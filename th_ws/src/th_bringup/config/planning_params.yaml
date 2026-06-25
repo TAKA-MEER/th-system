@@ -1,0 +1,39 @@
+# ============================================================
+# planning_params.yaml — follow_planner 全パラメータ
+# (高度追従ロジック対応版)
+# ============================================================
+follow_planner:
+  ros__parameters:
+    # ── 4.3.3 通常追従 ────────────────────────────────────
+    follow_distance_target:   1.5    # m 追従目標距離
+    follow_distance_min:      0.8    # m 最小許容距離（減速・停止）
+    follow_distance_max:      3.0    # m 最大許容距離（加速）
+    follow_angle_offset_max: 30.0    # deg 斜め後方追従の最大オフセット角度
+    corridor_width_threshold: 1.5    # m これ未満の通路幅で真後ろ追従に切替
+    lidar_fov_deg:          360.0    # deg LiDAR 有効視野角（RPLIDAR S1 = 360°）
+    vel_history_sec:          1.0    # s 速度推定に使う位置履歴長
+
+    # ── 4.3.4 静止時再配置 ────────────────────────────────
+    static_speed_threshold:   0.05   # m/s 静止判定速度閾値
+    static_time_threshold:    2.0    # s 静止継続時間閾値
+    candidate_count:         16      # 候補点数（放射状）
+    candidate_radius:         1.5    # m 候補点生成半径
+    work_front_exclusion_deg: 60.0   # deg 試験員正面除外角度の半角
+
+    # ── 4.3.7 近接退避 ────────────────────────────────────
+    retreat_trigger_distance: 0.8    # m 退避開始距離
+    retreat_release_distance: 1.2    # m 退避解除距離（ハンチング防止）
+    closing_speed_threshold:  0.3    # m/s 予防的退避を開始する接近速度
+    retreat_check_clearance:  0.5    # m 退避方向に必要な最小自由空間
+    retreat_speed:            0.15   # m/s 退避速度
+
+    # ── 共通 ──────────────────────────────────────────────
+    goal_deadzone_m:          0.30   # m ゴール更新のデッドゾーン
+    update_rate_hz:          10.0    # Hz 制御ループ周期
+    base_frame:               "base_link"
+    map_frame:                "map"
+
+panel_navigator:
+  ros__parameters:
+    arrival_threshold_m: 0.3
+    map_frame: "map"

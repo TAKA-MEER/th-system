@@ -1,0 +1,225 @@
+<?xml version="1.0"?>
+<!--
+  panel_room.world — 配電盤室シミュレーション環境
+  ─────────────────────────────────────────────────
+  部屋: 10m × 8m の閉じた空間
+  配電盤: 北壁沿いに 3 台
+  通路: 幅 1.4m（corridor_width_threshold 検証用）
+  Actor: 試験員を模擬した歩行人物モデル
+-->
+<sdf version="1.6">
+  <world name="panel_room">
+
+    <!-- ── 物理エンジン設定 ────────────────────────────── -->
+    <physics name="default_physics" default="0" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    <!-- ── 照明 ────────────────────────────────────────── -->
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <light name="ceiling_light" type="point">
+      <pose>0 0 3.8 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <attenuation>
+        <range>20</range>
+        <constant>0.5</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+    </light>
+
+    <!-- ── 地面 ────────────────────────────────────────── -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal></plane></geometry>
+          <surface><friction><ode><mu>100</mu><mu2>50</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <cast_shadows>false</cast_shadows>
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grey</name>
+            </script>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ── 壁 マクロ ────────────────────────────────────── -->
+    <!--
+      部屋サイズ: X方向 10m (前後), Y方向 8m (左右), 高さ 3m
+      原点: 部屋中央
+    -->
+
+    <!-- 南壁 (y = -4.0) -->
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -4.1 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>10.2 0.2 3.0</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>10.2 0.2 3.0</size></box></geometry>
+          <material><script><name>Gazebo/White</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 北壁 (y = +4.0) — 配電盤が設置される壁 -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 4.1 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>10.2 0.2 3.0</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>10.2 0.2 3.0</size></box></geometry>
+          <material><script><name>Gazebo/White</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 西壁 (x = -5.0) -->
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-5.1 0 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 8.2 3.0</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 8.2 3.0</size></box></geometry>
+          <material><script><name>Gazebo/White</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 東壁 (x = +5.0) -->
+    <model name="wall_east">
+      <static>true</static>
+      <pose>5.1 0 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 8.2 3.0</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.2 8.2 3.0</size></box></geometry>
+          <material><script><name>Gazebo/White</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ── 通路仕切り壁 (狭路テスト用) ────────────────── -->
+    <!-- 部屋中央付近に仕切り壁を設置し、幅 1.4m の通路を作る -->
+    <model name="partition_west">
+      <static>true</static>
+      <pose>-1.0 1.0 1.0 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>4.0 0.15 2.0</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>4.0 0.15 2.0</size></box></geometry>
+          <material><script><name>Gazebo/Grey</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ── 配電盤 (3台) ─────────────────────────────── -->
+    <!-- 北壁手前 (y ≈ 3.55) に設置 -->
+    <model name="panel_01">
+      <static>true</static>
+      <pose>-3.0 3.55 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.8 0.2 1.5</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.8 0.2 1.5</size></box></geometry>
+          <material><script><name>Gazebo/Blue</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="panel_02">
+      <static>true</static>
+      <pose>0.0 3.55 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.8 0.2 1.5</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.8 0.2 1.5</size></box></geometry>
+          <material><script><name>Gazebo/Blue</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="panel_03">
+      <static>true</static>
+      <pose>3.0 3.55 0.75 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.8 0.2 1.5</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.8 0.2 1.5</size></box></geometry>
+          <material><script><name>Gazebo/Blue</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ── 試験員 Actor ────────────────────────────────── -->
+    <!--
+      Gazebo Classic の actor タグで歩行する人物を模擬する。
+      walk.dae が存在しない環境では cylinder モデルで代替。
+      ウェイポイント間を一定速度で往復する経路を設定。
+    -->
+    <actor name="inspector">
+      <pose>0 0 0 0 0 0</pose>
+
+      <!-- スキン: walk.dae が利用可能な場合はアニメーション付き人物 -->
+      <skin>
+        <filename>walk.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+
+      <animation name="walking">
+        <filename>walk.dae</filename>
+        <scale>1.0</scale>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+
+      <!-- 歩行経路: 配電盤前を左右に往復 -->
+      <script>
+        <loop>true</loop>
+        <delay_start>1.0</delay_start>
+        <auto_start>true</auto_start>
+
+        <trajectory id="0" type="walking">
+          <!-- 西端スタート -->
+          <waypoint><time>0.0</time><pose>-3.5 2.5 0 0 0 0</pose></waypoint>
+          <!-- 第1配電盤前 -->
+          <waypoint><time>4.0</time><pose>-3.0 2.5 0 0 0 0</pose></waypoint>
+          <!-- 立ち止まり (作業中) -->
+          <waypoint><time>8.0</time><pose>-3.0 2.5 0 0 0 0</pose></waypoint>
+          <!-- 第2配電盤前へ移動 -->
+          <waypoint><time>12.0</time><pose>0.0 2.5 0 0 0 0</pose></waypoint>
+          <!-- 立ち止まり -->
+          <waypoint><time>16.0</time><pose>0.0 2.5 0 0 0 0</pose></waypoint>
+          <!-- 第3配電盤前へ移動 -->
+          <waypoint><time>20.0</time><pose>3.0 2.5 0 0 0 0</pose></waypoint>
+          <!-- 立ち止まり -->
+          <waypoint><time>24.0</time><pose>3.0 2.5 0 0 0 0</pose></waypoint>
+          <!-- 東端へ -->
+          <waypoint><time>28.0</time><pose>4.0 2.5 0 0 0 0</pose></waypoint>
+          <!-- 折り返し -->
+          <waypoint><time>32.0</time><pose>4.0 2.5 0 0 0 0</pose></waypoint>
+          <!-- 西端へ戻る -->
+          <waypoint><time>40.0</time><pose>-3.5 2.5 0 0 0 0</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+  </world>
+</sdf>

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>th_perception</name>
+  <version>0.1.0</version>
+  <description>lidar_filter / person_predictor / person_tracker_stub</description>
+  <maintainer email="dev@example.com">TH Team</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>th_system_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <exec_depend>gazebo_msgs</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

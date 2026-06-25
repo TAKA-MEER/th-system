@@ -1,0 +1,36 @@
+#version: "3.8"
+
+services:
+  th_robot:
+    build: .
+    container_name: th_robot
+    network_mode: host
+    privileged: true
+    environment:
+      - ROS_DOMAIN_ID=10
+      - DISPLAY=${DISPLAY:-:0}
+      - LIBGL_ALWAYS_INDIRECT=0        # GPU レンダリング許可
+      - GAZEBO_MODEL_PATH=/root/th_ws/src/th_description/meshes
+    volumes:
+      - ./src:/root/th_ws/src
+      - ./esp32:/root/th_ws/esp32
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Gazebo モデルキャッシュ（再起動時の高速化）
+      - gazebo_models:/root/.gazebo
+    devices:
+      - /dev/lidar:/dev/lidar
+      - /dev/esp32:/dev/esp32
+    # GPU サポート（NVIDIA の場合のみ有効化）
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+volumes:
+  gazebo_models:

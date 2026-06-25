@@ -1,0 +1,6 @@
+uint8  requested_mode
+string requester
+---
+bool   success
+string message
+uint8  current_mode

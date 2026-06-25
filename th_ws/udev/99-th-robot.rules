@@ -1,0 +1,35 @@
+# /etc/udev/rules.d/99-th-robot.rules
+#
+# インストール手順:
+#   sudo cp udev/99-th-robot.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger
+#
+# VID/PID の確認方法:
+#   デバイスを接続後: lsusb
+#   詳細確認: udevadm info -a -n /dev/ttyUSB0 | grep -E "idVendor|idProduct|serial"
+#
+# ─────────────────────────────────────────────────────────────────────
+# RPLIDAR S1 (Silicon Labs CP2102 USB-Serial)
+# VID: 10c4, PID: ea60 (CP2102)
+# ※ 実機で確認後に idProduct を修正すること
+# ─────────────────────────────────────────────────────────────────────
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", \
+  SYMLINK+="lidar", MODE="0666", \
+  ENV{ID_MM_DEVICE_IGNORE}="1"
+
+# ─────────────────────────────────────────────────────────────────────
+# ESP32 DevKit (CH340 または CP2102)
+# CH340:  VID=1a86, PID=7523
+# CP2102: VID=10c4, PID=ea60  ← RPLIDAR と同じ場合は SERIAL で区別
+#
+# 同 VID/PID の場合は ATTRS{serial} でシリアル番号を指定して区別:
+#   udevadm info -a -n /dev/ttyUSB1 | grep serial
+# ─────────────────────────────────────────────────────────────────────
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", \
+  SYMLINK+="esp32", MODE="0666", \
+  ENV{ID_MM_DEVICE_IGNORE}="1"
+
+# CP2102 の場合(シリアル番号で区別 — 実機確認後に SERIAL 値を入れる):
+# SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", \
+#   ATTRS{serial}=="XXXXXXXX", SYMLINK+="esp32", MODE="0666"

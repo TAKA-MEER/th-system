@@ -1,0 +1,40 @@
+# ============================================================
+# twist_mux 設定
+# 優先度: 高い数値が優先
+# lock: true のトピックが HIGH (true) を受信している間は
+#        他の全入力を無視してゼロ速を出力する
+# ============================================================
+twist_mux:
+  ros__parameters:
+
+    # ── ロック (強制ゼロ出力) ─────────────────────────────
+    locks:
+      estop:
+        topic:    /safety/estop        # safety_monitor が発行
+        timeout:  0.5                  # 0.5s 以内に更新がなければロック解除扱い
+        priority: 255                  # 最優先
+
+      fault:
+        topic:    /safety/fault_lock   # safety_monitor が FaultStatus.active=true 時に発行
+        timeout:  0.5
+        priority: 254
+
+    # ── 速度入力トピック ─────────────────────────────────
+    topics:
+      # 近接退避 (follow_planner が直接発行)
+      retreat:
+        topic:   /cmd_vel_retreat
+        timeout: 0.5
+        priority: 20
+
+      # Nav2 controller_server 出力 (追従/手動ゴール/配電盤移動で共用)
+      nav:
+        topic:   /cmd_vel_nav
+        timeout: 0.5
+        priority: 10
+
+      # 将来: ジョイスティック的な連続手動操作 (現状は未使用)
+      # manual_joy:
+      #   topic:   /cmd_vel_manual
+      #   timeout: 0.5
+      #   priority: 30

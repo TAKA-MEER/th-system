@@ -1,0 +1,8 @@
+esp32_bridge:
+  ros__parameters:
+    wheel_radius:  0.0391   # m — キャリブ後に apply_calib で更新
+    wheel_base:    0.39     # m — キャリブ後に apply_calib で更新
+    odom_frame:    "odom"
+    base_frame:    "base_link"
+    publish_tf:    true
+    feedback_timeout_ms: 500   # ESP32 フィードバック死活監視タイムアウト (ms)

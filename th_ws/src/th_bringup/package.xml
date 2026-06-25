@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>th_bringup</name>
+  <version>0.1.0</version>
+  <description>TH システム 起動パッケージ</description>
+  <maintainer email="dev@example.com">TH Team</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>th_system_msgs</exec_depend>
+  <exec_depend>th_esp32_bridge</exec_depend>
+  <exec_depend>th_safety</exec_depend>
+  <exec_depend>th_mode_manager</exec_depend>
+  <exec_depend>th_perception</exec_depend>
+  <exec_depend>th_planning</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
+  <exec_depend>twist_mux</exec_depend>
+  <exec_depend>sllidar_ros2</exec_depend>
+  <exec_depend>rosbridge_server</exec_depend>
+  <exec_depend>th_description</exec_depend>
+  <exec_depend>gazebo_ros</exec_depend>
+  <exec_depend>gazebo_ros_pkgs</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>micro_ros_agent</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

@@ -1,0 +1,136 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ============================================================
+       Gazebo プラグイン定義
+       use_gazebo パラメータが true のときのみ有効
+       ============================================================ -->
+
+  <xacro:macro name="gazebo_plugins" params="use_gazebo:=true">
+    <xacro:if value="${use_gazebo}">
+
+      <!-- ==================================================
+           差動駆動プラグイン
+           /cmd_vel を受け取り /odom + TF を発行する。
+           実機では esp32_bridge が担う役割を Gazebo が代替する。
+           ================================================== -->
+      <gazebo>
+        <plugin name="gazebo_ros_diff_drive"
+                filename="libgazebo_ros_diff_drive.so">
+          <ros>
+            <remapping>cmd_vel:=cmd_vel</remapping>
+            <remapping>odom:=odom</remapping>
+          </ros>
+          <!-- ジョイント名 -->
+          <left_joint>left_wheel_joint</left_joint>
+          <right_joint>right_wheel_joint</right_joint>
+          <!-- ロボット寸法（esp32_bridge/config/params.yaml と同じ値にする） -->
+          <wheel_separation>0.39</wheel_separation>
+          <wheel_diameter>0.0782</wheel_diameter>  <!-- 2 × wheel_radius -->
+          <!-- 出力設定 -->
+          <publish_odom>true</publish_odom>
+          <publish_odom_tf>true</publish_odom_tf>
+          <publish_wheel_tf>false</publish_wheel_tf>
+          <odometry_frame>odom</odometry_frame>
+          <robot_base_frame>base_footprint</robot_base_frame>
+          <!-- 物理特性 -->
+          <max_wheel_torque>20.0</max_wheel_torque>
+          <max_wheel_acceleration>1.0</max_wheel_acceleration>
+          <update_rate>30.0</update_rate>
+        </plugin>
+      </gazebo>
+
+      <!-- ==================================================
+           LiDAR センサプラグイン (RPLIDAR S1 近似)
+           360° / 8000点 / 最大12m / 10Hz
+           /scan に LaserScan を発行する。
+           ================================================== -->
+      <gazebo reference="laser_link">
+        <sensor name="lidar" type="ray">
+          <always_on>true</always_on>
+          <visualize>false</visualize>
+          <update_rate>10.0</update_rate>
+
+          <ray>
+            <scan>
+              <horizontal>
+                <samples>720</samples>         <!-- 0.5° 分解能 -->
+                <resolution>1</resolution>
+                <min_angle>-3.14159</min_angle>
+                <max_angle> 3.14159</max_angle>
+              </horizontal>
+            </scan>
+            <range>
+              <min>0.15</min>
+              <max>12.0</max>
+              <resolution>0.01</resolution>
+            </range>
+            <noise>
+              <type>gaussian</type>
+              <mean>0.0</mean>
+              <stddev>0.005</stddev>   <!-- 5mm のノイズ -->
+            </noise>
+          </ray>
+
+          <plugin name="gazebo_ros_lidar"
+                  filename="libgazebo_ros_ray_sensor.so">
+            <ros>
+              <remapping>~/out:=scan</remapping>
+            </ros>
+            <output_type>sensor_msgs/LaserScan</output_type>
+            <frame_name>laser_link</frame_name>
+          </plugin>
+        </sensor>
+      </gazebo>
+
+      <!-- ==================================================
+           IMU センサプラグイン (オプション)
+           esp32_bridge からの /esp32/imu_data に相当するトピックを発行。
+           ================================================== -->
+      <gazebo reference="imu_link">
+        <sensor name="imu_sensor" type="imu">
+          <always_on>true</always_on>
+          <update_rate>100.0</update_rate>
+          <visualize>false</visualize>
+          <plugin name="gazebo_ros_imu"
+                  filename="libgazebo_ros_imu_sensor.so">
+            <ros>
+              <remapping>~/out:=esp32/imu_data</remapping>
+            </ros>
+            <frame_name>imu_link</frame_name>
+            <initial_orientation_as_reference>false</initial_orientation_as_reference>
+          </plugin>
+        </sensor>
+      </gazebo>
+
+      <!-- ==================================================
+           車体の物理特性
+           ================================================== -->
+      <gazebo reference="base_link">
+        <mu1>0.8</mu1>
+        <mu2>0.8</mu2>
+        <kp>1e6</kp>
+        <kd>1.0</kd>
+      </gazebo>
+
+      <gazebo reference="left_wheel">
+        <mu1>1.5</mu1>
+        <mu2>1.5</mu2>
+        <kp>1e6</kp>
+        <kd>1.0</kd>
+      </gazebo>
+
+      <gazebo reference="right_wheel">
+        <mu1>1.5</mu1>
+        <mu2>1.5</mu2>
+        <kp>1e6</kp>
+        <kd>1.0</kd>
+      </gazebo>
+
+    </xacro:if>
+  </xacro:macro>
+
+  <!-- デフォルトでプラグインを有効化 -->
+  <xacro:gazebo_plugins/>
+
+</robot>

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>th_planning</name>
+  <version>0.1.0</version>
+  <description>follow_planner / panel_navigator / manual_command_handler</description>
+  <maintainer email="dev@example.com">TH Team</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav2_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>th_system_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

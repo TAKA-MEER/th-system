@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>th_mode_manager</name>
+  <version>0.1.0</version>
+  <description>mode_manager — FSM によるシステム全体の状態遷移管理</description>
+  <maintainer email="dev@example.com">TH Team</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>th_system_msgs</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>
