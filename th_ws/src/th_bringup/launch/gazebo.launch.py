@@ -298,12 +298,11 @@ def generate_launch_description():
     # Nav2 + SLAM（実機・シミュレーション共通、設定ファイルのみ異なる）
     # ════════════════════════════════════════════════════════
 
-    # Nav2 — シミュレーション
+    # Nav2 (ナビゲーション部分のみ) — シミュレーション
     nav2_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(NAV2_DIR, 'launch', 'bringup_launch.py')),
+            os.path.join(NAV2_DIR, 'launch', 'navigation_launch.py')),
         launch_arguments={
-            'map':          map_yaml,
             'use_sim_time': 'True',
             'params_file':  nav2_params_sim,
             'autostart':    'true',
@@ -311,17 +310,42 @@ def generate_launch_description():
         condition=IfCondition(sim),
     )
 
-    # Nav2 — 実機
+    # Nav2 (ナビゲーション部分のみ) — 実機
     nav2_real = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(NAV2_DIR, 'launch', 'bringup_launch.py')),
+            os.path.join(NAV2_DIR, 'launch', 'navigation_launch.py')),
+        launch_arguments={
+            'use_sim_time': 'False',
+            'params_file':  nav2_params_real,
+            'autostart':    'true',
+        }.items(),
+        condition=UnlessCondition(sim),
+    )
+
+    # Localization (AMCL + map_server) — シミュレーション
+    loc_sim = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(NAV2_DIR, 'launch', 'localization_launch.py')),
+        launch_arguments={
+            'map':          map_yaml,
+            'use_sim_time': 'True',
+            'params_file':  nav2_params_sim,
+            'autostart':    'true',
+        }.items(),
+        condition=IfCondition(PythonExpression(["'", sim, "' == 'true' and '", slam, "' == 'false'"])),
+    )
+
+    # Localization (AMCL + map_server) — 実機
+    loc_real = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(NAV2_DIR, 'launch', 'localization_launch.py')),
         launch_arguments={
             'map':          map_yaml,
             'use_sim_time': 'False',
             'params_file':  nav2_params_real,
             'autostart':    'true',
         }.items(),
-        condition=UnlessCondition(sim),
+        condition=IfCondition(PythonExpression(["'", sim, "' == 'false' and '", slam, "' == 'false'"])),
     )
 
     # SLAM — シミュレーション
@@ -393,9 +417,11 @@ def generate_launch_description():
             esp32_bridge,
             ekf_node,
 
-            # Nav2 + SLAM
+            # Nav2 + SLAM / Localization
             nav2_sim,
             nav2_real,
+            loc_sim,
+            loc_real,
             slam_sim,
             slam_real,
 

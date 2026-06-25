@@ -303,7 +303,8 @@ RViz2 に地図（/map）が表示されたら保存:
 ```bash
 # ターミナル 3
 ros2 run nav2_map_server map_saver_cli \
-  -f /root/th_ws/src/th_bringup/maps/th_map
+  -f /root/th_ws/src/th_bringup/maps/th_map \
+  --ros-args -p use_sim_time:=true -p save_map_timeout:=10000.0
 ```
 
 ### Step 4: 追従動作の確認
