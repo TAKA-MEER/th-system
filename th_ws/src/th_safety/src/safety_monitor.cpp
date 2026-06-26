@@ -32,6 +32,7 @@ public:
         declare_parameter("esp32_timeout_ms",     500);
         declare_parameter("person_timeout_ms",    500);
         declare_parameter("check_period_ms",      100);
+        declare_parameter("startup_grace_sec",    3);
 
         lidar_timeout_  = std::chrono::milliseconds(
             get_parameter("lidar_timeout_ms").as_int());
@@ -45,6 +46,9 @@ public:
             "/safety/estop", rclcpp::QoS(1).reliable());
         pub_fault_ = create_publisher<th_system_msgs::msg::FaultStatus>(
             "/safety/fault", rclcpp::QoS(1).reliable());
+        // twist_mux の fault lock 入力 (Bool): active=true 時に true を発行
+        pub_fault_lock_ = create_publisher<std_msgs::msg::Bool>(
+            "/safety/fault_lock", rclcpp::QoS(1).reliable());
 
         // ── Subscribers ────────────────────────────────────
         // 物理 E-Stop (ESP32 GPIO → esp32_bridge 中継)
@@ -97,7 +101,8 @@ public:
         last_esp32_time_  = t0;
 
         // 起動直後のタイムアウト誤検知を防ぐため初回は余裕を持たせる
-        startup_grace_end_ = t0 + rclcpp::Duration(3, 0);  // 3 秒猶予
+        int grace_sec = get_parameter("startup_grace_sec").as_int();
+        startup_grace_end_ = t0 + rclcpp::Duration(grace_sec, 0);
 
         RCLCPP_INFO(get_logger(), "safety_monitor 起動");
     }
@@ -130,6 +135,12 @@ private:
             checkTimeout("PERSON_TRACKER_LOST", last_person_time_, person_timeout_,
                          person_alive_, prev_person_fault_, t);
         }
+
+        // fault_lock を毎サイクル発行する（twist_mux timeout=0.5s を防ぐ）
+        // /safety/estop と同じく、状態変化の有無にかかわらず継続送信する。
+        std_msgs::msg::Bool lock_msg;
+        lock_msg.data = prev_lidar_fault_ || prev_esp32_fault_ || prev_person_fault_;
+        pub_fault_lock_->publish(lock_msg);
     }
 
     void checkTimeout(const std::string& fault_type,
@@ -160,11 +171,17 @@ private:
         msg.active     = active;
         msg.fault_type = type;
         pub_fault_->publish(msg);
+
+        // twist_mux の fault lock (Bool) へも同期発行
+        std_msgs::msg::Bool lock_msg;
+        lock_msg.data = active;
+        pub_fault_lock_->publish(lock_msg);
     }
 
     // ── Publishers ────────────────────────────────────────
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr                pub_estop_;
     rclcpp::Publisher<th_system_msgs::msg::FaultStatus>::SharedPtr   pub_fault_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr                pub_fault_lock_;
 
     // ── Subscribers ──────────────────────────────────────
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr             sub_estop_hw_;

@@ -11,6 +11,8 @@ from nav2_msgs.action import NavigateToPose
 from th_system_msgs.msg import RobotMode, PanelArrival
 from th_system_msgs.srv import GoToPanel, CompleteInspection, SetMode
 
+from action_msgs.msg import GoalStatus
+
 import yaml
 import os
 import math
@@ -145,7 +147,7 @@ class PanelNavigator(Node):
 
     def _nav_result(self, future, panel_id: str):
         result = future.result()
-        if result.status == 4:  # SUCCEEDED
+        if result.status == GoalStatus.STATUS_SUCCEEDED:
             self.get_logger().info(f'配電盤 {panel_id} 到着')
             # 到着通知
             arrived = PanelArrival()

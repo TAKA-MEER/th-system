@@ -604,6 +604,10 @@ class FollowPlannerCore:
         self._prev_goal = (gx, gy)
         return PlannerOutput(kind="nav_goal", goal_x=gx, goal_y=gy, goal_yaw=gyaw)
 
+    def clear_prev_goal(self) -> None:
+        """デッドゾーンをリセットして次回必ずゴールを送出する"""
+        self._prev_goal = None
+
     def reset(self) -> None:
         """モード切替時などにリセットする"""
         self.state = FollowState.NORMAL_FOLLOW

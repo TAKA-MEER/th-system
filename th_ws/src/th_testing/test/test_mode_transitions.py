@@ -72,7 +72,17 @@ class TestModeManagerTransitions(unittest.TestCase):
         assert self.cli.wait_for_service(timeout_sec=5.0), \
             'mode_manager サービスが起動していない'
 
-        time.sleep(0.5)   # 初期化完了待ち
+        # 前テストの FSM 状態をリセット: 任意モード → ESTOP → IDLE
+        rclpy.spin_once(self.node, timeout_sec=0.1)
+        self.pub_estop.publish(Bool(data=True))
+        time.sleep(0.2)
+        for _ in range(5):
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        self.pub_estop.publish(Bool(data=False))
+        time.sleep(0.3)
+        for _ in range(5):
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        self._mode_history.clear()
 
     def tearDown(self):
         self.node.destroy_node()

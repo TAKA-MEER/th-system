@@ -225,9 +225,10 @@ def generate_launch_description():
         executable='gazebo_person_relay.py',
         name='gazebo_person_relay',
         parameters=[{
-            'actor_name': 'inspector',
-            'base_frame': 'base_link',
-            'world_frame': 'odom',
+            'actor_name':       'inspector',
+            'robot_name':       'th_robot',
+            'base_frame':       'base_link',
+            'max_detect_range': 12.0,  # 部屋対角最大~12.8m をカバー (デフォルト8mだと西端ロボット→東端試験員が圏外)
         }],
         output='screen',
         condition=IfCondition(LaunchConfiguration('sim')),
@@ -387,7 +388,7 @@ def generate_launch_description():
     # Gazebo が完全に起動してからロボットをスポーンする
     # ════════════════════════════════════════════════════════
     spawn_delay = TimerAction(
-        period=3.0,
+        period=4.5,   # Gazebo 完全起動 + LiDAR/person_relay 安定化に余裕を持たせる
         actions=[spawn_robot],
     )
 

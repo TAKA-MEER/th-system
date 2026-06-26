@@ -3,45 +3,62 @@
 teleop.launch.py — キーボード手動操作
 ========================================
 シミュレーション・実機共通で使用できる。
-MANUAL モード時に /cmd_vel_nav へ直接速度指令を送る。
 
 使い方:
+  # 通常操作 (MANUAL モード、twist_mux 経由)
   ros2 launch th_bringup teleop.launch.py
 
-  # 地図作成時（Nav2 なしで直接 /cmd_vel へ）
+  # SLAM 地図作成時 (twist_mux バイパス)
   ros2 launch th_bringup teleop.launch.py direct:=true
+
+引数:
+  direct   true  → /cmd_vel へ直接送る (SLAM 地図作成時)
+           false → /cmd_vel_nav 経由で twist_mux を通す (デフォルト)
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition, UnlessCondition
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    return LaunchDescription([
-        DeclareLaunchArgument('direct', default_value='false',
-            description='true=/cmd_vel に直接送る, false=/cmd_vel_nav 経由(twist_mux通過)'),
+    direct = LaunchConfiguration('direct')
 
-        # /cmd_vel_nav 経由（通常の MANUAL 操作）
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            'direct', default_value='false',
+            description='true=/cmd_vel に直接, false=/cmd_vel_nav 経由 (twist_mux 通過)'),
+
+        # ── クローラー専用テレオペ: 通常モード (/cmd_vel_nav) ──────
         Node(
-            package='teleop_twist_keyboard',
-            executable='teleop_twist_keyboard',
-            name='teleop_twist_keyboard',
-            remappings=[('cmd_vel', '/cmd_vel_nav')],
-            prefix='xterm -fa "Monospace" -fs 10 -e',
+            package='th_planning',
+            executable='crawler_teleop.py',
+            name='crawler_teleop',
+            parameters=[{
+                'publish_topic':   '/cmd_vel_nav',
+                'linear_speed':    0.20,   # m/s
+                'spin_speed':      0.80,   # rad/s (超信地旋回)
+                'publish_rate_hz': 10.0,
+            }],
+            prefix='xterm -fa "Monospace" -fs 11 -e',
             output='screen',
-            condition=UnlessCondition(LaunchConfiguration('direct')),
+            condition=UnlessCondition(direct),
         ),
 
-        # /cmd_vel に直接送る（SLAM 地図作成時など）
+        # ── クローラー専用テレオペ: direct モード (/cmd_vel) ────────
         Node(
-            package='teleop_twist_keyboard',
-            executable='teleop_twist_keyboard',
-            name='teleop_twist_keyboard_direct',
-            remappings=[('cmd_vel', '/cmd_vel')],
-            prefix='xterm -fa "Monospace" -fs 10 -e',
+            package='th_planning',
+            executable='crawler_teleop.py',
+            name='crawler_teleop_direct',
+            parameters=[{
+                'publish_topic':   '/cmd_vel',
+                'linear_speed':    0.20,
+                'spin_speed':      0.80,
+                'publish_rate_hz': 10.0,
+            }],
+            prefix='xterm -fa "Monospace" -fs 11 -e',
             output='screen',
-            condition=IfCondition(LaunchConfiguration('direct')),
+            condition=IfCondition(direct),
         ),
     ])

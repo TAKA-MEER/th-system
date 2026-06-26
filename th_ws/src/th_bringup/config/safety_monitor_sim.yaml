@@ -9,6 +9,7 @@
 safety_monitor:
   ros__parameters:
     lidar_timeout_ms:   1000   # ms Gazebo センサは安定しているが余裕を持たせる
-    esp32_timeout_ms:  30000   # ms 実機なし → 実質無効化
-    person_timeout_ms:  1000   # ms Actor 中継ノードのタイムアウト
+    esp32_timeout_ms:  86400000 # ms 実機なし → 事実上無効 (24時間)
+    person_timeout_ms:  2000   # ms gazebo_person_relay の初期化猶予
     check_period_ms:     100   # ms 監視ループ周期
+    startup_grace_sec:     7   # s  spawn_delay(4.5s) + Gazebo 初期化(~2s) に対応

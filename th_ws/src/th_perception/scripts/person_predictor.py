@@ -51,7 +51,7 @@ class PersonPredictor(Node):
         self._pub_search = self.create_publisher(
             Bool, "/person/search_mode", 10)
         self._pub_search_cmd = self.create_publisher(
-            Twist, "/cmd_vel_nav", 10)   # 捜索旋回はNav2経由ではなく直接
+            Twist, "/cmd_vel_retreat", 10)  # 捜索旋回: twist_mux 優先度20(Nav2より高)で出力
 
         # ── Subscribers ────────────────────────────────────
         self.create_subscription(

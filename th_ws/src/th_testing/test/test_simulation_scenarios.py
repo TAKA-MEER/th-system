@@ -28,7 +28,6 @@ import launch
 import launch_ros.actions
 import launch_testing
 import launch_testing.actions
-from ament_index_python.packages import get_package_share_directory
 
 from geometry_msgs.msg import Twist, PointStamped
 from std_msgs.msg import Bool
@@ -49,11 +48,10 @@ sim_mark = pytest.mark.skipif(
 @pytest.mark.launch_test
 def generate_test_description():
     """
-    stub のみで動かす軽量版テスト環境。
+    テストノードが /person/status を直接発行する軽量版テスト環境。
+    person_tracker_stub を使わないことでテスト間のメッセージ競合を防ぐ。
     Gazebo を使う場合は gazebo.launch.py を追加すること。
     """
-    bringup_dir = get_package_share_directory('th_bringup')
-
     nodes = [
         # mode_manager
         launch_ros.actions.Node(
@@ -68,16 +66,6 @@ def generate_test_description():
                 'esp32_timeout_ms':  10000,
                 'person_timeout_ms': 10000,
                 'check_period_ms':   100,
-            }],
-            output='screen'),
-        # person_tracker_stub
-        launch_ros.actions.Node(
-            package='th_perception', executable='person_tracker_stub.py',
-            name='person_tracker',
-            parameters=[{
-                'pattern':    'static',
-                'initial_x':  1.5,
-                'initial_y':  0.0,
             }],
             output='screen'),
         # person_predictor
@@ -262,15 +250,18 @@ class TestSimulationScenarios(unittest.TestCase):
             self._publish_person(x=0.5, y=0.0)
             self._spin(0.1)
 
-        # retreat_history で退避が起きたことを確認
+        # 遠ざかる (release_distance = 1.2m 超)
+        # まず 1.5m を数回送って follow_planner の退避を止めてからクリア
+        for _ in range(5):
+            self._publish_person(x=1.5, y=0.0)
+            self._spin(0.1)
         self._retreat_history.clear()
 
-        # 遠ざかる (release_distance = 1.2m 超)
-        for _ in range(15):
+        # 退避解除後は retreat にゼロのみが来るはず
+        for _ in range(10):
             self._publish_person(x=1.5, y=0.0)
             self._spin(0.1)
 
-        # 退避解除後は retreat にゼロのみが来るはず
         non_zero = [t for t in self._retreat_history
                     if abs(t.linear.x) > 0.01]
         assert len(non_zero) == 0, (
@@ -306,14 +297,15 @@ class TestSimulationScenarios(unittest.TestCase):
             self._spin(0.1)
 
         # 予測フェーズ (max_predict_sec=2.0s): search_mode が False
-        self._spin(1.5)
+        # 0.5s(lost phase) + 1.2s = 1.7s < 2.0s で境界条件を回避
+        self._spin(1.2)
         search_during_predict = [s for s in self._search_mode_history if s]
         assert len(search_during_predict) == 0, (
             '予測フェーズ中に捜索モードが起動した（予期しない動作）')
 
         # max_predict_sec 経過後: search_mode が True になる
         self._search_mode_history.clear()
-        self._spin(1.0)   # さらに 1s 待つ (合計 2.5s > max_predict_sec 2.0s)
+        self._spin(1.5)   # さらに 1.5s 待つ (合計 3.2s > max_predict_sec 2.0s)
 
         search_active = [s for s in self._search_mode_history if s]
         assert len(search_active) > 0, (

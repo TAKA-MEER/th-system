@@ -14,6 +14,7 @@ follow_planner_core.py のロジックを ROS2 に接続する。
 
 import math
 import rclpy
+import rclpy.time
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
@@ -121,9 +122,13 @@ class FollowPlanner(Node):
             self._stop_retreat()
 
     def _cb_person(self, msg: PersonStatus):
+        was_lost = self._person_lost
         self._person_lost = msg.is_lost
         if not msg.is_lost:
             self._person_pos = (msg.position.x, msg.position.y)
+            if was_lost:
+                # ロスト→再検出の遷移: デッドゾーンをクリアして直ちに新ゴールを送出
+                self._core.clear_prev_goal()
 
     def _cb_costmap(self, msg: OccupancyGrid):
         self._costmap = msg
@@ -141,8 +146,11 @@ class FollowPlanner(Node):
             tf = self._tf_buffer.lookup_transform(
                 "map", self.get_parameter("base_frame").value,
                 rclpy.time.Time(), timeout=Duration(seconds=0.05))
-            mx = x + tf.transform.translation.x
-            my = y + tf.transform.translation.y
+            trans = tf.transform.translation
+            rot   = tf.transform.rotation
+            yaw   = 2.0 * math.atan2(rot.z, rot.w)
+            mx = trans.x + x * math.cos(yaw) - y * math.sin(yaw)
+            my = trans.y + x * math.sin(yaw) + y * math.cos(yaw)
         except Exception:
             return True
         cx = int((mx - ox) / res)
@@ -170,7 +178,7 @@ class FollowPlanner(Node):
 
     def _to_map_pose(self, x: float, y: float, yaw: float):
         ps = PoseStamped()
-        ps.header.stamp    = self.get_clock().now().to_msg()
+        ps.header.stamp    = rclpy.time.Time().to_msg()  # 最新の利用可能なTFを使用（未来外挿を回避）
         ps.header.frame_id = self.get_parameter("base_frame").value
         ps.pose.position.x = x
         ps.pose.position.y = y
@@ -181,18 +189,22 @@ class FollowPlanner(Node):
                 ps, self.get_parameter("map_frame").value,
                 timeout=Duration(seconds=0.1))
         except Exception as e:
-            self.get_logger().warn(f"TF 変換失敗: {e}")
+            self.get_logger().warn(f"TF 変換失敗: {e}", throttle_duration_sec=2.0)
             return None
 
     def _send_nav_goal(self, pose: PoseStamped):
         if not self._nav_client.wait_for_server(timeout_sec=0.05):
             return
+        if self._nav_goal_handle is not None:
+            self._nav_goal_handle.cancel_goal_async()
+            self._nav_goal_handle = None
         goal = NavigateToPose.Goal()
         goal.pose = pose
         f = self._nav_client.send_goal_async(goal)
-        f.add_done_callback(lambda fut: setattr(
-            self, "_nav_goal_handle",
-            fut.result() if fut.result().accepted else None))
+        def _on_goal_response(fut):
+            result = fut.result()
+            self._nav_goal_handle = result if result.accepted else None
+        f.add_done_callback(_on_goal_response)
 
     def _stop_retreat(self):
         self._pub_retreat.publish(Twist())
@@ -229,6 +241,9 @@ class FollowPlanner(Node):
             map_pose = self._to_map_pose(out.goal_x, out.goal_y, out.goal_yaw)
             if map_pose:
                 self._send_nav_goal(map_pose)
+            else:
+                # TF失敗時はデッドゾーンをクリアして次ループで再試行
+                self._core.clear_prev_goal()
 
 
 def main(args=None):

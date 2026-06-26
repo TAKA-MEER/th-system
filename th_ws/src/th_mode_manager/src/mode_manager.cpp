@@ -107,7 +107,8 @@ private:
 
         switch (from) {
         case RobotMode::IDLE:
-            return to == RobotMode::FOLLOWING;
+            return to == RobotMode::FOLLOWING ||
+                   to == RobotMode::MANUAL;
 
         case RobotMode::FOLLOWING:
             return to == RobotMode::MANUAL          ||

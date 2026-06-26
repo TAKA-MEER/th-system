@@ -185,7 +185,7 @@ th_ws/
 │   ├── th_safety/                # safety_monitor + twist_mux 設定
 │   ├── th_mode_manager/          # FSM（7 状態・全遷移ルール）
 │   ├── th_perception/            # lidar_filter・person_predictor・tracker_stub
-│   ├── th_planning/              # follow_planner・panel_navigator・manual_handler
+│   ├── th_planning/              # follow_planner・panel_navigator・manual_handler・crawler_teleop
 │   │   └── th_planning/          # Python パッケージ（テスト可能なコアロジック）
 │   │       └── follow_planner_core.py
 │   ├── th_calibration/           # オドメトリキャリブツール
@@ -277,14 +277,18 @@ export DISPLAY=:0
 docker compose run --rm th_robot bash
 ```
 
+> **注意 (シミュレーションのみの場合):** `docker-compose.yml` に実機デバイス (`/dev/lidar`, `/dev/esp32`) が記載されており、デバイスが存在しないとコンテナ起動に失敗することがある。その場合は `docker-compose.yml` の `devices:` セクションをコメントアウトするか削除すること。
+
 ### Step 2: ビルド
 
 ```bash
 # コンテナ内
 cd /root/th_ws
-colcon build --symlink-install
+colcon build --symlink-install   # 初回または C++ 変更時
 source install/setup.bash
 ```
+
+> Dockerfile 内でビルド済みのため、通常は不要。Python スクリプトの変更はシンボリックリンクで即時反映される。C++ パッケージ (`th_safety` など) を変更した場合のみ再ビルドが必要。
 
 ### Step 3: SLAM で地図を作成
 
@@ -292,13 +296,24 @@ source install/setup.bash
 # ターミナル 1: シミュレーション起動（初回は SLAM モード）
 ros2 launch th_bringup gazebo.launch.py
 
-# ターミナル 2: キーボードで手動操作して地図を作成
+# ターミナル 2: クローラーテレオペ（別 xterm ウィンドウが開く）
 ros2 launch th_bringup teleop.launch.py direct:=true
-# i=前進, ,=後退, j=左旋回, l=右旋回, k=停止
-# 部屋全体を走り回ったら Ctrl+C で停止
 ```
 
-RViz2 に地図（/map）が表示されたら保存:
+xterm ウィンドウをクリックしてフォーカスを与えてからキー操作:
+
+| キー | 動作 |
+| --- | --- |
+| `w` | 直進前進 |
+| `s` | 直進後退 |
+| `q` / `e` | 超信地旋回 左 / 右（その場旋回） |
+| `a` / `d` | 緩旋回前進 左 / 右（円弧走行） |
+| `z` / `c` | 緩旋回後退 左 / 右（円弧走行） |
+| `x` / Space | 停止 |
+| `+` / `-` | 並進速度を ±0.05 m/s |
+| `[` / `]` | 旋回速度を ±0.1 rad/s |
+
+RViz2 で `/map` に地図が表示されたら部屋全体を走り回り、地図を保存:
 
 ```bash
 # ターミナル 3
@@ -310,16 +325,22 @@ ros2 run nav2_map_server map_saver_cli \
 ### Step 4: 追従動作の確認
 
 ```bash
-# 地図ありで起動
+# ターミナル 1: 地図ありで起動（AMCL 自己位置推定）
 ros2 launch th_bringup gazebo.launch.py \
   slam:=false map_yaml:=/root/th_ws/src/th_bringup/maps/th_map.yaml
+```
 
-# タブレット UI または rosbridge 経由でモードを FOLLOWING に切替
+起動から約 10 秒後（Nav2 が active になってから）、モードを FOLLOWING に切替:
+
+```bash
+# ターミナル 2
 ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
   "{requested_mode: 2, requester: 'cli'}"
 ```
 
-Gazebo ウィンドウで Inspector（試験員役）が移動し、ロボットが追従することを確認します。
+Gazebo ウィンドウで Inspector（試験員役）が移動し、ロボットが追従することを確認する。Inspector は Gazebo 起動 1 秒後から配電盤前を往復し始める。
+
+> FOLLOWING モード中に手動操作したい場合は `requested_mode: 5` (MANUAL) に切替え、別ターミナルで `ros2 launch th_bringup teleop.launch.py` を実行する。
 
 ---
 
@@ -633,7 +654,7 @@ bash scripts/run_tests.sh --all --sim
 優先度（高い方が優先）:
   255: /safety/estop      lock   — E-Stop 発動中は全入力を無視してゼロ出力
   254: /safety/fault_lock lock   — フォルト検知時も同様
-   20: /cmd_vel_retreat   topic  — follow_planner からの近接退避指令（Nav2 を迂回）
+   20: /cmd_vel_retreat   topic  — follow_planner からの近接退避指令・person_predictor からの捜索旋回指令（Nav2 を迂回）
    10: /cmd_vel_nav       topic  — Nav2 controller_server の通常出力
 ```
 
@@ -656,6 +677,7 @@ bash scripts/run_tests.sh --all --sim
 // 例: 新モード "AUTO_PATROL" を追加する場合
 case RobotMode::IDLE:
     return to == RobotMode::FOLLOWING ||
+           to == RobotMode::MANUAL    ||
            to == RobotMode::AUTO_PATROL;  // ← 追加
 ```
 
@@ -663,7 +685,7 @@ case RobotMode::IDLE:
 
 以下の遷移ルールは安全上の要件であり、変更してはいけません。
 
-- `IDLE → FOLLOWING` は外部からのサービス呼び出し（明示操作）のみで発生し、自動では遷移しない。ロボットが操作者の意図しないタイミングで動き出すことを防ぐための方針。
+- `IDLE → FOLLOWING` および `IDLE → MANUAL` は外部からのサービス呼び出し（明示操作）のみで発生し、自動では遷移しない。ロボットが操作者の意図しないタイミングで動き出すことを防ぐための方針。
 - `ESTOP` へはどのモードからも即座に遷移できる。`ESTOP` からは `IDLE` にのみ遷移できる。
 - フォルト（`/safety/fault`）は `FOLLOWING`・`MOVING_TO_PANEL`・`MANUAL`・`AT_PANEL` のいずれからでも `IDLE` へ強制遷移させる。`IDLE` 中のフォルトはモード変化を起こさない。
 
@@ -1000,6 +1022,10 @@ esp32_timeout_ms: 500ms
   → 電磁ノイズ・ジッタによる誤検知が多い場合は大きく（800ms 等）
   → 故障への反応が遅い場合は小さく（300ms 等）
   → ESP32 ウォッチドッグ(300ms)よりは必ず大きく設定すること
+
+startup_grace_sec: 3s（シミュレーションでは safety_monitor_sim.yaml で 7s に上書き）
+  → 起動直後のタイムアウト誤検知を抑制する猶予時間
+  → Gazebo の spawn_delay(4.5s) + 初期化時間を考慮してシミュレーションでは大きく設定する
 ```
 
 ### ESP32 PID ゲイン（config.h）

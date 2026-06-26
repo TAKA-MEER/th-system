@@ -12,6 +12,7 @@ install(PROGRAMS
   scripts/follow_planner.py
   scripts/panel_navigator.py
   scripts/manual_command_handler.py
+  scripts/crawler_teleop.py
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})

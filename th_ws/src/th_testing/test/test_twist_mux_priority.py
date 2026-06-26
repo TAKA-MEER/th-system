@@ -86,6 +86,10 @@ class TestTwistMuxPriority(unittest.TestCase):
         self.pub_estop   = self.node.create_publisher(Bool,  '/safety/estop',    10)
 
         time.sleep(1.0)
+        # estop lock を解除（timeout=0.5s でノーメッセージ時にロックされるため）
+        self.pub_estop.publish(Bool(data=False))
+        self._spin(0.8)
+        self._cmd_vel_history.clear()
 
     def tearDown(self):
         # E-Stop を確実に解除してテスト間干渉を防ぐ

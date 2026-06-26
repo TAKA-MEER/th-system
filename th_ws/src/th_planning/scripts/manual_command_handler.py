@@ -5,6 +5,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
+from rclpy.duration import Duration
 
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Empty
@@ -13,6 +14,8 @@ from th_system_msgs.msg import RobotMode
 from th_system_msgs.srv import SetMode
 
 import math
+import tf2_ros
+import tf2_geometry_msgs  # noqa: F401
 
 
 class ManualCommandHandler(Node):
@@ -42,6 +45,10 @@ class ManualCommandHandler(Node):
         self.create_subscription(Empty, '/manual/heartbeat',
                                  self._cb_heartbeat, 10)
 
+        # ── TF ───────────────────────────────────────────────
+        self._tf_buffer   = tf2_ros.Buffer()
+        self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
+
         # ── Nav2 アクション & mode_manager サービス ──────────
         self._nav_client  = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         self._set_mode_cli = self.create_client(SetMode, '/mode_manager/set_mode')
@@ -65,10 +72,19 @@ class ManualCommandHandler(Node):
         if self._current_mode != RobotMode.MANUAL:
             return
 
-        # base_link 座標をそのまま Nav2 に渡す (frame_id='base_link' を指定)
-        # Nav2 が自動的に map 座標へ変換する
         if not self._nav_client.wait_for_server(timeout_sec=0.5):
             self.get_logger().warn('Nav2 未起動')
+            return
+
+        # base_link 座標を map フレームへ変換してから Nav2 へ送る
+        # (タイムスタンプを now() に更新し、TF の最新変換を使用する)
+        msg.header.stamp = self.get_clock().now().to_msg()
+        map_frame = self.get_parameter('map_frame').value
+        try:
+            map_pose = self._tf_buffer.transform(
+                msg, map_frame, timeout=Duration(seconds=0.1))
+        except Exception as e:
+            self.get_logger().warn(f'TF 変換失敗 (base_link→map): {e}')
             return
 
         # 既存ゴールをキャンセル
@@ -77,8 +93,7 @@ class ManualCommandHandler(Node):
             self._goal_handle = None
 
         goal_msg = NavigateToPose.Goal()
-        goal_msg.pose = msg
-        goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
+        goal_msg.pose = map_pose
 
         future = self._nav_client.send_goal_async(goal_msg)
         future.add_done_callback(self._on_goal_accepted)

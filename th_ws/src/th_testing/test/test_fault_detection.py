@@ -260,7 +260,8 @@ class TestFaultDetectionTiming(unittest.TestCase):
             self._pub_scan_once()
             self._spin(0.05)
 
-        # 1 秒待って FOLLOWING への自動復帰がないことを確認
+        # DDS キューに残った古い FOLLOWING メッセージをドレインしてから計測
+        self._spin(1.0)
         self._mode_times.clear()
         self._spin(1.0)
 
