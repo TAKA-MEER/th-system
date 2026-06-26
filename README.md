@@ -3,7 +3,7 @@
 ## 構成概要
 
 | レイヤー | 実装 |
-|---|---|
+| --- | --- |
 | ハードウェア制御 | ESP32 (PlatformIO + Arduino + micro-ROS) |
 | ROS2 ブリッジ | `th_esp32_bridge` (C++) |
 | 安全管理 | `th_safety` / `twist_mux` (C++) |
@@ -43,7 +43,7 @@ pio device monitor         # シリアルモニタ (115200 baud)
 
 ### E-Stop 配線
 
-```
+```tree
 物理スイッチ (モーター電断端子)
     └── GPIO 34 (ESP32)
     └── GND
@@ -137,7 +137,7 @@ npm run dev    # http://<PCのIP>:5173 をタブレットブラウザで開く
 ## モード操作
 
 | モード | 状態 | タブレット操作 |
-|---|---|---|
+| --- | --- | --- |
 | IDLE | 静止待機 | 起動時の初期状態 |
 | FOLLOWING | 試験員自動追従 | 「追従開始」ボタン |
 | MOVING_TO_PANEL | 配電盤移動中 | 配電盤ボタン |
@@ -150,7 +150,7 @@ npm run dev    # http://<PCのIP>:5173 をタブレットブラウザで開く
 ## フォルト対応
 
 | フォルト | 原因 | 対処 |
-|---|---|---|
+| --- | --- | --- |
 | `LIDAR_LOST` | LiDAR データ途絶 | ケーブル・ドライバ確認 → 再起動 |
 | `ESP32_DISCONNECTED` | ESP32 通信途絶 | USB 抜き差し → ファームウェア確認 |
 | `PERSON_TRACKER_LOST` | 追従データ途絶 | person_tracker ノード確認 |
@@ -162,7 +162,7 @@ npm run dev    # http://<PCのIP>:5173 をタブレットブラウザで開く
 
 ## ディレクトリ構成
 
-```
+```tree
 th_ws/
 ├── Dockerfile
 ├── docker-compose.yml
@@ -215,14 +215,14 @@ th_ws/
 
 ---
 
-# Gazebo シミュレーション
+## Gazebo シミュレーション
 
 ## 概要
 
 実機（ESP32・RPLIDAR S1）がなくても、Gazebo Classic 上で全追従ロジックを視覚的に確認できます。
 `sim:=true/false` の引数一つで実機とシミュレーションを切り替えられます。
 
-```
+```txt
 実機モード:   micro_ros_agent + sllidar_node + esp32_bridge が起動
 シミュレーション: Gazebo が /odom・/scan を発行し上記3ノードは不要
 共通:         mode_manager・follow_planner・Nav2・rosbridge 等は同一ノードが動く
@@ -325,7 +325,7 @@ Gazebo ウィンドウで Inspector（試験員役）が移動し、ロボット
 
 ## ワールド環境の構成
 
-```
+```txt
 panel_room.world（デフォルト）
   部屋サイズ: 10m × 8m
   配電盤:     北壁沿いに 3 台（青い箱）
@@ -373,7 +373,7 @@ ros2 run th_perception person_mover.py --ros-args -p pattern:=static
 ## 確認できるシナリオ
 
 | シナリオ | 設定 | RViz2 で見るもの |
-|---|---|---|
+| --- | --- | --- |
 | 通常追従 | `pattern:=patrol` | ロボットが試験員の後ろ 1.5m を追従 |
 | 近接退避 | `pattern:=approach` | 0.8m 以内で `/cmd_vel_retreat` が発行され後退 |
 | 狭路真後ろ追従 | 仕切り壁の通路を通る | 角度オフセットが 0° になる |
@@ -388,7 +388,7 @@ ros2 run th_perception person_mover.py --ros-args -p pattern:=static
 起動時に表示される `th_sim.rviz` レイアウト:
 
 | 表示 | 説明 |
-|---|---|
+| --- | --- |
 | 赤い点群 | `/scan`（生スキャン、アルミ角柱の死角含む） |
 | 緑の点群 | `/scan_filtered`（死角マスク済み、Nav2 が使用するもの） |
 | グレーの地図 | SLAM で作成中の `/map` |
@@ -423,6 +423,7 @@ ros2 run gazebo_ros spawn_entity.py \
 ### walk.dae が見つからない（Actor エラー）
 
 `panel_room_no_actor.world` に切り替えてください:
+
 ```bash
 ros2 launch th_bringup gazebo.launch.py \
   world:=$(ros2 pkg prefix th_bringup)/share/th_bringup/worlds/panel_room_no_actor.world
@@ -449,7 +450,6 @@ ros2 topic echo /gazebo/model_states | grep -A5 inspector
 ros2 node info /gazebo_person_relay
 ```
 
-
 ## TBD (今後確定が必要な事項)
 
 - [ ] LiDAR 死角角度の実測値 (`perception_params.yaml`)
@@ -465,12 +465,12 @@ ros2 node info /gazebo_person_relay
 
 ---
 
-# テスト
+## テスト
 
 ## テスト構成一覧
 
 | ファイル | 分類 | ROS2 要否 | テスト件数 | 設計書対応 |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `test_follow_planner_logic.py` | 純粋単体テスト | 不要 | 41 件 | 10.1 §3 |
 | `test_mode_transitions.py` | ROS2 統合テスト | 必要 | 19 件 | 10.1 §1 |
 | `test_safety_monitor.py` | ROS2 統合テスト | 必要 | 10 件 | 10.1 §5 |
@@ -499,7 +499,7 @@ python3 -m pytest src/th_testing/test/test_follow_planner_logic.py -x
 
 テスト対象クラスと確認内容:
 
-```
+```txt
 TestRetreatHysteresis   ── trigger/release 境界値・ハンチング防止・速度による予防的退避
 TestPositionHistory     ── 速度推定精度・接近速度の正負・履歴不足時のゼロ返却
 TestStaticDetector      ── 静止判定タイミング・移動再開によるリセット
@@ -598,7 +598,7 @@ bash scripts/run_tests.sh --all --sim
 
 新しいロジックを追加する際は以下の構成に従ってください。
 
-```
+```txt
 ロジック追加
   → th_planning/th_planning/follow_planner_core.py に純粋関数/クラスとして実装
   → src/th_testing/test/test_follow_planner_logic.py にテストクラスを追加
@@ -611,7 +611,7 @@ bash scripts/run_tests.sh --all --sim
 
 ---
 
-# 保守・拡張 技術詳細
+## 保守・拡張 技術詳細
 
 ## アーキテクチャ設計方針
 
@@ -629,7 +629,7 @@ bash scripts/run_tests.sh --all --sim
 
 `/cmd_vel` への速度指令は複数のノードから発行されますが、最終的な出力は常に `twist_mux` が一元管理します。これにより個々のノードが互いの状態を意識する必要がなくなります。
 
-```
+```txt
 優先度（高い方が優先）:
   255: /safety/estop      lock   — E-Stop 発動中は全入力を無視してゼロ出力
   254: /safety/fault_lock lock   — フォルト検知時も同様
@@ -679,7 +679,7 @@ case RobotMode::IDLE:
 
 `FollowPlannerCore.update()` は毎制御周期（10 Hz）に呼ばれ、以下の優先順位で出力を決定します。
 
-```
+```txt
 1. RETREAT（近接退避）   ← 最優先・安全関連
 2. STATIC_REPOSITION     ← 静止時の作業スペース配慮
 3. NORMAL_FOLLOW         ← 通常追従
@@ -695,7 +695,7 @@ case RobotMode::IDLE:
 
 試験員の速度が `static_speed_threshold`（0.05 m/s）を `static_time_threshold`（2.0 秒）以上下回った場合に「静止」と判定します。静止判定後は試験員を中心に放射状に `candidate_count`（16 個）の候補点を生成し、以下のスコアで最適点を選びます。
 
-```
+```txt
 スコア = 移動コスト（現在地からの距離）
        + costmap ブロックペナルティ（障害物方向は大きなペナルティ）
        + FOV 違反ペナルティ（LiDAR 視野角を外れる方向は大きなペナルティ）
@@ -717,7 +717,7 @@ case RobotMode::IDLE:
 
 ### フォルト検知のタイムライン
 
-```
+```txt
 フォルト発生
   ↓ （check_period_ms 以内、デフォルト 100ms）
 safety_monitor が途絶を検知
@@ -737,7 +737,7 @@ UI にフォルト表示・操作要求
 
 ROS2 側の `safety_monitor` に加え、ESP32 ファームウェアにもウォッチドッグが実装されています。
 
-```
+```txt
 ROS2 クラッシュ・USB 切断発生
   ↓ （同時に独立して動作）
 [ESP32 側] wheel_cmd 受信が WATCHDOG_MS(300ms) 途絶
@@ -752,7 +752,7 @@ ESP32 ウォッチドッグ（300ms）の方が safety_monitor（500ms）より�
 
 物理ボタンとタブレット UI の両方の E-Stop を `safety_monitor` が集約します。
 
-```
+```txt
 [物理スイッチ] → GPIO34 → ESP32 → /safety/estop_hw → safety_monitor
                                                               ↓（OR）
 [タブレット UI] → WebSocket → /safety/tablet_estop → safety_monitor
@@ -773,7 +773,7 @@ ESP32 ウォッチドッグ（300ms）の方が safety_monitor（500ms）より�
 
 `esp32_bridge` が実装するオドメトリ計算式です。
 
-```
+```txt
 入力:
   v_L, v_R = 左右ホイールの実速度 [m/s]（ESP32 から wheel_feedback で取得）
   dt        = 前回更新からの経過時間 [s]
@@ -790,7 +790,7 @@ ESP32 ウォッチドッグ（300ms）の方が safety_monitor（500ms）より�
 
 ### キャリブレーション手順の詳細
 
-```
+```txt
 目標精度: 直進 2m で誤差 ±2cm 以内、旋回 360° で誤差 ±5° 以内
 
 1. linear_calib.py を 3 回実行して平均を取る
@@ -897,7 +897,7 @@ ML ベースの `person_tracker` 実装が完成したら以下の手順で切�
 
 本番の `person_tracker` は以下のトピックを発行してください。
 
-```
+```txt
 /person/status  (th_system_msgs/PersonStatus)
   header.stamp    : 現在時刻
   header.frame_id : "base_link"
@@ -934,7 +934,7 @@ ros2 topic hz /person/status      # 10 Hz 以上発行されているか
 現状は `AT_PANEL` 到着通知（`/panel_navigator/arrived`）のみ実装しています。カメラ昇降システム側の設計が確定したら以下を追加実装します。
 
 | 追加が必要な実装 | 対応ノード | 優先度 |
-|---|---|---|
+| --- | --- | --- |
 | `/panel_navigator/arrived` のメッセージ内容確定 | `panel_navigator.py` | 高 |
 | 昇降完了通知の受信 → `complete_inspection` サービス呼び出し | `panel_navigator.py` | 高 |
 | `AT_PANEL → MANUAL` 中断時の同期確認（遷移前 OR 非同期通知の選択） | `mode_manager.cpp` + `panel_navigator.py` | 中 |
@@ -946,7 +946,7 @@ ros2 topic hz /person/status      # 10 Hz 以上発行されているか
 
 例として「自動巡回モード（AUTO_PATROL）」を追加する場合の手順です。
 
-```
+```txt
 1. th_system_msgs/msg/RobotMode.msg に定数を追加
    uint8 AUTO_PATROL = 7
 
@@ -973,7 +973,7 @@ ros2 topic hz /person/status      # 10 Hz 以上発行されているか
 
 ### 追従ロジック（planning_params.yaml）
 
-```
+```txt
 follow_distance_target: 1.5m
   → 近づきすぎる場合は大きく（2.0m 等）
   → 離れすぎる場合は小さく（1.2m 等）
@@ -994,7 +994,7 @@ static_time_threshold: 2.0s
 
 ### フォルト検知タイムアウト（safety_monitor.yaml）
 
-```
+```txt
 lidar_timeout_ms: 500ms
 esp32_timeout_ms: 500ms
   → 電磁ノイズ・ジッタによる誤検知が多い場合は大きく（800ms 等）
@@ -1004,7 +1004,7 @@ esp32_timeout_ms: 500ms
 
 ### ESP32 PID ゲイン（config.h）
 
-```
+```txt
 初期値: Kp=80-100, Ki=30, Kd=8
 チューニング手順:
   1. Ki=0, Kd=0 で Kp のみ調整 → 振動しない最大値を探す
