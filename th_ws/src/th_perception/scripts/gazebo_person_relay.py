@@ -4,17 +4,20 @@ gazebo_person_relay.py
 ========================
 Gazebo の Actor（模擬試験員）位置を /person/status に変換して発行する。
 
-Gazebo Classic は /gazebo/model_states に全モデルの位置を発行するので、
-そこから "inspector" Actor の位置を取得し、ロボットの base_link 基準の
-相対座標に変換して PersonStatus として発行する。
+Actor 位置取得は以下の 3 つの方法をフォールバック付きで試行する:
+  1. /gazebo/get_entity_state サービス（最も確実、Actor/Model 両対応）
+  2. /gazebo/model_states トピック（no_actor ワールドの cylinder モデル用）
+  3. /gazebo/link_states トピック（Actor がリンクとして見える場合）
 """
 
 import math
 import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 
-from gazebo_msgs.msg import ModelStates
+from gazebo_msgs.srv import GetEntityState
+from gazebo_msgs.msg import ModelStates, LinkStates
 from th_system_msgs.msg import PersonStatus
 
 import tf2_ros
@@ -45,7 +48,8 @@ class GazeboPersonRelay(Node):
         # ── 状態 ────────────────────────────────────────────
         self._actor_world_x: float | None = None
         self._actor_world_y: float | None = None
-        self._last_model_t  = None
+        self._last_update_t = None
+        self._source = 'none'           # どの方法で取得しているか
 
         # ── TF2 ──────────────────────────────────────────────
         self._tf_buffer   = tf2_ros.Buffer()
@@ -54,10 +58,33 @@ class GazeboPersonRelay(Node):
         # ── Publisher ───────────────────────────────────────
         self._pub = self.create_publisher(PersonStatus, '/person/status', 10)
 
-        # ── Subscriber: Gazebo モデル状態 ────────────────────
+        # ── Callback Groups ─────────────────────────────────
+        self._srv_cb_group = MutuallyExclusiveCallbackGroup()
+        self._sub_cb_group = ReentrantCallbackGroup()
+
+        # ── 方法1: Service Client (get_entity_state) ────────
+        self._get_state_cli = self.create_client(
+            GetEntityState, '/gazebo/get_entity_state',
+            callback_group=self._srv_cb_group)
+
+        # ── 方法2: Subscriber (model_states) ────────────────
+        # no_actor ワールドでは inspector が通常モデルなので有効
         self.create_subscription(
             ModelStates, '/gazebo/model_states',
-            self._cb_model_states, 10)
+            self._cb_model_states, 10,
+            callback_group=self._sub_cb_group)
+
+        # ── 方法3: Subscriber (link_states) ─────────────────
+        # Actor のリンクが含まれる場合のフォールバック
+        self.create_subscription(
+            LinkStates, '/gazebo/link_states',
+            self._cb_link_states, 10,
+            callback_group=self._sub_cb_group)
+
+        # ── ポーリングタイマー（サービス方式） ───────────────
+        self._poll_timer = self.create_timer(
+            0.1, self._poll_actor_state,
+            callback_group=self._srv_cb_group)
 
         # ── 発行タイマー ────────────────────────────────────
         self._timer = self.create_timer(1.0 / rate_hz, self._publish)
@@ -65,15 +92,80 @@ class GazeboPersonRelay(Node):
         self.get_logger().info(
             f'gazebo_person_relay 起動 → actor="{self._actor_name}"')
 
+    # ─────────────────────────────────────────────────────────
+    # 方法 1: get_entity_state サービス
+    # ─────────────────────────────────────────────────────────
+    def _poll_actor_state(self):
+        """定期的に Gazebo から Actor の位置を取得する (サービス方式)"""
+        if not self._get_state_cli.service_is_ready():
+            self.get_logger().info(
+                '/gazebo/get_entity_state 待機中…',
+                throttle_duration_sec=5.0)
+            return
+
+        req = GetEntityState.Request()
+        req.name = self._actor_name
+        req.reference_frame = 'world'
+
+        future = self._get_state_cli.call_async(req)
+        future.add_done_callback(self._on_entity_state)
+
+    def _on_entity_state(self, future):
+        """サービス応答コールバック"""
+        try:
+            resp = future.result()
+            if resp.success:
+                self._update_position(
+                    resp.state.pose.position.x,
+                    resp.state.pose.position.y,
+                    'service')
+        except Exception as e:
+            self.get_logger().debug(
+                f'get_entity_state 失敗: {e}',
+                throttle_duration_sec=5.0)
+
+    # ─────────────────────────────────────────────────────────
+    # 方法 2: /gazebo/model_states トピック
+    # ─────────────────────────────────────────────────────────
     def _cb_model_states(self, msg: ModelStates):
         """Gazebo の全モデル位置から Actor の位置を抜き出す"""
         if self._actor_name in msg.name:
             idx = msg.name.index(self._actor_name)
             pose = msg.pose[idx]
-            self._actor_world_x = pose.position.x
-            self._actor_world_y = pose.position.y
-            self._last_model_t  = self.get_clock().now().nanoseconds * 1e-9
+            self._update_position(
+                pose.position.x, pose.position.y, 'model_states')
 
+    # ─────────────────────────────────────────────────────────
+    # 方法 3: /gazebo/link_states トピック
+    # ─────────────────────────────────────────────────────────
+    def _cb_link_states(self, msg: LinkStates):
+        """Actor のリンクが link_states に含まれている場合に取得"""
+        # Actor は "actor_name::actor_name_pose" または
+        # "actor_name::link" のような名前で表れる可能性がある
+        for i, name in enumerate(msg.name):
+            if name.startswith(self._actor_name + '::'):
+                pose = msg.pose[i]
+                self._update_position(
+                    pose.position.x, pose.position.y, 'link_states')
+                return
+
+    # ─────────────────────────────────────────────────────────
+    # 共通: 位置更新
+    # ─────────────────────────────────────────────────────────
+    def _update_position(self, x: float, y: float, source: str):
+        """位置を更新する (どの方法から呼ばれても同じ処理)"""
+        self._actor_world_x = x
+        self._actor_world_y = y
+        self._last_update_t = self.get_clock().now().nanoseconds * 1e-9
+
+        if self._source != source:
+            self._source = source
+            self.get_logger().info(
+                f'Actor 位置を [{source}] 経由で取得開始')
+
+    # ─────────────────────────────────────────────────────────
+    # PersonStatus 発行
+    # ─────────────────────────────────────────────────────────
     def _publish(self):
         t = self.get_clock().now().nanoseconds * 1e-9
         msg = PersonStatus()
@@ -83,8 +175,8 @@ class GazeboPersonRelay(Node):
         # モデル状態を受信していない、またはタイムアウト
         is_lost = (
             self._actor_world_x is None or
-            self._last_model_t is None or
-            (t - self._last_model_t) > self._lost_timeout
+            self._last_update_t is None or
+            (t - self._last_update_t) > self._lost_timeout
         )
 
         if is_lost:
@@ -146,7 +238,9 @@ class GazeboPersonRelay(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = GazeboPersonRelay()
-    rclpy.spin(node)
+    executor = rclpy.executors.MultiThreadedExecutor()
+    executor.add_node(node)
+    executor.spin()
     node.destroy_node()
     rclpy.shutdown()
 

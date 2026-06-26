@@ -17,6 +17,16 @@
       <real_time_update_rate>1000</real_time_update_rate>
     </physics>
 
+    <!-- ── gazebo_ros_state プラグイン ────────────────────── -->
+    <!-- get_entity_state / set_entity_state サービスを提供     -->
+    <!-- Actor (inspector) の位置取得に必要                       -->
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <ros>
+        <namespace>/gazebo</namespace>
+      </ros>
+      <update_rate>10.0</update_rate>
+    </plugin>
+
     <!-- ── 照明 ────────────────────────────────────────── -->
     <light name="sun" type="directional">
       <cast_shadows>true</cast_shadows>
