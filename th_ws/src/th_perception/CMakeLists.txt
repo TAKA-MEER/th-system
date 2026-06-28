@@ -8,6 +8,7 @@ install(PROGRAMS
   scripts/person_tracker_stub.py
   scripts/gazebo_person_relay.py
   scripts/person_mover.py
+  scripts/obstacle_mover.py
   DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 ament_package()
