@@ -45,6 +45,8 @@ def generate_launch_description():
             description='既存地図 YAML パス (slam:=false 時に使用)'),
         DeclareLaunchArgument('use_stub',   default_value='false',
             description='true=試験員トラッカースタブを使用'),
+        DeclareLaunchArgument('obstacle',   default_value='true',
+            description='true=ランダム移動する障害物(wanderer)を動かす(回避検証用)'),
         DeclareLaunchArgument('imu_enabled',default_value='false',
             description='true=IMU を EKF に追加'),
         DeclareLaunchArgument('rviz',       default_value='true',
@@ -244,6 +246,24 @@ def generate_launch_description():
         condition=IfCondition(use_stub),
     )
 
+    # ランダム移動障害物 "wanderer" を動かす（回避動作検証用、シミュレーションのみ）
+    # collision を持つ円柱なので LiDAR に映り Nav2 が回避する。
+    obstacle_mover = Node(
+        package='th_perception',
+        executable='obstacle_mover.py',
+        name='obstacle_mover',
+        parameters=[{
+            'model_name': 'wanderer',
+            'move_speed': 0.5,
+            'x_min': -4.0, 'x_max': 4.0,
+            'y_min': -3.0, 'y_max': 3.0,
+        }],
+        output='screen',
+        condition=IfCondition(PythonExpression(
+            ["'", sim, "' == 'true' and '",
+             LaunchConfiguration('obstacle'), "' == 'true'"])),
+    )
+
     # ════════════════════════════════════════════════════════
     # 実機専用ノード（sim:=false）
     # ════════════════════════════════════════════════════════
@@ -411,6 +431,9 @@ def generate_launch_description():
             # 試験員ソース（Gazebo Actor 中継 or スタブ）
             person_relay,
             person_stub,
+
+            # ランダム移動障害物（回避検証用）
+            obstacle_mover,
 
             # 実機ノード
             micro_ros_agent,

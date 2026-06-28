@@ -46,6 +46,9 @@ class FollowPlanner(Node):
         self._person_lost  = True
         self._costmap      = None
         self._nav_goal_handle = None
+        # base_link → costmap フレーム の変換を 1 制御周期に 1 回だけ取得してキャッシュする。
+        # (costmap_clear_fn は 1 ループで数百回呼ばれるため、毎回 TF ルックアップすると過負荷になる)
+        self._cached_tf: tuple | None = None
 
         self._tf_buffer   = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
@@ -133,26 +136,49 @@ class FollowPlanner(Node):
     def _cb_costmap(self, msg: OccupancyGrid):
         self._costmap = msg
 
-    def _costmap_is_free(self, x: float, y: float) -> bool:
+    def _update_costmap_tf(self):
+        """base_link → costmap フレーム の変換を 1 制御周期に 1 回だけ取得する。
+
+        重要: costmap の origin はそのメッセージの header.frame_id（local_costmap は
+        通常 'odom'）で表現されている。以前は固定で 'map' に変換していたため、
+        SLAM/AMCL で map→odom にズレが生じると誤ったセルを参照していた。
+        cm.header.frame_id を変換先にすることでフレーム不一致を解消する。
+        """
         cm = self._costmap
         if cm is None:
+            self._cached_tf = None
+            return
+        target = cm.header.frame_id or self.get_parameter("map_frame").value
+        try:
+            tf = self._tf_buffer.lookup_transform(
+                target, self.get_parameter("base_frame").value,
+                rclpy.time.Time(), timeout=Duration(seconds=0.05))
+        except Exception as e:
+            self.get_logger().debug(
+                f"costmap TF 取得失敗 ({target}←base_link): {e}",
+                throttle_duration_sec=2.0)
+            self._cached_tf = None
+            return
+        trans = tf.transform.translation
+        rot   = tf.transform.rotation
+        yaw   = 2.0 * math.atan2(rot.z, rot.w)
+        self._cached_tf = (trans.x, trans.y, math.cos(yaw), math.sin(yaw))
+
+    def _costmap_is_free(self, x: float, y: float) -> bool:
+        cm  = self._costmap
+        tfc = self._cached_tf
+        # costmap 未受信 / TF 未確立時は「空き」とみなす（保守的: 退避や追従を妨げない）
+        if cm is None or tfc is None:
             return True
+        tx, ty, cos_yaw, sin_yaw = tfc
+        # base_link 相対座標 (x, y) を costmap フレームへ変換
+        mx = tx + x * cos_yaw - y * sin_yaw
+        my = ty + x * sin_yaw + y * cos_yaw
         ox  = cm.info.origin.position.x
         oy  = cm.info.origin.position.y
         res = cm.info.resolution
         W   = cm.info.width
         H   = cm.info.height
-        try:
-            tf = self._tf_buffer.lookup_transform(
-                "map", self.get_parameter("base_frame").value,
-                rclpy.time.Time(), timeout=Duration(seconds=0.05))
-            trans = tf.transform.translation
-            rot   = tf.transform.rotation
-            yaw   = 2.0 * math.atan2(rot.z, rot.w)
-            mx = trans.x + x * math.cos(yaw) - y * math.sin(yaw)
-            my = trans.y + x * math.sin(yaw) + y * math.cos(yaw)
-        except Exception:
-            return True
         cx = int((mx - ox) / res)
         cy = int((my - oy) / res)
         if cx < 0 or cx >= W or cy < 0 or cy >= H:
@@ -217,6 +243,8 @@ class FollowPlanner(Node):
 
         px, py = self._person_pos
         t  = self.get_clock().now().nanoseconds * 1e-9
+        # costmap フレームへの変換をこの周期で一度だけ取得（以降の costmap 参照で再利用）
+        self._update_costmap_tf()
         cw = self._corridor_width()
 
         out = self._core.update(

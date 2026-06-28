@@ -77,7 +77,7 @@ public:
             std::bind(&ModeManager::handleSetMode, this,
                       std::placeholders::_1, std::placeholders::_2));
 
-        // ── 定期発行タイマー (1 Hz) ─────────────────────────
+        // ── 定期発行タイマー (10 Hz) ────────────────────────
         pub_timer_ = create_wall_timer(
             std::chrono::milliseconds(100),
             [this]() { publishMode(); });
