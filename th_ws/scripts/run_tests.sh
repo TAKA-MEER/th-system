@@ -5,9 +5,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WS_ROOT="$SCRIPT_DIR"
+# ワークスペースルートは scripts/ の親ディレクトリ (= th_ws)。
+# colcon build と src/... のテストパスはこのディレクトリを cwd とする必要がある。
+WS_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# ROS / colcon の setup スクリプトは AMENT_TRACE_SETUP_FILES 等の未定義変数を
+# 参照するため、nounset(-u) のままだと source に失敗する。source 時のみ -u を外す。
+set +u
 source /opt/ros/humble/setup.bash
+set -u
 
 echo "=================================================="
 echo " TH システム テスト実行"
@@ -53,7 +59,9 @@ colcon build \
     th_testing \
   2>&1 | grep -E "(Building|Finished|Failed|error:|warning:)" || true
 
+set +u
 source install/setup.bash
+set -u
 
 # ── 純粋単体テスト（ROS2 不要）────────────────────────────
 if [ "$RUN_UNIT" = true ]; then
@@ -79,10 +87,15 @@ if [ "$RUN_INTEGRATION" = true ]; then
     echo "      シミュレーションテスト有効 (TH_SKIP_SIM=0)"
   fi
 
-  colcon test \
+  # 各統合テスト群 (mode/safety/fault/twist_mux/simulation) は同一 DDS ドメイン
+  # (ROS_DOMAIN_ID) 上で /safety/estop・/robot/mode・/cmd_vel 等の共通トピックを
+  # 使うため、ctest の既定 (並列実行) ではノード間でクロストークし偽陽性で失敗する。
+  # CTEST_PARALLEL_LEVEL=1 で直列実行し相互干渉を防ぐ。
+  CTEST_PARALLEL_LEVEL=1 colcon test \
     --packages-select th_testing \
     --event-handlers console_direct+ \
     --return-code-on-test-failure \
+    --ctest-args -j1 \
     2>&1
 
   colcon test-result --verbose

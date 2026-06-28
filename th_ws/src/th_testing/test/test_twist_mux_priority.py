@@ -85,14 +85,19 @@ class TestTwistMuxPriority(unittest.TestCase):
         self.pub_retreat = self.node.create_publisher(Twist, '/cmd_vel_retreat', 10)
         self.pub_estop   = self.node.create_publisher(Bool,  '/safety/estop',    10)
 
+        # twist_mux のロックは「ロックトピックが timeout(0.5s) 途絶したら作動」する
+        # フェイルセーフ設計。実機では safety_monitor が /safety/estop を 10Hz で
+        # 送り続けるためロックは作動しない。テストでもこれを再現するため、
+        # _spin() のたびに現在の estop 状態を送り続ける（1回だけだと 0.5s 後に
+        # ロックが作動し /cmd_vel が遮断されてしまう）。
+        self._estop_state = False
         time.sleep(1.0)
-        # estop lock を解除（timeout=0.5s でノーメッセージ時にロックされるため）
-        self.pub_estop.publish(Bool(data=False))
         self._spin(0.8)
         self._cmd_vel_history.clear()
 
     def tearDown(self):
         # E-Stop を確実に解除してテスト間干渉を防ぐ
+        self._estop_state = False
         self.pub_estop.publish(Bool(data=False))
         time.sleep(0.3)
         self.node.destroy_node()
@@ -101,6 +106,8 @@ class TestTwistMuxPriority(unittest.TestCase):
     def _spin(self, sec: float):
         deadline = time.time() + sec
         while time.time() < deadline:
+            # safety_monitor を模して estop ロックを継続的に供給する
+            self.pub_estop.publish(Bool(data=self._estop_state))
             rclpy.spin_once(self.node, timeout_sec=0.05)
 
     def _latest_cmd_vel(self) -> Twist | None:
@@ -200,8 +207,12 @@ class TestTwistMuxPriority(unittest.TestCase):
         assert not self._is_zero(self._latest_cmd_vel()), \
             '正常時にゼロが出てしまっている'
 
-        # E-Stop 発動
+        # E-Stop 発動（以降 _spin が True を送り続ける）
+        # ロックが作動すると twist_mux は無出力になるため、作動を待ってから
+        # 履歴をクリアする（作動前に漏れた古い速度が残らないように）。
+        self._estop_state = True
         self.pub_estop.publish(Bool(data=True))
+        self._spin(0.3)
         self._cmd_vel_history.clear()
 
         # E-Stop 中も両方送り続ける
@@ -220,10 +231,12 @@ class TestTwistMuxPriority(unittest.TestCase):
         nav_cmd = Twist(); nav_cmd.linear.x = 0.26
 
         # E-Stop 発動
+        self._estop_state = True
         self.pub_estop.publish(Bool(data=True))
         self._spin(0.3)
 
         # E-Stop 解除
+        self._estop_state = False
         self.pub_estop.publish(Bool(data=False))
         self._cmd_vel_history.clear()
 
@@ -243,7 +256,9 @@ class TestTwistMuxPriority(unittest.TestCase):
         """
         ret_cmd = Twist(); ret_cmd.linear.x = -0.15
 
+        self._estop_state = True
         self.pub_estop.publish(Bool(data=True))
+        self._spin(0.3)                 # ロックが作動するまで待つ
         self._cmd_vel_history.clear()
 
         for _ in range(10):

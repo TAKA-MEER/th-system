@@ -44,6 +44,7 @@ class PersonPredictor(Node):
         self._vel_y = 0.0
         self._lost_since: float | None = None
         self._current_mode = RobotMode.IDLE
+        self._search_active = False   # 直前周期で捜索旋回コマンドを出していたか
 
         # ── Publishers ─────────────────────────────────────
         self._pub_pos    = self.create_publisher(
@@ -104,6 +105,7 @@ class PersonPredictor(Node):
     def _publish(self):
         t = self.get_clock().now().nanoseconds * 1e-9
         is_searching = False
+        rotating     = False   # この周期で捜索旋回コマンドを実際に出したか
 
         if self._lost_since is None:
             pred_x = self._last_known_x
@@ -126,6 +128,7 @@ class PersonPredictor(Node):
                     cmd = Twist()
                     cmd.angular.z = self._search_ang_vel
                     self._pub_search_cmd.publish(cmd)
+                    rotating = True
             else:
                 # 捜索打ち切り — IDLE 遷移は mode_manager に委ねる
                 pred_x = self._last_known_x
@@ -134,6 +137,13 @@ class PersonPredictor(Node):
                 self.get_logger().warn(
                     "捜索タイムアウト — 再検出できなかった",
                     throttle_duration_sec=5.0)
+
+        # 捜索旋回をやめた瞬間（再検出・捜索打ち切り・モード離脱）に
+        # /cmd_vel_retreat へゼロを 1 回送り、停止後に旋回指令が
+        # twist_mux のタイムアウト(0.5s)まで残って誤旋回するのを防ぐ。
+        if self._search_active and not rotating:
+            self._pub_search_cmd.publish(Twist())
+        self._search_active = rotating
 
         # 予測位置発行
         msg = PointStamped()
