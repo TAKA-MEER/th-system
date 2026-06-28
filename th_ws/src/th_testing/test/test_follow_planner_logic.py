@@ -385,6 +385,35 @@ class TestComputeFollowGoal:
         expected_yaw = math.atan2(0.0 - gy, 2.0 - gx)
         assert abs(gyaw - expected_yaw) < 0.3
 
+    def test_person_approaching_robot_backs_up(self):
+        """試験員がロボットに向かって歩くとき、ゴールはロボット後方に設定される"""
+        p = self._params()
+        fc = FovChecker(fov_deg=360.0)
+        gx, gy, _ = compute_follow_goal(
+            person_x=2.0, person_y=0.0,
+            person_vel=(-0.5, 0.0),   # -x 方向（ロボット向き）に歩く
+            params=p,
+            corridor_width=5.0,
+            fov_checker=fc)
+        # ゴールはロボット(0,0)から -x 方向 1.5m ≒ (-1.5, 0)
+        assert gx < -0.5, f"ゴールはロボット後方のはず: gx={gx}"
+        assert abs(gy) < 0.5
+
+    def test_person_oblique_uses_normal_goal(self):
+        """試験員が閾値外の斜め方向に歩くときは通常の後方ゴールを使う"""
+        p = self._params()
+        fc = FovChecker(fov_deg=360.0)
+        # 試験員が (2, 0) にいて -y 方向（ロボットを通り過ぎる方向）に歩く
+        # ロボット方向 = 角度π、velocity 方向 = -π/2、差 = π/2 > 60° → 通常ゴール
+        gx, gy, _ = compute_follow_goal(
+            person_x=2.0, person_y=0.0,
+            person_vel=(0.0, -0.5),   # -y 方向
+            params=p,
+            corridor_width=5.0,
+            fov_checker=fc)
+        # 通常ゴール: 試験員の +y 側後方
+        assert gy > 0.5, f"通常ゴール（試験員後方）のはず: gy={gy}"
+
 
 # ════════════════════════════════════════════════════════════
 # 8. FollowPlannerCore — 統合テスト

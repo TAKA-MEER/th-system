@@ -28,6 +28,7 @@ follow_planner:
     retreat_speed:            0.15   # m/s 退避速度
 
     # ── 共通 ──────────────────────────────────────────────
+    path_approach_angle_deg:  60.0   # deg 試験員進行方向とロボット方向の角度差閾値（これ未満で退避ゴール）
     goal_deadzone_m:          0.30   # m ゴール更新のデッドゾーン
     update_rate_hz:          10.0    # Hz 制御ループ周期
     base_frame:               "base_link"

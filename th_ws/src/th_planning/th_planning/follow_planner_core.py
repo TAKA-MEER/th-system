@@ -62,6 +62,7 @@ class FollowParams:
     retreat_speed:             float = 0.15   # m/s
 
     # 共通
+    path_approach_angle_deg:   float = 60.0   # deg（試験員がロボット方向へ向かっているとみなす角度差閾値）
     goal_deadzone_m:           float = 0.30   # m
     update_rate_hz:            float = 10.0
 
@@ -374,6 +375,25 @@ def compute_follow_goal(
       4. 距離制約に基づいてゴール位置を算出
     """
     dist = math.hypot(person_x, person_y)
+
+    # ── 0. 試験員がロボット方向に向かって歩いているか検知 ──────────
+    # 試験員の進行方向がロボット方向（原点方向）と一致している場合、
+    # 通常ゴール（試験員後方）はロボットを越えた先に設定されるため、
+    # 代わりにロボット後方（試験員から遠ざかる方向）へゴールを設定する。
+    vx, vy = person_vel
+    _person_speed = math.hypot(vx, vy)
+    if _person_speed > 0.02:
+        _person_dir_raw   = math.atan2(vy, vx)
+        _person_to_robot  = math.atan2(-person_y, -person_x)  # 試験員→ロボット方向
+        _diff = math.atan2(
+            math.sin(_person_dir_raw - _person_to_robot),
+            math.cos(_person_dir_raw - _person_to_robot))
+        if abs(_diff) < math.radians(params.path_approach_angle_deg):
+            # ロボットが試験員の進行経路上 → ロボット後方にゴールを設定
+            goal_x   = params.follow_distance_target * math.cos(_person_to_robot)
+            goal_y   = params.follow_distance_target * math.sin(_person_to_robot)
+            goal_yaw = math.atan2(person_y - goal_y, person_x - goal_x)
+            return (goal_x, goal_y, goal_yaw)
 
     # ── 1. 試験員の進行方向 ──────────────────────────────────────
     vx, vy = person_vel
