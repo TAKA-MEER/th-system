@@ -61,7 +61,11 @@ class FollowParams:
     retreat_check_clearance:   float = 0.5    # m（退避方向の必要自由空間）
     retreat_speed:             float = 0.15   # m/s
 
+    # 進行路上退避
+    approach_perpendicular_deg: float = 45.0  # deg 垂直判定の半角（この範囲で前後逃げを優先）
+
     # 共通
+    path_approach_angle_deg:   float = 60.0   # deg（試験員がロボット方向へ向かっているとみなす角度差閾値）
     goal_deadzone_m:           float = 0.30   # m
     update_rate_hz:            float = 10.0
 
@@ -446,6 +450,58 @@ def compute_retreat_cmd(
 
 
 # ──────────────────────────────────────────────────────────────────
+# 進行路上退避速度指令計算
+# ──────────────────────────────────────────────────────────────────
+def compute_approach_escape_cmd(
+    person_dir:         float,   # 試験員の進行方向 (rad, base_link +x 基準)
+    escape_speed:       float,   # m/s（= retreat_speed を流用）
+    perp_threshold_deg: float,   # 垂直判定の半角 [deg]
+    clearance_fn,                # callable(dx, dy) → float: その方向の自由空間距離
+    min_clearance:      float,   # m 最低限必要な自由空間
+) -> Optional[Tuple[float, float]]:
+    """
+    試験員の進行方向上にロボットがいる場合の退避速度指令 (linear_x, angular_z) を計算する。
+
+    優先順位:
+      1. クローラ前後軸（±x）が試験員進行方向と垂直かつスペースあり
+           → ±x 方向（前進 or 後退）でスペースの広い方向へ逃げる
+      2. 平行 or 垂直でもスペースなし
+           → 試験員の進行方向そのままに速度指令を発行（後退含む）
+      スペースが全方向不足 → None（停止）
+
+    base_link 座標系。ロボット前進方向 = +x 軸。
+    """
+    # alpha: ロボット前後軸(x軸)と試験員進行方向の角度差 [0, π]
+    alpha = abs(person_dir)
+    if alpha > math.pi:
+        alpha = 2.0 * math.pi - alpha
+
+    perp_rad = math.radians(perp_threshold_deg)
+    is_perp  = abs(alpha - math.pi / 2.0) <= perp_rad
+
+    if is_perp:
+        fwd_clear = clearance_fn(1.0, 0.0)
+        bwd_clear = clearance_fn(-1.0, 0.0)
+        if max(fwd_clear, bwd_clear) >= min_clearance:
+            if fwd_clear >= bwd_clear:
+                return (escape_speed, 0.0)
+            else:
+                return (-escape_speed, 0.0)
+        # スペース不足 → 試験員進行方向へフォールスルー
+
+    # 試験員の進行方向に沿って退避（前進 or 後退）
+    esc_x = math.cos(person_dir)
+    esc_y = math.sin(person_dir)
+    if clearance_fn(esc_x, esc_y) < min_clearance:
+        return None   # 退避不可
+
+    # 非ホロノミック補正: x 成分で前後移動、y 成分は angular_z で補正
+    linear_x  = esc_x * escape_speed
+    angular_z = esc_y * escape_speed * 2.0
+    return (linear_x, angular_z)
+
+
+# ──────────────────────────────────────────────────────────────────
 # メインステートマシン
 # ──────────────────────────────────────────────────────────────────
 class FollowPlannerCore:
@@ -499,8 +555,9 @@ class FollowPlannerCore:
         person_speed  = self.pos_history.speed
         is_static     = self.static_detector.update(person_speed, t)
 
-        # ── 優先1: 近接退避チェック（4.3.7）────────────────────
-        retreat_needed = self.retreat_hyst.update(dist, closing_speed)
+        # ── 優先1: 近接退避チェック（距離のみ）──────────────────
+        # closing_speed によるトリガーは廃止。接近中の退避は優先1.5が担当する。
+        retreat_needed = self.retreat_hyst.update(dist, 0.0)
 
         if retreat_needed:
             self.state = FollowState.RETREAT
@@ -513,6 +570,31 @@ class FollowPlannerCore:
                 return PlannerOutput(kind="stop", retreat_blocked=True)
             lx, az = cmd
             return PlannerOutput(kind="retreat", linear_x=lx, angular_z=az)
+
+        # ── 優先1.5: 進行路上退避 ────────────────────────────────
+        # 試験員が動いており、かつロボットが試験員の進行経路上にいる場合に
+        # compute_approach_escape_cmd() で速度指令を生成する。
+        if person_speed > self.params.static_speed_threshold:
+            vx, vy = self.pos_history.velocity
+            if math.hypot(vx, vy) > 0.02:
+                person_dir     = math.atan2(vy, vx)
+                person_to_robot = math.atan2(-person_y, -person_x)
+                diff = math.atan2(
+                    math.sin(person_dir - person_to_robot),
+                    math.cos(person_dir - person_to_robot))
+                if abs(diff) < math.radians(self.params.path_approach_angle_deg):
+                    self.state = FollowState.RETREAT
+                    cmd = compute_approach_escape_cmd(
+                        person_dir,
+                        self.params.retreat_speed,
+                        self.params.approach_perpendicular_deg,
+                        retreat_clearance_fn,
+                        self.params.retreat_check_clearance)
+                    if cmd is not None:
+                        lx, az = cmd
+                        return PlannerOutput(kind="retreat", linear_x=lx, angular_z=az)
+                    # 逃げ場なし → 試験員が通り過ぎるのを待つ
+                    return PlannerOutput(kind="stop", retreat_blocked=True)
 
         # ── 優先2: 静止時再配置（4.3.4）────────────────────────
         if is_static:

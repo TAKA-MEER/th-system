@@ -53,7 +53,7 @@ def generate_launch_description():
             description='true=RViz2 を起動'),
         DeclareLaunchArgument('log_level',  default_value='info'),
         DeclareLaunchArgument('world',
-            default_value=os.path.join(BRINGUP_DIR, 'worlds', 'panel_room.world'),
+            default_value=os.path.join(BRINGUP_DIR, 'worlds', 'panel_room_no_actor.world'),
             description='Gazebo ワールドファイル'),
         DeclareLaunchArgument('robot_x',    default_value='-4.0'),
         DeclareLaunchArgument('robot_y',    default_value='-3.0'),
@@ -232,6 +232,16 @@ def generate_launch_description():
             'base_frame':       'base_link',
             'max_detect_range': 12.0,  # 部屋対角最大~12.8m をカバー (デフォルト8mだと西端ロボット→東端試験員が圏外)
         }],
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('sim')),
+    )
+
+    # 試験員シリンダーを巡回移動させる（panel_room_no_actor.world 用）
+    person_mover = Node(
+        package='th_perception',
+        executable='person_mover.py',
+        name='person_mover',
+        parameters=[{'pattern': 'patrol', 'model_name': 'inspector'}],
         output='screen',
         condition=IfCondition(LaunchConfiguration('sim')),
     )
@@ -428,8 +438,9 @@ def generate_launch_description():
             safety_sim_node,
             safety_real_node,
 
-            # 試験員ソース（Gazebo Actor 中継 or スタブ）
+            # 試験員ソース（Gazebo 中継 + シリンダー移動 or スタブ）
             person_relay,
+            person_mover,
             person_stub,
 
             # ランダム移動障害物（回避検証用）

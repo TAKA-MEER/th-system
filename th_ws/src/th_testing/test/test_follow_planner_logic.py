@@ -24,6 +24,7 @@ from follow_planner_core import (
     PositionHistory, StaticDetector, RetreatHysteresis,
     FovChecker, CandidatePoint,
     generate_candidate_points, score_candidate, compute_retreat_cmd,
+    compute_approach_escape_cmd,
     compute_follow_goal, estimate_corridor_width, PlannerOutput,
 )
 
@@ -334,7 +335,64 @@ class TestComputeRetreatCmd:
 
 
 # ════════════════════════════════════════════════════════════
-# 7. compute_follow_goal — 追従目標位置計算（4.3.3）
+# 7. compute_approach_escape_cmd — 進行路上退避コマンド計算
+# ════════════════════════════════════════════════════════════
+class TestComputeApproachEscapeCmd:
+
+    SPEED = 0.15
+    MIN_CLR = 0.5
+
+    def _run(self, person_dir, clearance_fn, perp_deg=45.0):
+        return compute_approach_escape_cmd(
+            person_dir=person_dir,
+            escape_speed=self.SPEED,
+            perp_threshold_deg=perp_deg,
+            clearance_fn=clearance_fn,
+            min_clearance=self.MIN_CLR)
+
+    def test_perp_fwd_space(self):
+        """試験員が +y 方向に進む（垂直）かつ前方に空きがある → 前進で横逃げ"""
+        always_free_clr = lambda dx, dy: 2.0
+        result = self._run(math.pi / 2, always_free_clr)
+        assert result is not None
+        lx, az = result
+        assert lx > 0.0
+        assert abs(az) < 1e-6
+
+    def test_perp_bwd_space(self):
+        """試験員が +y 方向に進む（垂直）かつ後方のみ空きがある → 後退で横逃げ"""
+        def front_blocked(dx, dy):
+            return 2.0 if dx <= 0 else 0.0
+        result = self._run(math.pi / 2, front_blocked)
+        assert result is not None
+        lx, az = result
+        assert lx < 0.0
+
+    def test_aligned_backward(self):
+        """試験員がロボット正面から接近（person_dir=π）→ 後退して逃げる"""
+        always_free_clr = lambda dx, dy: 2.0
+        result = self._run(math.pi, always_free_clr)
+        assert result is not None
+        lx, _ = result
+        assert lx < 0.0
+
+    def test_aligned_forward(self):
+        """試験員がロボット背後から追い越す方向（person_dir=0）→ 前進して逃げる"""
+        always_free_clr = lambda dx, dy: 2.0
+        result = self._run(0.0, always_free_clr)
+        assert result is not None
+        lx, _ = result
+        assert lx > 0.0
+
+    def test_no_clearance_returns_none(self):
+        """全方向に自由空間がない場合は None を返す（停止）"""
+        no_space = lambda dx, dy: 0.0
+        result = self._run(math.pi, no_space)
+        assert result is None
+
+
+# ════════════════════════════════════════════════════════════
+# 8. compute_follow_goal — 追従目標位置計算（4.3.3）  [旧 §7]
 # ════════════════════════════════════════════════════════════
 class TestComputeFollowGoal:
 
@@ -384,6 +442,7 @@ class TestComputeFollowGoal:
         # yaw は試験員方向を向くべき
         expected_yaw = math.atan2(0.0 - gy, 2.0 - gx)
         assert abs(gyaw - expected_yaw) < 0.3
+
 
 
 # ════════════════════════════════════════════════════════════
@@ -484,6 +543,29 @@ class TestFollowPlannerCore:
             costmap_clear_fn=always_free,
             retreat_clearance_fn=clearance_full)
         assert out.kind == 'no_update'
+
+    def test_approach_path_triggers_escape(self):
+        """
+        近接退避トリガー距離外(2m)でも、試験員が向かってきている場合は退避する（優先1.5）
+        """
+        core = self._core()
+        # 1秒かけて試験員が 2.5m → 2.0m に近づく（0.5 m/s）
+        for i in range(10):
+            core.update(
+                person_x=2.5 - 0.05 * i, person_y=0.0,
+                t=float(i) * 0.1,
+                corridor_width=3.0,
+                costmap_clear_fn=always_free,
+                retreat_clearance_fn=clearance_full)
+        # この時点で dist=2.0m（> retreat_trigger=0.8m）だが接近中
+        out = core.update(
+            person_x=2.0, person_y=0.0, t=1.0,
+            corridor_width=3.0,
+            costmap_clear_fn=always_free,
+            retreat_clearance_fn=clearance_full)
+        assert out.kind == 'retreat', (
+            f"退避トリガー距離外でも接近中なら退避すべき (kind={out.kind})")
+        assert out.linear_x < 0.0, "正面から来る試験員から後退すべき"
 
     def test_retreat_releases_after_moving_away(self):
         """距離が release を超えたら退避が解除される"""

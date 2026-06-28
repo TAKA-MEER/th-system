@@ -87,6 +87,8 @@ class FollowPlanner(Node):
         D("closing_speed_threshold",   0.3)
         D("retreat_check_clearance",   0.5)
         D("retreat_speed",            0.15)
+        D("approach_perpendicular_deg", 45.0)
+        D("path_approach_angle_deg",  60.0)
         D("goal_deadzone_m",          0.30)
         D("update_rate_hz",          10.0)
         D("base_frame",          "base_link")
@@ -112,6 +114,8 @@ class FollowPlanner(Node):
             closing_speed_threshold  = g("closing_speed_threshold").value,
             retreat_check_clearance  = g("retreat_check_clearance").value,
             retreat_speed            = g("retreat_speed").value,
+            approach_perpendicular_deg = g("approach_perpendicular_deg").value,
+            path_approach_angle_deg  = g("path_approach_angle_deg").value,
             goal_deadzone_m          = g("goal_deadzone_m").value,
             update_rate_hz           = g("update_rate_hz").value,
         )
