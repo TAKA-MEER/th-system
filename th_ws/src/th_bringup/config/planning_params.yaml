@@ -26,6 +26,7 @@ follow_planner:
     closing_speed_threshold:  0.3    # m/s 予防的退避を開始する接近速度
     retreat_check_clearance:  0.5    # m 退避方向に必要な最小自由空間
     retreat_speed:            0.15   # m/s 退避速度
+    approach_perpendicular_deg: 45.0 # deg 垂直判定の半角（この範囲で前後逃げを優先）
 
     # ── 共通 ──────────────────────────────────────────────
     path_approach_angle_deg:  60.0   # deg 試験員進行方向とロボット方向の角度差閾値（これ未満で退避ゴール）
