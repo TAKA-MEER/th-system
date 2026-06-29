@@ -9,7 +9,11 @@ services:
     environment:
       - ROS_DOMAIN_ID=10
       - DISPLAY=${DISPLAY:-:0}
-      - LIBGL_ALWAYS_INDIRECT=0        # GPU レンダリング許可
+      - LIBGL_ALWAYS_SOFTWARE=1        # WSL2/X11 ではソフトウェアレンダリング強制
+      - GALLIUM_DRIVER=llvmpipe        # Mesa LLVMpipe ソフトウェアレンダラー
+      - MESA_GL_VERSION_OVERRIDE=3.3   # OpenGL 3.3 として振る舞う
+      - QT_X11_NO_MITSHM=1             # Qt (RViz2) の共有メモリ問題を回避
+      - XLIB_SKIP_ARGB_VISUALS=1       # xterm 等の ARGB 透明ビジュアルを無効化
       - GAZEBO_MODEL_PATH=/root/th_ws/src/th_description/meshes
     volumes:
       - ./src:/root/th_ws/src

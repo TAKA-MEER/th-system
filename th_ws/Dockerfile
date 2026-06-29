@@ -33,6 +33,9 @@ RUN apt-get update && apt-get install -y \
     ros-humble-xacro \
     xterm \
     gazebo \
+    libgl1-mesa-dri \
+    libgl1-mesa-glx \
+    mesa-utils \
     git \
     vim \
     wget \

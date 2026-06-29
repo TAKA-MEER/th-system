@@ -14,11 +14,15 @@ teleop.launch.py — キーボード手動操作
 引数:
   direct   true  → /cmd_vel へ直接送る (SLAM 地図作成時)
            false → /cmd_vel_nav 経由で twist_mux を通す (デフォルト)
+
+注意:
+  このコマンドを実行したターミナル上でキー入力を受け付ける。
+  別ウィンドウは開かない。
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition, UnlessCondition
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
@@ -41,7 +45,6 @@ def generate_launch_description():
                 'spin_speed':      0.80,   # rad/s (超信地旋回)
                 'publish_rate_hz': 10.0,
             }],
-            prefix='xterm -fa "Monospace" -fs 11 -e',
             output='screen',
             condition=UnlessCondition(direct),
         ),
@@ -57,7 +60,6 @@ def generate_launch_description():
                 'spin_speed':      0.80,
                 'publish_rate_hz': 10.0,
             }],
-            prefix='xterm -fa "Monospace" -fs 11 -e',
             output='screen',
             condition=IfCondition(direct),
         ),

@@ -131,7 +131,16 @@ def main(args=None):
     node = CrawlerTeleop()
     print(_MSG)
 
-    fd  = sys.stdin.fileno()
+    # ros2 launch 経由では stdin がパイプになり termios が使えないため
+    # /dev/tty（プロセスの制御端末）を直接開く
+    tty_file = None
+    try:
+        fd = sys.stdin.fileno()
+        termios.tcgetattr(fd)   # TTY かどうか確認
+    except termios.error:
+        tty_file = open('/dev/tty', 'rb', buffering=0)
+        fd = tty_file.fileno()
+
     old = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
@@ -166,6 +175,8 @@ def main(args=None):
 
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        if tty_file is not None:
+            tty_file.close()
         node.set_vel(0.0, 0.0)
         time.sleep(0.15)   # 停止コマンドが届くまで待機
         rclpy.shutdown()
