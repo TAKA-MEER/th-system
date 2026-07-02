@@ -5,10 +5,8 @@
 // ハードウェア定数・チューニングパラメータ
 // ============================================================
 
-// ── ROS2 設定 ────────────────────────────────────────────────
-#define ROS_DOMAIN_ID     10
-#define ROS_NODE_NAME     "esp32_node"
-#define SERIAL_BAUD       115200     // micro-ROS Agent との通信速度
+// ── デバッグ用シリアル ───────────────────────────────────────
+#define SERIAL_BAUD       115200     // Serial.print デバッグ出力用 (UART0)
 
 // ── エンコーダ ───────────────────────────────────────────────
 // CuGo v3i エンコーダ: 4096 count/rev (A-B 相)
@@ -65,11 +63,12 @@
 #define ESTOP_GPIO        34         // 入力専用ピン
 #define ESTOP_LOW_ACTIVE  true       // LOW で E-Stop 発動
 
-// ⚠️ ベンチ試験用の一時バイパス ⚠️
+// ⚠️ ベンチ試験用の一時バイパス（無効化済み） ⚠️
 // GPIO34は内部プルアップ非対応のため、物理E-Stopスイッチ/外部プルアップ抵抗が
 // 未配線だとフローティングで常時 E-Stop 発動状態になり駆動系試験ができない。
-// 実機に物理E-Stopスイッチを配線したら、この define を必ず削除すること。
-#define ESTOP_BENCH_TEST_BYPASS
+// 実機に物理E-Stopスイッチを配線済みのため無効化。再度ベンチ試験する場合のみ
+// 一時的に define し直し、試験後は必ず削除すること。
+// #define ESTOP_BENCH_TEST_BYPASS
 
 // IMU (未実装・将来予約)
 // #define IMU_SDA        21

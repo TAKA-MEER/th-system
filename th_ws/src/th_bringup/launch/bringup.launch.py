@@ -49,16 +49,6 @@ def generate_launch_description():
 
     nodes = []
 
-    # ── 1. micro-ROS Agent (ESP32 通信) ──────────────────
-    nodes.append(Node(
-        package='micro_ros_agent',
-        executable='micro_ros_agent',
-        name='micro_ros_agent',
-        arguments=['serial', '--dev', '/dev/esp32', '-b', '115200',
-                   '--ros-args', '--log-level', 'warn'],
-        output='screen',
-    ))
-
     # ── 2. RPLIDAR S1 ────────────────────────────────────
     nodes.append(Node(
         package='sllidar_ros2',
@@ -92,7 +82,7 @@ def generate_launch_description():
 
     nodes.append(Node(
         package='th_esp32_bridge',
-        executable='esp32_bridge',
+        executable='esp32_bridge.py',
         name='esp32_bridge',
         parameters=esp32_params,
         output='screen',

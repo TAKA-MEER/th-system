@@ -29,11 +29,6 @@ def generate_launch_description():
         esp32_params.append(calib_yaml)
 
     return LaunchDescription([
-        # micro-ROS Agent
-        Node(package='micro_ros_agent', executable='micro_ros_agent',
-             arguments=['serial', '--dev', '/dev/esp32', '-b', '115200'],
-             output='screen'),
-
         # RPLIDAR
         Node(package='sllidar_ros2', executable='sllidar_node',
              parameters=[{'serial_port': '/dev/lidar', 'serial_baudrate': 256000,
@@ -45,7 +40,7 @@ def generate_launch_description():
              name='lidar_filter', output='screen'),
 
         # esp32_bridge
-        Node(package='th_esp32_bridge', executable='esp32_bridge',
+        Node(package='th_esp32_bridge', executable='esp32_bridge.py',
              name='esp32_bridge', parameters=esp32_params, output='screen'),
 
         # EKF

@@ -19,7 +19,6 @@ services:
       - gazebo_models:/root/.gazebo
     devices:
       - /dev/lidar:/dev/lidar
-      - /dev/esp32:/dev/esp32
     # GPU サポート（NVIDIA の場合のみ有効化）
     # deploy:
     #   resources:

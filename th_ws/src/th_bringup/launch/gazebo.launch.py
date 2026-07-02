@@ -278,16 +278,6 @@ def generate_launch_description():
     # 実機専用ノード（sim:=false）
     # ════════════════════════════════════════════════════════
 
-    micro_ros_agent = Node(
-        package='micro_ros_agent',
-        executable='micro_ros_agent',
-        name='micro_ros_agent',
-        arguments=['serial', '--dev', '/dev/esp32', '-b', '115200',
-                   '--ros-args', '--log-level', 'warn'],
-        output='screen',
-        condition=UnlessCondition(sim),
-    )
-
     lidar_node = Node(
         package='sllidar_ros2',
         executable='sllidar_node',
@@ -305,7 +295,7 @@ def generate_launch_description():
 
     esp32_bridge = Node(
         package='th_esp32_bridge',
-        executable='esp32_bridge',
+        executable='esp32_bridge.py',
         name='esp32_bridge',
         parameters=[
             os.path.join(get_package_share_directory('th_esp32_bridge'),
@@ -447,7 +437,6 @@ def generate_launch_description():
             obstacle_mover,
 
             # 実機ノード
-            micro_ros_agent,
             lidar_node,
             esp32_bridge,
             ekf_node,
