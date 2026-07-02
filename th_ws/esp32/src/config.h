@@ -13,9 +13,9 @@
 // ── エンコーダ ───────────────────────────────────────────────
 // CuGo v3i エンコーダ: 4096 count/rev (A-B 相)
 #define ENC_LEFT_A        4
-#define ENC_LEFT_B        5
-#define ENC_RIGHT_A       13
-#define ENC_RIGHT_B       14
+#define ENC_LEFT_B        13
+#define ENC_RIGHT_A       14
+#define ENC_RIGHT_B       5
 #define ENC_COUNTS_PER_REV  4096.0f  // 1 回転あたりのカウント数
 
 // ── モータードライバ (Cytron MD10C: DIR + PWM) ────────────────
@@ -64,6 +64,12 @@
 // 実機の回路に合わせて変更すること
 #define ESTOP_GPIO        34         // 入力専用ピン
 #define ESTOP_LOW_ACTIVE  true       // LOW で E-Stop 発動
+
+// ⚠️ ベンチ試験用の一時バイパス ⚠️
+// GPIO34は内部プルアップ非対応のため、物理E-Stopスイッチ/外部プルアップ抵抗が
+// 未配線だとフローティングで常時 E-Stop 発動状態になり駆動系試験ができない。
+// 実機に物理E-Stopスイッチを配線したら、この define を必ず削除すること。
+#define ESTOP_BENCH_TEST_BYPASS
 
 // IMU (未実装・将来予約)
 // #define IMU_SDA        21

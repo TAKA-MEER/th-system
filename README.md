@@ -55,6 +55,8 @@ pio device monitor         # シリアルモニタ (115200 baud)
 
 ## udev デバイスパスの確認と設定
 
+### Linux（実機環境）
+
 ```bash
 # デバイスを接続してから
 lsusb                           # VID:PID を確認
@@ -68,6 +70,51 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 ls -la /dev/lidar /dev/esp32
 ```
 
+### Windows (WSL2) での USB デバイス転送
+
+WSL2 は Windows の USB デバイスを自動で引き継がないため、`usbipd-win` でブリッジが必要。
+
+#### 初回セットアップ（1 回のみ）
+
+```powershell
+# 1. usbipd-win をインストール（管理者 PowerShell）
+winget install usbipd
+
+# 2. デバイス一覧を確認（busid をメモ）
+& "$env:ProgramFiles\usbipd-win\usbipd.exe" list
+# → "Silicon Labs CP210x USB to UART Bridge" の BUSID（例: 2-1）を確認
+
+# 3. bind（管理者として 1 回のみ実行）
+& "$env:ProgramFiles\usbipd-win\usbipd.exe" bind --busid 2-1
+```
+
+WSL2 内で udev ルールを作成（1 回のみ）:
+
+```bash
+# /dev/esp32 シンボリックリンクを自動作成するルール
+printf 'SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="esp32", MODE="0666"\n' \
+  | sudo tee /etc/udev/rules.d/99-esp32.rules
+sudo chmod 644 /etc/udev/rules.d/99-esp32.rules
+sudo udevadm control --reload-rules
+```
+
+`th_ws/docker-compose.override.yml` が用意されており、usbipd 経由で現れる `/dev/ttyUSB0` を コンテナ内で `/dev/esp32` として見せる設定が入っている。このファイルは `docker compose` が自動で読み込む。
+
+#### 毎回の手順（ESP32 を接続・再起動後）
+
+```powershell
+# 管理者 PowerShell で 1 行のみ
+& "$env:ProgramFiles\usbipd-win\usbipd.exe" attach --wsl --busid 2-1
+```
+
+その後は通常通り `docker compose run --rm th_robot bash` で起動する。
+
+| タイミング | 必要な操作 |
+| --- | --- |
+| Windows 再起動後 | `attach` のみ（`bind` は保持される） |
+| ESP32 抜き差し後 | `attach` のみ |
+| WSL2 再起動後 | `attach` のみ |
+
 ---
 
 ## 起動手順
@@ -77,6 +124,17 @@ ls -la /dev/lidar /dev/esp32
 ```bash
 # コンテナ起動
 docker compose run --rm th_robot bash
+
+#ビルド
+
+# コンテナ内
+cd /root/th_ws
+colcon build --symlink-install   # 初回または C++ 変更時
+source install/setup.bash
+
+# 駆動系キーボード操作テスト
+
+ros2 launch th_bringup esp32_keyboard_test.launch.py
 
 # コンテナ内
 ros2 launch th_bringup slam.launch.py
@@ -122,15 +180,61 @@ ros2 launch th_bringup bringup.launch.py \
 ros2 launch th_bringup bringup.launch.py use_stub:=true
 ```
 
-### Step 5: Web UI
+### Step 5: Web UI（タブレット UI）
+
+#### 初回のみ: 依存パッケージをインストール
+
+```bash
+# Docker コンテナの外（Windows または WSL2）で実行
+cd web_ui
+npm install
+```
+
+#### 起動
 
 ```bash
 cd web_ui
-npm run dev    # http://<PCのIP>:5173 をタブレットブラウザで開く
+npm run dev
+# → http://localhost:5173 で開発サーバーが起動
 ```
 
-**rosbridge の接続先を変更する場合:**
-`web_ui/src/hooks/useRosbridge.js` の `url` を修正する。
+#### タブレットからアクセス
+
+1. PC と タブレットを同じ Wi-Fi ネットワークに接続する
+2. PC の IP アドレスを確認する
+
+   ```bash
+   # Windows
+   ipconfig | findstr "IPv4"
+   # WSL2 / Linux
+   ip addr show | grep "inet " | grep -v 127
+   ```
+
+3. タブレットのブラウザで `http://<PCのIP>:5173` を開く
+
+#### rosbridge の接続先変更
+
+デフォルトでは `ws://<現在のホスト>:9090` に接続しようとする。
+タブレットから別の PC（ロボット本体）の rosbridge に接続したい場合は
+`web_ui/src/hooks/useRosbridge.js` の `url` を修正する:
+
+```js
+// 例: ロボットの IP が 192.168.1.100 の場合
+const url = 'ws://192.168.1.100:9090';
+```
+
+rosbridge は Docker コンテナ内で `bringup.launch.py` 起動時に自動で立ち上がる（ポート 9090）。
+
+#### UI でできること
+
+| 操作 | 説明 |
+| --- | --- |
+| 追従開始 | IDLE → FOLLOWING モードへ切替 |
+| 手動操作 | MANUAL モードへ切替・仮想ジョイスティック操作 |
+| 配電盤移動 | MOVING_TO_PANEL モードへ切替・目的地選択 |
+| 緊急停止 | ESTOP モードへ即時遷移 |
+| モード表示 | 現在のロボットモードをリアルタイム表示 |
+| フォルト表示 | `LIDAR_LOST` / `ESP32_DISCONNECTED` 等のアラート表示 |
 
 ---
 

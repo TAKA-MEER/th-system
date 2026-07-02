@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# ROS2 / colcon ビルド成果物
+th_ws/build/
+th_ws/install/
+th_ws/log/
+
+# ESP32 / PlatformIO
+th_ws/esp32/.pio/
+# micro_ros_arduino は release zip を手動展開する外部ライブラリ（README/platformio.ini 参照）
+th_ws/esp32/lib/
+
+# Web UI (Vite/React)
+node_modules/
+dist/
+.vite/
+
+# Docker: 個人環境向けオーバーライド（usbipd の COM ポート等、実機依存の設定）
+th_ws/docker-compose.override.yml
+
+# エディタ / OS
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini

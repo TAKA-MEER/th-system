@@ -57,9 +57,27 @@ static AgentState agentState = AgentState::SEARCHING;
 static volatile float targetLeft  = 0.0f;
 static volatile float targetRight = 0.0f;
 
-// ── マクロ: エラー無視 ────────────────────────────────────────
-#define RCCHECK(fn)  { rcl_ret_t rc = (fn); (void)rc; }
-#define RCSOFTCHECK(fn) { rcl_ret_t rc = (fn); (void)rc; }
+// ── デバッグ: RCCHECK/RCSOFTCHECK がエラーを握りつぶすとサイレント障害が
+//    追えないため、オンボードLED点滅で可視化する。
+//    (UART0はmicro-ROS通信専用でSerial.printを使えないための代替策)
+//    点滅回数 = rcl_ret_t の下1桁 (0は10回扱い)。原因切り分けが終わったら
+//    元の (void)rc; 版に戻して良い。
+#define DEBUG_LED_PIN 2
+static void blinkRclError(rcl_ret_t code) {
+    static bool ledReady = false;
+    if (!ledReady) { pinMode(DEBUG_LED_PIN, OUTPUT); ledReady = true; }
+    int n = (int)(code % 10);
+    if (n <= 0) n = 10;
+    for (int i = 0; i < n; i++) {
+        digitalWrite(DEBUG_LED_PIN, HIGH); delay(120);
+        digitalWrite(DEBUG_LED_PIN, LOW);  delay(120);
+    }
+    delay(700);
+}
+
+// ── マクロ: エラー検出時に LED 点滅 ──────────────────────────
+#define RCCHECK(fn)     { rcl_ret_t rc = (fn); if (rc != RCL_RET_OK) blinkRclError(rc); }
+#define RCSOFTCHECK(fn) { rcl_ret_t rc = (fn); if (rc != RCL_RET_OK) blinkRclError(rc); }
 
 // ── wheel_cmd コールバック ────────────────────────────────────
 static void cbWheelCmd(const void* msgin) {
@@ -82,6 +100,9 @@ static void cbCtrlTimer(rcl_timer_t* /*timer*/, int64_t /*last_call_time*/) {
     bool estopActive = ESTOP_LOW_ACTIVE
                        ? (digitalRead(ESTOP_GPIO) == LOW)
                        : (digitalRead(ESTOP_GPIO) == HIGH);
+#ifdef ESTOP_BENCH_TEST_BYPASS
+    estopActive = false;
+#endif
 
     // ウォッチドッグ: 最後の wheel_cmd 受信から WATCHDOG_MS 超過でゼロ
     bool watchdogTripped = (millis() - last_cmd_ms) > WATCHDOG_MS;
@@ -190,8 +211,8 @@ void setup() {
     Motor::init();
     Motor::stopAll();
 
-    // micro-ROS: シリアルトランスポート
-    set_microros_serial_transports(Serial);
+    // micro-ROS: シリアルトランスポート (micro_ros_arduino 2.x API)
+    set_microros_transports();
     delay(500);
 }
 
@@ -222,6 +243,11 @@ void loop() {
             agentState  = AgentState::SEARCHING;
         } else {
             rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
+            // rclc executor がタイマーを wait set に含めない場合の保険:
+            // cbCtrlTimer 冒頭で last_ctrl_ms を更新するため二重呼び出しは自動防止される
+            if ((millis() - last_ctrl_ms) >= CTRL_PERIOD_MS) {
+                cbCtrlTimer(nullptr, 0LL);
+            }
         }
         break;
     }
