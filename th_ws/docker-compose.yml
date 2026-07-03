@@ -2,7 +2,9 @@
 
 services:
   th_robot:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: th_robot
     network_mode: host
     privileged: true

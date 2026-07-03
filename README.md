@@ -185,9 +185,9 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 ls -la /dev/lidar
 ```
 
-### Windows (WSL2) での USB デバイス転送
+### Windows (WSL2) での USB デバイス転送（ESP32 ファームウェア書き込み用）
 
-WSL2 は Windows の USB デバイスを自動で引き継がないため、`usbipd-win` でブリッジが必要。
+ESP32 との実行時通信は WebSocket（WiFi 経由）のため、Docker コンテナに USB デバイスを渡す必要はない。ここで転送するのは `pio run --target upload` / `pio device monitor`（**WSL2 ホスト側**、コンテナの外で実行）のためだけ。WSL2 は Windows の USB デバイスを自動で引き継がないため、`usbipd-win` でブリッジが必要。
 
 #### 初回セットアップ（1 回のみ）
 
@@ -203,7 +203,7 @@ winget install usbipd
 & "$env:ProgramFiles\usbipd-win\usbipd.exe" bind --busid 2-1
 ```
 
-WSL2 内で udev ルールを作成（1 回のみ）:
+WSL2 内で udev ルールを作成（1 回のみ、`/dev/esp32` という分かりやすい名前で参照できるようにするだけで必須ではない）:
 
 ```bash
 # /dev/esp32 シンボリックリンクを自動作成するルール
@@ -213,8 +213,6 @@ sudo chmod 644 /etc/udev/rules.d/99-esp32.rules
 sudo udevadm control --reload-rules
 ```
 
-`th_ws/docker-compose.override.yml` が用意されており、usbipd 経由で現れる `/dev/ttyUSB0` を コンテナ内で `/dev/esp32` として見せる設定が入っている。このファイルは `docker compose` が自動で読み込む。
-
 #### 毎回の手順（ESP32 を接続・再起動後）
 
 ```powershell
@@ -222,7 +220,7 @@ sudo udevadm control --reload-rules
 & "$env:ProgramFiles\usbipd-win\usbipd.exe" attach --wsl --busid 2-1
 ```
 
-その後は通常通り `docker compose run --rm th_robot bash` で起動する。
+この `attach` は `pio run --target upload` / `pio device monitor` を実行するときだけ必要。`docker compose run --rm th_robot bash` でのコンテナ起動やロボットの通常運用には不要（ESP32 はコンテナの外、WSL2 ホスト側から直接ファームウェアを書き込む）。
 
 | タイミング | 必要な操作 |
 | --- | --- |
@@ -498,7 +496,7 @@ export DISPLAY=:0
 docker compose run --rm th_robot bash
 ```
 
-> **注意 (シミュレーションのみの場合):** `docker-compose.yml` に実機デバイス (`/dev/lidar`, `/dev/esp32`) が記載されており、デバイスが存在しないとコンテナ起動に失敗することがある。その場合は `docker-compose.yml` の `devices:` セクションをコメントアウトするか削除すること。
+> **注意 (シミュレーションのみの場合):** `docker-compose.yml` に実機デバイス (`/dev/lidar`) が記載されており、デバイスが存在しないとコンテナ起動に失敗することがある。その場合は `docker-compose.yml` の `devices:` セクションをコメントアウトするか削除すること。
 
 ### Step 2: ビルド
 

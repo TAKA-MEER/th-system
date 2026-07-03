@@ -12,8 +12,9 @@
 // CuGo v3i エンコーダ: 4096 count/rev (A-B 相)
 #define ENC_LEFT_A        4
 #define ENC_LEFT_B        13
-#define ENC_RIGHT_A       14
-#define ENC_RIGHT_B       5
+// 右エンコーダも同様にA/B入れ替えで回転方向の符号を反転(実機検証で確認)
+#define ENC_RIGHT_A       5
+#define ENC_RIGHT_B       14
 #define ENC_COUNTS_PER_REV  4096.0f  // 1 回転あたりのカウント数
 
 // ── モータードライバ (Cytron MD10C: DIR + PWM) ────────────────
@@ -30,7 +31,7 @@
 
 // 正転方向 (実機で確認し必要なら 0/1 を反転)
 #define MOT_RIGHT_FWD     1          // DIR=HIGH で前進
-#define MOT_LEFT_FWD      0          // DIR=LOW  で前進  (左右逆なので反転)
+#define MOT_LEFT_FWD      1          // DIR=HIGH で前進 (実機検証で反転を確認)
 
 // ── ロボット寸法 (オドメトリキャリブレーションで上書き) ────────
 // ※ esp32_bridge 側でも同値を使用しており両方の変更が必要
@@ -63,12 +64,13 @@
 #define ESTOP_GPIO        34         // 入力専用ピン
 #define ESTOP_LOW_ACTIVE  true       // LOW で E-Stop 発動
 
-// ⚠️ ベンチ試験用の一時バイパス（無効化済み） ⚠️
+// ⚠️ ベンチ試験用の一時バイパス（現在有効） ⚠️
 // GPIO34は内部プルアップ非対応のため、物理E-Stopスイッチ/外部プルアップ抵抗が
 // 未配線だとフローティングで常時 E-Stop 発動状態になり駆動系試験ができない。
-// 実機に物理E-Stopスイッチを配線済みのため無効化。再度ベンチ試験する場合のみ
-// 一時的に define し直し、試験後は必ず削除すること。
-// #define ESTOP_BENCH_TEST_BYPASS
+// 物理E-Stopスイッチが未配線(GPIO34はGNDに直結)のため一時的に有効化中。
+// 実機に物理E-Stopスイッチを配線したら必ず無効化(コメントアウト)すること。
+// ベンチ試験以外での使用禁止。
+#define ESTOP_BENCH_TEST_BYPASS
 
 // IMU (未実装・将来予約)
 // #define IMU_SDA        21

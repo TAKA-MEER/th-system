@@ -66,6 +66,7 @@ static void cbCtrlTimer() {
 
     float velL = 0.0f, velR = 0.0f;
 
+    float outR = 0.0f, outL = 0.0f;
     if (estopActive || watchdogTripped) {
         Motor::stopAll();
         pidRight.reset();
@@ -81,14 +82,22 @@ static void cbCtrlTimer() {
         velR = (float)cntR * distPerCount / dt;   // m/s
 
         // ── PID 速度制御 → PWM 正規化 (-1.0 〜 1.0) ────────────
-        float outR = pidRight.compute(targetRight, velR, dt) / 255.0f;
-        float outL = pidLeft.compute(targetLeft,  velL, dt) / 255.0f;
+        outR = pidRight.compute(targetRight, velR, dt) / 255.0f;
+        outL = pidLeft.compute(targetLeft,  velL, dt) / 255.0f;
 
         Motor::setRight(outR);
         Motor::setLeft(outL);
 
         // ── フィードバック送信 ───────────────────────────────────
         WsLink::sendWheelFeedback(velL, velR);
+    }
+
+    // デバッグ用一時ログ: 原因切り分け後に削除すること
+    static int dbgCounter = 0;
+    if (++dbgCounter >= 5) {
+        dbgCounter = 0;
+        Serial.printf("[DBG] estop=%d watchdog=%d tgtL=%.2f tgtR=%.2f velL=%.3f velR=%.3f outL=%.3f outR=%.3f\n",
+                      estopActive, watchdogTripped, targetLeft, targetRight, velL, velR, outL, outR);
     }
 
     // E-Stop 状態を送信 (毎周期)
