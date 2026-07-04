@@ -118,6 +118,67 @@ docker compose version
 
 以降は **この WSL2 (Ubuntu) のターミナルから** `docker compose ...` を実行する(Windows 側の `docker` コマンドや Docker Desktop アプリは使わない)。VSCode を使う場合は「Remote - WSL」拡張機能でこの WSL2 ディストリビューションを直接開くと作業しやすい。
 
+### Docker Desktop の WSL 統合が残っている場合の注意
+
+Docker Desktop をこれまで使っていた環境では、ネイティブ Docker Engine をインストールした後も **同じ WSL ディストリビューションで Docker Desktop の WSL 統合が有効なまま** になっていることがある。この状態では `network_mode: host` を指定してもコンテナが Docker Desktop 内部の仮想ネットワーク(`192.168.65.0/24` 等、`services1` という名前の仮想IFが目印)に閉じ込められ、外部LANデバイス(ラズパイ・ESP32等)への到達性が失われる。
+
+以下の手順ですべて解消しておくこと。
+
+1. Docker Desktop の **Settings → Resources → WSL Integration** で、対象ディストリビューション(例: `Ubuntu`)のトグルを **OFF** にする
+2. Docker Desktop アプリを完全に終了(タスクトレイから Quit)してから再度起動する(トグル変更の反映にはアプリ再起動が必要)
+3. WSL2 側で以下を実行し、Docker Desktop 由来の設定を消す
+
+   ```bash
+   rm -f ~/.docker/config.json
+   docker context use default
+   ```
+
+4. 確認: `/mnt/wsl/docker-desktop/*` のマウントが無いこと、`docker-compose` コマンドが `/mnt/wsl/docker-desktop/...` のシンボリックリンクになっていないこと
+
+   ```bash
+   mount | grep docker-desktop   # 何も出なければ OK
+   docker run --rm --network host busybox ip addr show   # ホストと同じIPが出れば host networking は正常
+   ```
+
+### ラズパイ等ネットワーク経由の LiDAR を使う場合
+
+RPLIDAR をロボット本体ではなく別マシン(ラズパイ等)に接続し、そちらが配信する `/scan` をネットワーク経由で受信する構成にも対応している。
+
+```bash
+# ローカルの sllidar_node 起動を止め、外部が配信する /scan を使う
+ros2 launch th_bringup bringup.launch.py lidar_source:=network
+ros2 launch th_bringup slam.launch.py    lidar_source:=network
+```
+
+これが機能するには、以下 3 点がすべて満たされている必要がある(実機検証で判明した詰まりどころ)。
+
+1. **同一LANセグメントに接続すること**: Windows のモバイルホットスポット/ICS 仮想アダプタ(`192.168.137.0/24` 等)は WSL2 の mirrored networking のミラー対象**外**であるため、ラズパイをそこに接続しても WSL2/コンテナ側から到達できない。ラズパイは、WSL2 が実際にミラーしている物理 Wi-Fi/Ethernet アダプタと**同じ**ネットワークに接続すること。
+
+   ```bash
+   # WSL2 側で実際にミラーされているセグメントを確認
+   ip addr show eth0 | grep 'inet '
+   ```
+
+2. **`ROS_DOMAIN_ID` の一致 + プロセス再起動**: ラズパイ側で `ROS_DOMAIN_ID` をコンテナ側(`10`)に合わせること。**環境変数はプロセス起動時にしか読み込まれない**ため、`.bashrc` に追記しただけでは既に起動済みの `/scan` 配信プロセスには反映されない。設定変更後は当該プロセス(またはラズパイ自体)を再起動すること。
+
+3. **Windows Firewall のインバウンド許可**: 接続先 Wi-Fi のネットワークプロファイルが「パブリック」の場合、Windows Firewall はデフォルトで未承諾のインバウンド UDP/TCP をブロックし、DDS のディスカバリ・データ配信が届かない。ラズパイの IP からの着信を許可するルールを追加する(管理者 PowerShell)。
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound UDP)" -Direction Inbound -Action Allow -Protocol UDP -RemoteAddress <ラズパイのIP> -Profile Any
+   New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound TCP)" -Direction Inbound -Action Allow -Protocol TCP -RemoteAddress <ラズパイのIP> -Profile Any
+   ```
+
+   ラズパイの IP が変わった場合は `RemoteAddress` を更新すること。
+
+動作確認:
+
+```bash
+ros2 topic list | grep scan
+ros2 topic hz /scan   # 10Hz 前後で来ていれば OK
+```
+
+`/scan` が来ない場合は、上記 1〜3 に加えて前節「Docker Desktop の WSL 統合が残っている場合の注意」も確認すること。
+
 ---
 
 ## ESP32 ファームウェア

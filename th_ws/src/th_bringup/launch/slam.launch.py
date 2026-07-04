@@ -7,12 +7,18 @@
 #   # RViz2 で /map を表示しながらロボットを手動で走らせる
 #   # 完了後:
 #   ros2 run nav2_map_server map_saver_cli -f ~/maps/th_map
+#
+#   lidar_source:=local    USB直結のsllidar_nodeを起動 (デフォルト)
+#   lidar_source:=network  ラズパイ等が配信する/scanを使用 (ローカル起動なし。
+#                          Pi側とROS_DOMAIN_IDを一致させること)
 # ============================================================
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 BRINGUP_DIR = get_package_share_directory('th_bringup')
@@ -28,12 +34,25 @@ def generate_launch_description():
     if os.path.exists(calib_yaml):
         esp32_params.append(calib_yaml)
 
+    lidar_source = LaunchConfiguration('lidar_source')
+    lidar_is_local = PythonExpression(["'", lidar_source, "' == 'local'"])
+
     return LaunchDescription([
-        # RPLIDAR
+        DeclareLaunchArgument('lidar_source', default_value='local',
+                              description='local=USB直結sllidar_node起動 / '
+                                          'network=ラズパイ等が配信する/scanを使用'),
+
+        # RPLIDAR (lidar_source:=local の場合のみ起動)
         Node(package='sllidar_ros2', executable='sllidar_node',
+             condition=IfCondition(lidar_is_local),
              parameters=[{'serial_port': '/dev/lidar', 'serial_baudrate': 256000,
                           'frame_id': 'laser_link', 'angle_compensate': True}],
              output='screen'),
+        LogInfo(
+            condition=UnlessCondition(lidar_is_local),
+            msg='lidar_source=network: ローカルsllidar_nodeは起動しません。'
+                'ラズパイ側の/scanを受信するにはROS_DOMAIN_IDが一致している必要があります。',
+        ),
 
         # lidar_filter
         Node(package='th_perception', executable='lidar_filter.py',
