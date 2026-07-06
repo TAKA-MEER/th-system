@@ -9,17 +9,17 @@
 // ============================================================
 
 // ── エンコーダ (CuGo v3i: 4096 count/rev, A-B相) ───────────────
-#define ENC_LEFT_A          4
-#define ENC_LEFT_B          13
-#define ENC_RIGHT_A         5
-#define ENC_RIGHT_B         14
+#define ENC_LEFT_A          36
+#define ENC_LEFT_B          39
+#define ENC_RIGHT_A         35
+#define ENC_RIGHT_B         34
 #define ENC_COUNTS_PER_REV  4096.0f
 
 // ── モータードライバ (Cytron MD10C: DIR + PWM) ─────────────────
-#define MOT_RIGHT_DIR       25
-#define MOT_RIGHT_PWM       26
-#define MOT_LEFT_DIR        32
-#define MOT_LEFT_PWM        33
+#define MOT_RIGHT_DIR       33
+#define MOT_RIGHT_PWM       25
+#define MOT_LEFT_DIR        27
+#define MOT_LEFT_PWM        26
 
 // PWM チャンネル (ESP32 LEDC)
 #define PWM_CH_RIGHT        0
