@@ -52,7 +52,8 @@ long readAndResetRight() {
     long v = countRight;
     countRight = 0;
     interrupts();
-    return v;
+    // 左右ミラー実装のため生カウントは右だけ符号が反転する。正転=プラスに揃える。
+    return -v;
 }
 
 float countsToMeters(long counts) {

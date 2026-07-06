@@ -26,12 +26,15 @@ namespace {
 
 constexpr uint32_t SAFETY_TIMEOUT_MS = 5000;   // 1回の駆動の最大継続時間
 constexpr uint32_t PRINT_PERIOD_MS   = 100;    // エンコーダ表示周期
+constexpr float    KICK_DUTY         = 0.6f;   // 起動キック duty (スティクション対策検証用)
+constexpr uint32_t KICK_MS           = 150;    // 起動キック継続時間
 
 enum class Drive { NONE, LEFT_FWD, LEFT_REV, RIGHT_FWD, RIGHT_REV };
 
-Drive    g_active     = Drive::NONE;
-float    g_duty       = 0.3f;          // デフォルト 30% (安全のため低め)
-uint32_t g_startMs    = 0;
+Drive    g_active      = Drive::NONE;
+float    g_duty        = 0.3f;          // デフォルト 30% (安全のため低め)
+bool     g_kickEnabled = false;         // 起動キック有効/無効
+uint32_t g_startMs     = 0;
 uint32_t g_lastPrintMs = 0;
 
 // Welford のオンライン分散計算 (駆動中の対象輪カウント/周期のばらつき)
@@ -61,8 +64,11 @@ void printHelp() {
     Serial.println(F("  l/L : left  motor fwd/rev"));
     Serial.println(F("  r/R : right motor fwd/rev"));
     Serial.println(F("  1-9 : duty 10-90%   0 : duty 100%"));
+    Serial.println(F("  k   : toggle start-kick (stiction workaround)"));
     Serial.println(F("  s   : stop"));
-    Serial.printf("  current duty = %.0f%%\n", g_duty * 100.0f);
+    Serial.printf("  current duty = %.0f%%  kick=%s (duty=%.0f%% %ums)\n",
+                  g_duty * 100.0f, g_kickEnabled ? "ON" : "OFF",
+                  KICK_DUTY * 100.0f, (unsigned)KICK_MS);
 }
 
 const char* driveName(Drive d) {
@@ -85,25 +91,38 @@ void stopDrive(const char* reason) {
     g_active = Drive::NONE;
 }
 
+void applyDrive(Drive d, float magnitude) {
+    switch (d) {
+        case Drive::LEFT_FWD:  Motor::setLeft(magnitude);    break;
+        case Drive::LEFT_REV:  Motor::setLeft(-magnitude);   break;
+        case Drive::RIGHT_FWD: Motor::setRight(magnitude);   break;
+        case Drive::RIGHT_REV: Motor::setRight(-magnitude);  break;
+        default: break;
+    }
+}
+
 void startDrive(Drive d) {
     Motor::stopAll();
+    g_active = d;
+
+    // スティクション対策検証用: 一瞬だけ高duty で起動してから目標duty に落とす。
+    // このキック中の回転量は計測(g_stats)に含めない。
+    if (g_kickEnabled) {
+        applyDrive(d, KICK_DUTY);
+        delay(KICK_MS);
+    }
+
     // 古いカウントを破棄してから計測を開始する
     Encoder::readAndResetLeft();
     Encoder::readAndResetRight();
     g_stats.reset();
-    g_active  = d;
+    applyDrive(d, g_duty);
     g_startMs = millis();
     g_lastPrintMs = g_startMs;
 
-    switch (d) {
-        case Drive::LEFT_FWD:  Motor::setLeft(g_duty);   break;
-        case Drive::LEFT_REV:  Motor::setLeft(-g_duty);  break;
-        case Drive::RIGHT_FWD: Motor::setRight(g_duty);  break;
-        case Drive::RIGHT_REV: Motor::setRight(-g_duty); break;
-        default: break;
-    }
-    Serial.printf("[START] %s duty=%.0f%% (auto-stop in %ums)\n",
-                  driveName(d), g_duty * 100.0f, (unsigned)SAFETY_TIMEOUT_MS);
+    Serial.printf("[START] %s duty=%.0f%% kick=%s (auto-stop in %ums)\n",
+                  driveName(d), g_duty * 100.0f, g_kickEnabled ? "ON" : "OFF",
+                  (unsigned)SAFETY_TIMEOUT_MS);
 }
 
 void handleChar(char c) {
@@ -123,6 +142,10 @@ void handleChar(char c) {
         startDrive(Drive::RIGHT_REV);
     } else if (c == 's' || c == ' ') {
         stopDrive("manual");
+    } else if (c == 'k') {
+        g_kickEnabled = !g_kickEnabled;
+        Serial.printf("[SET] kick-start=%s (duty=%.0f%%, %ums)\n",
+                      g_kickEnabled ? "ON" : "OFF", KICK_DUTY * 100.0f, (unsigned)KICK_MS);
     } else if (c == 'h' || c == '?') {
         printHelp();
     }
