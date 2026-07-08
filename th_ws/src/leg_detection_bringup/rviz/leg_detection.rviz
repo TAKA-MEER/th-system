@@ -1,0 +1,82 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /PointCloud2_obstacles1
+      Splitter Ratio: 0.5
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Color: 160; 160; 164
+      Cell Size: 1
+      Plane Cell Count: 20
+      Enabled: true
+      Reference Frame: <Fixed Frame>
+    - Class: rviz_default_plugins/Axes
+      Name: LiDAR_center
+      Enabled: true
+      Reference Frame: laser_frame
+      Length: 0.5
+      Radius: 0.05
+    - Class: rviz_default_plugins/LaserScan
+      Name: LaserScan_raw
+      Enabled: true
+      Topic:
+        Value: /scan
+        Depth: 5
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+      Color: 130; 130; 130
+      Color Transformer: FlatColor
+      Style: Points
+      Size (Pixels): 2
+      Position Transformer: XYZ
+    - Class: rviz_default_plugins/PointCloud2
+      Name: PointCloud2_obstacles
+      Enabled: true
+      Topic:
+        Value: /sobits_follower/multiple_sensor_person_tracking/obstacles
+        Depth: 5
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+      Color Transformer: RGB8
+      Style: Spheres
+      Size (m): 0.05
+      Position Transformer: XYZ
+      Decay Time: 0.2
+    - Class: rviz_default_plugins/MarkerArray
+      Name: TrackerMarkers
+      Enabled: true
+      Topic:
+        Value: /sobits_follower/multiple_sensor_person_tracking/tracker_marker
+        Depth: 5
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: laser_frame
+    Frame Rate: 30
+  Enabled: true
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      Distance: 12
+      Pitch: 1.4
+      Yaw: 1.57
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+    Saved: ~
+Window Geometry:
+  Height: 800
+  Width: 1200
