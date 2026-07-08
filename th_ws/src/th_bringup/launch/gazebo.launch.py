@@ -305,6 +305,34 @@ def generate_launch_description():
         condition=UnlessCondition(sim),
     )
 
+    # person_tracker 本番実装 (human_kenchi: DR-SPAAM + PersonTracker leg モード)
+    # 実機かつ use_stub:=false のときのみ有効。シミュレーションは常に gazebo_person_relay を使う。
+    real_tracker_expr = PythonExpression(
+        ["'", sim, "' == 'false' and '", use_stub, "' == 'false'"])
+
+    leg_detection = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(
+            get_package_share_directory('leg_detection_bringup'),
+            'launch', 'leg_detection.launch.py')),
+        launch_arguments={
+            'scan_topic':   '/scan_filtered',
+            'target_frame': 'base_link',
+            'scan_frame':   'laser_link',
+            'odom_frame':   'odom',
+            'use_rviz':     'false',
+            'autostart':    'true',
+        }.items(),
+        condition=IfCondition(real_tracker_expr),
+    )
+
+    person_tracker_bridge = Node(
+        package='th_perception',
+        executable='person_tracker_bridge.py',
+        name='person_tracker_bridge',
+        output='screen',
+        condition=IfCondition(real_tracker_expr),
+    )
+
     # EKF（実機のみ: Gazebo は diff_drive plugin が /odom を発行する）
     ekf_node = Node(
         package='robot_localization',
@@ -440,6 +468,8 @@ def generate_launch_description():
             lidar_node,
             esp32_bridge,
             ekf_node,
+            leg_detection,
+            person_tracker_bridge,
 
             # Nav2 + SLAM / Localization
             nav2_sim,

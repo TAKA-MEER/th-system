@@ -30,6 +30,10 @@ RUN apt-get update && apt-get install -y \
     ros-humble-joint-state-publisher-gui \
     ros-humble-teleop-twist-keyboard \
     ros-humble-xacro \
+    ros-humble-vision-msgs \
+    ros-humble-pcl-ros \
+    ros-humble-laser-geometry \
+    ros-humble-nav2-lifecycle-manager \
     xterm \
     gazebo \
     git \
@@ -49,6 +53,20 @@ WORKDIR /root/th_ws/src
 
 # aptにないパッケージをGitHubからクローン
 RUN git clone https://github.com/Slamtec/sllidar_ros2.git
+
+# person_tracker 本番実装: human_kenchi (LiDARのみの脚検出・追跡ワークスペース)
+# リポジトリ直下に独自の src/ を持つ多パッケージ構成だが、colcon は th_ws/src 以下を
+# 再帰的に探索するため human_kenchi/src/{multiple_observation_kalman_filter,
+# multiple_sensor_person_tracking, leg_detection_bringup} はそのままビルド対象になる。
+RUN git clone https://github.com/TAKA-MEER/human_kenchi.git
+
+# DR-SPAAM 脚検出器 (TeamSOBITS, human_kenchi の install.sh が参照する外部依存)
+RUN git clone -b jazzy-devel https://github.com/TeamSOBITS/2d_lidar_person_detection.git \
+    human_kenchi/src/2d_lidar_person_detection
+RUN cd human_kenchi/src/2d_lidar_person_detection/dr_spaam && python3 setup.py install
+# 重みファイル (ckpt_jrdb_ann_ft_dr_spaam_e20.pth, 約360MB) はイメージに含めない。
+# docker-compose.yml の bind mount 経由でホストの th_ws/dr_spaam_weights/ から供給する。
+# 詳細は README.md の「DR-SPAAM 重みファイルの配置」を参照。
 
 # ── 依存関係の解決 & ビルド ───────────────────────────────────────────
 WORKDIR /root/th_ws

@@ -142,7 +142,7 @@ def generate_launch_description():
     ))
 
     # ── 9. 試験員トラッカー (本番 or スタブ) ──────────────
-    # 本番: person_tracker (ML 実装完成後に切替)
+    # スタブ: person_tracker_stub.py
     nodes.append(Node(
         package='th_perception',
         executable='person_tracker_stub.py',
@@ -151,14 +151,29 @@ def generate_launch_description():
         parameters=[{'pattern': 'walk_forward', 'initial_x': 1.5}],
         output='screen',
     ))
-    # 本番実装はここに追加:
-    # nodes.append(Node(
-    #     package='th_perception',
-    #     executable='person_tracker',
-    #     name='person_tracker',
-    #     condition=UnlessCondition(use_stub),
-    #     output='screen',
-    # ))
+    # 本番: human_kenchi (DR-SPAAM + PersonTracker, leg モード) + person_tracker_bridge.py
+    # /scan_filtered (死角マスク済み) を入力にし、following_position を /person/status に変換する。
+    nodes.append(IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(
+            get_package_share_directory('leg_detection_bringup'),
+            'launch', 'leg_detection.launch.py')),
+        launch_arguments={
+            'scan_topic':   '/scan_filtered',
+            'target_frame': 'base_link',
+            'scan_frame':   'laser_link',
+            'odom_frame':   'odom',
+            'use_rviz':     'false',
+            'autostart':    'true',
+        }.items(),
+        condition=UnlessCondition(use_stub),
+    ))
+    nodes.append(Node(
+        package='th_perception',
+        executable='person_tracker_bridge.py',
+        name='person_tracker_bridge',
+        condition=UnlessCondition(use_stub),
+        output='screen',
+    ))
 
     # ── 10. person_predictor ──────────────────────────────
     nodes.append(Node(

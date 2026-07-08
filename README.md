@@ -464,7 +464,7 @@ th_ws/
 │   ├── th_esp32_bridge/          # ESP32 ↔ ROS2 ブリッジ・オドメトリ
 │   ├── th_safety/                # safety_monitor + twist_mux 設定
 │   ├── th_mode_manager/          # FSM（7 状態・全遷移ルール）
-│   ├── th_perception/            # lidar_filter・person_predictor・tracker_stub
+│   ├── th_perception/            # lidar_filter・person_predictor・tracker_stub・person_tracker_bridge
 │   ├── th_planning/              # follow_planner・panel_navigator・manual_handler・crawler_teleop
 │   │   └── th_planning/          # Python パッケージ（テスト可能なコアロジック）
 │   │       └── follow_planner_core.py
@@ -755,7 +755,8 @@ ros2 node info /gazebo_person_relay
 
 - [ ] LiDAR 死角角度の実測値 (`perception_params.yaml`)
 - [ ] 配電盤座標の登録 (`panels.yaml`)
-- [ ] `person_tracker` 本番実装への切替 (`use_stub:=false`)
+- [ ] DR-SPAAM 重みファイルの実機への配置・動作確認 (`use_stub:=false`)
+- [ ] LiDAR 死角と DR-SPAAM 誤検出の相性を実地検証（`leg_tracker_param.yaml` の再取得パラメータ調整）
 - [ ] IMU 調達後の EKF 切替 (`imu_enabled:=true`)
 - [ ] カメラ昇降システムとのインターフェース確定
 - [ ] ESP32 E-Stop GPIO の極性確認 (`config.h` の `ESTOP_LOW_ACTIVE`)
@@ -1191,43 +1192,71 @@ panels:
 
 ---
 
-## person_tracker 本番実装への切替
+## person_tracker 本番実装（human_kenchi ベース）
 
-ML ベースの `person_tracker` 実装が完成したら以下の手順で切替えます。
-
-### 必要なインターフェース
-
-本番の `person_tracker` は以下のトピックを発行してください。
+`person_tracker` の本番実装には
+[`TAKA-MEER/human_kenchi`](https://github.com/TAKA-MEER/human_kenchi)（`sobits_follower` から
+2D-LiDAR のみの脚検出・追跡部分を抜き出したワークスペース）を採用している。
+`use_stub:=false` で以下のパイプラインが起動する。
 
 ```txt
-/person/status  (th_system_msgs/PersonStatus)
-  header.stamp    : 現在時刻
-  header.frame_id : "base_link"
-  position.x      : 試験員の前方距離 [m]（ロボット正面方向）
-  position.y      : 試験員の横方向距離 [m]（左が正）
-  position.z      : 0.0
-  confidence      : 検出信頼度 0.0〜1.0
-  is_lost         : 検出できていない場合 true
-  lost_reason     : "DETECTION_LOST" / "LOW_CONFIDENCE" / ""
+/scan_filtered (死角マスク済み)
+  → dr_spaam_ros (DR-SPAAM 脚検出, human_kenchi/2d_lidar_person_detection)
+  → PersonTracker (leg モード, human_kenchi/multiple_sensor_person_tracking)
+  → sobits_follower/multiple_sensor_person_tracking/following_position
+  → person_tracker_bridge.py (th_perception)
+  → /person/status (th_system_msgs/PersonStatus)
 ```
 
-`is_lost` フラグは以下のタイミングで `true` にしてください。
+`person_tracker_bridge.py` が `following_position.status`
+（`0=NO_EXISTS` / `1=EXISTS_LEG`）を `PersonStatus.is_lost` に変換する薄い変換ノード。
+`th_ws/src/th_perception/scripts/person_tracker_bridge.py` を参照。
 
-- 検出対象が LiDAR スキャン内に見つからない場合
-- `confidence` が一定閾値（例: 0.3）を下回った場合
+human_kenchi 自体のパッケージ（`multiple_observation_kalman_filter` /
+`multiple_sensor_person_tracking` / `leg_detection_bringup`）と DR-SPAAM
+（`TeamSOBITS/2d_lidar_person_detection`）は Dockerfile で `git clone` して colcon
+ビルドに含めている（`sllidar_ros2` と同じ外部依存パターン）。このリポジトリには
+vendoring していないため、upstream の更新は Docker イメージの再ビルドで追従する。
 
-### 切替コマンド
+### DR-SPAAM 重みファイルの配置（初回のみ）
+
+DR-SPAAM の学習済み重み（`ckpt_jrdb_ann_ft_dr_spaam_e20.pth`, 約 360 MB）は容量・配布元
+（Google Drive）の都合上 Docker イメージには含めていない。以下の手順で手動配置する。
+
+1. [重みファイルをダウンロード](https://drive.google.com/drive/folders/1Wl2nC8lJ6s9NI1xtWwmxeAUnuxDiiM4W)
+2. リポジトリルートの `th_ws/dr_spaam_weights/` に置く（`.gitignore` 対象、コミット不要）
+3. `docker-compose.yml` の bind mount によりコンテナ内
+   `/root/th_ws/install/dr_spaam_ros/share/dr_spaam_ros/weights/` に自動反映される
+   （`docker compose run --rm` の使い捨てコンテナでも消えない）
+
+> **要確認**: 上記マウント先パスは `dr_spaam_ros` パッケージの CMake/setup.py の
+> インストール先を前提にした推定値。実際にビルドした後 `ros2 pkg prefix dr_spaam_ros`
+> で share ディレクトリを確認し、重みファイルが見つからない場合はパスを補正すること。
+
+### 動作確認
 
 ```bash
-# bringup launch の use_stub を false に変更
 ros2 launch th_bringup bringup.launch.py \
   map_yaml:=<地図パス> \
-  use_stub:=false      # ← ここを変更
+  use_stub:=false
 
-# 動作確認
+# パイプライン各段の確認
+ros2 topic hz /dr_spaam/dr_spaam_detections
+ros2 topic echo sobits_follower/multiple_sensor_person_tracking/following_position
 ros2 topic echo /person/status    # is_lost が適切に切り替わるか
 ros2 topic hz /person/status      # 10 Hz 以上発行されているか
 ```
+
+`use_stub:=true` の場合は上記パイプラインは一切起動せず、`person_tracker_stub.py` のみが
+`/person/status` を発行する。
+
+### チューニング
+
+障害物の陰に隠れた際の再取得挙動は `leg_detection_bringup` の
+`param/leg_tracker_param.yaml`（Docker イメージ内の human_kenchi パッケージが持つ）で調整する。
+主要パラメータは human_kenchi の README を参照。LiDAR 死角（アルミ角柱）による誤検出が
+出る場合は `perception_params.yaml` の `blind_angle_ranges` を先に見直すこと
+（DR-SPAAM の入力は `/scan_filtered` のため死角マスクが有効）。
 
 ---
 
