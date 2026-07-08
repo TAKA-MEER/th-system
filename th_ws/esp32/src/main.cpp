@@ -20,9 +20,22 @@ static PID pidRight(PID_KP_RIGHT, PID_KI_RIGHT, PID_KD_RIGHT,
 static PID pidLeft (PID_KP_LEFT,  PID_KI_LEFT,  PID_KD_LEFT,
                     PID_OUT_MIN,  PID_OUT_MAX,   PID_ITERM_MAX);
 
-// 目標速度 (m/s)
+// 目標速度 (m/s) — wheel_cmd で受信した最終目標値
 static volatile float targetLeft  = 0.0f;
 static volatile float targetRight = 0.0f;
+
+// PIDに渡す目標値 (m/s) — TARGET_RAMP_ACCEL_MPS2 で加速度制限した現在値。
+// targetLeft/Right へのステップ変化をそのままPIDに渡すと比例項が急崩壊して
+// 起動直後に振動するため、ここで滑らかに追従させる。
+static float rampLeft  = 0.0f;
+static float rampRight = 0.0f;
+
+// value を target に向かって最大 maxStep だけ動かす (加減速どちらも対応)
+static float rampToward(float value, float target, float maxStep) {
+    if (value < target) return min(value + maxStep, target);
+    if (value > target) return max(value - maxStep, target);
+    return value;
+}
 
 // ── WHEEL_CMD 受信コールバック ────────────────────────────────
 static void onWheelCmd(float left, float right) {
@@ -42,6 +55,8 @@ static void onWsDisconnect() {
     pidLeft.reset();
     targetLeft  = 0.0f;
     targetRight = 0.0f;
+    rampLeft    = 0.0f;
+    rampRight   = 0.0f;
 }
 
 // ── 制御タイマーコールバック ─────────────────────────────────
@@ -73,6 +88,8 @@ static void cbCtrlTimer() {
         pidLeft.reset();
         targetLeft  = 0.0f;
         targetRight = 0.0f;
+        rampLeft    = 0.0f;
+        rampRight   = 0.0f;
     } else {
         // ── エンコーダから実速度を計算 ──────────────────────────
         float distPerCount = (2.0f * M_PI * WHEEL_RADIUS_M) / ENC_COUNTS_PER_REV;
@@ -81,9 +98,14 @@ static void cbCtrlTimer() {
         velL = (float)cntL * distPerCount / dt;   // m/s
         velR = (float)cntR * distPerCount / dt;   // m/s
 
+        // ── 目標速度を加速度制限してランプ ──────────────────────
+        float rampStep = TARGET_RAMP_ACCEL_MPS2 * dt;
+        rampLeft  = rampToward(rampLeft,  targetLeft,  rampStep);
+        rampRight = rampToward(rampRight, targetRight, rampStep);
+
         // ── PID 速度制御 → PWM 正規化 (-1.0 〜 1.0) ────────────
-        outR = pidRight.compute(targetRight, velR, dt) / 255.0f;
-        outL = pidLeft.compute(targetLeft,  velL, dt) / 255.0f;
+        outR = pidRight.compute(rampRight, velR, dt) / 255.0f;
+        outL = pidLeft.compute(rampLeft,  velL, dt) / 255.0f;
 
         Motor::setRight(outR);
         Motor::setLeft(outL);
@@ -96,8 +118,8 @@ static void cbCtrlTimer() {
     static int dbgCounter = 0;
     if (++dbgCounter >= 5) {
         dbgCounter = 0;
-        Serial.printf("[DBG] estop=%d watchdog=%d tgtL=%.2f tgtR=%.2f velL=%.3f velR=%.3f outL=%.3f outR=%.3f\n",
-                      estopActive, watchdogTripped, targetLeft, targetRight, velL, velR, outL, outR);
+        Serial.printf("[DBG] estop=%d watchdog=%d tgtL=%.2f tgtR=%.2f rmpL=%.2f rmpR=%.2f velL=%.3f velR=%.3f outL=%.3f outR=%.3f\n",
+                      estopActive, watchdogTripped, targetLeft, targetRight, rampLeft, rampRight, velL, velR, outL, outR);
     }
 
     // E-Stop 状態を送信 (毎周期)
