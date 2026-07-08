@@ -15,8 +15,11 @@
 //
 // シリアルコマンド (行入力, Enter で確定):
 //   t <meters> <seconds>   指定距離を指定時間で走行 (例: t 1.0 2.0)
+//                          距離を負値にすると後退 (例: t -1.0 2.0)
 //   kpl/kil/kdl <v>        左輪 PID ゲイン設定
 //   kpr/kir/kdr <v>        右輪 PID ゲイン設定
+//   iml/imr <v>             左/右輪 積分項上限(iTermMax)設定
+//   a <mps2>                目標速度のランプ加速度設定 (m/s^2, 起動直後の振動緩和用)
 //   s                      走行中断
 //   h / ?                  ヘルプ表示
 //
@@ -36,27 +39,54 @@ public:
     PID(float kp, float ki, float kd, float outMin, float outMax, float iTermMax)
         : kp_(kp), ki_(ki), kd_(kd),
           outMin_(outMin), outMax_(outMax), iTermMax_(iTermMax),
-          iTerm_(0.0f), prevError_(0.0f) {}
+          iTerm_(0.0f), prevError_(0.0f), firstCall_(true) {}
 
     float compute(float setpoint, float measured, float dt) {
         if (dt <= 0.0f) return 0.0f;
+
+        // 目標速度がちょうど0の場合はPID計算を経由せず強制的に出力0にする
+        // (停止時のにじり出し・積分ワインドアップを防ぐフェイルセーフ)
+        if (setpoint == 0.0f) {
+            iTerm_     = 0.0f;
+            prevError_ = 0.0f;
+            firstCall_ = true;
+            return 0.0f;
+        }
+
         float error = setpoint - measured;
-        iTerm_ += ki_ * error * dt;
-        iTerm_  = constrain(iTerm_, -iTermMax_, iTermMax_);
-        float dTerm = kd_ * (error - prevError_) / dt;
+
+        // reset() 直後の1周期目は prevError_ が未確定 (0) のため、目標値の
+        // ステップ変化がそのままD項の急峻な微分キックになる。初回はD項を無効化する。
+        float dTerm = firstCall_ ? 0.0f : kd_ * (error - prevError_) / dt;
+        firstCall_ = false;
         prevError_ = error;
-        float output = kp_ * error + iTerm_ + dTerm;
-        return constrain(output, outMin_, outMax_);
+
+        // 進行方向と逆向きの出力(逆転ブレーキ)を禁止する非対称クランプ。
+        // 逆転ブレーキによる暴れ(発振)を避けるため、目標速度と同符号側のみ許可する。
+        float loMin = (setpoint >= 0.0f) ? 0.0f    : outMin_;
+        float loMax = (setpoint >= 0.0f) ? outMax_ : 0.0f;
+
+        // アンチワインドアップ: 出力が飽和する場合は積分項を更新しない
+        float iTermCandidate = constrain(iTerm_ + ki_ * error * dt, -iTermMax_, iTermMax_);
+        float rawOutput = kp_ * error + iTermCandidate + dTerm;
+        float output = constrain(rawOutput, loMin, loMax);
+        if (output == rawOutput) {
+            iTerm_ = iTermCandidate;
+        }
+        return output;
     }
 
-    void reset() { iTerm_ = 0.0f; prevError_ = 0.0f; }
+    void reset() { iTerm_ = 0.0f; prevError_ = 0.0f; firstCall_ = true; }
     void setGains(float kp, float ki, float kd) { kp_ = kp; ki_ = ki; kd_ = kd; }
     void getGains(float& kp, float& ki, float& kd) const { kp = kp_; ki = ki_; kd = kd_; }
+    void setItermMax(float v) { iTermMax_ = v; }
+    float getItermMax() const { return iTermMax_; }
 
 private:
     float kp_, ki_, kd_;
     float outMin_, outMax_, iTermMax_;
     float iTerm_, prevError_;
+    bool  firstCall_;
 };
 
 PID g_pidLeft (PID_KP_LEFT,  PID_KI_LEFT,  PID_KD_LEFT,  PID_OUT_MIN, PID_OUT_MAX, PID_ITERM_MAX);
@@ -65,7 +95,9 @@ PID g_pidRight(PID_KP_RIGHT, PID_KI_RIGHT, PID_KD_RIGHT, PID_OUT_MIN, PID_OUT_MA
 bool     g_active       = false;
 double   g_targetDistM  = 0.0;
 double   g_targetTimeS  = 0.0;
-float    g_targetSpeed  = 0.0f;    // m/s
+float    g_targetSpeed  = 0.0f;    // m/s (最終目標)
+float    g_rampSpeed    = 0.0f;    // m/s (PIDに渡す、加速度制限された現在の目標値)
+float    g_rampAccel    = 1.5f;    // m/s^2 (起動直後の急加速による振動を抑えるためのランプ加速度)
 uint32_t g_startMs      = 0;
 uint32_t g_lastCtrlMs   = 0;
 uint32_t g_safetyMs     = MAX_SAFETY_TIMEOUT_MS;
@@ -81,6 +113,8 @@ void printGains() {
     Serial.printf("  left  Kp=%.2f Ki=%.2f Kd=%.2f\n", kp, ki, kd);
     g_pidRight.getGains(kp, ki, kd);
     Serial.printf("  right Kp=%.2f Ki=%.2f Kd=%.2f\n", kp, ki, kd);
+    Serial.printf("  itermMax left=%.2f right=%.2f\n", g_pidLeft.getItermMax(), g_pidRight.getItermMax());
+    Serial.printf("  ramp  accel=%.2fm/s^2\n", g_rampAccel);
 }
 
 void printHelp() {
@@ -88,6 +122,8 @@ void printHelp() {
     Serial.println(F("  t <meters> <seconds> : run to target distance in target time"));
     Serial.println(F("  kpl/kil/kdl <v>      : set left  PID gain"));
     Serial.println(F("  kpr/kir/kdr <v>      : set right PID gain"));
+    Serial.println(F("  iml/imr <v>          : set left/right iTermMax"));
+    Serial.println(F("  a <mps2>             : set target-speed ramp accel"));
     Serial.println(F("  s                    : abort"));
     Serial.println(F("  current gains:"));
     printGains();
@@ -109,8 +145,8 @@ void stopDrive(const char* reason) {
 }
 
 void startDrive(double distM, double timeS) {
-    if (distM <= 0.0 || timeS <= 0.0) {
-        Serial.println(F("[ERR] distance and time must be > 0"));
+    if (distM == 0.0 || timeS <= 0.0) {
+        Serial.println(F("[ERR] distance must be != 0, time must be > 0"));
         return;
     }
     Motor::stopAll();
@@ -123,6 +159,7 @@ void startDrive(double distM, double timeS) {
     g_targetDistM = distM;
     g_targetTimeS = timeS;
     g_targetSpeed = (float)(distM / timeS);
+    g_rampSpeed   = 0.0f;
     g_active      = true;
     g_startMs     = millis();
     g_lastCtrlMs  = g_startMs;
@@ -157,6 +194,24 @@ void handleLine(char* line) {
         else if (line[1] == 'd') kd = v;
         pid.setGains(kp, ki, kd);
         Serial.printf("[SET] %s gains: Kp=%.2f Ki=%.2f Kd=%.2f\n", isLeft ? "left" : "right", kp, ki, kd);
+    } else if (strncmp(line, "iml", 3) == 0 || strncmp(line, "imr", 3) == 0) {
+        float v = atof(line + 3);
+        bool isLeft = (line[2] == 'l');
+        if (v > 0.0f) {
+            PID& pid = isLeft ? g_pidLeft : g_pidRight;
+            pid.setItermMax(v);
+            Serial.printf("[SET] %s itermMax=%.2f\n", isLeft ? "left" : "right", v);
+        } else {
+            Serial.println(F("[ERR] usage: iml/imr <v> (> 0)"));
+        }
+    } else if (line[0] == 'a' && (line[1] == ' ' || line[1] == '\0')) {
+        float v = atof(line + 1);
+        if (v > 0.0f) {
+            g_rampAccel = v;
+            Serial.printf("[SET] ramp accel=%.2fm/s^2\n", g_rampAccel);
+        } else {
+            Serial.println(F("[ERR] usage: a <mps2> (> 0)"));
+        }
     } else if (line[0] == 's') {
         stopDrive("manual");
     } else if (line[0] == 'h' || line[0] == '?') {
@@ -215,17 +270,28 @@ void loop() {
         float velL = distStepL / DT_S;
         float velR = distStepR / DT_S;
 
-        float outL = g_pidLeft.compute(g_targetSpeed, velL, DT_S);
-        float outR = g_pidRight.compute(g_targetSpeed, velR, DT_S);
+        // 目標速度への急激なステップ入力がP項の急崩壊(=起動直後の振動)を招くため、
+        // PIDに渡す目標値は加速度制限してランプさせる。target/rampとも前進なら正、
+        // 後退なら負なので、両方向とも0から離れる向きにランプすればよい。
+        float rampStep = g_rampAccel * DT_S;
+        if (g_rampSpeed < g_targetSpeed) {
+            g_rampSpeed = min(g_rampSpeed + rampStep, g_targetSpeed);
+        } else if (g_rampSpeed > g_targetSpeed) {
+            g_rampSpeed = max(g_rampSpeed - rampStep, g_targetSpeed);
+        }
+
+        float outL = g_pidLeft.compute(g_rampSpeed, velL, DT_S);
+        float outR = g_pidRight.compute(g_rampSpeed, velR, DT_S);
 
         Motor::setLeft(outL / 255.0f);
         Motor::setRight(outR / 255.0f);
 
         double avg = (g_distLeft + g_distRight) / 2.0;
-        Serial.printf("[CTRL] t=%5lums avg=%.4fm targetV=%.3f velL=%.3f velR=%.3f outL=%.1f outR=%.1f\n",
-                      (unsigned long)(now - g_startMs), avg, g_targetSpeed, velL, velR, outL, outR);
+        Serial.printf("[CTRL] t=%5lums avg=%.4fm targetV=%.3f rampV=%.3f velL=%.3f velR=%.3f outL=%.1f outR=%.1f\n",
+                      (unsigned long)(now - g_startMs), avg, g_targetSpeed, g_rampSpeed, velL, velR, outL, outR);
 
-        if (avg >= g_targetDistM) {
+        bool reached = (g_targetDistM >= 0.0) ? (avg >= g_targetDistM) : (avg <= g_targetDistM);
+        if (reached) {
             stopDrive("target-reached");
         }
     }

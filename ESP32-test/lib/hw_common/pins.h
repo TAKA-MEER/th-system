@@ -32,22 +32,25 @@
 #define MOT_LEFT_FWD        1           // DIR=HIGH で前進
 
 // ── ロボット寸法 ────────────────────────────────────────────
-#define WHEEL_RADIUS_M      0.0391f     // m
+#define WHEEL_RADIUS_M      0.0201f     // m
 #define WHEEL_BASE_M        0.39f       // m
 
-// ── PID 初期値 (th_ws/esp32/src/config.h と同一・実機未検証) ──
-#define PID_KP_RIGHT        80.0f
-#define PID_KI_RIGHT        30.0f
-#define PID_KD_RIGHT         8.0f
+// ── PID 初期値 ──
+// 右: th_ws/esp32/src/config.h と同一・実機未検証
+#define PID_KP_RIGHT        510.0f
+#define PID_KI_RIGHT        100.0f
+#define PID_KD_RIGHT         1.0f
 
-#define PID_KP_LEFT        100.0f
-#define PID_KI_LEFT         30.0f
-#define PID_KD_LEFT          8.0f
+// 左: Stage4実機調整済み (2026-07-06)。初期値 Kp=100 は発振したため Kp=30/Ki=10 に変更。
+// まだ目標速度への収束は遅め(暫定値)。TEST_LOG.md 参照。
+#define PID_KP_LEFT         540.0f
+#define PID_KI_LEFT         100.0f
+#define PID_KD_LEFT          1.0f
 
-#define PID_OUT_MIN        -255.0f
-#define PID_OUT_MAX         255.0f
-#define PID_ITERM_MAX       100.0f
+#define PID_OUT_MIN        -200.0f
+#define PID_OUT_MAX         200.0f
+#define PID_ITERM_MAX       150.0f
 
 // ── 制御周期 / シリアル ──────────────────────────────────────
-#define CTRL_PERIOD_MS      100
+#define CTRL_PERIOD_MS      10
 #define SERIAL_BAUD         115200
