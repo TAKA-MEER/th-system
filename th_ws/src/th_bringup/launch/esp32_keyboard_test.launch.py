@@ -3,55 +3,37 @@
 esp32_keyboard_test.launch.py — ESP32以降のみのキーボード操作テスト
 ====================================================================
 LiDAR・安全監視・twist_mux を含まない最小構成。
-keyboard → /cmd_vel → esp32_bridge → wheel_cmd → micro_ros_agent → ESP32 → モーター
+keyboard → /cmd_vel → esp32_bridge(WebSocketサーバー) → ESP32(WebSocketクライアント) → モーター
 
 使い方:
   ros2 launch th_bringup esp32_keyboard_test.launch.py
-  ros2 launch th_bringup esp32_keyboard_test.launch.py device:=/dev/ttyUSB0
 
-引数:
-  device   ESP32 シリアルポート (デフォルト: /dev/esp32)
+ESP32側は th_ws/esp32/src/wifi_credentials.h の WS_SERVER_HOST/WS_SERVER_PORT
+で esp32_bridge のアドレスを指定する(config/params.yaml の ws_host/ws_port と
+一致させること)。
 """
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    device = LaunchConfiguration('device')
-
     esp32_params = os.path.join(
         get_package_share_directory('th_esp32_bridge'),
         'config', 'params.yaml')
 
     return LaunchDescription([
-        DeclareLaunchArgument(
-            'device', default_value='/dev/esp32',
-            description='ESP32 シリアルポート (例: /dev/ttyUSB0)'),
-
-        # 1. micro-ROS Agent — bringup.launch.py と同一引数、device のみ可変
-        Node(
-            package='micro_ros_agent',
-            executable='micro_ros_agent',
-            name='micro_ros_agent',
-            arguments=['serial', '--dev', device, '-b', '115200', '-v6',
-                       '--ros-args', '--log-level', 'warn'],
-            output='screen',
-        ),
-
-        # 2. ESP32 ブリッジ (/cmd_vel → 差動駆動 → wheel_cmd)
+        # 1. ESP32 ブリッジ (/cmd_vel → 差動駆動 → WebSocket → ESP32)
         Node(
             package='th_esp32_bridge',
-            executable='esp32_bridge',
+            executable='esp32_bridge.py',
             name='esp32_bridge',
             parameters=[esp32_params],
             output='screen',
         ),
 
-        # 3. キーボードテレオペ (direct モード: /cmd_vel へ直接送信)
+        # 2. キーボードテレオペ (direct モード: /cmd_vel へ直接送信)
         #    teleop.launch.py の IfCondition(direct) ブランチと同一設定
         Node(
             package='th_planning',

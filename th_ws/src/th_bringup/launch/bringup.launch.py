@@ -6,6 +6,9 @@
 #   use_stub:=true    試験員トラッカーをスタブに切替 (デフォルト: false)
 #   imu_enabled:=true IMU 入力を EKF に追加 (デフォルト: false)
 #   map_yaml:=<path>  使用する地図ファイル (デフォルト: 空=SLAM マッピングモード)
+#   lidar_source:=local    USB直結のsllidar_nodeを起動 (デフォルト)
+#   lidar_source:=network  ラズパイ等が配信する/scanを使用 (ローカル起動なし。
+#                          Pi側とROS_DOMAIN_IDを一致させること)
 # ============================================================
 import os
 from ament_index_python.packages import get_package_share_directory
@@ -14,7 +17,8 @@ from launch.actions import (DeclareLaunchArgument, GroupAction,
                              IncludeLaunchDescription, LogInfo)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import (LaunchConfiguration, PathJoinSubstitution,
+                                   PythonExpression)
 from launch_ros.actions import Node, SetRemap
 
 BRINGUP_DIR  = get_package_share_directory('th_bringup')
@@ -32,11 +36,16 @@ def generate_launch_description():
         DeclareLaunchArgument('map_yaml',    default_value='',
                               description='地図 YAML パス (空=SLAM モード)'),
         DeclareLaunchArgument('log_level',   default_value='info'),
+        DeclareLaunchArgument('lidar_source', default_value='local',
+                              description='local=USB直結sllidar_node起動 / '
+                                          'network=ラズパイ等が配信する/scanを使用'),
     ]
 
-    use_stub    = LaunchConfiguration('use_stub')
-    imu_enabled = LaunchConfiguration('imu_enabled')
-    map_yaml    = LaunchConfiguration('map_yaml')
+    use_stub     = LaunchConfiguration('use_stub')
+    imu_enabled  = LaunchConfiguration('imu_enabled')
+    map_yaml     = LaunchConfiguration('map_yaml')
+    lidar_source = LaunchConfiguration('lidar_source')
+    lidar_is_local = PythonExpression(["'", lidar_source, "' == 'local'"])
 
     # ── 設定ファイルパス ──────────────────────────────────
     nav2_yaml   = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
@@ -49,21 +58,12 @@ def generate_launch_description():
 
     nodes = []
 
-    # ── 1. micro-ROS Agent (ESP32 通信) ──────────────────
-    nodes.append(Node(
-        package='micro_ros_agent',
-        executable='micro_ros_agent',
-        name='micro_ros_agent',
-        arguments=['serial', '--dev', '/dev/esp32', '-b', '115200',
-                   '--ros-args', '--log-level', 'warn'],
-        output='screen',
-    ))
-
-    # ── 2. RPLIDAR S1 ────────────────────────────────────
+    # ── 2. RPLIDAR S1 (lidar_source:=local の場合のみ起動) ─
     nodes.append(Node(
         package='sllidar_ros2',
         executable='sllidar_node',
         name='sllidar_node',
+        condition=IfCondition(lidar_is_local),
         parameters=[{
             'serial_port':     '/dev/lidar',
             'serial_baudrate': 256000,
@@ -72,6 +72,11 @@ def generate_launch_description():
             'scan_mode':       'Standard',
         }],
         output='screen',
+    ))
+    nodes.append(LogInfo(
+        condition=UnlessCondition(lidar_is_local),
+        msg='lidar_source=network: ローカルsllidar_nodeは起動しません。'
+            'ラズパイ側の/scanを受信するにはROS_DOMAIN_IDが一致している必要があります。',
     ))
 
     # ── 3. lidar_filter (死角マスク) ─────────────────────
@@ -92,7 +97,7 @@ def generate_launch_description():
 
     nodes.append(Node(
         package='th_esp32_bridge',
-        executable='esp32_bridge',
+        executable='esp32_bridge.py',
         name='esp32_bridge',
         parameters=esp32_params,
         output='screen',

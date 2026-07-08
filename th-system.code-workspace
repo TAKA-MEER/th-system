@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "th_ws/esp32"
+		},
+		{
+			"path": "ESP32-test"
+		}
+	],
+	"settings": {}
+}

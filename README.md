@@ -4,8 +4,8 @@
 
 | レイヤー | 実装 |
 | --- | --- |
-| ハードウェア制御 | ESP32 (PlatformIO + Arduino + micro-ROS) |
-| ROS2 ブリッジ | `th_esp32_bridge` (C++) |
+| ハードウェア制御 | ESP32 (PlatformIO + Arduino + WebSocket クライアント) |
+| ROS2 ブリッジ | `th_esp32_bridge` (Python) |
 | 安全管理 | `th_safety` / `twist_mux` (C++) |
 | 状態管理 | `th_mode_manager` (C++) |
 | 認識 | `th_perception` (Python) |
@@ -24,6 +24,163 @@ bash setup.sh
 
 ---
 
+## Docker 環境のセットアップ
+
+このリポジトリは Docker Compose 前提。**Docker Desktop ではなくネイティブの Docker Engine を使うことを推奨する**。理由: Windows で Docker Desktop の内部ネットワークプロキシ経由だと、ESP32 のような外部LANデバイスからコンテナへの長時間接続が数秒〜十数秒で切れる不具合を実機検証で確認した(コンテナ側は切断を検知するが ESP32 側は気づかない非対称な切断で、Docker を介さず直接ホストでWebSocketサーバーを動かすと同じ条件で安定することを確認済み)。ネイティブの Docker Engine(Linux 標準の `iptables` ベースの DNAT)ならこの問題を回避できる。実機(Ubuntu)と開発機(Windows+WSL2)を同じ Docker Engine 構成に揃えることで、環境差分による不具合も減らせる。
+
+### Linux (Ubuntu 実機)
+
+[Docker公式ドキュメント](https://docs.docker.com/engine/install/ubuntu/)に準拠した、公式 apt リポジトリからのインストール:
+
+```bash
+# 競合する古いパッケージを削除(なければエラーは無視してよい)
+for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
+  sudo apt-get remove -y $pkg
+done
+
+# 公式 GPG 鍵とリポジトリを追加
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+# Docker Engine 本体のインストール
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# サービスを有効化・起動
+sudo systemctl enable --now docker
+
+# sudo なしで docker コマンドを使えるようにする(反映には一度ログインし直しが必要)
+sudo usermod -aG docker $USER
+```
+
+### Windows (WSL2)
+
+Docker Desktop は使わず、**WSL2 の Ubuntu ディストリビューション内にネイティブの Docker Engine を直接インストールする**。
+
+#### 1. WSL2 をミラーネットワークモードにする
+
+デフォルトの WSL2 は NAT 接続のため、WSL2 内の IP アドレスが Windows ホストや LAN と別セグメントになり、ESP32 などの外部LANデバイスから到達できない。ミラーモードにすると WSL2 が Windows ホストと同じ IP を共有し、LAN 上に直接乗る(Windows 11 + 比較的新しい WSL バージョンが必要。`wsl --version` で確認)。
+
+`%USERPROFILE%\.wslconfig` を作成(既にある場合は追記):
+
+```ini
+[wsl2]
+networkingMode=mirrored
+```
+
+設定を反映するため WSL を再起動(**他の WSL 端末セッションも全て終了する**ので注意):
+
+```powershell
+wsl --shutdown
+```
+
+再度 WSL2 を開き、IP が Windows ホストと同じ(LAN の実IPアドレス)になっていることを確認する:
+
+```bash
+ip addr show eth0 | grep 'inet '
+```
+
+Docker Desktop を併用している場合、`wsl --shutdown` 後に WSL 統合が切れることがある。Docker Desktop アプリを再起動すれば直るが、本手順ではそもそも Docker Desktop 自体を使わないため無視してよい。
+
+#### 2. WSL2 (Ubuntu) 内に Docker Engine をネイティブインストール
+
+WSL2 の Ubuntu ディストリビューション内で、上記「Linux (Ubuntu 実機)」と**全く同じ手順**を実行する(Docker公式リポジトリ経由。Docker Desktop の WSL 統合機能は使わない)。
+
+WSL2 (Ubuntu) は systemd に対応しているため `systemctl` がそのまま使える。`/etc/wsl.conf` に以下が必要(Ubuntu on WSL のデフォルトで有効な場合が多いが、念のため確認する):
+
+```ini
+[boot]
+systemd=true
+```
+
+変更した場合は `wsl --shutdown` してから WSL2 を開き直す。
+
+インストール後、Docker Desktop 由来の設定が残っていると干渉することがあるため、`~/.docker/config.json` をリセットしておく:
+
+```bash
+rm -f ~/.docker/config.json
+docker context use default
+```
+
+#### 3. 動作確認
+
+```bash
+docker version   # Server セクションが表示されれば OK (Client だけならデーモンが起動していない)
+docker compose version
+```
+
+以降は **この WSL2 (Ubuntu) のターミナルから** `docker compose ...` を実行する(Windows 側の `docker` コマンドや Docker Desktop アプリは使わない)。VSCode を使う場合は「Remote - WSL」拡張機能でこの WSL2 ディストリビューションを直接開くと作業しやすい。
+
+### Docker Desktop の WSL 統合が残っている場合の注意
+
+Docker Desktop をこれまで使っていた環境では、ネイティブ Docker Engine をインストールした後も **同じ WSL ディストリビューションで Docker Desktop の WSL 統合が有効なまま** になっていることがある。この状態では `network_mode: host` を指定してもコンテナが Docker Desktop 内部の仮想ネットワーク(`192.168.65.0/24` 等、`services1` という名前の仮想IFが目印)に閉じ込められ、外部LANデバイス(ラズパイ・ESP32等)への到達性が失われる。
+
+以下の手順ですべて解消しておくこと。
+
+1. Docker Desktop の **Settings → Resources → WSL Integration** で、対象ディストリビューション(例: `Ubuntu`)のトグルを **OFF** にする
+2. Docker Desktop アプリを完全に終了(タスクトレイから Quit)してから再度起動する(トグル変更の反映にはアプリ再起動が必要)
+3. WSL2 側で以下を実行し、Docker Desktop 由来の設定を消す
+
+   ```bash
+   rm -f ~/.docker/config.json
+   docker context use default
+   ```
+
+4. 確認: `/mnt/wsl/docker-desktop/*` のマウントが無いこと、`docker-compose` コマンドが `/mnt/wsl/docker-desktop/...` のシンボリックリンクになっていないこと
+
+   ```bash
+   mount | grep docker-desktop   # 何も出なければ OK
+   docker run --rm --network host busybox ip addr show   # ホストと同じIPが出れば host networking は正常
+   ```
+
+### ラズパイ等ネットワーク経由の LiDAR を使う場合
+
+RPLIDAR をロボット本体ではなく別マシン(ラズパイ等)に接続し、そちらが配信する `/scan` をネットワーク経由で受信する構成にも対応している。
+
+```bash
+# ローカルの sllidar_node 起動を止め、外部が配信する /scan を使う
+ros2 launch th_bringup bringup.launch.py lidar_source:=network
+ros2 launch th_bringup slam.launch.py    lidar_source:=network
+```
+
+これが機能するには、以下 3 点がすべて満たされている必要がある(実機検証で判明した詰まりどころ)。
+
+1. **同一LANセグメントに接続すること**: Windows のモバイルホットスポット/ICS 仮想アダプタ(`192.168.137.0/24` 等)は WSL2 の mirrored networking のミラー対象**外**であるため、ラズパイをそこに接続しても WSL2/コンテナ側から到達できない。ラズパイは、WSL2 が実際にミラーしている物理 Wi-Fi/Ethernet アダプタと**同じ**ネットワークに接続すること。
+
+   ```bash
+   # WSL2 側で実際にミラーされているセグメントを確認
+   ip addr show eth0 | grep 'inet '
+   ```
+
+2. **`ROS_DOMAIN_ID` の一致 + プロセス再起動**: ラズパイ側で `ROS_DOMAIN_ID` をコンテナ側(`10`)に合わせること。**環境変数はプロセス起動時にしか読み込まれない**ため、`.bashrc` に追記しただけでは既に起動済みの `/scan` 配信プロセスには反映されない。設定変更後は当該プロセス(またはラズパイ自体)を再起動すること。
+
+3. **Windows Firewall のインバウンド許可**: 接続先 Wi-Fi のネットワークプロファイルが「パブリック」の場合、Windows Firewall はデフォルトで未承諾のインバウンド UDP/TCP をブロックし、DDS のディスカバリ・データ配信が届かない。ラズパイの IP からの着信を許可するルールを追加する(管理者 PowerShell)。
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound UDP)" -Direction Inbound -Action Allow -Protocol UDP -RemoteAddress <ラズパイのIP> -Profile Any
+   New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound TCP)" -Direction Inbound -Action Allow -Protocol TCP -RemoteAddress <ラズパイのIP> -Profile Any
+   ```
+
+   ラズパイの IP が変わった場合は `RemoteAddress` を更新すること。
+
+動作確認:
+
+```bash
+ros2 topic list | grep scan
+ros2 topic hz /scan   # 10Hz 前後で来ていれば OK
+```
+
+`/scan` が来ない場合は、上記 1〜3 に加えて前節「Docker Desktop の WSL 統合が残っている場合の注意」も確認すること。
+
+---
+
 ## ESP32 ファームウェア
 
 ### 初回ビルド
@@ -35,11 +192,30 @@ pio run --target upload    # ビルド + 書き込み
 pio device monitor         # シリアルモニタ (115200 baud)
 ```
 
-### micro-ROS ライブラリのインストール
+### WiFi 認証情報の設定
 
-1. [micro_ros_arduino releases](https://github.com/micro-ROS/micro_ros_arduino/releases) から **Humble** 対応の最新 `.zip` をダウンロード
-2. `esp32/lib/` に展開
-3. `pio run` を実行
+1. `esp32/src/wifi_credentials.h.example` を `esp32/src/wifi_credentials.h` としてコピー
+2. `WIFI_SSID` / `WIFI_PASSWORD` を実際のホットスポットの値に、`WS_SERVER_HOST` / `WS_SERVER_PORT` を `esp32_bridge` (`config/params.yaml` の `ws_host`/`ws_port`) に合わせて書き換える
+3. `pio run` を実行(`wifi_credentials.h` は `.gitignore` 対象のためコミットされない)
+
+### 開発ボード単体での書き込み・通信テスト
+
+モーター・エンコーダ・E-Stopスイッチを未配線のESP32開発ボードだけで、ROS2/colcon/Docker を使わずに「書き込みが成功したか」「WiFi/WebSocket通信ができるか」を確認できる。
+
+```bash
+# 1. PC側 (ROS2/Dockerは不要。websockets だけ pip でインストール)
+pip install websockets
+python th_ws/esp32/tools/ws_test_server.py --send-test-cmd
+
+# 2. ESP32側
+cd th_ws/esp32
+pio run --target upload
+pio device monitor
+```
+
+- **書き込み確認**: シリアルモニタに起動バナー(`TH System ESP32 Firmware (WebSocket)` とビルド日時)が出れば書き込み成功。
+- **通信確認**: `[WiFi] 接続しました IP=...` → `[WS] esp32_bridge に接続しました` の順にログが出て、`ws_test_server.py` 側にも `[接続] ESP32 接続: ...` と `[受信] ESTOP_HW ...` が周期的に表示されれば ESP32→PC 方向の通信は正常。`--send-test-cmd` を付けているとPC側が2秒おきにテスト用の `WHEEL_CMD` を送信するので、ESP32シリアルモニタに `[WHEEL_CMD] left=... right=...` が出れば PC→ESP32 方向も確認できる(モーター未配線でも安全)。
+- **注意**: `config.h` の `ESTOP_BENCH_TEST_BYPASS` は現在無効化されているため、E-Stopスイッチ未配線だと GPIO34 がフローティングになり `ESTOP_HW` の値が不安定になりうる(`WHEEL_FEEDBACK` はE-Stop有効中は送信されないため届かないことがある)。これは既知の挙動で、通信テスト自体には影響しない。動力系を配線せず確実に安定した挙動を見たい場合のみ、一時的に `ESTOP_BENCH_TEST_BYPASS` を再定義して試験し、試験後は必ず戻すこと。
 
 ### E-Stop 配線
 
@@ -66,13 +242,13 @@ udevadm info -a -n /dev/ttyUSB0 | grep -E "idVendor|idProduct|serial"
 sudo cp udev/99-th-robot.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 
-# 確認
-ls -la /dev/lidar /dev/esp32
+# 確認 (ESP32 は WebSocket 通信になったため /dev/esp32 のパススルーは不要)
+ls -la /dev/lidar
 ```
 
-### Windows (WSL2) での USB デバイス転送
+### Windows (WSL2) での USB デバイス転送（ESP32 ファームウェア書き込み用）
 
-WSL2 は Windows の USB デバイスを自動で引き継がないため、`usbipd-win` でブリッジが必要。
+ESP32 との実行時通信は WebSocket（WiFi 経由）のため、Docker コンテナに USB デバイスを渡す必要はない。ここで転送するのは `pio run --target upload` / `pio device monitor`（**WSL2 ホスト側**、コンテナの外で実行）のためだけ。WSL2 は Windows の USB デバイスを自動で引き継がないため、`usbipd-win` でブリッジが必要。
 
 #### 初回セットアップ（1 回のみ）
 
@@ -88,7 +264,7 @@ winget install usbipd
 & "$env:ProgramFiles\usbipd-win\usbipd.exe" bind --busid 2-1
 ```
 
-WSL2 内で udev ルールを作成（1 回のみ）:
+WSL2 内で udev ルールを作成（1 回のみ、`/dev/esp32` という分かりやすい名前で参照できるようにするだけで必須ではない）:
 
 ```bash
 # /dev/esp32 シンボリックリンクを自動作成するルール
@@ -98,8 +274,6 @@ sudo chmod 644 /etc/udev/rules.d/99-esp32.rules
 sudo udevadm control --reload-rules
 ```
 
-`th_ws/docker-compose.override.yml` が用意されており、usbipd 経由で現れる `/dev/ttyUSB0` を コンテナ内で `/dev/esp32` として見せる設定が入っている。このファイルは `docker compose` が自動で読み込む。
-
 #### 毎回の手順（ESP32 を接続・再起動後）
 
 ```powershell
@@ -107,7 +281,7 @@ sudo udevadm control --reload-rules
 & "$env:ProgramFiles\usbipd-win\usbipd.exe" attach --wsl --busid 2-1
 ```
 
-その後は通常通り `docker compose run --rm th_robot bash` で起動する。
+この `attach` は `pio run --target upload` / `pio device monitor` を実行するときだけ必要。`docker compose run --rm th_robot bash` でのコンテナ起動やロボットの通常運用には不要（ESP32 はコンテナの外、WSL2 ホスト側から直接ファームウェアを書き込む）。
 
 | タイミング | 必要な操作 |
 | --- | --- |
@@ -278,8 +452,10 @@ th_ws/
 ├── esp32/                        # PlatformIO プロジェクト
 │   ├── platformio.ini
 │   └── src/
-│       ├── main.cpp              # micro-ROS メインループ・自動再接続・E-Stop
+│       ├── main.cpp              # WebSocket クライアントループ・自動再接続・E-Stop
 │       ├── config.h              # ピン・パラメータ定義
+│       ├── ws_link.h / .cpp      # WebSocket バイナリプロトコル・接続管理
+│       ├── wifi_credentials.h    # WiFi/WSサーバー接続情報 (.gitignore 対象)
 │       ├── encoder.h / .cpp      # A-B 相エンコーダ（割り込み駆動）
 │       ├── motor.h / .cpp        # Cytron MD10C 制御（LEDC PWM）
 │       └── pid.h                 # 汎用 PID コントローラ
@@ -327,7 +503,7 @@ th_ws/
 `sim:=true/false` の引数一つで実機とシミュレーションを切り替えられます。
 
 ```txt
-実機モード:   micro_ros_agent + sllidar_node + esp32_bridge が起動
+実機モード:   sllidar_node + esp32_bridge(WebSocketサーバー) が起動
 シミュレーション: Gazebo が /odom・/scan を発行し上記3ノードは不要
 共通:         mode_manager・follow_planner・Nav2・rosbridge 等は同一ノードが動く
 ```
@@ -381,7 +557,7 @@ export DISPLAY=:0
 docker compose run --rm th_robot bash
 ```
 
-> **注意 (シミュレーションのみの場合):** `docker-compose.yml` に実機デバイス (`/dev/lidar`, `/dev/esp32`) が記載されており、デバイスが存在しないとコンテナ起動に失敗することがある。その場合は `docker-compose.yml` の `devices:` セクションをコメントアウトするか削除すること。
+> **注意 (シミュレーションのみの場合):** `docker-compose.yml` に実機デバイス (`/dev/lidar`) が記載されており、デバイスが存在しないとコンテナ起動に失敗することがある。その場合は `docker-compose.yml` の `devices:` セクションをコメントアウトするか削除すること。
 
 ### Step 2: ビルド
 
@@ -1186,11 +1362,15 @@ ros2 param set /lidar_filter blind_angle_ranges \
 ### ESP32 が頻繁に再接続する
 
 ```bash
-# micro-ROS Agent のログを確認
-ros2 topic echo /rosout | grep esp32
+# esp32_bridge の WebSocket 接続ログを確認 (接続/切断イベントが出力される)
+ros2 topic echo /rosout | grep esp32_bridge
 
-# USB 接続の安定性を確認（udev ルールによるデバイスパス固定）
-ls -la /dev/esp32
+# ESP32 側のシリアルモニタで WiFi RSSI・WS 接続状態を確認
+pio device monitor
+
+# ホットスポットの SSID/パスワードが wifi_credentials.h と一致しているか確認
+# PC 側ファイアウォールが ws_port (config/params.yaml の ws_port) を
+# ブロックしていないか確認
 
 # ウォッチドッグタイムアウトを確認
 # config.h: WATCHDOG_MS が通信周期より十分大きいか確認

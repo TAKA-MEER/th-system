@@ -16,7 +16,6 @@ RUN apt-get update && apt-get install -y \
     ros-humble-robot-localization \
     ros-humble-twist-mux \
     ros-humble-rosbridge-suite \
-    ros-humble-micro-ros-msgs \
     ros-humble-joint-state-publisher \
     ros-humble-robot-state-publisher \
     ros-humble-tf2-tools \
@@ -40,7 +39,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python パッケージ ────────────────────────────────────────────────
-RUN pip3 install numpy scipy transforms3d
+RUN pip3 install numpy scipy transforms3d websockets
 
 # ── rosdep 初期化 ────────────────────────────────────────────────────
 RUN rosdep init || true && rosdep update
@@ -62,27 +61,8 @@ RUN apt-get update && \
 # ROS 2環境を読み込んだ上で colcon build を実行
 RUN /bin/bash -c "source /opt/ros/humble/setup.bash && colcon build --symlink-install"
 
-# ── micro-ROS Agent (micro_ros_setup 経由の公式手順でビルド) ───────────
-# 生の Micro-ROS-Agent リポジトリを colcon build するだけだと ROS グラフへの
-# 橋渡し(rclcpp/rmw 統合)に必要なセットアップが欠け、XRCEセッションは確立
-# できてもトピック/ノードが ros2 topic list 等に一切現れない症状が起きるため、
-# 公式の micro_ros_setup ワークフローでビルドする。
-WORKDIR /root/microros_ws
-RUN mkdir -p src && \
-    git clone -b humble https://github.com/micro-ROS/micro_ros_setup.git src/micro_ros_setup && \
-    /bin/bash -c "source /opt/ros/humble/setup.bash && \
-        apt-get update && \
-        rosdep install --from-paths src --ignore-src -y && \
-        rm -rf /var/lib/apt/lists/* && \
-        colcon build --symlink-install && \
-        source install/setup.bash && \
-        ros2 run micro_ros_setup create_agent_ws.sh && \
-        ros2 run micro_ros_setup build_agent.sh"
-WORKDIR /root/th_ws
-
 # ── 便利エイリアス ───────────────────────────────────────────────────
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
-    echo "[ -f /root/microros_ws/install/setup.bash ] && source /root/microros_ws/install/setup.bash" >> /root/.bashrc && \
     echo "[ -f /root/th_ws/install/setup.bash ] && source /root/th_ws/install/setup.bash" >> /root/.bashrc && \
     echo "export ROS_DOMAIN_ID=10" >> /root/.bashrc && \
     echo "alias cb='colcon build --symlink-install'" >> /root/.bashrc && \

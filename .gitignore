@@ -18,6 +18,7 @@ th_ws/log/
 th_ws/esp32/.pio/
 # micro_ros_arduino は release zip を手動展開する外部ライブラリ（README/platformio.ini 参照）
 th_ws/esp32/lib/
+ESP32-test/.pio/
 
 # Web UI (Vite/React)
 node_modules/

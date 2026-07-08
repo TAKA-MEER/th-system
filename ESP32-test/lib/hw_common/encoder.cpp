@@ -17,7 +17,6 @@ void init() {
     attachInterrupt(digitalPinToInterrupt(ENC_RIGHT_B), isrRightB, CHANGE);
 }
 
-// ── 左エンコーダ ISR ─────────────────────────────────────────
 void IRAM_ATTR isrLeftA() {
     bool a = digitalRead(ENC_LEFT_A);
     bool b = digitalRead(ENC_LEFT_B);
@@ -29,7 +28,6 @@ void IRAM_ATTR isrLeftB() {
     countLeft += (a != b) ? 1 : -1;
 }
 
-// ── 右エンコーダ ISR ─────────────────────────────────────────
 void IRAM_ATTR isrRightA() {
     bool a = digitalRead(ENC_RIGHT_A);
     bool b = digitalRead(ENC_RIGHT_B);
@@ -41,7 +39,6 @@ void IRAM_ATTR isrRightB() {
     countRight += (a != b) ? 1 : -1;
 }
 
-// ── アトミック読み取り & リセット ────────────────────────────
 long readAndResetLeft() {
     noInterrupts();
     long v = countLeft;
@@ -57,6 +54,11 @@ long readAndResetRight() {
     interrupts();
     // 左右ミラー実装のため生カウントは右だけ符号が反転する。正転=プラスに揃える。
     return -v;
+}
+
+float countsToMeters(long counts) {
+    static const float kDistPerCount = (2.0f * PI * WHEEL_RADIUS_M) / ENC_COUNTS_PER_REV;
+    return (float)counts * kDistPerCount;
 }
 
 } // namespace Encoder

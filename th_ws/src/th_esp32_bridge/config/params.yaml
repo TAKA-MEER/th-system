@@ -6,3 +6,5 @@ esp32_bridge:
     base_frame:    "base_link"
     publish_tf:    true
     feedback_timeout_ms: 500   # ESP32 フィードバック死活監視タイムアウト (ms)
+    ws_host: "0.0.0.0"      # WebSocket サーバー bind アドレス (ESP32 が接続しにくる側)
+    ws_port: 8765           # WebSocket サーバー ポート
