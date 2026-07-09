@@ -5,7 +5,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 
 const MODE_NAMES = {
   0: 'INIT', 1: 'IDLE', 2: 'FOLLOWING',
-  3: 'MOVING_TO_PANEL', 4: 'AT_PANEL', 5: 'MANUAL', 6: 'ESTOP'
+  3: 'MOVING_TO_PANEL', 4: 'AT_PANEL', 5: 'MANUAL', 6: 'ESTOP',
+  7: 'FOLLOWING_MAPLESS'
 }
 
 export function useRosbridge(url = 'ws://192.168.137.1:9090') {

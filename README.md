@@ -230,6 +230,7 @@ rosbridge は Docker コンテナ内で `bringup.launch.py` 起動時に自動�
 | 操作 | 説明 |
 | --- | --- |
 | 追従開始 | IDLE → FOLLOWING モードへ切替 |
+| 軌跡追従(マップ不要) | IDLE/MANUAL → FOLLOWING_MAPLESS モードへ切替(地図・Nav2不要) |
 | 手動操作 | MANUAL モードへ切替・仮想ジョイスティック操作 |
 | 配電盤移動 | MOVING_TO_PANEL モードへ切替・目的地選択 |
 | 緊急停止 | ESTOP モードへ即時遷移 |
@@ -243,7 +244,8 @@ rosbridge は Docker コンテナ内で `bringup.launch.py` 起動時に自動�
 | モード | 状態 | タブレット操作 |
 | --- | --- | --- |
 | IDLE | 静止待機 | 起動時の初期状態 |
-| FOLLOWING | 試験員自動追従 | 「追従開始」ボタン |
+| FOLLOWING | 試験員自動追従(地図・Nav2使用) | 「追従開始」ボタン |
+| FOLLOWING_MAPLESS | 試験員自動追従(地図・Nav2不要) | 「軌跡追従(マップ不要)」ボタン |
 | MOVING_TO_PANEL | 配電盤移動中 | 配電盤ボタン |
 | AT_PANEL | 配電盤前作業中 | 自動遷移 |
 | MANUAL | 手動操作 | 「手動操作」ボタン |
@@ -287,17 +289,19 @@ th_ws/
 │   ├── th_system_msgs/           # カスタム型定義（全ノード共有）
 │   ├── th_esp32_bridge/          # ESP32 ↔ ROS2 ブリッジ・オドメトリ
 │   ├── th_safety/                # safety_monitor + twist_mux 設定
-│   ├── th_mode_manager/          # FSM（7 状態・全遷移ルール）
+│   ├── th_mode_manager/          # FSM（8 状態・全遷移ルール）
 │   ├── th_perception/            # lidar_filter・person_predictor・tracker_stub
 │   ├── th_planning/              # follow_planner・panel_navigator・manual_handler・crawler_teleop
 │   │   └── th_planning/          # Python パッケージ（テスト可能なコアロジック）
-│   │       └── follow_planner_core.py
+│   │       ├── follow_planner_core.py
+│   │       └── mapless_follow_core.py
 │   ├── th_calibration/           # オドメトリキャリブツール
 │   ├── th_bringup/               # 起動設定・地図・パラメータ
 │   └── th_testing/               # 単体・統合テスト
 │       └── test/
 │           ├── conftest.py
 │           ├── test_follow_planner_logic.py
+│           ├── test_mapless_follow_logic.py
 │           ├── test_mode_transitions.py
 │           ├── test_safety_monitor.py
 │           ├── test_twist_mux_priority.py
@@ -446,6 +450,58 @@ Gazebo ウィンドウで Inspector（試験員役）が移動し、ロボット
 
 > FOLLOWING モード中に手動操作したい場合は `requested_mode: 5` (MANUAL) に切替え、別ターミナルで `ros2 launch th_bringup teleop.launch.py` を実行する。
 
+### Step 5: MAP不要の軌跡追従モード（FOLLOWING_MAPLESS）の確認
+
+`follow_planner_mapless.py` は Nav2・SLAM 占有格子を一切使わず、`/odom`（ホイールオドメトリ）と `/scan_filtered`（死角マスク済み生 LiDAR スキャン）だけで動く追従モード。地図読み込み・AMCL・Nav2 のゴール計画が不要なため、**地図を作る前でも検証できる**。
+
+`RobotMode.msg` に `FOLLOWING_MAPLESS` 定数を追加しているため、検証前に **`th_system_msgs` を含むフルビルドが必須**:
+
+```bash
+cd /root/th_ws
+colcon build --symlink-install
+source install/setup.bash
+```
+
+起動（SLAM/地図の有無に関わらず動作確認できる。Nav2 自体はこの起動コマンドで引き続き立ち上がるが、`follow_planner_mapless` はそれを一切参照しない）:
+
+```bash
+ros2 launch th_bringup gazebo.launch.py
+```
+
+FOLLOWING_MAPLESS へ切替（CLI から）:
+
+```bash
+ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
+  "{requested_mode: 7, requester: 'cli'}"
+```
+
+タブレット UI から切替える場合は「軌跡追従(マップ不要)」ボタンを押す。
+
+確認項目:
+
+| 確認項目 | 方法 | 期待動作 |
+| --- | --- | --- |
+| 軌跡追従 | Inspector（または `person_mover.py --pattern:=patrol`）を移動させる | Nav2 にゴールを送らず、`/cmd_vel_retreat` に直接速度指令が出て試験員の軌跡を遡って追従する |
+| 接近時は退避せず停止 | `person_mover.py --ros-args -p pattern:=approach -p approach_dist:=0.6` 等で `stop_distance`（既定 1.0m）以内に接近させる | 後退・旋回せず、その場で停止する（`/cmd_vel_retreat` がゼロ） |
+| 停止後の追従再開 | 接近させた後、`resume_distance`（既定 1.3m）以上離す | 自動的に追従を再開する（オペレータ操作不要） |
+| 進路上障害物での停止 | ロボットの進行方位上（軌跡ゴールへのベアリング方向）に障害物モデルを置く | 試験員との距離に関わらずその場で停止する |
+| フェイルセーフ | `/scan_filtered` を止める（`lidar_filter` ノードを kill 等） | スキャン未受信になった時点で停止する（安全側） |
+
+停止理由はログで確認できる:
+
+```bash
+ros2 topic echo /rosout | grep follow_planner_mapless
+# "停止中（理由: person_close/obstacle_ahead/no_pose/no_scan）" または "追従再開" が出力される
+```
+
+`/cmd_vel_retreat` を直接確認する場合:
+
+```bash
+ros2 topic echo /cmd_vel_retreat
+```
+
+実機での検証も同じ手順で行える（`bringup.launch.py` にも `follow_planner_mapless` が同様に組み込まれている）。地図・Nav2・AMCL を一切起動していない状態でも `FOLLOWING_MAPLESS` 単体で動作することを確認するとよい。
+
 ---
 
 ## ワールド環境の構成
@@ -505,6 +561,7 @@ ros2 run th_perception person_mover.py --ros-args -p pattern:=static
 | 静止再配置 | `pattern:=static` | 2 秒後に試験員の側面〜背面に移動 |
 | 配電盤移動 | `ros2 service call /panel_navigator/go_to_panel ...` | Nav2 がパネル前まで誘導 |
 | E-Stop | タブレット UI の緊急停止 | ロボットが即時停止し ESTOP モードへ |
+| MAP不要軌跡追従 | `FOLLOWING_MAPLESS` へ切替 + `pattern:=approach` | 地図・Nav2 なしで追従、接近時は退避せず停止(詳細は Step 5 参照) |
 
 ---
 
@@ -596,7 +653,8 @@ ros2 node info /gazebo_person_relay
 
 | ファイル | 分類 | ROS2 要否 | テスト件数 | 設計書対応 |
 | --- | --- | --- | --- | --- |
-| `test_follow_planner_logic.py` | 純粋単体テスト | 不要 | 41 件 | 10.1 §3 |
+| `test_follow_planner_logic.py` | 純粋単体テスト | 不要 | 43 件 | 10.1 §3 |
+| `test_mapless_follow_logic.py` | 純粋単体テスト(MAP不要モード) | 不要 | 20 件 | - |
 | `test_mode_transitions.py` | ROS2 統合テスト | 必要 | 19 件 | 10.1 §1 |
 | `test_safety_monitor.py` | ROS2 統合テスト | 必要 | 10 件 | 10.1 §5 |
 | `test_twist_mux_priority.py` | ROS2 統合テスト | 必要 | 7 件 | 10.1 §4 |
@@ -1070,28 +1128,37 @@ ros2 topic hz /person/status      # 10 Hz 以上発行されているか
 
 ## 新しいモードの追加方法
 
-例として「自動巡回モード（AUTO_PATROL）」を追加する場合の手順です。
+実例: `FOLLOWING_MAPLESS`（MAP不要の軌跡追従モード）を追加した際の手順です。同じ手順で「自動巡回モード（AUTO_PATROL）」等を追加できます。
 
 ```txt
 1. th_system_msgs/msg/RobotMode.msg に定数を追加
-   uint8 AUTO_PATROL = 7
+   uint8 AUTO_PATROL = 8   # FOLLOWING_MAPLESS(7) の次の空き番号を使う
 
 2. mode_manager.cpp の isTransitionAllowed() に遷移ルールを追加
+   （FOLLOWING_MAPLESS の実装例: IDLE/MANUAL からのみ遷移可、
+    MOVING_TO_PANEL 等の地図前提の遷移は含めない）
    case RobotMode::IDLE:
      return to == RobotMode::FOLLOWING ||
             to == RobotMode::AUTO_PATROL;
+   sub_fault_ のフォルト強制 IDLE 判定にも新モードを追加すること（安全上必須）。
 
 3. 新ノード auto_patrol.py を th_planning/scripts/ に追加
    /robot/mode を購読し AUTO_PATROL 中のみ動作する
+   （既存ノードは無条件起動のまま常時併存させ、RobotMode の排他性で
+    衝突を防ぐ。follow_planner.py / follow_planner_mapless.py が同じ
+    パターン）
 
-4. th_bringup/launch/bringup.launch.py に auto_patrol ノードを追加
+4. th_planning/CMakeLists.txt の install(PROGRAMS ...) に追加
+   th_bringup/launch/bringup.launch.py と gazebo.launch.py に
+   ノードエントリを追加
 
 5. th_testing/test/test_mode_transitions.py に遷移テストを追加
 
-6. web_ui/src/App.jsx に操作ボタンを追加
+6. web_ui/src/App.jsx（MODE 定数・ボタン・modeColor）と
+   web_ui/src/hooks/useRosbridge.js（MODE_NAMES）に追加
 ```
 
-新しいモードは常に「ESTOP からは IDLE のみ経由で復帰」「IDLE への安全側遷移を持つ」という設計方針に従ってください。
+新しいモードは常に「ESTOP からは IDLE のみ経由で復帰」「IDLE への安全側遷移を持つ」「フォルト発生時は IDLE へ強制遷移する」という設計方針に従ってください。
 
 ---
 

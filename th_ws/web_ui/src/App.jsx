@@ -6,7 +6,7 @@ import { useRosbridge } from './hooks/useRosbridge'
 import './App.css'
 
 // ROS2 モード定数
-const MODE = { INIT:0, IDLE:1, FOLLOWING:2, MOVING_TO_PANEL:3, AT_PANEL:4, MANUAL:5, ESTOP:6 }
+const MODE = { INIT:0, IDLE:1, FOLLOWING:2, MOVING_TO_PANEL:3, AT_PANEL:4, MANUAL:5, ESTOP:6, FOLLOWING_MAPLESS:7 }
 
 // 配電盤リスト (panels.yaml と合わせること)
 const PANELS = [
@@ -44,7 +44,7 @@ export default function App() {
   const modeColor = {
     INIT: '#888', IDLE: '#2196F3', FOLLOWING: '#4CAF50',
     MOVING_TO_PANEL: '#FF9800', AT_PANEL: '#9C27B0',
-    MANUAL: '#00BCD4', ESTOP: '#F44336',
+    MANUAL: '#00BCD4', ESTOP: '#F44336', FOLLOWING_MAPLESS: '#8BC34A',
   }[modeName] ?? '#888'
 
   const isFault = fault?.active
@@ -86,6 +86,13 @@ export default function App() {
             onClick={() => requestMode(MODE.FOLLOWING)}
           >
             追従開始
+          </button>
+          <button
+            className="mode-btn"
+            disabled={mode === MODE.FOLLOWING_MAPLESS || !connected}
+            onClick={() => requestMode(MODE.FOLLOWING_MAPLESS)}
+          >
+            軌跡追従(マップ不要)
           </button>
           <button
             className="mode-btn"
