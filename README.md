@@ -674,24 +674,31 @@ python3 -m pytest src/th_testing/test/test_follow_planner_logic.py -v
 
 # 特定のテストクラスだけ実行
 python3 -m pytest src/th_testing/test/test_follow_planner_logic.py \
-  -v -k "TestRetreatHysteresis"
+  -v -k "TestNextFollowState"
 
 # 失敗時に即座に停止
 python3 -m pytest src/th_testing/test/test_follow_planner_logic.py -x
 ```
 
-テスト対象クラスと確認内容:
+`test_follow_planner_logic.py` のテスト対象クラスと確認内容:
 
 ```txt
-TestRetreatHysteresis   ── trigger/release 境界値・ハンチング防止・速度による予防的退避
-TestPositionHistory     ── 速度推定精度・接近速度の正負・履歴不足時のゼロ返却
-TestStaticDetector      ── 静止判定タイミング・移動再開によるリセット
-TestFovChecker          ── 360° FOV・死角マスク・オフセット縮小ロジック
-TestCandidatePoints     ── 作業前方除外・候補点スコアリング
-TestComputeRetreatCmd   ── 後退方向・速度・壁際での None 返却
-TestComputeFollowGoal   ── 狭路/広空間の角度切替・ゴール姿勢方向
-TestFollowPlannerCore   ── 優先順位(退避>静止>通常)・デッドゾーン・状態遷移
-TestCorridorWidth       ── 開放空間/狭路の幅推定精度
+TestFrameConversion         ── base_link相対⇔絶対座標(odom系)変換の往復・回転整合性
+TestTrail                   ── 軌跡点の最小移動距離フィルタ・lookback距離での遡り
+TestNextFollowState         ── TRACKING/PREPARE/EVADING の境界値・ハンチング防止
+TestFindNearestOpenDirection ── 全方向自由/一方向のみ自由/最小自由空間未達での不採用
+TestComputeEvadeGoal        ── 退避方向・距離からの退避ゴール点計算
+TestOrientToEvadeRoute      ── 許容誤差内での停止・誤差角に比例した旋回
+TestPurePursuitControl      ── 停止半径内での停止・距離に応じた速度クランプ
+TestFollowPlannerCore       ── 状態遷移・trail追従ゴール・PREPARE/EVADING出力・reset/clear_trail
+```
+
+`test_mapless_follow_logic.py` のテスト対象クラスと確認内容:
+
+```txt
+TestNextMaplessState  ── stop_distance/resume_distance の境界・ハンチング防止
+TestIsPathBlocked     ── 進路上障害物の有無・角度範囲外/inf/nanの無視
+TestMaplessFollowCore ── 追従駆動・接近時停止と再開・障害物停止・no_pose/no_scanフェイルセーフ
 ```
 
 ---
@@ -754,11 +761,13 @@ TH_SKIP_SIM=0 python3 -m pytest \
 
 確認されるシナリオ:
 
-- **Scenario A-1**: 試験員がトリガー距離以内に接近 → `/cmd_vel_retreat` に後退指令が発行される
+- **Scenario A-1**: 試験員が近接距離以内に接近 → `/cmd_vel_retreat` に退避指令が発行される
 - **Scenario A-2**: 壁際（costmap でブロック）での接近 → その場停止
 - **Scenario A-3**: 試験員が離れると退避解除 → 通常追従に戻りハンチングしない
 - **Scenario C**: ロスト後の予測外挿 → `max_predict_sec` 後に `/person/search_mode=true`
 - **Scenario D**: MANUAL 中は退避が作動しない（試験員が近くにいても後退しない）
+
+> **注意**: 退避方向は試験員の位置とは無関係に `find_nearest_open_direction()` による「地図上の最空きスペース方向」で決まる。costmap を配信しない stub 環境では試験員自身が障害物として地図に現れないため、Scenario A-1 の「試験員を避けて後退した」という確認は Gazebo + 実際の costmap がある環境でのみ意味を持つ。詳細は `test_simulation_scenarios.py` 内のコメントを参照。
 
 ---
 
@@ -857,43 +866,64 @@ case RobotMode::IDLE:
 
 ---
 
-## 試験員追従ロジック（follow_planner_core）
+## 試験員追従ロジック（follow_planner_core / mapless_follow_core）
 
-### 内部状態と優先順位
+追従ロジックは2つの独立した実装があり、モードによって使い分けられます。
 
-`FollowPlannerCore.update()` は毎制御周期（10 Hz）に呼ばれ、以下の優先順位で出力を決定します。
+| | `follow_planner_core.py` | `mapless_follow_core.py` |
+| --- | --- | --- |
+| 使用モード | `FOLLOWING` / `MOVING_TO_PANEL` | `FOLLOWING_MAPLESS` |
+| 目標地点の送出先 | Nav2 (`NavigateToPose`) | 直接 `(v, ω)` を `/cmd_vel_retreat` へ |
+| 地図・costmap | 必要（`/local_costmap/costmap` + TF） | 不要（`/odom` TF と `/scan_filtered` のみ） |
+| 近接時の挙動 | 地図上の最空きスペース方向へ退避 | 退避せずその場停止・離れたら再開 |
 
-```txt
-1. RETREAT（近接退避）   ← 最優先・安全関連
-2. STATIC_REPOSITION     ← 静止時の作業スペース配慮
-3. NORMAL_FOLLOW         ← 通常追従
-```
+### 内部状態と優先順位（follow_planner_core）
 
-各状態で何をするかは `follow_planner_core.py` の `FollowPlannerCore.update()` を参照してください。
-
-### 退避ヒステリシス（ハンチング防止）
-
-`RetreatHysteresis` は `trigger_distance`（退避開始）と `release_distance`（退避解除）を分けることでハンチングを防ぎます。`trigger=0.8m`、`release=1.2m` の場合、0.8m 以内に入ると退避を始め、1.2m を超えるまで退避を継続します。この差（0.4m）がヒステリシス幅です。現場でハンチングが観測された場合は `release_distance` を大きくしてください。
-
-### 静止検知と再配置
-
-試験員の速度が `static_speed_threshold`（0.05 m/s）を `static_time_threshold`（2.0 秒）以上下回った場合に「静止」と判定します。静止判定後は試験員を中心に放射状に `candidate_count`（16 個）の候補点を生成し、以下のスコアで最適点を選びます。
+`FollowPlannerCore.update()` は毎制御周期（10 Hz）に呼ばれ、試験員との距離のみに基づいて次の3状態を切り替えます（`followLogic.md` v2 設計）。
 
 ```txt
-スコア = 移動コスト（現在地からの距離）
-       + costmap ブロックペナルティ（障害物方向は大きなペナルティ）
-       + FOV 違反ペナルティ（LiDAR 視野角を外れる方向は大きなペナルティ）
+TRACKING（軌跡追従）   d ≥ d_prepare(既定3.0m)
+      ↓ d < d_prepare
+PREPARE（退避準備）     d_evade(既定2.0m) ≤ d < d_prepare
+      ↓ d < d_evade
+EVADING（退避）         d < d_evade
 ```
 
-試験員の正面方向（配電盤側）は `work_front_exclusion_deg`（±60°）で候補から除外されます。これにより作業スペースへの干渉を防ぎます。
+各状態の詳細は `follow_planner_core.py` の `FollowPlannerCore.update()` を参照してください。
 
-### 通路幅判定と角度オフセット
+### 状態遷移のヒステリシス（ハンチング防止）
 
-`estimate_corridor_width()` はロボットの横方向に costmap をプローブし、両側の障害物までの距離の和を通路幅とします。`corridor_width_threshold`（1.5m）未満であれば真後ろ追従（オフセット 0°）、それ以上であれば斜め後方追従（最大 `follow_angle_offset_max`=30°）を選択します。斜め後方追従は試験員の視界に入りやすくコミュニケーションを取りやすい位置取りです。
+`next_follow_state()` は復帰判定に `distance_hysteresis_m`（既定 0.2m）分の余裕を要求します。例えば `d_prepare=3.0m` の場合、距離が 3.0m を下回ると PREPARE に入りますが、TRACKING へ戻るには `d_prepare + distance_hysteresis_m = 3.2m` 以上必要です（EVADING⇔PREPARE も同様に `d_evade + distance_hysteresis_m` を要求）。現場でハンチングが観測された場合は `distance_hysteresis_m` を大きくしてください。
 
-### LiDAR 死角対応
+### 軌跡追従（TRACKING）
 
-`FovChecker` は `blind_angle_ranges` に設定された角度帯（アルミ角柱による死角）を除外します。追従角度オフセットを適用した結果が死角に入る場合、`clamp_offset()` がオフセットを 0 まで縮小し視野角を確保します。これは 4.3.1 節の「LiDAR 視野角内に試験員を収める（必須制約）」を実装したものです。
+試験員の位置履歴（`trail`。ロボットが移動しても意味が変わらないよう絶対座標系=odom系で保持）を `lookback_distance`（既定 1.0m）だけ遡った点をそのまま Nav2 のゴールとして送ります。旧設計にあった通路幅判定・角度オフセット・LiDAR視野角制約は廃止されています。
+
+### 退避方向探索（PREPARE）
+
+退避方向は試験員の歩行方向に依存しません。`find_nearest_open_direction()` が `/local_costmap/costmap` を放射状（`evade_scan_directions`、既定16方向、`evade_scan_max_dist` まで走査）に調べ、`retreat_check_clearance`（既定0.5m）以上の自由空間を確保できる中で最も開けた方向を選びます。この方向は PREPARE 突入時に一度だけ計算され、EVADING に移るまで保持されます。
+
+### 退避走行（EVADING）
+
+PREPARE で決めた方向に `evade_route_length_m`（既定2.0m）先の点をゴールとし、Pure Pursuit（`pure_pursuit_control()`）で `retreat_speed` を上限速度として走行します。
+
+---
+
+## MAP不要軌跡追従ロジック（mapless_follow_core）
+
+`FOLLOWING_MAPLESS` モードでは `MaplessFollowCore.update()` が Nav2 を使わず毎周期直接 `(v, ω)` を計算します。状態は TRACKING/STOPPED の2つのみで、近接時も退避行動は取りません。
+
+```txt
+TRACKING（追従中）
+      ↓ d < stop_distance(既定1.0m)
+STOPPED（停止中・退避せずその場停止）
+      ↓ d ≥ resume_distance(既定1.3m)
+TRACKING へ復帰
+```
+
+- **軌跡追従**: `follow_planner_core.py` の `update_trail`/`get_trail_goal`/`pure_pursuit_control`（絶対座標系での軌跡保持を含む）をそのまま再利用します。
+- **進路上障害物チェック**: costmap ではなく `/scan_filtered` の生レンジ値を `is_path_blocked()` で直接走査します。軌跡ゴールへの進行方位を中心に `obstacle_check_half_width_deg`（既定20°）の範囲・`obstacle_check_distance_m`（既定1.0m）未満に有効なレンジ値があれば、試験員との距離に関わらず停止します。
+- **フェイルセーフ**: TF（odom→base_link）が未確立、または `/scan_filtered` を一度も受信していない場合は安全側に倒して停止します（costmap 方式の「未受信時は自由とみなす」というフェイルオープンとは逆の設計です。他に障害物安全層が無いためです）。
 
 ---
 
@@ -1164,25 +1194,48 @@ ros2 topic hz /person/status      # 10 Hz 以上発行されているか
 
 ## パラメータチューニングガイド
 
-### 追従ロジック（planning_params.yaml）
+### 追従ロジック — FOLLOWING（planning_params.yaml の `follow_planner`）
 
 ```txt
-follow_distance_target: 1.5m
-  → 近づきすぎる場合は大きく（2.0m 等）
-  → 離れすぎる場合は小さく（1.2m 等）
+lookback_distance: 1.0m
+  → 追従がロボットに近づきすぎる場合は大きく（1.5m 等）
+  → 追従の反応が鈍い場合は小さく（0.7m 等）
 
-retreat_trigger_distance: 0.8m
-retreat_release_distance: 1.2m
-  → trigger と release の差（0.4m）がヒステリシス幅
-  → ハンチングが観測されたら release を大きく（1.5m 等）
-  → 退避が遅すぎる場合は trigger を大きく（1.0m 等）
+d_prepare: 3.0m
+d_evade: 2.0m
+distance_hysteresis_m: 0.2m
+  → d_prepare/d_evade の差が PREPARE 状態の距離帯の広さ
+  → distance_hysteresis_m がハンチング防止幅。ハンチングが観測されたら大きく（0.4m 等）
+  → 退避が早すぎる/遅すぎる場合は d_evade を調整
 
-closing_speed_threshold: 0.3 m/s
-  → 急接近を見逃す場合は小さく（0.2 m/s 等）
-  → 誤作動が多い場合は大きく（0.4 m/s 等）
+evade_scan_directions: 16
+evade_scan_max_dist: 3.0m
+retreat_check_clearance: 0.5m
+  → 退避方向が不自然な場合は evade_scan_directions を増やして分解能を上げる
+  → 狭所で退避不可（stop）が頻発する場合は retreat_check_clearance を小さく
 
-static_time_threshold: 2.0s
-  → 試験員が立ち止まるとすぐ再配置が発動する場合は大きく（3.0s 等）
+retreat_speed: 0.15 m/s
+  → 退避が遅すぎる/速すぎる場合に調整（通常追従速度の50〜70%が目安）
+```
+
+### MAP不要追従ロジック — FOLLOWING_MAPLESS（planning_params.yaml の `follow_planner_mapless`）
+
+```txt
+lookback_distance: 1.0m
+  → follow_planner と同様の目安
+
+stop_distance: 1.0m
+resume_distance: 1.3m
+  → 差（0.3m）がハンチング防止幅。頻繁に停止/再開を繰り返す場合は差を大きく
+  → 停止が遅すぎる場合は stop_distance を大きく
+
+obstacle_check_distance_m: 1.0m
+obstacle_check_half_width_deg: 20.0°
+  → 障害物での停止が頻発する場合（誤検知）は距離・角度幅を小さく
+  → 停止が遅い（間に合わない）場合は obstacle_check_distance_m を大きく
+
+v_max: 0.3 m/s
+  → 走行速度の上限。現場の安全要件に応じて調整
 ```
 
 ### フォルト検知タイムアウト（safety_monitor.yaml）
@@ -1233,11 +1286,14 @@ ros2 topic echo /robot/mode     # FOLLOWING/MANUAL であるべき
 ### 追従がぎこちない（ハンチング）
 
 ```bash
-# デッドゾーンを広くする
+# デッドゾーンを広くする（FOLLOWING）
 ros2 param set /follow_planner goal_deadzone_m 0.5
 
-# ヒステリシス幅を広くする
-ros2 param set /follow_planner retreat_release_distance 1.5
+# 状態遷移のヒステリシス幅を広くする（FOLLOWING）
+ros2 param set /follow_planner distance_hysteresis_m 0.4
+
+# 停止/再開のヒステリシス幅を広くする（FOLLOWING_MAPLESS）
+ros2 param set /follow_planner_mapless resume_distance 1.6
 ```
 
 ### LiDAR が誤認識する
