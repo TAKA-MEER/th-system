@@ -192,6 +192,15 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 11b. follow_planner_mapless (MAP不要の純粋軌跡追従モード。FOLLOWING_MAPLESS 時のみ動作)
+    nodes.append(Node(
+        package='th_planning',
+        executable='follow_planner_mapless.py',
+        name='follow_planner_mapless',
+        parameters=[os.path.join(BRINGUP_DIR, 'config', 'planning_params.yaml')],
+        output='screen',
+    ))
+
     # ── 12. panel_navigator ───────────────────────────────
     nodes.append(Node(
         package='th_planning',

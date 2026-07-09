@@ -505,6 +505,7 @@ rosbridge は Docker コンテナ内で `bringup.launch.py` 起動時に自動�
 | 操作 | 説明 |
 | --- | --- |
 | 追従開始 | IDLE → FOLLOWING モードへ切替 |
+| 軌跡追従(マップ不要) | IDLE/MANUAL → FOLLOWING_MAPLESS モードへ切替(地図・Nav2不要) |
 | 手動操作 | MANUAL モードへ切替・仮想ジョイスティック操作 |
 | 配電盤移動 | MOVING_TO_PANEL モードへ切替・目的地選択 |
 | 緊急停止 | ESTOP モードへ即時遷移 |
@@ -518,7 +519,8 @@ rosbridge は Docker コンテナ内で `bringup.launch.py` 起動時に自動�
 | モード | 状態 | タブレット操作 |
 | --- | --- | --- |
 | IDLE | 静止待機 | 起動時の初期状態 |
-| FOLLOWING | 試験員自動追従 | 「追従開始」ボタン |
+| FOLLOWING | 試験員自動追従(地図・Nav2使用) | 「追従開始」ボタン |
+| FOLLOWING_MAPLESS | 試験員自動追従(地図・Nav2不要) | 「軌跡追従(マップ不要)」ボタン |
 | MOVING_TO_PANEL | 配電盤移動中 | 配電盤ボタン |
 | AT_PANEL | 配電盤前作業中 | 自動遷移 |
 | MANUAL | 手動操作 | 「手動操作」ボタン |
@@ -564,11 +566,13 @@ th_ws/
 │   ├── th_system_msgs/           # カスタム型定義（全ノード共有）
 │   ├── th_esp32_bridge/          # ESP32 ↔ ROS2 ブリッジ・オドメトリ
 │   ├── th_safety/                # safety_monitor + twist_mux 設定
-│   ├── th_mode_manager/          # FSM（7 状態・全遷移ルール）
+│   ├── th_mode_manager/          # FSM（8 状態・全遷移ルール）
 │   ├── th_perception/            # lidar_filter・person_predictor・tracker_stub・person_tracker_bridge
+
 │   ├── th_planning/              # follow_planner・panel_navigator・manual_handler・crawler_teleop
 │   │   └── th_planning/          # Python パッケージ（テスト可能なコアロジック）
-│   │       └── follow_planner_core.py
+│   │       ├── follow_planner_core.py
+│   │       └── mapless_follow_core.py
 │   ├── th_calibration/           # オドメトリキャリブツール
 │   ├── th_bringup/               # 起動設定・地図・パラメータ
 │   ├── multiple_observation_kalman_filter/  # vendored (human_kenchi, プライベートリポジトリ)
@@ -578,6 +582,7 @@ th_ws/
 │       └── test/
 │           ├── conftest.py
 │           ├── test_follow_planner_logic.py
+│           ├── test_mapless_follow_logic.py
 │           ├── test_mode_transitions.py
 │           ├── test_safety_monitor.py
 │           ├── test_twist_mux_priority.py
@@ -726,6 +731,58 @@ Gazebo ウィンドウで Inspector（試験員役）が移動し、ロボット
 
 > FOLLOWING モード中に手動操作したい場合は `requested_mode: 5` (MANUAL) に切替え、別ターミナルで `ros2 launch th_bringup teleop.launch.py` を実行する。
 
+### Step 5: MAP不要の軌跡追従モード（FOLLOWING_MAPLESS）の確認
+
+`follow_planner_mapless.py` は Nav2・SLAM 占有格子を一切使わず、`/odom`（ホイールオドメトリ）と `/scan_filtered`（死角マスク済み生 LiDAR スキャン）だけで動く追従モード。地図読み込み・AMCL・Nav2 のゴール計画が不要なため、**地図を作る前でも検証できる**。
+
+`RobotMode.msg` に `FOLLOWING_MAPLESS` 定数を追加しているため、検証前に **`th_system_msgs` を含むフルビルドが必須**:
+
+```bash
+cd /root/th_ws
+colcon build --symlink-install
+source install/setup.bash
+```
+
+起動（SLAM/地図の有無に関わらず動作確認できる。Nav2 自体はこの起動コマンドで引き続き立ち上がるが、`follow_planner_mapless` はそれを一切参照しない）:
+
+```bash
+ros2 launch th_bringup gazebo.launch.py
+```
+
+FOLLOWING_MAPLESS へ切替（CLI から）:
+
+```bash
+ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
+  "{requested_mode: 7, requester: 'cli'}"
+```
+
+タブレット UI から切替える場合は「軌跡追従(マップ不要)」ボタンを押す。
+
+確認項目:
+
+| 確認項目 | 方法 | 期待動作 |
+| --- | --- | --- |
+| 軌跡追従 | Inspector（または `person_mover.py --pattern:=patrol`）を移動させる | Nav2 にゴールを送らず、`/cmd_vel_retreat` に直接速度指令が出て試験員の軌跡を遡って追従する |
+| 接近時は退避せず停止 | `person_mover.py --ros-args -p pattern:=approach -p approach_dist:=0.6` 等で `stop_distance`（既定 1.0m）以内に接近させる | 後退・旋回せず、その場で停止する（`/cmd_vel_retreat` がゼロ） |
+| 停止後の追従再開 | 接近させた後、`resume_distance`（既定 1.3m）以上離す | 自動的に追従を再開する（オペレータ操作不要） |
+| 進路上障害物での停止 | ロボットの進行方位上（軌跡ゴールへのベアリング方向）に障害物モデルを置く | 試験員との距離に関わらずその場で停止する |
+| フェイルセーフ | `/scan_filtered` を止める（`lidar_filter` ノードを kill 等） | スキャン未受信になった時点で停止する（安全側） |
+
+停止理由はログで確認できる:
+
+```bash
+ros2 topic echo /rosout | grep follow_planner_mapless
+# "停止中（理由: person_close/obstacle_ahead/no_pose/no_scan）" または "追従再開" が出力される
+```
+
+`/cmd_vel_retreat` を直接確認する場合:
+
+```bash
+ros2 topic echo /cmd_vel_retreat
+```
+
+実機での検証も同じ手順で行える（`bringup.launch.py` にも `follow_planner_mapless` が同様に組み込まれている）。地図・Nav2・AMCL を一切起動していない状態でも `FOLLOWING_MAPLESS` 単体で動作することを確認するとよい。
+
 ---
 
 ## ワールド環境の構成
@@ -785,6 +842,7 @@ ros2 run th_perception person_mover.py --ros-args -p pattern:=static
 | 静止再配置 | `pattern:=static` | 2 秒後に試験員の側面〜背面に移動 |
 | 配電盤移動 | `ros2 service call /panel_navigator/go_to_panel ...` | Nav2 がパネル前まで誘導 |
 | E-Stop | タブレット UI の緊急停止 | ロボットが即時停止し ESTOP モードへ |
+| MAP不要軌跡追従 | `FOLLOWING_MAPLESS` へ切替 + `pattern:=approach` | 地図・Nav2 なしで追従、接近時は退避せず停止(詳細は Step 5 参照) |
 
 ---
 
@@ -877,7 +935,8 @@ ros2 node info /gazebo_person_relay
 
 | ファイル | 分類 | ROS2 要否 | テスト件数 | 設計書対応 |
 | --- | --- | --- | --- | --- |
-| `test_follow_planner_logic.py` | 純粋単体テスト | 不要 | 41 件 | 10.1 §3 |
+| `test_follow_planner_logic.py` | 純粋単体テスト | 不要 | 43 件 | 10.1 §3 |
+| `test_mapless_follow_logic.py` | 純粋単体テスト(MAP不要モード) | 不要 | 20 件 | - |
 | `test_mode_transitions.py` | ROS2 統合テスト | 必要 | 19 件 | 10.1 §1 |
 | `test_safety_monitor.py` | ROS2 統合テスト | 必要 | 10 件 | 10.1 §5 |
 | `test_twist_mux_priority.py` | ROS2 統合テスト | 必要 | 7 件 | 10.1 §4 |
@@ -897,24 +956,31 @@ python3 -m pytest src/th_testing/test/test_follow_planner_logic.py -v
 
 # 特定のテストクラスだけ実行
 python3 -m pytest src/th_testing/test/test_follow_planner_logic.py \
-  -v -k "TestRetreatHysteresis"
+  -v -k "TestNextFollowState"
 
 # 失敗時に即座に停止
 python3 -m pytest src/th_testing/test/test_follow_planner_logic.py -x
 ```
 
-テスト対象クラスと確認内容:
+`test_follow_planner_logic.py` のテスト対象クラスと確認内容:
 
 ```txt
-TestRetreatHysteresis   ── trigger/release 境界値・ハンチング防止・速度による予防的退避
-TestPositionHistory     ── 速度推定精度・接近速度の正負・履歴不足時のゼロ返却
-TestStaticDetector      ── 静止判定タイミング・移動再開によるリセット
-TestFovChecker          ── 360° FOV・死角マスク・オフセット縮小ロジック
-TestCandidatePoints     ── 作業前方除外・候補点スコアリング
-TestComputeRetreatCmd   ── 後退方向・速度・壁際での None 返却
-TestComputeFollowGoal   ── 狭路/広空間の角度切替・ゴール姿勢方向
-TestFollowPlannerCore   ── 優先順位(退避>静止>通常)・デッドゾーン・状態遷移
-TestCorridorWidth       ── 開放空間/狭路の幅推定精度
+TestFrameConversion         ── base_link相対⇔絶対座標(odom系)変換の往復・回転整合性
+TestTrail                   ── 軌跡点の最小移動距離フィルタ・lookback距離での遡り
+TestNextFollowState         ── TRACKING/PREPARE/EVADING の境界値・ハンチング防止
+TestFindNearestOpenDirection ── 全方向自由/一方向のみ自由/最小自由空間未達での不採用
+TestComputeEvadeGoal        ── 退避方向・距離からの退避ゴール点計算
+TestOrientToEvadeRoute      ── 許容誤差内での停止・誤差角に比例した旋回
+TestPurePursuitControl      ── 停止半径内での停止・距離に応じた速度クランプ
+TestFollowPlannerCore       ── 状態遷移・trail追従ゴール・PREPARE/EVADING出力・reset/clear_trail
+```
+
+`test_mapless_follow_logic.py` のテスト対象クラスと確認内容:
+
+```txt
+TestNextMaplessState  ── stop_distance/resume_distance の境界・ハンチング防止
+TestIsPathBlocked     ── 進路上障害物の有無・角度範囲外/inf/nanの無視
+TestMaplessFollowCore ── 追従駆動・接近時停止と再開・障害物停止・no_pose/no_scanフェイルセーフ
 ```
 
 ---
@@ -977,11 +1043,13 @@ TH_SKIP_SIM=0 python3 -m pytest \
 
 確認されるシナリオ:
 
-- **Scenario A-1**: 試験員がトリガー距離以内に接近 → `/cmd_vel_retreat` に後退指令が発行される
+- **Scenario A-1**: 試験員が近接距離以内に接近 → `/cmd_vel_retreat` に退避指令が発行される
 - **Scenario A-2**: 壁際（costmap でブロック）での接近 → その場停止
 - **Scenario A-3**: 試験員が離れると退避解除 → 通常追従に戻りハンチングしない
 - **Scenario C**: ロスト後の予測外挿 → `max_predict_sec` 後に `/person/search_mode=true`
 - **Scenario D**: MANUAL 中は退避が作動しない（試験員が近くにいても後退しない）
+
+> **注意**: 退避方向は試験員の位置とは無関係に `find_nearest_open_direction()` による「地図上の最空きスペース方向」で決まる。costmap を配信しない stub 環境では試験員自身が障害物として地図に現れないため、Scenario A-1 の「試験員を避けて後退した」という確認は Gazebo + 実際の costmap がある環境でのみ意味を持つ。詳細は `test_simulation_scenarios.py` 内のコメントを参照。
 
 ---
 
@@ -1080,43 +1148,64 @@ case RobotMode::IDLE:
 
 ---
 
-## 試験員追従ロジック（follow_planner_core）
+## 試験員追従ロジック（follow_planner_core / mapless_follow_core）
 
-### 内部状態と優先順位
+追従ロジックは2つの独立した実装があり、モードによって使い分けられます。
 
-`FollowPlannerCore.update()` は毎制御周期（10 Hz）に呼ばれ、以下の優先順位で出力を決定します。
+| | `follow_planner_core.py` | `mapless_follow_core.py` |
+| --- | --- | --- |
+| 使用モード | `FOLLOWING` / `MOVING_TO_PANEL` | `FOLLOWING_MAPLESS` |
+| 目標地点の送出先 | Nav2 (`NavigateToPose`) | 直接 `(v, ω)` を `/cmd_vel_retreat` へ |
+| 地図・costmap | 必要（`/local_costmap/costmap` + TF） | 不要（`/odom` TF と `/scan_filtered` のみ） |
+| 近接時の挙動 | 地図上の最空きスペース方向へ退避 | 退避せずその場停止・離れたら再開 |
 
-```txt
-1. RETREAT（近接退避）   ← 最優先・安全関連
-2. STATIC_REPOSITION     ← 静止時の作業スペース配慮
-3. NORMAL_FOLLOW         ← 通常追従
-```
+### 内部状態と優先順位（follow_planner_core）
 
-各状態で何をするかは `follow_planner_core.py` の `FollowPlannerCore.update()` を参照してください。
-
-### 退避ヒステリシス（ハンチング防止）
-
-`RetreatHysteresis` は `trigger_distance`（退避開始）と `release_distance`（退避解除）を分けることでハンチングを防ぎます。`trigger=0.8m`、`release=1.2m` の場合、0.8m 以内に入ると退避を始め、1.2m を超えるまで退避を継続します。この差（0.4m）がヒステリシス幅です。現場でハンチングが観測された場合は `release_distance` を大きくしてください。
-
-### 静止検知と再配置
-
-試験員の速度が `static_speed_threshold`（0.05 m/s）を `static_time_threshold`（2.0 秒）以上下回った場合に「静止」と判定します。静止判定後は試験員を中心に放射状に `candidate_count`（16 個）の候補点を生成し、以下のスコアで最適点を選びます。
+`FollowPlannerCore.update()` は毎制御周期（10 Hz）に呼ばれ、試験員との距離のみに基づいて次の3状態を切り替えます（`followLogic.md` v2 設計）。
 
 ```txt
-スコア = 移動コスト（現在地からの距離）
-       + costmap ブロックペナルティ（障害物方向は大きなペナルティ）
-       + FOV 違反ペナルティ（LiDAR 視野角を外れる方向は大きなペナルティ）
+TRACKING（軌跡追従）   d ≥ d_prepare(既定3.0m)
+      ↓ d < d_prepare
+PREPARE（退避準備）     d_evade(既定2.0m) ≤ d < d_prepare
+      ↓ d < d_evade
+EVADING（退避）         d < d_evade
 ```
 
-試験員の正面方向（配電盤側）は `work_front_exclusion_deg`（±60°）で候補から除外されます。これにより作業スペースへの干渉を防ぎます。
+各状態の詳細は `follow_planner_core.py` の `FollowPlannerCore.update()` を参照してください。
 
-### 通路幅判定と角度オフセット
+### 状態遷移のヒステリシス（ハンチング防止）
 
-`estimate_corridor_width()` はロボットの横方向に costmap をプローブし、両側の障害物までの距離の和を通路幅とします。`corridor_width_threshold`（1.5m）未満であれば真後ろ追従（オフセット 0°）、それ以上であれば斜め後方追従（最大 `follow_angle_offset_max`=30°）を選択します。斜め後方追従は試験員の視界に入りやすくコミュニケーションを取りやすい位置取りです。
+`next_follow_state()` は復帰判定に `distance_hysteresis_m`（既定 0.2m）分の余裕を要求します。例えば `d_prepare=3.0m` の場合、距離が 3.0m を下回ると PREPARE に入りますが、TRACKING へ戻るには `d_prepare + distance_hysteresis_m = 3.2m` 以上必要です（EVADING⇔PREPARE も同様に `d_evade + distance_hysteresis_m` を要求）。現場でハンチングが観測された場合は `distance_hysteresis_m` を大きくしてください。
 
-### LiDAR 死角対応
+### 軌跡追従（TRACKING）
 
-`FovChecker` は `blind_angle_ranges` に設定された角度帯（アルミ角柱による死角）を除外します。追従角度オフセットを適用した結果が死角に入る場合、`clamp_offset()` がオフセットを 0 まで縮小し視野角を確保します。これは 4.3.1 節の「LiDAR 視野角内に試験員を収める（必須制約）」を実装したものです。
+試験員の位置履歴（`trail`。ロボットが移動しても意味が変わらないよう絶対座標系=odom系で保持）を `lookback_distance`（既定 1.0m）だけ遡った点をそのまま Nav2 のゴールとして送ります。旧設計にあった通路幅判定・角度オフセット・LiDAR視野角制約は廃止されています。
+
+### 退避方向探索（PREPARE）
+
+退避方向は試験員の歩行方向に依存しません。`find_nearest_open_direction()` が `/local_costmap/costmap` を放射状（`evade_scan_directions`、既定16方向、`evade_scan_max_dist` まで走査）に調べ、`retreat_check_clearance`（既定0.5m）以上の自由空間を確保できる中で最も開けた方向を選びます。この方向は PREPARE 突入時に一度だけ計算され、EVADING に移るまで保持されます。
+
+### 退避走行（EVADING）
+
+PREPARE で決めた方向に `evade_route_length_m`（既定2.0m）先の点をゴールとし、Pure Pursuit（`pure_pursuit_control()`）で `retreat_speed` を上限速度として走行します。
+
+---
+
+## MAP不要軌跡追従ロジック（mapless_follow_core）
+
+`FOLLOWING_MAPLESS` モードでは `MaplessFollowCore.update()` が Nav2 を使わず毎周期直接 `(v, ω)` を計算します。状態は TRACKING/STOPPED の2つのみで、近接時も退避行動は取りません。
+
+```txt
+TRACKING（追従中）
+      ↓ d < stop_distance(既定1.0m)
+STOPPED（停止中・退避せずその場停止）
+      ↓ d ≥ resume_distance(既定1.3m)
+TRACKING へ復帰
+```
+
+- **軌跡追従**: `follow_planner_core.py` の `update_trail`/`get_trail_goal`/`pure_pursuit_control`（絶対座標系での軌跡保持を含む）をそのまま再利用します。
+- **進路上障害物チェック**: costmap ではなく `/scan_filtered` の生レンジ値を `is_path_blocked()` で直接走査します。軌跡ゴールへの進行方位を中心に `obstacle_check_half_width_deg`（既定20°）の範囲・`obstacle_check_distance_m`（既定1.0m）未満に有効なレンジ値があれば、試験員との距離に関わらず停止します。
+- **フェイルセーフ**: TF（odom→base_link）が未確立、または `/scan_filtered` を一度も受信していない場合は安全側に倒して停止します（costmap 方式の「未受信時は自由とみなす」というフェイルオープンとは逆の設計です。他に障害物安全層が無いためです）。
 
 ---
 
@@ -1392,52 +1481,84 @@ Nav2/ESP32等を含まない脚検知パイプライン単体だけを素早く�
 
 ## 新しいモードの追加方法
 
-例として「自動巡回モード（AUTO_PATROL）」を追加する場合の手順です。
+実例: `FOLLOWING_MAPLESS`（MAP不要の軌跡追従モード）を追加した際の手順です。同じ手順で「自動巡回モード（AUTO_PATROL）」等を追加できます。
 
 ```txt
 1. th_system_msgs/msg/RobotMode.msg に定数を追加
-   uint8 AUTO_PATROL = 7
+   uint8 AUTO_PATROL = 8   # FOLLOWING_MAPLESS(7) の次の空き番号を使う
 
 2. mode_manager.cpp の isTransitionAllowed() に遷移ルールを追加
+   （FOLLOWING_MAPLESS の実装例: IDLE/MANUAL からのみ遷移可、
+    MOVING_TO_PANEL 等の地図前提の遷移は含めない）
    case RobotMode::IDLE:
      return to == RobotMode::FOLLOWING ||
             to == RobotMode::AUTO_PATROL;
+   sub_fault_ のフォルト強制 IDLE 判定にも新モードを追加すること（安全上必須）。
 
 3. 新ノード auto_patrol.py を th_planning/scripts/ に追加
    /robot/mode を購読し AUTO_PATROL 中のみ動作する
+   （既存ノードは無条件起動のまま常時併存させ、RobotMode の排他性で
+    衝突を防ぐ。follow_planner.py / follow_planner_mapless.py が同じ
+    パターン）
 
-4. th_bringup/launch/bringup.launch.py に auto_patrol ノードを追加
+4. th_planning/CMakeLists.txt の install(PROGRAMS ...) に追加
+   th_bringup/launch/bringup.launch.py と gazebo.launch.py に
+   ノードエントリを追加
 
 5. th_testing/test/test_mode_transitions.py に遷移テストを追加
 
-6. web_ui/src/App.jsx に操作ボタンを追加
+6. web_ui/src/App.jsx（MODE 定数・ボタン・modeColor）と
+   web_ui/src/hooks/useRosbridge.js（MODE_NAMES）に追加
 ```
 
-新しいモードは常に「ESTOP からは IDLE のみ経由で復帰」「IDLE への安全側遷移を持つ」という設計方針に従ってください。
+新しいモードは常に「ESTOP からは IDLE のみ経由で復帰」「IDLE への安全側遷移を持つ」「フォルト発生時は IDLE へ強制遷移する」という設計方針に従ってください。
 
 ---
 
 ## パラメータチューニングガイド
 
-### 追従ロジック（planning_params.yaml）
+### 追従ロジック — FOLLOWING（planning_params.yaml の `follow_planner`）
 
 ```txt
-follow_distance_target: 1.5m
-  → 近づきすぎる場合は大きく（2.0m 等）
-  → 離れすぎる場合は小さく（1.2m 等）
+lookback_distance: 1.0m
+  → 追従がロボットに近づきすぎる場合は大きく（1.5m 等）
+  → 追従の反応が鈍い場合は小さく（0.7m 等）
 
-retreat_trigger_distance: 0.8m
-retreat_release_distance: 1.2m
-  → trigger と release の差（0.4m）がヒステリシス幅
-  → ハンチングが観測されたら release を大きく（1.5m 等）
-  → 退避が遅すぎる場合は trigger を大きく（1.0m 等）
+d_prepare: 3.0m
+d_evade: 2.0m
+distance_hysteresis_m: 0.2m
+  → d_prepare/d_evade の差が PREPARE 状態の距離帯の広さ
+  → distance_hysteresis_m がハンチング防止幅。ハンチングが観測されたら大きく（0.4m 等）
+  → 退避が早すぎる/遅すぎる場合は d_evade を調整
 
-closing_speed_threshold: 0.3 m/s
-  → 急接近を見逃す場合は小さく（0.2 m/s 等）
-  → 誤作動が多い場合は大きく（0.4 m/s 等）
+evade_scan_directions: 16
+evade_scan_max_dist: 3.0m
+retreat_check_clearance: 0.5m
+  → 退避方向が不自然な場合は evade_scan_directions を増やして分解能を上げる
+  → 狭所で退避不可（stop）が頻発する場合は retreat_check_clearance を小さく
 
-static_time_threshold: 2.0s
-  → 試験員が立ち止まるとすぐ再配置が発動する場合は大きく（3.0s 等）
+retreat_speed: 0.15 m/s
+  → 退避が遅すぎる/速すぎる場合に調整（通常追従速度の50〜70%が目安）
+```
+
+### MAP不要追従ロジック — FOLLOWING_MAPLESS（planning_params.yaml の `follow_planner_mapless`）
+
+```txt
+lookback_distance: 1.0m
+  → follow_planner と同様の目安
+
+stop_distance: 1.0m
+resume_distance: 1.3m
+  → 差（0.3m）がハンチング防止幅。頻繁に停止/再開を繰り返す場合は差を大きく
+  → 停止が遅すぎる場合は stop_distance を大きく
+
+obstacle_check_distance_m: 1.0m
+obstacle_check_half_width_deg: 20.0°
+  → 障害物での停止が頻発する場合（誤検知）は距離・角度幅を小さく
+  → 停止が遅い（間に合わない）場合は obstacle_check_distance_m を大きく
+
+v_max: 0.3 m/s
+  → 走行速度の上限。現場の安全要件に応じて調整
 ```
 
 ### フォルト検知タイムアウト（safety_monitor.yaml）
@@ -1488,11 +1609,14 @@ ros2 topic echo /robot/mode     # FOLLOWING/MANUAL であるべき
 ### 追従がぎこちない（ハンチング）
 
 ```bash
-# デッドゾーンを広くする
+# デッドゾーンを広くする（FOLLOWING）
 ros2 param set /follow_planner goal_deadzone_m 0.5
 
-# ヒステリシス幅を広くする
-ros2 param set /follow_planner retreat_release_distance 1.5
+# 状態遷移のヒステリシス幅を広くする（FOLLOWING）
+ros2 param set /follow_planner distance_hysteresis_m 0.4
+
+# 停止/再開のヒステリシス幅を広くする（FOLLOWING_MAPLESS）
+ros2 param set /follow_planner_mapless resume_distance 1.6
 ```
 
 ### LiDAR が誤認識する

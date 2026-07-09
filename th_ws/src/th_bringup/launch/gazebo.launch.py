@@ -143,6 +143,14 @@ def generate_launch_description():
             parameters=[planning_yaml],
             output='screen',
         ),
+        # follow_planner_mapless (MAP不要の純粋軌跡追従モード。FOLLOWING_MAPLESS 時のみ動作)
+        Node(
+            package='th_planning',
+            executable='follow_planner_mapless.py',
+            name='follow_planner_mapless',
+            parameters=[planning_yaml],
+            output='screen',
+        ),
         # panel_navigator
         Node(
             package='th_planning',
