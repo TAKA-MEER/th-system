@@ -19,6 +19,8 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # Gazebo モデルキャッシュ（再起動時の高速化）
       - gazebo_models:/root/.gazebo
+      # DR-SPAAM 重みファイル（Google Drive から手動DL、README参照。--rm でも消えないようホストに永続化）
+      - ./dr_spaam_weights:/root/th_ws/install/dr_spaam_ros/share/dr_spaam_ros/weights
     devices:
       - /dev/lidar:/dev/lidar
     # GPU サポート（NVIDIA の場合のみ有効化）

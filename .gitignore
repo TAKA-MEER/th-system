@@ -28,6 +28,10 @@ dist/
 # Docker: 個人環境向けオーバーライド（usbipd の COM ポート等、実機依存の設定）
 th_ws/docker-compose.override.yml
 
+# DR-SPAAM 重みファイル（手動DL、README参照。360MBありコミットしない）
+th_ws/dr_spaam_weights/*
+!th_ws/dr_spaam_weights/.gitkeep
+
 # エディタ / OS
 *.swp
 *.swo

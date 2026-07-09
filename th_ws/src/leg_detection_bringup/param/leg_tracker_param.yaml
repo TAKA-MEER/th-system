@@ -1,0 +1,43 @@
+/**:
+  ros__parameters:
+    # --- Topics & Frames ---
+    # These are overridden by the launch arguments (robot-independent).
+    # detection_mode is fixed to "leg": LiDAR-only, no camera / body detection.
+    detection_mode : leg
+
+    # If merge_nontravelable_region is false the obstacle cloud comes from the
+    # LaserScan only (no extra sensors needed).
+    merge_nontravelable_region : false
+
+    # --- Tracking ---
+    target_range : 3.0            # Initial search radius to acquire a target [m]
+    leg_tracking_range : 1.10     # Gating radius while tracking a leg [m]
+    body_tracking_range : 0.90    # (unused in leg mode, kept for completeness)
+    target_cloud_radius : 0.4     # Radius removed around target when building obstacles [m]
+    outlier_radius : 0.1          # RadiusOutlierRemoval radius [m]
+    outlier_min_pts : 2           # RadiusOutlierRemoval min neighbours
+    leaf_size : 0.10              # VoxelGrid leaf size [m]
+    target_change_tolerance : 2.0 # Time before dropping a lost target [s]
+    # --- Re-acquisition after occlusion (Methods A-D) ---
+    # A: after a target is dropped it is not searched from the robot origin immediately;
+    #    for reacquire_tolerance seconds the tracker looks for the SAME person around
+    #    their last position, with the gate growing by reacquire_radius_rate per second
+    #    of occlusion (capped at target_range).
+    # C: the search centre is projected forward along the pre-occlusion velocity (capped
+    #    by reacquire_lead_max) so it expects the person to exit the far side of the obstacle.
+    # D: among candidate legs in the gate, the one whose implied motion best matches the
+    #    pre-occlusion velocity is preferred (weight reacquire_vel_weight), not just the nearest.
+    reacquire_tolerance : 3.0     # Re-acquire near last position for this long after loss [s]
+    reacquire_radius_rate : 0.5   # Search-gate growth per second of occlusion [m/s]
+    reacquire_lead_max : 2.0      # C: cap on velocity-projected emergence lead [m]
+    reacquire_vel_weight : 1.0    # D: weight of velocity mismatch in re-acquire cost (0 = off)
+    # B: coast (keep predicting) longer for a slow/stopped target, shorter for a fast one.
+    #    Effective coast time decays from coast_tolerance_max (at rest) toward
+    #    target_change_tolerance as speed rises past ~coast_speed_scale.
+    coast_tolerance_max : 5.0     # B: max coast time at rest before dropping [s]
+    coast_speed_scale : 0.5       # B: speed at which the extra coast time roughly halves [m/s]
+    display_marker : true         # Publish RViz markers
+
+    # --- Kalman Filter ---
+    process_noise : 50.0
+    system_noise : 1.0

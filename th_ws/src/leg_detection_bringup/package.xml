@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>leg_detection_bringup</name>
+  <version>0.0.0</version>
+  <description>LiDAR-only leg detection bringup. Runs DR-SPAAM leg detection + PersonTracker (leg mode) and outputs the leg coordinate. Robot-independent (topics/frames are launch arguments).</description>
+
+  <maintainer email="sobits@todo.todo">sobits</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>rclcpp_components</exec_depend>
+  <exec_depend>multiple_sensor_person_tracking</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <!-- External: DR-SPAAM leg detector (TeamSOBITS/2d_lidar_person_detection). Installed via install.sh -->
+  <exec_depend>dr_spaam_ros</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

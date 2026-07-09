@@ -1,0 +1,14 @@
+/**:
+  ros__parameters:
+    weight_file : "ckpt_jrdb_ann_ft_dr_spaam_e20.pth" # Name of the weight file
+    detector_model : "DR-SPAAM"                       # Model name: DROW3 or DR-SPAAM
+    use_gpu : False                                   # No GPU on this machine -> CPU inference
+    conf_thresh : 0.9                                 # Confidence threshold
+    stride : 2                                        # Downsample scans 2x for faster CPU inference (~2x throughput)
+    panoramic_scan : true                             # RPLIDAR A3/S1 covers 360 degrees
+    queue_size : 1                                    # Subscriber queue size for LaserScan
+    execute_default : true                            # Start detection immediately
+    auto_configure : true                             # Configure lifecycle node on startup
+    auto_activate : true                              # Activate lifecycle node on startup
+    # Input LaserScan topic. Overridden by the 'scan_topic' launch argument.
+    scan_topic_name : /scan

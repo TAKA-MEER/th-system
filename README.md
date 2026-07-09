@@ -291,6 +291,107 @@ sudo udevadm control --reload-rules
 
 ---
 
+### Windows (WSL2) + Docker Desktop での LiDAR 接続と RViz2 表示
+
+推奨は本書冒頭の「ネイティブ Docker Engine」構成だが、**Docker Desktop の WSL 統合を
+使い続ける場合**（切り替えが手間、または既存環境を壊したくない場合）に実機検証で
+判明した手順・回避策をまとめる。
+
+#### 1. LiDAR を WSL2 にアタッチ（ESP32 と同じ usbipd 手順）
+
+```powershell
+# デバイス一覧確認（管理者不要）
+& "$env:ProgramFiles\usbipd-win\usbipd.exe" list
+# → "Silicon Labs CP210x USB to UART Bridge" の busid を確認 (例: 2-1)
+
+# 管理者 PowerShell で bind は初回のみ、attach は接続/再起動のたびに必要
+& "$env:ProgramFiles\usbipd-win\usbipd.exe" bind --busid <busid>
+& "$env:ProgramFiles\usbipd-win\usbipd.exe" attach --wsl --busid <busid>
+```
+
+WSL2 (Ubuntu) 側で `/dev/lidar`（99-th-robot.rules の udev シンボリックリンク）が
+見えれば OK:
+
+```bash
+wsl -d Ubuntu -- ls -la /dev/lidar /dev/ttyUSB0
+```
+
+#### 2. Docker Desktop 特有の問題: `/dev/lidar` がコンテナから見えない
+
+Docker Desktop の WSL 統合はコンテナを別の WSL ディストロ（`docker-desktop`）内で
+実行するため、`Ubuntu` ディストロの udev が作った `/dev/lidar` シンボリックリンクは
+コンテナから見えない（生デバイス `/dev/ttyUSB0` 自体は WSL2 が全ディストロで共有する
+カーネルの devtmpfs に載るため見える）。`th_ws/docker-compose.override.yml`
+（`.gitignore` 対象・個人環境向け）で生デバイスを直接渡すことで回避する:
+
+```yaml
+# th_ws/docker-compose.override.yml
+services:
+  th_robot:
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    environment:
+      - LIBGL_ALWAYS_SOFTWARE=1   # 次項参照
+```
+
+ノード起動時は `serial_port:=/dev/ttyUSB0`（`/dev/lidar` ではなく）を指定する。
+ネイティブ Docker Engine 構成に切り替えればこの補正は不要になる。
+
+#### 3. RViz2 がクラッシュする場合（`libGL error: failed to create drawable`）
+
+Docker Desktop の WSL 統合下では、rviz2 がハードウェア OpenGL 経由で描画しようとすると
+`libGL error: failed to create drawable` を出して**起動直後にプロセスごと終了**する
+（ウィンドウが一瞬出て消える、または全く出ない）。`LIBGL_ALWAYS_SOFTWARE=1` で
+ソフトウェアレンダリング（llvmpipe）に強制すると安定する（上記 override に記載済み）。
+Gazebo は逆にハードウェア支援があった方が快適なため、この設定は
+`docker-compose.yml` 本体には入れず override 限定にしている。
+
+X11 表示自体は **VcXsrv 等の追加インストールは不要**。最近の WSL は WSLg
+（`DISPLAY=:0`、`/tmp/.X11-unix/X0`）を標準搭載しており、`docker-compose.yml` の
+既存の `DISPLAY` 環境変数 + `/tmp/.X11-unix` bind mount だけで GUI がホストの
+Windows デスクトップにそのまま表示される。
+
+#### 4. person_tracker（脚検知）だけを素早く動作確認する
+
+`bringup.launch.py` はNav2やESP32ブリッジ等も一括起動するため、脚検知パイプラインだけを
+素早く確認したい場合は以下を個別に起動する（コンテナ内、複数ターミナル/バックグラウンド）:
+
+```bash
+source /opt/ros/humble/setup.bash && source /root/th_ws/install/setup.bash
+
+# 1. LiDAR
+ros2 run sllidar_ros2 sllidar_node --ros-args \
+  -p serial_port:=/dev/ttyUSB0 -p serial_baudrate:=256000 \
+  -p frame_id:=laser_link -p angle_compensate:=true -p scan_mode:=Standard &
+
+# 2. 死角フィルタ
+ros2 run th_perception lidar_filter.py &
+
+# 3. DR-SPAAM + PersonTracker（単一LiDARなのでTF不要、target_frame=laser_link）
+ros2 launch leg_detection_bringup leg_detection.launch.py \
+  scan_topic:=/scan_filtered target_frame:=laser_link \
+  scan_frame:=laser_link odom_frame:=laser_link \
+  use_rviz:=false autostart:=true &
+
+# 4. /person/status へのブリッジ
+ros2 run th_perception person_tracker_bridge.py &
+
+# 5. 確認
+ros2 topic hz /dr_spaam/dr_spaam_detections
+ros2 topic echo sobits_follower/multiple_sensor_person_tracking/following_position --once
+ros2 topic echo /person/status --once
+
+# 6. 可視化（Docker Desktop環境ではソフトウェアレンダリング必須。上記override参照）
+rviz2   # Displays に LaserScan(/scan_filtered), PoseArray(/dr_spaam/dr_spaam_detections),
+        # MarkerArray(sobits_follower/multiple_sensor_person_tracking/tracker_marker) を追加
+        # Fixed Frame は laser_link
+```
+
+`target_frame:=base_link`（本番の `bringup.launch.py` と同じ設定）で確認したい場合は
+`robot_state_publisher` 等で `base_link → laser_link` の TF を先に流しておくこと。
+
+---
+
 ## 起動手順
 
 ### Step 1: 地図作成 (初回のみ)
@@ -466,13 +567,17 @@ th_ws/
 │   ├── th_esp32_bridge/          # ESP32 ↔ ROS2 ブリッジ・オドメトリ
 │   ├── th_safety/                # safety_monitor + twist_mux 設定
 │   ├── th_mode_manager/          # FSM（8 状態・全遷移ルール）
-│   ├── th_perception/            # lidar_filter・person_predictor・tracker_stub
+│   ├── th_perception/            # lidar_filter・person_predictor・tracker_stub・person_tracker_bridge
+
 │   ├── th_planning/              # follow_planner・panel_navigator・manual_handler・crawler_teleop
 │   │   └── th_planning/          # Python パッケージ（テスト可能なコアロジック）
 │   │       ├── follow_planner_core.py
 │   │       └── mapless_follow_core.py
 │   ├── th_calibration/           # オドメトリキャリブツール
 │   ├── th_bringup/               # 起動設定・地図・パラメータ
+│   ├── multiple_observation_kalman_filter/  # vendored (human_kenchi, プライベートリポジトリ)
+│   ├── multiple_sensor_person_tracking/     # vendored (human_kenchi) — PersonTracker (leg モード)
+│   ├── leg_detection_bringup/               # vendored (human_kenchi) — DR-SPAAM+Tracker launch
 │   └── th_testing/               # 単体・統合テスト
 │       └── test/
 │           ├── conftest.py
@@ -812,7 +917,8 @@ ros2 node info /gazebo_person_relay
 
 - [ ] LiDAR 死角角度の実測値 (`perception_params.yaml`)
 - [ ] 配電盤座標の登録 (`panels.yaml`)
-- [ ] `person_tracker` 本番実装への切替 (`use_stub:=false`)
+- [x] DR-SPAAM 重みファイルの実機への配置・単体動作確認（脚検知パイプライン単体で確認済み。`bringup.launch.py use_stub:=false` を通した end-to-end 確認はまだ）
+- [ ] LiDAR 死角と DR-SPAAM 誤検出の相性を実地検証（`leg_tracker_param.yaml` の再取得パラメータ調整、長時間・実運用環境での検証）
 - [ ] IMU 調達後の EKF 切替 (`imu_enabled:=true`)
 - [ ] カメラ昇降システムとのインターフェース確定
 - [ ] ESP32 E-Stop GPIO の極性確認 (`config.h` の `ESTOP_LOW_ACTIVE`)
@@ -1279,43 +1385,84 @@ panels:
 
 ---
 
-## person_tracker 本番実装への切替
+## person_tracker 本番実装（human_kenchi ベース）
 
-ML ベースの `person_tracker` 実装が完成したら以下の手順で切替えます。
-
-### 必要なインターフェース
-
-本番の `person_tracker` は以下のトピックを発行してください。
+`person_tracker` の本番実装には
+[`TAKA-MEER/human_kenchi`](https://github.com/TAKA-MEER/human_kenchi)（`sobits_follower` から
+2D-LiDAR のみの脚検出・追跡部分を抜き出したワークスペース）を採用している。
+`use_stub:=false` で以下のパイプラインが起動する。
 
 ```txt
-/person/status  (th_system_msgs/PersonStatus)
-  header.stamp    : 現在時刻
-  header.frame_id : "base_link"
-  position.x      : 試験員の前方距離 [m]（ロボット正面方向）
-  position.y      : 試験員の横方向距離 [m]（左が正）
-  position.z      : 0.0
-  confidence      : 検出信頼度 0.0〜1.0
-  is_lost         : 検出できていない場合 true
-  lost_reason     : "DETECTION_LOST" / "LOW_CONFIDENCE" / ""
+/scan_filtered (死角マスク済み)
+  → dr_spaam_ros (DR-SPAAM 脚検出, human_kenchi/2d_lidar_person_detection)
+  → PersonTracker (leg モード, human_kenchi/multiple_sensor_person_tracking)
+  → sobits_follower/multiple_sensor_person_tracking/following_position
+  → person_tracker_bridge.py (th_perception)
+  → /person/status (th_system_msgs/PersonStatus)
 ```
 
-`is_lost` フラグは以下のタイミングで `true` にしてください。
+`person_tracker_bridge.py` が `following_position.status`
+（`0=NO_EXISTS` / `1=EXISTS_LEG`）を `PersonStatus.is_lost` に変換する薄い変換ノード。
+`th_ws/src/th_perception/scripts/person_tracker_bridge.py` を参照。
 
-- 検出対象が LiDAR スキャン内に見つからない場合
-- `confidence` が一定閾値（例: 0.3）を下回った場合
+human_kenchi 自体の3パッケージ（`multiple_observation_kalman_filter` /
+`multiple_sensor_person_tracking` / `leg_detection_bringup`）は
+`th_ws/src/` に直接コミットしている（vendoring）。**human_kenchi はプライベートリポジトリ**
+のため Dockerfile から `git clone` できず（認証情報が必要）、`sllidar_ros2` と同じ
+外部依存パターンが使えなかったための対応。upstream の更新を取り込む場合は、
+アクセス権のあるアカウントで手動 clone し、該当3パッケージのディレクトリを
+上書きコミットすること。
 
-### 切替コマンド
+DR-SPAAM（`TeamSOBITS/2d_lidar_person_detection`, 公開リポジトリ）は引き続き Dockerfile で
+`git clone` して colcon ビルドに含めている（`sllidar_ros2` と同じパターン）。
+
+### DR-SPAAM 重みファイルの配置（初回のみ）
+
+DR-SPAAM の学習済み重み（`ckpt_jrdb_ann_ft_dr_spaam_e20.pth`, 実測 約 30 MB。配布元
+フォルダには他モデルの重みも含めて複数ファイルがあるが、`weight_file` パラメータの
+既定値であるこのファイルだけあれば動く）は配布元（Google Drive）の都合上 Docker
+イメージには含めていない。以下の手順で手動配置する。
+
+1. [重みファイルをダウンロード](https://drive.google.com/drive/folders/1Wl2nC8lJ6s9NI1xtWwmxeAUnuxDiiM4W)
+2. リポジトリルートの `th_ws/dr_spaam_weights/` に置く（`.gitignore` 対象、コミット不要）
+3. `docker-compose.yml` の bind mount によりコンテナ内
+   `/root/th_ws/install/dr_spaam_ros/share/dr_spaam_ros/weights/` に自動反映される
+   （`docker compose run --rm` の使い捨てコンテナでも消えない。実機検証で
+   このマウント先パスが正しいことを確認済み）
+
+> **既知の問題（対応済み）**: 配布されているチェックポイントは GPU (CUDA) 保存の
+> ため、CPU 専用機（`use_gpu:false`）では素の `torch.load` が
+> `Attempting to deserialize object on a CUDA device` で失敗する。Dockerfile 内で
+> `dr_spaam/detector.py` に `sed` で `map_location` を明示するパッチを当てて回避済み
+> （upstream 未対応のため、DR-SPAAM を再取得・再ビルドする際は要再適用）。
+
+### 動作確認
 
 ```bash
-# bringup launch の use_stub を false に変更
 ros2 launch th_bringup bringup.launch.py \
   map_yaml:=<地図パス> \
-  use_stub:=false      # ← ここを変更
+  use_stub:=false
 
-# 動作確認
+# パイプライン各段の確認
+ros2 topic hz /dr_spaam/dr_spaam_detections
+ros2 topic echo sobits_follower/multiple_sensor_person_tracking/following_position
 ros2 topic echo /person/status    # is_lost が適切に切り替わるか
 ros2 topic hz /person/status      # 10 Hz 以上発行されているか
 ```
+
+`use_stub:=true` の場合は上記パイプラインは一切起動せず、`person_tracker_stub.py` のみが
+`/person/status` を発行する。
+
+Nav2/ESP32等を含まない脚検知パイプライン単体だけを素早く確認したい場合は
+「Windows (WSL2) + Docker Desktop での LiDAR 接続と RViz2 表示」節の
+「person_tracker（脚検知）だけを素早く動作確認する」を参照（実機LiDAR単体で動作確認済み）。
+
+### チューニング
+
+障害物の陰に隠れた際の再取得挙動は `th_ws/src/leg_detection_bringup/param/leg_tracker_param.yaml`
+で調整する。主要パラメータは human_kenchi の README を参照。LiDAR 死角（アルミ角柱）による誤検出が
+出る場合は `perception_params.yaml` の `blind_angle_ranges` を先に見直すこと
+（DR-SPAAM の入力は `/scan_filtered` のため死角マスクが有効）。
 
 ---
 

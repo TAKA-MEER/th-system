@@ -6,6 +6,7 @@ install(PROGRAMS
   scripts/lidar_filter.py
   scripts/person_predictor.py
   scripts/person_tracker_stub.py
+  scripts/person_tracker_bridge.py
   scripts/gazebo_person_relay.py
   scripts/person_mover.py
   scripts/obstacle_mover.py
