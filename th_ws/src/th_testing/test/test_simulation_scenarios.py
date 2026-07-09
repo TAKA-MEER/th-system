@@ -78,17 +78,23 @@ def generate_test_description():
             }],
             output='screen'),
         # follow_planner
+        # 距離帯を旧設計のシナリオ距離（0.3〜1.5m）に合わせて縮小している。
+        # d_evade/d_prepare のデフォルト(2.0m/3.0m)のままだと本テストが使う
+        # 位置(x=0.3〜1.5)が常に EVADING 圏内に入ってしまうため。
         launch_ros.actions.Node(
             package='th_planning', executable='follow_planner.py',
             name='follow_planner',
             parameters=[{
-                'retreat_trigger_distance': 0.8,
-                'retreat_release_distance': 1.2,
-                'closing_speed_threshold':  0.3,
-                'retreat_check_clearance':  0.5,
-                'retreat_speed':            0.15,
-                'goal_deadzone_m':          0.0,
-                'update_rate_hz':          10.0,
+                'd_evade':                  0.8,
+                'd_prepare':                 1.2,
+                'distance_hysteresis_m':     0.1,
+                'evade_scan_directions':    16,
+                'evade_scan_max_dist':       2.0,
+                'evade_route_length_m':      1.0,
+                'retreat_check_clearance':   0.5,
+                'retreat_speed':             0.15,
+                'goal_deadzone_m':           0.0,
+                'update_rate_hz':           10.0,
             }],
             output='screen'),
     ]
@@ -178,6 +184,17 @@ class TestSimulationScenarios(unittest.TestCase):
 
     # ════════════════════════════════════════════════════════
     # Scenario A-1: 試験員接近 → /cmd_vel_retreat 発行
+    #
+    # 注意（followLogic.md v2 移行に伴う既知の制約）:
+    # 新ロジックの退避方向は find_nearest_open_direction による
+    # 「地図上の最空きスペース方向」であり、試験員の位置とは無関係に
+    # 決定される。costmap を配信しないこの stub 環境では試験員自身が
+    # 障害物としてマップに現れないため、試験員の方向がそのまま
+    # 「最空きスペース」として選ばれ得る（＝試験員へ向かって前進する
+    # 可能性がある）。したがって本シナリオの「後退方向確認」は
+    # 実際の costmap（Gazebo + LiDAR）がある環境でのみ意味を持つ。
+    # Docker + Gazebo 環境で本テストを実行し、退避方向が実際に
+    # 試験員を避けているか確認すること。
     # ════════════════════════════════════════════════════════
 
     def test_scenario_A1_retreat_on_approach(self):

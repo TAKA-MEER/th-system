@@ -1,35 +1,32 @@
 # ============================================================
 # planning_params.yaml — follow_planner 全パラメータ
-# (高度追従ロジック対応版)
+# (距離帯ベース追従ロジック v2 対応版 / followLogic.md)
 # ============================================================
 follow_planner:
   ros__parameters:
-    # ── 4.3.3 通常追従 ────────────────────────────────────
-    follow_distance_target:   1.5    # m 追従目標距離
-    follow_distance_min:      0.8    # m 最小許容距離（減速・停止）
-    follow_distance_max:      3.0    # m 最大許容距離（加速）
-    follow_angle_offset_max: 30.0    # deg 斜め後方追従の最大オフセット角度
-    corridor_width_threshold: 1.5    # m これ未満の通路幅で真後ろ追従に切替
-    lidar_fov_deg:          360.0    # deg LiDAR 有効視野角（RPLIDAR S1 = 360°）
-    vel_history_sec:          1.0    # s 速度推定に使う位置履歴長
+    # ── 状態A: TRACKING（軌跡追従） ─────────────────────────
+    lookback_distance:        1.0    # m 軌跡追従時に遡る距離
+    trail_sample_interval_m:  0.05   # m 軌跡点を追加する最小移動距離
+    trail_max_points:        2000    # 軌跡の最大保持点数
 
-    # ── 4.3.4 静止時再配置 ────────────────────────────────
-    static_speed_threshold:   0.05   # m/s 静止判定速度閾値
-    static_time_threshold:    2.0    # s 静止継続時間閾値
-    candidate_count:         16      # 候補点数（放射状）
-    candidate_radius:         1.5    # m 候補点生成半径
-    work_front_exclusion_deg: 60.0   # deg 試験員正面除外角度の半角
+    # ── 状態遷移（距離帯・ヒステリシス） ──────────────────
+    d_prepare:                 3.0   # m TRACKING/PREPARE の切替距離
+    d_evade:                   2.0   # m PREPARE/EVADING の切替距離
+    distance_hysteresis_m:     0.2   # m 復帰判定に加える余裕距離（チャタリング防止）
 
-    # ── 4.3.7 近接退避 ────────────────────────────────────
-    retreat_trigger_distance: 0.8    # m 退避開始距離
-    retreat_release_distance: 1.2    # m 退避解除距離（ハンチング防止）
-    closing_speed_threshold:  0.3    # m/s 予防的退避を開始する接近速度
-    retreat_check_clearance:  0.5    # m 退避方向に必要な最小自由空間
-    retreat_speed:            0.15   # m/s 退避速度
-    approach_perpendicular_deg: 45.0 # deg 垂直判定の半角（この範囲で前後逃げを優先）
+    # ── 状態B: PREPARE（退避準備・最空きスペース探索） ────
+    evade_scan_directions:    16     # 空きスペース探索の走査方向数
+    evade_scan_max_dist:       3.0   # m 空きスペース探索の最大走査距離
+    evade_route_length_m:      2.0   # m 退避ルートの長さ
+    retreat_check_clearance:   0.5   # m 退避方向に必要な最小自由空間
+
+    # ── 状態C: EVADING（退避走行・Pure Pursuit） ──────────
+    retreat_speed:              0.15 # m/s 退避速度
+    evade_k_ang:                 2.0 # 旋回 / Pure Pursuit の角度ゲイン
+    evade_stop_radius_m:         0.2 # m Pure Pursuit の停止半径
+    evade_orient_tolerance_rad:  0.05 # rad 向き合わせ完了とみなす角度誤差
 
     # ── 共通 ──────────────────────────────────────────────
-    path_approach_angle_deg:  60.0   # deg 試験員進行方向とロボット方向の角度差閾値（これ未満で退避ゴール）
     goal_deadzone_m:          0.30   # m ゴール更新のデッドゾーン
     update_rate_hz:          10.0    # Hz 制御ループ周期
     base_frame:               "base_link"

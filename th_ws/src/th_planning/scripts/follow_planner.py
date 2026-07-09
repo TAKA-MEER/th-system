@@ -6,10 +6,10 @@ follow_planner_core.py のロジックを ROS2 に接続する。
 
 担当:
   - /person/status      購読 → core への位置入力
-  - /local_costmap/costmap 購読 → corridor_width / 退避方向自由空間チェック
+  - /local_costmap/costmap 購読 → 退避方向探索・軌跡蓄積用の絶対姿勢(TF)取得、退避方向自由空間チェック
   - /robot/mode         購読 → FOLLOWING/MOVING_TO_PANEL 中のみ動作
   - NavigateToPose      アクションクライアント (base_link → map 変換後に送出)
-  - /cmd_vel_retreat    パブリッシュ (近接退避・停止)
+  - /cmd_vel_retreat    パブリッシュ (PREPARE 旋回・EVADING 走行・停止)
 """
 
 import math
@@ -29,7 +29,6 @@ import tf2_geometry_msgs  # noqa: F401
 
 from th_planning.follow_planner_core import (
     FollowParams, FollowPlannerCore,
-    estimate_corridor_width,
 )
 
 OBSTACLE_COST_THRESHOLD = 90
@@ -70,26 +69,21 @@ class FollowPlanner(Node):
 
     def _declare_all_params(self):
         D = self.declare_parameter
-        D("follow_distance_target",    1.5)
-        D("follow_distance_min",       0.8)
-        D("follow_distance_max",       3.0)
-        D("follow_angle_offset_max",  30.0)
-        D("corridor_width_threshold",  1.5)
-        D("lidar_fov_deg",           360.0)
-        D("vel_history_sec",           1.0)
-        D("static_speed_threshold",   0.05)
-        D("static_time_threshold",     2.0)
-        D("candidate_count",          16)
-        D("candidate_radius",          1.5)
-        D("work_front_exclusion_deg", 60.0)
-        D("retreat_trigger_distance",  0.8)
-        D("retreat_release_distance",  1.2)
-        D("closing_speed_threshold",   0.3)
-        D("retreat_check_clearance",   0.5)
-        D("retreat_speed",            0.15)
-        D("approach_perpendicular_deg", 45.0)
-        D("path_approach_angle_deg",  60.0)
-        D("goal_deadzone_m",          0.30)
+        D("lookback_distance",          1.0)
+        D("trail_sample_interval_m",   0.05)
+        D("trail_max_points",         2000)
+        D("d_prepare",                  3.0)
+        D("d_evade",                    2.0)
+        D("distance_hysteresis_m",      0.2)
+        D("evade_scan_directions",     16)
+        D("evade_scan_max_dist",        3.0)
+        D("evade_route_length_m",       2.0)
+        D("retreat_check_clearance",    0.5)
+        D("retreat_speed",             0.15)
+        D("evade_k_ang",                2.0)
+        D("evade_stop_radius_m",        0.2)
+        D("evade_orient_tolerance_rad", 0.05)
+        D("goal_deadzone_m",           0.30)
         D("update_rate_hz",          10.0)
         D("base_frame",          "base_link")
         D("map_frame",           "map")
@@ -97,27 +91,22 @@ class FollowPlanner(Node):
     def _load_params(self) -> FollowParams:
         g = self.get_parameter
         return FollowParams(
-            follow_distance_target   = g("follow_distance_target").value,
-            follow_distance_min      = g("follow_distance_min").value,
-            follow_distance_max      = g("follow_distance_max").value,
-            follow_angle_offset_max  = g("follow_angle_offset_max").value,
-            corridor_width_threshold = g("corridor_width_threshold").value,
-            lidar_fov_deg            = g("lidar_fov_deg").value,
-            vel_history_sec          = g("vel_history_sec").value,
-            static_speed_threshold   = g("static_speed_threshold").value,
-            static_time_threshold    = g("static_time_threshold").value,
-            candidate_count          = int(g("candidate_count").value),
-            candidate_radius         = g("candidate_radius").value,
-            work_front_exclusion_deg = g("work_front_exclusion_deg").value,
-            retreat_trigger_distance = g("retreat_trigger_distance").value,
-            retreat_release_distance = g("retreat_release_distance").value,
-            closing_speed_threshold  = g("closing_speed_threshold").value,
-            retreat_check_clearance  = g("retreat_check_clearance").value,
-            retreat_speed            = g("retreat_speed").value,
-            approach_perpendicular_deg = g("approach_perpendicular_deg").value,
-            path_approach_angle_deg  = g("path_approach_angle_deg").value,
-            goal_deadzone_m          = g("goal_deadzone_m").value,
-            update_rate_hz           = g("update_rate_hz").value,
+            lookback_distance          = g("lookback_distance").value,
+            trail_sample_interval_m    = g("trail_sample_interval_m").value,
+            trail_max_points           = int(g("trail_max_points").value),
+            d_prepare                  = g("d_prepare").value,
+            d_evade                    = g("d_evade").value,
+            distance_hysteresis_m      = g("distance_hysteresis_m").value,
+            evade_scan_directions      = int(g("evade_scan_directions").value),
+            evade_scan_max_dist        = g("evade_scan_max_dist").value,
+            evade_route_length_m       = g("evade_route_length_m").value,
+            retreat_check_clearance    = g("retreat_check_clearance").value,
+            retreat_speed              = g("retreat_speed").value,
+            evade_k_ang                = g("evade_k_ang").value,
+            evade_stop_radius_m        = g("evade_stop_radius_m").value,
+            evade_orient_tolerance_rad = g("evade_orient_tolerance_rad").value,
+            goal_deadzone_m            = g("goal_deadzone_m").value,
+            update_rate_hz             = g("update_rate_hz").value,
         )
 
     def _cb_mode(self, msg: RobotMode):
@@ -134,8 +123,9 @@ class FollowPlanner(Node):
         if not msg.is_lost:
             self._person_pos = (msg.position.x, msg.position.y)
             if was_lost:
-                # ロスト→再検出の遷移: デッドゾーンをクリアして直ちに新ゴールを送出
+                # ロスト→再検出の遷移: デッドゾーンと軌跡をクリアして直ちに新ゴールを送出
                 self._core.clear_prev_goal()
+                self._core.clear_trail()
 
     def _cb_costmap(self, msg: OccupancyGrid):
         self._costmap = msg
@@ -189,22 +179,12 @@ class FollowPlanner(Node):
             return True
         return cm.data[cy * W + cx] < OBSTACLE_COST_THRESHOLD
 
-    def _retreat_clearance(self, dx: float, dy: float) -> float:
+    def _retreat_clearance(self, dx: float, dy: float, limit: float = 2.0) -> float:
         step = 0.1
-        limit = 2.0
         for i in range(1, int(limit / step) + 1):
             if not self._costmap_is_free(dx * step * i, dy * step * i):
                 return step * (i - 1)
         return limit
-
-    def _corridor_width(self) -> float:
-        if self._costmap is None:
-            return 99.0
-        yaw = 0.0
-        if self._person_pos:
-            px, py = self._person_pos
-            yaw = math.atan2(py, px)
-        return estimate_corridor_width(0.0, 0.0, yaw, self._costmap_is_free)
 
     def _to_map_pose(self, x: float, y: float, yaw: float):
         ps = PoseStamped()
@@ -247,15 +227,19 @@ class FollowPlanner(Node):
 
         px, py = self._person_pos
         t  = self.get_clock().now().nanoseconds * 1e-9
-        # costmap フレームへの変換をこの周期で一度だけ取得（以降の costmap 参照で再利用）
+        # costmap フレームへの変換をこの周期で一度だけ取得（以降の costmap 参照・絶対姿勢で再利用）
         self._update_costmap_tf()
-        cw = self._corridor_width()
 
+        robot_pose_odom = None
+        if self._cached_tf is not None:
+            tx, ty, cos_yaw, sin_yaw = self._cached_tf
+            robot_pose_odom = (tx, ty, math.atan2(sin_yaw, cos_yaw))
+
+        evade_scan_max_dist = self._core.params.evade_scan_max_dist
         out = self._core.update(
             person_x=px, person_y=py, t=t,
-            corridor_width=cw,
-            costmap_clear_fn=self._costmap_is_free,
-            retreat_clearance_fn=self._retreat_clearance)
+            clearance_fn=lambda dx, dy: self._retreat_clearance(dx, dy, limit=evade_scan_max_dist),
+            robot_pose_odom=robot_pose_odom)
 
         if out.kind == "retreat":
             cmd = Twist()
