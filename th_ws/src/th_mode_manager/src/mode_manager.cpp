@@ -5,6 +5,8 @@
 //               ↕          ↕             ↕               ↕
 //             MANUAL ←──────────────────────────────────┘
 //               ↕
+//          FOLLOWING_MAPLESS (MAP不要の軌跡追従。IDLE/MANUAL とのみ相互遷移)
+//               ↕
 //             ESTOP (どの状態からでも割り込み)
 // ============================================================
 #include <rclcpp/rclcpp.hpp>
@@ -31,6 +33,7 @@ static std::string modeName(uint8_t m) {
         {RobotMode::AT_PANEL,        "AT_PANEL"},
         {RobotMode::MANUAL,          "MANUAL"},
         {RobotMode::ESTOP,           "ESTOP"},
+        {RobotMode::FOLLOWING_MAPLESS, "FOLLOWING_MAPLESS"},
     };
     auto it = names.find(m);
     return it != names.end() ? it->second : "UNKNOWN";
@@ -61,10 +64,11 @@ public:
             [this](const FaultStatus::SharedPtr msg) {
                 if (msg->active) {
                     uint8_t cm = current_mode_;
-                    if (cm == RobotMode::FOLLOWING      ||
-                        cm == RobotMode::MOVING_TO_PANEL ||
-                        cm == RobotMode::MANUAL          ||
-                        cm == RobotMode::AT_PANEL) {
+                    if (cm == RobotMode::FOLLOWING         ||
+                        cm == RobotMode::MOVING_TO_PANEL    ||
+                        cm == RobotMode::MANUAL             ||
+                        cm == RobotMode::AT_PANEL           ||
+                        cm == RobotMode::FOLLOWING_MAPLESS) {
                         transition(RobotMode::IDLE,
                                    "フォルト検知: " + msg->fault_type);
                     }
@@ -108,11 +112,16 @@ private:
         switch (from) {
         case RobotMode::IDLE:
             return to == RobotMode::FOLLOWING ||
+                   to == RobotMode::FOLLOWING_MAPLESS ||
                    to == RobotMode::MANUAL;
 
         case RobotMode::FOLLOWING:
             return to == RobotMode::MANUAL          ||
                    to == RobotMode::MOVING_TO_PANEL ||
+                   to == RobotMode::IDLE;
+
+        case RobotMode::FOLLOWING_MAPLESS:
+            return to == RobotMode::MANUAL ||
                    to == RobotMode::IDLE;
 
         case RobotMode::MOVING_TO_PANEL:
@@ -127,6 +136,7 @@ private:
 
         case RobotMode::MANUAL:
             return to == RobotMode::FOLLOWING ||
+                   to == RobotMode::FOLLOWING_MAPLESS ||
                    to == RobotMode::IDLE;
 
         default:

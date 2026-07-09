@@ -5,30 +5,38 @@ follow_planner のコアロジック（ROS2 非依存）
 
 テスト可能性のため、ROS2 インポートを一切含まない純粋な Python モジュール。
 ROS2 ノード側 (follow_planner.py) はこのモジュールを import して使用する。
+
+距離帯ベース方式（followLogic.md v2）:
+  TRACKING (d >= d_prepare)           : 試験員の軌跡を遡った点を Nav2 ゴールとして送る
+  PREPARE  (d_evade <= d < d_prepare) : 前進せず、地図上の最空きスペース方向へ旋回して待機
+  EVADING  (d < d_evade)              : 退避方向へ Pure Pursuit で前進する
+
+軌跡 (trail) と退避方向/退避ゴールは絶対座標系（costmap の frame_id、通常 odom）で
+保持する。base_link 相対座標系だとロボット自身の移動で過去の点の意味が変わって
+しまうため、ROS2 ノード側から渡される robot_pose_odom (base_link の odom 系での
+姿勢) を使って都度変換する。
 """
 
 from __future__ import annotations
 
 import math
-import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
-from typing import List, Optional, Tuple
+from typing import Deque, Optional, Tuple
 
 
-# ── 型エイリアス ──────────────────────────────────────────────────
-Point2D   = Tuple[float, float]   # (x, y) メートル
-Vector2D  = Tuple[float, float]   # (vx, vy) m/s
+Point2D = Tuple[float, float]
+Pose2D  = Tuple[float, float, float]   # (x, y, theta)
 
 
 # ──────────────────────────────────────────────────────────────────
 # 内部状態
 # ──────────────────────────────────────────────────────────────────
 class FollowState(Enum):
-    NORMAL_FOLLOW      = auto()   # 4.3.3 通常追従
-    STATIC_REPOSITION  = auto()   # 4.3.4 静止時再配置
-    RETREAT            = auto()   # 4.3.7 近接退避
+    TRACKING = auto()   # 状態A: 軌跡追従
+    PREPARE  = auto()   # 状態B: 退避準備
+    EVADING  = auto()   # 状態C: 退避
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -36,469 +44,199 @@ class FollowState(Enum):
 # ──────────────────────────────────────────────────────────────────
 @dataclass
 class FollowParams:
-    # 4.3.3 通常追従
-    follow_distance_target:    float = 1.5    # m
-    follow_distance_min:       float = 0.8    # m
-    follow_distance_max:       float = 3.0    # m
-    follow_angle_offset_max:   float = 30.0   # deg（斜め後方の最大オフセット）
-    corridor_width_threshold:  float = 1.5    # m（真後ろ追従に切替える通路幅）
-    lidar_fov_deg:             float = 360.0  # deg（有効視野角）
-    lidar_blind_angle_ranges:  List[Tuple[float, float]] = field(
-        default_factory=list)                 # [(start_deg, end_deg), ...]
-    vel_history_sec:           float = 1.0    # 速度推定に使う位置履歴長
+    # 軌跡追従 (TRACKING)
+    lookback_distance:          float = 1.0    # m 軌跡追従時に遡る距離
+    trail_sample_interval_m:    float = 0.05   # m 軌跡点を追加する最小移動距離
+    trail_max_points:           int   = 2000   # 軌跡の最大保持点数
 
-    # 4.3.4 静止時再配置
-    static_speed_threshold:    float = 0.05   # m/s（静止判定速度）
-    static_time_threshold:     float = 2.0    # s（静止継続時間）
-    candidate_count:           int   = 16     # 候補点数（放射状）
-    candidate_radius:          float = 1.5    # m（候補点の半径）
-    work_front_exclusion_deg:  float = 60.0   # deg（作業前方除外角度の半角）
+    # 状態遷移（距離帯）
+    d_prepare:                  float = 3.0    # m TRACKING/PREPARE の切替距離
+    d_evade:                    float = 2.0    # m PREPARE/EVADING の切替距離
+    distance_hysteresis_m:      float = 0.2    # m 復帰判定に加える余裕距離（チャタリング防止）
 
-    # 4.3.7 近接退避
-    retreat_trigger_distance:  float = 0.8    # m
-    retreat_release_distance:  float = 1.2    # m
-    closing_speed_threshold:   float = 0.3    # m/s
-    retreat_check_clearance:   float = 0.5    # m（退避方向の必要自由空間）
-    retreat_speed:             float = 0.15   # m/s
+    # 退避方向探索 (PREPARE)
+    evade_scan_directions:      int   = 16     # 空きスペース探索の走査方向数
+    evade_scan_max_dist:        float = 3.0    # m 空きスペース探索の最大走査距離
+    evade_route_length_m:       float = 2.0    # m 退避ルートの長さ
+    retreat_check_clearance:    float = 0.5    # m 退避方向に必要な最小自由空間
 
-    # 進行路上退避
-    approach_perpendicular_deg: float = 45.0  # deg 垂直判定の半角（この範囲で前後逃げを優先）
+    # 退避走行 (EVADING)
+    retreat_speed:               float = 0.15  # m/s 退避速度（= v_evade）
+    evade_k_ang:                  float = 2.0  # 旋回 / Pure Pursuit の角度ゲイン
+    evade_stop_radius_m:          float = 0.2  # m Pure Pursuit の停止半径
+    evade_orient_tolerance_rad:   float = 0.05 # rad 向き合わせ完了とみなす角度誤差
 
     # 共通
-    path_approach_angle_deg:   float = 60.0   # deg（試験員がロボット方向へ向かっているとみなす角度差閾値）
-    goal_deadzone_m:           float = 0.30   # m
-    update_rate_hz:            float = 10.0
+    goal_deadzone_m:             float = 0.30  # m ゴール更新のデッドゾーン
+    update_rate_hz:               float = 10.0
 
 
 # ──────────────────────────────────────────────────────────────────
-# 位置履歴バッファ
+# 座標変換（base_link 相対 ⇔ 絶対座標系）
 # ──────────────────────────────────────────────────────────────────
-class PositionHistory:
-    """試験員の位置履歴を保持し、速度ベクトルを推定する"""
+def to_absolute(robot_pose: Pose2D, rel_point: Point2D) -> Point2D:
+    """base_link 相対座標を絶対座標系（odom 等）に変換する"""
+    x_r, y_r, theta_r = robot_pose
+    c, s = math.cos(theta_r), math.sin(theta_r)
+    return (
+        x_r + rel_point[0] * c - rel_point[1] * s,
+        y_r + rel_point[0] * s + rel_point[1] * c,
+    )
 
-    def __init__(self, max_sec: float = 2.0, rate_hz: float = 10.0):
-        maxlen = int(max_sec * rate_hz) + 1
-        self._buf: deque[Tuple[float, float, float]] = deque(maxlen=maxlen)  # (t, x, y)
-        self._last_vel: Vector2D = (0.0, 0.0)
 
-    def update(self, x: float, y: float, t: float) -> None:
-        self._buf.append((t, x, y))
-        if len(self._buf) >= 2:
-            self._last_vel = self._estimate_vel()
-
-    def _estimate_vel(self) -> Vector2D:
-        """最小二乗法で速度ベクトルを推定（2点以上必要）"""
-        if len(self._buf) < 2:
-            return (0.0, 0.0)
-        oldest = self._buf[0]
-        newest = self._buf[-1]
-        dt = newest[0] - oldest[0]
-        if dt < 1e-3:
-            return (0.0, 0.0)
-        vx = (newest[1] - oldest[1]) / dt
-        vy = (newest[2] - oldest[2]) / dt
-        return (vx, vy)
-
-    @property
-    def velocity(self) -> Vector2D:
-        return self._last_vel
-
-    @property
-    def speed(self) -> float:
-        vx, vy = self._last_vel
-        return math.hypot(vx, vy)
-
-    @property
-    def direction_rad(self) -> float:
-        """進行方向 [rad]（静止中は直前値を保持）"""
-        vx, vy = self._last_vel
-        if math.hypot(vx, vy) < 0.02:
-            return math.atan2(vy, vx) if (vx != 0 or vy != 0) else 0.0
-        return math.atan2(vy, vx)
-
-    def closing_speed_to_robot(self) -> float:
-        """ロボット（原点）への接近速度 [m/s]（正=接近）"""
-        if len(self._buf) < 2:
-            return 0.0
-        p0 = self._buf[-2]
-        p1 = self._buf[-1]
-        dt = p1[0] - p0[0]
-        if dt < 1e-3:
-            return 0.0
-        d0 = math.hypot(p0[1], p0[2])
-        d1 = math.hypot(p1[1], p1[2])
-        return (d0 - d1) / dt
-
-    def clear(self) -> None:
-        self._buf.clear()
-        self._last_vel = (0.0, 0.0)
+def to_relative(robot_pose: Pose2D, abs_point: Point2D) -> Point2D:
+    """絶対座標系（odom 等）の点を base_link 相対座標に変換する"""
+    x_r, y_r, theta_r = robot_pose
+    dx, dy = abs_point[0] - x_r, abs_point[1] - y_r
+    c, s = math.cos(theta_r), math.sin(theta_r)
+    return (dx * c + dy * s, -dx * s + dy * c)
 
 
 # ──────────────────────────────────────────────────────────────────
-# 静止検知
+# 軌跡追従（状態A: TRACKING）
 # ──────────────────────────────────────────────────────────────────
-class StaticDetector:
-    """試験員が静止（作業中）かどうかを判定する"""
-
-    def __init__(self, speed_threshold: float = 0.05, time_threshold: float = 2.0):
-        self._speed_th    = speed_threshold
-        self._time_th     = time_threshold
-        self._static_since: Optional[float] = None
-
-    def update(self, speed: float, t: float) -> bool:
-        """is_static を返す"""
-        if speed > self._speed_th:
-            self._static_since = None
-            return False
-        if self._static_since is None:
-            self._static_since = t
-        return (t - self._static_since) >= self._time_th
-
-    def reset(self) -> None:
-        self._static_since = None
+def update_trail(trail: Deque[Point2D], person_pos: Point2D, min_delta: float = 0.05) -> None:
+    """試験員の軌跡バッファへ点を追加する（前回点から一定距離以上移動した場合のみ）"""
+    if not trail or math.hypot(person_pos[0] - trail[-1][0], person_pos[1] - trail[-1][1]) > min_delta:
+        trail.append(person_pos)
 
 
-# ──────────────────────────────────────────────────────────────────
-# 退避ヒステリシス
-# ──────────────────────────────────────────────────────────────────
-class RetreatHysteresis:
-    """前進・後退のハンチングを防ぐヒステリシス機構（4.3.7 §6）"""
-
-    def __init__(self, trigger: float, release: float, closing_th: float):
-        assert release > trigger, "release > trigger でなければヒステリシスにならない"
-        self._trigger    = trigger
-        self._release    = release
-        self._closing_th = closing_th
-        self._active     = False
-
-    def update(self, dist: float, closing_speed: float) -> bool:
-        if not self._active:
-            # 非退避中 → トリガー条件で退避開始
-            if dist < self._trigger or closing_speed > self._closing_th:
-                self._active = True
-        else:
-            # 退避中 → 両方の解除条件を満たしたら終了
-            if dist > self._release and closing_speed <= self._closing_th:
-                self._active = False
-        return self._active
-
-    @property
-    def is_active(self) -> bool:
-        return self._active
-
-    def reset(self) -> None:
-        self._active = False
-
-
-# ──────────────────────────────────────────────────────────────────
-# 候補点スコアリング（4.3.4）
-# ──────────────────────────────────────────────────────────────────
-@dataclass
-class CandidatePoint:
-    x: float
-    y: float
-    angle_from_person_rad: float   # 試験員から見た方向（ロボット基準）
-    score: float = 0.0
-    feasible: bool = True
-
-
-def generate_candidate_points(
-    person_x: float,
-    person_y: float,
-    person_facing_rad: float,       # 試験員の正面方向（ロボット基準）
-    radius: float,
-    count: int,
-    work_exclusion_half_deg: float  # 正面方向からの除外角度（半角）
-) -> List[CandidatePoint]:
+def get_trail_goal(
+    trail: Deque[Point2D],
+    lookback_distance: float,
+    robot_pos: Point2D = (0.0, 0.0),
+) -> Point2D:
     """
-    試験員を中心に放射状に候補点を生成する。
-    試験員の正面方向（配電盤がある方向）付近は除外する。
+    軌跡上を現在点から lookback_distance だけ遡った点を目標地点として返す。
+    trail が空の場合は robot_pos、1点しかない場合はその点を返す。
     """
-    candidates: List[CandidatePoint] = []
-    excl_half = math.radians(work_exclusion_half_deg)
-    step = 2 * math.pi / count
+    if len(trail) == 0:
+        return robot_pos
+    if len(trail) < 2:
+        return trail[-1]
 
-    for i in range(count):
-        angle = i * step          # ロボット基準の絶対角度
-        # 試験員から見た相対角度（正面を 0 として）
-        rel = angle - person_facing_rad
-        # 正規化 -π〜π
-        while rel >  math.pi: rel -= 2 * math.pi
-        while rel < -math.pi: rel += 2 * math.pi
-
-        # 正面付近を除外（配電盤作業スペース）
-        if abs(rel) < excl_half:
-            continue
-
-        cx = person_x + radius * math.cos(angle)
-        cy = person_y + radius * math.sin(angle)
-        candidates.append(CandidatePoint(
-            x=cx, y=cy,
-            angle_from_person_rad=angle
-        ))
-    return candidates
-
-
-def score_candidate(
-    candidate: CandidatePoint,
-    robot_x: float,
-    robot_y: float,
-    person_x: float,
-    person_y: float,
-    person_facing_rad: float,
-    is_in_fov_fn,           # callable(x, y) → bool
-    is_clear_fn,            # callable(x, y) → bool （costmap）
-    move_cost_weight: float = 1.0,
-    fov_violation_penalty: float = 1000.0,
-    blocked_penalty: float  = 500.0,
-) -> float:
-    """
-    候補点のスコアを計算する（低いほど良い）。
-    スコア = 移動コスト + ペナルティ
-    """
-    score = 0.0
-
-    # costmap チェック
-    if not is_clear_fn(candidate.x, candidate.y):
-        score += blocked_penalty
-        candidate.feasible = False
-
-    # 視野角チェック
-    if not is_in_fov_fn(candidate.x - person_x, candidate.y - person_y):
-        score += fov_violation_penalty
-
-    # 移動距離コスト（現在位置からの距離）
-    move_dist = math.hypot(candidate.x - robot_x, candidate.y - robot_y)
-    score += move_cost_weight * move_dist
-
-    candidate.score = score
-    return score
+    cum_dist = 0.0
+    pts = list(trail)
+    for i in range(len(pts) - 1, 0, -1):
+        seg = math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])
+        cum_dist += seg
+        if cum_dist >= lookback_distance:
+            return pts[i - 1]
+    return pts[0]
 
 
 # ──────────────────────────────────────────────────────────────────
-# LiDAR 視野角判定
+# 距離帯による状態遷移（ヒステリシス付き）
 # ──────────────────────────────────────────────────────────────────
-class FovChecker:
-    """
-    ロボットから見た相対ベクトルが LiDAR 有効視野角内かどうかを判定する。
-    死角範囲 (blind_angle_ranges) は除外する。
-    """
+def next_follow_state(
+    current_state: FollowState,
+    distance: float,
+    d_prepare: float,
+    d_evade: float,
+    hysteresis: float,
+) -> FollowState:
+    """距離に基づき次の状態を返す。復帰判定には hysteresis 分の余裕を要求する。"""
+    if current_state == FollowState.TRACKING:
+        if distance < d_prepare:
+            return FollowState.PREPARE
+        return FollowState.TRACKING
 
-    def __init__(self, fov_deg: float = 360.0,
-                 blind_ranges: List[Tuple[float, float]] = None):
-        self._fov_half = math.radians(fov_deg / 2.0)
-        self._blind    = [(math.radians(s), math.radians(e))
-                          for s, e in (blind_ranges or [])]
+    if current_state == FollowState.PREPARE:
+        if distance < d_evade:
+            return FollowState.EVADING
+        if distance >= d_prepare + hysteresis:
+            return FollowState.TRACKING
+        return FollowState.PREPARE
 
-    def is_in_fov(self, dx: float, dy: float) -> bool:
-        """(dx, dy) がロボット基準の相対ベクトル"""
-        angle = math.atan2(dy, dx)
-        # 360° FOV の場合は死角チェックのみ
-        if self._fov_half >= math.pi:
-            return not self._in_blind(angle)
-        return abs(angle) <= self._fov_half and not self._in_blind(angle)
-
-    def _in_blind(self, angle_rad: float) -> bool:
-        a = angle_rad % (2 * math.pi)
-        for (s, e) in self._blind:
-            s = s % (2 * math.pi)
-            e = e % (2 * math.pi)
-            if s <= e:
-                if s <= a <= e:
-                    return True
-            else:
-                if a >= s or a <= e:
-                    return True
-        return False
-
-    def clamp_offset(self, desired_offset_deg: float,
-                     person_angle_rad: float) -> float:
-        """
-        角度オフセットを適用した結果が死角に入る場合、
-        視野角内に収まるよう縮小する。
-        返り値: 実際に使用するオフセット [deg]
-        """
-        for offset in range(int(desired_offset_deg), -1, -1):
-            test_angle = person_angle_rad + math.radians(offset)
-            if self.is_in_fov(math.cos(test_angle), math.sin(test_angle)):
-                return float(offset)
-        return 0.0
+    # EVADING
+    if distance >= d_evade + hysteresis:
+        return FollowState.PREPARE
+    return FollowState.EVADING
 
 
 # ──────────────────────────────────────────────────────────────────
-# 通路幅評価
+# 退避方向探索（状態B: PREPARE）
 # ──────────────────────────────────────────────────────────────────
-def estimate_corridor_width(
-    query_x: float,
-    query_y: float,
-    query_yaw: float,
-    costmap_query_fn,      # callable(x, y) → bool (True = free)
-    probe_dist: float = 3.0,
-    probe_step: float = 0.05,
-) -> float:
+def find_nearest_open_direction(
+    clearance_fn,                   # callable(dx, dy) -> float: 単位ベクトル方向への自由距離 [m]
+    num_directions: int = 16,
+    max_check_dist: float = 3.0,
+    min_clearance: float = 0.5,
+) -> Tuple[float, float]:
     """
-    ロボットの横方向（左右）に障害物をプローブし、通路幅を推定する。
-    costmap_query_fn: (x,y) が空きならば True を返す関数
+    ロボット位置を中心に放射状に num_directions 方向を走査し、
+    min_clearance 以上の自由空間を確保できる中で最も自由距離の大きい方向を返す。
 
-    返り値: 推定通路幅 [m]
+    戻り値: (best_angle_rad, best_clear_dist)
+    採用可能な方向が無い場合は best_clear_dist = -1.0 を返す（呼び出し側で判定する）。
     """
-    perp = query_yaw + math.pi / 2.0   # 横方向角度
+    best_angle = 0.0
+    best_clear_dist = -1.0
+    step = 2.0 * math.pi / num_directions
 
-    def probe_side(sign: float) -> float:
-        for d in [probe_step * i for i in range(1, int(probe_dist / probe_step) + 1)]:
-            px = query_x + sign * d * math.cos(perp)
-            py = query_y + sign * d * math.sin(perp)
-            if not costmap_query_fn(px, py):
-                return d
-        return probe_dist
+    for k in range(num_directions):
+        angle = k * step
+        dx, dy = math.cos(angle), math.sin(angle)
+        clear_dist = min(clearance_fn(dx, dy), max_check_dist)
 
-    left  = probe_side( 1.0)
-    right = probe_side(-1.0)
-    return left + right
+        if clear_dist >= min_clearance and clear_dist > best_clear_dist:
+            best_clear_dist = clear_dist
+            best_angle = angle
 
-
-# ──────────────────────────────────────────────────────────────────
-# 追従ゴール計算（4.3.3）
-# ──────────────────────────────────────────────────────────────────
-def compute_follow_goal(
-    person_x:   float,
-    person_y:   float,
-    person_vel: Vector2D,
-    params:     FollowParams,
-    corridor_width: float,
-    fov_checker: FovChecker,
-) -> Tuple[float, float, float]:
-    """
-    通常追従ゴール (goal_x, goal_y, goal_yaw) を base_link 座標系で計算する。
-
-    アルゴリズム (4.3.3):
-      1. 試験員の進行方向を速度ベクトルから推定
-      2. 通路幅に応じて追従角度オフセットを決定
-      3. 視野角制約を適用しオフセットを縮小
-      4. 距離制約に基づいてゴール位置を算出
-    """
-    dist = math.hypot(person_x, person_y)
-
-    # ── 1. 試験員の進行方向 ──────────────────────────────────────
-    vx, vy = person_vel
-    person_dir = math.atan2(vy, vx) if math.hypot(vx, vy) > 0.02 else math.atan2(person_y, person_x)
-
-    # ── 2. 通路幅による角度オフセット決定 ──────────────────────────
-    if corridor_width < params.corridor_width_threshold:
-        desired_offset_deg = 0.0           # 狭い通路 → 真後ろ
-    else:
-        # 開けた空間 → 斜め後方（最大 follow_angle_offset_max）
-        desired_offset_deg = params.follow_angle_offset_max
-
-    # ── 3. 視野角制約で縮小 ─────────────────────────────────────
-    person_angle = math.atan2(person_y, person_x)
-    actual_offset_deg = fov_checker.clamp_offset(desired_offset_deg, person_angle)
-
-    # ── 4. ゴール位置計算 ────────────────────────────────────────
-    # 試験員の後方 follow_distance_target m の点
-    # オフセット: 試験員進行方向の逆方向から actual_offset_deg 回転
-    behind_dir = person_dir + math.pi + math.radians(actual_offset_deg)
-
-    goal_x = person_x + params.follow_distance_target * math.cos(behind_dir)
-    goal_y = person_y + params.follow_distance_target * math.sin(behind_dir)
-
-    # ゴール姿勢: 試験員を向く
-    goal_yaw = math.atan2(person_y - goal_y, person_x - goal_x)
-
-    return (goal_x, goal_y, goal_yaw)
+    return best_angle, best_clear_dist
 
 
-# ──────────────────────────────────────────────────────────────────
-# 退避速度指令計算（4.3.7）
-# ──────────────────────────────────────────────────────────────────
-def compute_retreat_cmd(
-    person_x:   float,
-    person_y:   float,
-    retreat_speed: float,
-    clearance_fn,   # callable(dx, dy) → float: 退避方向の自由空間距離
-    min_clearance:  float,
-) -> Optional[Tuple[float, float]]:
-    """
-    退避方向速度指令 (linear_x, angular_z) を計算する。
-    自由空間が不十分な場合は None を返す（その場停止）。
+def compute_evade_goal(
+    robot_pos_abs: Point2D,
+    escape_angle_abs: float,
+    route_length: float,
+) -> Point2D:
+    """絶対座標系でのロボット位置と退避角度から、退避ルート終端点を返す"""
+    return (
+        robot_pos_abs[0] + route_length * math.cos(escape_angle_abs),
+        robot_pos_abs[1] + route_length * math.sin(escape_angle_abs),
+    )
 
-    クローラーは非ホロノミックなため:
-      - 試験員が前方にいる → 後退（linear_x < 0）
-      - 試験員が横・後方にいる → 旋回してから後退の 2 フェーズ
-    ただし緊急退避ではまず距離を開けることを優先し、
-    試験員から遠ざかる方向の linear_x を直接出す簡略版を採用する。
-    """
-    dist = math.hypot(person_x, person_y)
-    if dist < 1e-3:
+
+def orient_to_evade_route(
+    robot_pose: Pose2D,
+    escape_angle: float,
+    k_ang: float = 2.0,
+    angle_tolerance: float = 0.05,
+) -> Tuple[float, float]:
+    """退避方向(絶対角)へ機体を向ける。前進速度は常に 0。"""
+    _, _, theta_r = robot_pose
+    angle_err = math.atan2(math.sin(escape_angle - theta_r), math.cos(escape_angle - theta_r))
+
+    if abs(angle_err) < angle_tolerance:
         return (0.0, 0.0)
 
-    # 試験員から遠ざかる方向（逆ベクトル）
-    away_x = -person_x / dist
-    away_y = -person_y / dist
-
-    # 自由空間チェック
-    clearance = clearance_fn(away_x, away_y)
-    if clearance < min_clearance:
-        return None   # 退避不可 → 呼び出し側で停止
-
-    # クローラーは y 方向に直接移動できないため、
-    # x 成分（前後）のみを使い、y 偏差は angular_z で補正
-    linear_x  = away_x * retreat_speed
-    angular_z = away_y * retreat_speed * 2.0   # 横方向誤差を旋回で補正（ゲイン暫定）
-
-    return (linear_x, angular_z)
+    return (0.0, k_ang * angle_err)
 
 
 # ──────────────────────────────────────────────────────────────────
-# 進行路上退避速度指令計算
+# Pure Pursuit（状態C: EVADING）
 # ──────────────────────────────────────────────────────────────────
-def compute_approach_escape_cmd(
-    person_dir:         float,   # 試験員の進行方向 (rad, base_link +x 基準)
-    escape_speed:       float,   # m/s（= retreat_speed を流用）
-    perp_threshold_deg: float,   # 垂直判定の半角 [deg]
-    clearance_fn,                # callable(dx, dy) → float: その方向の自由空間距離
-    min_clearance:      float,   # m 最低限必要な自由空間
-) -> Optional[Tuple[float, float]]:
-    """
-    試験員の進行方向上にロボットがいる場合の退避速度指令 (linear_x, angular_z) を計算する。
+def pure_pursuit_control(
+    robot_pose: Pose2D,
+    goal: Point2D,
+    v_max: float = 0.5,
+    k_ang: float = 2.0,
+    stop_radius: float = 0.3,
+) -> Tuple[float, float]:
+    x_r, y_r, theta_r = robot_pose
+    dx, dy = goal[0] - x_r, goal[1] - y_r
+    dist = math.hypot(dx, dy)
 
-    優先順位:
-      1. クローラ前後軸（±x）が試験員進行方向と垂直かつスペースあり
-           → ±x 方向（前進 or 後退）でスペースの広い方向へ逃げる
-      2. 平行 or 垂直でもスペースなし
-           → 試験員の進行方向そのままに速度指令を発行（後退含む）
-      スペースが全方向不足 → None（停止）
+    if dist < stop_radius:
+        return (0.0, 0.0)
 
-    base_link 座標系。ロボット前進方向 = +x 軸。
-    """
-    # alpha: ロボット前後軸(x軸)と試験員進行方向の角度差 [0, π]
-    alpha = abs(person_dir)
-    if alpha > math.pi:
-        alpha = 2.0 * math.pi - alpha
+    target_angle = math.atan2(dy, dx)
+    angle_err = math.atan2(math.sin(target_angle - theta_r), math.cos(target_angle - theta_r))
 
-    perp_rad = math.radians(perp_threshold_deg)
-    is_perp  = abs(alpha - math.pi / 2.0) <= perp_rad
-
-    if is_perp:
-        fwd_clear = clearance_fn(1.0, 0.0)
-        bwd_clear = clearance_fn(-1.0, 0.0)
-        if max(fwd_clear, bwd_clear) >= min_clearance:
-            if fwd_clear >= bwd_clear:
-                return (escape_speed, 0.0)
-            else:
-                return (-escape_speed, 0.0)
-        # スペース不足 → 試験員進行方向へフォールスルー
-
-    # 試験員の進行方向に沿って退避（前進 or 後退）
-    esc_x = math.cos(person_dir)
-    esc_y = math.sin(person_dir)
-    if clearance_fn(esc_x, esc_y) < min_clearance:
-        return None   # 退避不可
-
-    # 非ホロノミック補正: x 成分で前後移動、y 成分は angular_z で補正
-    linear_x  = esc_x * escape_speed
-    angular_z = esc_y * escape_speed * 2.0
-    return (linear_x, angular_z)
+    v = v_max * min(max(dist / 1.5, 0.0), 1.0)
+    omega = k_ang * angle_err
+    return (v, omega)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -511,172 +249,116 @@ class FollowPlannerCore:
     """
 
     def __init__(self, params: FollowParams = None):
-        self.params         = params or FollowParams()
-        self.state          = FollowState.NORMAL_FOLLOW
-        self.pos_history    = PositionHistory(
-            max_sec=self.params.vel_history_sec * 2,
-            rate_hz=self.params.update_rate_hz)
-        self.static_detector = StaticDetector(
-            speed_threshold=self.params.static_speed_threshold,
-            time_threshold=self.params.static_time_threshold)
-        self.retreat_hyst   = RetreatHysteresis(
-            trigger=self.params.retreat_trigger_distance,
-            release=self.params.retreat_release_distance,
-            closing_th=self.params.closing_speed_threshold)
-        self.fov_checker    = FovChecker(
-            fov_deg=self.params.lidar_fov_deg,
-            blind_ranges=self.params.lidar_blind_angle_ranges)
-        self._prev_goal: Optional[Point2D] = None
-        self._static_goal:  Optional[Tuple[float, float, float]] = None
+        self.params = params or FollowParams()
+        self.state  = FollowState.TRACKING
+
+        self.trail: Deque[Point2D] = deque(maxlen=self.params.trail_max_points)
+
+        self._prev_goal:        Optional[Point2D] = None
+        self._escape_angle_abs: Optional[float]    = None
+        self._evade_goal_abs:   Optional[Point2D]  = None
 
     def update(
         self,
-        person_x:       float,
-        person_y:       float,
-        t:              float,
-        corridor_width: float,                      # m
-        costmap_clear_fn,                           # callable(x,y)→bool
-        retreat_clearance_fn,                       # callable(dx,dy)→float
+        person_x: float,
+        person_y: float,
+        t: float,
+        clearance_fn,                                  # callable(dx,dy)->float
+        robot_pose_odom: Optional[Pose2D],              # (x,y,theta) odom(costmap)系
     ) -> "PlannerOutput":
         """
-        1 制御周期分の計算を行い PlannerOutput を返す。
+        1制御周期分の計算を行い PlannerOutput を返す。
 
         戻り値の kind:
           "nav_goal"   → (x,y,yaw) を Nav2 へ送る（base_link 座標）
           "retreat"    → (linear_x, angular_z) を /cmd_vel_retreat へ直接送る
-          "stop"       → 退避不可で停止（/cmd_vel_retreat にゼロを送る）
-          "no_update"  → デッドゾーン内・変化なし（何もしない）
+          "stop"       → 退避不可 / 絶対姿勢未確立で停止
+          "no_update"  → デッドゾーン内・絶対姿勢未確立などで変化なし
         """
-        # 位置履歴を更新
-        self.pos_history.update(person_x, person_y, t)
+        distance = math.hypot(person_x, person_y)
 
-        dist          = math.hypot(person_x, person_y)
-        closing_speed = self.pos_history.closing_speed_to_robot()
-        person_speed  = self.pos_history.speed
-        is_static     = self.static_detector.update(person_speed, t)
+        next_state = next_follow_state(
+            self.state, distance,
+            self.params.d_prepare, self.params.d_evade,
+            self.params.distance_hysteresis_m)
 
-        # ── 優先1: 近接退避チェック（距離のみ）──────────────────
-        # closing_speed によるトリガーは廃止。接近中の退避は優先1.5が担当する。
-        retreat_needed = self.retreat_hyst.update(dist, 0.0)
+        if next_state != self.state and next_state in (FollowState.TRACKING, FollowState.PREPARE):
+            # TRACKING へ復帰、または PREPARE へ（再)突入 → 退避方向を再計算させる
+            self._escape_angle_abs = None
+            self._evade_goal_abs   = None
+        self.state = next_state
 
-        if retreat_needed:
-            self.state = FollowState.RETREAT
-            cmd = compute_retreat_cmd(
-                person_x, person_y,
-                self.params.retreat_speed,
-                retreat_clearance_fn,
-                self.params.retreat_check_clearance)
-            if cmd is None:
-                return PlannerOutput(kind="stop", retreat_blocked=True)
-            lx, az = cmd
-            return PlannerOutput(kind="retreat", linear_x=lx, angular_z=az)
+        if self.state == FollowState.TRACKING:
+            return self._handle_tracking(person_x, person_y, robot_pose_odom)
 
-        # ── 優先1.5: 進行路上退避 ────────────────────────────────
-        # 試験員が動いており、かつロボットが試験員の進行経路上にいる場合に
-        # compute_approach_escape_cmd() で速度指令を生成する。
-        if person_speed > self.params.static_speed_threshold:
-            vx, vy = self.pos_history.velocity
-            if math.hypot(vx, vy) > 0.02:
-                person_dir     = math.atan2(vy, vx)
-                person_to_robot = math.atan2(-person_y, -person_x)
-                diff = math.atan2(
-                    math.sin(person_dir - person_to_robot),
-                    math.cos(person_dir - person_to_robot))
-                if abs(diff) < math.radians(self.params.path_approach_angle_deg):
-                    self.state = FollowState.RETREAT
-                    cmd = compute_approach_escape_cmd(
-                        person_dir,
-                        self.params.retreat_speed,
-                        self.params.approach_perpendicular_deg,
-                        retreat_clearance_fn,
-                        self.params.retreat_check_clearance)
-                    if cmd is not None:
-                        lx, az = cmd
-                        return PlannerOutput(kind="retreat", linear_x=lx, angular_z=az)
-                    # 逃げ場なし → 試験員が通り過ぎるのを待つ
-                    return PlannerOutput(kind="stop", retreat_blocked=True)
+        if self.state == FollowState.PREPARE:
+            return self._handle_prepare(clearance_fn, robot_pose_odom)
 
-        # ── 優先2: 静止時再配置（4.3.4）────────────────────────
-        if is_static:
-            if self.state != FollowState.STATIC_REPOSITION:
-                self.state = FollowState.STATIC_REPOSITION
-                self._static_goal = None   # 候補点を再計算
+        return self._handle_evading(clearance_fn, robot_pose_odom)
 
-            goal = self._compute_static_goal(
-                person_x, person_y, corridor_width,
-                costmap_clear_fn)
-            if goal is None:
-                return PlannerOutput(kind="no_update")
-            gx, gy, gyaw = goal
-            return self._nav_goal_output(gx, gy, gyaw)
-
-        # ── 通常追従（4.3.3）────────────────────────────────────
-        # 注意: static_detector.reset() はここで呼ばない。
-        # StaticDetector 内で移動速度が speed_threshold を超えたとき
-        # 自動的にタイマーがリセットされる（StaticDetector.update() 参照）。
-        # ここで reset() を呼ぶと静止タイマーが毎周期リセットされ
-        # 静止検知が永遠に発動しなくなる。
-        self.state = FollowState.NORMAL_FOLLOW
-        self._static_goal = None
-
-        gx, gy, gyaw = compute_follow_goal(
-            person_x, person_y,
-            self.pos_history.velocity,
-            self.params,
-            corridor_width,
-            self.fov_checker)
-        return self._nav_goal_output(gx, gy, gyaw)
-
-    def _compute_static_goal(
-        self,
-        person_x:       float,
-        person_y:       float,
-        corridor_width: float,
-        costmap_clear_fn,
-    ) -> Optional[Tuple[float, float, float]]:
-        """
-        静止時の再配置目標を計算する（4.3.4）。
-        既に計算済みであれば再利用する（_static_goal キャッシュ）。
-        """
-        if self._static_goal is not None:
-            return self._static_goal
-
-        # 試験員の正面方向を推定（直前の移動方向から）
-        facing_rad = self.pos_history.direction_rad
-
-        # 候補点生成
-        candidates = generate_candidate_points(
-            person_x, person_y,
-            facing_rad,
-            radius=self.params.candidate_radius,
-            count=self.params.candidate_count,
-            work_exclusion_half_deg=self.params.work_front_exclusion_deg)
-
-        if not candidates:
-            return None
-
-        # スコアリング
-        for c in candidates:
-            score_candidate(
-                c, 0.0, 0.0,    # ロボットは原点（base_link 系）
-                person_x, person_y,
-                facing_rad,
-                is_in_fov_fn=lambda dx, dy: self.fov_checker.is_in_fov(dx, dy),
-                is_clear_fn=costmap_clear_fn)
-
-        # 実行可能な候補を最小コスト順にソート
-        feasible = [c for c in candidates if c.feasible]
-        if not feasible:
-            feasible = candidates   # 全候補不可でも最良を選ぶ（停止よりマシ）
-        best = min(feasible, key=lambda c: c.score)
-
-        goal_yaw = math.atan2(person_y - best.y, person_x - best.x)
-        self._static_goal = (best.x, best.y, goal_yaw)
-        return self._static_goal
-
-    def _nav_goal_output(
-        self, gx: float, gy: float, gyaw: float
+    def _handle_tracking(
+        self, person_x: float, person_y: float, robot_pose_odom: Optional[Pose2D]
     ) -> "PlannerOutput":
+        if robot_pose_odom is None:
+            # 絶対姿勢が無いと軌跡を正しく蓄積できないため、この周期はスキップする
+            return PlannerOutput(kind="no_update")
+
+        person_abs = to_absolute(robot_pose_odom, (person_x, person_y))
+        update_trail(self.trail, person_abs, self.params.trail_sample_interval_m)
+
+        goal_abs = get_trail_goal(self.trail, self.params.lookback_distance,
+                                   robot_pos=(robot_pose_odom[0], robot_pose_odom[1]))
+        gx, gy = to_relative(robot_pose_odom, goal_abs)
+        goal_yaw = math.atan2(person_y - gy, person_x - gx)
+        return self._nav_goal_output(gx, gy, goal_yaw)
+
+    def _handle_prepare(self, clearance_fn, robot_pose_odom: Optional[Pose2D]) -> "PlannerOutput":
+        if robot_pose_odom is None:
+            return PlannerOutput(kind="stop", retreat_blocked=True)
+
+        if self._escape_angle_abs is None:
+            if not self._scan_escape_direction(clearance_fn, robot_pose_odom):
+                return PlannerOutput(kind="stop", retreat_blocked=True)
+
+        lx, az = orient_to_evade_route(
+            robot_pose_odom, self._escape_angle_abs,
+            self.params.evade_k_ang, self.params.evade_orient_tolerance_rad)
+        return PlannerOutput(kind="retreat", linear_x=lx, angular_z=az)
+
+    def _handle_evading(self, clearance_fn, robot_pose_odom: Optional[Pose2D]) -> "PlannerOutput":
+        if robot_pose_odom is None:
+            return PlannerOutput(kind="stop", retreat_blocked=True)
+
+        if self._escape_angle_abs is None:
+            # PREPARE を経ずに来ることは想定していないが、念のためこの周期で走査する
+            if not self._scan_escape_direction(clearance_fn, robot_pose_odom):
+                return PlannerOutput(kind="stop", retreat_blocked=True)
+
+        if self._evade_goal_abs is None:
+            self._evade_goal_abs = compute_evade_goal(
+                (robot_pose_odom[0], robot_pose_odom[1]),
+                self._escape_angle_abs,
+                self.params.evade_route_length_m)
+
+        lx, az = pure_pursuit_control(
+            robot_pose_odom, self._evade_goal_abs,
+            v_max=self.params.retreat_speed,
+            k_ang=self.params.evade_k_ang,
+            stop_radius=self.params.evade_stop_radius_m)
+        return PlannerOutput(kind="retreat", linear_x=lx, angular_z=az)
+
+    def _scan_escape_direction(self, clearance_fn, robot_pose_odom: Pose2D) -> bool:
+        angle_rel, clear_dist = find_nearest_open_direction(
+            clearance_fn,
+            num_directions=self.params.evade_scan_directions,
+            max_check_dist=self.params.evade_scan_max_dist,
+            min_clearance=self.params.retreat_check_clearance)
+        if clear_dist < 0.0:
+            return False
+        self._escape_angle_abs = robot_pose_odom[2] + angle_rel
+        return True
+
+    def _nav_goal_output(self, gx: float, gy: float, gyaw: float) -> "PlannerOutput":
         """デッドゾーン判定付きで nav_goal を返す"""
         if self._prev_goal is not None:
             dx = gx - self._prev_goal[0]
@@ -690,24 +372,28 @@ class FollowPlannerCore:
         """デッドゾーンをリセットして次回必ずゴールを送出する"""
         self._prev_goal = None
 
+    def clear_trail(self) -> None:
+        """試験員ロスト→再検出時に呼ぶ。軌跡の不連続（過去点の再利用）を防ぐ。"""
+        self.trail.clear()
+
     def reset(self) -> None:
         """モード切替時などにリセットする"""
-        self.state = FollowState.NORMAL_FOLLOW
-        self.retreat_hyst.reset()
-        self.static_detector.reset()
-        self._prev_goal   = None
-        self._static_goal = None
+        self.state = FollowState.TRACKING
+        self.trail.clear()
+        self._prev_goal        = None
+        self._escape_angle_abs = None
+        self._evade_goal_abs   = None
 
 
 @dataclass
 class PlannerOutput:
-    kind:           str     = "no_update"   # "nav_goal"/"retreat"/"stop"/"no_update"
+    kind:            str   = "no_update"   # "nav_goal"/"retreat"/"stop"/"no_update"
     # nav_goal 時
-    goal_x:         float   = 0.0
-    goal_y:         float   = 0.0
-    goal_yaw:       float   = 0.0
+    goal_x:          float = 0.0
+    goal_y:          float = 0.0
+    goal_yaw:        float = 0.0
     # retreat 時
-    linear_x:       float   = 0.0
-    angular_z:      float   = 0.0
+    linear_x:        float = 0.0
+    angular_z:       float = 0.0
     # 退避不可フラグ
-    retreat_blocked: bool   = False
+    retreat_blocked: bool  = False

@@ -123,8 +123,8 @@ class PersonPredictor(Node):
                 pred_y = self._last_known_y
                 is_searching = True
 
-                # FOLLOWING モード中のみ旋回速度を発行
-                if self._current_mode == RobotMode.FOLLOWING:
+                # FOLLOWING / FOLLOWING_MAPLESS モード中のみ旋回速度を発行
+                if self._current_mode in (RobotMode.FOLLOWING, RobotMode.FOLLOWING_MAPLESS):
                     cmd = Twist()
                     cmd.angular.z = self._search_ang_vel
                     self._pub_search_cmd.publish(cmd)
