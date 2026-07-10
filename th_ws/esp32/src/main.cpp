@@ -16,9 +16,9 @@ static unsigned long last_ctrl_ms = 0;
 
 // ── PID ──────────────────────────────────────────────────────
 static PID pidRight(PID_KP_RIGHT, PID_KI_RIGHT, PID_KD_RIGHT,
-                    PID_OUT_MIN,  PID_OUT_MAX,   PID_ITERM_MAX);
+                    PID_OUT_MIN,  PID_OUT_MAX,   PID_ITERM_MAX, PID_KFF);
 static PID pidLeft (PID_KP_LEFT,  PID_KI_LEFT,  PID_KD_LEFT,
-                    PID_OUT_MIN,  PID_OUT_MAX,   PID_ITERM_MAX);
+                    PID_OUT_MIN,  PID_OUT_MAX,   PID_ITERM_MAX, PID_KFF);
 
 // 目標速度 (m/s) — wheel_cmd で受信した最終目標値
 static volatile float targetLeft  = 0.0f;

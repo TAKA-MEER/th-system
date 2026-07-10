@@ -53,6 +53,12 @@
 #define PID_KI_LEFT        80.0f
 #define PID_KD_LEFT         1.0f
 
+// フィードフォワードゲイン [PWM/(m/s)]。PID 単独だと積分が積み上がるまで
+// 出力不足になるため、目標速度比例の基準出力を先に与える。
+// 実機実測 (2026-07-11): PWM 140 で約 0.45〜0.5 m/s (無負荷寄り) → k ≈ 280。
+// 過大にすると PID の補正幅 (ITERM_MAX=100) を超えて長時間オーバーシュートする。
+#define PID_KFF           280.0f
+
 #define PID_OUT_MIN      -200.0f    // PWM 出力下限
 #define PID_OUT_MAX       200.0f    // PWM 出力上限
 #define PID_ITERM_MAX     100.0f    // 積分ワインドアップ防止
