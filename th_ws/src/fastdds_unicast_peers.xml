@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <participant profile_name="unicast_peers_profile" is_default_profile="true">
+      <rtps>
+        <builtin>
+          <discovery_config>
+            <discoveryProtocol>SIMPLE</discoveryProtocol>
+          </discovery_config>
+          <metatrafficUnicastLocatorList>
+            <locator>
+              <udpv4>
+                <port>9920</port>
+              </udpv4>
+            </locator>
+          </metatrafficUnicastLocatorList>
+          <initialPeersList>
+            <locator>
+              <udpv4>
+                <address>10.42.0.1</address>
+                <port>9910</port>
+              </udpv4>
+            </locator>
+          </initialPeersList>
+        </builtin>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>
