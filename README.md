@@ -229,6 +229,118 @@ pio device monitor
 
 ---
 
+## ESP32 を AP にして PC⇔ラズパイを接続する構成
+
+ラズパイ自身を WiFi AP にする構成(前節「ラズパイ等ネットワーク経由の LiDAR を使う場合」)では、
+AP自身が生成した通信が PC 側に届かないという原因不明の非対称なネットワーク障害が実機で発生した
+ことがある。これを回避する代替構成として、**駆動用ESP32(または代替のESP32開発ボード)を WiFi AP にし、
+PC とラズパイの両方をそのAPのクライアントとして接続する**方法がある。両者が対等なステーションになるため、
+AP自身が発信元になる非対称性の問題が起きにくい。
+
+### 1. ESP32ファームウェアをAPモードで書き込む
+
+`th_ws/esp32/src/wifi_credentials.h` に以下を追加(既存のSTA用定義は削除しない。`WIFI_AP_MODE` で切替):
+
+```cpp
+#define WIFI_AP_MODE      1
+#define AP_SSID           "th-esp32-ap"
+#define AP_PASSWORD       "<APパスワード>"   // WPA2は8文字以上必須。実際のパスワードに置き換えること
+
+// esp32_bridge (PC側) がAPネットワーク上で待ち受けるIP。
+// PC側の固定IP設定 (下記3.) に合わせること。
+#define WS_SERVER_HOST    "192.168.4.50"
+#define WS_SERVER_PORT    8766
+```
+
+```bash
+cd th_ws/esp32
+pio run --target upload
+pio device monitor   # [WiFi] AP IP=192.168.4.1 が出れば起動成功
+```
+
+### 2. PC を ESP32 の AP に接続する
+
+物理WiFiアダプタ(モバイルホットスポット等の仮想アダプタは不可。WSL2 mirrored networking が
+ミラーするのは物理アダプタのみ)で `th-esp32-ap` に接続し、ネットワークプロファイルを
+「プライベート」に設定する。
+
+```powershell
+Set-NetConnectionProfile -InterfaceAlias "<アダプタ名>" -NetworkCategory Private
+```
+
+### 3. PC に固定IPを設定する(重要)
+
+ESP32のSoftAP DHCPは**再起動のたびにリース状態がリセットされ、PCに割り当てるIPが変わりうる**
+(`.2` → `.4` など)。ESP32を再書き込みするたびにportproxy設定やIPが食い違って通信不能になるため、
+必ず固定IPを設定すること(管理者権限が必要)。
+
+```powershell
+Get-NetIPAddress -InterfaceAlias "<アダプタ名>" -AddressFamily IPv4 | Remove-NetIPAddress -Confirm:$false
+New-NetIPAddress -InterfaceAlias "<アダプタ名>" -IPAddress 192.168.4.50 -PrefixLength 24 -DefaultGateway 192.168.4.1
+```
+
+**注意**: `Remove-NetIPAddress`/`New-NetIPAddress` の実行直後にWiFi接続自体が切断されることがある。
+`netsh wlan show interfaces` で `State: connected` に戻っているか必ず確認し、切れていたら
+`netsh wlan connect name="th-esp32-ap" interface="<アダプタ名>"` で再接続すること。
+
+### 4. Windows Firewall の設定
+
+- 上記2.で「プライベート」プロファイルに設定済みでも、**既存の `python.exe` 受信許可ルールが
+  「パブリック」プロファイル限定になっている場合がある**(Windowsが過去に別のネットワークで
+  自動作成したルールが残っているケース)。`Get-NetFirewallRule -DisplayName "python.exe"` で
+  `Profile` を確認し、Private が含まれていなければ以下のように専用ルールを追加する。
+
+```powershell
+New-NetFirewallRule -DisplayName "TH-System ESP32 WS Bridge" -Direction Inbound -Protocol TCP -LocalPort 8765,8766 -Action Allow -Profile Any
+```
+
+### 5. WSL2 ポート予約の回避 (portproxy)
+
+`esp32_bridge` は WSL2/Docker内で `0.0.0.0:8765` を待ち受けるが、WSL2 mirrored networking は
+同一ポート番号をWindows全体で(TCPに限り)排他予約し、外部アダプタ宛の到達を妨げることがある。
+外向きポートを8766にずらし、`netsh portproxy` で転送する(3.で設定した固定IP宛に作成すること)。
+
+```powershell
+netsh interface portproxy add v4tov4 listenport=8766 listenaddress=192.168.4.50 connectport=8765 connectaddress=127.0.0.1
+netsh interface portproxy show all   # 確認
+```
+
+PCのIPを変更した場合は、古いエントリを消してから作り直すこと:
+
+```powershell
+netsh interface portproxy delete v4tov4 listenport=8766 listenaddress=<旧IP>
+```
+
+### 6. ラズパイをESP32のAPに接続する
+
+ラズパイ側で通常のWiFi子機としてSSID `th-esp32-ap` に接続する(NetworkManager等でPiが
+物理アクセス可能な状態から操作すること。SSH接続はAP切替直後に一旦切れるため、Piから新しい
+IPアドレスを確認して伝えてもらい、そのIPで `ssh` し直す)。
+
+```bash
+ip addr show wlan0 | grep 'inet '   # ESP32のAP経由でDHCP取得したIPを確認
+```
+
+### 7. `/scan` の受信確認 (README 143〜181行目の3条件を適用)
+
+ラズパイ側で `ROS_DOMAIN_ID` をコンテナ側 (`10`) に一致させて `rplidar_node` を起動し、
+WSL2/コンテナ側で `ros2 topic hz /scan` が10Hz前後で来ることを確認する。手順は本README
+「ラズパイ等ネットワーク経由の LiDAR を使う場合」節と同じ(同一LANセグメント・
+`ROS_DOMAIN_ID`一致・Windows Firewall許可の3条件)。
+
+### 8. `esp32_bridge` との通信確認
+
+```bash
+# コンテナ内
+ros2 run th_esp32_bridge esp32_bridge.py --ros-args --params-file src/th_esp32_bridge/config/params.yaml
+ros2 topic hz /safety/estop_hw   # WSクライアントが接続していれば10Hz前後で届く
+```
+
+`/esp32/wheel_feedback` は `/cmd_vel` を送信していない間はESP32側のウォッチドッグが働き
+意図的に送信されない(安全側の設計)。通信確認だけなら `/safety/estop_hw` で十分。
+
+---
+
 ## udev デバイスパスの確認と設定
 
 ### Linux（実機環境）

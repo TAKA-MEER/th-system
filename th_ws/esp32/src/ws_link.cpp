@@ -79,7 +79,11 @@ void handleEvent(WStype_t type, uint8_t* payload, size_t length) {
             if (wheelCmdCallback) wheelCmdCallback(left, right);
         }
         break;
+    case WStype_ERROR:
+        Serial.printf("[WS] エラー (type=%d, len=%u)\n", (int)type, (unsigned)length);
+        break;
     default:
+        Serial.printf("[WS] 未処理イベント type=%d len=%u\n", (int)type, (unsigned)length);
         break;
     }
 }
@@ -92,6 +96,24 @@ void onWheelCmd(void (*callback)(float, float)) { wheelCmdCallback = callback; }
 void onDisconnect(void (*callback)()) { disconnectCallback = callback; }
 
 void init() {
+#if WIFI_AP_MODE
+    Serial.printf("[WiFi] SoftAP '%s' を起動します...\n", AP_SSID);
+    // WIFI_AP 単独だと WebSocketsClient (WiFiClient) の outbound 接続が
+    // 内部的に失敗するESP32 Arduino既知の挙動があるため、STAは使わないが
+    // WIFI_AP_STA にして TCP/IP スタックを両インターフェース分フル初期化する
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(AP_SSID, AP_PASSWORD);
+    Serial.print("[WiFi] AP IP=");
+    Serial.println(WiFi.softAPIP());
+    // AP モードでも、対向の esp32_bridge (PC) が同じAPネットワークの
+    // クライアントとして WS_SERVER_HOST:WS_SERVER_PORT で待ち受けていれば
+    // ESP32(AP)からその宛先へ outbound 接続できる。
+    client.begin(WS_SERVER_HOST, WS_SERVER_PORT, "/");
+    client.onEvent(handleEvent);
+    client.setReconnectInterval(2000);
+    client.enableHeartbeat(3000, 2000, 2);
+    Serial.printf("[WS] 接続先: %s:%u\n", WS_SERVER_HOST, WS_SERVER_PORT);
+#else
     Serial.printf("[WiFi] SSID '%s' に接続中...\n", WIFI_SSID);
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -104,9 +126,23 @@ void init() {
     // (3秒毎にping、2秒以内にpongが無ければタイムアウト、2回連続で切断)
     client.enableHeartbeat(3000, 2000, 2);
     Serial.printf("[WS] 接続先: %s:%u\n", WS_SERVER_HOST, WS_SERVER_PORT);
+#endif
 }
 
 void loop() {
+#if WIFI_AP_MODE
+    // AP接続クライアント数を定期ログ出力
+    static unsigned long lastApLogMs = 0;
+    if (millis() - lastApLogMs > 5000) {
+        lastApLogMs = millis();
+        Serial.printf("[WiFi-AP] 接続クライアント数=%d\n", WiFi.softAPgetStationNum());
+    }
+    client.loop();
+    if (state == LinkState::CONNECTED &&
+        millis() - connectedSinceMs > FORCE_RECONNECT_MS) {
+        forceReconnect("定期リフレッシュ");
+    }
+#else
     if (WiFi.status() != WL_CONNECTED) {
         if (state == LinkState::CONNECTED && disconnectCallback) disconnectCallback();
         state = LinkState::CONNECTING;
@@ -130,6 +166,7 @@ void loop() {
         millis() - connectedSinceMs > FORCE_RECONNECT_MS) {
         forceReconnect("定期リフレッシュ");
     }
+#endif
 }
 
 void sendWheelFeedback(float left, float right) {
