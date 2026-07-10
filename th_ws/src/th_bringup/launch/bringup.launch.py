@@ -17,11 +17,13 @@ from launch.actions import (DeclareLaunchArgument, GroupAction,
                              IncludeLaunchDescription, LogInfo)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import (LaunchConfiguration, PathJoinSubstitution,
-                                   PythonExpression)
+from launch.substitutions import (Command, LaunchConfiguration,
+                                   PathJoinSubstitution, PythonExpression)
 from launch_ros.actions import Node, SetRemap
+from launch_ros.parameter_descriptions import ParameterValue
 
 BRINGUP_DIR  = get_package_share_directory('th_bringup')
+DESC_DIR     = get_package_share_directory('th_description')
 NAV2_DIR     = get_package_share_directory('nav2_bringup')
 SLAM_DIR     = get_package_share_directory('slam_toolbox')
 
@@ -57,6 +59,26 @@ def generate_launch_description():
     calib_yaml  = os.path.join(BRINGUP_DIR, 'config', 'calib.yaml')
 
     nodes = []
+
+    # ── 1. robot_state_publisher / joint_state_publisher (URDF → TF) ─
+    # base_link → laser_link 等の固定 TF を配信する。これが無いと SLAM /
+    # Nav2 / leg_detection がスキャンを座標変換できない。
+    robot_description = ParameterValue(
+        Command(['xacro ', os.path.join(DESC_DIR, 'urdf', 'th_robot.urdf.xacro')]),
+        value_type=str)
+    nodes.append(Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        parameters=[{'robot_description': robot_description}],
+        output='screen',
+    ))
+    nodes.append(Node(
+        package='joint_state_publisher',
+        executable='joint_state_publisher',
+        name='joint_state_publisher',
+        output='screen',
+    ))
 
     # ── 2. RPLIDAR S1 (lidar_source:=local の場合のみ起動) ─
     nodes.append(Node(

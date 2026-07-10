@@ -41,6 +41,10 @@ def _setup(context):
         name="dr_spaam_ros",
         namespace="dr_spaam",
         output="screen",
+        # CPU 推論中に稀にセグフォで落ちることが実機で確認されたため自動再起動する
+        # (落ちたままだと /person/status が途絶し PERSON_TRACKER_LOST が出続ける)
+        respawn=True,
+        respawn_delay=2.0,
         parameters=[
             dr_spaam_params,
             {

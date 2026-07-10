@@ -21,8 +21,11 @@ services:
       - gazebo_models:/root/.gazebo
       # DR-SPAAM 重みファイル（Google Drive から手動DL、README参照。--rm でも消えないようホストに永続化）
       - ./dr_spaam_weights:/root/th_ws/install/dr_spaam_ros/share/dr_spaam_ros/weights
-    devices:
-      - /dev/lidar:/dev/lidar
+    # LiDAR を PC に USB 直結する場合のみ必要 (現行の実機構成では LiDAR は
+    # ラズパイ側に接続し /scan をネットワーク経由で受信するため不要)。
+    # 直結構成に戻す場合はコメント解除するか docker-compose.override.yml に書く。
+    # devices:
+    #   - /dev/lidar:/dev/lidar
     # GPU サポート（NVIDIA の場合のみ有効化）
     # deploy:
     #   resources:

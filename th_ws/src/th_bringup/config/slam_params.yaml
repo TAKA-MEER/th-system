@@ -27,7 +27,10 @@ slam_toolbox:
     resolution:            0.05
     max_laser_range:       12.0      # RPLIDAR S1 最大レンジ
     minimum_time_interval: 0.5
-    transform_timeout:     0.2
+    # 実機検証 (2026-07-11): ラズパイ配信の /scan は WiFi 経由でスタンプの
+    # 先行/遅延が ±0.6 秒程度発生し、0.2 だと message filter が大半のスキャンを
+    # 捨てて地図が全く生成されなかった。TF 到着を待てるよう 1.0 に緩和。
+    transform_timeout:     1.0
     tf_buffer_duration:    30.0
     stack_size_to_use:     40000000
 

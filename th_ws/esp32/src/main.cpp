@@ -79,7 +79,14 @@ static void cbCtrlTimer() {
     // (WS接続状態に関わらずローカルに独立して動作する)
     bool watchdogTripped = (millis() - last_cmd_ms) > WATCHDOG_MS;
 
-    float velL = 0.0f, velR = 0.0f;
+    // ── エンコーダから実速度を計算 ──────────────────────────
+    // 停止中(E-Stop/ウォッチドッグ)も読み続ける: 手押し等で車輪が回った
+    // 場合もオドメトリに反映させるため。
+    float distPerCount = (2.0f * M_PI * WHEEL_RADIUS_M) / ENC_COUNTS_PER_REV;
+    long  cntL = Encoder::readAndResetLeft();
+    long  cntR = Encoder::readAndResetRight();
+    float velL = (float)cntL * distPerCount / dt;   // m/s
+    float velR = (float)cntR * distPerCount / dt;   // m/s
 
     float outR = 0.0f, outL = 0.0f;
     if (estopActive || watchdogTripped) {
@@ -91,13 +98,6 @@ static void cbCtrlTimer() {
         rampLeft    = 0.0f;
         rampRight   = 0.0f;
     } else {
-        // ── エンコーダから実速度を計算 ──────────────────────────
-        float distPerCount = (2.0f * M_PI * WHEEL_RADIUS_M) / ENC_COUNTS_PER_REV;
-        long  cntL = Encoder::readAndResetLeft();
-        long  cntR = Encoder::readAndResetRight();
-        velL = (float)cntL * distPerCount / dt;   // m/s
-        velR = (float)cntR * distPerCount / dt;   // m/s
-
         // ── 目標速度を加速度制限してランプ ──────────────────────
         float rampStep = TARGET_RAMP_ACCEL_MPS2 * dt;
         rampLeft  = rampToward(rampLeft,  targetLeft,  rampStep);
@@ -109,10 +109,15 @@ static void cbCtrlTimer() {
 
         Motor::setRight(outR);
         Motor::setLeft(outL);
-
-        // ── フィードバック送信 ───────────────────────────────────
-        WsLink::sendWheelFeedback(velL, velR);
     }
+
+    // ── フィードバック送信 (毎周期・停止中も送る) ────────────────
+    // これを停止中に止めると、待機中(cmd_vel なし)に ROS 側の
+    // safety_monitor が ESP32_DISCONNECTED を誤検知し、esp32_bridge の
+    // odom/TF も途絶して Nav2 が動けなくなる(実機検証で判明)。
+    // 「切断検知」は通信途絶そのもので判定されるべきで、フィードバック送信を
+    // 止めることを安全機構にしてはいけない。
+    WsLink::sendWheelFeedback(velL, velR);
 
     // デバッグ用一時ログ: 原因切り分け後に削除すること
     static int dbgCounter = 0;

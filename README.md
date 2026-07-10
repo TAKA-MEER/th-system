@@ -15,6 +15,37 @@
 
 ---
 
+## 現行の実機ネットワーク構成（採用構成）
+
+**ESP32 を WiFi AP にし、PC とラズパイをそのクライアントとして接続する**構成を採用している
+（経緯・詳細は後述「ESP32 を AP にして PC⇔ラズパイを接続する構成」参照）。
+
+```txt
+ESP32 (駆動用, WiFi AP)          192.168.4.1   SSID: th-esp32-ap
+  ├── PC (Windows+WSL2, ROS2)   192.168.4.50  (固定IP必須)
+  │     ESP32 → WS 接続先: 192.168.4.50:8766 (コンテナ内 esp32_bridge が直接待ち受け)
+  └── ラズパイ (LiDAR 配信)      192.168.4.x   (DHCP。AP再起動でIPが変わりうる)
+        RPLIDAR S1 を USB 接続し rplidar_ros で /scan を配信
+```
+
+- LiDAR は PC ではなく**ラズパイに接続**する。PC 側は `lidar_source:=network` で起動する。
+- ラズパイ側の LiDAR 起動コマンド（**`frame_id:=laser_link` が必須**。既定の `laser` のままだと
+  TF が繋がらず SLAM/Nav2 がスキャンを使えない）:
+
+  ```bash
+  source /opt/ros/humble/setup.bash
+  source ~/ros2_ws/install/setup.bash
+  export ROS_DOMAIN_ID=10
+  ros2 launch rplidar_ros rplidar_s1_launch.py frame_id:=laser_link
+  ```
+
+- ESP32 ファームウェアは接続 5 分ごとに WebSocket を**意図的に再接続**する
+  （「定期リフレッシュ」。TCP の無言死に対する最後の保険。通常の死活検知は
+  3 秒周期の ping/pong ハートビートが担う。esp32_bridge のログに周期的な
+  接続/切断が出るのは正常）。
+
+---
+
 ## 初回セットアップ
 
 ```bash
@@ -142,12 +173,23 @@ Docker Desktop をこれまで使っていた環境では、ネイティブ Dock
 
 ### ラズパイ等ネットワーク経由の LiDAR を使う場合
 
-RPLIDAR をロボット本体ではなく別マシン(ラズパイ等)に接続し、そちらが配信する `/scan` をネットワーク経由で受信する構成にも対応している。
+RPLIDAR をロボット本体ではなく別マシン(ラズパイ等)に接続し、そちらが配信する `/scan` をネットワーク経由で受信する構成にも対応している。**現行の実機構成はこちら**。
 
 ```bash
 # ローカルの sllidar_node 起動を止め、外部が配信する /scan を使う
 ros2 launch th_bringup bringup.launch.py lidar_source:=network
 ros2 launch th_bringup slam.launch.py    lidar_source:=network
+```
+
+ラズパイ側は `rplidar_ros` パッケージ（`~/ros2_ws`）で配信する。**`frame_id` の既定値は
+`laser` のため、必ず `frame_id:=laser_link` を指定すること**（本システムの URDF / TF は
+`laser_link` を前提としており、既定のままだと SLAM・Nav2・脚検知がスキャンを座標変換できない）:
+
+```bash
+# ラズパイ側
+source /opt/ros/humble/setup.bash && source ~/ros2_ws/install/setup.bash
+export ROS_DOMAIN_ID=10
+ros2 launch rplidar_ros rplidar_s1_launch.py frame_id:=laser_link
 ```
 
 これが機能するには、以下 3 点がすべて満たされている必要がある(実機検証で判明した詰まりどころ)。
@@ -215,7 +257,7 @@ pio device monitor
 
 - **書き込み確認**: シリアルモニタに起動バナー(`TH System ESP32 Firmware (WebSocket)` とビルド日時)が出れば書き込み成功。
 - **通信確認**: `[WiFi] 接続しました IP=...` → `[WS] esp32_bridge に接続しました` の順にログが出て、`ws_test_server.py` 側にも `[接続] ESP32 接続: ...` と `[受信] ESTOP_HW ...` が周期的に表示されれば ESP32→PC 方向の通信は正常。`--send-test-cmd` を付けているとPC側が2秒おきにテスト用の `WHEEL_CMD` を送信するので、ESP32シリアルモニタに `[WHEEL_CMD] left=... right=...` が出れば PC→ESP32 方向も確認できる(モーター未配線でも安全)。
-- **注意**: `config.h` の `ESTOP_BENCH_TEST_BYPASS` は現在無効化されているため、E-Stopスイッチ未配線だと GPIO34 がフローティングになり `ESTOP_HW` の値が不安定になりうる(`WHEEL_FEEDBACK` はE-Stop有効中は送信されないため届かないことがある)。これは既知の挙動で、通信テスト自体には影響しない。動力系を配線せず確実に安定した挙動を見たい場合のみ、一時的に `ESTOP_BENCH_TEST_BYPASS` を再定義して試験し、試験後は必ず戻すこと。
+- **注意**: `config.h` の `ESTOP_BENCH_TEST_BYPASS` は現在無効化されているため、E-Stopスイッチ未配線だと GPIO34 がフローティングになり `ESTOP_HW` の値が不安定になりうる(`WHEEL_FEEDBACK` は E-Stop 中もウォッチドッグ作動中も毎周期送信される)。これは既知の挙動で、通信テスト自体には影響しない。動力系を配線せず確実に安定した挙動を見たい場合のみ、一時的に `ESTOP_BENCH_TEST_BYPASS` を再定義して試験し、試験後は必ず戻すこと。
 
 ### E-Stop 配線
 
@@ -268,6 +310,29 @@ pio device monitor   # [WiFi] AP IP=192.168.4.1 が出れば起動成功
 Set-NetConnectionProfile -InterfaceAlias "<アダプタ名>" -NetworkCategory Private
 ```
 
+さらに WiFi プロファイルを**自動接続**に設定すること(既定で「手動接続」になっていると、
+瞬断後に Windows が再接続せず、ESP32 側から見て「クライアント数=0」のまま
+WebSocket が数分間つながらない事象が実機で発生した):
+
+```powershell
+netsh wlan set profileparameter name=th-esp32-ap connectionmode=auto
+```
+
+切り分けのヒント: ESP32 のシリアルログに 5 秒ごとに `[WiFi-AP] 接続クライアント数=N` が
+出る。これが 0 に落ちる場合は ESP32 側ではなく **PC/ラズパイ側の WiFi が切れている**。
+
+**既知の問題**: Windows はインターネットの無い AP に接続中、約60秒周期で
+バックグラウンドスキャンを行い WiFi が微断する（→ WS が切断され再接続に数十秒かかる）
+ことを実機で確認した。運用時は管理者 PowerShell で該当アダプタのスキャンを止める:
+
+```powershell
+netsh wlan set autoconfig enabled=no interface="<アダプタ名>"   # 走行前
+netsh wlan set autoconfig enabled=yes interface="<アダプタ名>"  # 終了後
+```
+
+**シリアルモニタの注意**: シリアルポートを開くと DTR/RTS の自動リセット回路により
+**ESP32 が再起動する**（AP も一瞬落ちる）。走行中にシリアルモニタを接続しないこと。
+
 ### 3. PC に固定IPを設定する(重要)
 
 ESP32のSoftAP DHCPは**再起動のたびにリース状態がリセットされ、PCに割り当てるIPが変わりうる**
@@ -294,22 +359,23 @@ New-NetIPAddress -InterfaceAlias "<アダプタ名>" -IPAddress 192.168.4.50 -Pr
 New-NetFirewallRule -DisplayName "TH-System ESP32 WS Bridge" -Direction Inbound -Protocol TCP -LocalPort 8765,8766 -Action Allow -Profile Any
 ```
 
-### 5. WSL2 ポート予約の回避 (portproxy)
+### 5. WebSocket 待ち受けポート (portproxy は不要)
 
-`esp32_bridge` は WSL2/Docker内で `0.0.0.0:8765` を待ち受けるが、WSL2 mirrored networking は
-同一ポート番号をWindows全体で(TCPに限り)排他予約し、外部アダプタ宛の到達を妨げることがある。
-外向きポートを8766にずらし、`netsh portproxy` で転送する(3.で設定した固定IP宛に作成すること)。
+`esp32_bridge` は WSL2/Docker内で `0.0.0.0:8766` を直接待ち受ける
+(`th_esp32_bridge/config/params.yaml` の `ws_port: 8766`)。WSL2 mirrored networking で
+外部デバイス (ESP32) からコンテナ内のこのポートへ直接届くことを実機検証で確認済み。
 
-```powershell
-netsh interface portproxy add v4tov4 listenport=8766 listenaddress=192.168.4.50 connectport=8765 connectaddress=127.0.0.1
-netsh interface portproxy show all   # 確認
-```
-
-PCのIPを変更した場合は、古いエントリを消してから作り直すこと:
+**かつては `netsh portproxy` で 8766→8765 の転送を使っていたが廃止した。**
+古い portproxy エントリが残っていると Windows 側が 8766 を横取りして通信不能になるため、
+必ず削除すること(管理者 PowerShell):
 
 ```powershell
-netsh interface portproxy delete v4tov4 listenport=8766 listenaddress=<旧IP>
+netsh interface portproxy show all   # エントリが残っていないか確認
+netsh interface portproxy delete v4tov4 listenport=8766 listenaddress=192.168.4.50
 ```
+
+補足: portproxy のリスナーは Windows 再起動や IP 再設定で無言で機能停止することが
+実機で確認されており(エントリ表示は残るのに LISTEN しない)、恒久構成には不向き。
 
 ### 6. ラズパイをESP32のAPに接続する
 
@@ -336,8 +402,11 @@ ros2 run th_esp32_bridge esp32_bridge.py --ros-args --params-file src/th_esp32_b
 ros2 topic hz /safety/estop_hw   # WSクライアントが接続していれば10Hz前後で届く
 ```
 
-`/esp32/wheel_feedback` は `/cmd_vel` を送信していない間はESP32側のウォッチドッグが働き
-意図的に送信されない(安全側の設計)。通信確認だけなら `/safety/estop_hw` で十分。
+`/esp32/wheel_feedback` は `/cmd_vel` の有無に関わらず毎周期(10 Hz)送信される
+(かつては停止中に送信を止めていたが、待機中に `safety_monitor` が
+`ESP32_DISCONNECTED` を誤検知し odom/TF も途絶するため、常時送信に修正した)。
+なお ESP32 は 5 分ごとに WebSocket を定期リフレッシュするため、
+接続/切断ログが周期的に出るのは正常。
 
 ---
 
@@ -512,19 +581,18 @@ rviz2   # Displays に LaserScan(/scan_filtered), PoseArray(/dr_spaam/dr_spaam_d
 # コンテナ起動
 docker compose run --rm th_robot bash
 
-#ビルド
-
-# コンテナ内
+# ビルド (コンテナ内。イメージには外部依存パッケージのみビルド済みのため、
+# th_* パッケージは初回に必ずビルドが必要)
 cd /root/th_ws
-colcon build --symlink-install   # 初回または C++ 変更時
+colcon build --symlink-install
 source install/setup.bash
 
-# 駆動系キーボード操作テスト
-
+# (任意) 駆動系だけのキーボード操作テスト — LiDAR・安全監視なしの最小構成。
+# 実機での動作確認済み。ESP32 が AP として起動し PC が接続済みであること
 ros2 launch th_bringup esp32_keyboard_test.launch.py
 
-# コンテナ内
-ros2 launch th_bringup slam.launch.py
+# SLAM 起動 (コンテナ内。LiDAR はラズパイ側で起動しておく — 冒頭の実機構成参照)
+ros2 launch th_bringup slam.launch.py lidar_source:=network
 
 # 別ターミナルでタブレット UI を起動し、手動操作で全エリアを走る
 # 地図が完成したら保存
@@ -559,12 +627,14 @@ ros2 run th_calibration apply_calib.py --ros-args \
 
 ```bash
 # 地図指定で起動 (SLAM マッピングモードは map_yaml を空のまま)
+# 現行構成では LiDAR はラズパイ配信のため lidar_source:=network を付ける
 ros2 launch th_bringup bringup.launch.py \
+  lidar_source:=network \
   map_yaml:=/root/th_ws/src/th_bringup/maps/th_map.yaml \
   use_stub:=false
 
 # テスト時 (試験員追従スタブ使用)
-ros2 launch th_bringup bringup.launch.py use_stub:=true
+ros2 launch th_bringup bringup.launch.py lidar_source:=network use_stub:=true
 ```
 
 ### Step 5: Web UI（タブレット UI）
@@ -645,7 +715,7 @@ rosbridge は Docker コンテナ内で `bringup.launch.py` 起動時に自動�
 | フォルト | 原因 | 対処 |
 | --- | --- | --- |
 | `LIDAR_LOST` | LiDAR データ途絶 | ケーブル・ドライバ確認 → 再起動 |
-| `ESP32_DISCONNECTED` | ESP32 通信途絶 | USB 抜き差し → ファームウェア確認 |
+| `ESP32_DISCONNECTED` | ESP32 通信途絶 (WiFi/WebSocket) | AP への WiFi 接続・portproxy/固定IP 設定確認 → ESP32 再起動 |
 | `PERSON_TRACKER_LOST` | 追従データ途絶 | person_tracker ノード確認 |
 
 フォルト発生時は `twist_mux` が即座にモーター出力をゼロにし、
@@ -686,6 +756,7 @@ th_ws/
 │   │       ├── follow_planner_core.py
 │   │       └── mapless_follow_core.py
 │   ├── th_calibration/           # オドメトリキャリブツール
+│   ├── th_description/           # URDF (base_link→laser_link 等の TF 定義)
 │   ├── th_bringup/               # 起動設定・地図・パラメータ
 │   ├── multiple_observation_kalman_filter/  # vendored (human_kenchi, プライベートリポジトリ)
 │   ├── multiple_sensor_person_tracking/     # vendored (human_kenchi) — PersonTracker (leg モード)
@@ -778,7 +849,9 @@ export DISPLAY=:0
 docker compose run --rm th_robot bash
 ```
 
-> **注意 (シミュレーションのみの場合):** `docker-compose.yml` に実機デバイス (`/dev/lidar`) が記載されており、デバイスが存在しないとコンテナ起動に失敗することがある。その場合は `docker-compose.yml` の `devices:` セクションをコメントアウトするか削除すること。
+> **補足:** 現行構成では LiDAR はラズパイ側に接続するため、`docker-compose.yml` の
+> `devices:` (`/dev/lidar`) はコメントアウト済み。PC に LiDAR を USB 直結する場合のみ
+> コメントを解除する。
 
 ### Step 2: ビルド
 
@@ -1747,12 +1820,16 @@ ros2 param set /lidar_filter blind_angle_ranges \
 # esp32_bridge の WebSocket 接続ログを確認 (接続/切断イベントが出力される)
 ros2 topic echo /rosout | grep esp32_bridge
 
-# ESP32 側のシリアルモニタで WiFi RSSI・WS 接続状態を確認
-pio device monitor
+# ESP32 側のシリアルモニタで WiFi/WS 状態を確認
+# (現行構成では ESP32 はラズパイに USB 接続されているため、ラズパイ側で確認する)
+pio device monitor    # または ラズパイ上で /dev/ttyUSB1 を 115200 で読む
 
-# ホットスポットの SSID/パスワードが wifi_credentials.h と一致しているか確認
-# PC 側ファイアウォールが ws_port (config/params.yaml の ws_port) を
-# ブロックしていないか確認
+# ★5 分周期の切断→即再接続は「定期リフレッシュ」で正常動作(仕様)
+
+# AP 構成の場合: PC の固定IP (192.168.4.50) と portproxy (8766→8765) が
+# wifi_credentials.h の WS_SERVER_HOST/PORT と一致しているか確認
+# STA 構成の場合: ホットスポットの SSID/パスワードが一致しているか確認
+# PC 側ファイアウォールが ws_port をブロックしていないか確認
 
 # ウォッチドッグタイムアウトを確認
 # config.h: WATCHDOG_MS が通信周期より十分大きいか確認

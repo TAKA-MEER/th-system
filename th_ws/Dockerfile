@@ -72,7 +72,12 @@ RUN git clone -b jazzy-devel https://github.com/TeamSOBITS/2d_lidar_person_detec
 RUN sed -i \
     's/ckpt = torch.load(ckpt_file)/ckpt = torch.load(ckpt_file, map_location=torch.device("cuda" if gpu else "cpu"))/' \
     2d_lidar_person_detection/dr_spaam/dr_spaam/detector.py
-RUN cd 2d_lidar_person_detection/dr_spaam && python3 setup.py install
+# setuptools (numpy/scipy/torch 導入時に新しいものへ更新される) は
+# packaging>=22 の canonicalize_version(strip_trailing_zero=...) を前提とするが、
+# ベースイメージの packaging は 21.3 のままで非互換のため egg_info 生成が失敗する。
+# 明示的に packaging を更新してから install する。
+RUN pip3 install -U packaging
+RUN cd 2d_lidar_person_detection/dr_spaam && pip3 install .
 # 重みファイルはイメージに含めない。docker-compose.yml の bind mount 経由で
 # ホストの th_ws/dr_spaam_weights/ から供給する。
 # 詳細は README.md の「DR-SPAAM 重みファイルの配置」を参照。
