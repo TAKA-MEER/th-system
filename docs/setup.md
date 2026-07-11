@@ -1,0 +1,358 @@
+# 初回セットアップ
+
+[← README に戻る](../README.md)
+
+新しい PC / ラズパイ / ESP32 で環境を作るときの手順。上から順に実施する。
+一度セットアップ済みの環境での**毎回の起動手順は [README](../README.md#毎回の起動手順) を参照**。
+
+## 目次
+
+1. [PC: WSL2 + Docker Engine](#1-pc-wsl2--docker-engine)
+2. [PC: WiFi (ESP32 AP への接続)](#2-pc-wifi-esp32-ap-への接続)
+3. [PC: Windows Firewall](#3-pc-windows-firewall)
+4. [PC: 時刻同期](#4-pc-時刻同期)
+5. [PC: コンテナのビルド](#5-pc-コンテナのビルド)
+6. [ラズパイ: LiDAR 配信](#6-ラズパイ-lidar-配信)
+7. [ESP32: ファームウェア書き込み](#7-esp32-ファームウェア書き込み)
+8. [Web UI](#8-web-ui)
+9. [Linux 実機 (Ubuntu) の場合](#9-linux-実機-ubuntu-の場合)
+10. [レガシー環境向け (Docker Desktop 併用)](#10-レガシー環境向け-docker-desktop-併用)
+
+---
+
+## 1. PC: WSL2 + Docker Engine
+
+このリポジトリは Docker Compose 前提。**Docker Desktop ではなくネイティブの Docker Engine を推奨**。
+理由: Docker Desktop の内部ネットワークプロキシ経由だと、ESP32 のような外部 LAN デバイスからの
+長時間接続が数秒〜十数秒で切れる非対称な切断を実機で確認したため。
+
+### 1-1. `.wslconfig` (ミラーネットワーク + アイドル終了無効化)
+
+`%USERPROFILE%\.wslconfig` を作成(既にあれば追記):
+
+```ini
+[wsl2]
+networkingMode=mirrored
+vmIdleTimeout=2000000000   # ms。-1 は不正値で逆効果なので大きな正値を使う
+```
+
+- `networkingMode=mirrored`: WSL2 が Windows と同じ IP を共有し、ESP32/ラズパイから直接届くようになる
+  (Windows 11 + 新しめの WSL が必要。`wsl --version` で確認)
+- `vmIdleTimeout`: **WSL は対話セッションが無くなると約60秒で VM ごと自動終了**し、
+  docker・コンテナ・ROS2 ノードが全て巻き添えで死ぬ(「esp32_bridge が黙って消える」の原因)。
+  これを実質無効化する。**Windows 再起動でも安全のため、運用中は WSL ターミナルを1枚開いたままにしておく**とより確実。
+
+反映(他の WSL セッションも全て終了するので注意):
+
+```powershell
+wsl --shutdown
+```
+
+再度 WSL2 を開き、IP が Windows ホストと同じになっていることを確認:
+
+```bash
+ip addr show eth0 | grep 'inet '
+```
+
+### 1-2. WSL2 (Ubuntu) 内に Docker Engine をインストール
+
+[9. Linux 実機の場合](#9-linux-実機-ubuntu-の場合) と全く同じ手順を WSL2 の Ubuntu 内で実行する。
+WSL2 (Ubuntu) は systemd 対応なので `systemctl` がそのまま使える。`/etc/wsl.conf` に以下があることを確認:
+
+```ini
+[boot]
+systemd=true
+```
+
+Docker Desktop の残骸が干渉する場合はリセット:
+
+```bash
+rm -f ~/.docker/config.json
+docker context use default
+```
+
+### 1-3. 動作確認
+
+```bash
+docker version           # Server セクションが出れば OK
+docker compose version
+```
+
+以降の `docker compose ...` は**この WSL2 (Ubuntu) ターミナルから**実行する
+(Windows 側 docker / Docker Desktop は使わない)。
+
+---
+
+## 2. PC: WiFi (ESP32 AP への接続)
+
+ネットワーク全体像は [network.md](network.md) 参照。PC は物理 WiFi アダプタで
+SSID `th-esp32-ap` に接続する(モバイルホットスポット等の仮想アダプタは
+mirrored networking の対象外なので不可)。
+
+### 2-1. プロファイル設定 (管理者 PowerShell)
+
+```powershell
+# プライベートプロファイルに (Firewall 前提)
+Set-NetConnectionProfile -InterfaceAlias "<アダプタ名>" -NetworkCategory Private
+
+# 自動接続に (既定の「手動接続」だと瞬断後に再接続されず数分間通信不能になる)
+netsh wlan set profileparameter name=th-esp32-ap connectionmode=auto
+```
+
+### 2-2. 固定 IP 192.168.4.50 (必須・管理者 PowerShell)
+
+ESP32 の SoftAP DHCP は再起動のたびにリースがリセットされ、PC の IP が変わりうる。
+ESP32 ファームは `192.168.4.50` に接続しに来るため固定必須:
+
+```powershell
+Get-NetIPAddress -InterfaceAlias "<アダプタ名>" -AddressFamily IPv4 | Remove-NetIPAddress -Confirm:$false
+New-NetIPAddress -InterfaceAlias "<アダプタ名>" -IPAddress 192.168.4.50 -PrefixLength 24 -DefaultGateway 192.168.4.1
+```
+
+実行直後に WiFi が切断されることがある。`netsh wlan show interfaces` で確認し、
+切れていたら `netsh wlan connect name=th-esp32-ap interface="<アダプタ名>"` で再接続。
+
+### 2-3. バックグラウンドスキャン停止 (走行時のみ・管理者 PowerShell)
+
+Windows はインターネットの無い AP 接続中、**約60秒周期のバックグラウンドスキャンで WiFi を微断**させる
+(→ WebSocket が切断され再接続に数十秒かかる)。走行時は止める:
+
+```powershell
+netsh wlan set autoconfig enabled=no interface="<アダプタ名>"   # 走行前
+netsh wlan set autoconfig enabled=yes interface="<アダプタ名>"  # 終了後
+```
+
+> **⚠ 重要**: この設定は PC 再起動後も残り、**無効のままだと WiFi の再接続自体ができない**
+> (`接続できません。アダプターで WLAN 自動構成が無効になっています`)。
+> 必ず「① enabled=yes → ② th-esp32-ap に接続 → ③ enabled=no」の順で行うこと。
+
+### 2-4. 古い portproxy エントリの削除 (管理者 PowerShell)
+
+esp32_bridge は 8766 をコンテナ内で直接待ち受ける構成のため portproxy は**不要かつ有害**
+(残っていると Windows が 8766 を横取りする):
+
+```powershell
+netsh interface portproxy show all   # 空であること
+netsh interface portproxy delete v4tov4 listenport=8766 listenaddress=192.168.4.50
+```
+
+---
+
+## 3. PC: Windows Firewall
+
+管理者 PowerShell で以下の受信許可を作成する:
+
+```powershell
+# ラズパイからの DDS (/scan 等) 受信許可。IP を変えたらルールも更新すること
+New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound UDP)" -Direction Inbound -Action Allow -Protocol UDP -RemoteAddress 192.168.4.2 -Profile Any
+New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound TCP)" -Direction Inbound -Action Allow -Protocol TCP -RemoteAddress 192.168.4.2 -Profile Any
+
+# ESP32 からの WebSocket 受信許可
+New-NetFirewallRule -DisplayName "TH-System ESP32 WS Bridge" -Direction Inbound -Protocol TCP -LocalPort 8765,8766 -Action Allow -Profile Any
+```
+
+---
+
+## 4. PC: 時刻同期
+
+**Windows の時計が実時間から 1 秒近くズレていると、SLAM / AMCL / costmap がラズパイ配信の
+/scan を「未来のデータ」として全て破棄し、地図が一切生成されない**(実測で 0.9 秒の遅れを確認)。
+
+```powershell
+# 即時同期 (管理者)。w32tm の精度は ±0.5 秒程度しかない点に注意
+w32tm /resync /force
+# ズレの実測
+w32tm /stripchart /computer:time.windows.com /samples:3 /dataonly
+# w32tm で直りきらない場合は実測値ぶん直接補正
+Set-Date -Date (Get-Date).AddSeconds(0.7)
+```
+
+恒久対策(実運用時に推奨): AP 配下ではラズパイがインターネットに出られず NTP 同期できないため、
+**PC (WSL) 側に chrony サーバーを立て、ラズパイを PC に同期させる**:
+
+```bash
+# WSL (Ubuntu) 側: sudo apt install chrony して /etc/chrony/chrony.conf に追記
+#   allow 192.168.4.0/24
+#   local stratum 10
+# ラズパイ側: /etc/chrony/chrony.conf の pool をコメントアウトし
+#   server 192.168.4.50 iburst prefer
+```
+
+---
+
+## 5. PC: コンテナのビルド
+
+```bash
+# WSL2 (Ubuntu) で、リポジトリの th_ws/ にて
+docker compose build        # イメージビルド (初回は DR-SPAAM/torch 取得で時間がかかる)
+docker compose up -d        # コンテナ起動 (restart: unless-stopped で常駐)
+
+# コンテナ内で th_* パッケージをビルド (イメージには外部依存のみビルド済み)
+docker exec -it th_robot bash
+cd /root/th_ws && colcon build --symlink-install
+source install/setup.bash
+```
+
+> **注意**: `docker compose up -d` でコンテナが**再作成**されると(compose 設定変更時など)、
+> コンテナ内でビルドした install/ は消えるため `colcon build` のやり直しが必要。
+> 単なる再起動 (`docker restart th_robot`) では消えない。
+
+DR-SPAAM の重みファイル配置(初回のみ):
+
+1. [重みファイルをダウンロード](https://drive.google.com/drive/folders/1Wl2nC8lJ6s9NI1xtWwmxeAUnuxDiiM4W)
+   (`ckpt_jrdb_ann_ft_dr_spaam_e20.pth` だけあれば動く)
+2. リポジトリの `th_ws/dr_spaam_weights/` に置く(.gitignore 対象)
+3. docker-compose の bind mount で自動的にコンテナへ反映される
+
+---
+
+## 6. ラズパイ: LiDAR 配信
+
+RPLIDAR S1 はラズパイに USB 接続し、`rplidar_ros`(`~/ros2_ws`)で `/scan` を配信する。
+
+前提: `ROS_DOMAIN_ID=10`(コンテナと一致)、**`frame_id:=laser_link` 必須**
+(既定の `laser` のままだと TF が繋がらず SLAM/Nav2/脚検知が動かない)。
+
+### 6-1. systemd サービス化 (再起動後も自動復帰)
+
+```bash
+sudo tee /etc/systemd/system/rplidar.service << 'EOF'
+[Unit]
+Description=RPLIDAR S1 /scan publisher (TH system, frame_id=laser_link)
+After=network.target
+
+[Service]
+Type=simple
+User=mirs2602
+Environment=ROS_DOMAIN_ID=10
+ExecStart=/bin/bash -lc "source /opt/ros/humble/setup.bash && source /home/mirs2602/ros2_ws/install/setup.bash && exec ros2 run rplidar_ros rplidar_node --ros-args -p serial_port:=/dev/ttyUSB0 -p serial_baudrate:=256000 -p frame_id:=laser_link -p angle_compensate:=true -p scan_mode:=Standard"
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now rplidar
+```
+
+- `scan_mode:=Standard` を推奨: 既定の DenseBoost は点数が多く DR-SPAAM の CPU 推論が
+  約2Hz まで落ちて歩行者を見失いやすい。Standard(点数半減)で追跡が安定する。
+- **ラズパイ再起動で `/dev/ttyUSB0` ⇄ `/dev/ttyUSB1` が入れ替わることがある**。
+  起動失敗(`Error, code: 80008004`)時は `ls /dev/ttyUSB*` でポートを確認して差し替えるか、
+  udev ルール(`udev/99-th-robot.rules` 参照)で `/dev/lidar` に固定する。
+
+### 6-2. WiFi (th-esp32-ap への接続)
+
+NetworkManager で SSID `th-esp32-ap` に接続する(初回は物理アクセスできる状態で)。
+以後は保存プロファイルで自動再接続される。IP は DHCP(通常 `192.168.4.2`)。
+
+```bash
+nmcli connection up th-esp32-ap        # 手動で切り替える場合
+ip addr show wlan0 | grep 'inet '      # 取得 IP の確認
+```
+
+---
+
+## 7. ESP32: ファームウェア書き込み
+
+手順の詳細・チューニングは [esp32.md](esp32.md) 参照。初回の要点:
+
+1. `esp32/src/wifi_credentials.h.example` を `wifi_credentials.h` にコピーし、
+   AP モード設定(`WIFI_AP_MODE 1`, `AP_SSID "th-esp32-ap"`, `AP_PASSWORD`,
+   `WS_SERVER_HOST "192.168.4.50"`, `WS_SERVER_PORT 8766`)を記入
+2. PC に USB 接続して `cd esp32 && pio run --target upload`
+3. シリアルモニタで `[WiFi] AP IP=192.168.4.1` が出れば起動成功
+
+### Windows での USB シリアル (usbipd — WSL から書き込む場合のみ)
+
+PlatformIO を Windows 側で使うなら不要。WSL 側から書き込む場合は `usbipd-win` で転送:
+
+```powershell
+winget install usbipd                                          # 初回のみ
+& "$env:ProgramFiles\usbipd-win\usbipd.exe" list               # busid 確認
+& "$env:ProgramFiles\usbipd-win\usbipd.exe" bind --busid <id>  # 初回のみ (管理者)
+& "$env:ProgramFiles\usbipd-win\usbipd.exe" attach --wsl --busid <id>  # 接続のたび
+```
+
+---
+
+## 8. Web UI
+
+```bash
+# コンテナの外 (Windows または WSL2) で、初回のみ
+cd th_ws/web_ui
+npm install
+
+# 起動
+npm run dev    # → http://localhost:5173
+```
+
+roslib.js はローカル同梱(`web_ui/public/roslib.min.js`)のため、
+インターネットの無い AP 配下でもタブレットから動く。
+タブレットは th-esp32-ap に接続し `http://192.168.4.50:5173` を開く。
+rosbridge(9090)は bringup が自動起動する。
+
+---
+
+## 9. Linux 実機 (Ubuntu) の場合
+
+一括セットアップスクリプトがある(udev ルール適用・イメージビルド等をまとめて実行):
+
+```bash
+# th_ws/ で
+bash setup.sh
+```
+
+以下は手動で行う場合の内訳。Docker は[公式ドキュメント](https://docs.docker.com/engine/install/ubuntu/)準拠:
+
+```bash
+# 競合する古いパッケージを削除 (なければエラーは無視してよい)
+for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
+  sudo apt-get remove -y $pkg
+done
+
+# 公式 GPG 鍵とリポジトリを追加
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+# Docker Engine 本体
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER   # 反映には再ログイン
+```
+
+udev ルール(LiDAR を実機に直結する場合):
+
+```bash
+lsusb                           # VID:PID を確認
+udevadm info -a -n /dev/ttyUSB0 | grep -E "idVendor|idProduct|serial"
+sudo cp udev/99-th-robot.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
+ls -la /dev/lidar               # シンボリックリンク確認
+```
+
+---
+
+## 10. レガシー環境向け (Docker Desktop 併用)
+
+**非推奨**(冒頭の理由参照)だが、Docker Desktop の WSL 統合を使い続ける場合の既知の回避策:
+
+- **ネイティブ Engine と併用しない**: 同じディストロで WSL 統合が有効なままだと、
+  `network_mode: host` でもコンテナが Docker Desktop 内部ネットワーク(`192.168.65.0/24`)に
+  閉じ込められる。Settings → Resources → WSL Integration でトグル OFF →アプリ再起動→
+  `rm -f ~/.docker/config.json && docker context use default`。
+  確認: `mount | grep docker-desktop` が空であること。
+- **`/dev/lidar` がコンテナから見えない**: udev リンクは別ディストロから見えないため、
+  `docker-compose.override.yml`(.gitignore 対象)で生デバイス `/dev/ttyUSB0` を直接渡す。
+- **RViz2 が起動直後に落ちる**(`libGL error: failed to create drawable`):
+  override で `LIBGL_ALWAYS_SOFTWARE=1` を設定しソフトウェアレンダリングに強制する。
+  X11 は WSLg 標準搭載のため VcXsrv 等は不要。

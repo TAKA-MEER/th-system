@@ -24,7 +24,7 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # Gazebo モデルキャッシュ（再起動時の高速化）
       - gazebo_models:/root/.gazebo
-      # DR-SPAAM 重みファイル（Google Drive から手動DL、README参照。--rm でも消えないようホストに永続化）
+      # DR-SPAAM 重みファイル（Google Drive から手動DL、docs/setup.md 参照。--rm でも消えないようホストに永続化）
       - ./dr_spaam_weights:/root/th_ws/install/dr_spaam_ros/share/dr_spaam_ros/weights
     # LiDAR を PC に USB 直結する場合のみ必要 (現行の実機構成では LiDAR は
     # ラズパイ側に接続し /scan をネットワーク経由で受信するため不要)。

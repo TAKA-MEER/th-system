@@ -80,7 +80,7 @@ RUN pip3 install -U packaging
 RUN cd 2d_lidar_person_detection/dr_spaam && pip3 install .
 # 重みファイルはイメージに含めない。docker-compose.yml の bind mount 経由で
 # ホストの th_ws/dr_spaam_weights/ から供給する。
-# 詳細は README.md の「DR-SPAAM 重みファイルの配置」を参照。
+# 詳細は docs/setup.md「5. PC: コンテナのビルド」を参照。
 
 # ── 依存関係の解決 & ビルド ───────────────────────────────────────────
 WORKDIR /root/th_ws
