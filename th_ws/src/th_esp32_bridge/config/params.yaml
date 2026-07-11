@@ -7,4 +7,8 @@ esp32_bridge:
     publish_tf:    true
     feedback_timeout_ms: 500   # ESP32 フィードバック死活監視タイムアウト (ms)
     ws_host: "0.0.0.0"      # WebSocket サーバー bind アドレス (ESP32 が接続しにくる側)
-    ws_port: 8765           # WebSocket サーバー ポート
+    # ESP32 側 wifi_credentials.h の WS_SERVER_PORT と一致させる。
+    # 8766 で直接待ち受ける (実機検証 2026-07-11: WSL mirrored networking でも
+    # 外部デバイスから直接届くため、netsh portproxy は不要。むしろ Windows 側に
+    # 8766 の portproxy が残っていると横取りされるので削除すること)。
+    ws_port: 8766           # WebSocket サーバー ポート

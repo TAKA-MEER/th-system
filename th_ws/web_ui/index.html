@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>TH システム</title>
-    <!-- roslibjs (CDN) -->
-    <script src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"></script>
+    <!-- roslibjs (ローカル同梱。実機は ESP32 AP 配下でインターネットに出られない
+         ため CDN は使えない。web_ui/public/roslib.min.js) -->
+    <script src="/roslib.min.js"></script>
   </head>
   <body>
     <div id="root"></div>

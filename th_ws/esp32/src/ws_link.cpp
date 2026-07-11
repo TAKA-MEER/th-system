@@ -23,8 +23,12 @@ unsigned long lastWifiLogMs = 0;
 // 検知(ping/pongハートビートを含む)が効かず「接続中」のまま固まるケースが
 // 実機検証で確認された。ライブラリの検知に頼らず、時間ベースで強制的に
 // 接続を張り直す(最も確実な保険)。
+// 実機検証 (2026-07-11): 15秒に設定していたところ、リフレッシュ後の再接続が
+// portproxy/WSL 経由で間欠的に失敗し、約45秒の通信断が頻発した。
+// 死んだ接続の検知は enableHeartbeat の ping/pong (3秒周期・約7秒で切断) が
+// 担うため、時間ベースの強制再接続は「最後の保険」として長めに設定する。
 unsigned long connectedSinceMs = 0;
-const unsigned long FORCE_RECONNECT_MS = 15000;  // 接続後この時間で強制的に再接続
+const unsigned long FORCE_RECONNECT_MS = 300000;  // 接続後この時間で強制的に再接続
 
 // 送信の連続失敗も補助的な検知手段として残す
 int consecutiveSendFailures = 0;

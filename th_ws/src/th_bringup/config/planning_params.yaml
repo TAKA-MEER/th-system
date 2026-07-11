@@ -35,16 +35,18 @@ follow_planner:
 follow_planner_mapless:
   ros__parameters:
     # ── 軌跡追従（MAP不要・Nav2不使用） ────────────────────
-    lookback_distance:        1.0    # m 軌跡追従時に遡る距離
+    # 狭い部屋での実機検証 (2026-07-11) に合わせて近接寄りに調整。
+    # 広い現場では stop 1.0 / resume 1.3 / obstacle 1.0 / lookback 1.0 が目安。
+    lookback_distance:        0.5    # m 軌跡追従時に遡る距離
     trail_sample_interval_m:  0.05   # m 軌跡点を追加する最小移動距離
     trail_max_points:        2000    # 軌跡の最大保持点数
 
     # ── 試験員接近時の停止/再開（ヒステリシス） ────────────
-    stop_distance:            1.0    # m これ未満で停止（退避せずその場停止）
-    resume_distance:          1.3    # m これ以上で追従再開
+    stop_distance:            0.5    # m これ未満で停止（退避せずその場停止）
+    resume_distance:          0.7    # m これ以上で追従再開
 
     # ── 進路上障害物チェック（生 LiDAR スキャン） ──────────
-    obstacle_check_distance_m:     1.0   # m この距離未満に障害物があれば停止
+    obstacle_check_distance_m:     0.45  # m この距離未満に障害物があれば停止
     obstacle_check_half_width_deg: 20.0  # deg 進行方位を中心とした走査半幅
 
     # ── Pure Pursuit 駆動 ─────────────────────────────────

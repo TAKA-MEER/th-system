@@ -7,8 +7,10 @@
 
 class PID {
 public:
-    PID(float kp, float ki, float kd, float outMin, float outMax, float iTermMax)
-        : kp_(kp), ki_(ki), kd_(kd),
+    PID(float kp, float ki, float kd, float outMin, float outMax, float iTermMax,
+        float kff = 0.0f)
+        : kp_(kp), ki_(ki), kd_(kd), kff_(kff),
+          // kff: フィードフォワードゲイン [PWM/(m/s)]。0 で従来動作
           outMin_(outMin), outMax_(outMax), iTermMax_(iTermMax),
           iTerm_(0.0f), prevError_(0.0f), firstCall_(true) {}
 
@@ -40,9 +42,15 @@ public:
         float loMin = (setpoint >= 0.0f) ? 0.0f    : outMin_;
         float loMax = (setpoint >= 0.0f) ? outMax_ : 0.0f;
 
+        // フィードフォワード項: 目標速度に比例した基準出力を先に与える。
+        // モーターの駆動には誤差ゼロでも一定の PWM が必要なため、PID だけだと
+        // 積分項が積み上がるまで大幅に出力不足になる (実機検証 2026-07-11:
+        // 指令 0.1 m/s に対し 4 秒かけて 0.07 m/s までしか到達しなかった)。
+        float ffTerm = kff_ * setpoint;
+
         // 積分項 + アンチワインドアップ: 出力が飽和する場合は積分項を更新しない
         float iTermCandidate = constrain(iTerm_ + ki_ * error * dt, -iTermMax_, iTermMax_);
-        float rawOutput = kp_ * error + iTermCandidate + dTerm;
+        float rawOutput = ffTerm + kp_ * error + iTermCandidate + dTerm;
         float output = constrain(rawOutput, loMin, loMax);
         if (output == rawOutput) {
             iTerm_ = iTermCandidate;
@@ -61,7 +69,7 @@ public:
     }
 
 private:
-    float kp_, ki_, kd_;
+    float kp_, ki_, kd_, kff_;
     float outMin_, outMax_, iTermMax_;
     float iTerm_, prevError_;
     bool  firstCall_;

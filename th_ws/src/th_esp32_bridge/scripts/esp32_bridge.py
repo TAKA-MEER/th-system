@@ -93,7 +93,18 @@ class Esp32Bridge(Node):
     def _run_ws_server(self):
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
-        self._loop.run_until_complete(self._serve())
+        try:
+            self._loop.run_until_complete(self._serve())
+        except BaseException as e:
+            # bind 失敗 (ポート使用中等) やイベントループの想定外クラッシュ。
+            # WS サーバー無しでノードだけ生き続けると「起動しているのに
+            # ESP32 が繋がらない」状態に陥るため、即座にプロセスごと落とす
+            # (launch の respawn や再起動で復帰させる方が安全)。
+            self.get_logger().fatal(
+                f"WebSocket サーバー停止: {type(e).__name__}: {e} — ノードを終了します "
+                f"(ポート使用中の場合は別の esp32_bridge が動いていないか確認)")
+            import os
+            os._exit(1)
 
     async def _serve(self):
         async with websockets.serve(self._handle_client, self._ws_host, self._ws_port):

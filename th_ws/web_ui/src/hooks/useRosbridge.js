@@ -9,7 +9,9 @@ const MODE_NAMES = {
   7: 'FOLLOWING_MAPLESS'
 }
 
-export function useRosbridge(url = 'ws://192.168.137.1:9090') {
+// 既定はページを配信しているホスト (ロボットPC) の rosbridge に接続する。
+// 別ホストの rosbridge へ接続する場合は呼び出し側で url を指定する。
+export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
   const rosRef  = useRef(null)
   const [connected, setConnected]   = useState(false)
   const [mode, setMode]             = useState(null)

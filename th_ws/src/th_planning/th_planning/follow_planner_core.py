@@ -223,6 +223,7 @@ def pure_pursuit_control(
     v_max: float = 0.5,
     k_ang: float = 2.0,
     stop_radius: float = 0.3,
+    w_max: float = 1.0,
 ) -> Tuple[float, float]:
     x_r, y_r, theta_r = robot_pose
     dx, dy = goal[0] - x_r, goal[1] - y_r
@@ -235,7 +236,12 @@ def pure_pursuit_control(
     angle_err = math.atan2(math.sin(target_angle - theta_r), math.cos(target_angle - theta_r))
 
     v = v_max * min(max(dist / 1.5, 0.0), 1.0)
-    omega = k_ang * angle_err
+    # 角度誤差が大きいときは並進を絞って先に向き直る (ゴールが真後ろの場合に
+    # 前進 v_max + 大旋回で弧を描いて突っ込むのを防ぐ。実機検証 2026-07-11)
+    v *= max(0.0, math.cos(angle_err))
+    # 旋回速度をクランプ (無制限だと角度誤差 π × k_ang ≈ 6.3 rad/s という
+    # 物理的に不可能な指令が出る。実機で w=5.1 rad/s を観測)
+    omega = max(-w_max, min(w_max, k_ang * angle_err))
     return (v, omega)
 
 

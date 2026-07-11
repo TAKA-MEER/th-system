@@ -10,8 +10,16 @@
 # ============================================================
 safety_monitor:
   ros__parameters:
-    lidar_timeout_ms:    500    # ms /scan タイムアウト
-    esp32_timeout_ms:    500    # ms /esp32/wheel_feedback タイムアウト
-                                # (ESP32 ウォッチドッグ 300ms + ジッタ余裕)
-    person_timeout_ms:   500    # ms /person/status タイムアウト
+    # 実機検証 (2026-07-11): WiFi (ESP32 AP) 経由では /scan・wheel_feedback とも
+    # 平常時でも 0.5〜0.8 秒程度の受信ギャップが時折発生する。500ms だと誤フォルト
+    # が頻発するため 1200ms に緩和 (物理停止は ESP32 側ウォッチドッグ 300ms が担保)。
+    lidar_timeout_ms:    2000   # ms /scan タイムアウト
+    esp32_timeout_ms:    2000   # ms /esp32/wheel_feedback タイムアウト
+                                # (WiFi 実測でギャップが時折 1.2 秒超まで伸びる。
+                                #  物理停止は ESP32 側ウォッチドッグ 300ms が担保)
+    person_timeout_ms:   2500   # ms /person/status タイムアウト
+                                # (DR-SPAAM の CPU 推論は約2Hz=500ms間隔で、1回の
+                                #  スキップで1秒超のギャップが平常時も出る。実測に
+                                #  基づき2.5秒に設定。人ロスト時は follow_planner 側が
+                                #  停止するため、この緩和で安全性は損なわれない)
     check_period_ms:     100    # ms 監視ループ周期

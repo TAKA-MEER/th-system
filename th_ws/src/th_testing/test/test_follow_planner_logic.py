@@ -268,8 +268,30 @@ class TestPurePursuitControl:
         assert v == pytest.approx(0.6)
 
     def test_angle_error_drives_omega(self):
-        v, w = pure_pursuit_control(ORIGIN_POSE, (0.0, 1.0), v_max=0.6, k_ang=2.0, stop_radius=0.2)
-        assert w == pytest.approx(2.0 * math.pi / 2)
+        # 小さい角度誤差では w = k_ang * 誤差 がそのまま出る
+        v, w = pure_pursuit_control(ORIGIN_POSE, (1.0, 0.2), v_max=0.6, k_ang=2.0,
+                                    stop_radius=0.2, w_max=1.0)
+        assert w == pytest.approx(2.0 * math.atan2(0.2, 1.0))
+
+    def test_omega_clamped_at_w_max(self):
+        # 真横のゴール (角度誤差 π/2): k_ang*誤差 ≈ 3.14 だが w_max=1.0 にクランプ
+        # (実機で w=5.1 rad/s の非現実的な指令が出た問題の回帰テスト)
+        v, w = pure_pursuit_control(ORIGIN_POSE, (0.0, 1.0), v_max=0.6, k_ang=2.0,
+                                    stop_radius=0.2, w_max=1.0)
+        assert w == pytest.approx(1.0)
+        v, w = pure_pursuit_control(ORIGIN_POSE, (0.0, -1.0), v_max=0.6, k_ang=2.0,
+                                    stop_radius=0.2, w_max=1.0)
+        assert w == pytest.approx(-1.0)
+
+    def test_linear_reduced_when_goal_behind(self):
+        # 真後ろのゴール: cos(π)=-1 → 前進成分ゼロ (その場旋回で向き直る)
+        v, w = pure_pursuit_control(ORIGIN_POSE, (-2.0, 0.0), v_max=0.6, k_ang=2.0,
+                                    stop_radius=0.2, w_max=1.0)
+        assert v == pytest.approx(0.0)
+        assert abs(w) == pytest.approx(1.0)
+        # 真横のゴール: cos(π/2)=0 → 前進ゼロ
+        v, _ = pure_pursuit_control(ORIGIN_POSE, (0.0, 1.0), v_max=0.6, stop_radius=0.2)
+        assert v == pytest.approx(0.0)
 
 
 # ════════════════════════════════════════════════════════════

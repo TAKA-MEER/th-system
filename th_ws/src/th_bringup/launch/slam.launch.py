@@ -18,11 +18,13 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 BRINGUP_DIR = get_package_share_directory('th_bringup')
 SLAM_DIR    = get_package_share_directory('slam_toolbox')
+DESC_DIR    = get_package_share_directory('th_description')
 
 
 def generate_launch_description():
@@ -37,10 +39,24 @@ def generate_launch_description():
     lidar_source = LaunchConfiguration('lidar_source')
     lidar_is_local = PythonExpression(["'", lidar_source, "' == 'local'"])
 
+    # base_link → laser_link 等の固定 TF を配信する。これが無いと
+    # SLAM Toolbox がスキャンを座標変換できず地図が作れない。
+    robot_description = ParameterValue(
+        Command(['xacro ', os.path.join(DESC_DIR, 'urdf', 'th_robot.urdf.xacro')]),
+        value_type=str)
+
     return LaunchDescription([
         DeclareLaunchArgument('lidar_source', default_value='local',
                               description='local=USB直結sllidar_node起動 / '
                                           'network=ラズパイ等が配信する/scanを使用'),
+
+        # robot_state_publisher / joint_state_publisher (URDF → TF)
+        Node(package='robot_state_publisher', executable='robot_state_publisher',
+             name='robot_state_publisher',
+             parameters=[{'robot_description': robot_description}],
+             output='screen'),
+        Node(package='joint_state_publisher', executable='joint_state_publisher',
+             name='joint_state_publisher', output='screen'),
 
         # RPLIDAR (lidar_source:=local の場合のみ起動)
         Node(package='sllidar_ros2', executable='sllidar_node',
