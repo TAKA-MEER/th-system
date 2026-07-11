@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- TH システム実機用 FastDDS プロファイル
+
+     ESP32 SoftAP 経由のホスト間マルチキャストは不安定で、DDS ディスカバリが
+     成立しないことがある (実機検証 2026-07-11)。ラズパイ (192.168.4.2) を
+     ユニキャスト初期ピアとして追加する。トランスポートは既定のまま
+     (SHM + UDPv4 + マルチキャスト) なので、コンテナ内のローカル発見には
+     影響しない。ラズパイ側も同様に 192.168.4.50 をピアに登録すること。
+
+     使い方: FASTRTPS_DEFAULT_PROFILES_FILE=<このファイル>
+     (docker-compose.yml で設定済み)
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <participant profile_name="th_unicast_peers" is_default_profile="true">
+    <rtps>
+      <builtin>
+        <initialPeersList>
+          <locator><udpv4><address>192.168.4.2</address></udpv4></locator>
+        </initialPeersList>
+      </builtin>
+    </rtps>
+  </participant>
+</profiles>

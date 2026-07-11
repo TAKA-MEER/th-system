@@ -10,6 +10,11 @@ services:
     privileged: true
     environment:
       - ROS_DOMAIN_ID=10
+      # ESP32 SoftAP 経由のマルチキャストが不安定で pi の /scan が発見できない
+      # 場合のみ有効化する (ラズパイ側にも対になるピア設定が必要。
+      # fastdds_profile.xml 内コメント参照)。常用すると一部ノード間の
+      # ローカル発見が不安定になる事象も観測されたため既定では無効。
+      # - FASTRTPS_DEFAULT_PROFILES_FILE=/root/th_ws/src/th_bringup/config/fastdds_profile.xml
       - DISPLAY=${DISPLAY:-:0}
       - LIBGL_ALWAYS_INDIRECT=0        # GPU レンダリング許可
       - GAZEBO_MODEL_PATH=/root/th_ws/src/th_description/meshes
