@@ -11,5 +11,8 @@ install(PROGRAMS
   scripts/person_mover.py
   scripts/obstacle_mover.py
   DESTINATION lib/${PROJECT_NAME})
+install(FILES
+  scripts/person_tracker_bridge_core.py
+  DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 ament_package()

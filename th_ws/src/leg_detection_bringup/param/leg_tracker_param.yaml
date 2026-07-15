@@ -10,7 +10,10 @@
     merge_nontravelable_region : false
 
     # --- Tracking ---
-    target_range : 3.0            # Initial search radius to acquire a target [m]
+    target_range : 3.0            # Initial (cold-acquire) search radius [m]
+                                   # (2026-07 fix: this key used to be silently ignored --
+                                   #  the code hardcoded 3.0 regardless of this value. Now
+                                   #  actually read; safe to tune.)
     leg_tracking_range : 1.10     # Gating radius while tracking a leg [m]
     body_tracking_range : 0.90    # (unused in leg mode, kept for completeness)
     target_cloud_radius : 0.4     # Radius removed around target when building obstacles [m]
@@ -18,6 +21,20 @@
     outlier_min_pts : 2           # RadiusOutlierRemoval min neighbours
     leaf_size : 0.10              # VoxelGrid leaf size [m]
     target_change_tolerance : 2.0 # Time before dropping a lost target [s]
+
+    # --- Explicit target selection (furniture-leg false cold-acquire mitigation) ---
+    # If true, the tracker NEVER spontaneously grabs the nearest leg to the robot
+    # (startup, or after a full loss past reacquire_tolerance) -- it stays in a
+    # "no target, awaiting selection" state until the operator calls
+    # ~/person_tracker/select_target or ~/person_tracker/reset_tracking. This prevents
+    # a stationary chair/table leg from being cold-acquired as the person. Does NOT
+    # affect re-acquiring the SAME person after a brief occlusion (reacquire_tolerance
+    # window below) -- that recovery is unaffected.
+    require_explicit_target_selection : true
+    # After ~/select_target or ~/reset_tracking is called, how long (s) the cold-acquire
+    # search is allowed to run around the seeded point before reverting to
+    # "awaiting selection" if nothing was found nearby.
+    manual_seed_timeout : 5.0
     # --- Re-acquisition after occlusion (Methods A-D) ---
     # A: after a target is dropped it is not searched from the robot origin immediately;
     #    for reacquire_tolerance seconds the tracker looks for the SAME person around

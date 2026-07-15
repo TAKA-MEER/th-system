@@ -1,0 +1,13 @@
+# Force-seed PersonTracker's internal tracked position so the existing
+# per-frame gated nearest-neighbor association (findTwoObservationValue)
+# naturally locks onto the real leg detection near this point within
+# manual_seed_timeout seconds. Does NOT reimplement association logic.
+#
+# Provide candidate_index (preferred, from the latest PersonCandidates list)
+# OR an explicit target_frame-relative x/y (candidate_index = -1).
+int32 candidate_index
+float64 x
+float64 y
+---
+bool success
+string message

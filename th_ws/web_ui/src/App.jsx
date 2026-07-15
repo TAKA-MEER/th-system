@@ -1,7 +1,7 @@
 // ============================================================
 // App.jsx — TH システム タブレット UI
 // ============================================================
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useRosbridge } from './hooks/useRosbridge'
 import './App.css'
 
@@ -15,14 +15,85 @@ const PANELS = [
   { id: 'panel_03', label: '第3配電盤' },
 ]
 
-// ジョグ距離 (m)
-const JOG_STEP = 0.3
+// ジョグ速度 (押している間だけ /cmd_vel_manual に流す)
+const JOG_LIN = 0.15   // m/s
+const JOG_ANG = 0.6    // rad/s
+const JOG_PUB_MS = 100 // publish 周期
+
+// レーダー表示レンジ (m)
+const RADAR_RANGE = 3.5
+
+// 追跡中ターゲットと候補の同一判定距離 (m)
+const TRACKED_MATCH_DIST = 0.35
+
+// ── 候補レーダー (上から見た図。上=ロボット前方) ─────────────
+function CandidateRadar({ candidates, personStatus, onSelect, connected }) {
+  const size = 260               // SVG 論理サイズ (px)
+  const c = size / 2
+  const scale = (size / 2 - 18) / RADAR_RANGE
+
+  // ロボット座標 (x=前方, y=左) → SVG (上=前方, 右=右)
+  const toSvg = (p) => ({ sx: c - p.y * scale, sy: c - p.x * scale })
+
+  const tracked = personStatus && !personStatus.is_lost ? personStatus.position : null
+  const isTracked = (p) =>
+    tracked && Math.hypot(p.x - tracked.x, p.y - tracked.y) < TRACKED_MATCH_DIST
+
+  return (
+    <svg
+      className="radar"
+      viewBox={`0 0 ${size} ${size}`}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      {/* レンジリング (1m 毎) */}
+      {[1, 2, 3].map(r => (
+        <circle key={r} cx={c} cy={c} r={r * scale} className="radar-ring" />
+      ))}
+      {[1, 2, 3].map(r => (
+        <text key={r} x={c + 4} y={c - r * scale + 12} className="radar-ring-label">{r}m</text>
+      ))}
+      {/* 前方線 */}
+      <line x1={c} y1={c} x2={c} y2={16} className="radar-axis" />
+      <text x={c} y={11} textAnchor="middle" className="radar-ring-label">前</text>
+
+      {/* ロボット (中心) */}
+      <polygon
+        points={`${c},${c - 9} ${c - 7},${c + 7} ${c + 7},${c + 7}`}
+        className="radar-robot"
+      />
+
+      {/* 候補 */}
+      {candidates.map((p, i) => {
+        const { sx, sy } = toSvg(p)
+        const trackedNow = isTracked(p)
+        return (
+          <g
+            key={i}
+            className={`radar-cand ${trackedNow ? 'tracked' : ''} ${connected ? '' : 'off'}`}
+            onClick={() => connected && onSelect(i)}
+          >
+            {trackedNow && <circle cx={sx} cy={sy} r={15} className="radar-tracked-ring" />}
+            <circle cx={sx} cy={sy} r={10} className="radar-dot" />
+            <text x={sx} y={sy + 4} textAnchor="middle" className="radar-idx">{i + 1}</text>
+          </g>
+        )
+      })}
+
+      {/* 追跡中ターゲットが候補一覧に無い場合も位置を表示 */}
+      {tracked && !candidates.some(isTracked) && (() => {
+        const { sx, sy } = toSvg(tracked)
+        return <circle cx={sx} cy={sy} r={12} className="radar-tracked-ring" />
+      })()}
+    </svg>
+  )
+}
 
 export default function App() {
   const {
     connected, mode, modeName,
     fault, estop,
-    requestMode, publishTabletEstop, sendManualGoal, goToPanel,
+    personStatus, candidates, selectTarget, resetTracking,
+    requestMode, publishTabletEstop, publishManualCmd, goToPanel,
   } = useRosbridge()
 
   const [estopActive, setEstopActive] = useState(false)
@@ -34,11 +105,30 @@ export default function App() {
     publishTabletEstop(next)
   }
 
-  // ── ジョグボタン ──────────────────────────────────────────
-  const jog = (dx, dy) => {
+  // ── ジョグ: 押している間だけ速度指令を publish ─────────────
+  const jogTimerRef = useRef(null)
+  const jogStart = useCallback((vx, wz) => {
     if (mode !== MODE.MANUAL) return
-    sendManualGoal(dx, dy)
-  }
+    if (jogTimerRef.current) clearInterval(jogTimerRef.current)
+    publishManualCmd(vx, wz)
+    jogTimerRef.current = setInterval(() => publishManualCmd(vx, wz), JOG_PUB_MS)
+  }, [mode, publishManualCmd])
+
+  const jogStop = useCallback(() => {
+    if (jogTimerRef.current) {
+      clearInterval(jogTimerRef.current)
+      jogTimerRef.current = null
+    }
+    publishManualCmd(0, 0)
+  }, [publishManualCmd])
+
+  const jogProps = (vx, wz) => ({
+    onPointerDown:   () => jogStart(vx, wz),
+    onPointerUp:     jogStop,
+    onPointerLeave:  jogStop,
+    onPointerCancel: jogStop,
+    onContextMenu:   (e) => e.preventDefault(),
+  })
 
   // ── モードバッジの色 ──────────────────────────────────────
   const modeColor = {
@@ -48,6 +138,7 @@ export default function App() {
   }[modeName] ?? '#888'
 
   const isFault = fault?.active
+  const isTrackedNow = personStatus && !personStatus.is_lost
 
   return (
     <div className="app">
@@ -55,18 +146,14 @@ export default function App() {
       {/* ── ヘッダー ─────────────────────────────────── */}
       <header className="header">
         <span className="title">TH システム</span>
+        <div className="mode-inline" style={{ backgroundColor: modeColor }}>
+          <span className="mode-label">{modeName}</span>
+          {isFault && <span className="fault-badge">⚠ {fault.fault_type}</span>}
+        </div>
         <span className={`conn-badge ${connected ? 'ok' : 'ng'}`}>
           {connected ? '● 接続中' : '○ 切断'}
         </span>
       </header>
-
-      {/* ── モード表示 ───────────────────────────────── */}
-      <div className="mode-bar" style={{ backgroundColor: modeColor }}>
-        <span className="mode-label">{modeName}</span>
-        {isFault && (
-          <span className="fault-badge">⚠ {fault.fault_type}</span>
-        )}
-      </div>
 
       {/* ── 緊急停止ボタン ──────────────────────────── */}
       <button
@@ -76,77 +163,6 @@ export default function App() {
         {estopActive ? '■ 緊急停止 解除' : '⚠ 緊急停止'}
       </button>
 
-      {/* ── モード切替 ───────────────────────────────── */}
-      <section className="card">
-        <h2>モード操作</h2>
-        <div className="btn-row">
-          <button
-            className="mode-btn"
-            disabled={mode === MODE.FOLLOWING || !connected}
-            onClick={() => requestMode(MODE.FOLLOWING)}
-          >
-            追従開始
-          </button>
-          <button
-            className="mode-btn"
-            disabled={mode === MODE.FOLLOWING_MAPLESS || !connected}
-            onClick={() => requestMode(MODE.FOLLOWING_MAPLESS)}
-          >
-            軌跡追従(マップ不要)
-          </button>
-          <button
-            className="mode-btn"
-            disabled={mode === MODE.MANUAL || !connected}
-            onClick={() => requestMode(MODE.MANUAL)}
-          >
-            手動操作
-          </button>
-          <button
-            className="mode-btn idle"
-            disabled={mode === MODE.IDLE || !connected}
-            onClick={() => requestMode(MODE.IDLE)}
-          >
-            待機 (IDLE)
-          </button>
-        </div>
-      </section>
-
-      {/* ── 手動ジョグ ──────────────────────────────── */}
-      <section className={`card ${mode !== MODE.MANUAL ? 'disabled' : ''}`}>
-        <h2>手動移動 <span className="note">({JOG_STEP * 100} cm/回)</span></h2>
-        <div className="jog-grid">
-          <div />
-          <button className="jog-btn" onClick={() => jog(JOG_STEP, 0)}>▲</button>
-          <div />
-          <button className="jog-btn" onClick={() => jog(0,  JOG_STEP)}>◀</button>
-          <button className="jog-btn stop" onClick={() => jog(0, 0)}>■</button>
-          <button className="jog-btn" onClick={() => jog(0, -JOG_STEP)}>▶</button>
-          <div />
-          <button className="jog-btn" onClick={() => jog(-JOG_STEP, 0)}>▼</button>
-          <div />
-        </div>
-      </section>
-
-      {/* ── 配電盤移動 ──────────────────────────────── */}
-      <section className="card">
-        <h2>配電盤へ移動</h2>
-        <div className="panel-list">
-          {PANELS.map(p => (
-            <button
-              key={p.id}
-              className="panel-btn"
-              disabled={!connected || estopActive}
-              onClick={() => {
-                requestMode(MODE.FOLLOWING)  // FOLLOWING 経由でトリガー
-                setTimeout(() => goToPanel(p.id), 300)
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
       {/* ── フォルト情報 ─────────────────────────────── */}
       {isFault && (
         <div className="fault-bar">
@@ -154,6 +170,111 @@ export default function App() {
         </div>
       )}
 
+      {/* ── メイングリッド (横長レイアウト) ──────────── */}
+      <div className="grid">
+
+        {/* ── 追従ターゲット ─────────────────────────── */}
+        <section className="card card-target">
+          <h2>
+            追従ターゲット{' '}
+            <span className={`target-state ${isTrackedNow ? 'ok' : 'ng'}`}>
+              {isTrackedNow
+                ? `追跡中 (${personStatus.position.x.toFixed(1)}, ${personStatus.position.y.toFixed(1)})`
+                : personStatus?.lost_reason === 'TARGET_SWITCHED'
+                  ? '⚠ 対象切替の疑い — 選び直してください'
+                  : `未追跡${personStatus?.lost_reason ? ` (${personStatus.lost_reason})` : ''}`}
+            </span>
+          </h2>
+          <div className="target-body">
+            <CandidateRadar
+              candidates={candidates}
+              personStatus={personStatus}
+              onSelect={selectTarget}
+              connected={connected}
+            />
+            <div className="target-side">
+              <p className="note">
+                図の●をタップで対象を選択。緑リング = 現在の追跡対象。
+              </p>
+              <button className="mode-btn" disabled={!connected} onClick={resetTracking}>
+                最も近い人を再取得
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* ── モード切替 ─────────────────────────────── */}
+        <section className="card">
+          <h2>モード操作</h2>
+          <div className="btn-row">
+            <button
+              className="mode-btn"
+              disabled={mode === MODE.FOLLOWING || !connected}
+              onClick={() => requestMode(MODE.FOLLOWING)}
+            >
+              追従開始
+            </button>
+            <button
+              className="mode-btn"
+              disabled={mode === MODE.FOLLOWING_MAPLESS || !connected}
+              onClick={() => requestMode(MODE.FOLLOWING_MAPLESS)}
+            >
+              軌跡追従(マップ不要)
+            </button>
+            <button
+              className="mode-btn"
+              disabled={mode === MODE.MANUAL || !connected}
+              onClick={() => requestMode(MODE.MANUAL)}
+            >
+              手動操作
+            </button>
+            <button
+              className="mode-btn idle"
+              disabled={mode === MODE.IDLE || !connected}
+              onClick={() => requestMode(MODE.IDLE)}
+            >
+              待機 (IDLE)
+            </button>
+          </div>
+        </section>
+
+        {/* ── 手動ジョグ (押している間だけ動く) ───────── */}
+        <section className={`card ${mode !== MODE.MANUAL ? 'disabled' : ''}`}>
+          <h2>手動移動 <span className="note">(押している間だけ動く)</span></h2>
+          <div className="jog-grid">
+            <div />
+            <button className="jog-btn" {...jogProps(JOG_LIN, 0)}>▲</button>
+            <div />
+            <button className="jog-btn" {...jogProps(0, JOG_ANG)}>↺</button>
+            <button className="jog-btn stop" onClick={jogStop}>■</button>
+            <button className="jog-btn" {...jogProps(0, -JOG_ANG)}>↻</button>
+            <div />
+            <button className="jog-btn" {...jogProps(-JOG_LIN, 0)}>▼</button>
+            <div />
+          </div>
+        </section>
+
+        {/* ── 配電盤移動 ─────────────────────────────── */}
+        <section className="card">
+          <h2>配電盤へ移動</h2>
+          <div className="panel-list">
+            {PANELS.map(p => (
+              <button
+                key={p.id}
+                className="panel-btn"
+                disabled={!connected || estopActive}
+                onClick={() => {
+                  requestMode(MODE.FOLLOWING)  // FOLLOWING 経由でトリガー
+                  setTimeout(() => goToPanel(p.id), 300)
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+      </div>
     </div>
   )
 }
