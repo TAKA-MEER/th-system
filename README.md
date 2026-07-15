@@ -34,6 +34,12 @@ ping 192.168.4.1    # ESP32 (AP)
 ping 192.168.4.2    # ラズパイ (LiDAR は systemd で自動起動)
 # 繋がらない → netsh wlan disconnect → connect (docs/network.md「復旧手順」)
 
+# Wi-Fiのバックグラウンドスキャンの無効化
+
+netsh wlan set autoconfig enabled=no interface="<アダプタ名>"   # 走行前
+# netsh wlan set autoconfig enabled=yes interface="<アダプタ名>"  # 終了後
+
+
 # ② (推奨) WSL をクリーンに起動
 wsl --shutdown
 ```
@@ -44,8 +50,13 @@ docker start th_robot
 docker exec -it th_robot bash
 
 # ④ コンテナ内で bringup (地図なし=SLAM モード。地図ありは map_yaml:=... を追加)
-cd /root/th_ws && source install/setup.bash
+cd /root/th_ws
+colcon build --symlink-install
+source install/setup.bash
 ros2 launch th_bringup bringup.launch.py lidar_source:=network use_stub:=false
+
+# 駆動系だけのキーボード操作テスト (LiDAR・安全監視なしの最小構成)
+ros2 launch th_bringup esp32_keyboard_test.launch.py
 
 # ⑤ 健全性確認: 起動直後の [FAULT] は 1〜2 分で全て [FAULT CLEARED] になる。
 #    ならないフォルトがあれば docs/network.md の復旧手順へ
