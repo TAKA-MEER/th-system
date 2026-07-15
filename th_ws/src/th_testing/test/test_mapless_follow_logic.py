@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(
 from th_planning.mapless_follow_core import (
     MaplessState, MaplessFollowParams, MaplessFollowCore,
     next_mapless_state, is_path_blocked,
+    mapless_target_speed, rate_limit,
 )
 
 
@@ -136,9 +137,73 @@ class TestIsPathBlocked:
             ranges, ANGLE_MIN, ANGLE_INC,
             direction_rad=math.pi / 2, half_width_rad=math.radians(20), max_check_dist=1.0)
 
+    def test_person_at_check_distance_not_blocked(self):
+        """追従対象自身の反射(person_angle/person_range と一致)は障害物とみなさない"""
+        ranges = scan_with_obstacle_at(0.0, 0.4)
+        assert not is_path_blocked(
+            ranges, ANGLE_MIN, ANGLE_INC,
+            direction_rad=0.0, half_width_rad=math.radians(20), max_check_dist=1.0,
+            person_angle_rad=0.0, person_range_m=0.4)
+
+    def test_real_obstacle_nearer_than_person_still_blocks(self):
+        """追従対象より手前の障害物は距離が異なるため通常どおり検知される"""
+        ranges = scan_with_obstacle_at(0.0, 0.4)
+        assert is_path_blocked(
+            ranges, ANGLE_MIN, ANGLE_INC,
+            direction_rad=0.0, half_width_rad=math.radians(20), max_check_dist=1.0,
+            person_angle_rad=0.0, person_range_m=0.9)
+
+    def test_obstacle_outside_person_tolerance_still_blocks(self):
+        """追従対象の位置から exclude_tolerance を超えて離れた反射は通常どおり検知される"""
+        ranges = scan_with_obstacle_at(0.0, 0.4)
+        assert is_path_blocked(
+            ranges, ANGLE_MIN, ANGLE_INC,
+            direction_rad=0.0, half_width_rad=math.radians(20), max_check_dist=1.0,
+            person_angle_rad=0.0, person_range_m=0.9, person_exclude_tolerance_m=0.1)
+
 
 # ════════════════════════════════════════════════════════════
-# 3. MaplessFollowCore 統合テスト
+# 3. 速度プロファイル(制動距離ベースの目標速度・加減速レート制限)
+# ════════════════════════════════════════════════════════════
+class TestMaplessTargetSpeed:
+    def test_zero_at_stop_distance(self):
+        assert mapless_target_speed(1.0, stop_distance=1.0,
+                                     max_decel_mps2=1.0, v_max=0.3) == pytest.approx(0.0)
+
+    def test_saturates_at_v_max_when_margin_is_large(self):
+        assert mapless_target_speed(1.0 + 0.5, stop_distance=1.0,
+                                     max_decel_mps2=1.0, v_max=0.3) == pytest.approx(0.3)
+
+    def test_braking_distance_profile_midway(self):
+        # margin=0.02m, v = sqrt(2 * 1.0 * 0.02) = 0.2
+        assert mapless_target_speed(1.02, stop_distance=1.0,
+                                     max_decel_mps2=1.0, v_max=0.3) == pytest.approx(0.2)
+
+    def test_never_negative_when_closer_than_stop_distance(self):
+        assert mapless_target_speed(0.2, stop_distance=1.0,
+                                     max_decel_mps2=1.0, v_max=0.3) == pytest.approx(0.0)
+
+    def test_higher_v_max_still_bounded_by_braking_distance(self):
+        """v_max を上げても、近距離では制動距離の制約で低く抑えられる
+        (追従対象への追突防止)"""
+        near = mapless_target_speed(1.05, stop_distance=1.0, max_decel_mps2=1.0, v_max=1.0)
+        assert near == pytest.approx(math.sqrt(2 * 1.0 * 0.05))
+        assert near < 1.0
+
+
+class TestRateLimit:
+    def test_caps_acceleration(self):
+        assert rate_limit(target=1.0, prev=0.0, max_delta=0.1) == pytest.approx(0.1)
+
+    def test_caps_deceleration(self):
+        assert rate_limit(target=0.0, prev=0.3, max_delta=0.1) == pytest.approx(0.2)
+
+    def test_passes_through_within_limit(self):
+        assert rate_limit(target=0.25, prev=0.2, max_delta=0.1) == pytest.approx(0.25)
+
+
+# ════════════════════════════════════════════════════════════
+# 4. MaplessFollowCore 統合テスト
 # ════════════════════════════════════════════════════════════
 class TestMaplessFollowCore:
     def _core(self, **overrides):
@@ -146,15 +211,79 @@ class TestMaplessFollowCore:
         return MaplessFollowCore(params)
 
     def test_tracking_drives_via_pure_pursuit(self):
+        """十分な周期を経て速度が定常状態(v_max)に収束することを確認する"""
         core = self._core()
         core.update(person_x=5.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
                      scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
-        out = core.update(person_x=6.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
-                           scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        out = None
+        for _ in range(10):
+            out = core.update(person_x=6.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                               scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
         assert core.state == MaplessState.TRACKING
         assert out.reason == "tracking"
         assert out.linear_x == pytest.approx(0.3)
         assert out.angular_z == pytest.approx(0.0)
+
+    def test_speed_ramps_up_gradually_not_instantly(self):
+        """急発進防止: 静止状態から数周期(max_linear_accel_mps2 で決まる)かけて
+        v_max まで立ち上がり、1周期でいきなり目標速度には飛ばない"""
+        core = self._core(max_linear_accel_mps2=1.0, update_rate_hz=10.0)
+        out1 = core.update(person_x=5.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                            scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        out2 = core.update(person_x=6.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                            scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert out1.linear_x == pytest.approx(0.1)
+        assert out2.linear_x == pytest.approx(0.2)
+        assert out2.linear_x < 0.3   # 目標(v_max, 距離が遠いので飽和)へ一気に到達していない
+
+    def test_speed_resumes_from_zero_after_stop_not_from_stale_value(self):
+        """STOPPED から復帰した直後は前回速度を引き継がず 0 から加速する"""
+        core = self._core(max_linear_accel_mps2=1.0, update_rate_hz=10.0)
+        # 遠くで巡航速度に到達させる
+        core.update(person_x=5.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                     scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        for _ in range(10):
+            core.update(person_x=6.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                         scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert core.state == MaplessState.TRACKING
+        # 急接近 → STOPPED
+        core.update(person_x=0.5, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                     scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert core.state == MaplessState.STOPPED
+        # 離れて復帰した直後の一周期目は 0 から加速し始める(いきなり巡航速度に戻らない)
+        out = core.update(person_x=6.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                           scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert 0.0 < out.linear_x <= 0.1 + 1e-9
+
+    def test_large_steering_error_reduces_forward_speed(self):
+        """大きく曲がる必要がある時は並進を絞る(曲がりきれず壁に衝突するのを防ぐ)"""
+        core = self._core()
+        out = core.update(person_x=0.0, person_y=2.0, robot_pose_odom=ORIGIN_POSE,
+                           scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert out.reason == "tracking"
+        assert out.linear_x == pytest.approx(0.0, abs=1e-9)
+        assert out.angular_z != 0.0
+
+    def test_w_max_rad_s_clamps_turn_rate(self):
+        core = self._core(w_max_rad_s=0.5)
+        out = core.update(person_x=0.0, person_y=2.0, robot_pose_odom=ORIGIN_POSE,
+                           scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert out.angular_z == pytest.approx(0.5)
+
+    def test_notify_lost_resets_prev_speed_so_recovery_ramps_from_zero(self):
+        """ロスト中に notify_lost() を呼んでおけば再検出後は 0 から加速し直す
+        (ロスト直前の速度のまま進み続けるのを防ぐ。ROS2ノード側は notify_lost()
+        と併せて毎周期停止指令を publish し続ける想定)"""
+        core = self._core(max_linear_accel_mps2=1.0, update_rate_hz=10.0)
+        core.update(person_x=5.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                     scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        for _ in range(10):
+            core.update(person_x=6.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                         scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        core.notify_lost()
+        out = core.update(person_x=6.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                           scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert 0.0 < out.linear_x <= 0.1 + 1e-9
 
     def test_person_close_stops_without_evade(self):
         core = self._core()
@@ -174,6 +303,34 @@ class TestMaplessFollowCore:
                            scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
         assert core.state == MaplessState.TRACKING
         assert out.reason == "tracking"
+
+    def test_person_own_leg_reflection_does_not_false_trigger_obstacle_stop(self):
+        """
+        追従対象の脚表面までの生LiDAR距離は、脚トラッカーが報告する重心距離
+        (person_x/y から算出) と数十cm程度ずれうる。stop_distance(0.5m) と
+        obstacle_check_distance_m(0.45m) が近接した設定では、このズレだけで
+        追従対象自身を障害物として誤検知し得ることの回帰テスト。
+        """
+        core = self._core(stop_distance=0.5, resume_distance=0.7,
+                           obstacle_check_distance_m=0.45, lookback_distance=1.0)
+        core.update(person_x=0.9, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                     scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        # 追従対象の重心距離は 0.75m だが、脚表面での反射は 0.5m とする
+        blocked_scan = scan_with_obstacle_at(0.0, 0.5)
+        out = core.update(person_x=0.75, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                           scan_ranges=blocked_scan, scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert out.reason == "tracking"
+
+    def test_real_obstacle_still_stops_despite_person_exclusion(self):
+        """追従対象の重心距離から大きく離れた反射は通常どおり障害物として検知する"""
+        core = self._core(stop_distance=0.5, resume_distance=0.7,
+                           obstacle_check_distance_m=0.45, lookback_distance=1.0)
+        core.update(person_x=0.9, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                     scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        blocked_scan = scan_with_obstacle_at(0.0, 0.2)
+        out = core.update(person_x=0.75, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                           scan_ranges=blocked_scan, scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert out.reason == "obstacle_ahead"
 
     def test_obstacle_ahead_stops_regardless_of_person_distance(self):
         core = self._core()

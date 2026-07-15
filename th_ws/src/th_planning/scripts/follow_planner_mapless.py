@@ -68,6 +68,8 @@ class FollowPlannerMapless(Node):
         D("v_max",                        0.3)
         D("k_ang",                         2.0)
         D("stop_radius_m",                0.2)
+        D("w_max_rad_s",                   1.0)
+        D("max_linear_accel_mps2",        1.0)
         D("update_rate_hz",              10.0)
         D("odom_frame",           "odom")
         D("base_frame",           "base_link")
@@ -85,6 +87,8 @@ class FollowPlannerMapless(Node):
             v_max                         = g("v_max").value,
             k_ang                         = g("k_ang").value,
             stop_radius_m                 = g("stop_radius_m").value,
+            w_max_rad_s                   = g("w_max_rad_s").value,
+            max_linear_accel_mps2         = g("max_linear_accel_mps2").value,
             update_rate_hz                = g("update_rate_hz").value,
         )
 
@@ -128,6 +132,15 @@ class FollowPlannerMapless(Node):
         if self._current_mode != RobotMode.FOLLOWING_MAPLESS:
             return
         if self._person_lost or self._person_pos is None:
+            # ロスト中に何も publish しないと、直前の速度指令(前進中ならその速度)が
+            # /cmd_vel_retreat に残ったままになり、ロボットが停止せず進み続けてしまう。
+            # 追従対象に接近しすぎて LiDAR の死角/最小測距限界でロストした瞬間に
+            # 起きうるため、毎周期明示的に停止指令を送り続ける。
+            self._core.notify_lost()
+            self._stop()
+            if self._last_reason != "person_lost":
+                self.get_logger().warn("停止中（理由: person_lost）", throttle_duration_sec=2.0)
+            self._last_reason = "person_lost"
             return
 
         px, py = self._person_pos
