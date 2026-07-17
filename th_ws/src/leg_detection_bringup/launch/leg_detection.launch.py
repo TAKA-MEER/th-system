@@ -35,6 +35,9 @@ def _setup(context):
     dr_spaam_params = PathJoinSubstitution([bringup_share, "param", "dr_spaam_param.yaml"])
 
     # DR-SPAAM leg detector (external package: 2d_lidar_person_detection)
+    # 入力は scan_topic (既定 /scan_filtered。bringup 側で lidar_filter.py が
+    # ローカル発行する) なので、リモート LiDAR ホストとの DDS discovery は
+    # ここでは不要 (必要なのは lidar_filter.py 側。bringup.launch.py 参照)。
     dr_spaam_node = Node(
         package="dr_spaam_ros",
         executable="dr_spaam_ros",

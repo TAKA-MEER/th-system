@@ -12,8 +12,14 @@ services:
       - ROS_DOMAIN_ID=10
       # ESP32 SoftAP 経由のマルチキャストが不安定で pi の /scan が発見できない
       # 場合のみ有効化する (ラズパイ側にも対になるピア設定が必要。
-      # fastdds_profile.xml 内コメント参照)。常用すると一部ノード間の
-      # ローカル発見が不安定になる事象も観測されたため既定では無効。
+      # fastdds_profile.xml 内コメント参照)。
+      # 2026-07-17 実機検証: コンテナ全体にこれを適用すると mode_manager /
+      # safety_monitor 等ローカルノード間の通信まで道連れで壊れることを確認
+      # (ros2 node list / 同一ホスト内トピックが軒並み不通になった)。実際に
+      # 有効化・検証済みの箇所は bringup.launch.py の lidar_filter ノード
+      # (additional_env でノード単位に絞ってある。リモート /scan を実際に
+      # 購読する唯一のノードのため)。常用すると一部ノード間のローカル発見が
+      # 不安定になる事象も観測されたため、ここ(コンテナ全体)では既定で無効。
       # - FASTRTPS_DEFAULT_PROFILES_FILE=/root/th_ws/src/th_bringup/config/fastdds_profile.xml
       - DISPLAY=${DISPLAY:-:0}
       - LIBGL_ALWAYS_INDIRECT=0        # GPU レンダリング許可
