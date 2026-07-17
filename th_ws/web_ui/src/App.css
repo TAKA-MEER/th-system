@@ -101,6 +101,27 @@ body {
   background: #4a148c;
   animation: pulse 1s infinite;
 }
+
+/* ── 緊急停止の解除 (発動ボタンと別位置・別見た目) ──────── */
+.estop-release-card {
+  border: 1px solid #4a148c;
+}
+@media (min-width: 800px) {
+  .estop-release-card { grid-column: 2; }
+}
+.estop-release-btn {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.9rem;
+  font-size: 1rem;
+  border: 1px solid #7b1fa2;
+  border-radius: 6px;
+  background: #2a1a3a;
+  color: #ce93d8;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.estop-release-btn:active { background: #3a2a4a; }
 @keyframes pulse {
   0%,100% { opacity: 1; }
   50%      { opacity: 0.7; }

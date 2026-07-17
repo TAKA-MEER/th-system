@@ -1,7 +1,7 @@
 // ============================================================
 // App.jsx — TH システム タブレット UI
 // ============================================================
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRosbridge } from './hooks/useRosbridge'
 import './App.css'
 
@@ -98,12 +98,16 @@ export default function App() {
 
   const [estopActive, setEstopActive] = useState(false)
 
-  // ── 緊急停止トグル ─────────────────────────────────────────
-  const handleEstop = () => {
-    const next = !estopActive
-    setEstopActive(next)
-    publishTabletEstop(next)
-  }
+  // ── 緊急停止 (発動と解除を分離。発動ボタンは連打しても常に「停止」) ──
+  const engageEstop = useCallback(() => {
+    setEstopActive(true)
+    publishTabletEstop(true)
+  }, [publishTabletEstop])
+
+  const releaseEstop = useCallback(() => {
+    setEstopActive(false)
+    publishTabletEstop(false)
+  }, [publishTabletEstop])
 
   // ── ジョグ: 押している間だけ速度指令を publish ─────────────
   const jogTimerRef = useRef(null)
@@ -130,6 +134,58 @@ export default function App() {
     onContextMenu:   (e) => e.preventDefault(),
   })
 
+  // ── キーボード操作 ─────────────────────────────────────────
+  //   Space / Esc : 緊急停止 (発動のみ。解除はキーボード不可 = 誤操作防止)
+  //   W/A/S/D or 矢印キー : 手動ジョグ (MANUAL モード時のみ、押している間)
+  const activeJogKeyRef = useRef(null)
+  useEffect(() => {
+    const JOG_KEYS = {
+      'w': [JOG_LIN, 0],  'arrowup':    [JOG_LIN, 0],
+      's': [-JOG_LIN, 0], 'arrowdown':  [-JOG_LIN, 0],
+      'a': [0, JOG_ANG],  'arrowleft':  [0, JOG_ANG],
+      'd': [0, -JOG_ANG], 'arrowright': [0, -JOG_ANG],
+    }
+    const onKeyDown = (e) => {
+      const tag = e.target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (e.code === 'Space' || e.key === 'Escape') {
+        e.preventDefault()
+        engageEstop()
+        return
+      }
+      if (e.repeat) return
+      const key = e.key.toLowerCase()
+      const cmd = JOG_KEYS[key]
+      if (cmd) {
+        e.preventDefault()
+        activeJogKeyRef.current = key
+        jogStart(cmd[0], cmd[1])
+      }
+    }
+    const onKeyUp = (e) => {
+      const key = e.key.toLowerCase()
+      if (key === activeJogKeyRef.current) {
+        activeJogKeyRef.current = null
+        jogStop()
+      }
+    }
+    // タブ非表示・フォーカス喪失時もキー押しっぱなし扱いにならないよう停止
+    const onBlur = () => {
+      if (activeJogKeyRef.current) {
+        activeJogKeyRef.current = null
+        jogStop()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [engageEstop, jogStart, jogStop])
+
   // ── モードバッジの色 ──────────────────────────────────────
   const modeColor = {
     INIT: '#888', IDLE: '#2196F3', FOLLOWING: '#4CAF50',
@@ -155,12 +211,12 @@ export default function App() {
         </span>
       </header>
 
-      {/* ── 緊急停止ボタン ──────────────────────────── */}
+      {/* ── 緊急停止ボタン (発動専用。連打しても常に停止のまま) ── */}
       <button
         className={`estop-btn ${estopActive ? 'estop-active' : ''}`}
-        onClick={handleEstop}
+        onClick={engageEstop}
       >
-        {estopActive ? '■ 緊急停止 解除' : '⚠ 緊急停止'}
+        {estopActive ? '■ 緊急停止中 (Space/Esc)' : '⚠ 緊急停止 (Space/Esc)'}
       </button>
 
       {/* ── フォルト情報 ─────────────────────────────── */}
@@ -240,7 +296,7 @@ export default function App() {
 
         {/* ── 手動ジョグ (押している間だけ動く) ───────── */}
         <section className={`card ${mode !== MODE.MANUAL ? 'disabled' : ''}`}>
-          <h2>手動移動 <span className="note">(押している間だけ動く)</span></h2>
+          <h2>手動移動 <span className="note">(押している間だけ動く / キー: WASD・矢印)</span></h2>
           <div className="jog-grid">
             <div />
             <button className="jog-btn" {...jogProps(JOG_LIN, 0)}>▲</button>
@@ -273,6 +329,19 @@ export default function App() {
             ))}
           </div>
         </section>
+
+        {/* ── 緊急停止の解除 (発動ボタンと離れた位置・見た目も別) ── */}
+        {estopActive && (
+          <section className="card estop-release-card">
+            <h2>緊急停止の解除</h2>
+            <p className="note">
+              安全を確認してから解除してください。キーボードからは解除できません。
+            </p>
+            <button className="estop-release-btn" onClick={releaseEstop}>
+              ✓ 安全確認済み — 緊急停止を解除する
+            </button>
+          </section>
+        )}
 
       </div>
     </div>
