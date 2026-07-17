@@ -201,6 +201,13 @@ class TestRateLimit:
     def test_passes_through_within_limit(self):
         assert rate_limit(target=0.25, prev=0.2, max_delta=0.1) == pytest.approx(0.25)
 
+    def test_asymmetric_decel_faster_than_accel(self):
+        """減速側だけ別の(大きい)上限を使える — 停止応答を加速立ち上がりより速くする"""
+        assert rate_limit(target=0.0, prev=0.5, max_delta=0.1,
+                           max_delta_down=0.3) == pytest.approx(0.2)
+        assert rate_limit(target=1.0, prev=0.0, max_delta=0.1,
+                           max_delta_down=0.3) == pytest.approx(0.1)
+
 
 # ════════════════════════════════════════════════════════════
 # 4. MaplessFollowCore 統合テスト
@@ -269,6 +276,21 @@ class TestMaplessFollowCore:
         out = core.update(person_x=0.0, person_y=2.0, robot_pose_odom=ORIGIN_POSE,
                            scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
         assert out.angular_z == pytest.approx(0.5)
+
+    def test_decel_uses_decel_limit_not_accel_limit(self):
+        """接近時の減速は max_linear_decel_mps2 (加速側より大) でレート制限される"""
+        core = self._core(v_max=1.0, max_linear_accel_mps2=1.0,
+                           max_linear_decel_mps2=3.0, update_rate_hz=10.0)
+        core.update(person_x=5.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                     scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        for _ in range(15):
+            out = core.update(person_x=6.0, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                               scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert out.linear_x == pytest.approx(1.0)
+        # 突然 stop_distance ぎりぎりまで接近: 1周期の減速幅は decel/hz = 0.3
+        out = core.update(person_x=1.05, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                           scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert out.linear_x == pytest.approx(0.7)
 
     def test_notify_lost_resets_prev_speed_so_recovery_ramps_from_zero(self):
         """ロスト中に notify_lost() を呼んでおけば再検出後は 0 から加速し直す

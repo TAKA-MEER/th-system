@@ -61,9 +61,10 @@ class MaplessFollowParams:
     # lookback_distance は目標点の"位置"を決めるだけで速度には使わない
     # (軌跡追従目標は常に近距離にあるため、目標点までの距離で速度を決めると
     #  常に低速に頭打ちになってしまう)。
-    max_linear_accel_mps2:  float = 1.0   # m/s^2 1制御周期あたりの速度変化量の上限
-                                            # (急加減速防止。同じ値を制動距離の計算にも使う
-                                            #  ため、ここで指定した減速性能以上には近づけない)
+    max_linear_accel_mps2:  float = 1.0   # m/s^2 加速側のレート制限 (急発進防止)
+    max_linear_decel_mps2:  float = 2.0   # m/s^2 減速側のレート制限 兼 制動距離計算の減速度
+                                            # (停止応答は加速より優先されるべきなので別枠。
+                                            #  実機の実制動性能を超えない値にすること)
 
     update_rate_hz: float = 10.0
 
@@ -156,12 +157,19 @@ def mapless_target_speed(
     return min(v_max, math.sqrt(2.0 * max_decel_mps2 * margin))
 
 
-def rate_limit(target: float, prev: float, max_delta: float) -> float:
-    """1制御周期での変化量を max_delta 以内に制限する（急加減速防止）"""
+def rate_limit(target: float, prev: float, max_delta: float,
+               max_delta_down: float = None) -> float:
+    """
+    1制御周期での変化量を制限する（急加減速防止）。
+    max_delta_down を指定すると減少側だけ別の上限を使える
+    (停止応答を加速立ち上がりより速くするため)。省略時は増減とも max_delta。
+    """
+    if max_delta_down is None:
+        max_delta_down = max_delta
     if target > prev + max_delta:
         return prev + max_delta
-    if target < prev - max_delta:
-        return prev - max_delta
+    if target < prev - max_delta_down:
+        return prev - max_delta_down
     return target
 
 
@@ -228,13 +236,14 @@ class MaplessFollowCore:
 
         target_v = mapless_target_speed(
             distance, self.params.stop_distance,
-            self.params.max_linear_accel_mps2, self.params.v_max)
+            self.params.max_linear_decel_mps2, self.params.v_max)
         # 大きく曲がる必要がある時は先に向き直れるよう並進を絞る
         # (曲がりきれず壁に衝突するのを防ぐ。follow_planner_core の
         #  pure_pursuit_control と同じ考え方)
         target_v *= max(0.0, math.cos(bearing))
-        max_delta = self.params.max_linear_accel_mps2 / self.params.update_rate_hz
-        v = rate_limit(target_v, self._prev_linear_x, max_delta)
+        max_up   = self.params.max_linear_accel_mps2 / self.params.update_rate_hz
+        max_down = self.params.max_linear_decel_mps2 / self.params.update_rate_hz
+        v = rate_limit(target_v, self._prev_linear_x, max_up, max_down)
         self._prev_linear_x = v
 
         return MaplessOutput(linear_x=v, angular_z=w, state=self.state, reason="tracking")

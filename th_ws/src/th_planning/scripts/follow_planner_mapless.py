@@ -28,6 +28,7 @@ import tf2_ros
 from th_planning.mapless_follow_core import (
     MaplessFollowParams, MaplessFollowCore,
 )
+from th_planning.follow_planner_core import to_absolute, to_relative
 
 
 class FollowPlannerMapless(Node):
@@ -38,6 +39,7 @@ class FollowPlannerMapless(Node):
         self._core = MaplessFollowCore(p)
         self._current_mode = RobotMode.IDLE
         self._person_pos  = None
+        self._person_abs  = None   # odom系での試験員位置 (受信時に固定、自己移動補償用)
         self._person_lost = True
         self._scan: LaserScan | None = None
 
@@ -70,6 +72,7 @@ class FollowPlannerMapless(Node):
         D("stop_radius_m",                0.2)
         D("w_max_rad_s",                   1.0)
         D("max_linear_accel_mps2",        1.0)
+        D("max_linear_decel_mps2",        2.0)
         D("update_rate_hz",              10.0)
         D("odom_frame",           "odom")
         D("base_frame",           "base_link")
@@ -89,6 +92,7 @@ class FollowPlannerMapless(Node):
             stop_radius_m                 = g("stop_radius_m").value,
             w_max_rad_s                   = g("w_max_rad_s").value,
             max_linear_accel_mps2         = g("max_linear_accel_mps2").value,
+            max_linear_decel_mps2         = g("max_linear_decel_mps2").value,
             update_rate_hz                = g("update_rate_hz").value,
         )
 
@@ -104,6 +108,12 @@ class FollowPlannerMapless(Node):
         self._person_lost = msg.is_lost
         if not msg.is_lost:
             self._person_pos = (msg.position.x, msg.position.y)
+            # 受信時点の自己位置で odom 絶対座標に固定する。
+            # DR-SPAAM は CPU 推論で約 2Hz しか更新されないため、base_link 相対の
+            # まま保持すると次の検知までロボットの自己移動分だけ距離が実際より
+            # 遠く見え続け、停止判定が遅れて追従対象に衝突する (実機で確認)。
+            pose = self._robot_pose_odom()
+            self._person_abs = to_absolute(pose, self._person_pos) if pose is not None else None
             if was_lost:
                 self._core.clear_trail()
 
@@ -143,8 +153,14 @@ class FollowPlannerMapless(Node):
             self._last_reason = "person_lost"
             return
 
-        px, py = self._person_pos
         robot_pose_odom = self._robot_pose_odom()
+
+        # 自己移動補償: 検知メッセージ間 (約0.5秒以上) もロボットは動き続けるため、
+        # 受信時に固定した odom 絶対位置を現在の自己位置で相対座標に引き直す。
+        # これで接近中の距離が受信間隔中も単調に減り、停止判定の遅れを防ぐ。
+        px, py = self._person_pos
+        if self._person_abs is not None and robot_pose_odom is not None:
+            px, py = to_relative(robot_pose_odom, self._person_abs)
 
         scan_ranges = self._scan.ranges if self._scan is not None else None
         scan_angle_min = self._scan.angle_min if self._scan is not None else 0.0
