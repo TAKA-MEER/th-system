@@ -240,30 +240,39 @@ body {
   background: #10333a;
 }
 
-/* ── ジョググリッド ─────────────────────────────────────── */
-.jog-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.5rem;
-  max-width: 220px;
-  margin: 0 auto;
-}
-.jog-btn {
-  aspect-ratio: 1;
-  border: 1px solid #333;
-  border-radius: 6px;
-  background: #252830;
-  color: #e0e0e0;
-  font-size: 1.4rem;
-  cursor: pointer;
-  touch-action: manipulation;
+/* ── バーチャルスティック ───────────────────────────────── */
+.stick-wrap {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  transition: background 0.1s;
+  gap: 0.5rem;
 }
-.jog-btn:active { background: #3a3d4a; }
-.jog-btn.stop   { background: #2a1a1a; color: #ef9a9a; }
+.stick-pad {
+  width: 240px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  touch-action: none;       /* ドラッグ中のページスクロール防止 */
+  cursor: pointer;
+  user-select: none;
+}
+.stick-ring  { fill: #12141b; stroke: #2a2d35; stroke-width: 2; }
+.stick-guide line { stroke: #22252d; stroke-width: 1; }
+.stick-dead  { fill: none; stroke: #2a2d35; stroke-width: 1; stroke-dasharray: 3 3; }
+.stick-hint  { fill: #555; font-size: 11px; pointer-events: none; }
+.stick-knob {
+  fill: #252830;
+  stroke: #4a4d5a;
+  stroke-width: 2;
+  pointer-events: none;     /* イベントはパッド側で処理 */
+}
+.stick-knob.active { fill: #10333a; stroke: #00bcd4; }
+.stick-status {
+  font-size: 0.8rem;
+  color: #666;
+  min-height: 1.2em;
+  text-align: center;
+}
+.stick-status.active { color: #80deea; }
 
 /* ── 配電盤リスト ───────────────────────────────────────── */
 .panel-list { display: flex; flex-direction: column; gap: 0.5rem; }
