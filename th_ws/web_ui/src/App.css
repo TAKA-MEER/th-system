@@ -163,6 +163,83 @@ body {
 .mode-btn:disabled  { opacity: 0.35; cursor: not-allowed; }
 .mode-btn.idle      { border-color: #2196F3; color: #90CAF9; }
 
+/* ── ジョグ速度設定 (プリセット + スライダー) ───────────── */
+.speed-ctrl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 320px;
+  margin: 0 auto 0.9rem;
+}
+/* MANUAL 以外でカードが disabled でも速度設定だけは操作可能にする */
+.card.disabled .speed-ctrl { pointer-events: auto; }
+
+.speed-label {
+  font-size: 0.9rem;
+  color: #aaa;
+  text-align: center;
+}
+.speed-label b { color: #e0e0e0; font-size: 1.05rem; }
+.speed-pct { margin-left: 0.4rem; font-size: 0.8rem; color: #666; }
+
+.speed-presets { display: flex; gap: 0.5rem; }
+.speed-preset {
+  flex: 1;
+  padding: 0.6rem 0.25rem;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #252830;
+  color: #e0e0e0;
+  font-size: 0.9rem;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.1s, border-color 0.1s;
+}
+.speed-preset:active { background: #3a3d4a; }
+.speed-preset.active {
+  border-color: #00bcd4;
+  background: #10333a;
+  color: #80deea;
+}
+
+/* スライダー: タッチ操作向けに太めのトラック・大きめの thumb */
+.speed-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 34px;             /* タッチ当たり判定 */
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.speed-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: #2a2d35;
+}
+.speed-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -9px;        /* (thumb 26 - track 8) / 2 */
+  border-radius: 50%;
+  border: 2px solid #00bcd4;
+  background: #10333a;
+}
+.speed-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 4px;
+  background: #2a2d35;
+}
+.speed-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #00bcd4;
+  background: #10333a;
+}
+
 /* ── ジョググリッド ─────────────────────────────────────── */
 .jog-grid {
   display: grid;

@@ -16,9 +16,23 @@ const PANELS = [
 ]
 
 // ジョグ速度 (押している間だけ /cmd_vel_manual に流す)
-const JOG_LIN = 0.15   // m/s
-const JOG_ANG = 0.6    // rad/s
-const JOG_PUB_MS = 100 // publish 周期
+// 実際の速度は UI の速度設定 (speedPct) を掛けて決まる。100% 時の上限:
+const JOG_LIN_MAX = 0.5    // m/s
+const JOG_ANG_MAX = 2.0    // rad/s (従来の lin:ang = 1:4 の比を維持)
+const JOG_SPEED_MIN = 0.1  // 速度スライダー下限 (10%)
+const JOG_PUB_MS = 100     // publish 周期
+const JOG_PRESETS = [
+  { label: '低速', pct: 0.3 },   // 0.15 m/s / 0.6 rad/s (従来の固定値と同じ)
+  { label: '中速', pct: 0.6 },   // 0.30 m/s / 1.2 rad/s
+  { label: '高速', pct: 1.0 },   // 0.50 m/s / 2.0 rad/s
+]
+
+// 速度設定の永続化 (リロード後も維持)
+const SPEED_STORAGE_KEY = 'th_jog_speed_pct'
+const loadSpeedPct = () => {
+  const v = parseFloat(localStorage.getItem(SPEED_STORAGE_KEY))
+  return Number.isFinite(v) ? Math.min(1, Math.max(JOG_SPEED_MIN, v)) : 0.3
+}
 
 // レーダー表示レンジ (m)
 const RADAR_RANGE = 3.5
@@ -98,6 +112,15 @@ export default function App() {
 
   const [estopActive, setEstopActive] = useState(false)
 
+  // ── ジョグ速度設定 (プリセット + スライダー) ────────────────
+  // publish ループは ref を読むため、押しっぱなし中の変更も次周期から反映される
+  const [speedPct, setSpeedPct] = useState(loadSpeedPct)
+  const speedPctRef = useRef(speedPct)
+  useEffect(() => {
+    speedPctRef.current = speedPct
+    localStorage.setItem(SPEED_STORAGE_KEY, String(speedPct))
+  }, [speedPct])
+
   // ── 緊急停止 (発動と解除を分離。発動ボタンは連打しても常に「停止」) ──
   const engageEstop = useCallback(() => {
     setEstopActive(true)
@@ -110,12 +133,17 @@ export default function App() {
   }, [publishTabletEstop])
 
   // ── ジョグ: 押している間だけ速度指令を publish ─────────────
+  // 引数は方向 (-1/0/+1)。実速度は publish 時に速度設定を掛けて算出する
   const jogTimerRef = useRef(null)
-  const jogStart = useCallback((vx, wz) => {
+  const jogStart = useCallback((dirX, dirZ) => {
     if (mode !== MODE.MANUAL) return
     if (jogTimerRef.current) clearInterval(jogTimerRef.current)
-    publishManualCmd(vx, wz)
-    jogTimerRef.current = setInterval(() => publishManualCmd(vx, wz), JOG_PUB_MS)
+    const pub = () => publishManualCmd(
+      dirX * JOG_LIN_MAX * speedPctRef.current,
+      dirZ * JOG_ANG_MAX * speedPctRef.current,
+    )
+    pub()
+    jogTimerRef.current = setInterval(pub, JOG_PUB_MS)
   }, [mode, publishManualCmd])
 
   const jogStop = useCallback(() => {
@@ -126,8 +154,8 @@ export default function App() {
     publishManualCmd(0, 0)
   }, [publishManualCmd])
 
-  const jogProps = (vx, wz) => ({
-    onPointerDown:   () => jogStart(vx, wz),
+  const jogProps = (dirX, dirZ) => ({
+    onPointerDown:   () => jogStart(dirX, dirZ),
     onPointerUp:     jogStop,
     onPointerLeave:  jogStop,
     onPointerCancel: jogStop,
@@ -139,11 +167,11 @@ export default function App() {
   //   W/A/S/D or 矢印キー : 手動ジョグ (MANUAL モード時のみ、押している間)
   const activeJogKeyRef = useRef(null)
   useEffect(() => {
-    const JOG_KEYS = {
-      'w': [JOG_LIN, 0],  'arrowup':    [JOG_LIN, 0],
-      's': [-JOG_LIN, 0], 'arrowdown':  [-JOG_LIN, 0],
-      'a': [0, JOG_ANG],  'arrowleft':  [0, JOG_ANG],
-      'd': [0, -JOG_ANG], 'arrowright': [0, -JOG_ANG],
+    const JOG_KEYS = {   // 値は方向 (-1/0/+1)。実速度は jogStart 側で算出
+      'w': [1, 0],  'arrowup':    [1, 0],
+      's': [-1, 0], 'arrowdown':  [-1, 0],
+      'a': [0, 1],  'arrowleft':  [0, 1],
+      'd': [0, -1], 'arrowright': [0, -1],
     }
     const onKeyDown = (e) => {
       const tag = e.target?.tagName
@@ -297,15 +325,41 @@ export default function App() {
         {/* ── 手動ジョグ (押している間だけ動く) ───────── */}
         <section className={`card ${mode !== MODE.MANUAL ? 'disabled' : ''}`}>
           <h2>手動移動 <span className="note">(押している間だけ動く / キー: WASD・矢印)</span></h2>
+          <div className="speed-ctrl">
+            <div className="speed-label">
+              速度: <b>{(JOG_LIN_MAX * speedPct).toFixed(2)} m/s</b>
+              <span className="speed-pct">({Math.round(speedPct * 100)}%)</span>
+            </div>
+            <div className="speed-presets">
+              {JOG_PRESETS.map(p => (
+                <button
+                  key={p.label}
+                  className={`speed-preset ${Math.abs(speedPct - p.pct) < 0.001 ? 'active' : ''}`}
+                  onClick={() => setSpeedPct(p.pct)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <input
+              type="range"
+              className="speed-slider"
+              min={JOG_SPEED_MIN * 100}
+              max={100}
+              step={5}
+              value={Math.round(speedPct * 100)}
+              onChange={(e) => setSpeedPct(Number(e.target.value) / 100)}
+            />
+          </div>
           <div className="jog-grid">
             <div />
-            <button className="jog-btn" {...jogProps(JOG_LIN, 0)}>▲</button>
+            <button className="jog-btn" {...jogProps(1, 0)}>▲</button>
             <div />
-            <button className="jog-btn" {...jogProps(0, JOG_ANG)}>↺</button>
+            <button className="jog-btn" {...jogProps(0, 1)}>↺</button>
             <button className="jog-btn stop" onClick={jogStop}>■</button>
-            <button className="jog-btn" {...jogProps(0, -JOG_ANG)}>↻</button>
+            <button className="jog-btn" {...jogProps(0, -1)}>↻</button>
             <div />
-            <button className="jog-btn" {...jogProps(-JOG_LIN, 0)}>▼</button>
+            <button className="jog-btn" {...jogProps(-1, 0)}>▼</button>
             <div />
           </div>
         </section>
