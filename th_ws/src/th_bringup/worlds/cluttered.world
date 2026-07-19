@@ -1,0 +1,341 @@
+<?xml version="1.0"?>
+<!--
+  cluttered.world
+  ───────────────
+  什器あり環境シナリオ (scenario:=cluttered) 用ワールド。
+  内寸 10×8 m の部屋に机 3 台・椅子 4 脚・柱 2 本を配置。
+  机の天板 (高さ 0.7 m) は visual のみで collision を持たない。
+  LiDAR (床上 約 0.15 m) には細い脚シリンダーだけが映るため、
+  実機で発生する「机脚・椅子脚への誤トラッキング」に近い条件を再現する。
+  ロボットスポーン: (-4.0, -3.0)
+-->
+<sdf version="1.6">
+  <world name="cluttered">
+
+    <physics name="default_physics" default="0" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <ros><namespace>/gazebo</namespace></ros>
+      <update_rate>10.0</update_rate>
+    </plugin>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal></plane></geometry>
+          <surface><friction><ode><mu>100</mu><mu2>50</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <cast_shadows>false</cast_shadows>
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+          <material><script><name>Gazebo/Grey</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 外周壁 (内寸 10.0 × 8.0 — panel_room と同寸) -->
+    <model name="wall_south">
+      <static>true</static><pose>0 -4.1 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>10.2 0.2 3.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>10.2 0.2 3.0</size></box></geometry>
+          <material><script><name>Gazebo/White</name></script></material></visual>
+      </link>
+    </model>
+    <model name="wall_north">
+      <static>true</static><pose>0 4.1 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>10.2 0.2 3.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>10.2 0.2 3.0</size></box></geometry>
+          <material><script><name>Gazebo/White</name></script></material></visual>
+      </link>
+    </model>
+    <model name="wall_west">
+      <static>true</static><pose>-5.1 0 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 8.2 3.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.2 8.2 3.0</size></box></geometry>
+          <material><script><name>Gazebo/White</name></script></material></visual>
+      </link>
+    </model>
+    <model name="wall_east">
+      <static>true</static><pose>5.1 0 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 8.2 3.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.2 8.2 3.0</size></box></geometry>
+          <material><script><name>Gazebo/White</name></script></material></visual>
+      </link>
+    </model>
+
+    <!-- 机: 脚 4 本 (r0.03, collision あり) + 天板 (visual のみ) -->
+    <model name="desk_01">
+      <static>true</static><pose>-2.5 1.5 0 0 0 0</pose>
+      <link name="link">
+        <collision name="leg1"><pose>0.55 0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry></collision>
+        <collision name="leg2"><pose>0.55 -0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry></collision>
+        <collision name="leg3"><pose>-0.55 0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry></collision>
+        <collision name="leg4"><pose>-0.55 -0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry></collision>
+        <visual name="leg1v"><pose>0.55 0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg2v"><pose>0.55 -0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg3v"><pose>-0.55 0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg4v"><pose>-0.55 -0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="top"><pose>0 0 0.72 0 0 0</pose>
+          <geometry><box><size>1.2 0.7 0.04</size></box></geometry>
+          <material><script><name>Gazebo/Wood</name></script></material></visual>
+      </link>
+    </model>
+    <model name="desk_02">
+      <static>true</static><pose>0.5 -1.5 0 0 0 0.5</pose>
+      <link name="link">
+        <collision name="leg1"><pose>0.55 0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry></collision>
+        <collision name="leg2"><pose>0.55 -0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry></collision>
+        <collision name="leg3"><pose>-0.55 0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry></collision>
+        <collision name="leg4"><pose>-0.55 -0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry></collision>
+        <visual name="leg1v"><pose>0.55 0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg2v"><pose>0.55 -0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg3v"><pose>-0.55 0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg4v"><pose>-0.55 -0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="top"><pose>0 0 0.72 0 0 0</pose>
+          <geometry><box><size>1.2 0.7 0.04</size></box></geometry>
+          <material><script><name>Gazebo/Wood</name></script></material></visual>
+      </link>
+    </model>
+    <model name="desk_03">
+      <static>true</static><pose>2.8 1.5 0 0 0 1.5708</pose>
+      <link name="link">
+        <collision name="leg1"><pose>0.55 0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry></collision>
+        <collision name="leg2"><pose>0.55 -0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry></collision>
+        <collision name="leg3"><pose>-0.55 0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry></collision>
+        <collision name="leg4"><pose>-0.55 -0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry></collision>
+        <visual name="leg1v"><pose>0.55 0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg2v"><pose>0.55 -0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg3v"><pose>-0.55 0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg4v"><pose>-0.55 -0.3 0.35 0 0 0</pose>
+          <geometry><cylinder><radius>0.03</radius><length>0.7</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="top"><pose>0 0 0.72 0 0 0</pose>
+          <geometry><box><size>1.2 0.7 0.04</size></box></geometry>
+          <material><script><name>Gazebo/Wood</name></script></material></visual>
+      </link>
+    </model>
+
+    <!-- 椅子: 脚 4 本 (r0.02) + 座面 (visual のみ) -->
+    <model name="chair_01">
+      <static>true</static><pose>-2.5 0.6 0 0 0 0</pose>
+      <link name="link">
+        <collision name="leg1"><pose>0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <collision name="leg2"><pose>0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <collision name="leg3"><pose>-0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <collision name="leg4"><pose>-0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <visual name="leg1v"><pose>0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg2v"><pose>0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg3v"><pose>-0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg4v"><pose>-0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="seat"><pose>0 0 0.47 0 0 0</pose>
+          <geometry><box><size>0.4 0.4 0.04</size></box></geometry>
+          <material><script><name>Gazebo/Wood</name></script></material></visual>
+      </link>
+    </model>
+    <model name="chair_02">
+      <static>true</static><pose>0.0 -0.5 0 0 0 0.8</pose>
+      <link name="link">
+        <collision name="leg1"><pose>0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <collision name="leg2"><pose>0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <collision name="leg3"><pose>-0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <collision name="leg4"><pose>-0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <visual name="leg1v"><pose>0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg2v"><pose>0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg3v"><pose>-0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg4v"><pose>-0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="seat"><pose>0 0 0.47 0 0 0</pose>
+          <geometry><box><size>0.4 0.4 0.04</size></box></geometry>
+          <material><script><name>Gazebo/Wood</name></script></material></visual>
+      </link>
+    </model>
+    <model name="chair_03">
+      <static>true</static><pose>1.5 2.5 0 0 0 0</pose>
+      <link name="link">
+        <collision name="leg1"><pose>0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <collision name="leg2"><pose>0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <collision name="leg3"><pose>-0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <collision name="leg4"><pose>-0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <visual name="leg1v"><pose>0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg2v"><pose>0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg3v"><pose>-0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg4v"><pose>-0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="seat"><pose>0 0 0.47 0 0 0</pose>
+          <geometry><box><size>0.4 0.4 0.04</size></box></geometry>
+          <material><script><name>Gazebo/Wood</name></script></material></visual>
+      </link>
+    </model>
+    <model name="chair_04">
+      <static>true</static><pose>3.5 -0.8 0 0 0 -0.4</pose>
+      <link name="link">
+        <collision name="leg1"><pose>0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <collision name="leg2"><pose>0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <collision name="leg3"><pose>-0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <collision name="leg4"><pose>-0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry></collision>
+        <visual name="leg1v"><pose>0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg2v"><pose>0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg3v"><pose>-0.18 0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="leg4v"><pose>-0.18 -0.18 0.225 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.45</length></cylinder></geometry>
+          <material><script><name>Gazebo/DarkGrey</name></script></material></visual>
+        <visual name="seat"><pose>0 0 0.47 0 0 0</pose>
+          <geometry><box><size>0.4 0.4 0.04</size></box></geometry>
+          <material><script><name>Gazebo/Wood</name></script></material></visual>
+      </link>
+    </model>
+
+    <!-- 柱 -->
+    <model name="pillar_01">
+      <static>true</static><pose>-4.0 -2.0 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.3 0.3 3.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.3 0.3 3.0</size></box></geometry>
+          <material><script><name>Gazebo/Grey</name></script></material></visual>
+      </link>
+    </model>
+    <model name="pillar_02">
+      <static>true</static><pose>3.8 -2.6 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.3 0.3 3.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.3 0.3 3.0</size></box></geometry>
+          <material><script><name>Gazebo/Grey</name></script></material></visual>
+      </link>
+    </model>
+
+    <!-- 試験員模擬シリンダー (person_mover が動かす) -->
+    <model name="inspector">
+      <static>true</static>
+      <pose>-1.0 2.5 0.9 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><cylinder><radius>0.25</radius><length>1.8</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>0.25</radius><length>1.8</length></cylinder></geometry>
+          <material>
+            <ambient>0.8 0.3 0.1 1</ambient>
+            <diffuse>0.8 0.3 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 回避検証用の動く障害物 (obstacle_mover が動かす) -->
+    <model name="wanderer">
+      <pose>2.0 -3.2 0.85 0 0 0</pose>
+      <link name="link">
+        <inertial><mass>70.0</mass>
+          <inertia><ixx>1.0</ixx><ixy>0</ixy><ixz>0</ixz>
+                   <iyy>1.0</iyy><iyz>0</iyz><izz>0.3</izz></inertia>
+        </inertial>
+        <collision name="col">
+          <geometry><cylinder><radius>0.2</radius><length>1.7</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>0.2</radius><length>1.7</length></cylinder></geometry>
+          <material>
+            <ambient>0.85 0.1 0.1 1</ambient>
+            <diffuse>0.85 0.1 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

@@ -9,6 +9,7 @@
 | --- | --- | --- | --- | --- |
 | `test_follow_planner_logic.py` | 純粋単体テスト | 不要 | 43 件 | 10.1 §3 |
 | `test_mapless_follow_logic.py` | 純粋単体テスト(MAP不要モード) | 不要 | 20 件 | - |
+| `test_scenario_configs.py` | 純粋単体テスト(シナリオプリセット整合性) | 不要 | 36 件 | - |
 | `test_mode_transitions.py` | ROS2 統合テスト | 必要 | 19 件 | 10.1 §1 |
 | `test_safety_monitor.py` | ROS2 統合テスト | 必要 | 10 件 | 10.1 §5 |
 | `test_twist_mux_priority.py` | ROS2 統合テスト | 必要 | 7 件 | 10.1 §4 |
@@ -32,7 +33,14 @@ python3 -m pytest src/th_testing/test/test_follow_planner_logic.py \
 
 # 失敗時に即座に停止
 python3 -m pytest src/th_testing/test/test_follow_planner_logic.py -x
+
+# シナリオプリセット (config/scenarios/*.yaml) の整合性検証
+python3 -m pytest src/th_testing/test/test_scenario_configs.py -v
 ```
+
+> Gazebo シナリオ (`scenario:=narrow_room` 等) 自体は手動・目視で検証する
+> （手順と合格基準は [simulation.md](simulation.md) のシナリオ表を参照）。
+> `test_simulation_scenarios.py` の Gazebo 不要ハーネスは従来どおり。
 
 `test_follow_planner_logic.py` のテスト対象クラスと確認内容:
 

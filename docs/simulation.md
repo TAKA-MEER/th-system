@@ -7,6 +7,8 @@
 
 実機（ESP32・RPLIDAR S1）がなくても、Gazebo Classic 上で全追従ロジックを視覚的に確認できます。
 `sim:=true/false` の引数一つで実機とシミュレーションを切り替えられます。
+さらに `scenario:=<name>` でワールド・地図・試験員の動き・スポーン位置・障害物・
+プランナパラメータを一括切替できます（下記「シナリオプリセット」参照）。
 
 ```txt
 実機モード:   sllidar_node + esp32_bridge(WebSocketサーバー) が起動
@@ -40,7 +42,97 @@ ros2 launch th_bringup teleop.launch.py direct:=true  # /cmd_vel 直接（SLAM �
 # 6. 実機モード（Gazebo なし）
 ros2 launch th_bringup gazebo.launch.py sim:=false \
   map_yaml:=/root/th_ws/src/th_bringup/maps/th_map.yaml
+
+# 7. シナリオプリセットで起動（推奨）
+ros2 launch th_bringup gazebo.launch.py scenario:=narrow_room
 ```
+
+---
+
+## シナリオプリセット
+
+`config/scenarios/<name>.yaml` に定義されたプリセットを `scenario:=<name>` で
+一括ロードする。**優先順位: CLI 明示指定 > シナリオプリセット > 従来デフォルト**
+（`scenario` 未指定なら従来どおり panel_room + patrol + wanderer）。
+
+| シナリオ | 目的 | 起動 / モード切替 | 期待動作・合格基準 |
+| --- | --- | --- | --- |
+| `narrow_room` | 狭所追従（実機の現行狭所パラメータ検証） | `scenario:=narrow_room` → モード 7 | 幅 1.2m の L 字通路 + 0.9m 狭窄部を壁接触なしで追従。0.5m 未満で停止・0.7m 超で再開 |
+| `wide_area` | 広所向けパラメータ (stop 1.0 / resume 1.3 / obstacle 1.0) の先行検証 | `scenario:=wide_area` → モード 7 | 約 1.0m で停止・約 1.3m で再開。`ros2 param get /follow_planner_mapless stop_distance` が 1.0 |
+| `cluttered` | 什器（机脚・椅子脚・柱）環境での追従観察 | `scenario:=cluttered` → モード 7 → 2 | 机脚の間を追従。脚と人物の混同挙動を観察・記録（診断用途）。モード 2 で wanderer を回避 |
+| `lost_reacquire` | 人物ロスト → 捜索 → 再捕捉 | `scenario:=lost_reacquire` → モード 7 | 遮蔽板通過 約 1 秒で `/person/status` の `is_lost: true` → 捜索 → 再出現で再捕捉 |
+| `panel_shuttle` | 配電盤⇔待機位置の Nav2/AMCL 往復 | `scenario:=panel_shuttle` → `go_to_panel` サービス | 各配電盤前 (panels.yaml) に 0.3m 以内で到達し、CompleteInspection で復帰 |
+
+モード切替コマンド（起動 10 秒後・Nav2 active 後）:
+
+```bash
+ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
+  "{requested_mode: 7, requester: 'cli'}"     # 7=FOLLOWING_MAPLESS, 2=FOLLOWING
+
+# panel_shuttle の移動指令
+ros2 service call /panel_navigator/go_to_panel \
+  th_system_msgs/srv/GoToPanel "{panel_id: 'panel_01'}"
+```
+
+### プリセット YAML スキーマ
+
+```yaml
+scenario:
+  description: "..."
+  recommended_mode: 7            # 起動ログに set_mode コマンドを表示
+  world: narrow_room.world       # worlds/ 相対 (必須)
+  slam: true                     # false のとき map_yaml が必須
+  map_yaml: ""                   # maps/ 相対
+  robot_spawn: {x: 0.0, y: 0.0, yaw: 0.0}
+  person:
+    pattern: waypoints           # waypoints | patrol | approach | static
+    waypoints: [x1, y1, pause1, x2, y2, pause2, ...]   # flat リスト
+    move_speed: 0.4
+  relay:
+    max_detect_range: 8.0
+    occlusion_check: false       # true で遮蔽(LOS)判定を有効化
+    occlusion_segments: []       # flat [x1,y1,x2,y2,...] world 座標の壁線分
+  obstacle:
+    enabled: false
+    bounds: {x_min: -4.0, x_max: 4.0, y_min: -3.0, y_max: 3.0}
+    move_speed: 0.5
+  planning_overrides:            # planning_params.yaml の後に dict で上書き
+    follow_planner_mapless: {stop_distance: 1.0, ...}
+```
+
+整合性は純粋 pytest で検証できる（ワールド・地図の参照切れ、配列長など）:
+
+```bash
+python3 -m pytest src/th_testing/test/test_scenario_configs.py -v
+```
+
+### 遮蔽（LOS）チェックの仕組み
+
+`lost_reacquire` では `gazebo_person_relay.py` がロボット→人物の視線と
+`occlusion_segments`（遮蔽板の壁線分）の交差を判定し、遮られている間は位置更新を
+止める。`lost_timeout_sec`（1.0 秒）経過で自然に `is_lost: true` となり、
+人物が再び見えると自動で再捕捉する。
+**ワールドの遮蔽板を動かしたら、シナリオ YAML の `occlusion_segments` も必ず同期**
+させること（`lost_reacquire.world` のヘッダコメントに端点座標一覧あり）。
+
+### wide_area 用地図の生成
+
+`wide_area` プリセットは `maps/wide_area_map.yaml` を参照する。未生成の場合は:
+
+```bash
+# 1. SLAM モードで起動し、テレオペで柱を全て通る一周を走行
+ros2 launch th_bringup gazebo.launch.py scenario:=wide_area slam:=true
+ros2 launch th_bringup teleop.launch.py direct:=true   # 別ターミナル
+
+# 2. 地図を保存してコミット
+ros2 run nav2_map_server map_saver_cli \
+  -f /root/th_ws/src/th_bringup/maps/wide_area_map \
+  --ros-args -p use_sim_time:=true -p save_map_timeout:=10000.0
+```
+
+narrow_room / cluttered / lost_reacquire は地図をコミットしない
+（モード 7 は mapless、モード 2 の検証は `slam:=true` のライブ地図で行い、
+ワールド編集と地図の乖離を防ぐ）。
 
 ---
 
@@ -162,8 +254,8 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 | 確認項目 | 方法 | 期待動作 |
 | --- | --- | --- |
 | 軌跡追従 | Inspector（または `person_mover.py --pattern:=patrol`）を移動させる | Nav2 にゴールを送らず、`/cmd_vel_retreat` に直接速度指令が出て試験員の軌跡を遡って追従する |
-| 接近時は退避せず停止 | `person_mover.py --ros-args -p pattern:=approach -p approach_dist:=0.6` 等で `stop_distance`（既定 1.0m）以内に接近させる | 後退・旋回せず、その場で停止する（`/cmd_vel_retreat` がゼロ） |
-| 停止後の追従再開 | 接近させた後、`resume_distance`（既定 1.3m）以上離す | 自動的に追従を再開する（オペレータ操作不要） |
+| 接近時は退避せず停止 | `person_mover.py --ros-args -p pattern:=approach -p approach_dist:=0.6` 等で `stop_distance`（現行設定 0.5m・狭所向け）以内に接近させる | 後退・旋回せず、その場で停止する（`/cmd_vel_retreat` がゼロ） |
+| 停止後の追従再開 | 接近させた後、`resume_distance`（現行設定 0.7m）以上離す | 自動的に追従を再開する（オペレータ操作不要） |
 | 進路上障害物での停止 | ロボットの進行方位上（軌跡ゴールへのベアリング方向）に障害物モデルを置く | 試験員との距離に関わらずその場で停止する |
 | フェイルセーフ | `/scan_filtered` を止める（`lidar_filter` ノードを kill 等） | スキャン未受信になった時点で停止する（安全側） |
 
@@ -180,6 +272,11 @@ ros2 topic echo /rosout | grep follow_planner_mapless
 ros2 topic echo /cmd_vel_retreat
 ```
 
+> `planning_params.yaml` の `follow_planner_mapless` は現在 **狭所向け設定
+> (stop 0.5 / resume 0.7 / obstacle 0.45 / lookback 0.5)**。広所向け設定
+> (stop 1.0 / resume 1.3 / obstacle 1.0 / lookback 1.0) は `scenario:=wide_area`
+> の `planning_overrides` として適用される。
+
 実機での検証も同じ手順で行える（`bringup.launch.py` にも `follow_planner_mapless` が同様に組み込まれている）。地図・Nav2・AMCL を一切起動していない状態でも `FOLLOWING_MAPLESS` 単体で動作することを確認するとよい。
 
 ---
@@ -187,47 +284,55 @@ ros2 topic echo /cmd_vel_retreat
 ## ワールド環境の構成
 
 ```txt
-panel_room.world（デフォルト）
-  部屋サイズ: 10m × 8m
-  配電盤:     北壁沿いに 3 台（青い箱）
-  通路:       幅 1.4m の仕切り壁（狭路追従テスト用）
-  試験員:     Gazebo Actor（walk.dae アニメーション付き人物）
-              → walk.dae がない場合は panel_room_no_actor.world を使用
-
-panel_room_no_actor.world（代替）
+panel_room_no_actor.world（デフォルト / panel_shuttle）
+  部屋サイズ: 10m × 8m、配電盤 3 台（北壁・青い箱）、幅 1.4m の仕切り通路
   試験員:     cylinder モデル（person_mover.py で自動移動）
+
+narrow_room.world（narrow_room）
+  8×6m。幅 1.2m の L 字通路 + 幅 0.9m の狭窄部
+
+wide_area.world（wide_area）
+  20×16m ホール。非対称配置の柱 7 本 + 壁アルコーブ（SLAM/AMCL の特徴用）
+
+cluttered.world（cluttered）
+  10×8m。机 3（脚のみ collision）・椅子 4・柱 2。LiDAR には細い脚だけ映る
+
+lost_reacquire.world（lost_reacquire）
+  12×8m。自立遮蔽板 3 枚（occlusion_segments と同期必須）
+
+panel_room.world（旧 actor 版・保守のみ）
+  試験員:     Gazebo Actor（walk.dae アニメーション付き人物）
 ```
+
+ワールドを追加する際の必須構成（`gazebo_ros_state` プラグイン等）は
+`th_bringup/worlds/README.md` を参照。
 
 ---
 
 ## 試験員（Actor/Cylinder）の制御
 
-### Actor 版（panel_room.world）
-
-Actor はウェイポイントに沿って自動で動きます。経路の変更は world ファイルの
-`<trajectory>` セクションを編集してください。
-
-```xml
-<!-- 配電盤間を移動するパス例 -->
-<waypoint><time>0.0</time><pose>-3.5 2.5 0 0 0 0</pose></waypoint>
-<waypoint><time>5.0</time><pose> 3.5 2.5 0 0 0 0</pose></waypoint>
-```
-
-### Cylinder 版（panel_room_no_actor.world）
-
-`person_mover.py` でシナリオを制御します。
+試験員は cylinder モデル `inspector` を `person_mover.py` が動かす方式が標準
+（シナリオプリセットの `person:` セクションで自動設定される）。
+手動で動かし直す場合:
 
 ```bash
 # 巡回パターン（配電盤前を往復）
 ros2 run th_perception person_mover.py --ros-args -p pattern:=patrol
 
-# 接近パターン（退避ロジックのテスト）
+# 接近パターン（接近停止ロジックのテスト）
 ros2 run th_perception person_mover.py --ros-args \
   -p pattern:=approach -p approach_dist:=0.6
 
 # 静止パターン（静止時再配置のテスト）
 ros2 run th_perception person_mover.py --ros-args -p pattern:=static
+
+# 任意経路（flat [x, y, pause_sec, ...]。pattern より優先される）
+ros2 run th_perception person_mover.py --ros-args \
+  -p waypoints:="[1.0, -1.0, 2.0, 4.0, -1.0, 3.0]"
 ```
+
+旧 actor 版（`panel_room.world`）はウェイポイントを world ファイルの
+`<trajectory>` セクションで編集する。新規シナリオでは使用しない。
 
 ---
 
@@ -239,9 +344,13 @@ ros2 run th_perception person_mover.py --ros-args -p pattern:=static
 | 近接退避 | `pattern:=approach` | 0.8m 以内で `/cmd_vel_retreat` が発行され後退 |
 | 狭路真後ろ追従 | 仕切り壁の通路を通る | 角度オフセットが 0° になる |
 | 静止再配置 | `pattern:=static` | 2 秒後に試験員の側面〜背面に移動 |
-| 配電盤移動 | `ros2 service call /panel_navigator/go_to_panel ...` | Nav2 がパネル前まで誘導 |
+| 配電盤移動 | `scenario:=panel_shuttle` + `go_to_panel` サービス | Nav2 がパネル前まで誘導 |
 | E-Stop | タブレット UI の緊急停止 | ロボットが即時停止し ESTOP モードへ |
 | MAP不要軌跡追従 | `FOLLOWING_MAPLESS` へ切替 + `pattern:=approach` | 地図・Nav2 なしで追従、接近時は退避せず停止(詳細は Step 5 参照) |
+| 狭所追従 | `scenario:=narrow_room` + モード 7 | 幅 1.2m 通路を壁接触なしで追従 |
+| 広所追従 | `scenario:=wide_area` + モード 7 | 広所パラメータ (1.0/1.3) で停止・再開 |
+| 什器環境 | `scenario:=cluttered` + モード 7→2 | 机脚の間を追従、wanderer 回避 |
+| ロスト再捕捉 | `scenario:=lost_reacquire` + モード 7 | 遮蔽で is_lost → 捜索 → 再捕捉 |
 
 ---
 

@@ -1,0 +1,44 @@
+# ============================================================
+# scenario: narrow_room — 狭所追従
+# 実機の現行運用 (FOLLOWING_MAPLESS 狭所パラメータ
+# stop 0.5 / resume 0.7 / obstacle 0.45) を検証する。
+# planning_params.yaml のデフォルトが既に狭所値のため上書きなし。
+#
+# 起動:  ros2 launch th_bringup gazebo.launch.py scenario:=narrow_room
+# モード: ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
+#           "{requested_mode: 7, requester: 'cli'}"
+# ============================================================
+scenario:
+  description: "狭所追従 — 幅1.2m L字通路 + 0.9m 狭窄部で FOLLOWING_MAPLESS を検証"
+  recommended_mode: 7
+
+  world: narrow_room.world
+  slam: true          # 地図不要だが RViz 表示と地図保存のため SLAM を有効化
+  map_yaml: ""
+
+  robot_spawn: {x: -3.5, y: -2.4, yaw: 0.0}
+
+  person:
+    pattern: waypoints
+    # 通路西端 → 狭窄部 → コーナー → 北端 → 折り返し (flat [x, y, pause_sec, ...])
+    waypoints: [
+      -2.5, -2.4, 2.0,
+      -0.8, -2.25, 1.0,
+       0.8, -2.25, 1.0,
+       2.0, -2.4, 2.0,
+       3.4, -2.4, 1.0,
+       3.4,  0.0, 2.0,
+       3.4,  2.4, 4.0,
+       3.4,  0.0, 1.0,
+       3.4, -2.4, 1.0,
+       2.0, -2.4, 1.0,
+       0.8, -2.25, 1.0,
+      -0.8, -2.25, 1.0,
+    ]
+    move_speed: 0.3
+
+  relay:
+    max_detect_range: 8.0
+
+  obstacle:
+    enabled: false

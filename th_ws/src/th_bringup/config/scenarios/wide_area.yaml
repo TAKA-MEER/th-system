@@ -1,0 +1,50 @@
+# ============================================================
+# scenario: wide_area — 広所追従
+# TODO になっている広所向けパラメータ (stop 1.0 / resume 1.3 /
+# obstacle 1.0 / lookback 1.0) を planning_overrides でシミュ先行検証する。
+# (planning_params.yaml のコメント値をプリセット化したもの)
+#
+# 起動 (既存地図): ros2 launch th_bringup gazebo.launch.py scenario:=wide_area
+# 起動 (地図作成): ros2 launch th_bringup gazebo.launch.py scenario:=wide_area slam:=true
+# モード: ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
+#           "{requested_mode: 7, requester: 'cli'}"
+# 上書き確認: ros2 param get /follow_planner_mapless stop_distance  → 1.0
+# ============================================================
+scenario:
+  description: "広所追従 — 20×16m ホールで広所向け mapless パラメータを検証"
+  recommended_mode: 7
+
+  world: wide_area.world
+  slam: false
+  map_yaml: wide_area_map.yaml   # maps/ 相対。未生成の場合は slam:=true で起動して作成
+
+  robot_spawn: {x: -8.0, y: -6.0, yaw: 0.0}
+
+  person:
+    pattern: waypoints
+    # 長い直線 + 斜め横断のループ (flat [x, y, pause_sec, ...])
+    waypoints: [
+      -6.0, -6.0, 2.0,
+       6.0, -6.0, 3.0,
+       8.0,  0.0, 2.0,
+       0.0,  4.0, 3.0,
+      -6.0,  2.0, 3.0,
+      -8.0, -2.0, 2.0,
+    ]
+    move_speed: 0.6
+
+  relay:
+    max_detect_range: 12.0
+
+  obstacle:
+    enabled: false
+    # 有効化する場合の推奨移動範囲 (柱を避けた中央帯)
+    bounds: {x_min: -4.0, x_max: 4.0, y_min: -4.0, y_max: 0.0}
+    move_speed: 0.5
+
+  planning_overrides:
+    follow_planner_mapless:
+      stop_distance: 1.0
+      resume_distance: 1.3
+      obstacle_check_distance_m: 1.0
+      lookback_distance: 1.0

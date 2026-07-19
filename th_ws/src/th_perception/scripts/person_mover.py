@@ -13,6 +13,12 @@ panels.yaml に登録された配電盤前を巡回させる。
     -p pattern:=patrol    # 配電盤を巡回
     -p pattern:=approach  # ロボットに近づく(退避テスト用)
     -p pattern:=static    # 静止(静止再配置テスト用)
+
+  シナリオ固有の経路は waypoints パラメータで指定する
+  (flat リスト [x1, y1, pause1, x2, y2, pause2, ...]):
+  ros2 run th_perception person_mover.py --ros-args \
+    -p waypoints:="[1.0, -1.0, 2.0, 4.0, -1.0, 3.0]"
+  waypoints が非空なら pattern より優先される。
 """
 import math
 import time
@@ -32,12 +38,18 @@ class PersonMover(Node):
         self.declare_parameter('move_speed',    0.5)    # m/s 移動速度
         self.declare_parameter('pause_sec',     4.0)    # s 各地点での停止時間
         self.declare_parameter('approach_dist', 0.6)    # m 接近テスト時の最接近距離
+        self.declare_parameter('waypoints',     [0.0])  # flat [x,y,pause,...] 非空で pattern より優先
+        self.declare_parameter('z_height',      0.9)    # m モデル配置高さ
 
         self._pattern    = self.get_parameter('pattern').value
         self._model      = self.get_parameter('model_name').value
         self._speed      = self.get_parameter('move_speed').value
         self._pause      = self.get_parameter('pause_sec').value
         self._app_dist   = self.get_parameter('approach_dist').value
+        raw_wps          = list(self.get_parameter('waypoints').value or [])
+        # デフォルトのダミー値 [0.0] は「未指定」扱い
+        self._wp_param   = [] if raw_wps == [0.0] else raw_wps
+        self._z          = self.get_parameter('z_height').value
 
         # Gazebo SetEntityState サービスクライアント
         self._cli = self.create_client(
@@ -61,7 +73,18 @@ class PersonMover(Node):
         self._timer     = self.create_timer(0.05, self._step)
 
     def _build_waypoints(self):
-        """パターンに応じたウェイポイントリストを構築"""
+        """waypoints パラメータ優先、なければパターンに応じたリストを構築"""
+        if self._wp_param:
+            if len(self._wp_param) % 3 == 0:
+                wps = [tuple(self._wp_param[i:i + 3])
+                       for i in range(0, len(self._wp_param), 3)]
+                self.get_logger().info(
+                    f'waypoints パラメータから {len(wps)} 点をロード')
+                return wps
+            self.get_logger().warn(
+                f'waypoints の長さ {len(self._wp_param)} が 3 の倍数でない。'
+                'static にフォールバックします')
+            return [(1.5, 0.0, 999.0)]
         if self._pattern == 'patrol':
             # 配電盤前を左右に巡回 (panel_room.world に合わせた座標)
             return [
@@ -89,13 +112,15 @@ class PersonMover(Node):
             self.get_logger().warn(f'不明なパターン: {self._pattern}')
             return [(1.5, 0.0, 999.0)]
 
-    def _set_pose(self, x: float, y: float, z: float = 0.9):
+    def _set_pose(self, x: float, y: float, z: float = None):
         """Gazebo モデルの位置を設定"""
+        if z is None:
+            z = self._z
         req = SetEntityState.Request()
         state = EntityState()
         state.name = self._model
         state.pose = Pose(
-            position=Point(x=x, y=y, z=z),
+            position=Point(x=float(x), y=float(y), z=float(z)),
             orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0))
         state.reference_frame = 'world'
         req.state = state

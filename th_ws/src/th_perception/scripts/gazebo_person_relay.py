@@ -10,6 +10,16 @@ Gazebo の Actor（模擬試験員）位置を /person/status に変換して発
   2. /gazebo/model_states トピック — actor と robot 双方の world 座標から
      相対位置を計算（no_actor ワールドの cylinder モデル用）
   3. /gazebo/link_states トピック — Actor がリンクとして見える場合のフォールバック
+
+遮蔽(LOS)チェック:
+  occlusion_check:=true のとき、ロボット→人物の視線が occlusion_segments
+  （world 座標の壁線分リスト [x1,y1,x2,y2, ...]）と交差する間は位置更新を
+  スキップし、lost_timeout_sec 経過で自然に is_lost=True になる（再捕捉も自動）。
+  ※ occlusion_segments はワールドファイルの遮蔽板配置と手動で同期させること
+    （シナリオ YAML config/scenarios/*.yaml 側にモデル名コメント付きで記載）。
+  遮蔽チェック有効時は get_entity_state ポーリング（相対座標のみ返却で
+  LOS 判定不能）を無効化し、world 座標を持つ model_states / link_states
+  経路のみ使用する。
 """
 
 import math
@@ -33,6 +43,8 @@ class GazeboPersonRelay(Node):
         self.declare_parameter('publish_rate_hz',  10.0)
         self.declare_parameter('lost_timeout_sec',  1.0)
         self.declare_parameter('max_detect_range',  8.0)
+        self.declare_parameter('occlusion_check',   False)
+        self.declare_parameter('occlusion_segments', [0.0])  # flat [x1,y1,x2,y2,...] world 座標
 
         self._actor_name    = self.get_parameter('actor_name').value
         self._robot_name    = self.get_parameter('robot_name').value
@@ -40,6 +52,19 @@ class GazeboPersonRelay(Node):
         self._max_range     = self.get_parameter('max_detect_range').value
         self._lost_timeout  = self.get_parameter('lost_timeout_sec').value
         rate_hz             = self.get_parameter('publish_rate_hz').value
+        self._occlusion_on  = self.get_parameter('occlusion_check').value
+        raw_segs            = list(self.get_parameter('occlusion_segments').value or [])
+        if raw_segs == [0.0]:  # デフォルトのダミー値は「未指定」扱い
+            raw_segs = []
+        if len(raw_segs) % 4 != 0:
+            self.get_logger().warn(
+                f'occlusion_segments の長さ {len(raw_segs)} が 4 の倍数でないため無視します')
+            raw_segs = []
+        # [(x1,y1,x2,y2), ...] に整形
+        self._occ_segs = [tuple(raw_segs[i:i + 4]) for i in range(0, len(raw_segs), 4)]
+        if self._occlusion_on and not self._occ_segs:
+            self.get_logger().warn(
+                'occlusion_check=true ですが occlusion_segments が空です')
 
         # ── 状態（ロボット基準の相対座標を格納）────────────
         self._rel_x: float | None = None
@@ -74,11 +99,18 @@ class GazeboPersonRelay(Node):
         # ── ポーリングタイマー（サービス方式） ───────────────
         # ロボットスポーン前は reference_frame が未存在のため Gazebo エラーになる。
         # spawn_delay(4.5s)+マージン で開始を遅らせてエラースパムを抑制する。
+        # 遮蔽チェック有効時はサービス経路（相対座標のみで LOS 判定不能）を使わない
         self._spawn_grace_done = False
-        self._spawn_grace_timer = self.create_timer(
-            9.0, self._start_poll_timer,  # spawn_delay(4.5s) + Gazebo処理(~3s) 後にサービス開始
-            callback_group=self._srv_cb_group)
+        self._spawn_grace_timer = None
         self._poll_timer = None
+        if not self._occlusion_on:
+            self._spawn_grace_timer = self.create_timer(
+                9.0, self._start_poll_timer,  # spawn_delay(4.5s) + Gazebo処理(~3s) 後にサービス開始
+                callback_group=self._srv_cb_group)
+        else:
+            self.get_logger().info(
+                f'遮蔽チェック有効: 線分 {len(self._occ_segs)} 本, '
+                'get_entity_state ポーリングは無効化')
 
         # ── 発行タイマー ────────────────────────────────────
         self._timer = self.create_timer(1.0 / rate_hz, self._publish)
@@ -147,6 +179,10 @@ class GazeboPersonRelay(Node):
         rq = msg.pose[ri].orientation
         ryaw = 2.0 * math.atan2(rq.z, rq.w)
 
+        # 遮蔽中は更新をスキップ → lost_timeout 経過で is_lost になる
+        if self._is_occluded(rx, ry, ax, ay):
+            return
+
         # world 差分 → ロボット座標系（base_link）へ回転変換
         dx = ax - rx
         dy = ay - ry
@@ -176,6 +212,10 @@ class GazeboPersonRelay(Node):
         if robot_pos is None or actor_pos is None or robot_quat is None:
             return
 
+        if self._is_occluded(robot_pos[0], robot_pos[1],
+                             actor_pos[0], actor_pos[1]):
+            return
+
         ryaw = 2.0 * math.atan2(robot_quat.z, robot_quat.w)
         dx = actor_pos[0] - robot_pos[0]
         dy = actor_pos[1] - robot_pos[1]
@@ -183,6 +223,44 @@ class GazeboPersonRelay(Node):
         rel_y = -dx * math.sin(ryaw) + dy * math.cos(ryaw)
 
         self._update_rel_position(rel_x, rel_y, 'link_states')
+
+    # ─────────────────────────────────────────────────────────
+    # 遮蔽(LOS)判定: ロボット→人物の線分が壁線分と交差するか
+    # ─────────────────────────────────────────────────────────
+    def _is_occluded(self, rx: float, ry: float,
+                     ax: float, ay: float) -> bool:
+        if not self._occlusion_on:
+            return False
+        for (x1, y1, x2, y2) in self._occ_segs:
+            if self._segments_intersect(rx, ry, ax, ay, x1, y1, x2, y2):
+                return True
+        return False
+
+    @staticmethod
+    def _segments_intersect(ax, ay, bx, by, cx, cy, dx, dy) -> bool:
+        """2D 線分 AB と CD の交差判定（端点接触も交差扱い）"""
+        def cross(ox, oy, px, py, qx, qy):
+            return (px - ox) * (qy - oy) - (py - oy) * (qx - ox)
+
+        d1 = cross(cx, cy, dx, dy, ax, ay)
+        d2 = cross(cx, cy, dx, dy, bx, by)
+        d3 = cross(ax, ay, bx, by, cx, cy)
+        d4 = cross(ax, ay, bx, by, dx, dy)
+        if ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0)):
+            return True
+        # 共線・端点接触ケース
+        def on_seg(px, py, qx, qy, rx_, ry_):
+            return (min(px, qx) <= rx_ <= max(px, qx) and
+                    min(py, qy) <= ry_ <= max(py, qy))
+        if d1 == 0 and on_seg(cx, cy, dx, dy, ax, ay):
+            return True
+        if d2 == 0 and on_seg(cx, cy, dx, dy, bx, by):
+            return True
+        if d3 == 0 and on_seg(ax, ay, bx, by, cx, cy):
+            return True
+        if d4 == 0 and on_seg(ax, ay, bx, by, dx, dy):
+            return True
+        return False
 
     # ─────────────────────────────────────────────────────────
     # 共通: 相対位置更新

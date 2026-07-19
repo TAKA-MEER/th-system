@@ -1,0 +1,41 @@
+# ============================================================
+# scenario: cluttered — 什器あり環境
+# 机・椅子の細い脚だけが LiDAR に映る環境で追従を検証する。
+# 実機で発生する「机脚・椅子脚への誤トラッキング」の再現・観察が目的
+# (シミュの /person/status は真値のため誤認そのものは起きないが、
+#  障害物停止・経路選択の挙動を確認できる)。
+#
+# 起動:  ros2 launch th_bringup gazebo.launch.py scenario:=cluttered
+# モード: 7 (mapless) → 2 (Nav2 追従) の順で検証
+# ============================================================
+scenario:
+  description: "什器あり — 机脚・椅子脚・柱の間を縫う追従 + wanderer 回避"
+  recommended_mode: 7
+
+  world: cluttered.world
+  slam: true
+  map_yaml: ""
+
+  robot_spawn: {x: -4.0, y: -3.0, yaw: 0.0}
+
+  person:
+    pattern: waypoints
+    # 机の間を縫うループ (flat [x, y, pause_sec, ...])
+    waypoints: [
+      -1.0,  2.5, 2.0,
+      -3.5,  2.8, 3.0,
+      -3.2, -0.5, 2.0,
+      -1.2, -2.8, 2.0,
+       1.5, -3.0, 2.0,
+       2.2,  0.0, 2.0,
+       0.8,  2.8, 2.0,
+    ]
+    move_speed: 0.4
+
+  relay:
+    max_detect_range: 8.0
+
+  obstacle:
+    enabled: true
+    bounds: {x_min: -1.5, x_max: 3.0, y_min: -3.5, y_max: -1.5}
+    move_speed: 0.4

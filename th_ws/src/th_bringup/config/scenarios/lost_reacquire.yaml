@@ -1,0 +1,50 @@
+# ============================================================
+# scenario: lost_reacquire — 人物ロスト・再捕捉
+# 人物が遮蔽板の裏に回ると gazebo_person_relay の LOS チェックにより
+# 位置更新が止まり、lost_timeout (1.0s) 経過で is_lost=True になる。
+# 捜索 → 再出現で自動再捕捉。長時間ロストで PERSON_TRACKER_LOST →
+# 強制 IDLE となる安全チェーンも確認できる。
+#
+# 起動:  ros2 launch th_bringup gazebo.launch.py scenario:=lost_reacquire
+# モード: 7。観察: ros2 topic echo /person/status
+# ============================================================
+scenario:
+  description: "人物ロスト・再捕捉 — 遮蔽板3枚で is_lost → 捜索 → 再捕捉を再現"
+  recommended_mode: 7
+
+  world: lost_reacquire.world
+  slam: true
+  map_yaml: ""
+
+  robot_spawn: {x: -5.0, y: -3.0, yaw: 0.0}
+
+  person:
+    pattern: waypoints
+    # 各遮蔽板の裏で長めに停止するループ (flat [x, y, pause_sec, ...])
+    waypoints: [
+      -4.0, -2.0, 2.0,
+      -2.0, -0.5, 1.0,
+      -2.0,  2.0, 8.0,   # partition_a の裏
+      -0.5,  0.0, 2.0,
+       1.5, -2.2, 2.0,
+       1.5,  0.2, 6.0,   # partition_b の裏
+       3.0,  1.5, 2.0,
+       5.0,  1.5, 8.0,   # partition_c の裏 (東側)
+       3.0,  0.0, 2.0,
+      -1.0, -2.0, 2.0,
+    ]
+    move_speed: 0.4
+
+  relay:
+    max_detect_range: 10.0
+    occlusion_check: true
+    # ★ lost_reacquire.world の遮蔽板端点と同期させること (板を動かしたら両方更新)
+    # flat [x1, y1, x2, y2, ...] world 座標
+    occlusion_segments: [
+      -3.0,  1.0, -1.0,  1.0,   # partition_a
+       0.5, -1.0,  2.5, -1.0,   # partition_b
+       4.0,  0.5,  4.0,  2.5,   # partition_c
+    ]
+
+  obstacle:
+    enabled: false

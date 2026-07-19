@@ -63,6 +63,10 @@ ros2 launch th_bringup gazebo.launch.py
 ros2 launch th_bringup gazebo.launch.py \
   slam:=false map_yaml:=/root/th_ws/src/th_bringup/maps/th_map.yaml
 
+# シナリオプリセットで起動（narrow_room / wide_area / cluttered /
+# lost_reacquire / panel_shuttle。th_bringup/config/scenarios/ 参照）
+ros2 launch th_bringup gazebo.launch.py scenario:=narrow_room
+
 # キーボードテレオペ（別ターミナル）
 ros2 launch th_bringup teleop.launch.py           # /cmd_vel_nav 経由（通常）
 ros2 launch th_bringup teleop.launch.py direct:=true  # /cmd_vel 直接（SLAM 用）

@@ -1,0 +1,34 @@
+# ============================================================
+# scenario: panel_shuttle — 試験場: 配電盤⇔待機位置の往復
+# 既存の panel_room + th_map で Nav2 + AMCL ナビゲーションを検証する。
+# panel_navigator.py + config/panels.yaml を使用。
+#
+# 起動:  ros2 launch th_bringup gazebo.launch.py scenario:=panel_shuttle
+# 移動指令 (例):
+#   ros2 service call /panel_navigator/go_to_panel \
+#     th_system_msgs/srv/GoToPanel "{panel_id: 'panel_01'}"
+# 点検完了 → 待機位置復帰は CompleteInspection サービスを使用。
+# ============================================================
+scenario:
+  description: "試験場 — th_map 上で配電盤⇔待機位置を Nav2/AMCL で往復"
+  recommended_mode: 3   # MOVING_TO_PANEL
+
+  world: panel_room_no_actor.world
+  slam: false
+  map_yaml: th_map.yaml   # maps/ 相対
+
+  robot_spawn: {x: -4.0, y: -3.0, yaw: 0.0}
+
+  person:
+    pattern: waypoints
+    # 試験員は通路外の北西エリアに静置 (追従対象にしない)
+    waypoints: [-4.3, 2.0, 999.0]
+    move_speed: 0.3
+
+  relay:
+    max_detect_range: 12.0
+
+  obstacle:
+    enabled: true
+    bounds: {x_min: -4.0, x_max: 4.0, y_min: -3.0, y_max: 3.0}
+    move_speed: 0.5

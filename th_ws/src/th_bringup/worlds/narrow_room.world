@@ -1,0 +1,136 @@
+<?xml version="1.0"?>
+<!--
+  narrow_room.world
+  ─────────────────
+  狭所追従シナリオ (scenario:=narrow_room) 用ワールド。
+  外形 8×6 m の部屋に幅 1.2 m の L 字通路と幅 0.9 m の狭窄部を持つ。
+  FOLLOWING_MAPLESS の狭所パラメータ (stop 0.5 / resume 0.7 / obstacle 0.45)
+  の検証を想定。
+
+  通路レイアウト (world 座標):
+    - 水平通路: y = -3.0 〜 -1.8 (幅 1.2), x = -4.0 〜 4.0
+    - 狭窄部:  x = 0.0 付近で南壁から 0.3 m のスタブ → 残り幅 0.9
+    - 垂直通路: x = 2.8 〜 4.0 (幅 1.2), y = -1.8 〜 3.0
+  ロボットスポーン: (-3.5, -2.4)  通路西端
+-->
+<sdf version="1.6">
+  <world name="narrow_room">
+
+    <physics name="default_physics" default="0" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <ros><namespace>/gazebo</namespace></ros>
+      <update_rate>10.0</update_rate>
+    </plugin>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal></plane></geometry>
+          <surface><friction><ode><mu>100</mu><mu2>50</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <cast_shadows>false</cast_shadows>
+          <geometry><plane><normal>0 0 1</normal><size>16 16</size></plane></geometry>
+          <material><script><name>Gazebo/Grey</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 外周壁 (内寸 8.0 × 6.0) -->
+    <model name="wall_south">
+      <static>true</static><pose>0 -3.1 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>8.2 0.2 3.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>8.2 0.2 3.0</size></box></geometry>
+          <material><script><name>Gazebo/White</name></script></material></visual>
+      </link>
+    </model>
+    <model name="wall_north">
+      <static>true</static><pose>0 3.1 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>8.2 0.2 3.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>8.2 0.2 3.0</size></box></geometry>
+          <material><script><name>Gazebo/White</name></script></material></visual>
+      </link>
+    </model>
+    <model name="wall_west">
+      <static>true</static><pose>-4.1 0 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 6.2 3.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.2 6.2 3.0</size></box></geometry>
+          <material><script><name>Gazebo/White</name></script></material></visual>
+      </link>
+    </model>
+    <model name="wall_east">
+      <static>true</static><pose>4.1 0 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.2 6.2 3.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.2 6.2 3.0</size></box></geometry>
+          <material><script><name>Gazebo/White</name></script></material></visual>
+      </link>
+    </model>
+
+    <!-- L 字通路の内壁 -->
+    <!-- 水平通路の北側内壁: x -4.0〜2.8, 南面 y=-1.8 (通路幅 1.2) -->
+    <model name="wall_inner_h">
+      <static>true</static><pose>-0.6 -1.725 1.0 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>6.8 0.15 2.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>6.8 0.15 2.0</size></box></geometry>
+          <material><script><name>Gazebo/Grey</name></script></material></visual>
+      </link>
+    </model>
+    <!-- 垂直通路の西側内壁: y -1.8〜3.0, 東面 x=2.8 (通路幅 1.2) -->
+    <model name="wall_inner_v">
+      <static>true</static><pose>2.725 0.6 1.0 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.15 4.8 2.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.15 4.8 2.0</size></box></geometry>
+          <material><script><name>Gazebo/Grey</name></script></material></visual>
+      </link>
+    </model>
+
+    <!-- 狭窄部: 南壁から 0.3 m のスタブ → 残り幅 0.9 -->
+    <model name="pinch_stub">
+      <static>true</static><pose>0.0 -2.85 1.0 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.15 0.3 2.0</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.15 0.3 2.0</size></box></geometry>
+          <material><script><name>Gazebo/Orange</name></script></material></visual>
+      </link>
+    </model>
+
+    <!-- 試験員模擬シリンダー (person_mover が動かす) -->
+    <model name="inspector">
+      <static>true</static>
+      <pose>-2.0 -2.4 0.9 0 0 0</pose>
+      <link name="link">
+        <collision name="col">
+          <geometry><cylinder><radius>0.25</radius><length>1.8</length></cylinder></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><cylinder><radius>0.25</radius><length>1.8</length></cylinder></geometry>
+          <material>
+            <ambient>0.8 0.3 0.1 1</ambient>
+            <diffuse>0.8 0.3 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>
