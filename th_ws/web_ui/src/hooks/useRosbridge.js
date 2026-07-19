@@ -18,6 +18,8 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
   const [fault, setFault]           = useState({ active: false, fault_type: 'NONE' })
   const [estop, setEstop]           = useState(false)
   const [battVolt, setBattVolt]     = useState(null)
+  const [personStatus, setPersonStatus] = useState(null)
+  const [candidates, setCandidates]     = useState([])
 
   // ── 接続 ──────────────────────────────────────────────────
   useEffect(() => {
@@ -55,10 +57,26 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     subEstop.subscribe((msg) => setEstop(msg.data))
 
+    // ── 購読: /person/status ───────────────────────────────
+    const subPerson = new ROSLIB.Topic({
+      ros, name: '/person/status',
+      messageType: 'th_system_msgs/PersonStatus'
+    })
+    subPerson.subscribe((msg) => setPersonStatus(msg))
+
+    // ── 購読: 追従対象候補一覧 ──────────────────────────────
+    const subCandidates = new ROSLIB.Topic({
+      ros, name: '/sobits_follower/multiple_sensor_person_tracking/person_candidates',
+      messageType: 'multiple_sensor_person_tracking/PersonCandidates'
+    })
+    subCandidates.subscribe((msg) => setCandidates(msg.positions ?? []))
+
     return () => {
       subMode.unsubscribe()
       subFault.unsubscribe()
       subEstop.unsubscribe()
+      subPerson.unsubscribe()
+      subCandidates.unsubscribe()
       ros.close()
     }
   }, [url])
@@ -127,6 +145,31 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     }))
   }, [])
 
+  // ── 手動ジョグ (直接速度指令) ──────────────────────────────
+  // manual_command_handler の Nav2 ゴール方式は map フレームが必要で、
+  // 地図なし運用では機能しない。twist_mux の /cmd_vel_manual (priority 30,
+  // timeout 0.5s) へ直接 Twist を流す方式に変更。押している間だけ UI 側が
+  // 定期 publish し、timeout で自動停止する。
+  const manualCmdRef = useRef(null)
+  useEffect(() => {
+    if (!rosRef.current || !connected) return
+    const ROSLIB = window.ROSLIB
+    manualCmdRef.current = new ROSLIB.Topic({
+      ros: rosRef.current,
+      name: '/cmd_vel_manual',
+      messageType: 'geometry_msgs/Twist'
+    })
+  }, [connected])
+
+  const publishManualCmd = useCallback((vx, wz) => {
+    const ROSLIB = window.ROSLIB
+    if (!manualCmdRef.current || !ROSLIB) return
+    manualCmdRef.current.publish(new ROSLIB.Message({
+      linear:  { x: vx, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: wz }
+    }))
+  }, [])
+
   // ── 配電盤移動サービス ────────────────────────────────────
   const goToPanel = useCallback((panelId) => {
     const ROSLIB = window.ROSLIB
@@ -142,9 +185,39 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     )
   }, [])
 
+  // ── 追従対象の選択・再登録 ─────────────────────────────────
+  const selectTarget = useCallback((candidateIndex) => {
+    const ROSLIB = window.ROSLIB
+    if (!rosRef.current || !ROSLIB) return
+    const svc = new ROSLIB.Service({
+      ros: rosRef.current,
+      name: '/person_tracker/select_target',
+      serviceType: 'multiple_sensor_person_tracking/SelectTarget'
+    })
+    svc.callService(
+      new ROSLIB.ServiceRequest({ candidate_index: candidateIndex, x: 0.0, y: 0.0 }),
+      (res) => { if (!res.success) console.warn('ターゲット選択失敗:', res.message) }
+    )
+  }, [])
+
+  const resetTracking = useCallback(() => {
+    const ROSLIB = window.ROSLIB
+    if (!rosRef.current || !ROSLIB) return
+    const svc = new ROSLIB.Service({
+      ros: rosRef.current,
+      name: '/person_tracker/reset_tracking',
+      serviceType: 'std_srvs/Trigger'
+    })
+    svc.callService(
+      new ROSLIB.ServiceRequest({}),
+      (res) => { if (!res.success) console.warn('追従リセット失敗:', res.message) }
+    )
+  }, [])
+
   return {
     connected, mode, modeName: MODE_NAMES[mode] ?? '---',
     fault, estop,
-    requestMode, publishTabletEstop, sendManualGoal, goToPanel,
+    personStatus, candidates, selectTarget, resetTracking,
+    requestMode, publishTabletEstop, sendManualGoal, publishManualCmd, goToPanel,
   }
 }

@@ -50,9 +50,21 @@ class MaplessFollowParams:
     obstacle_check_half_width_deg: float = 20.0  # deg 進行方位を中心とした走査半幅
 
     # Pure Pursuit 駆動
-    v_max:        float = 0.3   # m/s
-    k_ang:        float = 2.0   # 角度ゲイン
-    stop_radius_m: float = 0.2  # m ゴール到達とみなす半径
+    v_max:         float = 0.3   # m/s
+    k_ang:         float = 2.0   # 角度ゲイン
+    stop_radius_m: float = 0.2   # m ゴール到達とみなす半径
+    w_max_rad_s:   float = 1.0   # rad/s 旋回速度の上限
+                                  # (実機検証: 無制限だと角度誤差π×k_angのような
+                                  #  物理的に不可能な指令が出る。follow_planner_core 参照)
+
+    # 速度プロファイル（試験員との距離ベースの追従速度・加減速レート）
+    # lookback_distance は目標点の"位置"を決めるだけで速度には使わない
+    # (軌跡追従目標は常に近距離にあるため、目標点までの距離で速度を決めると
+    #  常に低速に頭打ちになってしまう)。
+    max_linear_accel_mps2:  float = 1.0   # m/s^2 加速側のレート制限 (急発進防止)
+    max_linear_decel_mps2:  float = 2.0   # m/s^2 減速側のレート制限 兼 制動距離計算の減速度
+                                            # (停止応答は加速より優先されるべきなので別枠。
+                                            #  実機の実制動性能を超えない値にすること)
 
     update_rate_hz: float = 10.0
 
@@ -91,20 +103,74 @@ def is_path_blocked(
     direction_rad: float,
     half_width_rad: float,
     max_check_dist: float,
+    person_angle_rad: Optional[float] = None,
+    person_range_m: Optional[float] = None,
+    person_exclude_tolerance_m: float = 0.3,
 ) -> bool:
     """
     direction_rad ± half_width_rad の範囲にある LiDAR レンジ値のうち、
     max_check_dist 未満のものが1つでもあれば True(障害物あり)を返す。
     inf/nan は障害物なしとして扱う。
+
+    person_angle_rad / person_range_m を指定すると、その方向・距離
+    (± person_exclude_tolerance_m) にある反射は追従対象自身の脚とみなして
+    無視する（生スキャンは追従対象を障害物と区別できないため、指定が無いと
+    lookback_distance と obstacle_check_distance_m が近い設定の場合に
+    追従対象自身で誤検知し停止を繰り返す）。追従対象より手前にある実際の
+    障害物は距離が異なるため通常どおり検知される。
     """
     for i, r in enumerate(ranges):
         if not math.isfinite(r):
             continue
         angle = angle_min + i * angle_increment
         diff = math.atan2(math.sin(angle - direction_rad), math.cos(angle - direction_rad))
-        if abs(diff) <= half_width_rad and r < max_check_dist:
-            return True
+        if abs(diff) > half_width_rad or r >= max_check_dist:
+            continue
+
+        if person_angle_rad is not None and person_range_m is not None:
+            person_diff = math.atan2(
+                math.sin(angle - person_angle_rad), math.cos(angle - person_angle_rad))
+            if abs(person_diff) <= half_width_rad and abs(r - person_range_m) <= person_exclude_tolerance_m:
+                continue
+
+        return True
     return False
+
+
+def mapless_target_speed(
+    distance_to_person: float,
+    stop_distance: float,
+    max_decel_mps2: float,
+    v_max: float,
+) -> float:
+    """
+    試験員との実距離を元に目標速度を決める（制動距離ベース）。
+    stop_distance に達するまでに max_decel_mps2 の減速度で確実に速度0まで
+    落とせる速度を上限とする: v = sqrt(2 * max_decel_mps2 * margin)。
+    線形ランプと違い v_max をいくつに設定しても「その場で急停止しても
+    追従対象に届く前に止まれる」速度を上回らないため、v_max を上げても
+    追従対象への追突を防げる。
+    """
+    margin = distance_to_person - stop_distance
+    if margin <= 0.0:
+        return 0.0
+    return min(v_max, math.sqrt(2.0 * max_decel_mps2 * margin))
+
+
+def rate_limit(target: float, prev: float, max_delta: float,
+               max_delta_down: float = None) -> float:
+    """
+    1制御周期での変化量を制限する（急加減速防止）。
+    max_delta_down を指定すると減少側だけ別の上限を使える
+    (停止応答を加速立ち上がりより速くするため)。省略時は増減とも max_delta。
+    """
+    if max_delta_down is None:
+        max_delta_down = max_delta
+    if target > prev + max_delta:
+        return prev + max_delta
+    if target < prev - max_delta_down:
+        return prev - max_delta_down
+    return target
 
 
 class MaplessFollowCore:
@@ -117,6 +183,7 @@ class MaplessFollowCore:
         self.params = params or MaplessFollowParams()
         self.state  = MaplessState.TRACKING
         self.trail: Deque[Point2D] = deque(maxlen=self.params.trail_max_points)
+        self._prev_linear_x: float = 0.0
 
     def update(
         self,
@@ -133,15 +200,18 @@ class MaplessFollowCore:
             self.params.stop_distance, self.params.resume_distance)
 
         if robot_pose_odom is None:
+            self._prev_linear_x = 0.0
             return MaplessOutput(state=self.state, reason="no_pose")
 
         person_abs = to_absolute(robot_pose_odom, (person_x, person_y))
         update_trail(self.trail, person_abs, self.params.trail_sample_interval_m)
 
         if self.state == MaplessState.STOPPED:
+            self._prev_linear_x = 0.0
             return MaplessOutput(state=self.state, reason="person_close")
 
         if scan_ranges is None:
+            self._prev_linear_x = 0.0
             return MaplessOutput(state=self.state, reason="no_scan")
 
         goal_abs = get_trail_goal(self.trail, self.params.lookback_distance,
@@ -152,20 +222,46 @@ class MaplessFollowCore:
         if is_path_blocked(
                 scan_ranges, scan_angle_min, scan_angle_increment,
                 bearing, math.radians(self.params.obstacle_check_half_width_deg),
-                self.params.obstacle_check_distance_m):
+                self.params.obstacle_check_distance_m,
+                person_angle_rad=math.atan2(person_y, person_x),
+                person_range_m=distance):
+            self._prev_linear_x = 0.0
             return MaplessOutput(state=self.state, reason="obstacle_ahead")
 
-        v, w = pure_pursuit_control(
+        _, w = pure_pursuit_control(
             (0.0, 0.0, 0.0), rel_goal,
             v_max=self.params.v_max, k_ang=self.params.k_ang,
-            stop_radius=self.params.stop_radius_m)
+            stop_radius=self.params.stop_radius_m,
+            w_max=self.params.w_max_rad_s)
+
+        target_v = mapless_target_speed(
+            distance, self.params.stop_distance,
+            self.params.max_linear_decel_mps2, self.params.v_max)
+        # 大きく曲がる必要がある時は先に向き直れるよう並進を絞る
+        # (曲がりきれず壁に衝突するのを防ぐ。follow_planner_core の
+        #  pure_pursuit_control と同じ考え方)
+        target_v *= max(0.0, math.cos(bearing))
+        max_up   = self.params.max_linear_accel_mps2 / self.params.update_rate_hz
+        max_down = self.params.max_linear_decel_mps2 / self.params.update_rate_hz
+        v = rate_limit(target_v, self._prev_linear_x, max_up, max_down)
+        self._prev_linear_x = v
+
         return MaplessOutput(linear_x=v, angular_z=w, state=self.state, reason="tracking")
 
     def clear_trail(self) -> None:
         """試験員ロスト→再検出時に呼ぶ。軌跡の不連続を防ぐ。"""
         self.trail.clear()
 
+    def notify_lost(self) -> None:
+        """
+        試験員ロスト中に ROS2 ノード側から毎周期呼ぶ。前回速度を 0 にしておくことで、
+        再検出時に rate_limit がロスト直前の速度から再開する（＝停止せず進み続ける）
+        のを防ぎ、0 から滑らかに加速し直す。
+        """
+        self._prev_linear_x = 0.0
+
     def reset(self) -> None:
         """モード切替時などにリセットする"""
         self.state = MaplessState.TRACKING
         self.trail.clear()
+        self._prev_linear_x = 0.0

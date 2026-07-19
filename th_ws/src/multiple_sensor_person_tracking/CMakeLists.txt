@@ -28,7 +28,9 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/FollowingPosition.msg"
+  "msg/PersonCandidates.msg"
   "srv/LegDetectionService.srv"
+  "srv/SelectTarget.srv"
   DEPENDENCIES sensor_msgs geometry_msgs std_msgs
 )
 

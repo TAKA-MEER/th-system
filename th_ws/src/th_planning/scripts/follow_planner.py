@@ -223,6 +223,10 @@ class FollowPlanner(Node):
         if self._current_mode not in (RobotMode.FOLLOWING, RobotMode.MOVING_TO_PANEL):
             return
         if self._person_lost or self._person_pos is None:
+            # ロスト中に何も publish しないと、EVADING/PREPARE で直前に出していた
+            # 速度指令が /cmd_vel_retreat に残ったままになり停止しない
+            # (mapless 版と同じ理由で follow_planner_mapless.py 参照)。
+            self._stop_retreat()
             return
 
         px, py = self._person_pos

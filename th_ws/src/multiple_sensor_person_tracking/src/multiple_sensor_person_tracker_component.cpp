@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cmath>
 #include <limits>
 
 #include <rclcpp/rclcpp.hpp>
@@ -36,6 +37,8 @@
 #include "vision_msgs/msg/bounding_box2_d.hpp"
 
 #include "multiple_sensor_person_tracking/msg/following_position.hpp"
+#include "multiple_sensor_person_tracking/msg/person_candidates.hpp"
+#include "multiple_sensor_person_tracking/srv/select_target.hpp"
 
 #include "multiple_observation_kalman_filter/multiple_observation_kalman_filter.hpp"
 
@@ -63,6 +66,10 @@ namespace multiple_sensor_person_tracking {
             // Safety: tell the real robot to STOP when the target is lost or switched.
             rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr pub_stop_;
             rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr srv_reset_;
+            // Live candidate list (for operator target selection) + explicit select service.
+            rclcpp_lifecycle::LifecyclePublisher<multiple_sensor_person_tracking::msg::PersonCandidates>::SharedPtr pub_candidates_;
+            rclcpp::Service<multiple_sensor_person_tracking::srv::SelectTarget>::SharedPtr srv_select_target_;
+            multiple_sensor_person_tracking::msg::PersonCandidates last_candidates_;
             rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_scan_;
             rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_nontravelable_region_;
             rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr sub_dr_spaam_;
@@ -119,6 +126,16 @@ namespace multiple_sensor_person_tracking {
             bool target_changed_latched_;
             bool prev_stop_;
 
+            // Explicit-selection gating (furniture-leg false cold-acquire mitigation):
+            // when true, cold-acquire (no target, no recent loss) never spontaneously
+            // grabs the nearest leg -- it only runs within manual_seed_timeout_ seconds
+            // of an operator calling ~/reset_tracking or ~/select_target, searching
+            // around cold_acquire_seed_ instead of always the robot origin.
+            bool require_explicit_target_selection_;
+            geometry_msgs::msg::Point cold_acquire_seed_;
+            double manual_seed_time_;
+            double manual_seed_timeout_;
+
             visualization_msgs::msg::Marker makeLegPoseMarker( const std::vector<geometry_msgs::msg::Pose>& leg_poses );
             visualization_msgs::msg::Marker makeLegAreaMarker( const std::vector<geometry_msgs::msg::Pose>& leg_poses );
             visualization_msgs::msg::Marker makeBodyPoseMarker( const std::vector<vision_msgs::msg::Detection3D>& body_poses );
@@ -162,6 +179,11 @@ namespace multiple_sensor_person_tracking {
             void resetTrackingCallback(
                 const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
                 std::shared_ptr<std_srvs::srv::Trigger::Response> response );
+
+            // Force-seed the tracked position at an operator-chosen candidate/point.
+            void selectTargetCallback(
+                const std::shared_ptr<multiple_sensor_person_tracking::srv::SelectTarget::Request> request,
+                std::shared_ptr<multiple_sensor_person_tracking::srv::SelectTarget::Response> response );
         public:
             explicit PersonTracker(const rclcpp::NodeOptions & options)
             : rclcpp_lifecycle::LifecycleNode("person_tracker", options),
@@ -337,12 +359,25 @@ int multiple_sensor_person_tracking::PersonTracker::findTwoObservationValue(
         search_pt.y = last_target_pos_.y + lead_y;
         leg_min_distance = leg_tracking_range_ + reacquire_radius_rate_ * lost_dt;
     } else {
-        // Determine targets to track (search for the person closest to the robot)
-        search_pt.x = 0.0; search_pt.y = 0.0;
+        // Determine targets to track (search around the operator-seeded point, or the
+        // robot origin by default -- see cold_acquire_seed_).
+        search_pt = cold_acquire_seed_;
         leg_min_distance = target_range_;
     }
     // Never let the gate exceed the cold-acquisition range (avoid grabbing a far person).
     if ( leg_min_distance > target_range_ ) leg_min_distance = target_range_;
+
+    // Furniture-leg / stray-detection mitigation: a cold-acquire (no target, and not
+    // within the re-acquire-same-person window) never spontaneously locks onto whatever
+    // leg happens to be nearest -- it only runs for manual_seed_timeout_ seconds after
+    // an operator explicitly calls ~/reset_tracking or ~/select_target. Outside that
+    // window, no candidate can pass the gate (distance is always >= 0).
+    const bool cold_acquire = ( !exists_target_ && !reacquire_mode );
+    const bool manual_seed_window_open =
+        ( manual_seed_time_ >= 0.0 ) && ( ( now - manual_seed_time_ ) <= manual_seed_timeout_ );
+    if ( cold_acquire && require_explicit_target_selection_ && !manual_seed_window_open ) {
+        leg_min_distance = -1.0;
+    }
 
     bool exists_leg_pt = false, exists_body_pt = false;
     int result;
@@ -370,6 +405,9 @@ int multiple_sensor_person_tracking::PersonTracker::findTwoObservationValue(
     }
 
     double min_distance = ( exists_target_ ) ? body_tracking_range_ : target_range_;
+    if ( cold_acquire && require_explicit_target_selection_ && !manual_seed_window_open ) {
+        min_distance = -1.0;
+    }
     for ( const auto& detection : body_poses ) {
         
         if (detection.results.empty()) continue;
@@ -498,9 +536,53 @@ void multiple_sensor_person_tracking::PersonTracker::resetTrackingCallback(
     exists_target_ = false;
     target_lost_time_ = -1.0;
     no_exists_time_ = -1.0;
+    // Reproduce the original "grab nearest leg to robot origin" behavior even when
+    // require_explicit_target_selection_ blocks spontaneous cold-acquire: seed at the
+    // origin and open a short manual-acquire window.
+    cold_acquire_seed_ = geometry_msgs::msg::Point();
+    manual_seed_time_ = this->get_clock()->now().seconds();
     RCLCPP_INFO( this->get_logger(), "reset_tracking: safety latch cleared, re-acquiring target." );
     response->success = true;
     response->message = "tracking reset";
+}
+
+void multiple_sensor_person_tracking::PersonTracker::selectTargetCallback(
+    const std::shared_ptr<multiple_sensor_person_tracking::srv::SelectTarget::Request> request,
+    std::shared_ptr<multiple_sensor_person_tracking::srv::SelectTarget::Response> response )
+{
+    geometry_msgs::msg::Point seed;
+    if ( request->candidate_index >= 0 ) {
+        const auto idx = static_cast<size_t>( request->candidate_index );
+        if ( idx >= last_candidates_.positions.size() ) {
+            response->success = false;
+            response->message = "candidate_index out of range for the last published candidate list";
+            return;
+        }
+        seed = last_candidates_.positions[idx];
+    } else {
+        if ( !std::isfinite(request->x) || !std::isfinite(request->y) ) {
+            response->success = false;
+            response->message = "x/y must be finite when candidate_index < 0";
+            return;
+        }
+        seed.x = request->x;
+        seed.y = request->y;
+    }
+
+    // Same mechanism ~/reset_tracking uses (cold-acquire gated nearest-neighbor), just
+    // seeded at an operator-chosen point instead of the robot origin.
+    cold_acquire_seed_ = seed;
+    manual_seed_time_ = this->get_clock()->now().seconds();
+    target_changed_latched_ = false;
+    exists_target_ = false;
+    target_lost_time_ = -1.0;
+    no_exists_time_ = -1.0;
+
+    RCLCPP_INFO( this->get_logger(),
+        "select_target: seeding target at (%.2f, %.2f); awaiting association.",
+        seed.x, seed.y );
+    response->success = true;
+    response->message = "target seeded";
 }
 
 void multiple_sensor_person_tracking::PersonTracker::scan_callback (const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg)
@@ -640,6 +722,23 @@ void multiple_sensor_person_tracking::PersonTracker::callbackPoseArray ( const v
             const auto transformed = transformPoint(leg_array_frame, target_frame_, pose.position);
             pose.position = transformed.point;
         }
+    }
+
+    // Publish the live candidate list (already transformed to target_frame_) so an
+    // operator can pick a specific person via ~/select_target, independent of whether
+    // the tracker currently has a locked target. Placed before any early return below
+    // so the list keeps updating even while require_explicit_target_selection_ blocks
+    // spontaneous cold-acquire.
+    if ( pub_candidates_ ) {
+        multiple_sensor_person_tracking::msg::PersonCandidates candidates_msg;
+        candidates_msg.header.stamp = current_time;
+        candidates_msg.header.frame_id = target_frame_;
+        candidates_msg.positions.reserve( leg_detections_in_target.size() );
+        for ( const auto & pose : leg_detections_in_target ) {
+            candidates_msg.positions.push_back( pose.position );
+        }
+        last_candidates_ = candidates_msg;
+        pub_candidates_->publish( candidates_msg );
     }
 
     if ( !exists_target_ && use_body_detection && body_msg->detections.size() == 0) {
@@ -870,6 +969,9 @@ multiple_sensor_person_tracking::CallbackReturn multiple_sensor_person_tracking:
         this->declare_parameter<double>("coast_tolerance_max", 5.0);
         this->declare_parameter<double>("coast_speed_scale", 0.5);
         this->declare_parameter<bool>("display_marker", true);
+        this->declare_parameter<double>("target_range", 3.0);
+        this->declare_parameter<bool>("require_explicit_target_selection", true);
+        this->declare_parameter<double>("manual_seed_timeout", 5.0);
     } catch (const rclcpp::exceptions::ParameterAlreadyDeclaredException &) {
     }
 
@@ -893,6 +995,9 @@ multiple_sensor_person_tracking::CallbackReturn multiple_sensor_person_tracking:
     coast_tolerance_max_ = this->get_parameter("coast_tolerance_max").as_double();
     coast_speed_scale_ = this->get_parameter("coast_speed_scale").as_double();
     display_marker_ = this->get_parameter("display_marker").as_bool();
+    target_range_ = this->get_parameter("target_range").as_double();
+    require_explicit_target_selection_ = this->get_parameter("require_explicit_target_selection").as_bool();
+    manual_seed_timeout_ = this->get_parameter("manual_seed_timeout").as_double();
     if (detection_mode == "leg") {
         detection_mode_ = DetectionMode::LEG;
     } else if (detection_mode == "body") {
@@ -943,6 +1048,13 @@ multiple_sensor_person_tracking::CallbackReturn multiple_sensor_person_tracking:
     srv_reset_ = create_service< std_srvs::srv::Trigger >(
         "~/reset_tracking",
         std::bind(&PersonTracker::resetTrackingCallback, this, std::placeholders::_1, std::placeholders::_2) );
+    // Live candidate list, for operator target selection.
+    pub_candidates_ = create_publisher< multiple_sensor_person_tracking::msg::PersonCandidates >(
+        "sobits_follower/multiple_sensor_person_tracking/person_candidates", 1 );
+    // Service to force-seed a specific candidate/point as the new tracked target.
+    srv_select_target_ = create_service< multiple_sensor_person_tracking::srv::SelectTarget >(
+        "~/select_target",
+        std::bind(&PersonTracker::selectTargetCallback, this, std::placeholders::_1, std::placeholders::_2) );
 
     // Initialize Kalman filter
     kf_ = std::make_unique<multiple_observation_kalman_filter::KalmanFilter>(0.033, 1000, 1.0);
@@ -966,10 +1078,11 @@ multiple_sensor_person_tracking::CallbackReturn multiple_sensor_person_tracking:
     previous_vel_ = geometry_msgs::msg::Point();
     attention_leg_time_ = -1.0;
     attention_leg_idx_ = 0;
-    target_range_ = 3.0;
     active_ = false;
     target_changed_latched_ = false;
     prev_stop_ = false;
+    cold_acquire_seed_ = geometry_msgs::msg::Point();
+    manual_seed_time_ = -1.0;
 
     return CallbackReturn::SUCCESS;
 }
@@ -981,9 +1094,11 @@ multiple_sensor_person_tracking::CallbackReturn multiple_sensor_person_tracking:
     pub_obstacles_->on_activate();
     pub_target_odom_->on_activate();
     pub_stop_->on_activate();
+    pub_candidates_->on_activate();
     // Start un-latched so a fresh activation does not keep the robot stopped.
     target_changed_latched_ = false;
     prev_stop_ = false;
+    manual_seed_time_ = -1.0;
     previous_time_ = this->now();
     return CallbackReturn::SUCCESS;
 }
@@ -995,6 +1110,7 @@ multiple_sensor_person_tracking::CallbackReturn multiple_sensor_person_tracking:
     if (pub_obstacles_) pub_obstacles_->on_deactivate();
     if (pub_target_odom_) pub_target_odom_->on_deactivate();
     if (pub_stop_) pub_stop_->on_deactivate();
+    if (pub_candidates_) pub_candidates_->on_deactivate();
     return CallbackReturn::SUCCESS;
 }
 
@@ -1009,6 +1125,8 @@ void multiple_sensor_person_tracking::PersonTracker::resetInterfaces() {
     pub_target_odom_.reset();
     pub_stop_.reset();
     srv_reset_.reset();
+    pub_candidates_.reset();
+    srv_select_target_.reset();
     tf_sub_.reset();
     cloud_nontravelable_region_.reset();
     kf_.reset();

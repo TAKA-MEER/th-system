@@ -33,8 +33,9 @@ twist_mux:
         timeout: 0.5
         priority: 10
 
-      # 将来: ジョイスティック的な連続手動操作 (現状は未使用)
-      # manual_joy:
-      #   topic:   /cmd_vel_manual
-      #   timeout: 0.5
-      #   priority: 30
+      # タブレットUIのジョグ操作 (MANUAL モード時のみ UI 側が発行。
+      # Nav2/map 不要の直接速度指令。timeout 0.5s なので押下をやめれば止まる)
+      manual_joy:
+        topic:   /cmd_vel_manual
+        timeout: 0.5
+        priority: 30

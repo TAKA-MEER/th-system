@@ -102,11 +102,31 @@ def generate_launch_description():
     ))
 
     # ── 3. lidar_filter (死角マスク) ─────────────────────
+    # lidar_source:=network の場合、これがラズパイ配信の /scan を実際に
+    # 購読する唯一のノード。ESP32 SoftAP 越しだと DDS のマルチキャスト
+    # 参加者発見(SPDP)がホスト間で成立しないことがある実機検証済みの事象
+    # (2026-07-17: unicast UDP 疎通は正常なのに /scan が discover されない
+    #  ことを確認)。ラズパイをユニキャストピアとして与えることで解消する
+    # (network 時のみ。このプロセス単体にのみ適用し、コンテナ全体の環境変数
+    # にすると mode_manager 等ローカルノード間の発見まで巻き添えで壊れる
+    # ことを確認済みのためそれは避ける)。lidar_is_local と同じ条件分岐で
+    # sllidar_node と対にしている。
+    fastdds_profile_yaml = os.path.join(BRINGUP_DIR, 'config', 'fastdds_profile.xml')
     nodes.append(Node(
         package='th_perception',
         executable='lidar_filter.py',
         name='lidar_filter',
         parameters=[os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml')],
+        additional_env={'FASTRTPS_DEFAULT_PROFILES_FILE': fastdds_profile_yaml},
+        condition=UnlessCondition(lidar_is_local),
+        output='screen',
+    ))
+    nodes.append(Node(
+        package='th_perception',
+        executable='lidar_filter.py',
+        name='lidar_filter',
+        parameters=[os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml')],
+        condition=IfCondition(lidar_is_local),
         output='screen',
     ))
 
