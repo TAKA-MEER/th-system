@@ -61,18 +61,56 @@ ros2 launch th_bringup gazebo.launch.py scenario:=narrow_room
 | `wide_area` | 広所向けパラメータ (stop 1.0 / resume 1.3 / obstacle 1.0) の先行検証 | `scenario:=wide_area` → モード 7 | 約 1.0m で停止・約 1.3m で再開。`ros2 param get /follow_planner_mapless stop_distance` が 1.0 |
 | `cluttered` | 什器（机脚・椅子脚・柱）環境での追従観察 | `scenario:=cluttered` → モード 7 → 2 | 机脚の間を追従。脚と人物の混同挙動を観察・記録（診断用途）。モード 2 で wanderer を回避 |
 | `lost_reacquire` | 人物ロスト → 捜索 → 再捕捉 | `scenario:=lost_reacquire` → モード 7 | 遮蔽板通過 約 1 秒で `/person/status` の `is_lost: true` → 捜索 → 再出現で再捕捉 |
-| `panel_shuttle` | 配電盤⇔待機位置の Nav2/AMCL 往復 | `scenario:=panel_shuttle` → `go_to_panel` サービス | 各配電盤前 (panels.yaml) に 0.3m 以内で到達し、CompleteInspection で復帰 |
+| `panel_shuttle` | 試験場での一連の運用フロー（[VISION.md](../VISION.md) §1-3 準拠） | `scenario:=panel_shuttle`（下記の手順参照） | mapless追従→IDLE待機(捕捉継続・速度ゼロ)→配電盤巡回→mapless帰還が一通り成立する |
 
 モード切替コマンド（起動 10 秒後・Nav2 active 後）:
 
 ```bash
 ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
   "{requested_mode: 7, requester: 'cli'}"     # 7=FOLLOWING_MAPLESS, 2=FOLLOWING
+```
 
-# panel_shuttle の移動指令
+### panel_shuttle: VISION.md 準拠の一連フロー検証
+
+[VISION.md](../VISION.md) の完成形運用（保管場所⇔試験場は mapless 追従、試験場内は
+IDLE 待機、配電盤へは要請時のみ移動）を一通りなぞる手順。`panel_shuttle` は
+試験員(inspector)が起動直後にスポーン地点(保管場所想定)から通路を抜けて
+配電盤前エリア(試験場想定)まで自動で歩くよう経路を組んである。
+
+```bash
+# 0. 起動（起動直後は IDLE。試験員は保管場所→試験場へ歩き始める）
+ros2 launch th_bringup gazebo.launch.py scenario:=panel_shuttle
+
+# 1. mapless 追従で試験場へ移動（試験員のあとを追う）
+ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
+  "{requested_mode: 7, requester: 'cli'}"
+
+# 2. 試験員が配電盤エリアで静止したら IDLE へ（試験場内の既定状態）
+ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
+  "{requested_mode: 1, requester: 'cli'}"
+# → この間 /person/status が更新され続け、/cmd_vel が常にゼロであることを確認
+#   (VISION.md §4: 捕捉継続と移動不可の両立)
+ros2 topic echo /person/status
+ros2 topic echo /cmd_vel
+
+# 3. 配電盤ごとに「移動要請 → 作業完了 → IDLE」を panel_01/02/03 で繰り返す
+#    (panel_navigator が MOVING_TO_PANEL → AT_PANEL → IDLE を自動遷移させる)
 ros2 service call /panel_navigator/go_to_panel \
   th_system_msgs/srv/GoToPanel "{panel_id: 'panel_01'}"
+# 到着(AT_PANEL)を確認したら:
+ros2 service call /panel_navigator/complete_inspection \
+  th_system_msgs/srv/CompleteInspection "{panel_id: 'panel_01'}"
+# panel_02, panel_03 も同様に繰り返す
+
+# 4. 全配電盤の点検完了後、再び mapless 追従で保管場所へ帰還
+ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
+  "{requested_mode: 7, requester: 'cli'}"
 ```
+
+合格基準: 各ステップでモード遷移が `mode_manager` に拒否されないこと、ステップ2で
+`/cmd_vel` がゼロのまま `/person/status` が更新され続けること、各配電盤に
+`arrival_threshold_m`(0.3m)以内で到達すること、最後に試験員に追従して
+スポーン地点付近まで戻れること。
 
 ### プリセット YAML スキーマ
 
@@ -344,7 +382,7 @@ ros2 run th_perception person_mover.py --ros-args \
 | 近接退避 | `pattern:=approach` | 0.8m 以内で `/cmd_vel_retreat` が発行され後退 |
 | 狭路真後ろ追従 | 仕切り壁の通路を通る | 角度オフセットが 0° になる |
 | 静止再配置 | `pattern:=static` | 2 秒後に試験員の側面〜背面に移動 |
-| 配電盤移動 | `scenario:=panel_shuttle` + `go_to_panel` サービス | Nav2 がパネル前まで誘導 |
+| 試験場の一連フロー | `scenario:=panel_shuttle`(手順は上記参照) | mapless追従→IDLE待機→配電盤巡回→mapless帰還(VISION.md準拠) |
 | E-Stop | タブレット UI の緊急停止 | ロボットが即時停止し ESTOP モードへ |
 | MAP不要軌跡追従 | `FOLLOWING_MAPLESS` へ切替 + `pattern:=approach` | 地図・Nav2 なしで追従、接近時は退避せず停止(詳細は Step 5 参照) |
 | 狭所追従 | `scenario:=narrow_room` + モード 7 | 幅 1.2m 通路を壁接触なしで追従 |

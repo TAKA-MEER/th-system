@@ -1,17 +1,40 @@
 # ============================================================
-# scenario: panel_shuttle — 試験場: 配電盤⇔待機位置の往復
-# 既存の panel_room + th_map で Nav2 + AMCL ナビゲーションを検証する。
-# panel_navigator.py + config/panels.yaml を使用。
+# scenario: panel_shuttle — 試験場での一連の運用フロー
+# VISION.md §1-3 の完成形フローを再現する:
+#   保管場所から FOLLOWING_MAPLESS で試験員に追従 → 試験場到着で IDLE
+#   待機(人物捕捉は継続・速度ゼロ) → 要請ごとに MOVING_TO_PANEL で
+#   各配電盤を巡回(AT_PANEL → IDLE を繰り返す) → 全作業完了後
+#   FOLLOWING_MAPLESS で保管場所へ帰還。
 #
 # 起動:  ros2 launch th_bringup gazebo.launch.py scenario:=panel_shuttle
-# 移動指令 (例):
-#   ros2 service call /panel_navigator/go_to_panel \
-#     th_system_msgs/srv/GoToPanel "{panel_id: 'panel_01'}"
-# 点検完了 → 待機位置復帰は CompleteInspection サービスを使用。
+#
+# 検証手順 (VISION.md の運用フローに沿った一連の操作):
+#   1. 起動直後は IDLE。試験員(inspector)は保管場所付近(スポーン地点)から
+#      通路を抜けて配電盤前エリアまで自動で歩く(waypoints)。
+#   2. FOLLOWING_MAPLESS へ切替 → ロボットが試験員に追従して試験場入口まで移動:
+#        ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
+#          "{requested_mode: 7, requester: 'cli'}"
+#   3. 試験員が配電盤エリアで静止したら IDLE へ切替(試験場内の既定状態):
+#        ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
+#          "{requested_mode: 1, requester: 'cli'}"
+#      → /person/status が更新され続け、/cmd_vel が常にゼロであることを確認
+#        (VISION.md §4: 捕捉継続・移動不可の両立)
+#   4. 配電盤ごとに移動要請 → 作業完了 → IDLE の周期を panel_01/02/03 で繰り返す:
+#        ros2 service call /panel_navigator/go_to_panel \
+#          th_system_msgs/srv/GoToPanel "{panel_id: 'panel_01'}"
+#        # 到着(AT_PANEL)後:
+#        ros2 service call /panel_navigator/complete_inspection \
+#          th_system_msgs/srv/CompleteInspection "{panel_id: 'panel_01'}"
+#      (panel_navigator が MOVING_TO_PANEL → AT_PANEL → IDLE を自動遷移させる)
+#   5. 全配電盤の点検が終わったら再び FOLLOWING_MAPLESS に切替え、
+#      試験員について保管場所(スポーン地点)へ帰還する。
 # ============================================================
 scenario:
-  description: "試験場 — th_map 上で配電盤⇔待機位置を Nav2/AMCL で往復"
-  recommended_mode: 3   # MOVING_TO_PANEL
+  description: >-
+    試験場での一連の運用フロー(VISION.md準拠): mapless追従で試験場到着
+    → IDLE待機(捕捉継続・速度ゼロ) → 配電盤を順に巡回(MOVING_TO_PANEL/
+    AT_PANEL/IDLE) → mapless追従で保管場所へ帰還
+  recommended_mode: 7   # 最初のステップ: FOLLOWING_MAPLESS で試験場へ移動
 
   world: panel_room_no_actor.world
   slam: false
@@ -21,9 +44,16 @@ scenario:
 
   person:
     pattern: waypoints
-    # 試験員は通路外の北西エリアに静置 (追従対象にしない)
-    waypoints: [-4.3, 2.0, 999.0]
-    move_speed: 0.3
+    # 保管場所(スポーン地点付近) → 通路(partition_west 西端の隙間) →
+    # 配電盤前エリアで長時間静止(試験員がロボットを待機させる)
+    waypoints: [
+      -3.6, -2.6, 1.0,
+      -3.6,  0.0, 1.0,
+      -3.6,  2.0, 1.0,
+      -1.5,  2.7, 2.0,
+       0.0,  2.7, 999.0,
+    ]
+    move_speed: 0.4
 
   relay:
     max_detect_range: 12.0
