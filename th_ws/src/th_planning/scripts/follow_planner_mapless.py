@@ -21,6 +21,7 @@ from rclpy.duration import Duration
 
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
+from rcl_interfaces.msg import SetParametersResult
 from th_system_msgs.msg import RobotMode, PersonStatus
 
 import tf2_ros
@@ -37,6 +38,7 @@ class FollowPlannerMapless(Node):
         self._declare_all_params()
         p = self._load_params()
         self._core = MaplessFollowCore(p)
+        self.add_on_set_parameters_callback(self._on_set_params)
         self._current_mode = RobotMode.IDLE
         self._person_pos  = None
         self._person_abs  = None   # odom系での試験員位置 (受信時に固定、自己移動補償用)
@@ -95,6 +97,33 @@ class FollowPlannerMapless(Node):
             max_linear_decel_mps2         = g("max_linear_decel_mps2").value,
             update_rate_hz                = g("update_rate_hz").value,
         )
+
+    def _on_set_params(self, params):
+        # _load_params() は起動時に一度だけ MaplessFollowParams へ値をコピーする
+        # ため、標準の SetParameters を呼ぶだけでは動作に反映されない。
+        # WebUI 設定パネルからのライブ反映を機能させるため、ここで core.params
+        # にも反映する（MaplessFollowParams は非 frozen dataclass のため可能）。
+        #
+        # mapless_follow_core.py の計算式で除数・sqrt の被開数として使われる値
+        # (v_max, k_ang, stop_radius_m 等) に 0 以下を許すとゼロ除算/定義域
+        # エラーで FOLLOWING_MAPLESS 中にノードがクラッシュするため拒否する。
+        for p in params:
+            if p.name in self._POSITIVE_PARAMS and p.value <= 0:
+                return SetParametersResult(
+                    successful=False,
+                    reason=f"{p.name} は正の値である必要があります")
+        for p in params:
+            if hasattr(self._core.params, p.name):
+                setattr(self._core.params, p.name, p.value)
+        return SetParametersResult(successful=True)
+
+    _POSITIVE_PARAMS = frozenset({
+        "lookback_distance", "trail_sample_interval_m", "trail_max_points",
+        "stop_distance", "resume_distance", "obstacle_check_distance_m",
+        "obstacle_check_half_width_deg", "v_max", "k_ang", "stop_radius_m",
+        "w_max_rad_s", "max_linear_accel_mps2", "max_linear_decel_mps2",
+        "update_rate_hz",
+    })
 
     def _cb_mode(self, msg: RobotMode):
         prev = self._current_mode

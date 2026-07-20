@@ -5,6 +5,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(rcl_interfaces REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   # ── メッセージ ──────────────────────────────
@@ -18,7 +19,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetMode.srv"
   "srv/GoToPanel.srv"
   "srv/CompleteInspection.srv"
-  DEPENDENCIES std_msgs geometry_msgs
+  "srv/SetTunableParams.srv"
+  "srv/SaveTunableParams.srv"
+  DEPENDENCIES std_msgs geometry_msgs rcl_interfaces
 )
 
 ament_export_dependencies(rosidl_default_runtime)

@@ -3,6 +3,7 @@
 // ============================================================
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRosbridge } from './hooks/useRosbridge'
+import SettingsPanel from './SettingsPanel'
 import './App.css'
 
 // ROS2 モード定数
@@ -210,9 +211,11 @@ export default function App() {
     fault, estop,
     personStatus, candidates, selectTarget, resetTracking,
     requestMode, publishTabletEstop, publishManualCmd, goToPanel,
+    getTunableParams, applyTunableParam, saveTunableParams,
   } = useRosbridge()
 
   const [estopActive, setEstopActive] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   // ── ジョグ速度設定 (プリセット + スライダー) ────────────────
   // publish ループは ref を読むため、押しっぱなし中の変更も次周期から反映される
@@ -374,7 +377,19 @@ export default function App() {
         <span className={`conn-badge ${connected ? 'ok' : 'ng'}`}>
           {connected ? '● 接続中' : '○ 切断'}
         </span>
+        <button className="settings-btn" onClick={() => setSettingsOpen(true)} aria-label="設定">
+          ⚙
+        </button>
       </header>
+
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        editable={mode === MODE.IDLE || mode === MODE.MANUAL}
+        getTunableParams={getTunableParams}
+        applyTunableParam={applyTunableParam}
+        saveTunableParams={saveTunableParams}
+      />
 
       {/* ── 緊急停止ボタン (発動専用。連打しても常に停止のまま) ── */}
       <button

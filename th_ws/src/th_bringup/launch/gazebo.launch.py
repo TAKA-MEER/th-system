@@ -387,6 +387,13 @@ def generate_launch_description():
             name='manual_command_handler',
             output='screen',
         ),
+        # config_manager (WebUI 設定パネル: パラメータ調整の仲介)
+        Node(
+            package='th_config_manager',
+            executable='config_manager.py',
+            name='config_manager',
+            output='screen',
+        ),
         # rosbridge
         Node(
             package='rosbridge_server',

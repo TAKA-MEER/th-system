@@ -262,6 +262,14 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 13b. config_manager (WebUI 設定パネル: パラメータ調整の仲介) ──
+    nodes.append(Node(
+        package='th_config_manager',
+        executable='config_manager.py',
+        name='config_manager',
+        output='screen',
+    ))
+
     # ── 14. rosbridge (タブレット WebSocket) ──────────────
     nodes.append(Node(
         package='rosbridge_server',
