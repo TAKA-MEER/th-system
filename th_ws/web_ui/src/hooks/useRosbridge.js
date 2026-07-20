@@ -9,6 +9,53 @@ const MODE_NAMES = {
   7: 'FOLLOWING_MAPLESS'
 }
 
+// rcl_interfaces/msg/ParameterType の定数
+const PARAM_TYPE = {
+  BOOL: 1, INTEGER: 2, DOUBLE: 3, STRING: 4,
+  BYTE_ARRAY: 5, BOOL_ARRAY: 6, INTEGER_ARRAY: 7, DOUBLE_ARRAY: 8, STRING_ARRAY: 9,
+}
+
+function decodeParamValue(pv) {
+  switch (pv.type) {
+    case PARAM_TYPE.BOOL:          return pv.bool_value
+    case PARAM_TYPE.INTEGER:       return pv.integer_value
+    case PARAM_TYPE.DOUBLE:        return pv.double_value
+    case PARAM_TYPE.STRING:        return pv.string_value
+    case PARAM_TYPE.BYTE_ARRAY:    return pv.byte_array_value
+    case PARAM_TYPE.BOOL_ARRAY:    return pv.bool_array_value
+    case PARAM_TYPE.INTEGER_ARRAY: return pv.integer_array_value
+    case PARAM_TYPE.DOUBLE_ARRAY:  return pv.double_array_value
+    case PARAM_TYPE.STRING_ARRAY:  return pv.string_array_value
+    default: return null
+  }
+}
+
+// バックエンド側 (config_manager 等) が応答しない場合に UI が無期限に
+// フリーズしないようにするタイムアウト (ms)
+const TUNABLE_SERVICE_TIMEOUT_MS = 5000
+
+function withTimeout(promise, label) {
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(
+      () => reject(new Error(`${label} がタイムアウトしました`)),
+      TUNABLE_SERVICE_TIMEOUT_MS)
+    promise.then(
+      (v) => { clearTimeout(id); resolve(v) },
+      (e) => { clearTimeout(id); reject(e) })
+  })
+}
+
+function encodeParamValue(value, { isArray = false, isInt = false } = {}) {
+  if (isArray) {
+    return isInt
+      ? { type: PARAM_TYPE.INTEGER_ARRAY, integer_array_value: value }
+      : { type: PARAM_TYPE.DOUBLE_ARRAY,  double_array_value: value }
+  }
+  return isInt
+    ? { type: PARAM_TYPE.INTEGER, integer_value: value }
+    : { type: PARAM_TYPE.DOUBLE,  double_value: value }
+}
+
 // 既定はページを配信しているホスト (ロボットPC) の rosbridge に接続する。
 // 別ホストの rosbridge へ接続する場合は呼び出し側で url を指定する。
 export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
@@ -214,10 +261,74 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     )
   }, [])
 
+  // ── 設定パネル: パラメータ取得 (rcl_interfaces/GetParameters を対象ノードへ
+  // 直接呼び出す。読み取りのみのためモードゲート・config_manager 経由は不要) ──
+  const getTunableParams = useCallback((nodeName, paramNames) => {
+    const ROSLIB = window.ROSLIB
+    return withTimeout(new Promise((resolve, reject) => {
+      if (!rosRef.current || !ROSLIB) { reject(new Error('rosbridge 未接続')); return }
+      const svc = new ROSLIB.Service({
+        ros: rosRef.current,
+        name: `/${nodeName}/get_parameters`,
+        serviceType: 'rcl_interfaces/GetParameters'
+      })
+      svc.callService(
+        new ROSLIB.ServiceRequest({ names: paramNames }),
+        (res) => {
+          const out = {}
+          paramNames.forEach((name, i) => { out[name] = decodeParamValue(res.values[i]) })
+          resolve(out)
+        },
+        (err) => reject(err)
+      )
+    }), `${nodeName} のパラメータ取得`)
+  }, [])
+
+  // ── 設定パネル: パラメータのライブ反映 (config_manager 経由。
+  // IDLE/MANUAL モード以外では config_manager 側が拒否する) ──
+  const applyTunableParam = useCallback((nodeName, paramName, value, opts) => {
+    const ROSLIB = window.ROSLIB
+    return withTimeout(new Promise((resolve, reject) => {
+      if (!rosRef.current || !ROSLIB) { reject(new Error('rosbridge 未接続')); return }
+      const svc = new ROSLIB.Service({
+        ros: rosRef.current,
+        name: '/config_manager/set_tunable_params',
+        serviceType: 'th_system_msgs/SetTunableParams'
+      })
+      svc.callService(
+        new ROSLIB.ServiceRequest({
+          node_name: nodeName,
+          parameters: [{ name: paramName, value: encodeParamValue(value, opts) }]
+        }),
+        (res) => { if (!res.success) console.warn('パラメータ適用失敗:', res.message); resolve(res) },
+        (err) => reject(err)
+      )
+    }), `${nodeName}.${paramName} の適用`)
+  }, [])
+
+  // ── 設定パネル: YAML への保存 (config_manager 経由) ──────
+  const saveTunableParams = useCallback((nodeName) => {
+    const ROSLIB = window.ROSLIB
+    return withTimeout(new Promise((resolve, reject) => {
+      if (!rosRef.current || !ROSLIB) { reject(new Error('rosbridge 未接続')); return }
+      const svc = new ROSLIB.Service({
+        ros: rosRef.current,
+        name: '/config_manager/save_tunable_params',
+        serviceType: 'th_system_msgs/SaveTunableParams'
+      })
+      svc.callService(
+        new ROSLIB.ServiceRequest({ node_name: nodeName }),
+        (res) => { if (!res.success) console.warn('パラメータ保存失敗:', res.message); resolve(res) },
+        (err) => reject(err)
+      )
+    }), `${nodeName} の保存`)
+  }, [])
+
   return {
     connected, mode, modeName: MODE_NAMES[mode] ?? '---',
     fault, estop,
     personStatus, candidates, selectTarget, resetTracking,
     requestMode, publishTabletEstop, sendManualGoal, publishManualCmd, goToPanel,
+    getTunableParams, applyTunableParam, saveTunableParams,
   }
 }

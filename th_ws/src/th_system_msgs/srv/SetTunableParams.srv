@@ -1,0 +1,5 @@
+string node_name
+rcl_interfaces/Parameter[] parameters
+---
+bool success
+string message

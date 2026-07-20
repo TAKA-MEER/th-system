@@ -459,7 +459,72 @@ ros2 topic echo /person/status --once
 
 ---
 
+## WebUI 設定パネル（パラメータ調整）
+
+VISION.md §6 の完成形を実装したもの。タブレット WebUI（`web_ui/src/SettingsPanel.jsx`）から
+`follow_planner_mapless` の数値パラメータと `lidar_filter.blind_angle_ranges` を確認・変更できる。
+
+### 構成
+
+```
+[SettingsPanel.jsx]
+  │ getTunableParams()  ─── rcl_interfaces/GetParameters を対象ノードへ直接呼び出し（読み取り専用）
+  │                          /follow_planner_mapless/get_parameters, /lidar_filter/get_parameters
+  │
+  │ applyTunableParam() ─── th_system_msgs/SetTunableParams
+  │ saveTunableParams() ─── th_system_msgs/SaveTunableParams
+  └───────────────────────► /config_manager/{set,save}_tunable_params
+                                       │
+                              [config_manager ノード]  (th_config_manager パッケージ)
+                              - /robot/mode を購読。IDLE/MANUAL 以外は拒否
+                              - set: 対象ノードの標準 set_parameters へフォワード
+                              - save: 対象ノードの get_parameters で現在値取得
+                                → yaml_writer.update_ros_params_yaml() で YAML へ書き戻し
+```
+
+- rosbridge は `rosbridge_websocket` 単体起動で **rosapi は起動していない**ため、
+  `ROSLIB.Param`（rosapi 依存）ではなく `rcl_interfaces/srv/{Get,Set}Parameters` を
+  素の `ROSLIB.Service` で直接呼んでいる（`web_ui/src/hooks/useRosbridge.js` の
+  `getTunableParams`/`applyTunableParam`/`saveTunableParams`）。
+- **実行時反映と YAML 保存は別操作**。`applyTunableParam` は対象ノードへ即座に反映するが
+  再起動で失われる。`saveTunableParams` は対象ノードの現在値を取得して YAML に書き戻す
+  （設定パネルの「YAML に保存」ボタン）。
+- `follow_planner_mapless.py` と `lidar_filter.py` は起動時に一度だけパラメータを読み、
+  内部状態（`MaplessFollowParams` データクラス / `_blind_ranges`）にキャッシュしている。
+  そのため両ノードには `add_on_set_parameters_callback` を追加し、`set_parameters` が
+  呼ばれた際に内部状態を再構築するようにしてある。**新しいノードをチューニング対象に
+  追加する場合、同様のコールバックが無いとライブ反映が機能しない**点に注意。
+- YAML への書き戻しは `ruamel.yaml` の round-trip モードを使い、既存のコメント・
+  キー順序を保持する（`th_config_manager/th_config_manager/yaml_writer.py`）。
+  インデント設定 `yaml.indent(mapping=2, sequence=4, offset=2)` は
+  `planning_params.yaml` / `perception_params.yaml` の実際の書式に合わせて検証済み。
+- 変更は `IDLE` / `MANUAL` モード中のみ許可する。`SettingsPanel.jsx` は該当モード以外で
+  入力を disabled にするが、`config_manager` ノード側でも `/robot/mode` を見て同じ判定を
+  行う（UI の見た目だけに頼らないサーバー側の安全ガード）。
+
+### 新しいチューニング可能パラメータを追加する手順
+
+```txt
+1. th_config_manager/th_config_manager/tunable_targets.py の TUNABLE_TARGETS に追記
+   （対象ノード名・YAML パッケージ/パス・ros__parameters のブロックキー・パラメータ名）
+
+2. 対象ノードに add_on_set_parameters_callback が無ければ追加する
+   （follow_planner_mapless.py / lidar_filter.py の実装を参照。パラメータが
+    起動時に一度だけ内部状態へコピーされている場合は必須）
+
+3. web_ui/src/SettingsPanel.jsx にフォーム項目を追加
+   （MAPLESS_FIELDS 等のフィールド定義配列にラベル・単位・入力レンジを追記）
+```
+
+対象拡大（`follow_planner`・`person_predictor`・Nav2 パラメータ・`panels.yaml` 等）は
+VISION.md §7 の未確定事項を参照。
+
+---
+
 ## パラメータチューニングガイド
+
+上記の WebUI 設定パネルで調整できるパラメータ（follow_planner_mapless の数値パラメータ全数、
+lidar_filter.blind_angle_ranges）は、以下の CLI 手順の代わりにタブレットから直接変更できる。
 
 ### 追従ロジック — FOLLOWING（planning_params.yaml の `follow_planner`）
 

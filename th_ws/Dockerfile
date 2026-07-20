@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python パッケージ ────────────────────────────────────────────────
-RUN pip3 install numpy scipy transforms3d websockets
+RUN pip3 install numpy scipy transforms3d websockets ruamel.yaml
 
 # ── rosdep 初期化 ────────────────────────────────────────────────────
 RUN rosdep init || true && rosdep update
