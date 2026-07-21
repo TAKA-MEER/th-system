@@ -38,3 +38,5 @@ th_ws/dr_spaam_weights/*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+*.vscode
