@@ -42,8 +42,8 @@ follow_planner_mapless:
     trail_max_points: 2000           # 軌跡の最大保持点数
 
     # ── 試験員接近時の停止/再開（ヒステリシス） ────────────
-    stop_distance: 1.0               # m これ未満で停止（退避せずその場停止）
-    resume_distance: 1.3             # m これ以上で追従再開
+    stop_distance: 1.5               # m これ未満で停止（退避せずその場停止）
+    resume_distance: 1.8             # m これ以上で追従再開
 
     # ── 進路上障害物チェック（生 LiDAR スキャン） ──────────
     obstacle_check_distance_m: 0.45      # m この距離未満に障害物があれば停止
@@ -53,7 +53,7 @@ follow_planner_mapless:
     v_max: 0.5                       # m/s 人の歩行速度に追従できる上限
     k_ang: 2.0                       # 角度ゲイン
     stop_radius_m: 0.2               # m ゴール到達とみなす半径
-    w_max_rad_s: 1.0                 # rad/s 旋回速度の上限(未検証値。狭所で
+    w_max_rad_s: 0.5                 # rad/s 旋回速度の上限(未検証値。狭所で
                                       # 曲がりきれない場合はここを上げる前に
                                       # 実機の最大旋回性能を確認すること)
 
@@ -64,7 +64,7 @@ follow_planner_mapless:
     # (制動距離ベース。v_max を上げても追従対象への追突を防げる)。
     # 加えて、大きく曲がる必要がある時(cos(角度誤差))は並進を絞り、
     # 曲がりきれず壁に衝突するのを防ぐ。
-    max_linear_accel_mps2: 1.0       # m/s^2 加速側のレート制限 (急発進防止)
+    max_linear_accel_mps2: 0.5       # m/s^2 加速側のレート制限 (急発進防止)
     max_linear_decel_mps2: 2.0       # m/s^2 減速側のレート制限 兼 制動距離計算の減速度
                                       # (停止応答優先のため加速と別枠。実機の実制動性能を
                                       #  超える値にすると計算上の制動距離が実際より短くなり
