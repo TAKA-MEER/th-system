@@ -90,6 +90,7 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 | 地図作成・キャリブレーション・追従の使い方・トラブル対処 | [docs/operation.md](docs/operation.md) |
 | Gazebo シミュレーションで検証する | [docs/simulation.md](docs/simulation.md) |
 | テストを実行する・追加する | [docs/testing.md](docs/testing.md) |
+| 地図なし追従走行の実機/シム試験を実施する | [docs/mapless_follow_test_plan.md](docs/mapless_follow_test_plan.md) |
 | 内部設計・パラメータ調整・機能追加 | [docs/architecture.md](docs/architecture.md) |
 
 ---
