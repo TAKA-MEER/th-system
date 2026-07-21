@@ -89,19 +89,49 @@ ros2 run nav2_map_server map_saver_cli -f /root/th_ws/src/th_bringup/maps/th_map
 
 目標精度: 直進 2m で ±2cm、旋回 360° で ±5°。
 
+前提: bringup が実機構成(`use_stub:=false`)で起動済みで、`/odom` が配信されていること。
+また `linear_calib.py` / `rotation_calib.py` は `/robot/mode` が **IDLE または MANUAL** で
+なければ自動的に中断する(FOLLOWING 中などに誤って走行させる事故を防ぐガード)。
+必要なら先にモードを切り替える:
+
+```bash
+ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
+  "{requested_mode: 5, requester: 'calib'}"   # 5 = MANUAL
+```
+
+直進・旋回とも `/cmd_vel_manual` トピック(twist_mux 経由、priority 30)へ publish するため、
+estop/fault_lock の安全チェーンの対象になる(直接 `/cmd_vel` へは publish しない — `/cmd_vel` は
+twist_mux の出力であり、直接 publish してはいけない不変ルールに従う)。
+
+wheel_radius(車輪半径)と wheel_base(輪距)は補正の反映方法が異なるので注意:
+
+- **wheel_base**: `apply_calib.py` で ROS パラメータとして反映。**再起動不要で即座に**
+  cmd_vel 変換・オドメトリ計算に反映され、`th_bringup/config/calib.yaml` にも保存されるため
+  次回 bringup 起動時にも自動で読み込まれる。
+- **wheel_radius**: ROS 側にパラメータは存在せず、ESP32 ファームウェアのコンパイル時定数
+  (`esp32/src/config.h` の `WHEEL_RADIUS_M`)が実際の距離換算を行っている。
+  `linear_calib.py` は補正後の定数値を算出・表示するだけで、反映には
+  **config.h の書き換え + esptool での再書き込み**が必要(手順は setup.md / 実機メモ参照)。
+
 ```bash
 # 直進 (床に 2m マーキングを準備)
 ros2 run th_calibration linear_calib.py --ros-args -p distance:=2.0
+# → 補正後 WHEEL_RADIUS_M が表示される。config.h を書き換えて再書き込みし、
+#   再起動後に再計測して検算する。
 
 # 旋回
 ros2 run th_calibration rotation_calib.py --ros-args -p turns:=1
 
-# 反映 (th_bringup/config/calib.yaml に保存され、以後 bringup が自動で読む)
-ros2 run th_calibration apply_calib.py --ros-args \
-  -p wheel_radius:=<補正後> -p wheel_base:=<補正後>
+# 反映 (wheel_base のみ。th_bringup/config/calib.yaml に保存され、以後 bringup が自動で読む)
+ros2 run th_calibration apply_calib.py --ros-args -p wheel_base:=<補正後>
 ```
 
-wheel_radius と wheel_base は相互に影響するため**必ず直進→旋回の順**。3 回平均を推奨。
+wheel_radius(ファーム再書き込みが必要)と wheel_base(ROS 側で完結)は相互に影響するため
+**必ず直進→旋回の順**。3 回平均を推奨。
+
+> `rotation_calib.py` の既定 `speed:=0.3`(rad/s)は超信地旋回の摩擦に負けて
+> ほぼ回転しない場合がある(その場合オドメトリが目標角度に達せず終了しない)。
+> 回らない場合は `-p speed:=0.5` 等に上げてみる(teleop の超信地旋回 spin_speed=0.8 が参考値)。
 
 ---
 

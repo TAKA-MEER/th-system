@@ -18,6 +18,7 @@ import threading
 
 import rclpy
 from rclpy.node import Node
+from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool
@@ -36,7 +37,6 @@ class Esp32Bridge(Node):
     def __init__(self):
         super().__init__('esp32_bridge')
 
-        self.declare_parameter('wheel_radius', 0.0391)
         self.declare_parameter('wheel_base', 0.39)
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_link')
@@ -45,13 +45,16 @@ class Esp32Bridge(Node):
         self.declare_parameter('ws_host', '0.0.0.0')
         self.declare_parameter('ws_port', 8765)
 
-        self._wheel_radius = self.get_parameter('wheel_radius').value
         self._wheel_base = self.get_parameter('wheel_base').value
         self._odom_frame = self.get_parameter('odom_frame').value
         self._base_frame = self.get_parameter('base_frame').value
         self._publish_tf = self.get_parameter('publish_tf').value
         self._ws_host = self.get_parameter('ws_host').value
         self._ws_port = self.get_parameter('ws_port').value
+
+        # wheel_base はキャリブレーション後にランタイムで再設定されるため、
+        # 変更を即座に _cb_cmd_vel / _on_wheel_feedback へ反映する。
+        self.add_on_set_parameters_callback(self._on_set_parameters)
 
         # ── Publishers ─────────────────────────────────────
         self._pub_odom = self.create_publisher(Odometry, 'odom', 10)
@@ -86,8 +89,16 @@ class Esp32Bridge(Node):
         self._ws_thread.start()
 
         self.get_logger().info(
-            f"esp32_bridge 起動 wheel_radius={self._wheel_radius:.4f} "
-            f"wheel_base={self._wheel_base:.3f} ws={self._ws_host}:{self._ws_port}")
+            f"esp32_bridge 起動 wheel_base={self._wheel_base:.3f} "
+            f"ws={self._ws_host}:{self._ws_port}")
+
+    # ── パラメータ変更をランタイムで反映 (キャリブレーション用) ────────
+    def _on_set_parameters(self, params):
+        for p in params:
+            if p.name == 'wheel_base':
+                self._wheel_base = p.value
+                self.get_logger().info(f"wheel_base 更新: {self._wheel_base:.6f} m")
+        return SetParametersResult(successful=True)
 
     # ── WebSocket サーバー (別スレッドの asyncio イベントループ) ──────
     def _run_ws_server(self):
