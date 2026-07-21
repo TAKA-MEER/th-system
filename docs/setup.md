@@ -167,16 +167,50 @@ w32tm /stripchart /computer:time.windows.com /samples:3 /dataonly
 Set-Date -Date (Get-Date).AddSeconds(0.7)
 ```
 
-恒久対策(実運用時に推奨): AP 配下ではラズパイがインターネットに出られず NTP 同期できないため、
-**PC (WSL) 側に chrony サーバーを立て、ラズパイを PC に同期させる**:
+恒久対策(実運用時に推奨・設定済み): AP 配下ではラズパイがインターネットに出られず NTP 同期できないため、
+**PC の Windows Time サービス (W32Time) を NTP サーバー化し、ラズパイの systemd-timesyncd をそこに向ける**。
+
+当初は「PC (WSL) 側に chrony サーバーを立てる」案を検討したが、WSL2 の `networkingMode=mirrored`
+(1-1 節参照)では **Windows 本体の W32Time が UDP 123 を既に占有しており、WSL 側の chronyd が
+`Could not open NTP socket on 0.0.0.0:123` でバインドできず断念した**(mirrored モードは
+ポート空間を Windows ホストと共有するため)。ラズパイ側もこの AP 配下ではインターネットに出られず
+`apt install chrony` ができない(既定で入っている `systemd-timesyncd` を使う)。
+
+```powershell
+# PC: 管理者 PowerShell で W32Time を NTP サーバーとして有効化(一度だけ)
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpServer' -Name Enabled -Value 1
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Config' -Name AnnounceFlags -Value 5
+Restart-Service w32time
+w32tm /resync /force   # 自身も time.windows.com 等の外部 NTP に同期させておく
+w32tm /query /status   # Source が time.windows.com になっていること
+```
+
+ファイアウォールは 3 節の `TH-System Pi LiDAR (inbound UDP)` ルール(192.168.4.2 からの UDP を
+ポート指定なしで許可)がそのまま UDP 123 もカバーするため追加設定は不要。
 
 ```bash
-# WSL (Ubuntu) 側: sudo apt install chrony して /etc/chrony/chrony.conf に追記
-#   allow 192.168.4.0/24
-#   local stratum 10
-# ラズパイ側: /etc/chrony/chrony.conf の pool をコメントアウトし
-#   server 192.168.4.50 iburst prefer
+# ラズパイ側: /etc/systemd/timesyncd.conf
+[Time]
+NTP=192.168.4.50
+FallbackNTP=
+RootDistanceMaxSec=30
 ```
+
+```bash
+sudo systemctl restart systemd-timesyncd
+sudo systemctl enable systemd-timesyncd
+timedatectl status   # "System clock synchronized: yes" になること
+```
+
+`RootDistanceMaxSec` を既定の 5 から 30 に緩めているのは、W32Time が `RootDispersion` を
+実測より悲観的に(常に数秒オーダーで)申告する仕様のため、既定値のままだと
+`Server has too large root distance. Disconnecting.` で systemd-timesyncd に拒否されるから。
+実際の同期精度(Pi/PC 間の実測差)は 1 秒未満(実測 0.3 秒未満、SSH 往復遅延込み)で、
+1 節冒頭の 0.9 秒しきい値に対して十分な余裕がある。
+
+既知の注意点: AP 配下の Wi-Fi リンクは瞬断することがあり(2-3 節の autoconfig 問題等)、
+timesyncd の単発リトライがその瞬間に当たると `Timed out waiting for reply` になるが、
+指数バックオフで自動的にリトライし続けるため実運用上は問題ない。
 
 ---
 

@@ -9,5 +9,8 @@
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>ament_index_python</depend>
+  <depend>th_system_msgs</depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

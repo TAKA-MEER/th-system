@@ -206,13 +206,19 @@ ESP32 ウォッチドッグ（300ms）の方が safety_monitor（500ms）より�
 目標精度: 直進 2m で誤差 ±2cm 以内、旋回 360° で誤差 ±5° 以内
 
 1. linear_calib.py を 3 回実行して平均を取る
+   → 補正後の WHEEL_RADIUS_M(ESP32 ファームウェアのコンパイル時定数)が算出される。
+     config.h を書き換えて esptool で再書き込みし、再起動後に再計測して検算する
+     (wheel_radius は ROS 側パラメータではなくファーム定数が真の情報源のため)。
 2. rotation_calib.py を 3 回実行して平均を取る（CCW/CW 両方向で行うと精度が上がる）
-3. apply_calib.py で反映（th_bringup/config/calib.yaml に保存）
-4. 改めて linear_calib.py で確認 → 精度が目標に達するまで繰り返す
+3. apply_calib.py で wheel_base を反映
+   （esp32_bridge のランタイムパラメータへ即時反映 + th_bringup/config/calib.yaml に保存）
+4. 改めて linear_calib.py / rotation_calib.py で確認 → 精度が目標に達するまで繰り返す
 
 注意:
-  wheel_radius と wheel_base は互いに影響するため、
-  必ず直進 → 旋回の順でキャリブレーションすること。
+  wheel_radius(ファーム再書き込みが必要)と wheel_base(ROS 側で完結)は
+  互いに影響するため、必ず直進 → 旋回の順でキャリブレーションすること。
+  linear_calib.py / rotation_calib.py は /cmd_vel_manual(twist_mux 経由)へ publish し、
+  /robot/mode が IDLE/MANUAL でない場合は安全のため自動的に中断する。
 ```
 
 ### IMU 追加時の切替手順（TBD）
