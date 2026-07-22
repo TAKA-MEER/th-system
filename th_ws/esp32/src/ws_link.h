@@ -12,6 +12,9 @@
 //   WHEEL_CMD      (0x01) bridge→ESP32  float32 left, float32 right (9 bytes)
 //   WHEEL_FEEDBACK (0x02) ESP32→bridge  float32 left, float32 right (9 bytes)
 //   ESTOP_HW       (0x03) ESP32→bridge  uint8 active                (2 bytes)
+//   IMU_DATA       (0x04) ESP32→bridge  float32 qw,qx,qy,qz,
+//                                       wx,wy,wz, ax,ay,az,
+//                                       uint8 calib_status          (42 bytes)
 //
 // esp32_bridge (PC側) が WebSocket サーバー、ESP32 がクライアント。
 // wifi_credentials.h の WIFI_SSID/WIFI_PASSWORD/WS_SERVER_HOST/WS_SERVER_PORT
@@ -33,5 +36,9 @@ void onDisconnect(void (*callback)());
 
 void sendWheelFeedback(float left, float right);
 void sendEstopHw(bool active);
+void sendImuData(float qw, float qx, float qy, float qz,
+                  float wx, float wy, float wz,
+                  float ax, float ay, float az,
+                  uint8_t calibStatus);
 
 } // namespace WsLink

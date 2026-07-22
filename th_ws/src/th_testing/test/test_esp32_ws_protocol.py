@@ -19,11 +19,12 @@ sys.path.insert(0, os.path.join(
     '..', '..', 'th_esp32_bridge', 'th_esp32_bridge'))
 
 from ws_protocol import (
-    WHEEL_CMD, WHEEL_FEEDBACK, ESTOP_HW,
+    WHEEL_CMD, WHEEL_FEEDBACK, ESTOP_HW, IMU_DATA,
     ProtocolError,
     pack_wheel_cmd, unpack_wheel_cmd,
     pack_wheel_feedback, unpack_wheel_feedback,
     pack_estop_hw, unpack_estop_hw,
+    pack_imu_data, unpack_imu_data,
     peek_type,
 )
 
@@ -87,6 +88,34 @@ class TestEstopHwRoundTrip:
         assert frame[0] == ESTOP_HW
 
 
+class TestImuDataRoundTrip:
+    @pytest.mark.parametrize("quat,gyro,accel,calib", [
+        ((1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 0x00),
+        ((0.7071, 0.0, 0.0, 0.7071), (0.1, -0.2, 0.3), (0.5, -0.5, 9.8), 0xFF),
+        ((0.0, 1.0, 0.0, 0.0), (-1.5, 1.5, -1.5), (-9.8, 0.0, 0.0), 0b11100100),
+    ])
+    def test_round_trip(self, quat, gyro, accel, calib):
+        qw, qx, qy, qz = quat
+        wx, wy, wz = gyro
+        ax, ay, az = accel
+        frame = pack_imu_data(qw, qx, qy, qz, wx, wy, wz, ax, ay, az, calib)
+        out = unpack_imu_data(frame)
+        assert out[0:4] == pytest.approx(quat, abs=1e-4)
+        assert out[4:7] == pytest.approx(gyro, abs=1e-4)
+        assert out[7:10] == pytest.approx(accel, abs=1e-4)
+        assert out[10] == calib
+
+    def test_frame_size_and_type_tag(self):
+        frame = pack_imu_data(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0)
+        assert len(frame) == 42
+        assert frame[0] == IMU_DATA
+
+    def test_wrong_type_tag_rejected_by_imu_data_unpack(self):
+        frame = pack_wheel_feedback(1.0, 2.0)
+        with pytest.raises(ProtocolError):
+            unpack_imu_data(frame)
+
+
 # ────────────────────────────────────────────────────────────
 # 不正入力
 # ────────────────────────────────────────────────────────────
@@ -96,12 +125,16 @@ class TestMalformedInput:
             unpack_wheel_cmd(b"")
         with pytest.raises(ProtocolError):
             unpack_estop_hw(b"")
+        with pytest.raises(ProtocolError):
+            unpack_imu_data(b"")
 
     def test_wrong_length_raises(self):
         with pytest.raises(ProtocolError):
             unpack_wheel_cmd(bytes([WHEEL_CMD, 0x00, 0x00]))  # 短すぎる
         with pytest.raises(ProtocolError):
             unpack_wheel_cmd(pack_wheel_cmd(1.0, 2.0) + b"\x00")  # 長すぎる
+        with pytest.raises(ProtocolError):
+            unpack_imu_data(pack_imu_data(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0) + b"\x00")
 
     def test_unknown_type_tag_raises(self):
         garbage = bytes([0xFF]) + pack_wheel_cmd(1.0, 2.0)[1:]
@@ -116,3 +149,4 @@ class TestMalformedInput:
         assert peek_type(pack_wheel_cmd(0.0, 0.0)) == WHEEL_CMD
         assert peek_type(pack_wheel_feedback(0.0, 0.0)) == WHEEL_FEEDBACK
         assert peek_type(pack_estop_hw(True)) == ESTOP_HW
+        assert peek_type(pack_imu_data(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0)) == IMU_DATA

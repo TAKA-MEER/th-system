@@ -90,6 +90,7 @@
 // ベンチ試験以外での使用禁止。
 #define ESTOP_BENCH_TEST_BYPASS
 
-// IMU (未実装・将来予約)
-// #define IMU_SDA        21
-// #define IMU_SCL        22
+// ── IMU (DSR1603 / BNO055, I2C) ────────────────────────────────
+#define IMU_SDA           21
+#define IMU_SCL           22
+#define IMU_I2C_ADDR      0x28

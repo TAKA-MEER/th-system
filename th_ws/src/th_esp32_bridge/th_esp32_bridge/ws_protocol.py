@@ -11,6 +11,7 @@ WebSocket 自体がメッセージ境界を保証するため長さプレフィ�
 | WHEEL_CMD      (0x01) | bridge → ESP32   | float32 left_mps, float32 right_mps | 9 bytes    |
 | WHEEL_FEEDBACK (0x02) | ESP32 → bridge   | float32 left_mps, float32 right_mps | 9 bytes    |
 | ESTOP_HW       (0x03) | ESP32 → bridge   | uint8 estop_active (0/1)          | 2 bytes    |
+| IMU_DATA       (0x04) | ESP32 → bridge   | float32 qw,qx,qy,qz, wx,wy,wz, ax,ay,az, uint8 calib_status | 42 bytes |
 
 ESP32 側 (th_ws/esp32/src/ws_link.h) のバイト配置と必ず一致させること。
 """
@@ -19,9 +20,11 @@ import struct
 WHEEL_CMD = 0x01
 WHEEL_FEEDBACK = 0x02
 ESTOP_HW = 0x03
+IMU_DATA = 0x04
 
 _WHEEL_STRUCT = struct.Struct('<Bff')   # type tag + left + right
 _ESTOP_STRUCT = struct.Struct('<BB')    # type tag + bool
+_IMU_STRUCT = struct.Struct('<BffffffffffB')  # type tag + 10 floats + calib_status
 
 
 class ProtocolError(ValueError):
@@ -56,6 +59,25 @@ def unpack_estop_hw(data: bytes) -> bool:
     if tag != ESTOP_HW:
         raise ProtocolError(f"ESTOP_HW: type tag 不一致 (expected 0x{ESTOP_HW:02x}, got 0x{tag:02x})")
     return bool(value)
+
+
+def pack_imu_data(qw: float, qx: float, qy: float, qz: float,
+                   wx: float, wy: float, wz: float,
+                   ax: float, ay: float, az: float,
+                   calib_status: int) -> bytes:
+    return _IMU_STRUCT.pack(IMU_DATA, qw, qx, qy, qz, wx, wy, wz, ax, ay, az, calib_status)
+
+
+def unpack_imu_data(data: bytes) -> tuple[float, float, float, float,
+                                           float, float, float,
+                                           float, float, float, int]:
+    if len(data) != _IMU_STRUCT.size:
+        raise ProtocolError(
+            f"IMU_DATA: 長さ不正 (expected {_IMU_STRUCT.size}, got {len(data)})")
+    tag, qw, qx, qy, qz, wx, wy, wz, ax, ay, az, calib_status = _IMU_STRUCT.unpack(data)
+    if tag != IMU_DATA:
+        raise ProtocolError(f"IMU_DATA: type tag 不一致 (expected 0x{IMU_DATA:02x}, got 0x{tag:02x})")
+    return qw, qx, qy, qz, wx, wy, wz, ax, ay, az, calib_status
 
 
 def _unpack_wheel(data: bytes, expected_tag: int) -> tuple[float, float]:

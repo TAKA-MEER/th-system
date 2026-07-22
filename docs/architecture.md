@@ -221,24 +221,52 @@ ESP32 ウォッチドッグ（300ms）の方が safety_monitor（500ms）より�
   /robot/mode が IDLE/MANUAL でない場合は安全のため自動的に中断する。
 ```
 
-### IMU 追加時の切替手順（TBD）
+### IMU (DSR1603 / BNO055) 追加
 
-IMU（ESP32 の I2C に接続）が調達できた場合の切替手順です。
+超信地旋回時のクローラースリップによる yaw ドリフトを抑えるため、ダイセン電子工業製 9軸デジタルコンパス **DSR1603**（センサIC: Bosch **BNO055**、3軸加速度+3軸ジャイロ+3軸地磁気のオンチップセンサフュージョン）を ESP32 に追加する。
+
+**ハードウェア**
+
+| 項目 | 値 |
+| --- | --- |
+| センサ | BNO055（I2C, 400kHz, address = 0x28） |
+| 接続先 | ESP32 GPIO21 (SDA) / GPIO22 (SCL)（`config.h` の `IMU_SDA`/`IMU_SCL`） |
+| 電源 | **3.3V** で駆動する（DSR1603 は 3.3〜5.0V 対応だが、外部 I2C バスのプルアップがモジュール供給電圧にプルアップされる回路のため、5V 駆動だと ESP32/ラズパイの非5V-トレラントな GPIO を破損しうる。必ず 3.3V 系統から給電する） |
+| コネクタ | XH-4pin（VDD/SCL/SDA/GND）。付属ケーブルから ESP32 の該当 GPIO + 3.3V + GND に配線 |
+
+**プロトコル**
+
+ESP32 ⇔ esp32_bridge は WebSocket バイナリフレーム通信（`th_ws/esp32/src/ws_link.h` ⇔ `th_esp32_bridge/th_esp32_bridge/ws_protocol.py`）。`IMU_DATA (0x04)` フレームを ESP32 → bridge 方向に追加し、クォータニオン(qw,qx,qy,qz)・角速度(wx,wy,wz)・線形加速度(ax,ay,az、重力除去済み)・キャリブレーション状態(sys/gyro/accel/magを2bitずつパックした1byte)を毎制御周期(100ms, 10Hz)送信する。BNO055 自体は最大100Hzサンプリングだが、EKF・オドメトリ更新も10Hzのため既存の制御ループに相乗りさせており、独立タイマーは追加していない。
+
+bridge 側は `/esp32/imu_data`（`sensor_msgs/Imu`, frame_id=`imu_link`）と `/esp32/imu_calib_status`（`std_msgs/UInt8`）を発行する。
+
+**キャリブレーション**
+
+BNO055 の地磁気センサはロボットごとに8の字運動でのキャリブレーションが必要（DSR1603 マニュアル記載: 上下左右に8の字を描くように2回転）。`ros2 run th_calibration imu_calib_check.py` で `/esp32/imu_calib_status` を監視し、sys/gyro/accel/mag が全て 3(Fully calibrated) になるまで操作案内を表示する。
+
+**有効化手順**
 
 ```bash
-# 1. ESP32 ファームウェアを IMU 有効でビルド
-#    config.h の IMU_SDA / IMU_SCL のコメントアウトを解除してビルド
+# 1. ESP32 ファームウェアを IMU 対応でビルド・書き込み（config.h の IMU_SDA/IMU_SCL は既定で有効）
+#    DSR1603 未接続の個体でも Imu::init() が失敗を検出し、IMU_DATA 送信をスキップして起動する
 
 # 2. ESP32 が /esp32/imu_data を発行することを確認
 ros2 topic echo /esp32/imu_data
 
-# 3. EKF を IMU 入力有効に切替えて起動
+# 3. 8の字キャリブレーションを実施
+ros2 run th_calibration imu_calib_check.py
+
+# 4. EKF を IMU 入力有効に切替えて起動
+#    imu_enabled:=true で ekf_params.yaml（imu0込み）、false（既定）で
+#    ekf_params_no_imu.yaml（エンコーダのみ）を選択する
 ros2 launch th_bringup bringup.launch.py imu_enabled:=true
 
-# 4. EKF のキャリブレーション
+# 5. EKF のチューニング
 #    robot_localization のドキュメントを参照し
-#    ekf_params.yaml の process_noise_covariance を調整
+#    ekf_params.yaml の process_noise_covariance を実機データで調整
 ```
+
+`imu_enabled` は DSR1603 未装着の機体を壊さないようデフォルト `false`（エンコーダのみ）。装着・キャリブレーション済みの機体でのみ `true` を指定すること。
 
 ---
 

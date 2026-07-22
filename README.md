@@ -54,6 +54,8 @@ cd /root/th_ws
 colcon build --symlink-install
 source install/setup.bash
 ros2 launch th_bringup bringup.launch.py lidar_source:=network use_stub:=false
+# IMUあり
+ros2 launch th_bringup bringup.launch.py lidar_source:=network use_stub:=false imu_enabled:=true
 
 # 駆動系だけのキーボード操作テスト (LiDAR・安全監視なしの最小構成)
 ros2 launch th_bringup esp32_keyboard_test.launch.py
