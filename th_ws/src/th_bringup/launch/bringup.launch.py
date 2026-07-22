@@ -51,7 +51,11 @@ def generate_launch_description():
 
     # ── 設定ファイルパス ──────────────────────────────────
     nav2_yaml   = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
-    ekf_yaml    = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
+    # imu_enabled:=true → エンコーダ+IMU、false(既定) → エンコーダのみ
+    ekf_yaml_imu    = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
+    ekf_yaml_no_imu = os.path.join(BRINGUP_DIR, 'config', 'ekf_params_no_imu.yaml')
+    ekf_yaml    = PythonExpression(
+        ["'", ekf_yaml_imu, "' if '", imu_enabled, "' == 'true' else '", ekf_yaml_no_imu, "'"])
     slam_yaml   = os.path.join(BRINGUP_DIR, 'config', 'slam_params.yaml')
     twist_yaml  = os.path.join(get_package_share_directory('th_safety'),
                                'config', 'twist_mux.yaml')
@@ -146,6 +150,16 @@ def generate_launch_description():
     ))
 
     # ── 5. robot_localization (EKF) ──────────────────────
+    nodes.append(LogInfo(
+        condition=IfCondition(imu_enabled),
+        msg='imu_enabled=true: ekf_params.yaml (エンコーダ+IMU) を使用します。'
+            'DSR1603のキャリブレーション未実施の場合は ros2 run th_calibration '
+            'imu_calib_check.py で確認してください。',
+    ))
+    nodes.append(LogInfo(
+        condition=UnlessCondition(imu_enabled),
+        msg='imu_enabled=false (既定): ekf_params_no_imu.yaml (エンコーダのみ) を使用します。',
+    ))
     nodes.append(Node(
         package='robot_localization',
         executable='ekf_node',

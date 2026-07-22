@@ -6,5 +6,6 @@ install(PROGRAMS
   scripts/linear_calib.py
   scripts/rotation_calib.py
   scripts/apply_calib.py
+  scripts/imu_calib_check.py
   DESTINATION lib/${PROJECT_NAME})
 ament_package()

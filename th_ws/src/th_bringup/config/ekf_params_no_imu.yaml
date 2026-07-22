@@ -1,8 +1,7 @@
 # ============================================================
-# robot_localization EKF 設定 (IMU 有効版)
-# imu_enabled:=true のとき bringup.launch.py がこちらを読み込む
-# (エンコーダ + IMU 入力)。false (既定) の場合は
-# ekf_params_no_imu.yaml (エンコーダのみ) が使われる。
+# robot_localization EKF 設定 (IMU 無効版)
+# imu_enabled:=false (既定) のとき bringup.launch.py がこちらを読み込む。
+# エンコーダオドメトリのみを入力する。IMU 入力版は ekf_params.yaml を参照。
 # ============================================================
 
 ekf_filter_node:
@@ -34,18 +33,6 @@ ekf_filter_node:
     odom0_nodelay: false
     odom0_differential: false
     odom0_relative: false
-
-    # ── IMU 入力 (DSR1603/BNO055, /esp32/imu_data) ────────────
-    imu0: /esp32/imu_data
-    # [roll, pitch, yaw, vroll, vpitch, vyaw, ax, ay, az]
-    imu0_config: [false, false, true,
-                  false, false, true,
-                  false, false, false]
-    imu0_differential: false
-    imu0_relative: false
-    imu0_queue_size: 10
-    imu0_nodelay: false
-    imu0_remove_gravitational_acceleration: true
 
     # ── プロセスノイズ共分散 (初期値・実機チューニング必須) ───
     process_noise_covariance: [0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,

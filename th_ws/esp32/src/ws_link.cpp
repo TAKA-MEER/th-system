@@ -10,6 +10,7 @@ namespace {
 const uint8_t TYPE_WHEEL_CMD      = 0x01;
 const uint8_t TYPE_WHEEL_FEEDBACK = 0x02;
 const uint8_t TYPE_ESTOP_HW       = 0x03;
+const uint8_t TYPE_IMU_DATA       = 0x04;
 
 WebSocketsClient client;
 LinkState state = LinkState::CONNECTING;
@@ -185,6 +186,21 @@ void sendWheelFeedback(float left, float right) {
 void sendEstopHw(bool active) {
     if (!isConnected()) return;
     uint8_t buf[2] = { TYPE_ESTOP_HW, static_cast<uint8_t>(active ? 1 : 0) };
+    handleSendResult(client.sendBIN(buf, sizeof(buf)));
+}
+
+void sendImuData(float qw, float qx, float qy, float qz,
+                  float wx, float wy, float wz,
+                  float ax, float ay, float az,
+                  uint8_t calibStatus) {
+    if (!isConnected()) return;
+    uint8_t buf[42];
+    buf[0] = TYPE_IMU_DATA;
+    packFloat(buf, 1,  qw); packFloat(buf, 5,  qx);
+    packFloat(buf, 9,  qy); packFloat(buf, 13, qz);
+    packFloat(buf, 17, wx); packFloat(buf, 21, wy); packFloat(buf, 25, wz);
+    packFloat(buf, 29, ax); packFloat(buf, 33, ay); packFloat(buf, 37, az);
+    buf[41] = calibStatus;
     handleSendResult(client.sendBIN(buf, sizeof(buf)));
 }
 

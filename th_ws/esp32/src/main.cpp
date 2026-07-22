@@ -6,6 +6,7 @@
 
 #include "config.h"
 #include "encoder.h"
+#include "imu.h"
 #include "motor.h"
 #include "pid.h"
 #include "ws_link.h"
@@ -13,6 +14,10 @@
 // ── タイマー ─────────────────────────────────────────────────
 static unsigned long last_cmd_ms = 0;   // ウォッチドッグ用
 static unsigned long last_ctrl_ms = 0;
+
+// ── IMU (DSR1603/BNO055) ────────────────────────────────────
+// 未実装の個体では init() が false を返し、以降 IMU_DATA 送信をスキップする。
+static bool imuPresent = false;
 
 // ── PID ──────────────────────────────────────────────────────
 static PID pidRight(PID_KP_RIGHT, PID_KI_RIGHT, PID_KD_RIGHT,
@@ -119,6 +124,14 @@ static void cbCtrlTimer() {
     // 止めることを安全機構にしてはいけない。
     WsLink::sendWheelFeedback(velL, velR);
 
+    // ── IMU 送信 (未実装個体はスキップ) ───────────────────────────
+    if (imuPresent) {
+        float qw, qx, qy, qz, wx, wy, wz, ax, ay, az;
+        uint8_t calibStatus;
+        Imu::read(qw, qx, qy, qz, wx, wy, wz, ax, ay, az, calibStatus);
+        WsLink::sendImuData(qw, qx, qy, qz, wx, wy, wz, ax, ay, az, calibStatus);
+    }
+
     // デバッグ用一時ログ: 原因切り分け後に削除すること
     static int dbgCounter = 0;
     if (++dbgCounter >= 5) {
@@ -148,6 +161,10 @@ void setup() {
     Encoder::init();
     Motor::init();
     Motor::stopAll();
+
+    imuPresent = Imu::init();
+    Serial.printf("[IMU] DSR1603(BNO055) %s\n",
+                  imuPresent ? "検出・初期化OK" : "未検出(IMU_DATA送信をスキップ)");
 
     WsLink::onWheelCmd(onWheelCmd);
     WsLink::onDisconnect(onWsDisconnect);

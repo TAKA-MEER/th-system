@@ -21,15 +21,16 @@ from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Bool
+from sensor_msgs.msg import Imu
+from std_msgs.msg import Bool, UInt8
 from th_system_msgs.msg import WheelFeedback
 import tf2_ros
 
 import websockets
 
 from th_esp32_bridge.ws_protocol import (
-    ProtocolError, WHEEL_FEEDBACK, ESTOP_HW,
-    pack_wheel_cmd, unpack_wheel_feedback, unpack_estop_hw, peek_type,
+    ProtocolError, WHEEL_FEEDBACK, ESTOP_HW, IMU_DATA,
+    pack_wheel_cmd, unpack_wheel_feedback, unpack_estop_hw, unpack_imu_data, peek_type,
 )
 
 
@@ -61,6 +62,8 @@ class Esp32Bridge(Node):
         self._pub_wheel_feedback = self.create_publisher(
             WheelFeedback, '/esp32/wheel_feedback', 10)
         self._pub_estop_hw = self.create_publisher(Bool, '/safety/estop_hw', 10)
+        self._pub_imu = self.create_publisher(Imu, '/esp32/imu_data', 10)
+        self._pub_imu_calib = self.create_publisher(UInt8, '/esp32/imu_calib_status', 10)
         self._tf_broadcaster = tf2_ros.TransformBroadcaster(self)
 
         # ── Subscribers ────────────────────────────────────
@@ -176,6 +179,8 @@ class Esp32Bridge(Node):
             elif msg_type == ESTOP_HW:
                 estop = unpack_estop_hw(data)
                 self._pub_estop_hw.publish(Bool(data=estop))
+            elif msg_type == IMU_DATA:
+                self._on_imu_data(*unpack_imu_data(data))
             else:
                 self.get_logger().warn(f"未知の type tag: 0x{msg_type:02x}")
         except ProtocolError as e:
@@ -245,6 +250,37 @@ class Esp32Bridge(Node):
         fb.left_speed = v_left
         fb.right_speed = v_right
         self._pub_wheel_feedback.publish(fb)
+
+    # ── IMU_DATA → /esp32/imu_data + /esp32/imu_calib_status ──────
+    def _on_imu_data(self, qw, qx, qy, qz, wx, wy, wz, ax, ay, az, calib_status):
+        imu = Imu()
+        imu.header.stamp = self.get_clock().now().to_msg()
+        imu.header.frame_id = 'imu_link'
+        imu.orientation.w = qw
+        imu.orientation.x = qx
+        imu.orientation.y = qy
+        imu.orientation.z = qz
+        imu.angular_velocity.x = wx
+        imu.angular_velocity.y = wy
+        imu.angular_velocity.z = wz
+        imu.linear_acceleration.x = ax
+        imu.linear_acceleration.y = ay
+        imu.linear_acceleration.z = az
+
+        # 共分散 (暫定値 — 実機キャリブ後に調整。ekf_params.yaml の imu0_config は
+        # yaw/vyaw のみ使用するため roll/pitch/加速度側は EKF に影響しない)
+        imu.orientation_covariance[0] = 0.01
+        imu.orientation_covariance[4] = 0.01
+        imu.orientation_covariance[8] = 0.01
+        imu.angular_velocity_covariance[0] = 0.0025
+        imu.angular_velocity_covariance[4] = 0.0025
+        imu.angular_velocity_covariance[8] = 0.0025
+        imu.linear_acceleration_covariance[0] = 0.04
+        imu.linear_acceleration_covariance[4] = 0.04
+        imu.linear_acceleration_covariance[8] = 0.04
+
+        self._pub_imu.publish(imu)
+        self._pub_imu_calib.publish(UInt8(data=calib_status))
 
     # ── フィードバック死活監視 ────────────────────────────────────
     def _cb_watchdog(self):
