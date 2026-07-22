@@ -40,6 +40,8 @@ RUN apt-get update && apt-get install -y \
     vim \
     wget \
     usbutils \
+    iputils-ping \
+    iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python パッケージ ────────────────────────────────────────────────

@@ -27,6 +27,7 @@ services:
     volumes:
       - ./src:/root/th_ws/src
       - ./esp32:/root/th_ws/esp32
+      - ./scripts:/root/th_ws/scripts
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # Gazebo モデルキャッシュ（再起動時の高速化）
       - gazebo_models:/root/.gazebo
