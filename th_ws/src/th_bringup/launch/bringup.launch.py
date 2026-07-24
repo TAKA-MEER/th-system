@@ -48,6 +48,7 @@ def generate_launch_description():
     map_yaml     = LaunchConfiguration('map_yaml')
     lidar_source = LaunchConfiguration('lidar_source')
     lidar_is_local = PythonExpression(["'", lidar_source, "' == 'local'"])
+    map_is_empty = PythonExpression(["'", map_yaml, "' == ''"])
 
     # ── 設定ファイルパス ──────────────────────────────────
     nav2_yaml   = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
@@ -268,6 +269,15 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 12b. summon_navigator ──────────────────────────────
+    nodes.append(Node(
+        package='th_planning',
+        executable='summon_navigator.py',
+        name='summon_navigator',
+        parameters=[os.path.join(BRINGUP_DIR, 'config', 'planning_params.yaml')],
+        output='screen',
+    ))
+
     # ── 13. manual_command_handler ────────────────────────
     nodes.append(Node(
         package='th_planning',
@@ -284,6 +294,14 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 13c. slam_control (WebUI: 地図作成 開始/停止の仲介) ────
+    nodes.append(Node(
+        package='th_config_manager',
+        executable='slam_control.py',
+        name='slam_control',
+        output='screen',
+    ))
+
     # ── 14. rosbridge (タブレット WebSocket) ──────────────
     nodes.append(Node(
         package='rosbridge_server',
@@ -297,12 +315,15 @@ def generate_launch_description():
         output='screen',
     ))
 
-    # ── 15. Nav2 ──────────────────────────────────────────
+    # ── 15. Nav2 (ナビゲーション部分のみ。map_server/AMCL は含まない) ──
+    # localization (SLAM または AMCL) は下記 16/17 で map_yaml の有無により分岐する。
+    # 両方を無条件起動すると map→odom TF を取り合って SLAM 走行が機能しなくなるため
+    # (2026-07-23 修正: 従来は nav2_bringup/bringup_launch.py = フル AMCL+map_server
+    #  スタックと SLAM Toolbox を同時に起動しており、これが原因だった)。
     nav2_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(NAV2_DIR, 'launch', 'bringup_launch.py')),
+            os.path.join(NAV2_DIR, 'launch', 'navigation_launch.py')),
         launch_arguments={
-            'map':             map_yaml,
             'use_sim_time':    'false',
             'params_file':     nav2_yaml,
             'autostart':       'true',
@@ -310,7 +331,9 @@ def generate_launch_description():
     )
     nodes.append(nav2_launch)
 
-    # ── 16. SLAM Toolbox ─────────────────────────────────
+    # ── 16. SLAM Toolbox (map_yaml が空 = デフォルト。実機は毎回このモード) ──
+    # 地図作成自体の開始/停止は WebUI 経由の slam_control ノードが
+    # pause_new_measurements をトグルして制御する（VISION.md §7 参照）。
     slam_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(SLAM_DIR, 'launch', 'online_async_launch.py')),
@@ -318,7 +341,22 @@ def generate_launch_description():
             'slam_params_file': slam_yaml,
             'use_sim_time':     'false',
         }.items(),
+        condition=IfCondition(map_is_empty),
     )
     nodes.append(slam_launch)
+
+    # ── 17. AMCL + map_server (map_yaml 指定時のみ。UI には出さない休眠経路) ──
+    localization_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(NAV2_DIR, 'launch', 'localization_launch.py')),
+        launch_arguments={
+            'map':          map_yaml,
+            'use_sim_time': 'false',
+            'params_file':  nav2_yaml,
+            'autostart':    'true',
+        }.items(),
+        condition=UnlessCondition(map_is_empty),
+    )
+    nodes.append(localization_launch)
 
     return LaunchDescription(args + nodes)

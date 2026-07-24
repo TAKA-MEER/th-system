@@ -7,6 +7,8 @@
 //               ↕
 //          FOLLOWING_MAPLESS (MAP不要の軌跡追従。IDLE/MANUAL とのみ相互遷移)
 //               ↕
+//          SUMMONING (呼び寄せ。IDLE からのみ遷移し、到着/失敗/明示操作で IDLE に戻る)
+//               ↕
 //             ESTOP (どの状態からでも割り込み)
 // ============================================================
 #include <rclcpp/rclcpp.hpp>
@@ -34,6 +36,7 @@ static std::string modeName(uint8_t m) {
         {RobotMode::MANUAL,          "MANUAL"},
         {RobotMode::ESTOP,           "ESTOP"},
         {RobotMode::FOLLOWING_MAPLESS, "FOLLOWING_MAPLESS"},
+        {RobotMode::SUMMONING,        "SUMMONING"},
     };
     auto it = names.find(m);
     return it != names.end() ? it->second : "UNKNOWN";
@@ -68,7 +71,8 @@ public:
                         cm == RobotMode::MOVING_TO_PANEL    ||
                         cm == RobotMode::MANUAL             ||
                         cm == RobotMode::AT_PANEL           ||
-                        cm == RobotMode::FOLLOWING_MAPLESS) {
+                        cm == RobotMode::FOLLOWING_MAPLESS  ||
+                        cm == RobotMode::SUMMONING) {
                         transition(RobotMode::IDLE,
                                    "フォルト検知: " + msg->fault_type);
                     }
@@ -113,6 +117,7 @@ private:
         case RobotMode::IDLE:
             return to == RobotMode::FOLLOWING ||
                    to == RobotMode::FOLLOWING_MAPLESS ||
+                   to == RobotMode::SUMMONING ||
                    to == RobotMode::MANUAL;
 
         case RobotMode::FOLLOWING:
@@ -121,6 +126,10 @@ private:
                    to == RobotMode::IDLE;
 
         case RobotMode::FOLLOWING_MAPLESS:
+            return to == RobotMode::MANUAL ||
+                   to == RobotMode::IDLE;
+
+        case RobotMode::SUMMONING:
             return to == RobotMode::MANUAL ||
                    to == RobotMode::IDLE;
 

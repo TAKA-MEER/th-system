@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 const MODE_NAMES = {
   0: 'INIT', 1: 'IDLE', 2: 'FOLLOWING',
   3: 'MOVING_TO_PANEL', 4: 'AT_PANEL', 5: 'MANUAL', 6: 'ESTOP',
-  7: 'FOLLOWING_MAPLESS'
+  7: 'FOLLOWING_MAPLESS', 8: 'SUMMONING'
 }
 
 // rcl_interfaces/msg/ParameterType の定数
@@ -67,6 +67,17 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
   const [battVolt, setBattVolt]     = useState(null)
   const [personStatus, setPersonStatus] = useState(null)
   const [candidates, setCandidates]     = useState([])
+  const [mappingActive, setMappingActive] = useState(false)
+  const [actionError, setActionError]     = useState(null)  // 直近のサービス呼び出し失敗理由 (WebUI表示用)
+  const [mapData, setMapData]             = useState(null)   // 最新の nav_msgs/OccupancyGrid、未受信なら null
+  const [robotPose, setRobotPose]         = useState(null)   // map座標系での {x, y, yaw}、未確定なら null
+  const [scanData, setScanData]           = useState(null)   // 最新の sensor_msgs/LaserScan (/scan_filtered)、未受信なら null
+  const [pathData, setPathData]           = useState(null)   // 最新の nav_msgs/Path (/plan)、未受信なら null
+
+  // TF合成用の中間状態 (毎tick再レンダーさせないため ref で保持)
+  const mapOdomRef      = useRef(null)  // 最新の map->odom (geometry_msgs/Transform)
+  const odomBaseRef     = useRef(null)  // 最新の odom->base_link 相当 (geometry_msgs/Transform)
+  const lastPoseEmitRef = useRef(0)     // クライアント側間引き用タイムスタンプ
 
   // ── 接続 ──────────────────────────────────────────────────
   useEffect(() => {
@@ -118,12 +129,87 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     subCandidates.subscribe((msg) => setCandidates(msg.positions ?? []))
 
+    // ── 購読: /slam_control/mapping_active ─────────────────
+    const subMapping = new ROSLIB.Topic({
+      ros, name: '/slam_control/mapping_active',
+      messageType: 'std_msgs/Bool'
+    })
+    subMapping.subscribe((msg) => setMappingActive(msg.data))
+
+    // ── 購読: /map (SLAM 地図) ──────────────────────────────
+    const subMap = new ROSLIB.Topic({
+      ros, name: '/map',
+      messageType: 'nav_msgs/OccupancyGrid',
+    })
+    subMap.subscribe((msg) => setMapData(msg))
+
+    // ── 購読: /tf (map->odom, odom->base_link[_footprint] を自前で合成) ──
+    // roslib.min.js の ROSLIB.TFClient は tf2_web_republisher (/republish_tfs
+    // サービス) 前提の実装で本リポジトリには存在しないノードのため使用不可
+    // (subscribe してもコールバックが永久に呼ばれない)。/tf を直接購読し
+    // 手動で合成する。child_frame_id は実機では 'base_link' (esp32_bridge)、
+    // シムでは 'base_footprint' (gazebo_ros_diff_drive) と異なるが、両者は
+    // fixed joint (xyz="0 0 wheel_radius") で X/Y/yaw が完全一致するため
+    // 区別せず同一視してよい。
+    const subTf = new ROSLIB.Topic({
+      ros, name: '/tf',
+      messageType: 'tf2_msgs/TFMessage',
+    })
+    subTf.subscribe((msg) => {
+      let updated = false
+      msg.transforms.forEach((t) => {
+        if (t.child_frame_id === 'odom') { mapOdomRef.current = t.transform; updated = true }
+        if (t.child_frame_id === 'base_link' || t.child_frame_id === 'base_footprint') {
+          odomBaseRef.current = t.transform; updated = true
+        }
+      })
+      if (!updated || !mapOdomRef.current || !odomBaseRef.current) return
+
+      // /tf は ~50Hz (transform_publish_period: 0.02)。マーカー描画には
+      // 過剰なためクライアント側で ~10Hz に間引く
+      const now = performance.now()
+      if (now - lastPoseEmitRef.current < 100) return
+      lastPoseEmitRef.current = now
+
+      const baseInOdom = new ROSLIB.Pose({
+        position: odomBaseRef.current.translation,
+        orientation: odomBaseRef.current.rotation,
+      })
+      baseInOdom.applyTransform(new ROSLIB.Transform(mapOdomRef.current))  // map座標系へ
+
+      const q = baseInOdom.orientation
+      const yaw = Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+      setRobotPose({ x: baseInOdom.position.x, y: baseInOdom.position.y, yaw })
+    })
+
+    // ── 購読: /scan_filtered (点群表示用。帯域節約のため 5Hz に間引いて配信) ──
+    const subScan = new ROSLIB.Topic({
+      ros, name: '/scan_filtered',
+      messageType: 'sensor_msgs/LaserScan',
+      throttle_rate: 200,
+    })
+    subScan.subscribe((msg) => setScanData(msg))
+
+    // ── 購読: /plan (Nav2 のグローバル経路。ルート表示用) ──
+    const subPath = new ROSLIB.Topic({
+      ros, name: '/plan',
+      messageType: 'nav_msgs/Path',
+    })
+    subPath.subscribe((msg) => setPathData(msg))
+
     return () => {
       subMode.unsubscribe()
       subFault.unsubscribe()
       subEstop.unsubscribe()
       subPerson.unsubscribe()
       subCandidates.unsubscribe()
+      subMapping.unsubscribe()
+      subMap.unsubscribe()
+      subTf.unsubscribe()
+      subScan.unsubscribe()
+      subPath.unsubscribe()
+      mapOdomRef.current = null
+      odomBaseRef.current = null
       ros.close()
     }
   }, [url])
@@ -228,9 +314,60 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     svc.callService(
       new ROSLIB.ServiceRequest({ panel_id: panelId }),
-      (res) => console.log('GoToPanel:', res)
+      (res) => {
+        console.log('GoToPanel:', res)
+        if (!res.success) setActionError(`配電盤移動失敗: ${res.message}`)
+        else setActionError(null)
+      }
     )
   }, [])
+
+  // ── 呼び寄せサービス ──────────────────────────────────────
+  const summonRobot = useCallback(() => {
+    const ROSLIB = window.ROSLIB
+    if (!rosRef.current || !ROSLIB) return
+    const svc = new ROSLIB.Service({
+      ros: rosRef.current,
+      name: '/summon_navigator/call',
+      serviceType: 'std_srvs/Trigger'
+    })
+    svc.callService(
+      new ROSLIB.ServiceRequest({}),
+      (res) => {
+        if (!res.success) {
+          console.warn('呼び寄せ失敗:', res.message)
+          setActionError(`呼び寄せ失敗: ${res.message}`)
+        } else {
+          setActionError(null)
+        }
+      }
+    )
+  }, [])
+
+  // ── 地図作成 開始/停止 (トグル) ────────────────────────────
+  const toggleMapping = useCallback(() => {
+    const ROSLIB = window.ROSLIB
+    if (!rosRef.current || !ROSLIB) return
+    const svc = new ROSLIB.Service({
+      ros: rosRef.current,
+      name: '/slam_control/toggle_mapping',
+      serviceType: 'std_srvs/Trigger'
+    })
+    svc.callService(
+      new ROSLIB.ServiceRequest({}),
+      (res) => {
+        if (!res.success) {
+          console.warn('地図作成切替失敗:', res.message)
+          setActionError(`地図作成切替失敗: ${res.message}`)
+        } else {
+          setActionError(null)
+        }
+      }
+    )
+  }, [])
+
+  // ── アクションエラーの手動クリア (WebUI バナーの閉じるボタン用) ──
+  const clearActionError = useCallback(() => setActionError(null), [])
 
   // ── 追従対象の選択・再登録 ─────────────────────────────────
   const selectTarget = useCallback((candidateIndex) => {
@@ -329,6 +466,10 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     fault, estop,
     personStatus, candidates, selectTarget, resetTracking,
     requestMode, publishTabletEstop, sendManualGoal, publishManualCmd, goToPanel,
+    summonRobot,
+    mappingActive, toggleMapping,
+    actionError, clearActionError,
+    mapData, robotPose, scanData, pathData,
     getTunableParams, applyTunableParam, saveTunableParams,
   }
 }

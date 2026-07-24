@@ -185,6 +185,42 @@ class TestModeManagerTransitions(unittest.TestCase):
         assert res.success
         assert self._wait_mode(M.FOLLOWING)
 
+    def test_idle_to_summoning(self):
+        """IDLE → SUMMONING（呼び寄せ要求）"""
+        self._wait_mode(M.IDLE)
+        res = self._request_mode(M.SUMMONING)
+        assert res.success
+        assert self._wait_mode(M.SUMMONING)
+
+    def test_summoning_to_idle(self):
+        """SUMMONING → IDLE（到着/失敗/明示操作）"""
+        self._wait_mode(M.IDLE)
+        self._request_mode(M.SUMMONING)
+        self._wait_mode(M.SUMMONING)
+        res = self._request_mode(M.IDLE)
+        assert res.success
+        assert self._wait_mode(M.IDLE)
+
+    def test_summoning_to_manual(self):
+        """SUMMONING → MANUAL"""
+        self._wait_mode(M.IDLE)
+        self._request_mode(M.SUMMONING)
+        self._wait_mode(M.SUMMONING)
+        res = self._request_mode(M.MANUAL)
+        assert res.success
+        assert self._wait_mode(M.MANUAL)
+
+    def test_following_mapless_cannot_go_to_summoning_directly(self):
+        """FOLLOWING_MAPLESS → SUMMONING は禁止（IDLE を経由する必要あり）"""
+        self._wait_mode(M.IDLE)
+        self._request_mode(M.FOLLOWING_MAPLESS)
+        self._wait_mode(M.FOLLOWING_MAPLESS)
+        res = self._request_mode(M.SUMMONING)
+        assert not res.success
+        # クリーンアップ
+        self._request_mode(M.IDLE)
+        self._wait_mode(M.IDLE)
+
     def test_manual_to_idle_on_heartbeat_loss(self):
         """MANUAL 中の heartbeat 途絶相当 → IDLE"""
         self._wait_mode(M.IDLE)
@@ -251,6 +287,12 @@ class TestModeManagerTransitions(unittest.TestCase):
             self._request_mode(M.MANUAL)
             self._wait_mode(M.MANUAL)
         self._test_estop_from(M.MANUAL, setup)
+
+    def test_estop_from_summoning(self):
+        def setup():
+            self._request_mode(M.SUMMONING)
+            self._wait_mode(M.SUMMONING)
+        self._test_estop_from(M.SUMMONING, setup)
 
     # ════════════════════════════════════════════════════════
     # 禁止遷移テスト（success=False が返るべき）
@@ -325,4 +367,10 @@ class TestModeManagerTransitions(unittest.TestCase):
             self._wait_mode(M.MOVING_TO_PANEL)
             self._request_mode(M.AT_PANEL)
             self._wait_mode(M.AT_PANEL)
+        self._test_fault_from(setup, 'ESP32_DISCONNECTED')
+
+    def test_esp32_fault_from_summoning(self):
+        def setup():
+            self._request_mode(M.SUMMONING)
+            self._wait_mode(M.SUMMONING)
         self._test_fault_from(setup, 'ESP32_DISCONNECTED')

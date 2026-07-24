@@ -4,10 +4,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRosbridge } from './hooks/useRosbridge'
 import SettingsPanel from './SettingsPanel'
+import MapView from './MapView'
 import './App.css'
 
 // ROS2 モード定数
-const MODE = { INIT:0, IDLE:1, FOLLOWING:2, MOVING_TO_PANEL:3, AT_PANEL:4, MANUAL:5, ESTOP:6, FOLLOWING_MAPLESS:7 }
+const MODE = { INIT:0, IDLE:1, FOLLOWING:2, MOVING_TO_PANEL:3, AT_PANEL:4, MANUAL:5, ESTOP:6, FOLLOWING_MAPLESS:7, SUMMONING:8 }
 
 // 配電盤リスト (panels.yaml と合わせること)
 const PANELS = [
@@ -211,6 +212,10 @@ export default function App() {
     fault, estop,
     personStatus, candidates, selectTarget, resetTracking,
     requestMode, publishTabletEstop, publishManualCmd, goToPanel,
+    summonRobot,
+    mappingActive, toggleMapping,
+    actionError, clearActionError,
+    mapData, robotPose, scanData, pathData,
     getTunableParams, applyTunableParam, saveTunableParams,
   } = useRosbridge()
 
@@ -359,6 +364,7 @@ export default function App() {
     INIT: '#888', IDLE: '#2196F3', FOLLOWING: '#4CAF50',
     MOVING_TO_PANEL: '#FF9800', AT_PANEL: '#9C27B0',
     MANUAL: '#00BCD4', ESTOP: '#F44336', FOLLOWING_MAPLESS: '#8BC34A',
+    SUMMONING: '#E91E63',
   }[modeName] ?? '#888'
 
   const isFault = fault?.active
@@ -403,6 +409,14 @@ export default function App() {
       {isFault && (
         <div className="fault-bar">
           <b>⚠ フォルト:</b> {fault.fault_type} — {fault.description}
+        </div>
+      )}
+
+      {/* ── 直近の操作エラー (呼び寄せ/配電盤移動/地図作成の失敗理由) ── */}
+      {actionError && (
+        <div className="fault-bar action-error-bar">
+          <b>⚠ 操作失敗:</b> {actionError}
+          <button className="action-error-close" onClick={clearActionError} aria-label="閉じる">×</button>
         </div>
       )}
 
@@ -471,7 +485,39 @@ export default function App() {
             >
               待機 (IDLE)
             </button>
+            <button
+              className="mode-btn"
+              disabled={mode !== MODE.IDLE || !connected}
+              onClick={summonRobot}
+            >
+              呼び寄せ
+            </button>
           </div>
+        </section>
+
+        {/* ── 地図作成 開始/停止 ─────────────────────── */}
+        <section className="card">
+          <h2>
+            地図作成{' '}
+            <span className={`target-state ${mappingActive ? 'ok' : 'ng'}`}>
+              {mappingActive ? '作成中' : '停止中'}
+            </span>
+          </h2>
+          <div className="btn-row">
+            <button
+              className="mode-btn"
+              disabled={!connected || (mode !== MODE.IDLE && mode !== MODE.MANUAL)}
+              onClick={toggleMapping}
+            >
+              {mappingActive ? '地図作成停止' : '地図作成開始'}
+            </button>
+          </div>
+        </section>
+
+        {/* ── 地図表示 (SLAM 地図 + 自己位置) ─────────────── */}
+        <section className="card">
+          <h2>地図</h2>
+          <MapView mapData={mapData} robotPose={robotPose} scanData={scanData} pathData={pathData} />
         </section>
 
         {/* ── 手動ジョグ (押している間だけ動く) ───────── */}
