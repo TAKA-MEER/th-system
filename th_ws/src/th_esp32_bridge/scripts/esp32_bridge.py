@@ -61,6 +61,12 @@ class Esp32Bridge(Node):
         self._pub_odom = self.create_publisher(Odometry, 'odom', 10)
         self._pub_wheel_feedback = self.create_publisher(
             WheelFeedback, '/esp32/wheel_feedback', 10)
+        # /cmd_vel を差動駆動変換した左右目標速度 (WHEEL_CMD で ESP32 へ送る値と同じ)。
+        # WheelFeedback 型を指令値側にも再利用する(フィールド形状が同一のため)。
+        # WebUI で /esp32/wheel_feedback (実測) と重ねて表示し、PID の追従遅れ・
+        # 定常偏差を目視で確認できるようにする。
+        self._pub_wheel_cmd = self.create_publisher(
+            WheelFeedback, '/esp32/wheel_cmd_speed', 10)
         self._pub_estop_hw = self.create_publisher(Bool, '/safety/estop_hw', 10)
         self._pub_imu = self.create_publisher(Imu, '/esp32/imu_data', 10)
         self._pub_imu_calib = self.create_publisher(UInt8, '/esp32/imu_calib_status', 10)
@@ -146,6 +152,13 @@ class Esp32Bridge(Node):
         v_right = v + (w * self._wheel_base / 2.0)
         v_left = v - (w * self._wheel_base / 2.0)
         frame = pack_wheel_cmd(v_left, v_right)
+
+        cmd_fb = WheelFeedback()
+        cmd_fb.header.stamp = self.get_clock().now().to_msg()
+        cmd_fb.header.frame_id = self._base_frame
+        cmd_fb.left_speed = v_left
+        cmd_fb.right_speed = v_right
+        self._pub_wheel_cmd.publish(cmd_fb)
 
         with self._ws_conn_lock:
             conn = self._ws_conn

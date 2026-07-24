@@ -127,7 +127,7 @@ ESTOP → IDLE のみ
 - `RobotMode.msg` — mode フィールド (uint8) と定数 IDLE=1, FOLLOWING=2, MOVING_TO_PANEL=3, AT_PANEL=4, MANUAL=5, ESTOP=6
 - `PersonStatus.msg` — `position`（ロボット base_link 基準の相対座標 m）, `confidence`, `is_lost`, `lost_reason`
 - `FaultStatus.msg` — `active`, `fault_type` ("LIDAR_LOST" / "ESP32_DISCONNECTED" / "PERSON_TRACKER_LOST")
-- `WheelFeedback.msg` — ESP32 から届く左右ホイール実速度
+- `WheelFeedback.msg` — ESP32 から届く左右ホイール実速度(`/esp32/wheel_feedback`)。指令値側にも同型を再利用し `/esp32/wheel_cmd_speed`(esp32_bridge が `/cmd_vel` から計算)として発行、WebUI の速度表示カードで指令vs実測を比較する
 
 ### シミュレーション固有のノード
 

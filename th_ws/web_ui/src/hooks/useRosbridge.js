@@ -34,6 +34,9 @@ function decodeParamValue(pv) {
 // フリーズしないようにするタイムアウト (ms)
 const TUNABLE_SERVICE_TIMEOUT_MS = 5000
 
+// 速度表示カードで保持する履歴の長さ (秒)
+const WHEEL_HISTORY_SEC = 15
+
 function withTimeout(promise, label) {
   return new Promise((resolve, reject) => {
     const id = setTimeout(
@@ -73,11 +76,16 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
   const [robotPose, setRobotPose]         = useState(null)   // map座標系での {x, y, yaw}、未確定なら null
   const [scanData, setScanData]           = useState(null)   // 最新の sensor_msgs/LaserScan (/scan_filtered)、未受信なら null
   const [pathData, setPathData]           = useState(null)   // 最新の nav_msgs/Path (/plan)、未受信なら null
+  const [wheelSpeedData, setWheelSpeedData] = useState({ measured: [], command: [] })
+  // 左右輪 指令vs実測 速度グラフ用の直近履歴 ({t, left, right} の配列)
 
   // TF合成用の中間状態 (毎tick再レンダーさせないため ref で保持)
   const mapOdomRef      = useRef(null)  // 最新の map->odom (geometry_msgs/Transform)
   const odomBaseRef     = useRef(null)  // 最新の odom->base_link 相当 (geometry_msgs/Transform)
   const lastPoseEmitRef = useRef(0)     // クライアント側間引き用タイムスタンプ
+
+  const measuredWheelBufRef = useRef([])  // {t, left, right} (受信時刻, 実測 m/s)
+  const commandWheelBufRef  = useRef([])  // {t, left, right} (受信時刻, 指令 m/s)
 
   // ── 接続 ──────────────────────────────────────────────────
   useEffect(() => {
@@ -197,6 +205,27 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     subPath.subscribe((msg) => setPathData(msg))
 
+    // ── 購読: 左右輪 指令vs実測 速度 (速度表示カード用、直近 WHEEL_HISTORY_SEC 秒を保持) ──
+    const pushWheelSample = (bufRef, msg, key) => {
+      const t = Date.now() / 1000
+      const buf = bufRef.current
+      buf.push({ t, left: msg.left_speed, right: msg.right_speed })
+      const cutoff = t - WHEEL_HISTORY_SEC
+      while (buf.length && buf[0].t < cutoff) buf.shift()
+      setWheelSpeedData((prev) => ({ ...prev, [key]: buf.slice() }))
+    }
+    const subWheelFeedback = new ROSLIB.Topic({
+      ros, name: '/esp32/wheel_feedback',
+      messageType: 'th_system_msgs/WheelFeedback',
+    })
+    subWheelFeedback.subscribe((msg) => pushWheelSample(measuredWheelBufRef, msg, 'measured'))
+
+    const subWheelCmd = new ROSLIB.Topic({
+      ros, name: '/esp32/wheel_cmd_speed',
+      messageType: 'th_system_msgs/WheelFeedback',
+    })
+    subWheelCmd.subscribe((msg) => pushWheelSample(commandWheelBufRef, msg, 'command'))
+
     return () => {
       subMode.unsubscribe()
       subFault.unsubscribe()
@@ -208,8 +237,12 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
       subTf.unsubscribe()
       subScan.unsubscribe()
       subPath.unsubscribe()
+      subWheelFeedback.unsubscribe()
+      subWheelCmd.unsubscribe()
       mapOdomRef.current = null
       odomBaseRef.current = null
+      measuredWheelBufRef.current = []
+      commandWheelBufRef.current = []
       ros.close()
     }
   }, [url])
@@ -469,7 +502,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     summonRobot,
     mappingActive, toggleMapping,
     actionError, clearActionError,
-    mapData, robotPose, scanData, pathData,
+    mapData, robotPose, scanData, pathData, wheelSpeedData,
     getTunableParams, applyTunableParam, saveTunableParams,
   }
 }

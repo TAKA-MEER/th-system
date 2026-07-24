@@ -270,6 +270,20 @@ ros2 launch th_bringup bringup.launch.py imu_enabled:=true
 #    ekf_params.yaml の process_noise_covariance を実機データで調整
 ```
 
+### 直進ドリフト補正 (2026-07-25 追加)
+
+直進指令中(左右目標速度が等しい)に一方向へ逸れるクセ(タイヤ径公差・摩擦差等)を補正する機能。`th_ws/esp32/src/main.cpp` の `computeDriftCorrection()` が制御周期ごとに左右輪の目標速度へ小さな差動バイアスを加える(`rampLeft`/`rampRight` を PID へ渡す直前に加算するため、前進速度の合計には影響しない)。
+
+- **基本方式(IMU検出時)**: 実測ヨーレート(`wz`, 目標=0)を使った PI 制御。定数は `config.h` の `DRIFT_KP_YAW`/`DRIFT_KI_YAW`/`DRIFT_ITERM_MAX_MPS`/`DRIFT_CORRECTION_MAX_MPS`。
+- **フォールバック(IMU未検出時)**: `DRIFT_TRIM_MPS` の固定トリム値(既定 0.0 = 補正なし)。実機で直進走行させズレを見ながら調整する。
+- **適用条件**: `|targetLeft - targetRight| < DRIFT_STRAIGHT_THRESHOLD_MPS` の間のみ適用。旋回指令中は無効化し積分もリセットする(意図した旋回に補正が干渉しないようにするため)。E-Stop/ウォッチドッグ発動時・WS切断時も積分をリセットする。
+
+**⚠️ 符号の実機検証が必須**: BNO055 の `wz` の符号は実装向き・軸割り当てに依存し、コードだけからは断定できない。実機で直進コマンドを送り、ズレが改善するかを目視確認すること。悪化する場合は `config.h` の `DRIFT_IMU_SIGN` を反転(`+1.0f` ⇔ `-1.0f`)して再検証する。
+
+### 車輪速度の指令/実測比較 (`/esp32/wheel_cmd_speed`, WebUI速度表示カード, 2026-07-25 追加)
+
+`esp32_bridge` は `/cmd_vel` を差動駆動変換した左右目標速度(ESP32 へ `WHEEL_CMD` で送る値と同じ)を `/esp32/wheel_cmd_speed`(`th_system_msgs/WheelFeedback` 型を指令値側に再利用)として発行する。WebUI の「車輪速度」カード(`web_ui/src/WheelSpeedView.jsx`)がこれと実測値 `/esp32/wheel_feedback` を左右輪ごとに直近15秒の時系列グラフで重畳表示し、PID の追従遅れ・定常偏差・振動を目視で確認できるようにしている。PID ゲイン自体(`config.h` の `PID_KP_*`/`PID_KI_*`/`PID_KD_*`)は現状コンパイル時定数のままで、WebUI からのライブ調整は未対応(将来検討)。
+
 `imu_enabled` は DSR1603 未装着の機体を壊さないようデフォルト `false`（エンコーダのみ）。装着・キャリブレーション済みの機体でのみ `true` を指定すること。
 
 ---

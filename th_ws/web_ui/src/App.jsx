@@ -5,6 +5,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRosbridge } from './hooks/useRosbridge'
 import SettingsPanel from './SettingsPanel'
 import MapView from './MapView'
+import WheelSpeedView from './WheelSpeedView'
 import './App.css'
 
 // ROS2 モード定数
@@ -227,7 +228,7 @@ export default function App() {
     summonRobot,
     mappingActive, toggleMapping,
     actionError, clearActionError,
-    mapData, robotPose, scanData, pathData,
+    mapData, robotPose, scanData, pathData, wheelSpeedData,
     getTunableParams, applyTunableParam, saveTunableParams,
   } = useRosbridge()
 
@@ -536,6 +537,12 @@ export default function App() {
         <section className="card">
           <h2>地図</h2>
           <MapView mapData={mapData} robotPose={robotPose} scanData={scanData} pathData={pathData} />
+        </section>
+
+        {/* ── 速度表示 (左右輪 指令vs実測。PID追従状況の確認用) ─── */}
+        <section className="card">
+          <h2>車輪速度 <span className="note">(指令=破線 / 実測=実線, 直近15秒)</span></h2>
+          <WheelSpeedView wheelSpeedData={wheelSpeedData} />
         </section>
 
         {/* ── 手動ジョグ (押している間だけ動く) ───────── */}
