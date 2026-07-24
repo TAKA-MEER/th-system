@@ -327,6 +327,20 @@ body {
 .radar-cand:active .radar-dot { fill: #546e7a; }
 .radar-idx        { fill: #eceff1; font-size: 11px; font-weight: bold; pointer-events: none; }
 .radar-cand.tracked .radar-dot { fill: #1b5e20; stroke: #4caf50; }
+
+/* ── 地図表示 (MapView) ─────────────────────────────────── */
+.map-canvas {
+  display: block;
+  width: 100%;
+  max-width: 340px;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  background: #12141b;
+  border: 1px solid #2a2d35;
+  border-radius: 8px;
+  image-rendering: pixelated;
+}
+.map-placeholder { padding: 2rem 0; text-align: center; }
 .radar-tracked-ring {
   fill: none;
   stroke: #4caf50;

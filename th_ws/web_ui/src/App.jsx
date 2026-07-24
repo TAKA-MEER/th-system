@@ -4,6 +4,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRosbridge } from './hooks/useRosbridge'
 import SettingsPanel from './SettingsPanel'
+import MapView from './MapView'
 import './App.css'
 
 // ROS2 モード定数
@@ -213,6 +214,7 @@ export default function App() {
     requestMode, publishTabletEstop, publishManualCmd, goToPanel,
     summonRobot,
     mappingActive, toggleMapping,
+    mapData, robotPose, scanData, pathData,
     getTunableParams, applyTunableParam, saveTunableParams,
   } = useRosbridge()
 
@@ -501,6 +503,12 @@ export default function App() {
               {mappingActive ? '地図作成停止' : '地図作成開始'}
             </button>
           </div>
+        </section>
+
+        {/* ── 地図表示 (SLAM 地図 + 自己位置) ─────────────── */}
+        <section className="card">
+          <h2>地図</h2>
+          <MapView mapData={mapData} robotPose={robotPose} scanData={scanData} pathData={pathData} />
         </section>
 
         {/* ── 手動ジョグ (押している間だけ動く) ───────── */}
