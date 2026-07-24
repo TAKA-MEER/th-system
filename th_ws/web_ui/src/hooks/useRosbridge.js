@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 const MODE_NAMES = {
   0: 'INIT', 1: 'IDLE', 2: 'FOLLOWING',
   3: 'MOVING_TO_PANEL', 4: 'AT_PANEL', 5: 'MANUAL', 6: 'ESTOP',
-  7: 'FOLLOWING_MAPLESS'
+  7: 'FOLLOWING_MAPLESS', 8: 'SUMMONING'
 }
 
 // rcl_interfaces/msg/ParameterType の定数
@@ -67,6 +67,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
   const [battVolt, setBattVolt]     = useState(null)
   const [personStatus, setPersonStatus] = useState(null)
   const [candidates, setCandidates]     = useState([])
+  const [mappingActive, setMappingActive] = useState(false)
 
   // ── 接続 ──────────────────────────────────────────────────
   useEffect(() => {
@@ -118,12 +119,20 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     subCandidates.subscribe((msg) => setCandidates(msg.positions ?? []))
 
+    // ── 購読: /slam_control/mapping_active ─────────────────
+    const subMapping = new ROSLIB.Topic({
+      ros, name: '/slam_control/mapping_active',
+      messageType: 'std_msgs/Bool'
+    })
+    subMapping.subscribe((msg) => setMappingActive(msg.data))
+
     return () => {
       subMode.unsubscribe()
       subFault.unsubscribe()
       subEstop.unsubscribe()
       subPerson.unsubscribe()
       subCandidates.unsubscribe()
+      subMapping.unsubscribe()
       ros.close()
     }
   }, [url])
@@ -232,6 +241,36 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     )
   }, [])
 
+  // ── 呼び寄せサービス ──────────────────────────────────────
+  const summonRobot = useCallback(() => {
+    const ROSLIB = window.ROSLIB
+    if (!rosRef.current || !ROSLIB) return
+    const svc = new ROSLIB.Service({
+      ros: rosRef.current,
+      name: '/summon_navigator/call',
+      serviceType: 'std_srvs/Trigger'
+    })
+    svc.callService(
+      new ROSLIB.ServiceRequest({}),
+      (res) => { if (!res.success) console.warn('呼び寄せ失敗:', res.message) }
+    )
+  }, [])
+
+  // ── 地図作成 開始/停止 (トグル) ────────────────────────────
+  const toggleMapping = useCallback(() => {
+    const ROSLIB = window.ROSLIB
+    if (!rosRef.current || !ROSLIB) return
+    const svc = new ROSLIB.Service({
+      ros: rosRef.current,
+      name: '/slam_control/toggle_mapping',
+      serviceType: 'std_srvs/Trigger'
+    })
+    svc.callService(
+      new ROSLIB.ServiceRequest({}),
+      (res) => { if (!res.success) console.warn('地図作成切替失敗:', res.message) }
+    )
+  }, [])
+
   // ── 追従対象の選択・再登録 ─────────────────────────────────
   const selectTarget = useCallback((candidateIndex) => {
     const ROSLIB = window.ROSLIB
@@ -329,6 +368,8 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     fault, estop,
     personStatus, candidates, selectTarget, resetTracking,
     requestMode, publishTabletEstop, sendManualGoal, publishManualCmd, goToPanel,
+    summonRobot,
+    mappingActive, toggleMapping,
     getTunableParams, applyTunableParam, saveTunableParams,
   }
 }

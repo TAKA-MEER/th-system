@@ -79,3 +79,11 @@ panel_navigator:
   ros__parameters:
     arrival_threshold_m: 0.3
     map_frame: "map"
+
+summon_navigator:
+  ros__parameters:
+    stop_distance_m: 1.0             # m 試験員手前でこの距離を残して停止
+    min_confidence: 0.5              # 0.0-1.0 これ未満の confidence では起動を拒否
+    nav_wait_timeout_sec: 2.0        # s Nav2 アクションサーバ待機タイムアウト
+    map_frame: "map"
+    base_frame: "base_link"

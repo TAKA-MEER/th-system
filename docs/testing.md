@@ -9,8 +9,9 @@
 | --- | --- | --- | --- | --- |
 | `test_follow_planner_logic.py` | 純粋単体テスト | 不要 | 43 件 | 10.1 §3 |
 | `test_mapless_follow_logic.py` | 純粋単体テスト(MAP不要モード) | 不要 | 20 件 | - |
+| `test_summon_logic.py` | 純粋単体テスト(呼び寄せ) | 不要 | 10 件 | - |
 | `test_scenario_configs.py` | 純粋単体テスト(シナリオプリセット整合性) | 不要 | 36 件 | - |
-| `test_mode_transitions.py` | ROS2 統合テスト | 必要 | 19 件 | 10.1 §1 |
+| `test_mode_transitions.py` | ROS2 統合テスト | 必要 | 25 件 | 10.1 §1 |
 | `test_safety_monitor.py` | ROS2 統合テスト | 必要 | 10 件 | 10.1 §5 |
 | `test_twist_mux_priority.py` | ROS2 統合テスト | 必要 | 7 件 | 10.1 §4 |
 | `test_fault_detection.py` | ROS2 統合テスト | 必要 | 4 件 | 10.1 §5+ |

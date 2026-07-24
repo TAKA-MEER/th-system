@@ -2,7 +2,7 @@
 <package format="3">
   <name>th_config_manager</name>
   <version>0.1.0</version>
-  <description>WebUI からのパラメータ調整を仲介するノード（モードゲート + YAML 永続化）</description>
+  <description>WebUI からのパラメータ調整・地図作成開始停止を仲介するノード（モードゲート + YAML 永続化）</description>
   <maintainer email="dev@example.com">TH Team</maintainer>
   <license>MIT</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
@@ -11,5 +11,8 @@
   <depend>rcl_interfaces</depend>
   <depend>ament_index_python</depend>
   <depend>th_system_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>slam_toolbox</depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

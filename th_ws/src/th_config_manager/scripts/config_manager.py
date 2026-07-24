@@ -44,6 +44,7 @@ from th_system_msgs.srv import SaveTunableParams, SetTunableParams
 
 from th_config_manager.tunable_targets import TUNABLE_TARGETS
 from th_config_manager.yaml_writer import update_ros_params_yaml
+from th_config_manager.service_call import call_and_wait
 
 
 def _param_value_to_python(value):
@@ -108,19 +109,6 @@ class ConfigManager(Node):
     def _mode_allows_change(self) -> bool:
         return self._mode in (RobotMode.IDLE, RobotMode.MANUAL)
 
-    def _call_and_wait(self, client, request):
-        """対象ノードのサービスを呼び、完了 or タイムアウトまで待つ。
-
-        戻り値: (result, error_message) のどちらか一方が None。
-        """
-        future = client.call_async(request)
-        rclpy.spin_until_future_complete(
-            self, future, executor=self._executor, timeout_sec=SERVICE_TIMEOUT_SEC)
-        if not future.done():
-            future.cancel()
-            return None, "応答がタイムアウトしました"
-        return future.result(), None
-
     def _cb_set(self, request, response):
         if not self._mode_allows_change():
             response.success = False
@@ -139,7 +127,7 @@ class ConfigManager(Node):
 
         req = SetParameters.Request()
         req.parameters = request.parameters
-        result, err = self._call_and_wait(client, req)
+        result, err = call_and_wait(self, client, req, SERVICE_TIMEOUT_SEC)
         if err:
             response.success = False
             response.message = f"{request.node_name} への set_parameters 呼び出し失敗: {err}"
@@ -169,7 +157,7 @@ class ConfigManager(Node):
 
         req = GetParameters.Request()
         req.names = target["params"]
-        result, err = self._call_and_wait(client, req)
+        result, err = call_and_wait(self, client, req, SERVICE_TIMEOUT_SEC)
         if err:
             response.success = False
             response.message = f"{request.node_name} への get_parameters 呼び出し失敗: {err}"

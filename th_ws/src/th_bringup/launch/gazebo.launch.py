@@ -321,6 +321,7 @@ def generate_launch_description():
     ekf_yaml         = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
     calib_yaml       = os.path.join(BRINGUP_DIR, 'config', 'calib.yaml')
     panels_yaml      = os.path.join(BRINGUP_DIR, 'config', 'panels.yaml')
+    planning_yaml    = os.path.join(BRINGUP_DIR, 'config', 'planning_params.yaml')
     perc_yaml        = os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml')
     rviz_cfg         = os.path.join(BRINGUP_DIR, 'config', 'rviz', 'th_sim.rviz')
 
@@ -387,11 +388,26 @@ def generate_launch_description():
             name='manual_command_handler',
             output='screen',
         ),
+        # summon_navigator（呼び寄せ）
+        Node(
+            package='th_planning',
+            executable='summon_navigator.py',
+            name='summon_navigator',
+            parameters=[planning_yaml],
+            output='screen',
+        ),
         # config_manager (WebUI 設定パネル: パラメータ調整の仲介)
         Node(
             package='th_config_manager',
             executable='config_manager.py',
             name='config_manager',
+            output='screen',
+        ),
+        # slam_control (WebUI: 地図作成 開始/停止の仲介)
+        Node(
+            package='th_config_manager',
+            executable='slam_control.py',
+            name='slam_control',
             output='screen',
         ),
         # rosbridge

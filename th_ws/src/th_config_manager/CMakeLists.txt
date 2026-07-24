@@ -10,6 +10,7 @@ ament_python_install_package(th_config_manager)
 
 install(PROGRAMS
   scripts/config_manager.py
+  scripts/slam_control.py
   DESTINATION lib/${PROJECT_NAME})
 
 ament_package()

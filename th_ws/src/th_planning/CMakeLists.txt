@@ -13,6 +13,7 @@ install(PROGRAMS
   scripts/follow_planner_mapless.py
   scripts/panel_navigator.py
   scripts/manual_command_handler.py
+  scripts/summon_navigator.py
   scripts/crawler_teleop.py
   DESTINATION lib/${PROJECT_NAME})
 
