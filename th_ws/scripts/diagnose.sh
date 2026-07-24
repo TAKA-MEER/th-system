@@ -68,7 +68,7 @@ echo "=================================================="
 # ── 1. ROS2 ノード稼働確認 ───────────────────────────────
 echo ""
 echo "[1] ROS2 ノード"
-NODE_LIST="$(timeout 5 ros2 node list 2>/dev/null || true)"
+NODE_LIST="$(timeout 5 ros2 node list --no-daemon 2>/dev/null || true)"
 
 if [ -z "$NODE_LIST" ]; then
   fail "ros2 node list" "ノードが1件も見つからない。bringup.launch.py が起動しているか確認 (docs/operation.md の『ロボットが動かない』)"
@@ -86,7 +86,7 @@ fi
 echo ""
 echo "[2] 安全チェーン"
 
-ESTOP_RAW="$(timeout 3 ros2 topic echo /safety/estop --once 2>/dev/null || true)"
+ESTOP_RAW="$(timeout 3 ros2 topic echo /safety/estop --no-daemon --once 2>/dev/null || true)"
 if [ -z "$ESTOP_RAW" ]; then
   fail "/safety/estop 取得不可" "safety_monitor が起動していない可能性 (上記[1]参照)"
 elif echo "$ESTOP_RAW" | grep -q "data: true"; then
@@ -95,7 +95,7 @@ else
   pass "/safety/estop = false"
 fi
 
-FAULT_RAW="$(timeout 3 ros2 topic echo /safety/fault --once 2>/dev/null || true)"
+FAULT_RAW="$(timeout 3 ros2 topic echo /safety/fault --no-daemon --once 2>/dev/null || true)"
 if [ -z "$FAULT_RAW" ]; then
   fail "/safety/fault 取得不可" "safety_monitor が起動していない可能性 (上記[1]参照)"
 elif echo "$FAULT_RAW" | grep -q "active: true"; then
@@ -123,7 +123,7 @@ declare -A MODE_NAMES=(
   [4]="AT_PANEL" [5]="MANUAL" [6]="ESTOP" [7]="FOLLOWING_MAPLESS"
 )
 
-MODE_RAW="$(timeout 3 ros2 topic echo /robot/mode --once --qos-durability transient_local 2>/dev/null || true)"
+MODE_RAW="$(timeout 3 ros2 topic echo /robot/mode --no-daemon --once --qos-durability transient_local 2>/dev/null || true)"
 if [ -z "$MODE_RAW" ]; then
   fail "/robot/mode 取得不可" "mode_manager が起動していない可能性 (上記[1]参照)"
 else
