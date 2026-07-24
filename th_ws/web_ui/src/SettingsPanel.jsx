@@ -25,6 +25,7 @@ const MAPLESS_FIELDS = [
   { name: 'w_max_rad_s',                   label: '最高旋回速度',         unit: 'rad/s', min: 0.2, max: 3,   step: 0.1 },
   { name: 'max_linear_accel_mps2',         label: '加速度上限',           unit: 'm/s²', min: 0.2, max: 3,    step: 0.1 },
   { name: 'max_linear_decel_mps2',         label: '減速度上限',           unit: 'm/s²', min: 0.2, max: 4,    step: 0.1 },
+  { name: 'max_angular_accel_rad_s2',      label: '旋回加速度上限',       unit: 'rad/s²', min: 0.5, max: 8,  step: 0.1 },
   // update_rate_hz は対象外: 制御ループの周期は起動時に固定されておりライブ変更が
   // 効かない上、内部計算の除数のため 0 を送るとノードがクラッシュする
   // (th_config_manager/tunable_targets.py 参照)

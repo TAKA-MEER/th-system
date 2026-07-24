@@ -65,6 +65,10 @@ class MaplessFollowParams:
     max_linear_decel_mps2:  float = 2.0   # m/s^2 減速側のレート制限 兼 制動距離計算の減速度
                                             # (停止応答は加速より優先されるべきなので別枠。
                                             #  実機の実制動性能を超えない値にすること)
+    max_angular_accel_rad_s2: float = 3.0  # rad/s^2 旋回速度のレート制限
+                                            # (実機検証: これが無いと軌跡のノイズによる
+                                            #  bearing の揺れが angular_z に瞬時に反映され、
+                                            #  1周期で ±w_max まで飛んで機体が激しく揺れる)
 
     update_rate_hz: float = 10.0
 
@@ -76,6 +80,22 @@ class MaplessOutput:
     state:     MaplessState = MaplessState.TRACKING
     # "tracking" / "person_close" / "obstacle_ahead" / "no_pose" / "no_scan"
     reason:    str = "tracking"
+
+
+def should_stop_for_lost(
+    is_lost: bool,
+    lost_elapsed_sec: float,
+    debounce_sec: float,
+) -> bool:
+    """
+    is_lost によるロスト停止をデバウンスする。DR-SPAAM は約2Hzでしか推論
+    されないため、1フレームの検知ミスだけで is_lost が一瞬 true になり得る。
+    debounce_sec 未満の継続では「まだ見失っていない」とみなし、停止させない
+    (実機検証: これが無いと十分離れていても頻繁に一瞬停止する)。
+    障害物検知・接近時の停止はこの対象外(follow_planner_mapless.py 側で
+    別途、即時停止のまま扱う)。
+    """
+    return is_lost and lost_elapsed_sec >= debounce_sec
 
 
 def next_mapless_state(
@@ -184,6 +204,7 @@ class MaplessFollowCore:
         self.state  = MaplessState.TRACKING
         self.trail: Deque[Point2D] = deque(maxlen=self.params.trail_max_points)
         self._prev_linear_x: float = 0.0
+        self._prev_angular_z: float = 0.0
 
     def update(
         self,
@@ -201,6 +222,7 @@ class MaplessFollowCore:
 
         if robot_pose_odom is None:
             self._prev_linear_x = 0.0
+            self._prev_angular_z = 0.0
             return MaplessOutput(state=self.state, reason="no_pose")
 
         person_abs = to_absolute(robot_pose_odom, (person_x, person_y))
@@ -208,10 +230,12 @@ class MaplessFollowCore:
 
         if self.state == MaplessState.STOPPED:
             self._prev_linear_x = 0.0
+            self._prev_angular_z = 0.0
             return MaplessOutput(state=self.state, reason="person_close")
 
         if scan_ranges is None:
             self._prev_linear_x = 0.0
+            self._prev_angular_z = 0.0
             return MaplessOutput(state=self.state, reason="no_scan")
 
         goal_abs = get_trail_goal(self.trail, self.params.lookback_distance,
@@ -226,9 +250,10 @@ class MaplessFollowCore:
                 person_angle_rad=math.atan2(person_y, person_x),
                 person_range_m=distance):
             self._prev_linear_x = 0.0
+            self._prev_angular_z = 0.0
             return MaplessOutput(state=self.state, reason="obstacle_ahead")
 
-        _, w = pure_pursuit_control(
+        _, target_w = pure_pursuit_control(
             (0.0, 0.0, 0.0), rel_goal,
             v_max=self.params.v_max, k_ang=self.params.k_ang,
             stop_radius=self.params.stop_radius_m,
@@ -246,6 +271,13 @@ class MaplessFollowCore:
         v = rate_limit(target_v, self._prev_linear_x, max_up, max_down)
         self._prev_linear_x = v
 
+        # 旋回速度も同様にレート制限する。軌跡(trail)の点は試験員位置検知の
+        # ノイズをそのまま含むため、制限が無いと bearing のわずかな揺れが
+        # 1周期で ±w_max までの旋回指令に直結し機体が激しく揺れる。
+        max_ang_delta = self.params.max_angular_accel_rad_s2 / self.params.update_rate_hz
+        w = rate_limit(target_w, self._prev_angular_z, max_ang_delta)
+        self._prev_angular_z = w
+
         return MaplessOutput(linear_x=v, angular_z=w, state=self.state, reason="tracking")
 
     def clear_trail(self) -> None:
@@ -259,9 +291,11 @@ class MaplessFollowCore:
         のを防ぎ、0 から滑らかに加速し直す。
         """
         self._prev_linear_x = 0.0
+        self._prev_angular_z = 0.0
 
     def reset(self) -> None:
         """モード切替時などにリセットする"""
         self.state = MaplessState.TRACKING
         self.trail.clear()
         self._prev_linear_x = 0.0
+        self._prev_angular_z = 0.0

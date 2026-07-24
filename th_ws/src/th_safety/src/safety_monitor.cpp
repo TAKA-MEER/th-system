@@ -138,9 +138,7 @@ private:
 
         // fault_lock を毎サイクル発行する（twist_mux timeout=0.5s を防ぐ）
         // /safety/estop と同じく、状態変化の有無にかかわらず継続送信する。
-        std_msgs::msg::Bool lock_msg;
-        lock_msg.data = prev_lidar_fault_ || prev_esp32_fault_ || prev_person_fault_;
-        pub_fault_lock_->publish(lock_msg);
+        publishLock();
     }
 
     void checkTimeout(const std::string& fault_type,
@@ -152,18 +150,23 @@ private:
         double elapsed = (now_t - last_time).seconds();
         double limit   = timeout.count() / 1000.0;
         bool faulted   = (elapsed > limit);
+        bool was_fault = prev_fault;
+        // publishFault() 内で publishLock() が prev_lidar_fault_/prev_esp32_fault_
+        // を読むため、呼び出し前に確定させておく（そうしないと今まさに検知した
+        // フォルトがロック信号に反映されず、次の checkHealth() 周期まで
+        // 反映が 1 周期分遅れる）。
+        prev_fault = faulted;
 
-        if (faulted && !prev_fault) {
+        if (faulted && !was_fault) {
             // フォルト発生
             RCLCPP_ERROR(get_logger(), "[FAULT] %s (%.2f s)", fault_type.c_str(), elapsed);
             publishFault(true, fault_type);
             alive_flag = false;
-        } else if (!faulted && prev_fault) {
+        } else if (!faulted && was_fault) {
             // フォルト回復
             RCLCPP_INFO(get_logger(), "[FAULT CLEARED] %s", fault_type.c_str());
             publishFault(false, "NONE");
         }
-        prev_fault = faulted;
     }
 
     void publishFault(bool active, const std::string& type) {
@@ -172,9 +175,18 @@ private:
         msg.fault_type = type;
         pub_fault_->publish(msg);
 
-        // twist_mux の fault lock (Bool) へも同期発行
+        // twist_mux の fault lock (Bool) へも同期発行（統合状態を再送、単発の
+        // active では上書きしない。他フォルトが継続中に消えるのを防ぐ）
+        publishLock();
+    }
+
+    // twist_mux 物理ロックは LIDAR_LOST / ESP32_DISCONNECTED のみを対象とする。
+    // PERSON_TRACKER_LOST は走行の物理安全とは無関係(試験員位置に依存する
+    // モードでの IDLE 強制は mode_manager 側の判断に委ねる。VISION.md §5,
+    // 2026-07-24 決定)なので、ここではロックに含めない。
+    void publishLock() {
         std_msgs::msg::Bool lock_msg;
-        lock_msg.data = active;
+        lock_msg.data = prev_lidar_fault_ || prev_esp32_fault_;
         pub_fault_lock_->publish(lock_msg);
     }
 

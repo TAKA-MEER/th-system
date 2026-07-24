@@ -75,15 +75,27 @@ class CrawlerTeleop(Node):
         self.declare_parameter('spin_speed',      0.80)   # rad/s (超信地旋回)
         self.declare_parameter('publish_topic',   '/cmd_vel_nav')
         self.declare_parameter('publish_rate_hz', 10.0)
+        # キー入力の急変が瞬時にそのまま速度指令へ反映されると機体が激しく
+        # 揺れるため、目標値へレート制限をかけながら追従させる。停止側は
+        # 応答優先で別枠の上限を使う (mapless_follow_core と同じ考え方)。
+        self.declare_parameter('linear_accel_mps2',  0.6)
+        self.declare_parameter('linear_decel_mps2',  1.2)
+        self.declare_parameter('angular_accel_rad_s2', 3.0)
 
         self._lin  = self.get_parameter('linear_speed').value
         self._spin = self.get_parameter('spin_speed').value
         topic      = self.get_parameter('publish_topic').value
         rate_hz    = self.get_parameter('publish_rate_hz').value
+        self._lin_accel   = self.get_parameter('linear_accel_mps2').value
+        self._lin_decel   = self.get_parameter('linear_decel_mps2').value
+        self._ang_accel   = self.get_parameter('angular_accel_rad_s2').value
+        self._rate_hz     = rate_hz
 
         self._pub  = self.create_publisher(Twist, topic, 10)
-        self._vx   = 0.0
+        self._vx   = 0.0   # 目標速度 (キー入力で即座に変わる)
         self._wz   = 0.0
+        self._cur_vx = 0.0  # 実際に publish する速度 (レート制限で滑らかに追従)
+        self._cur_wz = 0.0
         self._lock = threading.Lock()
 
         self.create_timer(1.0 / rate_hz, self._cb_publish)
@@ -112,11 +124,29 @@ class CrawlerTeleop(Node):
 
     # ── タイマーコールバック ───────────────────────────────────
     def _cb_publish(self):
-        msg = Twist()
+        dt = 1.0 / self._rate_hz
         with self._lock:
-            msg.linear.x  = self._vx
-            msg.angular.z = self._wz
+            target_vx, target_wz = self._vx, self._wz
+        self._cur_vx = _ramp(self._cur_vx, target_vx,
+                              self._lin_accel * dt, self._lin_decel * dt)
+        self._cur_wz = _ramp(self._cur_wz, target_wz, self._ang_accel * dt)
+
+        msg = Twist()
+        msg.linear.x  = self._cur_vx
+        msg.angular.z = self._cur_wz
         self._pub.publish(msg)
+
+
+def _ramp(current: float, target: float, max_up: float, max_down: float = None) -> float:
+    """current を target へ 1 周期分だけ近づける (急加減速防止)。
+    max_down を指定すると減少側に別の上限を使える(停止応答を優先するため)。"""
+    if max_down is None:
+        max_down = max_up
+    if target > current + max_up:
+        return current + max_up
+    if target < current - max_down:
+        return current - max_down
+    return target
 
 
 def _getkey(fd: int, timeout: float = 0.05) -> str:

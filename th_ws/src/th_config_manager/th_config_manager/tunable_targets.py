@@ -34,6 +34,7 @@ TUNABLE_TARGETS = {
             "w_max_rad_s",
             "max_linear_accel_mps2",
             "max_linear_decel_mps2",
+            "max_angular_accel_rad_s2",
         ],
     },
     "lidar_filter": {

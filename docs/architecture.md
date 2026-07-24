@@ -22,7 +22,9 @@
 ```txt
 優先度（高い方が優先）:
   255: /safety/estop      lock   — E-Stop 発動中は全入力を無視してゼロ出力
-  254: /safety/fault_lock lock   — フォルト検知時も同様
+  254: /safety/fault_lock lock   — LIDAR_LOST/ESP32_DISCONNECTED 検知時も同様
+                                  （PERSON_TRACKER_LOST はここには含めない。
+                                    走行の物理安全とは無関係なため。下記参照）
    20: /cmd_vel_retreat   topic  — follow_planner からの近接退避指令・person_predictor からの捜索旋回指令（Nav2 を迂回）
    10: /cmd_vel_nav       topic  — Nav2 controller_server の通常出力
 ```
@@ -56,11 +58,13 @@ case RobotMode::IDLE:
 
 - `IDLE → FOLLOWING` および `IDLE → MANUAL` は外部からのサービス呼び出し（明示操作）のみで発生し、自動では遷移しない。ロボットが操作者の意図しないタイミングで動き出すことを防ぐための方針。
 - `ESTOP` へはどのモードからも即座に遷移できる。`ESTOP` からは `IDLE` にのみ遷移できる。
-- フォルト（`/safety/fault`）は `FOLLOWING`・`MOVING_TO_PANEL`・`MANUAL`・`AT_PANEL` のいずれからでも `IDLE` へ強制遷移させる。`IDLE` 中のフォルトはモード変化を起こさない。
+- フォルト（`/safety/fault`）は `LIDAR_LOST`・`ESP32_DISCONNECTED` の場合、`FOLLOWING`・`MOVING_TO_PANEL`・`MANUAL`・`AT_PANEL`・`FOLLOWING_MAPLESS`・`SUMMONING` のいずれからでも `IDLE` へ強制遷移させる。`PERSON_TRACKER_LOST` は試験員位置に依存するモード（`FOLLOWING`・`FOLLOWING_MAPLESS`・`SUMMONING`）のみを対象とし、`MANUAL`・`MOVING_TO_PANEL`・`AT_PANEL` は人物データが無関係なため強制遷移させない（VISION.md §5, 2026-07-24 決定）。`IDLE` 中のフォルトはモード変化を起こさない。
 
 ### heartbeat によるMANUAL自動解除
 
-`manual_command_handler` はタブレット UI からの `/manual/heartbeat`（`std_msgs/Empty`、2 Hz）を監視します。1 秒間受信がない場合は通信断と判断し、`/mode_manager/set_mode` を呼び出して `IDLE` へ遷移させます。これは想定外の切断（Wi-Fi 瞬断・ブラウザクラッシュ等）に対するフェイルセーフです。タブレットから意図的に `MANUAL` を終了した場合（「追従再開」ボタン押下）は、`FOLLOWING` へ直接遷移します。
+`manual_command_handler` はタブレット UI からの `/manual/heartbeat`（`std_msgs/Empty`、2 Hz）を監視します。既定 2.5 秒間（`heartbeat_timeout_sec`）受信がない場合は通信断と判断し、`/mode_manager/set_mode` を呼び出して `IDLE` へ遷移させます。これは想定外の切断（Wi-Fi 瞬断・ブラウザクラッシュ等）に対するフェイルセーフです。タブレットから意図的に `MANUAL` を終了した場合（「追従再開」ボタン押下）は、`FOLLOWING` へ直接遷移します。
+
+（2026-07-24: 実機の WiFi(ESP32 AP)経由では `/scan`・`wheel_feedback`・`/person/status` と同様に heartbeat も 0.5〜1.2 秒程度の受信ギャップが時折発生することが判明したため、1.0 秒から 2.5 秒に緩和した。`safety_monitor.yaml` の同種タイムアウトと揃えている）
 
 ---
 
@@ -602,6 +606,11 @@ obstacle_check_half_width_deg: 20.0°
 
 v_max: 0.3 m/s
   → 走行速度の上限。現場の安全要件に応じて調整
+
+max_linear_accel_mps2 / max_linear_decel_mps2
+max_angular_accel_rad_s2
+  → 急加減速・急旋回で機体が揺れる場合は小さく(滑らかになるが反応は遅くなる)
+  → 追従が遅れて感じる場合は大きく(ただし機体の実際の加減速性能を超えないこと)
 ```
 
 ### フォルト検知タイムアウト（safety_monitor.yaml）

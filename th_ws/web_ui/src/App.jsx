@@ -23,6 +23,11 @@ const JOG_LIN_MAX = 0.5    // m/s
 const JOG_ANG_MAX = 2.0    // rad/s (従来の lin:ang = 1:4 の比を維持)
 const JOG_SPEED_MIN = 0.1  // 速度スライダー下限 (10%)
 const JOG_PUB_MS = 100     // publish 周期
+// ジョグ入力のレート制限 (急加減速防止。実機検証: これが無いとスティック/
+// キー入力の変化が瞬時にそのまま速度指令へ反映され機体が激しく揺れる)。
+// 離した瞬間の停止は即時 0 publish のままなので安全性は損なわれない。
+const JOG_LIN_ACCEL = 1.0  // m/s^2
+const JOG_ANG_ACCEL = 4.0  // rad/s^2
 // 緩旋回 (直進 + 旋回同時) 時の旋回レート。crawler_teleop の緩旋回と同じ 0.5 倍
 const JOG_ARC_ANG_SCALE = 0.5
 // スティックのデッドゾーン (中心からの倒し量がこの割合未満なら停止)
@@ -106,6 +111,13 @@ function CandidateRadar({ candidates, personStatus, onSelect, connected }) {
       })()}
     </svg>
   )
+}
+
+// current を target へ maxDelta の範囲内で近づける (加減速レート制限)
+function rampToward(current, target, maxDelta) {
+  if (target > current + maxDelta) return current + maxDelta
+  if (target < current - maxDelta) return current - maxDelta
+  return target
 }
 
 // ── スティック位置 → 正規化コマンド ──────────────────────────
@@ -250,13 +262,18 @@ export default function App() {
   const jogTimerRef = useRef(null)
   const stickActiveRef = useRef(false)  // ドラッグ中はキーボード入力を無視
   const heldKeysRef = useRef(new Map()) // 押下中のジョグキー → [lin, ang]
+  // 直近に publish した実際の速度 (目標値へこれをレート制限しながら近づける)
+  const currentCmdRef = useRef({ vx: 0, wz: 0 })
 
   const jogPublish = useCallback(() => {
     const { vn, wn } = jogNormRef.current
-    publishManualCmd(
-      vn * JOG_LIN_MAX * speedPctRef.current,
-      wn * JOG_ANG_MAX * speedPctRef.current,
-    )
+    const targetVx = vn * JOG_LIN_MAX * speedPctRef.current
+    const targetWz = wn * JOG_ANG_MAX * speedPctRef.current
+    const dtSec = JOG_PUB_MS / 1000
+    const cur = currentCmdRef.current
+    cur.vx = rampToward(cur.vx, targetVx, JOG_LIN_ACCEL * dtSec)
+    cur.wz = rampToward(cur.wz, targetWz, JOG_ANG_ACCEL * dtSec)
+    publishManualCmd(cur.vx, cur.wz)
   }, [publishManualCmd])
 
   const setJogInput = useCallback((vn, wn) => {
@@ -268,6 +285,7 @@ export default function App() {
 
   const clearJogInput = useCallback(() => {
     jogNormRef.current = { vn: 0, wn: 0 }
+    currentCmdRef.current = { vx: 0, wz: 0 }
     if (jogTimerRef.current) {
       clearInterval(jogTimerRef.current)
       jogTimerRef.current = null
