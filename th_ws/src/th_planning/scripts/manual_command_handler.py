@@ -3,6 +3,7 @@
 # manual_command_handler — タブレット手動操作ハンドラー
 # ============================================================
 import rclpy
+import rclpy.time
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
@@ -77,8 +78,9 @@ class ManualCommandHandler(Node):
             return
 
         # base_link 座標を map フレームへ変換してから Nav2 へ送る
-        # (タイムスタンプを now() に更新し、TF の最新変換を使用する)
-        msg.header.stamp = self.get_clock().now().to_msg()
+        # (最新の利用可能なTFを使用。now() だと TF バッファがまだ追いついて
+        #  おらず未来外挿エラーになりうるため。summon_navigator.py と同じ対処)
+        msg.header.stamp = rclpy.time.Time().to_msg()
         map_frame = self.get_parameter('map_frame').value
         try:
             map_pose = self._tf_buffer.transform(

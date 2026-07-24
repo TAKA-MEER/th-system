@@ -68,6 +68,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
   const [personStatus, setPersonStatus] = useState(null)
   const [candidates, setCandidates]     = useState([])
   const [mappingActive, setMappingActive] = useState(false)
+  const [actionError, setActionError]     = useState(null)  // 直近のサービス呼び出し失敗理由 (WebUI表示用)
   const [mapData, setMapData]             = useState(null)   // 最新の nav_msgs/OccupancyGrid、未受信なら null
   const [robotPose, setRobotPose]         = useState(null)   // map座標系での {x, y, yaw}、未確定なら null
   const [scanData, setScanData]           = useState(null)   // 最新の sensor_msgs/LaserScan (/scan_filtered)、未受信なら null
@@ -313,7 +314,11 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     svc.callService(
       new ROSLIB.ServiceRequest({ panel_id: panelId }),
-      (res) => console.log('GoToPanel:', res)
+      (res) => {
+        console.log('GoToPanel:', res)
+        if (!res.success) setActionError(`配電盤移動失敗: ${res.message}`)
+        else setActionError(null)
+      }
     )
   }, [])
 
@@ -328,7 +333,14 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     svc.callService(
       new ROSLIB.ServiceRequest({}),
-      (res) => { if (!res.success) console.warn('呼び寄せ失敗:', res.message) }
+      (res) => {
+        if (!res.success) {
+          console.warn('呼び寄せ失敗:', res.message)
+          setActionError(`呼び寄せ失敗: ${res.message}`)
+        } else {
+          setActionError(null)
+        }
+      }
     )
   }, [])
 
@@ -343,9 +355,19 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     svc.callService(
       new ROSLIB.ServiceRequest({}),
-      (res) => { if (!res.success) console.warn('地図作成切替失敗:', res.message) }
+      (res) => {
+        if (!res.success) {
+          console.warn('地図作成切替失敗:', res.message)
+          setActionError(`地図作成切替失敗: ${res.message}`)
+        } else {
+          setActionError(null)
+        }
+      }
     )
   }, [])
+
+  // ── アクションエラーの手動クリア (WebUI バナーの閉じるボタン用) ──
+  const clearActionError = useCallback(() => setActionError(null), [])
 
   // ── 追従対象の選択・再登録 ─────────────────────────────────
   const selectTarget = useCallback((candidateIndex) => {
@@ -446,6 +468,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     requestMode, publishTabletEstop, sendManualGoal, publishManualCmd, goToPanel,
     summonRobot,
     mappingActive, toggleMapping,
+    actionError, clearActionError,
     mapData, robotPose, scanData, pathData,
     getTunableParams, applyTunableParam, saveTunableParams,
   }

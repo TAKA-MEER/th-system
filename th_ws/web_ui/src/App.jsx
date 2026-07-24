@@ -214,6 +214,7 @@ export default function App() {
     requestMode, publishTabletEstop, publishManualCmd, goToPanel,
     summonRobot,
     mappingActive, toggleMapping,
+    actionError, clearActionError,
     mapData, robotPose, scanData, pathData,
     getTunableParams, applyTunableParam, saveTunableParams,
   } = useRosbridge()
@@ -408,6 +409,14 @@ export default function App() {
       {isFault && (
         <div className="fault-bar">
           <b>⚠ フォルト:</b> {fault.fault_type} — {fault.description}
+        </div>
+      )}
+
+      {/* ── 直近の操作エラー (呼び寄せ/配電盤移動/地図作成の失敗理由) ── */}
+      {actionError && (
+        <div className="fault-bar action-error-bar">
+          <b>⚠ 操作失敗:</b> {actionError}
+          <button className="action-error-close" onClick={clearActionError} aria-label="閉じる">×</button>
         </div>
       )}
 

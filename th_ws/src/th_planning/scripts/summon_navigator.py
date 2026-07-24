@@ -7,6 +7,7 @@
 # 到着/失敗のいずれでも IDLE に戻る（AT_PANEL のような保持状態は持たない）。
 # ============================================================
 import rclpy
+import rclpy.time
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
@@ -120,7 +121,8 @@ class SummonNavigator(Node):
 
         goal_x, goal_y, yaw = goal
         goal_pose = PoseStamped()
-        goal_pose.header.stamp    = self.get_clock().now().to_msg()
+        # 最新の利用可能なTFを使用（未来外挿を回避。follow_planner.py と同じ対処）
+        goal_pose.header.stamp    = rclpy.time.Time().to_msg()
         goal_pose.header.frame_id = self._base_frame
         goal_pose.pose.position.x = goal_x
         goal_pose.pose.position.y = goal_y
