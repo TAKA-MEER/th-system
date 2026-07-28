@@ -72,6 +72,9 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
   const [candidates, setCandidates]     = useState([])
   const [mappingActive, setMappingActive] = useState(false)
   const [actionError, setActionError]     = useState(null)  // 直近のサービス呼び出し失敗理由 (WebUI表示用)
+  // 直近のサービス呼び出し結果 (音声アナウンスのトリガ用)。actionError と違い成功も記録し、
+  // seq が単調増加するため同じ結果が連続してもエッジとして検出できる
+  const [lastAction, setLastAction]       = useState(null)  // { seq, kind, ok, message }
   const [mapData, setMapData]             = useState(null)   // 最新の nav_msgs/OccupancyGrid、未受信なら null
   const [robotPose, setRobotPose]         = useState(null)   // map座標系での {x, y, yaw}、未確定なら null
   const [scanData, setScanData]           = useState(null)   // 最新の sensor_msgs/LaserScan (/scan_filtered)、未受信なら null
@@ -86,6 +89,14 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
 
   const measuredWheelBufRef = useRef([])  // {t, left, right} (受信時刻, 実測 m/s)
   const commandWheelBufRef  = useRef([])  // {t, left, right} (受信時刻, 指令 m/s)
+
+  // サービス応答を購読トピックから復元することはできないため、結果をイベントとして
+  // 1本流す。受け手 (useVoiceTriggers) が kind を見て何を鳴らすか決める。
+  const actionSeqRef = useRef(0)
+  const bumpAction = useCallback((kind, ok, message) => {
+    actionSeqRef.current += 1
+    setLastAction({ seq: actionSeqRef.current, kind, ok, message: message ?? '' })
+  }, [])
 
   // ── 接続 ──────────────────────────────────────────────────
   useEffect(() => {
@@ -258,9 +269,17 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     svc.callService(
       new ROSLIB.ServiceRequest({ requested_mode: modeNum, requester: 'tablet_ui' }),
-      (res) => { if (!res.success) console.warn('モード変更失敗:', res.message) }
+      (res) => {
+        bumpAction('set_mode', res.success, res.message)
+        if (!res.success) {
+          console.warn('モード変更失敗:', res.message)
+          setActionError(`モード変更失敗: ${res.message}`)
+        } else {
+          setActionError(null)
+        }
+      }
     )
-  }, [])
+  }, [bumpAction])
 
   // ── タブレット緊急停止 ────────────────────────────────────
   const tabletEstopRef = useRef(null)
@@ -349,11 +368,12 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
       new ROSLIB.ServiceRequest({ panel_id: panelId }),
       (res) => {
         console.log('GoToPanel:', res)
+        bumpAction('go_to_panel', res.success, res.message)
         if (!res.success) setActionError(`配電盤移動失敗: ${res.message}`)
         else setActionError(null)
       }
     )
-  }, [])
+  }, [bumpAction])
 
   // ── 呼び寄せサービス ──────────────────────────────────────
   const summonRobot = useCallback(() => {
@@ -367,6 +387,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     svc.callService(
       new ROSLIB.ServiceRequest({}),
       (res) => {
+        bumpAction('summon', res.success, res.message)
         if (!res.success) {
           console.warn('呼び寄せ失敗:', res.message)
           setActionError(`呼び寄せ失敗: ${res.message}`)
@@ -375,7 +396,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
         }
       }
     )
-  }, [])
+  }, [bumpAction])
 
   // ── 地図作成 開始/停止 (トグル) ────────────────────────────
   const toggleMapping = useCallback(() => {
@@ -389,6 +410,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     svc.callService(
       new ROSLIB.ServiceRequest({}),
       (res) => {
+        bumpAction('toggle_mapping', res.success, res.message)
         if (!res.success) {
           console.warn('地図作成切替失敗:', res.message)
           setActionError(`地図作成切替失敗: ${res.message}`)
@@ -397,7 +419,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
         }
       }
     )
-  }, [])
+  }, [bumpAction])
 
   // ── アクションエラーの手動クリア (WebUI バナーの閉じるボタン用) ──
   const clearActionError = useCallback(() => setActionError(null), [])
@@ -501,7 +523,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     requestMode, publishTabletEstop, sendManualGoal, publishManualCmd, goToPanel,
     summonRobot,
     mappingActive, toggleMapping,
-    actionError, clearActionError,
+    actionError, clearActionError, lastAction,
     mapData, robotPose, scanData, pathData, wheelSpeedData,
     getTunableParams, applyTunableParam, saveTunableParams,
   }
