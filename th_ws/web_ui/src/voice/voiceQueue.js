@@ -196,7 +196,9 @@ function createVoiceQueue() {
     emit()
   }
 
-  function stopAll({ clearConditions = false } = {}) {
+  // 既定で継続条件も解除する。「全部止める」と読める名前で再発話タイマーだけ
+  // 生き残るのは事故のもと。playback だけ止めたい場合のみ false を渡す。
+  function stopAll({ clearConditions = true } = {}) {
     cancelCurrent()
     queue.length = 0
     if (clearConditions) {
