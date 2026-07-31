@@ -124,12 +124,10 @@ export function useVoiceTriggers(ros, voice) {
     if (prev.followPlanner === followPlanner && followPlanner !== null) {
       if (prev.followState !== followState) {
         if (followPlanner === 'mapless') {
-          if (followState === 'TRACKING' && prev.followState === 'STOPPED') {
-            // 停止からの復帰は「なぜ止まっていたか」で文言が変わる。
-            // 接近停止からの再開 (N10) と障害物解消 (N12) は同じ遷移なので
-            // 直前の reason で振り分ける
-            if (prev.followReason === 'obstacle_ahead')   announce('N12')
-            else if (prev.followReason === 'person_close') announce('N10')
+          // 接近停止からの復帰。接近時だけ state が STOPPED になる
+          if (followState === 'TRACKING' && prev.followState === 'STOPPED' &&
+              prev.followReason === 'person_close') {
+            announce('N10')
           }
         } else if (followPlanner === 'map') {
           if (followState === 'PREPARE' && prev.followState === 'TRACKING') announce('N15')
@@ -141,11 +139,15 @@ export function useVoiceTriggers(ros, voice) {
           }
         }
       }
-      // 接近停止に入った瞬間 (mapless)。state は STOPPED のまま reason だけ
-      // 変わる経路 (障害物 → 接近) もあるので reason の遷移で見る
-      if (prev.followReason !== followReason &&
-          followPlanner === 'mapless' && followReason === 'person_close') {
-        announce('N9')
+      // reason の遷移で見るもの (mapless)。
+      // 障害物は state を STOPPED にせず TRACKING のまま reason だけ変える
+      // (距離ベースの状態機械と進路チェックが別系統のため。実機で確認済み)。
+      // よって障害物の検知・解消は state ではなく reason で判定する必要がある。
+      if (prev.followReason !== followReason && followPlanner === 'mapless') {
+        if (followReason === 'person_close') announce('N9')
+        if (followReason === 'tracking' && prev.followReason === 'obstacle_ahead') {
+          announce('N12')
+        }
       }
     }
   }, [connected, mode, faultActive, estopAny, isTracked, lostReason,
