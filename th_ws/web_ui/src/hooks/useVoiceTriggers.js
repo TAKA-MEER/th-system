@@ -6,8 +6,8 @@
 //
 // Tier 2 時点の自動化範囲:
 //   安全通知 13件すべて
-//   デモ実況 36件中 25件
-// 残る 11件 (N1 N2 N7 N8 N16 N17 N18 N20 N37 N39 N41) は、観測手段がないか
+//   デモ実況 36件中 24件
+// 残る 12件 (N1 N2 N6 N7 N8 N16 N17 N18 N20 N37 N39 N41) は、観測手段がないか
 // 他 ID と同じエッジで発火して区別できないため手動発火のみ。理由は
 // announcements.js の note に個別に書いてある。
 // ============================================================
@@ -100,6 +100,7 @@ export function useVoiceTriggers(ros, voice) {
 
     if (prev.mode !== mode) {
       if (prev.mode === MODE.IDLE && mode === MODE.FOLLOWING_MAPLESS) announce('N5')
+      if (prev.mode === MODE.IDLE && mode === MODE.FOLLOWING)         announce('N14')
       if (prev.mode === MODE.IDLE && mode === MODE.MANUAL)            announce('N40')
       if (prev.mode === MODE.MOVING_TO_PANEL && mode === MODE.AT_PANEL) announce('N38')
     }
@@ -117,7 +118,9 @@ export function useVoiceTriggers(ros, voice) {
     }
 
     // ── 追従ロジックの状態遷移 ──────────────────────────────
-    // planner が切り替わった直後は前回値と比較しても意味がないので見送る
+    // planner が切り替わった直後は前回値と比較しても意味がないので見送る。
+    // 追従開始そのもの (N5 / N14) はモード遷移側で拾っているので、ここでは
+    // 追従中に起きる状態変化だけを扱う
     if (prev.followPlanner === followPlanner && followPlanner !== null) {
       if (prev.followState !== followState) {
         if (followPlanner === 'mapless') {
@@ -128,7 +131,6 @@ export function useVoiceTriggers(ros, voice) {
             if (prev.followReason === 'obstacle_ahead')   announce('N12')
             else if (prev.followReason === 'person_close') announce('N10')
           }
-          if (followState === 'TRACKING' && prev.followState === 'INACTIVE') announce('N6')
         } else if (followPlanner === 'map') {
           if (followState === 'PREPARE' && prev.followState === 'TRACKING') announce('N15')
           if (followState === 'EVADING' && prev.followState === 'PREPARE')  announce('N19')
@@ -137,7 +139,6 @@ export function useVoiceTriggers(ros, voice) {
               (prev.followState === 'PREPARE' || prev.followState === 'EVADING')) {
             announce('N21')
           }
-          if (followState === 'TRACKING' && prev.followState === 'INACTIVE') announce('N14')
         }
       }
       // 接近停止に入った瞬間 (mapless)。state は STOPPED のまま reason だけ

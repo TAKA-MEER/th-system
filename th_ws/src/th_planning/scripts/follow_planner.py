@@ -68,6 +68,7 @@ class FollowPlanner(Node):
         # 状態 publish の間引き用 (follow_planner_mapless.py と同じ方針)
         self._last_status_key  = None
         self._last_status_time = 0.0
+        self._status_active    = False   # 直前周期で自モードだったか
         hz = self.get_parameter("update_rate_hz").value
         self._timer = self.create_timer(1.0 / hz, self._loop)
         self.get_logger().info("follow_planner 起動（高度追従ロジック）")
@@ -251,8 +252,13 @@ class FollowPlanner(Node):
 
     def _loop(self):
         if self._current_mode not in (RobotMode.FOLLOWING, RobotMode.MOVING_TO_PANEL):
-            self._publish_status("INACTIVE", "inactive")
+            # 自モードでない間は黙る (follow_planner_mapless.py の同じ箇所を参照)。
+            # モードを抜けた直後の 1 回だけ INACTIVE を出して残留状態を解除する。
+            if self._status_active:
+                self._status_active = False
+                self._publish_status("INACTIVE", "inactive")
             return
+        self._status_active = True
         if self._person_lost or self._person_pos is None:
             # ロスト中に何も publish しないと、EVADING/PREPARE で直前に出していた
             # 速度指令が /cmd_vel_retreat に残ったままになり停止しない

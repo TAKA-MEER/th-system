@@ -65,6 +65,7 @@ class FollowPlannerMapless(Node):
         # 毎周期再描画してしまうため、変化時 + 1Hz のハートビートに絞る
         self._last_status_key  = None
         self._last_status_time = 0.0
+        self._status_active    = False   # 直前周期で自モードだったか
         hz = self.get_parameter("update_rate_hz").value
         self._timer = self.create_timer(1.0 / hz, self._loop)
         self.get_logger().info("follow_planner_mapless 起動（MAP不要軌跡追従モード）")
@@ -221,8 +222,17 @@ class FollowPlannerMapless(Node):
 
     def _loop(self):
         if self._current_mode != RobotMode.FOLLOWING_MAPLESS:
-            self._publish_status("INACTIVE", "inactive")
+            # 自モードでない間は黙る。follow_planner と /follow/status を共有して
+            # いるため、両ノードが毎周期 INACTIVE を流すと planner フィールドが
+            # 交互に入れ替わり、購読側の状態遷移判定が壊れる。
+            # ただしモードを抜けた直後の 1 回だけは発行する。これがないと
+            # 「障害物で停止中」等の理由が最後の値のまま residual に残り、
+            # 音声通知の継続条件が解除されない。
+            if self._status_active:
+                self._status_active = False
+                self._publish_status("INACTIVE", "inactive")
             return
+        self._status_active = True
         if self._person_pos is None:
             # まだ一度も検知していない (デバウンス対象外、確定的に停止)
             self._core.notify_lost()

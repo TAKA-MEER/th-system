@@ -102,7 +102,8 @@ const DEMO_ANNOUNCEMENTS = [
   entry('N5',  D, 'IDLE → FOLLOWING_MAPLESS', '追従開始。地図なし', 1.3,
     { auto: AUTO.WIRED }),
   entry('N6',  D, 'MaplessState.TRACKING', '軌跡を追従中', 1.0,
-    { auto: AUTO.WIRED }),
+    { note: '追従開始と同時に TRACKING になるため N5「追従開始。地図なし」と'
+          + '重なる。追従中の再突入だけを拾う手段もないため手動発火のみ' }),
   entry('N7',  D, '追従速度が v_max 到達', '秒速 30 センチ', 1.1,
     { note: '速度は publish 済み。ただし文案が v_max の値を直書きしており、'
           + 'パラメータ変更で嘘になる。数値クリップ (clips) の導入が前提' }),
@@ -115,7 +116,9 @@ const DEMO_ANNOUNCEMENTS = [
   entry('N12', D, '障害物解消 → 再開', '回避完了。再開', 1.2,
     { auto: AUTO.WIRED }),
   entry('N14', D, 'FollowState.TRACKING', '軌跡追従中', 0.9,
-    { auto: AUTO.WIRED }),
+    { auto: AUTO.WIRED,
+      note: 'IDLE→FOLLOWING のモード遷移で発火する。地図あり追従には N5 相当の'
+          + '開始アナウンスがないため、これがその役割を兼ねる' }),
   entry('N15', D, 'TRACKING → PREPARE', '接近 3 メートル。退避準備', 1.7,
     { auto: AUTO.WIRED }),
   entry('N16', D, '退避方向スキャン開始', '16 方向スキャン', 1.3,
