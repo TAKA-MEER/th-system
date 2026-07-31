@@ -93,6 +93,16 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 | Gazebo シミュレーションで検証する | [docs/simulation.md](docs/simulation.md) |
 | テストを実行する・追加する | [docs/testing.md](docs/testing.md) |
 | 内部設計・パラメータ調整・機能追加 | [docs/architecture.md](docs/architecture.md) |
+| 音声アナウンスのクレジット・利用条件 | [docs/voice-credits.md](docs/voice-credits.md) |
+| 音声の話者を聞き比べて選ぶ | [docs/voice-audition/](docs/voice-audition/README.md) |
+
+---
+
+## クレジット
+
+音声アナウンスの音声合成に **VOICEVOX Nemo**（<https://voicevox.hiroshiba.jp/nemo/>）を使用しています。
+
+利用条件・遵守事項の詳細は [docs/voice-credits.md](docs/voice-credits.md) を参照してください。
 
 ---
 

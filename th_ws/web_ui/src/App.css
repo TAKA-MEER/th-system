@@ -709,3 +709,9 @@ body {
   background: #10333a;
   color: #80deea;
 }
+
+.voice-credit {
+  margin-top: 0.35rem;
+  font-size: 0.65rem;
+  color: #555;
+}

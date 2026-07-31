@@ -570,6 +570,9 @@ export default function App() {
               : '再生中: —'}
             {voice.snapshot.queueIds.length > 0 && `  (待機 ${voice.snapshot.queueIds.length})`}
           </div>
+          {/* VOICEVOX Nemo の利用規約で必須のクレジット表記。
+              docs/voice-credits.md 参照。消さないこと */}
+          <div className="voice-credit">音声: VOICEVOX Nemo</div>
         </section>
 
         {/* ── 地図作成 開始/停止 ─────────────────────── */}

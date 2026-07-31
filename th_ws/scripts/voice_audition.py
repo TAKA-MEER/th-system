@@ -21,6 +21,8 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -115,7 +117,16 @@ def is_female_nemo(name: str) -> bool:
 
 
 def safe_dirname(name: str) -> str:
-    return re.sub(r'[^\w぀-ヿ一-鿿\-]+', '_', name)
+    """話者名から ASCII のディレクトリ名を作る。
+
+    「女声1」等の日本語をそのままパスに使うと、GitHub Pages や Markdown の
+    リンクで URL エンコードを挟むことになり環境差が出やすい。共有物なので
+    ASCII に寄せる（表示名は HTML/Markdown 側で別に持つ）。
+    """
+    m = re.match(r'(女声|男声)(\d+)', name)
+    if m:
+        return ('f' if m.group(1) == '女声' else 'm') + m.group(2)
+    return re.sub(r'[^\w\-]+', '_', name) or 'speaker'
 
 
 def synth(host: str, text: str, style_id: int) -> bytes:
@@ -127,7 +138,18 @@ def synth(host: str, text: str, style_id: int) -> bytes:
                data=json.dumps(query).encode('utf-8'))
 
 
-def build_index_html(out_dir: str, speakers: list[tuple[str, str, int]]):
+def to_mp3(wav_path: str) -> str:
+    """WAV を MP3 に変換して WAV を消す。リポジトリに載せる際のサイズ対策。"""
+    mp3_path = wav_path[:-4] + '.mp3'
+    subprocess.run(
+        ['ffmpeg', '-y', '-loglevel', 'error', '-i', wav_path,
+         '-codec:a', 'libmp3lame', '-b:a', '96k', mp3_path],
+        check=True)
+    os.remove(wav_path)
+    return mp3_path
+
+
+def build_index_html(out_dir: str, speakers: list[tuple[str, str, int]], ext: str):
     """ブラウザで並べて聞き比べるためのページを書き出す"""
     rows = []
     for pid, text, reading, note in AUDITION_PHRASES:
@@ -135,7 +157,7 @@ def build_index_html(out_dir: str, speakers: list[tuple[str, str, int]]):
         for name, style, sid in speakers:
             d = safe_dirname(f'{name}_{style}')
             cells.append(
-                f'<td><audio controls preload="none" src="{d}/{pid}.wav"></audio></td>')
+                f'<td><audio controls preload="none" src="{d}/{pid}.{ext}"></audio></td>')
         yomi = f'<div class="prov">読み: {reading}</div>' if reading else ''
         rows.append(
             f'<tr><th><div class="id">{pid}</div>'
@@ -189,7 +211,13 @@ def main():
     ap.add_argument('--out', default='audition')
     ap.add_argument('--all-speakers', action='store_true',
                     help='男性話者も含めて生成する')
+    ap.add_argument('--mp3', action='store_true',
+                    help='MP3 に変換する (リポジトリに載せて共有する場合。要 ffmpeg)')
     args = ap.parse_args()
+
+    if args.mp3 and not shutil.which('ffmpeg'):
+        print('--mp3 には ffmpeg が必要です', file=sys.stderr)
+        return 1
 
     try:
         speakers = fetch_speakers(args.host)
@@ -214,11 +242,14 @@ def main():
         os.makedirs(d, exist_ok=True)
         for pid, text, reading, _ in AUDITION_PHRASES:
             wav = synth(args.host, reading or text, sid)
-            with open(os.path.join(d, f'{pid}.wav'), 'wb') as f:
+            wav_path = os.path.join(d, f'{pid}.wav')
+            with open(wav_path, 'wb') as f:
                 f.write(wav)
+            if args.mp3:
+                to_mp3(wav_path)
         print(f'  ✓ {name} ({style}, id={sid})')
 
-    build_index_html(args.out, speakers)
+    build_index_html(args.out, speakers, 'mp3' if args.mp3 else 'wav')
     print(f'\n完了。{os.path.join(args.out, "index.html")} をブラウザで開いてください')
     return 0
 
