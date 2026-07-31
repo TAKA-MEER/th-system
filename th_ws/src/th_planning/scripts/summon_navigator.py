@@ -15,7 +15,7 @@ from rclpy.duration import Duration
 from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import NavigateToPose
 from std_srvs.srv import Trigger
-from th_system_msgs.msg import RobotMode, PersonStatus
+from th_system_msgs.msg import RobotMode, PersonStatus, SummonStatus
 from th_system_msgs.srv import SetMode
 
 from action_msgs.msg import GoalStatus
@@ -53,6 +53,12 @@ class SummonNavigator(Node):
         self._person       = None   # 最新の PersonStatus
         self._goal_handle   = None
 
+        # ── Publisher ──────────────────────────────────────
+        # 到着と中止はどちらも SUMMONING → IDLE 遷移になるため、モード遷移だけを
+        # 見ている購読側 (WebUI の音声通知) では区別できない。イベントとして流す。
+        self._pub_status = self.create_publisher(
+            SummonStatus, '/summon_navigator/status', 10)
+
         # ── Subscribers ────────────────────────────────────
         self.create_subscription(RobotMode, '/robot/mode', self._cb_mode, 10)
         self.create_subscription(PersonStatus, '/person/status', self._cb_person, 10)
@@ -70,6 +76,14 @@ class SummonNavigator(Node):
 
         self.get_logger().info('summon_navigator 起動')
 
+    def _publish_status(self, event: str, message: str = ''):
+        msg = SummonStatus()
+        msg.header.stamp    = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'base_link'
+        msg.event           = event
+        msg.message         = message
+        self._pub_status.publish(msg)
+
     # ── モード監視 ─────────────────────────────────────────
     def _cb_mode(self, msg: RobotMode):
         prev = self._current_mode
@@ -84,6 +98,7 @@ class SummonNavigator(Node):
             self._goal_handle.cancel_goal_async()
             self._goal_handle = None
             self.get_logger().info('SUMMONING 離脱によりゴールをキャンセル')
+            self._publish_status('CANCELLED', 'SUMMONING 離脱')
 
     def _cb_person(self, msg: PersonStatus):
         self._person = msg
@@ -159,9 +174,11 @@ class SummonNavigator(Node):
         goal_handle = future.result()
         if not goal_handle.accepted:
             self.get_logger().error('Nav2 ゴール拒否')
+            self._publish_status('REJECTED', 'Nav2 ゴール拒否')
             self._request_mode(RobotMode.IDLE, 'summon_navigator')
             return
         self._goal_handle = goal_handle
+        self._publish_status('ACCEPTED')
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self._nav_result)
 
@@ -170,8 +187,14 @@ class SummonNavigator(Node):
         self._goal_handle = None
         if result.status == GoalStatus.STATUS_SUCCEEDED:
             self.get_logger().info('呼び寄せ: 試験員に到着')
+            self._publish_status('ARRIVED')
+        elif result.status == GoalStatus.STATUS_CANCELED:
+            # 離脱によるキャンセルは _cb_mode 側で既に CANCELLED を出しているため
+            # ここでは重ねない
+            self.get_logger().info('呼び寄せ: ゴールがキャンセルされた')
         else:
             self.get_logger().warn(f'呼び寄せ: Nav2 結果 status={result.status}')
+            self._publish_status('FAILED', f'Nav2 status={result.status}')
         self._request_mode(RobotMode.IDLE, 'summon_navigator')
 
     # ── mode_manager サービス呼び出し ──────────────────────

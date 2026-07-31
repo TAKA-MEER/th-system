@@ -4,10 +4,12 @@
 // useRosbridge には音声の存在を知らせない。あちらはドメインイベントを流すだけで、
 // 「どの状態でどれを鳴らすか」の知識はすべてこのファイルに閉じる。
 //
-// Tier 1 で自動化できるのは、既存の購読とサービス応答から確実に判定できるものだけ:
-//   安全通知 13件中 9件 (A1 A2 A3 B1 B2 B3 D1 D2 D3)
-//   デモ実況 36件中 11件 (N4 N5 N23 N24 N29 N30 N31 N34 N36 N38 N40)
-// 残りは追従系ノードの状態 publish (Tier 2) 待ち。
+// Tier 2 時点の自動化範囲:
+//   安全通知 13件すべて
+//   デモ実況 36件中 25件
+// 残る 11件 (N1 N2 N7 N8 N16 N17 N18 N20 N37 N39 N41) は、観測手段がないか
+// 他 ID と同じエッジで発火して区別できないため手動発火のみ。理由は
+// announcements.js の note に個別に書いてある。
 // ============================================================
 
 import { useEffect, useRef } from 'react'
@@ -17,6 +19,7 @@ import { MODE } from '../robotMode.js'
 export function useVoiceTriggers(ros, voice) {
   const {
     connected, mode, fault, estop, estopActive, personStatus, lastAction,
+    followStatus, searchStatus, summonStatus,
   } = ros
 
   const faultActive = !!fault?.active
@@ -26,6 +29,12 @@ export function useVoiceTriggers(ros, voice) {
   const estopAny    = !!estop || !!estopActive
   const isTracked   = !!personStatus && !personStatus.is_lost
   const lostReason  = personStatus?.is_lost ? (personStatus.lost_reason ?? '') : ''
+
+  // 追従ロジックの内部状態 (/follow/status)
+  const followPlanner = followStatus?.planner ?? null
+  const followState   = followStatus?.state ?? null
+  const followReason  = followStatus?.reason ?? null
+  const searchPhase   = searchStatus?.phase ?? null
 
   const { setCondition, announce } = voice
 
@@ -39,12 +48,26 @@ export function useVoiceTriggers(ros, voice) {
     setCondition('B1', faultActive && faultType === 'PERSON_TRACKER_LOST' && mode === MODE.IDLE)
   }, [faultActive, faultType, mode, setCondition])
 
+  // 追従ロジック由来の持続的な待機状態。
+  // C4 は reason が 'retreat_blocked' のときだけで、'no_pose' では鳴らさない。
+  // 両者は core では同じ retreat_blocked フラグだったが、costmap 未受信のたびに
+  // 「逃げ場なし。離れて」が誤発火するため理由を分けてある。
+  useEffect(() => {
+    setCondition('C3', searchPhase === 'GAVE_UP')
+    setCondition('C4', followReason === 'retreat_blocked')
+    setCondition('C7', followReason === 'obstacle_ahead')
+    setCondition('C8', followReason === 'no_pose' || followReason === 'no_scan')
+  }, [searchPhase, followReason, setCondition])
+
   // ── エッジ ──────────────────────────────────────────────
   const prevRef = useRef(null)
   const firstCaptureDoneRef = useRef(false)
 
   useEffect(() => {
-    const now = { connected, mode, faultActive, estopAny, isTracked, lostReason }
+    const now = {
+      connected, mode, faultActive, estopAny, isTracked, lostReason,
+      followPlanner, followState, followReason, searchPhase,
+    }
     const prev = prevRef.current
     prevRef.current = now
 
@@ -80,7 +103,72 @@ export function useVoiceTriggers(ros, voice) {
       if (prev.mode === MODE.IDLE && mode === MODE.MANUAL)            announce('N40')
       if (prev.mode === MODE.MOVING_TO_PANEL && mode === MODE.AT_PANEL) announce('N38')
     }
-  }, [connected, mode, faultActive, estopAny, isTracked, lostReason, announce])
+
+    // ── 捜索段階 (予測 → 捜索旋回 → 再捕捉) ────────────────
+    if (prev.searchPhase !== searchPhase) {
+      if (searchPhase === 'PREDICTING') announce('N25')
+      if (searchPhase === 'SEARCHING')  announce('N26')
+      // 捜索・予測から NONE に戻る = 再発見。デモの山場。
+      // 初回捕捉 (N4) とは区別する必要があるので、直前が捜索系だったことを見る
+      if (searchPhase === 'NONE' &&
+          (prev.searchPhase === 'SEARCHING' || prev.searchPhase === 'GAVE_UP')) {
+        announce('N27')
+      }
+    }
+
+    // ── 追従ロジックの状態遷移 ──────────────────────────────
+    // planner が切り替わった直後は前回値と比較しても意味がないので見送る
+    if (prev.followPlanner === followPlanner && followPlanner !== null) {
+      if (prev.followState !== followState) {
+        if (followPlanner === 'mapless') {
+          if (followState === 'TRACKING' && prev.followState === 'STOPPED') {
+            // 停止からの復帰は「なぜ止まっていたか」で文言が変わる。
+            // 接近停止からの再開 (N10) と障害物解消 (N12) は同じ遷移なので
+            // 直前の reason で振り分ける
+            if (prev.followReason === 'obstacle_ahead')   announce('N12')
+            else if (prev.followReason === 'person_close') announce('N10')
+          }
+          if (followState === 'TRACKING' && prev.followState === 'INACTIVE') announce('N6')
+        } else if (followPlanner === 'map') {
+          if (followState === 'PREPARE' && prev.followState === 'TRACKING') announce('N15')
+          if (followState === 'EVADING' && prev.followState === 'PREPARE')  announce('N19')
+          // 退避帯から追従へ復帰 = 距離を確保できた
+          if (followState === 'TRACKING' &&
+              (prev.followState === 'PREPARE' || prev.followState === 'EVADING')) {
+            announce('N21')
+          }
+          if (followState === 'TRACKING' && prev.followState === 'INACTIVE') announce('N14')
+        }
+      }
+      // 接近停止に入った瞬間 (mapless)。state は STOPPED のまま reason だけ
+      // 変わる経路 (障害物 → 接近) もあるので reason の遷移で見る
+      if (prev.followReason !== followReason &&
+          followPlanner === 'mapless' && followReason === 'person_close') {
+        announce('N9')
+      }
+    }
+  }, [connected, mode, faultActive, estopAny, isTracked, lostReason,
+      followPlanner, followState, followReason, searchPhase, announce])
+
+  // ── 呼び寄せイベント ────────────────────────────────────
+  // 到着 (N33) と中止 (N35) はどちらも SUMMONING→IDLE 遷移なので、
+  // モードだけを見ていると区別できない。専用トピックの event で振り分ける
+  const prevSummonSeqRef = useRef(0)
+
+  useEffect(() => {
+    if (!summonStatus || summonStatus.seq === prevSummonSeqRef.current) return
+    prevSummonSeqRef.current = summonStatus.seq
+
+    switch (summonStatus.event) {
+      case 'ACCEPTED':  announce('N32'); break
+      case 'ARRIVED':   announce('N33'); break
+      case 'CANCELLED': announce('N35'); break
+      // REJECTED / FAILED はどちらも「経路なし。中止」で足りる
+      case 'REJECTED':
+      case 'FAILED':    announce('N34'); break
+      default: break
+    }
+  }, [summonStatus, announce])
 
   // ── サービス応答 ────────────────────────────────────────
   // seq が単調増加するので、同じ結果が連続しても取りこぼさない

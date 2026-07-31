@@ -75,6 +75,11 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
   // 直近のサービス呼び出し結果 (音声アナウンスのトリガ用)。actionError と違い成功も記録し、
   // seq が単調増加するため同じ結果が連続してもエッジとして検出できる
   const [lastAction, setLastAction]       = useState(null)  // { seq, kind, ok, message }
+  // 追従・捜索・呼び寄せの内部状態 (音声通知のトリガ用)
+  const [followStatus, setFollowStatus]   = useState(null)  // th_system_msgs/FollowStatus
+  const [searchStatus, setSearchStatus]   = useState(null)  // th_system_msgs/SearchStatus
+  const [summonStatus, setSummonStatus]   = useState(null)  // { seq, event, message }
+  const summonSeqRef = useRef(0)
   const [mapData, setMapData]             = useState(null)   // 最新の nav_msgs/OccupancyGrid、未受信なら null
   const [robotPose, setRobotPose]         = useState(null)   // map座標系での {x, y, yaw}、未確定なら null
   const [scanData, setScanData]           = useState(null)   // 最新の sensor_msgs/LaserScan (/scan_filtered)、未受信なら null
@@ -140,6 +145,33 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
       messageType: 'th_system_msgs/PersonStatus'
     })
     subPerson.subscribe((msg) => setPersonStatus(msg))
+
+    // ── 購読: 追従ロジックの内部状態 (音声通知用) ───────────
+    // 発行側で「変化時 + 1Hz」に間引いてあるため、ここでの throttle は不要
+    const subFollowStatus = new ROSLIB.Topic({
+      ros, name: '/follow/status',
+      messageType: 'th_system_msgs/FollowStatus'
+    })
+    subFollowStatus.subscribe((msg) => setFollowStatus(msg))
+
+    // ── 購読: 捜索段階 (音声通知用) ─────────────────────────
+    const subSearchStatus = new ROSLIB.Topic({
+      ros, name: '/person/search_status',
+      messageType: 'th_system_msgs/SearchStatus'
+    })
+    subSearchStatus.subscribe((msg) => setSearchStatus(msg))
+
+    // ── 購読: 呼び寄せイベント (音声通知用) ─────────────────
+    // 到着と中止はどちらも SUMMONING→IDLE 遷移になるため、モードだけでは
+    // 区別できない。seq を振ってエッジとして扱えるようにする
+    const subSummonStatus = new ROSLIB.Topic({
+      ros, name: '/summon_navigator/status',
+      messageType: 'th_system_msgs/SummonStatus'
+    })
+    subSummonStatus.subscribe((msg) => {
+      summonSeqRef.current += 1
+      setSummonStatus({ seq: summonSeqRef.current, event: msg.event, message: msg.message })
+    })
 
     // ── 購読: 追従対象候補一覧 ──────────────────────────────
     const subCandidates = new ROSLIB.Topic({
@@ -242,6 +274,9 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
       subFault.unsubscribe()
       subEstop.unsubscribe()
       subPerson.unsubscribe()
+      subFollowStatus.unsubscribe()
+      subSearchStatus.unsubscribe()
+      subSummonStatus.unsubscribe()
       subCandidates.unsubscribe()
       subMapping.unsubscribe()
       subMap.unsubscribe()
@@ -524,6 +559,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     summonRobot,
     mappingActive, toggleMapping,
     actionError, clearActionError, lastAction,
+    followStatus, searchStatus, summonStatus,
     mapData, robotPose, scanData, pathData, wheelSpeedData,
     getTunableParams, applyTunableParam, saveTunableParams,
   }

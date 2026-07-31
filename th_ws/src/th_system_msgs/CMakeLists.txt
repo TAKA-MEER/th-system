@@ -15,6 +15,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/WheelFeedback.msg"
   "msg/PanelArrival.msg"
   "msg/PersonStatus.msg"
+  "msg/FollowStatus.msg"
+  "msg/SearchStatus.msg"
+  "msg/SummonStatus.msg"
   # ── サービス ────────────────────────────────
   "srv/SetMode.srv"
   "srv/GoToPanel.srv"
