@@ -28,6 +28,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import voice_dict  # noqa: E402  (同じディレクトリの兄弟モジュール)
+
 # 既定は docker の VOICEVOX Engine。50021 は Windows 側の VOICEVOX アプリ
 # (キャラクター版) が使っていることがあるため、ぶつからないポートにしている。
 #   docker run -d --rm --name voicevox -p 50121:50021 voicevox/voicevox_engine:cpu-latest
@@ -55,21 +58,21 @@ NEMO_PROVIDERS = {
 #   ・復帰系 (安心感が出るか)
 #   ・デモの山場
 #   ・数値を含む (分割合成の対象。単体でも自然か)
-# (ID, 表示テキスト, 合成に使う読み or None, 選定理由)
-# 読みを別に持つのは、VOICEVOX がラテン文字を綴り読みするため。
-# 例: 「LiDAR」→「リディーエーアール」になってしまう。
+# (ID, テキスト, 選定理由)
+# 誤読は voice_dict.py のユーザー辞書で直す。フレーズ側で読みを持たない
+# ことで、同じ語が別のフレーズに出てきても自動的に正しく読まれる。
 AUDITION_PHRASES = [
-    ('A1',  '停止。LiDAR 異常',      '停止。ライダー異常',
-     '英字を含む。カナ指定で正しく読めるかの確認'),
-    ('A3',  '緊急停止',              None,
+    ('A1',  '停止。LiDAR 異常',
+     '英字を含む。辞書で「ライダー」と読ませている'),
+    ('A3',  '緊急停止',
      '最短 0.7s。短くても潰れないか'),
-    ('C4',  '逃げ場なし。離れて',    None,
+    ('C4',  '逃げ場なし。離れて',
      '最も緊急度が高い。切迫感が出るか'),
-    ('D1',  '復旧。再開操作を',      None,
+    ('D1',  '復旧。再開操作を',
      '復帰系。安心感が出るか'),
-    ('N27', '再発見。追従再開',      None,
-     'デモの山場'),
-    ('N4',  '捕捉。前方 3 メートル', None,
+    ('N27', '再発見。追従再開',
+     'デモの山場。辞書で「ツイジュウ」と読ませている'),
+    ('N4',  '捕捉。前方 3 メートル',
      '数値を含む。分割合成の対象'),
 ]
 
@@ -152,16 +155,15 @@ def to_mp3(wav_path: str) -> str:
 def build_index_html(out_dir: str, speakers: list[tuple[str, str, int]], ext: str):
     """ブラウザで並べて聞き比べるためのページを書き出す"""
     rows = []
-    for pid, text, reading, note in AUDITION_PHRASES:
+    for pid, text, note in AUDITION_PHRASES:
         cells = []
         for name, style, sid in speakers:
             d = safe_dirname(f'{name}_{style}')
             cells.append(
                 f'<td><audio controls preload="none" src="{d}/{pid}.{ext}"></audio></td>')
-        yomi = f'<div class="prov">読み: {reading}</div>' if reading else ''
         rows.append(
             f'<tr><th><div class="id">{pid}</div>'
-            f'<div class="txt">{text}</div>{yomi}'
+            f'<div class="txt">{text}</div>'
             f'<div class="note">{note}</div></th>{"".join(cells)}</tr>')
 
     heads = ''.join(
@@ -234,14 +236,19 @@ def main():
               file=sys.stderr)
         return 1
 
+    # 誤読対策のユーザー辞書を先に登録する。Docker の Engine は毎回新しい
+    # コンテナなので、生成のたびに入れ直す必要がある
+    n = voice_dict.register_all(args.host)
+    print(f'ユーザー辞書 {n} 語を登録')
+
     os.makedirs(args.out, exist_ok=True)
     print(f'{len(speakers)} 話者 × {len(AUDITION_PHRASES)} フレーズを生成します')
 
     for name, style, sid in speakers:
         d = os.path.join(args.out, safe_dirname(f'{name}_{style}'))
         os.makedirs(d, exist_ok=True)
-        for pid, text, reading, _ in AUDITION_PHRASES:
-            wav = synth(args.host, reading or text, sid)
+        for pid, text, _ in AUDITION_PHRASES:
+            wav = synth(args.host, text, sid)
             wav_path = os.path.join(d, f'{pid}.wav')
             with open(wav_path, 'wb') as f:
                 f.write(wav)
