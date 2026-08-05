@@ -533,3 +533,185 @@ body {
   cursor: pointer;
   padding: 0 0.25rem;
 }
+
+/* ── 音声通知カード (VISION.md §7) ───────────────────────── */
+.voice-audio-state {
+  float: right;
+  font-size: 0.7rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.voice-audio-state.ok { color: #80deea; }
+.voice-audio-state.ng { color: #ffcc80; }
+
+.voice-toggles {
+  display: flex;
+  gap: 0.5rem;
+}
+.voice-toggle {
+  flex: 1;
+  padding: 0.7rem 0.25rem;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #252830;
+  color: #e0e0e0;
+  font-size: 0.9rem;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.1s, border-color 0.1s;
+}
+.voice-toggle:active { background: #3a3d4a; }
+.voice-toggle.active {
+  border-color: #00bcd4;
+  background: #10333a;
+  color: #80deea;
+}
+
+.voice-now {
+  margin-top: 0.6rem;
+  font-size: 0.75rem;
+  color: #666;
+}
+
+/* ── 音声テストパネル (開発用・?dev=1) ───────────────────── */
+.voicedev-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 2rem 1rem;
+  overflow-y: auto;
+  z-index: 200;
+}
+.voicedev-panel {
+  width: 100%;
+  max-width: 640px;
+  background: #1a1d24;
+  border: 1px solid #2a2d35;
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+.voicedev-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.voicedev-header h2 { font-size: 1.05rem; }
+
+.voicedev-status {
+  font-size: 0.75rem;
+  color: #9aa;
+  background: #14171d;
+  border: 1px solid #2a2d35;
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.voicedev-status b { color: #666; margin-right: 0.4rem; }
+
+.voicedev-bulk {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.voicedev-bulk-btn {
+  flex: 1;
+  padding: 0.5rem 0.25rem;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #252830;
+  color: #e0e0e0;
+  font-size: 0.8rem;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.voicedev-bulk-btn:active { background: #3a3d4a; }
+.voicedev-bulk-btn.stop { color: #ff8a80; }
+
+.voicedev-section { margin-top: 1rem; }
+.voicedev-section h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #888;
+  margin-bottom: 0.4rem;
+}
+.voicedev-count {
+  font-size: 0.7rem;
+  text-transform: none;
+  color: #666;
+  margin-left: 0.5rem;
+}
+.voicedev-off {
+  font-size: 0.7rem;
+  text-transform: none;
+  color: #ffcc80;
+  margin-left: 0.5rem;
+}
+
+.voicedev-row {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+.voicedev-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #252830;
+  color: #e0e0e0;
+  font-size: 0.8rem;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.voicedev-btn:active { background: #3a3d4a; }
+.voicedev-btn.heuristic { border-color: #7a5200; }
+.voicedev-btn.heuristic .voicedev-badge { color: #ffcc80; }
+.voicedev-btn.unwired {
+  border-style: dashed;
+  border-color: #3a3d4a;
+  opacity: 0.55;
+}
+.voicedev-id {
+  flex: 0 0 2.5rem;
+  color: #80deea;
+  font-variant-numeric: tabular-nums;
+}
+.voicedev-text { flex: 1; }
+.voicedev-badge {
+  flex: 0 0 auto;
+  font-size: 0.65rem;
+  color: #666;
+}
+
+.voicedev-hold {
+  flex: 0 0 5.5rem;
+  padding: 0.45rem 0.3rem;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #252830;
+  color: #aaa;
+  font-size: 0.7rem;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.voicedev-hold:active { background: #3a3d4a; }
+.voicedev-hold.active {
+  border-color: #00bcd4;
+  background: #10333a;
+  color: #80deea;
+}
+
+.voice-credit {
+  margin-top: 0.35rem;
+  font-size: 0.65rem;
+  color: #555;
+}

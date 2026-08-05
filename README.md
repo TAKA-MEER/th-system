@@ -11,16 +11,16 @@ ESP32 (駆動用, WiFi AP)          192.168.4.1   SSID: th-esp32-ap
         RPLIDAR S1 → rplidar_ros → /scan (ROS_DOMAIN_ID=10, frame_id=laser_link)
 ```
 
-| レイヤー | 実装 |
-| --- | --- |
+| レイヤー         | 実装                                                         |
+| ---------------- | ------------------------------------------------------------ |
 | ハードウェア制御 | ESP32 (PlatformIO + WebSocket クライアント, PID+FF 速度制御) |
-| ROS2 ブリッジ | `th_esp32_bridge` (WS サーバー・オドメトリ) |
-| 安全管理 | `th_safety` (safety_monitor) + `twist_mux` |
-| 状態管理 | `th_mode_manager` (FSM) |
-| 認識 | `th_perception` + DR-SPAAM 脚検知 (human_kenchi) |
-| 計画・追従 | `th_planning` (follow_planner / mapless) |
-| ナビゲーション | Nav2 + SLAM Toolbox + robot_localization |
-| UI | React + rosbridge WebSocket |
+| ROS2 ブリッジ    | `th_esp32_bridge` (WS サーバー・オドメトリ)                |
+| 安全管理         | `th_safety` (safety_monitor) + `twist_mux`               |
+| 状態管理         | `th_mode_manager` (FSM)                                    |
+| 認識             | `th_perception` + DR-SPAAM 脚検知 (human_kenchi)           |
+| 計画・追従       | `th_planning` (follow_planner / mapless)                   |
+| ナビゲーション   | Nav2 + SLAM Toolbox + robot_localization                     |
+| UI               | React + rosbridge WebSocket                                  |
 
 ---
 
@@ -71,48 +71,58 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 
 うまくいかない時の早見表:
 
-| 症状 | 対処 |
-| --- | --- |
-| AP に繋がらない / ping 不可 | WiFi 切断→再接続。autoconfig 無効のままなら有効化してから → [docs/network.md](docs/network.md) |
-| LIDAR_LOST が消えない | ラズパイの rplidar 再起動・時刻ズレ確認 → [docs/network.md](docs/network.md) |
-| ESP32_DISCONNECTED が消えない | PC の固定 IP・portproxy 残骸確認 → [docs/network.md](docs/network.md) |
-| CLI がトピックを見つけない・部分的に不通 | `docker restart th_robot` → だめなら `wsl --shutdown` からやり直し |
-| 地図が生成されない/ノイズだらけ | PC の時刻ズレ → [docs/setup.md §4](docs/setup.md) |
+| 症状                                     | 対処                                                                                           |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| AP に繋がらない / ping 不可              | WiFi 切断→再接続。autoconfig 無効のままなら有効化してから →[docs/network.md](docs/network.md) |
+| LIDAR_LOST が消えない                    | ラズパイの rplidar 再起動・時刻ズレ確認 →[docs/network.md](docs/network.md)                    |
+| ESP32_DISCONNECTED が消えない            | PC の固定 IP・portproxy 残骸確認 →[docs/network.md](docs/network.md)                           |
+| CLI がトピックを見つけない・部分的に不通 | `docker restart th_robot` → だめなら `wsl --shutdown` からやり直し                        |
+| 地図が生成されない/ノイズだらけ          | PC の時刻ズレ →[docs/setup.md §4](docs/setup.md)                                              |
 
 ---
 
 ## ドキュメント目次
 
-| やりたいこと | ドキュメント |
-| --- | --- |
-| システムの完成形・実装状況を知る | [VISION.md](VISION.md) |
-| 新しい PC/ラズパイ/ESP32 で環境を作る | [docs/setup.md](docs/setup.md) |
-| ネットワークの仕組み・通信トラブルの復旧 | [docs/network.md](docs/network.md) |
-| ESP32 ファームの書き込み・PID チューニング | [docs/esp32.md](docs/esp32.md) |
-| 地図作成・キャリブレーション・追従の使い方・トラブル対処 | [docs/operation.md](docs/operation.md) |
-| Gazebo シミュレーションで検証する | [docs/simulation.md](docs/simulation.md) |
-| テストを実行する・追加する | [docs/testing.md](docs/testing.md) |
-| 内部設計・パラメータ調整・機能追加 | [docs/architecture.md](docs/architecture.md) |
+| やりたいこと                                             | ドキュメント                                         |
+| -------------------------------------------------------- | ---------------------------------------------------- |
+| システムの完成形・実装状況を知る                         | [VISION.md](VISION.md)                                |
+| 新しい PC/ラズパイ/ESP32 で環境を作る                    | [docs/setup.md](docs/setup.md)                        |
+| ネットワークの仕組み・通信トラブルの復旧                 | [docs/network.md](docs/network.md)                    |
+| ESP32 ファームの書き込み・PID チューニング               | [docs/esp32.md](docs/esp32.md)                        |
+| 地図作成・キャリブレーション・追従の使い方・トラブル対処 | [docs/operation.md](docs/operation.md)                |
+| Gazebo シミュレーションで検証する                        | [docs/simulation.md](docs/simulation.md)              |
+| テストを実行する・追加する                               | [docs/testing.md](docs/testing.md)                    |
+| 内部設計・パラメータ調整・機能追加                       | [docs/architecture.md](docs/architecture.md)          |
+| 音声アナウンスのクレジット・利用条件                     | [docs/voice-credits.md](docs/voice-credits.md)        |
+| 音声の話者を聞き比べて選ぶ                               | [docs/voice-audition/](docs/voice-audition/README.md) |
+
+---
+
+## クレジット
+
+音声アナウンスの音声合成に **VOICEVOX Nemo**（[https://voicevox.hiroshiba.jp/nemo/](https://voicevox.hiroshiba.jp/nemo/)）を使用しています。
+
+利用条件・遵守事項の詳細は [docs/voice-credits.md](docs/voice-credits.md) を参照してください。
 
 ---
 
 ## モード / フォルト早見表
 
-| モード | 番号 | 状態 |
-| --- | --- | --- |
-| IDLE | 1 | 静止待機(起動時の初期状態) |
-| FOLLOWING | 2 | 試験員追従(地図・Nav2 使用) |
-| MOVING_TO_PANEL | 3 | 配電盤へ移動中 |
-| AT_PANEL | 4 | 配電盤前作業中 |
-| MANUAL | 5 | 手動操作(タブレット) |
-| ESTOP | 6 | 緊急停止(復帰は IDLE 経由のみ) |
-| FOLLOWING_MAPLESS | 7 | 試験員追従(地図・Nav2 不要) |
+| モード            | 番号 | 状態                           |
+| ----------------- | ---- | ------------------------------ |
+| IDLE              | 1    | 静止待機(起動時の初期状態)     |
+| FOLLOWING         | 2    | 試験員追従(地図・Nav2 使用)    |
+| MOVING_TO_PANEL   | 3    | 配電盤へ移動中                 |
+| AT_PANEL          | 4    | 配電盤前作業中                 |
+| MANUAL            | 5    | 手動操作(タブレット)           |
+| ESTOP             | 6    | 緊急停止(復帰は IDLE 経由のみ) |
+| FOLLOWING_MAPLESS | 7    | 試験員追従(地図・Nav2 不要)    |
 
-| フォルト | 意味 | 詳細 |
-| --- | --- | --- |
-| `LIDAR_LOST` | /scan 途絶 | [docs/operation.md](docs/operation.md#モード早見表--フォルト対応) |
-| `ESP32_DISCONNECTED` | ESP32 通信途絶 | 同上 |
-| `PERSON_TRACKER_LOST` | 追従データ途絶 | 同上 |
+| フォルト                | 意味           | 詳細                                                             |
+| ----------------------- | -------------- | ---------------------------------------------------------------- |
+| `LIDAR_LOST`          | /scan 途絶     | [docs/operation.md](docs/operation.md#モード早見表--フォルト対応) |
+| `ESP32_DISCONNECTED`  | ESP32 通信途絶 | 同上                                                             |
+| `PERSON_TRACKER_LOST` | 追従データ途絶 | 同上                                                             |
 
 フォルト発生時は twist_mux が即座にモーター出力をゼロにし、IDLE へ強制遷移する
 (検知〜物理停止は ESP32 ウォッチドッグ 300ms が最終保証)。

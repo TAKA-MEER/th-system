@@ -11,6 +11,7 @@ SLAM 占有格子・Nav2 を一切使わない、MAP不要の純粋軌跡追従�
   - /robot/mode     購読 → FOLLOWING_MAPLESS 中のみ動作
   - TF (odom→base_link) → 軌跡・退避ゴールの絶対座標系
   - /cmd_vel_retreat パブリッシュ（Nav2 は使わず常に直接速度指令）
+  - /follow/status パブリッシュ（内部状態の可視化。WebUI の音声通知が購読する）
 """
 
 import math
@@ -22,7 +23,7 @@ from rclpy.duration import Duration
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
 from rcl_interfaces.msg import SetParametersResult
-from th_system_msgs.msg import RobotMode, PersonStatus
+from th_system_msgs.msg import RobotMode, PersonStatus, FollowStatus
 
 import tf2_ros
 
@@ -52,6 +53,7 @@ class FollowPlannerMapless(Node):
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
         self._pub_retreat = self.create_publisher(Twist, "/cmd_vel_retreat", 10)
+        self._pub_status  = self.create_publisher(FollowStatus, "/follow/status", 10)
         self.create_subscription(RobotMode,    "/robot/mode",      self._cb_mode,   10)
         self.create_subscription(PersonStatus, "/person/status",   self._cb_person, 10)
         self.create_subscription(
@@ -59,9 +61,42 @@ class FollowPlannerMapless(Node):
             rclpy.qos.QoSProfile(depth=5, reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT))
 
         self._last_reason = None
+        # 状態 publish の間引き用。10Hz で流し続けると購読側 (WebUI) が
+        # 毎周期再描画してしまうため、変化時 + 1Hz のハートビートに絞る
+        self._last_status_key  = None
+        self._last_status_time = 0.0
+        self._status_active    = False   # 直前周期で自モードだったか
         hz = self.get_parameter("update_rate_hz").value
         self._timer = self.create_timer(1.0 / hz, self._loop)
         self.get_logger().info("follow_planner_mapless 起動（MAP不要軌跡追従モード）")
+
+    STATUS_HEARTBEAT_SEC = 1.0
+
+    def _publish_status(self, state: str, reason: str,
+                        person_distance: float = -1.0, linear_x: float = 0.0):
+        """内部状態を /follow/status に流す。
+
+        変化がなくても 1 秒に一度は再送する。後から購読を始めた WebUI が
+        次の状態変化まで何も分からないのを防ぐため。
+        """
+        key = (state, reason)
+        now = self.get_clock().now().nanoseconds * 1e-9
+        if key == self._last_status_key and (now - self._last_status_time) < self.STATUS_HEARTBEAT_SEC:
+            return
+        self._last_status_key  = key
+        self._last_status_time = now
+
+        msg = FollowStatus()
+        msg.header.stamp      = self.get_clock().now().to_msg()
+        msg.header.frame_id   = "base_link"
+        msg.planner           = "mapless"
+        msg.state             = state
+        msg.reason            = reason
+        msg.person_distance   = float(person_distance)
+        msg.linear_x          = float(linear_x)
+        msg.has_escape_angle  = False
+        msg.escape_angle      = 0.0
+        self._pub_status.publish(msg)
 
     def _declare_all_params(self):
         D = self.declare_parameter
@@ -187,7 +222,17 @@ class FollowPlannerMapless(Node):
 
     def _loop(self):
         if self._current_mode != RobotMode.FOLLOWING_MAPLESS:
+            # 自モードでない間は黙る。follow_planner と /follow/status を共有して
+            # いるため、両ノードが毎周期 INACTIVE を流すと planner フィールドが
+            # 交互に入れ替わり、購読側の状態遷移判定が壊れる。
+            # ただしモードを抜けた直後の 1 回だけは発行する。これがないと
+            # 「障害物で停止中」等の理由が最後の値のまま residual に残り、
+            # 音声通知の継続条件が解除されない。
+            if self._status_active:
+                self._status_active = False
+                self._publish_status("INACTIVE", "inactive")
             return
+        self._status_active = True
         if self._person_pos is None:
             # まだ一度も検知していない (デバウンス対象外、確定的に停止)
             self._core.notify_lost()
@@ -195,6 +240,7 @@ class FollowPlannerMapless(Node):
             if self._last_reason != "person_lost":
                 self.get_logger().warn("停止中（理由: person_lost）", throttle_duration_sec=2.0)
             self._last_reason = "person_lost"
+            self._publish_status("STOPPED", "person_lost")
             return
 
         # is_lost によるロストはデバウンスする: DR-SPAAM は約2Hzでしか推論
@@ -215,6 +261,7 @@ class FollowPlannerMapless(Node):
             if self._last_reason != "person_lost":
                 self.get_logger().warn("停止中（理由: person_lost）", throttle_duration_sec=2.0)
             self._last_reason = "person_lost"
+            self._publish_status("STOPPED", "person_lost")
             return
 
         robot_pose_odom = self._robot_pose_odom()
@@ -249,6 +296,12 @@ class FollowPlannerMapless(Node):
             else:
                 self.get_logger().info("追従再開")
         self._last_reason = out.reason
+
+        self._publish_status(
+            state=out.state.name,          # "TRACKING" / "STOPPED"
+            reason=out.reason,
+            person_distance=math.hypot(px, py),
+            linear_x=out.linear_x)
 
 
 def main(args=None):

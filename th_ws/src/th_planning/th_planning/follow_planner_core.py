@@ -320,25 +320,25 @@ class FollowPlannerCore:
 
     def _handle_prepare(self, clearance_fn, robot_pose_odom: Optional[Pose2D]) -> "PlannerOutput":
         if robot_pose_odom is None:
-            return PlannerOutput(kind="stop", retreat_blocked=True)
+            return PlannerOutput(kind="stop", retreat_blocked=True, reason="no_pose")
 
         if self._escape_angle_abs is None:
             if not self._scan_escape_direction(clearance_fn, robot_pose_odom):
-                return PlannerOutput(kind="stop", retreat_blocked=True)
+                return PlannerOutput(kind="stop", retreat_blocked=True, reason="retreat_blocked")
 
         lx, az = orient_to_evade_route(
             robot_pose_odom, self._escape_angle_abs,
             self.params.evade_k_ang, self.params.evade_orient_tolerance_rad)
-        return PlannerOutput(kind="retreat", linear_x=lx, angular_z=az)
+        return PlannerOutput(kind="retreat", linear_x=lx, angular_z=az, reason="preparing")
 
     def _handle_evading(self, clearance_fn, robot_pose_odom: Optional[Pose2D]) -> "PlannerOutput":
         if robot_pose_odom is None:
-            return PlannerOutput(kind="stop", retreat_blocked=True)
+            return PlannerOutput(kind="stop", retreat_blocked=True, reason="no_pose")
 
         if self._escape_angle_abs is None:
             # PREPARE を経ずに来ることは想定していないが、念のためこの周期で走査する
             if not self._scan_escape_direction(clearance_fn, robot_pose_odom):
-                return PlannerOutput(kind="stop", retreat_blocked=True)
+                return PlannerOutput(kind="stop", retreat_blocked=True, reason="retreat_blocked")
 
         if self._evade_goal_abs is None:
             self._evade_goal_abs = compute_evade_goal(
@@ -351,7 +351,19 @@ class FollowPlannerCore:
             v_max=self.params.retreat_speed,
             k_ang=self.params.evade_k_ang,
             stop_radius=self.params.evade_stop_radius_m)
-        return PlannerOutput(kind="retreat", linear_x=lx, angular_z=az)
+        return PlannerOutput(kind="retreat", linear_x=lx, angular_z=az, reason="evading")
+
+    def escape_angle_rel(self, robot_yaw: float) -> Optional[float]:
+        """退避方向を base_link 相対角で返す。未決定なら None。
+
+        内部では odom 絶対角で保持している (Pure Pursuit がその系で計算するため)
+        が、外部へ「右後方」等として提示する場合は機体基準でなければならない。
+        """
+        if self._escape_angle_abs is None:
+            return None
+        return math.atan2(
+            math.sin(self._escape_angle_abs - robot_yaw),
+            math.cos(self._escape_angle_abs - robot_yaw))
 
     def _scan_escape_direction(self, clearance_fn, robot_pose_odom: Pose2D) -> bool:
         angle_rel, clear_dist = find_nearest_open_direction(
@@ -403,3 +415,8 @@ class PlannerOutput:
     angular_z:       float = 0.0
     # 退避不可フラグ
     retreat_blocked: bool  = False
+    # 停止・状態の理由。retreat_blocked だけでは「壁際で本当に逃げ場がない」場合と
+    # 「絶対姿勢が取れていない」場合を区別できず、前者にだけ鳴らしたい音声通知
+    # (VISION.md §7.7 C4) が costmap 未受信のたびに誤発火するため分けている。
+    #   "tracking" / "preparing" / "evading" / "retreat_blocked" / "no_pose"
+    reason:          str   = "tracking"

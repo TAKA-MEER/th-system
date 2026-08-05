@@ -3,13 +3,19 @@
 // ============================================================
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRosbridge } from './hooks/useRosbridge'
+import { useVoice } from './hooks/useVoice'
+import { useVoiceTriggers } from './hooks/useVoiceTriggers'
 import SettingsPanel from './SettingsPanel'
+import VoiceDevPanel from './VoiceDevPanel'
 import MapView from './MapView'
 import WheelSpeedView from './WheelSpeedView'
+import { MODE } from './robotMode'
+import { LAYER } from './voice/announcements'
 import './App.css'
 
-// ROS2 モード定数
-const MODE = { INIT:0, IDLE:1, FOLLOWING:2, MOVING_TO_PANEL:3, AT_PANEL:4, MANUAL:5, ESTOP:6, FOLLOWING_MAPLESS:7, SUMMONING:8 }
+// 音声テストパネルは ?dev=1 のときだけ出す。URL はリロードなしに変わらないため
+// モジュールスコープで一度だけ判定する
+const DEV_MODE = new URLSearchParams(window.location.search).get('dev') === '1'
 
 // 配電盤リスト (panels.yaml と合わせること)
 const PANELS = [
@@ -220,6 +226,7 @@ function VirtualStick({ speedPct, onChange, onRelease }) {
 }
 
 export default function App() {
+  const ros = useRosbridge()
   const {
     connected, mode, modeName,
     fault, estop,
@@ -230,10 +237,16 @@ export default function App() {
     actionError, clearActionError,
     mapData, robotPose, scanData, pathData, wheelSpeedData,
     getTunableParams, applyTunableParam, saveTunableParams,
-  } = useRosbridge()
+  } = ros
 
   const [estopActive, setEstopActive] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [voiceDevOpen, setVoiceDevOpen] = useState(false)
+
+  // 音声アナウンス (VISION.md §7)。estopActive はローカル state なので
+  // ros に混ぜて渡し、タブレット側の押下でも即座に鳴らせるようにする
+  const voice = useVoice()
+  useVoiceTriggers({ ...ros, estopActive }, voice)
 
   // ── ジョグ速度設定 (プリセット + スライダー) ────────────────
   // publish ループは ref を読むため、押しっぱなし中の変更も次周期から反映される
@@ -402,6 +415,11 @@ export default function App() {
         <span className={`conn-badge ${connected ? 'ok' : 'ng'}`}>
           {connected ? '● 接続中' : '○ 切断'}
         </span>
+        {DEV_MODE && (
+          <button className="settings-btn" onClick={() => setVoiceDevOpen(true)} aria-label="音声テスト">
+            ♪
+          </button>
+        )}
         <button className="settings-btn" onClick={() => setSettingsOpen(true)} aria-label="設定">
           ⚙
         </button>
@@ -415,6 +433,14 @@ export default function App() {
         applyTunableParam={applyTunableParam}
         saveTunableParams={saveTunableParams}
       />
+
+      {DEV_MODE && (
+        <VoiceDevPanel
+          open={voiceDevOpen}
+          onClose={() => setVoiceDevOpen(false)}
+          voice={voice}
+        />
+      )}
 
       {/* ── 緊急停止ボタン (発動専用。連打しても常に停止のまま) ── */}
       <button
@@ -512,6 +538,41 @@ export default function App() {
               呼び寄せ
             </button>
           </div>
+        </section>
+
+        {/* ── 音声通知 (VISION.md §7) ────────────────────── */}
+        <section className="card card-voice">
+          <h2>
+            音声通知
+            {/* トグルが ON なのに鳴らない、という他に症状の出ない故障が
+                あるため AudioContext の状態を必ず出す */}
+            <span className={`voice-audio-state ${voice.audioReady ? 'ok' : 'ng'}`}>
+              {voice.audioReady ? '有効' : '未許可 — 画面をタップで有効化'}
+            </span>
+          </h2>
+          <div className="voice-toggles">
+            <button
+              className={`voice-toggle ${voice.safetyOn ? 'active' : ''}`}
+              onClick={() => voice.toggleLayer(LAYER.SAFETY)}
+            >
+              安全通知
+            </button>
+            <button
+              className={`voice-toggle ${voice.demoOn ? 'active' : ''}`}
+              onClick={() => voice.toggleLayer(LAYER.DEMO)}
+            >
+              デモ実況
+            </button>
+          </div>
+          <div className="voice-now">
+            {voice.snapshot.playingId
+              ? `再生中: ${voice.snapshot.playingId}`
+              : '再生中: —'}
+            {voice.snapshot.queueIds.length > 0 && `  (待機 ${voice.snapshot.queueIds.length})`}
+          </div>
+          {/* VOICEVOX Nemo の利用規約で必須のクレジット表記。
+              docs/voice-credits.md 参照。消さないこと */}
+          <div className="voice-credit">音声: VOICEVOX Nemo</div>
         </section>
 
         {/* ── 地図作成 開始/停止 ─────────────────────── */}

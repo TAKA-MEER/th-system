@@ -10,6 +10,7 @@ follow_planner_core.py のロジックを ROS2 に接続する。
   - /robot/mode         購読 → FOLLOWING/MOVING_TO_PANEL 中のみ動作
   - NavigateToPose      アクションクライアント (base_link → map 変換後に送出)
   - /cmd_vel_retreat    パブリッシュ (PREPARE 旋回・EVADING 走行・停止)
+  - /follow/status      パブリッシュ (内部状態の可視化。WebUI の音声通知が購読する)
 """
 
 import math
@@ -22,7 +23,7 @@ from rclpy.duration import Duration
 from geometry_msgs.msg import Twist, PoseStamped
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid
-from th_system_msgs.msg import RobotMode, PersonStatus
+from th_system_msgs.msg import RobotMode, PersonStatus, FollowStatus
 
 import tf2_ros
 import tf2_geometry_msgs  # noqa: F401
@@ -53,6 +54,7 @@ class FollowPlanner(Node):
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
         self._pub_retreat = self.create_publisher(Twist, "/cmd_vel_retreat", 10)
+        self._pub_status  = self.create_publisher(FollowStatus, "/follow/status", 10)
         self.create_subscription(RobotMode,     "/robot/mode",          self._cb_mode,     10)
         self.create_subscription(PersonStatus,  "/person/status",       self._cb_person,   10)
         self.create_subscription(
@@ -63,9 +65,38 @@ class FollowPlanner(Node):
                 reliability=rclpy.qos.ReliabilityPolicy.RELIABLE))
 
         self._nav_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
+        # 状態 publish の間引き用 (follow_planner_mapless.py と同じ方針)
+        self._last_status_key  = None
+        self._last_status_time = 0.0
+        self._status_active    = False   # 直前周期で自モードだったか
         hz = self.get_parameter("update_rate_hz").value
         self._timer = self.create_timer(1.0 / hz, self._loop)
         self.get_logger().info("follow_planner 起動（高度追従ロジック）")
+
+    STATUS_HEARTBEAT_SEC = 1.0
+
+    def _publish_status(self, state: str, reason: str,
+                        person_distance: float = -1.0, linear_x: float = 0.0,
+                        escape_angle=None):
+        """内部状態を /follow/status に流す。変化時 + 1Hz のハートビート。"""
+        key = (state, reason, escape_angle is not None)
+        now = self.get_clock().now().nanoseconds * 1e-9
+        if key == self._last_status_key and (now - self._last_status_time) < self.STATUS_HEARTBEAT_SEC:
+            return
+        self._last_status_key  = key
+        self._last_status_time = now
+
+        msg = FollowStatus()
+        msg.header.stamp     = self.get_clock().now().to_msg()
+        msg.header.frame_id  = "base_link"
+        msg.planner          = "map"
+        msg.state            = state
+        msg.reason           = reason
+        msg.person_distance  = float(person_distance)
+        msg.linear_x         = float(linear_x)
+        msg.has_escape_angle = escape_angle is not None
+        msg.escape_angle     = float(escape_angle) if escape_angle is not None else 0.0
+        self._pub_status.publish(msg)
 
     def _declare_all_params(self):
         D = self.declare_parameter
@@ -221,15 +252,23 @@ class FollowPlanner(Node):
 
     def _loop(self):
         if self._current_mode not in (RobotMode.FOLLOWING, RobotMode.MOVING_TO_PANEL):
+            # 自モードでない間は黙る (follow_planner_mapless.py の同じ箇所を参照)。
+            # モードを抜けた直後の 1 回だけ INACTIVE を出して残留状態を解除する。
+            if self._status_active:
+                self._status_active = False
+                self._publish_status("INACTIVE", "inactive")
             return
+        self._status_active = True
         if self._person_lost or self._person_pos is None:
             # ロスト中に何も publish しないと、EVADING/PREPARE で直前に出していた
             # 速度指令が /cmd_vel_retreat に残ったままになり停止しない
             # (mapless 版と同じ理由で follow_planner_mapless.py 参照)。
             self._stop_retreat()
+            self._publish_status("TRACKING", "person_lost")
             return
 
         px, py = self._person_pos
+        distance = math.hypot(px, py)
         t  = self.get_clock().now().nanoseconds * 1e-9
         # costmap フレームへの変換をこの周期で一度だけ取得（以降の costmap 参照・絶対姿勢で再利用）
         self._update_costmap_tf()
@@ -245,6 +284,16 @@ class FollowPlanner(Node):
             clearance_fn=lambda dx, dy: self._retreat_clearance(dx, dy, limit=evade_scan_max_dist),
             robot_pose_odom=robot_pose_odom)
 
+        # 退避方向は odom 絶対角で保持されているので機体相対に直してから流す
+        escape_rel = (self._core.escape_angle_rel(robot_pose_odom[2])
+                      if robot_pose_odom is not None else None)
+        self._publish_status(
+            state=self._core.state.name,   # "TRACKING" / "PREPARE" / "EVADING"
+            reason=out.reason,
+            person_distance=distance,
+            linear_x=out.linear_x,
+            escape_angle=escape_rel)
+
         if out.kind == "retreat":
             cmd = Twist()
             cmd.linear.x  = out.linear_x
@@ -253,9 +302,16 @@ class FollowPlanner(Node):
 
         elif out.kind == "stop":
             self._stop_retreat()
-            self.get_logger().warn(
-                "近接退避不可（壁際）— その場停止",
-                throttle_duration_sec=2.0)
+            # 「本当に逃げ場がない」場合と「自己位置が取れていない」場合を
+            # 区別してログに出す (音声通知 C4 は前者にのみ反応する)
+            if out.reason == "retreat_blocked":
+                self.get_logger().warn(
+                    "近接退避不可（壁際）— その場停止",
+                    throttle_duration_sec=2.0)
+            else:
+                self.get_logger().warn(
+                    "自己位置(TF/costmap)未確立 — その場停止",
+                    throttle_duration_sec=2.0)
 
         elif out.kind == "nav_goal":
             map_pose = self._to_map_pose(out.goal_x, out.goal_y, out.goal_yaw)
