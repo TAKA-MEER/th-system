@@ -135,10 +135,13 @@ def safe_dirname(name: str) -> str:
     return re.sub(r'[^\w\-]+', '_', name) or 'speaker'
 
 
-def synth(host: str, text: str, style_id: int) -> bytes:
+def synth(host: str, text: str, style_id: int, tuning: dict | None = None) -> bytes:
+    """1 フレーズを合成する。tuning を渡すと SYNTH_TUNING に上書きして適用する。"""
     query = json.loads(api(host, '/audio_query', method='POST',
                            params={'text': text, 'speaker': style_id}))
     query.update(SYNTH_TUNING)
+    if tuning:
+        query.update(tuning)
     return api(host, '/synthesis', method='POST',
                params={'speaker': style_id},
                data=json.dumps(query).encode('utf-8'))
