@@ -125,7 +125,7 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 | `PERSON_TRACKER_LOST` | 追従データ途絶 | 同上                                                             |
 
 フォルト発生時は twist_mux が即座にモーター出力をゼロにし、IDLE へ強制遷移する
-(検知〜物理停止は ESP32 ウォッチドッグ 300ms が最終保証)。
+(検知〜物理停止は ESP32 ウォッチドッグ 600ms が最終保証)。
 
 ---
 
