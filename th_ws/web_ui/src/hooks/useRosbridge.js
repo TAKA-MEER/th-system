@@ -470,9 +470,12 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     svc.callService(
       new ROSLIB.ServiceRequest({ candidate_index: candidateIndex, x: 0.0, y: 0.0 }),
-      (res) => { if (!res.success) console.warn('ターゲット選択失敗:', res.message) }
+      (res) => {
+        bumpAction('select_target', res.success, res.message)
+        if (!res.success) console.warn('ターゲット選択失敗:', res.message)
+      }
     )
-  }, [])
+  }, [bumpAction])
 
   const resetTracking = useCallback(() => {
     const ROSLIB = window.ROSLIB

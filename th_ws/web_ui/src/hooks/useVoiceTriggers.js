@@ -6,7 +6,7 @@
 //
 // Tier 2 時点の自動化範囲:
 //   安全通知 13件すべて
-//   デモ実況 36件中 24件
+//   デモ実況 38件中 26件
 // 残る 12件 (N1 N2 N6 N7 N8 N16 N17 N18 N20 N37 N39 N41) は、観測手段がないか
 // 他 ID と同じエッジで発火して区別できないため手動発火のみ。理由は
 // announcements.js の note に個別に書いてある。
@@ -87,26 +87,37 @@ export function useVoiceTriggers(ros, voice) {
     if (prev.estopAny && !estopAny) announce('D2')
     if (prev.faultActive && !faultActive) announce('D1')
 
+    // 人位置捕捉系 (N4・N23〜N27) は追従中 (FOLLOWING / FOLLOWING_MAPLESS) のみ。
+    // /person/status と捜索段階はモードに関わらず配信され続けるため、ゲートが
+    // ないと IDLE・MANUAL 中の検出でも鳴ってしまう
+    const isFollowingMode = mode === MODE.FOLLOWING || mode === MODE.FOLLOWING_MAPLESS
+
     // 試験員の初回捕捉。再捕捉は N27 だが、捜索中かどうかを区別できないため Tier 2
-    if (!prev.isTracked && isTracked && !firstCaptureDoneRef.current) {
+    if (isFollowingMode && !prev.isTracked && isTracked && !firstCaptureDoneRef.current) {
       firstCaptureDoneRef.current = true
       announce('N4')
     }
 
-    if (prev.lostReason !== lostReason) {
+    if (isFollowingMode && prev.lostReason !== lostReason) {
       if (lostReason === 'DETECTION_LOST')  announce('N23')
       if (lostReason === 'TARGET_SWITCHED') announce('N24')
     }
 
     if (prev.mode !== mode) {
-      if (prev.mode === MODE.IDLE && mode === MODE.FOLLOWING_MAPLESS) announce('N5')
-      if (prev.mode === MODE.IDLE && mode === MODE.FOLLOWING)         announce('N14')
-      if (prev.mode === MODE.IDLE && mode === MODE.MANUAL)            announce('N40')
+      // モード遷移系は遷移元を問わず発火させる (VISION.md §7.7・2026-08-05)。
+      // MANUAL → FOLLOWING_MAPLESS のように IDLE を経由しない遷移もあるため
+      if (mode === MODE.FOLLOWING_MAPLESS) announce('N5')
+      if (mode === MODE.FOLLOWING)         announce('N14')
+      if (mode === MODE.MANUAL)            announce('N40')
       if (prev.mode === MODE.MOVING_TO_PANEL && mode === MODE.AT_PANEL) announce('N38')
+
+      // 待機へ戻ったこと自体の通知。起動直後 (D3) と E-Stop 解除 (D2) は
+      // 専用の文言があるためここでは除く
+      if (mode === MODE.IDLE && prev.mode !== MODE.ESTOP) announce('N43')
     }
 
     // ── 捜索段階 (予測 → 捜索旋回 → 再捕捉) ────────────────
-    if (prev.searchPhase !== searchPhase) {
+    if (isFollowingMode && prev.searchPhase !== searchPhase) {
       if (searchPhase === 'PREDICTING') announce('N25')
       if (searchPhase === 'SEARCHING')  announce('N26')
       // 捜索・予測から NONE に戻る = 再発見。デモの山場。
@@ -195,5 +206,7 @@ export function useVoiceTriggers(ros, voice) {
     }
 
     if (kind === 'go_to_panel') announce(ok ? 'N36' : 'N34')
+
+    if (kind === 'select_target' && ok) announce('N44')
   }, [lastAction, announce])
 }

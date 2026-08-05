@@ -93,7 +93,7 @@ const SAFETY_ANNOUNCEMENTS = [
     { beep: BEEP.RECOVERY, auto: AUTO.WIRED }),
 ]
 
-// ── デモ実況レイヤ (36件) ─────────────────────────────────
+// ── デモ実況レイヤ (38件) ─────────────────────────────────
 // N3・N11・N13・N22・N28・N42 は安全通知と内容が重複するため意図的に欠番
 // (VISION.md §7.7 末尾)。
 const DEMO_ANNOUNCEMENTS = [
@@ -101,9 +101,9 @@ const DEMO_ANNOUNCEMENTS = [
     { note: 'ノード起動の観測手段がない。rosbridge 接続で代用するか要検討' }),
   entry('N2',  D, 'startup grace 経過・センサ健全', 'センサ正常', 1.02,
     { note: 'フォルト無しかつ全ノード生存の判定手段がない' }),
-  entry('N4',  D, '/person/status 初回捕捉', '捕捉。前方 3 メートル', 2.06,
+  entry('N4',  D, '/person/status 初回捕捉 (追従中のみ)', '捕捉。前方 3 メートル', 2.06,
     { auto: AUTO.WIRED }),
-  entry('N5',  D, 'IDLE → FOLLOWING_MAPLESS', '追従開始。地図なし', 1.81,
+  entry('N5',  D, '→ FOLLOWING_MAPLESS (任意モードから)', '軌跡追従開始', 1.32,
     { auto: AUTO.WIRED }),
   entry('N6',  D, 'MaplessState.TRACKING', '軌跡を追従中', 1.26,
     { note: '追従開始と同時に TRACKING になるため N5「追従開始。地図なし」と'
@@ -115,14 +115,13 @@ const DEMO_ANNOUNCEMENTS = [
     { note: 'レート制限が効いたかどうかを MaplessOutput が返していない' }),
   entry('N9',  D, 'STOPPED / person_close', '接近。停止', 1.53,
     { auto: AUTO.WIRED }),
-  entry('N10', D, 'STOPPED → TRACKING 復帰', '離れた。再開', 1.34,
+  entry('N10', D, 'STOPPED → TRACKING 復帰', '再開', 0.79,
     { auto: AUTO.WIRED }),
-  entry('N12', D, '障害物解消 → 再開', '回避完了。再開', 1.62,
+  entry('N12', D, '障害物解消 → 再開', '障害物なし。再開', 1.94,
     { auto: AUTO.WIRED }),
-  entry('N14', D, 'FollowState.TRACKING', '軌跡追従中', 1.11,
+  entry('N14', D, '→ FOLLOWING (任意モードから)', '軌跡追従中', 1.11,
     { auto: AUTO.WIRED,
-      note: 'IDLE→FOLLOWING のモード遷移で発火する。地図あり追従には N5 相当の'
-          + '開始アナウンスがないため、これがその役割を兼ねる' }),
+      note: '地図あり追従には N5 相当の開始アナウンスがないため、これがその役割を兼ねる' }),
   entry('N15', D, 'TRACKING → PREPARE', '接近 3 メートル。退避準備', 2.41,
     { auto: AUTO.WIRED }),
   entry('N16', D, '退避方向スキャン開始', '16 方向スキャン', 1.69,
@@ -139,15 +138,15 @@ const DEMO_ANNOUNCEMENTS = [
     { note: 'EVADING 突入と同じエッジで発火するため N19 と区別できない' }),
   entry('N21', D, '距離回復 → 追従復帰', '距離確保。追従へ', 1.69,
     { auto: AUTO.WIRED }),
-  entry('N23', D, 'lost_reason=DETECTION_LOST', '対象ロスト', 0.93,
+  entry('N23', D, 'lost_reason=DETECTION_LOST (追従中のみ)', '対象ロスト', 0.93,
     { auto: AUTO.WIRED }),
-  entry('N24', D, 'lost_reason=TARGET_SWITCHED', '別人の恐れ。中止', 1.76,
+  entry('N24', D, 'lost_reason=TARGET_SWITCHED (追従中のみ)', '対象を変更', 1.22,
     { auto: AUTO.WIRED }),
-  entry('N25', D, '予測追従開始', '位置を推定中', 1.18,
+  entry('N25', D, '予測追従開始 (追従中のみ)', '位置を推定中', 1.18,
     { auto: AUTO.WIRED }),
-  entry('N26', D, '予測上限超過 → 捜索旋回', '旋回して捜索', 1.34,
+  entry('N26', D, '予測上限超過 → 捜索旋回 (追従中のみ)', '旋回して捜索', 1.34,
     { auto: AUTO.WIRED }),
-  entry('N27', D, '捜索中の再捕捉', '再発見。追従再開', 1.66,
+  entry('N27', D, '捜索中の再捕捉 (追従中のみ)', '再発見。追従再開', 1.66,
     { auto: AUTO.WIRED }),
   entry('N29', D, '呼び寄せ受付', '呼び寄せ開始', 1.02,
     { auto: AUTO.WIRED }),
@@ -173,13 +172,17 @@ const DEMO_ANNOUNCEMENTS = [
     { auto: AUTO.WIRED }),
   entry('N39', D, '作業完了通知の受理', '作業完了', 1,
     { note: '/panel_navigator/complete_inspection を WebUI が呼んでいない' }),
-  entry('N40', D, 'IDLE → MANUAL', '手動モード', 0.93,
+  entry('N40', D, '→ MANUAL (任意モードから)', '手動操作', 1.01,
     { auto: AUTO.WIRED }),
   entry('N41', D, '/manual/target_pose 受信', '指定地点へ移動', 1.25,
     { note: 'sendManualGoal を呼ぶ UI が現状ない (地図タップ未実装)' }),
+  entry('N43', D, '任意モード → IDLE (通常終了。D2/D3 の場面は除く)', '待機中', 0.82,
+    { auto: AUTO.WIRED }),
+  entry('N44', D, '手動での対象切替 (/person_tracker/select_target 成功)', '対象を選択', 1.25,
+    { auto: AUTO.WIRED }),
 ]
 
-/** VISION.md §7.7 の全 49 件。安全通知 13 + デモ実況 36 */
+/** VISION.md §7.7 の全 51 件。安全通知 13 + デモ実況 38 */
 export const ANNOUNCEMENTS = [...SAFETY_ANNOUNCEMENTS, ...DEMO_ANNOUNCEMENTS]
 
 const BY_ID = new Map(ANNOUNCEMENTS.map((a) => [a.id, a]))
