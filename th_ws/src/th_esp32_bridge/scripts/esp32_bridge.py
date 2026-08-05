@@ -75,6 +75,18 @@ class Esp32Bridge(Node):
         # ── Subscribers ────────────────────────────────────
         self.create_subscription(Twist, '/cmd_vel', self._cb_cmd_vel, 10)
 
+        # 最新の /cmd_vel を一定周期で再送するキープアライブ。ESP32側の
+        # WHEEL_CMD ウォッチドッグ(300ms, config.h)は「WebSocketリンクが
+        # 生きているか」を測るためのものだが、/cmd_vel のコールバック駆動
+        # 送信だけだと上流の発行間隔(WiFi平常時ジッタで0.5〜1.2秒、
+        # docs/network.md 参照)がそのままウォッチドッグの入力になってしまい、
+        # リンクは健全なのに誤発動していた(2026-08-05 実機ログで確認)。
+        # このタイマーで実際のリンク死活とは無関係な発行間隔のばらつきを
+        # 吸収する。ROS2/本ノードが本当にクラッシュすればこのタイマーごと
+        # 止まるため、ESP32側の最終保証(300ms以内に停止)は変わらない。
+        self._last_cmd_vel = Twist()
+        self.create_timer(0.05, self._cb_cmd_vel_keepalive)  # 20Hz
+
         self._odom_x = self._odom_y = self._odom_yaw = 0.0
         self._last_odom_time = self.get_clock().now()
         self._last_feedback_time = self.get_clock().now()
@@ -147,6 +159,14 @@ class Esp32Bridge(Node):
 
     # ── /cmd_vel → WHEEL_CMD 送信 ─────────────────────────────────
     def _cb_cmd_vel(self, msg: Twist):
+        self._last_cmd_vel = msg
+        self._send_wheel_cmd(msg)
+
+    # ── キープアライブ: 最新の /cmd_vel を一定周期で再送 ────────────
+    def _cb_cmd_vel_keepalive(self):
+        self._send_wheel_cmd(self._last_cmd_vel)
+
+    def _send_wheel_cmd(self, msg: Twist):
         v = msg.linear.x
         w = msg.angular.z
         v_right = v + (w * self._wheel_base / 2.0)
