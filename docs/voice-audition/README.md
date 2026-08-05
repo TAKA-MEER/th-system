@@ -32,11 +32,16 @@
 
 ### 方法3: 手元で再生成する
 
-```bash
-# VOICEVOX Engine を起動 (Nemo の9話者が含まれる)
-docker run -d --rm --name voicevox -p 50121:50021 voicevox/voicevox_engine:cpu-latest
+```powershell
+# VOICEVOX Nemo Engine を起動する (VOICEVOX アプリを立ち上げても起動する)。
+# Docker の voicevox_engine には Nemo は入っていないので注意 — あちらは
+# キャラクター版 43 名で、Nemo の 9 話者は含まれない。
+cd "$env:APPDATA\voicevox\vvpp-engines\VOICEVOX_Nemo_Engine+<uuid>"
+.\run.exe --port 50121
+```
 
-# 生成 (--mp3 を外すと WAV。話者を変えるだけなら --all-speakers で男声も出る)
+```bash
+# 生成 (--mp3 を外すと WAV。--all-speakers で男声も出る)
 python3 th_ws/scripts/voice_audition.py --out docs/voice-audition --mp3
 ```
 

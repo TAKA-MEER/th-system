@@ -2,8 +2,8 @@
 """voice_dict.py — 音声合成用のユーザー辞書。
 
 VOICEVOX の既定辞書では正しく読めない語をここに集約する。合成前に
-register_all() を呼んで Engine に登録すること。Docker の Engine は毎回
-新しいコンテナなので、辞書は生成のたびに登録し直す必要がある。
+register_all() を呼んで Engine に登録すること。Engine を再起動すると辞書は消えるため、
+生成のたびに登録し直す必要がある。
 
 単体でも実行できる:
   python3 voice_dict.py            # 登録して読みを確認
@@ -18,6 +18,7 @@ import sys
 import urllib.parse
 import urllib.request
 
+# VOICEVOX Nemo Engine の既定ポート (VOICEVOX 本体の 50021 とは別)
 DEFAULT_HOST = 'http://127.0.0.1:50121'
 
 # priority は 0-10。既定の 5 では組み込み辞書に負けて反映されないため

@@ -74,23 +74,38 @@ VOICEVOX Nemo には 9 話者（女声 6・男声 3）が含まれる。Engine �
 | 男声2 | かちょゴリラ | 10000 |
 | 男声3 | 待ち人 | 10002 |
 
-採用話者: **未定**（[話者オーディション](voice-audition/README.md)で選定中）
+採用話者: **女声3（ゆう、style id 10004）**（決定・2026-08-05）
 
-決定したらこの行を更新する。より柔軟な演技や高品質な音声が必要になった場合は、
+本番クリップは `th_ws/scripts/generate_voice.py` がこの話者で全 49 件を生成し、
+`web_ui/public/voice/<ID>.mp3` に置く。より柔軟な演技や高品質な音声が必要になった場合は、
 公式サイト経由で音声提供者本人へ依頼できる旨の案内がある。
 
 ---
 
 ## 生成環境
 
-Nemo の音声モデルは VOICEVOX Engine の Docker イメージに含まれる。
+**Nemo は VOICEVOX 本体とは別のエンジンで、VOICEVOX アプリに VVPP プラグインとして
+追加して使う。** `voicevox/voicevox_engine` の Docker イメージには**含まれていない**
+（あちらはキャラクター版 43 名で、Nemo の 9 話者は入っていない）。
 
-```bash
-docker run -d --rm --name voicevox -p 50121:50021 voicevox/voicevox_engine:cpu-latest
+導入は VOICEVOX アプリの「エンジンの管理」から。公式サイトの案内に従って
+VOICEVOX Nemo Engine の vvpp を追加すると、次の場所に展開される。
+
+```txt
+%APPDATA%\voicevox\vvpp-engines\VOICEVOX_Nemo_Engine+<uuid>\
 ```
 
-ポートを 50121 にしているのは、Windows 側に VOICEVOX アプリ（キャラクター版）が
-入っている場合に既定の 50021 がぶつかるため。
+生成時はエンジンを起動しておく。VOICEVOX アプリを立ち上げれば自動で起動するが、
+GUI なしで動かすこともできる。
+
+```powershell
+# 既定ポートは 50121 (VOICEVOX 本体の 50021 とは別)
+cd "$env:APPDATA\voicevox\vvpp-engines\VOICEVOX_Nemo_Engine+<uuid>"
+.\run.exe --port 50121
+```
+
+生成スクリプトの既定接続先が 50121 なのはこのため。50021 は VOICEVOX 本体
+（キャラクター版）なので、そちらに繋ぐと Nemo の話者が見つからない。
 
 ---
 

@@ -5,8 +5,9 @@ VISION.md §7.5 の「話者 ID を差し替えて一括再生成できる構造
 本番の全 49 件生成 (generate_voice.py) の前に、代表フレーズだけを全話者分
 生成して聞き比べ、話者を決めるために使う。
 
-前提: VOICEVOX Engine が HTTP API を提供していること。
-  docker run --rm -p 50021:50021 voicevox/voicevox_engine:cpu-latest
+前提: VOICEVOX Nemo Engine が起動していること (既定ポート 50121)。
+  Docker の voicevox_engine には Nemo は入っていないので使えない。
+  VOICEVOX アプリを起動するか、run.exe を直接叩く。詳細は docs/voice-credits.md
 
 使い方:
   python3 voice_audition.py                    # 女性話者すべて
@@ -31,9 +32,8 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import voice_dict  # noqa: E402  (同じディレクトリの兄弟モジュール)
 
-# 既定は docker の VOICEVOX Engine。50021 は Windows 側の VOICEVOX アプリ
-# (キャラクター版) が使っていることがあるため、ぶつからないポートにしている。
-#   docker run -d --rm --name voicevox -p 50121:50021 voicevox/voicevox_engine:cpu-latest
+# VOICEVOX Nemo Engine の既定ポート。50021 は VOICEVOX 本体 (キャラクター版)
+# なので、そちらに繋ぐと Nemo の話者が見つからない。
 DEFAULT_HOST = 'http://127.0.0.1:50121'
 
 # Engine が返す話者名は「女声1」等の番号のみ。公式サイト掲載の音声提供者名を
@@ -228,7 +228,7 @@ def main():
         speakers = fetch_speakers(args.host)
     except (urllib.error.URLError, OSError) as e:
         print(f'VOICEVOX Engine に接続できません ({args.host}): {e}', file=sys.stderr)
-        print('  docker run --rm -p 50021:50021 voicevox/voicevox_engine:cpu-latest',
+        print('  VOICEVOX Nemo Engine を起動してください (docs/voice-credits.md 参照)',
               file=sys.stderr)
         return 1
 

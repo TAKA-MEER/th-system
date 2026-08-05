@@ -146,13 +146,17 @@ export function playEntry(entry) {
     return { done, cancel }
   }
 
-  const names = clipNames(entry)
-
-  if (!names) {
+  const playBeep = () => {
     const { nodes, totalMs } = scheduleBeep(c, entry.beep, c.currentTime + 0.01)
     liveNodes = nodes
     const holdMs = Math.max(totalMs, entry.approxSec * 1000)
     timerId = setTimeout(() => finish('done'), Math.round(holdMs))
+  }
+
+  const names = clipNames(entry)
+
+  if (!names) {
+    playBeep()
     return { done, cancel }
   }
 
@@ -173,8 +177,10 @@ export function playEntry(entry) {
       timerId = setTimeout(() => finish('done'), Math.round(holdMs))
     })
     .catch((e) => {
-      console.error('[voice] 音声ファイルの再生に失敗:', entry.id, e)
-      if (!cancelled) holdSilently()
+      // 未生成・配信漏れでも無音にせず、プレースホルダのビープに落とす。
+      // 「鳴らない」より「仮の音が鳴る」方が異常に気付きやすい
+      console.warn('[voice] 音声ファイルを再生できないためビープに切替:', entry.id, e)
+      if (!cancelled) playBeep()
     })
 
   return { done, cancel }
