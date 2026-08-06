@@ -458,6 +458,27 @@ body {
 }
 .map-placeholder { padding: 2rem 0; text-align: center; }
 
+/* ── 地図のパン・ズーム操作 ────────────────────────────── */
+.map-view { display: flex; flex-direction: column; gap: 0.4rem; }
+/* ドラッグ中にページのスクロール/ピンチへ取られないようにする。
+   これが無いとタブレットでは canvas を掴んでも画面ごと動く */
+.map-view .map-canvas { touch-action: none; cursor: grab; }
+.map-view .map-canvas:active { cursor: grabbing; }
+.map-view-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.map-zoom {
+  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #90caf9;
+  min-width: 2.8rem;
+  text-align: right;
+}
+
 /* ── 速度表示 (WheelSpeedView) ──────────────────────────── */
 .wheel-speed-wrap { display: flex; flex-direction: column; gap: 0.5rem; }
 .wheel-speed-svg {

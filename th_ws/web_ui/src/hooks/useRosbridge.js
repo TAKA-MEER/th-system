@@ -199,11 +199,28 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     subMapping.subscribe((msg) => setMappingActive(msg.data))
 
     // ── 購読: /slam_control/last_result ────────────────────
+    // 観客用ページは別の useRosbridge インスタンスなので、操作用で地図を
+    // 破棄しても直接は伝わらない。破棄の結果をここで拾って両方の表示を
+    // 揃える。/map は破棄直後には届かない (slam_toolbox はポーズグラフから
+    // 作り直したときにしか publish しない) ため、受信待ちにはできない。
+    //
+    // このトピックは transient_local なので、後から購読すると過去の結果が
+    // 1 通ラッチされて届く。それで地図を消すと、再作成した地図が接続のたびに
+    // 消える事故になるため最初の 1 通は表示だけに使い、破棄処理には使わない。
+    let slamResultLatched = false
     const subSlamResult = new ROSLIB.Topic({
       ros, name: '/slam_control/last_result',
       messageType: 'std_msgs/String'
     })
-    subSlamResult.subscribe((msg) => setSlamLastResult(msg.data))
+    subSlamResult.subscribe((msg) => {
+      setSlamLastResult(msg.data)
+      const isFirst = !slamResultLatched
+      slamResultLatched = true
+      if (!isFirst && msg.data.startsWith('OK') && msg.data.includes('破棄')) {
+        setMapData(null)
+        setPathData(null)
+      }
+    })
 
     // ── 購読: /map (SLAM 地図) ──────────────────────────────
     const subMap = new ROSLIB.Topic({
@@ -504,9 +521,34 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     () => callSlamTrigger('/slam_control/save_map', 'save_map', '地図の保存'),
     [callSlamTrigger])
 
-  const discardMap = useCallback(
-    () => callSlamTrigger('/slam_control/discard_map', 'discard_map', '地図の破棄'),
-    [callSlamTrigger])
+  // 破棄が成功しても /map は自動では届かない。slam_toolbox は
+  // map_update_interval ごとにポーズグラフから地図を作り直して publish する
+  // 実装で、グラフが空になった直後は「publish するものが無い」状態になり、
+  // WebUI 側は最後に受信した地図を保持したままになる (画面上は破棄前の地図が
+  // 残って見える)。破棄が成功したらこちらの保持も捨てる。
+  const discardMap = useCallback(() => {
+    const ROSLIB = window.ROSLIB
+    if (!rosRef.current || !ROSLIB) return
+    const svc = new ROSLIB.Service({
+      ros: rosRef.current,
+      name: '/slam_control/discard_map',
+      serviceType: 'std_srvs/Trigger'
+    })
+    svc.callService(
+      new ROSLIB.ServiceRequest({}),
+      (res) => {
+        bumpAction('discard_map', res.success, res.message)
+        if (res.success) {
+          setMapData(null)
+          setPathData(null)
+          setActionError(null)
+        } else {
+          console.warn('地図の破棄失敗:', res.message)
+          setActionError(`地図の破棄失敗: ${res.message}`)
+        }
+      }
+    )
+  }, [bumpAction])
 
   // ── アクションエラーの手動クリア (WebUI バナーの閉じるボタン用) ──
   const clearActionError = useCallback(() => setActionError(null), [])

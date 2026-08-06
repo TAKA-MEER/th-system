@@ -12,7 +12,9 @@
 // ============================================================
 import { useRef, useEffect } from 'react'
 
-import { quatToYaw, worldToCanvas, baseToWorld } from '../mapGeometry.js'
+import {
+  quatToYaw, worldToCanvas, baseToWorld, computeMapView,
+} from '../mapGeometry.js'
 
 const MAX_SCAN_RANGE_M = 12.0   // RPLIDAR S1 の最大レンジ。異常値の足切り
 // 追跡中ターゲットと候補の同一判定距離 (m)。App.jsx の CandidateRadar と同値。
@@ -35,17 +37,22 @@ export const COLOR = {
 // 分岐するのはこの関数を作るところだけにして、描画本体は共通にする
 function makeProjector(mapData, robotPose, w, h) {
   if (mapData) {
+    // 等方スケール + 中央寄せ。観客向けのペインは横長で地図グリッドと
+    // 縦横比が大きく違うため、以前の非等方スケールでは形が崩れていた
+    // (地図原点に回転が入ると平行四辺形に歪む)。詳細は mapGeometry.js
+    const mv = computeMapView(mapData.info, w, h)
     return {
+      view: mv,
       // map フレームの点 → canvas
-      world: (x, y) => worldToCanvas(x, y, mapData.info, w, h),
+      world: (x, y) => worldToCanvas(x, y, mapData.info, mv),
       // base_link 相対の点 → canvas (robotPose 経由で map へ)
       base: (lx, ly) => {
         const [wx, wy] = baseToWorld(lx, ly, robotPose)
-        return worldToCanvas(wx, wy, mapData.info, w, h)
+        return worldToCanvas(wx, wy, mapData.info, mv)
       },
       // 地図の向きに合わせたロボットの見かけ角
       markerYaw: robotPose.yaw - quatToYaw(mapData.info.origin.orientation),
-      mPerPx: mapData.info.resolution * (mapData.info.width / w),
+      mPerPx: mv.mPerPx,
     }
   }
   // ロボット中心。ロボットを画面中央に固定し、前方を上に向ける。
@@ -53,6 +60,7 @@ function makeProjector(mapData, robotPose, w, h) {
   const scale = Math.min(w, h) / 2 / ROBOT_VIEW_RANGE_M
   const cx = w / 2, cy = h / 2
   return {
+    view: null,
     world: (x, y) => {
       if (!robotPose) return [cx, cy]
       const dx = x - robotPose.x, dy = y - robotPose.y
@@ -162,7 +170,8 @@ export default function WorldCanvas({
       // ── 地図 ──
       if (useMap) {
         ctx.imageSmoothingEnabled = false
-        ctx.drawImage(offscreenRef.current, 0, 0, w, h)
+        const mv = proj.view
+        ctx.drawImage(offscreenRef.current, mv.offX, mv.offY, mv.drawW, mv.drawH)
       } else {
         drawRangeRings(ctx, w, h, proj, dpr)
       }
