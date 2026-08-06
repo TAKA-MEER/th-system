@@ -25,7 +25,6 @@ from launch_ros.parameter_descriptions import ParameterValue
 BRINGUP_DIR  = get_package_share_directory('th_bringup')
 DESC_DIR     = get_package_share_directory('th_description')
 NAV2_DIR     = get_package_share_directory('nav2_bringup')
-SLAM_DIR     = get_package_share_directory('slam_toolbox')
 
 
 def generate_launch_description():
@@ -344,16 +343,27 @@ def generate_launch_description():
     # ── 16. SLAM Toolbox (map_yaml が空 = デフォルト。実機は毎回このモード) ──
     # 地図作成自体の開始/停止は WebUI 経由の slam_control ノードが
     # pause_new_measurements をトグルして制御する（VISION.md §7 参照）。
-    slam_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(SLAM_DIR, 'launch', 'online_async_launch.py')),
-        launch_arguments={
-            'slam_params_file': slam_yaml,
-            'use_sim_time':     'false',
-        }.items(),
+    # online_async_launch.py (= async_slam_toolbox_node) は使わない。
+    # map_and_localization_slam_toolbox_node は /slam_toolbox/set_localization_mode
+    # (std_srvs/SetBool) を持ち、mapping ⇄ localization を同一プロセス内で
+    # ランタイム切替できる。これが「地図作成停止 = 地図は凍結・自己位置推定は継続」
+    # の要件を満たす唯一の手段 (VISION.md §8)。
+    #
+    # 旧実装は async ノード + pause_new_measurements だったが、これはスキャン処理
+    # そのものを止めるため停止後は map→odom が凍結しデッドレコニングになる
+    # (2026-08-07 実機で確認)。
+    #
+    # ノード名は slam_toolbox のまま維持する。サービス名 (/slam_toolbox/*) と
+    # slam_params.yaml のパラメータキーが変わらないようにするため。
+    # なお本ノードは slam_toolbox の experimental/ 配下の実装である。
+    nodes.append(Node(
+        package='slam_toolbox',
+        executable='map_and_localization_slam_toolbox_node',
+        name='slam_toolbox',
+        parameters=[slam_yaml, {'use_sim_time': False}],
+        output='screen',
         condition=IfCondition(map_is_empty),
-    )
-    nodes.append(slam_launch)
+    ))
 
     # ── 17. AMCL + map_server (map_yaml 指定時のみ。UI には出さない休眠経路) ──
     localization_launch = IncludeLaunchDescription(
