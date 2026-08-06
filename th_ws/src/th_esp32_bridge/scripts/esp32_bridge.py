@@ -129,6 +129,9 @@ class Esp32Bridge(Node):
         # 捉えればよく、docs/network.md 記載の最大ギャップ(1.2s)では発火しない
         # 幅を取る。
         self._STAMP_RESYNC_SEC = 2.0
+        # この機体の最大ヨーレートは 1 rad/s 程度。これを大きく超える角速度が
+        # 届いたらジャイロ単位の取り違えを疑う (_on_imu_data 参照)。
+        self._IMU_WZ_IMPLAUSIBLE_RAD_S = 10.0
         self._odom_stamp = None
         self._last_odom_time = self.get_clock().now()
         self._last_feedback_time = self.get_clock().now()
@@ -410,6 +413,21 @@ class Esp32Bridge(Node):
 
     # ── IMU_DATA → /esp32/imu_data + /esp32/imu_calib_status ──────
     def _on_imu_data(self, qw, qx, qy, qz, wx, wy, wz, ax, ay, az, calib_status):
+        # ジャイロ単位の取り違えを実機で検知する。sensor_msgs/Imu は rad/s 規定だが、
+        # 2026-08-06 より前のファームウェアは Adafruit_BNO055 の戻り値(dps)を
+        # そのまま送ってくるため 57.3 倍になる。この機体の最大ヨーレートは
+        # 1 rad/s 程度(planning_params.yaml の w_max 系)なので、それを大きく
+        # 超える値が続くなら単位の取り違えを疑う。
+        # 低速域では dps の値も閾値を下回るため、これは「気づける」ための警告で
+        # あって保証ではない。EKF への投入可否は imu_enabled で明示的に管理する。
+        if abs(wz) > self._IMU_WZ_IMPLAUSIBLE_RAD_S:
+            self.get_logger().error(
+                f"IMU の角速度が非現実的です (wz={wz:.1f} rad/s)。"
+                f"ジャイロ単位が dps のままの可能性があります "
+                f"(ESP32 ファームウェアの再書き込みが必要)。"
+                f"この状態で imu_enabled:=true にするとオドメトリが壊れます",
+                throttle_duration_sec=10.0)
+
         imu = Imu()
         imu.header.stamp = self.get_clock().now().to_msg()
         imu.header.frame_id = 'imu_link'

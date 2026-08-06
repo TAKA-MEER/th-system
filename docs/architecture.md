@@ -317,10 +317,10 @@ ros2 topic echo /esp32/imu_data
 # 3. 8の字キャリブレーションを実施
 ros2 run th_calibration imu_calib_check.py
 
-# 4. 起動（imu_enabled は既定 true なので指定不要）
-#    true(既定) で ekf_params.yaml（imu0込み）、false で
+# 4. 上記「ジャイロの単位」の検証手順を通してから IMU 入力を有効にする
+#    true で ekf_params.yaml（imu0込み）、false(既定) で
 #    ekf_params_no_imu.yaml（エンコーダのみ）を選択する
-ros2 launch th_bringup bringup.launch.py
+ros2 launch th_bringup bringup.launch.py imu_enabled:=true
 
 # 5. EKF のチューニング
 #    robot_localization のドキュメントを参照し
@@ -341,15 +341,32 @@ ros2 launch th_bringup bringup.launch.py
 
 `esp32_bridge` は `/cmd_vel` を差動駆動変換した左右目標速度(ESP32 へ `WHEEL_CMD` で送る値と同じ)を `/esp32/wheel_cmd_speed`(`th_system_msgs/WheelFeedback` 型を指令値側に再利用)として発行する。WebUI の「車輪速度」カード(`web_ui/src/WheelSpeedView.jsx`)がこれと実測値 `/esp32/wheel_feedback` を左右輪ごとに直近15秒の時系列グラフで重畳表示し、PID の追従遅れ・定常偏差・振動を目視で確認できるようにしている。PID ゲイン自体(`config.h` の `PID_KP_*`/`PID_KI_*`/`PID_KD_*`)は現状コンパイル時定数のままで、WebUI からのライブ調整は未対応(将来検討)。
 
-**新しい失敗モード（要監視）**: `imu_enabled` を既定 `true` にしたことで、BNO055 のジャイロバイアスが
-オドメトリに乗るようになった。`ekf_params.yaml` の `imu0` 側の `vyaw` 共分散（0.0025）は `odom0` 側
-（0.05）の 1/20 なので、EKF はジャイロを強く信頼する。キャリブレーション未実施でジャイロバイアスが
-残っていると、**静止中でも odom がじわじわ回り続ける**。従来は EKF の出力自体が使われていなかったため
-この経路は存在しなかった。起動時に `ros2 run th_calibration imu_calib_check.py` で gyro が 3
-（Fully calibrated）になっていることを確認すること。静止させて `ros2 topic echo /odom` の
-`twist.twist.angular.z` がゼロ近傍かを見るのが最も早い切り分け。
+**ジャイロの単位（2026-08-06 修正、要再書き込み）**
 
-`imu_enabled` は 2026-08-06 にデフォルト `true` へ変更した（従来は `false`）。超信地旋回時のスリップ補正は IMU がないと成立せず、既定 `false` のままでは有効化を忘れたまま運用される方が危険なため。DSR1603 未装着の個体でも `Imu::init()` が失敗を検出して `IMU_DATA` を送らないだけで、EKF は `odom0` のみで動作するので壊れない。IMU なしで運用する場合は明示的に `imu_enabled:=false` を指定すること。
+`Adafruit_BNO055::getVector(VECTOR_GYROSCOPE)` は **dps（度/秒）** を返す。ライブラリの `begin()` 内で `UNIT_SEL` レジスタを書く処理はコメントアウトされており、BNO055 は電源投入時の既定単位（`GYR_Unit = 0 = dps`）のまま動く。`getVector()` の除数もそれに合わせた dps 用スケーリング（`/16.0`）で、Euler が `/16` = 度、加速度が `/100` = m/s² と 3 つとも既定単位で一貫している。
+
+`esp32/src/imu.cpp` にはこれを「rad/s（ライブラリ仕様）」とする誤ったコメントがあり、値をそのまま rad/s として扱っていた（**57.3 倍**）。影響は 2 箇所:
+
+1. **直進ドリフト補正の発振**（`main.cpp` の `computeDriftCorrection()`）。ループゲインは設計値 0.385 のはずが約 22 になり、実ヨーレート 0.012 rad/s 相当で既に `DRIFT_CORRECTION_MAX_MPS`（±0.1 m/s）へ飽和する。事実上常時飽和して `wz` の符号反転ごとに反転する bang-bang 振動になり、**直進時のみ左右に振動する**（旋回中は `goingStraight` が false でループが開くため出ない）。WebUI の速度グラフでは「指令付近で実測が振動」に見える — 指令側 `/esp32/wheel_cmd_speed` は esp32_bridge が `/cmd_vel` から計算する値で、ESP32 内部で足される補正量を含まないため。
+2. **`/esp32/imu_data` の `angular_velocity`**。`sensor_msgs/Imu` は rad/s 規定なので、EKF が 57.3 倍のヨーレートを信じてオドメトリが壊れる。
+
+`imu.cpp` で dps → rad/s に変換して修正した。**この修正を含むファームウェアを書き込むまで `imu_enabled:=true` にしてはいけない。** 未修正のファームを検知できるよう、`esp32_bridge` は `|wz| > 10 rad/s` でエラーログを出す（低速域では dps の値も閾値を下回るため、気づくための警告であって保証ではない）。
+
+**検証手順**（再書き込み後）:
+
+```bash
+# 1. 静止させてゼロ付近か
+ros2 topic echo /esp32/imu_data --field angular_velocity.z
+# 2. 手で 90 度ゆっくり回し、積分値が約 1.57 rad になるか
+#    (dps のままなら約 90 になる)
+# 3. 直進させて振動が消えたか、WebUI の速度グラフで確認
+```
+
+**残る要検証項目**: `config.h` の `DRIFT_IMU_SIGN` は「実機で必ず検証すること」とコメントされたまま未検証。単位を直した後で符号が逆だと、今度は正帰還になって直進中に一方向へ逸れ続ける。上記 3 で振動が消えても真っ直ぐ走らない場合はここを反転して再検証する。
+
+**新しい失敗モード（要監視）**: `imu_enabled:=true` にすると、BNO055 のジャイロバイアスがオドメトリに乗る。`ekf_params.yaml` の `imu0` 側の `vyaw` 共分散（0.0025）は `odom0` 側（0.05）の 1/20 なので、EKF はジャイロを強く信頼する。キャリブレーション未実施でバイアスが残っていると、**静止中でも odom がじわじわ回り続ける**。従来は EKF の出力自体が使われていなかったためこの経路は存在しなかった。`ros2 run th_calibration imu_calib_check.py` で gyro が 3（Fully calibrated）になっていることを確認すること。
+
+`imu_enabled` の既定は `false` のまま（上記の再書き込みと検証が済むまで有効にしない）。DSR1603 未装着の個体でも `Imu::init()` が失敗を検出して `IMU_DATA` を送らないだけで、EKF は `odom0` のみで動作するので壊れない。
 
 ---
 

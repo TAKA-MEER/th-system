@@ -4,7 +4,7 @@
 #
 # 起動オプション:
 #   use_stub:=true    試験員トラッカーをスタブに切替 (デフォルト: false)
-#   imu_enabled:=false IMU 入力を EKF から外す (デフォルト: true)
+#   imu_enabled:=true IMU 入力を EKF に追加 (デフォルト: false。要ファーム更新)
 #   map_yaml:=<path>  使用する地図ファイル (デフォルト: 空=SLAM マッピングモード)
 #   lidar_source:=local    USB直結のsllidar_nodeを起動 (デフォルト)
 #   lidar_source:=network  ラズパイ等が配信する/scanを使用 (ローカル起動なし。
@@ -33,10 +33,15 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument('use_stub',    default_value='false',
                               description='試験員トラッカーをスタブで代替'),
-        DeclareLaunchArgument('imu_enabled', default_value='true',
+        # 既定 false: ジャイロ単位の修正(2026-08-06、esp32/src/imu.cpp)を含む
+        # ファームウェアを書き込み、実機でヨーレートを検証するまでは有効にしない。
+        # 未修正のファームは angular_velocity を dps で送ってくるため、rad/s
+        # 規定として読む EKF が 57.3 倍のヨーレートを信じてオドメトリが壊れる。
+        # 検証手順は docs/architecture.md「IMU (DSR1603 / BNO055) 追加」参照。
+        DeclareLaunchArgument('imu_enabled', default_value='false',
                               description='IMU (DSR1603/BNO055) の vyaw を EKF に追加。'
-                                          'false にするとエンコーダのみになり、'
-                                          'クローラの超信地旋回スリップによる yaw 誤差が補正されない'),
+                                          'ジャイロ単位修正済みファームの書き込みと'
+                                          '実機検証が済んでから true にすること'),
         DeclareLaunchArgument('map_yaml',    default_value='',
                               description='地図 YAML パス (空=SLAM モード)'),
         DeclareLaunchArgument('log_level',   default_value='info'),
@@ -54,7 +59,7 @@ def generate_launch_description():
 
     # ── 設定ファイルパス ──────────────────────────────────
     nav2_yaml   = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
-    # imu_enabled:=true(既定) → エンコーダ+IMU、false → エンコーダのみ
+    # imu_enabled:=true → エンコーダ+IMU、false(既定) → エンコーダのみ
     ekf_yaml_imu    = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
     ekf_yaml_no_imu = os.path.join(BRINGUP_DIR, 'config', 'ekf_params_no_imu.yaml')
     ekf_yaml    = PythonExpression(
@@ -155,13 +160,15 @@ def generate_launch_description():
     # ── 5. robot_localization (EKF) ──────────────────────
     nodes.append(LogInfo(
         condition=IfCondition(imu_enabled),
-        msg='imu_enabled=true (既定): ekf_params.yaml (エンコーダ+IMUのvyaw) を使用します。'
-            'DSR1603のキャリブレーション未実施の場合は ros2 run th_calibration '
-            'imu_calib_check.py で確認してください。',
+        msg='imu_enabled=true: ekf_params.yaml (エンコーダ+IMUのvyaw) を使用します。'
+            'ジャイロ単位修正(2026-08-06)を含むファームウェアが書き込まれていることを'
+            '確認してください。未修正だと角速度が dps で届き、EKF が 57.3 倍の'
+            'ヨーレートを信じてオドメトリが壊れます。'
+            'キャリブレーションは ros2 run th_calibration imu_calib_check.py で確認。',
     ))
     nodes.append(LogInfo(
         condition=UnlessCondition(imu_enabled),
-        msg='imu_enabled=false: ekf_params_no_imu.yaml (エンコーダのみ) を使用します。'
+        msg='imu_enabled=false (既定): ekf_params_no_imu.yaml (エンコーダのみ) を使用します。'
             'クローラの超信地旋回スリップによる yaw 誤差は補正されません。',
     ))
     nodes.append(Node(
