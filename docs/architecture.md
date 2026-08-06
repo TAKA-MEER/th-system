@@ -341,6 +341,14 @@ ros2 launch th_bringup bringup.launch.py
 
 `esp32_bridge` は `/cmd_vel` を差動駆動変換した左右目標速度(ESP32 へ `WHEEL_CMD` で送る値と同じ)を `/esp32/wheel_cmd_speed`(`th_system_msgs/WheelFeedback` 型を指令値側に再利用)として発行する。WebUI の「車輪速度」カード(`web_ui/src/WheelSpeedView.jsx`)がこれと実測値 `/esp32/wheel_feedback` を左右輪ごとに直近15秒の時系列グラフで重畳表示し、PID の追従遅れ・定常偏差・振動を目視で確認できるようにしている。PID ゲイン自体(`config.h` の `PID_KP_*`/`PID_KI_*`/`PID_KD_*`)は現状コンパイル時定数のままで、WebUI からのライブ調整は未対応(将来検討)。
 
+**新しい失敗モード（要監視）**: `imu_enabled` を既定 `true` にしたことで、BNO055 のジャイロバイアスが
+オドメトリに乗るようになった。`ekf_params.yaml` の `imu0` 側の `vyaw` 共分散（0.0025）は `odom0` 側
+（0.05）の 1/20 なので、EKF はジャイロを強く信頼する。キャリブレーション未実施でジャイロバイアスが
+残っていると、**静止中でも odom がじわじわ回り続ける**。従来は EKF の出力自体が使われていなかったため
+この経路は存在しなかった。起動時に `ros2 run th_calibration imu_calib_check.py` で gyro が 3
+（Fully calibrated）になっていることを確認すること。静止させて `ros2 topic echo /odom` の
+`twist.twist.angular.z` がゼロ近傍かを見るのが最も早い切り分け。
+
 `imu_enabled` は 2026-08-06 にデフォルト `true` へ変更した（従来は `false`）。超信地旋回時のスリップ補正は IMU がないと成立せず、既定 `false` のままでは有効化を忘れたまま運用される方が危険なため。DSR1603 未装着の個体でも `Imu::init()` が失敗を検出して `IMU_DATA` を送らないだけで、EKF は `odom0` のみで動作するので壊れない。IMU なしで運用する場合は明示的に `imu_enabled:=false` を指定すること。
 
 ---
@@ -429,6 +437,33 @@ panels:
 `person_tracker_bridge.py` が `following_position.status`
 （`0=NO_EXISTS` / `1=EXISTS_LEG`）を `PersonStatus.is_lost` に変換する薄い変換ノード。
 `th_ws/src/th_perception/scripts/person_tracker_bridge.py` を参照。
+
+### 自機回転補償（2026-08-06 追加）
+
+`PersonTracker` は追跡状態（KF の位置・速度、`previous_target_`、ロスト時の最終位置・速度、
+操作者が指定した cold-acquire シード）を `target_frame_` = `base_link` 相対で保持する。この
+座標系はロボットと一緒に回るため、**静止した試験員でも自機が角速度 ω で旋回すれば見かけ上
+ω·d で流れる**。DR-SPAAM は CPU 推論で約 2Hz（1フレーム約 0.5 秒）しかないため、旋回中は
+1フレームあたり ω·d·0.5 だけ見かけ位置が飛び、対応付けゲート `leg_tracking_range`（1.10m）を
+超えて対象を取り落としていた。
+
+`compensateEgoMotion()`（`multiple_sensor_person_tracker_component.cpp`）が検出フレームごとに
+`odom → base_link` の変化から剛体変換を求め、対応付けの前に追跡状態を現フレームへ移す。
+KF 側は `KalmanFilter::applyFrameTransform(R, t)` が位置 `p'=Rp+t`・速度 `v'=Rv`・
+共分散 `P'=JPJ^T`（`J=blockdiag(R,R)`）で状態を移す。TF が引けない場合とオドメトリの不連続
+（2m/2rad 超）は補償を見送り、基準姿勢を破棄して次フレームから取り直す。
+
+**ゲート半径を広げて対処してはいけない**（VISION.md §4）。机・椅子の脚へ乗り移る誤追跡
+（2026-07-11 実機で確認）が再発する。旋回による見かけの移動は補償で消すのが正で、ゲートは
+試験員の実移動量に対して設定する。
+
+本補償は `odom` の品質に依存するため、上記「IMU (DSR1603 / BNO055) 追加」の EKF 融合と対で成立する。
+
+なお同時に、`KalmanFilter` の状態遷移行列が生成時の `dt`（0.033s）で組まれたきり更新されず、
+`compute(dt, ...)` の `dt` が Q にしか渡っていなかった不具合を修正した。約 2Hz の実測間隔
+（0.5秒）を 0.033 秒のステップで説明することになり速度推定が約 15 倍に膨れ、
+`FollowingPosition.velocity` を入力とする遮蔽復帰ロジック（速度依存の coast 時間・出現点の
+外挿・速度整合による同一人物判定）がいずれも機能していなかった。
 
 human_kenchi 自体の3パッケージ（`multiple_observation_kalman_filter` /
 `multiple_sensor_person_tracking` / `leg_detection_bringup`）は
