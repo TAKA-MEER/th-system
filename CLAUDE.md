@@ -27,6 +27,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 環境の癖・注意点
 
 - `ros2 node list` はデーモンキャッシュの影響で新規ノードが反映されないことがある。`ros2 node list --no-daemon`（または `ros2 daemon stop` 後に再実行）で確実に最新状態を取得する。
+- **`th_robot` コンテナはユーザーが実機作業中のセッションであることがある。** デバッグ用にノードを起動・停止する前に必ず `docker exec th_robot ps -eo pid,etimes,args` で稼働中のプロセスを確認し、自分が起動したものだけを PID 指定で止めること（実際に `rotation_calib.py` が 50 分間走っている最中に遭遇した）。
+- `docker exec th_robot bash -lc '... pkill -f <pattern> ...'` は、パターンがこのシェル自身のコマンドライン（`-lc` の引数文字列全体）にマッチして**自分を殺す**。出力が一切出ず exit 143 になったらこれを疑う。スクリプトをファイルに書いてから実行するか、PID 指定で止める。
+- 長時間動くノード（`component_container_mt` 等）を `docker exec` から `&` で起動すると、シェル終了時に道連れになる。`setsid ... > log 2>&1 < /dev/null &` で切り離す。
 
 ## 開発環境
 
@@ -126,6 +129,19 @@ safety_monitor ─→ /safety/fault_lock (lock 254) ─────────�
 
 ESP32 には独立したウォッチドッグ（600ms、`config.h` の `WATCHDOG_MS`）があり、ROS2 がクラッシュしても停止できる。esp32_bridge は `/cmd_vel` を20Hzキープアライブで再送しており、WiFi ジッタによる誤発動を避けるため2026-08-05に300ms→600msへ緩和した（詳細: `docs/architecture.md`「ESP32側の二重フェイルセーフ」）。
 
+### オドメトリと TF
+
+```
+ESP32 (WHEEL_FEEDBACK: 左右速度 + dt) ─→ esp32_bridge ─→ /odom (publish_tf は false)
+                                                            ↓
+ESP32 (IMU_DATA: BNO055) ─→ /esp32/imu_data ─→ ekf_filter_node ─→ odom→base_link TF
+```
+
+**不変ルール**: `odom → base_link` の TF を発行するのは `ekf_filter_node` だけ。`esp32_bridge` の `publish_tf` を true に戻してはいけない（TF ツリーが二重親になる）。
+
+- EKF が融合する IMU 入力は**ジャイロの `vyaw` のみ**。BNO055 は NDOF モードで絶対方位（地磁気参照）を返すため、屋内の磁気擾乱でヨーが飛ぶ。`world_frame: odom` に絶対方位を入れてはいけない。
+- オドメトリの積分区間は ESP32 が `WHEEL_FEEDBACK` に載せてくる `dt`。到着時刻から推測してはいけない（WiFi 遅延がそのまま yaw ドリフトになる）。旧形式の 9 byte フレームも受理する。
+
 ### モード FSM
 
 `mode_manager.cpp` の `isTransitionAllowed()` で遷移を制御:
@@ -167,6 +183,8 @@ ESTOP → IDLE のみ
 | 対象 | ファイル |
 |------|---------|
 | 追従ロジック全般 | `th_bringup/config/planning_params.yaml` |
+| オドメトリ融合（EKF） | `th_bringup/config/ekf_params.yaml`（IMU有効・既定） / `ekf_params_no_imu.yaml` |
+| 人物トラッカー | `leg_detection_bringup/param/leg_tracker_param.yaml` |
 | 安全タイムアウト（実機） | `th_safety/config/safety_monitor.yaml` |
 | 安全タイムアウト（シミュ） | `th_bringup/config/safety_monitor_sim.yaml` |
 | twist_mux 優先度 | `th_safety/config/twist_mux.yaml` |
