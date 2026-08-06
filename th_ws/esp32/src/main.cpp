@@ -52,10 +52,17 @@ static void onWheelCmd(float left, float right) {
     targetLeft  = left;
     targetRight = right;
     last_cmd_ms = millis();
+#if LOG_EVERY_WHEEL_CMD
     // 通信テスト用ログ。開発ボード単体での書き込み・通信確認に使う
     // (WsLink::sendEstopHw は毎周期送信されるので、モーター未接続でも
     //  ws_test_server.py 側でこの受信ログと突き合わせて双方向通信を確認できる)
+    //
+    // 既定で無効(config.h)。これは WebSocket の受信コールバック内で走り、
+    // esp32_bridge のキープアライブ(20Hz)ぶんだけ毎秒発火する。1行35文字を
+    // 115200bps へ吐くとシリアルバッファが埋まった時点でブロックするため、
+    // 受信処理そのものを遅らせる。走行中の常用ログには向かない。
     Serial.printf("[WHEEL_CMD] left=%.3f right=%.3f\n", left, right);
+#endif
 }
 
 // ── WS切断時コールバック: 即座に停止 (ウォッチドッグを待たない) ──
