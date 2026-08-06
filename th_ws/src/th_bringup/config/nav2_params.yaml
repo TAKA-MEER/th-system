@@ -49,7 +49,16 @@ controller_server:
       min_lookahead_dist: 0.3
       max_lookahead_dist: 0.9
       lookahead_time: 1.5
-      rotate_to_heading_angular_vel: 0.8
+      # 超信地旋回の角速度。0.8 から下げた (2026-08-06)。
+      # 旋回中は (a) クローラのスリップで yaw オドメトリ誤差が出る、
+      # (b) 遅延したスキャンが ω×遅延 の角度誤差になり scan matching の探索窓
+      #     (coarse_search_angle_offset = 0.349 rad) を食う、
+      # (c) 人物トラッカーの見かけ移動量 ω·d·0.5s がゲートを食う
+      # のいずれもが ω に比例する。自機回転補償(VISION.md §4)と IMU 融合で
+      # 根本側は対処済みだが、残差も ω に比例するため速度自体も抑える。
+      # 実機で旋回が遅すぎる場合はここを戻す前に、地図の歪みと追従維持を
+      # 同時に確認すること。
+      rotate_to_heading_angular_vel: 0.4
       transform_tolerance: 0.1
       use_velocity_scaled_lookahead_dist: false
       min_approach_linear_velocity: 0.05
