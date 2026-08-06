@@ -244,7 +244,7 @@ export default function App() {
     personStatus, candidates, selectTarget, resetTracking,
     requestMode, publishTabletEstop, publishManualCmd,
     summonRobot,
-    mappingActive, toggleMapping,
+    mappingActive, toggleMapping, saveMap, discardMap, slamLastResult,
     actionError, clearActionError,
     mapData, robotPose, scanData, pathData, wheelSpeedData,
     getTunableParams, applyTunableParam, saveTunableParams,
@@ -254,6 +254,36 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [voiceDevOpen, setVoiceDevOpen] = useState(false)
   const [tab, setTab] = useState('operate')
+
+  // ── 地図操作 ────────────────────────────────────────────
+  // 地図の破棄は取り消せないため二段階にする。1度目の押下で「確認待ち」に
+  // 入り、10 秒放置すると自動で戻る（タブレットを持ち歩く運用で、意図しない
+  // 接触が2回連続する確率を下げるため）
+  const mapOpsAllowed =
+    connected && (mode === MODE.IDLE || mode === MODE.MANUAL)
+  const [discardArmed, setDiscardArmed] = useState(false)
+  const discardTimerRef = useRef(null)
+
+  const handleDiscardClick = useCallback(() => {
+    if (discardArmed) {
+      clearTimeout(discardTimerRef.current)
+      setDiscardArmed(false)
+      discardMap()
+      return
+    }
+    setDiscardArmed(true)
+    discardTimerRef.current = setTimeout(() => setDiscardArmed(false), 10000)
+  }, [discardArmed, discardMap])
+
+  // 操作できない状態になったら確認待ちも解除する（モードが変わった等）
+  useEffect(() => {
+    if (!mapOpsAllowed && discardArmed) {
+      clearTimeout(discardTimerRef.current)
+      setDiscardArmed(false)
+    }
+  }, [mapOpsAllowed, discardArmed])
+
+  useEffect(() => () => clearTimeout(discardTimerRef.current), [])
 
   // 音声アナウンス (VISION.md §7)。estopActive はローカル state なので
   // ros に混ぜて渡し、タブレット側の押下でも即座に鳴らせるようにする
@@ -643,16 +673,39 @@ export default function App() {
               <p className="note">
                 起動直後は停止状態。試験場に着いたら開始し、必要な範囲を走行後に停止する
                 （IDLE / MANUAL 中のみ操作可）。
+                <br />
+                停止しても自己位置推定は続きます（地図の更新だけが止まります）。
               </p>
               <div className="btn-row">
                 <button
                   className="mode-btn primary"
-                  disabled={!connected || (mode !== MODE.IDLE && mode !== MODE.MANUAL)}
+                  disabled={!mapOpsAllowed}
                   onClick={toggleMapping}
                 >
                   {mappingActive ? '地図作成停止' : '地図作成開始'}
                 </button>
+                <button
+                  className="mode-btn secondary"
+                  disabled={!mapOpsAllowed}
+                  onClick={saveMap}
+                >
+                  地図を保存
+                </button>
+                {/* 破棄は取り消せないので二段階にする。1度目で確認状態に入り、
+                    10秒放置か他操作で自動的に戻る（誤爆防止） */}
+                <button
+                  className={`mode-btn ${discardArmed ? 'discard-armed' : 'secondary'}`}
+                  disabled={!mapOpsAllowed}
+                  onClick={handleDiscardClick}
+                >
+                  {discardArmed ? '⚠ 本当に破棄する' : '地図を破棄'}
+                </button>
               </div>
+              {slamLastResult && (
+                <p className={`slam-result ${slamLastResult.startsWith('NG') ? 'ng' : 'ok'}`}>
+                  {slamLastResult}
+                </p>
+              )}
             </section>
 
             <section className="card">

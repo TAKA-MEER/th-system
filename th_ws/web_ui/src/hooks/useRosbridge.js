@@ -79,6 +79,9 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
   const [personStatus, setPersonStatus] = useState(null)
   const [candidates, setCandidates]     = useState([])
   const [mappingActive, setMappingActive] = useState(false)
+  // 直近の地図操作の結果文字列 ("OK: ..." / "NG: ...")。slam_control が publish する。
+  // サービス応答を取りこぼしても、何が起きたか画面に残るようにするため
+  const [slamLastResult, setSlamLastResult] = useState(null)
   const [actionError, setActionError]     = useState(null)  // 直近のサービス呼び出し失敗理由 (WebUI表示用)
   // 直近のサービス呼び出し結果 (音声アナウンスのトリガ用)。actionError と違い成功も記録し、
   // seq が単調増加するため同じ結果が連続してもエッジとして検出できる
@@ -194,6 +197,13 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
       messageType: 'std_msgs/Bool'
     })
     subMapping.subscribe((msg) => setMappingActive(msg.data))
+
+    // ── 購読: /slam_control/last_result ────────────────────
+    const subSlamResult = new ROSLIB.Topic({
+      ros, name: '/slam_control/last_result',
+      messageType: 'std_msgs/String'
+    })
+    subSlamResult.subscribe((msg) => setSlamLastResult(msg.data))
 
     // ── 購読: /map (SLAM 地図) ──────────────────────────────
     const subMap = new ROSLIB.Topic({
@@ -465,6 +475,39 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     )
   }, [bumpAction])
 
+  // ── 地図操作 (保存 / 破棄) ────────────────────────────────
+  // toggle_mapping と同じ Trigger 型で、slam_control が slam_toolbox の
+  // save_map / serialize_map / deserialize_map へ転送する。
+  const callSlamTrigger = useCallback((service, kind, label) => {
+    const ROSLIB = window.ROSLIB
+    if (!rosRef.current || !ROSLIB) return
+    const svc = new ROSLIB.Service({
+      ros: rosRef.current,
+      name: service,
+      serviceType: 'std_srvs/Trigger'
+    })
+    svc.callService(
+      new ROSLIB.ServiceRequest({}),
+      (res) => {
+        bumpAction(kind, res.success, res.message)
+        if (!res.success) {
+          console.warn(`${label}失敗:`, res.message)
+          setActionError(`${label}失敗: ${res.message}`)
+        } else {
+          setActionError(null)
+        }
+      }
+    )
+  }, [bumpAction])
+
+  const saveMap = useCallback(
+    () => callSlamTrigger('/slam_control/save_map', 'save_map', '地図の保存'),
+    [callSlamTrigger])
+
+  const discardMap = useCallback(
+    () => callSlamTrigger('/slam_control/discard_map', 'discard_map', '地図の破棄'),
+    [callSlamTrigger])
+
   // ── アクションエラーの手動クリア (WebUI バナーの閉じるボタン用) ──
   const clearActionError = useCallback(() => setActionError(null), [])
 
@@ -569,7 +612,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     personStatus, candidates, selectTarget, resetTracking,
     requestMode, publishTabletEstop, sendManualGoal, publishManualCmd, goToPanel,
     summonRobot,
-    mappingActive, toggleMapping,
+    mappingActive, toggleMapping, saveMap, discardMap, slamLastResult,
     actionError, clearActionError, lastAction,
     followStatus, searchStatus, summonStatus,
     mapData, robotPose, scanData, pathData, wheelSpeedData,

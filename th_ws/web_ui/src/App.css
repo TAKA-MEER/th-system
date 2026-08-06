@@ -255,6 +255,30 @@ body {
   align-self: center;
 }
 
+/* 地図の破棄の確認待ち状態。取り消せない操作なので、押し間違いに
+   気づけるよう色と大きさを明確に変える (二段階目であることを示す) */
+.mode-btn.discard-armed {
+  flex: 0 0 auto;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8rem;
+  align-self: center;
+  border-color: #e53935;
+  color: #ff8a80;
+  background: rgba(229, 57, 53, 0.15);
+  font-weight: 700;
+}
+
+/* 地図操作の結果表示。サービス応答を取りこぼしても何が起きたか残るよう
+   slam_control が publish する文字列をそのまま出す */
+.slam-result {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+.slam-result.ok { color: #81C784; }
+.slam-result.ng { color: #ff8a80; }
+
 /* ── ジョグ速度設定 (プリセット + スライダー) ───────────── */
 .speed-ctrl {
   display: flex;
