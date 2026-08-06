@@ -56,6 +56,11 @@ PYTHONPATH=~/esptool_env/site-packages python3 -m esptool \
 
 - `wheel_feedback` は `/cmd_vel` の有無に関わらず**毎周期(10 Hz)送信**される
   (停止中に止めると safety_monitor が ESP32_DISCONNECTED を誤検知し odom/TF も途絶するため)
+- `wheel_feedback` には左右速度に加えて**その速度を算出した制御周期 `dt_sec`** を載せる
+  (2026-08-06、9→13 byte)。esp32_bridge はこれをオドメトリの積分区間として使う。
+  到着時刻から推測すると WiFi 遅延がそのまま yaw ドリフトになるため。
+  ブリッジは旧形式(9 byte)も受理するので、**書き込み前の個体でもそのまま動く**
+  (公称周期にフォールバックするだけ)。ただし旋回精度の改善は書き込み後に効く
 - WebSocket は接続 5 分ごとに**定期リフレッシュ**(意図的な再接続)。ログの周期的な
   接続/切断は正常。死活検知は 3 秒周期の ping/pong ハートビート
 - ウォッチドッグ: `wheel_cmd` が 600ms 途絶するとモーターを強制停止(ROS 非依存の最終安全。

@@ -289,6 +289,18 @@ ESP32 ⇔ esp32_bridge は WebSocket バイナリフレーム通信（`th_ws/esp
 
 bridge 側は `/esp32/imu_data`（`sensor_msgs/Imu`, frame_id=`imu_link`）と `/esp32/imu_calib_status`（`std_msgs/UInt8`）を発行する。
 
+`WHEEL_FEEDBACK (0x02)` は 2026-08-06 に 9 → 13 byte へ拡張し、末尾に float32 の `dt_sec`（ESP32 が `velL = counts * distPerCount / dt` で速度を求めるのに使った制御周期）を追加した。bridge はこれをオドメトリの積分区間と `/odom` のヘッダスタンプの刻みに使う。到着時刻から推測すると、WiFi の遅延（0.5〜1.2 秒、`docs/network.md`）がそのまま yaw ドリフトになるため。**旧形式（9 byte）も引き続き受理する**ので、ファームウェア書き込み前の個体でも同じ bridge で動く（その場合は `feedback_period_ms` の公称値にフォールバックする）。
+
+**フレーム間の TF と EKF の関係**
+
+`odom → base_link` の TF を発行するのは `ekf_filter_node`（robot_localization）**だけ**で、`esp32_bridge` は `publish_tf: false`（`th_esp32_bridge/config/params.yaml`）にして `/odom` の発行のみを担当する。両方が発行すると TF ツリーが二重親になって壊れる。
+
+この配線は 2026-08-06 に是正したもので、それ以前は EKF が `publish_tf: false`・`imu_enabled` 既定 `false` で、TF は `esp32_bridge` が生のエンコーダ値のまま発行していた。`/odometry/filtered` を購読するノードも 1 つも無かったため、**IMU を有効にしても補正が SLAM/Nav2 に一切届かない死んだ枝**になっていた。
+
+EKF が融合するのは**ジャイロの `vyaw` のみ**で、`yaw`（絶対方位）は使わない（`ekf_params.yaml` の `imu0_config`）。BNO055 は Adafruit ライブラリ既定の NDOF モードで動くため orientation は地磁気参照の絶対方位になり、屋内の磁気擾乱でヨーが飛ぶ。`world_frame: odom` の EKF に入れると「局所的に連続でなめらか」という odom フレームの要件が壊れ、scan matching が破綻する。クローラのスリップで欠けているのは yaw の**変化量**なので、ジャイロ角速度だけで目的を達成できる。
+
+副次効果として TF が EKF の `frequency`（30Hz）で定常発行されるようになる。`esp32_bridge` は `wheel_feedback` を受信した瞬間にしか TF を出せなかったため、WiFi 途絶中は TF ごと途切れて slam_toolbox がスキャンを捨てていた。
+
 **キャリブレーション**
 
 BNO055 の地磁気センサはロボットごとに8の字運動でのキャリブレーションが必要（DSR1603 マニュアル記載: 上下左右に8の字を描くように2回転）。`ros2 run th_calibration imu_calib_check.py` で `/esp32/imu_calib_status` を監視し、sys/gyro/accel/mag が全て 3(Fully calibrated) になるまで操作案内を表示する。
@@ -305,10 +317,10 @@ ros2 topic echo /esp32/imu_data
 # 3. 8の字キャリブレーションを実施
 ros2 run th_calibration imu_calib_check.py
 
-# 4. EKF を IMU 入力有効に切替えて起動
-#    imu_enabled:=true で ekf_params.yaml（imu0込み）、false（既定）で
+# 4. 起動（imu_enabled は既定 true なので指定不要）
+#    true(既定) で ekf_params.yaml（imu0込み）、false で
 #    ekf_params_no_imu.yaml（エンコーダのみ）を選択する
-ros2 launch th_bringup bringup.launch.py imu_enabled:=true
+ros2 launch th_bringup bringup.launch.py
 
 # 5. EKF のチューニング
 #    robot_localization のドキュメントを参照し
@@ -329,7 +341,7 @@ ros2 launch th_bringup bringup.launch.py imu_enabled:=true
 
 `esp32_bridge` は `/cmd_vel` を差動駆動変換した左右目標速度(ESP32 へ `WHEEL_CMD` で送る値と同じ)を `/esp32/wheel_cmd_speed`(`th_system_msgs/WheelFeedback` 型を指令値側に再利用)として発行する。WebUI の「車輪速度」カード(`web_ui/src/WheelSpeedView.jsx`)がこれと実測値 `/esp32/wheel_feedback` を左右輪ごとに直近15秒の時系列グラフで重畳表示し、PID の追従遅れ・定常偏差・振動を目視で確認できるようにしている。PID ゲイン自体(`config.h` の `PID_KP_*`/`PID_KI_*`/`PID_KD_*`)は現状コンパイル時定数のままで、WebUI からのライブ調整は未対応(将来検討)。
 
-`imu_enabled` は DSR1603 未装着の機体を壊さないようデフォルト `false`（エンコーダのみ）。装着・キャリブレーション済みの機体でのみ `true` を指定すること。
+`imu_enabled` は 2026-08-06 にデフォルト `true` へ変更した（従来は `false`）。超信地旋回時のスリップ補正は IMU がないと成立せず、既定 `false` のままでは有効化を忘れたまま運用される方が危険なため。DSR1603 未装着の個体でも `Imu::init()` が失敗を検出して `IMU_DATA` を送らないだけで、EKF は `odom0` のみで動作するので壊れない。IMU なしで運用する場合は明示的に `imu_enabled:=false` を指定すること。
 
 ---
 
