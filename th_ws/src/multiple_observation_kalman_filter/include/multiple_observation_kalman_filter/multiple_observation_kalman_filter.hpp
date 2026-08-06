@@ -27,9 +27,25 @@ namespace multiple_observation_kalman_filter{
             double process_noise_;
 
         public :
+            // F : rebuild the constant-velocity transition matrix for an actual dt.
+            // Called at the top of every compute() -- see the note there.
+            void setTimeStep( const double dt );
+
             KalmanFilter ( const double dt, const double process_noise, const double system_noise );
             void changeParameter( const double process_noise, const double system_noise );
             void init( const Eigen::Vector2f& observed_value );
+
+            // Re-express the filter state in a moved frame (ego-motion compensation).
+            // The state lives in the robot-relative tracking frame, so when the robot
+            // itself moves between detections the stored position/velocity refer to a
+            // frame that no longer exists. Applying the frame change here keeps the
+            // prediction about the PERSON's motion instead of the robot's.
+            //   position : p' = R * p + t
+            //   velocity : v' = R * v      (a frame rotation, no translation term)
+            //   covariance : P' = J * P * J^T,  J = blockdiag(R, R)
+            // R/t describe new_frame <- old_frame.
+            void applyFrameTransform( const Eigen::Matrix2f& rotation,
+                                       const Eigen::Vector2f& translation );
             void compute( const double dt, const Eigen::Vector2f& observed_value1, const Eigen::Vector2f& observed_value2, Eigen::Vector4f* estimated_value );
             void compute( const double dt, const Eigen::Vector2f& observed_value1, Eigen::Vector4f* estimated_value );
             void compute( const double dt, Eigen::Vector4f* estimated_value );

@@ -48,7 +48,48 @@ void multiple_observation_kalman_filter::KalmanFilter::init( const Eigen::Vector
     estimated_value_ << observed_value[0], observed_value[1], 0.0, 0.0;
 }
 
+void multiple_observation_kalman_filter::KalmanFilter::setTimeStep( const double dt ) {
+    // F : constant-velocity model over the ACTUAL interval between observations.
+    //
+    // This used to be built once in the constructor with the nominal dt (0.033 s)
+    // and never updated -- compute(dt, ...) only fed dt into Q, so the prediction
+    // step always advanced the state by 33 ms no matter how far apart the
+    // detections really were. With DR-SPAAM running at ~2 Hz on CPU (0.5 s apart)
+    // the filter had to explain a 0.5 s position change with a 0.033 s step, which
+    // inflated the velocity estimate by roughly 15x. That estimate is published as
+    // FollowingPosition.velocity and drives the occlusion-recovery logic
+    // (coast time by speed, emergence-point extrapolation, velocity-matching
+    // re-identification), so all three were operating on nonsense.
+    state_transition_matrix_ << 1.0,    0.0,    dt,     0.0,
+                                0.0,    1.0,    0.0,    dt,
+                                0.0,    0.0,    1.0,    0.0,
+                                0.0,    0.0,    0.0,    1.0;
+}
+
+void multiple_observation_kalman_filter::KalmanFilter::applyFrameTransform(
+    const Eigen::Matrix2f& rotation, const Eigen::Vector2f& translation )
+{
+    const Eigen::Vector2f position( estimated_value_[0], estimated_value_[1] );
+    const Eigen::Vector2f velocity( estimated_value_[2], estimated_value_[3] );
+
+    const Eigen::Vector2f position_new = rotation * position + translation;
+    const Eigen::Vector2f velocity_new = rotation * velocity;
+
+    estimated_value_ << position_new[0], position_new[1], velocity_new[0], velocity_new[1];
+
+    // P' = J P J^T with J = blockdiag(R, R). The translation drops out: it is a
+    // constant offset and does not change how uncertain the estimate is.
+    Eigen::Matrix4f jacobian = Eigen::Matrix4f::Zero();
+    jacobian.block<2, 2>(0, 0) = rotation;
+    jacobian.block<2, 2>(2, 2) = rotation;
+    estimated_covariance_matrix_ =
+        jacobian * estimated_covariance_matrix_ * jacobian.transpose();
+}
+
 void multiple_observation_kalman_filter::KalmanFilter::compute( const double dt, const Eigen::Vector2f& observed_value1, const Eigen::Vector2f& observed_value2, Eigen::Vector4f* estimated_value ) {
+    // F : advance the state by the real interval since the last observation.
+    setTimeStep( dt );
+
     // Q : Process noise (used in prediction step)
     double noise_ax = process_noise_;
     double noise_ay = process_noise_;
@@ -103,6 +144,9 @@ void multiple_observation_kalman_filter::KalmanFilter::compute( const double dt,
 }
 
 void multiple_observation_kalman_filter::KalmanFilter::compute( const double dt, const Eigen::Vector2f& observed_value1, Eigen::Vector4f* estimated_value ) {
+    // F : advance the state by the real interval since the last observation.
+    setTimeStep( dt );
+
     // Q : Process noise (used in prediction step)
     double noise_ax = process_noise_;
     double noise_ay = process_noise_;
@@ -146,6 +190,9 @@ void multiple_observation_kalman_filter::KalmanFilter::compute( const double dt,
 }
 
 void multiple_observation_kalman_filter::KalmanFilter::compute( const double dt, Eigen::Vector4f* estimated_value ) {
+    // F : advance the state by the real interval since the last observation.
+    setTimeStep( dt );
+
     // Q : Process noise (used in prediction step)
     double noise_ax = process_noise_;
     double noise_ay = process_noise_;
