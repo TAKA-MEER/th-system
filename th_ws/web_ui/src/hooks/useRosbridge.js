@@ -61,7 +61,15 @@ function encodeParamValue(value, { isArray = false, isInt = false } = {}) {
 
 // 既定はページを配信しているホスト (ロボットPC) の rosbridge に接続する。
 // 別ホストの rosbridge へ接続する場合は呼び出し側で url を指定する。
-export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
+//
+// readOnly: 観客向け表示 (VISION.md §6.3) 用。ROS2 への publish を一切
+// 行わない。特に /manual/heartbeat を止めることが目的で、これが二重に
+// 流れると MANUAL のハートビート源が観客画面にも依存してしまう。
+// 既定は false = 従来どおりの操作 UI 向け動作。
+// mapThrottleMs: /map (OccupancyGrid) は 1 通で数百 KB になり得る。観客表示は
+// 秒単位の更新で十分なので間引いて購読負荷を下げる。0 = 間引かない (既定)。
+export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
+                             { readOnly = false, mapThrottleMs = 0 } = {}) {
   const rosRef  = useRef(null)
   const [connected, setConnected]   = useState(false)
   const [mode, setMode]             = useState(null)
@@ -191,6 +199,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     const subMap = new ROSLIB.Topic({
       ros, name: '/map',
       messageType: 'nav_msgs/OccupancyGrid',
+      ...(mapThrottleMs > 0 ? { throttle_rate: mapThrottleMs } : {}),
     })
     subMap.subscribe((msg) => setMapData(msg))
 
@@ -291,7 +300,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
       commandWheelBufRef.current = []
       ros.close()
     }
-  }, [url])
+  }, [url, mapThrottleMs])
 
   // ── モード変更サービス呼び出し ────────────────────────────
   const requestMode = useCallback((modeNum) => {
@@ -334,7 +343,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
 
   // ── heartbeat 定期送信 ────────────────────────────────────
   useEffect(() => {
-    if (!connected) return
+    if (!connected || readOnly) return
     const ROSLIB = window.ROSLIB
     const hbTopic = new ROSLIB.Topic({
       ros: rosRef.current,
@@ -345,7 +354,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
       hbTopic.publish(new ROSLIB.Message({}))
     }, 500)   // 500ms = 2Hz
     return () => clearInterval(id)
-  }, [connected])
+  }, [connected, readOnly])
 
   // ── 手動ゴール送信 ────────────────────────────────────────
   const sendManualGoal = useCallback((x, y) => {

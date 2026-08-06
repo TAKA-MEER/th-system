@@ -4,28 +4,10 @@
 // ============================================================
 import { useRef, useEffect } from 'react'
 
+import { quatToYaw, worldToCanvas } from './mapGeometry.js'
+
 const CANVAS_SIZE = 320   // 表示 canvas の一辺 (px)。CandidateRadar の 260px よりやや大きく
 const MAX_SCAN_RANGE_M = 12.0   // LiDAR (RPLIDAR S1) の最大レンジ。異常値の足切りに使う
-
-function quatToYaw(q) {
-  return Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
-}
-
-// map座標系の (x, y) [m] を canvas ピクセル座標 [px, py] に変換する。
-// OccupancyGrid の行0はmapフレーム下端・originはセル(0,0)の座標という前提
-// (MapView 全体でここ一箇所にまとめ、ロボットマーカー・点群・ルートで共有する)
-function worldToCanvas(x, y, mapInfo, canvasW, canvasH) {
-  const { resolution, width, height, origin } = mapInfo
-  const originYaw = quatToYaw(origin.orientation)
-  const dx = x - origin.position.x
-  const dy = y - origin.position.y
-  const cos = Math.cos(-originYaw), sin = Math.sin(-originYaw)
-  const gx = (dx * cos - dy * sin) / resolution   // グリッドセル座標 (列)
-  const gy = (dx * sin + dy * cos) / resolution   // グリッドセル座標 (行, 下端基準)
-  const scaleX = canvasW / width
-  const scaleY = canvasH / height
-  return [gx * scaleX, canvasH - gy * scaleY]     // 地図と同じ上下反転
-}
 
 export default function MapView({ mapData, robotPose, scanData, pathData }) {
   const canvasRef = useRef(null)

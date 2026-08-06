@@ -1,0 +1,256 @@
+/* ============================================================
+   AudienceView.css — 観客向けデモ表示 (VISION.md §6.3)
+   プロジェクタ・大型ディスプレイ前提。遠くから読めることを最優先に
+   文字を大きく・コントラストを強く取る
+   ============================================================ */
+
+/* App.css は操作 UI 側でしか読み込まれない (main.jsx でツリーごと分岐)。
+   リセットと body の基礎スタイルはこちらにも要る */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', sans-serif;
+  background: #0b0d12;
+  color: #e8eaed;
+  user-select: none;
+  overflow: hidden;
+}
+
+.aud {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: #0b0d12;
+  color: #e8eaed;
+  overflow: hidden;
+}
+
+/* ── ヘッダー ───────────────────────────────────────────── */
+.aud-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.9rem 1.5rem;
+  background: #12151c;
+  border-bottom: 1px solid #232833;
+}
+.aud-header h1 { font-size: 1.7rem; letter-spacing: 0.04em; }
+.aud-subtitle  { font-size: 1rem; color: #7e8794; }
+.aud-disconnect {
+  margin-left: auto;
+  font-size: 1.1rem;
+  color: #ff8a80;
+  animation: aud-pulse 1.4s infinite;
+}
+@keyframes aud-pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
+
+/* ── 本体 2 ペイン ──────────────────────────────────────── */
+.aud-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr minmax(320px, 26%);
+  gap: 1rem;
+  padding: 1rem 1.5rem 1.5rem;
+}
+
+/* ── 左: センサが見る世界 ───────────────────────────────── */
+.aud-world {
+  position: relative;
+  min-height: 0;
+  border: 1px solid #232833;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0b0d12;
+}
+.aud-canvas { display: block; width: 100%; height: 100%; }
+
+/* 凡例 = レイヤのトグル。色の説明と操作子を兼ねる */
+.aud-legend {
+  position: absolute;
+  left: 0.9rem;
+  bottom: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  transition: opacity 0.6s;
+}
+.aud-legend.faded { opacity: 0.12; }
+.aud-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #2c3340;
+  border-radius: 999px;
+  background: rgba(12, 15, 21, 0.85);
+  color: #dfe3e8;
+  font-size: 0.95rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+.aud-legend-item:hover { border-color: #48546a; }
+.aud-legend-item.off { opacity: 0.35; }
+.aud-legend-item.off .aud-swatch { background: #566 !important; }
+.aud-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.aud-legend-item kbd {
+  font-family: inherit;
+  font-size: 0.75rem;
+  color: #78828f;
+  border: 1px solid #2c3340;
+  border-radius: 3px;
+  padding: 0 0.3rem;
+}
+
+.aud-hint {
+  position: absolute;
+  right: 0.9rem;
+  top: 0.9rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(12, 15, 21, 0.85);
+  border: 1px solid #2c3340;
+  color: #8b95a3;
+  font-size: 0.9rem;
+  transition: opacity 0.6s;
+}
+.aud-hint.faded { opacity: 0.12; }
+
+/* ── 右: ロボットの判断 ─────────────────────────────────── */
+.aud-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  overflow: hidden;
+}
+
+.aud-mode {
+  flex-shrink: 0;
+  border: 2px solid #444;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  background: #12151c;
+  transition: border-color 0.3s;
+}
+.aud-mode-caption {
+  display: block;
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  color: #78828f;
+}
+.aud-mode-name {
+  display: block;
+  font-size: 1.9rem;
+  font-weight: bold;
+  line-height: 1.2;
+  transition: color 0.3s;
+}
+
+.aud-alert {
+  flex-shrink: 0;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  background: #3a1a00;
+  border: 1px solid #bf6000;
+  color: #ffcc80;
+  font-size: 1rem;
+}
+
+.aud-section {
+  flex-shrink: 0;
+  background: #12151c;
+  border: 1px solid #232833;
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+}
+.aud-section h2 {
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  color: #78828f;
+  margin-bottom: 0.5rem;
+}
+
+.aud-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.8rem;
+  padding: 0.12rem 0;
+}
+.aud-row-label { font-size: 0.95rem; color: #98a2b0; }
+.aud-row-value {
+  font-size: 1.25rem;
+  font-weight: bold;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.aud-row-value.tone-ok   { color: #81c784; }
+.aud-row-value.tone-warn { color: #ffcc80; }
+.aud-row-value.tone-ng   { color: #ef9a9a; }
+
+.aud-conditions {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.aud-condition {
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: #3a1a1a;
+  border: 1px solid #a33;
+  color: #ffcdd2;
+  font-size: 0.9rem;
+}
+
+/* 実況ログは残りの高さを使い、あふれたら中でスクロールする。
+   min-height を張ってパネル側にスクロールバーを出すと二重スクロールに
+   なって読みにくいので、ここは伸縮に任せる */
+.aud-log-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.aud-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.aud-log-empty { color: #4d5560; }
+.aud-log-item {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+.aud-log-item time {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: #5f6875;
+  font-variant-numeric: tabular-nums;
+}
+/* 安全通知は目立たせ、デモ実況は落ち着かせる */
+.aud-log-item.layer-safety span { color: #ffcc80; font-weight: bold; }
+.aud-log-item.layer-demo   span { color: #cfd5dd; }
+
+/* ── 縦長・小さめの画面向け ─────────────────────────────── */
+@media (max-width: 1100px) {
+  .aud-body { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .aud-panel { flex-direction: row; flex-wrap: wrap; overflow-y: auto; }
+  .aud-log-section { flex: 1 1 100%; max-height: 30vh; }
+}

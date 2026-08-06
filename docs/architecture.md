@@ -550,6 +550,10 @@ ros2 topic echo /person/status --once
 
 6. web_ui/src/App.jsx（MODE 定数・ボタン・modeColor）と
    web_ui/src/hooks/useRosbridge.js（MODE_NAMES）に追加
+   ※ ボタンは「運用」タブのモード操作カードに置く。画面は
+      運用 / 準備 / 診断の 3 タブ構成（VISION.md §6.1）で、
+      緊急停止・モード表示・接続状態・音声クレジットは
+      タブ外の常時表示ゾーンに固定されている
 ```
 
 新しいモードは常に「ESTOP からは IDLE のみ経由で復帰」「IDLE への安全側遷移を持つ」「フォルト発生時は IDLE へ強制遷移する」という設計方針に従ってください。
@@ -558,8 +562,9 @@ ros2 topic echo /person/status --once
 
 ## WebUI 設定パネル（パラメータ調整）
 
-VISION.md §6 の完成形を実装したもの。タブレット WebUI（`web_ui/src/SettingsPanel.jsx`）から
+VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web_ui/src/SettingsPanel.jsx`）から
 `follow_planner_mapless` の数値パラメータと `lidar_filter.blind_angle_ranges` を確認・変更できる。
+設定パネル自体はタブに属さないオーバーレイで、ヘッダーの ⚙ からどのタブでも開ける。
 
 ### 構成
 
@@ -615,6 +620,47 @@ VISION.md §6 の完成形を実装したもの。タブレット WebUI（`web_u
 
 対象拡大（`follow_planner`・`person_predictor`・Nav2 パラメータ・`panels.yaml` 等）は
 VISION.md §7 の未確定事項を参照。
+
+---
+
+## WebUI 観客向け表示（デモ展示用）
+
+VISION.md §6.3 の完成形を実装したもの。`?view=audience` を付けて開くと、操作 UI の代わりに
+観客向けの 2 ペイン表示（左=センサが見る世界 / 右=ロボットの判断）がマウントされる。
+
+```
+web_ui/src/
+  main.jsx                    ?view=audience でツリーごと分岐 (App か AudienceView か)
+  mapGeometry.js              worldToCanvas / baseToWorld — MapView と共有
+  audience/
+    AudienceView.jsx          2ペインのシェル・レイヤトグル・キー 1〜6
+    WorldCanvas.jsx           点群 + 脚検出候補 + 追跡対象 + 地図 + 経路 + 軌跡
+    JudgementPanel.jsx        モード・人の認識・追従状態・実況ログ
+    captionSink.js            音を鳴らさず字幕ログを作る (voiceQueue の代替)
+```
+
+### 設計上、崩してはいけない点
+
+- **`main.jsx` で分岐する（App 内で分岐しない）。** 操作 UI のジョグ用 `setInterval`・音声・
+  heartbeat が観客画面では起動しないことを構造で保証している。
+- **`useRosbridge(url, { readOnly: true })` を必ず渡す。** publish を止める。特に
+  `/manual/heartbeat` が二重に流れると MANUAL のハートビート源が観客画面にも依存する。
+- **`captionSink.js` から `voiceQueue.js` / `audioPlayer.js` を import しない。** 観客画面は
+  ROS2 スタックのホスト機で動くため、ここから音が出ると VISION.md §7.1/§7.2 の
+  「ロボット側スピーカーは持たない」に反する。import しないこと自体が保証になっている。
+- **地図が無いときはロボット中心表示へフォールバックする。** 主運用の FOLLOWING_MAPLESS は
+  地図作成を開始するまで `/map` が流れない。`WorldCanvas.jsx` の `makeProjector()` が
+  地図あり / なしの座標系差を吸収しているので、描画本体は分岐を持たない。
+
+### 表示端末
+
+ROS2 スタックのホスト機（現行構成では PC 側。ラズパイは LiDAR と ESP32 シリアルのみ）で
+localhost 配信を開き、その映像出力をディスプレイへ回す。`useRosbridge` の既定 URL は
+「ページを配信しているホストの 9090」なので、localhost 配信なら rosbridge 接続も localhost に
+閉じ、ESP32 SoftAP の帯域を使わない。
+
+`/map` は観客画面側のみ `throttle_rate: 2000` で購読し（`mapThrottleMs` オプション）、
+描画は `requestAnimationFrame` で約 10fps に制限してホスト機の CPU を空けている。
 
 ---
 

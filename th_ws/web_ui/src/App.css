@@ -11,19 +11,40 @@ body {
   color: #e0e0e0;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  overflow: hidden;   /* スクロールは .tabpanel の中だけ */
 }
 
-/* ── アプリ全体 (横長タブレット向け) ────────────────────── */
+/* ── アプリ全体 (横長タブレット向け) ──────────────────────
+   画面高を使い切り、スクロールするのは .tabpanel の中だけにする。
+   これにより緊急停止ボタン (上端) と解除バー・フッター (下端) は
+   どこまでスクロールしても常に見える (VISION.md §6.1) */
 .app {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 0 2rem;
+  /* body が overflow:hidden のため、dvh 非対応ブラウザで height が auto に
+     なると解除バー・フッターが画面外に出たまま到達不能になる。必ず 2 段書き */
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   gap: 0;
+  overflow: hidden;
+}
+/* 接続断・フォルト中は画面全体を縁取りして遠目でも分かるようにする。
+   currentColor は使わない (子要素の文字色まで巻き込むため) */
+.app-alert-disconnect { box-shadow: inset 0 0 0 3px #e53935; }
+.app-alert-fault      { box-shadow: inset 0 0 0 3px #bf6000; }
+
+/* ── タブ本体: ここだけがスクロールする ─────────────────── */
+.tabpanel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 0.75rem;
 }
 
-/* ── メイングリッド: 横長画面では2カラム ────────────────── */
+/* ── カードのグリッド: 横長画面では2カラム ──────────────── */
 .grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -31,14 +52,70 @@ body {
 }
 @media (min-width: 800px) {
   .grid {
-    grid-template-columns: minmax(420px, 1.2fr) 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 0.75rem;
     padding: 0 0.75rem;
     align-items: start;
   }
   .grid .card { margin: 0.75rem 0 0; }
-  /* 追従ターゲットは左カラムに大きく、他は右カラムに縦積み */
-  .card-target { grid-column: 1; grid-row: 1 / span 3; }
+  /* 運用タブ: 左にターゲット (背の高いレーダー)、右にモード操作 + 手動移動を
+     縦に積む。3 枚を画面高ぴったりに収め、走行中はスクロール不要にする。
+     余った高さはスティックに割り当てる (大きいほど操作しやすい) */
+  .grid-operate {
+    grid-template-columns: minmax(360px, 1fr) 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
+    padding-bottom: 0.75rem;
+    /* .grid の align-items:start だとカードが行の高さを無視して伸びる。
+       運用タブは行に収めたいので stretch に戻す */
+    align-items: stretch;
+  }
+  .grid-operate .card { min-height: 0; }
+  .grid-operate .card-target { grid-column: 1; grid-row: 1 / span 2; }
+  .grid-operate .card-manual {
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    /* スティックが指で操作できる大きさを割り込んだら、カード側で高さを
+       確保して tabpanel をスクロールに切り替える */
+    min-height: 270px;
+  }
+  .grid-operate .stick-wrap { flex: 1; min-height: 0; justify-content: center; }
+  .grid-operate .stick-pad {
+    width: auto;
+    height: 100%;
+    max-height: 240px;
+    min-height: 0;
+  }
+}
+
+/* ── タブ切替 ───────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem 0;
+  background: #12141b;
+  border-bottom: 1px solid #2a2d35;
+}
+.tab {
+  flex: 1;
+  padding: 0.7rem 0.5rem;
+  border: 1px solid #2a2d35;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: #1a1d24;
+  color: #888;
+  font-size: 0.95rem;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.1s, color 0.1s;
+}
+.tab:active { background: #252830; }
+.tab.active {
+  background: #252830;
+  color: #e0e0e0;
+  border-color: #3a4a52;
+  box-shadow: inset 0 3px 0 #00bcd4;
 }
 
 /* ── ヘッダー ───────────────────────────────────────────── */
@@ -49,9 +126,7 @@ body {
   padding: 0.75rem 1rem;
   background: #1a1d24;
   border-bottom: 1px solid #2a2d35;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  flex-shrink: 0;   /* .app は 100dvh 固定。上部ゾーンは縮めない */
 }
 .title { font-size: 1.1rem; font-weight: bold; letter-spacing: 0.05em; }
 .mode-inline {
@@ -82,9 +157,10 @@ body {
   border-radius: 4px;
 }
 
-/* ── 緊急停止ボタン ─────────────────────────────────────── */
+/* ── 緊急停止ボタン (画面最上部・常時表示) ──────────────── */
 .estop-btn {
   width: 100%;
+  flex-shrink: 0;
   padding: 1.25rem;
   font-size: 1.3rem;
   font-weight: bold;
@@ -102,17 +178,22 @@ body {
   animation: pulse 1s infinite;
 }
 
-/* ── 緊急停止の解除 (発動ボタンと別位置・別見た目) ──────── */
-.estop-release-card {
-  border: 1px solid #4a148c;
+/* ── 緊急停止の解除 (画面最下部・別見た目) ────────────────
+   発動ボタンから最も遠い位置に置く。連打で発動→即解除を防ぐ距離 */
+.estop-release-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.75rem;
+  background: #1c1226;
+  border-top: 2px solid #4a148c;
 }
-@media (min-width: 800px) {
-  .estop-release-card { grid-column: 2; }
-}
+.estop-release-note { flex: 1 1 200px; font-size: 0.75rem; color: #b39ddb; }
 .estop-release-btn {
-  width: 100%;
-  margin-top: 0.5rem;
-  padding: 0.9rem;
+  flex: 0 1 auto;
+  padding: 0.9rem 1.2rem;
   font-size: 1rem;
   border: 1px solid #7b1fa2;
   border-radius: 6px;
@@ -162,6 +243,17 @@ body {
 .mode-btn:active:not(:disabled) { background: #3a3d4a; }
 .mode-btn:disabled  { opacity: 0.35; cursor: not-allowed; }
 .mode-btn.idle      { border-color: #2196F3; color: #90CAF9; }
+/* 主/副の区別 (VISION.md §6.1): 当面の運用に使う 4 つを大きく、
+   優先度の低い地図あり追従を小さく */
+.mode-btn.primary   { padding: 0.9rem 0.5rem; font-size: 1rem; }
+.mode-btn.secondary {
+  flex: 0 0 auto;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8rem;
+  color: #999;
+  background: transparent;
+  align-self: center;
+}
 
 /* ── ジョグ速度設定 (プリセット + スライダー) ───────────── */
 .speed-ctrl {
@@ -173,6 +265,21 @@ body {
 }
 /* MANUAL 以外でカードが disabled でも速度設定だけは操作可能にする */
 .card.disabled .speed-ctrl { pointer-events: auto; }
+
+/* 横長画面では速度設定を 1 行にまとめ、スティックの表示高を稼ぐ
+   (運用タブをスクロールなしで収めるため) */
+@media (min-width: 800px) {
+  .speed-ctrl {
+    flex-direction: row;
+    align-items: center;
+    max-width: none;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+  }
+  .speed-label    { flex: 0 0 auto; text-align: left; }
+  .speed-presets  { flex: 0 0 auto; }
+  .speed-slider   { flex: 1 1 100px; height: 28px; }
+}
 
 .speed-label {
   font-size: 0.9rem;
@@ -248,7 +355,8 @@ body {
   gap: 0.5rem;
 }
 .stick-pad {
-  width: 240px;
+  /* 画面高が足りないときは縮めてスクロールを避ける */
+  width: min(240px, 34vh);
   max-width: 100%;
   aspect-ratio: 1;
   touch-action: none;       /* ドラッグ中のページスクロール防止 */
@@ -274,24 +382,6 @@ body {
 }
 .stick-status.active { color: #80deea; }
 
-/* ── 配電盤リスト ───────────────────────────────────────── */
-.panel-list { display: flex; flex-direction: column; gap: 0.5rem; }
-.panel-btn {
-  width: 100%;
-  padding: 0.9rem;
-  border: 1px solid #333;
-  border-radius: 6px;
-  background: #1e2640;
-  color: #90CAF9;
-  font-size: 1rem;
-  cursor: pointer;
-  touch-action: manipulation;
-  text-align: left;
-  transition: background 0.1s;
-}
-.panel-btn:active:not(:disabled) { background: #263050; }
-.panel-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-
 /* ── 追従ターゲット / レーダー ──────────────────────────── */
 .target-state { text-transform: none; font-size: 0.8rem; }
 .target-state.ok { color: #81c784; }
@@ -304,7 +394,7 @@ body {
 }
 .radar {
   flex: 1 1 240px;
-  max-width: 340px;
+  max-width: min(340px, 46vh);
   aspect-ratio: 1;
   background: #12141b;
   border: 1px solid #2a2d35;
@@ -317,6 +407,8 @@ body {
   gap: 0.75rem;
   justify-content: flex-end;
 }
+/* .mode-btn の flex:1 が縦方向に効いてボタンが間延びするのを抑える */
+.target-side .mode-btn { flex: 0 0 auto; }
 .radar-ring       { fill: none; stroke: #2a2d35; stroke-width: 1; }
 .radar-ring-label { fill: #555; font-size: 10px; }
 .radar-axis       { stroke: #2a2d35; stroke-width: 1; stroke-dasharray: 3 3; }
@@ -506,22 +598,34 @@ body {
 }
 .settings-field input[type="number"]:disabled { opacity: 0.4; }
 
-/* ── フォルトバー ───────────────────────────────────────── */
-.fault-bar {
-  margin: 0.75rem 0.75rem 0;
-  padding: 0.75rem 1rem;
-  background: #3a1a00;
-  border: 1px solid #bf6000;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  color: #ffcc80;
-}
-
-.action-error-bar {
+/* ── 警告帯 (常時表示ゾーン。タブに関係なく必ず見える) ────
+   試験員は画面を見ていない前提のため、視線を戻した瞬間に気付ける
+   だけの面積を持たせる (VISION.md §6.1・§7) */
+.alert-bar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.4rem;
+  padding: 0.7rem 1rem;
+  font-size: 0.9rem;
+}
+.alert-bar > :last-child.action-error-close { margin-left: auto; }
+.alert-disconnect {
+  background: #4a1010;
+  color: #ffcdd2;
+  border-bottom: 1px solid #e53935;
+  animation: pulse 1.4s infinite;
+}
+.alert-fault {
+  background: #3a1a00;
+  color: #ffcc80;
+  border-bottom: 1px solid #bf6000;
+}
+.alert-action {
+  background: #2a2200;
+  color: #fff59d;
+  border-bottom: 1px solid #7a6500;
+  font-size: 0.85rem;
 }
 
 .action-error-close {
@@ -544,10 +648,6 @@ body {
 .voice-audio-state.ok { color: #80deea; }
 .voice-audio-state.ng { color: #ffcc80; }
 
-.voice-toggles {
-  display: flex;
-  gap: 0.5rem;
-}
 .voice-toggle {
   flex: 1;
   padding: 0.7rem 0.25rem;
@@ -711,7 +811,35 @@ body {
 }
 
 .voice-credit {
-  margin-top: 0.35rem;
-  font-size: 0.65rem;
-  color: #555;
+  font-size: 0.7rem;
+  color: #777;
+  white-space: nowrap;
 }
+
+/* ── フッター (常時表示ゾーン) ───────────────────────────
+   VOICEVOX Nemo のクレジットは利用規約で必須のため、タブに入れず
+   ここに常設する (VISION.md §6.1・§7.5) */
+.footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: #1a1d24;
+  border-top: 1px solid #2a2d35;
+}
+.footer-voice { display: flex; gap: 0.5rem; flex: 1; max-width: 320px; }
+.footer .voice-toggle { padding: 0.5rem 0.25rem; font-size: 0.8rem; }
+.footer-audio-warn { font-size: 0.75rem; color: #ffcc80; }
+
+/* ── 診断リスト ─────────────────────────────────────────── */
+.diag-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
+.diag-list dt { color: #888; }
+.diag-list dd { color: #e0e0e0; word-break: break-word; }
+.diag-list dd.ok { color: #81c784; }
+.diag-list dd.ng { color: #ef9a9a; }
