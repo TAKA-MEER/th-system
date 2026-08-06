@@ -348,6 +348,15 @@ ros2 launch th_bringup bringup.launch.py imu_enabled:=true
 `esp32/src/imu.cpp` にはこれを「rad/s（ライブラリ仕様）」とする誤ったコメントがあり、値をそのまま rad/s として扱っていた（**57.3 倍**）。影響は 2 箇所:
 
 1. **直進ドリフト補正の発振**（`main.cpp` の `computeDriftCorrection()`）。ループゲインは設計値 0.385 のはずが約 22 になり、実ヨーレート 0.012 rad/s 相当で既に `DRIFT_CORRECTION_MAX_MPS`（±0.1 m/s）へ飽和する。事実上常時飽和して `wz` の符号反転ごとに反転する bang-bang 振動になり、**直進時のみ左右に振動する**（旋回中は `goingStraight` が false でループが開くため出ない）。WebUI の速度グラフでは「指令付近で実測が振動」に見える — 指令側 `/esp32/wheel_cmd_speed` は esp32_bridge が `/cmd_vel` から計算する値で、ESP32 内部で足される補正量を含まないため。
+
+   **ただしこれは DSR1603 が実装・初期化されている場合に限る。** `computeDriftCorrection()` は `imuPresent` が false なら `DRIFT_TRIM_MPS`（既定 0.0）を返すだけで何もしない。切り分けは ESP32 のシリアル（`/dev/ttyUSB1`, 115200）に毎 5 周期出ている `[DBG]` 行を直進走行中に見る:
+
+   | 観測 | 結論 |
+   | --- | --- |
+   | `drift=0.0000` のまま | IMU 未実装。振動の原因は別。PID の速度域依存を疑う（直進 0.3 m/s に対し旋回は片輪 0.098 m/s と約 3 倍違い、`PID_KP` は左右で 210/120 と 1.75 倍非対称） |
+   | `drift` が ±0.1000 を往復 | bang-bang 発振で確定 |
+   | ほぼ直進中の `wz` が 20〜30 | dps で確定 |
+   | ほぼ直進中の `wz` が 0.3〜0.5 | 既に rad/s。単位の前提が崩れるので再調査 |
 2. **`/esp32/imu_data` の `angular_velocity`**。`sensor_msgs/Imu` は rad/s 規定なので、EKF が 57.3 倍のヨーレートを信じてオドメトリが壊れる。
 
 `imu.cpp` で dps → rad/s に変換して修正した。**この修正を含むファームウェアを書き込むまで `imu_enabled:=true` にしてはいけない。** 未修正のファームを検知できるよう、`esp32_bridge` は `|wz| > 10 rad/s` でエラーログを出す（低速域では dps の値も閾値を下回るため、気づくための警告であって保証ではない）。
