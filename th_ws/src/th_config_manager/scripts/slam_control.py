@@ -142,9 +142,30 @@ class SlamControl(Node):
         response.message = 'OK'
         return response
 
-    def _set_active(self, active: bool):
+    def _set_active(self, active: bool, warn_on_stop: bool = True):
         self._mapping_active = active
         self._pub_active.publish(Bool(data=self._mapping_active))
+
+        # 起動時の初期停止(_force_initial_pause)では警告しない。設計どおりの
+        # 初期状態であり、この時点ではまだ地図も自己位置も無いため。
+        if not warn_on_stop:
+            return
+
+        # 停止は「地図の更新を止める」だけでなく「自己位置推定も止める」。
+        # slam_toolbox の pause_new_measurements はスキャン処理そのものを止める
+        # 実装で (shouldProcessScan が isPaused(NEW_MEASUREMENTS) で早期 return し、
+        # map_to_odom_ は処理経路内でしか更新されない)、停止後は map→odom が
+        # 最後の値のまま凍結してデッドレコニングになる。
+        # 2026-08-07 実機で、停止後の中速走行で地図と自己位置が大きくズレ、
+        # tf2_echo map odom が完全に凍結することを確認した。
+        # 恒久対処が入るまでの暫定運用は「走行中は停止しない」(VISION.md §8)。
+        # 黙って破綻させないため、停止するたびに警告する。
+        if not active:
+            self.get_logger().warn(
+                '地図作成を停止しました。**自己位置補正(map→odom)も同時に停止します**。'
+                'このまま走行するとデッドレコニングのみになり、地図と自己位置が'
+                'ズレ続けます。走行する場合は地図作成を再開してください '
+                '(VISION.md §8「地図作成停止後の自己位置推定」)')
 
     def _publish_timer_cb(self):
         self._pub_active.publish(Bool(data=self._mapping_active))
@@ -169,7 +190,7 @@ class SlamControl(Node):
                 '(地図作成は停止されていない可能性があります。'
                 'WebUI から手動で開始/停止し直してください)')
             return
-        self._set_active(False)
+        self._set_active(False, warn_on_stop=False)
         self.get_logger().info('初期状態: 地図作成停止')
 
 
