@@ -9,7 +9,10 @@ bt_navigator:
     odom_topic: /odom
     bt_loop_duration: 10
     default_server_timeout: 20
-    default_nav_to_pose_bt_xml: ""
+    # default_nav_to_pose_bt_xml は指定しない (bt_navigator の既定 BT XML を使う)。
+    # 空文字 "" を明示指定すると bt_navigator が本当に空パスとして読み込み、
+    # "Empty Tree. Exiting with failure." で navigate_to_pose が毎回即失敗する
+    # (呼び寄せ/配電盤移動など navigate_to_pose を使う全機能に影響。実機検証 2026-08-06)。
     # plugin_lib_names は指定しない (bt_navigator の既定 = 全標準プラグイン)。
     # 手書きの部分リストで上書きしていたところ、既定 BT XML が要求する
     # nav2_rate_controller_bt_node 等が欠けて bt_navigator が activate に失敗し
