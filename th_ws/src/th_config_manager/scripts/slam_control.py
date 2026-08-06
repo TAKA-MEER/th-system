@@ -18,7 +18,7 @@ WebUI からの地図操作要求を仲介する。
   | /slam_control/toggle_mapping   | Trigger | set_localization_mode（トグル）       |
   | /slam_control/set_mapping      | SetBool | set_localization_mode（明示指定）     |
   | /slam_control/save_map         | Trigger | save_map + serialize_map              |
-  | /slam_control/discard_map      | Trigger | deserialize_map（起動時の空グラフ）   |
+  | /slam_control/discard_map      | Trigger | slam_toolbox を終了 → respawn で再起動 |
 
 「地図作成停止」の意味（VISION.md §8）
 --------------------------------------
@@ -40,10 +40,22 @@ WebUI からの地図操作要求を仲介する。
 
 地図の破棄について
 ------------------
-slam_toolbox にポーズグラフを空へ戻すサービスは無い。このため起動直後
-（＝まだスキャンを 1 枚も取り込んでいない localization モードの状態）で
-`serialize_map` して「空のポーズグラフ」をファイルに退避しておき、破棄要求時に
-それを `deserialize_map` で読み戻す。ノードを再起動せずに初期状態へ戻せる。
+slam_toolbox にポーズグラフを空へ戻すサービスは無い。このためプロセスごと
+終了させ、`bringup.launch.py` の `respawn=True` で真っさらに立ち上げ直す。
+
+当初は起動直後の空ポーズグラフを `serialize_map` で退避し、破棄要求時に
+`deserialize_map` で読み戻す方式にしていたが、2026-08-07 の実機で
+**slam_toolbox が SIGSEGV で落ちた**。空に近いグラフの読み込みは想定されて
+いないと判断して廃止した（それ以前は localization モード中に呼んでいたため
+何もせず「OK」を返していた。VISION.md §8 の落とし穴 1・2 を参照）。
+
+クラッシュ耐性
+--------------
+`map_and_localization_slam_toolbox_node` は slam_toolbox の `experimental/`
+配下の実装で、実機で SIGSEGV を確認している。落ちたままだと map→odom が
+消えて自己位置が失われるうえ、他ノードは全て生きているため気づきにくい。
+`respawn` で自動復帰させ、こちらはサービスの消失→再出現を検知して
+モードを再適用する（_check_slam_restart）。破棄もこの経路に相乗りしている。
 
 スレッドモデル: config_manager.py と同じ理由（サービスコールバックの中から
 別サービスを呼ぶ構成は単純な call_async 発火だけだとハングしうる）で
@@ -67,11 +79,8 @@ SERVICE_TIMEOUT_SEC         = 5.0   # 通常運用時(ボタン押下時)の応�
                                      # 伴うため toggle より長めに取る
 STATUS_PUBLISH_PERIOD_SEC   = 0.5
 
-# 起動直後の空ポーズグラフの退避先。slam_toolbox が
-# <filename>.posegraph と <filename>.data を作る。
-EMPTY_POSEGRAPH_PATH = '/tmp/th_slam_empty'
-
 import os
+import signal
 import threading
 
 import rclpy
@@ -82,13 +91,39 @@ from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 
 from std_msgs.msg import Bool
 from std_srvs.srv import SetBool, Trigger
-from slam_toolbox.srv import (
-    DeserializePoseGraph, SaveMap, SerializePoseGraph)
+from slam_toolbox.srv import SaveMap, SerializePoseGraph
 from std_msgs.msg import String
 
 from th_system_msgs.msg import RobotMode
 
 from th_config_manager.service_call import call_and_wait
+
+
+# 破棄で終了させる対象の実行ファイル名。bringup.launch.py が起動するものと
+# 一致させること。pkill -f のようなパターン照合ではなく /proc を直接見るのは、
+# パターンが自分自身のコマンドラインにマッチして自滅する事故を避けるため
+# (CLAUDE.md「環境の癖」参照)。
+SLAM_EXECUTABLE = 'map_and_localization_slam_toolbox_node'
+
+
+def _find_slam_toolbox_pids():
+    """slam_toolbox の PID を /proc から探す（自分自身は必ず除外する）。"""
+    me = os.getpid()
+    found = []
+    for entry in os.listdir('/proc'):
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        if pid == me:
+            continue
+        try:
+            with open(f'/proc/{pid}/cmdline', 'rb') as f:
+                cmdline = f.read().replace(b'\0', b' ').decode('utf-8', 'replace')
+        except OSError:
+            continue   # 読む前に終了した等
+        if SLAM_EXECUTABLE in cmdline:
+            found.append(pid)
+    return found
 
 
 class SlamControl(Node):
@@ -97,7 +132,6 @@ class SlamControl(Node):
         self._mode = RobotMode.IDLE
         self._executor = None   # main() で MultiThreadedExecutor を渡す
         self._mapping_active = False   # 起動直後は停止状態から始める
-        self._empty_graph_ready = False
         # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
         # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
         self._slam_ready = None
@@ -116,8 +150,6 @@ class SlamControl(Node):
             SetBool, '/slam_toolbox/set_localization_mode', callback_group=cbg)
         self._cli_serialize = self.create_client(
             SerializePoseGraph, '/slam_toolbox/serialize_map', callback_group=cbg)
-        self._cli_deserialize = self.create_client(
-            DeserializePoseGraph, '/slam_toolbox/deserialize_map', callback_group=cbg)
         self._cli_save = self.create_client(
             SaveMap, '/slam_toolbox/save_map', callback_group=cbg)
 
@@ -206,11 +238,6 @@ class SlamControl(Node):
             return
         try:
             desired = self._mapping_active
-            err = self._serialize(EMPTY_POSEGRAPH_PATH)
-            if err:
-                self.get_logger().error(f'空ポーズグラフの再取得に失敗: {err}')
-            else:
-                self._empty_graph_ready = True
             err = self._apply_mapping(desired)
             if err:
                 self.get_logger().error(f'モードの再適用に失敗: {err}')
@@ -368,48 +395,42 @@ class SlamControl(Node):
 
     # ── 地図の破棄 ──────────────────────────────────────────
     def _cb_discard_map(self, request, response):
+        """slam_toolbox を作り直して地図を捨てる。
+
+        slam_toolbox にポーズグラフを空へ戻すサービスは無い。当初は起動直後の
+        空グラフを `deserialize_map` で読み戻す方式にしていたが、2026-08-07 の
+        実機で **slam_toolbox が SIGSEGV で落ちた**。空に近いグラフの読み込みは
+        想定されていないと判断し廃止した。
+
+        代わりにプロセスごと終了させ、`bringup.launch.py` の `respawn=True` で
+        真っさらに立ち上げ直す。再起動の検知とモードの再適用は
+        _check_slam_restart() が行うため、ここでは終了させるだけでよい。
+        """
         rejected = self._reject_if_mode_disallows(response)
         if rejected:
             return rejected
 
-        if not self._empty_graph_ready:
-            return self._finish(
-                response,
-                '起動時の空ポーズグラフの退避に失敗しているため破棄できません。'
-                'slam_control のログを確認してください', '')
-
-        if not os.path.exists(EMPTY_POSEGRAPH_PATH + '.posegraph'):
-            return self._finish(
-                response,
-                f'空ポーズグラフ ({EMPTY_POSEGRAPH_PATH}.posegraph) がありません。'
-                ' 起動時の退避に失敗しています', '')
-
         with self._lock:
-            if not self._cli_deserialize.wait_for_service(timeout_sec=1.0):
-                return self._finish(response, 'slam_toolbox に接続できません', '')
+            pids = _find_slam_toolbox_pids()
+            if not pids:
+                return self._finish(
+                    response, 'slam_toolbox のプロセスが見つかりません', '')
+            # 破棄後は「地図作成停止」状態から始める（起動直後と同じ）。
+            # 再起動した slam_toolbox は mapping モードで立ち上がるので、
+            # _check_slam_restart がこの値を見て停止状態を入れ直す。
+            self._set_active(False)
+            for pid in pids:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    self.get_logger().warn(
+                        f'地図を破棄するため slam_toolbox (pid {pid}) を終了させました。'
+                        ' respawn による再起動を待ちます')
+                except OSError as e:
+                    return self._finish(
+                        response, f'slam_toolbox (pid {pid}) を終了できません: {e}', '')
 
-            def _call():
-                req = DeserializePoseGraph.Request()
-                req.filename = EMPTY_POSEGRAPH_PATH
-                # 空グラフなので開始姿勢の指定は意味を持たない。最初のノードから
-                # 始める指定にしておく。localization モード中はこの match_type が
-                # 拒否されるため、必ず mapping モードで呼ぶ (_in_mapping_mode)。
-                req.match_type = DeserializePoseGraph.Request.START_AT_FIRST_NODE
-                _, err = call_and_wait(
-                    self, self._cli_deserialize, req, SERVICE_TIMEOUT_SEC)
-                return f'deserialize_map 呼び出し失敗: {err}' if err else None
-
-            err = self._in_mapping_mode(_call)
-            if err:
-                return self._finish(response, err, '')
-            # 破棄直後は「地図作成停止」状態に揃える（起動直後と同じ状態）。
-            # _in_mapping_mode が元のモードへ戻すが、破棄前がマッピング中でも
-            # 停止状態にしたいので明示的に倒す。
-            err = self._apply_mapping(False)
-            if err:
-                return self._finish(response, err, '')
-
-        return self._finish(response, None, '地図を破棄しました（停止状態）')
+        return self._finish(
+            response, None, '地図を破棄しました（slam_toolbox を再起動中）')
 
     def _finish(self, response, err: "str | None", ok_message: str):
         if err:
@@ -426,36 +447,19 @@ class SlamControl(Node):
 
     # ── 起動時の初期化 ──────────────────────────────────────
     def _startup(self):
-        """空グラフを退避してから localization モード（=地図作成停止）へ倒す。
+        """localization モード（=地図作成停止）へ倒す。
 
-        順序が重要。slam_toolbox は起動直後 mapping モードで、serialize を
-        受け付けるのはこのモードだけである（_in_mapping_mode の説明を参照）。
-        まだスキャンをほとんど取り込んでいないこの時点で serialize しておけば
-        「空の地図」のスナップショットになる。破棄操作はこれを読み戻すことで
-        実現する（slam_toolbox にグラフを空へ戻すサービスが無いため）。
-
-        なお slam_toolbox の起動から slam_control がここへ到達するまでの間に、
-        最初のスキャンが 1 枚グラフへ入る（初回スキャンは無条件に採用される）。
-        つまり厳密には「起動位置のスキャン 1 枚だけを持つグラフ」が基準になる。
-        走り出す前に退避が終わる前提であり、通常運用では問題にならない。
+        slam_toolbox は起動直後 mapping モードで立ち上がるため、ここで倒さないと
+        「停止中」と表示したまま地図が更新され続ける。VISION.md §8 の
+        「起動直後は地図作成を停止した状態にする」を満たすための処理。
         """
-        if not self._cli_serialize.wait_for_service(
+        if not self._cli_mode.wait_for_service(
                 timeout_sec=STARTUP_SERVICE_TIMEOUT_SEC):
             self.get_logger().warn(
                 'slam_toolbox 未起動のため初期化をスキップします '
                 '(地図作成が停止されていない可能性があります。'
                 'WebUI から明示的に開始/停止し直してください)')
             return
-
-        # まだ mapping モードのうちに退避する
-        err = self._serialize(EMPTY_POSEGRAPH_PATH)
-        if err:
-            self.get_logger().error(
-                f'空ポーズグラフの退避に失敗: {err} — 地図の破棄操作は使えません')
-        else:
-            self._empty_graph_ready = True
-            self.get_logger().info(
-                f'空ポーズグラフを退避しました ({EMPTY_POSEGRAPH_PATH}.posegraph)')
 
         err = self._apply_mapping(False)
         if err:
