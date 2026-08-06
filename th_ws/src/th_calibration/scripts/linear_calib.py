@@ -22,6 +22,37 @@ from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from th_system_msgs.msg import RobotMode
 import math
+import os
+import re
+
+
+def read_wheel_radius_from_config_h():
+    """esp32/src/config.h の WHEEL_RADIUS_M を読む。
+
+    車輪半径は ESP32 ファームウェアのコンパイル時定数で ROS パラメータではないため、
+    ここで値を二重に持つと必ず食い違う。実際、既定値が 0.0391(URDF 由来の旧値)のまま
+    config.h だけ 0.019412 に更新されており、そのまま実行すると補正値が約2倍ずれる
+    状態だった(2026-08-07 修正)。唯一の正である config.h を直接読む。
+
+    見つからない場合は None を返し、呼び出し側で current_wheel_radius パラメータへ
+    フォールバックする。
+    """
+    here = os.path.dirname(os.path.realpath(__file__))
+    path = os.path.normpath(
+        os.path.join(here, '..', '..', '..', 'esp32', 'src', 'config.h'))
+    try:
+        with open(path, encoding='utf-8') as f:
+            m = re.search(
+                r'^\s*#define\s+WHEEL_RADIUS_M\s+([0-9.eE+-]+)f?',
+                f.read(), re.MULTILINE)
+    except OSError:
+        return None, path
+    if not m:
+        return None, path
+    try:
+        return float(m.group(1)), path
+    except ValueError:
+        return None, path
 
 
 class LinearCalib(Node):
@@ -31,11 +62,26 @@ class LinearCalib(Node):
         self.declare_parameter('distance', 2.0)              # m
         self.declare_parameter('speed', 0.15)                # m/s (低速で正確に)
         self.declare_parameter('cmd_vel_topic', '/cmd_vel_manual')
-        self.declare_parameter('current_wheel_radius', 0.0391)  # config.h の現行値
+        # 既定 -1 = config.h から自動で読む。明示指定した場合はそちらを優先する。
+        self.declare_parameter('current_wheel_radius', -1.0)
 
         self._target_dist = self.get_parameter('distance').value
         self._speed = self.get_parameter('speed').value
-        self._current_radius = self.get_parameter('current_wheel_radius').value
+
+        param_radius = self.get_parameter('current_wheel_radius').value
+        if param_radius > 0.0:
+            self._current_radius = param_radius
+            self._radius_source = 'パラメータ指定'
+        else:
+            radius, path = read_wheel_radius_from_config_h()
+            if radius is None:
+                self.get_logger().error(
+                    f'{path} から WHEEL_RADIUS_M を読めませんでした。'
+                    ' -p current_wheel_radius:=<現在値> で明示指定して再実行してください。'
+                    ' 誤った現行値を使うと補正後の値がそのまま倍率ぶんずれます。中断します。')
+                raise SystemExit(1)
+            self._current_radius = radius
+            self._radius_source = path
 
         self._odom_dist = 0.0
         self._start_x = None
@@ -57,7 +103,9 @@ class LinearCalib(Node):
 
         self.get_logger().info(
             f'直進キャリブレーション開始: 目標 {self._target_dist:.1f} m '
-            f'(publish先: {topic})')
+            f'(publish先: {topic}, '
+            f'現行 WHEEL_RADIUS_M={self._current_radius:.6f} m '
+            f'← {self._radius_source})')
 
     def _cb_mode(self, msg: RobotMode):
         self._mode = msg.mode
@@ -140,8 +188,8 @@ class LinearCalib(Node):
         print(f'実測距離     : {actual:.4f} m')
         print(f'オドメトリ   : {self._odom_dist:.4f} m')
         print(f'補正係数     : {factor:.6f}')
-        print(f'現在の WHEEL_RADIUS_M(config.h想定): {self._current_radius:.6f} m')
-        print(f'補正後 WHEEL_RADIUS_M           : {corrected:.6f} m')
+        print(f'現在の WHEEL_RADIUS_M : {self._current_radius:.6f} m  ({self._radius_source})')
+        print(f'補正後 WHEEL_RADIUS_M : {corrected:.6f} m')
         print('\n次の手順:')
         print(' 1. th_ws/esp32/src/config.h の')
         print(f'    #define WHEEL_RADIUS_M を {corrected:.6f}f に書き換え')
