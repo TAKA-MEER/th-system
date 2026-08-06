@@ -257,17 +257,6 @@ export default function App() {
     localStorage.setItem(SPEED_STORAGE_KEY, String(speedPct))
   }, [speedPct])
 
-  // ── 緊急停止 (発動と解除を分離。発動ボタンは連打しても常に「停止」) ──
-  const engageEstop = useCallback(() => {
-    setEstopActive(true)
-    publishTabletEstop(true)
-  }, [publishTabletEstop])
-
-  const releaseEstop = useCallback(() => {
-    setEstopActive(false)
-    publishTabletEstop(false)
-  }, [publishTabletEstop])
-
   // ── ジョグ: 正規化コマンド (vn, wn ∈ [-1,1]) を周期 publish ──
   // スティック / キーボードの両入力が jogNormRef を更新し、単一の
   // interval が最新値 × 最新速度設定を publish する (操作中の速度変更も
@@ -306,6 +295,27 @@ export default function App() {
       publishManualCmd(0, 0)
     }
   }, [publishManualCmd])
+
+  // ── 緊急停止 (発動と解除を分離。発動ボタンは連打しても常に「停止」) ──
+  // 発動時は mode が ESTOP に切り替わる round-trip を待たず、保持中の
+  // ジョグ入力 (キー/スティック) を即座にローカルでクリアする。これが無いと
+  // 前進キーを押したまま緊急停止しても、モード遷移が反映されるまでの間
+  // /cmd_vel_manual の前進指令送信が続いてしまう (2026-08-06 報告)。
+  const engageEstop = useCallback(() => {
+    setEstopActive(true)
+    // ジョグのゼロ指令をロックより先に出す (mux がまだロックされていない
+    // うちに /cmd_vel_manual へゼロを通しておく。ロック自体は esp32_bridge
+    // 側でも独立して強制されるため、これは多重防御の一枚)。
+    stickActiveRef.current = false
+    heldKeysRef.current.clear()
+    clearJogInput()
+    publishTabletEstop(true)
+  }, [publishTabletEstop, clearJogInput])
+
+  const releaseEstop = useCallback(() => {
+    setEstopActive(false)
+    publishTabletEstop(false)
+  }, [publishTabletEstop])
 
   // MANUAL から離れたら入力を全クリアして停止 (interval の残留防止)
   useEffect(() => {

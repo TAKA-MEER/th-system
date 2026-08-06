@@ -75,6 +75,25 @@ class Esp32Bridge(Node):
         # ── Subscribers ────────────────────────────────────
         self.create_subscription(Twist, '/cmd_vel', self._cb_cmd_vel, 10)
 
+        # twist_mux はロック作動中、無出力(silent)になり得る実装のため、
+        # /cmd_vel の途絶だけに頼らずここでも直接ロック状態を購読し、
+        # ロック中は _last_cmd_vel の内容によらず強制的にゼロを送る
+        # (VISION.md §5 参照。2026-08-06 手動ジョグ中の E-Stop で発覚)。
+        #
+        # ロックトピック自体が途絶した場合 (safety_monitor のクラッシュ等) も
+        # twist_mux.yaml の locks.*.timeout(0.5s) と同じ考え方でフェイルセーフに
+        # ロック扱いにする。単純な bool ラッチだけだと safety_monitor が
+        # 死んだ際に「ロックされていない」状態のまま固定されてしまい、上と同じ
+        # 事象(古い非ゼロ指令の再送)が別経路で再発するため
+        # (twist_mux.yaml の timeout と同値の 0.5s を使用)。
+        self._LOCK_TIMEOUT_SEC = 0.5
+        self._estop_active = False
+        self._fault_lock_active = False
+        self._last_estop_msg_time = None
+        self._last_fault_lock_msg_time = None
+        self.create_subscription(Bool, '/safety/estop', self._cb_estop, 10)
+        self.create_subscription(Bool, '/safety/fault_lock', self._cb_fault_lock, 10)
+
         # 最新の /cmd_vel を一定周期で再送するキープアライブ。ESP32側の
         # WHEEL_CMD ウォッチドッグ(300ms, config.h)は「WebSocketリンクが
         # 生きているか」を測るためのものだが、/cmd_vel のコールバック駆動
@@ -162,13 +181,46 @@ class Esp32Bridge(Node):
         self._last_cmd_vel = msg
         self._send_wheel_cmd(msg)
 
+    # ── ロック状態購読 ─────────────────────────────────────────
+    def _cb_estop(self, msg: Bool):
+        self._estop_active = msg.data
+        self._last_estop_msg_time = self.get_clock().now()
+
+    def _cb_fault_lock(self, msg: Bool):
+        self._fault_lock_active = msg.data
+        self._last_fault_lock_msg_time = self.get_clock().now()
+
+    def _is_locked(self) -> bool:
+        if self._estop_active or self._fault_lock_active:
+            return True
+        return self._is_stale(self._last_estop_msg_time) or \
+            self._is_stale(self._last_fault_lock_msg_time)
+
+    def _is_stale(self, last_msg_time) -> bool:
+        # 未受信 (起動直後) も安全側にロック扱い。safety_monitor は起動後
+        # 即座に 10Hz で送り始めるため、正常時にここで待たされるのは一瞬。
+        if last_msg_time is None:
+            return True
+        elapsed = (self.get_clock().now() - last_msg_time).nanoseconds / 1e9
+        return elapsed > self._LOCK_TIMEOUT_SEC
+
     # ── キープアライブ: 最新の /cmd_vel を一定周期で再送 ────────────
     def _cb_cmd_vel_keepalive(self):
         self._send_wheel_cmd(self._last_cmd_vel)
 
     def _send_wheel_cmd(self, msg: Twist):
-        v = msg.linear.x
-        w = msg.angular.z
+        if self._is_locked():
+            # twist_mux が無出力(silent)のままでも取り残された非ゼロ指令を
+            # 再送し続けないよう、ここで強制的にゼロにする。_last_cmd_vel
+            # 自体もここでゼロ化しておかないと、ロック解除の瞬間に
+            # キープアライブがロック前の古い非ゼロ指令をそのまま再送して
+            # しまう(2026-08-06 E-Stop 解除後に前進指令が復活する事象で発覚)。
+            v = 0.0
+            w = 0.0
+            self._last_cmd_vel = Twist()
+        else:
+            v = msg.linear.x
+            w = msg.angular.z
         v_right = v + (w * self._wheel_base / 2.0)
         v_left = v - (w * self._wheel_base / 2.0)
         frame = pack_wheel_cmd(v_left, v_right)
