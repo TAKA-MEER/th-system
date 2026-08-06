@@ -15,7 +15,14 @@ ekf_filter_node:
     transform_timeout: 0.0
     print_diagnostics: true
     debug: false
-    publish_tf: false          # TF は esp32_bridge が発行
+    # odom → base_link TF はこの EKF が発行する (esp32_bridge 側は publish_tf:false)。
+    # 2026-08-06 まで false になっており、TF は esp32_bridge が生エンコーダ値で
+    # 発行していた。その結果 /odometry/filtered を購読するノードが 1 つも無く、
+    # imu_enabled:=true にしても IMU 補正が SLAM/Nav2 に一切届いていなかった。
+    # 併せて TF が EKF の frequency (30Hz) で定常発行されるようになるため、
+    # WiFi 途絶中 (0.5〜1.2秒、docs/network.md) に TF が途切れて slam_toolbox が
+    # スキャンを捨てる問題も解消する。
+    publish_tf: true
 
     map_frame:    map
     odom_frame:   odom
@@ -36,9 +43,15 @@ ekf_filter_node:
     odom0_relative: false
 
     # ── IMU 入力 (DSR1603/BNO055, /esp32/imu_data) ────────────
-    imu0: /esp32/imu_data
+    # 融合するのは vyaw (ジャイロの角速度) のみ。yaw (絶対方位) は使わない。
+    # BNO055 は Adafruit ライブラリ既定の NDOF モードで動いており (esp32/src/imu.cpp)、
+    # orientation は地磁気を参照した絶対方位になる。屋内はモーター・鉄骨・配電盤で
+    # 磁場が乱れるため、これを world_frame:odom の EKF に入れるとヨーが飛び、
+    # 「局所的に連続でなめらか」であることを要求される odom フレームが壊れて
+    # scan matching が破綻する。クローラのスリップで欠けているのは yaw の
+    # 「変化量」なので、ジャイロ角速度だけを入れれば目的は達成できる。
     # [roll, pitch, yaw, vroll, vpitch, vyaw, ax, ay, az]
-    imu0_config: [false, false, true,
+    imu0_config: [false, false, false,
                   false, false, true,
                   false, false, false]
     imu0_differential: false

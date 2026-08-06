@@ -43,6 +43,9 @@ class Esp32Bridge(Node):
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('publish_tf', True)
         self.declare_parameter('feedback_timeout_ms', 500)
+        # ESP32 の制御周期 (esp32/src/config.h の CTRL_PERIOD_MS と一致させること)。
+        # WHEEL_FEEDBACK 1 フレームが表す走行時間そのもので、オドメトリ積分の dt になる。
+        self.declare_parameter('feedback_period_ms', 100)
         self.declare_parameter('ws_host', '0.0.0.0')
         self.declare_parameter('ws_port', 8765)
 
@@ -107,6 +110,10 @@ class Esp32Bridge(Node):
         self.create_timer(0.05, self._cb_cmd_vel_keepalive)  # 20Hz
 
         self._odom_x = self._odom_y = self._odom_yaw = 0.0
+        self._feedback_period_sec = \
+            self.get_parameter('feedback_period_ms').value / 1000.0
+        # 受信ギャップの警告閾値。公称周期の 5 倍 (既定 0.5 s) を超えたら WiFi 遅延を疑う。
+        self._ARRIVAL_GAP_WARN_SEC = self._feedback_period_sec * 5.0
         self._last_odom_time = self.get_clock().now()
         self._last_feedback_time = self.get_clock().now()
         self._esp32_alive = False
@@ -277,10 +284,32 @@ class Esp32Bridge(Node):
         self._esp32_alive = True
 
         t = self.get_clock().now()
-        dt = (t - self._last_odom_time).nanoseconds / 1e9
+
+        # ── 積分に使う dt は「到着間隔」ではなく ESP32 の公称制御周期 ──────
+        # WHEEL_FEEDBACK はタイムスタンプを持たない (ws_protocol.py の '<Bff')。
+        # ESP32 は cbCtrlTimer() が CTRL_PERIOD_MS ごとに 1 回だけ、その周期の
+        # エンコーダ計数から求めた平均速度を送る (esp32/src/main.cpp。停止中も送る)。
+        # WebSocket は TCP 上にあるためフレームは欠落せず順序も保たれる。
+        # したがって「受信 1 フレーム = ESP32 の制御周期 1 回分の走行」であり、
+        # 積分の dt は公称周期で固定するのが正しい。
+        #
+        # 以前は到着時刻の差分を dt にしていたが、これは「車輪が回った時刻」ではなく
+        # 「WiFi/TCP がパケットを配送した時刻」を測っている。docs/network.md 記載の
+        # 0.5〜1.2 秒の受信ギャップとその後のバースト配送がそのまま積分誤差になり、
+        # さらに dt>1.0 の場合は更新ごと return で破棄していたため、ギャップ中の
+        # 回転が丸ごと消えていた (旋回時の yaw ドリフト。2026-08-06 修正)。
+        # 遅延して届いたフレームも公称周期で 1 つずつ積分すれば、遅延の分は
+        # 発行タイミングが遅れるだけで積算量は保たれる。
+        dt = self._feedback_period_sec
+
+        # 到着間隔そのものは診断情報として監視する (積分には使わない)。
+        arrival_dt = (t - self._last_odom_time).nanoseconds / 1e9
         self._last_odom_time = t
-        if dt <= 0.0 or dt > 1.0:
-            return
+        if arrival_dt > self._ARRIVAL_GAP_WARN_SEC:
+            self.get_logger().warn(
+                f"wheel_feedback の受信ギャップ {arrival_dt:.2f} s "
+                f"(公称 {dt:.3f} s)。WiFi 遅延の可能性",
+                throttle_duration_sec=5.0)
 
         # ── 差動駆動オドメトリ更新 ──────────────────────────
         v_center = (v_left + v_right) / 2.0

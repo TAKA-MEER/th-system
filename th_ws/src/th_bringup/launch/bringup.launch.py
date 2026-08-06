@@ -4,7 +4,7 @@
 #
 # 起動オプション:
 #   use_stub:=true    試験員トラッカーをスタブに切替 (デフォルト: false)
-#   imu_enabled:=true IMU 入力を EKF に追加 (デフォルト: false)
+#   imu_enabled:=false IMU 入力を EKF から外す (デフォルト: true)
 #   map_yaml:=<path>  使用する地図ファイル (デフォルト: 空=SLAM マッピングモード)
 #   lidar_source:=local    USB直結のsllidar_nodeを起動 (デフォルト)
 #   lidar_source:=network  ラズパイ等が配信する/scanを使用 (ローカル起動なし。
@@ -33,8 +33,10 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument('use_stub',    default_value='false',
                               description='試験員トラッカーをスタブで代替'),
-        DeclareLaunchArgument('imu_enabled', default_value='false',
-                              description='IMU を EKF に追加'),
+        DeclareLaunchArgument('imu_enabled', default_value='true',
+                              description='IMU (DSR1603/BNO055) の vyaw を EKF に追加。'
+                                          'false にするとエンコーダのみになり、'
+                                          'クローラの超信地旋回スリップによる yaw 誤差が補正されない'),
         DeclareLaunchArgument('map_yaml',    default_value='',
                               description='地図 YAML パス (空=SLAM モード)'),
         DeclareLaunchArgument('log_level',   default_value='info'),
@@ -52,7 +54,7 @@ def generate_launch_description():
 
     # ── 設定ファイルパス ──────────────────────────────────
     nav2_yaml   = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
-    # imu_enabled:=true → エンコーダ+IMU、false(既定) → エンコーダのみ
+    # imu_enabled:=true(既定) → エンコーダ+IMU、false → エンコーダのみ
     ekf_yaml_imu    = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
     ekf_yaml_no_imu = os.path.join(BRINGUP_DIR, 'config', 'ekf_params_no_imu.yaml')
     ekf_yaml    = PythonExpression(
@@ -153,13 +155,14 @@ def generate_launch_description():
     # ── 5. robot_localization (EKF) ──────────────────────
     nodes.append(LogInfo(
         condition=IfCondition(imu_enabled),
-        msg='imu_enabled=true: ekf_params.yaml (エンコーダ+IMU) を使用します。'
+        msg='imu_enabled=true (既定): ekf_params.yaml (エンコーダ+IMUのvyaw) を使用します。'
             'DSR1603のキャリブレーション未実施の場合は ros2 run th_calibration '
             'imu_calib_check.py で確認してください。',
     ))
     nodes.append(LogInfo(
         condition=UnlessCondition(imu_enabled),
-        msg='imu_enabled=false (既定): ekf_params_no_imu.yaml (エンコーダのみ) を使用します。',
+        msg='imu_enabled=false: ekf_params_no_imu.yaml (エンコーダのみ) を使用します。'
+            'クローラの超信地旋回スリップによる yaw 誤差は補正されません。',
     ))
     nodes.append(Node(
         package='robot_localization',

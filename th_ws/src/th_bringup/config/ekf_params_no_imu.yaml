@@ -14,7 +14,12 @@ ekf_filter_node:
     transform_timeout: 0.0
     print_diagnostics: true
     debug: false
-    publish_tf: false          # TF は esp32_bridge が発行
+    # odom → base_link TF はこの EKF が発行する (esp32_bridge 側は publish_tf:false)。
+    # IMU 無しでも EKF 側に一本化する: TF が EKF の frequency (30Hz) で定常発行
+    # されるため、WiFi 途絶中 (0.5〜1.2秒、docs/network.md) に TF が途切れて
+    # slam_toolbox がスキャンを捨てる問題を避けられる (esp32_bridge は
+    # wheel_feedback を受信した瞬間にしか TF を出せない)。詳細は ekf_params.yaml。
+    publish_tf: true
 
     map_frame:    map
     odom_frame:   odom
