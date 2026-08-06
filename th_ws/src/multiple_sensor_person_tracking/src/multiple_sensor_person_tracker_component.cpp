@@ -19,6 +19,7 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <tf2/utils.h>   // tf2::getYaw (ego-motion compensation)
 
 #include <laser_geometry/laser_geometry.hpp>
 #include <pcl_conversions/pcl_conversions.h>
@@ -97,6 +98,11 @@ namespace multiple_sensor_person_tracking {
             geometry_msgs::msg::Point previous_target_;
             rclcpp::Time previous_time_;
             bool exists_target_;
+            // Ego-motion compensation: pose of target_frame_ in odom_frame_name_ as of
+            // the last processed detection, so the next one can undo the robot's own
+            // movement before associating. See compensateEgoMotion().
+            tf2::Transform previous_tracking_pose_;
+            bool has_previous_tracking_pose_;
             double leg_tracking_range_;
             double body_tracking_range_;
             double target_range_;
@@ -157,6 +163,11 @@ namespace multiple_sensor_person_tracking {
                 const std::string& org_frame,
                 const std::string& target_frame,
                 const geometry_msgs::msg::Point& point );
+
+            // Undo the robot's own movement since the previous detection, so that the
+            // association gate and the constant-velocity prediction see only the
+            // person's motion. Called once per detection frame.
+            void compensateEgoMotion();
 
             void scan_callback (
                 const sensor_msgs::msg::LaserScan::ConstSharedPtr &scan_msg );
@@ -499,6 +510,103 @@ geometry_msgs::msg::PointStamped multiple_sensor_person_tracking::PersonTracker:
     return pt_transformed;
 }
 
+void multiple_sensor_person_tracking::PersonTracker::compensateEgoMotion() {
+    // Every piece of tracking state -- the Kalman filter's position and velocity,
+    // previous_target_, the position/velocity recorded at loss (Methods A/C/D) and the
+    // operator-seeded cold-acquire point -- is expressed in target_frame_, which is
+    // bolted to the robot. Between two detections the robot moves, so those stored
+    // values refer to a frame that no longer exists: to the tracker, a perfectly
+    // stationary person appears to sweep sideways at omega * distance.
+    //
+    // That apparent motion is what makes turns lose the target. DR-SPAAM runs at
+    // ~2 Hz on CPU, so one frame is ~0.5 s; a 0.8 rad/s pivot (Nav2's
+    // rotate_to_heading_angular_vel) displaces a person 2 m away by 0.8 m in a single
+    // frame, which on its own consumes most of the leg_tracking_range gate. Worse, the
+    // filter absorbs that sweep as the PERSON's velocity, so the prediction keeps
+    // swinging after the robot stops turning and the recorded velocity misdirects the
+    // re-acquisition search.
+    //
+    // Re-expressing the state in the current target_frame_ separates "the robot moved"
+    // from "the person moved", so the gate is spent on the latter only. Widening the
+    // gate instead is not an option: it brings back the furniture-leg mis-association
+    // seen on the real robot (VISION.md section 4).
+    geometry_msgs::msg::TransformStamped tf_msg;
+    try {
+        // odom <- target_frame (current). Latest-available TF, consistent with the rest
+        // of this node; the delta only needs to be self-consistent between frames.
+        tf_msg = tfBuffer_.lookupTransform(
+            odom_frame_name_, target_frame_, tf2::TimePointZero );
+    } catch ( const tf2::TransformException& ex ) {
+        // No odom yet (startup) or the chain broke. Drop the reference so the next
+        // frame starts fresh -- never apply a delta measured across an interval we
+        // did not actually observe.
+        RCLCPP_WARN_THROTTLE( this->get_logger(), *this->get_clock(), 2000,
+            "Ego-motion compensation skipped ('%s' -> '%s' unavailable): %s",
+            odom_frame_name_.c_str(), target_frame_.c_str(), ex.what() );
+        has_previous_tracking_pose_ = false;
+        return;
+    }
+
+    tf2::Transform current_pose;
+    tf2::fromMsg( tf_msg.transform, current_pose );
+
+    if ( has_previous_tracking_pose_ ) {
+        // current_frame <- previous_frame
+        const tf2::Transform delta = current_pose.inverse() * previous_tracking_pose_;
+        const tf2::Vector3 delta_translation = delta.getOrigin();
+        const double delta_yaw = tf2::getYaw( delta.getRotation() );
+
+        // Guard against an odom discontinuity (a reset, or a garbage TF) throwing the
+        // tracker somewhere it can never recover from. Real motion between detections
+        // is far below these bounds: the platform tops out around 0.3 m/s and 1 rad/s.
+        const double translation_norm =
+            std::hypot( delta_translation.x(), delta_translation.y() );
+        if ( translation_norm > 2.0 || std::fabs( delta_yaw ) > 2.0 ) {
+            RCLCPP_WARN( this->get_logger(),
+                "Ego-motion compensation skipped: implausible odom jump "
+                "(%.2f m, %.2f rad between detections)", translation_norm, delta_yaw );
+            previous_tracking_pose_ = current_pose;
+            return;
+        }
+
+        const double cos_yaw = std::cos( delta_yaw );
+        const double sin_yaw = std::sin( delta_yaw );
+
+        // Points move with the full rigid transform; velocities only rotate.
+        auto move_point = [&]( geometry_msgs::msg::Point& p ) {
+            const double x = p.x, y = p.y;
+            p.x = cos_yaw * x - sin_yaw * y + delta_translation.x();
+            p.y = sin_yaw * x + cos_yaw * y + delta_translation.y();
+        };
+        auto rotate_vector = [&]( geometry_msgs::msg::Point& v ) {
+            const double x = v.x, y = v.y;
+            v.x = cos_yaw * x - sin_yaw * y;
+            v.y = sin_yaw * x + cos_yaw * y;
+        };
+
+        move_point( previous_target_ );
+        move_point( last_target_pos_ );
+        // The operator picked a point in the world, not a bearing off the robot, so it
+        // has to follow the world too while the manual_seed_timeout_ window is open.
+        move_point( cold_acquire_seed_ );
+        rotate_vector( last_target_vel_ );
+        rotate_vector( previous_vel_ );
+
+        if ( kf_ ) {
+            Eigen::Matrix2f rotation;
+            rotation << static_cast<float>( cos_yaw ), static_cast<float>( -sin_yaw ),
+                        static_cast<float>( sin_yaw ), static_cast<float>(  cos_yaw );
+            const Eigen::Vector2f translation(
+                static_cast<float>( delta_translation.x() ),
+                static_cast<float>( delta_translation.y() ) );
+            kf_->applyFrameTransform( rotation, translation );
+        }
+    }
+
+    previous_tracking_pose_ = current_pose;
+    has_previous_tracking_pose_ = true;
+}
+
 void multiple_sensor_person_tracking::PersonTracker::publishFollowing() {
     // Derive the stop signal for the real robot:
     //   - detection interrupted this frame (status == NO_EXISTS), or
@@ -666,6 +774,13 @@ void multiple_sensor_person_tracking::PersonTracker::callbackPoseArray ( const v
     rclcpp::Time current_time = this->get_clock()->now();
     double dt = (current_time - previous_time_).seconds();
     previous_time_ = current_time;
+
+    // Bring the tracking state into the current robot frame before anything reads it.
+    // Done up front and unconditionally so that the stored reference pose and the state
+    // always advance together -- an early return below must not leave the state
+    // expressed in one frame and the reference in another.
+    compensateEgoMotion();
+
     const bool use_leg_detection = detection_mode_ != DetectionMode::BODY;
     const bool use_body_detection = detection_mode_ != DetectionMode::LEG;
 
@@ -1083,6 +1198,8 @@ multiple_sensor_person_tracking::CallbackReturn multiple_sensor_person_tracking:
     prev_stop_ = false;
     cold_acquire_seed_ = geometry_msgs::msg::Point();
     manual_seed_time_ = -1.0;
+    previous_tracking_pose_ = tf2::Transform::getIdentity();
+    has_previous_tracking_pose_ = false;
 
     return CallbackReturn::SUCCESS;
 }
@@ -1100,6 +1217,9 @@ multiple_sensor_person_tracking::CallbackReturn multiple_sensor_person_tracking:
     prev_stop_ = false;
     manual_seed_time_ = -1.0;
     previous_time_ = this->now();
+    // Any robot movement while deactivated must not be applied as a single jump on the
+    // first frame after activation.
+    has_previous_tracking_pose_ = false;
     return CallbackReturn::SUCCESS;
 }
 
