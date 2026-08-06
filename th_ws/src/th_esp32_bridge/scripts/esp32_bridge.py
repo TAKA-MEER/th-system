@@ -17,6 +17,7 @@ import queue
 import threading
 
 import rclpy
+from rclpy.duration import Duration
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import Twist, TransformStamped
@@ -114,6 +115,21 @@ class Esp32Bridge(Node):
             self.get_parameter('feedback_period_ms').value / 1000.0
         # 受信ギャップの警告閾値。公称周期の 5 倍 (既定 0.5 s) を超えたら WiFi 遅延を疑う。
         self._ARRIVAL_GAP_WARN_SEC = self._feedback_period_sec * 5.0
+        # ESP32 から受けた dt の妥当範囲の上限。ファーム側も 1.0 を超えたら公称値へ
+        # フォールバックする実装 (esp32/src/main.cpp) なので同じ値を使う。
+        self._DT_MAX_SEC = 1.0
+        # オドメトリのヘッダスタンプが実時間からこれ以上ずれたら貼り直す。
+        #
+        # 正常時はどのケースでもずれは 0 近傍に留まるため、これは異常時の安全網
+        # でしかない: 定常時は到着間隔と dt がどちらも公称周期で進む。バースト
+        # 配送でも、バースト開始時点の基準スタンプが既にギャップぶん古いので、
+        # dt を積み上げると現在時刻に着地する (これがこの方式の狙い)。ESP32 の
+        # ループ停滞で dt が伸びた場合も、到着間隔が同じだけ伸びるので釣り合う。
+        # したがって閾値は「dt の累積が実時間から乖離し続けている」異常だけを
+        # 捉えればよく、docs/network.md 記載の最大ギャップ(1.2s)では発火しない
+        # 幅を取る。
+        self._STAMP_RESYNC_SEC = 2.0
+        self._odom_stamp = None
         self._last_odom_time = self.get_clock().now()
         self._last_feedback_time = self.get_clock().now()
         self._esp32_alive = False
@@ -266,8 +282,8 @@ class Esp32Bridge(Node):
         try:
             msg_type = peek_type(data)
             if msg_type == WHEEL_FEEDBACK:
-                left, right = unpack_wheel_feedback(data)
-                self._on_wheel_feedback(left, right)
+                left, right, dt = unpack_wheel_feedback(data)
+                self._on_wheel_feedback(left, right, dt)
             elif msg_type == ESTOP_HW:
                 estop = unpack_estop_hw(data)
                 self._pub_estop_hw.publish(Bool(data=estop))
@@ -279,36 +295,63 @@ class Esp32Bridge(Node):
             self.get_logger().warn(f"不正なフレームを受信: {e}")
 
     # ── WHEEL_FEEDBACK → /odom + TF ───────────────────────────────
-    def _on_wheel_feedback(self, v_left: float, v_right: float):
-        self._last_feedback_time = self.get_clock().now()
+    def _on_wheel_feedback(self, v_left: float, v_right: float,
+                            dt_from_esp32: "float | None" = None):
+        now = self.get_clock().now()
+        self._last_feedback_time = now
         self._esp32_alive = True
 
-        t = self.get_clock().now()
-
-        # ── 積分に使う dt は「到着間隔」ではなく ESP32 の公称制御周期 ──────
-        # WHEEL_FEEDBACK はタイムスタンプを持たない (ws_protocol.py の '<Bff')。
-        # ESP32 は cbCtrlTimer() が CTRL_PERIOD_MS ごとに 1 回だけ、その周期の
-        # エンコーダ計数から求めた平均速度を送る (esp32/src/main.cpp。停止中も送る)。
-        # WebSocket は TCP 上にあるためフレームは欠落せず順序も保たれる。
-        # したがって「受信 1 フレーム = ESP32 の制御周期 1 回分の走行」であり、
-        # 積分の dt は公称周期で固定するのが正しい。
+        # ── 積分区間は「到着間隔」ではなく ESP32 が速度算出に使った dt ──────
+        # ESP32 は velL = counts * distPerCount / dt (esp32/src/main.cpp) で
+        # 速度を出しているので、そのフレームが表す走行時間はまさにこの dt。
+        # フレームに載せて送ってもらい、そのまま積分区間として使う。
         #
         # 以前は到着時刻の差分を dt にしていたが、これは「車輪が回った時刻」ではなく
         # 「WiFi/TCP がパケットを配送した時刻」を測っている。docs/network.md 記載の
-        # 0.5〜1.2 秒の受信ギャップとその後のバースト配送がそのまま積分誤差になり、
-        # さらに dt>1.0 の場合は更新ごと return で破棄していたため、ギャップ中の
-        # 回転が丸ごと消えていた (旋回時の yaw ドリフト。2026-08-06 修正)。
-        # 遅延して届いたフレームも公称周期で 1 つずつ積分すれば、遅延の分は
-        # 発行タイミングが遅れるだけで積算量は保たれる。
-        dt = self._feedback_period_sec
+        # 0.5〜1.2 秒の受信ギャップがそのまま積分誤差になり、さらに dt>1.0 の
+        # 場合は更新ごと return で破棄していたため、ギャップ中の回転が丸ごと
+        # 消えていた (旋回時の yaw ドリフト。2026-08-06 修正)。
+        #
+        # 旧ファームウェア (dt なし) からは None が来るので公称周期で代替する。
+        # 壊れたフレームの異常値をそのまま yaw に積むのは元の不具合より悪いため、
+        # 範囲外の値も公称周期へ落とす。
+        dt = dt_from_esp32
+        if dt is None or not (0.0 < dt <= self._DT_MAX_SEC):
+            if dt is not None:
+                self.get_logger().warn(
+                    f"ESP32 から不正な dt={dt} を受信。公称周期で代替します",
+                    throttle_duration_sec=5.0)
+            dt = self._feedback_period_sec
+
+        # ── ヘッダスタンプも dt で進める ────────────────────────────
+        # robot_localization は /odom の pose を使わず twist とヘッダスタンプの
+        # 差分で積分する (ekf_params.yaml の odom0_config は vx/vyaw のみ true)。
+        # ここで到着時刻を貼ると、遅延後にまとめて届いたフレーム群がほぼ同一の
+        # スタンプを持ち、EKF 側では積分区間ゼロになって内部の姿勢がいくら
+        # 正しくても TF に反映されない。dt ぶんずつ進む単調なスタンプを使う。
+        #
+        # ただし実時間から離れすぎると、slam_toolbox がスキャン時刻で TF を
+        # 引けなくなる (slam_params.yaml の transform_timeout 参照)。
+        # ずれが許容量を超えたら現在時刻へ貼り直す。
+        if self._odom_stamp is None:
+            self._odom_stamp = now
+        else:
+            self._odom_stamp = self._odom_stamp + Duration(seconds=dt)
+            skew = abs((now - self._odom_stamp).nanoseconds) / 1e9
+            if skew > self._STAMP_RESYNC_SEC:
+                self.get_logger().warn(
+                    f"オドメトリのスタンプが実時間から {skew:.2f} s ずれたため貼り直します",
+                    throttle_duration_sec=5.0)
+                self._odom_stamp = now
+        t = self._odom_stamp
 
         # 到着間隔そのものは診断情報として監視する (積分には使わない)。
-        arrival_dt = (t - self._last_odom_time).nanoseconds / 1e9
-        self._last_odom_time = t
+        arrival_dt = (now - self._last_odom_time).nanoseconds / 1e9
+        self._last_odom_time = now
         if arrival_dt > self._ARRIVAL_GAP_WARN_SEC:
             self.get_logger().warn(
                 f"wheel_feedback の受信ギャップ {arrival_dt:.2f} s "
-                f"(公称 {dt:.3f} s)。WiFi 遅延の可能性",
+                f"(ESP32 側 dt {dt:.3f} s)。WiFi 遅延の可能性",
                 throttle_duration_sec=5.0)
 
         # ── 差動駆動オドメトリ更新 ──────────────────────────

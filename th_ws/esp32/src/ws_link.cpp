@@ -174,12 +174,16 @@ void loop() {
 #endif
 }
 
-void sendWheelFeedback(float left, float right) {
+void sendWheelFeedback(float left, float right, float dtSec) {
     if (!isConnected()) return;
-    uint8_t buf[9];
+    uint8_t buf[13];
     buf[0] = TYPE_WHEEL_FEEDBACK;
     packFloat(buf, 1, left);
     packFloat(buf, 5, right);
+    // 速度は counts * distPerCount / dtSec で求めているので、このフレームが
+    // 表す走行時間はまさに dtSec。ブリッジ側で到着時刻から推測させると
+    // WiFi の遅延がそのままオドメトリ誤差になるため明示的に送る。
+    packFloat(buf, 9, dtSec);
     handleSendResult(client.sendBIN(buf, sizeof(buf)));
 }
 

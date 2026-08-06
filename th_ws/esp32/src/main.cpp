@@ -175,7 +175,9 @@ static void cbCtrlTimer() {
     // odom/TF も途絶して Nav2 が動けなくなる(実機検証で判明)。
     // 「切断検知」は通信途絶そのもので判定されるべきで、フィードバック送信を
     // 止めることを安全機構にしてはいけない。
-    WsLink::sendWheelFeedback(velL, velR);
+    // dt も送る: ブリッジ側はこれをオドメトリの積分区間に使う。到着時刻から
+    // 推測させると WiFi の遅延がそのまま yaw ドリフトになる (2026-08-06)。
+    WsLink::sendWheelFeedback(velL, velR, dt);
 
     // ── IMU 送信 (未実装個体はスキップ) ───────────────────────────
     if (imuPresent) {
