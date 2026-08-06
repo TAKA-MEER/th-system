@@ -38,7 +38,13 @@ def generate_launch_description():
             parameters=[{
                 'publish_topic':   '/cmd_vel_nav',
                 'linear_speed':    0.20,   # m/s
-                'spin_speed':      0.80,   # rad/s (超信地旋回)
+                # 超信地旋回 [rad/s]。0.80 から下げた (2026-08-07)。
+                # 地図作成はこのテレオペで走るため、旋回時の yaw 誤差
+                # (クローラーのスリップ・スキャンの時刻ズレ・スキャン内の
+                #  モーション歪み。いずれも角速度に比例) が地図品質へ直結する。
+                # Nav2 側 rotate_to_heading_angular_vel を 0.4 に下げたのと同じ理由。
+                # 走行中は teleop の [ / ] キーで 0.1 刻みに変えられる。
+                'spin_speed':      0.40,
                 'publish_rate_hz': 10.0,
             }],
             prefix='xterm -fa "Monospace" -fs 11 -e',
@@ -54,7 +60,7 @@ def generate_launch_description():
             parameters=[{
                 'publish_topic':   '/cmd_vel',
                 'linear_speed':    0.20,
-                'spin_speed':      0.80,
+                'spin_speed':      0.40,   # 上記 /cmd_vel_nav 側と同じ理由
                 'publish_rate_hz': 10.0,
             }],
             prefix='xterm -fa "Monospace" -fs 11 -e',
