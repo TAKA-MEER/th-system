@@ -522,7 +522,9 @@ IDLE からの遷移のみを想定していたが、MANUAL → FOLLOWING_MAPLES
     | 地図作成 開始 | `set_localization_mode(false)` | ポーズグラフへのノード追加を再開 |
     | 地図作成 停止（確定） | `set_localization_mode(true)` | 地図は凍結、自己位置推定は継続 |
     | 地図を保存 | `save_map`（pgm/yaml）+ `serialize_map`（ポーズグラフ） | 記録用。運用は毎回新規作成のままで、保存地図の再利用を前提にはしない |
-    | 地図を破棄 | `deserialize_map`（起動直後に取っておく空グラフを読み込む） | やり直し用。slam_toolbox に reset サービスが無いための実装 |
+    | 地図を破棄 | `deserialize_map`（起動直後に取っておく空グラフを読み込む） | やり直し用。slam_toolbox にグラフを空へ戻すサービスが無いための実装 |
+
+    **実装上の落とし穴**: `serialize_map` / `deserialize_map` は `LocalizationSlamToolbox` が override しており、**localization モード中は何もせずエラーを返す**（serialize は無条件、deserialize は `match_type` が `LOCALIZE_AT_POSE` 以外なら拒否）。しかも `DeserializePoseGraph.Response` はフィールドを持たず、`SerializePoseGraph.Response.result` も未設定なら 0（`RESULT_SUCCESS`）に見えるため、**呼び出し側からは成功と区別がつかない**。2026-08-07 の実機で、地図の破棄が「OK」を返しながら実際には何もしていない事象が発生した。これらは必ず mapping モードへ切り替えてから呼び、成否は応答ではなくファイルの実在で判定すること。
   - **既知の制約**: 起動のたびに SLAM の地図原点は任意になる。`panels.yaml` は過去のある地図セッションで実測した絶対座標（x/y/yaw）を保持する方式のため、セッションをまたぐと座標が実際のパネル位置とずれる。したがって **MOVING_TO_PANEL（配電盤への自律移動）は今回のスコープでは対応しない既知の制約**として残す。地図原点に依存しない位置指定方式（呼び寄せ、下記）を優先する
 - **周囲への予告手段（ブザー・ランプ）**: 音声は試験員の手元でのみ鳴るため、ロボットが動き出すこと
   （捜索旋回・退避）の周囲への予告は将来設置するブザー・ランプで対応する方針とした（§7.1）。

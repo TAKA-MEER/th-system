@@ -174,21 +174,56 @@ class SlamControl(Node):
     def _report(self, text: str):
         self._pub_last_result.publish(String(data=text))
 
-    def _apply_mapping(self, active: bool) -> "str | None":
-        """slam_toolbox のモードを切り替える。エラー文字列 or None を返す。
-
-        set_localization_mode は「localization を有効にするか」なので、
-        マッピングを有効にしたいときは False を渡す。
-        """
+    def _set_localization(self, localization: bool) -> "str | None":
+        """slam_toolbox のモードを切り替える。エラー文字列 or None を返す。"""
         if not self._cli_mode.wait_for_service(timeout_sec=1.0):
             return 'slam_toolbox に接続できません'
         _, err = call_and_wait(
-            self, self._cli_mode, SetBool.Request(data=not active),
+            self, self._cli_mode, SetBool.Request(data=localization),
             SERVICE_TIMEOUT_SEC)
         if err:
             return f'set_localization_mode 呼び出し失敗: {err}'
+        return None
+
+    def _apply_mapping(self, active: bool) -> "str | None":
+        """マッピングの有効/無効を切り替える。エラー文字列 or None を返す。"""
+        err = self._set_localization(not active)
+        if err:
+            return err
         self._set_active(active)
         return None
+
+    def _in_mapping_mode(self, fn) -> "str | None":
+        """mapping モードでしか受け付けられない操作を実行する。
+
+        LocalizationSlamToolbox は serializePoseGraphCallback と
+        deserializePoseGraphCallback を override しており、localization モード中は
+        何もせずエラーを返す（serialize は無条件、deserialize は match_type が
+        LOCALIZE_AT_POSE 以外なら拒否）。
+
+        しかも呼び出し側からは成功と区別がつかない。DeserializePoseGraph.Response
+        にはフィールドが無く、SerializePoseGraph.Response.result も未設定なら
+        0 (=RESULT_SUCCESS) になるためである。実際 2026-08-07 の実機で、
+        地図の破棄が「OK」を返しながら何もしていない事象が発生した。
+        必ずこのヘルパー経由で mapping モードへ入れてから呼ぶこと。
+
+        元のモードは処理後に復元する。一時的に mapping モードへ入る間にスキャンが
+        グラフへ入りうるが、破棄では直後に mapper ごと差し替わるため影響は無く、
+        保存では現在地のスキャンが1枚多く入るだけで実害は無い。
+        """
+        was_mapping = self._mapping_active
+        if not was_mapping:
+            err = self._set_localization(False)
+            if err:
+                return err
+        try:
+            return fn()
+        finally:
+            if not was_mapping:
+                restore_err = self._set_localization(True)
+                if restore_err:
+                    self.get_logger().error(
+                        f'モードを停止状態へ戻せませんでした: {restore_err}')
 
     # ── 地図作成 開始/停止 ──────────────────────────────────
     def _cb_toggle(self, request, response):
@@ -247,17 +282,37 @@ class SlamControl(Node):
             os.path.expanduser('~'), 'th_maps', 'th_map')
 
     def _serialize(self, path: str) -> "str | None":
+        """ポーズグラフを path.posegraph / path.data へ書き出す。
+
+        成否は応答ではなくファイルの実在で判定する。SerializePoseGraph.Response
+        の result は slam_toolbox が早期 return したとき未設定のままとなり、
+        0 (=RESULT_SUCCESS) に見えてしまうため信用できない（_in_mapping_mode の
+        説明を参照）。slam_control は slam_toolbox と同一コンテナで動くので、
+        書けたかどうかは直接確認できる。
+        """
         if not self._cli_serialize.wait_for_service(timeout_sec=1.0):
             return 'slam_toolbox に接続できません'
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        req = SerializePoseGraph.Request()
-        req.filename = path
-        result, err = call_and_wait(
-            self, self._cli_serialize, req, SERVICE_TIMEOUT_SEC)
+        graph_path = path + '.posegraph'
+        before = os.path.getmtime(graph_path) if os.path.exists(graph_path) else None
+
+        def _call():
+            req = SerializePoseGraph.Request()
+            req.filename = path
+            _, err = call_and_wait(
+                self, self._cli_serialize, req, SERVICE_TIMEOUT_SEC)
+            return f'serialize_map 呼び出し失敗: {err}' if err else None
+
+        err = self._in_mapping_mode(_call)
         if err:
-            return f'serialize_map 呼び出し失敗: {err}'
-        if result.result != SerializePoseGraph.Response.RESULT_SUCCESS:
-            return f'ポーズグラフの書き出しに失敗しました (result={result.result})'
+            return err
+
+        if not os.path.exists(graph_path):
+            return (f'ポーズグラフが書き出されませんでした ({graph_path} が無い)。'
+                    ' slam_toolbox のログを確認してください')
+        if before is not None and os.path.getmtime(graph_path) == before:
+            return (f'ポーズグラフが更新されませんでした ({graph_path} の更新時刻が'
+                    ' 変わっていない)。slam_toolbox のログを確認してください')
         return None
 
     # ── 地図の破棄 ──────────────────────────────────────────
@@ -272,20 +327,33 @@ class SlamControl(Node):
                 '起動時の空ポーズグラフの退避に失敗しているため破棄できません。'
                 'slam_control のログを確認してください', '')
 
+        if not os.path.exists(EMPTY_POSEGRAPH_PATH + '.posegraph'):
+            return self._finish(
+                response,
+                f'空ポーズグラフ ({EMPTY_POSEGRAPH_PATH}.posegraph) がありません。'
+                ' 起動時の退避に失敗しています', '')
+
         with self._lock:
             if not self._cli_deserialize.wait_for_service(timeout_sec=1.0):
                 return self._finish(response, 'slam_toolbox に接続できません', '')
-            req = DeserializePoseGraph.Request()
-            req.filename = EMPTY_POSEGRAPH_PATH
-            # 空グラフなので開始姿勢の指定は意味を持たない。最初のノードから
-            # 始める指定にしておく。
-            req.match_type = DeserializePoseGraph.Request.START_AT_FIRST_NODE
-            _, err = call_and_wait(
-                self, self._cli_deserialize, req, SERVICE_TIMEOUT_SEC)
+
+            def _call():
+                req = DeserializePoseGraph.Request()
+                req.filename = EMPTY_POSEGRAPH_PATH
+                # 空グラフなので開始姿勢の指定は意味を持たない。最初のノードから
+                # 始める指定にしておく。localization モード中はこの match_type が
+                # 拒否されるため、必ず mapping モードで呼ぶ (_in_mapping_mode)。
+                req.match_type = DeserializePoseGraph.Request.START_AT_FIRST_NODE
+                _, err = call_and_wait(
+                    self, self._cli_deserialize, req, SERVICE_TIMEOUT_SEC)
+                return f'deserialize_map 呼び出し失敗: {err}' if err else None
+
+            err = self._in_mapping_mode(_call)
             if err:
-                return self._finish(
-                    response, f'deserialize_map 呼び出し失敗: {err}', '')
+                return self._finish(response, err, '')
             # 破棄直後は「地図作成停止」状態に揃える（起動直後と同じ状態）。
+            # _in_mapping_mode が元のモードへ戻すが、破棄前がマッピング中でも
+            # 停止状態にしたいので明示的に倒す。
             err = self._apply_mapping(False)
             if err:
                 return self._finish(response, err, '')
@@ -307,14 +375,20 @@ class SlamControl(Node):
 
     # ── 起動時の初期化 ──────────────────────────────────────
     def _startup(self):
-        """localization モード（=地図作成停止）から始め、空グラフを退避する。
+        """空グラフを退避してから localization モード（=地図作成停止）へ倒す。
 
-        slam_toolbox は起動直後 mapping モードなので、まず localization へ倒す。
-        その時点ではまだポーズグラフにノードが 1 つも入っていないため、ここで
-        serialize しておけば「空の地図」のスナップショットになる。破棄操作は
-        これを読み戻すことで実現する（slam_toolbox に reset サービスが無いため）。
+        順序が重要。slam_toolbox は起動直後 mapping モードで、serialize を
+        受け付けるのはこのモードだけである（_in_mapping_mode の説明を参照）。
+        まだスキャンをほとんど取り込んでいないこの時点で serialize しておけば
+        「空の地図」のスナップショットになる。破棄操作はこれを読み戻すことで
+        実現する（slam_toolbox にグラフを空へ戻すサービスが無いため）。
+
+        なお slam_toolbox の起動から slam_control がここへ到達するまでの間に、
+        最初のスキャンが 1 枚グラフへ入る（初回スキャンは無条件に採用される）。
+        つまり厳密には「起動位置のスキャン 1 枚だけを持つグラフ」が基準になる。
+        走り出す前に退避が終わる前提であり、通常運用では問題にならない。
         """
-        if not self._cli_mode.wait_for_service(
+        if not self._cli_serialize.wait_for_service(
                 timeout_sec=STARTUP_SERVICE_TIMEOUT_SEC):
             self.get_logger().warn(
                 'slam_toolbox 未起動のため初期化をスキップします '
@@ -322,23 +396,21 @@ class SlamControl(Node):
                 'WebUI から明示的に開始/停止し直してください)')
             return
 
-        _, err = call_and_wait(
-            self, self._cli_mode, SetBool.Request(data=True),
-            STARTUP_CALL_TIMEOUT_SEC)
+        # まだ mapping モードのうちに退避する
+        err = self._serialize(EMPTY_POSEGRAPH_PATH)
+        if err:
+            self.get_logger().error(
+                f'空ポーズグラフの退避に失敗: {err} — 地図の破棄操作は使えません')
+        else:
+            self._empty_graph_ready = True
+            self.get_logger().info(
+                f'空ポーズグラフを退避しました ({EMPTY_POSEGRAPH_PATH}.posegraph)')
+
+        err = self._apply_mapping(False)
         if err:
             self.get_logger().warn(f'初期モード設定に失敗: {err}')
             return
-        self._set_active(False)
         self.get_logger().info('初期状態: 地図作成停止（自己位置推定は継続）')
-
-        err = self._serialize(EMPTY_POSEGRAPH_PATH)
-        if err:
-            self.get_logger().warn(
-                f'空ポーズグラフの退避に失敗: {err} — 地図の破棄操作は使えません')
-            return
-        self._empty_graph_ready = True
-        self.get_logger().info(
-            f'空ポーズグラフを退避しました ({EMPTY_POSEGRAPH_PATH})')
 
 
 def main(args=None):
