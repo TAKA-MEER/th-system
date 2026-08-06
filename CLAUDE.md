@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 作業開始前のルール
+
+**実装作業に入る前に必ず `git status` を確認し、作業前から存在する未コミットの変更がないか調べること。**
+
+- 未コミットの変更があれば、着手前にユーザーへ提示して扱いを確認する（先にコミットするか、そのまま残すか）。ユーザーが別のターミナルや別セッションで進行中の作業であることが多い。
+- 勝手にコミットも破棄もしない。確認せずに作業を始めると、こちらの変更と混ざって切り分けられなくなる。
+- コミット時は自分が変更したファイルだけをステージする。`git add -A` / `git add .` は作業前からあった変更を巻き込むため使わない。
+- この環境では `git add -p` が使えない（対話的フラグ非対応）ため、1つのファイルに複数の関心事の変更を混ぜると後からコミットを分割できない。無関係な変更を同じファイルに同時に入れないよう作業順序を組む。
+
 ## 方針変更時のルール
 
 このリポジトリでは `VISION.md`(README.md と同じ階層)に、ユーザーが目指す「完成形」(最終的なシステム像・挙動・要件)を記述している。
@@ -122,23 +131,29 @@ ESP32 には独立したウォッチドッグ（600ms、`config.h` の `WATCHDOG
 `mode_manager.cpp` の `isTransitionAllowed()` で遷移を制御:
 
 ```
-IDLE → FOLLOWING, MANUAL
+INIT → IDLE のみ
+IDLE → FOLLOWING, FOLLOWING_MAPLESS, SUMMONING, MANUAL
 FOLLOWING → MANUAL, MOVING_TO_PANEL, IDLE
+FOLLOWING_MAPLESS → MANUAL, IDLE
+SUMMONING → MANUAL, IDLE
 MOVING_TO_PANEL → AT_PANEL, MANUAL, IDLE
-AT_PANEL → MANUAL, IDLE
-MANUAL → FOLLOWING, IDLE
+AT_PANEL → FOLLOWING, MANUAL, IDLE
+MANUAL → FOLLOWING, FOLLOWING_MAPLESS, IDLE
 any → ESTOP
 ESTOP → IDLE のみ
 ```
 
-フォルト発生時は FOLLOWING / MOVING_TO_PANEL / MANUAL / AT_PANEL → IDLE へ強制遷移。IDLE 中のフォルトはモード変化なし。
+フォルト発生時は動作系モード（FOLLOWING / FOLLOWING_MAPLESS / SUMMONING / MOVING_TO_PANEL / AT_PANEL / MANUAL）から IDLE へ強制遷移。IDLE 中のフォルトはモード変化なし。
+
+ただし `PERSON_TRACKER_LOST` だけは例外で、試験員データを使うモード（FOLLOWING / FOLLOWING_MAPLESS / SUMMONING）からのみ強制遷移する。MANUAL ジョグや配電盤移動は人物データを使わないため継続できる（VISION.md §5）。
 
 ### カスタムメッセージ型（th_system_msgs）
 
-- `RobotMode.msg` — mode フィールド (uint8) と定数 IDLE=1, FOLLOWING=2, MOVING_TO_PANEL=3, AT_PANEL=4, MANUAL=5, ESTOP=6
+- `RobotMode.msg` — mode フィールド (uint8) と定数 INIT=0, IDLE=1, FOLLOWING=2, MOVING_TO_PANEL=3, AT_PANEL=4, MANUAL=5, ESTOP=6, FOLLOWING_MAPLESS=7, SUMMONING=8
 - `PersonStatus.msg` — `position`（ロボット base_link 基準の相対座標 m）, `confidence`, `is_lost`, `lost_reason`
 - `FaultStatus.msg` — `active`, `fault_type` ("LIDAR_LOST" / "ESP32_DISCONNECTED" / "PERSON_TRACKER_LOST")
 - `WheelFeedback.msg` — ESP32 から届く左右ホイール実速度(`/esp32/wheel_feedback`)。指令値側にも同型を再利用し `/esp32/wheel_cmd_speed`(esp32_bridge が `/cmd_vel` から計算)として発行、WebUI の速度表示カードで指令vs実測を比較する
+- 状態 publish 3種（`FollowStatus` = `/follow/status`、`SearchStatus` = `/person/search_status`、`SummonStatus` = `/summon_navigator/status`）— 追従・捜索・呼び寄せの内部状態。音声アナウンスと WebUI 表示のトリガ源。**state / reason / phase の文字列定義は各 .msg のコメントが正**なので、写像を書くときは必ずそちらを見る
 
 ### シミュレーション固有のノード
 
