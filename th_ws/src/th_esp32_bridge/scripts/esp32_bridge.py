@@ -133,6 +133,9 @@ class Esp32Bridge(Node):
         # 届いたらジャイロ単位の取り違えを疑う (_on_imu_data 参照)。
         self._IMU_WZ_IMPLAUSIBLE_RAD_S = 10.0
         self._odom_stamp = None
+        # 受信した WHEEL_FEEDBACK が新形式(dt 付き)かどうか。None = 未受信。
+        # 変化したときだけログに出す (_on_wheel_feedback 参照)。
+        self._feedback_has_dt = None
         self._last_odom_time = self.get_clock().now()
         self._last_feedback_time = self.get_clock().now()
         self._esp32_alive = False
@@ -318,6 +321,26 @@ class Esp32Bridge(Node):
         # 旧ファームウェア (dt なし) からは None が来るので公称周期で代替する。
         # 壊れたフレームの異常値をそのまま yaw に積むのは元の不具合より悪いため、
         # 範囲外の値も公称周期へ落とす。
+        # ファームウェアの世代をログに出す。後方互換にしてある都合上、旧形式でも
+        # 黙って動いてしまうため、「書き込んだつもり」の取り違えに気づけない。
+        # dt の有無とジャイロ単位修正は同じビルドに入るので、旧形式が届いている
+        # ことは「ジャイロもまだ dps」を意味する。
+        has_dt = dt_from_esp32 is not None
+        if has_dt != self._feedback_has_dt:
+            self._feedback_has_dt = has_dt
+            if has_dt:
+                self.get_logger().info(
+                    "WHEEL_FEEDBACK: 新形式 (dt 付き) を受信。ESP32 側の制御周期で"
+                    "オドメトリを積分します")
+            else:
+                self.get_logger().error(
+                    "WHEEL_FEEDBACK: 旧形式 (dt なし) を受信 — ESP32 ファームウェアが "
+                    "2026-08-06 の更新前です。オドメトリの積分区間は公称 "
+                    f"{self._feedback_period_sec * 1000:.0f} ms で代替します。"
+                    "同じ更新にジャイロの dps→rad/s 修正が入っているため、"
+                    "この状態で imu_enabled:=true にすると EKF が 57.3 倍の"
+                    "ヨーレートを信じてオドメトリが壊れます")
+
         dt = dt_from_esp32
         if dt is None or not (0.0 < dt <= self._DT_MAX_SEC):
             if dt is not None:
