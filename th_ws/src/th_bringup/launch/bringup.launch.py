@@ -356,12 +356,20 @@ def generate_launch_description():
     # ノード名は slam_toolbox のまま維持する。サービス名 (/slam_toolbox/*) と
     # slam_params.yaml のパラメータキーが変わらないようにするため。
     # なお本ノードは slam_toolbox の experimental/ 配下の実装である。
+    #
+    # respawn: 2026-08-07 実機で SIGSEGV (exit code -11) で落ちるのを確認した。
+    # 落ちたままだと map→odom が消えて自己位置が失われ、それに気づかず走り
+    # 続けることになる。dr_spaam_ros と同じ理由で自動再起動させる。
+    # 再起動後は mapping モードに戻るため、slam_control がサービスの再出現を
+    # 検知して停止状態を再適用する。
     nodes.append(Node(
         package='slam_toolbox',
         executable='map_and_localization_slam_toolbox_node',
         name='slam_toolbox',
         parameters=[slam_yaml, {'use_sim_time': False}],
         output='screen',
+        respawn=True,
+        respawn_delay=2.0,
         condition=IfCondition(map_is_empty),
     ))
 

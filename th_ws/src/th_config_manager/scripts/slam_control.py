@@ -98,6 +98,9 @@ class SlamControl(Node):
         self._executor = None   # main() で MultiThreadedExecutor を渡す
         self._mapping_active = False   # 起動直後は停止状態から始める
         self._empty_graph_ready = False
+        # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
+        # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
+        self._slam_ready = None
         # 操作の並行実行から状態の読み取り→更新と slam_toolbox 呼び出しまでを
         # まとめて保護する。ReentrantCallbackGroup 下では連続押下等で複数の
         # 要求が並行実行されうるため（実機検証で、ロックなしでは短時間の2連続
@@ -170,6 +173,54 @@ class SlamControl(Node):
 
     def _publish_timer_cb(self):
         self._pub_active.publish(Bool(data=self._mapping_active))
+        self._check_slam_restart()
+
+    def _check_slam_restart(self):
+        """slam_toolbox の再起動を検知して、こちらの状態を再適用する。
+
+        slam_toolbox は SIGSEGV で落ちることが実機で確認されており
+        (2026-08-07)、bringup では respawn=True で自動再起動する。再起動した
+        ノードは mapping モードで立ち上がるため、こちらが「停止中」と表示して
+        いても実際には地図が更新され続けることになる。サービスの消失→再出現を
+        再起動とみなし、望みのモードを入れ直す。
+
+        空ポーズグラフも取り直す。再起動でグラフは空に戻っており、この瞬間が
+        最も「空」に近いスナップショットを取れるタイミングであるため。
+        """
+        ready = self._cli_mode.service_is_ready()
+        was_ready = self._slam_ready
+        self._slam_ready = ready
+        if was_ready is None or ready == was_ready:
+            return
+
+        if not ready:
+            self.get_logger().error(
+                'slam_toolbox が応答しなくなりました (クラッシュの可能性)。'
+                ' 自己位置補正が止まります。respawn による再起動を待ちます')
+            self._report('NG: slam_toolbox が停止しました (再起動待ち)')
+            return
+
+        self.get_logger().warn('slam_toolbox の再起動を検知しました。状態を再適用します')
+        if not self._lock.acquire(blocking=False):
+            self._slam_ready = was_ready   # 次周期でやり直す
+            return
+        try:
+            desired = self._mapping_active
+            err = self._serialize(EMPTY_POSEGRAPH_PATH)
+            if err:
+                self.get_logger().error(f'空ポーズグラフの再取得に失敗: {err}')
+            else:
+                self._empty_graph_ready = True
+            err = self._apply_mapping(desired)
+            if err:
+                self.get_logger().error(f'モードの再適用に失敗: {err}')
+                self._report('NG: 再起動後のモード再適用に失敗しました')
+            else:
+                self._report(
+                    f'OK: slam_toolbox 再起動後に'
+                    f'{"地図作成中" if desired else "地図作成停止"}を再適用しました')
+        finally:
+            self._lock.release()
 
     def _report(self, text: str):
         self._pub_last_result.publish(String(data=text))
@@ -411,6 +462,9 @@ class SlamControl(Node):
             self.get_logger().warn(f'初期モード設定に失敗: {err}')
             return
         self.get_logger().info('初期状態: 地図作成停止（自己位置推定は継続）')
+        # ここまで来た＝サービスは見えている。以降の消失→再出現を再起動として
+        # 扱えるよう基準を確定させる (_check_slam_restart)
+        self._slam_ready = True
 
 
 def main(args=None):
