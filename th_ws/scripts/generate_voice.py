@@ -4,6 +4,9 @@
 announcements.js のマニフェストを唯一の正として読み、採用話者で全件を合成して
 web_ui/public/voice/ に書き出す。文案を直したらこれを流し直すだけでよい。
 
+ANNOUNCEMENTS (完成した1発話) に加え、数値分割合成用の語彙 CLIP_WORDS
+(数字・単位。VISION.md §7.5) も同じ要領で <id>.mp3 として生成する。
+
 前提: VOICEVOX Nemo Engine が起動していること (既定ポート 50121)。
   Docker の voicevox_engine には Nemo は入っていない。詳細は docs/voice-credits.md
 
@@ -11,6 +14,7 @@ web_ui/public/voice/ に書き出す。文案を直したらこれを流し直�
   python3 generate_voice.py                 # 採用話者で全件生成
   python3 generate_voice.py --speaker 10005 # 話者を変えて試す
   python3 generate_voice.py --wav           # MP3 にせず WAV のまま出す
+  python3 generate_voice.py --only hokaku,0,1,2,meter  # id を絞って生成
 """
 from __future__ import annotations
 
@@ -53,18 +57,24 @@ def load_manifest() -> list[dict]:
     """announcements.js を node 経由で読む。
 
     正規表現でパースすると書式変更に弱いので、実際に import して
-    ANNOUNCEMENTS をそのまま受け取る。JS 側を唯一の正に保つための措置。
+    ANNOUNCEMENTS / CLIP_WORDS をそのまま受け取る。JS 側を唯一の正に保つための措置。
 
     マニフェストの中身をそのまま一時 .mjs にコピーして実行する。web_ui/package.json
     に "type": "module" が無いため、node 18 は .js を CJS と決め打ちして "export" で
     構文エラーになる。import 元を .mjs にしても、読み込まれる .js 側は CJS 扱いの
     ままなので、ファイルごと .mjs にする必要がある。
     announcements.js は他を import しない純データなので、コピーで完結する。
+
+    CLIP_WORDS は数値分割合成用の語彙断片で、layer を持たない (キューの再生対象
+    ではないため)。ANNOUNCEMENTS と同じ {id, text, layer} 形に揃えて合流させる
+    (layer は null のまま。生成処理では使わない)。
     """
     with open(MANIFEST, encoding='utf-8') as f:
         src = f.read()
-    code = (src + "\nconsole.log(JSON.stringify(ANNOUNCEMENTS.map("
-                  "a => ({ id: a.id, text: a.text, layer: a.layer }))));\n")
+    code = (src + "\nconsole.log(JSON.stringify("
+                  "ANNOUNCEMENTS.map(a => ({ id: a.id, text: a.text, layer: a.layer }))"
+                  ".concat(CLIP_WORDS.map(w => ({ id: w.id, text: w.text, layer: null })))"
+                  "));\n")
     with tempfile.NamedTemporaryFile('w', suffix='.mjs', delete=False,
                                      encoding='utf-8') as f:
         f.write(code)
@@ -86,6 +96,7 @@ def main():
     ap.add_argument('--speaker', type=int, default=DEFAULT_SPEAKER)
     ap.add_argument('--out', default=DEFAULT_OUT)
     ap.add_argument('--wav', action='store_true', help='MP3 に変換しない')
+    ap.add_argument('--only', help='カンマ区切りの id だけ生成する (例: --only hokaku,0,1,meter)')
     args = ap.parse_args()
 
     if not args.wav and not shutil.which('ffmpeg'):
@@ -114,6 +125,14 @@ def main():
     print(f'ユーザー辞書 {n} 語を登録')
 
     entries = load_manifest()
+    if args.only:
+        wanted = set(args.only.split(','))
+        entries = [e for e in entries if e['id'] in wanted]
+        missing = wanted - {e['id'] for e in entries}
+        if missing:
+            print(f'--only で指定された id がマニフェストに無い: {sorted(missing)}',
+                  file=sys.stderr)
+            return 1
     os.makedirs(args.out, exist_ok=True)
     ext = 'wav' if args.wav else 'mp3'
 

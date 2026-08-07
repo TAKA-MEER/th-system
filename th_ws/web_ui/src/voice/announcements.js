@@ -7,9 +7,13 @@
 // 音声ファイルは public/voice/<ID>.mp3 に置く。th_ws/scripts/generate_voice.py が
 // このマニフェストを読んで一括生成するので、文案を直したら流し直すだけでよい。
 //   ・既定では <ID>.mp3 を再生する
-//   ・数値分割合成が要るものは clips に ['hokaku','3','meter'] を入れる
-//     (VISION.md §7.5。N4/N7/N15/N16/N19/N20/N36/N37 が該当。現状は未対応で、
-//      文案に書かれた数値がそのまま焼き込まれている)
+//   ・数値分割合成が要るものは呼び出し側が announce(id, { clips: ['hokaku','3','meter'] })
+//     のように実行時の値でクリップ列を渡す (VISION.md §7.5)。渡された clips が
+//     1つでも取得失敗すると静的な <ID>.mp3 へフォールバックする (audioPlayer.js)。
+//     現状 N4 のみ実装済み。N7/N15/N16/N19/N20/N36/N37 は未着手で、文案に
+//     書かれた数値がそのまま焼き込まれている
+//   ・分割合成用の語彙クリップ (数字・単位など) は CLIP_WORDS に持つ。
+//     announcements 本体とは違いキューの再生対象にはならない、生成専用のデータ
 //   ・ファイルが取得できない場合は beep のプレースホルダに落ちる
 // ============================================================
 
@@ -197,3 +201,17 @@ export const ANNOUNCEMENTS_BY_LAYER = {
   [LAYER.SAFETY]: SAFETY_ANNOUNCEMENTS,
   [LAYER.DEMO]:   DEMO_ANNOUNCEMENTS,
 }
+
+// ── 数値分割合成用の語彙クリップ (VISION.md §7.5) ──────────
+// ANNOUNCEMENTS とは別枠。1件が1つの完成した発話ではなく、announce() の
+// overrides.clips で組み合わせて使う単語の断片。generate_voice.py が
+// ANNOUNCEMENTS と同じ要領で <id>.mp3 を public/voice/ に生成する。
+//
+// 現状 N4「捕捉。前方 N メートル」のみが実装対象 (hokaku + 数字 + meter)。
+// centi (秒速 N センチ) / ban (配電盤 N) は VISION.md §7.5 に単位として
+// 明記されているが、対応する N7/N36 のトリガ配線はまだ無いため見送っている。
+export const CLIP_WORDS = [
+  { id: 'hokaku', text: '捕捉。前方' },
+  ...Array.from({ length: 21 }, (_, i) => ({ id: String(i), text: String(i) })),
+  { id: 'meter', text: 'メートル' },
+]

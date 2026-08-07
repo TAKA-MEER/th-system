@@ -10,6 +10,10 @@
 // 残る 12件 (N1 N2 N6 N7 N8 N16 N17 N18 N20 N37 N39 N41) は、観測手段がないか
 // 他 ID と同じエッジで発火して区別できないため手動発火のみ。理由は
 // announcements.js の note に個別に書いてある。
+//
+// N4 は距離を実測値で差し替える (数値分割合成。VISION.md §7.5)。他の数値系
+// (N7/N15/N16/N19/N20/N36/N37) は同じ仕組みに乗せられるが、値の取得元が
+// 未接続のため今は文案の数値のまま
 // ============================================================
 
 import { useEffect, useRef } from 'react'
@@ -95,7 +99,16 @@ export function useVoiceTriggers(ros, voice) {
     // 試験員の初回捕捉。再捕捉は N27 だが、捜索中かどうかを区別できないため Tier 2
     if (isFollowingMode && !prev.isTracked && isTracked && !firstCaptureDoneRef.current) {
       firstCaptureDoneRef.current = true
-      announce('N4')
+      // 距離を実測値で差し替える (数値分割合成。VISION.md §7.5)。
+      // クリップ (0〜20 の整数 + meter) の生成範囲に合わせて 0〜20m にクランプする。
+      // isTracked は同じレンダーの personStatus から導出しているため、ここで
+      // 参照する personStatus はその isTracked と矛盾しない値になっている
+      // (personStatus を effect の依存配列に入れているのもこのため)。
+      // それでも欠けていれば overrides 無しで呼び、静的な N4.mp3 にフォールバックする
+      const distM = personStatus
+        ? Math.hypot(personStatus.position.x, personStatus.position.y) : null
+      const distClip = distM === null ? null : String(Math.min(20, Math.max(0, Math.round(distM))))
+      announce('N4', distClip ? { clips: ['hokaku', distClip, 'meter'] } : null)
     }
 
     if (isFollowingMode && prev.lostReason !== lostReason) {
@@ -161,7 +174,7 @@ export function useVoiceTriggers(ros, voice) {
         }
       }
     }
-  }, [connected, mode, faultActive, estopAny, isTracked, lostReason,
+  }, [connected, mode, faultActive, estopAny, isTracked, lostReason, personStatus,
       followPlanner, followState, followReason, searchPhase, announce])
 
   // ── 呼び寄せイベント ────────────────────────────────────

@@ -5,7 +5,10 @@
 // UI から切り離し、開発パネルやコンソールから直接叩いて追えるようにする。
 //
 // 公開 API は「単発」と「継続」の2つに分かれる:
-//   announce(id)              — モード遷移・サービス応答などの単発イベント
+//   announce(id, overrides)   — モード遷移・サービス応答などの単発イベント。
+//                                overrides.clips で実行時の数値クリップ列を渡せる
+//                                (VISION.md §7.5)。省略時はマニフェストの静的な
+//                                clips/file をそのまま使う
 //   setCondition(id, active)  — フォルト継続・切断中などの持続状態。冪等
 //
 // setCondition が冪等であることが重要で、呼び出し側は毎レンダー同じ真偽値を
@@ -85,12 +88,16 @@ function createVoiceQueue() {
   }
 
   // ── 単発 ────────────────────────────────────────────────
-  function announce(id) {
-    const entry = getAnnouncement(id)
-    if (!entry) {
+  // overrides.clips を渡すと、その回だけマニフェストの静的な clips/file の代わりに
+  // 実行時のクリップ列で再生する (数値の動的差し替え。VISION.md §7.5)。
+  // entry 自体は書き換えず、キューに積む分だけコピーする
+  function announce(id, overrides = null) {
+    const base = getAnnouncement(id)
+    if (!base) {
       console.warn('[voice] 未知のアナウンス id:', id)
       return false
     }
+    const entry = overrides?.clips ? { ...base, clips: overrides.clips } : base
     if (!layers[entry.layer]) {
       drop(id, 'レイヤ無効')
       return false
@@ -124,6 +131,9 @@ function createVoiceQueue() {
       const state = conditions.get(entry.id)
       if (!state) return
       state.count += 1
+      // overrides を渡していないため、数値を動的差し替えするエントリに
+      // repeatSec を付けると再発話のたびに値が古びる。現状 repeatSec を持つのは
+      // 数値を含まない安全通知のみなので実害は無い
       announce(entry.id)
       if (entry.repeatMax && state.count >= entry.repeatMax) {
         clearInterval(state.timerId)

@@ -4,9 +4,11 @@
 // キュー規則 (voiceQueue.js) はこのファイルの中身を知らない。
 // 逆にこのファイルは優先度もレイヤも知らず、渡された1件を鳴らすだけ。
 //
-// 再生の種類は2つ:
-//   ・clips / file が指定されていれば WAV を鳴らす (Tier 3 の本番経路)
-//   ・どちらも null ならビープを合成する (Tier 1 のプレースホルダ)
+// 再生は優先順に3段のフォールバックで試す:
+//   1. entry.clips (動的な数値クリップ。呼び出し時に voiceQueue.announce の
+//      overrides で渡される。VISION.md §7.5) の WAV
+//   2. entry.file (マニフェストの静的な1ファイル) の WAV
+//   3. ビープ合成 (Tier 1 のプレースホルダ。1・2 がどちらも取得できない場合)
 // ============================================================
 
 let ctx        = null   // AudioContext (ユーザー操作が来るまで生成しない)
@@ -47,9 +49,16 @@ export function getAudioState() {
 }
 
 // ── WAV の読み込み (Tier 3 用の本番経路) ──────────────────
+// entry.file は既に拡張子付き ('N4.mp3')。一方 entry.clips / overrides.clips は
+// クリップ id を裸のまま持つ (['hokaku','3','meter'])。どちらも同じ場所から
+// 読めるよう、拡張子が無ければ .mp3 を補う
+function withExt(name) {
+  return /\.\w+$/.test(name) ? name : `${name}.mp3`
+}
+
 function clipUrl(name) {
   const base = import.meta.env.BASE_URL ?? '/'
-  return `${base}voice/${name}`.replace(/\/{2,}/g, '/')
+  return `${base}voice/${withExt(name)}`.replace(/\/{2,}/g, '/')
 }
 
 async function loadBuffer(c, name) {
@@ -63,11 +72,23 @@ async function loadBuffer(c, name) {
   return buf
 }
 
-/** entry から再生すべきクリップ名の配列を得る。ビープの場合は null */
-function clipNames(entry) {
-  if (entry.clips && entry.clips.length) return entry.clips
-  if (entry.file) return [entry.file]
-  return null
+/**
+ * entry から再生を試す候補を優先順に並べた配列を得る (各要素がクリップ名の配列)。
+ * 候補が無ければ空配列 (ビープへ)。
+ *
+ *   1. entry.clips — 呼び出し時に渡された動的クリップ (数値の差し替え。VISION.md §7.5)
+ *   2. entry.file  — マニフェストの静的な1ファイル
+ *
+ * 動的クリップが1つでも取得失敗すると、以前は即ビープに落ちていた。しかし
+ * entry.file 側は既に用意されている実音声 (値が焼き込みで不正確なだけ) なので、
+ * 先にそちらへフォールバックした方が「仮の値でも喋る」体験を保てる。
+ * clips を持たない大半のエントリは file 単独の1候補のみで従来と同じ挙動になる。
+ */
+function clipAttempts(entry) {
+  const attempts = []
+  if (entry.clips && entry.clips.length) attempts.push(entry.clips)
+  if (entry.file) attempts.push([entry.file])
+  return attempts
 }
 
 // ── ビープ合成 (Tier 1 のプレースホルダ) ───────────────────
@@ -153,35 +174,46 @@ export function playEntry(entry) {
     timerId = setTimeout(() => finish('done'), Math.round(holdMs))
   }
 
-  const names = clipNames(entry)
+  const attempts = clipAttempts(entry)
 
-  if (!names) {
+  if (!attempts.length) {
     playBeep()
     return { done, cancel }
   }
 
-  // WAV 経路。clips は前から順に隙間なく連結する (数値分割合成)
-  Promise.all(names.map((n) => loadBuffer(c, n)))
-    .then((buffers) => {
-      if (cancelled) return
-      let t = c.currentTime + 0.01
-      for (const buf of buffers) {
-        const src = c.createBufferSource()
-        src.buffer = buf
-        src.connect(masterGain)
-        src.start(t)
-        liveNodes.push(src)
-        t += buf.duration
-      }
-      const holdMs = (t - c.currentTime) * 1000
-      timerId = setTimeout(() => finish('done'), Math.round(holdMs))
-    })
-    .catch((e) => {
-      // 未生成・配信漏れでも無音にせず、プレースホルダのビープに落とす。
-      // 「鳴らない」より「仮の音が鳴る」方が異常に気付きやすい
-      console.warn('[voice] 音声ファイルを再生できないためビープに切替:', entry.id, e)
-      if (!cancelled) playBeep()
-    })
+  // WAV 経路。1候補内の複数クリップは前から順に隙間なく連結する (数値分割合成)。
+  // 候補が取得失敗したら次の候補へ、全滅したらビープへ落ちる
+  const tryAttempt = (i) => {
+    Promise.all(attempts[i].map((n) => loadBuffer(c, n)))
+      .then((buffers) => {
+        if (cancelled) return
+        let t = c.currentTime + 0.01
+        for (const buf of buffers) {
+          const src = c.createBufferSource()
+          src.buffer = buf
+          src.connect(masterGain)
+          src.start(t)
+          liveNodes.push(src)
+          t += buf.duration
+        }
+        const holdMs = (t - c.currentTime) * 1000
+        timerId = setTimeout(() => finish('done'), Math.round(holdMs))
+      })
+      .catch((e) => {
+        if (cancelled) return
+        const next = i + 1
+        if (next < attempts.length) {
+          console.warn('[voice] クリップを取得できないため次の候補へ切替:', entry.id, attempts[i], e)
+          tryAttempt(next)
+          return
+        }
+        // 未生成・配信漏れでも無音にせず、プレースホルダのビープに落とす。
+        // 「鳴らない」より「仮の音が鳴る」方が異常に気付きやすい
+        console.warn('[voice] 音声ファイルを再生できないためビープに切替:', entry.id, e)
+        playBeep()
+      })
+  }
+  tryAttempt(0)
 
   return { done, cancel }
 }
