@@ -101,7 +101,8 @@ export default function AudienceView() {
     <div className="aud">
 
       <header className="aud-header">
-        <h1>TH 追従ロボット</h1>
+        <span className="aud-team">高見舎プロジェクト</span>
+        <h1>TH 追従機能</h1>
         <span className="aud-subtitle">LiDAR で人を見つけて追う</span>
         {!connected && <span className="aud-disconnect">● 未接続</span>}
       </header>

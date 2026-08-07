@@ -36,6 +36,16 @@ body {
   background: #12151c;
   border-bottom: 1px solid #232833;
 }
+.aud-team {
+  flex-shrink: 0;
+  padding: 0.55rem 1.4rem;
+  border-radius: 999px;
+  background: #2f6fed;
+  color: #ffffff;
+  font-size: 1.6rem;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+}
 .aud-header h1 { font-size: 1.7rem; letter-spacing: 0.04em; }
 .aud-subtitle  { font-size: 1rem; color: #7e8794; }
 .aud-disconnect {
