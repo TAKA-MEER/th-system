@@ -3,12 +3,14 @@ std_msgs/Header header
 # どちらの追従ノードが発行したか
 #   "map"     — follow_planner (地図あり追従・退避シーケンス)
 #   "mapless" — follow_planner_mapless (地図なし軌跡追従)
+#   "face"    — face_planner (超信地旋回のみ・展示用、並進なし)
 string planner
 
 # 追従ロジックの内部状態
 #   共通    : "INACTIVE" (当該モードでない)
 #   mapless : "TRACKING" / "STOPPED"
 #   map     : "TRACKING" / "PREPARE" / "EVADING"
+#   face    : "TRACKING" / "ALIGNED" / "STOPPED"
 string state
 
 # 状態・停止の理由。state だけでは区別できない事象を表す。
@@ -21,6 +23,9 @@ string state
 #   "preparing"       — 退避準備 (向き合わせ) 中 (map)
 #   "evading"         — 退避走行中 (map)
 #   "retreat_blocked" — 周囲に退避できる空きがなくその場停止 (map)
+#   "aligned"         — 正対完了、角速度ほぼ0で待機中 (face)
+#   "low_confidence"  — confidence 不足で旋回停止中 (face)
+#   "no_odom"         — odom TF未取得のため自己移動補償なしの生値で旋回中 (face)
 #
 # 注意: "retreat_blocked" と "no_pose" は必ず区別すること。両者を混ぜると
 # costmap 未受信のたびに「逃げ場なし」の警告が誤って出る。

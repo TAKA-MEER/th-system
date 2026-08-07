@@ -151,6 +151,13 @@ def _scenario_setup(context, *args, **kwargs):
             parameters=planner_params('follow_planner_mapless'),
             output='screen',
         ),
+        Node(
+            package='th_planning',
+            executable='face_planner.py',
+            name='face_planner',
+            parameters=planner_params('face_planner'),
+            output='screen',
+        ),
     ]
 
     # ── SLAM / Localization (有効 slam/map 値で分岐) ─────────

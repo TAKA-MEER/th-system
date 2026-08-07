@@ -11,6 +11,7 @@ ament_python_install_package(th_planning)
 install(PROGRAMS
   scripts/follow_planner.py
   scripts/follow_planner_mapless.py
+  scripts/face_planner.py
   scripts/panel_navigator.py
   scripts/manual_command_handler.py
   scripts/summon_navigator.py

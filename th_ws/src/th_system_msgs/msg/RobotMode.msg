@@ -7,4 +7,5 @@ uint8 MANUAL            = 5
 uint8 ESTOP             = 6
 uint8 FOLLOWING_MAPLESS = 7
 uint8 SUMMONING         = 8
+uint8 FACING            = 9
 uint8 mode

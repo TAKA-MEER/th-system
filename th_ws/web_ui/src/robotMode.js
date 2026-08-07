@@ -15,6 +15,7 @@ export const MODE = {
   ESTOP:             6,
   FOLLOWING_MAPLESS: 7,
   SUMMONING:         8,
+  FACING:            9,
 }
 
 // モード名 → バッジ色。操作 UI (App.jsx) と観客表示 (audience/) で共有する。
@@ -23,7 +24,7 @@ const MODE_COLORS = {
   INIT: '#888', IDLE: '#2196F3', FOLLOWING: '#4CAF50',
   MOVING_TO_PANEL: '#FF9800', AT_PANEL: '#9C27B0',
   MANUAL: '#00BCD4', ESTOP: '#F44336', FOLLOWING_MAPLESS: '#8BC34A',
-  SUMMONING: '#E91E63',
+  SUMMONING: '#E91E63', FACING: '#607D8B',
 }
 
 export const modeColorOf = (modeName) => MODE_COLORS[modeName] ?? '#888'

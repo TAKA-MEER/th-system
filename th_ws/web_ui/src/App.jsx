@@ -610,6 +610,15 @@ export default function App() {
                 </button>
                 <button
                   className="mode-btn secondary"
+                  disabled={mode !== MODE.IDLE || !connected}
+                  onClick={() => requestMode(MODE.FACING)}
+                  title="その場で試験員の方向へ旋回のみ（展示用・並進なし）"
+                >
+                  正対旋回
+                  <span className="note"> 展示用</span>
+                </button>
+                <button
+                  className="mode-btn secondary"
                   disabled={mode === MODE.FOLLOWING || !connected}
                   onClick={() => requestMode(MODE.FOLLOWING)}
                   title="地図あり追従 (実験用・優先度低)"

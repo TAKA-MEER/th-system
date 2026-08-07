@@ -86,6 +86,37 @@ follow_planner_mapless:
     odom_frame: "odom"
     base_frame: "base_link"
 
+face_planner:
+  ros__parameters:
+    # ── 正対制御(並進なし・その場旋回のみ・展示用) ──────────
+    k_ang: 2.0                       # 角度ゲイン(evade_k_ang / mapless k_ang と同値。実績あり)
+    w_max_rad_s: 0.3                 # rad/s 旋回速度の上限。実機IMUあり検証(2026-08-07)で
+                                      # 0.5 だと振幅の大きい発振と頻繁なロストが発生。原因は
+                                      # 制御ゲインではなく、旋回中に人物トラッカーが別の脚
+                                      # (家具等)へ乗り移る誤対応付け(VISION.md §4 の既知の
+                                      # 失敗モード、§9 行19 参照)。旋回を遅くして1フレーム
+                                      # あたりの見かけの移動量(ω·d·0.5)を抑え、対応付けゲート
+                                      # (leg_tracking_range)を試験員の実移動量に対して確保する
+                                      # のが現状の対策。トラッカー側の補償が改善するまでは
+                                      # 上げないこと
+    max_angular_accel_rad_s2: 3.0    # rad/s^2 旋回速度の加速側レート制限(急旋回防止。mapless と
+                                      # 同値。2026-07-24 実機検証: これが無いとbearingノイズが
+                                      # 1周期で w_max までの旋回指令に直結し機体が激しく揺れる)
+    max_angular_decel_rad_s2: 6.0    # rad/s^2 旋回速度の減速側レート制限。加速側より大きくして
+                                      # 目標を通り過ぎたと分かってから素早く止まれるようにする。
+                                      # 実機検証(2026-08-07)では発振の主因ではなかった(上記
+                                      # w_max_rad_s 参照)が、コマンドの滑らかさ自体は改善する
+                                      # ため維持する
+    angle_tolerance_rad: 0.05        # rad 正対完了とみなす角度誤差(evade_orient_tolerance_rad と同値)
+    min_confidence: 0.5              # 0.0-1.0 これ未満の confidence では旋回停止(summon_navigator と同値)
+
+    # ── 試験員ロスト判定のデバウンス ────────────────────────
+    lost_debounce_sec: 0.3           # s (mapless と同値・同根拠。DR-SPAAM 約2Hz推論での
+                                      # 単発検知ミスによる瞬間停止を防ぐ)
+
+    # ── 共通 ──────────────────────────────────────────────
+    update_rate_hz: 10.0             # Hz 制御ループ周期
+
 panel_navigator:
   ros__parameters:
     arrival_threshold_m: 0.3

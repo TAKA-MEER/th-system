@@ -9,6 +9,8 @@
 //               ↕
 //          SUMMONING (呼び寄せ。IDLE からのみ遷移し、到着/失敗/明示操作で IDLE に戻る)
 //               ↕
+//          FACING (その場旋回で正対のみ。展示用。IDLE からのみ遷移し MANUAL/IDLE とのみ相互遷移)
+//               ↕
 //             ESTOP (どの状態からでも割り込み)
 // ============================================================
 #include <rclcpp/rclcpp.hpp>
@@ -37,6 +39,7 @@ static std::string modeName(uint8_t m) {
         {RobotMode::ESTOP,           "ESTOP"},
         {RobotMode::FOLLOWING_MAPLESS, "FOLLOWING_MAPLESS"},
         {RobotMode::SUMMONING,        "SUMMONING"},
+        {RobotMode::FACING,           "FACING"},
     };
     auto it = names.find(m);
     return it != names.end() ? it->second : "UNKNOWN";
@@ -76,14 +79,16 @@ public:
                     bool person_dependent_mode =
                         (cm == RobotMode::FOLLOWING ||
                          cm == RobotMode::FOLLOWING_MAPLESS ||
-                         cm == RobotMode::SUMMONING);
+                         cm == RobotMode::SUMMONING ||
+                         cm == RobotMode::FACING);
                     bool any_active_mode =
                         (cm == RobotMode::FOLLOWING         ||
                          cm == RobotMode::MOVING_TO_PANEL    ||
                          cm == RobotMode::MANUAL             ||
                          cm == RobotMode::AT_PANEL           ||
                          cm == RobotMode::FOLLOWING_MAPLESS  ||
-                         cm == RobotMode::SUMMONING);
+                         cm == RobotMode::SUMMONING          ||
+                         cm == RobotMode::FACING);
 
                     bool should_force_idle = (msg->fault_type == "PERSON_TRACKER_LOST")
                         ? person_dependent_mode
@@ -135,6 +140,7 @@ private:
             return to == RobotMode::FOLLOWING ||
                    to == RobotMode::FOLLOWING_MAPLESS ||
                    to == RobotMode::SUMMONING ||
+                   to == RobotMode::FACING ||
                    to == RobotMode::MANUAL;
 
         case RobotMode::FOLLOWING:
@@ -147,6 +153,10 @@ private:
                    to == RobotMode::IDLE;
 
         case RobotMode::SUMMONING:
+            return to == RobotMode::MANUAL ||
+                   to == RobotMode::IDLE;
+
+        case RobotMode::FACING:
             return to == RobotMode::MANUAL ||
                    to == RobotMode::IDLE;
 

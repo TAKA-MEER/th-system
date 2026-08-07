@@ -221,6 +221,53 @@ class TestModeManagerTransitions(unittest.TestCase):
         self._request_mode(M.IDLE)
         self._wait_mode(M.IDLE)
 
+    def test_idle_to_facing(self):
+        """IDLE → FACING（展示用・正対旋回要求）"""
+        self._wait_mode(M.IDLE)
+        res = self._request_mode(M.FACING)
+        assert res.success
+        assert self._wait_mode(M.FACING)
+
+    def test_facing_to_idle(self):
+        """FACING → IDLE（明示操作）"""
+        self._wait_mode(M.IDLE)
+        self._request_mode(M.FACING)
+        self._wait_mode(M.FACING)
+        res = self._request_mode(M.IDLE)
+        assert res.success
+        assert self._wait_mode(M.IDLE)
+
+    def test_facing_to_manual(self):
+        """FACING → MANUAL"""
+        self._wait_mode(M.IDLE)
+        self._request_mode(M.FACING)
+        self._wait_mode(M.FACING)
+        res = self._request_mode(M.MANUAL)
+        assert res.success
+        assert self._wait_mode(M.MANUAL)
+
+    def test_following_mapless_cannot_go_to_facing_directly(self):
+        """FOLLOWING_MAPLESS → FACING は禁止（IDLE を経由する必要あり）"""
+        self._wait_mode(M.IDLE)
+        self._request_mode(M.FOLLOWING_MAPLESS)
+        self._wait_mode(M.FOLLOWING_MAPLESS)
+        res = self._request_mode(M.FACING)
+        assert not res.success
+        # クリーンアップ
+        self._request_mode(M.IDLE)
+        self._wait_mode(M.IDLE)
+
+    def test_manual_cannot_go_to_facing_directly(self):
+        """MANUAL → FACING は禁止（IDLE を経由する必要あり）"""
+        self._wait_mode(M.IDLE)
+        self._request_mode(M.MANUAL)
+        self._wait_mode(M.MANUAL)
+        res = self._request_mode(M.FACING)
+        assert not res.success
+        # クリーンアップ
+        self._request_mode(M.IDLE)
+        self._wait_mode(M.IDLE)
+
     def test_manual_to_idle_on_heartbeat_loss(self):
         """MANUAL 中の heartbeat 途絶相当 → IDLE"""
         self._wait_mode(M.IDLE)
@@ -293,6 +340,12 @@ class TestModeManagerTransitions(unittest.TestCase):
             self._request_mode(M.SUMMONING)
             self._wait_mode(M.SUMMONING)
         self._test_estop_from(M.SUMMONING, setup)
+
+    def test_estop_from_facing(self):
+        def setup():
+            self._request_mode(M.FACING)
+            self._wait_mode(M.FACING)
+        self._test_estop_from(M.FACING, setup)
 
     # ════════════════════════════════════════════════════════
     # 禁止遷移テスト（success=False が返るべき）
@@ -373,4 +426,17 @@ class TestModeManagerTransitions(unittest.TestCase):
         def setup():
             self._request_mode(M.SUMMONING)
             self._wait_mode(M.SUMMONING)
+        self._test_fault_from(setup, 'ESP32_DISCONNECTED')
+
+    def test_person_tracker_lost_fault_from_facing(self):
+        """FACING 中の PERSON_TRACKER_LOST → IDLE（試験員位置依存モードのため強制遷移）"""
+        def setup():
+            self._request_mode(M.FACING)
+            self._wait_mode(M.FACING)
+        self._test_fault_from(setup, 'PERSON_TRACKER_LOST')
+
+    def test_esp32_fault_from_facing(self):
+        def setup():
+            self._request_mode(M.FACING)
+            self._wait_mode(M.FACING)
         self._test_fault_from(setup, 'ESP32_DISCONNECTED')

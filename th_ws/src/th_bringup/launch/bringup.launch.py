@@ -267,6 +267,15 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 11c. face_planner (超信地旋回のみ・展示用。FACING 時のみ動作) ──
+    nodes.append(Node(
+        package='th_planning',
+        executable='face_planner.py',
+        name='face_planner',
+        parameters=[os.path.join(BRINGUP_DIR, 'config', 'planning_params.yaml')],
+        output='screen',
+    ))
+
     # ── 12. panel_navigator ───────────────────────────────
     nodes.append(Node(
         package='th_planning',

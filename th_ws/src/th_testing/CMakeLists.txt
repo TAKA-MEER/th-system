@@ -12,6 +12,9 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_summon_logic
     test/test_summon_logic.py
     TIMEOUT 30)
+  ament_add_pytest_test(test_face_planner_logic
+    test/test_face_planner_logic.py
+    TIMEOUT 30)
 
   # ── ROS2 ノード統合テスト ────────────────────────────────
   ament_add_pytest_test(test_mode_transitions

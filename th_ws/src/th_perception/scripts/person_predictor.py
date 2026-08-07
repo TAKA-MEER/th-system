@@ -154,6 +154,13 @@ class PersonPredictor(Node):
                 phase = "SEARCHING"
 
                 # FOLLOWING / FOLLOWING_MAPLESS モード中のみ旋回速度を発行
+                #
+                # FACING は意図的に含めない: face_planner はロスト中も毎周期ゼロ Twist を
+                # /cmd_vel_retreat へ明示発行し続ける(ESP32 キープアライブが古い非ゼロ指令を
+                # 再送し続ける事象を防ぐため。VISION.md §5 参照)。同じトピックへこの捜索旋回が
+                # 同程度の周期で割り込むと、両者が交互に勝つ形でジャダー(旋回とゼロの点滅)が
+                # 起きる。展示ブースでは近接遮蔽によるロストが起きやすくこの経路を頻繁に踏むため、
+                # FACING は捜索旋回をせず停止して待つ(2026-08-07 決定)。
                 if self._current_mode in (RobotMode.FOLLOWING, RobotMode.FOLLOWING_MAPLESS):
                     cmd = Twist()
                     cmd.angular.z = self._search_ang_vel
