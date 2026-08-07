@@ -9,11 +9,25 @@
 //      overrides で渡される。VISION.md §7.5) の WAV
 //   2. entry.file (マニフェストの静的な1ファイル) の WAV
 //   3. ビープ合成 (Tier 1 のプレースホルダ。1・2 がどちらも取得できない場合)
+//
+// 話者は setSpeaker() で切り替える。public/voice/<speaker>/<id>.mp3 のサブ
+// ディレクトリを読みに行くだけで、上記1・2どちらの経路にも同じ話者が適用される
 // ============================================================
 
 let ctx        = null   // AudioContext (ユーザー操作が来るまで生成しない)
 let masterGain = null
 const bufferCache = new Map()   // url → AudioBuffer
+
+// 話者。public/voice/<speaker>/<id>.mp3 のサブディレクトリ名と一致させる
+// (th_ws/scripts/generate_voice.py の VOICE_PROFILES.<id>.out_subdir と対応)。
+// nemo が通常運用の既定。zundamon は展示専用の例外採用
+// (docs/voice-credits.md「展示専用の例外: ずんだもん」参照)
+let currentSpeaker = 'nemo'
+
+/** 話者を切り替える。bufferCache は URL キーのため、切替後は自動的に別キャッシュになる */
+export function setSpeaker(id) { currentSpeaker = id }
+
+export function getSpeaker() { return currentSpeaker }
 
 function ensureContext() {
   if (ctx) return ctx
@@ -58,7 +72,7 @@ function withExt(name) {
 
 function clipUrl(name) {
   const base = import.meta.env.BASE_URL ?? '/'
-  return `${base}voice/${withExt(name)}`.replace(/\/{2,}/g, '/')
+  return `${base}voice/${currentSpeaker}/${withExt(name)}`.replace(/\/{2,}/g, '/')
 }
 
 async function loadBuffer(c, name) {

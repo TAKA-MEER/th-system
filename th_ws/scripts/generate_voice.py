@@ -7,13 +7,17 @@ web_ui/public/voice/ に書き出す。文案を直したらこれを流し直�
 ANNOUNCEMENTS (完成した1発話) に加え、数値分割合成用の語彙 CLIP_WORDS
 (数字・単位。VISION.md §7.5) も同じ要領で <id>.mp3 として生成する。
 
-前提: VOICEVOX Nemo Engine が起動していること (既定ポート 50121)。
-  Docker の voicevox_engine には Nemo は入っていない。詳細は docs/voice-credits.md
+前提: VOICE_PROFILES に登録した Engine が起動していること。
+  nemo    : VOICEVOX Nemo Engine (既定ポート 50121)。Docker の voicevox_engine には
+            Nemo は入っていない。詳細は docs/voice-credits.md
+  zundamon: 通常版 VOICEVOX Engine (既定ポート 50021)。展示専用の例外採用
+            （docs/voice-credits.md「展示専用の例外: ずんだもん」参照）
 
 使い方:
-  python3 generate_voice.py                 # 採用話者で全件生成
-  python3 generate_voice.py --speaker 10005 # 話者を変えて試す
-  python3 generate_voice.py --wav           # MP3 にせず WAV のまま出す
+  python3 generate_voice.py                    # --profile nemo (既定) で全件生成
+  python3 generate_voice.py --profile zundamon # ずんだもんで全件生成
+  python3 generate_voice.py --speaker 10005    # 話者だけ変えて試す (出力先はプロファイル既定のまま)
+  python3 generate_voice.py --wav              # MP3 にせず WAV のまま出す
   python3 generate_voice.py --only hokaku,0,1,2,meter  # id を絞って生成
 """
 from __future__ import annotations
@@ -31,8 +35,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import voice_dict  # noqa: E402
 from voice_audition import SYNTH_TUNING, api, synth, to_mp3  # noqa: E402
 
-# 採用話者: 女声3 (ゆう)。docs/voice-credits.md 参照
-DEFAULT_SPEAKER = 10004
+# 話者プロファイル。host/speaker/出力サブディレクトリをまとめて切り替える。
+# --host/--speaker/--out を個別指定した場合はそちらを優先する (プロファイルは既定値の束に過ぎない)。
+#
+# zundamon は展示専用の例外採用 (docs/voice-credits.md「展示専用の例外: ずんだもん」参照)。
+# 通常運用の既定は nemo のまま変えない。style id 3 は「ノーマル」(通常版 VOICEVOX Engine
+# の /speakers で確認済み)。話速チューニング (LONG_IDS/LONG_TUNING) は当面 nemo で実測した
+# 値をそのまま流用する — ずんだもんでの実測調整は未着手 (VISION.md §7.5 参照)。
+VOICE_PROFILES = {
+    'nemo':     {'host': 'http://127.0.0.1:50121', 'speaker': 10004, 'out_subdir': 'nemo'},
+    'zundamon': {'host': 'http://127.0.0.1:50021', 'speaker': 3,     'out_subdir': 'zundamon'},
+}
 
 # 長いフレーズだけ話速を上げ、句点の間を詰める。
 #
@@ -50,7 +63,7 @@ LONG_TUNING = {
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MANIFEST = os.path.join(REPO_ROOT, 'th_ws', 'web_ui', 'src', 'voice', 'announcements.js')
-DEFAULT_OUT = os.path.join(REPO_ROOT, 'th_ws', 'web_ui', 'public', 'voice')
+PUBLIC_VOICE_DIR = os.path.join(REPO_ROOT, 'th_ws', 'web_ui', 'public', 'voice')
 
 
 def load_manifest() -> list[dict]:
@@ -92,12 +105,22 @@ def load_manifest() -> list[dict]:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--host', default=voice_dict.DEFAULT_HOST)
-    ap.add_argument('--speaker', type=int, default=DEFAULT_SPEAKER)
-    ap.add_argument('--out', default=DEFAULT_OUT)
+    ap.add_argument('--profile', choices=sorted(VOICE_PROFILES), default='nemo',
+                     help='host/speaker/出力先をまとめて切り替える (既定 nemo)')
+    ap.add_argument('--host', default=None, help='未指定なら --profile の値を使う')
+    ap.add_argument('--speaker', type=int, default=None, help='未指定なら --profile の値を使う')
+    ap.add_argument('--out', default=None, help='未指定なら --profile の値を使う')
     ap.add_argument('--wav', action='store_true', help='MP3 に変換しない')
     ap.add_argument('--only', help='カンマ区切りの id だけ生成する (例: --only hokaku,0,1,meter)')
     args = ap.parse_args()
+
+    profile = VOICE_PROFILES[args.profile]
+    if args.host is None:
+        args.host = profile['host']
+    if args.speaker is None:
+        args.speaker = profile['speaker']
+    if args.out is None:
+        args.out = os.path.join(PUBLIC_VOICE_DIR, profile['out_subdir'])
 
     if not args.wav and not shutil.which('ffmpeg'):
         print('MP3 変換には ffmpeg が必要です (--wav で回避できます)', file=sys.stderr)
@@ -107,16 +130,17 @@ def main():
         speakers = json.loads(api(args.host, '/speakers'))
     except (urllib.error.URLError, OSError) as e:
         print(f'VOICEVOX Engine に接続できません ({args.host}): {e}', file=sys.stderr)
-        print('  VOICEVOX Nemo Engine を起動してください (docs/voice-credits.md 参照)',
-              file=sys.stderr)
+        print(f'  --profile {args.profile} が使う Engine を起動してください '
+              '(docs/voice-credits.md 参照)', file=sys.stderr)
         return 1
 
     found = next(((sp['name'], st['name'])
                   for sp in speakers for st in sp['styles']
                   if st['id'] == args.speaker), None)
     if found is None:
-        print(f'話者 id={args.speaker} が Engine にありません。'
-              f'Nemo Engine ではなく VOICEVOX 本体に繋いでいませんか',
+        print(f'話者 id={args.speaker} が Engine ({args.host}) にありません。'
+              f'--profile {args.profile} が想定する Engine (nemo=Nemo Engine port 50121 / '
+              f'zundamon=通常版 VOICEVOX Engine port 50021) に繋いでいませんか',
               file=sys.stderr)
         return 1
     print(f'話者: {found[0]} ({found[1]}, id={args.speaker})')

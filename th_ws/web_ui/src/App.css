@@ -862,8 +862,9 @@ body {
 }
 
 /* ── フッター (常時表示ゾーン) ───────────────────────────
-   VOICEVOX Nemo のクレジットは利用規約で必須のため、タブに入れず
-   ここに常設する (VISION.md §6.1・§7.5) */
+   音声クレジットは利用規約で必須のため、タブに入れず
+   ここに常設する (VISION.md §6.1・§7.5)。話者切替ボタン分、
+   3ボタンがここに並ぶ想定で max-width を確保している */
 .footer {
   flex-shrink: 0;
   display: flex;
@@ -873,7 +874,7 @@ body {
   background: #1a1d24;
   border-top: 1px solid #2a2d35;
 }
-.footer-voice { display: flex; gap: 0.5rem; flex: 1; max-width: 320px; }
+.footer-voice { display: flex; gap: 0.5rem; flex: 1; max-width: 480px; flex-wrap: wrap; }
 .footer .voice-toggle { padding: 0.5rem 0.25rem; font-size: 0.8rem; }
 .footer-audio-warn { font-size: 0.75rem; color: #ffcc80; }
 

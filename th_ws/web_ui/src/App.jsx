@@ -17,6 +17,11 @@ import './App.css'
 // モジュールスコープで一度だけ判定する
 const DEV_MODE = new URLSearchParams(window.location.search).get('dev') === '1'
 
+// 話者クレジット文言。選択中の話者によって規約上の必須表記が異なるため動的に出し分ける
+// (docs/voice-credits.md)。zundamon は展示専用の例外採用で、コロン・スペース無しの
+// 「VOICEVOX:ずんだもん」がずんだもんの利用規約が定める表記
+const CREDIT_TEXT = { nemo: 'VOICEVOX Nemo', zundamon: 'VOICEVOX:ずんだもん' }
+
 // タブ構成 (VISION.md §6.1)。運用フェーズ単位で分ける。
 // サブシステム単位に並べると走行中に不要なカードが画面を埋め、
 // 操作に必要なものがスクロールの外へ出てしまう
@@ -794,10 +799,11 @@ export default function App() {
         </div>
       )}
 
-      {/* ── フッター (常時表示。音声レイヤ + クレジット) ─────────
-          VOICEVOX Nemo のクレジットは利用規約で必須 (VISION.md §7.5 /
-          docs/voice-credits.md)。タブの中に入れると非表示になり得るため
-          常時表示ゾーンに置いている。消さないこと */}
+      {/* ── フッター (常時表示。音声レイヤ + 話者切替 + クレジット) ─
+          クレジットは利用規約で必須 (VISION.md §7.5 / docs/voice-credits.md)。
+          タブの中に入れると非表示になり得るため常時表示ゾーンに置いている。
+          消さないこと。話者切替に応じてクレジット文言も動的に変える必要がある
+          (Nemo と ずんだもんで規約が定める表記が異なるため) */}
       <footer className="footer">
         <div className="footer-voice">
           <button
@@ -812,11 +818,20 @@ export default function App() {
           >
             ♪ デモ実況
           </button>
+          {/* 展示専用の例外採用 (docs/voice-credits.md「展示専用の例外: ずんだもん」)。
+              通常運用は Nemo のまま。展示時だけここで切り替える */}
+          <button
+            className={`voice-toggle ${voice.speaker === 'zundamon' ? 'active' : ''}`}
+            onClick={() => voice.setSpeaker(voice.speaker === 'nemo' ? 'zundamon' : 'nemo')}
+            title="展示用の話者切替 (通常運用は Nemo のまま)"
+          >
+            ♪ {voice.speaker === 'nemo' ? 'ずんだもんに切替' : 'Nemo に切替'}
+          </button>
         </div>
         {!voice.audioReady && (
           <span className="footer-audio-warn">音声未許可 — 画面をタップ</span>
         )}
-        <span className="voice-credit">音声: VOICEVOX Nemo</span>
+        <span className="voice-credit">音声: {CREDIT_TEXT[voice.speaker]}</span>
       </footer>
 
     </div>

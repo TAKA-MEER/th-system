@@ -101,6 +101,7 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 ## クレジット
 
 音声アナウンスの音声合成に **VOICEVOX Nemo**（[https://voicevox.hiroshiba.jp/nemo/](https://voicevox.hiroshiba.jp/nemo/)）を使用しています。
+展示会場でのデモ用途では、話者を **VOICEVOX:ずんだもん**（[https://zunko.jp/](https://zunko.jp/)）に切り替えられます（通常運用の既定は Nemo のまま）。
 
 利用条件・遵守事項の詳細は [docs/voice-credits.md](docs/voice-credits.md) を参照してください。
 
