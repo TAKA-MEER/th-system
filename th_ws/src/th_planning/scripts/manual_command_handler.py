@@ -24,7 +24,13 @@ class ManualCommandHandler(Node):
         super().__init__('manual_command_handler')
 
         # ── パラメータ ──────────────────────────────────────
-        self.declare_parameter('heartbeat_timeout_sec', 1.0)
+        # 実機検証: WiFi(ESP32 AP)経由では /scan・wheel_feedback・/person/status
+        # とも平常時でも 0.5〜1.2秒程度の受信ギャップが時折発生する
+        # (safety_monitor.yaml 参照)。heartbeat も同じ WebSocket 経路(rosbridge)
+        # を使うため同様のギャップが起こりうる。1.0s のままだと理由もなく
+        # MANUAL → IDLE に落ち、手動ジョグが反応しなくなるため、他の安全
+        # タイムアウトと揃えて緩和する。
+        self.declare_parameter('heartbeat_timeout_sec', 2.5)
         self.declare_parameter('check_period_ms',       200)
         self.declare_parameter('base_frame',            'base_link')
         self.declare_parameter('map_frame',             'map')

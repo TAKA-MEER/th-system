@@ -56,9 +56,16 @@ PYTHONPATH=~/esptool_env/site-packages python3 -m esptool \
 
 - `wheel_feedback` は `/cmd_vel` の有無に関わらず**毎周期(10 Hz)送信**される
   (停止中に止めると safety_monitor が ESP32_DISCONNECTED を誤検知し odom/TF も途絶するため)
+- `wheel_feedback` には左右速度に加えて**その速度を算出した制御周期 `dt_sec`** を載せる
+  (2026-08-06、9→13 byte)。esp32_bridge はこれをオドメトリの積分区間として使う。
+  到着時刻から推測すると WiFi 遅延がそのまま yaw ドリフトになるため。
+  ブリッジは旧形式(9 byte)も受理するので、**書き込み前の個体でもそのまま動く**
+  (公称周期にフォールバックするだけ)。ただし旋回精度の改善は書き込み後に効く
 - WebSocket は接続 5 分ごとに**定期リフレッシュ**(意図的な再接続)。ログの周期的な
   接続/切断は正常。死活検知は 3 秒周期の ping/pong ハートビート
-- ウォッチドッグ: `wheel_cmd` が 300ms 途絶するとモーターを強制停止(ROS 非依存の最終安全)
+- ウォッチドッグ: `wheel_cmd` が 600ms 途絶するとモーターを強制停止(ROS 非依存の最終安全。
+  esp32_bridge が 20Hz キープアライブで再送するため、TCP 再送タイムアウトを踏まえ
+  300ms→600ms に緩和。2026-08-05・`docs/architecture.md`「ESP32側の二重フェイルセーフ」)
 
 ## 速度制御 (PID + フィードフォワード)
 
@@ -70,7 +77,7 @@ PID_KFF = 280 [PWM/(m/s)]   フィードフォワード。モーターは速度�
                             (実測: FF なしだと指令 0.1 m/s に対し 4 秒で 0.07 m/s 止まり)。
 PID_KP/KI/KD (左右別)       FF が基準を出し、PID は誤差補正を担う
 TARGET_RAMP_ACCEL_MPS2      目標速度のランプ (起動時振動の防止)
-WATCHDOG_MS = 300           wheel_cmd 途絶 → モーター停止
+WATCHDOG_MS = 600           wheel_cmd 途絶 → モーター停止
 ```
 
 チューニング手順:

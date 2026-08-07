@@ -4,7 +4,7 @@
 #
 # 起動オプション:
 #   use_stub:=true    試験員トラッカーをスタブに切替 (デフォルト: false)
-#   imu_enabled:=true IMU 入力を EKF に追加 (デフォルト: false)
+#   imu_enabled:=true IMU 入力を EKF に追加 (デフォルト: false。要ファーム更新)
 #   map_yaml:=<path>  使用する地図ファイル (デフォルト: 空=SLAM マッピングモード)
 #   lidar_source:=local    USB直結のsllidar_nodeを起動 (デフォルト)
 #   lidar_source:=network  ラズパイ等が配信する/scanを使用 (ローカル起動なし。
@@ -25,7 +25,6 @@ from launch_ros.parameter_descriptions import ParameterValue
 BRINGUP_DIR  = get_package_share_directory('th_bringup')
 DESC_DIR     = get_package_share_directory('th_description')
 NAV2_DIR     = get_package_share_directory('nav2_bringup')
-SLAM_DIR     = get_package_share_directory('slam_toolbox')
 
 
 def generate_launch_description():
@@ -33,8 +32,15 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument('use_stub',    default_value='false',
                               description='試験員トラッカーをスタブで代替'),
+        # 既定 false: ジャイロ単位の修正(2026-08-06、esp32/src/imu.cpp)を含む
+        # ファームウェアを書き込み、実機でヨーレートを検証するまでは有効にしない。
+        # 未修正のファームは angular_velocity を dps で送ってくるため、rad/s
+        # 規定として読む EKF が 57.3 倍のヨーレートを信じてオドメトリが壊れる。
+        # 検証手順は docs/architecture.md「IMU (DSR1603 / BNO055) 追加」参照。
         DeclareLaunchArgument('imu_enabled', default_value='false',
-                              description='IMU を EKF に追加'),
+                              description='IMU (DSR1603/BNO055) の vyaw を EKF に追加。'
+                                          'ジャイロ単位修正済みファームの書き込みと'
+                                          '実機検証が済んでから true にすること'),
         DeclareLaunchArgument('map_yaml',    default_value='',
                               description='地図 YAML パス (空=SLAM モード)'),
         DeclareLaunchArgument('log_level',   default_value='info'),
@@ -153,13 +159,16 @@ def generate_launch_description():
     # ── 5. robot_localization (EKF) ──────────────────────
     nodes.append(LogInfo(
         condition=IfCondition(imu_enabled),
-        msg='imu_enabled=true: ekf_params.yaml (エンコーダ+IMU) を使用します。'
-            'DSR1603のキャリブレーション未実施の場合は ros2 run th_calibration '
-            'imu_calib_check.py で確認してください。',
+        msg='imu_enabled=true: ekf_params.yaml (エンコーダ+IMUのvyaw) を使用します。'
+            'ジャイロ単位修正(2026-08-06)を含むファームウェアが書き込まれていることを'
+            '確認してください。未修正だと角速度が dps で届き、EKF が 57.3 倍の'
+            'ヨーレートを信じてオドメトリが壊れます。'
+            'キャリブレーションは ros2 run th_calibration imu_calib_check.py で確認。',
     ))
     nodes.append(LogInfo(
         condition=UnlessCondition(imu_enabled),
-        msg='imu_enabled=false (既定): ekf_params_no_imu.yaml (エンコーダのみ) を使用します。',
+        msg='imu_enabled=false (既定): ekf_params_no_imu.yaml (エンコーダのみ) を使用します。'
+            'クローラの超信地旋回スリップによる yaw 誤差は補正されません。',
     ))
     nodes.append(Node(
         package='robot_localization',
@@ -334,16 +343,35 @@ def generate_launch_description():
     # ── 16. SLAM Toolbox (map_yaml が空 = デフォルト。実機は毎回このモード) ──
     # 地図作成自体の開始/停止は WebUI 経由の slam_control ノードが
     # pause_new_measurements をトグルして制御する（VISION.md §7 参照）。
-    slam_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(SLAM_DIR, 'launch', 'online_async_launch.py')),
-        launch_arguments={
-            'slam_params_file': slam_yaml,
-            'use_sim_time':     'false',
-        }.items(),
+    # online_async_launch.py (= async_slam_toolbox_node) は使わない。
+    # map_and_localization_slam_toolbox_node は /slam_toolbox/set_localization_mode
+    # (std_srvs/SetBool) を持ち、mapping ⇄ localization を同一プロセス内で
+    # ランタイム切替できる。これが「地図作成停止 = 地図は凍結・自己位置推定は継続」
+    # の要件を満たす唯一の手段 (VISION.md §8)。
+    #
+    # 旧実装は async ノード + pause_new_measurements だったが、これはスキャン処理
+    # そのものを止めるため停止後は map→odom が凍結しデッドレコニングになる
+    # (2026-08-07 実機で確認)。
+    #
+    # ノード名は slam_toolbox のまま維持する。サービス名 (/slam_toolbox/*) と
+    # slam_params.yaml のパラメータキーが変わらないようにするため。
+    # なお本ノードは slam_toolbox の experimental/ 配下の実装である。
+    #
+    # respawn: 2026-08-07 実機で SIGSEGV (exit code -11) で落ちるのを確認した。
+    # 落ちたままだと map→odom が消えて自己位置が失われ、それに気づかず走り
+    # 続けることになる。dr_spaam_ros と同じ理由で自動再起動させる。
+    # 再起動後は mapping モードに戻るため、slam_control がサービスの再出現を
+    # 検知して停止状態を再適用する。
+    nodes.append(Node(
+        package='slam_toolbox',
+        executable='map_and_localization_slam_toolbox_node',
+        name='slam_toolbox',
+        parameters=[slam_yaml, {'use_sim_time': False}],
+        output='screen',
+        respawn=True,
+        respawn_delay=2.0,
         condition=IfCondition(map_is_empty),
-    )
-    nodes.append(slam_launch)
+    ))
 
     # ── 17. AMCL + map_server (map_yaml 指定時のみ。UI には出さない休眠経路) ──
     localization_launch = IncludeLaunchDescription(

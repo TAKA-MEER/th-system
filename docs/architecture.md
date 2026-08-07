@@ -22,7 +22,9 @@
 ```txt
 優先度（高い方が優先）:
   255: /safety/estop      lock   — E-Stop 発動中は全入力を無視してゼロ出力
-  254: /safety/fault_lock lock   — フォルト検知時も同様
+  254: /safety/fault_lock lock   — LIDAR_LOST/ESP32_DISCONNECTED 検知時も同様
+                                  （PERSON_TRACKER_LOST はここには含めない。
+                                    走行の物理安全とは無関係なため。下記参照）
    20: /cmd_vel_retreat   topic  — follow_planner からの近接退避指令・person_predictor からの捜索旋回指令（Nav2 を迂回）
    10: /cmd_vel_nav       topic  — Nav2 controller_server の通常出力
 ```
@@ -56,11 +58,13 @@ case RobotMode::IDLE:
 
 - `IDLE → FOLLOWING` および `IDLE → MANUAL` は外部からのサービス呼び出し（明示操作）のみで発生し、自動では遷移しない。ロボットが操作者の意図しないタイミングで動き出すことを防ぐための方針。
 - `ESTOP` へはどのモードからも即座に遷移できる。`ESTOP` からは `IDLE` にのみ遷移できる。
-- フォルト（`/safety/fault`）は `FOLLOWING`・`MOVING_TO_PANEL`・`MANUAL`・`AT_PANEL` のいずれからでも `IDLE` へ強制遷移させる。`IDLE` 中のフォルトはモード変化を起こさない。
+- フォルト（`/safety/fault`）は `LIDAR_LOST`・`ESP32_DISCONNECTED` の場合、`FOLLOWING`・`MOVING_TO_PANEL`・`MANUAL`・`AT_PANEL`・`FOLLOWING_MAPLESS`・`SUMMONING` のいずれからでも `IDLE` へ強制遷移させる。`PERSON_TRACKER_LOST` は試験員位置に依存するモード（`FOLLOWING`・`FOLLOWING_MAPLESS`・`SUMMONING`）のみを対象とし、`MANUAL`・`MOVING_TO_PANEL`・`AT_PANEL` は人物データが無関係なため強制遷移させない（VISION.md §5, 2026-07-24 決定）。`IDLE` 中のフォルトはモード変化を起こさない。
 
 ### heartbeat によるMANUAL自動解除
 
-`manual_command_handler` はタブレット UI からの `/manual/heartbeat`（`std_msgs/Empty`、2 Hz）を監視します。1 秒間受信がない場合は通信断と判断し、`/mode_manager/set_mode` を呼び出して `IDLE` へ遷移させます。これは想定外の切断（Wi-Fi 瞬断・ブラウザクラッシュ等）に対するフェイルセーフです。タブレットから意図的に `MANUAL` を終了した場合（「追従再開」ボタン押下）は、`FOLLOWING` へ直接遷移します。
+`manual_command_handler` はタブレット UI からの `/manual/heartbeat`（`std_msgs/Empty`、2 Hz）を監視します。既定 2.5 秒間（`heartbeat_timeout_sec`）受信がない場合は通信断と判断し、`/mode_manager/set_mode` を呼び出して `IDLE` へ遷移させます。これは想定外の切断（Wi-Fi 瞬断・ブラウザクラッシュ等）に対するフェイルセーフです。タブレットから意図的に `MANUAL` を終了した場合（「追従再開」ボタン押下）は、`FOLLOWING` へ直接遷移します。
+
+（2026-07-24: 実機の WiFi(ESP32 AP)経由では `/scan`・`wheel_feedback`・`/person/status` と同様に heartbeat も 0.5〜1.2 秒程度の受信ギャップが時折発生することが判明したため、1.0 秒から 2.5 秒に緩和した。`safety_monitor.yaml` の同種タイムアウトと揃えている）
 
 ---
 
@@ -152,13 +156,58 @@ ROS2 側の `safety_monitor` に加え、ESP32 ファームウェアにもウォ
 ```txt
 ROS2 クラッシュ・USB 切断発生
   ↓ （同時に独立して動作）
-[ESP32 側] wheel_cmd 受信が WATCHDOG_MS(300ms) 途絶
+[ESP32 側] wheel_cmd 受信が WATCHDOG_MS(600ms) 途絶
            → モーター強制停止（ハードウェアレベル）
 [ROS2 側]  safety_monitor が wheel_feedback 途絶を esp32_timeout_ms(500ms) で検知
            → /safety/fault 発行 → twist_mux ロック
 ```
 
-ESP32 ウォッチドッグ（300ms）の方が safety_monitor（500ms）より先に作動する設計です。これにより ROS2 側の処理が間に合わなくても物理停止が保証されます。
+2026-08-05 に WATCHDOG_MS を 300ms → 600ms に緩和したため、通常の WS 切断（ESP32 が生きた
+まま ROS2 側の受信が途絶えるケース）では safety_monitor（500ms）の方が ESP32 ローカル
+ウォッチドッグ（600ms）より先に作動するようになった。ただし ESP32 ローカルウォッチドッグの
+本質的な役割は「ROS2/PC プロセスそのものが丸ごと落ちた場合」の最終防波堤であり、その場合
+safety_monitor 自身も道連れで停止し `/safety/fault` を発行できないため、両者の速さの比較は
+意味を持たない。この場合に効くのは ESP32 ローカルウォッチドッグ（600ms）のみであり、いずれの
+故障モードでも 600ms 以内に物理停止することは変わらず保証される。
+
+**WHEEL_CMD キープアライブ（2026-08-05 追加）**: `esp32_bridge` は `/cmd_vel` のコールバック
+受信時だけでなく、最新値を 20Hz のタイマーで ESP32 へ再送し続ける（`esp32_bridge.py` の
+`_cb_cmd_vel_keepalive`）。実機ログで、ESP32-PC 間の WiFi ジッタ（`docs/network.md` 記載:
+平常時でも 0.5〜1.2 秒）により WHEEL_CMD の到達間隔が 300ms を超え、直進走行中に
+ウォッチドッグが誤発動して一瞬停止する事象を確認したため導入。ROS2/`esp32_bridge` が本当に
+クラッシュすればこの再送タイマーごと停止するため、最終保証の性質は変わらない。
+
+**ロック中の強制ゼロ化（2026-08-06 追加）**: `twist_mux` はロック作動中、優先度を持つ速度
+トピック受信時に無出力（silent）になり得る実装であり、必ずしも `/cmd_vel` へゼロ Twist を
+明示発行するとは限らない。上記キープアライブは「最後に受信した `/cmd_vel`」を再送し続ける
+ため、ロック作動時に twist_mux が無出力のままだとロック前の非ゼロ指令が再送され続け、
+ESP32 側ウォッチドッグも誤発動しない（＝停止しない）事象が起こり得る（手動ジョグで前進
+入力を保持したまま E-Stop を発動した際に発覚）。このため `esp32_bridge` は `/safety/estop`
+と `/safety/fault_lock` を直接購読し、いずれかが有効な間は `/cmd_vel` の内容によらずゼロ
+速度を ESP32 へ送信する（`_send_wheel_cmd` 内でロック状態を確認）。twist_mux の出力仕様に
+依存しない独立したロック適用層として動作する。
+
+このときキープアライブが参照する `_last_cmd_vel`（最後に受信した `/cmd_vel`）自体も
+ロック中は毎回ゼロへ書き換える。これを怠ると、ロック解除の瞬間にロック発動前の古い
+非ゼロ指令がそのまま再送され、E-Stop 解除直後（IDLE 中）に前進指令が復活する事象が起きる
+（`_cb_cmd_vel` が新しい `/cmd_vel` を受信するまで `_last_cmd_vel` が更新されないため。
+2026-08-06 発覚・修正）。
+
+さらに `/safety/estop` / `/safety/fault_lock` そのものが途絶した場合（`safety_monitor` の
+クラッシュ等）も、`twist_mux.yaml` の `locks.*.timeout`(0.5s) と同じ考え方でフェイルセーフに
+ロック扱いにする。単純な bool ラッチのままだと、safety_monitor が非ロック状態（`data: false`）
+のまま停止した場合に「ロックされていない」状態が固定され、上記と同じ非ゼロ指令の再送が
+別経路で再発する。`esp32_bridge` は `_cb_estop` / `_cb_fault_lock` 受信時刻を記録し、
+`_send_wheel_cmd` で 0.5 秒（`twist_mux.yaml` と同値）を超えて更新が無ければロック扱いに
+する（起動直後、両トピックとも未受信の間もロック扱い）。
+
+**WATCHDOG_MS 300ms→600ms への緩和（2026-08-05 追加）**: キープアライブ導入後も実機で
+ウォッチドッグ誤発動が残ることを確認した。WebSocket は TCP 上に乗っており、1 パケットの
+ロスが再送(ACK待ち)完了までの間、後続パケットの受信をブロックする（Head-of-Line
+blocking）ため、アプリ層の送信頻度を上げるだけでは TCP 再送タイムアウト（数百ms〜1秒
+程度）に起因する詰まりを防げない。実測ジッタ（`docs/network.md`: 0.5〜1.2秒）を踏まえ、
+`config.h` の `WATCHDOG_MS` を 600ms に緩和した。ファームウェア変更のため再フラッシュが
+必要。
 
 ### E-Stop の集約
 
@@ -240,6 +289,18 @@ ESP32 ⇔ esp32_bridge は WebSocket バイナリフレーム通信（`th_ws/esp
 
 bridge 側は `/esp32/imu_data`（`sensor_msgs/Imu`, frame_id=`imu_link`）と `/esp32/imu_calib_status`（`std_msgs/UInt8`）を発行する。
 
+`WHEEL_FEEDBACK (0x02)` は 2026-08-06 に 9 → 13 byte へ拡張し、末尾に float32 の `dt_sec`（ESP32 が `velL = counts * distPerCount / dt` で速度を求めるのに使った制御周期）を追加した。bridge はこれをオドメトリの積分区間と `/odom` のヘッダスタンプの刻みに使う。到着時刻から推測すると、WiFi の遅延（0.5〜1.2 秒、`docs/network.md`）がそのまま yaw ドリフトになるため。**旧形式（9 byte）も引き続き受理する**ので、ファームウェア書き込み前の個体でも同じ bridge で動く（その場合は `feedback_period_ms` の公称値にフォールバックする）。
+
+**フレーム間の TF と EKF の関係**
+
+`odom → base_link` の TF を発行するのは `ekf_filter_node`（robot_localization）**だけ**で、`esp32_bridge` は `publish_tf: false`（`th_esp32_bridge/config/params.yaml`）にして `/odom` の発行のみを担当する。両方が発行すると TF ツリーが二重親になって壊れる。
+
+この配線は 2026-08-06 に是正したもので、それ以前は EKF が `publish_tf: false`・`imu_enabled` 既定 `false` で、TF は `esp32_bridge` が生のエンコーダ値のまま発行していた。`/odometry/filtered` を購読するノードも 1 つも無かったため、**IMU を有効にしても補正が SLAM/Nav2 に一切届かない死んだ枝**になっていた。
+
+EKF が融合するのは**ジャイロの `vyaw` のみ**で、`yaw`（絶対方位）は使わない（`ekf_params.yaml` の `imu0_config`）。BNO055 は Adafruit ライブラリ既定の NDOF モードで動くため orientation は地磁気参照の絶対方位になり、屋内の磁気擾乱でヨーが飛ぶ。`world_frame: odom` の EKF に入れると「局所的に連続でなめらか」という odom フレームの要件が壊れ、scan matching が破綻する。クローラのスリップで欠けているのは yaw の**変化量**なので、ジャイロ角速度だけで目的を達成できる。
+
+副次効果として TF が EKF の `frequency`（30Hz）で定常発行されるようになる。`esp32_bridge` は `wheel_feedback` を受信した瞬間にしか TF を出せなかったため、WiFi 途絶中は TF ごと途切れて slam_toolbox がスキャンを捨てていた。
+
 **キャリブレーション**
 
 BNO055 の地磁気センサはロボットごとに8の字運動でのキャリブレーションが必要（DSR1603 マニュアル記載: 上下左右に8の字を描くように2回転）。`ros2 run th_calibration imu_calib_check.py` で `/esp32/imu_calib_status` を監視し、sys/gyro/accel/mag が全て 3(Fully calibrated) になるまで操作案内を表示する。
@@ -256,8 +317,8 @@ ros2 topic echo /esp32/imu_data
 # 3. 8の字キャリブレーションを実施
 ros2 run th_calibration imu_calib_check.py
 
-# 4. EKF を IMU 入力有効に切替えて起動
-#    imu_enabled:=true で ekf_params.yaml（imu0込み）、false（既定）で
+# 4. 上記「ジャイロの単位」の検証手順を通してから IMU 入力を有効にする
+#    true で ekf_params.yaml（imu0込み）、false(既定) で
 #    ekf_params_no_imu.yaml（エンコーダのみ）を選択する
 ros2 launch th_bringup bringup.launch.py imu_enabled:=true
 
@@ -266,7 +327,55 @@ ros2 launch th_bringup bringup.launch.py imu_enabled:=true
 #    ekf_params.yaml の process_noise_covariance を実機データで調整
 ```
 
-`imu_enabled` は DSR1603 未装着の機体を壊さないようデフォルト `false`（エンコーダのみ）。装着・キャリブレーション済みの機体でのみ `true` を指定すること。
+### 直進ドリフト補正 (2026-07-25 追加)
+
+直進指令中(左右目標速度が等しい)に一方向へ逸れるクセ(タイヤ径公差・摩擦差等)を補正する機能。`th_ws/esp32/src/main.cpp` の `computeDriftCorrection()` が制御周期ごとに左右輪の目標速度へ小さな差動バイアスを加える(`rampLeft`/`rampRight` を PID へ渡す直前に加算するため、前進速度の合計には影響しない)。
+
+- **基本方式(IMU検出時)**: 実測ヨーレート(`wz`, 目標=0)を使った PI 制御。定数は `config.h` の `DRIFT_KP_YAW`/`DRIFT_KI_YAW`/`DRIFT_ITERM_MAX_MPS`/`DRIFT_CORRECTION_MAX_MPS`。
+- **フォールバック(IMU未検出時)**: `DRIFT_TRIM_MPS` の固定トリム値(既定 0.0 = 補正なし)。実機で直進走行させズレを見ながら調整する。
+- **適用条件**: `|targetLeft - targetRight| < DRIFT_STRAIGHT_THRESHOLD_MPS` の間のみ適用。旋回指令中は無効化し積分もリセットする(意図した旋回に補正が干渉しないようにするため)。E-Stop/ウォッチドッグ発動時・WS切断時も積分をリセットする。
+
+**⚠️ 符号の実機検証が必須**: BNO055 の `wz` の符号は実装向き・軸割り当てに依存し、コードだけからは断定できない。実機で直進コマンドを送り、ズレが改善するかを目視確認すること。悪化する場合は `config.h` の `DRIFT_IMU_SIGN` を反転(`+1.0f` ⇔ `-1.0f`)して再検証する。
+
+### 車輪速度の指令/実測比較 (`/esp32/wheel_cmd_speed`, WebUI速度表示カード, 2026-07-25 追加)
+
+`esp32_bridge` は `/cmd_vel` を差動駆動変換した左右目標速度(ESP32 へ `WHEEL_CMD` で送る値と同じ)を `/esp32/wheel_cmd_speed`(`th_system_msgs/WheelFeedback` 型を指令値側に再利用)として発行する。WebUI の「車輪速度」カード(`web_ui/src/WheelSpeedView.jsx`)がこれと実測値 `/esp32/wheel_feedback` を左右輪ごとに直近15秒の時系列グラフで重畳表示し、PID の追従遅れ・定常偏差・振動を目視で確認できるようにしている。PID ゲイン自体(`config.h` の `PID_KP_*`/`PID_KI_*`/`PID_KD_*`)は現状コンパイル時定数のままで、WebUI からのライブ調整は未対応(将来検討)。
+
+**ジャイロの単位（2026-08-06 修正、要再書き込み）**
+
+`Adafruit_BNO055::getVector(VECTOR_GYROSCOPE)` は **dps（度/秒）** を返す。ライブラリの `begin()` 内で `UNIT_SEL` レジスタを書く処理はコメントアウトされており、BNO055 は電源投入時の既定単位（`GYR_Unit = 0 = dps`）のまま動く。`getVector()` の除数もそれに合わせた dps 用スケーリング（`/16.0`）で、Euler が `/16` = 度、加速度が `/100` = m/s² と 3 つとも既定単位で一貫している。
+
+`esp32/src/imu.cpp` にはこれを「rad/s（ライブラリ仕様）」とする誤ったコメントがあり、値をそのまま rad/s として扱っていた（**57.3 倍**）。影響は 2 箇所:
+
+1. **直進ドリフト補正の発振**（`main.cpp` の `computeDriftCorrection()`）。ループゲインは設計値 0.385 のはずが約 22 になり、実ヨーレート 0.012 rad/s 相当で既に `DRIFT_CORRECTION_MAX_MPS`（±0.1 m/s）へ飽和する。事実上常時飽和して `wz` の符号反転ごとに反転する bang-bang 振動になり、**直進時のみ左右に振動する**（旋回中は `goingStraight` が false でループが開くため出ない）。WebUI の速度グラフでは「指令付近で実測が振動」に見える — 指令側 `/esp32/wheel_cmd_speed` は esp32_bridge が `/cmd_vel` から計算する値で、ESP32 内部で足される補正量を含まないため。
+
+   **ただしこれは DSR1603 が実装・初期化されている場合に限る。** `computeDriftCorrection()` は `imuPresent` が false なら `DRIFT_TRIM_MPS`（既定 0.0）を返すだけで何もしない。切り分けは ESP32 のシリアル（`/dev/ttyUSB1`, 115200）に毎 5 周期出ている `[DBG]` 行を直進走行中に見る:
+
+   | 観測 | 結論 |
+   | --- | --- |
+   | `drift=0.0000` のまま | IMU 未実装。振動の原因は別。PID の速度域依存を疑う（直進 0.3 m/s に対し旋回は片輪 0.098 m/s と約 3 倍違い、`PID_KP` は左右で 210/120 と 1.75 倍非対称） |
+   | `drift` が ±0.1000 を往復 | bang-bang 発振で確定 |
+   | ほぼ直進中の `wz` が 20〜30 | dps で確定 |
+   | ほぼ直進中の `wz` が 0.3〜0.5 | 既に rad/s。単位の前提が崩れるので再調査 |
+2. **`/esp32/imu_data` の `angular_velocity`**。`sensor_msgs/Imu` は rad/s 規定なので、EKF が 57.3 倍のヨーレートを信じてオドメトリが壊れる。
+
+`imu.cpp` で dps → rad/s に変換して修正した。**この修正を含むファームウェアを書き込むまで `imu_enabled:=true` にしてはいけない。** 未修正のファームを検知できるよう、`esp32_bridge` は `|wz| > 10 rad/s` でエラーログを出す（低速域では dps の値も閾値を下回るため、気づくための警告であって保証ではない）。
+
+**検証手順**（再書き込み後）:
+
+```bash
+# 1. 静止させてゼロ付近か
+ros2 topic echo /esp32/imu_data --field angular_velocity.z
+# 2. 手で 90 度ゆっくり回し、積分値が約 1.57 rad になるか
+#    (dps のままなら約 90 になる)
+# 3. 直進させて振動が消えたか、WebUI の速度グラフで確認
+```
+
+**残る要検証項目**: `config.h` の `DRIFT_IMU_SIGN` は「実機で必ず検証すること」とコメントされたまま未検証。単位を直した後で符号が逆だと、今度は正帰還になって直進中に一方向へ逸れ続ける。上記 3 で振動が消えても真っ直ぐ走らない場合はここを反転して再検証する。
+
+**新しい失敗モード（要監視）**: `imu_enabled:=true` にすると、BNO055 のジャイロバイアスがオドメトリに乗る。`ekf_params.yaml` の `imu0` 側の `vyaw` 共分散（0.0025）は `odom0` 側（0.05）の 1/20 なので、EKF はジャイロを強く信頼する。キャリブレーション未実施でバイアスが残っていると、**静止中でも odom がじわじわ回り続ける**。従来は EKF の出力自体が使われていなかったためこの経路は存在しなかった。`ros2 run th_calibration imu_calib_check.py` で gyro が 3（Fully calibrated）になっていることを確認すること。
+
+`imu_enabled` の既定は `false` のまま（上記の再書き込みと検証が済むまで有効にしない）。DSR1603 未装着の個体でも `Imu::init()` が失敗を検出して `IMU_DATA` を送らないだけで、EKF は `odom0` のみで動作するので壊れない。
 
 ---
 
@@ -354,6 +463,33 @@ panels:
 `person_tracker_bridge.py` が `following_position.status`
 （`0=NO_EXISTS` / `1=EXISTS_LEG`）を `PersonStatus.is_lost` に変換する薄い変換ノード。
 `th_ws/src/th_perception/scripts/person_tracker_bridge.py` を参照。
+
+### 自機回転補償（2026-08-06 追加）
+
+`PersonTracker` は追跡状態（KF の位置・速度、`previous_target_`、ロスト時の最終位置・速度、
+操作者が指定した cold-acquire シード）を `target_frame_` = `base_link` 相対で保持する。この
+座標系はロボットと一緒に回るため、**静止した試験員でも自機が角速度 ω で旋回すれば見かけ上
+ω·d で流れる**。DR-SPAAM は CPU 推論で約 2Hz（1フレーム約 0.5 秒）しかないため、旋回中は
+1フレームあたり ω·d·0.5 だけ見かけ位置が飛び、対応付けゲート `leg_tracking_range`（1.10m）を
+超えて対象を取り落としていた。
+
+`compensateEgoMotion()`（`multiple_sensor_person_tracker_component.cpp`）が検出フレームごとに
+`odom → base_link` の変化から剛体変換を求め、対応付けの前に追跡状態を現フレームへ移す。
+KF 側は `KalmanFilter::applyFrameTransform(R, t)` が位置 `p'=Rp+t`・速度 `v'=Rv`・
+共分散 `P'=JPJ^T`（`J=blockdiag(R,R)`）で状態を移す。TF が引けない場合とオドメトリの不連続
+（2m/2rad 超）は補償を見送り、基準姿勢を破棄して次フレームから取り直す。
+
+**ゲート半径を広げて対処してはいけない**（VISION.md §4）。机・椅子の脚へ乗り移る誤追跡
+（2026-07-11 実機で確認）が再発する。旋回による見かけの移動は補償で消すのが正で、ゲートは
+試験員の実移動量に対して設定する。
+
+本補償は `odom` の品質に依存するため、上記「IMU (DSR1603 / BNO055) 追加」の EKF 融合と対で成立する。
+
+なお同時に、`KalmanFilter` の状態遷移行列が生成時の `dt`（0.033s）で組まれたきり更新されず、
+`compute(dt, ...)` の `dt` が Q にしか渡っていなかった不具合を修正した。約 2Hz の実測間隔
+（0.5秒）を 0.033 秒のステップで説明することになり速度推定が約 15 倍に膨れ、
+`FollowingPosition.velocity` を入力とする遮蔽復帰ロジック（速度依存の coast 時間・出現点の
+外挿・速度整合による同一人物判定）がいずれも機能していなかった。
 
 human_kenchi 自体の3パッケージ（`multiple_observation_kalman_filter` /
 `multiple_sensor_person_tracking` / `leg_detection_bringup`）は
@@ -487,6 +623,10 @@ ros2 topic echo /person/status --once
 
 6. web_ui/src/App.jsx（MODE 定数・ボタン・modeColor）と
    web_ui/src/hooks/useRosbridge.js（MODE_NAMES）に追加
+   ※ ボタンは「運用」タブのモード操作カードに置く。画面は
+      運用 / 準備 / 診断の 3 タブ構成（VISION.md §6.1）で、
+      緊急停止・モード表示・接続状態・音声クレジットは
+      タブ外の常時表示ゾーンに固定されている
 ```
 
 新しいモードは常に「ESTOP からは IDLE のみ経由で復帰」「IDLE への安全側遷移を持つ」「フォルト発生時は IDLE へ強制遷移する」という設計方針に従ってください。
@@ -495,8 +635,9 @@ ros2 topic echo /person/status --once
 
 ## WebUI 設定パネル（パラメータ調整）
 
-VISION.md §6 の完成形を実装したもの。タブレット WebUI（`web_ui/src/SettingsPanel.jsx`）から
+VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web_ui/src/SettingsPanel.jsx`）から
 `follow_planner_mapless` の数値パラメータと `lidar_filter.blind_angle_ranges` を確認・変更できる。
+設定パネル自体はタブに属さないオーバーレイで、ヘッダーの ⚙ からどのタブでも開ける。
 
 ### 構成
 
@@ -555,6 +696,47 @@ VISION.md §7 の未確定事項を参照。
 
 ---
 
+## WebUI 観客向け表示（デモ展示用）
+
+VISION.md §6.3 の完成形を実装したもの。`?view=audience` を付けて開くと、操作 UI の代わりに
+観客向けの 2 ペイン表示（左=センサが見る世界 / 右=ロボットの判断）がマウントされる。
+
+```
+web_ui/src/
+  main.jsx                    ?view=audience でツリーごと分岐 (App か AudienceView か)
+  mapGeometry.js              worldToCanvas / baseToWorld — MapView と共有
+  audience/
+    AudienceView.jsx          2ペインのシェル・レイヤトグル・キー 1〜6
+    WorldCanvas.jsx           点群 + 脚検出候補 + 追跡対象 + 地図 + 経路 + 軌跡
+    JudgementPanel.jsx        モード・人の認識・追従状態・実況ログ
+    captionSink.js            音を鳴らさず字幕ログを作る (voiceQueue の代替)
+```
+
+### 設計上、崩してはいけない点
+
+- **`main.jsx` で分岐する（App 内で分岐しない）。** 操作 UI のジョグ用 `setInterval`・音声・
+  heartbeat が観客画面では起動しないことを構造で保証している。
+- **`useRosbridge(url, { readOnly: true })` を必ず渡す。** publish を止める。特に
+  `/manual/heartbeat` が二重に流れると MANUAL のハートビート源が観客画面にも依存する。
+- **`captionSink.js` から `voiceQueue.js` / `audioPlayer.js` を import しない。** 観客画面は
+  ROS2 スタックのホスト機で動くため、ここから音が出ると VISION.md §7.1/§7.2 の
+  「ロボット側スピーカーは持たない」に反する。import しないこと自体が保証になっている。
+- **地図が無いときはロボット中心表示へフォールバックする。** 主運用の FOLLOWING_MAPLESS は
+  地図作成を開始するまで `/map` が流れない。`WorldCanvas.jsx` の `makeProjector()` が
+  地図あり / なしの座標系差を吸収しているので、描画本体は分岐を持たない。
+
+### 表示端末
+
+ROS2 スタックのホスト機（現行構成では PC 側。ラズパイは LiDAR と ESP32 シリアルのみ）で
+localhost 配信を開き、その映像出力をディスプレイへ回す。`useRosbridge` の既定 URL は
+「ページを配信しているホストの 9090」なので、localhost 配信なら rosbridge 接続も localhost に
+閉じ、ESP32 SoftAP の帯域を使わない。
+
+`/map` は観客画面側のみ `throttle_rate: 2000` で購読し（`mapThrottleMs` オプション）、
+描画は `requestAnimationFrame` で約 10fps に制限してホスト機の CPU を空けている。
+
+---
+
 ## パラメータチューニングガイド
 
 上記の WebUI 設定パネルで調整できるパラメータ（follow_planner_mapless の数値パラメータ全数、
@@ -602,6 +784,11 @@ obstacle_check_half_width_deg: 20.0°
 
 v_max: 0.3 m/s
   → 走行速度の上限。現場の安全要件に応じて調整
+
+max_linear_accel_mps2 / max_linear_decel_mps2
+max_angular_accel_rad_s2
+  → 急加減速・急旋回で機体が揺れる場合は小さく(滑らかになるが反応は遅くなる)
+  → 追従が遅れて感じる場合は大きく(ただし機体の実際の加減速性能を超えないこと)
 ```
 
 ### フォルト検知タイムアウト（safety_monitor.yaml）

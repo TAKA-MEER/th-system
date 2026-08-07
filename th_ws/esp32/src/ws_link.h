@@ -34,7 +34,10 @@ void onWheelCmd(void (*callback)(float left, float right));
 // WS切断検知時に呼ばれる (即座にモーター停止するため)
 void onDisconnect(void (*callback)());
 
-void sendWheelFeedback(float left, float right);
+// dtSec: この left/right を算出した制御周期[s]。ブリッジ側はこれを
+// オドメトリの積分区間として使うため、速度算出に使った値をそのまま渡すこと
+// (2026-08-06 追加。ws_protocol.py のフレーム定義と必ず一致させる)。
+void sendWheelFeedback(float left, float right, float dtSec);
 void sendEstopHw(bool active);
 void sendImuData(float qw, float qx, float qy, float qz,
                   float wx, float wy, float wz,

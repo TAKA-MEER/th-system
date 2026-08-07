@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 作業開始前のルール
+
+**実装作業に入る前に必ず `git status` を確認し、作業前から存在する未コミットの変更がないか調べること。**
+
+- 未コミットの変更があれば、着手前にユーザーへ提示して扱いを確認する（先にコミットするか、そのまま残すか）。ユーザーが別のターミナルや別セッションで進行中の作業であることが多い。
+- 勝手にコミットも破棄もしない。確認せずに作業を始めると、こちらの変更と混ざって切り分けられなくなる。
+- コミット時は自分が変更したファイルだけをステージする。`git add -A` / `git add .` は作業前からあった変更を巻き込むため使わない。
+- この環境では `git add -p` が使えない（対話的フラグ非対応）ため、1つのファイルに複数の関心事の変更を混ぜると後からコミットを分割できない。無関係な変更を同じファイルに同時に入れないよう作業順序を組む。
+
 ## 方針変更時のルール
 
 このリポジトリでは `VISION.md`(README.md と同じ階層)に、ユーザーが目指す「完成形」(最終的なシステム像・挙動・要件)を記述している。
@@ -10,9 +19,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `docs/architecture.md` は現状実装の保守・拡張ガイド(as-built)であり、`VISION.md` とは役割が異なる(目指す姿 vs 今の実装)。両者が食い違う場合は VISION.md 側を優先して実装を追いつかせる。
 
+## このファイル自体の保守ルール
+
+- 作業中に判明したこのプロジェクト固有の環境の癖・落とし穴（コマンドの意外な挙動、ツールの制約など）は、ユーザーに確認せず「環境の癖」セクションに追記してよい。
+- **CLAUDE.md を更新するたびに、ファイル全体を読み直し、陳腐化した記述・重複・冗長な説明がないか見直すこと。** コンテキストを圧迫しないよう、価値の下がった記述は削除するか簡潔にまとめる。肥大化を優先して情報を積み増すだけにしない。
+
+## 環境の癖・注意点
+
+- `ros2 node list` はデーモンキャッシュの影響で新規ノードが反映されないことがある。`ros2 node list --no-daemon`（または `ros2 daemon stop` 後に再実行）で確実に最新状態を取得する。
+- **`th_robot` コンテナはユーザーが実機作業中のセッションであることがある。** デバッグ用にノードを起動・停止する前に必ず `docker exec th_robot ps -eo pid,etimes,args` で稼働中のプロセスを確認し、自分が起動したものだけを PID 指定で止めること（実際に `rotation_calib.py` が 50 分間走っている最中に遭遇した）。
+- `docker exec th_robot bash -lc '... pkill -f <pattern> ...'` は、パターンがこのシェル自身のコマンドライン（`-lc` の引数文字列全体）にマッチして**自分を殺す**。出力が一切出ず exit 143 になったらこれを疑う。スクリプトをファイルに書いてから実行するか、PID 指定で止める。
+- 長時間動くノード（`component_container_mt` 等）を `docker exec` から `&` で起動すると、シェル終了時に道連れになる。`setsid ... > log 2>&1 < /dev/null &` で切り離す。
+- **ノードを `kill -9` で落とすことを繰り返すと、コンテナ内の DDS discovery が壊れる。** 症状は「ノードは起動しログも出ているのに、他プロセスからサービス/トピックが一切見つからない」。`ls /dev/shm | wc -l` で `fastrtps_*` の残骸が溜まっているか確認する（ROS プロセスが 0 なのに大量にあれば該当）。`/dev/shm` の掃除だけでは直らないことがあり、その場合はコンテナ再起動が必要。デバッグ用ノードは `kill -TERM` で落とすこと。
+
 ## 開発環境
 
 すべての ROS2 コマンドは Docker コンテナ内（または ROS2 Humble がインストールされた環境）で実行する。
+
+Windows では Docker Desktop ではなく **WSL2 内の Docker Engine** でコンテナを起動する。`docker compose` はこの WSL2 側の Docker Engine に接続されるため、コマンドは WSL2 のシェル（または WSL2 統合が有効なターミナル）から実行すること。
 
 ```bash
 # Linux
@@ -104,30 +128,49 @@ safety_monitor ─→ /safety/fault_lock (lock 254) ─────────�
 
 `safety_monitor`（C++）が `/safety/estop` と `/safety/fault_lock` を twist_mux に送る。`mode_manager` の処理を待たずに twist_mux がモーターをゼロにする（フォルト検知 → 物理停止は 100ms 以内）。
 
-ESP32 には独立したウォッチドッグ（300ms）があり、ROS2 がクラッシュしても停止できる。
+ESP32 には独立したウォッチドッグ（600ms、`config.h` の `WATCHDOG_MS`）があり、ROS2 がクラッシュしても停止できる。esp32_bridge は `/cmd_vel` を20Hzキープアライブで再送しており、WiFi ジッタによる誤発動を避けるため2026-08-05に300ms→600msへ緩和した（詳細: `docs/architecture.md`「ESP32側の二重フェイルセーフ」）。
+
+### オドメトリと TF
+
+```
+ESP32 (WHEEL_FEEDBACK: 左右速度 + dt) ─→ esp32_bridge ─→ /odom (publish_tf は false)
+                                                            ↓
+ESP32 (IMU_DATA: BNO055) ─→ /esp32/imu_data ─→ ekf_filter_node ─→ odom→base_link TF
+```
+
+**不変ルール**: `odom → base_link` の TF を発行するのは `ekf_filter_node` だけ。`esp32_bridge` の `publish_tf` を true に戻してはいけない（TF ツリーが二重親になる）。
+
+- EKF が融合する IMU 入力は**ジャイロの `vyaw` のみ**。BNO055 は NDOF モードで絶対方位（地磁気参照）を返すため、屋内の磁気擾乱でヨーが飛ぶ。`world_frame: odom` に絶対方位を入れてはいけない。
+- オドメトリの積分区間は ESP32 が `WHEEL_FEEDBACK` に載せてくる `dt`。到着時刻から推測してはいけない（WiFi 遅延がそのまま yaw ドリフトになる）。旧形式の 9 byte フレームも受理する。
 
 ### モード FSM
 
 `mode_manager.cpp` の `isTransitionAllowed()` で遷移を制御:
 
 ```
-IDLE → FOLLOWING, MANUAL
+INIT → IDLE のみ
+IDLE → FOLLOWING, FOLLOWING_MAPLESS, SUMMONING, MANUAL
 FOLLOWING → MANUAL, MOVING_TO_PANEL, IDLE
+FOLLOWING_MAPLESS → MANUAL, IDLE
+SUMMONING → MANUAL, IDLE
 MOVING_TO_PANEL → AT_PANEL, MANUAL, IDLE
-AT_PANEL → MANUAL, IDLE
-MANUAL → FOLLOWING, IDLE
+AT_PANEL → FOLLOWING, MANUAL, IDLE
+MANUAL → FOLLOWING, FOLLOWING_MAPLESS, IDLE
 any → ESTOP
 ESTOP → IDLE のみ
 ```
 
-フォルト発生時は FOLLOWING / MOVING_TO_PANEL / MANUAL / AT_PANEL → IDLE へ強制遷移。IDLE 中のフォルトはモード変化なし。
+フォルト発生時は動作系モード（FOLLOWING / FOLLOWING_MAPLESS / SUMMONING / MOVING_TO_PANEL / AT_PANEL / MANUAL）から IDLE へ強制遷移。IDLE 中のフォルトはモード変化なし。
+
+ただし `PERSON_TRACKER_LOST` だけは例外で、試験員データを使うモード（FOLLOWING / FOLLOWING_MAPLESS / SUMMONING）からのみ強制遷移する。MANUAL ジョグや配電盤移動は人物データを使わないため継続できる（VISION.md §5）。
 
 ### カスタムメッセージ型（th_system_msgs）
 
-- `RobotMode.msg` — mode フィールド (uint8) と定数 IDLE=1, FOLLOWING=2, MOVING_TO_PANEL=3, AT_PANEL=4, MANUAL=5, ESTOP=6
+- `RobotMode.msg` — mode フィールド (uint8) と定数 INIT=0, IDLE=1, FOLLOWING=2, MOVING_TO_PANEL=3, AT_PANEL=4, MANUAL=5, ESTOP=6, FOLLOWING_MAPLESS=7, SUMMONING=8
 - `PersonStatus.msg` — `position`（ロボット base_link 基準の相対座標 m）, `confidence`, `is_lost`, `lost_reason`
 - `FaultStatus.msg` — `active`, `fault_type` ("LIDAR_LOST" / "ESP32_DISCONNECTED" / "PERSON_TRACKER_LOST")
-- `WheelFeedback.msg` — ESP32 から届く左右ホイール実速度
+- `WheelFeedback.msg` — ESP32 から届く左右ホイール実速度(`/esp32/wheel_feedback`)。指令値側にも同型を再利用し `/esp32/wheel_cmd_speed`(esp32_bridge が `/cmd_vel` から計算)として発行、WebUI の速度表示カードで指令vs実測を比較する
+- 状態 publish 3種（`FollowStatus` = `/follow/status`、`SearchStatus` = `/person/search_status`、`SummonStatus` = `/summon_navigator/status`）— 追従・捜索・呼び寄せの内部状態。音声アナウンスと WebUI 表示のトリガ源。**state / reason / phase の文字列定義は各 .msg のコメントが正**なので、写像を書くときは必ずそちらを見る
 
 ### シミュレーション固有のノード
 
@@ -141,6 +184,8 @@ ESTOP → IDLE のみ
 | 対象 | ファイル |
 |------|---------|
 | 追従ロジック全般 | `th_bringup/config/planning_params.yaml` |
+| オドメトリ融合（EKF） | `th_bringup/config/ekf_params.yaml`（IMU有効・既定） / `ekf_params_no_imu.yaml` |
+| 人物トラッカー | `leg_detection_bringup/param/leg_tracker_param.yaml` |
 | 安全タイムアウト（実機） | `th_safety/config/safety_monitor.yaml` |
 | 安全タイムアウト（シミュ） | `th_bringup/config/safety_monitor_sim.yaml` |
 | twist_mux 優先度 | `th_safety/config/twist_mux.yaml` |

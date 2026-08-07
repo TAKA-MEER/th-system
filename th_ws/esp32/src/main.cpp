@@ -35,6 +35,11 @@ static volatile float targetRight = 0.0f;
 static float rampLeft  = 0.0f;
 static float rampRight = 0.0f;
 
+// ── 直進ドリフト補正 ─────────────────────────────────────────
+// IMU 実測ヨーレート(wz)を使った PI 制御の積分項。旋回指令中・停止中は
+// リセットする(旋回終了後に持ち越さない、停止中に積み上がらない)。
+static float driftIntegral = 0.0f;
+
 // value を target に向かって最大 maxStep だけ動かす (加減速どちらも対応)
 static float rampToward(float value, float target, float maxStep) {
     if (value < target) return min(value + maxStep, target);
@@ -47,10 +52,17 @@ static void onWheelCmd(float left, float right) {
     targetLeft  = left;
     targetRight = right;
     last_cmd_ms = millis();
+#if LOG_EVERY_WHEEL_CMD
     // 通信テスト用ログ。開発ボード単体での書き込み・通信確認に使う
     // (WsLink::sendEstopHw は毎周期送信されるので、モーター未接続でも
     //  ws_test_server.py 側でこの受信ログと突き合わせて双方向通信を確認できる)
+    //
+    // 既定で無効(config.h)。これは WebSocket の受信コールバック内で走り、
+    // esp32_bridge のキープアライブ(20Hz)ぶんだけ毎秒発火する。1行35文字を
+    // 115200bps へ吐くとシリアルバッファが埋まった時点でブロックするため、
+    // 受信処理そのものを遅らせる。走行中の常用ログには向かない。
     Serial.printf("[WHEEL_CMD] left=%.3f right=%.3f\n", left, right);
+#endif
 }
 
 // ── WS切断時コールバック: 即座に停止 (ウォッチドッグを待たない) ──
@@ -62,6 +74,34 @@ static void onWsDisconnect() {
     targetRight = 0.0f;
     rampLeft    = 0.0f;
     rampRight   = 0.0f;
+    driftIntegral = 0.0f;
+}
+
+// ── 直進ドリフト補正 ─────────────────────────────────────────
+// 直進指令中(左右目標速度がほぼ等しい)のみ左右輪へ差動バイアスを加える。
+// IMU 検出時は実測ヨーレート(wz, 目標=0)の PI 制御、未検出時は固定トリムに
+// フォールバックする。戻り値は左右へ均等に反対符号で加える補正量[m/s]。
+static float computeDriftCorrection(bool imuPresentNow, float wz, float dt) {
+    bool goingStraight =
+        fabsf(targetLeft - targetRight) < DRIFT_STRAIGHT_THRESHOLD_MPS &&
+        (fabsf(targetLeft) > 0.001f || fabsf(targetRight) > 0.001f);
+
+    if (!goingStraight) {
+        driftIntegral = 0.0f;
+        return 0.0f;
+    }
+
+    if (!imuPresentNow) {
+        return DRIFT_TRIM_MPS;
+    }
+
+    // 目標ヨーレート0との誤差。DRIFT_IMU_SIGN は実機で wz の符号が
+    // 逆だった場合に反転する(config.h 参照)。
+    float yawRateError = -DRIFT_IMU_SIGN * wz;
+    driftIntegral = constrain(driftIntegral + DRIFT_KI_YAW * yawRateError * dt,
+                               -DRIFT_ITERM_MAX_MPS, DRIFT_ITERM_MAX_MPS);
+    float correction = DRIFT_KP_YAW * yawRateError + driftIntegral;
+    return constrain(correction, -DRIFT_CORRECTION_MAX_MPS, DRIFT_CORRECTION_MAX_MPS);
 }
 
 // ── 制御タイマーコールバック ─────────────────────────────────
@@ -93,7 +133,20 @@ static void cbCtrlTimer() {
     float velL = (float)cntL * distPerCount / dt;   // m/s
     float velR = (float)cntR * distPerCount / dt;   // m/s
 
+    // ── IMU 読み取り (未実装個体はスキップ) ───────────────────────
+    // ドリフト補正(下記)と IMU_DATA 送信の両方で使うため、周期の頭で
+    // 一度だけ読む(BNO055 への I2C アクセスを重複させない)。
+    float imu_qw = 1.0f, imu_qx = 0.0f, imu_qy = 0.0f, imu_qz = 0.0f;
+    float imu_wx = 0.0f, imu_wy = 0.0f, imu_wz = 0.0f;
+    float imu_ax = 0.0f, imu_ay = 0.0f, imu_az = 0.0f;
+    uint8_t imu_calibStatus = 0;
+    if (imuPresent) {
+        Imu::read(imu_qw, imu_qx, imu_qy, imu_qz, imu_wx, imu_wy, imu_wz,
+                   imu_ax, imu_ay, imu_az, imu_calibStatus);
+    }
+
     float outR = 0.0f, outL = 0.0f;
+    float driftCorrection = 0.0f;
     if (estopActive || watchdogTripped) {
         Motor::stopAll();
         pidRight.reset();
@@ -102,15 +155,22 @@ static void cbCtrlTimer() {
         targetRight = 0.0f;
         rampLeft    = 0.0f;
         rampRight   = 0.0f;
+        driftIntegral = 0.0f;
     } else {
         // ── 目標速度を加速度制限してランプ ──────────────────────
         float rampStep = TARGET_RAMP_ACCEL_MPS2 * dt;
         rampLeft  = rampToward(rampLeft,  targetLeft,  rampStep);
         rampRight = rampToward(rampRight, targetRight, rampStep);
 
+        // ── 直進ドリフト補正 (config.h 参照) ────────────────────
+        // + で右輪を増速(左へ補正)、- で左輪を増速(右へ補正)。
+        driftCorrection = computeDriftCorrection(imuPresent, imu_wz, dt);
+        float rampRightCorrected = rampRight + driftCorrection / 2.0f;
+        float rampLeftCorrected  = rampLeft  - driftCorrection / 2.0f;
+
         // ── PID 速度制御 → PWM 正規化 (-1.0 〜 1.0) ────────────
-        outR = pidRight.compute(rampRight, velR, dt) / 255.0f;
-        outL = pidLeft.compute(rampLeft,  velL, dt) / 255.0f;
+        outR = pidRight.compute(rampRightCorrected, velR, dt) / 255.0f;
+        outL = pidLeft.compute(rampLeftCorrected,  velL, dt) / 255.0f;
 
         Motor::setRight(outR);
         Motor::setLeft(outL);
@@ -122,22 +182,23 @@ static void cbCtrlTimer() {
     // odom/TF も途絶して Nav2 が動けなくなる(実機検証で判明)。
     // 「切断検知」は通信途絶そのもので判定されるべきで、フィードバック送信を
     // 止めることを安全機構にしてはいけない。
-    WsLink::sendWheelFeedback(velL, velR);
+    // dt も送る: ブリッジ側はこれをオドメトリの積分区間に使う。到着時刻から
+    // 推測させると WiFi の遅延がそのまま yaw ドリフトになる (2026-08-06)。
+    WsLink::sendWheelFeedback(velL, velR, dt);
 
     // ── IMU 送信 (未実装個体はスキップ) ───────────────────────────
     if (imuPresent) {
-        float qw, qx, qy, qz, wx, wy, wz, ax, ay, az;
-        uint8_t calibStatus;
-        Imu::read(qw, qx, qy, qz, wx, wy, wz, ax, ay, az, calibStatus);
-        WsLink::sendImuData(qw, qx, qy, qz, wx, wy, wz, ax, ay, az, calibStatus);
+        WsLink::sendImuData(imu_qw, imu_qx, imu_qy, imu_qz,
+                             imu_wx, imu_wy, imu_wz,
+                             imu_ax, imu_ay, imu_az, imu_calibStatus);
     }
 
     // デバッグ用一時ログ: 原因切り分け後に削除すること
     static int dbgCounter = 0;
     if (++dbgCounter >= 5) {
         dbgCounter = 0;
-        Serial.printf("[DBG] estop=%d watchdog=%d tgtL=%.2f tgtR=%.2f rmpL=%.2f rmpR=%.2f velL=%.3f velR=%.3f outL=%.3f outR=%.3f\n",
-                      estopActive, watchdogTripped, targetLeft, targetRight, rampLeft, rampRight, velL, velR, outL, outR);
+        Serial.printf("[DBG] estop=%d watchdog=%d tgtL=%.2f tgtR=%.2f rmpL=%.2f rmpR=%.2f velL=%.3f velR=%.3f outL=%.3f outR=%.3f drift=%.4f wz=%.3f\n",
+                      estopActive, watchdogTripped, targetLeft, targetRight, rampLeft, rampRight, velL, velR, outL, outR, driftCorrection, imu_wz);
     }
 
     // E-Stop 状態を送信 (毎周期)

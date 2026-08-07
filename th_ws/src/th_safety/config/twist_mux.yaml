@@ -34,8 +34,13 @@ twist_mux:
         priority: 10
 
       # タブレットUIのジョグ操作 (MANUAL モード時のみ UI 側が発行。
-      # Nav2/map 不要の直接速度指令。timeout 0.5s なので押下をやめれば止まる)
+      # Nav2/map 不要の直接速度指令。timeout で押下をやめれば止まる。
+      # 実機検証: WiFi(ESP32 AP)経由の rosbridge WebSocket は他の安全系
+      # トピックと同様に 0.5〜1.2秒程度の受信ギャップが時折発生するため、
+      # 0.5s のままだとキーを押し続けていても一時的に停止してしまう。
+      # 1.0s に緩和(手放し/タブレット切断時の停止までの遅れとのトレードオフ。
+      # 2026-07-24 決定)。
       manual_joy:
         topic:   /cmd_vel_manual
-        timeout: 0.5
+        timeout: 1.0
         priority: 30

@@ -62,17 +62,34 @@ public:
             });
 
         // フォルト: FOLLOWING/MOVING_TO_PANEL/MANUAL/AT_PANEL → IDLE
+        //
+        // PERSON_TRACKER_LOST（試験員追跡データの途絶）は LIDAR_LOST /
+        // ESP32_DISCONNECTED と異なり、走行そのものが危険になるわけではない。
+        // 試験員位置に依存するモード（FOLLOWING/FOLLOWING_MAPLESS/SUMMONING）
+        // でのみ IDLE へ強制遷移させ、人物データを使わない MANUAL ジョグや
+        // MOVING_TO_PANEL まで巻き添えで止めない（VISION.md §5, 2026-07-24 決定）。
         sub_fault_ = create_subscription<FaultStatus>(
             "/safety/fault", 10,
             [this](const FaultStatus::SharedPtr msg) {
                 if (msg->active) {
                     uint8_t cm = current_mode_;
-                    if (cm == RobotMode::FOLLOWING         ||
-                        cm == RobotMode::MOVING_TO_PANEL    ||
-                        cm == RobotMode::MANUAL             ||
-                        cm == RobotMode::AT_PANEL           ||
-                        cm == RobotMode::FOLLOWING_MAPLESS  ||
-                        cm == RobotMode::SUMMONING) {
+                    bool person_dependent_mode =
+                        (cm == RobotMode::FOLLOWING ||
+                         cm == RobotMode::FOLLOWING_MAPLESS ||
+                         cm == RobotMode::SUMMONING);
+                    bool any_active_mode =
+                        (cm == RobotMode::FOLLOWING         ||
+                         cm == RobotMode::MOVING_TO_PANEL    ||
+                         cm == RobotMode::MANUAL             ||
+                         cm == RobotMode::AT_PANEL           ||
+                         cm == RobotMode::FOLLOWING_MAPLESS  ||
+                         cm == RobotMode::SUMMONING);
+
+                    bool should_force_idle = (msg->fault_type == "PERSON_TRACKER_LOST")
+                        ? person_dependent_mode
+                        : any_active_mode;
+
+                    if (should_force_idle) {
                         transition(RobotMode::IDLE,
                                    "フォルト検知: " + msg->fault_type);
                     }

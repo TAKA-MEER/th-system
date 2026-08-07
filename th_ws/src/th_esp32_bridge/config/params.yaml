@@ -3,8 +3,16 @@ esp32_bridge:
     wheel_base:    0.39     # m — キャリブ後に apply_calib で更新 (再起動不要で即時反映)
     odom_frame:    "odom"
     base_frame:    "base_link"
-    publish_tf:    true
+    # odom → base_link TF は ekf_filter_node (robot_localization) が発行するため
+    # ここでは出さない。両方が出すと TF ツリーが二重親になり壊れる。
+    # 本ノードは /odom (エンコーダ生値) の発行のみを担当し、EKF がそれを
+    # IMU と融合して TF を出す (2026-08-06 変更・VISION.md §9 行12)。
+    # シミュレーション (gazebo.launch.py) では本ノード自体が起動しないため無関係。
+    publish_tf:    false
     feedback_timeout_ms: 500   # ESP32 フィードバック死活監視タイムアウト (ms)
+    feedback_period_ms:  100   # ESP32 の制御周期 (esp32/src/config.h の CTRL_PERIOD_MS)。
+                               # WHEEL_FEEDBACK 1 フレームが表す走行時間 = オドメトリ積分の dt。
+                               # config.h を変更したらここも必ず合わせること。
     ws_host: "0.0.0.0"      # WebSocket サーバー bind アドレス (ESP32 が接続しにくる側)
     # ESP32 側 wifi_credentials.h の WS_SERVER_PORT と一致させる。
     # 8766 で直接待ち受ける (実機検証 2026-07-11: WSL mirrored networking でも

@@ -34,6 +34,9 @@ function decodeParamValue(pv) {
 // フリーズしないようにするタイムアウト (ms)
 const TUNABLE_SERVICE_TIMEOUT_MS = 5000
 
+// 速度表示カードで保持する履歴の長さ (秒)
+const WHEEL_HISTORY_SEC = 15
+
 function withTimeout(promise, label) {
   return new Promise((resolve, reject) => {
     const id = setTimeout(
@@ -58,7 +61,15 @@ function encodeParamValue(value, { isArray = false, isInt = false } = {}) {
 
 // 既定はページを配信しているホスト (ロボットPC) の rosbridge に接続する。
 // 別ホストの rosbridge へ接続する場合は呼び出し側で url を指定する。
-export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
+//
+// readOnly: 観客向け表示 (VISION.md §6.3) 用。ROS2 への publish を一切
+// 行わない。特に /manual/heartbeat を止めることが目的で、これが二重に
+// 流れると MANUAL のハートビート源が観客画面にも依存してしまう。
+// 既定は false = 従来どおりの操作 UI 向け動作。
+// mapThrottleMs: /map (OccupancyGrid) は 1 通で数百 KB になり得る。観客表示は
+// 秒単位の更新で十分なので間引いて購読負荷を下げる。0 = 間引かない (既定)。
+export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
+                             { readOnly = false, mapThrottleMs = 0 } = {}) {
   const rosRef  = useRef(null)
   const [connected, setConnected]   = useState(false)
   const [mode, setMode]             = useState(null)
@@ -68,16 +79,40 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
   const [personStatus, setPersonStatus] = useState(null)
   const [candidates, setCandidates]     = useState([])
   const [mappingActive, setMappingActive] = useState(false)
+  // 直近の地図操作の結果文字列 ("OK: ..." / "NG: ...")。slam_control が publish する。
+  // サービス応答を取りこぼしても、何が起きたか画面に残るようにするため
+  const [slamLastResult, setSlamLastResult] = useState(null)
   const [actionError, setActionError]     = useState(null)  // 直近のサービス呼び出し失敗理由 (WebUI表示用)
+  // 直近のサービス呼び出し結果 (音声アナウンスのトリガ用)。actionError と違い成功も記録し、
+  // seq が単調増加するため同じ結果が連続してもエッジとして検出できる
+  const [lastAction, setLastAction]       = useState(null)  // { seq, kind, ok, message }
+  // 追従・捜索・呼び寄せの内部状態 (音声通知のトリガ用)
+  const [followStatus, setFollowStatus]   = useState(null)  // th_system_msgs/FollowStatus
+  const [searchStatus, setSearchStatus]   = useState(null)  // th_system_msgs/SearchStatus
+  const [summonStatus, setSummonStatus]   = useState(null)  // { seq, event, message }
+  const summonSeqRef = useRef(0)
   const [mapData, setMapData]             = useState(null)   // 最新の nav_msgs/OccupancyGrid、未受信なら null
   const [robotPose, setRobotPose]         = useState(null)   // map座標系での {x, y, yaw}、未確定なら null
   const [scanData, setScanData]           = useState(null)   // 最新の sensor_msgs/LaserScan (/scan_filtered)、未受信なら null
   const [pathData, setPathData]           = useState(null)   // 最新の nav_msgs/Path (/plan)、未受信なら null
+  const [wheelSpeedData, setWheelSpeedData] = useState({ measured: [], command: [] })
+  // 左右輪 指令vs実測 速度グラフ用の直近履歴 ({t, left, right} の配列)
 
   // TF合成用の中間状態 (毎tick再レンダーさせないため ref で保持)
   const mapOdomRef      = useRef(null)  // 最新の map->odom (geometry_msgs/Transform)
   const odomBaseRef     = useRef(null)  // 最新の odom->base_link 相当 (geometry_msgs/Transform)
   const lastPoseEmitRef = useRef(0)     // クライアント側間引き用タイムスタンプ
+
+  const measuredWheelBufRef = useRef([])  // {t, left, right} (受信時刻, 実測 m/s)
+  const commandWheelBufRef  = useRef([])  // {t, left, right} (受信時刻, 指令 m/s)
+
+  // サービス応答を購読トピックから復元することはできないため、結果をイベントとして
+  // 1本流す。受け手 (useVoiceTriggers) が kind を見て何を鳴らすか決める。
+  const actionSeqRef = useRef(0)
+  const bumpAction = useCallback((kind, ok, message) => {
+    actionSeqRef.current += 1
+    setLastAction({ seq: actionSeqRef.current, kind, ok, message: message ?? '' })
+  }, [])
 
   // ── 接続 ──────────────────────────────────────────────────
   useEffect(() => {
@@ -122,6 +157,33 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     subPerson.subscribe((msg) => setPersonStatus(msg))
 
+    // ── 購読: 追従ロジックの内部状態 (音声通知用) ───────────
+    // 発行側で「変化時 + 1Hz」に間引いてあるため、ここでの throttle は不要
+    const subFollowStatus = new ROSLIB.Topic({
+      ros, name: '/follow/status',
+      messageType: 'th_system_msgs/FollowStatus'
+    })
+    subFollowStatus.subscribe((msg) => setFollowStatus(msg))
+
+    // ── 購読: 捜索段階 (音声通知用) ─────────────────────────
+    const subSearchStatus = new ROSLIB.Topic({
+      ros, name: '/person/search_status',
+      messageType: 'th_system_msgs/SearchStatus'
+    })
+    subSearchStatus.subscribe((msg) => setSearchStatus(msg))
+
+    // ── 購読: 呼び寄せイベント (音声通知用) ─────────────────
+    // 到着と中止はどちらも SUMMONING→IDLE 遷移になるため、モードだけでは
+    // 区別できない。seq を振ってエッジとして扱えるようにする
+    const subSummonStatus = new ROSLIB.Topic({
+      ros, name: '/summon_navigator/status',
+      messageType: 'th_system_msgs/SummonStatus'
+    })
+    subSummonStatus.subscribe((msg) => {
+      summonSeqRef.current += 1
+      setSummonStatus({ seq: summonSeqRef.current, event: msg.event, message: msg.message })
+    })
+
     // ── 購読: 追従対象候補一覧 ──────────────────────────────
     const subCandidates = new ROSLIB.Topic({
       ros, name: '/sobits_follower/multiple_sensor_person_tracking/person_candidates',
@@ -136,10 +198,35 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     subMapping.subscribe((msg) => setMappingActive(msg.data))
 
+    // ── 購読: /slam_control/last_result ────────────────────
+    // 観客用ページは別の useRosbridge インスタンスなので、操作用で地図を
+    // 破棄しても直接は伝わらない。破棄の結果をここで拾って両方の表示を
+    // 揃える。/map は破棄直後には届かない (slam_toolbox はポーズグラフから
+    // 作り直したときにしか publish しない) ため、受信待ちにはできない。
+    //
+    // このトピックは transient_local なので、後から購読すると過去の結果が
+    // 1 通ラッチされて届く。それで地図を消すと、再作成した地図が接続のたびに
+    // 消える事故になるため最初の 1 通は表示だけに使い、破棄処理には使わない。
+    let slamResultLatched = false
+    const subSlamResult = new ROSLIB.Topic({
+      ros, name: '/slam_control/last_result',
+      messageType: 'std_msgs/String'
+    })
+    subSlamResult.subscribe((msg) => {
+      setSlamLastResult(msg.data)
+      const isFirst = !slamResultLatched
+      slamResultLatched = true
+      if (!isFirst && msg.data.startsWith('OK') && msg.data.includes('破棄')) {
+        setMapData(null)
+        setPathData(null)
+      }
+    })
+
     // ── 購読: /map (SLAM 地図) ──────────────────────────────
     const subMap = new ROSLIB.Topic({
       ros, name: '/map',
       messageType: 'nav_msgs/OccupancyGrid',
+      ...(mapThrottleMs > 0 ? { throttle_rate: mapThrottleMs } : {}),
     })
     subMap.subscribe((msg) => setMapData(msg))
 
@@ -197,22 +284,50 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     subPath.subscribe((msg) => setPathData(msg))
 
+    // ── 購読: 左右輪 指令vs実測 速度 (速度表示カード用、直近 WHEEL_HISTORY_SEC 秒を保持) ──
+    const pushWheelSample = (bufRef, msg, key) => {
+      const t = Date.now() / 1000
+      const buf = bufRef.current
+      buf.push({ t, left: msg.left_speed, right: msg.right_speed })
+      const cutoff = t - WHEEL_HISTORY_SEC
+      while (buf.length && buf[0].t < cutoff) buf.shift()
+      setWheelSpeedData((prev) => ({ ...prev, [key]: buf.slice() }))
+    }
+    const subWheelFeedback = new ROSLIB.Topic({
+      ros, name: '/esp32/wheel_feedback',
+      messageType: 'th_system_msgs/WheelFeedback',
+    })
+    subWheelFeedback.subscribe((msg) => pushWheelSample(measuredWheelBufRef, msg, 'measured'))
+
+    const subWheelCmd = new ROSLIB.Topic({
+      ros, name: '/esp32/wheel_cmd_speed',
+      messageType: 'th_system_msgs/WheelFeedback',
+    })
+    subWheelCmd.subscribe((msg) => pushWheelSample(commandWheelBufRef, msg, 'command'))
+
     return () => {
       subMode.unsubscribe()
       subFault.unsubscribe()
       subEstop.unsubscribe()
       subPerson.unsubscribe()
+      subFollowStatus.unsubscribe()
+      subSearchStatus.unsubscribe()
+      subSummonStatus.unsubscribe()
       subCandidates.unsubscribe()
       subMapping.unsubscribe()
       subMap.unsubscribe()
       subTf.unsubscribe()
       subScan.unsubscribe()
       subPath.unsubscribe()
+      subWheelFeedback.unsubscribe()
+      subWheelCmd.unsubscribe()
       mapOdomRef.current = null
       odomBaseRef.current = null
+      measuredWheelBufRef.current = []
+      commandWheelBufRef.current = []
       ros.close()
     }
-  }, [url])
+  }, [url, mapThrottleMs])
 
   // ── モード変更サービス呼び出し ────────────────────────────
   const requestMode = useCallback((modeNum) => {
@@ -225,9 +340,17 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     svc.callService(
       new ROSLIB.ServiceRequest({ requested_mode: modeNum, requester: 'tablet_ui' }),
-      (res) => { if (!res.success) console.warn('モード変更失敗:', res.message) }
+      (res) => {
+        bumpAction('set_mode', res.success, res.message)
+        if (!res.success) {
+          console.warn('モード変更失敗:', res.message)
+          setActionError(`モード変更失敗: ${res.message}`)
+        } else {
+          setActionError(null)
+        }
+      }
     )
-  }, [])
+  }, [bumpAction])
 
   // ── タブレット緊急停止 ────────────────────────────────────
   const tabletEstopRef = useRef(null)
@@ -247,7 +370,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
 
   // ── heartbeat 定期送信 ────────────────────────────────────
   useEffect(() => {
-    if (!connected) return
+    if (!connected || readOnly) return
     const ROSLIB = window.ROSLIB
     const hbTopic = new ROSLIB.Topic({
       ros: rosRef.current,
@@ -258,7 +381,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
       hbTopic.publish(new ROSLIB.Message({}))
     }, 500)   // 500ms = 2Hz
     return () => clearInterval(id)
-  }, [connected])
+  }, [connected, readOnly])
 
   // ── 手動ゴール送信 ────────────────────────────────────────
   const sendManualGoal = useCallback((x, y) => {
@@ -316,11 +439,12 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
       new ROSLIB.ServiceRequest({ panel_id: panelId }),
       (res) => {
         console.log('GoToPanel:', res)
+        bumpAction('go_to_panel', res.success, res.message)
         if (!res.success) setActionError(`配電盤移動失敗: ${res.message}`)
         else setActionError(null)
       }
     )
-  }, [])
+  }, [bumpAction])
 
   // ── 呼び寄せサービス ──────────────────────────────────────
   const summonRobot = useCallback(() => {
@@ -334,6 +458,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     svc.callService(
       new ROSLIB.ServiceRequest({}),
       (res) => {
+        bumpAction('summon', res.success, res.message)
         if (!res.success) {
           console.warn('呼び寄せ失敗:', res.message)
           setActionError(`呼び寄せ失敗: ${res.message}`)
@@ -342,7 +467,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
         }
       }
     )
-  }, [])
+  }, [bumpAction])
 
   // ── 地図作成 開始/停止 (トグル) ────────────────────────────
   const toggleMapping = useCallback(() => {
@@ -356,6 +481,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     svc.callService(
       new ROSLIB.ServiceRequest({}),
       (res) => {
+        bumpAction('toggle_mapping', res.success, res.message)
         if (!res.success) {
           console.warn('地図作成切替失敗:', res.message)
           setActionError(`地図作成切替失敗: ${res.message}`)
@@ -364,7 +490,65 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
         }
       }
     )
-  }, [])
+  }, [bumpAction])
+
+  // ── 地図操作 (保存 / 破棄) ────────────────────────────────
+  // toggle_mapping と同じ Trigger 型で、slam_control が slam_toolbox の
+  // save_map / serialize_map / deserialize_map へ転送する。
+  const callSlamTrigger = useCallback((service, kind, label) => {
+    const ROSLIB = window.ROSLIB
+    if (!rosRef.current || !ROSLIB) return
+    const svc = new ROSLIB.Service({
+      ros: rosRef.current,
+      name: service,
+      serviceType: 'std_srvs/Trigger'
+    })
+    svc.callService(
+      new ROSLIB.ServiceRequest({}),
+      (res) => {
+        bumpAction(kind, res.success, res.message)
+        if (!res.success) {
+          console.warn(`${label}失敗:`, res.message)
+          setActionError(`${label}失敗: ${res.message}`)
+        } else {
+          setActionError(null)
+        }
+      }
+    )
+  }, [bumpAction])
+
+  const saveMap = useCallback(
+    () => callSlamTrigger('/slam_control/save_map', 'save_map', '地図の保存'),
+    [callSlamTrigger])
+
+  // 破棄が成功しても /map は自動では届かない。slam_toolbox は
+  // map_update_interval ごとにポーズグラフから地図を作り直して publish する
+  // 実装で、グラフが空になった直後は「publish するものが無い」状態になり、
+  // WebUI 側は最後に受信した地図を保持したままになる (画面上は破棄前の地図が
+  // 残って見える)。破棄が成功したらこちらの保持も捨てる。
+  const discardMap = useCallback(() => {
+    const ROSLIB = window.ROSLIB
+    if (!rosRef.current || !ROSLIB) return
+    const svc = new ROSLIB.Service({
+      ros: rosRef.current,
+      name: '/slam_control/discard_map',
+      serviceType: 'std_srvs/Trigger'
+    })
+    svc.callService(
+      new ROSLIB.ServiceRequest({}),
+      (res) => {
+        bumpAction('discard_map', res.success, res.message)
+        if (res.success) {
+          setMapData(null)
+          setPathData(null)
+          setActionError(null)
+        } else {
+          console.warn('地図の破棄失敗:', res.message)
+          setActionError(`地図の破棄失敗: ${res.message}`)
+        }
+      }
+    )
+  }, [bumpAction])
 
   // ── アクションエラーの手動クリア (WebUI バナーの閉じるボタン用) ──
   const clearActionError = useCallback(() => setActionError(null), [])
@@ -380,9 +564,12 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     })
     svc.callService(
       new ROSLIB.ServiceRequest({ candidate_index: candidateIndex, x: 0.0, y: 0.0 }),
-      (res) => { if (!res.success) console.warn('ターゲット選択失敗:', res.message) }
+      (res) => {
+        bumpAction('select_target', res.success, res.message)
+        if (!res.success) console.warn('ターゲット選択失敗:', res.message)
+      }
     )
-  }, [])
+  }, [bumpAction])
 
   const resetTracking = useCallback(() => {
     const ROSLIB = window.ROSLIB
@@ -467,9 +654,10 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`) {
     personStatus, candidates, selectTarget, resetTracking,
     requestMode, publishTabletEstop, sendManualGoal, publishManualCmd, goToPanel,
     summonRobot,
-    mappingActive, toggleMapping,
-    actionError, clearActionError,
-    mapData, robotPose, scanData, pathData,
+    mappingActive, toggleMapping, saveMap, discardMap, slamLastResult,
+    actionError, clearActionError, lastAction,
+    followStatus, searchStatus, summonStatus,
+    mapData, robotPose, scanData, pathData, wheelSpeedData,
     getTunableParams, applyTunableParam, saveTunableParams,
   }
 }

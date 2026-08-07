@@ -11,6 +11,7 @@ SLAM 占有格子・Nav2 を一切使わない、MAP不要の純粋軌跡追従�
   - /robot/mode     購読 → FOLLOWING_MAPLESS 中のみ動作
   - TF (odom→base_link) → 軌跡・退避ゴールの絶対座標系
   - /cmd_vel_retreat パブリッシュ（Nav2 は使わず常に直接速度指令）
+  - /follow/status パブリッシュ（内部状態の可視化。WebUI の音声通知が購読する）
 """
 
 import math
@@ -22,12 +23,12 @@ from rclpy.duration import Duration
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
 from rcl_interfaces.msg import SetParametersResult
-from th_system_msgs.msg import RobotMode, PersonStatus
+from th_system_msgs.msg import RobotMode, PersonStatus, FollowStatus
 
 import tf2_ros
 
 from th_planning.mapless_follow_core import (
-    MaplessFollowParams, MaplessFollowCore,
+    MaplessFollowParams, MaplessFollowCore, should_stop_for_lost,
 )
 from th_planning.follow_planner_core import to_absolute, to_relative
 
@@ -38,17 +39,21 @@ class FollowPlannerMapless(Node):
         self._declare_all_params()
         p = self._load_params()
         self._core = MaplessFollowCore(p)
+        self._lost_debounce_sec = self.get_parameter("lost_debounce_sec").value
         self.add_on_set_parameters_callback(self._on_set_params)
         self._current_mode = RobotMode.IDLE
         self._person_pos  = None
         self._person_abs  = None   # odom系での試験員位置 (受信時に固定、自己移動補償用)
         self._person_lost = True
+        self._lost_since: float | None = None   # is_lost が True になった時刻
+        self._stopped_during_loss = False       # 今回のロスト中に実際に停止したか
         self._scan: LaserScan | None = None
 
         self._tf_buffer   = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
         self._pub_retreat = self.create_publisher(Twist, "/cmd_vel_retreat", 10)
+        self._pub_status  = self.create_publisher(FollowStatus, "/follow/status", 10)
         self.create_subscription(RobotMode,    "/robot/mode",      self._cb_mode,   10)
         self.create_subscription(PersonStatus, "/person/status",   self._cb_person, 10)
         self.create_subscription(
@@ -56,9 +61,42 @@ class FollowPlannerMapless(Node):
             rclpy.qos.QoSProfile(depth=5, reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT))
 
         self._last_reason = None
+        # 状態 publish の間引き用。10Hz で流し続けると購読側 (WebUI) が
+        # 毎周期再描画してしまうため、変化時 + 1Hz のハートビートに絞る
+        self._last_status_key  = None
+        self._last_status_time = 0.0
+        self._status_active    = False   # 直前周期で自モードだったか
         hz = self.get_parameter("update_rate_hz").value
         self._timer = self.create_timer(1.0 / hz, self._loop)
         self.get_logger().info("follow_planner_mapless 起動（MAP不要軌跡追従モード）")
+
+    STATUS_HEARTBEAT_SEC = 1.0
+
+    def _publish_status(self, state: str, reason: str,
+                        person_distance: float = -1.0, linear_x: float = 0.0):
+        """内部状態を /follow/status に流す。
+
+        変化がなくても 1 秒に一度は再送する。後から購読を始めた WebUI が
+        次の状態変化まで何も分からないのを防ぐため。
+        """
+        key = (state, reason)
+        now = self.get_clock().now().nanoseconds * 1e-9
+        if key == self._last_status_key and (now - self._last_status_time) < self.STATUS_HEARTBEAT_SEC:
+            return
+        self._last_status_key  = key
+        self._last_status_time = now
+
+        msg = FollowStatus()
+        msg.header.stamp      = self.get_clock().now().to_msg()
+        msg.header.frame_id   = "base_link"
+        msg.planner           = "mapless"
+        msg.state             = state
+        msg.reason            = reason
+        msg.person_distance   = float(person_distance)
+        msg.linear_x          = float(linear_x)
+        msg.has_escape_angle  = False
+        msg.escape_angle      = 0.0
+        self._pub_status.publish(msg)
 
     def _declare_all_params(self):
         D = self.declare_parameter
@@ -75,6 +113,8 @@ class FollowPlannerMapless(Node):
         D("w_max_rad_s",                   1.0)
         D("max_linear_accel_mps2",        1.0)
         D("max_linear_decel_mps2",        2.0)
+        D("max_angular_accel_rad_s2",     3.0)
+        D("lost_debounce_sec",            0.3)
         D("update_rate_hz",              10.0)
         D("odom_frame",           "odom")
         D("base_frame",           "base_link")
@@ -95,6 +135,7 @@ class FollowPlannerMapless(Node):
             w_max_rad_s                   = g("w_max_rad_s").value,
             max_linear_accel_mps2         = g("max_linear_accel_mps2").value,
             max_linear_decel_mps2         = g("max_linear_decel_mps2").value,
+            max_angular_accel_rad_s2      = g("max_angular_accel_rad_s2").value,
             update_rate_hz                = g("update_rate_hz").value,
         )
 
@@ -122,7 +163,7 @@ class FollowPlannerMapless(Node):
         "stop_distance", "resume_distance", "obstacle_check_distance_m",
         "obstacle_check_half_width_deg", "v_max", "k_ang", "stop_radius_m",
         "w_max_rad_s", "max_linear_accel_mps2", "max_linear_decel_mps2",
-        "update_rate_hz",
+        "max_angular_accel_rad_s2", "update_rate_hz",
     })
 
     def _cb_mode(self, msg: RobotMode):
@@ -135,16 +176,28 @@ class FollowPlannerMapless(Node):
     def _cb_person(self, msg: PersonStatus):
         was_lost = self._person_lost
         self._person_lost = msg.is_lost
-        if not msg.is_lost:
-            self._person_pos = (msg.position.x, msg.position.y)
-            # 受信時点の自己位置で odom 絶対座標に固定する。
-            # DR-SPAAM は CPU 推論で約 2Hz しか更新されないため、base_link 相対の
-            # まま保持すると次の検知までロボットの自己移動分だけ距離が実際より
-            # 遠く見え続け、停止判定が遅れて追従対象に衝突する (実機で確認)。
-            pose = self._robot_pose_odom()
-            self._person_abs = to_absolute(pose, self._person_pos) if pose is not None else None
-            if was_lost:
-                self._core.clear_trail()
+
+        if msg.is_lost:
+            if not was_lost:
+                self._lost_since = self.get_clock().now().nanoseconds * 1e-9
+                self._stopped_during_loss = False
+            return
+
+        self._person_pos = (msg.position.x, msg.position.y)
+        # 受信時点の自己位置で odom 絶対座標に固定する。
+        # DR-SPAAM は CPU 推論で約 2Hz しか更新されないため、base_link 相対の
+        # まま保持すると次の検知までロボットの自己移動分だけ距離が実際より
+        # 遠く見え続け、停止判定が遅れて追従対象に衝突する (実機で確認)。
+        pose = self._robot_pose_odom()
+        self._person_abs = to_absolute(pose, self._person_pos) if pose is not None else None
+
+        # 軌跡クリアは実際に停止に至った(=lost_debounce_sec 以上ロストした)
+        # 場合のみ行う。DR-SPAAM の単発検知ミス程度の瞬断(数百ms未満)では
+        # 軌跡はまだ有効なので消さない。消すと再開直後にlookback目標が
+        # 現在位置へ戻り旋回が跳ねる(症状: フラフラ揺れる一因)。
+        if was_lost and self._stopped_during_loss:
+            self._core.clear_trail()
+        self._lost_since = None
 
     def _cb_scan(self, msg: LaserScan):
         self._scan = msg
@@ -169,17 +222,46 @@ class FollowPlannerMapless(Node):
 
     def _loop(self):
         if self._current_mode != RobotMode.FOLLOWING_MAPLESS:
+            # 自モードでない間は黙る。follow_planner と /follow/status を共有して
+            # いるため、両ノードが毎周期 INACTIVE を流すと planner フィールドが
+            # 交互に入れ替わり、購読側の状態遷移判定が壊れる。
+            # ただしモードを抜けた直後の 1 回だけは発行する。これがないと
+            # 「障害物で停止中」等の理由が最後の値のまま residual に残り、
+            # 音声通知の継続条件が解除されない。
+            if self._status_active:
+                self._status_active = False
+                self._publish_status("INACTIVE", "inactive")
             return
-        if self._person_lost or self._person_pos is None:
-            # ロスト中に何も publish しないと、直前の速度指令(前進中ならその速度)が
-            # /cmd_vel_retreat に残ったままになり、ロボットが停止せず進み続けてしまう。
-            # 追従対象に接近しすぎて LiDAR の死角/最小測距限界でロストした瞬間に
-            # 起きうるため、毎周期明示的に停止指令を送り続ける。
+        self._status_active = True
+        if self._person_pos is None:
+            # まだ一度も検知していない (デバウンス対象外、確定的に停止)
             self._core.notify_lost()
             self._stop()
             if self._last_reason != "person_lost":
                 self.get_logger().warn("停止中（理由: person_lost）", throttle_duration_sec=2.0)
             self._last_reason = "person_lost"
+            self._publish_status("STOPPED", "person_lost")
+            return
+
+        # is_lost によるロストはデバウンスする: DR-SPAAM は約2Hzでしか推論
+        # されないため、1フレームの検知ミスだけで is_lost が一瞬 true になり
+        # 得る。lost_debounce_sec 未満なら「まだ追従対象を見失っていない」
+        # とみなし、自己移動補償した最後の既知位置で追従を続ける
+        # (障害物・接近側の即時停止仕様は変更しない。is_lost のみ対象)。
+        now = self.get_clock().now().nanoseconds * 1e-9
+        lost_elapsed = (now - self._lost_since) if self._lost_since is not None else 0.0
+        if should_stop_for_lost(self._person_lost, lost_elapsed, self._lost_debounce_sec):
+            # ロスト中に何も publish しないと、直前の速度指令(前進中ならその速度)が
+            # /cmd_vel_retreat に残ったままになり、ロボットが停止せず進み続けてしまう。
+            # 追従対象に接近しすぎて LiDAR の死角/最小測距限界でロストした瞬間に
+            # 起きうるため、毎周期明示的に停止指令を送り続ける。
+            self._stopped_during_loss = True
+            self._core.notify_lost()
+            self._stop()
+            if self._last_reason != "person_lost":
+                self.get_logger().warn("停止中（理由: person_lost）", throttle_duration_sec=2.0)
+            self._last_reason = "person_lost"
+            self._publish_status("STOPPED", "person_lost")
             return
 
         robot_pose_odom = self._robot_pose_odom()
@@ -214,6 +296,12 @@ class FollowPlannerMapless(Node):
             else:
                 self.get_logger().info("追従再開")
         self._last_reason = out.reason
+
+        self._publish_status(
+            state=out.state.name,          # "TRACKING" / "STOPPED"
+            reason=out.reason,
+            person_distance=math.hypot(px, py),
+            linear_x=out.linear_x)
 
 
 def main(args=None):

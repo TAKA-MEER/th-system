@@ -9,9 +9,14 @@ WebSocket 自体がメッセージ境界を保証するため長さプレフィ�
 | type tag           | 方向             | payload                          | 合計サイズ |
 | ------------------- | ---------------- | --------------------------------- | ---------- |
 | WHEEL_CMD      (0x01) | bridge → ESP32   | float32 left_mps, float32 right_mps | 9 bytes    |
-| WHEEL_FEEDBACK (0x02) | ESP32 → bridge   | float32 left_mps, float32 right_mps | 9 bytes    |
+| WHEEL_FEEDBACK (0x02) | ESP32 → bridge   | float32 left_mps, float32 right_mps, float32 dt_sec | 13 bytes |
 | ESTOP_HW       (0x03) | ESP32 → bridge   | uint8 estop_active (0/1)          | 2 bytes    |
 | IMU_DATA       (0x04) | ESP32 → bridge   | float32 qw,qx,qy,qz, wx,wy,wz, ax,ay,az, uint8 calib_status | 42 bytes |
+
+WHEEL_FEEDBACK の dt_sec は 2026-08-06 追加。ESP32 が速度を求めるのに実際に
+使った制御周期で、ブリッジ側のオドメトリ積分区間になる。**旧形式 (9 byte、
+dt_sec なし) も受理する**ため、ファームウェア書き込み前の個体でもそのまま動く
+(その場合ブリッジは公称周期にフォールバックする)。
 
 ESP32 側 (th_ws/esp32/src/ws_link.h) のバイト配置と必ず一致させること。
 """
@@ -22,7 +27,11 @@ WHEEL_FEEDBACK = 0x02
 ESTOP_HW = 0x03
 IMU_DATA = 0x04
 
-_WHEEL_STRUCT = struct.Struct('<Bff')   # type tag + left + right
+_WHEEL_STRUCT = struct.Struct('<Bff')    # type tag + left + right
+# WHEEL_FEEDBACK 拡張版: 上記に ESP32 側の制御周期 dt[s] を足したもの。
+# ESP32 は velL = counts * distPerCount / dt で速度を出しており、その dt を
+# そのまま載せる。ブリッジ側はこれを積分区間として使う (詳細は下記 unpack)。
+_WHEEL_FEEDBACK_DT_STRUCT = struct.Struct('<Bfff')
 _ESTOP_STRUCT = struct.Struct('<BB')    # type tag + bool
 _IMU_STRUCT = struct.Struct('<BffffffffffB')  # type tag + 10 floats + calib_status
 
@@ -39,12 +48,35 @@ def unpack_wheel_cmd(data: bytes) -> tuple[float, float]:
     return _unpack_wheel(data, WHEEL_CMD)
 
 
-def pack_wheel_feedback(left_mps: float, right_mps: float) -> bytes:
-    return _WHEEL_STRUCT.pack(WHEEL_FEEDBACK, left_mps, right_mps)
+def pack_wheel_feedback(left_mps: float, right_mps: float,
+                         dt_sec: "float | None" = None) -> bytes:
+    if dt_sec is None:
+        return _WHEEL_STRUCT.pack(WHEEL_FEEDBACK, left_mps, right_mps)
+    return _WHEEL_FEEDBACK_DT_STRUCT.pack(
+        WHEEL_FEEDBACK, left_mps, right_mps, dt_sec)
 
 
-def unpack_wheel_feedback(data: bytes) -> tuple[float, float]:
-    return _unpack_wheel(data, WHEEL_FEEDBACK)
+def unpack_wheel_feedback(data: bytes) -> tuple[float, float, "float | None"]:
+    """WHEEL_FEEDBACK をデコードし (left, right, dt) を返す。
+
+    長さで新旧を判別する:
+      9 byte  … 旧形式 (left/right のみ)。dt は None を返す。
+      13 byte … 新形式。ESP32 が速度算出に使った制御周期 dt[s] を含む。
+
+    ブリッジ側は dt が None の場合 feedback_period_ms の公称値へフォールバック
+    するため、ファームウェアが未更新でも動作は従来どおり継続する。新形式を
+    受けられるようにしておくことで、書き込み前後どちらの個体でも同じブリッジで
+    運用できる (書き込みは AP が落ちて SSH が切れる作業のため、同時切替を
+    強制しない)。
+    """
+    if len(data) == _WHEEL_FEEDBACK_DT_STRUCT.size:
+        tag, left, right, dt = _WHEEL_FEEDBACK_DT_STRUCT.unpack(data)
+        if tag != WHEEL_FEEDBACK:
+            raise ProtocolError(
+                f"type tag 不一致 (expected 0x{WHEEL_FEEDBACK:02x}, got 0x{tag:02x})")
+        return left, right, dt
+    left, right = _unpack_wheel(data, WHEEL_FEEDBACK)
+    return left, right, None
 
 
 def pack_estop_hw(estop_active: bool) -> bytes:

@@ -6,6 +6,9 @@ person_predictor.py — 試験員ロスト時の位置予測ノード (完全版
   - 直近の速度ベクトルで等速直線運動外挿
   - 予測上限超過後: 捜索行動（その場旋回）
   - /person/search_mode (Bool) で捜索中フラグを発行
+  - /person/search_status (SearchStatus) で段階を発行
+    (Bool では「捜索中」と「打ち切り後」を区別できないため。Bool 側は
+     既存の購読者・テストのためそのまま残す)
 """
 
 import math
@@ -16,7 +19,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import PointStamped
 from std_msgs.msg import Bool
 from geometry_msgs.msg import Twist
-from th_system_msgs.msg import PersonStatus, RobotMode
+from th_system_msgs.msg import PersonStatus, RobotMode, SearchStatus
 
 
 class PersonPredictor(Node):
@@ -45,12 +48,17 @@ class PersonPredictor(Node):
         self._lost_since: float | None = None
         self._current_mode = RobotMode.IDLE
         self._search_active = False   # 直前周期で捜索旋回コマンドを出していたか
+        # 段階 publish の間引き用。変化時 + 1Hz のハートビートに絞る
+        self._last_phase      = None
+        self._last_phase_time = 0.0
 
         # ── Publishers ─────────────────────────────────────
         self._pub_pos    = self.create_publisher(
             PointStamped, "/person/predicted_position", 10)
         self._pub_search = self.create_publisher(
             Bool, "/person/search_mode", 10)
+        self._pub_search_status = self.create_publisher(
+            SearchStatus, "/person/search_status", 10)
         self._pub_search_cmd = self.create_publisher(
             Twist, "/cmd_vel_retreat", 10)  # 捜索旋回: twist_mux 優先度20(Nav2より高)で出力
 
@@ -102,26 +110,48 @@ class PersonPredictor(Node):
         self._vel_x = (newest[1] - oldest[1]) / dt
         self._vel_y = (newest[2] - oldest[2]) / dt
 
+    STATUS_HEARTBEAT_SEC = 1.0
+
+    def _publish_search_status(self, phase: str, lost_elapsed: float):
+        """捜索段階を /person/search_status に流す。変化時 + 1Hz のハートビート。"""
+        now = self.get_clock().now().nanoseconds * 1e-9
+        if phase == self._last_phase and (now - self._last_phase_time) < self.STATUS_HEARTBEAT_SEC:
+            return
+        self._last_phase      = phase
+        self._last_phase_time = now
+
+        msg = SearchStatus()
+        msg.header.stamp      = self.get_clock().now().to_msg()
+        msg.header.frame_id   = "base_link"
+        msg.phase             = phase
+        msg.lost_elapsed_sec  = float(lost_elapsed)
+        self._pub_search_status.publish(msg)
+
     def _publish(self):
         t = self.get_clock().now().nanoseconds * 1e-9
         is_searching = False
         rotating     = False   # この周期で捜索旋回コマンドを実際に出したか
+        phase        = "NONE"
+        lost_elapsed = 0.0
 
         if self._lost_since is None:
             pred_x = self._last_known_x
             pred_y = self._last_known_y
         else:
             elapsed = t - self._lost_since
+            lost_elapsed = elapsed
 
             if elapsed < self._max_predict_sec:
                 # 等速直線外挿
                 pred_x = self._last_known_x + self._vel_x * elapsed
                 pred_y = self._last_known_y + self._vel_y * elapsed
+                phase  = "PREDICTING"
             elif elapsed < self._max_predict_sec + self._search_timeout:
                 # 捜索旋回フェーズ
                 pred_x = self._last_known_x
                 pred_y = self._last_known_y
                 is_searching = True
+                phase = "SEARCHING"
 
                 # FOLLOWING / FOLLOWING_MAPLESS モード中のみ旋回速度を発行
                 if self._current_mode in (RobotMode.FOLLOWING, RobotMode.FOLLOWING_MAPLESS):
@@ -134,6 +164,7 @@ class PersonPredictor(Node):
                 pred_x = self._last_known_x
                 pred_y = self._last_known_y
                 is_searching = True
+                phase = "GAVE_UP"
                 self.get_logger().warn(
                     "捜索タイムアウト — 再検出できなかった",
                     throttle_duration_sec=5.0)
@@ -153,8 +184,11 @@ class PersonPredictor(Node):
         msg.point.y = pred_y
         self._pub_pos.publish(msg)
 
-        # 捜索フラグ発行
+        # 捜索フラグ発行 (従来互換。SEARCHING / GAVE_UP のとき true)
         self._pub_search.publish(Bool(data=is_searching))
+
+        # 段階発行 (捜索中と打ち切り後を区別できる形)
+        self._publish_search_status(phase, lost_elapsed)
 
 
 def main(args=None):

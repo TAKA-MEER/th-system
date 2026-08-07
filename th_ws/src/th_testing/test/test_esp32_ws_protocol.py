@@ -64,16 +64,40 @@ class TestWheelFeedbackRoundTrip:
         (2.0, 2.0),
         (-2.0, -2.0),
     ])
-    def test_round_trip(self, left, right):
+    def test_round_trip_legacy_without_dt(self, left, right):
+        # 旧形式 (9 byte)。ファームウェア未更新の個体から届くフレーム。
         frame = pack_wheel_feedback(left, right)
-        out_left, out_right = unpack_wheel_feedback(frame)
+        out_left, out_right, out_dt = unpack_wheel_feedback(frame)
         assert out_left == pytest.approx(left, abs=1e-5)
         assert out_right == pytest.approx(right, abs=1e-5)
+        assert out_dt is None
+
+    @pytest.mark.parametrize("left,right,dt", [
+        (0.0, 0.0, 0.1),
+        (2.0, 2.0, 0.033),
+        (-2.0, -2.0, 0.85),
+    ])
+    def test_round_trip_with_dt(self, left, right, dt):
+        frame = pack_wheel_feedback(left, right, dt)
+        out_left, out_right, out_dt = unpack_wheel_feedback(frame)
+        assert out_left == pytest.approx(left, abs=1e-5)
+        assert out_right == pytest.approx(right, abs=1e-5)
+        assert out_dt == pytest.approx(dt, abs=1e-5)
 
     def test_frame_size_and_type_tag(self):
-        frame = pack_wheel_feedback(1.0, 2.0)
-        assert len(frame) == 9
-        assert frame[0] == WHEEL_FEEDBACK
+        # 旧形式と新形式が長さで判別できること。両方受理する必要がある
+        # (ブリッジ更新とファームウェア書き込みを同時に行わなくて済むように)。
+        assert len(pack_wheel_feedback(1.0, 2.0)) == 9
+        assert len(pack_wheel_feedback(1.0, 2.0, 0.1)) == 13
+        assert pack_wheel_feedback(1.0, 2.0)[0] == WHEEL_FEEDBACK
+        assert pack_wheel_feedback(1.0, 2.0, 0.1)[0] == WHEEL_FEEDBACK
+
+    def test_wheel_cmd_stays_strict_at_9_bytes(self):
+        # WHEEL_FEEDBACK を可変長にしたことで WHEEL_CMD 側の長さ検査が
+        # 緩んでいないこと (WHEEL_CMD は 9 byte 固定のまま)。
+        frame = pack_wheel_feedback(1.0, 2.0, 0.1)
+        with pytest.raises(ProtocolError):
+            unpack_wheel_cmd(frame)
 
 
 class TestEstopHwRoundTrip:

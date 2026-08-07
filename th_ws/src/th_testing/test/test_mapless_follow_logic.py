@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(
 from th_planning.mapless_follow_core import (
     MaplessState, MaplessFollowParams, MaplessFollowCore,
     next_mapless_state, is_path_blocked,
-    mapless_target_speed, rate_limit,
+    mapless_target_speed, rate_limit, should_stop_for_lost,
 )
 
 
@@ -94,6 +94,23 @@ class TestNextMaplessState:
             MaplessState.STOPPED, MaplessState.STOPPED, MaplessState.STOPPED,
             MaplessState.STOPPED, MaplessState.TRACKING,
         ]
+
+
+# ════════════════════════════════════════════════════════════
+# 1b. is_lost 停止のデバウンス
+# ════════════════════════════════════════════════════════════
+class TestShouldStopForLost:
+    def test_not_lost_never_stops(self):
+        assert not should_stop_for_lost(False, 999.0, 0.3)
+
+    def test_lost_below_debounce_does_not_stop(self):
+        assert not should_stop_for_lost(True, 0.1, 0.3)
+
+    def test_lost_at_debounce_boundary_stops(self):
+        assert should_stop_for_lost(True, 0.3, 0.3)
+
+    def test_lost_beyond_debounce_stops(self):
+        assert should_stop_for_lost(True, 1.0, 0.3)
 
 
 # ════════════════════════════════════════════════════════════
@@ -272,10 +289,43 @@ class TestMaplessFollowCore:
         assert out.angular_z != 0.0
 
     def test_w_max_rad_s_clamps_turn_rate(self):
-        core = self._core(w_max_rad_s=0.5)
+        """角速度もレート制限されるため、複数周期かけて w_max に収束することを確認する"""
+        core = self._core(w_max_rad_s=0.5, max_angular_accel_rad_s2=100.0)
+        out = None
+        for _ in range(20):
+            out = core.update(person_x=0.0, person_y=2.0, robot_pose_odom=ORIGIN_POSE,
+                               scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert out.angular_z == pytest.approx(0.5)
+
+    def test_angular_speed_ramps_up_gradually_not_instantly(self):
+        """急旋回防止: 静止状態から数周期(max_angular_accel_rad_s2 で決まる)かけて
+        目標旋回速度まで立ち上がり、1周期でいきなり飛ばない"""
+        core = self._core(w_max_rad_s=2.0, max_angular_accel_rad_s2=3.0, update_rate_hz=10.0)
+        out1 = core.update(person_x=0.0, person_y=2.0, robot_pose_odom=ORIGIN_POSE,
+                            scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        out2 = core.update(person_x=0.0, person_y=2.0, robot_pose_odom=ORIGIN_POSE,
+                            scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert out1.angular_z == pytest.approx(0.3)
+        assert out2.angular_z == pytest.approx(0.6)
+
+    def test_angular_speed_resets_to_zero_on_stop(self):
+        """STOPPED 等で停止した直後は前回旋回速度を引き継がず、再開時は 0 から立ち上がる"""
+        # trail_sample_interval_m を大きく取り、STOPPED 中の接近点(0.5, 0)が
+        # 軌跡に追加されないようにする(goal が (0, 2) に固定され、旋回方向の
+        # ブレなくレート制限だけを検証できる)
+        core = self._core(w_max_rad_s=2.0, max_angular_accel_rad_s2=3.0, update_rate_hz=10.0,
+                           trail_sample_interval_m=10.0)
+        for _ in range(20):
+            core.update(person_x=0.0, person_y=2.0, robot_pose_odom=ORIGIN_POSE,
+                        scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        # 急接近 → STOPPED
+        core.update(person_x=0.5, person_y=0.0, robot_pose_odom=ORIGIN_POSE,
+                    scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
+        assert core.state == MaplessState.STOPPED
+        # 離れて復帰した直後の一周期目は 0 から旋回加速し始める
         out = core.update(person_x=0.0, person_y=2.0, robot_pose_odom=ORIGIN_POSE,
                            scan_ranges=clear_scan(), scan_angle_min=ANGLE_MIN, scan_angle_increment=ANGLE_INC)
-        assert out.angular_z == pytest.approx(0.5)
+        assert 0.0 < out.angular_z <= 0.3 + 1e-9
 
     def test_decel_uses_decel_limit_not_accel_limit(self):
         """接近時の減速は max_linear_decel_mps2 (加速側より大) でレート制限される"""

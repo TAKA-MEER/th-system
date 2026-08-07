@@ -327,6 +327,20 @@ roslib.js はローカル同梱(`web_ui/public/roslib.min.js`)のため、
 タブレットは th-esp32-ap に接続し `http://192.168.4.50:5173` を開く。
 rosbridge(9090)は bringup が自動起動する。
 
+### 観客向け表示（デモ展示。VISION.md §6.3）
+
+```
+http://localhost:5173/?view=audience
+```
+
+**この PC 上で localhost で開き、PC の映像出力をディスプレイ/プロジェクタへ回すこと。**
+タブレット側の別タブで開いてはいけない —— ブラウザがバックグラウンドタブの
+`setInterval` を間引くため手動ジョグの publish が止まり、AP の帯域も倍使う。
+localhost で開けば rosbridge 接続も localhost に閉じ、WiFi を一切通らない。
+
+観客画面は読み取り専用で音も鳴らさない。表示レイヤ（地図/点群/検出候補/追跡対象/
+経路/走行軌跡）は画面左下の凡例をクリックするか、キー `1`〜`6` で個別に切り替えられる。
+
 ---
 
 ## 9. Linux 実機 (Ubuntu) の場合

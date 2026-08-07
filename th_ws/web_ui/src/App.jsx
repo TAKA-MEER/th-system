@@ -3,18 +3,27 @@
 // ============================================================
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRosbridge } from './hooks/useRosbridge'
+import { useVoice } from './hooks/useVoice'
+import { useVoiceTriggers } from './hooks/useVoiceTriggers'
 import SettingsPanel from './SettingsPanel'
+import VoiceDevPanel from './VoiceDevPanel'
 import MapView from './MapView'
+import WheelSpeedView from './WheelSpeedView'
+import { MODE, modeColorOf } from './robotMode'
+import { LAYER } from './voice/announcements'
 import './App.css'
 
-// ROS2 モード定数
-const MODE = { INIT:0, IDLE:1, FOLLOWING:2, MOVING_TO_PANEL:3, AT_PANEL:4, MANUAL:5, ESTOP:6, FOLLOWING_MAPLESS:7, SUMMONING:8 }
+// 音声テストパネルは ?dev=1 のときだけ出す。URL はリロードなしに変わらないため
+// モジュールスコープで一度だけ判定する
+const DEV_MODE = new URLSearchParams(window.location.search).get('dev') === '1'
 
-// 配電盤リスト (panels.yaml と合わせること)
-const PANELS = [
-  { id: 'panel_01', label: '第1配電盤' },
-  { id: 'panel_02', label: '第2配電盤' },
-  { id: 'panel_03', label: '第3配電盤' },
+// タブ構成 (VISION.md §6.1)。運用フェーズ単位で分ける。
+// サブシステム単位に並べると走行中に不要なカードが画面を埋め、
+// 操作に必要なものがスクロールの外へ出てしまう
+const TABS = [
+  { id: 'operate', label: '運用' },
+  { id: 'setup',   label: '準備' },
+  { id: 'diag',    label: '診断' },
 ]
 
 // ジョグ速度 (押している間だけ /cmd_vel_manual に流す)
@@ -23,6 +32,11 @@ const JOG_LIN_MAX = 0.5    // m/s
 const JOG_ANG_MAX = 2.0    // rad/s (従来の lin:ang = 1:4 の比を維持)
 const JOG_SPEED_MIN = 0.1  // 速度スライダー下限 (10%)
 const JOG_PUB_MS = 100     // publish 周期
+// ジョグ入力のレート制限 (急加減速防止。実機検証: これが無いとスティック/
+// キー入力の変化が瞬時にそのまま速度指令へ反映され機体が激しく揺れる)。
+// 離した瞬間の停止は即時 0 publish のままなので安全性は損なわれない。
+const JOG_LIN_ACCEL = 1.0  // m/s^2
+const JOG_ANG_ACCEL = 4.0  // rad/s^2
 // 緩旋回 (直進 + 旋回同時) 時の旋回レート。crawler_teleop の緩旋回と同じ 0.5 倍
 const JOG_ARC_ANG_SCALE = 0.5
 // スティックのデッドゾーン (中心からの倒し量がこの割合未満なら停止)
@@ -108,6 +122,13 @@ function CandidateRadar({ candidates, personStatus, onSelect, connected }) {
   )
 }
 
+// current を target へ maxDelta の範囲内で近づける (加減速レート制限)
+function rampToward(current, target, maxDelta) {
+  if (target > current + maxDelta) return current + maxDelta
+  if (target < current - maxDelta) return current - maxDelta
+  return target
+}
+
 // ── スティック位置 → 正規化コマンド ──────────────────────────
 // dx: 右+ / dy: 上+ (いずれも -1..1)。8方向セクター (45°幅) で判定:
 //   上下 = 直進 / 真横 = 超信地旋回 / 斜め = 緩旋回 (旋回 0.5 倍)
@@ -133,6 +154,15 @@ function VirtualStick({ speedPct, onChange, onRelease }) {
   const svgRef = useRef(null)
   const pointerIdRef = useRef(null)
   const [stick, setStick] = useState({ x: 0, y: 0, cmd: null })
+
+  // ドラッグ中にこのコンポーネントがアンマウントされる (タブ切替など) と
+  // pointerup が届かず、最後のジョグ指令が publish され続けてしまう。
+  // アンマウント時に確実に停止させる
+  const onReleaseRef = useRef(onRelease)
+  onReleaseRef.current = onRelease
+  useEffect(() => () => {
+    if (pointerIdRef.current !== null) onReleaseRef.current()
+  }, [])
 
   const update = (e) => {
     const rect = svgRef.current.getBoundingClientRect()
@@ -207,20 +237,58 @@ function VirtualStick({ speedPct, onChange, onRelease }) {
 }
 
 export default function App() {
+  const ros = useRosbridge()
   const {
     connected, mode, modeName,
     fault, estop,
     personStatus, candidates, selectTarget, resetTracking,
-    requestMode, publishTabletEstop, publishManualCmd, goToPanel,
+    requestMode, publishTabletEstop, publishManualCmd,
     summonRobot,
-    mappingActive, toggleMapping,
+    mappingActive, toggleMapping, saveMap, discardMap, slamLastResult,
     actionError, clearActionError,
-    mapData, robotPose, scanData, pathData,
+    mapData, robotPose, scanData, pathData, wheelSpeedData,
     getTunableParams, applyTunableParam, saveTunableParams,
-  } = useRosbridge()
+  } = ros
 
   const [estopActive, setEstopActive] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [voiceDevOpen, setVoiceDevOpen] = useState(false)
+  const [tab, setTab] = useState('operate')
+
+  // ── 地図操作 ────────────────────────────────────────────
+  // 地図の破棄は取り消せないため二段階にする。1度目の押下で「確認待ち」に
+  // 入り、10 秒放置すると自動で戻る（タブレットを持ち歩く運用で、意図しない
+  // 接触が2回連続する確率を下げるため）
+  const mapOpsAllowed =
+    connected && (mode === MODE.IDLE || mode === MODE.MANUAL)
+  const [discardArmed, setDiscardArmed] = useState(false)
+  const discardTimerRef = useRef(null)
+
+  const handleDiscardClick = useCallback(() => {
+    if (discardArmed) {
+      clearTimeout(discardTimerRef.current)
+      setDiscardArmed(false)
+      discardMap()
+      return
+    }
+    setDiscardArmed(true)
+    discardTimerRef.current = setTimeout(() => setDiscardArmed(false), 10000)
+  }, [discardArmed, discardMap])
+
+  // 操作できない状態になったら確認待ちも解除する（モードが変わった等）
+  useEffect(() => {
+    if (!mapOpsAllowed && discardArmed) {
+      clearTimeout(discardTimerRef.current)
+      setDiscardArmed(false)
+    }
+  }, [mapOpsAllowed, discardArmed])
+
+  useEffect(() => () => clearTimeout(discardTimerRef.current), [])
+
+  // 音声アナウンス (VISION.md §7)。estopActive はローカル state なので
+  // ros に混ぜて渡し、タブレット側の押下でも即座に鳴らせるようにする
+  const voice = useVoice()
+  useVoiceTriggers({ ...ros, estopActive }, voice)
 
   // ── ジョグ速度設定 (プリセット + スライダー) ────────────────
   // publish ループは ref を読むため、押しっぱなし中の変更も次周期から反映される
@@ -231,17 +299,6 @@ export default function App() {
     localStorage.setItem(SPEED_STORAGE_KEY, String(speedPct))
   }, [speedPct])
 
-  // ── 緊急停止 (発動と解除を分離。発動ボタンは連打しても常に「停止」) ──
-  const engageEstop = useCallback(() => {
-    setEstopActive(true)
-    publishTabletEstop(true)
-  }, [publishTabletEstop])
-
-  const releaseEstop = useCallback(() => {
-    setEstopActive(false)
-    publishTabletEstop(false)
-  }, [publishTabletEstop])
-
   // ── ジョグ: 正規化コマンド (vn, wn ∈ [-1,1]) を周期 publish ──
   // スティック / キーボードの両入力が jogNormRef を更新し、単一の
   // interval が最新値 × 最新速度設定を publish する (操作中の速度変更も
@@ -250,13 +307,18 @@ export default function App() {
   const jogTimerRef = useRef(null)
   const stickActiveRef = useRef(false)  // ドラッグ中はキーボード入力を無視
   const heldKeysRef = useRef(new Map()) // 押下中のジョグキー → [lin, ang]
+  // 直近に publish した実際の速度 (目標値へこれをレート制限しながら近づける)
+  const currentCmdRef = useRef({ vx: 0, wz: 0 })
 
   const jogPublish = useCallback(() => {
     const { vn, wn } = jogNormRef.current
-    publishManualCmd(
-      vn * JOG_LIN_MAX * speedPctRef.current,
-      wn * JOG_ANG_MAX * speedPctRef.current,
-    )
+    const targetVx = vn * JOG_LIN_MAX * speedPctRef.current
+    const targetWz = wn * JOG_ANG_MAX * speedPctRef.current
+    const dtSec = JOG_PUB_MS / 1000
+    const cur = currentCmdRef.current
+    cur.vx = rampToward(cur.vx, targetVx, JOG_LIN_ACCEL * dtSec)
+    cur.wz = rampToward(cur.wz, targetWz, JOG_ANG_ACCEL * dtSec)
+    publishManualCmd(cur.vx, cur.wz)
   }, [publishManualCmd])
 
   const setJogInput = useCallback((vn, wn) => {
@@ -268,12 +330,34 @@ export default function App() {
 
   const clearJogInput = useCallback(() => {
     jogNormRef.current = { vn: 0, wn: 0 }
+    currentCmdRef.current = { vx: 0, wz: 0 }
     if (jogTimerRef.current) {
       clearInterval(jogTimerRef.current)
       jogTimerRef.current = null
       publishManualCmd(0, 0)
     }
   }, [publishManualCmd])
+
+  // ── 緊急停止 (発動と解除を分離。発動ボタンは連打しても常に「停止」) ──
+  // 発動時は mode が ESTOP に切り替わる round-trip を待たず、保持中の
+  // ジョグ入力 (キー/スティック) を即座にローカルでクリアする。これが無いと
+  // 前進キーを押したまま緊急停止しても、モード遷移が反映されるまでの間
+  // /cmd_vel_manual の前進指令送信が続いてしまう (2026-08-06 報告)。
+  const engageEstop = useCallback(() => {
+    setEstopActive(true)
+    // ジョグのゼロ指令をロックより先に出す (mux がまだロックされていない
+    // うちに /cmd_vel_manual へゼロを通しておく。ロック自体は esp32_bridge
+    // 側でも独立して強制されるため、これは多重防御の一枚)。
+    stickActiveRef.current = false
+    heldKeysRef.current.clear()
+    clearJogInput()
+    publishTabletEstop(true)
+  }, [publishTabletEstop, clearJogInput])
+
+  const releaseEstop = useCallback(() => {
+    setEstopActive(false)
+    publishTabletEstop(false)
+  }, [publishTabletEstop])
 
   // MANUAL から離れたら入力を全クリアして停止 (interval の残留防止)
   useEffect(() => {
@@ -359,19 +443,17 @@ export default function App() {
     }
   }, [mode, engageEstop, setJogInput, clearJogInput])
 
-  // ── モードバッジの色 ──────────────────────────────────────
-  const modeColor = {
-    INIT: '#888', IDLE: '#2196F3', FOLLOWING: '#4CAF50',
-    MOVING_TO_PANEL: '#FF9800', AT_PANEL: '#9C27B0',
-    MANUAL: '#00BCD4', ESTOP: '#F44336', FOLLOWING_MAPLESS: '#8BC34A',
-    SUMMONING: '#E91E63',
-  }[modeName] ?? '#888'
+  // ── モードバッジの色 (観客表示と共有。robotMode.js) ────────
+  const modeColor = modeColorOf(modeName)
 
   const isFault = fault?.active
   const isTrackedNow = personStatus && !personStatus.is_lost
+  // 接続断・フォルトは画面全体で分かる表示にする (VISION.md §6.1)。試験員は
+  // 前を歩いていて画面を見ていない前提なので、視線を戻した瞬間に気付ける必要がある
+  const alertLevel = !connected ? 'disconnect' : isFault ? 'fault' : null
 
   return (
-    <div className="app">
+    <div className={`app ${alertLevel ? `app-alert app-alert-${alertLevel}` : ''}`}>
 
       {/* ── ヘッダー ─────────────────────────────────── */}
       <header className="header">
@@ -383,6 +465,11 @@ export default function App() {
         <span className={`conn-badge ${connected ? 'ok' : 'ng'}`}>
           {connected ? '● 接続中' : '○ 切断'}
         </span>
+        {DEV_MODE && (
+          <button className="settings-btn" onClick={() => setVoiceDevOpen(true)} aria-label="音声テスト">
+            ♪
+          </button>
+        )}
         <button className="settings-btn" onClick={() => setSettingsOpen(true)} aria-label="設定">
           ⚙
         </button>
@@ -397,6 +484,14 @@ export default function App() {
         saveTunableParams={saveTunableParams}
       />
 
+      {DEV_MODE && (
+        <VoiceDevPanel
+          open={voiceDevOpen}
+          onClose={() => setVoiceDevOpen(false)}
+          voice={voice}
+        />
+      )}
+
       {/* ── 緊急停止ボタン (発動専用。連打しても常に停止のまま) ── */}
       <button
         className={`estop-btn ${estopActive ? 'estop-active' : ''}`}
@@ -405,191 +500,316 @@ export default function App() {
         {estopActive ? '■ 緊急停止中 (Space/Esc)' : '⚠ 緊急停止 (Space/Esc)'}
       </button>
 
-      {/* ── フォルト情報 ─────────────────────────────── */}
+      {/* ── 警告帯 (常時表示ゾーン。タブに関係なく必ず見える) ───── */}
+      {!connected && (
+        <div className="alert-bar alert-disconnect">
+          <b>⚠ 通信途絶</b> — ロボットと接続できていません。操作は届きません
+        </div>
+      )}
+
       {isFault && (
-        <div className="fault-bar">
+        <div className="alert-bar alert-fault">
           <b>⚠ フォルト:</b> {fault.fault_type} — {fault.description}
         </div>
       )}
 
-      {/* ── 直近の操作エラー (呼び寄せ/配電盤移動/地図作成の失敗理由) ── */}
+      {/* ── 直近の操作エラー (呼び寄せ/地図作成の失敗理由) ── */}
       {actionError && (
-        <div className="fault-bar action-error-bar">
-          <b>⚠ 操作失敗:</b> {actionError}
+        <div className="alert-bar alert-action">
+          <span><b>⚠ 操作失敗:</b> {actionError}</span>
           <button className="action-error-close" onClick={clearActionError} aria-label="閉じる">×</button>
         </div>
       )}
 
-      {/* ── メイングリッド (横長レイアウト) ──────────── */}
-      <div className="grid">
+      {/* ── タブ (運用フェーズごと。VISION.md §6.1) ────────────── */}
+      <nav className="tabs" role="tablist">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
+            className={`tab ${tab === t.id ? 'active' : ''}`}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
 
-        {/* ── 追従ターゲット ─────────────────────────── */}
-        <section className="card card-target">
-          <h2>
-            追従ターゲット{' '}
-            <span className={`target-state ${isTrackedNow ? 'ok' : 'ng'}`}>
-              {isTrackedNow
-                ? `追跡中 (${personStatus.position.x.toFixed(1)}, ${personStatus.position.y.toFixed(1)})`
-                : personStatus?.lost_reason === 'TARGET_SWITCHED'
-                  ? '⚠ 対象切替の疑い — 選び直してください'
-                  : `未追跡${personStatus?.lost_reason ? ` (${personStatus.lost_reason})` : ''}`}
-            </span>
-          </h2>
-          <div className="target-body">
-            <CandidateRadar
-              candidates={candidates}
-              personStatus={personStatus}
-              onSelect={selectTarget}
-              connected={connected}
-            />
-            <div className="target-side">
-              <p className="note">
-                図の●をタップで対象を選択。緑リング = 現在の追跡対象。
-              </p>
-              <button className="mode-btn" disabled={!connected} onClick={resetTracking}>
-                最も近い人を再取得
-              </button>
-            </div>
-          </div>
-        </section>
+      {/* ── タブ本体 (ここだけがスクロールする) ─────────────── */}
+      <div className="tabpanel" role="tabpanel">
 
-        {/* ── モード切替 ─────────────────────────────── */}
-        <section className="card">
-          <h2>モード操作</h2>
-          <div className="btn-row">
-            <button
-              className="mode-btn"
-              disabled={mode === MODE.FOLLOWING || !connected}
-              onClick={() => requestMode(MODE.FOLLOWING)}
-            >
-              追従開始
-            </button>
-            <button
-              className="mode-btn"
-              disabled={mode === MODE.FOLLOWING_MAPLESS || !connected}
-              onClick={() => requestMode(MODE.FOLLOWING_MAPLESS)}
-            >
-              軌跡追従(マップ不要)
-            </button>
-            <button
-              className="mode-btn"
-              disabled={mode === MODE.MANUAL || !connected}
-              onClick={() => requestMode(MODE.MANUAL)}
-            >
-              手動操作
-            </button>
-            <button
-              className="mode-btn idle"
-              disabled={mode === MODE.IDLE || !connected}
-              onClick={() => requestMode(MODE.IDLE)}
-            >
-              待機 (IDLE)
-            </button>
-            <button
-              className="mode-btn"
-              disabled={mode !== MODE.IDLE || !connected}
-              onClick={summonRobot}
-            >
-              呼び寄せ
-            </button>
-          </div>
-        </section>
+        {/* ══ 運用タブ: 走行中に使うものだけ ══════════════════ */}
+        {tab === 'operate' && (
+          <div className="grid grid-operate">
 
-        {/* ── 地図作成 開始/停止 ─────────────────────── */}
-        <section className="card">
-          <h2>
-            地図作成{' '}
-            <span className={`target-state ${mappingActive ? 'ok' : 'ng'}`}>
-              {mappingActive ? '作成中' : '停止中'}
-            </span>
-          </h2>
-          <div className="btn-row">
-            <button
-              className="mode-btn"
-              disabled={!connected || (mode !== MODE.IDLE && mode !== MODE.MANUAL)}
-              onClick={toggleMapping}
-            >
-              {mappingActive ? '地図作成停止' : '地図作成開始'}
-            </button>
-          </div>
-        </section>
+            {/* ── 追従ターゲット ─────────────────────────── */}
+            <section className="card card-target">
+              <h2>
+                追従ターゲット{' '}
+                <span className={`target-state ${isTrackedNow ? 'ok' : 'ng'}`}>
+                  {isTrackedNow
+                    ? `追跡中 (${personStatus.position.x.toFixed(1)}, ${personStatus.position.y.toFixed(1)})`
+                    : personStatus?.lost_reason === 'TARGET_SWITCHED'
+                      ? '⚠ 対象切替の疑い — 選び直してください'
+                      : `未追跡${personStatus?.lost_reason ? ` (${personStatus.lost_reason})` : ''}`}
+                </span>
+              </h2>
+              <div className="target-body">
+                <CandidateRadar
+                  candidates={candidates}
+                  personStatus={personStatus}
+                  onSelect={selectTarget}
+                  connected={connected}
+                />
+                <div className="target-side">
+                  <p className="note">
+                    図の●をタップで対象を選択。緑リング = 現在の追跡対象。
+                  </p>
+                  <button className="mode-btn" disabled={!connected} onClick={resetTracking}>
+                    最も近い人を再取得
+                  </button>
+                </div>
+              </div>
+            </section>
 
-        {/* ── 地図表示 (SLAM 地図 + 自己位置) ─────────────── */}
-        <section className="card">
-          <h2>地図</h2>
-          <MapView mapData={mapData} robotPose={robotPose} scanData={scanData} pathData={pathData} />
-        </section>
-
-        {/* ── 手動ジョグ (押している間だけ動く) ───────── */}
-        <section className={`card ${mode !== MODE.MANUAL ? 'disabled' : ''}`}>
-          <h2>手動移動 <span className="note">(触れている間だけ動く / キー: WASD・矢印, 同時押しで緩旋回)</span></h2>
-          <div className="speed-ctrl">
-            <div className="speed-label">
-              速度: <b>{(JOG_LIN_MAX * speedPct).toFixed(2)} m/s</b>
-              <span className="speed-pct">({Math.round(speedPct * 100)}%)</span>
-            </div>
-            <div className="speed-presets">
-              {JOG_PRESETS.map(p => (
+            {/* ── モード操作 ───────────────────────────────
+                当面の運用は軌跡追従 / 手動 / 待機 / 呼び寄せの 4 つで成立する
+                (VISION.md §8)。地図あり追従は優先度が低いため副扱いにして、
+                同格ボタンが 5 つ横並びになる状態を解消する */}
+            <section className="card">
+              <h2>モード操作</h2>
+              <div className="btn-row">
                 <button
-                  key={p.label}
-                  className={`speed-preset ${Math.abs(speedPct - p.pct) < 0.001 ? 'active' : ''}`}
-                  onClick={() => setSpeedPct(p.pct)}
+                  className="mode-btn primary"
+                  disabled={mode === MODE.FOLLOWING_MAPLESS || !connected}
+                  onClick={() => requestMode(MODE.FOLLOWING_MAPLESS)}
                 >
-                  {p.label}
+                  追従開始
                 </button>
-              ))}
-            </div>
-            <input
-              type="range"
-              className="speed-slider"
-              min={JOG_SPEED_MIN * 100}
-              max={100}
-              step={5}
-              value={Math.round(speedPct * 100)}
-              onChange={(e) => setSpeedPct(Number(e.target.value) / 100)}
-            />
-          </div>
-          <VirtualStick
-            speedPct={speedPct}
-            onChange={stickChange}
-            onRelease={stickRelease}
-          />
-        </section>
+                <button
+                  className="mode-btn primary"
+                  disabled={mode === MODE.MANUAL || !connected}
+                  onClick={() => requestMode(MODE.MANUAL)}
+                >
+                  手動操作
+                </button>
+                <button
+                  className="mode-btn primary idle"
+                  disabled={mode === MODE.IDLE || !connected}
+                  onClick={() => requestMode(MODE.IDLE)}
+                >
+                  待機 (IDLE)
+                </button>
+                <button
+                  className="mode-btn primary"
+                  disabled={mode !== MODE.IDLE || !connected}
+                  onClick={summonRobot}
+                >
+                  呼び寄せ
+                </button>
+                <button
+                  className="mode-btn secondary"
+                  disabled={mode === MODE.FOLLOWING || !connected}
+                  onClick={() => requestMode(MODE.FOLLOWING)}
+                  title="地図あり追従 (実験用・優先度低)"
+                >
+                  地図あり追従
+                  <span className="note"> 実験用</span>
+                </button>
+              </div>
+            </section>
 
-        {/* ── 配電盤移動 ─────────────────────────────── */}
-        <section className="card">
-          <h2>配電盤へ移動</h2>
-          <div className="panel-list">
-            {PANELS.map(p => (
-              <button
-                key={p.id}
-                className="panel-btn"
-                disabled={!connected || estopActive}
-                onClick={() => {
-                  requestMode(MODE.FOLLOWING)  // FOLLOWING 経由でトリガー
-                  setTimeout(() => goToPanel(p.id), 300)
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        </section>
+            {/* ── 手動ジョグ (押している間だけ動く) ───────── */}
+            <section className={`card card-manual ${mode !== MODE.MANUAL ? 'disabled' : ''}`}>
+              <h2>手動移動 <span className="note">(触れている間だけ動く / キー: WASD・矢印, 同時押しで緩旋回)</span></h2>
+              <div className="speed-ctrl">
+                <div className="speed-label">
+                  速度: <b>{(JOG_LIN_MAX * speedPct).toFixed(2)} m/s</b>
+                  <span className="speed-pct">({Math.round(speedPct * 100)}%)</span>
+                </div>
+                <div className="speed-presets">
+                  {JOG_PRESETS.map(p => (
+                    <button
+                      key={p.label}
+                      className={`speed-preset ${Math.abs(speedPct - p.pct) < 0.001 ? 'active' : ''}`}
+                      onClick={() => setSpeedPct(p.pct)}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="range"
+                  className="speed-slider"
+                  min={JOG_SPEED_MIN * 100}
+                  max={100}
+                  step={5}
+                  value={Math.round(speedPct * 100)}
+                  onChange={(e) => setSpeedPct(Number(e.target.value) / 100)}
+                />
+              </div>
+              <VirtualStick
+                speedPct={speedPct}
+                onChange={stickChange}
+                onRelease={stickRelease}
+              />
+            </section>
 
-        {/* ── 緊急停止の解除 (発動ボタンと離れた位置・見た目も別) ── */}
-        {estopActive && (
-          <section className="card estop-release-card">
-            <h2>緊急停止の解除</h2>
-            <p className="note">
-              安全を確認してから解除してください。キーボードからは解除できません。
-            </p>
-            <button className="estop-release-btn" onClick={releaseEstop}>
-              ✓ 安全確認済み — 緊急停止を解除する
-            </button>
-          </section>
+          </div>
+        )}
+
+        {/* ══ 準備タブ: 試験場到着時のセットアップ ══════════════ */}
+        {tab === 'setup' && (
+          <div className="grid">
+
+            <section className="card">
+              <h2>
+                地図作成{' '}
+                <span className={`target-state ${mappingActive ? 'ok' : 'ng'}`}>
+                  {mappingActive ? '作成中' : '停止中'}
+                </span>
+              </h2>
+              <p className="note">
+                起動直後は停止状態。試験場に着いたら開始し、必要な範囲を走行後に停止する
+                （IDLE / MANUAL 中のみ操作可）。
+                <br />
+                停止しても自己位置推定は続きます（地図の更新だけが止まります）。
+              </p>
+              <div className="btn-row">
+                <button
+                  className="mode-btn primary"
+                  disabled={!mapOpsAllowed}
+                  onClick={toggleMapping}
+                >
+                  {mappingActive ? '地図作成停止' : '地図作成開始'}
+                </button>
+                <button
+                  className="mode-btn secondary"
+                  disabled={!mapOpsAllowed}
+                  onClick={saveMap}
+                >
+                  地図を保存
+                </button>
+                {/* 破棄は取り消せないので二段階にする。1度目で確認状態に入り、
+                    10秒放置か他操作で自動的に戻る（誤爆防止） */}
+                <button
+                  className={`mode-btn ${discardArmed ? 'discard-armed' : 'secondary'}`}
+                  disabled={!mapOpsAllowed}
+                  onClick={handleDiscardClick}
+                >
+                  {discardArmed ? '⚠ 本当に破棄する' : '地図を破棄'}
+                </button>
+              </div>
+              {slamLastResult && (
+                <p className={`slam-result ${slamLastResult.startsWith('NG') ? 'ng' : 'ok'}`}>
+                  {slamLastResult}
+                </p>
+              )}
+            </section>
+
+            <section className="card">
+              <h2>地図</h2>
+              <MapView mapData={mapData} robotPose={robotPose} scanData={scanData} pathData={pathData} />
+            </section>
+
+          </div>
+        )}
+
+        {/* ══ 診断タブ: 不調時の切り分け ═══════════════════════ */}
+        {tab === 'diag' && (
+          <div className="grid">
+
+            {/* 左右輪 指令vs実測。PID 追従状況の確認用 */}
+            <section className="card">
+              <h2>車輪速度 <span className="note">(指令=破線 / 実測=実線, 直近15秒)</span></h2>
+              <WheelSpeedView wheelSpeedData={wheelSpeedData} />
+            </section>
+
+            <section className="card">
+              <h2>接続・フォルト</h2>
+              <dl className="diag-list">
+                <dt>rosbridge</dt>
+                <dd className={connected ? 'ok' : 'ng'}>{connected ? '接続中' : '切断'}</dd>
+                <dt>モード</dt>
+                <dd>{modeName}</dd>
+                <dt>フォルト</dt>
+                <dd className={isFault ? 'ng' : 'ok'}>
+                  {isFault ? `${fault.fault_type} — ${fault.description}` : 'なし'}
+                </dd>
+                <dt>追跡</dt>
+                <dd className={isTrackedNow ? 'ok' : 'ng'}>
+                  {isTrackedNow
+                    ? `追跡中 (${personStatus.position.x.toFixed(2)}, ${personStatus.position.y.toFixed(2)}) conf ${personStatus.confidence?.toFixed(2) ?? '—'}`
+                    : `未追跡${personStatus?.lost_reason ? ` (${personStatus.lost_reason})` : ''}`}
+                </dd>
+                <dt>候補数</dt>
+                <dd>{candidates.length}</dd>
+              </dl>
+            </section>
+
+            {/* トグルが ON なのに鳴らない、という他に症状の出ない故障が
+                あるため AudioContext の状態とキューを必ず出す */}
+            <section className="card">
+              <h2>
+                音声
+                <span className={`voice-audio-state ${voice.audioReady ? 'ok' : 'ng'}`}>
+                  {voice.audioReady ? '有効' : '未許可 — 画面をタップで有効化'}
+                </span>
+              </h2>
+              <div className="voice-now">
+                {voice.snapshot.playingId
+                  ? `再生中: ${voice.snapshot.playingId}`
+                  : '再生中: —'}
+                {voice.snapshot.queueIds.length > 0 && `  (待機 ${voice.snapshot.queueIds.length})`}
+              </div>
+            </section>
+
+          </div>
         )}
 
       </div>
+
+      {/* ── 緊急停止の解除 ───────────────────────────────────
+          どのタブからでも到達できる必要があるためタブの外に置く。発動ボタン
+          (画面最上部) から最も遠い画面最下部に、色も形も変えて配置している。
+          連打で発動 → 即解除、を起こさないための距離である */}
+      {estopActive && (
+        <div className="estop-release-bar">
+          <span className="estop-release-note">
+            安全を確認してから解除してください（キーボードからは解除できません）
+          </span>
+          <button className="estop-release-btn" onClick={releaseEstop}>
+            ✓ 安全確認済み — 緊急停止を解除する
+          </button>
+        </div>
+      )}
+
+      {/* ── フッター (常時表示。音声レイヤ + クレジット) ─────────
+          VOICEVOX Nemo のクレジットは利用規約で必須 (VISION.md §7.5 /
+          docs/voice-credits.md)。タブの中に入れると非表示になり得るため
+          常時表示ゾーンに置いている。消さないこと */}
+      <footer className="footer">
+        <div className="footer-voice">
+          <button
+            className={`voice-toggle ${voice.safetyOn ? 'active' : ''}`}
+            onClick={() => voice.toggleLayer(LAYER.SAFETY)}
+          >
+            ♪ 安全通知
+          </button>
+          <button
+            className={`voice-toggle ${voice.demoOn ? 'active' : ''}`}
+            onClick={() => voice.toggleLayer(LAYER.DEMO)}
+          >
+            ♪ デモ実況
+          </button>
+        </div>
+        {!voice.audioReady && (
+          <span className="footer-audio-warn">音声未許可 — 画面をタップ</span>
+        )}
+        <span className="voice-credit">音声: VOICEVOX Nemo</span>
+      </footer>
+
     </div>
   )
 }

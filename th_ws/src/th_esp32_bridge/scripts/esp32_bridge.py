@@ -17,6 +17,7 @@ import queue
 import threading
 
 import rclpy
+from rclpy.duration import Duration
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import Twist, TransformStamped
@@ -43,6 +44,9 @@ class Esp32Bridge(Node):
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('publish_tf', True)
         self.declare_parameter('feedback_timeout_ms', 500)
+        # ESP32 の制御周期 (esp32/src/config.h の CTRL_PERIOD_MS と一致させること)。
+        # WHEEL_FEEDBACK 1 フレームが表す走行時間そのもので、オドメトリ積分の dt になる。
+        self.declare_parameter('feedback_period_ms', 100)
         self.declare_parameter('ws_host', '0.0.0.0')
         self.declare_parameter('ws_port', 8765)
 
@@ -61,6 +65,12 @@ class Esp32Bridge(Node):
         self._pub_odom = self.create_publisher(Odometry, 'odom', 10)
         self._pub_wheel_feedback = self.create_publisher(
             WheelFeedback, '/esp32/wheel_feedback', 10)
+        # /cmd_vel を差動駆動変換した左右目標速度 (WHEEL_CMD で ESP32 へ送る値と同じ)。
+        # WheelFeedback 型を指令値側にも再利用する(フィールド形状が同一のため)。
+        # WebUI で /esp32/wheel_feedback (実測) と重ねて表示し、PID の追従遅れ・
+        # 定常偏差を目視で確認できるようにする。
+        self._pub_wheel_cmd = self.create_publisher(
+            WheelFeedback, '/esp32/wheel_cmd_speed', 10)
         self._pub_estop_hw = self.create_publisher(Bool, '/safety/estop_hw', 10)
         self._pub_imu = self.create_publisher(Imu, '/esp32/imu_data', 10)
         self._pub_imu_calib = self.create_publisher(UInt8, '/esp32/imu_calib_status', 10)
@@ -69,7 +79,63 @@ class Esp32Bridge(Node):
         # ── Subscribers ────────────────────────────────────
         self.create_subscription(Twist, '/cmd_vel', self._cb_cmd_vel, 10)
 
+        # twist_mux はロック作動中、無出力(silent)になり得る実装のため、
+        # /cmd_vel の途絶だけに頼らずここでも直接ロック状態を購読し、
+        # ロック中は _last_cmd_vel の内容によらず強制的にゼロを送る
+        # (VISION.md §5 参照。2026-08-06 手動ジョグ中の E-Stop で発覚)。
+        #
+        # ロックトピック自体が途絶した場合 (safety_monitor のクラッシュ等) も
+        # twist_mux.yaml の locks.*.timeout(0.5s) と同じ考え方でフェイルセーフに
+        # ロック扱いにする。単純な bool ラッチだけだと safety_monitor が
+        # 死んだ際に「ロックされていない」状態のまま固定されてしまい、上と同じ
+        # 事象(古い非ゼロ指令の再送)が別経路で再発するため
+        # (twist_mux.yaml の timeout と同値の 0.5s を使用)。
+        self._LOCK_TIMEOUT_SEC = 0.5
+        self._estop_active = False
+        self._fault_lock_active = False
+        self._last_estop_msg_time = None
+        self._last_fault_lock_msg_time = None
+        self.create_subscription(Bool, '/safety/estop', self._cb_estop, 10)
+        self.create_subscription(Bool, '/safety/fault_lock', self._cb_fault_lock, 10)
+
+        # 最新の /cmd_vel を一定周期で再送するキープアライブ。ESP32側の
+        # WHEEL_CMD ウォッチドッグ(300ms, config.h)は「WebSocketリンクが
+        # 生きているか」を測るためのものだが、/cmd_vel のコールバック駆動
+        # 送信だけだと上流の発行間隔(WiFi平常時ジッタで0.5〜1.2秒、
+        # docs/network.md 参照)がそのままウォッチドッグの入力になってしまい、
+        # リンクは健全なのに誤発動していた(2026-08-05 実機ログで確認)。
+        # このタイマーで実際のリンク死活とは無関係な発行間隔のばらつきを
+        # 吸収する。ROS2/本ノードが本当にクラッシュすればこのタイマーごと
+        # 止まるため、ESP32側の最終保証(300ms以内に停止)は変わらない。
+        self._last_cmd_vel = Twist()
+        self.create_timer(0.05, self._cb_cmd_vel_keepalive)  # 20Hz
+
         self._odom_x = self._odom_y = self._odom_yaw = 0.0
+        self._feedback_period_sec = \
+            self.get_parameter('feedback_period_ms').value / 1000.0
+        # 受信ギャップの警告閾値。公称周期の 5 倍 (既定 0.5 s) を超えたら WiFi 遅延を疑う。
+        self._ARRIVAL_GAP_WARN_SEC = self._feedback_period_sec * 5.0
+        # ESP32 から受けた dt の妥当範囲の上限。ファーム側も 1.0 を超えたら公称値へ
+        # フォールバックする実装 (esp32/src/main.cpp) なので同じ値を使う。
+        self._DT_MAX_SEC = 1.0
+        # オドメトリのヘッダスタンプが実時間からこれ以上ずれたら貼り直す。
+        #
+        # 正常時はどのケースでもずれは 0 近傍に留まるため、これは異常時の安全網
+        # でしかない: 定常時は到着間隔と dt がどちらも公称周期で進む。バースト
+        # 配送でも、バースト開始時点の基準スタンプが既にギャップぶん古いので、
+        # dt を積み上げると現在時刻に着地する (これがこの方式の狙い)。ESP32 の
+        # ループ停滞で dt が伸びた場合も、到着間隔が同じだけ伸びるので釣り合う。
+        # したがって閾値は「dt の累積が実時間から乖離し続けている」異常だけを
+        # 捉えればよく、docs/network.md 記載の最大ギャップ(1.2s)では発火しない
+        # 幅を取る。
+        self._STAMP_RESYNC_SEC = 2.0
+        # この機体の最大ヨーレートは 1 rad/s 程度。これを大きく超える角速度が
+        # 届いたらジャイロ単位の取り違えを疑う (_on_imu_data 参照)。
+        self._IMU_WZ_IMPLAUSIBLE_RAD_S = 10.0
+        self._odom_stamp = None
+        # 受信した WHEEL_FEEDBACK が新形式(dt 付き)かどうか。None = 未受信。
+        # 変化したときだけログに出す (_on_wheel_feedback 参照)。
+        self._feedback_has_dt = None
         self._last_odom_time = self.get_clock().now()
         self._last_feedback_time = self.get_clock().now()
         self._esp32_alive = False
@@ -141,11 +207,59 @@ class Esp32Bridge(Node):
 
     # ── /cmd_vel → WHEEL_CMD 送信 ─────────────────────────────────
     def _cb_cmd_vel(self, msg: Twist):
-        v = msg.linear.x
-        w = msg.angular.z
+        self._last_cmd_vel = msg
+        self._send_wheel_cmd(msg)
+
+    # ── ロック状態購読 ─────────────────────────────────────────
+    def _cb_estop(self, msg: Bool):
+        self._estop_active = msg.data
+        self._last_estop_msg_time = self.get_clock().now()
+
+    def _cb_fault_lock(self, msg: Bool):
+        self._fault_lock_active = msg.data
+        self._last_fault_lock_msg_time = self.get_clock().now()
+
+    def _is_locked(self) -> bool:
+        if self._estop_active or self._fault_lock_active:
+            return True
+        return self._is_stale(self._last_estop_msg_time) or \
+            self._is_stale(self._last_fault_lock_msg_time)
+
+    def _is_stale(self, last_msg_time) -> bool:
+        # 未受信 (起動直後) も安全側にロック扱い。safety_monitor は起動後
+        # 即座に 10Hz で送り始めるため、正常時にここで待たされるのは一瞬。
+        if last_msg_time is None:
+            return True
+        elapsed = (self.get_clock().now() - last_msg_time).nanoseconds / 1e9
+        return elapsed > self._LOCK_TIMEOUT_SEC
+
+    # ── キープアライブ: 最新の /cmd_vel を一定周期で再送 ────────────
+    def _cb_cmd_vel_keepalive(self):
+        self._send_wheel_cmd(self._last_cmd_vel)
+
+    def _send_wheel_cmd(self, msg: Twist):
+        if self._is_locked():
+            # twist_mux が無出力(silent)のままでも取り残された非ゼロ指令を
+            # 再送し続けないよう、ここで強制的にゼロにする。_last_cmd_vel
+            # 自体もここでゼロ化しておかないと、ロック解除の瞬間に
+            # キープアライブがロック前の古い非ゼロ指令をそのまま再送して
+            # しまう(2026-08-06 E-Stop 解除後に前進指令が復活する事象で発覚)。
+            v = 0.0
+            w = 0.0
+            self._last_cmd_vel = Twist()
+        else:
+            v = msg.linear.x
+            w = msg.angular.z
         v_right = v + (w * self._wheel_base / 2.0)
         v_left = v - (w * self._wheel_base / 2.0)
         frame = pack_wheel_cmd(v_left, v_right)
+
+        cmd_fb = WheelFeedback()
+        cmd_fb.header.stamp = self.get_clock().now().to_msg()
+        cmd_fb.header.frame_id = self._base_frame
+        cmd_fb.left_speed = v_left
+        cmd_fb.right_speed = v_right
+        self._pub_wheel_cmd.publish(cmd_fb)
 
         with self._ws_conn_lock:
             conn = self._ws_conn
@@ -174,8 +288,8 @@ class Esp32Bridge(Node):
         try:
             msg_type = peek_type(data)
             if msg_type == WHEEL_FEEDBACK:
-                left, right = unpack_wheel_feedback(data)
-                self._on_wheel_feedback(left, right)
+                left, right, dt = unpack_wheel_feedback(data)
+                self._on_wheel_feedback(left, right, dt)
             elif msg_type == ESTOP_HW:
                 estop = unpack_estop_hw(data)
                 self._pub_estop_hw.publish(Bool(data=estop))
@@ -187,15 +301,84 @@ class Esp32Bridge(Node):
             self.get_logger().warn(f"不正なフレームを受信: {e}")
 
     # ── WHEEL_FEEDBACK → /odom + TF ───────────────────────────────
-    def _on_wheel_feedback(self, v_left: float, v_right: float):
-        self._last_feedback_time = self.get_clock().now()
+    def _on_wheel_feedback(self, v_left: float, v_right: float,
+                            dt_from_esp32: "float | None" = None):
+        now = self.get_clock().now()
+        self._last_feedback_time = now
         self._esp32_alive = True
 
-        t = self.get_clock().now()
-        dt = (t - self._last_odom_time).nanoseconds / 1e9
-        self._last_odom_time = t
-        if dt <= 0.0 or dt > 1.0:
-            return
+        # ── 積分区間は「到着間隔」ではなく ESP32 が速度算出に使った dt ──────
+        # ESP32 は velL = counts * distPerCount / dt (esp32/src/main.cpp) で
+        # 速度を出しているので、そのフレームが表す走行時間はまさにこの dt。
+        # フレームに載せて送ってもらい、そのまま積分区間として使う。
+        #
+        # 以前は到着時刻の差分を dt にしていたが、これは「車輪が回った時刻」ではなく
+        # 「WiFi/TCP がパケットを配送した時刻」を測っている。docs/network.md 記載の
+        # 0.5〜1.2 秒の受信ギャップがそのまま積分誤差になり、さらに dt>1.0 の
+        # 場合は更新ごと return で破棄していたため、ギャップ中の回転が丸ごと
+        # 消えていた (旋回時の yaw ドリフト。2026-08-06 修正)。
+        #
+        # 旧ファームウェア (dt なし) からは None が来るので公称周期で代替する。
+        # 壊れたフレームの異常値をそのまま yaw に積むのは元の不具合より悪いため、
+        # 範囲外の値も公称周期へ落とす。
+        # ファームウェアの世代をログに出す。後方互換にしてある都合上、旧形式でも
+        # 黙って動いてしまうため、「書き込んだつもり」の取り違えに気づけない。
+        # dt の有無とジャイロ単位修正は同じビルドに入るので、旧形式が届いている
+        # ことは「ジャイロもまだ dps」を意味する。
+        has_dt = dt_from_esp32 is not None
+        if has_dt != self._feedback_has_dt:
+            self._feedback_has_dt = has_dt
+            if has_dt:
+                self.get_logger().info(
+                    "WHEEL_FEEDBACK: 新形式 (dt 付き) を受信。ESP32 側の制御周期で"
+                    "オドメトリを積分します")
+            else:
+                self.get_logger().error(
+                    "WHEEL_FEEDBACK: 旧形式 (dt なし) を受信 — ESP32 ファームウェアが "
+                    "2026-08-06 の更新前です。オドメトリの積分区間は公称 "
+                    f"{self._feedback_period_sec * 1000:.0f} ms で代替します。"
+                    "同じ更新にジャイロの dps→rad/s 修正が入っているため、"
+                    "この状態で imu_enabled:=true にすると EKF が 57.3 倍の"
+                    "ヨーレートを信じてオドメトリが壊れます")
+
+        dt = dt_from_esp32
+        if dt is None or not (0.0 < dt <= self._DT_MAX_SEC):
+            if dt is not None:
+                self.get_logger().warn(
+                    f"ESP32 から不正な dt={dt} を受信。公称周期で代替します",
+                    throttle_duration_sec=5.0)
+            dt = self._feedback_period_sec
+
+        # ── ヘッダスタンプも dt で進める ────────────────────────────
+        # robot_localization は /odom の pose を使わず twist とヘッダスタンプの
+        # 差分で積分する (ekf_params.yaml の odom0_config は vx/vyaw のみ true)。
+        # ここで到着時刻を貼ると、遅延後にまとめて届いたフレーム群がほぼ同一の
+        # スタンプを持ち、EKF 側では積分区間ゼロになって内部の姿勢がいくら
+        # 正しくても TF に反映されない。dt ぶんずつ進む単調なスタンプを使う。
+        #
+        # ただし実時間から離れすぎると、slam_toolbox がスキャン時刻で TF を
+        # 引けなくなる (slam_params.yaml の transform_timeout 参照)。
+        # ずれが許容量を超えたら現在時刻へ貼り直す。
+        if self._odom_stamp is None:
+            self._odom_stamp = now
+        else:
+            self._odom_stamp = self._odom_stamp + Duration(seconds=dt)
+            skew = abs((now - self._odom_stamp).nanoseconds) / 1e9
+            if skew > self._STAMP_RESYNC_SEC:
+                self.get_logger().warn(
+                    f"オドメトリのスタンプが実時間から {skew:.2f} s ずれたため貼り直します",
+                    throttle_duration_sec=5.0)
+                self._odom_stamp = now
+        t = self._odom_stamp
+
+        # 到着間隔そのものは診断情報として監視する (積分には使わない)。
+        arrival_dt = (now - self._last_odom_time).nanoseconds / 1e9
+        self._last_odom_time = now
+        if arrival_dt > self._ARRIVAL_GAP_WARN_SEC:
+            self.get_logger().warn(
+                f"wheel_feedback の受信ギャップ {arrival_dt:.2f} s "
+                f"(ESP32 側 dt {dt:.3f} s)。WiFi 遅延の可能性",
+                throttle_duration_sec=5.0)
 
         # ── 差動駆動オドメトリ更新 ──────────────────────────
         v_center = (v_left + v_right) / 2.0
@@ -253,6 +436,21 @@ class Esp32Bridge(Node):
 
     # ── IMU_DATA → /esp32/imu_data + /esp32/imu_calib_status ──────
     def _on_imu_data(self, qw, qx, qy, qz, wx, wy, wz, ax, ay, az, calib_status):
+        # ジャイロ単位の取り違えを実機で検知する。sensor_msgs/Imu は rad/s 規定だが、
+        # 2026-08-06 より前のファームウェアは Adafruit_BNO055 の戻り値(dps)を
+        # そのまま送ってくるため 57.3 倍になる。この機体の最大ヨーレートは
+        # 1 rad/s 程度(planning_params.yaml の w_max 系)なので、それを大きく
+        # 超える値が続くなら単位の取り違えを疑う。
+        # 低速域では dps の値も閾値を下回るため、これは「気づける」ための警告で
+        # あって保証ではない。EKF への投入可否は imu_enabled で明示的に管理する。
+        if abs(wz) > self._IMU_WZ_IMPLAUSIBLE_RAD_S:
+            self.get_logger().error(
+                f"IMU の角速度が非現実的です (wz={wz:.1f} rad/s)。"
+                f"ジャイロ単位が dps のままの可能性があります "
+                f"(ESP32 ファームウェアの再書き込みが必要)。"
+                f"この状態で imu_enabled:=true にするとオドメトリが壊れます",
+                throttle_duration_sec=10.0)
+
         imu = Imu()
         imu.header.stamp = self.get_clock().now().to_msg()
         imu.header.frame_id = 'imu_link'
