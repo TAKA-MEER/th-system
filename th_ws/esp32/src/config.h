@@ -37,7 +37,7 @@
 
 // ── ロボット寸法 (オドメトリキャリブレーションで上書き) ────────
 // ※ esp32_bridge 側でも同値を使用しており両方の変更が必要
-#define WHEEL_RADIUS_M    0.019412f    // m  (実測後に calib ツールで調整)
+#define WHEEL_RADIUS_M    0.020065f    // m  (実測後に calib ツールで調整)
 #define WHEEL_BASE_M      0.39f      // m  (実測後に calib ツールで調整)
 
 // ── PID パラメータ ──
