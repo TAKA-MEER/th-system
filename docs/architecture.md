@@ -636,7 +636,8 @@ ros2 topic echo /person/status --once
 ## WebUI 設定パネル（パラメータ調整）
 
 VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web_ui/src/SettingsPanel.jsx`）から
-`follow_planner_mapless` の数値パラメータと `lidar_filter.blind_angle_ranges` を確認・変更できる。
+`follow_planner_mapless` の数値パラメータ、`face_planner`（FACING の旋回速度上限のみ・展示用）、
+`lidar_filter.blind_angle_ranges` を確認・変更できる。
 設定パネル自体はタブに属さないオーバーレイで、ヘッダーの ⚙ からどのタブでも開ける。
 
 ### 構成

@@ -1,7 +1,8 @@
 // ============================================================
 // SettingsPanel.jsx — WebUI 設定パネル（パラメータ調整）
 //
-// 対象: follow_planner_mapless（数値パラメータ全数）と
+// 対象: follow_planner_mapless（数値パラメータ全数）、
+//       face_planner（旋回速度のみ・展示用 FACING モード）、
 //       lidar_filter.blind_angle_ranges（VISION.md §6 参照）。
 // 変更は IDLE / MANUAL モード中のみ許可する。UI 側で入力を disabled に
 // するだけでなく、実際の適用・保存は config_manager ノードがモードを
@@ -29,6 +30,11 @@ const MAPLESS_FIELDS = [
   // update_rate_hz は対象外: 制御ループの周期は起動時に固定されておりライブ変更が
   // 効かない上、内部計算の除数のため 0 を送るとノードがクラッシュする
   // (th_config_manager/tunable_targets.py 参照)
+]
+
+// face_planner: FACING(展示用・その場正対旋回)の旋回速度上限のみを対象とする
+const FACE_FIELDS = [
+  { name: 'w_max_rad_s', label: '正対旋回: 最高旋回速度', unit: 'rad/s', min: 0.1, max: 2, step: 0.05 },
 ]
 
 const BLIND_LABELS = ['右前 開始', '右前 終了', '右後 開始', '右後 終了', '左後 開始', '左後 終了', '左前 開始', '左前 終了']
@@ -61,17 +67,20 @@ function NumberField({ label, unit, value, min, max, step, disabled, onCommit })
 
 export default function SettingsPanel({ open, onClose, editable, getTunableParams, applyTunableParam, saveTunableParams }) {
   const [mapless, setMapless] = useState({})
+  const [face, setFace] = useState({})
   const [blindRanges, setBlindRanges] = useState(null)
-  const [status, setStatus] = useState({ mapless: '', lidar_filter: '' })
+  const [status, setStatus] = useState({ mapless: '', face_planner: '', lidar_filter: '' })
   const [loading, setLoading] = useState(false)
 
   const reload = useCallback(() => {
     setLoading(true)
     Promise.all([
       getTunableParams('follow_planner_mapless', MAPLESS_FIELDS.map(f => f.name)),
+      getTunableParams('face_planner', FACE_FIELDS.map(f => f.name)),
       getTunableParams('lidar_filter', ['blind_angle_ranges']),
-    ]).then(([maplessVals, lidarVals]) => {
+    ]).then(([maplessVals, faceVals, lidarVals]) => {
       setMapless(maplessVals)
+      setFace(faceVals)
       setBlindRanges(lidarVals.blind_angle_ranges ?? [])
     }).catch((e) => {
       console.error('パラメータ取得失敗:', e)
@@ -85,6 +94,12 @@ export default function SettingsPanel({ open, onClose, editable, getTunableParam
   const applyMapless = (name, isInt) => (value) => {
     setMapless((prev) => ({ ...prev, [name]: value }))
     applyTunableParam('follow_planner_mapless', name, value, { isInt })
+      .catch((e) => console.error('適用失敗:', e))
+  }
+
+  const applyFace = (name, isInt) => (value) => {
+    setFace((prev) => ({ ...prev, [name]: value }))
+    applyTunableParam('face_planner', name, value, { isInt })
       .catch((e) => console.error('適用失敗:', e))
   }
 
@@ -139,6 +154,33 @@ export default function SettingsPanel({ open, onClose, editable, getTunableParam
                 value={mapless[f.name]}
                 disabled={!editable || loading}
                 onCommit={applyMapless(f.name, f.isInt)}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="settings-section-header">
+            <h3>正対旋回（face_planner・展示用）</h3>
+            <button
+              className="settings-save-btn"
+              disabled={!editable || loading}
+              onClick={() => save('face_planner')}
+            >
+              YAML に保存
+            </button>
+          </div>
+          {status.face_planner && <p className="settings-status">{status.face_planner}</p>}
+          <div className="settings-grid">
+            {FACE_FIELDS.map((f) => (
+              <NumberField
+                key={f.name}
+                label={f.label}
+                unit={f.unit}
+                min={f.min} max={f.max} step={f.step}
+                value={face[f.name]}
+                disabled={!editable || loading}
+                onCommit={applyFace(f.name, f.isInt)}
               />
             ))}
           </div>

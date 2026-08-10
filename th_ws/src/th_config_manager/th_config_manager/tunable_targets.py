@@ -37,6 +37,16 @@ TUNABLE_TARGETS = {
             "max_angular_accel_rad_s2",
         ],
     },
+    "face_planner": {
+        "yaml_package": "th_bringup",
+        "yaml_relpath": "config/planning_params.yaml",
+        "block_key": "face_planner",
+        # FACING(展示用・その場正対旋回)の旋回速度上限のみを対象とする。
+        # 他パラメータ(k_ang 等)は展示調整の対象外のためレジストリに含めない。
+        "params": [
+            "w_max_rad_s",
+        ],
+    },
     "lidar_filter": {
         "yaml_package": "th_bringup",
         "yaml_relpath": "config/perception_params.yaml",
