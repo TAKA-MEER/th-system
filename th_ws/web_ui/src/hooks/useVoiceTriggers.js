@@ -6,7 +6,7 @@
 //
 // Tier 2 時点の自動化範囲:
 //   安全通知 13件すべて
-//   デモ実況 38件中 26件
+//   デモ実況 39件中 27件
 // 残る 12件 (N1 N2 N6 N7 N8 N16 N17 N18 N20 N37 N39 N41) は、観測手段がないか
 // 他 ID と同じエッジで発火して区別できないため手動発火のみ。理由は
 // announcements.js の note に個別に書いてある。
@@ -122,6 +122,7 @@ export function useVoiceTriggers(ros, voice) {
       if (mode === MODE.FOLLOWING_MAPLESS) announce('N5')
       if (mode === MODE.FOLLOWING)         announce('N14')
       if (mode === MODE.MANUAL)            announce('N40')
+      if (mode === MODE.FACING)            announce('N45')
       if (prev.mode === MODE.MOVING_TO_PANEL && mode === MODE.AT_PANEL) announce('N38')
 
       // 待機へ戻ったこと自体の通知。起動直後 (D3) と E-Stop 解除 (D2) は

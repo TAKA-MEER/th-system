@@ -184,9 +184,12 @@ const DEMO_ANNOUNCEMENTS = [
     { auto: AUTO.WIRED }),
   entry('N44', D, '手動での対象切替 (/person_tracker/select_target 成功)', '対象を選択', 1.25,
     { auto: AUTO.WIRED }),
+  entry('N45', D, '→ FACING (IDLE から・展示用)', '簡易追従', 1.0,
+    { auto: AUTO.WIRED,
+      note: 'FACING は IDLE からのみ遷移可能なため N5/N14/N40/N43 と異なり遷移元の区別は不要' }),
 ]
 
-/** VISION.md §7.7 の全 51 件。安全通知 13 + デモ実況 38 */
+/** VISION.md §7.7 の全 52 件。安全通知 13 + デモ実況 39 */
 export const ANNOUNCEMENTS = [...SAFETY_ANNOUNCEMENTS, ...DEMO_ANNOUNCEMENTS]
 
 const BY_ID = new Map(ANNOUNCEMENTS.map((a) => [a.id, a]))
