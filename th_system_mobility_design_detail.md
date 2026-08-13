@@ -10,45 +10,45 @@
 
 ### 2.1 ノード一覧
 
-| ノード名 | 役割 | 言語(推奨) |
-| --- | --- | --- |
-| `person_tracker` | LiDARから試験員の相対位置(x,y)を取得(既存実装と連携) | Python/C++ |
-| `person_predictor` | LiDARロスト時にオドメトリ+簡易SLAMで試験員位置を予測 | Python |
-| `mode_manager` | システム全体の状態遷移管理(FSM) | C++ |
-| `follow_planner` | 試験員位置から追従目標位置を算出(近接時の後退判断を含む) | Python |
-| `panel_navigator` | 配電盤前への移動目標を管理 | Python |
-| `nav2`スタック(既存パッケージ) | 経路計画・障害物回避・局所制御 | - |
-| `twist_mux`(ROS2標準パッケージ) | 複数の`/cmd_vel`発行元の優先度制御・排他多重化、E-Stopロック | - |
-| `manual_command_handler` | タブレットからの操作コマンドを解釈 | Python |
-| `web_ui_bridge` | タブレットブラウザ⇔ROS2間通信(rosbridge) | - |
-| `esp32_bridge` | ESP32との通信(WebSocket, PC側がサーバー) | Python(`esp32_bridge`側)・Arduino/C++(ESP32側) |
-| `safety_monitor` | E-Stop監視に加え、LiDAR・ESP32の死活監視によるフェイルセーフ検知を担う | C++ |
+| ノード名                          | 役割                                                                   | 言語(推奨)                                       |
+| --------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------ |
+| `person_tracker`                | LiDARから試験員の相対位置(x,y)を取得(既存実装と連携)                   | Python/C++                                       |
+| `person_predictor`              | LiDARロスト時にオドメトリ+簡易SLAMで試験員位置を予測                   | Python                                           |
+| `mode_manager`                  | システム全体の状態遷移管理(FSM)                                        | C++                                              |
+| `follow_planner`                | 試験員位置から追従目標位置を算出(近接時の後退判断を含む)               | Python                                           |
+| `panel_navigator`               | 配電盤前への移動目標を管理                                             | Python                                           |
+| `nav2`スタック(既存パッケージ)  | 経路計画・障害物回避・局所制御                                         | -                                                |
+| `twist_mux`(ROS2標準パッケージ) | 複数の`/cmd_vel`発行元の優先度制御・排他多重化、E-Stopロック         | -                                                |
+| `manual_command_handler`        | タブレットからの操作コマンドを解釈                                     | Python                                           |
+| `web_ui_bridge`                 | タブレットブラウザ⇔ROS2間通信(rosbridge)                              | -                                                |
+| `esp32_bridge`                  | ESP32との通信(WebSocket, PC側がサーバー)                               | Python(`esp32_bridge`側)・Arduino/C++(ESP32側) |
+| `safety_monitor`                | E-Stop監視に加え、LiDAR・ESP32の死活監視によるフェイルセーフ検知を担う | C++                                              |
 
 ### 2.2 主要トピック/サービス/アクション
 
-| 名前 | 型 | 概要 |
-| --- | --- | --- |
-| `/person/position` | `geometry_msgs/PointStamped` | LiDARによる試験員相対位置(既存実装出力) |
-| `/scan` | `sensor_msgs/LaserScan` | LiDAR生スキャンデータ。Nav2 costmapの障害物レイヤーへ直接入力し、試験員かどうかを問わず周辺物体全般への衝突回避に使用(4.3.8節) |
-| `/person/predicted_position` | `geometry_msgs/PointStamped` | ロスト時の予測位置 |
-| `/robot/mode` | カスタム`RobotMode.msg` | 現在の動作モード |
-| `/mode_manager/set_mode` | サービス | モード変更要求 |
-| `/manual/target_pose` | `geometry_msgs/PoseStamped` (frame: base_link) | 手動入力によるロボット基準目標座標 |
-| `/manual/heartbeat` | `std_msgs/Empty` | タブレットUIからの生存信号 |
-| `/safety/estop` | `std_msgs/Bool` | 非常停止フラグ(物理ボタン・タブレットの緊急停止ボタンを`safety_monitor`が集約) |
-| `/safety/fault` | カスタム`FaultStatus.msg` (active, fault_type: `LIDAR_LOST`/`ESP32_DISCONNECTED`等) | `safety_monitor`がLiDAR(`/person/position`・`/scan`)やESP32(`/esp32/wheel_feedback`)の途絶を検知した際のフォルト通知。`twist_mux`のロックと`mode_manager`への通知を兼ねる |
-| `/esp32/wheel_cmd` | カスタム`WheelCommand.msg` (left_speed, right_speed) | 左右クローラー目標速度 |
-| `/esp32/wheel_feedback` | カスタム`WheelFeedback.msg` | 左右クローラー実速度 |
-| `/cmd_vel_nav` | `geometry_msgs/Twist` | Nav2 controller_serverの出力(通常の自律走行・手動ゴール移動・配電盤移動すべてで共用)。`twist_mux`の入力の1つ |
-| `/cmd_vel_retreat` | `geometry_msgs/Twist` | `follow_planner`からの近接退避時の直接速度指令(4.3.7節)。`twist_mux`の入力の1つ |
-| `/cmd_vel_manual`(将来) | `geometry_msgs/Twist` | 将来のジョイスティック的な連続手動操作用(5.2節)。`twist_mux`の入力として予約 |
-| `/cmd_vel` | `geometry_msgs/Twist` | `twist_mux`が優先度に基づき選択した最終速度指令。`esp32_bridge`へ入力される唯一の経路(2.4節) |
-| `/panel_navigator/go_to_panel` | サービス(panel_id指定) | 配電盤前への移動要求 |
-| `/panel_navigator/arrived` | カスタム`PanelArrival.msg` (panel_id) | 配電盤到着通知(外部のカメラ昇降システムへ) |
-| `/panel_navigator/complete_inspection` | サービス | 作業完了通知(タブレット操作、または将来的に外部システムからも呼び出し可) |
-| `/panel_navigator/at_panel_interrupted` | カスタムメッセージ(panel_id) | `AT_PANEL`から`MANUAL`へ中断する際の外部カメラ昇降システムへの通知(仮称) |
-| `/esp32/imu_data` | `sensor_msgs/Imu` | IMUデータ(IMU搭載時のみ発行。未搭載時はトピック自体が存在しない) |
-| `NavigateToPose` | Nav2標準アクション | 経路計画・実行(追従/手動/配電盤移動すべてで共用) |
+| 名前                                      | 型                                                                                        | 概要                                                                                                                                                                                  |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/person/position`                      | `geometry_msgs/PointStamped`                                                            | LiDARによる試験員相対位置(既存実装出力)                                                                                                                                               |
+| `/scan`                                 | `sensor_msgs/LaserScan`                                                                 | LiDAR生スキャンデータ。Nav2 costmapの障害物レイヤーへ直接入力し、試験員かどうかを問わず周辺物体全般への衝突回避に使用(4.3.8節)                                                        |
+| `/person/predicted_position`            | `geometry_msgs/PointStamped`                                                            | ロスト時の予測位置                                                                                                                                                                    |
+| `/robot/mode`                           | カスタム`RobotMode.msg`                                                                 | 現在の動作モード                                                                                                                                                                      |
+| `/mode_manager/set_mode`                | サービス                                                                                  | モード変更要求                                                                                                                                                                        |
+| `/manual/target_pose`                   | `geometry_msgs/PoseStamped` (frame: base_link)                                          | 手動入力によるロボット基準目標座標                                                                                                                                                    |
+| `/manual/heartbeat`                     | `std_msgs/Empty`                                                                        | タブレットUIからの生存信号                                                                                                                                                            |
+| `/safety/estop`                         | `std_msgs/Bool`                                                                         | 非常停止フラグ(物理ボタン・タブレットの緊急停止ボタンを`safety_monitor`が集約)                                                                                                      |
+| `/safety/fault`                         | カスタム`FaultStatus.msg` (active, fault_type: `LIDAR_LOST`/`ESP32_DISCONNECTED`等) | `safety_monitor`がLiDAR(`/person/position`・`/scan`)やESP32(`/esp32/wheel_feedback`)の途絶を検知した際のフォルト通知。`twist_mux`のロックと`mode_manager`への通知を兼ねる |
+| `/esp32/wheel_cmd`                      | カスタム`WheelCommand.msg` (left_speed, right_speed)                                    | 左右クローラー目標速度                                                                                                                                                                |
+| `/esp32/wheel_feedback`                 | カスタム`WheelFeedback.msg`                                                             | 左右クローラー実速度                                                                                                                                                                  |
+| `/cmd_vel_nav`                          | `geometry_msgs/Twist`                                                                   | Nav2 controller_serverの出力(通常の自律走行・手動ゴール移動・配電盤移動すべてで共用)。`twist_mux`の入力の1つ                                                                        |
+| `/cmd_vel_retreat`                      | `geometry_msgs/Twist`                                                                   | `follow_planner`からの近接退避時の直接速度指令(4.3.7節)。`twist_mux`の入力の1つ                                                                                                   |
+| `/cmd_vel_manual`(将来)                 | `geometry_msgs/Twist`                                                                   | 将来のジョイスティック的な連続手動操作用(5.2節)。`twist_mux`の入力として予約                                                                                                        |
+| `/cmd_vel`                              | `geometry_msgs/Twist`                                                                   | `twist_mux`が優先度に基づき選択した最終速度指令。`esp32_bridge`へ入力される唯一の経路(2.4節)                                                                                      |
+| `/panel_navigator/go_to_panel`          | サービス(panel_id指定)                                                                    | 配電盤前への移動要求                                                                                                                                                                  |
+| `/panel_navigator/arrived`              | カスタム`PanelArrival.msg` (panel_id)                                                   | 配電盤到着通知(外部のカメラ昇降システムへ)                                                                                                                                            |
+| `/panel_navigator/complete_inspection`  | サービス                                                                                  | 作業完了通知(タブレット操作、または将来的に外部システムからも呼び出し可)                                                                                                              |
+| `/panel_navigator/at_panel_interrupted` | カスタムメッセージ(panel_id)                                                              | `AT_PANEL`から`MANUAL`へ中断する際の外部カメラ昇降システムへの通知(仮称)                                                                                                          |
+| `/esp32/imu_data`                       | `sensor_msgs/Imu`                                                                       | IMUデータ(IMU搭載時のみ発行。未搭載時はトピック自体が存在しない)                                                                                                                      |
+| `NavigateToPose`                        | Nav2標準アクション                                                                        | 経路計画・実行(追従/手動/配電盤移動すべてで共用)                                                                                                                                      |
 
 すべてのカスタムメッセージは `th_system_msgs` パッケージに集約し、インターフェース変更の影響範囲を一箇所で管理する。
 
@@ -144,12 +144,12 @@ IMUはESP32に直接接続するセンサとして位置づけ、ROS2側(`esp32_
 
 **優先度設定(暫定):**
 
-| 優先度 | 入力トピック | 発行元 | 用途 |
-| --- | --- | --- | --- |
-| 最優先 | lock(`/safety/estop`・`/safety/fault`の2系統) | `safety_monitor` | E-Stop時、およびLiDAR/ESP32フォルト検知時の強制ゼロ出力。他のどの入力よりも優先し、`twist_mux`の標準機能として保証する |
-| 高 | `/cmd_vel_manual`(将来) | `manual_command_handler`(ジョイスティック実装時) | 手動連続操作。操作者の意図を最優先する |
-| 中 | `/cmd_vel_retreat` | `follow_planner` | 近接時の緊急退避(4.3.7節) |
-| 低 | `/cmd_vel_nav` | Nav2 controller_server | 通常の自律走行全般(追従・手動ゴール移動・配電盤移動) |
+| 優先度 | 入力トピック                                      | 発行元                                             | 用途                                                                                                                     |
+| ------ | ------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 最優先 | lock(`/safety/estop`・`/safety/fault`の2系統) | `safety_monitor`                                 | E-Stop時、およびLiDAR/ESP32フォルト検知時の強制ゼロ出力。他のどの入力よりも優先し、`twist_mux`の標準機能として保証する |
+| 高     | `/cmd_vel_manual`(将来)                         | `manual_command_handler`(ジョイスティック実装時) | 手動連続操作。操作者の意図を最優先する                                                                                   |
+| 中     | `/cmd_vel_retreat`                              | `follow_planner`                                 | 近接時の緊急退避(4.3.7節)                                                                                                |
+| 低     | `/cmd_vel_nav`                                  | Nav2 controller_server                             | 通常の自律走行全般(追従・手動ゴール移動・配電盤移動)                                                                     |
 
 - 各入力トピックには `twist_mux` のタイムアウト設定(例: 0.5秒未受信で非アクティブ扱い)を行い、発行元が停止している入力は自動的にミューティングされるようにする。
 - `safety_monitor` は `/safety/estop` が立った場合に加え、LiDARやESP32のデータ途絶を検知した場合(`/safety/fault`)にも、`twist_mux` のlock機構を通じて出力を強制的にゼロにする。これにより、`mode_manager`のモード遷移処理を待たずに、フォルト検知と同時に物理的な動きを止めることができる(モード遷移自体はその後追って行われ、`IDLE`等への移行と復帰の明示操作要求を担う)。Nav2や`follow_planner`など他のどの発行元からの指令よりも確実に停止が優先されることを、アプリケーションロジックではなく`twist_mux`の標準機能として保証する(7.1節参照)。
@@ -259,13 +259,13 @@ ESTOPはどの状態からも最優先で割り込む。また `IDLE → FOLLOWI
 
 #### 4.3.3 通常追従時(試験員が移動中)の位置決定
 
-| パラメータ名 | 説明 | 初期値(暫定) |
-| --- | --- | --- |
-| `follow_distance_target` | 追従目標距離 | 1.5 m |
-| `follow_distance_min` | 最小許容距離(これより近いと減速・停止) | 0.8 m |
-| `follow_distance_max` | 最大許容距離(これを超えると追従速度を上げる) | 3.0 m |
-| `follow_angle_offset_deg` | 試験員進行方向に対する追従角度オフセット(0度=真後ろ) | 0〜30度(可変) |
-| `corridor_width_threshold` | この幅未満の通路では真後ろ追従に切替 | 1.5 m |
+| パラメータ名                 | 説明                                                 | 初期値(暫定)  |
+| ---------------------------- | ---------------------------------------------------- | ------------- |
+| `follow_distance_target`   | 追従目標距離                                         | 1.5 m         |
+| `follow_distance_min`      | 最小許容距離(これより近いと減速・停止)               | 0.8 m         |
+| `follow_distance_max`      | 最大許容距離(これを超えると追従速度を上げる)         | 3.0 m         |
+| `follow_angle_offset_deg`  | 試験員進行方向に対する追従角度オフセット(0度=真後ろ) | 0〜30度(可変) |
+| `corridor_width_threshold` | この幅未満の通路では真後ろ追従に切替                 | 1.5 m         |
 
 **アルゴリズム:**
 
@@ -301,12 +301,12 @@ ESTOPはどの状態からも最優先で割り込む。また `IDLE → FOLLOWI
 
 クローラー駆動車両は非ホロノミック(その場での真横移動ができない)であり、緊急時に取りうる行動は実質的に「前進」「後退」「その場旋回」の3つに限られる。本ロジックはこの制約を前提に設計する。
 
-| パラメータ名 | 説明 | 初期値(暫定) |
-| --- | --- | --- |
-| `retreat_trigger_distance` | この距離を下回ったら後退を開始(`follow_distance_min`と同値が基本) | 0.8 m |
-| `retreat_release_distance` | この距離まで離れたら後退を解除し通常追従に戻す | 1.2 m |
-| `closing_speed_threshold` | この接近速度を超えたら、距離に余裕があっても予防的に後退を開始 | 0.3 m/s |
-| `retreat_check_clearance` | 後退を実行するために退避方向に必要な最小自由空間 | 0.5 m |
+| パラメータ名                 | 説明                                                                | 初期値(暫定) |
+| ---------------------------- | ------------------------------------------------------------------- | ------------ |
+| `retreat_trigger_distance` | この距離を下回ったら後退を開始(`follow_distance_min`と同値が基本) | 0.8 m        |
+| `retreat_release_distance` | この距離まで離れたら後退を解除し通常追従に戻す                      | 1.2 m        |
+| `closing_speed_threshold`  | この接近速度を超えたら、距離に余裕があっても予防的に後退を開始      | 0.3 m/s      |
+| `retreat_check_clearance`  | 後退を実行するために退避方向に必要な最小自由空間                    | 0.5 m        |
 
 **アルゴリズム:**
 
@@ -402,11 +402,11 @@ ESTOPはどの状態からも最優先で割り込む。また `IDLE → FOLLOWI
 - **フェーズ1のネットワーク**: PCがホストするモバイルホットスポート(WPA2パスワードあり)を使用する。PCはまだロボット上に搭載されているが、フェーズ2(PCがロボットから離れる)を見据え、ESP32との通信リンクのみ意図的に先行して無線化する(8章参照)。このフェーズではWPA2のパスワードのみをアクセス制御とし、アプリ層の追加認証は行わない(意図的な暫定判断、11章TBD参照)。
 - **メッセージ形式**: WebSocketバイナリフレーム、1byte type tag + 固定長payload(JSONパースのオーバーヘッドを避けるため)。
 
-  | type tag | 方向 | payload | 合計 |
-  | --- | --- | --- | --- |
-  | `WHEEL_CMD` (0x01) | `esp32_bridge`→ESP32 | float32 left_mps, float32 right_mps | 9 bytes |
+  | type tag                  | 方向                    | payload                             | 合計    |
+  | ------------------------- | ----------------------- | ----------------------------------- | ------- |
+  | `WHEEL_CMD` (0x01)      | `esp32_bridge`→ESP32 | float32 left_mps, float32 right_mps | 9 bytes |
   | `WHEEL_FEEDBACK` (0x02) | ESP32→`esp32_bridge` | float32 left_mps, float32 right_mps | 9 bytes |
-  | `ESTOP_HW` (0x03) | ESP32→`esp32_bridge` | uint8 estop_active | 2 bytes |
+  | `ESTOP_HW` (0x03)       | ESP32→`esp32_bridge` | uint8 estop_active                  | 2 bytes |
 
   一次情報源は `th_ws/src/th_esp32_bridge/th_esp32_bridge/ws_protocol.py`(ESP32側は `th_ws/esp32/src/ws_link.h` が同じバイト配置を実装する)。接続死活監視・レイテンシ計測はWebSocket標準のping/pongフレームを使う。
 - **レイテンシ目標とウォッチドッグとの関係**: 目標レイテンシは100ms(現場のホットスポット環境で実測して確認する)。実測の結果、6.2節のESP32側ウォッチドッグ(300ms)とのマージンが不足すると判明した場合は、①ウォッチドッグ値を緩和する、②それでも不安な場合は連続欠落N回で減速する段階的フェイルセーフを追加する、の順で対応する(②は未実装、11章TBD参照)。**2026-08-05: 実機でマージン不足を確認し①を適用、ウォッチドッグを600msに緩和済み(詳細は6.2節・`docs/architecture.md`)。**
@@ -442,13 +442,13 @@ ESTOPはどの状態からも最優先で割り込む。また `IDLE → FOLLOWI
 
 ### 7.2 フェイルセーフ一覧
 
-| 異常 | 対応 |
-| --- | --- |
-| タブレット⇔ROS2間通信断絶 | `manual_command_handler`がheartbeat途絶を検知し`MANUAL`自動解除、`IDLE`へ(7.3節) |
-| ESP32⇔ROS2間通信断絶 | ESP32側ウォッチドッグでモーター強制停止(ハードウェア層、即時)。並行して`safety_monitor`が`/esp32/wheel_feedback`の途絶(500ms)を検知し、`/safety/fault`で`twist_mux`を即座にロックしつつ`mode_manager`に通知、現在のモードによらず`IDLE`へ遷移させる。**2026-08-05: ESP32側ウォッチドッグを600msに緩和したため、通常のリンク断ではsafety_monitor(500ms)側が先に作動する設計に変わった。ESP32側ウォッチドッグの本質的な役割はROS2/PCプロセス自体がクラッシュしsafety_monitorも道連れで停止する場合の最終防波堤であり、その場合は速さの優劣は意味を持たない(詳細: `docs/architecture.md`)。** |
-| ESP32再接続後 | WebSocketクライアントの自動再接続シーケンス(6.2節)により通信は自動復旧し、`safety_monitor`の`/safety/fault`も解除される(twist_muxのロックも解ける)が、`mode_manager`は`IDLE`に留まる。ハードウェアリセットは想定外の事象であるため、他の異常復帰と同様に明示操作なしでは`FOLLOWING`等へ自動復帰させない |
-| LiDARデータ(`/person/position`・`/scan`とも)途絶 | `safety_monitor`が途絶を検知し、`/safety/fault`で`twist_mux`を即座にロック(モード遷移を待たず物理的な動きをまず止める)、続いて`mode_manager`に通知し`FOLLOWING`/`MOVING_TO_PANEL`/`MANUAL`を問わず`IDLE`へ遷移、試験員へ通知 |
-| バッテリー低電圧 | 自動帰還または `IDLE`、試験員へ通知 |
+| 異常                                                 | 対応                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| タブレット⇔ROS2間通信断絶                           | `manual_command_handler`がheartbeat途絶を検知し`MANUAL`自動解除、`IDLE`へ(7.3節)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ESP32⇔ROS2間通信断絶                                | ESP32側ウォッチドッグでモーター強制停止(ハードウェア層、即時)。並行して`safety_monitor`が`/esp32/wheel_feedback`の途絶(500ms)を検知し、`/safety/fault`で`twist_mux`を即座にロックしつつ`mode_manager`に通知、現在のモードによらず`IDLE`へ遷移させる。**2026-08-05: ESP32側ウォッチドッグを600msに緩和したため、通常のリンク断ではsafety_monitor(500ms)側が先に作動する設計に変わった。ESP32側ウォッチドッグの本質的な役割はROS2/PCプロセス自体がクラッシュしsafety_monitorも道連れで停止する場合の最終防波堤であり、その場合は速さの優劣は意味を持たない(詳細: `docs/architecture.md`)。** |
+| ESP32再接続後                                        | WebSocketクライアントの自動再接続シーケンス(6.2節)により通信は自動復旧し、`safety_monitor`の`/safety/fault`も解除される(twist_muxのロックも解ける)が、`mode_manager`は`IDLE`に留まる。ハードウェアリセットは想定外の事象であるため、他の異常復帰と同様に明示操作なしでは`FOLLOWING`等へ自動復帰させない                                                                                                                                                                                                                                                                                              |
+| LiDARデータ(`/person/position`・`/scan`とも)途絶 | `safety_monitor`が途絶を検知し、`/safety/fault`で`twist_mux`を即座にロック(モード遷移を待たず物理的な動きをまず止める)、続いて`mode_manager`に通知し`FOLLOWING`/`MOVING_TO_PANEL`/`MANUAL`を問わず`IDLE`へ遷移、試験員へ通知                                                                                                                                                                                                                                                                                                                                                                   |
+| バッテリー低電圧                                     | 自動帰還または`IDLE`、試験員へ通知                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 `/scan` はNav2 costmapの障害物回避にも使われる(4.3.8節)ため、LiDAR途絶は「試験員追従ができなくなる」だけでなく「あらゆる移動モードで衝突回避ができなくなる」安全上の問題として扱う。したがって `MANUAL` 中であっても、LiDARデータが途絶した場合は手動操作の継続を許可せず `IDLE` へ強制的に遷移させる。
 
