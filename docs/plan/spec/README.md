@@ -1,4 +1,4 @@
-# docs/plan/spec — 完全設計書
+﻿# docs/plan/spec — 完全設計書
 
 `docs/plan/NewDesign.md` と `docs/plan/restate/NewDesign-restated.md` を**両方とも正**として統合し、
 散在した記述をまとめて矛盾を解消した設計書。
@@ -41,9 +41,9 @@
 | [Spec-modes.md](Spec-modes.md) | **モード定義と遷移表。**ゾーン・ジョグ介入・人物追跡の要否 | — |
 | [Spec-transit.md](Spec-transit.md) | 7 走行方式の完全仕様と比較 | — |
 | [Spec-onsite.md](Spec-onsite.md) | 試験場内（前日の地図作成・登録／当日の盤前移動・呼び寄せ）・配電盤前 | — |
-| [Spec-safety.md](Spec-safety.md) | 安全チェーン・障害物・緊急停止・異常ウィンドウ・通信断 | — |
+| [Spec-safety.md](Spec-safety.md) | 安全チェーン・障害物・非常停止・異常ウィンドウ・通信断 | — |
 | [Spec-ops.md](Spec-ops.md) | 導入・起動・疎通確認・終了手順 | — |
-| [Spec-checks.md](Spec-checks.md) | 動作確認 4 項目・キャリブレーション 4 項目 | — |
+| [Spec-checks.md](Spec-checks.md) | 始業点検 4 項目・校正 4 項目 | — |
 | [Spec-webui.md](Spec-webui.md) | 画面一覧（15）・遷移図・ウィンドウ・共通部品 | — |
 | [Spec-params.md](Spec-params.md) | パラメータ一覧・逆算の連鎖・保存先 | — |
 | **[Spec-open.md](Spec-open.md)** | **矛盾の解決記録・未確定事項・既存 ID の処理状況** | — |
