@@ -172,6 +172,10 @@ n=10〜30 の試行数では「完走率 95%」も「99%」も検証できない
 
 **往復を区別しない。**詳細は [Spec-ops.md](Spec-ops.md) と [Spec-onsite.md](Spec-onsite.md)。
 
+**例外は教示 2 種（`TEACH_FOLLOW` / `TEACH_MANUAL`）だけ。**
+教示は保管場所以外を起点にしないと決めてあるので（[Spec-transit.md](Spec-transit.md) §3.5）、
+**復路では選べない。**メインメニュー画面での前提確認に含める（[Spec-transit.md](Spec-transit.md) §0.6）。
+
 ---
 
 ## 10. 詳細ファイル

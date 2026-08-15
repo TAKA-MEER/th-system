@@ -575,6 +575,15 @@ table.lst td.r{text-align:right}
     </div>
     <div class="row"><span class="sm mut">駆動用バッテリー</span><div class="bar grow ok"><i style="width:72%"></i></div><span class="mono b">72%</span></div>
   </div>
+  <!-- 運用の終了（Spec-webui.md §3.2.1 / Spec-ops.md §4）
+       運用そのものを終える唯一の出口。「終了」＝方式を抜ける と紛れないよう語を変えてある。 -->
+  <div class="card">
+    <h3>運用の終了</h3>
+    <div class="row mb"><span class="grow sm">未保存のデータ</span>
+      <span class="pill ng" id="unsavedPill">2 件</span></div>
+    <button class="btn danger wide" id="shutdownBtn" onclick="shutdown()">制御系を停止する</button>
+    <div class="hint" id="shutdownHint">未保存のデータが残っています。押すと一覧を表示します。</div>
+  </div>
 </section>
 
 <!-- ===== S-10 追従走行 ===== -->
@@ -1055,7 +1064,7 @@ table.lst td.r{text-align:right}
         <button class="tab on" onclick="tab(this,'t21a')">地図</button>
         <button class="tab" onclick="tab(this,'t21b')">対象選択</button>
       </div>
-      <span class="pill" id="modeSub21">配電盤へ移動中</span>
+      <span class="pill" id="modeSub21">行き先を選んでください</span>
     </div>
     <div class="tabpane on" id="t21a">
       <div class="mapWrap">
@@ -1091,7 +1100,7 @@ table.lst td.r{text-align:right}
         <button class="btn op-stop" onclick="act(this,'s21','pause')">停止</button>
         <button class="btn op-manual" onclick="openJog('s21')">手動</button>
       </div>
-      <div class="state" id="st21">配電盤へ移動中</div>
+      <div class="state" id="st21">行き先を選んでください</div>
     </div>
     <div class="subtabs">
     <div class="tabs">
@@ -1483,6 +1492,29 @@ table.lst td.r{text-align:right}
     </footer>
   </div>
 
+  <!-- 運用の終了：未保存の確認（Spec-webui.md §3.2.1 / Spec-ops.md §4）
+       保存前に電源を切ると前日の地図と教示経路が消えるため、ここが最後の砦になる。 -->
+  <div class="win confirm" id="winShutdown">
+    <header>制御系を停止します</header>
+    <div class="bodyw">
+      <div class="sm mb">停止する前に、未保存のデータの扱いを決めてください。</div>
+      <table class="lst" id="unsavedList">
+        <tr><th>未保存のデータ</th><th class="r">扱い</th></tr>
+        <tr id="uv-map"><td>試験場内地図（前日作成）</td><td class="r">
+          <button class="btn sm" onclick="keepUnsaved('uv-map')">保存</button>
+          <button class="btn sm danger" onclick="armDiscard(this,'uv-map')">破棄</button></td></tr>
+        <tr id="uv-route"><td>教示経路「保管場所→試験場」</td><td class="r">
+          <button class="btn sm" onclick="keepUnsaved('uv-route')">保存</button>
+          <button class="btn sm danger" onclick="armDiscard(this,'uv-route')">破棄</button></td></tr>
+      </table>
+      <div class="note" id="unsavedNone" style="display:none">未保存のデータはありません。</div>
+    </div>
+    <footer>
+      <button class="btn" onclick="closeWin('winShutdown')">やめる</button>
+      <button class="btn danger dis" id="doShutdownBtn" onclick="doShutdown()">停止する</button>
+    </footer>
+  </div>
+
   <div class="win confirm" id="winDisabled">
     <header id="wdTitle">この方式は使えません</header>
     <div class="bodyw" id="wdBody">—</div>
@@ -1556,7 +1588,11 @@ table.lst td.r{text-align:right}
   </div>
 </div>
 
-<!-- ============ 手動操作パネル（U-16・帯として本文の下に差し込む） ============ -->
+<!-- ============ 手動操作パネル W-6（U-16 改訂・本文の上に浮くカード） ============
+     初版は本文の下に差し込む帯だったが、開くたびに本文が再フローし、
+     スティックを小さくせざるを得なかったため作り直した（Spec-open.md §1.-1）。
+     絶対配置でレイアウトを一切動かさない。Spec-webui.md §4.0（W-6）。        -->
+
 <div id="jogWin">
   <div class="jw-hd">
     <span class="jw-t">手動操作（触れている間だけ）</span>
@@ -1652,8 +1688,10 @@ const SCREENS = {
   s14:{name:'教示再生走行',          mode:'REPLAY',       zone:false},
   s15:{name:'ライン誘導走行',        mode:'LINE',         zone:false},
   s16:{name:'電子リード走行',        mode:'LEASH',        zone:false},
+  /* s21 は開いた直後 IDLE。行き先を選んだ時点で PANEL_NAV / SUMMON / HOME_NAV に入る
+     （Spec-modes.md §4.2）。zone は画面ごとに持つ＝ゾーンはモードでなく画面が決める（同 §7）。 */
   s20:{name:'試験準備',              mode:'PREP',         zone:true },
-  s21:{name:'試験',                  mode:'PANEL_NAV',    zone:true },
+  s21:{name:'試験',                  mode:'IDLE',         zone:true },
   s30:{name:'始業点検',              mode:'OPCHECK',      zone:false},
   s31:{name:'故障診断',              mode:'OPCHECK',      zone:false},
   s40:{name:'校正',                  mode:'CALIB',        zone:false},
@@ -1904,6 +1942,49 @@ function arm(b, label){
   setTimeout(()=>{ if(b.dataset.armed){ delete b.dataset.armed; b.textContent = label; } }, 3000);
 }
 
+/* ---------------- 運用の終了（Spec-webui.md §3.2.1 / Spec-ops.md §4） ----------------
+   未保存が 1 件でも残っている間は「制御系を停止する」を押せない。
+   保存前に電源を切ると前日の地図と教示経路が消えるため、ここが最後の砦になる。 */
+function keepUnsaved(rowId){ resolveUnsaved(rowId, '保存しました'); }
+function armDiscard(b, rowId){
+  if(b.dataset.armed){ delete b.dataset.armed; resolveUnsaved(rowId, '破棄しました'); return; }
+  b.dataset.armed = '1'; b.textContent = '本当に破棄？';
+  setTimeout(()=>{ if(b.dataset.armed){ delete b.dataset.armed; b.textContent = '破棄'; } }, 3000);
+}
+function resolveUnsaved(rowId, tx){
+  const r = $(rowId);
+  if(!r) return;
+  r.cells[1].innerHTML = '<span class="pill ok">' + tx + '</span>';
+  r.dataset.done = '1';
+  syncShutdown();
+}
+function unsavedLeft(){
+  return [...document.querySelectorAll('#unsavedList tr[id^="uv-"]')].filter(r => !r.dataset.done).length;
+}
+function syncShutdown(){
+  const left = unsavedLeft();
+  $('unsavedNone').style.display = left ? 'none' : '';
+  $('doShutdownBtn').classList.toggle('dis', left > 0);
+  const pill = $('unsavedPill');
+  pill.textContent = left ? left + ' 件' : 'なし';
+  pill.className = left ? 'pill ng' : 'pill ok';
+  $('shutdownHint').textContent = left
+    ? '未保存のデータが残っています。押すと一覧を表示します。'
+    : '停止したあと、画面で完了を確認してから機体の電源を切ってください。';
+}
+/* カードのボタンは常に押せる。未保存があるかどうかはウィンドウの中で示す
+   （押せないボタンより、押したら理由が出るほうが分かりやすい）。 */
+function shutdown(){ openWin('winShutdown'); }
+function doShutdown(){
+  if($('doShutdownBtn').classList.contains('dis')){
+    whyDisabled('制御系の停止', '未保存のデータが残っています');
+    return;
+  }
+  closeWin('winShutdown');
+  showGuide('制御系を停止しています…');
+  setTimeout(()=>showGuide('制御系の停止が完了しました。機体の電源を切ってください。'), 1200);
+}
+
 /* ---------------- 走行方式の操作列（全画面共通） ----------------
    Spec-webui.md §3.3 の操作カード。停止=左上 / 確認=中上 / 走行=右上 /
    保存=左下 / 手動=右下。「終了」は操作カードに置かず画面左上に固定。
@@ -2079,6 +2160,13 @@ function layoutDock(){
   $('app').style.setProperty('--dock-h', h + 'px');
 }
 function openJog(screen){
+  /* 退避待ち（SUMMON / WAIT_CLEAR）中はジョグを受け付けない。
+     「人がゴール地点にいる間は動かさない」ためのゲートなので、
+     ここで手動介入を許すとゲートが止めている状況で機体が動く。Spec-modes.md §3.1.1 */
+  if(S.mode === 'SUMMON' && $('clearBox').style.display !== 'none'){
+    whyDisabled('手動操作', '退避待ちの間は動かせません。中止してからやり直してください');
+    return;
+  }
   const st = document.querySelector('#jogWin .stick');
   if(st) st.dataset.screen = screen;
   $('jwMode').textContent = 'モードは「' + MODES[S.mode].ja + '」のまま変わりません';
@@ -2181,8 +2269,10 @@ function toggleWork(){
   const b = $('workBtn');
   b.textContent = work ? 'ON（作業中）' : 'OFF';
   b.classList.toggle('on', work);
-  S.mode = work ? 'AT_PANEL' : 'PANEL_NAV';
-  sub21(work ? '配電盤前・作業中' : '配電盤へ移動中');
+  /* OFF にしても配電盤前にいることは変わらない（AT_PANEL の IDLE_P ⇄ WORKING）。
+     次の行き先を選んだ時点で PANEL_NAV / SUMMON / HOME_NAV に移る。Spec-modes.md §3 */
+  S.mode = 'AT_PANEL';
+  sub21(work ? '配電盤前・作業中' : '配電盤前');
   paintHeader();
 }
 function nextDest(name){
@@ -2284,6 +2374,7 @@ function pv(btn, mode){
 /* ---------------- 初期化 ---------------- */
 mountTemplates();
 bindSticks();
+syncShutdown();
 $('s00').classList.add('active');
 paintHeader();
 </script>
