@@ -1,6 +1,6 @@
 # 動作確認システム（再表現版）
 
-> **この文書は正ではない。** `docs/plan/NewDesign-operationalCheck.md`（以下「原文」）を、
+> **この文書は正ではない。** `docs/plan/source/NewDesign-operationalCheck.md`（以下「原文」）を、
 > 内容を変えずに**表現と構成だけ変えて**書き直したもの。食い違ったら**原文が正**。
 > 〔補完〕は原文に書かれておらず筆者（AI）が想像で埋めた箇所。
 > 点検結果は [NewDesign-details-restated-findings.md](NewDesign-details-restated-findings.md)。

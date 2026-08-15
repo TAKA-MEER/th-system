@@ -1,6 +1,6 @@
 # 再表現による NewDesign.md の点検結果
 
-[NewDesign-restated.md](NewDesign-restated.md) を書く過程で、原文（`docs/plan/NewDesign.md`）に
+[NewDesign-restated.md](NewDesign-restated.md) を書く過程で、原文（`docs/plan/source/NewDesign.md`）に
 補完が必要だった箇所・矛盾していた箇所をまとめたもの。**この文書も正ではない。**
 
 ## 手順

@@ -1,6 +1,6 @@
 ﻿# 完全設計書 — 配電盤上部確認用ロボット 移動システム
 
-`docs/plan/NewDesign.md` と `docs/plan/restate/NewDesign-restated.md` を**両方とも正**として統合し、
+`docs/plan/source/NewDesign.md` と `docs/plan/restate/NewDesign-restated.md` を**両方とも正**として統合し、
 矛盾を解消した設計書。**実装（ノード名・トピック名・ファイル構成）は書かない。次工程の詳細設計に回す。**
 
 読み方・位置づけは [README.md](README.md)。

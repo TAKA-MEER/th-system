@@ -1,6 +1,6 @@
 ﻿# docs/plan/spec — 完全設計書
 
-`docs/plan/NewDesign.md` と `docs/plan/restate/NewDesign-restated.md` を**両方とも正**として統合し、
+`docs/plan/source/NewDesign.md` と `docs/plan/restate/NewDesign-restated.md` を**両方とも正**として統合し、
 散在した記述をまとめて矛盾を解消した設計書。
 
 **本体は [Spec.md](Spec.md)。** そこから各詳細ファイルへ辿れる。
@@ -72,11 +72,11 @@
 
 | 文書 | 扱い |
 | --- | --- |
-| `docs/plan/NewDesign.md` | **正**（ユーザー指示） |
+| `docs/plan/source/NewDesign.md` | **正**（ユーザー指示） |
 | `docs/plan/restate/NewDesign-restated.md` | **正**（ユーザー指示・今回限り） |
-| `docs/plan/NewDesign-transit.md` / `-onsite.md` / `-kpi.md` / `-calib.md` / `-operationalCheck.md` | 詳細ファイル。原典に準じる |
-| `docs/plan/NewVISION.md` / `onsite-*.md` / `transit-*.md` | 意思決定の経緯 |
-| `docs/plan/NewDesign-checklist.md` | 指摘管理表（**仕様ソースではない**） |
+| `docs/plan/source/NewDesign-transit.md` / `-onsite.md` / `-kpi.md` / `-calib.md` / `-operationalCheck.md` | 詳細ファイル。原典に準じる |
+| `docs/plan/source/NewVISION.md` / `onsite-*.md` / `transit-*.md` | 意思決定の経緯 |
+| `docs/plan/source/NewDesign-checklist.md` | 指摘管理表（**仕様ソースではない**） |
 | `docs/plan/restate/*-findings.md` | 点検結果（**正ではないと自ら宣言している**） |
 
 **優先順位**: ユーザー確定事項 > `NewDesign.md` > 詳細ファイル > 経緯ファイル > `restate/` 配下。
