@@ -122,6 +122,7 @@
 | `clear_hold_ms` | 退避待ちゲートの保持時間 | **未確定** (b) | (b) |
 | `clear_timeout_ms` | 退避待ちのタイムアウト | **未確定** (b) | (b) |
 | `tablet_active_window_s` | 「使用されていた端末」とみなす時間 | **未確定** (b)。`E-7` の判定基準 | (b) |
+| **`jog_lease_ms`** | **ジョグ介入のリース期限。**この間隔で更新されなければ `jog_active` を解除する（[Spec-modes.md](Spec-modes.md) §3.1.1 ／ [Spec-open.md](Spec-open.md) F-29） | **未確定** (b)。**手動系の速度指令が多重化から落ちるまでの時間以上**にする。WiFi 受信ギャップ（§1・0.5〜1.2 s）より短いと、途切れるたびに介入が切れる | (b) |
 | `esp32_alive_timeout_ms` | 起動時の疎通判定 | **未確定** (b) | (b) |
 | （起動時の再起動待ち時間） | 一定時間つながらないときの再起動 | **マニュアル側で決める**（[Spec-open.md](Spec-open.md) O-d4） | — |
 | `calib_interval_days` | 定期校正を促す間隔 | **未確定** (c) | (c) |
