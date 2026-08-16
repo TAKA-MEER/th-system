@@ -370,8 +370,9 @@ ESP32 の不揮発領域（Preferences/NVS）に半径を持たせ、新フレ�
 その判断のために `calib/current.yaml` に `robot_id` を持たせておく
 （起動時に ESP32 の MAC と突き合わせ、違っていたら警告する）。
 
-> **申し送り**: `Spec-checks.md` §3.6 の「未確定（`O-d10`）」をこの決定で埋める。
-> [DetailedDesign-open.md](DetailedDesign-open.md) の解決済み表へ。
+> **2026-08-16 反映済み**: `Spec-checks.md` §3.6 の「未確定（`O-d10`）」をこの決定で埋め、
+> `Spec-open.md` §5.3 の `O-d10` を **F-40** として §3（決めたこと）へ移した
+> （[DetailedDesign-open.md](DetailedDesign-open.md) §3 A-11）。
 
 ---
 

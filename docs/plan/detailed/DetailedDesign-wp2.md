@@ -39,7 +39,8 @@
 | `ESTOP_HW (0x03)` フレームに `bypass_active` ビットを載せる | `DEBT-1` の**正式な解除**（同上） |
 | `esp32_bridge` が `bypass_active` を `/safety/firmware_flags` へ出す | 機体側 LED（`LED_STATE 0x05`。申し送り） |
 | `main.cpp:196-202` の `[DBG]` printf の削除 | プロトコルの他フレームの変更 |
-| `esp32/src/ws_link.h` のフレーム表の是正（`WHEEL_FEEDBACK` は 13 byte） | |
+| `esp32/src/ws_link.h` のフレーム表の是正（`WHEEL_FEEDBACK` は 13 byte） | `LED_STATE (0x05)` / `BATTERY (0x06)` の**実装**（表への追記だけ行う。§11） |
+| **部品の確認**（状態 LED ＋ 抵抗・分圧抵抗・空きピン。[hardware](DetailedDesign-hardware.md) §3.4・§5） | |
 
 ### 2. 参照する設計書の節
 
@@ -52,6 +53,8 @@
 | [safety](DetailedDesign-safety.md) §12 | **開発モードでも層 1・2 は無効化できない** |
 | [reuse](DetailedDesign-reuse.md) §2.13 | ファームの既存構造（**プロトコルは byte 互換のまま**） |
 | [reuse](DetailedDesign-reuse.md) §2.6 | `esp32_bridge` の「ファーム世代検出」の流儀（`_feedback_has_dt`） |
+| **[hardware](DetailedDesign-hardware.md) §3・§3.1・§3.4** | **ESP32 フレーム表の正・「旧形式を受理する」規約・GPIO 割り当て** |
+| **[hardware](DetailedDesign-hardware.md) §5** | **手配（LED と分圧抵抗はここで初めて必要になる）** |
 
 ### 3. インターフェース契約
 
@@ -166,6 +169,11 @@ ros2 topic echo /safety/estop_hw --once              # data: true
 **`DEBT-1` はこのパケットでは解除されない。**
 解除条件は「始業点検 項目 1 が OK」であり、それを実行できるのは `WP-MAINT-01`（段階 7）。
 **ここで行うのは「検出できるようにすること」まで**（[safety](DetailedDesign-safety.md) §11.1 の 4）。
+
+| 項目 | 扱い |
+| --- | --- |
+| **`LED_STATE (0x05)` / `BATTERY (0x06)` の実装** | **このパケットでは表に足すだけ。**GPIO の空きピン選定と部品が要る（[hardware](DetailedDesign-hardware.md) §3.4・§5）。**来なくてもフォルトにしない**設計なので、後から足せる |
+| 分圧比 | バッテリーの公称電圧が要る。**`battery_warn_v` / `battery_critical_v` は `given`**（方針値） |
 
 ### 12. 依存
 

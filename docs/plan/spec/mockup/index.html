@@ -1678,24 +1678,28 @@ const MODES = {
   OPCHECK:     {ja:'始業点検',      c:'#607d8b'},
   CALIB:       {ja:'校正',          c:'#795548'}
 };
+/* zone は 3 値（'IN' 場内 / 'OUT' 場外 / 'NA' 非該当）。Spec-modes.md §7。
+   真偽値にしてはいけない —— 'NA' を false（＝場外）に潰すと、始業点検・故障診断・校正に
+   場外の v_max が適用されてしまう。limit は画面由来の速度上限で、実際に効くのは
+   モード由来（同 §6）との最小値。ゾーンの強弱では合成しない（同 §7.1）。 */
 const SCREENS = {
-  s00:{name:'接続確認',              mode:'INIT',         zone:false},
-  s01:{name:'メインメニュー',        mode:'IDLE',         zone:false},
-  s10:{name:'追従走行',              mode:'FOLLOW',       zone:false},
-  s11:{name:'手動走行',              mode:'MANUAL',       zone:false},
-  s12:{name:'教示（追従）',          mode:'TEACH_FOLLOW', zone:false},
-  s13:{name:'教示（手動）',          mode:'TEACH_MANUAL', zone:false},
-  s14:{name:'教示再生走行',          mode:'REPLAY',       zone:false},
-  s15:{name:'ライン誘導走行',        mode:'LINE',         zone:false},
-  s16:{name:'電子リード走行',        mode:'LEASH',        zone:false},
+  s00:{name:'接続確認',              mode:'INIT',         zone:'NA',  limit:'停止'},
+  s01:{name:'メインメニュー',        mode:'IDLE',         zone:'OUT', limit:'停止'},
+  s10:{name:'追従走行',              mode:'FOLLOW',       zone:'OUT', limit:'v_max'},
+  s11:{name:'手動走行',              mode:'MANUAL',       zone:'OUT', limit:'v_max'},
+  s12:{name:'教示（追従）',          mode:'TEACH_FOLLOW', zone:'OUT', limit:'v_max'},
+  s13:{name:'教示（手動）',          mode:'TEACH_MANUAL', zone:'OUT', limit:'v_max'},
+  s14:{name:'教示再生走行',          mode:'REPLAY',       zone:'OUT', limit:'v_max'},
+  s15:{name:'ライン誘導走行',        mode:'LINE',         zone:'OUT', limit:'v_max'},
+  s16:{name:'電子リード走行',        mode:'LEASH',        zone:'OUT', limit:'v_leash'},
   /* s21 は開いた直後 IDLE。行き先を選んだ時点で PANEL_NAV / SUMMON / HOME_NAV に入る
      （Spec-modes.md §4.2）。zone は画面ごとに持つ＝ゾーンはモードでなく画面が決める（同 §7）。 */
-  s20:{name:'試験準備',              mode:'PREP',         zone:true },
-  s21:{name:'試験',                  mode:'IDLE',         zone:true },
-  s30:{name:'始業点検',              mode:'OPCHECK',      zone:false},
-  s31:{name:'故障診断',              mode:'OPCHECK',      zone:false},
-  s40:{name:'校正',                  mode:'CALIB',        zone:false},
-  s50:{name:'設定',                  mode:'IDLE',         zone:false}
+  s20:{name:'試験準備',              mode:'PREP',         zone:'IN',  limit:'v_slow'},
+  s21:{name:'試験',                  mode:'IDLE',         zone:'IN',  limit:'v_slow'},
+  s30:{name:'始業点検',              mode:'OPCHECK',      zone:'NA',  limit:'v_check'},
+  s31:{name:'故障診断',              mode:'OPCHECK',      zone:'NA',  limit:'停止'},
+  s40:{name:'校正',                  mode:'CALIB',        zone:'NA',  limit:'v_calib'},
+  s50:{name:'設定',                  mode:'IDLE',         zone:'OUT', limit:'停止'}
 };
 
 const S = {screen:'s00', mode:'INIT', prevMode:null, estop:false, hw:false,
@@ -1726,7 +1730,8 @@ function paintHeader(){
   $('modePill').style.background = m.c + '33';
   $('modePill').style.borderColor = m.c;
   $('modePill').style.color = '#fff';
-  $('zonePill').style.display = (sc.zone && !S.estop && !S.hw) ? 'inline-block' : 'none';
+  /* 場内（'IN'）のときだけ出す。'NA' は「ゾーンという枠で決めない」であって場外ではない。 */
+  $('zonePill').style.display = (sc.zone === 'IN' && !S.estop && !S.hw) ? 'inline-block' : 'none';
   $('devPill').style.display = S.dev ? 'inline-block' : 'none';
 }
 

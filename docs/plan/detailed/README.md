@@ -46,6 +46,7 @@
 | [DetailedDesign-onsite.md](DetailedDesign-onsite.md) | 試験場内 | 試験場内の担当 |
 | [DetailedDesign-maintenance.md](DetailedDesign-maintenance.md) | 始業点検・校正・故障診断 | 保守の担当 |
 | [DetailedDesign-webui.md](DetailedDesign-webui.md) | 15 画面 | UI の担当 |
+| [DetailedDesign-hardware.md](DetailedDesign-hardware.md) | **機器構成・ESP32 フレーム・手配** | **部品を買う前／ファームを触る前に必読** |
 | [DetailedDesign-reuse.md](DetailedDesign-reuse.md) | **既存資産の去就** | **既存コードを消す前に必読** |
 | [DetailedDesign-open.md](DetailedDesign-open.md) | 未確定・申し送り・レビュー指摘管理表 | 全員 |
 
@@ -63,6 +64,7 @@
 | 名前を決めたい | [-names.md](DetailedDesign-names.md)。**無ければ実装前にここへ足す** |
 | 数値を書きたい | [-params.md](DetailedDesign-params.md) §9。**裸の数値は書かない** |
 | **何が危ないか知りたい** | [-safety.md](DetailedDesign-safety.md) §0（安全負債 5 件） |
+| **部品を買う／ファームのフレームを足す** | [-hardware.md](DetailedDesign-hardware.md) §3・§5 |
 | 何が決まっていないか知りたい | [-open.md](DetailedDesign-open.md) §4 |
 
 ---
@@ -97,7 +99,7 @@
 | --- | --- | --- | --- |
 | **1 回目** | 基盤 4 ファイル完成時 | 安全・整合 ／ 実装可能性 | **指摘 87 件。**[-open.md](DetailedDesign-open.md) §5 |
 | **2 回目** | 全 13 ファイル完成時 | 網羅性 ／ 安全・整合 ／ 実装可能性 | **指摘 84 件。**[-open.md](DetailedDesign-open.md) §5.3。うち 13 件が持ち越し → **10 件を段階 0〜2 のパケット実体化で処理**。残り A〜D |
-| **3 回目** | 残り A〜C（`spec_ref` の実値・`O-d5`・ハードウェア構成表）を片づけた後 | 同左 | **未実施** |
+| **3 回目** | **A〜C 処理済み（2026-08-17）。いつでも実施できる** | 同左 | **未実施** |
 
 指摘は [-open.md](DetailedDesign-open.md) §5 に記録し、
 **「対応済み」か「対応しない＋理由」に落とし切るまで完了としない。**

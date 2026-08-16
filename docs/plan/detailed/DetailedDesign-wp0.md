@@ -182,6 +182,7 @@ python3 -m pytest src/th_testing/test/test_msg_definitions.py -v
 | [state](DetailedDesign-state.md) §3・§3.1・§3.2・§3.3・§3.5 | スキーマ・**マッチ規則の 6 手順**・解決トークン・effect 一覧・`ui.goto` の写像 |
 | [state](DetailedDesign-state.md) §4.1・§4.1.1 | 共通行 16 と**ガード 28 件の定義** |
 | [state](DetailedDesign-state.md) §4.2 | モード内 106 行（**`transitions.yaml` の中身はこの表**） |
+| **[state](DetailedDesign-state.md) §4.4** | **`spec_ref` の実値（全 124 行の写像）。転記するだけでよい** |
 | [state](DetailedDesign-state.md) §8.2・§8.3 | `attributes.yaml` の実値表・`mode_entry.yaml` の許可表 |
 | [state](DetailedDesign-state.md) §10 | `reject_reason_key` の一覧（**日本語を返さない**） |
 | [state](DetailedDesign-state.md) §11 | テスト要件 1〜10（**§10 の完了条件と 1:1**） |
@@ -328,6 +329,7 @@ python3 -c "import sys; sys.path.insert(0,'src/th_state'); import th_state.state
 # ③ 全テスト
 python3 -m pytest src/th_testing/test/test_state_core.py -v
 python3 -m pytest src/th_testing/test/test_transition_table.py -v
+#   テスト 2（欠落）・2r（過剰）・2f（宣言外の分割）の 3 本が通ること
 
 # ④ validate() が空を返す（起動可能であることの証明）
 python3 -m th_state.validate_cli --config src/th_state/config    # exit 0・出力なし
@@ -341,7 +343,7 @@ print(len(d), len({r['id'] for r in d}))"    # 121 121（重複 0）
 
 | 項目 | 扱い |
 | --- | --- |
-| **正本 `Spec-modes.md` への ID 列追加**（[open](DetailedDesign-open.md) §3 A-1） | **このパケットの着手前提条件。**`spec_ref` の値が決まらないと §11-2 / 2r が書けない |
+| ~~正本 `Spec-modes.md` への ID 列追加~~（[open](DetailedDesign-open.md) §3 A-1） | **完了。**`spec_ref` の実値は [state](DetailedDesign-state.md) §4.4 にある。**推測しない・転記する** |
 | `LINE` / `LEASH` の行 | **表には入れる**（実装は段階 8）。`validate()` は通る |
 
 ### 12. 依存
@@ -349,7 +351,7 @@ print(len(d), len({r['id'] for r in d}))"    # 121 121（重複 0）
 | | |
 | --- | --- |
 | 依存 WP | **なし**（`WP-MSG-01` とも独立。並行して着手できる） |
-| 前提条件 | 正本への ID 列追加（A-1） |
+| 前提条件 | **なし**（正本への ID 列追加は 2026-08-16 に完了） |
 | 被依存 WP | `WP-STATE-02` / `WP-SAFE-04`（`attributes.yaml` を共有） |
 
 ---

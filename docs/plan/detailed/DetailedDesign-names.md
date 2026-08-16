@@ -176,13 +176,13 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 **`STOP` という状態名は存在しない**（`Spec-modes.md` §3.1.1）。「停止」は操作の名前である。
 
 **`ARRIVED` は `LINE` にしか無い**（唯一の自動停止。`F-02`）。
-`PANEL_NAV` / `SUMMON` / `HOME_NAV` の `ARRIVED` は、正本 `Spec-modes.md` §3.1.2 が
-遷移先を「`ARRIVED` → `AT_PANEL`」と**通過の注記として**書いているもので、滞在する状態ではない。
+`PANEL_NAV` / `SUMMON` / `HOME_NAV` の到着は**滞在する状態ではない**。
 状態として持つと**到達不能状態になり `validate()` が落ちる**ので、状態集合から外す。
 到着したことは `effects: [mark_arrived]` と `/system/state.last_event` で表す。
 
-> **申し送り**: 正本 §3・§3.1.2 の `ARRIVED` 表記を「注記」と分かる形に直す。
-> [DetailedDesign-open.md](DetailedDesign-open.md) §3。
+> **2026-08-16 反映済み**: 正本 `Spec-modes.md` §3・§3.1.2 の `ARRIVED` 表記を
+> 「到着（`AT_PANEL` へ）」に直し、**§3.0-① に「滞在するのは `LINE` だけ」と明記した**
+> （[DetailedDesign-open.md](DetailedDesign-open.md) §3 A-4）。
 
 ### 3.1 フラグ
 
@@ -224,10 +224,10 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | `S-40` | 校正 | **`NA`** | `v_calib` |
 | `S-50` | 設定 | `OUT` | 停止 |
 
-> **モックアップとの差異**: `mockup/index.html` の `SCREENS[].zone` は真偽値で、
-> `NA` を `false`（＝場外）に潰している。`Spec-modes.md` §7 は
-> 「モックアップが定義の実装であり本表と一致していなければならない」と書いているので、
-> **モックアップ側が仕様違反である。**[DetailedDesign-open.md](DetailedDesign-open.md) に申し送る。
+> **2026-08-16 解消**: `mockup/index.html` の `SCREENS[].zone` は真偽値で `NA` を
+> `false`（＝場外）に潰していたが、**3 値（`'IN'` / `'OUT'` / `'NA'`）＋画面ごとの `limit` に直した**
+> （[DetailedDesign-open.md](DetailedDesign-open.md) §3 A-8）。`Spec-modes.md` §7 ／
+> `Spec-webui.md` §2 の表と本表の 3 者が一致している状態が正。
 
 ### 4.1 ゾーンの合成は「速度上限の最小値」で行う
 

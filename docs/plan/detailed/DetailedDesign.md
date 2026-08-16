@@ -136,6 +136,7 @@
 | [DetailedDesign-onsite.md](DetailedDesign-onsite.md) | 試験場内 5 モード・2 点指示・退避待ちゲート |
 | [DetailedDesign-maintenance.md](DetailedDesign-maintenance.md) | 始業点検・校正・故障診断 |
 | [DetailedDesign-webui.md](DetailedDesign-webui.md) | 15 画面の実装 |
+| [DetailedDesign-hardware.md](DetailedDesign-hardware.md) | **機器 → ノード → トピック。**USB 帯域・ESP32 フレーム・カメラの選定・手配 |
 | [DetailedDesign-reuse.md](DetailedDesign-reuse.md) | **既存資産の去就。**捨ててはいけないものを名指しで守る |
 | [DetailedDesign-packets.md](DetailedDesign-packets.md) | **段階と作業パケット 48 件の一覧・順序制約・検証。**実装はここから読む |
 | [DetailedDesign-wp0.md](DetailedDesign-wp0.md) | **段階 0 の作業パケット 10 件の実体**（測定・ネットワーク・契約） |
@@ -154,7 +155,11 @@
 
 1. **`VISION.md` を更新する。**`CLAUDE.md`「方針変更時のルール」により、
    追従ロジック・モード遷移・安全設計・アーキテクチャの変更は**コードより先に** `VISION.md` を直す
-2. [DetailedDesign-open.md](DetailedDesign-open.md) §3 の**申し送り 11 件を完全設計書へ戻す**
-   （戻さないと `Spec-modes.md` §3.1「表に無い遷移は起こらない」が破れる）
-3. 同 §5.3 の**未対応 A〜C**を処理する（`spec_ref` の実値・`O-d5` / `CL-M-7`・ハードウェア構成表）
-4. `git status` を確認し、未コミットの変更があればユーザーへ提示する
+2. ~~[DetailedDesign-open.md](DetailedDesign-open.md) §3 の申し送り 11 件を完全設計書へ戻す~~
+   → **2026-08-16 完了**（A-1〜A-11。`Spec-modes.md` §3.1 に ID 列と欠けていた遷移が入った）
+3. ~~同 §5.3 の未対応 A・B・C を処理する~~
+   → **2026-08-17 完了**（A＝[state](DetailedDesign-state.md) §4.4 の `spec_ref` 全 124 行 ／
+   B＝[onsite](DetailedDesign-onsite.md) §3.7 の地図再利用 3 段 ／
+   C＝[hardware](DetailedDesign-hardware.md) 新設）。**残るは D（段階 3〜8 のパケット実体）だけ**
+4. **3 回目のレビューを行う**（観点 3 つ。[README.md](README.md) §6）
+5. `git status` を確認し、未コミットの変更があればユーザーへ提示する

@@ -398,14 +398,15 @@ blind_angle_ranges の全ペアが幅ゼロ  →  obstacle_limiter は AUTO の�
 
 ### 5.3 自己位置喪失を重大フォルトに加える（`DEBT-5`）
 
-`Spec-safety.md` §3.5 の重大フォルト列挙に無いが、**「原因が解消してもそのまま続けると危険が残る」の定義に合致する。**
+**「原因が解消してもそのまま続けると危険が残る」の定義に合致する。**
 `map→odom` が凍結したまま Nav2 が走ると、機体は誤った自己位置に基づいて動き続ける。
 
 検出: `slam_control` 相当（`th_route` の `map_session`）が
 `map→odom` の更新途絶と slam_toolbox プロセスの死を検出して `evt` ではなくフォルトとして上げる。
 
-> **申し送り**: `Spec-safety.md` §3.5 の重大フォルト列挙に `LOCALIZATION_LOST` を足すべき。
-> [DetailedDesign-open.md](DetailedDesign-open.md) の申し送り表へ。
+> **2026-08-16 反映済み**: `Spec-safety.md` §3.5 の重大フォルト列挙に `LOCALIZATION_LOST` を追加した
+> （[DetailedDesign-open.md](DetailedDesign-open.md) §3 A-5）。**検出の実装は段階 5（`WP-SAFE-05`）**なので、
+> `DEBT-5` は解除されていない。
 
 ### 5.4 人物ロストは 3 段になる
 
@@ -527,7 +528,7 @@ PC 側の `rate_limit()`（`follow_core.py`）は**追従にしか効かない**
 | **自動で止めるか** | **止めない。**最終的に試験員が判断する |
 | 警告が無いこと | **長時間の動作を保証しない** |
 | 表示 | ヘッダに残量。`battery_warn_v` を下回ったら警告色。S-01 にも出す |
-| トピック | `/esp32/battery`（`sensor_msgs/BatteryState`）。**ESP32 のフレームに `BATTERY (0x06)` を追加する** |
+| トピック | `/esp32/battery`（`sensor_msgs/BatteryState`）。**ESP32 のフレームに `BATTERY (0x06)` を追加する**（フレーム定義は [hardware](DetailedDesign-hardware.md) §3.3 が正） |
 | パラメータ | `battery_warn_v` / `battery_critical_v`（ともに given）／ `battery_endurance_min`（(c)） |
 
 **`battery_critical_v` を下回っても停止させない。**警告の色と文言を変えるだけ。
