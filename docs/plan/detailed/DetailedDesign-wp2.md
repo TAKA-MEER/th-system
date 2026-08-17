@@ -8,179 +8,23 @@
 
 **段階 2 の出口**: Gazebo で故障注入 13 項目が自動で回り、
 実機（モータ電源断）で `/cmd_vel` がゼロになることをトピックで確認できること。
-**`DEBT-2`〜`DEBT-4` が解除され、`DEBT-1` が重大フォルトとして検出されること。**
+**`DEBT-2`〜`DEBT-4` が解除され、`DEBT-1` が重大フォルトとして検出されること**
+（`DEBT-1` の検出は `WP-ESP32-01` が段階 0 で用意する。段階 2 は `WP-SAFE-01` でそれを
+**重大フォルトに格上げする**ところを担う）。
 
 | 順 | WP | 種別 | 通電 |
 | --- | --- | --- | --- |
-| 1 | [`WP-ESP32-01`](#wp-esp32-01-バイパス解除--ファーム構成フラグdebt-1) | 実装（ファーム＋PC） | **必要** |
-| 2 | [`WP-SAFE-02`](#wp-safe-02-esp32_bridge-の-cmd_vel-stale-タイムアウトdebt-4) | 実装（ノード） | 不要 |
-| 3 | [`WP-CALIB-01`](#wp-calib-01-lidar-死角マスク校正前倒し最小範囲debt-2) | 実装（ノード＋画面） | **必要** |
-| 4 | [`WP-SAFE-01`](#wp-safe-01-safety_monitor-改修) | 実装（ノード） | 不要 |
-| 5 | [`WP-SAFE-03`](#wp-safe-03-obstacle_limiter-新設--twist_mux-remap--テスト更新) | 実装（ノード＋launch＋テスト） | **必要** |
-| 6 | [`WP-SAFE-04`](#wp-safe-04-jog_gate-新設) | 実装（ノード＋WebUI） | 不要 |
-| 7 | [`WP-TEST-01`](#wp-test-01-故障注入-13-項目の自動化) | 試験 | **一部必要** |
+| 1 | [`WP-SAFE-02`](#wp-safe-02-esp32_bridge-の-cmd_vel-stale-タイムアウトdebt-4) | 実装（ノード） | 不要 |
+| 2 | [`WP-CALIB-01`](#wp-calib-01-lidar-死角マスク校正前倒し最小範囲debt-2) | 実装（ノード＋画面） | **必要** |
+| 3 | [`WP-SAFE-01`](#wp-safe-01-safety_monitor-改修) | 実装（ノード） | 不要 |
+| 4 | [`WP-SAFE-03`](#wp-safe-03-obstacle_limiter-新設--twist_mux-remap--テスト更新) | 実装（ノード＋launch＋テスト） | **必要** |
+| 5 | [`WP-SAFE-04`](#wp-safe-04-jog_gate-新設) | 実装（ノード＋WebUI） | 不要 |
+| 6 | [`WP-TEST-01`](#wp-test-01-故障注入-13-項目の自動化) | 試験 | **一部必要** |
 
-**`WP-ESP32-01` を先頭に置く理由**（`O-5`）: 物理非常停止が効かないまま実機で走らせない。
-`WP-SAFE-03` と `WP-TEST-01` は走行を伴う。
-
----
-
-## `WP-ESP32-01` バイパス解除 ＋ ファーム構成フラグ（`DEBT-1`）
-
-### 0. 一行要旨
-
-`ESTOP_BENCH_TEST_BYPASS` を無効にし、**バイパスが有効なことをランタイムで検出できるようにする。**
-
-### 1. 対象と非対象
-
-| やる | やらない |
-| --- | --- |
-| `esp32/src/config.h` の `ESTOP_BENCH_TEST_BYPASS` を無効化 | 始業点検 項目 1 の実装（`WP-MAINT-01`。段階 7） |
-| `ESTOP_HW (0x03)` フレームに `bypass_active` ビットを載せる | `DEBT-1` の**正式な解除**（同上） |
-| `esp32_bridge` が `bypass_active` を `/safety/firmware_flags` へ出す | 機体側 LED（`LED_STATE 0x05`。申し送り） |
-| `main.cpp:196-202` の `[DBG]` printf の削除 | プロトコルの他フレームの変更 |
-| `esp32/src/ws_link.h` のフレーム表の是正（`WHEEL_FEEDBACK` は 13 byte） | `LED_STATE (0x05)` / `BATTERY (0x06)` の**実装**（表への追記だけ行う。§11） |
-| **部品の確認**（状態 LED ＋ 抵抗・分圧抵抗・空きピン。[hardware](DetailedDesign-hardware.md) §3.4・§5） | |
-
-### 2. 参照する設計書の節
-
-| 節 | 何のために |
-| --- | --- |
-| [safety](DetailedDesign-safety.md) §0 `DEBT-1` | 何が壊れているか（`config.h:130` / `main.cpp:119-121`） |
-| [safety](DetailedDesign-safety.md) §11.1 | **解除手順の 4 段**（合格判定は始業点検 項目 1） |
-| [safety](DetailedDesign-safety.md) §11.4 | 併せて片づける 4 件 |
-| [safety](DetailedDesign-safety.md) §1（層 1・2） | 物理ボタンとウォッチドッグの位置づけ |
-| [safety](DetailedDesign-safety.md) §12 | **開発モードでも層 1・2 は無効化できない** |
-| [reuse](DetailedDesign-reuse.md) §2.13 | ファームの既存構造（**プロトコルは byte 互換のまま**） |
-| [reuse](DetailedDesign-reuse.md) §2.6 | `esp32_bridge` の「ファーム世代検出」の流儀（`_feedback_has_dt`） |
-| **[hardware](DetailedDesign-hardware.md) §3・§3.1・§3.4** | **ESP32 フレーム表の正・「旧形式を受理する」規約・GPIO 割り当て** |
-| **[hardware](DetailedDesign-hardware.md) §5** | **手配（LED と分圧抵抗はここで初めて必要になる）** |
-
-### 3. インターフェース契約
-
-#### 3.1 トピック
-
-| 方向 | トピック | 型 | QoS | レート |
-| --- | --- | --- | --- | --- |
-| **pub**（`esp32_bridge`） | **`/safety/firmware_flags`** | `std_msgs/UInt8` | **transient_local, depth 1** | 変化時＋接続時 |
-| pub（既存） | `/safety/estop_hw` | `std_msgs/Bool` | reliable | 10 Hz |
-
-**bit 0 = `bypass_active`。**残りは予約（0）。
-**新しい msg 型を作らない**（`WP-MSG-01` は締めてある。`UInt8` で足りる）。
-
-#### 3.2 プロトコル
-
-```
-ESTOP_HW (0x03):  [type:1][pressed:1][flags:1]      ← flags を 1 byte 追加
-```
-
-**旧形式（2 byte）も受理する。**`esp32_bridge` は長さで判別し、
-2 byte なら `flags = 0xFF`（**「不明」＝バイパスの可能性あり ＝ 安全側**）として扱う。
-既存の `_feedback_has_dt` と同じ流儀。
-
-#### 3.3 パラメータ
-
-| 名前 | class | status | 用途 |
-| --- | --- | --- | --- |
-| `esp32_watchdog_ms` | given | given | `config.h` の `WATCHDOG_MS` の写し。A6/A7 が突き合わせる |
-| `esp32_ws_port` | given | given | `WP-NET-01` で統一済み |
-
-#### 3.4 フレーム
-
-なし。
-
-### 4. 内部設計
-
-#### 4.1 純粋コア
-
-`th_esp32_bridge/th_esp32_bridge/ws_protocol.py` に
-`unpack_estop_hw(payload) -> tuple[bool, int]` を足す（**既存関数の戻り値を変えない**）。
-
-#### 4.2 ノードの責務
-
-`esp32_bridge` は受け取った `flags` を `/safety/firmware_flags` へ流すだけ。
-**判定は `safety_monitor` が行う**（`WP-SAFE-01`）。
-
-#### 4.3 不変条件
-
-| # | 不変条件 | なぜ |
-| --- | --- | --- |
-| **E-1** | **旧形式のフレームは「不明」として安全側に倒す** | ファーム更新前の機体で無言に素通ししない |
-| **E-2** | `ESTOP_BENCH_TEST_BYPASS` の定義そのものを**残す**（無効化するだけ） | 台上試験の手段は必要。**検出できることが要件**であって禁止ではない |
-| **E-3** | 開発モードのフラグを ESP32 に渡さない | 層 1・2 は無効化できない（§12） |
-
-### 5. 表駆動データ
-
-なし。
-
-### 6. 安全要件
-
-| 項目 | 内容 |
-| --- | --- |
-| 6.1 触れる層 | **層 1（物理非常停止）そのもの** |
-| 6.2 フェイルセーフ既定 | `flags` 不明 → バイパスの可能性ありとして扱う（E-1） |
-| 6.3 FMEA | ① バイパスを無効化したが `estopActive` の反映漏れがある → **押しても止まらない。**通電での実測が必須。② `flags` を足したことで旧 `esp32_bridge` が例外を投げる → **`esp32_bridge` を先に更新してからファームを焼く**（順序）。③ `[DBG]` printf を消したことでシリアルのタイミングが変わり、既存の不具合が再現／消失する → 削除前後で `WHEEL_FEEDBACK` の受信間隔を比較する |
-
-### 7. 単体試験
-
-| テスト | 満たす仕様 |
-| --- | --- |
-| `test_esp32_ws_protocol.py::test_unpack_estop_hw_3byte` | §3.2 新形式 |
-| `test_esp32_ws_protocol.py::test_unpack_estop_hw_2byte_unknown` | E-1 |
-| `test_esp32_ws_protocol.py`（**既存の全ケース**） | 後方互換（無変更で通ること） |
-
-### 8. Gazebo シナリオ
-
-**なし**（Gazebo に `esp32_bridge` は起動しない）。
-
-### 9. 実機での確認手順
-
-| 電源断でできる | 通電が要る |
-| --- | --- |
-| `flags` が届くこと・`/safety/firmware_flags` が出ること | **押して実際に駆動が切れること**（テスタでモータードライバ電源を確認） |
-
-### 10. 完了条件
-
-```bash
-# ① バイパスが無効
-grep -n "ESTOP_BENCH_TEST_BYPASS" th_ws/esp32/src/config.h      # 定義はあるが 0 / #undef
-! grep -n "estopActive *= *false" th_ws/esp32/src/main.cpp       # 無条件代入が消えている
-
-# ② [DBG] printf が消えている
-! grep -n "\[DBG\]" th_ws/esp32/src/main.cpp
-
-# ③ フレーム表が実装と一致
-grep -n "WHEEL_FEEDBACK.*13" th_ws/esp32/src/ws_link.h
-grep -n "ESTOP_HW.*3" th_ws/esp32/src/ws_link.h
-
-# ④ プロトコルテスト
-python3 -m pytest th_ws/src/th_testing/test/test_esp32_ws_protocol.py -v
-
-# ⑤ 実機（電源断）
-ros2 topic echo /safety/firmware_flags --once        # data: 0（バイパス無効）
-#   物理ボタンを押す
-ros2 topic echo /safety/estop_hw --once              # data: true
-
-# ⑥ 通電（人が関与）— 押下でモータードライバ電源が落ちる
-```
-
-### 11. 既知の負債・未確定 (c)
-
-**`DEBT-1` はこのパケットでは解除されない。**
-解除条件は「始業点検 項目 1 が OK」であり、それを実行できるのは `WP-MAINT-01`（段階 7）。
-**ここで行うのは「検出できるようにすること」まで**（[safety](DetailedDesign-safety.md) §11.1 の 4）。
-
-| 項目 | 扱い |
-| --- | --- |
-| **`LED_STATE (0x05)` / `BATTERY (0x06)` の実装** | **このパケットでは表に足すだけ。**GPIO の空きピン選定と部品が要る（[hardware](DetailedDesign-hardware.md) §3.4・§5）。**来なくてもフォルトにしない**設計なので、後から足せる |
-| 分圧比 | バッテリーの公称電圧が要る。**`battery_warn_v` / `battery_critical_v` は `given`**（方針値） |
-
-### 12. 依存
-
-| | |
-| --- | --- |
-| 依存 WP | `WP-NET-01`（ポート統一）が**望ましい** |
-| 被依存 WP | **`WP-SAFE-01`**（バイパス検出を重大フォルトに）／ 実機で走らせる全パケット（`O-5`） |
+> **`WP-ESP32-01`（バイパス解除）は段階 0 にある**（[wp0](DetailedDesign-wp0.md)）。
+> `O-5` に例外を作らないため段階 2 から移した（[packets](DetailedDesign-packets.md) **§1.1**）。
+> **段階 2 に入る時点でバイパスは既に解除されている**——`WP-SAFE-03` と `WP-TEST-01` は
+> 走行を伴うので、これが前提である。
 
 ---
 
@@ -270,12 +114,18 @@ def keepalive_value(last_cmd_ms: int, now_ms: int, last_cmd: Twist2,
 
 ### 7. 単体試験
 
-| テスト | 満たす仕様 |
-| --- | --- |
-| `test_keepalive_core.py::test_stale_returns_zero` | §4.1 |
-| `test_keepalive_core.py::test_locked_returns_zero` | K-2 |
-| `test_keepalive_core.py::test_fresh_returns_last` | 既存挙動の維持 |
-| `test_esp32_bridge_node.py::test_still_publishes_at_20hz_when_stale` | **K-1（沈黙しない）** |
+| テスト | ctest 登録名（`V6`） | 満たす仕様 |
+| --- | --- | --- |
+| `test_keepalive_core.py::test_stale_returns_zero` | `keepalive_core` | §4.1 |
+| `test_keepalive_core.py::test_locked_returns_zero` | 同上 | K-2 |
+| `test_keepalive_core.py::test_fresh_returns_last` | 同上 | 既存挙動の維持 |
+| `test_esp32_bridge_node.py::test_still_publishes_at_20hz_when_stale` | `esp32_bridge_node` | **K-1（沈黙しない）** |
+
+```cmake
+# src/th_testing/CMakeLists.txt
+ament_add_pytest_test(keepalive_core    test/test_keepalive_core.py)
+ament_add_pytest_test(esp32_bridge_node test/test_esp32_bridge_node.py)
+```
 
 ### 8. Gazebo シナリオ
 
@@ -292,9 +142,11 @@ def keepalive_value(last_cmd_ms: int, now_ms: int, last_cmd: Twist2,
 
 ```bash
 # /cmd_vel の publisher を止めて、ESP32 への指令がゼロになることを見る
-ros2 topic pub -r 20 /cmd_vel geometry_msgs/Twist "{linear: {x: 0.2}}" &
-sleep 2 && kill %1
-ros2 topic echo /esp32/wheel_cmd_speed --once     # cmd_vel_stale_ms 以内にゼロ
+# V7: kill %1 は非対話シェルでジョブ制御が無効なので使わない。PID を取る
+ros2 topic pub -r 20 /cmd_vel geometry_msgs/Twist "{linear: {x: 0.2}}" & PUB=$!
+sleep 2 && kill -TERM $PUB
+sleep 1   # cmd_vel_stale_ms（既定 300 ms 想定）より十分長く待つ
+test "$(timeout 3 ros2 topic echo /esp32/wheel_cmd_speed --field left --once)" = "0.0"
 ```
 
 ### 10. 完了条件
@@ -308,7 +160,8 @@ cd /root/th_ws && colcon build --symlink-install --packages-select th_esp32_brid
 # ② テスト
 python3 -m pytest src/th_testing/test/test_keepalive_core.py -v
 colcon test --packages-select th_testing --event-handlers console_direct+ \
-  --ctest-args -R "esp32_bridge|fault_injection_12"
+  --ctest-args -R "keepalive_core|esp32_bridge_node|fault_injection_12"
+colcon test-result --verbose                    # V5
 
 # ③ 独立ロック層とキープアライブが残っている（消していないことの確認）
 grep -n "safety/estop\|safety/fault_lock" src/th_esp32_bridge/scripts/esp32_bridge.py
@@ -359,7 +212,8 @@ python3 -m th_params.export --registry src/th_params/config/registry.yaml \
 | [safety](DetailedDesign-safety.md) §11.2 | **前倒しの範囲**（保守機能全体は作らない） |
 | [safety](DetailedDesign-safety.md) §4.3 | 死角は第 3 の扱い（未知 → `v_reverse` 以下） |
 | [safety](DetailedDesign-safety.md) §4.4 | **未校正なら自律走行を拒否する**（`BLOCKED_UNCALIBRATED`） |
-| [maintenance](DetailedDesign-maintenance.md)（死角校正の節） | 手順（本格版と同じ手順を最小構成で） |
+| [maintenance](DetailedDesign-maintenance.md) **§3.1（4 項目の BLIND 行）・§3.2（ウィザードの骨格）・§3.3（項目ごとの流れ）** | 手順（本格版と同じ手順を最小構成で） |
+| [maintenance](DetailedDesign-maintenance.md) §3.6 | 履歴とロールバック。**最小構成版でも履歴は残す**（`K-r3`） |
 | [names](DetailedDesign-names.md) §5.2 `/calib/start` `/calib/submit` | サービスの型 |
 | [names](DetailedDesign-names.md) §4 | S-40 のゾーンは `NA`・速度上限 `v_calib` |
 | [webui](DetailedDesign-webui.md) §1・§4 | 画面の置き場所と操作カード |
@@ -440,9 +294,17 @@ def sector_indices(a0_deg: float, a1_deg: float, scan) -> tuple[int, int]:
 | **B-3** | `lidar_filter` と `obstacle_limiter` が同じ関数で解釈する | §4.1 |
 | **B-4** | `calib_runner` の走行は **`/cmd_vel_behavior`**（`/cmd_vel_manual` ではない） | `jog_gate` が `CALIB` を塞ぐので `/cmd_vel_manual` からは出せない |
 
-### 5. 表駆動データ
+### 5. 表駆動データ — `blind_angle_ranges` の型と変換
 
-なし。
+**現行 `perception_params.yaml:15-23` は flat な 8 要素リスト**（`- 40.0` / `- 40.0` / …）。
+**registry では pair 列にする。**型が変わるので変換規則を決めておく。
+
+| 項目 | 仕様 |
+| --- | --- |
+| registry の型 | **`list[[float, float]]`**（度。`[[a0, a1], ...]`） |
+| 現行からの変換 | **8 要素を先頭から 2 つずつ組にする**（`[40,40], [130,130], [220,220], [310,310]`） |
+| 検証 | 変換後に**幅ゼロのペアが 1 つでもあれば `status: placeholder` のまま**（B-1） |
+| 単位 | **度で持ち、ラジアンで使う**（§4.1 の規約 ②） |
 
 ### 6. 安全要件
 
@@ -454,14 +316,25 @@ def sector_indices(a0_deg: float, a1_deg: float, scan) -> tuple[int, int]:
 
 ### 7. 単体試験
 
-| テスト | 満たす仕様 |
-| --- | --- |
-| `test_scan_geometry.py::test_angle_to_index` | §4.1 ①〜④ |
-| `test_scan_geometry.py::test_wraparound_sector` | 0 をまたぐ区間 |
-| `test_scan_geometry.py::test_out_of_range_not_clamped` | 規約 ⑤ |
-| `test_scan_geometry_equivalence`（gtest） | **B-3。Python と C++ が同じ添字を返す** |
-| `test_calib_blind.py::test_zero_width_rejected` | B-1 |
-| `test_calib_blind.py::test_writes_registry` | `/calib/apply` |
+| テスト | ctest 登録名（`V6`） | 満たす仕様 |
+| --- | --- | --- |
+| `test_scan_geometry.py::test_angle_to_index` | `scan_geometry`（`th_testing`） | §4.1 ①〜④ |
+| `test_scan_geometry.py::test_wraparound_sector` | 同上 | 0 をまたぐ区間 |
+| `test_scan_geometry.py::test_out_of_range_not_clamped` | 同上 | 規約 ⑤ |
+| `test_scan_geometry_equivalence`（gtest） | `test_scan_geometry_equivalence`（**`th_safety`**） | **B-3。Python と C++ が同じ添字を返す** |
+| `test_calib_blind.py::test_zero_width_rejected` | `calib_blind`（`th_testing`） | B-1 |
+| `test_calib_blind.py::test_writes_registry` | 同上 | `/calib/apply` |
+
+```cmake
+# src/th_testing/CMakeLists.txt
+ament_add_pytest_test(scan_geometry test/test_scan_geometry.py)
+ament_add_pytest_test(calib_blind   test/test_calib_blind.py)
+# src/th_safety/CMakeLists.txt（DEBT-10 は WP-SAFE-00 で解除済み）
+ament_add_gtest(test_scan_geometry_equivalence test/test_scan_geometry_equivalence.cpp)
+```
+
+**`th_safety` 側と `th_testing` 側で同じ `-R scan_geometry` が両方に当たる。**
+§10 ③ は**パッケージを分けて 2 回**回す。
 
 ### 8. Gazebo シナリオ
 
@@ -493,16 +366,48 @@ for a0, a1 in p["value"]:
 print("ok", p["value"])
 EOF
 
-# ② 旧 YAML の幅ゼロが残っていない（生成に切り替わっていること）
-! grep -nE "(40, *40|130, *130|220, *220|310, *310)" src/th_bringup/config/perception_params.yaml
+# ② 旧 YAML から生成に切り替わっている（V2・V3）
+#    現行は flat な 8 要素リスト（- 40.0 / - 40.0 / ...）。§5 の変換規則で pair 列にする
+test -f src/th_bringup/config/perception_params.yaml && \
+  ! grep -q "blind_angle_ranges" src/th_bringup/config/perception_params.yaml
+grep -q "blind_angle_ranges" /root/th_data/generated/lidar_filter.yaml
 
-# ③ 等価性
+# ③ 等価性。V5・V6。th_safety と th_testing を分けて回す
 python3 -m pytest src/th_testing/test/test_scan_geometry.py -v
 colcon test --packages-select th_safety --event-handlers console_direct+ \
-  --ctest-args -R scan_geometry
+  --ctest-args -R test_scan_geometry_equivalence
+colcon test-result --verbose
+colcon test --packages-select th_testing --event-handlers console_direct+ \
+  --ctest-args -R "scan_geometry|calib_blind"
+colcon test-result --verbose
 
-# ④ 実機（電源断）で角柱の方向がマスクされる
-ros2 topic echo /scan_filtered --once   # 該当セクタが inf
+# ④ 実機（電源断）で角柱の方向がマスクされる（V4。目視しない・数える）
+#    registry の blind_angle_ranges の全区間で inf、区間外に inf が増えていないこと
+timeout 5 ros2 topic echo /scan_filtered --once > /tmp/filtered.yaml
+timeout 5 ros2 topic echo /scan --once           > /tmp/raw.yaml
+python3 - <<'PY'
+import math, yaml
+raw = yaml.safe_load(open('/tmp/raw.yaml'))
+flt = yaml.safe_load(open('/tmp/filtered.yaml'))
+reg = {p['name']: p for p in yaml.safe_load(
+    open('src/th_params/config/registry.yaml'))}
+pairs = reg['blind_angle_ranges']['value']          # [[a0,a1], ...] deg
+def idx(deg):
+    return int(round((math.radians(deg) - flt['angle_min']) / flt['angle_increment']))
+masked = set()
+for a0, a1 in pairs:
+    assert a1 != a0, ('幅ゼロが残っている', a0, a1)   # B-1 / DEBT-2
+    i0, i1 = idx(a0), idx(a1)
+    masked.update(range(i0, i1 + 1) if i0 <= i1 else
+                  list(range(i0, len(flt['ranges']))) + list(range(0, i1 + 1)))
+for i in masked:                                     # 区間内は全部 inf
+    assert math.isinf(flt['ranges'][i]), ('マスクされていない', i)
+extra = [i for i in range(len(flt['ranges']))
+         if i not in masked
+         and math.isinf(flt['ranges'][i]) and not math.isinf(raw['ranges'][i])]
+assert not extra, ('区間外を消している', extra[:10])   # 広く取りすぎの検出（§6.3 ①）
+print('ok masked=%d extra=0' % len(masked))
+PY
 ```
 
 ### 11. 既知の負債・未確定 (c)
@@ -581,9 +486,10 @@ ros2 topic echo /scan_filtered --once   # 該当セクタが inf
 
 #### 3.2 サービス
 
-| サービス | 備考 |
-| --- | --- |
-| `/safety/estop_ui` | **`/safety/tablet_estop` から改名**（端末はタブレットとは限らない）。**トピックであってサービスではない** |
+| サービス | 型 | 備考 |
+| --- | --- | --- |
+| `/safety/estop_ui` | — | **`/safety/tablet_estop` から改名**（端末はタブレットとは限らない）。**トピックであってサービスではない** |
+| **`/safety/clear_estop_ui`** | `std_srvs/Trigger` | **UI ラッチの非 UI 解除**（[safety](DetailedDesign-safety.md) §6.3.1 ／ `N-4`）。受理条件は **`estop_hw == false` かつ重大フォルト無し**。拒否時は `success=false` と理由を `message` に入れる。**受理・拒否のどちらもログに残す**（`who=cli`・時刻・そのときの `mode`/`state`） |
 
 #### 3.3 パラメータ
 
@@ -660,17 +566,28 @@ ros2 topic echo /scan_filtered --once   # 該当セクタが inf
 
 ### 7. 単体試験
 
-| テスト | 満たす仕様 |
-| --- | --- |
-| `test_safety_monitor.py`（**更新**） | `severity` 追加で既存が壊れる。**同一パケットで直す** |
-| `test_fault_detection.py`（**更新**） | 同上 |
-| `test_fault_severity`（gtest） | §5.1 の分類表を 1 行ずつ |
-| `test_fault_lock_includes_critical`（gtest） | F-2（§5.2.1） |
-| `test_mux_dead_bidirectional`（gtest） | §4.1。**ロック中を誤検知しない** |
-| `test_runaway_zero_cmd`（gtest） | §4.1。停止指令中の非ゼロ実測 |
-| `test_state_inconsistent`（gtest） | §4.1 |
-| `test_ui_estop_latch`（gtest） | §4.2。途絶でラッチ維持＋`UI_DISCONNECTED` |
-| `test_enabled_targets`（gtest） | F-5 |
+| テスト | ctest 登録名（`V6`） | 満たす仕様 |
+| --- | --- | --- |
+| `test_safety_monitor.py`（**更新**） | `safety_monitor`（`th_testing`・既存） | `severity` 追加で既存が壊れる。**同一パケットで直す** |
+| `test_fault_detection.py`（**更新**） | `fault_detection`（`th_testing`・既存） | 同上 |
+| `test_fault_severity`（gtest） | `test_safety_monitor_core`（`th_safety`） | §5.1 の分類表を 1 行ずつ |
+| `test_fault_lock_includes_critical`（gtest） | 同上 | F-2（§5.2.1） |
+| `test_mux_dead_bidirectional`（gtest） | 同上 | §4.1。**ロック中を誤検知しない** |
+| `test_runaway_zero_cmd`（gtest） | 同上 | §4.1。停止指令中の非ゼロ実測 |
+| `test_state_inconsistent`（gtest） | 同上 | §4.1 |
+| `test_ui_estop_latch`（gtest） | 同上 | §4.2。途絶でラッチ維持＋`UI_DISCONNECTED` |
+| **`test_clear_estop_ui_requires_hw_released`**（gtest） | 同上 | **§3.2。物理側が押されている間は拒否する**（`N-4` の受理条件） |
+| **`test_clear_estop_ui_logs`**（gtest） | 同上 | 受理・拒否の両方が記録される |
+| `test_enabled_targets`（gtest） | 同上 | F-5 |
+
+**gtest 7 本は 1 ターゲットにまとめる**（`test/test_safety_monitor_core.cpp` の中の 7 つの `TEST()`）。
+左列は**ケース名**であってターゲット名ではない。`-R` に渡すのは**右列**。
+
+```cmake
+# src/th_safety/CMakeLists.txt
+ament_add_gtest(test_safety_monitor_core test/test_safety_monitor_core.cpp)
+target_link_libraries(test_safety_monitor_core safety_monitor_core)
+```
 
 ### 8. Gazebo シナリオ
 
@@ -692,19 +609,25 @@ colcon test --packages-select th_testing --event-handlers console_direct+ \
   --ctest-args -R "safety_monitor|fault_detection"
 colcon test-result --verbose
 
-# ② gtest
-colcon test --packages-select th_safety --event-handlers console_direct+
+# ② gtest（V6。ターゲット名は §7 の右列）
+colcon test --packages-select th_safety --event-handlers console_direct+ \
+  --ctest-args -R test_safety_monitor_core
+colcon test-result --verbose     # V5
 
 # ③ 重大フォルトが fault_lock に載る（F-2）
 ros2 topic pub -1 /safety/limiter_status th_system_msgs/msg/LimiterStatus "{alive: false}"
-sleep 1 && ros2 topic echo /safety/fault_lock --once     # data: true
+sleep 1
+test "$(timeout 3 ros2 topic echo /safety/fault_lock --field data --once)" = "True"
+test "$(timeout 3 ros2 topic echo /safety/fault --field severity --once)" = "CRITICAL"
 
 # ④ タイムアウトが導出値（DEBT-3）
 grep -n "lidar_timeout_ms" /root/th_data/generated/safety_monitor.yaml
 ! grep -n "2000" /root/th_data/generated/safety_monitor.yaml    # 導出結果が 2000 でないこと
 
 # ⑤ 段階 2 で /person/targets のフォルトが出ない（F-5）
-ros2 topic echo /safety/fault --once | grep -c PERSON_TRACKER_LOST    # 0
+#    V4: 合格＝何も来ないので timeout の 124 を期待値にする
+timeout 10 ros2 topic echo /safety/fault > /tmp/f.txt; test $? -eq 124
+! grep -q PERSON_TRACKER_LOST /tmp/f.txt
 ```
 
 ### 11. 既知の負債・未確定 (c)
@@ -771,7 +694,7 @@ ros2 topic echo /safety/fault --once | grep -c PERSON_TRACKER_LOST    # 0
 | [names](DetailedDesign-names.md) §5.1 `LimiterStatus` | `action` の 5 値 |
 | [names](DetailedDesign-names.md) §1.2 | **`laser_link` の変換は起動時に 1 度取得して保持**（20 Hz で TF を引かない） |
 | [params](DetailedDesign-params.md) §4 A2a/A2b/A11 | 距離の大小関係 |
-| [wp2](#wp-calib-01-lidar-死角マスク校正前倒し最小範囲debt-2) §4.1 | **角度 → インデックス変換の規約**（`lidar_filter` と共有） |
+| **`WP-CALIB-01` §4.1**（このファイルの前半） | **角度 → インデックス変換の規約**（`lidar_filter` と共有）。**`th_safety` の C++ 側と `th_perception` の Python 側で同じ添字を返すこと**が `B-3` |
 | [reuse](DetailedDesign-reuse.md) §2.3 | `th_safety` の既存構成 |
 
 ### 3. インターフェース契約
@@ -820,6 +743,15 @@ ros2 topic echo /safety/fault --once | grep -c PERSON_TRACKER_LOST    # 0
 ### 4. 内部設計
 
 #### 4.1 純粋コアの関数シグネチャ
+
+**4 つの struct のフィールドを先に決める。**これが無いと property test の入力空間が決まらない。
+
+| struct | フィールド | 由来 |
+| --- | --- | --- |
+| `Twist2` | `double linear, angular` | `geometry_msgs/Twist` の x と z のみ |
+| `ScanView` | `double angle_min, angle_increment; const float* ranges; size_t n; double range_min, range_max` | `/scan`（**生**） |
+| `StateView` | `std::string mode, state, zone; bool jog_active, auto_brake` | `/system/state`（§3.1） |
+| `P` | §3.3 の全パラメータを `double` で 1 つずつ（`blind_angle_ranges` だけ `std::vector<std::pair<double,double>>`） | `generated/obstacle_limiter.yaml` |
 
 ```cpp
 // include/th_safety/obstacle_limiter_core.hpp — ROS2 非依存
@@ -883,16 +815,24 @@ Output evaluate(const Inputs&, const P&);             // 全部まとめる
 
 ### 7. 単体試験
 
-| テスト | 満たす仕様 |
-| --- | --- |
-| `test_limiter_core`（gtest）`L1`〜`L7` | **property test（ランダム入力 10,000 通り）** |
-| `test_limiter_core::HysteresisHolds` | §3.4.3 |
-| `test_limiter_core::ConeReverse` | 後退時のコーン幅 |
-| `test_limiter_core::BlindSectorLimitsAll` | L5 |
-| `test_limiter_core::ClassifyNeedsBoth` | §3.2。**鮮度だけでは `MANUAL` にならない** |
-| `test_limiter_core::UncalibratedBlocksAuto` | §4.4 |
-| `test_limiter_equivalence`（gtest） | **`is_path_blocked` との等価性**（既存 Python と同じ判定） |
-| **`test_twist_mux_priority.py`（更新）** | **出力名 `/cmd_vel_muxed` ＋ インライン辞書の `behavior`** |
+| テスト | ctest 登録名（`V6`） | 満たす仕様 |
+| --- | --- | --- |
+| `test_limiter_core`（gtest）`L1`〜`L7` | `test_limiter_core`（`th_safety`） | **property test（ランダム入力 10,000 通り）** |
+| `test_limiter_core::HysteresisHolds` | 同上 | §3.4.3 |
+| `test_limiter_core::ConeReverse` | 同上 | 後退時のコーン幅 |
+| `test_limiter_core::BlindSectorLimitsAll` | 同上 | L5 |
+| `test_limiter_core::ClassifyNeedsBoth` | 同上 | §3.2。**鮮度だけでは `MANUAL` にならない** |
+| `test_limiter_core::UncalibratedBlocksAuto` | 同上 | §4.4 |
+| `test_limiter_equivalence`（gtest） | `test_limiter_equivalence`（`th_safety`） | **`is_path_blocked` との等価性。**方式は**「Python 側で入出力ベクタを生成して `test/data/limiter_vectors.json` に落とし、gtest はそれを読むだけ」**。pybind11 は使わない（現行リポジトリに前例が無い）。生成スクリプトは `th_testing/tools/gen_limiter_vectors.py` |
+| **`test_twist_mux_priority.py`（更新）** | `twist_mux_priority`（`th_testing`・既存） | **出力名 `/cmd_vel_muxed` ＋ インライン辞書の `behavior`** |
+
+```cmake
+# src/th_safety/CMakeLists.txt
+ament_add_gtest(test_limiter_core       test/test_limiter_core.cpp)
+ament_add_gtest(test_limiter_equivalence test/test_limiter_equivalence.cpp)
+target_link_libraries(test_limiter_core       limiter_core)
+target_link_libraries(test_limiter_equivalence limiter_core)
+```
 
 ### 8. Gazebo シナリオ
 
@@ -925,8 +865,9 @@ grep -n "tf2_ros\|ament_cmake_gtest" src/th_safety/package.xml
 ros2 topic info /cmd_vel --verbose | grep -c "Node name: obstacle_limiter"   # 1
 ros2 topic info /cmd_vel --verbose | grep -c "Publisher count: 1"            # 1
 
-# ③ property test
-colcon test --packages-select th_safety --event-handlers console_direct+
+# ③ property test（V6）
+colcon test --packages-select th_safety --event-handlers console_direct+ \
+  --ctest-args -R "test_limiter_core|test_limiter_equivalence"
 colcon test-result --verbose
 
 # ④ twist_mux のテストが更新されて通る
@@ -940,10 +881,11 @@ colcon test --packages-select th_testing --event-handlers console_direct+ \
 python3 -m th_params.export --registry src/th_params/config/registry.yaml \
   --out /tmp/gen --stage 2 --nodes obstacle_limiter; echo "exit=$?"   # 0（A2a/A2b/A11 が通る）
 
-# ⑦ 実機（電源断）
-ros2 topic hz /cmd_vel                    # 20.0
-ros2 topic hz /safety/limiter_status      # 20.0
-ros2 topic echo /safety/limiter_status --field action --once
+# ⑦ 実機（電源断）。V4。hz は Ctrl-C まで戻らないので timeout で包む
+timeout 6 ros2 topic hz /cmd_vel                | grep -qE "average rate: 19\.|20\."
+timeout 6 ros2 topic hz /safety/limiter_status  | grep -qE "average rate: 19\.|20\."
+#   停止指令中は PASS（障害物が無い状態で ZERO_STALE / BLOCKED_* にならないこと）
+test "$(timeout 3 ros2 topic echo /safety/limiter_status --field action --once)" = "PASS"
 ```
 
 ### 11. 既知の負債・未確定 (c)
@@ -1072,15 +1014,25 @@ bool jog_passes(const StateView& st, double state_age_ms,
 
 ### 7. 単体試験
 
-| テスト | 満たす仕様 |
-| --- | --- |
-| `test_jog_gate_core`（gtest）`SilentWhenBlocked` | **J-1。publish 回数が 0** |
-| `test_jog_gate_core::SilentWhenStateStale` | J-2 |
-| `test_jog_gate_core::PassthroughUnchanged` | J-3 |
-| `test_jog_gate_core::IsDrivePasses` | `MANUAL` / `TEACH_MANUAL` |
-| `test_jog_gate_core::WaitClearBlocked` | `F-28` |
-| `test_jog_gate_core::AllModesFromAttributes` | **18 モードを attributes から回す** |
-| **`test_jog_gate_node.py::test_mux_can_select_priority_20`** | **J-1 の帰結。`jog_gate` が黙っている間に `/cmd_vel_behavior` が `/cmd_vel_muxed` に出る** |
+| テスト | ctest 登録名（`V6`） | 満たす仕様 |
+| --- | --- | --- |
+| `test_jog_gate_core`（gtest）`SilentWhenBlocked` | `test_jog_gate_core`（`th_safety`） | **J-1。publish 回数が 0** |
+| `test_jog_gate_core::SilentWhenStateStale` | 同上 | J-2 |
+| `test_jog_gate_core::PassthroughUnchanged` | 同上 | J-3 |
+| `test_jog_gate_core::IsDrivePasses` | 同上 | `MANUAL` / `TEACH_MANUAL` |
+| `test_jog_gate_core::WaitClearBlocked` | 同上 | `F-28` |
+| `test_jog_gate_core::AllModesFromAttributes` | 同上 | **18 モードを attributes から回す** |
+| **`test_jog_gate_node.py::test_mux_can_select_priority_20`** | `jog_gate_node`（`th_testing`） | **J-1 の帰結。`jog_gate` が黙っている間に `/cmd_vel_behavior` が `/cmd_vel_muxed` に出る** |
+
+```cmake
+# src/th_safety/CMakeLists.txt
+ament_add_gtest(test_jog_gate_core test/test_jog_gate_core.cpp)
+target_link_libraries(test_jog_gate_core jog_gate_core)
+# src/th_testing/CMakeLists.txt
+ament_add_pytest_test(jog_gate_node test/test_jog_gate_node.py)
+```
+
+**§10 ① の `-R jog_gate` は両方の前方一致**（`test_jog_gate_core` / `jog_gate_node`）。
 
 ### 8. Gazebo シナリオ
 
@@ -1095,9 +1047,9 @@ bool jog_passes(const StateView& st, double state_age_ms,
 
 ```bash
 # IDLE でスティックを倒しても /cmd_vel_manual が出ない
-ros2 topic pub -r 10 /cmd_vel_manual_raw geometry_msgs/Twist "{linear: {x: 0.2}}" &
-ros2 topic hz /cmd_vel_manual        # 「no new messages」
-kill %1
+ros2 topic pub -r 10 /cmd_vel_manual_raw geometry_msgs/Twist "{linear: {x: 0.2}}" & PUB=$!
+timeout 5 ros2 topic hz /cmd_vel_manual 2>&1 | grep -q "no new messages"   # V4・V7
+kill -TERM $PUB
 ```
 
 ### 10. 完了条件
@@ -1115,15 +1067,15 @@ colcon test --packages-select th_testing --event-handlers console_direct+ \
 grep -rn "cmd_vel_manual_raw" th_ws/web_ui/src/ros/topics.js
 ! grep -rn "'/cmd_vel_manual'" th_ws/web_ui/src/     # 旧トピックへの直接 publish が無い
 
-# ③ 実機（電源断）で IDLE のジョグが構造的にゼロ
-ros2 topic pub -r 10 /cmd_vel_manual_raw geometry_msgs/Twist "{linear: {x: 0.2}}" &
-sleep 2; ros2 topic echo /cmd_vel --field linear/x --once     # 0.0
-kill %1
+# ③ 実機（電源断）で IDLE のジョグが構造的にゼロ。V4・V7
+ros2 topic pub -r 10 /cmd_vel_manual_raw geometry_msgs/Twist "{linear: {x: 0.2}}" & PUB=$!
+sleep 2; test "$(timeout 3 ros2 topic echo /cmd_vel --field linear.x --once)" = "0.0"
+kill -TERM $PUB
 
 # ④ twist_mux が priority 20 を選べる（J-1 の帰結）
-ros2 topic pub -r 20 /cmd_vel_behavior geometry_msgs/Twist "{linear: {x: 0.1}}" &
-sleep 2; ros2 topic echo /cmd_vel_muxed --field linear/x --once   # 0.1
-kill %1
+ros2 topic pub -r 20 /cmd_vel_behavior geometry_msgs/Twist "{linear: {x: 0.1}}" & PUB=$!
+sleep 2; test "$(timeout 3 ros2 topic echo /cmd_vel_muxed --field linear.x --once)" = "0.1"
+kill -TERM $PUB
 ```
 
 ### 11. 既知の負債・未確定 (c)
@@ -1225,6 +1177,23 @@ def test_06_fault_to_stop_100ms(sim_stack):
 
 このパケット自体がテストである。
 
+**ctest 登録名（`V6`）。**1 ファイル 1 登録で、名前は `fault_injection_<2 桁>` に固定する。
+**§10 の `-R` はすべてこの命名の前方一致・正規表現である。**
+
+| ファイル | ctest 登録名 |
+| --- | --- |
+| `fault_injection/test_01_*.py` 〜 `test_13_*.py` | `fault_injection_01` 〜 `fault_injection_13` |
+| `fault_injection/test_control.py`（対照ケース。§6.3 ①） | `fault_injection_control` |
+
+```cmake
+# src/th_testing/CMakeLists.txt — 13 本＋対照を明示列挙する（glob にしない）
+foreach(n 01 02 03 04 05 06 07 08 09 10 11 12 13)
+  file(GLOB _f "test/fault_injection/test_${n}_*.py")
+  ament_add_pytest_test(fault_injection_${n} "${_f}")
+endforeach()
+ament_add_pytest_test(fault_injection_control test/fault_injection/test_control.py)
+```
+
 ### 10. 完了条件
 
 ```bash
@@ -1235,8 +1204,12 @@ colcon test --packages-select th_testing --event-handlers console_direct+ \
   --ctest-args -R fault_injection
 colcon test-result --verbose
 
-# ② 本数の確認
-ls src/th_testing/test/fault_injection/test_*.py | wc -l      # 13
+# ② 本数の確認（V9）。対照ケース test_control.py は別に数える
+test "$(ls src/th_testing/test/fault_injection/test_[0-9][0-9]_*.py | wc -l)" -eq 13
+test -f src/th_testing/test/fault_injection/test_control.py
+# ②' 13 本＋対照が ctest に登録されている（V6。0 件で合格するのを防ぐ）
+test "$(ctest --test-dir build/th_testing -N -R fault_injection \
+        | grep -c 'Test *#')" -eq 14
 
 # ③ 実機専用 3 本が「スキップ」ではなく明示的に落ちる（T-3）
 colcon test --packages-select th_testing --ctest-args -R "fault_injection_(04|08|10)"
@@ -1276,7 +1249,7 @@ colcon test --packages-select th_testing --ctest-args -R fault_injection
 # 実機（モータ電源断）
 ros2 launch th_bringup bringup.launch.py stage:=2
 ros2 topic info /cmd_vel --verbose | grep "Publisher count"    # 1（obstacle_limiter のみ）
-ros2 topic hz /cmd_vel /safety/limiter_status                  # ともに 20 Hz
+timeout 6 ros2 topic hz /cmd_vel /safety/limiter_status        # ともに 20 Hz。V4
 ```
 
 | 出口条件 | 判定 |
@@ -1286,5 +1259,5 @@ ros2 topic hz /cmd_vel /safety/limiter_status                  # ともに 20 Hz
 | **`DEBT-2`（死角）が解除** | `blind_angle_ranges` が `measured`・幅ゼロ 0 件 |
 | **`DEBT-3`（タイムアウト）が解除** | `generated/safety_monitor.yaml` が導出値 |
 | **`DEBT-4`（キープアライブ）が解除** | 故障注入 12 |
-| **`DEBT-1` が重大フォルトとして検出される**（解除は段階 7） | `/safety/firmware_flags` → `severity: CRITICAL` |
+| **`DEBT-1` が重大フォルトとして扱われる**（検出の口は段階 0 の `WP-ESP32-01`。解除は段階 7） | `/safety/firmware_flags` → `severity: CRITICAL` |
 | 自律走行の指令が出力できる（`jog_gate` が黙っている） | `WP-SAFE-04` §10-④ |

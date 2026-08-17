@@ -11,18 +11,23 @@
 実測値の入った `registry.yaml`、そしてビルドできる `th_system_msgs`。
 **この段階では ROS2 ノードを 1 つも作らない**（`WP-SAFE-00` を除く）。
 
-| WP | 種別 | 通電 |
-| --- | --- | --- |
-| [`WP-MSG-01`](#wp-msg-01-th_system_msgs-の新設追加のみ) | 実装（型定義） | 不要 |
-| [`WP-STATE-01`](#wp-state-01-state_core--transitionsyaml--guardspy) | 実装（純粋コア） | 不要 |
-| [`WP-PARAM-01`](#wp-param-01-registry--derive--assertions--export) | 実装（純粋コア） | 不要 |
-| [`WP-SAFE-00`](#wp-safe-00-リンク品質の計測だけを先に作る) | 実装（ノード） | 不要 |
-| [`WP-NET-01`](#wp-net-01-ネットワークの改善) | 環境整備 | **必要** |
-| [`WP-MEAS-01`](#wp-meas-01-制動加速度の実測) | 測定 | **必要** |
-| [`WP-MEAS-02`](#wp-meas-02-人が歩いている部屋で地図を作る) | 測定 | **必要** |
-| [`WP-MEAS-03`](#wp-meas-03-手押し搬送のベースライン) | 測定 | 機体のみ |
-| [`WP-MEAS-04`](#wp-meas-04-リンク品質の実測) | 測定 | 不要 |
-| [`WP-MEAS-05`](#wp-meas-05-1-日の運用を通した完走試験) | 測定（段階 6 の後） | **必要** |
+**この表は実施順である。**`WP-ESP32-01` が測定 5 件より前にあるのは `O-5`
+（物理非常停止が効かないまま実機で走らせない）による
+——[packets](DetailedDesign-packets.md) **§1.1** に、例外を作らず段階 2 から移した理由がある。
+
+| 順 | WP | 種別 | 通電 |
+| --- | --- | --- | --- |
+| 1 | [`WP-MSG-01`](#wp-msg-01-th_system_msgs-の新設追加のみ) | 実装（型定義） | 不要 |
+| 2 | [`WP-STATE-01`](#wp-state-01-state_core--transitionsyaml--guardspy) | 実装（純粋コア） | 不要 |
+| 3 | [`WP-PARAM-01`](#wp-param-01-registry--derive--assertions--export) | 実装（純粋コア） | 不要 |
+| 4 | [`WP-SAFE-00`](#wp-safe-00-リンク品質の計測だけを先に作る) | 実装（ノード） | 不要 |
+| 5 | [`WP-NET-01`](#wp-net-01-ネットワークの改善) | 環境整備 | **必要** |
+| **6** | **[`WP-ESP32-01`](#wp-esp32-01-バイパス解除--ファーム構成フラグdebt-1)** | **実装（ファーム＋PC）** | **必要** |
+| 7 | [`WP-MEAS-01`](#wp-meas-01-制動加速度の実測) | 測定 | **必要** |
+| 8 | [`WP-MEAS-02`](#wp-meas-02-人が歩いている部屋で地図を作る) | 測定 | **必要** |
+| 9 | [`WP-MEAS-03`](#wp-meas-03-手押し搬送のベースライン) | 測定 | 機体のみ |
+| 10 | [`WP-MEAS-04`](#wp-meas-04-リンク品質の実測) | 測定 | 不要 |
+| 11 | [`WP-MEAS-05`](#wp-meas-05-1-日の運用を通した完走試験) | 測定（段階 6 の後） | **必要** |
 
 ---
 
@@ -132,11 +137,19 @@ colcon build --symlink-install
 colcon test --packages-select th_testing --event-handlers console_direct+
 colcon test-result --verbose        # 失敗 0
 
-# ③ 新 msg が引ける
+# ③ names.md §5.1・§5.2 の全型が引ける（件数を主張せず、辞書と突き合わせる）
 source install/setup.bash
-ros2 interface show th_system_msgs/msg/SystemState
-ros2 interface show th_system_msgs/msg/LimiterStatus
-ros2 interface list | grep th_system_msgs | wc -l     # 旧 14 + 新 35 = 49
+python3 - <<'EOF'
+import re, subprocess, sys, io
+md = io.open("../../docs/plan/detailed/DetailedDesign-names.md", encoding="utf-8").read()
+want  = set(re.findall(r'\*{0,2}`(\w+)\.msg`', md))
+want |= set(re.findall(r'\| \*{0,2}`/[\w/]+`\*{0,2} \| `(\w+)`:', md))
+have = set(subprocess.run(["ros2","interface","list"], capture_output=True, text=True)
+           .stdout.split())
+missing = [w for w in sorted(want) if not any(w in h for h in have)]
+assert not missing, f"未定義: {missing}"
+print("ok", len(want), "型")
+EOF
 
 # ④ 単体試験
 python3 -m pytest src/th_testing/test/test_msg_definitions.py -v
@@ -166,8 +179,8 @@ python3 -m pytest src/th_testing/test/test_msg_definitions.py -v
 | 作る | 作らない |
 | --- | --- |
 | `th_state/th_state/state_core.py`（`rclpy` を import しない） | `state_manager.py`（ROS2 ノード。`WP-STATE-02`） |
-| `th_state/th_state/guards.py`（28 述語） | effect の**実行**（コアは返すだけ） |
-| `th_state/config/transitions.yaml`（**121 行**＝共通 16 ＋ モード内 106、`LINE`/`LEASH` 含む） | `/system/state` の publish |
+| `th_state/th_state/guards.py`（27 述語） | effect の**実行**（コアは返すだけ） |
+| `th_state/config/transitions.yaml`（**128 行**＝共通 18 ＋ モード内 110、`LINE`/`LEASH` 含む） | `/system/state` の publish |
 | `th_state/config/attributes.yaml`（18 行 × 9 列） | ラッチ（`prev_*`）の保持。**Context で受け取る** |
 | `th_state/config/mode_entry.yaml` | |
 | `th_state/package.xml` / `CMakeLists.txt`（`ament_cmake_python`） | |
@@ -180,9 +193,9 @@ python3 -m pytest src/th_testing/test/test_msg_definitions.py -v
 | --- | --- |
 | [state](DetailedDesign-state.md) §2 | `Context` / `Effect` / `Decision` / `StateCore` の**シグネチャ（そのまま実装する）** |
 | [state](DetailedDesign-state.md) §3・§3.1・§3.2・§3.3・§3.5 | スキーマ・**マッチ規則の 6 手順**・解決トークン・effect 一覧・`ui.goto` の写像 |
-| [state](DetailedDesign-state.md) §4.1・§4.1.1 | 共通行 16 と**ガード 28 件の定義** |
-| [state](DetailedDesign-state.md) §4.2 | モード内 106 行（**`transitions.yaml` の中身はこの表**） |
-| **[state](DetailedDesign-state.md) §4.4** | **`spec_ref` の実値（全 124 行の写像）。転記するだけでよい** |
+| [state](DetailedDesign-state.md) §4.1・§4.1.1 | **共通行 18** と**ガード 27 件の定義** |
+| [state](DetailedDesign-state.md) §4.2 | モード内 110 行（**`transitions.yaml` の中身はこの表**） |
+| **[state](DetailedDesign-state.md) §4.4** | **`spec_ref` の実値（全 128 行の写像）。転記するだけでよい** |
 | [state](DetailedDesign-state.md) §8.2・§8.3 | `attributes.yaml` の実値表・`mode_entry.yaml` の許可表 |
 | [state](DetailedDesign-state.md) §10 | `reject_reason_key` の一覧（**日本語を返さない**） |
 | [state](DetailedDesign-state.md) §11 | テスト要件 1〜10（**§10 の完了条件と 1:1**） |
@@ -317,11 +330,13 @@ GUARDS: dict[str, Callable[[str, str, Context], bool]] = {
 ### 10. 完了条件
 
 ```bash
+# コンテナ内 (/root/th_ws)。V1・V8
 cd /root/th_ws
+colcon build --symlink-install --packages-select th_state && source install/setup.bash
 
 # ① 純粋コアが ROS2 なしで動く（最重要）
 python3 -c "import sys; sys.path.insert(0,'src/th_state'); import th_state.state_core"
-! grep -rn "import rclpy\|from rclpy" src/th_state/th_state/     # 一致 0 件
+test -d src/th_state/th_state && ! grep -rq "import rclpy\|from rclpy" src/th_state/th_state/   # V2
 
 # ② 数値リテラルが無い（R2）
 ! grep -rnE "^[^#]*[^_a-zA-Z0-9]([0-9]+\.[0-9]+|[0-9]{3,})" src/th_state/th_state/state_core.py
@@ -332,11 +347,11 @@ python3 -m pytest src/th_testing/test/test_transition_table.py -v
 #   テスト 2（欠落）・2r（過剰）・2f（宣言外の分割）の 3 本が通ること
 
 # ④ validate() が空を返す（起動可能であることの証明）
-python3 -m th_state.validate_cli --config src/th_state/config    # exit 0・出力なし
+PYTHONPATH=src/th_state python3 -m th_state.validate_cli --config src/th_state/config   # exit 0・出力なし
 
 # ⑤ 行数を機械的に数える（主張ではなく実測）
 python3 -c "import yaml;d=yaml.safe_load(open('src/th_state/config/transitions.yaml'));\
-print(len(d), len({r['id'] for r in d}))"    # 121 121（重複 0）
+print(len(d), len({r['id'] for r in d}))"    # 128 128（重複 0）
 ```
 
 ### 11. 既知の負債・未確定 (c)
@@ -497,25 +512,29 @@ def timeout_upper_bound_ms(v_max, intrusion_budget_m) -> float
 ### 10. 完了条件
 
 ```bash
+# コンテナ内 (/root/th_ws)。V1・V8
 cd /root/th_ws
+colcon build --symlink-install --packages-select th_params && source install/setup.bash
 
 # ① ROS2 に依存しない
-! grep -rn "import rclpy\|from rclpy" src/th_params/th_params/
+test -d src/th_params/th_params && ! grep -rq "import rclpy\|from rclpy" src/th_params/th_params/
 
 # ② 未測定の全件が 1 コマンドで出る（P-2）
-grep -c TBD_MEASURE src/th_params/config/registry.yaml
-! grep -rn TBD_MEASURE --include='*.py' --include='*.jsx' --include='*.cpp' src/ web_ui/
+grep -c TBD_MEASURE src/th_params/config/registry.yaml   # 1 件以上（未測定がある）
+! grep -rq TBD_MEASURE --include='*.py' --include='*.cpp' src/   # registry 以外に無い（V2）
 
 # ③ 全テスト
 python3 -m pytest src/th_testing/test/test_params_*.py -v
 
 # ④ export が動く（sim 相当。placeholder を許す）
-python3 -m th_params.export --registry src/th_params/config/registry.yaml \
-  --out /tmp/gen --stage 0 --sim && ls /tmp/gen/
+PYTHONPATH=src/th_params python3 -m th_params.export \
+  --registry src/th_params/config/registry.yaml --out /tmp/gen --stage 0 --sim
+test $(ls /tmp/gen/*.yaml | wc -l) -ge 1        # V9
 
-# ⑤ 段階 0 で blocking な placeholder が残っていれば exit 1 になる
-python3 -m th_params.export --registry src/th_params/config/registry.yaml \
-  --out /tmp/gen --stage 0 --nodes state_manager; echo "exit=$?"   # brake 未測定なら 1
+# ⑤ 段階 0 で blocking な placeholder が残っていれば exit 1 になる（brake 未測定時）
+PYTHONPATH=src/th_params python3 -m th_params.export \
+  --registry src/th_params/config/registry.yaml --out /tmp/gen --stage 0 \
+  --nodes obstacle_limiter; test $? -eq 1
 ```
 
 ### 11. 既知の負債・未確定 (c)
@@ -636,11 +655,22 @@ class GapTracker {
 
 ### 7. 単体試験
 
-| テスト | 満たす仕様 |
-| --- | --- |
-| `test_link_quality_core`（gtest） | 既知の系列で p50/p99/max が一致 |
-| `test_link_quality_core::EmptyWindow` | Q-2。受信 0 でゼロ値 |
-| `test_safety_monitor.py`（**既存・無変更**） | Q-3 |
+| テスト | ctest 登録名（`V6`） | 満たす仕様 |
+| --- | --- | --- |
+| `test_link_quality_core`（gtest） | `test_link_quality_core`（`th_safety`） | 既知の系列で p50/p99/max が一致 |
+| `test_link_quality_core::EmptyWindow` | 同上（同一ターゲット内のケース） | Q-2。受信 0 でゼロ値 |
+| `test_safety_monitor.py`（**既存・無変更**） | `safety_monitor`（`th_testing`・**既存**） | Q-3 |
+
+**`th_safety/CMakeLists.txt` にはテスト登録が現在 1 件も無い**（`DEBT-10`）。
+**このパケットが最初の 1 件を登録する。**登録しないと `colcon test --packages-select th_safety` は
+**テスト 0 件で exit 0** ＝ §10 ② が無条件に合格する（`V5` / `V6`）。
+
+```cmake
+# src/th_safety/CMakeLists.txt — if(BUILD_TESTING) の中
+find_package(ament_cmake_gtest REQUIRED)
+ament_add_gtest(test_link_quality_core test/test_link_quality_core.cpp)
+target_link_libraries(test_link_quality_core link_quality_core)
+```
 
 ### 8. Gazebo シナリオ
 
@@ -654,7 +684,7 @@ class GapTracker {
 
 ```bash
 ros2 topic echo /safety/link_quality --once
-ros2 topic hz /safety/link_quality      # 3.0 Hz 前後（3 本 × 1 Hz）
+timeout 6 ros2 topic hz /safety/link_quality   # 3.0 Hz 前後（3 本 × 1 Hz）。V4
 ```
 
 ### 10. 完了条件
@@ -667,14 +697,16 @@ colcon test --packages-select th_testing --event-handlers console_direct+ \
   --ctest-args -R "safety_monitor|fault_detection"
 colcon test-result --verbose
 
-# ② gtest
-colcon test --packages-select th_safety --event-handlers console_direct+
+# ② gtest。DEBT-10 の解除。「0 件で合格」を潰すため実行件数を数える（V5・V6・V9）
+colcon test --packages-select th_safety --event-handlers console_direct+ \
+  --ctest-args -R test_link_quality_core
+colcon test-result --verbose                    # V5。colcon test は落ちても exit 0
+grep -c "ament_add_gtest\|ament_add_pytest_test" src/th_safety/CMakeLists.txt   # 1 以上
+test "$(ctest --test-dir build/th_safety -N | tail -1 | grep -oE '[0-9]+$')" -ge 1
 
-# ③ 実機（電源断）で 3 本出る
-ros2 topic echo /safety/link_quality --field link --once
-python3 - <<'EOF'
-# 3 本の link 名が {esp32, lidar, ui} であること
-EOF
+# ③ 実機（電源断）で 3 本出る。V4・V10
+timeout 5 ros2 topic echo /safety/link_quality --field link --csv > /tmp/lq.txt
+test "$(sort -u /tmp/lq.txt | tr -d '\r' | paste -sd, -)" = "esp32,lidar,ui\"
 ```
 
 ### 11. 既知の負債・未確定 (c)
@@ -712,6 +744,8 @@ EOF
 | [safety](DetailedDesign-safety.md) §7 | **なぜタイムアウトを縮めるのが誤った処方なのか** |
 | [safety](DetailedDesign-safety.md) §11.3・§11.4 | `DEBT-3` の解除手順・併せて片づける 4 件 |
 | [safety](DetailedDesign-safety.md) §8.3 | Wi-Fi AP は単一障害点（**改善しても必須系統には数えない**） |
+| [hardware](DetailedDesign-hardware.md) **§1**（機器 → ノード → トピック） | **どのリンクを改善するのか**——ESP32 は Wi-Fi、LiDAR は USB で、**同じ「通信」ではない。**AP を直しても USB 側のギャップは消えない |
+| [hardware](DetailedDesign-hardware.md) **§3**（ESP32 のフレーム。**このファイルが正**）・**§3.1**（拡張と新設の規約） | **`ws_link.h` のフレーム表をどこに合わせるか**（`DEBT-7`）。表の正本は `ws_link.h` ではなく hardware §3 である |
 | `docs/plan/task.md` 1 | 元の要求 |
 
 ### 3. インターフェース契約
@@ -757,20 +791,28 @@ EOF
 ### 10. 完了条件
 
 ```bash
+# ホスト（リポジトリルート・Git Bash）。V1
+
 # ① 認証情報がリポジトリに無い
-! git ls-files | grep -q "wifi_credentials.h$"
-git ls-files | grep -q "wifi_credentials.h.example"
-! grep -rnE "(ssid|password)\s*=\s*\"[^\"]{3,}\"" th_ws/esp32/src/wifi_credentials.h.example
+! git ls-files | grep -q "wifi_credentials\.h$"
+git ls-files | grep -q "wifi_credentials\.h\.example$"
+#    .example が「実物のコピー」になっていないこと（V2・V3。現行は #define 形式）
+test -f th_ws/esp32/src/wifi_credentials.h.example
+! grep -qE '#define +WIFI_(SSID|PASS[A-Z]*) +"(?!your-)' th_ws/esp32/src/wifi_credentials.h.example \
+  2>/dev/null || grep -qE '#define +WIFI_SSID +"your-' th_ws/esp32/src/wifi_credentials.h.example
 
-# ② ポートが 1 か所
-grep -rn "876[0-9]" th_ws/esp32/src/config.h th_ws/src/th_esp32_bridge/config/params.yaml
-# → 同じ値であること。値の実体は registry.yaml
+# ② ポートが 1 か所（値そのものを比較する。目視しない）
+FW=$(grep -oE 'WS_PORT +[0-9]+' th_ws/esp32/src/config.h | grep -oE '[0-9]+')
+PC=$(grep -oE 'port: *[0-9]+' th_ws/src/th_esp32_bridge/config/params.yaml | grep -oE '[0-9]+')
+test -n "$FW" && test "$FW" = "$PC"
 
-# ③ フレーム表が実装と一致
-grep -n "WHEEL_FEEDBACK" th_ws/esp32/src/ws_link.h     # 13 byte と書かれている
+# ③ フレーム表が実装と一致（V3。期待文字列そのものを書く）
+grep -q "WHEEL_FEEDBACK.*13 bytes" th_ws/esp32/src/ws_link.h
+grep -q "ESTOP_HW.*3 bytes"        th_ws/esp32/src/ws_link.h
 
-# ④ プロトコルテストが無変更で通る
-python3 -m pytest th_ws/src/th_testing/test/test_esp32_ws_protocol.py -v
+# ④ プロトコルテストが無変更で通る（コンテナ内）
+docker compose run --rm th_robot bash -lc \
+  'cd /root/th_ws && python3 -m pytest src/th_testing/test/test_esp32_ws_protocol.py -v'
 
 # ⑤ 改善の効果は WP-MEAS-04 で測る（このパケット単独では判定しない）
 ```
@@ -786,6 +828,174 @@ python3 -m pytest th_ws/src/th_testing/test/test_esp32_ws_protocol.py -v
 | --- | --- |
 | 依存 WP | なし |
 | 被依存 WP | **`WP-MEAS-04`** |
+
+---
+
+## `WP-ESP32-01` バイパス解除 ＋ ファーム構成フラグ（`DEBT-1`）
+
+### 0. 一行要旨
+
+`ESTOP_BENCH_TEST_BYPASS` を無効にし、**バイパスが有効なことをランタイムで検出できるようにする。**
+
+### 1. 対象と非対象
+
+| やる | やらない |
+| --- | --- |
+| `esp32/src/config.h` の `ESTOP_BENCH_TEST_BYPASS` を無効化 | 始業点検 項目 1 の実装（`WP-MAINT-01`。段階 7） |
+| `ESTOP_HW (0x03)` フレームに `bypass_active` ビットを載せる | `DEBT-1` の**正式な解除**（同上） |
+| `esp32_bridge` が `bypass_active` を `/safety/firmware_flags` へ出す | 機体側 LED（`LED_STATE 0x05`。申し送り） |
+| `main.cpp:196-202` の `[DBG]` printf の削除 | プロトコルの他フレームの変更 |
+| `esp32/src/ws_link.h` のフレーム表の是正（`WHEEL_FEEDBACK` は 13 byte） | `LED_STATE (0x05)` / `BATTERY (0x06)` の**実装**（表への追記だけ行う。§11） |
+| **部品の確認**（状態 LED ＋ 抵抗・分圧抵抗・空きピン。[hardware](DetailedDesign-hardware.md) §3.4・§5） | |
+
+### 2. 参照する設計書の節
+
+| 節 | 何のために |
+| --- | --- |
+| [safety](DetailedDesign-safety.md) §0 `DEBT-1` | 何が壊れているか（`config.h:130` / `main.cpp:119-121`） |
+| [safety](DetailedDesign-safety.md) §11.1 | **解除手順の 4 段**（合格判定は始業点検 項目 1） |
+| [safety](DetailedDesign-safety.md) §11.4 | 併せて片づける 4 件 |
+| [safety](DetailedDesign-safety.md) §1（層 1・2） | 物理ボタンとウォッチドッグの位置づけ |
+| [safety](DetailedDesign-safety.md) §12 | **開発モードでも層 1・2 は無効化できない** |
+| [reuse](DetailedDesign-reuse.md) §2.13 | ファームの既存構造（**プロトコルは byte 互換のまま**） |
+| [reuse](DetailedDesign-reuse.md) §2.6 | `esp32_bridge` の「ファーム世代検出」の流儀（`_feedback_has_dt`） |
+| **[hardware](DetailedDesign-hardware.md) §3・§3.1・§3.4** | **ESP32 フレーム表の正・「旧形式を受理する」規約・GPIO 割り当て** |
+| **[hardware](DetailedDesign-hardware.md) §5** | **手配（LED と分圧抵抗はここで初めて必要になる）** |
+
+### 3. インターフェース契約
+
+#### 3.1 トピック
+
+| 方向 | トピック | 型 | QoS | レート |
+| --- | --- | --- | --- | --- |
+| **pub**（`esp32_bridge`） | **`/safety/firmware_flags`** | `std_msgs/UInt8` | **transient_local, depth 1** | 変化時＋接続時 |
+| pub（既存） | `/safety/estop_hw` | `std_msgs/Bool` | reliable | 10 Hz |
+
+**bit 0 = `bypass_active`。**残りは予約（0）。
+**新しい msg 型を作らない**（`WP-MSG-01` は締めてある。`UInt8` で足りる）。
+
+#### 3.2 プロトコル
+
+```
+ESTOP_HW (0x03):  [type:1][pressed:1][flags:1]      ← flags を 1 byte 追加
+```
+
+**旧形式（2 byte）も受理する。**`esp32_bridge` は長さで判別し、
+2 byte なら `flags = 0xFF`（**「不明」＝バイパスの可能性あり ＝ 安全側**）として扱う。
+既存の `_feedback_has_dt` と同じ流儀。
+
+#### 3.3 パラメータ
+
+| 名前 | class | status | 用途 |
+| --- | --- | --- | --- |
+| `esp32_watchdog_ms` | given | given | `config.h` の `WATCHDOG_MS` の写し。A6/A7 が突き合わせる |
+| `esp32_ws_port` | given | given | `WP-NET-01` で統一済み |
+
+#### 3.4 フレーム
+
+なし。
+
+### 4. 内部設計
+
+#### 4.1 純粋コア
+
+`th_esp32_bridge/th_esp32_bridge/ws_protocol.py` に
+`unpack_estop_hw(payload) -> tuple[bool, int]` を足す（**既存関数の戻り値を変えない**）。
+
+#### 4.2 ノードの責務
+
+`esp32_bridge` は受け取った `flags` を `/safety/firmware_flags` へ流すだけ。
+**判定は `safety_monitor` が行う**（`WP-SAFE-01`）。
+
+#### 4.3 不変条件
+
+| # | 不変条件 | なぜ |
+| --- | --- | --- |
+| **E-1** | **旧形式のフレームは「不明」として安全側に倒す** | ファーム更新前の機体で無言に素通ししない |
+| **E-2** | `ESTOP_BENCH_TEST_BYPASS` の定義そのものを**残す**（無効化するだけ） | 台上試験の手段は必要。**検出できることが要件**であって禁止ではない |
+| **E-3** | 開発モードのフラグを ESP32 に渡さない | 層 1・2 は無効化できない（§12） |
+
+### 5. 表駆動データ
+
+なし。
+
+### 6. 安全要件
+
+| 項目 | 内容 |
+| --- | --- |
+| 6.1 触れる層 | **層 1（物理非常停止）そのもの** |
+| 6.2 フェイルセーフ既定 | `flags` 不明 → バイパスの可能性ありとして扱う（E-1） |
+| 6.3 FMEA | ① バイパスを無効化したが `estopActive` の反映漏れがある → **押しても止まらない。**通電での実測が必須。② `flags` を足したことで旧 `esp32_bridge` が例外を投げる → **`esp32_bridge` を先に更新してからファームを焼く**（順序）。③ `[DBG]` printf を消したことでシリアルのタイミングが変わり、既存の不具合が再現／消失する → 削除前後で `WHEEL_FEEDBACK` の受信間隔を比較する |
+
+### 7. 単体試験
+
+| テスト | 満たす仕様 |
+| --- | --- |
+| `test_esp32_ws_protocol.py::test_unpack_estop_hw_3byte` | §3.2 新形式 |
+| `test_esp32_ws_protocol.py::test_unpack_estop_hw_2byte_unknown` | E-1 |
+| `test_esp32_ws_protocol.py`（**既存の全ケース**） | 後方互換（無変更で通ること） |
+
+### 8. Gazebo シナリオ
+
+**なし**（Gazebo に `esp32_bridge` は起動しない）。
+
+### 9. 実機での確認手順
+
+| 電源断でできる | 通電が要る |
+| --- | --- |
+| `flags` が届くこと・`/safety/firmware_flags` が出ること | **押して実際に駆動が切れること**（テスタでモータードライバ電源を確認） |
+
+### 10. 完了条件
+
+```bash
+# ① バイパスが無効
+grep -n "ESTOP_BENCH_TEST_BYPASS" th_ws/esp32/src/config.h      # 定義はあるが 0 / #undef
+! grep -n "estopActive *= *false" th_ws/esp32/src/main.cpp       # 無条件代入が消えている
+
+# ② [DBG] printf が消えている
+! grep -n "\[DBG\]" th_ws/esp32/src/main.cpp
+
+# ③ フレーム表が実装と一致（V3。現行は "(9 bytes)" "(2 bytes)" なので期待文字列で当てる）
+grep -q "WHEEL_FEEDBACK.*13 bytes" th_ws/esp32/src/ws_link.h
+grep -q "ESTOP_HW.*3 bytes"        th_ws/esp32/src/ws_link.h
+grep -q "LED_STATE.*0x05"          th_ws/esp32/src/ws_link.h
+grep -q "BATTERY.*0x06"            th_ws/esp32/src/ws_link.h
+
+# ④ プロトコルテスト
+python3 -m pytest th_ws/src/th_testing/test/test_esp32_ws_protocol.py -v
+
+# ⑤ 実機（電源断）。V4。目視せず値を比較する
+test "$(timeout 3 ros2 topic echo /safety/firmware_flags --field data --once)" = "0"
+#   ここで物理ボタンを押す（人が関与）
+test "$(timeout 5 ros2 topic echo /safety/estop_hw --field data --once)" = "True"
+#   離すと戻る（ラッチしないこと。押しっぱなし検出ではない）
+test "$(timeout 5 ros2 topic echo /safety/estop_hw --field data --once)" = "False"
+
+# ⑥ 通電（人が関与）— 押下でモータードライバ電源が落ちる
+```
+
+### 11. 既知の負債・未確定 (c)
+
+**`DEBT-1` はこのパケットでは解除されない。**
+解除条件は「始業点検 項目 1 が OK」であり、それを実行できるのは `WP-MAINT-01`（段階 7）。
+**ここで行うのは「検出できるようにすること」まで**（[safety](DetailedDesign-safety.md) §11.1 の 4）。
+
+| 項目 | 扱い |
+| --- | --- |
+| **`LED_STATE (0x05)` / `BATTERY (0x06)` の実装** | **このパケットでは表に足すだけ。**GPIO の空きピン選定と部品が要る（[hardware](DetailedDesign-hardware.md) §3.4・§5）。**来なくてもフォルトにしない**設計なので、後から足せる |
+| 分圧比 | バッテリーの公称電圧が要る。**`battery_warn_v` / `battery_critical_v` は `given`**（方針値） |
+
+### 12. 依存
+
+| | |
+| --- | --- |
+| 依存 WP | `WP-NET-01`（ポート統一）が**望ましい**。**`WP-MSG-01` には依存しない**（`std_msgs/UInt8` しか使わない） |
+| 被依存 WP | **`WP-MEAS-01` / `WP-MEAS-02`**（段階 0 で実機を走らせる 2 件。`O-5`）／ **`WP-SAFE-01`**（バイパス検出を重大フォルトに）／ 実機で走らせる全パケット（`O-5`） |
+
+**このパケットが段階 2 ではなく段階 0 にある理由**は
+[packets](DetailedDesign-packets.md) **§1.1**。`O-5` に例外を作らないため移した。
+**ファームを焼く作業なので、機体が手元にある日にまとめて済ませる**
+（`WP-NET-01` の `wifi_credentials.h` 差し替えと同じ日にやるのが早い）。
 
 ---
 
@@ -860,6 +1070,8 @@ python3 -m pytest th_ws/src/th_testing/test/test_esp32_ws_protocol.py -v
 ### 10. 完了条件
 
 ```bash
+# ホスト（リポジトリルート）。① ② はホスト、③ はコンテナ内。V1
+
 # ① registry の該当行が measured になっている
 python3 - <<'EOF'
 import yaml
@@ -868,15 +1080,21 @@ p = r["brake_accel_mps2"]
 assert p["status"] == "measured", p["status"]
 assert "measured_at" in p and "source" in p        # S4
 assert p["value"] != "TBD_MEASURE"
-print("ok", p["value"])
+# §3 の雛形の穴埋めが残っていないこと（<...> はすべて実値に置き換わっている）
+import re
+for k in ("value", "measured_at", "source"):
+    assert not re.search(r"<[^>]*>", str(p[k])), (k, p[k])
+print("ok", p["value"], p["measured_at"])
 EOF
 
-# ② 15 回分の生データが残っている
-ls docs/plan/detailed/data/brake_accel_*.csv      # 3 条件 × 5 回
+# ② 15 回分の生データが残っている（V9。数える）
+test $(ls docs/plan/detailed/data/brake_accel_*.csv | wc -l) -eq 15
 
-# ③ この値に依存する導出が全部埋まる
-python3 -m th_params.export --registry th_ws/src/th_params/config/registry.yaml \
-  --out /tmp/gen --stage 0 --nodes obstacle_limiter ; echo "exit=$?"   # 0
+# ③ この値に依存する導出が全部埋まる（コンテナ内。V8）
+docker compose run --rm th_robot bash -lc 'cd /root/th_ws && \
+  PYTHONPATH=src/th_params python3 -m th_params.export \
+  --registry src/th_params/config/registry.yaml --out /tmp/gen --stage 0 \
+  --nodes obstacle_limiter'      # exit 0
 ```
 
 ### 11. 既知の負債
@@ -889,7 +1107,7 @@ python3 -m th_params.export --registry th_ws/src/th_params/config/registry.yaml 
 
 | | |
 | --- | --- |
-| 依存 WP | `WP-ESP32-01`（`DEBT-1` 解除）が**望ましい**が、人が張り付くことで代替可 |
+| 依存 WP | **`WP-ESP32-01`（`DEBT-1` 解除）が必須**（`O-5`。§6.1 が「バイパスが有効な状態で走らせない」と書いている）。人が張り付くことでは代替しない |
 | 被依存 WP | `WP-PARAM-01` の値埋め → `WP-SAFE-03` / 段階 1 以降の実機起動すべて |
 
 ---
@@ -911,7 +1129,7 @@ python3 -m th_params.export --registry th_ws/src/th_params/config/registry.yaml 
 
 | 節 | 何のために |
 | --- | --- |
-| [onsite](DetailedDesign-onsite.md)（地図作成・地図修正の節） | 写り込みを消す機能の位置づけ |
+| [onsite](DetailedDesign-onsite.md) §3.1（`PREP` の手順と状態）・**§3.5（地図の修正）** | 写り込みを消す機能の位置づけ |
 | [packets](DetailedDesign-packets.md) §9 | `WP-ONSITE-04` の範囲がこの結果で変わる |
 
 ### 3〜5. 契約・内部設計・表
@@ -921,6 +1139,8 @@ python3 -m th_params.export --registry th_ws/src/th_params/config/registry.yaml 
 ### 6. 安全要件
 
 歩いている人の周囲で機体を動かす。**手動走行のみ**（自律走行は使わない）。
+**`WP-ESP32-01` が済んでいること**——人が歩いている中で走らせるので、
+物理非常停止が効かない状態では行わない（`O-5` ／ [packets](DetailedDesign-packets.md) §1.1）。
 
 ### 7〜8. 単体試験・Gazebo
 
@@ -948,7 +1168,7 @@ grep -qE "^判定: (人物マスクが要る|人物マスクは不要)" docs/pla
 
 | | |
 | --- | --- |
-| 依存 WP | なし |
+| 依存 WP | **`WP-ESP32-01`**（`O-5`。人が歩いている中で走らせる） |
 | 被依存 WP | `WP-ONSITE-04`（**範囲が変わる**） |
 
 ---
@@ -983,8 +1203,10 @@ grep -qE "^判定: (人物マスクが要る|人物マスクは不要)" docs/pla
 ### 10. 完了条件
 
 ```bash
+# ホスト（リポジトリルート）。V1・V9
 test -f docs/plan/detailed/data/meas03/baseline.md
-# 所要時間 / 人数 / 主観負担（5 段階）が n≥3 回分ある
+#   所要時間 / 人数 / 主観負担（5 段階）を 1 行 1 回で記録し、3 回以上あること
+test $(grep -cE '^\| *[0-9]+ *\|' docs/plan/detailed/data/meas03/baseline.md) -ge 3
 ```
 
 ### 11〜12. 負債・依存
@@ -1050,10 +1272,11 @@ EOF
 # ② 改善前後の記録がある
 ls docs/plan/detailed/data/meas04/before.csv docs/plan/detailed/data/meas04/after.csv
 
-# ③ タイムアウトが導出でき、A1 が通る（v_max がクランプされたら警告が出る）
-python3 -m th_params.export --registry th_ws/src/th_params/config/registry.yaml \
-  --out /tmp/gen --stage 1 --nodes safety_monitor
-grep -n "v_max" /tmp/gen/safety_monitor.yaml
+# ③ タイムアウトが導出でき、A1 が通る（コンテナ内。V8）
+docker compose run --rm th_robot bash -lc 'cd /root/th_ws && \
+  PYTHONPATH=src/th_params python3 -m th_params.export \
+  --registry src/th_params/config/registry.yaml --out /tmp/gen --stage 1 \
+  --nodes safety_monitor && grep -q "lidar_timeout_ms" /tmp/gen/safety_monitor.yaml'
 ```
 
 ### 11. 既知の負債
@@ -1104,8 +1327,11 @@ grep -n "v_max" /tmp/gen/safety_monitor.yaml
 ### 10. 完了条件
 
 ```bash
-# ① restart_control_stack が 0 回
-grep -c "restart_control_stack" /root/th_data/logs/<日付>/state_manager.log   # 0
+# コンテナ内 (/root/th_ws)。V1
+
+# ① restart_control_stack が 0 回（V2。grep -c は 0 件で exit 1 を返す）
+LOGDIR=$(ls -d /root/th_data/logs/*/ | tail -1)
+test "$(grep -c 'restart_control_stack' "$LOGDIR/state_manager.log" || true)" -eq 0
 
 # ② バッテリー交換 0 回・充電 0 回が記録されている
 test -f docs/plan/detailed/data/meas05/run.md
@@ -1136,12 +1362,22 @@ python3 -m pytest src/th_testing/test/test_state_core.py \
                   src/th_testing/test/test_params_assertions.py \
                   src/th_testing/test/test_msg_definitions.py -v
 grep -c TBD_MEASURE src/th_params/config/registry.yaml    # brake_accel と link_gap は消えている
+
+# 物理非常停止が効く状態で段階 1 へ渡す（O-5。実機・電源断で確認）
+test "$(timeout 3 ros2 topic echo /safety/firmware_flags --field data --once)" = "0"
+test -f esp32/src/main.cpp && \
+  ! grep -n "estopActive *= *false" esp32/src/main.cpp    # V2。無条件代入が無い
+
+# th_safety にテストが 1 件以上登録されている（DEBT-10。V5・V6）
+grep -c "ament_add_gtest\|ament_add_pytest_test" src/th_safety/CMakeLists.txt
 ```
 
 | 出口条件 | 判定 |
 | --- | --- |
 | 純粋コアが `rclpy` なしで動く | `grep` で 0 件 |
+| **`DEBT-1`（バイパス）が実機で無効**——測定 2 件より前 | `/safety/firmware_flags` が `0`（`WP-ESP32-01` §10） |
+| **`DEBT-10`（`th_safety` のテスト 0 件）が解除** | `CMakeLists.txt` に登録 1 件以上（`WP-SAFE-00` §10-②） |
 | `brake_accel_mps2` が `measured` | `registry.yaml` |
 | `link_gap_p99_ms` が 3 本とも `measured` | 同上 |
-| 遷移表 121 行・`id` 重複 0・`validate()` が空 | `validate_cli` |
+| 遷移表 **128 行**・`id` 重複 0・`validate()` が空 | `validate_cli` |
 | 旧 msg が 1 つも消えていない | `colcon test` 全通過 |

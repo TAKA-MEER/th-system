@@ -51,6 +51,45 @@ safety_monitor ──► /safety/estop / /safety/fault_lock ──┬──► t
 `twist_mux` と `obstacle_limiter` が両方死んでも効く唯一の PC 側経路であり、
 `Spec-safety.md` §1「上位が下位の故障に依存しない」の実装そのものである。
 
+### 1.2 twist_mux のロックだけが fail-open である（**削ってはいけない本当の理由**）
+
+**層 3 の 2 本の腕は、途絶したときに逆向きに倒れる。**
+
+| 経路 | ロックトピックが途絶したら | 根拠 |
+| --- | --- | --- |
+| **`twist_mux` のロック** | **解除扱い（fail-open）。全入力を通し始める** | `twist_mux.yaml:14` の `timeout: 0.5` とそのコメント「0.5s 以内に更新がなければロック解除扱い」 |
+| **`esp32_bridge` の独立ロック層** | **ロック扱い（fail-closed）。ゼロを送り続ける** | §1.1・`lock_stale_ms` |
+| **`obstacle_limiter`** | **ロック扱い（fail-closed）。出力ゼロ**（L6） | §3.4.2 |
+
+**`safety_monitor` が落ちると `/safety/estop` と `/safety/fault_lock` が途絶するので、
+0.5 s 後に twist_mux は止めなくなる。**止めているのは後段 2 つだけになる。
+
+**これが「重複しているから片方消そう」を却下する決定的な根拠である。**
+twist_mux のロックは**発行者が生きている間だけ**効く仕組みで、単独では安全側に倒れない。
+
+> **`twist_mux` 側を fail-closed に変えない。**
+> ロックが途絶したまま閉じ続けると、`safety_monitor` の再起動中に**手動での退避もできなくなる**。
+> fail-open のままにして、**後段 2 つで受ける**のが正しい役割分担である。
+
+### 1.3 `jog_gate` が閉じた後、手動指令はいつ止まるか
+
+**`jog_gate` は沈黙する**（§3.4.1）ので、`/cmd_vel_manual` への publish が止まる。
+そこから先はこうなる。
+
+| 時刻 | 起きること |
+| --- | --- |
+| `t=0` | `jog_gate` が publish を止める |
+| `t=0`〜 | **`twist_mux` は publish しない**（入力が来ないため。`twist_mux` は入力受信で駆動され、最後の値を再送しない） |
+| `t = muxed_stale_ms` | `obstacle_limiter` が `/cmd_vel_muxed` の途絶を検知し、**`action = ZERO_STALE` でゼロを出す** |
+| `t = manual_joy_timeout`（1.0 s） | `twist_mux` の `manual_joy` がタイムアウトし、priority 20 / 10 を選べるようになる |
+
+**駆動が止まるのは `muxed_stale_ms` 後**であって、1.0 s ではない。
+**`muxed_stale_ms ≪ manual_joy_timeout` であること**を A12 として起動時に検査する
+（[params](DetailedDesign-params.md) §4）。
+
+**1.0 s のあいだに起きるのは「自律側の指令が選ばれない」ことだけ**で、機体は止まっている。
+`SUMMON` / `WAIT_CLEAR` はゲートを閉じる状態＝挙動ノードも走らせない状態なので実害は無い。
+
 ---
 
 ## 2. 速度指令の経路
@@ -281,8 +320,18 @@ double v_allow(double nearest_m, const P& p) {
   if (margin <= 0.0) return 0.0;                       // action = STOP
   return std::sqrt(2.0 * p.brake_accel_mps2 * margin); // action = CLAMP
 }
-out.linear.x = clamp_toward_zero(in.linear.x, std::min(v_allow(d, p), applied_limit_mps));
+// 政策表（§3.3）を通してから使う。v_allow を無条件に掛けてはいけない
+double ceiling = applied_limit_mps;
+if (policy_stops(source_class, zone, auto_brake))     // AUTO は常に true（無効化不可・L7）
+    ceiling = std::min(ceiling, v_allow(d, p));
+out.linear.x = clamp_toward_zero(in.linear.x, ceiling);
 ```
+
+**`v_allow` を無条件に掛けると `AT_PANEL` の詰め寄せが成立しない。**
+`T-ATP-03`（到着ずれをジョグで手で詰める）は盤の手前で `d_floor` を割るのが正常な使い方であり、
+そこで必ずゼロにすると `v_jog_panel` / `F-24` の用途が消える。
+`policy_stops()` は §3.3 の 4 行をそのまま実装したもの——
+**`AUTO` は常に true（無効化不可）、`MANUAL` は `zone` と `auto_brake` で決まる。**
 
 **停止と再開のヒステリシス**: 一度 `STOP` に入ったら、
 `nearest_m ≥ obstacle_floor_distance_m + hysteresis_band_m` になるまで `STOP` を維持する。
@@ -301,7 +350,7 @@ out.linear.x = clamp_toward_zero(in.linear.x, std::min(v_allow(d, p), applied_li
 | **L2** | 入力が stale → `out = 0`。**沈黙しない** | §3.4 |
 | **L3** | **前方障害物では `linear.x` のみクランプし、`angular.z` は殺さない。ただし `d_floor` を割っている間は `angular.z` にも `w_align_max` を掛ける** | 角速度まで 0 にすると `ALIGN`（超信地旋回）と「人が手動操作で避ける」（`Spec-safety.md` §2.1）が実行不能になり、壁際でデッドロックする。一方、上限が無いと障害物へ振り込める |
 | **L4** | `out.linear.x < 0` のとき `\|out.linear.x\| ≤ v_reverse` | `Spec-safety.md` §2.3。LiDAR 死角 |
-| **L5** | 死角セクタが非ゼロ幅で存在する間は、**`v_reverse` を全方向の上限にする** | §4.3 |
+| **L5** | **死角セクタに向かう成分がある間**、その方向の上限を `v_reverse` にする。**全方向ではない** | §4.3。**全方向にすると、正しく校正した機体は死角が常に非ゼロ幅で存在するので`v_max` にも `v_slow` にも永久に到達できない**（A5 の `v_reverse ≤ v_slow ≤ v_max` より） |
 | **L6** | ロック中（`/safety/estop` or `/safety/fault_lock`）は無条件にゼロ | 二重化 |
 | **L7** | **`AUTO` 政策は決して緩まない。**分類に迷いがある入力は `AUTO` に倒す | §3.2 |
 
@@ -375,7 +424,7 @@ blind_angle_ranges の全ペアが幅ゼロ  →  obstacle_limiter は AUTO の�
 | --- | --- | --- |
 | `FaultStatus` | `active` / `fault_type` / `description` | **`severity` を追加** |
 | **`/safety/fault_lock`** | `LIDAR_LOST \|\| ESP32_DISCONNECTED` | **`LIDAR_LOST \|\| ESP32_DISCONNECTED \|\| severity == CRITICAL`。**§5.2.1 |
-| 監視対象 | `/scan` / `/person/status` / `/esp32/wheel_feedback` | `/scan` / **`/person/targets`** / `/esp32/wheel_feedback` ＋ **`/safety/limiter_status`**（重大） ＋ **`/map_session/status`**（自己位置喪失・重大） |
+| 監視対象 | `/scan` / `/person/status` / `/esp32/wheel_feedback` | `/scan` / **`/person/targets`** / `/esp32/wheel_feedback` ＋ **`/safety/limiter_status`**（重大） ＋ **`/map_session/status`**（自己位置喪失・重大） ＋ **`/cmd_vel_muxed` と `/cmd_vel`**（`MUX_DEAD` / `DRIVE_RUNAWAY`） ＋ **`/system/state`**（`STATE_INCONSISTENT`） ＋ **`/safety/firmware_flags`**（`DEBT-1` 検出）。**検出条件は [wp2](DetailedDesign-wp2.md) `WP-SAFE-01` §4.1 が正** |
 | タイムアウト | 固定値 | **導出値**（§7） |
 | リンク品質 | 単発警告のみ | **`/safety/link_quality` として p50/p99/max を publish** |
 
@@ -461,7 +510,38 @@ blind_angle_ranges の全ペアが幅ゼロ  →  obstacle_limiter は AUTO の�
 | 送信 | WebUI は `/safety/estop_ui` を**押下中は 2 Hz で送り続ける**（`true` のラッチではなく継続送信） |
 | 解除 | `false` を明示送信。**かつ** `estop_ui_lease_ms` の途絶でも `false` にはしない — **押下側にラッチする** |
 | 非対称の理由 | 「押した」の取りこぼしは危険、「解除した」の取りこぼしは安全。**安全側に倒すなら押下をラッチする** |
-| 解除の手段 | UI の解除ボタンのみ（下端に固定・小さめ・色と形を変える。`Spec-webui.md` §1.2） |
+| 解除の手段 | UI の解除ボタン（下端に固定・小さめ・色と形を変える。`Spec-webui.md` §1.2）**＋ §6.3.1 の非 UI 経路** |
+
+### 6.3.1 UI に依存しない解除経路（`N-4` の決着）
+
+**押下側にラッチする以上、「解除は UI だけ」にすると詰む場合がある。**
+押下中にタブレットが落ちる／rosbridge が死ぬ／AP が落ちると、
+**ラッチは立ったままで、それを下ろす手段が 1 つも無い。**
+
+まず**詰まない場合を切り分ける。**
+
+| 状況 | 解除できるか |
+| --- | --- |
+| WebUI のタブが落ちた／端末が再起動した | **できる。**別の端末・再読み込みした画面から解除ボタンを押せばよい（ラッチは `safety_monitor` 側にあり、UI の状態ではない） |
+| rosbridge・AP・タブレットが**まとめて**死んだ | **できない。**これが `N-4` |
+
+**後者のためだけに、機体側から叩ける解除サービスを 1 本置く。**
+
+| | |
+| --- | --- |
+| サービス | **`/safety/clear_estop_ui`**（`std_srvs/Trigger`。提供者 `safety_monitor`） |
+| 到達手段 | 機体の PC に SSH して `ros2 service call` する。**WebUI・rosbridge を一切通らない** |
+| 受理条件 | **`/safety/estop_hw` が `false`**（物理側が押されていない）こと。重大フォルトが立っていないこと。満たさなければ `success=false` と理由を返す |
+| 記録 | **必ずログに残す**（`who=cli`、時刻、そのときの `mode`/`state`）。UI 経由の解除と区別できる形で |
+
+**これは「UI ボタンの代替」ではなく復旧手段である。**
+通常運用の解除は UI ボタンだけを使う。
+
+| 疑問 | 答え |
+| --- | --- |
+| **サービスを生やすと誰でも解除できて危険では** | **危険は増えない。**このサービスに届くには機体の PC にログインできる必要があり、その権限があれば `safety_monitor` を直接止められる。**新しい攻撃面ではなく、既にある権限の正しい使い口を用意しただけ** |
+| **物理ボタンの押下→解放で下ろす案は** | **採らない。**独立した 2 系統（`F-39` の OR）を片方からもう片方へ効かせると、**二重化が二重でなくなる。**物理側の解放が UI ラッチを下ろすなら、UI ラッチは独立した入力ではない |
+| **解除できないままでも危険ではないのでは** | **危険ではないが運用が止まる。**`N-4` は安全の欠陥ではなく**可用性の欠陥**である。だから対処も安全経路の外（CLI）に置く |
 
 ### 6.4 `CARRY` 中は UI 非常停止を受け付けない（`F-26`）
 

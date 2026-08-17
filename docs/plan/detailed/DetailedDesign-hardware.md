@@ -60,9 +60,9 @@
 
 ```bash
 # WP-LINE-00 の測定手順（LiDAR を回しながら）
-ros2 topic hz /scan                       # ベースライン（カメラ無し）
+timeout 6 ros2 topic hz /scan             # ベースライン（カメラ無し）。V4
 #   カメラを接続して取得を開始してから
-ros2 topic hz /scan                       # 悪化していないこと
+timeout 6 ros2 topic hz /scan             # 悪化していないこと（上と比較）
 ros2 topic echo /safety/link_quality --once   # p99 が WP-MEAS-04 の実測から悪化していないこと
 ```
 

@@ -5,6 +5,17 @@
 > **`DD-1`**: 名前を発明する余地をゼロにする。必要な名前が無いと分かったら、
 > **実装する前にこのファイルへ行を足す。**
 
+**この文書は機械可読にできる。**`tools/export_names.py` が §2 / §4 / §5 / §6 / §7 / §8 の
+表から名前を抜き、`th_ws/web_ui/src/ros/names.json` を作る
+（[webui](DetailedDesign-webui.md) **§9.1**）。**WebUI の受け入れ条件 10 がそれを使う。**
+
+```bash
+python3 docs/plan/detailed/tools/export_names.py .
+```
+
+**表の書式を変えるときは生成器も同時に直す。**列を入れ替えると黙って 0 件になる
+——生成器は 0 件で非ゼロ終了するので、そこで気づける。
+
 ---
 
 ## 0. 命名規則
@@ -196,7 +207,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | `tracker_enabled` | bool | 人物追跡が動いている | `th_state`（S-50 の設定） |
 | `auto_brake` | bool | 自動ブレーキが有効 | `th_state`（ゾーン既定＋UI トグル） |
 | `working` | bool | 盤前の「作業中」ボタンが ON | `th_state` |
-| `map_update` | bool | 教示再生中の地図書き足しが ON | `th_state` |
+| `map_update` | bool | **地図の書き足しが ON。**`REPLAY` ＋ 試験場内 4 モード（`PANEL_NAV` / `SUMMON` / `HOME_NAV` / `AT_PANEL`。[onsite](DetailedDesign-onsite.md) §3.7.3） | `th_state` |
 | `unsaved` | string[] | 未保存の種別（`venue_map` / `route` / `calib` / `map_patch`） | 各機能ノードが `evt.unsaved.*` で申告 |
 
 ---
@@ -331,6 +342,7 @@ def derive_limits(screens, now_ms, p):
 | `/params/save` | `std_srvs/Trigger` | `th_params` |
 | `/shutdown/prepare` | `std_srvs/Trigger` → 未保存一覧 | `th_state` |
 | `/shutdown/execute` | `std_srvs/Trigger` | `th_state` |
+| **`/safety/clear_estop_ui`** | `std_srvs/Trigger` | **`safety_monitor`**。**UI に依存しない解除経路**（[safety](DetailedDesign-safety.md) §6.3.1 ／ `N-4`）。`/safety/estop_hw` が `false` かつ重大フォルトが無いときだけ受理し、**必ずログに残す**。**通常運用では使わない**——WebUI の解除ボタンが正規の経路である |
 
 **廃止・改名するサービス**:
 
@@ -400,6 +412,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `/safety/fault_lock` | `std_msgs/Bool` | reliable | 10 Hz |
 | `/safety/limiter_status` | `LimiterStatus` | best_effort, depth 1 | **20 Hz**（heartbeat 兼用） |
 | `/safety/link_quality` | `LinkQuality` | best_effort | 1 Hz |
+| **`/safety/firmware_flags`** | `std_msgs/UInt8` | **transient_local, depth 1** | 変化時＋接続時（[hardware](DetailedDesign-hardware.md) §3.1） |
+| **`/esp32/battery`** | `sensor_msgs/BatteryState` | reliable, depth 1 | **1 Hz**（[hardware](DetailedDesign-hardware.md) §3.3） |
 
 ### 6.3 知覚
 
@@ -488,7 +502,11 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `align_tolerance_rad` | rad | (b) |
 | `route_sample_interval_m` ／ `route_jump_m` | m | (b) |
 | `replay_drift_m_per_100m` | m | **(c)**（`O-c4`） |
+| **`link_gap_p99_ms`** | ms | **(c)**。`value_by: [esp32, lidar, ui]`（`WP-MEAS-04`） |
+| **`battery_endurance_min`** | 分 | **(c)**（`O-c7`。`WP-MEAS-05`） |
+| **`battery_warn_v`** ／ **`battery_critical_v`** | V | given（[hardware](DetailedDesign-hardware.md) §3.3） |
 | **`obstacle_cone_half_width_rad`** ／ **`obstacle_cone_half_width_reverse_rad`** | rad | (b)。**リミッタの判定コーン幅**（前方／後退で別値） |
+| **`blind_angle_ranges`** | deg のペア列 | **(c)**。死角セクタ。`list[[a0,a1]]`（[wp2](DetailedDesign-wp2.md) `WP-CALIB-01` §5） |
 
 ### 7.5 マージン 3 種の使い分け
 
@@ -503,7 +521,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | 名前 | 単位 | 分類 |
 | --- | --- | --- |
 | `tracker_lost_grace_ms` | ms | (c) |
-| `auto_select_hold_s` | s | (b) |
+| `auto_select_hold_s` | s | (b)。**`E-8`** の「数秒」 |
 | `clear_hold_ms` ／ `clear_timeout_ms` | ms | (b) |
 | `lidar_timeout_ms` ／ `esp32_timeout_ms` ／ `person_timeout_ms` | ms | (b) 導出 |
 | **`muxed_stale_ms`** | ms | (b)。**リミッタ**が `/cmd_vel_muxed` の途絶を判定する |
@@ -516,11 +534,20 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`state_stale_ms`** | ms | (b)。リミッタ／`jog_gate` が `/system/state` の途絶を判定する |
 | **`lock_stale_ms`** | ms | (b)。`/safety/estop` `/safety/fault_lock` の途絶をロック扱いにする閾値（現行 0.5 s） |
 | **`estop_ui_repeat_hz`** | Hz | given。UI 非常停止の押下継続の送信頻度 |
+| **`limiter_dead_ms`** | ms | (b)。`/safety/limiter_status` の途絶（20 Hz の 5 周期） |
+| **`mux_dead_ms`** | ms | (b)。`MUX_DEAD` の判定（[wp2](DetailedDesign-wp2.md) `WP-SAFE-01` §4.1） |
+| **`runaway_hold_ms`** | ms | (b)。`DRIVE_RUNAWAY` の保持時間 |
+| **`link_quality_window_sec`** | s | given。分位点を取る窓（`WP-SAFE-00`） |
 | **`behavior_cmd_timeout_s`** ／ **`nav_cmd_timeout_s`** | s | given。`twist_mux.yaml` の生成元（現行 0.5 s） |
 | **`wheel_radius_scale`** | — | measured（校正の出力） |
 | **`wheel_radius_scale_max_dev`** | — | given。A10 の閾値 |
+| **`runaway_ratio`** ／ **`runaway_zero_threshold`** | — / m/s | (b)。`DRIVE_RUNAWAY` の乖離判定 |
+| **`link_quality_regression_ratio`** | — | given。カメラ接続後の `/scan` p99 悪化の許容比（[hardware](DetailedDesign-hardware.md) §2.1） |
 | `ui_active_window_s` | s | (b)。`Spec-safety.md` §6.2 の「使用中」（**旧 `tablet_active_window_s` から改名**） |
 | `esp32_alive_timeout_ms` | ms | (b)。**起動時の疎通判定にだけ使う**（運用中は `esp32_timeout_ms`） |
+| **`enabled_targets`** | string[] | given。`safety_monitor` の監視対象（**段階ごとに launch から渡す**。`O-7`） |
+| **`scan_expected_points`** | — | given。起動時の疎通判定（`WP-STATE-03`） |
+| **`required_nodes`** | string[] | given。同上 |
 | **`esp32_watchdog_ms`** | ms | given。`esp32/src/config.h` の写し |
 | **`link_wait_timeout_ms`** | ms | (b)。`sys.link_timeout` の契機 |
 | `blocked_hold_ms` ／ `unblocked_hold_ms` | ms | (b) |
@@ -594,7 +621,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `evt.arrived` | `panel_navigator` / `home_navigator` / `summon_navigator` / `line_runner` |
 | `evt.align_done` | 各 navigator |
 | `evt.blocked` ／ `evt.unblocked` | 各 navigator |
-| `evt.target_lost` ／ `evt.target_reacquired` | `person_tracker_bridge` |
+| `evt.target_lost` | `person_tracker_bridge` |
 | `evt.auto_selected` | `person_tracker_bridge`（`auto_select_hold_s` 成立） |
 | `evt.clear_ok` ／ `evt.clear_timeout` | `wait_clear_gate` |
 | `evt.localize_done` ／ `evt.localize_low` | `replay_runner` |
@@ -610,6 +637,13 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `evt.check_result` | `opcheck_runner`。`{"item":..., "result":...}` |
 | `evt.calib_step_done` ／ `evt.calib_verify_ng` | `calib_runner` |
 | `evt.unsaved.set` ／ `evt.unsaved.clear` | 記録を持つ全ノード |
+
+> **`evt.target_reacquired` は作らない**（初版にあったが削除した）。
+> 追跡が切れたら `T-FOLLOW-06` で `SELECT` へ落ち、**再開には人の選び直しが要る**。
+> 自動で再捕捉して走行に戻す事象を用意すると、既存の
+> `require_explicit_target_selection: true`（`leg_tracker_param.yaml`）と正面から衝突し、
+> **別人を掴んだまま走り出す経路ができる。**
+> 再捕捉したことの**表示**は `/person/targets` の中身で足りる（事象は要らない）。
 
 ### 8.3 `fault.*` ／ `hw.*`（`th_state` の内部生成）
 

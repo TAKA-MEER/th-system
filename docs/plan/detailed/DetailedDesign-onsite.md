@@ -242,8 +242,34 @@ def two_point_pose(p1: tuple[float, float], p2: tuple[float, float]) -> Pose2D:
 | フラグ | 既存の **`map_update`**（[names](DetailedDesign-names.md) §3.1）をそのまま使う。新設しない |
 | 有効なモード | **`PANEL_NAV` / `SUMMON` / `HOME_NAV` / `AT_PANEL`** を追加（現行は `REPLAY` のみ） |
 | 置き場所 | **S-21 の「地図」タブ**にトグルを 1 つ。既定 **OFF** |
-| 保存 | `map_session` の `dirty` が立ち、S-21 に「地図に未保存の変更があります」。保存は **`ui.save`**（`SystemState.unsaved` に `venue_map` が入る） |
+| 保存 | `map_session` の `dirty` が立ち、S-21 に「地図に未保存の変更があります」。保存は **`ui.save`**（`SystemState.unsaved` に `venue_map` が入る）。**遷移行は `T-PNAV-09` / `T-SUM-14` / `T-HNAV-08` / `T-ATP-07`**（§3.7.3.1） |
 | **ピンの扱い** | **ピンは動かさない。**地図だけを更新する。**ピンがずれていると感じたら C（取り直し）へ行く**のが唯一の正しい経路 |
+
+#### 3.7.3.1 追加が必要な遷移行（**4 行。無いと段 B が成立しない**）
+
+**`map_update` を ON にしても、書き足した地図を確定する遷移が無かった。**
+`REPLAY` にしか `ui.save` の行が無く（`T-REPLAY-08`）、試験場内 4 モードは `SAVED` 状態も持たない。
+**このままだと S-21 でトグルを ON にして走っても `ui.save` が `not_allowed` で必ず拒否され、
+終了時に W-4 で「破棄」しか選べない**——段 B が消えて A と C の二択に戻る。
+
+| id | mode | state | event | guard | to_mode | to_state | effects | `spec_ref` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **`T-PNAV-09`** | `PANEL_NAV` | `PAUSE` | `ui.save` | `map_update` | `=` | `=` | `commit_map_patch` | `SM-3.1.2-099` |
+| **`T-SUM-14`** | `SUMMON` | `PAUSE` | `ui.save` | `map_update` | `=` | `=` | `commit_map_patch` | `SM-3.1.2-101` |
+| **`T-HNAV-08`** | `HOME_NAV` | `PAUSE` | `ui.save` | `map_update` | `=` | `=` | `commit_map_patch` | `SM-3.1.2-102` |
+| **`T-ATP-07`** | `AT_PANEL` | `IDLE_P` | `ui.save` | `map_update` | `=` | `=` | `commit_map_patch` | `SM-3.1.2-100` |
+
+**`SAVED` 状態を作らない。**`REPLAY` の `T-REPLAY-08` は `SAVED` へ移るが、
+試験場内モードは**走行の続きが前提**なので状態を変えずに effect だけ撃つ
+（`SAVED` を作ると `T-*-09` 相当の復帰行が 4 本増え、`AT_PANEL` では出口が塞がる）。
+
+**あわせて `attributes.yaml` の `has_record` を 4 モードとも「`map_update` が ON のときだけ true」にする**
+（[state](DetailedDesign-state.md) §8.2 の ※ を `REPLAY` 限定から広げる）。
+
+> **正本へ反映済み**（2026-08-17。申し送り A-13）。`Spec-open.md` **F-41** ／
+> `Spec-modes.md` §3.0-③・`SM-3.1.2-099`〜`-102` ／ `Spec-onsite.md` §4.0.1 ／
+> `Spec-webui.md` §3.11 ／ `Spec-transit.md` §0.1。
+> **正本の 4 行が先にあり、上の 4 行はその実装である**（§11 のテスト 2r も通る）。
 
 > **「地図を書き足したのだからピンも自動で補正する」をやってはいけない。**
 > 補正の根拠が無い（どのピンがどれだけずれたかは推定できない）。

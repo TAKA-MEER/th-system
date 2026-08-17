@@ -835,7 +835,7 @@ table.lst td.r{text-align:right}
       </div>
       <div class="state" id="st14">一時停止中</div>
       <div class="row mt"><span class="grow sm">地図の更新</span>
-        <button class="btn sm" onclick="toggleMapUpd(this)">OFF</button></div>
+        <button class="btn sm" onclick="toggleMapUpd(this,'save14')">OFF</button></div>
     </div>
     <div class="card">
       <h3>経路の指定</h3>
@@ -1098,9 +1098,12 @@ table.lst td.r{text-align:right}
       <h3>操作</h3>
       <div class="opsgrid">
         <button class="btn op-stop" onclick="act(this,'s21','pause')">停止</button>
+        <button class="btn save op-save" id="save21" style="display:none" onclick="saveMap21()">保存</button>
         <button class="btn op-manual" onclick="openJog('s21')">手動</button>
       </div>
       <div class="state" id="st21">行き先を選んでください</div>
+      <div class="row mt"><span class="grow sm">地図の更新</span>
+        <button class="btn sm" onclick="toggleMapUpd(this,'save21')">OFF</button></div>
     </div>
     <div class="subtabs">
     <div class="tabs">
@@ -2120,13 +2123,15 @@ function bindSticks(){
   });
 }
 
-/* ---------------- 教示再生：地図の更新 ON のときだけ「保存」を出す ---------------- */
-function toggleMapUpd(b){
+/* ---------------- 地図の更新 ON のときだけ「保存」を出す（S-14 / S-21・F-41） ---------------- */
+function toggleMapUpd(b, saveId){
   const on = b.classList.toggle('on');
   b.textContent = on ? 'ON' : 'OFF';
-  $('save14').style.display = on ? '' : 'none';
+  $(saveId || 'save14').style.display = on ? '' : 'none';
 }
 function saveMap14(){ closeJog(true); $('st14').textContent = '地図の書き足しを保存しました'; }
+/* S-21 は状態を変えない（PAUSE / IDLE_P のまま）。SAVED を作らない */
+function saveMap21(){ closeJog(true); $('st21').textContent = '地図の書き足しを保存しました'; }
 
 /* ---------------- 2 点指示 ---------------- */
 let p2 = 1;

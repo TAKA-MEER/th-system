@@ -2,6 +2,9 @@
 
 [DetailedDesign.md](DetailedDesign.md) の詳細。**`Spec-modes.md` §3.1 を実装可能な形に正規化する。**
 
+> **`SD-4`**（`Spec.md` §5）「モードと状態を分ける」の実装。
+> 「停止」と「終了」、異常からの復帰が素直に表せるのはこの二層構造による。
+>
 > **`DD-3`**: 遷移表は**データ**であり、実装はそれを読む。
 > `Spec-modes.md` §3.1 の「表に無い遷移は起こらない／新しい遷移が必要なら先に表へ行を足す」を、
 > コードの性質として担保する。
@@ -31,7 +34,9 @@ th_state/
 @dataclass(frozen=True)
 class Context:
     """遷移の判定に必要な、状態機械の外にある情報。ノードが毎回詰めて渡す。
-    ★ 全ガードは Context のフィールドだけで判定できること（validate() の検査項目）。"""
+    ★ ガードが読んでよいのは Context のフィールドと、step() に渡る mode / state だけ
+       （guards.py の述語は (mode, state, ctx) の 3 引数を取る。§4.1.1）。
+       時刻・ファイル・環境変数を読んではいけない —— これが validate() ② の検査項目。"""
     # --- 直前の状態（ESTOP / CARRY / PREP の復帰用。ラッチはノードが保持する） ---
     prev_mode: str                  # "" なら未ラッチ
     prev_state: str
@@ -84,11 +89,13 @@ class StateCore:
     def validate(self) -> list[str]:
         """起動時に呼ぶ。空でなければ起動を止める。検査するもの:
         ① モード名・状態名が §2/§3 の集合に含まれる
-        ② ガード名が guards.py に存在し、Context のフィールドだけを読む
+        ② ガード名が guards.py に存在し、シグネチャが (mode, state, ctx) で、
+           Context のフィールドと mode/state 以外を読まない
         ③ effect 名が §3.3 の一覧に存在し、引数の型が合う
         ④ to_mode/to_state の $トークンが §3.2 の一覧に含まれる
         ⑤ 到達不能な状態が無い
-        ⑥ PAUSE を持たないモードが無い（INIT/ESTOP/CARRY/IDLE を除く）
+        ⑥ PAUSE を持たないモードが無い
+           （除外は INIT / IDLE / ESTOP / CARRY / OPCHECK / CALIB の 6 つ。§4.1.1 末尾と同一集合）
         ⑦ 全行に spec_ref がある"""
     def step(self, mode: str, state: str, event: str, ctx: Context) -> Decision: ...
     def initial_state(self, mode: str) -> str: ...
@@ -226,8 +233,8 @@ class StateCore:
 | `C-04` | `*` | `PAUSE` | `ui.resume_yes` | `fault_cleared` | `=` | `$resume_run` | `close_window{id:W-1}` |
 | `C-05` | `*` | `PAUSE` | `ui.resume_no` ／ `ui.resume_ack` | `fault_cleared` | `=` | **`$resume_state`** | `close_window{id:W-1}` |
 | **`C-06a`** | `*` | `*` | `fault.critical` | — | `ESTOP` | `NONE` | `latch_prev` |
+| **`C-06r`** | `CARRY` | `NONE` | `ui.estop.press` | — | — | — | **`reject: true`**（`reject_reason_key: estop_disabled_in_carry`）。**`C-06b` より上の行に置く**（§3.1 規則 1 は記載順に走査する） |
 | **`C-06b`** | `*` | `*` | `ui.estop.press` | `estop_ui_allowed` | `ESTOP` | `NONE` | `latch_prev` |
-| **`C-06r`** | `CARRY` | `NONE` | `ui.estop.press` | — | — | — | **`reject: true`**（`reject_reason_key: estop_disabled_in_carry`） |
 | `C-07` | `*` | `*` | `hw.estop.press` | `not_checking_estop` | `CARRY` | `NONE` | `latch_prev`, `open_window{id:W-2}` |
 | `C-08` | `*` | `*` | `ui.finish` | **`can_finish`** | `IDLE` | `NONE` | `ask_save_if_unsaved`, `clear_prev` |
 | `C-09` | `ESTOP` | `NONE` | `ui.estop.release` | `no_critical_fault` | `IDLE` | `NONE` | `clear_prev` |
@@ -252,34 +259,37 @@ class StateCore:
 **`latch_prev` は `mode ∈ {ESTOP, CARRY}` のときは記録しない**（§3.3）。
 `ESTOP` 中の物理押下・`CARRY` 中の重大フォルトで復帰先が壊れるのを防ぐ。
 
-### 4.1.1 ガードの定義（**全 28 件**）
+### 4.1.1 ガードの定義（**全 27 件**）
+
+**`guards.py` の述語は `(mode, state, ctx)` の 3 引数を取る。**「参照する `Context`」列に
+**`mode` / `state` と書いてあるものは第 1・第 2 引数**を読む（`Context` にこの 2 つは無い）。
 
 **`guards.py` の実装はこの表が正。**`Context` のフィールドだけで判定できること。
 
 | ガード | 真になる条件 | 参照する `Context` |
 | --- | --- | --- |
-| `jog_allowed` | 下の除外表のいずれにも当たらない | `flags`, `zone` |
-| `fault_stops_mode` | 下の表で true | `fault_type` |
+| `jog_allowed` | 下の除外表のいずれにも当たらない | **`mode`, `state`**（除外表は両方を見る） |
+| `fault_stops_mode` | 下の表で true | `fault_type`, **`mode`** |
 | `fault_cleared` | `not fault_active` | `fault_active` |
 | `fault_cleared_and_ui_released` | `not fault_active and not ui_estop and not hw_estop` | 同上 |
-| `estop_ui_allowed` | `mode != "CARRY"` | — |
-| `not_checking_estop` | `not (mode == "OPCHECK" and check_item == "ESTOP")` | `check_item` |
-| `checking_estop_item` | `mode == "OPCHECK" and check_item == "ESTOP"` | `check_item` |
+| `estop_ui_allowed` | `mode != "CARRY"` | **`mode`** |
+| `not_checking_estop` | `not (mode == "OPCHECK" and check_item == "ESTOP")` | `check_item`, **`mode`** |
+| `checking_estop_item` | `mode == "OPCHECK" and check_item == "ESTOP"` | `check_item`, **`mode`** |
 | `no_critical_fault` | `fault_severity != "CRITICAL"` | `fault_severity` |
 | `hw_released` | `not hw_estop` | `hw_estop` |
 | **`hw_released_and_no_critical`** | `not hw_estop and fault_severity != "CRITICAL"` | `hw_estop`, `fault_severity` |
 | **`leash_slack`** | `not leash_taut` | `leash_taut` |
-| **`can_finish`** | `mode not in {"ESTOP"}` かつ（`mode != "CARRY"` または `not hw_estop`） | `hw_estop` |
+| **`can_finish`** | `mode not in {"ESTOP"}` かつ（`mode != "CARRY"` または `not hw_estop`） | `hw_estop`, **`mode`** |
 | `mode_entry_allowed` | `mode_entry.yaml` が許し、かつ前提条件（§`DetailedDesign-transit.md` §0.4）を満たす | `route_ids`, `flags`, `leash_present`, `camera_present` |
 | `goto_allowed` | `not flags["working"]` かつ `kind == "PANEL"` なら該当ピンが存在 | `flags`, `pin_kinds`, `arg` |
-| `not_working` | `not flags["working"]` | `flags` |
+| ~~`not_working`~~ | `not flags["working"]` | **どの行からも参照されていない。**`T-ATP-05` は `goto_allowed` を使う → **削除する**（28 → 27 件） |
 | `candidate_exists` | `candidate_count > 0` | `candidate_count` |
 | `target_selected` | `target_selected` | 同名 |
 | `target_confident` | `target_selected and target_confident` | 同 |
 | `route_arg_valid` | `arg["id"] in route_ids` または `arg.get("new") is True` | `route_ids`, `arg` |
 | `route_exists` | `arg["id"] in route_ids` | 同 |
 | `home_pin_exists` | `"HOME" in pin_kinds` | `pin_kinds` |
-| `map_update` | `flags["map_update"] and map_update_available` | `flags` |
+| `map_update` | `flags["map_update"] and map_update_available` | `flags`, **`map_update_available`** |
 | `line_visible` | `line_visible` | 同名 |
 | `leash_taut` | `leash_taut` | 同名 |
 | `preview_sane` | `calib_preview_sane` | 同名 |
@@ -320,9 +330,10 @@ class StateCore:
 
 ### 4.2 モード内（`layer: 10`）— `Spec-modes.md` §3.1.2
 
-`Spec-modes.md` §3.1.2 は **98 行**（`SM-3.1.2-001`〜`-098`。2026-08-16 に
-[open](DetailedDesign-open.md) §3 A-1 / A-2 を反映して 75 行から増えた）。
-**「A／B」と併記されている契機を 1 行 1 事象に割る**と詳細設計側は **106 行**になる。
+`Spec-modes.md` §3.1.2 は **102 行**（`SM-3.1.2-001`〜`-102`。2026-08-16 に
+[open](DetailedDesign-open.md) §3 A-1 / A-2 を反映して 75 行から増え、
+**2026-08-17 に A-13（地図の書き足し 4 行・`-099`〜`-102`）でさらに増えた**）。
+**「A／B」と併記されている契機を 1 行 1 事象に割る**と詳細設計側は **110 行**になる。
 
 **行数は主張ではなく機械的に数える。**§11 のテスト 2（正本 → 詳細の欠落）と
 **テスト 2r（詳細 → 正本の過剰）**の両方で突き合わせる。
@@ -366,12 +377,18 @@ class StateCore:
 
 #### `MANUAL`
 
-| id | state | event | guard | to_state |
-| --- | --- | --- | --- | --- |
-| `T-MANUAL-01` | `PAUSE` ／ **`RUN`** | `ui.jog.hold` | — | `RUN` |
-| `T-MANUAL-02` | `RUN` | `sys.jog_lease_expired` ／ `ui.stop` | — | `PAUSE` |
+| id | state | event | guard | to_state | `override_common` |
+| --- | --- | --- | --- | --- | --- |
+| `T-MANUAL-01` | `PAUSE` ／ **`RUN`** | `ui.jog.hold` | — | `RUN` | **`true`** |
+| `T-MANUAL-02` | `RUN` | `sys.jog_lease_expired` ／ `ui.stop` | — | `PAUSE` | `false` |
 
-**`override_common: true`**（`C-01` はこの 2 モードに効かない）。
+> **`override_common` は行の属性であって、モードの属性ではない**（§3・§3.1 規則 3）。
+> **打ち消すのは `T-MANUAL-01` が `ui.jog.hold` に対して `C-01` を、それだけ。**
+>
+> **モード単位のフラグとして実装してはいけない。**そうすると `MANUAL` / `TEACH_MANUAL` で
+> `layer: 0` が丸ごと無視され、**`C-06a`（重大フォルト → `ESTOP`）と `C-07`（物理 E-Stop → `CARRY`）が
+> 効かなくなる**——手動走行中だけ安全チェーンの層 1・2 が消える。
+> §4.2 の `CALIB` の囲みが禁じている状態そのものである。
 
 **`T-MANUAL-01` は `RUN` からの自己ループを含む。**
 リースは 5 Hz 以上で送り続けるので、`PAUSE` 発だけにすると
@@ -403,7 +420,8 @@ class StateCore:
 続けて `ui.save` した場合は `F-04` に従い**新版**として保存する。
 `T-TEACH-06` は `Spec-modes.md` §5「そのモードを続けられないときだけ `IDLE` へ落とす」の実体。
 
-`TEACH_MANUAL` は `MANUAL` と同じく `override_common: true`（`T-MANUAL-01/02` 相当の行を持つ）。
+`TEACH_MANUAL` も同じく、**`T-TEACH-03M` と `T-TEACH-05M` の 2 行だけ** `override_common: true` にする
+（`ui.jog.hold` に対して `C-01` を打ち消す）。**モード単位のフラグにしない**（上の囲みと同じ理由）。
 **`-03M` / `-05M` を分けたのは、手動系ではスティックが走行操作そのものだからである**
 （§9-(j) ／ `Spec-open.md` F-38）。`ui.run` を `TEACH_MANUAL` に残すと、
 **押せるボタンが存在しない遷移**が表に入る。
@@ -462,6 +480,7 @@ class StateCore:
 | `T-PNAV-06` | `BLOCKED` | `ui.stop` | — | `=` | `PAUSE` | — |
 | `T-PNAV-07` | `BLOCKED` | `ui.reroute` | — | `=` | `NAV` | `replan` |
 | `T-PNAV-08` | `ALIGN` | `evt.align_done` | — | `AT_PANEL` | `IDLE_P` | — |
+| **`T-PNAV-09`** | `PAUSE` | `ui.save` | `map_update` | `=` | `=` | `commit_map_patch` |
 
 #### `AT_PANEL`
 
@@ -472,6 +491,7 @@ class StateCore:
 | `T-ATP-03` | `IDLE_P` | `ui.jog.hold` | — | `=` | `PAUSE` | `set_jog(true)` |
 | `T-ATP-04` | `PAUSE` | `sys.jog_lease_expired` | — | `=` | **`IDLE_P`** | `set_jog(false)` |
 | `T-ATP-05` | `IDLE_P` ／ `WORKING` | `ui.goto` | `goto_allowed` | `$arg.kind`（§3.5） | `$initial` | — |
+| **`T-ATP-07`** | `IDLE_P` | `ui.save` | `map_update` | `=` | `=` | `commit_map_patch` |
 
 **`T-ATP-06` は置かない。**「作業中に行き先を選ぼうとした」の拒否は
 **ガード `goto_allowed` の否定**で表す（`not flags["working"]`）。
@@ -501,6 +521,7 @@ UI がエラー表示すべきか判断できなくなる。
 | **`T-SUM-13`** | `BLOCKED` | `ui.reroute` | — | `=` | `NAV` | `replan` |
 | `T-SUM-11` | `NAV` | `evt.arrived` | — | `=` | `ALIGN` | — |
 | `T-SUM-12` | `ALIGN` | `evt.align_done` | — | `AT_PANEL` | `IDLE_P` | — |
+| **`T-SUM-14`** | `PAUSE` | `ui.save` | `map_update` | `=` | `=` | `commit_map_patch` |
 
 #### `HOME_NAV`
 
@@ -513,6 +534,11 @@ UI がエラー表示すべきか判断できなくなる。
 | `T-HNAV-05` | `BLOCKED` | `evt.unblocked` | — | `=` | `NAV` | `close_window(W-5)` |
 | `T-HNAV-06` | `BLOCKED` | `ui.stop` | — | `=` | `PAUSE` | — |
 | `T-HNAV-07` | `BLOCKED` | `ui.reroute` | — | `=` | `NAV` | `replan` |
+| **`T-HNAV-08`** | `PAUSE` | `ui.save` | `map_update` | `=` | `=` | `commit_map_patch` |
+
+**試験場内 4 モードの `ui.save`（`T-PNAV-09` / `T-ATP-07` / `T-SUM-14` / `T-HNAV-08`）は
+`to_state` を変えない。**`SAVED` を作ると復帰行が 4 本増え、`AT_PANEL` では出口が塞がる
+（[onsite](DetailedDesign-onsite.md) §3.7.3.1 ／ 正本 `Spec-modes.md` §3.0-③・F-41）。
 
 #### `OPCHECK`
 
@@ -597,13 +623,13 @@ UI がエラー表示すべきか判断できなくなる。
 
 ### 4.4 `spec_ref` の実値（**正本 ↔ 詳細設計の写像。これが `transitions.yaml` に入る**）
 
-**正本 `Spec-modes.md` §3.1.1（17 行）・§3.1.2（98 行）に ID 列が入った**（2026-08-17。申し送り A-1 が反映済み）。
+**正本 `Spec-modes.md` §3.1.1（17 行）・§3.1.2（102 行）に ID 列が入った**（2026-08-17。申し送り A-1 が反映済み）。
 **この表が `transitions.yaml` の `spec_ref` 列の値である。**
 
 | 実測値 | |
 | --- | --- |
-| 詳細設計の行数 | **共通 18 ＋ モード内 106 ＝ 124** |
-| 正本の ID 数 | §3.1.1 **17** ＋ §3.1.2 **98** ＝ **115** |
+| 詳細設計の行数 | **共通 18 ＋ モード内 110 ＝ 128** |
+| 正本の ID 数 | §3.1.1 **17** ＋ §3.1.2 **102** ＝ **119** |
 | 覆えていない正本 ID | **0** |
 | 正本に無い `spec_ref` | **0** |
 
@@ -639,10 +665,10 @@ UI がエラー表示すべきか判断できなくなる。
 | `LINE` | `T-LINE-01`→030 ／ `-02`→031 ／ `-03`→032 ／ `-04`→033 ／ `-05`→034 ／ `-06`→035 |
 | `LEASH` | `T-LEASH-01`→036 ／ **`-07`→037** ／ `-02`→**038** ／ `-03`→**038** ／ `-04`→039 ／ `-05`→040 ／ `-06`→041 |
 | `PREP` | `T-PREP-01`→042 ／ `-02`→**043** ／ `-03`→**043** ／ `-04`→044 ／ `-05`→045 ／ `-06`→046 ／ `-07`→047 ／ `-08`→048 ／ `-09`→049 ／ `-10`→050 ／ `-11`→051 ／ `-12`→052 ／ `-13`→053 |
-| `PANEL_NAV` | `T-PNAV-01`→054 ／ `-02`→055 ／ `-03`→056 ／ `-04`→057 ／ `-05`→058 ／ `-06`→059 ／ `-07`→060 ／ `-08`→061 |
-| `AT_PANEL` | `T-ATP-01`→062 ／ `-02`→063 ／ `-03`→064 ／ `-04`→065 ／ `-05`→066 |
-| `SUMMON` | `T-SUM-01`→067 ／ `-02`→068 ／ `-03`→**069** ／ `-04`→**069** ／ `-05`→**069** ／ `-06`→070 ／ `-07`→071 ／ `-08`→072 ／ `-09`→073 ／ `-10`→074 ／ **`-13`→075** ／ `-11`→076 ／ `-12`→077 |
-| `HOME_NAV` | `T-HNAV-01`→078 ／ `-02`→079 ／ `-03`→080 ／ `-04`→081 ／ `-05`→082 ／ `-06`→083 ／ `-07`→084 |
+| `PANEL_NAV` | `T-PNAV-01`→054 ／ `-02`→055 ／ `-03`→056 ／ `-04`→057 ／ `-05`→058 ／ `-06`→059 ／ `-07`→060 ／ `-08`→061 ／ **`-09`→099** |
+| `AT_PANEL` | `T-ATP-01`→062 ／ `-02`→063 ／ `-03`→064 ／ `-04`→065 ／ `-05`→066 ／ **`-07`→100** |
+| `SUMMON` | `T-SUM-01`→067 ／ `-02`→068 ／ `-03`→**069** ／ `-04`→**069** ／ `-05`→**069** ／ `-06`→070 ／ `-07`→071 ／ `-08`→072 ／ `-09`→073 ／ `-10`→074 ／ **`-13`→075** ／ `-11`→076 ／ `-12`→077 ／ **`-14`→101** |
+| `HOME_NAV` | `T-HNAV-01`→078 ／ `-02`→079 ／ `-03`→080 ／ `-04`→081 ／ `-05`→082 ／ `-06`→083 ／ `-07`→084 ／ **`-08`→102** |
 | `OPCHECK` | `T-OPC-01`→085 ／ **`-04`→086** ／ `-02`→087 ／ `-03`→088 ／ `-05`→089 ／ `-06`→090 ／ **`-08`→091** ／ **`-07`→092** |
 | `CALIB` | `T-CAL-01`→093 ／ `-02`→**094** ／ `-03`→**094** ／ `-04`→**094** ／ `-05`→**094** ／ `-06`→095 ／ `-07`→096 ／ `-08`→097 ／ `-09`→098 |
 
@@ -750,8 +776,13 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | `resume` | 出す選択肢 | 対象モード |
 | --- | --- | --- |
 | `yes_no` | はい／いいえ | `FOLLOW` / `TEACH_FOLLOW` / `REPLAY` / `LINE` / `LEASH` / `PREP` / `PANEL_NAV` / `HOME_NAV` |
-| `ack_only` | 確認（1 択） | `MANUAL` / `TEACH_MANUAL` / `SUMMON` / `OPCHECK` / `CALIB` |
-| `none` | 出さない | `INIT` / `IDLE` / `ESTOP` / `CARRY` / `AT_PANEL` |
+| `ack_only` | 確認（1 択） | `MANUAL` / `TEACH_MANUAL` / `SUMMON` / `OPCHECK` / `CALIB` / **`ESTOP`** / **`AT_PANEL`** |
+| `none` | 出さない | `INIT` / `IDLE` / `CARRY` |
+
+> **`ESTOP` と `AT_PANEL` を `none` にしてはいけない。**
+> `ESTOP` は `C-09f`（重大フォルトで入った `ESTOP` の唯一の出口）が起こせなくなり**トラップになる**。
+> `AT_PANEL` は回復フォルトで `PAUSE` に落ちた後、ジョグ中でなければ `sys.jog_lease_expired` も来ず
+> **出口が無い**。理由は §8.2 の末尾表。**実値の正は §8.2** であり、この表はその読み方の説明である。
 
 `ack_only` のうち `SUMMON` だけ復帰先が `POINT`（2 点指示からやり直す）、
 `OPCHECK` / `CALIB` は `LIST`。これも `attributes.yaml` の `resume_state` に書く。
@@ -792,14 +823,17 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | `LINE` | `SETUP` | `RUN` | `yes_no` | `PAUSE` | `unused` | `v_max` | `on_locked` | `allowed` | false |
 | `LEASH` | `DEV_CHECK` | `RUN` | `yes_no` | `PAUSE` | `unused` | `v_leash` | `on_locked` | `allowed` | false |
 | `PREP` | `MAPPING` | `MAPPING` | `yes_no` | `PAUSE` | `required`※※ | `v_slow` | `on_locked` | `allowed` | **true** |
-| `PANEL_NAV` | `NAV` | `NAV` | `yes_no` | `PAUSE` | `unused` | `v_slow` | `on_locked` | `allowed` | false |
-| `AT_PANEL` | `IDLE_P` | — | **`ack_only`** | **`IDLE_P`** | `unused` | `stop`※※※ | `on_locked` | `allowed` | false |
-| `SUMMON` | `POINT` | `NAV` | **`ack_only`** | **`POINT`** | `required` | `v_slow` | `on_locked` | `allowed` | false |
-| `HOME_NAV` | `NAV` | `NAV` | `yes_no` | `PAUSE` | `unused` | `v_slow` | `on_locked` | `allowed` | false |
+| `PANEL_NAV` | `NAV` | `NAV` | `yes_no` | `PAUSE` | `unused` | `v_slow` | `on_locked` | `allowed` | false※ |
+| `AT_PANEL` | `IDLE_P` | — | **`ack_only`** | **`IDLE_P`** | `unused` | `stop`※※※ | `on_locked` | `allowed` | false※ |
+| `SUMMON` | `POINT` | `NAV` | **`ack_only`** | **`POINT`** | `required` | `v_slow` | `on_locked` | `allowed` | false※ |
+| `HOME_NAV` | `NAV` | `NAV` | `yes_no` | `PAUSE` | `unused` | `v_slow` | `on_locked` | `allowed` | false※ |
 | `OPCHECK` | `LIST` | — | **`ack_only`** | **`LIST`** | `unused` | `v_check` | `on_locked` | `denied` | false |
 | `CALIB` | `LIST` | — | **`ack_only`** | **`LIST`** | `unused` | `v_calib` | `on_locked` | `denied` | false |
 
-※ `REPLAY` の `has_record` は **`map_update` が ON のときだけ true**（`T-REPLAY-08` のガード）。
+※ `REPLAY` / **`PANEL_NAV` / `SUMMON` / `HOME_NAV` / `AT_PANEL`** の `has_record` は
+**`map_update` が ON のときだけ true**（`T-REPLAY-08` ／ `T-PNAV-09` / `T-SUM-14` / `T-HNAV-08` / `T-ATP-07`
+のガード。試験場内 4 モードへの拡張は [onsite](DetailedDesign-onsite.md) §3.7.3.1 ／ 正本 `Spec-open.md` **F-41**）。
+**表の `false` は既定値**（`map_update` OFF）であり、固定値ではない。
 ※※ `PREP` の `needs_tracker` は **`REGISTER` 状態のときだけ `required`**、他は `optional`。
 ※※※ `AT_PANEL` は停止だが、**`jog_active` の間だけ `v_jog_panel`**（`F-24`）。
 
@@ -895,6 +929,8 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | `wait_clear_active` | 退避待ち中の手動操作 |
 | `calib_not_verified` | 検証を通していない |
 | `params_placeholder_blocking` | 起動を止める暫定値が残っている |
+| **`blind_mask_uncalibrated`** | 死角マスクが未校正のまま自律走行を始めようとした（[safety](DetailedDesign-safety.md) §4.4） |
+| **`unsaved_remains`** | 未保存が残ったまま `/shutdown/execute` を呼んだ（§12.5） |
 
 ---
 
@@ -903,7 +939,7 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | # | 検証 | 手段 |
 | --- | --- | --- |
 | 1 | `transitions.yaml` の全行に `spec_ref` がある | `test_transition_table_traceability` |
-| 2 | **`Spec-modes.md` §3.1.1 の 17 行・§3.1.2 の 98 行すべてに、対応する行が 1 つ以上ある** | `spec_ref` の逆引き。**欠けたら失敗**。行数は主張せず `SM-` の ID を機械的に数える |
+| 2 | **`Spec-modes.md` §3.1.1 の 17 行・§3.1.2 の 102 行すべてに、対応する行が 1 つ以上ある** | `spec_ref` の逆引き。**欠けたら失敗**。行数は主張せず `SM-` の ID を機械的に数える |
 | **2r** | **逆方向: 全行の `spec_ref` が指す正本の ID が実在する** | **過剰行の検出。**詳細設計にしか無い遷移は正本へ戻す（`Spec-open.md` §7.1 手順 6） |
 | **2f** | **1 つの正本 ID に複数行が対応するのは §4.4.3 の 6 組だけ** | **分割の検出。**2 と 2r は「1 行を 2 行に割った」を通してしまう。宣言外の fan-out が出たら**正本の行が 2 事象を混ぜている** |
 | 3 | 全行に対応する pytest がある | **`@pytest.mark.rule("T-FOLLOW-03")` で申告する。**`conftest.py` が収集して `transitions.yaml` の `id` 集合と突き合わせる |
@@ -968,7 +1004,7 @@ python3 -m pytest src/th_testing/test/test_transition_table.py -v
 | 手段 | 実装 |
 | --- | --- |
 | WebUI | S-00 の機器ごとの状態と総合判定 |
-| **機体側** | ESP32 の GPIO に LED を足し、`evt.link_ok` を受けて点灯させる。**`WHEEL_CMD` とは別のフレーム**（`LED_STATE 0x05`）で伝える |
+| **機体側** | ESP32 の GPIO に LED を足す。**4 状態**（起動中／運用可／フォルト／非常停止）を `esp32_bridge` が `/system/state` と `/safety/fault` から決めて送る。**フレーム定義・GPIO・部品は [hardware](DetailedDesign-hardware.md) §3.2 が正** |
 
 **フレーム定義・GPIO・部品の手配は [hardware](DetailedDesign-hardware.md) §3.2・§5 が正。**
 **`WP-ESP32-01` では部品の確認までを行い、実装は段階 2 の後半に回す**（`LED_STATE` が来なくてもフォルトにしない）。

@@ -159,7 +159,7 @@ grep -n TBD_MEASURE th_ws/src/th_params/config/registry.yaml   # 未測定の全
 
 ```python
 def braking_distance(v: float, a: float, t_delay: float) -> float:
-    """Spec-safety.md §2.2 / Spec-params.md §3【B】"""
+    """Spec-safety.md §2.2 / Spec-params.md §3【B】 / F-06（停止距離の定義）"""
     return v * v / (2.0 * a) + v * t_delay
 ```
 
@@ -169,7 +169,7 @@ def braking_distance(v: float, a: float, t_delay: float) -> float:
 | `obstacle_floor_distance_m`（`d_floor`） | **この式では出さない。**`floor_distance(body_half_length_m, floor_margin_m)`（速度非依存。§3.1.1 の下） |
 | `follow_stop_distance_m` | `braking_distance(v_max, a, t_delay) + person_margin_m` |
 | `lidar_timeout_ms` / `esp32_timeout_ms` | §3.3 |
-| 停止・再開のヒステリシス帯 | `hysteresis_ratio × obstacle_stop_distance_m` |
+| 停止・再開のヒステリシス帯 | **`hysteresis_ratio × obstacle_floor_distance_m`**（§4 の A11。`obstacle_stop_distance_m` から導くと帯が `d_behavior` を超えうる） |
 
 `v_limit` は**ゾーンとモードで変わる**ので、`obstacle_limiter` は
 `v_max` / `v_slow` / `v_reverse` / `v_jog_panel` それぞれに対する距離を起動時に表として持つ。
@@ -218,8 +218,9 @@ def clear_distance(body_half_length_m: float, clear_margin_m: float) -> float:
     """退避待ちゲート：対象がゴールから離れるべき距離。"""
     return body_half_length_m + clear_margin_m
 
-def hysteresis_band(stop_distance_m: float, ratio: float) -> float:
-    return stop_distance_m * ratio
+def hysteresis_band(floor_distance_m: float, ratio: float) -> float:
+    """★ d_floor スケール。d_behavior から導くと帯が d_behavior を超えうる（A11）。"""
+    return floor_distance_m * ratio
 ```
 
 **`status: derived` の全パラメータに `formula` が存在すること**を CI で検査する（§8-5）。
@@ -285,7 +286,7 @@ def deviation_budget_m(corridor_width_m: float, body_width_m: float, margin_m: f
 | # | 検査 | 違反時 |
 | --- | --- | --- |
 | **A1** | `v_max × (lidar_timeout_ms / 1000) ≤ intrusion_budget_m`（`esp32_timeout_ms` も同様） | **`v_max` をクランプし、警告を出す。**`blocking` 指定なら起動を拒否 |
-| **A2a** | `obstacle_floor_distance_m < obstacle_stop_distance_m`（**全 `value_by` 軸について**） | **起動を拒否**（リミッタが先に発火して自律走行が成立しない） |
+| **A2a** | `obstacle_floor_distance_m < obstacle_stop_distance_m`（**自律走行に使う軸だけ**: `v_max` / `v_slow` / `v_reverse`） | **起動を拒否**（リミッタが先に発火して自律走行が成立しない）。**全軸に課してはいけない** → §4.1 |
 | **A2b** | `obstacle_floor_distance_m < follow_stop_distance_m` | **起動を拒否**（リミッタが追従対象の脚で発火する） |
 | **A3** | `0 < tracker_lost_grace_ms < person_timeout_ms` | 起動を拒否 |
 | **A4** | `jog_lease_ms ≥ twist_mux の manual_joy timeout` | 起動を拒否 |
@@ -297,8 +298,28 @@ def deviation_budget_m(corridor_width_m: float, body_width_m: float, margin_m: f
 | **A10** | `\|wheel_radius_scale − 1\| ≤ wheel_radius_scale_max_dev` | **起動を拒否。**10% を超えるずれは校正ではなく機械的な異常（[maintenance](DetailedDesign-maintenance.md) §4.3） |
 | **A11** | `obstacle_floor_distance_m + hysteresis_band_m < obstacle_stop_distance_m` | 起動を拒否（ヒステリシス帯が `d_behavior` を越えない） |
 
+| **A12** | `muxed_stale_ms < manual_joy_timeout` | 起動を拒否（[safety](DetailedDesign-safety.md) §1.3。逆にすると `jog_gate` を閉じてから駆動が止まるまでが `manual_joy_timeout` に伸びる） |
+
 **`hysteresis_band_m` は `obstacle_floor_distance_m × hysteresis_ratio` から導く**（`value_by` なし）。
 `obstacle_stop_distance_m` から導くと**帯が `d_behavior` を超えうる**。
+
+### 4.1 A2a を全軸に課してはいけない
+
+`d_behavior` は軸ごとに `braking_distance(v_limit) + safety_margin_m` で変わるが、
+**`d_floor` は速度非依存の機体クリアランス**（`body_half_length_m + floor_margin_m`）である。
+
+| 軸 | `d_behavior` のおおよその大きさ | A2a |
+| --- | --- | --- |
+| `v_max` / `v_slow` / `v_reverse` | 制動距離ぶん大きい | **課す** |
+| **`v_jog_panel` / `v_check` / `v_calib`** | **`panel_clearance_m` 程度（数 cm〜）。`d_floor` より小さくなる** | **課さない** |
+
+**極低速の軸まで A2a を課すと、設計どおりの値を入れた時点で起動しなくなる。**
+逃げようとすると `floor_margin_m` を負にする（＝`d_floor` を機体内部に置く）ことになり、
+§3.1「リミッタは上位が壊れたときだけ発火する」という後段配置の根拠自体が崩れる。
+
+**極低速の軸では、リミッタは距離ではなく政策表（[safety](DetailedDesign-safety.md) §3.3）で制御する。**
+`AT_PANEL` のジョグは `MANUAL` × `IN` なので `auto_brake` の既定 ON で止まり、
+試験員が OFF にすれば盤の手前まで詰められる。
 
 **`WATCHDOG_MS` はファームのコンパイル時定数なので、`registry.yaml` には
 `esp32_watchdog_ms`（`status: given`、`source: esp32/src/config.h`）として写しを持つ。**
@@ -405,7 +426,7 @@ digest = sha1( sorted( f"{name}={status}:{value}" for all params ) )[:12]
 | `lidar_timeout_ms` ／ `esp32_timeout_ms` | `timeout_from_bounds` | `link_gap_p99_ms`, `intrusion_budget_m`, `v_max` |
 | `person_timeout_ms` | `person_backstop_ms` | `tracker_lost_grace_ms`, `link_gap_p99_ms` |
 | `clear_distance_m` | `clear_distance` | `body_half_length_m`, `clear_margin_m` |
-| `hysteresis_band_m` | `hysteresis_band` | `obstacle_stop_distance_m`, `hysteresis_ratio` |
+| `hysteresis_band_m` | `hysteresis_band` | **`obstacle_floor_distance_m`**, `hysteresis_ratio`（A11。§4） |
 | `deviation_budget_m` | `deviation_budget_m` | `corridor_width_m`, `body_width_m` |
 
 **`v_check` / `v_calib` / `v_leash` は `given`（方針値）。**逆算する対象が無い（§3.1.1）。
@@ -440,7 +461,7 @@ digest = sha1( sorted( f"{name}={status}:{value}" for all params ) )[:12]
 | 3 | `consumers` が空の行が無い | 同上 |
 | 4 | **registry にある (b) パラメータの現在値と同じ数値が、コード／`generated/` 以外の YAML に現れない** | `test_no_hardcoded_numbers.py`。**除外リストは `th_params/config/literal_allowlist.yaml`**（QoS 深さ・配列長・単位変換など） |
 | 5 | `derive.py` の全関数に単体テストがある。**`status: derived` の全パラメータに `formula` が存在する** | `test_derive.py` |
-| 6 | `assertions.py` の **A1〜A10**（A9 は CI 専用）が違反入力で正しく落ちる | `test_assertions.py` |
+| 6 | `assertions.py` の **A1〜A12**（A9 は CI 専用。A11・A12 を含む）が違反入力で正しく落ちる | `test_assertions.py` |
 | 9 | **`class`／`status` の組合せ規則 S1〜S5 に違反する行が無い** | `test_registry_schema.py` |
 | 7 | 入力が `placeholder` の (b) は出力も `placeholder` になる（伝播） | `test_placeholder_propagation.py` |
 | 8 | `TBD_MEASURE` が `registry.yaml` 以外に現れない | `test_marker_isolation.py` |

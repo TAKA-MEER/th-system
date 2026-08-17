@@ -212,8 +212,8 @@ python3 -m pytest src/th_testing/test/test_state_manager_node.py -v
 colcon test --packages-select th_testing --event-handlers console_direct+
 colcon test-result --verbose
 
-# ④ 実機（電源断）
-ros2 topic hz /system/state          # 10.0 前後
+# ④ 実機（電源断）。V4: timeout で包み、許容幅を数値で書く
+timeout 5 ros2 topic hz /system/state 2>&1 | tail -3 | grep -qE "average rate: (9|10|11)\.
 ros2 service call /system/trigger th_system_msgs/srv/UiTrigger \
   "{trigger: 'evt.arrived', arg_json: '', requester: 'cli'}"    # accepted: false
 ```
@@ -335,13 +335,21 @@ def evaluate(now_ms, last_fb_ms, last_cmd_ms, last_scan_ms, scan_points,
 
 ### 7. 単体試験
 
-| テスト | 満たす仕様 |
-| --- | --- |
-| `test_connectivity_core.py::test_four_items` | §12.2 の 4 行を 1 本ずつ |
-| `test_connectivity_core.py::test_unreceived_is_fail` | 6.2 |
-| `test_connectivity_core.py::test_ap_not_a_criterion` | L-1 |
-| `test_connectivity_checker_node.py::test_estop_blocks_link_ok` | L-2（`CL-B-6`） |
-| `test_connectivity_checker_node.py::test_link_ok_once` | L-3 |
+| テスト | ctest 登録名（`V6`） | 満たす仕様 |
+| --- | --- | --- |
+| `test_connectivity_core.py::test_four_items` | `connectivity_core` | §12.2 の 4 行を 1 本ずつ |
+| `test_connectivity_core.py::test_unreceived_is_fail` | 同上 | 6.2 |
+| `test_connectivity_core.py::test_ap_not_a_criterion` | 同上 | L-1 |
+| `test_connectivity_checker_node.py::test_estop_blocks_link_ok` | `connectivity_checker_node` | L-2（`CL-B-6`） |
+| `test_connectivity_checker_node.py::test_link_ok_once` | 同上 | L-3 |
+
+```cmake
+# src/th_testing/CMakeLists.txt — if(BUILD_TESTING) の中
+ament_add_pytest_test(connectivity_core         test/test_connectivity_core.py)
+ament_add_pytest_test(connectivity_checker_node test/test_connectivity_checker_node.py)
+```
+
+**§10 の `-R connectivity` はこの 2 つの前方一致である。**名前を変えるなら §10 も同時に直す。
 
 ### 8. Gazebo シナリオ
 
@@ -367,8 +375,7 @@ colcon test --packages-select th_testing --event-handlers console_direct+ \
   --ctest-args -R connectivity
 
 # 実機（電源断）: 疎通が揃うと IDLE へ進む
-ros2 topic echo /system/state --field mode --once     # IDLE
-
+test "$(timeout 3 ros2 topic echo /system/state --field mode --once)" = "IDLE"
 # LiDAR を止めると INIT に戻らない（運用中は safety_monitor の担当）が、
 # 再起動すれば INIT/CHECK で止まる
 ```
@@ -519,18 +526,34 @@ grep -c "th_data/generated" src/th_bringup/launch/gazebo.launch.py    # >= 1
 ! grep -rn "config/planning_params.yaml\|config/safety_monitor.yaml" \
     src/th_bringup/launch/bringup.launch.py
 
-# ② bind mount がある
-grep -n "th_data" docker-compose.yml
+# ② bind mount がある（**ホスト**。docker-compose.yml はコンテナ内に無い。V1）
+grep -q "./data:/root/th_data" docker-compose.yml
 
-# ③ アサーション違反で launch が止まる（G-2）
+# ③ アサーション違反で launch が止まる（G-2）。V10: 実際に判定する
 python3 - <<'EOF'
-# registry を一時的に壊して（A2a 違反）launch が非ゼロで終わることを確認
+import shutil, subprocess, tempfile, yaml, os
+src = "src/th_params/config/registry.yaml"
+tmp = tempfile.mkdtemp()
+bad = os.path.join(tmp, "registry.yaml"); shutil.copy(src, bad)
+d = yaml.safe_load(open(bad))
+for p in d:                      # A2a を意図的に破る
+    if p["name"] == "floor_margin_m":
+        p["value"] = 99.0; p["status"] = "given"
+yaml.safe_dump(d, open(bad, "w"), allow_unicode=True)
+r = subprocess.run(["python3", "-m", "th_params.export", "--registry", bad,
+                    "--out", tmp, "--stage", "2", "--nodes", "obstacle_limiter"],
+                   env={**os.environ, "PYTHONPATH": "src/th_params"},
+                   capture_output=True, text=True)
+assert r.returncode == 1, f"A2a 違反を検出できていない: {r.returncode}"
+print("ok: A2a 違反で exit 1")
 EOF
 
-# ④ 生成物
-ros2 launch th_bringup bringup.launch.py stage:=1 &
-sleep 15 && ls /root/th_data/generated/twist_mux.yaml
-ros2 topic echo /system/params_status --once | grep placeholder_count
+# ④ 生成物。V7: PID を取って kill -TERM（kill -9 は DDS discovery を壊す）
+ros2 launch th_bringup bringup.launch.py stage:=1 & LAUNCH=$!
+sleep 15
+test -f /root/th_data/generated/twist_mux.yaml
+timeout 5 ros2 topic echo /system/params_status --once | grep -q placeholder_count
+kill -TERM $LAUNCH; wait $LAUNCH 2>/dev/null || true
 
 # ⑤ テスト
 python3 -m pytest src/th_testing/test/test_params_launch.py \
@@ -709,14 +732,26 @@ npm run build
 # ② Playwright
 npx playwright test
 
-# ③ 3 タブシェルが消えている
-! grep -rn "運用\s*|\s*準備\s*|\s*診断" src/App.jsx 2>/dev/null
+# ③ 3 タブシェルが消えている（V3。`-E` が無いと `|` はリテラルで常に合格）
 test ! -f src/App.css
+! test -f src/App.jsx || ! grep -qE "運用|準備|診断" src/App.jsx
 
 # ④ 日本語がコンポーネントに無い（R4 / U-4）
-! grep -rlnP '[\x{3040}-\x{30ff}\x{4e00}-\x{9fff}]' src/shell/ src/parts/ src/ros/
+#    V2: grep -P + \x{} は locale 依存で、エラー終了すると `!` が反転して合格になる
+node -e '
+const fs=require("fs"),p=require("path");
+const bad=[];
+for (const d of ["src/shell","src/parts","src/ros"])
+  for (const f of fs.readdirSync(d))
+    if (/[぀-ヿ一-鿿]/.test(fs.readFileSync(p.join(d,f),"utf8"))) bad.push(p.join(d,f));
+if (bad.length) { console.error("日本語が混入:",bad); process.exit(1); }
+console.log("ok");'
 
-# ⑤ topics.js が名前辞書と一致
+# ⑤ topics.js が名前辞書と一致（U-5）
+#    names.json は Markdown から生成する派生物。手で書かない
+#    V1: 生成はホスト（リポジトリルート）。web_ui はコンテナにマウントされていない
+(cd ../.. && python3 docs/plan/detailed/tools/export_names.py .)   # → src/ros/names.json
+git diff --exit-code src/ros/names.json    # 生成結果がコミット済みと一致する
 node --test test/unit/topics-in-dictionary.test.js
 
 # ⑥ 外部ホスト 0 件（②に含まれるが単独でも回せる）
@@ -976,7 +1011,7 @@ WebUI が `/system/state` の `mode == "CARRY"` を見て W-2 を出す。
 
 ```bash
 ros2 topic pub -1 /safety/estop_hw std_msgs/Bool "{data: true}"
-ros2 topic echo /system/state --field mode --once     # CARRY
+test "$(timeout 3 ros2 topic echo /system/state --field mode --once)" = "CARRY"
 ```
 
 ### 9. 実機での確認手順
@@ -998,22 +1033,22 @@ cd /root/th_ws
 # ① 遷移
 python3 -m pytest src/th_testing/test/test_state_core.py -v -k "carry or estop"
 
-# ② UI
-cd th_ws/web_ui && npx playwright test e2e/w2-*.spec.js
+# ② UI（**ホスト**。web_ui はコンテナにマウントされていない。V1）
+#    別ターミナルでリポジトリルートから:
+#      cd th_ws/web_ui && npm run build && npx playwright test e2e/w2-*.spec.js
 
 # ③ 実機（電源断）— 押下 → CARRY → 解除 → 再開 → 元のモード
 ros2 service call /system/trigger th_system_msgs/srv/UiTrigger \
   "{trigger: 'ui.enter_mode', arg_json: '{\"mode\":\"MANUAL\"}', requester: 'cli'}"
 #   物理ボタンを押す
-ros2 topic echo /system/state --field mode --once            # CARRY
+test "$(timeout 3 ros2 topic echo /system/state --field mode --once)" = "CARRY"
 ros2 service call /system/trigger th_system_msgs/srv/UiTrigger \
   "{trigger: 'ui.estop.press', arg_json: '', requester: 'cli'}"
 #   → accepted: false, reject_reason_key: 'estop_disabled_in_carry'
 #   物理ボタンを解除する
 ros2 service call /system/trigger th_system_msgs/srv/UiTrigger \
   "{trigger: 'ui.carry_resume', arg_json: '', requester: 'cli'}"
-ros2 topic echo /system/state --field mode --once            # MANUAL
-
+test "$(timeout 3 ros2 topic echo /system/state --field mode --once)" = "MANUAL"
 # ④ 通電での最終確認（人が関与）
 #   物理ボタンを押した状態でモータードライバ電源が実際に落ちていること（テスタ）
 ```
