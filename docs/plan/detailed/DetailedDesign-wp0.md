@@ -35,7 +35,8 @@
 
 ### 0. 一行要旨
 
-新しい msg 15 種・srv 20 種を `th_system_msgs` に**足す**。**旧 msg は 1 つも消さない。**
+新しい msg **16 種**・srv 20 種を `th_system_msgs` に**足す**。**旧 msg は 1 つも消さない。**
+（旧記述は 15 種だったが、[names](DetailedDesign-names.md) §5.1 の表の実数は 16 種。**表が正**）
 
 ### 1. 対象と非対象
 
@@ -521,7 +522,12 @@ test -d src/th_params/th_params && ! grep -rq "import rclpy\|from rclpy" src/th_
 
 # ② 未測定の全件が 1 コマンドで出る（P-2）
 grep -c TBD_MEASURE src/th_params/config/registry.yaml   # 1 件以上（未測定がある）
-! grep -rq TBD_MEASURE --include='*.py' --include='*.cpp' src/   # registry 以外に無い（V2）
+#   registry 以外に無い（V2）。ただし sentinel を比較する定数の定義 1 行だけは除く
+#   —— コードから参照する以上どこかに 1 度は書く必要がある。文字列を分割して
+#   grep を避ける書き方は禁止（定義箇所が grep で見つからなくなる）
+test $(grep -rl TBD_MEASURE --include='*.py' --include='*.cpp' src/ | wc -l) -le 1
+test "$(grep -rl TBD_MEASURE --include='*.py' --include='*.cpp' src/)" = "src/th_params/th_params/schema.py"
+test $(grep -c TBD_MEASURE src/th_params/th_params/schema.py) -eq 1
 
 # ③ 全テスト
 python3 -m pytest src/th_testing/test/test_params_*.py -v
@@ -733,8 +739,8 @@ test "$(sort -u /tmp/lq.txt | tr -d '\r' | paste -sd, -)" = "esp32,lidar,ui\"
 | やる | やらない |
 | --- | --- |
 | AP・チャンネル・帯域・配置の見直し | ROS2 側のタイムアウト値の変更（`WP-SAFE-01`） |
-| `esp32/src/wifi_credentials.h` を `.gitignore` へ。`.example` を正とする | 有線化・別無線方式への変更（範囲外） |
-| ポート不一致の是正（`8765` vs `params.yaml` の `8766`） | |
+| ~~`esp32/src/wifi_credentials.h` を `.gitignore` へ~~ **→ 実機確認の結果、既に解消済み**（untracked・履歴にも無い・`.example` はダミー値）。**残る作業は `.example` の値を実態に合わせること**（下記） | 有線化・別無線方式への変更（範囲外） |
+| ポートの記述の是正。**`config.h` にポート定義は無い**（2026-08-18 実機確認）。実値は `wifi_credentials.h` の `WS_SERVER_PORT`（機体ごと・`.gitignore` 対象）で、`params.yaml` の `ws_port: 8766` と**既に一致**している。**古いのは `.example` の 8765** | |
 | `esp32/src/ws_link.h` のフレーム表を実装に合わせる（`WHEEL_FEEDBACK` は 13 byte） | |
 
 ### 2. 参照する設計書の節
@@ -755,8 +761,8 @@ test "$(sort -u /tmp/lq.txt | tr -d '\r' | paste -sd, -)" = "esp32,lidar,ui\"
 
 | 項目 | 現行 | 変更後 |
 | --- | --- | --- |
-| ポート | `config.h` 8765 / `params.yaml` 8766 | **どちらかに統一**（`registry.yaml` の `esp32_ws_port`、`given`） |
-| 認証情報 | `wifi_credentials.h` に実 SSID・実パスワード | `.gitignore` ＋ `wifi_credentials.h.example` |
+| ポート | `wifi_credentials.h`（実値・8766）／`params.yaml`（8766）／**`.example`（8765・古い）** | **`.example` を 8766 に揃える。**`registry.yaml` に `esp32_ws_port` を `given` で新規登録する（**`WP-PARAM-01` 時点で未登録だった**） |
+| 認証情報 | **対処済み。**`.gitignore` 済み・untracked・履歴にも無い | 確認のみ（下記 §10-①） |
 
 ### 4. 内部設計
 
@@ -801,10 +807,13 @@ test -f th_ws/esp32/src/wifi_credentials.h.example
 ! grep -qE '#define +WIFI_(SSID|PASS[A-Z]*) +"(?!your-)' th_ws/esp32/src/wifi_credentials.h.example \
   2>/dev/null || grep -qE '#define +WIFI_SSID +"your-' th_ws/esp32/src/wifi_credentials.h.example
 
-# ② ポートが 1 か所（値そのものを比較する。目視しない）
-FW=$(grep -oE 'WS_PORT +[0-9]+' th_ws/esp32/src/config.h | grep -oE '[0-9]+')
-PC=$(grep -oE 'port: *[0-9]+' th_ws/src/th_esp32_bridge/config/params.yaml | grep -oE '[0-9]+')
-test -n "$FW" && test "$FW" = "$PC"
+# ② ポートが揃っている（値そのものを比較する。目視しない）
+#    実値の wifi_credentials.h は .gitignore 対象なので検査できない。
+#    検査できるのは .example と params.yaml と registry.yaml の 3 つ。
+EX=$(grep -oE 'WS_SERVER_PORT +[0-9]+' th_ws/esp32/src/wifi_credentials.h.example | grep -oE '[0-9]+')
+PC=$(grep -oE 'ws_port: *[0-9]+' th_ws/src/th_esp32_bridge/config/params.yaml | grep -oE '[0-9]+')
+RG=$(python3 -c "import yaml;print({p['name']:p for p in yaml.safe_load(open('th_ws/src/th_params/config/registry.yaml'))}['esp32_ws_port']['value'])")
+test -n "$EX" && test "$EX" = "$PC" && test "$EX" = "$RG"
 
 # ③ フレーム表が実装と一致（V3。期待文字列そのものを書く）
 grep -q "WHEEL_FEEDBACK.*13 bytes" th_ws/esp32/src/ws_link.h

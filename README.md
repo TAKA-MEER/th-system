@@ -88,6 +88,7 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 | システムの完成形を知る                                   | [VISION.md](VISION.md)                                |
 | 完成形の全仕様（何がどう振る舞うか）                     | [docs/plan/spec/](docs/plan/spec/README.md)           |
 | 実装の設計（ノード名・作業単位）・進捗                   | [docs/plan/detailed/](docs/plan/detailed/README.md)   |
+| **機体を使う日の作業手順（段階 0）**                     | [docs/機体作業手順-段階0.md](docs/機体作業手順-段階0.md) |
 | 新しい PC/ラズパイ/ESP32 で環境を作る                    | [docs/setup.md](docs/setup.md)                        |
 | ネットワークの仕組み・通信トラブルの復旧                 | [docs/network.md](docs/network.md)                    |
 | ESP32 ファームの書き込み・PID チューニング               | [docs/esp32.md](docs/esp32.md)                        |
