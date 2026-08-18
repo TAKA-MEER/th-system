@@ -1,0 +1,7 @@
+string kind
+string name
+string method     # "TWO_POINT"/"PLANE"
+---
+bool    success
+Pin     pin
+string  message
