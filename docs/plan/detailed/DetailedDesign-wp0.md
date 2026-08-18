@@ -35,7 +35,8 @@
 
 ### 0. 一行要旨
 
-新しい msg 15 種・srv 20 種を `th_system_msgs` に**足す**。**旧 msg は 1 つも消さない。**
+新しい msg **16 種**・srv 20 種を `th_system_msgs` に**足す**。**旧 msg は 1 つも消さない。**
+（旧記述は 15 種だったが、[names](DetailedDesign-names.md) §5.1 の表の実数は 16 種。**表が正**）
 
 ### 1. 対象と非対象
 
@@ -521,7 +522,12 @@ test -d src/th_params/th_params && ! grep -rq "import rclpy\|from rclpy" src/th_
 
 # ② 未測定の全件が 1 コマンドで出る（P-2）
 grep -c TBD_MEASURE src/th_params/config/registry.yaml   # 1 件以上（未測定がある）
-! grep -rq TBD_MEASURE --include='*.py' --include='*.cpp' src/   # registry 以外に無い（V2）
+#   registry 以外に無い（V2）。ただし sentinel を比較する定数の定義 1 行だけは除く
+#   —— コードから参照する以上どこかに 1 度は書く必要がある。文字列を分割して
+#   grep を避ける書き方は禁止（定義箇所が grep で見つからなくなる）
+test $(grep -rl TBD_MEASURE --include='*.py' --include='*.cpp' src/ | wc -l) -le 1
+test "$(grep -rl TBD_MEASURE --include='*.py' --include='*.cpp' src/)" = "src/th_params/th_params/schema.py"
+test $(grep -c TBD_MEASURE src/th_params/th_params/schema.py) -eq 1
 
 # ③ 全テスト
 python3 -m pytest src/th_testing/test/test_params_*.py -v

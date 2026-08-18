@@ -1,0 +1,6 @@
+string slot
+string session_id
+string mode
+---
+bool   success
+string message

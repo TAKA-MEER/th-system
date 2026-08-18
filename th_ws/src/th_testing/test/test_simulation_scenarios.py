@@ -41,8 +41,10 @@ from th_system_msgs.srv import SetMode
 import os
 SKIP_SIM = os.environ.get('TH_SKIP_SIM', '1') == '1'
 
-sim_mark = pytest.mark.skipif(
-    SKIP_SIM, reason='TH_SKIP_SIM=1 のためシミュレーションテストをスキップ')
+# unittest.TestCase のサブクラスには pytest.mark.skipif が効かないため
+# unittest.skipIf を使う（pytest のマーカーだと黙って実行されてしまう）
+sim_mark = unittest.skipIf(
+    SKIP_SIM, 'TH_SKIP_SIM=1 のためシミュレーションテストをスキップ')
 
 
 @pytest.mark.launch_test
@@ -104,6 +106,7 @@ def generate_test_description():
     ), {}
 
 
+@sim_mark
 class TestSimulationScenarios(unittest.TestCase):
 
     @classmethod
