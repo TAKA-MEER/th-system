@@ -19,6 +19,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `docs/architecture.md` は現状実装の保守・拡張ガイド(as-built)であり、`VISION.md` とは役割が異なる(目指す姿 vs 今の実装)。両者が食い違う場合は VISION.md 側を優先して実装を追いつかせる。
 
+`docs/plan/` は**未確定の検討メモ**を置く場所で、VISION.md を上書きしない。書き方のルール（本体は結論と表だけにして一目で読める分量を保ち、根拠・詳細は `<テーマ>-<側面>.md` に分ける）は `docs/plan/README.md` に定義してある。plan 配下を編集する前に必ず読むこと。
+
 ## このファイル自体の保守ルール
 
 - 作業中に判明したこのプロジェクト固有の環境の癖・落とし穴（コマンドの意外な挙動、ツールの制約など）は、ユーザーに確認せず「環境の癖」セクションに追記してよい。

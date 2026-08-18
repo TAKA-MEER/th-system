@@ -1,6 +1,6 @@
 # 音声アナウンス — 話者オーディション
 
-音声フィードバック（[VISION.md §7](../../VISION.md#7-音声フィードバック)）で使う話者を
+音声フィードバック（[docs/voice-and-audience.md §2](../voice-and-audience.md#2-音声フィードバック)）で使う話者を
 チームで聞き比べて決めるためのページ。
 
 ## 聞き方
@@ -49,7 +49,8 @@ python3 th_ws/scripts/voice_audition.py --out docs/voice-audition --mp3
 
 フレーズは性格の異なるものを選んである。**主流でないモードでしか鳴らないものは含めない**
 （例: C4「逃げ場なし。離れて」は地図あり追従 FOLLOWING 専用で、そのモードは
-[VISION.md §3](../../VISION.md) で優先度低とされている）。
+旧 VISION.md §3 で優先度低とされていた。現在の走行方式の位置づけは
+[Spec-transit.md](../plan/spec/Spec-transit.md)）。
 
 | ID | 文言 | 何を見るか |
 | --- | --- | --- |
@@ -78,7 +79,7 @@ python3 th_ws/scripts/voice_dict.py          # 登録して読みを確認
 python3 th_ws/scripts/voice_dict.py --list   # 現在の登録内容
 ```
 
-合成条件は**話速 1.15 倍・抑揚 0.8 倍**（機器アナウンス寄りに寄せた設定、VISION.md §7.5）。
+合成条件は**話速 1.15 倍・抑揚 0.8 倍**（機器アナウンス寄りに寄せた設定、[docs/voice-and-audience.md](../voice-and-audience.md) §2.5）。
 話者を決めた後、この値自体も調整の余地がある。
 
 判断の前提として、この音声は**オリジナルキャラクターの声**として使う想定。

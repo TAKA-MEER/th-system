@@ -85,7 +85,9 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 
 | やりたいこと                                             | ドキュメント                                         |
 | -------------------------------------------------------- | ---------------------------------------------------- |
-| システムの完成形・実装状況を知る                         | [VISION.md](VISION.md)                                |
+| システムの完成形を知る                                   | [VISION.md](VISION.md)                                |
+| 完成形の全仕様（何がどう振る舞うか）                     | [docs/plan/spec/](docs/plan/spec/README.md)           |
+| 実装の設計（ノード名・作業単位）・進捗                   | [docs/plan/detailed/](docs/plan/detailed/README.md)   |
 | 新しい PC/ラズパイ/ESP32 で環境を作る                    | [docs/setup.md](docs/setup.md)                        |
 | ネットワークの仕組み・通信トラブルの復旧                 | [docs/network.md](docs/network.md)                    |
 | ESP32 ファームの書き込み・PID チューニング               | [docs/esp32.md](docs/esp32.md)                        |
@@ -134,7 +136,7 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 ```txt
 th-system/
 ├── README.md                     # 本書 (毎回の起動手順・目次)
-├── VISION.md                     # 完成形の記述・実装状況 (方針変更時は必ずここを先に更新)
+├── VISION.md                     # 完成形の入口 (詳細は docs/plan/spec・detailed へ委譲)
 ├── docs/                         # 詳細ドキュメント (上記目次)
 └── th_ws/
     ├── Dockerfile / docker-compose.yml
