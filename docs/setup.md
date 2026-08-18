@@ -327,7 +327,7 @@ roslib.js はローカル同梱(`web_ui/public/roslib.min.js`)のため、
 タブレットは th-esp32-ap に接続し `http://192.168.4.50:5173` を開く。
 rosbridge(9090)は bringup が自動起動する。
 
-### 観客向け表示（デモ展示。VISION.md §6.3）
+### 観客向け表示（デモ展示。[docs/voice-and-audience.md](voice-and-audience.md) §1）
 
 ```
 http://localhost:5173/?view=audience
