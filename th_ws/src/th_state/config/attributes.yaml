@@ -1,0 +1,193 @@
+# attributes.yaml
+#
+# DetailedDesign-state.md §8.2 の実値表（18行×9列）を転記したもの（Spec-modes.md §6 の転写）。
+# キーの意味は §8.1 を参照。
+#
+# 注意:
+#   - resume_state は全モード必須（C-05 が全モードの PAUSE に効くため）。
+#   - PREP の needs_tracker は REGISTER 状態のときだけ required、他は optional（※※）。
+#     この分岐は th_state の外（呼び出し側）が state を見て判断する。
+#   - has_record が true の REPLAY / PANEL_NAV / SUMMON / HOME_NAV / AT_PANEL は
+#     map_update が ON のときだけ意味を持つ（既定 false。※）。
+#   - AT_PANEL の speed_limit は停止だが、jog_active の間だけ v_jog_panel（※※※）。
+
+INIT:
+  initial_state: CHECK
+  run_state: null
+  resume: none
+  resume_state: null
+  needs_tracker: optional
+  speed_limit: stop
+  auto_brake_default: on_locked
+  jog: denied
+  has_record: false
+IDLE:
+  initial_state: NONE
+  run_state: null
+  resume: none
+  resume_state: null
+  needs_tracker: optional
+  speed_limit: stop
+  auto_brake_default: on_locked
+  jog: denied
+  has_record: false
+ESTOP:
+  initial_state: NONE
+  run_state: null
+  resume: ack_only
+  resume_state: NONE
+  needs_tracker: keep
+  speed_limit: stop
+  auto_brake_default: on_locked
+  jog: denied
+  has_record: false
+CARRY:
+  initial_state: NONE
+  run_state: null
+  resume: none
+  resume_state: null
+  needs_tracker: keep
+  speed_limit: stop
+  auto_brake_default: on_locked
+  jog: denied
+  has_record: false
+FOLLOW:
+  initial_state: SELECT
+  run_state: RUN
+  resume: yes_no
+  resume_state: PAUSE
+  needs_tracker: required
+  speed_limit: v_max
+  auto_brake_default: on_locked
+  jog: allowed
+  has_record: false
+MANUAL:
+  initial_state: PAUSE
+  run_state: RUN
+  resume: ack_only
+  resume_state: PAUSE
+  needs_tracker: unused
+  speed_limit: v_max
+  auto_brake_default: 'off'
+  jog: is_drive
+  has_record: false
+TEACH_FOLLOW:
+  initial_state: ROUTE_SEL
+  run_state: REC
+  resume: yes_no
+  resume_state: PAUSE
+  needs_tracker: required
+  speed_limit: v_max
+  auto_brake_default: on_locked
+  jog: allowed
+  has_record: true
+TEACH_MANUAL:
+  initial_state: ROUTE_SEL
+  run_state: REC
+  resume: ack_only
+  resume_state: PAUSE
+  needs_tracker: unused
+  speed_limit: v_max
+  auto_brake_default: 'off'
+  jog: is_drive
+  has_record: true
+REPLAY:
+  initial_state: ROUTE_SEL
+  run_state: RUN
+  resume: yes_no
+  resume_state: PAUSE
+  needs_tracker: unused
+  speed_limit: v_max
+  auto_brake_default: on_locked
+  jog: allowed
+  has_record: true
+LINE:
+  initial_state: SETUP
+  run_state: RUN
+  resume: yes_no
+  resume_state: PAUSE
+  needs_tracker: unused
+  speed_limit: v_max
+  auto_brake_default: on_locked
+  jog: allowed
+  has_record: false
+LEASH:
+  initial_state: DEV_CHECK
+  run_state: RUN
+  resume: yes_no
+  resume_state: PAUSE
+  needs_tracker: unused
+  speed_limit: v_leash
+  auto_brake_default: on_locked
+  jog: allowed
+  has_record: false
+PREP:
+  initial_state: MAPPING
+  run_state: MAPPING
+  resume: yes_no
+  resume_state: PAUSE
+  needs_tracker: required
+  speed_limit: v_slow
+  auto_brake_default: on_locked
+  jog: allowed
+  has_record: true
+PANEL_NAV:
+  initial_state: NAV
+  run_state: NAV
+  resume: yes_no
+  resume_state: PAUSE
+  needs_tracker: unused
+  speed_limit: v_slow
+  auto_brake_default: on_locked
+  jog: allowed
+  has_record: false
+AT_PANEL:
+  initial_state: IDLE_P
+  run_state: null
+  resume: ack_only
+  resume_state: IDLE_P
+  needs_tracker: unused
+  speed_limit: stop
+  auto_brake_default: on_locked
+  jog: allowed
+  has_record: false
+SUMMON:
+  initial_state: POINT
+  run_state: NAV
+  resume: ack_only
+  resume_state: POINT
+  needs_tracker: required
+  speed_limit: v_slow
+  auto_brake_default: on_locked
+  jog: allowed
+  has_record: false
+HOME_NAV:
+  initial_state: NAV
+  run_state: NAV
+  resume: yes_no
+  resume_state: PAUSE
+  needs_tracker: unused
+  speed_limit: v_slow
+  auto_brake_default: on_locked
+  jog: allowed
+  has_record: false
+OPCHECK:
+  initial_state: LIST
+  run_state: null
+  resume: ack_only
+  resume_state: LIST
+  needs_tracker: unused
+  speed_limit: v_check
+  auto_brake_default: on_locked
+  jog: denied
+  has_record: false
+CALIB:
+  initial_state: LIST
+  run_state: null
+  resume: ack_only
+  resume_state: LIST
+  needs_tracker: unused
+  speed_limit: v_calib
+  auto_brake_default: on_locked
+  jog: denied
+  has_record: false

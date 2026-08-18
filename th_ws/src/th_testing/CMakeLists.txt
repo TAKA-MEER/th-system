@@ -13,6 +13,19 @@ if(BUILD_TESTING)
     test/test_summon_logic.py
     TIMEOUT 30)
 
+  # ── 型定義テスト (th_system_msgs の生成物が要る・ノード起動は不要) ──
+  ament_add_pytest_test(test_msg_definitions
+    test/test_msg_definitions.py
+    TIMEOUT 60)
+
+  # ── 状態機械コア (th_state。ROS2 不要・純粋単体テスト。WP-STATE-01) ──
+  ament_add_pytest_test(test_state_core
+    test/test_state_core.py
+    TIMEOUT 60)
+  ament_add_pytest_test(test_transition_table
+    test/test_transition_table.py
+    TIMEOUT 60)
+
   # ── ROS2 ノード統合テスト ────────────────────────────────
   ament_add_pytest_test(test_mode_transitions
     test/test_mode_transitions.py

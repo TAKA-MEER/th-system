@@ -35,7 +35,8 @@
 
 ### 0. 一行要旨
 
-新しい msg 15 種・srv 20 種を `th_system_msgs` に**足す**。**旧 msg は 1 つも消さない。**
+新しい msg **16 種**・srv 20 種を `th_system_msgs` に**足す**。**旧 msg は 1 つも消さない。**
+（旧記述は 15 種だったが、[names](DetailedDesign-names.md) §5.1 の表の実数は 16 種。**表が正**）
 
 ### 1. 対象と非対象
 
