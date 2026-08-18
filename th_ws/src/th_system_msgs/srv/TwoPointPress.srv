@@ -1,0 +1,6 @@
+string purpose    # "HOME"/"PANEL"/"SUMMON"/"LINE_POSE"
+uint8  index       # 1 or 2
+---
+bool    accepted
+string  reject_reason_key
+float32 yaw
