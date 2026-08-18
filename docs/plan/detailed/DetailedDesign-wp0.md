@@ -95,7 +95,7 @@
 | --- | --- |
 | M1 | **文字列フィールドに `uint8` の定数を併設しない。**`RobotMode.msg` の失敗を繰り返さない |
 | M2 | **`Header header` を持つのは publish されるトピック型だけ。**`Pin.msg` / `RouteInfo.msg` は配列要素なので持たない |
-| M3 | 既存の 9 msg・5 srv のファイルは**バイト単位で変更しない** |
+| M3 | 既存の 9 msg・5 srv のファイルは**バイト単位で変更しない**。**例外は `FaultStatus.msg` の 1 件だけ**——[names](DetailedDesign-names.md) §5.1 と §6.3 FMEA ① が `string severity`（`RECOVERABLE` / `CRITICAL`）の**追加**を要求しており、これを落とすと `WP-SAFE-01` が着手不能になる。**フィールドは末尾に足す**（既存の publisher はそのままビルドが通る）。`test_legacy_msgs_untouched` はこの 1 件を対象から外し、代わりに**「`severity` が末尾に 1 行足されただけで、既存フィールドの順序と型が変わっていない」**ことを検査する |
 
 ### 5. 表駆動データ
 
