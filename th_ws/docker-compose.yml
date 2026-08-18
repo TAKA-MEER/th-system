@@ -28,6 +28,8 @@ services:
       - ./src:/root/th_ws/src
       - ./esp32:/root/th_ws/esp32
       - ./scripts:/root/th_ws/scripts
+      # 設計書（完了条件が /docs を読む。DetailedDesign-wp0.md WP-MSG-01 §10-③ など）。読み取り専用
+      - ../docs:/docs:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # Gazebo モデルキャッシュ（再起動時の高速化）
       - gazebo_models:/root/.gazebo

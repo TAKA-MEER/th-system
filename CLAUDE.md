@@ -28,6 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 環境の癖・注意点
 
+- **`sudo` はこのセッションからは実行できない。**パスワードが要るうえ TTY が無く、`!` プレフィックス経由でも `a terminal is required to read the password` になる。管理者権限が要る作業はスクリプトに書き出し、ユーザーに別ターミナルで実行してもらう。`usermod -aG` の反映にはセッションの再起動が要る（グループはログイン時に確定するため、Claude Code を再起動しないとツール側から見えない）。
 - `ros2 node list` はデーモンキャッシュの影響で新規ノードが反映されないことがある。`ros2 node list --no-daemon`（または `ros2 daemon stop` 後に再実行）で確実に最新状態を取得する。
 - **`th_robot` コンテナはユーザーが実機作業中のセッションであることがある。** デバッグ用にノードを起動・停止する前に必ず `docker exec th_robot ps -eo pid,etimes,args` で稼働中のプロセスを確認し、自分が起動したものだけを PID 指定で止めること（実際に `rotation_calib.py` が 50 分間走っている最中に遭遇した）。
 - `docker exec th_robot bash -lc '... pkill -f <pattern> ...'` は、パターンがこのシェル自身のコマンドライン（`-lc` の引数文字列全体）にマッチして**自分を殺す**。出力が一切出ず exit 143 になったらこれを疑う。スクリプトをファイルに書いてから実行するか、PID 指定で止める。
@@ -36,19 +37,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 開発環境
 
-すべての ROS2 コマンドは Docker コンテナ内（または ROS2 Humble がインストールされた環境）で実行する。
-
-Windows では Docker Desktop ではなく **WSL2 内の Docker Engine** でコンテナを起動する。`docker compose` はこの WSL2 側の Docker Engine に接続されるため、コマンドは WSL2 のシェル（または WSL2 統合が有効なターミナル）から実行すること。
+**開発機は Ubuntu 22.04 実機 ＋ ネイティブ Docker Engine**（Docker Desktop は使わない）。ホストに ROS2 は入れず、すべての ROS2 コマンドはコンテナ内で実行する。
 
 ```bash
-# Linux
 xhost +local:docker
 docker compose run --rm th_robot bash
-
-# Windows (WSL2)
-export DISPLAY=:0
-docker compose run --rm th_robot bash
 ```
+
+Windows で作業する場合のみ WSL2 内の Docker Engine を使う（`export DISPLAY=:0` が要る）。初回構築は `docs/setup.md`、Docker 導入後は `th_ws/setup.sh` がイメージビルドと npm 導入をまとめて行う。
 
 コンテナ内では `/root/th_ws` がワークスペースルート。
 
