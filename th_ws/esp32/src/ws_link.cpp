@@ -187,9 +187,9 @@ void sendWheelFeedback(float left, float right, float dtSec) {
     handleSendResult(client.sendBIN(buf, sizeof(buf)));
 }
 
-void sendEstopHw(bool active) {
+void sendEstopHw(bool active, uint8_t flags) {
     if (!isConnected()) return;
-    uint8_t buf[2] = { TYPE_ESTOP_HW, static_cast<uint8_t>(active ? 1 : 0) };
+    uint8_t buf[3] = { TYPE_ESTOP_HW, static_cast<uint8_t>(active ? 1 : 0), flags };
     handleSendResult(client.sendBIN(buf, sizeof(buf)));
 }
 

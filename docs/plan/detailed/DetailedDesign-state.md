@@ -140,6 +140,12 @@ class StateCore:
 6. どの行にも当たらなければ accepted=False, reject_reason_key="not_allowed"
 ```
 
+**マッチしたがガードが偽だった行の扱いは、現時点では手順 6 に落ちる**（`not_allowed`）。
+§3 のスキーマ表は `reject_reason_key` を「ガード不成立時」にも返すと書いているが、
+**§4.1・§4.2 の表にその列が無く**（`C-06r` だけがインラインで持つ）、
+どのガードにどのキーを対応させるかが決まっていない（[open](DetailedDesign-open.md) §4.1 **`N-5`**）。
+**実装者はここを推測で埋めない。**対応表が決まるまでは手順 6 のとおり `not_allowed` を返す。
+
 **「同じ `(mode, state, event)`」という包含関係で定義しない。**
 `C-01` は `(*, *, ui.jog.hold)`、`T-MANUAL-01` は `(MANUAL, PAUSE, ui.jog.hold)` で
 両者は「同じ」ではないため、旧表現では実装者が解釈できなかった。
@@ -498,6 +504,11 @@ class StateCore:
 遷移表に「受理された拒否」（`accepted=true` なのに `reject` を effect に持つ行）を作らない
 —— `Decision` の定義上、`reject_reason_key` は `accepted=false` のときだけ入るため、
 UI がエラー表示すべきか判断できなくなる。
+
+> **`T-ATP-03` は到達不能な重複行である**（`WP-STATE-01` の実装時に判明）。`AT_PANEL` は
+> `jog_allowed` の除外表に無いのでガードが常に真であり、`layer: 0` の `C-01` が必ず先に成立する。
+> **出力は `C-01` と同一**（`=` / `PAUSE` / `set_jog(true)`）なので実害は無い。**消さない**——
+> 正本 `Spec-modes.md` §3.1.2 にある行であり、消すと §11-2 の被覆検査が落ちる。
 
 **`T-ATP-04` は `override_common: true`。**`C-02` は「`PAUSE` のまま」だが、`AT_PANEL` は `IDLE_P` へ戻す。
 **正本の中で食い違っていた箇所だが、`AT_PANEL` 側を採り、`Spec-modes.md` §3.1.1 に

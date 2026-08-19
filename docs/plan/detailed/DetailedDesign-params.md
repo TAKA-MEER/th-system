@@ -360,6 +360,50 @@ digest = sha1( sorted( f"{name}={status}:{value}" for all params ) )[:12]
 暫定値で取ったデータが後から「暫定だった」と分かるようにする。
 これが `Spec-params.md` §0「測定が目標の確認になる」への実質的な対策である。
 
+### 5.3 現場での調整（`Spec-params.md` §6.1 の実装。**2026-08-18 追加**）
+
+**`registry.yaml` は設計値の正であり続ける。**現場の調整は**重ね書き**で持つ
+（校正値を `/root/th_data/calib/current.yaml` から重ねるのと同じ流儀）。
+
+| 段 | 実体 | 内容 |
+| --- | --- | --- |
+| 1 | `registry.yaml` | 設計値。**リポジトリの中。**現場からは書き換えない |
+| 2 | `/root/th_data/calib/current.yaml` | 校正の出力（`status: measured` へ） |
+| **3** | **`/root/th_data/params/overrides.yaml`** | **現場調整の出力。**`{name: {value, set_at, set_by, reason}}` だけを持つ |
+
+**読み込み順は 1 → 2 → 3。**後のものが勝つ。`params_digest` は**重ね書き後の値**で計算する
+（暫定値・調整値で取ったデータが後から識別できる）。
+
+#### 5.3.1 `/params/set` の手続き
+
+```
+1. 対象が status: given の行か検査する（derived / measured は拒否 → reject_reason_key）
+2. モードが IDLE / MANUAL か検査する（それ以外は拒否。現行 config_manager の流儀）
+3. 重ね書きを当てた registry のコピーを作り、derive.py を回し、assertions.py を全部通す
+4. 1 つでも違反したらコピーを捨てて拒否する（★部分適用しない）
+5. 通ったら overrides.yaml へ書き、生成物を作り直し、走っているノードへ反映する
+6. 反映できないノードがあれば「要再起動」を /system/params_status に載せる
+```
+
+| 不変条件 | 内容 |
+| --- | --- |
+| **PT-1** | **アサーションを通らない値は 1 つも当たらない。**検査は当てる前に、コピーの上で行う |
+| **PT-2** | `derived` の行は `/params/set` の対象にならない。**元の値を変える**（例: `obstacle_stop_distance_m` ではなく `brake_accel_mps2` や `safety_margin_m`） |
+| **PT-3** | 走行中（`IDLE` / `MANUAL` 以外）は**受理そのものを拒否**する。`accepted=false` を返し、値を保持しない |
+| **PT-4** | `overrides.yaml` の各行に `set_at` / `set_by` / `reason` が必須。**出どころの無い数値を作らない**（P2） |
+
+#### 5.3.2 反映の手段
+
+**停止中に限られるので、その場での反映を許す。**`params_audit` が対象ノードの
+ROS2 パラメータを `set_parameters` で更新する。**宣言していないノードは「要再起動」**とし、
+UI が再起動を促す（黙って古い値で走らせない）。
+
+#### 5.3.3 画面
+
+**段階 1 に最小版**（`WP-UI-08a`。開発モードタブ内。値の一覧と編集と保存だけ）、
+**正式版は段階 7**（`WP-UI-08`。S-50 の 3 タブ）。
+機体が動き出すのは段階 3 だが、**寸法と速度上限は段階 1・2 の実機起動でも要る**ので前倒しする。
+
 ### 5.2 ヘッダのバッジ
 
 `placeholder_count > 0` の間、ヘッダに「暫定値 n 件」を出す。

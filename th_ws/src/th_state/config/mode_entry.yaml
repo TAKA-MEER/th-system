@@ -1,0 +1,84 @@
+# mode_entry.yaml
+#
+# DetailedDesign-state.md §8.3 の許可表（Spec-modes.md §4.2 の転写）を転記したもの。
+# C-13 / C-15 / T-OPC-07 / T-CAL-09 のガード mode_entry_allowed が読む。
+# 表に無い組合せは拒否する（reject_reason_key: mode_entry_denied）。
+#
+# 注意: mode_entry_allowed はこの表に加えて前提条件も見る
+# （教示済み経路の有無・tracker_enabled・デバイス接続。DetailedDesign-transit.md §0.4）。
+# その前提条件はこのパケット（WP-STATE-01）の対象外（§2 に読む節として挙げられていない）。
+
+INIT:
+  - IDLE
+
+IDLE:
+  - FOLLOW
+  - MANUAL
+  - TEACH_FOLLOW
+  - TEACH_MANUAL
+  - REPLAY
+  - LINE
+  - LEASH
+  - PREP
+  - PANEL_NAV
+  - SUMMON
+  - HOME_NAV
+  - OPCHECK
+  - CALIB
+
+MANUAL:
+  - IDLE
+  - OPCHECK
+  - CALIB
+
+FOLLOW:
+  - IDLE
+
+TEACH_FOLLOW:
+  - IDLE
+
+TEACH_MANUAL:
+  - IDLE
+
+REPLAY:
+  - IDLE
+
+LINE:
+  - IDLE
+
+LEASH:
+  - IDLE
+
+PREP:
+  - IDLE
+
+PANEL_NAV:
+  - AT_PANEL
+  - IDLE
+
+AT_PANEL:
+  - PANEL_NAV
+  - SUMMON
+  - HOME_NAV
+  - IDLE
+
+SUMMON:
+  - AT_PANEL
+  - IDLE
+
+HOME_NAV:
+  - IDLE
+
+OPCHECK:
+  - CALIB
+  - IDLE
+
+CALIB:
+  - OPCHECK
+  - IDLE
+
+ESTOP:
+  - IDLE
+
+CARRY: []  # C-11 は $prev_mode（表引きではなく直前モードへの復帰）／C-12 は IDLE。
+           # どちらも mode_entry_allowed（ui.enter_mode 経由）は使わない。
