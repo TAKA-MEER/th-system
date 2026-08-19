@@ -443,6 +443,17 @@ PY
 | タイムアウトの導出値化（`DEBT-3`） | |
 | `PersonStatus` → `PersonTargets` への購読差し替え | |
 | バイパス検出（`/safety/firmware_flags`）を重大フォルトに | |
+| **Executor の見直し**（`WP-SAFE-00` からの申し送り。下記） | |
+
+> **`WP-SAFE-00` からの申し送り（2026-08-18）**: `link_quality` の 1 Hz タイマは
+> `FMEA ③` に従って別のコールバックグループに置いたが、**`main()` は `rclcpp::spin()`
+> のままなので実行は単一スレッドで、分離の効果は出ていない。**
+> `WP-SAFE-00` で Executor を替えなかったのは、**既存のフォルト判定が
+> `bool` と `rclcpp::Time` をロック無しで共有しており、スレッドセーフに書かれていない**ため
+> （替えると新たな競合を作り、`Q-3`「既存挙動不変」に反する）。
+> **このパケットが `safety_monitor` を書き換えるので、ここで決める**——
+> マルチスレッド Executor にするなら**共有状態の保護も同時に入れる**こと。
+> 入れないなら「単一スレッドのままでよい」と明記して申し送りを閉じる。
 | **`MUX_DEAD` / `DRIVE_RUNAWAY` / `STATE_INCONSISTENT` の検出条件**（§4.1） | |
 | `test_safety_monitor.py` / `test_fault_detection.py` の**同時更新** | |
 

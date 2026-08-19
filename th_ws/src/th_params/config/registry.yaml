@@ -1,0 +1,971 @@
+# registry.yaml — 数値が存在する唯一の場所（WP-PARAM-01）。
+#
+# スキーマは DetailedDesign-params.md §1.1。規則 S1〜S5 は th_params/schema.py が検証する。
+# 名前の正本は DetailedDesign-names.md §7（`test_names_match_names_md` が突き合わせる）。
+#
+# 数値を書けるのは class: b(given) と given の行だけ。class: c は全行
+# value: TBD_MEASURE ＋ blocking: true ＋ blocking_from_stage を持つ（S1）。
+# class: a で status: placeholder の行（O-a2/O-a4 未決）も value: TBD_MEASURE（S2）。
+#
+# 実測値そのものは WP-MEAS-01 / WP-MEAS-04 が後から入れる。ここではまだ入れない
+# （brake_accel_mps2 が TBD_MEASURE のままなのは正しい状態）。
+#
+# 数値の根拠について: brake_accel_mps2 などの class:c は測定するまで分からない値。
+# venue_clearance_m 等の class:a は O-a2/O-a4 が決まるまで方針未定。
+# それ以外の class:b(given) / given の値は、実機データシートや現行コードから明示的な
+# 数値が読み取れる場合はその値を使い（出典を note に明記）、明示的な数値が文書中に
+# 無い場合は P1（暫定値は安全側の極値）に従い保守的な仮値を置いた
+# （note に "暫定値。実機データ未確認" と明記。数値そのものの根拠は WP-PARAM-01 の
+# 完了報告を参照）。
+
+# =========================================================================
+# 7.1 速度（names §7.1 / params §6.1・§6.4）
+# =========================================================================
+
+- name: drivetrain_ceiling_mps
+  unit: m/s
+  class: b
+  status: given
+  value: 1.4
+  consumers: [params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §6.1"
+  note: "出力上限 ÷ フィードフォワード係数。暫定値。実機データシート未確認（P1 fail-slow）。v_max の逆算元"
+
+- name: v_max_headroom_ratio
+  unit: null
+  class: b
+  status: given
+  value: 0.8
+  consumers: [params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1"
+  note: "v_max を天井の何割にするか。補正の余地を残すための暫定値"
+
+- name: v_max
+  unit: m/s
+  class: b
+  status: derived
+  value: null
+  derived_from: [drivetrain_ceiling_mps, v_max_headroom_ratio]
+  formula: v_max_from_ceiling
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner, jog_gate, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1・§6.4"
+  note: "ゾーン OUT の上限。A1 の 2 本制約を満たせなければ 1 回だけ引き下げられる（P-5）"
+
+- name: venue_clearance_m
+  unit: m
+  class: a
+  status: placeholder
+  value: TBD_MEASURE
+  consumers: [params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
+  note: "v_slow の逆算元（O-a2 が決まるまで placeholder）"
+
+- name: blind_clearance_m
+  unit: m
+  class: a
+  status: placeholder
+  value: TBD_MEASURE
+  consumers: [params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
+  note: "v_reverse の逆算元（LiDAR 死角。O-a2 が決まるまで placeholder）"
+
+- name: panel_clearance_m
+  unit: m
+  class: a
+  status: placeholder
+  value: TBD_MEASURE
+  consumers: [params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
+  note: "v_jog_panel の逆算元（O-a2 が決まるまで placeholder）"
+
+- name: v_slow
+  unit: m/s
+  class: b
+  status: derived
+  value: null
+  derived_from: [venue_clearance_m, brake_accel_mps2, brake_delay_s]
+  formula: speed_from_braking_distance
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
+  note: "ゾーン IN の上限。venue_clearance_m と brake_accel_mps2 のどちらかが placeholder なら placeholder（S5）"
+
+- name: v_reverse
+  unit: m/s
+  class: b
+  status: derived
+  value: null
+  derived_from: [blind_clearance_m, brake_accel_mps2, brake_delay_s]
+  formula: speed_from_braking_distance
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
+  note: "後退（全モード共通の上限）"
+
+- name: v_jog_panel
+  unit: m/s
+  class: b
+  status: derived
+  value: null
+  derived_from: [panel_clearance_m, brake_accel_mps2, brake_delay_s]
+  formula: speed_from_braking_distance
+  consumers: [jog_gate, obstacle_limiter, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
+  note: "AT_PANEL のジョグ。A2a は課さない（極低速軸。params.md §4.1）"
+
+- name: v_leash
+  unit: m/s
+  class: b
+  status: given
+  value: 1.0
+  consumers: [leash_runner, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
+  note: "LEASH（一定速）。逆算対象が無いため given（方針値）。人の歩行速度を想定した暫定値"
+
+- name: v_check
+  unit: m/s
+  class: b
+  status: given
+  value: 0.05
+  consumers: [opcheck_runner, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
+  note: "OPCHECK のモーター確認。押している間だけ動く極低速（方針値）"
+
+- name: v_calib
+  unit: m/s
+  class: b
+  status: given
+  value: 0.15
+  consumers: [calib_runner, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
+  note: "CALIB の自律走行・旋回。校正の再現性が出る速度（方針値）"
+
+- name: w_max
+  unit: rad/s
+  class: b
+  status: given
+  value: 0.6
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, jog_gate, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1"
+  note: "角速度上限。逆算式が無いため given。暫定値（P1 fail-slow）"
+
+- name: w_align_max
+  unit: rad/s
+  class: b
+  status: given
+  value: 0.3
+  consumers: [obstacle_limiter, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1"
+  note: "d_floor を割っている間の角速度上限（safety L3）。w_max より小さい暫定値"
+
+- name: speed_preset_low
+  unit: ratio
+  class: b
+  status: given
+  value: 0.3
+  consumers: [web_ui]
+  spec_ref: "DetailedDesign-names.md §7.1"
+  note: "UI プリセット。上限に対する割合"
+
+- name: speed_preset_mid
+  unit: ratio
+  class: b
+  status: given
+  value: 0.6
+  consumers: [web_ui]
+  spec_ref: "DetailedDesign-names.md §7.1"
+  note: "UI プリセット。上限に対する割合"
+
+- name: speed_preset_high
+  unit: ratio
+  class: b
+  status: given
+  value: 1.0
+  consumers: [web_ui]
+  spec_ref: "DetailedDesign-names.md §7.1"
+  note: "UI プリセット。上限に対する割合"
+
+# =========================================================================
+# 7.2 距離（names §7.2・§7.5 / params §6.1〜§6.4）
+# =========================================================================
+
+- name: brake_accel_mps2
+  unit: m/s2
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 0
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner, jog_gate]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.2 / DetailedDesign-wp0.md WP-PARAM-01 §5"
+  note: "最も多くを従属させる 1 つ（O-c1）。WP-MEAS-01 が測るまで TBD_MEASURE のまま。埋めてはいけない"
+
+- name: brake_delay_s
+  unit: s
+  class: b
+  status: given
+  value: 0.2
+  consumers: [params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "制動開始までのむだ時間（検知・処理・アクチュエータ）。暫定値（P1 fail-slow・大きめ）"
+
+- name: safety_margin_m
+  unit: m
+  class: b
+  status: given
+  value: 0.3
+  consumers: [params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2・§7.5"
+  note: "挙動ノードの obstacle_stop_distance_m に足す余裕。floor_margin_m より大きい（§7.5）"
+
+- name: floor_margin_m
+  unit: m
+  class: b
+  status: given
+  value: 0.15
+  consumers: [params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2・§7.5"
+  note: "リミッタの obstacle_floor_distance_m に足す余裕。safety_margin_m より小さい（A2 の成否を単独で決める）"
+
+- name: person_margin_m
+  unit: m
+  class: b
+  status: given
+  value: 0.4
+  consumers: [params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2・§7.5"
+  note: "follow_stop_distance_m に足す余裕。人に対する余裕は障害物より大きく取る（safety_margin_m より大きい）"
+
+- name: body_width_m
+  unit: m
+  class: b
+  status: given
+  value: 0.55
+  consumers: [params_audit, obstacle_limiter]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.1"
+  note: "機体外形（幅）。2026-08-18 に巻尺で実測（最外形）。出典: docs/plan/detailed/data/dimensions/body.md"
+
+- name: body_length_m
+  unit: m
+  class: b
+  status: given
+  value: 0.55
+  consumers: [params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "機体外形（全長）。2026-08-18 に巻尺で実測（最外形）。出典: docs/plan/detailed/data/dimensions/body.md"
+
+- name: body_half_length_m
+  unit: m
+  class: b
+  status: given
+  value: 0.275
+  consumers: [obstacle_limiter, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §3.1"
+  note: "body_length_m / 2。floor_distance() の入力（d_floor は速度非依存）。**body_length_m と二重持ちになっている（open.md N-8）。片方だけ直さないこと**"
+
+- name: obstacle_stop_distance_m
+  unit: m
+  class: b
+  status: derived
+  value: null
+  value_by: [v_max, v_slow, v_reverse, v_jog_panel, v_check, v_calib, v_leash]
+  derived_from: [brake_accel_mps2, brake_delay_s, safety_margin_m]
+  formula: braking_distance_plus_margin
+  consumers: [follow_runner, replay_runner, venue_navigator]
+  spec_ref: "DetailedDesign-params.md §1.1・§1.4・§3.1 / DetailedDesign-safety.md §3.1"
+  note: "挙動ノード側の判定距離（d_behavior）。obstacle_floor_distance_m より必ず大きい（A2a）"
+
+- name: obstacle_floor_distance_m
+  unit: m
+  class: b
+  status: derived
+  value: null
+  derived_from: [body_half_length_m, floor_margin_m]
+  formula: floor_distance
+  consumers: [obstacle_limiter]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §3.1"
+  note: "★ 速度非依存。value_by を持たない。リミッタ側の判定距離（d_floor）。brake_accel_mps2 が未測定でも計算できる"
+
+- name: follow_stop_distance_m
+  unit: m
+  class: b
+  status: derived
+  value: null
+  derived_from: [brake_accel_mps2, brake_delay_s, person_margin_m]
+  formula: braking_distance_plus_margin
+  consumers: [follow_runner]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §3.1"
+  note: "v_max を用いて計算する（value_by なし）。obstacle_floor_distance_m より必ず大きい（A2b）"
+
+- name: clear_distance_m
+  unit: m
+  class: b
+  status: derived
+  value: null
+  derived_from: [body_half_length_m, clear_margin_m]
+  formula: clear_distance
+  consumers: [wait_clear_gate]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "退避待ちゲート：対象がゴールから離れるべき距離"
+
+- name: clear_margin_m
+  unit: m
+  class: b
+  status: given
+  value: 0.3
+  consumers: [wait_clear_gate, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "退避待ちゲートの余裕。deviation_budget_m の margin_m にも流用する（判断は報告に明記）"
+
+- name: two_point_spacing_m
+  unit: m
+  class: b
+  status: given
+  value: 1.0
+  consumers: [pin_registrar, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.1"
+  note: "推奨 1.0 m（params.md §6.1）"
+
+- name: two_point_min_spacing_m
+  unit: m
+  class: b
+  status: given
+  value: 0.5
+  consumers: [pin_registrar]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "2 点指示の最小間隔。two_point_spacing_m の半分を暫定値とした"
+
+- name: intrusion_budget_m
+  unit: m
+  class: a
+  status: placeholder
+  value: TBD_MEASURE
+  consumers: [safety_monitor, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §7 / DetailedDesign-open.md §4.1 N-2"
+  note: "通信断で進んでよい距離の上限。N-2 により未決。人が決めるまで placeholder（逆算元ではなく方針値のため誰かが決める必要がある）"
+
+- name: hysteresis_ratio
+  unit: null
+  class: b
+  status: given
+  value: 0.2
+  consumers: [params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "hysteresis_band_m = obstacle_floor_distance_m × hysteresis_ratio の係数（暫定値）"
+
+- name: hysteresis_band_m
+  unit: m
+  class: b
+  status: derived
+  value: null
+  derived_from: [obstacle_floor_distance_m, hysteresis_ratio]
+  formula: hysteresis_band
+  consumers: [obstacle_limiter]
+  spec_ref: "DetailedDesign-params.md §3.1.2・§4（A11・P-4）"
+  note: "★ obstacle_floor_distance_m から導く（obstacle_stop_distance_m からではない。P-4・A11）"
+
+- name: corridor_width_m
+  unit: m
+  class: a
+  status: placeholder
+  value: TBD_MEASURE
+  consumers: [venue_navigator]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.3（O-a4）"
+  note: "未取得。deviation_budget_m の逆算元"
+
+- name: deviation_budget_m
+  unit: m
+  class: b
+  status: derived
+  value: null
+  derived_from: [corridor_width_m, body_width_m, clear_margin_m]
+  formula: deviation_budget_m
+  consumers: [venue_navigator]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §3.4・§6.4"
+  note: "corridor_width_m が未取得の間 placeholder（S5）。margin_m には clear_margin_m を流用した（params.md §6.4 の derived_from 表は corridor_width_m と body_width_m のみを挙げ margin を明記していないための判断。報告に明記）"
+
+- name: nav_tolerance_m
+  unit: m
+  class: b
+  status: given
+  value: 0.1
+  consumers: [venue_navigator, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.1"
+  note: "Nav2 の現行設定値。暫定値（実際の nav2_params.yaml との突き合わせ未確認）"
+
+- name: nav_tolerance_deg
+  unit: deg
+  class: b
+  status: given
+  value: 5.0
+  consumers: [venue_navigator, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.1"
+  note: "Nav2 の現行設定値。暫定値（実際の nav2_params.yaml との突き合わせ未確認）"
+
+- name: person_position_sigma_m
+  unit: m
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 4
+  consumers: [pin_registrar]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.2（O-c3） / DetailedDesign-wp0.md WP-PARAM-01 §5"
+  note: "2 点指示の角度精度（【A】）の逆算元"
+
+- name: blocked_lookahead_m
+  unit: m
+  class: b
+  status: given
+  value: 1.0
+  consumers: [follow_runner, line_runner]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "暫定値（P1 fail-slow）"
+
+- name: home_declare_tolerance_m
+  unit: m
+  class: b
+  status: given
+  value: 0.1
+  consumers: [venue_navigator]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "暫定値"
+
+- name: home_declare_tolerance_deg
+  unit: deg
+  class: b
+  status: given
+  value: 5.0
+  consumers: [venue_navigator]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "暫定値"
+
+- name: align_tolerance_rad
+  unit: rad
+  class: b
+  status: given
+  value: 0.05
+  consumers: [obstacle_limiter]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "暫定値（約 2.9 deg）"
+
+- name: route_sample_interval_m
+  unit: m
+  class: b
+  status: given
+  value: 0.1
+  consumers: [route_recorder]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "暫定値"
+
+- name: route_jump_m
+  unit: m
+  class: b
+  status: given
+  value: 0.5
+  consumers: [route_recorder]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "暫定値"
+
+- name: replay_drift_m_per_100m
+  unit: m
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 5
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.2（O-c4） / DetailedDesign-wp0.md WP-PARAM-01 §5"
+  note: "1 経路の長さの上限の逆算元"
+
+- name: link_gap_p99_ms
+  unit: ms
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  value_by: [esp32, lidar, ui]
+  blocking: true
+  blocking_from_stage: 1
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §7 / DetailedDesign-wp0.md WP-PARAM-01 §5"
+  note: "ESP32／LiDAR／UI 別（WP-MEAS-04 が測る）。タイムアウトの下限の逆算元"
+
+- name: battery_endurance_min
+  unit: min
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 8
+  consumers: [web_ui]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.2（O-c7） / DetailedDesign-wp0.md WP-PARAM-01 §5"
+  note: "目標 G5 の検証項目（WP-MEAS-05 が測る）"
+
+- name: battery_warn_v
+  unit: V
+  class: b
+  status: given
+  value: 24.0
+  consumers: [web_ui, safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.2（hardware §3.3）"
+  note: "LiFePO4 8S（公称 24V・6Ah、実測最大 29.29V）。3.0V/セル。ここから残量が急落する。2026-08-18 ユーザー提供の実機仕様に基づく"
+
+- name: battery_critical_v
+  unit: V
+  class: b
+  status: given
+  value: 22.4
+  consumers: [web_ui, safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.2（hardware §3.3）"
+  note: "LiFePO4 8S。2.8V/セル。これ以下はセル劣化域。下回っても停止はさせない（safety.md §7.2）。2026-08-18 ユーザー提供の実機仕様に基づく"
+
+- name: obstacle_cone_half_width_rad
+  unit: rad
+  class: b
+  status: given
+  value: 0.5
+  consumers: [obstacle_limiter]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "前方のリミッタ判定コーン半幅。暫定値"
+
+- name: obstacle_cone_half_width_reverse_rad
+  unit: rad
+  class: b
+  status: given
+  value: 0.6
+  consumers: [obstacle_limiter]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "後退時のリミッタ判定コーン半幅。前方より広い暫定値（死角ぶんの余裕）"
+
+- name: blind_angle_ranges
+  unit: deg_pairs
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 2
+  consumers: [lidar_filter, obstacle_limiter]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-wp0.md WP-PARAM-01 §5"
+  note: "死角セクタ（O-4: WP-CALIB-01 は WP-SAFE-03 より前＝段階 2）。blocking_from_stage はパケット §5 の表に無いためこちらで判断した（報告に明記）"
+
+# =========================================================================
+# 7.3 時間（names §7.3）
+# =========================================================================
+
+- name: tracker_lost_grace_ms
+  unit: ms
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 4
+  consumers: [follow_runner, venue_navigator, safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §6.2（C-05） / DetailedDesign-wp0.md WP-PARAM-01 §5"
+  note: "追従・呼び寄せの停止判断"
+
+- name: auto_select_hold_s
+  unit: s
+  class: b
+  status: given
+  value: 2.0
+  consumers: [pin_registrar]
+  spec_ref: "DetailedDesign-names.md §7.3（E-8）"
+  note: "『数秒』の暫定値"
+
+- name: clear_hold_ms
+  unit: ms
+  class: b
+  status: given
+  value: 1000
+  consumers: [wait_clear_gate]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "暫定値"
+
+- name: clear_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 5000
+  consumers: [wait_clear_gate]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "暫定値"
+
+- name: lidar_timeout_ms
+  unit: ms
+  class: b
+  status: derived
+  value: null
+  derived_from: [link_gap_p99_ms, intrusion_budget_m, v_max]
+  formula: timeout_from_bounds
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §3.3・§6.4 / DetailedDesign-safety.md §7"
+  note: "2 本制約（下限=p99+余裕・上限=intrusion_budget/v_max）。link_gap_p99_ms(lidar 軸) が未測定の間 placeholder"
+
+- name: esp32_timeout_ms
+  unit: ms
+  class: b
+  status: derived
+  value: null
+  derived_from: [link_gap_p99_ms, intrusion_budget_m, v_max]
+  formula: timeout_from_bounds
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §3.3・§6.4 / DetailedDesign-safety.md §7"
+  note: "2 本制約。link_gap_p99_ms(esp32 軸) が未測定の間 placeholder。A6 の対象"
+
+- name: person_timeout_ms
+  unit: ms
+  class: b
+  status: derived
+  value: null
+  derived_from: [tracker_lost_grace_ms, link_gap_p99_ms]
+  formula: person_backstop_ms
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §3.1.2・§6.4"
+  note: "safety_monitor の遅いバックストップ。tracker_lost_grace_ms より必ず長い（A3）"
+
+- name: muxed_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 200
+  consumers: [obstacle_limiter]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "リミッタが /cmd_vel_muxed の途絶を判定する。20 Hz 周期（50ms）より少し長い暫定値。cmd_vel_stale_ms とは別物"
+
+- name: cmd_vel_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 400
+  consumers: [esp32_bridge]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §4（A7）"
+  note: "esp32_bridge が /cmd_vel の途絶を判定する。esp32_watchdog_ms(600ms) 未満（A7）"
+
+- name: scan_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 300
+  consumers: [obstacle_limiter]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "リミッタが /scan の途絶を判定する。超えたら action=STOP"
+
+- name: jog_lease_ms
+  unit: ms
+  class: b
+  status: given
+  value: 1200
+  consumers: [jog_gate]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §4（A4）"
+  note: "manual_joy_timeout(1.0s=1000ms) 以上（A4）"
+
+- name: manual_joy_timeout
+  unit: s
+  class: b
+  status: given
+  value: 1.0
+  consumers: [twist_mux, jog_gate, obstacle_limiter]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-safety.md §3.2"
+  note: "twist_mux.yaml の manual_joy.timeout と同一の値（1.0 s。safety.md §3.2 に明記）。registry から生成する"
+
+- name: estop_ui_lease_ms
+  unit: ms
+  class: b
+  status: given
+  value: 1500
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "UI 非常停止の押下継続を判定する。暫定値"
+
+- name: screen_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 3000
+  consumers: [state_manager]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "暫定値"
+
+- name: state_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 1500
+  consumers: [obstacle_limiter, jog_gate]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-safety.md §3.2"
+  note: "リミッタ／jog_gate が /system/state の途絶を判定する。途絶したらゾーン最低・auto_brake=ON に倒す"
+
+- name: lock_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [safety_monitor, obstacle_limiter]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "/safety/estop /safety/fault_lock の途絶をロック扱いにする閾値（現行 0.5 s。names.md に明記）"
+
+- name: estop_ui_repeat_hz
+  unit: Hz
+  class: b
+  status: given
+  value: 5.0
+  consumers: [web_ui]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "UI 非常停止の押下継続の送信頻度。暫定値"
+
+- name: limiter_dead_ms
+  unit: ms
+  class: b
+  status: given
+  value: 250
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "/safety/limiter_status の途絶（20 Hz の 5 周期 = 250ms。names.md に明記）"
+
+- name: mux_dead_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3（wp2 WP-SAFE-01 §4.1）"
+  note: "MUX_DEAD の判定。暫定値"
+
+- name: runaway_hold_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "DRIVE_RUNAWAY の保持時間。暫定値"
+
+- name: link_quality_window_sec
+  unit: s
+  class: b
+  status: given
+  value: 30
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3（WP-SAFE-00）"
+  note: "分位点を取る窓。暫定値"
+
+- name: behavior_cmd_timeout_s
+  unit: s
+  class: b
+  status: given
+  value: 0.5
+  consumers: [twist_mux]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "twist_mux.yaml の生成元（現行 0.5 s。names.md に明記）"
+
+- name: nav_cmd_timeout_s
+  unit: s
+  class: b
+  status: given
+  value: 0.5
+  consumers: [twist_mux]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "twist_mux.yaml の生成元（現行 0.5 s。names.md に明記）"
+
+- name: wheel_radius_scale
+  unit: null
+  class: b
+  status: given
+  value: 1.0
+  consumers: [esp32_bridge]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §7"
+  note: "校正の出力（names.md は measured と記す）。校正が一度も走っていない段階の初期値は補正なしの恒等値 1.0 とし given で置いた。calib_runner が測定後に status を measured へ上書きする（params.md §7 の仕組み。WP-CALIB-01 の範囲）。判断は報告に明記"
+
+- name: wheel_radius_scale_max_dev
+  unit: null
+  class: b
+  status: given
+  value: 0.10
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §4（A10）"
+  note: "A10 の閾値。10% を超えるずれは校正ではなく機械的な異常（names.md に明記）"
+
+- name: runaway_ratio
+  unit: null
+  class: b
+  status: given
+  value: 1.5
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "DRIVE_RUNAWAY の乖離判定。暫定値"
+
+- name: runaway_zero_threshold
+  unit: m/s
+  class: b
+  status: given
+  value: 0.02
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "DRIVE_RUNAWAY の乖離判定。暫定値"
+
+- name: link_quality_regression_ratio
+  unit: null
+  class: b
+  status: given
+  value: 1.5
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3（hardware §2.1）"
+  note: "カメラ接続後の /scan p99 悪化の許容比。暫定値"
+
+- name: ui_active_window_s
+  unit: s
+  class: b
+  status: given
+  value: 30
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3（safety.md §6.2）"
+  note: "『使用中』の判定。旧 tablet_active_window_s から改名。暫定値"
+
+- name: esp32_alive_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 3000
+  consumers: [state_manager, connectivity_checker]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "起動時の疎通判定にだけ使う（運用中は esp32_timeout_ms）"
+
+- name: enabled_targets
+  unit: string_list
+  class: b
+  status: given
+  value: []
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3（O-7）"
+  note: "safety_monitor の監視対象。段階ごとに launch から渡す（既定は空。packets.md O-7）"
+
+- name: scan_expected_points
+  unit: null
+  class: b
+  status: given
+  value: 360
+  consumers: [connectivity_checker]
+  spec_ref: "DetailedDesign-names.md §7.3（WP-STATE-03）"
+  note: "起動時の疎通判定。暫定値（実機 LiDAR の点数仕様未確認）"
+
+- name: required_nodes
+  unit: string_list
+  class: b
+  status: given
+  value: []
+  consumers: [connectivity_checker]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "起動時の疎通判定。既定は空（launch が渡す）"
+
+- name: esp32_watchdog_ms
+  unit: ms
+  class: b
+  status: given
+  value: 600
+  consumers: [safety_monitor, esp32_bridge]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §4（A6・A7） / CLAUDE.md"
+  source: "esp32/src/config.h WATCHDOG_MS"
+  note: "esp32/src/config.h の写し（CLAUDE.md に明記の 600ms）。ファーム側が正。ずれたら A6/A7 が拾う"
+
+- name: esp32_ws_port
+  unit: null
+  class: b
+  status: given
+  value: 8766
+  consumers: [esp32_bridge]
+  spec_ref: "DetailedDesign-wp0.md WP-NET-01 §3 / WP-ESP32-01 §3.3"
+  source: "th_esp32_bridge/config/params.yaml ws_port ／ esp32/src/wifi_credentials.h WS_SERVER_PORT（機体ごと・.gitignore 対象）"
+  note: "esp32_bridge の WebSocket 待受ポート。ESP32 側 wifi_credentials.h の WS_SERVER_PORT と一致させること。WP-PARAM-01 時点で未登録だった行（WP-ESP32-01 で追加）"
+
+- name: link_wait_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 10000
+  consumers: [connectivity_checker]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "sys.link_timeout の契機。暫定値"
+
+- name: blocked_hold_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [follow_runner, line_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "暫定値"
+
+- name: unblocked_hold_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [follow_runner, line_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "暫定値"
+
+- name: route_gap_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 3000
+  consumers: [route_recorder]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "暫定値"
+
+- name: leash_stop_latency_ms
+  unit: ms
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 8
+  consumers: [leash_runner]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-wp0.md WP-PARAM-01 §5"
+  note: "段階 8 まで測りようがない"
+
+- name: calib_interval_days
+  unit: days
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 7
+  consumers: [calib_runner, web_ui]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §6.2（O-c5） / DetailedDesign-wp0.md WP-PARAM-01 §5"
+  note: "定期校正の催促"
+
+# =========================================================================
+# 7.4 許容範囲（校正）（names §7.4）
+# =========================================================================
+
+- name: calib_linear_tolerance_ratio
+  unit: null
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 7
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.4 / DetailedDesign-params.md §6.2（O-c5/F-13） / DetailedDesign-wp0.md WP-PARAM-01 §5"
+  note: "校正の合否"
+
+- name: calib_rotation_tolerance_deg
+  unit: deg
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 7
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.4 / DetailedDesign-params.md §6.2（O-c5/F-13） / DetailedDesign-wp0.md WP-PARAM-01 §5"
+  note: "校正の合否"
+
+- name: calib_blind_tolerance_deg
+  unit: deg
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 7
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.4 / DetailedDesign-params.md §6.2（O-c5/F-13） / DetailedDesign-wp0.md WP-PARAM-01 §5"
+  note: "校正の合否"

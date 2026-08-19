@@ -1,0 +1,392 @@
+# 機体作業手順 — 段階 0
+
+[← README に戻る](../README.md)
+
+**機体が使える日に、上から順に実行する。**段階 0 のうち実機が要る 6 件をこの 1 本にまとめてある。
+
+| 対象パケット | 内容 |
+| --- | --- |
+| `WP-NET-01` | Wi-Fi の見直し・ポートの記述是正 |
+| `WP-ESP32-01` | **物理非常停止のバイパス解除**（現在は無効化されている） |
+| `WP-MEAS-04` | リンク品質の実測（**AP 3 案の比較**） |
+| `WP-MEAS-01` | 制動距離の実測（通電） |
+| `WP-MEAS-02` | 人が歩いている室内での地図（通電） |
+| `WP-MEAS-03` | 手押し搬送のベースライン |
+
+---
+
+## 0. 安全上の約束（**破らない**）
+
+| # | 約束 | 理由 |
+| --- | --- | --- |
+| 1 | **手順 A-4 が終わるまで、モータに通電して走らせない** | 物理非常停止がファームで無効化されている（`ESTOP_BENCH_TEST_BYPASS`）。**押しても止まらない機体で走行試験をしない**（`O-5`） |
+| 2 | 通電作業は**人が張り付く。**周囲 3 m に人・物を置かない | `WP-MEAS-01` §6.2 |
+| 3 | 手順 C-1（テスタで駆動電源が落ちることの確認）に**合格するまで C-2 以降へ進まない** | トピックが出ることと、電気的に切れることは別 |
+| 4 | 「電源断」＝**モータードライバの電源だけ切り、ESP32・ラズパイ・LiDAR は通電**した状態 | 手順 A と B はすべてこの状態でできる |
+
+---
+
+## 1. 持ち物
+
+| 物 | 使う手順 | 代替 |
+| --- | --- | --- |
+| **テスタ（マルチメータ）** | C-1 | **無し。**これが無いと C 以降に進めない |
+| **巻尺（5 m 以上）** | A-1・C-2 | 無し |
+| ストップウォッチ（スマホ可） | D | — |
+| USB ケーブル（ESP32 書き込み用・**データ線あり**） | A-4 | — |
+| タブレット（短辺 768 px 以上） | B | PC のブラウザで代用可 |
+| 養生用のコーン・テープ（走行範囲の明示） | C-2 | — |
+| 候補の AP 機器（ルーター） | B-3 | 未入手なら B-3 を飛ばす |
+
+---
+
+## 2. 作業順の根拠
+
+```
+A. 電源断でできる作業
+   A-1 寸法の実測 ──────────────┐
+   A-2 部品と空きピンの確認      │
+   A-3 ファーム改修              │
+   A-4 書き込みと確認 ───────────┼─→ ここまで終わって初めて通電してよい
+                                 │
+B. AP 比較（電源断のまま 1 時間 × 最大 3 回）
+   B-1 現状 ESP32 AP → before.csv│
+   B-2 ラズパイ AP               │
+   B-3 ルーター                  │
+   B-4 判定 → after.csv          │
+                                 ↓
+C. 通電作業
+   C-1 テスタで駆動電源の遮断を確認（★関門）
+   C-2 制動距離 15 本
+   C-3 人が歩く室内での地図
+
+D. 手押しベースライン（通電不要・いつでも可）
+```
+
+**B は A より後でなくてもよい**（電源断で完結するため）が、**A-3 でファームを焼くついでに B-2・B-3 用の設定も入れられる**ので、この順が早い。
+
+---
+
+## 3. 手順 A — 電源断でできる作業
+
+### A-1 機体寸法の実測
+
+**`registry.yaml` に入っている寸法は暫定値**（`body_length_m: 0.7` / `body_width_m: 0.5`）で、根拠がない。**巻尺で実測して置き換える。**
+
+| 測るもの | パラメータ | 測り方 |
+| --- | --- | --- |
+| 全長 | `body_length_m` | **最外形**（バンパー・突起を含む）。走行方向 |
+| 全幅 | `body_width_m` | 最外形。クローラ外側から外側 |
+| 左右クローラ中心間 | （記録のみ） | 校正（`WP-MAINT-02`）で使う。`N-7` で `wheel_base_m` を registry に足す判断が要る |
+
+記録:
+
+```bash
+# ホスト（リポジトリルート）
+mkdir -p docs/plan/detailed/data/dimensions
+cat > docs/plan/detailed/data/dimensions/body.md <<'EOF'
+| 項目 | 実測値 (m) | 測定日 | 備考 |
+| --- | --- | --- | --- |
+| body_length_m |  | 2026-__-__ | 最外形 |
+| body_width_m  |  | 2026-__-__ | 最外形 |
+| クローラ中心間 |  | 2026-__-__ | 校正用 |
+EOF
+```
+
+**実測後、`registry.yaml` の該当行の `value` と `note` を書き換える**（`note` は「暫定値」ではなく実測の根拠に）。
+
+### A-2 部品と空きピンの確認
+
+| 確認 | 内容 |
+| --- | --- |
+| 状態 LED ＋ 抵抗 | 手元にあるか。**空きピンを 1 本選ぶ**（`hardware.md` §3.4 が「実機で選ぶ」としている） |
+| 分圧抵抗 **100 kΩ ＋ 10 kΩ** | バッテリー電圧測定用（LiFePO4 8S・実測最大 29.29 V → 2.66 V）。**ADC 入力が 3.3 V を超えないこと**を実際に測って確認する |
+| 物理非常停止ボタン | **GPIO32** に配線されているか（`ESTOP_LOW_ACTIVE true` ＝ LOW で発動）。**外部プルアップ抵抗（10 kΩ 程度）が要る**——ファームは `pinMode(ESTOP_GPIO, INPUT)` で**内部プルアップを使っていない**ため、未配線だとピンがフローティングになり、バイパスを外した状態では**誤って E-Stop が発動し続ける**（これが元々バイパスが入っていた理由） |
+
+**LED とバッテリー測定の実装はこの日はやらない**（段階 1〜2）。**取り付けと配線だけ済ませておくと後が早い。**
+
+### A-3 ファームの改修
+
+`th_ws/esp32/src/` を編集する。**焼く前に PC 側（`esp32_bridge`）を先に更新する**（`WP-ESP32-01` FMEA ②: 逆順だと旧 bridge が新フレームで例外を出す）。
+
+| # | ファイル | 変更 |
+| --- | --- | --- |
+| 1 | `config.h:130` | `ESTOP_BENCH_TEST_BYPASS` を**無効化**（定義自体は残す。台上試験の手段は要る＝`E-2`） |
+| 2 | `main.cpp:196-202` | `[DBG]` の printf を削除 |
+| 3 | `main.cpp` | `estopActive = false` の**無条件代入**を削除 |
+| 4 | `ws_link.h` | フレーム表の是正（`WHEEL_FEEDBACK` は **13 bytes**、`ESTOP_HW` は **3 bytes**）＋ `LED_STATE 0x05` / `BATTERY 0x06` を表に追記 |
+| 5 | `ESTOP_HW (0x03)` | `[type:1][pressed:1]` に **`[flags:1]`** を追加。bit 0 = `bypass_active` |
+| 6 | `wifi_credentials.h.example` | `WS_SERVER_PORT` を **8766** に（現在 8765 で古い。実値は既に 8766） |
+
+**`wifi_credentials.h`（実値）は `.gitignore` 済み・履歴にも無い**ことを確認済み。**この日に新たな対処は不要。**
+
+PC 側:
+
+```bash
+# esp32_bridge に unpack_estop_hw を足し、/safety/firmware_flags を出す（WP-ESP32-01 §4）
+# 旧 2 byte 形式は flags = 0xFF（＝不明・バイパスの可能性あり）として安全側に倒す
+```
+
+### A-4 書き込みと電源断での確認
+
+> **★ 焼く前の関門**: **GPIO32 の配線（スイッチ ＋ 外部プルアップ）を完了しておくこと。**
+> 未配線のまま焼くと、バイパスが外れているためフローティングで E-Stop が発動し続け、
+> **機体が一切動かなくなる**（A-2 参照）。
+>
+> **順序**: **PC 側（`esp32_bridge`）を先に更新して再起動**してから焼く。
+> 逆順だと、新ファームの 3 byte `ESTOP_HW` を旧 bridge が受けて毎周期 `ProtocolError` を出し、
+> `/safety/estop_hw` が更新されなくなる（`WP-ESP32-01` FMEA ②）。
+
+```bash
+# ホスト。PlatformIO は ~/.platformio/penv/bin/pio に導入済み（6.1.19）
+cd th_ws/esp32 && ~/.platformio/penv/bin/pio run -t upload
+
+# コンテナ内。ノードを起動して確認
+docker compose run --rm th_robot bash -lc \
+  'cd /root/th_ws && source install/setup.bash && ros2 launch th_bringup bringup.launch.py'
+```
+
+別のターミナルで:
+
+```bash
+# ① バイパスが無効（0 が出ること。0xFF なら旧ファームのまま）
+test "$(timeout 3 ros2 topic echo /safety/firmware_flags --field data --once)" = "0"
+
+# ② 物理ボタンを押す → True
+test "$(timeout 5 ros2 topic echo /safety/estop_hw --field data --once)" = "True"
+
+# ③ 離す → False（ラッチしないこと）
+test "$(timeout 5 ros2 topic echo /safety/estop_hw --field data --once)" = "False"
+```
+
+**① が `0` にならない限り、通電作業（手順 C）へ進まない。**
+
+---
+
+## 4. 手順 B — AP 3 案の比較測定
+
+**目的**: 受信ギャップの **p99 が最高速度の上限を決める**（`safety.md` §7）。
+
+```
+v_max ≤ intrusion_budget_m / (p99 × 余裕率)
+```
+
+### B-0 測定の共通条件（**3 案で必ず同じにする**）
+
+| 条件 | 内容 |
+| --- | --- |
+| 時間 | **1 時間以上**（`WP-MEAS-04`。短時間だと最悪値を拾えない） |
+| 負荷 | **運用相当**。LiDAR を回し、UI を開き、`/cmd_vel` を 20 Hz で流す |
+| 場所 | **同じ場所・同じ距離**。機体は静止でよい（走行は不要） |
+| 禁止 | 静止した空きチャンネルで測ること（実運用より良い値が出て、タイムアウトが短すぎになる） |
+
+負荷の作り方（モータ電源は切ったまま。ゼロ速度を流すだけ）:
+
+```bash
+# 別ターミナルで放置
+ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist "{}"
+```
+
+記録:
+
+```bash
+mkdir -p docs/plan/detailed/data/meas04
+timeout 3600 ros2 topic echo /safety/link_quality --csv > docs/plan/detailed/data/meas04/<構成名>.csv
+```
+
+集計（p99 の最大値を構成ごとに出す）:
+
+```bash
+python3 - <<'EOF'
+import csv, sys, collections
+worst = collections.defaultdict(float)
+for name in ("esp32ap", "rpiap", "router"):
+    try: rows = list(csv.reader(open(f"docs/plan/detailed/data/meas04/{name}.csv")))
+    except FileNotFoundError: continue
+    for r in rows:
+        # LinkQuality: ... ,link,p50_ms,p99_ms,max_ms,window_sec
+        try: link, p99 = r[-5], float(r[-3])
+        except (IndexError, ValueError): continue
+        worst[(name, link)] = max(worst[(name, link)], p99)
+for k in sorted(worst): print(f"{k[0]:8} {k[1]:6} p99_max={worst[k]:.1f} ms")
+EOF
+```
+
+### B-1 現状（ESP32 が AP）— `esp32ap.csv`
+
+**いま動く構成。**これが比較の基準になり、`WP-MEAS-04` の `before.csv` になる。
+
+```bash
+cp docs/plan/detailed/data/meas04/esp32ap.csv docs/plan/detailed/data/meas04/before.csv
+```
+
+### B-2 ラズパイが AP — `rpiap.csv`
+
+**費用ゼロ。**旧構成で「AP 自身が発信元の通信が PC に届かない」非対称障害が出たが（`docs/network.md`）、**WSL 層が無くなった今なら通る可能性がある**——その検証。
+
+ラズパイ側（**別ターミナルでユーザーが実行**。`sudo` が要る）:
+
+```bash
+sudo apt-get install -y hostapd dnsmasq
+sudo systemctl unmask hostapd
+
+# /etc/hostapd/hostapd.conf
+#   interface=wlan0
+#   ssid=th-rpi-ap
+#   hw_mode=g            ← ESP32 は 2.4GHz のみ。5GHz は使えない
+#   channel=<混んでいないチャンネルを選ぶ。自動にしない>
+#   wpa=2 / wpa_passphrase=<8文字以上> / wpa_key_mgmt=WPA-PSK / rsn_pairwise=CCMP
+
+# 固定 IP と DHCP（dnsmasq）を設定し、PC とラズパイに固定 IP を割り当てる
+sudo systemctl enable --now hostapd dnsmasq
+```
+
+ESP32 側（**ファーム再書き込み**）:
+
+| 設定 | 値 |
+| --- | --- |
+| `WIFI_AP_MODE` | **0**（STA モードにする） |
+| `WIFI_SSID` / `WIFI_PASSWORD` | ラズパイ AP のもの |
+| `WS_SERVER_HOST` | **新しいネットワークでの PC の固定 IP** |
+| `WS_SERVER_PORT` | 8766（変更なし） |
+
+**確認**: DDS のマルチキャストが通るか（`ros2 topic list` で他ホストのトピックが見えるか）。通らなければ `fastdds_profile.xml` のユニキャストピア設定を使う（`docs/network.md`）。
+
+> **この案の構造的な弱点**: 無線は 1 系統しかないので、**ESP32 の制御通信と `/scan` の大量トラフィックが同じ 2.4 GHz を奪い合う。**帯域を分けられない。
+
+### B-3 ルーターが AP — `router.csv`
+
+**推奨案。**唯一「帯域を分けられる」構成。
+
+| 割り当て | 理由 |
+| --- | --- |
+| ESP32 → **2.4 GHz** | ESP32 は 2.4 GHz 専用 |
+| ラズパイ・PC・タブレット → **5 GHz** | `/scan` の大量トラフィックを制御通信から隔離する |
+
+| 要件 | 内容 |
+| --- | --- |
+| 同時デュアルバンド | 2.4 と 5 を**同時に**使えること |
+| 電源 | 5 V USB か 12 V。**24 V パックから DC-DC で取る**（機体に載せる。PC は機体に載せない設計なので、AP は機体側に無いと 200 m の移動を覆えない） |
+| チャンネル | **固定**（自動選択だと測定が再現しない） |
+| IP | ラズパイ・PC は**固定**（DHCP 予約でも可） |
+
+ESP32 側の設定は B-2 と同じ（`WIFI_AP_MODE 0` ＋ ルーターの SSID）。
+
+### B-4 判定と記録
+
+1. 3 構成の **p99 の最大値**（ESP32 リンク・LiDAR リンクそれぞれ）を比べる
+2. 最良の構成を採用し、その CSV を `after.csv` としてコピーする
+3. `registry.yaml` の `link_gap_p99_ms` を `measured` にする（`value_by: [esp32, lidar, ui]`、`measured_at` と `source` が必須）
+
+```bash
+cp docs/plan/detailed/data/meas04/<採用した構成>.csv docs/plan/detailed/data/meas04/after.csv
+```
+
+> **`intrusion_budget_m` も同時に決める。**未決（`N-2`）のままだと `v_max` が決まらない。
+> AP を良くしても、この値が小さいままでは速度は上がらない。
+
+---
+
+## 5. 手順 C — 通電作業
+
+### C-1 テスタで駆動電源の遮断を確認（**関門**）
+
+| 手順 | 内容 |
+| --- | --- |
+| 1 | モータードライバの電源ラインにテスタを当てる |
+| 2 | 物理非常停止ボタンを**押す** |
+| 3 | **電圧が落ちること**を確認する |
+
+**落ちなければここで中止。**配線かファームの問題であり、これが効かない状態で C-2 以降は行わない
+（`ESTOP_HW` フレームは「押された事実を PC に伝えるだけ」で、**停止の手段ではない**）。
+
+### C-2 制動距離の実測（`WP-MEAS-01`）
+
+**周囲 3 m を空ける。人が張り付く。**
+
+| 条件 | 回数 |
+| --- | --- |
+| 前進（場内速度） | 5 |
+| 後退 | 5 |
+| 前進（最高速度域） | 5 |
+
+各回の手順:
+
+1. 一定速度に達したら `/cmd_vel` をゼロにする
+2. **停止するまでの距離**を、`/odometry/filtered` の積分と**巻尺の両方**で記録する
+3. `TARGET_RAMP_ACCEL_MPS2` の設定値も記録する（後でファームを触ったとき再測定の要否が判断できる）
+
+```bash
+mkdir -p docs/plan/detailed/data
+# 1 回 1 ファイル。合計 15 ファイル（完了条件が数える）
+# docs/plan/detailed/data/brake_accel_<条件>_<回>.csv
+```
+
+**平均を採らない。最も悪い値を採る**（平均だと制動距離が短く見積もられ、以降の全距離が危険側にずれる）。
+
+`registry.yaml` の `brake_accel_mps2` を `measured` にし、`measured_at` / `source` を書く。
+
+### C-3 人が歩いている室内での地図（`WP-MEAS-02`）
+
+**最も安いテスト。**人物マスクを実装するかどうかがこれで決まる。
+
+| 手順 | 内容 |
+| --- | --- |
+| 1 | 人が普通に歩いている室内で SLAM を回す（**手動走行のみ**。自律走行は使わない） |
+| 2 | 地図への写り込みを記録する |
+| 3 | 写り込んだ場合、手作業で消すのに何分かかるかを測る |
+
+```bash
+mkdir -p docs/plan/detailed/data/meas02
+# 地図を保存
+ros2 run nav2_map_server map_saver_cli -f docs/plan/detailed/data/meas02/map_with_people
+# 判定を 1 行目に書く（どちらか）
+echo "判定: 人物マスクが要る"   > docs/plan/detailed/data/meas02/report.md
+echo "判定: 人物マスクは不要"   > docs/plan/detailed/data/meas02/report.md
+```
+
+---
+
+## 6. 手順 D — 手押し搬送のベースライン（`WP-MEAS-03`）
+
+**ROS2 不要・通電不要。**目標 G4（搬送の省力化）の比較対象を作る。
+
+| 測るもの | 内容 |
+| --- | --- |
+| 所要時間 | 片道 200 m |
+| 人数 | 何人で押したか |
+| 主観的負担 | 5 段階 |
+
+**3 回以上**（完了条件が行数を数える）。
+
+```bash
+mkdir -p docs/plan/detailed/data/meas03
+cat > docs/plan/detailed/data/meas03/baseline.md <<'EOF'
+| 回 | 所要時間(分) | 人数 | 主観負担(1-5) | 日付 | 備考 |
+| --- | --- | --- | --- | --- | --- |
+| 1 |  |  |  |  |  |
+| 2 |  |  |  |  |  |
+| 3 |  |  |  |  |  |
+EOF
+```
+
+---
+
+## 7. 記録先の一覧（完了条件が検査するパス）
+
+| パケット | 記録先 | 検査内容 |
+| --- | --- | --- |
+| `WP-MEAS-01` | `docs/plan/detailed/data/brake_accel_*.csv` | **15 ファイル**。`registry` が `measured` |
+| `WP-MEAS-02` | `docs/plan/detailed/data/meas02/{*.pgm,*.yaml,report.md}` | `report.md` の 1 行目が `判定: ...` |
+| `WP-MEAS-03` | `docs/plan/detailed/data/meas03/baseline.md` | **3 行以上** |
+| `WP-MEAS-04` | `docs/plan/detailed/data/meas04/{before,after}.csv` | 両方あること。`registry` の `link_gap_p99_ms` が `measured` |
+| A-1 寸法 | `docs/plan/detailed/data/dimensions/body.md` | （`registry` の値の根拠として残す） |
+
+---
+
+## 8. 中断したとき
+
+**手順 A-4 の途中でファームだけ焼いて中断した場合は、必ず `/safety/firmware_flags` を確認してから終わる。**
+`0xFF`（不明）のまま放置すると、次に触る人がバイパスの有無を判断できない。
+
+**通電作業を中断する場合は、モータードライバの電源を落としてから離れる。**
