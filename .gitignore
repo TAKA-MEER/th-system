@@ -35,6 +35,11 @@ th_ws/voice_audition/
 th_ws/dr_spaam_weights/*
 !th_ws/dr_spaam_weights/.gitkeep
 
+# 実行時データ（試験場地図・教示経路・校正値・生成パラメータ・ログ。個体ごとに異なり
+# コミットしない。DetailedDesign-names.md §9.2 / WP-PARAM-02）
+th_ws/data/*
+!th_ws/data/.gitkeep
+
 # エディタ / OS
 *.swp
 *.swo

@@ -107,6 +107,11 @@ void init() {
     // 内部的に失敗するESP32 Arduino既知の挙動があるため、STAは使わないが
     // WIFI_AP_STA にして TCP/IP スタックを両インターフェース分フル初期化する
     WiFi.mode(WIFI_AP_STA);
+    // 省電力を切る。既定では STA 側がビーコン間隔ごとにしか受信しないため、
+    // 数百 ms〜秒単位の受信ギャップが出る（2026-08-18 の実測で子機時に
+    // p99 402ms / max 2.5s を観測した）。制御リンクの p99 が v_max を決めるので、
+    // ここは常に無効にする。
+    WiFi.setSleep(false);
     WiFi.softAP(AP_SSID, AP_PASSWORD);
     Serial.print("[WiFi] AP IP=");
     Serial.println(WiFi.softAPIP());
@@ -121,6 +126,7 @@ void init() {
 #else
     Serial.printf("[WiFi] SSID '%s' に接続中...\n", WIFI_SSID);
     WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);   // 上と同じ理由。子機モードではこれが特に効く
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     client.begin(WS_SERVER_HOST, WS_SERVER_PORT, "/");
     client.onEvent(handleEvent);
@@ -187,9 +193,9 @@ void sendWheelFeedback(float left, float right, float dtSec) {
     handleSendResult(client.sendBIN(buf, sizeof(buf)));
 }
 
-void sendEstopHw(bool active) {
+void sendEstopHw(bool active, uint8_t flags) {
     if (!isConnected()) return;
-    uint8_t buf[2] = { TYPE_ESTOP_HW, static_cast<uint8_t>(active ? 1 : 0) };
+    uint8_t buf[3] = { TYPE_ESTOP_HW, static_cast<uint8_t>(active ? 1 : 0), flags };
     handleSendResult(client.sendBIN(buf, sizeof(buf)));
 }
 

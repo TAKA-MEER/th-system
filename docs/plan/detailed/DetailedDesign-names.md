@@ -292,7 +292,7 @@ def derive_limits(screens, now_ms, p):
 | **`SystemState.msg`** | `Header header` / `string mode` / `string state` / `string prev_mode` / `string prev_state` / `string zone`（`IN`/`OUT`/`NA`） / `bool jog_active` / `bool estop_ui` / `bool estop_hw` / `bool tracker_enabled` / `bool auto_brake` / `bool working` / `bool map_update` / `string[] unsaved` / `builtin_interfaces/Time since` / `string last_event` / `string last_reject_reason` | **状態の唯一の発行元。**`prev_*` は `ESTOP` / `CARRY` の復帰先ラッチ |
 | **`StateEvent.msg`** | `Header header` / `string event`（`evt.*` のみ） / `string source_node` / `string arg_json` | 挙動ノード → `th_state` |
 | **`ActiveScreen.msg`** | `Header header` / `string screen_id` / `string client_id` / `bool interacting` / **`builtin_interfaces/Time last_input`** | UI → `th_state`。**`header.stamp` は 2 Hz の定期発行時刻であって「最後の操作時刻」ではない。**`last_input` が無いと、画面を開いているだけの端末が永久に「使用中」になる |
-| `FaultStatus.msg` | `Header header` / `bool active` / `string fault_type` / **`string severity`**（`RECOVERABLE` / `CRITICAL`） / `string description` | **`severity` を追加**（`F-20`） |
+| `FaultStatus.msg` | `bool active` / `string fault_type` / `string description` / **`string severity`**（`RECOVERABLE` / `CRITICAL`） | **`severity` を末尾に追加**（`F-20`）。**`Header header` は未追加**——`WP-MSG-01` の `M3` は既存 msg への変更を `severity` 1 件に限定しており、先頭への挿入はその例外を超える。**`/safety/fault` の publisher を書き換える `WP-SAFE-01` で追加する**（現時点で `header.stamp` を読む消費者は無い） |
 | **`LimiterStatus.msg`** | `Header header` / `bool alive` / `string action`（`PASS`/`CLAMP`/`STOP`/`ZERO_STALE`/**`BLOCKED_UNCALIBRATED`**） / `float32 in_linear` / `float32 out_linear` / `float32 nearest_obstacle_m` / `string source_class`（`MANUAL`/`AUTO`） / `float32 applied_limit_mps` | 監視と画面表示の両方に使う |
 | **`WaitClearStatus.msg`** | `Header header` / `float32 distance_m` / `float32 remaining_sec` / `bool satisfied` / `string verdict`（`OK`/`WAITING`/`NOT_CLEAR`） | 退避待ちの表示 |
 | **`RouteList.msg`** | `Header header` / `RouteInfo[] routes` | transient_local。トピック `/route/catalog` |
@@ -328,7 +328,7 @@ def derive_limits(screens, now_ms, p):
 | `/map_session/discard` | `std_srvs/Trigger` | `th_route` |
 | `/onsite/two_point` | `TwoPointPress`: `string purpose`（`HOME`/`PANEL`/`SUMMON`/`LINE_POSE`） / `uint8 index`（1 or 2） → `bool accepted` / `string reject_reason_key` / `float32 yaw` | `th_onsite` |
 | `/onsite/register_pin` | `RegisterPin`: `string kind` / `string name` / `string method`（`TWO_POINT`/`PLANE`） → `bool success` / `Pin pin` / `string message` | `th_onsite` |
-| `/onsite/edit_pin` | `EditPin`: `string id` / `string new_name` / `bool delete` → `bool success` / `string message` | `th_onsite` |
+| `/onsite/edit_pin` | `EditPin`: `string id` / `string new_name` / **`bool is_delete`** → `bool success` / `string message` | `th_onsite`。**`delete` は C++ の予約語**で、rosidl が生成する C++ ヘッダがコンパイル不能になる（`WP-MSG-01` で実測）。`is_delete` に改名した |
 | `/onsite/declare_home` | `DeclareHome`: `bool force` → `bool success` / `float32 offset_m` / `float32 offset_deg` / `string message` | `th_onsite` |
 | `/onsite/map_erase` | `EraseMapRegion`: `float32 x0,y0,x1,y1` / `bool undo` → `bool success` | `th_route` |
 | `/opcheck/run_item` | `RunCheck`: `string item` → `bool started` / `string message` | `th_maintenance` |
@@ -338,7 +338,7 @@ def derive_limits(screens, now_ms, p):
 | `/calib/apply` | `ApplyCalib`: `string item` → `bool success` / `string message` | `th_maintenance` |
 | `/calib/rollback` | `RollbackCalib`: `string item` / `uint8 generation` → `bool success` | `th_maintenance` |
 | `/params/get` | `GetParams`: `string[] names` → `string json` | `th_params` |
-| `/params/set` | `SetParams`: `string json` → `bool success` / `string message` | `th_params` |
+| `/params/set` | `SetParams`: `string json` → `bool success` / `string message` | `th_params`。**`json` の形は `{"values": {名前: 値, ...}, "set_by": "...", "reason": "..."}`**（2026-08-19 確定）。[params](DetailedDesign-params.md) §5.3 の `PT-4` が `set_at` / `set_by` / `reason` を必須にしているが、`.srv` にフィールドが無いため **json の中に入れる**。`set_at` は受理側が付ける |
 | `/params/save` | `std_srvs/Trigger` | `th_params` |
 | `/shutdown/prepare` | `std_srvs/Trigger` → 未保存一覧 | `th_state` |
 | `/shutdown/execute` | `std_srvs/Trigger` | `th_state` |
@@ -549,7 +549,9 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`scan_expected_points`** | — | given。起動時の疎通判定（`WP-STATE-03`） |
 | **`required_nodes`** | string[] | given。同上 |
 | **`esp32_watchdog_ms`** | ms | given。`esp32/src/config.h` の写し |
+| **`esp32_ws_port`** | — | given。`esp32_bridge` が待ち受ける WebSocket ポート。**実値は機体側の `esp32/src/wifi_credentials.h`（`.gitignore` 対象）にあり、`params.yaml` と `wifi_credentials.h.example` と 3 つで揃える**（`WP-NET-01` §10-②） |
 | **`link_wait_timeout_ms`** | ms | (b)。`sys.link_timeout` の契機 |
+| `restart_max_count` ／ `restart_wait_ms` | — / ms | (c)。**`O-d4`。マニュアル側で決める**ので registry.yaml に placeholder として置く（`WP-STATE-03`） |
 | `blocked_hold_ms` ／ `unblocked_hold_ms` | ms | (b) |
 | `route_gap_timeout_ms` | ms | (b) |
 | `leash_stop_latency_ms` | ms | (c) |

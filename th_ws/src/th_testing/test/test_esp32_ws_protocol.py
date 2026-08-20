@@ -7,6 +7,7 @@ ROS2 なし・純粋 Python で実行可能。
 pytest で実行: pytest test/test_esp32_ws_protocol.py -v
 """
 
+import struct
 import sys
 import os
 import pytest
@@ -24,6 +25,7 @@ from ws_protocol import (
     pack_wheel_cmd, unpack_wheel_cmd,
     pack_wheel_feedback, unpack_wheel_feedback,
     pack_estop_hw, unpack_estop_hw,
+    unpack_estop_hw_flags, FIRMWARE_FLAGS_UNKNOWN,
     pack_imu_data, unpack_imu_data,
     peek_type,
 )
@@ -110,6 +112,45 @@ class TestEstopHwRoundTrip:
         frame = pack_estop_hw(True)
         assert len(frame) == 2
         assert frame[0] == ESTOP_HW
+
+
+class TestEstopHwFlags:
+    """WP-ESP32-01: ESTOP_HW にファーム構成フラグ(flags)を足した3 byte形式。"""
+
+    @pytest.mark.parametrize("active,flags", [
+        (True, 0x00),
+        (False, 0x00),
+        (True, 0x01),   # bypass_active
+        (False, 0x01),
+        (True, 0xFE),   # 予約ビットが立っていても bit0 だけ意味を持つ
+    ])
+    def test_unpack_estop_hw_3byte(self, active, flags):
+        # ESP32 側 (ws_link.cpp sendEstopHw) が送る新形式そのままの並び。
+        frame = struct.pack('<BBB', ESTOP_HW, 1 if active else 0, flags)
+        out_active, out_flags = unpack_estop_hw_flags(frame)
+        assert out_active is active
+        assert out_flags == flags
+
+    def test_unpack_estop_hw_2byte_unknown(self):
+        # 旧形式(2 byte・flags なし)。ファームウェア書き込み前の個体から届く
+        # フレームで、flags は「不明」として安全側(バイパスの可能性あり)に
+        # 倒す (E-1)。estop_active 自体の読み取りは従来どおり正しく行う。
+        for active in (True, False):
+            frame = pack_estop_hw(active)
+            out_active, out_flags = unpack_estop_hw_flags(frame)
+            assert out_active is active
+            assert out_flags == FIRMWARE_FLAGS_UNKNOWN == 0xFF
+
+    def test_wrong_length_raises(self):
+        with pytest.raises(ProtocolError):
+            unpack_estop_hw_flags(bytes([ESTOP_HW]))  # 1 byte: 短すぎる
+        with pytest.raises(ProtocolError):
+            unpack_estop_hw_flags(struct.pack('<BBBB', ESTOP_HW, 1, 0x00, 0x00))  # 4 byte: 長すぎる
+
+    def test_wrong_type_tag_rejected(self):
+        frame = struct.pack('<BBB', WHEEL_FEEDBACK, 1, 0x00)
+        with pytest.raises(ProtocolError):
+            unpack_estop_hw_flags(frame)
 
 
 class TestImuDataRoundTrip:

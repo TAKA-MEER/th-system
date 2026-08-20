@@ -8,7 +8,8 @@ esp32_bridge がサーバー、ESP32 がクライアントとして接続しに�
 担当:
   1. /cmd_vel (Twist) → 差動駆動変換 → WHEEL_CMD フレーム送信
   2. WHEEL_FEEDBACK フレーム受信 → /odom + TF 計算
-  3. ESTOP_HW フレーム受信 → /safety/estop_hw へ中継
+  3. ESTOP_HW フレーム受信 → /safety/estop_hw へ中継、flags を
+     /safety/firmware_flags へ中継 (判定はしない。WP-ESP32-01)
   4. /esp32/wheel_feedback (WheelFeedback) 発行 (他ノード用)
 """
 import asyncio
@@ -19,6 +20,8 @@ import threading
 import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
+                        QoSReliabilityPolicy)
 from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
@@ -31,7 +34,7 @@ import websockets
 
 from th_esp32_bridge.ws_protocol import (
     ProtocolError, WHEEL_FEEDBACK, ESTOP_HW, IMU_DATA,
-    pack_wheel_cmd, unpack_wheel_feedback, unpack_estop_hw, unpack_imu_data, peek_type,
+    pack_wheel_cmd, unpack_wheel_feedback, unpack_estop_hw_flags, unpack_imu_data, peek_type,
 )
 
 
@@ -72,6 +75,20 @@ class Esp32Bridge(Node):
         self._pub_wheel_cmd = self.create_publisher(
             WheelFeedback, '/esp32/wheel_cmd_speed', 10)
         self._pub_estop_hw = self.create_publisher(Bool, '/safety/estop_hw', 10)
+        # ファーム構成フラグ (ESTOP_HW の flags をそのまま流すだけ。判定は
+        # safety_monitor が行う。WP-SAFE-01)。transient_local: 後から立ち上がる
+        # 購読側(safety_monitor)が起動順序に関わらず最新値を受け取れるように。
+        firmware_flags_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST)
+        self._pub_firmware_flags = self.create_publisher(
+            UInt8, '/safety/firmware_flags', firmware_flags_qos)
+        # 直近に publish した値。変化時だけ publish するための比較用。
+        # ESP32 が(再)接続するたびに None へ戻し、次に届いた ESTOP_HW フレームで
+        # 必ず publish させる(値が変化していなくても、接続直後は改めて知らせる)。
+        self._last_firmware_flags = None
         self._pub_imu = self.create_publisher(Imu, '/esp32/imu_data', 10)
         self._pub_imu_calib = self.create_publisher(UInt8, '/esp32/imu_calib_status', 10)
         self._tf_broadcaster = tf2_ros.TransformBroadcaster(self)
@@ -193,6 +210,12 @@ class Esp32Bridge(Node):
     async def _handle_client(self, websocket):
         with self._ws_conn_lock:
             self._ws_conn = websocket
+        # 接続のたびにリセットする: 次に届く ESTOP_HW フレームで
+        # /safety/firmware_flags を必ず publish させる(接続時に改めて知らせる。
+        # WP-ESP32-01 §3.1「変化時＋接続時」)。rclpy 側スレッドの
+        # _handle_frame からしか _last_firmware_flags を読み書きしないため
+        # (drain は同一タイマーコールバック内)、ここでの代入だけロックなしで安全。
+        self._last_firmware_flags = None
         self.get_logger().info(f"ESP32 接続: {websocket.remote_address}")
         try:
             async for message in websocket:
@@ -291,8 +314,14 @@ class Esp32Bridge(Node):
                 left, right, dt = unpack_wheel_feedback(data)
                 self._on_wheel_feedback(left, right, dt)
             elif msg_type == ESTOP_HW:
-                estop = unpack_estop_hw(data)
+                estop, flags = unpack_estop_hw_flags(data)
                 self._pub_estop_hw.publish(Bool(data=estop))
+                # 判定はしない(safety_monitor が WP-SAFE-01 で行う)。ここは
+                # 変化時 ＋ 接続時(_handle_client で _last_firmware_flags を
+                # None に戻す)だけ publish する。
+                if flags != self._last_firmware_flags:
+                    self._last_firmware_flags = flags
+                    self._pub_firmware_flags.publish(UInt8(data=flags))
             elif msg_type == IMU_DATA:
                 self._on_imu_data(*unpack_imu_data(data))
             else:
