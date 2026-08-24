@@ -1,0 +1,8 @@
+string trigger
+string arg_json
+string requester
+---
+bool   accepted
+string reject_reason_key
+string mode
+string state

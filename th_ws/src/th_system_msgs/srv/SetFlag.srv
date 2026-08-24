@@ -1,0 +1,5 @@
+string flag
+bool   value
+---
+bool   accepted
+string reject_reason_key
