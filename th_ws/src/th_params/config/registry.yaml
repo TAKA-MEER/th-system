@@ -655,7 +655,7 @@
   class: b
   status: given
   value: 1200
-  consumers: [jog_gate]
+  consumers: [jog_gate, state_manager]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §4（A4）"
   note: "manual_joy_timeout(1.0s=1000ms) 以上（A4）"
 
@@ -817,7 +817,7 @@
   class: b
   status: given
   value: 30
-  consumers: [safety_monitor]
+  consumers: [safety_monitor, state_manager]
   spec_ref: "DetailedDesign-names.md §7.3（safety.md §6.2）"
   note: "『使用中』の判定。旧 tablet_active_window_s から改名。暫定値"
 
@@ -852,10 +852,15 @@
   unit: string_list
   class: b
   status: given
-  value: []
+  value:
+    - esp32_bridge
+    - lidar_filter
+    - safety_monitor
+    - twist_mux
+    - ekf_filter_node
   consumers: [connectivity_checker]
   spec_ref: "DetailedDesign-names.md §7.3"
-  note: "起動時の疎通判定。既定は空（launch が渡す）"
+  note: "起動時の疎通判定。bringup.launch.py が lidar_source / use_stub / map_yaml のどの分岐でも必ず起動する5ノード（速度指令がESP32まで届く経路＋障害物が見える経路を構成）。Nav2/slam_toolboxは条件分岐・遅延起動があるため含めない（WP-STATE-02/03 起動配線）"
 
 - name: esp32_watchdog_ms
   unit: ms

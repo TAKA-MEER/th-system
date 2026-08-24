@@ -62,6 +62,8 @@ REGISTRY_NODES: tuple[str, ...] = (
     "lidar_filter",
     "safety_monitor",
     "twist_mux",
+    "state_manager",
+    "connectivity_checker",
 )
 
 # ---------------------------------------------------------------------------

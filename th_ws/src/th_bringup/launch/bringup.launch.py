@@ -233,6 +233,26 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 8b. state_manager / connectivity_checker (WP-STATE-02/03) ──────
+    # 新FSM (system/state)。旧FSM (mode_manager / robot/mode) と並走する。
+    # トピック名は衝突しない（/safety/fault は両者が購読するのみで書き込みは
+    # しない）。生成ファイルのみを使う（静的な土台ファイルは存在しない）。
+    nodes.append(Node(
+        package='th_state',
+        executable='state_manager.py',
+        name='state_manager',
+        parameters=[os.path.join(GENERATED_DIR, 'state_manager.yaml')],
+        output='screen',
+    ))
+    nodes.append(Node(
+        package='th_state',
+        executable='connectivity_checker.py',
+        name='connectivity_checker',
+        parameters=[os.path.join(GENERATED_DIR, 'connectivity_checker.yaml'),
+                    {'sim': False}],
+        output='screen',
+    ))
+
     # ── 9. 試験員トラッカー (本番 or スタブ) ──────────────
     # スタブ: person_tracker_stub.py
     nodes.append(Node(
