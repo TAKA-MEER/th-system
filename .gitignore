@@ -43,3 +43,13 @@ Thumbs.db
 desktop.ini
 
 *.vscode
+
+# Playwright: E2E の実行結果（使い捨て。再実行で生成される）
+th_ws/web_ui/test-results/
+th_ws/web_ui/playwright-report/
+
+# Claude Code のローカル設定（環境依存のため共有しない）
+.claude/settings.local.json
+
+# tcpdump のテキスト展開（同ディレクトリの .pcap から tshark で再生成できる）
+th_ws/data/**/*_tcpdump.txt
