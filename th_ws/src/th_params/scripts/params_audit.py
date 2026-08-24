@@ -303,7 +303,7 @@ class ParamsAudit(Node):
         # 未測定値（例: link_gap_p99_ms）で毎回拒否されてはいけない
         # （実際、現行 registry.yaml では A8 を回すと常に失敗し現場調整が成立しない）。
         # ここで見るのは A1〜A7・A10・A11 ＝ 当てようとしている値そのものの物理的整合性。
-        assertion_errors = export.run_assertions(
+        assertion_errors, assertion_warnings = export.run_assertions(
             patched_rows, resolved, stage=8, nodes=None, include_a8=False)
         if assertion_errors:
             response.success = False
@@ -313,10 +313,18 @@ class ParamsAudit(Node):
         self._write_overrides(values, set_by=set_by, reason=reason)
         self._publish_status()
 
+        # 警告（A6 等。params.md §4）は拒否理由にしないが、握り潰さない——ログと
+        # response.message の両方に出す（R5: 沈黙禁止）。
+        if assertion_warnings:
+            self.get_logger().warn("/params/set 受理（警告あり）: " + "; ".join(assertion_warnings))
+
         response.success = True
-        response.message = (
+        message = (
             "受理した。overrides.yaml に反映した。稼働中のノードへのライブ反映は行っていない"
             "（このパケットの実装範囲外）。次回起動で反映されるまで再起動が必要")
+        if assertion_warnings:
+            message += " / 警告: " + "; ".join(assertion_warnings)
+        response.message = message
         return response
 
     def _write_overrides(self, values: dict, set_by: str, reason: str):

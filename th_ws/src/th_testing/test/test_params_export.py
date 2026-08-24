@@ -92,7 +92,7 @@ def test_intrusion_budget_m_is_placeholder_and_propagates_safely(registry_rows):
 
     # A1（intrusion_budget_m を使う起動時アサーション）は placeholder 入力ではガードされ、
     # 例外を投げずに単に評価をスキップすること（export.run_assertions 経由）
-    errors = export.run_assertions(rows_copy, resolved, stage=0, nodes=None)
+    errors, warnings = export.run_assertions(rows_copy, resolved, stage=0, nodes=None)
     assert not any("A1" in e for e in errors)
 
 
@@ -145,3 +145,69 @@ def test_build_node_outputs_never_leaks_tbd_measure_sentinel(registry_rows):
     outputs = export.build_node_outputs(registry_rows, resolved)
     dumped = json.dumps(outputs)
     assert schema.TBD not in dumped
+
+
+def _registry_with_esp32_timeout_below_watchdog(registry_rows):
+    """`esp32_timeout_ms` が `esp32_watchdog_ms` 以下になり、かつ **A1 は違反しない**
+    registry のコピーを作る（A6 だけを単独で違反させたい。§4 の表では A6 は「警告」・
+    A1 は「拒否」なので、両方を同時に踏むと A6 が errors を空にできることを検証できない）。
+    class:b の行なので `status: given` で直接値を置いても S1〜S5（schema.py）に違反しない。
+
+    v_max / intrusion_budget_m が given/derived 済み（placeholder でない）場合は
+    A1 の上限（budget/v_max*1000）も踏まえて、その内側で watchdog 未満の値を選ぶ。
+    どちらかが placeholder のままなら A1 はそもそもガードされるので、watchdog 未満
+    であることだけを条件にする。
+    """
+    import copy
+    rows_copy = copy.deepcopy(registry_rows)
+    rows_by_name = {row["name"]: row for row in rows_copy}
+    watchdog_ms = rows_by_name["esp32_watchdog_ms"]["value"]
+
+    resolved_before = export.resolve_registry(rows_copy)
+    v_max_status, v_max_value = resolved_before["v_max"]
+    budget_status, budget_value = resolved_before["intrusion_budget_m"]
+
+    timeout_ms = watchdog_ms - 50
+    if v_max_status != "placeholder" and budget_status != "placeholder":
+        a1_upper_ms = budget_value / v_max_value * 1000.0
+        timeout_ms = min(timeout_ms, a1_upper_ms - 10)
+    assert timeout_ms > 0, "test setup: 選んだ esp32_timeout_ms が非正になった"
+
+    timeout_row = rows_by_name["esp32_timeout_ms"]
+    timeout_row["status"] = "given"
+    timeout_row["value"] = timeout_ms
+    return rows_copy, watchdog_ms, timeout_ms
+
+
+def test_a6_esp32_timeout_below_watchdog_is_warning_not_error(registry_rows):
+    """`DetailedDesign-params.md` §4: A6 は違反時「警告」であり、他のアサーション
+    （多くは「起動を拒否」）と違って errors に混ざってはいけない。
+    esp32_timeout_ms が WATCHDOG_MS 以下でも run_assertions の errors は空、
+    warnings に A6 のメッセージが入ること。"""
+    rows_copy, watchdog_ms, timeout_ms = _registry_with_esp32_timeout_below_watchdog(registry_rows)
+    resolved = export.resolve_registry(rows_copy)
+    assert resolved["esp32_timeout_ms"] == ("given", timeout_ms)
+    assert timeout_ms <= watchdog_ms
+
+    errors, warnings = export.run_assertions(rows_copy, resolved, stage=0, nodes=None)
+    assert not any("A6" in e for e in errors)
+    assert any("A6" in w for w in warnings)
+
+
+def test_main_completes_with_zero_exit_when_a6_violated(registry_rows, tmp_path):
+    """A6 が警告に留まる結果として、`export.main()`（launch から呼ばれる CLI 本体）が
+    GenerationError 相当の失敗にならず、終了コード 0 で生成物を書き切ること
+    （このアサーションが errors に混ざっていた旧実装では、良好なリンクほど
+    esp32_timeout_ms が縮み A6 が発火し、実機の bringup が起動できなくなっていた）。"""
+    import yaml
+    rows_copy, _watchdog_ms, _timeout_ms = _registry_with_esp32_timeout_below_watchdog(registry_rows)
+
+    registry_path = tmp_path / "registry.yaml"
+    with open(registry_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(rows_copy, f, allow_unicode=True)
+
+    out_dir = tmp_path / "out"
+    rc = export.main(["--registry", str(registry_path), "--out", str(out_dir), "--stage", "0"])
+    assert rc == 0
+    assert (out_dir / "safety_monitor.yaml").exists()
+    assert (out_dir / "params_digest.json").exists()

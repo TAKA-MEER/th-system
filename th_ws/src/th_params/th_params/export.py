@@ -225,8 +225,16 @@ def compute_digest(resolved: Mapping[str, tuple[str, Any]]) -> str:
 
 def run_assertions(rows: list[dict], resolved: Mapping[str, tuple[str, Any]],
                     stage: int, nodes: list[str] | None,
-                    include_a8: bool = True) -> list[str]:
+                    include_a8: bool = True) -> tuple[list[str], list[str]]:
     """A1〜A11 のうち registry から機械的に評価できるものを回す。A9 は CI 専用（ここでは呼ばない）。
+
+    戻り値は `(errors, warnings)`。**どのアサーションが起動を拒否（errors）で、
+    どれが警告に留まる（warnings）かは `DetailedDesign-params.md` §4 のアサーション表が
+    根拠。**現時点で警告扱いなのは A6 だけ（A1 は同表では「`v_max` をクランプし、警告を出す。
+    `blocking` 指定なら起動を拒否」という条件付きの扱いだが、そのクランプ（P-5）自体が
+    `_call_formula()` の `timeout_from_bounds` で意図的に未実装のまま残っているため、
+    ここでは A1 を従来どおり errors 側に置く。この食い違いは
+    `DetailedDesign-open.md` §4.1 の未解決事項として別途扱う）。
 
     `include_a8`（既定 True）: False にすると A8（blocking placeholder の検査）を
     呼ばない。A8 は「未測定の値を抱えたまま**起動**させない」ための完全性の門で、
@@ -238,6 +246,7 @@ def run_assertions(rows: list[dict], resolved: Mapping[str, tuple[str, Any]],
     `include_a8=False` で呼ぶ。
     """
     errors: list[str] = []
+    warnings: list[str] = []
     rows_by_name = {row["name"]: row for row in rows}
 
     def val(name: str) -> Any:
@@ -287,11 +296,11 @@ def run_assertions(rows: list[dict], resolved: Mapping[str, tuple[str, Any]],
         errors.extend(assertions.a5_speed_ordering(
             val("v_reverse"), val("v_slow"), val("v_max"), val("v_jog_panel")))
 
-    # A6 / A7
+    # A6（警告。params.md §4）/ A7（拒否）
     if "esp32_watchdog_ms" in rows_by_name:
         watchdog_ms = val("esp32_watchdog_ms")
         if not is_placeholder("esp32_timeout_ms"):
-            errors.extend(assertions.a6_esp32_timeout_vs_watchdog(val("esp32_timeout_ms"), watchdog_ms))
+            warnings.extend(assertions.a6_esp32_timeout_vs_watchdog(val("esp32_timeout_ms"), watchdog_ms))
         if "cmd_vel_stale_ms" in rows_by_name:
             errors.extend(assertions.a7_cmd_vel_stale_vs_watchdog(val("cmd_vel_stale_ms"), watchdog_ms))
 
@@ -308,7 +317,7 @@ def run_assertions(rows: list[dict], resolved: Mapping[str, tuple[str, Any]],
                 errors.extend(assertions.a1_intrusion_budget(
                     val("v_max"), val(timeout_name), budget, label=timeout_name))
 
-    return errors
+    return errors, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +347,10 @@ def main(argv: list[str] | None = None) -> int:
 
     nodes = args.nodes.split(",") if args.nodes else None
     if not args.sim:
-        errors = run_assertions(rows, resolved, args.stage, nodes)
+        errors, warnings = run_assertions(rows, resolved, args.stage, nodes)
+        # 警告（A6）は stderr に出すが、終了コードには影響させない（生成は続行する）。
+        for w in warnings:
+            print(w, file=sys.stderr)
         if errors:
             for e in errors:
                 print(e, file=sys.stderr)
