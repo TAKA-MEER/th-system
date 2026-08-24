@@ -10,13 +10,20 @@ WebSocket 自体がメッセージ境界を保証するため長さプレフィ�
 | ------------------- | ---------------- | --------------------------------- | ---------- |
 | WHEEL_CMD      (0x01) | bridge → ESP32   | float32 left_mps, float32 right_mps | 9 bytes    |
 | WHEEL_FEEDBACK (0x02) | ESP32 → bridge   | float32 left_mps, float32 right_mps, float32 dt_sec | 13 bytes |
-| ESTOP_HW       (0x03) | ESP32 → bridge   | uint8 estop_active (0/1)          | 2 bytes    |
+| ESTOP_HW       (0x03) | ESP32 → bridge   | uint8 estop_active (0/1) [, uint8 flags] | 2 or 3 bytes |
 | IMU_DATA       (0x04) | ESP32 → bridge   | float32 qw,qx,qy,qz, wx,wy,wz, ax,ay,az, uint8 calib_status | 42 bytes |
 
 WHEEL_FEEDBACK の dt_sec は 2026-08-06 追加。ESP32 が速度を求めるのに実際に
 使った制御周期で、ブリッジ側のオドメトリ積分区間になる。**旧形式 (9 byte、
 dt_sec なし) も受理する**ため、ファームウェア書き込み前の個体でもそのまま動く
 (その場合ブリッジは公称周期にフォールバックする)。
+
+ESTOP_HW の flags (uint8) は WP-ESP32-01 で追加。ファーム構成フラグ (bit0 =
+bypass_active、他ビットは将来拡張用の予約) で、`unpack_estop_hw_flags` で読む。
+**旧形式 (2 byte・flags なし) も受理する**が、この場合 flags は
+`FIRMWARE_FLAGS_UNKNOWN(0xFF)` を返す。flags が不明ということはバイパスされて
+いるかどうかも分からないということなので、安全側 (バイパスの可能性あり) に倒す
+判断をここでは行わず、呼び出し側にそのまま「不明」を伝える。
 
 ESP32 側 (th_ws/esp32/src/ws_link.h) のバイト配置と必ず一致させること。
 """
@@ -33,7 +40,12 @@ _WHEEL_STRUCT = struct.Struct('<Bff')    # type tag + left + right
 # そのまま載せる。ブリッジ側はこれを積分区間として使う (詳細は下記 unpack)。
 _WHEEL_FEEDBACK_DT_STRUCT = struct.Struct('<Bfff')
 _ESTOP_STRUCT = struct.Struct('<BB')    # type tag + bool
+_ESTOP_FLAGS_STRUCT = struct.Struct('<BBB')  # type tag + bool + flags
 _IMU_STRUCT = struct.Struct('<BffffffffffB')  # type tag + 10 floats + calib_status
+
+# 旧形式 ESTOP_HW (2 byte) には flags が乗っていない。「不明」を意味する値として
+# 予約する。0xFF は他の flags 値 (bit0 のみ有効・残りは予約) と衝突しない。
+FIRMWARE_FLAGS_UNKNOWN = 0xFF
 
 
 class ProtocolError(ValueError):
@@ -91,6 +103,31 @@ def unpack_estop_hw(data: bytes) -> bool:
     if tag != ESTOP_HW:
         raise ProtocolError(f"ESTOP_HW: type tag 不一致 (expected 0x{ESTOP_HW:02x}, got 0x{tag:02x})")
     return bool(value)
+
+
+def unpack_estop_hw_flags(data: bytes) -> tuple[bool, int]:
+    """ESTOP_HW をデコードし (estop_active, flags) を返す。
+
+    長さで新旧を判別する:
+      3 byte … 新形式 (WP-ESP32-01)。ファーム構成 flags (bit0 = bypass_active)
+               を含む。予約ビットが立っていてもそのまま返す (意味付けは
+               呼び出し側の責務)。
+      2 byte … 旧形式 (flags なし)。ファームウェア書き込み前の個体から届く。
+               flags は FIRMWARE_FLAGS_UNKNOWN(0xFF) を返す。「不明」＝
+               バイパスされているかもしれない、という安全側への倒し方 (E-1)。
+    """
+    if len(data) == _ESTOP_FLAGS_STRUCT.size:
+        tag, active, flags = _ESTOP_FLAGS_STRUCT.unpack(data)
+        if tag != ESTOP_HW:
+            raise ProtocolError(
+                f"ESTOP_HW: type tag 不一致 (expected 0x{ESTOP_HW:02x}, got 0x{tag:02x})")
+        return bool(active), flags
+    if len(data) == _ESTOP_STRUCT.size:
+        active = unpack_estop_hw(data)
+        return active, FIRMWARE_FLAGS_UNKNOWN
+    raise ProtocolError(
+        f"ESTOP_HW: 長さ不正 (expected {_ESTOP_STRUCT.size} or "
+        f"{_ESTOP_FLAGS_STRUCT.size}, got {len(data)})")
 
 
 def pack_imu_data(qw: float, qx: float, qy: float, qz: float,
