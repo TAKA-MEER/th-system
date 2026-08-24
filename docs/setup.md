@@ -167,7 +167,11 @@ w32tm /stripchart /computer:time.windows.com /samples:3 /dataonly
 Set-Date -Date (Get-Date).AddSeconds(0.7)
 ```
 
-恒久対策(実運用時に推奨・設定済み): AP 配下ではラズパイがインターネットに出られず NTP 同期できないため、
+> **【2026-08-20 更新】開発機が Ubuntu になり、以下の W32Time 手順は使えなくなった。**
+> 現行の手順は本節末尾の「Ubuntu 開発機での恒久対策」を見ること。W32Time の記述は
+> Windows 開発機を使う場合のみ有効な参考情報として残す。
+
+恒久対策(Windows 開発機の場合): AP 配下ではラズパイがインターネットに出られず NTP 同期できないため、
 **PC の Windows Time サービス (W32Time) を NTP サーバー化し、ラズパイの systemd-timesyncd をそこに向ける**。
 
 当初は「PC (WSL) 側に chrony サーバーを立てる」案を検討したが、WSL2 の `networkingMode=mirrored`
@@ -201,6 +205,65 @@ sudo systemctl restart systemd-timesyncd
 sudo systemctl enable systemd-timesyncd
 timedatectl status   # "System clock synchronized: yes" になること
 ```
+### Ubuntu 開発機での恒久対策（2026-08-20・現行）
+
+開発機が Ubuntu になったため、上記 W32Time の手順は使えない。**PC 側に `chrony` を立てて配る。**
+
+```bash
+# ① PC（一度だけ）
+sudo bash th_ws/scripts/pc_setup_ntp_server.sh
+
+# ② ラズパイ（一度だけ）
+ssh -t mirs2602@192.168.4.2 'sudo bash /tmp/rpi_fix_clock.sh'   # 先に scp しておく
+```
+
+Ubuntu 既定の `systemd-timesyncd` は**クライアント専用で時刻を配れない**。`chrony` を入れると
+`systemd-timesyncd` は自動で削除される。`local stratum 10` を入れるので、**PC が上流に
+繋がっていなくても配れる**（現場は隔離 AP のため必須）。ラズパイ側の
+`/etc/systemd/timesyncd.conf`（`NTP=192.168.4.50`）は上記のままでよい。
+
+なお WSL2 mirrored モードで chronyd が 123/udp にバインドできなかった問題は、
+**ネイティブ Ubuntu では起きない**（Windows の W32Time が居ないため）。
+
+#### 時計がずれると DDS ごと壊れる（実機で 2 回遭遇・2026-08-20）
+
+ラズパイには**ハードウェア RTC が無く**、起動のたびに時計が過去へ戻る（実際に 3 日ずれた）。
+このとき **DDS のディスカバリ自体が成立しない**。症状は次のとおりで、原因が時刻だと気づきにくい。
+
+- `rplidar` サービスは `active`、ログも正常（health OK / Start）
+- しかし **ラズパイ自身で `ros2 node list --no-daemon` を叩いても何も出ない**
+- PC ↔ ラズパイの DDS 用 UDP は `tcpdump` で**双方向に流れている**
+- それでも参加者としてマッチしない
+
+**時刻を合わせた直後に `/scan` が見えるようになる。**ただし合わせるだけでは足りず、
+**既に起動してしまったノードは回復しない**ので、`rplidar.service` に
+`After=... time-sync.target` / `Wants=time-sync.target` を入れて順序を強制する
+（`rpi_fix_clock.sh` が行う。`systemd-time-wait-sync` は既定で `disabled` だった）。
+
+#### LiDAR の `scan_mode`
+
+> **★ `scan_mode` を変えたら `scan_expected_points` を必ず測り直すこと。**
+> 起動時の疎通判定（`DetailedDesign-state.md` §12.2 行 3）は `/scan` の点数の
+> **厳密一致**を要求する。合わないと `evt.link_ok` が出ず、**`INIT` から永久に
+> 出られない**（WebUI では「全デバイス状態確認中」のまま止まる）。
+> **2026-08-21 に実際に踏んだ。**8/20 に DenseBoost → Standard へ替えた際、
+> `registry.yaml` の `scan_expected_points`（1080＝DenseBoost の実測値）を
+> 直し忘れていた。
+>
+> ```bash
+> # コンテナ内。100 スキャン測って一定かどうかまで見る
+> python3 scripts/check_scan_points.py 100
+> # → 出た値を registry.yaml の scan_expected_points に入れる
+> ```
+
+
+稼働中の unit が `ros2 launch rplidar_ros rplidar_s1_launch.py` を叩いていると
+**`scan_mode` を指定できない**（この launch ファイルは引数として宣言していない）。
+`scripts/rpi_set_scan_mode.sh` が `ExecStart` を `ros2 run` 形式へ差し替える。
+
+`Standard` と `DenseBoost` の実測差は `docs/plan/detailed/data/meas06/README.md`。
+**Standard で DR-SPAAM が 3.7 → 6.5 Hz、知覚の遅延が 348 → 179 ms になった。**
+
 
 `RootDistanceMaxSec` を既定の 5 から 30 に緩めているのは、W32Time が `RootDispersion` を
 実測より悲観的に(常に数秒オーダーで)申告する仕様のため、既定値のままだと
