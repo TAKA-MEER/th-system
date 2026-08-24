@@ -131,9 +131,12 @@
 | # | 項目 | 状態 |
 | --- | --- | --- |
 | **N-1** | **教示再生の走行中ドリフト補正。**地図があるので scan matching で補正できるが、「走行開始時に決定した経路を逸脱しない」との関係を詰めていない | 保留（[transit](DetailedDesign-transit.md) §4.7） |
-| **N-2** | **`intrusion_budget_m`（通信断で進んでよい距離）を誰が決めるか。**逆算元ではなく方針値なので、人が決める必要がある | 未決 |
+| ~~N-2~~ | **`intrusion_budget_m`（通信断で進んでよい距離）を誰が決めるか。**逆算元ではなく方針値なので、人が決める必要がある | **解決**（2026-08-24）。`intrusion_budget_m = 0.50 m`（人が決めた方針値。`registry.yaml` `status: given`）。`v_max(1.12) × esp32_timeout_ms(322ms)/1000 = 0.361 m ≤ 0.50 m` で余裕を持って成立する |
 | **N-3** | **複数機体になったときの `wheel_radius_scale`。**PC 側に持つと機体を入れ替えたとき値が付いてきてしまう。当面は `robot_id` を持たせて警告する | 保留（[maintenance](DetailedDesign-maintenance.md) §4.4） |
 | ~~N-4~~ | **UI 非常停止の UI 非依存な解除経路。**押下側にラッチする以上、WebUI が押下中に落ちると再起動以外に復帰できない | **解決**（2026-08-17）。[safety](DetailedDesign-safety.md) **§6.3.1**。`/safety/clear_estop_ui`（`std_srvs/Trigger`・機体の PC から `ros2 service call`）を 1 本置く。**物理側の解放で下ろす案は却下**——独立 2 系統の片方をもう片方に効かせると二重化でなくなる。**`N-4` は安全の欠陥ではなく可用性の欠陥**なので、対処も安全経路の外に置いた |
+| **N-5** | **UI 側の受信ギャップ 4592ms の切り分け。**2026-08-21 の実測（`th_ws/data/meas04_after.csv`）でスリープ／タイマー抑制の混入が疑われる。要再測定（機体＋タブレット） | 未決。`ui_gap_p99_ms`（`registry.yaml`）が `placeholder` のまま |
+| **N-6** | **PC 側タイムアウトが ESP32 のウォッチドッグより短い。**`esp32_timeout_ms = 322ms` に対し `esp32_watchdog_ms = 600ms`。ESP32 が自分で止まる前に PC 側が「切断」と判定する（A6 が指す実質的な問題）。`CLAUDE.md` によればウォッチドッグは WiFi ジッタによる誤発動を避けるため 2026-08-05 に 300→600ms へ緩めた経緯があり、この関係を詰め直す必要がある | 未決 |
+| **N-7** | **A1 の `v_max` クランプ（P-5）が未実装。**設計書 §4 は「`v_max` をクランプし、警告を出す」としているが `export.py` の `timeout_from_bounds` は `if timeout > upper: pass` で何もしていない。現在の値では上限に触れないため実害は出ていないが、実装と設計書が食い違っている | 未決（[params](DetailedDesign-params.md) §3.3・§4） |
 
 ---
 

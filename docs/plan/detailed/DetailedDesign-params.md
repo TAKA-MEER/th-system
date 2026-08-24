@@ -391,7 +391,8 @@ digest = sha1( sorted( f"{name}={status}:{value}" for all params ) )[:12]
 | --- | --- | --- |
 | **`brake_accel_mps2`** | `v_max` / 全障害物距離 / タイムアウト。**最も多くを従属させる 1 つ** | `O-c1` |
 | `person_position_sigma_m` | 2 点指示の角度精度（【A】） | `O-c3` |
-| `link_gap_p99_ms`（ESP32 / LiDAR / UI 別） | タイムアウトの下限（§3.3） | `O-c6` |
+| `link_gap_p99_ms`（ESP32 / LiDAR 別。実測済み・2026-08-21） | タイムアウトの下限（§3.3） | `O-c6` |
+| `ui_gap_p99_ms`（UI 別。`link_gap_p99_ms` から分離。実測値が異常のため未採用・要再測定） | — | `O-c6` |
 | `tracker_lost_grace_ms` | 追従・呼び寄せの停止判断 | `C-05` |
 | `replay_drift_m_per_100m` | 1 経路の長さの上限 | `O-c4` |
 | `calib_linear_tolerance_ratio` / `calib_rotation_tolerance_deg` / `calib_blind_tolerance_deg` | 校正の合否 | `O-c5` / `F-13` |

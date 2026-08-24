@@ -488,7 +488,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `follow_stop_distance_m` | m | (b) 導出 |
 | `clear_distance_m` | m | (b) |
 | `two_point_spacing_m` ／ `two_point_min_spacing_m` | m | (b) |
-| `intrusion_budget_m` | m | **(a)／方針値。**通信断で進んでよい距離の上限。**逆算元ではなく人が決める** |
+| `intrusion_budget_m` | m | **(a)／方針値。**通信断で進んでよい距離の上限。**逆算元ではなく人が決める。**2026-08-24 決定: 0.50 m（`DetailedDesign-open.md` §4.1 `N-2` 解決） |
 | `safety_margin_m` ／ `floor_margin_m` ／ `person_margin_m` | m | (b)。§7.5 |
 | `hysteresis_ratio` ／ `hysteresis_band_m` | — / m | (b) |
 | `body_width_m` ／ `body_length_m` ／ **`body_half_length_m`** | m | given（機体外形） |
@@ -502,7 +502,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `align_tolerance_rad` | rad | (b) |
 | `route_sample_interval_m` ／ `route_jump_m` | m | (b) |
 | `replay_drift_m_per_100m` | m | **(c)**（`O-c4`） |
-| **`link_gap_p99_ms`** | ms | **(c)**。`value_by: [esp32, lidar, ui]`（`WP-MEAS-04`） |
+| **`link_gap_p99_ms`** | ms | **(c)**。実測済み（`measured`）。`value_by: [esp32, lidar]`（`WP-MEAS-04`。2026-08-21。`ui` は `ui_gap_p99_ms` へ分離） |
+| **`ui_gap_p99_ms`** | ms | **(c)**。UI 受信ギャップの p99。2026-08-21 実測 4592.1ms だがスリープ／タイマー抑制の混入が疑われリンク品質として不採用。要再測定（`DetailedDesign-open.md` §4.1） |
 | **`battery_endurance_min`** | 分 | **(c)**（`O-c7`。`WP-MEAS-05`） |
 | **`battery_warn_v`** ／ **`battery_critical_v`** | V | given（[hardware](DetailedDesign-hardware.md) §3.3） |
 | **`obstacle_cone_half_width_rad`** ／ **`obstacle_cone_half_width_reverse_rad`** | rad | (b)。**リミッタの判定コーン幅**（前方／後退で別値） |

@@ -338,11 +338,11 @@
 - name: intrusion_budget_m
   unit: m
   class: a
-  status: placeholder
-  value: TBD_MEASURE
+  status: given
+  value: 0.50
   consumers: [safety_monitor, params_audit]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §7 / DetailedDesign-open.md §4.1 N-2"
-  note: "通信断で進んでよい距離の上限。N-2 により未決。人が決めるまで placeholder（逆算元ではなく方針値のため誰かが決める必要がある）"
+  note: "通信断で進んでよい距離の上限。人が決めた方針値（逆算元ではない）。2026-08-24 決定: 0.50 m（N-2 解決。DetailedDesign-open.md §4.1）"
 
 - name: hysteresis_ratio
   unit: null
@@ -481,14 +481,25 @@
 - name: link_gap_p99_ms
   unit: ms
   class: c
-  status: placeholder
-  value: TBD_MEASURE
-  value_by: [esp32, lidar, ui]
-  blocking: true
-  blocking_from_stage: 1
+  status: measured
+  value: {esp32: 161, lidar: 154}
+  value_by: [esp32, lidar]
+  measured_at: '2026-08-21'
+  source: "th_ws/data/meas04_after.csv（2026-08-21 11:41〜12:03 の 22 分間、/safety/link_quality を `ros2 topic echo --csv` で記録。列は header.stamp.sec, nanosec, frame_id, link, p50_ms, p99_ms, max_ms, window_sec(=30)）。30 秒窓 p99 の最悪窓を軸ごとに取り、実測 160.2ms(esp32) / 153.2ms(lidar) を切り上げて 161 / 154 とした（切り上げる方が p99 が大きくなり誤フォルトに対して安全側）。ui 軸は ui_gap_p99_ms へ切り出し、ここからは除外した"
   consumers: [safety_monitor]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §7 / DetailedDesign-wp0.md WP-PARAM-01 §5"
-  note: "ESP32／LiDAR／UI 別（WP-MEAS-04 が測る）。タイムアウトの下限の逆算元"
+  note: "esp32／lidar のみ（ui は ui_gap_p99_ms へ分離）。esp32 は 22 分間に 600ms 超の断が3回残っている（最悪 4105.6ms）。p99 は健全だが裾は健全でない"
+
+- name: ui_gap_p99_ms
+  unit: ms
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 8
+  consumers: [web_ui]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §7 / DetailedDesign-open.md §4.1"
+  note: "2026-08-21 の実測（th_ws/data/meas04_after.csv）で 30 秒窓 p99 最悪 4592.1ms。タブレットのスリープかブラウザのタイマー抑制の混入が疑われ、リンク品質として採用しない（link_gap_p99_ms から分離）。切り分けには機体とタブレットが要る"
 
 - name: battery_endurance_min
   unit: min
@@ -599,7 +610,7 @@
   formula: timeout_from_bounds
   consumers: [safety_monitor]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §3.3・§6.4 / DetailedDesign-safety.md §7"
-  note: "2 本制約（下限=p99+余裕・上限=intrusion_budget/v_max）。link_gap_p99_ms(lidar 軸) が未測定の間 placeholder"
+  note: "2 本制約（下限=p99+余裕・上限=intrusion_budget/v_max）。下限を常に採る（§3.3）"
 
 - name: esp32_timeout_ms
   unit: ms
@@ -610,7 +621,7 @@
   formula: timeout_from_bounds
   consumers: [safety_monitor]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §3.3・§6.4 / DetailedDesign-safety.md §7"
-  note: "2 本制約。link_gap_p99_ms(esp32 軸) が未測定の間 placeholder。A6 の対象"
+  note: "2 本制約。下限を常に採る（§3.3）。A6 の対象（esp32_watchdog_ms 600ms との関係。違反時は警告）"
 
 - name: person_timeout_ms
   unit: ms
