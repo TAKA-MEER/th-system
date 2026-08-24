@@ -16,6 +16,7 @@ gazebo.launch.py — Gazebo シミュレーション起動ファイル
 
 import glob
 import os
+import sys
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -32,6 +33,12 @@ from launch.substitutions import (
 from launch_ros.actions import Node, SetParameter
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.parameter_descriptions import ParameterValue
+
+# WP-PARAM-02: registry.yaml → /root/th_data/generated/*.yaml のパラメータ生成
+# ヘルパー。launch ファイルと同じディレクトリに share インストールされるが
+# sys.path には自動で乗らないため、自分でパスを通してから import する。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from params_generation import GENERATED_DIR, make_opaque_function  # noqa: E402
 
 BRINGUP_DIR  = get_package_share_directory('th_bringup')
 DESC_DIR     = get_package_share_directory('th_description')
@@ -301,6 +308,9 @@ def generate_launch_description():
         DeclareLaunchArgument('robot_x',    default_value=''),
         DeclareLaunchArgument('robot_y',    default_value=''),
         DeclareLaunchArgument('robot_yaw',  default_value=''),
+        DeclareLaunchArgument('stage', default_value='1',
+            description='params_generation.py が registry.yaml を解決するステージ'
+                        '番号 (WP-PARAM-02)'),
     ]
 
     sim        = LaunchConfiguration('sim')
@@ -317,7 +327,6 @@ def generate_launch_description():
     nav2_params_real = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
     safety_sim       = os.path.join(BRINGUP_DIR, 'config', 'safety_monitor_sim.yaml')
     safety_real      = os.path.join(SAFETY_DIR,  'config', 'safety_monitor.yaml')
-    twist_yaml       = os.path.join(SAFETY_DIR,  'config', 'twist_mux.yaml')
     ekf_yaml         = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
     calib_yaml       = os.path.join(BRINGUP_DIR, 'config', 'calib.yaml')
     panels_yaml      = os.path.join(BRINGUP_DIR, 'config', 'panels.yaml')
@@ -327,6 +336,15 @@ def generate_launch_description():
 
     # ── use_sim_time を全ノードに伝播 ────────────────────────
     sim_time_action = OpaqueFunction(function=_set_sim_time)
+
+    # ── パラメータ生成 (WP-PARAM-02) ─────────────────────────
+    # registry.yaml → /root/th_data/generated/*.yaml を、ノードを1つも起動する前に
+    # 同期生成する（G-1）。アサーション違反なら例外で launch ごと止まる（G-2）。
+    # sim launch 引数で --sim の可否を切り替える（sim:=true なら stage=1 の
+    # blocking placeholder A8 を回避できる。実機は blocking のため stage:=1 では
+    # 起動しない — 意図された挙動。詳細はコミットメッセージ参照）。
+    params_generation_action = OpaqueFunction(
+        function=make_opaque_function(sim_arg_name='sim'))
 
     # ════════════════════════════════════════════════════════
     # 共通ノード（実機・シミュレーション共通）
@@ -341,11 +359,13 @@ def generate_launch_description():
             output='screen',
         ),
         # twist_mux
+        # 静的 th_safety/config/twist_mux.yaml は読まない。generated/twist_mux.yaml
+        # が階層構造(locks/topics)を完全に持つ唯一の情報源 (G-3, 二重管理の防止)。
         Node(
             package='twist_mux',
             executable='twist_mux',
             name='twist_mux',
-            parameters=[twist_yaml],
+            parameters=[os.path.join(GENERATED_DIR, 'twist_mux.yaml')],
             remappings=[('cmd_vel_out', '/cmd_vel')],
             output='screen',
         ),
@@ -357,11 +377,12 @@ def generate_launch_description():
             output='screen',
         ),
         # lidar_filter（/scan → /scan_filtered）
+        # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる (G-4)。
         Node(
             package='th_perception',
             executable='lidar_filter.py',
             name='lidar_filter',
-            parameters=[perc_yaml],
+            parameters=[perc_yaml, os.path.join(GENERATED_DIR, 'lidar_filter.yaml')],
             output='screen',
         ),
         # person_predictor
@@ -429,11 +450,12 @@ def generate_launch_description():
     scenario_action = OpaqueFunction(function=_scenario_setup)
 
     # safety_monitor: シミュレーション設定
+    # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる (G-4)。
     safety_sim_node = Node(
         package='th_safety',
         executable='safety_monitor',
         name='safety_monitor',
-        parameters=[safety_sim],
+        parameters=[safety_sim, os.path.join(GENERATED_DIR, 'safety_monitor.yaml')],
         output='screen',
         condition=IfCondition(sim),
     )
@@ -443,7 +465,7 @@ def generate_launch_description():
         package='th_safety',
         executable='safety_monitor',
         name='safety_monitor',
-        parameters=[safety_real],
+        parameters=[safety_real, os.path.join(GENERATED_DIR, 'safety_monitor.yaml')],
         output='screen',
         condition=UnlessCondition(sim),
     )
@@ -481,10 +503,13 @@ def generate_launch_description():
         package='th_esp32_bridge',
         executable='esp32_bridge.py',
         name='esp32_bridge',
+        # 静的ファイル（+ calib.yaml があれば）を土台にし、registry.yaml 由来の
+        # 生成ファイルを最後段に重ねる (G-4)。
         parameters=[
             os.path.join(get_package_share_directory('th_esp32_bridge'),
                          'config', 'params.yaml'),
-        ] + ([calib_yaml] if os.path.exists(calib_yaml) else []),
+        ] + ([calib_yaml] if os.path.exists(calib_yaml) else [])
+          + [os.path.join(GENERATED_DIR, 'esp32_bridge.yaml')],
         output='screen',
         condition=UnlessCondition(sim),
     )
@@ -575,6 +600,10 @@ def generate_launch_description():
             sim_time_action,
             LogInfo(msg=['[th_bringup] sim=', sim, ' slam=', slam,
                          ' scenario=', LaunchConfiguration('scenario')]),
+
+            # パラメータ生成 (WP-PARAM-02)。ノードを1つも起動する前に
+            # 同期生成する (G-1)。scenario_action / common_nodes より前に置く。
+            params_generation_action,
 
             # シナリオ依存アクション
             # (Gazebo/スポーン/中継/人物移動/障害物/SLAM/Localization/追従プランナ)

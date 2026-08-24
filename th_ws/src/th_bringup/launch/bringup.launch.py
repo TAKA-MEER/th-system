@@ -11,16 +11,24 @@
 #                          Pi側とROS_DOMAIN_IDを一致させること)
 # ============================================================
 import os
+import sys
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, GroupAction,
-                             IncludeLaunchDescription, LogInfo)
+                             IncludeLaunchDescription, LogInfo, OpaqueFunction)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (Command, LaunchConfiguration,
                                    PathJoinSubstitution, PythonExpression)
 from launch_ros.actions import Node, SetRemap
 from launch_ros.parameter_descriptions import ParameterValue
+
+# WP-PARAM-02: registry.yaml → /root/th_data/generated/*.yaml のパラメータ生成
+# ヘルパー。CMakeLists.txt が launch/ 以下をまるごと share にインストールするので
+# このファイルと同じディレクトリに居るが、ROS2 launch は importlib で個別ロード
+# するだけでこのディレクトリを sys.path に入れないため、自分でパスを通す。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from params_generation import GENERATED_DIR, make_opaque_function  # noqa: E402
 
 BRINGUP_DIR  = get_package_share_directory('th_bringup')
 DESC_DIR     = get_package_share_directory('th_description')
@@ -47,6 +55,9 @@ def generate_launch_description():
         DeclareLaunchArgument('lidar_source', default_value='local',
                               description='local=USB直結sllidar_node起動 / '
                                           'network=ラズパイ等が配信する/scanを使用'),
+        DeclareLaunchArgument('stage', default_value='1',
+                              description='params_generation.py が registry.yaml を'
+                                          '解決するステージ番号 (WP-PARAM-02)'),
     ]
 
     use_stub     = LaunchConfiguration('use_stub')
@@ -64,12 +75,17 @@ def generate_launch_description():
     ekf_yaml    = PythonExpression(
         ["'", ekf_yaml_imu, "' if '", imu_enabled, "' == 'true' else '", ekf_yaml_no_imu, "'"])
     slam_yaml   = os.path.join(BRINGUP_DIR, 'config', 'slam_params.yaml')
-    twist_yaml  = os.path.join(get_package_share_directory('th_safety'),
-                               'config', 'twist_mux.yaml')
     # キャリブ値 YAML (apply_calib で生成、存在しない場合は無視される)
     calib_yaml  = os.path.join(BRINGUP_DIR, 'config', 'calib.yaml')
 
     nodes = []
+
+    # ── 0. パラメータ生成 (WP-PARAM-02) ──────────────────────
+    # registry.yaml → /root/th_data/generated/*.yaml を、ノードを1つも起動する前に
+    # 同期生成する（G-1）。アサーション違反なら例外で launch ごと止まる（G-2）。
+    params_generation_action = OpaqueFunction(
+        function=make_opaque_function(sim_default=False))
+    nodes.append(params_generation_action)
 
     # ── 1. robot_state_publisher / joint_state_publisher (URDF → TF) ─
     # base_link → laser_link 等の固定 TF を配信する。これが無いと SLAM /
@@ -127,7 +143,11 @@ def generate_launch_description():
         package='th_perception',
         executable='lidar_filter.py',
         name='lidar_filter',
-        parameters=[os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml')],
+        # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる
+        # (G-4)。placeholder のキーはサニタイズで落ちるため、給値されていない値は
+        # 土台の静的値がそのまま残る。
+        parameters=[os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml'),
+                    os.path.join(GENERATED_DIR, 'lidar_filter.yaml')],
         additional_env={'FASTRTPS_DEFAULT_PROFILES_FILE': fastdds_profile_yaml},
         condition=UnlessCondition(lidar_is_local),
         output='screen',
@@ -136,17 +156,20 @@ def generate_launch_description():
         package='th_perception',
         executable='lidar_filter.py',
         name='lidar_filter',
-        parameters=[os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml')],
+        parameters=[os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml'),
+                    os.path.join(GENERATED_DIR, 'lidar_filter.yaml')],
         condition=IfCondition(lidar_is_local),
         output='screen',
     ))
 
     # ── 4. esp32_bridge ───────────────────────────────────
-    # calib.yaml が存在する場合は上書き
+    # calib.yaml が存在する場合は上書き。registry.yaml 由来の生成ファイルは
+    # 最後段に重ねる (G-4)。
     esp32_params = [os.path.join(get_package_share_directory('th_esp32_bridge'),
                                  'config', 'params.yaml')]
     if os.path.exists(calib_yaml):
         esp32_params.append(calib_yaml)
+    esp32_params.append(os.path.join(GENERATED_DIR, 'esp32_bridge.yaml'))
 
     nodes.append(Node(
         package='th_esp32_bridge',
@@ -185,16 +208,19 @@ def generate_launch_description():
         name='safety_monitor',
         parameters=[os.path.join(
             get_package_share_directory('th_safety'),
-            'config', 'safety_monitor.yaml')],
+            'config', 'safety_monitor.yaml'),
+            os.path.join(GENERATED_DIR, 'safety_monitor.yaml')],
         output='screen',
     ))
 
     # ── 7. twist_mux ──────────────────────────────────────
+    # 静的 th_safety/config/twist_mux.yaml は読まない。generated/twist_mux.yaml が
+    # 階層構造(locks/topics)を完全に持つ唯一の情報源 (G-3, 二重管理の防止)。
     nodes.append(Node(
         package='twist_mux',
         executable='twist_mux',
         name='twist_mux',
-        parameters=[twist_yaml],
+        parameters=[os.path.join(GENERATED_DIR, 'twist_mux.yaml')],
         remappings=[('cmd_vel_out', '/cmd_vel')],
         output='screen',
     ))
