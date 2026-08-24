@@ -37,33 +37,62 @@ def test_digest_changes_when_a_value_changes(registry_rows):
 
 
 def test_resolve_registry_propagates_placeholder(registry_rows):
-    """S5: brake_accel_mps2 が placeholder のあいだ、依存する v_slow も placeholder。"""
-    resolved = export.resolve_registry(registry_rows)
+    """S5: 依存元が placeholder のあいだ、依存する行（v_slow / obstacle_stop_distance_m）も
+    placeholder に伝播すること。
+
+    registry の現在の status に直接束縛すると、実測が進むたびにこのテストが落ちる
+    （brake_accel_mps2 は 2026-08-21 に実測されて measured になった）。検証したいのは
+    S5 の伝播機構そのものであって「brake_accel_mps2 が今 placeholder であること」では
+    ないので、実物の formula グラフ（derived_from の連鎖）は使いつつ、起点だけを
+    deepcopy 上で意図的に placeholder に落として伝播を確認する。
+    """
+    import copy
+    rows_copy = copy.deepcopy(registry_rows)
+    rows_by_name = {row["name"]: row for row in rows_copy}
+    origin = rows_by_name["brake_accel_mps2"]
+    origin["status"] = "placeholder"
+    origin["value"] = schema.TBD
+    origin["blocking"] = True  # class:c は S1 により status!=measured で blocking:true が必須
+
+    resolved = export.resolve_registry(rows_copy)
     assert resolved["brake_accel_mps2"][0] == "placeholder"
     assert resolved["v_slow"][0] == "placeholder"
     assert resolved["obstacle_stop_distance_m"][0] == "placeholder"
 
 
 def test_intrusion_budget_m_is_placeholder_and_propagates_safely(registry_rows):
-    """N-2（DetailedDesign-open.md §4.1）: intrusion_budget_m は人が決めるまで未決 = placeholder。
+    """N-2（DetailedDesign-open.md §4.1）: intrusion_budget_m は現状 placeholder だが、
+    値が決まった後も「起点が placeholder のとき A1 がガードされる」という検証意図は
+    生き続ける。registry の現在の status に直接束縛すると、値が給値された時点で
+    このテストが落ちてしまう（先回りして書き換える理由）ため、実物の formula グラフは
+    使いつつ、起点だけを deepcopy 上で意図的に placeholder に落として確認する。
+
     S5 により lidar_timeout_ms / esp32_timeout_ms も placeholder に伝播するが、
     それが正しい振る舞い（伝播して困るなら値を決めるべき、というのが設計の意図）。
     伝播先の解決・生成が例外を投げずに完走することを確認する。
     """
-    resolved = export.resolve_registry(registry_rows)
+    import copy
+    rows_copy = copy.deepcopy(registry_rows)
+    rows_by_name = {row["name"]: row for row in rows_copy}
+    origin = rows_by_name["intrusion_budget_m"]
+    origin["status"] = "placeholder"
+    origin["value"] = schema.TBD
+    origin["blocking"] = True
+
+    resolved = export.resolve_registry(rows_copy)
     assert resolved["intrusion_budget_m"][0] == "placeholder"
     assert resolved["lidar_timeout_ms"][0] == "placeholder"
     assert resolved["esp32_timeout_ms"][0] == "placeholder"
 
     # 生成物が例外なく組み上がり、sentinel も漏れない
-    outputs = export.build_node_outputs(registry_rows, resolved)
+    outputs = export.build_node_outputs(rows_copy, resolved)
     assert outputs["safety_monitor"]["intrusion_budget_m"] is None
     assert outputs["safety_monitor"]["lidar_timeout_ms"] is None
     assert outputs["safety_monitor"]["esp32_timeout_ms"] is None
 
     # A1（intrusion_budget_m を使う起動時アサーション）は placeholder 入力ではガードされ、
     # 例外を投げずに単に評価をスキップすること（export.run_assertions 経由）
-    errors = export.run_assertions(registry_rows, resolved, stage=0, nodes=None)
+    errors = export.run_assertions(rows_copy, resolved, stage=0, nodes=None)
     assert not any("A1" in e for e in errors)
 
 
