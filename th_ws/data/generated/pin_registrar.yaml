@@ -1,0 +1,5 @@
+pin_registrar:
+  ros__parameters:
+    auto_select_hold_s: 2.0
+    two_point_min_spacing_m: 0.5
+    two_point_spacing_m: 1.0

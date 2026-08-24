@@ -1,0 +1,24 @@
+twist_mux:
+  ros__parameters:
+    locks:
+      estop:
+        priority: 255
+        timeout: 0.5
+        topic: /safety/estop
+      fault:
+        priority: 254
+        timeout: 0.5
+        topic: /safety/fault_lock
+    topics:
+      manual_joy:
+        priority: 30
+        timeout: 1.0
+        topic: /cmd_vel_manual
+      nav:
+        priority: 10
+        timeout: 0.5
+        topic: /cmd_vel_nav
+      retreat:
+        priority: 20
+        timeout: 0.5
+        topic: /cmd_vel_retreat

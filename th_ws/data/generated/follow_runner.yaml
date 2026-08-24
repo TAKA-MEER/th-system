@@ -1,0 +1,7 @@
+follow_runner:
+  ros__parameters:
+    blocked_hold_ms: 500
+    blocked_lookahead_m: 1.0
+    unblocked_hold_ms: 500
+    v_max: 1.1199999999999999
+    w_max: 0.6

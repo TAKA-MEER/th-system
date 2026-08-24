@@ -1,0 +1,22 @@
+params_audit:
+  ros__parameters:
+    body_half_length_m: 0.275
+    body_length_m: 0.55
+    body_width_m: 0.55
+    brake_delay_s: 0.2
+    clear_margin_m: 0.3
+    drivetrain_ceiling_mps: 1.4
+    floor_margin_m: 0.15
+    hysteresis_ratio: 0.2
+    nav_tolerance_deg: 5.0
+    nav_tolerance_m: 0.1
+    person_margin_m: 0.4
+    safety_margin_m: 0.3
+    two_point_spacing_m: 1.0
+    v_calib: 0.15
+    v_check: 0.05
+    v_leash: 1.0
+    v_max: 1.1199999999999999
+    v_max_headroom_ratio: 0.8
+    w_align_max: 0.3
+    w_max: 0.6

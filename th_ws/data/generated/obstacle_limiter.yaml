@@ -1,0 +1,17 @@
+obstacle_limiter:
+  ros__parameters:
+    align_tolerance_rad: 0.05
+    body_half_length_m: 0.275
+    body_width_m: 0.55
+    hysteresis_band_m: 0.08500000000000002
+    lock_stale_ms: 500
+    manual_joy_timeout: 1.0
+    muxed_stale_ms: 200
+    obstacle_cone_half_width_rad: 0.5
+    obstacle_cone_half_width_reverse_rad: 0.6
+    obstacle_floor_distance_m: 0.42500000000000004
+    scan_stale_ms: 300
+    state_stale_ms: 1500
+    v_max: 1.1199999999999999
+    w_align_max: 0.3
+    w_max: 0.6
