@@ -1,0 +1,200 @@
+{
+  "AT_PANEL": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "IDLE_P",
+    "jog": "allowed",
+    "needs_tracker": "unused",
+    "resume": "ack_only",
+    "resume_state": "IDLE_P",
+    "run_state": null,
+    "speed_limit": "stop"
+  },
+  "CALIB": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "LIST",
+    "jog": "denied",
+    "needs_tracker": "unused",
+    "resume": "ack_only",
+    "resume_state": "LIST",
+    "run_state": null,
+    "speed_limit": "v_calib"
+  },
+  "CARRY": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "NONE",
+    "jog": "denied",
+    "needs_tracker": "keep",
+    "resume": "none",
+    "resume_state": null,
+    "run_state": null,
+    "speed_limit": "stop"
+  },
+  "ESTOP": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "NONE",
+    "jog": "denied",
+    "needs_tracker": "keep",
+    "resume": "ack_only",
+    "resume_state": "NONE",
+    "run_state": null,
+    "speed_limit": "stop"
+  },
+  "FOLLOW": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "SELECT",
+    "jog": "allowed",
+    "needs_tracker": "required",
+    "resume": "yes_no",
+    "resume_state": "PAUSE",
+    "run_state": "RUN",
+    "speed_limit": "v_max"
+  },
+  "HOME_NAV": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "NAV",
+    "jog": "allowed",
+    "needs_tracker": "unused",
+    "resume": "yes_no",
+    "resume_state": "PAUSE",
+    "run_state": "NAV",
+    "speed_limit": "v_slow"
+  },
+  "IDLE": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "NONE",
+    "jog": "denied",
+    "needs_tracker": "optional",
+    "resume": "none",
+    "resume_state": null,
+    "run_state": null,
+    "speed_limit": "stop"
+  },
+  "INIT": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "CHECK",
+    "jog": "denied",
+    "needs_tracker": "optional",
+    "resume": "none",
+    "resume_state": null,
+    "run_state": null,
+    "speed_limit": "stop"
+  },
+  "LEASH": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "DEV_CHECK",
+    "jog": "allowed",
+    "needs_tracker": "unused",
+    "resume": "yes_no",
+    "resume_state": "PAUSE",
+    "run_state": "RUN",
+    "speed_limit": "v_leash"
+  },
+  "LINE": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "SETUP",
+    "jog": "allowed",
+    "needs_tracker": "unused",
+    "resume": "yes_no",
+    "resume_state": "PAUSE",
+    "run_state": "RUN",
+    "speed_limit": "v_max"
+  },
+  "MANUAL": {
+    "auto_brake_default": "off",
+    "has_record": false,
+    "initial_state": "PAUSE",
+    "jog": "is_drive",
+    "needs_tracker": "unused",
+    "resume": "ack_only",
+    "resume_state": "PAUSE",
+    "run_state": "RUN",
+    "speed_limit": "v_max"
+  },
+  "OPCHECK": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "LIST",
+    "jog": "denied",
+    "needs_tracker": "unused",
+    "resume": "ack_only",
+    "resume_state": "LIST",
+    "run_state": null,
+    "speed_limit": "v_check"
+  },
+  "PANEL_NAV": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "NAV",
+    "jog": "allowed",
+    "needs_tracker": "unused",
+    "resume": "yes_no",
+    "resume_state": "PAUSE",
+    "run_state": "NAV",
+    "speed_limit": "v_slow"
+  },
+  "PREP": {
+    "auto_brake_default": "on_locked",
+    "has_record": true,
+    "initial_state": "MAPPING",
+    "jog": "allowed",
+    "needs_tracker": "required",
+    "resume": "yes_no",
+    "resume_state": "PAUSE",
+    "run_state": "MAPPING",
+    "speed_limit": "v_slow"
+  },
+  "REPLAY": {
+    "auto_brake_default": "on_locked",
+    "has_record": true,
+    "initial_state": "ROUTE_SEL",
+    "jog": "allowed",
+    "needs_tracker": "unused",
+    "resume": "yes_no",
+    "resume_state": "PAUSE",
+    "run_state": "RUN",
+    "speed_limit": "v_max"
+  },
+  "SUMMON": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "POINT",
+    "jog": "allowed",
+    "needs_tracker": "required",
+    "resume": "ack_only",
+    "resume_state": "POINT",
+    "run_state": "NAV",
+    "speed_limit": "v_slow"
+  },
+  "TEACH_FOLLOW": {
+    "auto_brake_default": "on_locked",
+    "has_record": true,
+    "initial_state": "ROUTE_SEL",
+    "jog": "allowed",
+    "needs_tracker": "required",
+    "resume": "yes_no",
+    "resume_state": "PAUSE",
+    "run_state": "REC",
+    "speed_limit": "v_max"
+  },
+  "TEACH_MANUAL": {
+    "auto_brake_default": "off",
+    "has_record": true,
+    "initial_state": "ROUTE_SEL",
+    "jog": "is_drive",
+    "needs_tracker": "unused",
+    "resume": "ack_only",
+    "resume_state": "PAUSE",
+    "run_state": "REC",
+    "speed_limit": "v_max"
+  }
+}

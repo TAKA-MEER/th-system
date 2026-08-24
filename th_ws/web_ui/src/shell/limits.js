@@ -1,0 +1,64 @@
+// shell/limits.js — display-only helpers for the shell.
+// These decide what the UI *shows*; they are never the source of truth for
+// what is *allowed* — th_state (transitions.yaml) is authoritative and can
+// still reject a call the UI thought looked fine (DetailedDesign-webui.md
+// §4.1: "the UI may pre-decide for convenience, but it is not the
+// authority").
+
+// resumeChoices(mode, attributes) -> 'yes_no' | 'ack_only' | 'none'
+// Reads generated/attributes.json (built from th_state/config/attributes.yaml
+// by scripts/gen_attributes.py). Never hardcode per-mode choices here (U-6).
+export function resumeChoices(mode, attributes) {
+  return attributes?.[mode]?.resume ?? 'none'
+}
+
+// isW1Active(mode, stateName, faultActive) -> bool
+//
+// W-1 (the fault/estop window, DetailedDesign-webui.md §6) fires in two
+// cases that share one window (§6.2 "the same window turns into resume?",
+// E-5): mode itself is 'ESTOP' (C-06a/C-06b), or a recoverable fault has
+// pushed the *current* mode into PAUSE without changing it (C-03 --
+// DetailedDesign-state.md §4.1, WP-UI-01 §11 "W-1 generalization"). Shared by
+// shell/Windows.jsx (renders the window) and shell/AppShell.jsx (the
+// header's "reopen" badge needs to know the same thing), so it lives here
+// rather than being computed twice and risking drift.
+export function isW1Active(mode, stateName, faultActive) {
+  return mode === 'ESTOP' || (stateName === 'PAUSE' && !!faultActive)
+}
+
+// stateToBlueButton(mode, stateName, attributes) -> 'stop' | 'run' | 'check' | null
+//
+// §4.3 (U-17): exactly one button in the operation card is blue, and it
+// reflects "what is happening now" — stopped / confirming-or-selecting /
+// running. attributes.json gives us the two states with unambiguous
+// meaning (resume_state = the paused/stopped state, run_state = the
+// driving state); anything else is treated as an in-between
+// selection/setup phase, which the "check" (confirm) slot represents.
+export function stateToBlueButton(mode, stateName, attributes) {
+  if (!stateName || stateName === 'NONE') return null
+  const attrs = attributes?.[mode]
+  if (!attrs) return null
+  if (stateName === attrs.run_state) return 'run'
+  if (stateName === attrs.resume_state) return 'stop'
+  return 'check'
+}
+
+// operationCardLayout(mode, attributes) -> { stop, check, run, save, manual }
+//
+// Only `stop`, `run` and `save` can be derived purely from mode + attributes.
+// `check` and `manual` depend on which screen is showing the card (e.g.
+// S-10 has "confirm", S-11 does not; S-14 has "manual", S-10 does not — see
+// DetailedDesign-webui.md §4.2), which isn't known until screens exist
+// (WP-UI-02+). Screens should treat this as a starting point and override
+// `check` / `manual` explicitly.
+export function operationCardLayout(mode, attributes) {
+  const attrs = attributes?.[mode]
+  if (!attrs) return { stop: false, check: false, run: false, save: false, manual: false }
+  return {
+    stop: true,
+    check: false,
+    run: attrs.run_state != null,
+    save: !!attrs.has_record,
+    manual: false,
+  }
+}

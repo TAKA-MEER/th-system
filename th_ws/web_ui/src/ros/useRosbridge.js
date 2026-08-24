@@ -1,7 +1,8 @@
 // ============================================================
-// useRosbridge.js — rosbridge WebSocket 接続フック
+// useRosbridge.js — rosbridge WebSocket connection hook
 // ============================================================
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { SLAM_DISCARD_MARKER } from '../i18n/states.js'
 
 const MODE_NAMES = {
   0: 'INIT', 1: 'IDLE', 2: 'FOLLOWING',
@@ -9,7 +10,7 @@ const MODE_NAMES = {
   7: 'FOLLOWING_MAPLESS', 8: 'SUMMONING'
 }
 
-// rcl_interfaces/msg/ParameterType の定数
+// rcl_interfaces/msg/ParameterType constants
 const PARAM_TYPE = {
   BOOL: 1, INTEGER: 2, DOUBLE: 3, STRING: 4,
   BYTE_ARRAY: 5, BOOL_ARRAY: 6, INTEGER_ARRAY: 7, DOUBLE_ARRAY: 8, STRING_ARRAY: 9,
@@ -30,17 +31,17 @@ function decodeParamValue(pv) {
   }
 }
 
-// バックエンド側 (config_manager 等) が応答しない場合に UI が無期限に
-// フリーズしないようにするタイムアウト (ms)
+// Timeout (ms) so the UI doesn't freeze forever when the backend
+// (config_manager etc.) never responds.
 const TUNABLE_SERVICE_TIMEOUT_MS = 5000
 
-// 速度表示カードで保持する履歴の長さ (秒)
+// History length (seconds) kept for the wheel-speed display card
 const WHEEL_HISTORY_SEC = 15
 
 function withTimeout(promise, label) {
   return new Promise((resolve, reject) => {
     const id = setTimeout(
-      () => reject(new Error(`${label} がタイムアウトしました`)),
+      () => reject(new Error(`${label} timed out`)),
       TUNABLE_SERVICE_TIMEOUT_MS)
     promise.then(
       (v) => { clearTimeout(id); resolve(v) },
@@ -59,15 +60,16 @@ function encodeParamValue(value, { isArray = false, isInt = false } = {}) {
     : { type: PARAM_TYPE.DOUBLE,  double_value: value }
 }
 
-// 既定はページを配信しているホスト (ロボットPC) の rosbridge に接続する。
-// 別ホストの rosbridge へ接続する場合は呼び出し側で url を指定する。
+// Defaults to the rosbridge on the host serving this page (the robot PC).
+// Pass a different url to connect to a different host's rosbridge.
 //
-// readOnly: 観客向け表示 (VISION.md §6.3) 用。ROS2 への publish を一切
-// 行わない。特に /manual/heartbeat を止めることが目的で、これが二重に
-// 流れると MANUAL のハートビート源が観客画面にも依存してしまう。
-// 既定は false = 従来どおりの操作 UI 向け動作。
-// mapThrottleMs: /map (OccupancyGrid) は 1 通で数百 KB になり得る。観客表示は
-// 秒単位の更新で十分なので間引いて購読負荷を下げる。0 = 間引かない (既定)。
+// readOnly: for the audience display (VISION.md §6.3). Never publishes
+// anything to ROS2. In particular it stops /manual/heartbeat, so the
+// audience view doesn't become a second source of the MANUAL heartbeat.
+// Default false = normal behavior for the operator UI.
+// mapThrottleMs: /map (OccupancyGrid) can be several hundred KB per message.
+// The audience display only needs per-second updates, so this throttles the
+// subscription to reduce load. 0 = no throttling (default).
 export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
                              { readOnly = false, mapThrottleMs = 0 } = {}) {
   const rosRef  = useRef(null)
@@ -79,102 +81,109 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
   const [personStatus, setPersonStatus] = useState(null)
   const [candidates, setCandidates]     = useState([])
   const [mappingActive, setMappingActive] = useState(false)
-  // 直近の地図操作の結果文字列 ("OK: ..." / "NG: ...")。slam_control が publish する。
-  // サービス応答を取りこぼしても、何が起きたか画面に残るようにするため
+  // Latest map-op result string ("OK: ..." / "NG: ..."), published by
+  // slam_control. Kept so the outcome survives even if a service response
+  // is missed.
   const [slamLastResult, setSlamLastResult] = useState(null)
-  const [actionError, setActionError]     = useState(null)  // 直近のサービス呼び出し失敗理由 (WebUI表示用)
-  // 直近のサービス呼び出し結果 (音声アナウンスのトリガ用)。actionError と違い成功も記録し、
-  // seq が単調増加するため同じ結果が連続してもエッジとして検出できる
+  const [actionError, setActionError]     = useState(null)  // reason for the most recent failed service call (WebUI display)
+  // Result of the most recent service call (for voice-announcement triggers).
+  // Unlike actionError this also records success, and seq increases
+  // monotonically so repeated identical results still register as an edge.
   const [lastAction, setLastAction]       = useState(null)  // { seq, kind, ok, message }
-  // 追従・捜索・呼び寄せの内部状態 (音声通知のトリガ用)
+  // Internal state of follow / search / summon (voice-notification triggers)
   const [followStatus, setFollowStatus]   = useState(null)  // th_system_msgs/FollowStatus
   const [searchStatus, setSearchStatus]   = useState(null)  // th_system_msgs/SearchStatus
   const [summonStatus, setSummonStatus]   = useState(null)  // { seq, event, message }
   const summonSeqRef = useRef(0)
-  const [mapData, setMapData]             = useState(null)   // 最新の nav_msgs/OccupancyGrid、未受信なら null
-  const [robotPose, setRobotPose]         = useState(null)   // map座標系での {x, y, yaw}、未確定なら null
-  const [scanData, setScanData]           = useState(null)   // 最新の sensor_msgs/LaserScan (/scan_filtered)、未受信なら null
-  const [pathData, setPathData]           = useState(null)   // 最新の nav_msgs/Path (/plan)、未受信なら null
+  const [mapData, setMapData]             = useState(null)   // latest nav_msgs/OccupancyGrid, null if none received yet
+  const [robotPose, setRobotPose]         = useState(null)   // {x, y, yaw} in the map frame, null if not yet determined
+  const [scanData, setScanData]           = useState(null)   // latest sensor_msgs/LaserScan (/scan_filtered), null if none received yet
+  const [pathData, setPathData]           = useState(null)   // latest nav_msgs/Path (/plan), null if none received yet
   const [wheelSpeedData, setWheelSpeedData] = useState({ measured: [], command: [] })
-  // 左右輪 指令vs実測 速度グラフ用の直近履歴 ({t, left, right} の配列)
+  // Recent history ({t, left, right} arrays) for the command-vs-measured
+  // left/right wheel speed graph
 
-  // TF合成用の中間状態 (毎tick再レンダーさせないため ref で保持)
-  const mapOdomRef      = useRef(null)  // 最新の map->odom (geometry_msgs/Transform)
-  const odomBaseRef     = useRef(null)  // 最新の odom->base_link 相当 (geometry_msgs/Transform)
-  const lastPoseEmitRef = useRef(0)     // クライアント側間引き用タイムスタンプ
+  // Intermediate state for TF composition (kept in refs so it doesn't
+  // trigger a re-render on every tick)
+  const mapOdomRef      = useRef(null)  // latest map->odom (geometry_msgs/Transform)
+  const odomBaseRef     = useRef(null)  // latest odom->base_link-equivalent (geometry_msgs/Transform)
+  const lastPoseEmitRef = useRef(0)     // timestamp for client-side throttling
 
-  const measuredWheelBufRef = useRef([])  // {t, left, right} (受信時刻, 実測 m/s)
-  const commandWheelBufRef  = useRef([])  // {t, left, right} (受信時刻, 指令 m/s)
+  const measuredWheelBufRef = useRef([])  // {t, left, right} (receive time, measured m/s)
+  const commandWheelBufRef  = useRef([])  // {t, left, right} (receive time, commanded m/s)
 
-  // サービス応答を購読トピックから復元することはできないため、結果をイベントとして
-  // 1本流す。受け手 (useVoiceTriggers) が kind を見て何を鳴らすか決める。
+  // Service responses can't be reconstructed from a subscribed topic, so
+  // results are pushed through as a single event stream. The consumer
+  // (useVoiceTriggers) looks at `kind` to decide what to play.
   const actionSeqRef = useRef(0)
   const bumpAction = useCallback((kind, ok, message) => {
     actionSeqRef.current += 1
     setLastAction({ seq: actionSeqRef.current, kind, ok, message: message ?? '' })
   }, [])
 
-  // ── 接続 ──────────────────────────────────────────────────
+  // ── connection ──────────────────────────────────────────────────
   useEffect(() => {
     const ROSLIB = window.ROSLIB
-    if (!ROSLIB) { console.error('roslibjs が読み込まれていません'); return }
+    if (!ROSLIB) { console.error('roslibjs is not loaded'); return }
 
     const ros = new ROSLIB.Ros({ url })
     rosRef.current = ros
 
     ros.on('connection', () => {
-      console.log('rosbridge 接続')
+      console.log('rosbridge connected')
       setConnected(true)
     })
-    ros.on('error',      (e) => { console.error('rosbridge エラー', e); setConnected(false) })
-    ros.on('close',      ()  => { console.warn('rosbridge 切断'); setConnected(false) })
+    ros.on('error',      (e) => { console.error('rosbridge error', e); setConnected(false) })
+    ros.on('close',      ()  => { console.warn('rosbridge disconnected'); setConnected(false) })
 
-    // ── 購読: /robot/mode ──────────────────────────────────
+    // ── subscribe: /robot/mode ──────────────────────────────────
     const subMode = new ROSLIB.Topic({
       ros, name: '/robot/mode',
       messageType: 'th_system_msgs/RobotMode'
     })
     subMode.subscribe((msg) => setMode(msg.mode))
 
-    // ── 購読: /safety/fault ────────────────────────────────
+    // ── subscribe: /safety/fault ────────────────────────────────
     const subFault = new ROSLIB.Topic({
       ros, name: '/safety/fault',
       messageType: 'th_system_msgs/FaultStatus'
     })
     subFault.subscribe((msg) => setFault(msg))
 
-    // ── 購読: /safety/estop ────────────────────────────────
+    // ── subscribe: /safety/estop ────────────────────────────────
     const subEstop = new ROSLIB.Topic({
       ros, name: '/safety/estop',
       messageType: 'std_msgs/Bool'
     })
     subEstop.subscribe((msg) => setEstop(msg.data))
 
-    // ── 購読: /person/status ───────────────────────────────
+    // ── subscribe: /person/status ───────────────────────────────
     const subPerson = new ROSLIB.Topic({
       ros, name: '/person/status',
       messageType: 'th_system_msgs/PersonStatus'
     })
     subPerson.subscribe((msg) => setPersonStatus(msg))
 
-    // ── 購読: 追従ロジックの内部状態 (音声通知用) ───────────
-    // 発行側で「変化時 + 1Hz」に間引いてあるため、ここでの throttle は不要
+    // ── subscribe: follow logic internal state (voice notifications) ───
+    // The publisher already throttles to "on change + 1Hz", so no
+    // additional throttling is needed here
     const subFollowStatus = new ROSLIB.Topic({
       ros, name: '/follow/status',
       messageType: 'th_system_msgs/FollowStatus'
     })
     subFollowStatus.subscribe((msg) => setFollowStatus(msg))
 
-    // ── 購読: 捜索段階 (音声通知用) ─────────────────────────
+    // ── subscribe: search phase (voice notifications) ─────────────────
     const subSearchStatus = new ROSLIB.Topic({
       ros, name: '/person/search_status',
       messageType: 'th_system_msgs/SearchStatus'
     })
     subSearchStatus.subscribe((msg) => setSearchStatus(msg))
 
-    // ── 購読: 呼び寄せイベント (音声通知用) ─────────────────
-    // 到着と中止はどちらも SUMMONING→IDLE 遷移になるため、モードだけでは
-    // 区別できない。seq を振ってエッジとして扱えるようにする
+    // ── subscribe: summon events (voice notifications) ─────────────────
+    // Arrival and abort both end up as a SUMMONING->IDLE mode transition,
+    // so mode alone can't tell them apart. A seq is attached so this can be
+    // treated as an edge.
     const subSummonStatus = new ROSLIB.Topic({
       ros, name: '/summon_navigator/status',
       messageType: 'th_system_msgs/SummonStatus'
@@ -184,29 +193,33 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
       setSummonStatus({ seq: summonSeqRef.current, event: msg.event, message: msg.message })
     })
 
-    // ── 購読: 追従対象候補一覧 ──────────────────────────────
+    // ── subscribe: follow-target candidate list ──────────────────────────
     const subCandidates = new ROSLIB.Topic({
       ros, name: '/sobits_follower/multiple_sensor_person_tracking/person_candidates',
       messageType: 'multiple_sensor_person_tracking/PersonCandidates'
     })
     subCandidates.subscribe((msg) => setCandidates(msg.positions ?? []))
 
-    // ── 購読: /slam_control/mapping_active ─────────────────
+    // ── subscribe: /slam_control/mapping_active ─────────────────
     const subMapping = new ROSLIB.Topic({
       ros, name: '/slam_control/mapping_active',
       messageType: 'std_msgs/Bool'
     })
     subMapping.subscribe((msg) => setMappingActive(msg.data))
 
-    // ── 購読: /slam_control/last_result ────────────────────
-    // 観客用ページは別の useRosbridge インスタンスなので、操作用で地図を
-    // 破棄しても直接は伝わらない。破棄の結果をここで拾って両方の表示を
-    // 揃える。/map は破棄直後には届かない (slam_toolbox はポーズグラフから
-    // 作り直したときにしか publish しない) ため、受信待ちにはできない。
+    // ── subscribe: /slam_control/last_result ────────────────────
+    // The audience page is a separate useRosbridge instance, so discarding
+    // the map from the operator UI doesn't propagate directly. This picks
+    // up the discard result and syncs both displays. /map itself doesn't
+    // arrive right after a discard (slam_toolbox only publishes when it
+    // rebuilds from the pose graph), so this can't just wait for a message
+    // there.
     //
-    // このトピックは transient_local なので、後から購読すると過去の結果が
-    // 1 通ラッチされて届く。それで地図を消すと、再作成した地図が接続のたびに
-    // 消える事故になるため最初の 1 通は表示だけに使い、破棄処理には使わない。
+    // This topic is transient_local, so subscribing later still delivers
+    // the last result as one latched message. If that first message were
+    // used to clear the map, the map would disappear every time a client
+    // reconnects, so the first message is display-only and never triggers
+    // the discard side effect.
     let slamResultLatched = false
     const subSlamResult = new ROSLIB.Topic({
       ros, name: '/slam_control/last_result',
@@ -216,13 +229,13 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
       setSlamLastResult(msg.data)
       const isFirst = !slamResultLatched
       slamResultLatched = true
-      if (!isFirst && msg.data.startsWith('OK') && msg.data.includes('破棄')) {
+      if (!isFirst && msg.data.startsWith('OK') && msg.data.includes(SLAM_DISCARD_MARKER)) {
         setMapData(null)
         setPathData(null)
       }
     })
 
-    // ── 購読: /map (SLAM 地図) ──────────────────────────────
+    // ── subscribe: /map (SLAM map) ──────────────────────────────────
     const subMap = new ROSLIB.Topic({
       ros, name: '/map',
       messageType: 'nav_msgs/OccupancyGrid',
@@ -230,14 +243,15 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     })
     subMap.subscribe((msg) => setMapData(msg))
 
-    // ── 購読: /tf (map->odom, odom->base_link[_footprint] を自前で合成) ──
-    // roslib.min.js の ROSLIB.TFClient は tf2_web_republisher (/republish_tfs
-    // サービス) 前提の実装で本リポジトリには存在しないノードのため使用不可
-    // (subscribe してもコールバックが永久に呼ばれない)。/tf を直接購読し
-    // 手動で合成する。child_frame_id は実機では 'base_link' (esp32_bridge)、
-    // シムでは 'base_footprint' (gazebo_ros_diff_drive) と異なるが、両者は
-    // fixed joint (xyz="0 0 wheel_radius") で X/Y/yaw が完全一致するため
-    // 区別せず同一視してよい。
+    // ── subscribe: /tf (compose map->odom, odom->base_link[_footprint] by hand) ──
+    // roslib.min.js's ROSLIB.TFClient assumes tf2_web_republisher (the
+    // /republish_tfs service), which this repo doesn't run, so it can't be
+    // used here (subscribing would never invoke the callback). /tf is
+    // subscribed directly and composed by hand instead. child_frame_id is
+    // 'base_link' on real hardware (esp32_bridge) but 'base_footprint' in
+    // sim (gazebo_ros_diff_drive); the two can be treated as the same frame
+    // since they're joined by a fixed joint (xyz="0 0 wheel_radius") that
+    // makes X/Y/yaw identical.
     const subTf = new ROSLIB.Topic({
       ros, name: '/tf',
       messageType: 'tf2_msgs/TFMessage',
@@ -252,8 +266,8 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
       })
       if (!updated || !mapOdomRef.current || !odomBaseRef.current) return
 
-      // /tf は ~50Hz (transform_publish_period: 0.02)。マーカー描画には
-      // 過剰なためクライアント側で ~10Hz に間引く
+      // /tf runs at ~50Hz (transform_publish_period: 0.02). That's more
+      // than marker rendering needs, so throttle to ~10Hz client-side
       const now = performance.now()
       if (now - lastPoseEmitRef.current < 100) return
       lastPoseEmitRef.current = now
@@ -262,14 +276,14 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
         position: odomBaseRef.current.translation,
         orientation: odomBaseRef.current.rotation,
       })
-      baseInOdom.applyTransform(new ROSLIB.Transform(mapOdomRef.current))  // map座標系へ
+      baseInOdom.applyTransform(new ROSLIB.Transform(mapOdomRef.current))  // into the map frame
 
       const q = baseInOdom.orientation
       const yaw = Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
       setRobotPose({ x: baseInOdom.position.x, y: baseInOdom.position.y, yaw })
     })
 
-    // ── 購読: /scan_filtered (点群表示用。帯域節約のため 5Hz に間引いて配信) ──
+    // ── subscribe: /scan_filtered (point-cloud display; throttled to 5Hz to save bandwidth) ──
     const subScan = new ROSLIB.Topic({
       ros, name: '/scan_filtered',
       messageType: 'sensor_msgs/LaserScan',
@@ -277,14 +291,14 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     })
     subScan.subscribe((msg) => setScanData(msg))
 
-    // ── 購読: /plan (Nav2 のグローバル経路。ルート表示用) ──
+    // ── subscribe: /plan (Nav2's global path, for route display) ──
     const subPath = new ROSLIB.Topic({
       ros, name: '/plan',
       messageType: 'nav_msgs/Path',
     })
     subPath.subscribe((msg) => setPathData(msg))
 
-    // ── 購読: 左右輪 指令vs実測 速度 (速度表示カード用、直近 WHEEL_HISTORY_SEC 秒を保持) ──
+    // ── subscribe: command-vs-measured left/right wheel speed (for the speed card, keeps the last WHEEL_HISTORY_SEC seconds) ──
     const pushWheelSample = (bufRef, msg, key) => {
       const t = Date.now() / 1000
       const buf = bufRef.current
@@ -329,7 +343,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     }
   }, [url, mapThrottleMs])
 
-  // ── モード変更サービス呼び出し ────────────────────────────
+  // ── mode-change service call ────────────────────────────
   const requestMode = useCallback((modeNum) => {
     const ROSLIB = window.ROSLIB
     if (!rosRef.current || !ROSLIB) return
@@ -343,8 +357,8 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
       (res) => {
         bumpAction('set_mode', res.success, res.message)
         if (!res.success) {
-          console.warn('モード変更失敗:', res.message)
-          setActionError(`モード変更失敗: ${res.message}`)
+          console.warn('mode change failed:', res.message)
+          setActionError(`mode change failed: ${res.message}`)
         } else {
           setActionError(null)
         }
@@ -352,7 +366,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     )
   }, [bumpAction])
 
-  // ── タブレット緊急停止 ────────────────────────────────────
+  // ── tablet emergency stop ────────────────────────────────────
   const tabletEstopRef = useRef(null)
   useEffect(() => {
     if (!rosRef.current || !connected) return
@@ -368,7 +382,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     tabletEstopRef.current?.publish(new window.ROSLIB.Message({ data: active }))
   }, [])
 
-  // ── heartbeat 定期送信 ────────────────────────────────────
+  // ── periodic heartbeat ────────────────────────────────────
   useEffect(() => {
     if (!connected || readOnly) return
     const ROSLIB = window.ROSLIB
@@ -383,7 +397,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     return () => clearInterval(id)
   }, [connected, readOnly])
 
-  // ── 手動ゴール送信 ────────────────────────────────────────
+  // ── manual goal send ────────────────────────────────────────
   const sendManualGoal = useCallback((x, y) => {
     const ROSLIB = window.ROSLIB
     if (!rosRef.current || !ROSLIB) return
@@ -401,11 +415,12 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     }))
   }, [])
 
-  // ── 手動ジョグ (直接速度指令) ──────────────────────────────
-  // manual_command_handler の Nav2 ゴール方式は map フレームが必要で、
-  // 地図なし運用では機能しない。twist_mux の /cmd_vel_manual (priority 30,
-  // timeout 0.5s) へ直接 Twist を流す方式に変更。押している間だけ UI 側が
-  // 定期 publish し、timeout で自動停止する。
+  // ── manual jog (direct velocity command) ──────────────────────────
+  // manual_command_handler's Nav2-goal approach needs a map frame, which
+  // isn't available in mapless operation. Switched to publishing Twist
+  // directly to twist_mux's /cmd_vel_manual (priority 30, timeout 0.5s).
+  // The UI publishes at a fixed period while held, and the timeout stops
+  // the robot automatically.
   const manualCmdRef = useRef(null)
   useEffect(() => {
     if (!rosRef.current || !connected) return
@@ -426,7 +441,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     }))
   }, [])
 
-  // ── 配電盤移動サービス ────────────────────────────────────
+  // ── go-to-panel service ────────────────────────────────────
   const goToPanel = useCallback((panelId) => {
     const ROSLIB = window.ROSLIB
     if (!rosRef.current || !ROSLIB) return
@@ -440,13 +455,13 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
       (res) => {
         console.log('GoToPanel:', res)
         bumpAction('go_to_panel', res.success, res.message)
-        if (!res.success) setActionError(`配電盤移動失敗: ${res.message}`)
+        if (!res.success) setActionError(`go-to-panel failed: ${res.message}`)
         else setActionError(null)
       }
     )
   }, [bumpAction])
 
-  // ── 呼び寄せサービス ──────────────────────────────────────
+  // ── summon service ──────────────────────────────────────
   const summonRobot = useCallback(() => {
     const ROSLIB = window.ROSLIB
     if (!rosRef.current || !ROSLIB) return
@@ -460,8 +475,8 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
       (res) => {
         bumpAction('summon', res.success, res.message)
         if (!res.success) {
-          console.warn('呼び寄せ失敗:', res.message)
-          setActionError(`呼び寄せ失敗: ${res.message}`)
+          console.warn('summon failed:', res.message)
+          setActionError(`summon failed: ${res.message}`)
         } else {
           setActionError(null)
         }
@@ -469,7 +484,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     )
   }, [bumpAction])
 
-  // ── 地図作成 開始/停止 (トグル) ────────────────────────────
+  // ── mapping start/stop (toggle) ────────────────────────────
   const toggleMapping = useCallback(() => {
     const ROSLIB = window.ROSLIB
     if (!rosRef.current || !ROSLIB) return
@@ -483,8 +498,8 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
       (res) => {
         bumpAction('toggle_mapping', res.success, res.message)
         if (!res.success) {
-          console.warn('地図作成切替失敗:', res.message)
-          setActionError(`地図作成切替失敗: ${res.message}`)
+          console.warn('mapping toggle failed:', res.message)
+          setActionError(`mapping toggle failed: ${res.message}`)
         } else {
           setActionError(null)
         }
@@ -492,9 +507,9 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     )
   }, [bumpAction])
 
-  // ── 地図操作 (保存 / 破棄) ────────────────────────────────
-  // toggle_mapping と同じ Trigger 型で、slam_control が slam_toolbox の
-  // save_map / serialize_map / deserialize_map へ転送する。
+  // ── map operations (save / discard) ────────────────────────────
+  // Same std_srvs/Trigger type as toggle_mapping; slam_control forwards
+  // these to slam_toolbox's save_map / serialize_map / deserialize_map.
   const callSlamTrigger = useCallback((service, kind, label) => {
     const ROSLIB = window.ROSLIB
     if (!rosRef.current || !ROSLIB) return
@@ -508,8 +523,8 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
       (res) => {
         bumpAction(kind, res.success, res.message)
         if (!res.success) {
-          console.warn(`${label}失敗:`, res.message)
-          setActionError(`${label}失敗: ${res.message}`)
+          console.warn(`${label} failed:`, res.message)
+          setActionError(`${label} failed: ${res.message}`)
         } else {
           setActionError(null)
         }
@@ -518,14 +533,14 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
   }, [bumpAction])
 
   const saveMap = useCallback(
-    () => callSlamTrigger('/slam_control/save_map', 'save_map', '地図の保存'),
+    () => callSlamTrigger('/slam_control/save_map', 'save_map', 'map save'),
     [callSlamTrigger])
 
-  // 破棄が成功しても /map は自動では届かない。slam_toolbox は
-  // map_update_interval ごとにポーズグラフから地図を作り直して publish する
-  // 実装で、グラフが空になった直後は「publish するものが無い」状態になり、
-  // WebUI 側は最後に受信した地図を保持したままになる (画面上は破棄前の地図が
-  // 残って見える)。破棄が成功したらこちらの保持も捨てる。
+  // Even a successful discard doesn't make /map arrive automatically:
+  // slam_toolbox only rebuilds and publishes from the pose graph on its own
+  // map_update_interval, and right after the graph goes empty there's
+  // nothing for it to publish (the WebUI keeps showing the last map it
+  // received). Once discard succeeds, drop this hook's own copy too.
   const discardMap = useCallback(() => {
     const ROSLIB = window.ROSLIB
     if (!rosRef.current || !ROSLIB) return
@@ -543,17 +558,17 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
           setPathData(null)
           setActionError(null)
         } else {
-          console.warn('地図の破棄失敗:', res.message)
-          setActionError(`地図の破棄失敗: ${res.message}`)
+          console.warn('map discard failed:', res.message)
+          setActionError(`map discard failed: ${res.message}`)
         }
       }
     )
   }, [bumpAction])
 
-  // ── アクションエラーの手動クリア (WebUI バナーの閉じるボタン用) ──
+  // ── manual clear of the action error (for the WebUI banner's close button) ──
   const clearActionError = useCallback(() => setActionError(null), [])
 
-  // ── 追従対象の選択・再登録 ─────────────────────────────────
+  // ── follow-target selection / re-registration ─────────────────────────────
   const selectTarget = useCallback((candidateIndex) => {
     const ROSLIB = window.ROSLIB
     if (!rosRef.current || !ROSLIB) return
@@ -566,7 +581,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
       new ROSLIB.ServiceRequest({ candidate_index: candidateIndex, x: 0.0, y: 0.0 }),
       (res) => {
         bumpAction('select_target', res.success, res.message)
-        if (!res.success) console.warn('ターゲット選択失敗:', res.message)
+        if (!res.success) console.warn('target selection failed:', res.message)
       }
     )
   }, [bumpAction])
@@ -581,16 +596,17 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     })
     svc.callService(
       new ROSLIB.ServiceRequest({}),
-      (res) => { if (!res.success) console.warn('追従リセット失敗:', res.message) }
+      (res) => { if (!res.success) console.warn('follow reset failed:', res.message) }
     )
   }, [])
 
-  // ── 設定パネル: パラメータ取得 (rcl_interfaces/GetParameters を対象ノードへ
-  // 直接呼び出す。読み取りのみのためモードゲート・config_manager 経由は不要) ──
+  // ── settings panel: parameter fetch (calls rcl_interfaces/GetParameters
+  // directly on the target node; read-only, so no mode gate / config_manager
+  // hop is needed) ──
   const getTunableParams = useCallback((nodeName, paramNames) => {
     const ROSLIB = window.ROSLIB
     return withTimeout(new Promise((resolve, reject) => {
-      if (!rosRef.current || !ROSLIB) { reject(new Error('rosbridge 未接続')); return }
+      if (!rosRef.current || !ROSLIB) { reject(new Error('rosbridge not connected')); return }
       const svc = new ROSLIB.Service({
         ros: rosRef.current,
         name: `/${nodeName}/get_parameters`,
@@ -605,15 +621,15 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
         },
         (err) => reject(err)
       )
-    }), `${nodeName} のパラメータ取得`)
+    }), `fetching parameters for ${nodeName}`)
   }, [])
 
-  // ── 設定パネル: パラメータのライブ反映 (config_manager 経由。
-  // IDLE/MANUAL モード以外では config_manager 側が拒否する) ──
+  // ── settings panel: live parameter apply (via config_manager;
+  // config_manager itself rejects this outside IDLE/MANUAL mode) ──
   const applyTunableParam = useCallback((nodeName, paramName, value, opts) => {
     const ROSLIB = window.ROSLIB
     return withTimeout(new Promise((resolve, reject) => {
-      if (!rosRef.current || !ROSLIB) { reject(new Error('rosbridge 未接続')); return }
+      if (!rosRef.current || !ROSLIB) { reject(new Error('rosbridge not connected')); return }
       const svc = new ROSLIB.Service({
         ros: rosRef.current,
         name: '/config_manager/set_tunable_params',
@@ -624,17 +640,17 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
           node_name: nodeName,
           parameters: [{ name: paramName, value: encodeParamValue(value, opts) }]
         }),
-        (res) => { if (!res.success) console.warn('パラメータ適用失敗:', res.message); resolve(res) },
+        (res) => { if (!res.success) console.warn('parameter apply failed:', res.message); resolve(res) },
         (err) => reject(err)
       )
-    }), `${nodeName}.${paramName} の適用`)
+    }), `applying ${nodeName}.${paramName}`)
   }, [])
 
-  // ── 設定パネル: YAML への保存 (config_manager 経由) ──────
+  // ── settings panel: save to YAML (via config_manager) ──────
   const saveTunableParams = useCallback((nodeName) => {
     const ROSLIB = window.ROSLIB
     return withTimeout(new Promise((resolve, reject) => {
-      if (!rosRef.current || !ROSLIB) { reject(new Error('rosbridge 未接続')); return }
+      if (!rosRef.current || !ROSLIB) { reject(new Error('rosbridge not connected')); return }
       const svc = new ROSLIB.Service({
         ros: rosRef.current,
         name: '/config_manager/save_tunable_params',
@@ -642,10 +658,10 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
       })
       svc.callService(
         new ROSLIB.ServiceRequest({ node_name: nodeName }),
-        (res) => { if (!res.success) console.warn('パラメータ保存失敗:', res.message); resolve(res) },
+        (res) => { if (!res.success) console.warn('parameter save failed:', res.message); resolve(res) },
         (err) => reject(err)
       )
-    }), `${nodeName} の保存`)
+    }), `saving ${nodeName}`)
   }, [])
 
   return {
