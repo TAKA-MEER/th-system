@@ -1,0 +1,10 @@
+# names.md §5.2 は元々 `bool delete` としているが、`delete` は C++ の予約語で
+# あり rosidl の生成コードが `this->delete = ...` のような不正な式を出力して
+# ビルドできない（実測。WP-MSG-01 で判明）。名前だけを `is_delete` に変更する
+# （意味・型・列順は変えていない）。names.md 側の修正は別途要検討。
+string id
+string new_name
+bool   is_delete
+---
+bool   success
+string message
