@@ -23,11 +23,14 @@ drain 側 (_drain_rx_queue、50Hz タイマー) も while True で無制限に
     コールバックが有界時間で終わることを保証する。
 
 queue.Queue は「溢れたら古い方を捨てる」操作を持たない (put_nowait は
-Full 例外を投げるだけ) ため、collections.deque(maxlen=N) を使う。
-deque(maxlen=N) は append 時に上限を超えると自動的に反対端 (古い方) を
-捨てる。ここでは呼び出し側 (asyncio スレッドの _handle_client と rclpy
-タイマースレッドの _drain_rx_queue) からの同時アクセスを明示的な
-threading.Lock で守る。
+Full 例外を投げるだけ) ため collections.deque を使う。ただし maxlen 付き
+deque (deque(maxlen=N)) は使わない — append 時に上限を超えると古い方を
+「黙って」捨てる仕組みのため、捨てた回数 (dropped_count) を数えられない。
+D-3 の計器で drop 数をサマリに出す必要があるため、maxlen 無しの
+deque + 明示的な popleft() で自前に上限判定と計数を行う (rev: レビュー
+指摘で本 docstring と実装の不一致を修正)。ここでは呼び出し側 (asyncio
+スレッドの _handle_client と rclpy タイマースレッドの _drain_rx_queue)
+からの同時アクセスを明示的な threading.Lock で守る。
 
 ROS2 に依存しないため、ここだけで pytest による検証が完結する。
 """

@@ -98,3 +98,51 @@ def complete(state: CoalescerState) -> CompletionResult:
     if state.pending is not None:
         return CompletionResult(state.pending, replace(state, pending=None))
     return CompletionResult(None, replace(state, in_flight=False))
+
+
+async def drive_send_loop(frame: "bytes | None", send_fn, complete_fn) -> None:
+    """offer() が返した最初のフレームから、保留が尽きるまで送信し続ける。
+
+    レビュー指摘 (2026-08) で見つかった2つの実バグをここで修正する。
+    ノード側 (esp32_bridge.py の旧 _send_and_continue) は次のように
+    自分自身を再帰呼び出ししていた:
+
+        await conn.send(frame)
+        result = complete(state)
+        if result.frame_to_send is not None:
+            await self._send_and_continue(result.frame_to_send)  # 再帰
+
+    バグ2 (無限に伸びうる再帰): Python に末尾呼び出し最適化は無い。
+    TCP 送信ウィンドウが閉じ続ける間 (D-1 がまさに対処対象にしている
+    輻輳状態そのもの) に、complete() のたびに新しい保留フレームが
+    割り込み続けると呼び出しごとにスタックが1段ずつ伸び、最悪
+    RecursionError で送信が永久停止しかねない。ここでは while ループに
+    置き換え、1呼び出しあたりのスタック深さを一定にした。
+
+    バグ1 (complete_fn が呼ばれずに終わる経路): 送信側 (send_fn) が
+    想定外の例外を投げると、その例外が complete_fn の呼び出しより先に
+    伝播してしまい、状態が「送信中」のまま固定される (以後の送信要求は
+    永久に保留へ積まれるだけになり、WHEEL_CMD 送信が二度と行われなく
+    なる — K-1 違反。ノード再起動でしか復帰しない恒久故障で、しかも
+    ログに何も出ない)。send_fn の実装 (_send_safe) 側でも例外を捕捉する
+    よう直したが、ここでも try/finally で complete_fn を必ず呼ぶことで
+    二重に守る。
+
+    send_fn: 1フレーム送信する非同期関数 (async def send_fn(frame))。
+             例外を外へ投げないようにするのは呼び出し側 (send_fn 自体)
+             の責務。ここでは「投げられても complete_fn は必ず呼ぶ」
+             ところまでしか保証しない (投げられた場合、その時点で
+             complete_fn が返す次フレームがあっても送信はしない —
+             送信そのものが失敗する状況で same call 内に続行するのは
+             安全ではないため)。
+    complete_fn: 引数無しの同期関数。呼ぶたびに1回分の送信完了を通知し、
+                 次に送るべきフレーム (無ければ None) を返す。実際の
+                 状態更新とロックはノード側 (コアレッシング状態は
+                 スレッド間で共有されるため) の責務であり、ここでは
+                 渡された関数を呼ぶだけにする。
+    """
+    while frame is not None:
+        try:
+            await send_fn(frame)
+        finally:
+            frame = complete_fn()

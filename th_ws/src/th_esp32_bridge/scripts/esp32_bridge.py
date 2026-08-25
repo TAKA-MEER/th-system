@@ -42,6 +42,7 @@ from th_esp32_bridge.odom_core import (
 from th_esp32_bridge.rx_backpressure import BoundedFrameQueue
 from th_esp32_bridge.send_coalescer import INITIAL_STATE as _COALESCER_INITIAL_STATE
 from th_esp32_bridge.send_coalescer import complete as coalescer_complete
+from th_esp32_bridge.send_coalescer import drive_send_loop
 from th_esp32_bridge.send_coalescer import offer as coalescer_offer
 from th_esp32_bridge.ws_protocol import (
     ProtocolError, WHEEL_FEEDBACK, ESTOP_HW, IMU_DATA,
@@ -372,25 +373,46 @@ class Esp32Bridge(Node):
     async def _send_and_continue(self, frame: bytes):
         """1フレーム送信し、完了時に保留フレームがあれば続けて送る。
 
-        conn は送信のたびに読み直す (ESP32 の再接続を跨いで古い conn オブジェクト
-        へ送り続けないため)。
+        実際のループ制御 (再帰にしない・complete を必ず呼ぶ) は
+        send_coalescer.drive_send_loop に切り出してある (レビュー指摘で
+        見つかった2つのバグの修正。同モジュールの drive_send_loop
+        docstring 参照)。ここでは ROS2/asyncio 固有の実体 (WS接続の
+        読み直し・コアレッシング状態のロック) を渡すだけにする。
         """
-        with self._ws_conn_lock:
-            conn = self._ws_conn
-        if conn is not None:
-            await self._send_safe(conn, frame)
-        with self._coalescer_lock:
-            result = coalescer_complete(self._coalescer_state)
-            self._coalescer_state = result.state
-        if result.frame_to_send is not None:
-            await self._send_and_continue(result.frame_to_send)
+        async def send_fn(f: bytes) -> None:
+            # conn は送信のたびに読み直す (ESP32 の再接続を跨いで古い
+            # conn オブジェクトへ送り続けないため)。
+            with self._ws_conn_lock:
+                conn = self._ws_conn
+            if conn is not None:
+                await self._send_safe(conn, f)
+
+        def complete_fn() -> "bytes | None":
+            with self._coalescer_lock:
+                result = coalescer_complete(self._coalescer_state)
+                self._coalescer_state = result.state
+            return result.frame_to_send
+
+        await drive_send_loop(frame, send_fn, complete_fn)
 
     @staticmethod
     async def _send_safe(conn, frame: bytes):
         try:
             await conn.send(frame)
-        except Exception:
-            pass  # 切断済み等 — 次周期の cmd_vel で再送されるため無視してよい
+        except (Exception, asyncio.CancelledError):
+            # 切断済み等 — 次周期の cmd_vel で再送されるため無視してよい。
+            #
+            # レビュー指摘 (2026-08) のバグ修正: asyncio.CancelledError は
+            # Python 3.8+ で Exception ではなく BaseException 直下のため、
+            # `except Exception` だけでは素通りしていた。素通りすると
+            # 呼び出し元 (drive_send_loop) の complete_fn 呼び出しに
+            # 到達できず、コアレッシング状態が「送信中」のまま固定され、
+            # 以後の送信要求は永久に保留へ積まれるだけになって WHEEL_CMD
+            # 送信 (20Hzキープアライブ含む) が二度と行われなくなる
+            # (K-1 違反。ノード再起動でしか復帰しない恒久故障で、しかも
+            # ログに何も出ない)。drive_send_loop 側の try/finally とあわせ
+            # て二重に防ぐ。
+            pass
 
     # ── 受信キューの drain (rclpy スレッド側) ─────────────────────
     def _drain_rx_queue(self):

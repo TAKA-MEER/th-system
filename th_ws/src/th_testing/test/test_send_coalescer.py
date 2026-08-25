@@ -6,9 +6,21 @@ send_coalescer.py (esp32_bridge の WHEEL_CMD 送信コアレッシング判定)
 
 満たす仕様: 2026-08 実機計測の受信ギャップ切り分け作業 D-1
 (送信中に次の要求が来たらキューせず保留フレームを上書きする。最新値勝ち)。
-"""
 
-from send_coalescer import INITIAL_STATE, CoalescerState, offer, complete
+TestDriveSendLoop はレビュー (2026-08) で見つかった2つの実バグの回帰テスト:
+  - バグ1: send_fn が例外を投げると complete_fn が呼ばれず in_flight が
+    固定される (K-1 の永久停止に直結)。
+  - バグ2: 旧実装は自分自身を再帰呼び出ししており、輻輳が続くとスタックが
+    伸び続けて RecursionError になり得た。
+"""
+import asyncio
+import sys
+
+import pytest
+
+from send_coalescer import (
+    INITIAL_STATE, CoalescerState, complete, drive_send_loop, offer,
+)
 
 
 class TestOffer:
@@ -115,3 +127,90 @@ class TestEndToEndSequence:
         assert r.state.in_flight is False
 
         assert sent == [b"f1", b"f4"]
+
+
+class TestDriveSendLoop:
+
+    def test_complete_fn_is_called_even_if_send_fn_raises(self):
+        """バグ1の回帰テスト: send_fn が例外を投げても complete_fn は
+        必ず呼ばれる (in_flight が固定されたまま復帰不能にならないこと)。
+        """
+        calls = {"complete": 0}
+
+        def complete_fn():
+            calls["complete"] += 1
+            return None  # 保留なし = in_flight 解除
+
+        async def send_fn(frame):
+            raise RuntimeError("送信失敗 (asyncio.CancelledError 等を模擬)")
+
+        with pytest.raises(RuntimeError):
+            asyncio.run(drive_send_loop(b"f1", send_fn, complete_fn))
+
+        assert calls["complete"] == 1, (
+            "send_fn が例外を投げても complete_fn は必ず1回は呼ばれ、"
+            "in_flight を解放できる状態にしなければならない")
+
+    def test_complete_fn_not_called_when_no_initial_frame(self):
+        """frame=None (offer() が『既に in_flight 中』を返した場合) なら
+        何もせず即座に戻る。"""
+        calls = {"complete": 0}
+
+        def complete_fn():
+            calls["complete"] += 1
+            return None
+
+        async def send_fn(frame):
+            pass
+
+        asyncio.run(drive_send_loop(None, send_fn, complete_fn))
+        assert calls["complete"] == 0
+
+    def test_long_pending_chain_does_not_grow_the_call_stack(self):
+        """バグ2の回帰テスト: complete_fn が延々と次のフレームを返し
+        続けても (輻輳が続き pending が途切れないケースを模擬)、
+        再帰ではなくループで処理されるためスタックが伸びないこと。
+
+        recursionlimit を極端に低く設定してもエラーにならないことで、
+        実装が反復的であることを直接確認する (再帰実装ならここで
+        RecursionError になる)。
+        """
+        TOTAL_FRAMES = 5000
+        calls = {"send": 0, "complete": 0}
+
+        def complete_fn():
+            calls["complete"] += 1
+            if calls["complete"] >= TOTAL_FRAMES:
+                return None
+            return b"next"
+
+        async def send_fn(frame):
+            calls["send"] += 1
+
+        old_limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(80)  # 再帰していたら5000段には到底届かない
+        try:
+            asyncio.run(drive_send_loop(b"f0", send_fn, complete_fn))
+        finally:
+            sys.setrecursionlimit(old_limit)
+
+        assert calls["send"] == TOTAL_FRAMES
+        assert calls["complete"] == TOTAL_FRAMES
+
+    def test_send_fn_receives_each_frame_in_order(self):
+        """送信されるフレームの並びが complete_fn の返す順序どおりで
+        あること (ロジックの健全性確認)。"""
+        received = []
+        frames = [b"f1", b"f2", b"f3"]
+        remaining = list(frames[1:])
+
+        def complete_fn():
+            if remaining:
+                return remaining.pop(0)
+            return None
+
+        async def send_fn(frame):
+            received.append(frame)
+
+        asyncio.run(drive_send_loop(frames[0], send_fn, complete_fn))
+        assert received == frames
