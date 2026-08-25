@@ -34,6 +34,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 長時間動くノード（`component_container_mt` 等）を `docker exec` から `&` で起動すると、シェル終了時に道連れになる。`setsid ... > log 2>&1 < /dev/null &` で切り離す。
 - **`docker compose run --rm th_robot` は毎回新しいコンテナを作り、`build/` と `install/` はバインドマウントされていない**（マウントは `src` / `esp32` / `scripts` / `data` / `dr_spaam_weights` のみ）。そのため `colcon build` と `colcon test` を別々の `docker compose run` で実行すると、テスト側からビルド成果が見えず `colcon test-result` が「0 tests」になる。**ビルドからテストまでを 1 回の `bash -lc` の中で通すこと。**
 - `test_simulation_scenarios.py` は Gazebo + Nav2 のフル環境が前提。環境なしでもスキップ判定が効かずに実行され、`test_scenario_A1_retreat_on_approach` が「後退指令が来なかった」で落ちる。ヘッドレスでの `colcon test` ではこの 1 件の失敗は想定内。
+- **テストの大半は Docker 不要でホストの `python3` から直接走る。**`th_ws/src/th_testing/test/` のうち ROS2 環境（`rclpy` / ビルド済み `th_system_msgs`）が要るのは次の 9 ファイルだけで、他は素の pytest で緑赤を判定できる（2026-08-24 時点で 385 passed）。`colcon build` は数分かかるので、まずホストで回して最後に Docker で 1 回通すのが速い。
+  除外する 9 ファイル: `test_connectivity_checker_node.py` / `test_fault_detection.py` / `test_mode_transitions.py` / `test_params_audit_node.py` / `test_safety_monitor.py` / `test_state_manager_node.py` / `test_twist_mux_priority.py` / `test_simulation_scenarios.py` / `test_msg_definitions.py`
+- `th_ws/esp32/.vscode/extensions.json` は **`.gitignore` に載っているのに tracked** という状態で、内容もモードも index と一致しているのに `git status` に `M` が出続けることがある（index の stat キャッシュが NTFS 時代の古いサイズを持っているため）。`git diff` が空なのに `M` が消えないときはこれ。`git add -f <path>` で解消でき、内容が同じなので差分はステージされない。
 - **ノードを `kill -9` で落とすことを繰り返すと、コンテナ内の DDS discovery が壊れる。** 症状は「ノードは起動しログも出ているのに、他プロセスからサービス/トピックが一切見つからない」。`ls /dev/shm | wc -l` で `fastrtps_*` の残骸が溜まっているか確認する（ROS プロセスが 0 なのに大量にあれば該当）。`/dev/shm` の掃除だけでは直らないことがあり、その場合はコンテナ再起動が必要。デバッグ用ノードは `kill -TERM` で落とすこと。
 
 ## 開発環境
