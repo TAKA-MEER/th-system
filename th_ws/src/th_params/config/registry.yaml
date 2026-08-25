@@ -702,8 +702,10 @@
   class: b
   status: given
   value: 1500
-  consumers: [obstacle_limiter, jog_gate]
-  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-safety.md §3.2"
+  # WP-SAFE-01 (2026-08-25) で safety_monitor を追加した: STATE_INCONSISTENT
+  # (/system/state 途絶) の判定に使う (wp2 WP-SAFE-01 §4.1・§3.3)。
+  consumers: [obstacle_limiter, jog_gate, safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-safety.md §3.2 / DetailedDesign-wp2.md WP-SAFE-01 §4.1"
   note: "リミッタ／jog_gate が /system/state の途絶を判定する。途絶したらゾーン最低・auto_brake=ON に倒す"
 
 - name: lock_stale_ms

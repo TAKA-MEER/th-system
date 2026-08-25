@@ -449,13 +449,28 @@ def generate_launch_description():
     # ════════════════════════════════════════════════════════
     scenario_action = OpaqueFunction(function=_scenario_setup)
 
+    # enabled_targets (O-7): registry.yaml の既定値は空リストであり、かつ
+    # export.py は空リストを生成物からサニタイズして落とす（D3）ため、実際の値は
+    # launch から明示的に渡す（DetailedDesign-names.md §7.3 の note の実体）。
+    # 対象は「その publisher が実際にこの launch で起動するか」で決める。
+    #
+    # sim: esp32_bridge / state_manager とも condition=UnlessCondition(sim) で
+    # 起動しない（このファイル内で確認済み）ため、esp32・state は publisher が
+    # 無い。runaway は /esp32/wheel_feedback（同じく無い）を要るため除外。
+    # firmware も esp32_bridge が publisher のため除外。Gazebo の LiDAR センサ
+    # プラグインは sim/実機を問わず /scan を出すため lidar だけ有効にする。
+    SAFETY_ENABLED_TARGETS_SIM = ['lidar']
+    # 実機: bringup.launch.py と同じ判断（WP-SAFE-01 完了報告に詳細）。
+    SAFETY_ENABLED_TARGETS_REAL = ['lidar', 'esp32', 'runaway', 'state', 'firmware']
+
     # safety_monitor: シミュレーション設定
     # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる (G-4)。
     safety_sim_node = Node(
         package='th_safety',
         executable='safety_monitor',
         name='safety_monitor',
-        parameters=[safety_sim, os.path.join(GENERATED_DIR, 'safety_monitor.yaml')],
+        parameters=[safety_sim, os.path.join(GENERATED_DIR, 'safety_monitor.yaml'),
+                    {'enabled_targets': SAFETY_ENABLED_TARGETS_SIM}],
         output='screen',
         condition=IfCondition(sim),
     )
@@ -465,7 +480,8 @@ def generate_launch_description():
         package='th_safety',
         executable='safety_monitor',
         name='safety_monitor',
-        parameters=[safety_real, os.path.join(GENERATED_DIR, 'safety_monitor.yaml')],
+        parameters=[safety_real, os.path.join(GENERATED_DIR, 'safety_monitor.yaml'),
+                    {'enabled_targets': SAFETY_ENABLED_TARGETS_REAL}],
         output='screen',
         condition=UnlessCondition(sim),
     )

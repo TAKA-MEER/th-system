@@ -8,16 +8,44 @@ endif()
 find_package(ament_cmake    REQUIRED)
 find_package(rclcpp         REQUIRED)
 find_package(std_msgs       REQUIRED)
+find_package(std_srvs       REQUIRED)
 find_package(sensor_msgs    REQUIRED)
+find_package(geometry_msgs  REQUIRED)
 find_package(th_system_msgs REQUIRED)
 
+# link_quality_core（WP-SAFE-00）: ヘッダオンリーの純粋ロジック層。
+add_library(link_quality_core INTERFACE)
+target_include_directories(link_quality_core INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+
+# safety_monitor_core（WP-SAFE-01）: ROS2 非依存の判定ロジック層。
+add_library(safety_monitor_core src/safety_monitor_core.cpp)
+target_include_directories(safety_monitor_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+
 add_executable(safety_monitor src/safety_monitor.cpp)
+target_link_libraries(safety_monitor safety_monitor_core link_quality_core)
 ament_target_dependencies(safety_monitor
-  rclcpp std_msgs sensor_msgs th_system_msgs)
+  rclcpp std_msgs std_srvs sensor_msgs geometry_msgs th_system_msgs)
 
 install(TARGETS safety_monitor DESTINATION lib/${PROJECT_NAME})
+install(TARGETS safety_monitor_core link_quality_core
+  EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin)
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
-install(FILES config/twist_mux.yaml config/safety_monitor.yaml
-        DESTINATION share/${PROJECT_NAME}/config)
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_link_quality_core test/test_link_quality_core.cpp)
+  target_link_libraries(test_link_quality_core link_quality_core)
+
+  ament_add_gtest(test_safety_monitor_core test/test_safety_monitor_core.cpp)
+  target_link_libraries(test_safety_monitor_core safety_monitor_core)
+endif()
 
 ament_package()

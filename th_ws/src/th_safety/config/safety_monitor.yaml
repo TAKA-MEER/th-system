@@ -1,25 +1,15 @@
 # ============================================================
-# safety_monitor パラメータ
+# safety_monitor パラメータ（静的な土台。G-4）
 #
-# タイムアウト値の調整指針:
-#   - 短くしすぎると電磁ノイズ・通信ジッタで誤検知が増える
-#   - 長くしすぎると実際の故障への反応が遅れる
-#   - ESP32 ウォッチドッグ (300ms) よりは長く設定し、
-#     ウォッチドッグが先に作動してからフォルト通知する設計
-#   - 現場検証後に最終調整すること (設計書 TBD 参照)
+# タイムアウト・保持時間などの安全パラメータは registry.yaml から導出・生成
+# される（/root/th_data/generated/safety_monitor.yaml が後段で重ね書きする。
+# DEBT-3・DetailedDesign-wp2.md WP-SAFE-01）。ここに残すのは registry.yaml
+# の対象外（ノードのループ周期など、安全上の意味を持たない値）だけ。
+#
+# 根拠のコメントは registry.yaml の各行の note へ移した
+# （DetailedDesign-reuse.md §2.3「値の根拠コメントは registry.yaml の note へ移す」）。
 # ============================================================
 safety_monitor:
   ros__parameters:
-    # 実機検証 (2026-07-11): WiFi (ESP32 AP) 経由では /scan・wheel_feedback とも
-    # 平常時でも 0.5〜0.8 秒程度の受信ギャップが時折発生する。500ms だと誤フォルト
-    # が頻発するため 1200ms に緩和 (物理停止は ESP32 側ウォッチドッグ 300ms が担保)。
-    lidar_timeout_ms:    2000   # ms /scan タイムアウト
-    esp32_timeout_ms:    2000   # ms /esp32/wheel_feedback タイムアウト
-                                # (WiFi 実測でギャップが時折 1.2 秒超まで伸びる。
-                                #  物理停止は ESP32 側ウォッチドッグ 300ms が担保)
-    person_timeout_ms:   2500   # ms /person/status タイムアウト
-                                # (DR-SPAAM の CPU 推論は約2Hz=500ms間隔で、1回の
-                                #  スキップで1秒超のギャップが平常時も出る。実測に
-                                #  基づき2.5秒に設定。人ロスト時は follow_planner 側が
-                                #  停止するため、この緩和で安全性は損なわれない)
     check_period_ms:     100    # ms 監視ループ周期
+    startup_grace_sec:     3    # s  起動直後のタイムアウト誤検知を防ぐ猶予

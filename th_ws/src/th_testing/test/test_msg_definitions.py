@@ -7,7 +7,8 @@ DetailedDesign-wp0.md `WP-MSG-01` §7:
   - test_all_new_msgs_importable  : names.md §5.1 の全 msg が Python から import できる
   - test_no_uint8_mode_constants  : M1。SystemState に uint8 定数が無い
   - test_legacy_msgs_untouched    : M3。旧 msg のファイルハッシュが変わっていない
-                                     （FaultStatus.msg のみ末尾 1 行追加を許容）
+                                     （FaultStatus.msg のみ例外。WP-MSG-01 で末尾に
+                                     severity、WP-SAFE-01 で先頭に Header を追加）
   - test_fields_match_names_md    : names.md §5.1 の表を機械読みして突き合わせる
 
 このテストは生成済みの th_system_msgs (colcon build 済み・source install/setup.bash
@@ -161,17 +162,24 @@ def test_legacy_msgs_untouched():
     assert not mismatched, (
         '旧 msg/srv のファイルが変更されている (M3 違反): %s' % mismatched)
 
-    # FaultStatus.msg だけは唯一の例外。既存 3 フィールドの順序・型はそのまま、
-    # 末尾に string severity が 1 行だけ増えていること。
+    # FaultStatus.msg だけは唯一の例外。
+    #   WP-MSG-01: 既存 3 フィールドの順序・型はそのまま、末尾に string severity。
+    #   WP-SAFE-01: それに加え、先頭に std_msgs/Header header を追加してよい
+    #               （names.md §5.1 が明示的に許可。/safety/fault の publisher を
+    #               書き換えるこのパケット自身が唯一の変更元のため、既存 4
+    #               フィールドの順序・型は不変のまま先頭挿入だけを許容する）。
     fault_path = os.path.join(_TH_SYSTEM_MSGS_ROOT, 'msg', 'FaultStatus.msg')
     fields = _parse_msg_fields(fault_path)
-    assert fields[:3] == [
+    assert fields[:1] == [
+        ('std_msgs/Header', 'header'),
+    ], 'FaultStatus.msg の先頭は std_msgs/Header header のはず (WP-SAFE-01)'
+    assert fields[1:4] == [
         ('bool', 'active'), ('string', 'fault_type'), ('string', 'description'),
     ], 'FaultStatus.msg の既存フィールドの順序または型が変わっている (M3 違反)'
-    assert len(fields) == 4, (
-        'FaultStatus.msg は severity 1 行だけが末尾に追加されているはず: %s' % (fields,))
-    assert fields[3] == ('string', 'severity'), (
-        'FaultStatus.msg の末尾フィールドは string severity のはず: %s' % (fields[3],))
+    assert len(fields) == 5, (
+        'FaultStatus.msg は Header 1 行 + severity 1 行だけが増えているはず: %s' % (fields,))
+    assert fields[4] == ('string', 'severity'), (
+        'FaultStatus.msg の末尾フィールドは string severity のはず: %s' % (fields[4],))
 
 
 # ── test_fields_match_names_md ──────────────────────────────────────────

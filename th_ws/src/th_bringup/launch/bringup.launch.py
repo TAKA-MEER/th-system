@@ -202,6 +202,20 @@ def generate_launch_description():
     ))
 
     # ── 6. safety_monitor ─────────────────────────────────
+    # enabled_targets (O-7): registry.yaml の既定値は空リストであり、かつ
+    # export.py は空リストを生成物からサニタイズして落とす（D3）ため、段階ごとの
+    # 実際の値は registry 経由では渡らない。ここで launch から明示的に渡す
+    # (DetailedDesign-names.md §7.3 の note「段階ごとに launch から渡す」の実体)。
+    #
+    # 現時点（stage 既定 1、WP-SAFE-03/obstacle_limiter・WP-PERC-*/person_targets
+    # とも未着手）で実際に publisher が存在する対象だけを有効にする。
+    # wp2 の段階表は「段階 2 が完了した時点」の最終形（limiter/mux を含む）を
+    # 示しており、WP-SAFE-01 単体の時点ではまだ入れられない
+    # （limiter_status の publisher は obstacle_limiter=WP-SAFE-03、
+    #  cmd_vel_muxed の publisher は twist_mux の remap 先変更=同じく WP-SAFE-03
+    #  側の変更が要る。O-7「publisher ができるまで有効にしない」）。
+    # 判断の詳細は WP-SAFE-01 完了報告に明記。
+    SAFETY_ENABLED_TARGETS = ['lidar', 'esp32', 'runaway', 'state', 'firmware']
     nodes.append(Node(
         package='th_safety',
         executable='safety_monitor',
@@ -209,7 +223,8 @@ def generate_launch_description():
         parameters=[os.path.join(
             get_package_share_directory('th_safety'),
             'config', 'safety_monitor.yaml'),
-            os.path.join(GENERATED_DIR, 'safety_monitor.yaml')],
+            os.path.join(GENERATED_DIR, 'safety_monitor.yaml'),
+            {'enabled_targets': SAFETY_ENABLED_TARGETS}],
         output='screen',
     ))
 

@@ -1,14 +1,17 @@
 """
 test_safety_monitor.py
 ========================
-設計書 10.1 節 § 5 項 — safety_monitor フォルト検知テスト
+DetailedDesign-wp2.md `WP-SAFE-01` §7 — safety_monitor フォルト検知テスト
 
 確認事項:
   - LiDAR / ESP32 フィードバックの途絶を模擬し /safety/fault 発行を確認
-  - /safety/estop_hw + /safety/tablet_estop を集約し /safety/estop を発行
+  - /safety/estop_hw + /safety/estop_ui（旧 /safety/tablet_estop）を集約し
+    /safety/estop を発行
   - twist_mux ロックは /safety/estop が HIGH になることで保証される
     (twist_mux 自体のテストは test_twist_mux_priority.py で行う)
   - mode_manager のモード遷移より前に /safety/fault が発行されること
+  - enabled_targets（F-5・O-7）に入っている対象だけが監視されること
+    （このテストは lidar・esp32 だけを有効にする）
 """
 
 import pytest
@@ -23,12 +26,11 @@ import launch_testing.actions
 
 from std_msgs.msg import Bool
 from sensor_msgs.msg import LaserScan
-from th_system_msgs.msg import FaultStatus, WheelFeedback, PersonStatus
+from th_system_msgs.msg import FaultStatus, WheelFeedback
 
 
 LIDAR_TIMEOUT_MS  = 500   # safety_monitor のデフォルト値と合わせる
 ESP32_TIMEOUT_MS  = 500
-PERSON_TIMEOUT_MS = 500
 
 
 @pytest.mark.launch_test
@@ -40,8 +42,9 @@ def generate_test_description():
         parameters=[{
             'lidar_timeout_ms':   LIDAR_TIMEOUT_MS,
             'esp32_timeout_ms':   ESP32_TIMEOUT_MS,
-            'person_timeout_ms':  PERSON_TIMEOUT_MS,
             'check_period_ms':    50,
+            # F-5・O-7: このテストが検証する対象だけを明示的に有効化する。
+            'enabled_targets':    ['lidar', 'esp32'],
         }],
         output='screen',
     )
@@ -78,9 +81,8 @@ class TestSafetyMonitor(unittest.TestCase):
         # 入力パブリッシャー
         self.pub_scan   = self.node.create_publisher(LaserScan,     '/scan',               10)
         self.pub_wf     = self.node.create_publisher(WheelFeedback, '/esp32/wheel_feedback', 10)
-        self.pub_person = self.node.create_publisher(PersonStatus,  '/person/status',       10)
         self.pub_hw_estop    = self.node.create_publisher(Bool, '/safety/estop_hw',     10)
-        self.pub_tab_estop   = self.node.create_publisher(Bool, '/safety/tablet_estop', 10)
+        self.pub_ui_estop    = self.node.create_publisher(Bool, '/safety/estop_ui',     10)
 
         # 起動猶予（grace period）+ 少し余裕
         time.sleep(3.5)
@@ -137,12 +139,6 @@ class TestSafetyMonitor(unittest.TestCase):
         msg = WheelFeedback()
         msg.header.stamp = self.node.get_clock().now().to_msg()
         self.pub_wf.publish(msg)
-
-    def _pub_person_once(self):
-        msg = PersonStatus()
-        msg.header.stamp = self.node.get_clock().now().to_msg()
-        msg.is_lost = False
-        self.pub_person.publish(msg)
 
     # ════════════════════════════════════════════════════════
     # LiDAR フォルト検知テスト
@@ -233,11 +229,13 @@ class TestSafetyMonitor(unittest.TestCase):
         assert self._wait_for_estop(True), \
             'hw estop 発動後 /safety/estop が True にならなかった'
 
-    def test_tablet_estop_triggers_estop_topic(self):
-        """タブレット緊急停止 (tablet_estop=True) → /safety/estop が True"""
-        self.pub_tab_estop.publish(Bool(data=True))
+    def test_ui_estop_triggers_estop_topic(self):
+        """UI 非常停止 (estop_ui=True) → /safety/estop が True"""
+        self.pub_ui_estop.publish(Bool(data=True))
         assert self._wait_for_estop(True), \
-            'tablet estop 発動後 /safety/estop が True にならなかった'
+            'UI estop 発動後 /safety/estop が True にならなかった'
+        # クリーンアップ（§6.3: 押下側にラッチするため明示的に false を送る）
+        self.pub_ui_estop.publish(Bool(data=False))
 
     def test_estop_cleared_when_both_released(self):
         """両方の E-Stop が False になったら /safety/estop が False になる"""
@@ -245,14 +243,14 @@ class TestSafetyMonitor(unittest.TestCase):
         self._wait_for_estop(True)
 
         self.pub_hw_estop.publish(Bool(data=False))
-        self.pub_tab_estop.publish(Bool(data=False))
+        self.pub_ui_estop.publish(Bool(data=False))
         assert self._wait_for_estop(False), \
             '両 E-Stop 解除後 /safety/estop が False にならなかった'
 
     def test_estop_remains_if_one_active(self):
         """片方が True のままなら /safety/estop は True のまま"""
         self.pub_hw_estop.publish(Bool(data=True))
-        self.pub_tab_estop.publish(Bool(data=True))
+        self.pub_ui_estop.publish(Bool(data=True))
         self._wait_for_estop(True)
         self._estops.clear()
 
@@ -261,9 +259,9 @@ class TestSafetyMonitor(unittest.TestCase):
         self._spin(0.5)
 
         assert self._estops and self._estops[-1] is True, \
-            'タブレット E-Stop が残っているのに /safety/estop が False になった'
-        # クリーンアップ
-        self.pub_tab_estop.publish(Bool(data=False))
+            'UI 非常停止が残っているのに /safety/estop が False になった'
+        # クリーンアップ（§6.3: ラッチするため明示的に false を送る）
+        self.pub_ui_estop.publish(Bool(data=False))
 
     # ════════════════════════════════════════════════════════
     # フォルト発行タイミング（mode_manager 遷移より前）
