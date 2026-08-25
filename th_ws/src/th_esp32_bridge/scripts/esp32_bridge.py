@@ -432,11 +432,23 @@ class Esp32Bridge(Node):
             elif msg_type == IMU_DATA:
                 self._on_imu_data(*unpack_imu_data(data))
             else:
+                # D-4: 件数はカウンタ(D-3のサマリ)に集約し、ログ自体は
+                # throttle する。理由は下記 except ProtocolError と同じ。
                 self._diag_stats = record_invalid_frame(self._diag_stats)
-                self.get_logger().warn(f"未知の type tag: 0x{msg_type:02x}")
+                self.get_logger().warn(
+                    f"未知の type tag: 0x{msg_type:02x}", throttle_duration_sec=5.0)
         except ProtocolError as e:
+            # D-4: rclpy のログは stdout/rosout に同期で書く。launch が
+            # stdout をパイプで取っていて読み手が遅いと、パイプバッファが
+            # 埋まった時点で write() がブロックする。不正フレームが連続で
+            # 届くと、throttle 無しではその回数だけ同期 write が起き、
+            # 数秒スケールで executor 全体 (rclpy シングルスレッド) が
+            # 止まりかねない ── これが実機で観測されたCの最有力機構の
+            # ひとつ (2026-08 実機計測の切り分け作業)。件数自体は
+            # invalid_frames_total (D-3) に必ず積算するのでログを絞っても
+            # 発生頻度は分かる。
             self._diag_stats = record_invalid_frame(self._diag_stats)
-            self.get_logger().warn(f"不正なフレームを受信: {e}")
+            self.get_logger().warn(f"不正なフレームを受信: {e}", throttle_duration_sec=5.0)
 
     # ── WHEEL_FEEDBACK → /odom + TF ───────────────────────────────
     def _on_wheel_feedback(self, v_left: float, v_right: float,
