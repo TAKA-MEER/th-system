@@ -62,6 +62,9 @@ function AppShellInner({ screenName, screenId, children }) {
   const estopHw = !!state?.estop_hw
   const zone = state?.zone && state.zone !== 'NA' ? state.zone : null
   const w1Active = isW1Active(mode, stateName, !!fault?.active)
+  // C-2 (WP-CARRY-01 §4/§7): server-side reject reason for a UI estop press
+  // rejected during CARRY (C-06r), surfaced to W-2 -- see Windows.jsx.
+  const lastRejectReason = state?.last_reject_reason ?? ''
 
   // A higher-priority window (W-1/W-2) always wins; a confirm window a
   // screen opened before the fault/estop landed must not linger underneath
@@ -144,6 +147,7 @@ function AppShellInner({ screenName, screenId, children }) {
         setEstopDismissed={setEstopDismissed}
         confirmOpen={confirmOpen}
         onConfirmMount={setConfirmMount}
+        lastRejectReason={lastRejectReason}
       />
       <EstopReleaseBar show={uiEngaged || mode === 'ESTOP'} onRelease={handleRelease} />
     </div>

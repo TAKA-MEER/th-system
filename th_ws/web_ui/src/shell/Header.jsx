@@ -26,6 +26,15 @@ export default function Header({
   const modeText = stale ? MODE_UNKNOWN_LABEL : modeLabel(mode)
   const zoneLabels = zone ? ZONE_LABELS[zone] : null
 
+  // C-2 (DetailedDesign-wp1.md WP-CARRY-01 §4.3): in CARRY, C-06r rejects
+  // every UI estop press server-side, so `.engaged` (the look a *genuinely
+  // accepted* press gets, theme.css #estopBtn.engaged) must not appear --
+  // it would visually claim the press worked. The button must also not be
+  // `disabled` or hidden (§6.2's safety path -- /safety/estop_ui -- keeps
+  // publishing regardless, see AppShell.jsx's publishEstopUi); it only gets
+  // a distinct "won't do anything" look via this class.
+  const estopClass = mode === 'CARRY' ? 'disabled-in-carry' : (estopEngaged ? 'engaged' : '')
+
   // Priority: link loss > estop > a recoverable fault (WP-UI-02 generalizes
   // W-1 to fault-caused PAUSE; the header follows the same priority so it
   // never claims normal while a fault window is actually open) > normal.
@@ -76,7 +85,7 @@ export default function Header({
         </div>
         <button
           id="estopBtn"
-          className={estopEngaged ? 'engaged' : ''}
+          className={estopClass}
           onClick={onEstopClick}
         >
           {ESTOP_BUTTON_LABEL}

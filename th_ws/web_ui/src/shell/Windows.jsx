@@ -35,12 +35,22 @@
 import { useEffect } from 'react'
 import { resumeChoices, isW1Active } from './limits.js'
 import { faultLabel } from '../i18n/faults.js'
+import { reasonLabel } from '../i18n/reasons.js'
 import {
   WIN_HIDE_LABEL, WIN_RESUME_ACK, WIN_RESUME_YES, WIN_RESUME_NO,
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
   WIN_CARRY_TITLE, WIN_CARRY_BODY, WIN_CARRY_HINT, WIN_CARRY_RELEASED,
-  WIN_CARRY_RESUME, WIN_CARRY_DISMISS,
+  WIN_CARRY_RESUME, WIN_CARRY_DISMISS, WIN_CARRY_ESTOP_DISABLED,
 } from '../i18n/states.js'
+
+// C-06r's reject_reason_key for a UI estop press rejected during CARRY
+// (DetailedDesign-state.md :764). Not /system/trigger's business -- the UI
+// estop's own safety path is /safety/estop_ui, published unconditionally
+// (DetailedDesign-safety.md §6.2: th_state must never sit on that path).
+// state_manager subscribes to that same topic and, on a CARRY-time press,
+// republishes this key through SystemState.last_reject_reason; Windows.jsx
+// only reads it back out, it never calls a service to get it.
+const ESTOP_DISABLED_IN_CARRY = 'estop_disabled_in_carry'
 
 // estopDismissed / setEstopDismissed are lifted to AppShell so the header's
 // "reopen" badge (outside this component, in the always-on-top layer) can
@@ -49,6 +59,7 @@ import {
 export default function Windows({
   mode, stateName, estopUi, estopHw, fault, attributes, onTrigger,
   estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
+  lastRejectReason,
 }) {
   const faultActive = !!fault?.active
   // Mutually exclusive: mode can't be both 'ESTOP' and something else at once.
@@ -122,6 +133,13 @@ export default function Windows({
             <div className="bodyw">
               <p>{WIN_CARRY_BODY}</p>
               <p className="hint mt">{WIN_CARRY_HINT}</p>
+              {/* C-2: the UI estop button stays visible and clickable in
+                  CARRY (it must not be hidden), but it can't do anything
+                  while the drive is already cut -- say so plainly. */}
+              <p className="hint mt">{WIN_CARRY_ESTOP_DISABLED}</p>
+              {lastRejectReason === ESTOP_DISABLED_IN_CARRY && (
+                <p className="hint mt">{reasonLabel(lastRejectReason)}</p>
+              )}
               {carryHwReleased && (
                 <div className="mt">
                   <div className="row"><span className="pill ok">{WIN_CARRY_RELEASED}</span></div>

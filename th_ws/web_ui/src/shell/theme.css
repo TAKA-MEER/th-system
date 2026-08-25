@@ -108,6 +108,20 @@ table{border-collapse:collapse;width:100%}
 }
 #estopBtn:active{background:var(--estop-hi)}
 #estopBtn.engaged{background:var(--carry);border-left-color:#4a2a70}
+/* C-2 (WP-CARRY-01 §4.3): CARRY's own "won't do anything" look -- not
+   `.engaged` (that's reserved for a genuinely accepted press, and would
+   visually claim this one worked; C-06r actually rejects it), not
+   `disabled`/hidden either (the button stays pressable; the safety-path
+   publish to /safety/estop_ui never stops -- AppShell.jsx). A hazard-stripe
+   fill on the same red keeps it recognizable as the estop button while
+   reading as "inert" rather than "off" or "success". */
+#estopBtn.disabled-in-carry{
+  background:repeating-linear-gradient(135deg,var(--estop) 0 10px,#5a1414 10px 20px);
+  cursor:not-allowed;
+}
+#estopBtn.disabled-in-carry:active{
+  background:repeating-linear-gradient(135deg,var(--estop) 0 10px,#5a1414 10px 20px);
+}
 /* On a portrait screen, occupy >=45% of the header's second row */
 #hdr .row2{--estop-w:46%}
 #estopBtn{flex-basis:var(--estop-w,auto)}

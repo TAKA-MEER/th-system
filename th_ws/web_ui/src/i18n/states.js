@@ -89,6 +89,14 @@ export const WIN_CARRY_RELEASED = '解除されました'
 export const WIN_CARRY_RESUME = '押下前のモードで再開する'
 export const WIN_CARRY_DISMISS = '再開しない（待機に戻る）'
 
+// C-2 (DetailedDesign-wp1.md WP-CARRY-01 §4.3, §7 / DetailedDesign-state.md
+// :764): shown in W-2 regardless of whether the UI estop button has been
+// pressed -- the drive is already cut for the whole time CARRY holds, not
+// only after a rejected press. The event-specific reason
+// (estop_disabled_in_carry, i18n/reasons.js) layers on top of this once
+// SystemState.last_reject_reason actually reports the C-06r rejection.
+export const WIN_CARRY_ESTOP_DISABLED = '駆動は既に切れています。'
+
 // Operation card button labels (DetailedDesign-webui.md §4.1). `run`'s
 // label varies per screen ("follow start" / "run" / "replay" / ...); this
 // is only the generic default until a screen overrides it.
