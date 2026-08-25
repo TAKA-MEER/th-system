@@ -14,6 +14,7 @@ esp32_bridge がサーバー、ESP32 がクライアントとして接続しに�
 """
 import asyncio
 import threading
+import time
 
 import rclpy
 from rclpy.node import Node
@@ -31,6 +32,10 @@ import tf2_ros
 import websockets
 
 from th_esp32_bridge.keepalive_core import Twist2, keepalive_value
+from th_esp32_bridge.bridge_diagnostics import (
+    INITIAL_DIAG_STATS, format_summary, record_drain, record_feedback_gap,
+    record_invalid_frame, record_timer_tick, reset_window,
+)
 from th_esp32_bridge.odom_core import (
     Pose2D, integrate_pose, resolve_dt, resync_stamp, yaw_to_quaternion_zw,
 )
@@ -200,6 +205,14 @@ class Esp32Bridge(Node):
         self._rx_queue = BoundedFrameQueue(
             maxsize=self.get_parameter('rx_queue_maxsize').value)
         self.create_timer(0.02, self._drain_rx_queue)  # 50Hz
+
+        # D-3: 実行時計器 (bridge_diagnostics.py 参照)。timer_interval /
+        # drain_duration は実際の executor スケジューリング遅延を測るため
+        # ROS クロック (use_sim_time の影響を受け得る) ではなく
+        # time.monotonic() を使う。
+        self._diag_stats = INITIAL_DIAG_STATS
+        self._last_drain_tick_monotonic: "float | None" = None
+        self.create_timer(1.0, self._cb_diag_summary)  # 1Hz サマリ
 
         self._loop: "asyncio.AbstractEventLoop | None" = None
         self._ws_conn_lock = threading.Lock()
@@ -384,9 +397,22 @@ class Esp32Bridge(Node):
         # D-2: 1回の呼び出しで処理するフレーム数を有界にする (バックログが
         # あっても、このタイマーコールバックが際限なく executor を占有しない
         # ようにするため。rx_backpressure.py 参照)。
+        #
+        # D-3: このタイマー自身が実際に呼ばれた間隔と、drain 処理自体の
+        # 所要時間を計測する (bridge_diagnostics.py 参照。実機での詰まりの
+        # 有無を切り分ける計器)。
+        now_mono = time.monotonic()
+        if self._last_drain_tick_monotonic is not None:
+            interval_ms = (now_mono - self._last_drain_tick_monotonic) * 1000.0
+            self._diag_stats = record_timer_tick(self._diag_stats, interval_ms)
+        self._last_drain_tick_monotonic = now_mono
+
+        start_mono = time.monotonic()
         frames = self._rx_queue.drain(self._rx_queue_drain_max_per_cycle)
         for data in frames:
             self._handle_frame(data)
+        duration_ms = (time.monotonic() - start_mono) * 1000.0
+        self._diag_stats = record_drain(self._diag_stats, duration_ms, len(frames))
 
     def _handle_frame(self, data: bytes):
         try:
@@ -406,8 +432,10 @@ class Esp32Bridge(Node):
             elif msg_type == IMU_DATA:
                 self._on_imu_data(*unpack_imu_data(data))
             else:
+                self._diag_stats = record_invalid_frame(self._diag_stats)
                 self.get_logger().warn(f"未知の type tag: 0x{msg_type:02x}")
         except ProtocolError as e:
+            self._diag_stats = record_invalid_frame(self._diag_stats)
             self.get_logger().warn(f"不正なフレームを受信: {e}")
 
     # ── WHEEL_FEEDBACK → /odom + TF ───────────────────────────────
@@ -484,6 +512,8 @@ class Esp32Bridge(Node):
         # 到着間隔そのものは診断情報として監視する (積分には使わない)。
         arrival_dt = (now - self._last_odom_time).nanoseconds / 1e9
         self._last_odom_time = now
+        # D-3: WHEEL_FEEDBACK 到着間隔の窓内最大値 (bridge_diagnostics.py 参照)。
+        self._diag_stats = record_feedback_gap(self._diag_stats, arrival_dt * 1000.0)
         if arrival_dt > self._ARRIVAL_GAP_WARN_SEC:
             self.get_logger().warn(
                 f"wheel_feedback の受信ギャップ {arrival_dt:.2f} s "
@@ -595,6 +625,21 @@ class Esp32Bridge(Node):
             self._esp32_alive = False
             # safety_monitor が /esp32/wheel_feedback の途絶を別途検知するため
             # ここでは警告のみ(二重処理を避ける)
+
+    # ── D-3: 実行時計器の1Hzサマリ ──────────────────────────────
+    def _cb_diag_summary(self):
+        """実機20分計測でgrepして原因A/B/Cを切り分けるための計器サマリ。
+
+        bridge_diagnostics.py のモジュール docstring 参照。coalescer/
+        rx_queue それぞれの drop 累積カウンタ (D-1/D-2) はこのタイミングで
+        読み出す (状態は各コアが保持し、ここでは読むだけ)。
+        """
+        with self._coalescer_lock:
+            coalescer_dropped_total = self._coalescer_state.dropped_count
+        rx_queue_dropped_total = self._rx_queue.dropped_count
+        self.get_logger().info(
+            format_summary(self._diag_stats, coalescer_dropped_total, rx_queue_dropped_total))
+        self._diag_stats = reset_window(self._diag_stats)
 
 
 def main(args=None):

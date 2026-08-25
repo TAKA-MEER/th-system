@@ -47,6 +47,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_rx_backpressure
     test/test_rx_backpressure.py
     TIMEOUT 60)
+  # D-3: 実行時計器 (実機計測 2026-08 の受信ギャップ切り分け作業。
+  # drain タイマー間隔・drain 処理時間・WHEEL_FEEDBACK 到着間隔の最大値、
+  # および frames/drop/invalid の累積カウントを1Hzサマリで出す。ROS2不要)
+  ament_add_pytest_test(test_bridge_diagnostics
+    test/test_bridge_diagnostics.py
+    TIMEOUT 60)
   # CMakeLists.txt へのテスト登録漏れを検出するガード（このファイル自身と
   # ament_add_gtest 登録も対象。上記5本が長期間未登録だった事故の再発防止）
   ament_add_pytest_test(test_cmake_test_registration
