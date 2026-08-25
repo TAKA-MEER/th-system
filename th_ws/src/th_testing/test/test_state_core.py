@@ -161,6 +161,61 @@ def test_estop_in_carry_rejected(state_core_bundle):
 
 
 # ============================================================
+# WP-CARRY-01 §7: C-07 → C-10 → C-11 の一巡（物理E-Stop押下でCARRYへ、
+# 解除で表示、「再開」で押下前のモード・状態へ戻る）。
+# ============================================================
+@pytest.mark.rule("C-07")
+@pytest.mark.rule("C-10")
+@pytest.mark.rule("C-11")
+def test_carry_roundtrip(state_core_bundle):
+    core, _, _, _ = state_core_bundle
+
+    # C-07: 通常モード（FOLLOW/RUN）中に物理E-Stop押下 → CARRY。
+    # mode=FOLLOW は NO_LATCH_MODES に含まれないので latch_prev が発火する。
+    d1 = core.step("FOLLOW", "RUN", "hw.estop.press", _mk_ctx())
+    assert d1.accepted is True
+    assert d1.to_mode == "CARRY" and d1.to_state == "NONE"
+    assert d1.rule_id == "C-07"
+    assert "latch_prev" in [e.name for e in d1.effects]
+    assert "open_window" in [e.name for e in d1.effects]
+
+    # latch_prev effect の適用（呼び出し側 = state_manager の仕事）を模擬し、
+    # 押下前のモード・状態を prev_* として引き継いだ Context を以降で使う。
+    ctx_pressed = _mk_ctx(prev_mode="FOLLOW", prev_state="RUN", hw_estop=True)
+
+    # C-10: CARRY 中に物理E-Stop解除 → モード・状態は変わらず、show_resume を出す。
+    d2 = core.step("CARRY", "NONE", "hw.estop.release", ctx_pressed)
+    assert d2.accepted is True
+    assert d2.to_mode == "CARRY" and d2.to_state == "NONE"
+    assert d2.rule_id == "C-10"
+    assert "show_resume" in [e.name for e in d2.effects]
+
+    # C-11: 解除済み・重大フォルトなしで「再開」→ 押下前のモード（$prev_mode/$prev_state）へ戻る。
+    ctx_released = _mk_ctx(prev_mode="FOLLOW", prev_state="RUN", hw_estop=False, fault_severity="")
+    d3 = core.step("CARRY", "NONE", "ui.carry_resume", ctx_released)
+    assert d3.accepted is True
+    assert d3.to_mode == "FOLLOW" and d3.to_state == "RUN"
+    assert d3.rule_id == "C-11"
+    assert "close_window" in [e.name for e in d3.effects]
+
+
+# ============================================================
+# WP-CARRY-01 §7 FMEA②: hw_released_and_no_critical を hw_released だけにすると、
+# 重大フォルトが継続したまま走行モードへ戻ってしまう（Spec-safety.md §3.5 違反）。
+# 物理は解除済みでも、重大フォルトが残っている間は ui.carry_resume が通らないこと。
+# ============================================================
+@pytest.mark.rule("C-11")
+def test_carry_resume_blocked_by_critical(state_core_bundle):
+    core, _, _, _ = state_core_bundle
+
+    ctx = _mk_ctx(prev_mode="FOLLOW", prev_state="RUN", hw_estop=False,
+                  fault_active=True, fault_severity="CRITICAL")
+    d = core.step("CARRY", "NONE", "ui.carry_resume", ctx)
+    assert d.accepted is False
+    assert d.reject_reason_key == "not_allowed"
+
+
+# ============================================================
 # C-09f: ESTOP はトラップにならない。
 # fault.critical → ESTOP → ui.resume_ack → IDLE
 # ============================================================
