@@ -176,12 +176,20 @@ def _apply_v_max_clamp(rows_by_name: Mapping[str, dict], values: dict[str, tuple
                         clamp_warnings: list[str] | None, clamp_errors: list[str] | None) -> None:
     """A1 のクランプ（`DetailedDesign-params.md` §3.3 手順2・§4 A1・N-7）。
 
-    `resolve_registry()` の一般ループより**前に**呼ぶこと。`v_max` は `lidar_timeout_ms` /
-    `esp32_timeout_ms` だけでなく `obstacle_stop_distance_m` / `follow_stop_distance_m` /
-    `v_slow` 等、多数の行から `derived_from` される。クランプ後の `v_max` を
-    `values["v_max"]` に上書きしてから一般ループへ入ることで、それらの派生値が
-    **新しい v_max で 1 度だけ再計算される**（`_resolve_one` は `values` に既にあれば
-    再計算しない memoize 方式なので、事前に確定させておく必要がある。P-5: 不動点反復にしない）。
+    `resolve_registry()` の一般ループより**前に**呼ぶこと。`v_max` を使う経路は
+    `derived_from` だけではない——`lidar_timeout_ms` / `esp32_timeout_ms` の
+    `derived_from` には確かに `v_max` があるが、`obstacle_stop_distance_m`（`value_by`
+    に `v_max` を持つ軸の解決経由）や `follow_stop_distance_m`（`value_by` を持たない
+    スカラー分岐で `_call_formula()` が `_resolve_one("v_max", ...)` を直接呼ぶ経由。
+    `export.py` の `braking_distance_plus_margin` 参照）は `derived_from` に `v_max` を
+    **持たないまま** v_max を使う（`derived_from: [v_max]` を grep しても
+    `lidar_timeout_ms` / `esp32_timeout_ms` の 2 行しか出ないのはそのため——
+    「この配置は過剰では」と早合点しないこと）。`v_slow` / `v_reverse` / `v_jog_panel` は
+    そもそも v_max に依存しない（この関数の下方、A5 適合性チェックのコメント参照）。
+    クランプ後の `v_max` を `values["v_max"]` に上書きしてから一般ループへ入ることで、
+    上記のどちらの経路であっても**新しい v_max で 1 度だけ再計算される**
+    （`_resolve_one` は `values` に既にあれば再計算しない memoize 方式なので、
+    事前に確定させておく必要がある。P-5: 不動点反復にしない）。
 
     N-7（`DetailedDesign-open.md`）: クランプは A5（`v_reverse ≤ v_slow ≤ v_max`）と衝突しうる。
     ここでは**選択肢(b)**を採る——クランプ後の `v_max` が `v_slow` を下回るなら、

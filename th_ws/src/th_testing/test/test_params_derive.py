@@ -88,6 +88,26 @@ def test_v_max_from_intrusion_budget():
     assert derive.timeout_upper_bound_ms(v_max, budget) == pytest.approx(timeout_ms)
 
 
+def test_v_max_from_intrusion_budget_never_overshoots_the_budget():
+    """N-7 レビュー指摘: IEEE754 の丸めで `(budget/x)*x` が `budget` を 1 ULP 超えると、
+    A1（`assertions.a1_intrusion_budget`。厳密比較 `intrusion > intrusion_budget_m`）が
+    「クランプしてちょうど満たしたはずの v_max」を直後にまた違反判定してしまう
+    （`intrusion_budget_m = 0.50` はたまたま丸め誤差が出ない値だっただけで、
+    0.40 等では総当たりで有意な確率で踏む）。budget 0.01〜1.99 × timeout_ms 50〜3000ms を
+    総当たりし、`v_max × (timeout_ms/1000)` が `intrusion_budget_m` を絶対に超えないこと
+    （誤判定 0 件）を確認する。"""
+    bad = []
+    for bi in range(1, 200):
+        budget = bi / 100.0
+        for ti in range(50, 3001, 50):
+            timeout_ms = float(ti)
+            v_max = derive.v_max_from_intrusion_budget(budget, timeout_ms)
+            intrusion = v_max * (timeout_ms / 1000.0)
+            if intrusion > budget:
+                bad.append((budget, timeout_ms, intrusion))
+    assert bad == []
+
+
 def test_all_twelve_functions_exist_with_expected_signatures():
     """DetailedDesign-wp0.md WP-PARAM-01 §4.1 の 12 関数がすべて実装されていること。"""
     import inspect

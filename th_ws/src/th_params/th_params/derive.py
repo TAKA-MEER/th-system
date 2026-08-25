@@ -102,8 +102,20 @@ def timeout_upper_bound_ms(v_max: float, intrusion_budget_m: float) -> float:
 def v_max_from_intrusion_budget(intrusion_budget_m: float, timeout_ms: float) -> float:
     """A1 のクランプ（§3.3 手順2・N-7）: timeout_upper_bound_ms の逆関数。
     採用する timeout（下限）を固定した上で、intrusion_budget_m を満たす v_max を逆算する。
-    v_max を下げる側にのみ使う（1 回だけ。不動点反復にしない。P-5）。"""
-    return intrusion_budget_m / (timeout_ms / 1000.0)
+    v_max を下げる側にのみ使う（1 回だけ。不動点反復にしない。P-5）。
+
+    IEEE754 の丸めにより `(budget / x) * x`（x = timeout_ms/1000）が `budget` を
+    1 ULP 超えることがある——`assertions.a1_intrusion_budget()` は厳密比較
+    （`intrusion > intrusion_budget_m`）なので、超えたままだと「クランプして
+    ちょうど満たしたはずの v_max」で直後に A1 が再び違反する。A1（危険な組合せを
+    構成不能にする表明）を緩めるのではなく、クランプ側が厳密に満たしに行く——
+    `math.nextafter(v, 0.0)` で v_max を下向きに 1 ULP ずつ下げ、
+    `v * x ≤ budget` になった時点で止める（実測で最大 1 回、有界）。"""
+    x = timeout_ms / 1000.0
+    v = intrusion_budget_m / x
+    while v * x > intrusion_budget_m:
+        v = math.nextafter(v, 0.0)
+    return v
 
 
 # ---------------------------------------------------------------------------
