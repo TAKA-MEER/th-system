@@ -193,7 +193,7 @@
   status: measured
   value: 1.18
   measured_at: "2026-08-21"
-  source: "実測（WP-MEAS-01）。前進 0.89 m/s から 3 本。巻尺 4.20/4.25/4.26 m で較正した積分値。制動距離 0.314〜0.336 m、実効減速度 1.18/1.19/1.26 m/s2 の最悪値。TARGET_RAMP_ACCEL_MPS2=1.5（config.h:69）に対し実測は約 2 割低い。記録: docs/plan/detailed/data/meas07/"
+  source: "実測（WP-MEAS-01）。前進 0.89 m/s から 3 本。巻尺 4.20/4.25/4.26 m で較正した積分値。制動距離 0.314〜0.336 m、実効減速度 1.18/1.19/1.26 m/s2 の最悪値。TARGET_RAMP_ACCEL_MPS2=1.5（config.h:69）に対し実測は約 2 割低い。記録: th_ws/data/brake_032431.csv, th_ws/data/brake_032737.csv"
   blocking: true
   blocking_from_stage: 0
   consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner, jog_gate]
@@ -243,7 +243,7 @@
   value: 0.55
   consumers: [params_audit, obstacle_limiter]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.1"
-  note: "機体外形（幅）。2026-08-18 に巻尺で実測（最外形）。出典: docs/plan/detailed/data/dimensions/body.md"
+  note: "機体外形（幅）。2026-08-18 に巻尺で実測（最外形）。記録ファイルは NTFS 破損で消失したため、この registry の記載が唯一の出典"
 
 - name: body_length_m
   unit: m
@@ -252,7 +252,7 @@
   value: 0.55
   consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.2"
-  note: "機体外形（全長）。2026-08-18 に巻尺で実測（最外形）。出典: docs/plan/detailed/data/dimensions/body.md"
+  note: "機体外形（全長）。2026-08-18 に巻尺で実測（最外形）。記録ファイルは NTFS 破損で消失したため、この registry の記載が唯一の出典"
 
 - name: body_half_length_m
   unit: m
