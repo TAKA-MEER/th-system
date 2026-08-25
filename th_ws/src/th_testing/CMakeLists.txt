@@ -12,6 +12,26 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_summon_logic
     test/test_summon_logic.py
     TIMEOUT 30)
+  ament_add_pytest_test(test_esp32_ws_protocol
+    test/test_esp32_ws_protocol.py
+    TIMEOUT 60)
+  ament_add_pytest_test(test_mapless_follow_logic
+    test/test_mapless_follow_logic.py
+    TIMEOUT 60)
+  ament_add_pytest_test(test_person_tracker_bridge_logic
+    test/test_person_tracker_bridge_logic.py
+    TIMEOUT 60)
+  ament_add_pytest_test(test_scenario_configs
+    test/test_scenario_configs.py
+    TIMEOUT 60)
+  ament_add_pytest_test(test_yaml_writer
+    test/test_yaml_writer.py
+    TIMEOUT 60)
+  # CMakeLists.txt へのテスト登録漏れを検出するガード（このファイル自身と
+  # ament_add_gtest 登録も対象。上記5本が長期間未登録だった事故の再発防止）
+  ament_add_pytest_test(test_cmake_test_registration
+    test/test_cmake_test_registration.py
+    TIMEOUT 60)
 
   # ── 型定義テスト (th_system_msgs の生成物が要る・ノード起動は不要) ──
   ament_add_pytest_test(test_msg_definitions
