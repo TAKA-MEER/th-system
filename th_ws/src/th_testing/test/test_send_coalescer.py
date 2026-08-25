@@ -214,3 +214,63 @@ class TestDriveSendLoop:
 
         asyncio.run(drive_send_loop(frames[0], send_fn, complete_fn))
         assert received == frames
+
+
+class TestDriveSendLoopRestoresIdleOnFailure:
+    """レビュー第2ラウンドの指摘。
+
+    「例外時に complete_fn を1回呼ぶ」だけでは足りない。complete() は保留が
+    あるとき in_flight を True に保ったままそのフレームを返す仕様なので、
+    1回しか呼ばないと「保留を返しただけで誰も送らず、二度と complete されない」
+    状態になり in_flight が True で固定される。以後の送信要求 (20Hz キープ
+    アライブを含む) は永久に pending へ落ちるだけになり、WHEEL_CMD が二度と
+    送信されない = K-1 違反の恒久故障。
+
+    しかも **輻輳中は pending が埋まっているのが常態**なので、これは例外的な
+    経路ではなく本番の経路である。
+
+    ここではフェイクではなく本物の offer() / complete() を通して検証する
+    (この2つの相互作用がバグの本体であり、complete_fn を固定値で模擬すると
+    バグの棲む枝を一度も通らないため — 実際、第1ラウンドのテストは
+    complete_fn が常に None を返す形だったのでこのバグを見逃した)。
+    """
+
+    def _run_with_pending(self, exc: BaseException) -> CoalescerState:
+        """保留を埋めた状態で送信を失敗させ、最終的な状態を返す。"""
+        # offer で in_flight にし、さらに offer して pending を埋める
+        first = offer(INITIAL_STATE, b"f1")
+        second = offer(first.state, b"f2")
+        assert second.state.in_flight is True
+        assert second.state.pending == b"f2"   # 前提: 保留が埋まっている
+
+        box = {"state": second.state}
+
+        def complete_fn():
+            result = complete(box["state"])
+            box["state"] = result.state
+            return result.frame_to_send
+
+        async def send_fn(frame):
+            raise exc
+
+        with pytest.raises(type(exc)):
+            asyncio.run(drive_send_loop(first.frame_to_send, send_fn, complete_fn))
+        return box["state"]
+
+    def test_idle_restored_when_send_fails_with_pending(self):
+        """保留が埋まった状態で送信が例外を投げても in_flight が解放される"""
+        state = self._run_with_pending(RuntimeError("送信失敗"))
+        assert state.in_flight is False, (
+            "保留がある状態で送信が失敗すると in_flight が True のまま固定され、"
+            "以後の WHEEL_CMD が永久に送信されなくなる (K-1 違反)")
+        assert state.pending is None
+
+    def test_idle_restored_on_cancelled_error(self):
+        """CancelledError (Exception ではなく BaseException 直下) でも同じこと。
+
+        これを取りこぼさないことがこの防御の存在理由なので、except Exception
+        では意味がない。
+        """
+        state = self._run_with_pending(asyncio.CancelledError())
+        assert state.in_flight is False
+        assert state.pending is None

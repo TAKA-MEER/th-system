@@ -399,19 +399,18 @@ class Esp32Bridge(Node):
     async def _send_safe(conn, frame: bytes):
         try:
             await conn.send(frame)
-        except (Exception, asyncio.CancelledError):
+        except Exception:
             # 切断済み等 — 次周期の cmd_vel で再送されるため無視してよい。
             #
-            # レビュー指摘 (2026-08) のバグ修正: asyncio.CancelledError は
-            # Python 3.8+ で Exception ではなく BaseException 直下のため、
-            # `except Exception` だけでは素通りしていた。素通りすると
-            # 呼び出し元 (drive_send_loop) の complete_fn 呼び出しに
-            # 到達できず、コアレッシング状態が「送信中」のまま固定され、
-            # 以後の送信要求は永久に保留へ積まれるだけになって WHEEL_CMD
-            # 送信 (20Hzキープアライブ含む) が二度と行われなくなる
-            # (K-1 違反。ノード再起動でしか復帰しない恒久故障で、しかも
-            # ログに何も出ない)。drive_send_loop 側の try/finally とあわせ
-            # て二重に防ぐ。
+            # asyncio.CancelledError (Python 3.8+ では Exception ではなく
+            # BaseException 直下) は **意図的にここで握らない**。握りつぶすと
+            # タスクのキャンセル意味論が壊れ、イベントループ停止時にタスクが
+            # 落ちなくなる (Python 公式も再送出を推奨している)。
+            #
+            # 握らなくて安全なのは、呼び出し元の drive_send_loop が
+            # `except BaseException` で受けてコアレッシング状態を idle へ
+            # 戻してから再送出するため (send_coalescer.py 参照)。状態が
+            # 固定されないことはあちらの責務として保証されている。
             pass
 
     # ── 受信キューの drain (rclpy スレッド側) ─────────────────────

@@ -124,17 +124,21 @@ async def drive_send_loop(frame: "bytes | None", send_fn, complete_fn) -> None:
     伝播してしまい、状態が「送信中」のまま固定される (以後の送信要求は
     永久に保留へ積まれるだけになり、WHEEL_CMD 送信が二度と行われなく
     なる — K-1 違反。ノード再起動でしか復帰しない恒久故障で、しかも
-    ログに何も出ない)。send_fn の実装 (_send_safe) 側でも例外を捕捉する
-    よう直したが、ここでも try/finally で complete_fn を必ず呼ぶことで
-    二重に守る。
+    ログに何も出ない)。ここでは send_fn がどんな例外を投げても
+    **コアレッシング状態を idle (in_flight=False) へ戻してから再送出する**
+    ことを保証する (下の except 節のコメント参照)。
+
+    注意: 「complete_fn を 1 回呼べばよい」ではない。complete() は保留が
+    あるとき in_flight を True に保ったままそのフレームを返すため、
+    1 回呼ぶだけでは輻輳中 (= 保留が埋まっているのが常態) にちょうど
+    in_flight が固定される。None が返るまで呼び切る必要がある。
 
     send_fn: 1フレーム送信する非同期関数 (async def send_fn(frame))。
-             例外を外へ投げないようにするのは呼び出し側 (send_fn 自体)
-             の責務。ここでは「投げられても complete_fn は必ず呼ぶ」
-             ところまでしか保証しない (投げられた場合、その時点で
-             complete_fn が返す次フレームがあっても送信はしない —
-             送信そのものが失敗する状況で same call 内に続行するのは
-             安全ではないため)。
+             例外を投げてもよい (状態の後始末はここが引き受ける)。
+             ただしその呼び出しで残っていた保留フレームは送られずに
+             捨てられる — 送信そのものが失敗している状況で同じ呼び出しの
+             中で続行するのは安全ではないため。捨てても次の 20Hz
+             キープアライブが最新値で送り直すので実害は 50ms 以内に収まる。
     complete_fn: 引数無しの同期関数。呼ぶたびに1回分の送信完了を通知し、
                  次に送るべきフレーム (無ければ None) を返す。実際の
                  状態更新とロックはノード側 (コアレッシング状態は
@@ -144,5 +148,27 @@ async def drive_send_loop(frame: "bytes | None", send_fn, complete_fn) -> None:
     while frame is not None:
         try:
             await send_fn(frame)
-        finally:
-            frame = complete_fn()
+        except BaseException:
+            # 送信に失敗した以上、このフレーム以降は同じ呼び出しの中では送らない。
+            # ただし **状態は必ず idle (in_flight=False) へ戻してから** 抜ける。
+            #
+            # complete() は保留フレームがあるとき in_flight=True を保ったまま
+            # そのフレームを返す仕様なので、ここで 1 回呼ぶだけだと
+            # 「保留を返しただけで誰も送らず、二度と complete されない」状態に
+            # なり、in_flight が True で固定される。以後の送信要求 (20Hz の
+            # キープアライブを含む) は永久に pending へ落ちるだけになり、
+            # WHEEL_CMD が二度と送信されない — K-1 違反の恒久故障になる。
+            # **輻輳中は pending が埋まっているのが常態**なので、これは例外的な
+            # 経路ではなく本番の経路である。
+            #
+            # そこで None が返るまで呼び切って idle に戻す。保留は高々 1 件
+            # なので有界 (最大 2 周)。捨てたフレームは次の 20Hz キープアライブが
+            # 最新値で送り直すため、復帰は 50ms 以内で済む。
+            #
+            # BaseException で受けるのは asyncio.CancelledError (Python 3.8+ では
+            # Exception ではなく BaseException 直下) を取りこぼさないため。
+            # それがこの防御の存在理由なので Exception では意味がない。
+            while complete_fn() is not None:
+                pass
+            raise
+        frame = complete_fn()
