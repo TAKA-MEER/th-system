@@ -551,13 +551,22 @@
 - name: blind_angle_ranges
   unit: deg_pairs
   class: c
-  status: placeholder
-  value: TBD_MEASURE
-  blocking: true
-  blocking_from_stage: 2
+  status: measured
+  value: []
+  measured_at: "2026-08-26"
+  source: "走行体のみの構成では LiDAR に死角が無いことを確認。上部構造を搭載した時点で WP-CALIB-01 の手順で再測定する"
   consumers: [lidar_filter, obstacle_limiter]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-wp0.md WP-PARAM-01 §5"
-  note: "死角セクタ（O-4: WP-CALIB-01 は WP-SAFE-03 より前＝段階 2）。blocking_from_stage はパケット §5 の表に無いためこちらで判断した（報告に明記）"
+  note: "死角セクタ（O-4）。現構成（走行体のみ）は死角が無いため空配列で確定。空配列と『未校正』は別物であり、その判定は blind_calibrated（class:b）に委ねる（DetailedDesign-open.md 参照）"
+
+- name: blind_calibrated
+  unit: null
+  class: b
+  status: given
+  value: true
+  consumers: [obstacle_limiter, lidar_filter]
+  spec_ref: "DetailedDesign-safety.md §4.4 / DetailedDesign-open.md"
+  note: "死角マスクが校正済みかどうか。既定は false 側（拒否）が安全だが、現構成は死角が無いことを確認済みなので true。DetailedDesign-safety.md §4.4 は『全ペアが幅ゼロ→拒否』と定めるが、空リストは sanitize_node_params() が落とすため配列の形からは『死角なし』と『バグで消えた』を区別できない。明示フラグで判定する"
 
 # =========================================================================
 # 7.3 時間（names §7.3）

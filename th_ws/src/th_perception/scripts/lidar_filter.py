@@ -2,13 +2,17 @@
 # ============================================================
 # lidar_filter — LiDAR 死角フィルターノード
 #
-# 20mm 角アルミパイプ (4 角柱) による死角を inf でマスクし
+# 機体外形（アルミパイプ等）による死角を inf でマスクし
 # /scan_filtered を発行する。
-# 死角角度は実測後に blind_angle_ranges パラメータで更新。
+# blind_angle_ranges は registry.yaml の 1 本が出所（params_generation が
+# th_ws/data/generated/lidar_filter.yaml へ書く）。既定値は空（＝マスクなし）
+# にしてある。死角がある構成なら registry.yaml 側で必ず値を持たせること
+# （このノード側の既定値だけを変えても params_generation の生成物が
+# 上書きするため意味がない）。
 # ============================================================
 import rclpy
 from rclpy.node import Node
-from rcl_interfaces.msg import SetParametersResult
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType, SetParametersResult
 from sensor_msgs.msg import LaserScan
 import math
 import copy
@@ -20,18 +24,22 @@ class LidarFilter(Node):
 
         # ── パラメータ ──────────────────────────────────────
         # blind_angle_ranges: [[start_deg, end_deg], ...] (0=前方 右回り正)
-        # 初期値: 4 角柱を 45°±5° ずつでマスク (実測後に更新)
-        self.declare_parameter('blind_angle_ranges',
-            [40.0, 50.0,   # 右前
-             130.0, 140.0, # 右後
-             220.0, 230.0, # 左後
-             310.0, 320.0] # 左前
-        )
+        # 既定値は空配列（＝マスクしない）。空の DOUBLE_ARRAY は型推論に失敗する
+        # ため ParameterDescriptor で明示する。マスクしすぎて障害物が見えなく
+        # なるより、マスクせず広く見える方が安全側（安全側は「マスクしない」）。
+        self.declare_parameter(
+            'blind_angle_ranges', [],
+            ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY))
         self.declare_parameter('input_topic',  '/scan')
         self.declare_parameter('output_topic', '/scan_filtered')
 
         self._blind_ranges = self._build_blind_ranges(
             self.get_parameter('blind_angle_ranges').value)
+        if not self._blind_ranges:
+            self.get_logger().warn(
+                'blind_angle_ranges が空。死角マスクなしで起動する'
+                '（死角が無いことを確認済みの構成なら正常。死角があるのに'
+                'registry.yaml の値が抜けている場合は要確認）')
         self.add_on_set_parameters_callback(self._on_set_params)
 
         in_topic  = self.get_parameter('input_topic').value

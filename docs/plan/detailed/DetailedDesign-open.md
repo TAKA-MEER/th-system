@@ -137,6 +137,7 @@
 | **N-5** | **UI 側の受信ギャップ 4592ms の切り分け。**2026-08-21 の実測（`th_ws/data/meas04_after.csv`）でスリープ／タイマー抑制の混入が疑われる。要再測定（機体＋タブレット） | 未決。`ui_gap_p99_ms`（`registry.yaml`）が `placeholder` のまま |
 | **N-6** | **PC 側タイムアウトが ESP32 のウォッチドッグより短い。**`esp32_timeout_ms = 322ms` に対し `esp32_watchdog_ms = 600ms`。ESP32 が自分で止まる前に PC 側が「切断」と判定する（A6 が指す実質的な問題）。`CLAUDE.md` によればウォッチドッグは WiFi ジッタによる誤発動を避けるため 2026-08-05 に 300→600ms へ緩めた経緯があり、この関係を詰め直す必要がある | 未決 |
 | **N-7** | **A1 の `v_max` クランプ（P-5）が未実装。**設計書 §4 は「`v_max` をクランプし、警告を出す」としているが `export.py` の `timeout_from_bounds` は `if timeout > upper: pass` で何もしていない。現在の値では上限に触れないため実害は出ていないが、実装と設計書が食い違っている | 未決（[params](DetailedDesign-params.md) §3.3・§4） |
+| ~~N-8~~ | **`blind_angle_ranges` の「死角なし」と「未校正」を配列の形だけで区別できない。**[safety](DetailedDesign-safety.md) §4.4 は「全ペアが幅ゼロ → `obstacle_limiter` は AUTO の走行開始を拒否する」と定めるが、`params_generation.sanitize_node_params()` は D3 の設計どおり空リストをキーごと落とすため、生成物では「死角が無いと確認済みで空配列」と「値が抜けてバグで消えた」を区別できない。安全ゲートの判定を配列の形から推論するのは危険 | **解決**（2026-08-26）。走行体のみの構成では LiDAR に死角が無いことを確認済みなので `blind_angle_ranges` は `status: measured` / `value: []` で確定した。判定は配列の形からではなく、新設した `blind_calibrated`（`class: b` / `given` / `value: true`）という明示フラグで行う設計にした。既定を `false`（拒否）側にせず現状 `true` にしているのは、死角が実際に無いことを確認済みであるため。上部構造の追加などで死角ができたら、`WP-CALIB-01` の手順で `blind_angle_ranges` を再測定するのと同時に `blind_calibrated` を明示的に見直すこと（`registry.yaml` / [names](DetailedDesign-names.md) §7.2） |
 
 ---
 
