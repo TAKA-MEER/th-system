@@ -35,6 +35,9 @@ from th_esp32_bridge.keepalive_core import Twist2, keepalive_value
 from th_esp32_bridge.odom_core import (
     Pose2D, integrate_pose, resolve_dt, resync_stamp, yaw_to_quaternion_zw,
 )
+from th_esp32_bridge.send_coalescer import INITIAL_STATE as _COALESCER_INITIAL_STATE
+from th_esp32_bridge.send_coalescer import complete as coalescer_complete
+from th_esp32_bridge.send_coalescer import offer as coalescer_offer
 from th_esp32_bridge.ws_protocol import (
     ProtocolError, WHEEL_FEEDBACK, ESTOP_HW, IMU_DATA,
     pack_wheel_cmd, unpack_wheel_feedback, unpack_estop_hw_flags, unpack_imu_data, peek_type,
@@ -184,6 +187,13 @@ class Esp32Bridge(Node):
         self._ws_conn_lock = threading.Lock()
         self._ws_conn = None  # 現在接続中の ESP32 (単一クライアント想定)
 
+        # D-1: WHEEL_CMD 送信コアレッシング (send_coalescer.py 参照)。
+        # in-flight 中の送信要求はキューせず保留フレームの上書きで束ねる。
+        # rclpy タイマー(_send_wheel_cmd)と asyncio スレッド(_send_and_continue
+        # の完了時)の双方から読み書きするため、専用ロックで守る。
+        self._coalescer_lock = threading.Lock()
+        self._coalescer_state = _COALESCER_INITIAL_STATE
+
         self._ws_thread = threading.Thread(target=self._run_ws_server, daemon=True)
         self._ws_thread.start()
 
@@ -317,7 +327,32 @@ class Esp32Bridge(Node):
             loop = self._loop
         if conn is None or loop is None:
             return  # ESP32 未接続 — ESP32 側もローカルウォッチドッグで安全側に倒れる
-        asyncio.run_coroutine_threadsafe(self._send_safe(conn, frame), loop)
+
+        # D-1: 送信コアレッシング。in-flight でなければ即座に送信を投げ、
+        # in-flight 中なら保留フレームを上書きするだけでコルーチンは追加しない
+        # (send_coalescer.py の docstring 参照)。
+        with self._coalescer_lock:
+            coalesce_result = coalescer_offer(self._coalescer_state, frame)
+            self._coalescer_state = coalesce_result.state
+        if coalesce_result.frame_to_send is not None:
+            asyncio.run_coroutine_threadsafe(
+                self._send_and_continue(coalesce_result.frame_to_send), loop)
+
+    async def _send_and_continue(self, frame: bytes):
+        """1フレーム送信し、完了時に保留フレームがあれば続けて送る。
+
+        conn は送信のたびに読み直す (ESP32 の再接続を跨いで古い conn オブジェクト
+        へ送り続けないため)。
+        """
+        with self._ws_conn_lock:
+            conn = self._ws_conn
+        if conn is not None:
+            await self._send_safe(conn, frame)
+        with self._coalescer_lock:
+            result = coalescer_complete(self._coalescer_state)
+            self._coalescer_state = result.state
+        if result.frame_to_send is not None:
+            await self._send_and_continue(result.frame_to_send)
 
     @staticmethod
     async def _send_safe(conn, frame: bytes):

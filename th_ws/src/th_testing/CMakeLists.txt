@@ -35,6 +35,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_odom_core
     test/test_odom_core.py
     TIMEOUT 60)
+  # D-1: WHEEL_CMD 送信コアレッシング (実機計測 2026-08 の受信ギャップ
+  # 切り分け作業。in-flight 中の送信要求を保留フレームの上書きで束ねる。
+  # ROS2 不要)
+  ament_add_pytest_test(test_send_coalescer
+    test/test_send_coalescer.py
+    TIMEOUT 60)
   # CMakeLists.txt へのテスト登録漏れを検出するガード（このファイル自身と
   # ament_add_gtest 登録も対象。上記5本が長期間未登録だった事故の再発防止）
   ament_add_pytest_test(test_cmake_test_registration
