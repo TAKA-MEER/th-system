@@ -13,7 +13,6 @@ esp32_bridge がサーバー、ESP32 がクライアントとして接続しに�
   4. /esp32/wheel_feedback (WheelFeedback) 発行 (他ノード用)
 """
 import asyncio
-import queue
 import threading
 
 import rclpy
@@ -35,6 +34,7 @@ from th_esp32_bridge.keepalive_core import Twist2, keepalive_value
 from th_esp32_bridge.odom_core import (
     Pose2D, integrate_pose, resolve_dt, resync_stamp, yaw_to_quaternion_zw,
 )
+from th_esp32_bridge.rx_backpressure import BoundedFrameQueue
 from th_esp32_bridge.send_coalescer import INITIAL_STATE as _COALESCER_INITIAL_STATE
 from th_esp32_bridge.send_coalescer import complete as coalescer_complete
 from th_esp32_bridge.send_coalescer import offer as coalescer_offer
@@ -65,6 +65,21 @@ class Esp32Bridge(Node):
         # 既定 400ms) で上書きされる。ここでの既定値は launch を介さず
         # 直接ノードを立てた場合のフォールバック。
         self.declare_parameter('cmd_vel_stale_ms', 400)
+        # D-2 (受信ギャップ切り分け作業): 受信キュー (_rx_queue) の上限件数。
+        # 溢れたら古い方を捨てる (rx_backpressure.py 参照)。WHEEL_FEEDBACK と
+        # IMU_DATA はどちらも ESP32 の制御周期 (既定 CTRL_PERIOD_MS=100ms)
+        # ごとに1フレームずつ、あわせて公称 20Hz で届く。既定値 200 は
+        # この公称レートで 10 秒分に相当し、実機計測で観測された最悪ギャップ
+        # (4106ms) を大きく上回る余裕を持たせつつ、詰まりが際限なく伸びない
+        # よう上限を設けている。
+        self.declare_parameter('rx_queue_maxsize', 200)
+        # 1回の drain (_drain_rx_queue、50Hz) で処理するフレーム数の上限。
+        # 上限に達したら残りは次周期 (20ms 後) に持ち越す。バックログが
+        # あっても 1 回のタイマーコールバックの処理時間を有界にし、
+        # 「詰まりの自己増幅」(1回のコールバックが長時間 executor を
+        # 占有し、次の詰まりを招く)を防ぐ。既定値 50 は rx_queue_maxsize
+        # (既定200) を 4 周期 (80ms) で掃き出せる値。
+        self.declare_parameter('rx_queue_drain_max_per_cycle', 50)
 
         self._wheel_base = self.get_parameter('wheel_base').value
         self._odom_frame = self.get_parameter('odom_frame').value
@@ -73,6 +88,8 @@ class Esp32Bridge(Node):
         self._ws_host = self.get_parameter('ws_host').value
         self._ws_port = self.get_parameter('ws_port').value
         self._cmd_vel_stale_ms = self.get_parameter('cmd_vel_stale_ms').value
+        self._rx_queue_drain_max_per_cycle = \
+            self.get_parameter('rx_queue_drain_max_per_cycle').value
 
         # wheel_base はキャリブレーション後にランタイムで再設定されるため、
         # 変更を即座に _cb_cmd_vel / _on_wheel_feedback へ反映する。
@@ -179,8 +196,9 @@ class Esp32Bridge(Node):
 
         # 受信フレームは asyncio スレッドからロック付きキューへ積み、rclpy 側の
         # タイマーで drain する(rclpy publisher は任意スレッドからの同時呼び出し
-        # が保証されないため)。
-        self._rx_queue: queue.Queue = queue.Queue()
+        # が保証されないため)。D-2: 有界キュー (rx_backpressure.py 参照)。
+        self._rx_queue = BoundedFrameQueue(
+            maxsize=self.get_parameter('rx_queue_maxsize').value)
         self.create_timer(0.02, self._drain_rx_queue)  # 50Hz
 
         self._loop: "asyncio.AbstractEventLoop | None" = None
@@ -244,7 +262,7 @@ class Esp32Bridge(Node):
             async for message in websocket:
                 if not isinstance(message, (bytes, bytearray)):
                     continue
-                self._rx_queue.put(bytes(message))
+                self._rx_queue.push(bytes(message))
         finally:
             with self._ws_conn_lock:
                 if self._ws_conn is websocket:
@@ -363,11 +381,11 @@ class Esp32Bridge(Node):
 
     # ── 受信キューの drain (rclpy スレッド側) ─────────────────────
     def _drain_rx_queue(self):
-        while True:
-            try:
-                data = self._rx_queue.get_nowait()
-            except queue.Empty:
-                break
+        # D-2: 1回の呼び出しで処理するフレーム数を有界にする (バックログが
+        # あっても、このタイマーコールバックが際限なく executor を占有しない
+        # ようにするため。rx_backpressure.py 参照)。
+        frames = self._rx_queue.drain(self._rx_queue_drain_max_per_cycle)
+        for data in frames:
             self._handle_frame(data)
 
     def _handle_frame(self, data: bytes):
