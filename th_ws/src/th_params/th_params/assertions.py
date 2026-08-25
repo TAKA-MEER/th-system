@@ -24,8 +24,11 @@ def a1_intrusion_budget(v_max: float, timeout_ms: float, intrusion_budget_m: flo
     """A1: v_max × (timeout_ms/1000) ≤ intrusion_budget_m。
 
     違反時の対処（params.md §4）は「v_max をクランプし、警告を出す。blocking 指定なら
-    起動を拒否」——このクランプ自体は §3.3 の一度きりの `v_max` 引き下げ（P-5）が担う。
-    ここでは違反の有無だけを判定する。
+    起動を拒否」——このクランプ自体は `export._apply_v_max_clamp()` が §3.3 の一度きりの
+    `v_max` 引き下げ（P-5）として `resolve_registry()` の中で実施する（N-7）。
+    したがって `resolved` から取り出した `v_max` / `timeout_ms` は通常クランプ済みであり、
+    ここで違反が出るのはクランプが A5 と衝突して見送られた場合（N-7 選択肢b）。
+    この関数自体は違反の有無だけを判定する。
     """
     intrusion = v_max * (timeout_ms / 1000.0)
     if intrusion > intrusion_budget_m:

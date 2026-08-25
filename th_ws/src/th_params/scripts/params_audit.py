@@ -166,14 +166,28 @@ class ParamsAudit(Node):
         self._apply_overrides(rows, self._load_overrides())
         return rows
 
-    def _resolved(self) -> dict:
-        return export.resolve_registry(self._effective_rows())
+    def _resolved(self, clamp_warnings: list | None = None,
+                  clamp_errors: list | None = None) -> dict:
+        return export.resolve_registry(self._effective_rows(),
+                                        clamp_warnings=clamp_warnings, clamp_errors=clamp_errors)
 
     # ------------------------------------------------------------
     # /system/params_status
     # ------------------------------------------------------------
+    #
+    # N-7: A1 のクランプ（`export._apply_v_max_clamp`）が実際に何をしたかは
+    # `ParamsStatus.msg` に運ぶフィールドが無い（`placeholder_count` / `placeholder_names` /
+    # `digest` のみ。本ファイル冒頭のモジュール docstring 参照）ため、ログに出す
+    # （R5: 沈黙禁止）。`/system/params_status` トピック自体への反映は本パケットの範囲外——
+    # メッセージ定義の変更は th_system_msgs の再ビルドを要する別範囲の変更になる。
     def _publish_status(self):
-        resolved = self._resolved()
+        clamp_warnings: list[str] = []
+        clamp_errors: list[str] = []
+        resolved = self._resolved(clamp_warnings=clamp_warnings, clamp_errors=clamp_errors)
+        for w in clamp_warnings:
+            self.get_logger().warn(w)
+        for e in clamp_errors:
+            self.get_logger().error(e)
         placeholder_names = sorted(
             name for name, (status, _value) in resolved.items() if status == "placeholder")
         msg = ParamsStatus()
@@ -294,7 +308,10 @@ class ParamsAudit(Node):
             response.message = "; ".join(schema_errors)
             return response
 
-        resolved = export.resolve_registry(patched_rows)
+        clamp_warnings: list[str] = []
+        clamp_errors: list[str] = []
+        resolved = export.resolve_registry(patched_rows,
+                                            clamp_warnings=clamp_warnings, clamp_errors=clamp_errors)
         # params_audit は「現在の起動段階」を知らない。安全側に倒し、常に最大段階・
         # 全ノードを対象に検査する（DD-6 の「stage 既定は最大値」と同じ思想）。
         # D2: include_a8=False。A8（blocking placeholder の完全性の門）は「これから
@@ -304,7 +321,8 @@ class ParamsAudit(Node):
         # （実際、現行 registry.yaml では A8 を回すと常に失敗し現場調整が成立しない）。
         # ここで見るのは A1〜A7・A10・A11 ＝ 当てようとしている値そのものの物理的整合性。
         assertion_errors, assertion_warnings = export.run_assertions(
-            patched_rows, resolved, stage=8, nodes=None, include_a8=False)
+            patched_rows, resolved, stage=8, nodes=None, include_a8=False,
+            clamp_warnings=clamp_warnings, clamp_errors=clamp_errors)
         if assertion_errors:
             response.success = False
             response.message = "; ".join(assertion_errors)

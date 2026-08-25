@@ -1,5 +1,7 @@
 """test_params_export.py — th_params/export.py を検証する（WP-PARAM-01 §7）。"""
-from th_params import export, schema
+import pytest
+
+from th_params import derive, export, schema
 
 
 def test_twist_mux_generated(registry_rows):
@@ -211,3 +213,167 @@ def test_main_completes_with_zero_exit_when_a6_violated(registry_rows, tmp_path)
     assert rc == 0
     assert (out_dir / "safety_monitor.yaml").exists()
     assert (out_dir / "params_digest.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# N-7（DetailedDesign-open.md）: A1 の v_max クランプ（`_apply_v_max_clamp`）
+# ---------------------------------------------------------------------------
+#
+# 現行 registry.yaml では drivetrain_ceiling_mps が小さく（v_max ≈ 1.12 m/s）、
+# クランプは発火しない（発火させるには v_max が概ね 1.55 m/s を超える必要がある）。
+# 以下のテストは drivetrain_ceiling_mps だけを人工的に底上げして発火させる。
+
+
+def test_a1_clamp_applies_and_recomputes_v_max_dependents_once(registry_rows):
+    """クランプが発火する場合: (1) v_max が期待どおり下がる (2) 警告が出る
+    (3) v_max に依存する派生値（follow_stop_distance_m 等）が新しい v_max で
+    再計算される (4) 1 度しか発火しない（反復しない。P-5）。
+
+    venue_clearance_m 等は現行 registry で placeholder のままなので v_slow も
+    placeholder になり、A5 適合性チェックは対象外になる（クランプは素直に適用される）。
+    """
+    import copy
+    rows_copy = copy.deepcopy(registry_rows)
+    rows_by_name = {r["name"]: r for r in rows_copy}
+    rows_by_name["drivetrain_ceiling_mps"]["value"] = 10.0
+
+    clamp_warnings: list[str] = []
+    clamp_errors: list[str] = []
+    resolved = export.resolve_registry(rows_copy, clamp_warnings=clamp_warnings,
+                                        clamp_errors=clamp_errors)
+
+    assert clamp_errors == []
+    assert len(clamp_warnings) == 1  # (4) 1 度だけ発火する
+
+    v_max_status, v_max_value = resolved["v_max"]
+    assert v_max_status == "derived"
+    v_max_natural = derive.v_max_from_ceiling(10.0, rows_by_name["v_max_headroom_ratio"]["value"])
+    assert v_max_value < v_max_natural  # (1) 下がっている
+
+    budget = rows_by_name["intrusion_budget_m"]["value"]
+    p99 = rows_by_name["link_gap_p99_ms"]["value"]
+    lower_esp32 = derive.timeout_lower_bound_ms(p99["esp32"], export.TIMEOUT_MARGIN_RATIO)
+    lower_lidar = derive.timeout_lower_bound_ms(p99["lidar"], export.TIMEOUT_MARGIN_RATIO)
+    expected_v_max = min(derive.v_max_from_intrusion_budget(budget, lower_esp32),
+                          derive.v_max_from_intrusion_budget(budget, lower_lidar))
+    assert v_max_value == pytest.approx(expected_v_max)  # (1) 期待値どおり
+
+    # timeout 自体は下限のまま（v_max のクランプに反復して依存しない。P-5）
+    esp32_status, esp32_value = resolved["esp32_timeout_ms"]
+    lidar_status, lidar_value = resolved["lidar_timeout_ms"]
+    assert (esp32_status, esp32_value) == ("derived", pytest.approx(lower_esp32))
+    assert (lidar_status, lidar_value) == ("derived", pytest.approx(lower_lidar))
+
+    # (2) 警告が出る。かつ post-clamp では A1 はもう違反しない
+    errors, warnings = export.run_assertions(rows_copy, resolved, stage=0, nodes=None,
+                                              clamp_warnings=clamp_warnings,
+                                              clamp_errors=clamp_errors)
+    assert not any("A1" in e for e in errors)
+    assert any("N-7" in w for w in warnings)
+
+    # (3) follow_stop_distance_m が新しい（クランプ後の）v_max で再計算されている
+    a = rows_by_name["brake_accel_mps2"]["value"]
+    t_delay = rows_by_name["brake_delay_s"]["value"]
+    person_margin = rows_by_name["person_margin_m"]["value"]
+    expected_follow_stop = derive.braking_distance(v_max_value, a, t_delay) + person_margin
+    follow_status, follow_value = resolved["follow_stop_distance_m"]
+    assert follow_status == "derived"
+    assert follow_value == pytest.approx(expected_follow_stop)
+
+    # クランプ前の（自然な）v_max で計算した値とは異なる＝実際に再計算された証拠
+    stale_follow_stop = derive.braking_distance(v_max_natural, a, t_delay) + person_margin
+    assert follow_value != pytest.approx(stale_follow_stop)
+
+
+def test_a1_clamp_skipped_when_it_would_break_a5(registry_rows):
+    """N-7 選択肢(b): クランプ後の v_max が v_slow を下回り A5（v_slow ≤ v_max）に
+    違反する場合は、クランプを適用せず v_max を自然値のまま残す。intrusion budget
+    超過が解消されないままなので、A1 が改めて違反を検出して起動を拒否する
+    （DetailedDesign-open.md N-7 参照。速度体系全体を比例縮小する選択肢(a)や、
+    A1 を満たさないまま起動させる選択肢(c)は採らないと決めた）。"""
+    import copy
+    rows_copy = copy.deepcopy(registry_rows)
+    rows_by_name = {r["name"]: r for r in rows_copy}
+    rows_by_name["drivetrain_ceiling_mps"]["value"] = 10.0
+    venue = rows_by_name["venue_clearance_m"]
+    venue["status"] = "given"
+    venue["value"] = 5.0
+
+    clamp_warnings: list[str] = []
+    clamp_errors: list[str] = []
+    resolved = export.resolve_registry(rows_copy, clamp_warnings=clamp_warnings,
+                                        clamp_errors=clamp_errors)
+
+    v_max_status, v_max_value = resolved["v_max"]
+    v_max_natural = derive.v_max_from_ceiling(10.0, rows_by_name["v_max_headroom_ratio"]["value"])
+    assert v_max_status == "derived"
+    assert v_max_value == pytest.approx(v_max_natural)  # クランプを適用していない
+
+    # テスト設定の前提確認: クランプが必要な状況で、かつクランプ後の v_max（v_max_needed）
+    # が v_slow を下回る（＝ A5 と衝突する）ことを、クランプと同じ計算で検証する
+    budget = rows_by_name["intrusion_budget_m"]["value"]
+    p99 = rows_by_name["link_gap_p99_ms"]["value"]
+    lower_esp32 = derive.timeout_lower_bound_ms(p99["esp32"], export.TIMEOUT_MARGIN_RATIO)
+    lower_lidar = derive.timeout_lower_bound_ms(p99["lidar"], export.TIMEOUT_MARGIN_RATIO)
+    v_max_needed = min(derive.v_max_from_intrusion_budget(budget, lower_esp32),
+                        derive.v_max_from_intrusion_budget(budget, lower_lidar))
+    assert v_max_needed < v_max_natural  # クランプが必要な状況になっている
+
+    v_slow_status, v_slow_value = resolved["v_slow"]
+    assert v_slow_status == "derived"
+    assert v_slow_value > v_max_needed  # テスト設定として A5 と衝突する状況になっている
+
+    assert clamp_warnings == []
+    assert any("A5" in e for e in clamp_errors)
+
+    errors, warnings = export.run_assertions(rows_copy, resolved, stage=0, nodes=None,
+                                              clamp_warnings=clamp_warnings,
+                                              clamp_errors=clamp_errors)
+    assert any("A1" in e for e in errors)  # intrusion budget 超過が残ったまま検出される
+    assert any("N-7" in e and "A5" in e for e in errors)  # クランプ見送りの理由も明示される
+
+
+def test_a1_clamp_disabled_when_apply_v_max_clamp_false(registry_rows):
+    """`apply_v_max_clamp=False`（`main()` が `--sim` のときに渡す）では
+    クランプを一切行わない（『--sim では A1〜A11 が全てスキップされる』既存挙動を壊さない）。"""
+    import copy
+    rows_copy = copy.deepcopy(registry_rows)
+    rows_by_name = {r["name"]: r for r in rows_copy}
+    rows_by_name["drivetrain_ceiling_mps"]["value"] = 10.0
+
+    clamp_warnings: list[str] = []
+    clamp_errors: list[str] = []
+    resolved = export.resolve_registry(rows_copy, clamp_warnings=clamp_warnings,
+                                        clamp_errors=clamp_errors, apply_v_max_clamp=False)
+    v_max_status, v_max_value = resolved["v_max"]
+    v_max_natural = derive.v_max_from_ceiling(10.0, rows_by_name["v_max_headroom_ratio"]["value"])
+    assert v_max_status == "derived"
+    assert v_max_value == pytest.approx(v_max_natural)
+    assert clamp_warnings == []
+    assert clamp_errors == []
+
+
+def test_main_sim_flag_skips_v_max_clamp(registry_rows, tmp_path):
+    """CLI 経由（`--sim`）でも同様にクランプが発火しないこと。
+    発火する条件を作った上で `--sim` を付け、生成された safety_monitor.yaml の
+    v_max 依存パラメータが自然値のままであることを確認する。"""
+    import copy
+    import yaml
+    rows_copy = copy.deepcopy(registry_rows)
+    rows_by_name = {r["name"]: r for r in rows_copy}
+    rows_by_name["drivetrain_ceiling_mps"]["value"] = 10.0
+
+    registry_path = tmp_path / "registry.yaml"
+    with open(registry_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(rows_copy, f, allow_unicode=True)
+
+    out_dir = tmp_path / "out"
+    rc = export.main(["--registry", str(registry_path), "--out", str(out_dir),
+                       "--stage", "0", "--sim"])
+    assert rc == 0
+
+    v_max_natural = derive.v_max_from_ceiling(10.0, rows_by_name["v_max_headroom_ratio"]["value"])
+    with open(out_dir / "params_audit.yaml", encoding="utf-8") as f:
+        params_audit_out = yaml.safe_load(f)
+    assert params_audit_out["params_audit"]["ros__parameters"]["v_max"] == pytest.approx(
+        v_max_natural)

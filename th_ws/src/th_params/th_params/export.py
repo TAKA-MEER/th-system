@@ -34,6 +34,11 @@ from th_params import assertions, derive, schema
 
 PLACEHOLDER = schema.TBD
 
+# §3.3: timeout_lower_bound_ms の margin_ratio。v_max とは独立な固定係数。
+# `_call_formula()`（timeout_from_bounds）と `_apply_v_max_clamp()` の両方が使うため
+# ここに 1 か所だけ置く（値が 2 箇所に散らばって食い違うのを防ぐ）。
+TIMEOUT_MARGIN_RATIO = 1.0
+
 
 class ResolutionError(Exception):
     """formula 名が未知、または derived_from が循環しているときに送出する。"""
@@ -127,22 +132,19 @@ def _call_formula(formula: str | None, row: dict, deps: dict[str, Any],
         return derive.person_backstop_ms(grace_value, p99_worst, 1.0)
 
     if formula == "timeout_from_bounds":
-        # §3.3: 下限を採り、上限を超えるなら v_max を 1 回だけ下げる（P-5）。
+        # §3.3 手順1: 下限を採る。手順2（上限を超える場合に v_max を1回だけ下げる。P-5・N-7）は
+        # `_apply_v_max_clamp()` が `resolve_registry()` の冒頭・この関数が呼ばれるより前に
+        # 一度だけ済ませてあるため、ここで参照する `deps["v_max"]`（= values["v_max"]）は
+        # 既にクランプ後の値になっている。したがってここで改めて upper と比較する必要はない
+        # （クランプが A5 と衝突して見送られた場合は v_max が自然値のまま残り、timeout が
+        # upper を超えたままになるが、それは意図どおり——呼び出し側の A1 チェックが
+        # 起動を拒否する。N-7 選択肢b。DetailedDesign-open.md 参照）。
         p99_status, p99_value = values["link_gap_p99_ms"]
         if p99_status == "placeholder":
             raise ResolutionError("timeout_from_bounds は placeholder 入力では呼ばれない")
         axis = "lidar" if name == "lidar_timeout_ms" else "esp32"
         p99_for_axis = p99_value[axis] if isinstance(p99_value, dict) else p99_value
-        margin_ratio = 1.0  # 下限に対する余裕。§3.3 のとおり固定係数（v_max とは独立）
-        lower = derive.timeout_lower_bound_ms(p99_for_axis, margin_ratio)
-        upper = derive.timeout_upper_bound_ms(deps["v_max"], deps["intrusion_budget_m"])
-        timeout = lower
-        if timeout > upper:
-            # v_max を下げて確定（不動点反復にしない。P-5）。ここでは registry の v_max を
-            # 書き換えず、警告メッセージだけを添えて timeout を確定する
-            # （実際の v_max クランプ適用は呼び出し側 export の警告ログに委ねる）。
-            pass
-        return timeout
+        return derive.timeout_lower_bound_ms(p99_for_axis, TIMEOUT_MARGIN_RATIO)
 
     if formula == "braking_distance_plus_margin":
         margin_name = [d for d in row["derived_from"]
@@ -170,13 +172,108 @@ def _call_formula(formula: str | None, row: dict, deps: dict[str, Any],
     raise ResolutionError(f"未知の formula '{formula}' ({name})")
 
 
-def resolve_registry(rows: list[dict]) -> dict[str, tuple[str, Any]]:
+def _apply_v_max_clamp(rows_by_name: Mapping[str, dict], values: dict[str, tuple[str, Any]],
+                        clamp_warnings: list[str] | None, clamp_errors: list[str] | None) -> None:
+    """A1 のクランプ（`DetailedDesign-params.md` §3.3 手順2・§4 A1・N-7）。
+
+    `resolve_registry()` の一般ループより**前に**呼ぶこと。`v_max` は `lidar_timeout_ms` /
+    `esp32_timeout_ms` だけでなく `obstacle_stop_distance_m` / `follow_stop_distance_m` /
+    `v_slow` 等、多数の行から `derived_from` される。クランプ後の `v_max` を
+    `values["v_max"]` に上書きしてから一般ループへ入ることで、それらの派生値が
+    **新しい v_max で 1 度だけ再計算される**（`_resolve_one` は `values` に既にあれば
+    再計算しない memoize 方式なので、事前に確定させておく必要がある。P-5: 不動点反復にしない）。
+
+    N-7（`DetailedDesign-open.md`）: クランプは A5（`v_reverse ≤ v_slow ≤ v_max`）と衝突しうる。
+    ここでは**選択肢(b)**を採る——クランプ後の `v_max` が `v_slow` を下回るなら、
+    クランプを適用せず `v_max` を自然値のまま残す。この場合 intrusion budget 超過が
+    解消されないため、後段の `run_assertions()` の A1 チェックが改めて違反を検出し
+    起動を拒否する（`clamp_errors` にも衝突の理由を明示するメッセージを積む）。
+    速度体系全体を比例縮小する選択肢(a)は採らない——registry に書いた値と実際に
+    動く値が乖離し追跡できなくなるため。A1 を満たさないまま起動させる選択肢(c)も
+    採らない——A1 の存在意義（危険な組合せを構成不能にする）に反するため。
+    """
+    if "v_max" not in rows_by_name or "intrusion_budget_m" not in rows_by_name \
+            or "link_gap_p99_ms" not in rows_by_name:
+        return
+
+    try:
+        v_max_status, v_max_natural = _resolve_one("v_max", rows_by_name, values, set())
+        budget_status, budget = _resolve_one("intrusion_budget_m", rows_by_name, values, set())
+        p99_status, p99_value = _resolve_one("link_gap_p99_ms", rows_by_name, values, set())
+    except ResolutionError:
+        return
+    if "placeholder" in (v_max_status, budget_status, p99_status):
+        return
+
+    needed_v_max_by_axis: dict[str, float] = {}
+    for axis, timeout_name in (("lidar", "lidar_timeout_ms"), ("esp32", "esp32_timeout_ms")):
+        if timeout_name not in rows_by_name:
+            continue
+        p99_for_axis = p99_value[axis] if isinstance(p99_value, dict) else p99_value
+        lower = derive.timeout_lower_bound_ms(p99_for_axis, TIMEOUT_MARGIN_RATIO)
+        upper = derive.timeout_upper_bound_ms(v_max_natural, budget)
+        if lower > upper:
+            needed_v_max_by_axis[timeout_name] = derive.v_max_from_intrusion_budget(budget, lower)
+
+    if not needed_v_max_by_axis:
+        return  # A1 は違反しない。クランプ不要
+
+    v_max_needed = min(needed_v_max_by_axis.values())  # 最も厳しい軸に合わせる
+    axes_desc = ", ".join(sorted(needed_v_max_by_axis))
+
+    # A5 適合性チェック: v_slow / v_reverse / v_jog_panel は v_max に依存しないので
+    # （derived_from に v_max を持たない）ここで先に解決しても循環にならない。
+    conflicting = []
+    for name in ("v_slow", "v_reverse", "v_jog_panel"):
+        if name not in rows_by_name:
+            continue
+        try:
+            status, value = _resolve_one(name, rows_by_name, values, set())
+        except ResolutionError:
+            continue
+        if status == "placeholder":
+            continue
+        if value > v_max_needed:
+            conflicting.append(f"{name}({value})")
+
+    if conflicting:
+        msg = (f"N-7: A1 のクランプ判定で v_max を {v_max_natural} → {v_max_needed} へ"
+               f"下げる必要があった（{axes_desc} が intrusion_budget_m={budget} を超過）が、"
+               f"{', '.join(conflicting)} を下回り A5 に違反するためクランプを適用しない。"
+               "安全な速度が存在しない構成として v_max は自然値のまま残し、"
+               "intrusion budget 超過を A1 の起動拒否に委ねる"
+               "（N-7 選択肢b。DetailedDesign-open.md 参照）。")
+        if clamp_errors is not None:
+            clamp_errors.append(msg)
+        return
+
+    values["v_max"] = ("derived", v_max_needed)
+    msg = (f"N-7: A1 のクランプを適用した。v_max を {v_max_natural} → {v_max_needed} へ下げた"
+           f"（{axes_desc} が intrusion_budget_m={budget} を超過したため）。"
+           "v_max に依存する派生値はこの新しい v_max で 1 度だけ再計算する（P-5）。")
+    if clamp_warnings is not None:
+        clamp_warnings.append(msg)
+
+
+def resolve_registry(rows: list[dict], clamp_warnings: list[str] | None = None,
+                      clamp_errors: list[str] | None = None,
+                      apply_v_max_clamp: bool = True) -> dict[str, tuple[str, Any]]:
     """registry の全行を解決し、{name: (status, value)} を返す。
 
     値が正しく計算できない行（placeholder が伝播した行）は ('placeholder', schema.TBD) 相当。
+
+    `apply_v_max_clamp`（既定 True）: False にすると A1 のクランプ（`_apply_v_max_clamp`）を
+    一切行わない。`--sim` では A1〜A11 が全てスキップされる既存挙動（`main()` 参照）に
+    合わせ、呼び出し側が `--sim` のときに False を渡す。
+
+    `clamp_warnings` / `clamp_errors`: クランプが実際に何をしたか（適用した／A5 と衝突して
+    見送った）を追記する出力用リスト。呼び出し側は `run_assertions()` に同じリストを渡すと
+    最終的な `(errors, warnings)` にそのまま合流する。
     """
     rows_by_name = {row["name"]: row for row in rows}
     values: dict[str, tuple[str, Any]] = {}
+    if apply_v_max_clamp:
+        _apply_v_max_clamp(rows_by_name, values, clamp_warnings, clamp_errors)
     for name in rows_by_name:
         try:
             _resolve_one(name, rows_by_name, values, set())
@@ -225,16 +322,26 @@ def compute_digest(resolved: Mapping[str, tuple[str, Any]]) -> str:
 
 def run_assertions(rows: list[dict], resolved: Mapping[str, tuple[str, Any]],
                     stage: int, nodes: list[str] | None,
-                    include_a8: bool = True) -> tuple[list[str], list[str]]:
+                    include_a8: bool = True,
+                    clamp_warnings: list[str] | None = None,
+                    clamp_errors: list[str] | None = None) -> tuple[list[str], list[str]]:
     """A1〜A11 のうち registry から機械的に評価できるものを回す。A9 は CI 専用（ここでは呼ばない）。
 
     戻り値は `(errors, warnings)`。**どのアサーションが起動を拒否（errors）で、
     どれが警告に留まる（warnings）かは `DetailedDesign-params.md` §4 のアサーション表が
-    根拠。**現時点で警告扱いなのは A6 だけ（A1 は同表では「`v_max` をクランプし、警告を出す。
-    `blocking` 指定なら起動を拒否」という条件付きの扱いだが、そのクランプ（P-5）自体が
-    `_call_formula()` の `timeout_from_bounds` で意図的に未実装のまま残っているため、
-    ここでは A1 を従来どおり errors 側に置く。この食い違いは
-    `DetailedDesign-open.md` §4.1 の未解決事項として別途扱う）。
+    根拠。**現時点で警告扱いなのは A6 と、A1 のクランプが実際に適用された場合（N-7）。
+
+    A1 自体は `resolved` に入っている `v_max` / `*_timeout_ms` を検査するだけであり、
+    それらは `resolve_registry()` が `_apply_v_max_clamp()` で**既にクランプ後の値**に
+    差し替え済みのはず——クランプが成功していれば intrusion budget を満たすため、
+    ここでの A1 チェックは通常もう違反しない。クランプが A5 と衝突して見送られた場合
+    （N-7 選択肢b。`DetailedDesign-open.md` 参照）は `v_max` が自然値のまま残るため、
+    この A1 チェックが改めて違反を検出し起動を拒否する。
+
+    `clamp_warnings` / `clamp_errors`: `resolve_registry()` に渡したのと同じリストを
+    ここにも渡すと、クランプが実際に何をしたか（適用した／A5 衝突で見送った）の
+    メッセージがそのまま最終的な `(errors, warnings)` に合流する（新しい仕組みを
+    作らず、既存の warnings 経路に載せる）。
 
     `include_a8`（既定 True）: False にすると A8（blocking placeholder の検査）を
     呼ばない。A8 は「未測定の値を抱えたまま**起動**させない」ための完全性の門で、
@@ -317,6 +424,14 @@ def run_assertions(rows: list[dict], resolved: Mapping[str, tuple[str, Any]],
                 errors.extend(assertions.a1_intrusion_budget(
                     val("v_max"), val(timeout_name), budget, label=timeout_name))
 
+    # A1 クランプ（N-7）: resolve_registry() 側で集めたメッセージをそのまま合流させる。
+    # 適用できた（警告）／A5 衝突で見送った（起動拒否の理由を明示する追加エラー）の
+    # どちらも、新しい仕組みを作らず既存の (errors, warnings) 経路に載せる。
+    if clamp_warnings:
+        warnings.extend(clamp_warnings)
+    if clamp_errors:
+        errors.extend(clamp_errors)
+
     return errors, warnings
 
 
@@ -343,12 +458,18 @@ def main(argv: list[str] | None = None) -> int:
             print(e, file=sys.stderr)
         return 2
 
-    resolved = resolve_registry(rows)
+    # A1 のクランプ（N-7）は --sim では適用しない。A1〜A11 が全てスキップされる
+    # 既存挙動（このブロックの if not args.sim: と同じ思想）を壊さないため。
+    clamp_warnings: list[str] = []
+    clamp_errors: list[str] = []
+    resolved = resolve_registry(rows, clamp_warnings=clamp_warnings, clamp_errors=clamp_errors,
+                                 apply_v_max_clamp=not args.sim)
 
     nodes = args.nodes.split(",") if args.nodes else None
     if not args.sim:
-        errors, warnings = run_assertions(rows, resolved, args.stage, nodes)
-        # 警告（A6）は stderr に出すが、終了コードには影響させない（生成は続行する）。
+        errors, warnings = run_assertions(rows, resolved, args.stage, nodes,
+                                           clamp_warnings=clamp_warnings, clamp_errors=clamp_errors)
+        # 警告（A6・クランプ適用時）は stderr に出すが、終了コードには影響させない（生成は続行する）。
         for w in warnings:
             print(w, file=sys.stderr)
         if errors:

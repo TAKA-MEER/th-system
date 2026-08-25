@@ -78,6 +78,16 @@ def test_deviation_budget_m():
     assert derive.deviation_budget_m(2.0, 0.5, 0.1) == pytest.approx((2.0 - 0.5) / 2.0 - 0.1)
 
 
+def test_v_max_from_intrusion_budget():
+    """N-7（DetailedDesign-open.md）: timeout_upper_bound_ms の逆関数。
+    採用した timeout（下限）で intrusion_budget_m を満たす v_max を逆算する。"""
+    assert derive.v_max_from_intrusion_budget(0.5, 500.0) == pytest.approx(1.0)
+    # 往復: timeout_upper_bound_ms(v_max_from_intrusion_budget(budget, t), budget) == t
+    budget, timeout_ms = 0.5, 322.0
+    v_max = derive.v_max_from_intrusion_budget(budget, timeout_ms)
+    assert derive.timeout_upper_bound_ms(v_max, budget) == pytest.approx(timeout_ms)
+
+
 def test_all_twelve_functions_exist_with_expected_signatures():
     """DetailedDesign-wp0.md WP-PARAM-01 §4.1 の 12 関数がすべて実装されていること。"""
     import inspect

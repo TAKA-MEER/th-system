@@ -99,6 +99,13 @@ def timeout_upper_bound_ms(v_max: float, intrusion_budget_m: float) -> float:
     return intrusion_budget_m / v_max * 1000.0
 
 
+def v_max_from_intrusion_budget(intrusion_budget_m: float, timeout_ms: float) -> float:
+    """A1 のクランプ（§3.3 手順2・N-7）: timeout_upper_bound_ms の逆関数。
+    採用する timeout（下限）を固定した上で、intrusion_budget_m を満たす v_max を逆算する。
+    v_max を下げる側にのみ使う（1 回だけ。不動点反復にしない。P-5）。"""
+    return intrusion_budget_m / (timeout_ms / 1000.0)
+
+
 # ---------------------------------------------------------------------------
 # §3.4 【C】経路長の連鎖
 # ---------------------------------------------------------------------------
