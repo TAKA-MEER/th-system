@@ -130,6 +130,21 @@ def test_override_evaluates_guard(state_core_bundle):
 @pytest.mark.rule("C-06b")
 @pytest.mark.rule("C-07")
 def test_latch_skipped_in_estop_carry(state_core_bundle):
+    """このテストは DetailedDesign-wp1.md §7 が名指しする
+    test_critical_in_carry_keeps_prev（C-3）と
+    test_hw_press_in_estop_keeps_prev（C-4）を、別テストとして重複させず
+    このテストのアサーション 2・3 が兼ねている。対応は以下:
+
+    - d_carry_to_estop（CARRY 中に fault.critical → ESTOP、latch_prev
+      発火しない）= C-3。CARRY 中の重大フォルトが prev_* を CARRY 自身で
+      上書きしてはいけない、という不変条件。
+    - d_estop_to_carry（ESTOP 中に hw.estop.press → CARRY、latch_prev
+      発火しない）= C-4。ESTOP 中の物理押下が prev_* を ESTOP 自身で
+      上書きしてはいけない、という不変条件。
+
+    d_normal（FOLLOW/RUN 中に fault.critical → ESTOP、latch_prev 発火する）
+    は §7 のどの行にも対応しない、通常経路の対照用アサーション。
+    """
     core, _, _, _ = state_core_bundle
 
     # 通常モードからの重大フォルト → ESTOP: latch_prev が発火する。
