@@ -13,15 +13,14 @@ esp32_bridge がサーバー、ESP32 がクライアントとして接続しに�
   4. /esp32/wheel_feedback (WheelFeedback) 発行 (他ノード用)
 """
 import asyncio
-import math
 import queue
 import threading
 
 import rclpy
-from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                         QoSReliabilityPolicy)
+from rclpy.time import Time
 from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
@@ -32,6 +31,10 @@ import tf2_ros
 
 import websockets
 
+from th_esp32_bridge.keepalive_core import Twist2, keepalive_value
+from th_esp32_bridge.odom_core import (
+    Pose2D, integrate_pose, resolve_dt, resync_stamp, yaw_to_quaternion_zw,
+)
 from th_esp32_bridge.ws_protocol import (
     ProtocolError, WHEEL_FEEDBACK, ESTOP_HW, IMU_DATA,
     pack_wheel_cmd, unpack_wheel_feedback, unpack_estop_hw_flags, unpack_imu_data, peek_type,
@@ -52,6 +55,13 @@ class Esp32Bridge(Node):
         self.declare_parameter('feedback_period_ms', 100)
         self.declare_parameter('ws_host', '0.0.0.0')
         self.declare_parameter('ws_port', 8765)
+        # DEBT-4 対処 (WP-SAFE-02): /cmd_vel がこの時間 [ms] 途絶したら、
+        # キープアライブの参照値をゼロへ書き換える (esp32_bridge.py 側で
+        # 先に止める。A7: esp32_watchdog_ms=600ms より短いこと)。
+        # 通常運用では generated/esp32_bridge.yaml (registry.yaml 由来、
+        # 既定 400ms) で上書きされる。ここでの既定値は launch を介さず
+        # 直接ノードを立てた場合のフォールバック。
+        self.declare_parameter('cmd_vel_stale_ms', 400)
 
         self._wheel_base = self.get_parameter('wheel_base').value
         self._odom_frame = self.get_parameter('odom_frame').value
@@ -59,6 +69,7 @@ class Esp32Bridge(Node):
         self._publish_tf = self.get_parameter('publish_tf').value
         self._ws_host = self.get_parameter('ws_host').value
         self._ws_port = self.get_parameter('ws_port').value
+        self._cmd_vel_stale_ms = self.get_parameter('cmd_vel_stale_ms').value
 
         # wheel_base はキャリブレーション後にランタイムで再設定されるため、
         # 変更を即座に _cb_cmd_vel / _on_wheel_feedback へ反映する。
@@ -125,6 +136,8 @@ class Esp32Bridge(Node):
         # 吸収する。ROS2/本ノードが本当にクラッシュすればこのタイマーごと
         # 止まるため、ESP32側の最終保証(300ms以内に停止)は変わらない。
         self._last_cmd_vel = Twist()
+        # 未受信 (起動直後) は「無限に stale」として扱う (_send_wheel_cmd 参照)。
+        self._last_cmd_vel_time: "rclpy.time.Time | None" = None
         self.create_timer(0.05, self._cb_cmd_vel_keepalive)  # 20Hz
 
         self._odom_x = self._odom_y = self._odom_yaw = 0.0
@@ -149,7 +162,7 @@ class Esp32Bridge(Node):
         # この機体の最大ヨーレートは 1 rad/s 程度。これを大きく超える角速度が
         # 届いたらジャイロ単位の取り違えを疑う (_on_imu_data 参照)。
         self._IMU_WZ_IMPLAUSIBLE_RAD_S = 10.0
-        self._odom_stamp = None
+        self._odom_stamp_sec: "float | None" = None
         # 受信した WHEEL_FEEDBACK が新形式(dt 付き)かどうか。None = 未受信。
         # 変化したときだけログに出す (_on_wheel_feedback 参照)。
         self._feedback_has_dt = None
@@ -231,7 +244,8 @@ class Esp32Bridge(Node):
     # ── /cmd_vel → WHEEL_CMD 送信 ─────────────────────────────────
     def _cb_cmd_vel(self, msg: Twist):
         self._last_cmd_vel = msg
-        self._send_wheel_cmd(msg)
+        self._last_cmd_vel_time = self.get_clock().now()
+        self._send_wheel_cmd()
 
     # ── ロック状態購読 ─────────────────────────────────────────
     def _cb_estop(self, msg: Bool):
@@ -257,22 +271,36 @@ class Esp32Bridge(Node):
         return elapsed > self._LOCK_TIMEOUT_SEC
 
     # ── キープアライブ: 最新の /cmd_vel を一定周期で再送 ────────────
+    # DEBT-4 対処 (WP-SAFE-02): 20Hz の送信そのものは止めない (K-1)。
+    # ロック中 or /cmd_vel が cmd_vel_stale_ms 途絶していれば、送る内容
+    # (参照値) をゼロへ書き換える。「送るのをやめる」のではなく
+    # 「ゼロを送る」——止めるとウォッチドッグ経由(最大 esp32_watchdog_ms
+    # =600ms)になり、PC 側の対処(cmd_vel_stale_ms=400ms)より遅れる。
     def _cb_cmd_vel_keepalive(self):
-        self._send_wheel_cmd(self._last_cmd_vel)
+        self._send_wheel_cmd()
 
-    def _send_wheel_cmd(self, msg: Twist):
-        if self._is_locked():
+    def _send_wheel_cmd(self):
+        locked = self._is_locked()
+        if locked:
             # twist_mux が無出力(silent)のままでも取り残された非ゼロ指令を
             # 再送し続けないよう、ここで強制的にゼロにする。_last_cmd_vel
             # 自体もここでゼロ化しておかないと、ロック解除の瞬間に
             # キープアライブがロック前の古い非ゼロ指令をそのまま再送して
             # しまう(2026-08-06 E-Stop 解除後に前進指令が復活する事象で発覚)。
-            v = 0.0
-            w = 0.0
             self._last_cmd_vel = Twist()
-        else:
-            v = msg.linear.x
-            w = msg.angular.z
+            self._last_cmd_vel_time = None
+
+        now_ms = self.get_clock().now().nanoseconds / 1e6
+        last_cmd_ms = (float('-inf') if self._last_cmd_vel_time is None
+                       else self._last_cmd_vel_time.nanoseconds / 1e6)
+        result = keepalive_value(
+            last_cmd_ms=last_cmd_ms,
+            now_ms=now_ms,
+            last_cmd=Twist2(self._last_cmd_vel.linear.x, self._last_cmd_vel.angular.z),
+            stale_ms=self._cmd_vel_stale_ms,
+            locked=locked)
+
+        v, w = result.linear, result.angular
         v_right = v + (w * self._wheel_base / 2.0)
         v_left = v - (w * self._wheel_base / 2.0)
         frame = pack_wheel_cmd(v_left, v_right)
@@ -370,13 +398,15 @@ class Esp32Bridge(Node):
                     "この状態で imu_enabled:=true にすると EKF が 57.3 倍の"
                     "ヨーレートを信じてオドメトリが壊れます")
 
-        dt = dt_from_esp32
-        if dt is None or not (0.0 < dt <= self._DT_MAX_SEC):
-            if dt is not None:
-                self.get_logger().warn(
-                    f"ESP32 から不正な dt={dt} を受信。公称周期で代替します",
-                    throttle_duration_sec=5.0)
-            dt = self._feedback_period_sec
+        dt, used_esp32_dt = resolve_dt(
+            dt_from_esp32, self._feedback_period_sec, self._DT_MAX_SEC)
+        if not used_esp32_dt and dt_from_esp32 is not None:
+            # フィールド自体は届いたが値が範囲外 (has_dt=True のケース)。
+            # フィールド自体が無かった (旧形式) 場合は上の has_dt ブロックで
+            # 既に error ログを出しているので、ここでは二重に警告しない。
+            self.get_logger().warn(
+                f"ESP32 から不正な dt={dt_from_esp32} を受信。公称周期で代替します",
+                throttle_duration_sec=5.0)
 
         # ── ヘッダスタンプも dt で進める ────────────────────────────
         # robot_localization は /odom の pose を使わず twist とヘッダスタンプの
@@ -388,17 +418,15 @@ class Esp32Bridge(Node):
         # ただし実時間から離れすぎると、slam_toolbox がスキャン時刻で TF を
         # 引けなくなる (slam_params.yaml の transform_timeout 参照)。
         # ずれが許容量を超えたら現在時刻へ貼り直す。
-        if self._odom_stamp is None:
-            self._odom_stamp = now
-        else:
-            self._odom_stamp = self._odom_stamp + Duration(seconds=dt)
-            skew = abs((now - self._odom_stamp).nanoseconds) / 1e9
-            if skew > self._STAMP_RESYNC_SEC:
-                self.get_logger().warn(
-                    f"オドメトリのスタンプが実時間から {skew:.2f} s ずれたため貼り直します",
-                    throttle_duration_sec=5.0)
-                self._odom_stamp = now
-        t = self._odom_stamp
+        now_sec = now.nanoseconds / 1e9
+        resync = resync_stamp(self._odom_stamp_sec, now_sec, dt, self._STAMP_RESYNC_SEC)
+        if resync.resynced:
+            skew = abs(now_sec - (self._odom_stamp_sec + dt))
+            self.get_logger().warn(
+                f"オドメトリのスタンプが実時間から {skew:.2f} s ずれたため貼り直します",
+                throttle_duration_sec=5.0)
+        self._odom_stamp_sec = resync.stamp_sec
+        t = Time(nanoseconds=round(self._odom_stamp_sec * 1e9), clock_type=now.clock_type)
 
         # 到着間隔そのものは診断情報として監視する (積分には使わない)。
         arrival_dt = (now - self._last_odom_time).nanoseconds / 1e9
@@ -410,17 +438,13 @@ class Esp32Bridge(Node):
                 throttle_duration_sec=5.0)
 
         # ── 差動駆動オドメトリ更新 ──────────────────────────
-        v_center = (v_left + v_right) / 2.0
-        omega = (v_right - v_left) / self._wheel_base
-        dtheta = omega * dt
-
-        self._odom_x += v_center * math.cos(self._odom_yaw + dtheta / 2.0) * dt
-        self._odom_y += v_center * math.sin(self._odom_yaw + dtheta / 2.0) * dt
-        self._odom_yaw += dtheta
+        new_pose, v_center, omega = integrate_pose(
+            Pose2D(self._odom_x, self._odom_y, self._odom_yaw),
+            v_left, v_right, self._wheel_base, dt)
+        self._odom_x, self._odom_y, self._odom_yaw = new_pose.x, new_pose.y, new_pose.yaw
 
         # yaw のみの姿勢なのでクォータニオンは手計算で十分 (roll=pitch=0)
-        qz = math.sin(self._odom_yaw / 2.0)
-        qw = math.cos(self._odom_yaw / 2.0)
+        qz, qw = yaw_to_quaternion_zw(self._odom_yaw)
 
         # ── /odom 発行 ───────────────────────────────────────
         odom = Odometry()

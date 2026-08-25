@@ -27,6 +27,14 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_yaml_writer
     test/test_yaml_writer.py
     TIMEOUT 60)
+  # esp32_bridge の純粋コア (WP-SAFE-02。DEBT-4: /cmd_vel stale タイムアウト
+  # ＋ オドメトリ積分・スタンプ再同期の抽出。ROS2 不要)
+  ament_add_pytest_test(keepalive_core
+    test/test_keepalive_core.py
+    TIMEOUT 60)
+  ament_add_pytest_test(test_odom_core
+    test/test_odom_core.py
+    TIMEOUT 60)
   # CMakeLists.txt へのテスト登録漏れを検出するガード（このファイル自身と
   # ament_add_gtest 登録も対象。上記5本が長期間未登録だった事故の再発防止）
   ament_add_pytest_test(test_cmake_test_registration
@@ -90,6 +98,10 @@ if(BUILD_TESTING)
     TIMEOUT 60)
   ament_add_pytest_test(test_fault_detection
     test/test_fault_detection.py
+    TIMEOUT 90)
+  # esp32_bridge ノード統合テスト (WP-SAFE-02。故障注入12「/cmd_vel の途絶」)
+  ament_add_pytest_test(esp32_bridge_node
+    test/test_esp32_bridge_node.py
     TIMEOUT 90)
 
   # ── シミュレーション統合テスト (TH_SKIP_SIM=0 で有効化) ──
