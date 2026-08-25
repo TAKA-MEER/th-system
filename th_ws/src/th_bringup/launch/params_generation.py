@@ -203,6 +203,12 @@ def run_generation(*, stage: int, sim: bool, nodes: Sequence[str] | None = REGIS
     `env` はサブプロセスへ渡す環境変数（省略時は現プロセスを継承。テストが
     PYTHONPATH を差し替えるために使う。launch から呼ぶときは省略でよい —
     th_params は colcon install 済みで通常の PYTHONPATH に乗っている）。
+
+    成功時（終了コード 0）でも export.py の stderr は握り潰さず、そのまま
+    launch 側の stderr へ出す。A6（esp32_timeout_ms が WATCHDOG_MS 以下）のように
+    「起動は拒否しないが黙って見過ごしてもいけない」判定があるため
+    （eed7ee1 で A6 を拒否→警告に変更した際、警告の出口が launch 経路に
+    無いままだった）。
     """
     registry_path = registry_path or default_registry_path()
     out = Path(out_dir)
@@ -225,6 +231,9 @@ def run_generation(*, stage: int, sim: bool, nodes: Sequence[str] | None = REGIS
             f"exit={result.returncode}\n"
             f"--- stdout ---\n{result.stdout}\n"
             f"--- stderr ---\n{result.stderr}")
+
+    if result.stderr:
+        print(f"[params_generation] export.py の警告:\n{result.stderr}", file=sys.stderr)
 
     # D3: export.py は `--nodes` で絞っても consumers に現れる全ノード分の YAML を書く
     # （REGISTRY_NODES の5つだけではない）。params_digest.json は ROS2 パラメータ

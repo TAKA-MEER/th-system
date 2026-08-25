@@ -148,6 +148,44 @@ def test_assertion_ok_does_not_raise_and_writes_files():
         assert os.path.isfile(os.path.join(out_dir, "params_digest.json"))
 
 
+def test_generation_success_does_not_swallow_export_stderr(capsys):
+    """G-2 の裏側（続き）: export.py が終了コード 0（警告のみ）で終わっても、
+    その stderr を run_generation() が握り潰さず launch 側の stderr へ出すこと。
+
+    実物の registry.yaml + 実機条件（stage=1, sim=False）は、この変更の時点で
+    A6（esp32_timeout_ms が WATCHDOG_MS 以下）の警告を出す状態になっている
+    （eed7ee1 で拒否→警告化された）。ただし「A6 の具体的な文言」自体には
+    依存させず、「export.py が stderr に何か書いた → run_generation() がそれを
+    素通しした」ことだけを見る（将来 registry の値が変わって A6 が警告しなく
+    なっても、このテストの意図が壊れないように）。
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = os.path.join(tmp, "generated")
+
+        # 前提確認: 実機条件で export.py 自体が stderr に何か書くこと
+        # （書かない状態になったら、このテストは「素通し」を検証できていない
+        # ので、意図を明示して先に失敗させる）。
+        import subprocess
+        cmd = [sys.executable, "-m", "th_params.export",
+               "--registry", REGISTRY_YAML, "--out", out_dir, "--stage", "1",
+               "--nodes", ",".join(pg.REGISTRY_NODES)]
+        precheck = subprocess.run(cmd, capture_output=True, text=True, env=_subprocess_env())
+        assert precheck.returncode == 0, "前提が崩れている: 実機条件の registry がそもそも失敗する"
+        assert precheck.stderr, (
+            "前提が崩れている: 実機条件で export.py が stderr に何も書かなくなった"
+            "（= このテストが検証したい『成功時 stderr の素通し』を再現できていない。"
+            "registry.yaml の値が変わって A6 等の警告が出なくなった可能性がある）")
+
+        capsys.readouterr()  # ここまでの出力を捨てる
+        pg.run_generation(stage=1, sim=False, nodes=list(pg.REGISTRY_NODES),
+                           out_dir=out_dir, registry_path=REGISTRY_YAML, env=_subprocess_env())
+        captured = capsys.readouterr()
+
+        assert captured.err, "run_generation() が成功時の stderr を握り潰している"
+        assert "[params_generation]" in captured.err, (
+            "stderr に出所を示す前置きが無い")
+
+
 # ============================================================================
 # G-3: twist_mux.yaml も生成対象（階層構造への組み直し）
 # ============================================================================
