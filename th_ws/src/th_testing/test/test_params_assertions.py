@@ -134,3 +134,40 @@ def test_a11_hysteresis_band():
     assert assertions.a11_hysteresis_band(0.5, 0.2, 0.6) != []
     # 合格: floor(0.5) + hysteresis(0.05) = 0.55 < stop(0.6)
     assert assertions.a11_hysteresis_band(0.5, 0.05, 0.6) == []
+
+
+def test_a13_speed_limit_strictness_order_pass():
+    # LIMIT_STRICTNESS そのものの並び。stop は 0.0 扱い、数値は昇順で一致している
+    order = ("stop", "v_check", "v_calib", "v_jog_panel", "v_slow", "v_leash", "v_max")
+    values = {"v_check": 0.05, "v_calib": 0.15, "v_jog_panel": 0.3,
+              "v_slow": 0.6, "v_leash": 1.0, "v_max": 1.2}
+    assert assertions.a13_speed_limit_strictness_order(order, values) == []
+
+
+def test_a13_speed_limit_strictness_order_detects_inversion():
+    # v_jog_panel が並びでは v_calib の後ろ（＝より厳しい）だが、実際の値は
+    # v_calib(0.15) より小さい(0.1) ではなく大きい(0.5) と仮定 → まだ合格のはず。
+    # 逆に、並びで v_calib の後ろに置かれているのに実際の値が v_calib より小さい
+    # ケース（当初の誤り: stop の直後＝v_check や v_calib より前に置いてしまった状態
+    # の再現）を検出できることを確認する。
+    order = ("stop", "v_check", "v_calib", "v_jog_panel", "v_slow", "v_leash", "v_max")
+    values = {"v_check": 0.05, "v_calib": 0.15, "v_jog_panel": 0.1,  # v_calib より小さい
+              "v_slow": 0.6, "v_leash": 1.0, "v_max": 1.2}
+    errors = assertions.a13_speed_limit_strictness_order(order, values)
+    assert errors != []
+    assert any("v_jog_panel" in e and "v_calib" in e for e in errors)
+
+
+def test_a13_speed_limit_strictness_order_excludes_placeholders():
+    # v_jog_panel が values_by_name に無い（＝placeholder。未測定）なら比較対象から
+    # 除外され、他が正しい昇順であれば合格する。
+    order = ("stop", "v_check", "v_calib", "v_jog_panel", "v_slow", "v_leash", "v_max")
+    values = {"v_check": 0.05, "v_calib": 0.15, "v_slow": 0.6, "v_leash": 1.0, "v_max": 1.2}
+    assert assertions.a13_speed_limit_strictness_order(order, values) == []
+
+
+def test_a13_speed_limit_strictness_order_stop_is_zero():
+    # stop は常に 0.0 として扱われる。名前の直後に値 0.0 未満のものは存在しえないので、
+    # stop の次に来る名前が正の値ならどれでも合格する（stop が最も厳しいという定義）。
+    order = ("stop", "v_check")
+    assert assertions.a13_speed_limit_strictness_order(order, {"v_check": 0.05}) == []

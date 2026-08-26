@@ -377,3 +377,78 @@ def test_main_sim_flag_skips_v_max_clamp(registry_rows, tmp_path):
         params_audit_out = yaml.safe_load(f)
     assert params_audit_out["params_audit"]["ros__parameters"]["v_max"] == pytest.approx(
         v_max_natural)
+
+
+# ---------------------------------------------------------------------------
+# N-15（DetailedDesign-open.md）: A13 speed_limit strictness order
+#
+# th_state.zones.LIMIT_STRICTNESS の並びが registry.yaml の解決済みの数値の昇順と
+# 一致しているかを検査する。v_slow / v_reverse / v_jog_panel は現行 registry.yaml では
+# 逆算元（venue_clearance_m / blind_clearance_m / panel_clearance_m）が placeholder
+# なので、以下は意図的に v_jog_panel の行を status:given に上書きして「measured 値が
+# 入って LIMIT_STRICTNESS の位置と食い違った」状況を再現する（レビュー指摘の再発防止）。
+# ---------------------------------------------------------------------------
+def test_baseline_registry_passes_a13_because_speed_axes_are_still_placeholder(registry_rows):
+    """現行 registry.yaml（v_slow/v_reverse/v_jog_panel が placeholder）では
+    A13 は比較対象が無く合格する（回帰確認: 導入によって既存の起動が壊れていない）。"""
+    resolved = export.resolve_registry(registry_rows)
+    errors, _warnings = export.run_assertions(registry_rows, resolved, stage=0, nodes=None)
+    assert not any("A13" in e for e in errors)
+
+
+def test_a13_fires_when_v_jog_panel_measured_value_breaks_the_order(registry_rows):
+    """**実際に発火することの確認**（レビュー指摘）。`v_jog_panel` に
+    `v_calib`(0.15) より小さい値が測定値として入った状況（＝現在の
+    `LIMIT_STRICTNESS` の並び `... v_calib, v_jog_panel, v_slow ...` と矛盾する）を
+    作り、`run_assertions()` が実際に A13 違反で起動を拒否することを確認する。"""
+    import copy
+    rows_copy = copy.deepcopy(registry_rows)
+    rows_by_name = {r["name"]: r for r in rows_copy}
+    # 逆算式を経由せず、測定済みのふりをして直接値を入れる（PT-2 と同じ「given 扱い」）。
+    rows_by_name["v_jog_panel"]["status"] = "given"
+    rows_by_name["v_jog_panel"]["value"] = 0.1  # v_calib(0.15) より小さい → 順序矛盾
+    rows_by_name["v_jog_panel"]["derived_from"] = None
+    rows_by_name["v_jog_panel"]["formula"] = None
+
+    resolved = export.resolve_registry(rows_copy)
+    assert resolved["v_jog_panel"] == ("given", 0.1)  # 前提: 実際に concrete な値になっている
+
+    errors, _warnings = export.run_assertions(rows_copy, resolved, stage=0, nodes=None)
+    assert any("A13" in e and "v_jog_panel" in e for e in errors)
+
+
+def test_a13_does_not_fire_when_v_jog_panel_measured_value_matches_the_order(registry_rows):
+    """対照テスト: `v_calib`(0.15) より大きい値なら（`LIMIT_STRICTNESS` の位置どおり
+    v_calib と v_slow の間に収まっていれば）A13 は違反にならない。"""
+    import copy
+    rows_copy = copy.deepcopy(registry_rows)
+    rows_by_name = {r["name"]: r for r in rows_copy}
+    rows_by_name["v_jog_panel"]["status"] = "given"
+    rows_by_name["v_jog_panel"]["value"] = 0.3  # v_calib(0.15) より大きい
+    rows_by_name["v_jog_panel"]["derived_from"] = None
+    rows_by_name["v_jog_panel"]["formula"] = None
+
+    resolved = export.resolve_registry(rows_copy)
+    errors, _warnings = export.run_assertions(rows_copy, resolved, stage=0, nodes=None)
+    assert not any("A13" in e for e in errors)
+
+
+def test_main_rejects_startup_when_a13_violated(registry_rows, tmp_path):
+    """`export.main()`（launch から呼ばれる CLI 本体）のレベルで、A13 違反が
+    終了コード 1（アサーション違反。launch を止める）になることを確認する。"""
+    import copy
+    import yaml
+    rows_copy = copy.deepcopy(registry_rows)
+    rows_by_name = {r["name"]: r for r in rows_copy}
+    rows_by_name["v_jog_panel"]["status"] = "given"
+    rows_by_name["v_jog_panel"]["value"] = 0.1  # v_calib(0.15) より小さい → 順序矛盾
+    rows_by_name["v_jog_panel"]["derived_from"] = None
+    rows_by_name["v_jog_panel"]["formula"] = None
+
+    registry_path = tmp_path / "registry.yaml"
+    with open(registry_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(rows_copy, f, allow_unicode=True)
+
+    out_dir = tmp_path / "out"
+    rc = export.main(["--registry", str(registry_path), "--out", str(out_dir), "--stage", "0"])
+    assert rc == 1
