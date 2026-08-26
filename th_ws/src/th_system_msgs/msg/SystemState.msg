@@ -19,3 +19,6 @@ string[] unsaved          # 未保存の種別 ("venue_map" / "route" / "calib" 
 builtin_interfaces/Time since   # 現在の mode/state に入った時刻
 string last_event               # 直近に処理した evt.*
 string last_reject_reason       # 直近に拒否された遷移の理由キー ("" なら無し)
+
+string speed_limit        # 画面由来の速度上限。registry のパラメータ名 or "stop"
+                           # (zones.py の Limits.speed_limit。N-13。末尾追加)
