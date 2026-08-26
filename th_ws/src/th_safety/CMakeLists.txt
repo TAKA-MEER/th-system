@@ -74,6 +74,12 @@ if(BUILD_TESTING)
   target_link_libraries(test_scan_geometry_equivalence scan_geometry_core)
   target_compile_definitions(test_scan_geometry_equivalence PRIVATE
     TH_SAFETY_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
+
+  # obstacle_limiter_core の property test（DetailedDesign-safety.md §3.5・
+  # 不変条件 L1〜L7）。乱数シード固定・10,000 通り × 2（単発呼び出しの
+  # 不変条件・ヒステリシスの時系列挙動）。
+  ament_add_gtest(test_obstacle_limiter_core test/test_obstacle_limiter_core.cpp)
+  target_link_libraries(test_obstacle_limiter_core obstacle_limiter_core)
 endif()
 
 ament_package()
