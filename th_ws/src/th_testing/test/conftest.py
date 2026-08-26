@@ -27,6 +27,11 @@ _esp32_bridge_core = os.path.join(_repo_root, 'th_esp32_bridge', 'th_esp32_bridg
 # th_perception パッケージの scripts (person_tracker_bridge_core.py 等) を追加
 _perception_scripts = os.path.join(_repo_root, 'th_perception', 'scripts')
 
+# th_perception パッケージのルートを追加（WP-CALIB-01a。scan_geometry.py は
+# th_planning と同じ流儀で th_perception/th_perception/ に置いている）
+_perception      = os.path.join(_repo_root, 'th_perception')
+_perception_core = os.path.join(_repo_root, 'th_perception', 'th_perception')
+
 # th_state パッケージのルートを追加（WP-STATE-01。colcon build --symlink-install 前でも
 # pytest test/test_state_core.py を単体で実行できるようにする）
 _th_state = os.path.join(_repo_root, 'th_state')
@@ -35,7 +40,7 @@ _th_state = os.path.join(_repo_root, 'th_state')
 _th_params = os.path.join(_repo_root, 'th_params')
 
 for _p in [_planning, _planning_core, _esp32_bridge, _esp32_bridge_core,
-           _perception_scripts, _th_state, _th_params]:
+           _perception_scripts, _perception, _perception_core, _th_state, _th_params]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
