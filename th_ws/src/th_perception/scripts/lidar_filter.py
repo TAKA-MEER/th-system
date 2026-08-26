@@ -9,13 +9,19 @@
 # にしてある。死角がある構成なら registry.yaml 側で必ず値を持たせること
 # （このノード側の既定値だけを変えても params_generation の生成物が
 # 上書きするため意味がない）。
+#
+# 角度→添字の変換は scan_geometry.py（th_perception 正本。
+# DetailedDesign-wp2.md WP-CALIB-01 §4.1）に委譲する。obstacle_limiter
+# （th_safety、C++移植版 scan_geometry.hpp）と同じ規約で解釈することが
+# 目的（B-3。片方だけ更新して片方を忘れると死角の解釈がずれる）。
 # ============================================================
 import rclpy
 from rclpy.node import Node
 from rcl_interfaces.msg import ParameterDescriptor, ParameterType, SetParametersResult
 from sensor_msgs.msg import LaserScan
-import math
 import copy
+
+from th_perception.scan_geometry import sector_indices
 
 
 class LidarFilter(Node):
@@ -23,7 +29,10 @@ class LidarFilter(Node):
         super().__init__('lidar_filter')
 
         # ── パラメータ ──────────────────────────────────────
-        # blind_angle_ranges: [[start_deg, end_deg], ...] (0=前方 右回り正)
+        # blind_angle_ranges: [start_deg, end_deg, start_deg, end_deg, ...]
+        # （フラットリスト。2 個ずつ組にして [a0, a1] の閉区間として扱う）。
+        # 角度は laser_link 基準・反時計回り正（scan_geometry.py 規約①。
+        # sensor_msgs/LaserScan の angle_min + i*angle_increment の向きに一致）。
         # 既定値は空配列（＝マスクしない）。空の DOUBLE_ARRAY は型推論に失敗する
         # ため ParameterDescriptor で明示する。マスクしすぎて障害物が見えなく
         # なるより、マスクせず広く見える方が安全側（安全側は「マスクしない」）。
@@ -55,14 +64,16 @@ class LidarFilter(Node):
 
     @staticmethod
     def _build_blind_ranges(raw):
-        # フラットリスト [s0,e0, s1,e1, ...] → [(s0,e0), (s1,e1), ...]
+        # フラットリスト [a0,a1, a2,a3, ...]（度）→ [(a0,a1), (a2,a3), ...]。
+        # 度→ラジアン変換は scan_geometry.sector_indices() の中で 1 度だけ
+        # 行う（scan_geometry.py 規約②。ここでは単位変換しない）。
         return [
-            (math.radians(raw[i]), math.radians(raw[i + 1]))
+            (raw[i], raw[i + 1])
             for i in range(0, len(raw) - 1, 2)
         ]
 
     def _on_set_params(self, params):
-        # blind_angle_ranges は起動時に一度だけ ラジアンの (start,end) タプル列
+        # blind_angle_ranges は起動時に一度だけ 度の (start,end) タプル列
         # へ変換してキャッシュしている。WebUI 設定パネルからのライブ反映を
         # 機能させるため、変更されたら再構築する。
         for p in params:
@@ -73,23 +84,26 @@ class LidarFilter(Node):
     def _cb(self, msg: LaserScan):
         filtered = copy.copy(msg)
         filtered.ranges = list(msg.ranges)
+        n = len(filtered.ranges)
 
-        for i, r in enumerate(filtered.ranges):
-            angle = msg.angle_min + i * msg.angle_increment
-            # -π〜π → 0〜2π に正規化
-            angle_norm = angle % (2 * math.pi)
-
-            for (start, end) in self._blind_ranges:
-                s = start % (2 * math.pi)
-                e = end   % (2 * math.pi)
-                if s <= e:
-                    if s <= angle_norm <= e:
-                        filtered.ranges[i] = float('inf')
-                        break
-                else:  # 0°をまたぐ範囲
-                    if angle_norm >= s or angle_norm <= e:
-                        filtered.ranges[i] = float('inf')
-                        break
+        for (a0_deg, a1_deg) in self._blind_ranges:
+            i0, i1 = sector_indices(a0_deg, a1_deg, msg)
+            if i0 is None or i1 is None:
+                # 規約⑤: 範囲外は「そのセクタは存在しない」。clamp せず
+                # マスクしない（安全側＝マスクしない、をここでも踏襲する）。
+                self.get_logger().warn(
+                    f'blind_angle_ranges の区間 ({a0_deg}, {a1_deg}) が現在の '
+                    '/scan の angle_min/angle_max の範囲外。マスクしない',
+                    throttle_duration_sec=5.0)
+                continue
+            if i0 <= i1:
+                for i in range(i0, i1 + 1):
+                    filtered.ranges[i] = float('inf')
+            else:  # 配列境界（angle_min/angle_max）をまたぐ区間
+                for i in range(i0, n):
+                    filtered.ranges[i] = float('inf')
+                for i in range(0, i1 + 1):
+                    filtered.ranges[i] = float('inf')
 
         self._pub.publish(filtered)
 
