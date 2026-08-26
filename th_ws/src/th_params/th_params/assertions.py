@@ -4,6 +4,15 @@
 `DetailedDesign-safety.md` §1.3 を参照する必要があり、パケット §2 の参照節に
 含まれていないため実装しない — R1「§2 に無い仕様は実装しない」）。
 
+**A13**（`N-15` レビュー・`WP-SAFE-03` の派生作業で追加）: `th_state.zones.LIMIT_STRICTNESS`
+の並びが `registry.yaml` の解決済みの数値の昇順と一致することを検査する。
+`th_state/zones.py` の `LIMIT_STRICTNESS` は「speed_limit 名の厳しさ順」という
+**数値の代理**であり、実際の数値（`registry.yaml`。measured 値が入ると変わりうる）と
+順序が食い違うと `combine_speed_limits()` が実際より高い（緩い）上限を返し、
+速度上限という安全機構が静かに無効化される。この関数だけ `th_state` の並びを
+（呼び出し側が）引数として渡す必要があり、P-1「registry を知らない」の対称として
+「`th_state` も知らない・引数だけで完結する」——`order` をハードコードしない。
+
 各関数は `list[str]` を返す。**空リスト＝合格。**非空＝違反メッセージ（複数可）。
 「拒否」か「警告に留める」かは呼び出し側（`export.py`）が判断する
 （A1・A6 は params.md 上は「警告」、他の多くは「起動を拒否」だが、
@@ -170,3 +179,40 @@ def a11_hysteresis_band(floor_m: float, hysteresis_band_m: float, stop_m: float)
                 f"hysteresis_band_m({hysteresis_band_m}) が "
                 f"obstacle_stop_distance_m({stop_m}) 以上"]
     return []
+
+
+def a13_speed_limit_strictness_order(order: Sequence[str],
+                                      values_by_name: Mapping[str, float]) -> list[str]:
+    """A13: `order`（`th_state.zones.LIMIT_STRICTNESS` を渡す想定）の並びが、
+    `values_by_name` の解決済みの数値の昇順と一致すること。
+
+    `order` は「左ほど厳しい（低速）」という順序の名前列。`values_by_name` は
+    `order` に含まれる名前のうち、`resolve_registry()` で具体的な数値に解決できた
+    （`placeholder` でない）ものだけを渡すこと——未測定の軸は比較から除外する
+    （呼び出し側が省けばこの関数は自動的に飛ばす）。`"stop"` は registry に行を
+    持たない特別な名前で、常に 0.0 として扱う（`values_by_name` に無くてよい）。
+
+    違反時（登場順で見て値が前より小さい＝逆転している）は起動を拒否する
+    （呼び出し側 `export.py` が `errors` に積む）。`LIMIT_STRICTNESS` は
+    「speed_limit 名の厳しさ順」という数値の代理であり、ここが崩れると
+    `combine_speed_limits()`（`th_state/zones.py`）が実際より高い上限を返しうる。
+    """
+    errors: list[str] = []
+    prev_name: str | None = None
+    prev_value: float | None = None
+    for name in order:
+        if name == "stop":
+            value = 0.0
+        elif name in values_by_name:
+            value = values_by_name[name]
+        else:
+            continue  # placeholder（未測定）または registry に無い名前は比較から除外
+        if prev_value is not None and value < prev_value:
+            errors.append(
+                f"A13 違反: LIMIT_STRICTNESS の並びで '{prev_name}'({prev_value}) の次に "
+                f"'{name}'({value}) が来るが、数値の昇順になっていない"
+                f"（'{name}' の方が値が小さい＝速いのに、並びでは '{prev_name}' より厳しい"
+                "側に置かれていない）")
+        else:
+            prev_name, prev_value = name, value
+    return errors

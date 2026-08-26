@@ -22,6 +22,10 @@ from typing import Any, Mapping
 import yaml
 
 from th_params import assertions, derive, schema
+# A13（N-15）: th_state.zones.LIMIT_STRICTNESS の並びが registry.yaml の解決済みの
+# 数値の昇順と一致することを検査するために必要（th_params/package.xml に
+# <depend>th_state</depend> を追加してある）。
+from th_state.zones import LIMIT_STRICTNESS
 
 # ---------------------------------------------------------------------------
 # 導出値の解決（registry.yaml の formula 名 → derive.py の純粋関数の組合せ）
@@ -271,7 +275,7 @@ def resolve_registry(rows: list[dict], clamp_warnings: list[str] | None = None,
     値が正しく計算できない行（placeholder が伝播した行）は ('placeholder', schema.TBD) 相当。
 
     `apply_v_max_clamp`（既定 True）: False にすると A1 のクランプ（`_apply_v_max_clamp`）を
-    一切行わない。`--sim` では A1〜A11 が全てスキップされる既存挙動（`main()` 参照）に
+    一切行わない。`--sim` では A1〜A11・A13 が全てスキップされる既存挙動（`main()` 参照）に
     合わせ、呼び出し側が `--sim` のときに False を渡す。
 
     `clamp_warnings` / `clamp_errors`: クランプが実際に何をしたか（適用した／A5 と衝突して
@@ -333,7 +337,8 @@ def run_assertions(rows: list[dict], resolved: Mapping[str, tuple[str, Any]],
                     include_a8: bool = True,
                     clamp_warnings: list[str] | None = None,
                     clamp_errors: list[str] | None = None) -> tuple[list[str], list[str]]:
-    """A1〜A11 のうち registry から機械的に評価できるものを回す。A9 は CI 専用（ここでは呼ばない）。
+    """A1〜A11・A13 のうち registry から機械的に評価できるものを回す
+    （A12 は未実装。A9 は CI 専用でここでは呼ばない）。
 
     戻り値は `(errors, warnings)`。**どのアサーションが起動を拒否（errors）で、
     どれが警告に留まる（warnings）かは `DetailedDesign-params.md` §4 のアサーション表が
@@ -432,6 +437,16 @@ def run_assertions(rows: list[dict], resolved: Mapping[str, tuple[str, Any]],
                 errors.extend(assertions.a1_intrusion_budget(
                     val("v_max"), val(timeout_name), budget, label=timeout_name))
 
+    # A13（N-15）: th_state.zones.LIMIT_STRICTNESS の並びが registry.yaml の解決済みの
+    # 数値の昇順と一致していること。未測定（placeholder）の軸は比較から除外する。
+    # "stop" は registry に行が無いので values_by_name には含めない
+    # （a13_speed_limit_strictness_order() 側で 0.0 として扱う）。
+    strictness_values = {
+        name: val(name) for name in LIMIT_STRICTNESS
+        if name != "stop" and name in rows_by_name and not is_placeholder(name)
+    }
+    errors.extend(assertions.a13_speed_limit_strictness_order(LIMIT_STRICTNESS, strictness_values))
+
     # A1 クランプ（N-7）: resolve_registry() 側で集めたメッセージをそのまま合流させる。
     # 適用できた（警告）／A5 衝突で見送った（起動拒否の理由を明示する追加エラー）の
     # どちらも、新しい仕組みを作らず既存の (errors, warnings) 経路に載せる。
@@ -466,7 +481,7 @@ def main(argv: list[str] | None = None) -> int:
             print(e, file=sys.stderr)
         return 2
 
-    # A1 のクランプ（N-7）は --sim では適用しない。A1〜A11 が全てスキップされる
+    # A1 のクランプ（N-7）は --sim では適用しない。A1〜A11・A13 が全てスキップされる
     # 既存挙動（このブロックの if not args.sim: と同じ思想）を壊さないため。
     clamp_warnings: list[str] = []
     clamp_errors: list[str] = []
