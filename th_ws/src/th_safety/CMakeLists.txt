@@ -80,6 +80,18 @@ if(BUILD_TESTING)
   # 不変条件・ヒステリシスの時系列挙動）。
   ament_add_gtest(test_obstacle_limiter_core test/test_obstacle_limiter_core.cpp)
   target_link_libraries(test_obstacle_limiter_core obstacle_limiter_core)
+
+  # observe_cone() の Python/C++ 等価性テスト（DetailedDesign-safety.md
+  # §3.4.3。is_path_blocked() を最近傍距離を返す形に拡張した Python版
+  # mapless_follow_core.observe_cone() と C++版 obstacle_limiter_core の
+  # observe_cone() を突き合わせる）。テストベクタ
+  # (test/data/obstacle_cone_vectors.json) は
+  # th_testing/tools/gen_obstacle_cone_vectors.py が Python 正本を実際に
+  # 呼び出して生成したもの（pybind11 は使わず JSON 経由で突き合わせる）。
+  ament_add_gtest(test_obstacle_cone_equivalence test/test_obstacle_cone_equivalence.cpp)
+  target_link_libraries(test_obstacle_cone_equivalence obstacle_limiter_core)
+  target_compile_definitions(test_obstacle_cone_equivalence PRIVATE
+    TH_SAFETY_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
 endif()
 
 ament_package()
