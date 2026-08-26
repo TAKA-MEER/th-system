@@ -55,6 +55,15 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_safety_monitor_core test/test_safety_monitor_core.cpp)
   target_link_libraries(test_safety_monitor_core safety_monitor_core)
+
+  # scan_geometry の Python/C++ 等価性テスト（WP-CALIB-01a §7・B-3）。
+  # テストベクタ (test/data/scan_geometry_vectors.json) は
+  # th_testing/tools/gen_scan_geometry_vectors.py が Python 正本を実際に
+  # 呼び出して生成したもの（pybind11 は使わず JSON 経由で突き合わせる）。
+  ament_add_gtest(test_scan_geometry_equivalence test/test_scan_geometry_equivalence.cpp)
+  target_link_libraries(test_scan_geometry_equivalence scan_geometry_core)
+  target_compile_definitions(test_scan_geometry_equivalence PRIVATE
+    TH_SAFETY_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
 endif()
 
 ament_package()
