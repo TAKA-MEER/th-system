@@ -35,7 +35,8 @@ from th_system_msgs.srv import SetFlag, UiTrigger
 
 from th_state import guards as guards_module
 from th_state.state_core import BOOT_MODE, Context, StateCore
-from th_state.zones import ScreenInput, derive_limits
+from th_state.zones import (ScreenInput, combine_speed_limits, derive_limits,
+                             mode_speed_limit)
 
 # ============================================================
 # state.md §3.3 の effect 宛先表（転記。ログ用）。
@@ -237,7 +238,9 @@ class StateManager(Node):
     def _current_limits(self):
         """derive_limits() を1回だけ呼ぶ（N-13: zone と speed_limit を別呼び出しで
         求めると、途中で now_ms が動いて別時刻の結果になりうる）。呼び出し側は
-        必要なフィールド（.zone / .speed_limit）をこの1回の結果から取り出すこと。"""
+        必要なフィールド（.zone / .speed_limit）をこの1回の結果から取り出すこと。
+        ここで返る .speed_limit は画面由来のみ（N-15: モード由来との合成は
+        呼び出し側 `_publish_state()` が `combine_speed_limits()` で行う）。"""
         window_s = self.get_parameter('ui_active_window_s').value
         return derive_limits(self._screens, self._now_ms(), window_s)
 
@@ -486,7 +489,11 @@ class StateManager(Node):
         msg.prev_state = self.prev_state
         limits = self._current_limits()
         msg.zone = limits.zone
-        msg.speed_limit = limits.speed_limit
+        # N-15: speed_limit は「画面由来」単体ではなく、画面由来とモード由来
+        # （attributes.yaml。AT_PANEL × jog_active の v_jog_panel 特例を含む）の
+        # 厳しい方（DetailedDesign-safety.md §3.3.1）。
+        mode_limit = mode_speed_limit(self.core.attributes(self.mode), self._jog_active)
+        msg.speed_limit = combine_speed_limits(limits.speed_limit, mode_limit)
         msg.jog_active = self._jog_active
         msg.estop_ui = self._ui_estop
         msg.estop_hw = self._hw_estop
