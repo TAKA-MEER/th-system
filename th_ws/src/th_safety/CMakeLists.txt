@@ -44,13 +44,23 @@ target_include_directories(obstacle_limiter_core PUBLIC
 target_link_libraries(obstacle_limiter_core PUBLIC scan_geometry_core)
 target_compile_features(obstacle_limiter_core PUBLIC cxx_std_17)
 
+# obstacle_limiter_params（DetailedDesign-wp2.md WP-SAFE-03）: obstacle_limiter
+# ノードが行う「ROS パラメータ表 → コア入力値」変換のうち、テストできる部分
+# （speed_limit 名の解決・blind_angle_ranges の平坦配列→ペア変換）だけを
+# 切り出したヘッダオンリーの純粋ロジック層。
+add_library(obstacle_limiter_params INTERFACE)
+target_include_directories(obstacle_limiter_params INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+
 add_executable(safety_monitor src/safety_monitor.cpp)
 target_link_libraries(safety_monitor safety_monitor_core link_quality_core)
 ament_target_dependencies(safety_monitor
   rclcpp std_msgs std_srvs sensor_msgs geometry_msgs th_system_msgs)
 
 install(TARGETS safety_monitor DESTINATION lib/${PROJECT_NAME})
-install(TARGETS safety_monitor_core obstacle_limiter_core link_quality_core scan_geometry_core
+install(TARGETS safety_monitor_core obstacle_limiter_core obstacle_limiter_params
+                link_quality_core scan_geometry_core
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -92,6 +102,11 @@ if(BUILD_TESTING)
   target_link_libraries(test_obstacle_cone_equivalence obstacle_limiter_core)
   target_compile_definitions(test_obstacle_cone_equivalence PRIVATE
     TH_SAFETY_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
+
+  # obstacle_limiter_params.hpp の単体試験（WP-SAFE-03。obstacle_limiter ノード
+  # が行う「ROS パラメータ表 → コア入力値」変換のうちテストできる部分）。
+  ament_add_gtest(test_obstacle_limiter_params test/test_obstacle_limiter_params.cpp)
+  target_link_libraries(test_obstacle_limiter_params obstacle_limiter_params)
 endif()
 
 ament_package()
