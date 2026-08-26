@@ -100,8 +100,12 @@ ros2 launch th_bringup gazebo.launch.py \
 ros2 launch th_bringup gazebo.launch.py scenario:=narrow_room
 
 # キーボードテレオペ（別ターミナル）
-ros2 launch th_bringup teleop.launch.py           # /cmd_vel_nav 経由（通常）
-ros2 launch th_bringup teleop.launch.py direct:=true  # /cmd_vel 直接（SLAM 用）
+ros2 launch th_bringup teleop.launch.py           # /cmd_vel_nav 経由（通常。twist_mux → obstacle_limiter を通る）
+ros2 launch th_bringup teleop.launch.py direct:=true  # /cmd_vel 直接（SLAM 用。
+  # twist_mux も obstacle_limiter も経由しない既存の例外。WP-SAFE-03 の
+  # 「/cmd_vel を publish してよいのは obstacle_limiter だけ」という不変ルールに
+  # 反する唯一の既知の穴。teleop.launch.py 自体は今回のパケットの範囲外なので
+  # 未対応のまま（WP-SAFE-03 完了報告に記載）
 
 # FOLLOWING モードに切替（起動 10 秒後）
 ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
@@ -112,23 +116,32 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 
 ### 速度指令の流れ（最重要）
 
+WP-SAFE-03（2026-08-27）で最終段に `obstacle_limiter` が入った。twist_mux の出力先は
+`/cmd_vel` ではなく `/cmd_vel_muxed` になり、`/cmd_vel` を publish してよいのは
+`obstacle_limiter` だけになった。
+
 ```
-follow_planner.py ─→ /cmd_vel_retreat (priority 20) ─┐
-person_predictor.py ─→ /cmd_vel_retreat (priority 20) ─┤
-Nav2 controller_server ─→ /cmd_vel_nav (priority 10) ───┤ twist_mux ─→ /cmd_vel ─→ ESP32
-                                                          │
-safety_monitor ─→ /safety/estop     (lock 255) ──────────┤
-safety_monitor ─→ /safety/fault_lock (lock 254) ─────────┘
+挙動系ノード（th_transit/th_onsite/th_route/th_maintenance）
+                       ─→ /cmd_vel_behavior (priority 20) ─┐
+Nav2 controller_server ─→ /cmd_vel_nav      (priority 10) ─┤ twist_mux ─→ /cmd_vel_muxed ─┐
+                                                             │                              │
+safety_monitor ─→ /safety/estop      (lock 255) ────────────┤                              │
+safety_monitor ─→ /safety/fault_lock (lock 254) ────────────┘                              │
+                                                                                             ▼
+/scan・/system/state・/cmd_vel_manual・/safety/estop・/safety/fault_lock ──→ [ obstacle_limiter ] ─→ /cmd_vel ─→ ESP32
+                                                             （20Hz固定・沈黙禁止。base_link<-laser_link TFを起動時に有界リトライで取得）
 ```
 
-**不変ルール**: `/cmd_vel` に直接 publish するノードを追加してはいけない。すべての速度指令は twist_mux 経由。退避・捜索旋回は `/cmd_vel_retreat`（priority 20）、Nav2 経由の移動は `/cmd_vel_nav`（priority 10）を使う。
+**不変ルール**: `/cmd_vel` に直接 publish するノードを追加してはいけない。`obstacle_limiter` だけが `/cmd_vel` の publisher。すべての速度指令は twist_mux → `/cmd_vel_muxed` → `obstacle_limiter` 経由。Nav2 経由の移動は `/cmd_vel_nav`（priority 10）、それ以外の挙動系（点検・校正の走行を含む）は `/cmd_vel_behavior`（priority 20）を使う。
+
+`follow_planner.py` / `follow_planner_mapless.py` / `person_predictor.py` は旧設計の挙動ノードで、いまだに廃止済みの `/cmd_vel_retreat` へ publish している（新設計の `/cmd_vel_behavior` ではない）。twist_mux はもうこのトピックを購読していないため、**これらのノードの退避・捜索旋回コマンドは現在誰にも届かず無音のまま捨てられる**（追従自体は Nav2 経由の `/cmd_vel_nav` で動くため気づきにくい）。3ノードとも新設計での廃止対象（`docs/plan/detailed/DetailedDesign-names.md` §1.1・§6.1）なので、書き直すのではなく WP-TRANSIT-01 等での削除を待つこと。
 
 ### 追従ロジックの二層構造
 
 追従ロジックは意図的に二層に分けられている:
 
 - `th_planning/th_planning/follow_planner_core.py` — **ROS2 非依存の純粋 Python**。`FollowPlannerCore.update()` がコアアルゴリズム。このファイルは ROS2 を import しないことで `pytest` で直接テスト可能。
-- `th_planning/scripts/follow_planner.py` — ROS2 ノード。`follow_planner_core.py` を import して `/person/status` → Nav2 ゴール / `/cmd_vel_retreat` に接続するだけ。
+- `th_planning/scripts/follow_planner.py` — ROS2 ノード。`follow_planner_core.py` を import して `/person/status` → Nav2 ゴール / `/cmd_vel_retreat` に接続するだけ（`/cmd_vel_retreat` は WP-SAFE-03 以降 twist_mux が購読しておらず無音で捨てられる。上の「速度指令の流れ」の注記参照）。
 
 新しい追従ロジックを追加する際は必ず `follow_planner_core.py` に純粋関数として実装し、`test_follow_planner_logic.py` にテストを追加してから `follow_planner.py` から呼ぶ。
 
