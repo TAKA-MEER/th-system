@@ -139,27 +139,78 @@ public:
             {"v_leash", get_parameter("v_leash").as_double()},
         };
 
-        // ── TF: 起動時に 1 度だけ base_link<-laser_link を取得して保持する
+        // ── TF: 起動時に base_link<-laser_link を取得して保持する
         //    （names.md §1.2・wp2.md WP-SAFE-03 §3.4。20Hz では引かない）。
         //    取得に失敗したら起動を失敗させる（wp2.md §3.4 が明記。素通しにしない）。
-        const double tf_timeout_sec = declare_parameter("tf_lookup_timeout_sec", 5.0);
+        //
+        // 有界のリトライ（launch 配線時に追加。実装管理者からの指示、2026-08-27）:
+        // launch では robot_state_publisher と同時に起動されるため、xacro の
+        // Command 実行（数百ms〜数秒かかりうる）が終わって最初の /tf_static が
+        // 届く前に本ノードが TF を引きに行く起動レースがある。単発の
+        // lookupTransform(timeout) だけに頼ると、Docker実測で「約8msでリトライ
+        // 無しに例外を投げた」事例が確認されている（tf2_ros::Buffer の内部の
+        // ブロッキング待ちが期待通りに機能しない環境があるということ）。
+        // そのため呼び出し側で canTransform() を明示的にポーリングするループに
+        // し、実際に一定間隔でリトライすることを保証する。
+        // 待ち時間: 全体 tf_lookup_timeout_sec（既定 10.0 秒。xacro 起動 + DDS
+        // discovery の遅延を吸収する余裕を持たせた値。5 秒では Docker の重い
+        // 起動時に不足する可能性があるため従来の既定値から広げた）を
+        // tf_lookup_poll_interval_sec（既定 0.2 秒）刻みでポーリングする。
+        // 「待っても取れなければ起動失敗」なので wp2.md §3.4 の要求
+        // （素通しで動かさない）は変わらず満たす。
+        const double tf_timeout_sec = declare_parameter("tf_lookup_timeout_sec", 10.0);
+        const double tf_poll_interval_sec = declare_parameter("tf_lookup_poll_interval_sec", 0.2);
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
         // spin_thread=true: このリスナ専用の実行スレッドを持たせる。main() の
         // executor がまだ spin していない起動シーケンス中でも /tf, /tf_static
-        // のコールバックが処理され、下の lookupTransform のブロッキング待ちが
-        // 機能する。
+        // のコールバックが処理される。
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, this, true);
-        try {
-            laser_to_base_ = tf_buffer_->lookupTransform(
-                "base_link", "laser_link", tf2::TimePointZero,
-                tf2::durationFromSec(tf_timeout_sec));
-        } catch (const tf2::TransformException& ex) {
+
+        bool tf_ready = false;
+        std::string tf_error;
+        int tf_attempts = 0;
+        const auto tf_deadline = std::chrono::steady_clock::now() +
+            std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<double>(tf_timeout_sec));
+        do {
+            ++tf_attempts;
+            tf_error.clear();
+            if (tf_buffer_->canTransform(
+                    "base_link", "laser_link", tf2::TimePointZero, &tf_error)) {
+                tf_ready = true;
+                break;
+            }
+            if (std::chrono::steady_clock::now() >= tf_deadline) {
+                break;
+            }
+            RCLCPP_WARN(get_logger(),
+                "base_link<-laser_link TF 未取得（%d 回目、%.1fs 刻みでリトライ継続）: %s",
+                tf_attempts, tf_poll_interval_sec, tf_error.c_str());
+            rclcpp::sleep_for(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::duration<double>(tf_poll_interval_sec)));
+        } while (std::chrono::steady_clock::now() < tf_deadline);
+
+        if (!tf_ready) {
             RCLCPP_FATAL(get_logger(),
-                "起動時の base_link<-laser_link TF 取得に失敗した。"
-                "素通しでは動かさず起動を失敗させる（wp2.md WP-SAFE-03 §3.4）: %s",
-                ex.what());
+                "起動時の base_link<-laser_link TF 取得に %.1f 秒(%d 回試行)待っても"
+                "失敗した。素通しでは動かさず起動を失敗させる（wp2.md WP-SAFE-03 §3.4）: %s",
+                tf_timeout_sec, tf_attempts, tf_error.c_str());
             throw std::runtime_error(
                 "obstacle_limiter: base_link<-laser_link TF unavailable at startup");
+        }
+        try {
+            laser_to_base_ = tf_buffer_->lookupTransform(
+                "base_link", "laser_link", tf2::TimePointZero);
+        } catch (const tf2::TransformException& ex) {
+            // canTransform 直後の lookupTransform が失敗するのは通常起きない
+            // （TF バッファから消える猶予はあるが、直前に確認したばかりのため）。
+            // 想定外の状態として同じくFATALで起動失敗にする（素通ししない）。
+            RCLCPP_FATAL(get_logger(),
+                "canTransform は成功したが直後の lookupTransform が失敗した（想定外）: %s",
+                ex.what());
+            throw std::runtime_error(
+                "obstacle_limiter: base_link<-laser_link TF lookup failed "
+                "immediately after a successful canTransform");
         }
         const double yaw = tf2::getYaw(laser_to_base_.transform.rotation);
         if (std::fabs(yaw) > 1e-6) {
