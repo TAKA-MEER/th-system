@@ -4,14 +4,20 @@
 `DetailedDesign-safety.md` §1.3 を参照する必要があり、パケット §2 の参照節に
 含まれていないため実装しない — R1「§2 に無い仕様は実装しない」）。
 
-**A13**（`N-15` レビュー・`WP-SAFE-03` の派生作業で追加）: `th_state.zones.LIMIT_STRICTNESS`
-の並びが `registry.yaml` の解決済みの数値の昇順と一致することを検査する。
-`th_state/zones.py` の `LIMIT_STRICTNESS` は「speed_limit 名の厳しさ順」という
-**数値の代理**であり、実際の数値（`registry.yaml`。measured 値が入ると変わりうる）と
-順序が食い違うと `combine_speed_limits()` が実際より高い（緩い）上限を返し、
-速度上限という安全機構が静かに無効化される。この関数だけ `th_state` の並びを
-（呼び出し側が）引数として渡す必要があり、P-1「registry を知らない」の対称として
-「`th_state` も知らない・引数だけで完結する」——`order` をハードコードしない。
+**A13**（`N-15` レビュー・`WP-SAFE-03` の派生作業で追加）: 「speed_limit 名の厳しさ順」
+（`order`）が `registry.yaml` の解決済みの数値の昇順と一致することを検査する。
+`order` は呼び出し側（`export.py::speed_limit_strictness_order()`。registry.yaml の
+`speed_limit_strictness_rank` フィールドから組み立てる）が引数として渡す——この関数自体は
+`order` がどこから来たかを知らない（P-1「registry を知らない」の対称として
+「`th_state` も知らない・引数だけで完結する」）。`order` は `th_state/zones.py` の
+`LIMIT_STRICTNESS`（`combine_speed_limits()` が実際に使う「厳しさ順」の実体）と
+**意味的に同じもの**を registry 側にも宣言した重複であり、`th_params`（上流。
+`registry.yaml` から全ノード分の設定を生成する側）が `th_state`（下流）を import して
+層を逆転させないための設計（レビュー指摘）。2 か所の一致は
+`test_state_registry_consistency.py`（`th_testing`）が機械的に検査する。
+これは「speed_limit 名の厳しさ順」という**数値の代理**の並びであり、実際の数値
+（`registry.yaml`。measured 値が入ると変わりうる）と食い違うと `combine_speed_limits()`
+が実際より高い（緩い）上限を返し、速度上限という安全機構が静かに無効化される。
 
 各関数は `list[str]` を返す。**空リスト＝合格。**非空＝違反メッセージ（複数可）。
 「拒否」か「警告に留める」かは呼び出し側（`export.py`）が判断する

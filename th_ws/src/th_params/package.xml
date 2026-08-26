@@ -13,8 +13,5 @@
   <depend>ament_index_python</depend>
   <depend>std_srvs</depend>
   <depend>th_system_msgs</depend>
-  <!-- A13（N-15）: export.py が th_state.zones.LIMIT_STRICTNESS を読んで
-       registry.yaml の解決済みの数値の昇順と一致することを検査するため -->
-  <depend>th_state</depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

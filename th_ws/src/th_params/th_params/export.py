@@ -22,10 +22,6 @@ from typing import Any, Mapping
 import yaml
 
 from th_params import assertions, derive, schema
-# A13（N-15）: th_state.zones.LIMIT_STRICTNESS の並びが registry.yaml の解決済みの
-# 数値の昇順と一致することを検査するために必要（th_params/package.xml に
-# <depend>th_state</depend> を追加してある）。
-from th_state.zones import LIMIT_STRICTNESS
 
 # ---------------------------------------------------------------------------
 # 導出値の解決（registry.yaml の formula 名 → derive.py の純粋関数の組合せ）
@@ -332,6 +328,28 @@ def compute_digest(resolved: Mapping[str, tuple[str, Any]]) -> str:
     return hashlib.sha1(joined).hexdigest()[:12]
 
 
+def speed_limit_strictness_order(rows: list[dict]) -> tuple[str, ...]:
+    """A13（N-15）: registry.yaml の `speed_limit_strictness_rank` フィールドから
+    「speed_limit 名の厳しさ順」（数値が小さいほど厳しい＝低速）を組み立てる。
+
+    `stop` は registry に行を持たない特別な名前で、rank 0 として常に先頭に置く
+    （`speed_limit_strictness_rank` を持つ行は無い前提。もし将来 `stop` という
+    名前の行が rank 付きで現れても、"stop" は常に別枠として先頭固定でよい）。
+
+    この並びは `th_state/zones.py` の `LIMIT_STRICTNESS` と**意味的に同じもの**を
+    registry 側で宣言したもの（依存の向きを th_params → th_state にしないための
+    重複。`th_params` は registry.yaml から全ノード分の設定を生成する上流であり、
+    下流である `th_state` を import すると層が反転するため——レビュー指摘）。
+    2 か所が食い違わないことは `test_state_registry_consistency.py`（th_testing。
+    th_state と th_params の両方を import してよいテストコードの中でだけ突き合わせる）
+    が機械的に検査する。
+    """
+    ranked = [(row["name"], row["speed_limit_strictness_rank"])
+              for row in rows if "speed_limit_strictness_rank" in row]
+    ranked.sort(key=lambda pair: pair[1])
+    return ("stop",) + tuple(name for name, _rank in ranked)
+
+
 def run_assertions(rows: list[dict], resolved: Mapping[str, tuple[str, Any]],
                     stage: int, nodes: list[str] | None,
                     include_a8: bool = True,
@@ -437,15 +455,16 @@ def run_assertions(rows: list[dict], resolved: Mapping[str, tuple[str, Any]],
                 errors.extend(assertions.a1_intrusion_budget(
                     val("v_max"), val(timeout_name), budget, label=timeout_name))
 
-    # A13（N-15）: th_state.zones.LIMIT_STRICTNESS の並びが registry.yaml の解決済みの
-    # 数値の昇順と一致していること。未測定（placeholder）の軸は比較から除外する。
+    # A13（N-15）: registry.yaml の speed_limit_strictness_rank から組み立てた並びが、
+    # 解決済みの数値の昇順と一致していること。未測定（placeholder）の軸は比較から除外する。
     # "stop" は registry に行が無いので values_by_name には含めない
     # （a13_speed_limit_strictness_order() 側で 0.0 として扱う）。
+    strictness_order = speed_limit_strictness_order(rows)
     strictness_values = {
-        name: val(name) for name in LIMIT_STRICTNESS
+        name: val(name) for name in strictness_order
         if name != "stop" and name in rows_by_name and not is_placeholder(name)
     }
-    errors.extend(assertions.a13_speed_limit_strictness_order(LIMIT_STRICTNESS, strictness_values))
+    errors.extend(assertions.a13_speed_limit_strictness_order(strictness_order, strictness_values))
 
     # A1 クランプ（N-7）: resolve_registry() 側で集めたメッセージをそのまま合流させる。
     # 適用できた（警告）／A5 衝突で見送った（起動拒否の理由を明示する追加エラー）の
