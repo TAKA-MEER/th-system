@@ -234,9 +234,12 @@ class StateManager(Node):
     def _now_ms(self) -> int:
         return self.get_clock().now().nanoseconds // 1_000_000
 
-    def _current_zone(self) -> str:
+    def _current_limits(self):
+        """derive_limits() を1回だけ呼ぶ（N-13: zone と speed_limit を別呼び出しで
+        求めると、途中で now_ms が動いて別時刻の結果になりうる）。呼び出し側は
+        必要なフィールド（.zone / .speed_limit）をこの1回の結果から取り出すこと。"""
         window_s = self.get_parameter('ui_active_window_s').value
-        return derive_limits(self._screens, self._now_ms(), window_s).zone
+        return derive_limits(self._screens, self._now_ms(), window_s)
 
     def _build_context(self, arg: dict) -> Context:
         flags = dict(self._flags)
@@ -246,7 +249,7 @@ class StateManager(Node):
             prev_state=self.prev_state,
             prev_sub=self.prev_sub,
             flags=flags,
-            zone=self._current_zone(),
+            zone=self._current_limits().zone,
             candidate_count=0,
             target_selected=False,
             target_confident=False,
@@ -481,7 +484,9 @@ class StateManager(Node):
         msg.state = self.state
         msg.prev_mode = self.prev_mode
         msg.prev_state = self.prev_state
-        msg.zone = self._current_zone()
+        limits = self._current_limits()
+        msg.zone = limits.zone
+        msg.speed_limit = limits.speed_limit
         msg.jog_active = self._jog_active
         msg.estop_ui = self._ui_estop
         msg.estop_hw = self._hw_estop
