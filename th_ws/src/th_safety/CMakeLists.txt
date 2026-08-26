@@ -34,13 +34,23 @@ target_include_directories(safety_monitor_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 
+# obstacle_limiter_core（DetailedDesign-safety.md §3）: ROS2 非依存の
+# obstacle_limiter 判定ロジック層。scan_geometry.hpp（角度→添字変換）に
+# 依存するため C++17 が必要。
+add_library(obstacle_limiter_core src/obstacle_limiter_core.cpp)
+target_include_directories(obstacle_limiter_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(obstacle_limiter_core PUBLIC scan_geometry_core)
+target_compile_features(obstacle_limiter_core PUBLIC cxx_std_17)
+
 add_executable(safety_monitor src/safety_monitor.cpp)
 target_link_libraries(safety_monitor safety_monitor_core link_quality_core)
 ament_target_dependencies(safety_monitor
   rclcpp std_msgs std_srvs sensor_msgs geometry_msgs th_system_msgs)
 
 install(TARGETS safety_monitor DESTINATION lib/${PROJECT_NAME})
-install(TARGETS safety_monitor_core link_quality_core scan_geometry_core
+install(TARGETS safety_monitor_core obstacle_limiter_core link_quality_core scan_geometry_core
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
