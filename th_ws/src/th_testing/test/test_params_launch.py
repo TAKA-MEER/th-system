@@ -24,14 +24,8 @@ import yaml
 _REPO_SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _LAUNCH_DIR = os.path.join(_REPO_SRC, "th_bringup", "launch")
 _PARAMS_SRC = os.path.join(_REPO_SRC, "th_params")
-# A13（N-15）: th_params/export.py が `from th_state.zones import LIMIT_STRICTNESS` を
-# import するようになったため、`python3 -m th_params.export` をサブプロセスで呼ぶ
-# _subprocess_env() の PYTHONPATH にも th_state を足す必要がある（colcon build 後の
-# 実運用では install/setup.bash が PYTHONPATH に全パッケージを載せるので問題にならないが、
-# このテストはビルドなしでサブプロセスの PYTHONPATH を手組みしているため必要）。
-_STATE_SRC = os.path.join(_REPO_SRC, "th_state")
 
-for _p in (_LAUNCH_DIR, _PARAMS_SRC, _STATE_SRC):
+for _p in (_LAUNCH_DIR, _PARAMS_SRC):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -49,8 +43,7 @@ def _read(path: str) -> str:
 
 def _subprocess_env() -> dict:
     env = dict(os.environ)
-    env["PYTHONPATH"] = (_PARAMS_SRC + os.pathsep + _STATE_SRC + os.pathsep
-                          + env.get("PYTHONPATH", ""))
+    env["PYTHONPATH"] = _PARAMS_SRC + os.pathsep + env.get("PYTHONPATH", "")
     return env
 
 

@@ -104,6 +104,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_params_launch
     test/test_params_launch.py
     TIMEOUT 60)
+  # th_state/zones.py の LIMIT_STRICTNESS と registry.yaml の
+  # speed_limit_strictness_rank が一致することの機械的な照合（N-15 レビュー。
+  # th_state と th_params の両方を import してよい唯一のテストコード）
+  ament_add_pytest_test(test_state_registry_consistency
+    test/test_state_registry_consistency.py
+    TIMEOUT 60)
 
   # ── ROS2 ノード統合テスト ────────────────────────────────
   ament_add_pytest_test(test_mode_transitions
