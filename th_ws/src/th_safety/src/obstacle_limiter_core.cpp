@@ -92,11 +92,10 @@ bool blind_direction_overlap(double direction_rad, double half_width_rad,
   return false;
 }
 
-std::optional<double> nearest_in_cone(const ScanSnapshot& scan, double direction_rad,
-                                       double half_width_rad) {
+ConeObservation observe_cone(const ScanSnapshot& scan, double direction_rad, double half_width_rad) {
   if (!scan.received || scan.geometry.num_ranges == 0 ||
       scan.ranges.size() != scan.geometry.num_ranges) {
-    return std::nullopt;
+    return ConeObservation{};  // covered=false（未観測。デフォルト値のまま）
   }
 
   const double direction_deg = direction_rad * kRadToDeg;
@@ -107,9 +106,13 @@ std::optional<double> nearest_in_cone(const ScanSnapshot& scan, double direction
   const auto& i1 = bounds.second;
   if (!i0.has_value() || !i1.has_value()) {
     // scan_geometry 規約⑤: 範囲外は「そのセクタは存在しない」。
-    // lidar_filter の既定（安全側＝判定できない区間は無視する）を踏襲し、
-    // 「その方向は観測なし」として nullopt を返す（呼び出し側で空き扱い）。
-    return std::nullopt;
+    // これは lidar_filter の「マスクしない＝安全側」とは向きが逆
+    // （lidar_filter は障害物を多く見る方向＝安全側だが、ここで「空き扱い」
+    // にすると障害物を少なく見る方向＝危険側になる）。§3.4.2 の
+    // 「古いスキャンで空きと判定しない」と同じ理屈で、未観測を空きとして
+    // 返さない（covered=false のまま返す。呼び出し側は L5 と同じ v_reverse
+    // キャップの対象にする。N-11）。
+    return ConeObservation{};
   }
 
   const std::size_t n = scan.geometry.num_ranges;
@@ -137,7 +140,7 @@ std::optional<double> nearest_in_cone(const ScanSnapshot& scan, double direction
       consider(i);
     }
   }
-  return nearest;
+  return ConeObservation{/*covered=*/true, nearest.value_or(std::numeric_limits<double>::infinity())};
 }
 
 ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& in,
@@ -211,16 +214,22 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
       applied_limit = std::min(applied_limit, p.v_reverse);
     }
   }
-  // L5: 死角セクタに向かう成分がある間だけ、その方向の上限を v_reverse にする
-  // （全方向ではない。state の新鮮さに関わらず幾何的に成立する制約なので
-  // state_fresh の分岐の外で常に適用する）。
-  if (blind_direction_overlap(direction_rad, half_width, p.blind_angle_ranges_deg)) {
+  // L5: 死角セクタに向かう成分がある間、または scan がその方向のコーンを
+  // 観測できていない間（未観測は「空き」ではない。N-11）は、その方向の
+  // 上限を v_reverse にする（全方向ではない。state の新鮮さに関わらず
+  // 幾何的に成立する制約なので state_fresh の分岐の外で常に適用する）。
+  const ConeObservation cone = observe_cone(in.scan, direction_rad, half_width);
+  if (blind_direction_overlap(direction_rad, half_width, p.blind_angle_ranges_deg) ||
+      !cone.covered) {
     applied_limit = std::min(applied_limit, p.v_reverse);
   }
   applied_limit = std::max(0.0, applied_limit);
 
-  const std::optional<double> nearest_opt = nearest_in_cone(in.scan, direction_rad, half_width);
-  const double nearest_m = nearest_opt.value_or(std::numeric_limits<double>::infinity());
+  // v_allow / ヒステリシスへの入力。未観測（cone.covered == false）のときは
+  // 「新たに障害物を検知した情報が無い」という中立値として +infinity を使う
+  // ――安全側のマージンは上で既に適用した v_reverse キャップが別途担保するため、
+  // ここでさらに悲観側（0 に近い値）へ倒す必要はない（N-11）。
+  const double nearest_m = cone.covered ? cone.nearest_m : std::numeric_limits<double>::infinity();
 
   // ヒステリシス（§3.4.3）。stop_latched_ はインスタンスの状態として持ち、
   // nearest_m >= floor + band になるまで STOP を維持する。
@@ -243,16 +252,22 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   }
   linear_ceiling = std::max(0.0, linear_ceiling);
 
-  // L3: 前方障害物では linear.x だけをクランプし、angular.z は殺さない。
-  // ただし d_floor を割っている間（below_floor）は angular.z にも w_align_max を掛ける。
-  double angular_ceiling = std::numeric_limits<double>::infinity();
+  // 角速度の一般上限は w_max（常に効く）。L3: 前方障害物では linear.x だけを
+  // クランプし、angular.z は殺さない。ただし d_floor を割っている間
+  // （below_floor）は angular.z にも w_align_max を追加で掛ける
+  // （min(w_max, w_align_max)。w_align_max > w_max の設定でも min により
+  // 安全側＝より小さい方に倒れる）。
+  double angular_ceiling = p.w_max;
   if (below_floor) {
-    angular_ceiling = p.w_align_max;
+    angular_ceiling = std::min(angular_ceiling, p.w_align_max);
   }
 
   out.out.linear_x = clamp_toward_zero(in.muxed.value.linear_x, linear_ceiling);
   out.out.angular_z = clamp_toward_zero(in.muxed.value.angular_z, angular_ceiling);
-  out.nearest_obstacle_m = nearest_m;
+  // 診断用の距離: 未観測（cone.covered == false）は「不明」の明示値 -1.0
+  // （+infinity＝空き確認済み、とは区別する。§3.4.2「古いスキャンで空きと
+  // 判定しない」と同じ理屈。N-11）。
+  out.nearest_obstacle_m = cone.covered ? nearest_m : -1.0;
   out.source_class = source_class;
   out.applied_limit_mps = applied_limit;
 

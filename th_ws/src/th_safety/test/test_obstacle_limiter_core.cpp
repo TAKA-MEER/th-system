@@ -92,6 +92,28 @@ ScanGeometryInfo fixed_geometry() {
   return g;
 }
 
+// 全周をカバーしない ScanGeometryInfo（N-11: 観測範囲外の扱いを検証する用）。
+// exclude_rear==true: -100°〜100°の200°だけをカバーする（前方 0° は
+// カバー内、後方 180° 付近はカバー外になる＝後退時のコーンが必ず未観測）。
+// exclude_rear==false: 100°〜260°の160°だけをカバーする（後方 180° は
+// カバー内、前方 0° はカバー外になる＝前進時のコーンが必ず未観測）。
+// cone half-width（最大 0.8 rad ≈ 46°）を除外域の内側に十分収まるように
+// 除外域を広めに取ってあるので、対応する方向のコーンは必ず全体が
+// カバー外になる（境界だけ一部カバーというあいまいな状態を作らない）。
+ScanGeometryInfo partial_geometry(bool exclude_rear) {
+  ScanGeometryInfo g;
+  g.num_ranges = 400;
+  constexpr double kDeg = kPi / 180.0;
+  if (exclude_rear) {
+    g.angle_min = -100.0 * kDeg;
+    g.angle_increment = (200.0 * kDeg) / g.num_ranges;
+  } else {
+    g.angle_min = 100.0 * kDeg;
+    g.angle_increment = (160.0 * kDeg) / g.num_ranges;
+  }
+  return g;
+}
+
 // direction_rad 付近（cone 内）の添字に obstacle_range_m を書き込み、
 // それ以外は far_range_m（届かない距離）で埋める。
 void plant_obstacle(std::vector<double>* ranges, const ScanGeometryInfo& geom, double direction_rad,
@@ -119,6 +141,9 @@ GeneratedCase generate_case(std::mt19937& rng) {
   std::uniform_real_distribution<double> cone_dist(0.2, 0.7);
   std::uniform_real_distribution<double> cone_rev_dist(0.2, 0.8);
   std::uniform_real_distribution<double> v_reverse_dist(0.05, 0.4);
+  std::uniform_real_distribution<double> w_max_dist(0.2, 0.8);
+  // w_align_max はわざと w_max と独立に振る（min() が向きを問わず
+  // 安全側を取ることを検証するため、w_align_max > w_max のケースも混ぜる）。
   std::uniform_real_distribution<double> w_align_dist(0.1, 0.5);
   std::uniform_real_distribution<double> manual_to_dist(0.5, 1.5);
   std::uniform_real_distribution<double> state_stale_dist(0.5, 2.0);
@@ -132,6 +157,7 @@ GeneratedCase generate_case(std::mt19937& rng) {
   c.p.obstacle_cone_half_width_rad = cone_dist(rng);
   c.p.obstacle_cone_half_width_reverse_rad = cone_rev_dist(rng);
   c.p.v_reverse = v_reverse_dist(rng);
+  c.p.w_max = w_max_dist(rng);
   c.p.w_align_max = w_align_dist(rng);
   c.p.manual_joy_timeout_sec = manual_to_dist(rng);
   c.p.state_stale_sec = state_stale_dist(rng);
@@ -197,34 +223,50 @@ GeneratedCase generate_case(std::mt19937& rng) {
     } else {
       c.in.scan.stamp_sec = now_sec - c.p.scan_stale_sec * (1.1 + frac(rng));
     }
-    c.in.scan.geometry = fixed_geometry();
-
-    std::uniform_int_distribution<int> scan_bucket(0, 3);
     const bool reversing_hint = c.in.muxed.value.linear_x < 0.0;
     const double direction_rad = reversing_hint ? kPi : 0.0;
-    std::uniform_real_distribution<double> dist_around_floor(
-        c.p.obstacle_floor_distance_m - 0.3, c.p.obstacle_floor_distance_m + 0.5);
-    switch (scan_bucket(rng)) {
-      case 0:  // 空き（十分遠い）
-        c.in.scan.ranges.assign(c.in.scan.geometry.num_ranges, 30.0);
-        break;
-      case 1: {  // 進行方向 cone 内、floor 付近にプラント
-        double d = dist_around_floor(rng);
-        if (d < 0.0) d = 0.01;
-        plant_obstacle(&c.in.scan.ranges, c.in.scan.geometry, direction_rad, d, 30.0);
-        break;
+
+    // N-11: 30% の確率でコーンの一部が未観測になる部分カバレッジの scan
+    // 形状を使う（実機は全周カバーだが、N-10 のような angle_min=0 系の
+    // スキャナと組み合わさると到達するケースを模す）。
+    std::bernoulli_distribution partial_geom_dist(0.3);
+    std::bernoulli_distribution exclude_rear_dist(0.5);
+    const bool use_partial = partial_geom_dist(rng);
+    const bool exclude_rear = exclude_rear_dist(rng);
+    c.in.scan.geometry = use_partial ? partial_geometry(exclude_rear) : fixed_geometry();
+
+    if (use_partial) {
+      // 部分カバレッジのケースは「そのカバレッジで観測できる範囲は空き」
+      // だけを試す（障害物プラントは observe_cone() の cover 判定そのものの
+      // 検証が目的なので、行き先の cone がカバー内かどうかは exclude_rear と
+      // reversing_hint の組合せで決まる。プラントは行わない）。
+      c.in.scan.ranges.assign(c.in.scan.geometry.num_ranges, 30.0);
+    } else {
+      std::uniform_int_distribution<int> scan_bucket(0, 3);
+      std::uniform_real_distribution<double> dist_around_floor(
+          c.p.obstacle_floor_distance_m - 0.3, c.p.obstacle_floor_distance_m + 0.5);
+      switch (scan_bucket(rng)) {
+        case 0:  // 空き（十分遠い）
+          c.in.scan.ranges.assign(c.in.scan.geometry.num_ranges, 30.0);
+          break;
+        case 1: {  // 進行方向 cone 内、floor 付近にプラント
+          double d = dist_around_floor(rng);
+          if (d < 0.0) d = 0.01;
+          plant_obstacle(&c.in.scan.ranges, c.in.scan.geometry, direction_rad, d, 30.0);
+          break;
+        }
+        case 2:  // 全 inf（センサ無反応）
+          c.in.scan.ranges.assign(c.in.scan.geometry.num_ranges,
+                                   std::numeric_limits<double>::infinity());
+          break;
+        case 3: {  // 進行方向 cone 内、床よりかなり近い
+          std::uniform_real_distribution<double> very_near(0.01, c.p.obstacle_floor_distance_m * 0.5);
+          plant_obstacle(&c.in.scan.ranges, c.in.scan.geometry, direction_rad, very_near(rng), 30.0);
+          break;
+        }
+        default:
+          c.in.scan.ranges.assign(c.in.scan.geometry.num_ranges, 30.0);
       }
-      case 2:  // 全 inf（センサ無反応）
-        c.in.scan.ranges.assign(c.in.scan.geometry.num_ranges,
-                                 std::numeric_limits<double>::infinity());
-        break;
-      case 3: {  // 進行方向 cone 内、床よりかなり近い
-        std::uniform_real_distribution<double> very_near(0.01, c.p.obstacle_floor_distance_m * 0.5);
-        plant_obstacle(&c.in.scan.ranges, c.in.scan.geometry, direction_rad, very_near(rng), 30.0);
-        break;
-      }
-      default:
-        c.in.scan.ranges.assign(c.in.scan.geometry.num_ranges, 30.0);
     }
   }
 
@@ -247,7 +289,10 @@ std::string describe(const GeneratedCase& c, int iter) {
      << " state.mode=" << c.in.state.mode << " jog_active=" << c.in.state.jog_active
      << " zone=" << static_cast<int>(c.in.state.zone) << " auto_brake=" << c.in.state.auto_brake
      << "\n"
-     << "  scan.received=" << c.in.scan.received << " scan.stamp=" << c.in.scan.stamp_sec << "\n"
+     << "  scan.received=" << c.in.scan.received << " scan.stamp=" << c.in.scan.stamp_sec
+     << " scan.angle_min=" << c.in.scan.geometry.angle_min
+     << " scan.angle_increment=" << c.in.scan.geometry.angle_increment
+     << " scan.num_ranges=" << c.in.scan.geometry.num_ranges << "\n"
      << "  estop.received=" << c.in.estop.received << " estop.stamp=" << c.in.estop.stamp_sec
      << " estop.value=" << c.in.estop.value << "\n"
      << "  fault_lock.received=" << c.in.fault_lock.received
@@ -258,7 +303,8 @@ std::string describe(const GeneratedCase& c, int iter) {
      << "  p.obstacle_floor_distance_m=" << c.p.obstacle_floor_distance_m
      << " p.hysteresis_band_m=" << c.p.hysteresis_band_m
      << " p.brake_accel_mps2=" << c.p.brake_accel_mps2 << " p.v_reverse=" << c.p.v_reverse
-     << " p.w_align_max=" << c.p.w_align_max << " p.blind_calibrated=" << c.p.blind_calibrated
+     << " p.w_max=" << c.p.w_max << " p.w_align_max=" << c.p.w_align_max
+     << " p.blind_calibrated=" << c.p.blind_calibrated
      << " p.blind_angle_ranges_deg.size=" << c.p.blind_angle_ranges_deg.size();
   return os.str();
 }
@@ -300,6 +346,12 @@ TEST(ObstacleLimiterCoreProperty, RandomizedSingleCallInvariants) {
     // ── L4: 後退時は v_reverse 以内 ──
     if (out.out.linear_x < 0.0 && std::fabs(out.out.linear_x) > c.p.v_reverse + kEps) {
       ADD_FAILURE() << "L4 exceeded v_reverse while reversing\n" << ctx;
+      ++failures;
+    }
+
+    // ── 角速度の一般上限 w_max は常に効く（どの分岐でも成立するはず） ──
+    if (std::fabs(out.out.angular_z) > c.p.w_max + kEps) {
+      ADD_FAILURE() << "angular exceeded w_max\n" << ctx;
       ++failures;
     }
 
@@ -364,8 +416,12 @@ TEST(ObstacleLimiterCoreProperty, RandomizedSingleCallInvariants) {
     const double half_width =
         reversing ? c.p.obstacle_cone_half_width_reverse_rad : c.p.obstacle_cone_half_width_rad;
 
-    // ── L5: 死角セクタに向かう成分がある方向だけ v_reverse キャップ ──
+    // ── L5 + N-11: 死角セクタに向かう成分がある方向、または scan が
+    // その方向のコーンを観測できていない方向（未観測は「空き」ではない）
+    // だけ v_reverse キャップ ──
     const bool overlap = blind_direction_overlap(direction_rad, half_width, c.p.blind_angle_ranges_deg);
+    const ConeObservation cone = observe_cone(c.in.scan, direction_rad, half_width);
+    const bool must_cap = overlap || !cone.covered;
     const bool state_fresh =
         c.in.state.received && (c.in.now_sec - c.in.state.stamp_sec) <= c.p.state_stale_sec;
     double non_blind_ceiling;
@@ -375,16 +431,18 @@ TEST(ObstacleLimiterCoreProperty, RandomizedSingleCallInvariants) {
       non_blind_ceiling = std::min(c.in.screen_limit_mps, c.in.mode_limit_mps);
       if (reversing) non_blind_ceiling = std::min(non_blind_ceiling, c.p.v_reverse);
     }
-    if (overlap) {
+    if (must_cap) {
       const double expected_ceiling = std::max(0.0, std::min(non_blind_ceiling, c.p.v_reverse));
       if (out.applied_limit_mps > expected_ceiling + kEps) {
-        ADD_FAILURE() << "L5 blind overlap but applied_limit_mps not capped to v_reverse\n" << ctx;
+        ADD_FAILURE() << "L5/N-11 overlap-or-uncovered but applied_limit_mps not capped to v_reverse\n"
+                       << "  overlap=" << overlap << " cone.covered=" << cone.covered << "\n"
+                       << ctx;
         ++failures;
       }
     } else {
       const double expected_ceiling = std::max(0.0, non_blind_ceiling);
       if (std::fabs(out.applied_limit_mps - expected_ceiling) > 1e-6) {
-        ADD_FAILURE() << "L5 non-overlapping direction unexpectedly capped\n"
+        ADD_FAILURE() << "L5 non-overlapping/covered direction unexpectedly capped\n"
                        << "  expected_ceiling=" << expected_ceiling
                        << " got=" << out.applied_limit_mps << "\n"
                        << ctx;
@@ -392,23 +450,39 @@ TEST(ObstacleLimiterCoreProperty, RandomizedSingleCallInvariants) {
       }
     }
 
-    // ── L3: d_floor を割っている間だけ angular に w_align_max ──
+    // ── N-11: 未観測方向は「不明」(-1.0) として報告する。空き確認済み
+    // （+infinity）と取り違えていないか ──
+    if (!cone.covered && out.nearest_obstacle_m != -1.0) {
+      ADD_FAILURE() << "N-11 uncovered cone but nearest_obstacle_m != -1.0\n"
+                     << "  got=" << out.nearest_obstacle_m << "\n"
+                     << ctx;
+      ++failures;
+    }
+
+    // ── L3: d_floor を割っている間だけ angular に追加で w_align_max ──
     // フレッシュな core なので below_floor は生の nearest_m 比較と一致する
     // （ヒステリシスは前歴に依存するのでこのテストでは対象外。別テストで検証）。
-    const std::optional<double> nearest_opt = nearest_in_cone(c.in.scan, direction_rad, half_width);
-    const double nearest_m = nearest_opt.value_or(std::numeric_limits<double>::infinity());
+    // 未観測（cone.covered==false）は生産コードと同じく「中立値
+    // ＝+infinity」として below_floor の判定に使う（N-11。安全マージンは
+    // 上の v_reverse キャップが別途担保する）。
+    const double nearest_m =
+        cone.covered ? cone.nearest_m : std::numeric_limits<double>::infinity();
     const bool below_floor = nearest_m < c.p.obstacle_floor_distance_m;
+    const double expected_angular_ceiling =
+        below_floor ? std::min(c.p.w_max, c.p.w_align_max) : c.p.w_max;
     if (below_floor) {
-      if (std::fabs(out.out.angular_z) > c.p.w_align_max + kEps) {
-        ADD_FAILURE() << "L3 angular not capped to w_align_max while below floor\n"
+      if (std::fabs(out.out.angular_z) > expected_angular_ceiling + kEps) {
+        ADD_FAILURE() << "L3 angular not capped to min(w_max, w_align_max) while below floor\n"
                        << "  nearest_m=" << nearest_m << " out.angular_z=" << out.out.angular_z
-                       << "\n"
+                       << " expected_ceiling=" << expected_angular_ceiling << "\n"
                        << ctx;
         ++failures;
       }
-    } else {
+    } else if (std::fabs(c.in.muxed.value.angular_z) <= c.p.w_max + kEps) {
+      // w_max 自体では既にクランプされないはずの範囲でだけ「無改変」を厳密に見る
+      // （below_floor でなく、かつ w_max 未満なら angular はそのまま通るはず）。
       if (out.out.angular_z != c.in.muxed.value.angular_z) {
-        ADD_FAILURE() << "L3 angular unexpectedly clamped while clear of floor\n"
+        ADD_FAILURE() << "L3 angular unexpectedly clamped while clear of floor and within w_max\n"
                        << "  nearest_m=" << nearest_m << "\n"
                        << ctx;
         ++failures;
@@ -448,6 +522,7 @@ TEST(ObstacleLimiterCoreProperty, HysteresisHoldsUntilClearOfBand) {
   p.obstacle_cone_half_width_rad = 0.5;
   p.obstacle_cone_half_width_reverse_rad = 0.6;
   p.v_reverse = 0.2;
+  p.w_max = 0.6;
   p.w_align_max = 0.3;
   p.manual_joy_timeout_sec = 1.0;
   p.state_stale_sec = 1.5;

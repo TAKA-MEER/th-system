@@ -17,6 +17,11 @@
 // 角度→LaserScan 添字の変換は th_safety/scan_geometry.hpp に委譲する
 // （Python/C++ 等価性が確認済みの唯一の正本。自前で floor() を書き直さない）。
 //
+// 角速度の一般上限は w_max（常時）。d_floor を割っている間だけ w_align_max で
+// さらに絞る（min(w_max, w_align_max)。docs/plan/detailed/DetailedDesign-open.md
+// N-11 も参照）。scan がコーンを観測できていない方向（観測範囲外）は
+// 「空き」ではなく L5 と同じ v_reverse キャップの対象にする（N-11）。
+//
 // このコアは「画面由来の上限」「モード由来の上限」を数値として受け取る
 // 設計にしている（screen_limit_mps / mode_limit_mps）。names.md §4 の
 // SCREEN_ZONE 表や attributes.yaml の speed_limit をどの画面／モードに
@@ -28,6 +33,7 @@
 #define TH_SAFETY_OBSTACLE_LIMITER_CORE_HPP_
 
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -113,7 +119,8 @@ struct ObstacleLimiterParams {
   double obstacle_cone_half_width_rad = 0.0;
   double obstacle_cone_half_width_reverse_rad = 0.0;
   double v_reverse = 0.0;
-  double w_align_max = 0.0;
+  double w_max = 0.0;        // 角速度の一般上限（常に効く）
+  double w_align_max = 0.0;  // d_floor 割れの間だけ追加で効く（min(w_max, w_align_max)）
 
   double manual_joy_timeout_sec = 0.0;
   double state_stale_sec = 0.0;
@@ -157,11 +164,24 @@ double clamp_toward_zero(double val, double max_abs);
 bool blind_direction_overlap(double direction_rad, double half_width_rad,
                               const std::vector<std::pair<double, double>>& blind_angle_ranges_deg);
 
-// §3.4.3 判定コーン。direction_rad ± half_width_rad 内にある有限レンジの最小値。
-// 見つからない場合・scan が cone を全くカバーしていない場合（scan_geometry 規約⑤）は
-// std::nullopt（＝「観測なし」。呼び出し側は空きとして扱う）。
-std::optional<double> nearest_in_cone(const ScanSnapshot& scan, double direction_rad,
-                                       double half_width_rad);
+// §3.4.3 判定コーン。observe_cone() の戻り値。
+//
+// covered == false は「scan の角度範囲がコーンの一部または全部をカバーして
+// いない」（scan_geometry 規約⑤で境界が std::nullopt になる場合）。これは
+// 「空きを確認した」のとは意味が違う。§3.4.2 が /scan の stale について
+// 明記する「古いスキャンで空きと判定しない」と同じ理屈をコーン単位に適用し、
+// 未観測を空き（+infinity）として扱わない（N-11）。covered == false のとき
+// nearest_m は意味を持たない（呼び出し側は使わないこと）。
+//
+// covered == true で有限レンジが 1 つも無ければ nearest_m は +infinity
+// （実際に観測して「空き」と確認できた場合）。
+struct ConeObservation {
+  bool covered = false;
+  double nearest_m = std::numeric_limits<double>::infinity();
+};
+
+// direction_rad ± half_width_rad 内にある有限レンジの最小値を求める。
+ConeObservation observe_cone(const ScanSnapshot& scan, double direction_rad, double half_width_rad);
 
 // ── ヒステリシス・角度判定を含む本体（状態を持つのでクラス） ───────────
 class ObstacleLimiterCore {
