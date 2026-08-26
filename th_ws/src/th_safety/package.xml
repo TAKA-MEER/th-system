@@ -12,6 +12,12 @@
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>th_system_msgs</depend>
+  <!-- obstacle_limiter（WP-SAFE-03）: 起動時に 1 度だけ base_link<-laser_link
+       を取得するために要る（names.md §1.2）。tf2 は tf2::TransformException /
+       tf2::getYaw / tf2::durationFromSec を直接使うため明示的に依存させる。 -->
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
   <exec_depend>twist_mux</exec_depend>
   <test_depend>ament_cmake_gtest</test_depend>
   <export><build_type>ament_cmake</build_type></export>

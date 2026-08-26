@@ -12,6 +12,11 @@ find_package(std_srvs       REQUIRED)
 find_package(sensor_msgs    REQUIRED)
 find_package(geometry_msgs  REQUIRED)
 find_package(th_system_msgs REQUIRED)
+# obstacle_limiter（WP-SAFE-03）: 起動時に 1 度だけ base_link<-laser_link を
+# 取得するために要る（names.md §1.2。20Hz では TF を引かない）。
+find_package(tf2               REQUIRED)
+find_package(tf2_ros            REQUIRED)
+find_package(tf2_geometry_msgs  REQUIRED)
 
 # link_quality_core（WP-SAFE-00）: ヘッダオンリーの純粋ロジック層。
 add_library(link_quality_core INTERFACE)
@@ -58,7 +63,15 @@ target_link_libraries(safety_monitor safety_monitor_core link_quality_core)
 ament_target_dependencies(safety_monitor
   rclcpp std_msgs std_srvs sensor_msgs geometry_msgs th_system_msgs)
 
-install(TARGETS safety_monitor DESTINATION lib/${PROJECT_NAME})
+# obstacle_limiter（WP-SAFE-03）: 判定ロジックは持たない。ROS の世界と
+# obstacle_limiter_core.hpp の相互変換だけを行うノード（src/obstacle_limiter.cpp
+# 冒頭コメント参照）。launch 配線・twist_mux.yaml の改名は別パケット。
+add_executable(obstacle_limiter src/obstacle_limiter.cpp)
+target_link_libraries(obstacle_limiter obstacle_limiter_core obstacle_limiter_params)
+ament_target_dependencies(obstacle_limiter
+  rclcpp std_msgs sensor_msgs geometry_msgs th_system_msgs tf2 tf2_ros tf2_geometry_msgs)
+
+install(TARGETS safety_monitor obstacle_limiter DESTINATION lib/${PROJECT_NAME})
 install(TARGETS safety_monitor_core obstacle_limiter_core obstacle_limiter_params
                 link_quality_core scan_geometry_core
   EXPORT export_${PROJECT_NAME}
