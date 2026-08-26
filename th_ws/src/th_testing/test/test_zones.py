@@ -20,7 +20,7 @@ import pytest
 
 from th_state.zones import (ScreenInput, combine_speed_limits, derive_limits,
                              mode_speed_limit)
-from th_state.zones import _LIMIT_STRICTNESS
+from th_state.zones import LIMIT_STRICTNESS
 
 
 _WINDOW_S = 5  # ui_active_window_s。テストの都合上の値（意味は「使用中とみなす窓」だけ）
@@ -110,7 +110,7 @@ def test_na_stop_screen_wins_over_out_v_max():
 def test_multiple_screens_take_minimum_speed_limit_not_zone_priority():
     now = 10_000
     # S-30 (NA/v_check) と S-16 (OUT/v_leash) の同時使用。
-    # v_check と v_leash のどちらが厳しいかは _LIMIT_STRICTNESS の順序が決める
+    # v_check と v_leash のどちらが厳しいかは LIMIT_STRICTNESS の順序が決める
     # （テストは「NA 側の画面が居合わせても IN の緩い上限へは絶対に倒れない」
     #   ことだけを直接保証する。実際の厳しさ順は zones.py の定義そのものを見る）。
     screens = {
@@ -200,19 +200,19 @@ def test_combine_speed_limits_screen_disconnect_failsafe_beats_jog():
 
 
 # ============================================================
-# N-15: attributes.yaml と _LIMIT_STRICTNESS の乖離を機械で防ぐ
+# N-15: attributes.yaml と LIMIT_STRICTNESS の乖離を機械で防ぐ
 # ============================================================
 def test_all_mode_speed_limits_are_known_to_limit_strictness(state_core_bundle):
-    """attributes.yaml の全モードの speed_limit が _LIMIT_STRICTNESS に載っていることを
+    """attributes.yaml の全モードの speed_limit が LIMIT_STRICTNESS に載っていることを
     表明する（新しいモード／新しい speed_limit 名を足したときにここで落ちるようにする）。"""
     _, _, _, attributes = state_core_bundle
     unknown = {
         mode: attrs["speed_limit"]
         for mode, attrs in attributes.items()
-        if attrs["speed_limit"] not in _LIMIT_STRICTNESS
+        if attrs["speed_limit"] not in LIMIT_STRICTNESS
     }
     assert unknown == {}, (
-        f"_LIMIT_STRICTNESS に無い speed_limit 名が attributes.yaml にある: {unknown}")
+        f"LIMIT_STRICTNESS に無い speed_limit 名が attributes.yaml にある: {unknown}")
 
 
 if __name__ == '__main__':
