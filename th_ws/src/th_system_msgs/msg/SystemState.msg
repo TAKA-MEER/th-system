@@ -20,5 +20,8 @@ builtin_interfaces/Time since   # 現在の mode/state に入った時刻
 string last_event               # 直近に処理した evt.*
 string last_reject_reason       # 直近に拒否された遷移の理由キー ("" なら無し)
 
-string speed_limit        # 画面由来の速度上限。registry のパラメータ名 or "stop"
-                           # (zones.py の Limits.speed_limit。N-13。末尾追加)
+string speed_limit        # 速度上限。registry のパラメータ名 or "stop"（数値ではない）
+                           # 画面由来（names.md §4.1 derive_limits）とモード由来
+                           # （attributes.yaml）を combine_speed_limits() で合成した
+                           # 結果。obstacle_limiter はこれに v_reverse と障害物
+                           # クランプを重ねる（N-13 で新設・N-15 で合成対象を拡張）
