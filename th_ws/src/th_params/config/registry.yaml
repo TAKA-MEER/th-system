@@ -50,6 +50,15 @@
   consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner, jog_gate, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1・§6.4"
   note: "ゾーン OUT の上限。A1 の 2 本制約を満たせなければ 1 回だけ引き下げられる（P-5）"
+  # speed_limit_strictness_rank（N-15・A13）: この行の値が「speed_limit 名の厳しさ順」
+  # （th_state/zones.py の LIMIT_STRICTNESS。数値が小さいほど厳しい＝低速）のどこに
+  # 位置するかを宣言する。"stop" は registry に行が無いので rank 0 は予約済み・暗黙。
+  # A13（assertions.a13_speed_limit_strictness_order）がこの rank 順に並べた名前の列と、
+  # 解決済みの数値の昇順が一致するかを起動時に検査する。この宣言自体と
+  # th_state/zones.py の LIMIT_STRICTNESS が一致することは
+  # test_state_registry_consistency.py（th_testing）が機械的に照合する
+  # （2 か所の重複は残るが、N-14 のような静かな乖離にはしない）。
+  speed_limit_strictness_rank: 6
 
 - name: venue_clearance_m
   unit: m
@@ -88,6 +97,7 @@
   consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "ゾーン IN の上限。venue_clearance_m と brake_accel_mps2 のどちらかが placeholder なら placeholder（S5）"
+  speed_limit_strictness_rank: 4  # N-15・A13。v_max(43行目のコメント) 参照
 
 - name: v_reverse
   unit: m/s
@@ -110,6 +120,7 @@
   consumers: [jog_gate, obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "AT_PANEL のジョグ。A2a は課さない（極低速軸。params.md §4.1）"
+  speed_limit_strictness_rank: 3  # N-15・A13。v_max(43行目のコメント) 参照
 
 - name: v_leash
   unit: m/s
@@ -119,6 +130,7 @@
   consumers: [leash_runner, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "LEASH（一定速）。逆算対象が無いため given（方針値）。人の歩行速度を想定した暫定値"
+  speed_limit_strictness_rank: 5  # N-15・A13。v_max(43行目のコメント) 参照
 
 - name: v_check
   unit: m/s
@@ -128,6 +140,7 @@
   consumers: [opcheck_runner, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "OPCHECK のモーター確認。押している間だけ動く極低速（方針値）"
+  speed_limit_strictness_rank: 1  # N-15・A13。v_max(43行目のコメント) 参照
 
 - name: v_calib
   unit: m/s
@@ -137,6 +150,7 @@
   consumers: [calib_runner, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "CALIB の自律走行・旋回。校正の再現性が出る速度（方針値）"
+  speed_limit_strictness_rank: 2  # N-15・A13。v_max(43行目のコメント) 参照
 
 - name: w_max
   unit: rad/s
