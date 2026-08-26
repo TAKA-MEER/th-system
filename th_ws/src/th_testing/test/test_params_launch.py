@@ -204,7 +204,7 @@ def test_twist_mux_generated():
     params = nested["twist_mux"]["ros__parameters"]
 
     assert params["topics"]["manual_joy"]["timeout"] == 1.0
-    assert params["topics"]["retreat"]["timeout"] == 0.5
+    assert params["topics"]["behavior"]["timeout"] == 0.5
     assert params["topics"]["nav"]["timeout"] == 0.5
     # 配線情報（トピック名・優先度・ロックのタイムアウト）は registry に無いので不変
     assert params["topics"]["manual_joy"]["topic"] == "/cmd_vel_manual"

@@ -21,9 +21,10 @@ twist_mux:
 
     # ── 速度入力トピック ─────────────────────────────────
     topics:
-      # 近接退避 (follow_planner が直接発行)
-      retreat:
-        topic:   /cmd_vel_retreat
+      # 挙動系ノード (th_transit/th_onsite/th_route/th_maintenance が発行。
+      # WP-SAFE-03: 旧 retreat トピック（優先度20）から改名。優先度は維持。
+      behavior:
+        topic:   /cmd_vel_behavior
         timeout: 0.5
         priority: 20
 

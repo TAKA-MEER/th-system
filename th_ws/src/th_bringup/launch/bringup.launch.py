@@ -231,12 +231,28 @@ def generate_launch_description():
     # ── 7. twist_mux ──────────────────────────────────────
     # 静的 th_safety/config/twist_mux.yaml は読まない。generated/twist_mux.yaml が
     # 階層構造(locks/topics)を完全に持つ唯一の情報源 (G-3, 二重管理の防止)。
+    # WP-SAFE-03: 出力先を /cmd_vel_muxed に変更（後段に obstacle_limiter が入る。
+    # /cmd_vel を publish してよいのは obstacle_limiter だけになった）。
     nodes.append(Node(
         package='twist_mux',
         executable='twist_mux',
         name='twist_mux',
         parameters=[os.path.join(GENERATED_DIR, 'twist_mux.yaml')],
-        remappings=[('cmd_vel_out', '/cmd_vel')],
+        remappings=[('cmd_vel_out', '/cmd_vel_muxed')],
+        output='screen',
+    ))
+
+    # ── 7b. obstacle_limiter ────────────────────────────────
+    # WP-SAFE-03: /cmd_vel_muxed → /cmd_vel の最終段速度リミッタ。/cmd_vel の
+    # publisher はこのノードだけ（CLAUDE.md「速度指令の流れ」参照）。
+    # dev_mode は渡さない（names.md §1.3。safety_monitor と同じ構造的な保証）。
+    # 起動時に base_link<-laser_link TF を有界リトライで取得できないと
+    # 起動失敗する（obstacle_limiter.cpp。素通しで動かさない設計）。
+    nodes.append(Node(
+        package='th_safety',
+        executable='obstacle_limiter',
+        name='obstacle_limiter',
+        parameters=[os.path.join(GENERATED_DIR, 'obstacle_limiter.yaml')],
         output='screen',
     ))
 

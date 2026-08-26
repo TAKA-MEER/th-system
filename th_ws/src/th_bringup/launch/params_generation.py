@@ -64,6 +64,12 @@ REGISTRY_NODES: tuple[str, ...] = (
     "twist_mux",
     "state_manager",
     "connectivity_checker",
+    # WP-SAFE-03: obstacle_limiter 本体が完成し launch に配線される時点で追加。
+    # 実装未完成のうちに足すと A8（blocking placeholder かつ consumers に
+    # 含まれる行があれば起動拒否）が armed になり stage:=2 の launch が
+    # 全部止まるため、このタイミング（配線コミット）まで待った
+    # （WP-SAFE-03 の指示に明記）。
+    "obstacle_limiter",
 )
 
 # ---------------------------------------------------------------------------
@@ -83,7 +89,11 @@ TWIST_MUX_STRUCTURE: dict[str, Any] = {
     # （現行 th_safety/config/twist_mux.yaml の値と同じ）。通常は resolved（給値済み）
     # なので reshape_twist_mux() が registry 由来の値で必ず上書きする。
     "topics": {
-        "retreat": {"topic": "/cmd_vel_retreat", "priority": 20, "timeout": 0.5},
+        # WP-SAFE-03: 旧 retreat トピック（優先度20）から /cmd_vel_behavior に
+        # 改名（優先度は維持）。follow_planner / person_predictor は旧設計の
+        # 挙動ノードで、まだ旧トピックに publish している（範囲外。
+        # WP-SAFE-03 完了報告に残存箇所を記載）。
+        "behavior": {"topic": "/cmd_vel_behavior", "priority": 20, "timeout": 0.5},
         "nav": {"topic": "/cmd_vel_nav", "priority": 10, "timeout": 0.5},
         "manual_joy": {"topic": "/cmd_vel_manual", "priority": 30, "timeout": 1.0},
     },
@@ -93,7 +103,7 @@ TWIST_MUX_STRUCTURE: dict[str, Any] = {
 # (トップレベルの2キー分だけ = topics.<key>.timeout)
 _TWIST_MUX_TIMEOUT_MAP: dict[str, str] = {
     "manual_joy_timeout": "manual_joy",
-    "behavior_cmd_timeout_s": "retreat",
+    "behavior_cmd_timeout_s": "behavior",
     "nav_cmd_timeout_s": "nav",
 }
 
