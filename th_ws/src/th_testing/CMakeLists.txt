@@ -79,6 +79,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(connectivity_core
     test/test_connectivity_core.py
     TIMEOUT 60)
+  # ゾーン合成コア (WP-STATE-02。derive_limits() の速度上限が §4.1 の規則
+  # 「合成は各画面の最小値。ゾーンの強弱では合成しない」を満たすことの担保。N-13)
+  ament_add_pytest_test(test_zones
+    test/test_zones.py
+    TIMEOUT 60)
 
   # ── パラメータ registry コア (th_params。ROS2 不要・純粋単体テスト。WP-PARAM-01) ──
   ament_add_pytest_test(test_params_schema
