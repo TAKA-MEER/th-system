@@ -19,6 +19,15 @@ target_include_directories(link_quality_core INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 
+# scan_geometry_core（WP-CALIB-01a）: 角度→LaserScan添字変換のヘッダオンリー
+# 純粋ロジック層。th_perception/th_perception/scan_geometry.py の C++移植
+# （B-3。std::optional<std::size_t> を使うため C++17 が必要）。
+add_library(scan_geometry_core INTERFACE)
+target_include_directories(scan_geometry_core INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(scan_geometry_core INTERFACE cxx_std_17)
+
 # safety_monitor_core（WP-SAFE-01）: ROS2 非依存の判定ロジック層。
 add_library(safety_monitor_core src/safety_monitor_core.cpp)
 target_include_directories(safety_monitor_core PUBLIC
@@ -31,7 +40,7 @@ ament_target_dependencies(safety_monitor
   rclcpp std_msgs std_srvs sensor_msgs geometry_msgs th_system_msgs)
 
 install(TARGETS safety_monitor DESTINATION lib/${PROJECT_NAME})
-install(TARGETS safety_monitor_core link_quality_core
+install(TARGETS safety_monitor_core link_quality_core scan_geometry_core
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
