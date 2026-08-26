@@ -11,6 +11,11 @@ DetailedDesign-state.md §6 も「ここに擬似コードを再掲しない」�
 ROS2 パラメータとして受け取り、引数で渡す。画面 ID・ゾーン名・速度上限パラメータ名は
 DetailedDesign-names.md §4 の表の転記であり、文字列の集合なので R2 の対象外
 （state_core.py の MODES 集合と同じ扱い）。
+
+`mode_speed_limit()` / `combine_speed_limits()`（N-15）: DetailedDesign-safety.md §3.3.1 の
+`applied_limit_mps = min(画面由来の上限, モード由来の上限, v_reverse)` のうち、画面由来と
+モード由来の合成を担う。モード由来は `attributes.yaml`（`th_state` の config）の
+`speed_limit` から決まるので、ここに置くのが妥当（`_LIMIT_STRICTNESS` を再利用できる）。
 """
 from dataclasses import dataclass
 from typing import Dict, Mapping
@@ -62,7 +67,17 @@ _ZONE_PRIORITY = ("IN", "NA", "OUT")
 
 # speed_limit 名同士の「厳しさ」順（左ほど厳しい）。実際の数値は registry.yaml 側の責務なので
 # ここでは名前の順序だけを持つ（R2）。stop が最も厳しいことは定義上自明。
-_LIMIT_STRICTNESS = ("stop", "v_check", "v_calib", "v_slow", "v_leash", "v_max")
+#
+# v_jog_panel（N-15 で追加）: registry.yaml の A5 は `v_jog_panel ≤ v_reverse ≤ v_slow ≤ v_max`
+# と定めるが、v_check・v_calib との相対順は A5 の対象外で数値も未測定
+# （registry.yaml の値は参照しない。この判断は設計書に書かれておらず自分で判断した点）。
+# `stop` の次に厳しい位置に置いた: v_jog_panel は AT_PANEL で「本来 stop のところを
+# jog_active の間だけ明示的に許す」例外専用の値であり（attributes.yaml 冒頭コメント）、
+# 配電盤という障害物至近での作業なので他のどの極低速上限（v_check・v_calib 含む）よりも
+# 厳しく扱うのが安全側。画面が途絶したときの stop フェイルセーフより緩いのは、
+# 画面（操作端末）不在は jog そのものが成立しない状況だから。
+_LIMIT_STRICTNESS = (
+    "stop", "v_jog_panel", "v_check", "v_calib", "v_slow", "v_leash", "v_max")
 
 
 @dataclass(frozen=True)
@@ -104,3 +119,31 @@ def derive_limits(screens: Mapping[str, ScreenInput], now_ms: int,
 
     auto_brake = zone != "OUT"
     return Limits(zone=zone, speed_limit=speed_limit, auto_brake=auto_brake)
+
+
+def mode_speed_limit(mode_attrs: Mapping[str, object], jog_active: bool) -> str:
+    """`attributes.yaml` の該当モード行から求める「モード由来」の速度上限（N-15）。
+
+    DetailedDesign-safety.md §3.3.1 の 2 系統のうちモード側。呼び出し側は
+    `attributes.yaml` を読み込んだ辞書からそのモードの行（例: `attrs["AT_PANEL"]`）を
+    渡すこと（`th_state.state_core.StateCore.attributes(mode)` が返す形と同じ）。
+
+    attributes.yaml 冒頭コメント（※※※）: 「speed_limit は停止だが、jog_active の間だけ
+    v_jog_panel」という行が AT_PANEL に 1 つある。ここではモード名を比較せず
+    （CLAUDE.md N-1 と同種の理由。将来 speed_limit=stop かつ jog 許可のモードが増えても
+    同じ規則で動くように）、`speed_limit == "stop"` かつ `jog` が `denied` でない
+    （= このモードはそもそも jog できる）かつ `jog_active` の 3 条件で判定する。
+    現状の attributes.yaml でこの3条件をすべて満たすのは AT_PANEL だけ。
+    """
+    limit = mode_attrs["speed_limit"]
+    if limit == "stop" and jog_active and mode_attrs.get("jog") != "denied":
+        return "v_jog_panel"
+    return limit
+
+
+def combine_speed_limits(screen_limit: str, mode_limit: str) -> str:
+    """画面由来とモード由来のうち厳しい方を返す（DetailedDesign-safety.md §3.3.1）。
+
+    `_LIMIT_STRICTNESS` の名前の順序で比較する（数値では比較しない）。
+    """
+    return next(l for l in _LIMIT_STRICTNESS if l in (screen_limit, mode_limit))
