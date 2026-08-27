@@ -35,6 +35,9 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 
+#include <rcl_interfaces/msg/parameter_descriptor.hpp>
+#include <rcl_interfaces/msg/parameter_type.hpp>
+
 #include <th_system_msgs/msg/system_state.hpp>
 #include <th_system_msgs/msg/limiter_status.hpp>
 
@@ -97,7 +100,18 @@ public:
         declare_parameter("lock_stale_ms", 500);
 
         declare_parameter("blind_calibrated", true);
-        declare_parameter("blind_angle_ranges", std::vector<double>{});
+        // blind_angle_ranges: 空の DOUBLE_ARRAY は rclcpp が型推論に失敗する
+        // （lidar_filter.py と同じ問題。th_perception/scripts/lidar_filter.py の
+        // コメント参照）。Docker 実起動で
+        // 「parameter_value_from failed for parameter 'blind_angle_ranges':
+        // No parameter value set」により起動が FATAL で落ちることを実測で
+        // 確認済み（generated yaml 側の `blind_angle_ranges: []` は正しく、
+        // 落ちるのはこの宣言の型推論）。ParameterDescriptor で明示して回避する。
+        // 既定値は空配列（＝死角マスクなし）。マスクしすぎて障害物が見えなく
+        // なるより、マスクせず広く見える方が安全側。
+        rcl_interfaces::msg::ParameterDescriptor blind_angle_ranges_desc;
+        blind_angle_ranges_desc.type = rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY;
+        declare_parameter("blind_angle_ranges", std::vector<double>{}, blind_angle_ranges_desc);
 
         // 速度上限の名前→数値表（§3.3.1・「確認済みの事実①」）。
         // v_reverse は ObstacleLimiterParams::v_reverse と表の両方に使う
@@ -107,6 +121,13 @@ public:
         declare_parameter("v_slow", 0.0);
         declare_parameter("v_reverse", 0.0);
         declare_parameter("v_jog_panel", 0.0);
+        // v_check / v_calib / v_leash: registry.yaml の該当行は
+        // consumers に obstacle_limiter を含めていない（status: given の
+        // 方針値で、生成 yaml（th_ws/data/generated/obstacle_limiter.yaml）
+        // には出力されない）。したがってここに書く既定値が唯一の出所であり、
+        // registry.yaml の value（v_check=0.05 / v_calib=0.15 / v_leash=1.0）と
+        // 手で一致させてある。registry 側の値を変えるときはここも合わせて
+        // 直すこと（配線されていないので自動では追従しない）。
         declare_parameter("v_check", 0.05);
         declare_parameter("v_calib", 0.15);
         declare_parameter("v_leash", 1.0);
