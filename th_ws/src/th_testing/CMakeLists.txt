@@ -138,6 +138,56 @@ if(BUILD_TESTING)
     test/test_esp32_bridge_node.py
     TIMEOUT 90)
 
+  # ── 故障注入 13 項目 + 対照ケース (WP-TEST-01。fault_injection/) ──
+  # DetailedDesign-safety.md §10 の 13 行が仕様。ファイル名は意図的に test_ で
+  # 始めていない (test/fault_injection/conftest.py 冒頭の docstring 参照。ホストの
+  # 通常 pytest 実行 (`pytest src/th_testing/test/`) に収集されないようにするための
+  # 分離)。glob ではなく1本ずつ明示列挙する — ファイルを消しても colcon test が
+  # 静かにスルーしないようにするため (test_cmake_test_registration.py と同じ考え方)。
+  # 実機専用の 04・08・10 以外はこのパケットではプレースホルダ (中身は次パケット)。
+  ament_add_pytest_test(fault_injection_01
+    test/fault_injection/case_01_obstacle_limiter_forward.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_02
+    test/fault_injection/case_02_obstacle_limiter_backward.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_03
+    test/fault_injection/case_03_estop_ui.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_04
+    test/fault_injection/case_04_estop_physical.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_05
+    test/fault_injection/case_05_link_loss_fault.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_06
+    test/fault_injection/case_06_fault_to_stop.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_07
+    test/fault_injection/case_07_summon_retreat_wait.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_08
+    test/fault_injection/case_08_esp32_watchdog.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_09
+    test/fault_injection/case_09_person_detection_off.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_10
+    test/fault_injection/case_10_physical_button_at_boot.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_11
+    test/fault_injection/case_11_limiter_sigkill.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_12
+    test/fault_injection/case_12_cmd_vel_stale.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_13
+    test/fault_injection/case_13_localization_loss.py
+    TIMEOUT 60)
+  ament_add_pytest_test(fault_injection_control
+    test/fault_injection/control.py
+    TIMEOUT 60)
+
   # ── シミュレーション統合テスト (TH_SKIP_SIM=0 で有効化) ──
   ament_add_pytest_test(test_simulation
     test/test_simulation_scenarios.py
