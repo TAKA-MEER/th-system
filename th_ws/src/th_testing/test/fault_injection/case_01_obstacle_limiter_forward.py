@@ -28,11 +28,16 @@ T-1 が禁じる「安全パラメータのしきい値をテストに直書き�
 obstacle_limiter 側の registry 値で決まっており、このテストはその値を
 一切書き換えない。
 
-【前提: `/system/state` を自分で発行する理由】
-`conftest.py` の `DriveController` の docstring 参照。`gazebo.launch.py` は
-`/system/state` の publisher（`state_manager`）を起動しないため、何もしないと
-obstacle_limiter は障害物の有無に関わらず常に速度上限 0 を出す
-（＝停止試験として無意味になる）。`DriveController` がこれを埋める。
+【前提: 速度上限を実際に流すために state_manager の新FSMを通す】
+`conftest.py` の `enter_manual_mode()` docstring 参照。`gazebo.launch.py` に
+`state_manager`（＋ `connectivity_checker`）を追加した（このパケットで、
+コーディネーターの指摘を受けて追加）。何もしないと `/system/state` の
+publisher が無く obstacle_limiter は障害物の有無に関わらず常に速度上限 0 を
+出してしまう（＝停止試験として無意味になる）ため、`enter_manual_mode()` で
+実際に `IDLE` → `MANUAL` へ進めてから駆動する。**未解決の疑わしいブロッカー
+（`scan_expected_points` の実機値とGazeboのLiDARセンサ設定の不一致）が
+`enter_manual_mode()` の docstring にある。**Docker で state_manager が
+`IDLE` にすら到達しない場合はこれが原因の可能性が高い。
 """
 from __future__ import annotations
 
@@ -42,7 +47,9 @@ import pytest
 import rclpy
 from geometry_msgs.msg import Twist
 
-from fault_injection.conftest import DriveController, TopicWatcher, place_entity_state
+from fault_injection.conftest import (
+    DriveController, TopicWatcher, enter_manual_mode, place_entity_state,
+)
 
 # gazebo.launch.py の legacy デフォルト spawn（scenario 未指定時）。
 # _scenario_setup() の _LEGACY 定数と同じ値（このテストは意図的に scenario を
@@ -72,11 +79,12 @@ def test_fault_injection_01_obstacle_forward(
         ros_node, 'wanderer',
         x=_ROBOT_SPAWN_X + _OBSTACLE_AHEAD_M, y=_ROBOT_SPAWN_Y)
 
+    bootstrap, state_watcher = enter_manual_mode(ros_node)
     watcher = TopicWatcher(ros_node, '/cmd_vel', Twist)
     # v_max で前進を指令する。obstacle_limiter 側の最終出力は
     # min(この指令, 上限, 障害物クランプ) で決まるため、指令自体の大きさは
     # 「上限に張り付かない程度に十分大きい」以外の意味を持たない。
-    drive = DriveController(ros_node, linear_x=limiter_param('v_max'), mode='IDLE')
+    drive = DriveController(ros_node, linear_x=limiter_param('v_max'))
     try:
         warmup_deadline = time.monotonic() + 1.0
         while time.monotonic() < warmup_deadline:
@@ -87,6 +95,8 @@ def test_fault_injection_01_obstacle_forward(
     finally:
         drive.stop()
         watcher.destroy()
+        bootstrap.stop()
+        state_watcher.destroy()
 
 
 if __name__ == '__main__':

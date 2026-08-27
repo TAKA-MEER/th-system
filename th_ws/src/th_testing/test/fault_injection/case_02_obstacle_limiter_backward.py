@@ -58,7 +58,9 @@ import pytest
 import rclpy
 from geometry_msgs.msg import Twist
 
-from fault_injection.conftest import DriveController, TopicWatcher, place_entity_state
+from fault_injection.conftest import (
+    DriveController, TopicWatcher, enter_manual_mode, place_entity_state,
+)
 
 _ROBOT_SPAWN_X = -4.0
 _ROBOT_SPAWN_Y = -3.0
@@ -96,11 +98,12 @@ def test_fault_injection_02_obstacle_backward(
         ros_node, 'wanderer',
         x=_ROBOT_SPAWN_X + _OBSTACLE_BEHIND_M, y=_ROBOT_SPAWN_Y)
 
+    bootstrap, state_watcher = enter_manual_mode(ros_node)
     watcher = TopicWatcher(ros_node, '/cmd_vel', Twist)
     # 後退コマンド(linear_x < 0)。v_reverse キャップの実測値がいくつであれ、
     # コマンド自体はそれより十分大きい大きさで出しておけば
     # (min(コマンド, 上限, 障害物クランプ) で決まる出力の性質上)問題ない。
-    drive = DriveController(ros_node, linear_x=-limiter_param('v_max'), mode='IDLE')
+    drive = DriveController(ros_node, linear_x=-limiter_param('v_max'))
     try:
         warmup_deadline = time.monotonic() + 1.0
         while time.monotonic() < warmup_deadline:
@@ -111,6 +114,8 @@ def test_fault_injection_02_obstacle_backward(
     finally:
         drive.stop()
         watcher.destroy()
+        bootstrap.stop()
+        state_watcher.destroy()
 
 
 if __name__ == '__main__':

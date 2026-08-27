@@ -45,6 +45,13 @@ case_11_limiter_sigkill.py — 故障注入 11「リミッタの死（SIGKILL）
     （ごまかして緩めていない）。mode_manager.cpp が修正されれば、この
     テストはコード変更なしでそのまま合格するようにしてある。
 
+(3) このテストは `conftest.py` の `enter_manual_mode()` に依存しており、
+    そちらにさらに未解決の疑わしいブロッカーがある（`scan_expected_points`
+    の実機値=1080 と Gazebo LiDAR センサの `<samples>720` の不一致。
+    `connectivity_checker` が `evt.link_ok` を出せず `state_manager` が
+    `INIT` から進めない可能性）。①〜⑤の手前でこれに引っかかった場合、
+    エラーメッセージにその旨が出る（`enter_manual_mode()` docstring参照）。
+
 ────────────────────────────────────────────────────────────
 【「駆動ゼロ」をどう判定したか】
 ────────────────────────────────────────────────────────────
@@ -103,7 +110,8 @@ from std_msgs.msg import Bool
 from th_system_msgs.msg import FaultStatus, LimiterStatus, RobotMode
 
 from fault_injection.conftest import (
-    DriveController, TopicWatcher, find_pids_by_exe_basename, place_entity_state,
+    DriveController, TopicWatcher, enter_manual_mode, find_pids_by_exe_basename,
+    place_entity_state,
 )
 
 _ROBOT_SPAWN_X = -4.0
@@ -130,6 +138,7 @@ def test_fault_injection_11_limiter_sigkill(
         ros_node, 'wanderer',
         x=_ROBOT_SPAWN_X + _OBSTACLE_AHEAD_M, y=_ROBOT_SPAWN_Y)
 
+    bootstrap, state_watcher = enter_manual_mode(ros_node)
     cmd_watcher = TopicWatcher(ros_node, '/cmd_vel', Twist)
     limiter_hb_watcher = TopicWatcher(
         ros_node, '/safety/limiter_status', LimiterStatus, qos=_LIMITER_STATUS_QOS)
@@ -137,7 +146,7 @@ def test_fault_injection_11_limiter_sigkill(
     fault_lock_watcher = TopicWatcher(ros_node, '/safety/fault_lock', Bool)
     mode_watcher = TopicWatcher(ros_node, '/robot/mode', RobotMode)
 
-    drive = DriveController(ros_node, linear_x=limiter_param('v_max'), mode='IDLE')
+    drive = DriveController(ros_node, linear_x=limiter_param('v_max'))
     try:
         # ── 1) 故障注入1と同じ手順で、実際に障害物の手前で安全停止させる ──
         warmup_deadline = time.monotonic() + 1.0
@@ -183,6 +192,8 @@ def test_fault_injection_11_limiter_sigkill(
         fault_watcher.destroy()
         fault_lock_watcher.destroy()
         mode_watcher.destroy()
+        bootstrap.stop()
+        state_watcher.destroy()
 
 
 if __name__ == '__main__':

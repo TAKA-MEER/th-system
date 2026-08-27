@@ -31,24 +31,25 @@ control.py — 対照ケース（ctest 登録名: fault_injection_control）
 違う・常に真になる等）ここで例外を投げずに通ってしまったら、この対照ケース
 自体が失敗する——FMEA①をそのまま検出できる設計。
 
-【何を publish して走らせるか（設計書に無い自己判断）】
+【何を publish して走らせるか】
 `DetailedDesign-wp2.md` `WP-TEST-01` §3 は「新しいトピック・サービス・
 パラメータを作らない」と定めるが、**駆動のさせ方**（既存のどの入力に何を
 publish するか）までは規定していない。ここでは `conftest.py` の
 `DriveController` を使い、既存の入力トピック `/cmd_vel_nav`（Nav2 が使う、
 twist_mux priority 10 の入力）に一定の前進速度を発行し続ける。
 
-もう1つ、`DriveController` は `/system/state` も発行し続ける。これは
-**実装を読んで判明した、設計書に書かれていなかった事実**: `obstacle_limiter`
-は `/system/state` が 1.5 秒以内に更新され続けないと速度上限を強制的に 0 に
-する（`obstacle_limiter_core.cpp` の `state_fresh` 分岐）。ところが
-`gazebo.launch.py` は `/system/state` の publisher である `state_manager` を
-一切起動しない（`bringup.launch.py` 専用）。つまり何もしなければ Gazebo 上の
-obstacle_limiter は障害物の有無に関わらず常に 0 を出し、この対照ケースは
-「何もしなくても止まっている」という誤った意味で「合格」してしまう
-（FMEA①と同種の環境起因の落とし穴）。これを埋めるため
-`DriveController` が `/system/state` も一緒に発行する
-（`conftest.py` の `DriveController` docstring 参照）。
+【`/system/state` は偽装しない（コーディネーターの指示・2026-08-27 に方針転換）】
+以前のバージョンは `DriveController` が `/system/state` も直接発行していたが、
+これは「故障注入試験の目的は実スタックの挙動を確かめること。`/system/state`
+をテストが作ってしまうと `state_manager` を経路から外した別物を試験する
+ことになる」という指摘を受けて撤回した。代わりに `conftest.py` の
+`enter_manual_mode()` が、実際に起動している `state_manager` /
+`connectivity_checker` の新FSMを `/ui/active_screen`（画面 S-11・手動走行）
+経由で `IDLE` → `MANUAL` へ進め、`state_manager` 自身に
+`/system/state.speed_limit` を計算・発行させる。`enter_manual_mode()` の
+docstring に、この経路上で新たに判明した未解決の疑わしいブロッカー
+（`scan_expected_points` の実機値とGazeboのLiDARセンサ設定の不一致）を
+記載してある。
 """
 from __future__ import annotations
 
@@ -58,7 +59,7 @@ import pytest
 import rclpy
 from geometry_msgs.msg import Twist
 
-from fault_injection.conftest import DriveController, TopicWatcher
+from fault_injection.conftest import DriveController, TopicWatcher, enter_manual_mode
 
 # obstacle:=false: このテストは障害物の有無を検証しないので、
 # wanderer のランダム歩行(obstacle_mover.py)を止めて再現性を上げる。
@@ -77,14 +78,15 @@ _WINDOW_MULTIPLIER = 15
 @pytest.mark.parametrize('sim_stack', [_SIM_STACK_PARAM], indirect=True)
 def test_fault_injection_control_runs_without_fault(
         sim_stack, ros_node, limiter_param, assert_stops_within):
+    bootstrap, state_watcher = enter_manual_mode(ros_node)
     watcher = TopicWatcher(ros_node, '/cmd_vel', Twist)
     # v_max の半分程度で走らせる(v_maxちょうどだとクランプ境界に近すぎて
     # 判定が微妙になるのを避けるための余裕)。
-    drive = DriveController(ros_node, linear_x=limiter_param('v_max') * 0.5, mode='IDLE')
+    drive = DriveController(ros_node, linear_x=limiter_param('v_max') * 0.5)
     try:
-        # ウォームアップ: /cmd_vel_nav・/system/state の発行が
-        # twist_mux/obstacle_limiter 側に反映されるまで待ってから
-        # 測定窓をクリアする(起動直後の過渡的なゼロを測定に含めない)。
+        # ウォームアップ: /cmd_vel_nav の発行が twist_mux/obstacle_limiter
+        # 側に反映されるまで待ってから測定窓をクリアする
+        # (起動直後の過渡的なゼロを測定に含めない)。
         warmup_deadline = time.monotonic() + 2.0
         while time.monotonic() < warmup_deadline:
             rclpy.spin_once(ros_node, timeout_sec=0.05)
@@ -100,6 +102,8 @@ def test_fault_injection_control_runs_without_fault(
     finally:
         drive.stop()
         watcher.destroy()
+        bootstrap.stop()
+        state_watcher.destroy()
 
 
 if __name__ == '__main__':
