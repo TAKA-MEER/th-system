@@ -127,9 +127,9 @@
   class: b
   status: given
   value: 1.0
-  consumers: [leash_runner, params_audit]
+  consumers: [leash_runner, obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
-  note: "LEASH（一定速）。逆算対象が無いため given（方針値）。人の歩行速度を想定した暫定値"
+  note: "LEASH（一定速）。逆算対象が無いため given（方針値）。人の歩行速度を想定した暫定値。obstacle_limiter は SystemState.speed_limit=\"v_leash\" を数値へ解決するために必要（attributes.yaml の LEASH が speed_limit: v_leash）"
   speed_limit_strictness_rank: 5  # N-15・A13。v_max(43行目のコメント) 参照
 
 - name: v_check
@@ -137,9 +137,9 @@
   class: b
   status: given
   value: 0.05
-  consumers: [opcheck_runner, params_audit]
+  consumers: [opcheck_runner, obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
-  note: "OPCHECK のモーター確認。押している間だけ動く極低速（方針値）"
+  note: "OPCHECK のモーター確認。押している間だけ動く極低速（方針値）。obstacle_limiter は SystemState.speed_limit=\"v_check\" を数値へ解決するために必要（attributes.yaml の OPCHECK が speed_limit: v_check）"
   speed_limit_strictness_rank: 1  # N-15・A13。v_max(43行目のコメント) 参照
 
 - name: v_calib
@@ -147,9 +147,9 @@
   class: b
   status: given
   value: 0.15
-  consumers: [calib_runner, params_audit]
+  consumers: [calib_runner, obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
-  note: "CALIB の自律走行・旋回。校正の再現性が出る速度（方針値）"
+  note: "CALIB の自律走行・旋回。校正の再現性が出る速度（方針値）。obstacle_limiter は SystemState.speed_limit=\"v_calib\" を数値へ解決するために必要（attributes.yaml の CALIB が speed_limit: v_calib）"
   speed_limit_strictness_rank: 2  # N-15・A13。v_max(43行目のコメント) 参照
 
 - name: w_max

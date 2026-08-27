@@ -121,16 +121,20 @@ public:
         declare_parameter("v_slow", 0.0);
         declare_parameter("v_reverse", 0.0);
         declare_parameter("v_jog_panel", 0.0);
-        // v_check / v_calib / v_leash: registry.yaml の該当行は
-        // consumers に obstacle_limiter を含めていない（status: given の
-        // 方針値で、生成 yaml（th_ws/data/generated/obstacle_limiter.yaml）
-        // には出力されない）。したがってここに書く既定値が唯一の出所であり、
-        // registry.yaml の value（v_check=0.05 / v_calib=0.15 / v_leash=1.0）と
-        // 手で一致させてある。registry 側の値を変えるときはここも合わせて
-        // 直すこと（配線されていないので自動では追従しない）。
-        declare_parameter("v_check", 0.05);
-        declare_parameter("v_calib", 0.15);
-        declare_parameter("v_leash", 1.0);
+        // v_check / v_calib / v_leash: 2026-08-27 に registry.yaml の consumers へ
+        // obstacle_limiter を追加した（SystemState.speed_limit が "v_check" /
+        // "v_calib" / "v_leash" を運びうる。attributes.yaml の OPCHECK / CALIB /
+        // LEASH の speed_limit がそれぞれこの名前を指すため、resolve_speed_limit_name()
+        // が解決するには表に載っている必要がある）。これで生成 yaml
+        // （th_ws/data/generated/obstacle_limiter.yaml）に値が載るようになった。
+        // 数値の実体は registry.yaml の責務なので、ここでは他の v_* と同じく
+        // 既定値を安全側（0.0 = 停止）にするだけにする（実運用値をコードに
+        // 手で書き写さない。書き写すと registry を変えても追従しない——
+        // auto_brake が names.md / zones.py / state_manager.py の3箇所で
+        // 食い違った N-14 と同じ失敗パターンになる）。
+        declare_parameter("v_check", 0.0);
+        declare_parameter("v_calib", 0.0);
+        declare_parameter("v_leash", 0.0);
 
         params_.obstacle_floor_distance_m = get_parameter("obstacle_floor_distance_m").as_double();
         params_.hysteresis_band_m = get_parameter("hysteresis_band_m").as_double();
