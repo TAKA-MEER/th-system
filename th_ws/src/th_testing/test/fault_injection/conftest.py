@@ -450,47 +450,27 @@ def sim_stack(request, ros_node, tmp_path):
 
 
 class DriveController:
-    """`/cmd_vel_nav` と `/system/state` を一定周期で発行し続けるヘルパー。
+    """`/cmd_vel_nav` を一定周期で発行し続けるヘルパー。
 
-    【なぜ `/system/state` も発行するか（設計書に無い自己判断）】
-    `obstacle_limiter.cpp` の `update()` は `/system/state` が
-    `state_stale_ms`（既定1500ms）以内に更新され続けていないと
-    `applied_limit_mps` を強制的に 0.0 にする（`state_fresh` 分岐。
-    `obstacle_limiter_core.cpp` §3.4.2）。ところが **`gazebo.launch.py` は
-    `/system/state` の publisher である `state_manager` を一切起動しない**
-    （`state_manager` は `bringup.launch.py` 専用。sim では
-    `condition=UnlessCondition(sim)` にすら入っておらず、そもそも
-    ノード定義自体が無い）。つまり **何もしなければ Gazebo 上の
-    obstacle_limiter は常に速度上限 0.0 を出し、ロボットは絶対に動かない**
-    （障害物の有無に関係なく）。これは実装管理者の作業指示にも設計書にも
-    書かれていなかった、実装を読んで判明した事実。この空白を埋めるため、
-    テスト自身が `/system/state` を代わりに発行する
-    （新しいトピックは作らず、既存の観測点に**書く**側に回るだけ）。
-
-    QoS はいずれも obstacle_limiter 側の購読 QoS に合わせている
-    （`/system/state` は `reliable().transient_local()`。合わせないと
-    そもそも接続が成立しない＝メッセージが永遠に届かない）。
+    以前は `/system/state` もここから直接発行していたが、コーディネーターの
+    指示（「故障注入試験の目的は実スタックの挙動を確かめること。
+    `/system/state` をテストが作ってしまうと `state_manager` を経路から
+    外した別物を試験することになる」）により撤回した。速度上限を実際に
+    流すには `state_manager`（＋ `connectivity_checker`）を実際に起動し、
+    その入力（`/ui/active_screen` 等）をテストが供給する形にする。
+    `enter_manual_mode()` を参照。
     """
 
     def __init__(self, node, linear_x: float = 0.0, angular_z: float = 0.0,
-                 speed_limit_name: str = 'v_max', mode: str = 'IDLE',
                  period_sec: float = 0.1):
         from geometry_msgs.msg import Twist
-        from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-        from th_system_msgs.msg import SystemState
 
         self._node = node
         self._Twist = Twist
-        self._SystemState = SystemState
         self.linear_x = linear_x
         self.angular_z = angular_z
-        self._speed_limit_name = speed_limit_name
-        self._mode = mode
 
-        state_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
-                                durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self._pub_cmd = node.create_publisher(Twist, '/cmd_vel_nav', 10)
-        self._pub_state = node.create_publisher(SystemState, '/system/state', state_qos)
         self._timer = node.create_timer(period_sec, self._tick)
 
     def _tick(self) -> None:
@@ -499,20 +479,173 @@ class DriveController:
         twist.angular.z = float(self.angular_z)
         self._pub_cmd.publish(twist)
 
-        state = self._SystemState()
-        state.header.stamp = self._node.get_clock().now().to_msg()
-        # "IDLE" 自体が th_state の18モード表と厳密に一致している必要はない
-        # ——compute_source_class() が見るのは "MANUAL"/"TEACH_MANUAL" との
-        # 不一致だけ（それ以外は全て AUTO 扱い）。
-        state.mode = self._mode
-        state.zone = 'OUT'
-        state.jog_active = False
-        state.auto_brake = True
-        state.speed_limit = self._speed_limit_name
-        self._pub_state.publish(state)
+    def stop(self) -> None:
+        self._node.destroy_timer(self._timer)
+
+
+# ---------------------------------------------------------------------------
+# enter_manual_mode — state_manager の新FSMを実際に通して speed_limit を
+# 流す（このパケットで /system/state 偽装から変更。コーディネーターの
+# 指示に従い、テストは「既存の入力トピック/サービス」だけを叩き、
+# 上限の計算自体は state_manager / connectivity_checker の実装に委ねる）。
+# ---------------------------------------------------------------------------
+
+# state_manager が INIT のまま実際に何秒待たされうるか（実測未確認。
+# link_wait_timeout_ms 既定10秒より長く取り、それでも上がってこなければ
+# 既知の疑わしい原因を名指ししてfailする。合否のしきい値ではない）。
+_MANUAL_MODE_READY_TIMEOUT_SEC = 60.0
+
+# S-11「手動走行」: DetailedDesign-names.md §4 の表でゾーン OUT・速度上限 v_max。
+# S-10「追従走行」も同じ v_max だが tracker_enabled 前提が絡む可能性がある
+# 一方、S-11(手動走行)は attributes.yaml 上 MANUAL モードの needs_tracker が
+# unused であり、このパケットの試験（人がコマンドで走らせる想定）の実態にも
+# 合う。ここではその判断に基づき S-11 を選んだ。
+_DRIVING_SCREEN_ID = 'S-11'
+_DRIVING_MODE = 'MANUAL'
+
+
+class _UiInputBootstrap:
+    """`/safety/estop_hw` と `/ui/active_screen` を一定周期で発行し続ける。
+
+    【`/safety/estop_hw` を発行する理由（実装を読んで判明した追加の事実）】
+    `connectivity_checker.py` は `all_ok()`（LiDAR 等の疎通）に加えて
+    **`/safety/estop_hw` を一度も受信していない間は不合格として扱う**
+    フェイルセーフを持つ（`_estop_seen`。§6.2「判定できない項目は不合格」）。
+    `/safety/estop_hw` の唯一の publisher は `esp32_bridge.py` だが、これは
+    `condition=UnlessCondition(sim)` により **sim では起動しない**。つまり
+    `connectivity_checker` を起動しただけでは `evt.link_ok` が一生出ない
+    （疎通は良くても estop_hw が「分からない」ままなので gate が閉じ続ける）。
+
+    これは `/ui/active_screen` と同じ「実機では別ノードが供給するはずの
+    生の入力信号を、その実機ノードが sim に存在しないためテストが代わりに
+    供給する」ケースであり、`/system/state`（`state_manager` が計算する
+    **出力**）を偽装するのとは性質が違うと判断した——ここで供給しているのは
+    「物理E-Stopは押されていない」という raw な入力事実であり、それを受けて
+    `all_ok()` や `evt.link_ok` を出すかどうかの判定自体は
+    `connectivity_checker`/`state_manager` の実装がそのまま行う。
+    """
+
+    def __init__(self, node, screen_id: str, client_id: str, period_sec: float = 0.1):
+        from std_msgs.msg import Bool
+        from th_system_msgs.msg import ActiveScreen
+
+        self._node = node
+        self._Bool = Bool
+        self._ActiveScreen = ActiveScreen
+        self._screen_id = screen_id
+        self._client_id = client_id
+
+        self._pub_estop_hw = node.create_publisher(Bool, '/safety/estop_hw', 10)
+        self._pub_screen = node.create_publisher(ActiveScreen, '/ui/active_screen', 10)
+        self._timer = node.create_timer(period_sec, self._tick)
+
+    def _tick(self) -> None:
+        self._pub_estop_hw.publish(self._Bool(data=False))
+
+        msg = self._ActiveScreen()
+        now = self._node.get_clock().now().to_msg()
+        msg.header.stamp = now
+        msg.screen_id = self._screen_id
+        msg.client_id = self._client_id
+        msg.interacting = True
+        msg.last_input = now
+        self._pub_screen.publish(msg)
 
     def stop(self) -> None:
         self._node.destroy_timer(self._timer)
+
+
+def enter_manual_mode(node, timeout_sec: float = _MANUAL_MODE_READY_TIMEOUT_SEC):
+    """`state_manager` の新FSMを実際に `IDLE` → `MANUAL` へ進め、
+    `/system/state.speed_limit` が `v_max` になるまで待つ。
+
+    返り値: 呼び出し側が生成物を破棄できるよう `(bootstrap, watcher)` を返す
+    （`bootstrap.stop()` / `watcher.destroy()` を呼び出し側の `finally` で
+    呼ぶこと）。
+
+    手順（すべて既存のトピック/サービスへの発行・呼び出しのみ。新規なし）:
+      1. `_UiInputBootstrap` で `/safety/estop_hw`（False固定）と
+         `/ui/active_screen`（S-11・interacting=True）を発行し続ける。
+      2. `/system/state.mode` が `IDLE` になるまで待つ
+         （`INIT` → `evt.link_ok`（`connectivity_checker` が判定して
+         `/system/event` へ発行）→ `IDLE`）。
+      3. `/system/trigger`（`UiTrigger`）を `ui.enter_mode` /
+         `{"mode": "MANUAL"}` で1回呼び、`accepted` を確認する。
+      4. `/system/state.mode` が `MANUAL` になるまで待つ。
+
+    【未解決の疑わしいブロッカー（実装を読んで判明。Docker で要確認）】
+    `connectivity_checker` の LiDAR 判定は `scan_points ==
+    scan_expected_points` の**完全一致**を要求する。`registry.yaml` の
+    `scan_expected_points` は実機 SLLIDAR 値の **1080**、対して Gazebo の
+    LiDAR センサ（`th_description/urdf/gazebo_plugins.xacro`）は
+    `<samples>720</samples>`。この2つは一致しない。一致しない限り
+    `connectivity_checker.all_ok()` は sim で恒久的に `False` となり、
+    `evt.link_ok` が出ず、`state_manager` は `INIT` から一生進めない
+    （このパケットの範囲では対処していない。**実装管理者に必ず報告する**）。
+    手順②のタイムアウトにこの疑いを名指ししたメッセージを付けているのは
+    このため。
+    """
+    import rclpy
+    from th_system_msgs.msg import SystemState
+    from th_system_msgs.srv import UiTrigger
+
+    bootstrap = _UiInputBootstrap(node, _DRIVING_SCREEN_ID, 'fault_injection_test')
+    watcher = TopicWatcher(node, '/system/state', SystemState)
+    try:
+        deadline = time.monotonic() + timeout_sec
+
+        def _mode_is(expected: str):
+            return bool(watcher.records) and watcher.records[-1][1].mode == expected
+
+        ok = _spin_until(node, lambda: _mode_is('IDLE'), deadline)
+        if not ok:
+            last_mode = watcher.records[-1][1].mode if watcher.records else '受信なし'
+            pytest.fail(
+                f"state_manager が {timeout_sec}秒以内に IDLE へ到達しなかった "
+                f"(直近の mode: {last_mode!r})。上の enter_manual_mode() "
+                f"docstring に記載の scan_expected_points 不一致(1080 vs "
+                f"Gazebo実測720)が原因の可能性が高い。connectivity_checker が "
+                f"evt.link_ok を一切出せていない状態と考えられる。")
+
+        cli = node.create_client(UiTrigger, '/system/trigger')
+        try:
+            if not cli.wait_for_service(timeout_sec=10.0):
+                pytest.fail('/system/trigger サービスが見つからない '
+                            '(state_manager が起動していない?)')
+            req = UiTrigger.Request()
+            req.trigger = 'ui.enter_mode'
+            req.arg_json = f'{{"mode": "{_DRIVING_MODE}"}}'
+            req.requester = 'fault_injection_test'
+            future = cli.call_async(req)
+            rclpy.spin_until_future_complete(node, future, timeout_sec=10.0)
+            result = future.result()
+            if result is None or not result.accepted:
+                reason = getattr(result, 'reject_reason_key', '') if result else '応答なし'
+                pytest.fail(
+                    f"/system/trigger(ui.enter_mode, mode={_DRIVING_MODE}) が "
+                    f"拒否された (reject_reason_key={reason!r})")
+        finally:
+            node.destroy_client(cli)
+
+        deadline = time.monotonic() + timeout_sec
+        ok = _spin_until(node, lambda: _mode_is(_DRIVING_MODE), deadline)
+        if not ok:
+            last_mode = watcher.records[-1][1].mode if watcher.records else '受信なし'
+            pytest.fail(
+                f"state_manager が {timeout_sec}秒以内に {_DRIVING_MODE} へ "
+                f"遷移しなかった (直近の mode: {last_mode!r})。"
+                f"/system/trigger は accepted=True を返していた。")
+    except BaseException:
+        # pytest.fail() が投げる Failed は Exception ではなく BaseException
+        # の直属サブクラス（呼び出し側の広い except Exception に飲まれない
+        # ようにするため）。ここでの後始末も同じ理由で BaseException を
+        # 捕まえる必要がある（`except Exception` だと pytest.fail 経路で
+        # bootstrap のタイマー・watcher の購読が残ってしまう）。
+        bootstrap.stop()
+        watcher.destroy()
+        raise
+
+    return bootstrap, watcher
 
 
 # ---------------------------------------------------------------------------
