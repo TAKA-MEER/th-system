@@ -453,6 +453,39 @@ def generate_launch_description():
             parameters=[{'port': 9090}],
             output='screen',
         ),
+        # state_manager（新FSM。WP-TEST-01 で追加。bringup.launch.py:283 と
+        # 同じ定義。純粋な Python ノードでハードウェアに依存しないため
+        # sim/実機共通で無条件起動にする——以前このファイルには定義自体が
+        # 無く、`/system/state` の publisher が sim に存在しなかった
+        # （obstacle_limiter が常に速度上限0を出す原因になっていた。詳細は
+        # conftest.py の `enter_manual_mode()` docstring 参照）。
+        Node(
+            package='th_state',
+            executable='state_manager.py',
+            name='state_manager',
+            parameters=[os.path.join(GENERATED_DIR, 'state_manager.yaml')],
+            output='screen',
+        ),
+        # connectivity_checker（WP-TEST-01 で追加。state_manager が INIT から
+        # IDLE へ進むための evt.link_ok は connectivity_checker だけが出す）。
+        # sim パラメータは connectivity_core.py が Gazebo シナリオ向けに
+        # 最初から用意していたもの（esp32_bridge が sim に居ないため ESP32の
+        # 2項目と required_nodes の判定を除外する。bringup.launch.py の
+        # {'sim': False} と対になる設定）。
+        # 既知の未解決事項: `scan_expected_points`（registry.yaml=1080。実機
+        # SLLIDAR値）と Gazebo の LiDAR センサ（gazebo_plugins.xacro の
+        # <samples>720）が一致しないため、sim=True にしても LiDAR 項目の
+        # 完全一致判定は現状 False のままになる可能性が高い
+        # （conftest.py の `enter_manual_mode()` docstring・実装報告参照。
+        # このパケットの範囲では対処していない）。
+        Node(
+            package='th_state',
+            executable='connectivity_checker.py',
+            name='connectivity_checker',
+            parameters=[os.path.join(GENERATED_DIR, 'connectivity_checker.yaml'),
+                        {'sim': True}],
+            output='screen',
+        ),
     ]
 
     # ════════════════════════════════════════════════════════
@@ -468,11 +501,24 @@ def generate_launch_description():
     # launch から明示的に渡す（DetailedDesign-names.md §7.3 の note の実体）。
     # 対象は「その publisher が実際にこの launch で起動するか」で決める。
     #
-    # sim: esp32_bridge / state_manager とも condition=UnlessCondition(sim) で
-    # 起動しない（このファイル内で確認済み）ため、esp32・state は publisher が
-    # 無い。runaway は /esp32/wheel_feedback（同じく無い）を要るため除外。
-    # firmware も esp32_bridge が publisher のため除外。Gazebo の LiDAR センサ
-    # プラグインは sim/実機を問わず /scan を出すため lidar は有効にする。
+    # sim: esp32_bridge は condition=UnlessCondition(sim) で起動しないため
+    # esp32 は publisher が無い。runaway は /esp32/wheel_feedback（同じく無い）
+    # を要るため除外。firmware も esp32_bridge が publisher のため除外。
+    # Gazebo の LiDAR センサプラグインは sim/実機を問わず /scan を出すため
+    # lidar は有効にする。
+    #
+    # state（訂正・2026-08-27）: このコメントは以前「state_manager も
+    # condition=UnlessCondition(sim) で起動しないため publisher が無い」と
+    # 書いていたが、これは誤りだった——**このファイルには state_manager の
+    # Node 定義自体がそもそも存在しなかった**（コメントと実態が最初から
+    # 食い違っていた）。WP-TEST-01 で state_manager（＋ connectivity_checker）
+    # を common_nodes に追加したことで /system/state の publisher が実在する
+    # ようになったが、STATE_INCONSISTENT 検出（'state' target）を有効化する
+    # かどうかはこのパケットの範囲外の別判断として意図的に触れていない
+    # （'mux' と同じ扱い。安全監視を新たに有効化する変更は、起動直後の
+    # モード遷移シーケンス（INIT→IDLE→MANUAL）中に誤検知しないかを別途
+    # 検証してから判断すべきと考えたため）。Gazebo の LiDAR センサプラグインは
+    # sim/実機を問わず /scan を出すため lidar は有効にする。
     #
     # limiter（WP-TEST-01 の実装中に発見・追加。DetailedDesign-safety.md §10 #11
     # 「obstacle_limiter を SIGKILL → 重大フォルト → ESTOP → 駆動ゼロ」の自動化を
