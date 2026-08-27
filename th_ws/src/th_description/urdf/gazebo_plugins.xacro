@@ -54,7 +54,9 @@
           <ray>
             <scan>
               <horizontal>
-                <samples>720</samples>         <!-- 0.5° 分解能 -->
+                <samples>1080</samples>        <!-- 0.333° 分解能 (実機SLLIDAR相当。
+                                                     connectivity_checker の scan_expected_points=1080 と一致させる必要がある。
+                                                     WP-TEST-01 完了報告 / DetailedDesign-open.md N-22 参照) -->
                 <resolution>1</resolution>
                 <min_angle>-3.14159</min_angle>
                 <max_angle> 3.14159</max_angle>
