@@ -190,7 +190,8 @@ class SimStackHandle:
 
 
 def _terminate_process_group(proc: subprocess.Popen, grace_sec: float = 20.0) -> None:
-    """プロセスグループ全体に SIGTERM を送り、終了を待つ。
+    """プロセスグループ全体に SIGTERM を送って終了を待ち、続けて
+    `gzserver`/`gzclient` を名指しで確実に終わらせる。
 
     CLAUDE.md「ノードを kill -9 で落とすことを繰り返すと DDS discovery が壊れる」
     を踏まえ、既定は SIGTERM のみ（`kill -TERM`）。`gazebo.launch.py` は
@@ -205,31 +206,54 @@ def _terminate_process_group(proc: subprocess.Popen, grace_sec: float = 20.0) ->
     続けて動く次の ctest エントリ（fault_injection_02 等）に Gazebo/ROS
     プロセスが居座ったまま混入し、そちらの結果まで壊れる。1回きりの
     最終手段としての SIGKILL のほうが、その実害より小さいと判断した。
+
+    【`gzserver`/`gzclient` を追加で名指しする理由（コーディネーターの実測で判明）】
+    上記のプロセスグループ SIGTERM だけでは `gzserver` が終了せずリークする
+    ことが Docker での実測で確認された。Gazebo classic は `SIGINT` を
+    期待しており、`ros2 launch` 経由のプロセスグループ SIGTERM を素直に
+    受け取らないことが知られている。放置すると次に走る `sim_stack` が
+    「古い `gzserver` が既に `/gazebo/...` サービス等を握っている」状態で
+    起動しにいくことになり、準備完了ポーリングが（`gzserver` 自体は生きて
+    いるのに新しい方の起動がかみ合わず）上限の90秒で必ず打ち切られる
+    （実測で確認済み）。そのため `_terminate_gazebo_processes()` で
+    `SIGINT → SIGTERM → SIGKILL` の順に段階的 escalate しながら名指しで
+    終わらせ、**終了を待ってから**戻る（シグナルを送るだけで次へ進まない）。
     """
     if proc.poll() is not None:
+        _terminate_gazebo_processes()
         return
     try:
         pgid = os.getpgid(proc.pid)
     except ProcessLookupError:
+        _terminate_gazebo_processes()
         return
 
+    exited = False
     for attempt_grace in (grace_sec, grace_sec / 2.0):
         try:
             os.killpg(pgid, signal.SIGTERM)
         except ProcessLookupError:
-            return
+            exited = True
+            break
         try:
             proc.wait(timeout=attempt_grace)
-            return
+            exited = True
+            break
         except subprocess.TimeoutExpired:
             continue
 
-    # 最終手段（上記docstring参照）。
-    try:
-        os.killpg(pgid, signal.SIGKILL)
-        proc.wait(timeout=10.0)
-    except (subprocess.TimeoutExpired, ProcessLookupError):
-        pass
+    if not exited:
+        # 最終手段（上記docstring参照）。
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+            proc.wait(timeout=10.0)
+        except (subprocess.TimeoutExpired, ProcessLookupError):
+            pass
+
+    # ros2 launch 自体(と大半の子ROSノード)は上のSIGTERMで死ぬが、gzserver/
+    # gzclientはSIGINTを期待するため素直に死なないことが実測で確認された
+    # (上のdocstring参照)。名前で名指しして確実に終わらせる。
+    _terminate_gazebo_processes()
 
 
 def _cleanup_idle_dds_shm() -> list[str]:
@@ -302,6 +326,58 @@ def find_pids_by_exe_basename(basename: str) -> list[int]:
         if os.path.basename(argv0) == basename:
             pids.append(int(entry))
     return pids
+
+
+def _pid_alive(pid: int) -> bool:
+    """PID がまだ存在するか（シグナル0を送るだけで実際には何もしない）。"""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # 存在はするが権限が無い(通常起きない想定。安全側=生存扱い)
+    return True
+
+
+# gzserver/gzclient を段階的に終わらせるときの1段あたりの待ち時間。
+# Gazebo classic の起動・シャットダウンは重く、SIGINTを受けても片付けに
+# 数秒かかることがあるため、他のプロセスへの待ちより長めに取る。
+_GAZEBO_TERMINATE_GRACE_SEC = 10.0
+
+
+def _terminate_gazebo_processes(grace_sec_each: float = _GAZEBO_TERMINATE_GRACE_SEC) -> bool:
+    """`gzserver`/`gzclient` を `SIGINT` → `SIGTERM` → `SIGKILL` の順に
+    段階的に終わらせ、**実際に終了するまで待つ**。全て終了したら True。
+
+    `_terminate_process_group()` の docstring に書いたとおり、Gazebo classic
+    は `ros2 launch` 経由のプロセスグループ SIGTERM だけでは終了しない
+    ことが Docker での実測で確認された。ここでは `find_pids_by_exe_basename()`
+    （`pkill -f` の部分一致誤爆を避けるための既存ヘルパー）で対象を名指しし、
+    まず Gazebo classic が期待する `SIGINT` から試す。CLAUDE.md「`kill -9`
+    を繰り返すと DDS discovery が壊れる」を踏まえ、`SIGKILL` は
+    `SIGINT`/`SIGTERM` の両方に応答しなかった場合の最終手段としてのみ使う。
+    シグナルを送って**待たずに**戻ると、次に起動する `sim_stack` が
+    同じ `gzserver` とかち合って同じ 90 秒タイムアウトを再現するため、
+    ここでは呼び出し元に「本当に消えた」ことを boolean で返す。
+    """
+    pids = set(find_pids_by_exe_basename('gzserver') + find_pids_by_exe_basename('gzclient'))
+    if not pids:
+        return True
+
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL):
+        for pid in list(pids):
+            try:
+                os.kill(pid, sig)
+            except ProcessLookupError:
+                pids.discard(pid)
+        deadline = time.monotonic() + grace_sec_each
+        while pids and time.monotonic() < deadline:
+            pids = {p for p in pids if _pid_alive(p)}
+            if pids:
+                time.sleep(0.2)
+        if not pids:
+            return True
+    return not pids
 
 
 def place_entity_state(node, model_name: str, x: float, y: float, z: float = 0.85,
@@ -377,10 +453,39 @@ def sim_stack(request, ros_node, tmp_path):
     判定に影響しない――上記はいずれも `gzserver` 側・ROS ノード側の状態
     だけを見ており、GUI である `gzclient` の生死を見ていないため。
 
+    【意図的に含めていないもの: 「走行できる状態」かどうか】
+    上の3条件は「Gazebo 本体・obstacle_limiter・safety_monitor が起動済み」
+    ことしか保証しない。`state_manager` が `MANUAL` 等の駆動可能なモードに
+    到達しているか（＝`obstacle_limiter` の速度上限が `stop` から動いて
+    いるか）はここでは見ていない――意図的な設計判断で、`sim_stack` は
+    このパケット以外の将来の故障注入試験（自己位置喪失など、駆動できる
+    状態を前提にしない試験）にも使われる汎用フィクスチャであり、
+    「駆動可能になるまで待つ」という要件を一律に課すのは筋が違うと判断
+    した。駆動を伴う試験（1・2・11・control）は `sim_stack` の直後に
+    `enter_manual_mode()` を呼び、その内部で `/system/state.mode` が
+    `IDLE`→`MANUAL` になるまで明示的に待つ（到達しなければ `pytest.fail`
+    で即座に落ちる。固定 sleep 無し・空振りで通過することは無い）。
+    コーディネーターの実測（対照ケースが16秒程度で合格した件）についても、
+    `enter_manual_mode()` 内の `pytest.fail` を経由せずに合格している以上
+    `MANUAL` へ実際に到達していたことの証拠になる、とこのコードを
+    読んで確認した。
+
     【後始末】
     `_terminate_process_group()` で `ros2 launch` のプロセスグループ全体に
-    SIGTERM を送る（`kill -TERM`。`kill -9` は使わない。例外は
-    `_terminate_process_group` のdocstring参照）。
+    SIGTERM を送り、続けて `gzserver`/`gzclient` を名指しで
+    `SIGINT`→`SIGTERM`→`SIGKILL` の順に確実に終了させる（`kill -9` は
+    最終手段のみ。詳細は `_terminate_process_group()` docstring参照）。
+
+    【起動前の保険（コーディネーターの実測で追加）】
+    後始末が何らかの理由で失敗すると `gzserver`/`gzclient` が次のテストの
+    開始時点まで生き残り、新しい `gzserver` が既存の1つとかち合って
+    準備完了ポーリングが**必ず** `ready_timeout_sec`（既定90秒）で打ち切ら
+    れることが Docker での実測で確認された。この場合の真因は「今回の
+    起動が遅い」ではなく「前のテストの後始末が失敗した」なので、起動前に
+    残留 `gzserver`/`gzclient` の有無を確認し、居れば掃除を試みる。
+    掃除しても消えなければ、90秒待たせずにその旨を名指しした
+    メッセージで即座に fail する（次に調べる人が同じ調査をせずに済む
+    ようにするため）。
 
     【`th_ws/data/generated/` について】
     このフィクスチャ自身は生成物を読み書きしない。`gazebo.launch.py` が
@@ -393,6 +498,19 @@ def sim_stack(request, ros_node, tmp_path):
     launch_args.update({k: str(v) for k, v in (params.get('launch_args') or {}).items()})
     ready_timeout_sec = float(params.get('ready_timeout_sec', _DEFAULT_READY_TIMEOUT_SEC))
     cleanup_dds_shm = bool(params.get('cleanup_dds_shm', False))
+
+    leftover_gazebo = (find_pids_by_exe_basename('gzserver')
+                        + find_pids_by_exe_basename('gzclient'))
+    if leftover_gazebo:
+        cleaned = _terminate_gazebo_processes()
+        if not cleaned:
+            pytest.fail(
+                f"sim_stack: 起動前に古い gzserver/gzclient が残っていた "
+                f"(PID={leftover_gazebo})。掃除を試みたが完了しなかった。"
+                f"これは今回の準備完了待ちの失敗ではなく、**前に走った試験の"
+                f"後始末（_terminate_process_group）が失敗した**ことを示す。"
+                f"手動で `kill -9 {' '.join(str(p) for p in leftover_gazebo)}` "
+                f"するか、コンテナを作り直してから再実行すること。")
 
     cmd = ['ros2', 'launch', 'th_bringup', 'gazebo.launch.py']
     cmd += [f'{k}:={v}' for k, v in launch_args.items()]
