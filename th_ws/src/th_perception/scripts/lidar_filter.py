@@ -24,9 +24,20 @@ class LidarFilter(Node):
 
         # ── パラメータ ──────────────────────────────────────
         # blind_angle_ranges: [[start_deg, end_deg], ...] (0=前方 右回り正)
-        # 既定値は空配列（＝マスクしない）。空の DOUBLE_ARRAY は型推論に失敗する
-        # ため ParameterDescriptor で明示する。マスクしすぎて障害物が見えなく
+        # 既定値は空配列（＝マスクしない）。マスクしすぎて障害物が見えなく
         # なるより、マスクせず広く見える方が安全側（安全側は「マスクしない」）。
+        # **2026-08-27 訂正**: 当初このコメントは「空の DOUBLE_ARRAY は型推論に
+        # 失敗するため ParameterDescriptor で明示する」としていたが誤りだった。
+        # Docker 実起動で本ノードが起動失敗することを実測で確認している
+        # （rclpy ではパラメータが未初期化のまま残り get_parameter().value で
+        #   ParameterUninitializedException になる。rclcpp では
+        #   `parameter_value_from failed ... No parameter value set` で即死する。
+        #   標準ノード tf2_ros/static_transform_publisher でも同じ現象を確認した）。
+        # 真因は ROS 2 Humble が params YAML の空配列 override を解決できないこと
+        # であって declare_parameter の型推論ではない。対処は生成側で行った——
+        # th_bringup/launch/params_generation.py が空のキーを生成 YAML から
+        # 落とすようにしたので、override が空配列になることはもう無い。
+        # ここの ParameterDescriptor は主たる対処ではなく多層防御として残す。
         self.declare_parameter(
             'blind_angle_ranges', [],
             ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY))

@@ -187,44 +187,6 @@ def _reshape_twist_mux_file(path: Path) -> None:
 # で表す（O-4。走行体のみの構成では死角が無いことを確認済み）。しかし
 # sanitize_node_params() は D3 の設計どおり空リストをキーごと落とすため、その後段の
 # 生成物だけを見ると「死角なしで確定」と「値が抜けて壊れた」を区別できない。
-# 判定そのものは blind_calibrated（明示フラグ）に委ねるが、そのフラグが意味を持つには
-# blind_angle_ranges 自体がまず生成物に存在している必要がある。reshape_twist_mux() と
-# 同じ流儀（サニタイズ後に対象ノードだけ個別に組み直す）で、値が無ければ空配列を
-# 明示的に書き戻す。
-
-# blind_angle_ranges の consumers（registry.yaml と一致させること）。
-_BLIND_ANGLE_NODE_FILES: tuple[str, ...] = ("lidar_filter.yaml", "obstacle_limiter.yaml")
-
-
-def reshape_blind_angles(flat_params: Mapping[str, Any]) -> dict[str, Any]:
-    """blind_angle_ranges が無ければ空配列を補う（純粋関数。ファイル I/O をしない）。
-
-    「値が無い」ことと「死角なし（空配列）」を配列の形だけからは区別できないので、
-    ここでは常に最も安全側（マスクしない＝空配列）に倒すだけに留める。校正済みか
-    どうかの判定は blind_calibrated（別パラメータ）の仕事にする。
-    """
-    result = dict(flat_params)
-    result.setdefault("blind_angle_ranges", [])
-    return result
-
-
-def _reshape_blind_angles_file(path: Path) -> None:
-    if not path.exists():
-        return
-    node_name = path.stem
-    with open(path, encoding="utf-8") as f:
-        doc = yaml.safe_load(f) or {}
-    body = doc.get(node_name)
-    if body is None:
-        return
-    flat_params = (body or {}).get("ros__parameters") or {}
-    new_params = reshape_blind_angles(flat_params)
-    if new_params != flat_params:
-        doc[node_name]["ros__parameters"] = new_params
-        with open(path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(doc, f, allow_unicode=True, sort_keys=True)
-
-
 # ---------------------------------------------------------------------------
 # 生成本体
 # ---------------------------------------------------------------------------
@@ -290,8 +252,13 @@ def run_generation(*, stage: int, sim: bool, nodes: Sequence[str] | None = REGIS
         _sanitize_node_params_file(yaml_path)
 
     _reshape_twist_mux_file(out / "twist_mux.yaml")
-    for node_file in _BLIND_ANGLE_NODE_FILES:
-        _reshape_blind_angles_file(out / node_file)
+    # blind_angle_ranges は「空なら sanitize_node_params() がキーごと落とす」に委ねる。
+    # 以前はここで空配列を書き戻していたが、**ROS 2 Humble は params YAML の空配列を
+    # 扱えない**（rclcpp は `parameter_value_from failed ... No parameter value set` で
+    # 落ち、rclpy は未初期化のまま `get_parameter().value` で例外になる。標準ノード
+    # tf2_ros/static_transform_publisher でも同じ現象を実測で確認した）。
+    # 「死角なし」と「未校正」の区別は blind_calibrated（明示フラグ）が運ぶので、
+    # 配列の形から推論する必要はない（DetailedDesign-open.md の N-8）。
 
 
 # ---------------------------------------------------------------------------

@@ -239,36 +239,28 @@ def test_twist_mux_end_to_end_via_export():
 # ============================================================================
 
 
-def test_blind_angle_ranges_reshaped():
-    """O-4: reshape_blind_angles() が blind_angle_ranges を補うこと（純粋関数）。
+def test_blind_angle_ranges_absent_when_empty():
+    """O-4 の結合確認: 死角なし（`blind_angle_ranges` が空）の構成では、生成 YAML に
+    **キーが現れない**こと。
 
-    sanitize_node_params() は D3 の設計どおり空リストをキーごと落とすため、
-    blind_angle_ranges: [] のような「死角なしで確定」の値もサニタイズ後は
-    キーが消えてしまう。reshape_twist_mux() と同じ流儀で、サニタイズ後に
-    空配列として明示的に書き戻す。"""
-    # キーが無い（サニタイズで落ちた状態） → 空配列を補う
-    out = pg.reshape_blind_angles({"blind_calibrated": True})
-    assert out["blind_angle_ranges"] == []
-    assert out["blind_calibrated"] is True
+    **空配列を書いてはいけない。**ROS 2 Humble は params YAML の空配列を扱えず、
+    そのキーを含む YAML を読ませると:
+      - rclcpp: ノード構築時に
+        `parameter_value_from failed for parameter '<name>': No parameter value set`
+        を投げて即死する（標準ノード `tf2_ros/static_transform_publisher` でも
+        同じ現象を実測で確認済み。我々のコード固有の問題ではない）
+      - rclpy: パラメータが「未初期化」のままになり、`get_parameter(...).value` で
+        `ParameterUninitializedException` になる（`ParameterDescriptor` で型を
+        明示しても防げない）
+    以前は「空配列を明示的に書き戻す」実装（reshape_blind_angles）だったが、
+    そのせいで lidar_filter / obstacle_limiter が起動できなかった。
 
-    # 実際に死角がある構成では上書きしない（値をそのまま残す）
-    out2 = pg.reshape_blind_angles({"blind_angle_ranges": [40.0, 50.0]})
-    assert out2["blind_angle_ranges"] == [40.0, 50.0]
+    「死角なし」と「未校正」の区別は `blind_calibrated`（明示フラグ）が運ぶので、
+    配列の形から推論する必要はない（DetailedDesign-open.md の N-8）。
+    キーが無ければノード側の declare 既定値（空）が使われる。
 
-    # 純粋関数（入力を書き換えない）
-    src = {"blind_calibrated": True}
-    pg.reshape_blind_angles(src)
-    assert src == {"blind_calibrated": True}
-
-
-def test_blind_angle_ranges_end_to_end_via_export():
-    """O-4 の結合確認: 実際の registry.yaml → export.py → サニタイズ → reshape の結果、
-    lidar_filter.yaml / obstacle_limiter.yaml のどちらにも blind_angle_ranges が
-    空配列のまま残ること（サニタイズで消えたままにならない）。
-
-    stage=2・sim=False（A8 が blind_angle_ranges の blocking_from_stage:2 を見る条件）
-    でも GenerationError にならず完走することも合わせて確認する
-    （registry.yaml が status: measured になったことで A8 の対象から外れているはず）。"""
+    stage=2・sim=False（A8 が `blind_angle_ranges` の blocking_from_stage:2 を見る条件）
+    でも GenerationError にならず完走することも合わせて確認する。"""
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = os.path.join(tmp, "generated")
         pg.run_generation(stage=2, sim=False, nodes=list(pg.REGISTRY_NODES),
@@ -276,15 +268,11 @@ def test_blind_angle_ranges_end_to_end_via_export():
 
         with open(os.path.join(out_dir, "lidar_filter.yaml"), encoding="utf-8") as f:
             lidar_params = yaml.safe_load(f)["lidar_filter"]["ros__parameters"]
-        assert lidar_params["blind_angle_ranges"] == []
-        assert lidar_params["blind_calibrated"] is True
-
-        obstacle_path = os.path.join(out_dir, "obstacle_limiter.yaml")
-        assert os.path.exists(obstacle_path), "obstacle_limiter.yaml が生成されていない"
-        with open(obstacle_path, encoding="utf-8") as f:
-            obstacle_params = yaml.safe_load(f)["obstacle_limiter"]["ros__parameters"]
-        assert obstacle_params["blind_angle_ranges"] == []
-        assert obstacle_params["blind_calibrated"] is True
+        assert "blind_angle_ranges" not in lidar_params, (
+            "空の blind_angle_ranges を生成 YAML に書いてはいけない"
+            "（ROS 2 Humble が扱えず lidar_filter が起動できなくなる）")
+        assert lidar_params["blind_calibrated"] is True, (
+            "校正済みかどうかを運ぶのは blind_calibrated。こちらは残っていること")
 
 
 def test_both_launch_files_use_generated():
