@@ -207,15 +207,25 @@ def generate_launch_description():
     # 実際の値は registry 経由では渡らない。ここで launch から明示的に渡す
     # (DetailedDesign-names.md §7.3 の note「段階ごとに launch から渡す」の実体)。
     #
-    # 現時点（stage 既定 1、WP-SAFE-03/obstacle_limiter・WP-PERC-*/person_targets
-    # とも未着手）で実際に publisher が存在する対象だけを有効にする。
-    # wp2 の段階表は「段階 2 が完了した時点」の最終形（limiter/mux を含む）を
-    # 示しており、WP-SAFE-01 単体の時点ではまだ入れられない
-    # （limiter_status の publisher は obstacle_limiter=WP-SAFE-03、
-    #  cmd_vel_muxed の publisher は twist_mux の remap 先変更=同じく WP-SAFE-03
-    #  側の変更が要る。O-7「publisher ができるまで有効にしない」）。
-    # 判断の詳細は WP-SAFE-01 完了報告に明記。
-    SAFETY_ENABLED_TARGETS = ['lidar', 'esp32', 'runaway', 'state', 'firmware']
+    # 実際に publisher が存在する対象だけを有効にする（O-7「publisher が
+    # できるまで有効にしない」）。
+    #
+    # limiter（WP-TEST-01 の実装中に発見・追加。2026-08-27）: このコメントは
+    # 元々「WP-SAFE-01 単体の時点では WP-SAFE-03/obstacle_limiter が未実装なので
+    # limiter を入れられない」としていたが、**WP-SAFE-03 は既に実装済み**
+    # （obstacle_limiter は上の「7b. obstacle_limiter」で無条件に起動しており、
+    # `/safety/limiter_status` を実際に20Hzで発行している）。コメントの更新が
+    # 漏れていたと判断し、limiter を追加する。DetailedDesign-safety.md §10 #11
+    # の自動化（`obstacle_limiter` を SIGKILL → 重大フォルト検出）は
+    # `targetEnabled("limiter")` がゲートしているため、これが無いと実機でも
+    # obstacle_limiter のプロセス死亡を safety_monitor が一切検出できない
+    # （DEBT-4 が実質的に塞がっていない状態だった）。
+    #
+    # mux（MUX_DEAD。`/cmd_vel_muxed` の remap 先も WP-SAFE-03 で完了済みなので
+    # 同様に有効化できる可能性が高い）は**このパケットの範囲外**として意図的に
+    # 触れていない——故障注入12「/cmd_vel の途絶」は別パケットの担当であり、
+    # mux 検出との相互作用まで含めた検証はそちら側の判断に委ねる。
+    SAFETY_ENABLED_TARGETS = ['lidar', 'esp32', 'runaway', 'state', 'firmware', 'limiter']
     nodes.append(Node(
         package='th_safety',
         executable='safety_monitor',

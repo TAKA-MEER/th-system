@@ -472,10 +472,23 @@ def generate_launch_description():
     # 起動しない（このファイル内で確認済み）ため、esp32・state は publisher が
     # 無い。runaway は /esp32/wheel_feedback（同じく無い）を要るため除外。
     # firmware も esp32_bridge が publisher のため除外。Gazebo の LiDAR センサ
-    # プラグインは sim/実機を問わず /scan を出すため lidar だけ有効にする。
-    SAFETY_ENABLED_TARGETS_SIM = ['lidar']
-    # 実機: bringup.launch.py と同じ判断（WP-SAFE-01 完了報告に詳細）。
-    SAFETY_ENABLED_TARGETS_REAL = ['lidar', 'esp32', 'runaway', 'state', 'firmware']
+    # プラグインは sim/実機を問わず /scan を出すため lidar は有効にする。
+    #
+    # limiter（WP-TEST-01 の実装中に発見・追加。DetailedDesign-safety.md §10 #11
+    # 「obstacle_limiter を SIGKILL → 重大フォルト → ESTOP → 駆動ゼロ」の自動化を
+    # 書こうとしたところ、obstacle_limiter は common_nodes で sim/実機いずれでも
+    # 無条件に起動し `/safety/limiter_status` を実際に20Hzで発行しているのに、
+    # ここに 'limiter' が無いために safety_monitor.cpp の LIMITER_DEAD 検出
+    # （targetEnabled("limiter")でゲートされている。F-5・O-7）が sim・実機の
+    # 両方で常に無効だったことが判明した。obstacle_limiter 自体は WP-SAFE-03 で
+    # 「DEBT-4を塞ぐ」と明記されているが、その前提となる監視の有効化が
+    # 漏れていたと判断し、ここで追加する。新しい安全機能ではなく、既に実装
+    # 済みの検出ロジックを実際に有効化するだけの1行修正。
+    SAFETY_ENABLED_TARGETS_SIM = ['lidar', 'limiter']
+    # 実機: bringup.launch.py と同じ判断（WP-SAFE-01 完了報告に詳細）＋ 上記と
+    # 同じ理由で limiter を追加（obstacle_limiter は実機でも common_nodes で
+    # 無条件に起動する）。
+    SAFETY_ENABLED_TARGETS_REAL = ['lidar', 'esp32', 'runaway', 'state', 'firmware', 'limiter']
 
     # safety_monitor: シミュレーション設定
     # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる (G-4)。
