@@ -100,15 +100,35 @@ public:
         declare_parameter("lock_stale_ms", 500);
 
         declare_parameter("blind_calibrated", true);
-        // blind_angle_ranges: 空の DOUBLE_ARRAY は rclcpp が型推論に失敗する
-        // （lidar_filter.py と同じ問題。th_perception/scripts/lidar_filter.py の
-        // コメント参照）。Docker 実起動で
-        // 「parameter_value_from failed for parameter 'blind_angle_ranges':
-        // No parameter value set」により起動が FATAL で落ちることを実測で
-        // 確認済み（generated yaml 側の `blind_angle_ranges: []` は正しく、
-        // 落ちるのはこの宣言の型推論）。ParameterDescriptor で明示して回避する。
-        // 既定値は空配列（＝死角マスクなし）。マスクしすぎて障害物が見えなく
-        // なるより、マスクせず広く見える方が安全側。
+        // blind_angle_ranges: 空配列の**扱いは 2026-08-27 に訂正した**。
+        //
+        // 当初（b8d8e98）は「rclcpp が空の DOUBLE_ARRAY から型推論できない」
+        // ことが原因と考え、ParameterDescriptor で型を明示すれば直ると判断した。
+        // これは誤りだった。Docker 実起動で ParameterDescriptor を付けた後も
+        // 同じ「parameter_value_from failed for parameter 'blind_angle_ranges':
+        // No parameter value set」で起動失敗することを実測で確認した。
+        // 本当の原因は **ROS2 Humble の rcl_yaml_param_parser が空配列の
+        // parameter override をそもそも解決できない**ことで、
+        // declare_parameter 側の型推論の問題ではない（素の
+        // tf2_ros::static_transform_publisher に空配列 1 個だけの params
+        // ファイルを渡しても同じ例外で落ちることを実測で確認済み。
+        // ParameterDescriptor の有無は無関係）。
+        //
+        // **本当の対処は生成側**（th_bringup/launch/params_generation.py）
+        // にある: sanitize_node_params() が空配列のキーを丸ごと落とし、
+        // かつて存在した reshape_blind_angles()（空配列を明示的に書き戻す
+        // 処理）は撤去した。したがって生成 yaml に blind_angle_ranges が
+        // 載るのは実際に値がある（死角がある）ときだけで、ここの override
+        // が空配列になることはもう無い。
+        //
+        // ここでの ParameterDescriptor は**主たる対処ではなく多層防御**として
+        // 残す——将来、生成経路以外（手動の --params-file 上書き等）から
+        // このパラメータへ空配列 override が渡る事態が万一起きても、型が
+        // 明示されていれば少なくとも `declare_parameter` の意図は読み取れる
+        // （それでも override が空配列である限り起動失敗は避けられないことに
+        // 変わりはない。空配列を override として渡さないことが唯一の正しい
+        // 対処）。既定値は空配列（＝死角マスクなし）。マスクしすぎて障害物が
+        // 見えなくなるより、マスクせず広く見える方が安全側。
         rcl_interfaces::msg::ParameterDescriptor blind_angle_ranges_desc;
         blind_angle_ranges_desc.type = rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY;
         declare_parameter("blind_angle_ranges", std::vector<double>{}, blind_angle_ranges_desc);

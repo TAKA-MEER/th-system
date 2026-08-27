@@ -190,49 +190,35 @@ def _reshape_twist_mux_file(path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# blind_angle_ranges: 空配列でも生成物にキーを残す
+# blind_angle_ranges: 空配列を生成物へ書き戻す reshape は撤去した（2026-08-27）
 # ---------------------------------------------------------------------------
 #
-# registry.yaml の blind_angle_ranges は「死角なし」を status: measured / value: []
-# で表す（O-4。走行体のみの構成では死角が無いことを確認済み）。しかし
-# sanitize_node_params() は D3 の設計どおり空リストをキーごと落とすため、その後段の
-# 生成物だけを見ると「死角なしで確定」と「値が抜けて壊れた」を区別できない。
-# 判定そのものは blind_calibrated（明示フラグ）に委ねるが、そのフラグが意味を持つには
-# blind_angle_ranges 自体がまず生成物に存在している必要がある。reshape_twist_mux() と
-# 同じ流儀（サニタイズ後に対象ノードだけ個別に組み直す）で、値が無ければ空配列を
-# 明示的に書き戻す。
-
-# blind_angle_ranges の consumers（registry.yaml と一致させること）。
-_BLIND_ANGLE_NODE_FILES: tuple[str, ...] = ("lidar_filter.yaml", "obstacle_limiter.yaml")
-
-
-def reshape_blind_angles(flat_params: Mapping[str, Any]) -> dict[str, Any]:
-    """blind_angle_ranges が無ければ空配列を補う（純粋関数。ファイル I/O をしない）。
-
-    「値が無い」ことと「死角なし（空配列）」を配列の形だけからは区別できないので、
-    ここでは常に最も安全側（マスクしない＝空配列）に倒すだけに留める。校正済みか
-    どうかの判定は blind_calibrated（別パラメータ）の仕事にする。
-    """
-    result = dict(flat_params)
-    result.setdefault("blind_angle_ranges", [])
-    return result
-
-
-def _reshape_blind_angles_file(path: Path) -> None:
-    if not path.exists():
-        return
-    node_name = path.stem
-    with open(path, encoding="utf-8") as f:
-        doc = yaml.safe_load(f) or {}
-    body = doc.get(node_name)
-    if body is None:
-        return
-    flat_params = (body or {}).get("ros__parameters") or {}
-    new_params = reshape_blind_angles(flat_params)
-    if new_params != flat_params:
-        doc[node_name]["ros__parameters"] = new_params
-        with open(path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(doc, f, allow_unicode=True, sort_keys=True)
+# 88c2ab1（N-8）は「死角なし」と「値が抜けた」を配列の形だけから区別できない
+# 問題を、sanitize_node_params() が落とした blind_angle_ranges を空配列で
+# 明示的に書き戻す reshape_blind_angles() で解決したことにしていた。
+#
+# これは**誤りだった**。Docker 実機で `gazebo.launch.py sim:=true` を起動した
+# ところ obstacle_limiter・lidar_filter の両方が
+# 「parameter_value_from failed for parameter 'blind_angle_ranges':
+# No parameter value set」で起動失敗した（実測）。原因は
+# `declare_parameter` 側の型推論ではなく、**ROS2 Humble の
+# rcl_yaml_param_parser が空配列の parameter override をそもそも扱えない**
+# こと——素の `tf2_ros::static_transform_publisher` に
+# `{ros__parameters: {empty_arr: []}}` だけの params ファイルを渡しても
+# 同じ例外で落ちることを実測で確認済み（このプロジェクトのコードは無関係）。
+# rclpy 側も同様に `get_parameter(...).value` が
+# `ParameterUninitializedException` を投げる。`ParameterDescriptor` で型を
+# 明示しても、override 自体が「空配列」である限り解決できない。
+#
+# **`sanitize_node_params()` が空配列のキーを丸ごと落とす（＝override 自体を
+# 発生させない）のが正しい対処**であり、reshape_blind_angles() はそれに
+# 逆行して壊れた override を意図的に作っていた。「死角なし」と「値が抜けた」
+# の区別は、この関数が存在するかどうかに関わらず `blind_calibrated`
+# （`class: b` / `given`。N-8 で新設）という独立フラグが担っている——
+# `blind_angle_ranges` というキー自体が生成物に無くても、ノード側の
+# `declare_parameter` の既定値（空配列 = マスクなし。安全側）がそのまま使われる
+# だけで、`blind_calibrated` の意味は変わらない。したがってこの reshape は
+# 最初から不要だった（キーを残す理由が無かった）。
 
 
 # ---------------------------------------------------------------------------
@@ -300,8 +286,6 @@ def run_generation(*, stage: int, sim: bool, nodes: Sequence[str] | None = REGIS
         _sanitize_node_params_file(yaml_path)
 
     _reshape_twist_mux_file(out / "twist_mux.yaml")
-    for node_file in _BLIND_ANGLE_NODE_FILES:
-        _reshape_blind_angles_file(out / node_file)
 
 
 # ---------------------------------------------------------------------------

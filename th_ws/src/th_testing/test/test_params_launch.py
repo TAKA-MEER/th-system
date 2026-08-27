@@ -239,32 +239,27 @@ def test_twist_mux_end_to_end_via_export():
 # ============================================================================
 
 
-def test_blind_angle_ranges_reshaped():
-    """O-4: reshape_blind_angles() が blind_angle_ranges を補うこと（純粋関数）。
-
-    sanitize_node_params() は D3 の設計どおり空リストをキーごと落とすため、
-    blind_angle_ranges: [] のような「死角なしで確定」の値もサニタイズ後は
-    キーが消えてしまう。reshape_twist_mux() と同じ流儀で、サニタイズ後に
-    空配列として明示的に書き戻す。"""
-    # キーが無い（サニタイズで落ちた状態） → 空配列を補う
-    out = pg.reshape_blind_angles({"blind_calibrated": True})
-    assert out["blind_angle_ranges"] == []
-    assert out["blind_calibrated"] is True
-
-    # 実際に死角がある構成では上書きしない（値をそのまま残す）
-    out2 = pg.reshape_blind_angles({"blind_angle_ranges": [40.0, 50.0]})
-    assert out2["blind_angle_ranges"] == [40.0, 50.0]
-
-    # 純粋関数（入力を書き換えない）
-    src = {"blind_calibrated": True}
-    pg.reshape_blind_angles(src)
-    assert src == {"blind_calibrated": True}
-
-
 def test_blind_angle_ranges_end_to_end_via_export():
-    """O-4 の結合確認: 実際の registry.yaml → export.py → サニタイズ → reshape の結果、
-    lidar_filter.yaml / obstacle_limiter.yaml のどちらにも blind_angle_ranges が
-    空配列のまま残ること（サニタイズで消えたままにならない）。
+    """O-4 の結合確認（2026-08-27 に表明を反転): 実際の registry.yaml →
+    export.py → sanitize_node_params() の結果、lidar_filter.yaml /
+    obstacle_limiter.yaml の**どちらにも blind_angle_ranges というキー自体が
+    存在しない**こと（空配列で残っていない）。
+
+    以前は「空配列のまま残ること」を検査していたが、これは Docker 実機での
+    起動失敗（`gazebo.launch.py sim:=true` で obstacle_limiter・lidar_filter の
+    両方が `parameter_value_from failed for parameter 'blind_angle_ranges':
+    No parameter value set` で落ちた。実測で確認済み）を固定するテストだった。
+    原因は ROS2 Humble の `rcl_yaml_param_parser` が空配列の parameter
+    override をそもそも扱えないこと（`declare_parameter` の型推論の問題ではない
+    ——素の `tf2_ros::static_transform_publisher` に空配列 1 個だけの
+    params ファイルを渡しても同じ例外で落ちることを実測で確認済み）。
+    `ParameterDescriptor` で型を明示しても override が空である限り解決できない。
+
+    「死角なし」と「値が抜けた」の区別は `blind_calibrated`（`class: b` /
+    `given`。N-8）という独立フラグが担うため、`blind_angle_ranges` というキー
+    自体が生成物に存在しなくても意味は失われない——ノード側の
+    `declare_parameter` の既定値（空配列 = マスクなし。安全側）がそのまま
+    使われるだけ。
 
     stage=2・sim=False（A8 が blind_angle_ranges の blocking_from_stage:2 を見る条件）
     でも GenerationError にならず完走することも合わせて確認する
@@ -276,14 +271,18 @@ def test_blind_angle_ranges_end_to_end_via_export():
 
         with open(os.path.join(out_dir, "lidar_filter.yaml"), encoding="utf-8") as f:
             lidar_params = yaml.safe_load(f)["lidar_filter"]["ros__parameters"]
-        assert lidar_params["blind_angle_ranges"] == []
+        assert "blind_angle_ranges" not in lidar_params, (
+            "blind_angle_ranges が空配列のまま生成物に残っている"
+            "（ROS2 Humble はこの override を扱えずノードが起動失敗する）")
         assert lidar_params["blind_calibrated"] is True
 
         obstacle_path = os.path.join(out_dir, "obstacle_limiter.yaml")
         assert os.path.exists(obstacle_path), "obstacle_limiter.yaml が生成されていない"
         with open(obstacle_path, encoding="utf-8") as f:
             obstacle_params = yaml.safe_load(f)["obstacle_limiter"]["ros__parameters"]
-        assert obstacle_params["blind_angle_ranges"] == []
+        assert "blind_angle_ranges" not in obstacle_params, (
+            "blind_angle_ranges が空配列のまま生成物に残っている"
+            "（ROS2 Humble はこの override を扱えずノードが起動失敗する）")
         assert obstacle_params["blind_calibrated"] is True
 
 
@@ -401,21 +400,18 @@ def test_generated_yaml_has_no_null_or_empty_containers():
     実在する。生成された全 *.yaml（twist_mux.yaml 含む。params_digest.json は
     ROS2 パラメータファイルではないので対象外）の `ros__parameters` に
     None / 空 list / 空 dict が1つも無いことを検査する
-    （残っていると `declare_parameter` が例外を投げてノードが落ちる。実測は
-    完了報告に記載）。
+    （残っていると ROS2 Humble の rcl_yaml_param_parser が override を解決
+    できず、ノードが `parameter_value_from failed ... No parameter value set`
+    で起動失敗する。Docker 実機での実測で確認済み）。
 
-    **例外**: `blind_angle_ranges` はこの検査から除外する（O-4）。
-    `lidar_filter.yaml` / `obstacle_limiter.yaml` の `blind_angle_ranges: []` は
-    `reshape_blind_angles()` が意図して書き戻す値（死角なしを空配列で表す。
-    サニタイズで落ちたままだと「死角なし」と「値が抜けた」を区別できない）。
-    `lidar_filter.py` 側は `ParameterDescriptor(type=PARAMETER_DOUBLE_ARRAY)` で
-    型を明示しているため、この 1 件に限り空配列のままでも
-    `declare_parameter` は例外を投げない（test_blind_angle_ranges_end_to_end_via_export
-    が生成側を、lidar_filter 自体の動作は colcon test 側で検証する）。"""
-    _EXPECTED_EMPTY = {
-        ("lidar_filter.yaml", "lidar_filter", "blind_angle_ranges"),
-        ("obstacle_limiter.yaml", "obstacle_limiter", "blind_angle_ranges"),
-    }
+    **例外は無い**（2026-08-27 に撤去）。以前は `blind_angle_ranges` を
+    `reshape_blind_angles()` が空配列で明示的に書き戻し、この検査から
+    例外扱いしていたが、それ自体が実機起動を壊す原因だった——
+    `ParameterDescriptor` で型を明示しても override が空配列である限り
+    解決できないため、「例外的に許容してよい空配列」は存在しない。
+    このテストは今後もこの種の例外が増えないことを保証する
+    （test_blind_angle_ranges_end_to_end_via_export が blind_angle_ranges
+    個別の回帰を守る）。"""
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = os.path.join(tmp, "generated")
         pg.run_generation(stage=1, sim=True, nodes=list(pg.REGISTRY_NODES),
@@ -431,8 +427,6 @@ def test_generated_yaml_has_no_null_or_empty_containers():
             for node_name, node_body in doc.items():
                 ros_params = (node_body or {}).get("ros__parameters") or {}
                 for key, value in ros_params.items():
-                    if (fname, node_name, key) in _EXPECTED_EMPTY:
-                        continue
                     if value is None:
                         offenders.append(f"{fname}:{node_name}.{key} は null")
                     elif isinstance(value, (list, dict)) and len(value) == 0:
