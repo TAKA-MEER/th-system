@@ -22,28 +22,32 @@ case_11_limiter_sigkill.py — 故障注入 11「リミッタの死（SIGKILL）
     監視ロジックに繋ぐだけの1行修正であり、新しい安全機能の実装ではない
     ため、このパケットのテスト実装に必要な最小限の修正として扱った）。
 
-(2) `mode_manager.cpp` は `/safety/fault` の `severity` を見ていない。
-    `sub_fault_` のコールバックは `msg->fault_type` だけで分岐し、
-    アクティブなモードから常に `IDLE` へ強制遷移させる
-    （`PERSON_TRACKER_LOST` の narrower gating のみ例外）。`ESTOP` へ
-    遷移するのは `/safety/estop`（ハード/UI E-Stop）だけ。これは
-    `DetailedDesign-safety.md` §5.1 の「`CRITICAL` → `ESTOP`」という表と
-    食い違う——**現状の実装は `LIMITER_DEAD` のような CRITICAL フォルトでも
-    `IDLE` にしか遷移しない**。これは mode_manager.cpp 側の実装ギャップで、
-    このパケットの範囲（test ファイル + 1行の launch 修正）を超える
-    修正が必要なため、ここでは直さない。
+(2) 【訂正（コーディネーターの実測により判明。当初の記述は誤りだった）】
+    このテストは当初 `/robot/mode`（`RobotMode` 型）を購読して `ESTOP` を
+    確認しようとしていた。これは **as-built の旧FSM `mode_manager.cpp`
+    が publish する廃止予定のトピック**であり、新設計の FSM は `th_state`
+    の `state_manager` で、モードは `/system/state.mode`（**文字列**。
+    `SystemState.msg` 参照）に載る。`WP-TEST-01` の仕様 §3 の観測点表も
+    `/system/state` の `mode` を指定しており、`/robot/mode` を見ていたのは
+    **テスト側が仕様から外れた観測対象の誤り**だった。
 
-    §5.2.1 は「`th_state` の `ESTOP` 遷移は表示と復帰のためだけであり、
-    駆動を止める役目は持たない（駆動を止めるのは層3=`/safety/fault_lock`）」
-    と明記しているため、**この2番目のギャップは「駆動ゼロ」という
-    安全上の本質的な結果には影響しない**（`/safety/fault_lock` は
-    severity==CRITICAL を正しく見ており、こちらは実装済み。
-    `safety_monitor_core.cpp::compute_fault_lock()` 参照）。だが
-    §10 #11 が明示的に要求する「`ESTOP`」という表示状態を実際に検証すると
-    **現状は失敗する**。これは実装管理者に必ず報告すべき既知のギャップと
-    判断し、テストとしては「本来満たすべき仕様」をそのまま書いた
-    （ごまかして緩めていない）。mode_manager.cpp が修正されれば、この
-    テストはコード変更なしでそのまま合格するようにしてある。
+    コーディネーターが Docker で実測したところ、`/system/state.mode` は
+    `INIT` → `IDLE` → `MANUAL` → `ESTOP` と正しく遷移していた
+    （`safety_monitor` → `severity: CRITICAL` → `fault.critical` イベント →
+    `transitions.yaml` の `C-06a`（`mode:'*'` / `event: fault.critical` →
+    `to_mode: ESTOP`）という連鎖がすべて働いている）。**新FSM（`state_manager`）
+    は系として正しく動作しており、`DetailedDesign-safety.md` §5.1 の
+    「`CRITICAL` → `ESTOP`」を満たしている。** よってこのテストの ⑥ の
+    アサーションは `/system/state.mode`（文字列 `"ESTOP"`）を見るように
+    修正した（`enter_manual_mode()` が返す `state_watcher` を再利用する。
+    同じ `/system/state` への二重購読を避けるため）。
+
+    なお **as-built の旧FSM `mode_manager.cpp` 自体は、`/safety/fault` の
+    `severity` を見ずに `CRITICAL` フォルトでも `IDLE` にしか遷移させない**
+    という食い違いを依然として持っている。これは新FSMへの移行が段階3で
+    完了するまでの過渡期の既知事項であり、`/robot/mode` を実際に消費する
+    ノードが残っている限り実害になりうるが、**このテストの観測対象では
+    ないため直接の影響は無い**（`DetailedDesign-open.md` N-23 参照）。
 
 (3) このテストは `conftest.py` の `enter_manual_mode()` に依存する。当初
     `enter_manual_mode()` 経由で `scan_expected_points`（実機値=1080）と
@@ -109,7 +113,7 @@ import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool
-from th_system_msgs.msg import FaultStatus, LimiterStatus, RobotMode
+from th_system_msgs.msg import FaultStatus, LimiterStatus
 
 from fault_injection.conftest import (
     DriveController, TopicWatcher, enter_manual_mode, find_pids_by_exe_basename,
@@ -146,7 +150,6 @@ def test_fault_injection_11_limiter_sigkill(
         ros_node, '/safety/limiter_status', LimiterStatus, qos=_LIMITER_STATUS_QOS)
     fault_watcher = TopicWatcher(ros_node, '/safety/fault', FaultStatus)
     fault_lock_watcher = TopicWatcher(ros_node, '/safety/fault_lock', Bool)
-    mode_watcher = TopicWatcher(ros_node, '/robot/mode', RobotMode)
 
     drive = DriveController(ros_node, linear_x=limiter_param('v_max'))
     try:
@@ -178,10 +181,13 @@ def test_fault_injection_11_limiter_sigkill(
         assert_true_within(fault_lock_watcher, 'data', ms=dead_ms * 3)
 
         # ── 6) 表示・復帰用の ESTOP モード遷移 ──
-        # 既知のギャップ(本ファイル冒頭docstring(2))により、現状の
-        # mode_manager.cpp では**ここで失敗する**想定。ギャップが解消されたら
-        # このアサーションはコード変更なしで合格するようにしてある。
-        assert_equals_within(mode_watcher, 'mode', RobotMode.ESTOP, ms=dead_ms * 10)
+        # 新FSM(state_manager)の /system/state.mode を見る(文字列 "ESTOP"。
+        # RobotMode の数値定数ではない)。enter_manual_mode() が返す
+        # state_watcher は既に /system/state を購読済みなのでそれを再利用する
+        # (同じトピックへの二重購読を避ける)。本ファイル冒頭docstring(2)参照
+        # ——旧FSM(mode_manager.cpp・/robot/mode)を見ていたのは観測対象の
+        # 誤りだった。新FSMは正しくESTOPへ遷移する。
+        assert_equals_within(state_watcher, 'mode', 'ESTOP', ms=dead_ms * 10)
 
         # ── 7) 駆動ゼロ: 既に停止済みの状態から、kill後に非ゼロ指令が
         #        再び現れないこと(本ファイル冒頭docstringの限界の説明どおり、
@@ -193,7 +199,6 @@ def test_fault_injection_11_limiter_sigkill(
         limiter_hb_watcher.destroy()
         fault_watcher.destroy()
         fault_lock_watcher.destroy()
-        mode_watcher.destroy()
         bootstrap.stop()
         state_watcher.destroy()
 

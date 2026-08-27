@@ -920,8 +920,11 @@ def assert_true_within(ros_node):
 def assert_equals_within(ros_node):
     """`assert_equals_within(watcher, field, expected, ms)`: 呼び出し時点から
     `ms` ミリ秒以内に、直近の受信値の `field` が `expected` と等しくなることを
-    確認する。`/robot/mode` が特定の値（例: `RobotMode.ESTOP`）になることの
-    確認向け（多値フィールドなので `assert_true_within` は使えない）。"""
+    確認する。`/system/state` の `mode`（文字列。例: `"ESTOP"`）が特定の値に
+    なることの確認向け（多値フィールドなので `assert_true_within` は使えない）。
+    ※ as-built の旧FSM `mode_manager.cpp` が publish する `/robot/mode`
+    （`RobotMode` 型・数値定数）は廃止予定のトピックなので使わないこと
+    （故障注入11で実際にこれを見て観測対象の誤りだったことが判明した）。"""
 
     def _assert(watcher: TopicWatcher, field: str, expected: Any, ms: float) -> None:
         deadline = time.monotonic() + ms / 1000.0
