@@ -97,6 +97,7 @@ twist_mux のロックは**発行者が生きている間だけ**効く仕組み
 ```
 th_transit / th_onsite / th_route ──► /cmd_vel_behavior (20) ─┐
 th_maintenance（点検・校正の走行）  ──► /cmd_vel_behavior (20) ─┤
+Nav2 behavior_server（spin/backup/drive_on_heading等）──► /cmd_vel_behavior (20) ─┤
                                                                │ twist_mux
 WebUI ─► /cmd_vel_manual_raw ─► [ jog_gate ] ─► /cmd_vel_manual (30) ─┤
                                     ▲ /system/state              │
@@ -114,6 +115,16 @@ Nav2 controller_server ────────────►/cmd_vel_nav (10) 
 
 **不変ルール（現行から変更）**: `/cmd_vel` を publish してよいのは **`obstacle_limiter` だけ**。
 `twist_mux` の出力は `/cmd_vel_muxed` に変える。
+
+> **`Nav2 behavior_server` は remap しないと `/cmd_vel` に直接 publish する**
+> （`nav2_behaviors` の `TimedBehavior::configure()` がトピック名を
+> `"cmd_vel"` に固定しており、YAML パラメータで変える手段が無い。
+> `nav2_bringup` 純正の `navigation_launch.py` にもこの remap は無い）。
+> `N-17`（[open](DetailedDesign-open.md)）で `th_bringup/launch/navigation_launch.py`
+> （`nav2_bringup` からのローカルフォーク）に remap を追加して解決した。
+> 同じフォークで `velocity_smoother`（`cmd_vel_smoothed` → `cmd_vel` の remap を
+> 持ち、同じく最終段 `/cmd_vel` に直接 publish する。上の経路図にも
+> `VISION.md` にも登場しない、このプロジェクトが意図していないノード）も削除した。
 
 > **変更する場所は `twist_mux.yaml` ではない。**remap は launch にある。
 >
