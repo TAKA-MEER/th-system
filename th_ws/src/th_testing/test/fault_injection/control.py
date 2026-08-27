@@ -46,10 +46,11 @@ twist_mux priority 10 の入力）に一定の前進速度を発行し続ける�
 `enter_manual_mode()` が、実際に起動している `state_manager` /
 `connectivity_checker` の新FSMを `/ui/active_screen`（画面 S-11・手動走行）
 経由で `IDLE` → `MANUAL` へ進め、`state_manager` 自身に
-`/system/state.speed_limit` を計算・発行させる。`enter_manual_mode()` の
-docstring に、この経路上で新たに判明した未解決の疑わしいブロッカー
-（`scan_expected_points` の実機値とGazeboのLiDARセンサ設定の不一致）を
-記載してある。
+`/system/state.speed_limit` を計算・発行させる。この経路上で
+`scan_expected_points` の実機値と Gazebo の LiDAR センサ設定の不一致が
+新たに判明したが、`gazebo_plugins.xacro` の `<samples>` を実機値へ合わせて
+解消済み（`DetailedDesign-open.md` N-22。詳細は `enter_manual_mode()`
+docstring）。
 """
 from __future__ import annotations
 

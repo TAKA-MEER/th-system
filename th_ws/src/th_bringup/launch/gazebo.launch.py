@@ -472,12 +472,12 @@ def generate_launch_description():
         # 最初から用意していたもの（esp32_bridge が sim に居ないため ESP32の
         # 2項目と required_nodes の判定を除外する。bringup.launch.py の
         # {'sim': False} と対になる設定）。
-        # 既知の未解決事項: `scan_expected_points`（registry.yaml=1080。実機
-        # SLLIDAR値）と Gazebo の LiDAR センサ（gazebo_plugins.xacro の
-        # <samples>720）が一致しないため、sim=True にしても LiDAR 項目の
-        # 完全一致判定は現状 False のままになる可能性が高い
-        # （conftest.py の `enter_manual_mode()` docstring・実装報告参照。
-        # このパケットの範囲では対処していない）。
+        # `scan_expected_points`（registry.yaml=1080。実機SLLIDAR値）と
+        # Gazebo の LiDAR センサの点数が一致していないと LiDAR 項目の完全
+        # 一致判定が常に False になり evt.link_ok が出ない（発見時は
+        # <samples>720 で不一致だった）。gazebo_plugins.xacro の <samples>
+        # を実機と同じ 1080 へ合わせて解消済み（DetailedDesign-open.md
+        # N-22。conftest.py の `enter_manual_mode()` docstring も参照）。
         Node(
             package='th_state',
             executable='connectivity_checker.py',

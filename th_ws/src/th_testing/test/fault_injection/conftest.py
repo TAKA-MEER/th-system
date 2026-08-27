@@ -573,17 +573,17 @@ def enter_manual_mode(node, timeout_sec: float = _MANUAL_MODE_READY_TIMEOUT_SEC)
          `{"mode": "MANUAL"}` で1回呼び、`accepted` を確認する。
       4. `/system/state.mode` が `MANUAL` になるまで待つ。
 
-    【未解決の疑わしいブロッカー（実装を読んで判明。Docker で要確認）】
+    【`scan_expected_points` 不一致は解消済み（2026-08-27）】
     `connectivity_checker` の LiDAR 判定は `scan_points ==
-    scan_expected_points` の**完全一致**を要求する。`registry.yaml` の
-    `scan_expected_points` は実機 SLLIDAR 値の **1080**、対して Gazebo の
-    LiDAR センサ（`th_description/urdf/gazebo_plugins.xacro`）は
-    `<samples>720</samples>`。この2つは一致しない。一致しない限り
-    `connectivity_checker.all_ok()` は sim で恒久的に `False` となり、
-    `evt.link_ok` が出ず、`state_manager` は `INIT` から一生進めない
-    （このパケットの範囲では対処していない。**実装管理者に必ず報告する**）。
-    手順②のタイムアウトにこの疑いを名指ししたメッセージを付けているのは
-    このため。
+    scan_expected_points` の**完全一致**を要求する。当初 `registry.yaml` の
+    `scan_expected_points`（実機 SLLIDAR 値 1080）と Gazebo の LiDAR センサ
+    （`th_description/urdf/gazebo_plugins.xacro`）の `<samples>720</samples>`
+    が不一致で、`connectivity_checker.all_ok()` が sim で恒久的に `False` と
+    なり `state_manager` が `INIT` から進めない問題があったが、コーディネー
+    ターの判断で `gazebo_plugins.xacro` の `<samples>` を実機と同じ 1080 へ
+    修正した（`DetailedDesign-open.md` N-22）。もし Docker で②のタイムアウト
+    が再発する場合は、この修正が正しく効いているか（`<samples>1080</samples>`
+    になっているか・ビルドし直したか）をまず疑うこと。
     """
     import rclpy
     from th_system_msgs.msg import SystemState
@@ -602,10 +602,12 @@ def enter_manual_mode(node, timeout_sec: float = _MANUAL_MODE_READY_TIMEOUT_SEC)
             last_mode = watcher.records[-1][1].mode if watcher.records else '受信なし'
             pytest.fail(
                 f"state_manager が {timeout_sec}秒以内に IDLE へ到達しなかった "
-                f"(直近の mode: {last_mode!r})。上の enter_manual_mode() "
-                f"docstring に記載の scan_expected_points 不一致(1080 vs "
-                f"Gazebo実測720)が原因の可能性が高い。connectivity_checker が "
-                f"evt.link_ok を一切出せていない状態と考えられる。")
+                f"(直近の mode: {last_mode!r})。connectivity_checker が "
+                f"evt.link_ok を一切出せていない状態と考えられる。以前あった "
+                f"scan_expected_points 不一致(1080 vs Gazebo実測720)は "
+                f"gazebo_plugins.xacro の <samples> を1080へ修正して解消済み "
+                f"(DetailedDesign-open.md N-22) だが、その修正が効いていない "
+                f"(ビルド漏れ等)可能性をまず疑うこと。")
 
         cli = node.create_client(UiTrigger, '/system/trigger')
         try:

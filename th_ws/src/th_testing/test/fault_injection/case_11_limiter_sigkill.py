@@ -45,12 +45,14 @@ case_11_limiter_sigkill.py — 故障注入 11「リミッタの死（SIGKILL）
     （ごまかして緩めていない）。mode_manager.cpp が修正されれば、この
     テストはコード変更なしでそのまま合格するようにしてある。
 
-(3) このテストは `conftest.py` の `enter_manual_mode()` に依存しており、
-    そちらにさらに未解決の疑わしいブロッカーがある（`scan_expected_points`
-    の実機値=1080 と Gazebo LiDAR センサの `<samples>720` の不一致。
-    `connectivity_checker` が `evt.link_ok` を出せず `state_manager` が
-    `INIT` から進めない可能性）。①〜⑤の手前でこれに引っかかった場合、
-    エラーメッセージにその旨が出る（`enter_manual_mode()` docstring参照）。
+(3) このテストは `conftest.py` の `enter_manual_mode()` に依存する。当初
+    `enter_manual_mode()` 経由で `scan_expected_points`（実機値=1080）と
+    Gazebo LiDAR センサの `<samples>720` の不一致が判明し、`connectivity_
+    checker` が `evt.link_ok` を出せず `state_manager` が `INIT` から進めない
+    問題があったが、`gazebo_plugins.xacro` の `<samples>` を1080へ修正して
+    解消済み（`DetailedDesign-open.md` N-22）。①〜⑤の手前で `state_manager`
+    が `IDLE`/`MANUAL` に到達しない場合、エラーメッセージにその旨が出る
+    （`enter_manual_mode()` docstring参照）。
 
 ────────────────────────────────────────────────────────────
 【「駆動ゼロ」をどう判定したか】

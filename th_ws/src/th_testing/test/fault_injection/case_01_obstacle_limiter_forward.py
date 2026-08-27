@@ -34,10 +34,11 @@ obstacle_limiter 側の registry 値で決まっており、このテストは�
 コーディネーターの指摘を受けて追加）。何もしないと `/system/state` の
 publisher が無く obstacle_limiter は障害物の有無に関わらず常に速度上限 0 を
 出してしまう（＝停止試験として無意味になる）ため、`enter_manual_mode()` で
-実際に `IDLE` → `MANUAL` へ進めてから駆動する。**未解決の疑わしいブロッカー
-（`scan_expected_points` の実機値とGazeboのLiDARセンサ設定の不一致）が
-`enter_manual_mode()` の docstring にある。**Docker で state_manager が
-`IDLE` にすら到達しない場合はこれが原因の可能性が高い。
+実際に `IDLE` → `MANUAL` へ進めてから駆動する。当初 `scan_expected_points`
+の実機値と Gazebo の LiDAR センサ設定の不一致で `state_manager` が `IDLE`
+に到達できない問題があったが、`gazebo_plugins.xacro` の `<samples>` を
+実機値へ合わせて解消済み（`DetailedDesign-open.md` N-22。詳細は
+`enter_manual_mode()` docstring）。
 """
 from __future__ import annotations
 
