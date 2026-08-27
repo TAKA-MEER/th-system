@@ -587,9 +587,13 @@ def generate_launch_description():
     # ════════════════════════════════════════════════════════
 
     # Nav2 (ナビゲーション部分のみ) — シミュレーション
+    # WP-SAFE-03 / N-17: nav2_bringup 純正の navigation_launch.py は使わず、
+    # th_bringup/launch/navigation_launch.py（ローカルフォーク。ファイル冒頭の
+    # コメント参照）を使う。behavior_server が /cmd_vel に直接 publish して
+    # 安全チェーンを迂回する問題をここで塞ぐ。
     nav2_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(NAV2_DIR, 'launch', 'navigation_launch.py')),
+            os.path.join(BRINGUP_DIR, 'launch', 'navigation_launch.py')),
         launch_arguments={
             'use_sim_time': 'True',
             'params_file':  nav2_params_sim,
@@ -601,7 +605,7 @@ def generate_launch_description():
     # Nav2 (ナビゲーション部分のみ) — 実機
     nav2_real = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(NAV2_DIR, 'launch', 'navigation_launch.py')),
+            os.path.join(BRINGUP_DIR, 'launch', 'navigation_launch.py')),
         launch_arguments={
             'use_sim_time': 'False',
             'params_file':  nav2_params_real,

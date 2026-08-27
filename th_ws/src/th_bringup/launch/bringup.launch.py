@@ -406,9 +406,13 @@ def generate_launch_description():
     # 両方を無条件起動すると map→odom TF を取り合って SLAM 走行が機能しなくなるため
     # (2026-07-23 修正: 従来は nav2_bringup/bringup_launch.py = フル AMCL+map_server
     #  スタックと SLAM Toolbox を同時に起動しており、これが原因だった)。
+    # WP-SAFE-03 / N-17: nav2_bringup 純正の navigation_launch.py は使わず、
+    # th_bringup/launch/navigation_launch.py（ローカルフォーク。ファイル冒頭の
+    # コメント参照）を使う。behavior_server が /cmd_vel に直接 publish して
+    # 安全チェーンを迂回する問題をここで塞ぐ（gazebo.launch.py と同じ対処）。
     nav2_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(NAV2_DIR, 'launch', 'navigation_launch.py')),
+            os.path.join(BRINGUP_DIR, 'launch', 'navigation_launch.py')),
         launch_arguments={
             'use_sim_time':    'false',
             'params_file':     nav2_yaml,
