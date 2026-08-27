@@ -145,12 +145,21 @@ if(BUILD_TESTING)
   # 分離)。glob ではなく1本ずつ明示列挙する — ファイルを消しても colcon test が
   # 静かにスルーしないようにするため (test_cmake_test_registration.py と同じ考え方)。
   # 実機専用の 04・08・10 以外はこのパケットではプレースホルダ (中身は次パケット)。
+  #
+  # 01・02・11・control は Gazebo を実際に起動するため TIMEOUT 240
+  # （既定の 60 では足りない。実測: gazebo.launch.py sim:=true の起動完了に
+  # 40〜45 秒。内訳の見積り: sim_stack の準備完了ポーリング上限 90 秒
+  # （実測値に安全側の余裕を載せた打ち切り値。合否のしきい値ではない）＋
+  # ウォームアップ数秒 ＋ 停止観測窓 30 秒（_STOP_WINDOW_MS）＋ 故障注入11の
+  # 追加アサーション類 約10秒 ＋ 後始末（SIGTERM の猶予。最大 30 秒＋
+  # 最終手段のSIGKILL猶予10秒）。積み上げた粗い上限が約170秒なので、
+  # 環境負荷のばらつきを見込んで240秒とした）。
   ament_add_pytest_test(fault_injection_01
     test/fault_injection/case_01_obstacle_limiter_forward.py
-    TIMEOUT 60)
+    TIMEOUT 240)
   ament_add_pytest_test(fault_injection_02
     test/fault_injection/case_02_obstacle_limiter_backward.py
-    TIMEOUT 60)
+    TIMEOUT 240)
   ament_add_pytest_test(fault_injection_03
     test/fault_injection/case_03_estop_ui.py
     TIMEOUT 60)
@@ -177,7 +186,7 @@ if(BUILD_TESTING)
     TIMEOUT 60)
   ament_add_pytest_test(fault_injection_11
     test/fault_injection/case_11_limiter_sigkill.py
-    TIMEOUT 60)
+    TIMEOUT 240)
   ament_add_pytest_test(fault_injection_12
     test/fault_injection/case_12_cmd_vel_stale.py
     TIMEOUT 60)
@@ -186,7 +195,7 @@ if(BUILD_TESTING)
     TIMEOUT 60)
   ament_add_pytest_test(fault_injection_control
     test/fault_injection/control.py
-    TIMEOUT 60)
+    TIMEOUT 240)
 
   # ── シミュレーション統合テスト (TH_SKIP_SIM=0 で有効化) ──
   ament_add_pytest_test(test_simulation
