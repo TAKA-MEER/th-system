@@ -125,6 +125,11 @@ Nav2 controller_server ────────────►/cmd_vel_nav (10) 
 > 同じフォークで `velocity_smoother`（`cmd_vel_smoothed` → `cmd_vel` の remap を
 > 持ち、同じく最終段 `/cmd_vel` に直接 publish する。上の経路図にも
 > `VISION.md` にも登場しない、このプロジェクトが意図していないノード）も削除した。
+> **削除は §7.1 の設計と整合する**——加減速を鈍らせる権威は ESP32 ファームの
+> `TARGET_RAMP_ACCEL_MPS2` であり、**すべての速度源**（ジョグ・Nav2・挙動ノード）
+> に効く設計（§7.1 の表）。Nav2 の `velocity_smoother` はこれと同じ役割を
+> PC 側でも冗長にやろうとするもので、しかも `/cmd_vel` を直接叩いて安全チェーン
+> を丸ごと迂回する。冗長な上に安全チェーンを迂回するので削除一択と判断した。
 
 > **変更する場所は `twist_mux.yaml` ではない。**remap は launch にある。
 >

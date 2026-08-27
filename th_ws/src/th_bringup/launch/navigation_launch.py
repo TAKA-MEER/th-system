@@ -16,7 +16,15 @@
 # このファイルは nav2_bringup (ros-humble-nav2-bringup パッケージ)
 # 付属の launch/navigation_launch.py の**ローカルフォーク**（2026-08-27。
 # 元は https://github.com/ros-navigation/navigation2/blob/humble/
-# nav2_bringup/launch/navigation_launch.py。取得日時点の humble ブランチ）。
+# nav2_bringup/launch/navigation_launch.py。取得日 2026-08-27 時点の
+# humble ブランチ HEAD。Dockerfile は `ros-humble-nav2-bringup` をバージョン
+# 指定なしで apt install しているため、apt パッケージの正確なビルド日時・
+# コミットハッシュはこのリポジトリからは特定できない——次に nav2 を上げる際は
+# 上記 URL の履歴と本ファイルの diff を取り直すこと）。
+#
+# **これは保守負債（DetailedDesign-open.md N-20）。**nav2_bringup を
+# アップデートしても本ファイルは自動追従しない。behavior_server /
+# controller_server 周りの実装が変わったら手動で追いつかせる必要がある。
 #
 # フォークした理由（DetailedDesign-open.md N-17）: nav2_bringup 版は
 # behavior_server と velocity_smoother が `/cmd_vel` に**直接** publish する。
@@ -59,9 +67,16 @@
 #      （このプロジェクトの最終段の速度平滑化は obstacle_limiter が担う設計で、
 #      controller_server の生出力をそのまま `/cmd_vel_nav` として twist_mux へ
 #      渡す構成が元々の意図だった。twist_mux の入力は変わらない）。
+#      **削除は DetailedDesign-safety.md §7.1「加減速はファームウェアで鈍らせる」
+#      と整合する**——加減速を鈍らせる権威は ESP32 ファームの
+#      `TARGET_RAMP_ACCEL_MPS2` であり、これはジョグ・Nav2・挙動ノードの
+#      **すべての速度源**に効く設計（§7.1 の表）。velocity_smoother は
+#      同じ役割を PC 側でも冗長にやろうとするもので、しかも `/cmd_vel` を
+#      直接叩いて安全チェーンを丸ごと迂回する。冗長な上に安全チェーンを
+#      迂回するので削除一択と判断した。
 #
 # nav2 のバージョンが上がって上流の navigation_launch.py が変わった場合は
-# このファイルも手動で追従させる必要がある（自動追従の仕組みは無い）。
+# このファイルも手動で追従させる必要がある（自動追従の仕組みは無い。N-20）。
 # ============================================================
 
 import os
