@@ -644,7 +644,23 @@ class DriveController:
     """
 
     def __init__(self, node, linear_x: float = 0.0, angular_z: float = 0.0,
-                 period_sec: float = 0.1):
+                 period_sec: float = 0.02):
+        """`period_sec` の既定を 0.02（50Hz）にしてある理由（重要）:
+
+        `twist_mux` は**入力を受け取ったときに出力を再評価**する。したがって
+        ロック（`/safety/fault_lock`）が立ってから `/cmd_vel_muxed` に
+        ゼロが出るまで、最悪で**この駆動周期ぶん**の遅れが乗る。
+
+        故障注入 6（`DetailedDesign-safety.md` §10 #6）の合格条件は
+        「フォルト検知から **100 ms 以内**に速度指令が 0」であり、この 100 ms は
+        **層 3（twist_mux のロック）の応答時間の予算**である。
+        既定が 0.1（10Hz）だと最悪 100 ms を試験側の刻みだけで使い切ってしまい、
+        安全チェーンが即座に反応していても不合格になる（実測で確認）。
+
+        0.02（50Hz）なら試験側の取り分は最悪 20 ms で、残り 80 ms を
+        実際の応答時間の測定に使える。**予算 100 ms に対して測定側が何 ms
+        使うかを常に意識すること。**
+        """
         from geometry_msgs.msg import Twist
 
         self._node = node
