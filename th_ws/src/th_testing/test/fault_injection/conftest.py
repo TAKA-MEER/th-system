@@ -787,6 +787,22 @@ class TopicWatcher:
     `time.monotonic()` と揃える必要があるため、watcher を故障の後から作ると、
     故障直後〜watcher 作成までの間のメッセージを取りこぼして
     偽陽性（実際は遅いのに合格と判定してしまう）になる。
+
+    **`qos` の既定値（int の 10）は RELIABLE になる。** 購読先トピックの
+    publisher が best_effort の場合（`/clock`・`/safety/limiter_status`・
+    `/scan` 等。`rclpy.qos.QoSProfile` で明示すること）は既定のままだと
+    QoS 非互換で **1件も配送されない**まま黙って「受信0件」の結果になる
+    （rclpy/rclcpp が警告は出すがテストのアサーション自体は何も知らせない。
+    実例: `/clock` を既定 QoS で購読していたため `cut_lidar_and_keep_clock_alive`
+    が Docker で「/clock を一度も受信できなかった」で fail した。修正は
+    `_clock_qos()` 参照）。**新しく `TopicWatcher(` を呼ぶ・観測点を増やす
+    ときは、対象トピックの publisher 側 QoS（reliability/durability）を
+    ソースで確認し、best_effort なら `qos=` に一致する `QoSProfile` を
+    明示的に渡すこと。**`assert_silent_within` / `assert_no_nonzero_after`
+    のように「何も来ない」ことを確認するアサーションは、QoS 不一致で
+    そもそも1件も届いていない場合でも見た目上は成立してしまう
+    （両フィクスチャ自体には `since` より前に受信歴があることを要求する
+    ガードを追加済み。それでも観測点を増やす際は QoS を都度確認すること）。
     """
 
     def __init__(self, node, topic: str, msg_type, qos: int = 10):
@@ -959,9 +975,24 @@ def assert_silent_within(ros_node):
     わずかに遅れているメッセージが `since` の直後に届くことがある
     （プロセス自体は既に死んでいるのに false negative になる）。20Hz
     ハートビートの数周期分（既定150ms）は許容し、それより後だけを厳密に見る。
+
+    **前提条件（コーディネーターの指摘・2026-08-28）: `since` より前に
+    watcher が1件以上受信していることを要求する。** これが無いと、QoS
+    不一致・トピック名の誤り・監視対象ノード未起動のいずれでも「最初から
+    1件も届いていない」状態になり、「沈黙を確認した」という**偽の合格**に
+    化ける（`/clock` を既定 RELIABLE QoS で購読していたために
+    `cut_lidar_and_keep_clock_alive` が実際にこの形の空振りを踏んだ。
+    `TopicWatcher` の docstring参照）。受信歴が無ければ「沈黙を判定できない」
+    として明示的に fail する。
     """
 
     def _assert(watcher: TopicWatcher, since: float, ms: float, grace_ms: float = 150.0) -> None:
+        had_signal_before = any(t <= since for t, _m in watcher.records)
+        assert had_signal_before, (
+            f"assert_silent_within: watcher が since={since:.3f} より前に一度も"
+            "受信していない。購読が成立していない(QoS不一致・トピック名誤り・"
+            "対象ノード未起動等)可能性が高く、『沈黙を確認した』とは言えない。")
+
         deadline = since + ms / 1000.0
         _spin_until(ros_node, lambda: time.monotonic() >= deadline, deadline)
         cutoff = since + grace_ms / 1000.0
@@ -983,10 +1014,22 @@ def assert_no_nonzero_after(ros_node):
     合格として扱う——publisher が死んでメッセージが来なくなること自体は
     「非ゼロが来ていない」の一種であり、ここで判定したいのは「死んだ後に
     再び動き出さないか」であるため。
+
+    **前提条件（コーディネーターの指摘・2026-08-28。`assert_silent_within`
+    と同じ理由）: `since` より前に watcher が1件以上受信していることを
+    要求する。** そうでなければ「非ゼロが1件も無い」が QoS不一致・
+    トピック名誤り・対象ノード未起動による偽の合格である可能性を否定
+    できないため、明示的に fail する。
     """
 
     def _assert(watcher: TopicWatcher, field: str, since: float, ms: float,
                 atol: float = 1e-6) -> None:
+        had_signal_before = any(t <= since for t, _m in watcher.records)
+        assert had_signal_before, (
+            f"assert_no_nonzero_after: watcher が since={since:.3f} より前に"
+            "一度も受信していない。購読が成立していない(QoS不一致・トピック名"
+            "誤り・対象ノード未起動等)可能性が高く、『非ゼロが無い』とは言えない。")
+
         deadline = since + ms / 1000.0
         _spin_until(ros_node, lambda: time.monotonic() >= deadline, deadline)
         offenders = [(t, _get_field(m, field)) for t, m in watcher.records
@@ -1064,16 +1107,38 @@ def first_match_time(watcher: TopicWatcher, predicate: Callable[[Any], bool]) ->
 #    から値が再開する」状況を想定どおり扱うか（型としては単に新しい /clock
 #    メッセージを受け取るだけのはずだが、Docker 実測はしていない）。
 # Docker 未実行のため、この2点は実装報告でコーディネーターに検証を依頼する。
+def _clock_qos():
+    """`/clock` の QoS（`ros2 topic info /clock --verbose` の実測値に合わせる。
+    コーディネーターの Docker 実測: `Reliability: BEST_EFFORT` /
+    `Durability: VOLATILE`。既定の `TopicWatcher(qos=10)`（RELIABLE）や
+    素の `create_publisher(..., 10)`（同じく RELIABLE）は **この実測値と
+    非互換**で、rclpy/rclcpp が「QoS が非互換なので1件も配送しない」旨の
+    警告を出して黙って0件配送になる（購読側・発行側の両方で踏みうる。
+    実際に踏んだ: `case_05`/`case_06` が Docker で
+    「/clock を一度も受信できなかった」で failure になった直接原因）。
+    購読・発行の両方でこの QoS を明示的に使うこと。"""
+    from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
+
+    return QoSProfile(
+        depth=1,
+        reliability=QoSReliabilityPolicy.BEST_EFFORT,
+        durability=QoSDurabilityPolicy.VOLATILE)
+
+
 class SyntheticClock:
     """gzserver 停止後も /clock を実時間(1倍速)で発行し続けるヘルパー。
-    上のモジュール docstring 参照。"""
+    上のモジュール docstring 参照。発行側も `_clock_qos()`（BEST_EFFORT）で
+    publish する——RELIABLE で発行すると、safety_monitor 等の各ノードが
+    内部で使う既定の `/clock` 購読（BEST_EFFORT）側から見て非互換になり、
+    せっかく publish しても届かない（このファイル冒頭 `_clock_qos()` の
+    docstring 参照）。"""
 
     def __init__(self, node, start_stamp, period_sec: float = 0.02):
         from rosgraph_msgs.msg import Clock
 
         self._node = node
         self._Clock = Clock
-        self._pub = node.create_publisher(Clock, '/clock', 10)
+        self._pub = node.create_publisher(Clock, '/clock', _clock_qos())
         self._start_wall = time.monotonic()
         self._start_total_ns = start_stamp.sec * 1_000_000_000 + start_stamp.nanosec
         self._timer = node.create_timer(period_sec, self._tick)
@@ -1114,7 +1179,7 @@ def cut_lidar_and_keep_clock_alive(node, timeout_sec: float = 30.0):
     """
     from rosgraph_msgs.msg import Clock
 
-    clock_watcher = TopicWatcher(node, '/clock', Clock)
+    clock_watcher = TopicWatcher(node, '/clock', Clock, qos=_clock_qos())
     deadline = time.monotonic() + timeout_sec
     ok = _spin_until(node, lambda: bool(clock_watcher.records), deadline)
     if not ok:
