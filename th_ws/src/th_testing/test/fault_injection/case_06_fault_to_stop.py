@@ -58,6 +58,19 @@ LIDAR_LOST を検知するまでの時間）に対し `scan_stale_ms = 300ms`（
 ではなく、「実際に動いていたものがフォルトを境に止まった」ことを示すため、
 `enter_manual_mode()` で `MANUAL` に入り `DriveController` で走らせ続けた
 状態でフォルトを注入する。
+
+【観測窓に `safety_monitor_sim_startup_grace_sec` を足す理由
+（コーディネーターとの共同調査で判明。2026-08-28）】
+`case_05_link_loss_fault.py` と同じ理由・同じ対処。詳細は
+`conftest.py` の `safety_monitor_sim_startup_grace_sec` フィクスチャの
+docstring参照。要点: `safety_monitor.cpp` は起動から `startup_grace_sec`
+（sim秒。既定7秒）経つまで `checkTimeout()` を呼ばず、`/safety/fault_lock`
+の10Hz発行はこの間も止まらないため外部から grace 中かどうか分からない。
+`cut_lidar_and_keep_clock_alive()` を呼ぶ時点の sim 時刻がまだ grace 期間内
+（実測: `case_05` で cut時 sim=2.8s）だと、`lidar_timeout_ms` 由来の余裕
+だけでは grace を抜けられないまま観測窓が尽きる。`enter_manual_mode()` の
+分だけ `case_05` より cut が遅れるため grace を抜けている可能性はあるが、
+保証はできないので同じ安全側の余裕を入れる。
 """
 from __future__ import annotations
 
@@ -82,6 +95,7 @@ _SIM_STACK_PARAM = {'launch_args': {'obstacle': 'false'}}
 @pytest.mark.parametrize('sim_stack', [_SIM_STACK_PARAM], indirect=True)
 def test_fault_injection_06_fault_to_stop(
         sim_stack, ros_node, fault_params, limiter_param,
+        safety_monitor_sim_startup_grace_sec,
         assert_fault_within, assert_zero_within):
     bootstrap, state_watcher = enter_manual_mode(ros_node)
     fault_watcher = TopicWatcher(ros_node, '/safety/fault', FaultStatus)
@@ -97,7 +111,12 @@ def test_fault_injection_06_fault_to_stop(
 
         synthetic_clock, _cut_time = cut_lidar_and_keep_clock_alive(ros_node)
 
-        window_ms = fault_params['lidar_timeout_ms'] * _FAULT_WINDOW_MULTIPLIER
+        # 上のモジュールdocstring参照: cut時のsim時刻が最悪0秒(grace起点)
+        # だった場合でもgraceを抜けられるよう、startup_grace_sec分を
+        # 必ず観測窓に含める。
+        window_ms = (
+            safety_monitor_sim_startup_grace_sec * 1000
+            + fault_params['lidar_timeout_ms'] * _FAULT_WINDOW_MULTIPLIER)
         assert_fault_within(fault_watcher, 'LIDAR_LOST', ms=window_ms)
         t_fault = first_match_time(
             fault_watcher, lambda m: m.active and m.fault_type == 'LIDAR_LOST')

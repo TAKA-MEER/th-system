@@ -38,12 +38,21 @@ use_sim_time=True な全ノードの ROS 時刻が凍結しないようにする
 `state_manager` のモードに依存しない）。走行を伴う検証（「フォルト検知後に
 本当に止まるか」）は `case_06_fault_to_stop.py` が担当する。
 
-【合格条件の時間】
-`fault_params['lidar_timeout_ms']`（T-1: registry.yaml から `resolve_registry()`
-で解決した値。テストに数値を直書きしない）。`_FAULT_WINDOW_MULTIPLIER` は
-`case_11` の `dead_ms * 3` と同じ流儀の scaffolding（safety_monitor の
-`check_period_ms`＝100ms 周期のポーリング・SyntheticClock の発見・購読の
-成立に要する遅延を吸収するための余裕であり、合否のしきい値そのものではない）。
+【観測窓に `safety_monitor_sim_startup_grace_sec` を足す理由
+（コーディネーターとの共同調査で判明。2026-08-28）】
+`conftest.py` の `safety_monitor_sim_startup_grace_sec` フィクスチャの
+docstring に詳細を書いたが、要点だけここにも記す: `safety_monitor.cpp` は
+起動から `startup_grace_sec`（sim 秒。既定7秒）経つまで `checkTimeout()`
+（LIDAR_LOST 検知本体）を一切呼ばない。ところが `/safety/fault_lock` の
+10Hz発行はこの grace 期間中も止まらないため、外部からの観測だけでは
+grace 中かどうか分からない。`sim_stack` の準備完了条件（`/scan` を1件受信）
+は Gazebo の物理が動き始めてすぐ満たされうるため、このテストは
+**sim 時刻がまだ grace 期間内のうちに `/scan` を止めうる**
+（実測: cut時 sim=2.8s）。観測窓が `lidar_timeout_ms` 由来の余裕だけだと
+grace を抜けられないまま打ち切られる（実測: 2464ms 窓で LIDAR_LOST が
+一度も active にならなかった failure）。そのため、`cut` の時点で sim 時刻が
+最悪 0 秒（grace の起点）だったと仮定しても grace を抜けられるだけの
+時間（`startup_grace_sec` 秒ぶん）を観測窓に必ず含める。
 """
 from __future__ import annotations
 
@@ -53,6 +62,9 @@ from th_system_msgs.msg import FaultStatus
 from fault_injection.conftest import TopicWatcher, cut_lidar_and_keep_clock_alive
 
 # scaffolding（上のモジュールdocstring参照。T-1の対象外）。
+# safety_monitor の check_period_ms(100ms) 周期のポーリング・SyntheticClock の
+# 発見/購読の成立に要する遅延を吸収するための余裕（`case_11` の
+# `dead_ms * 3` と同じ流儀）。
 _FAULT_WINDOW_MULTIPLIER = 8
 
 _SIM_STACK_PARAM = {'launch_args': {'obstacle': 'false'}}
@@ -60,13 +72,19 @@ _SIM_STACK_PARAM = {'launch_args': {'obstacle': 'false'}}
 
 @pytest.mark.parametrize('sim_stack', [_SIM_STACK_PARAM], indirect=True)
 def test_fault_injection_05_link_loss_raises_fault(
-        sim_stack, ros_node, fault_params, assert_fault_within):
+        sim_stack, ros_node, fault_params, safety_monitor_sim_startup_grace_sec,
+        assert_fault_within):
     fault_watcher = TopicWatcher(ros_node, '/safety/fault', FaultStatus)
     synthetic_clock = None
     try:
         synthetic_clock, _cut_time = cut_lidar_and_keep_clock_alive(ros_node)
 
-        window_ms = fault_params['lidar_timeout_ms'] * _FAULT_WINDOW_MULTIPLIER
+        # 上のモジュールdocstring参照: cut時のsim時刻が最悪0秒(grace起点)
+        # だった場合でもgraceを抜けられるよう、startup_grace_sec分を
+        # 必ず観測窓に含める。
+        window_ms = (
+            safety_monitor_sim_startup_grace_sec * 1000
+            + fault_params['lidar_timeout_ms'] * _FAULT_WINDOW_MULTIPLIER)
         assert_fault_within(fault_watcher, 'LIDAR_LOST', ms=window_ms)
     finally:
         if synthetic_clock is not None:

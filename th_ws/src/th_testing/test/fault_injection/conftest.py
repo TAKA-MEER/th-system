@@ -124,6 +124,49 @@ def fault_params() -> dict[str, Any]:
     }
 
 
+@pytest.fixture(scope='session')
+def safety_monitor_sim_startup_grace_sec() -> float:
+    """sim の safety_monitor が起動直後に持つ猶予秒数（`startup_grace_sec`。
+    `th_bringup/config/safety_monitor_sim.yaml` の静的値）。
+
+    【故障注入5・6を実装しながらコーディネーターと共同で特定した重要な事実】
+    `safety_monitor.cpp::checkHealth()` は `t < startup_grace_end_` の間
+    `checkTimeout()`（LIDAR_LOST 等の検知本体。§4.1のcheckTimeout呼び出し）
+    を一切呼ばない。ところが `publishLock()`（`/safety/fault_lock` の
+    10Hz発行）は `if (!in_grace)` の**外**にあり、grace 中かどうかに関係なく
+    常に呼ばれる（`safety_monitor.cpp:309`）。そのため
+    「`/safety/fault_lock` が10Hzで出続けている」という外部からの観測だけでは
+    grace が終わっているかどうか判定できない——これが、Docker実測で
+    `/safety/fault_lock` が cut の前後を通じて10Hzを維持していたにも
+    関わらず LIDAR_LOST が一切 active にならなかった（`[FAULT]` ログが
+    1行も出ない）という一見矛盾する現象の原因だった。
+
+    `startup_grace_end_` は safety_monitor のノード構築時（＝コンストラクタ
+    実行中でまだ一度もスピンしておらず、`now()` が確実に `Time(0,0)` を
+    返す時点。`rclcpp::spin()` はコンストラクタ完了後に呼ばれるため
+    「一度もスピンしていない」は実装上保証される）の
+    `now() + startup_grace_sec` として一度だけ固定される。つまり
+    **sim 時刻が 0〜`startup_grace_sec` 秒の間に故障を注入すると、
+    その後どれだけ待ってもタイムアウト判定が一切動かない**。
+
+    `sim_stack` の準備完了条件（`/scan` を1件受信・§本ファイル `sim_stack`
+    docstring）は Gazebo の物理が動き始めてすぐ満たされうるため、
+    「準備完了後すぐ故障を注入する」設計の `case_05`/`case_06` は
+    sim 時刻がまだ grace 期間内（0〜7秒）のうちに故障を注入しうる
+    （実測: cut時 sim=2.8s。`startup_grace_sec`=7 に対し、当時の
+    観測窓 `lidar_timeout_ms × 8 ≈ 2.5s` では grace を抜けられなかった）。
+
+    `lidar_timeout_ms` と違い registry.yaml 管理のパラメータではない
+    （`safety_monitor_sim.yaml` の静的値。T-1が対象とする「安全パラメータの
+    しきい値」そのものではないが、テストに数値を直書きしないという同じ
+    精神でファイルから読む）。
+    """
+    path = os.path.join(_SRC_ROOT, 'th_bringup', 'config', 'safety_monitor_sim.yaml')
+    with open(path, encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+    return float(data['safety_monitor']['ros__parameters']['startup_grace_sec'])
+
+
 # ---------------------------------------------------------------------------
 # limiter_param（このパケットで追加。故障注入 1・2・11 が使う）
 # ---------------------------------------------------------------------------
