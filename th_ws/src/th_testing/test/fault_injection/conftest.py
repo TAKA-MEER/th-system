@@ -65,6 +65,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from typing import Any, Callable
 
@@ -1131,7 +1132,19 @@ class SyntheticClock:
     publish する——RELIABLE で発行すると、safety_monitor 等の各ノードが
     内部で使う既定の `/clock` 購読（BEST_EFFORT）側から見て非互換になり、
     せっかく publish しても届かない（このファイル冒頭 `_clock_qos()` の
-    docstring 参照）。"""
+    docstring 参照）。
+
+    **専用スレッドで発行する（`rclpy` タイマーではない。コーディネーターの
+    Docker 実測による訂正・2026-08-28）。** 当初 `node.create_timer()` を
+    使っていたが、Docker 実測で `/safety/fault` に LIDAR_LOST が全く
+    active にならない（＝ `/clock` が実質進んでいない）ことが分かった。
+    コーディネーターが `threading.Thread` ベースの素の手順で同じ条件を
+    再現したところ成立したため、原因は `rclpy` タイマーの発火条件
+    （ノードがスピンされている間しか発火しない・同時に他の購読が待って
+    いると後回しにされうる）にあると判断し、スレッドへ切り替えた。
+    `time.monotonic()` 基準で一定周期に publish するので、呼び出し側の
+    スピン状況（`_spin_until` の外にいるか・他の購読で埋まっているか）に
+    一切依存しない。"""
 
     def __init__(self, node, start_stamp, period_sec: float = 0.02):
         from rosgraph_msgs.msg import Clock
@@ -1141,7 +1154,18 @@ class SyntheticClock:
         self._pub = node.create_publisher(Clock, '/clock', _clock_qos())
         self._start_wall = time.monotonic()
         self._start_total_ns = start_stamp.sec * 1_000_000_000 + start_stamp.nanosec
-        self._timer = node.create_timer(period_sec, self._tick)
+        self._period_sec = period_sec
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        # daemon=True はプロセス終了時の最終防波堤に過ぎない。通常の後始末は
+        # stop() の Event.set() + join() で行う（gzserver のリークと同じ轍を
+        # 踏まないよう、スレッドが確実に止まったことを stop() 側で確認する）。
+        while not self._stop_event.is_set():
+            self._tick()
+            self._stop_event.wait(self._period_sec)
 
     def _tick(self) -> None:
         elapsed_ns = int((time.monotonic() - self._start_wall) * 1e9)
@@ -1149,13 +1173,21 @@ class SyntheticClock:
         msg = self._Clock()
         msg.clock.sec = total_ns // 1_000_000_000
         msg.clock.nanosec = total_ns % 1_000_000_000
+        # rclpy の Publisher.publish() はスピンを介さず rmw 層へ直接書くため、
+        # スピン中のメインスレッドとは別スレッドから呼んでよい
+        # （rclpy でよく使われる周期publish用バックグラウンドスレッドの
+        # 定石と同じ。コーディネーターの検証プローブもこの前提で動いていた）。
         self._pub.publish(msg)
 
     def stop(self) -> None:
         """`sim_stack` の後始末（_terminate_process_group）より必ず前に呼ぶこと。
         テストプロセス側に /clock の publisher が残ったまま次の sim_stack が
-        新しい gzserver を起動すると、2つの /clock publisher が競合する。"""
-        self._node.destroy_timer(self._timer)
+        新しい gzserver を起動すると、2つの /clock publisher が競合する。
+        スレッドの終了を実際に待つ（join）——確認せずに戻ると、まれに
+        stop() 直後の publish() が destroy_publisher() 後の publisher に
+        触れて例外になりうる。"""
+        self._stop_event.set()
+        self._thread.join(timeout=5.0)
         self._node.destroy_publisher(self._pub)
 
 
