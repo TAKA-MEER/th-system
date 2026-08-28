@@ -346,7 +346,8 @@ def _pid_alive(pid: int) -> bool:
 _GAZEBO_TERMINATE_GRACE_SEC = 10.0
 
 
-def _terminate_gazebo_processes(grace_sec_each: float = _GAZEBO_TERMINATE_GRACE_SEC) -> bool:
+def _terminate_gazebo_processes(grace_sec_each: float = _GAZEBO_TERMINATE_GRACE_SEC,
+                                 node=None) -> bool:
     """`gzserver`/`gzclient` を `SIGINT` → `SIGTERM` → `SIGKILL` の順に
     段階的に終わらせ、**実際に終了するまで待つ**。全て終了したら True。
 
@@ -360,10 +361,29 @@ def _terminate_gazebo_processes(grace_sec_each: float = _GAZEBO_TERMINATE_GRACE_
     シグナルを送って**待たずに**戻ると、次に起動する `sim_stack` が
     同じ `gzserver` とかち合って同じ 90 秒タイムアウトを再現するため、
     ここでは呼び出し元に「本当に消えた」ことを boolean で返す。
+
+    `node` を渡すと、終了を待つ間 `time.sleep()` の代わりに
+    `rclpy.spin_once()` でその `node` をスピンし続ける（コーディネーターの
+    指摘・2026-08-28: `cut_lidar_and_keep_clock_alive` が終了待ちの**前**に
+    `/clock` の最終値を控えていたため、gzserver が実際に死ぬまでの間
+    （SIGINT を送ってから終了するまで、gzserver は `/clock`/`/scan` を
+    出し続ける）に進んだぶんシミュレーション時刻が巻き戻る不具合があった。
+    `node` を渡して待機中もスピンすれば、その間に届く `/clock` 等の
+    購読コールバックも処理され、呼び出し側は「gzserver が実際に死ぬ直前」
+    に近い最新値を拾える）。`node=None`（既定）のときは従来どおり
+    `time.sleep()` で待つ（`sim_stack` の後始末など、スピンする理由が
+    無い呼び出し元の挙動は変えない）。
     """
     pids = set(find_pids_by_exe_basename('gzserver') + find_pids_by_exe_basename('gzclient'))
     if not pids:
         return True
+
+    def _wait_tick(sec: float) -> None:
+        if node is None:
+            time.sleep(sec)
+        else:
+            import rclpy
+            rclpy.spin_once(node, timeout_sec=sec)
 
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL):
         for pid in list(pids):
@@ -375,7 +395,7 @@ def _terminate_gazebo_processes(grace_sec_each: float = _GAZEBO_TERMINATE_GRACE_
         while pids and time.monotonic() < deadline:
             pids = {p for p in pids if _pid_alive(p)}
             if pids:
-                time.sleep(0.2)
+                _wait_tick(0.2)
         if not pids:
             return True
     return not pids
@@ -1144,7 +1164,16 @@ class SyntheticClock:
     いると後回しにされうる）にあると判断し、スレッドへ切り替えた。
     `time.monotonic()` 基準で一定周期に publish するので、呼び出し側の
     スピン状況（`_spin_until` の外にいるか・他の購読で埋まっているか）に
-    一切依存しない。"""
+    一切依存しない。
+
+    **単調性を自前で保証する（コーディネーターの指摘・2026-08-28）。**
+    `cut_lidar_and_keep_clock_alive` 側で「gzserver が実際に死ぬ直前の値」
+    から再開するよう対策したが（時刻の巻き戻り対策）、その対策が万一
+    不完全でも（開始値の取り違え・将来の改修等）このクラス自身が時刻を
+    後退させて publish しないよう、発行しようとする値がこれまでに発行した
+    最大値を下回っていたらその最大値を使う。シミュレーション時刻の巻き戻りは
+    ROS の時刻依存処理（タイムアウト判定はすべてそう）を軒並み壊しうるため、
+    ここで構造的に防いでおく。"""
 
     def __init__(self, node, start_stamp, period_sec: float = 0.02):
         from rosgraph_msgs.msg import Clock
@@ -1154,6 +1183,7 @@ class SyntheticClock:
         self._pub = node.create_publisher(Clock, '/clock', _clock_qos())
         self._start_wall = time.monotonic()
         self._start_total_ns = start_stamp.sec * 1_000_000_000 + start_stamp.nanosec
+        self._last_published_ns = self._start_total_ns
         self._period_sec = period_sec
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -1169,7 +1199,10 @@ class SyntheticClock:
 
     def _tick(self) -> None:
         elapsed_ns = int((time.monotonic() - self._start_wall) * 1e9)
-        total_ns = self._start_total_ns + elapsed_ns
+        candidate_ns = self._start_total_ns + elapsed_ns
+        # 単調性ガード（上のクラス docstring参照）: 後退させない。
+        total_ns = max(candidate_ns, self._last_published_ns)
+        self._last_published_ns = total_ns
         msg = self._Clock()
         msg.clock.sec = total_ns // 1_000_000_000
         msg.clock.nanosec = total_ns % 1_000_000_000
@@ -1191,16 +1224,38 @@ class SyntheticClock:
         self._node.destroy_publisher(self._pub)
 
 
+def _clock_to_ns(stamp) -> int:
+    return stamp.sec * 1_000_000_000 + stamp.nanosec
+
+
 def cut_lidar_and_keep_clock_alive(node, timeout_sec: float = 30.0):
     """`/scan` を止めつつ `/clock` を止めない（上のモジュール docstring 参照）。
 
     手順:
-      1. `/clock` を1件受信するまで待ち、その最終値を控える。
-      2. `_terminate_gazebo_processes()` で gzserver/gzclient を
+      1. `/clock` を1件受信するまで待つ。
+      2. `_terminate_gazebo_processes(node=node)` で gzserver/gzclient を
          SIGINT→SIGTERM→SIGKILL の順に確実に終了させる（`/scan` の
          publisher はこのプロセスの中にいるので、これで `/scan` が止まる）。
-      3. 控えておいた最終値から `SyntheticClock` を起動し、/clock の発行を
-         実時間で引き継ぐ。
+         **待っている間も `node` をスピンし続け、`/clock` の受信を止めない**
+         （下の「時刻の巻き戻り対策」参照）。
+      3. gzserver が実際に終了したあとの `clock_watcher.records` の最終値
+         から `SyntheticClock` を起動し、/clock の発行を実時間で引き継ぐ。
+
+    【時刻の巻き戻り対策（コーディネーターの指摘・2026-08-28）】
+    以前は `/clock` の最終値を**終了待ちの前**に控えてから
+    `_terminate_gazebo_processes()` を（スピンせずに）呼んでいた。
+    gzserver は SIGINT を受けてから実際に終了するまでの間も `/clock`/`/scan`
+    を出し続けるため、終了待ちに数秒かかると、控えた値は「その数秒ぶん」
+    過去の値になる。`SyntheticClock` がその古い値から再開すると、
+    safety_monitor 等から見てシミュレーション時刻が**巻き戻り**、
+    `now() - last_scan_time_` が負になってタイムアウトが発火しなくなる
+    （実測: `lidar_timeout_ms × 8` の観測窓 2464ms 以内に LIDAR_LOST が
+    立たない failure として現れた）。対策として、`clock_watcher` を
+    終了待ちの**間もスピンして更新し続け**、gzserver が実際に死んだ**後**
+    の最終値を使うよう順序を入れ替えた。`SyntheticClock` 側にも単調性の
+    保証（発行しようとする値が既発行の最大値より小さければ最大値を使う）
+    を独立に入れてあるので、この対策が万一不完全でも壊れない
+    （`SyntheticClock._tick()` 参照）。
 
     返り値: `(SyntheticClock, cut_time)`。`cut_time` は
       `time.monotonic()`（gzserver へシグナルを送る直前の時刻。故障注入11の
@@ -1208,6 +1263,11 @@ def cut_lidar_and_keep_clock_alive(node, timeout_sec: float = 30.0):
       「止め始めた時刻」の近似値）。
     呼び出し側は使い終わったら `SyntheticClock.stop()` を必ず呼ぶこと
     （`sim_stack` の後始末より前）。
+
+    診断用に、gzserver 終了待ちの所要時間（秒）とその間に進んだ
+    シミュレーション時刻（秒）を `print()` する（コーディネーターの指摘
+    「数値が出ていれば一目で分かった」への対応。pytest はデフォルトで
+    標準出力をキャプチャし、テスト失敗時にのみ表示する）。
     """
     from rosgraph_msgs.msg import Clock
 
@@ -1219,15 +1279,31 @@ def cut_lidar_and_keep_clock_alive(node, timeout_sec: float = 30.0):
         pytest.fail(
             "cut_lidar_and_keep_clock_alive: /clock を一度も受信できなかった "
             "(Gazebo が /clock を出していない? use_sim_time の伝播漏れ?)")
+    clock_before_wait = clock_watcher.records[-1][1].clock
+
+    cut_time = time.monotonic()
+    # node=node: 終了待ちの間もスピンし、/clock の受信を止めない
+    # (上のdocstring「時刻の巻き戻り対策」参照)。
+    cleaned = _terminate_gazebo_processes(node=node)
+    terminate_wall_sec = time.monotonic() - cut_time
+    if not cleaned:
+        clock_watcher.destroy()
+        pytest.fail(
+            "cut_lidar_and_keep_clock_alive: gzserver/gzclient の終了待ちが"
+            "タイムアウトした（SIGINT/SIGTERM/SIGKILL すべて送った後も残留）。"
+            f"待ち時間={terminate_wall_sec:.3f}s")
+
     last_clock = clock_watcher.records[-1][1].clock
     clock_watcher.destroy()
 
-    cut_time = time.monotonic()
-    cleaned = _terminate_gazebo_processes()
-    if not cleaned:
-        pytest.fail(
-            "cut_lidar_and_keep_clock_alive: gzserver/gzclient の終了待ちが"
-            "タイムアウトした（SIGINT/SIGTERM/SIGKILL すべて送った後も残留）。")
+    advanced_during_wait_sec = (
+        (_clock_to_ns(last_clock) - _clock_to_ns(clock_before_wait)) / 1e9)
+    print(
+        f"[cut_lidar_and_keep_clock_alive] gzserver 終了待ち: "
+        f"実時間={terminate_wall_sec:.3f}s / この間に進んだシミュレーション"
+        f"時刻={advanced_during_wait_sec:.3f}s "
+        f"(終了待ち前のclock={clock_before_wait.sec}.{clock_before_wait.nanosec:09d} "
+        f"→ 終了待ち後のclock={last_clock.sec}.{last_clock.nanosec:09d})")
 
     synthetic_clock = SyntheticClock(node, last_clock)
     return synthetic_clock, cut_time
