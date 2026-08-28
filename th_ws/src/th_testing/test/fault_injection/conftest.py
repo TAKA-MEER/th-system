@@ -669,7 +669,24 @@ class DriveController:
         self.angular_z = angular_z
 
         self._pub_cmd = node.create_publisher(Twist, '/cmd_vel_nav', 10)
-        self._timer = node.create_timer(period_sec, self._tick)
+
+        # rclpy タイマーではなく専用スレッドで回す。
+        # SyntheticClock で実測したのと同じ理由——rclpy のタイマーは
+        # **ノードがスピンされたときにしか発火せず**、`_spin_until` の外では
+        # 一切進まないうえ、spin_once は 1 回につき 1 つの処理しか実行しないため
+        # 多数の購読が同時に待っていると後回しにされて実効レートが落ちる。
+        # 駆動周期が落ちると twist_mux の出力再評価も遅れ、故障注入 6 の
+        # 100ms 予算を測定側が食い潰す（周期を 50Hz へ上げただけでは
+        # 不合格のままだったことを Docker 実測で確認済み）。
+        self._stop_event = threading.Event()
+        self._period_sec = period_sec
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop_event.is_set():
+            self._tick()
+            self._stop_event.wait(self._period_sec)
 
     def _tick(self) -> None:
         twist = self._Twist()
@@ -678,7 +695,10 @@ class DriveController:
         self._pub_cmd.publish(twist)
 
     def stop(self) -> None:
-        self._node.destroy_timer(self._timer)
+        # 停止はスレッドの終了を実際に待ってから返る（送るだけで戻ると
+        # 次のテストと publisher が競合する。gzserver リークと同じ轍）。
+        self._stop_event.set()
+        self._thread.join(timeout=5.0)
 
 
 # ---------------------------------------------------------------------------
