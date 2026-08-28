@@ -880,6 +880,16 @@ def assert_zero_within(ros_node):
     「呼び出し時点」ではなく「過去のイベント時刻」であること。
     故障注入 6（フォルトから `FAULT_TO_STOP_LAYER3_MS`＝100ms 以内）・
     12（stale から `cmd_vel_stale_ms` 以内）向け。
+
+    【故障注入6の実装中に見つけて直したバグ】
+    以前は判定条件が `t <= deadline` だけで `t >= since` が抜けていた。
+    これだと `since` より**前**（例えば watcher 作成直後の起動過渡期）に
+    たまたま 0 の記録が1件でもあれば、`since` 以降に実際に 0 へ落ちたかを
+    一切見ずに合格してしまう（FMEA①「テストが誤って通る」そのもの）。
+    このフィクスチャ自体は故障注入6・12向けの「インターフェースとして
+    先に作られた」ものでまだ実戦投入されていなかった
+    （`case_11` は `assert_no_nonzero_after` を使っており、このバグを
+    踏んでいない）。故障注入6で初めて実使用するにあたって修正した。
     """
 
     def _assert(watcher: TopicWatcher, field: str, since: float, ms: float,
@@ -887,7 +897,7 @@ def assert_zero_within(ros_node):
         deadline = since + ms / 1000.0
         ok = _spin_until(
             ros_node,
-            lambda: any(t <= deadline and abs(_get_field(m, field)) <= atol
+            lambda: any(since <= t <= deadline and abs(_get_field(m, field)) <= atol
                         for t, m in watcher.records),
             deadline)
         assert ok, (
@@ -986,3 +996,141 @@ def assert_no_nonzero_after(ros_node):
             f"{offenders[:3]}")
 
     return _assert
+
+
+def first_match_time(watcher: TopicWatcher, predicate: Callable[[Any], bool]) -> float:
+    """`watcher.records` の中から `predicate(msg)` を満たす最初の
+    `(受信時刻[time.monotonic()], msg)` の時刻を返す。無ければ `pytest.fail`。
+
+    故障注入6（`case_06_fault_to_stop.py`）が「フォルトが実際に検知された
+    瞬間」を `assert_zero_within` の `since` に渡すために使う——
+    `assert_fault_within` は「立ったかどうか」の bool しか返さないため、
+    正確な検知時刻は `watcher.records` から別途拾う必要がある。
+    """
+    for t, m in watcher.records:
+        if predicate(m):
+            return t
+    pytest.fail("first_match_time: 条件を満たすメッセージが watcher.records に無い "
+                "(呼び出し側で先に fault が観測されていることを確認すること)")
+
+
+# ---------------------------------------------------------------------------
+# SyntheticClock / cut_lidar_and_keep_clock_alive — 故障注入5・6専用。
+# 「/scan だけを止めて /clock は止めない」ための仕掛け。
+# ---------------------------------------------------------------------------
+#
+# 【背景・コーディネーターが指摘した罠】
+# sim は use_sim_time:=True で動いており、/clock は gzserver が出している。
+# Gazebo Classic の LiDAR センサプラグイン（libgazebo_ros_ray_sensor.so）は
+# gzserver **と同一プロセス内**で動くロボットモデルのプラグインであり、
+# 独立した OS プロセスではない（`th_description/urdf/gazebo_plugins.xacro`
+# 参照）。そのため `/gazebo/pause_physics` で物理を止める・gzserver を kill
+# する、といった方法で `/scan` を止めると、**同時に /clock も止まる**
+# （Gazebo Classic の SimTime は物理ステップが進むたびに増分されるカウンタで、
+# 物理が止まれば増分も止まる）。use_sim_time=True な全ノード（safety_monitor
+# 含む）の `rclcpp::Time::now()` は ROS_TIME クロックであり、新しい /clock
+# メッセージが来ない限り最後に受信した値のまま凍結する。safety_monitor の
+# `checkTimeout()` は `now() - last_scan_time_ > timeout` を見ているだけなので、
+# now() が凍結すればこの差は増えず、**タイムアウトが永久に発火しない**。
+#
+# 【調べて判断した対処】
+# gzserver/gzclient を殺して /scan を止めた直後から、**テスト自身が /clock を
+# 実時間(1倍速)で発行し続ける**（`SyntheticClock`）。gzserver 停止直前の
+# 最終 /clock 値を引き継いで発行するので、他ノード（safety_monitor だけでなく
+# twist_mux・obstacle_limiter・state_manager 等、use_sim_time=True の全ノード）
+# から見た ROS 時刻はそのまま進み続ける。Gazebo の「pause → resume」と同じ
+# 「一時停止してから元の値の続きから進む」形なので、他ノードが時刻の巻き戻り
+# や不連続な跳躍を見ることはない。
+#
+# 検討した代替案と却下理由:
+#   - **生の /scan を横取りする relay ノードを本番 launch に挟む**
+#     （Gazebo プラグインの remap 先を /scan_raw_sim 等に変え、test が kill
+#     できる relay を gazebo.launch.py に追加する）。技術的には筋が良いが、
+#     `gazebo_plugins.xacro` / `gazebo.launch.py` という**本番の記述・launch
+#     構造**を試験のためだけに変える話であり、作業指示に明記された
+#     「本番launchの構造を変える必要が出た場合は実装せず報告する」に該当する
+#     ため実装しなかった（実装報告で詳細を伝える）。
+#   - Gazebo 内部の「センサ単体を止める」API（`gz sensor` 相当）: Gazebo
+#     Classic にこの CLI/サービスが存在するか確証が持てず（Ignition/新Gazebo
+#     の機能という認識で、Classic には無いと考えている）、Docker 未実行の
+#     この環境では検証できない。存在を前提にしたコードは書かなかった。
+#
+# 【この方式のリスク（実装報告に明記する）】
+# 1. gzserver を殺すことで `ros2 launch` の他プロセス群に連鎖的な影響が
+#    出ないか（`ros2 launch` は既定では 1 プロセスの終了で他を巻き込んで
+#    シャットダウンしない設計のはずだが、`gazebo_ros` 側の launch がそれと
+#    異なる終了ハンドラを持っていないか未確認）。
+# 2. rclcpp の TimeSource が「/clock が一定時間途絶したあと、別の publisher
+#    から値が再開する」状況を想定どおり扱うか（型としては単に新しい /clock
+#    メッセージを受け取るだけのはずだが、Docker 実測はしていない）。
+# Docker 未実行のため、この2点は実装報告でコーディネーターに検証を依頼する。
+class SyntheticClock:
+    """gzserver 停止後も /clock を実時間(1倍速)で発行し続けるヘルパー。
+    上のモジュール docstring 参照。"""
+
+    def __init__(self, node, start_stamp, period_sec: float = 0.02):
+        from rosgraph_msgs.msg import Clock
+
+        self._node = node
+        self._Clock = Clock
+        self._pub = node.create_publisher(Clock, '/clock', 10)
+        self._start_wall = time.monotonic()
+        self._start_total_ns = start_stamp.sec * 1_000_000_000 + start_stamp.nanosec
+        self._timer = node.create_timer(period_sec, self._tick)
+
+    def _tick(self) -> None:
+        elapsed_ns = int((time.monotonic() - self._start_wall) * 1e9)
+        total_ns = self._start_total_ns + elapsed_ns
+        msg = self._Clock()
+        msg.clock.sec = total_ns // 1_000_000_000
+        msg.clock.nanosec = total_ns % 1_000_000_000
+        self._pub.publish(msg)
+
+    def stop(self) -> None:
+        """`sim_stack` の後始末（_terminate_process_group）より必ず前に呼ぶこと。
+        テストプロセス側に /clock の publisher が残ったまま次の sim_stack が
+        新しい gzserver を起動すると、2つの /clock publisher が競合する。"""
+        self._node.destroy_timer(self._timer)
+        self._node.destroy_publisher(self._pub)
+
+
+def cut_lidar_and_keep_clock_alive(node, timeout_sec: float = 30.0):
+    """`/scan` を止めつつ `/clock` を止めない（上のモジュール docstring 参照）。
+
+    手順:
+      1. `/clock` を1件受信するまで待ち、その最終値を控える。
+      2. `_terminate_gazebo_processes()` で gzserver/gzclient を
+         SIGINT→SIGTERM→SIGKILL の順に確実に終了させる（`/scan` の
+         publisher はこのプロセスの中にいるので、これで `/scan` が止まる）。
+      3. 控えておいた最終値から `SyntheticClock` を起動し、/clock の発行を
+         実時間で引き継ぐ。
+
+    返り値: `(SyntheticClock, cut_time)`。`cut_time` は
+      `time.monotonic()`（gzserver へシグナルを送る直前の時刻。故障注入11の
+      `kill_time` と同じ流儀——正確な「/scanが止まった瞬間」ではなく
+      「止め始めた時刻」の近似値）。
+    呼び出し側は使い終わったら `SyntheticClock.stop()` を必ず呼ぶこと
+    （`sim_stack` の後始末より前）。
+    """
+    from rosgraph_msgs.msg import Clock
+
+    clock_watcher = TopicWatcher(node, '/clock', Clock)
+    deadline = time.monotonic() + timeout_sec
+    ok = _spin_until(node, lambda: bool(clock_watcher.records), deadline)
+    if not ok:
+        clock_watcher.destroy()
+        pytest.fail(
+            "cut_lidar_and_keep_clock_alive: /clock を一度も受信できなかった "
+            "(Gazebo が /clock を出していない? use_sim_time の伝播漏れ?)")
+    last_clock = clock_watcher.records[-1][1].clock
+    clock_watcher.destroy()
+
+    cut_time = time.monotonic()
+    cleaned = _terminate_gazebo_processes()
+    if not cleaned:
+        pytest.fail(
+            "cut_lidar_and_keep_clock_alive: gzserver/gzclient の終了待ちが"
+            "タイムアウトした（SIGINT/SIGTERM/SIGKILL すべて送った後も残留）。")
+
+    synthetic_clock = SyntheticClock(node, last_clock)
+    return synthetic_clock, cut_time
