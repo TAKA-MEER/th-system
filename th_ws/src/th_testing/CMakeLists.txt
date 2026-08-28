@@ -160,18 +160,27 @@ if(BUILD_TESTING)
   ament_add_pytest_test(fault_injection_02
     test/fault_injection/case_02_obstacle_limiter_backward.py
     TIMEOUT 240)
+  # 03 は 01/02 と同じく Gazebo を実際に起動して走行させるため TIMEOUT 240
+  # (積算根拠は01/02と同じ。上のコメント参照)。
   ament_add_pytest_test(fault_injection_03
     test/fault_injection/case_03_estop_ui.py
-    TIMEOUT 60)
+    TIMEOUT 240)
   ament_add_pytest_test(fault_injection_04
     test/fault_injection/case_04_estop_physical.py
     TIMEOUT 60)
+  # 05・06 は 01/02 と同じ Gazebo 起動コストに加え、`/scan` を止めるために
+  # gzserver/gzclient を `_terminate_gazebo_processes()` で SIGINT→SIGTERM→
+  # SIGKILL の順に段階的に終わらせる待ち（1段10秒×最大3段＝最悪30秒。通常は
+  # SIGINT で数秒以内に終わる）が追加で乗る。01/02の見積り(約170秒)に
+  # この最悪30秒と後始末での二重の gzserver 終了待ち分の余裕を足し、
+  # 300秒とした（conftest.py の `cut_lidar_and_keep_clock_alive` 参照。
+  # Docker 未検証のため実測に応じて見直しが要る可能性がある）。
   ament_add_pytest_test(fault_injection_05
     test/fault_injection/case_05_link_loss_fault.py
-    TIMEOUT 60)
+    TIMEOUT 300)
   ament_add_pytest_test(fault_injection_06
     test/fault_injection/case_06_fault_to_stop.py
-    TIMEOUT 60)
+    TIMEOUT 300)
   ament_add_pytest_test(fault_injection_07
     test/fault_injection/case_07_summon_retreat_wait.py
     TIMEOUT 60)
