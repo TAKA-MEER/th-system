@@ -388,6 +388,7 @@ obstacleWarning(limiterStatus) -> { level: 'none'|'warn'|'stop', distance_m } | 
 | `e2e/s11-lease-expiry-stops.spec.js` | 同上 | **T1-2。**送出を止めると `PAUSE` |
 | `e2e/s11-ops-card-stop-only.spec.js` | 同上 | **T1-4。**操作カードに「走行」「手動」が無い |
 | `e2e/s11-reachable-from-menu.spec.js` | 同上 | S-01 の「手動走行」を押すと S-11 が出る（**今回の目的そのもの**） |
+| `e2e/s11-stop-sends-ui-stop.spec.js` | 同上 | **§11 c6。**唯一のボタンが実際に `ui.stop` を送る |
 | `e2e/s01-no-scroll-768.spec.js` の対象に S-11 を追加 | 同上 | §9-2 |
 
 ### 8. Gazebo シナリオ
@@ -429,10 +430,13 @@ grep -q "attributes" src/screens/S11Manual.jsx
 # ③ 画面 ID が名前辞書にある
 grep -q '"S-11"' src/ros/names.json
 
-# コンテナ内 (/root/th_ws)
-colcon build --symlink-install --packages-select th_state th_testing && source install/setup.bash
-colcon test --packages-select th_testing --event-handlers console_direct+ --ctest-args -R state_manager
-colcon test-result --verbose
+# ホスト（リポジトリルート）
+# ④ ROS2 側を 1 行も触っていないこと（このパケットは WebUI だけ。
+#    state_manager の試験を回しても、この変更については何も検査しない）
+test "$(git status --short th_ws/src th_ws/esp32 | wc -l)" -eq 0
+
+# ⑤ 唯一のボタンが実際にトリガを送ること（**「1 つだけ在る」では足りない**）
+grep -q "onTrigger={(trigger) => sendTrigger(trigger)}" src/screens/S11Manual.jsx
 ```
 
 ### 11. 既知の負債・未確定 (c) と、その扱い
@@ -443,6 +447,8 @@ colcon test-result --verbose
 | c2 | **`N-19` は解消しない。**`follow_planner.py` / `follow_planner_mapless.py` / `person_predictor.py` の削除は当初 `WP-TRANSIT-01` の範囲とされていたが、追従走行（`WP-TRANSIT-03`）が未着手のまま消すと Gazebo シナリオが全滅する | **`WP-TRANSIT-03` へ繰り下げる。**[open](DetailedDesign-open.md) の N-19 に追記する |
 | c3 | `N-12` の「`observe_cone()` の Python / C++ 一本化」も `WP-TRANSIT-01` の作業とされていたが、`th_transit` そのものが未着手 | 同じく `WP-TRANSIT-03` へ繰り下げる。**両実装の食い違いは安全側にしか倒れない**ことは実測済み |
 | c4 | 障害物警告の文言（「前方 0.6 m に障害物」）に距離を出すかどうか | mockup は出している。`nearest_obstacle_m` をそのまま表示する。**閾値判定は UI でしない**（4.1） |
+| **c5** | **自動ブレーキを試験員が切り替える経路が無い。**[Spec-webui.md](../spec/Spec-webui.md) §3.5 は「場外の既定 OFF、場内の既定 ON。**試験員が OFF にできる**」と定めているが、切り替えを送るサービス／トピックが `WP-TRANSIT-01` のインターフェース契約（§3）にもどこにも無い | **表示だけにした。**`/system/state.auto_brake` を映すが、押せる見た目にしない。**押せるのに何も起きないボタンは、安全に関わる画面では「切ったつもりで切れていない」を招く**ので置かない。初版は `<button>` にしていたが、本番では `/system/state.auto_brake` が常に来るため**押しても必ず無反応**で、しかも e2e が `auto_brake` を注入していなかったので局所 state 側が働いて緑のまま通っていた。**切替経路の新設は別パケット**（`obstacle_limiter` 側にサービスが要る） |
+| **c6** | **「ボタンが 1 つだけ在る」ことと「そのボタンが効く」ことは別の検査である** | 初版は `OperationCard` に `onTrigger={() => {}}` を渡しており、**この画面で唯一のボタンである「停止」が無反応**だった。`s11-ops-card-stop-only.spec.js`（ボタンの数を見る）は緑のまま通っていた。`s11-stop-sends-ui-stop.spec.js` を追加し、§10 ⑤ にも入れた。**操作カードを置く画面を追加するときは毎回この 2 本目を書くこと** |
 
 ### 12. 依存 WP / 被依存 WP
 

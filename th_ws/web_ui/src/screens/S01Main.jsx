@@ -51,7 +51,7 @@ function parseUnsaved(message) {
   }
 }
 
-export default function S01Main() {
+export default function S01Main({ onEnter }) {
   const { state, stale } = useSystemState()
   const sendTrigger = useTrigger()
   const shutdownPrepare = useStdTrigger(SERVICES.SHUTDOWN_PREPARE)
@@ -94,10 +94,15 @@ export default function S01Main() {
       if (!res?.accepted) {
         setActiveWindow({ kind: 'reason', reasonKey: res?.reject_reason_key ?? null })
         confirmWindow.open()
+        return
       }
-      // accepted: nothing further to do here -- the destination screen for
-      // this mode doesn't exist yet (WP-UI-03+); the header's mode pill
-      // will reflect the change once /system/state republishes it.
+      // accepted: hand off to main.jsx, which owns the screen FSM — the
+      // destination for this mode comes from the MODE_TO_SCREEN map there
+      // (DetailedDesign-wp3.md WP-TRANSIT-01 §11 c1: screen transitions are
+      // a map so later packets add one row per screen). If no screen is
+      // mapped yet (e.g. a mode whose screen is a later packet), it's a
+      // no-op here; /system/state will reflect the mode change anyway.
+      if (onEnter) onEnter(item.mode)
     } catch {
       setActiveWindow({ kind: 'reason', reasonKey: null })
       confirmWindow.open()

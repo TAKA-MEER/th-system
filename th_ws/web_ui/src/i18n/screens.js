@@ -139,3 +139,20 @@ export const DRIVE_MANUAL = '手動'
 // テスト用ドライブ画面の「離れる」ボタン (U3-1 の unmount 確認用に
 // DriveTab をマウントから外す。実画面の画面遷移に置き換わる)。
 export const DRIVE_LEAVE = '離れる'
+
+// ---------------------------------------------------------------- S-11 (手動走行) ----
+// DetailedDesign-wp3.md WP-TRANSIT-01 §4.2 / mockup L620-656。
+// parts/screens は日本語リテラル禁止 (c4) なので、S-11 の表示文字はすべてここに置く。
+export const S11_TAB_DRIVE = '走行'
+export const S11_OBSTACLE_TITLE = '障害物'
+export const S11_OBSTACLE_WARN = (d) => `前方 ${d} m に障害物（警告）`
+export const S11_OBSTACLE_STOP = (d) => `前方 ${d} m に障害物（停止）`
+export const S11_OBSTACLE_PASS = '障害物なし'
+// 未受信のときの表示（"障害物なし" と出さない。安全側 DetailedDesign-wp3.md §6.2）
+export const S11_OBSTACLE_UNKNOWN = '障害物情報なし'
+export const S11_AUTO_BRAKE_LABEL = '自動ブレーキ'
+export const S11_AUTO_BRAKE_OFF = 'OFF'
+export const S11_AUTO_BRAKE_ON = 'ON'
+export const S11_REAR_TITLE = '後退'
+export const S11_REAR_NOTE = '後方は LiDAR の死角。後退速度を制限中'
+export const S11_MANUAL_TITLE = '手動操作'

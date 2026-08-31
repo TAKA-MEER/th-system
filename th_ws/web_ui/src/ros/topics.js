@@ -23,6 +23,10 @@ export const TOPICS = {
   // twist_mux -> obstacle_limiter).
   JOG_LEASE: '/ui/jog_lease',
   CMD_VEL_MANUAL_RAW: '/cmd_vel_manual_raw',
+  // WP-TRANSIT-01 §3.1: obstacle_limiter の出力（action / nearest_obstacle_m /
+  // applied_limit_mps）。publisher は 20Hz best_effort なので SubscribeOptions
+  // も合わせる。S-11 の障害物警告表示に使う。
+  LIMITER_STATUS: '/safety/limiter_status',
 }
 
 export const SERVICES = {
@@ -42,6 +46,10 @@ export const MSG_TYPES = {
   // and std_msgs/String are both built into roslib, no custom message.
   TWIST: 'geometry_msgs/Twist',
   STRING: 'std_msgs/String',
+  // WP-TRANSIT-01 §3.1: LimiterStatus は names.json の msgs にも載っている
+  //（既存メッセージ型）。best_effort publisher なので subscribeOptions を
+  // 使う側で合わせること（この定数は型名だけ）。
+  LIMITER_STATUS: 'th_system_msgs/LimiterStatus',
 }
 
 export const SRV_TYPES = {

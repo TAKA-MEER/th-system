@@ -51,6 +51,20 @@ export function stateToBlueButton(mode, stateName, attributes) {
 // DetailedDesign-webui.md §4.2), which isn't known until screens exist
 // (WP-UI-02+). Screens should treat this as a starting point and override
 // `check` / `manual` explicitly.
+// obstacleWarning(limiterStatus) -> { level: 'none'|'warn'|'stop', distance_m } | null
+//
+// /safety/limiter_status から UI 表示用の障害物警告を返す（WP-TRANSIT-01 §4.1）。
+// action 文字列（"PASS" / "CLAMP" / "STOP"）で閾値判定は obstacle_limiter 側が
+// 持っており、UI は nearest_obstacle_m をそのまま表示するだけ。
+// 未受信（null）のときは安全側として null を返す——"障害物なし" と表示しない
+//（DetailedDesign-wp3.md §6.2 / §6.2 の fail-safe）。
+export function obstacleWarning(limiterStatus) {
+  if (!limiterStatus) return null
+  const action = limiterStatus.action
+  const level = action === 'STOP' ? 'stop' : action === 'CLAMP' ? 'warn' : 'none'
+  return { level, distance_m: limiterStatus.nearest_obstacle_m }
+}
+
 export function operationCardLayout(mode, attributes) {
   const attrs = attributes?.[mode]
   if (!attrs) return { stop: false, check: false, run: false, save: false, manual: false }

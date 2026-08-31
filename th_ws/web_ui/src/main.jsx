@@ -5,6 +5,7 @@ import AudienceView from './audience/AudienceView.jsx'
 import OperationCardHarness from './TestHarness.jsx'
 import S00Connect from './screens/S00Connect.jsx'
 import S01Main from './screens/S01Main.jsx'
+import S11Manual from './screens/S11Manual.jsx'
 import DriveTab from './screens/driveTab.jsx'
 import { useJogPanel } from './shell/jogPanel.js'
 import { SCREEN_NAMES, DRIVE_MANUAL, DRIVE_LEAVE } from './i18n/screens.js'
@@ -28,7 +29,16 @@ const TEST_SCREEN = typeof window !== 'undefined' ? window.__thTestScreen : unde
 
 // names.json の screens に載っている ID (N-15: /ui/active_screen の
 // screen_id はこの値をそのまま使う -- names.json に無い値を送ってはいけない)。
-const SCREEN_IDS = { S00: 'S-00', S01: 'S-01' }
+const SCREEN_IDS = { S00: 'S-00', S01: 'S-01', S11: 'S-11' }
+
+// mode -> screen-key map, owned here so Screens() can switch. S-01 sends
+// ui.enter_mode; when th_state accepts it, S01Main calls onEnter(mode) which
+// reads this map to decide where to go. Later packets add one row per screen
+// (DetailedDesign-wp3.md WP-TRANSIT-01 §11 c1: "遷移先を配列化して次の画面で
+// 増やしやすくする"). A mode with no mapped screen yet (e.g. FOLLOW -> S-10,
+// which is WP-UI-04) is simply absent: S-01 stays put and the header's mode
+// pill reflects the change.
+const MODE_TO_SCREEN = { MANUAL: 'S11' }
 
 // e2e 用の DRIVE テスト画面: 常設走行タブ (driveTab) と、W-6 を開く「手動」
 // ボタンだけを並べる。runTestDrive() は __thTestScreen === 'DRIVE_S11' を
@@ -80,9 +90,19 @@ function Screens() {
       </AppShell>
     )
   }
+  if (screen === 'S11') {
+    return (
+      <AppShell screenName={SCREEN_NAMES.S11} screenId={SCREEN_IDS.S11}>
+        <S11Manual onFinish={() => setScreen('S01')} />
+      </AppShell>
+    )
+  }
   return (
     <AppShell screenName={SCREEN_NAMES.S01} screenId={SCREEN_IDS.S01}>
-      <S01Main />
+      <S01Main onEnter={(mode) => {
+        const next = MODE_TO_SCREEN[mode]
+        if (next) setScreen(next)
+      }} />
     </AppShell>
   )
 }

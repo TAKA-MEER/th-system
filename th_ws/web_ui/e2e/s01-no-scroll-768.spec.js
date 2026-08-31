@@ -31,4 +31,21 @@ for (const size of SIZES) {
     )
     expect(scrollable, 'S-01 must fit without scrolling at short edge 768px (M-3)').toBe(false)
   })
+
+  // DetailedDesign-wp3.md WP-TRANSIT-01 §7: S-11 also joins §9-2. Driving is
+  // an in-the-moment activity — the whole drive tab (stick + presets) plus the
+  // obstacle/rear/ops cards must fit on screen so the operator never loses the
+  // stick while touching it (M-3's intent, and the stick is the only drive
+  // entry T1-4: it can't scroll out of reach).
+  test(`S-11 does not scroll at ${size.width}x${size.height}`, async ({ page }) => {
+    await page.setViewportSize(size)
+    await gotoScreen(page, 'S11', { mode: 'MANUAL', state: 'PAUSE', tracker_enabled: true })
+
+    await expect(page.locator('#s11')).toBeVisible()
+
+    const scrollable = await page.evaluate(
+      () => document.body.scrollHeight > window.innerHeight,
+    )
+    expect(scrollable, 'S-11 must fit without scrolling at short edge 768px (§9-2)').toBe(false)
+  })
 }

@@ -33,12 +33,39 @@ export async function gotoScreen(page, screen, state = {}) {
   await page.goto('/')
 }
 
+// WP-TRANSIT-01: opens a screen with a seeded /safety/limiter_status value.
+// useLimiterStatus.js reads window.__thTestLimiterStatus on first render
+// (mirroring __thTestState), so it must be set via addInitScript.
+export async function gotoScreenWithLimiter(page, screen, state, limiter) {
+  await page.addInitScript(({ s, scr, lim }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    window.__thTestLimiterStatus = lim
+  }, { s: state, scr: screen, lim: limiter })
+  await page.goto('/')
+}
+
+// Mutate the seeded limiter status after mount (useLimiterStatus.js installs
+// window.__thSetTestLimiterStatus, mirroring __thSetTestState).
+export async function setTestLimiter(page, value) {
+  await page.evaluate((v) => window.__thSetTestLimiterStatus(v), value)
+}
+
 // Stubs a std_srvs/Trigger-shaped service call (ros/useStdTrigger.js's test
 // hook) for /shutdown/prepare / /shutdown/execute. Must be called via
 // addInitScript (before the page's first render) since S01Main reads
 // window.__thTestServices synchronously on first call.
 export async function stubServices(page, services) {
   await page.addInitScript((s) => { window.__thTestServices = s }, services)
+}
+
+// Stubs a /system/trigger response per trigger name (ros/useTrigger.js's test
+// hook, window.__thTestTrigger) so an e2e spec can drive the *accepted* path
+// of ui.enter_mode (e.g. S-01 -> S-11, DetailedDesign-wp3.md WP-TRANSIT-01)
+// offline. Un-stubbed triggers resolve as a denial. Must be set via
+// addInitScript so the values are present before the screen renders.
+export async function stubTrigger(page, triggers) {
+  await page.addInitScript((t) => { window.__thTestTrigger = t }, triggers)
 }
 
 // Press-and-hold the virtual stick at `stick` (a Locator for `.stick svg`)

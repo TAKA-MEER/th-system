@@ -10,10 +10,28 @@ import { useCallback } from 'react'
 import { useSystemState } from './useSystemState'
 import { SERVICES, SRV_TYPES } from './topics'
 
+// TEST_MODE: no rosbridge under Playwright, so /system/trigger would always
+// reject ("rosbridge is not connected"). Mirror useStdTrigger.js's
+// window.__thTestServices: an e2e spec can stub a specific trigger via
+// window.__thTestTrigger[triggerName], letting the accepted path (e.g.
+// S-01's ui.enter_mode -> S-11) be exercised offline. Defaults to a rejected
+// response ({ accepted: false, reject_reason_key: null }), so a spec that
+// doesn't stub a trigger behaves like a denial.
+const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
+
 export function useTrigger() {
   const { ros } = useSystemState()
 
   return useCallback((trigger, argJson = {}, requester = 'web_ui') => {
+    if (TEST_MODE) {
+      // 呼ばれたことを e2e が数えられるように残す（何を送ったかを
+      // 検証できないと「ボタンが繋がっていない」に気づけない）。
+      window.__thTriggerCalls = window.__thTriggerCalls ?? []
+      window.__thTriggerCalls.push({ trigger, argJson, requester })
+      const stub = window.__thTestTrigger?.[trigger]
+      if (stub) return Promise.resolve(stub)
+      return Promise.resolve({ accepted: false, reject_reason_key: null })
+    }
     return new Promise((resolve, reject) => {
       const ROSLIB = window.ROSLIB
       if (!ros || !ROSLIB) {
