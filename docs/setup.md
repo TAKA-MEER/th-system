@@ -255,6 +255,15 @@ Ubuntu 既定の `systemd-timesyncd` は**クライアント専用で時刻を�
 > python3 scripts/check_scan_points.py 100
 > # → 出た値を registry.yaml の scan_expected_points に入れる
 > ```
+>
+> **2026-08-31 に同じ事故が再発していたことが判明した。**8/20 の
+> DenseBoost → Standard 変更に対する `registry.yaml` の追従が結局入っておらず、
+> 11 日間 `1080` のまま残っていた（実機は `720`）。実機で `INIT` から出ようと
+> した時点で発覚。現在の正しい値は **`720`（Standard・10.01 Hz・0.4993°/点）**。
+> **`gazebo_plugins.xacro` の `<samples>` も同じ値に揃えること**——ここが
+> ずれると今度は Gazebo 側の `connectivity_checker` が通らなくなる
+> （実際に WP-TEST-01 で sim 側を `1080` に合わせてしまい、sim が実機から
+> 離れる方向へずれていた）。
 
 
 稼働中の unit が `ros2 launch rplidar_ros rplidar_s1_launch.py` を叩いていると
