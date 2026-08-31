@@ -377,6 +377,40 @@ def test_sanitize_node_params_pure_no_mutation():
     assert out == {"b": [1]}
 
 
+def test_sanitize_node_params_ceils_ms_floats_to_int():
+    """導出パラメータが返す `*_ms` の float を整数へ切り上げること。
+
+    このリポジトリの `*_ms` は 14 箇所すべて整数で宣言されている
+    （`safety_monitor.cpp` / `obstacle_limiter.cpp` / `esp32_bridge.py` /
+    `connectivity_checker.py` / `state_manager.py`）。rclcpp は int 宣言に
+    double を渡すと `InvalidParameterTypeException` を投げてノードを abort
+    させる（2026-08-31 に実機で `safety_monitor` が exit code -6 で落ちた）。
+    """
+    out = pg.sanitize_node_params({
+        "lidar_timeout_ms": 308.0,
+        "esp32_timeout_ms": 322.4,
+    })
+    assert out["lidar_timeout_ms"] == 308
+    assert isinstance(out["lidar_timeout_ms"], int)
+    # 切り上げ: 導出の下限（p99 + 余裕）を生成物の上でも下回らせない
+    assert out["esp32_timeout_ms"] == 323, "切り捨て・四捨五入ではなく切り上げること"
+
+
+def test_sanitize_node_params_ms_coercion_does_not_touch_others():
+    """`_ms` で終わっても dict は対象外（`link_gap_p99_ms`）。int / bool /
+    `_ms` で終わらない float は素通しすること。"""
+    out = pg.sanitize_node_params({
+        "link_gap_p99_ms": {"esp32": 161, "lidar": 154},   # dict は触らない
+        "limiter_dead_ms": 250,                              # 既に int
+        "runaway_ratio": 1.5,                                # _ms ではない float
+        "v_max": 1.12,
+    })
+    assert out["link_gap_p99_ms"] == {"esp32": 161, "lidar": 154}
+    assert out["limiter_dead_ms"] == 250 and isinstance(out["limiter_dead_ms"], int)
+    assert out["runaway_ratio"] == 1.5 and isinstance(out["runaway_ratio"], float)
+    assert out["v_max"] == 1.12 and isinstance(out["v_max"], float)
+
+
 # ============================================================================
 # D3 回帰試験: 実物の registry.yaml から生成した全 YAML に None / 空コンテナが
 # 1つも残っていないこと（twist_mux.yaml を含む）
@@ -437,3 +471,30 @@ def test_both_launch_files_wire_generated_params():
     ——閾値を下げて合わせるのではなく launch を直すこと。"""
     for path in (BRINGUP_PY, GAZEBO_PY):
         _assert_generated_dir_wired(path)
+
+
+def test_generated_yaml_has_no_float_ms():
+    """実物の registry.yaml から生成した全 YAML に `*_ms` の float が
+    1 つも無いこと（実機 bringup が読む経路そのものを検査する）。
+
+    **この経路は Gazebo では通らない。**`gazebo.launch.py` の `safety_monitor` は
+    静的な `safety_monitor_sim.yaml` を読むため、生成 YAML の型崩れは sim では
+    絶対に露見しない。実機で `safety_monitor` が abort して初めて分かった
+    （2026-08-31）。ユニットテストで塞ぐ意味はここにある。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = os.path.join(tmp, "generated")
+        pg.run_generation(stage=1, sim=False, nodes=list(pg.REGISTRY_NODES),
+                           out_dir=out_dir, registry_path=REGISTRY_YAML, env=_subprocess_env())
+
+        offenders = []
+        for fname in [p for p in os.listdir(out_dir) if p.endswith(".yaml")]:
+            with open(os.path.join(out_dir, fname), encoding="utf-8") as f:
+                doc = yaml.safe_load(f) or {}
+            for node_name, node_body in doc.items():
+                for key, value in ((node_body or {}).get("ros__parameters") or {}).items():
+                    if key.endswith("_ms") and isinstance(value, float):
+                        offenders.append(f"{fname}:{node_name}.{key} = {value!r}")
+
+        assert not offenders, (
+            "*_ms が float のまま生成されている（int 宣言のノードが abort する）: "
+            + "; ".join(offenders))
