@@ -54,9 +54,13 @@
           <ray>
             <scan>
               <horizontal>
-                <samples>1080</samples>        <!-- 0.333° 分解能 (実機SLLIDAR相当。
-                                                     connectivity_checker の scan_expected_points=1080 と一致させる必要がある。
-                                                     WP-TEST-01 完了報告 / DetailedDesign-open.md N-22 参照) -->
+                <samples>720</samples>         <!-- 0.5° 分解能 (実機 SLLIDAR の Standard モード相当。
+                                                     connectivity_checker の scan_expected_points と一致させる必要がある。
+                                                     2026-08-31 に実機を再実測して 720 で確定 (registry.yaml の
+                                                     scan_expected_points / docs/setup.md「LiDAR の scan_mode」)。
+                                                     WP-TEST-01 で 1080 へ変えたのは、当時の registry の値 (DenseBoost 時代の
+                                                     1080) に sim を合わせた結果であり、実機から離れる方向のずれだった。
+                                                     DetailedDesign-open.md N-22 参照) -->
                 <resolution>1</resolution>
                 <min_angle>-3.14159</min_angle>
                 <max_angle> 3.14159</max_angle>
