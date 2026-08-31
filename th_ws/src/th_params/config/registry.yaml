@@ -879,10 +879,10 @@
   unit: null
   class: b
   status: given
-  value: 1080
+  value: 720
   consumers: [connectivity_checker]
   spec_ref: "DetailedDesign-names.md §7.3（WP-STATE-03）"
-  note: "起動時の疎通判定（§12.2 行 3）。**2026-08-18 に実機で実測: 100 スキャンすべてが 1080 点で一定**。判定は厳密一致なので、LiDAR の設定を変えたら必ずここも直すこと（旧値 360 のままだと疎通が永久に成立せず INIT から出られない）"
+  note: "起動時の疎通判定（§12.2 行 3）。**2026-08-31 に実機で再実測: scripts/check_scan_points.py 100 が 720 点 × 100 回で一定**（10.01 Hz・angle_increment 0.4993°）。判定は厳密一致なので、LiDAR の scan_mode を変えたら必ずここも直すこと（docs/setup.md「LiDAR の scan_mode」）。旧値 1080 は DenseBoost の実測値（2026-08-18）で、8/20 に Standard へ替えた際の追従漏れが 8/31 まで残っていた——この状態では link_ok が立たず INIT から永久に出られない。**Gazebo 側の gazebo_plugins.xacro の <samples> もこの値と一致させること**（sim で connectivity_checker が通らなくなる）"
 
 - name: required_nodes
   unit: string_list
