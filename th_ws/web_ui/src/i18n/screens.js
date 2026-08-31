@@ -8,6 +8,9 @@
 export const SCREEN_NAMES = {
   S00: '接続確認',
   S01: 'メインメニュー',
+  // S-11 (手動操作) は driveTab kind='manual' の常設タブで使用 (WP-UI-03)。
+  // 画面名の正式値は後続パケットで確定するが、テスト用に名前だけ用意する。
+  S11: '手動操作',
 }
 
 // ---------------------------------------------------------------- S-00 ----
@@ -100,3 +103,39 @@ export const UNSAVED_LABELS = {
 export function unsavedLabel(key) {
   return UNSAVED_LABELS[key] ?? key
 }
+
+// ---------------------------------------------------------------- 走行タブ / W-6 ----
+// DetailedDesign-wp3.md WP-UI-03. parts/screens は日本語リテラル禁止 (c4) なので、
+// スティック・速度プリセット・W-6 パネルの表示文字はすべてここに置く。
+export const SPD_HIGH = '高速'
+export const SPD_MID = '中速'
+export const SPD_LOW = '低速'
+export const SPD_SLIDER_ARIA = '速度'
+
+// stickGeometry.js が返す label キー → 日本語。8方向セクターの動作表示。
+export const STICK_LABELS = {
+  forward: '前進',
+  arc: '緩旋回',
+  turn: '超信地旋回',
+  rev_arc: '後退緩旋回',
+  reverse: '後退',
+}
+export const STICK_ACTIVE = '操作中'
+export const STICK_FWD = '前進'
+export const STICK_BACK = '後退'
+export const STICK_LEFT = '左'
+export const STICK_RIGHT = '右'
+
+// driveTab kind='follow' の状況 (差し込み口は WP-UI-04 で埋める)。空カーソルの aria 用。
+export const FOLLOW_RADAR_SLOT = '対象選択'
+
+// W-6 手動操作パネル (DetailedDesign-webui.md §6.3)。
+export const W6_TITLE = '手動操作（触れている間だけ）'
+export const W6_CLOSE = '閉じる'
+export const W6_MODE = 'モードは「{mode}」のまま変わりません'
+
+// 手動操作タブの「手動」ボタン (driveTab kind='manual' から W-6 を開く)。
+export const DRIVE_MANUAL = '手動'
+// テスト用ドライブ画面の「離れる」ボタン (U3-1 の unmount 確認用に
+// DriveTab をマウントから外す。実画面の画面遷移に置き換わる)。
+export const DRIVE_LEAVE = '離れる'

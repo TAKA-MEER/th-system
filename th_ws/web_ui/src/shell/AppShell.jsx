@@ -2,7 +2,7 @@
 // and the estop release bar (DetailedDesign-webui.md §1/§2).
 // Screens (WP-UI-02+) are rendered as `children`; this packet builds no
 // screen content (DetailedDesign-wp1.md WP-UI-01 §1).
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { SystemStateProvider, useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useActiveScreenPublisher } from '../ros/useActiveScreenPublisher.js'
@@ -12,6 +12,7 @@ import Header from './Header.jsx'
 import Windows from './Windows.jsx'
 import { isW1Active } from './limits.js'
 import { ConfirmWindowContext } from './confirmWindow.js'
+import { JogPanelContext } from './jogPanel.js'
 import { ESTOP_RELEASE_NOTE, ESTOP_RELEASE_BUTTON } from '../i18n/states.js'
 import './theme.css'
 
@@ -46,6 +47,18 @@ function AppShellInner({ screenName, screenId, children }) {
   const [uiEngaged, setUiEngaged] = useState(false)
   const [estopDismissed, setEstopDismissed] = useState(false)
 
+  // W-6 (manual-operation panel, DetailedDesign-webui.md §6 W-6): open/close
+  // is owned here so the shell decides when the panel is legal (it floats
+  // above the body and must still let the estop / release bar reach). The
+  // panel body lives in Windows.jsx; screens reach this via
+  // shell/jogPanel.js's context (a screen's "手動" button calls open()).
+  const [jogOpen, setJogOpen] = useState(false)
+  const jogPanelApi = useMemo(() => ({
+    isOpen: jogOpen,
+    open: () => setJogOpen(true),
+    close: () => setJogOpen(false),
+  }), [jogOpen])
+
   // W-4 (confirm window) host state, exposed to screens via
   // shell/confirmWindow.js's context. See that file and shell/Windows.jsx
   // for why this is a portal-mount-node handshake rather than rendered
@@ -60,6 +73,18 @@ function AppShellInner({ screenName, screenId, children }) {
   const stateName = state?.state ?? null
   const estopUi = !!state?.estop_ui
   const estopHw = !!state?.estop_hw
+
+  // W-6 bottom edge floats above the estop release bar: --dock-h feeds
+  // #jogWin's `bottom: calc(var(--dock-h, 0px) + 10px)` (theme.css, ported
+  // from the mockup's layoutDock()). Measure the release bar when it's
+  // actually shown so the panel never sits under anything reachable.
+  const releaseShown = uiEngaged || mode === 'ESTOP'
+  useLayoutEffect(() => {
+    const releaseEl = document.getElementById('release')
+    const h = releaseEl && releaseShown ? releaseEl.offsetHeight : 0
+    document.getElementById('app')?.style.setProperty('--dock-h', `${h}px`)
+  }, [releaseShown])
+
   const zone = state?.zone && state.zone !== 'NA' ? state.zone : null
   const w1Active = isW1Active(mode, stateName, !!fault?.active)
   // C-2 (WP-CARRY-01 §4/§7): server-side reject reason for a UI estop press
@@ -131,11 +156,14 @@ function AppShellInner({ screenName, screenId, children }) {
           (the confirm window) via useConfirmWindow() -- see
           shell/confirmWindow.js. */}
       <ConfirmWindowContext.Provider value={confirmWindowApi}>
-        <main id="body">
-          {children}
-        </main>
+        <JogPanelContext.Provider value={jogPanelApi}>
+          <main id="body">
+            {children}
+          </main>
+        </JogPanelContext.Provider>
       </ConfirmWindowContext.Provider>
       <Windows
+        ros={ros}
         mode={mode}
         stateName={stateName}
         estopUi={estopUi}
@@ -148,6 +176,8 @@ function AppShellInner({ screenName, screenId, children }) {
         confirmOpen={confirmOpen}
         onConfirmMount={setConfirmMount}
         lastRejectReason={lastRejectReason}
+        jogOpen={jogOpen}
+        onJogClose={() => setJogOpen(false)}
       />
       <EstopReleaseBar show={uiEngaged || mode === 'ESTOP'} onRelease={handleRelease} />
     </div>

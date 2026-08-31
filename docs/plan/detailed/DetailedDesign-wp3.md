@@ -177,6 +177,15 @@ rampToward(current, target, maxDelta) -> number // 既存 App.jsx:127 をその�
 | `e2e/w6-stick-responds.spec.js` | 同上 | FMEA ③（U3-4）。W-6 のスティックを触ると送出が始まる |
 | `e2e/stick-unmount-releases.spec.js` | 同上 | U3-1。画面を離れるとゼロが出て送出が止まる |
 
+**e2e の書き方で踏んだ落とし穴**（同じ形の検査を書くときは先に読むこと）:
+
+| 症状 | 原因 | 正しい書き方 |
+| --- | --- | --- |
+| `.stick svg` が strict mode violation | W-6 のスティックが常時 DOM にあり 2 件マッチする | 常設側は `#body .stick svg`、W-6 側は `#jogWin .stick svg` |
+| 閉じた W-6 を待つと永久に止まる | `#jogWin:not(.show)` は `display:none` で、既定の `waitFor()` は**可視**になるまで待つ | `waitFor({ state: 'hidden' })` |
+| 中身の無い印の `div` を待つと止まる | 大きさ 0 の要素は Playwright から見て不可視 | 印を置かず、**消えたはずの要素の `toHaveCount(0)`** で確かめる |
+| 「離さないまま画面を離れる」が再現できない | スティックが `setPointerCapture()` でポインタを掴んでおり、`page.click()` がボタンに届かない（**それこそが再現したい状況**） | `locator.dispatchEvent('click')` で捕捉を迂回する |
+
 **rosbridge のモックは既存の流儀を使う**: `e2e/helpers.js` の `gotoScreen()` ＋
 `window.__thTestState`。送出の観測は `useActiveScreenPublisher.js` が
 `window.__thActiveScreenPublishes` を使っているのと同じ形で、
@@ -207,15 +216,21 @@ npm run build                 # 本番ビルドが通ること（オフライン
 npm run test:unit             # node --test。stickGeometry / speed presets
 npx playwright test           # 上の e2e 5 本を含む
 
-# ① 送出口が 1 箇所に閉じている（4.2）
-test "$(grep -rl "cmd_vel_manual_raw" src/ | wc -l)" -eq 2   # useJogLease.js と topics.js だけ
+# ① 走行タブからの送出口が 1 箇所に閉じている（4.2）
+#    publish しているのは useJogLease.js だけ。useRosbridge.js は旧 App.jsx
+#    経路（WP-SAFE-04 の O-6 で publish 先だけ差し替えた孤児。§11 c2）なので
+#    数から除く。topics.js は定数、names.json は辞書。
+test -f src/ros/useJogLease.js
+test "$(grep -rl "CMD_VEL_MANUAL_RAW" src/parts/ src/screens/ src/ros/ | wc -l)" -eq 2  # useJogLease.js と topics.js
 
 # ② 数値リテラルを JSX に書いていない（R2）
 test -f src/generated/speed_presets.json
 ! grep -rn "JOG_LIN_MAX\|JOG_ANG_MAX" src/parts/ src/screens/ src/ros/
 
-# ③ ui.jog.release というトリガを作っていない
-! grep -rn "jog.release" src/
+# ③ ui.jog.release というトリガを送っていない
+#    **コメント中の言及に当たるので `jog.release` で grep してはいけない**（V3）。
+#    実際に送るなら文字列リテラルになるので、そちらを見る。
+! grep -rn "'ui\.jog" src/
 
 # ④ topics.js の全トピック名が名前辞書にある（既存テスト）
 node --test test/unit/topics-in-dictionary.test.js
@@ -229,6 +244,8 @@ node --test test/unit/topics-in-dictionary.test.js
 | c2 | `App.jsx` の旧ジョグ経路（`useRosbridge.js` の `publishManualCmd`）が残る | `WP-SAFE-04` で publish 先を `/cmd_vel_manual_raw` へ変えてある。`App.jsx` は `main.jsx` から到達できない孤児なので実害は無い。削除は `WP-TRANSIT-01` 完了後に別途判断する |
 | c3 | `CandidateRadar` が無いので `kind='follow'` の中身が空 | `WP-UI-04` の範囲。差し込み口だけ空けておく |
 | c4 | `parts/` は `U-4` の機械検査 3 ディレクトリ（`shell`/`parts`/`ros`）に含まれる。**日本語は `i18n/` にだけ置く** | `WP-UI-02` が `screens/` にも同じ意図を適用済み。それに揃える |
+| **c5** | **設計時に詰めていなかった: W-6 を開く画面がこの段階に存在しない**（「手動」ボタンを置くのは S-14 / S-15 / S-16 / S-20 / S-21 で、いずれも後のパケット）。開閉の持ち主と e2e の入口が決まらない | **実装で次のとおり決めた**: 開閉状態は `AppShell` が持ち、`shell/jogPanel.js` の context で画面へ配る（`shell/confirmWindow.js` と同じ流儀）。パネルの中身は `parts/JogConsole.jsx`（スティック＋速度プリセット）で、常設側と W-6 で**同一の部品**を使う（§6.3「常設するものと同じ大きさ」を構造で保証）。e2e の入口は `main.jsx` の `__thTestScreen === 'DRIVE_S11'`（`WP-UI-02` が S-00 / S-01 に使ったフックと同じ） |
+| **c6** | **`VirtualStick` の当たり判定が要素の幅と高さを別々に基準にしていた**（`App.jsx` L149-237 から移設した計算そのもの）。`svg` は `viewBox` が 1:1・`preserveAspectRatio` 既定なので、要素が正方形でないと**描画された円と操作範囲がずれる** | **このパケットで直した**（短辺基準に統一）。旧 UI では CSS が箱を正方形に保っていたため露見していなかったが、走行タブでは `.stick` が横に伸びて実測 1129×230 になり、**円の縁まで倒しても倒し量 0.08 < デッドゾーン 0.15 で完全に無反応**だった（2026-09-01 実測）。e2e の `downOnStick()` も短辺に対する割合で倒し量を与える |
 
 ### 12. 依存 WP / 被依存 WP
 

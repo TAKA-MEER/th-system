@@ -14,6 +14,15 @@ export const TOPICS = {
   // display, W-1), but it wasn't wired up -- see DetailedDesign-wp1.md
   // WP-UI-01 §11 "W-1 generalization".
   SAFETY_FAULT: '/safety/fault',
+  // WP-UI-03 (DetailedDesign-wp3.md §3.1): the two topics useJogLease
+  // publishes. /ui/jog_lease carries this client's id (not a /system/trigger
+  // call -- a synchronous rosbridge round-trip 5x/s would stall on WiFi
+  // gaps, DetailedDesign-webui.md §5); /cmd_vel_manual_raw is the raw
+  // velocity in front of jog_gate (WebUI is the only /cmd_vel_manual_raw
+  // publisher and it only ever reaches the motor through jog_gate ->
+  // twist_mux -> obstacle_limiter).
+  JOG_LEASE: '/ui/jog_lease',
+  CMD_VEL_MANUAL_RAW: '/cmd_vel_manual_raw',
 }
 
 export const SERVICES = {
@@ -29,6 +38,10 @@ export const MSG_TYPES = {
   ACTIVE_SCREEN: 'th_system_msgs/ActiveScreen',
   BOOL: 'std_msgs/Bool',
   FAULT_STATUS: 'th_system_msgs/FaultStatus',
+  // WP-UI-03: geometry_msgs/Twist (roslib shorthand "geometry_msgs/Twist")
+  // and std_msgs/String are both built into roslib, no custom message.
+  TWIST: 'geometry_msgs/Twist',
+  STRING: 'std_msgs/String',
 }
 
 export const SRV_TYPES = {

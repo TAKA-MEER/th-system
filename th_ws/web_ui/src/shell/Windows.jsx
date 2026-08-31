@@ -36,6 +36,9 @@ import { useEffect } from 'react'
 import { resumeChoices, isW1Active } from './limits.js'
 import { faultLabel } from '../i18n/faults.js'
 import { reasonLabel } from '../i18n/reasons.js'
+import { modeLabel } from '../i18n/modes.js'
+import { W6_TITLE, W6_CLOSE, W6_MODE } from '../i18n/screens.js'
+import JogConsole from '../parts/JogConsole.jsx'
 import {
   WIN_HIDE_LABEL, WIN_RESUME_ACK, WIN_RESUME_YES, WIN_RESUME_NO,
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
@@ -57,14 +60,21 @@ const ESTOP_DISABLED_IN_CARRY = 'estop_disabled_in_carry'
 // control the same flag. It now doubles as "W-1 dismissed", covering both
 // the ESTOP and fault-caused-PAUSE cases below.
 export default function Windows({
-  mode, stateName, estopUi, estopHw, fault, attributes, onTrigger,
+  ros, mode, stateName, estopUi, estopHw, fault, attributes, onTrigger,
   estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
-  lastRejectReason,
+  lastRejectReason, jogOpen, onJogClose,
 }) {
   const faultActive = !!fault?.active
   // Mutually exclusive: mode can't be both 'ESTOP' and something else at once.
   const w1IsEstop = mode === 'ESTOP'
   const w1Active = isW1Active(mode, stateName, faultActive)
+
+  // W-6 auto-closes on an estop or fault (Spec-webui.md §4.0 "自動で閉じる").
+  // The stick user can keep it open across releases; a drive `ui.stop` /
+  // leaving the screen is the open screen's concern (S-14..).
+  useEffect(() => {
+    if ((mode === 'ESTOP' || faultActive) && jogOpen) onJogClose()
+  }, [mode, faultActive, jogOpen, onJogClose])
 
   // A fresh W-1 occurrence always starts shown (§6.2: "non-display can be
   // done regardless of resolution", but each new fault re-opens it).
@@ -167,8 +177,20 @@ export default function Windows({
       {/* W-3 guide banner: mount point only, no screen supplies guide{key} yet */}
       <div id="winGuide" />
 
-      {/* W-6 manual panel: mount point only, no screen supplies a jog target yet */}
-      <div id="jogWin" />
+      {/* W-6 manual-operation panel (DetailedDesign-webui.md §6/§6.3).
+          A floating card, `position:absolute` in theme.css, so opening it
+          never moves the body's layout (U3-5). Opened by a screen's "手動"
+          button via shell/jogPanel.js; same JogConsole as the perpetual
+          drive tab so both are the same size (U-14-style reuse). */}
+      <div id="jogWin" className={jogOpen ? 'show' : ''}>
+        <div className="jw-hd">
+          <span className="jw-t">{W6_TITLE}</span>
+          <span className="grow" />
+          <button type="button" className="btn sm" onClick={onJogClose}>{W6_CLOSE}</button>
+        </div>
+        <div className="jw-m">{W6_MODE.replace('{mode}', modeLabel(mode))}</div>
+        <JogConsole ros={ros} />
+      </div>
     </>
   )
 }

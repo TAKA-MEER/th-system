@@ -40,3 +40,27 @@ export async function gotoScreen(page, screen, state = {}) {
 export async function stubServices(page, services) {
   await page.addInitScript((s) => { window.__thTestServices = s }, services)
 }
+
+// Press-and-hold the virtual stick at `stick` (a Locator for `.stick svg`)
+// with a real mouse gesture. `offsetX`/`offsetY` は中心からの倒し量を
+// **短辺の半分に対する割合**で与える（右／上が正。1.0 = 円の縁）。 Uses page.mouse so the pointer is a genuine active
+// pointer and the stick's setPointerCapture() succeeds; the button stays
+// down for the caller to release with page.mouse.up(). See
+// jog-lease-rate.spec.js / w6-stick-responds.spec.js.
+export async function downOnStick(page, stick, { offsetX = 0.45, offsetY = 0 } = {}) {
+  const box = await stick.boundingBox()
+  if (!box) throw new Error('stick svg has no bounding box (is it visible?)')
+  const cx = box.x + box.width / 2
+  const cy = box.y + box.height / 2
+  // オフセットは **短辺** に対する割合で与える（VirtualStick の update() と
+  // 同じ基準）。走行タブでは `.stick` が横に伸びて箱が 1129x230 になるため、
+  // 箱の幅を基準にすると円の外側を押すことになる。
+  const span = Math.min(box.width, box.height) / 2
+  await page.mouse.move(cx + offsetX * span, cy + offsetY * span)
+  await page.mouse.down()
+}
+
+export async function jogPublishes(page, topic) {
+  return (await page.evaluate(() => window.__thJogPublishes ?? []))
+    .filter((p) => p.topic === topic)
+}
