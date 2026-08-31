@@ -64,8 +64,25 @@ def generate_launch_description():
     imu_enabled  = LaunchConfiguration('imu_enabled')
     map_yaml     = LaunchConfiguration('map_yaml')
     lidar_source = LaunchConfiguration('lidar_source')
+    stage        = LaunchConfiguration('stage')
     lidar_is_local = PythonExpression(["'", lidar_source, "' == 'local'"])
-    map_is_empty = PythonExpression(["'", map_yaml, "' == ''"])
+
+    # ── 段階で重いスタックを出し分ける（N-27 の対処 (a)） ──────────
+    # Nav2 のライフサイクル起動と DR-SPAAM のモデルロードが同時に走ると、
+    # PC 側が一過性に数百 ms ストールする。実機で obstacle_limiter の 20Hz 出力が
+    # limiter_dead_ms(250ms) を超えて途切れ、LIMITER_DEAD(CRITICAL) → ESTOP が
+    # ラッチした（2026-08-31・DetailedDesign-open.md N-27。起動 18 秒後、
+    # startup_grace_sec=3 の外なので猶予では防げない）。
+    #
+    # 段階 1（手押し・手動ジョグ）と段階 2（安全チェーン）はどちらも Nav2 も
+    # 人物検知も使わない。使い始めるのは Nav2 が段階 3（WP-TRANSIT-01）、
+    # 人物検知が段階 4 から。**要らないものを起動しない**ことで、安全側の
+    # しきい値（limiter_dead_ms）を緩めずにストールそのものを無くす。
+    #
+    # connectivity_checker の required_nodes は [esp32_bridge, lidar_filter] だけ
+    # なので、これらを止めても evt.link_ok の成立には影響しない（registry.yaml）。
+    nav2_enabled       = PythonExpression(["int('", stage, "') >= 3"])
+    perception_enabled = PythonExpression(["int('", stage, "') >= 4"])
 
     # ── 設定ファイルパス ──────────────────────────────────
     nav2_yaml   = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
@@ -86,6 +103,14 @@ def generate_launch_description():
     params_generation_action = OpaqueFunction(
         function=make_opaque_function(sim_default=False))
     nodes.append(params_generation_action)
+
+    # 何を省いたかを起動ログに残す。省略は仕様であって故障ではない、と
+    # その場で分かるようにする（N-27 の対処 (a) を入れた副作用で
+    # 「Nav2 が上がらない」を不具合と誤認するのを防ぐ）。
+    nodes.append(LogInfo(msg=PythonExpression([
+        "'stage=", stage, ": Nav2/SLAM=' + ('起動' if int('", stage,
+        "') >= 3 else '省略(段階3から)') + ' / 人物検知=' + "
+        "('起動' if int('", stage, "') >= 4 else '省略(段階4から)')"])))
 
     # ── 1. robot_state_publisher / joint_state_publisher (URDF → TF) ─
     # base_link → laser_link 等の固定 TF を配信する。これが無いと SLAM /
@@ -318,13 +343,16 @@ def generate_launch_description():
             'use_rviz':     'false',
             'autostart':    'true',
         }.items(),
-        condition=UnlessCondition(use_stub),
+        # 段階 4 以上でのみ起動する（N-27 の対処 (a)。上の perception_enabled 参照）。
+        condition=IfCondition(PythonExpression(
+            ["'", use_stub, "' != 'true' and int('", stage, "') >= 4"])),
     ))
     nodes.append(Node(
         package='th_perception',
         executable='person_tracker_bridge.py',
         name='person_tracker_bridge',
-        condition=UnlessCondition(use_stub),
+        condition=IfCondition(PythonExpression(
+            ["'", use_stub, "' != 'true' and int('", stage, "') >= 4"])),
         output='screen',
     ))
 
@@ -428,6 +456,8 @@ def generate_launch_description():
             'params_file':     nav2_yaml,
             'autostart':       'true',
         }.items(),
+        # 段階 3（WP-TRANSIT-01）以上でのみ起動する（N-27 の対処 (a)）。
+        condition=IfCondition(nav2_enabled),
     )
     nodes.append(nav2_launch)
 
@@ -461,7 +491,9 @@ def generate_launch_description():
         output='screen',
         respawn=True,
         respawn_delay=2.0,
-        condition=IfCondition(map_is_empty),
+        # 段階 3 以上 かつ map_yaml が空のときだけ（N-27 の対処 (a)）。
+        condition=IfCondition(PythonExpression(
+            ["'", map_yaml, "' == '' and int('", stage, "') >= 3"])),
     ))
 
     # ── 17. AMCL + map_server (map_yaml 指定時のみ。UI には出さない休眠経路) ──
@@ -474,7 +506,9 @@ def generate_launch_description():
             'params_file':  nav2_yaml,
             'autostart':    'true',
         }.items(),
-        condition=UnlessCondition(map_is_empty),
+        # 段階 3 以上 かつ map_yaml 指定ありのときだけ（N-27 の対処 (a)）。
+        condition=IfCondition(PythonExpression(
+            ["'", map_yaml, "' != '' and int('", stage, "') >= 3"])),
     )
     nodes.append(localization_launch)
 
