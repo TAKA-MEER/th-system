@@ -291,6 +291,20 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 7c. jog_gate ────────────────────────────────────────
+    # WP-SAFE-04: /cmd_vel_manual_raw → /cmd_vel_manual の手動ジョグゲート。
+    # /cmd_vel_manual の publisher はこのノードだけ（WebUI は /cmd_vel_manual_raw
+    # へ publish。O-6）。attributes.yaml（th_state と同じファイル）を読み、
+    # /system/state が新鮮かつ jog 許可のときだけ通す。通さないときは沈黙する
+    # （ゼロを撃たない。J-1）。generated/jog_gate.yaml が state_stale_ms を運ぶ。
+    nodes.append(Node(
+        package='th_safety',
+        executable='jog_gate',
+        name='jog_gate',
+        parameters=[os.path.join(GENERATED_DIR, 'jog_gate.yaml')],
+        output='screen',
+    ))
+
     # ── 8. mode_manager ───────────────────────────────────
     nodes.append(Node(
         package='th_mode_manager',

@@ -71,6 +71,10 @@ REGISTRY_NODES: tuple[str, ...] = (
     # 全部止まるため、このタイミング（配線コミット）まで待った
     # （WP-SAFE-03 の指示に明記）。
     "obstacle_limiter",
+    # WP-SAFE-04: jog_gate は registry.yaml の state_stale_ms 等（consumers に
+    # jog_gate が入っている行）を生成 yaml に載せる。実装・launch 配線が
+    # 完了したこのタイミングで追加。
+    "jog_gate",
 )
 
 # ---------------------------------------------------------------------------

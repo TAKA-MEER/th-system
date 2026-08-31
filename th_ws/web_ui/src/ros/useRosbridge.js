@@ -418,7 +418,8 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
   // ── manual jog (direct velocity command) ──────────────────────────
   // manual_command_handler's Nav2-goal approach needs a map frame, which
   // isn't available in mapless operation. Switched to publishing Twist
-  // directly to twist_mux's /cmd_vel_manual (priority 30, timeout 0.5s).
+  // directly to jog_gate's /cmd_vel_manual_raw (O-6 / WP-SAFE-04), which
+  // gate-keeps it to twist_mux's /cmd_vel_manual (priority 30, timeout 0.5s).
   // The UI publishes at a fixed period while held, and the timeout stops
   // the robot automatically.
   const manualCmdRef = useRef(null)
@@ -427,7 +428,7 @@ export function useRosbridge(url = `ws://${window.location.hostname}:9090`,
     const ROSLIB = window.ROSLIB
     manualCmdRef.current = new ROSLIB.Topic({
       ros: rosRef.current,
-      name: '/cmd_vel_manual',
+      name: '/cmd_vel_manual_raw',
       messageType: 'geometry_msgs/Twist'
     })
   }, [connected])

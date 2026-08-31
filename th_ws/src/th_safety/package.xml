@@ -18,6 +18,14 @@
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
+  <!-- jog_gate（WP-SAFE-04）: attributes.yaml（th_state と同じファイル）を
+       ament_index_cpp で指し、yaml-cpp で読むのに要る。 -->
+  <depend>ament_index_cpp</depend>
+  <depend>yaml_cpp_vendor</depend>
+  <!-- jog_gate は実行時に th_state の share/config/attributes.yaml を読む
+       （J-4: th_state の jog_allowed と同じファイル）。ビルドには要らないが
+       実行時には必ず要るので exec_depend で表明する。 -->
+  <exec_depend>th_state</exec_depend>
   <exec_depend>twist_mux</exec_depend>
   <test_depend>ament_cmake_gtest</test_depend>
   <export><build_type>ament_cmake</build_type></export>

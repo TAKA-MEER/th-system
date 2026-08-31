@@ -133,6 +133,13 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_fault_detection
     test/test_fault_detection.py
     TIMEOUT 90)
+  # jog_gate ノード統合テスト（WP-SAFE-04 §7。J-1 の帰結:
+  # jog_gate が黙っている間に /cmd_vel_behavior=priority20 が /cmd_vel_muxed に出る）
+  # TIMEOUT: 3 本のテストがそれぞれ discovery 待ち 1s ＋ stale 待ち 2.2s 等を
+  # 含むため 60 では足りない（実測で 40s 前後）。
+  ament_add_pytest_test(jog_gate_node
+    test/test_jog_gate_node.py
+    TIMEOUT 150)
   # esp32_bridge ノード統合テスト (WP-SAFE-02。故障注入12「/cmd_vel の途絶」)
   ament_add_pytest_test(esp32_bridge_node
     test/test_esp32_bridge_node.py

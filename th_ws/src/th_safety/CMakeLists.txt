@@ -17,6 +17,9 @@ find_package(th_system_msgs REQUIRED)
 find_package(tf2               REQUIRED)
 find_package(tf2_ros            REQUIRED)
 find_package(tf2_geometry_msgs  REQUIRED)
+# jog_gate（WP-SAFE-04）: attributes.yaml（th_state と同じファイル）を読むのに要る。
+find_package(ament_index_cpp   REQUIRED)
+find_package(yaml_cpp_vendor   REQUIRED)
 
 # link_quality_core（WP-SAFE-00）: ヘッダオンリーの純粋ロジック層。
 add_library(link_quality_core INTERFACE)
@@ -71,9 +74,25 @@ target_link_libraries(obstacle_limiter obstacle_limiter_core obstacle_limiter_pa
 ament_target_dependencies(obstacle_limiter
   rclcpp std_msgs sensor_msgs geometry_msgs th_system_msgs tf2 tf2_ros tf2_geometry_msgs)
 
-install(TARGETS safety_monitor obstacle_limiter DESTINATION lib/${PROJECT_NAME})
+# jog_gate_core（DetailedDesign-wp2.md WP-SAFE-04 §4.1）: 手動ジョグ指令の
+# ゲート判定ロジック。attributes.yaml の読込（yaml-cpp）を含む。
+# attributes.yaml は th_state と同じファイルを読む（J-4）。
+add_library(jog_gate_core src/jog_gate_core.cpp)
+target_include_directories(jog_gate_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(jog_gate_core PUBLIC yaml-cpp)
+
+# jog_gate（WP-SAFE-04）: /cmd_vel_manual_raw → /cmd_vel_manual のゲートノード。
+# 判定は jog_gate_core に持ち、このノードは sub/pub と パラメータ/ファイル
+# 解決だけを行う。通さないときは沈黙する（ゼロを撃たない。J-1）。
+add_executable(jog_gate src/jog_gate.cpp)
+target_link_libraries(jog_gate jog_gate_core)
+ament_target_dependencies(jog_gate rclcpp geometry_msgs th_system_msgs ament_index_cpp)
+
+install(TARGETS safety_monitor obstacle_limiter jog_gate DESTINATION lib/${PROJECT_NAME})
 install(TARGETS safety_monitor_core obstacle_limiter_core obstacle_limiter_params
-                link_quality_core scan_geometry_core
+                link_quality_core scan_geometry_core jog_gate_core
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -120,6 +139,17 @@ if(BUILD_TESTING)
   # が行う「ROS パラメータ表 → コア入力値」変換のうちテストできる部分）。
   ament_add_gtest(test_obstacle_limiter_params test/test_obstacle_limiter_params.cpp)
   target_link_libraries(test_obstacle_limiter_params obstacle_limiter_params)
+
+  # jog_gate_core の単体試験（DetailedDesign-wp2.md WP-SAFE-04 §7。
+  # 不変条件 J-1〜J-3・F-28・18 モード）。テスト名は設計書 §7 に固定。
+  ament_add_gtest(test_jog_gate_core test/test_jog_gate_core.cpp)
+  target_link_libraries(test_jog_gate_core jog_gate_core)
+  # AllModesFromAttributes は th_state が持つ実ファイルを読む（J-4:
+  # th_state の jog_allowed と同じ attributes.yaml を読む）。表を写した
+  # テストにすると yaml を書き換えても緑のまま通ってしまう（実測済み）。
+  # 流儀は test_scan_geometry_equivalence の TH_SAFETY_TEST_DATA_DIR と同じ。
+  target_compile_definitions(test_jog_gate_core PRIVATE
+    TH_STATE_ATTRIBUTES_YAML="${CMAKE_CURRENT_SOURCE_DIR}/../th_state/config/attributes.yaml")
 endif()
 
 ament_package()
