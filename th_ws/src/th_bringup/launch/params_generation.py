@@ -34,6 +34,7 @@ export.py / assertions.py の中身であり、ここでは作らない（呼ぶ
 """
 from __future__ import annotations
 
+import math
 import copy
 import os
 import shutil
@@ -108,6 +109,26 @@ _TWIST_MUX_TIMEOUT_MAP: dict[str, str] = {
 }
 
 
+def _coerce_ms_to_int(key: str, value: Any) -> Any:
+    """`*_ms` の float を整数へ切り上げる（`sanitize_node_params()` の下請け）。
+
+    **切り上げ（floor でも round でもなく ceil）にする理由**: 対象になるのは
+    `lidar_timeout_ms` / `esp32_timeout_ms` のような導出タイムアウトで、
+    `timeout_from_bounds` は「下限（p99 + 余裕）を常に採る」形で値を決める
+    （registry.yaml の note・`DetailedDesign-params.md` §3.3）。切り捨てると
+    その下限を下回り、**導出の根拠になった不等式が生成物の上で成り立たなくなる**
+    （リンク品質の裾で誤フォルトが出る側へ倒れる）。切り上げれば下限は必ず満たされ、
+    代償は検知が最大 1 ms 遅れることだけで、300 ms 級のタイムアウトに対して無視できる。
+
+    `link_gap_p99_ms` のようにキーは `_ms` で終わるが値が dict のものは対象外
+    （`isinstance(value, float)` でしか発火しない）。bool は float ではないので
+    巻き込まない。
+    """
+    if key.endswith('_ms') and isinstance(value, float):
+        return int(math.ceil(value))
+    return value
+
+
 def sanitize_node_params(params: Mapping[str, Any]) -> dict[str, Any]:
     """export.py が書いたノード別 `ros__parameters` から、ROS2 が受け取れない値の
     キーを落とす（純粋関数。ファイル I/O をしない）。D3 対応。
@@ -130,6 +151,16 @@ def sanitize_node_params(params: Mapping[str, Any]) -> dict[str, Any]:
     blocking placeholder 検査）が別途行う——ここでは「壊れた YAML でノードを
     落とさない」だけを保証する。
 
+      - `*_ms` の float。導出パラメータ（`timeout_from_bounds` 等）は float を返すため
+        `lidar_timeout_ms: 308.0` のように書かれるが、**このリポジトリの `*_ms` は
+        14 箇所すべて整数で宣言されている**（`safety_monitor.cpp` / `obstacle_limiter.cpp` /
+        `esp32_bridge.py` / `connectivity_checker.py` / `state_manager.py`）。
+        rclcpp は int 宣言に double を渡すと `InvalidParameterTypeException` を投げ、
+        **ノードが起動時に abort する**（2026-08-31 に実機で `safety_monitor` が
+        exit code -6 で落ちて発覚。生成 YAML を使うのは実機 bringup 経路だけで、
+        Gazebo は静的な `safety_monitor_sim.yaml` を読むためこの経路が今まで
+        一度も通っていなかった）。
+
     それ以外の値（0 / False / 空文字列を含む）はそのまま残す
     （falsy であることと「値が無い」ことは別。空文字列はまさに空リストと違って
     STRING 型として妥当に配れる）。
@@ -140,7 +171,7 @@ def sanitize_node_params(params: Mapping[str, Any]) -> dict[str, Any]:
             continue
         if isinstance(value, (list, dict)) and len(value) == 0:
             continue
-        sanitized[key] = value
+        sanitized[key] = _coerce_ms_to_int(key, value)
     return sanitized
 
 
