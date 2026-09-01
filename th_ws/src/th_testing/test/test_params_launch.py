@@ -82,6 +82,28 @@ def test_generated_before_nodes():
         "gazebo.launch.py: params_generation_action が common_nodes より後にある")
 
 
+def test_bringup_safety_targets_omit_runaway_while_w06_open():
+    """W-06（特例）: `/esp32/wheel_feedback` の WiFi 受信ギャップで DRIVE_RUNAWAY が
+    走行のたびに誤発火するため、`bringup.launch.py` の `SAFETY_ENABLED_TARGETS` から
+    `'runaway'` を外している。EXCEPTION-LEDGER の W-06 を正規実装で閉じるときに
+    `'runaway'` を戻し、このテストも撤去する（撤去し忘れ防止のアンカー）。"""
+    src = _read(BRINGUP_PY)
+    tree = ast.parse(src, filename=BRINGUP_PY)
+    targets = None
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "SAFETY_ENABLED_TARGETS"
+                        for t in node.targets)
+                and isinstance(node.value, (ast.List, ast.Tuple))):
+            targets = [el.value for el in node.value.elts if isinstance(el, ast.Constant)]
+    assert targets is not None, "bringup.launch.py: SAFETY_ENABLED_TARGETS の代入が見つからない"
+    assert "runaway" not in targets, (
+        "SAFETY_ENABLED_TARGETS に 'runaway' が復活している。W-06 を正規実装で"
+        "閉じたなら、このテストごと撤去すること")
+    assert "# WAIVER(demo): W-06" in src, (
+        "bringup.launch.py に W-06 の WAIVER タグが無い")
+
+
 def _find_function(tree: ast.AST, name: str) -> ast.FunctionDef:
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == name:

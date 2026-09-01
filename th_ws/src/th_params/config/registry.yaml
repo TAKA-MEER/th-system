@@ -774,7 +774,7 @@
   value: 500
   consumers: [safety_monitor]
   spec_ref: "DetailedDesign-names.md §7.3"
-  note: "DRIVE_RUNAWAY の保持時間。暫定値"
+  note: "DRIVE_RUNAWAY の保持時間。暫定値。W-06（特例）で runaway ターゲットは bringup.launch.py から外し監視バイパス中。解除時に実測で右サイズ化"
 
 - name: link_quality_window_sec
   unit: s
@@ -828,7 +828,7 @@
   value: 1.5
   consumers: [safety_monitor]
   spec_ref: "DetailedDesign-names.md §7.3"
-  note: "DRIVE_RUNAWAY の乖離判定。暫定値"
+  note: "DRIVE_RUNAWAY の乖離判定。暫定値。W-06（特例）で runaway 監視バイパス中"
 
 - name: runaway_zero_threshold
   unit: m/s
@@ -837,7 +837,7 @@
   value: 0.02
   consumers: [safety_monitor]
   spec_ref: "DetailedDesign-names.md §7.3"
-  note: "DRIVE_RUNAWAY の乖離判定。暫定値"
+  note: "DRIVE_RUNAWAY の乖離判定。暫定値。W-06（特例）で runaway 監視バイパス中"
 
 - name: link_quality_regression_ratio
   unit: null

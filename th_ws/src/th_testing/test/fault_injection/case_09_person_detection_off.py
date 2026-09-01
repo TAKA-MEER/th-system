@@ -31,8 +31,9 @@ case_09_person_detection_off.py — 故障注入 9「人検知 OFF とフォル�
    `safety_monitor.cpp:270` の `person` ターゲットは `targetEnabled("person")`
    でゲートされているが、`gazebo.launch.py` の
    `SAFETY_ENABLED_TARGETS_SIM = ['lidar', 'limiter']` にも
-   `SAFETY_ENABLED_TARGETS_REAL = ['lidar', 'esp32', 'runaway', 'state',
-   'firmware', 'limiter']` にも `'person'` が無い。**さらに**、たとえ
+   実機 bringup の `SAFETY_ENABLED_TARGETS`（`['lidar', 'esp32', 'state',
+   'firmware', 'limiter']`。2026-09-01 に W-06 で `'runaway'` を一時除外）にも
+   `'person'` が無い。**さらに**、たとえ
    `enabled_targets` に加えても、`/person/targets`（`PersonTargets` 型）を
    publish するノードがリポジトリ全体を検索して1つも存在しない
    （`grep -rl PersonTargets` で `safety_monitor.cpp` と

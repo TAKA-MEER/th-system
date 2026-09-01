@@ -250,7 +250,14 @@ def generate_launch_description():
     # 同様に有効化できる可能性が高い）は**このパケットの範囲外**として意図的に
     # 触れていない——故障注入12「/cmd_vel の途絶」は別パケットの担当であり、
     # mux 検出との相互作用まで含めた検証はそちら側の判断に委ねる。
-    SAFETY_ENABLED_TARGETS = ['lidar', 'esp32', 'runaway', 'state', 'firmware', 'limiter']
+    # WAIVER(demo): W-06 — 'runaway'（DRIVE_RUNAWAY）を一時的に外している。
+    #   WiFi 経由の /esp32/wheel_feedback は受信ギャップ（500ms 超）が起きるため、
+    #   走行のたびに safety_monitor が「新鮮な指令 vs 古い実測」を比べて誤発火し、
+    #   手動教示・教示再生のデモが成立しない（実機フィードバック 2026-09-01）。
+    #   物理非常停止と ESP32 ウォッチドッグ（600ms）は有効なので真の暴走は止まる。
+    #   特例解除時に wheel_feedback の鮮度ゲート＋回頭中の Case A 除外＋実測較正で
+    #   runaway_hold_ms を右サイズ化してから 'runaway' を戻す。docs/plan/EXCEPTION-LEDGER.md W-06。
+    SAFETY_ENABLED_TARGETS = ['lidar', 'esp32', 'state', 'firmware', 'limiter']
     nodes.append(Node(
         package='th_safety',
         executable='safety_monitor',
