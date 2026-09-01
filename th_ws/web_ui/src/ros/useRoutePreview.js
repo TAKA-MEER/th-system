@@ -8,6 +8,7 @@
 // window.__thSetTestRoutePreview (mutate) for e2e.
 import { useEffect, useRef, useState } from 'react'
 import { TOPICS, MSG_TYPES } from './topics'
+import { previewFromPath } from '../screens/routePreviewGeom.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 
@@ -35,10 +36,11 @@ export function useRoutePreview(ros) {
       subscribeOptions: { queueSize: 2, throttle_rate: 0, latching: false },
     })
     topicRef.current.subscribe((msg) => {
-      const pts = (msg?.poses ?? []).map((p) => ({
-        x: p.pose.position.x, y: p.pose.position.y,
-      }))
-      setPreview(pts)
+      // WS-6.4: ignore empty Path messages so a momentary zero-frame gap never
+      // blanks the preview (node side no longer publishes empty, double-insured
+      // here). TEST_MODE's __thSetTestRoutePreview still sets everything the e2e
+      // asks, including an explicit empty.
+      setPreview((prev) => previewFromPath(msg, prev))
     })
     return () => {
       topicRef.current?.unsubscribe()

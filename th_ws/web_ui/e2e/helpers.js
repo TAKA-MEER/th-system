@@ -79,6 +79,26 @@ export async function gotoScreenWithRoutePreview(page, screen, state, { routes, 
   await page.goto('/')
 }
 
+// WS-6.4 / demo-teach-replay: opens the screen with the route-robot preview
+// seeded -- routes/catalog, /route/preview (points), /route/status (target_index),
+// the robot odom pose ({x,y,yaw} for __thTestOdomPose) and a /scan_filtered
+// LaserScan-minimal (angle_min/angle_increment/ranges). useOdomPose /
+// useRoutePreview / useRouteStatus / useRouteCatalog and RoutePreview's scan
+// all read their window.__thTest<Name> on first render, so every seed must be
+// set via addInitScript.
+export async function gotoScreenWithRouteRobot(page, screen, state, { routes, preview, status, pose, scan }) {
+  await page.addInitScript(({ s, scr, r, pv, st, ps, sc }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    window.__thTestRouteCatalog = r
+    window.__thTestRoutePreview = pv
+    window.__thTestRouteStatus = st
+    if (ps) window.__thTestOdomPose = ps
+    if (sc) window.__thTestRouteScan = sc
+  }, { s: state, scr: screen, r: routes, pv: preview, st: status, ps: pose, sc: scan })
+  await page.goto('/')
+}
+
 // Stubs a std_srvs/Trigger-shaped service call (ros/useStdTrigger.js's test
 // hook) for /shutdown/prepare / /shutdown/execute. Must be called via
 // addInitScript (before the page's first render) since S01Main reads

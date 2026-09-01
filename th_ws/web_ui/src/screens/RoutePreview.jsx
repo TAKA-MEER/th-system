@@ -21,12 +21,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { baseToWorld } from '../mapGeometry.js'
 import { ROUTE_PREVIEW_EMPTY } from '../i18n/screens.js'
-import { fitTransform, ROUTE_PREVIEW_PAD } from './routePreviewGeom.js'
+import { fitTransform, ROUTE_PREVIEW_PAD, centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M } from './routePreviewGeom.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 const SCAN_TOPIC = '/scan_filtered'
 const SCAN_MSG = 'sensor_msgs/LaserScan'
-const SCAN_MAX = 8 // m; draw closer points only (point cloud is for nearby obstacles)
+const SCAN_MAX = 7.5 // m; just under the fixed display radius so the edge fades naturally
+const W = 600
+const H = 380
 
 export default function RoutePreview({ preview, pose, targetIndex }) {
   const { ros } = useSystemState()
@@ -50,10 +52,16 @@ export default function RoutePreview({ preview, pose, targetIndex }) {
     return () => { topic.unsubscribe() }
   }, [ros])
 
+  // WS-6.4: with a pose use the robot-centred fixed-scale transform (never
+  // re-fits, so the view does not jump while the robot moves + the scan fits on
+  // screen). Only without a pose (odom not yet received) fall back to the
+  // data-bbox fit from WS-3.
   const points = []
   if (preview) points.push(...preview)
   if (pose) points.push(pose)
-  const fit = fitTransform(points, 600, 380, ROUTE_PREVIEW_PAD)
+  const fit = pose
+    ? centeredTransform(pose, ROUTE_PREVIEW_HALF_SPAN_M, W, H)
+    : fitTransform(points, W, H, ROUTE_PREVIEW_PAD)
 
   // TEST_MODE: reflect what was actually drawn so e2e can assert the passed
   // targetIndex really reaches the canvas (mutation 3). No production effect.
@@ -69,6 +77,7 @@ export default function RoutePreview({ preview, pose, targetIndex }) {
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
+    if (TEST_MODE) window.__thRoutePreviewFit = { scale: fit ? fit.scale : null }
     if (!fit) return
 
     const px = (p) => (p.x - fit.minX) * fit.scale + fit.offX
@@ -87,7 +96,9 @@ export default function RoutePreview({ preview, pose, targetIndex }) {
     }
 
     // ② /scan_filtered point cloud (laser_link = base_link x/y/yaw; reuse
-    // MapView's conversion via baseToWorld against the odom pose).
+    // MapView's conversion via baseToWorld against the odom pose). Points drawn
+    // are counted for the e2e (mutation 2), production unaffected.
+    let scanDrawn = 0
     if (scanData && pose) {
       const { angle_min, angle_increment, ranges } = scanData
       ctx.fillStyle = '#ef5350'
@@ -98,12 +109,15 @@ export default function RoutePreview({ preview, pose, targetIndex }) {
         const [wx, wy] = baseToWorld(r * Math.cos(angle), r * Math.sin(angle), pose)
         const [cx, cy] = [px({ x: wx, y: wy }), py({ x: wx, y: wy })]
         ctx.fillRect(cx - 1, cy - 1, 2, 2)
+        scanDrawn++
       }
     }
+    if (TEST_MODE) window.__thRoutePreviewScanDrawn = scanDrawn
 
     // ③ robot marker (MapView's triangle, no map-origin rotation: odom frame)
     if (pose) {
       const cx = px(pose), cy = py(pose)
+      // WS-6.4: with the centred transform the robot fixes the canvas centre.
       ctx.save()
       ctx.translate(cx, cy)
       ctx.rotate(Math.PI / 2 - pose.yaw)
@@ -127,20 +141,22 @@ export default function RoutePreview({ preview, pose, targetIndex }) {
     }
   }, [fit, preview, pose, scanData, targetIndex])
 
-  if (!fit) {
-    return <p className="note" data-testid="route-preview-empty">{ROUTE_PREVIEW_EMPTY}</p>
-  }
-
+  // WS-6.4: the canvas is ALWAYS mounted (so a zero-frame gap never swaps the
+  // DOM, further reducing #4 flicker). With no drawable data the placeholder
+  // overlay shows on top; with data it hides behind the drawing.
   return (
-    <div className="card">
+    <div className="routePreview">
       <canvas
         ref={canvasRef}
         data-testid="route-preview"
         data-target-index={drawnTarget}
-        width={600}
-        height={380}
+        width={W}
+        height={H}
         className="route-preview"
       />
+      {!fit && (
+        <p className="routePreviewOverlay" data-testid="route-preview-empty">{ROUTE_PREVIEW_EMPTY}</p>
+      )}
     </div>
   )
 }

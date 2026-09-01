@@ -191,6 +191,12 @@ table{border-collapse:collapse;width:100%}
    縦横比を保ってフィットし、CSS はウィンドウ幅に合わせて等比拡縮する。 */
 .route-preview{display:block;width:100%;height:auto;background:var(--inset);
   border:1px solid var(--bd);border-radius:var(--r)}
+/* WS-6.4 / demo-teach-replay: 経路プレビューは ロボット中心・固定倍率（半径7m）。
+   canvas は常時マウントし、データが無い間だけオーバレイ文言を重ねる（DOM を差し替えない
+   ので #4 の点滅がさらに減る）。 */
+.routePreview{position:relative}
+.routePreviewOverlay{position:absolute;inset:0;display:grid;place-items:center;
+  margin:0;pointer-events:none;color:var(--mut)}
 /* WS-4 / demo-teach-replay: 走行スティック下のキーボード操作の凡例。
    押下中（kbd.held）は keys を強調表示する（任意実装）。 */
 .kbdHint{display:flex;gap:6px;justify-content:center;align-items:center;

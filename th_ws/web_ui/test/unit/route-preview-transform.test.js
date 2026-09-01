@@ -4,7 +4,10 @@
 // route-preview crop is silently dropped (mutation 2).
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { fitTransform, ROUTE_PREVIEW_PAD } from '../../src/screens/routePreviewGeom.js'
+import {
+  fitTransform, ROUTE_PREVIEW_PAD,
+  centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M,
+} from '../../src/screens/routePreviewGeom.js'
 
 test('returns null for an empty point set', () => {
   assert.equal(fitTransform([], 600, 380, 20), null)
@@ -48,4 +51,55 @@ test('degenerate single point still renders (small default extent, centered)', (
   const pyCanvas = 300 - ((cy - f.minY) * f.scale + f.offY)
   assert.ok(Math.abs(px - 200) < 150, `point should render near canvas center, got x=${px}`)
   assert.ok(Math.abs(pyCanvas - 150) < 150, `point should render near canvas center, got y=${pyCanvas}`)
+})
+
+// ---------------------------------------------------------------- WS-6.4: centeredTransform ----
+
+const W = 600, H = 380
+
+test('centeredTransform maps the center to the canvas centre', () => {
+  const f = centeredTransform({ x: 0, y: 0 }, ROUTE_PREVIEW_HALF_SPAN_M, W, H)
+  assert.ok(f)
+  // scale short-side: min(600,380) / (2*7) = 380/14
+  assert.equal(f.scale, Math.min(W, H) / (2 * ROUTE_PREVIEW_HALF_SPAN_M))
+  assert.equal(f.minX, -7)
+  assert.equal(f.minY, -7)
+  // px/py math matches RoutePreview
+  const px = (p) => (p.x - f.minX) * f.scale + f.offX
+  const py = (p) => H - ((p.y - f.minY) * f.scale + f.offY)
+  const cx = px({ x: 0, y: 0 })
+  const cy = py({ x: 0, y: 0 })
+  assert.ok(Math.abs(cx - W / 2) < 1e-6, `centre x should be W/2, got ${cx}`)
+  assert.ok(Math.abs(cy - H / 2) < 1e-6, `centre y should be H/2, got ${cy}`)
+})
+
+test('centeredTransform fits ±halfSpan to the SHORT canvas edge', () => {
+  const f = centeredTransform({ x: 0, y: 0 }, ROUTE_PREVIEW_HALF_SPAN_M, W, H)
+  assert.ok(f)
+  const px = (p) => (p.x - f.minX) * f.scale + f.offX
+  const py = (p) => H - ((p.y - f.minY) * f.scale + f.offY)
+  // short side (height): y = center ±7 lands exactly on the two edges.
+  // Canvas y grows downward, so world y=-7 (below center) draws at the BOTTOM.
+  assert.ok(Math.abs(py({ x: 0, y: -7 }) - H) < 1e-6, 'y=-7 should hit the bottom edge')
+  assert.ok(Math.abs(py({ x: 0, y: 7 })) < 1e-6, 'y=+7 should hit the top edge')
+  // long side is inset (the view is fit to the short side, aspect preserved)
+  assert.ok(px({ x: -7 }) > 0 && px({ x: 7 }) < W, 'x=±7 should stay inside the canvas')
+})
+
+test('centeredTransform scale is invariant to the center (fixed zoom, no re-fit)', () => {
+  const a = centeredTransform({ x: 0, y: 0 }, ROUTE_PREVIEW_HALF_SPAN_M, W, H)
+  const b = centeredTransform({ x: 3.5, y: -2.7 }, ROUTE_PREVIEW_HALF_SPAN_M, W, H)
+  assert.ok(a && b)
+  assert.equal(a.scale, b.scale)
+  // ...and neither depends on the route data at all (only center + halfSpan).
+  assert.equal(
+    centeredTransform({ x: 3.5, y: -2.7 }, ROUTE_PREVIEW_HALF_SPAN_M, W, H).scale,
+    Math.min(W, H) / (2 * ROUTE_PREVIEW_HALF_SPAN_M))
+})
+
+test('centeredTransform returns null for an invalid center', () => {
+  assert.equal(centeredTransform(null, ROUTE_PREVIEW_HALF_SPAN_M, W, H), null)
+  assert.equal(centeredTransform({ x: NaN, y: 0 }, ROUTE_PREVIEW_HALF_SPAN_M, W, H), null)
+  assert.equal(centeredTransform({ x: 0, y: Infinity }, ROUTE_PREVIEW_HALF_SPAN_M, W, H), null)
+  assert.equal(centeredTransform({ x: 0, y: 0 }, 0, W, H), null)
 })
