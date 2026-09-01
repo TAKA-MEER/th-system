@@ -53,3 +53,6 @@ th_ws/web_ui/playwright-report/
 
 # tcpdump のテキスト展開（同ディレクトリの .pcap から tshark で再生成できる）
 th_ws/data/**/*_tcpdump.txt
+
+# herdr 用の実装ブリーフ置き場（共有しない）
+.briefs/
