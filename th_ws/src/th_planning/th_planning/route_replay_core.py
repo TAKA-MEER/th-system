@@ -134,6 +134,7 @@ def pure_pursuit(
         return ReplayCommand(0.0, 0.0, last_index, True)
 
     # 3. pure-pursuit
+    # WAIVER(demo): W-02 走行中の自己位置補正なし（オドメトリ＋ジャイロの /odom だけで辿る）
     bearing = math.atan2(ty - ry, tx - rx)
     alpha = normalize_angle(bearing - robot[2])
     w = 2.0 * params.cruise_speed_mps * math.sin(alpha) / params.lookahead_m

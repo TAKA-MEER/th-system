@@ -432,6 +432,14 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 13a'. replay_runner（教示再生の走行。WP-TRANSIT / demo-teach-replay）─
+    nodes.append(Node(
+        package='th_planning',
+        executable='replay_runner.py',
+        name='replay_runner',
+        output='screen',
+    ))
+
     # ── 13b. config_manager (WebUI 設定パネル: パラメータ調整の仲介) ──
     nodes.append(Node(
         package='th_config_manager',
