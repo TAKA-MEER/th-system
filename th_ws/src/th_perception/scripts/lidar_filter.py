@@ -15,6 +15,8 @@
 # （th_safety、C++移植版 scan_geometry.hpp）と同じ規約で解釈することが
 # 目的（B-3。片方だけ更新して片方を忘れると死角の解釈がずれる）。
 # ============================================================
+import time
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
@@ -69,6 +71,7 @@ class LidarFilter(Node):
         in_topic  = self.get_parameter('input_topic').value
         out_topic = self.get_parameter('output_topic').value
 
+        self._in_topic = in_topic
         self._pub = self.create_publisher(LaserScan, out_topic, 10)
         # /scan は sensor QoS (BEST_EFFORT) で購読する。既定の RELIABLE だと
         # lidar_source:=network（ラズパイ→ロボPC の WiFi）で信頼配送のハンドシェイクが
@@ -78,9 +81,33 @@ class LidarFilter(Node):
         self._sub = self.create_subscription(
             LaserScan, in_topic, self._cb, qos_profile_sensor_data)
 
+        # 起動直後の discovery レース対策の軽い保険。フル bringup 起動直後に
+        # SEDP を取りこぼして subscription が match しても /scan が来ないことが
+        # まれにある。最初の 1 回だけ、10s 無受信なら subscription を作り直す。
+        # （本命の対処は launch 側：network 時はマルチキャストが不安定な AP なら
+        #  fastdds_profile.xml でラズパイをユニキャストピアに与える。）
+        self._started_wall = time.monotonic()
+        self._got_scan = False
+        self._resubbed = False
+        self._resub_timer = self.create_timer(5.0, self._check_rx)
+
         self.get_logger().info(
             f'lidar_filter 起動  {in_topic} → {out_topic}  '
             f'死角: {len(self._blind_ranges)} 範囲')
+
+    def _check_rx(self):
+        if self._got_scan or self._resubbed:
+            self._resub_timer.cancel()
+            return
+        if time.monotonic() - self._started_wall < 10.0:
+            return
+        self._resubbed = True
+        self._resub_timer.cancel()
+        self.get_logger().warn(
+            f'{self._in_topic} が 10s 来ない → subscription を作り直す（discovery 保険）')
+        self.destroy_subscription(self._sub)
+        self._sub = self.create_subscription(
+            LaserScan, self._in_topic, self._cb, qos_profile_sensor_data)
 
     @staticmethod
     def _build_blind_ranges(raw):
@@ -102,6 +129,7 @@ class LidarFilter(Node):
         return SetParametersResult(successful=True)
 
     def _cb(self, msg: LaserScan):
+        self._got_scan = True
         filtered = copy.copy(msg)
         filtered.ranges = list(msg.ranges)
         n = len(filtered.ranges)

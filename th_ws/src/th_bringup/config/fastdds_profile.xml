@@ -1,21 +1,27 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<!-- TH システム実機用 FastDDS プロファイル
+<!-- TH システム実機用 FastDDS プロファイル（オプトイン。既定では未使用）
 
-     ESP32 SoftAP 経由のホスト間マルチキャストは不安定で、DDS ディスカバリが
-     成立しないことがある (実機検証 2026-07-11)。ラズパイ (192.168.4.2) を
-     ユニキャスト初期ピアとして追加する。トランスポートは既定のまま
-     (SHM + UDPv4 + マルチキャスト) なので、コンテナ内のローカル発見には
-     影響しない。ラズパイ側も同様に 192.168.4.50 をピアに登録すること。
+     一部の WiFi AP ではホスト間マルチキャストが不安定で DDS ディスカバリが
+     成立しないことがある (実機検証 2026-07-11、旧 ESP32 SoftAP 192.168.4.x)。
+     そういう AP のときだけ、ラズパイ (/scan 配信元) をユニキャスト初期ピアに
+     与える。<address> は**現在のラズパイの IP に必ず直すこと**。存在しない
+     サブネットの IP を残すと discovery が逆に壊れて /scan が全く来なくなる
+     (2026-09-01: 192.168.5.x へ移行後も 192.168.4.2 のままで /scan_filtered が
+     完全無音になった)。
 
-     使い方: FASTRTPS_DEFAULT_PROFILES_FILE=<このファイル>
-     (docker-compose.yml で設定済み)
+     使い方: bringup.launch.py の lidar_filter Node に
+       additional_env={'FASTRTPS_DEFAULT_PROFILES_FILE': '<このファイルの絶対パス>'}
+     を渡す (network 時・このプロセス単体のみ。コンテナ全体に適用すると
+     同一ホスト内ノード間の発見まで壊れる — 2026-07-17 検証済み)。
+     現行 AP はマルチキャストが正常なので既定では渡していない。
 -->
 <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
   <participant profile_name="th_unicast_peers" is_default_profile="true">
     <rtps>
       <builtin>
         <initialPeersList>
-          <locator><udpv4><address>192.168.4.2</address></udpv4></locator>
+          <!-- ↓ 現在のラズパイの IP に直す -->
+          <locator><udpv4><address>192.168.5.125</address></udpv4></locator>
         </initialPeersList>
       </builtin>
     </rtps>

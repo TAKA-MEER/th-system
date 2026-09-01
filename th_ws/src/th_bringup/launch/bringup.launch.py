@@ -164,35 +164,28 @@ def generate_launch_description():
 
     # ── 3. lidar_filter (死角マスク) ─────────────────────
     # lidar_source:=network の場合、これがラズパイ配信の /scan を実際に
-    # 購読する唯一のノード。ESP32 SoftAP 越しだと DDS のマルチキャスト
-    # 参加者発見(SPDP)がホスト間で成立しないことがある実機検証済みの事象
-    # (2026-07-17: unicast UDP 疎通は正常なのに /scan が discover されない
-    #  ことを確認)。ラズパイをユニキャストピアとして与えることで解消する
-    # (network 時のみ。このプロセス単体にのみ適用し、コンテナ全体の環境変数
-    # にすると mode_manager 等ローカルノード間の発見まで巻き添えで壊れる
-    # ことを確認済みのためそれは避ける)。lidar_is_local と同じ条件分岐で
-    # sllidar_node と対にしている。
-    fastdds_profile_yaml = os.path.join(BRINGUP_DIR, 'config', 'fastdds_profile.xml')
+    # 購読する唯一のノード。
+    #
+    # 2026-07-17: 旧 ESP32 SoftAP（192.168.4.x）越しだと DDS の参加者発見(SPDP)
+    # がホスト間で成立しないことがあり、`fastdds_profile.xml` でラズパイ
+    # (192.168.4.2) をユニキャスト初期ピアに与えて対処していた。
+    #
+    # 2026-09-01: ネットワークが 192.168.5.x に変わり、その固定 IP（存在しない
+    # サブネット）が逆に discovery を壊して /scan_filtered が完全無音になった。
+    # 現行 AP はマルチキャスト discovery が正常なので additional_env を外した。
+    # **別 AP でマルチキャストが不安定なら**、`config/fastdds_profile.xml` の
+    # <address> を現ラズパイの IP に直し、この Node に
+    # `additional_env={'FASTRTPS_DEFAULT_PROFILES_FILE': '<...>/fastdds_profile.xml'}`
+    # を戻すこと（network 時のみ・このプロセス単体に絞る。コンテナ全体に
+    # 適用すると同一ホスト内ノード間の発見まで壊れる — 2026-07-17 検証済み）。
     nodes.append(Node(
         package='th_perception',
         executable='lidar_filter.py',
         name='lidar_filter',
-        # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる
-        # (G-4)。placeholder のキーはサニタイズで落ちるため、給値されていない値は
-        # 土台の静的値がそのまま残る。
+        # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に
+        # 重ねる (G-4)。placeholder のキーはサニタイズで落ちる。
         parameters=[os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml'),
                     os.path.join(GENERATED_DIR, 'lidar_filter.yaml')],
-        additional_env={'FASTRTPS_DEFAULT_PROFILES_FILE': fastdds_profile_yaml},
-        condition=UnlessCondition(lidar_is_local),
-        output='screen',
-    ))
-    nodes.append(Node(
-        package='th_perception',
-        executable='lidar_filter.py',
-        name='lidar_filter',
-        parameters=[os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml'),
-                    os.path.join(GENERATED_DIR, 'lidar_filter.yaml')],
-        condition=IfCondition(lidar_is_local),
         output='screen',
     ))
 

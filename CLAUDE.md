@@ -44,7 +44,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`launch_testing` を使うテスト（`generate_test_description()` を持つファイル）は、本体が `unittest.TestCase` なので pytest のフィクスチャを一切受け取れない。** `conftest.py` が提供する値（`fault_params` 等）が要るときは、同じ解決ロジックをモジュールレベルで呼ぶこと。CMake 側は `add_launch_test` ではなく `ament_add_pytest_test` でそのまま登録できる（`esp32_bridge_node` / `fault_injection_12` が実例）。pytest の表示は `collected 1 item` になるが、junit には `TestCase` のメソッド数だけ結果が出る。
 - `th_ws/esp32/.vscode/extensions.json` は **`.gitignore` に載っているのに tracked** という状態で、内容もモードも index と一致しているのに `git status` に `M` が出続けることがある（index の stat キャッシュが NTFS 時代の古いサイズを持っているため）。`git diff` が空なのに `M` が消えないときはこれ。`git add -f <path>` で解消でき、内容が同じなので差分はステージされない。
 - **ノードを `kill -9` で落とすことを繰り返すと、コンテナ内の DDS discovery が壊れる。** 症状は「ノードは起動しログも出ているのに、他プロセスからサービス/トピックが一切見つからない」。`ls /dev/shm | wc -l` で `fastrtps_*` の残骸が溜まっているか確認する（ROS プロセスが 0 なのに大量にあれば該当）。`/dev/shm` の掃除だけでは直らないことがあり、その場合はコンテナ再起動が必要。デバッグ用ノードは `kill -TERM` で落とすこと。
-- **`lidar_source:=network`（ラズパイ→ロボPC WiFi）では、`/scan` を既定 QoS（RELIABLE）で購読するとサンプルが 1 つも届かない。** `ros2 topic info /scan -v` では reader が match して見え、`ros2 topic hz /scan` も別プロセスからは 10Hz 出るのに、当該ノードのコールバックが一度も発火しない（RELIABLE の信頼配送ハンドシェイクが WiFi 越しに成立しないため）。センサストリームは必ず `qos_profile_sensor_data`（BEST_EFFORT）で購読する。`lidar_filter` がこれで `/scan_filtered` を無音にしていた（2026-09-01 修正）。`safety_monitor` / `obstacle_limiter` / `connectivity_checker` は元から BEST_EFFORT。
+- **`/scan_filtered` が実機で完全に無音になる複合バグ（2026-09-01 修正）。** 症状: 点群表示も slam_toolbox の地図生成も動かない。`ros2 topic hz /scan` は 10Hz 出るのに `lidar_filter` の `_cb` が一度も発火しない。原因は 2 つ:
+  1. **`bringup.launch.py` が `lidar_filter`（network 時）に渡していた `FASTRTPS_DEFAULT_PROFILES_FILE`（`config/fastdds_profile.xml`）のユニキャスト初期ピアが `192.168.4.2` 固定だった。** ネットワークが `192.168.5.x` へ移行して**存在しないサブネット**になり、これが逆に discovery を壊した。→ additional_env を外し、マルチキャスト discovery（現行 AP では正常）に戻した。別 AP で不安定なら `fastdds_profile.xml` の `<address>` を現ラズパイ IP に直して再度渡す。
+  2. `lidar_filter` の `/scan` 購読が既定 QoS（RELIABLE）だった。センサストリームは必ず `qos_profile_sensor_data`（BEST_EFFORT）で購読する（`safety_monitor` / `obstacle_limiter` / `connectivity_checker` は元から BEST_EFFORT）。
+- **実機のネットワークは `192.168.4.x` から `192.168.5.x` へ移行済み**（`docs/network.md` の IP は要更新）。ラズパイは DHCP（`ip neigh` で REACHABLE な `192.168.5.x` を探す。2026-09-01 時点 `192.168.5.125`）。ESP32 SoftAP `192.168.4.1` も移動しているはず。
 
 ## 開発環境
 
