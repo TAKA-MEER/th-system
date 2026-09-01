@@ -33,6 +33,16 @@ def test_start_sets_initial_point_and_start_yaw():
     assert rec.recorded_m == pytest.approx(0.0)
 
 
+def test_points_property_returns_a_copy_of_the_recorded_list():
+    rec = RouteRecorderCore(RouteRecordParams(sample_min_dist_m=0.1, sample_min_yaw_rad=0.2))
+    rec.start(0.0, 0.0, 0.0)
+    rec.add_pose(0.2, 0.0, 0.0)
+    pts = rec.points
+    assert pts == [(0.0, 0.0, 0.0), (0.2, 0.0, 0.0)]
+    pts.append((9.0, 9.0, 0.0))          # 返り値をいじっても内部は変わらない
+    assert rec.point_count == 2
+
+
 def test_small_movement_is_thinned_out():
     params = RouteRecordParams(sample_min_dist_m=0.10, sample_min_yaw_rad=0.20)
     rec = RouteRecorderCore(params)

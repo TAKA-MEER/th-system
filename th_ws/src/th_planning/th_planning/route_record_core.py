@@ -144,6 +144,11 @@ class RouteRecorderCore:
         return len(self._points)
 
     @property
+    def points(self) -> List[Pose2D]:
+        """記録中の点列のコピー（プレビュー描画用）。"""
+        return list(self._points)
+
+    @property
     def start_yaw(self) -> float:
         return self._start_yaw
 

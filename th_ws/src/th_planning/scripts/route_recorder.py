@@ -20,9 +20,26 @@ from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
 
 from builtin_interfaces.msg import Time as TimeMsg
-from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import Odometry, Path
 from th_system_msgs.msg import (RouteInfo, RouteList, RouteStatus, StateEffect,
                                 SystemState)
+
+
+def _points_to_path(points, frame_id='odom', stamp=None):
+    """[(x,y,yaw),...] を nav_msgs/Path（frame_id）にする。"""
+    path = Path()
+    path.header.frame_id = frame_id
+    if stamp is not None:
+        path.header.stamp = stamp
+    for (x, y, _yaw) in points:
+        ps = PoseStamped()
+        ps.header.frame_id = frame_id
+        ps.pose.position.x = float(x)
+        ps.pose.position.y = float(y)
+        ps.pose.orientation.w = 1.0
+        path.poses.append(ps)
+    return path
 
 from th_planning.route_record_core import (
     RouteRecorderCore, RouteRecordParams, polyline_length,
@@ -84,6 +101,7 @@ class RouteRecorder(Node):
         status_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
                                 history=QoSHistoryPolicy.KEEP_LAST)
         self._pub_status = self.create_publisher(RouteStatus, '/route/status', status_qos)
+        self._pub_preview = self.create_publisher(Path, '/route/preview', status_qos)
 
         # ── Timers ─────────────────────────────────────────
         self.create_timer(sample_ms / 1000.0, self._sample_timer)
@@ -159,18 +177,23 @@ class RouteRecorder(Node):
 
     def _status_timer(self):
         msg = RouteStatus()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        stamp = self.get_clock().now().to_msg()
+        msg.header.stamp = stamp
+        msg.target_index = -1   # 記録側は目標点を持たない
         if self._recorder is None:
             msg.state = self._state or 'NONE'
             msg.recorded_m = 0.0
             msg.points = 0
             msg.elapsed_sec = 0.0
+            preview_points = []
         else:
             msg.state = self._state or 'NONE'
             msg.recorded_m = float(self._recorder.recorded_m)
             msg.points = self._recorder.point_count
             msg.elapsed_sec = (self._now_ms() - self._rec_started_ms) / 1000.0
+            preview_points = self._recorder.points
         self._pub_status.publish(msg)
+        self._pub_preview.publish(_points_to_path(preview_points, stamp=stamp))
 
     # ── 経路一覧 publish ──────────────────────────────────
     def _publish_routes_list(self):

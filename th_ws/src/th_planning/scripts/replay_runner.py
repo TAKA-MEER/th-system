@@ -21,10 +21,26 @@ from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
 
-from geometry_msgs.msg import Twist
-from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseStamped, Twist
+from nav_msgs.msg import Odometry, Path
 from th_system_msgs.msg import (RouteInfo, RouteStatus, StateEffect,
                                 StateEvent, SystemState)
+
+
+def _points_to_path(points, frame_id='odom', stamp=None):
+    """[(x,y,yaw),...] を nav_msgs/Path（frame_id）にする。"""
+    path = Path()
+    path.header.frame_id = frame_id
+    if stamp is not None:
+        path.header.stamp = stamp
+    for (x, y, _yaw) in points:
+        ps = PoseStamped()
+        ps.header.frame_id = frame_id
+        ps.pose.position.x = float(x)
+        ps.pose.position.y = float(y)
+        ps.pose.orientation.w = 1.0
+        path.poses.append(ps)
+    return path
 
 from th_planning.route_record_core import polyline_length, route_from_dict
 from th_planning.route_replay_core import (
@@ -75,6 +91,7 @@ class ReplayRunner(Node):
         self._rotated = False
         self._arrived_sent = False
         self._was_moving = False
+        self._target_index = -1
         self._pose = None
         self._mode = ""
         self._state = ""
@@ -99,6 +116,7 @@ class ReplayRunner(Node):
         self._pub_cmd = self.create_publisher(Twist, '/cmd_vel_behavior', cmd_qos)
         self._pub_event = self.create_publisher(StateEvent, '/system/event', cmd_qos)
         self._pub_status = self.create_publisher(RouteStatus, '/route/status', cmd_qos)
+        self._pub_preview = self.create_publisher(Path, '/route/preview', cmd_qos)
 
         # ── Timers ─────────────────────────────────────────
         self.create_timer(control_ms / 1000.0, self._control_timer)
@@ -139,6 +157,7 @@ class ReplayRunner(Node):
             self._points = pts
             self._start_yaw = pts[0][2] if pts else rec_start_yaw
             self._from_index = 0
+            self._target_index = -1
             self._need_rotate = False
             self._rotated = False
             self._arrived_sent = False
@@ -196,6 +215,7 @@ class ReplayRunner(Node):
         # WAIVER(demo): W-02 走行中の自己位置補正なし（/odom だけで辿る）
         cmd = pure_pursuit(self._pose, self._points, self._params, self._from_index)
         self._from_index = advance_index(self._pose, self._points, self._from_index, self._params)
+        self._target_index = cmd.target_index
         if cmd.arrived:
             self._pub_cmd.publish(Twist())
             self._was_moving = False
@@ -221,12 +241,14 @@ class ReplayRunner(Node):
 
     # ── ステータス publish ───────────────────────────────
     def _status_timer(self):
+        stamp = self.get_clock().now().to_msg()
         msg = RouteStatus()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.stamp = stamp
         msg.state = self._state or 'NONE'
         msg.points = len(self._points)
         msg.recorded_m = float(polyline_length(self._points))
         msg.elapsed_sec = 0.0  # 再生では未使用
+        msg.target_index = int(self._target_index)
         if self._route is not None:
             info = RouteInfo()
             info.id = self._route.id
@@ -234,6 +256,8 @@ class ReplayRunner(Node):
             info.point_count = len(self._points)
             msg.current = info
         self._pub_status.publish(msg)
+        # 現在地合わせ済みの点列を odom フレームの Path でプレビュー配信する。
+        self._pub_preview.publish(_points_to_path(self._points, stamp=stamp))
 
 
 def main(args=None):
