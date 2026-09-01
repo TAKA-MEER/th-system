@@ -42,6 +42,7 @@ class RouteRecorder(Node):
         super().__init__('route_recorder')
 
         # ── パラメータ ──────────────────────────────────────
+        # WAIVER(demo): W-03 — 数値は registry.yaml 経由でなくノード内リテラル既定値
         self.declare_parameter('routes_dir', '/root/th_data/routes')
         self.declare_parameter('sample_period_ms', 100)
         self.declare_parameter('sample_min_dist_m', 0.10)
@@ -126,12 +127,15 @@ class RouteRecorder(Node):
                 return
             route = self._recorder.finalize(
                 self._route_id, self._name, self._now_ms(), frame_id='odom')
+            # WAIVER(demo): W-04 — 同じ id は上書き。新版として旧版を残す世代管理はしない
             path = os.path.join(self._routes_dir, f'{self._route_id}.json')
             os.makedirs(self._routes_dir, exist_ok=True)
             with open(path, 'w', encoding='utf-8') as f:
                 json.dump(route_to_dict(route), f, ensure_ascii=False, indent=2)
+            # RouteData は point_count / length_m を持たない（route_to_dict の出力だけが持つ）
             self.get_logger().info(
-                f'保存: {path} ({route.point_count} 点, {route.length_m:.2f} m)')
+                f'保存: {path} ({len(route.points)} 点, '
+                f'{polyline_length(route.points):.2f} m)')
             self._publish_routes_list()
         else:
             self.get_logger().debug(f"無視する effect: {name}")

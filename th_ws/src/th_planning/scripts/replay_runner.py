@@ -44,6 +44,7 @@ class ReplayRunner(Node):
         super().__init__('replay_runner')
 
         # ── パラメータ ──────────────────────────────────────
+        # WAIVER(demo): W-03 — 数値は registry.yaml 経由でなくノード内リテラル既定値
         self.declare_parameter('routes_dir', '/root/th_data/routes')
         self.declare_parameter('control_period_ms', 50)   # 20Hz
         self.declare_parameter('status_period_ms', 500)
