@@ -2,9 +2,10 @@
 // route (S-13 / S-14), WS-3 / demo-teach-replay.
 //
 // MapView (src/MapView.jsx) is OccupancyGrid-based and cannot render the
-// odom-frame route preview, so this is a dedicated, map-less canvas:
-//   layers: ① preview polyline  ② /scan_filtered point cloud (red, converted
-//            via baseToWorld against the robot pose)  ③ robot triangle marker
+// odom-frame route preview, so this is a dedicated, lightweight canvas:
+//   layers: ⓪ /map background raster (when a map is available, WS-8B)
+//           ① preview polyline  ② /scan_filtered point cloud (red, converted
+//           via baseToWorld against the robot pose)  ③ robot triangle marker
 //           ④ the pure-pursuit target point (a prominent dot) when
 //           targetIndex >= 0 and preview[targetIndex] exists.
 //
@@ -20,7 +21,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { ROUTE_PREVIEW_EMPTY } from '../i18n/screens.js'
-import { fitTransform, ROUTE_PREVIEW_PAD, centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M, scanToPoints, SCAN_FALLBACK_MAX_M } from './routePreviewGeom.js'
+import { fitTransform, ROUTE_PREVIEW_PAD, centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M, scanToPoints, SCAN_FALLBACK_MAX_M, mapDestRect } from './routePreviewGeom.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 const SCAN_TOPIC = '/scan_filtered'
@@ -28,10 +29,41 @@ const SCAN_MSG = 'sensor_msgs/LaserScan'
 const W = 600
 const H = 380
 
-export default function RoutePreview({ preview, pose, targetIndex }) {
+export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
   const { ros } = useSystemState()
   const canvasRef = useRef(null)
+  const offscreenRef = useRef(null)
   const [scanData, setScanData] = useState(null)
+
+  // Off-screen map raster (OccupancyGrid -> ImageData), rebuilt on map change.
+  // Mirrors MapView.jsx: row 0 of the grid is the map-frame bottom, ImageData
+  // row 0 is the top, so rows are flipped; unknown (-1) is mid-grey, 0 white,
+  // 100 black.
+  useEffect(() => {
+    if (!mapData) { offscreenRef.current = null; return undefined }
+    const { width, height } = mapData.info
+    const data = mapData.data
+    if (!Array.isArray(data) || width <= 0 || height <= 0) return undefined
+    if (!offscreenRef.current) offscreenRef.current = document.createElement('canvas')
+    const off = offscreenRef.current
+    off.width = width
+    off.height = height
+    const ctx = off.getContext('2d')
+    const img = ctx.createImageData(width, height)
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width; col++) {
+        const srcIdx = row * width + col
+        const destRow = height - 1 - row
+        const destIdx = (destRow * width + col) * 4
+        const v = data[srcIdx]
+        const gray = v < 0 ? 128 : 255 - Math.round(v * 2.55)
+        img.data[destIdx] = img.data[destIdx + 1] = img.data[destIdx + 2] = gray
+        img.data[destIdx + 3] = 255
+      }
+    }
+    ctx.putImageData(img, 0, 0)
+    return undefined
+  }, [mapData])
 
   // Own /scan_filtered subscription (raw topic name, matching useRosbridge.js).
   useEffect(() => {
@@ -76,10 +108,26 @@ export default function RoutePreview({ preview, pose, targetIndex }) {
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     if (TEST_MODE) window.__thRoutePreviewFit = { scale: fit ? fit.scale : null }
+    if (TEST_MODE) window.__thRoutePreviewPose = pose ? { x: pose.x, y: pose.y } : null
     if (!fit) return
 
     const px = (p) => (p.x - fit.minX) * fit.scale + fit.offX
     const py = (p) => canvas.height - ((p.y - fit.minY) * fit.scale + fit.offY)
+
+    // ⓪ /map background raster (deepest layer). Only when a map exists
+    // (enable_route_slam:=true); map-less operation skips this entirely.
+    // Blit the native-resolution offscreen bitmap through the same robot-centred
+    // fit, so it lines up with the route/scan/robot layers. TEST_MODE flag for e2e.
+    let mapDrawn = false
+    if (mapData && offscreenRef.current) {
+      const rect = mapDestRect(mapData.info, fit, canvas.height)
+      if (rect) {
+        ctx.imageSmoothingEnabled = false
+        ctx.drawImage(offscreenRef.current, rect.dx, rect.dy, rect.dw, rect.dh)
+        mapDrawn = true
+      }
+    }
+    if (TEST_MODE) window.__thRoutePreviewMapDrawn = mapDrawn
 
     // ① preview polyline
     if (preview && preview.length > 1) {
@@ -134,7 +182,7 @@ export default function RoutePreview({ preview, pose, targetIndex }) {
       ctx.lineWidth = 1.5
       ctx.stroke()
     }
-  }, [fit, preview, pose, scanData, targetIndex])
+  }, [fit, preview, pose, scanData, targetIndex, mapData])
 
   // WS-6.4: the canvas is ALWAYS mounted (so a zero-frame gap never swaps the
   // DOM, further reducing #4 flicker). With no drawable data the placeholder

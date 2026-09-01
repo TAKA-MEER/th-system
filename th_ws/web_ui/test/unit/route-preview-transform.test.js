@@ -8,6 +8,7 @@ import {
   fitTransform, ROUTE_PREVIEW_PAD,
   centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M,
   scanToPoints, SCAN_FALLBACK_MAX_M,
+  mapDestRect,
 } from '../../src/screens/routePreviewGeom.js'
 
 test('returns null for an empty point set', () => {
@@ -172,4 +173,43 @@ test('scanToPoints returns [] when scan or pose is missing', () => {
   assert.deepEqual(scanToPoints(null, ORIGIN), [])
   assert.deepEqual(scanToPoints(SCAN4, null), [])
   assert.deepEqual(scanToPoints({ ...SCAN4, ranges: undefined }, ORIGIN), [])
+})
+
+// ----------------------------------------------------------------- WS-8B: mapDestRect ----
+
+const H2 = 380
+// 4×4 grid, res 0.5, origin at (-1,-1) -> world x/y ∈ [-1, 1]. Fit: pose centre
+// (0,0), halfSpan 10, W=600, H=380 -> scale=19, offX=110, offY=0 (see above).
+const MAP_INFO = {
+  resolution: 0.5,
+  width: 4,
+  height: 4,
+  origin: { position: { x: -1, y: -1 }, orientation: { z: 0, w: 1 } },
+}
+const MAP_FIT = centeredTransform({ x: 0, y: 0 }, ROUTE_PREVIEW_HALF_SPAN_M, W, H)
+
+test('mapDestRect places the map world-rect through the centred fit', () => {
+  assert.ok(MAP_FIT)
+  // px(-1)=281, px(1)=319 -> dw=38. py flips: dy at y1(=1)=171, dh=38.
+  assert.deepEqual(mapDestRect(MAP_INFO, MAP_FIT, H2), { dx: 281, dy: 171, dw: 38, dh: 38 })
+})
+
+test('mapDestRect flips vertically so the world TOP (y1) is the canvas top', () => {
+  assert.ok(MAP_FIT)
+  const r = mapDestRect(MAP_INFO, MAP_FIT, H2)
+  assert.ok(r)
+  // world y1 (=1) sits at dy, world y0 (=-1) at dy+dh — i.e. the map's +y
+  // (north) edge is drawn at the smaller canvas y (flip). Swapping y1/y0 makes
+  // dy=209 and dh negative, so these two hold independently of the exact rect.
+  const py = (wy) => H2 - ((wy - MAP_FIT.minY) * MAP_FIT.scale + MAP_FIT.offY)
+  assert.equal(r.dy, py(MAP_INFO.origin.position.y + MAP_INFO.height * MAP_INFO.resolution))
+  assert.equal(r.dy + r.dh, py(MAP_INFO.origin.position.y))
+})
+
+test('mapDestRect returns null for missing/invalid info or fit', () => {
+  assert.equal(mapDestRect(null, MAP_FIT, H2), null)
+  assert.equal(mapDestRect(MAP_INFO, null, H2), null)
+  assert.equal(mapDestRect({ ...MAP_INFO, resolution: 0 }, MAP_FIT, H2), null)
+  assert.equal(mapDestRect({ ...MAP_INFO, width: -4 }, MAP_FIT, H2), null)
+  assert.equal(mapDestRect(MAP_INFO, MAP_FIT, 0), null)
 })

@@ -142,3 +142,59 @@ test('S-14 drops points beyond scanData.range_max but keeps nearer ones', async 
 
   await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewScanDrawn)).toBe(1)
 })
+
+// ---------------------------------------------------------------- WS-8B: /map layer ----
+
+// 最小 OccupancyGrid: 4×4, res 0.5, origin (-1,-1) → world x/y ∈ [-1,1]。
+// 0 自由 / 100 占有 / -1 未知 を混ぜる（OccupancyGrid の data 配列）。
+const ROUTE_MAP = {
+  info: {
+    resolution: 0.5,
+    width: 4,
+    height: 4,
+    origin: { position: { x: -1, y: -1 }, orientation: { w: 1, z: 0 } },
+  },
+  data: [0, 100, -1, 0, 100, 0, 0, -1, -1, 0, 100, 0, 0, -1, 100, 0],
+}
+
+test('S-14 draws the map raster as the deepest layer when a map is present', async ({ page }) => {
+  await gotoScreenWithRouteRobot(
+    page, 'S14',
+    { mode: 'REPLAY', state: 'RUN' },
+    { routes: ROUTES, preview: PREVIEW, status: { target_index: 5 }, pose: POSE, scan: SCAN, map: ROUTE_MAP },
+  )
+  await page.locator('#s14').waitFor()
+
+  // 地図が最背面に描かれた。scan も従来どおり描かれる（レイヤは共存）。
+  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewMapDrawn)).toBe(true)
+  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewScanDrawn)).toBeGreaterThan(0)
+})
+
+test('S-14 falls back cleanly with NO map (map-less operation, scan+preview intact)', async ({ page }) => {
+  await gotoScreenWithRouteRobot(
+    page, 'S14',
+    { mode: 'REPLAY', state: 'RUN' },
+    { routes: ROUTES, preview: PREVIEW, status: { target_index: 5 }, pose: POSE, scan: SCAN },
+  )
+  await page.locator('#s14').waitFor()
+
+  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewMapDrawn)).toBe(false)
+  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewScanDrawn)).toBeGreaterThan(0)
+})
+
+test('S-14 prefers the map-frame /route/robot_pose over odom when both are present', async ({ page }) => {
+  // routePose を map 座標 (50,50) に、odomPose を原点 (0,0) に seed。正しければ
+  // routePose が centre になり pose.x=50 が反映される（変異 3: odom 固定だと x=0）。
+  const routePose = { x: 50, y: 50, yaw: 0, frame: 'map' }
+  await gotoScreenWithRouteRobot(
+    page, 'S14',
+    { mode: 'REPLAY', state: 'RUN' },
+    {
+      routes: ROUTES, preview: PREVIEW, status: { target_index: 5 },
+      pose: POSE, routePose, scan: SCAN, map: ROUTE_MAP,
+    },
+  )
+  await page.locator('#s14').waitFor()
+
+  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewPose?.x)).toBe(50)
+})

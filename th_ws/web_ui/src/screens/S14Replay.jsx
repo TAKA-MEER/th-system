@@ -21,6 +21,8 @@ import { useRouteCatalog } from '../ros/useRouteCatalog.js'
 import { useRouteStatus } from '../ros/useRouteStatus.js'
 import { useRoutePreview } from '../ros/useRoutePreview.js'
 import { useOdomPose } from '../ros/useOdomPose.js'
+import { useRoutePose } from '../ros/useRoutePose.js'
+import { useRouteMap } from '../ros/useRouteMap.js'
 import RoutePreview from './RoutePreview.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import DriveTab from './driveTab.jsx'
@@ -49,6 +51,8 @@ export default function S14Replay({ onFinish }) {
   const routeStatus = useRouteStatus(ros)
   const routePreview = useRoutePreview(ros)
   const odomPose = useOdomPose(ros)
+  const routePose = useRoutePose(ros)
+  const routeMap = useRouteMap(ros)
   const disabledAll = stale || state?.mode == null
 
   const [selectedId, setSelectedId] = useState(null)
@@ -149,7 +153,8 @@ export default function S14Replay({ onFinish }) {
               pure-pursuit 目標点。記録中・未走行は -1） */}
           <RoutePreview
             preview={routePreview}
-            pose={odomPose}
+            pose={routePose ?? odomPose}
+            mapData={routeMap}
             targetIndex={routeStatus?.target_index ?? -1}
           />
 

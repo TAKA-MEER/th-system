@@ -81,13 +81,15 @@ export async function gotoScreenWithRoutePreview(page, screen, state, { routes, 
 
 // WS-6.4 / demo-teach-replay: opens the screen with the route-robot preview
 // seeded -- routes/catalog, /route/preview (points), /route/status (target_index),
-// the robot odom pose ({x,y,yaw} for __thTestOdomPose) and a /scan_filtered
-// LaserScan-minimal (angle_min/angle_increment/ranges). useOdomPose /
-// useRoutePreview / useRouteStatus / useRouteCatalog and RoutePreview's scan
-// all read their window.__thTest<Name> on first render, so every seed must be
-// set via addInitScript.
-export async function gotoScreenWithRouteRobot(page, screen, state, { routes, preview, status, pose, scan }) {
-  await page.addInitScript(({ s, scr, r, pv, st, ps, sc }) => {
+// the robot odom pose ({x,y,yaw} for __thTestOdomPose), a /scan_filtered
+// LaserScan-minimal (angle_min/angle_increment/ranges), an optional /map
+// OccupancyGrid (for __thTestRouteMap) and an optional /route/robot_pose
+// ({x,y,yaw,frame} for __thTestRoutePose). useOdomPose / useRoutePreview /
+// useRouteStatus / useRouteCatalog / useRouteMap / useRoutePose and
+// RoutePreview's scan all read their window.__thTest<Name> on first render, so
+// every seed must be set via addInitScript.
+export async function gotoScreenWithRouteRobot(page, screen, state, { routes, preview, status, pose, scan, map, routePose }) {
+  await page.addInitScript(({ s, scr, r, pv, st, ps, sc, mp, rp }) => {
     window.__thTestState = s
     window.__thTestScreen = scr
     window.__thTestRouteCatalog = r
@@ -95,7 +97,9 @@ export async function gotoScreenWithRouteRobot(page, screen, state, { routes, pr
     window.__thTestRouteStatus = st
     if (ps) window.__thTestOdomPose = ps
     if (sc) window.__thTestRouteScan = sc
-  }, { s: state, scr: screen, r: routes, pv: preview, st: status, ps: pose, sc: scan })
+    if (mp) window.__thTestRouteMap = mp
+    if (rp) window.__thTestRoutePose = rp
+  }, { s: state, scr: screen, r: routes, pv: preview, st: status, ps: pose, sc: scan, mp: map, rp: routePose })
   await page.goto('/')
 }
 

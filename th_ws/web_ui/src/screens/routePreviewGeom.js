@@ -73,6 +73,42 @@ export function scanToPoints(scan, pose, fallbackMaxRange = 16) {
   return pts
 }
 
+// mapDestRect(mapInfo, fit, viewH) -> { dx, dy, dw, dh }  (canvas px) | null
+// Where to blit the OccupancyGrid bitmap on the route-preview canvas, using the
+// same robot-centred `fit` transform (centeredTransform / fitTransform shape:
+// { scale, minX, minY, offX, offY }) as the route/scan/robot layers (WS-8B).
+// `mapInfo` is nav_msgs/OccupancyGrid.info { resolution, width, height, origin };
+// `viewH` is the canvas height for py()'s vertical flip. The map's world
+// rectangle runs x:[origin.x, origin.x + width*res] and
+// y:[origin.y, origin.y + height*res]. py() flips vertically (canvas y grows
+// down), so the destination top is world y1. Returns null on missing/invalid
+// info or fit. Pure & react/canvas-free so test/unit drives it.
+export function mapDestRect(mapInfo, fit, viewH) {
+  if (!mapInfo || !fit) return null
+  const res = mapInfo.resolution
+  const width = mapInfo.width
+  const height = mapInfo.height
+  const ox = mapInfo.origin?.position?.x
+  const oy = mapInfo.origin?.position?.y
+  if (!Number.isFinite(res) || res <= 0 || !Number.isInteger(width) ||
+      !Number.isInteger(height) || width <= 0 || height <= 0 ||
+      !Number.isFinite(ox) || !Number.isFinite(oy) || !Number.isFinite(viewH) || viewH <= 0) {
+    return null
+  }
+  const { minX, minY, scale, offX, offY } = fit
+  const px = (wx) => (wx - minX) * scale + offX
+  const py = (wy) => viewH - ((wy - minY) * scale + offY)
+  const x0 = ox
+  const x1 = ox + width * res
+  const y0 = oy
+  const y1 = oy + height * res
+  const dx = px(x0)
+  const dw = px(x1) - px(x0)
+  const dy = py(y1)
+  const dh = py(y0) - py(y1)
+  return { dx, dy, dw, dh }
+}
+
 // fitTransform(points, w, h, pad) -> { scale, minX, minY, offX, offY } | null
 // Pure geometry: fit the bbox of `points` ([{x,y},...]) into a w x h canvas
 // with `pad` margin, preserving aspect ratio and centering. Returns null for
