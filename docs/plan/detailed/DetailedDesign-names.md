@@ -291,6 +291,7 @@ def derive_limits(screens, now_ms, p):
 | --- | --- | --- |
 | **`SystemState.msg`** | `Header header` / `string mode` / `string state` / `string prev_mode` / `string prev_state` / `string zone`（`IN`/`OUT`/`NA`） / `bool jog_active` / `bool estop_ui` / `bool estop_hw` / `bool tracker_enabled` / `bool auto_brake` / `bool working` / `bool map_update` / `string[] unsaved` / `builtin_interfaces/Time since` / `string last_event` / `string last_reject_reason` / `string speed_limit`（registry のパラメータ名 or `stop`） | **状態の唯一の発行元。**`prev_*` は `ESTOP` / `CARRY` の復帰先ラッチ。`speed_limit` は**画面由来（§4.1 の `derive_limits()`）とモード由来（`attributes.yaml`。`AT_PANEL` × `jog_active` の `v_jog_panel` 特例を含む）を `state_manager` が合成した結果**を運ぶ（**末尾に追加**。`N-13`で新設・`N-15`でモード由来との合成に拡張。`WP-MSG-01` の `M3` は既存 msg への変更を `severity` 1 件に限定しているが、`FaultStatus.msg` への `Header` 追加（`WP-SAFE-01`）と同種の例外——消費者（`obstacle_limiter`）が実在し、追加しないと `WP-SAFE-03` が成立しない） |
 | **`StateEvent.msg`** | `Header header` / `string event`（`evt.*` のみ） / `string source_node` / `string arg_json` | 挙動ノード → `th_state` |
+| **`StateEffect.msg`** | `Header header` / `string name`（effect 名） / `string dest`（宛先ノード名。不明なら `unknown`） / `string args_json` | `th_state` → 挙動ノード（`route_recorder` / `replay_runner` 等）。`state_core` の effect を外へ配送する。**`demo-teach-replay` で新設** |
 | **`ActiveScreen.msg`** | `Header header` / `string screen_id` / `string client_id` / `bool interacting` / **`builtin_interfaces/Time last_input`** | UI → `th_state`。**`header.stamp` は 2 Hz の定期発行時刻であって「最後の操作時刻」ではない。**`last_input` が無いと、画面を開いているだけの端末が永久に「使用中」になる |
 | `FaultStatus.msg` | **`Header header`** / `bool active` / `string fault_type` / `string description` / **`string severity`**（`RECOVERABLE` / `CRITICAL`） | **`severity` を末尾に追加**（`F-20`。`WP-MSG-01`）。**`Header header` を先頭に追加**（`WP-SAFE-01`）——`WP-MSG-01` の `M3` は既存 msg への変更を `severity` 1 件に限定しており、先頭への挿入はその例外を超えるため、`/safety/fault` の publisher を書き換える `WP-SAFE-01` で追加した（`header.stamp` を読む消費者はまだ無い） |
 | **`LimiterStatus.msg`** | `Header header` / `bool alive` / `string action`（`PASS`/`CLAMP`/`STOP`/`ZERO_STALE`/**`BLOCKED_UNCALIBRATED`**） / `float32 in_linear` / `float32 out_linear` / `float32 nearest_obstacle_m` / `string source_class`（`MANUAL`/`AUTO`） / `float32 applied_limit_mps` | 監視と画面表示の両方に使う |
@@ -403,6 +404,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | --- | --- | --- | --- |
 | `/system/state` | `SystemState` | transient_local, depth 1, reliable | 10 Hz ＋ 変化時即時 |
 | `/system/event` | `StateEvent` | reliable, depth 10 | 事象時 |
+| `/system/effect` | `StateEffect` | reliable, depth 10 | 事象時（`demo-teach-replay` で新設。`state_manager` が self 以外の effect を配送） |
 | `/system/params_status` | `ParamsStatus` | transient_local, depth 1 | 変化時 |
 | `/ui/active_screen` | `ActiveScreen` | reliable, depth 5 | 2 Hz（端末ごと） |
 | `/safety/estop_hw` | `std_msgs/Bool` | reliable | 10 Hz |

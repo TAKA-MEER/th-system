@@ -165,7 +165,7 @@ class StateManager(Node):
         self._unsaved = []          # このパケットでは常に空（記録系ノードは未実装）
         self._last_event = ""
         self._last_reject_reason = ""
-        self._route_ids = []          # /routes/list から。既存経路の選択ガード用（P2）
+        self._route_ids = []          # /route/catalog から。既存経路の選択ガード用（P2）
 
         now = self._now_ms()
         self._boot_ms = now
@@ -216,7 +216,7 @@ class StateManager(Node):
         routes_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
                                 durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
                                 history=QoSHistoryPolicy.KEEP_LAST)
-        self.create_subscription(RouteList, '/routes/list', self._on_routes_list, routes_qos)
+        self.create_subscription(RouteList, '/route/catalog', self._on_routes_list, routes_qos)
 
         event_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
         self.create_subscription(StateEvent, '/system/event', self._on_event, event_qos)

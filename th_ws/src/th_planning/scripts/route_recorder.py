@@ -4,7 +4,7 @@
 # ============================================================
 # /system/effect の start_record / resume_record / finalize_route を受け、
 # /odom のロボット姿勢を route_record_core で間引いて th_data/routes/<id>.json に
-# 保存する。/routes/list を latched で、/teach/status を定期発行する。
+# 保存する。/route/catalog を latched で、/route/status を定期発行する。
 # 姿勢サンプルは /system/state.state=="REC" の間だけ行い、PAUSE 中は積まない。
 #
 # 純コア (route_record_core) は P1 で完成済み。ここでは中身をコピペせず
@@ -78,11 +78,11 @@ class RouteRecorder(Node):
         routes_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
                                 durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
                                 history=QoSHistoryPolicy.KEEP_LAST)
-        self._pub_routes = self.create_publisher(RouteList, '/routes/list', routes_qos)
+        self._pub_routes = self.create_publisher(RouteList, '/route/catalog', routes_qos)
 
         status_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
                                 history=QoSHistoryPolicy.KEEP_LAST)
-        self._pub_status = self.create_publisher(RouteStatus, '/teach/status', status_qos)
+        self._pub_status = self.create_publisher(RouteStatus, '/route/status', status_qos)
 
         # ── Timers ─────────────────────────────────────────
         self.create_timer(sample_ms / 1000.0, self._sample_timer)
@@ -172,7 +172,7 @@ class RouteRecorder(Node):
     def _publish_routes_list(self):
         if not os.path.isdir(self._routes_dir):
             self.get_logger().debug(
-                f'routes_dir が存在しないため /routes/list は空: {self._routes_dir}')
+                f'routes_dir が存在しないため /route/catalog は空: {self._routes_dir}')
             self._pub_routes.publish(RouteList())
             return
         infos = []
@@ -196,7 +196,7 @@ class RouteRecorder(Node):
             info.recorded_at = _ms_to_time(route.recorded_at_ms)
             infos.append(info)
         self._pub_routes.publish(RouteList(routes=infos))
-        self.get_logger().debug(f'/routes/list を publish: {len(infos)} 件')
+        self.get_logger().debug(f'/route/catalog を publish: {len(infos)} 件')
 
     # ── ユーティリティ ────────────────────────────────────
     def _now_ms(self) -> int:

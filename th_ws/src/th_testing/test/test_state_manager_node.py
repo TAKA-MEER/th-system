@@ -118,8 +118,8 @@ class TestStateManagerNode(unittest.TestCase):
         self.pub_hw = self.node.create_publisher(Bool, '/safety/estop_hw', 10)
         self.pub_ui_estop = self.node.create_publisher(Bool, '/safety/estop_ui', 10)
 
-        # P2: /routes/list は route_recorder が latched (TRANSIENT_LOCAL) で publish する前提
-        self.pub_routes = self.node.create_publisher(RouteList, '/routes/list', _STATE_QOS)
+        # P2: /route/catalog は route_recorder が latched (TRANSIENT_LOCAL) で publish する前提
+        self.pub_routes = self.node.create_publisher(RouteList, '/route/catalog', _STATE_QOS)
 
         self.cli_trigger = self.node.create_client(UiTrigger, '/system/trigger')
         self.cli_set_flag = self.node.create_client(SetFlag, '/system/set_flag')
@@ -423,7 +423,7 @@ class TestStateManagerNode(unittest.TestCase):
         assert json.loads(hits[0].args_json).get('route_id') == 'r1', hits[0].args_json
 
     def test_routes_list_populates_route_ids_for_replay(self):
-        """/routes/list の latched 配信で route_ids が埋まり、REPLAY の route_exists が通る。"""
+        """/route/catalog の latched 配信で route_ids が埋まり、REPLAY の route_exists が通る。"""
         self.pub_routes.publish(RouteList(routes=[RouteInfo(id='r9')]))
         self._spin(0.4)
 

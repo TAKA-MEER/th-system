@@ -96,7 +96,7 @@ class ReplayRunner(Node):
                              history=QoSHistoryPolicy.KEEP_LAST)
         self._pub_cmd = self.create_publisher(Twist, '/cmd_vel_behavior', cmd_qos)
         self._pub_event = self.create_publisher(StateEvent, '/system/event', cmd_qos)
-        self._pub_status = self.create_publisher(RouteStatus, '/replay/status', cmd_qos)
+        self._pub_status = self.create_publisher(RouteStatus, '/route/status', cmd_qos)
 
         # ── Timers ─────────────────────────────────────────
         self.create_timer(control_ms / 1000.0, self._control_timer)
