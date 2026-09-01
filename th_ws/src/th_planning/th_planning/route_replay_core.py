@@ -56,6 +56,37 @@ def reverse_points(points: Sequence[Pose2D]) -> List[Pose2D]:
 
 
 # ──────────────────────────────────────────────────────────────────
+# 現在地合わせ（WAIVER(demo): W-01 の実害対策）
+# ──────────────────────────────────────────────────────────────────
+def align_path_to_current(
+    points: Sequence[Pose2D],
+    recorded_start: Pose2D,
+    current: Pose2D,
+) -> List[Pose2D]:
+    """記録経路を「記録始点 pose → 現在 pose」の 2D 剛体変換で移す。
+
+    LiDAR による初期姿勢推定を省略している（W-01）ため、ロボットが記録始点に
+    いない状態で再生を始めると、絶対 odom 座標の経路へ横から寄せる不自然な
+    挙動になる。代わりに「今いる場所を記録の始点とみなす」ことで、記録した
+    経路の"形"をその場から辿れるようにする。
+
+    変換: 記録始点まわりに dtheta = current_yaw - recorded_start_yaw だけ回し、
+    記録始点が現在位置に重なるよう平行移動する。返る点列の先頭は current に一致する。
+    """
+    sx, sy, syaw = recorded_start
+    cx, cy, cyaw = current
+    dtheta = normalize_angle(cyaw - syaw)
+    cos_d, sin_d = math.cos(dtheta), math.sin(dtheta)
+    out: List[Pose2D] = []
+    for (x, y, yaw) in points:
+        rx, ry = x - sx, y - sy
+        nx = cx + rx * cos_d - ry * sin_d
+        ny = cy + rx * sin_d + ry * cos_d
+        out.append((nx, ny, normalize_angle(yaw + dtheta)))
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────
 # 旋回
 # ──────────────────────────────────────────────────────────────────
 def rotate_toward(

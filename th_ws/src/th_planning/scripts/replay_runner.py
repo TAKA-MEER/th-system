@@ -28,7 +28,8 @@ from th_system_msgs.msg import (RouteInfo, RouteStatus, StateEffect,
 
 from th_planning.route_record_core import polyline_length, route_from_dict
 from th_planning.route_replay_core import (
-    ReplayParams, advance_index, pure_pursuit, reverse_points, rotate_toward,
+    ReplayParams, advance_index, align_path_to_current, pure_pursuit,
+    reverse_points, rotate_toward,
 )
 
 
@@ -126,16 +127,24 @@ class ReplayRunner(Node):
             pts = list(self._route.points)
             if reverse:
                 pts = reverse_points(pts)
+            rec_start_yaw = pts[0][2] if reverse else self._route.start_yaw
+            # WAIVER(demo): W-01 — LiDAR による初期姿勢推定を省略する代わりに、
+            # 「今いる場所を記録の始点とみなす」。記録経路を現在 odom へ 2D 剛体変換で
+            # 移し、その場から経路の形を辿れるようにする（align_path_to_current）。
+            aligned = False
+            if self._pose is not None and pts:
+                recorded_start = (pts[0][0], pts[0][1], rec_start_yaw)
+                pts = align_path_to_current(pts, recorded_start, self._pose)
+                aligned = True
             self._points = pts
-            self._start_yaw = pts[0][2] if reverse else self._route.start_yaw
+            self._start_yaw = pts[0][2] if pts else rec_start_yaw
             self._from_index = 0
             self._need_rotate = False
             self._rotated = False
             self._arrived_sent = False
-            # WAIVER(demo): W-01 — LiDAR による初期姿勢推定を省略し、記録始点に
-            # ロボットがいる前提で即座に evt.localize_done を発行する。
             self.get_logger().info(
                 f'load_route: id={route_id} reverse={reverse} 点={len(pts)} '
+                f'現在地合わせ={"あり" if aligned else "なし(odom 未受信)"} '
                 '(WAIVER(demo): W-01 により即 evt.localize_done を発行)')
             self._emit_event('evt.localize_done')
         elif name == 'rotate_to_start_yaw':

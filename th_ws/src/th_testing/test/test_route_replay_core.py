@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(
 from route_replay_core import (
     ReplayParams, ReplayCommand,
     reverse_points, rotate_toward, pure_pursuit, advance_index, normalize_angle,
+    align_path_to_current,
 )
 
 
@@ -107,3 +108,49 @@ def test_advance_index_exists_and_moves_forward():
     # ロボットが 4.5 付近 → index 前進
     idx = advance_index((4.5, 0.0, 0.0), points, 0, params)
     assert idx >= 0
+
+
+# ── align_path_to_current（WAIVER W-01 の実害対策）─────────────────
+def test_align_identity_when_current_equals_recorded_start():
+    pts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, math.pi / 2)]
+    out = align_path_to_current(pts, recorded_start=(0.0, 0.0, 0.0),
+                                current=(0.0, 0.0, 0.0))
+    for a, b in zip(out, pts):
+        assert a[0] == pytest.approx(b[0])
+        assert a[1] == pytest.approx(b[1])
+        assert a[2] == pytest.approx(b[2])
+
+
+def test_align_pure_translation():
+    pts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0)]
+    out = align_path_to_current(pts, recorded_start=(0.0, 0.0, 0.0),
+                                current=(10.0, 5.0, 0.0))
+    assert out[0] == pytest.approx((10.0, 5.0, 0.0))
+    assert out[2][0] == pytest.approx(12.0)
+    assert out[2][1] == pytest.approx(5.0)
+
+
+def test_align_rotation_90deg():
+    # 記録は +x 方向へ 2m 直進。現在向きは +90°（+y 方向）。
+    pts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0)]
+    out = align_path_to_current(pts, recorded_start=(0.0, 0.0, 0.0),
+                                current=(0.0, 0.0, math.pi / 2))
+    # 変換後は +y 方向へ 2m 進む形になる。
+    assert out[0] == pytest.approx((0.0, 0.0, math.pi / 2))
+    assert out[2][0] == pytest.approx(0.0, abs=1e-9)
+    assert out[2][1] == pytest.approx(2.0)
+    assert out[2][2] == pytest.approx(math.pi / 2)
+
+
+def test_align_first_point_always_lands_on_current():
+    pts = [(3.0, -1.0, 1.2), (4.0, -1.0, 1.0), (5.0, 0.0, 0.5)]
+    cur = (7.0, 8.0, -2.0)
+    out = align_path_to_current(pts, recorded_start=(3.0, -1.0, 1.2), current=cur)
+    assert out[0][0] == pytest.approx(cur[0])
+    assert out[0][1] == pytest.approx(cur[1])
+    assert out[0][2] == pytest.approx(cur[2])
+    # 形（隣接点間の距離）は保存される。
+    def seglen(p):
+        return [math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1])
+                for i in range(len(p) - 1)]
+    assert seglen(out) == pytest.approx(seglen(pts))
