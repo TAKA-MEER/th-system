@@ -186,6 +186,11 @@ table{border-collapse:collapse;width:100%}
 /* ---------- generic pieces ---------- */
 .card{background:var(--panel);border:1px solid var(--bd);border-radius:var(--r);padding:10px;margin-bottom:10px}
 .card > h3{font-size:calc(var(--fs) * .76);letter-spacing:.1em;color:var(--mut);font-weight:700;margin-bottom:8px}
+/* WS-3 / demo-teach-replay: 経路プレビュー canvas（S-13/S-14）。
+   canvas 本体は 600x380 論理解像度で fitTransform がデータ bbox に合わせて
+   縦横比を保ってフィットし、CSS はウィンドウ幅に合わせて等比拡縮する。 */
+.route-preview{display:block;width:100%;height:auto;background:var(--inset);
+  border:1px solid var(--bd);border-radius:var(--r)}
 .well{background:var(--inset);border:1px solid var(--bd);border-radius:var(--r);padding:10px}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .grow{flex:1 1 auto}

@@ -63,6 +63,22 @@ export async function gotoScreenWithRouteCatalog(page, screen, state, routes) {
   await page.goto('/')
 }
 
+// WS-3 / demo-teach-replay: opens S-14 with the route-preview data seeded --
+// /route/catalog (routes list), /route/preview (points, as [{x,y},...]) and
+// /route/status (for target_index). useRouteCatalog / useRoutePreview /
+// useRouteStatus read window.__thTest<Name> on first render, so all must be
+// set via addInitScript.
+export async function gotoScreenWithRoutePreview(page, screen, state, { routes, preview, status }) {
+  await page.addInitScript(({ s, scr, r, pv, st }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    window.__thTestRouteCatalog = r
+    window.__thTestRoutePreview = pv
+    window.__thTestRouteStatus = st
+  }, { s: state, scr: screen, r: routes, pv: preview, st: status })
+  await page.goto('/')
+}
+
 // Stubs a std_srvs/Trigger-shaped service call (ros/useStdTrigger.js's test
 // hook) for /shutdown/prepare / /shutdown/execute. Must be called via
 // addInitScript (before the page's first render) since S01Main reads

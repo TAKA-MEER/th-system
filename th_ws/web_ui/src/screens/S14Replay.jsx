@@ -18,6 +18,10 @@ import { useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useRouteCatalog } from '../ros/useRouteCatalog.js'
+import { useRouteStatus } from '../ros/useRouteStatus.js'
+import { useRoutePreview } from '../ros/useRoutePreview.js'
+import { useOdomPose } from '../ros/useOdomPose.js'
+import RoutePreview from './RoutePreview.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import DriveTab from './driveTab.jsx'
 import attributes from '../generated/attributes.json'
@@ -42,6 +46,9 @@ export default function S14Replay({ onFinish }) {
   const { ros, state, stale } = useSystemState()
   const sendTrigger = useTrigger()
   const routes = useRouteCatalog(ros)
+  const routeStatus = useRouteStatus(ros)
+  const routePreview = useRoutePreview(ros)
+  const odomPose = useOdomPose(ros)
   const disabledAll = stale || state?.mode == null
 
   const [selectedId, setSelectedId] = useState(null)
@@ -137,6 +144,14 @@ export default function S14Replay({ onFinish }) {
               {S14_PROCEED}
             </button>
           </div>
+
+          {/* WS-3: 経路プレビュー（再生中の点列＋現在地。targetIndex は /route/status の
+              pure-pursuit 目標点。記録中・未走行は -1） */}
+          <RoutePreview
+            preview={routePreview}
+            pose={odomPose}
+            targetIndex={routeStatus?.target_index ?? -1}
+          />
 
           <div className="card">
             <h3>{S14_POSE_TITLE}</h3>

@@ -31,6 +31,12 @@ export const TOPICS = {
   // 記録状況。route_recorder（教示中）/ replay_runner（再生中）が publish する。
   ROUTE_CATALOG: '/route/catalog',
   ROUTE_STATUS: '/route/status',
+  // WS-3 / demo-teach-replay: 教示・再生の経路プレビュー（nav_msgs/Path、odom フレーム、
+  // reliable depth1 2Hz）。route_recorder / replay_runner が publish する。
+  // /odom と /scan_filtered は辞書に載るが、useRosbridge.js が /scan_filtered を
+  // 直書きしている両例に倣い、本パケットでは hook/コンポーネント側でローカル定数に
+  // している（topics.js には増やさない）。
+  ROUTE_PREVIEW: '/route/preview',
 }
 
 export const SERVICES = {
@@ -58,6 +64,9 @@ export const MSG_TYPES = {
   //（P4.5 で /route/catalog・/route/status を endpoints に追加済み）。
   ROUTE_LIST: 'th_system_msgs/RouteList',
   ROUTE_STATUS: 'th_system_msgs/RouteStatus',
+  // WS-3 / demo-teach-replay: /route/preview は nav_msgs/Path（names.json の
+  // endpoints にある）。
+  PATH: 'nav_msgs/Path',
 }
 
 export const SRV_TYPES = {

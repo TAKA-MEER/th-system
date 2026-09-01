@@ -197,3 +197,7 @@ export const S14_POSE_RUN = '再生中'
 export const S14_POSE_PAUSE = '一時停止（記録の終端に達しました。終了を押してください）'
 export const S14_LENGTH = '距離'
 export const S14_POINTS = '点数'
+
+// ---------------------------------------------------------------- 経路プレビュー（WS-3） ----
+// src/screens/RoutePreview.jsx の表示文字列。
+export const ROUTE_PREVIEW_EMPTY = '経路がありません'

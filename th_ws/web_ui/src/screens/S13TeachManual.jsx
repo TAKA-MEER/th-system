@@ -20,6 +20,9 @@ import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useLimiterStatus } from '../ros/useLimiterStatus.js'
 import { useRouteStatus } from '../ros/useRouteStatus.js'
+import { useRoutePreview } from '../ros/useRoutePreview.js'
+import { useOdomPose } from '../ros/useOdomPose.js'
+import RoutePreview from './RoutePreview.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import DriveTab from './driveTab.jsx'
 import { obstacleWarning } from '../shell/limits.js'
@@ -49,6 +52,8 @@ export default function S13TeachManual({ onFinish }) {
   const sendTrigger = useTrigger()
   const limiter = useLimiterStatus(ros)
   const routeStatus = useRouteStatus(ros)
+  const routePreview = useRoutePreview(ros)
+  const odomPose = useOdomPose(ros)
   const warn = obstacleWarning(limiter)
   const disabledAll = stale || state?.mode == null
 
@@ -159,6 +164,9 @@ export default function S13TeachManual({ onFinish }) {
                 <div className="note mt" data-testid="s13-recording">{S13_RECORDING}</div>
               )}
             </div>
+            {/* WS-3: 教示タブの経路プレビュー（記録中の点列。記録中は target_index=-1、
+                /scan_filtered は RoutePreview 内部で購読） */}
+            <RoutePreview preview={routePreview} pose={odomPose} />
             <div className="card">
               <h3>{S13_RECORDED_LABEL}</h3>
               {saved ? (
