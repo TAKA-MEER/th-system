@@ -139,7 +139,13 @@ public:
         // 同じ registry.yaml の v_reverse なので、パラメータの実体は 1 つ）。
         declare_parameter("v_max", 0.0);
         declare_parameter("v_slow", 0.0);
-        declare_parameter("v_reverse", 0.0);
+        // WAIVER(demo): W-05 — 本来 registry の v_reverse は blind_clearance_m
+        // (LiDAR 死角。placeholder) から逆算する derived 値。derived だと null →
+        // 生成 yaml に出ず → 既定 0.0 で「後退がゼロにクランプされ後退不可」
+        // (実機で発覚)。実機の LiDAR は 360°・死角なし (blind_angle_ranges 空・
+        // blind_calibrated:true) なので、デモの間だけ既定を 0.25 m/s (場内低速相当)
+        // にする。生成 yaml に v_reverse が入れば (blind_clearance_m 実測後) 上書きされる。
+        declare_parameter("v_reverse", 0.25);
         declare_parameter("v_jog_panel", 0.0);
         // v_check / v_calib / v_leash: 2026-08-27 に registry.yaml の consumers へ
         // obstacle_limiter を追加した（SystemState.speed_limit が "v_check" /
