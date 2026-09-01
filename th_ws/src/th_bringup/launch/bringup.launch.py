@@ -424,6 +424,14 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 13a. route_recorder（教示経路の記録。WP-TRANSIT / demo-teach-replay）──
+    nodes.append(Node(
+        package='th_planning',
+        executable='route_recorder.py',
+        name='route_recorder',
+        output='screen',
+    ))
+
     # ── 13b. config_manager (WebUI 設定パネル: パラメータ調整の仲介) ──
     nodes.append(Node(
         package='th_config_manager',
