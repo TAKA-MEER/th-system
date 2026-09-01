@@ -53,6 +53,10 @@ assert set(MODE_STATES.keys()) == MODES
 # WP-STATE-01 の「遷移の判断」の範囲には入らない。
 BOOT_MODE: str = "INIT"
 
+# state_manager.py が UI 非常停止起因の ESTOP ラッチ判定で使う参照点（N-1 と同じ理由で
+# ノード側にモード名リテラルを書かない。2026-09-01。SM-3.1.1-11）。
+ESTOP_MODE: str = "ESTOP"
+
 # DetailedDesign-state.md §4-1-1 末尾・§2 validate()⑥docstring — PAUSE を持たないモード。
 NO_PAUSE_MODES: Set[str] = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB"}
 
@@ -163,6 +167,9 @@ class Context:
     calib_preview_sane: bool
     map_update_available: bool
     now_ms: int
+    # UI 非常停止ボタンで入った ESTOP かどうか（重大フォルト起因と区別する。
+    # 2026-09-01。SM-3.1.1-11。呼び出し側がラッチして渡す）。
+    estop_from_ui: bool = False
     arg: Dict[str, Any] = field(default_factory=dict)
 
 

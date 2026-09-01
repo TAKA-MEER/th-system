@@ -81,7 +81,9 @@ _ESTOP_PREV_NONRESUMABLE = {"", "INIT", "IDLE", "ESTOP", "CARRY"}
 
 
 def _estop_resume_prev(mode, state, ctx) -> bool:
-    return (ctx.fault_severity != "CRITICAL"
+    return (ctx.estop_from_ui
+            and not ctx.fault_active
+            and ctx.fault_severity != "CRITICAL"
             and not ctx.hw_estop
             and ctx.prev_mode not in _ESTOP_PREV_NONRESUMABLE)
 

@@ -128,7 +128,8 @@ _STATIC_GUARD_OVERRIDES = {
     "check_result_ok": {"check_result": "OK"},
     "ng_and_calibrable": {"check_result": "NG", "check_item": "IMU"},
     "ng_and_not_calibrable": {"check_result": "NG", "check_item": "MOTOR"},
-    "estop_resume_prev": {"fault_severity": "", "hw_estop": False, "prev_mode": "MANUAL"},
+    "estop_resume_prev": {"estop_from_ui": True, "fault_active": False,
+                          "fault_severity": "", "hw_estop": False, "prev_mode": "MANUAL"},
 }
 assert set(_STATIC_GUARD_OVERRIDES) | {"mode_entry_allowed"} == set(
     __import__("th_state.guards", fromlist=["GUARDS"]).GUARDS)

@@ -365,6 +365,50 @@ class TestStateManagerNode(unittest.TestCase):
             'CARRY 中の ui.finish 後は prev_* を捨てるはず（§7 行6）'
 
     # ════════════════════════════════════════════════════════
+    # 2026-09-01（SM-3.1.1-11）: UI ボタン起因の ESTOP（重大フォルト無し）は
+    # 解除後に「戻る／メニューへ」を選べる。fault 起因は従来どおり IDLE のみ。
+    # ════════════════════════════════════════════════════════
+    def test_ui_estop_resume_to_prev_mode(self):
+        res = self._trigger('ui.enter_mode', {'mode': 'MANUAL'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('MANUAL')
+
+        # UI 非常停止ボタン押下 → ESTOP。prev_mode を記録。
+        self.pub_ui_estop.publish(Bool(data=True))
+        assert self._wait_mode('ESTOP')
+        assert self._latest().prev_mode == 'MANUAL'
+
+        # 解除（true→false）→ ESTOP のまま（W-1 が「戻る／メニューへ」に変わる）。
+        self.pub_ui_estop.publish(Bool(data=False))
+        self._spin(0.3)
+        assert self._latest().mode == 'ESTOP', 'UI estop 解除で即 IDLE に落ちてはいけない'
+
+        # 「元のモードに戻る」→ 押下前モードの PAUSE へ。
+        res = self._trigger('ui.resume_yes')
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('MANUAL')
+        assert self._latest().state == 'PAUSE'
+
+    def test_fault_estop_still_idle_only(self):
+        res = self._trigger('ui.enter_mode', {'mode': 'FOLLOW'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('FOLLOW')
+
+        # 重大フォルト起因の ESTOP。
+        self.pub_fault.publish(FaultStatus(active=True, fault_type='OTHER', severity='CRITICAL'))
+        assert self._wait_mode('ESTOP')
+
+        # フォルト解消 → 「戻る」(ui.resume_yes) は通らない（estop_from_ui=False）。
+        self.pub_fault.publish(FaultStatus(active=False, fault_type='', severity=''))
+        self._spin(0.2)
+        res = self._trigger('ui.resume_yes')
+        assert res.accepted is False, 'fault 起因の ESTOP から prev モードへ戻れてはいけない'
+        # 「確認」で IDLE。
+        res = self._trigger('ui.resume_ack')
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('IDLE')
+
+    # ════════════════════════════════════════════════════════
     # names.md §4.1 — derive_limits() の3ケース（zone）
     # ════════════════════════════════════════════════════════
     def test_zone_from_active_screen(self):

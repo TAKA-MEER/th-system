@@ -35,7 +35,7 @@ from th_system_msgs.msg import (ActiveScreen, FaultStatus, RouteList, StateEffec
 from th_system_msgs.srv import SetFlag, UiTrigger
 
 from th_state import guards as guards_module
-from th_state.state_core import BOOT_MODE, Context, StateCore
+from th_state.state_core import BOOT_MODE, ESTOP_MODE, Context, StateCore
 from th_state.zones import (ScreenInput, combine_speed_limits, derive_limits,
                              mode_speed_limit)
 
@@ -161,6 +161,8 @@ class StateManager(Node):
         self._fault_type = ""
         self._hw_estop = False
         self._ui_estop = False
+        # 現在の ESTOP が UI ボタン起因かどうか（重大フォルト起因と区別。SM-3.1.1-11）。
+        self._estop_from_ui = False
         self._screens = {}          # client_id -> ScreenInput
         self._unsaved = []          # このパケットでは常に空（記録系ノードは未実装）
         self._last_event = ""
@@ -286,6 +288,7 @@ class StateManager(Node):
             calib_preview_sane=False,
             map_update_available=False,
             now_ms=self._now_ms(),
+            estop_from_ui=self._estop_from_ui,
             arg=arg or {},
         )
 
@@ -310,6 +313,16 @@ class StateManager(Node):
 
         self.mode = decision.to_mode
         self.state = decision.to_state
+
+        # ESTOP が UI ボタン起因かどうかのラッチ（SM-3.1.1-11。guards._estop_resume_prev が読む）。
+        # ESTOP を離れたらクリア。UI ボタンで ESTOP に入ったら True、重大フォルトで入ったら False。
+        # モード名リテラルは書かない（N-1）。state_core.ESTOP_MODE を参照する。
+        if self.mode != ESTOP_MODE:
+            self._estop_from_ui = False
+        elif decision.accepted and event == "ui.estop.press":
+            self._estop_from_ui = True
+        elif decision.accepted and event == "fault.critical":
+            self._estop_from_ui = False
 
         return decision
 
