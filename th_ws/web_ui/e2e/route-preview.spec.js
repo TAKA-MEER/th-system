@@ -102,3 +102,43 @@ test('S-14 does not rescale when the robot moves (fixed zoom, no flicker #4)', a
   await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewFit?.scale))
     .toBe(s1)
 })
+
+// ---------------------------------------------------------------- WS-8A: range_max clip ----
+
+test('S-14 draws scan points far past the old 7.5m clip (range_max honoured)', async ({ page }) => {
+  // Open-venue walls at 8–12m used to be dropped by the hard 7.5m clip; the
+  // clip now honours scanData.range_max, so far points are drawn.
+  const farScan = {
+    angle_min: 0,
+    angle_increment: 0.1,
+    ranges: [12, 8, 9], // all > 7.5 but <= range_max
+    range_max: 15,
+  }
+  await gotoScreenWithRouteRobot(
+    page, 'S14',
+    { mode: 'REPLAY', state: 'RUN' },
+    { routes: ROUTES, preview: PREVIEW, status: { target_index: 5 }, pose: POSE, scan: farScan },
+  )
+  await page.locator('#s14').waitFor()
+
+  // All three far returns must survive the clip.
+  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewScanDrawn)).toBe(3)
+})
+
+test('S-14 drops points beyond scanData.range_max but keeps nearer ones', async ({ page }) => {
+  // r=1 stays, r=20 (beyond range_max 15) is dropped -> exactly 1 drawn.
+  const mixed = {
+    angle_min: 0,
+    angle_increment: 0.1,
+    ranges: [1, 20],
+    range_max: 15,
+  }
+  await gotoScreenWithRouteRobot(
+    page, 'S14',
+    { mode: 'REPLAY', state: 'RUN' },
+    { routes: ROUTES, preview: PREVIEW, status: { target_index: 5 }, pose: POSE, scan: mixed },
+  )
+  await page.locator('#s14').waitFor()
+
+  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewScanDrawn)).toBe(1)
+})

@@ -19,14 +19,12 @@
 // TEST_MODE a seeded window.__thTestRouteScan can stand in for the wire.
 import { useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
-import { baseToWorld } from '../mapGeometry.js'
 import { ROUTE_PREVIEW_EMPTY } from '../i18n/screens.js'
-import { fitTransform, ROUTE_PREVIEW_PAD, centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M } from './routePreviewGeom.js'
+import { fitTransform, ROUTE_PREVIEW_PAD, centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M, scanToPoints, SCAN_FALLBACK_MAX_M } from './routePreviewGeom.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 const SCAN_TOPIC = '/scan_filtered'
 const SCAN_MSG = 'sensor_msgs/LaserScan'
-const SCAN_MAX = 7.5 // m; just under the fixed display radius so the edge fades naturally
 const W = 600
 const H = 380
 
@@ -95,19 +93,16 @@ export default function RoutePreview({ preview, pose, targetIndex }) {
       ctx.stroke()
     }
 
-    // ② /scan_filtered point cloud (laser_link = base_link x/y/yaw; reuse
-    // MapView's conversion via baseToWorld against the odom pose). Points drawn
-    // are counted for the e2e (mutation 2), production unaffected.
+    // ② /scan_filtered point cloud (laser_link = base_link x/y/yaw). WS-8A:
+    // the clip now honours the sensor's scanData.range_max (open-venue walls
+    // past the old 7.5m hard clip are drawn), converted to world via the pure
+    // scanToPoints. Points drawn are counted for the e2e, production unaffected.
     let scanDrawn = 0
-    if (scanData && pose) {
-      const { angle_min, angle_increment, ranges } = scanData
+    const scanPts = scanToPoints(scanData, pose, SCAN_FALLBACK_MAX_M)
+    if (scanPts.length) {
       ctx.fillStyle = '#ef5350'
-      for (let i = 0; i < ranges.length; i++) {
-        const r = ranges[i]
-        if (!Number.isFinite(r) || r <= 0 || r > SCAN_MAX) continue
-        const angle = angle_min + i * angle_increment
-        const [wx, wy] = baseToWorld(r * Math.cos(angle), r * Math.sin(angle), pose)
-        const [cx, cy] = [px({ x: wx, y: wy }), py({ x: wx, y: wy })]
+      for (const wp of scanPts) {
+        const cx = px(wp), cy = py(wp)
         ctx.fillRect(cx - 1, cy - 1, 2, 2)
         scanDrawn++
       }

@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import {
   fitTransform, ROUTE_PREVIEW_PAD,
   centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M,
+  scanToPoints, SCAN_FALLBACK_MAX_M,
 } from '../../src/screens/routePreviewGeom.js'
 
 test('returns null for an empty point set', () => {
@@ -60,10 +61,10 @@ const W = 600, H = 380
 test('centeredTransform maps the center to the canvas centre', () => {
   const f = centeredTransform({ x: 0, y: 0 }, ROUTE_PREVIEW_HALF_SPAN_M, W, H)
   assert.ok(f)
-  // scale short-side: min(600,380) / (2*7) = 380/14
+  // scale short-side: min(600,380) / (2 * HALF_SPAN)
   assert.equal(f.scale, Math.min(W, H) / (2 * ROUTE_PREVIEW_HALF_SPAN_M))
-  assert.equal(f.minX, -7)
-  assert.equal(f.minY, -7)
+  assert.equal(f.minX, -ROUTE_PREVIEW_HALF_SPAN_M)
+  assert.equal(f.minY, -ROUTE_PREVIEW_HALF_SPAN_M)
   // px/py math matches RoutePreview
   const px = (p) => (p.x - f.minX) * f.scale + f.offX
   const py = (p) => H - ((p.y - f.minY) * f.scale + f.offY)
@@ -78,12 +79,13 @@ test('centeredTransform fits ±halfSpan to the SHORT canvas edge', () => {
   assert.ok(f)
   const px = (p) => (p.x - f.minX) * f.scale + f.offX
   const py = (p) => H - ((p.y - f.minY) * f.scale + f.offY)
-  // short side (height): y = center ±7 lands exactly on the two edges.
-  // Canvas y grows downward, so world y=-7 (below center) draws at the BOTTOM.
-  assert.ok(Math.abs(py({ x: 0, y: -7 }) - H) < 1e-6, 'y=-7 should hit the bottom edge')
-  assert.ok(Math.abs(py({ x: 0, y: 7 })) < 1e-6, 'y=+7 should hit the top edge')
+  // short side (height): y = center ±halfSpan lands exactly on the two edges.
+  // Canvas y grows downward, so world y=-halfSpan (below center) draws at BOTTOM.
+  const hs = ROUTE_PREVIEW_HALF_SPAN_M
+  assert.ok(Math.abs(py({ x: 0, y: -hs }) - H) < 1e-6, 'y=-halfSpan should hit the bottom edge')
+  assert.ok(Math.abs(py({ x: 0, y: hs })) < 1e-6, 'y=+halfSpan should hit the top edge')
   // long side is inset (the view is fit to the short side, aspect preserved)
-  assert.ok(px({ x: -7 }) > 0 && px({ x: 7 }) < W, 'x=±7 should stay inside the canvas')
+  assert.ok(px({ x: -hs }) > 0 && px({ x: hs }) < W, 'x=±halfSpan should stay inside the canvas')
 })
 
 test('centeredTransform scale is invariant to the center (fixed zoom, no re-fit)', () => {
@@ -102,4 +104,72 @@ test('centeredTransform returns null for an invalid center', () => {
   assert.equal(centeredTransform({ x: NaN, y: 0 }, ROUTE_PREVIEW_HALF_SPAN_M, W, H), null)
   assert.equal(centeredTransform({ x: 0, y: Infinity }, ROUTE_PREVIEW_HALF_SPAN_M, W, H), null)
   assert.equal(centeredTransform({ x: 0, y: 0 }, 0, W, H), null)
+})
+
+// ----------------------------------------------------------------- WS-8A: scanToPoints ----
+
+// 前・左・後・右（yaw 0, pose 原点）。
+const SCAN4 = {
+  angle_min: 0,
+  angle_increment: Math.PI / 2,
+  ranges: [1, 2, 3, 4],
+  range_max: 16,
+}
+const ORIGIN = { x: 0, y: 0, yaw: 0 }
+
+// coordinate compare with tolerance for trig floating-point noise
+function assertPt(p, x, y) {
+  assert.ok(Math.abs(p.x - x) < 1e-6, `x=${p.x} != ${x}`)
+  assert.ok(Math.abs(p.y - y) < 1e-6, `y=${p.y} != ${y}`)
+}
+
+test('scanToPoints converts range/angle to world points (yaw 0, origin)', () => {
+  const pts = scanToPoints(SCAN4, ORIGIN)
+  assert.equal(pts.length, 4)
+  // 前・左・後・右（cos/sin の浮動小数点誤差は収める）
+  assertPt(pts[0], 1, 0)
+  assertPt(pts[1], 0, 2)
+  assertPt(pts[2], -3, 0)
+  assertPt(pts[3], 0, -4)
+})
+
+test('scanToPoints clips to scanData.range_max', () => {
+  const pts = scanToPoints({ ...SCAN4, range_max: 3 }, ORIGIN)
+  // r=4 (> range_max) is dropped -> 3 points remain.
+  assert.equal(pts.length, 3)
+  assertPt(pts[0], 1, 0)
+  assertPt(pts[1], 0, 2)
+  assertPt(pts[2], -3, 0)
+})
+
+test('scanToPoints falls back to fallbackMaxRange when range_max is absent', () => {
+  const { range_max, ...noMax } = SCAN4
+  void range_max
+  // fallback 16: r=4 kept, but r=20 would be dropped.
+  assert.equal(scanToPoints(noMax, ORIGIN, 16).length, 4)
+  assert.equal(scanToPoints({ ...noMax, ranges: [4, 20] }, ORIGIN, 16).length, 1)
+  assert.equal(SCAN_FALLBACK_MAX_M, 16)
+})
+
+test('scanToPoints drops NaN / 0 / negative ranges', () => {
+  const { range_max, ...noMax } = SCAN4
+  void range_max
+  const pts = scanToPoints({ ...noMax, ranges: [NaN, 0, -2, 1.5, Infinity] }, ORIGIN, 16)
+  // index 3 -> angle 3·(π/2) = 3π/2 (straight down) => world (0, -1.5)
+  assert.equal(pts.length, 1)
+  assertPt(pts[0], 0, -1.5)
+})
+
+test('scanToPoints translates with a non-origin pose (baseToWorld)', () => {
+  const pose = { x: 5, y: 3, yaw: Math.PI / 2 }
+  // yaw=90°, forward == world +y: a single point straight ahead (localX=2, localY=0)
+  // -> world = pose + rotate(2, 0) = (5, 3) + (0, 2) = (5, 5)
+  const pts = scanToPoints({ angle_min: 0, angle_increment: 0, ranges: [2], range_max: 16 }, pose)
+  assert.deepEqual(pts, [{ x: 5, y: 5 }])
+})
+
+test('scanToPoints returns [] when scan or pose is missing', () => {
+  assert.deepEqual(scanToPoints(null, ORIGIN), [])
+  assert.deepEqual(scanToPoints(SCAN4, null), [])
+  assert.deepEqual(scanToPoints({ ...SCAN4, ranges: undefined }, ORIGIN), [])
 })
