@@ -41,10 +41,15 @@ import { W6_TITLE, W6_CLOSE, W6_MODE } from '../i18n/screens.js'
 import JogConsole from '../parts/JogConsole.jsx'
 import {
   WIN_HIDE_LABEL, WIN_RESUME_ACK, WIN_RESUME_YES, WIN_RESUME_NO,
+  WIN_ESTOP_RESUME_PREV, WIN_ESTOP_TO_MENU,
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
   WIN_CARRY_TITLE, WIN_CARRY_BODY, WIN_CARRY_HINT, WIN_CARRY_RELEASED,
   WIN_CARRY_RESUME, WIN_CARRY_DISMISS, WIN_CARRY_ESTOP_DISABLED,
 } from '../i18n/states.js'
+
+// UI 非常停止（重大フォルト無し）解除後に「元のモードに戻る」を出せる押下前モード。
+// guards.py の _ESTOP_PREV_NONRESUMABLE と対応（Spec-modes.md §3.1.1 SM-3.1.1-11）。
+const _ESTOP_PREV_NONRESUMABLE = new Set(['', 'INIT', 'IDLE', 'ESTOP', 'CARRY'])
 
 // C-06r's reject_reason_key for a UI estop press rejected during CARRY
 // (DetailedDesign-state.md :764). Not /system/trigger's business -- the UI
@@ -60,7 +65,7 @@ const ESTOP_DISABLED_IN_CARRY = 'estop_disabled_in_carry'
 // control the same flag. It now doubles as "W-1 dismissed", covering both
 // the ESTOP and fault-caused-PAUSE cases below.
 export default function Windows({
-  ros, mode, stateName, estopUi, estopHw, fault, attributes, onTrigger,
+  ros, mode, stateName, prevMode, estopUi, estopHw, fault, attributes, onTrigger,
   estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose,
 }) {
@@ -94,7 +99,18 @@ export default function Windows({
   // literally is 'ESTOP'; in the fault-caused-PAUSE case mode never changed
   // from whatever it was (C-03's to_mode is '=').
   const w1Resolved = w1Active && (w1IsEstop ? (!estopUi && !estopHw) : !faultActive)
-  const w1Resume = resumeChoices(mode, attributes)
+
+  // 2026-09-01 (SM-3.1.1-11): UI ボタン起因の ESTOP は、重大フォルトが無く押下前が
+  // 復帰可能なモードなら「元のモードに戻る／メインメニューへ」の 2 択を出す。
+  // 重大フォルト起因の ESTOP は従来どおり「確認」→ IDLE（SM-3.1.1-12）。
+  const estopCanResumePrev = w1IsEstop && !estopUi && !estopHw
+    && fault?.severity !== 'CRITICAL'
+    && !_ESTOP_PREV_NONRESUMABLE.has(prevMode ?? '')
+  const w1Resume = w1IsEstop
+    ? (estopCanResumePrev ? 'yes_no' : 'ack_only')
+    : resumeChoices(mode, attributes)
+  const resumeYesLabel = estopCanResumePrev ? WIN_ESTOP_RESUME_PREV : WIN_RESUME_YES
+  const resumeNoLabel = estopCanResumePrev ? WIN_ESTOP_TO_MENU : WIN_RESUME_NO
 
   // C-11/C-12: CARRY only offers a way out once the physical button is
   // released.
@@ -123,10 +139,10 @@ export default function Windows({
               {w1Resolved && w1Resume === 'yes_no' && (
                 <>
                   <button type="button" className="btn" onClick={() => fire('ui.resume_no')}>
-                    {WIN_RESUME_NO}
+                    {resumeNoLabel}
                   </button>
                   <button type="button" className="btn primary" onClick={() => fire('ui.resume_yes')}>
-                    {WIN_RESUME_YES}
+                    {resumeYesLabel}
                   </button>
                 </>
               )}

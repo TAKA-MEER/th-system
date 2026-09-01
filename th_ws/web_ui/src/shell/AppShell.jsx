@@ -166,6 +166,7 @@ function AppShellInner({ screenName, screenId, children }) {
         ros={ros}
         mode={mode}
         stateName={stateName}
+        prevMode={state?.prev_mode ?? null}
         estopUi={estopUi}
         estopHw={estopHw}
         fault={fault}
