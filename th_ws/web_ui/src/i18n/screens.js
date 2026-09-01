@@ -11,6 +11,10 @@ export const SCREEN_NAMES = {
   // S-11 (手動操作) は driveTab kind='manual' の常設タブで使用 (WP-UI-03)。
   // 画面名の正式値は後続パケットで確定するが、テスト用に名前だけ用意する。
   S11: '手動操作',
+  // P5 / demo-teach-replay: S-13 教示（手動）と S-14 教示再生。
+  // 正式値は names.json / Spec-webui.md §3.7 が正。
+  S13: '教示（手動）',
+  S14: '教示再生',
 }
 
 // ---------------------------------------------------------------- S-00 ----
@@ -156,3 +160,40 @@ export const S11_AUTO_BRAKE_ON = 'ON'
 export const S11_REAR_TITLE = '後退'
 export const S11_REAR_NOTE = '後方は LiDAR の死角。後退速度を制限中'
 export const S11_MANUAL_TITLE = '手動操作'
+
+// ---------------------------------------------------------------- S-13 (教示（手動）) ----
+// P5 / demo-teach-replay. Spec-transit.md §0.5 / U-5: 教示（手動）＝手動走行画面＋
+// 「教示」タブ 1 枚。走行部分は S-11 と完全に共通、教示タブに入るのは「経路の選択
+// （新規／既存）」と「記録の状況（距離・時間・点数・開始時の向き）」だけ。
+// 走行に関する見出し（障害物／後退／手動操作）は S-11 の定数を再利用する。
+export const S13_TAB_TEACH = '教示'
+export const S13_TEACH_TITLE = '教示'
+export const S13_ROUTE_NAME_LABEL = '経路名'
+export const S13_ROUTE_NAME_PLACEHOLDER = '経路名を入力'
+export const S13_RECORD_START = '記録開始'
+export const S13_RECORDING = '記録中'
+export const S13_SAVED = '保存しました'
+export const S13_RECORDED_LABEL = '記録距離'
+export const S13_POINTS_LABEL = '点数'
+export const S13_ELAPSED_LABEL = '経過時間'
+export const S13_START_YAW_LABEL = '開始時の向き'
+export const S13_SEC = (s) => `${s} 秒`
+export const S13_M = (m) => `${m} m`
+export const S13_DEG = (deg) => `${deg}°`
+export const S13_REC_DIRECTION = '経路名を入れて「記録開始」を押すと、操作での走行を経路として記録します。'
+
+// ---------------------------------------------------------------- S-14 (教示再生) ----
+// P5 / demo-teach-replay. Spec-webui.md §3.7 の簡略版。
+export const S14_TAB_REPLAY = '再生'
+export const S14_SELECT_TITLE = '経路を選択'
+export const S14_EMPTY = '教示済みの経路がありません'
+export const S14_FWD = '順再生'
+export const S14_REV = '逆再生'
+export const S14_PROCEED = 'この経路で進む'
+export const S14_POSE_TITLE = '初期姿勢'
+export const S14_POSE_LOCALIZE = '初期姿勢を推定しています…'
+export const S14_POSE_READY = '推定できました。地図と位置を確認して『再生』を押してください'
+export const S14_POSE_RUN = '再生中'
+export const S14_POSE_PAUSE = '一時停止（記録の終端に達しました。終了を押してください）'
+export const S14_LENGTH = '距離'
+export const S14_POINTS = '点数'

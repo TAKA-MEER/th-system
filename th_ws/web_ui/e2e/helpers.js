@@ -51,6 +51,18 @@ export async function setTestLimiter(page, value) {
   await page.evaluate((v) => window.__thSetTestLimiterStatus(v), value)
 }
 
+// P5 / demo-teach-replay: opens a screen with a seeded /route/catalog routes
+// array. useRouteCatalog.js reads window.__thTestRouteCatalog on first render
+// (mirroring __thTestLimiterStatus), so it must be set via addInitScript.
+export async function gotoScreenWithRouteCatalog(page, screen, state, routes) {
+  await page.addInitScript(({ s, scr, r }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    window.__thTestRouteCatalog = r
+  }, { s: state, scr: screen, r: routes })
+  await page.goto('/')
+}
+
 // Stubs a std_srvs/Trigger-shaped service call (ros/useStdTrigger.js's test
 // hook) for /shutdown/prepare / /shutdown/execute. Must be called via
 // addInitScript (before the page's first render) since S01Main reads

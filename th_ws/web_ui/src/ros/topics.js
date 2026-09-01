@@ -27,6 +27,10 @@ export const TOPICS = {
   // applied_limit_mps）。publisher は 20Hz best_effort なので SubscribeOptions
   // も合わせる。S-11 の障害物警告表示に使う。
   LIMITER_STATUS: '/safety/limiter_status',
+  // P5 / demo-teach-replay: 教示（手動）S-13 と 教示再生 S-14 が使う経路一覧・
+  // 記録状況。route_recorder（教示中）/ replay_runner（再生中）が publish する。
+  ROUTE_CATALOG: '/route/catalog',
+  ROUTE_STATUS: '/route/status',
 }
 
 export const SERVICES = {
@@ -50,6 +54,10 @@ export const MSG_TYPES = {
   //（既存メッセージ型）。best_effort publisher なので subscribeOptions を
   // 使う側で合わせること（この定数は型名だけ）。
   LIMITER_STATUS: 'th_system_msgs/LimiterStatus',
+  // P5 / demo-teach-replay: RouteList / RouteStatus は names.json に載っている
+  //（P4.5 で /route/catalog・/route/status を endpoints に追加済み）。
+  ROUTE_LIST: 'th_system_msgs/RouteList',
+  ROUTE_STATUS: 'th_system_msgs/RouteStatus',
 }
 
 export const SRV_TYPES = {
