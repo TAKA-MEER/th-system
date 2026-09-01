@@ -125,23 +125,34 @@ def rotate_toward(
 def advance_index(
     robot: Pose2D, points: Sequence[Pose2D], current_index: int, params: ReplayParams,
 ) -> int:
-    """ロボットが通過した点まで current_index を前進させる小関数。
+    """ロボットが通過した点まで current_index を前進させる。
 
-    現在の目標点から前へ、ロボットの後方/側方に既にある点はスキップする。
-    単純な実装: 現在点より後の点で、ロボット位置を「過ぎた」点を指し進める。
+    セグメント idx→idx+1 について、ロボットがその終端の足を越えた
+    (セグメントへの射影 t >= 1)、または次の点 idx+1 に arrive_dist_m 以内まで
+    近づいたら index を 1 つ進める。進めなくなるまで繰り返す。
+
+    旧実装はループが range(current_index, ...) で始まり、初回反復の
+    `i > current_index` が必ず False → `else: break` で**常に current_index を
+    返す no-op** だった。そのため replay_runner._from_index が 0 に固着し、
+    pure_pursuit の探索窓が動かず経路の 2 点目以降へ進めなかった。
     """
+    if not points:
+        return 0
+    idx = max(0, min(current_index, len(points) - 1))
     rx, ry, _ = robot
-    new_index = current_index
-    for i in range(current_index, len(points)):
-        px, py, _ = points[i]
-        # ロボット位置から前方にある点 (i > current_index) で、
-        # その点を超えて進んだ (ロボットが目標点より先にある / 横を通過) 場合は前進
-        dx, dy = px - rx, py - ry
-        if i > current_index and dx * dx + dy * dy < params.arrive_dist_m * params.arrive_dist_m:
-            new_index = i
+    ad_sq = params.arrive_dist_m * params.arrive_dist_m
+    while idx + 1 < len(points):
+        px, py, _ = points[idx]
+        nx, ny, _ = points[idx + 1]
+        seg_x, seg_y = nx - px, ny - py
+        seg_sq = seg_x * seg_x + seg_y * seg_y
+        near_next = (nx - rx) ** 2 + (ny - ry) ** 2 <= ad_sq
+        passed = seg_sq > 1e-9 and ((rx - px) * seg_x + (ry - py) * seg_y) >= seg_sq
+        if near_next or passed or seg_sq <= 1e-9:
+            idx += 1
         else:
             break
-    return new_index
+    return idx
 
 
 def pure_pursuit(
@@ -164,26 +175,31 @@ def pure_pursuit(
         return ReplayCommand(0.0, 0.0, 0, True)
 
     last_index = len(points) - 1
-    rx, ry, _ = robot
+    rx, ry, ryaw = robot
+    cos_y, sin_y = math.cos(ryaw), math.sin(ryaw)
 
-    # 1. ルックアヘッド目標選択
+    # 1. ルックアヘッド目標選択。ロボット後方の点はスキップする
+    #    （後方点を目標にすると alpha≈±π で U ターンし、経路始点との往復に固着する）。
     target_index = last_index
     for i in range(from_index, len(points)):
         px, py, _ = points[i]
-        if math.hypot(px - rx, py - ry) >= params.lookahead_m:
+        dx, dy = px - rx, py - ry
+        if dx * cos_y + dy * sin_y < 0.0:      # ロボット進行方向の背後
+            continue
+        if math.hypot(dx, dy) >= params.lookahead_m:
             target_index = i
             break
     tx, ty, _ = points[target_index]
 
-    # 2. 到着判定（最終点までの距離）
+    # 2. 到着判定（最終セグメントを過ぎた or 最終点まで arrive_dist_m 以内）
     lx, ly, _ = points[last_index]
-    if math.hypot(lx - rx, ly - ry) <= params.arrive_dist_m:
+    if from_index >= last_index or math.hypot(lx - rx, ly - ry) <= params.arrive_dist_m:
         return ReplayCommand(0.0, 0.0, last_index, True)
 
     # 3. pure-pursuit
     # WAIVER(demo): W-02 走行中の自己位置補正なし（オドメトリ＋ジャイロの /odom だけで辿る）
     bearing = math.atan2(ty - ry, tx - rx)
-    alpha = normalize_angle(bearing - robot[2])
+    alpha = normalize_angle(bearing - ryaw)
     w = 2.0 * params.cruise_speed_mps * math.sin(alpha) / params.lookahead_m
     w = max(-params.max_yaw_rate_rps, min(params.max_yaw_rate_rps, w))
     v = params.cruise_speed_mps * max(0.2, math.cos(alpha))

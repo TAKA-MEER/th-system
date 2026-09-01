@@ -226,8 +226,9 @@ class ReplayRunner(Node):
 
         # 追従フェーズ
         # WAIVER(demo): W-02 走行中の自己位置補正なし（/odom だけで辿る）
-        cmd = pure_pursuit(self._pose, self._points, self._params, self._from_index)
+        # 先に通過済みの点まで index を進めてから、同じ index で pure-pursuit する。
         self._from_index = advance_index(self._pose, self._points, self._from_index, self._params)
+        cmd = pure_pursuit(self._pose, self._points, self._params, self._from_index)
         self._target_index = cmd.target_index
         if cmd.arrived:
             self._publish_ramped(0.0, 0.0)

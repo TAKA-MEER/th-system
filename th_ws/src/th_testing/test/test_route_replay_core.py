@@ -110,12 +110,90 @@ def test_from_index_monotonic_increases_target():
     assert c1.target_index <= c2.target_index <= c3.target_index
 
 
-def test_advance_index_exists_and_moves_forward():
+def test_advance_index_moves_past_passed_points():
     params = ReplayParams(arrive_dist_m=0.2)
+    points = [(float(i), 0.0, 0.0) for i in range(0, 11)]  # 1m 間隔
+    # ロボットが x=4.5 → セグメント 0-1..3-4 の足を越えている → index 4
+    assert advance_index((4.5, 0.0, 0.0), points, 0, params) == 4
+    # 進んだ index からさらに前進
+    assert advance_index((7.2, 0.0, 0.0), points, 4, params) == 7
+    # まだ最初のセグメント上 → 進まない
+    assert advance_index((0.1, 0.0, 0.0), points, 0, params) == 0
+    # index は後退しない
+    assert advance_index((1.0, 0.0, 0.0), points, 5, params) == 5
+    # 空・単一点で落ちない
+    assert advance_index((0.0, 0.0, 0.0), [], 0, params) == 0
+    assert advance_index((0.0, 0.0, 0.0), [(0.0, 0.0, 0.0)], 0, params) == 0
+
+
+def test_advance_index_captures_near_next_point():
+    # 密な点列（~0.1m 間隔）。arrive_dist_m 0.2 以内の次点は通過扱いで飛ばす
+    params = ReplayParams(arrive_dist_m=0.2)
+    points = [(0.1 * i, 0.0, 0.0) for i in range(0, 30)]
+    # ロボットが x=1.0 付近 → 次点(index+1)が 0.2 以内の間ずっと進む
+    idx = advance_index((1.0, 0.0, 0.0), points, 0, params)
+    assert 8 <= idx <= 12   # 1.0m 近傍の点まで進む
+
+
+def test_pure_pursuit_skips_points_behind_robot():
+    # ロボットが経路の途中(x=5)で +x を向いている。from_index が古く 0 のままでも
+    # 背後(x<5)の点は目標に選ばず、前方の点を選ぶ（U ターン固着の防止）。
+    params = ReplayParams(lookahead_m=0.4, arrive_dist_m=0.2)
     points = [(float(i), 0.0, 0.0) for i in range(0, 11)]
-    # ロボットが 4.5 付近 → index 前進
-    idx = advance_index((4.5, 0.0, 0.0), points, 0, params)
-    assert idx >= 0
+    cmd = pure_pursuit((5.0, 0.0, 0.0), points, params, from_index=0)
+    assert cmd.target_index >= 5
+    assert not cmd.arrived
+    assert cmd.v > 0.0
+    assert abs(cmd.w) < 1e-6           # まっすぐ前方 → 旋回なし
+
+
+def test_pure_pursuit_arrived_when_from_index_at_last():
+    params = ReplayParams(lookahead_m=0.4, arrive_dist_m=0.2)
+    points = [(float(i), 0.0, 0.0) for i in range(0, 11)]
+    # 最終点まで距離があっても from_index が末尾なら到着扱い（過走の吸収）
+    cmd = pure_pursuit((9.5, 0.0, 0.0), points, params, from_index=10)
+    assert cmd.arrived
+
+
+def _simulate_replay(points, start_pose, params, *, dt=0.05, max_ticks=4000):
+    """pure_pursuit + advance_index を単純なユニサイクルモデルで多ティック回す。
+    返り値: (arrived, final_from_index, min_v, total_abs_yaw_change)"""
+    x, y, yaw = start_pose
+    from_index = 0
+    min_v = float('inf')
+    total_dyaw = 0.0
+    prev_yaw = yaw
+    for _ in range(max_ticks):
+        from_index = advance_index((x, y, yaw), points, from_index, params)
+        cmd = pure_pursuit((x, y, yaw), points, params, from_index)
+        if cmd.arrived:
+            return True, from_index, min_v, total_dyaw
+        min_v = min(min_v, cmd.v)
+        x += cmd.v * math.cos(yaw) * dt
+        y += cmd.v * math.sin(yaw) * dt
+        yaw = normalize_angle(yaw + cmd.w * dt)
+        total_dyaw += abs(normalize_angle(yaw - prev_yaw))
+        prev_yaw = yaw
+    return False, from_index, min_v, total_dyaw
+
+
+def test_replay_simulation_completes_curved_route_without_uturn():
+    # ~0.11m 間隔で緩く左に曲がる経路（実記録 route_1788241427965.json に近い密度）
+    params = ReplayParams()
+    points = []
+    x, y, th = 0.0, 0.0, 0.0
+    for _ in range(40):
+        points.append((x, y, th))
+        x += 0.11 * math.cos(th)
+        y += 0.11 * math.sin(th)
+        th += 0.05
+    arrived, final_idx, min_v, total_dyaw = _simulate_replay(
+        points, (0.0, 0.0, 0.0), params)
+    assert arrived, f'完走しなかった (from_index={final_idx}/{len(points) - 1})'
+    assert final_idx >= len(points) - 2
+    assert min_v >= -1e-6, '後退指令が出た（U ターン痕跡）'
+    # 経路全体の向き変化は ~2.0rad。U ターンが混ざると数倍に膨らむ
+    assert total_dyaw < 4.0, f'旋回量が過大 (U ターンの疑い): {total_dyaw:.2f}'
 
 
 # ── align_path_to_current（WAIVER W-01 の実害対策）─────────────────
