@@ -47,6 +47,22 @@ def normalize_angle(a: float) -> float:
     return math.atan2(math.sin(a), math.cos(a))
 
 
+def ramp_toward(current: float, target: float, max_step: float) -> float:
+    """current を target へ 1 周期分（最大 max_step）だけ近づける。
+
+    再生指令を階段状に出すと指令と実ホイール速度が乖離し safety_monitor の
+    runaway 判定（比 1.5 / 500ms）に引っかかる（実機 DRIVE_RUNAWAY）。毎ティック
+    この関数で滑らかに追従させる（crawler_teleop.py の _ramp と同型）。
+    """
+    if max_step <= 0.0:
+        return target
+    if target > current + max_step:
+        return current + max_step
+    if target < current - max_step:
+        return current - max_step
+    return target
+
+
 # ──────────────────────────────────────────────────────────────────
 # 逆再生支援
 # ──────────────────────────────────────────────────────────────────

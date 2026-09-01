@@ -45,7 +45,7 @@ def _points_to_path(points, frame_id='odom', stamp=None):
 from th_planning.route_record_core import polyline_length, route_from_dict
 from th_planning.route_replay_core import (
     ReplayParams, advance_index, align_path_to_current, pure_pursuit,
-    reverse_points, rotate_toward,
+    ramp_toward, reverse_points, rotate_toward,
 )
 
 
@@ -66,13 +66,19 @@ class ReplayRunner(Node):
         self.declare_parameter('control_period_ms', 50)   # 20Hz
         self.declare_parameter('status_period_ms', 500)
         self.declare_parameter('lookahead_m', 0.40)
-        self.declare_parameter('cruise_speed_mps', 0.25)
-        self.declare_parameter('max_yaw_rate_rps', 0.8)
+        # 2026-09-01: 実機で DRIVE_RUNAWAY を踏んだため巡航・旋回を下げてランプ化した（#2）。
+        self.declare_parameter('cruise_speed_mps', 0.18)
+        self.declare_parameter('max_yaw_rate_rps', 0.5)
         self.declare_parameter('arrive_dist_m', 0.20)
         self.declare_parameter('yaw_tol_rad', 0.10)
+        self.declare_parameter('linear_accel_mps2', 0.5)
+        self.declare_parameter('angular_accel_rps2', 1.5)
         self._routes_dir = self.get_parameter('routes_dir').value
         control_ms = self.get_parameter('control_period_ms').value
         status_ms = self.get_parameter('status_period_ms').value
+        dt = control_ms / 1000.0
+        self._max_dv = self.get_parameter('linear_accel_mps2').value * dt
+        self._max_dw = self.get_parameter('angular_accel_rps2').value * dt
 
         # ── 純コアのパラメータ束（指示の値をそのまま使う）──
         self._params = ReplayParams(
@@ -92,6 +98,8 @@ class ReplayRunner(Node):
         self._arrived_sent = False
         self._was_moving = False
         self._target_index = -1
+        self._cur_v = 0.0   # ランプ後の実際の publish 値
+        self._cur_w = 0.0
         self._pose = None
         self._mode = ""
         self._state = ""
@@ -190,23 +198,28 @@ class ReplayRunner(Node):
         p = msg.pose.pose.position
         self._pose = (p.x, p.y, _yaw_from_quat(msg.pose.pose.orientation))
 
+    def _publish_ramped(self, target_v: float, target_w: float):
+        """目標 (v, w) へランプで近づけてから publish（#2: DRIVE_RUNAWAY 対策）。"""
+        self._cur_v = ramp_toward(self._cur_v, target_v, self._max_dv)
+        self._cur_w = ramp_toward(self._cur_w, target_w, self._max_dw)
+        t = Twist()
+        t.linear.x = self._cur_v
+        t.angular.z = self._cur_w
+        self._pub_cmd.publish(t)
+        self._was_moving = abs(self._cur_v) > 1e-6 or abs(self._cur_w) > 1e-6
+
     # ── 制御ループ（20Hz）────────────────────────────────
     def _control_timer(self):
-        # 走行条件が揃っていない
+        # 走行条件が揃っていない → ランプで 0 へ戻す（急な 0 もステップになる）
         if self._mode != 'REPLAY' or self._state != 'RUN' or \
                 self._route is None or self._pose is None:
             if self._was_moving:
-                # 直前まで走っていたら 1 回だけ 0 を送って止める
-                self._pub_cmd.publish(Twist())
-                self._was_moving = False
+                self._publish_ramped(0.0, 0.0)
             return
 
         if self._need_rotate and not self._rotated:
             w, done = rotate_toward(self._pose[2], self._start_yaw, self._params)
-            cmd_twist = Twist()
-            cmd_twist.angular.z = w
-            self._pub_cmd.publish(cmd_twist)
-            self._was_moving = True
+            self._publish_ramped(0.0, w)
             if done:
                 self._rotated = True
             return
@@ -217,16 +230,12 @@ class ReplayRunner(Node):
         self._from_index = advance_index(self._pose, self._points, self._from_index, self._params)
         self._target_index = cmd.target_index
         if cmd.arrived:
-            self._pub_cmd.publish(Twist())
-            self._was_moving = False
+            self._publish_ramped(0.0, 0.0)
             if not self._arrived_sent:
                 self._emit_event('evt.arrived')
                 self._arrived_sent = True
             return
-        cmd_twist = Twist()
-        cmd_twist.linear.x = cmd.v
-        cmd_twist.angular.z = cmd.w
-        self._pub_cmd.publish(cmd_twist)
+        self._publish_ramped(cmd.v, cmd.w)
         self._was_moving = True
 
     # ── イベント発行 ─────────────────────────────────────
@@ -257,7 +266,10 @@ class ReplayRunner(Node):
             msg.current = info
         self._pub_status.publish(msg)
         # 現在地合わせ済みの点列を odom フレームの Path でプレビュー配信する。
-        self._pub_preview.publish(_points_to_path(self._points, stamp=stamp))
+        # #4: 経路を読んでいるときだけ出す（空 Path を出すと、記録側と交互配信になり
+        # WebUI のプレビューが点滅する）。
+        if self._route is not None and self._points:
+            self._pub_preview.publish(_points_to_path(self._points, stamp=stamp))
 
 
 def main(args=None):

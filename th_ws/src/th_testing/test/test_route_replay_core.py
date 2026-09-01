@@ -22,8 +22,16 @@ sys.path.insert(0, os.path.join(
 from route_replay_core import (
     ReplayParams, ReplayCommand,
     reverse_points, rotate_toward, pure_pursuit, advance_index, normalize_angle,
-    align_path_to_current,
+    align_path_to_current, ramp_toward,
 )
+
+
+def test_ramp_toward_clamps_step_and_reaches_target():
+    assert ramp_toward(0.0, 1.0, 0.2) == pytest.approx(0.2)      # 上げ: max_step まで
+    assert ramp_toward(1.0, 0.0, 0.3) == pytest.approx(0.7)      # 下げ: max_step まで
+    assert ramp_toward(0.05, 0.0, 0.2) == pytest.approx(0.0)     # 近ければ target ちょうど
+    assert ramp_toward(-0.5, 0.5, 100) == pytest.approx(0.5)     # step 十分なら一発
+    assert ramp_toward(0.3, 0.9, 0.0) == pytest.approx(0.9)      # max_step<=0 は即 target
 
 
 def test_reverse_points_reverses_and_rotates_yaw():

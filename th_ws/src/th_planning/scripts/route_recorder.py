@@ -193,7 +193,10 @@ class RouteRecorder(Node):
             msg.elapsed_sec = (self._now_ms() - self._rec_started_ms) / 1000.0
             preview_points = self._recorder.points
         self._pub_status.publish(msg)
-        self._pub_preview.publish(_points_to_path(preview_points, stamp=stamp))
+        # #4: 記録中だけ /route/preview を出す（空 Path を出すと再生側と交互配信になり
+        # WebUI のプレビューが点滅する）。
+        if self._recorder is not None and preview_points:
+            self._pub_preview.publish(_points_to_path(preview_points, stamp=stamp))
 
     # ── 経路一覧 publish ──────────────────────────────────
     def _publish_routes_list(self):
