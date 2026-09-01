@@ -17,6 +17,7 @@
 # ============================================================
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from rcl_interfaces.msg import ParameterDescriptor, ParameterType, SetParametersResult
 from sensor_msgs.msg import LaserScan
 import copy
@@ -69,8 +70,13 @@ class LidarFilter(Node):
         out_topic = self.get_parameter('output_topic').value
 
         self._pub = self.create_publisher(LaserScan, out_topic, 10)
+        # /scan は sensor QoS (BEST_EFFORT) で購読する。既定の RELIABLE だと
+        # lidar_source:=network（ラズパイ→ロボPC の WiFi）で信頼配送のハンドシェイクが
+        # 成立せず、ros2 topic info では match していても実サンプルが届かず
+        # /scan_filtered が無音になる（2026-09-01 実機で確認。safety_monitor /
+        # obstacle_limiter / connectivity_checker は元から BEST_EFFORT）。
         self._sub = self.create_subscription(
-            LaserScan, in_topic, self._cb, 10)
+            LaserScan, in_topic, self._cb, qos_profile_sensor_data)
 
         self.get_logger().info(
             f'lidar_filter 起動  {in_topic} → {out_topic}  '
