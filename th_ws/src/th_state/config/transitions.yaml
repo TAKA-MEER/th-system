@@ -1,0 +1,1573 @@
+# transitions.yaml
+#
+# DetailedDesign-state.md §4.1（共通・layer 0・18行）と §4.2（モード内・layer 10・110行）を
+# 加工せずに転記したもの（唯一の正）。spec_ref の実値は §4.4 の写像を転記している。
+# id は詳細設計・pytest・UI がそのまま参照する（DetailedDesign-state.md §3）。
+#
+# 注意:
+#   - to_mode は §4.2 の表でモード跨ぎが無いモードでは列自体が省略されているが、
+#     このファイルでは全行に "="（不変）を明示する。
+#   - C-06r は C-06b より前に置く（layer 0 内は記載順に走査するため。§3.1 規則1）。
+#   - LINE/LEASH の一部行は実装を段階8へ後回しにしており、§3.3 のeffect一覧に無い効果名
+#     （例: plan_line_route）は転記していない（空リスト）。表そのものは含める。
+
+- id: C-01
+  layer: 0
+  mode: '*'
+  state: '*'
+  event: ui.jog.hold
+  guard: jog_allowed
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: set_jog
+    args:
+      'on': true
+  spec_ref: SM-3.1.1-01
+- id: C-02
+  layer: 0
+  mode: '*'
+  state: PAUSE
+  event: sys.jog_lease_expired
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: set_jog
+    args:
+      'on': false
+  spec_ref: SM-3.1.1-02
+- id: C-03
+  layer: 0
+  mode: '*'
+  state: '*'
+  event: fault.recoverable
+  guard: fault_stops_mode
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: open_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-03
+- id: C-04
+  layer: 0
+  mode: '*'
+  state: PAUSE
+  event: ui.resume_yes
+  guard: fault_cleared
+  to_mode: '='
+  to_state: $resume_run
+  effects:
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-04
+- id: C-05
+  layer: 0
+  mode: '*'
+  state: PAUSE
+  event:
+  - ui.resume_no
+  - ui.resume_ack
+  guard: fault_cleared
+  to_mode: '='
+  to_state: $resume_state
+  effects:
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-05
+- id: C-06a
+  layer: 0
+  mode: '*'
+  state: '*'
+  event: fault.critical
+  guard: null
+  to_mode: ESTOP
+  to_state: NONE
+  effects:
+  - name: latch_prev
+    args: {}
+  spec_ref: SM-3.1.1-06
+- id: C-06r
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.estop.press
+  guard: null
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.1-08
+  reject: true
+  reject_reason_key: estop_disabled_in_carry
+- id: C-06b
+  layer: 0
+  mode: '*'
+  state: '*'
+  event: ui.estop.press
+  guard: estop_ui_allowed
+  to_mode: ESTOP
+  to_state: NONE
+  effects:
+  - name: latch_prev
+    args: {}
+  spec_ref: SM-3.1.1-07
+- id: C-07
+  layer: 0
+  mode: '*'
+  state: '*'
+  event: hw.estop.press
+  guard: not_checking_estop
+  to_mode: CARRY
+  to_state: NONE
+  effects:
+  - name: latch_prev
+    args: {}
+  - name: open_window
+    args:
+      id: W-2
+  spec_ref: SM-3.1.1-09
+- id: C-08
+  layer: 0
+  mode: '*'
+  state: '*'
+  event: ui.finish
+  guard: can_finish
+  to_mode: IDLE
+  to_state: NONE
+  effects:
+  - name: ask_save_if_unsaved
+    args: {}
+  - name: clear_prev
+    args: {}
+  spec_ref: SM-3.1.1-10
+- id: C-09
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.estop.release
+  guard: no_critical_fault
+  to_mode: IDLE
+  to_state: NONE
+  effects:
+  - name: clear_prev
+    args: {}
+  spec_ref: SM-3.1.1-11
+- id: C-09f
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_ack
+  guard: fault_cleared_and_ui_released
+  to_mode: IDLE
+  to_state: NONE
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-12
+- id: C-10
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: hw.estop.release
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: show_resume
+    args: {}
+  spec_ref: SM-3.1.1-13
+- id: C-11
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: hw_released_and_no_critical
+  to_mode: $prev_mode
+  to_state: $prev_state
+  effects:
+  - name: close_window
+    args:
+      id: W-2
+  spec_ref: SM-3.1.1-14
+- id: C-12
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.finish
+  guard: hw_released
+  to_mode: IDLE
+  to_state: NONE
+  effects:
+  - name: clear_prev
+    args: {}
+  spec_ref: SM-3.1.1-10
+- id: C-13
+  layer: 0
+  mode:
+  - IDLE
+  - MANUAL
+  state: '*'
+  event: ui.enter_mode
+  guard: mode_entry_allowed
+  to_mode: $arg.mode
+  to_state: $initial
+  effects: []
+  spec_ref: SM-3.1.1-15
+- id: C-14
+  layer: 0
+  mode: '*'
+  state: '*'
+  event: ui.screen
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: set_screen
+    args:
+      screen_id: $arg.screen_id
+  spec_ref: SM-3.1.1-17
+- id: C-15
+  layer: 0
+  mode: IDLE
+  state: NONE
+  event: ui.goto
+  guard: goto_allowed
+  to_mode: $arg.kind
+  to_state: $initial
+  effects: []
+  spec_ref: SM-3.1.1-16
+- id: T-INIT-01
+  layer: 10
+  mode: INIT
+  state: CHECK
+  event: evt.link_ok
+  guard: null
+  to_mode: IDLE
+  to_state: NONE
+  effects:
+  - name: enable_main_menu
+    args: {}
+  spec_ref: SM-3.1.2-001
+- id: T-INIT-02
+  layer: 10
+  mode: INIT
+  state: CHECK
+  event: sys.link_timeout
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: restart_control_stack
+    args: {}
+  spec_ref: SM-3.1.2-002
+- id: T-INIT-03
+  layer: 10
+  mode: INIT
+  state: CHECK
+  event: hw.estop.press
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: guide
+    args:
+      key: estop_held_at_boot
+  spec_ref: SM-3.1.2-003
+  override_common: true
+- id: T-FOLLOW-01
+  layer: 10
+  mode: FOLLOW
+  state: SELECT
+  event: ui.select_target
+  guard: candidate_exists
+  to_mode: '='
+  to_state: SELECT
+  effects:
+  - name: set_target
+    args:
+      index: $arg.index
+  spec_ref: SM-3.1.2-004
+- id: T-FOLLOW-02
+  layer: 10
+  mode: FOLLOW
+  state: SELECT
+  event: evt.auto_selected
+  guard: null
+  to_mode: '='
+  to_state: SELECT
+  effects:
+  - name: set_target
+    args:
+      index: $arg.index
+  spec_ref: SM-3.1.2-004
+- id: T-FOLLOW-03
+  layer: 10
+  mode: FOLLOW
+  state: SELECT
+  event: ui.confirm
+  guard: target_selected
+  to_mode: '='
+  to_state: CONFIRM
+  effects:
+  - name: face_target
+    args: {}
+  spec_ref: SM-3.1.2-005
+- id: T-FOLLOW-04
+  layer: 10
+  mode: FOLLOW
+  state: CONFIRM
+  event: ui.run
+  guard: target_confident
+  to_mode: '='
+  to_state: RUN
+  effects: []
+  spec_ref: SM-3.1.2-006
+- id: T-FOLLOW-05
+  layer: 10
+  mode: FOLLOW
+  state: RUN
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects: []
+  spec_ref: SM-3.1.2-007
+- id: T-FOLLOW-06
+  layer: 10
+  mode: FOLLOW
+  state: RUN
+  event: evt.target_lost
+  guard: null
+  to_mode: '='
+  to_state: SELECT
+  effects:
+  - name: clear_selection
+    args: {}
+  - name: guide
+    args:
+      key: target_lost
+  spec_ref: SM-3.1.2-008
+- id: T-FOLLOW-07
+  layer: 10
+  mode: FOLLOW
+  state: PAUSE
+  event: ui.run
+  guard: target_selected
+  to_mode: '='
+  to_state: RUN
+  effects: []
+  spec_ref: SM-3.1.2-009
+- id: T-MANUAL-01
+  layer: 10
+  mode: MANUAL
+  state:
+  - PAUSE
+  - RUN
+  event: ui.jog.hold
+  guard: null
+  to_mode: '='
+  to_state: RUN
+  effects: []
+  spec_ref: SM-3.1.2-010
+  override_common: true
+- id: T-MANUAL-02
+  layer: 10
+  mode: MANUAL
+  state: RUN
+  event:
+  - sys.jog_lease_expired
+  - ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects: []
+  spec_ref: SM-3.1.2-011
+  override_common: false
+- id: T-TEACH-01
+  layer: 10
+  mode:
+  - TEACH_FOLLOW
+  - TEACH_MANUAL
+  state: ROUTE_SEL
+  event: ui.route_select
+  guard: route_arg_valid
+  to_mode: '='
+  to_state: REC
+  effects:
+  - name: start_record
+    args:
+      route_id: $arg.id
+  spec_ref: SM-3.1.2-012
+- id: T-TEACH-02
+  layer: 10
+  mode:
+  - TEACH_FOLLOW
+  - TEACH_MANUAL
+  state: REC
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects: []
+  spec_ref: SM-3.1.2-013
+- id: T-TEACH-03
+  layer: 10
+  mode: TEACH_FOLLOW
+  state: PAUSE
+  event: ui.run
+  guard: null
+  to_mode: '='
+  to_state: REC
+  effects:
+  - name: resume_record
+    args: {}
+  spec_ref: SM-3.1.2-014
+- id: T-TEACH-03M
+  layer: 10
+  mode: TEACH_MANUAL
+  state:
+  - PAUSE
+  - REC
+  event: ui.jog.hold
+  guard: null
+  to_mode: '='
+  to_state: REC
+  effects:
+  - name: resume_record
+    args: {}
+  spec_ref: SM-3.1.2-015
+  override_common: true
+- id: T-TEACH-04
+  layer: 10
+  mode:
+  - TEACH_FOLLOW
+  - TEACH_MANUAL
+  state:
+  - REC
+  - PAUSE
+  event: ui.save
+  guard: null
+  to_mode: '='
+  to_state: SAVED
+  effects:
+  - name: finalize_route
+    args: {}
+  spec_ref: SM-3.1.2-016
+- id: T-TEACH-05
+  layer: 10
+  mode: TEACH_FOLLOW
+  state: SAVED
+  event: ui.run
+  guard: null
+  to_mode: '='
+  to_state: REC
+  effects:
+  - name: resume_record
+    args: {}
+  spec_ref: SM-3.1.2-017
+- id: T-TEACH-05M
+  layer: 10
+  mode: TEACH_MANUAL
+  state: SAVED
+  event: ui.jog.hold
+  guard: null
+  to_mode: '='
+  to_state: REC
+  effects:
+  - name: resume_record
+    args: {}
+  spec_ref: SM-3.1.2-018
+  override_common: true
+- id: T-TEACH-06
+  layer: 10
+  mode:
+  - TEACH_FOLLOW
+  - TEACH_MANUAL
+  state: '*'
+  event: evt.record_broken
+  guard: null
+  to_mode: IDLE
+  to_state: NONE
+  effects:
+  - name: ask_save
+    args: {}
+  spec_ref: SM-3.1.2-019
+- id: T-REPLAY-01
+  layer: 10
+  mode: REPLAY
+  state: ROUTE_SEL
+  event: ui.route_select
+  guard: route_exists
+  to_mode: '='
+  to_state: LOCALIZE
+  effects:
+  - name: load_route
+    args:
+      route_id: $arg.id
+      reverse: $arg.reverse
+  spec_ref: SM-3.1.2-020
+- id: T-REPLAY-02
+  layer: 10
+  mode: REPLAY
+  state: LOCALIZE
+  event: evt.localize_low
+  guard: null
+  to_mode: '='
+  to_state: LOCALIZE
+  effects:
+  - name: widen_search
+    args: {}
+  spec_ref: SM-3.1.2-021
+- id: T-REPLAY-03
+  layer: 10
+  mode: REPLAY
+  state: LOCALIZE
+  event: ui.localize_global
+  guard: null
+  to_mode: '='
+  to_state: LOCALIZE
+  effects:
+  - name: global_localize
+    args: {}
+  spec_ref: SM-3.1.2-022
+- id: T-REPLAY-04
+  layer: 10
+  mode: REPLAY
+  state: LOCALIZE
+  event: evt.localize_done
+  guard: null
+  to_mode: '='
+  to_state: READY
+  effects: []
+  spec_ref: SM-3.1.2-023
+- id: T-REPLAY-05
+  layer: 10
+  mode: REPLAY
+  state: READY
+  event: ui.run
+  guard: null
+  to_mode: '='
+  to_state: RUN
+  effects:
+  - name: rotate_to_start_yaw
+    args: {}
+  spec_ref: SM-3.1.2-024
+- id: T-REPLAY-06
+  layer: 10
+  mode: REPLAY
+  state: RUN
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects: []
+  spec_ref: SM-3.1.2-025
+- id: T-REPLAY-07
+  layer: 10
+  mode: REPLAY
+  state: PAUSE
+  event: ui.run
+  guard: null
+  to_mode: '='
+  to_state: RUN
+  effects:
+  - name: resume_path
+    args: {}
+  spec_ref: SM-3.1.2-026
+- id: T-REPLAY-08
+  layer: 10
+  mode: REPLAY
+  state: PAUSE
+  event: ui.save
+  guard: map_update
+  to_mode: '='
+  to_state: SAVED
+  effects:
+  - name: commit_map_patch
+    args: {}
+  spec_ref: SM-3.1.2-028
+- id: T-REPLAY-09
+  layer: 10
+  mode: REPLAY
+  state: RUN
+  event: evt.arrived
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: guide
+    args:
+      key: route_end
+  spec_ref: SM-3.1.2-027
+- id: T-REPLAY-10
+  layer: 10
+  mode: REPLAY
+  state: SAVED
+  event: ui.run
+  guard: null
+  to_mode: '='
+  to_state: RUN
+  effects:
+  - name: resume_path
+    args: {}
+  spec_ref: SM-3.1.2-029
+- id: T-LINE-01
+  layer: 10
+  mode: LINE
+  state: SETUP
+  event: evt.setup_done
+  guard: null
+  to_mode: '='
+  to_state: PLANNED
+  effects: []
+  spec_ref: SM-3.1.2-030
+- id: T-LINE-02
+  layer: 10
+  mode: LINE
+  state: PLANNED
+  event: ui.run
+  guard: null
+  to_mode: '='
+  to_state: RUN
+  effects: []
+  spec_ref: SM-3.1.2-031
+- id: T-LINE-03
+  layer: 10
+  mode: LINE
+  state: RUN
+  event: evt.arrived
+  guard: null
+  to_mode: '='
+  to_state: ARRIVED
+  effects: []
+  spec_ref: SM-3.1.2-032
+- id: T-LINE-04
+  layer: 10
+  mode: LINE
+  state: RUN
+  event: evt.line_lost
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: guide
+    args:
+      key: line_lost
+  spec_ref: SM-3.1.2-033
+- id: T-LINE-05
+  layer: 10
+  mode: LINE
+  state: RUN
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects: []
+  spec_ref: SM-3.1.2-034
+- id: T-LINE-06
+  layer: 10
+  mode: LINE
+  state:
+  - PAUSE
+  - ARRIVED
+  event: ui.run
+  guard: line_visible
+  to_mode: '='
+  to_state: RUN
+  effects: []
+  spec_ref: SM-3.1.2-035
+- id: T-LEASH-01
+  layer: 10
+  mode: LEASH
+  state: DEV_CHECK
+  event: evt.leash_present
+  guard: null
+  to_mode: '='
+  to_state: READY
+  effects: []
+  spec_ref: SM-3.1.2-036
+- id: T-LEASH-07
+  layer: 10
+  mode: LEASH
+  state: DEV_CHECK
+  event: evt.leash_absent
+  guard: null
+  to_mode: '='
+  to_state: DEV_CHECK
+  effects:
+  - name: guide
+    args:
+      key: leash_not_connected
+  spec_ref: SM-3.1.2-037
+- id: T-LEASH-02
+  layer: 10
+  mode: LEASH
+  state:
+  - READY
+  - PAUSE
+  event: ui.run
+  guard: leash_taut
+  to_mode: '='
+  to_state: RUN
+  effects: []
+  spec_ref: SM-3.1.2-038
+- id: T-LEASH-03
+  layer: 10
+  mode: LEASH
+  state:
+  - READY
+  - PAUSE
+  event: ui.run
+  guard: leash_slack
+  to_mode: '='
+  to_state: HOLD
+  effects: []
+  spec_ref: SM-3.1.2-038
+- id: T-LEASH-04
+  layer: 10
+  mode: LEASH
+  state: RUN
+  event: evt.leash_slack
+  guard: null
+  to_mode: '='
+  to_state: HOLD
+  effects: []
+  spec_ref: SM-3.1.2-039
+- id: T-LEASH-05
+  layer: 10
+  mode: LEASH
+  state: HOLD
+  event: evt.leash_taut
+  guard: null
+  to_mode: '='
+  to_state: RUN
+  effects: []
+  spec_ref: SM-3.1.2-040
+- id: T-LEASH-06
+  layer: 10
+  mode: LEASH
+  state:
+  - RUN
+  - HOLD
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects: []
+  spec_ref: SM-3.1.2-041
+- id: T-PREP-01
+  layer: 10
+  mode: PREP
+  state: MAPPING
+  event: ui.register
+  guard: target_confident
+  to_mode: '='
+  to_state: REGISTER
+  effects:
+  - name: begin_two_point
+    args:
+      kind: $arg.kind
+  spec_ref: SM-3.1.2-042
+- id: T-PREP-02
+  layer: 10
+  mode: PREP
+  state: REGISTER
+  event: evt.register_ok
+  guard: null
+  to_mode: '='
+  to_state: MAPPING
+  effects:
+  - name: place_pin
+    args: {}
+  spec_ref: SM-3.1.2-043
+- id: T-PREP-03
+  layer: 10
+  mode: PREP
+  state: REGISTER
+  event: evt.plane_done
+  guard: null
+  to_mode: '='
+  to_state: MAPPING
+  effects:
+  - name: place_pin
+    args: {}
+  spec_ref: SM-3.1.2-043
+- id: T-PREP-04
+  layer: 10
+  mode: PREP
+  state: REGISTER
+  event: evt.register_rejected
+  guard: null
+  to_mode: '='
+  to_state: MAPPING
+  effects:
+  - name: guide
+    args:
+      key: register_rejected
+  spec_ref: SM-3.1.2-044
+- id: T-PREP-05
+  layer: 10
+  mode: PREP
+  state: REGISTER
+  event: evt.target_lost
+  guard: null
+  to_mode: '='
+  to_state: MAPPING
+  effects:
+  - name: reject_register
+    args: {}
+  - name: guide
+    args:
+      key: register_target_lost
+  spec_ref: SM-3.1.2-045
+- id: T-PREP-06
+  layer: 10
+  mode: PREP
+  state: MAPPING
+  event: ui.return_home
+  guard: home_pin_exists
+  to_mode: '='
+  to_state: RETURN
+  effects: []
+  spec_ref: SM-3.1.2-046
+- id: T-PREP-07
+  layer: 10
+  mode: PREP
+  state: RETURN
+  event: evt.arrived
+  guard: null
+  to_mode: '='
+  to_state: EDIT
+  effects: []
+  spec_ref: SM-3.1.2-047
+- id: T-PREP-08
+  layer: 10
+  mode: PREP
+  state:
+  - MAPPING
+  - EDIT
+  event: ui.map_edit
+  guard: null
+  to_mode: '='
+  to_state: EDIT
+  effects: []
+  spec_ref: SM-3.1.2-048
+- id: T-PREP-09
+  layer: 10
+  mode: PREP
+  state: EDIT
+  event: ui.run
+  guard: null
+  to_mode: '='
+  to_state: MAPPING
+  effects: []
+  spec_ref: SM-3.1.2-049
+- id: T-PREP-10
+  layer: 10
+  mode: PREP
+  state: '*'
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: keep_all
+    args: {}
+  spec_ref: SM-3.1.2-050
+- id: T-PREP-11
+  layer: 10
+  mode: PREP
+  state: PAUSE
+  event: ui.run
+  guard: null
+  to_mode: '='
+  to_state: $prev_sub
+  effects: []
+  spec_ref: SM-3.1.2-051
+- id: T-PREP-12
+  layer: 10
+  mode: PREP
+  state: '*'
+  event: ui.save
+  guard: null
+  to_mode: '='
+  to_state: SAVED
+  effects:
+  - name: commit_venue_map
+    args: {}
+  spec_ref: SM-3.1.2-052
+- id: T-PREP-13
+  layer: 10
+  mode: PREP
+  state: SAVED
+  event: ui.run
+  guard: null
+  to_mode: '='
+  to_state: MAPPING
+  effects: []
+  spec_ref: SM-3.1.2-053
+- id: T-PNAV-01
+  layer: 10
+  mode: PANEL_NAV
+  state: NAV
+  event: evt.arrived
+  guard: null
+  to_mode: '='
+  to_state: ALIGN
+  effects: []
+  spec_ref: SM-3.1.2-054
+- id: T-PNAV-02
+  layer: 10
+  mode: PANEL_NAV
+  state: NAV
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: cancel_follow_path
+    args: {}
+  spec_ref: SM-3.1.2-055
+- id: T-PNAV-03
+  layer: 10
+  mode: PANEL_NAV
+  state: PAUSE
+  event: ui.run
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: resume_follow_path
+    args: {}
+  spec_ref: SM-3.1.2-056
+- id: T-PNAV-04
+  layer: 10
+  mode: PANEL_NAV
+  state: NAV
+  event: evt.blocked
+  guard: null
+  to_mode: '='
+  to_state: BLOCKED
+  effects:
+  - name: open_window
+    args:
+      id: W-5
+  spec_ref: SM-3.1.2-057
+- id: T-PNAV-05
+  layer: 10
+  mode: PANEL_NAV
+  state: BLOCKED
+  event: evt.unblocked
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: close_window
+    args:
+      id: W-5
+  spec_ref: SM-3.1.2-058
+- id: T-PNAV-06
+  layer: 10
+  mode: PANEL_NAV
+  state: BLOCKED
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects: []
+  spec_ref: SM-3.1.2-059
+- id: T-PNAV-07
+  layer: 10
+  mode: PANEL_NAV
+  state: BLOCKED
+  event: ui.reroute
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: replan
+    args: {}
+  spec_ref: SM-3.1.2-060
+- id: T-PNAV-08
+  layer: 10
+  mode: PANEL_NAV
+  state: ALIGN
+  event: evt.align_done
+  guard: null
+  to_mode: AT_PANEL
+  to_state: IDLE_P
+  effects: []
+  spec_ref: SM-3.1.2-061
+- id: T-PNAV-09
+  layer: 10
+  mode: PANEL_NAV
+  state: PAUSE
+  event: ui.save
+  guard: map_update
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: commit_map_patch
+    args: {}
+  spec_ref: SM-3.1.2-099
+- id: T-ATP-01
+  layer: 10
+  mode: AT_PANEL
+  state: IDLE_P
+  event: ui.working
+  guard: null
+  to_mode: '='
+  to_state: WORKING
+  effects: []
+  spec_ref: SM-3.1.2-062
+- id: T-ATP-02
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event: ui.working
+  guard: null
+  to_mode: '='
+  to_state: IDLE_P
+  effects: []
+  spec_ref: SM-3.1.2-063
+- id: T-ATP-03
+  layer: 10
+  mode: AT_PANEL
+  state: IDLE_P
+  event: ui.jog.hold
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: set_jog
+    args:
+      'on': true
+  spec_ref: SM-3.1.2-064
+- id: T-ATP-04
+  layer: 10
+  mode: AT_PANEL
+  state: PAUSE
+  event: sys.jog_lease_expired
+  guard: null
+  to_mode: '='
+  to_state: IDLE_P
+  effects:
+  - name: set_jog
+    args:
+      'on': false
+  spec_ref: SM-3.1.2-065
+  override_common: true
+- id: T-ATP-05
+  layer: 10
+  mode: AT_PANEL
+  state:
+  - IDLE_P
+  - WORKING
+  event: ui.goto
+  guard: goto_allowed
+  to_mode: $arg.kind
+  to_state: $initial
+  effects: []
+  spec_ref: SM-3.1.2-066
+- id: T-ATP-07
+  layer: 10
+  mode: AT_PANEL
+  state: IDLE_P
+  event: ui.save
+  guard: map_update
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: commit_map_patch
+    args: {}
+  spec_ref: SM-3.1.2-100
+- id: T-SUM-01
+  layer: 10
+  mode: SUMMON
+  state: POINT
+  event: evt.two_point_done
+  guard: null
+  to_mode: '='
+  to_state: WAIT_CLEAR
+  effects:
+  - name: disable_jog_ui
+    args: {}
+  spec_ref: SM-3.1.2-067
+- id: T-SUM-02
+  layer: 10
+  mode: SUMMON
+  state: WAIT_CLEAR
+  event: evt.clear_ok
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: enable_jog_ui
+    args: {}
+  spec_ref: SM-3.1.2-068
+- id: T-SUM-03
+  layer: 10
+  mode: SUMMON
+  state: WAIT_CLEAR
+  event: evt.clear_timeout
+  guard: null
+  to_mode: '='
+  to_state: POINT
+  effects:
+  - name: enable_jog_ui
+    args: {}
+  - name: guide
+    args:
+      key: summon_clear_timeout
+  spec_ref: SM-3.1.2-069
+- id: T-SUM-04
+  layer: 10
+  mode: SUMMON
+  state: WAIT_CLEAR
+  event: evt.target_lost
+  guard: null
+  to_mode: '='
+  to_state: POINT
+  effects:
+  - name: enable_jog_ui
+    args: {}
+  - name: guide
+    args:
+      key: summon_target_lost
+  spec_ref: SM-3.1.2-069
+- id: T-SUM-05
+  layer: 10
+  mode: SUMMON
+  state: WAIT_CLEAR
+  event: ui.abort
+  guard: null
+  to_mode: '='
+  to_state: POINT
+  effects:
+  - name: enable_jog_ui
+    args: {}
+  spec_ref: SM-3.1.2-069
+- id: T-SUM-06
+  layer: 10
+  mode: SUMMON
+  state: NAV
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: cancel_follow_path
+    args: {}
+  spec_ref: SM-3.1.2-070
+- id: T-SUM-07
+  layer: 10
+  mode: SUMMON
+  state: PAUSE
+  event: ui.run
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: resume_follow_path
+    args: {}
+  spec_ref: SM-3.1.2-071
+- id: T-SUM-08
+  layer: 10
+  mode: SUMMON
+  state: NAV
+  event: evt.blocked
+  guard: null
+  to_mode: '='
+  to_state: BLOCKED
+  effects:
+  - name: open_window
+    args:
+      id: W-5
+  spec_ref: SM-3.1.2-072
+- id: T-SUM-09
+  layer: 10
+  mode: SUMMON
+  state: BLOCKED
+  event: evt.unblocked
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: close_window
+    args:
+      id: W-5
+  spec_ref: SM-3.1.2-073
+- id: T-SUM-10
+  layer: 10
+  mode: SUMMON
+  state: BLOCKED
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects: []
+  spec_ref: SM-3.1.2-074
+- id: T-SUM-13
+  layer: 10
+  mode: SUMMON
+  state: BLOCKED
+  event: ui.reroute
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: replan
+    args: {}
+  spec_ref: SM-3.1.2-075
+- id: T-SUM-11
+  layer: 10
+  mode: SUMMON
+  state: NAV
+  event: evt.arrived
+  guard: null
+  to_mode: '='
+  to_state: ALIGN
+  effects: []
+  spec_ref: SM-3.1.2-076
+- id: T-SUM-12
+  layer: 10
+  mode: SUMMON
+  state: ALIGN
+  event: evt.align_done
+  guard: null
+  to_mode: AT_PANEL
+  to_state: IDLE_P
+  effects: []
+  spec_ref: SM-3.1.2-077
+- id: T-SUM-14
+  layer: 10
+  mode: SUMMON
+  state: PAUSE
+  event: ui.save
+  guard: map_update
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: commit_map_patch
+    args: {}
+  spec_ref: SM-3.1.2-101
+- id: T-HNAV-01
+  layer: 10
+  mode: HOME_NAV
+  state: NAV
+  event: evt.arrived
+  guard: null
+  to_mode: IDLE
+  to_state: NONE
+  effects:
+  - name: guide
+    args:
+      key: home_arrived
+  spec_ref: SM-3.1.2-078
+- id: T-HNAV-02
+  layer: 10
+  mode: HOME_NAV
+  state: NAV
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: cancel_follow_path
+    args: {}
+  spec_ref: SM-3.1.2-079
+- id: T-HNAV-03
+  layer: 10
+  mode: HOME_NAV
+  state: PAUSE
+  event: ui.run
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: resume_follow_path
+    args: {}
+  spec_ref: SM-3.1.2-080
+- id: T-HNAV-04
+  layer: 10
+  mode: HOME_NAV
+  state: NAV
+  event: evt.blocked
+  guard: null
+  to_mode: '='
+  to_state: BLOCKED
+  effects:
+  - name: open_window
+    args:
+      id: W-5
+  spec_ref: SM-3.1.2-081
+- id: T-HNAV-05
+  layer: 10
+  mode: HOME_NAV
+  state: BLOCKED
+  event: evt.unblocked
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: close_window
+    args:
+      id: W-5
+  spec_ref: SM-3.1.2-082
+- id: T-HNAV-06
+  layer: 10
+  mode: HOME_NAV
+  state: BLOCKED
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects: []
+  spec_ref: SM-3.1.2-083
+- id: T-HNAV-07
+  layer: 10
+  mode: HOME_NAV
+  state: BLOCKED
+  event: ui.reroute
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: replan
+    args: {}
+  spec_ref: SM-3.1.2-084
+- id: T-HNAV-08
+  layer: 10
+  mode: HOME_NAV
+  state: PAUSE
+  event: ui.save
+  guard: map_update
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: commit_map_patch
+    args: {}
+  spec_ref: SM-3.1.2-102
+- id: T-OPC-01
+  layer: 10
+  mode: OPCHECK
+  state: LIST
+  event: ui.check_item
+  guard: null
+  to_mode: '='
+  to_state: RUNNING_CHECK
+  effects:
+  - name: start_monitor
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.2-085
+- id: T-OPC-02
+  layer: 10
+  mode: OPCHECK
+  state: RUNNING_CHECK
+  event: evt.check_result
+  guard: ng_and_calibrable
+  to_mode: '='
+  to_state: LIST
+  effects:
+  - name: offer_calib
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.2-087
+- id: T-OPC-03
+  layer: 10
+  mode: OPCHECK
+  state: RUNNING_CHECK
+  event: evt.check_result
+  guard: ng_and_not_calibrable
+  to_mode: '='
+  to_state: REPAIR
+  effects: []
+  spec_ref: SM-3.1.2-088
+- id: T-OPC-04
+  layer: 10
+  mode: OPCHECK
+  state: RUNNING_CHECK
+  event: evt.check_result
+  guard: check_result_ok
+  to_mode: '='
+  to_state: LIST
+  effects:
+  - name: record_result
+    args:
+      item: $arg.item
+      result: $arg.result
+  spec_ref: SM-3.1.2-086
+- id: T-OPC-05
+  layer: 10
+  mode: OPCHECK
+  state: RUNNING_CHECK
+  event:
+  - hw.estop.press
+  - hw.estop.release
+  guard: checking_estop_item
+  to_mode: '='
+  to_state: RUNNING_CHECK
+  effects:
+  - name: feed_check_input
+    args:
+      pressed: $arg.pressed
+  spec_ref: SM-3.1.2-089
+  override_common: true
+- id: T-OPC-06
+  layer: 10
+  mode: OPCHECK
+  state: REPAIR
+  event: ui.stop
+  guard: null
+  to_mode: '='
+  to_state: LIST
+  effects: []
+  spec_ref: SM-3.1.2-090
+- id: T-OPC-07
+  layer: 10
+  mode: OPCHECK
+  state: LIST
+  event: ui.enter_mode
+  guard: mode_entry_allowed
+  to_mode: CALIB
+  to_state: $initial
+  effects: []
+  spec_ref: SM-3.1.2-092
+- id: T-OPC-08
+  layer: 10
+  mode: OPCHECK
+  state: '*'
+  event: fault.recoverable
+  guard: null
+  to_mode: '='
+  to_state: LIST
+  effects:
+  - name: abort_check
+    args: {}
+  spec_ref: SM-3.1.2-091
+  override_common: true
+- id: T-CAL-01
+  layer: 10
+  mode: CALIB
+  state: LIST
+  event: ui.calib_item
+  guard: null
+  to_mode: '='
+  to_state: S1
+  effects:
+  - name: begin_wizard
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.2-093
+- id: T-CAL-02
+  layer: 10
+  mode: CALIB
+  state: S1
+  event: ui.calib_next
+  guard: null
+  to_mode: '='
+  to_state: S2
+  effects:
+  - name: run_measurement
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.2-094
+- id: T-CAL-03
+  layer: 10
+  mode: CALIB
+  state: S2
+  event: evt.calib_step_done
+  guard: null
+  to_mode: '='
+  to_state: S3
+  effects:
+  - name: build_preview
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.2-094
+- id: T-CAL-04
+  layer: 10
+  mode: CALIB
+  state: S3
+  event: ui.calib_next
+  guard: preview_sane
+  to_mode: '='
+  to_state: S4
+  effects:
+  - name: apply_and_verify
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.2-094
+- id: T-CAL-05
+  layer: 10
+  mode: CALIB
+  state: S4
+  event: evt.calib_step_done
+  guard: null
+  to_mode: '='
+  to_state: LIST
+  effects:
+  - name: commit_calib
+    args:
+      item: $arg.item
+  - name: offer_opcheck
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.2-094
+- id: T-CAL-06
+  layer: 10
+  mode: CALIB
+  state: S4
+  event: evt.calib_verify_ng
+  guard: null
+  to_mode: '='
+  to_state: S2
+  effects:
+  - name: revert_calib
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.2-095
+- id: T-CAL-07
+  layer: 10
+  mode: CALIB
+  state: '*'
+  event: ui.abort
+  guard: null
+  to_mode: '='
+  to_state: LIST
+  effects:
+  - name: discard_calib
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.2-096
+- id: T-CAL-08
+  layer: 10
+  mode: CALIB
+  state: '*'
+  event: fault.recoverable
+  guard: null
+  to_mode: '='
+  to_state: LIST
+  effects:
+  - name: discard_calib
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.2-097
+  override_common: true
+- id: T-CAL-09
+  layer: 10
+  mode: CALIB
+  state: LIST
+  event: ui.enter_mode
+  guard: mode_entry_allowed
+  to_mode: OPCHECK
+  to_state: $initial
+  effects: []
+  spec_ref: SM-3.1.2-098

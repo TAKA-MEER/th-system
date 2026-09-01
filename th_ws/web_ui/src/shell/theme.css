@@ -1,0 +1,385 @@
+/* ============================================================
+   shell/theme.css — CSS variables and layout skeleton, moved from
+   docs/plan/spec/mockup/index.html (the layout spec's source of truth;
+   see DetailedDesign-webui.md §1 and the file's own header comment).
+
+   Ported as-is except for the mockup-only preview harness (#stage,
+   body.pv-*, #demo*, <template> content), which doesn't exist in the real
+   app. IDs/classes are kept identical to the mockup so the container-query
+   + clamp() rules (DetailedDesign-webui.md §2.3 / SD-2) transfer unchanged.
+   ============================================================ */
+
+:root{
+  --bg:#0f1117; --panel:#1a1d24; --inset:#12141b;
+  --ctrl:#252830; --ctrl-hi:#343849; --ctrl-on:#2c4a74;
+  --bd:#2a2d35; --bd-hi:#3a3f4c;
+  --tx:#e6e8ec; --mut:#8b93a1; --dim:#5c6470;
+  --brand:#3f8ae0; --brand-lt:#7fb4ee; --brand-dk:#12233d;
+  --ok:#4caf50; --ok-tx:#8fd694;
+  --warn:#ffb74d; --warn-tx:#ffcc80;
+  --ng:#ef5350; --ng-tx:#ff9b98;
+  --estop:#c62828; --estop-hi:#e53935;
+  --carry:#7e4fb0; --carry-tx:#c9a6e8;
+  --hdr:96px;
+  --r:8px;
+  /* Base font size. Every font-size is written as calc(var(--fs) * n).
+     Inside #app, the container query below makes this track screen width. */
+  --fs:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:#07090d; color:var(--tx); font-size:var(--fs);
+  font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
+  -webkit-tap-highlight-color:transparent; overflow:hidden;
+}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;touch-action:manipulation}
+table{border-collapse:collapse;width:100%}
+
+#app{
+  position:relative;display:flex;flex-direction:column;overflow:hidden;
+  background:var(--bg);width:100%;height:100dvh;
+  /* Layout switches on #app's own width, not viewport width, so the shell
+     is correct even when embedded in something narrower/wider than the
+     viewport. size containment is required to use cqh (container-height
+     units), which caps figure heights against screen height
+     (DetailedDesign-webui.md §2.4). */
+  container-type:size;container-name:app;
+}
+/* DetailedDesign-webui.md §2.3: font size tracks screen width.
+   Container-query units aren't usable on #app itself, so this is applied
+   to its direct children (#hdr / #body / #winGuide / #release / #overlay).
+   420px->16 / 1120px->16 / 1400px->19 / 1920px->22. */
+#app > *{ --fs:clamp(16px, calc(1.1cqi + 3.6px), 22px); font-size:var(--fs); }
+
+/* ================= header (always on top, never covered) ================= */
+#hdr{
+  flex:0 0 auto;z-index:100;position:relative;
+  background:linear-gradient(180deg,#16283f,#101a29);
+  border-bottom:2px solid var(--brand);
+}
+#hdr .row1{display:flex;align-items:center;gap:8px;padding:7px 10px;flex-wrap:wrap;min-width:0}
+#logo{height:30px;background:#fff;border-radius:5px;padding:3px 6px;flex:0 0 auto}
+#logo img{height:100%;display:block}
+.proj{font-size:calc(var(--fs) * .66);color:var(--brand-lt);letter-spacing:.02em;line-height:1.25;flex:0 0 auto}
+.proj b{display:block;font-size:calc(var(--fs) * .8);color:#fff;font-weight:700}
+#hdr .spacer{flex:1 1 auto}
+/* DetailedDesign-webui.md §2.5: screen name and mode are the largest text in the header */
+#screenName{font-size:calc(var(--fs) * 1.45);font-weight:800;letter-spacing:.02em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
+#modePill{
+  flex:0 0 auto;font-size:calc(var(--fs) * 1.05);font-weight:800;padding:5px 14px;border-radius:999px;
+  background:#2a3242;border:1px solid #3a4356;white-space:nowrap;
+}
+#modePill.unknown{background:#3a1414;border-color:#8a2a2a;color:var(--ng-tx)}
+#zonePill{
+  flex:0 0 auto;font-size:calc(var(--fs) * .72);font-weight:700;padding:4px 9px;border-radius:999px;
+  background:#3a2a10;border:1px solid #7a5a20;color:var(--warn-tx);white-space:nowrap;display:none;
+}
+#zonePill.show{display:inline-block}
+#devPill{
+  flex:0 0 auto;font-size:calc(var(--fs) * .72);font-weight:700;padding:4px 9px;border-radius:999px;
+  background:#4a1030;border:1px solid #8a2a5a;color:#ffa6d0;display:none;
+}
+#devPill.show{display:inline-block}
+#hdr .row2{display:flex;align-items:stretch;gap:0;border-top:1px solid #23334a}
+#faultBox{
+  flex:1 1 auto;display:flex;align-items:center;gap:8px;padding:7px 12px;
+  background:#151b26;font-size:calc(var(--fs) * .88);min-width:0;
+}
+#faultDot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:0 0 auto}
+#faultDot.ng{background:var(--ng)}
+#faultDot.warn{background:var(--warn)}
+#faultTx{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#faultBadge{
+  flex:0 0 auto;font-size:calc(var(--fs) * .74);font-weight:700;padding:3px 9px;border-radius:999px;
+  background:#4a1010;border:1px solid #8a2a2a;color:var(--ng-tx);display:none;cursor:pointer;
+}
+#faultBadge.show{display:inline-block}
+/* DetailedDesign-webui.md §2.2 (U-9): height >=72px and >= 4.2x base font,
+   width >=160px and >=25% of screen width; the tallest button on screen */
+#estopBtn{
+  /* 25cqw = 25% of #app's width. vw would ignore an embedding frame and overflow it */
+  flex:0 0 auto;min-width:max(160px,25cqw);min-height:max(72px,calc(var(--fs) * 4.2));
+  background:var(--estop);color:#fff;
+  font-size:calc(var(--fs) * 1.25);font-weight:800;letter-spacing:.14em;padding:12px 20px;
+  border-left:2px solid #7a1414;
+  box-shadow:inset 0 0 0 2px #ff6b6b33;
+}
+#estopBtn:active{background:var(--estop-hi)}
+#estopBtn.engaged{background:var(--carry);border-left-color:#4a2a70}
+/* C-2 (WP-CARRY-01 §4.3): CARRY's own "won't do anything" look -- not
+   `.engaged` (that's reserved for a genuinely accepted press, and would
+   visually claim this one worked; C-06r actually rejects it), not
+   `disabled`/hidden either (the button stays pressable; the safety-path
+   publish to /safety/estop_ui never stops -- AppShell.jsx). A hazard-stripe
+   fill on the same red keeps it recognizable as the estop button while
+   reading as "inert" rather than "off" or "success". */
+#estopBtn.disabled-in-carry{
+  background:repeating-linear-gradient(135deg,var(--estop) 0 10px,#5a1414 10px 20px);
+  cursor:not-allowed;
+}
+#estopBtn.disabled-in-carry:active{
+  background:repeating-linear-gradient(135deg,var(--estop) 0 10px,#5a1414 10px 20px);
+}
+/* On a portrait screen, occupy >=45% of the header's second row */
+#hdr .row2{--estop-w:46%}
+#estopBtn{flex-basis:var(--estop-w,auto)}
+@container app (min-width:760px){
+  #hdr .row2{--estop-w:auto}
+  #faultBox{min-width:190px}
+}
+/* The header only becomes one row (side-by-side) once row 1 still fits on
+   one line with row 2 beside it. Switching at 760px would leave row 1 only
+   ~400px, wrapping the screen name / mode to 3 lines. */
+@container app (min-width:1200px){
+  #hdr{display:flex;align-items:stretch}
+  #hdr .row1{flex:1 1 auto;min-width:0}
+  #hdr .row2{border-top:none;border-left:1px solid #23334a;flex:0 0 auto}
+}
+/* On a portrait screen, fold the project name and shorten the zone pill.
+   A header that wraps to 2 lines eats into body height (DetailedDesign-webui.md §2.5) */
+.z-short{display:none}
+@container app (max-width:559px){
+  .proj{display:none}
+  .z-long{display:none}
+  .z-short{display:inline}
+  #hdr .spacer{display:none}
+  /* grow here would push the mode pill onto the next line; only allow shrink */
+  #screenName{flex:0 1 auto}
+  /* keep row1 nowrap: with wrap, the layout adds a line before the screen
+     name shrinks, which grows the header. nowrap forces the screen name's
+     own ellipsis to absorb the missing space instead */
+  #hdr .row1{gap:6px;padding:7px 8px;flex-wrap:nowrap}
+  #modePill,#zonePill,#devPill{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  #devPill{font-size:calc(var(--fs) * .66);padding:4px 7px}
+  #devPill .d-long{display:none}
+}
+.d-short{display:none}
+@container app (max-width:559px){ .d-short{display:inline} }
+
+/* ================= body (the only scrolling region) ================= */
+/* scrollbar-gutter keeps body width stable across scrollbar appearance, so
+   height:auto figures don't resize themselves just because a scrollbar
+   showed up. */
+#body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+  scrollbar-gutter:stable}
+.screen{padding:10px}
+@container app (min-width:760px){
+  .screen.two-col{display:grid;grid-template-columns:1.35fr 1fr;gap:10px;align-items:start}
+}
+/* Cap single-column screens' width on wide screens so buttons don't stretch
+   full width (a target that keeps moving is hard to aim at). */
+@container app (min-width:1200px){
+  .screen:not(.two-col){max-width:1100px;margin:0 auto}
+}
+@container app (min-width:1300px){
+  .screen.two-col{grid-template-columns:1.15fr 1.4fr}
+  .screen.two-col > div:last-child{
+    display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start;
+  }
+  .screen.two-col > div:last-child > .card{margin-bottom:0}
+  /* the operation card always sits top-left (don't move where it's found) */
+  .screen.two-col > div:last-child > .card.ops{grid-column:1}
+}
+
+/* ---------- generic pieces ---------- */
+.card{background:var(--panel);border:1px solid var(--bd);border-radius:var(--r);padding:10px;margin-bottom:10px}
+.card > h3{font-size:calc(var(--fs) * .76);letter-spacing:.1em;color:var(--mut);font-weight:700;margin-bottom:8px}
+.well{background:var(--inset);border:1px solid var(--bd);border-radius:var(--r);padding:10px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1 1 auto}
+.mut{color:var(--mut)}.dim{color:var(--dim)}
+.sm{font-size:calc(var(--fs) * .82)}.xs{font-size:calc(var(--fs) * .74)}
+.mono{font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;font-variant-numeric:tabular-nums}
+.b{font-weight:700}
+.tone-ok{color:var(--ok-tx)}.tone-ng{color:var(--ng-tx)}.tone-warn{color:var(--warn-tx)}
+.mt{margin-top:8px}.mb{margin-bottom:8px}
+
+.btn{
+  background:var(--ctrl);border:1px solid var(--bd-hi);border-radius:6px;
+  padding:11px 14px;font-size:calc(var(--fs) * .95);font-weight:600;text-align:center;
+}
+.btn:active{background:var(--ctrl-hi)}
+/* Blue = "what's happening now" only (§4.3 / U-17). Never used for emphasis. */
+.btn.on{background:var(--ctrl-on);border-color:var(--brand);color:#fff}
+.btn.primary{background:#245089;border-color:var(--brand)}
+.btn.save{background:#17361d;border-color:#2f7a38;color:#a9e0ad;font-weight:700}
+.btn.save:active{background:#1f4a27}
+.btn.danger{background:#4a1414;border-color:#8a2a2a;color:var(--ng-tx)}
+.btn.wide{width:100%}
+.btn[disabled],.btn.dis{opacity:.4;cursor:not-allowed}
+.btn.sm{padding:7px 10px;font-size:calc(var(--fs) * .84)}
+
+/* Ported from docs/plan/spec/mockup/index.html (not carried over by
+   WP-UI-01, which built no screens yet -- first needed by S-00/S-01,
+   WP-UI-02). A grid of same-size buttons for S-01's mode-selection groups
+   and similar lists. */
+.btnrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));gap:7px}
+.btnrow.n2{grid-template-columns:1fr 1fr}
+.btnrow.n3{grid-template-columns:repeat(3,1fr)}
+.btnrow.n4{grid-template-columns:repeat(4,1fr)}
+/* Extremely narrow devices: 2 columns wraps text and grows button height,
+   which would break "estop is the tallest button on screen" (U-9). */
+@container app (max-width:400px){ #s01 .btnrow{grid-template-columns:1fr} }
+
+.pill{display:inline-block;font-size:calc(var(--fs) * .72);font-weight:700;padding:2px 8px;border-radius:999px;
+  background:#2a3242;border:1px solid #3a4356}
+.pill.ok{background:#14331a;border-color:#2c6b33;color:var(--ok-tx)}
+.pill.ng{background:#3a1414;border-color:#7a2a2a;color:var(--ng-tx)}
+.pill.warn{background:#3a2a10;border-color:#7a5a20;color:var(--warn-tx)}
+
+/* Ported from the mockup alongside .btnrow above -- S-00's device table. */
+table.lst th,table.lst td{padding:7px 8px;border-bottom:1px solid var(--bd);font-size:calc(var(--fs) * .86);text-align:left}
+table.lst th{color:var(--mut);font-size:calc(var(--fs) * .74);letter-spacing:.06em;font-weight:700}
+table.lst tr.sel td{background:#1f2634}
+table.lst td.r{text-align:right}
+
+.hint{background:#122033;border:1px solid #24446e;border-radius:6px;padding:8px 10px;
+  font-size:calc(var(--fs) * .83);color:#b9d4f2;line-height:1.5}
+.note{background:#2a1c0a;border:1px solid #6a4a18;border-radius:6px;padding:8px 10px;
+  font-size:calc(var(--fs) * .83);color:var(--warn-tx);line-height:1.5}
+
+/* ---------- operation bar (screen-local: finish / tabs / status pill) ----------
+   DetailedDesign-webui.md §4: fixed top-left of the body, "finish" lives
+   here only — never in the operation card (a slip there could be mistaken
+   for pause). */
+.top-actions{display:flex;gap:8px;align-items:center;margin-bottom:9px;flex-wrap:wrap}
+.top-actions.sticky{
+  position:sticky;top:0;z-index:5;margin:-10px -10px 9px;padding:10px;
+  background:var(--bg);border-bottom:1px solid var(--bd);
+}
+
+/* ---------- operation card (same position in every screen) ----------
+   DetailedDesign-webui.md §4: stop=top-left / confirm=top-mid / run=top-right
+   / save=bottom-left / manual=bottom-right. Unused buttons are omitted, but
+   the ones that are shown never move. */
+.opsgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.op-stop  {grid-column:1;grid-row:1}
+.op-check {grid-column:2;grid-row:1}
+.op-run   {grid-column:3;grid-row:1}
+.op-save  {grid-column:1;grid-row:2}
+.op-manual{grid-column:3;grid-row:2}
+.opsgrid .btn{padding:calc(var(--fs) * .62) 8px}
+/* When a row holds only one button, let it span the row instead of looking
+   unfinished. "manual" never moves off bottom-right though (its position is
+   memorized as "the jog control"). */
+.opsgrid:not(:has(.op-check)):not(:has(.op-run)) .op-stop{grid-column:1 / -1}
+.opsgrid:not(:has(.op-manual)) .op-save{grid-column:1 / -1}
+.state{margin-top:9px;font-size:calc(var(--fs) * .95);font-weight:700}
+
+@container app (max-width:559px){
+  .screen{padding:7px}
+  .card{padding:8px;margin-bottom:7px}
+  .btn{padding:9px 10px}
+}
+
+/* ================= windows (below the header, above the body) ================= */
+#overlay{
+  position:absolute;left:0;right:0;top:0;bottom:0;z-index:50;
+  pointer-events:none;display:flex;flex-direction:column;
+  /* lets a window taller than the viewport still reach its footer buttons */
+  overflow:auto;
+}
+#overlay .backdrop{position:absolute;inset:0;background:#000a;pointer-events:auto;display:none}
+#overlay.has-modal .backdrop{display:block}
+.win{
+  position:relative;pointer-events:auto;margin:auto;width:min(560px,calc(100% - 24px));
+  background:var(--panel);border:1px solid var(--bd-hi);border-radius:10px;
+  box-shadow:0 18px 60px #000c;display:none;
+  max-height:calc(100% - 24px);flex-direction:column;
+}
+.win.show{display:flex}
+.win > .bodyw{overflow-y:auto}
+.win > header,.win > footer{flex:0 0 auto}
+.win > header{padding:11px 14px;font-weight:700;font-size:calc(var(--fs) * 1);display:flex;gap:8px;align-items:center;
+  border-bottom:1px solid var(--bd)}
+.win > .bodyw{padding:14px;font-size:calc(var(--fs) * .92);line-height:1.6}
+.win > footer{padding:11px 14px;display:flex;gap:8px;justify-content:flex-end;
+  border-top:1px solid var(--bd);flex-wrap:wrap}
+.win.fault > header{background:#3a1414;color:var(--ng-tx)}
+.win.resolved > header{background:#14331a;color:var(--ok-tx)}
+.win.carry > header{background:#2e1b46;color:var(--carry-tx)}
+.win.blocked > header{background:#2a1c0a;color:var(--warn-tx)}
+.win.confirm > header{background:#1f2634}
+
+/* W-3 guide window: a one-line band inserted below the body. An absolutely
+   positioned overlay would cover the jog panel / release bar and make them
+   unreachable; a band only shrinks the body (DetailedDesign-webui.md §6.1). */
+#winGuide{
+  flex:0 0 auto;display:none;z-index:50;position:relative;
+  background:#122033;border-top:2px solid var(--brand);padding:10px 12px;
+}
+#winGuide.show{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#winGuide .g-tx{flex:1 1 220px;font-size:calc(var(--fs) * .88);line-height:1.5;color:#cfe3fa}
+
+/* ---------- W-6 manual-operation panel ----------
+   Only shown on screens that can't keep the virtual stick on screen
+   permanently. Floats above everything else without moving the body's
+   layout at all (a band would re-flow the two-column layout, shrinking the
+   map too — DetailedDesign-webui.md §6.3). Bottom-left: on wide screens the
+   operation card is the right column, so there is no structural overlap. */
+#jogWin{
+  position:absolute;display:none;z-index:60;
+  left:10px;bottom:calc(var(--dock-h, 0px) + 10px);
+  width:min(440px, calc(100cqw - 20px));max-height:46cqh;
+  background:var(--panel);border:1px solid #2c7a55;border-radius:10px;
+  box-shadow:0 18px 60px #000c;padding:10px 12px;
+}
+#jogWin.show{display:block}
+#jogWin .jw-hd{display:flex;align-items:center;gap:10px;flex-wrap:nowrap}
+#jogWin .jw-t{font-weight:700;font-size:calc(var(--fs) * .92);color:#8fe0bb;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+#jogWin .jw-m{font-size:calc(var(--fs) * .8);color:var(--mut);margin:2px 0 8px}
+/* W-6's stick is the same component as the perpetual one, but capped a
+   little lower so the panel fits the floating card (mockup L363). */
+#jogWin .stick svg{max-height:min(30cqh,210px)}
+/* On a portrait screen, pad the body by the panel's height so the operation
+   card can still be scrolled above it. Padding only — nothing already on
+   screen moves. */
+#body.jog-pad{padding-bottom:var(--jog-h, 0px)}
+
+/* ---------- virtual stick (WP-UI-03) ----------
+   Ported from docs/plan/spec/mockup/index.html L292-305 (#tplStick's .stickBox
+   and the .stick svg style) plus the internal guide/dead/knob/hint classes
+   the mockup drew with inline SVG attributes but the React component renders
+   via classes. Values kept identical so the layout spec's measured sizing
+   (DetailedDesign-webui.md §1: don't rewrite the CSS) transfers unchanged. */
+.stickBox{display:flex;gap:10px;align-items:stretch}
+.stick{flex:1 1 auto;position:relative;background:var(--inset);border:1px solid var(--bd);border-radius:var(--r);
+  touch-action:none;user-select:none;overflow:hidden}
+.stick svg{display:block;width:100%;height:auto;max-height:min(32cqh,260px)}
+/* `off` (e.g. a stale link) greys the pad so the operator sees the stick is
+   inert without anything visually claiming it is live (display-only courtesy,
+   WP-UI-03 §6.2 -- the authority is jog_gate). */
+.stick.off{opacity:.45;pointer-events:none}
+.stick.act{border-color:var(--brand);box-shadow:0 0 0 2px #24446e inset}
+.stick-guide{fill:none;stroke:#39404f;stroke-width:1.4}
+.stick-plate{fill:#1b1f28;stroke:#333a48}
+.stick-dead{fill:#2b3140;stroke:#4a5266}
+.stick-hint{fill:#7c8595;font-size:12px}
+.stick-knob{fill:#2b3140;stroke:#4a5266;transition:all .12s}
+.stick-knob.active{fill:var(--brand);stroke:var(--brand-lt)}
+.spd{display:flex;flex-direction:column;gap:6px;justify-content:center;flex:0 0 84px}
+.slider{flex:0 0 30px;display:flex;align-items:center;justify-content:center}
+.slider input{writing-mode:vertical-lr;direction:rtl;height:110px;accent-color:var(--brand)}
+.jogBadge{
+  position:absolute;left:8px;top:8px;font-size:calc(var(--fs) * .74);font-weight:700;
+  padding:3px 9px;border-radius:999px;
+  background:#123a2a;border:1px solid #2c7a55;color:#8fe0bb;display:none;z-index:2;
+}
+.stick.act .jogBadge{display:block}
+
+/* Bottom-to-top stacking order. The release bar never moves from the very
+   bottom (DetailedDesign-webui.md §2.1). */
+#hdr{order:0} #body{order:1} #winGuide{order:2} #release{order:3}
+
+/* ---------- estop release bar (fixed to the bottom, away from the estop button) ---------- */
+#release{
+  flex:0 0 auto;display:none;background:#1c1226;border-top:2px solid var(--carry);
+  padding:9px 12px;z-index:40;position:relative;
+}
+#release.show{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#release .rt{flex:1 1 200px;font-size:calc(var(--fs) * .85);color:var(--carry-tx)}
+#releaseBtn{background:#3d2160;border:1px solid var(--carry);border-radius:6px;padding:9px 16px;
+  font-weight:700;color:#e2ccf7}

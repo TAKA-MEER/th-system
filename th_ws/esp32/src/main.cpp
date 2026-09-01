@@ -113,12 +113,19 @@ static void cbCtrlTimer() {
     if (dt <= 0.0f || dt > 1.0f) dt = (float)CTRL_PERIOD_MS / 1000.0f;
 
     // E-Stop チェック
-    bool estopActive = ESTOP_LOW_ACTIVE
+    // config.h の ESTOP_BENCH_TEST_BYPASS が有効な間だけ bypassActive が立つ。
+    // このフラグは ESTOP_HW フレームの flags bit0 に載せて PC 側
+    // (/safety/firmware_flags) へ伝え、バイパスが有効な機体を検出できるように
+    // する(DEBT-1)。「有効なときだけフラグとして持つ」形にすることで、
+    // 物理ボタンの読み取り結果を無条件で上書きする代入をソース上から無くす。
+    bool hwEstopActive = ESTOP_LOW_ACTIVE
                        ? (digitalRead(ESTOP_GPIO) == LOW)
                        : (digitalRead(ESTOP_GPIO) == HIGH);
+    bool bypassActive = false;
 #ifdef ESTOP_BENCH_TEST_BYPASS
-    estopActive = false;
+    bypassActive = true;
 #endif
+    bool estopActive = hwEstopActive && !bypassActive;
 
     // ウォッチドッグ: 最後の wheel_cmd 受信から WATCHDOG_MS 超過でゼロ
     // (WS接続状態に関わらずローカルに独立して動作する)
@@ -193,16 +200,10 @@ static void cbCtrlTimer() {
                              imu_ax, imu_ay, imu_az, imu_calibStatus);
     }
 
-    // デバッグ用一時ログ: 原因切り分け後に削除すること
-    static int dbgCounter = 0;
-    if (++dbgCounter >= 5) {
-        dbgCounter = 0;
-        Serial.printf("[DBG] estop=%d watchdog=%d tgtL=%.2f tgtR=%.2f rmpL=%.2f rmpR=%.2f velL=%.3f velR=%.3f outL=%.3f outR=%.3f drift=%.4f wz=%.3f\n",
-                      estopActive, watchdogTripped, targetLeft, targetRight, rampLeft, rampRight, velL, velR, outL, outR, driftCorrection, imu_wz);
-    }
-
-    // E-Stop 状態を送信 (毎周期)
-    WsLink::sendEstopHw(estopActive);
+    // E-Stop 状態を送信 (毎周期)。flags bit0 = bypassActive(config.h の
+    // ESTOP_BENCH_TEST_BYPASS が有効かどうか)。残りビットは予約(0)。
+    uint8_t estopFlags = bypassActive ? 0x01 : 0x00;
+    WsLink::sendEstopHw(estopActive, estopFlags);
 }
 
 // ── setup / loop ─────────────────────────────────────────────

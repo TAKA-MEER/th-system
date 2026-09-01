@@ -11,16 +11,24 @@
 #                          Pi側とROS_DOMAIN_IDを一致させること)
 # ============================================================
 import os
+import sys
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, GroupAction,
-                             IncludeLaunchDescription, LogInfo)
+                             IncludeLaunchDescription, LogInfo, OpaqueFunction)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (Command, LaunchConfiguration,
                                    PathJoinSubstitution, PythonExpression)
 from launch_ros.actions import Node, SetRemap
 from launch_ros.parameter_descriptions import ParameterValue
+
+# WP-PARAM-02: registry.yaml → /root/th_data/generated/*.yaml のパラメータ生成
+# ヘルパー。CMakeLists.txt が launch/ 以下をまるごと share にインストールするので
+# このファイルと同じディレクトリに居るが、ROS2 launch は importlib で個別ロード
+# するだけでこのディレクトリを sys.path に入れないため、自分でパスを通す。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from params_generation import GENERATED_DIR, make_opaque_function  # noqa: E402
 
 BRINGUP_DIR  = get_package_share_directory('th_bringup')
 DESC_DIR     = get_package_share_directory('th_description')
@@ -47,14 +55,34 @@ def generate_launch_description():
         DeclareLaunchArgument('lidar_source', default_value='local',
                               description='local=USB直結sllidar_node起動 / '
                                           'network=ラズパイ等が配信する/scanを使用'),
+        DeclareLaunchArgument('stage', default_value='1',
+                              description='params_generation.py が registry.yaml を'
+                                          '解決するステージ番号 (WP-PARAM-02)'),
     ]
 
     use_stub     = LaunchConfiguration('use_stub')
     imu_enabled  = LaunchConfiguration('imu_enabled')
     map_yaml     = LaunchConfiguration('map_yaml')
     lidar_source = LaunchConfiguration('lidar_source')
+    stage        = LaunchConfiguration('stage')
     lidar_is_local = PythonExpression(["'", lidar_source, "' == 'local'"])
-    map_is_empty = PythonExpression(["'", map_yaml, "' == ''"])
+
+    # ── 段階で重いスタックを出し分ける（N-27 の対処 (a)） ──────────
+    # Nav2 のライフサイクル起動と DR-SPAAM のモデルロードが同時に走ると、
+    # PC 側が一過性に数百 ms ストールする。実機で obstacle_limiter の 20Hz 出力が
+    # limiter_dead_ms(250ms) を超えて途切れ、LIMITER_DEAD(CRITICAL) → ESTOP が
+    # ラッチした（2026-08-31・DetailedDesign-open.md N-27。起動 18 秒後、
+    # startup_grace_sec=3 の外なので猶予では防げない）。
+    #
+    # 段階 1（手押し・手動ジョグ）と段階 2（安全チェーン）はどちらも Nav2 も
+    # 人物検知も使わない。使い始めるのは Nav2 が段階 3（WP-TRANSIT-01）、
+    # 人物検知が段階 4 から。**要らないものを起動しない**ことで、安全側の
+    # しきい値（limiter_dead_ms）を緩めずにストールそのものを無くす。
+    #
+    # connectivity_checker の required_nodes は [esp32_bridge, lidar_filter] だけ
+    # なので、これらを止めても evt.link_ok の成立には影響しない（registry.yaml）。
+    nav2_enabled       = PythonExpression(["int('", stage, "') >= 3"])
+    perception_enabled = PythonExpression(["int('", stage, "') >= 4"])
 
     # ── 設定ファイルパス ──────────────────────────────────
     nav2_yaml   = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
@@ -64,12 +92,25 @@ def generate_launch_description():
     ekf_yaml    = PythonExpression(
         ["'", ekf_yaml_imu, "' if '", imu_enabled, "' == 'true' else '", ekf_yaml_no_imu, "'"])
     slam_yaml   = os.path.join(BRINGUP_DIR, 'config', 'slam_params.yaml')
-    twist_yaml  = os.path.join(get_package_share_directory('th_safety'),
-                               'config', 'twist_mux.yaml')
     # キャリブ値 YAML (apply_calib で生成、存在しない場合は無視される)
     calib_yaml  = os.path.join(BRINGUP_DIR, 'config', 'calib.yaml')
 
     nodes = []
+
+    # ── 0. パラメータ生成 (WP-PARAM-02) ──────────────────────
+    # registry.yaml → /root/th_data/generated/*.yaml を、ノードを1つも起動する前に
+    # 同期生成する（G-1）。アサーション違反なら例外で launch ごと止まる（G-2）。
+    params_generation_action = OpaqueFunction(
+        function=make_opaque_function(sim_default=False))
+    nodes.append(params_generation_action)
+
+    # 何を省いたかを起動ログに残す。省略は仕様であって故障ではない、と
+    # その場で分かるようにする（N-27 の対処 (a) を入れた副作用で
+    # 「Nav2 が上がらない」を不具合と誤認するのを防ぐ）。
+    nodes.append(LogInfo(msg=PythonExpression([
+        "'stage=", stage, ": Nav2/SLAM=' + ('起動' if int('", stage,
+        "') >= 3 else '省略(段階3から)') + ' / 人物検知=' + "
+        "('起動' if int('", stage, "') >= 4 else '省略(段階4から)')"])))
 
     # ── 1. robot_state_publisher / joint_state_publisher (URDF → TF) ─
     # base_link → laser_link 等の固定 TF を配信する。これが無いと SLAM /
@@ -127,7 +168,11 @@ def generate_launch_description():
         package='th_perception',
         executable='lidar_filter.py',
         name='lidar_filter',
-        parameters=[os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml')],
+        # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる
+        # (G-4)。placeholder のキーはサニタイズで落ちるため、給値されていない値は
+        # 土台の静的値がそのまま残る。
+        parameters=[os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml'),
+                    os.path.join(GENERATED_DIR, 'lidar_filter.yaml')],
         additional_env={'FASTRTPS_DEFAULT_PROFILES_FILE': fastdds_profile_yaml},
         condition=UnlessCondition(lidar_is_local),
         output='screen',
@@ -136,17 +181,20 @@ def generate_launch_description():
         package='th_perception',
         executable='lidar_filter.py',
         name='lidar_filter',
-        parameters=[os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml')],
+        parameters=[os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml'),
+                    os.path.join(GENERATED_DIR, 'lidar_filter.yaml')],
         condition=IfCondition(lidar_is_local),
         output='screen',
     ))
 
     # ── 4. esp32_bridge ───────────────────────────────────
-    # calib.yaml が存在する場合は上書き
+    # calib.yaml が存在する場合は上書き。registry.yaml 由来の生成ファイルは
+    # 最後段に重ねる (G-4)。
     esp32_params = [os.path.join(get_package_share_directory('th_esp32_bridge'),
                                  'config', 'params.yaml')]
     if os.path.exists(calib_yaml):
         esp32_params.append(calib_yaml)
+    esp32_params.append(os.path.join(GENERATED_DIR, 'esp32_bridge.yaml'))
 
     nodes.append(Node(
         package='th_esp32_bridge',
@@ -179,23 +227,81 @@ def generate_launch_description():
     ))
 
     # ── 6. safety_monitor ─────────────────────────────────
+    # enabled_targets (O-7): registry.yaml の既定値は空リストであり、かつ
+    # export.py は空リストを生成物からサニタイズして落とす（D3）ため、段階ごとの
+    # 実際の値は registry 経由では渡らない。ここで launch から明示的に渡す
+    # (DetailedDesign-names.md §7.3 の note「段階ごとに launch から渡す」の実体)。
+    #
+    # 実際に publisher が存在する対象だけを有効にする（O-7「publisher が
+    # できるまで有効にしない」）。
+    #
+    # limiter（WP-TEST-01 の実装中に発見・追加。2026-08-27）: このコメントは
+    # 元々「WP-SAFE-01 単体の時点では WP-SAFE-03/obstacle_limiter が未実装なので
+    # limiter を入れられない」としていたが、**WP-SAFE-03 は既に実装済み**
+    # （obstacle_limiter は上の「7b. obstacle_limiter」で無条件に起動しており、
+    # `/safety/limiter_status` を実際に20Hzで発行している）。コメントの更新が
+    # 漏れていたと判断し、limiter を追加する。DetailedDesign-safety.md §10 #11
+    # の自動化（`obstacle_limiter` を SIGKILL → 重大フォルト検出）は
+    # `targetEnabled("limiter")` がゲートしているため、これが無いと実機でも
+    # obstacle_limiter のプロセス死亡を safety_monitor が一切検出できない
+    # （DEBT-4 が実質的に塞がっていない状態だった）。
+    #
+    # mux（MUX_DEAD。`/cmd_vel_muxed` の remap 先も WP-SAFE-03 で完了済みなので
+    # 同様に有効化できる可能性が高い）は**このパケットの範囲外**として意図的に
+    # 触れていない——故障注入12「/cmd_vel の途絶」は別パケットの担当であり、
+    # mux 検出との相互作用まで含めた検証はそちら側の判断に委ねる。
+    SAFETY_ENABLED_TARGETS = ['lidar', 'esp32', 'runaway', 'state', 'firmware', 'limiter']
     nodes.append(Node(
         package='th_safety',
         executable='safety_monitor',
         name='safety_monitor',
         parameters=[os.path.join(
             get_package_share_directory('th_safety'),
-            'config', 'safety_monitor.yaml')],
+            'config', 'safety_monitor.yaml'),
+            os.path.join(GENERATED_DIR, 'safety_monitor.yaml'),
+            {'enabled_targets': SAFETY_ENABLED_TARGETS}],
         output='screen',
     ))
 
     # ── 7. twist_mux ──────────────────────────────────────
+    # 静的 th_safety/config/twist_mux.yaml は読まない。generated/twist_mux.yaml が
+    # 階層構造(locks/topics)を完全に持つ唯一の情報源 (G-3, 二重管理の防止)。
+    # WP-SAFE-03: 出力先を /cmd_vel_muxed に変更（後段に obstacle_limiter が入る。
+    # /cmd_vel を publish してよいのは obstacle_limiter だけになった）。
     nodes.append(Node(
         package='twist_mux',
         executable='twist_mux',
         name='twist_mux',
-        parameters=[twist_yaml],
-        remappings=[('cmd_vel_out', '/cmd_vel')],
+        parameters=[os.path.join(GENERATED_DIR, 'twist_mux.yaml')],
+        remappings=[('cmd_vel_out', '/cmd_vel_muxed')],
+        output='screen',
+    ))
+
+    # ── 7b. obstacle_limiter ────────────────────────────────
+    # WP-SAFE-03: /cmd_vel_muxed → /cmd_vel の最終段速度リミッタ。/cmd_vel の
+    # publisher はこのノードだけ（CLAUDE.md「速度指令の流れ」参照）。
+    # dev_mode は渡さない（names.md §1.3。safety_monitor と同じ構造的な保証）。
+    # 起動時に base_link<-laser_link TF を有界リトライで取得できないと
+    # 起動失敗する（obstacle_limiter.cpp。素通しで動かさない設計）。
+    nodes.append(Node(
+        package='th_safety',
+        executable='obstacle_limiter',
+        name='obstacle_limiter',
+        parameters=[os.path.join(GENERATED_DIR, 'obstacle_limiter.yaml')],
+        output='screen',
+    ))
+
+    # ── 7c. jog_gate ────────────────────────────────────────
+    # WP-SAFE-04: /cmd_vel_manual_raw → /cmd_vel_manual の手動ジョグゲート。
+    # /cmd_vel_manual の publisher はこのノードだけ（WebUI は /cmd_vel_manual_raw
+    # へ publish。O-6）。attributes.yaml（th_state と同じファイル）を読み、
+    # /system/state が新鮮かつ jog 許可のときだけ通す。通さないときは沈黙する
+    # （ゼロを撃たない。J-1）。generated/jog_gate.yaml が state_stale_ms を運ぶ。
+    nodes.append(Node(
+        package='th_safety',
+        executable='jog_gate',
+        name='jog_gate',
+        parameters=[os.path.join(GENERATED_DIR, 'jog_gate.yaml')],
         output='screen',
     ))
 
@@ -204,6 +310,26 @@ def generate_launch_description():
         package='th_mode_manager',
         executable='mode_manager',
         name='mode_manager',
+        output='screen',
+    ))
+
+    # ── 8b. state_manager / connectivity_checker (WP-STATE-02/03) ──────
+    # 新FSM (system/state)。旧FSM (mode_manager / robot/mode) と並走する。
+    # トピック名は衝突しない（/safety/fault は両者が購読するのみで書き込みは
+    # しない）。生成ファイルのみを使う（静的な土台ファイルは存在しない）。
+    nodes.append(Node(
+        package='th_state',
+        executable='state_manager.py',
+        name='state_manager',
+        parameters=[os.path.join(GENERATED_DIR, 'state_manager.yaml')],
+        output='screen',
+    ))
+    nodes.append(Node(
+        package='th_state',
+        executable='connectivity_checker.py',
+        name='connectivity_checker',
+        parameters=[os.path.join(GENERATED_DIR, 'connectivity_checker.yaml'),
+                    {'sim': False}],
         output='screen',
     ))
 
@@ -231,13 +357,16 @@ def generate_launch_description():
             'use_rviz':     'false',
             'autostart':    'true',
         }.items(),
-        condition=UnlessCondition(use_stub),
+        # 段階 4 以上でのみ起動する（N-27 の対処 (a)。上の perception_enabled 参照）。
+        condition=IfCondition(PythonExpression(
+            ["'", use_stub, "' != 'true' and int('", stage, "') >= 4"])),
     ))
     nodes.append(Node(
         package='th_perception',
         executable='person_tracker_bridge.py',
         name='person_tracker_bridge',
-        condition=UnlessCondition(use_stub),
+        condition=IfCondition(PythonExpression(
+            ["'", use_stub, "' != 'true' and int('", stage, "') >= 4"])),
         output='screen',
     ))
 
@@ -329,14 +458,20 @@ def generate_launch_description():
     # 両方を無条件起動すると map→odom TF を取り合って SLAM 走行が機能しなくなるため
     # (2026-07-23 修正: 従来は nav2_bringup/bringup_launch.py = フル AMCL+map_server
     #  スタックと SLAM Toolbox を同時に起動しており、これが原因だった)。
+    # WP-SAFE-03 / N-17: nav2_bringup 純正の navigation_launch.py は使わず、
+    # th_bringup/launch/navigation_launch.py（ローカルフォーク。ファイル冒頭の
+    # コメント参照）を使う。behavior_server が /cmd_vel に直接 publish して
+    # 安全チェーンを迂回する問題をここで塞ぐ（gazebo.launch.py と同じ対処）。
     nav2_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(NAV2_DIR, 'launch', 'navigation_launch.py')),
+            os.path.join(BRINGUP_DIR, 'launch', 'navigation_launch.py')),
         launch_arguments={
             'use_sim_time':    'false',
             'params_file':     nav2_yaml,
             'autostart':       'true',
         }.items(),
+        # 段階 3（WP-TRANSIT-01）以上でのみ起動する（N-27 の対処 (a)）。
+        condition=IfCondition(nav2_enabled),
     )
     nodes.append(nav2_launch)
 
@@ -370,7 +505,9 @@ def generate_launch_description():
         output='screen',
         respawn=True,
         respawn_delay=2.0,
-        condition=IfCondition(map_is_empty),
+        # 段階 3 以上 かつ map_yaml が空のときだけ（N-27 の対処 (a)）。
+        condition=IfCondition(PythonExpression(
+            ["'", map_yaml, "' == '' and int('", stage, "') >= 3"])),
     ))
 
     # ── 17. AMCL + map_server (map_yaml 指定時のみ。UI には出さない休眠経路) ──
@@ -383,7 +520,9 @@ def generate_launch_description():
             'params_file':  nav2_yaml,
             'autostart':    'true',
         }.items(),
-        condition=UnlessCondition(map_is_empty),
+        # 段階 3 以上 かつ map_yaml 指定ありのときだけ（N-27 の対処 (a)）。
+        condition=IfCondition(PythonExpression(
+            ["'", map_yaml, "' != '' and int('", stage, "') >= 3"])),
     )
     nodes.append(localization_launch)
 

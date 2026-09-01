@@ -29,9 +29,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 環境の癖・注意点
 
 - `ros2 node list` はデーモンキャッシュの影響で新規ノードが反映されないことがある。`ros2 node list --no-daemon`（または `ros2 daemon stop` 後に再実行）で確実に最新状態を取得する。
+  **ただし `--no-daemon` でも生きているノードを取りこぼすことがある。**「一覧に出ない」だけで死んだと判断しないこと。launch のログに `process has died` が無いか、当該ノードの起動 INFO が出ているかを併せて見る（`lidar_filter` が正常起動しているのに一覧に出ず、誤って「修正が効いていない」と判断しかけた）。
 - **`th_robot` コンテナはユーザーが実機作業中のセッションであることがある。** デバッグ用にノードを起動・停止する前に必ず `docker exec th_robot ps -eo pid,etimes,args` で稼働中のプロセスを確認し、自分が起動したものだけを PID 指定で止めること（実際に `rotation_calib.py` が 50 分間走っている最中に遭遇した）。
 - `docker exec th_robot bash -lc '... pkill -f <pattern> ...'` は、パターンがこのシェル自身のコマンドライン（`-lc` の引数文字列全体）にマッチして**自分を殺す**。出力が一切出ず exit 143 になったらこれを疑う。スクリプトをファイルに書いてから実行するか、PID 指定で止める。
 - 長時間動くノード（`component_container_mt` 等）を `docker exec` から `&` で起動すると、シェル終了時に道連れになる。`setsid ... > log 2>&1 < /dev/null &` で切り離す。
+- **コンテナ内で launch を起動すると `th_ws/data/generated/` が root 所有で書き換わる。**`th_ws/data` は `/root/th_data` にバインドマウントされており、`params_generation` の生成先（`/root/th_data/generated`）がそこに含まれる。生成物は tracked なので `git status` に `M` が並び、しかもホスト側ユーザでは `git checkout --` すら「許可がありません」で失敗する。`docker compose run --rm th_robot bash -lc 'chown -R 1000:1000 /root/th_data'` で所有権を戻してから復元する。
+- **`docker-compose.yml` はリポジトリ直下ではなく `th_ws/` にある。** リポジトリルートから `docker compose run ...` を実行すると `no configuration file provided: not found` で即死する。必ず `th_ws/` から実行すること（コンテナ名が `th_ws-th_robot-run-*` になるのはこのため）。
+- **`docker compose run --rm th_robot` は毎回新しいコンテナを作り、`build/` と `install/` はバインドマウントされていない**（マウントは `src` / `esp32` / `scripts` / `data` / `dr_spaam_weights` のみ）。そのため `colcon build` と `colcon test` を別々の `docker compose run` で実行すると、テスト側からビルド成果が見えず `colcon test-result` が「0 tests」になる。**ビルドからテストまでを 1 回の `bash -lc` の中で通すこと。**
+- **検証スクリプトに `set -u` を書かない。** `source /opt/ros/humble/setup.bash` が `AMENT_TRACE_SETUP_FILES: unbound variable` で即死する。`docker compose run -d`（デタッチ）で踏むと**出力が一切残らないまま `--rm` でコンテナごと消える**ので、原因が分からない。同じスクリプトを非デタッチで走らせるとメッセージが出る。
+- **数分かかる Docker 検証は `docker compose run -d`（デタッチ）で回し、結果を `/root/th_data/`（＝`th_ws/data/`）へ書かせる。** `colcon build` ＋ launch は 5 分前後かかり、バックグラウンドのシェルタスクが途中で打ち切られると `--rm` でコンテナごと出力が消える（実際に 3 回取り逃した）。デタッチしてバインドマウント経由で結果を受け取れば、タスクが止まっても残る。待つときは Monitor の until ループを使う。コンテナ側の最後に `chown -R 1000:1000 /root/th_data` を入れておくと、生成物が root 所有で残るのを防げる。
+- `test_simulation_scenarios.py` は **Gazebo を起動しない**（`generate_test_description()` が立てるのは `mode_manager` / `safety_monitor` / `person_predictor` / `follow_planner` の 4 ノードだけ）。**既定でスキップする**（`TH_SKIP_SIM=1`）。検証しているのは新設計で廃止済みの as-built 挙動（近接退避・捜索旋回）で、段階 3 の `WP-TRANSIT-01` で `follow_planner` ごと削除される見込み。復活させる前に必ずファイル冒頭の docstring を読むこと（A2 / A3 のアサーションが無力である事実を含む）。
+- **テストの大半は Docker 不要でホストの `python3` から直接走る。**`th_ws/src/th_testing/test/` のうち ROS2 環境（`rclpy` / ビルド済み `th_system_msgs`）が要るのは次の 11 ファイルだけで、他は素の pytest で緑赤を判定できる（2026-09-01 時点で 517 passed / 1 skipped）。`colcon build` は数分かかるので、まずホストで回して最後に Docker で 1 回通すのが速い。
+  除外する 11 ファイル: `test_connectivity_checker_node.py` / `test_fault_detection.py` / `test_mode_transitions.py` / `test_params_audit_node.py` / `test_safety_monitor.py` / `test_state_manager_node.py` / `test_twist_mux_priority.py` / `test_simulation_scenarios.py` / `test_msg_definitions.py` / `test_esp32_bridge_node.py` / `test_jog_gate_node.py`（後ろ 2 つは `launch_testing`）
+- **`launch_testing` を使うテスト（`generate_test_description()` を持つファイル）は、本体が `unittest.TestCase` なので pytest のフィクスチャを一切受け取れない。** `conftest.py` が提供する値（`fault_params` 等）が要るときは、同じ解決ロジックをモジュールレベルで呼ぶこと。CMake 側は `add_launch_test` ではなく `ament_add_pytest_test` でそのまま登録できる（`esp32_bridge_node` / `fault_injection_12` が実例）。pytest の表示は `collected 1 item` になるが、junit には `TestCase` のメソッド数だけ結果が出る。
+- `th_ws/esp32/.vscode/extensions.json` は **`.gitignore` に載っているのに tracked** という状態で、内容もモードも index と一致しているのに `git status` に `M` が出続けることがある（index の stat キャッシュが NTFS 時代の古いサイズを持っているため）。`git diff` が空なのに `M` が消えないときはこれ。`git add -f <path>` で解消でき、内容が同じなので差分はステージされない。
 - **ノードを `kill -9` で落とすことを繰り返すと、コンテナ内の DDS discovery が壊れる。** 症状は「ノードは起動しログも出ているのに、他プロセスからサービス/トピックが一切見つからない」。`ls /dev/shm | wc -l` で `fastrtps_*` の残骸が溜まっているか確認する（ROS プロセスが 0 なのに大量にあれば該当）。`/dev/shm` の掃除だけでは直らないことがあり、その場合はコンテナ再起動が必要。デバッグ用ノードは `kill -TERM` で落とすこと。
 
 ## 開発環境
@@ -94,8 +105,12 @@ ros2 launch th_bringup gazebo.launch.py \
 ros2 launch th_bringup gazebo.launch.py scenario:=narrow_room
 
 # キーボードテレオペ（別ターミナル）
-ros2 launch th_bringup teleop.launch.py           # /cmd_vel_nav 経由（通常）
-ros2 launch th_bringup teleop.launch.py direct:=true  # /cmd_vel 直接（SLAM 用）
+ros2 launch th_bringup teleop.launch.py           # /cmd_vel_nav 経由（通常。twist_mux → obstacle_limiter を通る）
+ros2 launch th_bringup teleop.launch.py direct:=true  # /cmd_vel 直接（SLAM 用。
+  # twist_mux も obstacle_limiter も経由しない既存の例外。WP-SAFE-03 の
+  # 「/cmd_vel を publish してよいのは obstacle_limiter だけ」という不変ルールに
+  # 反する唯一の既知の穴。teleop.launch.py 自体は今回のパケットの範囲外なので
+  # 未対応のまま（WP-SAFE-03 完了報告に記載）
 
 # FOLLOWING モードに切替（起動 10 秒後）
 ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
@@ -106,23 +121,32 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 
 ### 速度指令の流れ（最重要）
 
+WP-SAFE-03（2026-08-27）で最終段に `obstacle_limiter` が入った。twist_mux の出力先は
+`/cmd_vel` ではなく `/cmd_vel_muxed` になり、`/cmd_vel` を publish してよいのは
+`obstacle_limiter` だけになった。
+
 ```
-follow_planner.py ─→ /cmd_vel_retreat (priority 20) ─┐
-person_predictor.py ─→ /cmd_vel_retreat (priority 20) ─┤
-Nav2 controller_server ─→ /cmd_vel_nav (priority 10) ───┤ twist_mux ─→ /cmd_vel ─→ ESP32
-                                                          │
-safety_monitor ─→ /safety/estop     (lock 255) ──────────┤
-safety_monitor ─→ /safety/fault_lock (lock 254) ─────────┘
+挙動系ノード（th_transit/th_onsite/th_route/th_maintenance）
+                       ─→ /cmd_vel_behavior (priority 20) ─┐
+Nav2 controller_server ─→ /cmd_vel_nav      (priority 10) ─┤ twist_mux ─→ /cmd_vel_muxed ─┐
+                                                             │                              │
+safety_monitor ─→ /safety/estop      (lock 255) ────────────┤                              │
+safety_monitor ─→ /safety/fault_lock (lock 254) ────────────┘                              │
+                                                                                             ▼
+/scan・/system/state・/cmd_vel_manual・/safety/estop・/safety/fault_lock ──→ [ obstacle_limiter ] ─→ /cmd_vel ─→ ESP32
+                                                             （20Hz固定・沈黙禁止。base_link<-laser_link TFを起動時に有界リトライで取得）
 ```
 
-**不変ルール**: `/cmd_vel` に直接 publish するノードを追加してはいけない。すべての速度指令は twist_mux 経由。退避・捜索旋回は `/cmd_vel_retreat`（priority 20）、Nav2 経由の移動は `/cmd_vel_nav`（priority 10）を使う。
+**不変ルール**: `/cmd_vel` に直接 publish するノードを追加してはいけない。`obstacle_limiter` だけが `/cmd_vel` の publisher。すべての速度指令は twist_mux → `/cmd_vel_muxed` → `obstacle_limiter` 経由。Nav2 経由の移動は `/cmd_vel_nav`（priority 10）、それ以外の挙動系（点検・校正の走行を含む）は `/cmd_vel_behavior`（priority 20）を使う。
+
+`follow_planner.py` / `follow_planner_mapless.py` / `person_predictor.py` は旧設計の挙動ノードで、いまだに廃止済みの `/cmd_vel_retreat` へ publish している（新設計の `/cmd_vel_behavior` ではない）。twist_mux はもうこのトピックを購読していないため、**これらのノードの退避・捜索旋回コマンドは現在誰にも届かず無音のまま捨てられる**（追従自体は Nav2 経由の `/cmd_vel_nav` で動くため気づきにくい）。3ノードとも新設計での廃止対象（`docs/plan/detailed/DetailedDesign-names.md` §1.1・§6.1）なので、書き直すのではなく WP-TRANSIT-01 等での削除を待つこと。
 
 ### 追従ロジックの二層構造
 
 追従ロジックは意図的に二層に分けられている:
 
 - `th_planning/th_planning/follow_planner_core.py` — **ROS2 非依存の純粋 Python**。`FollowPlannerCore.update()` がコアアルゴリズム。このファイルは ROS2 を import しないことで `pytest` で直接テスト可能。
-- `th_planning/scripts/follow_planner.py` — ROS2 ノード。`follow_planner_core.py` を import して `/person/status` → Nav2 ゴール / `/cmd_vel_retreat` に接続するだけ。
+- `th_planning/scripts/follow_planner.py` — ROS2 ノード。`follow_planner_core.py` を import して `/person/status` → Nav2 ゴール / `/cmd_vel_retreat` に接続するだけ（`/cmd_vel_retreat` は WP-SAFE-03 以降 twist_mux が購読しておらず無音で捨てられる。上の「速度指令の流れ」の注記参照）。
 
 新しい追従ロジックを追加する際は必ず `follow_planner_core.py` に純粋関数として実装し、`test_follow_planner_logic.py` にテストを追加してから `follow_planner.py` から呼ぶ。
 

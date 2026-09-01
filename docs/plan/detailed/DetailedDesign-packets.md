@@ -63,7 +63,8 @@
 | **0** | [DetailedDesign-wp0.md](DetailedDesign-wp0.md) | **10 パケットすべて記述済み** |
 | **1** | [DetailedDesign-wp1.md](DetailedDesign-wp1.md) | **6 パケットすべて記述済み** |
 | **2** | [DetailedDesign-wp2.md](DetailedDesign-wp2.md) | **7 パケットすべて記述済み** |
-| 3〜8 | — | **未記述。**着手前に §0.1 のテンプレートで書く |
+| **3** | [DetailedDesign-wp3.md](DetailedDesign-wp3.md) | **`WP-UI-03` / `WP-TRANSIT-01` の 2 件のみ記述済み。**`WP-ROUTE-01` / `WP-TRANSIT-02` は着手時に追記する |
+| 4〜8 | — | **未記述。**着手前に §0.1 のテンプレートで書く |
 
 **段階 3 以降に着手するときは、まず該当段階の `DetailedDesign-wp<n>.md` を書く。**
 一覧表の 4 列（WP / 名前 / 依存 / 完了条件）だけでは `DD-2`（1 パケット＝1 セッションで完結）が成立しない

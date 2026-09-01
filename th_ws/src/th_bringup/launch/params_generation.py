@@ -1,0 +1,354 @@
+#!/usr/bin/env python3
+"""params_generation.py — launch の OpaqueFunction から呼ぶパラメータ生成ヘルパー（WP-PARAM-02）。
+
+DetailedDesign-params.md §5「①生成」の実体。`registry.yaml` から `th_params.export`
+（WP-PARAM-01）を CLI 経由で呼び、ノード別 ROS2 パラメータ YAML と `twist_mux.yaml` を
+`/root/th_data/generated/` へ書く。**生成そのもの（値の計算・アサーション判定）は
+export.py / assertions.py の中身であり、ここでは作らない（呼ぶだけ）。**
+
+不変条件:
+  G-1 生成はノード起動より前に同期実行する
+      → `make_opaque_function()` が返す callback は `OpaqueFunction(function=...)` に渡され、
+        launch がこの関数を「その後の全アクションを展開する前」に同期的に呼ぶ。
+        bringup.launch.py / gazebo.launch.py の両方で、Node(...) を1つも追加する前に
+        この OpaqueFunction を最初のアクションとして登録すること。
+  G-2 アサーション違反（export.py の終了コード != 0）なら例外を投げて launch を止める。
+      「起動はしたが値が危険」という状態を作らない。
+  G-3 twist_mux.yaml も生成対象。ただしノード実体（ros-teleop/twist_mux）が読む
+      パラメータ名は `locks.<name>.timeout` / `topics.<name>.timeout` のような階層名であり、
+      export.py の汎用生成（consumers ごとに `{node: {ros__parameters: {flat_name: value}}}`
+      を書く）はそのままでは twist_mux に読ませられない（flat name と階層名が食い違う）。
+      ロックのトピック名・優先度・ロック自体のタイムアウトは registry.yaml に持たない
+      配線情報（DetailedDesign-reuse.md §2.3「値は維持」）なのでこのモジュールの定数として
+      持ち、registry 由来の3つのタイムアウト値だけを export.py の生成結果から差し込んで
+      組み直す（`reshape_twist_mux()`）。数値の実体は registry.yaml のまま
+      （二重管理にならない）。
+
+不変条件 P-1 に準じ、`reshape_twist_mux()` はファイル I/O をしない純粋関数にする
+（`run_generation()` がファイル I/O を引き受ける）。
+
+このモジュールは `launch` / `launch_ros` を**モジュール読み込み時にはインポートしない**
+（`make_opaque_function()` の中で遅延インポートする）。これにより
+`reshape_twist_mux()` / `run_generation()` は ROS2 launch 環境が無くても
+（= `python3 -m pytest` から直接）テストできる。
+"""
+from __future__ import annotations
+
+import math
+import copy
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Callable, Mapping, Sequence
+
+import yaml
+
+GENERATED_DIR = "/root/th_data/generated"
+
+# このパケット (WP-PARAM-02) の時点で実際に起動しており、かつ registry.yaml の
+# consumers 語彙と名前が一致するノードだけを挙げる。
+#
+# th_planning (follow_planner 等) / th_config_manager 等の旧アーキテクチャのノードは
+# registry.yaml の consumers が新アーキテクチャの名前（follow_runner 等）を使っており
+# 1:1 で対応しない（旧ノードのコード自体を書き換える別 WP の範囲）。ここに含めない
+# ノードの consumers-only な blocking placeholder 行は A8 の対象外になる
+# （assertions.a8_blocking_placeholders の `nodes` 引数による絞り込み。「使わない
+# ノードのパラメータで起動が止まることを防ぐ」という設計そのもの）。判断は
+# WP-PARAM-02 完了報告に明記。
+REGISTRY_NODES: tuple[str, ...] = (
+    "params_audit",
+    "esp32_bridge",
+    "lidar_filter",
+    "safety_monitor",
+    "twist_mux",
+    "state_manager",
+    "connectivity_checker",
+    # WP-SAFE-03: obstacle_limiter 本体が完成し launch に配線される時点で追加。
+    # 実装未完成のうちに足すと A8（blocking placeholder かつ consumers に
+    # 含まれる行があれば起動拒否）が armed になり stage:=2 の launch が
+    # 全部止まるため、このタイミング（配線コミット）まで待った
+    # （WP-SAFE-03 の指示に明記）。
+    "obstacle_limiter",
+    # WP-SAFE-04: jog_gate は registry.yaml の state_stale_ms 等（consumers に
+    # jog_gate が入っている行）を生成 yaml に載せる。実装・launch 配線が
+    # 完了したこのタイミングで追加。
+    "jog_gate",
+)
+
+# ---------------------------------------------------------------------------
+# twist_mux.yaml の組み直し（G-3）
+# ---------------------------------------------------------------------------
+#
+# ロック・トピックの配線（トピック名・優先度・ロック自体のタイムアウト）は
+# registry.yaml に無い（th_safety/config/twist_mux.yaml の現行値をそのまま維持。
+# DetailedDesign-reuse.md §2.3「値は維持」）。registry から生成するのは
+# manual_joy / retreat(behavior) / nav の3つのタイムアウトだけ（G-3 の対象）。
+TWIST_MUX_STRUCTURE: dict[str, Any] = {
+    "locks": {
+        "estop": {"topic": "/safety/estop", "timeout": 0.5, "priority": 255},
+        "fault": {"topic": "/safety/fault_lock", "timeout": 0.5, "priority": 254},
+    },
+    # timeout はここでは「registry が placeholder のときのフォールバック既定値」
+    # （現行 th_safety/config/twist_mux.yaml の値と同じ）。通常は resolved（給値済み）
+    # なので reshape_twist_mux() が registry 由来の値で必ず上書きする。
+    "topics": {
+        # WP-SAFE-03: 旧 retreat トピック（優先度20）から /cmd_vel_behavior に
+        # 改名（優先度は維持）。follow_planner / person_predictor は旧設計の
+        # 挙動ノードで、まだ旧トピックに publish している（範囲外。
+        # WP-SAFE-03 完了報告に残存箇所を記載）。
+        "behavior": {"topic": "/cmd_vel_behavior", "priority": 20, "timeout": 0.5},
+        "nav": {"topic": "/cmd_vel_nav", "priority": 10, "timeout": 0.5},
+        "manual_joy": {"topic": "/cmd_vel_manual", "priority": 30, "timeout": 1.0},
+    },
+}
+
+# registry のフラットなパラメータ名 → twist_mux の階層パスの対応
+# (トップレベルの2キー分だけ = topics.<key>.timeout)
+_TWIST_MUX_TIMEOUT_MAP: dict[str, str] = {
+    "manual_joy_timeout": "manual_joy",
+    "behavior_cmd_timeout_s": "behavior",
+    "nav_cmd_timeout_s": "nav",
+}
+
+
+def _coerce_ms_to_int(key: str, value: Any) -> Any:
+    """`*_ms` の float を整数へ切り上げる（`sanitize_node_params()` の下請け）。
+
+    **切り上げ（floor でも round でもなく ceil）にする理由**: 対象になるのは
+    `lidar_timeout_ms` / `esp32_timeout_ms` のような導出タイムアウトで、
+    `timeout_from_bounds` は「下限（p99 + 余裕）を常に採る」形で値を決める
+    （registry.yaml の note・`DetailedDesign-params.md` §3.3）。切り捨てると
+    その下限を下回り、**導出の根拠になった不等式が生成物の上で成り立たなくなる**
+    （リンク品質の裾で誤フォルトが出る側へ倒れる）。切り上げれば下限は必ず満たされ、
+    代償は検知が最大 1 ms 遅れることだけで、300 ms 級のタイムアウトに対して無視できる。
+
+    `link_gap_p99_ms` のようにキーは `_ms` で終わるが値が dict のものは対象外
+    （`isinstance(value, float)` でしか発火しない）。bool は float ではないので
+    巻き込まない。
+    """
+    if key.endswith('_ms') and isinstance(value, float):
+        return int(math.ceil(value))
+    return value
+
+
+def sanitize_node_params(params: Mapping[str, Any]) -> dict[str, Any]:
+    """export.py が書いたノード別 `ros__parameters` から、ROS2 が受け取れない値の
+    キーを落とす（純粋関数。ファイル I/O をしない）。D3 対応。
+
+    落とす理由（rcl の YAML パーサの挙動）:
+      - `None`（export.build_node_outputs() が placeholder を表すのに書く `null`）。
+        rcl の YAML パーサはスカラを int → double → bool → string の順に解釈するため、
+        `null` は**文字列 `"null"`** になる。宣言側の型（例: DOUBLE_ARRAY）と食い違うと
+        `declare_parameter` が `InvalidParameterValueException` を投げてノードが落ちる。
+      - 空の list / dict（registry.yaml の `status: given, value: []` 等。
+        `enabled_targets` / `required_nodes` が該当）。要素が無いと YAML パーサが型を
+        決められず `No parameter value set` になる。**これはそのパラメータを宣言して
+        いないノードでも起きる**（ノード生成時にオーバーライド全体を変換するため、
+        当該パラメータを使わないノードの起動まで巻き込んで落ちる）。
+
+    キーを落とすと、そのキーは生成物から消え、**静的パラメータファイル（土台）の値が
+    そのまま残る**——これは G-4 の重ね書き設計（generated/ を土台の後段に重ねる）の
+    意図どおりで、「registry が値を持たないなら土台の値を使う」という以上でも以下でも
+    ない。未測定のまま起動してよいかどうかの判定は A8（run_assertions の
+    blocking placeholder 検査）が別途行う——ここでは「壊れた YAML でノードを
+    落とさない」だけを保証する。
+
+      - `*_ms` の float。導出パラメータ（`timeout_from_bounds` 等）は float を返すため
+        `lidar_timeout_ms: 308.0` のように書かれるが、**このリポジトリの `*_ms` は
+        14 箇所すべて整数で宣言されている**（`safety_monitor.cpp` / `obstacle_limiter.cpp` /
+        `esp32_bridge.py` / `connectivity_checker.py` / `state_manager.py`）。
+        rclcpp は int 宣言に double を渡すと `InvalidParameterTypeException` を投げ、
+        **ノードが起動時に abort する**（2026-08-31 に実機で `safety_monitor` が
+        exit code -6 で落ちて発覚。生成 YAML を使うのは実機 bringup 経路だけで、
+        Gazebo は静的な `safety_monitor_sim.yaml` を読むためこの経路が今まで
+        一度も通っていなかった）。
+
+    それ以外の値（0 / False / 空文字列を含む）はそのまま残す
+    （falsy であることと「値が無い」ことは別。空文字列はまさに空リストと違って
+    STRING 型として妥当に配れる）。
+    """
+    sanitized: dict[str, Any] = {}
+    for key, value in params.items():
+        if value is None:
+            continue
+        if isinstance(value, (list, dict)) and len(value) == 0:
+            continue
+        sanitized[key] = _coerce_ms_to_int(key, value)
+    return sanitized
+
+
+def _sanitize_node_params_file(path: Path) -> None:
+    with open(path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f) or {}
+    changed = False
+    for node_name, node_body in doc.items():
+        ros_params = (node_body or {}).get("ros__parameters")
+        if ros_params is None:
+            continue
+        clean = sanitize_node_params(ros_params)
+        if clean != ros_params:
+            doc[node_name]["ros__parameters"] = clean
+            changed = True
+    if changed:
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(doc, f, allow_unicode=True, sort_keys=True)
+
+
+def reshape_twist_mux(flat_params: Mapping[str, Any]) -> dict[str, Any]:
+    """export.py が書いた twist_mux.yaml の flat ros__parameters を、
+    twist_mux ノードが実際に読む階層構造へ組み直す（純粋関数。ファイル I/O をしない）。
+
+    `flat_params` は `{registry_param_name: value_or_None}`（export.build_node_outputs の
+    出力そのもの）。値が None（= placeholder）の場合は組み直し先を上書きしない
+    （静的な既定値のまま残る。placeholder のタイムアウトで twist_mux を起動させない
+    判断は A8 = launch 側の仕事であり、ここでは「上書きしない」だけに留める）。
+    """
+    structure = copy.deepcopy(TWIST_MUX_STRUCTURE)
+    for flat_name, topic_key in _TWIST_MUX_TIMEOUT_MAP.items():
+        value = flat_params.get(flat_name)
+        if value is not None:
+            structure["topics"][topic_key]["timeout"] = value
+    return {"twist_mux": {"ros__parameters": structure}}
+
+
+def _reshape_twist_mux_file(path: Path) -> None:
+    if not path.exists():
+        return
+    with open(path, encoding="utf-8") as f:
+        flat_doc = yaml.safe_load(f) or {}
+    flat_params = (flat_doc.get("twist_mux") or {}).get("ros__parameters") or {}
+    nested = reshape_twist_mux(flat_params)
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(nested, f, allow_unicode=True, sort_keys=True)
+
+
+# ---------------------------------------------------------------------------
+# blind_angle_ranges: 空配列を生成物へ書き戻す reshape は撤去した（2026-08-27）
+# ---------------------------------------------------------------------------
+#
+# 88c2ab1（N-8）は「死角なし」と「値が抜けた」を配列の形だけから区別できない
+# 問題を、sanitize_node_params() が落とした blind_angle_ranges を空配列で
+# 明示的に書き戻す reshape_blind_angles() で解決したことにしていた。
+#
+# これは**誤りだった**。Docker 実機で `gazebo.launch.py sim:=true` を起動した
+# ところ obstacle_limiter・lidar_filter の両方が
+# 「parameter_value_from failed for parameter 'blind_angle_ranges':
+# No parameter value set」で起動失敗した（実測）。原因は
+# `declare_parameter` 側の型推論ではなく、**ROS2 Humble の
+# rcl_yaml_param_parser が空配列の parameter override をそもそも扱えない**
+# こと——素の `tf2_ros::static_transform_publisher` に
+# `{ros__parameters: {empty_arr: []}}` だけの params ファイルを渡しても
+# 同じ例外で落ちることを実測で確認済み（このプロジェクトのコードは無関係）。
+# rclpy 側も同様に `get_parameter(...).value` が
+# `ParameterUninitializedException` を投げる。`ParameterDescriptor` で型を
+# 明示しても、override 自体が「空配列」である限り解決できない。
+#
+# **`sanitize_node_params()` が空配列のキーを丸ごと落とす（＝override 自体を
+# 発生させない）のが正しい対処**であり、reshape_blind_angles() はそれに
+# 逆行して壊れた override を意図的に作っていた。「死角なし」と「値が抜けた」
+# の区別は、この関数が存在するかどうかに関わらず `blind_calibrated`
+# （`class: b` / `given`。N-8 で新設）という独立フラグが担っている——
+# `blind_angle_ranges` というキー自体が生成物に無くても、ノード側の
+# `declare_parameter` の既定値（空配列 = マスクなし。安全側）がそのまま使われる
+# だけで、`blind_calibrated` の意味は変わらない。したがってこの reshape は
+# 最初から不要だった（キーを残す理由が無かった）。
+
+
+# ---------------------------------------------------------------------------
+# 生成本体
+# ---------------------------------------------------------------------------
+
+
+def default_registry_path() -> str:
+    from ament_index_python.packages import get_package_share_directory
+    return os.path.join(get_package_share_directory("th_params"), "config", "registry.yaml")
+
+
+class GenerationError(RuntimeError):
+    """export.py がアサーション違反・スキーマ違反で失敗したときに送出する（G-2）。"""
+
+
+def run_generation(*, stage: int, sim: bool, nodes: Sequence[str] | None = REGISTRY_NODES,
+                    out_dir: str = GENERATED_DIR, registry_path: str | None = None,
+                    env: Mapping[str, str] | None = None) -> None:
+    """registry.yaml から生成物を作る。
+
+    FMEA①: 古い generated/ が残って使われることを防ぐため、書く前に必ず削除する。
+    G-2: export.py の終了コードが 0 でなければ GenerationError を投げる（launch を止める）。
+    `env` はサブプロセスへ渡す環境変数（省略時は現プロセスを継承。テストが
+    PYTHONPATH を差し替えるために使う。launch から呼ぶときは省略でよい —
+    th_params は colcon install 済みで通常の PYTHONPATH に乗っている）。
+
+    成功時（終了コード 0）でも export.py の stderr は握り潰さず、そのまま
+    launch 側の stderr へ出す。A6（esp32_timeout_ms が WATCHDOG_MS 以下）のように
+    「起動は拒否しないが黙って見過ごしてもいけない」判定があるため
+    （eed7ee1 で A6 を拒否→警告に変更した際、警告の出口が launch 経路に
+    無いままだった）。
+    """
+    registry_path = registry_path or default_registry_path()
+    out = Path(out_dir)
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    cmd = [sys.executable, "-m", "th_params.export",
+           "--registry", registry_path, "--out", str(out), "--stage", str(stage)]
+    if sim:
+        cmd.append("--sim")
+    if nodes:
+        cmd += ["--nodes", ",".join(nodes)]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    if result.returncode != 0:
+        raise GenerationError(
+            "params 生成に失敗した（G-2: launch を止める。古い generated/ は使わない）。\n"
+            f"cmd={' '.join(cmd)}\n"
+            f"exit={result.returncode}\n"
+            f"--- stdout ---\n{result.stdout}\n"
+            f"--- stderr ---\n{result.stderr}")
+
+    if result.stderr:
+        print(f"[params_generation] export.py の警告:\n{result.stderr}", file=sys.stderr)
+
+    # D3: export.py は `--nodes` で絞っても consumers に現れる全ノード分の YAML を書く
+    # （REGISTRY_NODES の5つだけではない）。params_digest.json は ROS2 パラメータ
+    # ファイルではないので対象外、それ以外の *.yaml 全てをサニタイズする。
+    # reshape_twist_mux() は静的な既定値を土台に持つ設計（キーが無ければ上書きしない）
+    # なので、サニタイズの後に行う。
+    for yaml_path in sorted(out.glob("*.yaml")):
+        _sanitize_node_params_file(yaml_path)
+
+    _reshape_twist_mux_file(out / "twist_mux.yaml")
+
+
+# ---------------------------------------------------------------------------
+# launch 用 OpaqueFunction ラッパ（`launch` はここで初めて import する）
+# ---------------------------------------------------------------------------
+
+
+def make_opaque_function(*, nodes: Sequence[str] = REGISTRY_NODES,
+                          stage_arg_name: str = "stage",
+                          sim_arg_name: str | None = None,
+                          sim_default: bool = False) -> Callable:
+    """`OpaqueFunction(function=...)` に渡すコールバックを作る。
+
+    `sim_arg_name` を指定すると、その名前の launch 引数（'true'/'false' 文字列）を
+    `--sim` の可否に使う（gazebo.launch.py 向け）。指定しなければ `sim_default`
+    を使う（bringup.launch.py は実機専用launchなので常に False）。
+    """
+    def _opaque(context, *args, **kwargs):
+        from launch.substitutions import LaunchConfiguration
+
+        stage = int(LaunchConfiguration(stage_arg_name).perform(context))
+        if sim_arg_name is not None:
+            sim_str = LaunchConfiguration(sim_arg_name).perform(context).strip().lower()
+            sim = sim_str in ("true", "1", "yes")
+        else:
+            sim = sim_default
+
+        run_generation(stage=stage, sim=sim, nodes=nodes)
+        return []
+
+    return _opaque

@@ -859,6 +859,39 @@ ros2 param set /lidar_filter blind_angle_ranges \
 # /scan と /scan_filtered を同時に RViz2 で比較
 ```
 
+### ラズパイの CPU が足りない / LiDAR が遅い・落ちる
+
+**まず `rplidar_node` の CPU を見ること。**このドライバは正常時でも
+**1 コアの約 80 % を食う**（実測 2026-08-20・Raspberry Pi 4 Model B ＠1.5 GHz、
+`scan_mode: Standard`）。「重いから壊れている」のではなく**平常運転がこれ**なので、
+他の原因を探す前にこの前提を思い出すこと。
+
+```bash
+ssh mirs2602@192.168.5.1 'ps -o pid,etimes,time,pcpu,comm -p $(pgrep -f rplidar_ros/rplidar_node)'
+# → %CPU 80 前後が「正常」。100 を超えていたら別の異常
+```
+
+**内訳（実測）**: ユーザ時間 14.2 % に対し**システム時間 67.2 %**。計算ではなく
+**syscall で潰れている**。`strace -c` 3 秒で `futex` 22377 回・`read` 7026 回・
+`ioctl` 7052 回＝**毎秒およそ 12000 回**。25.6 KB/s（256000 baud）を読むだけの
+仕事としては 1〜2 桁多い。
+
+| 症状 | 原因 |
+| --- | --- |
+| `read` 1 回が約 11 バイト | バッファリングせず小刻みに読んでいる |
+| `ioctl` が `read` と 1 対 1 | 読む前に毎回 `FIONREAD` で残量を問い合わせている |
+| `futex` が最多（毎秒 7459・うちエラー 2748） | SDK が読み取りスレッドからサンプル単位でイベント通知している |
+
+**原因は Slamtec SDK / `rplidar_ros` の実装**であって設定ではない。`scan_mode` を
+`DenseBoost` から `Standard` に落としてもこの値。直すなら upstream に手を入れるか、
+`termios` の `VMIN`/`VTIME` でまとめ読みさせる方向になる。
+
+**2026-08-20 時点では実害を確認していない**（ラズパイ AP ch1 で受信ギャップは
+max 300 ms・跳ね 1 回まで改善している。詳細は
+[`data/meas05/README.md`](plan/detailed/data/meas05/README.md)）。**余裕を食っている
+だけ**なので未着手。ただし Nav2・SLAM・教示再生などラズパイ側の負荷が増えたときは
+**まずここを疑う**こと。4 コアのうち 1 コアが既に埋まっている。
+
 ### ESP32 が頻繁に再接続する
 
 ```bash

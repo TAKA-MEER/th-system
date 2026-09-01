@@ -665,6 +665,9 @@ timeout 10 ros2 topic echo /safety/fault > /tmp/f.txt; test $? -eq 124
 | 4 | `twist_mux.yaml` の入力トピック改名: `retreat: /cmd_vel_retreat` → **`behavior: /cmd_vel_behavior`**（priority 20 は維持） |
 | 5 | `th_testing/test/test_twist_mux_priority.py` の**出力トピック名と、テスト内のインラインのパラメータ辞書（L39-51）の両方** |
 | 6 | `th_safety/package.xml` / `CMakeLists.txt` に依存追加: **`geometry_msgs` / `tf2_ros` / `tf2_geometry_msgs` / `ament_cmake_gtest`** |
+| 7†| **`th_bringup/launch/navigation_launch.py`（`nav2_bringup` からのローカルフォーク）を新設**。`behavior_server` の `remappings` に `('cmd_vel', 'cmd_vel_behavior')` を追加し、`velocity_smoother`（最終段 `/cmd_vel` に直接 publish する未使用ノード）を削除。`gazebo.launch.py`・`bringup.launch.py` の include 元をこのフォークに差し替え |
+
+† 行7は本パケットの実装完了後に発覚した `N-17`（[open](DetailedDesign-open.md)）の対処として後日追加。当初の「1パケットで6つを同時に変える」の6つには含まれない（`obstacle_limiter` が動く前提の後続修正のため、同時である必要が無かった）。
 
 | 作らない |
 | --- |

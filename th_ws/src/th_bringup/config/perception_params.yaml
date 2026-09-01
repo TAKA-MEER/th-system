@@ -5,22 +5,10 @@ lidar_filter:
   ros__parameters:
     input_topic: "/scan"
     output_topic: "/scan_filtered"
-    # 死角範囲 [start_deg, end_deg, ...] (フラットリスト、ペアで指定)
-    # 0° = 前方、右回り正
-    # 初期値: 各角柱 ±5° (合計 4 箇所) — 実測後に更新すること
-    # 更新方法:
-    #   1. ros2 run rviz2 rviz2 で /scan を表示
-    #   2. ロボットを静止させ、アルミパイプが映る角度帯を確認
-    #   3. この YAML を更新して再起動 (ランタイム変更も可能)
-    blind_angle_ranges:
-      - 40.0    # 右前 開始
-      - 40.0    # 右前 終了
-      - 130.0   # 右後 開始
-      - 130.0   # 右後 終了
-      - 220.0   # 左後 開始
-      - 220.0   # 左後 終了
-      - 310.0   # 左前 開始
-      - 310.0   # 左前 終了
+    # blind_angle_ranges はここでは持たない。出所は registry.yaml の 1 本
+    # （params_generation が th_ws/data/generated/lidar_filter.yaml へ書く）。
+    # 現構成（走行体のみ）は死角が無いことを確認済みで空配列。上部構造の
+    # 追加で死角ができたら registry.yaml 側を更新すること（WP-CALIB-01）。
 
 person_predictor:
   ros__parameters:

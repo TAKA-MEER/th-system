@@ -299,6 +299,7 @@ def deviation_budget_m(corridor_width_m: float, body_width_m: float, margin_m: f
 | **A11** | `obstacle_floor_distance_m + hysteresis_band_m < obstacle_stop_distance_m` | 起動を拒否（ヒステリシス帯が `d_behavior` を越えない） |
 
 | **A12** | `muxed_stale_ms < manual_joy_timeout` | 起動を拒否（[safety](DetailedDesign-safety.md) §1.3。逆にすると `jog_gate` を閉じてから駆動が止まるまでが `manual_joy_timeout` に伸びる） |
+| **A13** | `th_state.zones.LIMIT_STRICTNESS` の並びが、`registry.yaml` の解決済みの数値の昇順と一致する（`stop` は 0 とみなす。`placeholder` の名前は比較から除外） | **起動を拒否。**`N-15`（`DetailedDesign-open.md`）で追加。`LIMIT_STRICTNESS`（`th_state/zones.py`。§3.3.1 の `combine_speed_limits()` が使う「speed_limit 名の厳しさ順」）は数値の代理であり、`registry.yaml` の measured 値と順序が食い違うと合成結果が実際より高い（緩い）上限になりうる |
 
 **`hysteresis_band_m` は `obstacle_floor_distance_m × hysteresis_ratio` から導く**（`value_by` なし）。
 `obstacle_stop_distance_m` から導くと**帯が `d_behavior` を超えうる**。
@@ -391,7 +392,8 @@ digest = sha1( sorted( f"{name}={status}:{value}" for all params ) )[:12]
 | --- | --- | --- |
 | **`brake_accel_mps2`** | `v_max` / 全障害物距離 / タイムアウト。**最も多くを従属させる 1 つ** | `O-c1` |
 | `person_position_sigma_m` | 2 点指示の角度精度（【A】） | `O-c3` |
-| `link_gap_p99_ms`（ESP32 / LiDAR / UI 別） | タイムアウトの下限（§3.3） | `O-c6` |
+| `link_gap_p99_ms`（ESP32 / LiDAR 別。実測済み・2026-08-21） | タイムアウトの下限（§3.3） | `O-c6` |
+| `ui_gap_p99_ms`（UI 別。`link_gap_p99_ms` から分離。実測値が異常のため未採用・要再測定） | — | `O-c6` |
 | `tracker_lost_grace_ms` | 追従・呼び寄せの停止判断 | `C-05` |
 | `replay_drift_m_per_100m` | 1 経路の長さの上限 | `O-c4` |
 | `calib_linear_tolerance_ratio` / `calib_rotation_tolerance_deg` / `calib_blind_tolerance_deg` | 校正の合否 | `O-c5` / `F-13` |
@@ -461,7 +463,7 @@ digest = sha1( sorted( f"{name}={status}:{value}" for all params ) )[:12]
 | 3 | `consumers` が空の行が無い | 同上 |
 | 4 | **registry にある (b) パラメータの現在値と同じ数値が、コード／`generated/` 以外の YAML に現れない** | `test_no_hardcoded_numbers.py`。**除外リストは `th_params/config/literal_allowlist.yaml`**（QoS 深さ・配列長・単位変換など） |
 | 5 | `derive.py` の全関数に単体テストがある。**`status: derived` の全パラメータに `formula` が存在する** | `test_derive.py` |
-| 6 | `assertions.py` の **A1〜A12**（A9 は CI 専用。A11・A12 を含む）が違反入力で正しく落ちる | `test_assertions.py` |
+| 6 | `assertions.py` の **A1〜A13**（A9 は CI 専用。A11・A13 を含む。A12 は未実装 — 本ファイル §4 参照）が違反入力で正しく落ちる | `test_assertions.py` |
 | 9 | **`class`／`status` の組合せ規則 S1〜S5 に違反する行が無い** | `test_registry_schema.py` |
 | 7 | 入力が `placeholder` の (b) は出力も `placeholder` になる（伝播） | `test_placeholder_propagation.py` |
 | 8 | `TBD_MEASURE` が `registry.yaml` 以外に現れない | `test_marker_isolation.py` |

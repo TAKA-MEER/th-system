@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(
 
 from th_planning.mapless_follow_core import (
     MaplessState, MaplessFollowParams, MaplessFollowCore,
-    next_mapless_state, is_path_blocked,
+    next_mapless_state, is_path_blocked, observe_cone,
     mapless_target_speed, rate_limit, should_stop_for_lost,
 )
 
@@ -177,6 +177,63 @@ class TestIsPathBlocked:
             ranges, ANGLE_MIN, ANGLE_INC,
             direction_rad=0.0, half_width_rad=math.radians(20), max_check_dist=1.0,
             person_angle_rad=0.0, person_range_m=0.9, person_exclude_tolerance_m=0.1)
+
+
+# ════════════════════════════════════════════════════════════
+# 2b. 進路上の最近傍距離(is_path_blocked の bool 判定を拡張したもの。
+#     C++ 版 th_safety::observe_cone() との等価性は
+#     test_obstacle_cone_equivalence.cpp 側で検証する)
+# ════════════════════════════════════════════════════════════
+class TestObserveCone:
+    def test_clear_cone_returns_none(self):
+        assert observe_cone(
+            clear_scan(), ANGLE_MIN, ANGLE_INC,
+            direction_rad=0.0, half_width_rad=math.radians(20)) is None
+
+    def test_single_obstacle_returns_its_distance(self):
+        ranges = scan_with_obstacle_at(0.0, 0.5)
+        assert observe_cone(
+            ranges, ANGLE_MIN, ANGLE_INC,
+            direction_rad=0.0, half_width_rad=math.radians(20)) == pytest.approx(0.5)
+
+    def test_obstacle_outside_cone_ignored(self):
+        ranges = scan_with_obstacle_at(math.pi / 2, 0.5)
+        assert observe_cone(
+            ranges, ANGLE_MIN, ANGLE_INC,
+            direction_rad=0.0, half_width_rad=math.radians(20)) is None
+
+    def test_no_max_check_dist_filter(self):
+        """is_path_blocked と違い距離での足切りをしない(遠くの障害物も返す)"""
+        ranges = scan_with_obstacle_at(0.0, 5.0)
+        assert observe_cone(
+            ranges, ANGLE_MIN, ANGLE_INC,
+            direction_rad=0.0, half_width_rad=math.radians(20)) == pytest.approx(5.0)
+
+    def test_picks_nearest_of_multiple_obstacles(self):
+        ranges = clear_scan()
+        for angle, dist in [(math.radians(-10), 1.2), (0.0, 0.6), (math.radians(10), 2.0)]:
+            idx = round((angle - ANGLE_MIN) / ANGLE_INC) % N_SAMPLES
+            ranges[idx] = dist
+        assert observe_cone(
+            ranges, ANGLE_MIN, ANGLE_INC,
+            direction_rad=0.0, half_width_rad=math.radians(20)) == pytest.approx(0.6)
+
+    def test_nan_and_negative_ignored(self):
+        ranges = scan_with_obstacle_at(0.0, 0.5)
+        idx_nan = round((math.radians(5) - ANGLE_MIN) / ANGLE_INC) % N_SAMPLES
+        ranges[idx_nan] = float('nan')
+        idx_neg = round((math.radians(-5) - ANGLE_MIN) / ANGLE_INC) % N_SAMPLES
+        ranges[idx_neg] = -1.0
+        assert observe_cone(
+            ranges, ANGLE_MIN, ANGLE_INC,
+            direction_rad=0.0, half_width_rad=math.radians(20)) == pytest.approx(0.5)
+
+    def test_no_person_exclusion_argument(self):
+        """観測系は追従対象を知らない設計(WP-SAFE-03 §1)。person_* 相当の引数は無い"""
+        import inspect
+        params = inspect.signature(observe_cone).parameters
+        assert 'person_angle_rad' not in params
+        assert 'person_range_m' not in params
 
 
 # ════════════════════════════════════════════════════════════

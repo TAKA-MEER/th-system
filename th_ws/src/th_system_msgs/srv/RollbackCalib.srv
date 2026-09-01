@@ -1,0 +1,4 @@
+string item
+uint8  generation
+---
+bool success

@@ -1,0 +1,8 @@
+venue_navigator:
+  ros__parameters:
+    home_declare_tolerance_deg: 5.0
+    home_declare_tolerance_m: 0.1
+    nav_tolerance_deg: 5.0
+    nav_tolerance_m: 0.1
+    v_max: 1.1199999999999999
+    w_max: 0.6

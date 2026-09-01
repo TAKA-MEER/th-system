@@ -16,6 +16,7 @@ gazebo.launch.py — Gazebo シミュレーション起動ファイル
 
 import glob
 import os
+import sys
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -32,6 +33,12 @@ from launch.substitutions import (
 from launch_ros.actions import Node, SetParameter
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.parameter_descriptions import ParameterValue
+
+# WP-PARAM-02: registry.yaml → /root/th_data/generated/*.yaml のパラメータ生成
+# ヘルパー。launch ファイルと同じディレクトリに share インストールされるが
+# sys.path には自動で乗らないため、自分でパスを通してから import する。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from params_generation import GENERATED_DIR, make_opaque_function  # noqa: E402
 
 BRINGUP_DIR  = get_package_share_directory('th_bringup')
 DESC_DIR     = get_package_share_directory('th_description')
@@ -301,6 +308,9 @@ def generate_launch_description():
         DeclareLaunchArgument('robot_x',    default_value=''),
         DeclareLaunchArgument('robot_y',    default_value=''),
         DeclareLaunchArgument('robot_yaw',  default_value=''),
+        DeclareLaunchArgument('stage', default_value='1',
+            description='params_generation.py が registry.yaml を解決するステージ'
+                        '番号 (WP-PARAM-02)'),
     ]
 
     sim        = LaunchConfiguration('sim')
@@ -317,7 +327,6 @@ def generate_launch_description():
     nav2_params_real = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
     safety_sim       = os.path.join(BRINGUP_DIR, 'config', 'safety_monitor_sim.yaml')
     safety_real      = os.path.join(SAFETY_DIR,  'config', 'safety_monitor.yaml')
-    twist_yaml       = os.path.join(SAFETY_DIR,  'config', 'twist_mux.yaml')
     ekf_yaml         = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
     calib_yaml       = os.path.join(BRINGUP_DIR, 'config', 'calib.yaml')
     panels_yaml      = os.path.join(BRINGUP_DIR, 'config', 'panels.yaml')
@@ -327,6 +336,15 @@ def generate_launch_description():
 
     # ── use_sim_time を全ノードに伝播 ────────────────────────
     sim_time_action = OpaqueFunction(function=_set_sim_time)
+
+    # ── パラメータ生成 (WP-PARAM-02) ─────────────────────────
+    # registry.yaml → /root/th_data/generated/*.yaml を、ノードを1つも起動する前に
+    # 同期生成する（G-1）。アサーション違反なら例外で launch ごと止まる（G-2）。
+    # sim launch 引数で --sim の可否を切り替える（sim:=true なら stage=1 の
+    # blocking placeholder A8 を回避できる。実機は blocking のため stage:=1 では
+    # 起動しない — 意図された挙動。詳細はコミットメッセージ参照）。
+    params_generation_action = OpaqueFunction(
+        function=make_opaque_function(sim_arg_name='sim'))
 
     # ════════════════════════════════════════════════════════
     # 共通ノード（実機・シミュレーション共通）
@@ -341,12 +359,28 @@ def generate_launch_description():
             output='screen',
         ),
         # twist_mux
+        # 静的 th_safety/config/twist_mux.yaml は読まない。generated/twist_mux.yaml
+        # が階層構造(locks/topics)を完全に持つ唯一の情報源 (G-3, 二重管理の防止)。
+        # WP-SAFE-03: 出力先を /cmd_vel_muxed に変更（後段に obstacle_limiter が入る。
+        # /cmd_vel を publish してよいのは obstacle_limiter だけになった）。
         Node(
             package='twist_mux',
             executable='twist_mux',
             name='twist_mux',
-            parameters=[twist_yaml],
-            remappings=[('cmd_vel_out', '/cmd_vel')],
+            parameters=[os.path.join(GENERATED_DIR, 'twist_mux.yaml')],
+            remappings=[('cmd_vel_out', '/cmd_vel_muxed')],
+            output='screen',
+        ),
+        # obstacle_limiter（WP-SAFE-03）: /cmd_vel_muxed → /cmd_vel の最終段速度
+        # リミッタ。/cmd_vel の publisher はこのノードだけ。dev_mode は渡さない
+        # （names.md §1.3。safety_monitor と同じ構造的な保証）。起動時に
+        # base_link<-laser_link TF を有界リトライで取得できないと起動失敗する
+        # （obstacle_limiter.cpp。素通しで動かさない設計）。
+        Node(
+            package='th_safety',
+            executable='obstacle_limiter',
+            name='obstacle_limiter',
+            parameters=[os.path.join(GENERATED_DIR, 'obstacle_limiter.yaml')],
             output='screen',
         ),
         # mode_manager
@@ -357,11 +391,12 @@ def generate_launch_description():
             output='screen',
         ),
         # lidar_filter（/scan → /scan_filtered）
+        # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる (G-4)。
         Node(
             package='th_perception',
             executable='lidar_filter.py',
             name='lidar_filter',
-            parameters=[perc_yaml],
+            parameters=[perc_yaml, os.path.join(GENERATED_DIR, 'lidar_filter.yaml')],
             output='screen',
         ),
         # person_predictor
@@ -418,6 +453,39 @@ def generate_launch_description():
             parameters=[{'port': 9090}],
             output='screen',
         ),
+        # state_manager（新FSM。WP-TEST-01 で追加。bringup.launch.py:283 と
+        # 同じ定義。純粋な Python ノードでハードウェアに依存しないため
+        # sim/実機共通で無条件起動にする——以前このファイルには定義自体が
+        # 無く、`/system/state` の publisher が sim に存在しなかった
+        # （obstacle_limiter が常に速度上限0を出す原因になっていた。詳細は
+        # conftest.py の `enter_manual_mode()` docstring 参照）。
+        Node(
+            package='th_state',
+            executable='state_manager.py',
+            name='state_manager',
+            parameters=[os.path.join(GENERATED_DIR, 'state_manager.yaml')],
+            output='screen',
+        ),
+        # connectivity_checker（WP-TEST-01 で追加。state_manager が INIT から
+        # IDLE へ進むための evt.link_ok は connectivity_checker だけが出す）。
+        # sim パラメータは connectivity_core.py が Gazebo シナリオ向けに
+        # 最初から用意していたもの（esp32_bridge が sim に居ないため ESP32の
+        # 2項目と required_nodes の判定を除外する。bringup.launch.py の
+        # {'sim': False} と対になる設定）。
+        # `scan_expected_points`（registry.yaml=1080。実機SLLIDAR値）と
+        # Gazebo の LiDAR センサの点数が一致していないと LiDAR 項目の完全
+        # 一致判定が常に False になり evt.link_ok が出ない（発見時は
+        # <samples>720 で不一致だった）。gazebo_plugins.xacro の <samples>
+        # を実機と同じ 1080 へ合わせて解消済み（DetailedDesign-open.md
+        # N-22。conftest.py の `enter_manual_mode()` docstring も参照）。
+        Node(
+            package='th_state',
+            executable='connectivity_checker.py',
+            name='connectivity_checker',
+            parameters=[os.path.join(GENERATED_DIR, 'connectivity_checker.yaml'),
+                        {'sim': True}],
+            output='screen',
+        ),
     ]
 
     # ════════════════════════════════════════════════════════
@@ -428,12 +496,54 @@ def generate_launch_description():
     # ════════════════════════════════════════════════════════
     scenario_action = OpaqueFunction(function=_scenario_setup)
 
+    # enabled_targets (O-7): registry.yaml の既定値は空リストであり、かつ
+    # export.py は空リストを生成物からサニタイズして落とす（D3）ため、実際の値は
+    # launch から明示的に渡す（DetailedDesign-names.md §7.3 の note の実体）。
+    # 対象は「その publisher が実際にこの launch で起動するか」で決める。
+    #
+    # sim: esp32_bridge は condition=UnlessCondition(sim) で起動しないため
+    # esp32 は publisher が無い。runaway は /esp32/wheel_feedback（同じく無い）
+    # を要るため除外。firmware も esp32_bridge が publisher のため除外。
+    # Gazebo の LiDAR センサプラグインは sim/実機を問わず /scan を出すため
+    # lidar は有効にする。
+    #
+    # state（訂正・2026-08-27）: このコメントは以前「state_manager も
+    # condition=UnlessCondition(sim) で起動しないため publisher が無い」と
+    # 書いていたが、これは誤りだった——**このファイルには state_manager の
+    # Node 定義自体がそもそも存在しなかった**（コメントと実態が最初から
+    # 食い違っていた）。WP-TEST-01 で state_manager（＋ connectivity_checker）
+    # を common_nodes に追加したことで /system/state の publisher が実在する
+    # ようになったが、STATE_INCONSISTENT 検出（'state' target）を有効化する
+    # かどうかはこのパケットの範囲外の別判断として意図的に触れていない
+    # （'mux' と同じ扱い。安全監視を新たに有効化する変更は、起動直後の
+    # モード遷移シーケンス（INIT→IDLE→MANUAL）中に誤検知しないかを別途
+    # 検証してから判断すべきと考えたため）。Gazebo の LiDAR センサプラグインは
+    # sim/実機を問わず /scan を出すため lidar は有効にする。
+    #
+    # limiter（WP-TEST-01 の実装中に発見・追加。DetailedDesign-safety.md §10 #11
+    # 「obstacle_limiter を SIGKILL → 重大フォルト → ESTOP → 駆動ゼロ」の自動化を
+    # 書こうとしたところ、obstacle_limiter は common_nodes で sim/実機いずれでも
+    # 無条件に起動し `/safety/limiter_status` を実際に20Hzで発行しているのに、
+    # ここに 'limiter' が無いために safety_monitor.cpp の LIMITER_DEAD 検出
+    # （targetEnabled("limiter")でゲートされている。F-5・O-7）が sim・実機の
+    # 両方で常に無効だったことが判明した。obstacle_limiter 自体は WP-SAFE-03 で
+    # 「DEBT-4を塞ぐ」と明記されているが、その前提となる監視の有効化が
+    # 漏れていたと判断し、ここで追加する。新しい安全機能ではなく、既に実装
+    # 済みの検出ロジックを実際に有効化するだけの1行修正。
+    SAFETY_ENABLED_TARGETS_SIM = ['lidar', 'limiter']
+    # 実機: bringup.launch.py と同じ判断（WP-SAFE-01 完了報告に詳細）＋ 上記と
+    # 同じ理由で limiter を追加（obstacle_limiter は実機でも common_nodes で
+    # 無条件に起動する）。
+    SAFETY_ENABLED_TARGETS_REAL = ['lidar', 'esp32', 'runaway', 'state', 'firmware', 'limiter']
+
     # safety_monitor: シミュレーション設定
+    # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる (G-4)。
     safety_sim_node = Node(
         package='th_safety',
         executable='safety_monitor',
         name='safety_monitor',
-        parameters=[safety_sim],
+        parameters=[safety_sim, os.path.join(GENERATED_DIR, 'safety_monitor.yaml'),
+                    {'enabled_targets': SAFETY_ENABLED_TARGETS_SIM}],
         output='screen',
         condition=IfCondition(sim),
     )
@@ -443,7 +553,8 @@ def generate_launch_description():
         package='th_safety',
         executable='safety_monitor',
         name='safety_monitor',
-        parameters=[safety_real],
+        parameters=[safety_real, os.path.join(GENERATED_DIR, 'safety_monitor.yaml'),
+                    {'enabled_targets': SAFETY_ENABLED_TARGETS_REAL}],
         output='screen',
         condition=UnlessCondition(sim),
     )
@@ -481,10 +592,13 @@ def generate_launch_description():
         package='th_esp32_bridge',
         executable='esp32_bridge.py',
         name='esp32_bridge',
+        # 静的ファイル（+ calib.yaml があれば）を土台にし、registry.yaml 由来の
+        # 生成ファイルを最後段に重ねる (G-4)。
         parameters=[
             os.path.join(get_package_share_directory('th_esp32_bridge'),
                          'config', 'params.yaml'),
-        ] + ([calib_yaml] if os.path.exists(calib_yaml) else []),
+        ] + ([calib_yaml] if os.path.exists(calib_yaml) else [])
+          + [os.path.join(GENERATED_DIR, 'esp32_bridge.yaml')],
         output='screen',
         condition=UnlessCondition(sim),
     )
@@ -532,9 +646,13 @@ def generate_launch_description():
     # ════════════════════════════════════════════════════════
 
     # Nav2 (ナビゲーション部分のみ) — シミュレーション
+    # WP-SAFE-03 / N-17: nav2_bringup 純正の navigation_launch.py は使わず、
+    # th_bringup/launch/navigation_launch.py（ローカルフォーク。ファイル冒頭の
+    # コメント参照）を使う。behavior_server が /cmd_vel に直接 publish して
+    # 安全チェーンを迂回する問題をここで塞ぐ。
     nav2_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(NAV2_DIR, 'launch', 'navigation_launch.py')),
+            os.path.join(BRINGUP_DIR, 'launch', 'navigation_launch.py')),
         launch_arguments={
             'use_sim_time': 'True',
             'params_file':  nav2_params_sim,
@@ -546,7 +664,7 @@ def generate_launch_description():
     # Nav2 (ナビゲーション部分のみ) — 実機
     nav2_real = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(NAV2_DIR, 'launch', 'navigation_launch.py')),
+            os.path.join(BRINGUP_DIR, 'launch', 'navigation_launch.py')),
         launch_arguments={
             'use_sim_time': 'False',
             'params_file':  nav2_params_real,
@@ -575,6 +693,10 @@ def generate_launch_description():
             sim_time_action,
             LogInfo(msg=['[th_bringup] sim=', sim, ' slam=', slam,
                          ' scenario=', LaunchConfiguration('scenario')]),
+
+            # パラメータ生成 (WP-PARAM-02)。ノードを1つも起動する前に
+            # 同期生成する (G-1)。scenario_action / common_nodes より前に置く。
+            params_generation_action,
 
             # シナリオ依存アクション
             # (Gazebo/スポーン/中継/人物移動/障害物/SLAM/Localization/追従プランナ)

@@ -1,0 +1,4 @@
+connectivity_checker:
+  ros__parameters:
+    esp32_alive_timeout_ms: 3000
+    scan_expected_points: 1080

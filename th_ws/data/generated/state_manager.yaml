@@ -1,0 +1,5 @@
+state_manager:
+  ros__parameters:
+    esp32_alive_timeout_ms: 3000
+    link_wait_timeout_ms: 10000
+    screen_stale_ms: 3000
