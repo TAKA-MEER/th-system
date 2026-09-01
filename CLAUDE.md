@@ -44,6 +44,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`launch_testing` を使うテスト（`generate_test_description()` を持つファイル）は、本体が `unittest.TestCase` なので pytest のフィクスチャを一切受け取れない。** `conftest.py` が提供する値（`fault_params` 等）が要るときは、同じ解決ロジックをモジュールレベルで呼ぶこと。CMake 側は `add_launch_test` ではなく `ament_add_pytest_test` でそのまま登録できる（`esp32_bridge_node` / `fault_injection_12` が実例）。pytest の表示は `collected 1 item` になるが、junit には `TestCase` のメソッド数だけ結果が出る。
 - `th_ws/esp32/.vscode/extensions.json` は **`.gitignore` に載っているのに tracked** という状態で、内容もモードも index と一致しているのに `git status` に `M` が出続けることがある（index の stat キャッシュが NTFS 時代の古いサイズを持っているため）。`git diff` が空なのに `M` が消えないときはこれ。`git add -f <path>` で解消でき、内容が同じなので差分はステージされない。
 - **ノードを `kill -9` で落とすことを繰り返すと、コンテナ内の DDS discovery が壊れる。** 症状は「ノードは起動しログも出ているのに、他プロセスからサービス/トピックが一切見つからない」。`ls /dev/shm | wc -l` で `fastrtps_*` の残骸が溜まっているか確認する（ROS プロセスが 0 なのに大量にあれば該当）。`/dev/shm` の掃除だけでは直らないことがあり、その場合はコンテナ再起動が必要。デバッグ用ノードは `kill -TERM` で落とすこと。
+- **`lidar_source:=network`（ラズパイ→ロボPC WiFi）では、`/scan` を既定 QoS（RELIABLE）で購読するとサンプルが 1 つも届かない。** `ros2 topic info /scan -v` では reader が match して見え、`ros2 topic hz /scan` も別プロセスからは 10Hz 出るのに、当該ノードのコールバックが一度も発火しない（RELIABLE の信頼配送ハンドシェイクが WiFi 越しに成立しないため）。センサストリームは必ず `qos_profile_sensor_data`（BEST_EFFORT）で購読する。`lidar_filter` がこれで `/scan_filtered` を無音にしていた（2026-09-01 修正）。`safety_monitor` / `obstacle_limiter` / `connectivity_checker` は元から BEST_EFFORT。
 
 ## 開発環境
 
