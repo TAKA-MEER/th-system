@@ -462,20 +462,23 @@ class SlamControl(Node):
 
         WS-8B (startup_mapping=true): 倒さず mapping モードのまま。教示・再生が
         map→odom の連続補正を必要とするため。ローカル状態は mapping 有効で始める。
+        この経路は async_slam_toolbox_node（set_localization_mode サービスを
+        持たない）で使うため、サービス待ちはしない。
         """
+        if self._startup_mapping:
+            self._set_active(True)
+            self.get_logger().info(
+                '初期状態: 地図作成 継続（WS-8B / startup_mapping=true。'
+                'mapping モード固定・切替サービスは使わない）')
+            self._slam_ready = self._cli_mode.service_is_ready()
+            return
+
         if not self._cli_mode.wait_for_service(
                 timeout_sec=STARTUP_SERVICE_TIMEOUT_SEC):
             self.get_logger().warn(
                 'slam_toolbox 未起動のため初期化をスキップします '
                 '(地図作成が停止されていない可能性があります。'
                 'WebUI から明示的に開始/停止し直してください)')
-            return
-
-        if self._startup_mapping:
-            self._set_active(True)
-            self.get_logger().info(
-                '初期状態: 地図作成 継続（WS-8B / startup_mapping=true）')
-            self._slam_ready = True
             return
 
         err = self._apply_mapping(False)

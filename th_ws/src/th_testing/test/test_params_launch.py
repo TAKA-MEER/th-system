@@ -110,11 +110,13 @@ def test_bringup_declares_enable_route_slam_arg():
     src = _read(BRINGUP_PY)
     assert "'enable_route_slam'" in src, (
         "bringup.launch.py に enable_route_slam 引数が無い（WS-8B）")
-    # slam_toolbox Node の executable 指定より後ろで enable_route_slam が
-    # PythonExpression 条件に入っていること（stage<3 でも起動できる）
-    after_exec = src.split("executable='map_and_localization_slam_toolbox_node'", 1)[1]
-    assert "enable_route_slam" in after_exec.split("))", 1)[0], (
-        "slam_toolbox の condition が enable_route_slam を見ていない（WS-8B）")
+    # 16a: async_slam_toolbox_node（実機で /map 生成実績あり）が
+    # enable_route_slam ゲートで起動すること。
+    after_exec = src.split("executable='async_slam_toolbox_node'", 1)
+    assert len(after_exec) == 2, (
+        "bringup.launch.py が async_slam_toolbox_node を使っていない（WS-8B 16a）")
+    assert "enable_route_slam" in after_exec[1].split("))", 1)[0], (
+        "async_slam_toolbox_node の condition が enable_route_slam を見ていない（WS-8B）")
 
 
 def _find_function(tree: ast.AST, name: str) -> ast.FunctionDef:
