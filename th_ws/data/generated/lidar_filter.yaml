@@ -1,2 +1,3 @@
 lidar_filter:
-  ros__parameters: {}
+  ros__parameters:
+    blind_calibrated: true

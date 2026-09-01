@@ -1,4 +1,10 @@
 connectivity_checker:
   ros__parameters:
     esp32_alive_timeout_ms: 3000
-    scan_expected_points: 1080
+    required_nodes:
+    - esp32_bridge
+    - lidar_filter
+    - safety_monitor
+    - twist_mux
+    - ekf_filter_node
+    scan_expected_points: 720

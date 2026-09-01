@@ -1,8 +1,17 @@
 venue_navigator:
   ros__parameters:
+    brake_accel_mps2: 1.18
     home_declare_tolerance_deg: 5.0
     home_declare_tolerance_m: 0.1
     nav_tolerance_deg: 5.0
     nav_tolerance_m: 0.1
+    obstacle_stop_distance_m:
+      v_calib: 0.33953389830508474
+      v_check: 0.3110593220338983
+      v_jog_panel: null
+      v_leash: 0.923728813559322
+      v_max: 1.0555254237288134
+      v_reverse: null
+      v_slow: null
     v_max: 1.1199999999999999
     w_max: 0.6

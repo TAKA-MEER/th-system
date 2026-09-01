@@ -8,6 +8,7 @@ params_audit:
     drivetrain_ceiling_mps: 1.4
     floor_margin_m: 0.15
     hysteresis_ratio: 0.2
+    intrusion_budget_m: 0.5
     nav_tolerance_deg: 5.0
     nav_tolerance_m: 0.1
     person_margin_m: 0.4

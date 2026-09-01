@@ -56,3 +56,6 @@ th_ws/data/**/*_tcpdump.txt
 
 # herdr 用の実装ブリーフ置き場（共有しない）
 .briefs/
+
+# 教示経路の記録（実行時に route_recorder が書く。機体・現場ごとの生成物）
+th_ws/data/routes/

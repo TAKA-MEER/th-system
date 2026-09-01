@@ -10,6 +10,10 @@ twist_mux:
         timeout: 0.5
         topic: /safety/fault_lock
     topics:
+      behavior:
+        priority: 20
+        timeout: 0.5
+        topic: /cmd_vel_behavior
       manual_joy:
         priority: 30
         timeout: 1.0
@@ -18,7 +22,3 @@ twist_mux:
         priority: 10
         timeout: 0.5
         topic: /cmd_vel_nav
-      retreat:
-        priority: 20
-        timeout: 0.5
-        topic: /cmd_vel_retreat

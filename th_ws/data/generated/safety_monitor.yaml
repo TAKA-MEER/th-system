@@ -1,0 +1,22 @@
+safety_monitor:
+  ros__parameters:
+    battery_critical_v: 22.4
+    battery_warn_v: 24.0
+    esp32_timeout_ms: 322
+    esp32_watchdog_ms: 600
+    estop_ui_lease_ms: 1500
+    intrusion_budget_m: 0.5
+    lidar_timeout_ms: 308
+    limiter_dead_ms: 250
+    link_gap_p99_ms:
+      esp32: 161
+      lidar: 154
+    link_quality_regression_ratio: 1.5
+    link_quality_window_sec: 30
+    lock_stale_ms: 500
+    mux_dead_ms: 500
+    runaway_hold_ms: 500
+    runaway_ratio: 1.5
+    runaway_zero_threshold: 0.02
+    state_stale_ms: 1500
+    ui_active_window_s: 30

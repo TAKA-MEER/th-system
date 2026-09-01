@@ -1,0 +1,8 @@
+web_ui:
+  ros__parameters:
+    battery_critical_v: 22.4
+    battery_warn_v: 24.0
+    estop_ui_repeat_hz: 5.0
+    speed_preset_high: 1.0
+    speed_preset_low: 0.3
+    speed_preset_mid: 0.6

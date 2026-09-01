@@ -1,3 +1,12 @@
 replay_runner:
   ros__parameters:
+    brake_accel_mps2: 1.18
+    obstacle_stop_distance_m:
+      v_calib: 0.33953389830508474
+      v_check: 0.3110593220338983
+      v_jog_panel: null
+      v_leash: 0.923728813559322
+      v_max: 1.0555254237288134
+      v_reverse: null
+      v_slow: null
     v_max: 1.1199999999999999
