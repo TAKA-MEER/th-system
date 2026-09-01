@@ -532,6 +532,7 @@ class StateManager(Node):
         msg.jog_active = self._jog_active
         msg.estop_ui = self._ui_estop
         msg.estop_hw = self._hw_estop
+        msg.estop_from_ui = self._estop_from_ui
         msg.tracker_enabled = self._flags["tracker_enabled"]
         msg.auto_brake = self._flags["auto_brake"]
         msg.working = self._flags["working"]

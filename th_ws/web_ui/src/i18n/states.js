@@ -79,6 +79,10 @@ export const WIN_ESTOP_TO_MENU = 'メインメニューへ'
 export const WIN_ESTOP_TITLE = '非常停止中'
 export const WIN_ESTOP_BODY = '非常停止ボタンが押されました。速度指令をゼロにしています。'
 export const WIN_ESTOP_HINT = '解除は画面下端の解除バーから。解除すると元のモードの再開を選べます。'
+// fault 起因の ESTOP（DRIVE_RUNAWAY 等）。「ボタンが押された」ではないので別文言（#1）。
+export const WIN_ESTOP_SYSTEM_TITLE = '安全のため停止しました'
+export const WIN_ESTOP_SYSTEM_BODY = '安全監視が異常を検知し、速度指令をゼロにしています。'
+export const WIN_ESTOP_SYSTEM_HINT = '原因が解消したら「確認」を押すとメインメニューに戻ります。'
 
 // W-1 generalized to fault-caused PAUSE, not just ESTOP (DetailedDesign-wp1.md
 // WP-UI-01 §11 "W-1 の一般化" -> WP-UI-02). The body text itself (cause and

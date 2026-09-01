@@ -42,6 +42,7 @@ import JogConsole from '../parts/JogConsole.jsx'
 import {
   WIN_HIDE_LABEL, WIN_RESUME_ACK, WIN_RESUME_YES, WIN_RESUME_NO,
   WIN_ESTOP_RESUME_PREV, WIN_ESTOP_TO_MENU,
+  WIN_ESTOP_SYSTEM_TITLE, WIN_ESTOP_SYSTEM_BODY, WIN_ESTOP_SYSTEM_HINT,
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
   WIN_CARRY_TITLE, WIN_CARRY_BODY, WIN_CARRY_HINT, WIN_CARRY_RELEASED,
   WIN_CARRY_RESUME, WIN_CARRY_DISMISS, WIN_CARRY_ESTOP_DISABLED,
@@ -65,7 +66,7 @@ const ESTOP_DISABLED_IN_CARRY = 'estop_disabled_in_carry'
 // control the same flag. It now doubles as "W-1 dismissed", covering both
 // the ESTOP and fault-caused-PAUSE cases below.
 export default function Windows({
-  ros, mode, stateName, prevMode, estopUi, estopHw, fault, attributes, onTrigger,
+  ros, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, attributes, onTrigger,
   estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose,
 }) {
@@ -98,13 +99,21 @@ export default function Windows({
   // resumeChoices(mode, ...) is correct for both: in the ESTOP case mode
   // literally is 'ESTOP'; in the fault-caused-PAUSE case mode never changed
   // from whatever it was (C-03's to_mode is '=').
-  const w1Resolved = w1Active && (w1IsEstop ? (!estopUi && !estopHw) : !faultActive)
+  // fault 起因の ESTOP は fault が消えるまで「確認」を出さない（押しても C-09f が
+  // fault_cleared_and_ui_released で弾くだけなので、押せる見た目にしない）。
+  const w1Resolved = w1Active && (w1IsEstop
+    ? (!estopUi && !estopHw && !faultActive)
+    : !faultActive)
 
   // 2026-09-01 (SM-3.1.1-11): UI ボタン起因の ESTOP は、重大フォルトが無く押下前が
   // 復帰可能なモードなら「元のモードに戻る／メインメニューへ」の 2 択を出す。
-  // 重大フォルト起因の ESTOP は従来どおり「確認」→ IDLE（SM-3.1.1-12）。
-  const estopCanResumePrev = w1IsEstop && !estopUi && !estopHw
-    && fault?.severity !== 'CRITICAL'
+  // fault 起因の ESTOP（estopFromUi=false。DRIVE_RUNAWAY 等。fault が消えても
+  // 起因は変わらない）は「確認」→ IDLE だけ（SM-3.1.1-12。C-09f）。
+  // estopFromUi は SystemState 由来。state_manager が「UI ボタンで入った ESTOP か」を
+  // ラッチしたもの（guards._estop_resume_prev と同じ値）。
+  const w1IsFaultEstop = w1IsEstop && !estopFromUi
+  const estopCanResumePrev = w1IsEstop && estopFromUi && !estopUi && !estopHw
+    && !faultActive && fault?.severity !== 'CRITICAL'
     && !_ESTOP_PREV_NONRESUMABLE.has(prevMode ?? '')
   const w1Resume = w1IsEstop
     ? (estopCanResumePrev ? 'yes_no' : 'ack_only')
@@ -125,10 +134,24 @@ export default function Windows({
 
         {w1Active && (
           <div className={`win fault ${w1Open ? 'show' : ''} ${w1Resolved ? 'resolved' : ''}`}>
-            <header>{w1IsEstop ? WIN_ESTOP_TITLE : WIN_FAULT_TITLE}</header>
+            <header>
+              {w1IsFaultEstop ? WIN_ESTOP_SYSTEM_TITLE
+                : w1IsEstop ? WIN_ESTOP_TITLE : WIN_FAULT_TITLE}
+            </header>
             <div className="bodyw">
-              <p>{w1IsEstop ? WIN_ESTOP_BODY : faultLabel(fault?.fault_type)}</p>
-              {!w1Resolved && <p className="hint mt">{w1IsEstop ? WIN_ESTOP_HINT : WIN_FAULT_HINT}</p>}
+              <p>
+                {w1IsFaultEstop ? WIN_ESTOP_SYSTEM_BODY
+                  : w1IsEstop ? WIN_ESTOP_BODY : faultLabel(fault?.fault_type)}
+              </p>
+              {w1IsFaultEstop && fault?.fault_type && (
+                <p className="hint mt">{faultLabel(fault.fault_type)}</p>
+              )}
+              {!w1Resolved && (
+                <p className="hint mt">
+                  {w1IsFaultEstop ? WIN_ESTOP_SYSTEM_HINT
+                    : w1IsEstop ? WIN_ESTOP_HINT : WIN_FAULT_HINT}
+                </p>
+              )}
             </div>
             <footer>
               {w1Resolved && w1Resume === 'ack_only' && (

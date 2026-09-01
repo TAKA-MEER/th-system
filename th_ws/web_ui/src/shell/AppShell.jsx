@@ -169,6 +169,7 @@ function AppShellInner({ screenName, screenId, children }) {
         prevMode={state?.prev_mode ?? null}
         estopUi={estopUi}
         estopHw={estopHw}
+        estopFromUi={!!state?.estop_from_ui}
         fault={fault}
         attributes={attributes}
         onTrigger={sendTrigger}

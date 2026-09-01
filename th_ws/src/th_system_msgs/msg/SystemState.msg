@@ -9,6 +9,7 @@ string zone               # "IN" / "OUT" / "NA"
 bool jog_active           # 手動ジョグ介入中 (リース式)
 bool estop_ui             # WebUI の非常停止が押されている
 bool estop_hw             # 物理非常停止が押されている
+bool estop_from_ui        # 現在の ESTOP が UI ボタン起因か (重大フォルト起因と区別。SM-3.1.1-11)
 bool tracker_enabled      # 人物追跡が動いている
 bool auto_brake           # 自動ブレーキが有効
 bool working              # 盤前の「作業中」ボタンが ON
