@@ -131,7 +131,13 @@ class SlamControl(Node):
         super().__init__('slam_control')
         self._mode = RobotMode.IDLE
         self._executor = None   # main() で MultiThreadedExecutor を渡す
-        self._mapping_active = False   # 起動直後は停止状態から始める
+        # WS-8B: enable_route_slam のとき true。起動時に localization へ倒さず
+        # slam_toolbox を既定の mapping モードのまま走らせる（教示・再生で
+        # map→odom を連続補正するため）。
+        self.declare_parameter('startup_mapping', False)
+        self._startup_mapping = bool(
+            self.get_parameter('startup_mapping').value)
+        self._mapping_active = self._startup_mapping   # 起動直後の状態
         # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
         # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
         self._slam_ready = None
@@ -447,11 +453,15 @@ class SlamControl(Node):
 
     # ── 起動時の初期化 ──────────────────────────────────────
     def _startup(self):
-        """localization モード（=地図作成停止）へ倒す。
+        """起動時の初期モードを確定させる。
 
+        既定 (startup_mapping=false): localization モード（=地図作成停止）へ倒す。
         slam_toolbox は起動直後 mapping モードで立ち上がるため、ここで倒さないと
         「停止中」と表示したまま地図が更新され続ける。VISION.md §8 の
         「起動直後は地図作成を停止した状態にする」を満たすための処理。
+
+        WS-8B (startup_mapping=true): 倒さず mapping モードのまま。教示・再生が
+        map→odom の連続補正を必要とするため。ローカル状態は mapping 有効で始める。
         """
         if not self._cli_mode.wait_for_service(
                 timeout_sec=STARTUP_SERVICE_TIMEOUT_SEC):
@@ -459,6 +469,13 @@ class SlamControl(Node):
                 'slam_toolbox 未起動のため初期化をスキップします '
                 '(地図作成が停止されていない可能性があります。'
                 'WebUI から明示的に開始/停止し直してください)')
+            return
+
+        if self._startup_mapping:
+            self._set_active(True)
+            self.get_logger().info(
+                '初期状態: 地図作成 継続（WS-8B / startup_mapping=true）')
+            self._slam_ready = True
             return
 
         err = self._apply_mapping(False)

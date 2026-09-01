@@ -104,6 +104,19 @@ def test_bringup_safety_targets_omit_runaway_while_w06_open():
         "bringup.launch.py に W-06 の WAIVER タグが無い")
 
 
+def test_bringup_declares_enable_route_slam_arg():
+    """WS-8B: 教示・再生の地図フレーム追従のため、stage<3 でも slam_toolbox を
+    起動できる `enable_route_slam` 引数が bringup.launch.py にあること。"""
+    src = _read(BRINGUP_PY)
+    assert "'enable_route_slam'" in src, (
+        "bringup.launch.py に enable_route_slam 引数が無い（WS-8B）")
+    # slam_toolbox Node の executable 指定より後ろで enable_route_slam が
+    # PythonExpression 条件に入っていること（stage<3 でも起動できる）
+    after_exec = src.split("executable='map_and_localization_slam_toolbox_node'", 1)[1]
+    assert "enable_route_slam" in after_exec.split("))", 1)[0], (
+        "slam_toolbox の condition が enable_route_slam を見ていない（WS-8B）")
+
+
 def _find_function(tree: ast.AST, name: str) -> ast.FunctionDef:
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == name:

@@ -58,6 +58,12 @@ def generate_launch_description():
         DeclareLaunchArgument('stage', default_value='1',
                               description='params_generation.py が registry.yaml を'
                                           '解決するステージ番号 (WP-PARAM-02)'),
+        # WS-8B（教示・再生の地図フレーム追従）: stage<3 でも slam_toolbox を
+        # mapping モードで起動し、教示中も再生中も map→odom を連続補正する。
+        # Nav2 planner/controller は起動しない（stage ゲート据え置き＝N-27 回避）。
+        DeclareLaunchArgument('enable_route_slam', default_value='false',
+                              description='教示・再生用に slam_toolbox を mapping '
+                                          'モードで起動する (WS-8B。stage<3 でも可)'),
     ]
 
     use_stub     = LaunchConfiguration('use_stub')
@@ -65,6 +71,7 @@ def generate_launch_description():
     map_yaml     = LaunchConfiguration('map_yaml')
     lidar_source = LaunchConfiguration('lidar_source')
     stage        = LaunchConfiguration('stage')
+    enable_route_slam = LaunchConfiguration('enable_route_slam')
     lidar_is_local = PythonExpression(["'", lidar_source, "' == 'local'"])
 
     # ── 段階で重いスタックを出し分ける（N-27 の対処 (a)） ──────────
@@ -108,8 +115,10 @@ def generate_launch_description():
     # その場で分かるようにする（N-27 の対処 (a) を入れた副作用で
     # 「Nav2 が上がらない」を不具合と誤認するのを防ぐ）。
     nodes.append(LogInfo(msg=PythonExpression([
-        "'stage=", stage, ": Nav2/SLAM=' + ('起動' if int('", stage,
-        "') >= 3 else '省略(段階3から)') + ' / 人物検知=' + "
+        "'stage=", stage, ": Nav2=' + ('起動' if int('", stage,
+        "') >= 3 else '省略(段階3から)') + ' / SLAM=' + "
+        "('起動' if (int('", stage, "') >= 3 or '", enable_route_slam,
+        "'.lower() in ('true','1')) else '省略') + ' / 人物検知=' + "
         "('起動' if int('", stage, "') >= 4 else '省略(段階4から)')"])))
 
     # ── 1. robot_state_publisher / joint_state_publisher (URDF → TF) ─
@@ -456,10 +465,19 @@ def generate_launch_description():
     ))
 
     # ── 13c. slam_control (WebUI: 地図作成 開始/停止の仲介) ────
+    # WS-8B: enable_route_slam のときは起動時に localization モードへ倒さず、
+    # slam_toolbox を既定の mapping モードのまま走らせる（教示・再生で map→odom を
+    # 連続補正するため）。
     nodes.append(Node(
         package='th_config_manager',
         executable='slam_control.py',
         name='slam_control',
+        parameters=[{
+            'startup_mapping': ParameterValue(
+                PythonExpression(
+                    ["'", enable_route_slam, "'.lower() in ('true', '1')"]),
+                value_type=bool),
+        }],
         output='screen',
     ))
 
@@ -528,9 +546,11 @@ def generate_launch_description():
         output='screen',
         respawn=True,
         respawn_delay=2.0,
-        # 段階 3 以上 かつ map_yaml が空のときだけ（N-27 の対処 (a)）。
+        # map_yaml が空（AMCL 経路と排他）かつ、段階 3 以上（N-27 の対処 (a)）
+        # または enable_route_slam（WS-8B: 教示・再生の地図フレーム追従）。
         condition=IfCondition(PythonExpression(
-            ["'", map_yaml, "' == '' and int('", stage, "') >= 3"])),
+            ["'", map_yaml, "' == '' and (int('", stage,
+             "') >= 3 or '", enable_route_slam, "'.lower() in ('true', '1'))"])),
     ))
 
     # ── 17. AMCL + map_server (map_yaml 指定時のみ。UI には出さない休眠経路) ──

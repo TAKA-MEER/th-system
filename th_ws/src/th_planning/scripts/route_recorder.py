@@ -15,9 +15,13 @@ import os
 import time
 
 import rclpy
+import rclpy.time
+from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
+
+import tf2_ros
 
 from builtin_interfaces.msg import Time as TimeMsg
 from geometry_msgs.msg import PoseStamped
@@ -65,9 +69,15 @@ class RouteRecorder(Node):
         self.declare_parameter('sample_min_dist_m', 0.10)
         self.declare_parameter('sample_min_yaw_rad', 0.20)
         self.declare_parameter('status_period_ms', 500)
+        # WS-8B: slam_toolbox が map→base_link を出しているときは map フレームで
+        # 記録する（走行中もドリフト補正済み）。出ていなければ従来どおり /odom。
+        self.declare_parameter('map_frame', 'map')
+        self.declare_parameter('base_frame', 'base_link')
         self._routes_dir = self.get_parameter('routes_dir').value
         sample_ms = self.get_parameter('sample_period_ms').value
         status_ms = self.get_parameter('status_period_ms').value
+        self._map_frame = self.get_parameter('map_frame').value
+        self._base_frame = self.get_parameter('base_frame').value
 
         # ── 状態 ────────────────────────────────────────────
         self._recorder: RouteRecorderCore | None = None
@@ -75,8 +85,12 @@ class RouteRecorder(Node):
         self._name: str = ""
         self._rec_started_ms: int = 0
         self._pose: tuple[float, float, float] | None = None
+        self._frame_id: str = 'odom'   # 記録中の経路フレーム（start_record で確定）
         self._mode: str = ""
         self._state: str = ""
+
+        self._tf_buffer = tf2_ros.Buffer()
+        self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
         # ── Subscribers ────────────────────────────────────
         effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
@@ -102,6 +116,10 @@ class RouteRecorder(Node):
                                 history=QoSHistoryPolicy.KEEP_LAST)
         self._pub_status = self.create_publisher(RouteStatus, '/route/status', status_qos)
         self._pub_preview = self.create_publisher(Path, '/route/preview', status_qos)
+        # WS-8B: WebUI が地図上にロボットを描くための pose（map or odom フレーム）。
+        # rosbridge から TF ルックアップは扱いにくいのでノード側で解決して publish する。
+        self._pub_robot_pose = self.create_publisher(
+            PoseStamped, '/route/robot_pose', status_qos)
 
         # ── Timers ─────────────────────────────────────────
         self.create_timer(sample_ms / 1000.0, self._sample_timer)
@@ -112,6 +130,36 @@ class RouteRecorder(Node):
 
         self.get_logger().info(
             f'route_recorder 起動 (routes_dir={self._routes_dir})')
+
+    # ── フレーム解決 ──────────────────────────────────────
+    def _map_pose(self):
+        """map→base_link TF から (x, y, yaw) を返す。取れなければ None。"""
+        try:
+            tf = self._tf_buffer.lookup_transform(
+                self._map_frame, self._base_frame, rclpy.time.Time(),
+                timeout=Duration(seconds=0.05))
+        except Exception:
+            return None
+        t = tf.transform.translation
+        return (t.x, t.y, _yaw_from_quat(tf.transform.rotation))
+
+    def _publish_robot_pose(self):
+        """WebUI 用に現在ロボット pose を map（あれば）or odom フレームで publish。"""
+        mp = self._map_pose()
+        if mp is not None:
+            (x, y, yaw), frame = mp, self._map_frame
+        elif self._pose is not None:
+            (x, y, yaw), frame = self._pose, 'odom'
+        else:
+            return
+        ps = PoseStamped()
+        ps.header.stamp = self.get_clock().now().to_msg()
+        ps.header.frame_id = frame
+        ps.pose.position.x = float(x)
+        ps.pose.position.y = float(y)
+        ps.pose.orientation.z = math.sin(yaw / 2.0)
+        ps.pose.orientation.w = math.cos(yaw / 2.0)
+        self._pub_robot_pose.publish(ps)
 
     # ── 購読コールバック ──────────────────────────────────
     def _on_effect(self, msg: StateEffect):
@@ -127,13 +175,22 @@ class RouteRecorder(Node):
                 sample_min_dist_m=self.get_parameter('sample_min_dist_m').value,
                 sample_min_yaw_rad=self.get_parameter('sample_min_yaw_rad').value)
             self._recorder = RouteRecorderCore(params)
-            if self._pose is None:
+            # WS-8B: 記録開始時に map TF があれば経路全体を map フレームで記録する。
+            # 無ければ従来どおり /odom。フレームは記録中ずっと固定（混ぜない）。
+            mp = self._map_pose()
+            if mp is not None:
+                self._frame_id = self._map_frame
+                self._recorder.start(*mp)
+            elif self._pose is not None:
+                self._frame_id = 'odom'
+                self._recorder.start(*self._pose)
+            else:
+                self._frame_id = 'odom'
                 self.get_logger().warn('odom 未受信のため (0,0,0) で記録開始')
                 self._recorder.start(0.0, 0.0, 0.0)
-            else:
-                self._recorder.start(*self._pose)
             self._rec_started_ms = self._now_ms()
-            self.get_logger().info(f'記録開始: route_id={self._route_id}')
+            self.get_logger().info(
+                f'記録開始: route_id={self._route_id} frame={self._frame_id}')
         elif name == 'resume_record':
             if self._recorder is None:
                 self.get_logger().warn('resume_record を受けたが記録中でない（無視）')
@@ -144,7 +201,8 @@ class RouteRecorder(Node):
                 self.get_logger().warn('finalize_route を受けたが記録中でない（無視）')
                 return
             route = self._recorder.finalize(
-                self._route_id, self._name, self._now_ms(), frame_id='odom')
+                self._route_id, self._name, self._now_ms(),
+                frame_id=self._frame_id)
             # WAIVER(demo): W-04 — 同じ id は上書き。新版として旧版を残す世代管理はしない
             path = os.path.join(self._routes_dir, f'{self._route_id}.json')
             os.makedirs(self._routes_dir, exist_ok=True)
@@ -168,12 +226,20 @@ class RouteRecorder(Node):
 
     # ── タイマ ────────────────────────────────────────────
     def _sample_timer(self):
+        # 記録有無に関わらず WebUI 用のロボット pose を出す。
+        self._publish_robot_pose()
         # PAUSE 中は積まない。REC の間だけ姿勢を間引いて記録する。
         if self._recorder is None or self._state != 'REC':
             return
-        if self._pose is None:
+        # 記録フレームに合わせて pose を取る。map フレーム記録中に TF が
+        # 一時的に切れたらそのサンプルは飛ばす（フレームを混ぜない）。
+        if self._frame_id == self._map_frame:
+            pose = self._map_pose()
+        else:
+            pose = self._pose
+        if pose is None:
             return
-        self._recorder.add_pose(*self._pose)
+        self._recorder.add_pose(*pose)
 
     def _status_timer(self):
         msg = RouteStatus()
@@ -194,9 +260,10 @@ class RouteRecorder(Node):
             preview_points = self._recorder.points
         self._pub_status.publish(msg)
         # #4: 記録中だけ /route/preview を出す（空 Path を出すと再生側と交互配信になり
-        # WebUI のプレビューが点滅する）。
+        # WebUI のプレビューが点滅する）。フレームは記録中の経路フレーム。
         if self._recorder is not None and preview_points:
-            self._pub_preview.publish(_points_to_path(preview_points, stamp=stamp))
+            self._pub_preview.publish(_points_to_path(
+                preview_points, frame_id=self._frame_id, stamp=stamp))
 
     # ── 経路一覧 publish ──────────────────────────────────
     def _publish_routes_list(self):

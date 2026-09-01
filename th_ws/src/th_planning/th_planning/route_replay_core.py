@@ -197,7 +197,9 @@ def pure_pursuit(
         return ReplayCommand(0.0, 0.0, last_index, True)
 
     # 3. pure-pursuit
-    # WAIVER(demo): W-02 走行中の自己位置補正なし（オドメトリ＋ジャイロの /odom だけで辿る）
+    # WAIVER(demo): W-02（縮小）— この純コアは pose の出どころを問わない。
+    # replay_runner が map フレーム経路なら slam_toolbox の map→base_link を、
+    # odom フォールバックなら /odom を渡す（前者は走行中も連続補正あり）。
     bearing = math.atan2(ty - ry, tx - rx)
     alpha = normalize_angle(bearing - ryaw)
     w = 2.0 * params.cruise_speed_mps * math.sin(alpha) / params.lookahead_m
