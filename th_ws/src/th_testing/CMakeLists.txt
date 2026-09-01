@@ -27,6 +27,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_yaml_writer
     test/test_yaml_writer.py
     TIMEOUT 60)
+  ament_add_pytest_test(test_route_record_core
+    test/test_route_record_core.py
+    TIMEOUT 30)
+  ament_add_pytest_test(test_route_replay_core
+    test/test_route_replay_core.py
+    TIMEOUT 30)
   # 角度 → LaserScan 添字の変換規約（WP-CALIB-01a。DetailedDesign-wp2.md
   # WP-CALIB-01 §7。登録名は設計書どおり scan_geometry）
   ament_add_pytest_test(scan_geometry
