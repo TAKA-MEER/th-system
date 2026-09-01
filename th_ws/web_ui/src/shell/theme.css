@@ -191,6 +191,13 @@ table{border-collapse:collapse;width:100%}
    縦横比を保ってフィットし、CSS はウィンドウ幅に合わせて等比拡縮する。 */
 .route-preview{display:block;width:100%;height:auto;background:var(--inset);
   border:1px solid var(--bd);border-radius:var(--r)}
+/* WS-4 / demo-teach-replay: 走行スティック下のキーボード操作の凡例。
+   押下中（kbd.held）は keys を強調表示する（任意実装）。 */
+.kbdHint{display:flex;gap:6px;justify-content:center;align-items:center;
+  font-size:calc(var(--fs) * .6);color:var(--mut);margin-top:8px;line-height:1.5}
+.kbdHint .kbdKeys{padding:1px 8px;border:1px solid var(--bd);border-radius:8px;
+  background:var(--inset);letter-spacing:.05em;color:var(--txt)}
+.kbdHint.on .kbdKeys{background:var(--acc);color:#fff;border-color:var(--acc)}
 .well{background:var(--inset);border:1px solid var(--bd);border-radius:var(--r);padding:10px}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .grow{flex:1 1 auto}

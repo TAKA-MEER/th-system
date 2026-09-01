@@ -201,3 +201,8 @@ export const S14_POINTS = '点数'
 // ---------------------------------------------------------------- 経路プレビュー（WS-3） ----
 // src/screens/RoutePreview.jsx の表示文字列。
 export const ROUTE_PREVIEW_EMPTY = '経路がありません'
+
+// ---------------------------------------------------------------- キーボード操作（WS-4） ----
+// parts/JogConsole.jsx の操作キー凡例。押下中のキーは .kbdHint.on でハイライト。
+export const KBD_HINT_KEYS = 'W/A/S/D または矢印キー'
+export const KBD_HINT = 'で走行'

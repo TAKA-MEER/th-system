@@ -27,7 +27,9 @@ export default function DriveTab({ kind }) {
         // this empty (c3) -- the follow screen body is a later packet.
         <div className="radarWrap" data-testid="drive-radar-slot" aria-label={FOLLOW_RADAR_SLOT} />
       )}
-      <JogConsole ros={ros} disabled={stale} />
+      {/* keyboard は常設走行タブ側だけ true（W-6 の JogConsole は false のまま。
+          window の keydown が両方に届くので二重指令になる。WS-4）。 */}
+      <JogConsole ros={ros} disabled={stale} keyboard />
     </div>
   )
 }
