@@ -357,6 +357,13 @@ table.lst td.r{text-align:right}
    the mockup drew with inline SVG attributes but the React component renders
    via classes. Values kept identical so the layout spec's measured sizing
    (DetailedDesign-webui.md §1: don't rewrite the CSS) transfers unchanged. */
+/* WS-5 / demo-teach-replay: 走行画面ではスティックのカードをヘッダ（非常停止ボタン）
+   から離す。手動走行中にスティックへ手を伸ばすと画面上端の非常停止に当たりやすい、
+   という実機フィードバックへの緩和。操作カードは動かさない（.card.ops は据え置き）。 */
+.screen#s11 > div:last-child > .card:not(.ops),
+.screen#s13 > div:last-child > .card:not(.ops),
+.screen#s14 > div:last-child > .card:not(.ops){margin-top:clamp(16px, 6vh, 64px)}
+
 .stickBox{display:flex;gap:10px;align-items:stretch}
 .stick{flex:1 1 auto;position:relative;background:var(--inset);border:1px solid var(--bd);border-radius:var(--r);
   touch-action:none;user-select:none;overflow:hidden}
