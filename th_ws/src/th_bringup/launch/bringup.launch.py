@@ -440,11 +440,18 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # WS-8B: enable_route_slam のときだけ教示・再生を map フレーム追従にする
+    # （TF リスナ・/route/robot_pose もこのときだけ有効。通常起動では挙動不変）。
+    use_map_frame = ParameterValue(
+        PythonExpression(["'", enable_route_slam, "'.lower() in ('true', '1')"]),
+        value_type=bool)
+
     # ── 13a. route_recorder（教示経路の記録。WP-TRANSIT / demo-teach-replay）──
     nodes.append(Node(
         package='th_planning',
         executable='route_recorder.py',
         name='route_recorder',
+        parameters=[{'use_map_frame': use_map_frame}],
         output='screen',
     ))
 
@@ -453,6 +460,7 @@ def generate_launch_description():
         package='th_planning',
         executable='replay_runner.py',
         name='replay_runner',
+        parameters=[{'use_map_frame': use_map_frame}],
         output='screen',
     ))
 

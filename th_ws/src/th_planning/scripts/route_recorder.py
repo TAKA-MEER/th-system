@@ -16,7 +16,6 @@ import time
 
 import rclpy
 import rclpy.time
-from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
@@ -69,13 +68,17 @@ class RouteRecorder(Node):
         self.declare_parameter('sample_min_dist_m', 0.10)
         self.declare_parameter('sample_min_yaw_rad', 0.20)
         self.declare_parameter('status_period_ms', 500)
-        # WS-8B: slam_toolbox が map→base_link を出しているときは map フレームで
-        # 記録する（走行中もドリフト補正済み）。出ていなければ従来どおり /odom。
+        # WS-8B: use_map_frame（launch が enable_route_slam のとき true）でだけ
+        # slam_toolbox の map→base_link を使って map フレームで記録する。
+        # 既定 false ＝ 従来どおり /odom のみ・TF リスナも作らない（通常起動で
+        # 挙動を一切変えない）。
+        self.declare_parameter('use_map_frame', False)
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
         self._routes_dir = self.get_parameter('routes_dir').value
         sample_ms = self.get_parameter('sample_period_ms').value
         status_ms = self.get_parameter('status_period_ms').value
+        self._use_map_frame = bool(self.get_parameter('use_map_frame').value)
         self._map_frame = self.get_parameter('map_frame').value
         self._base_frame = self.get_parameter('base_frame').value
 
@@ -89,8 +92,11 @@ class RouteRecorder(Node):
         self._mode: str = ""
         self._state: str = ""
 
-        self._tf_buffer = tf2_ros.Buffer()
-        self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
+        self._tf_buffer = None
+        self._tf_listener = None
+        if self._use_map_frame:
+            self._tf_buffer = tf2_ros.Buffer()
+            self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
         # ── Subscribers ────────────────────────────────────
         effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
@@ -133,11 +139,17 @@ class RouteRecorder(Node):
 
     # ── フレーム解決 ──────────────────────────────────────
     def _map_pose(self):
-        """map→base_link TF から (x, y, yaw) を返す。取れなければ None。"""
+        """map→base_link TF から (x, y, yaw) を返す。取れなければ None。
+
+        **非ブロッキング**。timeout を渡すと単一スレッド executor 上で TF 到着
+        コールバックが動けず必ずタイムアウトまで固まる（10Hz で呼ぶとノードが
+        半分止まる）。バッファに既にあるものだけ読む。
+        """
+        if self._tf_buffer is None:
+            return None
         try:
             tf = self._tf_buffer.lookup_transform(
-                self._map_frame, self._base_frame, rclpy.time.Time(),
-                timeout=Duration(seconds=0.05))
+                self._map_frame, self._base_frame, rclpy.time.Time())
         except Exception:
             return None
         t = tf.transform.translation
@@ -145,6 +157,8 @@ class RouteRecorder(Node):
 
     def _publish_robot_pose(self):
         """WebUI 用に現在ロボット pose を map（あれば）or odom フレームで publish。"""
+        if not self._use_map_frame:
+            return
         mp = self._map_pose()
         if mp is not None:
             (x, y, yaw), frame = mp, self._map_frame
@@ -226,8 +240,6 @@ class RouteRecorder(Node):
 
     # ── タイマ ────────────────────────────────────────────
     def _sample_timer(self):
-        # 記録有無に関わらず WebUI 用のロボット pose を出す。
-        self._publish_robot_pose()
         # PAUSE 中は積まない。REC の間だけ姿勢を間引いて記録する。
         if self._recorder is None or self._state != 'REC':
             return
@@ -242,6 +254,8 @@ class RouteRecorder(Node):
         self._recorder.add_pose(*pose)
 
     def _status_timer(self):
+        # WebUI 用のロボット pose（map or odom）。2Hz で十分。
+        self._publish_robot_pose()
         msg = RouteStatus()
         stamp = self.get_clock().now().to_msg()
         msg.header.stamp = stamp

@@ -22,7 +22,6 @@ import os
 
 import rclpy
 import rclpy.time
-from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
@@ -81,11 +80,14 @@ class ReplayRunner(Node):
         self.declare_parameter('yaw_tol_rad', 0.10)
         self.declare_parameter('linear_accel_mps2', 0.5)
         self.declare_parameter('angular_accel_rps2', 1.5)
-        # WS-8B: 経路が map フレームなら map→base_link TF でロボット pose を取り、
-        # slam_toolbox の連続補正を効かせる。odom 経路は従来どおり /odom。
+        # WS-8B: use_map_frame（launch が enable_route_slam のとき true）でだけ
+        # map→base_link TF を使う。既定 false ＝ 従来どおり /odom のみ・TF リスナも
+        # 作らない（通常起動で挙動を一切変えない）。
+        self.declare_parameter('use_map_frame', False)
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('localize_wait_s', 5.0)
+        self._use_map_frame = bool(self.get_parameter('use_map_frame').value)
         self._map_frame = self.get_parameter('map_frame').value
         self._base_frame = self.get_parameter('base_frame').value
         self._localize_wait_s = float(self.get_parameter('localize_wait_s').value)
@@ -123,8 +125,11 @@ class ReplayRunner(Node):
         self._mode = ""
         self._state = ""
 
-        self._tf_buffer = tf2_ros.Buffer()
-        self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
+        self._tf_buffer = None
+        self._tf_listener = None
+        if self._use_map_frame:
+            self._tf_buffer = tf2_ros.Buffer()
+            self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
         # ── Subscribers ────────────────────────────────────
         effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
@@ -175,13 +180,17 @@ class ReplayRunner(Node):
             except Exception as e:
                 self.get_logger().error(f'経路を読み込めない: {path}: {e}')
                 return
-            self._route_frame = self._route.frame_id or 'odom'
+            # use_map_frame オフ（通常起動）なら map フレーム経路も odom 扱いにし、
+            # 従来どおり align_path_to_current で現在地を始点とみなす。
+            file_frame = self._route.frame_id or 'odom'
+            map_route = self._use_map_frame and file_frame == self._map_frame
+            self._route_frame = self._map_frame if map_route else 'odom'
             pts = list(self._route.points)
             if reverse:
                 pts = reverse_points(pts)
             rec_start_yaw = pts[0][2] if reverse else self._route.start_yaw
             aligned = False
-            if self._route_frame == self._map_frame:
+            if map_route:
                 # WS-8B: 経路が map フレーム。slam_toolbox が同じ map を再構築して
                 # おり、始点マーク運用なら記録座標がそのまま有効 → 剛体変換しない。
                 pass
@@ -198,7 +207,7 @@ class ReplayRunner(Node):
             self._need_rotate = False
             self._rotated = False
             self._arrived_sent = False
-            if self._route_frame == self._map_frame:
+            if map_route:
                 # map TF が来るまで（最大 localize_wait_s）待って evt.localize_done。
                 # これで LOCALIZE 状態が「数秒の実待ち」になる。
                 self._localize_pending = True
@@ -239,11 +248,16 @@ class ReplayRunner(Node):
 
     # ── フレーム解決 ──────────────────────────────────────
     def _map_pose(self):
-        """map→base_link TF から (x, y, yaw) を返す。取れなければ None。"""
+        """map→base_link TF から (x, y, yaw) を返す。取れなければ None。
+
+        **非ブロッキング**。timeout を渡すと単一スレッド executor 上で TF 到着
+        コールバックが動けず必ずタイムアウトまで固まる。バッファにあるものだけ読む。
+        """
+        if self._tf_buffer is None:
+            return None
         try:
             tf = self._tf_buffer.lookup_transform(
-                self._map_frame, self._base_frame, rclpy.time.Time(),
-                timeout=Duration(seconds=0.05))
+                self._map_frame, self._base_frame, rclpy.time.Time())
         except Exception:
             return None
         t = tf.transform.translation
@@ -251,11 +265,13 @@ class ReplayRunner(Node):
 
     def _get_pose(self):
         """追従に使うロボット pose を経路フレームで返す。取れなければ None。"""
-        if self._route_frame == self._map_frame:
+        if self._use_map_frame and self._route_frame == self._map_frame:
             return self._map_pose()
         return self._pose
 
     def _publish_robot_pose(self):
+        if not self._use_map_frame:
+            return
         mp = self._map_pose()
         if mp is not None:
             (x, y, yaw), frame = mp, self._map_frame
