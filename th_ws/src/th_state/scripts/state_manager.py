@@ -30,7 +30,8 @@ from builtin_interfaces.msg import Time as TimeMsg
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
-from th_system_msgs.msg import ActiveScreen, FaultStatus, StateEvent, SystemState
+from th_system_msgs.msg import (ActiveScreen, FaultStatus, RouteList, StateEffect,
+                                StateEvent, SystemState)
 from th_system_msgs.srv import SetFlag, UiTrigger
 
 from th_state import guards as guards_module
@@ -164,6 +165,7 @@ class StateManager(Node):
         self._unsaved = []          # このパケットでは常に空（記録系ノードは未実装）
         self._last_event = ""
         self._last_reject_reason = ""
+        self._route_ids = []          # /routes/list から。既存経路の選択ガード用（P2）
 
         now = self._now_ms()
         self._boot_ms = now
@@ -204,6 +206,17 @@ class StateManager(Node):
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             history=QoSHistoryPolicy.KEEP_LAST)
         self._pub_state = self.create_publisher(SystemState, '/system/state', state_qos)
+
+        # P2: effect の外部配送。self effect 以外をここに publish する。
+        effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
+                                history=QoSHistoryPolicy.KEEP_LAST)
+        self._pub_effect = self.create_publisher(StateEffect, '/system/effect', effect_qos)
+
+        # P2: 記録済み経路の一覧。route_recorder が latched で publish する。
+        routes_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+                                durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                                history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(RouteList, '/routes/list', self._on_routes_list, routes_qos)
 
         event_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
         self.create_subscription(StateEvent, '/system/event', self._on_event, event_qos)
@@ -261,7 +274,7 @@ class StateManager(Node):
             fault_type=self._fault_type,
             hw_estop=self._hw_estop,
             ui_estop=self._ui_estop,
-            route_ids=(),
+            route_ids=tuple(self._route_ids),
             pin_kinds=(),
             leash_present=False,
             leash_taut=False,
@@ -306,10 +319,16 @@ class StateManager(Node):
             if handler is not None:
                 handler(eff.args, requester)
                 continue
-            dest = _EFFECT_DESTINATIONS.get(eff.name, "不明")
+            dest = _EFFECT_DESTINATIONS.get(eff.name, "unknown")
+            # P2: self effect 以外は /system/effect に流す（宛先ノードが購読して実行する）。
+            out = StateEffect()
+            out.header.stamp = self.get_clock().now().to_msg()
+            out.name = eff.name
+            out.dest = dest
+            out.args_json = json.dumps(eff.args or {})
+            self._pub_effect.publish(out)
             self.get_logger().info(
-                f"effect '{eff.name}' args={eff.args} -> 宛先 '{dest}' は未実装のため "
-                "配送せず捨てる（DetailedDesign-wp1.md WP-STATE-02 §11 既知の負債）")
+                f"effect '{eff.name}' args={eff.args} -> 宛先 '{dest}' に /system/effect で配送")
 
     # --- self effects（th_state 自身が処理する。state.md §3.3） ---
     def _eff_set_jog(self, args, requester):
@@ -393,6 +412,9 @@ class StateManager(Node):
             interacting=msg.interacting,
             last_input_ms=_stamp_to_ms(msg.last_input))
         self._last_screen_msg_ms = self._now_ms()
+
+    def _on_routes_list(self, msg):
+        self._route_ids = [r.id for r in msg.routes]
 
     # ------------------------------------------------------------
     # /safety/* の購読 → fault.* / hw.* / ui.estop.* の内部生成

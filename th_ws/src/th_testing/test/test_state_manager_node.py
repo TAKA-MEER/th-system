@@ -32,7 +32,8 @@ from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                         QoSReliabilityPolicy)
 
 from std_msgs.msg import Bool, String
-from th_system_msgs.msg import ActiveScreen, FaultStatus, StateEvent, SystemState
+from th_system_msgs.msg import (ActiveScreen, FaultStatus, RouteInfo, RouteList,
+                                StateEffect, StateEvent, SystemState)
 from th_system_msgs.srv import SetFlag, UiTrigger
 
 
@@ -105,12 +106,20 @@ class TestStateManagerNode(unittest.TestCase):
         self.node.create_subscription(
             SystemState, '/system/state', self._state_history.append, _STATE_QOS)
 
+        # P2: /system/effect の配送観測（self effect 以外がここへ流れる）
+        self._effect_history = []
+        self.node.create_subscription(
+            StateEffect, '/system/effect', self._effect_history.append, 10)
+
         self.pub_event = self.node.create_publisher(StateEvent, '/system/event', 10)
         self.pub_screen = self.node.create_publisher(ActiveScreen, '/ui/active_screen', 5)
         self.pub_jog = self.node.create_publisher(String, '/ui/jog_lease', 1)
         self.pub_fault = self.node.create_publisher(FaultStatus, '/safety/fault', 5)
         self.pub_hw = self.node.create_publisher(Bool, '/safety/estop_hw', 10)
         self.pub_ui_estop = self.node.create_publisher(Bool, '/safety/estop_ui', 10)
+
+        # P2: /routes/list は route_recorder が latched (TRANSIENT_LOCAL) で publish する前提
+        self.pub_routes = self.node.create_publisher(RouteList, '/routes/list', _STATE_QOS)
 
         self.cli_trigger = self.node.create_client(UiTrigger, '/system/trigger')
         self.cli_set_flag = self.node.create_client(SetFlag, '/system/set_flag')
@@ -119,6 +128,7 @@ class TestStateManagerNode(unittest.TestCase):
 
         self._reset_to_idle()
         self._state_history.clear()
+        self._effect_history.clear()
 
     def tearDown(self):
         self.node.destroy_node()
@@ -383,6 +393,52 @@ class TestStateManagerNode(unittest.TestCase):
             screen_id='S-01', client_id=client, interacting=False,
             last_input=self.node.get_clock().now().to_msg()))
         self._spin(0.2)
+
+    # ════════════════════════════════════════════════════════
+    # P2 — effect の配送と route_ids の供給
+    # ════════════════════════════════════════════════════════
+    def _wait_effect(self, name: str, timeout: float = 3.0) -> list:
+        """/system/effect に name が届くまで待つ。届いたものを返す。"""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self._spin(0.1)
+            hit = [m for m in self._effect_history if m.name == name]
+            if hit:
+                return hit
+        return []
+
+    def test_route_select_emits_start_record_effect(self):
+        """教示記録: ui.route_select {new:true, id} → start_record が /system/effect に届く。"""
+        res = self._trigger('ui.enter_mode', {'mode': 'TEACH_MANUAL'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('TEACH_MANUAL')
+
+        self._effect_history.clear()
+        res = self._trigger('ui.route_select', {'new': True, 'id': 'r1'})
+        assert res.accepted, res.reject_reason_key
+
+        hits = self._wait_effect('start_record')
+        assert len(hits) == 1, f'start_record が {len(hits)} 通届いた（1 通を期待）'
+        assert hits[0].dest == 'route_recorder', hits[0].dest
+        assert json.loads(hits[0].args_json).get('route_id') == 'r1', hits[0].args_json
+
+    def test_routes_list_populates_route_ids_for_replay(self):
+        """/routes/list の latched 配信で route_ids が埋まり、REPLAY の route_exists が通る。"""
+        self.pub_routes.publish(RouteList(routes=[RouteInfo(id='r9')]))
+        self._spin(0.4)
+
+        res = self._trigger('ui.enter_mode', {'mode': 'REPLAY'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('REPLAY')
+
+        self._effect_history.clear()
+        res = self._trigger('ui.route_select', {'id': 'r9'})
+        assert res.accepted, \
+            f'replay の route_exists ガードが通らなかった: {res.reject_reason_key}'
+        hits = self._wait_effect('load_route')
+        assert len(hits) == 1, f'load_route が {len(hits)} 通届いた（1 通を期待）'
+        assert hits[0].dest == 'replay_runner', hits[0].dest
+        assert json.loads(hits[0].args_json).get('route_id') == 'r9', hits[0].args_json
 
 
 if __name__ == '__main__':

@@ -33,6 +33,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Pin.msg"
   "msg/PinList.msg"
   "msg/RouteStatus.msg"
+  "msg/StateEffect.msg"
   "msg/MapSessionStatus.msg"
   "msg/CheckStatus.msg"
   "msg/CalibStatus.msg"
