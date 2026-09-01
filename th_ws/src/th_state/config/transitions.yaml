@@ -143,7 +143,26 @@
   - name: clear_prev
     args: {}
   spec_ref: SM-3.1.1-10
+# C-09 / C-09b / C-09c / C-09d: 1 正本 SM-3.1.1-11 の fan-out（2026-09-01 変更）。
+# UI ボタン起因の ESTOP 解除。重大フォルトを伴わず押下前が復帰可能なら
+# 「戻る／メニューへ」を選ばせる（CARRY の C-10 / C-11 と同型）。
+#   C-09  解除 → estop_resume_prev が真: ESTOP のまま show_resume
+#   C-09b 解除 → それ以外（押下前が復帰不能／重大フォルト無し）: IDLE
+#   C-09c 「戻る」→ 押下前モードの PAUSE
+#   C-09d 「メニューへ」→ IDLE
 - id: C-09
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.estop.release
+  guard: estop_resume_prev
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: show_resume
+    args: {}
+  spec_ref: SM-3.1.1-11
+- id: C-09b
   layer: 0
   mode: ESTOP
   state: NONE
@@ -154,6 +173,36 @@
   effects:
   - name: clear_prev
     args: {}
+  spec_ref: SM-3.1.1-11
+- id: C-09c
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_resume_prev
+  to_mode: $prev_mode
+  to_state: PAUSE
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-11
+- id: C-09d
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_no
+  guard: null
+  to_mode: IDLE
+  to_state: NONE
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
   spec_ref: SM-3.1.1-11
 - id: C-09f
   layer: 0

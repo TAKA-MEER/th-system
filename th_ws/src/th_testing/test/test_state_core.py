@@ -255,6 +255,70 @@ def test_estop_is_not_a_trap(state_core_bundle):
 
 
 # ============================================================
+# 2026-09-01 変更: UI ボタン起因の ESTOP（重大フォルト無し）は解除後に
+# 「元のモードに戻る／メニューへ」を選べる（SM-3.1.1-11 / -11b / -11f）。
+# ============================================================
+@pytest.mark.rule("C-06b")
+@pytest.mark.rule("C-09")
+@pytest.mark.rule("C-09c")
+@pytest.mark.rule("C-09d")
+def test_ui_estop_resume_to_prev_mode(state_core_bundle):
+    core, _, _, _ = state_core_bundle
+
+    # UI ボタン → ESTOP。押下前のモード・状態をラッチ。
+    d1 = core.step("MANUAL", "RUN", "ui.estop.press", _mk_ctx())
+    assert d1.accepted and d1.to_mode == "ESTOP"
+    assert "latch_prev" in [e.name for e in d1.effects]
+
+    # 解除（重大フォルト無し・物理も解放・押下前が MANUAL）→ ESTOP のまま show_resume。
+    ctx = _mk_ctx(prev_mode="MANUAL", prev_state="RUN", ui_estop=False, hw_estop=False)
+    d2 = core.step("ESTOP", "NONE", "ui.estop.release", ctx)
+    assert d2.accepted is True
+    assert d2.to_mode == "ESTOP" and d2.to_state == "NONE"
+    assert d2.rule_id == "C-09"
+    assert "show_resume" in [e.name for e in d2.effects]
+
+    # 「元のモードに戻る」→ 押下前モードの PAUSE へ（勝手に RUN へは戻さない）。
+    d3 = core.step("ESTOP", "NONE", "ui.resume_yes", ctx)
+    assert d3.accepted is True
+    assert d3.to_mode == "MANUAL" and d3.to_state == "PAUSE"
+    assert d3.rule_id == "C-09c"
+    assert "close_window" in [e.name for e in d3.effects]
+
+    # 「メインメニューへ」→ IDLE。
+    d4 = core.step("ESTOP", "NONE", "ui.resume_no", ctx)
+    assert d4.accepted is True
+    assert d4.to_mode == "IDLE" and d4.to_state == "NONE"
+    assert d4.rule_id == "C-09d"
+
+
+@pytest.mark.rule("C-09b")
+@pytest.mark.rule("C-09c")
+def test_ui_estop_release_goes_idle_when_prev_not_resumable_or_critical(state_core_bundle):
+    core, _, _, _ = state_core_bundle
+
+    # 押下前が IDLE（＝メニューで押した）→ 解除は IDLE のみ（C-09b）。
+    d1 = core.step("ESTOP", "NONE", "ui.estop.release",
+                    _mk_ctx(prev_mode="IDLE", ui_estop=False, hw_estop=False))
+    assert d1.accepted is True and d1.to_mode == "IDLE"
+    assert d1.rule_id == "C-09b"
+
+    # 重大フォルトが継続中は、押下前が MANUAL でも復帰させない（C-09b にフォールバック）。
+    d2 = core.step("ESTOP", "NONE", "ui.estop.release",
+                    _mk_ctx(prev_mode="MANUAL", prev_state="RUN",
+                            ui_estop=False, hw_estop=False,
+                            fault_active=True, fault_severity="CRITICAL"))
+    # 重大フォルト継続中は no_critical_fault も false なので C-09b も通らない。
+    assert d2.accepted is False
+
+    # 「元のモードに戻る」は重大フォルト中は拒否される。
+    d3 = core.step("ESTOP", "NONE", "ui.resume_yes",
+                    _mk_ctx(prev_mode="MANUAL", prev_state="RUN",
+                            fault_active=True, fault_severity="CRITICAL"))
+    assert d3.accepted is False
+
+
+# ============================================================
 # §3.5: ui.goto の kind → モード写像。PANEL というモードは存在しない。
 # ============================================================
 @pytest.mark.rule("C-15")

@@ -28,9 +28,11 @@ with open(_CONFIG_DIR / "attributes.yaml", encoding="utf-8") as _f:
 
 _SPEC_ID_RE = re.compile(r"SM-3\.1\.[12]-\d+")
 
-# DetailedDesign-state.md §4.4.3 — 1つの正本IDに複数の詳細行が対応する6組（これが行数差の全部）。
+# DetailedDesign-state.md §4.4.3 — 1つの正本IDに複数の詳細行が対応する組（これが行数差の全部）。
+# SM-3.1.1-11 は 2026-09-01 の UI 非常停止復帰変更で 1 → 4 行に分割（C-09 / -09b / -09c / -09d。
+# Spec-modes.md §3.1.1 SM-3.1.1-11 の 1 行が「解除／戻る／メニューへ」を包含する）。
 SPEC_FANOUT = {
-    "SM-3.1.1-10": 2, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
+    "SM-3.1.1-10": 2, "SM-3.1.1-11": 4, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
     "SM-3.1.2-043": 2, "SM-3.1.2-069": 3, "SM-3.1.2-094": 4,
 }
 
@@ -126,6 +128,7 @@ _STATIC_GUARD_OVERRIDES = {
     "check_result_ok": {"check_result": "OK"},
     "ng_and_calibrable": {"check_result": "NG", "check_item": "IMU"},
     "ng_and_not_calibrable": {"check_result": "NG", "check_item": "MOTOR"},
+    "estop_resume_prev": {"fault_severity": "", "hw_estop": False, "prev_mode": "MANUAL"},
 }
 assert set(_STATIC_GUARD_OVERRIDES) | {"mode_entry_allowed"} == set(
     __import__("th_state.guards", fromlist=["GUARDS"]).GUARDS)

@@ -74,6 +74,18 @@ def _hw_released_and_no_critical(mode, state, ctx) -> bool:
     return not ctx.hw_estop and ctx.fault_severity != "CRITICAL"
 
 
+# UI ボタン起因の ESTOP からの復帰先が「押下前のモード」になれる条件
+# （2026-09-01 変更。Spec-modes.md §3.1.1 SM-3.1.1-11 / -11b）。
+# 重大フォルトを伴わず、物理ボタンも押されておらず、押下前が動作系モードのとき。
+_ESTOP_PREV_NONRESUMABLE = {"", "INIT", "IDLE", "ESTOP", "CARRY"}
+
+
+def _estop_resume_prev(mode, state, ctx) -> bool:
+    return (ctx.fault_severity != "CRITICAL"
+            and not ctx.hw_estop
+            and ctx.prev_mode not in _ESTOP_PREV_NONRESUMABLE)
+
+
 def _leash_slack(mode, state, ctx) -> bool:
     return not ctx.leash_taut
 
@@ -157,7 +169,7 @@ def _ng_and_not_calibrable(mode, state, ctx) -> bool:
     return ctx.check_result == "NG" and ctx.check_item in _NOT_CALIBRABLE_ITEMS
 
 
-# 27 件。§4.1.1 のとおり（`not_working` は削除済み。28 → 27 件）。
+# 28 件。§4.1.1 のとおり（`not_working` 削除で 27 → `estop_resume_prev` 追加で 28）。
 GUARDS: Dict[str, Callable] = {
     "jog_allowed": _jog_allowed,
     "fault_stops_mode": _fault_stops_mode,
@@ -186,9 +198,10 @@ GUARDS: Dict[str, Callable] = {
     "check_result_ok": _check_result_ok,
     "ng_and_calibrable": _ng_and_calibrable,
     "ng_and_not_calibrable": _ng_and_not_calibrable,
+    "estop_resume_prev": _estop_resume_prev,
 }
 
-assert len(GUARDS) == 27, len(GUARDS)
+assert len(GUARDS) == 28, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict) -> Dict[str, Callable]:
