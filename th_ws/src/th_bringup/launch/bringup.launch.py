@@ -90,6 +90,12 @@ def generate_launch_description():
     # なので、これらを止めても evt.link_ok の成立には影響しない（registry.yaml）。
     nav2_enabled       = PythonExpression(["int('", stage, "') >= 3"])
     perception_enabled = PythonExpression(["int('", stage, "') >= 4"])
+    # WS-9E: 人物データを使うノードは、/person/status の publisher が起動する
+    # ときだけ立てる（stub か stage>=4）。実機デモ（stage:=1 / use_stub:=false）では
+    # 入力が 1 件も来ないうえ、出力先の /cmd_vel_retreat は WP-SAFE-03 以降
+    # twist_mux が購読していないので、丸ごと無駄な CPU になる。
+    person_logic_enabled = PythonExpression(
+        ["'", use_stub, "' == 'true' or int('", stage, "') >= 4"])
 
     # ── 設定ファイルパス ──────────────────────────────────
     nav2_yaml   = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
@@ -380,27 +386,37 @@ def generate_launch_description():
     ))
 
     # ── 10. person_predictor ──────────────────────────────
+    # WS-9E: 出力先の /cmd_vel_retreat は WP-SAFE-03 以降 twist_mux が購読せず、
+    # 入力 /person/status も stage:=1 / use_stub:=false では来ない（廃止対象）。
+    # 常時起動は CPU を無駄に食うだけなので /person/status の publisher が居る時だけゲート。
     nodes.append(Node(
         package='th_perception',
         executable='person_predictor.py',
         name='person_predictor',
+        condition=IfCondition(person_logic_enabled),
         output='screen',
     ))
 
     # ── 11. follow_planner ────────────────────────────────
+    # WS-9E: /cmd_vel_retreat が twist_mux に購読されず、/person/status も
+    # stage:=1 / use_stub:=false では来ない（廃止対象）。person_logic_enabled でゲート。
     nodes.append(Node(
         package='th_planning',
         executable='follow_planner.py',
         name='follow_planner',
+        condition=IfCondition(person_logic_enabled),
         parameters=[os.path.join(BRINGUP_DIR, 'config', 'planning_params.yaml')],
         output='screen',
     ))
 
     # ── 11b. follow_planner_mapless (MAP不要の純粋軌跡追従モード。FOLLOWING_MAPLESS 時のみ動作)
+    # WS-9E: 上と同じく output は /cmd_vel_retreat（購読なし）・input は /person/status
+    # （stage:=1 / use_stub:=false では来ない。廃止対象）。person_logic_enabled でゲート。
     nodes.append(Node(
         package='th_planning',
         executable='follow_planner_mapless.py',
         name='follow_planner_mapless',
+        condition=IfCondition(person_logic_enabled),
         parameters=[os.path.join(BRINGUP_DIR, 'config', 'planning_params.yaml')],
         output='screen',
     ))

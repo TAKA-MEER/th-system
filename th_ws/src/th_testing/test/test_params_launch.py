@@ -541,3 +541,94 @@ def test_generated_yaml_has_no_float_ms():
         assert not offenders, (
             "*_ms が float のまま生成されている（int 宣言のノードが abort する）: "
             + "; ".join(offenders))
+
+
+# ============================================================================
+# WS-9E: 出力が誰にも届かない旧設計ノードを launch でゲートする
+# ============================================================================
+# 3 ノード（person_predictor / follow_planner / follow_planner_mapless）は走行指令を
+# /cmd_vel_retreat に出すが、WP-SAFE-03 以降 twist_mux はこれを購読していない。
+# 唯一の入力 /person/status も bringup では stub か stage>=4 のときしか来ない。
+# → bringup.launch.py で person_logic_enabled によりゲートする。
+
+
+def _extract_safety_enabled_targets() -> list[str]:
+    """bringup.launch.py の `SAFETY_ENABLED_TARGETS = [...]` を AST で静的に読む。"""
+    tree = ast.parse(_read(BRINGUP_PY), filename=BRINGUP_PY)
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "SAFETY_ENABLED_TARGETS"
+                        for t in node.targets)
+                and isinstance(node.value, (ast.List, ast.Tuple))):
+            return [el.value for el in node.value.elts if isinstance(el, ast.Constant)]
+    raise AssertionError("bringup.launch.py: SAFETY_ENABLED_TARGETS の代入が見つからない")
+
+
+def _bringup_node_kwargs():
+    """bringup.launch.py の `nodes.append(Node(...))` の (name 文字列, 指, 行番号) を
+    AST 走査で返す。name= は Node の `name='...'` キーワードから読む。"""
+    tree = ast.parse(_read(BRINGUP_PY), filename=BRINGUP_PY)
+    func = _find_function(tree, "generate_launch_description")
+    rows = []
+    for node in ast.walk(func):
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "append"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "nodes"
+                and node.args):
+            arg = node.args[0]
+            if not (isinstance(arg, ast.Call)
+                    and isinstance(arg.func, ast.Name) and arg.func.id == "Node"):
+                continue
+            keywords = {k.arg: k for k in arg.keywords}
+            name_val = None
+            if "name" in keywords and isinstance(keywords["name"].value, ast.Constant):
+                name_val = keywords["name"].value.value
+            rows.append((name_val, keywords, node.lineno, arg))
+    return rows
+
+
+def _node_kwargs_by_name(name: str):
+    """指定 name の最も内側（対応する）`Node(...)` の keyword 辞書を返す。"""
+    rows = _bringup_node_kwargs()
+    matches = [(kw, ln, call) for (nm, kw, ln, call) in rows if nm == name]
+    assert matches, f"bringup.launch.py に name={name!r} の Node(...) が見つからない"
+    return matches[-1][0]
+
+
+def test_person_logic_nodes_gate_with_condition():
+    """WS-9E: person_predictor / follow_planner / follow_planner_mapless の 3 ノードは
+    `/person/status` の publisher が居るとき（person_logic_enabled）だけ起動する。
+    `/cmd_vel_retreat` は twist_mux に購読されていない＝走行に無関係で、しかも
+    stage:=1 / use_stub:=false の実機デモでは入力が来ない。常時起動は CPU を
+    無駄に食い、起動時ストール（N-27 → LIMITER_DEAD → ESTOP）の一因になる。"""
+    src = _read(BRINGUP_PY)
+    for name in ("person_predictor", "follow_planner", "follow_planner_mapless"):
+        kw = _node_kwargs_by_name(name)
+        assert "condition" in kw, (
+            f"bringup.launch.py: name={name!r} の Node(...) に condition= が無い（WS-9E）")
+        cond = kw["condition"].value
+        assert (isinstance(cond, ast.Call) and getattr(cond.func, "id", None) == "IfCondition"), (
+            f"bringup.launch.py: name={name!r} の condition= が IfCondition(...) でない")
+    assert "person_logic_enabled" in src, (
+        "bringup.launch.py に person_logic_enabled の定義が無い（WS-9E）")
+
+
+def test_summon_and_panel_navigators_not_gated():
+    """WS-9E の固定: summon_navigator / panel_navigator はスコープ外。従来どおり
+    condition= を持たないこと（必要以上にゲートを広げていないことの固定）。"""
+    src = _read(BRINGUP_PY)
+    for name in ("summon_navigator", "panel_navigator"):
+        kw = _node_kwargs_by_name(name)
+        assert "condition" not in kw, (
+            f"bringup.launch.py: name={name!r} に condition= が付いている（スコープ外。WS-9E）")
+
+
+def test_safety_enabled_targets_still_includes_limiter():
+    """WS-9E: 安全側を緩めていないことの固定。SAFETY_ENABLED_TARGETS に 'limiter' が
+    残っていること（これを外して LIMITER_DEAD を黙らせるのは WS-9E の趣旨と正反対）。"""
+    targets = _extract_safety_enabled_targets()
+    assert "limiter" in targets, (
+        "SAFETY_ENABLED_TARGETS から 'limiter' が消えている。安全側を緩めていない"
+        "（WS-9E の趣旨と正反対）")
