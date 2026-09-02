@@ -263,8 +263,26 @@ class Esp32Bridge(Node):
             await asyncio.Future()  # run forever
 
     async def _handle_client(self, websocket):
+        # ESP32 は 1 台しか繋がらない前提。新しい接続が来たら、古い接続は
+        # 必ず閉じる。
+        #
+        # 2026-09-02 実機: ここで _ws_conn を上書きするだけだったため、
+        # ESP32 側が再接続しても古い接続の `async for message` が生き残り、
+        # 死んだソケットからのフレームを _rx_queue に流し込み続けていた
+        # (WiFi 経由だと FIN が届かず TCP が半開きのまま残る)。
+        # 症状: `opening handshake failed` / wheel_feedback の二重計上 /
+        # 送信先が古いソケットのままで指令が届かない。
         with self._ws_conn_lock:
+            previous = self._ws_conn
             self._ws_conn = websocket
+        if previous is not None and previous is not websocket:
+            self.get_logger().warn(
+                f"古い ESP32 接続 {previous.remote_address} を閉じます "
+                f"(新規接続 {websocket.remote_address} を受理)")
+            try:
+                await previous.close()
+            except Exception as e:   # noqa: BLE001 — close 失敗で新接続を壊さない
+                self.get_logger().warn(f"古い接続の close に失敗: {e!r}")
         # 接続のたびにリセットする: 次に届く ESTOP_HW フレームで
         # /safety/firmware_flags を必ず publish させる(接続時に改めて知らせる。
         # WP-ESP32-01 §3.1「変化時＋接続時」)。rclpy 側スレッドの
