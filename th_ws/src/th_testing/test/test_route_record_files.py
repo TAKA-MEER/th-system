@@ -217,6 +217,28 @@ def _effect_branch_calls_method(tree, effect_name: str, method: str) -> bool:
     return False
 
 
+def _reset_autosave_assignments(tree):
+    """_reset_autosave_state 本体の `self.<attr> = <定数値>` 代入を (attr, 値) 列で返す。
+
+    RHS がリテラルでない代入は値が None になる。定義が無ければ None を返す。
+    """
+    funcdef = next((n for n in ast.walk(tree)
+                    if isinstance(n, ast.FunctionDef) and n.name == '_reset_autosave_state'),
+                   None)
+    if funcdef is None:
+        return None
+    assigns = []
+    body = ast.Module(body=funcdef.body, type_ignores=[])
+    for stmt in ast.walk(body):
+        if isinstance(stmt, ast.Assign):
+            const = stmt.value.value if isinstance(stmt.value, ast.Constant) else None
+            for target in stmt.targets:
+                if (isinstance(target, ast.Attribute)
+                        and isinstance(target.value, ast.Name) and target.value.id == 'self'):
+                    assigns.append((target.attr, const))
+    return assigns
+
+
 def test_route_recorder_has_reset_autosave_state_definition():
     """WS-9H-2: _reset_autosave_state の定義があること。"""
     tree = _tree(ROUTE_RECORDER)
@@ -243,3 +265,21 @@ def test_resume_record_branch_does_not_reset_autosave_state():
     assert _effect_branch_calls_method(
         _tree(ROUTE_RECORDER), 'resume_record', '_reset_autosave_state') is False, (
         'resume_record 分岐でも _reset_autosave_state() が呼ばれている（点数比較が壊れる）')
+
+
+def test_reset_autosave_state_body_resets_all_fields():
+    """WS-9H-2（追補）: _reset_autosave_state 本体が 3 状態すべてをまっさらに戻す。
+
+    既存のテストは「ヘルパが呼ばれているか」しか見ておらず、本体が何を戻すかを
+    固定していない。`self._last_autosaved_points = 0` の 1 行だけ消す変異では
+    2 本目の教示で自動保存が抑止される欠陥がそのまま復活するのに全テストが緑の
+    ままであった。ここでは代入先 3 つが揃っていることと、_last_autosaved_points
+    の代入値が 0 であることを固定する。
+    """
+    assigns = _reset_autosave_assignments(_tree(ROUTE_RECORDER))
+    assert assigns is not None, 'route_recorder.py に _reset_autosave_state の定義が無い'
+    by_attr = {attr: const for attr, const in assigns}
+    assert set(by_attr) == {'_last_autosave_s', '_last_autosaved_points', '_autosave_logged'}, (
+        f'_reset_autosave_state 本体が 3 状態を戻し切れていない: {sorted(by_attr)}')
+    assert by_attr['_last_autosaved_points'] == 0, (
+        '_last_autosaved_points の代入値が 0 でない（欠陥が復活し得る）')
