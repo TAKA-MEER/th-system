@@ -82,6 +82,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_transition_table
     test/test_transition_table.py
     TIMEOUT 60)
+  # 「再生を押しても機体が動かない」の回帰試験 (2026-09-02 実機。
+  #  準備状態が PAUSE へ落ちて経路選択が飛ばされる不具合)
+  ament_add_pytest_test(test_replay_route_selection
+    test/test_replay_route_selection.py
+    TIMEOUT 60)
   ament_add_pytest_test(connectivity_core
     test/test_connectivity_core.py
     TIMEOUT 60)

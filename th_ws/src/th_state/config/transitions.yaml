@@ -18,7 +18,7 @@
   event: ui.jog.hold
   guard: jog_allowed
   to_mode: '='
-  to_state: PAUSE
+  to_state: $pause_unless_prep
   effects:
   - name: set_jog
     args:
@@ -44,7 +44,7 @@
   event: fault.recoverable
   guard: fault_stops_mode
   to_mode: '='
-  to_state: PAUSE
+  to_state: $pause_unless_prep
   effects:
   - name: open_window
     args:
@@ -622,7 +622,7 @@
   mode: REPLAY
   state: PAUSE
   event: ui.run
-  guard: null
+  guard: route_loaded
   to_mode: '='
   to_state: RUN
   effects:
@@ -659,13 +659,27 @@
   mode: REPLAY
   state: SAVED
   event: ui.run
-  guard: null
+  guard: route_loaded
   to_mode: '='
   to_state: RUN
   effects:
   - name: resume_path
     args: {}
   spec_ref: SM-3.1.2-029
+- id: T-REPLAY-11
+  layer: 10
+  mode: REPLAY
+  state: PAUSE
+  event: ui.route_select
+  guard: route_exists
+  to_mode: '='
+  to_state: LOCALIZE
+  effects:
+  - name: load_route
+    args:
+      route_id: $arg.id
+      reverse: $arg.reverse
+  spec_ref: SM-3.1.2-103
 - id: T-LINE-01
   layer: 10
   mode: LINE

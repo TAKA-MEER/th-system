@@ -139,6 +139,16 @@ def _route_exists(mode, state, ctx) -> bool:
     return ctx.arg.get("id") in ctx.route_ids
 
 
+def _route_loaded(mode, state, ctx) -> bool:
+    """replay_runner が実際に追従できる経路を積んでいるか。
+
+    PAUSE / SAVED からの ui.run は resume_path を出すだけで経路を読み直さない。
+    経路未読込のまま RUN に入ると「再生は受理されたのに機体が動かない」に
+    なるため（2026-09-02 実機）、ここで止めて理由を UI に返す。
+    """
+    return ctx.route_loaded
+
+
 def _home_pin_exists(mode, state, ctx) -> bool:
     return "HOME" in ctx.pin_kinds
 
@@ -192,6 +202,7 @@ GUARDS: Dict[str, Callable] = {
     "target_confident": _target_confident,
     "route_arg_valid": _route_arg_valid,
     "route_exists": _route_exists,
+    "route_loaded": _route_loaded,
     "home_pin_exists": _home_pin_exists,
     "map_update": _map_update,
     "line_visible": _line_visible,
@@ -203,7 +214,7 @@ GUARDS: Dict[str, Callable] = {
     "estop_resume_prev": _estop_resume_prev,
 }
 
-assert len(GUARDS) == 28, len(GUARDS)
+assert len(GUARDS) == 29, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict) -> Dict[str, Callable]:

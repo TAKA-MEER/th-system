@@ -74,6 +74,7 @@ GOTO_KIND_MAP: Dict[str, str] = {
 _KNOWN_TOKENS: Set[str] = {
     "$initial", "$resume_run", "$resume_state",
     "$prev_mode", "$prev_state", "$prev_sub",
+    "$pause_unless_prep",
 }
 _ARG_TOKEN_PREFIX = "$arg."
 
@@ -170,6 +171,10 @@ class Context:
     # UI 非常停止ボタンで入った ESTOP かどうか（重大フォルト起因と区別する。
     # 2026-09-01。SM-3.1.1-11。呼び出し側がラッチして渡す）。
     estop_from_ui: bool = False
+    # replay_runner が実際に経路を積んでいるか（/route/status の points > 0）。
+    # PAUSE からの ui.run は「経路は積んである」前提で resume_path を出すだけ
+    # なので、これを guard して空振りの再生を防ぐ（2026-09-02）。
+    route_loaded: bool = False
     arg: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -417,6 +422,18 @@ class StateCore:
             return self._attrs.get(mode, {}).get("run_state")
         if raw == "$resume_state":
             return self._attrs.get(mode, {}).get("resume_state")
+        if raw == "$pause_unless_prep":
+            # 「走っていないものは止められない」(VISION.md §2.5 実機フィードバック
+            #  2026-09-02)。C-01(ジョグ介入) / C-03(回復可能フォルト) は
+            #  mode=* state=* なので、経路をまだ積んでいない準備状態からも
+            #  PAUSE に落ちてしまい、そこからの ui.run が「経路は積んである」
+            #  前提の resume_path を出して**経路選択が丸ごと飛ぶ**。
+            #  準備状態として明示された状態にいるときは、状態を保つ。
+            #  attributes.yaml に prep_states を書いていないモードは
+            #  従来どおり PAUSE（既定は安全側＝止める）。
+            if state in (self._attrs.get(mode, {}).get("prep_states") or ()):
+                return state
+            return "PAUSE"
         if raw == "$prev_mode":
             return ctx.prev_mode
         if raw == "$prev_state":

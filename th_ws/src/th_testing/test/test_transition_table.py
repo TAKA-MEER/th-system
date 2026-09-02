@@ -120,6 +120,7 @@ _STATIC_GUARD_OVERRIDES = {
     "target_confident": {"target_selected": True, "target_confident": True},
     "route_arg_valid": {"arg": {"new": True}},
     "route_exists": {"route_ids": ("R1",), "arg": {"id": "R1"}},
+    "route_loaded": {"route_loaded": True},
     "home_pin_exists": {"pin_kinds": ("HOME",)},
     "map_update": {"flags": {"map_update": True}, "map_update_available": True},
     "line_visible": {"line_visible": True},

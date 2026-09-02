@@ -30,8 +30,8 @@ from builtin_interfaces.msg import Time as TimeMsg
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
-from th_system_msgs.msg import (ActiveScreen, FaultStatus, RouteList, StateEffect,
-                                StateEvent, SystemState)
+from th_system_msgs.msg import (ActiveScreen, FaultStatus, RouteList, RouteStatus,
+                                StateEffect, StateEvent, SystemState)
 from th_system_msgs.srv import SetFlag, UiTrigger
 
 from th_state import guards as guards_module
@@ -168,6 +168,7 @@ class StateManager(Node):
         self._last_event = ""
         self._last_reject_reason = ""
         self._route_ids = []          # /route/catalog から。既存経路の選択ガード用（P2）
+        self._route_loaded = False    # /route/status から。空振りの再生を止めるガード用
 
         now = self._now_ms()
         self._boot_ms = now
@@ -219,6 +220,13 @@ class StateManager(Node):
                                 durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
                                 history=QoSHistoryPolicy.KEEP_LAST)
         self.create_subscription(RouteList, '/route/catalog', self._on_routes_list, routes_qos)
+
+        # 実際に replay_runner が経路を積んでいるか。PAUSE / SAVED からの ui.run は
+        # resume_path を出すだけで経路を読み直さないため、これを guard に使う
+        # （route_loaded。2026-09-02 実機「再生を押しても動かない」）。
+        status_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+                                history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(RouteStatus, '/route/status', self._on_route_status, status_qos)
 
         event_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
         self.create_subscription(StateEvent, '/system/event', self._on_event, event_qos)
@@ -277,6 +285,7 @@ class StateManager(Node):
             hw_estop=self._hw_estop,
             ui_estop=self._ui_estop,
             route_ids=tuple(self._route_ids),
+            route_loaded=self._route_loaded,
             pin_kinds=(),
             leash_present=False,
             leash_taut=False,
@@ -428,6 +437,11 @@ class StateManager(Node):
 
     def _on_routes_list(self, msg):
         self._route_ids = [r.id for r in msg.routes]
+
+    def _on_route_status(self, msg):
+        # 点が 1 つも無ければ「積んでいない」。replay_runner は経路を読み込むと
+        # points を載せて publish する（未読込は points=0 / id='' / target_index=-1）。
+        self._route_loaded = bool(msg.points > 0 and msg.current.id)
 
     # ------------------------------------------------------------
     # /safety/* の購読 → fault.* / hw.* / ui.estop.* の内部生成

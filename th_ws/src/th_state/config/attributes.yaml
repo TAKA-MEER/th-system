@@ -72,6 +72,7 @@ MANUAL:
   jog: is_drive
   has_record: false
 TEACH_FOLLOW:
+  prep_states: [ROUTE_SEL]
   initial_state: ROUTE_SEL
   run_state: REC
   resume: yes_no
@@ -82,6 +83,7 @@ TEACH_FOLLOW:
   jog: allowed
   has_record: true
 TEACH_MANUAL:
+  prep_states: [ROUTE_SEL]
   initial_state: ROUTE_SEL
   run_state: REC
   resume: ack_only
@@ -92,6 +94,7 @@ TEACH_MANUAL:
   jog: is_drive
   has_record: true
 REPLAY:
+  prep_states: [ROUTE_SEL, LOCALIZE, READY]
   initial_state: ROUTE_SEL
   run_state: RUN
   resume: yes_no
