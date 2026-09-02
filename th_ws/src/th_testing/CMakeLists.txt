@@ -87,6 +87,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_replay_route_selection
     test/test_replay_route_selection.py
     TIMEOUT 60)
+  # EKF 設定の整合性 (2026-09-02: imu0 のトピック指定行が欠落していて
+  #  ジャイロが無言で融合されていなかった件の回帰試験)
+  ament_add_pytest_test(test_ekf_config
+    test/test_ekf_config.py
+    TIMEOUT 60)
   ament_add_pytest_test(connectivity_core
     test/test_connectivity_core.py
     TIMEOUT 60)
