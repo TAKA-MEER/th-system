@@ -14,11 +14,17 @@ ROS2 なし・純粋 Python。pytest の tmp_path フィクスチャを使って
 ここでは「途中経過の .wip 自動保存」「旧版の .prev 退避」「原子的書き込み」を固定する。
 """
 
+import ast
 import json
 import os
 import sys
 
 import pytest
+
+# route_recorder.py のソースを ast で静的検証するためのパス（WS-9H-2）
+_SCRIPTS = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), '..', '..', 'th_planning', 'scripts'))
+ROUTE_RECORDER = os.path.join(_SCRIPTS, 'route_recorder.py')
 
 # ── パスを通す（colcon build 前にも直接 pytest できるように）
 sys.path.insert(0, os.path.join(
@@ -144,3 +150,96 @@ def test_autosave_path_sanitizes_dotdot(tmp_path):
     p = autosave_path(routes_dir, '../../evil')
     assert p.startswith(routes_dir)
     assert '/../' not in '/' + p
+
+
+# ============================================================================
+# WS-9H-2: 2 回目の教示で自動保存が効かない欠陥の修正を固定する静的テスト。
+# ノードは立てず、route_recorder.py のソースを ast で読む（test_route_preview_bandwidth
+# の _read / ast.parse の書き方に倣う）。
+#
+# 欠陥: 自動保存の間引き用状態 (_last_autosave_s / _last_autosaved_points /
+# _autosave_logged) が __init__ で 1 回初期化されるだけで start_record でリセット
+# されなかった。start_record は毎回新しい RouteRecorderCore を作り点数が 0 から
+# 数え直しになるのに、前の教示の点数 (例 1000) が残っていると _maybe_autosave の
+# 「点が増えていないときは書かない」(point_count <= _last_autosaved_points) が
+# 常に成立し、2 本目の自動保存が丸ごと抑止される。録り直しこそ本機能の主用途。
+# resume_record は同じ recorder を使い続けるためリセットしてはいけない。
+# ============================================================================
+
+
+def _read(path: str) -> str:
+    with open(path, encoding='utf-8') as f:
+        return f.read()
+
+
+def _tree(path: str) -> ast.AST:
+    return ast.parse(_read(path), filename=path)
+
+
+def _iter_effect_branches(funcdef):
+    """_on_effect の if name == '...' / elif のチェーンを (効果名, body) 列として返す。
+
+    _on_effect は先頭に `name = msg.name` を持つため、関数本体の最初の If 文を探す。
+    """
+    first_if = next((s for s in funcdef.body if isinstance(s, ast.If)), None)
+    node = first_if
+    while isinstance(node, ast.If):
+        if (isinstance(node.test, ast.Compare)
+                and isinstance(node.test.left, ast.Name) and node.test.left.id == 'name'
+                and len(node.test.ops) == 1 and isinstance(node.test.ops[0], ast.Eq)
+                and isinstance(node.test.comparators[0], ast.Constant)):
+            yield node.test.comparators[0].value, node.body
+        if node.orelse and isinstance(node.orelse[0], ast.If):
+            node = node.orelse[0]
+        else:
+            break
+
+
+def _branch_calls_self_method(body_nodes, method: str) -> bool:
+    """分岐 body の中で self.<method>() を呼び出しているか。"""
+    for node in ast.walk(ast.Module(body=body_nodes, type_ignores=[])):
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == 'self'
+                and node.func.attr == method):
+            return True
+    return False
+
+
+def _effect_branch_calls_method(tree, effect_name: str, method: str) -> bool:
+    """_on_effect の効果分岐 effect_name の中で self.<method>() が呼ばれるか。"""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == '_on_effect':
+            for name, body in _iter_effect_branches(node):
+                if name == effect_name:
+                    return _branch_calls_self_method(body, method)
+    return False
+
+
+def test_route_recorder_has_reset_autosave_state_definition():
+    """WS-9H-2: _reset_autosave_state の定義があること。"""
+    tree = _tree(ROUTE_RECORDER)
+    assert any(isinstance(n, ast.FunctionDef) and n.name == '_reset_autosave_state'
+               for n in ast.walk(tree)), (
+        'route_recorder.py に _reset_autosave_state の定義が無い')
+
+
+def test_start_record_branch_resets_autosave_state():
+    """WS-9H-2: start_record 分岐の中で _reset_autosave_state() が呼ばれること。
+
+    変異チェック 1: この呼び出しを消すとテストが落ちる。
+    """
+    assert _effect_branch_calls_method(
+        _tree(ROUTE_RECORDER), 'start_record', '_reset_autosave_state') is True, (
+        'start_record 分岐の中で _reset_autosave_state() が呼ばれていない')
+
+
+def test_resume_record_branch_does_not_reset_autosave_state():
+    """WS-9H-2: resume_record 分岐では呼ばれないこと（同じ recorder を使い続ける）。
+
+    変異チェック 2: resume_record にも足すとテストが落ちる。
+    """
+    assert _effect_branch_calls_method(
+        _tree(ROUTE_RECORDER), 'resume_record', '_reset_autosave_state') is False, (
+        'resume_record 分岐でも _reset_autosave_state() が呼ばれている（点数比較が壊れる）')

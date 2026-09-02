@@ -126,10 +126,10 @@ class RouteRecorder(Node):
         self._raw_sample: tuple[tuple[float, float, float], int] | None = None
         self._filtered_sample: tuple[tuple[float, float, float], int] | None = None
         self._current_source: str | None = None   # 直近の選択出所（切替ログ用）
-        # WS-9H: 自動保存の状態（前回書いた時刻・最後に保存した点数・初回ログ済みか）
-        self._last_autosave_s = 0.0
-        self._last_autosaved_points = 0
-        self._autosave_logged = False
+        # WS-9H: 自動保存の状態（間引き用の記録）。start_record ごとに
+        # _reset_autosave_state でまっさらに戻す（2 本目の教示で前の点数列が
+        # 残って抑止されないため）。
+        self._reset_autosave_state()
 
         self._tf_buffer = None
         self._tf_listener = None
@@ -242,6 +242,9 @@ class RouteRecorder(Node):
                 sample_min_dist_m=self.get_parameter('sample_min_dist_m').value,
                 sample_min_yaw_rad=self.get_parameter('sample_min_yaw_rad').value)
             self._recorder = RouteRecorderCore(params)
+            # WS-9H-2: 新しい recorder は点数が 0 から数え直しになるので、前の教示の
+            # 点数列が間引き比較に残らないよう自動保存の状態をまっさらに戻す。
+            self._reset_autosave_state()
             # WS-8B: 記録開始時に map TF があれば経路全体を map フレームで記録する。
             # 無ければ従来どおり /odom。フレームは記録中ずっと固定（混ぜない）。
             mp = self._map_pose()
@@ -372,6 +375,17 @@ class RouteRecorder(Node):
                 preview_points, frame_id=self._frame_id, stamp=stamp))
         # WS-9H: 記録中だけ、間隔が来て点が増えていたら途中経過を .wip へ自動保存する。
         self._maybe_autosave()
+
+    def _reset_autosave_state(self):
+        """自動保存の間引き用の記録をまっさらに戻す。
+
+        start_record は毎回新しい RouteRecorderCore を作り点数が 0 から数え直しに
+        なるため、前の教示の点数が残っていると 2 本目の自動保存が丸ごと抑止される。
+        resume_record は同じ recorder を使い続けるので呼ばない。
+        """
+        self._last_autosave_s = 0.0
+        self._last_autosaved_points = 0
+        self._autosave_logged = False
 
     def _maybe_autosave(self):
         """記録中に途中経過を 1 世代前と混ざらない .wip へ定期的に保存する。
