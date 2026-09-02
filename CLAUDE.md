@@ -56,10 +56,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   | ESP32 | `192.168.5.125` | STA 子機（DHCP）。`WIFI_AP_MODE 0` / `WS_SERVER_HOST 192.168.5.50` |
 
   **2026-09-01 に CLAUDE.md へ書いた「ラズパイは DHCP で `192.168.5.125`」は誤り。それは ESP32。** `/system/trigger` に繋ぎに来る IP を見れば ESP32 と分かる（`ss -tnp | grep 8766`）。
-- **実機の 2.4GHz リンクは平常時から壊れている（コードでは直せない）。** 2026-09-02 実測で PC→ラズパイ・PC→ESP32 の**両方**が ロス 22〜30% / RTT min 1.2ms・avg 500〜700ms・max 3〜6 秒。原因は電波環境で、`nmcli dev wifi list` で見ると**構内 AP が同じ ch1 に 10 局**（`eduroam` / `NCT-WL*` が信号 65〜69 とロボット AP の 80 に匹敵）。非重複チャネルの混雑は ch1=10 / ch6=5 / ch11=7。
-  - LiDAR の `/scan` を止めても改善しないので**トラフィック起因ではない**。ESP32 の `WiFi.setSleep(false)` でも改善しない（AP 側も等しく悪いため）。
-  - Ubuntu は `/etc/NetworkManager/conf.d/*powersave*` で `wifi.powersave = 3`（省電力ON）が既定。`nmcli connection modify th-rpi-ap 802-11-wireless.powersave 2` でロスは減るが RTT は残る。
-  - **本命の対処は AP のチャネル移設（ch6）または 5GHz 化**。ラズパイ側の hostapd 設定。
+- **無線が遅い・切れるの真因は PC の USB WiFi ドングル（AIC8800 / `wlx6c1ff789d5d4`）。チャネル混雑ではない。** 2026-09-02 に対照実験で確定した。同じ AP・同じ ch1・同じ部屋・同じ時刻:
+
+  | 条件 | 上り | 下り | ロス | avg RTT | max RTT |
+  |---|---|---|---|---|---|
+  | ドングル単独 | 3.35 Mbps | 6.71 Mbps | 18% | 151 ms | 970 ms |
+  | **内蔵 Intel (`wlo1`/iwlwifi) 単独** | **28.6 Mbps** | **31.9 Mbps** | **0%** | **2.2 ms** | **11 ms** |
+
+  内蔵カードは**混雑した ch1 のまま**ロス 0% / RTT 2.2ms を出す。→ **ch1 の混雑は律速ではない。チャネル移設（ch6 等）は無意味。** 対処は「ロボット回線を内蔵 Intel に移し、インターネットをドングル側に回す」か「ドングルを交換」。
+  - ドングルのドライバは統計を信用できない（`rx_drop`/`rx_err`/`tx_err` が全て 0 のまま、`Signal -51dBm` なのに `Link Quality=0/100`）。**このドングルの自己申告値で判断しないこと。**
+  - 切り分けの定石: `ping` の「ロス」は RTT が数秒に伸びると測定終了時に飛行中のパケットが計上されるため過大に出る。**TCP スループット（`dd | ssh 'cat >/dev/null'`）で測るのが確実。**
+  - ラズパイ→ESP32（PC を通らない経路）は**ロス 0%**。PC が絡む経路にだけロスが出るのが切り分けの決め手だった。
+  - Ubuntu は `/etc/NetworkManager/conf.d/*powersave*` で `wifi.powersave = 3`（省電力ON）が既定。ロボット用接続だけ `nmcli connection modify th-rpi-ap 802-11-wireless.powersave 2` で無効化済み。
+  - **ESP32 は 2.4GHz 専用**なので AP の 5GHz 化はできない（ESP32 が繋がらなくなる）。
+  - PC が 2.4GHz 無線を 2 枚同時に使う状態（内蔵=モバイルホットスポット ch11／ドングル=ロボット ch1）は機内共存干渉を招くので避ける。
 - **`pkill -TERM -f "ros2 launch ..."` は launch 親しか殺さず、子ノードは生き残る。** 「止めたはずなのにポートが埋まっている」「修正したのに古い挙動のまま」はこれ。実際に古い `esp32_bridge` が残って新 bringup の 8766 / rosbridge の 9090 を奪い、検証を 1 周無駄にした。`ps -eo pid,args` で ROS 関連を拾って **PID 指定で TERM** すること（`kill -9` は DDS discovery を壊すので使わない）。
 - **`pkill -f <パターン>` は docker 外（ホスト）でも自分のシェルを殺す。** `pkill -f vite` で exit 144 になり、後続の `rm` が実行されなかった。ホストでも PID 指定で止めること。
 
