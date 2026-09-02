@@ -49,6 +49,7 @@ def _points_to_path(points, frame_id='odom', stamp=None):
         path.poses.append(ps)
     return path
 
+from th_planning.odom_source import pick_odom_source
 from th_planning.route_record_core import polyline_length, route_from_dict
 from th_planning.route_replay_core import (
     ReplayParams, advance_index, align_path_to_current, pure_pursuit,
@@ -92,10 +93,18 @@ class ReplayRunner(Node):
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('localize_wait_s', 5.0)
+        # WS-9D: 自己位置源の EKF 出力 (/odometry/filtered) を優先し、古ければ
+        # 生 /odom にフォールバックする。両ノードで同名・同既定にすること。
+        self.declare_parameter('odom_topic', '/odom')
+        self.declare_parameter('odom_filtered_topic', '/odometry/filtered')
+        self.declare_parameter('odom_stale_ms', 500)
         self._use_map_frame = bool(self.get_parameter('use_map_frame').value)
         self._map_frame = self.get_parameter('map_frame').value
         self._base_frame = self.get_parameter('base_frame').value
         self._localize_wait_s = float(self.get_parameter('localize_wait_s').value)
+        self._odom_topic = self.get_parameter('odom_topic').value
+        self._odom_filtered_topic = self.get_parameter('odom_filtered_topic').value
+        self._odom_stale_ms = int(self.get_parameter('odom_stale_ms').value)
         self._routes_dir = self.get_parameter('routes_dir').value
         control_ms = self.get_parameter('control_period_ms').value
         status_ms = self.get_parameter('status_period_ms').value
@@ -129,6 +138,11 @@ class ReplayRunner(Node):
         self._localize_deadline = 0.0
         self._mode = ""
         self._state = ""
+        # WS-9D: 自己位置源の選択（生 odom / EKF 出力）。(pose, stamp_ms) の組。
+        # stamp は受信時刻（_now_ms）を使い、ノード時計と同一基準にする。
+        self._raw_sample: tuple[tuple[float, float, float], int] | None = None
+        self._filtered_sample: tuple[tuple[float, float, float], int] | None = None
+        self._current_source: str | None = None   # 直近の選択出所（切替ログ用）
 
         self._tf_buffer = None
         self._tf_listener = None
@@ -146,9 +160,14 @@ class ReplayRunner(Node):
                                history=QoSHistoryPolicy.KEEP_LAST)
         self.create_subscription(SystemState, '/system/state', self._on_state, state_qos)
 
+        # WS-9D: 同じ QoS で /odom（フォールバック源）と /odometry/filtered（EKF 出力、
+        # 優先源）の両方を購読する。 /odom 購読はフォールバックに要るので消さない。
         odom_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
                               history=QoSHistoryPolicy.KEEP_LAST)
-        self.create_subscription(Odometry, '/odom', self._on_odom, odom_qos)
+        self.create_subscription(
+            Odometry, self._odom_topic, self._on_odom, odom_qos)
+        self.create_subscription(
+            Odometry, self._odom_filtered_topic, self._on_odom_filtered, odom_qos)
 
         # ── Publishers（速度は /cmd_vel_behavior のみ）──────
         cmd_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
@@ -254,6 +273,12 @@ class ReplayRunner(Node):
     def _on_odom(self, msg: Odometry):
         p = msg.pose.pose.position
         self._pose = (p.x, p.y, _yaw_from_quat(msg.pose.pose.orientation))
+        self._raw_sample = (self._pose, self._now_ms())
+
+    def _on_odom_filtered(self, msg: Odometry):
+        p = msg.pose.pose.position
+        self._filtered_sample = (
+            (p.x, p.y, _yaw_from_quat(msg.pose.pose.orientation)), self._now_ms())
 
     # ── フレーム解決 ──────────────────────────────────────
     def _map_pose(self):
@@ -276,7 +301,34 @@ class ReplayRunner(Node):
         """追従に使うロボット pose を経路フレームで返す。取れなければ None。"""
         if self._use_map_frame and self._route_frame == self._map_frame:
             return self._map_pose()
-        return self._pose
+        # WS-9D: odom フレーム経路は EKF 出力 (filtered) が新鮮ならそれ、
+        # 古ければ生 /odom にフォールバックする。map フレーム経路（上の TF 経路）は
+        # ここを通らず既存のまま。
+        pose, source = pick_odom_source(
+            self._filtered_sample, self._raw_sample,
+            self._now_ms(), self._odom_stale_ms)
+        self._note_odom_source(source)
+        return pose
+
+    def _note_odom_source(self, source):
+        """自己位置源が切り替わったときだけ 1 回ログする（毎ティック出さない）。"""
+        if source == self._current_source:
+            return
+        prev = self._current_source
+        self._current_source = source
+        if prev is None:
+            return  # 初回は切替ではない（移り変わりの起点）ので出さない
+        if source == 'raw' and prev == 'filtered':
+            self.get_logger().info(
+                f'自己位置源を filtered → raw に切替'
+                f'（EKF 出力が {self._odom_stale_ms}ms 途絶）')
+        elif source is None:
+            self.get_logger().info('自己位置源が利用不可（filtered/raw 両方途絶）')
+        else:
+            self.get_logger().info(f'自己位置源を {prev} → {source} に切替')
+
+    def _now_ms(self) -> int:
+        return self.get_clock().now().nanoseconds // 1_000_000
 
     def _publish_robot_pose(self):
         if not self._use_map_frame:
