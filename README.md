@@ -103,6 +103,8 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 
 | やりたいこと                                             | ドキュメント                                          |
 | ---------------------------------------------------------- | ------------------------------------------------------- |
+| **実機を動かす（手動走行・教示・再生）**                 | **[docs/使い方.md](docs/使い方.md)**                  |
+| **今回の実機試験で何を確かめるか**                       | **[docs/試験項目.md](docs/試験項目.md)**              |
 | システムの完成形・実装状況を知る                         | [VISION.md](VISION.md)                                |
 | 新しい PC/ラズパイ/ESP32 で環境を作る                    | [docs/setup.md](docs/setup.md)                        |
 | ネットワークの仕組み・通信トラブルの復旧                 | [docs/network.md](docs/network.md)                    |
