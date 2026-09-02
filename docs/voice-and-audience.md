@@ -83,7 +83,7 @@ VISION.md から切り出して置いている。
 - タブレットは試験員が携行しているため、「試験員に気付かせる」目的に対して音源位置が最も正しい
 - 安全通知の主要部（フォルト・E-Stop・モード強制遷移・復旧）に必要なトピックは WebUI が既に
   購読済み（`/robot/mode`・`/safety/fault`・`/safety/estop`・`/person/status`）であり、
-  新規 ROS2 ノードを要しない。ただし追従ロジック由来の待機（C3・C4・C7・C8）は §2.8 の
+  新規 ROS2 ノードを要しない。ただし追従ロジック由来の待機（C3・C4・C7・C8）は §2.9 の
   状態 publish が前提となる
 - ロボット側に置く場合に必要となる音声デバイスのパススルー（`/dev/snd`・WSLg・`PULSE_SERVER`）、
   ラズパイへの音声パッケージ導入、SoftAP 越し DDS リンクへの依存がすべて不要になる
@@ -268,7 +268,35 @@ IDLE からの遷移のみを想定していたが、MANUAL → FOLLOWING_MAPLES
 `/person_tracker/select_target` の呼び出しは成功・失敗ともに WebUI 上で完結しており、
 試験員が正しく切り替わったかを確認する手段が音声側になかった。
 
-### 2.8 実装上の前提と制約
+### 2.8 現状（2026-09-02 時点）— **操作者タブレットでは一度も鳴っていない**
+
+§2.2 で「音声はすべてタブレット WebUI で再生する」と決めているが、**現行の WebUI
+シェルからは再生パイプラインに到達できない。**
+
+WebUI のエントリは `src/main.jsx` で、そこから描かれるのは `AppShell`（操作者 UI）と
+`AudienceView`（`?view=audience` の観客画面）の 2 つ。音声の再生側
+（`hooks/useVoice.js` → `voice/voiceQueue.js` → `voice/audioPlayer.js`）を import して
+いるのは **旧シェル `src/App.jsx` だけで、`App.jsx` はどこからも import されていない**
+（`main.jsx` からの到達可能性を機械的に確認済み。到達不能なのは
+`App.jsx` / `MapView.jsx` / `SettingsPanel.jsx` / `VoiceDevPanel.jsx` /
+`WheelSpeedView.jsx` / `hooks/useVoice.js` / `voice/voiceQueue.js` /
+`voice/audioPlayer.js` / `shell/OperationBar.jsx` / `i18n/guides.js` の 10 ファイル・
+計 2039 行）。
+
+状態 → アナウンス ID の対応付け `hooks/useVoiceTriggers.js` 自体は生きているが、
+呼んでいるのは `AudienceView` だけで、渡しているシンクは `captionSink`＝**字幕のみ**
+（§1 の「観客画面で音を出さない」決定どおり）。したがって
+**事前生成した約 50 個の WAV は production では一度も再生されない。**
+
+繋ぎ直しは `AppShell` で `useVoice()` を呼ぶだけでは済まない。`useVoiceTriggers` の
+発火条件は**旧 9 モード体系（`robotMode.js` の `MODE`）を前提**にしており、
+新 FSM（`th_state` の mode × state）へ引き直す必要がある（`VISION.md` §2.5 の注記と同じ話）。
+
+**方針（2026-09-02・ユーザー判断）**: 音声はあったほうがよいが**急がない**。
+特例デモ（教示・再生）の完了を優先し、到達不能な 10 ファイルは**消さずに残す**
+（引き直しの土台として要る）。
+
+### 2.9 実装上の前提と制約
 
 - **ブラウザの自動再生ポリシー**: ユーザー操作なしに音を鳴らせない。セッション開始時に一度タップ
   させる導線が必須。いずれかのレイヤを有効化する操作でこれを兼ねられるため、専用の導線は設けない
@@ -331,5 +359,5 @@ VISION.md 旧 §8 のうち、音声・観客向け表示に関わるものを�
 | --- | --- |
 | 音声のライセンス確認 | 2026-08-01。VOICEVOX Nemo 採用でキャラクター個別規約との整合問題が消える（§2.5・[voice-credits.md](voice-credits.md)） |
 | 採用話者 | 2026-08-05。女声3（ゆう、style id 10004） |
-| プランナ状態の可観測性 | 2026-08-01。`/follow/status`・`/person/search_status`・`/summon_navigator/status` を新設（§2.8）。**ただし新パッケージ構成での対応トピックは詳細設計側で決め直す** |
+| プランナ状態の可観測性 | 2026-08-01。`/follow/status`・`/person/search_status`・`/summon_navigator/status` を新設（§2.9）。**ただし新パッケージ構成での対応トピックは詳細設計側で決め直す** |
 | 数値の動的差し替え（N4） | 2026-08-07 実装済み（§2.5） |
