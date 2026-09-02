@@ -30,13 +30,21 @@ test('mode IDLE: every menu button is enabled (mode_entry.yaml allows all 10 fro
   }
 })
 
-test('mode MANUAL: only OPCHECK/CALIB (保守) buttons are enabled, others show mode_entry_denied when pressed', async ({ page }) => {
-  await gotoScreen(page, 'S01', { mode: 'MANUAL', tracker_enabled: true })
+// 2026-09-02: 以前はここで mode MANUAL を seed していたが、main.jsx が
+// 画面を SystemState.mode から導出するようになった今、mode MANUAL では
+// S-11 が描画されるので S-01 のボタンは存在しない。
+// そもそも「mode MANUAL のまま S-01 に居る」状態は修正前から本番では
+// 到達不能で（S-11 から戻る手段は 終了 → ui.finish → IDLE だけ）、
+// このテストが直接 seed して作っていた合成状態だった。
+// 検証したいのは menuItems() の「今のモードから入れないボタンは dis 表示、
+// 押すと理由ウィンドウ」という挙動なので、専用画面を持たない＝S-01 が
+// 正しく描画されるモードで同じ形を突く。mode_entry.json の
+// OPCHECK -> ['CALIB', 'IDLE'] は保守系だけ許可・走行系は拒否という
+// 同じ構図（MANUAL -> ['IDLE','OPCHECK','CALIB'] の代わり）。
+test('mode OPCHECK: 遷移可能な保守ボタンだけ活性、他は押すと mode_entry_denied', async ({ page }) => {
+  await gotoScreen(page, 'S01', { mode: 'OPCHECK', tracker_enabled: true })
 
-  const opcheck = page.getByRole('button', { name: '始業点検' })
   const calib = page.getByRole('button', { name: '校正' })
-  await expect(opcheck).toBeEnabled()
-  await expect(opcheck).not.toHaveClass(/\bdis\b/)
   await expect(calib).toBeEnabled()
   await expect(calib).not.toHaveClass(/\bdis\b/)
 

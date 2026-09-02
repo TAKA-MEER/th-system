@@ -3,7 +3,7 @@
 // Screens (WP-UI-02+) are rendered as `children`; this packet builds no
 // screen content (DetailedDesign-wp1.md WP-UI-01 §1).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { SystemStateProvider, useSystemState } from '../ros/useSystemState.js'
+import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useActiveScreenPublisher } from '../ros/useActiveScreenPublisher.js'
 import { TOPICS, MSG_TYPES } from '../ros/topics.js'
@@ -186,10 +186,16 @@ function AppShellInner({ screenName, screenId, children }) {
   )
 }
 
-export default function AppShell({ screenName, screenId, url, children }) {
+// SystemStateProvider はここではなく main.jsx のルート（ルータの外側）に置く。
+//
+// 2026-09-02: 以前はこの AppShell が画面ごとに Provider を張っていたため、
+// ルータ (main.jsx の Screens) が SystemState.mode を読めず、画面遷移が
+// ローカル state の一方通行になっていた。その結果「ロボット側でモードが
+// 変わっても画面が追随しない」＝ 画面は教示のままなのに FSM は IDLE、という
+// 乖離が起き、操作が全部拒否されて動けなくなる不具合になっていた。
+// Provider を上へ出して、画面をモードから導出できるようにしている。
+export default function AppShell({ screenName, screenId, children }) {
   return (
-    <SystemStateProvider url={url}>
-      <AppShellInner screenName={screenName} screenId={screenId}>{children}</AppShellInner>
-    </SystemStateProvider>
+    <AppShellInner screenName={screenName} screenId={screenId}>{children}</AppShellInner>
   )
 }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import AppShell from './shell/AppShell.jsx'
+import { SystemStateProvider, useSystemState } from './ros/useSystemState.js'
 import AudienceView from './audience/AudienceView.jsx'
 import OperationCardHarness from './TestHarness.jsx'
 import S00Connect from './screens/S00Connect.jsx'
@@ -76,58 +77,107 @@ function DriveTestScreen() {
   )
 }
 
-// 15 画面のうち S-00 / S-01 は WP-UI-02 で追加された (screens/ 配下)。
-// 残りは以降の作業パケットで追加される。画面遷移はまだ本格的なルータでは
-// なく、S-00 の「進む」だけがローカルに S-01 へ切り替える
-// (DetailedDesign-webui.md §2.1 の遷移図: 走行方式・保守画面はまだ無いため
-// ui.enter_mode が受理されてもそこへは進めない -- WP-UI-02 §11 相当)。
+// 表示中の画面は SystemState.mode から導出する（純関数。ユニットテスト対象）。
+//
+// 2026-09-02 修正の要点: 以前は画面が完全にローカル state の一方通行で、
+// S-00 の「進む」と S-01 の enter_mode、各画面の「終了」でしか動かなかった。
+// そのためロボット側 FSM が独自にモードを変えたとき——重大フォルトで
+// 動作系モードから IDLE へ強制遷移した、ESTOP から復帰した、他の端末が
+// 操作した、再生が終わった——画面はそのまま取り残された。
+// 画面が S-13（教示）なのに FSM は IDLE、という状態では教示系の操作が
+// 全部 FSM に拒否され、しかも「終了」も既に IDLE なので効かず、
+// **どこにも行けなくなる**（実機で報告された「移動不能」）。
+//
+// 対策: ロボットの FSM を唯一の真実とし、画面はそこから導出する。
+// ローカルに残す状態は「S-00（接続確認）を通過したか」の 1 つだけ。
+//
+// - mode に対応する画面が無い場合は S-01（メインメニュー）。
+// - リンクが stale になっても S-00 へは戻さない。最後に見えていたモードの
+//   画面に留まり、切断の告知は W-2（Windows.jsx）に任せる。ここで戻すと
+//   一瞬の途切れで画面が飛ぶ（2026-09-01 に直したチラつきの再発）。
+export function resolveScreen({ testScreen, passedConnect, mode }) {
+  // DRIVE_S11 は本番に存在しない e2e 専用の合成画面なので、これだけは
+  // モード導出を迂回する固定の上書きとして扱う。
+  if (testScreen === 'DRIVE_S11') return 'DRIVE_S11'
+  if (!passedConnect) return 'S00'
+  return MODE_TO_SCREEN[mode] ?? 'S01'
+}
+
+// __thTestScreen は「どこから始めるか」の初期値であって、以後の遷移を
+// 固定するものではない（固定すると S-00 の「進む」が効かなくなる）。
+// 'S00' 指定なら接続確認から、それ以外なら通過済みとして始める。
+function initialPassedConnect(testScreen) {
+  if (!testScreen) return false
+  return testScreen !== 'S00'
+}
+
 function Screens() {
-  const [screen, setScreen] = useState(TEST_SCREEN || 'S00')
+  const { state } = useSystemState()
+  const mode = state?.mode ?? null
+  // S-00 は「疎通確認」という UI 上の前段で、FSM のモードではない。
+  // 通過したかどうかだけがローカル状態。
+  const [passedConnect, setPassedConnect] = useState(() => initialPassedConnect(TEST_SCREEN))
+
+  const screen = resolveScreen({ testScreen: TEST_SCREEN, passedConnect, mode })
+
   if (screen === 'DRIVE_S11') {
     return <DriveTestScreen />
   }
   if (screen === 'S00') {
     return (
       <AppShell screenName={SCREEN_NAMES.S00} screenId={SCREEN_IDS.S00}>
-        <S00Connect onAdvance={() => setScreen('S01')} />
+        <S00Connect onAdvance={() => setPassedConnect(true)} />
       </AppShell>
     )
   }
+  // 以下の画面の「終了」は ui.finish を送るだけでよい。受理されれば
+  // FSM が IDLE になり、その /system/state を見てここが S-01 に戻す。
+  // onFinish を渡して画面側から直接切り替えさせない（それをやると
+  // 「画面は戻ったが FSM は戻っていない」という乖離を作り直すことになる）。
   if (screen === 'S11') {
     return (
       <AppShell screenName={SCREEN_NAMES.S11} screenId={SCREEN_IDS.S11}>
-        <S11Manual onFinish={() => setScreen('S01')} />
+        <S11Manual />
       </AppShell>
     )
   }
   if (screen === 'S13') {
     return (
       <AppShell screenName={SCREEN_NAMES.S13} screenId={SCREEN_IDS.S13}>
-        <S13TeachManual onFinish={() => setScreen('S01')} />
+        <S13TeachManual />
       </AppShell>
     )
   }
   if (screen === 'S14') {
     return (
       <AppShell screenName={SCREEN_NAMES.S14} screenId={SCREEN_IDS.S14}>
-        <S14Replay onFinish={() => setScreen('S01')} />
+        <S14Replay />
       </AppShell>
     )
   }
   return (
     <AppShell screenName={SCREEN_NAMES.S01} screenId={SCREEN_IDS.S01}>
-      <S01Main onEnter={(mode) => {
-        const next = MODE_TO_SCREEN[mode]
-        if (next) setScreen(next)
-      }} />
+      {/* onEnter は渡さない。ui.enter_mode が受理されれば FSM が
+          モードを変え、その /system/state を見てここが画面を切り替える。 */}
+      <S01Main />
     </AppShell>
   )
 }
 
+// SystemStateProvider はルータより外側に 1 つだけ置く。こうすることで
+// (1) Screens() が mode を読んで画面を導出でき、(2) 画面が変わっても
+// rosbridge 接続が張り直されない。
+// 観客表示 (AudienceView) は useRosbridge を自前で持ち /system/state を
+// 使わないので、無駄な接続を増やさないよう Provider の外に置く。
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     {AUDIENCE ? <AudienceView />
-      : (TEST_MODE && !TEST_SCREEN) ? <AppShell><OperationCardHarness /></AppShell>
-      : <Screens />}
+      : (
+        <SystemStateProvider>
+          {(TEST_MODE && !TEST_SCREEN)
+            ? <AppShell><OperationCardHarness /></AppShell>
+            : <Screens />}
+        </SystemStateProvider>
+      )}
   </React.StrictMode>,
 )
