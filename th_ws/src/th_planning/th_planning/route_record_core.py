@@ -59,6 +59,38 @@ def polyline_length(points: Sequence[Pose2D]) -> float:
     return total
 
 
+def decimate_polyline(points, max_points):
+    """表示用に点列を間引く。順序を保ち、始点と終点は必ず残す。
+
+    points: [(x, y, yaw), ...] のような列（中身の型には触らない。要素をそのまま返す）
+    max_points: 残す最大点数
+
+    - len(points) <= max_points なら中身を変えずにそのまま返す
+    - max_points <= 0 は間引かない（そのまま返す）とみなす
+    - max_points == 1 なら始点だけ
+    - それ以外は等間隔ストライドで選び、**必ず最後の要素を含める**
+    - 空列は空列
+
+    /route/preview は記録済みの全点を 2Hz で毎回 publish するため、長距離（100m 級、
+    1000 点前後）になると数 Mbps の帯域を食い、直したばかりのロボット無線を圧迫する
+    （WS-9F）。表示専用の間引きで帯域を抑える。順序は変えず、始点・終点は必ず残す。
+    元のリストは破壊しない。
+    """
+    n = len(points)
+    if n <= max_points or max_points <= 0:
+        return points
+    if max_points == 1:
+        return [points[0]]
+    out = []
+    last_idx = -1
+    for k in range(max_points):
+        idx = int(round(k * (n - 1) / (max_points - 1)))
+        if idx != last_idx:   # 重複を返さない（最後の点が終点と同一でも二重に入れない）
+            out.append(points[idx])
+            last_idx = idx
+    return out
+
+
 def route_to_dict(route: RouteData) -> dict:
     """RouteData を dict へ変換する。
 

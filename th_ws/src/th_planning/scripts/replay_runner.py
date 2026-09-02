@@ -73,6 +73,11 @@ class ReplayRunner(Node):
         self.declare_parameter('routes_dir', '/root/th_data/routes')
         self.declare_parameter('control_period_ms', 50)   # 20Hz
         self.declare_parameter('status_period_ms', 500)
+        # WS-9F: 再生側の点列は load_route 後、走行中は一切変わらない。それを 2Hz で
+        # 毎回まるごと送るのは無駄なので、点列が変わったとき＋このハートビート間隔
+        # だけプレビューを配信する（既定 5000ms）。なお target_index で点の添字を
+        # 参照するため、再生側は間引かない（全点のまま回数を減らす）。
+        self.declare_parameter('preview_heartbeat_ms', 5000)
         # 経路プレビューはロボット中心・固定倍率なので、この pose が画面全体の
         # 位置を決める。2Hz では旋回 1 ステップ 14°＝外周 47px のジャンプになり
         # 「ガクガク」になる（2026-09-02 実機報告）。status から分離して 10Hz。
@@ -105,6 +110,7 @@ class ReplayRunner(Node):
         self._odom_topic = self.get_parameter('odom_topic').value
         self._odom_filtered_topic = self.get_parameter('odom_filtered_topic').value
         self._odom_stale_ms = int(self.get_parameter('odom_stale_ms').value)
+        self._preview_heartbeat_ms = int(self.get_parameter('preview_heartbeat_ms').value)
         self._routes_dir = self.get_parameter('routes_dir').value
         control_ms = self.get_parameter('control_period_ms').value
         status_ms = self.get_parameter('status_period_ms').value
@@ -128,6 +134,8 @@ class ReplayRunner(Node):
         self._need_rotate = False
         self._rotated = False
         self._arrived_sent = False
+        self._preview_dirty = False          # WS-9F: 点列が変わった（load_route で差し替え）
+        self._last_preview_ms = 0.0          # WS-9F: 直前に preview を publish した時刻
         self._was_moving = False
         self._target_index = -1
         self._cur_v = 0.0   # ランプ後の実際の publish 値
@@ -232,6 +240,7 @@ class ReplayRunner(Node):
                     pts = align_path_to_current(pts, recorded_start, cur)
                     aligned = True
             self._points = pts
+            self._preview_dirty = True   # WS-9F: 点列が変わった → 次ティックで preview 配信
             self._start_yaw = pts[0][2] if pts else rec_start_yaw
             self._from_index = 0
             self._target_index = -1
@@ -447,9 +456,18 @@ class ReplayRunner(Node):
         # 追従中の点列を経路フレーム（map or odom）の Path でプレビュー配信する。
         # #4: 経路を読んでいるときだけ出す（空 Path を出すと、記録側と交互配信になり
         # WebUI のプレビューが点滅する）。
+        # WS-9F: 走行中は点列が変わらないため毎 2Hz で送るのは無駄。点列が変わった
+        # （_preview_dirty / load_route で立てる）とき＋ハートビート間隔だけ配信する。
+        # ここは間引かない（RoutePreview が preview[targetIndex] で添字参照するため）。
         if self._route is not None and self._points:
-            self._pub_preview.publish(_points_to_path(
-                self._points, frame_id=self._route_frame, stamp=stamp))
+            now_ms = self._now_ms()
+            changed = self._preview_dirty
+            heartbeat_due = (now_ms - self._last_preview_ms) >= self._preview_heartbeat_ms
+            if changed or heartbeat_due:
+                self._pub_preview.publish(_points_to_path(
+                    self._points, frame_id=self._route_frame, stamp=stamp))
+                self._preview_dirty = False
+                self._last_preview_ms = now_ms
 
 
 def main(args=None):

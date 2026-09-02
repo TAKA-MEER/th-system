@@ -167,3 +167,32 @@ export function fitTransform(points, w, h, pad = ROUTE_PREVIEW_PAD) {
   const offY = (h - ah * scale) / 2
   return { scale, minX, minY, offX, offY }
 }
+
+// occupancyGridToPixels(data, width, height) -> Uint8ClampedArray (RGBA)
+// Convert an OccupancyGrid data column to the RGBA bitmap RoutePreview blits on
+// the route-preview canvas. Pure & canvas-free so test/unit drives it with node
+// --test. Row 0 of the grid is the map-frame bottom, ImageData row 0 is the top,
+// so rows are flipped here. Unknown is mid-grey 128, 0 (free) is white, 100
+// (occupied) is black. Only uses index access (`data[i]`), so it works for both
+// a plain Array and a TypedArray — with rosbridge `compression:'cbor'` (/map,
+// WS-9F) the data may arrive as a Uint8Array where unknown (-1) is stored as
+// 255, hence `v < 0 || v > 100` (instead of bare `v < 0`) is treated as unknown.
+export function occupancyGridToPixels(data, width, height) {
+  const w = Math.floor(width)
+  const h = Math.floor(height)
+  const out = new Uint8ClampedArray(w * h * 4)
+  for (let row = 0; row < h; row++) {
+    for (let col = 0; col < w; col++) {
+      const srcIdx = row * w + col
+      const destRow = h - 1 - row
+      const destIdx = (destRow * w + col) * 4
+      const v = data[srcIdx]
+      let gray
+      if (v < 0 || v > 100) gray = 128
+      else gray = 255 - Math.round(v * 2.55)
+      out[destIdx] = out[destIdx + 1] = out[destIdx + 2] = gray
+      out[destIdx + 3] = 255
+    }
+  }
+  return out
+}

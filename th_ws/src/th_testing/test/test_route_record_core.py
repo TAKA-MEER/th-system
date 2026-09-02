@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(
 from route_record_core import (
     RouteRecordParams, RouteData, RouteRecorderCore,
     polyline_length, route_to_dict, route_from_dict, normalize_angle,
+    decimate_polyline,
 )
 
 
@@ -116,3 +117,65 @@ def test_normalize_angle_range():
     assert normalize_angle(3.0 * math.pi) == pytest.approx(math.pi)
     assert normalize_angle(1.5 * math.pi) == pytest.approx(-math.pi / 2)
     assert normalize_angle(2.0 * math.pi) == pytest.approx(0.0)
+
+
+# ── WS-9F: decimate_polyline（/route/preview の帯域対策・純関数） ──────────
+
+def _pts(n):
+    return [(i, i * 0.5, 0.0) for i in range(n)]
+
+
+def test_decimate_keeps_content_unchanged_when_within_budget():
+    pts = _pts(77)
+    assert decimate_polyline(pts, 400) == pts   # 「そのまま（中身を変えずに）返す」
+
+
+def test_decimate_shrinks_and_keeps_first_and_last():
+    pts = _pts(1200)
+    out = decimate_polyline(pts, 400)
+    assert len(out) <= 400
+    assert out[0] == pts[0]
+    assert out[-1] == pts[-1]
+
+
+def test_decimate_preserves_order_and_is_a_subsequence_without_duplicates():
+    pts = _pts(1200)
+    out = decimate_polyline(pts, 400)
+    assert len(out) <= 400
+    # 元の部分列になっている（並べ替えていない）
+    it = iter(pts)
+    assert all(any(p == q for q in it) for p in out)
+    # 重複しない
+    assert len(set(out)) == len(out)
+
+
+def test_decimate_max_points_zero_or_negative_returns_unchanged():
+    pts = _pts(50)
+    assert decimate_polyline(pts, 0) == pts
+    assert decimate_polyline(pts, -3) == pts
+
+
+def test_decimate_max_points_one_keeps_only_first():
+    pts = _pts(50)
+    assert decimate_polyline(pts, 1) == [pts[0]]
+
+
+def test_decimate_empty_list():
+    assert decimate_polyline([], 5) == []
+
+
+def test_decimate_1200_to_400_school_loop_keeps_endpoints():
+    # 校舎 1 周（100m 級・1000 点前後）の実寸に相当
+    pts = _pts(1200)
+    out = decimate_polyline(pts, 400)
+    assert len(out) <= 400
+    assert out[0] == (0, 0.0, 0.0)
+    assert out[-1] == (1199, 1199 * 0.5, 0.0)
+
+
+def test_decimate_does_not_mutate_input():
+    pts = _pts(1200)
+    snapshot = list(pts)
+    decimate_polyline(pts, 400)
+    assert pts == snapshot
+

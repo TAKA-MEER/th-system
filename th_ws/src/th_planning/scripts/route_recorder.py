@@ -46,8 +46,8 @@ def _points_to_path(points, frame_id='odom', stamp=None):
 
 from th_planning.odom_source import pick_odom_source
 from th_planning.route_record_core import (
-    RouteRecorderCore, RouteRecordParams, polyline_length,
-    route_from_dict, route_to_dict,
+    RouteRecorderCore, RouteRecordParams, decimate_polyline,
+    polyline_length, route_from_dict, route_to_dict,
 )
 
 
@@ -69,6 +69,9 @@ class RouteRecorder(Node):
         self.declare_parameter('sample_min_dist_m', 0.10)
         self.declare_parameter('sample_min_yaw_rad', 0.20)
         self.declare_parameter('status_period_ms', 500)
+        # WS-9F: /route/preview は表示専用なので、長距離で配信量が線形に増えて
+        # 無線を食い潰すのを防ぐため間引いて publish する（既定 400 点）。
+        self.declare_parameter('preview_max_points', 400)
         # WebUI の経路プレビューはロボット中心・固定倍率で描くので、この pose が
         # 画面全体の位置を決める。2Hz だと 1 更新あたり旋回 14°（w_max=0.5rad/s）＝
         # 半径 10m の点群外周で 47px の一発ジャンプになり「ガクガク」に見える
@@ -98,6 +101,7 @@ class RouteRecorder(Node):
         self._odom_topic = self.get_parameter('odom_topic').value
         self._odom_filtered_topic = self.get_parameter('odom_filtered_topic').value
         self._odom_stale_ms = int(self.get_parameter('odom_stale_ms').value)
+        self._preview_max_points = int(self.get_parameter('preview_max_points').value)
 
         # ── 状態 ────────────────────────────────────────────
         self._recorder: RouteRecorderCore | None = None
@@ -339,7 +343,8 @@ class RouteRecorder(Node):
             msg.recorded_m = float(self._recorder.recorded_m)
             msg.points = self._recorder.point_count
             msg.elapsed_sec = (self._now_ms() - self._rec_started_ms) / 1000.0
-            preview_points = self._recorder.points
+            preview_points = decimate_polyline(self._recorder.points,
+                                               self._preview_max_points)
         self._pub_status.publish(msg)
         # #4: 記録中だけ /route/preview を出す（空 Path を出すと再生側と交互配信になり
         # WebUI のプレビューが点滅する）。フレームは記録中の経路フレーム。

@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { ROUTE_PREVIEW_EMPTY } from '../i18n/screens.js'
-import { fitTransform, ROUTE_PREVIEW_PAD, centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M, scanToPoints, SCAN_FALLBACK_MAX_M, mapDestRect, smoothPose } from './routePreviewGeom.js'
+import { fitTransform, ROUTE_PREVIEW_PAD, centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M, scanToPoints, SCAN_FALLBACK_MAX_M, mapDestRect, smoothPose, occupancyGridToPixels } from './routePreviewGeom.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 const SCAN_TOPIC = '/scan_filtered'
@@ -48,24 +48,18 @@ export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
     if (!mapData) { offscreenRef.current = null; return undefined }
     const { width, height } = mapData.info
     const data = mapData.data
-    if (!Array.isArray(data) || width <= 0 || height <= 0) return undefined
+    // `data` は素の配列（TEST_MODE のシード）か、rosbridge cbor で届く Uint8Array
+    // （WS-9F）。どちらでも解釈できるように、配列/型付き配列を判定して許す。
+    if (!(Array.isArray(data) || ArrayBuffer.isView(data)) || width <= 0 || height <= 0) {
+      return undefined
+    }
     if (!offscreenRef.current) offscreenRef.current = document.createElement('canvas')
     const off = offscreenRef.current
     off.width = width
     off.height = height
     const ctx = off.getContext('2d')
     const img = ctx.createImageData(width, height)
-    for (let row = 0; row < height; row++) {
-      for (let col = 0; col < width; col++) {
-        const srcIdx = row * width + col
-        const destRow = height - 1 - row
-        const destIdx = (destRow * width + col) * 4
-        const v = data[srcIdx]
-        const gray = v < 0 ? 128 : 255 - Math.round(v * 2.55)
-        img.data[destIdx] = img.data[destIdx + 1] = img.data[destIdx + 2] = gray
-        img.data[destIdx + 3] = 255
-      }
-    }
+    img.data.set(occupancyGridToPixels(data, width, height))
     ctx.putImageData(img, 0, 0)
     return undefined
   }, [mapData])
