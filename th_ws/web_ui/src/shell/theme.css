@@ -36,9 +36,25 @@ body{
 button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;touch-action:manipulation}
 table{border-collapse:collapse;width:100%}
 
+/* ================= stage (固定論理キャンバスのレターボックス) =================
+   2026-09-02: 画面サイズで見え方が変わる問題への対策。#app は端末の実寸では
+   なく stageMetrics() が決めた固定サイズ (横長 1280x720 / 縦長 720x1280) で
+   描き、それを --stage-scale で画面いっぱいまで等倍拡大する。
+   余白は黒帯になる。CSS 変数は shell/FixedStage.jsx が実測して流す。
+   theme.css 内に position:fixed の要素は無いので、#app に transform を
+   かけても固定配置の基準がずれる問題は起きない（W-1..W-6 も #app 内の
+   absolute 配置）。 */
+#stage{
+  position:fixed;inset:0;overflow:hidden;background:#000;
+  display:flex;align-items:center;justify-content:center;
+}
 #app{
   position:relative;display:flex;flex-direction:column;overflow:hidden;
-  background:var(--bg);width:100%;height:100dvh;
+  background:var(--bg);
+  /* 論理サイズ。FixedStage が未マウントでも壊れないよう既定値を持たせる。 */
+  width:var(--stage-w, 100%);height:var(--stage-h, 100dvh);
+  flex:0 0 auto;
+  transform:scale(var(--stage-scale, 1));transform-origin:center center;
   /* Layout switches on #app's own width, not viewport width, so the shell
      is correct even when embedded in something narrower/wider than the
      viewport. size containment is required to use cqh (container-height

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import AppShell from './shell/AppShell.jsx'
+import FixedStage from './shell/FixedStage.jsx'
 import { SystemStateProvider, useSystemState } from './ros/useSystemState.js'
 import AudienceView from './audience/AudienceView.jsx'
 import OperationCardHarness from './TestHarness.jsx'
@@ -174,9 +175,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     {AUDIENCE ? <AudienceView />
       : (
         <SystemStateProvider>
-          {(TEST_MODE && !TEST_SCREEN)
-            ? <AppShell><OperationCardHarness /></AppShell>
-            : <Screens />}
+          <FixedStage>
+            {(TEST_MODE && !TEST_SCREEN)
+              ? <AppShell><OperationCardHarness /></AppShell>
+              : <Screens />}
+          </FixedStage>
         </SystemStateProvider>
       )}
   </React.StrictMode>,
