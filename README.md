@@ -4,29 +4,20 @@
 ESP32(モーター制御)+ ラズパイ(LiDAR)+ PC(ROS2 Humble / Docker)の3台構成。
 
 ```txt
-ESP32 (駆動用, WiFi AP)          192.168.4.1   SSID: th-esp32-ap
-  ├── PC (Windows+WSL2, ROS2)   192.168.4.50  (固定IP)
-  │     ESP32 → WebSocket: 192.168.4.50:8766 (コンテナ内 esp32_bridge が直接待ち受け)
-  └── ラズパイ (LiDAR 配信)      192.168.4.2   (DHCP)
-        RPLIDAR S1 → rplidar_ros → /scan (ROS_DOMAIN_ID=10, frame_id=laser_link)
+ラズパイ (WiFi AP + LiDAR 配信)  192.168.5.1    SSID: th-rpi-ap (2.4GHz ch1)
+  ├── PC 内蔵Intel wlo1         192.168.5.50   固定IP。esp32_bridge が :8766 で待ち受け
+  │     RPLIDAR S1 → rplidar_ros → /scan (ROS_DOMAIN_ID=10, frame_id=laser_link)
+  └── ESP32 (駆動用, STA 子機)   192.168.5.125  DHCP → PC:8766 へ WebSocket 接続
+
+PC のインターネットは別系統: Elecom WDC-433SU2M2 (5GHz専用) → NCT-WL-ST
 ```
 
-> **上図は旧構成 (ESP32 が AP)。2026-09-02 実機の現行構成は「ラズパイが AP」**:
->
-> ```txt
-> ラズパイ (WiFi AP + LiDAR)     192.168.5.1    SSID: th-rpi-ap (2.4GHz ch1)
->   ├── PC 内蔵Intel wlo1        192.168.5.50   固定IP。esp32_bridge が :8766 で待ち受け
->   └── ESP32 (駆動)             192.168.5.125  STA 子機 (DHCP) → PC:8766 へ接続
->
-> PC のインターネットは別系統: Elecom WDC-433SU2M2 (5GHz専用) → NCT-WL-ST
-> ```
->
 > **ロボット回線は必ず PC の内蔵 Intel カードを使うこと。** USB ドングル (AIC8800) を
-> 使っていた頃は ロス 22% / RTT 最大 4.7 秒で ESP32 が切れ続けていた。同じ AP・同じ
-> チャネルで内蔵カードに替えるとロス 0% / RTT 4.4ms になる（原因はチャネル混雑では
-> なくドングル。詳細は CLAUDE.md）。ESP32 は 2.4GHz 専用なので AP の 5GHz 化は不可。
+> 使っていた頃は ロス 18% / RTT 最大 970ms で ESP32 が切れ続けていた。同じ AP・同じ
+> チャネルで内蔵カードに替えるとロス 0% / RTT 2.2ms になる（原因はチャネル混雑では
+> なくドングル）。ESP32 は 2.4GHz 専用なので AP の 5GHz 化は不可。
 >
-> [docs/network.md](docs/network.md) は ESP32-AP 前提のままで**全面的に古い**（要更新）。
+> 構成の詳細・復旧手順は [docs/network.md](docs/network.md)。
 
 
 | レイヤー         | 実装                                                         |
@@ -46,28 +37,26 @@ ESP32 (駆動用, WiFi AP)          192.168.4.1   SSID: th-esp32-ap
 
 前提: 初回セットアップ([docs/setup.md](docs/setup.md))済み。詳細は [docs/operation.md](docs/operation.md)。
 
-```powershell
-# ① ロボット・ラズパイの電源 ON。PC を SSID "th-rpi-ap" に接続して疎通確認
-#    2026-09-02 実機確認の構成 (docs/network.md の ESP32-AP 構成は古い):
+```bash
+# ① ロボット・ラズパイの電源 ON。PC をロボット AP に繋いで疎通確認
 #      ラズパイ 192.168.5.1   … AP 本体 + /scan 配信元 (systemd で自動起動)
-#      PC       192.168.5.50  … esp32_bridge が :8766 で待ち受け
+#      PC       192.168.5.50  … esp32_bridge が :8766 で待ち受け (内蔵 Intel wlo1・固定IP)
 #      ESP32    192.168.5.125 … STA 子機 (DHCP)。PC:8766 へ繋ぎに来る
-ping 192.168.5.1     # ラズパイ (AP 兼 LiDAR)
-ping 192.168.5.125   # ESP32 (IP は DHCP。ss -tnp | grep 8766 でも確認できる)
-# 繋がらない → netsh wlan disconnect → connect (docs/network.md「復旧手順」)
+nmcli connection up th-rpi-ap-wlo1     # autoconnect 済みなら不要
+ping -c3 192.168.5.1                   # ラズパイ (AP 兼 LiDAR)
+ping -c3 192.168.5.125                 # ESP32 (IP は DHCP。ss -tnp | grep 8766 でも確認できる)
+# 繋がらない → docs/network.md「復旧手順」
 
-# Wi-Fiのバックグラウンドスキャンの無効化
-
-netsh wlan set autoconfig enabled=no interface="<アダプタ名>"   # 走行前
-# netsh wlan set autoconfig enabled=yes interface="<アダプタ名>"  # 終了後
-
-
-# ② (推奨) WSL をクリーンに起動
-wsl --shutdown
+# ② インターネット側 (5GHz) が別アダプタで上がっていること
+nmcli -f NAME,DEVICE,STATE connection show --active
+ip route | head -1                     # default が net5g 側 (wlx...) であること
 ```
 
+> Windows + WSL2 の PC で動かす場合は ① を `netsh wlan connect name=th-rpi-ap ...` に
+> 読み替え、③ の前に `wsl --shutdown` でクリーンに起動する。
+
 ```bash
-# ③ WSL2 (Ubuntu) ターミナルで th_ws/ にて
+# ③ th_ws/ にて
 docker start th_robot
 docker exec -it th_robot bash
 

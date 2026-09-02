@@ -21,36 +21,47 @@ PC でビルドした `firmware.bin` を scp し、ラズパイ上の esptool �
 ```bash
 # PC 側
 cd esp32 && pio run
-scp .pio/build/esp32dev/firmware.bin mirs2602@192.168.4.2:~/th_firmware.bin
+scp .pio/build/esp32dev/firmware.bin mirs2602@192.168.5.1:~/th_firmware.bin
 
 # ラズパイ側 (baud は 115200 — 460800 は失敗する)
 PYTHONPATH=~/esptool_env/site-packages python3 -m esptool \
   --port /dev/ttyUSB1 --baud 115200 --chip esp32 write-flash 0x10000 ~/th_firmware.bin
 ```
 
-> **⚠ 書き込み中は AP が落ちる** = ssh も切れる。ラズパイ側では `setsid nohup ... &` で
-> 実行し、完了後に各クライアントの WiFi 再接続([network.md](network.md))を行うこと。
+> **⚠ 書き込み中は ESP32 が AP から落ちる。** ラズパイ側では `setsid nohup ... &` で
+> 実行すること。ラズパイが AP 本体なので ssh 自体は切れない。
 
 ### シリアルモニタの注意
 
-シリアルポートを開くと DTR/RTS の自動リセット回路で **ESP32 が再起動する(AP も落ちる)**。
-走行中・通信確認中はシリアルを開かない。開いた後は PC/ラズパイの WiFi 再接続が必要。
+シリアルポートを開くと DTR/RTS の自動リセット回路で **ESP32 が再起動する**。
+走行中・通信確認中はシリアルを開かない。
 
 ## WiFi 設定 (`wifi_credentials.h`)
 
-`esp32/src/wifi_credentials.h.example` をコピーして作成(.gitignore 対象)。現行の AP 構成:
+`esp32/src/wifi_credentials.h.example` をコピーして作成(.gitignore 対象)。
+**現行はラズパイが AP、ESP32 は STA 子機**（[network.md](network.md) 参照）:
 
 ```cpp
-#define WIFI_AP_MODE      1
-#define AP_SSID           "th-esp32-ap"
-#define AP_PASSWORD       "<APパスワード>"   // WPA2 は 8 文字以上
+// ── 子機として接続する親機 (ラズパイの AP) ──
+#define WIFI_SSID         "th-rpi-ap"
+#define WIFI_PASSWORD     "<APパスフレーズ>"
 
-// esp32_bridge (PC 側) の待ち受け先。th_esp32_bridge/config/params.yaml の ws_port と一致させる
-#define WS_SERVER_HOST    "192.168.4.50"
+// esp32_bridge (PC 側) の待ち受け先。PC の固定 IP。
+// th_esp32_bridge/config/params.yaml の ws_port と一致させること
+#define WS_SERVER_HOST    "192.168.5.50"
 #define WS_SERVER_PORT    8766
+
+#define WIFI_AP_MODE      0    // 0 = 子機 (現行)
 ```
 
-`WIFI_AP_MODE 0` にすると従来の STA モード(既存ホットスポットに接続)に戻る。
+`WIFI_AP_MODE 1` にすると ESP32 自身が親機になる旧構成に戻るが、**常用しないこと。**
+負荷時に ESP32 の無線が 600ms 単位で丸ごと停止し、受信ギャップの最悪値が
+1920ms（子機構成では 300ms）になることが実測で判明している。台上で PC と 1 対 1 で
+繋ぐときの退避手段としてのみ残してある。
+
+> **親機側は WPA2/CCMP に固定し、管理フレーム保護 (802.11w / PMF) を無効にすること。**
+> PMF が有効だと ESP32 (Arduino) は接続要求すら送れず、シールド基板ではシリアルログも
+> 読めないため切り分けが極めて難しい。AP 構築手順は `th_ws/scripts/rpi_setup_ap.sh`。
 
 ## 通信仕様 (実装済みの挙動)
 

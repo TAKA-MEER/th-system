@@ -47,7 +47,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`/scan_filtered` が実機で完全に無音になる複合バグ（2026-09-01 修正）。** 症状: 点群表示も slam_toolbox の地図生成も動かない。`ros2 topic hz /scan` は 10Hz 出るのに `lidar_filter` の `_cb` が一度も発火しない。原因は 2 つ:
   1. **`bringup.launch.py` が `lidar_filter`（network 時）に渡していた `FASTRTPS_DEFAULT_PROFILES_FILE`（`config/fastdds_profile.xml`）のユニキャスト初期ピアが `192.168.4.2` 固定だった。** ネットワークが `192.168.5.x` へ移行して**存在しないサブネット**になり、これが逆に discovery を壊した。→ additional_env を外し、マルチキャスト discovery（現行 AP では正常）に戻した。別 AP で不安定なら `fastdds_profile.xml` の `<address>` を現ラズパイ IP に直して再度渡す。
   2. `lidar_filter` の `/scan` 購読が既定 QoS（RELIABLE）だった。センサストリームは必ず `qos_profile_sensor_data`（BEST_EFFORT）で購読する（`safety_monitor` / `obstacle_limiter` / `connectivity_checker` は元から BEST_EFFORT）。
-- **実機のネットワークは「ESP32 が AP」から「ラズパイが AP」へ変わっている**（`docs/network.md` の記述は全面的に古い）。2026-09-02 に実機で確定した構成:
+- **実機のネットワークは「ESP32 が AP」から「ラズパイが AP」へ変わっている**（`docs/network.md` / `setup.md` / `esp32.md` は 2026-09-02 に現行構成へ書き直し済み。192.168.4.x や `th-esp32-ap` が出てくる記述を見かけたら古い）。2026-09-02 に実機で確定した構成:
 
   | 機器 | IP | 役割 |
   |---|---|---|

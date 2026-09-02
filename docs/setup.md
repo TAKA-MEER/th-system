@@ -8,7 +8,7 @@
 ## 目次
 
 1. [PC: WSL2 + Docker Engine](#1-pc-wsl2--docker-engine)
-2. [PC: WiFi (ESP32 AP への接続)](#2-pc-wifi-esp32-ap-への接続)
+2. [PC: WiFi (ラズパイ AP への接続)](#2-pc-wifi-ラズパイ-ap-への接続)
 3. [PC: Windows Firewall](#3-pc-windows-firewall)
 4. [PC: 時刻同期](#4-pc-時刻同期)
 5. [PC: コンテナのビルド](#5-pc-コンテナのビルド)
@@ -83,39 +83,64 @@ docker compose version
 
 ---
 
-## 2. PC: WiFi (ESP32 AP への接続)
+## 2. PC: WiFi (ラズパイ AP への接続)
 
-ネットワーク全体像は [network.md](network.md) 参照。PC は物理 WiFi アダプタで
-SSID `th-esp32-ap` に接続する(モバイルホットスポット等の仮想アダプタは
-mirrored networking の対象外なので不可)。
+ネットワーク全体像は [network.md](network.md) 参照。**現行はラズパイが AP**
+(SSID `th-rpi-ap` / 2.4GHz)、PC と ESP32 がどちらも子機。PC は
+**物理の内蔵 WiFi カード**で繋ぐ(USB ドングルは実測で品質が出ない。network.md の対照実験)。
 
-### 2-1. プロファイル設定 (管理者 PowerShell)
+AP 側(ラズパイ)の構築は `th_ws/scripts/rpi_setup_ap.sh`。
+WPA2/CCMP 固定・**PMF (802.11w) 無効**が必須(ESP32 が接続要求すら送れなくなる)。
+
+### 2-1. 接続プロファイル (Linux / NetworkManager)
+
+ロボット回線は**固定 IP `192.168.5.50/24`** にする。ESP32 ファームの
+`WS_SERVER_HOST` がこの IP 決め打ちのため必須。
+
+```bash
+nmcli connection add type wifi ifname wlo1 con-name th-rpi-ap-wlo1 ssid th-rpi-ap
+nmcli connection modify th-rpi-ap-wlo1 \
+  wifi-sec.key-mgmt wpa-psk wifi-sec.psk '<APパスフレーズ>' \
+  ipv4.method manual ipv4.addresses 192.168.5.50/24 \
+  ipv4.never-default yes ipv6.method disabled \
+  connection.autoconnect yes connection.autoconnect-priority 10 \
+  802-11-wireless.powersave 2
+nmcli connection up th-rpi-ap-wlo1
+```
+
+- `ipv4.never-default yes` — ロボット AP はインターネットを持たないので、
+  既定経路を奪わせない。
+- `802-11-wireless.powersave 2`(無効) — Ubuntu は
+  `/etc/NetworkManager/conf.d/*powersave*` で省電力 ON が既定。有効のままだと
+  受信ギャップが伸びる。
+- `ifname` は環境で異なる。`nmcli device status` で内蔵カードの名前を確認する。
+
+### 2-2. インターネットは別アダプタ (5GHz) に逃がす
+
+**PC が 2.4GHz を 2 枚同時に使う状態を作らないこと**(機内共存干渉でロボット回線が
+劣化する)。インターネットは 5GHz 専用アダプタで別 AP に繋ぎ、既定経路はそちらに置く。
+
+```bash
+nmcli device wifi connect '<5GHz の SSID>' password '<パスフレーズ>' ifname wlx........ name net5g
+ip route | head -1        # default が 5GHz 側になっていること
+```
+
+### 2-3. Windows + WSL2 の PC で動かす場合
+
+物理 WiFi アダプタで `th-rpi-ap` に接続する(モバイルホットスポット等の仮想アダプタは
+mirrored networking の対象外なので不可)。管理者 PowerShell で:
 
 ```powershell
-# プライベートプロファイルに (Firewall 前提)
 Set-NetConnectionProfile -InterfaceAlias "<アダプタ名>" -NetworkCategory Private
+netsh wlan set profileparameter name=th-rpi-ap connectionmode=auto
 
-# 自動接続に (既定の「手動接続」だと瞬断後に再接続されず数分間通信不能になる)
-netsh wlan set profileparameter name=th-esp32-ap connectionmode=auto
-```
-
-### 2-2. 固定 IP 192.168.4.50 (必須・管理者 PowerShell)
-
-ESP32 の SoftAP DHCP は再起動のたびにリースがリセットされ、PC の IP が変わりうる。
-ESP32 ファームは `192.168.4.50` に接続しに来るため固定必須:
-
-```powershell
+# 固定 IP 192.168.5.50 (ESP32 ファームがこの IP に繋ぎに来るため必須)
 Get-NetIPAddress -InterfaceAlias "<アダプタ名>" -AddressFamily IPv4 | Remove-NetIPAddress -Confirm:$false
-New-NetIPAddress -InterfaceAlias "<アダプタ名>" -IPAddress 192.168.4.50 -PrefixLength 24 -DefaultGateway 192.168.4.1
+New-NetIPAddress -InterfaceAlias "<アダプタ名>" -IPAddress 192.168.5.50 -PrefixLength 24
 ```
 
-実行直後に WiFi が切断されることがある。`netsh wlan show interfaces` で確認し、
-切れていたら `netsh wlan connect name=th-esp32-ap interface="<アダプタ名>"` で再接続。
-
-### 2-3. バックグラウンドスキャン停止 (走行時のみ・管理者 PowerShell)
-
-Windows はインターネットの無い AP 接続中、**約60秒周期のバックグラウンドスキャンで WiFi を微断**させる
-(→ WebSocket が切断され再接続に数十秒かかる)。走行時は止める:
+Windows はインターネットの無い AP 接続中、**約60秒周期のバックグラウンドスキャンで
+WiFi を微断**させる。走行時は止める:
 
 ```powershell
 netsh wlan set autoconfig enabled=no interface="<アダプタ名>"   # 走行前
@@ -124,16 +149,14 @@ netsh wlan set autoconfig enabled=yes interface="<アダプタ名>"  # 終了後
 
 > **⚠ 重要**: この設定は PC 再起動後も残り、**無効のままだと WiFi の再接続自体ができない**
 > (`接続できません。アダプターで WLAN 自動構成が無効になっています`)。
-> 必ず「① enabled=yes → ② th-esp32-ap に接続 → ③ enabled=no」の順で行うこと。
+> 必ず「① enabled=yes → ② `th-rpi-ap` に接続 → ③ enabled=no」の順で行うこと。
 
-### 2-4. 古い portproxy エントリの削除 (管理者 PowerShell)
-
-esp32_bridge は 8766 をコンテナ内で直接待ち受ける構成のため portproxy は**不要かつ有害**
+esp32_bridge は 8766 をコンテナ内で直接待ち受けるため **portproxy は不要かつ有害**
 (残っていると Windows が 8766 を横取りする):
 
 ```powershell
 netsh interface portproxy show all   # 空であること
-netsh interface portproxy delete v4tov4 listenport=8766 listenaddress=192.168.4.50
+netsh interface portproxy delete v4tov4 listenport=8766 listenaddress=192.168.5.50
 ```
 
 ---
@@ -144,8 +167,8 @@ netsh interface portproxy delete v4tov4 listenport=8766 listenaddress=192.168.4.
 
 ```powershell
 # ラズパイからの DDS (/scan 等) 受信許可。IP を変えたらルールも更新すること
-New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound UDP)" -Direction Inbound -Action Allow -Protocol UDP -RemoteAddress 192.168.4.2 -Profile Any
-New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound TCP)" -Direction Inbound -Action Allow -Protocol TCP -RemoteAddress 192.168.4.2 -Profile Any
+New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound UDP)" -Direction Inbound -Action Allow -Protocol UDP -RemoteAddress 192.168.5.1 -Profile Any
+New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound TCP)" -Direction Inbound -Action Allow -Protocol TCP -RemoteAddress 192.168.5.1 -Profile Any
 
 # ESP32 からの WebSocket 受信許可
 New-NetFirewallRule -DisplayName "TH-System ESP32 WS Bridge" -Direction Inbound -Protocol TCP -LocalPort 8765,8766 -Action Allow -Profile Any
@@ -189,13 +212,13 @@ w32tm /resync /force   # 自身も time.windows.com 等の外部 NTP に同期�
 w32tm /query /status   # Source が time.windows.com になっていること
 ```
 
-ファイアウォールは 3 節の `TH-System Pi LiDAR (inbound UDP)` ルール(192.168.4.2 からの UDP を
+ファイアウォールは 3 節の `TH-System Pi LiDAR (inbound UDP)` ルール(192.168.5.1 からの UDP を
 ポート指定なしで許可)がそのまま UDP 123 もカバーするため追加設定は不要。
 
 ```bash
 # ラズパイ側: /etc/systemd/timesyncd.conf
 [Time]
-NTP=192.168.4.50
+NTP=192.168.5.50
 FallbackNTP=
 RootDistanceMaxSec=30
 ```
@@ -214,13 +237,13 @@ timedatectl status   # "System clock synchronized: yes" になること
 sudo bash th_ws/scripts/pc_setup_ntp_server.sh
 
 # ② ラズパイ（一度だけ）
-ssh -t mirs2602@192.168.4.2 'sudo bash /tmp/rpi_fix_clock.sh'   # 先に scp しておく
+ssh -t mirs2602@192.168.5.1 'sudo bash /tmp/rpi_fix_clock.sh'   # 先に scp しておく
 ```
 
 Ubuntu 既定の `systemd-timesyncd` は**クライアント専用で時刻を配れない**。`chrony` を入れると
 `systemd-timesyncd` は自動で削除される。`local stratum 10` を入れるので、**PC が上流に
 繋がっていなくても配れる**（現場は隔離 AP のため必須）。ラズパイ側の
-`/etc/systemd/timesyncd.conf`（`NTP=192.168.4.50`）は上記のままでよい。
+`/etc/systemd/timesyncd.conf`（`NTP=192.168.5.50`）は上記のままでよい。
 
 なお WSL2 mirrored モードで chronyd が 123/udp にバインドできなかった問題は、
 **ネイティブ Ubuntu では起きない**（Windows の W32Time が居ないため）。
@@ -348,15 +371,24 @@ sudo systemctl enable --now rplidar
   起動失敗(`Error, code: 80008004`)時は `ls /dev/ttyUSB*` でポートを確認して差し替えるか、
   udev ルール(`udev/99-th-robot.rules` 参照)で `/dev/lidar` に固定する。
 
-### 6-2. WiFi (th-esp32-ap への接続)
+### 6-2. WiFi (ラズパイを AP にする)
 
-NetworkManager で SSID `th-esp32-ap` に接続する(初回は物理アクセスできる状態で)。
-以後は保存プロファイルで自動再接続される。IP は DHCP(通常 `192.168.4.2`)。
+**ラズパイ自身が親機**。`th_ws/scripts/rpi_setup_ap.sh` をラズパイ上で実行する。
 
 ```bash
-nmcli connection up th-esp32-ap        # 手動で切り替える場合
-ip addr show wlan0 | grep 'inet '      # 取得 IP の確認
+sudo bash rpi_setup_ap.sh th-rpi-ap '<APパスフレーズ>' 1   # SSID / パスフレーズ / ch
+sudo bash rpi_setup_ap.sh --revert                        # AP を止める
+ip addr show wlan0 | grep 'inet '                         # 192.168.5.1 になっていること
 ```
+
+> **⚠ 事前に有線の退路を作っておくこと**(無線設定を誤ると機体に触れなくなる)。
+> 手順はスクリプト冒頭のコメントに書いてある。
+>
+> WPA2/CCMP 固定・**PMF (802.11w) 無効**が必須。PMF が有効だと ESP32 (Arduino) は
+> 接続要求すら送れず、シールド基板ではシリアルログも読めないため切り分けが困難。
+>
+> `hostapd` / `dnsmasq` パッケージは不要(NetworkManager の共有モードが
+> `dnsmasq-base` を使う)。現場の AP は外に出られず `apt` が使えないので重要な性質。
 
 ---
 
@@ -365,10 +397,10 @@ ip addr show wlan0 | grep 'inet '      # 取得 IP の確認
 手順の詳細・チューニングは [esp32.md](esp32.md) 参照。初回の要点:
 
 1. `esp32/src/wifi_credentials.h.example` を `wifi_credentials.h` にコピーし、
-   AP モード設定(`WIFI_AP_MODE 1`, `AP_SSID "th-esp32-ap"`, `AP_PASSWORD`,
-   `WS_SERVER_HOST "192.168.4.50"`, `WS_SERVER_PORT 8766`)を記入
+   **STA (子機) 設定**(`WIFI_AP_MODE 0`, `WIFI_SSID "th-rpi-ap"`, `WIFI_PASSWORD`,
+   `WS_SERVER_HOST "192.168.5.50"`, `WS_SERVER_PORT 8766`)を記入
 2. PC に USB 接続して `cd esp32 && pio run --target upload`
-3. シリアルモニタで `[WiFi] AP IP=192.168.4.1` が出れば起動成功
+3. シリアルモニタで AP への接続と取得 IP(DHCP。通常 `192.168.5.125`)が出れば起動成功
 
 ### Windows での USB シリアル (usbipd — WSL から書き込む場合のみ)
 
@@ -396,7 +428,7 @@ npm run dev    # → http://localhost:5173
 
 roslib.js はローカル同梱(`web_ui/public/roslib.min.js`)のため、
 インターネットの無い AP 配下でもタブレットから動く。
-タブレットは th-esp32-ap に接続し `http://192.168.4.50:5173` を開く。
+タブレットは `th-rpi-ap` に接続し `http://192.168.5.50:5173` を開く。
 rosbridge(9090)は bringup が自動起動する。
 
 ### 観客向け表示（デモ展示。[docs/voice-and-audience.md](voice-and-audience.md) §1）
