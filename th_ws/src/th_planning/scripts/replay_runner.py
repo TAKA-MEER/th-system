@@ -50,7 +50,8 @@ def _points_to_path(points, frame_id='odom', stamp=None):
     return path
 
 from th_planning.odom_source import pick_odom_source
-from th_planning.route_record_core import polyline_length, route_from_dict
+from th_planning.route_record_core import (
+    finalized_path, polyline_length, route_from_dict)
 from th_planning.route_replay_core import (
     ReplayParams, advance_index, align_path_to_current, pure_pursuit,
     ramp_toward, reverse_points, rotate_toward,
@@ -209,7 +210,10 @@ class ReplayRunner(Node):
                 reverse = rev_arg.lower() in ('true', '1', 'yes')
             else:
                 reverse = bool(rev_arg)
-            path = os.path.join(self._routes_dir, f'{route_id}.json')
+            # 保存側 (finalized_path) と同じ規則でファイル名を作る。route_id に `/`
+            # や `\` が入る名前 (例: 9/3_koushakukou) でも保存先と読み込み先が
+            # 必ず一致するようにする。
+            path = finalized_path(self._routes_dir, route_id)
             try:
                 with open(path, encoding='utf-8') as f:
                     self._route = route_from_dict(json.load(f))

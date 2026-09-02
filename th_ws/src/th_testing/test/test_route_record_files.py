@@ -25,6 +25,7 @@ import pytest
 _SCRIPTS = os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..', 'th_planning', 'scripts'))
 ROUTE_RECORDER = os.path.join(_SCRIPTS, 'route_recorder.py')
+REPLAY_RUNNER = os.path.join(_SCRIPTS, 'replay_runner.py')
 
 # ── パスを通す（colcon build 前にも直接 pytest できるように）
 sys.path.insert(0, os.path.join(
@@ -283,3 +284,79 @@ def test_reset_autosave_state_body_resets_all_fields():
         f'_reset_autosave_state 本体が 3 状態を戻し切れていない: {sorted(by_attr)}')
     assert by_attr['_last_autosaved_points'] == 0, (
         '_last_autosaved_points の代入値が 0 でない（欠陥が復活し得る）')
+
+
+# ============================================================================
+# WS-9I: 経路名に `/` が入ると保存できるのに再生できない。
+#
+# route_recorder（保存側）は finalized_path() で `/` `\` を _ に置換して書き、
+# replay_runner（再生側）は生の id を `os.path.join(..., f'{route_id}.json')`
+# で開いていた。`9/3_koushakukou` のような名前は保存先 <dir>/9_3_koushakukou.json
+# にあるのに、再生は <dir>/9/3_koushakukou.json を開こうとして見つからない。
+# WS-9H で保存側だけサニタイズした結果の食い違い（保存は通るのに再生で動かない）。
+#
+# 「保存先と読み込み先が必ず一致する」ことを、純関数・ast・往復の 3 方向で固定する。
+# ============================================================================
+
+
+def test_finalized_path_stays_in_dir_and_is_json(tmp_path):
+    """WS-9I: finalized_path(dir, name) が dir 直下に収まり .json で終わる。
+
+    変異チェック 2: _safe_id の置換をやめると、`9/3_...` や `../evil` の dirname が
+    dir と一致しなくなり（/ を _ に替えないため）、このテストが落ちる。
+    """
+    routes_dir = _mkroutes(tmp_path)
+    names = ['kousha_01', '校舎1周', '9/3_koushakukou', 'a\\b', '../evil', '']
+    for name in names:
+        p = finalized_path(routes_dir, name)
+        assert os.path.dirname(p) == routes_dir, f'name={name!r}: 先が dir 直下でない: {p!r}'
+        assert p.endswith('.json'), f'name={name!r}: .json で終わらない: {p!r}'
+
+
+def test_replay_runner_uses_finalized_path_and_no_raw_json_fstring(tmp_path):
+    """WS-9I: replay_runner が生の f-string でパスを組んでいないこと。
+
+    - finalized_path() の呼び出しが存在すること
+    - `f'...{...}.json'` 相当（JoinedStr の一部に '.json' を含む文字列リテラルを
+      持つもの）が無いこと
+
+    変異チェック 1: finalized_path(...) を元の os.path.join(..., f'{route_id}.json')
+    に戻すと、JoinedStr('.json') が現れこのテストが落ちる。
+    """
+    tree = _tree(REPLAY_RUNNER)
+
+    has_call = any(
+        isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == 'finalized_path'
+        for n in ast.walk(tree))
+    assert has_call, 'replay_runner のソースに finalized_path() の呼び出しが見つからない'
+
+    offending = None
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.JoinedStr):
+            continue
+        for v in n.values:
+            if isinstance(v, ast.Constant) and isinstance(v.value, str) and '.json' in v.value:
+                offending = n
+                break
+        if offending is not None:
+            break
+    assert offending is None, (
+        'replay_runner が生の f-string で .json を組み立てている箇所が残っている: '
+        f'{ast.dump(offending)}')
+
+
+def test_finalize_then_read_back_round_trip(tmp_path):
+    """WS-9I: 保存先 (finalized_path) と読み込み先が必ず一致する往復テスト。
+
+    finalize_route_file(dir, name, ...) で保存したファイルを
+    finalized_path(dir, name) で必ず開けること。すべての名前で confirm。
+    """
+    routes_dir = _mkroutes(tmp_path)
+    names = ['kousha_01', '校舎1周', '9/3_koushakukou', 'a\\b', '../evil', '']
+    for name in names:
+        dest = finalize_route_file(routes_dir, name, {'id': name, 'points': []})
+        assert dest == finalized_path(routes_dir, name), f'name={name!r}: 保存先が食い違う'
+        with open(finalized_path(routes_dir, name), encoding='utf-8') as f:
+            assert json.load(f)['id'] == name, f'name={name!r}: 読み戻せない'
