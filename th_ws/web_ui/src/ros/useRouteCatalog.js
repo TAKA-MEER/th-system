@@ -35,7 +35,7 @@ export function useRouteCatalog(ros) {
       ros,
       name: TOPICS.ROUTE_CATALOG,
       messageType: MSG_TYPES.ROUTE_LIST,
-      subscribeOptions: { queueSize: 1, throttle_rate: 0, latching: true },
+      queue_length: 1,
     })
     topicRef.current.subscribe((msg) => setRoutes(msg?.routes ?? []))
     return () => {

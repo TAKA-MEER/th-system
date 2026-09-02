@@ -4,12 +4,7 @@
 // route-preview crop is silently dropped (mutation 2).
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  fitTransform, ROUTE_PREVIEW_PAD,
-  centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M,
-  scanToPoints, SCAN_FALLBACK_MAX_M,
-  mapDestRect,
-} from '../../src/screens/routePreviewGeom.js'
+import { fitTransform, ROUTE_PREVIEW_PAD, centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M, scanToPoints, SCAN_FALLBACK_MAX_M, mapDestRect, shortestAngleDelta, smoothPose } from '../../src/screens/routePreviewGeom.js'
 
 test('returns null for an empty point set', () => {
   assert.equal(fitTransform([], 600, 380, 20), null)
@@ -212,4 +207,68 @@ test('mapDestRect returns null for missing/invalid info or fit', () => {
   assert.equal(mapDestRect({ ...MAP_INFO, resolution: 0 }, MAP_FIT, H2), null)
   assert.equal(mapDestRect({ ...MAP_INFO, width: -4 }, MAP_FIT, H2), null)
   assert.equal(mapDestRect(MAP_INFO, MAP_FIT, 0), null)
+})
+// ── pose 補間（2026-09-02「経路表示がガクガク動く」対策） ──────────────
+// プレビューはロボット中心・固定倍率なので pose が画面全体の位置を決める。
+// pose は 10Hz でしか来ないため、間のフレームを補間しないと地図・経路・点群が
+// まとめて瞬間移動する。ここが守る性質:
+//   1. yaw は必ず「短い方」に回る（179° → -179° を +2° と解釈する）
+//   2. alpha=1 で目標に一致し、0 で動かない（境界で壊れない）
+//   3. 繰り返し適用すると目標に収束する（発散・振動しない）
+test('shortestAngleDelta: 境界をまたぐときは短い方を返す', () => {
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`)
+  near(shortestAngleDelta(0, 0), 0)
+  near(shortestAngleDelta(0, 1), 1)
+  // 179° -> -179° は -358° ではなく +2°
+  near(shortestAngleDelta(Math.PI - 0.01, -Math.PI + 0.01), 0.02)
+  // 逆向きも同様
+  near(shortestAngleDelta(-Math.PI + 0.01, Math.PI - 0.01), -0.02)
+  // 返り値は必ず -π..π
+  for (const [f, t] of [[0, 10], [0, -10], [5, -5], [-3, 3]]) {
+    const d = shortestAngleDelta(f, t)
+    assert.ok(d >= -Math.PI - 1e-9 && d <= Math.PI + 1e-9, `範囲外: ${d}`)
+  }
+})
+
+test('smoothPose: alpha=1 で目標に一致し、alpha=0 で動かない', () => {
+  const cur = { x: 0, y: 0, yaw: 0 }
+  const tgt = { x: 2, y: -4, yaw: 1.2 }
+  const at1 = smoothPose(cur, tgt, 1)
+  assert.ok(Math.abs(at1.x - 2) < 1e-9 && Math.abs(at1.y + 4) < 1e-9)
+  assert.ok(Math.abs(at1.yaw - 1.2) < 1e-9)
+  const at0 = smoothPose(cur, tgt, 0)
+  assert.ok(Math.abs(at0.x) < 1e-9 && Math.abs(at0.y) < 1e-9 && Math.abs(at0.yaw) < 1e-9)
+})
+
+test('smoothPose: current が無ければ目標をそのまま返す（初回受信）', () => {
+  const tgt = { x: 1, y: 2, yaw: 0.5, frame: 'map' }
+  const r = smoothPose(null, tgt, 0.25)
+  assert.equal(r.x, 1); assert.equal(r.y, 2); assert.equal(r.yaw, 0.5)
+  assert.equal(r.frame, 'map', 'frame 等の付随フィールドが落ちている')
+})
+
+test('smoothPose: target が無ければ current を保つ（pose 途絶で消さない）', () => {
+  const cur = { x: 1, y: 2, yaw: 0.5 }
+  assert.deepEqual(smoothPose(cur, null, 0.25), cur)
+  assert.equal(smoothPose(null, null, 0.25), null)
+})
+
+test('smoothPose: 繰り返すと目標に収束する（発散しない）', () => {
+  let p = { x: 0, y: 0, yaw: 0 }
+  const tgt = { x: 5, y: -3, yaw: 2.0 }
+  for (let i = 0; i < 200; i++) p = smoothPose(p, tgt, 0.25)
+  assert.ok(Math.hypot(p.x - 5, p.y + 3) < 1e-6, `位置が収束しない: ${p.x},${p.y}`)
+  assert.ok(Math.abs(p.yaw - 2.0) < 1e-6, `yaw が収束しない: ${p.yaw}`)
+})
+
+test('smoothPose: 角度の折返しを跨いでも大回りしない', () => {
+  // 179.4° から -179.4° へ。素朴な線形補間だと中間が 0° 付近（真後ろ）を通る。
+  let p = { x: 0, y: 0, yaw: Math.PI - 0.01 }
+  const tgt = { x: 0, y: 0, yaw: -Math.PI + 0.01 }
+  for (let i = 0; i < 60; i++) {
+    p = smoothPose(p, tgt, 0.25)
+    // 常に境界付近（|yaw| > 3.0）に留まること＝0 付近を通らない
+    const wrapped = Math.atan2(Math.sin(p.yaw), Math.cos(p.yaw))
+    assert.ok(Math.abs(wrapped) > 3.0, `大回りした: ${wrapped}`)
+  }
 })

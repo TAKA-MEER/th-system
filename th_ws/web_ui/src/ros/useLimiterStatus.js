@@ -40,7 +40,7 @@ export function useLimiterStatus(ros) {
       ros,
       name: TOPICS.LIMITER_STATUS,
       messageType: MSG_TYPES.LIMITER_STATUS,
-      subscribeOptions: { queueSize: 1, throttle_rate: 0, latching: false },
+      queue_length: 1,
     })
     topicRef.current.subscribe((msg) => setStatus(msg))
     return () => {

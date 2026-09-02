@@ -33,7 +33,7 @@ export function useRoutePreview(ros) {
       ros,
       name: TOPICS.ROUTE_PREVIEW,
       messageType: MSG_TYPES.PATH,
-      subscribeOptions: { queueSize: 2, throttle_rate: 0, latching: false },
+      queue_length: 1,
     })
     topicRef.current.subscribe((msg) => {
       // WS-6.4: ignore empty Path messages so a momentary zero-frame gap never

@@ -33,7 +33,7 @@ export function useRouteStatus(ros) {
       ros,
       name: TOPICS.ROUTE_STATUS,
       messageType: MSG_TYPES.ROUTE_STATUS,
-      subscribeOptions: { queueSize: 1, throttle_rate: 0, latching: true },
+      queue_length: 1,   // 最新のみ保持（詰まった後の古いメッセージのバースト配信を防ぐ）
     })
     topicRef.current.subscribe((msg) => setStatus(msg))
     return () => {

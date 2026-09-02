@@ -15,6 +15,12 @@ const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== unde
 const ROUTE_MAP_TOPIC = '/map'
 const ROUTE_MAP_MSG = 'nav_msgs/OccupancyGrid'
 
+// slam_toolbox 側の map_update_interval は 5.0s（slam_params.yaml）。地図 1 枚は
+// 数十万セルの JSON で、受信のたびに RoutePreview が width×height の二重ループを
+// 回して ImageData を作る＝メインスレッドが固まる。publish 周期より短く間引いても
+// 意味が無いので、受信側もこの程度に抑えて取りこぼしの再送だけ受ける。
+const MAP_THROTTLE_MS = 2000
+
 export function useRouteMap(ros) {
   const topicRef = useRef(null)
   const [mapData, setMapData] = useState(
@@ -34,7 +40,9 @@ export function useRouteMap(ros) {
       ros,
       name: ROUTE_MAP_TOPIC,
       messageType: ROUTE_MAP_MSG,
-      subscribeOptions: { queueSize: 1, throttle_rate: 0, latching: false },
+      queue_length: 1,
+      // /map は数十万セル。5秒ごとの巨大 JSON でメインスレッドが固まるので間引く。
+      throttle_rate: MAP_THROTTLE_MS,
     })
     topicRef.current.subscribe((grid) => {
       if (!grid?.info || !grid.data) return

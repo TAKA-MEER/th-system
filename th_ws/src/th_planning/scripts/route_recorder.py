@@ -68,6 +68,14 @@ class RouteRecorder(Node):
         self.declare_parameter('sample_min_dist_m', 0.10)
         self.declare_parameter('sample_min_yaw_rad', 0.20)
         self.declare_parameter('status_period_ms', 500)
+        # WebUI の経路プレビューはロボット中心・固定倍率で描くので、この pose が
+        # 画面全体の位置を決める。2Hz だと 1 更新あたり旋回 14°（w_max=0.5rad/s）＝
+        # 半径 10m の点群外周で 47px の一発ジャンプになり「ガクガク」に見える
+        # （2026-09-02 実機報告）。status(2Hz) から分離して 10Hz で出す。
+        # 2026-09-01 に 10Hz→2Hz へ下げた理由はブロッキング lookup_transform で
+        # executor が半分止まることだったが、その timeout は同じコミット(b7fa24a)で
+        # 除去済み（_map_pose の docstring 参照）。レートを戻しても再現しない。
+        self.declare_parameter('pose_period_ms', 100)
         # WS-8B: use_map_frame（launch が enable_route_slam のとき true）でだけ
         # slam_toolbox の map→base_link を使って map フレームで記録する。
         # 既定 false ＝ 従来どおり /odom のみ・TF リスナも作らない（通常起動で
@@ -130,6 +138,12 @@ class RouteRecorder(Node):
         # ── Timers ─────────────────────────────────────────
         self.create_timer(sample_ms / 1000.0, self._sample_timer)
         self.create_timer(status_ms / 1000.0, self._status_timer)
+        # pose は表示の滑らかさに直結するので status とは別周期で回す。
+        # use_map_frame が false のときは _publish_robot_pose が即 return するので
+        # 通常起動での負荷増は無い。
+        self.create_timer(
+            self.get_parameter('pose_period_ms').value / 1000.0,
+            self._publish_robot_pose)
 
         # 起動時に既存経路を latched publish する
         self._publish_routes_list()
@@ -254,8 +268,7 @@ class RouteRecorder(Node):
         self._recorder.add_pose(*pose)
 
     def _status_timer(self):
-        # WebUI 用のロボット pose（map or odom）。2Hz で十分。
-        self._publish_robot_pose()
+        # pose は専用の 10Hz タイマ（pose_period_ms）で出す。ここでは出さない。
         msg = RouteStatus()
         stamp = self.get_clock().now().to_msg()
         msg.header.stamp = stamp

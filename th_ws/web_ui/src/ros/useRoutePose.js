@@ -34,7 +34,7 @@ export function useRoutePose(ros) {
       ros,
       name: ROUTE_POSE_TOPIC,
       messageType: ROUTE_POSE_MSG,
-      subscribeOptions: { queueSize: 1, throttle_rate: 0, latching: false },
+      queue_length: 1,   // 最新のみ。WiFi が詰まった後に古い pose が連続配信されると位置が飛ぶ
     })
     topicRef.current.subscribe((msg) => {
       if (!msg?.pose) return

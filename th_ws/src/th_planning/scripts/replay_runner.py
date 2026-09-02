@@ -72,6 +72,11 @@ class ReplayRunner(Node):
         self.declare_parameter('routes_dir', '/root/th_data/routes')
         self.declare_parameter('control_period_ms', 50)   # 20Hz
         self.declare_parameter('status_period_ms', 500)
+        # 経路プレビューはロボット中心・固定倍率なので、この pose が画面全体の
+        # 位置を決める。2Hz では旋回 1 ステップ 14°＝外周 47px のジャンプになり
+        # 「ガクガク」になる（2026-09-02 実機報告）。status から分離して 10Hz。
+        # 詳細は route_recorder.py の同名パラメータのコメント参照。
+        self.declare_parameter('pose_period_ms', 100)
         self.declare_parameter('lookahead_m', 0.40)
         # 2026-09-01: 実機で DRIVE_RUNAWAY を踏んだため巡航・旋回を下げてランプ化した（#2）。
         self.declare_parameter('cruise_speed_mps', 0.18)
@@ -159,6 +164,10 @@ class ReplayRunner(Node):
         # ── Timers ─────────────────────────────────────────
         self.create_timer(control_ms / 1000.0, self._control_timer)
         self.create_timer(status_ms / 1000.0, self._status_timer)
+        # pose は表示の滑らかさに直結するので status とは別周期で回す。
+        self.create_timer(
+            self.get_parameter('pose_period_ms').value / 1000.0,
+            self._publish_robot_pose)
 
         self.get_logger().info('replay_runner 起動')
 
@@ -361,7 +370,7 @@ class ReplayRunner(Node):
     # ── ステータス publish ───────────────────────────────
     def _status_timer(self):
         stamp = self.get_clock().now().to_msg()
-        self._publish_robot_pose()
+        # pose は専用の 10Hz タイマ（pose_period_ms）で出す。ここでは出さない。
         msg = RouteStatus()
         msg.header.stamp = stamp
         msg.state = self._state or 'NONE'

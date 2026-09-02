@@ -18,16 +18,21 @@
 // here because the screen shouldn't have to wire a point cloud it doesn't
 // otherwise use (useRosbridge.js subscribes it the same raw-name way). In
 // TEST_MODE a seeded window.__thTestRouteScan can stand in for the wire.
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { ROUTE_PREVIEW_EMPTY } from '../i18n/screens.js'
-import { fitTransform, ROUTE_PREVIEW_PAD, centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M, scanToPoints, SCAN_FALLBACK_MAX_M, mapDestRect } from './routePreviewGeom.js'
+import { fitTransform, ROUTE_PREVIEW_PAD, centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M, scanToPoints, SCAN_FALLBACK_MAX_M, mapDestRect, smoothPose } from './routePreviewGeom.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 const SCAN_TOPIC = '/scan_filtered'
 const SCAN_MSG = 'sensor_msgs/LaserScan'
 const W = 600
 const H = 380
+// pose 補間の追従係数（0..1）。1 フレームで目標との差をこの割合だけ詰める。
+// 大きいほど機敏だが階段が残り、小さいほど滑らかだが表示が遅れる。
+// 60fps・pose 10Hz（= 6 フレームに 1 回更新）で、0.25 なら 1 更新分の差を
+// おおむね次の更新までに詰めきる（0.75^6 ≒ 0.18 まで縮む）。
+const POSE_SMOOTH_ALPHA = 0.25
 
 export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
   const { ros } = useSystemState()
@@ -89,6 +94,8 @@ export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
   const points = []
   if (preview) points.push(...preview)
   if (pose) points.push(pose)
+  // `fit` はここでは「描けるデータがあるか」の判定とオーバレイ表示にだけ使う。
+  // 実際の描画は下の rAF ループが補間後の pose から毎フレーム作り直す。
   const fit = pose
     ? centeredTransform(pose, ROUTE_PREVIEW_HALF_SPAN_M, W, H)
     : fitTransform(points, W, H, ROUTE_PREVIEW_PAD)
@@ -102,9 +109,24 @@ export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
     window.__thRoutePreviewDrawn = { targetIndex: drawnTarget, pointCount: preview?.length ?? 0 }
   }, [drawnTarget, preview])
 
-  useEffect(() => {
+  // rAF ループが「張り直さずに」最新の props を読めるようにする。以前は描画が
+  // useEffect の依存（fit を含む）で走っており、fit は毎レンダー新オブジェクト
+  // だったため、/system/state の 10Hz 再レンダーのたびに中身が変わっていなくても
+  // フル再描画していた（地図 blit ＋ 数百 fillRect）。
+  const latestRef = useRef(null)
+  latestRef.current = { preview, scanData, targetIndex, mapData, pose }
+
+  const drawFrame = useCallback((dpose) => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const { preview, scanData, targetIndex, mapData } = latestRef.current
+    const pose = dpose
+    const pts = []
+    if (preview) pts.push(...preview)
+    if (pose) pts.push(pose)
+    const fit = pose
+      ? centeredTransform(pose, ROUTE_PREVIEW_HALF_SPAN_M, W, H)
+      : fitTransform(pts, W, H, ROUTE_PREVIEW_PAD)
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     if (TEST_MODE) window.__thRoutePreviewFit = { scale: fit ? fit.scale : null }
@@ -182,7 +204,35 @@ export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
       ctx.lineWidth = 1.5
       ctx.stroke()
     }
-  }, [fit, preview, pose, scanData, targetIndex, mapData])
+  }, [])
+
+  // ── 描画の駆動 ───────────────────────────────────────────────
+  // 本番: rAF ループで毎フレーム、pose を目標へ指数的に近づけてから描く。
+  // pose は 10Hz でしか来ないので、間のフレームを補間しないと画面全体
+  // （地図・経路・点群）が秒 10 回まとめて瞬間移動する＝ガクガクになる。
+  // ループは一度だけ張り、データは latestRef から読むので再レンダーで
+  // 張り直さない。
+  const smoothRef = useRef(null)
+  const rafRef = useRef(0)
+  useEffect(() => {
+    if (TEST_MODE) return undefined
+    const step = () => {
+      smoothRef.current = smoothPose(
+        smoothRef.current, latestRef.current.pose, POSE_SMOOTH_ALPHA)
+      drawFrame(smoothRef.current)
+      rafRef.current = requestAnimationFrame(step)
+    }
+    rafRef.current = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [drawFrame])
+
+  // TEST_MODE: e2e は seed した直後に window.__thRoutePreview* を読むので、
+  // 補間も rAF も挟まず同期で 1 回描く（決定的にする）。
+  useEffect(() => {
+    if (!TEST_MODE) return
+    smoothRef.current = pose ? { ...pose } : null
+    drawFrame(smoothRef.current)
+  }, [drawFrame, pose, preview, scanData, targetIndex, mapData])
 
   // WS-6.4: the canvas is ALWAYS mounted (so a zero-frame gap never swaps the
   // DOM, further reducing #4 flicker). With no drawable data the placeholder

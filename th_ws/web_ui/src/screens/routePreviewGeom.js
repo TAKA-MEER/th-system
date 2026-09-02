@@ -15,6 +15,39 @@ export const ROUTE_PREVIEW_HALF_SPAN_M = 10
 // RPLIDAR S1 range_max is ~12m; 16m keeps all valid returns drawn.
 export const SCAN_FALLBACK_MAX_M = 16
 
+// ── pose の補間（2026-09-02「経路表示がガクガク動く」対策） ──────────────
+//
+// プレビューはロボット中心・固定倍率なので、pose が画面全体の位置を決める。
+// pose は ROS 側から離散的にしか来ない（10Hz。以前は 2Hz だった）ため、受信の
+// たびに地図・経路・点群がまとめて瞬間移動する＝ガクガク見える。特に旋回は
+// 効きが大きく、w=0.5rad/s・10Hz でも 1 更新 2.9°、半径 10m の点群外周で
+// 約 9px が一度に動く（2Hz だった頃は 14.3°・47px）。
+// そこで描画側は毎フレーム目標 pose へ指数的に近づけた値を使う。
+
+// -π..π に畳んだ角度差。yaw を補間するとき 179° → -179° を
+// 「-358°回る」ではなく「+2°回る」と解釈させるために要る。
+export function shortestAngleDelta(from, to) {
+  let d = to - from
+  while (d > Math.PI) d -= 2 * Math.PI
+  while (d < -Math.PI) d += 2 * Math.PI
+  return d
+}
+
+// current を target へ alpha（0..1）だけ近づけた pose を返す純関数。
+// alpha=1 で即座に target（テスト・初回受信時はこれを使う）。
+// current が無ければ target をそのまま返す（初期化）。
+export function smoothPose(current, target, alpha) {
+  if (!target) return current ?? null
+  if (!current) return { ...target }
+  const a = Math.max(0, Math.min(1, alpha))
+  return {
+    ...target,
+    x: current.x + (target.x - current.x) * a,
+    y: current.y + (target.y - current.y) * a,
+    yaw: current.yaw + shortestAngleDelta(current.yaw, target.yaw) * a,
+  }
+}
+
 // centeredTransform(center, halfSpanM, w, h) -> { scale, minX, minY, offX, offY } | null
 // Put `center` ({x,y}, odom world) at the canvas centre and fit ±halfSpanM to
 // the SHORT canvas side, preserving aspect ratio. No rotation, fixed scale —

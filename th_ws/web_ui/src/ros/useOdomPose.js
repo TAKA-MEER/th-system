@@ -38,7 +38,7 @@ export function useOdomPose(ros) {
       ros,
       name: ODOM_TOPIC,
       messageType: ODOM_MSG,
-      subscribeOptions: { queueSize: 1, throttle_rate: 0, latching: false },
+      queue_length: 1,   // 最新のみ（古い pose のバースト配信を防ぐ）
     })
     topicRef.current.subscribe((odom) => {
       if (!odom?.pose?.pose) return
