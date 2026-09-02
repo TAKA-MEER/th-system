@@ -1,5 +1,5 @@
 {
-  "speed_preset_high": 1.0,
-  "speed_preset_low": 0.3,
-  "speed_preset_mid": 0.6
+  "speed_preset_high": 0.55,
+  "speed_preset_low": 0.15,
+  "speed_preset_mid": 0.3
 }

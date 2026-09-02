@@ -25,6 +25,7 @@
 // there is no rosbridge, so nothing is published for real; instead every
 // send is recorded on window.__thJogPublishes for e2e to count.
 import { useEffect, useRef } from 'react'
+import { rampToward } from '../parts/stickGeometry.js'
 import { TOPICS, MSG_TYPES } from './topics'
 import { getClientId } from './clientId'
 
@@ -34,6 +35,16 @@ const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== unde
 // (jog_lease_ms is 1200ms, so 200ms is comfortably above it), velocity 10 Hz.
 const LEASE_MS = 200
 const CMD_MS = 100
+
+// ジョグの加速度制限（2026-09-02 に復活させた）。
+// 旧 App.jsx が JOG_LIN_ACCEL=1.0 / JOG_ANG_ACCEL=4.0 を持っており、
+// 「無いとスティック/キー入力の変化が瞬時にそのまま速度指令へ反映され機体が
+// 激しく揺れる」という実機検証のコメントが残っていた。新 UI へ移す際に
+// rampToward だけが stickGeometry.js へ移植され、**呼び出しが失われていた**
+// （本番から一度も呼ばれていなかった）。急発進は車輪を滑らせ、/odom は車輪速度
+// フィードバック由来なので教示精度そのものを損なう。
+const JOG_LIN_ACCEL = 1.0   // m/s^2
+const JOG_ANG_ACCEL = 4.0   // rad/s^2
 
 export function useJogLease(ros, held, cmd, enabled = true) {
   const leaseTopicRef = useRef(null)
@@ -93,12 +104,31 @@ export function useJogLease(ros, held, cmd, enabled = true) {
     }
   }
 
-  const publishCmd = (vx = cmdRef.current.vx, wz = cmdRef.current.wz) => {
-    record.current({ topic: TOPICS.CMD_VEL_MANUAL_RAW, cmd: { vx, wz } })
+  // 直近に実際に送った値。加速度制限の起点になる。
+  const sentRef = useRef({ vx: 0, wz: 0 })
+
+  // 引数なし = 定期送信。目標へ加速度制限つきで近づける。
+  // 引数あり = 解放・非表示・アンマウント時のゼロなど「今すぐこの値」を意味する
+  // 呼び出しなので、**ランプを通さない**。ここを滑らかにすると手を離しても
+  // 機体が進み続けることになり、安全上の後退になる。
+  const publishCmd = (vx, wz) => {
+    let outVx
+    let outWz
+    if (vx === undefined) {
+      outVx = rampToward(sentRef.current.vx, cmdRef.current.vx,
+                         JOG_LIN_ACCEL * (CMD_MS / 1000))
+      outWz = rampToward(sentRef.current.wz, cmdRef.current.wz,
+                         JOG_ANG_ACCEL * (CMD_MS / 1000))
+    } else {
+      outVx = vx
+      outWz = wz
+    }
+    sentRef.current = { vx: outVx, wz: outWz }
+    record.current({ topic: TOPICS.CMD_VEL_MANUAL_RAW, cmd: { vx: outVx, wz: outWz } })
     if (!TEST_MODE && cmdTopicRef.current && window.ROSLIB) {
       cmdTopicRef.current.publish(new window.ROSLIB.Message({
-        linear: { x: vx, y: 0, z: 0 },
-        angular: { x: 0, y: 0, z: wz },
+        linear: { x: outVx, y: 0, z: 0 },
+        angular: { x: 0, y: 0, z: outWz },
       }))
     }
   }
@@ -149,7 +179,7 @@ export function useJogLease(ros, held, cmd, enabled = true) {
         publishLease()
         publishCmd()
         leaseTimerRef.current = setInterval(publishLease, LEASE_MS)
-        cmdTimerRef.current = setInterval(publishCmd, CMD_MS)
+        cmdTimerRef.current = setInterval(() => publishCmd(), CMD_MS)
       }
       return
     }

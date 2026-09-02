@@ -174,28 +174,28 @@
   unit: ratio
   class: b
   status: given
-  value: 0.3
+  value: 0.15
   consumers: [web_ui]
   spec_ref: "DetailedDesign-names.md §7.1"
-  note: "UI プリセット。上限に対する割合"
+  note: "# WAIVER(demo): W-07 — UI プリセット。**現状これがそのまま m/s になる**。2026-09-02 実機で前進が速すぎ教示精度が不安との報告を受け 0.3/0.6/1.0 から下げた。根拠: (1) 駆動系のフィードフォワード飽和点が約 0.71 m/s（config.h の k≈280 と PID_OUT_MAX=200 から逆算）で、超えると指令と実速度が乖離し /odom そのものが劣化する。(2) route_recorder の記録間隔は max(0.10m, v×0.1s) なので v≤0.6 なら距離ゲートが支配的で空間分解能 10cm が保たれる"
 
 - name: speed_preset_mid
   unit: ratio
   class: b
   status: given
-  value: 0.6
+  value: 0.30
   consumers: [web_ui]
   spec_ref: "DetailedDesign-names.md §7.1"
-  note: "UI プリセット。上限に対する割合"
+  note: "# WAIVER(demo): W-07 — UI プリセット。**現状これがそのまま m/s になる**。2026-09-02 実機で前進が速すぎ教示精度が不安との報告を受け 0.3/0.6/1.0 から下げた。根拠: (1) 駆動系のフィードフォワード飽和点が約 0.71 m/s（config.h の k≈280 と PID_OUT_MAX=200 から逆算）で、超えると指令と実速度が乖離し /odom そのものが劣化する。(2) route_recorder の記録間隔は max(0.10m, v×0.1s) なので v≤0.6 なら距離ゲートが支配的で空間分解能 10cm が保たれる"
 
 - name: speed_preset_high
   unit: ratio
   class: b
   status: given
-  value: 1.0
+  value: 0.55
   consumers: [web_ui]
   spec_ref: "DetailedDesign-names.md §7.1"
-  note: "UI プリセット。上限に対する割合"
+  note: "# WAIVER(demo): W-07 — UI プリセット。**現状これがそのまま m/s になる**。2026-09-02 実機で前進が速すぎ教示精度が不安との報告を受け 0.3/0.6/1.0 から下げた。根拠: (1) 駆動系のフィードフォワード飽和点が約 0.71 m/s（config.h の k≈280 と PID_OUT_MAX=200 から逆算）で、超えると指令と実速度が乖離し /odom そのものが劣化する。(2) route_recorder の記録間隔は max(0.10m, v×0.1s) なので v≤0.6 なら距離ゲートが支配的で空間分解能 10cm が保たれる"
 
 # =========================================================================
 # 7.2 距離（names §7.2・§7.5 / params §6.1〜§6.4）
