@@ -74,7 +74,13 @@ table{border-collapse:collapse;width:100%}
   background:linear-gradient(180deg,#16283f,#101a29);
   border-bottom:2px solid var(--brand);
 }
-#hdr .row1{display:flex;align-items:center;gap:8px;padding:7px 10px;flex-wrap:wrap;min-width:0}
+/* flex-wrap:nowrap は必須（2026-09-02）。wrap だと、幅が足りなくなったとき
+   #screenName が省略記号で縮む前に行が増え、ヘッダーの高さごと変わってしまう
+   （＝本文の高さが動く。DetailedDesign-webui.md §2.5）。実機では row2 の
+   フォルト文が長いときにこれが起きて「画面名／モードだけ下の行に落ちる」
+   という変形になっていた。nowrap にして、足りない分は #screenName 自身の
+   ellipsis に吸収させる（元々 max-width:559px の分岐だけがこうしていた）。 */
+#hdr .row1{display:flex;align-items:center;gap:8px;padding:7px 10px;flex-wrap:nowrap;min-width:0}
 #logo{height:30px;background:#fff;border-radius:5px;padding:3px 6px;flex:0 0 auto}
 #logo img{height:100%;display:block}
 .proj{font-size:calc(var(--fs) * .66);color:var(--brand-lt);letter-spacing:.02em;line-height:1.25;flex:0 0 auto}
@@ -106,7 +112,9 @@ table{border-collapse:collapse;width:100%}
 #faultDot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:0 0 auto}
 #faultDot.ng{background:var(--ng)}
 #faultDot.warn{background:var(--warn)}
-#faultTx{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* min-width:0 が無いと flex アイテムの既定 (min-width:auto = 内容の最小幅) の
+   ため、ellipsis があっても実際には縮まず、親を押し広げる。 */
+#faultTx{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 #faultBadge{
   flex:0 0 auto;font-size:calc(var(--fs) * .74);font-weight:700;padding:3px 9px;border-radius:999px;
   background:#4a1010;border:1px solid #8a2a2a;color:var(--ng-tx);display:none;cursor:pointer;
@@ -151,7 +159,15 @@ table{border-collapse:collapse;width:100%}
 @container app (min-width:1200px){
   #hdr{display:flex;align-items:stretch}
   #hdr .row1{flex:1 1 auto;min-width:0}
-  #hdr .row2{border-top:none;border-left:1px solid #23334a;flex:0 0 auto}
+  /* row2 の幅は「中身」ではなく「コンテナ幅」だけで決める（2026-09-02）。
+     以前は flex:0 0 auto で中身依存だったため、フォルト文が長いほど row2 が
+     広がり row1 を圧迫し、ヘッダーが変形していた。幅を cqw の式に固定すれば
+     メッセージの長さと無関係になり、row1 の取り分も一定になる。
+     内訳: #estopBtn が min-width:max(160px,25cqw) を持つので、残りが
+     #faultBox に回る（1200px で 504-300=204px ≥ min-width:190px を満たす）。 */
+  #hdr .row2{border-top:none;border-left:1px solid #23334a;
+    flex:0 0 auto;width:max(420px, 42cqw);min-width:0}
+  #faultBox{flex:1 1 auto;min-width:0}
 }
 /* On a portrait screen, fold the project name and shorten the zone pill.
    A header that wraps to 2 lines eats into body height (DetailedDesign-webui.md §2.5) */
