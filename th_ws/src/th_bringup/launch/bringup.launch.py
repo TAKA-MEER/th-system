@@ -473,6 +473,20 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 13a''. map_downsampler（/map を表示用に間引いて /route/map_view へ配信。
+    #    WS-9G）──
+    # N-27 の「要らないものを起動しない」方針に沿い、enable_route_slam（＝/map が
+    # 出る）ときだけ起動する。それ以外で動かす意味が無い（use_map_frame が
+    # enable_route_slam から作られているのと同じ条件を使う）。
+    nodes.append(Node(
+        package='th_planning',
+        executable='map_downsampler.py',
+        name='map_downsampler',
+        condition=IfCondition(PythonExpression(
+            ["'", enable_route_slam, "'.lower() in ('true', '1')"])),
+        output='screen',
+    ))
+
     # ── 13b. config_manager (WebUI 設定パネル: パラメータ調整の仲介) ──
     nodes.append(Node(
         package='th_config_manager',

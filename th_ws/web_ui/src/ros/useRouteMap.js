@@ -1,13 +1,16 @@
-// ros/useRouteMap.js — subscribes to /map (nav_msgs/OccupancyGrid) for the
-// S-13/S-14 route-preview background map layer (WS-8B / demo-teach-replay).
+// ros/useRouteMap.js — subscribes to /route/map_view (nav_msgs/OccupancyGrid) for
+// the S-13/S-14 route-preview background map layer (WS-8B / demo-teach-replay).
 //
-// /map is published by slam_toolbox when the route is taught/replayed with
-// enable_route_slam:=true, in the map frame, as a transient_local topic. The
-// hook hands back the latest OccupancyGrid as { info, data } (null until one is
-// received), so the route preview can fall back to the map-less view when no
-// map exists (enable_route_slam:=false). Mirrors ros/useOdomPose.js / the
-// transient_local useRouteCatalog pattern: owns its own rosbridge Topic, and in
-// TEST_MODE reads window.__thTestRouteMap (seed) for e2e.
+// /route/map_view is published by map_downsampler (th_planning), which takes the
+// raw slam_toolbox /map (resolution 0.05m/cell) and downsamples it to a
+// display-only copy (factor 4 → 0.20m/cell) so a school-loop-sized map does not
+// eat the 2.4GHz wireless link (WS-9G). It is a transient_local topic, so the
+// latest single map arrives to clients that connect late. The hook hands back
+// the latest OccupancyGrid as { info, data } (null until one is received), so
+// the route preview falls back to the map-less view when no map exists
+// (enable_route_slam:=false). Mirrors ros/useOdomPose.js / the transient_local
+// useRouteCatalog pattern: owns its own rosbridge Topic, and in TEST_MODE reads
+// window.__thTestRouteMap (seed) for e2e.
 import { useEffect, useRef, useState } from 'react'
 import { routeMapTopicConfig, MAP_THROTTLE_MS } from './routeMapTopicConfig.js'
 

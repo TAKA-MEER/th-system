@@ -35,6 +35,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_route_preview_bandwidth
     test/test_route_preview_bandwidth.py
     TIMEOUT 30)
+  # WS-9G: /map を表示用に間引く純関数 downsample_occupancy のテスト（ROS2 不要）
+  ament_add_pytest_test(test_map_downsample
+    test/test_map_downsample.py
+    TIMEOUT 30)
   ament_add_pytest_test(test_route_replay_core
     test/test_route_replay_core.py
     TIMEOUT 30)

@@ -625,6 +625,21 @@ def test_summon_and_panel_navigators_not_gated():
             f"bringup.launch.py: name={name!r} に condition= が付いている（スコープ外。WS-9E）")
 
 
+def test_map_downsampler_gate_with_condition():
+    """WS-9G: map_downsampler は enable_route_slam（＝/map が出て表示用に畳む意味が
+    ある）ときだけ起動する。それ以外で動かすと /map が無いのに購読し続け CPU を
+    無駄に食う（N-27 の「要らないものを起動しない」方針）。condition= を外すと
+    このテストが落ちる（WS-9G の変異チェック 3）。"""
+    kw = _node_kwargs_by_name("map_downsampler")
+    assert "condition" in kw, (
+        "bringup.launch.py: map_downsampler の Node(...) に condition= が無い（WS-9G）")
+    cond = kw["condition"].value
+    assert (isinstance(cond, ast.Call) and getattr(cond.func, "id", None) == "IfCondition"), (
+        "bringup.launch.py: map_downsampler の condition= が IfCondition(...) でない（WS-9G）")
+    assert "enable_route_slam" in ast.dump(cond), (
+        "bringup.launch.py: map_downsampler の condition= が enable_route_slam を見ていない（WS-9G）")
+
+
 def test_safety_enabled_targets_still_includes_limiter():
     """WS-9E: 安全側を緩めていないことの固定。SAFETY_ENABLED_TARGETS に 'limiter' が
     残っていること（これを外して LIMITER_DEAD を黙らせるのは WS-9E の趣旨と正反対）。"""

@@ -208,6 +208,23 @@ test('mapDestRect returns null for missing/invalid info or fit', () => {
   assert.equal(mapDestRect({ ...MAP_INFO, width: -4 }, MAP_FIT, H2), null)
   assert.equal(mapDestRect(MAP_INFO, MAP_FIT, 0), null)
 })
+
+test('mapDestRect is resolution-agnostic: same world-rect at 0.20m/cell (WS-9G)', () => {
+  // WS-9G: map_downsampler は /map を factor=4（0.05 → 0.20m/セル）に畳んで
+  // /route/map_view へ配信する。同じ世界矩形（ここでは 2m×2m、origin (-1,-1)）を
+  // 0.20m/セル（10×10 セル）で表しても、描画矩形は元と同じにならなければならない。
+  // info.resolution から矩形を出す mapDestRect は解像度が変わっても正しく動く。
+  const MAP_INFO_020 = {
+    resolution: 0.2,
+    width: 10,
+    height: 10,
+    origin: { position: { x: -1, y: -1 }, orientation: { z: 0, w: 1 } },
+  }
+  assert.ok(MAP_FIT)
+  assert.deepEqual(mapDestRect(MAP_INFO_020, MAP_FIT, H2), { dx: 281, dy: 171, dw: 38, dh: 38 })
+  // 元（0.5m/セル・4×4）と同一矩形になることの明示
+  assert.deepEqual(mapDestRect(MAP_INFO_020, MAP_FIT, H2), mapDestRect(MAP_INFO, MAP_FIT, H2))
+})
 // ── pose 補間（2026-09-02「経路表示がガクガク動く」対策） ──────────────
 // プレビューはロボット中心・固定倍率なので pose が画面全体の位置を決める。
 // pose は 10Hz でしか来ないため、間のフレームを補間しないと地図・経路・点群が
