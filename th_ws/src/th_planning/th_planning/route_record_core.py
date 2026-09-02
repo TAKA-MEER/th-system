@@ -15,7 +15,10 @@ ROS2 ノード側（後続パケット）がこのモジュールを import し�
 
 from __future__ import annotations
 
+import json
 import math
+import os
+import re
 from dataclasses import dataclass, field
 from typing import List, Sequence, Tuple
 
@@ -123,6 +126,92 @@ def route_from_dict(d: dict) -> RouteData:
         frame_id=d.get('frame_id', 'odom'),
         points=points,
     )
+
+
+# ──────────────────────────────────────────────────────────────────
+# 経路ファイルの保存（WS-9H。ROS2 非依存・os/json のみで完結）
+# ──────────────────────────────────────────────────────────────────
+# 教示は 10 分前後かかる。いまは finalize（画面「保存」）の 1 回だけしかファイルに
+# 書かず、その間の点列はメモリにしか無い。ルートが落ちる・コンテナ再起動・電源断で
+# 10 分の成果が丸ごと消える。さらに同名で保存し直すと旧版 <id>.json が消える
+# （EXCEPTION-LEDGER W-04）。ここで「途中経過の定期保存」と「旧版を 1 世代残す
+# 世代管理」を担う純関数をまとめる。
+#
+# 命名: 完成品は <id>.json、途中経過は <id>.wip、1 世代前は <id>.prev。
+# /route/catalog は routes_dir を舐めて `.json` だけを拾うので、.wip/.prev は
+# 一覧に出ない（除外判定は list_finalized_route_files に一元化）。
+_FILENAME_UNSAFE_RE = re.compile(r'[\\/]+')
+
+
+def _safe_id(route_id):
+    """経路名をファイル名用に無害化する。`/` `\\` を `_` に置換する。
+
+    経路名に `../` や `a/b` が混じっても、routes_dir の外へ書かないための防御。
+    `../evil` は `.._evil` になりディレクトリを越えられない（既存保存の
+    `f'{id}.json'` を直接 join していた扱いを安全側へ揃える）。
+    """
+    return _FILENAME_UNSAFE_RE.sub('_', route_id)
+
+
+def finalized_path(routes_dir, route_id):
+    """記録が確定した経路（完成品）の保存先 <id>.json。"""
+    return os.path.join(routes_dir, _safe_id(route_id) + '.json')
+
+
+def autosave_path(routes_dir, route_id):
+    """記録中の途中経過を書く先。完成品(.json)と混ざらない .wip 名。"""
+    return os.path.join(routes_dir, _safe_id(route_id) + '.wip')
+
+
+def previous_path(routes_dir, route_id):
+    """1 世代前を退避する先。完成品と区別できる .prev 名。"""
+    return os.path.join(routes_dir, _safe_id(route_id) + '.prev')
+
+
+def save_route_atomic(path, route_dict):
+    """同じディレクトリの一時ファイルへ書いてから os.replace で差し替える。
+
+    途中で落ちても、読み手が「半分だけ書かれた JSON」を掴まないようにする。
+    一時ファイルは隠し名 `.<basename>.tmp` で本体と異なる名前にする。
+    """
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    tmp = os.path.join(directory, f'.{os.path.basename(path)}.tmp')
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(route_dict, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+    return path
+
+
+def finalize_route_file(routes_dir, route_id, route_dict):
+    """完成した経路を保存する。戻り値は保存先のパス。
+
+    1. 既存の <id>.json があれば previous_path へ退避する（1 世代だけ。
+       既に前の世代があれば上書きしてよい）
+    2. <id>.json を save_route_atomic で書く
+    3. 途中経過ファイル（autosave_path）が残っていれば消す
+    """
+    os.makedirs(routes_dir, exist_ok=True)
+    dest = finalized_path(routes_dir, route_id)
+    prev = previous_path(routes_dir, route_id)
+    if os.path.exists(dest):
+        os.replace(dest, prev)   # 旧版を 1 世代前へ退避
+    save_route_atomic(dest, route_dict)
+    wip = autosave_path(routes_dir, route_id)
+    if os.path.exists(wip):
+        os.remove(wip)
+    return dest
+
+
+def list_finalized_route_files(routes_dir):
+    """/route/catalog に出す経路一覧を返す。routes_dir 内の `.json` だけを拾う。
+
+    途中経過(.wip)・1 世代前(.prev)は一覧に出してはならない。この除外判定を
+    純関数として一元化し、route_recorder 側とテスト両方から直接叩けるようにする。
+    """
+    if not os.path.isdir(routes_dir):
+        return []
+    return sorted(f for f in os.listdir(routes_dir) if f.endswith('.json'))
 
 
 # ──────────────────────────────────────────────────────────────────

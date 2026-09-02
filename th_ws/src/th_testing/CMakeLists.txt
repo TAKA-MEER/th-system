@@ -30,6 +30,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_route_record_core
     test/test_route_record_core.py
     TIMEOUT 30)
+  # WS-9H: 経路ファイル保存系（.wip 自動保存 / .prev 世代退避 / 原子的書き込み。
+  # route_record_core の純関数を実ファイルで検証。ROS2 不要）
+  ament_add_pytest_test(test_route_record_files
+    test/test_route_record_files.py
+    TIMEOUT 30)
   # WS-9F: /route/preview の帯域対策の静的テスト（decimate_polyline 適用と
   # ハートビート配信の設計判断を固定。ROS2 不要）
   ament_add_pytest_test(test_route_preview_bandwidth

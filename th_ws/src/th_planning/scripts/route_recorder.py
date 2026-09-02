@@ -46,8 +46,10 @@ def _points_to_path(points, frame_id='odom', stamp=None):
 
 from th_planning.odom_source import pick_odom_source
 from th_planning.route_record_core import (
-    RouteRecorderCore, RouteRecordParams, decimate_polyline,
-    polyline_length, route_from_dict, route_to_dict,
+    RouteRecorderCore, RouteRecordParams, autosave_path,
+    decimate_polyline, finalize_route_file, list_finalized_route_files,
+    polyline_length, previous_path, route_from_dict, route_to_dict,
+    save_route_atomic,
 )
 
 
@@ -69,6 +71,9 @@ class RouteRecorder(Node):
         self.declare_parameter('sample_min_dist_m', 0.10)
         self.declare_parameter('sample_min_yaw_rad', 0.20)
         self.declare_parameter('status_period_ms', 500)
+        # WS-9H: 記録中に途中経過を <id>.wip へ自動保存する間隔（ms）。0 以下なら
+        # 自動保存しない。10 分級の教示中にルートが落ちても成果を失わないための保険。
+        self.declare_parameter('autosave_period_ms', 10000)
         # WS-9F: /route/preview は表示専用なので、長距離で配信量が線形に増えて
         # 無線を食い潰すのを防ぐため間引いて publish する（既定 400 点）。
         self.declare_parameter('preview_max_points', 400)
@@ -102,6 +107,10 @@ class RouteRecorder(Node):
         self._odom_filtered_topic = self.get_parameter('odom_filtered_topic').value
         self._odom_stale_ms = int(self.get_parameter('odom_stale_ms').value)
         self._preview_max_points = int(self.get_parameter('preview_max_points').value)
+        # WS-9H: 途中経過の自動保存。0 以下なら無効。_status_timer(2Hz) の中から
+        # 前回時刻と比べて間隔が来たときだけ書く（専用タイマは増やさない）。
+        self._autosave_period_s = (int(self.get_parameter('autosave_period_ms').value)
+                                   / 1000.0)
 
         # ── 状態 ────────────────────────────────────────────
         self._recorder: RouteRecorderCore | None = None
@@ -117,6 +126,10 @@ class RouteRecorder(Node):
         self._raw_sample: tuple[tuple[float, float, float], int] | None = None
         self._filtered_sample: tuple[tuple[float, float, float], int] | None = None
         self._current_source: str | None = None   # 直近の選択出所（切替ログ用）
+        # WS-9H: 自動保存の状態（前回書いた時刻・最後に保存した点数・初回ログ済みか）
+        self._last_autosave_s = 0.0
+        self._last_autosaved_points = 0
+        self._autosave_logged = False
 
         self._tf_buffer = None
         self._tf_listener = None
@@ -170,6 +183,8 @@ class RouteRecorder(Node):
 
         # 起動時に既存経路を latched publish する
         self._publish_routes_list()
+        # WS-9H: 前回の教示が保存されずに終わった証拠（消し損ねた途中経過）を報告する。
+        self._warn_leftover_autosaves()
 
         self.get_logger().info(
             f'route_recorder 起動 (routes_dir={self._routes_dir})')
@@ -258,14 +273,18 @@ class RouteRecorder(Node):
             route = self._recorder.finalize(
                 self._route_id, self._name, self._now_ms(),
                 frame_id=self._frame_id)
-            # WAIVER(demo): W-04 — 同じ id は上書き。新版として旧版を残す世代管理はしない
-            path = os.path.join(self._routes_dir, f'{self._route_id}.json')
-            os.makedirs(self._routes_dir, exist_ok=True)
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(route_to_dict(route), f, ensure_ascii=False, indent=2)
+            # WS-9H: 旧版退避(.prev)・原子的書き込み・途中経過(.wip)の後始末を
+            # finalize_route_file が一括で担う（EXCEPTION-LEDGER W-04 を CLOSED に）。
+            dest = finalize_route_file(self._routes_dir, self._route_id,
+                                       route_to_dict(route))
+            if os.path.exists(previous_path(self._routes_dir, self._route_id)):
+                prev_name = os.path.basename(
+                    previous_path(self._routes_dir, self._route_id))
+                self.get_logger().warn(
+                    f'同名の経路があったため {prev_name} として退避しました')
             # RouteData は point_count / length_m を持たない（route_to_dict の出力だけが持つ）
             self.get_logger().info(
-                f'保存: {path} ({len(route.points)} 点, '
+                f'保存: {dest} ({len(route.points)} 点, '
                 f'{polyline_length(route.points):.2f} m)')
             self._publish_routes_list()
         else:
@@ -351,6 +370,47 @@ class RouteRecorder(Node):
         if self._recorder is not None and preview_points:
             self._pub_preview.publish(_points_to_path(
                 preview_points, frame_id=self._frame_id, stamp=stamp))
+        # WS-9H: 記録中だけ、間隔が来て点が増えていたら途中経過を .wip へ自動保存する。
+        self._maybe_autosave()
+
+    def _maybe_autosave(self):
+        """記録中に途中経過を 1 世代前と混ざらない .wip へ定期的に保存する。
+
+        専用タイマは持たない（executor 負荷を読みにくくするため）。_status_timer の
+        中から前回時刻と比べて間隔が来たときだけ書く。点が増えていない間は同じ内容を
+        書き直さない。ログは最初の 1 回だけ出す（毎回出さない。ログで CPU を食う前科）。
+        """
+        if self._recorder is None or self._autosave_period_s <= 0:
+            return
+        if self._recorder.point_count <= self._last_autosaved_points:
+            return   # 点が増えていないときは書かない
+        now_s = time.monotonic()
+        if now_s - self._last_autosave_s < self._autosave_period_s:
+            return
+        route = self._recorder.finalize(
+            self._route_id, self._name, self._now_ms(), frame_id=self._frame_id)
+        path = autosave_path(self._routes_dir, self._route_id)
+        save_route_atomic(path, route_to_dict(route))
+        if not self._autosave_logged:
+            self.get_logger().info(f'教示の途中経過を自動保存しています: {path}')
+            self._autosave_logged = True
+        self._last_autosave_s = now_s
+        self._last_autosaved_points = self._recorder.point_count
+
+    # ── 起動時チェック ─────────────────────────────────────
+    def _warn_leftover_autosaves(self):
+        """前回の教示が保存されずに終わった証拠（消し損ねた .wip）を warn で列挙する。
+
+        自動で復元まではしない（FSM の状態を作り直す必要があり範囲が大きい）。
+        """
+        if not os.path.isdir(self._routes_dir):
+            return
+        for fname in sorted(os.listdir(self._routes_dir)):
+            if fname.endswith('.wip'):
+                path = os.path.join(self._routes_dir, fname)
+                self.get_logger().warn(
+                    f'前回の教示の途中経過が残っています: {path}'
+                    f'（保存されずに終了した可能性）。使うときは .json にリネームしてください')
 
     # ── 経路一覧 publish ──────────────────────────────────
     def _publish_routes_list(self):
@@ -360,9 +420,8 @@ class RouteRecorder(Node):
             self._pub_routes.publish(RouteList())
             return
         infos = []
-        for fname in sorted(os.listdir(self._routes_dir)):
-            if not fname.endswith('.json'):
-                continue
+        # WS-9H: .wip/.prev は一覧に出さない（除外判定は list_finalized_route_files）。
+        for fname in list_finalized_route_files(self._routes_dir):
             path = os.path.join(self._routes_dir, fname)
             try:
                 with open(path, encoding='utf-8') as f:
