@@ -20,8 +20,9 @@
     <rtps>
       <builtin>
         <initialPeersList>
-          <!-- ↓ 現在のラズパイの IP に直す -->
-          <locator><udpv4><address>192.168.5.125</address></udpv4></locator>
+          <!-- ↓ /scan 配信元（ラズパイ）の IP。2026-09-02 実機確認: ラズパイが
+               AP 本体で 192.168.5.1。192.168.5.125 は ESP32 なので入れない。 -->
+          <locator><udpv4><address>192.168.5.1</address></udpv4></locator>
         </initialPeersList>
       </builtin>
     </rtps>

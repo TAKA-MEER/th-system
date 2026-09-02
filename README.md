@@ -11,9 +11,17 @@ ESP32 (駆動用, WiFi AP)          192.168.4.1   SSID: th-esp32-ap
         RPLIDAR S1 → rplidar_ros → /scan (ROS_DOMAIN_ID=10, frame_id=laser_link)
 ```
 
-> **2026-09-01: ネットワーク移行中** — 実機は `192.168.4.x` → `192.168.5.x` へ移行中
-> (AP ゲートウェイ `192.168.5.1` / ラズパイ DHCP)。上図の IP は旧構成。
-> 現行の正確な IP・SSID・AP 構成は [docs/network.md](docs/network.md) を参照。
+> **上図は旧構成 (ESP32 が AP)。2026-09-02 実機の現行構成は「ラズパイが AP」**:
+>
+> ```txt
+> ラズパイ (WiFi AP + LiDAR)     192.168.5.1    SSID: th-rpi-ap
+>   ├── PC (ROS2/Docker)         192.168.5.50   esp32_bridge が :8766 で待ち受け
+>   └── ESP32 (駆動)             192.168.5.125  STA 子機 (DHCP) → PC:8766 へ接続
+> ```
+>
+> [docs/network.md](docs/network.md) は ESP32-AP 前提のままで**全面的に古い**（要更新）。
+> なお構内 AP が ch1 に 10 局あり、この 2.4GHz リンクは平常時でもロス 20〜30% ある
+> （ESP32 の断続的な切断の主因。AP を ch6 か 5GHz へ移すのが本命の対処）。
 
 
 | レイヤー         | 実装                                                         |
@@ -34,13 +42,13 @@ ESP32 (駆動用, WiFi AP)          192.168.4.1   SSID: th-esp32-ap
 前提: 初回セットアップ([docs/setup.md](docs/setup.md))済み。詳細は [docs/operation.md](docs/operation.md)。
 
 ```powershell
-# ① ロボット・ラズパイの電源 ON。PC を LiDAR 配信元の AP に接続して疎通確認
-#    2026-09-01: ネットワークを 192.168.4.x → 192.168.5.x へ移行中。
-#    正確な IP / SSID は docs/network.md が正 (移行の反映は追従中)。
-#    現状: AP ゲートウェイ 192.168.5.1 / ラズパイは DHCP (2026-09-01 時点 192.168.5.125)。
-ping 192.168.5.1     # AP ゲートウェイ
-ip neigh | grep REACHABLE      # ← WSL 側。ラズパイの現在の 192.168.5.x を特定
-ping 192.168.5.125   # ラズパイ (LiDAR は systemd で自動起動。IP は上で確認した値)
+# ① ロボット・ラズパイの電源 ON。PC を SSID "th-rpi-ap" に接続して疎通確認
+#    2026-09-02 実機確認の構成 (docs/network.md の ESP32-AP 構成は古い):
+#      ラズパイ 192.168.5.1   … AP 本体 + /scan 配信元 (systemd で自動起動)
+#      PC       192.168.5.50  … esp32_bridge が :8766 で待ち受け
+#      ESP32    192.168.5.125 … STA 子機 (DHCP)。PC:8766 へ繋ぎに来る
+ping 192.168.5.1     # ラズパイ (AP 兼 LiDAR)
+ping 192.168.5.125   # ESP32 (IP は DHCP。ss -tnp | grep 8766 でも確認できる)
 # 繋がらない → netsh wlan disconnect → connect (docs/network.md「復旧手順」)
 
 # Wi-Fiのバックグラウンドスキャンの無効化

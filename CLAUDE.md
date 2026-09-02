@@ -47,7 +47,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`/scan_filtered` が実機で完全に無音になる複合バグ（2026-09-01 修正）。** 症状: 点群表示も slam_toolbox の地図生成も動かない。`ros2 topic hz /scan` は 10Hz 出るのに `lidar_filter` の `_cb` が一度も発火しない。原因は 2 つ:
   1. **`bringup.launch.py` が `lidar_filter`（network 時）に渡していた `FASTRTPS_DEFAULT_PROFILES_FILE`（`config/fastdds_profile.xml`）のユニキャスト初期ピアが `192.168.4.2` 固定だった。** ネットワークが `192.168.5.x` へ移行して**存在しないサブネット**になり、これが逆に discovery を壊した。→ additional_env を外し、マルチキャスト discovery（現行 AP では正常）に戻した。別 AP で不安定なら `fastdds_profile.xml` の `<address>` を現ラズパイ IP に直して再度渡す。
   2. `lidar_filter` の `/scan` 購読が既定 QoS（RELIABLE）だった。センサストリームは必ず `qos_profile_sensor_data`（BEST_EFFORT）で購読する（`safety_monitor` / `obstacle_limiter` / `connectivity_checker` は元から BEST_EFFORT）。
-- **実機のネットワークは `192.168.4.x` から `192.168.5.x` へ移行済み**（`docs/network.md` の IP は要更新）。ラズパイは DHCP（`ip neigh` で REACHABLE な `192.168.5.x` を探す。2026-09-01 時点 `192.168.5.125`）。ESP32 SoftAP `192.168.4.1` も移動しているはず。
+- **実機のネットワークは「ESP32 が AP」から「ラズパイが AP」へ変わっている**（`docs/network.md` の記述は全面的に古い）。2026-09-02 に実機で確定した構成:
+
+  | 機器 | IP | 役割 |
+  |---|---|---|
+  | ラズパイ | `192.168.5.1` | **AP 本体**（SSID `th-rpi-ap`）＋ `/scan` 配信元 |
+  | PC | `192.168.5.50` | USB WiFi ドングル `wlx6c1ff789d5d4`（AIC8800）。`esp32_bridge` が :8766 で待ち受け |
+  | ESP32 | `192.168.5.125` | STA 子機（DHCP）。`WIFI_AP_MODE 0` / `WS_SERVER_HOST 192.168.5.50` |
+
+  **2026-09-01 に CLAUDE.md へ書いた「ラズパイは DHCP で `192.168.5.125`」は誤り。それは ESP32。** `/system/trigger` に繋ぎに来る IP を見れば ESP32 と分かる（`ss -tnp | grep 8766`）。
+- **実機の 2.4GHz リンクは平常時から壊れている（コードでは直せない）。** 2026-09-02 実測で PC→ラズパイ・PC→ESP32 の**両方**が ロス 22〜30% / RTT min 1.2ms・avg 500〜700ms・max 3〜6 秒。原因は電波環境で、`nmcli dev wifi list` で見ると**構内 AP が同じ ch1 に 10 局**（`eduroam` / `NCT-WL*` が信号 65〜69 とロボット AP の 80 に匹敵）。非重複チャネルの混雑は ch1=10 / ch6=5 / ch11=7。
+  - LiDAR の `/scan` を止めても改善しないので**トラフィック起因ではない**。ESP32 の `WiFi.setSleep(false)` でも改善しない（AP 側も等しく悪いため）。
+  - Ubuntu は `/etc/NetworkManager/conf.d/*powersave*` で `wifi.powersave = 3`（省電力ON）が既定。`nmcli connection modify th-rpi-ap 802-11-wireless.powersave 2` でロスは減るが RTT は残る。
+  - **本命の対処は AP のチャネル移設（ch6）または 5GHz 化**。ラズパイ側の hostapd 設定。
+- **`pkill -TERM -f "ros2 launch ..."` は launch 親しか殺さず、子ノードは生き残る。** 「止めたはずなのにポートが埋まっている」「修正したのに古い挙動のまま」はこれ。実際に古い `esp32_bridge` が残って新 bringup の 8766 / rosbridge の 9090 を奪い、検証を 1 周無駄にした。`ps -eo pid,args` で ROS 関連を拾って **PID 指定で TERM** すること（`kill -9` は DDS discovery を壊すので使わない）。
+- **`pkill -f <パターン>` は docker 外（ホスト）でも自分のシェルを殺す。** `pkill -f vite` で exit 144 になり、後続の `rm` が実行されなかった。ホストでも PID 指定で止めること。
 
 ## 開発環境
 
