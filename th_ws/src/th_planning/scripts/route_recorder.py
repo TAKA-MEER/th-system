@@ -195,10 +195,11 @@ class RouteRecorder(Node):
         mp = self._map_pose()
         if mp is not None:
             (x, y, yaw), frame = mp, self._map_frame
-        elif self._pose is not None:
-            (x, y, yaw), frame = self._pose, 'odom'
         else:
-            return
+            op = self._odom_pose()
+            if op is None:
+                return
+            (x, y, yaw), frame = op, 'odom'
         ps = PoseStamped()
         ps.header.stamp = self.get_clock().now().to_msg()
         ps.header.frame_id = frame
@@ -228,13 +229,16 @@ class RouteRecorder(Node):
             if mp is not None:
                 self._frame_id = self._map_frame
                 self._recorder.start(*mp)
-            elif self._pose is not None:
-                self._frame_id = 'odom'
-                self._recorder.start(*self._pose)
             else:
-                self._frame_id = 'odom'
-                self.get_logger().warn('odom 未受信のため (0,0,0) で記録開始')
-                self._recorder.start(0.0, 0.0, 0.0)
+                # WS-9D: odom 開始姿勢も自己位置源の選択結果を使う。
+                op = self._odom_pose()
+                if op is not None:
+                    self._frame_id = 'odom'
+                    self._recorder.start(*op)
+                else:
+                    self._frame_id = 'odom'
+                    self.get_logger().warn('odom 未受信のため (0,0,0) で記録開始')
+                    self._recorder.start(0.0, 0.0, 0.0)
             self._rec_started_ms = self._now_ms()
             self.get_logger().info(
                 f'記録開始: route_id={self._route_id} frame={self._frame_id}')
@@ -278,6 +282,14 @@ class RouteRecorder(Node):
             (p.x, p.y, _yaw_from_quat(msg.pose.pose.orientation)), self._now_ms())
 
     # ── タイマ ────────────────────────────────────────────
+    def _odom_pose(self):
+        """自己位置源の選択を通した odom フレームの現在 pose（無ければ None）。"""
+        pose, source = pick_odom_source(
+            self._filtered_sample, self._raw_sample,
+            self._now_ms(), self._odom_stale_ms)
+        self._note_odom_source(source)
+        return pose
+
     def _note_odom_source(self, source):
         """自己位置源が切り替わったときだけ 1 回ログする（毎ティック出さない）。"""
         if source == self._current_source:
@@ -305,10 +317,7 @@ class RouteRecorder(Node):
             pose = self._map_pose()
         else:
             # WS-9D: EKF 出力が新鮮ならそれ、古ければ生 odom にフォールバック。
-            pose, source = pick_odom_source(
-                self._filtered_sample, self._raw_sample,
-                self._now_ms(), self._odom_stale_ms)
-            self._note_odom_source(source)
+            pose = self._odom_pose()
         if pose is None:
             return
         self._recorder.add_pose(*pose)

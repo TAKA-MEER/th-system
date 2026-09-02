@@ -222,12 +222,15 @@ class ReplayRunner(Node):
                 # WS-8B: 経路が map フレーム。slam_toolbox が同じ map を再構築して
                 # おり、始点マーク運用なら記録座標がそのまま有効 → 剛体変換しない。
                 pass
-            elif self._pose is not None and pts:
+            elif pts:
                 # WAIVER(demo): W-01（縮小）— odom フォールバック経路のみ。
                 # 「今いる場所を記録の始点とみなす」2D 剛体変換で経路の形を辿る。
-                recorded_start = (pts[0][0], pts[0][1], rec_start_yaw)
-                pts = align_path_to_current(pts, recorded_start, self._pose)
-                aligned = True
+                # 基点は WS-9D の自己位置源選択結果を使う（取れなければスキップ）。
+                cur = self._odom_pose()
+                if cur is not None:
+                    recorded_start = (pts[0][0], pts[0][1], rec_start_yaw)
+                    pts = align_path_to_current(pts, recorded_start, cur)
+                    aligned = True
             self._points = pts
             self._start_yaw = pts[0][2] if pts else rec_start_yaw
             self._from_index = 0
@@ -301,9 +304,12 @@ class ReplayRunner(Node):
         """追従に使うロボット pose を経路フレームで返す。取れなければ None。"""
         if self._use_map_frame and self._route_frame == self._map_frame:
             return self._map_pose()
-        # WS-9D: odom フレーム経路は EKF 出力 (filtered) が新鮮ならそれ、
-        # 古ければ生 /odom にフォールバックする。map フレーム経路（上の TF 経路）は
-        # ここを通らず既存のまま。
+        # WS-9D: odom フレーム経路は選択結果（EKF 出力優先、生 odom フォールバック）。
+        # map フレーム経路（上の TF 経路）はここを通らず既存のまま。
+        return self._odom_pose()
+
+    def _odom_pose(self):
+        """自己位置源の選択を通した odom フレームの現在 pose（無ければ None）。"""
         pose, source = pick_odom_source(
             self._filtered_sample, self._raw_sample,
             self._now_ms(), self._odom_stale_ms)
@@ -336,10 +342,11 @@ class ReplayRunner(Node):
         mp = self._map_pose()
         if mp is not None:
             (x, y, yaw), frame = mp, self._map_frame
-        elif self._pose is not None:
-            (x, y, yaw), frame = self._pose, 'odom'
         else:
-            return
+            op = self._odom_pose()
+            if op is None:
+                return
+            (x, y, yaw), frame = op, 'odom'
         ps = PoseStamped()
         ps.header.stamp = self.get_clock().now().to_msg()
         ps.header.frame_id = frame
