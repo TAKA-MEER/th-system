@@ -14,14 +14,19 @@ ESP32 (駆動用, WiFi AP)          192.168.4.1   SSID: th-esp32-ap
 > **上図は旧構成 (ESP32 が AP)。2026-09-02 実機の現行構成は「ラズパイが AP」**:
 >
 > ```txt
-> ラズパイ (WiFi AP + LiDAR)     192.168.5.1    SSID: th-rpi-ap
->   ├── PC (ROS2/Docker)         192.168.5.50   esp32_bridge が :8766 で待ち受け
+> ラズパイ (WiFi AP + LiDAR)     192.168.5.1    SSID: th-rpi-ap (2.4GHz ch1)
+>   ├── PC 内蔵Intel wlo1        192.168.5.50   固定IP。esp32_bridge が :8766 で待ち受け
 >   └── ESP32 (駆動)             192.168.5.125  STA 子機 (DHCP) → PC:8766 へ接続
+>
+> PC のインターネットは別系統: Elecom WDC-433SU2M2 (5GHz専用) → NCT-WL-ST
 > ```
 >
+> **ロボット回線は必ず PC の内蔵 Intel カードを使うこと。** USB ドングル (AIC8800) を
+> 使っていた頃は ロス 22% / RTT 最大 4.7 秒で ESP32 が切れ続けていた。同じ AP・同じ
+> チャネルで内蔵カードに替えるとロス 0% / RTT 4.4ms になる（原因はチャネル混雑では
+> なくドングル。詳細は CLAUDE.md）。ESP32 は 2.4GHz 専用なので AP の 5GHz 化は不可。
+>
 > [docs/network.md](docs/network.md) は ESP32-AP 前提のままで**全面的に古い**（要更新）。
-> なお構内 AP が ch1 に 10 局あり、この 2.4GHz リンクは平常時でもロス 20〜30% ある
-> （ESP32 の断続的な切断の主因。AP を ch6 か 5GHz へ移すのが本命の対処）。
 
 
 | レイヤー         | 実装                                                         |
