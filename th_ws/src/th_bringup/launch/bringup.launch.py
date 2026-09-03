@@ -558,31 +558,28 @@ def generate_launch_description():
     nodes.append(nav2_launch)
 
     # ── 16. SLAM Toolbox (map_yaml が空 = デフォルト) ──
-    # 16a: WS-8B（enable_route_slam）は async_slam_toolbox_node を使う。
-    #   これは slam.launch.py（実機の地図作成で実績あり）と同じ実装で、
-    #   RPLIDAR S1 + WiFi /scan で /map を生成できることが確認済み。WS-8B は
-    #   連続 mapping だけで良く、mapping ⇄ localization のランタイム切替は不要。
-    #   map_and_localization_slam_toolbox_node（experimental 版）は stage>=3 用に
-    #   残すが、実機で /map を出せるか未検証（16b）。
-    nodes.append(Node(
-        package='slam_toolbox',
-        executable='async_slam_toolbox_node',
-        name='slam_toolbox',
-        parameters=[slam_yaml, {'use_sim_time': False}],
-        output='screen',
-        respawn=True,
-        respawn_delay=2.0,
-        condition=IfCondition(PythonExpression(
-            ["'", map_yaml, "' == '' and '", enable_route_slam,
-             "'.lower() in ('true', '1')"])),
-    ))
-
-    # 16b: stage>=3（WS-8C 領域）は map_and_localization_slam_toolbox_node。
-    #   /slam_toolbox/set_localization_mode (std_srvs/SetBool) で mapping ⇄
-    #   localization を同一プロセスで切替でき、「地図作成停止 = 地図凍結・
-    #   自己位置推定継続」の要件を満たす唯一の手段 (VISION.md §8)。
-    #   slam_control がサービス再出現を検知して停止状態を再適用する。
-    #   respawn: 2026-08-07 実機で SIGSEGV を確認。
+    # WS-9N (2026-09-03): enable_route_slam でも
+    # map_and_localization_slam_toolbox_node を使う。
+    #
+    # WS-8B は async_slam_toolbox_node を選んだ。当時のワークフローは「教示も再生も
+    # 連続 mapping」だけで、mapping ⇄ localization の切替が要らなかったため。
+    # WS-9L でワークフローが「教示 → 地図を凍結して保存 → 再生前に読み直して
+    # 自己位置推定」に変わったのに、ノードの選択を見直していなかった。
+    #
+    # async_slam_toolbox_node に出来るのは「地図作成（ついでに自己位置推定）」か
+    # 「pause_new_measurements で全部止める（自己位置推定も止まる）」の二択で、
+    # 「地図を凍結したまま自己位置推定だけ続ける」が出来ない。その結果、再生中も
+    # 地図作成が動き続け、ずれた自己位置に新しいスキャンを描き足して地図が汚れ、
+    # 推定がさらにずれる悪循環になった（2026-09-03 実機: 再生の READY で
+    # map→base_link が経路の始点から 1.52 m / 41.8° ずれ、/map が 0.5 Hz で
+    # 更新され続けていた）。
+    #
+    # map_and_localization_slam_toolbox_node は /slam_toolbox/set_localization_mode
+    # (std_srvs/SetBool) で同一プロセスのまま切替でき、「地図作成停止 = 地図凍結・
+    # 自己位置推定継続」の要件を満たす唯一の手段 (VISION.md §8)。
+    # 2026-09-03 に実機コンテナで単体起動を確認済み（35 秒生存・/map を publish・
+    # set_localization_mode / deserialize_map / serialize_map / pause_new_measurements
+    # がすべて存在）。respawn: 2026-08-07 実機で SIGSEGV を確認しているため残す。
     nodes.append(Node(
         package='slam_toolbox',
         executable='map_and_localization_slam_toolbox_node',
@@ -592,8 +589,8 @@ def generate_launch_description():
         respawn=True,
         respawn_delay=2.0,
         condition=IfCondition(PythonExpression(
-            ["'", map_yaml, "' == '' and int('", stage,
-             "') >= 3 and '", enable_route_slam, "'.lower() not in ('true', '1')"])),
+            ["'", map_yaml, "' == '' and ('", enable_route_slam,
+             "'.lower() in ('true', '1') or int('", stage, "') >= 3)"])),
     ))
 
     # ── 17. AMCL + map_server (map_yaml 指定時のみ。UI には出さない休眠経路) ──
