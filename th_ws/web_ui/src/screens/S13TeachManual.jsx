@@ -79,8 +79,12 @@ export default function S13TeachManual({ onFinish }) {
 
   // 経路名を入れて「記録開始」→ ui.route_select {new:true,id}。
   // 受理されたら記録中表示に切り替える。
+  // 入力欄の値を id に使う（WS-9K E-1）。空欄のときだけ日時ベースの自動名。
+  // / \ は保存側で _ に置換されるので、ここで同じ置換をして画面の表示名と
+  // 保存名が食い違わないようにする。
   async function handleRecordStart() {
-    const id = 'route_' + Date.now()
+    const trimmed = name.replace(/[\\/]/g, '_').trim()
+    const id = trimmed || 'route_' + Date.now()
     const res = await sendTrigger('ui.route_select', { new: true, id })
     if (res?.accepted) setRecording(true)
   }
@@ -158,7 +162,7 @@ export default function S13TeachManual({ onFinish }) {
                     type="button"
                     className="btn mt"
                     data-testid="s13-record-start"
-                    disabled={disabledAll || !name.trim()}
+                    disabled={disabledAll}
                     onClick={handleRecordStart}
                   >
                     {S13_RECORD_START}
