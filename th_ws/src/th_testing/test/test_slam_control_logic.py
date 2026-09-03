@@ -408,6 +408,39 @@ def test_senders_normalize_session_id_with_safe_id():
         'replay_runner が /map_session/open 呼び出しで _safe_id を使っていない'
 
 
+def test_replay_runner_reload_map_sends_initial_pose_and_checks_success():
+    """WS-9N: replay_runner._reload_map が初期姿勢を載せて呼び、success を確認していること。
+
+    始点 pose（has_initial_pose, initial_x, initial_y, initial_yaw）を渡さないと
+    slam_toolbox が match_type 3 (LOCALIZE_AT_POSE) で自己位置を合わせられない。
+    また応答の success を見ないと読み直し失敗を検知できず READY に進んでしまう。
+    """
+    tree = _tree(REPLAY_RUNNER)
+    funcdef = _funcdef(tree, '_reload_map')
+    assert funcdef is not None, '_reload_map が見つからない'
+
+    # OpenMapSession.Request(...) のキーワード引数に initial pose 関連があること
+    req_call = None
+    for n in ast.walk(funcdef):
+        if isinstance(n, ast.Call):
+            if (isinstance(n.func, ast.Attribute) and n.func.attr == 'Request') or \
+               (isinstance(n.func, ast.Name) and n.func.id == 'OpenMapSession'):
+                req_call = n
+                break
+    assert req_call is not None, 'OpenMapSession.Request の呼び出しが見つからない'
+
+    kw_names = {kw.arg for kw in req_call.keywords}
+    assert 'has_initial_pose' in kw_names, 'has_initial_pose が渡されていない'
+    assert 'initial_x' in kw_names, 'initial_x が渡されていない'
+    assert 'initial_y' in kw_names, 'initial_y が渡されていない'
+    assert 'initial_yaw' in kw_names, 'initial_yaw が渡されていない'
+
+    # resp.success を見ていること
+    has_success_check = any(
+        isinstance(n, ast.Attribute) and n.attr == 'success'
+        for n in ast.walk(funcdef))
+    assert has_success_check, '_reload_map で応答の success を確認していない'
+
 
 # ── 9. ast: deserialize の filename に .posegraph を足していない（WS-9M）──
 def test_deserialize_filename_does_not_append_posegraph():

@@ -340,9 +340,10 @@ class ReplayRunner(Node):
     def _reload_map(self, route_id: str) -> "str | None":
         """/map_session/open reload で教示の地図を読み直す。エラー文字列 or None。
 
-        deserialize_map は 6.9MB のグラフを読み self.position を地図の最初のノード
-        （＝経路の始点）に合わせる。成功したら地図作成も再開される（slam_control 側
-        ）。再読込は 6.9MB の I/O を伴うので長めのタイムアウト（30s）を使う。
+        WS-9N: 経路の始点（self._points[0] と self._start_yaw）を初期姿勢として渡し、
+        deserialize_map(match_type=3 LOCALIZE_AT_POSE) で自己位置を経路始点に合わせる。
+        再生中は地図を凍結したまま自己位置推定のみ継続する。
+        再読込は 6.9MB の I/O を伴うので長めのタイムアウト（30s）を使う。
         """
         if not self._map_session_client.wait_for_service(timeout_sec=1.0):
             return '/map_session/open に接続できません'
@@ -350,11 +351,24 @@ class ReplayRunner(Node):
         # 保存名（finalized_path が内部で _safe_id する）と地図ファイル名を一致させる
         # ため。受ける側（slam_control_logic）は未正規化 id を拒否するだけ。
         session_id = _safe_id(route_id)
+        has_init = bool(self._points)
+        init_x = float(self._points[0][0]) if has_init else 0.0
+        init_y = float(self._points[0][1]) if has_init else 0.0
+        init_yaw = float(self._start_yaw) if has_init else 0.0
         req = OpenMapSession.Request(
-            slot='ROUTE', session_id=session_id, mode='reload')
-        _resp, err = call_and_wait(self, self._map_session_client, req, 30.0)
+            slot='ROUTE',
+            session_id=session_id,
+            mode='reload',
+            has_initial_pose=has_init,
+            initial_x=init_x,
+            initial_y=init_y,
+            initial_yaw=init_yaw)
+        resp, err = call_and_wait(self, self._map_session_client, req, 30.0)
         if err:
             return f'地図の読み直しに失敗: {err}'
+        if resp is not None and not resp.success:
+            msg = resp.message if resp.message else 'success=False'
+            return f'地図の読み直しに失敗: {msg}'
         return None
 
     def _on_odom(self, msg: Odometry):
