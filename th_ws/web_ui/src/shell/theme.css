@@ -221,7 +221,11 @@ table{border-collapse:collapse;width:100%}
 /* WS-3 / demo-teach-replay: 経路プレビュー canvas（S-13/S-14）。
    canvas 本体は 600x380 論理解像度で fitTransform がデータ bbox に合わせて
    縦横比を保ってフィットし、CSS はウィンドウ幅に合わせて等比拡縮する。 */
-.route-preview{display:block;width:100%;height:auto;background:var(--inset);
+/* max-height はモックアップの .mapWrap svg{max-height:min(42cqh,300px)} 相当。
+   幅なりに縦へ伸びると操作カードや初期姿勢カードを画面外へ押し出す。canvas は
+   論理 600x380 で描画済みなので object-fit:contain で歪まず内側に収まる。 */
+.route-preview{display:block;width:100%;height:auto;max-height:min(42cqh,300px);
+  object-fit:contain;background:var(--inset);
   border:1px solid var(--bd);border-radius:var(--r)}
 /* WS-6.4 / demo-teach-replay: 経路プレビューは ロボット中心・固定倍率（半径7m）。
    canvas は常時マウントし、データが無い間だけオーバレイ文言を重ねる（DOM を差し替えない
@@ -273,6 +277,18 @@ table{border-collapse:collapse;width:100%}
    which would break "estop is the tallest button on screen" (U-9). */
 @container app (max-width:400px){ #s01 .btnrow{grid-template-columns:1fr} }
 
+/* Ported from docs/plan/spec/mockup/index.html L222-226. Left out of the
+   original theme.css port because no screen had styled panes yet; S-13's
+   走行/教示 tabs render as bare buttons without this. Screens that place the
+   strip inside .top-actions (S-11/S-13/S-14) null out .tabs' own margin/border
+   inline -- what matters here is .tab / .tab.on. .tabpane visibility is still
+   React conditional rendering; .tabpane{display:none} hides nothing today. */
+.tabs{display:flex;gap:5px;margin-bottom:9px;border-bottom:1px solid var(--bd);flex-wrap:wrap}
+.tab{padding:9px 14px;font-size:calc(var(--fs) * .9);font-weight:600;color:var(--mut);
+  border-bottom:3px solid transparent;border-radius:6px 6px 0 0}
+.tab.on{color:#fff;background:#20242e;border-bottom-color:var(--brand)}
+.tabpane{display:none}.tabpane.on{display:block}
+
 .pill{display:inline-block;font-size:calc(var(--fs) * .72);font-weight:700;padding:2px 8px;border-radius:999px;
   background:#2a3242;border:1px solid #3a4356}
 .pill.ok{background:#14331a;border-color:#2c6b33;color:var(--ok-tx)}
@@ -284,6 +300,10 @@ table.lst th,table.lst td{padding:7px 8px;border-bottom:1px solid var(--bd);font
 table.lst th{color:var(--mut);font-size:calc(var(--fs) * .74);letter-spacing:.06em;font-weight:700}
 table.lst tr.sel td{background:#1f2634}
 table.lst td.r{text-align:right}
+/* S-14 の経路一覧: 行数が増えても地図を下へ押し出さないよう、一覧だけを
+   枠内スクロールにする。cqh は #app（container-type:size）＝画面高に追従。
+   上限に達したあとは経路が何本あっても地図の位置は変わらない。 */
+.lst-scroll{max-height:clamp(96px, 24cqh, 200px);overflow-y:auto}
 
 .hint{background:#122033;border:1px solid #24446e;border-radius:6px;padding:8px 10px;
   font-size:calc(var(--fs) * .83);color:#b9d4f2;line-height:1.5}
@@ -431,10 +451,16 @@ table.lst td.r{text-align:right}
    bottom (DetailedDesign-webui.md §2.1). */
 #hdr{order:0} #body{order:1} #winGuide{order:2} #release{order:3}
 
-/* ---------- estop release bar (fixed to the bottom, away from the estop button) ---------- */
+/* ---------- estop release bar (fixed to the bottom, away from the estop button) ----------
+   z-index:70 — above #overlay's windows (50) and W-6 (60), below the header
+   (100). SD-3「非常停止はどんなときでも動作し、何にも覆われない」: W-1 は
+   非常停止のたびに必ず開き、その .backdrop が下端まで覆う。40 のままだと
+   解除バーがその暗幕に沈んでタップが吸われ、解除できない（W-1 の文言自体が
+   「解除は画面下端の解除バーから」と案内しているのに）。モックアップの
+   #overlay(900) < #release(950) の順序に相当（DetailedDesign-webui.md §2.1）。 */
 #release{
   flex:0 0 auto;display:none;background:#1c1226;border-top:2px solid var(--carry);
-  padding:9px 12px;z-index:40;position:relative;
+  padding:9px 12px;z-index:70;position:relative;
 }
 #release.show{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 #release .rt{flex:1 1 200px;font-size:calc(var(--fs) * .85);color:var(--carry-tx)}

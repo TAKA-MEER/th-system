@@ -118,31 +118,34 @@ export default function S14Replay({ onFinish }) {
             {empty ? (
               <div className="note" data-testid="s14-empty">{S14_EMPTY}</div>
             ) : (
-              <table className="lst">
-                <tbody>
-                  {routes.map((r) => (
-                    <tr
-                      key={r.id}
-                      className={selectedId === r.id ? 'sel' : ''}
-                      data-testid="s14-route-row"
-                    >
-                      <td role="radio" aria-checked={selectedId === r.id} className="sm">
-                        <button
-                          type="button"
-                          data-testid={`s14-select-${r.id}`}
-                          onClick={() => setSelectedId(r.id)}
-                        >
-                          {r.name}
-                        </button>
-                      </td>
-                      <td className="r sm">
-                        {S14_LENGTH}: {r.length_m != null ? r.length_m.toFixed(2) : '--'}
-                        / {S14_POINTS}: {r.point_count}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              // 経路が増えても地図を下へ押し出さないよう一覧だけ枠内スクロール
+              <div className="lst-scroll">
+                <table className="lst">
+                  <tbody>
+                    {routes.map((r) => (
+                      <tr
+                        key={r.id}
+                        className={selectedId === r.id ? 'sel' : ''}
+                        data-testid="s14-route-row"
+                      >
+                        <td role="radio" aria-checked={selectedId === r.id} className="sm">
+                          <button
+                            type="button"
+                            data-testid={`s14-select-${r.id}`}
+                            onClick={() => setSelectedId(r.id)}
+                          >
+                            {r.name}
+                          </button>
+                        </td>
+                        <td className="r sm">
+                          {S14_LENGTH}: {r.length_m != null ? r.length_m.toFixed(2) : '--'}
+                          / {S14_POINTS}: {r.point_count}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
             <div className="row mt">
               <span className="grow sm">{S14_FWD}</span>
