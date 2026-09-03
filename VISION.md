@@ -179,6 +179,21 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
 
   更新: [Spec-modes.md](docs/plan/spec/Spec-modes.md) §3.1.2（`SM-3.1.2-020` 周辺）。
 
+- **2026-09-03 — 再生時の地図凍結と自己位置推定継続（WS-9N）**: 実機で
+  再生の `READY` 時に自己位置が経路始点から **1.52 m / 41.8°** ずれ、
+  走り出すと一気に発散した。原因は再生中も slam_toolbox が **地図作成モード**で
+  動いていたこと。ずれた自己位置に新しいスキャンを描き足して地図が汚れ、
+  次のスキャンマッチがさらにずれる悪循環になっていた。
+
+  **変更**: SLAM ノードを `async_slam_toolbox_node` から
+  `map_and_localization_slam_toolbox_node` へ差し替える（`bringup.launch.py`）。
+  教示中は mapping（`set_localization_mode(false)`）、再生中は localization
+  （`set_localization_mode(true)` ＝ **地図を凍結したまま自己位置推定だけ継続**）。
+  保存は mapping モードのまま serialize（localization では書き出されない。
+  2026-09-03 実機確認）。再生の読み直しは localization に入ってから
+  `deserialize_map(match_type=3, initial_pose=経路始点)`。
+  旧 §8 の「地図作成停止 ＝ 自己位置推定停止ではない」要求に実装を追いつかせた。
+
 ---
 
 ## 3. 両設計書が扱っていない事項

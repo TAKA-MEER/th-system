@@ -35,16 +35,16 @@ ros2 service call /slam_control/discard_map std_srvs/srv/Trigger
 
 echo
 echo "=== ② slam_toolbox が戻るのを待つ（respawn。最大 60 秒）==="
-# async_slam_toolbox_node には set_localization_mode は無い（WS-9L）。
-# 実在する pause_new_measurements の出現で再起動を検知する。
+# map_and_localization_slam_toolbox_node (WS-9N)。
+# set_localization_mode の出現で再起動を検知する。
 for i in $(seq 1 60); do
-  if ros2 service list 2>/dev/null | grep -q '^/slam_toolbox/pause_new_measurements$'; then
+  if ros2 service list 2>/dev/null | grep -q '^/slam_toolbox/set_localization_mode$'; then
     echo "  戻ってきた（${i} 秒）"
     break
   fi
   sleep 1
 done
-if ! ros2 service list 2>/dev/null | grep -q '^/slam_toolbox/pause_new_measurements$'; then
+if ! ros2 service list 2>/dev/null | grep -q '^/slam_toolbox/set_localization_mode$'; then
   echo "NG: slam_toolbox が 60 秒経っても戻ってこない。bringup のログを見ること" >&2
   exit 1
 fi
