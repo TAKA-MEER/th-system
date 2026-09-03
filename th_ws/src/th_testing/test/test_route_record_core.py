@@ -90,7 +90,7 @@ def test_finalize_route_to_dict_keys_and_length():
     d = route_to_dict(data)
     assert set(d.keys()) == {
         'id', 'name', 'generation', 'length_m', 'point_count',
-        'start_yaw', 'recorded_at_ms', 'frame_id', 'points',
+        'start_yaw', 'recorded_at_ms', 'frame_id', 'map_session_id', 'points',
     }
     assert d['id'] == "route-1"
     assert d['length_m'] == pytest.approx(rec.recorded_m)

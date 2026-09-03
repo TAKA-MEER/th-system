@@ -92,6 +92,11 @@ class RouteRecorder(Node):
         self.declare_parameter('use_map_frame', False)
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
+        # WS-9K-B: 地図セッション ID。bringup.launch.py が 1 回だけ生成し、
+        # route_recorder と replay_runner の両方へ同じ値を渡す（各ノードが自分で
+        # 作ると一致しない）。map フレームで記録した経路はこの ID を持ち、
+        # 再生側が同じセッションのときだけ追わせる。
+        self.declare_parameter('map_session_id', '')
         # WS-9D: 自己位置源の EKF 出力 (/odometry/filtered) を優先し、古ければ
         # 生 /odom にフォールバックする。両ノードで同名・同既定にすること。
         self.declare_parameter('odom_topic', '/odom')
@@ -103,6 +108,7 @@ class RouteRecorder(Node):
         self._use_map_frame = bool(self.get_parameter('use_map_frame').value)
         self._map_frame = self.get_parameter('map_frame').value
         self._base_frame = self.get_parameter('base_frame').value
+        self._map_session_id = self.get_parameter('map_session_id').value
         self._odom_topic = self.get_parameter('odom_topic').value
         self._odom_filtered_topic = self.get_parameter('odom_filtered_topic').value
         self._odom_stale_ms = int(self.get_parameter('odom_stale_ms').value)
@@ -206,6 +212,16 @@ class RouteRecorder(Node):
             return None
         t = tf.transform.translation
         return (t.x, t.y, _yaw_from_quat(tf.transform.rotation))
+
+    def _current_session_for_route(self) -> str:
+        """記録中の経路に付けるセッション ID。map フレームのときだけ持つ。
+
+        odom フレーム経路は地図に依存しないので ""（制限しない）。map フレームで
+        記録するときは bringup が渡した共通セッション ID を付ける（WS-9K-B）。
+        """
+        if self._frame_id == self._map_frame:
+            return self._map_session_id
+        return ""
 
     def _publish_robot_pose(self):
         """WebUI 用に現在ロボット pose を map（あれば）or odom フレームで publish。"""
@@ -402,7 +418,8 @@ class RouteRecorder(Node):
         if now_s - self._last_autosave_s < self._autosave_period_s:
             return
         route = self._recorder.finalize(
-            self._route_id, self._name, self._now_ms(), frame_id=self._frame_id)
+            self._route_id, self._name, self._now_ms(), frame_id=self._frame_id,
+            map_session_id=self._current_session_for_route())
         path = autosave_path(self._routes_dir, self._route_id)
         save_route_atomic(path, route_to_dict(route))
         if not self._autosave_logged:

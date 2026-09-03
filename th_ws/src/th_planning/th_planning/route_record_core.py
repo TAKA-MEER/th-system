@@ -46,6 +46,11 @@ class RouteData:
     recorded_at_ms: int
     frame_id: str
     points: List[Pose2D] = field(default_factory=list)
+    # WS-9K-B: この経路がどの地図セッションで記録されたかの印。odom フレーム
+    # 経路では "" （地図に依存しないので制限しない）。map フレーム経路では
+    # 記録時（bringup 起動）のセッション ID が入る。"" は「セッション不明」＝
+    # 一致しない扱いなので、別セッションの取得で再生側が誤って追わない。
+    map_session_id: str = ""
 
 
 def normalize_angle(a: float) -> float:
@@ -110,12 +115,17 @@ def route_to_dict(route: RouteData) -> dict:
         'start_yaw': route.start_yaw,
         'recorded_at_ms': route.recorded_at_ms,
         'frame_id': route.frame_id,
+        'map_session_id': route.map_session_id,
         'points': [[p[0], p[1], p[2]] for p in route.points],
     }
 
 
 def route_from_dict(d: dict) -> RouteData:
-    """dict を RouteData へ逆変換する。points はタプル化する。"""
+    """dict を RouteData へ逆変換する。points はタプル化する。
+
+    WS-9K-B: 古い JSON（`map_session_id` キーが無い）でも落ちない。無ければ
+    `""`（＝セッション不明）として読み、can_replay_route 側で一致しない扱いにする。
+    """
     points = [tuple(p) for p in d.get('points', [])]  # type: ignore[arg-type]
     return RouteData(
         id=d['id'],
@@ -124,8 +134,28 @@ def route_from_dict(d: dict) -> RouteData:
         start_yaw=d['start_yaw'],
         recorded_at_ms=d.get('recorded_at_ms', 0),
         frame_id=d.get('frame_id', 'odom'),
+        map_session_id=d.get('map_session_id', ''),
         points=points,
     )
+
+
+def can_replay_route(route_frame: str, route_session: str,
+                     current_session: str, map_frame: str) -> bool:
+    """経路を現在のセッションで再生してよいか判定する (WS-9K-B)。
+
+    ループ閉じ込みと map 絶対座標記録が両立しないため、地図は map セッションごと
+    に作り直される。別セッションで記録した map フレーム経路の座標は現在の地図では
+    無意味なので、再生を進めない（実機 2026-09-03: 別セッションの経路を再生し
+    start_yaw=-178.1° から約 180° 旋回して壁に向かった）。
+
+    - route_frame == map_frame（map フレーム経路）:
+      route_session が現在のセッションと**一致する場合だけ** True。`""`（古い
+      経路でセッション不明）や違うセッションは False。
+    - それ以外（odom フレーム経路）: 地図に依存しないのでセッションに関係なく True。
+    """
+    if route_frame != map_frame:
+        return True
+    return bool(route_session) and route_session == current_session
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -280,6 +310,7 @@ class RouteRecorderCore:
         recorded_at_ms: int,
         frame_id: str = "odom",
         generation: int = 1,
+        map_session_id: str = "",
     ) -> RouteData:
         """記録を RouteData に落として返す。"""
         return RouteData(
@@ -289,5 +320,6 @@ class RouteRecorderCore:
             start_yaw=self._start_yaw,
             recorded_at_ms=recorded_at_ms,
             frame_id=frame_id,
+            map_session_id=map_session_id,
             points=list(self._points),
         )

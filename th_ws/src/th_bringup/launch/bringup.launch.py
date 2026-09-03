@@ -12,6 +12,7 @@
 # ============================================================
 import os
 import sys
+import time
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, GroupAction,
@@ -455,12 +456,20 @@ def generate_launch_description():
         PythonExpression(["'", enable_route_slam, "'.lower() in ('true', '1')"]),
         value_type=bool)
 
+    # WS-9K-B: 地図セッション ID。地図は bringup ごとに作り直されるので、
+    # 「この bringup の起動」を 1 つの地図セッションとみなし、1 回だけ生成して
+    # route_recorder と replay_runner の両方へ同じ値を渡す（各ノードが自分で作ると
+    # 起動時刻が僅かにずれて一致しない）。route_recorder はこの ID を map フレーム
+    # 経路に刻み、replay_runner は一致しない map 経路の再生を拒否する。
+    map_session_id = f'sess_{int(time.time() * 1000)}'
+
     # ── 13a. route_recorder（教示経路の記録。WP-TRANSIT / demo-teach-replay）──
     nodes.append(Node(
         package='th_planning',
         executable='route_recorder.py',
         name='route_recorder',
-        parameters=[{'use_map_frame': use_map_frame}],
+        parameters=[{'use_map_frame': use_map_frame,
+                     'map_session_id': map_session_id}],
         output='screen',
     ))
 
@@ -469,7 +478,8 @@ def generate_launch_description():
         package='th_planning',
         executable='replay_runner.py',
         name='replay_runner',
-        parameters=[{'use_map_frame': use_map_frame}],
+        parameters=[{'use_map_frame': use_map_frame,
+                     'map_session_id': map_session_id}],
         output='screen',
     ))
 

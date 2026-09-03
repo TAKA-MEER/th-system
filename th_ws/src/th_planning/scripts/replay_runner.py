@@ -51,7 +51,7 @@ def _points_to_path(points, frame_id='odom', stamp=None):
 
 from th_planning.odom_source import pick_odom_source
 from th_planning.route_record_core import (
-    finalized_path, polyline_length, route_from_dict)
+    can_replay_route, finalized_path, polyline_length, route_from_dict)
 from th_planning.route_replay_core import (
     ReplayParams, advance_index, align_path_to_current, pure_pursuit,
     ramp_toward, reverse_points, rotate_toward,
@@ -98,6 +98,10 @@ class ReplayRunner(Node):
         self.declare_parameter('use_map_frame', False)
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
+        # WS-9K-B: 地図セッション ID。bringup.launch.py が 1 回だけ生成し、
+        # route_recorder と replay_runner の両方へ同じ値を渡す。load_route の経路が
+        # map フレームなら、このセッション ID と一致したときだけ再生を進める。
+        self.declare_parameter('map_session_id', '')
         self.declare_parameter('localize_wait_s', 5.0)
         # WS-9D: 自己位置源の EKF 出力 (/odometry/filtered) を優先し、古ければ
         # 生 /odom にフォールバックする。両ノードで同名・同既定にすること。
@@ -107,6 +111,7 @@ class ReplayRunner(Node):
         self._use_map_frame = bool(self.get_parameter('use_map_frame').value)
         self._map_frame = self.get_parameter('map_frame').value
         self._base_frame = self.get_parameter('base_frame').value
+        self._map_session_id = self.get_parameter('map_session_id').value
         self._localize_wait_s = float(self.get_parameter('localize_wait_s').value)
         self._odom_topic = self.get_parameter('odom_topic').value
         self._odom_filtered_topic = self.get_parameter('odom_filtered_topic').value
@@ -225,6 +230,21 @@ class ReplayRunner(Node):
             file_frame = self._route.frame_id or 'odom'
             map_route = self._use_map_frame and file_frame == self._map_frame
             self._route_frame = self._map_frame if map_route else 'odom'
+            # WS-9K-B: map フレーム経路が別の地図セッションで記録されていたら
+            # 繋がない。ループ閉じ込みを止めた今、地図はセッションごとに作り直され、
+            # 別セッションの map 座標は現在の地図では無意味（実機 2026-09-03:
+            # 別セッションの経路を再生し start_yaw=-178.1° から約180°旋回して壁に
+            # 向かった）。不一致なら読み込まず evt.localize_done も出さない。
+            # 逆に odom フレーム経路は地図に依存しないので常に再生してよい。
+            route_session = self._route.map_session_id or ''
+            if not can_replay_route(
+                    file_frame, route_session, self._map_session_id, self._map_frame):
+                self.get_logger().error(
+                    f'この経路は別の地図セッション（{route_session or "不明"}）で記録されて'
+                    f'いる。現在のセッション（{self._map_session_id}）では座標が一致しない'
+                    f'ため再生できない。教示からやり直すこと')
+                self._route = None
+                return
             pts = list(self._route.points)
             if reverse:
                 pts = reverse_points(pts)

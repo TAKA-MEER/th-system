@@ -35,6 +35,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_route_record_files
     test/test_route_record_files.py
     TIMEOUT 30)
+  # WS-9K-B: 地図セッション ID。経路に記録セッションの印を付け、別セッションの
+  # map 経路を再生に進ませない判定 (can_replay_route) を固定。ROS2 不要
+  ament_add_pytest_test(test_route_map_session
+    test/test_route_map_session.py
+    TIMEOUT 30)
   # WS-9F: /route/preview の帯域対策の静的テスト（decimate_polyline 適用と
   # ハートビート配信の設計判断を固定。ROS2 不要）
   ament_add_pytest_test(test_route_preview_bandwidth
