@@ -123,6 +123,10 @@ class RouteRecorder(Node):
         self._route_id: str | None = None
         self._name: str = ""
         self._rec_started_ms: int = 0
+        # WS-9K-E2: 記録側の「ファイルに書けたか」フラグ。finalize_route_file に
+        # 成功したときだけ true。「保存しました」は FSM の SAVED でなくこれを見る
+        # （S13TeachManual.jsx）。新しい記録が始まったら false に戻す。
+        self._saved = False
         self._pose: tuple[float, float, float] | None = None
         self._frame_id: str = 'odom'   # 記録中の経路フレーム（start_record で確定）
         self._mode: str = ""
@@ -261,6 +265,8 @@ class RouteRecorder(Node):
             # WS-9H-2: 新しい recorder は点数が 0 から数え直しになるので、前の教示の
             # 点数列が間引き比較に残らないよう自動保存の状態をまっさらに戻す。
             self._reset_autosave_state()
+            # WS-9K-E2: 新しい記録はまだ保存していないので saved を false に戻す。
+            self._saved = False
             # WS-8B: 記録開始時に map TF があれば経路全体を map フレームで記録する。
             # 無ければ従来どおり /odom。フレームは記録中ずっと固定（混ぜない）。
             mp = self._map_pose()
@@ -347,6 +353,9 @@ class RouteRecorder(Node):
             frame_id=self._frame_id, map_session_id=self._current_session_for_route())
         dest = finalize_route_file(self._routes_dir, self._route_id,
                                    route_to_dict(route))
+        # WS-9K-E2: ファイルに書けた（finalize_route_file が例外なしで返った）
+        # ときだけ true。「保存しました」はこれを見る。FSM の SAVED は見ない。
+        self._saved = True
         self._close_recording()
         return dest, route
 
@@ -415,6 +424,8 @@ class RouteRecorder(Node):
         stamp = self.get_clock().now().to_msg()
         msg.header.stamp = stamp
         msg.target_index = -1   # 記録側は目標点を持たない
+        # WS-9K-E2: 「ファイルに書けたか」を載せる（FSM の SAVED ではない）。
+        msg.saved = self._saved
         if self._recorder is None:
             msg.state = self._state or 'NONE'
             msg.recorded_m = 0.0

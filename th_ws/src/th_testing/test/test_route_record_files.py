@@ -480,3 +480,97 @@ def test_route_recorder_closes_recording_on_finalize():
     assert _method_calls(tree, '_finalize_and_close', '_close_recording') is True, (
         '_finalize_and_close が _close_recording を呼ばない')
     assert _method_calls(tree, '_autofinalize_mode_left', '_finalize_and_close') is True
+
+
+# ============================================================================
+# WS-9K-E2: 「保存しました」が嘘をつく問題のノード側対策。
+#
+# S13TeachManual.jsx の `const saved = st?.state === 'SAVED'` は
+# /route/status.state（＝ FSM の状態のコピー）を見ているだけで、route_recorder が
+# 実際にファイルを書いたかどうかを一切見ていない。そのため FSM が SAVED になれば、
+# 保存が失敗していても「保存しました」と出る（実機 2026-09-03: SAVED は出ていた
+# のに保存されていなかった）。
+#
+# 対策: RouteStatus.msg に `bool saved` を追加し、route_recorder が
+# finalize_route_file に成功したときだけ true にする（FSM の SAVED とは無関係）。
+# WebUI 側（impl2 担当）はこの saved を見て「保存しました」を出す。
+# ============================================================================
+
+
+def _method_sets_attr_true(tree, method, attr):
+    """メソッド本体で `self.<attr> = True` の代入があるか。"""
+    node = _method_def(tree, method)
+    if node is None:
+        return False
+    return any(
+        isinstance(n, ast.Assign)
+        and len(n.targets) == 1 and isinstance(n.targets[0], ast.Attribute)
+        and isinstance(n.targets[0].value, ast.Name) and n.targets[0].value.id == 'self'
+        and n.targets[0].attr == attr
+        and isinstance(n.value, ast.Constant) and n.value.value is True
+        for n in ast.walk(ast.Module(body=node.body, type_ignores=[])))
+
+
+def test_route_recorder_start_record_clears_saved():
+    """start_record で saved を false に戻す。
+
+    変異チェック E2a: この代入を消すと、前の教示の saved=true が残って新しい教示の
+    「保存しました」が先に嘘を出し得る → 赤くなる。
+    """
+    tree = _tree(ROUTE_RECORDER)
+    # start_record 分岐（if name == 'start_record'）内で self._saved = False
+    assert_dim = _effect_branch_sets_attr_false(tree, 'start_record', '_saved')
+    assert assert_dim, 'start_record 分岐で self._saved = False にしていない'
+
+
+def _effect_branch_sets_attr_false(tree, effect_name, attr):
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == '_on_effect':
+            for name, body in _iter_effect_branches(node):
+                if name == effect_name:
+                    return _branch_sets_attr_false(body, attr)
+    return False
+
+
+def _branch_sets_attr_false(body_nodes, attr):
+    return any(
+        isinstance(n, ast.Assign)
+        and len(n.targets) == 1 and isinstance(n.targets[0], ast.Attribute)
+        and isinstance(n.targets[0].value, ast.Name) and n.targets[0].value.id == 'self'
+        and n.targets[0].attr == attr
+        and isinstance(n.value, ast.Constant) and n.value.value is False
+        for n in ast.walk(ast.Module(body=body_nodes, type_ignores=[])))
+
+
+def test_route_recorder_sets_saved_true_only_on_successful_save():
+    """finalize_route_file に成功したときだけ self._saved = True にする。
+
+    変異チェック E2b: _finalize_and_close の成功経路で saved=true を消す／あるいは
+    FSM の SAVED（状態）を見て true にすると赤くなる。
+    """
+    tree = _tree(ROUTE_RECORDER)
+    # _finalize_and_close は finalize_route_file を呼んで成功したら saved=true。
+    assert _method_sets_attr_true(tree, '_finalize_and_close', '_saved'), (
+        '_finalize_and_close が self._saved = True にしない')
+    fclose = _method_def(tree, '_finalize_and_close')
+    calls_finalize_file = any(
+        isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+        and n.func.id == 'finalize_route_file'
+        for n in ast.walk(ast.Module(body=fclose.body, type_ignores=[])))
+    assert calls_finalize_file, '_finalize_and_close が finalize_route_file を呼ばない'
+
+
+def test_route_recorder_status_publishes_saved():
+    """/route/status publish が msg.saved に _saved を載せる。"""
+    tree = _tree(ROUTE_RECORDER)
+    node = _method_def(tree, '_status_timer')
+    assert node is not None, '_status_timer が無い'
+    assigns = [
+        n for n in ast.walk(ast.Module(body=node.body, type_ignores=[]))
+        if isinstance(n, ast.Assign)
+        and len(n.targets) == 1 and isinstance(n.targets[0], ast.Attribute)
+        and n.targets[0].attr == 'saved'
+        and isinstance(n.targets[0].value, ast.Name)
+        and n.targets[0].value.id == 'msg'
+    ]
+    assert assigns, '_status_timer が msg.saved を set していない'
