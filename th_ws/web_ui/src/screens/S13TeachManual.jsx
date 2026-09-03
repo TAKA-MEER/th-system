@@ -34,7 +34,7 @@ import {
   S11_OBSTACLE_PASS, S11_OBSTACLE_UNKNOWN, S11_REAR_TITLE, S11_REAR_NOTE,
   S11_MANUAL_TITLE,
   S13_TAB_TEACH, S13_TEACH_TITLE, S13_ROUTE_NAME_LABEL, S13_ROUTE_NAME_PLACEHOLDER,
-  S13_RECORD_START, S13_RECORDING, S13_SAVED, S13_RECORDED_LABEL, S13_POINTS_LABEL,
+  S13_RECORD_START, S13_RECORDING, S13_SAVED, S13_SAVE_FAILED, S13_RECORDED_LABEL, S13_POINTS_LABEL,
   S13_ELAPSED_LABEL, S13_START_YAW_LABEL, S13_SEC, S13_M, S13_DEG,
   S13_REC_DIRECTION,
 } from '../i18n/screens.js'
@@ -90,7 +90,12 @@ export default function S13TeachManual({ onFinish }) {
   }
 
   const st = routeStatus
-  const saved = st?.state === 'SAVED'
+  // WS-9K E-2: 「保存しました」は route_recorder が実際にファイルを書いた
+  // （RouteStatus.saved === true）ときだけ出す。FSM の state が SAVED でも
+  // 保存に失敗していれば saved は false のままなので、出してはいけない。
+  const saved = st?.saved === true
+  // FSM が SAVED なのにファイル保存に失敗した（saved が false）ケース。
+  const saveFailed = state?.state === 'SAVED' && !saved
 
   return (
     <div className="screen two-col" id="s13">
@@ -179,6 +184,8 @@ export default function S13TeachManual({ onFinish }) {
               <h3>{S13_RECORDED_LABEL}</h3>
               {saved ? (
                 <div className="note" data-testid="s13-saved">{S13_SAVED}</div>
+              ) : saveFailed ? (
+                <div className="note" data-testid="s13-save-failed">{S13_SAVE_FAILED}</div>
               ) : (
                 <table className="lst">
                   <tbody>
