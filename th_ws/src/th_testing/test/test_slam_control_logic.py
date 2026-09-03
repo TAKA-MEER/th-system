@@ -153,37 +153,67 @@ def _name_calls(node, name):
             and n.func.id == name]
 
 
-# ── 5. ast: slam_control に set_localization_mode が残らない ────────────
-def test_slam_control_has_no_set_localization_mode_client():
-    """slam_control.py に set_localization_mode が転送先に残っていないこと。
+# ── 5. ast: slam_control は pause_new_measurements を使わず、reload 時に凍結してから deserialize する (WS-9N) ──
+def test_slam_control_has_no_pause_new_measurements():
+    """WS-9N: slam_control.py に pause_new_measurements が現れないこと。
 
-    async_slam_toolbox_node には存在しないサービス。クライアント生成やサービス
-    転送に使われていたら（＝存在しないサービスを待ち続けて起動が遅れる）赤になる。
+    pause_new_measurements は自己位置推定まで止めてしまう旧ノードの代用であり、
+    新ノード map_and_localization_slam_toolbox_node では set_localization_mode を
+    使うため一切使わない。
     """
     src = _read(SLAM_CONTROL)
-    tree = _tree(SLAM_CONTROL)
-    for n in ast.walk(tree):
-        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) \
-                and n.func.attr in ('create_client', 'create_service'):
-            arg_str = ast.get_source_segment(src, n) or ''
-            assert 'set_localization_mode' not in arg_str, \
-                f'set_localization_mode が転送先に残っている: {arg_str}'
+    assert 'pause_new_measurements' not in src, (
+        'slam_control.py に pause_new_measurements が残っている（WS-9N）')
 
 
-def test_slam_control_has_pause_and_deserialize_clients():
-    """slam_control が pause_new_measurements / deserialize_map クライアントを持つ。"""
+def test_slam_control_has_localization_and_deserialize_clients():
+    """slam_control が set_localization_mode / deserialize_map クライアントを持つ。"""
     src = _read(SLAM_CONTROL)
-    assert 'pause_new_measurements' in src
+    assert 'set_localization_mode' in src
     assert 'deserialize_map' in src
-    # クライアント生成が create_client(..., '/slam_toolbox/...') で行われている
     tree = _tree(SLAM_CONTROL)
     clients = [ast.get_source_segment(src, n) or ''
                for n in ast.walk(tree)
                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
                and n.func.attr == 'create_client']
-    assert any('open_session' not in c for c in clients)
-    assert any('/slam_toolbox/pause_new_measurements' in c for c in clients), \
-        'pause_new_measurements クライアントが無い'
+    assert any('/slam_toolbox/set_localization_mode' in c for c in clients), (
+        'set_localization_mode クライアントが無い')
+    assert any('/slam_toolbox/deserialize_map' in c for c in clients), (
+        'deserialize_map クライアントが無い')
+
+
+def test_handle_map_reload_calls_localization_before_deserialize():
+    """_handle_map_reload の中で localization 切替呼び出しが deserialize の呼び出しより前に現れること。
+
+    再生中に地図作成へ戻す一行が復活したり、deserialize の後に凍結したりすると、
+    再生中に地図作成が走って自己位置が発散する（2026-09-03 実機で 1.52m / 41.8° ずれ）。
+    ROS ノードなので実行時に捕まえられないため、静的 AST で順序を固定する。
+    """
+    tree = _tree(SLAM_CONTROL)
+    funcdef = _funcdef(tree, '_handle_map_reload')
+    assert funcdef is not None, '_handle_map_reload が無い'
+
+    loc_call_lineno = None
+    deser_call_lineno = None
+
+    for n in ast.walk(funcdef):
+        if isinstance(n, ast.Call):
+            # _set_localization(...) または set_localization_mode を含む呼び出し
+            if isinstance(n.func, ast.Attribute) and n.func.attr == '_set_localization':
+                loc_call_lineno = n.lineno
+            # call_and_wait(self, self._cli_deserialize, ...)
+            if isinstance(n.func, ast.Name) and n.func.id == 'call_and_wait':
+                if len(n.args) >= 2 and isinstance(n.args[1], ast.Attribute) \
+                        and n.args[1].attr == '_cli_deserialize':
+                    deser_call_lineno = n.lineno
+
+    assert loc_call_lineno is not None, (
+        '_handle_map_reload に _set_localization の呼び出しが見つからない')
+    assert deser_call_lineno is not None, (
+        '_handle_map_reload に _cli_deserialize の call_and_wait が見つからない')
+    assert loc_call_lineno < deser_call_lineno, (
+        f'_set_localization (line {loc_call_lineno}) が '
+        f'deserialize (line {deser_call_lineno}) より後に呼ばれている（順序不正）')
 
 
 # ── 6. ast: replay_runner の localize_done が reload 成功の分岐の中 ─────
@@ -416,51 +446,21 @@ def test_deserialize_filename_does_not_append_posegraph():
 
 
 # ── 10. ast: _set_pause がトグルをループせず最大 1 回だけ叩く（WS-9M）───
-def test_set_pause_toggle_is_max_one_not_loop():
-    """_set_pause がトグルを最大 1 回だけ叩くこと（ループではない）。
+# ── 10. ast: _set_localization が応答の success を確認（WS-9N）──────────
+def test_set_localization_checks_response_success():
+    """_set_localization が SetBool の応答の success を確認していること。
 
-    旧 converge_pause 版は for ループ内で最大 2 回叩いていた。WS-9M では状態
-    追跡に変え、`pause_toggle_needed` が True のときだけ 1 回叩く。
-
-    変異チェック: for ループ版に戻すと（call_and_wait が 2 か所 or ループ内に
-    なる）赤くなる。
+    応答を見ずに success=True を仮定すると、切替失敗を検知できず
+    再生中に地図作成のまま走り出す（2026-09-03 の欠陥）。
     """
     tree = _tree(SLAM_CONTROL)
-    funcdef = _funcdef(tree, '_set_pause')
-    assert funcdef is not None, '_set_pause が無い'
+    funcdef = _funcdef(tree, '_set_localization')
+    assert funcdef is not None, '_set_localization が無い'
 
-    for_nodes = [n for n in ast.walk(funcdef) if isinstance(n, ast.For)]
-    assert not for_nodes, '_set_pause に for ループが残っている'
-
-    # call_and_wait（bare 名で呼ばれる）を叩く箇所が 1 回だけであること
-    calls = _name_calls(funcdef, 'call_and_wait')
-    assert len(calls) == 1, (
-        f'call_and_wait の呼び出しが {len(calls)} 回ある（期待: 1 回）')
-
-
-# ── 11. ast: _check_slam_restart が追跡状態をリセット（WS-9M）──────────
-def test_check_slam_restart_resets_paused_tracked():
-    """_check_slam_restart が再起動検知時に self._paused_tracked を False に
-    リセットしていること。
-
-    再起動で slam_toolbox は mapping モード（一時停止していない）で立ち上がる。
-    これを忘れると、クラッシュ後に実際は動いているのに「停止中」と思い込んで
-    逆に倒してしまう。
-
-    変異チェック: このリセット代入を消すと赤くなる。
-    """
-    tree = _tree(SLAM_CONTROL)
-    funcdef = _funcdef(tree, '_check_slam_restart')
-    assert funcdef is not None, '_check_slam_restart が無い'
-
-    found = False
-    for n in ast.walk(funcdef):
-        if isinstance(n, ast.Assign):
-            for t in n.targets:
-                if isinstance(t, ast.Attribute) and t.attr == '_paused_tracked':
-                    if isinstance(n.value, ast.Constant) and n.value.value is False:
-                        found = True
-    assert found, '_check_slam_restart で self._paused_tracked = False が見つからない'
+    has_success_check = any(
+        isinstance(n, ast.Attribute) and n.attr == 'success'
+        for n in ast.walk(funcdef))
+    assert has_success_check, '_set_localization が応答の success を見ていない'
 
 
 # ── 12. ast: deserialize 前に .posegraph と .data の両方を確認（WS-9M）──
