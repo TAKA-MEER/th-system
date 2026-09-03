@@ -26,6 +26,12 @@ slam_toolbox:
     map_update_interval:   2.0   # 2026-09-02: 教示中に地図が伸びるのを見たいので 5.0 から短縮
     resolution:            0.05
     max_laser_range:       12.0      # RPLIDAR S1 最大レンジ
+    # 実機ログ (2026-09-03): slam_toolbox が
+    #   "minimum laser range setting (0.0 m) exceeds the capabilities of the
+    #    used Lidar (0.2 m)"
+    # と警告していた。未設定だと slam_toolbox の既定 0.0 が使われる。
+    # RPLIDAR S1 の最小レンジは 0.2 m なので明示する。
+    min_laser_range:       0.2
     minimum_time_interval: 0.5
     # 実機検証 (2026-07-11): ラズパイ配信の /scan は WiFi 経由でスタンプの
     # 先行/遅延が ±0.6 秒程度発生し、0.2 だと message filter が大半のスキャンを

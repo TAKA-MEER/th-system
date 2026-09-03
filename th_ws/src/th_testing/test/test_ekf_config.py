@@ -118,3 +118,31 @@ def test_slam_loop_closing_is_disabled():
     assert params.get('do_loop_closing') is False, (
         'do_loop_closing が true に戻っている。ループ閉じ込みは記録済み経路を '
         '過去に遡って無効化し、教示再生を壊す（WS-9K）。false のままにすること。')
+
+
+def test_slam_min_laser_range_is_set_for_the_lidar():
+    """slam_params.yaml は min_laser_range を LiDAR の最小レンジ以上で明示すること。
+
+    実機ログ (2026-09-03):
+
+      [async_slam_toolbox_node-22] [WARN] [slam_toolbox]:
+        minimum laser range setting (0.0 m) exceeds the capabilities of the
+        used Lidar (0.2 m)
+
+    min_laser_range を書かないと slam_toolbox の既定 0.0 が使われ、実機で使う
+    RPLIDAR S1 の最小レンジ 0.2 m を下回る。近距離の無効点が地図に混ざるのを
+    防ぐため 0.2 m 以上を明示する。
+    """
+    path = _CONFIG_DIR / 'slam_params.yaml'
+    assert path.exists(), f'slam_params.yaml が見つからない: {path}'
+    doc = yaml.safe_load(path.read_text(encoding='utf-8'))
+    params = doc['slam_toolbox']['ros__parameters']
+    assert 'min_laser_range' in params, (
+        'slam_params.yaml に min_laser_range が無い。既定 0.0 が使われ、'
+        'slam_toolbox が "minimum laser range setting (0.0 m) exceeds the '
+        'capabilities of the used Lidar (0.2 m)" と警告する（実機 2026-09-03）。')
+    value = params['min_laser_range']
+    assert isinstance(value, (int, float)) and not isinstance(value, bool), (
+        f'min_laser_range が数値でない: {value!r}')
+    assert value >= 0.2, (
+        f'min_laser_range={value} が RPLIDAR S1 の最小レンジ 0.2 m を下回る。')
