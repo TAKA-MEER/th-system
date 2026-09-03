@@ -4,7 +4,15 @@ slam_control_logic.py
 slam_control.py の pure 関数。ROS 依存なし。
 """
 
-from th_planning.route_record_core import _safe_id
+import re
+
+# 経路名・セッション ID として不正な文字。送る側（経路記録側）は
+# route_record_core._safe_id で `/` `\` を `_` に正規化して送ってくる。ここは
+# 受け取った id が**未正規化でないか**を検証する（検証はしつつ変換はしない。
+# サニタイズを 2 か所に持つと片方だけ変えて食い違うため、「送る側が正規化し、
+# 受ける側は不正なら拒否」に役割を分ける）。
+_UNSAFE_ID_RE = re.compile(r'[/\\]')
+_TRAVERSAL_RE = re.compile(r'\.\.')
 
 
 def converge_pause(wanted: bool, statuses) -> "str | None":
@@ -37,6 +45,7 @@ def open_session_error(slot: str, mode: str, session_id: str) -> "str | None":
     - slot は当面 "ROUTE" のみ受け付ける
     - mode は "save" / "reload" のみ
     - session_id が空は拒否
+    - session_id に `/` `\\` `..` が含まれる（未正規化）は拒否
 
     問題なければ None、あればエラー文字列を返す。
     """
@@ -46,18 +55,18 @@ def open_session_error(slot: str, mode: str, session_id: str) -> "str | None":
         return f'mode は save/reload のみ対応 (given {mode!r})'
     if not session_id:
         return 'session_id が空'
+    if _UNSAFE_ID_RE.search(session_id):
+        return (f'session_id に `/` か `\\` が含まれる（未正規化）: '
+                f'{session_id!r}')
+    if _TRAVERSAL_RE.search(session_id):
+        return f'session_id に `..` が含まれる（不正）: {session_id!r}'
     return None
 
 
 def map_session_filename(session_id: str) -> str:
     """セッション ID から地図ファイル名を作る（純関数）。
 
-    **route_record_core._safe_id と同じ規則を使う**。経路 JSON の保存名と地図
-    （.posegraph / .data）のファイル名を一致させるため、正規表現を二重に持たない
-    （片方だけ変えると、経路名の `/` が保存側だけ置換されて再生できなくなる —
-    2026-09-03 に実際に踏んだバグと同じ種類）。
-
-    `/` `\\` は `_` に置換されるため、`../` や `a/b` が混じっても `map_dir` の
-    外を指せない（`.._evil` になる）。
+    呼び出し元（/map_session/open ハンドラ）は open_session_error で検証済みの
+    id だけを渡す（変換はしない）。ここはそのまま join に使える値を返す。
     """
-    return _safe_id(session_id)
+    return session_id

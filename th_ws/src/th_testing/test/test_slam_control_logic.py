@@ -16,6 +16,12 @@ _CONF_SCRIPTS = os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..', 'th_config_manager', 'scripts'))
 SLAM_CONTROL = os.path.join(_CONF_SCRIPTS, 'slam_control.py')
 
+# slam_control_logic.py（純ロジック本体）のソースを検証するためのパス
+_CONF_PKG = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), '..', '..', 'th_config_manager',
+    'th_config_manager'))
+SLAM_CONTROL_LOGIC = os.path.join(_CONF_PKG, 'slam_control_logic.py')
+
 # route_recorder.py / replay_runner.py のソースを ast で静的検証するためのパス
 _PLAN_SCRIPTS = os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..', 'th_planning', 'scripts'))
@@ -23,9 +29,10 @@ ROUTE_RECORDER = os.path.join(_PLAN_SCRIPTS, 'route_recorder.py')
 REPLAY_RUNNER = os.path.join(_PLAN_SCRIPTS, 'replay_runner.py')
 
 # ── パスを通す（colcon build 前にも直接 pytest できるように）────────────
-# slam_control_logic は th_config_manager パッケージ、_safe_id は th_planning
-# パッケージ（route_record_core）に依存する。conftest は th_config_manager を
-# 足さないので、両方ここで足す。
+# slam_control_logic は th_config_manager パッケージのみに依存する。送る側の
+# 正規化（route_record_core._safe_id）を検証するために th_planning のパスも足す
+# （import はしない：slam_control_logic が th_planning を import しないことを
+# ast で確認するテストがある）。
 sys.path.insert(0, os.path.join(
     os.path.dirname(__file__), '..', '..', 'th_planning', 'th_planning'))
 sys.path.insert(0, os.path.join(
@@ -94,26 +101,29 @@ def test_open_session_rejects_empty_session_id():
     assert open_session_error('ROUTE', 'save', '') is not None
 
 
-# ── 3. id の無害化（route_record_core._safe_id と同じ規則）─────────────
-def test_map_session_filename_sanitizes_slashes():
-    """session_id に `/` `\\` が入っても map_dir の外を指さない。
+def test_open_session_rejects_unsafe_session_id():
+    """session_id に `/` `\\` `..`（未正規化・不正）が含まれると拒否。
 
-    変異チェック 2: サニタイズを外す（生 session_id をそのまま返す）と赤くなる。
+    変異チェック 1: 未正規化 id の検証を外す（そのまま通す）と赤くなる。
+    受ける側は「送る側が _safe_id で正規化済みの id だけ」を受け取る前提で、
+    変換はせず拒否する（サニタイズを 2 か所に持たない）。
     """
-    assert map_session_filename('9/3_kousha') == '9_3_kousha'
-    assert map_session_filename('a\\b') == 'a_b'
-    assert map_session_filename('../evil') == '.._evil', \
-        '親ディレクトリへ逃げられないこと'
+    assert open_session_error('ROUTE', 'save', '9/3_kousha') is not None
+    assert open_session_error('ROUTE', 'save', 'a\\b') is not None
+    assert open_session_error('ROUTE', 'save', '../evil') is not None
 
 
-def test_map_session_filename_matches_route_filename():
-    """経路 JSON の保存名 (finalized_path の _safe_id) と地図名が一致すること。
+# ── 3. 受ける側は変換しない（検証済み id → そのままファイル名）──────────
+def test_map_session_filename_passes_validated_id_through():
+    """検証済み（安全な）id はそのままファイル名にする（変換しない）。
 
-    slam_control 側の正規表現を独自に持つと、経路 JSON と地図ファイル名が食い違って
-    読み直せなくなる（2026-09-03 に実際に踏んだバグと同じ種類）。ここで縛る。
+    変異チェック 1: ここで `/` や `\\` を `_` に置換する（受ける側で再サニタイズ）と
+    赤くなる。サニタイズは送る側（_safe_id）が一律に行い、受ける側は不正なら
+    拒否する、という役割分担に固定する。
     """
-    for sid in ['r1', '9/3_kousha', 'a\\b', '../evil', 'x y']:
-        assert map_session_filename(sid) == _safe_id(sid)
+    assert map_session_filename('r1') == 'r1'
+    assert map_session_filename('9_3_kousha') == '9_3_kousha'
+    assert map_session_filename('a_b') == 'a_b'
 
 
 # ── 4. ast ヘルパー ────────────────────────────────────────────────────
@@ -140,6 +150,13 @@ def _calls(node, method_names):
             result.append(n)
     result.sort(key=lambda n: n.lineno)
     return result
+
+
+def _name_calls(node, name):
+    """bare 名（ast.Name）で name を呼ぶ ast.Call の一覧（属性呼び出しを除く）。"""
+    return [n for n in ast.walk(node)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            and n.func.id == name]
 
 
 # ── 5. ast: slam_control に set_localization_mode が残らない ────────────
@@ -326,4 +343,43 @@ def test_route_recorder_and_replay_use_multithreaded_executor():
             f'{label} に MultiThreadedExecutor が見つからない')
         assert 'ReentrantCallbackGroup' in src, (
             f'{label} に ReentrantCallbackGroup が見つからない')
+
+
+# ── 8. ast: 依存を一方向（th_config_manager から th_planning を import しない）──
+def test_slam_control_logic_does_not_import_th_planning():
+    """slam_control_logic.py が th_planning を import していないこと。
+
+    循環依存の根絶。これが破れると th_config_manager <-> th_planning の循環になり
+    colcon が受け付けない。ソースに 'th_planning' の文字列が無いことでも confirm
+    （import 文はもちろん、コメント・docstring に書いても余計な束縛が増えるので
+    書かないことにする）。
+    """
+    src = _read(SLAM_CONTROL_LOGIC)
+    assert 'th_planning' not in src, \
+        'slam_control_logic.py が th_planning を参照している（循環依存）'
+
+
+def test_senders_normalize_session_id_with_safe_id():
+    """route_recorder / replay_runner が /map_session/open を呼ぶとき _safe_id を通す。
+
+    「送る側が正規化する」役割を固定。これが外れると受ける側は未正規化 id を拒否
+    するため、経路名に `/` などが入ったときに地図だけ見つからなくなる。
+    OpenMapSession.Request(...) の呼び出しと同一関数内に _safe_id の呼び出しが
+    あること（＝正規化された session_id を渡している）。
+
+    変異チェック 2: 送る側の _safe_id を外す（route_id をそのまま渡す）と赤くなる。
+    """
+    src = _read(ROUTE_RECORDER)
+    tree = _tree(ROUTE_RECORDER)
+    funcdef = _funcdef(tree, '_save_map_for_route')
+    assert funcdef is not None, '_save_map_for_route が無い'
+    assert _name_calls(funcdef, '_safe_id'), \
+        'route_recorder が /map_session/open 呼び出しで _safe_id を使っていない'
+
+    src2 = _read(REPLAY_RUNNER)
+    tree2 = _tree(REPLAY_RUNNER)
+    funcdef2 = _funcdef(tree2, '_reload_map')
+    assert funcdef2 is not None, '_reload_map が無い'
+    assert _name_calls(funcdef2, '_safe_id'), \
+        'replay_runner が /map_session/open 呼び出しで _safe_id を使っていない'
 

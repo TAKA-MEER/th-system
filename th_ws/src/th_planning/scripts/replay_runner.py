@@ -59,7 +59,7 @@ def _points_to_path(points, frame_id='odom', stamp=None):
 
 from th_planning.odom_source import pick_odom_source
 from th_planning.route_record_core import (
-    can_replay_route, finalized_path, polyline_length, route_from_dict)
+    _safe_id, can_replay_route, finalized_path, polyline_length, route_from_dict)
 from th_planning.route_replay_core import (
     ReplayParams, advance_index, align_path_to_current, pure_pursuit,
     ramp_toward, reverse_points, rotate_toward,
@@ -346,7 +346,12 @@ class ReplayRunner(Node):
         """
         if not self._map_session_client.wait_for_service(timeout_sec=1.0):
             return '/map_session/open に接続できません'
-        req = OpenMapSession.Request(slot='ROUTE', session_id=route_id, mode='reload')
+        # 送る側で正規化する（route_record_core._safe_id と同じ規則）。経路 JSON の
+        # 保存名（finalized_path が内部で _safe_id する）と地図ファイル名を一致させる
+        # ため。受ける側（slam_control_logic）は未正規化 id を拒否するだけ。
+        session_id = _safe_id(route_id)
+        req = OpenMapSession.Request(
+            slot='ROUTE', session_id=session_id, mode='reload')
         _resp, err = call_and_wait(self, self._map_session_client, req, 30.0)
         if err:
             return f'地図の読み直しに失敗: {err}'

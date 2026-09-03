@@ -55,9 +55,9 @@ def _points_to_path(points, frame_id='odom', stamp=None):
 from th_planning.odom_source import pick_odom_source
 from th_planning.route_record_core import (
     RouteRecorderCore, RouteRecordParams, autosave_path,
-    decimate_polyline, finalize_route_file, list_finalized_route_files,
-    polyline_length, previous_path, route_from_dict, route_to_dict,
-    save_route_atomic, should_autofinalize,
+    _safe_id, decimate_polyline, finalize_route_file,
+    list_finalized_route_files, polyline_length, previous_path, route_from_dict,
+    route_to_dict, save_route_atomic, should_autofinalize,
 )
 
 
@@ -392,8 +392,12 @@ class RouteRecorder(Node):
                 f'地図を保存できなかったので再生できない可能性がある: '
                 f'/map_session/open に接続できません (id={route_id})')
             return
+        # 送る側で正規化する（route_record_core._safe_id と同じ規則）。経路 JSON の
+        # 保存名（finalized_path が内部で _safe_id する）と地図ファイル名を一致させる
+        # ため。受ける側（slam_control_logic）は未正規化 id を拒否するだけ。
+        session_id = _safe_id(route_id)
         req = OpenMapSession.Request(
-            slot='ROUTE', session_id=route_id, mode='save')
+            slot='ROUTE', session_id=session_id, mode='save')
         try:
             _resp, err = call_and_wait(
                 self, self._map_session_client, req, 30.0)
