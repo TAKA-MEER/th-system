@@ -22,6 +22,8 @@ import os
 
 import rclpy
 import rclpy.time
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
@@ -32,6 +34,12 @@ from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import Odometry, Path
 from th_system_msgs.msg import (RouteInfo, RouteStatus, StateEffect,
                                 StateEvent, SystemState)
+from th_system_msgs.srv import OpenMapSession
+
+# WS-9L: 再生の経路選択で地図を読み直すための共通ヘルパー。
+# 購読コールバック内からサービスを同期的に呼ぶには、main() の
+# MultiThreadedExecutor + ReentrantCallbackGroup（/system/effect 購読）が必要。
+from th_config_manager.service_call import call_and_wait
 
 
 def _points_to_path(points, frame_id='odom', stamp=None):
@@ -165,14 +173,25 @@ class ReplayRunner(Node):
             self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
         # ── Subscribers ────────────────────────────────────
+        # WS-9L: /system/effect は callback 内から別サービス (/map_session/open
+        # reload) を同期的に呼ぶ。単一スレッド executor だと応答コールバックが動けず
+        # デッドロックするので、ReentrantCallbackGroup に乗せ、main() 側で
+        # MultiThreadedExecutor を使う（slam_control.py と同じ構成）。
+        sub_cbg = ReentrantCallbackGroup()
         effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
                                 history=QoSHistoryPolicy.KEEP_LAST)
-        self.create_subscription(StateEffect, '/system/effect', self._on_effect, effect_qos)
+        self.create_subscription(StateEffect, '/system/effect', self._on_effect,
+                                 effect_qos, callback_group=sub_cbg)
 
         state_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
                                durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
                                history=QoSHistoryPolicy.KEEP_LAST)
         self.create_subscription(SystemState, '/system/state', self._on_state, state_qos)
+
+        # WS-9L: 再生の経路選択で地図を読み直す。client は既定グループに置き、
+        # effect コールバック（Reentrant）と並行実行できるようにする。
+        self._map_session_client = self.create_client(
+            OpenMapSession, '/map_session/open')
 
         # WS-9D: 同じ QoS で /odom（フォールバック源）と /odometry/filtered（EKF 出力、
         # 優先源）の両方を購読する。 /odom 購読はフォールバックに要るので消さない。
@@ -272,14 +291,26 @@ class ReplayRunner(Node):
             self._rotated = False
             self._arrived_sent = False
             if map_route:
-                # map TF が来るまで（最大 localize_wait_s）待って evt.localize_done。
-                # これで LOCALIZE 状態が「数秒の実待ち」になる。
-                self._localize_pending = True
-                self._localize_deadline = (
-                    self.get_clock().now().nanoseconds / 1e9 + self._localize_wait_s)
-                self.get_logger().info(
-                    f'load_route: id={route_id} reverse={reverse} 点={len(pts)} '
-                    f'frame=map（map→base_link TF を最大 {self._localize_wait_s:.0f}s 待つ）')
+                # WS-9L: 経路が map フレーム。手で機体を始点へ戻したうえで、教示の
+                # 地図を読み直す（deserialize。自己位置が地図の最初のノード＝経路の
+                # 始点に一致する）。成功したときだけ evt.localize_done へ進める。
+                # 失敗したら LOCALIZE から進まない（error ログのみ）。
+                err = self._reload_map(route_id)
+                if err is None:
+                    # map TF が来るまで（最大 localize_wait_s）待って evt.localize_done。
+                    # これで LOCALIZE 状態が「数秒の実待ち」になる。
+                    self._localize_pending = True
+                    self._localize_deadline = (
+                        self.get_clock().now().nanoseconds / 1e9
+                        + self._localize_wait_s)
+                    self.get_logger().info(
+                        f'load_route: id={route_id} reverse={reverse} 点={len(pts)} '
+                        f'frame=map（地図を読み直しました。map→base_link TF を最大 '
+                        f'{self._localize_wait_s:.0f}s 待つ）')
+                else:
+                    self.get_logger().error(
+                        f'地図を読み直せなかったため LOCALIZE から進めない: '
+                        f'id={route_id} ({err})')
             else:
                 self.get_logger().info(
                     f'load_route: id={route_id} reverse={reverse} 点={len(pts)} '
@@ -305,6 +336,21 @@ class ReplayRunner(Node):
     def _on_state(self, msg: SystemState):
         self._mode = msg.mode
         self._state = msg.state
+
+    def _reload_map(self, route_id: str) -> "str | None":
+        """/map_session/open reload で教示の地図を読み直す。エラー文字列 or None。
+
+        deserialize_map は 6.9MB のグラフを読み self.position を地図の最初のノード
+        （＝経路の始点）に合わせる。成功したら地図作成も再開される（slam_control 側
+        ）。再読込は 6.9MB の I/O を伴うので長めのタイムアウト（30s）を使う。
+        """
+        if not self._map_session_client.wait_for_service(timeout_sec=1.0):
+            return '/map_session/open に接続できません'
+        req = OpenMapSession.Request(slot='ROUTE', session_id=route_id, mode='reload')
+        _resp, err = call_and_wait(self, self._map_session_client, req, 30.0)
+        if err:
+            return f'地図の読み直しに失敗: {err}'
+        return None
 
     def _on_odom(self, msg: Odometry):
         p = msg.pose.pose.position
@@ -497,9 +543,17 @@ class ReplayRunner(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = ReplayRunner()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    # WS-9L: /system/effect コールバック内から /map_session/open を同期的に呼ぶため
+    # MultiThreadedExecutor + ReentrantCallbackGroup を使う（slam_control.py と同じ
+    # 構成。単一スレッド executor だと応答コールバックが動けず経路選択で固まる）。
+    executor = MultiThreadedExecutor()
+    node._executor = executor
+    executor.add_node(node)
+    try:
+        executor.spin()
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
