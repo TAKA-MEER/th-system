@@ -40,6 +40,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_route_map_session
     test/test_route_map_session.py
     TIMEOUT 30)
+  # WS-9L: 地図の凍結・保存・再読込。Pause トグルの収束ロジック / /map_session/open
+  # の引数検証・id 無害化（slam_control_logic 純関数）と配線の ast 静的検証。ROS2 不要
+  ament_add_pytest_test(test_slam_control_logic
+    test/test_slam_control_logic.py
+    TIMEOUT 30)
   # WS-9F: /route/preview の帯域対策の静的テスト（decimate_polyline 適用と
   # ハートビート配信の設計判断を固定。ROS2 不要）
   ament_add_pytest_test(test_route_preview_bandwidth
