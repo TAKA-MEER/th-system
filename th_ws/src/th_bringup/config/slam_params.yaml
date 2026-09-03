@@ -48,13 +48,21 @@ slam_toolbox:
     scan_buffer_maximum_scan_distance: 12.0
     link_match_minimum_response_fine: 0.1
     link_scan_maximum_distance: 1.5
-    # ★最重要: 1 周して戻ってきたとき、オドメトリの累積誤差がこの半径を
-    # 超えているとループ候補をそもそも探しに行けず、閉じられない。
-    # 100m 走行後の車輪オドメトリ誤差は数 m〜十数 m になり得るので、
-    # 3.0 では確実に足りない。広げると誤マッチのリスクは上がるが、
-    # loop_match_minimum_response_* の閾値が最終的な採否を守る。
-    loop_search_maximum_distance: 15.0
-    do_loop_closing:            true
+    # ★★ ループ閉じ込みを無効化（2026-09-03 実機で確定）。
+    #   校舎 1 周（185.0 m / 1504 点）の教示を成功させた直後、ループを閉じた
+    #   瞬間に記録点が index 1474→1475 で 0.1 秒の間に 4.09 m・yaw −6.3° 跳び、
+    #   経路と地図が最大 4 m ずれて壁に埋まった。slam_toolbox がループ閉じ込みで
+    #   過去に遡って地図を変形させても、記録済みの経路は補正前のフレームのまま
+    #   残るため、SLAM が地図を変形させ続けている最中に map 絶対座標で経路を
+    #   記録する現設計とは両立しない。→ 意図的に閉じない。
+    #
+    #   トレードオフ:
+    #   - 地図は 1 周して戻ったところで継ぎ目（壁が二重）になる。これは正常。
+    #   - 絶対的な終点誤差はドリフトぶん残る（実測 185 m あたり約 4 m ≒ 2%）。
+    #   - 一方で経路と地図が同じフレームに保たれるので、経路の追従自体は成立する
+    #     （今回失敗したのはまさにここ。こちらを優先する）。
+    loop_search_maximum_distance: 3.0
+    do_loop_closing:            false
     loop_match_minimum_chain_size: 10
     loop_match_maximum_variance_coarse: 3.0
     loop_match_minimum_response_coarse: 0.35

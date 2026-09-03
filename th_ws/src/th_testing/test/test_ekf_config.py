@@ -96,3 +96,25 @@ def test_no_imu_variant_has_no_imu_sensor():
         pytest.skip('ekf_params_no_imu.yaml が無い')
     params = _ekf_params(path)
     assert 'imu0' not in params, 'IMU なし版に imu0 が入っている'
+
+
+def test_slam_loop_closing_is_disabled():
+    """slam_params.yaml は ループ閉じ込みを無効化していること（WS-9K）。
+
+    これをうっかり true に戻してはいけない。理由:
+
+      SLAM が地図を変形させている最中に map 絶対座標で経路を記録する現設計と、
+      ループ閉じ込み（ポーズグラフの過去遡及最適化）は両立しない。2026-09-03 の
+      校舎 1 周（185.0 m / 1504 点）の教示で、ループを閉じた瞬間に記録点が
+      index 1474→1475 で 0.1 秒の間に 4.09 m 跳び、経路と地図が最大 4 m ずれて
+      壁に埋まった。ループ閉じ込みを無効化すると地図に継ぎ目ができ、終点誤差は
+      ドリフトぶん（約 2%）残るが、「経路と地図を同じフレームに保つ」優先で
+      経路追従自体は成立する。
+    """
+    path = _CONFIG_DIR / 'slam_params.yaml'
+    assert path.exists(), f'slam_params.yaml が見つからない: {path}'
+    doc = yaml.safe_load(path.read_text(encoding='utf-8'))
+    params = doc['slam_toolbox']['ros__parameters']
+    assert params.get('do_loop_closing') is False, (
+        'do_loop_closing が true に戻っている。ループ閉じ込みは記録済み経路を '
+        '過去に遡って無効化し、教示再生を壊す（WS-9K）。false のままにすること。')
