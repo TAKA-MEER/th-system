@@ -16,6 +16,8 @@ import time
 
 import rclpy
 import rclpy.time
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
@@ -27,6 +29,12 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry, Path
 from th_system_msgs.msg import (RouteInfo, RouteList, RouteStatus, StateEffect,
                                 SystemState)
+from th_system_msgs.srv import OpenMapSession
+
+# WS-9L: 教示の「保存」で地図を同期保存するための共通ヘルパー。
+# 購読コールバック内からサービスを同期的に呼ぶには、main() の
+# MultiThreadedExecutor + ReentrantCallbackGroup（/system/effect 購読）が必要。
+from th_config_manager.service_call import call_and_wait
 
 
 def _points_to_path(points, frame_id='odom', stamp=None):
@@ -148,14 +156,26 @@ class RouteRecorder(Node):
             self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
         # ── Subscribers ────────────────────────────────────
+        # WS-9L: /system/effect と /system/state は callback 内から別サービス
+        # (/map_session/open save) を同期的に呼ぶ。単一スレッド executor だと応答
+        # コールバックが動けずデッドロックするので、ReentrantCallbackGroup に乗せ、
+        # main() 側で MultiThreadedExecutor を使う（slam_control.py と同じ構成）。
+        sub_cbg = ReentrantCallbackGroup()
         effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
                                 history=QoSHistoryPolicy.KEEP_LAST)
-        self.create_subscription(StateEffect, '/system/effect', self._on_effect, effect_qos)
+        self.create_subscription(StateEffect, '/system/effect', self._on_effect,
+                                 effect_qos, callback_group=sub_cbg)
 
         state_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
                                durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
                                history=QoSHistoryPolicy.KEEP_LAST)
-        self.create_subscription(SystemState, '/system/state', self._on_state, state_qos)
+        self.create_subscription(SystemState, '/system/state', self._on_state,
+                                 state_qos, callback_group=sub_cbg)
+
+        # WS-9L: 教示の「保存」で地図を凍結保存する。client は既定グループに置き、
+        # effect コールバック（Reentrant）と並行実行できるようにする。
+        self._map_session_client = self.create_client(
+            OpenMapSession, '/map_session/open')
 
         # WS-9D: 同じ QoS で /odom（フォールバック源）と /odometry/filtered（EKF 出力、
         # 優先源）の両方を購読する。 /odom 購読はフォールバックに要るので消さない。
@@ -353,11 +373,40 @@ class RouteRecorder(Node):
             frame_id=self._frame_id, map_session_id=self._current_session_for_route())
         dest = finalize_route_file(self._routes_dir, self._route_id,
                                    route_to_dict(route))
+        # WS-9L: 経路が map フレームで記録されたときだけ、地図を凍結保存する
+        # （route_id をセッション ID にして /map_session/open save）。経路の保存
+        # が成功した直後に呼ぶ。失敗しても経路の保存は成功扱いのまま（_saved は
+        # 真）で、warn にだけ残す。
+        if self._frame_id == self._map_frame:
+            self._save_map_for_route(self._route_id)
         # WS-9K-E2: ファイルに書けた（finalize_route_file が例外なしで返った）
         # ときだけ true。「保存しました」はこれを見る。FSM の SAVED は見ない。
         self._saved = True
         self._close_recording()
         return dest, route
+
+    def _save_map_for_route(self, route_id: str):
+        """教示の地図を /map_session/open で凍結保存する（失敗は warn のみ）。"""
+        if not self._map_session_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().warn(
+                f'地図を保存できなかったので再生できない可能性がある: '
+                f'/map_session/open に接続できません (id={route_id})')
+            return
+        req = OpenMapSession.Request(
+            slot='ROUTE', session_id=route_id, mode='save')
+        try:
+            _resp, err = call_and_wait(
+                self, self._map_session_client, req, 30.0)
+        except Exception as e:   # noqa: BLE001
+            self.get_logger().warn(
+                f'地図を保存できなかったので再生できない可能性がある: {e} '
+                f'(id={route_id})')
+            return
+        if err:
+            self.get_logger().warn(
+                f'地図を保存できなかったので再生できない可能性がある: {err} '
+                f'(id={route_id})')
+            return
 
     def _close_recording(self):
         """記録を閉じて自動保存の状態もまっさらに戻す。
@@ -544,9 +593,17 @@ def _ms_to_time(ms: int) -> TimeMsg:
 def main(args=None):
     rclpy.init(args=args)
     node = RouteRecorder()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    # WS-9L: /system/effect コールバック内から /map_session/open を同期的に呼ぶため
+    # MultiThreadedExecutor + ReentrantCallbackGroup を使う（slam_control.py と同じ
+    # 構成。単一スレッド executor だと応答コールバックが動けず保存で固まる）。
+    executor = MultiThreadedExecutor()
+    node._executor = executor
+    executor.add_node(node)
+    try:
+        executor.spin()
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
