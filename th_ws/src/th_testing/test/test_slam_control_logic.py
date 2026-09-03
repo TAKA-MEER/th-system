@@ -113,6 +113,25 @@ def test_open_session_rejects_unsafe_session_id():
     assert open_session_error('ROUTE', 'save', '../evil') is not None
 
 
+def test_open_session_rejects_traversal_session_id():
+    """`.` `.`（`..`) を含む session_id を拒否する。
+
+    `/` `\\` を含む id は _UNSAFE_ID_RE（それより前の分岐）で弾かれるため、
+    `..` だけを見る _TRAVERSAL_RE の分岐は、`/` も `\\` も含まないケースで
+    初めて到達する。ここを固定しないと、`..` だけを弾く分岐が黙って消えても
+    `test_open_session_rejects_unsafe_session_id`（`../evil` 含む）は、`/` で
+    先に弾かれてしまうので検知できない。`..` だけでディレクトリを抜けることは
+    できないが（_safe_id が `/` `\\` を `_` に正規化済み）、検証の分岐が消えるのを
+    防ぐためにここで固定する。
+
+    変異チェック: _TRAVERSAL_RE の分岐を `if False:` に潰すと赤くなる。
+    """
+    assert open_session_error('ROUTE', 'save', '..') is not None
+    assert open_session_error('ROUTE', 'save', '..evil') is not None
+    assert open_session_error('ROUTE', 'save', 'a..b') is not None
+    assert open_session_error('ROUTE', 'reload', 'a..b') is not None
+
+
 # ── 3. 受ける側は変換しない（検証済み id → そのままファイル名）──────────
 def test_map_session_filename_passes_validated_id_through():
     """検証済み（安全な）id はそのままファイル名にする（変換しない）。
