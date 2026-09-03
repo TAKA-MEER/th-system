@@ -178,3 +178,47 @@ class TestEsp32BridgeWiring:
             assert not (isinstance(first, ast.Constant) and first.value == 1.0), (
                 "create_timer の第1引数が 1.0 リテラルのまま。"
                 "diag_log_period_s の値を渡すこと")
+
+    def test_diag_summary_timer_is_guarded_by_the_diag_log_period_condition(self):
+        """INFO サマリのタイマ生成が `diag_log_period_s` を見る if の中にあること。
+
+        `test_diag_summary_timer_is_not_created_unconditionally` は「if の中に
+        あること」しか見ないので、`if diag_log_period_s > 0.0:` を `if True:` の
+        ような形に骨抜きにされても素通りする。それが起きると WS-9J-A が直した
+        バグそのもの（1Hz INFO サマリの無条件生成 → 実機で起動 4 分に 268 行中
+        178 行がこのサマリ）が復活する。条件の中身が `diag_log_period_s` を
+        参照していること自体をここで固定する。
+        """
+        tree, src = _bridge_tree()
+        parents = _parent_map(tree)
+
+        def _if_test_names(if_node):
+            return {
+                n.id for n in ast.walk(if_node.test)
+                if isinstance(n, ast.Name)
+            }
+
+        diag_summary_timers = [
+            call for call in _create_timer_calls(tree)
+            if '_cb_diag_summary' in (ast.get_source_segment(src, call) or '')
+        ]
+        assert diag_summary_timers, (
+            "create_timer(..., self._cb_diag_summary) が見当たらない。"
+            "リファクタで名前が変わったらこのテストを追随させること")
+
+        for call in diag_summary_timers:
+            node = call
+            guarded_by_param = False
+            while node in parents:
+                parent = parents[node]
+                # `node` が if の本体(body)側にあり、かつ its test が
+                # diag_log_period_s を参照しているか
+                if isinstance(parent, ast.If) and node in parent.body \
+                        and 'diag_log_period_s' in _if_test_names(parent):
+                    guarded_by_param = True
+                    break
+                node = parent
+            assert guarded_by_param, (
+                "create_timer(..., self._cb_diag_summary) が "
+                "`diag_log_period_s` を条件に持つ if の本体の中にない。"
+                "`if True:` のように条件が骨抜きにされると 1Hz INFO 洪水が復活する")
