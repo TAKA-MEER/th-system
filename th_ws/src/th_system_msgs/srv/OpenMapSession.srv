@@ -1,6 +1,13 @@
 string slot
 string session_id
 string mode
+# WS-9N: mode=reload のとき deserialize_map に渡す初期姿勢（map フレーム）。
+# 経路の始点。has_initial_pose=false なら match_type 1 (START_AT_FIRST_NODE)
+# にフォールバックする。
+bool    has_initial_pose
+float64 initial_x
+float64 initial_y
+float64 initial_yaw
 ---
 bool   success
 string message

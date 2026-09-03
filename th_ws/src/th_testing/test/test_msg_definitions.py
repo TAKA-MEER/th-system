@@ -207,6 +207,59 @@ def test_fields_match_names_md():
         'names.md §5.1 と実装のフィールドが食い違う: %s' % mismatches)
 
 
+# ── test_open_map_session_srv_fields (WS-9N) ───────────────────────────
+
+def test_open_map_session_srv_fields():
+    """WS-9N: OpenMapSession.srv の request/response フィールド定義を検証する。
+
+    request に初期姿勢（has_initial_pose, initial_x, initial_y, initial_yaw）が
+    追加されていること。
+    """
+    srv_path = os.path.join(_TH_SYSTEM_MSGS_ROOT, 'srv', 'OpenMapSession.srv')
+    assert os.path.isfile(srv_path), f'{srv_path} が見つからない'
+
+    with open(srv_path, encoding='utf-8') as f:
+        content = f.read()
+
+    sections = content.split('---')
+    assert len(sections) == 2, 'srv に --- が 1 つだけあること'
+
+    def parse_section(text):
+        fields = []
+        for line in text.splitlines():
+            line = line.split('#', 1)[0].strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                fields.append((parts[0], parts[1]))
+        return fields
+
+    req_fields = parse_section(sections[0])
+    resp_fields = parse_section(sections[1])
+
+    expected_req = [
+        ('string', 'slot'),
+        ('string', 'session_id'),
+        ('string', 'mode'),
+        ('bool', 'has_initial_pose'),
+        ('float64', 'initial_x'),
+        ('float64', 'initial_y'),
+        ('float64', 'initial_yaw'),
+    ]
+    expected_resp = [
+        ('bool', 'success'),
+        ('string', 'message'),
+    ]
+
+    assert req_fields == expected_req, (
+        f'OpenMapSession.srv の request フィールドが期待と一致しない: {req_fields}'
+    )
+    assert resp_fields == expected_resp, (
+        f'OpenMapSession.srv の response フィールドが期待と一致しない: {resp_fields}'
+    )
+
+
 if __name__ == '__main__':
     import sys
     sys.exit(pytest.main([__file__, '-v']))

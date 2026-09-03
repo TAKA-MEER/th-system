@@ -15,18 +15,19 @@ _UNSAFE_ID_RE = re.compile(r'[/\\]')
 _TRAVERSAL_RE = re.compile(r'\.\.')
 
 
-def pause_toggle_needed(tracked_paused: bool, wanted_paused: bool) -> bool:
-    """一時停止のトグルを叩く必要があるか（純関数）。
+def deserialize_match_type(has_initial_pose: bool) -> int:
+    """deserialize_map に渡す match_type を決める（純関数）。
 
-    `/slam_toolbox/pause_new_measurements` は引数を取らないトグルで、応答の status は
-    常に True（＝呼べた）を返すだけで現在の状態を教えてくれない（実機で 3 回連続
-    呼んで 3 回とも True。2026-09-03）。したがって状態は呼び出し側が持つしかない。
-
-    旧 converge_pause は「status は切り替え後の状態を返す」前提で最大 2 回叩いて
-    いたが、その前提が誤りで、必ず 2 回叩いて望みと逆の状態
-    （wanted paused=False, got True）で終わっていた。
+    - has_initial_pose=True: 3 (LOCALIZE_AT_POSE)
+      経路の始点 (initial_x, initial_y, initial_yaw) を初期姿勢として
+      slam_toolbox に渡し、その位置でスキャンマッチングさせて自己位置を推定する。
+      実機確認 (2026-09-03): match_type 3 + initial_pose で読み込み成功。
+      読み込み後の map->base_link は始点との差 1.9 cm / 5.5° で整合し、
+      SIGSEGV も発生しない。
+    - has_initial_pose=False: 1 (START_AT_FIRST_NODE)
+      初期姿勢が無い場合は地図の最初のノードで開始するフォールバック。
     """
-    return tracked_paused != wanted_paused
+    return 3 if has_initial_pose else 1
 
 
 def open_session_error(slot: str, mode: str, session_id: str) -> "str | None":

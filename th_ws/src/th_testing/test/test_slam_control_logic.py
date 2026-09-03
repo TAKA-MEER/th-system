@@ -40,26 +40,20 @@ sys.path.insert(0, os.path.join(
     'th_config_manager'))
 
 from slam_control_logic import (   # noqa: E402
-    map_session_filename, open_session_error, pause_toggle_needed,
+    deserialize_match_type, map_session_filename, open_session_error,
 )
 from route_record_core import _safe_id, finalized_path   # noqa: E402
 
 
-# ── 1. Pause トグルの判定ロジック（WS-9M: 状態は呼び出し側が持つ）──────
-def test_pause_toggle_needed_when_states_differ():
-    """追跡している状態と望みが違う → トグルが必要 (True)。"""
-    assert pause_toggle_needed(tracked_paused=False, wanted_paused=True) is True
-    assert pause_toggle_needed(tracked_paused=True, wanted_paused=False) is True
+# ── 1. deserialize_match_type の判定ロジック（WS-9N）──────────────────
+def test_deserialize_match_type_with_initial_pose():
+    """has_initial_pose=True なら LOCALIZE_AT_POSE (3) を返す。"""
+    assert deserialize_match_type(True) == 3
 
 
-def test_pause_toggle_not_needed_when_states_match():
-    """追跡している状態と望みが同じ → トグル不要 (False)。
-
-    変異チェック: pause_toggle_needed を常に True にすると、ここが赤くなる
-    （＝望みの状態でも毎回叩いて状態がずれる）。
-    """
-    assert pause_toggle_needed(tracked_paused=False, wanted_paused=False) is False
-    assert pause_toggle_needed(tracked_paused=True, wanted_paused=True) is False
+def test_deserialize_match_type_without_initial_pose():
+    """has_initial_pose=False なら START_AT_FIRST_NODE (1) を返す。"""
+    assert deserialize_match_type(False) == 1
 
 
 # ── 2. /map_session/open の引数検証 ────────────────────────────────────
