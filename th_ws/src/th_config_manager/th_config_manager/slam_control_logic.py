@@ -15,28 +15,18 @@ _UNSAFE_ID_RE = re.compile(r'[/\\]')
 _TRAVERSAL_RE = re.compile(r'\.\.')
 
 
-def converge_pause(wanted: bool, statuses) -> "str | None":
-    """Pause トグルの収束判定（純関数）。
+def pause_toggle_needed(tracked_paused: bool, wanted_paused: bool) -> bool:
+    """一時停止のトグルを叩く必要があるか（純関数）。
 
-    `/slam_toolbox/pause_new_measurements` は**引数を受け取らないトグル**で、
-    応答の `status` が**切り替えた後の状態**を返す（`status=True` = 一時停止中）。
-    望みの状態になるまで**最大 2 回叩く**。
+    `/slam_toolbox/pause_new_measurements` は引数を取らないトグルで、応答の status は
+    常に True（＝呼べた）を返すだけで現在の状態を教えてくれない（実機で 3 回連続
+    呼んで 3 回とも True。2026-09-03）。したがって状態は呼び出し側が持つしかない。
 
-    statuses: これまでに得た応答 `status` のリスト（1 回目、2 回目の順。トグル
-    のため、叩くたびに状態が反転していく）。
-
-    戻り値: None = 望みの状態（wanted）に達した（追加の呼び出し不要）。
-    それ以外は文字列で、呼び出し元はもう 1 回叩いて statuses に足して再判定する。
-    2 回叩いても達しなければ失敗メッセージになる。
+    旧 converge_pause は「status は切り替え後の状態を返す」前提で最大 2 回叩いて
+    いたが、その前提が誤りで、必ず 2 回叩いて望みと逆の状態
+    （wanted paused=False, got True）で終わっていた。
     """
-    if not statuses:
-        return 'retry'   # まだ 1 回も叩いていない（呼び出し元が status を足してくる）
-    if any(s == wanted for s in statuses):
-        return None
-    if len(statuses) >= 2:
-        return (f'pause_new_measurements を 2 回叩いても望みの状態にならない '
-                f'(wanted paused={wanted}, got {statuses[-1]})')
-    return 'retry'   # 1 回叩いて不一致。トグルなので状態が反転しているはず。もう 1 回
+    return tracked_paused != wanted_paused
 
 
 def open_session_error(slot: str, mode: str, session_id: str) -> "str | None":

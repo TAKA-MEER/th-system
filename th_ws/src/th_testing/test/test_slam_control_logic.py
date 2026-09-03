@@ -40,45 +40,26 @@ sys.path.insert(0, os.path.join(
     'th_config_manager'))
 
 from slam_control_logic import (   # noqa: E402
-    converge_pause, map_session_filename, open_session_error,
+    map_session_filename, open_session_error, pause_toggle_needed,
 )
 from route_record_core import _safe_id, finalized_path   # noqa: E402
 
 
-# ── 1. Pause トグルの収束ロジック ───────────────────────────────────────
-def test_pause_converged_on_first_status():
-    """望みの状態と 1 回目の status が一致 → 追加の呼び出し不要 (None)。"""
-    assert converge_pause(True, [True]) is None
-    assert converge_pause(False, [False]) is None
+# ── 1. Pause トグルの判定ロジック（WS-9M: 状態は呼び出し側が持つ）──────
+def test_pause_toggle_needed_when_states_differ():
+    """追跡している状態と望みが違う → トグルが必要 (True)。"""
+    assert pause_toggle_needed(tracked_paused=False, wanted_paused=True) is True
+    assert pause_toggle_needed(tracked_paused=True, wanted_paused=False) is True
 
 
-def test_pause_retry_after_first_mismatch():
-    """1 回目が不一致 → もう 1 回叩く（'retry'、失敗扱いにはしない）。
+def test_pause_toggle_not_needed_when_states_match():
+    """追跡している状態と望みが同じ → トグル不要 (False)。
 
-    変異チェック: 「1 回叩いて終わり」にする（1 回目の不一致で即失敗メッセージを
-    返す）と、ここが赤くなる。
+    変異チェック: pause_toggle_needed を常に True にすると、ここが赤くなる
+    （＝望みの状態でも毎回叩いて状態がずれる）。
     """
-    assert converge_pause(True, [False]) == 'retry'
-    assert converge_pause(False, [True]) == 'retry'
-
-
-def test_pause_converged_on_second_status():
-    """1 回目不一致 → 2 回目で一致 → 収束 (None)。"""
-    assert converge_pause(True, [False, True]) is None
-    assert converge_pause(False, [True, False]) is None
-
-
-def test_pause_fails_after_two_mismatches():
-    """2 回叩いても望みの状態にならない → 失敗（文字列）。"""
-    assert converge_pause(True, [False, False]) is not None
-    assert converge_pause(False, [True, True]) is not None
-    # 失敗時も「再試行して」ではなく明示的な失敗メッセージ
-    assert 'retry' != converge_pause(True, [False, False])
-
-
-def test_pause_empty_statuses_means_retry():
-    """まだ 1 回も叩いていない → 呼び出し元が status を足してくる前提で retry。"""
-    assert converge_pause(True, []) == 'retry'
+    assert pause_toggle_needed(tracked_paused=False, wanted_paused=False) is False
+    assert pause_toggle_needed(tracked_paused=True, wanted_paused=True) is False
 
 
 # ── 2. /map_session/open の引数検証 ────────────────────────────────────
@@ -438,3 +419,51 @@ def test_deserialize_filename_does_not_append_posegraph():
         assert isinstance(n.value, ast.Name) and n.value.id == 'base', (
             'req.filename は拡張子なしの base を渡すこと（現在: '
             f'{ast.get_source_segment(_read(SLAM_CONTROL), n.value)}）')
+
+
+# ── 10. ast: _set_pause がトグルをループせず最大 1 回だけ叩く（WS-9M）───
+def test_set_pause_toggle_is_max_one_not_loop():
+    """_set_pause がトグルを最大 1 回だけ叩くこと（ループではない）。
+
+    旧 converge_pause 版は for ループ内で最大 2 回叩いていた。WS-9M では状態
+    追跡に変え、`pause_toggle_needed` が True のときだけ 1 回叩く。
+
+    変異チェック: for ループ版に戻すと（call_and_wait が 2 か所 or ループ内に
+    なる）赤くなる。
+    """
+    tree = _tree(SLAM_CONTROL)
+    funcdef = _funcdef(tree, '_set_pause')
+    assert funcdef is not None, '_set_pause が無い'
+
+    for_nodes = [n for n in ast.walk(funcdef) if isinstance(n, ast.For)]
+    assert not for_nodes, '_set_pause に for ループが残っている'
+
+    # call_and_wait（bare 名で呼ばれる）を叩く箇所が 1 回だけであること
+    calls = _name_calls(funcdef, 'call_and_wait')
+    assert len(calls) == 1, (
+        f'call_and_wait の呼び出しが {len(calls)} 回ある（期待: 1 回）')
+
+
+# ── 11. ast: _check_slam_restart が追跡状態をリセット（WS-9M）──────────
+def test_check_slam_restart_resets_paused_tracked():
+    """_check_slam_restart が再起動検知時に self._paused_tracked を False に
+    リセットしていること。
+
+    再起動で slam_toolbox は mapping モード（一時停止していない）で立ち上がる。
+    これを忘れると、クラッシュ後に実際は動いているのに「停止中」と思い込んで
+    逆に倒してしまう。
+
+    変異チェック: このリセット代入を消すと赤くなる。
+    """
+    tree = _tree(SLAM_CONTROL)
+    funcdef = _funcdef(tree, '_check_slam_restart')
+    assert funcdef is not None, '_check_slam_restart が無い'
+
+    found = False
+    for n in ast.walk(funcdef):
+        if isinstance(n, ast.Assign):
+            for t in n.targets:
+                if isinstance(t, ast.Attribute) and t.attr == '_paused_tracked':
+                    if isinstance(n.value, ast.Constant) and n.value.value is False:
+                        found = True
+    assert found, '_check_slam_restart で self._paused_tracked = False が見つからない'

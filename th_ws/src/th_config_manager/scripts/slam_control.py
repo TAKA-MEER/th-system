@@ -34,10 +34,11 @@ WebUI / route_recorder / replay_runner からの地図操作要求を仲介す�
 サービスを持たない（実機でサービス一覧を取って確認済み。以下「地図作成停止」
 の実装は `pause_new_measurements` ベースに書き直した）。
 
-`pause_new_measurements` は**引数を取らないトグル**で、応答の `status` が
-**切り替えた後の状態**を返す（`status=True` = 一時停止中）。望みの状態になる
-まで最大 2 回叩く（_set_pause を参照。純ロジックは slam_control_logic.py の
-converge_pause）。
+`pause_new_measurements` は**引数を取らないトグル**で、応答の `status` は
+常に True（＝呼べた）を返すだけで現在の一時停止状態は返さない（2026-09-03
+実機で 3 回続けて呼んで 3 回とも status=True）。状態は `slam_control` 側が
+`_paused_tracked` で追跡する（_set_pause を参照。純ロジックは
+slam_control_logic.py の pause_toggle_needed）。
 
 なお 2026-08-07 時点では `pause_new_measurements` は「スキャン処理そのものを
 止める」ため map→odom が凍結して純粋なデッドレコニングになると確認し、この
@@ -127,7 +128,7 @@ from th_system_msgs.srv import OpenMapSession
 
 from th_config_manager.service_call import call_and_wait
 from th_config_manager.slam_control_logic import (
-    converge_pause, map_session_filename, open_session_error,
+    map_session_filename, open_session_error, pause_toggle_needed,
 )
 
 
@@ -171,6 +172,10 @@ class SlamControl(Node):
         self._startup_mapping = bool(
             self.get_parameter('startup_mapping').value)
         self._mapping_active = self._startup_mapping   # 起動直後の状態
+        # WS-9M: pause_new_measurements の応答 status は常に True で現在状態を
+        # 教えないため、トグルの呼び出し側が状態を追跡する。起動直後は
+        # mapping モード（一時停止していない）。
+        self._paused_tracked = False
         # WS-9L: /map_session/open の保存先ディレクトリ。経路 JSON と同じ場所
         # (routes_dir) でよい。serialize_map は <name>.posegraph / <name>.data を
         # 作るが、/route/catalog は .json しか拾わないため一覧は汚れない。
@@ -291,6 +296,10 @@ class SlamControl(Node):
             return
 
         self.get_logger().warn('slam_toolbox の再起動を検知しました。状態を再適用します')
+        # WS-9M: 再起動で slam_toolbox は mapping モード（一時停止していない）で
+        # 立ち上がる。追跡状態をリセットしないと、実際に動いてるのに「停止中」と
+        # 思い込んで逆に倒してしまう。
+        self._paused_tracked = False
         if not self._lock.acquire(blocking=False):
             self._slam_ready = was_ready   # 次周期でやり直す
             return
@@ -314,24 +323,21 @@ class SlamControl(Node):
         """slam_toolbox の一時停止状態を切り替える。エラー文字列 or None を返す。
 
         `/slam_toolbox/pause_new_measurements` は**引数を取らないトグル**で、応答の
-        `status` が**切り替えた後の状態**を返す（`status=True` = 一時停止中）。
-        望みの状態になるまで**最大 2 回叩く**（純ロジックは slam_control_logic.py の
-        converge_pause）。
+        `status` は常に True（＝呼べた）を返すだけで現在の状態を教えてくれない
+        （2026-09-03 実機確認。3 回続けて呼んで 3 回とも status=True）。状態は
+        `_paused_tracked` で追跡し、望みと違うときだけ **1 回だけ**トグルする。
+        追跡状態はトグル成功時に反転させる。
         """
+        if not pause_toggle_needed(self._paused_tracked, paused):
+            return None
         if not self._cli_pause.wait_for_service(timeout_sec=1.0):
             return 'slam_toolbox に接続できません'
-        statuses = []
-        for _ in range(2):
-            result, err = call_and_wait(
-                self, self._cli_pause, Pause.Request(), SERVICE_TIMEOUT_SEC)
-            if err:
-                return f'pause_new_measurements 呼び出し失敗: {err}'
-            statuses.append(bool(result.status))
-            reason = converge_pause(paused, statuses)
-            if reason is None:
-                return None
-        # 2 回叩いても望みの状態に達しなかった（converge_pause が失敗メッセージを返す）
-        return converge_pause(paused, statuses)
+        _result, err = call_and_wait(
+            self, self._cli_pause, Pause.Request(), SERVICE_TIMEOUT_SEC)
+        if err:
+            return f'pause_new_measurements 呼び出し失敗: {err}'
+        self._paused_tracked = not self._paused_tracked
+        return None
 
     def _apply_mapping(self, active: bool) -> "str | None":
         """マッピングの有効/無効を切り替える。エラー文字列 or None を返す。
