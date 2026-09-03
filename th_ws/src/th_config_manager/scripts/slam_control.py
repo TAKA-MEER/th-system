@@ -485,16 +485,26 @@ class SlamControl(Node):
           serialization::Read: Failed to open requested file: .../crash_check.posegraph.
           DeserializePoseGraph: Failed to read file: .../crash_check.posegraph.）。
         そこでサービスに渡す名前は拡張子なしの `base`、存在確認はディスク上の
-        実ファイル名 `base + '.posegraph'` と、あえて別にする。
+        実ファイル名 `base + '.posegraph'` / `base + '.data'` と、あえて別にする。
         """
         if not self._cli_deserialize.wait_for_service(timeout_sec=1.0):
             return self._finish(response, 'slam_toolbox に接続できません', '')
-        # 教示の地図が無い状態で reload されたら success=false（例外にしない）。
-        # 確認するのはディスク上の実ファイル名（拡張子つき）。
+        # WS-9M: deserialize を呼ぶ前に `.posegraph` と `.data` の両方の存在を
+        # 確認する。DeserializePoseGraph の応答は空でフィールドが 1 つも無く、
+        # 読み込みが失敗しても call_and_wait は成功として返る（＝サービスの
+        # 戻り値では成否が分からない）。片方でも欠けていれば deserialize は必ず
+        # 失敗するので、呼ばずに success=false を返して replay_runner が
+        # localize_done → READY まで進まないようにする。
+        # 確認するのはディスク上の実ファイル名（拡張子つき。サービスに渡す名前は
+        # 上の docstring のとおり拡張子なし）。
         graph_path = base + '.posegraph'
+        data_path = base + '.data'
         if not os.path.exists(graph_path):
             return self._finish(
                 response, f'地図ファイルが無いため読み直せません ({graph_path})', '')
+        if not os.path.exists(data_path):
+            return self._finish(
+                response, f'地図データファイルが無いため読み直せません ({data_path})', '')
         req = DeserializePoseGraph.Request()
         req.filename = base   # WS-9M: slam_toolbox が `.posegraph` を付けるため拡張子なし
         req.match_type = 1   # START_AT_FIRST_NODE

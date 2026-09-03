@@ -467,3 +467,55 @@ def test_check_slam_restart_resets_paused_tracked():
                     if isinstance(n.value, ast.Constant) and n.value.value is False:
                         found = True
     assert found, '_check_slam_restart で self._paused_tracked = False が見つからない'
+
+
+# ── 12. ast: deserialize 前に .posegraph と .data の両方を確認（WS-9M）──
+def test_handle_map_reload_checks_both_files():
+    """_handle_map_reload が deserialize_map を呼ぶ前に `.posegraph` と `.data`
+    の両方の存在を確認し、欠けていれば success=false で返すこと。
+
+    DeserializePoseGraph の応答は空でフィールドが 1 つも無く、読み込み失敗でも
+    call_and_wait は成功として返る（実機ログ「DeserializePoseGraph: Failed to
+    read file」でも例外にならない）。戻り値で成否が分からないので、呼ぶ前に
+    両方のファイルが揃っていることを実質的な成否判定にする。いまは無条件に
+    成功を返しており、replay_runner が evt.localize_done を出して READY まで
+    進んでしまっていた。
+
+    変異チェック: `.data` の存在確認を消すと赤くなる。
+    """
+    tree = _tree(SLAM_CONTROL)
+    funcdef = _funcdef(tree, '_handle_map_reload')
+    assert funcdef is not None
+
+    src = _read(SLAM_CONTROL)
+    # `<var> = base + '<ext>'` で作る拡張子つきパス変数 → 拡張子の対応表
+    ext_of_var = {}
+    for n in ast.walk(funcdef):
+        if isinstance(n, ast.Assign) and isinstance(n.value, ast.BinOp) \
+                and isinstance(n.value.op, ast.Add):
+            for sub in ast.walk(n.value):
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                    for t in n.targets:
+                        if isinstance(t, ast.Name):
+                            ext_of_var[t.id] = sub.value
+
+    # os.path.exists(...) に渡している拡張子を集める
+    checked_exts = set()
+    for n in ast.walk(funcdef):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) \
+                and n.func.attr == 'exists' and n.args:
+            arg = n.args[0]
+            if isinstance(arg, ast.Name) and arg.id in ext_of_var:
+                checked_exts.add(ext_of_var[arg.id])
+            seg = ast.get_source_segment(src, arg) or ''
+            for ext in ('.posegraph', '.data'):
+                if ext in seg:
+                    checked_exts.add(ext)
+
+    assert '.posegraph' in checked_exts, (
+        f'_handle_map_reload に .posegraph の存在確認が無い: {checked_exts}')
+    assert '.data' in checked_exts, (
+        f'_handle_map_reload に .data の存在確認が無い: {checked_exts}')
+    # 存在確認に失敗したらエラー文字列つき _finish（= success=false）で返すこと
+    body_src = ast.get_source_segment(src, funcdef) or ''
+    assert 'return self._finish(' in body_src
