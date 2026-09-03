@@ -14,7 +14,7 @@
 // 操作カードは stop（ui.stop）と run（ui.run、ラベル「再生」）だけ。
 // onTrigger を空関数にしない（S-11 の既知バグ。この画面では「再生」ボタンが
 // 実際に ui.run を送ることを e2e/s14-replay-button-sends-ui-run.spec.js で検証する）。
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useRouteCatalog } from '../ros/useRouteCatalog.js'
@@ -30,11 +30,16 @@ import attributes from '../generated/attributes.json'
 import {
   S11_MANUAL_TITLE,
   S14_TAB_REPLAY, S14_SELECT_TITLE, S14_EMPTY, S14_FWD, S14_REV, S14_PROCEED,
-  S14_POSE_TITLE, S14_POSE_LOCALIZE, S14_POSE_READY, S14_POSE_RUN, S14_POSE_PAUSE,
+  S14_POSE_TITLE, S14_POSE_LOCALIZE, S14_POSE_LOCALIZE_TIMEOUT, S14_POSE_READY, S14_POSE_RUN, S14_POSE_PAUSE,
   S14_LENGTH, S14_POINTS,
 } from '../i18n/screens.js'
 import { stateLabel } from '../i18n/states.js'
 import { OP_LABELS } from '../i18n/states.js'
+
+// この経路は別のセッションで記録したもので初期姿勢が確定できず、LOCALIZE に
+// 留まり続ける（WS-9K-B のガード）。正常時は W-01 により LOCALIZE はほぼ一瞬で
+// 抜けるので、ここまで留まるのは異常（＝弾かれている）とみなして手がかりを出す。
+const LOCALIZE_TIMEOUT_MS = 20000
 
 function poseText(stateName) {
   if (stateName === 'LOCALIZE') return S14_POSE_LOCALIZE
@@ -56,11 +61,20 @@ export default function S14Replay({ onFinish }) {
   const disabledAll = stale || state?.mode == null
 
   const [selectedId, setSelectedId] = useState(null)
+  const [localizeStuck, setLocalizeStuck] = useState(false)
 
   const stateName = state?.state ?? null
   const pose = poseText(stateName)
   const empty = routes.length === 0
   const selected = selectedId != null
+
+  // LOCALIZE が一定時間続いたら（＝別セッションの経路で弾かれている）手がかりを出す。
+  useEffect(() => {
+    if (stateName !== 'LOCALIZE') { setLocalizeStuck(false); return undefined }
+    setLocalizeStuck(false)
+    const t = setTimeout(() => setLocalizeStuck(true), LOCALIZE_TIMEOUT_MS)
+    return () => clearTimeout(t)
+  }, [stateName])
 
   // 終了 → ui.finish → 承認で S-01 へ戻る（S11Manual の handleFinish と同じ）。
   async function handleFinish() {
@@ -163,6 +177,9 @@ export default function S14Replay({ onFinish }) {
             <div className="note" data-testid="s14-pose">
               {pose ?? stateLabel(stateName)}
             </div>
+            {localizeStuck && (
+              <div className="note" data-testid="s14-localize-stuck">{S14_POSE_LOCALIZE_TIMEOUT}</div>
+            )}
           </div>
         </div>
       </div>
