@@ -435,6 +435,17 @@ def test_replay_runner_reload_map_sends_initial_pose_and_checks_success():
     assert 'initial_y' in kw_names, 'initial_y が渡されていない'
     assert 'initial_yaw' in kw_names, 'initial_yaw が渡されていない'
 
+    # キーワードが「在る」だけでは足りない。定数を直接書くと、名前は揃っているのに
+    # 実際には経路の始点が届かない。has_initial_pose=False を書けば match_type は
+    # 1 (START_AT_FIRST_NODE) に落ち、initial_x=0.0 を書けば原点で読み込むことに
+    # なる。どちらも 2026-09-03 実機で自己位置が 1.52m / 41.8° ずれた挙動そのもの。
+    # 変異チェックで、値の検査が無いとこの 2 つを素通りさせることを確認した。
+    for kw in req_call.keywords:
+        if kw.arg in ('has_initial_pose', 'initial_x', 'initial_y', 'initial_yaw'):
+            assert not isinstance(kw.value, ast.Constant), (
+                f'{kw.arg} に定数 {getattr(kw.value, "value", "?")!r} を直接渡している。'
+                '経路の始点から計算した値を渡すこと')
+
     # resp.success を見ていること
     has_success_check = any(
         isinstance(n, ast.Attribute) and n.attr == 'success'
