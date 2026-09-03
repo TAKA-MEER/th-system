@@ -149,6 +149,35 @@ ClearEstopUiDecision decide_clear_estop_ui(bool estop_hw, bool has_critical_faul
 // enabled_targets に無い対象は監視しない（フォルトを立てない）。
 bool is_target_enabled(const std::string& target, const std::vector<std::string>& enabled_targets);
 
+// ── 起動直後の未受信を「途絶」と誤判定しないための判定 ────────
+//
+// 起動直後は DDS のマッチングが終わるまで 1 通も届かない。これを途絶として
+// 扱うと、publisher が正常でも CRITICAL フォルト → ESTOP になる。
+// 実機 2026-09-03: safety_monitor 起動 331.082 / grace 明け 334.082 に対し、
+// obstacle_limiter は 331.35 から 20Hz で /safety/limiter_status を出して
+// いたのに、safety_monitor が実際に受信し始めたのが 334.5 頃で grace を
+// 0.4 秒超過。LIMITER_DEAD(CRITICAL) と ESP32_DISCONNECTED が同時に誤発火し
+// mode が ESTOP に落ちた（操作者が毎回「確認」を押す羽目になった）。
+//
+// ただし「いつまで経っても来ない」＝本当に居ない場合は検知しなければ
+// ならないので、未受信の猶予は startup_deadline_sec で頭打ちにする
+// （grace を延ばす対処は監視が盲目になる時間を延ばすので採らない）。
+//
+//   ever_received       : そのトピックを一度でも受信したか
+//   since_last_sec      : 直近受信からの経過 [s]
+//   timeout_sec         : 途絶とみなすしきい値 [s]（従来値。緩めない）
+//   since_start_sec     : ノード起動からの経過 [s]
+//   startup_deadline_sec: 未受信を許す上限 [s]。これを超えても 1 通も
+//                         来なければ途絶として検知する
+inline bool is_timeout_fault(bool ever_received,
+                             double since_last_sec,
+                             double timeout_sec,
+                             double since_start_sec,
+                             double startup_deadline_sec) {
+  if (!ever_received) return since_start_sec > startup_deadline_sec;
+  return since_last_sec > timeout_sec;
+}
+
 }  // namespace th_safety
 
 #endif  // TH_SAFETY_SAFETY_MONITOR_CORE_HPP_

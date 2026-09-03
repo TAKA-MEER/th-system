@@ -209,3 +209,42 @@ TEST(SafetyMonitorCore, EnabledTargetsEmptyMeansNothingMonitored) {
   EXPECT_FALSE(is_target_enabled("lidar", enabled));
   EXPECT_FALSE(is_target_enabled("esp32", enabled));
 }
+
+// ── test_is_timeout_fault ───────────────────────────────────────────────
+// WS-9J-B: 起動直後の未受信（DDS マッチング未了）を「途絶」と誤検知しない。
+// 実機 2026-09-03: obstacle_limiter は 331.35 から /safety/limiter_status を
+// 20Hz で出していたのに、safety_monitor が受信し始めたのが 334.5 頃で
+// startup_grace_sec(3) を 0.4 秒超過 → LIMITER_DEAD(CRITICAL) 誤発火 → ESTOP。
+
+TEST(SafetyMonitorCore, TimeoutFaultUnreceivedBeforeDeadlineIsNotFault) {
+  // まだ 1 通も来ていないが、起動からの経過が deadline 未満 → 誤検知しない
+  EXPECT_FALSE(is_timeout_fault(/*ever_received=*/false, /*since_last=*/0.0,
+                                /*timeout=*/0.25, /*since_start=*/5.0,
+                                /*startup_deadline=*/15.0));
+}
+
+TEST(SafetyMonitorCore, TimeoutFaultUnreceivedAfterDeadlineIsFault) {
+  // deadline を過ぎても 1 通も来なければ「本当に居ない」→ 検知する
+  EXPECT_TRUE(is_timeout_fault(false, 0.0, 0.25, 15.001, 15.0));
+}
+
+TEST(SafetyMonitorCore, TimeoutFaultUnreceivedExactlyAtDeadlineIsNotFault) {
+  // 境界: since_start == deadline ちょうどは false（> deadline で検知）
+  EXPECT_FALSE(is_timeout_fault(false, 0.0, 0.25, 15.0, 15.0));
+}
+
+TEST(SafetyMonitorCore, TimeoutFaultReceivedWithinTimeoutIsNotFault) {
+  EXPECT_FALSE(is_timeout_fault(/*ever_received=*/true, /*since_last=*/0.1,
+                                /*timeout=*/0.25, /*since_start=*/100.0,
+                                /*startup_deadline=*/15.0));
+}
+
+TEST(SafetyMonitorCore, TimeoutFaultReceivedBeyondTimeoutIsFault) {
+  // 従来の検知が壊れていないこと
+  EXPECT_TRUE(is_timeout_fault(true, 0.30, 0.25, 100.0, 15.0));
+}
+
+TEST(SafetyMonitorCore, TimeoutFaultReceivedThenLostEvenRightAfterStartup) {
+  // 一度受けた後に途絶えたら、起動直後（since_start が小さい）でも検知する
+  EXPECT_TRUE(is_timeout_fault(true, 0.5, 0.25, /*since_start=*/1.0, 15.0));
+}

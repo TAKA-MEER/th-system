@@ -79,6 +79,9 @@ public:
         declare_parameter("link_quality_window_sec", 30);
         declare_parameter("check_period_ms",      100);
         declare_parameter("startup_grace_sec",    3);
+        // 未受信（DDS マッチング未了）を「途絶」と誤検知しないための上限。
+        // startup_grace_sec は変えない。これを超えても 1 通も来なければ検知する。
+        declare_parameter("startup_deadline_sec", 15);
         // O-7: 既定は空（何も監視しない）。段階ごとに launch から渡す。
         declare_parameter("enabled_targets", std::vector<std::string>{});
 
@@ -94,6 +97,7 @@ public:
         estop_ui_lease_sec_ = get_parameter("estop_ui_lease_ms").as_int() / 1000.0;
         link_quality_window_sec_ = get_parameter("link_quality_window_sec").as_int();
         enabled_targets_ = get_parameter("enabled_targets").as_string_array();
+        startup_deadline_sec_ = get_parameter("startup_deadline_sec").as_int();
 
         // ── Publishers ─────────────────────────────────────
         pub_estop_ = create_publisher<std_msgs::msg::Bool>(
@@ -221,6 +225,7 @@ public:
             1s, std::bind(&SafetyMonitor::publishLinkQuality, this));
 
         rclcpp::Time t0 = now();
+        node_start_time_   = t0;
         last_scan_time_    = t0;
         last_person_time_  = t0;
         last_esp32_time_   = t0;
@@ -262,13 +267,13 @@ private:
         if (!in_grace) {
             // ── 回復可能フォルト ──────────────────────────
             if (targetEnabled("lidar")) {
-                checkTimeout("LIDAR_LOST", last_scan_time_, lidar_timeout_, t);
+                checkTimeout("LIDAR_LOST", last_scan_time_, lidar_timeout_, t, lidar_alive_);
             }
             if (targetEnabled("esp32")) {
-                checkTimeout("ESP32_DISCONNECTED", last_esp32_time_, esp32_timeout_, t);
+                checkTimeout("ESP32_DISCONNECTED", last_esp32_time_, esp32_timeout_, t, esp32_alive_);
             }
             if (targetEnabled("person")) {
-                checkTimeout("PERSON_TRACKER_LOST", last_person_time_, person_timeout_, t);
+                checkTimeout("PERSON_TRACKER_LOST", last_person_time_, person_timeout_, t, person_alive_);
             }
             // UI_DISCONNECTED は enabled_targets の対象外（常時監視。§4.2）
             updateFaultState("UI_DISCONNECTED",
@@ -276,11 +281,19 @@ private:
 
             // ── 重大フォルト（§4.1） ──────────────────────
             if (targetEnabled("limiter")) {
-                checkTimeout("LIMITER_DEAD", last_limiter_time_, limiter_dead_, t);
+                checkTimeout("LIMITER_DEAD", last_limiter_time_, limiter_dead_, t, limiter_alive_);
             }
             if (targetEnabled("mux")) {
-                bool muxed_stale = (t - last_muxed_time_) > rclcpp::Duration(mux_dead_);
-                bool cmd_stale   = (t - last_cmd_time_) > rclcpp::Duration(mux_dead_);
+                // MUX_DEAD は checkTimeout を通らない独自判定だが、未受信の
+                // 誤検知回避は同じ規則にそろえる（is_timeout_fault 経由）。
+                double since_start   = (t - node_start_time_).seconds();
+                double mux_dead_sec  = std::chrono::duration<double>(mux_dead_).count();
+                bool muxed_stale = th_safety::is_timeout_fault(
+                    muxed_alive_, (t - last_muxed_time_).seconds(), mux_dead_sec,
+                    since_start, startup_deadline_sec_);
+                bool cmd_stale = th_safety::is_timeout_fault(
+                    cmd_alive_, (t - last_cmd_time_).seconds(), mux_dead_sec,
+                    since_start, startup_deadline_sec_);
                 bool mux_dead = th_safety::detect_mux_dead(
                     muxed_stale, muxed_last_nonzero_, cmd_stale, cmd_last_nonzero_);
                 updateFaultState("MUX_DEAD", mux_dead);
@@ -309,10 +322,17 @@ private:
         publishLock();
     }
 
-    // 通信途絶タイムアウトによるフォルト判定（回復可能・重大 共通）
+    // 通信途絶タイムアウトによるフォルト判定（回復可能・重大 共通）。
+    // ever_received=false（起動直後、まだ 1 通も来ていない）の間は
+    // startup_deadline_sec を超えるまで途絶扱いしない（is_timeout_fault）。
     void checkTimeout(const std::string& fault_type, const rclcpp::Time& last_time,
-                      const std::chrono::milliseconds& timeout, const rclcpp::Time& now_t) {
-        bool faulted = (now_t - last_time) > rclcpp::Duration(timeout);
+                      const std::chrono::milliseconds& timeout, const rclcpp::Time& now_t,
+                      bool ever_received) {
+        double since_last  = (now_t - last_time).seconds();
+        double since_start = (now_t - node_start_time_).seconds();
+        double timeout_sec = std::chrono::duration<double>(timeout).count();
+        bool faulted = th_safety::is_timeout_fault(
+            ever_received, since_last, timeout_sec, since_start, startup_deadline_sec_);
         updateFaultState(fault_type, faulted);
     }
 
@@ -437,6 +457,7 @@ private:
     bool prev_estop_      = false;
     th_safety::UiEstopLatch ui_latch_;
 
+    rclcpp::Time node_start_time_;
     rclcpp::Time last_scan_time_;
     rclcpp::Time last_person_time_;
     rclcpp::Time last_esp32_time_;
@@ -481,6 +502,7 @@ private:
     th_safety::HoldTimer runaway_hold_;
     double estop_ui_lease_sec_ = 1.5;
     double check_period_sec_ = 0.1;
+    double startup_deadline_sec_ = 15.0;
     int link_quality_window_sec_ = 30;
 
     std::vector<std::string> enabled_targets_;
