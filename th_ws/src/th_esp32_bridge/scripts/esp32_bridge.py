@@ -33,8 +33,9 @@ import websockets
 
 from th_esp32_bridge.keepalive_core import Twist2, keepalive_value
 from th_esp32_bridge.bridge_diagnostics import (
-    INITIAL_DIAG_STATS, format_summary, record_drain, record_feedback_gap,
-    record_invalid_frame, record_timer_tick, reset_window,
+    INITIAL_DIAG_STATS, diag_window_is_abnormal, format_summary, record_drain,
+    record_drop_totals, record_feedback_gap, record_invalid_frame,
+    record_timer_tick, reset_window,
 )
 from th_esp32_bridge.odom_core import (
     Pose2D, integrate_pose, resolve_dt, resync_stamp, yaw_to_quaternion_zw,
@@ -86,6 +87,15 @@ class Esp32Bridge(Node):
         # 占有し、次の詰まりを招く)を防ぐ。既定値 50 は rx_queue_maxsize
         # (既定200) を 4 周期 (80ms) で掃き出せる値。
         self.declare_parameter('rx_queue_drain_max_per_cycle', 50)
+
+        # D-3 の 1Hz INFO サマリ (esp32_bridge_diag:) の出力周期 [s]。
+        # 既定 0.0 = 出さない。実機で 268 行中 178 行 (66%) がこのサマリで
+        # 埋まり、本当に見たい警告が埋もれた (2026-09-03)。計測そのものは
+        # 常時続けるが、健全な窓では黙る。> 0 のときだけ毎窓 INFO を出す。
+        self.declare_parameter('diag_log_period_s', 0.0)
+        # diag_log_period_s=0 でも「悪化した窓」だけは warn で 1 回出す。
+        # feedback_gap の窓内最大がこれ [ms] を超えたら異常扱い。
+        self.declare_parameter('diag_warn_gap_ms', 500.0)
 
         self._wheel_base = self.get_parameter('wheel_base').value
         self._odom_frame = self.get_parameter('odom_frame').value
@@ -213,7 +223,23 @@ class Esp32Bridge(Node):
         # time.monotonic() を使う。
         self._diag_stats = INITIAL_DIAG_STATS
         self._last_drain_tick_monotonic: "float | None" = None
-        self.create_timer(1.0, self._cb_diag_summary)  # 1Hz サマリ
+        self._diag_warn_gap_ms = self.get_parameter('diag_warn_gap_ms').value
+        # 前の窓の終わりに記録した drop 累積値 (窓ごとの増分判定に使う)。
+        self._diag_prev_totals = {
+            'coalescer_dropped_total': 0,
+            'rx_queue_dropped_total': 0,
+            'invalid_frames_total': 0,
+        }
+        diag_log_period_s = self.get_parameter('diag_log_period_s').value
+        if diag_log_period_s > 0.0:
+            # 明示的に有効化されたときだけ毎窓 INFO サマリを出す。
+            self.create_timer(diag_log_period_s, self._cb_diag_summary)
+        else:
+            # 既定: INFO は出さない。ただし窓最大値・件数のリセットと、
+            # 悪化した窓の warn 判定は続ける必要があるので軽い経路を回す
+            # (1Hz。計測を止めると feedback_gap_max_ms 等が累積最大に化けて
+            # 異常判定が張り付く)。
+            self.create_timer(1.0, self._cb_diag_window_check)
 
         self._loop: "asyncio.AbstractEventLoop | None" = None
         self._ws_conn_lock = threading.Lock()
@@ -677,19 +703,39 @@ class Esp32Bridge(Node):
             # safety_monitor が /esp32/wheel_feedback の途絶を別途検知するため
             # ここでは警告のみ(二重処理を避ける)
 
-    # ── D-3: 実行時計器の1Hzサマリ ──────────────────────────────
+    # ── D-3: 実行時計器の窓サマリ ──────────────────────────────
     def _cb_diag_summary(self):
-        """実機20分計測でgrepして原因A/B/Cを切り分けるための計器サマリ。
+        """diag_log_period_s > 0 のときだけ回る。毎窓 INFO サマリを出す。
 
-        bridge_diagnostics.py のモジュール docstring 参照。coalescer/
-        rx_queue それぞれの drop 累積カウンタ (D-1/D-2) はこのタイミングで
-        読み出す (状態は各コアが保持し、ここでは読むだけ)。
+        実機20分計測でgrepして原因A/B/Cを切り分けるための計器サマリ
+        (bridge_diagnostics.py のモジュール docstring 参照)。
+        """
+        self._diag_tick(emit_info=True)
+
+    def _cb_diag_window_check(self):
+        """既定で回る軽い経路。INFO は出さず、窓のリセットと warn 判定だけ行う。"""
+        self._diag_tick(emit_info=False)
+
+    def _diag_tick(self, emit_info: bool):
+        """窓を締める共通処理。coalescer/rx_queue の drop 累積カウンタ
+        (D-1/D-2) はこのタイミングで読み出す (状態は各コアが保持し、
+        ここでは読むだけ)。
         """
         with self._coalescer_lock:
             coalescer_dropped_total = self._coalescer_state.dropped_count
         rx_queue_dropped_total = self._rx_queue.dropped_count
-        self.get_logger().info(
-            format_summary(self._diag_stats, coalescer_dropped_total, rx_queue_dropped_total))
+        stats = record_drop_totals(
+            self._diag_stats, coalescer_dropped_total, rx_queue_dropped_total)
+        body = format_summary(stats, coalescer_dropped_total, rx_queue_dropped_total)
+        if emit_info:
+            self.get_logger().info(body)
+        elif diag_window_is_abnormal(stats, self._diag_prev_totals, self._diag_warn_gap_ms):
+            self.get_logger().warn(body)
+        self._diag_prev_totals = {
+            'coalescer_dropped_total': coalescer_dropped_total,
+            'rx_queue_dropped_total': rx_queue_dropped_total,
+            'invalid_frames_total': stats.invalid_frames_total,
+        }
         self._diag_stats = reset_window(self._diag_stats)
 
 

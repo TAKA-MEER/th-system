@@ -99,6 +99,13 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_bridge_diagnostics
     test/test_bridge_diagnostics.py
     TIMEOUT 60)
+  # WS-9J-A: 1Hz 診断サマリ (esp32_bridge_diag:) を既定で黙らせ、悪化した窓だけ
+  # warn で出すゲート。diag_window_is_abnormal 純関数と esp32_bridge.py の
+  # ast 静的検証 (diag_log_period_s の declare / 無条件 create_timer が無いこと)。
+  # 実機ログ 2026-09-03 で 268 行中 178 行 (66%) がこのサマリだった。ROS2 不要
+  ament_add_pytest_test(test_esp32_bridge_diag_gate
+    test/test_esp32_bridge_diag_gate.py
+    TIMEOUT 60)
   # CMakeLists.txt へのテスト登録漏れを検出するガード（このファイル自身と
   # ament_add_gtest 登録も対象。上記5本が長期間未登録だった事故の再発防止）
   ament_add_pytest_test(test_cmake_test_registration

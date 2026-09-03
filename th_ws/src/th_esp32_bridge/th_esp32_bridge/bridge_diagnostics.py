@@ -42,6 +42,11 @@ class DiagStats:
     # ── 累積 (リセットしない) ──────────────────────────
     frames_total: int = 0
     invalid_frames_total: int = 0
+    # D-1 / D-2 の drop 累積カウンタは各コア (send_coalescer / rx_backpressure)
+    # が保持する。ノードが毎窓その時点の値をここへ写して、窓ごとの増分判定
+    # (diag_window_is_abnormal) を ROS 非依存で行えるようにする。
+    coalescer_dropped_total: int = 0
+    rx_queue_dropped_total: int = 0
 
     # ── 直近ウィンドウの最大値・件数 (サマリ出力のたびに reset_window() で
     #    0 へ戻す) ──────────────────────────────────────
@@ -80,6 +85,47 @@ def record_feedback_gap(stats: DiagStats, gap_ms: float) -> DiagStats:
 def record_invalid_frame(stats: DiagStats) -> DiagStats:
     """不正フレーム/未知 type tag を受けた回数を記録する (D-4のログ絞りと対)。"""
     return replace(stats, invalid_frames_total=stats.invalid_frames_total + 1)
+
+
+def record_drop_totals(stats: DiagStats, coalescer_dropped_total: int,
+                       rx_queue_dropped_total: int) -> DiagStats:
+    """D-1 / D-2 の drop 累積カウンタ (各コアが保持) の現在値を写す。
+
+    diag_window_is_abnormal() が窓ごとの増分を判定できるようにするための
+    ミラー。累積値なので reset_window() では戻さない。
+    """
+    return replace(
+        stats,
+        coalescer_dropped_total=coalescer_dropped_total,
+        rx_queue_dropped_total=rx_queue_dropped_total)
+
+
+# 警告に値する窓かどうかを判定するときに参照する累積カウンタ名。
+_DROP_TOTAL_FIELDS = (
+    "coalescer_dropped_total", "rx_queue_dropped_total", "invalid_frames_total")
+
+
+def diag_window_is_abnormal(stats: DiagStats, prev_totals, warn_gap_ms: float) -> bool:
+    """この窓が warn ログを出すに値するか (健全なら False)。
+
+    esp32_bridge の 1Hz INFO サマリ (esp32_bridge_diag:) は既定で無効化する
+    (diag_log_period_s=0.0)。無効時でも「悪化した窓」だけは黙らせないための
+    判定。ノード側はこの純関数を呼ぶだけにする。
+
+    True になる条件:
+      - feedback_gap_max_ms が warn_gap_ms を「超えた」(ちょうどは False)
+      - coalescer / rx_queue / invalid の drop 累積が前の窓から増えた
+        (累積値が 0 でなくても、増えていなければ黙る)
+
+    prev_totals: 前の窓の終わりに記録した累積値の dict
+                 (キーは _DROP_TOTAL_FIELDS。欠けていれば 0 とみなす)。
+    """
+    if stats.feedback_gap_max_ms > warn_gap_ms:
+        return True
+    for name in _DROP_TOTAL_FIELDS:
+        if getattr(stats, name) > prev_totals.get(name, 0):
+            return True
+    return False
 
 
 def reset_window(stats: DiagStats) -> DiagStats:
