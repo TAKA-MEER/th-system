@@ -49,7 +49,7 @@ from th_planning.route_record_core import (
     RouteRecorderCore, RouteRecordParams, autosave_path,
     decimate_polyline, finalize_route_file, list_finalized_route_files,
     polyline_length, previous_path, route_from_dict, route_to_dict,
-    save_route_atomic,
+    save_route_atomic, should_autofinalize,
 )
 
 
@@ -289,13 +289,12 @@ class RouteRecorder(Node):
             if self._recorder is None:
                 self.get_logger().warn('finalize_route を受けたが記録中でない（無視）')
                 return
-            route = self._recorder.finalize(
-                self._route_id, self._name, self._now_ms(),
-                frame_id=self._frame_id)
             # WS-9H: 旧版退避(.prev)・原子的書き込み・途中経過(.wip)の後始末を
             # finalize_route_file が一括で担う（EXCEPTION-LEDGER W-04 を CLOSED に）。
-            dest = finalize_route_file(self._routes_dir, self._route_id,
-                                       route_to_dict(route))
+            # WS-9K-D: 通常の finalize でも保存後に必ず記録を閉じる（_finalize_and_close
+            # が self._recorder を None にする）。閉じないと SAVED 後にスティックへ
+            # 触れた resume_record で保存済みの記録が再開してしまう。
+            dest, route = self._finalize_and_close()
             if os.path.exists(previous_path(self._routes_dir, self._route_id)):
                 prev_name = os.path.basename(
                     previous_path(self._routes_dir, self._route_id))
@@ -310,8 +309,54 @@ class RouteRecorder(Node):
             self.get_logger().debug(f"無視する effect: {name}")
 
     def _on_state(self, msg: SystemState):
-        self._mode = msg.mode
+        new_mode = msg.mode
+        # WS-9K-D: 記録中に教示系モードから出た（重大フォルト C-06a 等で TEACH_*
+        # → ESTOP/IDLE）ら、FSM はもう finalize_route を発行できないため、ここで
+        # 記録を保存して閉じる（無駄に捨てない）。通常の finalize は分岐側。
+        if new_mode != self._mode and should_autofinalize(
+                self._mode, new_mode, self._recorder is not None):
+            self._autofinalize_mode_left(new_mode)
+        self._mode = new_mode
         self._state = msg.state
+
+    def _autofinalize_mode_left(self, new_mode: str):
+        """記録中に教示系モードを出たので保存して閉じる（WS-9K-D）。
+
+        finalize_route_file が成功したら warn で理由と保存先を残す。失敗時も
+        記録は閉じる（次の教示で古い点数を引きずらない・進めない）。
+        """
+        try:
+            dest, _route = self._finalize_and_close()
+        except Exception as e:
+            self.get_logger().error(f'教示中モード逸脱の自動保存に失敗: {e}')
+            self._close_recording()
+            return
+        self.get_logger().warn(
+            f'教示中にモードが {new_mode} へ移ったため、記録を自動保存した: {dest}')
+
+    def _finalize_and_close(self):
+        """現在の記録を RouteData に落とし finalize_route_file で保存して閉じる。
+
+        map フレーム記録時だけ地図セッション ID を刻む（odom は ""＝制限しない）。
+        WS-9K-D: 呼び出し元（通常の finalize_route / モード逸脱の自動保存）のどちら
+        でも、保存後は必ず記録を閉じる（self._recorder = None）。いま閉じないと、
+        SAVED 後にスティックへ触れた resume_record で保存済みの記録が再開してしまう。
+        """
+        route = self._recorder.finalize(
+            self._route_id, self._name, self._now_ms(),
+            frame_id=self._frame_id, map_session_id=self._current_session_for_route())
+        dest = finalize_route_file(self._routes_dir, self._route_id,
+                                   route_to_dict(route))
+        self._close_recording()
+        return dest, route
+
+    def _close_recording(self):
+        """記録を閉じて自動保存の状態もまっさらに戻す。
+
+        WS-9K-D: ソース上で self._recorder を None にする唯一の箇所。
+        """
+        self._recorder = None
+        self._reset_autosave_state()
 
     def _on_odom(self, msg: Odometry):
         p = msg.pose.pose.position

@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.join(
 from route_record_core import (
     autosave_path, previous_path, finalized_path,
     save_route_atomic, finalize_route_file, list_finalized_route_files,
+    should_autofinalize,
 )
 
 
@@ -360,3 +361,122 @@ def test_finalize_then_read_back_round_trip(tmp_path):
         assert dest == finalized_path(routes_dir, name), f'name={name!r}: 保存先が食い違う'
         with open(finalized_path(routes_dir, name), encoding='utf-8') as f:
             assert json.load(f)['id'] == name, f'name={name!r}: 読み戻せない'
+
+
+# ============================================================================
+# WS-9K-D: 重大フォルト（C-06a）で教示モードを弾き飛ばされると記録が孤児になる。
+#
+# transitions.yaml の C-06a（`mode=* state=* --fault.critical--> ESTOP/NONE`）は、
+# 重大フォルトが 1 回出ただけで TEACH_MANUAL から即 ESTOP へ飛ぶ。ESTOP からの
+# 復帰は C-09b（IDLE）だけで、元の TEACH_MANUAL へは戻れない。つまり FSM はもう
+# finalize_route を発行できず、route_recorder は self._recorder を持ったまま点列と
+# .wip を保持し続ける → 記録は永久に保存できない（2026-09-03 の校舎 1 周 185 m も
+# .wip だけ残って .json が無かった。SLAM 有効で CPU 負荷が増え LIMITER_DEAD
+# (CRITICAL) が出るようになったのが引き金）。
+#
+# 対策: 記録中にモードが教示系（TEACH_MANUAL / TEACH_FOLLOW）から出たことを
+# 検出したら、その場で finalize_route_file して記録を閉じる（self._recorder=None）。
+# 判定は純関数 should_autofinalize(prev_mode, new_mode, recording) としてコアに置く。
+# ============================================================================
+
+
+# ── 判定 (should_autofinalize) の純関数テスト ──────────────────────────────
+
+def test_autofinalize_teach_manual_to_estop_while_recording():
+    assert should_autofinalize('TEACH_MANUAL', 'ESTOP', True) is True
+
+
+def test_autofinalize_teach_manual_to_idle_while_recording():
+    assert should_autofinalize('TEACH_MANUAL', 'IDLE', True) is True
+
+
+def test_autofinalize_same_teaching_mode_while_recording():
+    """TEACH_MANUAL → TEACH_MANUAL は遷移でないので保存しない。"""
+    assert should_autofinalize('TEACH_MANUAL', 'TEACH_MANUAL', True) is False
+
+
+def test_autofinalize_teach_follow_to_estop_while_recording():
+    assert should_autofinalize('TEACH_FOLLOW', 'ESTOP', True) is True
+
+
+def test_autofinalize_not_recording_is_always_false():
+    """記録していなければモードが何でも保存しない（既知の穴）。"""
+    assert should_autofinalize('TEACH_MANUAL', 'ESTOP', False) is False
+    assert should_autofinalize('TEACH_MANUAL', 'IDLE', False) is False
+
+
+def test_autofinalize_entering_teaching_mode_is_false():
+    """IDLE → TEACH_MANUAL は（記録前提でも）「教示から出た」ではない。"""
+    assert should_autofinalize('IDLE', 'TEACH_MANUAL', True) is False
+
+
+# ── ast: route_recorder.py がモード逸脱で finalize する・finalize が記録を閉じる ──
+
+
+def _method_def(tree, name):
+    return next(
+        (n for n in ast.walk(tree)
+         if isinstance(n, ast.FunctionDef) and n.name == name), None)
+
+
+def _method_calls(tree, method, callee):
+    node = _method_def(tree, method)
+    if node is None:
+        return False
+    return any(
+        isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and isinstance(n.func.value, ast.Name) and n.func.value.id == 'self'
+        and n.func.attr == callee
+        for n in ast.walk(ast.Module(body=node.body, type_ignores=[])))
+
+
+def test_route_recorder_mode_lost_triggers_autofinalize():
+    """記録中モード逸脱の自動保存処理が、終端的に finalize_route_file を呼ぶ。
+
+    経路: _on_state → _autofinalize_mode_left → _finalize_and_close →
+    finalize_route_file。モード遷移を見る関数（_on_state）が存在し、その先で
+    finalize_route_file が呼ばれることを固定する。
+
+    変異チェック D1: _finalize_and_close（または _autofinalize_mode_left）が
+    finalize_route_file を呼ばなくなると赤くなる。
+    """
+    tree = _tree(ROUTE_RECORDER)
+    assert _method_def(tree, '_on_state') is not None, '_on_state が無い'
+    # _on_state がモード逸脱の自動保存へ進む（should_autofinalize を使う）
+    assert _method_calls(tree, '_autofinalize_mode_left', '_finalize_and_close') is True, (
+        '_autofinalize_mode_left が _finalize_and_close を呼ばない')
+    # _finalize_and_close が finalize_route_file（モジュール関数）を呼ぶ
+    fclose = _method_def(tree, '_finalize_and_close')
+    assert fclose is not None, '_finalize_and_close が無い'
+    calls_finalize_file = any(
+        isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+        and n.func.id == 'finalize_route_file'
+        for n in ast.walk(ast.Module(body=fclose.body, type_ignores=[])))
+    assert calls_finalize_file, '_finalize_and_close が finalize_route_file を呼ばない'
+
+
+def test_route_recorder_closes_recording_on_finalize():
+    """finalize（保存）で self._recorder = None にして記録を閉じる。
+
+    変異チェック D2: _close_recording から self._recorder = None を消すと赤くなる。
+    （消すと SAVED 後に resume_record で保存済み記録が再開する「既知の落とし穴」が
+      復活する）
+    """
+    tree = _tree(ROUTE_RECORDER)
+    close = _method_def(tree, '_close_recording')
+    assert close is not None, '_close_recording が無い'
+    assigns_none = [
+        n for n in ast.walk(ast.Module(body=close.body, type_ignores=[]))
+        if isinstance(n, ast.Assign)
+        and len(n.targets) == 1 and isinstance(n.targets[0], ast.Attribute)
+        and isinstance(n.targets[0].value, ast.Name) and n.targets[0].value.id == 'self'
+        and n.targets[0].attr == '_recorder'
+        and isinstance(n.value, ast.Constant) and n.value.value is None
+    ]
+    assert len(assigns_none) >= 1, '_close_recording が self._recorder = None にしない'
+    # 通常の保存分岐（finalize_route）とモード逸脱の両方がこの _close_recording を
+    # 通る。finalize_route 分岐と _finalize_and_close が閉じる経路を持つこと。
+    assert _method_calls(tree, '_finalize_and_close', '_close_recording') is True, (
+        '_finalize_and_close が _close_recording を呼ばない')
+    assert _method_calls(tree, '_autofinalize_mode_left', '_finalize_and_close') is True

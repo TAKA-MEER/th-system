@@ -158,6 +158,27 @@ def can_replay_route(route_frame: str, route_session: str,
     return bool(route_session) and route_session == current_session
 
 
+_TEACH_MODES = frozenset({'TEACH_MANUAL', 'TEACH_FOLLOW'})
+
+
+def should_autofinalize(prev_mode: str, new_mode: str, recording: bool) -> bool:
+    """教示中にモードが教示系から出たか（出たら記録を保存して閉じる）(WS-9K-D)。
+
+    実機 2026-09-03: transitions.yaml の C-06a（重大フォルト --> ESTOP/NONE）で、
+    重大フォルトが 1 回出ただけで TEACH_MANUAL から ESTOP へ飛んだ。FSM はもう
+    finalize_route を発行できず、route_recorder は self._recorder を持ったまま
+    点列と .wip を保持し続ける→記録は永久に保存できない（185 m も .wip だけ
+    残って .json が無かった）。
+
+    記録中（recording=True）に prev_mode が教示系（TEACH_MANUAL / TEACH_FOLLOW）
+    から new_mode が教示系以外へ出たら True。モード内の遷移や通常の finalize は
+    False。
+    """
+    if not recording:
+        return False
+    return prev_mode in _TEACH_MODES and new_mode not in _TEACH_MODES
+
+
 # ──────────────────────────────────────────────────────────────────
 # 経路ファイルの保存（WS-9H。ROS2 非依存・os/json のみで完結）
 # ──────────────────────────────────────────────────────────────────
