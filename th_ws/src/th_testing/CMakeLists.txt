@@ -44,6 +44,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_map_downsample
     test/test_map_downsample.py
     TIMEOUT 30)
+  # install(PROGRAMS ...) に載せたスクリプトが実際に起動できる形か（実行ビット・
+  # shebang）。実機で map_downsampler.py が「libexec に無い」と言われた事故の再発防止。
+  # core.fileMode=false のため chmod だけでは index に反映されない点も含めて固定する
+  ament_add_pytest_test(test_installed_scripts_executable
+    test/test_installed_scripts_executable.py
+    TIMEOUT 30)
   ament_add_pytest_test(test_route_replay_core
     test/test_route_replay_core.py
     TIMEOUT 30)

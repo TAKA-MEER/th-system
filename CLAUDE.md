@@ -93,6 +93,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - **ESP32 は 2.4GHz 専用**なので AP の 5GHz 化はできない（ESP32 が繋がらなくなる）。
   - PC が 2.4GHz 無線を 2 枚同時に使う状態（内蔵=モバイルホットスポット ch11／ドングル=ロボット ch1）は機内共存干渉を招くので避ける。
 - **`pkill -TERM -f "ros2 launch ..."` は launch 親しか殺さず、子ノードは生き残る。** 「止めたはずなのにポートが埋まっている」「修正したのに古い挙動のまま」はこれ。実際に古い `esp32_bridge` が残って新 bringup の 8766 / rosbridge の 9090 を奪い、検証を 1 周無駄にした。`ps -eo pid,args` で ROS 関連を拾って **PID 指定で TERM** すること（`kill -9` は DDS discovery を壊すので使わない）。
+- **このリポジトリは `core.fileMode = false`。`chmod +x` しても git の index に反映されない。** 新しく実行するスクリプト（`install(PROGRAMS ...)` に載せるもの）を追加したら `git update-index --chmod=+x <path>` を明示的に叩くこと。忘れると **git 上は 100644 のまま**で、`colcon build` は成功しテストも通るのに、実機の launch だけが `executable '<name>' not found on the libexec directory` で落ちる。`--symlink-install` では install 先がソースへのシンボリックリンクになるため、CMake の `install(PROGRAMS)` が付けるはずの実行権限が効かず、ソース側の権限がそのまま runtime に出るのが理由。**エラー文言が「見つからない」なので権限だと気づけない**（2026-09-03 に `map_downsampler.py` で実際に踏んだ）。`test_installed_scripts_executable.py` が再発を止める。
 - **`pkill -f <パターン>` は docker 外（ホスト）でも自分のシェルを殺す。** `pkill -f vite` で exit 144 になり、後続の `rm` が実行されなかった。ホストでも PID 指定で止めること。
 
 ## 開発環境
