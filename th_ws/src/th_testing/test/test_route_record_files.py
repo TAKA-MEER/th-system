@@ -574,3 +574,83 @@ def test_route_recorder_status_publishes_saved():
         and n.targets[0].value.id == 'msg'
     ]
     assert assigns, '_status_timer が msg.saved を set していない'
+
+
+# ── E2-補: self._saved = True が finalize_route_file の呼び出しより後にあること ──
+
+
+def _top_level_stmts(node):
+    """関数本体の文をソース順に走査し、サブ文も含めて列挙する。
+
+    if/try/with 等の複合文も中身を再帰的に展開し、葉の Statement ノードを
+    ソース順に返す（例: if 内の文は if 文より後に来る）。
+    """
+    for stmt in node.body:
+        yield stmt
+        for child in ast.iter_child_nodes(stmt):
+            if isinstance(child, ast.AST) and hasattr(child, 'body'):
+                if isinstance(child.body, list):
+                    for s in child.body:
+                        yield s
+            # with / try の else / except も展開
+            if isinstance(child, ast.AST) and hasattr(child, 'handlers'):
+                for h in child.handlers:
+                    for s in h.body:
+                        yield s
+            if isinstance(child, ast.AST) and hasattr(child, 'finalbody'):
+                for s in child.finalbody:
+                    yield s
+            if isinstance(child, ast.AST) and hasattr(child, 'orelse'):
+                for s in child.orelse:
+                    yield s
+
+
+def _stmt_contains_finalize_file(stmt):
+    return any(
+        isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+        and n.func.id == 'finalize_route_file'
+        for n in ast.walk(stmt))
+
+
+def _stmt_contains_saved_true(stmt):
+    return any(
+        isinstance(n, ast.Assign)
+        and len(n.targets) == 1 and isinstance(n.targets[0], ast.Attribute)
+        and isinstance(n.targets[0].value, ast.Name) and n.targets[0].value.id == 'self'
+        and n.targets[0].attr == '_saved'
+        and isinstance(n.value, ast.Constant) and n.value.value is True
+        for n in ast.walk(stmt))
+
+
+def test_finalize_and_close_saved_after_finalize_file():
+    """_finalize_and_close で self._saved = True が finalize_route_file の呼び出し
+    より後に来ることを固定する。
+
+    なぜ重要か（実機 2026-09-03 の再発防止）:
+      finalize_route_file は磁盤_FULL 等で例外を投げることがある。このとき
+      self._saved は False のままでなければならない（保存失敗なのに画面が
+      「保存しました」と嘘をつかない）。self._saved = True を finalize_route_file
+      より前に置くと、例外が飛んでも saved が true のまま残り、WebUI が嘘の
+      「保存しました」を出す。2026-09-03 に実際にこの順序で実行されると
+      SAVED が出たのに .wip だけ残る事象が再発する。
+
+    変異チェック E2c: self._saved = True を finalize_route_file より前に移すと
+    赤くなる。
+    """
+    tree = _tree(ROUTE_RECORDER)
+    node = _method_def(tree, '_finalize_and_close')
+    assert node is not None, '_finalize_and_close が無い'
+    finalize_idx = None
+    saved_idx = None
+    for idx, stmt in enumerate(_top_level_stmts(node)):
+        if _stmt_contains_finalize_file(stmt) and finalize_idx is None:
+            finalize_idx = idx
+        if _stmt_contains_saved_true(stmt) and saved_idx is None:
+            saved_idx = idx
+    assert finalize_idx is not None, 'finalize_route_file の呼び出しが見つからない'
+    assert saved_idx is not None, 'self._saved = True の代入が見つからない'
+    assert saved_idx > finalize_idx, (
+        f'self._saved = True (stmt {saved_idx}) が finalize_route_file '
+        f'(stmt {finalize_idx}) より前に来ている。'
+        '例外時に saved が true になり画面が「保存しました」と嘘をつく。'
+        'self._saved = True を finalize_route_file の直後に移す')
