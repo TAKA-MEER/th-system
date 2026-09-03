@@ -472,16 +472,25 @@ class SlamControl(Node):
         match_type 1 = START_AT_FIRST_NODE（地図の最初のノード＝経路の始点に自己位置を
         置く）。読み込み後 map→base_link ≒ 原点（実測 (-0.021, 0.000)）。
         6.9MB のグラフ I/O が重いので DESERIALIZE_TIMEOUT_SEC(30s) を使う。
+
+        WS-9M: slam_toolbox は渡された filename に `.posegraph` を自分で付ける。
+        拡張子つきの名前を渡すと `<base>.posegraph.posegraph` を探して必ず失敗する
+        （実機ログ:
+          serialization::Read: Failed to open requested file: .../crash_check.posegraph.
+          DeserializePoseGraph: Failed to read file: .../crash_check.posegraph.）。
+        そこでサービスに渡す名前は拡張子なしの `base`、存在確認はディスク上の
+        実ファイル名 `base + '.posegraph'` と、あえて別にする。
         """
         if not self._cli_deserialize.wait_for_service(timeout_sec=1.0):
             return self._finish(response, 'slam_toolbox に接続できません', '')
         # 教示の地図が無い状態で reload されたら success=false（例外にしない）。
+        # 確認するのはディスク上の実ファイル名（拡張子つき）。
         graph_path = base + '.posegraph'
         if not os.path.exists(graph_path):
             return self._finish(
                 response, f'地図ファイルが無いため読み直せません ({graph_path})', '')
         req = DeserializePoseGraph.Request()
-        req.filename = graph_path
+        req.filename = base   # WS-9M: slam_toolbox が `.posegraph` を付けるため拡張子なし
         req.match_type = 1   # START_AT_FIRST_NODE
         _result, err = call_and_wait(
             self, self._cli_deserialize, req, DESERIALIZE_TIMEOUT_SEC)

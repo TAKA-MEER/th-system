@@ -402,3 +402,39 @@ def test_senders_normalize_session_id_with_safe_id():
     assert _name_calls(funcdef2, '_safe_id'), \
         'replay_runner が /map_session/open 呼び出しで _safe_id を使っていない'
 
+
+
+# ── 9. ast: deserialize の filename に .posegraph を足していない（WS-9M）──
+def test_deserialize_filename_does_not_append_posegraph():
+    """_handle_map_reload が deserialize_map に渡す filename が拡張子なしの
+    `base` そのものであること。
+
+    slam_toolbox は渡された filename に `.posegraph` を自分で付けるため、
+    呼び出し側が付けると `<base>.posegraph.posegraph` を探して必ず失敗する
+    （2026-09-03 実機ログ:
+      serialization::Read: Failed to open requested file: .../crash_check.posegraph.
+      DeserializePoseGraph: Failed to read file: .../crash_check.posegraph.）。
+    しかも DeserializePoseGraph の応答は空なので call は成功として返り、
+    「読み直した」と誤報告していた。
+
+    変異チェック: `req.filename = base + '.posegraph'` や `= graph_path` に
+    戻すと赤くなる。
+    """
+    tree = _tree(SLAM_CONTROL)
+    funcdef = _funcdef(tree, '_handle_map_reload')
+    assert funcdef is not None, '_handle_map_reload が無い'
+
+    filename_assigns = [
+        n for n in ast.walk(funcdef)
+        if isinstance(n, ast.Assign)
+        and any(isinstance(t, ast.Attribute) and t.attr == 'filename'
+                for t in n.targets)
+    ]
+    assert filename_assigns, 'req.filename への代入が見つからない'
+    for n in filename_assigns:
+        # 値は拡張子なしの `base`（bare 名）そのものであること。
+        #   - `base + '.posegraph'` は BinOp なので ast.Name ではない → 赤
+        #   - `graph_path`（= base + '.posegraph'）は id が base でない → 赤
+        assert isinstance(n.value, ast.Name) and n.value.id == 'base', (
+            'req.filename は拡張子なしの base を渡すこと（現在: '
+            f'{ast.get_source_segment(_read(SLAM_CONTROL), n.value)}）')
