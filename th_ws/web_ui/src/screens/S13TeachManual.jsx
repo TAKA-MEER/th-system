@@ -160,7 +160,7 @@ export default function S13TeachManual({ onFinish }) {
                       data-testid="s13-route-name"
                       value={name}
                       placeholder={S13_ROUTE_NAME_PLACEHOLDER}
-                      onChange={(e) => setName(e.target.value)}
+                      onChange={(e) => setName(e.target.value.replace(/[\\/]/g, '_'))}
                     />
                   </div>
                   <button

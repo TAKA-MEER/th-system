@@ -3,7 +3,8 @@
 // 確かめる。過去にこの UI で「ボタンが在るのに押しても無反応」（onClick 空）を
 // 出したため、trigger が本当に送られることを検証する（S11 の ui.stop と同じ狙い）。
 // WS-9K E-1: 入力欄の値を id に使い、空欄なら route_ で始まる自動名になること、
-// / \ は _ に置換されることを固定する。
+// / \ は入力欄（onChange）で _ に置換され、画面に表示されている文字列がそのまま
+// 登録名になることを固定する。
 //
 // th_state は無いのでロード時に TEACH_MANUAL/ROUTE_SEL を直接注入し、記録開始の
 // 後の状態遷移（REC 表示切替）は扱わない -- 検証するのは「押すと trigger が
@@ -43,9 +44,20 @@ test('S-13 記録開始 空欄なら route_ で始まる自動名になる', asy
   expect(arg.id, '空欄なら route_ で始まる自動名になる').toMatch(/^route_/)
 })
 
-test('S-13 記録開始 / \\ は _ に置換される（画面表示と保存名を揃える）', async ({ page }) => {
-  const sel = await recordTrigger(page, '校舎1周/本番\\午後')
+test('S-13 記録開始 / \\ は入力欄で _ に置換され、その値が id に載る（画面表示と保存名を揃える）', async ({ page }) => {
+  await gotoScreen(page, 'S13', { mode: 'TEACH_MANUAL', state: 'ROUTE_SEL' })
+  await page.locator('#s13').waitFor()
+  await page.getByRole('tab', { name: '教示' }).click()
+
+  const field = page.locator('[data-testid="s13-route-name"]')
+  // onChange で / \ が _ に置換されるため、入力欄の表示そのものが正規化される。
+  await field.fill('校舎1周/本番\\午後')
+  await expect(field).toHaveValue('校舎1周_本番_午後')
+
+  await page.locator('[data-testid="s13-record-start"]').click()
+  const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
+  const sel = calls.find((c) => c.trigger === 'ui.route_select')
   expect(sel, '記録開始が ui.route_select を送っていない').toBeTruthy()
   const arg = sel.argJson
-  expect(arg.id, '/ と \\ が _ に置換されていない').toBe('校舎1周_本番_午後')
+  expect(arg.id, '正規化後の値が id になっていない').toBe('校舎1周_本番_午後')
 })
