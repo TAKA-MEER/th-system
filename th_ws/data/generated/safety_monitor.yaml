@@ -2,6 +2,7 @@ safety_monitor:
   ros__parameters:
     battery_critical_v: 22.4
     battery_warn_v: 24.0
+    critical_fault_hold_ms: 300
     esp32_timeout_ms: 322
     esp32_watchdog_ms: 600
     estop_ui_lease_ms: 1500

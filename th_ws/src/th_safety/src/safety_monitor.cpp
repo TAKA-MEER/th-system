@@ -74,6 +74,14 @@ public:
         declare_parameter("state_stale_ms",       1500);
         declare_parameter("runaway_ratio",        1.5);
         declare_parameter("runaway_hold_ms",      500);
+        // WS-9O (2026-09-04): 重大フォルトの発火に課す保持時間。
+        // 監視ループ (check_period_ms) 自身が一時的に遅れると、複数の入力が同じ
+        // 判定周期で同時にタイムアウト超過に見える。実機ログで ESP32_DISCONNECTED と
+        // LIMITER_DEAD が同じ 1ms に発火し 26ms 後に両方解除された。フォルトは edge で
+        // publish されるので、その 26ms でも active=true は state_manager に届き
+        // C-06a (ガード無し) で必ず ESTOP に落ちる。条件が継続したときだけ報告する。
+        // タイムアウト値そのもの (limiter_dead_ms 等) は変えない。
+        declare_parameter("critical_fault_hold_ms", 300);
         declare_parameter("runaway_zero_threshold", 0.02);
         declare_parameter("estop_ui_lease_ms",    1500);
         declare_parameter("link_quality_window_sec", 30);
@@ -94,6 +102,12 @@ public:
         runaway_ratio_  = get_parameter("runaway_ratio").as_double();
         runaway_zero_threshold_ = get_parameter("runaway_zero_threshold").as_double();
         runaway_hold_   = th_safety::HoldTimer(get_parameter("runaway_hold_ms").as_int() / 1000.0);
+        {
+            const double hold = get_parameter("critical_fault_hold_ms").as_int() / 1000.0;
+            limiter_dead_hold_  = th_safety::HoldTimer(hold);
+            mux_dead_hold_      = th_safety::HoldTimer(hold);
+            state_inconsist_hold_ = th_safety::HoldTimer(hold);
+        }
         estop_ui_lease_sec_ = get_parameter("estop_ui_lease_ms").as_int() / 1000.0;
         link_quality_window_sec_ = get_parameter("link_quality_window_sec").as_int();
         enabled_targets_ = get_parameter("enabled_targets").as_string_array();
@@ -281,7 +295,12 @@ private:
 
             // ── 重大フォルト（§4.1） ──────────────────────
             if (targetEnabled("limiter")) {
-                checkTimeout("LIMITER_DEAD", last_limiter_time_, limiter_dead_, t, limiter_alive_);
+                // WS-9O: 単発の誤検知よけに保持時間を課す（checkTimeout をそのまま
+                // 使うと 1 周期の遅れで ESTOP に落ちる）。
+                bool cond = computeTimeoutFault(last_limiter_time_, limiter_dead_, t,
+                                                 limiter_alive_);
+                updateFaultState("LIMITER_DEAD",
+                                  limiter_dead_hold_.update(cond, check_period_sec_));
             }
             if (targetEnabled("mux")) {
                 // MUX_DEAD は checkTimeout を通らない独自判定だが、未受信の
@@ -296,7 +315,9 @@ private:
                     since_start, startup_deadline_sec_);
                 bool mux_dead = th_safety::detect_mux_dead(
                     muxed_stale, muxed_last_nonzero_, cmd_stale, cmd_last_nonzero_);
-                updateFaultState("MUX_DEAD", mux_dead);
+                // WS-9O: 単発の誤検知よけ
+                updateFaultState("MUX_DEAD",
+                                  mux_dead_hold_.update(mux_dead, check_period_sec_));
             }
             if (targetEnabled("runaway")) {
                 double feedback_abs = std::fabs((last_wheel_left_ + last_wheel_right_) / 2.0);
@@ -310,7 +331,9 @@ private:
                 bool state_stale = (t - last_state_time_) > rclcpp::Duration(state_stale_);
                 bool inconsistent = th_safety::detect_state_inconsistent(
                     state_stale, last_mode_, last_state_, th_safety::default_mode_states());
-                updateFaultState("STATE_INCONSISTENT", inconsistent);
+                // WS-9O: 単発の誤検知よけ
+                updateFaultState("STATE_INCONSISTENT",
+                                  state_inconsist_hold_.update(inconsistent, check_period_sec_));
             }
             if (targetEnabled("firmware")) {
                 updateFaultState("ESTOP_BYPASS_ACTIVE",
@@ -325,15 +348,21 @@ private:
     // 通信途絶タイムアウトによるフォルト判定（回復可能・重大 共通）。
     // ever_received=false（起動直後、まだ 1 通も来ていない）の間は
     // startup_deadline_sec を超えるまで途絶扱いしない（is_timeout_fault）。
-    void checkTimeout(const std::string& fault_type, const rclcpp::Time& last_time,
-                      const std::chrono::milliseconds& timeout, const rclcpp::Time& now_t,
-                      bool ever_received) {
+    bool computeTimeoutFault(const rclcpp::Time& last_time,
+                             const std::chrono::milliseconds& timeout,
+                             const rclcpp::Time& now_t, bool ever_received) {
         double since_last  = (now_t - last_time).seconds();
         double since_start = (now_t - node_start_time_).seconds();
         double timeout_sec = std::chrono::duration<double>(timeout).count();
-        bool faulted = th_safety::is_timeout_fault(
+        return th_safety::is_timeout_fault(
             ever_received, since_last, timeout_sec, since_start, startup_deadline_sec_);
-        updateFaultState(fault_type, faulted);
+    }
+
+    void checkTimeout(const std::string& fault_type, const rclcpp::Time& last_time,
+                      const std::chrono::milliseconds& timeout, const rclcpp::Time& now_t,
+                      bool ever_received) {
+        updateFaultState(fault_type,
+                          computeTimeoutFault(last_time, timeout, now_t, ever_received));
     }
 
     // フォルトの edge 検出 + publish。active_faults_ を更新する（fault_lock の合成に使う）。
@@ -500,6 +529,11 @@ private:
     double runaway_ratio_ = 1.5;
     double runaway_zero_threshold_ = 0.02;
     th_safety::HoldTimer runaway_hold_;
+    // WS-9O: 重大フォルトの単発誤検知よけ（回復可能フォルトは一時停止から
+    // 正常に再開できるため対象外）。
+    th_safety::HoldTimer limiter_dead_hold_{0.0};
+    th_safety::HoldTimer mux_dead_hold_{0.0};
+    th_safety::HoldTimer state_inconsist_hold_{0.0};
     double estop_ui_lease_sec_ = 1.5;
     double check_period_sec_ = 0.1;
     double startup_deadline_sec_ = 15.0;

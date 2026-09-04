@@ -767,6 +767,20 @@
   spec_ref: "DetailedDesign-names.md §7.3（wp2 WP-SAFE-01 §4.1）"
   note: "MUX_DEAD の判定。暫定値"
 
+- name: critical_fault_hold_ms
+  unit: ms
+  class: b
+  status: given
+  value: 300
+  consumers: [safety_monitor]
+  spec_ref: "VISION.md §2（2026-09-04 WS-9O）"
+  note: "重大フォルト（LIMITER_DEAD / MUX_DEAD / STATE_INCONSISTENT）の発火に課す保持時間。
+    監視ループ（check_period_ms=100）自身が一時的に遅れると複数入力が同じ周期で同時に
+    タイムアウト超過に見える。実機で ESP32_DISCONNECTED と LIMITER_DEAD が同じ 1ms に
+    発火し 26ms 後に両方解除された（2026-09-04）。フォルトは edge publish なのでその
+    26ms でも ESTOP に落ちる。3 周期ぶん継続を要求して単発の誤検知を消す。
+    タイムアウト値そのものは変えない。回復可能フォルトは一時停止から再開できるため対象外"
+
 - name: runaway_hold_ms
   unit: ms
   class: b

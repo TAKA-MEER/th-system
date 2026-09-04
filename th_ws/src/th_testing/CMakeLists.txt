@@ -45,6 +45,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_slam_control_logic
     test/test_slam_control_logic.py
     TIMEOUT 30)
+  # WS-9O: 重大フォルトの保持時間（単発の誤検知で ESTOP に落ちない）と、
+  # しきい値を緩める方向へ流れていないことの静的検証。ROS2 不要
+  ament_add_pytest_test(test_critical_fault_hold
+    test/test_critical_fault_hold.py
+    TIMEOUT 30)
   # WS-9F: /route/preview の帯域対策の静的テスト（decimate_polyline 適用と
   # ハートビート配信の設計判断を固定。ROS2 不要）
   ament_add_pytest_test(test_route_preview_bandwidth

@@ -542,6 +542,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`limiter_dead_ms`** | ms | (b)。`/safety/limiter_status` の途絶（20 Hz の 5 周期） |
 | **`mux_dead_ms`** | ms | (b)。`MUX_DEAD` の判定（[wp2](DetailedDesign-wp2.md) `WP-SAFE-01` §4.1） |
 | **`runaway_hold_ms`** | ms | (b)。`DRIVE_RUNAWAY` の保持時間 |
+| **`critical_fault_hold_ms`** | ms | (b)。`LIMITER_DEAD` / `MUX_DEAD` / `STATE_INCONSISTENT` の保持時間。監視ループ 1 周期の遅れで生じる単発の誤検知を消す（WS-9O。VISION.md §2 の 2026-09-04 の項）|
 | **`link_quality_window_sec`** | s | given。分位点を取る窓（`WP-SAFE-00`） |
 | **`behavior_cmd_timeout_s`** ／ **`nav_cmd_timeout_s`** | s | given。`twist_mux.yaml` の生成元（現行 0.5 s） |
 | **`wheel_radius_scale`** | — | measured（校正の出力） |
