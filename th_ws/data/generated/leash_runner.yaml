@@ -3,4 +3,4 @@ leash_runner:
     brake_accel_mps2: 1.18
     v_leash: 1.0
     v_max: 1.1199999999999999
-    w_max: 0.6
+    w_max: 1.2

@@ -5,4 +5,4 @@ jog_gate:
     manual_joy_timeout: 1.0
     state_stale_ms: 1500
     v_max: 1.1199999999999999
-    w_max: 0.6
+    w_max: 1.2

@@ -20,4 +20,4 @@ obstacle_limiter:
     v_leash: 1.0
     v_max: 1.1199999999999999
     w_align_max: 0.3
-    w_max: 0.6
+    w_max: 1.2
