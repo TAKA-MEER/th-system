@@ -274,19 +274,18 @@ class ReplayRunner(Node):
             file_frame = self._route.frame_id or 'odom'
             map_route = self._use_map_frame and file_frame == self._map_frame
             self._route_frame = self._map_frame if map_route else 'odom'
-            # WS-9K-B: map フレーム経路が別の地図セッションで記録されていたら
-            # 繋がない。ループ閉じ込みを止めた今、地図はセッションごとに作り直され、
-            # 別セッションの map 座標は現在の地図では無意味（実機 2026-09-03:
-            # 別セッションの経路を再生し start_yaw=-178.1° から約180°旋回して壁に
-            # 向かった）。不一致なら読み込まず evt.localize_done も出さない。
-            # 逆に odom フレーム経路は地図に依存しないので常に再生してよい。
+            # WS-9K-B / WS-9U: map フレーム経路は自身の .posegraph を読み直すので
+            # 別セッションでも再生してよい（WS-9S で経路選択のたび slam_toolbox を
+            # 作り直してその経路の地図を deserialize する）。保存地図が無い
+            # （map_session_id が空 ＝ 古い記録 or 教示の「保存」未完）経路だけ弾く。
+            # 実ファイルの有無は slam_control._handle_map_reload が確認する。
+            # odom フレーム経路は地図に依存しないので常に再生してよい。
             route_session = self._route.map_session_id or ''
             if not can_replay_route(
                     file_frame, route_session, self._map_session_id, self._map_frame):
                 self.get_logger().error(
-                    f'この経路は別の地図セッション（{route_session or "不明"}）で記録されて'
-                    f'いる。現在のセッション（{self._map_session_id}）では座標が一致しない'
-                    f'ため再生できない。教示からやり直すこと')
+                    'この経路には保存された地図が無い（教示の「保存」が完了して'
+                    'いない可能性）。再生できない。教示からやり直すこと')
                 self._route = None
                 return
             pts = list(self._route.points)
@@ -619,7 +618,8 @@ def main(args=None):
     # WS-9L: /system/effect コールバック内から /map_session/open を同期的に呼ぶため
     # MultiThreadedExecutor + ReentrantCallbackGroup を使う（slam_control.py と同じ
     # 構成。単一スレッド executor だと応答コールバックが動けず経路選択で固まる）。
-    executor = MultiThreadedExecutor()
+    # WS-9U: call_and_wait はポーリング中に worker スレッドを塞ぐので下限 4 本。
+    executor = MultiThreadedExecutor(num_threads=4)
     node._executor = executor
     executor.add_node(node)
     try:

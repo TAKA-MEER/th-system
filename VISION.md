@@ -366,6 +366,46 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
   更新: `route_replay_core.py` / `replay_runner.py` / `registry.yaml` /
   `stickGeometry.js` / `JogConsole.jsx` / 新 `ReplaySpeedControl.jsx` ほか WebUI。
 
+- **2026-09-04 — 長距離再生で replay_runner が落ちる／別セッション経路を再生できない（WS-9U）**:
+  実機。長距離経路（1150 点・現セッション）を再生しようとすると画面に「初期姿勢を
+  推定できません。別の起動セッションで記録した経路の可能性があります」。短距離は正常。
+  ユーザー指摘: WS-9S で reload のたび slam_toolbox を作り直して経路の地図を読み直す
+  以上、別セッションでも再生できてよいはず。
+
+  実機ログで確定した原因は **2 つ、別物**:
+
+  1. **replay_runner のクラッシュ（本命）**。`_reload_map` が `/map_session/open` を
+     `call_and_wait`（= `rclpy.spin_until_future_complete(node, future, executor=node._executor)`）
+     で待っていた。これは自分の実行スレッドの中から、`main()` で既に回している
+     MultiThreadedExecutor を**再入 spin** する。`_spin_once_impl` の共有ジェネレータ
+     （`wait_for_ready_callbacks` の `_cb_iter`）と共有リスト `_futures` を 2 スレッドが
+     同時に壊し、`future.result()` が無関係なコールバックの例外まで再送出してノードごと
+     落ちる。WS-9S 以前は reload が数秒で終わり窓が小さく潜在化していたが、respawn
+     （5〜45 秒）＋ slam_toolbox 再起動の TF 嵐で、20/10/2Hz タイマ＋TF リスナを回す
+     replay_runner では衝突がほぼ確実になった。**画面の「別セッション…」は LOCALIZE が
+     進まないことからの UI の推測で真因ではない。**
+  2. **セッション制限（`can_replay_route`）が WS-9S で不要に**。WS-9K-B は
+     「別セッションの map 座標は現在の in-memory 地図と合わない」ため
+     `route_session == current_session` を要求した。WS-9S 以降は経路選択で
+     slam_toolbox を作り直しその経路の `.posegraph` を deserialize するので、地図は
+     経路自身のもの。セッション一致は不要。
+
+  **変更**:
+  1. `call_and_wait`（`th_config_manager/service_call.py`）を **spin せず
+     `future.done()` をポーリング**する実装に差し替え（`_wait_for_slam_restart` と同じ
+     思想）。応答は呼び出し元ノードの `main()` の `executor.spin()` スレッドが処理する。
+     呼び出し元 6 箇所は無変更で直る。各ノードの `MultiThreadedExecutor` は
+     `num_threads=4` を明示（ポーリング中に 1 worker を塞ぐため下限保証。実機は 8 コア）。
+  2. `can_replay_route` の map 経路判定を `bool(route_session)` に緩和（保存地図を
+     持つ map 経路は別セッションでも可。posegraph が無い経路だけ弾く。実ファイルの
+     有無は `slam_control._handle_map_reload` が確認）。S-14 の LOCALIZE 長引き
+     しきい値を 20s → 60s（respawn ぶんの余裕）、文言を原因非依存に。
+
+  **不変**: 安全チェーン・FSM・WS-9S の respawn 方式は変更なし。
+
+  更新: `service_call.py` / `route_record_core.py` / `replay_runner.py` /
+  `config_manager.py` / `slam_control.py` / `route_recorder.py` / S-14 WebUI。
+
 ---
 
 ## 3. 両設計書が扱っていない事項

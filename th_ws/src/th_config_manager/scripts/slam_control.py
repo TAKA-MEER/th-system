@@ -670,7 +670,8 @@ class SlamControl(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = SlamControl()
-    executor = MultiThreadedExecutor()
+    # WS-9U: call_and_wait はポーリング中に worker スレッドを塞ぐので下限 4 本。
+    executor = MultiThreadedExecutor(num_threads=4)
     node._executor = executor
     executor.add_node(node)
     node._startup()

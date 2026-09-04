@@ -606,7 +606,8 @@ def main(args=None):
     # WS-9L: /system/effect コールバック内から /map_session/open を同期的に呼ぶため
     # MultiThreadedExecutor + ReentrantCallbackGroup を使う（slam_control.py と同じ
     # 構成。単一スレッド executor だと応答コールバックが動けず保存で固まる）。
-    executor = MultiThreadedExecutor()
+    # WS-9U: call_and_wait はポーリング中に worker スレッドを塞ぐので下限 4 本。
+    executor = MultiThreadedExecutor(num_threads=4)
     node._executor = executor
     executor.add_node(node)
     try:

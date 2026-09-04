@@ -194,7 +194,7 @@ export const S14_PROCEED = 'この経路で進む'
 export const S14_POSE_TITLE = '初期姿勢'
 export const S14_POSE_LOCALIZE = '初期姿勢を推定しています…'
 export const S14_POSE_LOCALIZE_TIMEOUT =
-  '初期姿勢を推定できません。別の起動セッションで記録した経路の可能性があります。教示からやり直してください'
+  '初期姿勢を推定できません。機体を始点マークに置き直すか、教示からやり直してください'
 export const S14_POSE_READY = '推定できました。地図と位置を確認して『再生』を押してください'
 export const S14_POSE_RUN = '再生中'
 export const S14_POSE_PAUSE = '一時停止（記録の終端に達しました。終了を押してください）'

@@ -141,21 +141,30 @@ def route_from_dict(d: dict) -> RouteData:
 
 def can_replay_route(route_frame: str, route_session: str,
                      current_session: str, map_frame: str) -> bool:
-    """経路を現在のセッションで再生してよいか判定する (WS-9K-B)。
+    """経路を再生してよいか判定する（WS-9K-B、WS-9U で緩和）。
 
-    ループ閉じ込みと map 絶対座標記録が両立しないため、地図は map セッションごと
-    に作り直される。別セッションで記録した map フレーム経路の座標は現在の地図では
-    無意味なので、再生を進めない（実機 2026-09-03: 別セッションの経路を再生し
-    start_yaw=-178.1° から約 180° 旋回して壁に向かった）。
+    WS-9K-B は「地図は起動セッションごとに作り直され、別セッションで記録した
+    map フレーム経路の座標は現在の in-memory 地図と合わない」ため
+    `route_session == current_session` を要求していた（実機 2026-09-03: 別セッションの
+    経路を再生し約 180° 旋回して壁に向かった）。
+
+    WS-9U: 経路選択のたびに slam_toolbox を作り直し、**その経路自身の `.posegraph`**
+    をディスクから deserialize（`LOCALIZE_AT_POSE`、始点合わせ）するようになったので
+    （WS-9S）、地図は経路自身のもの。セッション一致は不要になった。
 
     - route_frame == map_frame（map フレーム経路）:
-      route_session が現在のセッションと**一致する場合だけ** True。`""`（古い
-      経路でセッション不明）や違うセッションは False。
-    - それ以外（odom フレーム経路）: 地図に依存しないのでセッションに関係なく True。
+      `route_session` が非空（＝地図を保存するコードで記録された）なら True。
+      `""`（WS-9K-B より前の古い経路 or 保存失敗）だけ False。実際に `.posegraph` /
+      `.data` が在るかは `slam_control._handle_map_reload` がファイル存在確認して
+      clean error を返す（そこで弾かれても replay_runner は落ちない）。
+    - それ以外（odom フレーム経路）: 地図に依存しないので常に True。
+
+    `current_session` は当面シグネチャに残す（呼び出し側・テストを崩さないため）。
+    現在は未使用。
     """
     if route_frame != map_frame:
         return True
-    return bool(route_session) and route_session == current_session
+    return bool(route_session)
 
 
 _TEACH_MODES = frozenset({'TEACH_MANUAL', 'TEACH_FOLLOW'})

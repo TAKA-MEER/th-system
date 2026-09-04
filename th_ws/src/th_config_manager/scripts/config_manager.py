@@ -185,7 +185,10 @@ class ConfigManager(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = ConfigManager()
-    executor = MultiThreadedExecutor()
+    # WS-9U: call_and_wait はポーリング中に worker スレッドを 1 本塞ぐ。応答を
+    # 別スレッドで捌けるよう最低 2、余裕を見て 4 本確保する（実機 8 コアでは既定
+    # cpu_count のままだが、コア数の少ない環境での下限保証）。
+    executor = MultiThreadedExecutor(num_threads=4)
     node._executor = executor
     executor.add_node(node)
     try:

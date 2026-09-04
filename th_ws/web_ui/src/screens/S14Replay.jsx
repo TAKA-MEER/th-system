@@ -39,10 +39,10 @@ import {
 import { stateLabel } from '../i18n/states.js'
 import { OP_LABELS } from '../i18n/states.js'
 
-// この経路は別のセッションで記録したもので初期姿勢が確定できず、LOCALIZE に
-// 留まり続ける（WS-9K-B のガード）。正常時は W-01 により LOCALIZE はほぼ一瞬で
-// 抜けるので、ここまで留まるのは異常（＝弾かれている）とみなして手がかりを出す。
-const LOCALIZE_TIMEOUT_MS = 20000
+// LOCALIZE が長引く = 地図の読み直しに失敗（保存地図が無い経路、posegraph
+// ファイル欠落、始点から離れすぎ 等）。WS-9S 以降は slam_toolbox の respawn +
+// deserialize に長距離地図で ~45s かかりうるので、しきい値は余裕を持たせる。
+const LOCALIZE_TIMEOUT_MS = 60000
 
 // WS-9P: PAUSE の文言は「なぜ止まったか」で変える。終端に達したのなら終了を促し、
 // フォルト・ジョグ介入・停止ボタンで止まったのなら「再生で続きから」を案内する。
@@ -79,7 +79,7 @@ export default function S14Replay({ onFinish }) {
   const empty = routes.length === 0
   const selected = selectedId != null
 
-  // LOCALIZE が一定時間続いたら（＝別セッションの経路で弾かれている）手がかりを出す。
+  // LOCALIZE が長く続いたら（＝地図の読み直し失敗の可能性）手がかりを出す。
   useEffect(() => {
     if (stateName !== 'LOCALIZE') { setLocalizeStuck(false); return undefined }
     setLocalizeStuck(false)

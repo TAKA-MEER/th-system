@@ -1,22 +1,16 @@
 """
 test_route_map_session.py
 ==========================
-WS-9K-B: 経路に「どの地図セッションで記録したか」の印を付け、別セッションの
-経路を再生に進ませない。
+WS-9K-B: 経路に「どの地図セッションで記録したか」の印（RouteData.map_session_id）を
+付ける。WS-9U: 経路選択のたびに slam_toolbox を作り直してその経路自身の .posegraph を
+読み直すようになった（WS-9S）ので、セッション一致の要求は撤廃した。判定
+（can_replay_route）は「保存地図を持つ map 経路か」だけを見る。
 
-実機 2026-09-03: 校舎 1 周（185 m / 1504 点 / 包絡 44.5×56.4 m）の教示は .wip が
-残っただけで .json にならず、一覧には**前のセッションで記録した別の経路**しか無い
-状態になった。それを再生すると start_yaw=-178.1° からまず約 180° 旋回し、別の地図の
-座標を追うため壁に向かった（「開始地点から逆方向に旋回した」の正体）。
-
-地図はセッションごとに作り直されるため（docs/使い方.md §4-4）、別セッションで
-記録した map フレーム経路の座標は現在の地図では無意味。これを再生しないための
-印（RouteData.map_session_id）と判定（can_replay_route）を固定する。
-
-- map フレーム＋同じセッション         → 再生可 (True)
-- map フレーム＋違うセッション        → 再生不可 (False)
-- map フレーム＋セッション ""(古い経路) → 再生不可 (False。セッション不明は一致しない)
+- map フレーム＋セッション ID あり     → 再生可 (True。別セッションでも可)
+- map フレーム＋セッション ""(古い経路) → 再生不可 (False。保存地図が無い)
 - odom フレーム                       → セッションに関係なく再生可 (True)
+
+実ファイル（.posegraph / .data）の有無は slam_control._handle_map_reload が確認する。
 
 ROS2 なし・純粋 Python。
 """
@@ -80,19 +74,31 @@ def test_route_from_dict_survives_old_json_without_session():
     assert route.map_session_id == ''
 
 
-# ── セッション判定 (can_replay_route) ───────────────────────────────────
+# ── 再生可否判定 (can_replay_route) ─────────────────────────────────────
+# WS-9U: 経路選択のたびに slam_toolbox を作り直してその経路自身の .posegraph を
+# 読み直すようになった（WS-9S）ので、セッション一致は不要になった。map 経路は
+# セッション ID を持つ（＝地図を保存するコードで記録された）なら別セッションでも
+# 再生してよい。posegraph が無い経路（セッション ""）だけ弾く。
 def test_can_replay_map_same_session():
     assert can_replay_route('map', 'sess_A', 'sess_A', 'map') is True
 
 
-def test_can_replay_map_different_session():
-    """変異チェック 3: 「違うセッション」を True にすると赤くなる。"""
-    assert can_replay_route('map', 'sess_A', 'sess_B', 'map') is False
+def test_can_replay_map_different_session_now_allowed():
+    """WS-9U: 別セッションで記録した map 経路も再生可（自身の地図を読み直すため）。
+
+    変異チェック: `bool(route_session)` を `route_session == current_session` に
+    戻すと赤くなる。
+    """
+    assert can_replay_route('map', 'sess_A', 'sess_B', 'map') is True
 
 
-def test_can_replay_map_unknown_session_is_false():
-    """古い経路（セッション ""）は一致しない扱い＝再生不可。"""
+def test_can_replay_map_no_saved_map_is_false():
+    """保存地図が無い経路（セッション ""＝古い記録 or 保存失敗）は再生不可。
+
+    変異チェック: この分岐を消す（常に True を返す）と赤くなる。
+    """
     assert can_replay_route('map', '', 'sess_B', 'map') is False
+    assert can_replay_route('map', '', '', 'map') is False
 
 
 def test_can_replay_odom_ignores_session():
@@ -101,10 +107,10 @@ def test_can_replay_odom_ignores_session():
     assert can_replay_route('odom', '', 'sess_B', 'map') is True
 
 
-def test_can_replay_current_empty_session_blocks_map_route():
-    """replay_runner にセッション ID が渡らない（""）場合も、map 経路は再生不可。"""
-    assert can_replay_route('map', 'sess_A', '', 'map') is False
-    assert can_replay_route('map', '', '', 'map') is False
+def test_can_replay_current_session_unused():
+    """WS-9U: current_session は判定に使わない（route_session だけを見る）。"""
+    assert can_replay_route('map', 'sess_A', '', 'map') is True
+    assert can_replay_route('map', 'sess_A', 'sess_ANYTHING', 'map') is True
 
 
 # ── 経路 JSON に地図セッション ID が保存される（保存側の配線）──────────
