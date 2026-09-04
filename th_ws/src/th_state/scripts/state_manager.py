@@ -374,7 +374,8 @@ class StateManager(Node):
             return
         now = self._now_ms()
         self._screens[requester] = ScreenInput(
-            screen_id=screen_id, interacting=True, last_input_ms=now)
+            screen_id=screen_id, interacting=True, last_input_ms=now,
+            last_seen_ms=now)
         self._last_screen_msg_ms = now
 
     def _eff_mark_arrived(self, args, requester):
@@ -429,11 +430,16 @@ class StateManager(Node):
     # /ui/active_screen（ゾーン用の使用中トラッキング。イベントではない）
     # ------------------------------------------------------------
     def _on_active_screen(self, msg):
+        # WS-9R: 在席判定は last_seen（この受信時刻）で測る。last_input は端末が
+        # 申告する「最後のタッチ」で、端末の時計に依存するうえ画面を見ているだけ
+        # では更新されない（derive_limits の docstring 参照）。
+        now = self._now_ms()
         self._screens[msg.client_id] = ScreenInput(
             screen_id=msg.screen_id,
             interacting=msg.interacting,
-            last_input_ms=_stamp_to_ms(msg.last_input))
-        self._last_screen_msg_ms = self._now_ms()
+            last_input_ms=_stamp_to_ms(msg.last_input),
+            last_seen_ms=now)
+        self._last_screen_msg_ms = now
 
     def _on_routes_list(self, msg):
         self._route_ids = [r.id for r in msg.routes]

@@ -466,3 +466,15 @@ table.lst td.r{text-align:right}
 #release .rt{flex:1 1 200px;font-size:calc(var(--fs) * .85);color:var(--carry-tx)}
 #releaseBtn{background:#3d2160;border:1px solid var(--carry);border-radius:6px;padding:9px 16px;
   font-weight:700;color:#e2ccf7}
+
+/* WS-9R (2026-09-04): 止まっている理由の帯。速度上限が 0 の間だけ出る。
+   黙って止まると操作者に理由が分からない（実機「謎の一時停止」）。
+   本文を押し下げないよう #app 内の absolute で重ねる。押し下げると操作者の指の
+   下でボタンが動くうえ、e2e/header-geometry-stable.spec.js（本文の開始位置が
+   変わらないこと）が落ちる。#app は position:relative。 */
+.stop-banner{
+  position:absolute;left:8px;right:8px;bottom:8px;z-index:60;
+  background:#3a1414;border:1px solid #8a3030;border-radius:6px;
+  padding:10px 12px;color:#ffd7d7;font-size:calc(var(--fs) * .9);line-height:1.5;
+  box-shadow:0 2px 10px rgba(0,0,0,.5);pointer-events:none;
+}

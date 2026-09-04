@@ -119,3 +119,16 @@ export const OP_LABELS = {
   manual: '手動',
   finish: '終了',
 }
+
+// WS-9R (2026-09-04): 速度上限が 0 に落ちている理由。黙って止まるのをやめる。
+export const STOP_REASON_LABELS = {
+  estop: '非常停止中です。解除してください。',
+  fault: '異常を検知して停止しています。',
+  presence: 'タブレットの在席が確認できないため停止しています。画面をこのアプリに戻すか、接続を確認してください。',
+  obstacle: '前方に障害物があるため停止しています。',
+  stale: '速度指令が届いていないため停止しています。',
+}
+
+export function stopReasonLabel(reason) {
+  return STOP_REASON_LABELS[reason] ?? null
+}

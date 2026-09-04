@@ -76,3 +76,28 @@ export function operationCardLayout(mode, attributes) {
     manual: false,
   }
 }
+
+// ── WS-9R (2026-09-04): 止まっている理由 ──────────────────────────────
+//
+// 実機フィードバック「謎の一時停止が発生する。画面をスクロールしたりすると
+// 復帰する」。速度上限が 0 に落ちても、フォルトでも一時停止でもないので画面に
+// 何も出ず、操作者に理由が分からなかった。
+//
+// stopReason(state, limiterStatus) -> 'estop'|'fault'|'presence'|'obstacle'|'stale'|null
+// null は「止められていない」。厳しい順に判定する（複数当てはまるときは
+// 操作者が最初に直すべきものを返す）。
+export function stopReason(state, limiterStatus, fault) {
+  if (!state) return null
+  if (state.mode === 'ESTOP' || state.mode === 'CARRY') return 'estop'
+  // フォルトで止まっているとき（W-1 の窓が別に出るので、ここでは種別だけ返す）
+  if (fault?.active) return 'fault'
+  // 在席未確認: derive_limits が 0 台にフェイルセーフした形
+  // （zone=NA かつ speed_limit=stop）。WS-9R 以降ここに落ちるのは
+  // 「アプリが前面に無い」か「接続が切れている」ときだけ。
+  if (state.zone === 'NA' && state.speed_limit === 'stop') return 'presence'
+  if (!limiterStatus) return null
+  if (limiterStatus.action === 'STOP') return 'obstacle'
+  if (limiterStatus.action === 'ZERO_STALE') return 'stale'
+  if (limiterStatus.action === 'BLOCKED_UNCALIBRATED') return 'stale'
+  return null
+}

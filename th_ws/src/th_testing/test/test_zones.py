@@ -26,9 +26,22 @@ from th_state.zones import LIMIT_STRICTNESS
 _WINDOW_S = 5  # ui_active_window_s。テストの都合上の値（意味は「使用中とみなす窓」だけ）
 
 
-def _screen(screen_id: str, now_ms: int, interacting: bool = True, age_ms: int = 0) -> ScreenInput:
+def _screen(screen_id: str, now_ms: int, interacting: bool = True, age_ms: int = 0,
+            input_age_ms: "int | None" = None) -> ScreenInput:
+    """WS-9R: age_ms は「最後に**メッセージが届いて**からの経過」を表す。
+
+    在席判定は last_seen（受信時刻）で測る。以前は last_input（最後のタッチ）で
+    測っており、画面を見ているだけでは 30 秒で speed_limit=stop に落ちていた
+    （実機 2026-09-04「謎の一時停止。スクロールすると復帰する」）。
+
+    input_age_ms を渡さなければ last_input も同じだけ古くする。判定に効かない
+    ことを示すテストだけが別の値を渡す。
+    """
+    if input_age_ms is None:
+        input_age_ms = age_ms
     return ScreenInput(screen_id=screen_id, interacting=interacting,
-                        last_input_ms=now_ms - age_ms)
+                        last_input_ms=now_ms - input_age_ms,
+                        last_seen_ms=now_ms - age_ms)
 
 
 # ============================================================
@@ -218,3 +231,81 @@ def test_all_mode_speed_limits_are_known_to_limit_strictness(state_core_bundle):
 if __name__ == '__main__':
     import sys
     sys.exit(pytest.main([__file__, '-v']))
+
+# ============================================================
+# WS-9R (2026-09-04): 在席は「見ているか」で測る
+# ============================================================
+def test_watching_without_touching_stays_active():
+    """タッチしていなくても、メッセージが届き続けていれば在席とみなす。
+
+    実機フィードバック「謎の一時停止。画面をスクロールしたりすると復帰する」。
+    /ui/active_screen は 2Hz で出続けるので、last_seen は常に新しい。以前は
+    last_input（pointerdown / keydown / touchstart でしか更新されない）で
+    測っていたため、再生をただ見ている操作者は 30 秒で speed_limit=stop に
+    落とされていた（= obstacle_limiter の screen_limit_mps が 0）。
+    """
+    now = 1_000_000
+    # 5 分間タッチしていないが、メッセージは直前まで届いている。
+    screens = {'t1': _screen('S-10', now, age_ms=0, input_age_ms=300_000)}
+    limits = derive_limits(screens, now, 30)
+    assert limits.speed_limit != 'stop', (
+        '見ているだけの端末を「不在」にしてはいけない（WS-9R）')
+    assert limits.zone == 'OUT'
+
+
+def test_link_loss_still_fails_to_stop():
+    """端末が落ちる・回線が切れる（受信が途絶える）なら従来どおり停止側。
+
+    screens の辞書からは古い端末が消えないので、窓による生存判定は必須。
+    ここを外すと「タブレットが死んでも走り続ける」になる。
+    """
+    now = 1_000_000
+    # ずっとタッチしていた端末だが、最後の受信が窓の外。
+    screens = {'t1': _screen('S-10', now, age_ms=31_000, input_age_ms=0)}
+    limits = derive_limits(screens, now, 30)
+    assert limits.speed_limit == 'stop'
+    assert limits.zone == 'NA'
+    assert limits.auto_brake is True
+
+
+def test_backgrounded_screen_still_fails_to_stop():
+    """画面を消す・別アプリへ切り替える（interacting=false）なら停止側。"""
+    now = 1_000_000
+    screens = {'t1': _screen('S-10', now, interacting=False, age_ms=0)}
+    limits = derive_limits(screens, now, 30)
+    assert limits.speed_limit == 'stop'
+    assert limits.zone == 'NA'
+
+# ============================================================
+# WS-9R: state_manager 側の配線（純関数だけ直しても届かない範囲）
+# ============================================================
+def test_state_manager_records_last_seen_on_active_screen():
+    """`_on_active_screen` が last_seen_ms を受信時刻で埋めていること。
+
+    純関数を last_seen で判定する形に直しても、state_manager が値を入れ忘れると
+    既定 0 のまま＝常に窓の外＝**機体が一切動かない**。しかも黙って止まるので
+    気づきにくい。変異チェックで、この検査が無いと素通りすることを確認した。
+    """
+    import ast
+    import os
+
+    root = os.path.abspath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '..'))
+    path = os.path.join(root, 'th_ws', 'src', 'th_state', 'scripts',
+                        'state_manager.py')
+    with open(path, encoding='utf-8') as f:
+        tree = ast.parse(f.read())
+
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.FunctionDef)
+                and node.name == '_on_active_screen'):
+            continue
+        body = '\n'.join(ast.unparse(n) for n in node.body)
+        assert 'last_seen_ms=' in body, (
+            '_on_active_screen が last_seen_ms を渡していない（WS-9R）。'
+            f' 既定 0 のままだと常に不在扱いになり機体が動かない: {body!r}')
+        assert 'last_seen_ms=_stamp_to_ms' not in body, (
+            'last_seen_ms に端末申告の時刻を入れている。受信時刻で測ること'
+            '（端末の時計に依存させない）')
+        return
+    raise AssertionError('state_manager に _on_active_screen が無い')

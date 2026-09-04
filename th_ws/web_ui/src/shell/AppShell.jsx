@@ -6,14 +6,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useActiveScreenPublisher } from '../ros/useActiveScreenPublisher.js'
+import { useLimiterStatus } from '../ros/useLimiterStatus.js'
 import { TOPICS, MSG_TYPES } from '../ros/topics.js'
 import attributes from '../generated/attributes.json'
 import Header from './Header.jsx'
 import Windows from './Windows.jsx'
-import { isW1Active } from './limits.js'
+import { isW1Active, stopReason } from './limits.js'
 import { ConfirmWindowContext } from './confirmWindow.js'
 import { JogPanelContext } from './jogPanel.js'
-import { ESTOP_RELEASE_NOTE, ESTOP_RELEASE_BUTTON } from '../i18n/states.js'
+import { ESTOP_RELEASE_NOTE, ESTOP_RELEASE_BUTTON, stopReasonLabel } from '../i18n/states.js'
 import './theme.css'
 
 // DetailedDesign-wp1.md WP-UI-01 §3.1: /safety/estop_ui is republished at
@@ -36,6 +37,7 @@ function AppShellInner({ screenName, screenId, children }) {
   // publishes once a screen has actually announced its screen_id -- see
   // main.jsx's Screens().
   useActiveScreenPublisher(ros, screenId)
+  const limiterStatus = useLimiterStatus(ros)
 
   const [devMode] = useState(
     () => new URLSearchParams(window.location.search).get('dev') === '1')
@@ -87,6 +89,8 @@ function AppShellInner({ screenName, screenId, children }) {
 
   const zone = state?.zone && state.zone !== 'NA' ? state.zone : null
   const w1Active = isW1Active(mode, stateName, !!fault?.active)
+  // WS-9R: 速度上限が 0 に落ちている理由（在席未確認・障害物・指令途絶など）。
+  const stopBanner = stopReasonLabel(stopReason(state, limiterStatus, fault))
   // C-2 (WP-CARRY-01 §4/§7): server-side reject reason for a UI estop press
   // rejected during CARRY (C-06r), surfaced to W-2 -- see Windows.jsx.
   const lastRejectReason = state?.last_reject_reason ?? ''
@@ -157,6 +161,17 @@ function AppShellInner({ screenName, screenId, children }) {
           shell/confirmWindow.js. */}
       <ConfirmWindowContext.Provider value={confirmWindowApi}>
         <JogPanelContext.Provider value={jogPanelApi}>
+          {/* WS-9R (2026-09-04): 止まっている理由を必ず画面に出す。
+              実機「謎の一時停止。画面をスクロールしたりすると復帰する」の後半。
+              速度上限が 0 に落ちても、フォルトでも一時停止でもないので画面に
+              何も出ず、操作者に理由が分からなかった。
+              非常停止・フォルトは W-1 の窓が別に説明するので、窓が出ている間は
+              二重に出さない。 */}
+          {!w1Active && stopBanner && (
+            <div className="stop-banner" role="status" data-testid="stop-banner">
+              {stopBanner}
+            </div>
+          )}
           <main id="body">
             {children}
           </main>

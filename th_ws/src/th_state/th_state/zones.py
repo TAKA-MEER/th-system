@@ -98,6 +98,10 @@ class ScreenInput:
     screen_id: str
     interacting: bool
     last_input_ms: int
+    # WS-9R (2026-09-04): この端末から最後にメッセージが届いた時刻（受信時刻）。
+    # 在席判定はこちらで測る。last_input（最後のタッチ）は「操作しているか」の
+    # 情報として残すが、判定には使わない。理由は derive_limits の docstring。
+    last_seen_ms: int = 0
 
 
 @dataclass(frozen=True)
@@ -111,13 +115,28 @@ def derive_limits(screens: Mapping[str, ScreenInput], now_ms: int,
                    ui_active_window_s: int) -> Limits:
     """DetailedDesign-names.md §4.1 の `derive_limits()`。
 
-    「使用中」= interacting かつ最後の操作から ui_active_window_s 以内
-    （Spec-safety.md §6.2 と同一定義）。途絶・使用中 0 台はフェイルセーフで
+    「使用中」= interacting かつ**最後にメッセージが届いてから**
+    ui_active_window_s 以内。途絶・使用中 0 台はフェイルセーフで
     zone=NA・speed_limit=stop・auto_brake=True に倒す。
+
+    WS-9R (2026-09-04): 窓を `last_input`（最後のタッチ）から `last_seen`
+    （最後の受信時刻）に変えた。実機で「謎の一時停止。画面をスクロールすると
+    復帰する」。`last_input` を更新するのは pointerdown / keydown / touchstart
+    だけなので、**画面を見ているだけでは在席とみなされず** 30 秒で
+    speed_limit=stop に落ちていた（＝ obstacle_limiter の screen_limit_mps=0）。
+    再生中、操作者が見るのはロボットであってタブレットではないので、この定義は
+    用途に合っていなかった。
+
+    `/ui/active_screen` は 2Hz で出続けるので、`last_seen` で測れば
+    「アプリが前面にあって接続が生きている」ことが在席の根拠になる。
+    フェイルセーフは保たれる:
+      - 画面を消す・別アプリへ切り替える → interacting=false → stop
+      - 端末が落ちる・回線が切れる       → 受信が途絶えて窓を超える → stop
+    （`screens` の辞書からは古い端末が消えないので、窓による生存判定は必須。）
     """
     window_ms = ui_active_window_s * 1000
     active = [s for s in screens.values()
-              if s.interacting and now_ms - s.last_input_ms <= window_ms]
+              if s.interacting and now_ms - s.last_seen_ms <= window_ms]
 
     if not active:
         return Limits(zone="NA", speed_limit="stop", auto_brake=True)
