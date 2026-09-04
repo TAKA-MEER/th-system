@@ -1,11 +1,16 @@
 // ============================================================
 // SettingsPanel.jsx — WebUI 設定パネル（パラメータ調整）
 //
-// 対象: follow_planner_mapless（数値パラメータ全数）と
-//       lidar_filter.blind_angle_ranges（VISION.md §6 参照）。
+// 対象: follow_planner_mapless（数値パラメータ全数）、
+//       lidar_filter.blind_angle_ranges（VISION.md §6 参照）、
+//       slam_toolbox（再生の自己位置推定のスキャンマッチ。WS-9W）。
 // 変更は IDLE / MANUAL モード中のみ許可する。UI 側で入力を disabled に
 // するだけでなく、実際の適用・保存は config_manager ノードがモードを
 // 再確認して拒否する（サーバー側の安全ガード。二重チェック）。
+//
+// slam_toolbox はランタイムのパラメータコールバックが無いので「適用」は
+// その場では効かない。「YAML に保存」してから次の「この経路で進む」で
+// slam_toolbox が読み直して有効になる（WS-9S の respawn）。
 // ============================================================
 import { useEffect, useState, useCallback } from 'react'
 
@@ -32,6 +37,17 @@ const MAPLESS_FIELDS = [
 ]
 
 const BLIND_LABELS = ['右前 開始', '右前 終了', '右後 開始', '右後 終了', '左後 開始', '左後 終了', '左前 開始', '左前 終了']
+
+// slam_toolbox: 再生の自己位置推定（スキャンマッチ）。名前は
+// th_config_manager/tunable_targets.py の slam_toolbox.params と揃えること。
+// 「補正頻度」を上げる = 間隔を小さく、「探索窓」を広げる = dimension を大きく。
+const SLAM_FIELDS = [
+  { name: 'minimum_travel_distance',            label: '補正間隔（距離）',       unit: 'm',     min: 0.05, max: 1.0,  step: 0.05 },
+  { name: 'minimum_travel_heading',             label: '補正間隔（角度）',       unit: 'rad',   min: 0.05, max: 1.0,  step: 0.05 },
+  { name: 'correlation_search_space_dimension', label: 'スキャン探索窓（全幅）', unit: 'm',     min: 0.3,  max: 2.0,  step: 0.05 },
+  { name: 'correlation_search_space_resolution',label: '探索の刻み',             unit: 'm',     min: 0.005, max: 0.05, step: 0.005 },
+  { name: 'link_match_minimum_response_fine',   label: 'マッチ受理の下限',       unit: '',      min: 0.05, max: 0.6,  step: 0.01 },
+]
 
 function NumberField({ label, unit, value, min, max, step, disabled, onCommit }) {
   const [local, setLocal] = useState(value ?? '')
@@ -62,6 +78,7 @@ function NumberField({ label, unit, value, min, max, step, disabled, onCommit })
 export default function SettingsPanel({ open, onClose, editable, getTunableParams, applyTunableParam, saveTunableParams }) {
   const [mapless, setMapless] = useState({})
   const [blindRanges, setBlindRanges] = useState(null)
+  const [slam, setSlam] = useState({})
   const [status, setStatus] = useState({ mapless: '', lidar_filter: '' })
   const [loading, setLoading] = useState(false)
 
@@ -70,9 +87,13 @@ export default function SettingsPanel({ open, onClose, editable, getTunableParam
     Promise.all([
       getTunableParams('follow_planner_mapless', MAPLESS_FIELDS.map(f => f.name)),
       getTunableParams('lidar_filter', ['blind_angle_ranges']),
-    ]).then(([maplessVals, lidarVals]) => {
+      // slam_toolbox は enable_route_slam のときだけ存在する。取れなくても
+      // パネル全体を止めない（空オブジェクトにフォールバック）。
+      getTunableParams('slam_toolbox', SLAM_FIELDS.map(f => f.name)).catch(() => ({})),
+    ]).then(([maplessVals, lidarVals, slamVals]) => {
       setMapless(maplessVals)
       setBlindRanges(lidarVals.blind_angle_ranges ?? [])
+      setSlam(slamVals ?? {})
     }).catch((e) => {
       console.error('パラメータ取得失敗:', e)
     }).finally(() => setLoading(false))
@@ -93,6 +114,13 @@ export default function SettingsPanel({ open, onClose, editable, getTunableParam
     next[index] = value
     setBlindRanges(next)
     applyTunableParam('lidar_filter', 'blind_angle_ranges', next, { isArray: true })
+      .catch((e) => console.error('適用失敗:', e))
+  }
+
+  const applySlam = (name) => (value) => {
+    setSlam((prev) => ({ ...prev, [name]: value }))
+    // slam_toolbox はライブ反映しない。値は保持され、YAML 保存 → 次の経路選択で効く。
+    applyTunableParam('slam_toolbox', name, value)
       .catch((e) => console.error('適用失敗:', e))
   }
 
@@ -166,6 +194,38 @@ export default function SettingsPanel({ open, onClose, editable, getTunableParam
                 value={blindRanges?.[i]}
                 disabled={!editable || loading || !blindRanges}
                 onCommit={applyBlindRange(i)}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="settings-section-header">
+            <h3>再生の自己位置推定（slam_toolbox）</h3>
+            <button
+              className="settings-save-btn"
+              disabled={!editable || loading}
+              onClick={() => save('slam_toolbox')}
+            >
+              YAML に保存
+            </button>
+          </div>
+          {status.slam_toolbox && <p className="settings-status">{status.slam_toolbox}</p>}
+          <p className="note">
+            変更は「YAML に保存」してから、次に「この経路で進む」を押したときに有効になります
+            （SLAM がその場では読み直さないため）。補正頻度を上げる＝間隔を小さく、
+            廊下でのずれに強くする＝探索窓を広げる。
+          </p>
+          <div className="settings-grid">
+            {SLAM_FIELDS.map((f) => (
+              <NumberField
+                key={f.name}
+                label={f.label}
+                unit={f.unit}
+                min={f.min} max={f.max} step={f.step}
+                value={slam[f.name]}
+                disabled={!editable || loading || !(f.name in slam)}
+                onCommit={applySlam(f.name)}
               />
             ))}
           </div>

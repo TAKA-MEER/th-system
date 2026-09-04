@@ -428,9 +428,33 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
   `imu_enabled:=false`。
 
   **限界**: IMU は上流のオドメトリを直すが、特徴の無い長い廊下の廊下軸方向ドリフトは
-  原理的に残る。SLAM localization のチューニング（探索窓拡大・補正頻度）は別途。
+  原理的に残る。SLAM localization のチューニングは WS-9W。
 
   更新: `bringup.launch.py` / `docs/使い方.md` §1-2 / `docs/architecture.md`。
+
+- **2026-09-04 — 廊下の自己位置ドリフト対策として SLAM チューニングを WebUI 化（WS-9W）**:
+  WS-9V の実機報告で、画像の状況は方位誤差ほぼ無し・廊下軸方向の位置ずれのみ
+  （＝ IMU の効果は薄い）。窓・補正頻度の最適値は現場（廊下の長さ・特徴量）で
+  変わるため、WebUI から調整できるようにする（ユーザー決定 2026-09-04）。
+
+  **変更**:
+  1. `slam_toolbox` を WebUI 設定パネルの調整対象に追加（`tunable_targets.py` +
+     `SettingsPanel.jsx`「再生の自己位置推定」セクション）。対象:
+     `minimum_travel_distance` / `minimum_travel_heading`（補正頻度）、
+     `correlation_search_space_dimension` / `_resolution`（探索窓）、
+     `link_match_minimum_response_fine`（マッチ受理下限）。既存の tunable 基盤
+     （config_manager + `/config_manager/set|save_tunable_params`）にそのまま乗る。
+     **癖**: slam_toolbox はランタイムのパラメータコールバックが無いので「適用」は
+     即時に効かない。「YAML に保存」→ 次の「この経路で進む」で slam_toolbox が
+     respawn 時に読み直して有効になる（WS-9S）。
+  2. 既定値も調整（`slam_params.yaml`）: `minimum_travel_distance` 0.3→0.2、
+     `minimum_travel_heading` 0.3→0.25、`correlation_search_space_dimension` 0.5→0.8。
+     手がかり（ドアの縁・角）が視野に入ったとき、蓄積ドリフトが窓を超える前に
+     マッチできるようにする。トレードオフ: 教示のポーズグラフが密になり
+     `.posegraph` が大きくなる。
+
+  更新: `tunable_targets.py` / `slam_params.yaml` / `SettingsPanel.jsx` /
+  `docs/architecture.md`「WebUI 設定パネル」。
 
 ---
 

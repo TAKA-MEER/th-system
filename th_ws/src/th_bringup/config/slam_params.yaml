@@ -44,8 +44,16 @@ slam_toolbox:
     enable_interactive_mode:    true
     use_scan_matching:          true
     use_scan_barycenter:        true
-    minimum_travel_distance:    0.3
-    minimum_travel_heading:     0.3
+    # WS-9W (2026-09-04): 再生の特徴の少ない廊下で廊下軸方向にドリフトし、
+    # slam_toolbox の localization が補正できなかった（実機。方位誤差はほぼ無し、
+    # 位置のみ）。原因は「0.3m 進むごとにしか補正しない」＋「探索窓 ±0.25m」。
+    # ドアの縁・角などの手がかりが視野に入ったとき、蓄積ドリフトが窓を超える前に
+    # マッチできるよう、補正間隔を詰めて探索窓を広げる。値は現場ごとに WebUI の
+    # 設定パネル（slam_toolbox）で調整可（tunable_targets.py）。
+    # トレードオフ: minimum_travel_distance を下げると教示のポーズグラフが密になり
+    # .posegraph が大きくなる（157m で 20MB → さらに増える）。0.3→0.2 は中間。
+    minimum_travel_distance:    0.2
+    minimum_travel_heading:     0.25
     # 2026-09-02: 校舎 1 周（100m 以上）の教示・再生に向けた調整。
     # 従来値は数 m の短経路を想定していた。
     # scan_buffer_size: ループ候補の照合に使う直近スキャン数。長い廊下では
@@ -75,7 +83,11 @@ slam_toolbox:
     loop_match_minimum_response_fine:   0.45
 
     # スキャンマッチング
-    correlation_search_space_dimension:      0.5
+    # WS-9W: 探索窓を 0.5→0.8（片側 ±0.4m）。廊下でドリフトが ±0.25m を超えると
+    # 真の pose が窓の外になり補正不能だったため。resolution 据え置き（0.01m/セル）。
+    # 広げすぎると廊下の弱い相関で誤った軸方向位置にロックしうるので中庸に。
+    # 現場調整は WebUI 設定パネル（slam_toolbox）。
+    correlation_search_space_dimension:      0.8
     correlation_search_space_resolution:     0.01
     correlation_search_space_smear_deviation: 0.1
     loop_search_space_dimension:      8.0

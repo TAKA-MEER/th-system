@@ -50,6 +50,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_service_call
     test/test_service_call.py
     TIMEOUT 30)
+  # WS-9W: WebUI 調整対象（tunable_targets）が参照先 YAML と SettingsPanel.jsx の
+  # FIELDS 配列と名前一致していることの固定。ROS2 不要
+  ament_add_pytest_test(test_tunable_targets
+    test/test_tunable_targets.py
+    TIMEOUT 30)
   # WS-9O: 重大フォルトの保持時間（単発の誤検知で ESTOP に落ちない）と、
   # しきい値を緩める方向へ流れていないことの静的検証。ROS2 不要
   ament_add_pytest_test(test_critical_fault_hold

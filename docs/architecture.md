@@ -636,7 +636,8 @@ ros2 topic echo /person/status --once
 ## WebUI 設定パネル（パラメータ調整）
 
 VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web_ui/src/SettingsPanel.jsx`）から
-`follow_planner_mapless` の数値パラメータと `lidar_filter.blind_angle_ranges` を確認・変更できる。
+`follow_planner_mapless` の数値パラメータ、`lidar_filter.blind_angle_ranges`、
+`slam_toolbox` のスキャンマッチ関連（再生の自己位置推定。WS-9W）を確認・変更できる。
 設定パネル自体はタブに属さないオーバーレイで、ヘッダーの ⚙ からどのタブでも開ける。
 
 ### 構成
@@ -669,6 +670,12 @@ VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web
   そのため両ノードには `add_on_set_parameters_callback` を追加し、`set_parameters` が
   呼ばれた際に内部状態を再構築するようにしてある。**新しいノードをチューニング対象に
   追加する場合、同様のコールバックが無いとライブ反映が機能しない**点に注意。
+- **`slam_toolbox`（WS-9W）はランタイムのパラメータコールバックを持たない**（Karto の
+  マッパーは起動時に確定）。`set_parameters` は値を rclpy のストアに保持するだけで
+  その場では効かないが、`saveTunableParams` が `get_parameters`（＝保持された新値）を
+  読んで `slam_params.yaml` へ書き戻す。WS-9S で「この経路で進む」のたびに
+  slam_toolbox を respawn して `--params-file slam_params.yaml` を読み直すので、
+  「変更 →『YAML に保存』→ 経路を選び直す」で新しい値が効く。パネルにその旨を表示する。
 - YAML への書き戻しは `ruamel.yaml` の round-trip モードを使い、既存のコメント・
   キー順序を保持する（`th_config_manager/th_config_manager/yaml_writer.py`）。
   インデント設定 `yaml.indent(mapping=2, sequence=4, offset=2)` は
@@ -685,10 +692,13 @@ VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web
 
 2. 対象ノードに add_on_set_parameters_callback が無ければ追加する
    （follow_planner_mapless.py / lidar_filter.py の実装を参照。パラメータが
-    起動時に一度だけ内部状態へコピーされている場合は必須）
+    起動時に一度だけ内部状態へコピーされている場合は必須。
+    slam_toolbox のようにコールバックを持てないノードは「保存 → 再起動で反映」
+    になる旨をパネルに表示する）
 
 3. web_ui/src/SettingsPanel.jsx にフォーム項目を追加
-   （MAPLESS_FIELDS 等のフィールド定義配列にラベル・単位・入力レンジを追記）
+   （MAPLESS_FIELDS / SLAM_FIELDS 等のフィールド定義配列にラベル・単位・入力レンジを追記。
+    名前は tunable_targets.py と一致させる。test_tunable_targets.py が両者の一致を固定する）
 ```
 
 対象拡大（`follow_planner`・`person_predictor`・Nav2 パラメータ・`panels.yaml` 等）は
@@ -740,7 +750,8 @@ localhost 配信を開き、その映像出力をディスプレイへ回す。`
 ## パラメータチューニングガイド
 
 上記の WebUI 設定パネルで調整できるパラメータ（follow_planner_mapless の数値パラメータ全数、
-lidar_filter.blind_angle_ranges）は、以下の CLI 手順の代わりにタブレットから直接変更できる。
+lidar_filter.blind_angle_ranges、slam_toolbox のスキャンマッチ関連）は、以下の CLI 手順の
+代わりにタブレットから直接変更できる。
 
 ### 追従ロジック — FOLLOWING（planning_params.yaml の `follow_planner`）
 
