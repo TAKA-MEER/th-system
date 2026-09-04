@@ -235,7 +235,19 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
      ジョグ介入（`C-01`）・停止ボタン（`T-REPLAY-06`）が**すべて**落ちてくるので、
      状態名だけでは区別できない。FSM には `T-REPLAY-07`（`PAUSE --ui.run
      [route_loaded]--> RUN` ＋ `resume_path`）があり、`_from_index` は保持される
-     ので**本当は途中から再開できた**のに、画面が終了を促していた。
+     ので**途中から再開できるはず**だったのに、画面が終了を促していた。
+
+  1b. **その「再生」を押しても半分の確率で無反応（WS-9Q。2026-09-04 追加報告）。**
+     `/route/status` には `route_recorder` と `replay_runner` の**両方**が
+     publisher を持ち、どちらも無条件に 2Hz で出していた。再生中も記録側が
+     `points=0` を流すので、`state_manager._on_route_status` が更新する
+     `route_loaded` が **4Hz で真偽を往復**する。`T-REPLAY-07` のガードはこれを
+     見るため、「再生」を押した瞬間がどちらのメッセージの直後かで受理／拒否が
+     変わっていた。実測: `/route/status` は publisher 2 個・**4.002 Hz**。
+     `/route/preview` は WS-6.4 で同じ理由（表示の点滅）から記録側をゲート済み
+     だったが、`/route/status` だけ残っていた。
+     → **自分のモードのときだけ publish する**（`owns_route_status`。教示系は
+     記録側、`REPLAY` は再生側、それ以外は誰も出さない）。
   2. **何も無いところで止まり、しばらくして自分で走り出す。**
      `obstacle_limiter_core.observe_cone` が円錐内の**最小値をそのまま**採用して
      いた。スキャン 1 枚のノイズ 1 点で停止距離を割り、次のスキャンで消えるので

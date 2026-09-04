@@ -56,7 +56,8 @@ from th_planning.odom_source import pick_odom_source
 from th_planning.route_record_core import (
     RouteRecorderCore, RouteRecordParams, autosave_path,
     _safe_id, decimate_polyline, finalize_route_file,
-    list_finalized_route_files, polyline_length, previous_path, route_from_dict,
+    list_finalized_route_files, owns_route_status, polyline_length, previous_path,
+    route_from_dict,
     route_to_dict, save_route_atomic, should_autofinalize,
 )
 
@@ -492,7 +493,12 @@ class RouteRecorder(Node):
             msg.elapsed_sec = (self._now_ms() - self._rec_started_ms) / 1000.0
             preview_points = decimate_polyline(self._recorder.points,
                                                self._preview_max_points)
-        self._pub_status.publish(msg)
+        # WS-9Q: 教示系モードのときだけ出す。再生中も出していたため points=0 が
+        # replay_runner の実データと交互配信になり、state_manager の route_loaded が
+        # 往復して「再生」が拒否されていた（実機 2026-09-04）。
+        # /route/preview は WS-6.4 で同じ理由から既にゲート済みだった。
+        if owns_route_status(self._mode, recorder=True):
+            self._pub_status.publish(msg)
         # #4: 記録中だけ /route/preview を出す（空 Path を出すと再生側と交互配信になり
         # WebUI のプレビューが点滅する）。フレームは記録中の経路フレーム。
         if self._recorder is not None and preview_points:

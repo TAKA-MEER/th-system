@@ -161,6 +161,30 @@ def can_replay_route(route_frame: str, route_session: str,
 _TEACH_MODES = frozenset({'TEACH_MANUAL', 'TEACH_FOLLOW'})
 
 
+def owns_route_status(mode: str, *, recorder: bool) -> bool:
+    """いま /route/status を publish してよいのは自分か（WS-9Q）。
+
+    `/route/status` には route_recorder と replay_runner の**両方**が publisher を
+    持つ。どちらも無条件に 2Hz で出していたため、再生中でも記録側が
+    `points=0` を交互に流していた。`state_manager._on_route_status` は届いた
+    メッセージごとに `route_loaded = points > 0 and current.id` を更新するので、
+    このフラグが 4Hz で真偽を往復する。`T-REPLAY-07`（PAUSE --ui.run--> RUN）の
+    ガードは `route_loaded` なので、**「再生」を押した瞬間がどちらのメッセージの
+    直後かで受理／拒否が変わる**（実機 2026-09-04「再生を押したが反応しなかった」）。
+
+    実測（2026-09-04・実機）: `/route/status` は publisher 2 個・**4.002 Hz**。
+    各ノードの status_period_ms は 500ms なので、両方が出していたことの裏づけ。
+
+    `/route/preview` は WS-6.4 で同じ理由（表示の点滅）から記録側をゲート済み
+    だった。`/route/status` だけが残っていた。
+
+    自分のモードのときだけ出す。recorder=True なら教示系、False なら再生。
+    """
+    if recorder:
+        return mode in _TEACH_MODES
+    return mode == 'REPLAY'
+
+
 def should_autofinalize(prev_mode: str, new_mode: str, recording: bool) -> bool:
     """教示中にモードが教示系から出たか（出たら記録を保存して閉じる）(WS-9K-D)。
 

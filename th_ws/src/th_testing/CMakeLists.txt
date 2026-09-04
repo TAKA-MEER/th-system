@@ -55,6 +55,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_pause_reason_and_min_points
     test/test_pause_reason_and_min_points.py
     TIMEOUT 30)
+  # WS-9Q: /route/status を出すのは自分のモードのノードだけ（交互配信で
+  # route_loaded が往復し「再生」が拒否されるのを防ぐ）。ROS2 不要
+  ament_add_pytest_test(test_route_status_ownership
+    test/test_route_status_ownership.py
+    TIMEOUT 30)
   # WS-9F: /route/preview の帯域対策の静的テスト（decimate_polyline 適用と
   # ハートビート配信の設計判断を固定。ROS2 不要）
   ament_add_pytest_test(test_route_preview_bandwidth

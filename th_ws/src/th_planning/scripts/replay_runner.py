@@ -59,7 +59,8 @@ def _points_to_path(points, frame_id='odom', stamp=None):
 
 from th_planning.odom_source import pick_odom_source
 from th_planning.route_record_core import (
-    _safe_id, can_replay_route, finalized_path, polyline_length, route_from_dict)
+    _safe_id, can_replay_route, finalized_path, owns_route_status, polyline_length,
+    route_from_dict)
 from th_planning.route_replay_core import (
     ReplayParams, advance_index, align_path_to_current, pure_pursuit,
     ramp_toward, reverse_points, rotate_toward,
@@ -530,6 +531,12 @@ class ReplayRunner(Node):
 
     # ── ステータス publish ───────────────────────────────
     def _status_timer(self):
+        # WS-9Q: 自分のモードのときだけ出す。両方が無条件に出していたため、再生中も
+        # route_recorder が points=0 を交互に流し、state_manager の route_loaded が
+        # 4Hz で往復していた。T-REPLAY-07 のガードがそれを見るので「再生」が
+        # 押したタイミング次第で拒否されていた（実機 2026-09-04）。
+        if not owns_route_status(self._mode, recorder=False):
+            return
         stamp = self.get_clock().now().to_msg()
         # pose は専用の 10Hz タイマ（pose_period_ms）で出す。ここでは出さない。
         msg = RouteStatus()
