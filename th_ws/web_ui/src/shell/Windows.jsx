@@ -42,7 +42,7 @@ import JogConsole from '../parts/JogConsole.jsx'
 import {
   WIN_HIDE_LABEL, WIN_RESUME_ACK, WIN_RESUME_YES, WIN_RESUME_NO,
   WIN_ESTOP_RESUME_PREV, WIN_ESTOP_TO_MENU,
-  WIN_ESTOP_SYSTEM_TITLE, WIN_ESTOP_SYSTEM_BODY, WIN_ESTOP_SYSTEM_HINT,
+  WIN_ESTOP_SYSTEM_TITLE, WIN_ESTOP_SYSTEM_BODY, WIN_ESTOP_SYSTEM_HINT, WIN_ESTOP_SYSTEM_HINT_RESUMABLE,
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
   WIN_CARRY_TITLE, WIN_CARRY_BODY, WIN_CARRY_HINT, WIN_CARRY_RELEASED,
   WIN_CARRY_RESUME, WIN_CARRY_DISMISS, WIN_CARRY_ESTOP_DISABLED,
@@ -105,14 +105,18 @@ export default function Windows({
     ? (!estopUi && !estopHw && !faultActive)
     : !faultActive)
 
-  // 2026-09-01 (SM-3.1.1-11): UI ボタン起因の ESTOP は、重大フォルトが無く押下前が
-  // 復帰可能なモードなら「元のモードに戻る／メインメニューへ」の 2 択を出す。
-  // fault 起因の ESTOP（estopFromUi=false。DRIVE_RUNAWAY 等。fault が消えても
-  // 起因は変わらない）は「確認」→ IDLE だけ（SM-3.1.1-12。C-09f）。
-  // estopFromUi は SystemState 由来。state_manager が「UI ボタンで入った ESTOP か」を
-  // ラッチしたもの（guards._estop_resume_prev と同じ値）。
+  // 2026-09-01 (SM-3.1.1-11): ESTOP は、重大フォルトが無く押下前が復帰可能なモード
+  // なら「元のモードに戻る／メインメニューへ」の 2 択を出す。
+  //
+  // WS-9O (2026-09-04): ここに estopFromUi を要求していたのを撤去した。フォルト起因の
+  // ESTOP が「確認」→ IDLE しか選べず、再生中に一瞬のフォルトで落ちると経路選択から
+  // やり直しになっていたため（VISION.md §2 の 2026-09-04 の項）。guards._estop_resume_prev
+  // と同じ条件にそろえる（両方が真でないと押しても FSM に拒否される）。
+  //
+  // estopFromUi は文言の出し分けにだけ使う。フォルト起因なら「システムが安全のため
+  // 停止しました」＋フォルト名、UI ボタン起因なら「非常停止ボタンが押されました」。
   const w1IsFaultEstop = w1IsEstop && !estopFromUi
-  const estopCanResumePrev = w1IsEstop && estopFromUi && !estopUi && !estopHw
+  const estopCanResumePrev = w1IsEstop && !estopUi && !estopHw
     && !faultActive && fault?.severity !== 'CRITICAL'
     && !_ESTOP_PREV_NONRESUMABLE.has(prevMode ?? '')
   const w1Resume = w1IsEstop
@@ -148,7 +152,9 @@ export default function Windows({
               )}
               {!w1Resolved && (
                 <p className="hint mt">
-                  {w1IsFaultEstop ? WIN_ESTOP_SYSTEM_HINT
+                  {w1IsFaultEstop
+                    ? (estopCanResumePrev
+                        ? WIN_ESTOP_SYSTEM_HINT_RESUMABLE : WIN_ESTOP_SYSTEM_HINT)
                     : w1IsEstop ? WIN_ESTOP_HINT : WIN_FAULT_HINT}
                 </p>
               )}

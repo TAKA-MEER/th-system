@@ -305,12 +305,36 @@ def test_ui_estop_release_goes_idle_when_prev_not_resumable_or_critical(state_co
     assert d1.accepted is True and d1.to_mode == "IDLE"
     assert d1.rule_id == "C-09b"
 
-    # 重大フォルト起因の ESTOP（estop_from_ui=False）は、押下前が MANUAL でも復帰させない。
+    # WS-9O (2026-09-04): フォルト起因の ESTOP（estop_from_ui=False）でも、フォルトが
+    # 消えていて押下前が動作系モードなら復帰の選択肢を出す（C-09）。
+    # 以前は estop_from_ui を要求していたため必ず IDLE（C-09b）に落ちており、再生中に
+    # 一瞬のフォルトで止まると経路選択からやり直しになっていた（VISION.md §2）。
     d1b = core.step("ESTOP", "NONE", "ui.estop.release",
                      _mk_ctx(prev_mode="MANUAL", prev_state="RUN",
                              ui_estop=False, hw_estop=False, estop_from_ui=False))
-    assert d1b.accepted is True and d1b.to_mode == "IDLE"
-    assert d1b.rule_id == "C-09b"
+    assert d1b.accepted is True and d1b.rule_id == "C-09"
+    assert d1b.to_mode == "ESTOP", "C-09 は ESTOP に留まって選択肢を出す"
+
+    # そのまま「元のモードに戻る」を押すと、押下前モードの PAUSE（停止状態）へ。
+    # 走り出すには操作者がもう一度「再生」を押す必要がある。
+    d1c = core.step("ESTOP", "NONE", "ui.resume_yes",
+                     _mk_ctx(prev_mode="MANUAL", prev_state="RUN",
+                             ui_estop=False, hw_estop=False, estop_from_ui=False))
+    assert d1c.accepted is True and d1c.rule_id == "C-09c"
+    assert d1c.to_mode == "MANUAL" and d1c.to_state == "PAUSE"
+
+    # 押下前が復帰不能なモードなら、フォルト起因でも IDLE（C-09b）。
+    d1d = core.step("ESTOP", "NONE", "ui.estop.release",
+                     _mk_ctx(prev_mode="IDLE", ui_estop=False, hw_estop=False,
+                             estop_from_ui=False))
+    assert d1d.accepted is True and d1d.to_mode == "IDLE"
+    assert d1d.rule_id == "C-09b"
+
+    # 物理ボタンが押されたままなら復帰させない（フォルト起因でも同じ）。
+    d1e = core.step("ESTOP", "NONE", "ui.resume_yes",
+                     _mk_ctx(prev_mode="MANUAL", prev_state="RUN",
+                             ui_estop=False, hw_estop=True, estop_from_ui=False))
+    assert d1e.accepted is False
 
     # 重大フォルトが継続中は、UI 起因でも復帰させない（C-09b にフォールバック）。
     d2 = core.step("ESTOP", "NONE", "ui.estop.release",

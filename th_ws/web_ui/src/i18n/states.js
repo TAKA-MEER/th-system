@@ -83,6 +83,10 @@ export const WIN_ESTOP_HINT = '解除は画面下端の解除バーから。解�
 export const WIN_ESTOP_SYSTEM_TITLE = '安全のため停止しました'
 export const WIN_ESTOP_SYSTEM_BODY = '安全監視が異常を検知し、速度指令をゼロにしています。'
 export const WIN_ESTOP_SYSTEM_HINT = '原因が解消したら「確認」を押すとメインメニューに戻ります。'
+// WS-9O (2026-09-04): フォルト起因でも元のモードへ戻れるようになった。戻り先は
+// 停止状態なので、走り出すにはもう一度「再生」を押す必要がある（VISION.md §2）。
+export const WIN_ESTOP_SYSTEM_HINT_RESUMABLE =
+  '原因は解消しました。元のモードに戻ると停止した状態から再開できます。'
 
 // W-1 generalized to fault-caused PAUSE, not just ESTOP (DetailedDesign-wp1.md
 // WP-UI-01 §11 "W-1 の一般化" -> WP-UI-02). The body text itself (cause and

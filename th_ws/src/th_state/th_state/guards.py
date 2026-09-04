@@ -74,15 +74,29 @@ def _hw_released_and_no_critical(mode, state, ctx) -> bool:
     return not ctx.hw_estop and ctx.fault_severity != "CRITICAL"
 
 
-# UI ボタン起因の ESTOP からの復帰先が「押下前のモード」になれる条件
-# （2026-09-01 変更。Spec-modes.md §3.1.1 SM-3.1.1-11 / -11b）。
-# 重大フォルトを伴わず、物理ボタンも押されておらず、押下前が動作系モードのとき。
+# ESTOP からの復帰先が「押下前のモード」になれる条件
+# （2026-09-01 導入。2026-09-04 WS-9O で estop_from_ui の要求を撤去）。
+#
+# WS-9O まではここに ctx.estop_from_ui を要求していた。そのため**フォルト起因の
+# ESTOP は構造的に元のモードへ戻れず**、出口は C-09f（ui.resume_ack）→ IDLE だけ
+# だった。実機では 26ms で自然に消えるような一瞬の重大フォルトでも ESTOP に落ちる
+# （フォルトは edge で publish されるので active=true は必ず届き、C-06a はガード
+# 無し）ため、再生中に落ちると経路選択からやり直しになっていた。
+#
+# 復帰先は $prev_mode の **PAUSE**（停止状態）で、走り出すには操作者がもう一度
+# 「再生」を押す必要がある。したがって「フォルトが消えていれば元のモードの停止状態
+# まで戻す」ことに安全上の追加リスクは無い。フォルトの種類による除外は設けない
+# （ユーザー決定 2026-09-04。VISION.md §2 の 2026-09-04 の項）。
+#
+# 残る要求（いずれも従来どおり）:
+#   - フォルトが実際に消えていること（fault_active / severity）
+#   - 物理非常停止が解放されていること（hw_estop）
+#   - 押下前が動作系モードであること（prev_mode）
 _ESTOP_PREV_NONRESUMABLE = {"", "INIT", "IDLE", "ESTOP", "CARRY"}
 
 
 def _estop_resume_prev(mode, state, ctx) -> bool:
-    return (ctx.estop_from_ui
-            and not ctx.fault_active
+    return (not ctx.fault_active
             and ctx.fault_severity != "CRITICAL"
             and not ctx.hw_estop
             and ctx.prev_mode not in _ESTOP_PREV_NONRESUMABLE)
