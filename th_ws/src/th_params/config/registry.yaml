@@ -156,10 +156,10 @@
   unit: rad/s
   class: b
   status: given
-  value: 0.6
+  value: 1.2
   consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, jog_gate, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1"
-  note: "角速度上限。逆算式が無いため given。暫定値（P1 fail-slow）"
+  note: "角速度上限。逆算式が無いため given。暫定値（P1 fail-slow）。2026-09-04（WS-9T）実機で手動ジョグのその場旋回が遅い（0.6=34°/s、90°に約2.6s）との報告を受け 0.6→1.2 に引き上げ。w_align_max（d_floor 割れ時の追加絞り）は 0.3 のまま据え置き"
 
 - name: w_align_max
   unit: rad/s

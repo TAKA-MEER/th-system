@@ -42,3 +42,18 @@ export function stickToCmd(dx, dy, len) {
   if (deg < 157.5) return { vn: -m, wn: turn * JOG_ARC_ANG_SCALE * m, label: 'rev_arc' }
   return { vn: -m, wn: 0, label: 'reverse' }
 }
+
+// 正規化コマンド { vn, wn } を速度プリセット比率で実指令 { vx, wz } に換算する。
+// WS-9T: **その場旋回（前進成分ゼロ・旋回成分あり）は speedPct を掛けない。**
+// 教示は前進を低速にしたいが、曲がり角のその場旋回まで一緒に遅くなると 90° 回るのに
+// 10 秒かかって使い物にならない（2026-09-04 実機報告）。その場旋回のときは wn（倒し量）
+// をそのまま比率として送り、実 rad/s 上限は下流の obstacle_limiter（w_max）が握る。
+// 前進・後退・緩旋回（arc / rev_arc、前進しながら曲がる）は従来どおり speedPct で絞る。
+// stickToCmd() は設計で凍結なので触らず、換算だけをここに足す。
+export function scaleJogCmd({ vn, wn }, speedPct) {
+  const pureTurn = vn === 0 && wn !== 0
+  return {
+    vx: vn * speedPct,
+    wz: wn * (pureTurn ? 1 : speedPct),
+  }
+}

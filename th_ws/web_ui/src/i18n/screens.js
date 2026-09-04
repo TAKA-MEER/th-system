@@ -205,6 +205,8 @@ export const S14_POSE_PAUSE_RESUMABLE =
   '一時停止中。「再生」を押すと止まったところから続きを走ります。'
 export const S14_LENGTH = '距離'
 export const S14_POINTS = '点数'
+// WS-9T: 再生速度の低速/中速/高速 切替（走行中も変更可）。
+export const S14_SPEED_TITLE = '再生速度'
 
 // ---------------------------------------------------------------- 経路プレビュー（WS-3） ----
 // src/screens/RoutePreview.jsx の表示文字列。

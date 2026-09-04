@@ -19,11 +19,17 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(__file__),
     '..', '..', 'th_planning', 'th_planning'))
 
+import ast
+
 from route_replay_core import (
     ReplayParams, ReplayCommand,
     reverse_points, rotate_toward, pure_pursuit, advance_index, normalize_angle,
-    align_path_to_current, ramp_toward,
+    align_path_to_current, ramp_toward, scale_replay_params,
 )
+
+REPLAY_RUNNER = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), '..', '..', 'th_planning', 'scripts',
+    'replay_runner.py'))
 
 
 def test_ramp_toward_clamps_step_and_reaches_target():
@@ -240,3 +246,78 @@ def test_align_first_point_always_lands_on_current():
         return [math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1])
                 for i in range(len(p) - 1)]
     assert seglen(out) == pytest.approx(seglen(pts))
+
+
+# ── scale_replay_params（WS-9T: 再生速度を比率で可変にする）────────────
+_BASE = ReplayParams(lookahead_m=0.4, cruise_speed_mps=0.45, max_yaw_rate_rps=0.9,
+                     arrive_dist_m=0.2, yaw_tol_rad=0.1)
+
+
+def test_scale_replay_params_ratio_1_is_base_max_end():
+    p = scale_replay_params(_BASE, 1.0, cruise_min=0.12, yaw_min=0.4)
+    assert p.cruise_speed_mps == pytest.approx(0.45)
+    assert p.max_yaw_rate_rps == pytest.approx(0.9)
+
+
+def test_scale_replay_params_ratio_0_is_min_end():
+    p = scale_replay_params(_BASE, 0.0, cruise_min=0.12, yaw_min=0.4)
+    assert p.cruise_speed_mps == pytest.approx(0.12)
+    assert p.max_yaw_rate_rps == pytest.approx(0.4)
+
+
+def test_scale_replay_params_midpoint_is_linear():
+    p = scale_replay_params(_BASE, 0.5, cruise_min=0.12, yaw_min=0.4)
+    assert p.cruise_speed_mps == pytest.approx(0.12 + (0.45 - 0.12) * 0.5)
+    assert p.max_yaw_rate_rps == pytest.approx(0.4 + (0.9 - 0.4) * 0.5)
+
+
+def test_scale_replay_params_clamps_out_of_range_ratio():
+    lo = scale_replay_params(_BASE, -3.0, cruise_min=0.12, yaw_min=0.4)
+    hi = scale_replay_params(_BASE, 9.0, cruise_min=0.12, yaw_min=0.4)
+    assert lo.cruise_speed_mps == pytest.approx(0.12)
+    assert hi.cruise_speed_mps == pytest.approx(0.45)
+
+
+def test_scale_replay_params_leaves_other_fields_untouched():
+    p = scale_replay_params(_BASE, 0.3, cruise_min=0.12, yaw_min=0.4)
+    assert p.lookahead_m == _BASE.lookahead_m
+    assert p.arrive_dist_m == _BASE.arrive_dist_m
+    assert p.yaw_tol_rad == _BASE.yaw_tol_rad
+    # 元のインスタンスは変更しない（複製を返す）。
+    assert _BASE.cruise_speed_mps == 0.45
+
+
+# ── replay_runner.py の配線（ast 静的検査。ROS 不要）──────────────────
+def _runner_tree():
+    with open(REPLAY_RUNNER, encoding='utf-8') as f:
+        return ast.parse(f.read(), filename=REPLAY_RUNNER)
+
+
+def test_replay_runner_subscribes_speed_scale_and_uses_scale_helper():
+    """WS-9T: /replay/speed_scale を購読し、受信ハンドラで scale_replay_params を呼ぶ。"""
+    src = open(REPLAY_RUNNER, encoding='utf-8').read()
+    assert "'/replay/speed_scale'" in src, '/replay/speed_scale の購読が無い'
+    tree = _runner_tree()
+    handler = next((n for n in ast.walk(tree)
+                    if isinstance(n, ast.FunctionDef) and n.name == '_on_speed_scale'), None)
+    assert handler is not None, '_on_speed_scale ハンドラが無い'
+    calls = [n for n in ast.walk(handler)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+             and n.func.id == 'scale_replay_params']
+    assert calls, '_on_speed_scale が scale_replay_params を呼んでいない'
+
+
+def test_replay_runner_speed_defaults_raised():
+    """WS-9T: cruise/yaw の最大端（既定）を 0.45 / 0.9 に引き上げてあること。"""
+    tree = _runner_tree()
+    decls = {}
+    for n in ast.walk(tree):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr == 'declare_parameter' and len(n.args) >= 2
+                and isinstance(n.args[0], ast.Constant)
+                and isinstance(n.args[1], ast.Constant)):
+            decls[n.args[0].value] = n.args[1].value
+    assert decls.get('cruise_speed_mps') == 0.45, decls.get('cruise_speed_mps')
+    assert decls.get('max_yaw_rate_rps') == 0.9, decls.get('max_yaw_rate_rps')
+    assert 'replay_cruise_min_mps' in decls
+    assert 'replay_speed_default_ratio' in decls

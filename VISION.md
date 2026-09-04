@@ -336,6 +336,36 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
 
   更新: `slam_control.py` / `replay_runner.py` / `slam_control_logic.py`。
 
+- **2026-09-04 — 教示再生が遅く変える手段がない／手動ジョグの旋回が遅い（WS-9T）**:
+  実機（ユーザー）。
+
+  1. 再生の巡航速度は `replay_runner` のノード内リテラル既定
+     （`cruise_speed_mps=0.18` m/s・`max_yaw_rate_rps=0.5` rad/s）固定で、launch 引数も
+     画面コントロールも無い。
+  2. 手動ジョグのその場旋回が遅い。旋回上限 `w_max=0.6` rad/s（≈34°/s）に加え、
+     WebUI スティックが旋回指令を前進速度プリセットで絞る（`wz = wn * speedPct`）ため、
+     低速設定では 0.15 rad/s（≈9°/s）。
+
+  **変更**（ユーザー決定 2026-09-04）:
+  1. 再生速度を **WebUI（S-14）から可変**にする。新トピック `/replay/speed_scale`
+     （`std_msgs/Float32`、比率 0..1、latched）。S-14 の「再生速度」低速/中速/高速
+     ボタンが publish、`replay_runner` が subscribe して pure-pursuit パラメータを
+     作り直す（`route_replay_core.scale_replay_params`。`cruise` は
+     `replay_cruise_min_mps`〜`cruise_speed_mps` の線形補間）。**走行中も切替可。**
+     既定は中速相当（比率 0.65 → cruise ≈ 0.33 m/s、従来より速い）。実 m/s 換算は
+     `replay_runner` が持ち、ブラウザは比率だけを送る（jog の speed_preset と同じ方針）。
+  2. `w_max` を **0.6 → 1.2** rad/s（`registry.yaml`）。かつ WebUI スティックの
+     **その場旋回（前進成分ゼロ）を速度プリセットから切り離す**
+     （`stickGeometry.scaleJogCmd`：pure turn は `wz = wn`、arc・前進は従来どおり
+     `* speedPct`）。前進速度は据え置き、教示の低速走行はそのまま。
+
+  **不変**: 速度指令の最終クランプ（`obstacle_limiter`）・twist_mux 優先度・ESP32
+  ウォッチドッグ（600ms）は一切触らない。速度コントロールは上限を握らず、
+  障害物・在席未確認時は従来どおり `obstacle_limiter` が最終的に絞る。
+
+  更新: `route_replay_core.py` / `replay_runner.py` / `registry.yaml` /
+  `stickGeometry.js` / `JogConsole.jsx` / 新 `ReplaySpeedControl.jsx` ほか WebUI。
+
 ---
 
 ## 3. 両設計書が扱っていない事項

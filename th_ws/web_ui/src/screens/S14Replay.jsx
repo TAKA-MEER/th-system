@@ -23,15 +23,18 @@ import { useRoutePreview } from '../ros/useRoutePreview.js'
 import { useOdomPose } from '../ros/useOdomPose.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useRouteMap } from '../ros/useRouteMap.js'
+import { useReplaySpeedPublisher } from '../ros/useReplaySpeedPublisher.js'
 import RoutePreview from './RoutePreview.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
+import ReplaySpeedControl from '../parts/ReplaySpeedControl.jsx'
+import { REPLAY_SPEED_RATIOS } from '../parts/replaySpeed.js'
 import DriveTab from './driveTab.jsx'
 import attributes from '../generated/attributes.json'
 import {
   S11_MANUAL_TITLE,
   S14_TAB_REPLAY, S14_SELECT_TITLE, S14_EMPTY, S14_FWD, S14_REV, S14_PROCEED,
   S14_POSE_TITLE, S14_POSE_LOCALIZE, S14_POSE_LOCALIZE_TIMEOUT, S14_POSE_READY, S14_POSE_RUN, S14_POSE_PAUSE, S14_POSE_PAUSE_RESUMABLE,
-  S14_LENGTH, S14_POINTS,
+  S14_LENGTH, S14_POINTS, S14_SPEED_TITLE,
 } from '../i18n/screens.js'
 import { stateLabel } from '../i18n/states.js'
 import { OP_LABELS } from '../i18n/states.js'
@@ -66,6 +69,10 @@ export default function S14Replay({ onFinish }) {
 
   const [selectedId, setSelectedId] = useState(null)
   const [localizeStuck, setLocalizeStuck] = useState(false)
+  // WS-9T: 再生速度の比率。既定は中速。走行中に変えても replay_runner が
+  // 次ティックで反映する（useReplaySpeedPublisher → /replay/speed_scale）。
+  const [speedRatio, setSpeedRatio] = useState(REPLAY_SPEED_RATIOS.mid)
+  useReplaySpeedPublisher(ros, speedRatio)
 
   const stateName = state?.state ?? null
   const pose = poseText(stateName, routeStatus?.arrived === true)
@@ -203,6 +210,14 @@ export default function S14Replay({ onFinish }) {
           disabled={disabledAll}
           onTrigger={(trigger) => sendTrigger(trigger)}
         />
+        <div className="card">
+          <h3>{S14_SPEED_TITLE}</h3>
+          <ReplaySpeedControl
+            value={speedRatio}
+            onSelect={setSpeedRatio}
+            disabled={disabledAll}
+          />
+        </div>
         <div className="card">
           <h3>{S11_MANUAL_TITLE}</h3>
           {/* 手動介入用（常設。Spec-transit §0.4） */}

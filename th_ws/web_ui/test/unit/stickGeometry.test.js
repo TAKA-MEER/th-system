@@ -6,7 +6,7 @@
 // (the design forbids changing stickToCmd()'s behavior).
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { stickToCmd, rampToward } from '../../src/parts/stickGeometry.js'
+import { stickToCmd, rampToward, scaleJogCmd } from '../../src/parts/stickGeometry.js'
 
 // Forward (top) -> vn>0, no spin.
 test('forward: straight up gives vn>=0 and wz=0', () => {
@@ -70,6 +70,29 @@ test('magnitude: at full throw m=1, just past deadzone m is near 0', () => {
   const near = stickToCmd(0, 1, 0.16)
   assert.ok(near.vn > 0)
   assert.ok(near.vn < 0.2)
+})
+
+// WS-9T: scaleJogCmd leaves a pure in-place turn unscaled by the speed preset
+// so a low forward preset doesn't also slow cornering; everything else keeps
+// scaling by speedPct.
+test('scaleJogCmd: pure turn ignores speedPct (wz = wn), vx=0', () => {
+  const r = scaleJogCmd({ vn: 0, wn: -1 }, 0.15)
+  assert.deepEqual(r, { vx: 0, wz: -1 })
+  const half = scaleJogCmd({ vn: 0, wn: 0.4 }, 0.15)
+  assert.deepEqual(half, { vx: 0, wz: 0.4 })
+})
+
+test('scaleJogCmd: forward/reverse/arc still scale both axes by speedPct', () => {
+  assert.deepEqual(scaleJogCmd({ vn: 1, wn: 0 }, 0.3), { vx: 0.3, wz: 0 })
+  assert.deepEqual(scaleJogCmd({ vn: -1, wn: 0 }, 0.5), { vx: -0.5, wz: 0 })
+  // arc: vn and wn both non-zero -> not a pure turn -> both * speedPct
+  const arc = scaleJogCmd({ vn: 1, wn: -0.5 }, 0.4)
+  assert.ok(Math.abs(arc.vx - 0.4) < 1e-9)
+  assert.ok(Math.abs(arc.wz - -0.2) < 1e-9)
+})
+
+test('scaleJogCmd: deadzone {0,0} stays {0,0}', () => {
+  assert.deepEqual(scaleJogCmd({ vn: 0, wn: 0 }, 0.55), { vx: 0, wz: 0 })
 })
 
 // rampToward clamps the step change.

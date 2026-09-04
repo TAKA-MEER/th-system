@@ -32,6 +32,7 @@ import tf2_ros
 
 from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import Odometry, Path
+from std_msgs.msg import Float32
 from th_system_msgs.msg import (RouteInfo, RouteStatus, StateEffect,
                                 StateEvent, SystemState)
 from th_system_msgs.srv import OpenMapSession
@@ -63,7 +64,7 @@ from th_planning.route_record_core import (
     route_from_dict)
 from th_planning.route_replay_core import (
     ReplayParams, advance_index, align_path_to_current, pure_pursuit,
-    ramp_toward, reverse_points, rotate_toward,
+    ramp_toward, reverse_points, rotate_toward, scale_replay_params,
 )
 
 
@@ -95,8 +96,14 @@ class ReplayRunner(Node):
         self.declare_parameter('pose_period_ms', 100)
         self.declare_parameter('lookahead_m', 0.40)
         # 2026-09-01: 実機で DRIVE_RUNAWAY を踏んだため巡航・旋回を下げてランプ化した（#2）。
-        self.declare_parameter('cruise_speed_mps', 0.18)
-        self.declare_parameter('max_yaw_rate_rps', 0.5)
+        # WS-9T: これは「速度スケール最大端」。実効値は /replay/speed_scale の比率で
+        # replay_cruise_min_mps〜この値 の間に補間される（scale_replay_params）。
+        self.declare_parameter('cruise_speed_mps', 0.45)
+        self.declare_parameter('max_yaw_rate_rps', 0.9)
+        # WS-9T: 速度スケール最小端 ＋ WebUI 未接続時の既定比率。
+        self.declare_parameter('replay_cruise_min_mps', 0.12)
+        self.declare_parameter('replay_yaw_min_rps', 0.4)
+        self.declare_parameter('replay_speed_default_ratio', 0.6)
         self.declare_parameter('arrive_dist_m', 0.20)
         self.declare_parameter('yaw_tol_rad', 0.10)
         self.declare_parameter('linear_accel_mps2', 0.5)
@@ -133,13 +140,22 @@ class ReplayRunner(Node):
         self._max_dv = self.get_parameter('linear_accel_mps2').value * dt
         self._max_dw = self.get_parameter('angular_accel_rps2').value * dt
 
-        # ── 純コアのパラメータ束（指示の値をそのまま使う）──
-        self._params = ReplayParams(
+        # ── 純コアのパラメータ束 ──
+        # WS-9T: _base_params は「速度スケール最大端」。実際に pure-pursuit へ渡す
+        # self._params は speed_ratio で cruise/yaw を最小端との間に補間したもの
+        # （scale_replay_params）。/replay/speed_scale の受信（_on_speed_scale）で作り直す。
+        self._base_params = ReplayParams(
             lookahead_m=self.get_parameter('lookahead_m').value,
             cruise_speed_mps=self.get_parameter('cruise_speed_mps').value,
             max_yaw_rate_rps=self.get_parameter('max_yaw_rate_rps').value,
             arrive_dist_m=self.get_parameter('arrive_dist_m').value,
             yaw_tol_rad=self.get_parameter('yaw_tol_rad').value)
+        self._cruise_min = float(self.get_parameter('replay_cruise_min_mps').value)
+        self._yaw_min = float(self.get_parameter('replay_yaw_min_rps').value)
+        self._speed_ratio = float(
+            self.get_parameter('replay_speed_default_ratio').value)
+        self._params = scale_replay_params(
+            self._base_params, self._speed_ratio, self._cruise_min, self._yaw_min)
 
         # ── 状態 ────────────────────────────────────────────
         self._route = None
@@ -188,6 +204,14 @@ class ReplayRunner(Node):
                                durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
                                history=QoSHistoryPolicy.KEEP_LAST)
         self.create_subscription(SystemState, '/system/state', self._on_state, state_qos)
+
+        # WS-9T: WebUI（S-14）から再生速度の比率（0..1）が latched で届く。
+        # 走行中に変わっても次ティックから効く（_params を作り直すだけ）。
+        speed_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+                               durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                               history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(
+            Float32, '/replay/speed_scale', self._on_speed_scale, speed_qos)
 
         # WS-9L: 再生の経路選択で地図を読み直す。client は既定グループに置き、
         # effect コールバック（Reentrant）と並行実行できるようにする。
@@ -341,6 +365,18 @@ class ReplayRunner(Node):
     def _on_state(self, msg: SystemState):
         self._mode = msg.mode
         self._state = msg.state
+
+    def _on_speed_scale(self, msg: Float32):
+        """WS-9T: 再生速度の比率（0..1）を受けて pure-pursuit パラメータを作り直す。"""
+        ratio = 0.0 if msg.data < 0.0 else 1.0 if msg.data > 1.0 else float(msg.data)
+        if ratio == self._speed_ratio:
+            return
+        self._speed_ratio = ratio
+        self._params = scale_replay_params(
+            self._base_params, ratio, self._cruise_min, self._yaw_min)
+        self.get_logger().info(
+            f'再生速度スケール {ratio:.2f} → cruise {self._params.cruise_speed_mps:.2f} m/s / '
+            f'yaw {self._params.max_yaw_rate_rps:.2f} rad/s')
 
     def _reload_map(self, route_id: str) -> "str | None":
         """/map_session/open reload で教示の地図を読み直す。エラー文字列 or None。

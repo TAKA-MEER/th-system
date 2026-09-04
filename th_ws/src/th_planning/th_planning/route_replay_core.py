@@ -16,7 +16,7 @@ alpha は 0 に近いほど真直ぐ、±pi ほど大きく旋回する。cos(al
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Sequence, Tuple
 
 Pose2D = Tuple[float, float, float]   # (x, y, theta[rad])
@@ -40,6 +40,26 @@ class ReplayCommand:
     w: float
     target_index: int
     arrived: bool
+
+
+# ──────────────────────────────────────────────────────────────────
+# 再生速度スケール（WS-9T: WebUI から /replay/speed_scale で可変にする）
+# ──────────────────────────────────────────────────────────────────
+def scale_replay_params(
+    base: ReplayParams, ratio: float, cruise_min: float, yaw_min: float,
+) -> ReplayParams:
+    """再生速度の比率 ratio(0..1) で cruise / yaw を最小端〜base の間に線形補間する。
+
+    base.cruise_speed_mps / base.max_yaw_rate_rps を「最大端」、cruise_min / yaw_min を
+    「最小端」とし、ratio=0 で最小・ratio=1 で最大。範囲外の ratio はクランプする。
+    lookahead_m / arrive_dist_m / yaw_tol_rad は変えない（速度だけを可変にする）。
+    """
+    r = 0.0 if ratio < 0.0 else 1.0 if ratio > 1.0 else float(ratio)
+    return replace(
+        base,
+        cruise_speed_mps=cruise_min + (base.cruise_speed_mps - cruise_min) * r,
+        max_yaw_rate_rps=yaw_min + (base.max_yaw_rate_rps - yaw_min) * r,
+    )
 
 
 def normalize_angle(a: float) -> float:

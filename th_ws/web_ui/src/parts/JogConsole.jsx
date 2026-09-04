@@ -14,6 +14,7 @@
 // useJogLease exists. This keeps "送出を 1 箇所に閉じる" (§4.2).
 import { useState } from 'react'
 import { useJogLease } from '../ros/useJogLease.js'
+import { scaleJogCmd } from './stickGeometry.js'
 import { useKeyboardJog } from './useKeyboardJog.js'
 import VirtualStick from './VirtualStick.jsx'
 import SpeedPreset from './SpeedPreset.jsx'
@@ -36,7 +37,9 @@ export default function JogConsole({ ros, disabled = false, keyboard = false }) 
 
   // Scaled to "the chosen speed as a ratio of the (unknown-to-us) ceiling";
   // obstacle_limiter holds the actual m/s rad/s ceilings (WP-UI-03 §3.3).
-  const scaled = { vx: effectiveRaw.vn * speedPct, wz: effectiveRaw.wn * speedPct }
+  // WS-9T: scaleJogCmd leaves a pure in-place turn unscaled by speedPct so the
+  // low forward preset doesn't also slow cornering (stickGeometry.js).
+  const scaled = scaleJogCmd(effectiveRaw, speedPct)
 
   useJogLease(ros, effectiveHeld && !disabled, scaled)
 
