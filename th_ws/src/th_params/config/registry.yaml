@@ -553,6 +553,21 @@
   spec_ref: "DetailedDesign-names.md §7.2"
   note: "前方のリミッタ判定コーン半幅。暫定値"
 
+- name: obstacle_min_points
+  unit: count
+  class: b
+  status: given
+  value: 3
+  consumers: [obstacle_limiter]
+  spec_ref: "VISION.md §2（2026-09-04 WS-9P）"
+  note: "障害物とみなすのに必要な点数。円錐内の n 番目に小さい距離を最近傍とする。
+    1 だと最小値そのもの＝スキャン 1 枚のノイズ 1 点で停止し、次のスキャンで消えるので
+    独りでに再開する（実機 2026-09-04「何も無いところで止まってまた走り出した」）。
+    実測: /scan_filtered は 720 点・分解能 0.499°、前方円錐(±28.6°)に 105 点。
+    停止距離 0.425m では 1 ビームの弧長が 3.7mm なので幅 2cm の実体は 5 点以上に映る。
+    3 点なら実体を取りこぼさず孤立した 1〜2 点のノイズだけ落とせる。
+    有効点が 3 未満のときは最小値へ退避する（LiDAR 異常時に空きへ倒さない）"
+
 - name: obstacle_cone_half_width_reverse_rad
   unit: rad
   class: b

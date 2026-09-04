@@ -29,6 +29,10 @@
 // 固定変換を起動時に 1 度だけ取得して保持する（20Hz では TF を引かない）。
 // 取得に失敗したら起動を失敗させる（wp2.md §3.4 が明記。素通しで動かさない）。
 // ============================================================
+#include <algorithm>
+#include <cstdint>
+#include <cstddef>
+
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
@@ -89,6 +93,8 @@ public:
         declare_parameter("hysteresis_band_m", 0.0);
         declare_parameter("brake_accel_mps2", 1.18);  // registry.yaml 実測値（WP-MEAS-01）
         declare_parameter("obstacle_cone_half_width_rad", 0.5);
+        // WS-9P: 障害物とみなすのに必要な点数（ノイズ 1 点で止まらないように）。
+        declare_parameter("obstacle_min_points", 3);
         declare_parameter("obstacle_cone_half_width_reverse_rad", 0.6);
         declare_parameter("w_max", 0.6);
         declare_parameter("w_align_max", 0.3);
@@ -166,6 +172,8 @@ public:
         params_.hysteresis_band_m = get_parameter("hysteresis_band_m").as_double();
         params_.brake_accel_mps2 = get_parameter("brake_accel_mps2").as_double();
         params_.obstacle_cone_half_width_rad = get_parameter("obstacle_cone_half_width_rad").as_double();
+        params_.obstacle_min_points = static_cast<std::size_t>(
+            std::max<int64_t>(1, get_parameter("obstacle_min_points").as_int()));
         params_.obstacle_cone_half_width_reverse_rad =
             get_parameter("obstacle_cone_half_width_reverse_rad").as_double();
         params_.v_reverse = get_parameter("v_reverse").as_double();

@@ -123,6 +123,10 @@ if(BUILD_TESTING)
   ament_add_gtest(test_obstacle_limiter_core test/test_obstacle_limiter_core.cpp)
   target_link_libraries(test_obstacle_limiter_core obstacle_limiter_core)
 
+  # WS-9P: 障害物とみなすのに必要な点数（ノイズ 1 点で止まらない）。
+  ament_add_gtest(test_obstacle_min_points test/test_obstacle_min_points.cpp)
+  target_link_libraries(test_obstacle_min_points obstacle_limiter_core)
+
   # observe_cone() の Python/C++ 等価性テスト（DetailedDesign-safety.md
   # §3.4.3。is_path_blocked() を最近傍距離を返す形に拡張した Python版
   # mapless_follow_core.observe_cone() と C++版 obstacle_limiter_core の

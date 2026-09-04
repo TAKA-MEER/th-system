@@ -117,6 +117,10 @@ struct ObstacleLimiterParams {
   double hysteresis_band_m = 0.0;
   double brake_accel_mps2 = 0.0;
   double obstacle_cone_half_width_rad = 0.0;
+  // WS-9P (2026-09-04): 障害物とみなすのに必要な点数。円錐内の min_points 番目に
+  // 小さい距離を「最近傍」とする。1 だと従来どおり最小値そのもの＝ノイズ 1 点で
+  // 止まる（VISION.md §2 の 2026-09-04 の項）。
+  std::size_t obstacle_min_points = 1;
   double obstacle_cone_half_width_reverse_rad = 0.0;
   double v_reverse = 0.0;
   double w_max = 0.0;        // 角速度の一般上限（常に効く）
@@ -181,7 +185,11 @@ struct ConeObservation {
 };
 
 // direction_rad ± half_width_rad 内にある有限レンジの最小値を求める。
-ConeObservation observe_cone(const ScanSnapshot& scan, double direction_rad, double half_width_rad);
+// min_points: 障害物とみなすのに必要な点数（WS-9P）。円錐内の min_points 番目に
+// 小さい距離を返す。有効点がそれに満たないときは最小値へ退避する（LiDAR 異常時に
+// 「空き」へ倒さないため）。既定 1 は従来どおりの「最小値そのもの」。
+ConeObservation observe_cone(const ScanSnapshot& scan, double direction_rad,
+                             double half_width_rad, std::size_t min_points = 1);
 
 // ── ヒステリシス・角度判定を含む本体（状態を持つのでクラス） ───────────
 class ObstacleLimiterCore {

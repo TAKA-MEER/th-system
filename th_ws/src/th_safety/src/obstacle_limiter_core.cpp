@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 namespace th_safety {
 
@@ -92,7 +93,8 @@ bool blind_direction_overlap(double direction_rad, double half_width_rad,
   return false;
 }
 
-ConeObservation observe_cone(const ScanSnapshot& scan, double direction_rad, double half_width_rad) {
+ConeObservation observe_cone(const ScanSnapshot& scan, double direction_rad,
+                             double half_width_rad, std::size_t min_points) {
   if (!scan.received || scan.geometry.num_ranges == 0 ||
       scan.ranges.size() != scan.geometry.num_ranges) {
     return ConeObservation{};  // covered=false（未観測。デフォルト値のまま）
@@ -115,16 +117,27 @@ ConeObservation observe_cone(const ScanSnapshot& scan, double direction_rad, dou
     return ConeObservation{};
   }
 
+  // WS-9P (2026-09-04): 円錐内の**最小値をそのまま**採用していたため、スキャン
+  // 1 枚のノイズ 1 点で停止距離を割り、次のスキャンで消えるので独りでに再開して
+  // いた（実機「何も無いところで止まってしばらくしてまた走り出した」）。
+  //
+  // 代わりに min_points 番目に小さい距離を採る。実測 (2026-09-04): /scan_filtered
+  // は 720 点・分解能 0.499°、前方円錐 (±28.6°) に 105 点。停止距離 0.425 m では
+  // 1 ビームの弧長が 3.7 mm なので、**幅 2 cm の実体は 5 点以上に映る**。
+  // したがって既定 3 点は実体を取りこぼさず、孤立した 1〜2 点のノイズだけを落とす。
+  //
+  // 有効点が min_points に満たないときは最小値へ退避する。円錐 105 点のうち有効が
+  // 2 点以下という状況は LiDAR 側の異常であり、そこで「空き」に倒すのは危険側。
+  // 変えたのは「何点あれば障害物とみなすか」だけで、円錐の角度・停止距離・
+  // スキャン途絶判定・死角マスクはいずれも変えていない。
   const std::size_t n = scan.geometry.num_ranges;
-  std::optional<double> nearest;
+  std::vector<double> valid;
   auto consider = [&](std::size_t idx) {
     const double r = scan.ranges[idx];
     if (!std::isfinite(r) || r < 0.0) {
       return;
     }
-    if (!nearest.has_value() || r < *nearest) {
-      nearest = r;
-    }
+    valid.push_back(r);
   };
 
   if (*i0 <= *i1) {
@@ -140,7 +153,13 @@ ConeObservation observe_cone(const ScanSnapshot& scan, double direction_rad, dou
       consider(i);
     }
   }
-  return ConeObservation{/*covered=*/true, nearest.value_or(std::numeric_limits<double>::infinity())};
+  if (valid.empty()) {
+    return ConeObservation{/*covered=*/true, std::numeric_limits<double>::infinity()};
+  }
+  const std::size_t k = std::min(std::max<std::size_t>(min_points, 1), valid.size());
+  std::nth_element(valid.begin(), valid.begin() + static_cast<std::ptrdiff_t>(k - 1),
+                    valid.end());
+  return ConeObservation{/*covered=*/true, valid[k - 1]};
 }
 
 ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& in,
@@ -218,7 +237,8 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   // 観測できていない間（未観測は「空き」ではない。N-11）は、その方向の
   // 上限を v_reverse にする（全方向ではない。state の新鮮さに関わらず
   // 幾何的に成立する制約なので state_fresh の分岐の外で常に適用する）。
-  const ConeObservation cone = observe_cone(in.scan, direction_rad, half_width);
+  const ConeObservation cone =
+      observe_cone(in.scan, direction_rad, half_width, p.obstacle_min_points);
   if (blind_direction_overlap(direction_rad, half_width, p.blind_angle_ranges_deg) ||
       !cone.covered) {
     applied_limit = std::min(applied_limit, p.v_reverse);
