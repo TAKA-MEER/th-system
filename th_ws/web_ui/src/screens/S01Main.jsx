@@ -31,7 +31,7 @@ import modeEntry from '../generated/mode_entry.json'
 import { modeLabel } from '../i18n/modes.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import {
-  GROUP_MOVE_TITLE, GROUP_FIELD_TITLE, GROUP_MAINT_TITLE,
+  GROUP_MOVE_TITLE, GROUP_FIELD_TITLE, GROUP_MAINT_TITLE, S01_SETTINGS,
   WIN_REASON_TITLE, WIN_REASON_OK,
   SHUTDOWN_TITLE, SHUTDOWN_UNSAVED_LABEL, SHUTDOWN_NONE, SHUTDOWN_BUTTON, SHUTDOWN_HINT,
   SHUTDOWN_WIN_TITLE, SHUTDOWN_WIN_INTRO, SHUTDOWN_WIN_NONE, SHUTDOWN_SAVE,
@@ -51,7 +51,7 @@ function parseUnsaved(message) {
   }
 }
 
-export default function S01Main({ onEnter }) {
+export default function S01Main({ onEnter, onOpenSettings }) {
   const { state, stale } = useSystemState()
   const sendTrigger = useTrigger()
   const shutdownPrepare = useStdTrigger(SERVICES.SHUTDOWN_PREPARE)
@@ -174,6 +174,20 @@ export default function S01Main({ onEnter }) {
               )
             })}
           </div>
+          {/* WS-9X: 「設定」は FSM のモードではないので menuItems() も
+              .btnrow（モード選択ボタンのグリッド）にも入れない。S-50 を開く
+              だけ（onOpenSettings）。stale / INIT でも設定は読めるように
+              disabledAll では切らない。 */}
+          {group.key === 'maint' && onOpenSettings && (
+            <button
+              type="button"
+              className="btn wide mt"
+              onClick={onOpenSettings}
+              data-testid="s01-open-settings"
+            >
+              {S01_SETTINGS}
+            </button>
+          )}
         </div>
       ))}
 

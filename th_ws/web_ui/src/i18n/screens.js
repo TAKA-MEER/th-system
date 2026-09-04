@@ -15,6 +15,9 @@ export const SCREEN_NAMES = {
   // 正式値は names.json / Spec-webui.md §3.7 が正。
   S13: '教示（手動）',
   S14: '教示再生',
+  // WS-9X: S-50 設定（Spec-webui.md §3.15）。S-01 の「保守・設定」から開く
+  // IDLE のサブ画面。
+  S50: '設定',
 }
 
 // ---------------------------------------------------------------- S-00 ----
@@ -54,7 +57,8 @@ export const S00_ADVANCE = 'メインメニュー画面へ'
 // ---------------------------------------------------------------- S-01 ----
 export const GROUP_MOVE_TITLE = '移動'
 export const GROUP_FIELD_TITLE = '試験場'
-export const GROUP_MAINT_TITLE = '保守'
+// WS-9X: 「設定」ボタン（S-50 を開く）をこのカードに同居させたので「保守・設定」。
+export const GROUP_MAINT_TITLE = '保守・設定'
 
 // "この方式は使えません" (mockup's winDisabled) generalized: also used when
 // an *enabled-looking* button is rejected by /system/trigger at the moment
@@ -216,3 +220,38 @@ export const ROUTE_PREVIEW_EMPTY = '経路がありません'
 // parts/JogConsole.jsx の操作キー凡例。押下中のキーは .kbdHint.on でハイライト。
 export const KBD_HINT_KEYS = 'W/A/S/D または矢印キー'
 export const KBD_HINT = 'で走行'
+
+// ---------------------------------------------------------------- S-50 設定（WS-9X） ----
+// screens/S50Settings.jsx の表示文字列。Spec-webui.md §3.15 のタブ構成。
+export const S01_SETTINGS = '設定'            // S-01「保守・設定」カードのボタン
+export const S50_BACK = '戻る'
+export const S50_TAB_GENERAL = '一般'
+export const S50_TAB_DISPLAY = '表示'
+export const S50_TAB_DEV = '開発モード'
+// 変更可能なのは IDLE / MANUAL のときだけ（config_manager がサーバ側で再確認する）。
+export const S50_GUARD = 'IDLE または MANUAL のときだけ変更できます（今は変更不可）'
+export const S50_SAVE_YAML = 'YAML に保存'
+export const S50_SAVING = '保存中…'
+export const S50_SAVED = '保存しました'
+export const S50_SAVE_FAILED = '保存に失敗しました'
+export const S50_LOAD_FAILED = '現在値を取得できませんでした'
+// 一般タブ: 3 セクション見出し
+export const S50_SEC_FOLLOW = '軌跡追従（follow_planner_mapless）'
+export const S50_SEC_LIDAR = 'LiDAR 死角マスク（lidar_filter）'
+export const S50_SEC_SLAM = '再生の自己位置推定（slam_toolbox）'
+export const S50_SLAM_NOTE =
+  '変更は「YAML に保存」してから、次に「この経路で進む」を押したときに有効になります'
+  + '（SLAM がその場では読み直さないため）。補正頻度を上げる＝間隔を小さく、'
+  + '廊下でのずれに強くする＝探索窓を広げる。'
+// 表示タブ: 文字サイズ
+export const S50_FONT_TITLE = '文字サイズ'
+export const S50_FONT_NORMAL = '標準'
+export const S50_FONT_LARGE = '大'
+export const S50_FONT_XLARGE = '特大'
+// 開発モードタブ
+export const S50_DEV_TITLE = '開発モード'
+export const S50_DEV_ENABLE = '開発モードを有効にする'
+export const S50_DEV_DISABLE = '開発モードを無効にする'
+export const S50_DEV_NOTE =
+  '安全系のバイパスなど開発向けの設定は今後ここに追加します。'
+  + '現状はヘッダに「開発」表示が出るだけです。'

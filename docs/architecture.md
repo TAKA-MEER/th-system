@@ -633,19 +633,34 @@ ros2 topic echo /person/status --once
 
 ---
 
-## WebUI 設定パネル（パラメータ調整）
+## WebUI 設定画面 S-50（パラメータ調整）
 
-VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web_ui/src/SettingsPanel.jsx`）から
-`follow_planner_mapless` の数値パラメータ、`lidar_filter.blind_angle_ranges`、
+VISION.md §6.2 の完成形。タブレット WebUI の **S-50 設定画面**（`web_ui/src/screens/S50Settings.jsx`）
+から `follow_planner_mapless` の数値パラメータ、`lidar_filter.blind_angle_ranges`、
 `slam_toolbox` のスキャンマッチ関連（再生の自己位置推定。WS-9W）を確認・変更できる。
-設定パネル自体はタブに属さないオーバーレイで、ヘッダーの ⚙ からどのタブでも開ける。
+
+**画面の位置づけ（WS-9X）**: S-50 は FSM のモードではなく **IDLE のサブ画面**。
+S-01 メインメニューの「保守・設定」カードの「設定」ボタンから開く。`main.jsx` の
+`Screens()` が `settingsOpen` フラグを持ち、`screens/screenRouting.js` の
+`resolveScreen()` が「本来 S-01 を出す」ときだけ `S50` に差し替える。動作系モード
+（`MODE_TO_SCREEN` にヒット）に入ると `settingsOpen` は無視され、かつ `main.jsx` が
+自動で畳む → 走行中に設定画面がかぶることは構造上あり得ない。
+タブは **一般**（上記パラメータ調整）/ **表示**（文字サイズ・`localStorage`。
+`parts/fontScale.js` が `#app` の `--fs-user` を切り替える）/ **開発モード**
+（開発モード ON/OFF・`localStorage`。`parts/devMode.js`。現状はヘッダの「開発」表示のみ）。
+
+> 旧 `SettingsPanel.jsx`（ヘッダー ⚙ のオーバーレイ）は、WebUI の画面構成ベース
+> 再構成（コミット `bbb86f2`）で `App.jsx` ごと孤立し表示されなくなっていた。
+> WS-9X で S-50 として作り直し、`App.jsx` / `SettingsPanel.jsx` / `MapView.jsx` /
+> `WheelSpeedView.jsx` / `VoiceDevPanel.jsx` を削除した。
 
 ### 構成
 
 ```
-[SettingsPanel.jsx]
+[screens/S50Settings.jsx]  ── ros/useTunableParams.js (useSystemState() の ros を使う小さいフック)
   │ getTunableParams()  ─── rcl_interfaces/GetParameters を対象ノードへ直接呼び出し（読み取り専用）
-  │                          /follow_planner_mapless/get_parameters, /lidar_filter/get_parameters
+  │                          /follow_planner_mapless/get_parameters, /lidar_filter/get_parameters,
+  │                          /slam_toolbox/get_parameters
   │
   │ applyTunableParam() ─── th_system_msgs/SetTunableParams
   │ saveTunableParams() ─── th_system_msgs/SaveTunableParams
@@ -660,8 +675,11 @@ VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web
 
 - rosbridge は `rosbridge_websocket` 単体起動で **rosapi は起動していない**ため、
   `ROSLIB.Param`（rosapi 依存）ではなく `rcl_interfaces/srv/{Get,Set}Parameters` を
-  素の `ROSLIB.Service` で直接呼んでいる（`web_ui/src/hooks/useRosbridge.js` の
-  `getTunableParams`/`applyTunableParam`/`saveTunableParams`）。
+  素の `ROSLIB.Service` で直接呼んでいる（`web_ui/src/ros/useTunableParams.js` の
+  `getTunableParams`/`applyTunableParam`/`saveTunableParams`）。`ParameterValue` の
+  JS 変換は `web_ui/src/ros/paramCodec.js` に切り出し、観客ビューが使う
+  `useRosbridge.js` と共用する（WS-9X）。TEST_MODE（e2e）では 3 関数とも即 reject し、
+  rosbridge へは一切繋がない。
 - **実行時反映と YAML 保存は別操作**。`applyTunableParam` は対象ノードへ即座に反映するが
   再起動で失われる。`saveTunableParams` は対象ノードの現在値を取得して YAML に書き戻す
   （設定パネルの「YAML に保存」ボタン）。
@@ -680,9 +698,10 @@ VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web
   キー順序を保持する（`th_config_manager/th_config_manager/yaml_writer.py`）。
   インデント設定 `yaml.indent(mapping=2, sequence=4, offset=2)` は
   `planning_params.yaml` / `perception_params.yaml` の実際の書式に合わせて検証済み。
-- 変更は `IDLE` / `MANUAL` モード中のみ許可する。`SettingsPanel.jsx` は該当モード以外で
+- 変更は `IDLE` / `MANUAL` モード中のみ許可する。`S50Settings.jsx` は該当モード以外で
   入力を disabled にするが、`config_manager` ノード側でも `/robot/mode` を見て同じ判定を
-  行う（UI の見た目だけに頼らないサーバー側の安全ガード）。
+  行う（UI の見た目だけに頼らないサーバー側の安全ガード）。S-50 自体は S-01（IDLE）
+  からしか開けないので通常は常に editable。
 
 ### 新しいチューニング可能パラメータを追加する手順
 
@@ -696,7 +715,7 @@ VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web
     slam_toolbox のようにコールバックを持てないノードは「保存 → 再起動で反映」
     になる旨をパネルに表示する）
 
-3. web_ui/src/SettingsPanel.jsx にフォーム項目を追加
+3. web_ui/src/screens/S50Settings.jsx にフォーム項目を追加
    （MAPLESS_FIELDS / SLAM_FIELDS 等のフィールド定義配列にラベル・単位・入力レンジを追記。
     名前は tunable_targets.py と一致させる。test_tunable_targets.py が両者の一致を固定する）
 ```

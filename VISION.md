@@ -456,6 +456,38 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
   更新: `tunable_targets.py` / `slam_params.yaml` / `SettingsPanel.jsx` /
   `docs/architecture.md`「WebUI 設定パネル」。
 
+- **2026-09-04 — 設定を S-50 画面としてモックアップに合わせる＋WebUI 配置の整理（WS-9X）**:
+  WS-9W で足した SLAM 調整セクションが実機で見つからなかった。原因は、設定パネル
+  （`⚙`＋`SettingsPanel.jsx`）が `App.jsx` の中にしか無く、その `App.jsx` は WebUI の
+  画面構成ベース再構成（コミット `bbb86f2`）でどこからも import されなくなった死んだ
+  ファイルだったこと。設定パネルはその再構成以降ずっと表示されていなかった
+  （`slam_params.yaml` の既定値変更は実機で有効。届いていなかったのは動的調整 UI だけ）。
+
+  **変更**:
+  1. `docs/plan/spec/mockup/index.html` の **S-50 設定画面**（`Spec-webui.md` §3.15）に
+     合わせて `screens/S50Settings.jsx` を新設。S-01「保守・設定」カードの「設定」ボタン
+     から開く IDLE のサブ画面（FSM のモードではない。`main.jsx` の `settingsOpen` /
+     `screens/screenRouting.js` の `resolveScreen`。動作系モードに入ると自動で閉じる）。
+     タブ: **一般**（実配線のあるパラメータ調整＝旧 SettingsPanel の中身）/ **表示**
+     （文字サイズ・`localStorage`）/ **開発モード**（開発モード ON/OFF・`localStorage`。
+     現状はヘッダ表示のみ。安全系バイパスの設定は今後ここに追加）。
+  2. パラメータ get/apply/save は `ros/useTunableParams.js`（小さい専用フック）へ。
+     rcl_interfaces のコーデックは `ros/paramCodec.js` に切り出して `useRosbridge.js`
+     （観客ビューが現役）と共用。config_manager 経由・モードのサーバ側再確認は不変。
+  3. 配置の整理: 死んだ `App.jsx` / `SettingsPanel.jsx` / `MapView.jsx` /
+     `WheelSpeedView.jsx` / `VoiceDevPanel.jsx` を削除。横長で S-01 を 2 列ハブ・
+     S-50 の各タブを 2 列に（`theme.css`）。S-14 の「再生速度」カードを左列へ
+     （右列は操作＋手動介入で統一）。
+
+  不変: 速度指令チェーン・FSM・安全系は非変更。モックアップ S-50 の未配線項目
+  （速度プリセット表・人物追跡 ON/OFF・自動ブレーキ既定・警告抑制・ログ選択）は別 WP。
+
+  更新: `screens/S50Settings.jsx`（新） / `ros/useTunableParams.js`（新） /
+  `ros/paramCodec.js`（新） / `screens/screenRouting.js`（新） / `main.jsx` /
+  `screens/S01Main.jsx` / `screens/S14Replay.jsx` / `shell/AppShell.jsx` /
+  `shell/theme.css` / `i18n/screens.js` / `test_tunable_targets.py` /
+  `docs/使い方.md` / `docs/architecture.md`。
+
 ---
 
 ## 3. 両設計書が扱っていない事項

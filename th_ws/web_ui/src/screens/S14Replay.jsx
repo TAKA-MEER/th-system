@@ -195,6 +195,17 @@ export default function S14Replay({ onFinish }) {
               <div className="note" data-testid="s14-localize-stuck">{S14_POSE_LOCALIZE_TIMEOUT}</div>
             )}
           </div>
+
+          {/* WS-9X: 再生速度は経路準備段階の設定なので左列（右列は操作＋手動介入で
+              統一する。モックアップ two-col の右列と同じ並び）。 */}
+          <div className="card">
+            <h3>{S14_SPEED_TITLE}</h3>
+            <ReplaySpeedControl
+              value={speedRatio}
+              onSelect={setSpeedRatio}
+              disabled={disabledAll}
+            />
+          </div>
         </div>
       </div>
 
@@ -210,14 +221,6 @@ export default function S14Replay({ onFinish }) {
           disabled={disabledAll}
           onTrigger={(trigger) => sendTrigger(trigger)}
         />
-        <div className="card">
-          <h3>{S14_SPEED_TITLE}</h3>
-          <ReplaySpeedControl
-            value={speedRatio}
-            onSelect={setSpeedRatio}
-            disabled={disabledAll}
-          />
-        </div>
         <div className="card">
           <h3>{S11_MANUAL_TITLE}</h3>
           {/* 手動介入用（常設。Spec-transit §0.4） */}

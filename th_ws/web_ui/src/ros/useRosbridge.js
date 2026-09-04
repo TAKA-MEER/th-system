@@ -3,6 +3,10 @@
 // ============================================================
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { SLAM_DISCARD_MARKER } from '../i18n/states.js'
+// WS-9X: the ParameterValue codec moved to ros/paramCodec.js so the S-50
+// settings screen (ros/useTunableParams.js) can reuse it without importing
+// this whole hook. Re-exported names are unchanged.
+import { decodeParamValue, encodeParamValue, withTimeout } from './paramCodec.js'
 
 const MODE_NAMES = {
   0: 'INIT', 1: 'IDLE', 2: 'FOLLOWING',
@@ -10,55 +14,8 @@ const MODE_NAMES = {
   7: 'FOLLOWING_MAPLESS', 8: 'SUMMONING'
 }
 
-// rcl_interfaces/msg/ParameterType constants
-const PARAM_TYPE = {
-  BOOL: 1, INTEGER: 2, DOUBLE: 3, STRING: 4,
-  BYTE_ARRAY: 5, BOOL_ARRAY: 6, INTEGER_ARRAY: 7, DOUBLE_ARRAY: 8, STRING_ARRAY: 9,
-}
-
-function decodeParamValue(pv) {
-  switch (pv.type) {
-    case PARAM_TYPE.BOOL:          return pv.bool_value
-    case PARAM_TYPE.INTEGER:       return pv.integer_value
-    case PARAM_TYPE.DOUBLE:        return pv.double_value
-    case PARAM_TYPE.STRING:        return pv.string_value
-    case PARAM_TYPE.BYTE_ARRAY:    return pv.byte_array_value
-    case PARAM_TYPE.BOOL_ARRAY:    return pv.bool_array_value
-    case PARAM_TYPE.INTEGER_ARRAY: return pv.integer_array_value
-    case PARAM_TYPE.DOUBLE_ARRAY:  return pv.double_array_value
-    case PARAM_TYPE.STRING_ARRAY:  return pv.string_array_value
-    default: return null
-  }
-}
-
-// Timeout (ms) so the UI doesn't freeze forever when the backend
-// (config_manager etc.) never responds.
-const TUNABLE_SERVICE_TIMEOUT_MS = 5000
-
 // History length (seconds) kept for the wheel-speed display card
 const WHEEL_HISTORY_SEC = 15
-
-function withTimeout(promise, label) {
-  return new Promise((resolve, reject) => {
-    const id = setTimeout(
-      () => reject(new Error(`${label} timed out`)),
-      TUNABLE_SERVICE_TIMEOUT_MS)
-    promise.then(
-      (v) => { clearTimeout(id); resolve(v) },
-      (e) => { clearTimeout(id); reject(e) })
-  })
-}
-
-function encodeParamValue(value, { isArray = false, isInt = false } = {}) {
-  if (isArray) {
-    return isInt
-      ? { type: PARAM_TYPE.INTEGER_ARRAY, integer_array_value: value }
-      : { type: PARAM_TYPE.DOUBLE_ARRAY,  double_array_value: value }
-  }
-  return isInt
-    ? { type: PARAM_TYPE.INTEGER, integer_value: value }
-    : { type: PARAM_TYPE.DOUBLE,  double_value: value }
-}
 
 // Defaults to the rosbridge on the host serving this page (the robot PC).
 // Pass a different url to connect to a different host's rosbridge.

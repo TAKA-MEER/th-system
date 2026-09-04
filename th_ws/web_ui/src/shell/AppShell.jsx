@@ -15,6 +15,8 @@ import { isW1Active, stopReason } from './limits.js'
 import { ConfirmWindowContext } from './confirmWindow.js'
 import { JogPanelContext } from './jogPanel.js'
 import { ESTOP_RELEASE_NOTE, ESTOP_RELEASE_BUTTON, stopReasonLabel } from '../i18n/states.js'
+import { readFontScale, applyFontScale } from '../parts/fontScale.js'
+import { readDevMode, DEV_MODE_EVENT } from '../parts/devMode.js'
 import './theme.css'
 
 // DetailedDesign-wp1.md WP-UI-01 §3.1: /safety/estop_ui is republished at
@@ -39,8 +41,18 @@ function AppShellInner({ screenName, screenId, children }) {
   useActiveScreenPublisher(ros, screenId)
   const limiterStatus = useLimiterStatus(ros)
 
-  const [devMode] = useState(
-    () => new URLSearchParams(window.location.search).get('dev') === '1')
+  // WS-9X: ?dev=1 か localStorage['th.devMode']。S-50 開発モードタブの
+  // トグルが DEV_MODE_EVENT を投げてくるので、リロード無しで追従する。
+  const [devMode, setDevModeState] = useState(readDevMode)
+  useEffect(() => {
+    const onChange = () => setDevModeState(readDevMode())
+    window.addEventListener(DEV_MODE_EVENT, onChange)
+    return () => window.removeEventListener(DEV_MODE_EVENT, onChange)
+  }, [])
+
+  // WS-9X: 文字サイズ（S-50 表示タブ）を起動時に復元。#app は AppShell の
+  // 描画後に存在するので effect で当てる。
+  useEffect(() => { applyFontScale(readFontScale()) }, [])
   // This client's own intent to hold the UI estop latch up. Deliberately
   // local, not derived from state.estop_ui: a freshly loaded/reloaded page
   // must not start repeating "true" just because some other client is

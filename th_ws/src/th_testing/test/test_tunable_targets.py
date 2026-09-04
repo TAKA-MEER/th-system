@@ -26,8 +26,10 @@ sys.path.insert(0, _CONF_PKG)
 from tunable_targets import TUNABLE_TARGETS   # noqa: E402
 
 _SRC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+# WS-9X: 設定パネルは S-01 のサブ画面 S-50 になった（SettingsPanel.jsx は削除）。
+# フィールド定義は screens/S50Settings.jsx へそのまま移設（配列名は不変）。
 _SETTINGS_PANEL = os.path.abspath(os.path.join(
-    os.path.dirname(__file__), '..', '..', '..', 'web_ui', 'src', 'SettingsPanel.jsx'))
+    os.path.dirname(__file__), '..', '..', '..', 'web_ui', 'src', 'screens', 'S50Settings.jsx'))
 
 
 def _yaml_block(pkg: str, relpath: str, block_key: str) -> dict:
