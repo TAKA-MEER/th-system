@@ -4,7 +4,7 @@
 #
 # 起動オプション:
 #   use_stub:=true    試験員トラッカーをスタブに切替 (デフォルト: false)
-#   imu_enabled:=true IMU 入力を EKF に追加 (デフォルト: false。要ファーム更新)
+#   imu_enabled:=false  IMU の vyaw 融合を切る (デフォルト: true。WS-9V)
 #   map_yaml:=<path>  使用する地図ファイル (デフォルト: 空=SLAM マッピングモード)
 #   lidar_source:=local    USB直結のsllidar_nodeを起動 (デフォルト)
 #   lidar_source:=network  ラズパイ等が配信する/scanを使用 (ローカル起動なし。
@@ -41,15 +41,17 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument('use_stub',    default_value='false',
                               description='試験員トラッカーをスタブで代替'),
-        # 既定 false: ジャイロ単位の修正(2026-08-06、esp32/src/imu.cpp)を含む
-        # ファームウェアを書き込み、実機でヨーレートを検証するまでは有効にしない。
-        # 未修正のファームは angular_velocity を dps で送ってくるため、rad/s
-        # 規定として読む EKF が 57.3 倍のヨーレートを信じてオドメトリが壊れる。
-        # 検証手順は docs/architecture.md「IMU (DSR1603 / BNO055) 追加」参照。
-        DeclareLaunchArgument('imu_enabled', default_value='false',
-                              description='IMU (DSR1603/BNO055) の vyaw を EKF に追加。'
-                                          'ジャイロ単位修正済みファームの書き込みと'
-                                          '実機検証が済んでから true にすること'),
+        # WS-9V (2026-09-04): 既定 true。クローラは超信地旋回でトラックが滑り、
+        # エンコーダだけのオドメトリは L 字コーナーで yaw が飛ぶ。特徴の無い長い
+        # 廊下ではその誤差がそのまま伸び、slam_toolbox の localization（探索窓
+        # ±0.25m）では窓の外に出て補正できない（実機 2026-09-04 の長距離再生で
+        # 地図と scan が明確にずれた）。EKF が融合するのはジャイロ vyaw のみ・
+        # BNO055 の gyro は fully calibrated・dps→rad/s 修正(2026-08-06)済み・
+        # ekf_params.yaml の imu0 欠落(2026-09-02)も修正済みで、有効化の条件は整った。
+        # ジャイロ単位未修正のファームの個体で動かすときだけ imu_enabled:=false。
+        DeclareLaunchArgument('imu_enabled', default_value='true',
+                              description='IMU (DSR1603/BNO055) の vyaw を EKF に融合（既定 true）。'
+                                          'ジャイロ単位未修正のファームの個体では false にする'),
         DeclareLaunchArgument('map_yaml',    default_value='',
                               description='地図 YAML パス (空=SLAM モード)'),
         DeclareLaunchArgument('log_level',   default_value='info'),
@@ -100,7 +102,7 @@ def generate_launch_description():
 
     # ── 設定ファイルパス ──────────────────────────────────
     nav2_yaml   = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
-    # imu_enabled:=true → エンコーダ+IMU、false(既定) → エンコーダのみ
+    # imu_enabled:=true(既定) → エンコーダ+IMU の vyaw、false → エンコーダのみ
     ekf_yaml_imu    = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
     ekf_yaml_no_imu = os.path.join(BRINGUP_DIR, 'config', 'ekf_params_no_imu.yaml')
     ekf_yaml    = PythonExpression(
@@ -216,16 +218,17 @@ def generate_launch_description():
     # ── 5. robot_localization (EKF) ──────────────────────
     nodes.append(LogInfo(
         condition=IfCondition(imu_enabled),
-        msg='imu_enabled=true: ekf_params.yaml (エンコーダ+IMUのvyaw) を使用します。'
+        msg='imu_enabled=true (既定): ekf_params.yaml (エンコーダ+IMUのvyaw) を使用します。'
             'ジャイロ単位修正(2026-08-06)を含むファームウェアが書き込まれていることを'
             '確認してください。未修正だと角速度が dps で届き、EKF が 57.3 倍の'
-            'ヨーレートを信じてオドメトリが壊れます。'
+            'ヨーレートを信じてオドメトリが壊れます（その場合は imu_enabled:=false）。'
             'キャリブレーションは ros2 run th_calibration imu_calib_check.py で確認。',
     ))
     nodes.append(LogInfo(
         condition=UnlessCondition(imu_enabled),
-        msg='imu_enabled=false (既定): ekf_params_no_imu.yaml (エンコーダのみ) を使用します。'
-            'クローラの超信地旋回スリップによる yaw 誤差は補正されません。',
+        msg='imu_enabled=false: ekf_params_no_imu.yaml (エンコーダのみ) を使用します。'
+            'クローラの超信地旋回スリップによる yaw 誤差は補正されません'
+            '（長距離・廊下の再生では地図とずれます）。',
     ))
     nodes.append(Node(
         package='robot_localization',

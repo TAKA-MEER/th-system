@@ -317,10 +317,10 @@ ros2 topic echo /esp32/imu_data
 # 3. 8の字キャリブレーションを実施
 ros2 run th_calibration imu_calib_check.py
 
-# 4. 上記「ジャイロの単位」の検証手順を通してから IMU 入力を有効にする
-#    true で ekf_params.yaml（imu0込み）、false(既定) で
-#    ekf_params_no_imu.yaml（エンコーダのみ）を選択する
-ros2 launch th_bringup bringup.launch.py imu_enabled:=true
+# 4. IMU 融合は既定で有効（WS-9V / 2026-09-04）。true で ekf_params.yaml（imu0込み）、
+#    false で ekf_params_no_imu.yaml（エンコーダのみ）を選択する。
+#    ジャイロ単位未修正のファームの個体でだけ imu_enabled:=false にする。
+ros2 launch th_bringup bringup.launch.py   # imu_enabled:=true が既定
 
 # 5. EKF のチューニング
 #    robot_localization のドキュメントを参照し
@@ -359,7 +359,7 @@ ros2 launch th_bringup bringup.launch.py imu_enabled:=true
    | ほぼ直進中の `wz` が 0.3〜0.5 | 既に rad/s。単位の前提が崩れるので再調査 |
 2. **`/esp32/imu_data` の `angular_velocity`**。`sensor_msgs/Imu` は rad/s 規定なので、EKF が 57.3 倍のヨーレートを信じてオドメトリが壊れる。
 
-`imu.cpp` で dps → rad/s に変換して修正した。**この修正を含むファームウェアを書き込むまで `imu_enabled:=true` にしてはいけない。** 未修正のファームを検知できるよう、`esp32_bridge` は `|wz| > 10 rad/s` でエラーログを出す（低速域では dps の値も閾値を下回るため、気づくための警告であって保証ではない）。
+`imu.cpp` で dps → rad/s に変換して修正した。**この修正を含むファームウェアが書き込まれていない個体では `imu_enabled:=false` で起動すること**（既定は true）。未修正のファームを検知できるよう、`esp32_bridge` は `|wz| > 10 rad/s` でエラーログを出す（低速域では dps の値も閾値を下回るため、気づくための警告であって保証ではない）。
 
 **検証手順**（再書き込み後）:
 
@@ -375,7 +375,7 @@ ros2 topic echo /esp32/imu_data --field angular_velocity.z
 
 **新しい失敗モード（要監視）**: `imu_enabled:=true` にすると、BNO055 のジャイロバイアスがオドメトリに乗る。`ekf_params.yaml` の `imu0` 側の `vyaw` 共分散（0.0025）は `odom0` 側（0.05）の 1/20 なので、EKF はジャイロを強く信頼する。キャリブレーション未実施でバイアスが残っていると、**静止中でも odom がじわじわ回り続ける**。従来は EKF の出力自体が使われていなかったためこの経路は存在しなかった。`ros2 run th_calibration imu_calib_check.py` で gyro が 3（Fully calibrated）になっていることを確認すること。
 
-`imu_enabled` の既定は `false` のまま（上記の再書き込みと検証が済むまで有効にしない）。DSR1603 未装着の個体でも `Imu::init()` が失敗を検出して `IMU_DATA` を送らないだけで、EKF は `odom0` のみで動作するので壊れない。
+**`imu_enabled` の既定は `true`（WS-9V / 2026-09-04）。** ジャイロ単位修正（2026-08-06）・`imu0` 欠落修正（2026-09-02）が済み、実機で gyro が Fully calibrated・`/esp32/imu_data` が 10Hz で届くことを確認したうえで既定化した。動機: 特徴の少ない長い廊下の教示再生で L 字コーナーのクローラースリップ由来の yaw 誤差がそのまま伸び、slam_toolbox の localization（探索窓 ±0.25m）では窓の外に出て補正できなかった（実機 2026-09-04）。ジャイロ単位未修正のファームの個体で動かすときは `imu_enabled:=false`。DSR1603 未装着の個体でも `Imu::init()` が失敗を検出して `IMU_DATA` を送らないだけで、EKF は `odom0` のみで動作するので壊れない（＝既定 true でも安全）。
 
 ---
 

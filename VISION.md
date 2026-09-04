@@ -406,6 +406,32 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
   更新: `service_call.py` / `route_record_core.py` / `replay_runner.py` /
   `config_manager.py` / `slam_control.py` / `route_recorder.py` / S-14 WebUI。
 
+- **2026-09-04 — 特徴の少ない廊下の再生で地図とずれ、補正されない（WS-9V）**:
+  実機の長距離再生で、L 字コーナーの先の廊下で `map→base_link` が実機から
+  〜0.4m ずれ、scan が壁からはみ出て obstacle_limiter が停止。
+
+  **なぜ localization が補正しないか**: `map_and_localization_slam_toolbox_node` の
+  localization は「odom で予測した pose のまわり **±0.25m**（`correlation_search_space_dimension`
+  0.5 の半分）を相関スキャンマッチで探索し、`link_match_minimum_response_fine`(0.1) を
+  超えたら採用」。ずれが 0.25m を超えると**真の pose が探索窓の外**で、マッチャーは
+  それを一度も評価しない（「ずれを見ているのに直さない」のではなく、正しい pose に
+  到達できない）。さらに特徴の無い廊下は廊下軸方向に相関の勾配が無いので、窓の中でも
+  引き戻せない。復帰用のパーティクルフィルタ（AMCL 相当）も無い。`minimum_travel_distance`
+  0.3 も相まって、補正頻度 < ドリフト蓄積速度になり負ける。
+
+  **変更**（ユーザー決定 2026-09-04）: **`imu_enabled` の既定を `false` → `true`**
+  （`bringup.launch.py`）。EKF が融合するのはジャイロ `vyaw` のみ（絶対方位は不使用。
+  屋内磁気擾乱対策）。有効化の前提条件は揃っている: dps→rad/s 修正（2026-08-06）、
+  `ekf_params.yaml` の `imu0` 欠落修正（2026-09-02）、実機で gyro fully calibrated・
+  `/esp32/imu_data` 10Hz。エンコーダのみで欠けるコーナーの yaw 変化量をジャイロが
+  埋める → ドリフトの上流を断つ。ジャイロ単位未修正ファームの個体でだけ
+  `imu_enabled:=false`。
+
+  **限界**: IMU は上流のオドメトリを直すが、特徴の無い長い廊下の廊下軸方向ドリフトは
+  原理的に残る。SLAM localization のチューニング（探索窓拡大・補正頻度）は別途。
+
+  更新: `bringup.launch.py` / `docs/使い方.md` §1-2 / `docs/architecture.md`。
+
 ---
 
 ## 3. 両設計書が扱っていない事項
