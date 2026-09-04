@@ -156,22 +156,15 @@ table{border-collapse:collapse;width:100%}
   #hdr .row2{--estop-w:auto}
   #faultBox{min-width:190px}
 }
-/* The header only becomes one row (side-by-side) once row 1 still fits on
-   one line with row 2 beside it. Switching at 760px would leave row 1 only
-   ~400px, wrapping the screen name / mode to 3 lines. */
-@container app (min-width:1200px){
-  #hdr{display:flex;align-items:stretch}
-  #hdr .row1{flex:1 1 auto;min-width:0}
-  /* row2 の幅は「中身」ではなく「コンテナ幅」だけで決める（2026-09-02）。
-     以前は flex:0 0 auto で中身依存だったため、フォルト文が長いほど row2 が
-     広がり row1 を圧迫し、ヘッダーが変形していた。幅を cqw の式に固定すれば
-     メッセージの長さと無関係になり、row1 の取り分も一定になる。
-     内訳: #estopBtn が min-width:max(160px,25cqw) を持つので、残りが
-     #faultBox に回る（1200px で 504-300=204px ≥ min-width:190px を満たす）。 */
-  #hdr .row2{border-top:none;border-left:1px solid #23334a;
-    flex:0 0 auto;width:max(420px, 42cqw);min-width:0}
-  #faultBox{flex:1 1 auto;min-width:0}
-}
+/* WS-9X: 横長でもヘッダーは 2 段のまま（row1 / row2 を縦に積む）。
+   以前は min-width:1200px で 1 段（row1 | row2 横並び）にしていたが、それだと
+   row2 の取り分が ~42cqw に固定され、フォルト／状態メッセージ（#faultBox）の
+   幅が狭くなる。ユーザー要望（2026-09-04）で、本文高さより「エラーメッセージ
+   のスペース」を優先し、2 段に統一した。
+   2 段なら row2 は常に全幅で、#faultBox が flex:1 1 auto、#estopBtn が
+   min-width:max(160px,25cqw) の右端 = メッセージ領域が最大になる。
+   （2026-09-02 に直した「フォルト文の長さでヘッダーが変形する」不具合は
+   1 段レイアウト特有だったので、2 段に統一したことで原理的に再発しない。） */
 /* On a portrait screen, fold the project name and shorten the zone pill.
    A header that wraps to 2 lines eats into body height (DetailedDesign-webui.md §2.5) */
 .z-short{display:none}

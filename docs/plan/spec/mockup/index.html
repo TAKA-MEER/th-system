@@ -118,14 +118,11 @@ body.pv-landscape #app{width:1120px;height:720px;max-width:calc(100vw - 36px);ma
   #hdr .row2{--estop-w:auto}
   #faultBox{min-width:190px}
 }
-/* ヘッダを 1 段（横並び）にするのは、2 段目を横に置いても 1 段目が
-   1 行に収まる幅からにする。760px で切り替えると 1 段目の取り分が
-   400px 弱しか残らず、画面名称・モードが 3 行に折り返す。 */
-@container app (min-width:1200px){
-  #hdr{display:flex;align-items:stretch}
-  #hdr .row1{flex:1 1 auto;min-width:0}
-  #hdr .row2{border-top:none;border-left:1px solid #23334a;flex:0 0 auto}
-}
+/* WS-9X: 横長でもヘッダは 2 段のまま（row1 / row2 を縦に積む）。
+   1 段（横並び）にすると row2 の取り分が固定され、フォルト／状態メッセージ
+   （#faultBox）の幅が狭くなる。本文高さより「エラーメッセージのスペース」を
+   優先し 2 段に統一（ユーザー要望 2026-09-04）。row2 は常に全幅で、
+   #faultBox が flex:1 1 auto、#estopBtn が右端 = メッセージ領域が最大。 */
 /* 縦長ではプロジェクト名を畳み、ゾーン表示も短縮する。
    ヘッダが 2 行に折り返すと本文の高さをそのぶん奪うため（Spec-webui.md §1.3） */
 .z-short{display:none}
