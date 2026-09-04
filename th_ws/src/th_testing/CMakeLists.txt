@@ -50,6 +50,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_critical_fault_hold
     test/test_critical_fault_hold.py
     TIMEOUT 30)
+  # WS-9P: 一時停止の理由（RouteStatus.arrived）と障害物とみなす点数の
+  # ノード側配線。gtest / playwright が届かない範囲だけ。ROS2 不要
+  ament_add_pytest_test(test_pause_reason_and_min_points
+    test/test_pause_reason_and_min_points.py
+    TIMEOUT 30)
   # WS-9F: /route/preview の帯域対策の静的テスト（decimate_polyline 適用と
   # ハートビート配信の設計判断を固定。ROS2 不要）
   ament_add_pytest_test(test_route_preview_bandwidth

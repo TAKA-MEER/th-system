@@ -198,6 +198,11 @@ export const S14_POSE_LOCALIZE_TIMEOUT =
 export const S14_POSE_READY = '推定できました。地図と位置を確認して『再生』を押してください'
 export const S14_POSE_RUN = '再生中'
 export const S14_POSE_PAUSE = '一時停止（記録の終端に達しました。終了を押してください）'
+// WS-9P (2026-09-04): PAUSE は終端到達だけでなくフォルト・ジョグ介入・停止ボタンでも
+// 起きる。以前はすべて上の「終了を押してください」を出していたため、ESP32 が一瞬
+// 途切れて止まっただけの操作者に「もう終わりだ」と誤って案内していた。
+export const S14_POSE_PAUSE_RESUMABLE =
+  '一時停止中。「再生」を押すと止まったところから続きを走ります。'
 export const S14_LENGTH = '距離'
 export const S14_POINTS = '点数'
 

@@ -321,8 +321,12 @@ class ReplayRunner(Node):
             self._need_rotate = True
             self._rotated = False
         elif name == 'resume_path':
-            # _from_index から追従を続ける（特に何もしない）
-            self.get_logger().info('resume_path: 追従を再開')
+            # _from_index から追従を続ける（index はそのままなので途中から再開する）。
+            # WS-9P: 到着ラッチを解除する。終端に達したあとに再生を押した場合、
+            # 解除しないと evt.arrived を出し直せず RUN のまま機体が動かない状態で
+            # 固まる。解除しておけば「もう終端だ」と即座に判定して PAUSE へ戻る。
+            self._arrived_sent = False
+            self.get_logger().info('resume_path: 追従を再開（index は保持）')
         elif name == 'widen_search':
             # WAIVER(demo): W-01 — デモでは来ない想定。ログのみ。
             self.get_logger().info('widen_search: 受信したが探索省略（WAIVER(demo): W-01）')
@@ -535,6 +539,9 @@ class ReplayRunner(Node):
         msg.recorded_m = float(polyline_length(self._points))
         msg.elapsed_sec = 0.0  # 再生では未使用
         msg.target_index = int(self._target_index)
+        # WS-9P: 一時停止の理由を UI に伝える。PAUSE は終端到達だけでなくフォルト・
+        # ジョグ介入・停止ボタンでも起きるので、状態名だけでは区別できない。
+        msg.arrived = bool(self._arrived_sent)
         if self._route is not None:
             info = RouteInfo()
             info.id = self._route.id

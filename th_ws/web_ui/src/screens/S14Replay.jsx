@@ -30,7 +30,7 @@ import attributes from '../generated/attributes.json'
 import {
   S11_MANUAL_TITLE,
   S14_TAB_REPLAY, S14_SELECT_TITLE, S14_EMPTY, S14_FWD, S14_REV, S14_PROCEED,
-  S14_POSE_TITLE, S14_POSE_LOCALIZE, S14_POSE_LOCALIZE_TIMEOUT, S14_POSE_READY, S14_POSE_RUN, S14_POSE_PAUSE,
+  S14_POSE_TITLE, S14_POSE_LOCALIZE, S14_POSE_LOCALIZE_TIMEOUT, S14_POSE_READY, S14_POSE_RUN, S14_POSE_PAUSE, S14_POSE_PAUSE_RESUMABLE,
   S14_LENGTH, S14_POINTS,
 } from '../i18n/screens.js'
 import { stateLabel } from '../i18n/states.js'
@@ -41,11 +41,15 @@ import { OP_LABELS } from '../i18n/states.js'
 // 抜けるので、ここまで留まるのは異常（＝弾かれている）とみなして手がかりを出す。
 const LOCALIZE_TIMEOUT_MS = 20000
 
-function poseText(stateName) {
+// WS-9P: PAUSE の文言は「なぜ止まったか」で変える。終端に達したのなら終了を促し、
+// フォルト・ジョグ介入・停止ボタンで止まったのなら「再生で続きから」を案内する。
+// arrived は replay_runner が /route/status に載せてくる（RouteStatus.arrived）。
+// 状態名だけでは区別できない（T-REPLAY-06/09 と C-01/C-03 が同じ PAUSE に落ちる）。
+function poseText(stateName, arrived) {
   if (stateName === 'LOCALIZE') return S14_POSE_LOCALIZE
   if (stateName === 'READY') return S14_POSE_READY
   if (stateName === 'RUN') return S14_POSE_RUN
-  if (stateName === 'PAUSE') return S14_POSE_PAUSE
+  if (stateName === 'PAUSE') return arrived ? S14_POSE_PAUSE : S14_POSE_PAUSE_RESUMABLE
   return null
 }
 
@@ -64,7 +68,7 @@ export default function S14Replay({ onFinish }) {
   const [localizeStuck, setLocalizeStuck] = useState(false)
 
   const stateName = state?.state ?? null
-  const pose = poseText(stateName)
+  const pose = poseText(stateName, routeStatus?.arrived === true)
   const empty = routes.length === 0
   const selected = selectedId != null
 
