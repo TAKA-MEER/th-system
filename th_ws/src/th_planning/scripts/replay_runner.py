@@ -348,7 +348,11 @@ class ReplayRunner(Node):
         WS-9N: 経路の始点（self._points[0] と self._start_yaw）を初期姿勢として渡し、
         deserialize_map(match_type=3 LOCALIZE_AT_POSE) で自己位置を経路始点に合わせる。
         再生中は地図を凍結したまま自己位置推定のみ継続する。
-        再読込は 6.9MB の I/O を伴うので長めのタイムアウト（30s）を使う。
+
+        WS-9S: slam_control 側は読み直しのたび slam_toolbox を respawn してから
+        deserialize する（deserialize の反復呼びでグラフが上乗せされ地図が壊れる
+        バグの対策）。respawn 待ち（最大 ~45s）＋ 6.9MB〜20MB の deserialize I/O
+        （最大 30s）を含むので、タイムアウトは 90s と長めに取る。
         """
         if not self._map_session_client.wait_for_service(timeout_sec=1.0):
             return '/map_session/open に接続できません'
@@ -368,7 +372,7 @@ class ReplayRunner(Node):
             initial_x=init_x,
             initial_y=init_y,
             initial_yaw=init_yaw)
-        resp, err = call_and_wait(self, self._map_session_client, req, 30.0)
+        resp, err = call_and_wait(self, self._map_session_client, req, 90.0)
         if err:
             return f'地図の読み直しに失敗: {err}'
         if resp is not None and not resp.success:

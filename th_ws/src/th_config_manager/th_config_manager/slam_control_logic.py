@@ -30,6 +30,23 @@ def deserialize_match_type(has_initial_pose: bool) -> int:
     return 3 if has_initial_pose else 1
 
 
+def slam_restart_complete(old_pids, current_pids) -> bool:
+    """respawn 後、slam_toolbox の PID が総入れ替わりしたか（純関数）。
+
+    WS-9S: 再生の地図読み直しは毎回 slam_toolbox を SIGTERM → launch の
+    `respawn=True` で作り直してから `deserialize_map` する。旧プロセスが消えて
+    新プロセスが立つまで待つ判定に使う。
+
+    - current_pids が空 → まだ立ち上がっていない（False）
+    - current_pids が old_pids と 1 つでも重なる → まだ旧プロセスが残っている（False）
+    - current_pids が非空で old_pids と互いに素 → 総入れ替わり済み（True）
+    """
+    cur = set(current_pids)
+    if not cur:
+        return False
+    return cur.isdisjoint(set(old_pids))
+
+
 def open_session_error(slot: str, mode: str, session_id: str) -> "str | None":
     """/map_session/open の引数検証（純関数）。
 

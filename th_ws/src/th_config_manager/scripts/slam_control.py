@@ -95,11 +95,18 @@ DESERIALIZE_TIMEOUT_SEC     = 30.0  # deserialize_map は 6.9MB のポーズグ�
                                      # (2026-09-03 実測 .posegraph 6.9MB + .data
                                      # 29KB)。SERVICE_TIMEOUT_SEC(5s) では足りない
                                      # 可能性があるため長めに取る
+RESPAWN_WAIT_SEC           = 45.0   # WS-9S: reload のたび slam_toolbox を SIGTERM →
+                                     # launch の respawn=True で作り直す。旧プロセス
+                                     # 消失 → 新プロセスのサービス復帰までの待ち上限。
+                                     # respawn_delay=2.0 + ノード初期化が Gazebo 等と
+                                     # 輻輳すると 25s 超（STARTUP_SERVICE_TIMEOUT_SEC の
+                                     # コメント参照）になる実績があるため長めに取る
 STATUS_PUBLISH_PERIOD_SEC   = 0.5
 
 import os
 import signal
 import threading
+import time
 
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -118,6 +125,7 @@ from th_system_msgs.srv import OpenMapSession
 from th_config_manager.service_call import call_and_wait
 from th_config_manager.slam_control_logic import (
     deserialize_match_type, map_session_filename, open_session_error,
+    slam_restart_complete,
 )
 
 
@@ -169,6 +177,9 @@ class SlamControl(Node):
         # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
         # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
         self._slam_ready = None
+        # WS-9S: 再生の地図読み直しは意図的に slam_toolbox を respawn する。その間
+        # _check_slam_restart にモード再適用を走らせない（reload 側が最後まで面倒を見る）。
+        self._reload_in_progress = False
         # 操作の並行実行から状態の読み取り→更新と slam_toolbox 呼び出しまでを
         # まとめて保護する。ReentrantCallbackGroup 下では連続押下等で複数の
         # 要求が並行実行されうるため（実機検証で、ロックなしでは短時間の2連続
@@ -266,6 +277,8 @@ class SlamControl(Node):
         空ポーズグラフも取り直す。再起動でグラフは空に戻っており、この瞬間が
         最も「空」に近いスナップショットを取れるタイミングであるため。
         """
+        if self._reload_in_progress:
+            return   # WS-9S: reload が respawn を意図的に起こしている最中は触らない
         ready = self._cli_localization.service_is_ready()
         was_ready = self._slam_ready
         self._slam_ready = ready
@@ -456,12 +469,56 @@ class SlamControl(Node):
         return self._finish(
             response, None, f'地図を保存しました（地図を凍結しました）: {base}.posegraph')
 
-    def _handle_map_reload(self, response, base: str, request=None):
-        """localization モードに入ってから deserialize_map で地図を読み直す。
+    def _kill_slam_toolbox(self):
+        """稼働中の slam_toolbox プロセスを SIGTERM する。落とした PID の一覧を返す。
 
-        順序: _set_localization(True) → deserialize_map
+        launch の `respawn=True` が作り直す。`_cb_discard_map` と共用。
+        """
+        pids = _find_slam_toolbox_pids()
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                self.get_logger().warn(
+                    f'slam_toolbox (pid {pid}) を終了させました。'
+                    ' respawn による再起動を待ちます')
+            except OSError as e:
+                self.get_logger().warn(f'slam_toolbox (pid {pid}) を終了できません: {e}')
+        return pids
+
+    def _wait_for_slam_restart(self, old_pids, timeout_s: float) -> "str | None":
+        """WS-9S: SIGTERM 後、旧プロセス消失 → 新プロセスのサービス復帰まで待つ。
+
+        戻り値: エラー文字列（タイムアウト等） or None（復帰完了）。
+        """
+        deadline = time.monotonic() + timeout_s
+        # 1. slam_toolbox の PID が総入れ替わりするまで /proc をポーリングする
+        #    （ROS グラフのタイミングに依存しない。純判定は slam_restart_complete）。
+        while time.monotonic() < deadline:
+            if slam_restart_complete(old_pids, _find_slam_toolbox_pids()):
+                break
+            time.sleep(0.5)
+        else:
+            return 'slam_toolbox が再起動しませんでした（respawn 待ちタイムアウト）'
+        # 2. 新ノードのサービスが出そろうのを待つ。
+        remaining = max(1.0, deadline - time.monotonic())
+        if not self._cli_deserialize.wait_for_service(timeout_sec=remaining):
+            return 'slam_toolbox の deserialize_map サービスが復帰しません'
+        if not self._cli_localization.wait_for_service(timeout_sec=5.0):
+            return 'slam_toolbox の set_localization_mode サービスが復帰しません'
+        return None
+
+    def _handle_map_reload(self, response, base: str, request=None):
+        """slam_toolbox を作り直してから deserialize_map で地図を読み直す（WS-9S）。
+
+        順序: (ファイル存在確認) → slam_toolbox を SIGTERM して respawn を待つ
+              → _set_localization(True) → deserialize_map を **1 回だけ**
+
+        WS-9S: 経路選択のたび長寿命ノードへ deserialize を反復するとポーズグラフが
+        上乗せされ、`/map` が選択のたび形を変え `map→odom` が数 m 飛ぶ（2026-09-04
+        実機で確定）。まっさらなノードに deserialize を 1 回、が本来の使い方。
+
         LocalizationSlamToolbox 側が match_type を扱うため、localization モードに
-        入ってから読み直す（2026-09-03 実機確認）。
+        入ってから読み直す（2026-09-03 実機確認。順序は AST テストで固定）。
 
         - req.filename = base（slam_toolbox が .posegraph を付けるため拡張子なし）
         - req.match_type = deserialize_match_type(request.has_initial_pose)
@@ -470,11 +527,10 @@ class SlamControl(Node):
           （戻すと地図が汚れ自己位置が発散する。ここが欠陥の中心）。
         - _set_active(False) で「地図作成停止」を publish する。
         """
-        if not self._cli_deserialize.wait_for_service(timeout_sec=1.0):
-            return self._finish(response, 'slam_toolbox に接続できません', '')
-
         graph_path = base + '.posegraph'
         data_path = base + '.data'
+        # kill する前にファイルの有無を確認して fail-fast する（無いのに slam を
+        # 落とすと自己位置補正が無駄に止まる）。
         if not os.path.exists(graph_path):
             return self._finish(
                 response, f'地図ファイルが無いため読み直せません ({graph_path})', '')
@@ -482,27 +538,48 @@ class SlamControl(Node):
             return self._finish(
                 response, f'地図データファイルが無いため読み直せません ({data_path})', '')
 
-        # WS-9N: localization モードへ切り替えて地図を凍結する (/slam_toolbox/set_localization_mode)
-        err = self._set_localization(True)
-        if err:
-            return self._finish(response, f'localization モード切替失敗: {err}', '')
+        # kill の前に立てる。kill 直後に _check_slam_restart が「クラッシュした」と
+        # 誤認するのを防ぐ（この関数は self._lock を持って呼ばれている）。
+        self._reload_in_progress = True
+        try:
+            old_pids = self._kill_slam_toolbox()
+            if not old_pids:
+                self.get_logger().warn(
+                    'slam_toolbox のプロセスが見つかりません。respawn 待ちに入ります'
+                    '（サービス復帰を待って読み直しを試みます）')
 
-        req = DeserializePoseGraph.Request()
-        req.filename = base   # WS-9M: slam_toolbox が `.posegraph` を付けるため拡張子なし
-        has_init = bool(getattr(request, 'has_initial_pose', False)) if request else False
-        req.match_type = deserialize_match_type(has_init)
-        if has_init:
-            req.initial_pose.x = float(request.initial_x)
-            req.initial_pose.y = float(request.initial_y)
-            req.initial_pose.theta = float(request.initial_yaw)
+            err = self._wait_for_slam_restart(old_pids, RESPAWN_WAIT_SEC)
+            if err:
+                return self._finish(response, err, '')
 
-        _result, err = call_and_wait(
-            self, self._cli_deserialize, req, DESERIALIZE_TIMEOUT_SEC)
-        if err:
-            return self._finish(response, f'deserialize_map 呼び出し失敗: {err}', '')
+            # WS-9N: localization モードへ切り替えて地図を凍結する
+            # (/slam_toolbox/set_localization_mode)
+            err = self._set_localization(True)
+            if err:
+                return self._finish(response, f'localization モード切替失敗: {err}', '')
 
-        # 再生中は localization モードのまま維持（地図作成に戻さない）
-        self._set_active(False)
+            req = DeserializePoseGraph.Request()
+            req.filename = base   # WS-9M: slam_toolbox が `.posegraph` を付けるため拡張子なし
+            has_init = bool(getattr(request, 'has_initial_pose', False)) if request else False
+            req.match_type = deserialize_match_type(has_init)
+            if has_init:
+                req.initial_pose.x = float(request.initial_x)
+                req.initial_pose.y = float(request.initial_y)
+                req.initial_pose.theta = float(request.initial_yaw)
+
+            _result, err = call_and_wait(
+                self, self._cli_deserialize, req, DESERIALIZE_TIMEOUT_SEC)
+            if err:
+                return self._finish(response, f'deserialize_map 呼び出し失敗: {err}', '')
+
+            # 再生中は localization モードのまま維持（地図作成に戻さない）
+            self._set_active(False)
+            # サービス復帰は確認済み。次周期の _check_slam_restart に
+            # 「再起動を検知」させて余計なモード再適用を走らせない。
+            self._slam_ready = True
+        finally:
+            self._reload_in_progress = False
+
         return self._finish(
             response, None,
             '地図を読み直しました（地図を凍結して自己位置推定に切り替えました）')
@@ -525,23 +602,16 @@ class SlamControl(Node):
             return rejected
 
         with self._lock:
-            pids = _find_slam_toolbox_pids()
-            if not pids:
+            if not _find_slam_toolbox_pids():
                 return self._finish(
                     response, 'slam_toolbox のプロセスが見つかりません', '')
             # 破棄後は「地図作成停止」状態から始める（起動直後と同じ）。
             # 再起動した slam_toolbox は mapping モードで立ち上がるので、
             # _check_slam_restart がこの値を見て停止状態を入れ直す。
             self._set_active(False)
-            for pid in pids:
-                try:
-                    os.kill(pid, signal.SIGTERM)
-                    self.get_logger().warn(
-                        f'地図を破棄するため slam_toolbox (pid {pid}) を終了させました。'
-                        ' respawn による再起動を待ちます')
-                except OSError as e:
-                    return self._finish(
-                        response, f'slam_toolbox (pid {pid}) を終了できません: {e}', '')
+            # _handle_map_reload と違い、ここは respawn を待たない。再起動の検知と
+            # モード再適用は _check_slam_restart() に任せる（従来どおり即返す）。
+            self._kill_slam_toolbox()
 
         return self._finish(
             response, None, '地図を破棄しました（slam_toolbox を再起動中）')

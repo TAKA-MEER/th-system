@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.join(
 
 from slam_control_logic import (   # noqa: E402
     deserialize_match_type, map_session_filename, open_session_error,
+    slam_restart_complete,
 )
 from route_record_core import _safe_id, finalized_path   # noqa: E402
 
@@ -54,6 +55,30 @@ def test_deserialize_match_type_with_initial_pose():
 def test_deserialize_match_type_without_initial_pose():
     """has_initial_pose=False なら START_AT_FIRST_NODE (1) を返す。"""
     assert deserialize_match_type(False) == 1
+
+
+# ── 1b. slam_restart_complete（WS-9S: respawn 待ちの純判定）────────────
+def test_slam_restart_complete_empty_current_is_false():
+    """新プロセスがまだ 1 つも無ければ「再起動未完了」。"""
+    assert slam_restart_complete([100, 101], []) is False
+
+
+def test_slam_restart_complete_all_new_pids_is_true():
+    """PID が総入れ替わりしていれば「再起動完了」。"""
+    assert slam_restart_complete([100, 101], [205]) is True
+    assert slam_restart_complete([100], [205, 206]) is True
+
+
+def test_slam_restart_complete_overlap_is_false():
+    """旧 PID が 1 つでも残っていれば未完了（respawn 前に旧プロセスを拾っている）。"""
+    assert slam_restart_complete([100, 101], [101]) is False
+    assert slam_restart_complete([100], [100, 205]) is False
+
+
+def test_slam_restart_complete_no_old_pids():
+    """落とす前に PID が無かった場合でも、新プロセスが出れば完了とみなす。"""
+    assert slam_restart_complete([], [205]) is True
+    assert slam_restart_complete([], []) is False
 
 
 # ── 2. /map_session/open の引数検証 ────────────────────────────────────
@@ -214,6 +239,65 @@ def test_handle_map_reload_calls_localization_before_deserialize():
     assert loc_call_lineno < deser_call_lineno, (
         f'_set_localization (line {loc_call_lineno}) が '
         f'deserialize (line {deser_call_lineno}) より後に呼ばれている（順序不正）')
+
+
+def test_handle_map_reload_respawns_slam_before_deserialize():
+    """WS-9S: _handle_map_reload が deserialize の前に slam_toolbox を作り直すこと。
+
+    経路選択のたび長寿命ノードへ deserialize を反復するとポーズグラフが上乗せされ、
+    `/map` が選択のたび形を変え `map→odom` が数 m 飛ぶ（2026-09-04 実機で確定）。
+    まっさらなノードに deserialize 1 回、に固定する。
+
+    変異チェック: `_kill_slam_toolbox()` / `_wait_for_slam_restart()` の呼び出しを
+    消す、または deserialize より後ろに移すと赤くなる。
+    """
+    tree = _tree(SLAM_CONTROL)
+    funcdef = _funcdef(tree, '_handle_map_reload')
+    assert funcdef is not None, '_handle_map_reload が無い'
+
+    kill_lineno = None
+    wait_lineno = None
+    deser_call_lineno = None
+    for n in ast.walk(funcdef):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute):
+            if n.func.attr == '_kill_slam_toolbox':
+                kill_lineno = n.lineno
+            if n.func.attr == '_wait_for_slam_restart':
+                wait_lineno = n.lineno
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) \
+                and n.func.id == 'call_and_wait' and len(n.args) >= 2 \
+                and isinstance(n.args[1], ast.Attribute) \
+                and n.args[1].attr == '_cli_deserialize':
+            deser_call_lineno = n.lineno
+
+    assert kill_lineno is not None, (
+        '_handle_map_reload に _kill_slam_toolbox() の呼び出しが無い（WS-9S）')
+    assert wait_lineno is not None, (
+        '_handle_map_reload に _wait_for_slam_restart() の呼び出しが無い（WS-9S）')
+    assert deser_call_lineno is not None, (
+        '_handle_map_reload に _cli_deserialize の call_and_wait が見つからない')
+    assert kill_lineno < deser_call_lineno, (
+        f'_kill_slam_toolbox (line {kill_lineno}) が deserialize '
+        f'(line {deser_call_lineno}) より後にある（respawn してから読むこと）')
+    assert wait_lineno < deser_call_lineno, (
+        f'_wait_for_slam_restart (line {wait_lineno}) が deserialize '
+        f'(line {deser_call_lineno}) より後にある')
+
+
+def test_check_slam_restart_guards_on_reload_in_progress():
+    """WS-9S: _check_slam_restart が _reload_in_progress のとき早期 return すること。
+
+    reload が意図的に slam_toolbox を respawn している最中に、_check_slam_restart が
+    「クラッシュした」と誤認してモード再適用を割り込ませると競合する。
+
+    変異チェック: _check_slam_restart 内の _reload_in_progress 参照を消すと赤くなる。
+    """
+    tree = _tree(SLAM_CONTROL)
+    funcdef = _funcdef(tree, '_check_slam_restart')
+    assert funcdef is not None, '_check_slam_restart が無い'
+    refs = [n for n in ast.walk(funcdef)
+            if isinstance(n, ast.Attribute) and n.attr == '_reload_in_progress']
+    assert refs, '_check_slam_restart が _reload_in_progress を見ていない（WS-9S）'
 
 
 # ── 6. ast: replay_runner の localize_done が reload 成功の分岐の中 ─────

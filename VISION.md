@@ -191,7 +191,8 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
   （`set_localization_mode(true)` ＝ **地図を凍結したまま自己位置推定だけ継続**）。
   保存は mapping モードのまま serialize（localization では書き出されない。
   2026-09-03 実機確認）。再生の読み直しは localization に入ってから
-  `deserialize_map(match_type=3, initial_pose=経路始点)`。
+  `deserialize_map(match_type=3, initial_pose=経路始点)`（毎回 slam_toolbox を
+  作り直してから。WS-9S）。
   旧 §8 の「地図作成停止 ＝ 自己位置推定停止ではない」要求に実装を追いつかせた。
 
 - **2026-09-04 — 一瞬の重大フォルトで止まり、元のモードへ戻れない（WS-9O）**:
@@ -307,6 +308,33 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
      RUN 直後に一瞬出て点滅する）。帯は 1 行に切り詰め、隠す面積を最小にする。
 
   物理非常停止と ESP32 のウォッチドッグ（600ms）は変更しない。
+
+- **2026-09-04 — 再生で経路を選ぶたび地図が変わる・自己位置が飛ぶ（WS-9S）**:
+  実機で「再生走行で地図を上書きしている。元の地図を参照して自己位置推定して
+  いないかも」。切り分けで確定（memory `replay-deserialize-accumulates-bug`）:
+  経路選択のたび `slam_control` が長寿命の `slam_toolbox` へ `deserialize_map` を
+  投げているが、このノードは deserialize で既存ポーズグラフをクリアせず**上乗せ**
+  する。同じ `test.posegraph`（ファイルは不変）を 3 回読み直させたら結果が毎回
+  変わり（`/map` が 298×167 → 333×262 → 345×213、原点も移動）、`map→odom` TF が
+  読み直しのたびに数 m・100〜200° 飛んだ（2 回目の後は yaw +192°＝ほぼ逆向き。
+  逆再生が 1.4 m で PAUSE）。1 回目（教示直後）だけ誤差が小さく前進再生は完走
+  していた。ノードは終始 localization モードなので**ディスクの `.posegraph` は
+  無傷**——壊れるのは稼働中ノードのグラフと配信中の `/map`（→ WebUI 表示）。
+
+  方針（§8 / WS-9N：再生中は地図凍結・保存地図で自己位置推定）は不変。実装バグ。
+
+  **変更**（ユーザー決定 2026-09-04・案A）: 再生の地図読み直し（`/map_session/open`
+  reload）は、毎回 `slam_toolbox` を SIGTERM して `bringup.launch.py` の
+  `respawn=True` で作り直し、**まっさらなノードに対して `deserialize_map` を
+  1 回だけ**呼ぶ。`set_localization_mode(true)` →
+  `deserialize_map(match_type=3, initial_pose=経路始点)` の中身は不変で、その手前に
+  respawn を挟むだけ。`discard_map`（`docs/使い方.md` §4-5）が既に使っている
+  「SIGTERM → respawn 待ち」を reload でも同期でやりきる形にする。
+
+  **トレードオフ**: 経路選択に respawn ぶんの待ちが増える（短経路で数秒、長距離
+  20 MB のポーズグラフで ~30–45 秒）。`docs/使い方.md` §4-4 / §4-6 に明記する。
+
+  更新: `slam_control.py` / `replay_runner.py` / `slam_control_logic.py`。
 
 ---
 
