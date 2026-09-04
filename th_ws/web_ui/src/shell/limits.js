@@ -77,18 +77,34 @@ export function operationCardLayout(mode, attributes) {
   }
 }
 
+
 // ── WS-9R (2026-09-04): 止まっている理由 ──────────────────────────────
 //
 // 実機フィードバック「謎の一時停止が発生する。画面をスクロールしたりすると
 // 復帰する」。速度上限が 0 に落ちても、フォルトでも一時停止でもないので画面に
 // 何も出ず、操作者に理由が分からなかった。
 //
-// stopReason(state, limiterStatus) -> 'estop'|'fault'|'presence'|'obstacle'|'stale'|null
-// null は「止められていない」。厳しい順に判定する（複数当てはまるときは
-// 操作者が最初に直すべきものを返す）。
-export function stopReason(state, limiterStatus, fault) {
+// 2026-09-04 追修正（実機「基本的に常に出ていて邪魔。一部表示を隠してしまう」）:
+//   1. **機体が走るはずのときだけ**出す。走らせていない間は速度指令が無いのが
+//      normal で、リミッタは常に ZERO_STALE を返す。それを「止まっている理由」
+//      として出すと待機中ずっと帯が出たままになる。
+//      判定は attributes.yaml の run_state（REPLAY→RUN / TEACH_MANUAL→REC）。
+//   2. ZERO_STALE は理由から外した。操作者に打つ手が無いうえ、RUN に入った直後
+//      に一瞬出て点滅する。ノードが死んだ場合は経路状態やフォルトが先に出る。
+//
+// stopReason(state, limiterStatus, fault, attributes)
+//   -> 'estop'|'fault'|'presence'|'obstacle'|'uncalibrated'|null
+// null は「出さない」。厳しい順に判定する。
+export function stopReason(state, limiterStatus, fault, attributes) {
   if (!state) return null
-  if (state.mode === 'ESTOP' || state.mode === 'CARRY') return 'estop'
+  // 走るはずでないなら何も出さない（待機・経路選択・準備完了・一時停止中）。
+  const runState = attributes?.[state.mode]?.run_state
+  if (!runState || state.state !== runState) return null
+
+  // 非常停止（ESTOP / CARRY）の分岐はここに要らない。どちらも attributes.yaml の
+  // run_state が null なので、上の走行状態ゲートが先に null を返す。W-1 の窓が
+  // 別に説明もする。書いても到達しない＝壊しても誰も気づけないコードになるので
+  // 置かない（変異チェックで実際に素通りすることを確認した）。
   // フォルトで止まっているとき（W-1 の窓が別に出るので、ここでは種別だけ返す）
   if (fault?.active) return 'fault'
   // 在席未確認: derive_limits が 0 台にフェイルセーフした形
@@ -97,7 +113,6 @@ export function stopReason(state, limiterStatus, fault) {
   if (state.zone === 'NA' && state.speed_limit === 'stop') return 'presence'
   if (!limiterStatus) return null
   if (limiterStatus.action === 'STOP') return 'obstacle'
-  if (limiterStatus.action === 'ZERO_STALE') return 'stale'
-  if (limiterStatus.action === 'BLOCKED_UNCALIBRATED') return 'stale'
+  if (limiterStatus.action === 'BLOCKED_UNCALIBRATED') return 'uncalibrated'
   return null
 }
