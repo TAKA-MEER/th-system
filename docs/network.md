@@ -202,6 +202,14 @@ docker restart th_robot                               # /dev/shm の掃除だけ
 **まだ実機に一度も導入していない（2026-09-05 時点。ESP32 は導入までの間 PC に
 USB 接続してファームを開発する）。** ESP32 をラズパイへ物理的に繋ぎ替えたら:
 
+0. **(必須・最初に1回)** `rplidar.service` が `/dev/ttyUSB0` のような列挙順依存の
+   パスのままになっていないか確認する:
+   ```bash
+   ssh mirs2602@192.168.5.1 'systemctl cat rplidar | grep serial_port'
+   ```
+   `/dev/ttyUSB0` 等になっていたら、ESP32 を挿した瞬間に列挙順が入れ替わって
+   LiDAR と ESP32 を取り違える恐れがある。`docs/setup.md` §6-1 の手順で
+   `/dev/serial/by-id/...` を指定する形に直してから先へ進む。
 1. ESP32 の USB を PC からラズパイへ挿し替え、by-id パスを確認する:
    ```bash
    ssh mirs2602@192.168.5.1 'ls -l /dev/serial/by-id/'

@@ -87,6 +87,11 @@ async def relay_once(ser: serial.Serial, ws_uri: str) -> None:
     loop = asyncio.get_running_loop()
     LOG.info("esp32_bridge へ接続します: %s", ws_uri)
     async with websockets.connect(ws_uri) as ws:
+        # WS が切れていた間もシリアルポート自体は開いたまま(DTR/RTSを動かさない
+        # ため)なので、カーネルのtty受信バッファに数秒分のフレームが溜まって
+        # いることがある。再接続直後にそれをそのまま流すと、古いWHEEL_FEEDBACK
+        # が一気に届いてオドメトリが瞬間的に破綻するため、接続直後に読み捨てる。
+        ser.reset_input_buffer()
         LOG.info("接続しました: %s", ws_uri)
         await asyncio.gather(
             serial_to_ws(ser, ws, decoder, loop),

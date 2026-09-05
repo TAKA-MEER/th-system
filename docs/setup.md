@@ -358,7 +358,7 @@ After=network.target
 Type=simple
 User=mirs2602
 Environment=ROS_DOMAIN_ID=10
-ExecStart=/bin/bash -lc "source /opt/ros/humble/setup.bash && source /home/mirs2602/ros2_ws/install/setup.bash && exec ros2 run rplidar_ros rplidar_node --ros-args -p serial_port:=/dev/ttyUSB0 -p serial_baudrate:=256000 -p frame_id:=laser_link -p angle_compensate:=true -p scan_mode:=Standard"
+ExecStart=/bin/bash -lc "source /opt/ros/humble/setup.bash && source /home/mirs2602/ros2_ws/install/setup.bash && exec ros2 run rplidar_ros rplidar_node --ros-args -p serial_port:=/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_0b443775f827c8419a0592b44475a0a2-if00-port0 -p serial_baudrate:=256000 -p frame_id:=laser_link -p angle_compensate:=true -p scan_mode:=Standard"
 Restart=always
 RestartSec=5
 
@@ -369,9 +369,18 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now rplidar
 ```
 
+> **2026-09-05 追記: `serial_port` は `/dev/ttyUSB0` ではなく `/dev/serial/by-id/...`
+> を指定すること。** ESP32 もラズパイの USB-UART に直結する構成（[network.md](network.md)）
+> になったため、`/dev/ttyUSB0`/`/dev/ttyUSB1` のような列挙順依存のパスは
+> 起動のたびに LiDAR と ESP32 が入れ替わりうる。上の値は 2026-09-05 に
+> `ls -l /dev/serial/by-id/` で確認したこの個体のパス。**別個体・別ケーブルに
+> 交換したら `ls -l /dev/serial/by-id/` で確認し直して置き換えること。**
+> 既存の稼働機は `sudo systemctl edit rplidar` で `ExecStart` を上書きするか、
+> unit ファイルを直接編集して `daemon-reload && restart` する。
+
 - `scan_mode:=Standard` を推奨: 既定の DenseBoost は点数が多く DR-SPAAM の CPU 推論が
   約2Hz まで落ちて歩行者を見失いやすい。Standard(点数半減)で追跡が安定する。
-- **ラズパイ再起動で `/dev/ttyUSB0` ⇄ `/dev/ttyUSB1` が入れ替わることがある**。
+- **(2026-09-05 以前の旧構成の記録)** ラズパイ再起動で `/dev/ttyUSB0` ⇄ `/dev/ttyUSB1` が入れ替わることがあった。
   起動失敗(`Error, code: 80008004`)時は `ls /dev/ttyUSB*` でポートを確認して差し替えるか、
   udev ルール(`udev/99-th-robot.rules` 参照)で `/dev/lidar` に固定する。
 
