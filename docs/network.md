@@ -5,17 +5,31 @@
 > **2026-09-02 に実機で全面的に確認・書き直した。** それ以前のこのファイルは
 > 「ESP32 を AP にする」構成を前提にしていたが、**その構成はもう使っていない。**
 > 192.168.4.x の IP・`th-esp32-ap` という SSID が出てくる記述を見かけたら古い。
+>
+> **2026-09-05 追記: ESP32 は無線を一切使わなくなった。** 第4回3階教示再生走行
+> 試験で ESP32 の WiFi 通信エラーが頻発し教示中に衝突を繰り返したため、
+> ESP32↔PC 間の無線 WebSocket を廃止し、**ESP32 はラズパイへ USB-UART で直結**、
+> ラズパイ上の `pi_serial_relay` が代わりに WiFi 経由で PC の `esp32_bridge` へ
+> 接続する構成に変更した（VISION.md「ESP32の無線化をやめ、ラズパイ経由の
+> シリアル接続にする」）。これまでの WiFi 対策の積み重ね（本ファイルの以下の
+> 記述）にもかかわらず ESP32 の切断はほぼランダムに発生しており、過去の
+> 「改善した」という判断は検証run間のブレを誤認していた可能性が高いと判断した。
+> **以下の「PC↔ラズパイ」に関する記述は今も有効**（`/scan` に加えてこの区間で
+> ESP32 のデータも運ぶようになった）。**「ESP32↔PC」に関する記述（WS 直結・
+> `wifi_credentials.h` 等）は歴史的経緯として残すが、もう実体が無い。**
 
 ## 構成の全体像
 
-**ラズパイを WiFi AP にし、PC と ESP32 をそのクライアントとして接続する**構成。
+**ラズパイを WiFi AP にし、PC をそのクライアントとして接続する**構成。
+ESP32 はラズパイに USB-UART で直結し、無線区間には出てこない。
 
 ```txt
-ラズパイ (WiFi AP + LiDAR 配信)   192.168.5.1    SSID: th-rpi-ap (2.4GHz ch1)
-  ├── PC (Ubuntu, ROS2 コンテナ)  192.168.5.50   固定IP (内蔵 Intel カード wlo1)
-  │     esp32_bridge が :8766 を待ち受け / rosbridge :9090
-  └── ESP32 (駆動用, STA 子機)    192.168.5.125  DHCP
-        WS 接続先: 192.168.5.50:8766 (ファームに決め打ち)
+ラズパイ (WiFi AP + LiDAR 配信 + pi_serial_relay)  192.168.5.1  SSID: th-rpi-ap (2.4GHz ch1)
+  │  USB-UART (/dev/serial/by-id/...)
+  ├── ESP32 (駆動用)                                (WiFi 不使用。シリアル直結のみ)
+  │
+  └── PC (Ubuntu, ROS2 コンテナ)   192.168.5.50   固定IP (内蔵 Intel カード wlo1)
+        esp32_bridge が :8766 を待ち受け(pi_serial_relay がここへ接続) / rosbridge :9090
 
 PC のインターネットは別系統:
   Elecom WDC-433SU2M2 (5GHz専用)  DHCP          SSID: NCT-WL-ST (5GHz ch36)
@@ -23,15 +37,16 @@ PC のインターネットは別系統:
 ```
 
 RPLIDAR S1 → ラズパイの `rplidar_ros` → `/scan` (`ROS_DOMAIN_ID=10`)。
-ラズパイ側は systemd で自動起動する。
+ラズパイ側は systemd で自動起動する（ESP32 用の `pi_serial_relay` も同様。後述）。
 
 ### なぜこの構成なのか
 
-- **ESP32 は 2.4GHz 専用**なので、ロボット回線は 2.4GHz でしか組めない。
-  AP を 5GHz 化することはできない。
+- PC↔ラズパイの WiFi 区間は、以前から `/scan` を実測ロス 0%・RTT 2.2ms で安定
+  運用している経路（下記「使ってはいけないアダプタ」参照）。ESP32 のデータも
+  この**既に信頼性が確認済みの経路**に相乗りさせることで、ESP32 自身の WiFi
+  スタックという不安定要因そのものを消す。
 - インターネットを 5GHz の別アダプタに逃がすことで、**PC が 2.4GHz を 2 枚同時に
-  使う状態（機内共存干渉）を避けている。** これを解消しただけで ESP32 の WS 切断が
-  194 秒ごと → 0 回になった。
+  使う状態（機内共存干渉）を避けている。**
 - `WDC-433SU2M2` は 5GHz 専用（実測: 見える AP 24 件すべて 5GHz、2.4GHz は 0 件）。
   **ロボット回線には使えない。インターネット専用。**
 
@@ -42,8 +57,9 @@ RPLIDAR S1 → ラズパイの `rplidar_ros` → `/scan` (`ROS_DOMAIN_ID=10`)。
 | `wlo1`（内蔵 Intel） | iwlwifi | `th-rpi-ap-wlo1` | `th-rpi-ap` | **固定 192.168.5.50/24**・`never-default`・powersave 無効 |
 | `wlx3897a478b19d`（Elecom） | rtl8821au | `net5g` | `NCT-WL-ST` | DHCP・**既定経路** |
 
-- **固定 IP にしている理由**: ESP32 ファームの `WS_SERVER_HOST` が
-  `192.168.5.50` 決め打ちだから。DHCP にすると ESP32 が繋ぎに来られなくなる。
+- **固定 IP にしている理由**: ラズパイの `pi_serial_relay`（`--ws-host`）が
+  `192.168.5.50` 決め打ちだから。DHCP にすると `pi_serial_relay` が繋ぎに
+  来られなくなる。
 - `never-default` を付けているのは、ロボット AP（インターネットなし）が既定経路を
   奪わないようにするため。
 - Ubuntu は `/etc/NetworkManager/conf.d/*powersave*` で `wifi.powersave = 3`（省電力ON）が
@@ -73,9 +89,10 @@ ip route | head -3                                    # default が net5g 側か
 
 | 事項 | 内容 |
 | --- | --- |
-| WS ハートビート | ESP32 は 10 秒ごとに ping、5 秒以内に pong が来なければミス計上、3 回連続で再接続（`esp32/src/ws_link.cpp`）。**定期的な意図的再接続はもう無い**（旧 5 分周期の仕様は撤去済み） |
+| WS 接続 | `pi_serial_relay`（ラズパイ）が `esp32_bridge`（PC）へ接続しに行くクライアント。ESP32 自身は WS を持たない。切断時は `pi_serial_relay` 側が再接続ループする（`th_ws/scripts/pi_serial_relay.py`） |
+| シリアル区間の完全性 | ESP32↔ラズパイ間は `serial_framer.py`（sync+len+CRC8 のエンベロープ）で境界と破損検知を行う。ブート時 ASCII バナー等が混ざっても resync して後続フレームを拾う |
 | 多重接続 | `esp32_bridge` は新しい WS 接続を受けたら**古い接続を明示的に閉じる**。「接続が 2 本ある」状態にはならない |
-| 現在の実測 | 3 分ソークで ESP32 の WS 切断 **0 回**、`ESP32_DISCONNECTED` は起動時の 3 回のみ、`/scan_filtered` **10.07Hz・最大ギャップ 0.12s・標準偏差 0.006s** |
+| PC↔ラズパイの実測 | 3 分ソークでロス **0%**、`/scan_filtered` **10.07Hz・最大ギャップ 0.12s・標準偏差 0.006s**（2026-09-02。ESP32 のデータもこの経路に相乗りする） |
 | DDS ディスカバリ | 現行 AP では**マルチキャストで正常に動く**。ユニキャストピア設定は使わない（後述の落とし穴を参照） |
 | `/scan` の QoS | センサストリームなので**必ず `qos_profile_sensor_data`（BEST_EFFORT）で購読する。** RELIABLE で購読すると 1 件も届かない |
 
@@ -97,17 +114,33 @@ ping -c3 192.168.5.1
 - **PC が 2.4GHz を 2 枚同時に使う状態にしないこと**（内蔵をモバイルホットスポットに
   するなど）。機内共存干渉でロボット回線が劣化する。
 
-### ESP32 が WS に繋がらない（`esp32_bridge` に「接続:」ログが出ない）
+### `pi_serial_relay` が WS に繋がらない（`esp32_bridge` に「接続:」ログが出ない）
 
-1. ESP32 が AP に居るか: ラズパイ側で `ip neigh` / PC 側で `ping -c3 192.168.5.125`
-2. **PC 側で 8766 を誰が持っているか**: `ss -tlnp | grep 8766`
+1. ラズパイ側で `pi_serial_relay` が動いているか: `systemctl status rpi-serial-relay`
+2. ラズパイが PC に到達できるか: `ping -c3 192.168.5.50`
+3. **PC 側で 8766 を誰が持っているか**: `ss -tlnp | grep 8766`
    （**古い `esp32_bridge` が生き残っていてポートを奪っている**のが実際にあった。次項参照）
-3. 実際に繋ぎに来ている相手を見る: `ss -tnp | grep 8766`
-   → ここに出る IP が ESP32。**`/system/trigger` に繋ぎに来る IP と混同しないこと**
-4. ESP32 側のファーム設定: `WIFI_AP_MODE 0`（STA）、`WS_SERVER_HOST 192.168.5.50`
+4. 実際に繋ぎに来ている相手を見る: `ss -tnp | grep 8766`
+   → ここに出る IP がラズパイ（192.168.5.1）。**`/system/trigger` に繋ぎに来る IP と混同しないこと**
+5. `pi_serial_relay` のログ (`journalctl -u rpi-serial-relay -f`) で `--ws-host`/`--ws-port` が
+   正しいか確認する
 
-> **シリアルモニタの注意**: シリアルポートを開くと DTR/RTS 自動リセット回路で
-> **ESP32 が再起動する**。走行中・通信確認中は開かないこと。
+### ESP32 と `pi_serial_relay` の間が繋がらない（`wheel_feedback` が全く来ない）
+
+1. ラズパイで ESP32 が見えているか: `ls -l /dev/serial/by-id/`
+   （**RPLIDAR も同じ機構の USB-UART。`/dev/ttyUSB0` のような列挙順依存の指定は
+   ある日 LiDAR と入れ替わる。** 必ず `by-id` のシリアル番号込みパスで指定する）
+2. `pi_serial_relay` の `--serial-port` がそのパスと一致しているか
+3. `journalctl -u rpi-serial-relay -f` で `esp32_bridge へ接続しました` は出ているのに
+   フィードバックが来ない場合、ESP32 側が起動していない/焼き込み前の可能性
+   （`docs/esp32.md` の書き込み確認バナー参照）
+
+> **シリアルポートを開くと DTR/RTS 自動リセット回路で ESP32 が再起動する。**
+> `pi_serial_relay.py` は `open()` 前に DTR/RTS を明示的に落として開くことで
+> これを避けている（systemd unit の `ExecStartPre=stty ... -hupcl` も参照）。
+> 手元でシリアルモニタ（`pio device monitor` 等）を別途開くと、そのツール自身が
+> DTR/RTS を上げて再起動を誘発しうるので、走行中・`pi_serial_relay` 稼働中は
+> 開かないこと。
 
 ### `/scan` がコンテナに届かない（`LIDAR_LOST` が消えない）
 
@@ -161,6 +194,49 @@ docker restart th_robot                               # /dev/shm の掃除だけ
 - **`th_robot` コンテナはユーザーが実機作業中のセッションであることがある。**
   何かを止める前に `docker exec th_robot ps -eo pid,etimes,args` で稼働中のプロセスを
   確認し、自分が起動したものだけを止めること。
+
+---
+
+## ラズパイ: pi_serial_relay の導入
+
+**まだ実機に一度も導入していない（2026-09-05 時点。ESP32 は導入までの間 PC に
+USB 接続してファームを開発する）。** ESP32 をラズパイへ物理的に繋ぎ替えたら:
+
+1. ESP32 の USB を PC からラズパイへ挿し替え、by-id パスを確認する:
+   ```bash
+   ssh mirs2602@192.168.5.1 'ls -l /dev/serial/by-id/'
+   ```
+   RPLIDAR（既存の CP2102）とは別のエントリが増えているはずなので、それが
+   ESP32 のパス（例: `usb-...-if00-port0`）。**このパスを控える。**
+2. 中継スクリプトと必要ライブラリをラズパイへ配置する:
+   ```bash
+   scp th_ws/src/th_esp32_bridge/th_esp32_bridge/serial_framer.py \
+       th_ws/scripts/pi_serial_relay.py \
+       mirs2602@192.168.5.1:~/
+   ssh mirs2602@192.168.5.1 'pip3 install --user pyserial websockets'
+   ```
+3. systemd unit を配置する（`th_ws/scripts/rpi-serial-relay.service` をコピーし、
+   `<SERIAL_BY_ID_PATH>` を手順1のパスに書き換えてから転送・有効化）:
+   ```bash
+   scp th_ws/scripts/rpi-serial-relay.service mirs2602@192.168.5.1:/tmp/
+   ssh mirs2602@192.168.5.1 '
+     sudo sed -i "s#<SERIAL_BY_ID_PATH>#実際のパス#g" /tmp/rpi-serial-relay.service
+     sudo cp /tmp/rpi-serial-relay.service /etc/systemd/system/
+     sudo systemctl daemon-reload
+     sudo systemctl enable --now rpi-serial-relay
+     systemctl status rpi-serial-relay --no-pager
+   '
+   ```
+4. **導入直後に必ず確認すること（advisor 指摘・2026-09-05）**: `pi_serial_relay`
+   の起動・再起動のたびに ESP32 が誤って再リセットされていないか。ESP32 の
+   起動バナーは電源投入直後の一度しか出ないはずなので、`journalctl -u
+   rpi-serial-relay --since "5 min ago"` を見ながらサービスを
+   `sudo systemctl restart rpi-serial-relay` し、その直後の `wheel_feedback` が
+   途切れず続く（＝ESP32 が再起動していない）ことを確認する。再起動している
+   兆候があれば `stty -F <path> -hupcl` が効いているか、ケーブル/ドライバの
+   自動リセット回路の仕様を疑う。
+5. `ros2 topic hz /esp32/wheel_feedback`（PC 側コンテナ内）が安定して出続けることを
+   確認する。
 
 ---
 

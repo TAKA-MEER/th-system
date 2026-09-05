@@ -25,7 +25,10 @@ bypass_active、他ビットは将来拡張用の予約) で、`unpack_estop_hw_
 いるかどうかも分からないということなので、安全側 (バイパスの可能性あり) に倒す
 判断をここでは行わず、呼び出し側にそのまま「不明」を伝える。
 
-ESP32 側 (th_ws/esp32/src/ws_link.h) のバイト配置と必ず一致させること。
+ESP32 側 (th_ws/esp32/src/serial_link.h) のバイト配置と必ず一致させること。
+このフレーム自体は 2026-09-05 のシリアル化後も無変更（PAYLOAD としてそのまま
+エンベロープに封入されるだけ。th_ws/src/th_esp32_bridge/th_esp32_bridge/
+serial_framer.py 参照）。
 """
 import struct
 

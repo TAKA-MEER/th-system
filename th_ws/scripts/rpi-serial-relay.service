@@ -1,0 +1,30 @@
+# pi_serial_relay の systemd unit テンプレート。
+# /etc/systemd/system/rpi-serial-relay.service としてラズパイに配置する。
+#
+# <SERIAL_BY_ID_PATH> は ESP32 を物理接続した後に
+#   ls -l /dev/serial/by-id/
+# で確認した実際のパスに書き換えること(/dev/ttyUSB0 等の列挙順依存パスは
+# 使わない。RPLIDAR S1 も同じラズパイの USB-UART で、列挙順は起動/挿抜のたびに
+# 入れ替わりうる。詳細は docs/network.md)。
+#
+# 導入手順は docs/network.md「ラズパイ: pi_serial_relay の導入」参照。
+[Unit]
+Description=ESP32 serial <-> esp32_bridge WebSocket relay (TH system)
+After=network.target
+
+[Service]
+Type=simple
+User=mirs2602
+# ポートを開き直すたびに HUPCL による DTR/RTS の再アサートで ESP32 が
+# 誤って自動リセットされないようにする(pi_serial_relay.py 自体も open()
+# 前に dtr/rts を明示的に落としているが、二重の対策として残す)。
+ExecStartPre=/usr/bin/stty -F <SERIAL_BY_ID_PATH> -hupcl
+ExecStart=/usr/bin/python3 /home/mirs2602/pi_serial_relay.py \
+  --serial-port <SERIAL_BY_ID_PATH> \
+  --ws-host 192.168.5.50 \
+  --ws-port 8766
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
