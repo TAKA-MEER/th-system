@@ -30,6 +30,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 # するだけでこのディレクトリを sys.path に入れないため、自分でパスを通す。
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from params_generation import GENERATED_DIR, make_opaque_function  # noqa: E402
+from prelaunch_guard import make_guard_opaque_function  # noqa: E402
 
 BRINGUP_DIR  = get_package_share_directory('th_bringup')
 DESC_DIR     = get_package_share_directory('th_description')
@@ -112,6 +113,13 @@ def generate_launch_description():
     calib_yaml  = os.path.join(BRINGUP_DIR, 'config', 'calib.yaml')
 
     nodes = []
+
+    # ── -1. 前回起動の後始末 (2026-09-05) ──────────────────────
+    # 前回の bringup/gazebo launch を止め忘れたまま次を起動すると、esp32_bridge の
+    # ポート衝突や slam_toolbox の資源の奪い合い(セグフォルト無限再起動)を起こす
+    # （実機で発生・prelaunch_guard.py のモジュールdocstring参照）。ノードを1つも
+    # 起動する前に、自分以外の生き残りを自動で止める。
+    nodes.append(OpaqueFunction(function=make_guard_opaque_function()))
 
     # ── 0. パラメータ生成 (WP-PARAM-02) ──────────────────────
     # registry.yaml → /root/th_data/generated/*.yaml を、ノードを1つも起動する前に

@@ -39,6 +39,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 # sys.path には自動で乗らないため、自分でパスを通してから import する。
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from params_generation import GENERATED_DIR, make_opaque_function  # noqa: E402
+from prelaunch_guard import make_guard_opaque_function  # noqa: E402
 
 BRINGUP_DIR  = get_package_share_directory('th_bringup')
 DESC_DIR     = get_package_share_directory('th_description')
@@ -333,6 +334,10 @@ def generate_launch_description():
     planning_yaml    = os.path.join(BRINGUP_DIR, 'config', 'planning_params.yaml')
     perc_yaml        = os.path.join(BRINGUP_DIR, 'config', 'perception_params.yaml')
     rviz_cfg         = os.path.join(BRINGUP_DIR, 'config', 'rviz', 'th_sim.rviz')
+
+    # ── 前回起動の後始末 (2026-09-05) ────────────────────────
+    # bringup.launch.py と同じ理由・同じ実装（prelaunch_guard.py 参照）。
+    guard_action = OpaqueFunction(function=make_guard_opaque_function())
 
     # ── use_sim_time を全ノードに伝播 ────────────────────────
     sim_time_action = OpaqueFunction(function=_set_sim_time)
@@ -690,6 +695,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         declared_args + [
+            guard_action,
             sim_time_action,
             LogInfo(msg=['[th_bringup] sim=', sim, ' slam=', slam,
                          ' scenario=', LaunchConfiguration('scenario')]),

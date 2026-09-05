@@ -56,17 +56,32 @@ def test_generated_before_nodes():
     """G-1: params_generation_action が、両 launch ファイルの中で
     Node(...) を1つも起動する前に構築・登録されていることをソーステキストで検査する。"""
 
-    # --- bringup.launch.py: nodes = [] の後、最初の nodes.append(...) が
-    #     params_generation_action でなければならない（Python リストは append 順を
-    #     保つので、これが LaunchDescription(args + nodes) の実際の並び順になる）。
+    # --- bringup.launch.py: nodes = [] の後、最初の nodes.append(...) は
+    #     前回起動の後始末 (prelaunch_guard) 、2番目が params_generation_action で
+    #     なければならない（Python リストは append 順を保つので、これが
+    #     LaunchDescription(args + nodes) の実際の並び順になる。両方とも
+    #     Node(...) より前 = G-1 の対象）。
     tree = ast.parse(_read(BRINGUP_PY), filename=BRINGUP_PY)
     func = _find_function(tree, "generate_launch_description")
     appends = _find_nodes_append_calls(func, list_name="nodes")
-    assert appends, "bringup.launch.py: nodes.append(...) が1つも見つからない"
-    first_arg = appends[0]
-    assert isinstance(first_arg, ast.Name) and first_arg.id == "params_generation_action", (
-        "bringup.launch.py: nodes への最初の append が params_generation_action でない "
-        f"(実際: {ast.dump(first_arg)})")
+    assert len(appends) >= 2, "bringup.launch.py: nodes.append(...) が2件未満"
+
+    def _is_opaque_call(node: ast.AST, function_name: str) -> bool:
+        return (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name) and node.func.id == "OpaqueFunction"
+                and any(kw.arg == "function"
+                        and isinstance(kw.value, ast.Call)
+                        and isinstance(kw.value.func, ast.Name)
+                        and kw.value.func.id == function_name
+                        for kw in node.keywords))
+
+    assert _is_opaque_call(appends[0], "make_guard_opaque_function"), (
+        "bringup.launch.py: nodes への最初の append が prelaunch_guard の "
+        f"OpaqueFunction でない (実際: {ast.dump(appends[0])})")
+    second_arg = appends[1]
+    assert isinstance(second_arg, ast.Name) and second_arg.id == "params_generation_action", (
+        "bringup.launch.py: nodes への2番目の append が params_generation_action でない "
+        f"(実際: {ast.dump(second_arg)})")
 
     # --- gazebo.launch.py: 最終的な LaunchDescription(...) の引数リストの中で、
     #     params_generation_action が scenario_action や common_nodes より前にあること。
