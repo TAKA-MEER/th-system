@@ -94,7 +94,18 @@ class ReplayRunner(Node):
         # 「ガクガク」になる（2026-09-02 実機報告）。status から分離して 10Hz。
         # 詳細は route_recorder.py の同名パラメータのコメント参照。
         self.declare_parameter('pose_period_ms', 100)
-        self.declare_parameter('lookahead_m', 0.40)
+        # 2026-09-05: 高速再生（cruise_speed_mps 最大端）でふらつきが実機で
+        # 確認された。pure_pursuit は実質的に lookahead_m/cruise_speed_mps
+        # （先読み時間）で damping が決まり、固定 lookahead のままだと cruise が
+        # 上がるほど先読み時間が短くなって応答が過敏になる（低速 0.40/0.15≈2.7s
+        # に対し旧デフォルトの高速は 0.40/0.45≈0.9s）。lookahead_m も
+        # cruise_speed_mps と一緒にスケールするようにし（scale_replay_params）、
+        # この値は「速度スケール最大端」（高速側）の先読み距離として引き上げた
+        # （0.40→0.60。0.60/0.45≈1.33s、既存の中速 0.40/0.33≈1.2s 相当に近づける
+        # 狙い）。低速側は replay_lookahead_min_m（既存の 0.40 のまま）で従来の
+        # 挙動を保つ。実機未検証の見積もりなので、高速再生で実測しながら調整すること
+        # （VISION.md SD-7: 測らないと分からない値に事前の目標を置かない）。
+        self.declare_parameter('lookahead_m', 0.60)
         # 2026-09-01: 実機で DRIVE_RUNAWAY を踏んだため巡航・旋回を下げてランプ化した（#2）。
         # WS-9T: これは「速度スケール最大端」。実効値は /replay/speed_scale の比率で
         # replay_cruise_min_mps〜この値 の間に補間される（scale_replay_params）。
@@ -103,6 +114,9 @@ class ReplayRunner(Node):
         # WS-9T: 速度スケール最小端 ＋ WebUI 未接続時の既定比率。
         self.declare_parameter('replay_cruise_min_mps', 0.12)
         self.declare_parameter('replay_yaw_min_rps', 0.4)
+        # 2026-09-05: lookahead の速度スケール最小端。既存の低速再生の挙動
+        # （lookahead_m の旧既定値そのもの）をそのまま保つため 0.40 とする。
+        self.declare_parameter('replay_lookahead_min_m', 0.40)
         self.declare_parameter('replay_speed_default_ratio', 0.6)
         self.declare_parameter('arrive_dist_m', 0.20)
         self.declare_parameter('yaw_tol_rad', 0.10)
@@ -152,10 +166,12 @@ class ReplayRunner(Node):
             yaw_tol_rad=self.get_parameter('yaw_tol_rad').value)
         self._cruise_min = float(self.get_parameter('replay_cruise_min_mps').value)
         self._yaw_min = float(self.get_parameter('replay_yaw_min_rps').value)
+        self._lookahead_min = float(self.get_parameter('replay_lookahead_min_m').value)
         self._speed_ratio = float(
             self.get_parameter('replay_speed_default_ratio').value)
         self._params = scale_replay_params(
-            self._base_params, self._speed_ratio, self._cruise_min, self._yaw_min)
+            self._base_params, self._speed_ratio, self._cruise_min, self._yaw_min,
+            self._lookahead_min)
 
         # ── 状態 ────────────────────────────────────────────
         self._route = None
@@ -372,10 +388,12 @@ class ReplayRunner(Node):
             return
         self._speed_ratio = ratio
         self._params = scale_replay_params(
-            self._base_params, ratio, self._cruise_min, self._yaw_min)
+            self._base_params, ratio, self._cruise_min, self._yaw_min,
+            self._lookahead_min)
         self.get_logger().info(
             f'再生速度スケール {ratio:.2f} → cruise {self._params.cruise_speed_mps:.2f} m/s / '
-            f'yaw {self._params.max_yaw_rate_rps:.2f} rad/s')
+            f'yaw {self._params.max_yaw_rate_rps:.2f} rad/s / '
+            f'lookahead {self._params.lookahead_m:.2f} m')
 
     def _reload_map(self, route_id: str) -> "str | None":
         """/map_session/open reload で教示の地図を読み直す。エラー文字列 or None。

@@ -47,18 +47,31 @@ class ReplayCommand:
 # ──────────────────────────────────────────────────────────────────
 def scale_replay_params(
     base: ReplayParams, ratio: float, cruise_min: float, yaw_min: float,
+    lookahead_min: float,
 ) -> ReplayParams:
-    """再生速度の比率 ratio(0..1) で cruise / yaw を最小端〜base の間に線形補間する。
+    """再生速度の比率 ratio(0..1) で cruise / yaw / lookahead を最小端〜base の間に
+    線形補間する。
 
-    base.cruise_speed_mps / base.max_yaw_rate_rps を「最大端」、cruise_min / yaw_min を
-    「最小端」とし、ratio=0 で最小・ratio=1 で最大。範囲外の ratio はクランプする。
-    lookahead_m / arrive_dist_m / yaw_tol_rad は変えない（速度だけを可変にする）。
+    base.cruise_speed_mps / base.max_yaw_rate_rps / base.lookahead_m を「最大端」、
+    cruise_min / yaw_min / lookahead_min を「最小端」とし、ratio=0 で最小・
+    ratio=1 で最大。範囲外の ratio はクランプする。arrive_dist_m / yaw_tol_rad は
+    変えない。
+
+    lookahead_m を cruise と一緒にスケールする理由（2026-09-05、実機で確認した
+    ふらつき対策）: pure_pursuit の応答は実質的に「lookahead_m / cruise_speed_mps」
+    （目標点までの先読み時間）で damping が決まる。以前は lookahead_m を固定
+    (cruise に関係なく一定) にしていたため、cruise が上がるほど先読み時間が
+    短くなり（例: 低速 0.40/0.15≈2.7s に対し高速 0.40/0.45≈0.9s）、高速再生時に
+    応答が過敏になってふらついていた。lookahead も cruise と一緒にスケールする
+    ことで、高速側の先読み時間を底上げする。lookahead_min は現行の低速側の
+    挙動（既に問題ないと確認済み）をそのまま保つ値にすること。
     """
     r = 0.0 if ratio < 0.0 else 1.0 if ratio > 1.0 else float(ratio)
     return replace(
         base,
         cruise_speed_mps=cruise_min + (base.cruise_speed_mps - cruise_min) * r,
         max_yaw_rate_rps=yaw_min + (base.max_yaw_rate_rps - yaw_min) * r,
+        lookahead_m=lookahead_min + (base.lookahead_m - lookahead_min) * r,
     )
 
 
