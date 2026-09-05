@@ -39,6 +39,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 環境の癖・注意点
 
+- **`pip3 install platformio` をホストの `python3 -m pytest` と同じ環境に入れると、依存の `anyio` が pytest プラグインとして自動登録され、`ModuleNotFoundError: No module named '_pytest.scope'` でテストが全滅する**（この環境の `pytest` は 6.2.5 で `anyio` の新しめのプラグインAPIと非互換）。`python3 -m pytest -p no:anyio ...` で回避できる。ESP32 ファームを `pio run` でビルドしたい場合に踏む（2026-09-05）。
+- **ラズパイ (`mirs2602@192.168.5.1`) には `pip3` が無く、`ip route` に default gateway も無いためインターネットに出られない。** Python ライブラリが要る場合は、開発機で `pip3 download --platform manylinux2014_aarch64 --python-version 310 --implementation cp --only-binary=:all: <pkg>` して wheel を展開し、`PYTHONPATH` で読ませる（`docs/network.md`「ラズパイ: pi_serial_relay の導入」に実例）。`sudo` もパスワードが必要で非対話 SSH からは実行できない（systemd unit のインストール等は対話セッションでやる必要がある）。
+- **pyserial の `ser.read(size)` は `timeout` の間「`size` バイト溜まるまで」待ち続ける実装**であり、`size > 1` に有限 `timeout` を組み合わせると必ず `timeout` の粒度で足止めされる固定ポーリングになる。ESP32 側が 100ms 周期で送信しているのに `pi_serial_relay.py` が `ser.read(4096)` を `timeout=0.05` で呼んでいたところ、2 つの周期がビート（うなり）を起こして `/esp32/wheel_feedback` が毎周期バースト受信になった（2026-09-05 実機で発覚。教示再生のふらつき増加の原因だった）。低遅延・低ジッタが要る受信は `ser.read(1, timeout=None)`（無期限待ち）→即座に `ser.in_waiting` 分だけノンブロッキングで追い読み、の2段構えにする。
 - `ros2 node list` はデーモンキャッシュの影響で新規ノードが反映されないことがある。`ros2 node list --no-daemon`（または `ros2 daemon stop` 後に再実行）で確実に最新状態を取得する。
   **ただし `--no-daemon` でも生きているノードを取りこぼすことがある。**「一覧に出ない」だけで死んだと判断しないこと。launch のログに `process has died` が無いか、当該ノードの起動 INFO が出ているかを併せて見る（`lidar_filter` が正常起動しているのに一覧に出ず、誤って「修正が効いていない」と判断しかけた）。
 - **`th_robot` コンテナはユーザーが実機作業中のセッションであることがある。** デバッグ用にノードを起動・停止する前に必ず `docker exec th_robot ps -eo pid,etimes,args` で稼働中のプロセスを確認し、自分が起動したものだけを PID 指定で止めること（実際に `rotation_calib.py` が 50 分間走っている最中に遭遇した）。
