@@ -18,7 +18,11 @@ User=mirs2602
 # ポートを開き直すたびに HUPCL による DTR/RTS の再アサートで ESP32 が
 # 誤って自動リセットされないようにする(pi_serial_relay.py 自体も open()
 # 前に dtr/rts を明示的に落としているが、二重の対策として残す)。
-ExecStartPre=/usr/bin/stty -F <SERIAL_BY_ID_PATH> -hupcl
+# 先頭の "-" は stty 自体が失敗しても unit の起動を止めないための保険
+# (無くすと mirs2602 が dialout グループに入っていない等で stty が失敗した
+# 場合、原因が分かりにくい「サービスが起動しない」症状になる。
+# dialout 所属は導入手順(docs/network.md)で別途確認すること)。
+ExecStartPre=-/usr/bin/stty -F <SERIAL_BY_ID_PATH> -hupcl
 ExecStart=/usr/bin/python3 /home/mirs2602/pi_serial_relay.py \
   --serial-port <SERIAL_BY_ID_PATH> \
   --ws-host 192.168.5.50 \

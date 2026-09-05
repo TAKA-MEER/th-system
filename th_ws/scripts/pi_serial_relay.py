@@ -44,7 +44,6 @@ import serial_framer          # noqa: E402  (同ディレクトリに配置す�
 LOG = logging.getLogger("pi_serial_relay")
 
 RECONNECT_DELAY_S = 2.0
-SERIAL_POLL_INTERVAL_S = 0.005
 
 
 def open_serial(port: str, baud: int) -> serial.Serial:
@@ -52,7 +51,10 @@ def open_serial(port: str, baud: int) -> serial.Serial:
     ser = serial.Serial()
     ser.port = port
     ser.baudrate = baud
-    ser.timeout = 0  # 非ブロッキング読み出し
+    # 0だとexecutorスレッドがビジーポーリングになる(Piの1コアを無駄に食う。
+    # architecture.mdでrplidarが既に1コア飽和と指摘されている)。50msブロック
+    # 読みにして、データが来るまでカーネル側で寝かせる。
+    ser.timeout = 0.05
     ser.dsrdtr = False
     ser.rtscts = False
     ser.dtr = False
@@ -63,23 +65,32 @@ def open_serial(port: str, baud: int) -> serial.Serial:
 
 async def serial_to_ws(ser: serial.Serial, ws, decoder: "serial_framer.SerialFrameDecoder",
                         loop: asyncio.AbstractEventLoop) -> None:
-    """シリアルから読めたバイトをデコードし、フレーム単位でPCへ転送する。"""
+    """シリアルから読めたバイトをデコードし、フレーム単位でPCへ転送する。
+
+    ser.read() は ser.timeout 秒でタイムアウトして空バイト列を返すブロッキング
+    呼び出し。executor スレッドの中でブロックさせることで、このコルーチン
+    自身は毎回イベントループへ制御を返す(ビジーポーリングしない)。
+    """
     while True:
         data = await loop.run_in_executor(None, ser.read, 4096)
         if data:
             for frame in decoder.feed(data):
                 await ws.send(frame)
-        else:
-            await asyncio.sleep(SERIAL_POLL_INTERVAL_S)
 
 
 async def ws_to_serial(ws, ser: serial.Serial, loop: asyncio.AbstractEventLoop) -> None:
-    """PCから届いたフレーム(WHEEL_CMD等)をエンベロープに包んでシリアルへ書く。"""
+    """PCから届いたフレーム(WHEEL_CMD等)をエンベロープに包んでシリアルへ書く。
+
+    WSが正常にcloseされて `async for` が抜けたときも例外を投げて呼び出し元の
+    gatherを終わらせる。そうしないと(ESP32が繋がっていない等で)serial_to_ws
+    側が何も送信せず、gatherが永久に片肺のまま止まる。
+    """
     async for message in ws:
         if not isinstance(message, (bytes, bytearray)):
             continue
         envelope = serial_framer.encode_frame(bytes(message))
         await loop.run_in_executor(None, ser.write, envelope)
+    raise RuntimeError("WS接続が閉じられました(ws_to_serial側で検知)")
 
 
 async def relay_once(ser: serial.Serial, ws_uri: str) -> None:
@@ -93,10 +104,19 @@ async def relay_once(ser: serial.Serial, ws_uri: str) -> None:
         # が一気に届いてオドメトリが瞬間的に破綻するため、接続直後に読み捨てる。
         ser.reset_input_buffer()
         LOG.info("接続しました: %s", ws_uri)
-        await asyncio.gather(
-            serial_to_ws(ser, ws, decoder, loop),
-            ws_to_serial(ws, ser, loop),
-        )
+        tasks = [
+            asyncio.ensure_future(serial_to_ws(ser, ws, decoder, loop)),
+            asyncio.ensure_future(ws_to_serial(ws, ser, loop)),
+        ]
+        try:
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+            for task in done:
+                task.result()  # 例外があれば再送出し、呼び出し元の再接続ループへ落とす
+        finally:
+            for task in tasks:
+                task.cancel()
 
 
 def main() -> None:
@@ -123,7 +143,17 @@ def main() -> None:
         while True:
             try:
                 asyncio.run(relay_once(ser, ws_uri))
-            except (OSError, websockets.exceptions.WebSocketException) as e:
+            except serial.SerialException as e:
+                # ser.read()/ser.write() がここから投げるのは「ポート自体が
+                # 死んだ」場合(ESP32抜線・USB切断等)。serial.SerialException は
+                # OSError のサブクラスなので、下のWS用exceptより先に捕まえる
+                # 必要がある(順番を変えるとここに来ずWS再接続扱いになり、
+                # 死んだfdへの再試行を無限に続けてしまう)。
+                # ポートの再オープンはこのプロセスの責務にせず、systemdの
+                # Restart=always に委ねて素直に終了する。
+                LOG.error("シリアルポートが切れました: %r。終了します(systemdが再起動)", e)
+                sys.exit(1)
+            except (OSError, websockets.exceptions.WebSocketException, RuntimeError) as e:
                 LOG.warning("esp32_bridge との接続が切れました: %r。%.1fs後に再接続します",
                             e, RECONNECT_DELAY_S)
                 time.sleep(RECONNECT_DELAY_S)

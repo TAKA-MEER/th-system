@@ -223,6 +223,13 @@ USB 接続してファームを開発する）。** ESP32 をラズパイへ物�
        mirs2602@192.168.5.1:~/
    ssh mirs2602@192.168.5.1 'pip3 install --user pyserial websockets'
    ```
+   `mirs2602` が `dialout` グループに入っているか確認する（入っていないと
+   `pi_serial_relay.py` の `open()` も unit の `ExecStartPre=stty` も
+   permission denied で失敗し、症状は「サービスが起動しない」としか出ない）:
+   ```bash
+   ssh mirs2602@192.168.5.1 'groups | grep -q dialout && echo OK || \
+     (sudo usermod -aG dialout mirs2602 && echo "追加した。再ログインが必要")'
+   ```
 3. systemd unit を配置する（`th_ws/scripts/rpi-serial-relay.service` をコピーし、
    `<SERIAL_BY_ID_PATH>` を手順1のパスに書き換えてから転送・有効化）:
    ```bash
