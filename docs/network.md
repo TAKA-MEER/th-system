@@ -216,13 +216,39 @@ USB 接続してファームを開発する）。** ESP32 をラズパイへ物�
    ```
    RPLIDAR（既存の CP2102）とは別のエントリが増えているはずなので、それが
    ESP32 のパス（例: `usb-...-if00-port0`）。**このパスを控える。**
-2. 中継スクリプトと必要ライブラリをラズパイへ配置する:
+2. 中継スクリプトと必要ライブラリをラズパイへ配置する。**このラズパイは
+   `ip route` に default gateway が無くインターネットに出られない
+   （2026-09-05 確認）ので `pip3` は使えない（そもそも `pip3` コマンド自体が
+   入っていない）。開発機（インターネットに出られる側）で wheel を落として
+   展開したものを scp で送る:**
    ```bash
+   # 開発機側: 対象アーキテクチャ(ラズパイ=aarch64)向けにwheelを取得
+   pip3 install --user platformio   # 未導入なら(pio run に必要)。pipも同梱される
+   mkdir -p /tmp/pi_relay_wheels && cd /tmp/pi_relay_wheels
+   pip3 download --no-deps --platform manylinux2014_aarch64 \
+     --python-version 310 --implementation cp --only-binary=:all: \
+     pyserial websockets
+   mkdir -p site-packages
+   for f in *.whl; do python3 -m zipfile -e "$f" site-packages/; done
+   tar czf site-packages.tgz -C site-packages .
+
+   # ラズパイへ転送・展開
+   scp site-packages.tgz mirs2602@192.168.5.1:~/pi_relay_env.tgz
+   ssh mirs2602@192.168.5.1 '
+     mkdir -p ~/pi_relay_env/site-packages
+     tar xzf ~/pi_relay_env.tgz -C ~/pi_relay_env/site-packages
+     PYTHONPATH=~/pi_relay_env/site-packages python3 -c "import serial, websockets; print(\"OK\", serial.VERSION, websockets.__version__)"
+   '
+
+   # 中継スクリプト本体
    scp th_ws/src/th_esp32_bridge/th_esp32_bridge/serial_framer.py \
        th_ws/scripts/pi_serial_relay.py \
        mirs2602@192.168.5.1:~/
-   ssh mirs2602@192.168.5.1 'pip3 install --user pyserial websockets'
    ```
+   `websockets` は 13 以降で `import websockets` だけでは `websockets.exceptions`
+   が生えない（遅延import）。`pi_serial_relay.py` は明示的に
+   `import websockets.exceptions` しているので問題ないが、手元で対話的に
+   確認する際は注意（2026-09-05 実機で踏んだ）。
    `serial_framer.py` はラズパイへの**ベタコピー**（`th_ws/src/th_esp32_bridge/`
    側の正本を変更したら、その都度この scp をやり直すこと。忘れると片方だけ
    古いままになり、症状は「通信が全滅」という分かりにくい形で出る）。

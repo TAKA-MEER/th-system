@@ -15,6 +15,10 @@ After=network.target
 [Service]
 Type=simple
 User=mirs2602
+# このラズパイに pip3 が入っていない(インターネット非接続)ため、
+# pyserial/websockets は開発機で `pip3 download` した wheel を展開して
+# ~/pi_relay_env/site-packages に置く運用にした(docs/network.md 参照)。
+Environment=PYTHONPATH=/home/mirs2602/pi_relay_env/site-packages
 # ポートを開き直すたびに HUPCL による DTR/RTS の再アサートで ESP32 が
 # 誤って自動リセットされないようにする(pi_serial_relay.py 自体も open()
 # 前に dtr/rts を明示的に落としているが、二重の対策として残す)。
