@@ -15,6 +15,9 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_esp32_ws_protocol
     test/test_esp32_ws_protocol.py
     TIMEOUT 60)
+  ament_add_pytest_test(test_serial_framer
+    test/test_serial_framer.py
+    TIMEOUT 60)
   ament_add_pytest_test(test_mapless_follow_logic
     test/test_mapless_follow_logic.py
     TIMEOUT 60)
