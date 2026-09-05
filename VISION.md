@@ -488,6 +488,53 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
   `shell/theme.css` / `i18n/screens.js` / `test_tunable_targets.py` /
   `docs/使い方.md` / `docs/architecture.md`。
 
+- **2026-09-05 — ESP32 の無線化をやめ、ラズパイ経由のシリアル接続にする（ユーザー決定）**:
+  第4回3階教示再生走行試験で ESP32 の通信エラーが頻発し、教示中に操作を受け付けず
+  壁へ衝突する事象を繰り返した。これまで [docs/network.md](docs/network.md) の対策
+  （AP のチャネル・PC 側 WiFi アダプタの入れ替え等）を重ねてきたが、ESP32 の WiFi
+  切断はほぼランダムに発生しており、**過去の「改善した」という判断は検証run間の
+  ブレを改善効果と誤認していた可能性が高い**と判断した。
+
+  **変更**: ESP32 と PC 間の無線 WebSocket 接続を廃止し、**ESP32 はシリアル
+  （USB-UART、既存のフラッシュ用ケーブルをそのまま流用）でラズパイに接続**、
+  ラズパイ上の中継プロセスが PC の `esp32_bridge`（WebSocket サーバー、変更なし）
+  へクライアントとして接続する構成にする。
+
+  ```
+  ESP32 --USB/UART(シリアル)--> [ラズパイ: pi_serial_relay] --WS(既存の8766に接続)--> PC: esp32_bridge（無変更）
+  ```
+
+  - PC↔ラズパイ間は `/scan` が既に実測ロス 0%・RTT 2.2ms で安定運用している経路
+    （[docs/network.md](docs/network.md)）をそのまま再利用する。ESP32 自身は
+    WiFi を一切使わなくなる。
+  - `ws_protocol.py`（PC 側のフレーム定義）と PC 側 `esp32_bridge.py` は無変更。
+    ラズパイの中継はシリアル区間だけに新しいエンベロープ（同期バイト＋長さ＋CRC8）
+    を被せ、中の payload は既存の `ws_protocol` フレームそのままにして、
+    PC へは既存フォーマットの WS バイナリメッセージとして転送する。
+  - ESP32 ファームウェアの `ws_link.h/cpp`（WiFi + WebSocketsClient）を
+    `serial_link.h/cpp`（Serial 直結）に置き換える。`main.cpp` の呼び出し口は
+    同一シグネチャを維持し他のロジック（PID・ドリフト補正・E-Stop）は無変更。
+  - **ウォッチドッグ（600ms）・物理非常停止は変更しない。** WS 切断イベントに
+    よる即時ゼロ化（`onWsDisconnect`）は代替手段が無いためシリアル化では失われるが、
+    既存の `WATCHDOG_MS` ベースの独立監視（`main.cpp` の `watchdogTripped`、
+    WS 接続状態と無関係に動作）がそのまま同じ保護を提供する。
+    `/esp32/wheel_feedback` のタイムアウト検知（`ESP32_DISCONNECTED`、
+    `th_safety/safety_monitor.cpp`）はメッセージ到達ベースであり中継の実装に
+    依存しないため、シリアル断でも変わらず発火する。
+  - ラズパイの `pi_serial_relay` は ESP32 用ポートを `/dev/serial/by-id/` で
+    固定し、RPLIDAR（同じくラズパイに USB-UART 接続）とのポート競合を避ける。
+    シリアルポートのオープンで DTR/RTS が動くと ESP32 の自動リセット回路が
+    誤発火するため、オープン時にそれらを不活性化する。
+
+  不変: 速度指令チェーン・FSM・安全系（ウォッチドッグ・E-Stop・フォルト判定基準）
+  は非変更。WiFi 化していた頃の対策記録（[docs/network.md](docs/network.md)）は
+  「なぜ WiFi をやめたか」の根拠として残す。
+
+  更新: `th_ws/esp32/src/ws_link.h`・`ws_link.cpp`（削除→`serial_link.h/cpp`
+  新設）/ `main.cpp` / `wifi_credentials.h`・`.example`（削除） /
+  `th_ws/esp32/tools/ws_test_server.py`（削除） / ラズパイ側中継プロセス（新設） /
+  `docs/network.md` / `docs/使い方.md` / `docs/architecture.md`。
+
 ---
 
 ## 3. 両設計書が扱っていない事項
