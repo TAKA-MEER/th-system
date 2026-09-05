@@ -60,6 +60,10 @@ def main() -> None:
                          help="起動2秒後に WHEEL_CMD(left=0, right=0) を送る")
     args = parser.parse_args()
 
+    # pi_serial_relay.open_serial() と違い、ここでは意図的に DTR/RTS 対策を
+    # しない: 単体テストなので ESP32 が open() のたびに再起動して起動バナー
+    # から流れ直すことを期待している(本番のpi_serial_relayでは逆にこれを
+    # 避ける。docs/network.md参照)。
     ser = serial.Serial(args.port, args.baud, timeout=0.1)
     decoder = serial_framer.SerialFrameDecoder()
     sent_test_cmd = False

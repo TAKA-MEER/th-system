@@ -223,6 +223,10 @@ USB 接続してファームを開発する）。** ESP32 をラズパイへ物�
        mirs2602@192.168.5.1:~/
    ssh mirs2602@192.168.5.1 'pip3 install --user pyserial websockets'
    ```
+   `serial_framer.py` はラズパイへの**ベタコピー**（`th_ws/src/th_esp32_bridge/`
+   側の正本を変更したら、その都度この scp をやり直すこと。忘れると片方だけ
+   古いままになり、症状は「通信が全滅」という分かりにくい形で出る）。
+
    `mirs2602` が `dialout` グループに入っているか確認する（入っていないと
    `pi_serial_relay.py` の `open()` も unit の `ExecStartPre=stty` も
    permission denied で失敗し、症状は「サービスが起動しない」としか出ない）:
