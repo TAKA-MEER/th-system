@@ -37,6 +37,7 @@ from pathlib import Path
 
 import serial
 import websockets
+import websockets.exceptions  # websockets>=13 は遅延importのため明示的にimportが必要
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import serial_framer          # noqa: E402  (同ディレクトリに配置する想定)
@@ -51,10 +52,15 @@ def open_serial(port: str, baud: int) -> serial.Serial:
     ser = serial.Serial()
     ser.port = port
     ser.baudrate = baud
-    # 0だとexecutorスレッドがビジーポーリングになる(Piの1コアを無駄に食う。
-    # architecture.mdでrplidarが既に1コア飽和と指摘されている)。50msブロック
-    # 読みにして、データが来るまでカーネル側で寝かせる。
-    ser.timeout = 0.05
+    # timeout=None (無期限ブロック) にすること。ser.read(size) は「size バイト
+    # 溜まるか timeout が経過するまで」待つため、size>1 に有限timeoutを
+    # 組み合わせると「timeout の粒度で必ず足止めされる」固定ポーリングになる
+    # (実測: timeout=0.05 だと WHEEL_FEEDBACK の到着間隔が 50ms 周期でビート
+    # を起こし、教示再生時のふらつきの原因になった。2026-09-05)。
+    # None にして「1バイト来るまで無期限に待つ」→「その後は溜まっている分だけ
+    # 即座に読む」の2段構えにすることで、カーネルのselect起床にほぼ一致した
+    # 低遅延・低ジッタな受信になる(serial_to_ws参照)。
+    ser.timeout = None
     ser.dsrdtr = False
     ser.rtscts = False
     ser.dtr = False
@@ -63,16 +69,25 @@ def open_serial(port: str, baud: int) -> serial.Serial:
     return ser
 
 
+def _blocking_read_batch(ser: serial.Serial) -> bytes:
+    """1バイト来るまで無期限に待ち、そこから溜まっている分をまとめて読む。
+
+    executorスレッドの中で呼ぶ前提(ここでブロックしてもイベントループは
+    止まらない)。timeout=None の ser.read(1) はデータが来るまでCPUを使わず
+    カーネル側で寝る(ビジーポーリングにならない)ため、待機コストは実質ゼロ。
+    """
+    first = ser.read(1)
+    if not first:
+        return b""  # timeout=Noneなら通常起きない。ポート断でSerialExceptionが飛ぶ
+    rest = ser.read(ser.in_waiting) if ser.in_waiting else b""
+    return first + rest
+
+
 async def serial_to_ws(ser: serial.Serial, ws, decoder: "serial_framer.SerialFrameDecoder",
                         loop: asyncio.AbstractEventLoop) -> None:
-    """シリアルから読めたバイトをデコードし、フレーム単位でPCへ転送する。
-
-    ser.read() は ser.timeout 秒でタイムアウトして空バイト列を返すブロッキング
-    呼び出し。executor スレッドの中でブロックさせることで、このコルーチン
-    自身は毎回イベントループへ制御を返す(ビジーポーリングしない)。
-    """
+    """シリアルから読めたバイトをデコードし、フレーム単位でPCへ転送する。"""
     while True:
-        data = await loop.run_in_executor(None, ser.read, 4096)
+        data = await loop.run_in_executor(None, _blocking_read_batch, ser)
         if data:
             for frame in decoder.feed(data):
                 await ws.send(frame)
