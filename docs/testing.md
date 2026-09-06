@@ -5,39 +5,78 @@
 
 ## テスト構成一覧
 
-| ファイル | 分類 | ROS2 要否 | テスト件数 | 設計書対応 |
-| --- | --- | --- | --- | --- |
-| `test_follow_planner_logic.py` | 純粋単体テスト | 不要 | 43 件 | 10.1 §3 |
-| `test_mapless_follow_logic.py` | 純粋単体テスト(MAP不要モード) | 不要 | 20 件 | - |
-| `test_summon_logic.py` | 純粋単体テスト(呼び寄せ) | 不要 | 10 件 | - |
-| `test_scenario_configs.py` | 純粋単体テスト(シナリオプリセット整合性) | 不要 | 36 件 | - |
-| `test_mode_transitions.py` | ROS2 統合テスト | 必要 | 25 件 | 10.1 §1 |
-| `test_safety_monitor.py` | ROS2 統合テスト | 必要 | 10 件 | 10.1 §5 |
-| `test_twist_mux_priority.py` | ROS2 統合テスト | 必要 | 7 件 | 10.1 §4 |
-| `test_fault_detection.py` | ROS2 統合テスト | 必要 | 4 件 | 10.1 §5+ |
-| `test_simulation_scenarios.py` | シナリオテスト | 必要 | 5 件 | 10.3 |
+**`th_ws/src/th_testing/test/` に 55 ファイル。うち 43 ファイル・783 件は ROS2 なしで
+ホストの `python3 -m pytest` から直接走る**（2026-09-06 時点。`783 passed / 1 skipped`）。
+`colcon build` は数分かかるので、**まずホストで回して最後に Docker で 1 回通す**のが速い。
+
+| 区分 | ファイル数 | 件数 | 実行方法 |
+| --- | --- | --- | --- |
+| ROS2 不要（純粋コア・設定整合・静的検査） | 43 | 783 | ホストで `python3 -m pytest`（下記） |
+| ROS2 必須（`rclpy` / ビルド済み `th_system_msgs`） | 11 | — | コンテナで `colcon test`（下記） |
+| その他（`fault_injection/` のケース等） | 1 | — | `colcon test` 経由 |
+
+**ROS2 が必要な 11 ファイル**（これ以外はホストで走る）:
+
+```txt
+test_connectivity_checker_node.py  test_fault_detection.py     test_mode_transitions.py
+test_params_audit_node.py          test_safety_monitor.py      test_state_manager_node.py
+test_twist_mux_priority.py         test_simulation_scenarios.py test_msg_definitions.py
+test_esp32_bridge_node.py          test_jog_gate_node.py
+```
+
+件数の多い主なファイル:
+
+| ファイル | 件数 | 対象 |
+| --- | --- | --- |
+| `test_transition_table.py` | 137 | 現行 FSM（`th_state`）の遷移表 |
+| `test_mapless_follow_logic.py` | 53 | 地図なし追従コア（旧設計） |
+| `test_follow_planner_logic.py` | 45 | 人物追従コア（旧設計） |
+| `test_scenario_configs.py` / `test_esp32_ws_protocol.py` | 36 / 36 | シナリオ整合 / ESP32 フレーム定義 |
+| `test_serial_framer.py` | 30 | シリアル区間のエンベロープ（sync+len+CRC8） |
+| `test_slam_control_logic.py` / `test_zones.py` | 29 / 28 | 地図セッション / 速度ゾーン |
+| `test_route_record_files.py` / `test_route_replay_core.py` | 28 / 25 | 教示の保存 / 再生の pure-pursuit |
+| `test_params_*.py`（6 ファイル） | 87 | `registry.yaml` からの生成・導出・監査 |
+
+> **`test_simulation_scenarios.py` は Gazebo を起動せず、既定でスキップされる**
+> （`TH_SKIP_SIM=1`）。検証しているのは新設計で廃止済みの挙動（近接退避・捜索旋回）で、
+> `WP-TRANSIT-01` で `follow_planner` ごと削除される見込み。復活させる前に必ず
+> ファイル冒頭の docstring を読むこと。
 
 ---
 
-## 純粋単体テストの実行（ROS2 なし）
+## ROS2 なしのテスト実行（ホスト・最速）
 
-`follow_planner_core.py` のコアロジックは ROS2 に依存しない純粋な Python モジュールとして実装されており、ROS2 環境がなくてもテストできます。
+`*_core.py` 系のコアロジックは ROS2 に依存しない純粋な Python として実装してあるため、
+ROS2 環境がなくてもテストできます（`follow_planner_core.py` / `route_replay_core.py` /
+`serial_framer.py` / `state` 系など）。
 
 ```bash
-# pytest を直接実行
+# リポジトリルートから、ROS2 が要る 11 ファイルを除いて一括実行
+python3 -m pytest th_ws/src/th_testing/test/ -q \
+  --ignore=th_ws/src/th_testing/test/test_connectivity_checker_node.py \
+  --ignore=th_ws/src/th_testing/test/test_fault_detection.py \
+  --ignore=th_ws/src/th_testing/test/test_mode_transitions.py \
+  --ignore=th_ws/src/th_testing/test/test_params_audit_node.py \
+  --ignore=th_ws/src/th_testing/test/test_safety_monitor.py \
+  --ignore=th_ws/src/th_testing/test/test_state_manager_node.py \
+  --ignore=th_ws/src/th_testing/test/test_twist_mux_priority.py \
+  --ignore=th_ws/src/th_testing/test/test_simulation_scenarios.py \
+  --ignore=th_ws/src/th_testing/test/test_msg_definitions.py \
+  --ignore=th_ws/src/th_testing/test/test_esp32_bridge_node.py \
+  --ignore=th_ws/src/th_testing/test/test_jog_gate_node.py
+# → 783 passed, 1 skipped
+
+# 個別ファイル / 特定クラスだけ
 cd th_ws
-python3 -m pytest src/th_testing/test/test_follow_planner_logic.py -v
-
-# 特定のテストクラスだけ実行
-python3 -m pytest src/th_testing/test/test_follow_planner_logic.py \
-  -v -k "TestNextFollowState"
-
-# 失敗時に即座に停止
-python3 -m pytest src/th_testing/test/test_follow_planner_logic.py -x
-
-# シナリオプリセット (config/scenarios/*.yaml) の整合性検証
-python3 -m pytest src/th_testing/test/test_scenario_configs.py -v
+python3 -m pytest src/th_testing/test/test_route_replay_core.py -v
+python3 -m pytest src/th_testing/test/test_follow_planner_logic.py -v -k "TestNextFollowState"
+python3 -m pytest src/th_testing/test/test_scenario_configs.py -v   # シナリオプリセット整合性
 ```
+
+> **`pip3 install platformio`（ESP32 ファームのビルド用）を同じ Python 環境に入れると、
+> 依存の `anyio` が pytest プラグインとして自動登録され、この環境の pytest 6.2.5 と
+> 非互換で全滅する**（`ModuleNotFoundError: No module named '_pytest.scope'`）。
+> `python3 -m pytest -p no:anyio ...` で回避できる（2026-09-05）。
 
 > Gazebo シナリオ (`scenario:=narrow_room` 等) 自体は手動・目視で検証する
 > （手順と合格基準は [simulation.md](simulation.md) のシナリオ表を参照）。
@@ -76,8 +115,8 @@ source /opt/ros/humble/setup.bash
 cd th_ws
 colcon build --symlink-install \
   --packages-select \
-    th_system_msgs th_safety th_mode_manager \
-    th_planning th_perception th_testing
+    th_system_msgs th_safety th_mode_manager th_state \
+    th_planning th_perception th_config_manager th_params th_testing
 
 source install/setup.bash
 
@@ -88,6 +127,13 @@ colcon test --packages-select th_testing \
 # 結果確認
 colcon test-result --verbose
 ```
+
+> **`docker compose run --rm th_robot` は毎回新しいコンテナを作り、`build/` と
+> `install/` はバインドマウントされていない**（マウントは `src` / `esp32` /
+> `scripts` / `data` / `dr_spaam_weights` のみ）。そのため `colcon build` と
+> `colcon test` を別々の `docker compose run` で実行すると、テスト側からビルド成果が
+> 見えず `colcon test-result` が「0 tests」になる。**ビルドからテストまでを 1 回の
+> `bash -lc` の中で通すこと。**
 
 ### 個別テストの単独実行
 
@@ -151,16 +197,28 @@ bash scripts/run_tests.sh --all --sim
 
 ## テスト追加のガイドライン
 
-新しいロジックを追加する際は以下の構成に従ってください。
+新しいロジックを追加する際は以下の構成に従ってください（**二層構造**）。
 
 ```txt
 ロジック追加
-  → th_planning/th_planning/follow_planner_core.py に純粋関数/クラスとして実装
-  → src/th_testing/test/test_follow_planner_logic.py にテストクラスを追加
-  → ROS2 ノード(follow_planner.py)はコアロジックを呼び出すだけにする
+  → <パッケージ>/<パッケージ>/<name>_core.py に ROS2 非依存の純粋関数/クラスとして実装
+  → src/th_testing/test/test_<name>_core.py にテストを追加
+  → src/th_testing/CMakeLists.txt の if(BUILD_TESTING) に ament_add_pytest_test で登録
+  → ROS2 ノード(scripts/<name>.py)はコアロジックを呼び出して配線するだけにする
 ```
 
-この構造により、ROS2 環境なしで CI/CD パイプラインの高速テストが可能になります。
+実例: `route_replay_core.py`（再生の pure-pursuit）／`serial_framer.py`（シリアル
+エンベロープ）／`follow_planner_core.py`（人物追従・旧設計）／`state` 系。
+この構造により、ROS2 環境なしでホストから高速にテストできます。
+
+> **CMakeLists.txt への登録を忘れると `test_cmake_test_registration.py` が落ちます**
+> （テストファイルを足したのに `colcon test` で走らない事故を防ぐためのガード）。
+
+> **`launch_testing` を使うテスト（`generate_test_description()` を持つファイル）は、
+> 本体が `unittest.TestCase` なので pytest のフィクスチャを一切受け取れません。**
+> `conftest.py` が提供する値が要るときは、同じ解決ロジックをモジュールレベルで
+> 呼ぶこと。CMake 側は `add_launch_test` ではなく `ament_add_pytest_test` で登録できます
+> （`test_esp32_bridge_node.py` / `fault_injection` が実例）。
 
 ---
 
