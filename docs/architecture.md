@@ -7,39 +7,89 @@
 
 本システムは以下の 3 つの原則に基づいて設計されています。
 
-**安全レイヤーの独立性**: `twist_mux` が `/cmd_vel` の最終出力を一元管理し、個々のノードの実装ミスが物理的な動きに影響しないことをアーキテクチャで保証します。`safety_monitor` が `mode_manager` のモード遷移を待たずに `twist_mux` をロックするため、フォルト検知から物理停止までにソフトウェア処理のレイテンシが介在しません。
+**安全レイヤーの独立性**: `twist_mux` が速度指令を一元的に調停し、最終段の
+`obstacle_limiter` だけが `/cmd_vel` を出すことで、個々のノードの実装ミスが物理的な
+動きに影響しないことをアーキテクチャで保証します。`safety_monitor` が FSM のモード遷移を
+待たずに `twist_mux` をロックするため、フォルト検知から物理停止までにソフトウェア処理の
+レイテンシが介在しません。
 
-**テスト可能なコアロジック**: 追従ロジック（`follow_planner_core.py`）を ROS2 非依存の純粋 Python モジュールとして実装しています。これにより ROS2 環境なしでロジックの単体テストが実行でき、アルゴリズムの変更を安全に検証できます。
+**テスト可能なコアロジック**: アルゴリズムを `*_core.py` / `*_core.hpp` として ROS2 非依存に
+実装し、ノード側は配線だけを行う二層構造にしています（`route_replay_core.py`・
+`state_core.py`・`serial_framer.py`・`obstacle_limiter_core.hpp`・`follow_planner_core.py` など）。
+これにより ROS2 環境なしでロジックの単体テストが実行でき（ホストだけで 783 件。
+[testing.md](testing.md)）、アルゴリズムの変更を安全に検証できます。
 
 **パラメータ外部化**: 全ノードの調整値を YAML ファイルで管理し、コード変更なしにチューニングできます。特に追従距離・PID ゲイン・フォルトタイムアウトは現場検証後に頻繁に変更される値であるため、すべてパラメータ化されています。
 
 ---
 
-## 速度指令の排他制御（twist_mux）
+## 速度指令の排他制御（twist_mux → obstacle_limiter）
 
-`/cmd_vel` への速度指令は複数のノードから発行されますが、最終的な出力は常に `twist_mux` が一元管理します。これにより個々のノードが互いの状態を意識する必要がなくなります。
+速度指令は複数のノードから出ますが、`twist_mux` が一元的に調停し、**最終段の
+`obstacle_limiter` だけが `/cmd_vel` を publish します**（`WP-SAFE-03`・2026-08-27）。
 
 ```txt
-優先度（高い方が優先）:
-  255: /safety/estop      lock   — E-Stop 発動中は全入力を無視してゼロ出力
-  254: /safety/fault_lock lock   — LIDAR_LOST/ESP32_DISCONNECTED 検知時も同様
-                                  （PERSON_TRACKER_LOST はここには含めない。
-                                    走行の物理安全とは無関係なため。下記参照）
-   20: /cmd_vel_retreat   topic  — follow_planner からの近接退避指令・person_predictor からの捜索旋回指令（Nav2 を迂回）
-   10: /cmd_vel_nav       topic  — Nav2 controller_server の通常出力
+挙動系（th_planning の replay_runner 等）─→ /cmd_vel_behavior (priority 20) ─┐
+Nav2 controller_server              ─→ /cmd_vel_nav      (priority 10) ─┤
+WebUI の手動ジョグ（jog_gate 経由） ─→ /cmd_vel_manual   (priority 30) ─┤ twist_mux
+                                                                        │
+safety_monitor ─→ /safety/estop      (lock 255) ───────────────────────┤
+safety_monitor ─→ /safety/fault_lock (lock 254) ───────────────────────┘
+                                                                        │
+                                                                  /cmd_vel_muxed
+                                                                        ↓
+/scan・/system/state・/cmd_vel_manual・/safety/estop・/safety/fault_lock →[ obstacle_limiter ]
+                                                                        ↓
+                                                                    /cmd_vel → ESP32
 ```
 
-`retreat` が `nav` より高い優先度を持つため、Nav2 がゴールへの経路を計算し続けていても、退避が必要な瞬間に `follow_planner` が直接 `/cmd_vel_retreat` を発行すれば即座に反映されます。`follow_planner` 側で Nav2 のゴールをキャンセルする必要はありません。
+| 優先度 | 入力 | 出どころ |
+| --- | --- | --- |
+| lock 255 | `/safety/estop` | E-Stop 発動中は全入力を無視してゼロ出力 |
+| lock 254 | `/safety/fault_lock` | `LIDAR_LOST` / `ESP32_DISCONNECTED` / 重大フォルト（`PERSON_TRACKER_LOST` は含めない。走行の物理安全とは無関係なため） |
+| 30 | `/cmd_vel_manual` | 手動ジョグ（`jog_gate` が通した分だけ） |
+| 20 | `/cmd_vel_behavior` | 挙動系ノード（教示再生の `replay_runner` など） |
+| 10 | `/cmd_vel_nav` | Nav2 controller_server の通常出力 |
 
-退避が終了した際は `/cmd_vel_retreat` の発行を止めるだけで、`twist_mux` のタイムアウト（0.5 秒）が経過すると自動的に `/cmd_vel_nav` に切り替わります。これが「退避解除」の実装です。
+> **不変ルール**: `/cmd_vel` に直接 publish するノードを追加してはいけません。
+> `obstacle_limiter` だけが `/cmd_vel` の publisher です。すべての速度指令は
+> twist_mux → `/cmd_vel_muxed` → `obstacle_limiter` を経由します。Nav2 経由の移動は
+> `/cmd_vel_nav`、それ以外の挙動系（点検・校正の走行を含む）は `/cmd_vel_behavior` を使います。
 
-各入力トピックのタイムアウト値変更が必要な場合は `th_safety/config/twist_mux.yaml` を編集します。
+`obstacle_limiter` は **20Hz 固定で出し続け、沈黙しません**（沈黙＝停止ではなく、
+下流から見て「指令が来ない」状態を作らないため）。判定ロジックは ROS2 非依存の
+`th_safety/obstacle_limiter_core.hpp` にあり、ノード側は sub/pub/timer の配線だけを行います。
+起動時に `base_link ← laser_link` の TF を有界リトライで取得します。
+
+各入力トピックのタイムアウト値は `th_safety/config/twist_mux.yaml` で変更します。
+
+> **⚠ `/cmd_vel_retreat` は現在どこにも繋がっていません（2026-09-06）。**
+> 旧設計では優先度 20 が `/cmd_vel_retreat`（`follow_planner` の近接退避・
+> `person_predictor` の捜索旋回）でしたが、`WP-SAFE-03` で `/cmd_vel_behavior` に
+> 置き換わりました。`follow_planner.py` / `follow_planner_mapless.py` /
+> `person_predictor.py` は**いまだに `/cmd_vel_retreat` へ publish しており、
+> twist_mux が購読していないため出力は無音で捨てられます**（トピックを `echo` すれば
+> 値は見えるので紛らわしい）。3ノードとも新設計での廃止対象（`WP-TRANSIT-01`）です。
 
 ---
 
-## 状態管理（mode_manager FSM）
+## 状態管理（現行は th_state。mode_manager は旧 FSM）
 
-### 遷移ルールの実装
+> **⚠ FSM は 2 つ併存しています（2026-09-06）。**
+>
+> | | `th_state`（`state_manager.py`） | `th_mode_manager`（`mode_manager.cpp`） |
+> | --- | --- | --- |
+> | 位置づけ | **現行**。教示再生デモはこちらで動く | 旧 9 モード体系。まだ起動している |
+> | モード | 18 個（`INIT` / `IDLE` / `ESTOP` / `CARRY` / `FOLLOW` / `MANUAL` / **`TEACH_FOLLOW`** / **`TEACH_MANUAL`** / **`REPLAY`** / `LINE` / `LEASH` / `PREP` / `PANEL_NAV` / `AT_PANEL` / `SUMMON` / `HOME_NAV` / `OPCHECK` / `CALIB`） | 9 個（`INIT`〜`FOLLOWING_MAPLESS`） |
+> | 遷移の定義 | **YAML**（`transitions.yaml` / `attributes.yaml` / `mode_entry.yaml`）を純粋コア `th_state/state_core.py` が読む。`step()` は副作用なし | C++ の `isTransitionAllowed()` にハードコード |
+> | テスト | `test_transition_table.py`（137 件）ほか。ROS2 不要 | `test_mode_transitions.py`（ROS2 必要） |
+>
+> **新しいモード・遷移を足すときは `th_state` 側の YAML を編集します。**
+> 以下の `mode_manager` の記述は旧 FSM のもので、教示再生の遷移は説明していません
+> （新 FSM の遷移表は `docs/plan/detailed/DetailedDesign-state.md` と
+> `th_ws/src/th_state/config/*.yaml` が正）。
+
+### 遷移ルールの実装（旧 FSM）
 
 `mode_manager` は `isTransitionAllowed()` 関数で遷移の許可・拒否を判定します。新しいモードを追加する場合はこの関数に遷移元/遷移先のペアを追加するだけで対応できます。
 
@@ -68,7 +118,71 @@ case RobotMode::IDLE:
 
 ---
 
+## 教示再生（route_recorder / replay_runner）★現行デモの主機能
+
+手動で走らせた経路を記録し（教示）、あとから同じ経路を自動で走る（再生）。
+2026-09 現在のデモはこれが主機能で、`th_state` の `TEACH_MANUAL` / `REPLAY` モードで動く。
+
+```txt
+[教示] 手動ジョグ → /odom の姿勢を間引いて記録 → 「保存」で経路 JSON ＋ 地図を凍結保存
+        route_recorder ← route_record_core（純粋コア）
+        slam_control: mapping → localization へ切替（set_localization_mode）
+
+[再生] 経路を選ぶ → slam_toolbox を作り直して地図を1回だけ読み直す → 始点へ自己位置合わせ
+        → pure-pursuit で /cmd_vel_behavior へ (v, ω) を出す
+        replay_runner ← route_replay_core（純粋コア）
+```
+
+| ノード / モジュール | 役割 |
+| --- | --- |
+| `th_planning/scripts/route_recorder.py` | `/system/effect` の `start_record` / `resume_record` / `finalize_route` を受け、`/odom` の姿勢を間引いて `th_data/routes/<id>.json` に保存。`/route/catalog`（latched）・`/route/status` を発行 |
+| `th_planning/th_planning/route_record_core.py` | 記録の純粋コア（間引き・距離計算）。ROS2 非依存 |
+| `th_planning/scripts/replay_runner.py` | `load_route` / `rotate_to_start_yaw` / `resume_path` を受け、pure-pursuit で `/cmd_vel_behavior`（priority 20）へ出力。到着で `evt.arrived` を返す |
+| `th_planning/th_planning/route_replay_core.py` | 再生の純粋コア（pure-pursuit・逆再生・現在地合わせ）。ROS2 非依存 |
+| `th_config_manager/scripts/slam_control.py` | 地図セッション（`/map_session/open`）。教示「保存」で地図を凍結し、再生の経路選択のたび `slam_toolbox` を作り直してから `deserialize_map` を **1 回だけ** 行う |
+| `th_planning/scripts/map_downsampler.py` | WebUI へ送る地図の間引き（帯域対策） |
+
+### 再生の pure-pursuit と速度スケール
+
+`route_replay_core.pure_pursuit()` は、記録点列から `lookahead_m` 以上離れた最初の点を
+目標にして `(v, ω)` を返す。
+
+```txt
+ω = clamp(2 · cruise · sin(alpha) / lookahead, ±max_yaw_rate)
+v = cruise · max(0.2, cos(alpha))        # 旋回が大きいほど落とす
+```
+
+WebUI（S-14）の「再生速度」は `/replay/speed_scale`（`std_msgs/Float32`、比率 0..1）で
+`scale_replay_params()` に渡り、**`cruise_speed_mps` / `max_yaw_rate_rps` / `lookahead_m` を
+最小端〜最大端の間で線形補間する**（低速 ≈0.15 / 中速 ≈0.33 / 高速 ≈0.45 m/s）。
+
+> **`lookahead_m` を速度と一緒にスケールする理由（2026-09-05）**: pure-pursuit の damping は
+> 実質「`lookahead_m / cruise_speed_mps`（先読み時間）」で決まる。以前は `lookahead_m` を
+> 速度に関わらず 0.40m 固定にしていたため、高速ほど先読み時間が短くなって応答が過敏になり
+> （低速 0.40/0.15≈2.7s に対し高速 0.40/0.45≈0.9s）、**高速再生でふらついていた**。
+> 高速側を 0.60m に引き上げて先読み時間を底上げした（`replay_lookahead_min_m` = 低速側 0.40m）。
+> **この値は実測に基づく調整ではないので、実走行で詰めること**（VISION.md SD-7）。
+
+### 実機で踏んだ落とし穴（再発したらまずここを見る）
+
+| 症状 | 原因 | 対策 |
+| --- | --- | --- |
+| 再生開始直後に逆方向へ旋回して壁へ | 別の起動セッションで記録した経路を再生していた（地図は起動ごとに作り直されるので座標が無意味） | 経路に地図セッション ID を付けて弾く（`WS-9K-B`） |
+| 曲がり角で自己位置が外れる | 経路選択のたび同じ `slam_toolbox` に `deserialize_map` を打ち、地図コピーが積み上がっていた | reload のたび `slam_toolbox` を作り直してから 1 回だけ deserialize（`WS-9S`） |
+| 廊下で位置がずれる | IMU（ジャイロ）未融合。クローラの超信地旋回でエンコーダだけでは yaw がずれる | `imu_enabled` の既定を `true` に（`WS-9V`） |
+| 記録した経路が壁に埋まる | `slam_toolbox` のループ閉じ込みで、記録済み経路だけ補正前のフレームに取り残される | `do_loop_closing: false` |
+
+試験の記録は [教示再生走行試験.md](教示再生走行試験.md) にある。
+
+---
+
 ## 試験員追従ロジック（follow_planner_core / mapless_follow_core）
+
+> **⚠ この節のロジックは現在ロボットを動かしていません（2026-09-06）。**
+> 出力先の `/cmd_vel_retreat` が `twist_mux` から外れているためです
+> （上記「速度指令の排他制御」参照）。Nav2 ゴールを出す経路（`FOLLOWING`）は
+> `/cmd_vel_nav` を通るので生きていますが、近接退避・捜索旋回は届きません。
+> 3ノードとも `WP-TRANSIT-01` での削除・作り直し対象です。
 
 追従ロジックは2つの独立した実装があり、モードによって使い分けられます。
 
@@ -602,9 +716,14 @@ ros2 topic echo /person/status --once
 
 ---
 
-## 新しいモードの追加方法
+## 新しいモードの追加方法（旧 FSM `mode_manager` の手順）
 
-実例: `FOLLOWING_MAPLESS`（MAP不要の軌跡追従モード）を追加した際の手順です。同じ手順で「自動巡回モード（AUTO_PATROL）」等を追加できます。
+> **⚠ 現行の FSM は `th_state` です（2026-09-06）。** 新しいモード・遷移を足すときは
+> `th_ws/src/th_state/config/*.yaml`（`transitions.yaml` / `attributes.yaml` /
+> `mode_entry.yaml`）を編集し、`test_transition_table.py` で検証します。
+> C++ を触る必要はありません。以下は旧 `mode_manager` の手順で、記録として残します。
+
+実例: `FOLLOWING_MAPLESS`（MAP不要の軌跡追従モード）を追加した際の手順です。
 
 ```txt
 1. th_system_msgs/msg/RobotMode.msg に定数を追加
