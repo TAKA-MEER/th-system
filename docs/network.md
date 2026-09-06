@@ -199,8 +199,24 @@ docker restart th_robot                               # /dev/shm の掃除だけ
 
 ## ラズパイ: pi_serial_relay の導入
 
-**まだ実機に一度も導入していない（2026-09-05 時点。ESP32 は導入までの間 PC に
-USB 接続してファームを開発する）。** ESP32 をラズパイへ物理的に繋ぎ替えたら:
+**2026-09-05 に実機へ導入済み**（ESP32 をラズパイへ挿し替え → ファーム書き込み →
+`pi_serial_relay` を systemd 登録 → `/esp32/wheel_feedback` が約100ms±20msで届くことを確認）。
+現在の実機の状態:
+
+| 項目 | 値 |
+| --- | --- |
+| ESP32 のポート | `/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0`（`/dev/ttyUSB1`） |
+| RPLIDAR のポート | `/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_0b443775f827c8419a0592b44475a0a2-if00-port0`（`/dev/ttyUSB0`） |
+| サービス | `rpi-serial-relay.service`（`enable` 済み・`Restart=always`） |
+| Python ライブラリ | `~/pi_relay_env/site-packages`（`PYTHONPATH` で読ませる。下記の理由で pip 不可） |
+
+> **⚠ 未適用の課題（2026-09-06 時点）**: 実機の `rplidar.service` は **まだ
+> `/dev/ttyUSB0` 直指定のまま**で、下記の手順0を実施していない。ESP32 が同じ
+> ラズパイに挿さっている今、起動時の列挙順が入れ替わると `rplidar_ros` が ESP32 を
+> 開いてしまい、`/scan` が死ぬ（ネットワーク障害に見えるので原因究明が難しい）。
+> **次に実機へ触るとき最優先で手順0を実施すること。**
+
+以下は**新しい機体・新しいラズパイへ導入し直すとき**の手順:
 
 0. **(必須・最初に1回)** `rplidar.service` が `/dev/ttyUSB0` のような列挙順依存の
    パスのままになっていないか確認する:
@@ -281,7 +297,21 @@ USB 接続してファームを開発する）。** ESP32 をラズパイへ物�
    兆候があれば `stty -F <path> -hupcl` が効いているか、ケーブル/ドライバの
    自動リセット回路の仕様を疑う。
 5. `ros2 topic hz /esp32/wheel_feedback`（PC 側コンテナ内）が安定して出続けることを
-   確認する。
+   確認する。**約100ms間隔（標準偏差 0.003〜0.01s 程度）で並ぶのが正常。**
+   2件がほぼ同時に届いた直後に約200msの空白、というバーストが**毎周期**続く場合は
+   異常で、下記のいずれかを疑う。
+
+### 導入時に実際に踏んだこと（2026-09-05）
+
+| 症状 | 原因 | 対処 |
+| --- | --- | --- |
+| `wheel_feedback` が毎周期バーストする（標準偏差 0.04〜0.08s） | `pi_serial_relay` の `ser.read` が固定50msポーリングになっており、ESP32 の100ms送信周期とビート（うなり）を起こしていた。pyserial の `read(size)` は「timeout の間 size バイト溜まるまで待つ」実装なので、`size > 1` に有限 timeout を付けると必ず timeout の粒度で足止めされる | `read(1, timeout=None)` で1バイト待ち → `in_waiting` 分をまとめて読む2段構えに変更（[`ad3960d`](https://github.com/TAKA-MEER/th-system/commit/ad3960d)）。**教示再生のふらつきの直接原因だった** |
+| サービスが起動しない | unit の `<SERIAL_BY_ID_PATH>` を置換し忘れ | `systemctl cat rpi-serial-relay` で実際の `ExecStart` を確認する |
+| `pip3: command not found` | ラズパイに `pip3` が無く、`ip route` に default gateway も無い（インターネット非接続） | 上記の wheel 手配り方式（手順2） |
+
+ESP32 の誤リセット（`ExecStartPre` の `stty -hupcl` と `open()` 前の DTR/RTS 落としが
+効いているか）は、サービス再起動時に `/safety/fault_lock` が `false` のまま
+・`wheel_feedback` が途切れないことで確認した（2026-09-05）。
 
 ---
 

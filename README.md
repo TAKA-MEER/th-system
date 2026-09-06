@@ -28,12 +28,18 @@ PC のインターネットは別系統: Elecom WDC-433SU2M2 (5GHz専用) → NC
 | ハードウェア制御 | ESP32 (PlatformIO + シリアル直結, PID+FF 速度制御)           |
 | ラズパイ中継     | `pi_serial_relay` (シリアル ⇔ WS クライアント)               |
 | ROS2 ブリッジ    | `th_esp32_bridge` (WS サーバー・オドメトリ)                  |
-| 安全管理         | `th_safety` (safety_monitor) + `twist_mux`                   |
-| 状態管理         | `th_mode_manager` (FSM)                                      |
+| 安全管理         | `th_safety` (safety_monitor・**obstacle_limiter**・jog_gate) + `twist_mux` |
+| 状態管理         | `th_state` (state_manager。**現行の FSM**) ／ `th_mode_manager` (旧 9 モード FSM。併存中) |
 | 認識             | `th_perception` + DR-SPAAM 脚検知 (human_kenchi)             |
-| 計画・追従       | `th_planning` (follow_planner / mapless)                     |
+| **教示再生**     | `th_planning` (route_recorder / replay_runner) + `th_config_manager` (slam_control) |
+| 計画・追従       | `th_planning` (follow_planner / mapless。**旧設計・現在は出力が届かない**) |
+| パラメータ       | `th_params` (registry.yaml から生成・監査)                   |
 | ナビゲーション   | Nav2 + SLAM Toolbox + robot_localization                     |
 | UI               | React + rosbridge WebSocket                                  |
+
+> **いま動いているデモは「手動教示 → 教示再生」**（`route_recorder` / `replay_runner`）。
+> 人物追従（`follow_planner` 系）は旧設計の名残で、`/cmd_vel_retreat` へ publish しており
+> **`twist_mux` がもう購読していないため出力は捨てられる**（[docs/architecture.md](docs/architecture.md)）。
 
 ---
 
@@ -169,10 +175,14 @@ th-system/
     ├── src/                      # ROS2 ワークスペース
     │   ├── th_system_msgs/       # カスタム型 (RobotMode/PersonStatus/FaultStatus/WheelFeedback)
     │   ├── th_esp32_bridge/      # ESP32 ↔ ROS2 (WebSocket サーバー・オドメトリ)
-    │   ├── th_safety/            # safety_monitor + twist_mux 設定
-    │   ├── th_mode_manager/      # モード FSM
+    │   ├── th_safety/            # safety_monitor・obstacle_limiter・jog_gate + twist_mux 設定
+    │   ├── th_state/             # state_manager・connectivity_checker (現行 FSM)
+    │   ├── th_mode_manager/      # 旧 9 モード FSM (併存中)
+    │   ├── th_config_manager/    # config_manager・slam_control (地図セッション)
+    │   ├── th_params/            # registry.yaml → 各ノードのパラメータ生成・監査
     │   ├── th_perception/        # lidar_filter・person_predictor・tracker_bridge・stub
-    │   ├── th_planning/          # follow_planner(_mapless)・panel_navigator・teleop
+    │   ├── th_planning/          # route_recorder・replay_runner（教示再生）・panel_navigator・
+    │   │                         # summon_navigator・follow_planner(_mapless)（旧設計）・teleop
     │   │   └── th_planning/      # ROS2 非依存のコアロジック (pytest 対象)
     │   ├── th_calibration/       # オドメトリキャリブツール
     │   ├── th_description/       # URDF (base_link→laser_link 等の TF)

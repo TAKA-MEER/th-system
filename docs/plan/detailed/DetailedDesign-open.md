@@ -35,9 +35,9 @@
 | **DEBT-3** | `lidar_timeout_ms` / `esp32_timeout_ms` = 2000 ms | `th_safety/config/safety_monitor.yaml:16-19` | `v_max` = 0.7 m/s で**タイムアウトまでに 1.4 m 走る** | A1 が満たされること（タイムアウトを導出値にし、破れるなら `v_max` を下げる） | 段階 2 |
 | **DEBT-4** | `/cmd_vel` 途絶時も `esp32_bridge` がキープアライブで最後の非ゼロ指令を送り続ける | `esp32_bridge.py:237-238` | **上流が死んでも誰も止めない。**後段リミッタの前提が崩れる | 故障注入 §10-12（`cmd_vel_stale_ms` 以内にゼロ） | **段階 2 の最初** |
 | **DEBT-5** | 自己位置喪失が `/safety/fault` に上がらない | `slam_control.py:210-250` | `map→odom` が凍結しても走り続ける | 故障注入 §10-13 | 段階 5 |
-| DEBT-6 | `wifi_credentials.h` が実 SSID・実パスワードを含んでコミットされている。ポートも 8765 で `params.yaml`（8766）と不一致 | `esp32/src/wifi_credentials.h` | 秘匿情報の混入 | `.gitignore` 化＋履歴からの除去 | 段階 0（`task.md` 1 と同時） |
-| DEBT-7 | `ws_link.h` のフレーム表が古い（`WHEEL_FEEDBACK` を 9 byte と書くが実装は 13 byte） | `esp32/src/ws_link.h` | プロトコル改訂時の事故源 | 表を実装に合わせる | プロトコルを触る最初のパケット |
-| DEBT-8 | `esp32/tools/ws_test_server.py:86` が `unpack_wheel_feedback` の 3 要素返却に追従しておらず `ValueError` | 同左 | ベンチ試験ツールが動かない | 修正または削除 | 同上 |
+| ~~DEBT-6~~ | ~~`wifi_credentials.h` が実 SSID・実パスワードを含んでコミットされている~~ → **【消滅・2026-09-05】** ESP32 の無線化をやめたため `wifi_credentials.h` / `.example` ごと削除した（`1430dcd`）。WiFi 認証情報はファームウェアに存在しない | ~~`esp32/src/wifi_credentials.h`~~（削除済み） | — | — | 解除済 |
+| ~~DEBT-7~~ | ~~`ws_link.h` のフレーム表が古い~~ → **【消滅・2026-09-05】** `ws_link.h/cpp` を削除し `serial_link.h/cpp` に置き換えた（`1430dcd`）。新ヘッダのフレーム表は実装と一致している | ~~`esp32/src/ws_link.h`~~（削除済み。現行は `esp32/src/serial_link.h`） | — | — | 解除済 |
+| ~~DEBT-8~~ | ~~`ws_test_server.py:86` が `unpack_wheel_feedback` の 3 要素返却に追従していない~~ → **【消滅・2026-09-05】** `ws_test_server.py` を削除し、シリアル用の `esp32/tools/serial_test.py` に置き換えた（`1430dcd`） | ~~`esp32/tools/ws_test_server.py`~~（削除済み） | — | — | 解除済 |
 | DEBT-9 | `main.cpp:196-202` の `[DBG]` printf が「原因切り分け後に削除」のまま残存 | 同左 | シリアル帯域の浪費 | 削除または開発モードのログ選択へ | 段階 3 |
 | **DEBT-10** | **`th_safety/CMakeLists.txt` にテスト登録が 1 件も無い** | `th_safety/CMakeLists.txt`（`if(BUILD_TESTING)` ブロックに `ament_add_gtest` / `ament_add_pytest_test` が 0 件） | **`colcon test --packages-select th_safety` が現在この瞬間でも exit 0 で合格する。**安全の中核パッケージの完了条件が**すべて無条件合格**になる | `WP-SAFE-00` §7 の `ament_add_gtest` を登録し、**`colcon test-result --verbose` が「1 件以上実行された」と出る**こと | **段階 0（`WP-SAFE-00`）** |
 
@@ -482,7 +482,7 @@ R1（網羅性）は機械検査で代替し、R2・R3 はサブエージェン�
 
 | 事実 | 影響 |
 | --- | --- |
-| `esp32/src/ws_link.h` のフレーム表は **`(9 bytes)` / `(2 bytes)`** のまま | `DEBT-7`。§10 の検査を期待文字列に直した |
+| ~~`esp32/src/ws_link.h` のフレーム表は **`(9 bytes)` / `(2 bytes)`** のまま~~ | ~~`DEBT-7`。§10 の検査を期待文字列に直した~~ → **【2026-09-05 消滅】** `ws_link.h` ごと削除（`serial_link.h` へ置換） |
 | **`th_safety/CMakeLists.txt` にテスト登録が 1 件も無い** | `colcon test --packages-select th_safety` は**現在この瞬間でも合格する**。`V5`・`V6` の根拠 |
 
 ### 5.5.5 3 回目レビューの残件（2026-08-17 に消化）
