@@ -86,16 +86,20 @@ docker compose version
 ## 2. PC: WiFi (ラズパイ AP への接続)
 
 ネットワーク全体像は [network.md](network.md) 参照。**現行はラズパイが AP**
-(SSID `th-rpi-ap` / 2.4GHz)、PC と ESP32 がどちらも子機。PC は
+(SSID `th-rpi-ap` / 2.4GHz)、PC はその子機（2026-09-05 以降、ESP32 自体は
+WiFi を使わずラズパイへシリアル直結。この WiFi 区間は `/scan` に加えて
+ラズパイの `pi_serial_relay` → PC `esp32_bridge` の通信も運ぶ）。PC は
 **物理の内蔵 WiFi カード**で繋ぐ(USB ドングルは実測で品質が出ない。network.md の対照実験)。
 
 AP 側(ラズパイ)の構築は `th_ws/scripts/rpi_setup_ap.sh`。
-WPA2/CCMP 固定・**PMF (802.11w) 無効**が必須(ESP32 が接続要求すら送れなくなる)。
+WPA2/CCMP 固定・**PMF (802.11w) 無効**が必須(ラズパイの `pi_serial_relay` が
+接続要求すら送れなくなる。旧ESP32直結時代からの制約を踏襲)。
 
 ### 2-1. 接続プロファイル (Linux / NetworkManager)
 
-ロボット回線は**固定 IP `192.168.5.50/24`** にする。ESP32 ファームの
-`WS_SERVER_HOST` がこの IP 決め打ちのため必須。
+ロボット回線は**固定 IP `192.168.5.50/24`** にする。ラズパイの
+`pi_serial_relay`(`--ws-host` 既定値)がこの IP 決め打ちで esp32_bridge に
+接続しに来るため必須。
 
 ```bash
 nmcli connection add type wifi ifname wlo1 con-name th-rpi-ap-wlo1 ssid th-rpi-ap
@@ -134,7 +138,7 @@ mirrored networking の対象外なので不可)。管理者 PowerShell で:
 Set-NetConnectionProfile -InterfaceAlias "<アダプタ名>" -NetworkCategory Private
 netsh wlan set profileparameter name=th-rpi-ap connectionmode=auto
 
-# 固定 IP 192.168.5.50 (ESP32 ファームがこの IP に繋ぎに来るため必須)
+# 固定 IP 192.168.5.50 (ラズパイの pi_serial_relay がこの IP に繋ぎに来るため必須)
 Get-NetIPAddress -InterfaceAlias "<アダプタ名>" -AddressFamily IPv4 | Remove-NetIPAddress -Confirm:$false
 New-NetIPAddress -InterfaceAlias "<アダプタ名>" -IPAddress 192.168.5.50 -PrefixLength 24
 ```
@@ -354,7 +358,7 @@ After=network.target
 Type=simple
 User=mirs2602
 Environment=ROS_DOMAIN_ID=10
-ExecStart=/bin/bash -lc "source /opt/ros/humble/setup.bash && source /home/mirs2602/ros2_ws/install/setup.bash && exec ros2 run rplidar_ros rplidar_node --ros-args -p serial_port:=/dev/ttyUSB0 -p serial_baudrate:=256000 -p frame_id:=laser_link -p angle_compensate:=true -p scan_mode:=Standard"
+ExecStart=/bin/bash -lc "source /opt/ros/humble/setup.bash && source /home/mirs2602/ros2_ws/install/setup.bash && exec ros2 run rplidar_ros rplidar_node --ros-args -p serial_port:=/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_0b443775f827c8419a0592b44475a0a2-if00-port0 -p serial_baudrate:=256000 -p frame_id:=laser_link -p angle_compensate:=true -p scan_mode:=Standard"
 Restart=always
 RestartSec=5
 
@@ -365,9 +369,18 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now rplidar
 ```
 
+> **2026-09-05 追記: `serial_port` は `/dev/ttyUSB0` ではなく `/dev/serial/by-id/...`
+> を指定すること。** ESP32 もラズパイの USB-UART に直結する構成（[network.md](network.md)）
+> になったため、`/dev/ttyUSB0`/`/dev/ttyUSB1` のような列挙順依存のパスは
+> 起動のたびに LiDAR と ESP32 が入れ替わりうる。上の値は 2026-09-05 に
+> `ls -l /dev/serial/by-id/` で確認したこの個体のパス。**別個体・別ケーブルに
+> 交換したら `ls -l /dev/serial/by-id/` で確認し直して置き換えること。**
+> 既存の稼働機は `sudo systemctl edit rplidar` で `ExecStart` を上書きするか、
+> unit ファイルを直接編集して `daemon-reload && restart` する。
+
 - `scan_mode:=Standard` を推奨: 既定の DenseBoost は点数が多く DR-SPAAM の CPU 推論が
   約2Hz まで落ちて歩行者を見失いやすい。Standard(点数半減)で追跡が安定する。
-- **ラズパイ再起動で `/dev/ttyUSB0` ⇄ `/dev/ttyUSB1` が入れ替わることがある**。
+- **(2026-09-05 以前の旧構成の記録)** ラズパイ再起動で `/dev/ttyUSB0` ⇄ `/dev/ttyUSB1` が入れ替わることがあった。
   起動失敗(`Error, code: 80008004`)時は `ls /dev/ttyUSB*` でポートを確認して差し替えるか、
   udev ルール(`udev/99-th-robot.rules` 参照)で `/dev/lidar` に固定する。
 
@@ -392,15 +405,16 @@ ip addr show wlan0 | grep 'inet '                         # 192.168.5.1 にな�
 
 ---
 
-## 7. ESP32: ファームウェア書き込み
+## 7. ESP32: ファームウェア書き込み・ラズパイへの接続
 
 手順の詳細・チューニングは [esp32.md](esp32.md) 参照。初回の要点:
 
-1. `esp32/src/wifi_credentials.h.example` を `wifi_credentials.h` にコピーし、
-   **STA (子機) 設定**(`WIFI_AP_MODE 0`, `WIFI_SSID "th-rpi-ap"`, `WIFI_PASSWORD`,
-   `WS_SERVER_HOST "192.168.5.50"`, `WS_SERVER_PORT 8766`)を記入
-2. PC に USB 接続して `cd esp32 && pio run --target upload`
-3. シリアルモニタで AP への接続と取得 IP(DHCP。通常 `192.168.5.125`)が出れば起動成功
+1. PC に USB 接続して `cd esp32 && pio run --target upload`
+   （2026-09-05 以降、WiFi 設定ファイルは不要。ESP32 はもう WiFi を使わない）
+2. シリアルモニタで起動バナー(`TH System ESP32 Firmware (Serial)`)が出れば書き込み成功
+3. 書き込みが済んだら、ESP32 の USB ケーブルを **PC からラズパイへ差し替える**
+4. ラズパイ側に `pi_serial_relay` を導入する（初回のみ。手順は
+   [network.md](network.md)「ラズパイ: pi_serial_relay の導入」参照）
 
 ### Windows での USB シリアル (usbipd — WSL から書き込む場合のみ)
 

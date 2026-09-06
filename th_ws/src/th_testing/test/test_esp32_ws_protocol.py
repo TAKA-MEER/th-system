@@ -125,7 +125,7 @@ class TestEstopHwFlags:
         (True, 0xFE),   # 予約ビットが立っていても bit0 だけ意味を持つ
     ])
     def test_unpack_estop_hw_3byte(self, active, flags):
-        # ESP32 側 (ws_link.cpp sendEstopHw) が送る新形式そのままの並び。
+        # ESP32 側 (serial_link.cpp sendEstopHw) が送る新形式そのままの並び。
         frame = struct.pack('<BBB', ESTOP_HW, 1 if active else 0, flags)
         out_active, out_flags = unpack_estop_hw_flags(frame)
         assert out_active is active

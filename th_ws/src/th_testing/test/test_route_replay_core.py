@@ -249,42 +249,58 @@ def test_align_first_point_always_lands_on_current():
 
 
 # ── scale_replay_params（WS-9T: 再生速度を比率で可変にする）────────────
-_BASE = ReplayParams(lookahead_m=0.4, cruise_speed_mps=0.45, max_yaw_rate_rps=0.9,
+# 2026-09-05: lookahead_m も cruise/yaw と一緒にスケールするようになった
+# （高速再生のふらつき対策。route_replay_core.py の scale_replay_params
+# docstring 参照）。_BASE.lookahead_m=0.6 を「高速側」、_LOOKAHEAD_MIN=0.4 を
+# 「低速側」の先読み距離とするテスト用の値（本番既定値と揃える必要はない）。
+_BASE = ReplayParams(lookahead_m=0.6, cruise_speed_mps=0.45, max_yaw_rate_rps=0.9,
                      arrive_dist_m=0.2, yaw_tol_rad=0.1)
+_LOOKAHEAD_MIN = 0.4
 
 
 def test_scale_replay_params_ratio_1_is_base_max_end():
-    p = scale_replay_params(_BASE, 1.0, cruise_min=0.12, yaw_min=0.4)
+    p = scale_replay_params(_BASE, 1.0, cruise_min=0.12, yaw_min=0.4,
+                             lookahead_min=_LOOKAHEAD_MIN)
     assert p.cruise_speed_mps == pytest.approx(0.45)
     assert p.max_yaw_rate_rps == pytest.approx(0.9)
+    assert p.lookahead_m == pytest.approx(0.6)
 
 
 def test_scale_replay_params_ratio_0_is_min_end():
-    p = scale_replay_params(_BASE, 0.0, cruise_min=0.12, yaw_min=0.4)
+    p = scale_replay_params(_BASE, 0.0, cruise_min=0.12, yaw_min=0.4,
+                             lookahead_min=_LOOKAHEAD_MIN)
     assert p.cruise_speed_mps == pytest.approx(0.12)
     assert p.max_yaw_rate_rps == pytest.approx(0.4)
+    assert p.lookahead_m == pytest.approx(0.4)
 
 
 def test_scale_replay_params_midpoint_is_linear():
-    p = scale_replay_params(_BASE, 0.5, cruise_min=0.12, yaw_min=0.4)
+    p = scale_replay_params(_BASE, 0.5, cruise_min=0.12, yaw_min=0.4,
+                             lookahead_min=_LOOKAHEAD_MIN)
     assert p.cruise_speed_mps == pytest.approx(0.12 + (0.45 - 0.12) * 0.5)
     assert p.max_yaw_rate_rps == pytest.approx(0.4 + (0.9 - 0.4) * 0.5)
+    assert p.lookahead_m == pytest.approx(0.4 + (0.6 - 0.4) * 0.5)
 
 
 def test_scale_replay_params_clamps_out_of_range_ratio():
-    lo = scale_replay_params(_BASE, -3.0, cruise_min=0.12, yaw_min=0.4)
-    hi = scale_replay_params(_BASE, 9.0, cruise_min=0.12, yaw_min=0.4)
+    lo = scale_replay_params(_BASE, -3.0, cruise_min=0.12, yaw_min=0.4,
+                              lookahead_min=_LOOKAHEAD_MIN)
+    hi = scale_replay_params(_BASE, 9.0, cruise_min=0.12, yaw_min=0.4,
+                              lookahead_min=_LOOKAHEAD_MIN)
     assert lo.cruise_speed_mps == pytest.approx(0.12)
     assert hi.cruise_speed_mps == pytest.approx(0.45)
+    assert lo.lookahead_m == pytest.approx(0.4)
+    assert hi.lookahead_m == pytest.approx(0.6)
 
 
 def test_scale_replay_params_leaves_other_fields_untouched():
-    p = scale_replay_params(_BASE, 0.3, cruise_min=0.12, yaw_min=0.4)
-    assert p.lookahead_m == _BASE.lookahead_m
+    p = scale_replay_params(_BASE, 0.3, cruise_min=0.12, yaw_min=0.4,
+                             lookahead_min=_LOOKAHEAD_MIN)
     assert p.arrive_dist_m == _BASE.arrive_dist_m
     assert p.yaw_tol_rad == _BASE.yaw_tol_rad
     # 元のインスタンスは変更しない（複製を返す）。
     assert _BASE.cruise_speed_mps == 0.45
+    assert _BASE.lookahead_m == 0.6
 
 
 # ── replay_runner.py の配線（ast 静的検査。ROS 不要）──────────────────
@@ -321,3 +337,23 @@ def test_replay_runner_speed_defaults_raised():
     assert decls.get('max_yaw_rate_rps') == 0.9, decls.get('max_yaw_rate_rps')
     assert 'replay_cruise_min_mps' in decls
     assert 'replay_speed_default_ratio' in decls
+
+
+def test_replay_runner_lookahead_scales_with_speed():
+    """2026-09-05: 高速再生のふらつき対策で lookahead_m も速度スケール対象にした。
+
+    replay_lookahead_min_m（低速側）が宣言されていること、_on_speed_scale が
+    scale_replay_params へ渡す引数に self._lookahead_min が含まれること
+    （AST 上、キーワード名 lookahead_min= の値が Attribute lookahead_min の
+    参照であることまでは検査しないが、呼び出しの引数個数が増えたことは
+    scale_replay_params 側のシグネチャ変更で route_replay_core のテストが
+    保証する）。
+    """
+    tree = _runner_tree()
+    decls = {}
+    for n in ast.walk(tree):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr == 'declare_parameter' and len(n.args) >= 2
+                and isinstance(n.args[0], ast.Constant)):
+            decls[n.args[0].value] = True
+    assert 'replay_lookahead_min_m' in decls

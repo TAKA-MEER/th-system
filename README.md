@@ -1,13 +1,16 @@
 # TH システム — 配電盤上部確認ロボット 移動機構
 
 2D-LiDAR による脚検知で試験員を追従するクローラーロボット。
-ESP32(モーター制御)+ ラズパイ(LiDAR)+ PC(ROS2 Humble / Docker)の3台構成。
+ESP32(モーター制御)+ ラズパイ(LiDAR + ESP32中継)+ PC(ROS2 Humble / Docker)の3台構成。
+ESP32はラズパイへUSB-UARTで直結し、WiFiは使わない(2026-09-05〜)。
 
 ```txt
-ラズパイ (WiFi AP + LiDAR 配信)  192.168.5.1    SSID: th-rpi-ap (2.4GHz ch1)
-  ├── PC 内蔵Intel wlo1         192.168.5.50   固定IP。esp32_bridge が :8766 で待ち受け
-  │     RPLIDAR S1 → rplidar_ros → /scan (ROS_DOMAIN_ID=10, frame_id=laser_link)
-  └── ESP32 (駆動用, STA 子機)   192.168.5.125  DHCP → PC:8766 へ WebSocket 接続
+ラズパイ (WiFi AP + LiDAR配信 + pi_serial_relay)  192.168.5.1  SSID: th-rpi-ap (2.4GHz ch1)
+  │  USB-UART
+  ├── ESP32 (駆動用)             (WiFi不使用。シリアル直結のみ)
+  │
+  └── PC 内蔵Intel wlo1         192.168.5.50   固定IP。esp32_bridge が :8766 で待ち受け
+        RPLIDAR S1 → rplidar_ros → /scan (ROS_DOMAIN_ID=10, frame_id=laser_link)
 
 PC のインターネットは別系統: Elecom WDC-433SU2M2 (5GHz専用) → NCT-WL-ST
 ```
@@ -22,7 +25,8 @@ PC のインターネットは別系統: Elecom WDC-433SU2M2 (5GHz専用) → NC
 
 | レイヤー         | 実装                                                         |
 | ------------------ | -------------------------------------------------------------- |
-| ハードウェア制御 | ESP32 (PlatformIO + WebSocket クライアント, PID+FF 速度制御) |
+| ハードウェア制御 | ESP32 (PlatformIO + シリアル直結, PID+FF 速度制御)           |
+| ラズパイ中継     | `pi_serial_relay` (シリアル ⇔ WS クライアント)               |
 | ROS2 ブリッジ    | `th_esp32_bridge` (WS サーバー・オドメトリ)                  |
 | 安全管理         | `th_safety` (safety_monitor) + `twist_mux`                   |
 | 状態管理         | `th_mode_manager` (FSM)                                      |
@@ -38,14 +42,14 @@ PC のインターネットは別系統: Elecom WDC-433SU2M2 (5GHz専用) → NC
 前提: 初回セットアップ([docs/setup.md](docs/setup.md))済み。詳細は [docs/operation.md](docs/operation.md)。
 
 ```bash
-# ① ロボット・ラズパイの電源 ON。PC をロボット AP に繋いで疎通確認
-#      ラズパイ 192.168.5.1   … AP 本体 + /scan 配信元 (systemd で自動起動)
+# ① ロボット(ESP32・ラズパイにUSB接続)・ラズパイの電源 ON。PC をロボット AP に繋いで疎通確認
+#      ラズパイ 192.168.5.1   … AP 本体 + /scan 配信元 + pi_serial_relay (systemd で自動起動)
 #      PC       192.168.5.50  … esp32_bridge が :8766 で待ち受け (内蔵 Intel wlo1・固定IP)
-#      ESP32    192.168.5.125 … STA 子機 (DHCP)。PC:8766 へ繋ぎに来る
+#      ESP32    (WiFi不使用)  … ラズパイへUSB-UART直結。pi_serial_relay 経由でPCと通信
 nmcli connection up th-rpi-ap-wlo1     # autoconnect 済みなら不要
-ping -c3 192.168.5.1                   # ラズパイ (AP 兼 LiDAR)
-ping -c3 192.168.5.125                 # ESP32 (IP は DHCP。ss -tnp | grep 8766 でも確認できる)
-# 繋がらない → docs/network.md「復旧手順」
+ping -c3 192.168.5.1                   # ラズパイ (AP 兼 LiDAR 兼 ESP32中継)
+ssh mirs2602@192.168.5.1 'systemctl is-active rpi-serial-relay'  # ESP32中継が動いているか
+# 繋がらない/activeでない → docs/network.md「復旧手順」
 
 # ② インターネット側 (5GHz) が別アダプタで上がっていること
 nmcli -f NAME,DEVICE,STATE connection show --active

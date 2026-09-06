@@ -151,6 +151,15 @@ UI にフォルト表示・操作要求
 
 ### ESP32 側の二重フェイルセーフ
 
+> **2026-09-05 追記**: ESP32↔PC間は WiFi(WebSocket直結)を廃止し、ESP32はラズパイへ
+> シリアル直結、ラズパイの `pi_serial_relay` が PC の `esp32_bridge` へ接続する構成に
+> 変更した（[network.md](network.md) 参照）。**`esp32_bridge.py` 自体・以下で説明する
+> ウォッチドッグ／キープアライブ／ロック中ゼロ化の設計は無変更。** 以下の
+> 「WiFi ジッタ」を根拠にした数値（WATCHDOG_MS=600ms 等）はその値を導いた当時の
+> 実測に基づく歴史的記録として残すが、ESP32↔PC間の遅延要因としての WiFi は
+> もう存在しない（ESP32↔ラズパイ間はシリアルで遅延がほぼ無視できる。
+> PC↔ラズパイ間は `/scan` と同じ、実測で安定しているWiFi経路）。
+
 ROS2 側の `safety_monitor` に加え、ESP32 ファームウェアにもウォッチドッグが実装されています。
 
 ```txt
@@ -285,7 +294,7 @@ blocking）ため、アプリ層の送信頻度を上げるだけでは TCP 再�
 
 **プロトコル**
 
-ESP32 ⇔ esp32_bridge は WebSocket バイナリフレーム通信（`th_ws/esp32/src/ws_link.h` ⇔ `th_esp32_bridge/th_esp32_bridge/ws_protocol.py`）。`IMU_DATA (0x04)` フレームを ESP32 → bridge 方向に追加し、クォータニオン(qw,qx,qy,qz)・角速度(wx,wy,wz)・線形加速度(ax,ay,az、重力除去済み)・キャリブレーション状態(sys/gyro/accel/magを2bitずつパックした1byte)を毎制御周期(100ms, 10Hz)送信する。BNO055 自体は最大100Hzサンプリングだが、EKF・オドメトリ更新も10Hzのため既存の制御ループに相乗りさせており、独立タイマーは追加していない。
+ESP32 ⇔ esp32_bridge のフレーム定義自体は `th_ws/esp32/src/serial_link.h` ⇔ `th_esp32_bridge/th_esp32_bridge/ws_protocol.py` で、2026-09-05 のシリアル化前後で無変更（ESP32↔ラズパイ間はこのフレームを `serial_framer.py` のエンベロープで包んで運び、ラズパイ↔PC間は従来どおり WebSocket バイナリフレームで運ぶ。[network.md](network.md) 参照）。`IMU_DATA (0x04)` フレームを ESP32 → bridge 方向に追加し、クォータニオン(qw,qx,qy,qz)・角速度(wx,wy,wz)・線形加速度(ax,ay,az、重力除去済み)・キャリブレーション状態(sys/gyro/accel/magを2bitずつパックした1byte)を毎制御周期(100ms, 10Hz)送信する。BNO055 自体は最大100Hzサンプリングだが、EKF・オドメトリ更新も10Hzのため既存の制御ループに相乗りさせており、独立タイマーは追加していない。
 
 bridge 側は `/esp32/imu_data`（`sensor_msgs/Imu`, frame_id=`imu_link`）と `/esp32/imu_calib_status`（`std_msgs/UInt8`）を発行する。
 
@@ -922,25 +931,24 @@ max 300 ms・跳ね 1 回まで改善している。詳細は
 だけ**なので未着手。ただし Nav2・SLAM・教示再生などラズパイ側の負荷が増えたときは
 **まずここを疑う**こと。4 コアのうち 1 コアが既に埋まっている。
 
-### ESP32 が頻繁に再接続する
+### `pi_serial_relay` が頻繁に再接続する (2026-09-05 シリアル化後)
+
+ESP32 はもう WiFi/WebSocket を持たない。再接続が起きているのはラズパイの
+`pi_serial_relay` ⇔ PC の `esp32_bridge` 間（WebSocket）である。詳細な切り分け
+手順は [network.md](network.md)「`pi_serial_relay` が WS に繋がらない」
+「ESP32 と `pi_serial_relay` の間が繋がらない」参照。要点だけ:
 
 ```bash
-# esp32_bridge の WebSocket 接続ログを確認 (接続/切断イベントが出力される)
+# esp32_bridge 側の接続ログ
 ros2 topic echo /rosout | grep esp32_bridge
 
-# ESP32 側のシリアルモニタで WiFi/WS 状態を確認
-# (現行構成では ESP32 はラズパイに USB 接続されているため、ラズパイ側で確認する)
-pio device monitor    # または ラズパイ上で /dev/ttyUSB1 を 115200 で読む
+# pi_serial_relay 側のログ (ラズパイで)
+ssh mirs2602@192.168.5.1 'journalctl -u rpi-serial-relay -f'
 
-# ★旧仕様にあった「5 分周期の切断→即再接続(定期リフレッシュ)」は撤去済み。
-#   現行は 10 秒ごとの ping / 5 秒以内の pong で死活を見る(ws_link.cpp)。
-#   定期的な切断ログが出るのはもう正常ではない。
+# PC の固定IP (192.168.5.50) が pi_serial_relay の --ws-host/--ws-port と
+# 一致しているか、PC 側ファイアウォールが ws_port をブロックしていないか確認
 
-# 現行(ラズパイ AP)構成: PC の固定IP (192.168.5.50) が
-# wifi_credentials.h の WS_SERVER_HOST/PORT と一致しているか確認
-# PC 側ファイアウォールが ws_port をブロックしていないか確認
-
-# ウォッチドッグタイムアウトを確認
+# ウォッチドッグタイムアウトを確認 (無変更)
 # config.h: WATCHDOG_MS が通信周期より十分大きいか確認
 ```
 

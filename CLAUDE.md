@@ -39,6 +39,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 環境の癖・注意点
 
+- **`pip3 install platformio` をホストの `python3 -m pytest` と同じ環境に入れると、依存の `anyio` が pytest プラグインとして自動登録され、`ModuleNotFoundError: No module named '_pytest.scope'` でテストが全滅する**（この環境の `pytest` は 6.2.5 で `anyio` の新しめのプラグインAPIと非互換）。`python3 -m pytest -p no:anyio ...` で回避できる。ESP32 ファームを `pio run` でビルドしたい場合に踏む（2026-09-05）。
+- **ラズパイ (`mirs2602@192.168.5.1`) には `pip3` が無く、`ip route` に default gateway も無いためインターネットに出られない。** Python ライブラリが要る場合は、開発機で `pip3 download --platform manylinux2014_aarch64 --python-version 310 --implementation cp --only-binary=:all: <pkg>` して wheel を展開し、`PYTHONPATH` で読ませる（`docs/network.md`「ラズパイ: pi_serial_relay の導入」に実例）。`sudo` もパスワードが必要で非対話 SSH からは実行できない（systemd unit のインストール等は対話セッションでやる必要がある）。
+- **pyserial の `ser.read(size)` は `timeout` の間「`size` バイト溜まるまで」待ち続ける実装**であり、`size > 1` に有限 `timeout` を組み合わせると必ず `timeout` の粒度で足止めされる固定ポーリングになる。ESP32 側が 100ms 周期で送信しているのに `pi_serial_relay.py` が `ser.read(4096)` を `timeout=0.05` で呼んでいたところ、2 つの周期がビート（うなり）を起こして `/esp32/wheel_feedback` が毎周期バースト受信になった（2026-09-05 実機で発覚。教示再生のふらつき増加の原因だった）。低遅延・低ジッタが要る受信は `ser.read(1, timeout=None)`（無期限待ち）→即座に `ser.in_waiting` 分だけノンブロッキングで追い読み、の2段構えにする。
 - `ros2 node list` はデーモンキャッシュの影響で新規ノードが反映されないことがある。`ros2 node list --no-daemon`（または `ros2 daemon stop` 後に再実行）で確実に最新状態を取得する。
   **ただし `--no-daemon` でも生きているノードを取りこぼすことがある。**「一覧に出ない」だけで死んだと判断しないこと。launch のログに `process has died` が無いか、当該ノードの起動 INFO が出ているかを併せて見る（`lidar_filter` が正常起動しているのに一覧に出ず、誤って「修正が効いていない」と判断しかけた）。
 - **`th_robot` コンテナはユーザーが実機作業中のセッションであることがある。** デバッグ用にノードを起動・停止する前に必ず `docker exec th_robot ps -eo pid,etimes,args` で稼働中のプロセスを確認し、自分が起動したものだけを PID 指定で止めること（実際に `rotation_calib.py` が 50 分間走っている最中に遭遇した）。
@@ -64,9 +67,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   |---|---|---|
   | ラズパイ | `192.168.5.1` | **AP 本体**（SSID `th-rpi-ap`）＋ `/scan` 配信元 |
   | PC | `192.168.5.50` | USB WiFi ドングル `wlx6c1ff789d5d4`（AIC8800）。`esp32_bridge` が :8766 で待ち受け |
-  | ESP32 | `192.168.5.125` | STA 子機（DHCP）。`WIFI_AP_MODE 0` / `WS_SERVER_HOST 192.168.5.50` |
 
-  **2026-09-01 に CLAUDE.md へ書いた「ラズパイは DHCP で `192.168.5.125`」は誤り。それは ESP32。** `/system/trigger` に繋ぎに来る IP を見れば ESP32 と分かる（`ss -tnp | grep 8766`）。
+  **2026-09-01 に CLAUDE.md へ書いた「ラズパイは DHCP で `192.168.5.125`」は誤り。それは（当時の）ESP32。**
+  **2026-09-05 追記: ESP32 は無線を廃止しラズパイへシリアル直結した（`docs/network.md`参照）。
+  上記表の「ESP32 が `192.168.5.125` の STA 子機」という行はもう実体が無い（歴史的記録として削除した）。
+  代わりにラズパイ上の `pi_serial_relay` が PC:8766 へ接続しに来る。**
 - **無線が遅い・切れるの真因は PC の USB WiFi ドングル（AIC8800 / `wlx6c1ff789d5d4`）。チャネル混雑ではない。** 2026-09-02 に対照実験で確定した。同じ AP・同じ ch1・同じ部屋・同じ時刻:
 
   | 条件 | 上り | 下り | ロス | avg RTT | max RTT |
@@ -80,7 +85,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
   | デバイス | 接続先 | IP |
   |---|---|---|
-  | 内蔵 Intel `wlo1` (iwlwifi) | `th-rpi-ap-wlo1`（ロボット AP・2.4GHz ch1） | **固定 192.168.5.50/24**（`never-default`。ESP32 ファームの `WS_SERVER_HOST` が決め打ちなので DHCP にしない） |
+  | 内蔵 Intel `wlo1` (iwlwifi) | `th-rpi-ap-wlo1`（ロボット AP・2.4GHz ch1） | **固定 192.168.5.50/24**（`never-default`。ラズパイの `pi_serial_relay` が決め打ちで接続しに来るため DHCP にしない） |
   | Elecom WDC-433SU2M2 `wlx3897a478b19d` (rtl8821au) | `net5g`（`NCT-WL-ST` 5GHz ch36） | DHCP・**既定経路はこちら** |
 
   インターネットを 5GHz に逃がしたので**機内の 2.4GHz 共存干渉も消えた**。効果（3 分ソーク）: ESP32 の WS 切断 194 秒ごと → **0 回**、`ESP32_DISCONNECTED` 105 回/7分 → **3 回**（起動時のみ）、`/scan_filtered` 5.4Hz・最大ギャップ 2.94s → **10.07Hz・最大 0.12s・標準偏差 0.006s**。

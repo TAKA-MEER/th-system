@@ -944,8 +944,8 @@
   value: 8766
   consumers: [esp32_bridge]
   spec_ref: "DetailedDesign-wp0.md WP-NET-01 §3 / WP-ESP32-01 §3.3"
-  source: "th_esp32_bridge/config/params.yaml ws_port ／ esp32/src/wifi_credentials.h WS_SERVER_PORT（機体ごと・.gitignore 対象）"
-  note: "esp32_bridge の WebSocket 待受ポート。ESP32 側 wifi_credentials.h の WS_SERVER_PORT と一致させること。WP-PARAM-01 時点で未登録だった行（WP-ESP32-01 で追加）"
+  source: "th_esp32_bridge/config/params.yaml ws_port ／ ラズパイの pi_serial_relay --ws-port（2026-09-05〜。旧 esp32/src/wifi_credentials.h WS_SERVER_PORT は廃止）"
+  note: "esp32_bridge の WebSocket 待受ポート。ラズパイの pi_serial_relay と一致させること。WP-PARAM-01 時点で未登録だった行（WP-ESP32-01 で追加）"
 
 - name: link_wait_timeout_ms
   unit: ms
