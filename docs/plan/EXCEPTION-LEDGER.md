@@ -2,8 +2,14 @@
 
 **発効 2026-09-01（ユーザー指示）。**根拠と方針は [VISION.md](../../VISION.md) §2.5。
 
-実現可能性デモ（手動教示・教示再生の一気通貫）を最優先するため、実装・試験・安全システムの
-一部を期間限定で省略・バイパスしている。**ここに記録の無い省略・バイパスをしてはいけない。**
+実現可能性デモのため、実装・試験・安全システムの一部を期間限定で省略・バイパスしている。
+**ここに記録の無い省略・バイパスをしてはいけない。**
+
+- **フェーズ 1**（手動教示・教示再生の一気通貫）: `W-01`〜`W-07`。
+- **フェーズ 2**（試験場内動作。2026-09-07 スコープ拡大。VISION.md §2.5「### 2026-09-07」）:
+  `W-08`〜。**安全のソフト層はバイパスしない**（`obstacle_limiter` を活かす・`safety_monitor` を
+  緩めない・実物の人物トラッカーを起動）。フェーズ 2 の WAIVER は**仕様どおりの機能の省略**が中心で、
+  安全チェーンのバイパスは含めない。
 
 ## 運用ルール
 
@@ -25,6 +31,18 @@
 | W-05 | `v_reverse` の既定値を 0.25 に | `registry.yaml` の `v_reverse` は `blind_clearance_m`（LiDAR 死角。placeholder）由来の `derived` → null → 生成 yaml に出ない → `obstacle_limiter.cpp` の `declare_parameter("v_reverse", 0.0)` が効き**後退が 0 にクランプ**（実機で後退不可が発覚）。registry を触ると `obstacle_stop_distance_m[v_reverse]` が計算され A2a/A11 違反で生成が止まるため、**C++ の宣言既定値だけ 0.25 m/s（場内低速相当）にした**。生成 yaml に `v_reverse` が入れば上書きされる | 実機の LiDAR は 360° で死角なし（`blind_angle_ranges` 空・`blind_calibrated: true`）。`blind_clearance_m` の実測は O-a2 待ちで未計画 | 後退の減速根拠が実測でない。死角のある構成に変えたら過大な後退速度になりうる | `blind_clearance_m` を実測 → `v_reverse` を `derived` のまま解決させ、A2a を満たすよう `obstacle_floor_distance_m` を含めて詰める。C++ 既定は 0.0 に戻す | `obstacle_limiter.cpp` の `declare_parameter("v_reverse", ...)`（`// WAIVER(demo): W-05`） | OPEN |
 | W-06 | safety_monitor の `runaway` ターゲット | `bringup.launch.py` の `SAFETY_ENABLED_TARGETS` から `runaway` を除外し、`DRIVE_RUNAWAY`（指令 `/cmd_vel` と実測 `/esp32/wheel_feedback` の乖離が比 1.5 を 500ms 超で継続 → CRITICAL → ESTOP）の検知を無効化 | WiFi 経由の `/esp32/wheel_feedback` は受信ギャップ（500ms 超〜数秒）が起きる。`/cmd_vel` は obstacle_limiter が 20Hz で常時出すため、ギャップ中は「新鮮な指令 vs 走り出し直後の古い実測(≈0)」を比べ続けて走行のたびに誤発火し、教示・再生デモが 1 回も通らない（実機 2026-09-01）。他候補（回頭フェーズの `linear.x=0` + 非対称車輪／指令速度に未到達／`wheel_radius_scale=1.0` 未校正）も切り分け前 | PID 発振・エンコーダ断線・指令ゼロ時の惰走を safety_monitor が検知しなくなる。物理非常停止ボタンと ESP32 ウォッチドッグ（600ms, `config.h`）は有効なので、真の暴走の物理停止はできる。`is_runaway_condition` のロジック自体はコードに残す | ①次の実機日に `/cmd_vel` と `/esp32/wheel_feedback` を 10 秒トレースして主因を特定 ②`safety_monitor` に wheel_feedback の鮮度ゲート（実測が古いときは runaway 判定をスキップ）を実装 ③回頭フェーズ（意図的な `linear.x=0` + 旋回）を Case A から除外 ④`wheel_radius_scale` を実測較正 ⑤上記を踏まえ `runaway_hold_ms` / `runaway_ratio` を実測で右サイズ化 ⑥`SAFETY_ENABLED_TARGETS` に `runaway` を戻す | `bringup.launch.py` の `SAFETY_ENABLED_TARGETS`（`# WAIVER(demo): W-06`）/ `registry.yaml` の `runaway_*` 3 行の note | OPEN |
 | W-07 | ジョグ速度の「比率 × 上限」 | WebUI が送る正規化値（`stickToCmd` の `vn`/`wn`、最大 1.0）に `speed_preset_*` を掛けた値が、**そのまま m/s / rad/s として `/cmd_vel_manual_raw` に載る**。`DetailedDesign-wp3.md` §3.3 が意図した「プリセットは上限に対する割合」の掛け算がどのノードにも実装されておらず、掛ける先の上限が存在しない。結果 `v_max=1.12` は前進に一度も当たらず（UI 最大 1.0 < 1.12）、旋回だけ `w_max=0.6` で常に削られる | デモ最優先。正しくやるにはジョグ専用の前進上限を registry に新設し、掛け算をどこで行うか（UI か新設ノードか）の設計判断と spec 更新が要る。2026-09-02 の実機報告「前進が速すぎて教示精度が心配」には`speed_preset_*` を実速度とみなして下げる（0.3/0.6/1.0 → 0.15/0.30/0.55）ことで即応した | プリセット値が「割合」でなく「m/s」を意味するため、`v_max` を変えても手動走行の速度は変わらない（誤解を招く）。`jog_gate.yaml` の `v_max`/`w_max` も `jog_gate.cpp` が宣言しておらず死パラメータのまま | ジョグ専用の前進・旋回上限を `registry.yaml` に追加し、`speed_preset_*` を本来の割合に戻したうえで掛け算を実装する。あわせて `jog_gate.yaml` の死パラメータを解消する | `registry.yaml` の `speed_preset_*` 3 行の note（`# WAIVER(demo): W-07`） | OPEN |
+
+### フェーズ 2（試験場内動作。2026-09-07〜）
+
+| ID | 対象 | 省略・バイパスの内容 | 理由 | リスク / 影響 | 解除時にやること | タグの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| W-08 | 配電盤・待機場所の登録方式 | **方式 A（2 点指示）のみ実装。**方式 B（LiDAR 平面認識 1 ボタン登録。[Spec-onsite.md](spec/Spec-onsite.md) §3.2）は実装しない。§3.4 の① 退避方向サニティチェックも省略 | フェーズ 2 の実現可能性は方式 A で示せる（ユーザー決定 2026-09-07）。平面認識は範囲が大きい | 盤面が壁と面一のとき／人物追跡が不安定なときの代替手段が無い。KPI「平面検出成功率」を取れない | `WP-ONSITE-01` の方式 B（`plane_detect_core` ＋ 退避待ちゲート連動）を実装。§3.4 のサニティチェックを足す | `two_point_core` / `pin_registrar`（`# WAIVER(demo): W-08`） | OPEN |
+| W-09 | 盤前到着後の正対 | 到着後の LiDAR 盤面正対（[Spec-onsite.md](spec/Spec-onsite.md) §3.3）を実装しない。向きは「2 点指示の目標向き ＋ Nav2 到達許容」の合成誤差（見積もり ±16〜18°）のまま。`ALIGN` は超信地旋回で目標ヨーに合わせるだけ | カメラ昇降の位置決め許容差（`O-a1`）が未確定で、正対が要るか判断できない | 要求許容差 < 合成誤差 だと盤面に正対しない。到着誤差のリカバリはジョグ介入頼み（§7.3） | `O-a1` 確定後、必要なら §3.3 の到着後正対ループを別レイヤで実装。`F-22` の合成誤差を実測 | `venue_navigator` の `ALIGN` 処理（`# WAIVER(demo): W-09`） | OPEN |
+| W-10 | `PREP` の地図修正（人物映り込み消去） | `WP-ONSITE-04` の人物マスク（範囲選択でセルを未知化・元に戻せる。[Spec-onsite.md](spec/Spec-onsite.md) §2.2）は実装しない。地図修正 UI そのものを省く | 人物映り込みが実際に問題になるか未検証（`O-c2`）。要否は `WP-MEAS-02` で決まる | 作業者が地図に写り込んだとき手当てできない。前日準備の所要時間 KPI（`O-a3`）を取れない | `WP-MEAS-02` の結果を見て、要るなら §2.2 の範囲選択マスクと undo を実装 | `map_editor`（未作成。`# WAIVER(demo): W-10` を作成時に付す） | OPEN |
+| W-11 | 当日の地図「書き足し（段 B）」 | [Spec-onsite.md](spec/Spec-onsite.md) §4.0.1 の 3 段（A そのまま／B 書き足し／C 作り直し）のうち **B を実装しない**。当日は A（既存地図をそのまま開く）か C（`PREP` やり直し）のみ | 会場条件が分からず既定を決められない（`O-d5`）。B は `SM-3.1.2-099`〜`-102` の地図更新モードの配線が要る | 一部だけ物が動いた会場で、毎回フル `PREP` になる（前日準備の負担が残る） | §4.0.1 段 B（地図更新 ON で走る → 「保存」で確定）を配線。`SM-3.1.2-099`〜`-102` を実装 | `venue_map_session`（`# WAIVER(demo): W-11`） | OPEN |
+| W-12 | 「作業中」ボタンの正式 IF 化 | [Spec-onsite.md](spec/Spec-onsite.md) §7.2 の暫定「作業中」ボタン（ON で次の行き先を拒否）を仮のまま使う。到着通知／昇降完了／撮影完了／中断通知の正式インターフェースは作らない | 昇降・撮影側との結合設計が未了（`O-a6`） | 誰がいつ押すか運用依存。押し忘れで撮影前に発進しうる（画面表示で緩和） | 結合設計確定後、§7.2 の 4 信号に置き換える | `venue_navigator` の `working` 購読（`# WAIVER(demo): W-12`） | OPEN |
+| W-13 | 試験場内ノードの数値パラメータ | `two_point_core` / `pin_registrar` / `venue_navigator` / `wait_clear_gate` の点間距離下限・`clear_distance_m` / `clear_hold_ms` / `clear_timeout_ms`・`ALIGN` 許容ヨー等をノード内リテラル既定値で持つ。`registry.yaml` 経由でない（`W-03` と同型） | デモ最優先。registry 登録と params_generation 拡張は範囲外 | 現場調整が WebUI からできず、値の履歴が残らない（VISION §2 の前提に反する） | 各値を `registry.yaml` に登録し（`names.json` の宣言に沿う）、launch で YAML を渡す。`W-03` とまとめてクローズ可 | 各ノードの `declare_parameter` 群（`# WAIVER(demo): W-13`） | OPEN |
+| W-14 | フェーズ 2 の統合・実機試験項目 | `WP-ONSITE-*` / `WP-UI-06/07` の統合テスト・実機試験項目（故障注入 §10-7 の `WAIT_CLEAR` 系を含む）を省略してよい（記録は必須） | デモ期限（VISION §2.5） | 場内動作の回帰を自動で守れない。実機での退避ゲート・到着精度が未計測 | `test_simulation_scenarios` 系に場内シナリオを追加。`docs/試験項目.md` に実機項目を起こして実施 | — | OPEN |
 
 ## 状態の凡例
 
