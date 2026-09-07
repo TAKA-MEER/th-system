@@ -299,6 +299,9 @@ export const S21_MAP_UPDATE_NOTE = '地図更新 OFF の間は「保存」を出
 // ---------------------------------------------------------------- S-50 設定（WS-9X） ----
 // screens/S50Settings.jsx の表示文字列。Spec-webui.md §3.15 のタブ構成。
 export const S01_SETTINGS = '設定'            // S-01「保守・設定」カードのボタン
+// brief-UI-S21-entry: S-01「試験場」の「試験」ボタン（mockup 555 行の文言どおり。
+// S-21 は FSM のモードではないので PREP のようなモード遷移ボタンではない）。
+export const S01_ONSITE_TEST = '試験（当日）'
 export const S50_BACK = '戻る'
 export const S50_TAB_GENERAL = '一般'
 export const S50_TAB_DISPLAY = '表示'

@@ -71,7 +71,7 @@ function waitBarPct(wait) {
   return Math.max(4, Math.min(96, 100 - (remain / WAIT_BAR_SEC) * 100))
 }
 
-export default function S21Test() {
+export default function S21Test({ onExit }) {
   const { ros, state, stale } = useSystemState()
   const sendTrigger = useTrigger()
   const pins = useOnsitePins(ros)
@@ -117,8 +117,12 @@ export default function S21Test() {
   }, [showWizard])
 
   // ── 操作 ─────────────────────────────────────────────
+  // brief-UI-S21-entry: 「終了」は ui.finish を送り、そのあと main.jsx 経由で
+  // onsiteTestOpen を閉じてもらう（onExit）。閉じないと FSM が IDLE に戻った
+  // あとも S-21 が出たままになる。
   function handleFinish() {
     sendTrigger('ui.finish')
+    onExit?.()
   }
 
   // 行き先を選んで ui.goto（C-15: IDLE、T-ATP-05: AT_PANEL）。

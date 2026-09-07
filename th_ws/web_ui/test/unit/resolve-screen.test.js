@@ -56,3 +56,26 @@ test('PANEL_NAV / SUMMON / AT_PANEL / HOME_NAV なら S-21（settingsOpen でも
 test('IDLE は S-21 でなく S-01 のまま（screenRouting に IDLE 分岐を足さない）', () => {
   assert.equal(resolveScreen({ ...base, mode: 'IDLE' }), 'S01')
 })
+
+// brief-UI-S21-entry §4.1: onsiteTestOpen。S-50 と同じ「S-01 のサブ画面」方式で、
+// 動作系モードが最優先。settingsOpen より onsiteTestOpen を先に見る。
+test('onsiteTestOpen && IDLE なら S-21（S-01 のサブ画面として）', () => {
+  assert.equal(resolveScreen({ ...base, mode: 'IDLE', onsiteTestOpen: true }), 'S21')
+})
+
+test('onsiteTestOpen でも PANEL_NAV なら S-21（モード優先でも結果は同じ）', () => {
+  assert.equal(resolveScreen({ ...base, mode: 'PANEL_NAV', onsiteTestOpen: true }), 'S21')
+})
+
+test('onsiteTestOpen でも MANUAL なら S-11（動作系モードが優先）', () => {
+  assert.equal(resolveScreen({ ...base, mode: 'MANUAL', onsiteTestOpen: true }), 'S11')
+})
+
+test('onsiteTestOpen と settingsOpen が両方立ったら S-21（onsiteTestOpen 優先）', () => {
+  assert.equal(
+    resolveScreen({ ...base, mode: 'IDLE', onsiteTestOpen: true, settingsOpen: true }),
+    'S21')
+  assert.equal(
+    resolveScreen({ ...base, mode: 'IDLE', onsiteTestOpen: false, settingsOpen: true }),
+    'S50')
+})
