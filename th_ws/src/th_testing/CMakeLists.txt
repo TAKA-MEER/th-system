@@ -188,6 +188,12 @@ if(BUILD_TESTING)
     test/test_venue_nav_core.py
     TIMEOUT 30)
 
+  # 待機場所宣言コア (Spec-onsite §4.0。姿勢オフセット・許容差判定。
+  # th_onsite の純ロジック。ROS2 不要)
+  ament_add_pytest_test(test_home_declare_core
+    test/test_home_declare_core.py
+    TIMEOUT 30)
+
   # ── パラメータ registry コア (th_params。ROS2 不要・純粋単体テスト。WP-PARAM-01) ──
   ament_add_pytest_test(test_params_schema
     test/test_params_schema.py
