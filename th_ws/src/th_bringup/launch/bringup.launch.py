@@ -553,6 +553,26 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 13e. venue_navigator（盤前移動・向き合わせ。WP-ONSITE-02）──
+    # PANEL_NAV / SUMMON の NAV→ALIGN。Nav2 の FollowPath を使うため段階 3。
+    nodes.append(Node(
+        package='th_onsite',
+        executable='venue_navigator.py',
+        name='venue_navigator',
+        condition=IfCondition(onsite_enabled),
+        output='screen',
+    ))
+
+    # ── 13f. wait_clear_gate（退避待ちゲート。WP-ONSITE-03）──
+    # SUMMON/WAIT_CLEAR で試験員の退避を待って evt.clear_ok / evt.clear_timeout。
+    nodes.append(Node(
+        package='th_onsite',
+        executable='wait_clear_gate.py',
+        name='wait_clear_gate',
+        condition=IfCondition(onsite_enabled),
+        output='screen',
+    ))
+
     # ── 14. rosbridge (タブレット WebSocket) ──────────────
     nodes.append(Node(
         package='rosbridge_server',
