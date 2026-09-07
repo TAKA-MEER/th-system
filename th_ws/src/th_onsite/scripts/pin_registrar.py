@@ -29,6 +29,7 @@ from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
 
 import tf2_ros
 
+from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Header
 from th_system_msgs.msg import Pin, PinList, PersonStatus, StateEffect, StateEvent
 from th_system_msgs.srv import EditPin, RegisterPin, TwoPointPress
@@ -127,6 +128,10 @@ class PinRegistrar(Node):
         self._pub_event = self.create_publisher(
             StateEvent, '/system/event', event_qos)
         self._pub_pins = self.create_publisher(PinList, '/onsite/pins', pins_qos)
+        # WP-ONSITE-02: SUMMON のゴール（2点指示の P1=yaw）を venue_navigator へ。
+        # transient_local で latched し、mode が SUMMON に入った時に読めるようにする。
+        self._pub_summon_goal = self.create_publisher(
+            PoseStamped, '/onsite/summon_goal', pins_qos)
 
         # ── Services ────────────────────────────────────────
         self.create_service(TwoPointPress, '/onsite/two_point', self._on_two_point,
@@ -196,6 +201,21 @@ class PinRegistrar(Node):
         ev.arg_json = arg_json
         self._pub_event.publish(ev)
         self.get_logger().info(f'/system/event 発行: {event}')
+
+    def _publish_summon_goal(self, p1, yaw):
+        """SUMMON 受理時にゴール(P1=map xy, yaw)を /onsite/summon_goal へ publish。"""
+        ps = PoseStamped()
+        ps.header.stamp = self.get_clock().now().to_msg()
+        ps.header.frame_id = 'map'
+        ps.pose.position.x = float(p1[0])
+        ps.pose.position.y = float(p1[1])
+        ps.pose.position.z = 0.0
+        ps.pose.orientation.z = math.sin(float(yaw) / 2.0)
+        ps.pose.orientation.w = math.cos(float(yaw) / 2.0)
+        self._pub_summon_goal.publish(ps)
+        self.get_logger().info(
+            f'/onsite/summon_goal 発行 (x={p1[0]:.3f}, y={p1[1]:.3f}, '
+            f'yaw={yaw:.3f})')
 
     # ── /onsite/pins publish ──────────────────────────────
     def _publish_pins(self):
@@ -337,6 +357,7 @@ class PinRegistrar(Node):
         if purpose == 'SUMMON':
             self._emit_event('evt.two_point_done',
                              json.dumps({'yaw': round(float(yaw), 3)}))
+            self._publish_summon_goal(self._p1, yaw)
         else:
             self._emit_event('evt.register_ok',
                              json.dumps({'kind': self._kind,

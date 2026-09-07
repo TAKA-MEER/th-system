@@ -182,6 +182,12 @@ if(BUILD_TESTING)
     test/test_wait_clear_core.py
     TIMEOUT 30)
 
+  # venue_navigator コア (WP-ONSITE-02。旋回誤差・旋回指令クランプ・到着判定。
+  # th_onsite の純ロジック。ROS2 不要)
+  ament_add_pytest_test(test_venue_nav_core
+    test/test_venue_nav_core.py
+    TIMEOUT 30)
+
   # ── パラメータ registry コア (th_params。ROS2 不要・純粋単体テスト。WP-PARAM-01) ──
   ament_add_pytest_test(test_params_schema
     test/test_params_schema.py
