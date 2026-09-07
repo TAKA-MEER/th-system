@@ -31,3 +31,11 @@ test('DRIVE_S11（e2e 合成画面）は settingsOpen より優先', () => {
   assert.equal(
     resolveScreen({ ...base, testScreen: 'DRIVE_S11', settingsOpen: true }), 'DRIVE_S11')
 })
+
+// WP-UI-06: PREP モードは S-20 試験準備。目盛りは S-01 のサブ画面である S-50 設定
+// に置き換わらない（動作系モードの従来挙動。上のループに吸収済みだが、
+// 失敗時に行が分かるよう明示もしておく）。
+test('PREP なら S-20（settingsOpen でも）', () => {
+  assert.equal(resolveScreen({ ...base, mode: 'PREP' }), 'S20')
+  assert.equal(resolveScreen({ ...base, mode: 'PREP', settingsOpen: true }), 'S20')
+})

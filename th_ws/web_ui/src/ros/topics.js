@@ -37,6 +37,10 @@ export const TOPICS = {
   // 直書きしている両例に倣い、本パケットでは hook/コンポーネント側でローカル定数に
   // している（topics.js には増やさない）。
   ROUTE_PREVIEW: '/route/preview',
+  // WP-UI-06: S-20 試験準備。試験場内地図のピン一覧（PinList、transient_local）。
+  ONSITE_PINS: '/onsite/pins',
+  // WP-UI-06: 対象選択の候補（PersonTargets。candidates は base_link 相対）。
+  PERSON_TARGETS: '/person/targets',
 }
 
 export const SERVICES = {
@@ -44,6 +48,9 @@ export const SERVICES = {
   // std_srvs/Trigger, not th_system_msgs/UiTrigger -- see ros/useStdTrigger.js.
   SHUTDOWN_PREPARE: '/shutdown/prepare',
   SHUTDOWN_EXECUTE: '/shutdown/execute',
+  // WP-UI-06: S-20。2 点指示（two_point）とピンの改名/削除（edit_pin）。
+  ONSITE_TWO_POINT: '/onsite/two_point',
+  ONSITE_EDIT_PIN: '/onsite/edit_pin',
 }
 
 export const MSG_TYPES = {
@@ -67,9 +74,15 @@ export const MSG_TYPES = {
   // WS-3 / demo-teach-replay: /route/preview は nav_msgs/Path（names.json の
   // endpoints にある）。
   PATH: 'nav_msgs/Path',
+  // WP-UI-06: S-20。PinList / PersonTargets は names.json の msgs に載っている。
+  PIN_LIST: 'th_system_msgs/PinList',
+  PERSON_TARGETS: 'th_system_msgs/PersonTargets',
 }
 
 export const SRV_TYPES = {
   UI_TRIGGER: 'th_system_msgs/UiTrigger',
   STD_TRIGGER: 'std_srvs/Trigger',
+  // WP-UI-06: S-20。2 点指示 / ピン編集。
+  ONSITE_TWO_POINT: 'th_system_msgs/TwoPointPress',
+  ONSITE_EDIT_PIN: 'th_system_msgs/EditPin',
 }

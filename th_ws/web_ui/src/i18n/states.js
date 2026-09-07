@@ -17,6 +17,12 @@ export const STATE_NAMES = {
   POINT: '位置指示中',
   LIST: '一覧確認中',
   IDLE_P: '待機中',
+  // WP-UI-06: PREP のサブ状態（th_state/config/transitions.yaml T-PREP-01〜15）。
+  // stateLabel(state) のフォールバック（生トークン表示）を避けるために足す。
+  REGISTER: '登録中',
+  SAVED: '保存済み',
+  RETURN: '待機場所へ移動中',
+  EDIT: '地図編集中',
 }
 
 export const UNKNOWN_STATE_LABEL = '不明'

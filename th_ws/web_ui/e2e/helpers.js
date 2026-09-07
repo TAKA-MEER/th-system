@@ -111,6 +111,42 @@ export async function stubServices(page, services) {
   await page.addInitScript((s) => { window.__thTestServices = s }, services)
 }
 
+// WP-UI-06: opens S-20 with the onsite data seeded -- /onsite/pins (PinList's
+// pins array), /person/targets (PersonTargets-shaped msg), /odom pose
+// ({x,y,yaw}), and stubs for /onsite/two_point + /onsite/edit_pin
+// (read at call time from window.__thTestTwoPoint / __thTestEditPin).
+// useOnsitePins / usePersonTargets / useOdomPose read their window.__thTest<Name>
+// on first render, so every seed must be set via addInitScript.
+export async function gotoScreenWithOnsite(page, screen, state, { pins, targets, twoPoint, editPin, pose }) {
+  await page.addInitScript(({ s, scr, p, t, tp, ep, ps }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    if (p) window.__thTestOnsitePins = p
+    if (t) window.__thTestPersonTargets = t
+    if (tp) window.__thTestTwoPoint = tp
+    if (ep) window.__thTestEditPin = ep
+    if (ps) window.__thTestOdomPose = ps
+  }, { s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose })
+  await page.goto('/')
+}
+
+// WP-UI-06: the service calls recorded by ros/useOnsiteService.js's test hook
+// (shape { service, request }).
+export async function onsiteServiceCalls(page) {
+  return page.evaluate(() => window.__thOnsiteServiceCalls ?? [])
+}
+
+// WP-UI-06: mutate the seeded pins / targets after mount
+// (useOnsitePins / usePersonTargets install __thSetTestOnsitePins /
+// __thSetTestPersonTargets, mirroring __thSetTestState).
+export async function setTestOnsitePins(page, v) {
+  await page.evaluate((x) => window.__thSetTestOnsitePins(x), v)
+}
+
+export async function setTestPersonTargets(page, v) {
+  await page.evaluate((x) => window.__thSetTestPersonTargets(x), v)
+}
+
 // Stubs a /system/trigger response per trigger name (ros/useTrigger.js's test
 // hook, window.__thTestTrigger) so an e2e spec can drive the *accepted* path
 // of ui.enter_mode (e.g. S-01 -> S-11, DetailedDesign-wp3.md WP-TRANSIT-01)

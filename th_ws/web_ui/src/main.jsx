@@ -10,6 +10,7 @@ import S01Main from './screens/S01Main.jsx'
 import S11Manual from './screens/S11Manual.jsx'
 import S13TeachManual from './screens/S13TeachManual.jsx'
 import S14Replay from './screens/S14Replay.jsx'
+import S20Prep from './screens/S20Prep.jsx'
 import S50Settings from './screens/S50Settings.jsx'
 import DriveTab from './screens/driveTab.jsx'
 import { useJogPanel } from './shell/jogPanel.js'
@@ -118,6 +119,13 @@ function Screens() {
     return (
       <AppShell screenName={SCREEN_NAMES.S14} screenId={SCREEN_IDS.S14}>
         <S14Replay />
+      </AppShell>
+    )
+  }
+  if (screen === 'S20') {
+    return (
+      <AppShell screenName={SCREEN_NAMES.S20} screenId={SCREEN_IDS.S20}>
+        <S20Prep />
       </AppShell>
     )
   }

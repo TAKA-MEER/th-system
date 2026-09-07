@@ -5,7 +5,8 @@
 // names.json の screens に載っている ID (N-15: /ui/active_screen の
 // screen_id はこの値をそのまま使う -- names.json に無い値を送ってはいけない)。
 export const SCREEN_IDS = {
-  S00: 'S-00', S01: 'S-01', S11: 'S-11', S13: 'S-13', S14: 'S-14', S50: 'S-50',
+  S00: 'S-00', S01: 'S-01', S11: 'S-11', S13: 'S-13', S14: 'S-14',
+  S20: 'S-20', S50: 'S-50',
 }
 
 // mode -> screen-key map. S-01 sends ui.enter_mode; when th_state accepts
@@ -13,7 +14,8 @@ export const SCREEN_IDS = {
 // with no mapped screen yet (e.g. FOLLOW -> S-10) is simply absent: S-01
 // stays put and the header's mode pill reflects the change.
 // P5 / demo-teach-replay: TEACH_MANUAL -> S-13、REPLAY -> S-14。
-export const MODE_TO_SCREEN = { MANUAL: 'S11', TEACH_MANUAL: 'S13', REPLAY: 'S14' }
+// WP-UI-06: PREP（試験準備）-> S-20。
+export const MODE_TO_SCREEN = { MANUAL: 'S11', TEACH_MANUAL: 'S13', REPLAY: 'S14', PREP: 'S20' }
 
 // 表示中の画面は SystemState.mode から導出する（純関数）。
 //

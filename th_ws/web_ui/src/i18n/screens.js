@@ -15,6 +15,8 @@ export const SCREEN_NAMES = {
   // 正式値は names.json / Spec-webui.md §3.7 が正。
   S13: '教示（手動）',
   S14: '教示再生',
+  // WP-UI-06: S-20 試験準備（PREP）。Spec-webui.md §3.10。
+  S20: '試験準備',
   // WS-9X: S-50 設定（Spec-webui.md §3.15）。S-01 の「保守・設定」から開く
   // IDLE のサブ画面。
   S50: '設定',
@@ -220,6 +222,42 @@ export const ROUTE_PREVIEW_EMPTY = '経路がありません'
 // parts/JogConsole.jsx の操作キー凡例。押下中のキーは .kbdHint.on でハイライト。
 export const KBD_HINT_KEYS = 'W/A/S/D または矢印キー'
 export const KBD_HINT = 'で走行'
+
+// ---------------------------------------------------------------- S-20 (試験準備) ----
+// WP-UI-06。Spec-webui.md §3.10 / mockup 957〜1054 行。
+// 日本語はパケットの常規則どおり i18n だけに置く（screens/S20Prep.jsx と
+// parts/RadarSelect.jsx はこの定数だけを参照する）。
+export const S20_TAB_MAP = '地図'
+export const S20_TAB_TARGET = '対象選択'
+export const S20_UNSAVED = '未保存'
+export const S20_MAP_TITLE = '試験場内地図'
+export const S20_MAP_ARIA = '試験場内地図とピン'
+export const S20_MAP_ROBOT = '現在位置'
+export const S20_MAP_NO_POSE = '現在位置を取得中…'
+export const S20_TARGET_HINT = '登録する試験員を選んでください。2 点指示はこの対象の位置で登録します。'
+export const S20_SUBTAB_REGISTER = '登録'
+export const S20_SUBTAB_PINS = 'ピン'
+export const S20_REGISTER_TITLE = '登録'
+export const S20_REG_HOME = '待機場所を登録'
+export const S20_REG_PANEL = '配電盤を登録'
+export const S20_WIZ_STEP = (n) => `Step ${n}/2`
+export const S20_WIZ_MSG = '立ってほしい位置に立って押してください'
+export const S20_WIZ_REGISTER = 'この位置を登録'
+export const S20_PINS_TITLE = 'ピン'
+export const S20_PIN_EDIT = '編集'
+export const S20_PIN_RENAME = '改名'
+export const S20_PIN_DELETE = '削除'
+export const S20_PIN_CANCEL = 'やめる'
+export const S20_PIN_YAW = (deg) => `向き ${deg}°`
+export const S20_RETURN_HOME = '1 ボタンで待機場所に戻す'
+export const S20_RETURN_HINT = '待機場所のピン "HOME" を登録すると使えます'
+
+// 対象選択レーダー（parts/RadarSelect.jsx。S-20 / S-21 で共用。Spec-webui.md §9.1）。
+export const RADAR_ARIA = '対象選択レーダー'
+export const RADAR_LOST = '対象を見失っています'
+export const RADAR_EMPTY = '試験員が検出されていません'
+export const RADAR_SELECTED = '対象'
+export const RADAR_CONFIDENCE = (c) => `確信度 ${c}`
 
 // ---------------------------------------------------------------- S-50 設定（WS-9X） ----
 // screens/S50Settings.jsx の表示文字列。Spec-webui.md §3.15 のタブ構成。
