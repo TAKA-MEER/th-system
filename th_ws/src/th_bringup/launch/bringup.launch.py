@@ -16,7 +16,8 @@ import time
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, GroupAction,
-                             IncludeLaunchDescription, LogInfo, OpaqueFunction)
+                             IncludeLaunchDescription, LogInfo, OpaqueFunction,
+                             TimerAction)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (Command, LaunchConfiguration,
@@ -68,6 +69,11 @@ def generate_launch_description():
         DeclareLaunchArgument('enable_route_slam', default_value='false',
                               description='教示・再生用に slam_toolbox を mapping '
                                           'モードで起動する (WS-8B。stage<3 でも可)'),
+        # WP-ONSITE-P0: stage>=4 で DR-SPAAM を Nav2 起動と重ねないための遅延（N-27）。
+        DeclareLaunchArgument('perception_start_delay', default_value='8.0',
+                              description='DR-SPAAM/person_tracker_bridge の起動を'
+                                          'この秒数だけ遅らせる (N-27: Nav2 lifecycle と'
+                                          'モデルロードの同時実行によるCPUストール回避)'),
     ]
 
     use_stub     = LaunchConfiguration('use_stub')
@@ -375,29 +381,40 @@ def generate_launch_description():
     ))
     # 本番: human_kenchi (DR-SPAAM + PersonTracker, leg モード) + person_tracker_bridge.py
     # /scan_filtered (死角マスク済み) を入力にし、following_position を /person/status に変換する。
-    nodes.append(IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(
-            get_package_share_directory('leg_detection_bringup'),
-            'launch', 'leg_detection.launch.py')),
-        launch_arguments={
-            'scan_topic':   '/scan_filtered',
-            'target_frame': 'base_link',
-            'scan_frame':   'laser_link',
-            'odom_frame':   'odom',
-            'use_rviz':     'false',
-            'autostart':    'true',
-        }.items(),
-        # 段階 4 以上でのみ起動する（N-27 の対処 (a)。上の perception_enabled 参照）。
-        condition=IfCondition(PythonExpression(
-            ["'", use_stub, "' != 'true' and int('", stage, "') >= 4"])),
-    ))
-    nodes.append(Node(
-        package='th_perception',
-        executable='person_tracker_bridge.py',
-        name='person_tracker_bridge',
-        condition=IfCondition(PythonExpression(
-            ["'", use_stub, "' != 'true' and int('", stage, "') >= 4"])),
-        output='screen',
+    #
+    # WP-ONSITE-P0: DR-SPAAM のモデルロードを起動から perception_start_delay 秒だけ
+    # 遅らせる。N-27（Nav2 のライフサイクル起動と DR-SPAAM のモデルロードが同じ時間帯に
+    # 走ると PC 側が一過性にストールし LIMITER_DEAD → ESTOP）は 2026-08-31 に対処 (a)
+    # ＝「段階で出し分け」で回避したが、試験場内デモは stage:=4 で Nav2 と DR-SPAAM を
+    # 両方立てるため N-27 の条件が戻る。critical_fault_hold_ms(300ms) が当時の 260ms
+    # ストールは吸収するが、両者の重なりそのものを減らして裕度を稼ぐ。
+    perception_start_delay = LaunchConfiguration('perception_start_delay')
+    _perception_real = PythonExpression(
+        ["'", use_stub, "' != 'true' and int('", stage, "') >= 4"])
+    nodes.append(TimerAction(
+        period=perception_start_delay,
+        actions=[
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(os.path.join(
+                    get_package_share_directory('leg_detection_bringup'),
+                    'launch', 'leg_detection.launch.py')),
+                launch_arguments={
+                    'scan_topic':   '/scan_filtered',
+                    'target_frame': 'base_link',
+                    'scan_frame':   'laser_link',
+                    'odom_frame':   'odom',
+                    'use_rviz':     'false',
+                    'autostart':    'true',
+                }.items(),
+            ),
+            Node(
+                package='th_perception',
+                executable='person_tracker_bridge.py',
+                name='person_tracker_bridge',
+                output='screen',
+            ),
+        ],
+        condition=IfCondition(_perception_real),
     ))
 
     # ── 10. person_predictor ──────────────────────────────
