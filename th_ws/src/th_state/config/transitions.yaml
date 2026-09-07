@@ -975,6 +975,32 @@
   to_state: MAPPING
   effects: []
   spec_ref: SM-3.1.2-053
+- id: T-PREP-14
+  layer: 10
+  mode: PREP
+  state: MAPPING
+  event: ui.select_target
+  guard: candidate_exists
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: set_target
+    args:
+      index: $arg.index
+  spec_ref: SM-3.1.2-105
+- id: T-PREP-15
+  layer: 10
+  mode: PREP
+  state: MAPPING
+  event: evt.auto_selected
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: set_target
+    args:
+      index: $arg.index
+  spec_ref: SM-3.1.2-105
 - id: T-PNAV-01
   layer: 10
   mode: PANEL_NAV
@@ -1320,6 +1346,32 @@
   - name: commit_map_patch
     args: {}
   spec_ref: SM-3.1.2-101
+- id: T-SUM-15
+  layer: 10
+  mode: SUMMON
+  state: POINT
+  event: ui.select_target
+  guard: candidate_exists
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: set_target
+    args:
+      index: $arg.index
+  spec_ref: SM-3.1.2-106
+- id: T-SUM-16
+  layer: 10
+  mode: SUMMON
+  state: POINT
+  event: evt.auto_selected
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: set_target
+    args:
+      index: $arg.index
+  spec_ref: SM-3.1.2-106
 - id: T-HNAV-01
   layer: 10
   mode: HOME_NAV

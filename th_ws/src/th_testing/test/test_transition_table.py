@@ -34,6 +34,9 @@ _SPEC_ID_RE = re.compile(r"SM-3\.1\.[12]-\d+")
 SPEC_FANOUT = {
     "SM-3.1.1-10": 2, "SM-3.1.1-11": 4, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
     "SM-3.1.2-043": 2, "SM-3.1.2-069": 3, "SM-3.1.2-094": 4,
+    # WP-ONSITE-F3: PREP / SUMMON の「対象選択」は ui.select_target と
+    # evt.auto_selected の 2 経路（FOLLOW の SM-3.1.2-004 と同じ形）。
+    "SM-3.1.2-105": 2, "SM-3.1.2-106": 2,
 }
 
 
@@ -54,7 +57,7 @@ def test_all_rows_have_spec_ref():
 # §11-2 / §11-2r / §11-2f: 正本との突き合わせ
 # ============================================================
 def test_spec_rows_covered(spec_modes_file):
-    """Spec-modes.md §3.1.1 の17行・§3.1.2 の102行すべてに、対応する行が1つ以上ある。
+    """Spec-modes.md §3.1.1・§3.1.2 の全 SM- ID すべてに、対応する行が1つ以上ある。
     欠けたら失敗する（行数は主張せず SM- の ID を機械的に数える）。"""
     spec_ids = _load_spec_ids(spec_modes_file)
     covered = {row["spec_ref"] for row in _TRANSITIONS}
@@ -84,7 +87,7 @@ def test_fanout_is_exactly_the_declared_six():
 # ============================================================
 def test_every_rule_has_a_test(request):
     """@pytest.mark.rule(<id>) で申告されたテストを収集し、transitions.yaml の id 集合と
-    突き合わせる。全 128 行がどこかのテストでカバーされていることを検査する。"""
+    突き合わせる。全行がどこかのテストでカバーされていることを検査する。"""
     declared_ids = {row["id"] for row in _TRANSITIONS}
     covered_ids = set()
     for item in request.session.items:
