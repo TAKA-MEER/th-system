@@ -17,6 +17,8 @@ export const SCREEN_NAMES = {
   S14: '教示再生',
   // WP-UI-06: S-20 試験準備（PREP）。Spec-webui.md §3.10。
   S20: '試験準備',
+  // WP-UI-07: S-21 試験（PANEL_NAV / SUMMON / AT_PANEL / HOME_NAV）。
+  S21: '試験',
   // WS-9X: S-50 設定（Spec-webui.md §3.15）。S-01 の「保守・設定」から開く
   // IDLE のサブ画面。
   S50: '設定',
@@ -258,6 +260,41 @@ export const RADAR_LOST = '対象を見失っています'
 export const RADAR_EMPTY = '試験員が検出されていません'
 export const RADAR_SELECTED = '対象'
 export const RADAR_CONFIDENCE = (c) => `確信度 ${c}`
+
+// ---------------------------------------------------------------- S-21 試験（WP-UI-07） ----
+// screens/S21Test.jsx の表示文字列。brief-UI-S21 / mockup 1055〜1153 行。
+// 2 点指示ウィザードと「地図」「対象選択」タブは S-20 の定数をそのまま流用する。
+export const S21_SELECT_HINT = '行き先を選んでください'
+export const S21_TARGET_HINT = '呼び寄せる試験員を選んでください。'
+export const S21_SUBTAB_DEST = '行き先'
+export const S21_SUBTAB_SUMMON = '呼び寄せ'
+export const S21_SUBTAB_ATPANEL = '配電盤前'
+export const S21_PREP_TITLE = '準備 ／ (a) ピンを選ぶ'
+export const S21_NOW_AT_HOME = 'いま待機場所にいる'
+export const S21_HOME_UNDECLARED = '未宣言'
+export const S21_HOME_DECLARED = '宣言済み'
+export const S21_HOME_DECLARE = '宣言する'
+export const S21_HOME_FORCE_DECLARE = '強制的に宣言'
+export const S21_HOME_RETRY_LATER = 'あとで'
+export const S21_PIN_MOVE = '移動'
+export const S21_NEXT_DEST_TITLE = '次の行き先'
+export const S21_DEST_HOME = '待機場所'
+export const S21_DEST_NEXT_PANEL = '次の配電盤'
+export const S21_DEST_SUMMON_HERE = 'その場で呼ぶ'
+export const S21_PICK_PANEL_HINT = '移動したいピンを押してください'
+export const S21_SUMMON_TITLE = '(b) その場で呼ぶ'
+export const S21_SUMMON_START = '呼び寄せ（2 点指示）'
+export const S21_WAIT_TITLE = '退避待ち — 退いてください'
+export const S21_WAIT_DIST = (m) => `${m.toFixed(1)} m`
+export const S21_WAIT_CANCEL = '中止'
+export const S21_WAIT_CLEARING = '対象の場所が空き次第、自動で続行します'
+export const S21_ATPANEL_TITLE = '配電盤前'
+export const S21_WORKING = '作業中'
+export const S21_WORK_ON = 'ON'
+export const S21_WORK_OFF = 'OFF'
+export const S21_MAP_UPDATE = '地図の更新'
+export const S21_MAP_UPDATE_OFF = 'OFF'
+export const S21_MAP_UPDATE_NOTE = '地図更新 OFF の間は「保存」を出しません'
 
 // ---------------------------------------------------------------- S-50 設定（WS-9X） ----
 // screens/S50Settings.jsx の表示文字列。Spec-webui.md §3.15 のタブ構成。

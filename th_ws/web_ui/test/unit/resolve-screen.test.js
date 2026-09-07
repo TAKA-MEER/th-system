@@ -39,3 +39,20 @@ test('PREP なら S-20（settingsOpen でも）', () => {
   assert.equal(resolveScreen({ ...base, mode: 'PREP' }), 'S20')
   assert.equal(resolveScreen({ ...base, mode: 'PREP', settingsOpen: true }), 'S20')
 })
+
+// WP-UI-07: S-21 試験。PANEL_NAV / SUMMON / AT_PANEL / HOME_NAV の 4 モードが対象
+// （brief-UI-S21 §2.1）。動作系モードなので settingsOpen でも置き換わらない。
+test('PANEL_NAV / SUMMON / AT_PANEL / HOME_NAV なら S-21（settingsOpen でも）', () => {
+  for (const mode of ['PANEL_NAV', 'SUMMON', 'AT_PANEL', 'HOME_NAV']) {
+    assert.equal(resolveScreen({ ...base, mode }), 'S21', `mode=${mode} は S-21`)
+    assert.equal(resolveScreen({ ...base, mode, settingsOpen: true }), 'S21',
+      `mode=${mode} は settingsOpen でも S-21`)
+  }
+})
+
+// brief-UI-S21 §2.1: IDLE は MODE_TO_SCREEN に入れない。S-21 をモードに関係なく
+// 開く導線はテスト専用の TEST_SCREEN 経由（main.jsx 側）であり、screenRouting に
+// IDLE 分岐を持たせるのは混線のもとになるので禁止。
+test('IDLE は S-21 でなく S-01 のまま（screenRouting に IDLE 分岐を足さない）', () => {
+  assert.equal(resolveScreen({ ...base, mode: 'IDLE' }), 'S01')
+})

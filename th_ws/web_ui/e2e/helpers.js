@@ -111,14 +111,21 @@ export async function stubServices(page, services) {
   await page.addInitScript((s) => { window.__thTestServices = s }, services)
 }
 
-// WP-UI-06: opens S-20 with the onsite data seeded -- /onsite/pins (PinList's
-// pins array), /person/targets (PersonTargets-shaped msg), /odom pose
-// ({x,y,yaw}), and stubs for /onsite/two_point + /onsite/edit_pin
-// (read at call time from window.__thTestTwoPoint / __thTestEditPin).
-// useOnsitePins / usePersonTargets / useOdomPose read their window.__thTest<Name>
-// on first render, so every seed must be set via addInitScript.
-export async function gotoScreenWithOnsite(page, screen, state, { pins, targets, twoPoint, editPin, pose }) {
-  await page.addInitScript(({ s, scr, p, t, tp, ep, ps }) => {
+// WP-UI-06/07: opens S-20/S-21 with the onsite data seeded -- /onsite/pins
+// (PinList's pins array), /person/targets (PersonTargets-shaped msg), /odom pose
+// ({x,y,yaw}), and service stubs read at call time: /onsite/two_point
+// (__thTestTwoPoint), /onsite/edit_pin (__thTestEditPin), /onsite/declare_home
+// (__thTestDeclareHome), /onsite/select_pin (__thTestSelectPin). For S-21 the
+// topic seeds /onsite/home_declared (__thTestHomeDeclared) and /onsite/wait_clear
+// (__thTestWaitClear) are read on first render instead.
+// useOnsitePins / usePersonTargets / useOdomPose / useHomeDeclared /
+// useWaitClearStatus read their window.__thTest<Name> on first render, so every
+// seed must be set via addInitScript.
+export async function gotoScreenWithOnsite(
+  page, screen, state,
+  { pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear },
+) {
+  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc }) => {
     window.__thTestState = s
     window.__thTestScreen = scr
     if (p) window.__thTestOnsitePins = p
@@ -126,7 +133,12 @@ export async function gotoScreenWithOnsite(page, screen, state, { pins, targets,
     if (tp) window.__thTestTwoPoint = tp
     if (ep) window.__thTestEditPin = ep
     if (ps) window.__thTestOdomPose = ps
-  }, { s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose })
+    if (dh) window.__thTestDeclareHome = dh
+    if (sp) window.__thTestSelectPin = sp
+    if (hd) window.__thTestHomeDeclared = hd
+    if (wc) window.__thTestWaitClear = wc
+  },
+  { s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose, dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear })
   await page.goto('/')
 }
 
@@ -145,6 +157,17 @@ export async function setTestOnsitePins(page, v) {
 
 export async function setTestPersonTargets(page, v) {
   await page.evaluate((x) => window.__thSetTestPersonTargets(x), v)
+}
+
+// WP-UI-07: mutate the seeded /onsite/home_declared / /onsite/wait_clear values
+// after mount (useHomeDeclared / useWaitClearStatus install
+// __thSetTestHomeDeclared / __thSetTestWaitClear, mirroring __thSetTestState).
+export async function setTestHomeDeclared(page, v) {
+  await page.evaluate((x) => window.__thSetTestHomeDeclared(x), v)
+}
+
+export async function setTestWaitClear(page, v) {
+  await page.evaluate((x) => window.__thSetTestWaitClear(x), v)
 }
 
 // Stubs a /system/trigger response per trigger name (ros/useTrigger.js's test

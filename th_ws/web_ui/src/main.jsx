@@ -11,6 +11,7 @@ import S11Manual from './screens/S11Manual.jsx'
 import S13TeachManual from './screens/S13TeachManual.jsx'
 import S14Replay from './screens/S14Replay.jsx'
 import S20Prep from './screens/S20Prep.jsx'
+import S21Test from './screens/S21Test.jsx'
 import S50Settings from './screens/S50Settings.jsx'
 import DriveTab from './screens/driveTab.jsx'
 import { useJogPanel } from './shell/jogPanel.js'
@@ -85,7 +86,9 @@ function Screens() {
     if (mode && MODE_TO_SCREEN[mode]) setSettingsOpen(false)
   }, [mode])
 
-  const screen = resolveScreen({ testScreen: TEST_SCREEN, passedConnect, mode, settingsOpen })
+  const screen = TEST_SCREEN === 'S21'
+    ? 'S21'
+    : resolveScreen({ testScreen: TEST_SCREEN, passedConnect, mode, settingsOpen })
 
   if (screen === 'DRIVE_S11') {
     return <DriveTestScreen />
@@ -126,6 +129,19 @@ function Screens() {
     return (
       <AppShell screenName={SCREEN_NAMES.S20} screenId={SCREEN_IDS.S20}>
         <S20Prep />
+      </AppShell>
+    )
+  }
+  if (screen === 'S21') {
+    // brief-UI-S21 §2.1: S-21 は「mode に関係なく直接開く」画面で、その導線
+    // （S-01 の「試験」ボタン）は別パケット。screenRouting に IDLE 分岐を足す
+    // 代わりに、e2e 専用の TEST_SCREEN が 'S21' のときだけここで直接切り替える
+    // （TEST_SCREEN は __thTestScreen で、Playwright 以外では付かない）。
+    // 本番は PANEL_NAV/SUMMON/AT_PANEL/HOME_NAV が MODE_TO_SCREEN 経由で
+    // resolveScreen にヒットして同じ分岐に来る。
+    return (
+      <AppShell screenName={SCREEN_NAMES.S21} screenId={SCREEN_IDS.S21}>
+        <S21Test />
       </AppShell>
     )
   }

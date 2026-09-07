@@ -6,7 +6,7 @@
 // screen_id はこの値をそのまま使う -- names.json に無い値を送ってはいけない)。
 export const SCREEN_IDS = {
   S00: 'S-00', S01: 'S-01', S11: 'S-11', S13: 'S-13', S14: 'S-14',
-  S20: 'S-20', S50: 'S-50',
+  S20: 'S-20', S21: 'S-21', S50: 'S-50',
 }
 
 // mode -> screen-key map. S-01 sends ui.enter_mode; when th_state accepts
@@ -15,7 +15,14 @@ export const SCREEN_IDS = {
 // stays put and the header's mode pill reflects the change.
 // P5 / demo-teach-replay: TEACH_MANUAL -> S-13、REPLAY -> S-14。
 // WP-UI-06: PREP（試験準備）-> S-20。
-export const MODE_TO_SCREEN = { MANUAL: 'S11', TEACH_MANUAL: 'S13', REPLAY: 'S14', PREP: 'S20' }
+// WP-UI-07: S-21（試験）。PANEL_NAV / SUMMON / AT_PANEL / HOME_NAV の 4 モードが
+// 対象（brief-UI-S21 §2.1）。IDLE はここに足さない -- S-21 を「モードに関係なく」
+// 開く導線（S-01 の「試験」ボタン等）は別パケットの仕事で、e2e は TEST_SCREEN
+// 経由で直接開く（main.jsx 側の上書き。screenRouting には入れない）。
+export const MODE_TO_SCREEN = {
+  MANUAL: 'S11', TEACH_MANUAL: 'S13', REPLAY: 'S14', PREP: 'S20',
+  PANEL_NAV: 'S21', SUMMON: 'S21', AT_PANEL: 'S21', HOME_NAV: 'S21',
+}
 
 // 表示中の画面は SystemState.mode から導出する（純関数）。
 //

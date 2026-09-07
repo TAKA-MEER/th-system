@@ -319,7 +319,7 @@ table.lst td.r{text-align:right}
    地図 SVG と対象選択レーダー。mockup の .mapWrap svg とデータテンプレート
    radar の狙い（幅なりに伸びて、操作カードを画面外へ押さない）を踏襲する。
    max-height はモックアップの .mapWrap svg{max-height:min(42cqh,300px)} 相当。 */
-.screen#s20 .mapWrap svg{display:block;width:100%;height:auto;max-height:min(42cqh,300px);
+.screen#s20 .mapWrap svg,.screen#s21 .mapWrap svg{display:block;width:100%;height:auto;max-height:min(42cqh,300px);
   background:var(--inset);border:1px solid var(--bd);border-radius:var(--r)}
 .radar{display:block;width:100%;height:auto;max-height:min(42cqh,300px);
   background:var(--inset);border:1px solid var(--bd);border-radius:var(--r)}
@@ -332,6 +332,15 @@ table.lst td.r{text-align:right}
 .rv-cand text{fill:var(--mut);font-size:10px}
 .rv-cand.sel .rv-sel{fill:#c8e6c9;font-size:11px}
 .rv-cnf{fill:var(--mut);font-size:9px}
+
+/* ---------- S-21 試験（WP-UI-07。screens/S21Test.jsx） ---------- */
+/* mockup #clearBar（退避待ちの進捗バー）: .bar.grow.warn の中の <i> で幅を表す。 */
+.screen#s21 .s21-bar{height:12px;border-radius:999px;overflow:hidden;background:var(--inset);
+  border:1px solid var(--bd-hi);min-width:80px}
+.screen#s21 .s21-bar i{display:block;height:100%;border-radius:999px;background:var(--warn)}
+.screen#s21 .s21-bar.ok i{background:var(--ok-tx)}
+.screen#s21 .s21-bar.nope i{background:var(--ng-tx)}
+.screen#s21 .s21-map-row{display:flex;align-items:center;justify-content:space-between;margin-top:9px}
 
 /* ---------- S-50 設定のパラメータ入力（WS-9X。screens/S50Settings.jsx） ----------
    数値フィールドを詰めて並べる。指で触れる高さは確保する。 */

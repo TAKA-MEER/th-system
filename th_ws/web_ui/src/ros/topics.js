@@ -41,6 +41,9 @@ export const TOPICS = {
   ONSITE_PINS: '/onsite/pins',
   // WP-UI-06: 対象選択の候補（PersonTargets。candidates は base_link 相対）。
   PERSON_TARGETS: '/person/targets',
+  // WP-UI-07: S-21 試験。呼び寄せの退避待ち状態（WaitClearStatus、5Hz・
+  // wait_clear_gate が SUMMON/WAIT_CLEAR の間だけ配信）。
+  WAIT_CLEAR: '/onsite/wait_clear',
 }
 
 export const SERVICES = {
@@ -51,6 +54,10 @@ export const SERVICES = {
   // WP-UI-06: S-20。2 点指示（two_point）とピンの改名/削除（edit_pin）。
   ONSITE_TWO_POINT: '/onsite/two_point',
   ONSITE_EDIT_PIN: '/onsite/edit_pin',
+  // WP-UI-07: S-21。待機場所の宣言（home_declarer）。選んだ配電盤のゴール保留は
+  // `/onsite/select_pin` だが、names.json（辞書ゲート）に無いため TOPICS/SERVICES には
+  // 載せず useOnsiteService.js 内のローカル定数で扱う（useOdomPose と同型）。
+  ONSITE_DECLARE_HOME: '/onsite/declare_home',
 }
 
 export const MSG_TYPES = {
@@ -77,6 +84,9 @@ export const MSG_TYPES = {
   // WP-UI-06: S-20。PinList / PersonTargets は names.json の msgs に載っている。
   PIN_LIST: 'th_system_msgs/PinList',
   PERSON_TARGETS: 'th_system_msgs/PersonTargets',
+  // WP-UI-07: S-21。待機場所宣言済み（home_declarer が latched 配信）。
+  BOOL: 'std_msgs/Bool',
+  WAIT_CLEAR: 'th_system_msgs/WaitClearStatus',
 }
 
 export const SRV_TYPES = {
@@ -85,4 +95,8 @@ export const SRV_TYPES = {
   // WP-UI-06: S-20。2 点指示 / ピン編集。
   ONSITE_TWO_POINT: 'th_system_msgs/TwoPointPress',
   ONSITE_EDIT_PIN: 'th_system_msgs/EditPin',
+  // WP-UI-07: S-21。待機場所宣言 / ピン選択（select_pin はサービス名が
+  // names.json に無いため S21Test 側のローカル定数で呼ぶ。型はここ）。
+  ONSITE_DECLARE_HOME: 'th_system_msgs/DeclareHome',
+  ONSITE_SELECT_PIN: 'th_system_msgs/GoToPanel',
 }

@@ -23,6 +23,9 @@ export const STATE_NAMES = {
   SAVED: '保存済み',
   RETURN: '待機場所へ移動中',
   EDIT: '地図編集中',
+  // WP-UI-07: S-21 試験のサブ状態（transitions.yaml T-ATP-01/02・T-SUM-01/05）。
+  WORKING: '作業中',
+  WAIT_CLEAR: '退避待ち',
 }
 
 export const UNKNOWN_STATE_LABEL = '不明'
