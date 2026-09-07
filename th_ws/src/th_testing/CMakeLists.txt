@@ -176,6 +176,12 @@ if(BUILD_TESTING)
     test/test_two_point_core.py
     TIMEOUT 30)
 
+  # 退避待ちゲートコア (WP-ONSITE-03。hold 蓄積・タイムアウト・二重発火ガード。
+  # th_onsite の純ロジック。ROS2 不要)
+  ament_add_pytest_test(test_wait_clear_core
+    test/test_wait_clear_core.py
+    TIMEOUT 30)
+
   # ── パラメータ registry コア (th_params。ROS2 不要・純粋単体テスト。WP-PARAM-01) ──
   ament_add_pytest_test(test_params_schema
     test/test_params_schema.py
