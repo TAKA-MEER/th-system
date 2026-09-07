@@ -422,10 +422,11 @@
   status: placeholder
   value: TBD_MEASURE
   blocking: true
-  blocking_from_stage: 4
+  blocking_from_stage: 5   # WAIVER(demo): W-15 — 本来 4。試験場内デモを stage:=4 で
   consumers: [pin_registrar]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.2（O-c3） / DetailedDesign-wp0.md WP-PARAM-01 §5"
-  note: "2 点指示の角度精度（【A】）の逆算元"
+  note: "2 点指示の角度精度（【A】）の逆算元。W-15: pin_registrar は現状ノード内
+    リテラル（W-13）で動き、この値を消費していないためデモ中は起動を止めない"
 
 - name: blocked_lookahead_m
   unit: m
@@ -607,10 +608,11 @@
   status: placeholder
   value: TBD_MEASURE
   blocking: true
-  blocking_from_stage: 4
+  blocking_from_stage: 5   # WAIVER(demo): W-15 — 本来 4。試験場内デモを stage:=4 で
   consumers: [follow_runner, venue_navigator, safety_monitor]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §6.2（C-05） / DetailedDesign-wp0.md WP-PARAM-01 §5"
-  note: "追従・呼び寄せの停止判断"
+  note: "追従・呼び寄せの停止判断。W-15: venue_navigator / safety_monitor は現状この
+    値を消費しておらず（follow_runner は未実装）、デモ中は起動を止めない"
 
 - name: auto_select_hold_s
   unit: s
