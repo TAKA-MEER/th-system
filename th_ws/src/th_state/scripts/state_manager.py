@@ -30,11 +30,13 @@ from builtin_interfaces.msg import Time as TimeMsg
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
-from th_system_msgs.msg import (ActiveScreen, FaultStatus, RouteList, RouteStatus,
-                                StateEffect, StateEvent, SystemState)
+from th_system_msgs.msg import (ActiveScreen, FaultStatus, PersonTargets, PinList,
+                                RouteList, RouteStatus, StateEffect, StateEvent,
+                                SystemState)
 from th_system_msgs.srv import SetFlag, UiTrigger
 
 from th_state import guards as guards_module
+from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
 from th_state.state_core import BOOT_MODE, ESTOP_MODE, Context, StateCore
 from th_state.zones import (ScreenInput, combine_speed_limits, derive_limits,
                              mode_speed_limit)
@@ -131,6 +133,8 @@ class StateManager(Node):
         self.declare_parameter('link_wait_timeout_ms', Parameter.Type.INTEGER)
         self.declare_parameter('ui_active_window_s', Parameter.Type.INTEGER)
         self.declare_parameter('screen_stale_ms', Parameter.Type.INTEGER)
+        # # WAIVER(demo): W-13 — ノード内リテラル既定値（registry 経由にしない）
+        self.declare_parameter('target_confidence_min', 0.5)
 
         transitions, attributes, mode_entry = self._load_config()
         guards = guards_module.build_guards(mode_entry)
@@ -169,6 +173,12 @@ class StateManager(Node):
         self._last_reject_reason = ""
         self._route_ids = []          # /route/catalog から。既存経路の選択ガード用（P2）
         self._route_loaded = False    # /route/status から。空振りの再生を止めるガード用
+        # WP-ONSITE-F2: /person/targets と /onsite/pins 由来。次の event 受信時に
+        # _build_context() が読む（_route_ids / _route_loaded と同じ設計）。
+        self._candidate_count = 0
+        self._target_selected = False
+        self._target_confident = False
+        self._pin_kinds: tuple = ()
 
         now = self._now_ms()
         self._boot_ms = now
@@ -228,6 +238,19 @@ class StateManager(Node):
                                 history=QoSHistoryPolicy.KEEP_LAST)
         self.create_subscription(RouteStatus, '/route/status', self._on_route_status, status_qos)
 
+        # WP-ONSITE-F2: /person/targets（VOLATILE 既定。person_tracker_bridge / stub が
+        # RELIABLE/VOLATILE, depth1 で publish。TRANSIENT_LOCAL で購読すると受け取れない）
+        pt_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+                            history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(PersonTargets, '/person/targets',
+                                 self._on_person_targets, pt_qos)
+
+        # /onsite/pins は pin_registrar が transient_local で latched publish する
+        pins_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+                              durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                              history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(PinList, '/onsite/pins', self._on_onsite_pins, pins_qos)
+
         event_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
         self.create_subscription(StateEvent, '/system/event', self._on_event, event_qos)
 
@@ -276,9 +299,9 @@ class StateManager(Node):
             prev_sub=self.prev_sub,
             flags=flags,
             zone=self._current_limits().zone,
-            candidate_count=0,
-            target_selected=False,
-            target_confident=False,
+            candidate_count=self._candidate_count,
+            target_selected=self._target_selected,
+            target_confident=self._target_confident,
             fault_active=self._fault_active,
             fault_severity=self._fault_severity,
             fault_type=self._fault_type,
@@ -286,7 +309,7 @@ class StateManager(Node):
             ui_estop=self._ui_estop,
             route_ids=tuple(self._route_ids),
             route_loaded=self._route_loaded,
-            pin_kinds=(),
+            pin_kinds=self._pin_kinds,
             leash_present=False,
             leash_taut=False,
             line_visible=False,
@@ -448,6 +471,16 @@ class StateManager(Node):
         # 点が 1 つも無ければ「積んでいない」。replay_runner は経路を読み込むと
         # points を載せて publish する（未読込は points=0 / id='' / target_index=-1）。
         self._route_loaded = bool(msg.points > 0 and msg.current.id)
+
+    def _on_person_targets(self, msg):
+        thr = self.get_parameter('target_confidence_min').value
+        (self._candidate_count,
+         self._target_selected,
+         self._target_confident) = derive_person_ctx(
+             len(msg.candidates), msg.selected_index, msg.confidence, thr)
+
+    def _on_onsite_pins(self, msg):
+        self._pin_kinds = derive_pin_kinds([p.kind for p in msg.pins])
 
     # ------------------------------------------------------------
     # /safety/* の購読 → fault.* / hw.* / ui.estop.* の内部生成

@@ -194,6 +194,13 @@ if(BUILD_TESTING)
     test/test_home_declare_core.py
     TIMEOUT 30)
 
+  # onsite コンテキスト派生値 (WP-ONSITE-F2。/person/targets・/onsite/pins →
+  # Context の candidate_count / target_selected / target_confident / pin_kinds。
+  # th_state の純ロジック。ROS2 不要)
+  ament_add_pytest_test(test_onsite_context
+    test/test_onsite_context.py
+    TIMEOUT 30)
+
   # ── パラメータ registry コア (th_params。ROS2 不要・純粋単体テスト。WP-PARAM-01) ──
   ament_add_pytest_test(test_params_schema
     test/test_params_schema.py
