@@ -94,6 +94,9 @@ def generate_launch_description():
     # なので、これらを止めても evt.link_ok の成立には影響しない（registry.yaml）。
     nav2_enabled       = PythonExpression(["int('", stage, "') >= 3"])
     perception_enabled = PythonExpression(["int('", stage, "') >= 4"])
+    # WP-ONSITE-01: 試験場内ピン登録 (pin_registrar)。Nav2/人物トラッカーと同じ
+    # 段階 3 で上がる（ピンの map 座標は SLAM の map→base_link TF が要るため）。
+    onsite_enabled      = PythonExpression(["int('", stage, "') >= 3"])
     # WS-9E: 人物データを使うノードは、/person/status の publisher が起動する
     # ときだけ立てる（stub か stage>=4）。実機デモ（stage:=1 / use_stub:=false）では
     # 入力が 1 件も来ないうえ、出力先の /cmd_vel_retreat は WP-SAFE-03 以降
@@ -530,6 +533,23 @@ def generate_launch_description():
                     ["'", enable_route_slam, "'.lower() in ('true', '1')"]),
                 value_type=bool),
         }],
+        output='screen',
+    ))
+
+    # ── 13d. pin_registrar（試験場内 2 点指示・ピン登録。WP-ONSITE-01）──
+    # /system/effect の begin_two_point / place_pin / reject_register を受け、
+    # 対象の map 姿勢を venue/pins.yaml に永続化する。ピンの map 座標を得るには
+    # SLAM の map→base_link TF が要るため、Nav2 と同じ段階 3 から起動する。
+    nodes.append(LogInfo(
+        condition=IfCondition(onsite_enabled),
+        msg=PythonExpression(["'pin_registrar: onsite_enabled=' + ",
+                              "('起動' if int('", stage, "') >= 3 else '省略(段階3から)')"]),
+    ))
+    nodes.append(Node(
+        package='th_onsite',
+        executable='pin_registrar.py',
+        name='pin_registrar',
+        condition=IfCondition(onsite_enabled),
         output='screen',
     ))
 

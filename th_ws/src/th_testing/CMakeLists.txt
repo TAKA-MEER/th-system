@@ -170,6 +170,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_zones
     test/test_zones.py
     TIMEOUT 60)
+  # 2点指示コア (WP-ONSITE-01。方位・点間距離・対象妥当性・base_link→map 合成。
+  # th_onsite の純ロジック。ROS2 不要)
+  ament_add_pytest_test(test_two_point_core
+    test/test_two_point_core.py
+    TIMEOUT 30)
 
   # ── パラメータ registry コア (th_params。ROS2 不要・純粋単体テスト。WP-PARAM-01) ──
   ament_add_pytest_test(test_params_schema
