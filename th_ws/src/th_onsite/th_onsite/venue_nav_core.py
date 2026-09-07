@@ -45,3 +45,18 @@ def arrived(robot_x: float, robot_y: float, goal_x: float, goal_y: float,
             params: VenueNavParams) -> bool:
     """ロボット xy がゴール xy から arrival_xy_tol_m 以内か（euclid）。"""
     return math.hypot(robot_x - goal_x, robot_y - goal_y) < params.arrival_xy_tol_m
+
+
+def find_home_goal(pins) -> dict | None:
+    """kind == 'HOME' のピンからゴール dict {x, y, yaw} を探す。
+
+    pins: 各要素が `kind` / `x` / `y` / `yaw` を持つ dict の列。
+    HOME ピンが無ければ None（ノードは evt.blocked を出して待つ）。
+    """
+    if pins is None:
+        return None
+    for pin in pins:
+        if getattr(pin, 'get', None) is not None and pin.get('kind') == 'HOME':
+            return {'x': float(pin['x']), 'y': float(pin['y']),
+                    'yaw': float(pin['yaw'])}
+    return None

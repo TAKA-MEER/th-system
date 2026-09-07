@@ -31,7 +31,9 @@ from nav_msgs.msg import Path
 from th_system_msgs.msg import PinList, StateEffect, StateEvent, SystemState
 from th_system_msgs.srv import GoToPanel
 
-from th_onsite.venue_nav_core import VenueNavParams, align_cmd_wz, arrived
+from th_onsite.venue_nav_core import (
+    VenueNavParams, align_cmd_wz, arrived, find_home_goal,
+)
 
 
 def _yaw_from_quat(q) -> float:
@@ -42,6 +44,9 @@ def _yaw_from_quat(q) -> float:
 
 
 class VenueNavigator(Node):
+    # このノードが駆動対象とするモード（NAV で走り、必要なら ALIGN）
+    _NAV_MODES = ('PANEL_NAV', 'SUMMON', 'HOME_NAV')
+
     def __init__(self):
         super().__init__('venue_navigator')
 
@@ -142,7 +147,7 @@ class VenueNavigator(Node):
                           self._blocked_recheck)
 
         self.get_logger().info(
-            'venue_navigator 起動 (mode を監視: PANEL_NAV/SUMMON)')
+            'venue_navigator 起動 (mode を監視: PANEL_NAV/SUMMON/HOME_NAV)')
 
     # ── 便利ヘルパー ──────────────────────────────────────
     def _emit_event(self, event: str, arg_json: str = "{}"):
@@ -167,7 +172,22 @@ class VenueNavigator(Node):
             return {'x': float(sg.pose.position.x),
                     'y': float(sg.pose.position.y),
                     'yaw': _yaw_from_quat(sg.pose.orientation)}
+        if self._mode == 'HOME_NAV':
+            # ゴールは待機場所ピン (kind == HOME)。無ければ None → _start_nav が
+            # evt.blocked を出して待つ。
+            return find_home_goal(self._pin_goals())
         return None
+
+    def _pin_goals(self):
+        """保持中の /onsite/pins を純関数 find_home_goal が使える dict 列に変換。"""
+        out = []
+        for pin in self._pins:
+            if getattr(pin, 'kind', '') == 'HOME':
+                p = pin.pose.position
+                out.append({'kind': pin.kind,
+                            'x': float(p.x), 'y': float(p.y),
+                            'yaw': _yaw_from_quat(pin.pose.orientation)})
+        return out
 
     # ── /system/state 受信 ────────────────────────────────
     def _on_state(self, msg: SystemState):
@@ -181,7 +201,7 @@ class VenueNavigator(Node):
         self.get_logger().info(f'/system/state: {entered}')
 
         # NAV に入った瞬間、まだ FollowPath を回していなければ起動
-        if self._mode in ('PANEL_NAV', 'SUMMON') and self._state == 'NAV':
+        if self._mode in self._NAV_MODES and self._state == 'NAV':
             if self._follow_goal_handle is None:
                 self._start_nav()
             return
@@ -193,7 +213,7 @@ class VenueNavigator(Node):
             return
 
         # モードから外れた（IDLE / ESTOP / PAUSE を含む一部）
-        if self._mode not in ('PANEL_NAV', 'SUMMON'):
+        if self._mode not in self._NAV_MODES:
             self._reset_for_exit()
 
     def _reset_for_exit(self):
@@ -399,7 +419,7 @@ class VenueNavigator(Node):
     def _blocked_recheck(self):
         if not self._blocked:
             return
-        if self._mode not in ('PANEL_NAV', 'SUMMON'):
+        if self._mode not in self._NAV_MODES:
             return
         goal = self._current_goal()
         if goal is None:
@@ -411,7 +431,7 @@ class VenueNavigator(Node):
 
     # ── 20Hz タイマ（NAV 到着フォールバック + ALIGN）────────
     def _align_timer(self):
-        if self._mode not in ('PANEL_NAV', 'SUMMON'):
+        if self._mode not in self._NAV_MODES:
             return
         self._refresh_robot_pose()
 
@@ -423,6 +443,11 @@ class VenueNavigator(Node):
                            goal['x'], goal['y'], self._params):
                     self.get_logger().info('NAV 到着（xy tol 内）→ evt.arrived')
                     self._on_arrived()
+            return
+
+        # HOME_NAV には ALIGN 状態が無い。向き合わせは仕様どおり行わない
+        # （逃げの保険。上述の NAV 分岐で既に return しているため通常ここには来ない）。
+        if self._mode == 'HOME_NAV':
             return
 
         if self._state != 'ALIGN':

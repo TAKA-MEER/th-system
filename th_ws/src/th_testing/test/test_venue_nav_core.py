@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(__file__), '..', '..', 'th_onsite'))
 
 from th_onsite.venue_nav_core import (  # noqa: E402
-    VenueNavParams, align_cmd_wz, arrived, yaw_error)
+    VenueNavParams, align_cmd_wz, arrived, find_home_goal, yaw_error)
 
 
 def approx(a, b, eps=1e-6):
@@ -59,3 +59,24 @@ class TestArrived:
     def test_arrived_false(self):
         # (0,0)-(0.5,0) → False
         assert arrived(0, 0, 0.5, 0, VenueNavParams(arrival_xy_tol_m=0.30)) is False
+
+
+class TestFindHomeGoal:
+    def test_home_found(self):
+        # HOME ピン (1,2,yaw=0) を返す（PANEL があっても HOME を優先）
+        pins = [
+            {'kind': 'PANEL', 'x': 9, 'y': 9, 'yaw': 0.5},
+            {'kind': 'HOME', 'x': 1, 'y': 2, 'yaw': 0},
+        ]
+        assert find_home_goal(pins) == {'x': 1, 'y': 2, 'yaw': 0}
+
+    def test_no_home_returns_none(self):
+        # PANEL のみ → None
+        pins = [{'kind': 'PANEL', 'x': 9, 'y': 9, 'yaw': 0.5}]
+        assert find_home_goal(pins) is None
+
+    def test_empty_returns_none(self):
+        assert find_home_goal([]) is None
+
+    def test_none_returns_none(self):
+        assert find_home_goal(None) is None
