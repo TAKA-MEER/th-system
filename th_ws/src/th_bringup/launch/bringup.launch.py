@@ -532,6 +532,8 @@ def generate_launch_description():
                 PythonExpression(
                     ["'", enable_route_slam, "'.lower() in ('true', '1')"]),
                 value_type=bool),
+            # WP-ONSITE-D: 試験場内地図（slot:VENUE）の保存先。CL-M-9。
+            'venue_map_dir': '/root/th_data/venue',
         }],
         output='screen',
     ))

@@ -50,15 +50,15 @@ def slam_restart_complete(old_pids, current_pids) -> bool:
 def open_session_error(slot: str, mode: str, session_id: str) -> "str | None":
     """/map_session/open の引数検証（純関数）。
 
-    - slot は当面 "ROUTE" のみ受け付ける
+    - slot は "ROUTE"（経路地図）と "VENUE"（試験場内地図）のみ受け付ける
     - mode は "save" / "reload" のみ
     - session_id が空は拒否
     - session_id に `/` `\\` `..` が含まれる（未正規化）は拒否
 
     問題なければ None、あればエラー文字列を返す。
     """
-    if slot != 'ROUTE':
-        return f'slot は ROUTE のみ対応 (given {slot!r})'
+    if slot not in ('ROUTE', 'VENUE'):
+        return f'slot は ROUTE / VENUE のみ対応 (given {slot!r})'
     if mode not in ('save', 'reload'):
         return f'mode は save/reload のみ対応 (given {mode!r})'
     if not session_id:
@@ -78,3 +78,25 @@ def map_session_filename(session_id: str) -> str:
     id だけを渡す（変換はしない）。ここはそのまま join に使える値を返す。
     """
     return session_id
+
+
+def map_session_base_dir(slot: str, route_map_dir: str, venue_map_dir: str) -> str:
+    """slot に応じた地図の保存先ディレクトリを返す（純関数）。
+
+    'VENUE' なら venue_map_dir（試験場内地図）、それ以外（'ROUTE'）なら
+    route_map_dir（経路地図）を返す。slot は open_session_error で検証済み前提。
+    """
+    if slot == 'VENUE':
+        return venue_map_dir
+    return route_map_dir
+
+
+def map_session_name(slot: str, session_id: str) -> str:
+    """slot に応じた地図ファイル名（拡張子なし）を返す（純関数）。
+
+    'VENUE' は 'map' 固定（1 枚のみ保持。CL-M-9）。それ以外（'ROUTE'）は
+    map_session_filename(session_id)。id は open_session_error で検証済み前提。
+    """
+    if slot == 'VENUE':
+        return 'map'
+    return map_session_filename(session_id)

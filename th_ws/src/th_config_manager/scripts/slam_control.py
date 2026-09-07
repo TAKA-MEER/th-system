@@ -112,20 +112,21 @@ import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
+from rclpy.qos import (QoSHistoryPolicy, QoSProfile, QoSDurabilityPolicy,
+                       QoSReliabilityPolicy)
 
 from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool, Trigger
 from slam_toolbox.srv import (DeserializePoseGraph, SaveMap,
                               SerializePoseGraph)
 
-from th_system_msgs.msg import RobotMode
+from th_system_msgs.msg import RobotMode, StateEffect
 from th_system_msgs.srv import OpenMapSession
 
 from th_config_manager.service_call import call_and_wait
 from th_config_manager.slam_control_logic import (
-    deserialize_match_type, map_session_filename, open_session_error,
-    slam_restart_complete,
+    deserialize_match_type, map_session_base_dir, map_session_filename,
+    map_session_name, open_session_error, slam_restart_complete,
 )
 
 
@@ -174,6 +175,10 @@ class SlamControl(Node):
         # 作るが、/route/catalog は .json しか拾わないため一覧は汚れない。
         self.declare_parameter('map_dir', '/root/th_data/routes')
         self._map_dir = self.get_parameter('map_dir').value
+        # WP-ONSITE-D: 試験場内地図（slot:VENUE）の保存先。CL-M-9（経路地図と
+        # 物理的に別ディレクトリ）。bringup.launch.py が /root/th_data/venue を渡す。
+        self.declare_parameter('venue_map_dir', '/root/th_data/venue')
+        self._venue_map_dir = self.get_parameter('venue_map_dir').value
         # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
         # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
         self._slam_ready = None
@@ -190,6 +195,14 @@ class SlamControl(Node):
         cbg = ReentrantCallbackGroup()
         self.create_subscription(RobotMode, '/robot/mode', self._cb_mode, 10,
                                   callback_group=cbg)
+
+        # WP-ONSITE-D: state_manager からの effect 配送（dest == 'map_session'）。
+        # commit_venue_map（PREP の「保存」）で venue/map を serialize する。
+        effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
+                                history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(
+            StateEffect, '/system/effect', self._on_effect, effect_qos,
+            callback_group=cbg)
 
         # WS-9N: map_and_localization_slam_toolbox_node に差し替えたため、
         # set_localization_mode サービスが存在する（2026-09-03 実機確認済み、success=True）。
@@ -431,25 +444,75 @@ class SlamControl(Node):
         return None
 
     # ── 地図の保存・再読込 (WS-9L /map_session/open) ─────────
-    def _map_session_base(self, session_id: str) -> str:
-        """session_id から保存/読込先ベース名（拡張子なし）を作る。
+    def _map_session_base(self, slot: str, session_id: str) -> str:
+        """slot に応じた保存/読込先ベース名（拡張子なし）を作る。
 
-        route_record_core._safe_id（`/` `\\` → `_`）と同じ規則で無害化する
-        （map_session_filename）。経路 JSON は最終的に _safe_id で保存されるため、
-        ここも同じにしないと名前が食い違って読み直せない。
+        ROUTE は経路地図ディレクトリ + map_session_filename（route_record_core.
+        _safe_id と同じ規則で無害化済みの id）。VENUE は試験場内地図ディレクトリ +
+        'map' 固定（1 枚のみ保持。CL-M-9）。
         """
-        return os.path.join(self._map_dir, map_session_filename(session_id))
+        base_dir = map_session_base_dir(slot, self._map_dir, self._venue_map_dir)
+        return os.path.join(base_dir, map_session_name(slot, session_id))
 
     def _cb_map_session_open(self, request, response):
         err = open_session_error(request.slot, request.mode, request.session_id)
         if err:
             return self._finish(response, err, '')
 
-        base = self._map_session_base(request.session_id)
+        base = self._map_session_base(request.slot, request.session_id)
         with self._lock:
             if request.mode == 'save':
+                # VENUE は ROUTE と違い凍結しない（PREP は保存後も地図作成を続ける）。
+                if request.slot == 'VENUE':
+                    return self._handle_venue_commit(response)
                 return self._handle_map_save(response, base)
+            # reload は ROUTE / VENUE とも同一（respawn→deserialize）。
             return self._handle_map_reload(response, base, request)
+
+    def _handle_venue_commit(self, response):
+        """VENUE の保存（/map_session/open slot:VENUE mode:save のサービス経路）。
+
+        ROUTE の _handle_map_save と違い、_set_localization / _set_active は呼ばず
+        地図作成モードのまま（F-32: PREP は保存後も地図作成を続けられる）。
+        サービス応答は _finish で返す（effect 経由の commit_venue_map は応答なし）。
+        """
+        err = self._commit_venue_map()
+        if err:
+            return self._finish(response, err, '')
+        return self._finish(
+            response, None, '試験場内地図を保存しました (venue/map)')
+
+    def _commit_venue_map(self) -> "str | None":
+        """venue/map へ serialize（既存の _serialize を使う）。凍結しない。
+
+        ROUTE の save と違い地図作成モードのまま（PREP は保存後も地図作成を
+        続けられる）。失敗しても PREP は続くので致命ではない。ログは呼び出し側。
+
+        **呼び出し側が self._lock を保持していること**（self._lock は
+        非再入 threading.Lock。ここで取り直すと _cb_map_session_open 経由で
+        デッドロックする）。
+        """
+        base = os.path.join(self._venue_map_dir, 'map')
+        return self._serialize(base)
+
+    def _on_effect(self, msg: StateEffect):
+        if msg.dest != 'map_session':
+            return
+        if msg.name == 'commit_venue_map':
+            with self._lock:
+                err = self._commit_venue_map()
+            if err:
+                self._report(f'NG: commit_venue_map 失敗 ({err})')
+                self.get_logger().warn(f'commit_venue_map 失敗: {err}')
+            else:
+                self._report('OK: commit_venue_map (venue/map をシリアライズ)')
+                self.get_logger().info('commit_venue_map OK: venue/map をシリアライズ')
+        elif msg.name == 'commit_map_patch':
+            # WAIVER(demo): W-11 — 地図書き足しは未実装
+            self.get_logger().info('commit_map_patch: 地図書き足しは未実装（W-11）')
+        else:
+            self.get_logger().debug(
+                f'effect {msg.name} は未処理 (dest={msg.dest})')
 
     def _handle_map_save(self, response, base: str):
         """mapping モードのまま serialize_map で保存し、書き終えてから地図を凍結する。

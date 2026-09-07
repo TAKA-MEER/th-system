@@ -40,8 +40,8 @@ sys.path.insert(0, os.path.join(
     'th_config_manager'))
 
 from slam_control_logic import (   # noqa: E402
-    deserialize_match_type, map_session_filename, open_session_error,
-    slam_restart_complete,
+    deserialize_match_type, map_session_base_dir, map_session_filename,
+    map_session_name, open_session_error, slam_restart_complete,
 )
 from route_record_core import _safe_id, finalized_path   # noqa: E402
 
@@ -143,6 +143,49 @@ def test_map_session_filename_passes_validated_id_through():
     assert map_session_filename('r1') == 'r1'
     assert map_session_filename('9_3_kousha') == '9_3_kousha'
     assert map_session_filename('a_b') == 'a_b'
+
+
+# ── 2b. WP-ONSITE-D: slot:VENUE（試験場内地図）────────────────────────
+def test_open_session_venue_save_reload_ok():
+    """VENUE は save / reload とも受理される。"""
+    assert open_session_error('VENUE', 'save', 'venue') is None
+    assert open_session_error('VENUE', 'reload', 'venue') is None
+
+
+def test_open_session_other_slots_still_invalid():
+    """'MAP' など ROUTE/VENUE 以外は今後も無効（既存の ROUTE 専用から不変）。"""
+    assert open_session_error('MAP', 'save', 'x') is not None
+    assert open_session_error('', 'save', 'x') is not None
+
+
+def test_open_session_venue_mode_validation_unchanged():
+    """VENUE でも mode 検証は不変（save/reload 以外は拒否）。"""
+    assert open_session_error('VENUE', 'delete', 'venue') is not None
+
+
+def test_open_session_venue_session_id_validation_unchanged():
+    """VENUE でも session_id の検証（空・未正規化）は不変。"""
+    assert open_session_error('VENUE', 'save', '') is not None
+    assert open_session_error('VENUE', 'save', '9/3') is not None
+    assert open_session_error('VENUE', 'save', '..') is not None
+
+
+def test_map_session_base_dir_venue():
+    assert map_session_base_dir('VENUE', '/routes', '/venue') == '/venue'
+
+
+def test_map_session_base_dir_route():
+    assert map_session_base_dir('ROUTE', '/routes', '/venue') == '/routes'
+
+
+def test_map_session_name_venue_fixed_map():
+    """VENUE は id に関係なく 'map' 固定（1 枚のみ保持）。"""
+    assert map_session_name('VENUE', 'anything') == 'map'
+
+
+def test_map_session_name_route_uses_filename():
+    """ROUTE は検証済み id をそのまま（map_session_filename と同じ挙動）。"""
+    assert map_session_name('ROUTE', 'r9_3') == map_session_filename('r9_3') == 'r9_3'
 
 
 # ── 4. ast ヘルパー ────────────────────────────────────────────────────
