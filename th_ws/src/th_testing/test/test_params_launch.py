@@ -662,3 +662,37 @@ def test_safety_enabled_targets_still_includes_limiter():
     assert "limiter" in targets, (
         "SAFETY_ENABLED_TARGETS から 'limiter' が消えている。安全側を緩めていない"
         "（WS-9E の趣旨と正反対）")
+
+
+def test_onsite_nodes_gate_with_onsite_enabled():
+    """WP-ONSITE: pin_registrar / venue_navigator / wait_clear_gate / home_declarer の
+    onsite 4 ノードが、`onsite_enabled` 条件で bringup.launch.py に載っていること。
+    home_declarer が漏れると /onsite/declare_home が実機に出ず S-21 の待機場所宣言が
+    必ず失敗する（brief-onsite-fix B）。"""
+    src = _read(BRINGUP_PY)
+    for name in ("pin_registrar", "venue_navigator", "wait_clear_gate", "home_declarer"):
+        kw = _node_kwargs_by_name(name)
+        assert "condition" in kw, (
+            f"bringup.launch.py: name={name!r} の Node(...) に condition= が無い（WP-ONSITE）")
+        cond = kw["condition"].value
+        assert (isinstance(cond, ast.Call) and getattr(cond.func, "id", None) == "IfCondition"), (
+            f"bringup.launch.py: name={name!r} の condition= が IfCondition(...) でない（WP-ONSITE）")
+        assert "onsite_enabled" in ast.dump(cond), (
+            f"bringup.launch.py: name={name!r} の condition= が onsite_enabled を見ていない（WP-ONSITE）")
+    assert "onsite_enabled" in src, (
+        "bringup.launch.py に onsite_enabled の定義が無い（WP-ONSITE）")
+
+
+def test_onsite_cmake_and_launch_both_cover_four_executables():
+    """WP-ONSITE: th_onsite の 4 実行ファイル（pin_registrar / venue_navigator /
+    wait_clear_gate / home_declarer）が、CMakeLists.txt の install(PROGRAMS ...) と
+    bringup.launch.py の両方に出ていること。片方だけに載っても実機に出ない
+    （brief-onsite-fix B: home_declarer が CMakeLists に載っているのに launch に
+    無く /onsite/declare_home が実機に出なかった）。"""
+    cmake = _read(os.path.join(_REPO_SRC, 'th_onsite', 'CMakeLists.txt'))
+    launch_src = _read(BRINGUP_PY)
+    for script in ('pin_registrar', 'venue_navigator', 'wait_clear_gate', 'home_declarer'):
+        assert f'scripts/{script}.py' in cmake, (
+            f"th_onsite/CMakeLists.txt: install(PROGRAMS ...) に {script}.py が無い")
+        assert f"executable='{script}.py'" in launch_src, (
+            f"bringup.launch.py: {script}.py の Node(executable=...) が無い")

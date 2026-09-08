@@ -592,6 +592,18 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 13g. home_declarer（待機場所の宣言。WP-ONSITE-E）──
+    # /onsite/declare_home サービスと /onsite/home_declared を提供する。
+    # SLAM の map→base_link TF と待機場所ピンを照合するため段階 3 から起動する。
+    # パラメータは全てノード内に既定値があるため launch からは渡さない。
+    nodes.append(Node(
+        package='th_onsite',
+        executable='home_declarer.py',
+        name='home_declarer',
+        condition=IfCondition(onsite_enabled),
+        output='screen',
+    ))
+
     # ── 14. rosbridge (タブレット WebSocket) ──────────────
     nodes.append(Node(
         package='rosbridge_server',
