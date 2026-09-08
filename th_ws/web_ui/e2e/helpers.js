@@ -123,9 +123,9 @@ export async function stubServices(page, services) {
 // seed must be set via addInitScript.
 export async function gotoScreenWithOnsite(
   page, screen, state,
-  { pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear, routeMap },
+  { pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear, routeMap, openVenueMap },
 ) {
-  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm }) => {
+  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm }) => {
     window.__thTestState = s
     window.__thTestScreen = scr
     if (p) window.__thTestOnsitePins = p
@@ -144,8 +144,9 @@ export async function gotoScreenWithOnsite(
     if (hd) window.__thTestHomeDeclared = hd
     if (wc) window.__thTestWaitClear = wc
     if (rm) window.__thTestRouteMap = rm
+    if (ovm) window.__thTestOpenVenueMap = ovm
   },
-  { s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose, dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear, rm: routeMap })
+  { s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose, dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear, rm: routeMap, ovm: openVenueMap })
   await page.goto('/')
 }
 

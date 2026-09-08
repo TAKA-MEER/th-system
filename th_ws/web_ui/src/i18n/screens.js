@@ -253,6 +253,17 @@ export const S20_PIN_CANCEL = 'やめる'
 export const S20_PIN_YAW = (deg) => `向き ${deg}°`
 export const S20_RETURN_HOME = '1 ボタンで待機場所に戻す'
 export const S20_RETURN_HINT = '待機場所のピン "HOME" を登録すると使えます'
+// brief-onsite-ux UX-1: S-20 の手順バー（screens/onsiteSteps.js の id に対応）と
+// 「次にやること」ボタン（parts/StepBar.jsx / S20Prep.jsx の next-action）。
+export const S20_STEP_MAP = '地図を作る'
+export const S20_STEP_TARGET = '対象を選ぶ'
+export const S20_STEP_HOME = '待機場所を登録'
+export const S20_STEP_PANEL = '配電盤を登録'
+export const S20_STEP_SAVE = '保存'
+export const S20_NEXT_SELECT_TARGET = '対象を選ぶ'
+export const S20_NEXT_REG_HOME = '待機場所を登録'
+export const S20_NEXT_REG_PANEL = '配電盤を登録'
+export const S20_NEXT_SAVE = '保存'
 
 // 対象選択レーダー（parts/RadarSelect.jsx。S-20 / S-21 で共用。Spec-webui.md §9.1）。
 export const RADAR_ARIA = '対象選択レーダー'
@@ -300,6 +311,19 @@ export const S21_WORK_OFF = 'OFF'
 export const S21_MAP_UPDATE = '地図の更新'
 export const S21_MAP_UPDATE_OFF = 'OFF'
 export const S21_MAP_UPDATE_NOTE = '地図更新 OFF の間は「保存」を出しません'
+// brief-onsite-ux UX-1: S-21 の手順バー（screens/onsiteSteps.js の id に対応）と
+// 「次にやること」ボタン（parts/StepBar.jsx / S21Test.jsx の next-action）。
+export const S21_STEP_OPEN = '会場地図を開く'
+export const S21_STEP_HOME = '待機場所を宣言'
+export const S21_STEP_DEST = '行き先を選ぶ'
+export const S21_STEP_MOVE = '移動'
+export const S21_STEP_WORK = '作業/呼び寄せ'
+export const S21_NEXT_OPEN_VENUE = '会場地図を開く'
+export const S21_NEXT_DECLARE_HOME = '待機場所を宣言'
+export const S21_NEXT_PICK_DEST = '行き先を選ぶ'
+export const S21_NEXT_STOP = '停止'
+export const S21_NEXT_WORK = '作業中'
+export const S21_NEXT_SUMMON = '呼び寄せ'
 
 // ---------------------------------------------------------------- S-50 設定（WS-9X） ----
 // screens/S50Settings.jsx の表示文字列。Spec-webui.md §3.15 のタブ構成。

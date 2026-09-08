@@ -31,19 +31,32 @@ import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
+import StepBar from '../parts/StepBar.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import attributes from '../generated/attributes.json'
+import { prepSteps } from './onsiteSteps.js'
 import { quatToYaw } from '../mapGeometry.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
   S20_MAP_ARIA, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TITLE,
+  S20_NEXT_REG_HOME, S20_NEXT_REG_PANEL, S20_NEXT_SAVE, S20_NEXT_SELECT_TARGET,
   S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_EDIT, S20_PIN_RENAME,
   S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REGISTER_TITLE, S20_REG_PANEL,
-  S20_RETURN_HOME, S20_SUBTAB_PINS, S20_SUBTAB_REGISTER,
+  S20_RETURN_HOME, S20_STEP_HOME, S20_STEP_MAP, S20_STEP_PANEL, S20_STEP_SAVE, S20_STEP_TARGET,
+  S20_SUBTAB_PINS, S20_SUBTAB_REGISTER,
   S20_TAB_MAP, S20_TAB_TARGET, S20_TARGET_HINT, S20_UNSAVED,
   S20_WIZ_MSG, S20_WIZ_REGISTER, S20_WIZ_STEP,
 } from '../i18n/screens.js'
+
+// brief-onsite-ux UX-1: prepSteps() が返す段 id → 表示ラベル（i18n の定数）。
+const S20_STEP_LABELS = {
+  map: S20_STEP_MAP,
+  target: S20_STEP_TARGET,
+  home: S20_STEP_HOME,
+  panel: S20_STEP_PANEL,
+  save: S20_STEP_SAVE,
+}
 
 function yawDeg(pin) {
   if (!pin?.pose?.orientation) return 0
@@ -82,6 +95,22 @@ export default function S20Prep() {
   const isRegister = stateName === 'REGISTER'
   const homePinExists = pins.some((p) => p.kind === 'HOME')
   const unsaved = Array.isArray(state?.unsaved) && state.unsaved.length > 0
+
+  // ── 手順バー（UX-1）と「次にやること」ボタン ──
+  // prepSteps は mode 無しで段 1（地図を作る）を常に完了扱いにする（この画面は
+  // PREP のときだけ開く）。現在段＝未完了の最初の段。全部完了なら最後の段。
+  const { steps, currentIndex } = prepSteps({ pins, personTargets, unsaved: state?.unsaved })
+  const stepViews = steps.map((s) => ({ ...s, label: S20_STEP_LABELS[s.id] ?? s.id }))
+
+  // 現在段に対応する「1 個で済む」操作。押すと必要なタブへ自動で切り替わる。
+  // 2 点指示ウィザードが開いている（REGISTER）ときはウィザード優先で隠す。
+  const nextActions = {
+    1: { label: S20_NEXT_SELECT_TARGET, run: () => setTab('target') },
+    2: { label: S20_NEXT_REG_HOME, run: () => { setSubtab('register'); handleRegister('HOME') } },
+    3: { label: S20_NEXT_REG_PANEL, run: () => { setSubtab('register'); handleRegister('PANEL') } },
+    4: { label: S20_NEXT_SAVE, run: () => sendTrigger('ui.save') },
+  }
+  const nextAction = isRegister ? null : (nextActions[currentIndex] ?? null)
 
   // REGISTER を離れたら（成功・拒否・ロストで MAPPING へ戻る）ウィザードを初期化。
   useEffect(() => {
@@ -158,6 +187,9 @@ export default function S20Prep() {
 
   return (
     <div className="screen two-col" id="s20">
+      <div className="stepbar-cell">
+        <StepBar steps={stepViews} currentIndex={currentIndex} testId="s20" />
+      </div>
       <div>
         <div className="top-actions sticky">
           <button
@@ -230,6 +262,17 @@ export default function S20Prep() {
       </div>
 
       <div>
+        {nextAction && (
+          <button
+            type="button"
+            className="next-action"
+            data-testid="s20-next-action"
+            disabled={disabledAll}
+            onClick={nextAction.run}
+          >
+            {nextAction.label}
+          </button>
+        )}
         <OperationCard
           mode={state?.mode}
           stateName={stateName}

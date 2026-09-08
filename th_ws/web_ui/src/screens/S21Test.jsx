@@ -32,8 +32,10 @@ import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
+import StepBar from '../parts/StepBar.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import attributes from '../generated/attributes.json'
+import { NAV_MODES, testSteps } from './onsiteSteps.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
@@ -43,19 +45,29 @@ import {
   S21_ATPANEL_TITLE, S21_DEST_HOME, S21_DEST_NEXT_PANEL, S21_DEST_SUMMON_HERE,
   S21_HOME_DECLARED, S21_HOME_DECLARE, S21_HOME_FORCE_DECLARE,
   S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_UPDATE, S21_MAP_UPDATE_OFF,
+  S21_NEXT_DECLARE_HOME, S21_NEXT_OPEN_VENUE, S21_NEXT_PICK_DEST,
+  S21_NEXT_STOP, S21_NEXT_SUMMON, S21_NEXT_WORK,
   S21_NEXT_DEST_TITLE, S21_NOW_AT_HOME, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_MAP,
   S21_PICK_PANEL_HINT, S21_PIN_MOVE,
-  S21_PREP_TITLE, S21_SELECT_HINT, S21_SUBTAB_ATPANEL, S21_SUBTAB_DEST,
+  S21_PREP_TITLE, S21_SELECT_HINT, S21_STEP_DEST, S21_STEP_HOME, S21_STEP_MOVE,
+  S21_STEP_OPEN, S21_STEP_WORK, S21_SUBTAB_ATPANEL, S21_SUBTAB_DEST,
   S21_SUBTAB_SUMMON, S21_SUMMON_START, S21_SUMMON_TITLE, S21_TARGET_HINT,
   S21_WAIT_CANCEL, S21_WAIT_CLEARING, S21_WAIT_DIST, S21_WAIT_TITLE,
   S21_WORKING, S21_WORK_ON, S21_WORK_OFF,
 } from '../i18n/screens.js'
 
+// brief-onsite-ux UX-1: testSteps() が返す段 id → 表示ラベル（i18n の定数）。
+const S21_STEP_LABELS = {
+  open: S21_STEP_OPEN,
+  home: S21_STEP_HOME,
+  dest: S21_STEP_DEST,
+  move: S21_STEP_MOVE,
+  work: S21_STEP_WORK,
+}
+
 // 退避待ちの想定タイムアウト。バー幅の計算にだけ使い、実挙動には関与しない
 // （真の値は wait_clear_gate が持つ。残り時間の減少が「そのまま進捗」に見える係数）。
 const WAIT_BAR_SEC = 15
-
-const NAV_MODES = ['SUMMON', 'PANEL_NAV', 'AT_PANEL', 'HOME_NAV']
 
 function waitBarPct(wait) {
   if (wait.verdict === 'OK') return 100
@@ -203,8 +215,37 @@ export default function S21Test({ onExit }) {
   const stateText = isNavMode ? stateLabel(stateName) : S21_SELECT_HINT
   const pendingYaw = showWizard && wizYaw != null
 
+  // ── 手順バー（UX-1）と「次にやること」ボタン ──
+  // 段 1「会場地図を開く」だけは /map_session/open の応答 success を画面ローカル
+  // state（venueMsg.ok）で保持する（ROS 側に状態が無いため。UX-3 の報告対象）。
+  const { steps, currentIndex } = testSteps({
+    homeDeclared,
+    mapOpened: venueMsg?.ok === true,
+    selectedPinId,
+    mode,
+    stateName,
+  })
+  const stepViews = steps.map((s) => ({ ...s, label: S21_STEP_LABELS[s.id] ?? s.id }))
+
+  // 現在段の操作を 1 個だけ出す。押すと必要なサブタブへ自動で切り替わる。
+  // 2 点指示ウィザード（POINT）と退避待ち（WAIT_CLEAR）は最優先で見せ、隠す。
+  const nextActions = {
+    0: { label: S21_NEXT_OPEN_VENUE, run: () => handleOpenVenueMap() },
+    1: { label: S21_NEXT_DECLARE_HOME, run: () => { setSubtab('dest'); handleDeclareHome(false) } },
+    2: { label: S21_NEXT_PICK_DEST, run: () => { setSubtab('dest'); setPanelPick(true) } },
+    3: { label: S21_NEXT_STOP, run: () => sendTrigger('ui.stop') },
+    // 段 5: 作業中（WORKING⇄IDLE_P のトグル）か、呼び寄せ（SUMMON ならサブタブへ誘導）。
+    4: (working || mode === 'AT_PANEL')
+      ? { label: S21_NEXT_WORK, run: toggleWorking }
+      : { label: S21_NEXT_SUMMON, run: () => setSubtab('summon') },
+  }
+  const nextAction = (showWizard || showWait) ? null : (nextActions[currentIndex] ?? null)
+
   return (
     <div className="screen two-col" id="s21">
+      <div className="stepbar-cell">
+        <StepBar steps={stepViews} currentIndex={currentIndex} testId="s21" />
+      </div>
       <div>
         <div className="top-actions sticky">
           <button
@@ -279,6 +320,17 @@ export default function S21Test({ onExit }) {
       </div>
 
       <div>
+        {nextAction && (
+          <button
+            type="button"
+            className="next-action"
+            data-testid="s21-next-action"
+            disabled={disabledAll}
+            onClick={nextAction.run}
+          >
+            {nextAction.label}
+          </button>
+        )}
         <OperationCard
           mode={mode}
           stateName={stateName}

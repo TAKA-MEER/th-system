@@ -342,6 +342,63 @@ table.lst td.r{text-align:right}
 .screen#s21 .s21-bar.nope i{background:var(--ng-tx)}
 .screen#s21 .s21-map-row{display:flex;align-items:center;justify-content:space-between;margin-top:9px}
 
+/* ---------- UX-1: 手順バー（S-20 / S-21 共用。parts/StepBar.jsx） ----------
+   画面本文の一番上（タブ列より上）に横一列で常設。丸番号→ラベル→細線、の並び。
+   done=塗りつぶし＋✓ / current=太枠＋外側リングで大きく / 現在以外の未着手=淡色。
+   ブラウザ極小でラベルを畳んで丸だけにするのは @container 側（Spec-webui.md §1.4
+   「図の高さを頭打ちにする」と同じ考え方。ページ全体を横スクロールさせない）。 */
+.screen.two-col > .stepbar-cell{grid-column:1 / -1;margin-bottom:9px}
+.stepbar{display:flex;align-items:center;list-style:none;margin:0;padding:0}
+.stepbar-step{
+  display:flex;align-items:center;gap:7px;white-space:nowrap;min-width:0;
+}
+.stepbar-link{
+  display:flex;align-items:center;width:min(28px,4cqw);flex:0 0 auto;list-style:none;
+}
+.stepbar-link::before{
+  content:"";display:block;width:100%;height:2px;border-radius:1px;background:var(--bd-hi);
+}
+.stepbar-num{
+  flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  width:22px;height:22px;border-radius:50%;
+  background:var(--ctrl);border:2px solid var(--bd-hi);color:var(--mut);
+  font-size:calc(var(--fs) * .72);font-weight:700;line-height:1;
+}
+.stepbar-check{width:12px;height:12px}
+.stepbar-step.done .stepbar-num{background:#2c6b33;border-color:#4caf50;color:#e8f5e9}
+.stepbar-step.cur .stepbar-num{
+  width:28px;height:28px;color:#fff;font-size:calc(var(--fs) * .82);
+  background:var(--ctrl-on);border:3px solid var(--brand);
+  box-shadow:0 0 0 3px rgba(63,138,224,.35);
+}
+.stepbar-step.cur .stepbar-label{font-weight:700;color:var(--tx)}
+.stepbar-step:not(.done):not(.cur) .stepbar-num{background:transparent}
+.stepbar-step:not(.done):not(.cur){opacity:.55}
+.stepbar-label{font-size:calc(var(--fs) * .78);color:var(--mut)}
+@container app (max-width:759px){
+  /* 縦長・極小ではラベルを畳んで番号の丸だけにする */
+  .stepbar-step .stepbar-label{display:none}
+  .stepbar-step{gap:4px}
+  .stepbar-step.cur .stepbar-num{width:24px;height:24px}
+  .stepbar-step:not(.cur) .stepbar-num{width:20px;height:20px}
+  .stepbar-link{width:9px}
+}
+
+/* ---------- UX-1: 「次にやること」主ボタン（右列一番上。S-20 / S-21） ----------
+   現在の段の操作を 1 つだけ・他より明らかに大きく出す。押すと必要なタブに
+   自動で切り替わる（タブを探させない）。UX-2 でアイコン（形・色）を付ける。 */
+.next-action{
+  width:100%;margin-bottom:9px;padding:13px 15px;
+  font-size:calc(var(--fs) * 1.02);font-weight:700;text-align:center;
+  background:var(--brand-dk);border:1px solid var(--brand);border-radius:8px;color:#fff;
+}
+.next-action:active{background:var(--ctrl-on)}
+.next-action[disabled]{background:var(--ctrl);opacity:.4;cursor:not-allowed}
+
+/* 手順バーを足したぶん、S-20/S-21 の sticky 操作バーが上方向へ負マージンで
+   はみ出して手順バーに重ならないよう、top 側だけ 0 にする（横方向の全幅は維持）。 */
+.screen#s20 .top-actions.sticky,.screen#s21 .top-actions.sticky{margin:0 -10px 9px}
+
 /* ---------- S-50 設定のパラメータ入力（WS-9X。screens/S50Settings.jsx） ----------
    数値フィールドを詰めて並べる。指で触れる高さは確保する。 */
 .s50-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px 12px}
