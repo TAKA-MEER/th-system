@@ -27,8 +27,15 @@ export default function DriveTab({ kind }) {
         // this empty (c3) -- the follow screen body is a later packet.
         <div className="radarWrap" data-testid="drive-radar-slot" aria-label={FOLLOW_RADAR_SLOT} />
       )}
-      {/* keyboard は常設走行タブ側だけ true（W-6 の JogConsole は false のまま。
-          window の keydown が両方に届くので二重指令になる。WS-4）。 */}
+      {/* keyboard はここ（常設走行タブ）で true。brief-onsite-ux2 F-5 で W-6
+          （shell/Windows.jsx）側の JogConsole にも keyboard を渡すよう変えた
+          （S-20/S-21 の手動操作パネルで WASD が効かないという実機指摘）。
+          window の keydown は全 JogConsole に届くので、両方が同時に画面へ
+          出ると指令が二重になる（WS-4）。ただし実際には driveTab（この
+          コンポーネント。S-11/S-13/S-14）と W-6（S-20/S-21）は同じ画面に
+          同時に出ない（S-11/S-13/S-14 の OperationCard は manual スロットを
+          false にしており「手動」ボタン＝W-6 を開く導線が無い）ので、現状は
+          二重指令にならない。Windows.jsx 側の詳しい理由もあわせて参照。 */}
       <JogConsole ros={ros} disabled={stale} keyboard />
     </div>
   )

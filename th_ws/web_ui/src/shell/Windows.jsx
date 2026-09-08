@@ -226,7 +226,26 @@ export default function Windows({
           A floating card, `position:absolute` in theme.css, so opening it
           never moves the body's layout (U3-5). Opened by a screen's "手動"
           button via shell/jogPanel.js; same JogConsole as the perpetual
-          drive tab so both are the same size (U-14-style reuse). */}
+          drive tab so both are the same size (U-14-style reuse).
+
+          brief-onsite-ux2 F-5: keyboard is now enabled here too (WASD /
+          arrows), matching the driveTab's perpetual stick. This div is
+          always mounted (only `.show` toggles visibility via CSS
+          display:none — theme.css), so `disabled={!jogOpen}` is required:
+          without it, useKeyboardJog's window-level keydown listener would
+          keep reacting to WASD even while the panel is hidden. Passing
+          disabled also gates the keyboard hook itself
+          (JogConsole.jsx: `useKeyboardJog(keyboard && !disabled)`), so keys
+          are only "subscribed" (actually acted upon) while the panel shows.
+
+          No screen currently renders driveTab (kind="manual", keyboard=true)
+          and opens W-6 at the same time — S-11/S-13/S-14 render driveTab but
+          never show the "手動" button that opens W-6 (their OperationCard
+          slots have manual:false); S-20/S-21 open W-6 but never render
+          driveTab. So there is no live double-publish risk today, but the
+          `keyboard` prop's own contract (parts/JogConsole.jsx) still says
+          only one JogConsole per screen may set it — keep that invariant if
+          a future screen ever combines both. */}
       <div id="jogWin" className={jogOpen ? 'show' : ''}>
         <div className="jw-hd">
           <span className="jw-t">{W6_TITLE}</span>
@@ -234,7 +253,7 @@ export default function Windows({
           <button type="button" className="btn sm" onClick={onJogClose}>{W6_CLOSE}</button>
         </div>
         <div className="jw-m">{W6_MODE.replace('{mode}', modeLabel(mode))}</div>
-        <JogConsole ros={ros} />
+        <JogConsole ros={ros} disabled={!jogOpen} keyboard />
       </div>
     </>
   )
