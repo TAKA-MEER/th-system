@@ -49,7 +49,9 @@ from person_tracker_bridge_core import (
     classify,
     match_selected_index,
     auto_select_step,
+    apply_lost_grace,
     AutoSelectState,
+    LostGraceState,
     STATUS_EXISTS_LEG,
 )
 
@@ -57,6 +59,10 @@ from person_tracker_bridge_core import (
 DEFAULT_AUTO_SELECT_HOLD_S = 2.0
 DEFAULT_MATCH_TOL_M = 0.35
 DEFAULT_TARGET_CONFIDENCE_MIN = 0.5
+# brief-onsite-ux2 F-4: 脚検出は歩行中に一瞬抜けるため、is_lost=True の
+# フレームが1枚来ただけで即 evt.target_lost を出すと点滅して見える
+# （実機ログで確定）。1500ms は仮の既定値。
+DEFAULT_LOST_GRACE_MS = 1500
 
 
 class PersonTrackerBridge(Node):
@@ -81,6 +87,8 @@ class PersonTrackerBridge(Node):
                                'sobits_follower/multiple_sensor_person_tracking/person_candidates')
         self.declare_parameter('select_service', '/person_tracker/select_target')
         self.declare_parameter('reset_service', '/person_tracker/reset_tracking')
+        # brief-onsite-ux2 F-4: is_lost のデバウンス（猶予）。
+        self.declare_parameter('tracker_lost_grace_ms', DEFAULT_LOST_GRACE_MS)
 
         self._auto_select_hold_s = float(self.get_parameter('auto_select_hold_s').value)
         self._match_tol_m = float(self.get_parameter('match_tol_m').value)
@@ -88,6 +96,7 @@ class PersonTrackerBridge(Node):
         candidates_topic = self.get_parameter('candidates_topic').value
         select_service = self.get_parameter('select_service').value
         reset_service = self.get_parameter('reset_service').value
+        self._lost_grace_ms = int(self.get_parameter('tracker_lost_grace_ms').value)
 
         # ── 全購読を 1 つの MutuallyExclusive グループに入れる。
         # _recompute_and_publish は 4 コールバック（following / stop / candidates /
@@ -107,6 +116,7 @@ class PersonTrackerBridge(Node):
         self._auto_select = AutoSelectState()
         self._selected_index = -1        # マッチングによる選択中 index
         self._auto_selected = False      # 自動選択発火済みフラグ（1人継続で再発火しない）
+        self._lost_grace = LostGraceState()  # brief-onsite-ux2 F-4: is_lost のデバウンス
 
         # ── Subscribers ─────────────────────────────────────
         self.create_subscription(
@@ -165,7 +175,15 @@ class PersonTrackerBridge(Node):
 
     # ── 再計算・再 publish ───────────────────────────────
     def _recompute_and_publish(self):
+        now_ms = int(self.get_clock().now().nanoseconds / 1e6)
+
         decision = classify(self._last_status, self._stop_following)
+        # brief-onsite-ux2 F-4: 猶予（デバウンス）。脚検出が歩行中に一瞬抜けた
+        # だけの is_lost=True を tracker_lost_grace_ms の間は隠す（点滅対策）。
+        # evt.target_lost は下の edge 検出がこの masked な is_lost しか見ないため、
+        # 猶予中に一度も発行されない（復帰時にイベントを出さない、を自動的に満たす）。
+        self._lost_grace, decision = apply_lost_grace(
+            self._lost_grace, decision, now_ms, self._lost_grace_ms)
         is_lost = decision.is_lost
         lost_reason = decision.lost_reason
 
@@ -175,7 +193,6 @@ class PersonTrackerBridge(Node):
             self._candidates, followed_xy, is_lost, self._match_tol_m)
 
         # 自動選択: 候補がちょうど1つ・まだ選ばれていない・追跡継続中のみ
-        now_ms = int(self.get_clock().now().nanoseconds / 1e6)
         already_selected = self._selected_index >= 0 or self._auto_selected
         state, idx = auto_select_step(
             self._auto_select, len(self._candidates), now_ms,
