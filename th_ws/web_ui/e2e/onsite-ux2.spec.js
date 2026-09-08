@@ -8,7 +8,9 @@
 //         要素が無いか」しか見ておらず、区画内スクロールと本文スクロールを
 //         区別できなかった。bodyOverflowPx() に置き換えた）。
 import { expect, test } from '@playwright/test'
-import { gotoScreen, gotoScreenWithOnsite } from './helpers.js'
+import {
+  gotoScreen, gotoScreenWithOnsite, unlockOnsiteMap, unlockOnsiteVenueMap,
+} from './helpers.js'
 
 // ── UX-2-a: 「停止」の形は他と異なる ──────────────────────────────────────────
 
@@ -113,4 +115,42 @@ test('UX-5: S-21（SUMMON/WAIT_CLEAR・ピン6・候補4）は 1280×720 で本�
   })
   await page.locator('[data-testid="s21-subtab-summon"]').click()
   expect(await bodyOverflowPx(page)).toBeLessThanOrEqual(1)
+})
+
+// ── F-7: 手動操作パネル（W-6）が地図を隠さない（brief-onsite-ux2） ───────────
+// S-20/S-21 の左列は地図タブなので、既定の左下配置だと浮いた W-6 が地図に
+// 被る（実機指摘）。案A（W-6 を右列の幅に収めて右下へ寄せる）を採った。
+// S-11/S-13/S-14 は無変更（e2e/w6-does-not-move-body.spec.js が別途担保）。
+function overlaps(a, b) {
+  return !(a.x + a.width <= b.x || b.x + b.width <= a.x
+    || a.y + a.height <= b.y || b.y + b.height <= a.y)
+}
+
+test('F-7: S-20 で W-6 を開いても地図と重ならない', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await gotoScreenWithOnsite(page, 'S20', PREP_STATE, { pins: [], targets: [], mappingActive: true })
+  await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
+  await page.locator('#s20 .op-manual').click()
+  await page.locator('#jogWin.show').waitFor()
+
+  const mapBox = await page.getByTestId('s20-map').boundingBox()
+  const jogBox = await page.locator('#jogWin').boundingBox()
+  expect(overlaps(mapBox, jogBox), 'W-6 が S-20 の地図と重なっている').toBe(false)
+})
+
+test('F-7: S-21 で W-6 を開いても地図と重ならない', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await gotoScreenWithOnsite(
+    page, 'S21', { mode: 'PANEL_NAV', state: 'NAV' },
+    { pins: [], targets: [], openVenueMap: { success: true, message: '' } },
+  )
+  await page.locator('#s21').waitFor()
+  await unlockOnsiteVenueMap(page)
+  await page.locator('#s21 .op-manual').click()
+  await page.locator('#jogWin.show').waitFor()
+
+  const mapBox = await page.getByTestId('s21-map').boundingBox()
+  const jogBox = await page.locator('#jogWin').boundingBox()
+  expect(overlaps(mapBox, jogBox), 'W-6 が S-21 の地図と重なっている').toBe(false)
 })

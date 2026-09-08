@@ -495,8 +495,12 @@ table.lst td.r{text-align:right}
    Only shown on screens that can't keep the virtual stick on screen
    permanently. Floats above everything else without moving the body's
    layout at all (a band would re-flow the two-column layout, shrinking the
-   map too — DetailedDesign-webui.md §6.3). Bottom-left: on wide screens the
-   operation card is the right column, so there is no structural overlap. */
+   map too — DetailedDesign-webui.md §6.3). Bottom-left: on S-11/S-13/S-14 the
+   left column is text/operations (not a map), so there is no structural
+   overlap there. S-20/S-21 are the exception — their LEFT column is the map
+   tab, so the same bottom-left float covers it (brief-onsite-ux2 F-7, real
+   実機 report). See the S-20/S-21 override below (案A: dock right, capped to
+   the right column's width instead). */
 #jogWin{
   position:absolute;display:none;z-index:60;
   left:10px;bottom:calc(var(--dock-h, 0px) + 10px);
@@ -516,6 +520,21 @@ table.lst td.r{text-align:right}
    card can still be scrolled above it. Padding only — nothing already on
    screen moves. */
 #body.jog-pad{padding-bottom:var(--jog-h, 0px)}
+
+/* brief-onsite-ux2 F-7 (案A): S-20/S-21 だけ、W-6 を右列の幅に収めて右下へ
+   寄せる（左列＝地図の上に出さない）。#jogWin は #body の外（#app 直下の
+   Windows.jsx 出力）に在るため .screen 側のセレクタでは届かない。AppShell.jsx
+   が #app に付けた data-screen（'S-20'/'S-21'）でスコープする。
+   S-11/S-13/S-14 は無変更（e2e/w6-does-not-move-body.spec.js が緑のまま）。
+   right column の幅比は .screen.two-col の grid-template-columns（760px〜
+   1299px: 1.35fr:1fr ≒ 右列 42.6%、1300px 以上: 1.15fr:1.4fr ≒ 右列 54.9%）
+   のうち小さい方（42.6%）を基準に、余裕を持たせて 38cqw を上限にした
+   （実測 1280×720 で地図 SVG と重ならないことを screenshot + bounding-box で確認）。 */
+#app[data-screen="S-20"] #jogWin,
+#app[data-screen="S-21"] #jogWin{
+  left:auto;right:10px;
+  width:min(400px, calc(38cqw - 20px));
+}
 
 /* ---------- virtual stick (WP-UI-03) ----------
    Ported from docs/plan/spec/mockup/index.html L292-305 (#tplStick's .stickBox

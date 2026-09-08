@@ -153,7 +153,11 @@ function AppShellInner({ screenName, screenId, children }) {
   }, [publishEstopUi])
 
   return (
-    <div id="app">
+    // brief-onsite-ux2 F-7: data-screen lets theme.css scope W-6 (#jogWin,
+    // rendered as a sibling of #body below via <Windows>, not a DOM
+    // descendant of the screen it floats over) to S-20/S-21 without moving
+    // any other screen's markup or CSS. screenId is 'S-20'/'S-21' (SCREEN_IDS).
+    <div id="app" data-screen={screenId}>
       <Header
         screenName={screenName}
         mode={mode}
