@@ -12,6 +12,13 @@
 // e2e/s01-shutdown-flow.spec.js can drive the 5-step flow (§12.5) offline
 // (U-3). Defaults to `{ success: true, message: '' }` if a spec doesn't
 // configure a stub for the service it calls.
+//
+// brief-onsite-ux2 F-6: every TEST_MODE call is also recorded on
+// window.__thStdTriggerCalls ({ service }) -- same "record every call" idea
+// as ros/useOnsiteService.js's __thOnsiteServiceCalls -- so an e2e spec can
+// prove the S-20 map gate did NOT call /slam_control/toggle_mapping when
+// mapping was already active (calling it there would stop a mapping run
+// that started at launch, the exact failure mode F-6 exists to avoid).
 import { useCallback } from 'react'
 import { useSystemState } from './useSystemState'
 import { SRV_TYPES } from './topics'
@@ -23,6 +30,8 @@ export function useStdTrigger(serviceName) {
 
   return useCallback(() => {
     if (TEST_MODE) {
+      window.__thStdTriggerCalls = window.__thStdTriggerCalls ?? []
+      window.__thStdTriggerCalls.push({ service: serviceName })
       const stub = window.__thTestServices?.[serviceName]
       return Promise.resolve(stub ?? { success: true, message: '' })
     }

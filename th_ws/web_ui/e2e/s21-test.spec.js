@@ -8,7 +8,7 @@
 import { test, expect } from '@playwright/test'
 import {
   gotoScreenWithOnsite, onsiteServiceCalls, setTestState,
-  setTestPersonTargets, setTestWaitClear, setTestHomeDeclared,
+  setTestPersonTargets, setTestWaitClear, setTestHomeDeclared, unlockOnsiteVenueMap,
 } from './helpers.js'
 
 // Pin.msg の最小形（pose.position が地図座標、kind が HOME/PANEL）。
@@ -61,13 +61,15 @@ async function goto21(page, state = IDLE, extra = {}) {
 }
 
 test('S-21 表示とタイトル（IDLE のまま直接開く）', async ({ page }) => {
-  await goto21(page)
+  await goto21(page, IDLE, { openVenueMap: { success: true, message: '' } })
   await expect(page.locator('main')).toContainText('試験')
   await expect(page.locator('[data-testid="s21-finish"]')).toBeVisible()
   // IDLE では「行き先を選んでください」を状態欄に出す（UX-5: タブ列右のピルは
   // 状態欄と同じ文字列を二重に出していたので削った）。
   await expect(page.locator('[data-testid="s21-state"]')).toHaveText('行き先を選んでください')
-  // 地図タブ初期表示: ピン 3 個とロボットマーカー。
+  // brief-onsite-ux2 F-6: 地図タブは「保存した会場地図を開く」を押すまで
+  // OnsiteMap をマウントしない。押した後にピン 3 個とロボットマーカーが出る。
+  await unlockOnsiteVenueMap(page)
   await expect(page.locator('[data-testid="s21-map-pin-p1"]')).toBeVisible()
   await expect(page.locator('[data-testid="s21-map-pin-p3"]')).toBeVisible()
   await expect(page.locator('[data-testid="s21-map-robot"]')).toBeVisible()
@@ -268,10 +270,21 @@ test('SUMMON 以外のモードでも見た目はそのまま（PANEL_NAV で状
 
 // brief-onsite-fix C.5: 実地図シードで s21 地図タブにラスタが描かれ、ピン/ロボットが載る。
 test('地図シードありで s21-map-raster が描かれピンが地図座標に載る', async ({ page }) => {
-  await goto21(page, IDLE, { routeMap: ROUTE_MAP })
+  await goto21(page, IDLE, { routeMap: ROUTE_MAP, openVenueMap: { success: true, message: '' } })
+  await unlockOnsiteVenueMap(page)
   await expect(page.locator('[data-testid="s21-map-raster"]')).toBeVisible()
   await expect(page.locator('[data-testid="s21-map-pin-p1"]')).toBeVisible()
   await expect(page.locator('[data-testid="s21-map-robot"]')).toBeVisible()
+})
+
+// brief-onsite-ux2 F-6: 押す前は地図タブに OnsiteMap がマウントされない
+// （案内文と「保存した会場地図を開く」ボタンだけ）。押すと現れる。
+test('F-6: 「保存した会場地図を開く」を押すまで s21-map は存在せず、押すと現れる', async ({ page }) => {
+  await goto21(page, IDLE, { openVenueMap: { success: true, message: '' } })
+  await expect(page.locator('[data-testid="s21-map"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="s21-map-gate-msg"]')).toBeVisible()
+  await unlockOnsiteVenueMap(page)
+  await expect(page.locator('[data-testid="s21-map"]')).toBeVisible()
 })
 
 // brief-onsite-fix E: 「保存した会場地図を開く」を押すと /map_session/open

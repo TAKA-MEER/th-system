@@ -246,6 +246,28 @@ test('prepSteps: unsaved undefined / 非配列は空扱い', () => {
   }
 })
 
+// brief-onsite-ux2 F-6: 段 1「地図を作る」は「地図作成開始」を押して表示を
+// 解禁するまで未完了にする。mapRevealed 省略時は後方互換で従来どおり完了扱い
+// （既存呼び出し・上のテストはそのまま緑）。
+test('prepSteps: mapRevealed=false なら段1は未完了、current は段1のまま', () => {
+  const { steps, currentIndex } = prepSteps({
+    pins: [{ id: 'h', kind: 'HOME' }, { id: 'p', kind: 'PANEL' }],
+    personTargets: { selected_index: 0 },
+    mapRevealed: false,
+  })
+  assert.equal(steps[0].done, false)
+  assert.equal(currentIndex, 0)
+  assert.equal(steps[0].id, 'map')
+})
+
+test('prepSteps: mapRevealed=true なら段1は完了（明示的に渡した場合も従来どおり）', () => {
+  const { steps, currentIndex } = prepSteps({
+    pins: [], personTargets: { selected_index: -1 }, mapRevealed: true,
+  })
+  assert.equal(steps[0].done, true)
+  assert.equal(currentIndex, 1)
+})
+
 // ── testSteps（S-21） ───────────────────────────────────────
 
 test('testSteps: 何も無し → 段1のみ不明、current は段1（会場地図を開く）', () => {

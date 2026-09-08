@@ -126,11 +126,18 @@ export async function stubServices(page, services) {
 // __thTestOnsiteMap）を見るようになったため、この helper の `routeMap` 引数は
 // __thTestOnsiteMap を seed する（このヘルパーは S-20/S-21 専用で、S-13/S-14 の
 // gotoScreenWithRouteRobot とは別系統）。
+// brief-onsite-ux2 F-6: `mappingActive` は /slam_control/mapping_active
+// （useMappingActive, __thTestMappingActive）を seed する。true/false/undefined
+// （=不明のまま）を区別できるよう、他の bool 引数と違い `!== undefined` で判定する
+// （false を明示的に seed できないと「地図作成停止中」のケースを再現できない）。
 export async function gotoScreenWithOnsite(
   page, screen, state,
-  { pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear, routeMap, openVenueMap },
+  {
+    pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear,
+    routeMap, openVenueMap, mappingActive,
+  },
 ) {
-  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm }) => {
+  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm, ma }) => {
     window.__thTestState = s
     window.__thTestScreen = scr
     if (p) window.__thTestOnsitePins = p
@@ -150,8 +157,13 @@ export async function gotoScreenWithOnsite(
     if (wc) window.__thTestWaitClear = wc
     if (rm) window.__thTestOnsiteMap = rm
     if (ovm) window.__thTestOpenVenueMap = ovm
+    if (ma !== undefined) window.__thTestMappingActive = ma
   },
-  { s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose, dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear, rm: routeMap, ovm: openVenueMap })
+  {
+    s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose,
+    dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear, rm: routeMap, ovm: openVenueMap,
+    ma: mappingActive,
+  })
   await page.goto('/')
 }
 
@@ -159,6 +171,29 @@ export async function gotoScreenWithOnsite(
 // (shape { service, request }).
 export async function onsiteServiceCalls(page) {
   return page.evaluate(() => window.__thOnsiteServiceCalls ?? [])
+}
+
+// brief-onsite-ux2 F-6: the std_srvs/Trigger calls recorded by
+// ros/useStdTrigger.js's test hook (shape { service }).
+export async function stdTriggerCalls(page) {
+  return page.evaluate(() => window.__thStdTriggerCalls ?? [])
+}
+
+// brief-onsite-ux2 F-6: S-20 の地図タブは「地図作成開始」を押すまで OnsiteMap を
+// マウントしない。段1が既に完了扱いだった旧仕様に依存する既存 e2e（手順バーの
+// current が段2から始まる、等）はこのヘルパーでゲートを開けてから続ける。
+// gotoScreenWithOnsite の mappingActive を明示的に seed していない場合、
+// mappingActive===null（不明）のままだとボタンが非活性なので既定で true を渡す。
+export async function unlockOnsiteMap(page) {
+  await page.locator('[data-testid="s20-map-gate-start"]').click()
+}
+
+// brief-onsite-ux2 F-6: S-21 の地図タブは「保存した会場地図を開く」（/map_session/open
+// の応答 success）まで OnsiteMap をマウントしない。呼び出し側は openVenueMap:
+// { success: true, message: '' } を gotoScreenWithOnsite に渡しておくこと
+// （既定スタブは success:false で解禁されない）。
+export async function unlockOnsiteVenueMap(page) {
+  await page.locator('[data-testid="s21-map-gate-open"]').click()
 }
 
 // WP-UI-06: mutate the seeded pins / targets after mount

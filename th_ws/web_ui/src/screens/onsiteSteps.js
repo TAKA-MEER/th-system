@@ -73,20 +73,25 @@ function currentIndexOf(done) {
 
 /**
  * S-20 試験準備の 5 段。
- * 段 1「地図を作る」は `mode === 'PREP'`（この画面が出ている時点で満たす）なので
- * 引数に mode を取らず常に完了扱いにする（brief-onsite-ux UX-1-a の表）。
- * @param {{pins?: Array, personTargets?: Object, unsaved?: Array}} _
+ * 段 1「地図を作る」は元々 `mode === 'PREP'`（この画面が出ている時点で満たす）
+ * ので常に完了扱いにしていたが、brief-onsite-ux2 F-6 で「地図作成開始」を押して
+ * 表示を解禁するまでは未完了にする（mapRevealed）。既定は後方互換のため true
+ * （呼び出し側が省略した既存呼び出し・テストは従来どおり常に完了扱いのまま）。
+ * @param {{pins?: Array, personTargets?: Object, unsaved?: Array, mapRevealed?: boolean}} _
  *   pins: /onsite/pins（PinList）、personTargets: /person/targets、
- *   unsaved: /system/state の unsaved（配列の生値。未変更なら undefined/falsy）。
+ *   unsaved: /system/state の unsaved（配列の生値。未変更なら undefined/falsy）、
+ *   mapRevealed: 画面ローカル state（「地図作成開始」を押して表示を解禁したか）。
  */
-export function prepSteps({ pins = [], personTargets = {}, unsaved } = {}) {
+export function prepSteps({
+  pins = [], personTargets = {}, unsaved, mapRevealed = true,
+} = {}) {
   const homeDone = pins.some((p) => p?.kind === 'HOME')
   const panelDone = pins.some((p) => p?.kind === 'PANEL')
   const targetDone = (personTargets.selected_index ?? -1) >= 0
   // 段 5「保存」は「未保存が空」かつ待機場所・配電盤の登録済み。
   const unsavedEmpty = !(Array.isArray(unsaved) && unsaved.length > 0)
   const steps = [
-    { id: 'map', labelKey: 'S20_STEP_MAP', done: true },
+    { id: 'map', labelKey: 'S20_STEP_MAP', done: mapRevealed === true },
     { id: 'target', labelKey: 'S20_STEP_TARGET', done: targetDone },
     { id: 'home', labelKey: 'S20_STEP_HOME', done: homeDone },
     { id: 'panel', labelKey: 'S20_STEP_PANEL', done: panelDone },

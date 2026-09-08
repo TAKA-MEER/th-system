@@ -6,7 +6,7 @@
 import { test, expect } from '@playwright/test'
 import {
   gotoScreen, gotoScreenWithOnsite, onsiteServiceCalls,
-  setTestState, setTestPersonTargets, setTestOnsitePins,
+  setTestState, setTestPersonTargets, setTestOnsitePins, unlockOnsiteMap, stdTriggerCalls,
 } from './helpers.js'
 
 // Pin.msg の最小形（pose.position が地図座標、kind が HOME/PANEL）。
@@ -54,10 +54,15 @@ async function triggers(page) {
 }
 
 test('S-20 表示とタイトル', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 } })
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, mappingActive: true },
+  )
   await page.locator('#s20').waitFor()
   await expect(page.locator('#s20 [data-testid="s20-finish"]')).toBeVisible()
-  // 地図タブが初期表示: ピン 3 個とロボットマーカー。
+  // brief-onsite-ux2 F-6: 地図タブは「地図作成開始」を押すまで OnsiteMap を
+  // マウントしない。押した後にピン 3 個とロボットマーカーが出る。
+  await unlockOnsiteMap(page)
   await expect(page.locator('[data-testid="s20-map-pin-p1"]')).toBeVisible()
   await expect(page.locator('[data-testid="s20-map-pin-p3"]')).toBeVisible()
   await expect(page.locator('[data-testid="s20-map-robot"]')).toBeVisible()
@@ -130,8 +135,12 @@ test('2 点指示が拒否されたら理由を表示して Step を進めない
 })
 
 test('停止/保存の操作カードと対象選択（radar）', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 } })
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, mappingActive: true },
+  )
   await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
 
   // 操作カード: 停止(ui.stop)。保存は、この PINS/TARGETS シードだと全段完了で
   // 「次にやること」ボタンも保存になるため、重複を避けて操作カード側には出ない
@@ -221,9 +230,13 @@ test('ピンが 0 件なら空表示', async ({ page }) => {
 test('地図シードありで s20-map-raster が描かれピンが地図座標に載る', async ({ page }) => {
   await gotoScreenWithOnsite(
     page, 'S20', PREP,
-    { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, routeMap: ROUTE_MAP },
+    {
+      pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, routeMap: ROUTE_MAP,
+      mappingActive: true,
+    },
   )
   await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
   // ラスタ描画は canvas→dataURL なので /route/map_view 受信後に非同期で出る。
   await expect(page.locator('[data-testid="s20-map-raster"]')).toBeVisible()
   await expect(page.locator('[data-testid="s20-map-pin-p1"]')).toBeVisible()
@@ -231,10 +244,67 @@ test('地図シードありで s20-map-raster が描かれピンが地図座標�
 })
 
 test('地図シードなしならラスタは描かれない（モックアップ部屋も描かない。F-4）', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 } })
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, mappingActive: true },
+  )
   await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
   await expect(page.locator('[data-testid="s20-map-raster"]')).not.toBeVisible()
   await expect(page.locator('[data-testid="s20-map-robot"]')).toBeVisible()
+})
+
+// brief-onsite-ux2 F-6: 押す前は地図タブに OnsiteMap がマウントされない
+// （地図作成開始ボタンと案内文だけ）。押すと現れる。
+test('F-6: 「地図作成開始」を押すまで s20-map は存在せず、押すと現れる', async ({ page }) => {
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, mappingActive: true },
+  )
+  await page.locator('#s20').waitFor()
+  await expect(page.locator('[data-testid="s20-map"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="s20-map-gate-msg"]')).toBeVisible()
+  const startBtn = page.locator('[data-testid="s20-map-gate-start"]')
+  await expect(startBtn).toBeEnabled()
+  await startBtn.click()
+  await expect(page.locator('[data-testid="s20-map"]')).toBeVisible()
+})
+
+// brief-onsite-ux2 F-6: mappingActive が不明（null）の間はボタンを非活性にし、
+// race で稼働中の地図作成を誤って止めないようにする。
+test('F-6: mappingActive 不明の間は「地図作成開始」が非活性', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS })
+  await page.locator('#s20').waitFor()
+  await expect(page.locator('[data-testid="s20-map-gate-start"]')).toBeDisabled()
+})
+
+// brief-onsite-ux2 F-6 の核心: mappingActive===true（起動時から動いている通常
+// ケース）で「地図作成開始」を押しても /slam_control/toggle_mapping を呼ばない
+// （呼ぶと動いている地図作成を誤って止めてしまう）。表示だけ解禁する。
+test('F-6: mappingActive===true なら toggle_mapping を呼ばずに表示だけ解禁', async ({ page }) => {
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    { pins: PINS, targets: TARGETS, mappingActive: true },
+  )
+  await page.locator('#s20').waitFor()
+  await page.locator('[data-testid="s20-map-gate-start"]').click()
+  await expect(page.locator('[data-testid="s20-map"]')).toBeVisible()
+  const calls = await stdTriggerCalls(page)
+  expect(calls.some((c) => c.service === '/slam_control/toggle_mapping'),
+    'mappingActive===true なのに toggle_mapping を呼んだ（動いている地図作成を止めてしまう）').toBe(false)
+})
+
+// mappingActive===false なら toggle_mapping を呼んでから表示を解禁する。
+test('F-6: mappingActive===false なら toggle_mapping を呼んでから表示を解禁', async ({ page }) => {
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    { pins: PINS, targets: TARGETS, mappingActive: false },
+  )
+  await page.locator('#s20').waitFor()
+  await page.locator('[data-testid="s20-map-gate-start"]').click()
+  await expect(page.locator('[data-testid="s20-map"]')).toBeVisible()
+  const calls = await stdTriggerCalls(page)
+  expect(calls.some((c) => c.service === '/slam_control/toggle_mapping')).toBe(true)
 })
 
 // brief-onsite-fix F-2: レーダーに機体マーク（前方上向き三角＋中心丸）が出る。

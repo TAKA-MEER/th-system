@@ -263,6 +263,10 @@ export const S20_NEXT_SELECT_TARGET = '対象を選ぶ'
 export const S20_NEXT_REG_HOME = '待機場所を登録'
 export const S20_NEXT_REG_PANEL = '配電盤を登録'
 export const S20_NEXT_SAVE = '保存'
+// brief-onsite-ux2 F-6: 「地図作成開始」を押すまで地図を出さない表示ゲート。
+export const S20_MAP_GATE_MSG = '地図作成を開始してください'
+export const S20_MAP_GATE_BUTTON = '地図作成開始'
+export const S20_NEXT_START_MAPPING = '地図作成開始'
 
 // 対象選択レーダー（parts/RadarSelect.jsx。S-20 / S-21 で共用。Spec-webui.md §9.1）。
 export const RADAR_ARIA = '対象選択レーダー'
@@ -285,6 +289,8 @@ export const S21_NOW_AT_HOME = 'いま待機場所にいる'
 // brief-onsite-fix E: 保存した会場地図（slot:VENUE）を当日に開き直すボタン。
 export const S21_OPEN_VENUE_MAP = '保存した会場地図を開く'
 export const S21_OPEN_VENUE_DONE = '会場地図を開きました'
+// brief-onsite-ux2 F-6: 「会場地図を開く」まで地図タブに地図を出さない表示ゲート。
+export const S21_MAP_GATE_MSG = '保存した会場地図を開いてください'
 export const S21_HOME_UNDECLARED = '未宣言'
 export const S21_HOME_DECLARED = '宣言済み'
 export const S21_HOME_DECLARE = '宣言する'

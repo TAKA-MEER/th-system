@@ -57,8 +57,12 @@ export default function OnsiteMap({
   const t = onsiteMapTransform(mapData, MAP_VB_W, MAP_VB_H, 24, 22)
   const hasMap = !!(mapUrl && t.view)
 
+  // brief-onsite-ux2 F-6/F-7: `${testId}-map` は「地図タブに地図 SVG が
+  // マウントされているか」を e2e から直接見るための testid（F-6 の表示ゲート、
+  // F-7 の重なり判定の両方が使う）。他の子要素（-map-raster / -map-pin-<id> /
+  // -map-robot / -map-no-pose）と同じ `${testId}-map-*` 系列に揃える。
   return (
-    <svg viewBox={`0 0 ${MAP_VB_W} ${MAP_VB_H}`} aria-label={ariaLabel} data-testid={testId}>
+    <svg viewBox={`0 0 ${MAP_VB_W} ${MAP_VB_H}`} aria-label={ariaLabel} data-testid={`${testId}-map`}>
       <rect width={MAP_VB_W} height={MAP_VB_H} fill="#20242c" />
       {hasMap ? (
         <image

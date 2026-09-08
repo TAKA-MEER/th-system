@@ -48,7 +48,7 @@ import {
   S20_WIZ_MSG, S20_WIZ_REGISTER, S20_WIZ_STEP, S20_PIN_YAW,
   S21_ATPANEL_TITLE, S21_DEST_HOME, S21_DEST_NEXT_PANEL, S21_DEST_SUMMON_HERE,
   S21_HOME_DECLARED, S21_HOME_DECLARE, S21_HOME_FORCE_DECLARE,
-  S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
+  S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_GATE_MSG, S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
   S21_NEXT_DECLARE_HOME, S21_NEXT_OPEN_VENUE, S21_NEXT_PICK_DEST,
   S21_NEXT_STOP, S21_NEXT_SUMMON, S21_NEXT_WORK,
   S21_NEXT_DEST_TITLE, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_MAP,
@@ -253,9 +253,12 @@ export default function S21Test({ onExit }) {
   // ── 手順バー（UX-1）と「次にやること」ボタン ──
   // 段 1「会場地図を開く」だけは /map_session/open の応答 success を画面ローカル
   // state（venueMsg.ok）で保持する（ROS 側に状態が無いため。UX-3 の報告対象）。
+  // brief-onsite-ux2 F-6: この mapOpened を地図タブの表示ゲートにも使う
+  // （「会場地図を開く」まで地図を出さない）。
+  const mapOpened = venueMsg?.ok === true
   const { steps, currentIndex } = testSteps({
     homeDeclared,
-    mapOpened: venueMsg?.ok === true,
+    mapOpened,
     selectedPinId,
     mode,
     stateName,
@@ -321,7 +324,26 @@ export default function S21Test({ onExit }) {
           </div>
         </div>
 
-        {tab === 'map' && (
+        {tab === 'map' && !mapOpened && (
+          <div className="tabpane on">
+            <div className="card">
+              <h3>{S20_MAP_TITLE}</h3>
+              <div className="note" data-testid="s21-map-gate-msg">{S21_MAP_GATE_MSG}</div>
+              <button
+                type="button"
+                className={`btn wide mt ${OP_BUTTON_KINDS.advance}`}
+                data-testid="s21-map-gate-open"
+                disabled={disabledAll}
+                onClick={() => handleOpenVenueMap()}
+              >
+                <IconArrow />
+                <span>{S21_OPEN_VENUE_MAP}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {tab === 'map' && mapOpened && (
           <div className="tabpane on">
             <div className="card">
               <h3>{S20_MAP_TITLE}</h3>

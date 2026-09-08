@@ -28,6 +28,8 @@ import { usePersonTargets } from '../ros/usePersonTargets.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { useOnsiteMapView } from '../ros/useOnsiteMapView.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
+import { useMappingActive } from '../ros/useMappingActive.js'
+import { useStdTrigger } from '../ros/useStdTrigger.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
@@ -43,8 +45,8 @@ import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
   BADGE_JOG_DENIED,
-  S20_MAP_ARIA, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TITLE,
-  S20_NEXT_REG_HOME, S20_NEXT_REG_PANEL, S20_NEXT_SAVE, S20_NEXT_SELECT_TARGET,
+  S20_MAP_ARIA, S20_MAP_GATE_BUTTON, S20_MAP_GATE_MSG, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TITLE,
+  S20_NEXT_REG_HOME, S20_NEXT_REG_PANEL, S20_NEXT_SAVE, S20_NEXT_SELECT_TARGET, S20_NEXT_START_MAPPING,
   S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_EDIT, S20_PIN_RENAME,
   S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REGISTER_TITLE, S20_REG_PANEL,
   S20_RETURN_HOME, S20_STEP_HOME, S20_STEP_MAP, S20_STEP_PANEL, S20_STEP_SAVE, S20_STEP_TARGET,
@@ -85,6 +87,17 @@ export default function S20Prep() {
   const routePose = useRoutePose(ros)
   const { twoPoint, editPin } = useOnsiteService()
   const jogPanel = useJogPanel()
+  // brief-onsite-ux2 F-6: 地図タブの表示ゲート。/slam_control/mapping_active
+  // は起動コマンド（enable_route_slam:=true）により起動直後から true のことが
+  // 多いので、「地図作成開始」を押したときは
+  //   mappingActive === false なら toggle_mapping を呼んで開始する
+  //   mappingActive === true（起動時から動いている通常ケース）なら
+  //     サービスは呼ばず表示だけ解禁する（呼ぶと動いている地図作成を止めてしまう）
+  // mappingActive が null（初回メッセージ未受信）の間は、この判定ができず
+  // 誤って停止させる恐れがあるためボタンを非活性にする。
+  const mappingActive = useMappingActive(ros)
+  const toggleMapping = useStdTrigger('/slam_control/toggle_mapping')
+  const [mapUnlocked, setMapUnlocked] = useState(false)
 
   const disabledAll = stale || state?.mode == null
 
@@ -109,15 +122,19 @@ export default function S20Prep() {
   const unsaved = Array.isArray(state?.unsaved) && state.unsaved.length > 0
 
   // ── 手順バー（UX-1）と「次にやること」ボタン ──
-  // prepSteps は mode 無しで段 1（地図を作る）を常に完了扱いにする（この画面は
-  // PREP のときだけ開く）。現在段＝未完了の最初の段。全部完了なら最後の段。
-  const { steps, currentIndex } = prepSteps({ pins, personTargets, unsaved: state?.unsaved })
+  // brief-onsite-ux2 F-6: 段 1（地図を作る）の完了条件は mapUnlocked（表示解禁）
+  // に変えた（以前は mode==='PREP' で常に完了扱い）。現在段＝未完了の最初の段。
+  // 全部完了なら最後の段。
+  const { steps, currentIndex } = prepSteps({
+    pins, personTargets, unsaved: state?.unsaved, mapRevealed: mapUnlocked,
+  })
   const stepViews = steps.map((s) => ({ ...s, label: S20_STEP_LABELS[s.id] ?? s.id }))
 
   // 現在段に対応する「1 個で済む」操作。押すと必要なタブへ自動で切り替わる。
   // 2 点指示ウィザードが開いている（REGISTER）ときはウィザード優先で隠す。
   // kind は OP_BUTTON_KINDS に通す（進む=塗り、登録・保存=枠線）。
   const nextActions = {
+    0: { kind: 'advance', label: S20_NEXT_START_MAPPING, run: () => { setTab('map'); handleStartMapping() } },
     1: { kind: 'advance', label: S20_NEXT_SELECT_TARGET, run: () => setTab('target') },
     2: { kind: 'register', label: S20_NEXT_REG_HOME, run: () => { setSubtab('register'); handleRegister('HOME') } },
     3: { kind: 'register', label: S20_NEXT_REG_PANEL, run: () => { setSubtab('register'); handleRegister('PANEL') } },
@@ -148,6 +165,17 @@ export default function S20Prep() {
   }, [pins, editingPinId])
 
   // ── 操作 ─────────────────────────────────────────────
+  // brief-onsite-ux2 F-6:「地図作成開始」。mappingActive===false のときだけ
+  // toggle_mapping を呼ぶ。起動時から動いている通常ケース（true）はサービスを
+  // 呼ばず表示だけ解禁する（呼ぶと動いている地図作成を止めてしまう）。
+  async function handleStartMapping() {
+    if (mappingActive === false) {
+      const res = await toggleMapping()
+      if (res?.success === false) return   // 失敗時は解禁しない（留まる）
+    }
+    setMapUnlocked(true)
+  }
+
   // 登録（MAPPING で受理されると FSM が REGISTER にする）。
   async function handleRegister(kind) {
     setRegisterKind(kind)
@@ -249,7 +277,26 @@ export default function S20Prep() {
           {unsaved && <span className="pill ng" data-testid="s20-unsaved">{S20_UNSAVED}</span>}
         </div>
 
-        {tab === 'map' && (
+        {tab === 'map' && !mapUnlocked && (
+          <div className="tabpane on">
+            <div className="card">
+              <h3>{S20_MAP_TITLE}</h3>
+              <div className="note" data-testid="s20-map-gate-msg">{S20_MAP_GATE_MSG}</div>
+              <button
+                type="button"
+                className={`btn wide mt ${OP_BUTTON_KINDS.advance}`}
+                data-testid="s20-map-gate-start"
+                disabled={disabledAll || mappingActive == null}
+                onClick={handleStartMapping}
+              >
+                <IconArrow />
+                <span>{S20_MAP_GATE_BUTTON}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {tab === 'map' && mapUnlocked && (
           <div className="tabpane on">
             <div className="card">
               <h3>{S20_MAP_TITLE}</h3>

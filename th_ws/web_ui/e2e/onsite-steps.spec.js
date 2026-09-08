@@ -4,7 +4,7 @@
 // 「押すと対応する trigger / service を本当に送る」こと（ボタン保険）。
 import { test, expect } from '@playwright/test'
 import {
-  gotoScreenWithOnsite, onsiteServiceCalls, setTestHomeDeclared, setTestState,
+  gotoScreenWithOnsite, onsiteServiceCalls, setTestHomeDeclared, setTestState, unlockOnsiteMap,
 } from './helpers.js'
 
 // Pin.msg の最小形（pose.position が地図座標、kind が HOME/PANEL）。
@@ -46,8 +46,9 @@ async function triggers(page) {
 // ── S-20 ─────────────────────────────────────────────────
 
 test('S-20: 手順バーが出て現在段に aria-current が付く（空→段2）', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: [], targets: NO_TARGET })
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: [], targets: NO_TARGET, mappingActive: true })
   await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
 
   await expect(page.locator('[data-testid="s20-stepper"]')).toBeVisible()
   await expect(page.locator('[data-testid="step-1"]')).toHaveClass(/done/)
@@ -58,8 +59,9 @@ test('S-20: 手順バーが出て現在段に aria-current が付く（空→段
 })
 
 test('S-20: 「対象を選ぶ」で対象選択タブに切り替わる', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: [], targets: NO_TARGET })
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: [], targets: NO_TARGET, mappingActive: true })
   await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
 
   const btn = page.locator('[data-testid="s20-next-action"]')
   await expect(btn).toHaveText('対象を選ぶ')
@@ -69,8 +71,9 @@ test('S-20: 「対象を選ぶ」で対象選択タブに切り替わる', async
 })
 
 test('S-20: 「待機場所を登録」で登録サブタブへ切り替わり ui.register{HOME}', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: [], targets: TARGETS })
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: [], targets: TARGETS, mappingActive: true })
   await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
 
   const btn = page.locator('[data-testid="s20-next-action"]')
   await expect(btn).toHaveText('待機場所を登録')
@@ -82,8 +85,9 @@ test('S-20: 「待機場所を登録」で登録サブタブへ切り替わり u
 })
 
 test('S-20: 「配電盤を登録」で ui.register{PANEL}', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: HOME_ONLY, targets: TARGETS })
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: HOME_ONLY, targets: TARGETS, mappingActive: true })
   await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
 
   const btn = page.locator('[data-testid="s20-next-action"]')
   await expect(btn).toHaveText('配電盤を登録')
@@ -94,8 +98,9 @@ test('S-20: 「配電盤を登録」で ui.register{PANEL}', async ({ page }) =>
 })
 
 test('S-20: 全部完了（保存まで済み）でも現在は段5、保存ボタンが動く', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS })
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS, mappingActive: true })
   await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
 
   await expect(page.locator('[data-testid="step-5"]')).toHaveAttribute('aria-current', 'step')
   const btn = page.locator('[data-testid="s20-next-action"]')
@@ -105,8 +110,9 @@ test('S-20: 全部完了（保存まで済み）でも現在は段5、保存ボ�
 })
 
 test('S-20: 2 点指示ウィザード（REGISTER）中は次操作ボタンを隠す', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: HOME_ONLY, targets: TARGETS })
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: HOME_ONLY, targets: TARGETS, mappingActive: true })
   await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
 
   await expect(page.locator('[data-testid="s20-next-action"]')).toBeVisible()
   await setTestState(page, { state: 'REGISTER' })
