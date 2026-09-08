@@ -26,7 +26,7 @@ import { useTrigger } from '../ros/useTrigger.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
 import { usePersonTargets } from '../ros/usePersonTargets.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
-import { useRouteMap } from '../ros/useRouteMap.js'
+import { useOnsiteMapView } from '../ros/useOnsiteMapView.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
@@ -81,7 +81,7 @@ export default function S20Prep() {
   const sendTrigger = useTrigger()
   const pins = useOnsitePins(ros)
   const personTargets = usePersonTargets(ros)
-  const routeMap = useRouteMap(ros)
+  const routeMap = useOnsiteMapView(ros)
   const routePose = useRoutePose(ros)
   const { twoPoint, editPin } = useOnsiteService()
   const jogPanel = useJogPanel()

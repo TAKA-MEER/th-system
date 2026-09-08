@@ -528,6 +528,21 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 13a'''. map_downsampler（試験場内用。会場は狭いので間引かない）──
+    # /route/map_view（factor=4）は校舎 1 周級の教示・再生用。試験場内は狭いので
+    # factor=1（=間引かない）の別トピックを onsite 画面に配る。publish 周期は
+    # /route/map_view と同じ 2s に絞ってあるので無線への追加負荷は 1 枚ぶん。
+    # brief-onsite-ux2 F-2: /route/map_view と map_downsampler の既定 factor は
+    # 変えない（S-13/S-14 が使う）。この 2 個目のインスタンスは S-20/S-21 専用。
+    nodes.append(Node(
+        package='th_planning',
+        executable='map_downsampler.py',
+        name='onsite_map_downsampler',
+        parameters=[{'factor': 1, 'output_topic': '/onsite/map_view'}],
+        condition=IfCondition(onsite_enabled),
+        output='screen',
+    ))
+
     # ── 13b. config_manager (WebUI 設定パネル: パラメータ調整の仲介) ──
     nodes.append(Node(
         package='th_config_manager',

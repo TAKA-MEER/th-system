@@ -121,6 +121,11 @@ export async function stubServices(page, services) {
 // useOnsitePins / usePersonTargets / useOdomPose / useHomeDeclared /
 // useWaitClearStatus read their window.__thTest<Name> on first render, so every
 // seed must be set via addInitScript.
+// brief-onsite-ux2 F-2: S-20/S-21 の地図タブは /route/map_view（useRouteMap,
+// __thTestRouteMap）ではなく onsite 専用の /onsite/map_view（useOnsiteMapView,
+// __thTestOnsiteMap）を見るようになったため、この helper の `routeMap` 引数は
+// __thTestOnsiteMap を seed する（このヘルパーは S-20/S-21 専用で、S-13/S-14 の
+// gotoScreenWithRouteRobot とは別系統）。
 export async function gotoScreenWithOnsite(
   page, screen, state,
   { pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear, routeMap, openVenueMap },
@@ -143,7 +148,7 @@ export async function gotoScreenWithOnsite(
     if (sp) window.__thTestSelectPin = sp
     if (hd) window.__thTestHomeDeclared = hd
     if (wc) window.__thTestWaitClear = wc
-    if (rm) window.__thTestRouteMap = rm
+    if (rm) window.__thTestOnsiteMap = rm
     if (ovm) window.__thTestOpenVenueMap = ovm
   },
   { s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose, dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear, rm: routeMap, ovm: openVenueMap })

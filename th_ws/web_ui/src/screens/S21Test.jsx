@@ -27,7 +27,7 @@ import { usePersonTargets } from '../ros/usePersonTargets.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { useHomeDeclared } from '../ros/useHomeDeclared.js'
 import { useWaitClearStatus } from '../ros/useWaitClearStatus.js'
-import { useRouteMap } from '../ros/useRouteMap.js'
+import { useOnsiteMapView } from '../ros/useOnsiteMapView.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
@@ -105,7 +105,7 @@ export default function S21Test({ onExit }) {
   const sendTrigger = useTrigger()
   const pins = useOnsitePins(ros)
   const personTargets = usePersonTargets(ros)
-  const routeMap = useRouteMap(ros)
+  const routeMap = useOnsiteMapView(ros)
   const routePose = useRoutePose(ros)
   const homeDeclared = useHomeDeclared(ros)
   const wait = useWaitClearStatus(ros)
