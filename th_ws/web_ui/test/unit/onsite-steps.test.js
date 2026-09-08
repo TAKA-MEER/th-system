@@ -3,7 +3,10 @@
 // 検証する。ROS / React 不要の純関数なので node --test で直接走る。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { NAV_MODES, prepSteps, testSteps } from '../../src/screens/onsiteSteps.js'
+import {
+  NAV_MODES, jogAllowedForMode, onsiteReasons, prepSteps, testSteps,
+} from '../../src/screens/onsiteSteps.js'
+import { OP_BUTTON_KINDS } from '../../src/parts/opKinds.js'
 
 test('NAV_MODES は S-21 の移動系モードを持ち、IDLE を含まない', () => {
   assert.deepEqual(
@@ -11,6 +14,79 @@ test('NAV_MODES は S-21 の移動系モードを持ち、IDLE を含まない',
     ['AT_PANEL', 'HOME_NAV', 'PANEL_NAV', 'SUMMON'].sort(),
   )
   assert.equal(NAV_MODES.includes('IDLE'), false)
+})
+
+// ── UX-2-a: ボタンの形の種別 ────────────────────────────────
+// 識別は色だけにしないためのクラス。特に「停止」は他と絶対に同じ形にしない
+// （theme.css の .btn-stop は丸太枠）。OP_BUTTON_KINDS は node --test から
+// 直接 import できる純モジュール（JSX なし）であることも同時に固定する。
+
+test('UX-2-a: OP_BUTTON_KINDS は青塗り・停止・登録・手動・保存・終了を区別する', () => {
+  const values = Object.values(OP_BUTTON_KINDS)
+  assert.deepEqual(
+    new Set(values).size,
+    values.length,
+    'どの kind も同じクラス名を共有しない',
+  )
+  assert.equal(new Set(values).has(undefined), false)
+})
+
+test('UX-2-a: 「停止」は他のどの kind とも異なるクラスを持つ', () => {
+  const stop = OP_BUTTON_KINDS.stop
+  assert.ok(stop && stop.startsWith('btn-'))
+  for (const [key, value] of Object.entries(OP_BUTTON_KINDS)) {
+    if (key !== 'stop') assert.notEqual(value, stop, `${key} が停止と同じクラス`)
+  }
+})
+
+test('UX-2-a: 進む/停止/登録/手動/保存/終了の 6 kind が揃っている', () => {
+  assert.deepEqual(
+    Object.keys(OP_BUTTON_KINDS).sort(),
+    ['advance', 'finish', 'manual', 'register', 'save', 'stop'].sort(),
+  )
+})
+
+// ── UX-2-d: 手動操作の可否 ───────────────────────────────────
+// attributes.yaml の jog 値からだけ判定する純関数。安全側の設定
+// （jog_gate/guards.py）は触らないので、「該当モードでは押せない」を表示する。
+
+const attributesLike = {
+  IDLE: { jog: 'denied' },
+  INIT: { jog: 'denied' },
+  CARRY: { jog: 'denied' },
+  ESTOP: { jog: 'denied' },
+  CALIB: { jog: 'denied' },
+  OPCHECK: { jog: 'denied' },
+  PREP: { jog: 'allowed' },
+  AT_PANEL: { jog: 'allowed' },
+  PANEL_NAV: { jog: 'allowed' },
+  SUMMON: { jog: 'allowed' },
+  HOME_NAV: { jog: 'allowed' },
+  MANUAL: { jog: 'is_drive' },
+}
+
+test('UX-2-d: jogAllowedForMode は attributes の jog 値のまま判定する', () => {
+  for (const denied of ['IDLE', 'INIT', 'CARRY', 'ESTOP', 'CALIB', 'OPCHECK']) {
+    assert.equal(jogAllowedForMode(denied, attributesLike), false, `${denied} は手動不可`)
+  }
+  for (const allowed of ['PREP', 'AT_PANEL', 'PANEL_NAV', 'SUMMON', 'HOME_NAV', 'MANUAL']) {
+    assert.equal(jogAllowedForMode(allowed, attributesLike), true, `${allowed} は手動可`)
+  }
+})
+
+test('UX-2-d: 未知モードや attributes 無しは「押せる側」に倒す（サーバが拒否を返す）', () => {
+  assert.equal(jogAllowedForMode('BOGUS', attributesLike), true)
+  assert.equal(jogAllowedForMode('IDLE', null), true)
+  assert.equal(jogAllowedForMode(null, attributesLike), true)
+  assert.equal(jogAllowedForMode(undefined, {}), true)
+})
+
+test('UX-2-d: onsiteReasons は手動不可モードにだけ jog_denied を返す', () => {
+  assert.deepEqual(onsiteReasons({ mode: 'IDLE', attributes: attributesLike }), { manual: 'jog_denied' })
+  assert.deepEqual(onsiteReasons({ mode: 'PREP', attributes: attributesLike }), {})
+  assert.deepEqual(onsiteReasons({ mode: 'AT_PANEL', attributes: attributesLike }), {})
+  assert.deepEqual(onsiteReasons({ mode: null, attributes: attributesLike }), {})
+  assert.deepEqual(onsiteReasons({}), {})
 })
 
 // ── prepSteps（S-20） ───────────────────────────────────────

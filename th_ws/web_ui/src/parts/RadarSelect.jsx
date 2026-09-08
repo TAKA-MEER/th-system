@@ -12,8 +12,10 @@ import {
 } from '../i18n/screens.js'
 import { RADAR_PX_PER_M, RADAR_CX, RADAR_CY, radarToSvg } from './radarGeometry.js'
 
-const VW = 240
-const VH = 240
+// 論理 viewBox は 240x240（radarGeometry はこの座標系が前提。変更禁止）。
+// 表示サイズは CSS（.radar の width:100% / max-height）が決める
+// （brief-onsite-ux UX-2-c: 固定 px で描かない）。
+const RADAR_VB = 240
 const CX = RADAR_CX
 const CY = RADAR_CY
 
@@ -28,7 +30,7 @@ export default function RadarSelect({
     <div className="card">
       <svg
         className="radar"
-        viewBox={`0 0 ${VW} ${VH}`}
+        viewBox={`0 0 ${RADAR_VB} ${RADAR_VB}`}
         role="group"
         aria-label={RADAR_ARIA}
         data-testid="radar"

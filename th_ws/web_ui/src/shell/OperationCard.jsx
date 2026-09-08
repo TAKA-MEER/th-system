@@ -4,8 +4,16 @@
 // most one button is blue, and that blue button is the mode/state's current
 // status, decided here — never by the screen (§4.3, U-17, e2e
 // one-primary-button.spec.js).
+//
+// brief-onsite-ux UX-2-a: each slot carries a kind shape (shape + inline SVG
+// icon, never colour alone). UX-2-b / UX-2-d: when a screen passes
+// manualDenyReason, the manual button is disabled and the reason is shown in
+// a badge directly beneath it (data-testid="reason-manual").
 import { operationCardLayout, stateToBlueButton } from './limits.js'
 import { OP_LABELS } from '../i18n/states.js'
+import {
+  IconArrow, IconJoystick, IconSave, IconStop, OP_BUTTON_KINDS,
+} from '../parts/icons.jsx'
 
 export default function OperationCard({
   mode,
@@ -14,6 +22,7 @@ export default function OperationCard({
   slots: slotOverrides,
   runLabel,
   disabled = false,
+  manualDenyReason = null,
   onTrigger,
   onManualClick,
 }) {
@@ -32,11 +41,12 @@ export default function OperationCard({
         {slots.stop && (
           <button
             type="button"
-            className={`btn op-stop ${blue === 'stop' ? 'on' : ''}`}
+            className={`btn op-stop ${OP_BUTTON_KINDS.stop} ${blue === 'stop' ? 'on' : ''}`}
             disabled={disabled}
             onClick={() => fire('ui.stop')}
           >
-            {OP_LABELS.stop}
+            <IconStop />
+            <span>{OP_LABELS.stop}</span>
           </button>
         )}
         {slots.check && (
@@ -52,32 +62,42 @@ export default function OperationCard({
         {slots.run && (
           <button
             type="button"
-            className={`btn op-run ${blue === 'run' ? 'on' : ''}`}
+            className={`btn op-run ${OP_BUTTON_KINDS.advance} ${blue === 'run' ? 'on' : ''}`}
             disabled={disabled}
             onClick={() => fire('ui.run')}
           >
-            {runLabel ?? OP_LABELS.run}
+            <IconArrow />
+            <span>{runLabel ?? OP_LABELS.run}</span>
           </button>
         )}
         {slots.save && (
           <button
             type="button"
-            className="btn save op-save"
+            className={`btn save op-save ${OP_BUTTON_KINDS.save}`}
             disabled={disabled}
             onClick={() => fire('ui.save')}
           >
-            {OP_LABELS.save}
+            <IconSave />
+            <span>{OP_LABELS.save}</span>
           </button>
         )}
         {slots.manual && (
-          <button
-            type="button"
-            className="btn op-manual"
-            disabled={disabled}
-            onClick={onManualClick}
-          >
-            {OP_LABELS.manual}
-          </button>
+          <div className="manual-cell">
+            <button
+              type="button"
+              className={`btn op-manual ${OP_BUTTON_KINDS.manual}`}
+              disabled={disabled || !!manualDenyReason}
+              onClick={onManualClick}
+            >
+              <IconJoystick />
+              <span>{OP_LABELS.manual}</span>
+            </button>
+            {manualDenyReason && (
+              <span className="reason-badge" data-testid="reason-manual">
+                {manualDenyReason}
+              </span>
+            )}
+          </div>
         )}
       </div>
     </div>

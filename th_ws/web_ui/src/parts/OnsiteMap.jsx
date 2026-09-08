@@ -15,8 +15,11 @@ import { useEffect, useState } from 'react'
 import { onsiteMapTransform, yawToSvgDeg } from '../mapGeometry.js'
 import { occupancyGridToPixels } from '../screens/routePreviewGeom.js'
 
-const VIEW_W = 340
-const VIEW_H = 250
+// 論理 viewBox は 340x250（mapGeometry の変換はこの座標系が前提。変更禁止）。
+// 表示サイズは CSS（.mapWrap svg の width:100% / max-height）が決める
+// （brief-onsite-ux UX-2-c: 固定 px で描かない）。
+const MAP_VB_W = 340
+const MAP_VB_H = 250
 
 export default function OnsiteMap({
   mapData,
@@ -50,12 +53,12 @@ export default function OnsiteMap({
     return undefined
   }, [mapData])
 
-  const t = onsiteMapTransform(mapData, VIEW_W, VIEW_H)
+  const t = onsiteMapTransform(mapData, MAP_VB_W, MAP_VB_H)
   const hasMap = !!(mapUrl && t.view)
 
   return (
-    <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} aria-label={ariaLabel} data-testid={testId}>
-      <rect width={VIEW_W} height={VIEW_H} fill="#20242c" />
+    <svg viewBox={`0 0 ${MAP_VB_W} ${MAP_VB_H}`} aria-label={ariaLabel} data-testid={testId}>
+      <rect width={MAP_VB_W} height={MAP_VB_H} fill="#20242c" />
       {hasMap ? (
         <image
           x={t.view.offX}
@@ -106,7 +109,7 @@ export default function OnsiteMap({
           <line x1={0} y1={0} x2={14} y2={0} stroke="#c8e6c9" strokeWidth={3} strokeLinecap="round" />
         </g>
       ) : (
-        <text x={VIEW_W / 2} y={VIEW_H / 2} textAnchor="middle" fill="#9aa4b2" fontSize="11" data-testid={`${testId}-map-no-pose`}>
+        <text x={MAP_VB_W / 2} y={MAP_VB_H / 2} textAnchor="middle" fill="#9aa4b2" fontSize="11" data-testid={`${testId}-map-no-pose`}>
           {noPoseLabel}
         </text>
       )}

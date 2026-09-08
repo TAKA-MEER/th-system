@@ -580,3 +580,64 @@ table.lst td.r{text-align:right}
   /* 1 行に収める。隠す面積を最小にするため（実機「一部表示を隠してしまう」）。 */
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
+
+/* ================= UX-2: ボタンの形とアイコン（brief-onsite-ux UX-2-a） ==============
+   識別を色だけにしない。形（塗りつぶし/枠線、停止は丸太枠）とアイコン、ラベルの
+   組み合わせで区別し、ラベルはテキストで読ませる（アイコンは aria-hidden）。
+   parts/icons.jsx の OP_BUTTON_KINDS とクラス名を同期させる（unit で固定）。 */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.ic{flex:0 0 auto}
+
+/* 進む・移動: 塗りつぶし・青 + 右向き矢印 */
+.btn-advance{background:#245089;border-color:#3a6cb0}
+.btn-advance:active{background:#2d5f9e}
+/* 停止: 塗りつぶし・赤。丸太枠（border-radius:999px + 4px 縁）で他と別の形に
+   する。青（.on）と重なっても赤が勝つよう併記する。 */
+.btn-stop{background:#7a1010;border:4px solid #d84343;border-radius:999px;font-weight:800}
+.btn-stop:active{background:#9c1a1a}
+.btn-stop.btn.on{background:#a11e1e}
+/* 登録・宣言: 枠線・水色 + ピン */
+.btn-register{background:transparent;border:2px solid #64b5f6;color:#90caf9}
+.btn-register:active{background:#16304a}
+/* 手動: 枠線・灰 + ジョイスティック */
+.btn-manual-op{background:transparent;border:2px solid #8a94a6;color:#c3ccd9}
+.btn-manual-op:active{background:#2a2f3a}
+/* 保存: 枠線・緑 + フロッピー（既存 .btn.save の塗りつぶしを上書き） */
+.btn.btn-save-op{background:transparent;border:2px solid #4caf50;color:#a9e0ad}
+.btn.btn-save-op:active{background:#173d1e}
+
+/* 手動ボタン＋理由バッジのセル。op-manual は「右列の操作カード左下のジョグ」
+   として配置を記憶されている（DetailedDesign-webui.md §4）ので、セルごと
+   元と同じ grid-column/row に置く。 */
+.opsgrid > .manual-cell{grid-column:3;grid-row:2;display:flex;flex-direction:column;gap:4px;min-width:0}
+.opsgrid > .manual-cell .op-manual{width:100%}
+
+/* UX-2-b: 押せないボタンの直下の理由バッジ */
+.reason-badge{
+  display:block;font-size:calc(var(--fs) * .68);font-weight:600;line-height:1.3;
+  color:var(--ng-tx);background:#3a1414;border:1px solid #7a2a2a;border-radius:6px;
+  padding:3px 6px;text-align:center;
+}
+
+/* UX-1 の「次にやること」主ボタンにも形の種別を載せる（アイコン＋塗り分け）。
+   進む=塗りつぶし青（既定）、登録=枠線水色、保存=枠線緑、停止=塗りつぶし赤・丸。 */
+.next-action{display:flex;align-items:center;justify-content:center;gap:8px}
+.next-action.btn-register{background:transparent;border-color:#64b5f6;color:#90caf9}
+.next-action.btn-save-op{background:transparent;border-color:#4caf50;color:#a9e0ad}
+.next-action.btn-stop{background:#7a1010;border-color:#d84343;border-radius:999px}
+
+/* UX-2-a「終了は枠線・右下」+ UX-3: S-20/S-21 は本文を画面（#body）いっぱいに
+   広げ、終了ボタンを右列の最下端（右寄せ）に置く。position:absolute の浮かせ
+   は、右列が画面いっぱいを占めると「次の行き先」カードのボタンを覆ってタップを
+   奪う（e2e で確定）ので使わない。右列を flex にし、margin-top:auto で下端に
+   押し下げる＝文字通り「右下」。短い内容でも画面いっぱいに下がる。 */
+.screen#s20,.screen#s21{min-height:100%}
+.screen#s20.two-col,.screen#s21.two-col{align-items:stretch}
+.screen#s20.two-col > div:last-child,
+.screen#s21.two-col > div:last-child{display:flex;flex-direction:column;align-items:stretch;min-width:0}
+.finish-row{display:flex;justify-content:flex-end;margin-top:auto;padding-top:9px}
+.finish-row .btn-finish{min-height:44px;padding:10px 16px;font-weight:700;
+  background:transparent;border-color:var(--bd-hi);color:var(--mut)}
+
+/* UX-3: 手順バー・次操作ボタンが同じことを伝えるレーダー横のヒントは削った
+   （本文を詰める。引き算の範疇なので CSS は無い）。 */

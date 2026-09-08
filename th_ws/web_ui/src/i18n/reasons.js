@@ -22,6 +22,10 @@ export const REJECT_REASONS = {
   params_placeholder_blocking: '起動を止める暫定値が残っています',
   blind_mask_uncalibrated: '死角マスクが未校正です',
   unsaved_remains: '未保存のデータが残っています',
+  /* brief-onsite-ux UX-2-d: attributes[jog] が 'denied' のモード（IDLE など）で
+     S-20/S-21 の「手動」ボタンを非活性にしたときの画面側バッジ。th_state は
+     このキーを返さない（画面だけが判定する。UI は権威ではない）。 */
+  jog_denied: 'このモードでは手動操作できません',
 }
 
 export const UNKNOWN_REASON_LABEL = '拒否されました（理由不明）'

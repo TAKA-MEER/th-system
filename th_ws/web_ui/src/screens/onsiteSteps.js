@@ -9,6 +9,34 @@
 // labelKey は i18n/screens.js の S20_STEP_* / S21_STEP_* 定数名。id は S20/S21 の
 // ラベル対応表（S20_STEP_LABELS / S21_STEP_LABELS）のキーに使う。
 
+/**
+ * S-20 / S-21 の「手動」ボタンが効くモードか（brief-onsite-ux UX-2-d）。
+ * attributes.yaml の jog: denied（IDLE / INIT / CARRY / ESTOP / CALIB / OPCHECK）は
+ * jog_gate（C++）も guards.py も受け付けない。表示だけ非活性にして原因を見せる。
+ * 安全側の設定（attributes.yaml / jog_gate / guards）は触らない。
+ * @param {string|null} mode /system/state の mode。
+ * @param {Object} attributes web_ui/src/generated/attributes.json。
+ * @returns {boolean} true なら押せる。
+ */
+export function jogAllowedForMode(mode, attributes) {
+  return attributes?.[mode]?.jog !== 'denied'
+}
+
+/**
+ * 押せないボタンの直下に出す理由バッジ（brief-onsite-ux UX-2-b）。
+ * 画面だけで判定できる理由に限る（サーバ側でしか分からない理由は今までどおり
+ * 拒否ウィンドウで出す）。文言は i18n/reasons.js の REJECT_REASONS キーで返す。
+ * @param {{mode?: string|null, attributes?: Object}} _ mode と attributes。
+ * @returns {{manual?: string}} ボタン id → reason_key。無ければ空。
+ */
+export function onsiteReasons({ mode, attributes } = {}) {
+  const reasons = {}
+  if (!jogAllowedForMode(mode, attributes)) {
+    reasons.manual = 'jog_denied'
+  }
+  return reasons
+}
+
 // S-21 の「行き先を選ぶ」段の完了判定に使うモード群（S21Test.jsx からも参照する）。
 export const NAV_MODES = ['SUMMON', 'PANEL_NAV', 'AT_PANEL', 'HOME_NAV']
 

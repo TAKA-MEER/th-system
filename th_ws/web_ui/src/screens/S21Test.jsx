@@ -33,9 +33,12 @@ import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
 import StepBar from '../parts/StepBar.jsx'
+import {
+  IconArrow, IconClose, IconPin, IconStop, OP_BUTTON_KINDS,
+} from '../parts/icons.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import attributes from '../generated/attributes.json'
-import { NAV_MODES, testSteps } from './onsiteSteps.js'
+import { NAV_MODES, testSteps, onsiteReasons } from './onsiteSteps.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
@@ -51,7 +54,7 @@ import {
   S21_PICK_PANEL_HINT, S21_PIN_MOVE,
   S21_PREP_TITLE, S21_SELECT_HINT, S21_STEP_DEST, S21_STEP_HOME, S21_STEP_MOVE,
   S21_STEP_OPEN, S21_STEP_WORK, S21_SUBTAB_ATPANEL, S21_SUBTAB_DEST,
-  S21_SUBTAB_SUMMON, S21_SUMMON_START, S21_SUMMON_TITLE, S21_TARGET_HINT,
+  S21_SUBTAB_SUMMON, S21_SUMMON_START, S21_SUMMON_TITLE,
   S21_WAIT_CANCEL, S21_WAIT_CLEARING, S21_WAIT_DIST, S21_WAIT_TITLE,
   S21_WORKING, S21_WORK_ON, S21_WORK_OFF,
 } from '../i18n/screens.js'
@@ -68,6 +71,13 @@ const S21_STEP_LABELS = {
 // 退避待ちの想定タイムアウト。バー幅の計算にだけ使い、実挙動には関与しない
 // （真の値は wait_clear_gate が持つ。残り時間の減少が「そのまま進捗」に見える係数）。
 const WAIT_BAR_SEC = 15
+
+// UX-2-a: 次操作ボタンにも形の種別（OP_BUTTON_KINDS）とアイコンを付ける。
+const NEXT_ACTION_ICONS = {
+  advance: <IconArrow />,
+  register: <IconPin />,
+  stop: <IconStop />,
+}
 
 function waitBarPct(wait) {
   if (wait.verdict === 'OK') return 100
@@ -215,6 +225,10 @@ export default function S21Test({ onExit }) {
   const stateText = isNavMode ? stateLabel(stateName) : S21_SELECT_HINT
   const pendingYaw = showWizard && wizYaw != null
 
+  // UX-2-b/UX-2-d: この画面から「押せない」ことが画面だけでも分かる理由のバッジ。
+  const reasons = onsiteReasons({ mode, attributes })
+  const manualDenyReason = reasons.manual ? (REJECT_REASONS[reasons.manual] ?? reasons.manual) : null
+
   // ── 手順バー（UX-1）と「次にやること」ボタン ──
   // 段 1「会場地図を開く」だけは /map_session/open の応答 success を画面ローカル
   // state（venueMsg.ok）で保持する（ROS 側に状態が無いため。UX-3 の報告対象）。
@@ -229,15 +243,16 @@ export default function S21Test({ onExit }) {
 
   // 現在段の操作を 1 個だけ出す。押すと必要なサブタブへ自動で切り替わる。
   // 2 点指示ウィザード（POINT）と退避待ち（WAIT_CLEAR）は最優先で見せ、隠す。
+  // kind は OP_BUTTON_KINDS に通す（進む=塗り、登録=枠線水色、停止=丸太枠赤）。
   const nextActions = {
-    0: { label: S21_NEXT_OPEN_VENUE, run: () => handleOpenVenueMap() },
-    1: { label: S21_NEXT_DECLARE_HOME, run: () => { setSubtab('dest'); handleDeclareHome(false) } },
-    2: { label: S21_NEXT_PICK_DEST, run: () => { setSubtab('dest'); setPanelPick(true) } },
-    3: { label: S21_NEXT_STOP, run: () => sendTrigger('ui.stop') },
+    0: { kind: 'advance', label: S21_NEXT_OPEN_VENUE, run: () => handleOpenVenueMap() },
+    1: { kind: 'register', label: S21_NEXT_DECLARE_HOME, run: () => { setSubtab('dest'); handleDeclareHome(false) } },
+    2: { kind: 'advance', label: S21_NEXT_PICK_DEST, run: () => { setSubtab('dest'); setPanelPick(true) } },
+    3: { kind: 'stop', label: S21_NEXT_STOP, run: () => sendTrigger('ui.stop') },
     // 段 5: 作業中（WORKING⇄IDLE_P のトグル）か、呼び寄せ（SUMMON ならサブタブへ誘導）。
     4: (working || mode === 'AT_PANEL')
-      ? { label: S21_NEXT_WORK, run: toggleWorking }
-      : { label: S21_NEXT_SUMMON, run: () => setSubtab('summon') },
+      ? { kind: 'advance', label: S21_NEXT_WORK, run: toggleWorking }
+      : { kind: 'advance', label: S21_NEXT_SUMMON, run: () => setSubtab('summon') },
   }
   const nextAction = (showWizard || showWait) ? null : (nextActions[currentIndex] ?? null)
 
@@ -248,15 +263,6 @@ export default function S21Test({ onExit }) {
       </div>
       <div>
         <div className="top-actions sticky">
-          <button
-            type="button"
-            className="btn sm"
-            data-testid="s21-finish"
-            disabled={disabledAll}
-            onClick={handleFinish}
-          >
-            {OP_LABELS.finish}
-          </button>
           <div className="tabs grow" style={{ margin: 0, border: 'none' }} role="tablist">
             <button
               type="button"
@@ -314,7 +320,6 @@ export default function S21Test({ onExit }) {
               confidence={personTargets.confidence}
               onSelect={handleSelectTarget}
             />
-            <div className="hint mt" data-testid="s21-target-hint">{S21_TARGET_HINT}</div>
           </div>
         )}
       </div>
@@ -323,12 +328,13 @@ export default function S21Test({ onExit }) {
         {nextAction && (
           <button
             type="button"
-            className="next-action"
+            className={`next-action ${OP_BUTTON_KINDS[nextAction.kind] ?? ''}`.trim()}
             data-testid="s21-next-action"
             disabled={disabledAll}
             onClick={nextAction.run}
           >
-            {nextAction.label}
+            {NEXT_ACTION_ICONS[nextAction.kind]}
+            <span>{nextAction.label}</span>
           </button>
         )}
         <OperationCard
@@ -337,6 +343,7 @@ export default function S21Test({ onExit }) {
           attributes={attributes}
           slots={{ stop: true, check: false, run: false, save: mapUpdate, manual: true }}
           disabled={disabledAll}
+          manualDenyReason={manualDenyReason}
           onTrigger={(trigger) => sendTrigger(trigger)}
           onManualClick={() => jogPanel.open()}
         />
@@ -416,12 +423,13 @@ export default function S21Test({ onExit }) {
                   </span>
                   <button
                     type="button"
-                    className="btn sm"
+                    className="btn sm btn-register"
                     data-testid="s21-home-declare"
                     disabled={disabledAll || homeDeclared}
                     onClick={() => handleDeclareHome(false)}
                   >
-                    {S21_HOME_DECLARE}
+                    <IconPin />
+                    <span>{S21_HOME_DECLARE}</span>
                   </button>
                 </div>
                 {homeErr && (
@@ -495,30 +503,33 @@ export default function S21Test({ onExit }) {
                 <div className="btnrow n3">
                   <button
                     type="button"
-                    className="btn"
+                    className={`btn ${OP_BUTTON_KINDS.advance}`}
                     data-testid="s21-dest-home"
                     disabled={disabledAll}
                     onClick={() => gotoDest('HOME')}
                   >
-                    {S21_DEST_HOME}
+                    <IconArrow />
+                    <span>{S21_DEST_HOME}</span>
                   </button>
                   <button
                     type="button"
-                    className="btn"
+                    className={`btn ${OP_BUTTON_KINDS.advance}`}
                     data-testid="s21-dest-next-panel"
                     disabled={disabledAll}
                     onClick={pickNextPanel}
                   >
-                    {S21_DEST_NEXT_PANEL}
+                    <IconArrow />
+                    <span>{S21_DEST_NEXT_PANEL}</span>
                   </button>
                   <button
                     type="button"
-                    className="btn"
+                    className={`btn ${OP_BUTTON_KINDS.advance}`}
                     data-testid="s21-dest-summon-here"
                     disabled={disabledAll}
                     onClick={startSummon}
                   >
-                    {S21_DEST_SUMMON_HERE}
+                    <IconArrow />
+                    <span>{S21_DEST_SUMMON_HERE}</span>
                   </button>
                 </div>
               </div>
@@ -536,7 +547,8 @@ export default function S21Test({ onExit }) {
                   disabled={disabledAll}
                   onClick={startSummon}
                 >
-                  {S21_SUMMON_START}
+                  <IconArrow />
+                  <span>{S21_SUMMON_START}</span>
                 </button>
 
                 {showWizard && (
@@ -608,6 +620,19 @@ export default function S21Test({ onExit }) {
               </div>
             </div>
           )}
+        </div>
+        {/* UX-2-a: 終了は枠線・右下（右列の最下端、右寄せ。theme.css .finish-row）。 */}
+        <div className="finish-row">
+          <button
+            type="button"
+            className="btn btn-finish"
+            data-testid="s21-finish"
+            disabled={disabledAll}
+            onClick={handleFinish}
+          >
+            <IconClose />
+            <span>{OP_LABELS.finish}</span>
+          </button>
         </div>
       </div>
     </div>

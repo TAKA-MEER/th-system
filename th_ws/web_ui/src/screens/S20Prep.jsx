@@ -32,9 +32,12 @@ import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
 import StepBar from '../parts/StepBar.jsx'
+import {
+  IconArrow, IconClose, IconPin, IconSave, IconStop, OP_BUTTON_KINDS,
+} from '../parts/icons.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import attributes from '../generated/attributes.json'
-import { prepSteps } from './onsiteSteps.js'
+import { prepSteps, onsiteReasons } from './onsiteSteps.js'
 import { quatToYaw } from '../mapGeometry.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
@@ -45,7 +48,7 @@ import {
   S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REGISTER_TITLE, S20_REG_PANEL,
   S20_RETURN_HOME, S20_STEP_HOME, S20_STEP_MAP, S20_STEP_PANEL, S20_STEP_SAVE, S20_STEP_TARGET,
   S20_SUBTAB_PINS, S20_SUBTAB_REGISTER,
-  S20_TAB_MAP, S20_TAB_TARGET, S20_TARGET_HINT, S20_UNSAVED,
+  S20_TAB_MAP, S20_TAB_TARGET, S20_UNSAVED,
   S20_WIZ_MSG, S20_WIZ_REGISTER, S20_WIZ_STEP,
 } from '../i18n/screens.js'
 
@@ -56,6 +59,14 @@ const S20_STEP_LABELS = {
   home: S20_STEP_HOME,
   panel: S20_STEP_PANEL,
   save: S20_STEP_SAVE,
+}
+
+// UX-2-a: 次操作ボタンにも形の種別（OP_BUTTON_KINDS）とアイコンを付ける。
+const NEXT_ACTION_ICONS = {
+  advance: <IconArrow />,
+  register: <IconPin />,
+  save: <IconSave />,
+  stop: <IconStop />,
 }
 
 function yawDeg(pin) {
@@ -104,13 +115,18 @@ export default function S20Prep() {
 
   // 現在段に対応する「1 個で済む」操作。押すと必要なタブへ自動で切り替わる。
   // 2 点指示ウィザードが開いている（REGISTER）ときはウィザード優先で隠す。
+  // kind は OP_BUTTON_KINDS に通す（進む=塗り、登録・保存=枠線）。
   const nextActions = {
-    1: { label: S20_NEXT_SELECT_TARGET, run: () => setTab('target') },
-    2: { label: S20_NEXT_REG_HOME, run: () => { setSubtab('register'); handleRegister('HOME') } },
-    3: { label: S20_NEXT_REG_PANEL, run: () => { setSubtab('register'); handleRegister('PANEL') } },
-    4: { label: S20_NEXT_SAVE, run: () => sendTrigger('ui.save') },
+    1: { kind: 'advance', label: S20_NEXT_SELECT_TARGET, run: () => setTab('target') },
+    2: { kind: 'register', label: S20_NEXT_REG_HOME, run: () => { setSubtab('register'); handleRegister('HOME') } },
+    3: { kind: 'register', label: S20_NEXT_REG_PANEL, run: () => { setSubtab('register'); handleRegister('PANEL') } },
+    4: { kind: 'save', label: S20_NEXT_SAVE, run: () => sendTrigger('ui.save') },
   }
   const nextAction = isRegister ? null : (nextActions[currentIndex] ?? null)
+
+  // UX-2-b/UX-2-d: この画面から「押せない」ことが画面だけでも分かる理由のバッジ。
+  const reasons = onsiteReasons({ mode: state?.mode, attributes })
+  const manualDenyReason = reasons.manual ? (REJECT_REASONS[reasons.manual] ?? reasons.manual) : null
 
   // REGISTER を離れたら（成功・拒否・ロストで MAPPING へ戻る）ウィザードを初期化。
   useEffect(() => {
@@ -192,15 +208,6 @@ export default function S20Prep() {
       </div>
       <div>
         <div className="top-actions sticky">
-          <button
-            type="button"
-            className="btn sm"
-            data-testid="s20-finish"
-            disabled={disabledAll}
-            onClick={handleFinish}
-          >
-            {OP_LABELS.finish}
-          </button>
           <div className="tabs grow" style={{ margin: 0, border: 'none' }} role="tablist">
             <button
               type="button"
@@ -256,7 +263,6 @@ export default function S20Prep() {
               confidence={personTargets.confidence}
               onSelect={handleSelectTarget}
             />
-            <div className="hint mt" data-testid="s20-target-hint">{S20_TARGET_HINT}</div>
           </div>
         )}
       </div>
@@ -265,12 +271,13 @@ export default function S20Prep() {
         {nextAction && (
           <button
             type="button"
-            className="next-action"
+            className={`next-action ${OP_BUTTON_KINDS[nextAction.kind] ?? ''}`.trim()}
             data-testid="s20-next-action"
             disabled={disabledAll}
             onClick={nextAction.run}
           >
-            {nextAction.label}
+            {NEXT_ACTION_ICONS[nextAction.kind]}
+            <span>{nextAction.label}</span>
           </button>
         )}
         <OperationCard
@@ -279,6 +286,7 @@ export default function S20Prep() {
           attributes={attributes}
           slots={{ stop: true, check: false, run: false, save: true, manual: true }}
           disabled={disabledAll}
+          manualDenyReason={manualDenyReason}
           onTrigger={(trigger) => sendTrigger(trigger)}
           onManualClick={() => jogPanel.open()}
         />
@@ -315,21 +323,23 @@ export default function S20Prep() {
                 <div className="btnrow n2 mb">
                   <button
                     type="button"
-                    className="btn sm"
+                    className="btn sm btn-register"
                     data-testid="s20-reg-home"
                     disabled={disabledAll}
                     onClick={() => handleRegister('HOME')}
                   >
-                    {S20_REG_HOME}
+                    <IconPin />
+                    <span>{S20_REG_HOME}</span>
                   </button>
                   <button
                     type="button"
-                    className="btn sm"
+                    className="btn sm btn-register"
                     data-testid="s20-reg-panel"
                     disabled={disabledAll}
                     onClick={() => handleRegister('PANEL')}
                   >
-                    {S20_REG_PANEL}
+                    <IconPin />
+                    <span>{S20_REG_PANEL}</span>
                   </button>
                 </div>
                 {isRegister && (
@@ -447,6 +457,20 @@ export default function S20Prep() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* UX-2-a: 終了は枠線・右下（右列の最下端、右寄せ。theme.css .finish-row）。 */}
+        <div className="finish-row">
+          <button
+            type="button"
+            className="btn btn-finish"
+            data-testid="s20-finish"
+            disabled={disabledAll}
+            onClick={handleFinish}
+          >
+            <IconClose />
+            <span>{OP_LABELS.finish}</span>
+          </button>
         </div>
       </div>
     </div>
