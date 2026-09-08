@@ -302,6 +302,8 @@ export const S01_SETTINGS = '設定'            // S-01「保守・設定」カ�
 // brief-UI-S21-entry: S-01「試験場」の「試験」ボタン（mockup 555 行の文言どおり。
 // S-21 は FSM のモードではないので PREP のようなモード遷移ボタンではない）。
 export const S01_ONSITE_TEST = '試験（当日）'
+// brief-onsite-fix A: 画面の無いモードで S-01 が出ているとき、ui.finish で IDLE に戻す導線。
+export const S01_FINISH_ESCAPE = '終了して待機に戻る'
 export const S50_BACK = '戻る'
 export const S50_TAB_GENERAL = '一般'
 export const S50_TAB_DISPLAY = '表示'

@@ -70,3 +70,12 @@ export function menuItems(systemState, modeEntry, attributes) {
     return { mode: m, enabled: true, reasonKey: null }
   })
 }
+
+// 画面の無いモード（MODE_TO_SCREEN に載らないモード）で S-01 が表示されているとき、
+// ui.finish で IDLE に戻す導線を出すべきかを返す。IDLE / INIT / null では出さない
+// （出す意味が無く、押し間違いで無駄な trigger を投げるだけになる）。
+// S-01 が出ている時点で MODE_TO_SCREEN に無いモードだと確定しているため、
+// 「IDLE / INIT / null 以外なら true」の単純規則で十分。
+export function needsFinishEscape(mode) {
+  return mode != null && mode !== 'IDLE' && mode !== 'INIT'
+}

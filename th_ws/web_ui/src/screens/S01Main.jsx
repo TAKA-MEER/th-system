@@ -25,13 +25,14 @@ import { useStdTrigger } from '../ros/useStdTrigger.js'
 import { SERVICES } from '../ros/topics.js'
 import { useConfirmWindow } from '../shell/confirmWindow.js'
 import ArmedButton from '../parts/ArmedButton.jsx'
-import { menuItems, MENU_GROUPS } from './mainMenuItems.js'
+import { menuItems, MENU_GROUPS, needsFinishEscape } from './mainMenuItems.js'
 import attributes from '../generated/attributes.json'
 import modeEntry from '../generated/mode_entry.json'
 import { modeLabel } from '../i18n/modes.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import {
   GROUP_MOVE_TITLE, GROUP_FIELD_TITLE, GROUP_MAINT_TITLE, S01_SETTINGS, S01_ONSITE_TEST,
+  S01_FINISH_ESCAPE,
   WIN_REASON_TITLE, WIN_REASON_OK,
   SHUTDOWN_TITLE, SHUTDOWN_UNSAVED_LABEL, SHUTDOWN_NONE, SHUTDOWN_BUTTON, SHUTDOWN_HINT,
   SHUTDOWN_WIN_TITLE, SHUTDOWN_WIN_INTRO, SHUTDOWN_WIN_NONE, SHUTDOWN_SAVE,
@@ -206,6 +207,33 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenOnsiteTest }) {
           )}
         </div>
       ))}
+
+      {needsFinishEscape(mode) && (
+        <div className="card">
+          <button
+            type="button"
+            className="btn danger wide"
+            disabled={disabledAll}
+            onClick={async () => {
+              try {
+                const res = await sendTrigger('ui.finish')
+                if (!res?.accepted) {
+                  setActiveWindow({ kind: 'reason', reasonKey: res?.reject_reason_key ?? null })
+                  confirmWindow.open()
+                  return
+                }
+                if (onEnter) onEnter('IDLE')
+              } catch {
+                setActiveWindow({ kind: 'reason', reasonKey: null })
+                confirmWindow.open()
+              }
+            }}
+            data-testid="s01-finish-escape"
+          >
+            {S01_FINISH_ESCAPE}
+          </button>
+        </div>
+      )}
 
       <div className="card">
         <h3>{SHUTDOWN_TITLE}</h3>
