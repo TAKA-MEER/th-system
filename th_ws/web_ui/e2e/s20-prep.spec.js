@@ -37,6 +37,18 @@ const TARGETS = {
 
 const PREP = { mode: 'PREP', state: 'MAPPING' }
 
+// 最小 OccupancyGrid: 4×4, res 0.5, origin (-1,-1) → world x/y ∈ [-1,1]。
+// 0 自由 / 100 占有 / -1 未知（RoutePreview e2e と同じ形）。
+const ROUTE_MAP = {
+  info: {
+    resolution: 0.5,
+    width: 4,
+    height: 4,
+    origin: { position: { x: -1, y: -1 }, orientation: { w: 1, z: 0 } },
+  },
+  data: [0, 100, -1, 0, 100, 0, 0, -1, -1, 0, 100, 0, 0, -1, 100, 0],
+}
+
 async function triggers(page) {
   return page.evaluate(() => window.__thTriggerCalls ?? [])
 }
@@ -199,4 +211,33 @@ test('ピンが 0 件なら空表示', async ({ page }) => {
   await page.locator('#s20').waitFor()
   await page.getByRole('tab', { name: 'ピン' }).click()
   await expect(page.locator('[data-testid="s20-pins-empty"]')).toBeVisible()
+})
+
+// brief-onsite-fix C.5: 実地図（/route/map_view）が届いていれば占有格子ラスタが
+// 地図タブに描かれ、ピン（map フレーム）/ ロボット（map フレーム）と重なる。
+test('地図シードありで s20-map-raster が描かれピンが地図座標に載る', async ({ page }) => {
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, routeMap: ROUTE_MAP },
+  )
+  await page.locator('#s20').waitFor()
+  // ラスタ描画は canvas→dataURL なので /route/map_view 受信後に非同期で出る。
+  await expect(page.locator('[data-testid="s20-map-raster"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s20-map-pin-p1"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s20-map-robot"]')).toBeVisible()
+})
+
+test('地図シードなしならラスタは描かれない（モックアップ部屋も描かない。F-4）', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 } })
+  await page.locator('#s20').waitFor()
+  await expect(page.locator('[data-testid="s20-map-raster"]')).not.toBeVisible()
+  await expect(page.locator('[data-testid="s20-map-robot"]')).toBeVisible()
+})
+
+// brief-onsite-fix F-2: レーダーに機体マーク（前方上向き三角＋中心丸）が出る。
+test('レーダーに機体マーク（radar-heading）が描かれる', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 } })
+  await page.locator('#s20').waitFor()
+  await page.getByRole('tab', { name: '対象選択' }).click()
+  await expect(page.locator('[data-testid="radar-heading"]')).toBeVisible()
 })

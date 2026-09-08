@@ -27,9 +27,11 @@ import { usePersonTargets } from '../ros/usePersonTargets.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { useHomeDeclared } from '../ros/useHomeDeclared.js'
 import { useWaitClearStatus } from '../ros/useWaitClearStatus.js'
-import { useOdomPose } from '../ros/useOdomPose.js'
+import { useRouteMap } from '../ros/useRouteMap.js'
+import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
+import OnsiteMap from '../parts/OnsiteMap.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import attributes from '../generated/attributes.json'
 import { REJECT_REASONS } from '../i18n/reasons.js'
@@ -48,21 +50,11 @@ import {
   S21_WORKING, S21_WORK_ON, S21_WORK_OFF,
 } from '../i18n/screens.js'
 
-const VIEW_W = 340
-const VIEW_H = 250
-const CX = VIEW_W / 2
-const CY = VIEW_H / 2
-// 1 m = 24 px（S-20 と同じ。SVG はデモ用の等方スケール。原点はビューの中心）。
-const PX_PER_M = 24
 // 退避待ちの想定タイムアウト。バー幅の計算にだけ使い、実挙動には関与しない
 // （真の値は wait_clear_gate が持つ。残り時間の減少が「そのまま進捗」に見える係数）。
 const WAIT_BAR_SEC = 15
 
 const NAV_MODES = ['SUMMON', 'PANEL_NAV', 'AT_PANEL', 'HOME_NAV']
-
-function toSvg(x, y) {
-  return [CX + x * PX_PER_M, CY - y * PX_PER_M]
-}
 
 function waitBarPct(wait) {
   if (wait.verdict === 'OK') return 100
@@ -76,7 +68,8 @@ export default function S21Test({ onExit }) {
   const sendTrigger = useTrigger()
   const pins = useOnsitePins(ros)
   const personTargets = usePersonTargets(ros)
-  const odomPose = useOdomPose(ros)
+  const routeMap = useRouteMap(ros)
+  const routePose = useRoutePose(ros)
   const homeDeclared = useHomeDeclared(ros)
   const wait = useWaitClearStatus(ros)
   const { twoPoint, selectPin, declareHome } = useOnsiteService()
@@ -244,55 +237,17 @@ export default function S21Test({ onExit }) {
             <div className="card">
               <h3>{S20_MAP_TITLE}</h3>
               <div className="mapWrap">
-                <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} aria-label={S20_MAP_ARIA} data-testid="s21-map">
-                  <rect width={VIEW_W} height={VIEW_H} fill="#20242c" />
-                  <path d="M30 20 h280 v210 h-280 z" fill="#3c424e" />
-                  <path
-                    d="M30 20 h280 v210 h-280 z" fill="none" stroke="#e8ecf2" strokeWidth="4"
-                    strokeLinecap="round" opacity=".85"
-                  />
-                  {pins.map((pin) => {
-                    const [px, py] = toSvg(pin.pose?.position?.x ?? 0, pin.pose?.position?.y ?? 0)
-                    const sel = pin.id === selectedPinId
-                    const home = pin.kind === 'HOME'
-                    return (
-                      <g
-                        key={pin.id}
-                        className={`s21-map-pin${sel ? ' sel' : ''}`}
-                        transform={`translate(${px} ${py})`}
-                        role="button"
-                        tabIndex={0}
-                        data-testid={`s21-map-pin-${pin.id}`}
-                        onClick={() => setSelectedPinId(pin.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault(); setSelectedPinId(pin.id)
-                          }
-                        }}
-                      >
-                        <circle r={10} fill={home ? '#2196f3' : '#e91e63'} stroke={sel ? '#ffd54f' : (home ? '#90caf9' : '#f8bbd0')} strokeWidth={2} />
-                        <text y={26} textAnchor="middle" fontSize="10" fill={home ? '#90caf9' : '#f8bbd0'}>
-                          {pin.name ?? pin.id}
-                        </text>
-                      </g>
-                    )
-                  })}
-                  {odomPose ? (
-                    <g
-                      className="s21-map-robot"
-                      transform={`translate(${toSvg(odomPose.x, odomPose.y)[0]} ${toSvg(odomPose.x, odomPose.y)[1]}) rotate(${(odomPose.yaw * 180) / Math.PI})`}
-                      data-testid="s21-map-robot"
-                    >
-                      <title>{S20_MAP_ROBOT}</title>
-                      <circle r={9} fill="#43a047" stroke="#c8e6c9" strokeWidth={2} />
-                      <line x1={0} y1={0} x2={14} y2={0} stroke="#c8e6c9" strokeWidth={3} strokeLinecap="round" />
-                    </g>
-                  ) : (
-                    <text x={CX} y={CY} textAnchor="middle" fill="#9aa4b2" fontSize="11" data-testid="s21-map-no-pose">
-                      {S20_MAP_NO_POSE}
-                    </text>
-                  )}
-                </svg>
+                <OnsiteMap
+                  mapData={routeMap}
+                  pins={pins}
+                  robotPose={routePose}
+                  selectedPinId={selectedPinId}
+                  onSelectPin={setSelectedPinId}
+                  ariaLabel={S20_MAP_ARIA}
+                  noPoseLabel={S20_MAP_NO_POSE}
+                  robotLabel={S20_MAP_ROBOT}
+                  testId="s21"
+                />
               </div>
             </div>
           </div>

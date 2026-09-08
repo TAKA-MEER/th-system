@@ -40,6 +40,17 @@ const TARGETS = {
 
 const IDLE = { mode: 'IDLE', state: 'NONE' }
 
+// 最小 OccupancyGrid（S-20 と同じ。地図シードを渡すと地図タブにラスタが描かれる）。
+const ROUTE_MAP = {
+  info: {
+    resolution: 0.5,
+    width: 4,
+    height: 4,
+    origin: { position: { x: -1, y: -1 }, orientation: { w: 1, z: 0 } },
+  },
+  data: [0, 100, -1, 0, 100, 0, 0, -1, -1, 0, 100, 0, 0, -1, 100, 0],
+}
+
 async function triggers(page) {
   return page.evaluate(() => window.__thTriggerCalls ?? [])
 }
@@ -253,4 +264,12 @@ test('SUMMON 以外のモードでも見た目はそのまま（PANEL_NAV で状
   await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' })
   await expect(page.locator('[data-testid="s21-state"]')).toHaveText('移動中')
   await expect(page.locator('[data-testid="s21-select-hint"]')).toBeHidden()
+})
+
+// brief-onsite-fix C.5: 実地図シードで s21 地図タブにラスタが描かれ、ピン/ロボットが載る。
+test('地図シードありで s21-map-raster が描かれピンが地図座標に載る', async ({ page }) => {
+  await goto21(page, IDLE, { routeMap: ROUTE_MAP })
+  await expect(page.locator('[data-testid="s21-map-raster"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s21-map-pin-p1"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s21-map-robot"]')).toBeVisible()
 })

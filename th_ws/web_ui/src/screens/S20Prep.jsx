@@ -26,9 +26,11 @@ import { useTrigger } from '../ros/useTrigger.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
 import { usePersonTargets } from '../ros/usePersonTargets.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
-import { useOdomPose } from '../ros/useOdomPose.js'
+import { useRouteMap } from '../ros/useRouteMap.js'
+import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
+import OnsiteMap from '../parts/OnsiteMap.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import attributes from '../generated/attributes.json'
 import { quatToYaw } from '../mapGeometry.js'
@@ -43,17 +45,6 @@ import {
   S20_WIZ_MSG, S20_WIZ_REGISTER, S20_WIZ_STEP,
 } from '../i18n/screens.js'
 
-const VIEW_W = 340
-const VIEW_H = 250
-const CX = VIEW_W / 2
-const CY = VIEW_H / 2
-// 1 m = 24 px（SVG はデモ用の等方スケール。原点はビューの中心）。
-const PX_PER_M = 24
-
-function toSvg(x, y) {
-  return [CX + x * PX_PER_M, CY - y * PX_PER_M]
-}
-
 function yawDeg(pin) {
   if (!pin?.pose?.orientation) return 0
   const deg = (quatToYaw(pin.pose.orientation) * 180) / Math.PI
@@ -65,7 +56,8 @@ export default function S20Prep() {
   const sendTrigger = useTrigger()
   const pins = useOnsitePins(ros)
   const personTargets = usePersonTargets(ros)
-  const odomPose = useOdomPose(ros)
+  const routeMap = useRouteMap(ros)
+  const routePose = useRoutePose(ros)
   const { twoPoint, editPin } = useOnsiteService()
   const jogPanel = useJogPanel()
 
@@ -207,55 +199,17 @@ export default function S20Prep() {
             <div className="card">
               <h3>{S20_MAP_TITLE}</h3>
               <div className="mapWrap">
-                <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} aria-label={S20_MAP_ARIA} data-testid="s20-map">
-                  <rect width={VIEW_W} height={VIEW_H} fill="#20242c" />
-                  <path d="M30 20 h280 v210 h-280 z" fill="#3c424e" />
-                  <path
-                    d="M30 20 h280 v210 h-280 z" fill="none" stroke="#e8ecf2" strokeWidth="4"
-                    strokeLinecap="round" opacity=".85"
-                  />
-                  {pins.map((pin) => {
-                    const [px, py] = toSvg(pin.pose?.position?.x ?? 0, pin.pose?.position?.y ?? 0)
-                    const sel = pin.id === selectedPinId
-                    const home = pin.kind === 'HOME'
-                    return (
-                      <g
-                        key={pin.id}
-                        className={`s20-map-pin${sel ? ' sel' : ''}`}
-                        transform={`translate(${px} ${py})`}
-                        role="button"
-                        tabIndex={0}
-                        data-testid={`s20-map-pin-${pin.id}`}
-                        onClick={() => setSelectedPinId(pin.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault(); setSelectedPinId(pin.id)
-                          }
-                        }}
-                      >
-                        <circle r={10} fill={home ? '#2196f3' : '#e91e63'} stroke={sel ? '#ffd54f' : (home ? '#90caf9' : '#f8bbd0')} strokeWidth={2} />
-                        <text y={26} textAnchor="middle" fontSize="10" fill={home ? '#90caf9' : '#f8bbd0'}>
-                          {pin.name ?? pin.id}
-                        </text>
-                      </g>
-                    )
-                  })}
-                  {odomPose ? (
-                    <g
-                      className="s20-map-robot"
-                      transform={`translate(${toSvg(odomPose.x, odomPose.y)[0]} ${toSvg(odomPose.x, odomPose.y)[1]}) rotate(${(odomPose.yaw * 180) / Math.PI})`}
-                      data-testid="s20-map-robot"
-                    >
-                      <title>{S20_MAP_ROBOT}</title>
-                      <circle r={9} fill="#43a047" stroke="#c8e6c9" strokeWidth={2} />
-                      <line x1={0} y1={0} x2={14} y2={0} stroke="#c8e6c9" strokeWidth={3} strokeLinecap="round" />
-                    </g>
-                  ) : (
-                    <text x={CX} y={CY} textAnchor="middle" fill="#9aa4b2" fontSize="11" data-testid="s20-map-no-pose">
-                      {S20_MAP_NO_POSE}
-                    </text>
-                  )}
-                </svg>
+                <OnsiteMap
+                  mapData={routeMap}
+                  pins={pins}
+                  robotPose={routePose}
+                  selectedPinId={selectedPinId}
+                  onSelectPin={setSelectedPinId}
+                  ariaLabel={S20_MAP_ARIA}
+                  noPoseLabel={S20_MAP_NO_POSE}
+                  robotLabel={S20_MAP_ROBOT}
+                  testId="s20"
+                />
               </div>
             </div>
           </div>

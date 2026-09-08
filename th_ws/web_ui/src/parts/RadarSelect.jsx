@@ -8,20 +8,14 @@
 // 空関数にしない（e2e/s20-prep.spec.js が「レーダーのタップ → ui.select_target」
 // として実在のハンドラであることを検証する）。
 import {
-  RADAR_ARIA, RADAR_CONFIDENCE, RADAR_EMPTY, RADAR_LOST, RADAR_SELECTED,
+  RADAR_ARIA, RADAR_CONFIDENCE, RADAR_EMPTY, RADAR_HEADING, RADAR_LOST, RADAR_SELECTED,
 } from '../i18n/screens.js'
+import { RADAR_PX_PER_M, RADAR_CX, RADAR_CY, radarToSvg } from './radarGeometry.js'
 
 const VW = 240
 const VH = 240
-const CX = VW / 2
-const CY = VH / 2
-// 1 m を 60 px。レーダー半径 2 m を描く（可視範囲の目安）。
-const PX_PER_M = 60
-
-// base_link: +x 前方・+y 左をそのまま絵の x / 逆 y に写す（画面は下方向正）。
-function toSvg(x, y) {
-  return [CX + x * PX_PER_M, CY - y * PX_PER_M]
-}
+const CX = RADAR_CX
+const CY = RADAR_CY
 
 export default function RadarSelect({
   candidates = [],
@@ -39,10 +33,25 @@ export default function RadarSelect({
         aria-label={RADAR_ARIA}
         data-testid="radar"
       >
-        <circle className="rv-ring" cx={CX} cy={CY} r={PX_PER_M * 2} />
-        <circle className="rv-ring" cx={CX} cy={CY} r={PX_PER_M} />
-        <line className="rv-axis" x1={CX} y1={CY - PX_PER_M * 2} x2={CX} y2={CY + PX_PER_M * 2} />
-        <line className="rv-axis" x1={CX - PX_PER_M * 2} y1={CY} x2={CX + PX_PER_M * 2} y2={CY} />
+        <circle className="rv-ring" cx={CX} cy={CY} r={RADAR_PX_PER_M * 2} />
+        <circle className="rv-ring" cx={CX} cy={CY} r={RADAR_PX_PER_M} />
+        {/* 前方（機体 +x / 画面の上）の軸線を強調。F-2。 */}
+        <line className="rv-axis rv-axis-fwd" x1={CX} y1={CY - RADAR_PX_PER_M * 2} x2={CX} y2={CY} />
+        <line className="rv-axis" x1={CX - RADAR_PX_PER_M * 2} y1={CY} x2={CX + RADAR_PX_PER_M * 2} y2={CY} />
+        {/* 機体マーク（中心の丸＋上向き三角）。候補より下のレイヤに描いて隠れないようにする。 */}
+        <g data-testid="radar-heading">
+          <polygon
+            points={`${CX},${CY - 20} ${CX - 10},${CY + 6} ${CX + 10},${CY + 6}`}
+            fill="none"
+            stroke="#90caf9"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+          <circle cx={CX} cy={CY} r={6} fill="#90caf9" />
+          <text x={CX} y={CY - 26} textAnchor="middle" fontSize="11" fill="#90caf9">
+            {RADAR_HEADING}
+          </text>
+        </g>
         {isLost ? (
           <text x={CX} y={CY} textAnchor="middle" className="rv-msg" data-testid="radar-lost">
             {RADAR_LOST}
@@ -53,7 +62,7 @@ export default function RadarSelect({
           </text>
         ) : (
           candidates.map((c, i) => {
-            const [sx, sy] = toSvg(c?.x ?? 0, c?.y ?? 0)
+            const [sx, sy] = radarToSvg(c?.x ?? 0, c?.y ?? 0)
             const sel = i === selectedIndex
             return (
               <g

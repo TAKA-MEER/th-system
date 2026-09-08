@@ -260,6 +260,8 @@ export const RADAR_LOST = '対象を見失っています'
 export const RADAR_EMPTY = '試験員が検出されていません'
 export const RADAR_SELECTED = '対象'
 export const RADAR_CONFIDENCE = (c) => `確信度 ${c}`
+// brief-onsite-fix F-2: レーダー機体マークの「前」ラベル。
+export const RADAR_HEADING = '前'
 
 // ---------------------------------------------------------------- S-21 試験（WP-UI-07） ----
 // screens/S21Test.jsx の表示文字列。brief-UI-S21 / mockup 1055〜1153 行。

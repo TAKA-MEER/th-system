@@ -123,22 +123,29 @@ export async function stubServices(page, services) {
 // seed must be set via addInitScript.
 export async function gotoScreenWithOnsite(
   page, screen, state,
-  { pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear },
+  { pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear, routeMap },
 ) {
-  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc }) => {
+  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm }) => {
     window.__thTestState = s
     window.__thTestScreen = scr
     if (p) window.__thTestOnsitePins = p
     if (t) window.__thTestPersonTargets = t
     if (tp) window.__thTestTwoPoint = tp
     if (ep) window.__thTestEditPin = ep
-    if (ps) window.__thTestOdomPose = ps
+    if (ps) {
+      window.__thTestOdomPose = ps
+      // brief-onsite-fix C: 地図タブのロボット位置は odom でなく map フレーム
+      // （/route/robot_pose、useRoutePose）。既存 e2e は pose を渡すだけだったので、
+      // 同じ値を route pose にも注入して地図上のロボットマーカーが出るようにする。
+      window.__thTestRoutePose = ps
+    }
     if (dh) window.__thTestDeclareHome = dh
     if (sp) window.__thTestSelectPin = sp
     if (hd) window.__thTestHomeDeclared = hd
     if (wc) window.__thTestWaitClear = wc
+    if (rm) window.__thTestRouteMap = rm
   },
-  { s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose, dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear })
+  { s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose, dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear, rm: routeMap })
   await page.goto('/')
 }
 
