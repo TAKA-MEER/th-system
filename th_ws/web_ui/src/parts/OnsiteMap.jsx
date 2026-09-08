@@ -67,7 +67,6 @@ export default function OnsiteMap({
           width={t.view.drawW}
           height={t.view.drawH}
           href={mapUrl}
-          preserveAspectRatio="none"
           data-testid={`${testId}-map-raster`}
         />
       ) : null}

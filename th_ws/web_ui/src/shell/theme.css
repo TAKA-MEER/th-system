@@ -321,6 +321,15 @@ table.lst td.r{text-align:right}
    max-height はモックアップの .mapWrap svg{max-height:min(42cqh,300px)} 相当。 */
 .screen#s20 .mapWrap svg,.screen#s21 .mapWrap svg{display:block;width:100%;height:auto;max-height:min(42cqh,300px);
   background:var(--inset);border:1px solid var(--bd);border-radius:var(--r)}
+/* brief-onsite-ux2 F-3: 占有格子ラスタは canvas→toDataURL()→SVG <image> で
+   描いており、S-13/S-14（RoutePreview、canvas 直描き + imageSmoothingEnabled
+   =false）と違って拡大時にブラウザが平滑化しぼやける。ピクセルをくっきり保つ。
+   -webkit-optimize-contrast は pixelated 非対応の古い WebView 向けフォールバック
+   （未対応の値は無視されるだけなので、pixelated を後に書けば対応環境ではそちらが勝つ）。 */
+.screen#s20 image,.screen#s21 image{
+  image-rendering:-webkit-optimize-contrast;
+  image-rendering:pixelated;
+}
 .radar{display:block;width:100%;height:auto;max-height:min(42cqh,300px);
   background:var(--inset);border:1px solid var(--bd);border-radius:var(--r)}
 .rv-ring{fill:none;stroke:var(--bd);stroke-width:1}
