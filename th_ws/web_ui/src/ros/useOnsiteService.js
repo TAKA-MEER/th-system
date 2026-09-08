@@ -14,11 +14,11 @@
 // TEST_MODE: same contract as useTrigger.js / useStdTrigger.js — every call
 // is recorded on window.__thOnsiteServiceCalls ({ service, request }) and
 // answered from a stub read at call time (window.__thTestTwoPoint /
-// window.__thTestEditPin / __thTestDeclareHome / __thTestSelectPin). Without a
-// stub it resolves as a denial, so a spec that doesn't stub a service behaves
-// like a rejection. Recording every call is what lets e2e prove a button is
-// actually wired (opencode-bigpickle-evaluation's known hole: an inert button
-// passing green).
+// window.__thTestEditPin / __thTestDeclareHome / __thTestSelectPin /
+// __thTestOpenVenueMap). Without a stub it resolves as a denial, so a spec
+// that doesn't stub a service behaves like a rejection. Recording every call
+// is what lets e2e prove a button is actually wired
+// (opencode-bigpickle-evaluation's known hole: an inert button passing green).
 import { useCallback } from 'react'
 import { useSystemState } from './useSystemState'
 import { SERVICES, SRV_TYPES } from './topics'
@@ -65,5 +65,13 @@ export function useOnsiteService() {
       SERVICES.ONSITE_DECLARE_HOME, SRV_TYPES.ONSITE_DECLARE_HOME, request, '__thTestDeclareHome'),
     selectPin: (request) => callService(
       SELECT_PIN_SERVICE, SRV_TYPES.ONSITE_SELECT_PIN, request, '__thTestSelectPin'),
+    // brief-onsite-fix E: 保存した会場地図（slot:VENUE）を当日に読み直す
+    // （/map_session/open → OpenMapSession.srv）。session_id は空不可（VENUE でも
+    // 検証される）なので 'venue' を渡す。deserialize の初期姿勢は未指定
+    // （has_initial_pose=false → match_type=START_AT_FIRST_NODE にフォールバック）。
+    openVenueMap: () => callService(
+      SERVICES.MAP_SESSION_OPEN, SRV_TYPES.MAP_SESSION_OPEN,
+      { slot: 'VENUE', mode: 'reload', session_id: 'venue', has_initial_pose: false },
+      '__thTestOpenVenueMap'),
   }
 }

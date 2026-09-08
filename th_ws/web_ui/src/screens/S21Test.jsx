@@ -43,7 +43,8 @@ import {
   S21_ATPANEL_TITLE, S21_DEST_HOME, S21_DEST_NEXT_PANEL, S21_DEST_SUMMON_HERE,
   S21_HOME_DECLARED, S21_HOME_DECLARE, S21_HOME_FORCE_DECLARE,
   S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_UPDATE, S21_MAP_UPDATE_OFF,
-  S21_NEXT_DEST_TITLE, S21_NOW_AT_HOME, S21_PICK_PANEL_HINT, S21_PIN_MOVE,
+  S21_NEXT_DEST_TITLE, S21_NOW_AT_HOME, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_MAP,
+  S21_PICK_PANEL_HINT, S21_PIN_MOVE,
   S21_PREP_TITLE, S21_SELECT_HINT, S21_SUBTAB_ATPANEL, S21_SUBTAB_DEST,
   S21_SUBTAB_SUMMON, S21_SUMMON_START, S21_SUMMON_TITLE, S21_TARGET_HINT,
   S21_WAIT_CANCEL, S21_WAIT_CLEARING, S21_WAIT_DIST, S21_WAIT_TITLE,
@@ -72,7 +73,7 @@ export default function S21Test({ onExit }) {
   const routePose = useRoutePose(ros)
   const homeDeclared = useHomeDeclared(ros)
   const wait = useWaitClearStatus(ros)
-  const { twoPoint, selectPin, declareHome } = useOnsiteService()
+  const { twoPoint, selectPin, declareHome, openVenueMap } = useOnsiteService()
   const jogPanel = useJogPanel()
 
   const disabledAll = stale || state?.mode == null
@@ -98,6 +99,8 @@ export default function S21Test({ onExit }) {
 
   // 待機場所の宣言エラー（success=false のときのメッセージと再宣言）。
   const [homeErr, setHomeErr] = useState(null)
+  // 会場地図の読み直し（/map_session/open）の結果メッセージ（success/message）。
+  const [venueMsg, setVenueMsg] = useState(null)
   // ピン選択（select_pin）の失敗メッセージ。
   const [goErr, setGoErr] = useState(null)
 
@@ -181,6 +184,14 @@ export default function S21Test({ onExit }) {
     if (!res?.success) {
       setHomeErr(res?.message ?? null)
     }
+  }
+
+  // 保存した会場地図を開く（/map_session/open, slot:VENUE / mode:reload）。
+  // 当日の手順の先頭（brief-onsite-fix E）。success / message を画面に出す。
+  async function handleOpenVenueMap() {
+    setVenueMsg(null)
+    const res = await openVenueMap()
+    setVenueMsg({ ok: !!res?.success, text: res?.message ?? '' })
   }
 
   // 呼び寄せ対象（RadarSelect）。SUMMON のときだけ set_target（T-SUM-15）。
@@ -329,6 +340,23 @@ export default function S21Test({ onExit }) {
             <div className="tabpane on">
               <div className="card">
                 <h3>{S21_PREP_TITLE}</h3>
+                <div className="row mb">
+                  <span className="grow sm">{S21_OPEN_VENUE_MAP}</span>
+                  <button
+                    type="button"
+                    className="btn sm"
+                    data-testid="s21-open-venue-map"
+                    disabled={disabledAll}
+                    onClick={() => handleOpenVenueMap()}
+                  >
+                    {S21_OPEN_VENUE_MAP}
+                  </button>
+                </div>
+                {venueMsg && (
+                  <div className={`note mb${venueMsg.ok ? '' : ' err'}`} data-testid="s21-open-venue-msg">
+                    {venueMsg.text || (venueMsg.ok ? S21_OPEN_VENUE_DONE : null)}
+                  </div>
+                )}
                 <div className="row mb">
                   <span className="grow sm">{S21_NOW_AT_HOME}</span>
                   <span className={`pill ${homeDeclared ? 'ok' : 'ng'}`} data-testid="s21-home-pill">

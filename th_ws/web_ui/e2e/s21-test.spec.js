@@ -273,3 +273,17 @@ test('地図シードありで s21-map-raster が描かれピンが地図座標�
   await expect(page.locator('[data-testid="s21-map-pin-p1"]')).toBeVisible()
   await expect(page.locator('[data-testid="s21-map-robot"]')).toBeVisible()
 })
+
+// brief-onsite-fix E: 「保存した会場地図を開く」を押すと /map_session/open
+// （slot:VENUE / mode:reload / session_id:venue）を呼ぶ。
+test('保存した会場地図を開くが /map_session/open を呼ぶ', async ({ page }) => {
+  await goto21(page)
+  const btn = page.locator('[data-testid="s21-open-venue-map"]')
+  await expect(btn).toBeVisible()
+  await btn.click()
+  const open = (await onsiteServiceCalls(page)).find(
+    (c) => c.service === '/map_session/open')
+  expect(open, '「保存した会場地図を開く」が /map_session/open を呼んでいない').toBeTruthy()
+  expect(open.request).toMatchObject({ slot: 'VENUE', mode: 'reload', session_id: 'venue' })
+})
+

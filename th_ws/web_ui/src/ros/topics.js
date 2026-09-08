@@ -58,6 +58,9 @@ export const SERVICES = {
   // `/onsite/select_pin` だが、names.json（辞書ゲート）に無いため TOPICS/SERVICES には
   // 載せず useOnsiteService.js 内のローカル定数で扱う（useOdomPose と同型）。
   ONSITE_DECLARE_HOME: '/onsite/declare_home',
+  // brief-onsite-fix E: 保存した会場地図（slot:VENUE）を当日に読み直す。
+  // S-21 の「保存した会場地図を開く」ボタンが呼ぶ（slam_control /map_session/open）。
+  MAP_SESSION_OPEN: '/map_session/open',
 }
 
 export const MSG_TYPES = {
@@ -99,4 +102,6 @@ export const SRV_TYPES = {
   // names.json に無いため S21Test 側のローカル定数で呼ぶ。型はここ）。
   ONSITE_DECLARE_HOME: 'th_system_msgs/DeclareHome',
   ONSITE_SELECT_PIN: 'th_system_msgs/GoToPanel',
+  // brief-onsite-fix E: /map_session/open の SRV 型。
+  MAP_SESSION_OPEN: 'th_system_msgs/OpenMapSession',
 }
