@@ -23,16 +23,42 @@ export function jogAllowedForMode(mode, attributes) {
 }
 
 /**
- * 押せないボタンの直下に出す理由バッジ（brief-onsite-ux UX-2-b）。
+ * 押せないボタンの直下に出す理由バッジ（brief-onsite-ux UX-2-b / brief-onsite-ux-fix UX-6-b）。
  * 画面だけで判定できる理由に限る（サーバ側でしか分からない理由は今までどおり
- * 拒否ウィンドウで出す）。文言は i18n/reasons.js の REJECT_REASONS キーで返す。
- * @param {{mode?: string|null, attributes?: Object}} _ mode と attributes。
- * @returns {{manual?: string}} ボタン id → reason_key。無ければ空。
+ * 拒否ウィンドウで出す）。i18n/reasons.js（th_state が返す reject_reason_key の写し）
+ * は経由しない。返すのは画面ローカルの意味キーで、文言解決は呼び出し側
+ * （S20Prep.jsx / S21Test.jsx）が i18n/screens.js の BADGE_* と、guards.py に
+ * 実在するキーだけ i18n/reasons.js の REJECT_REASONS を引いて行う。
+ *
+ * - manual: 'jog_denied'（attributes[mode].jog==='denied'）または
+ *   'wait_clear_active'（SUMMON/WAIT_CLEAR 中は手動操作できない）。
+ * - destHome / destNextPanel / destSummonHere（S-21「次の行き先」3 ボタン）:
+ *   working 中はどれも 'working_in_progress'（guards.py _goto_allowed は
+ *   ctx.flags.working を pin_kinds より先に見るため、working 中はピンの
+ *   有無に関係なく拒否される）。working でなければ、PANEL ピンが無ければ
+ *   destNextPanel に 'no_panel_pin'（_goto_allowed: kind==='PANEL' は
+ *   'PANEL' in ctx.pin_kinds を要求）、HOME ピンが無ければ destHome に
+ *   'no_home_pin'（venue_nav_core.find_home_goal が HOME ピンを探す）。
+ * @param {{mode?: string|null, stateName?: string|null, attributes?: Object,
+ *         pins?: Array, working?: boolean}} _
+ * @returns {Object} ボタン id → 意味キー。無ければ空。
  */
-export function onsiteReasons({ mode, attributes } = {}) {
+export function onsiteReasons({
+  mode, stateName, attributes, pins = [], working = false,
+} = {}) {
   const reasons = {}
   if (!jogAllowedForMode(mode, attributes)) {
     reasons.manual = 'jog_denied'
+  } else if (mode === 'SUMMON' && stateName === 'WAIT_CLEAR') {
+    reasons.manual = 'wait_clear_active'
+  }
+  if (working) {
+    reasons.destHome = 'working_in_progress'
+    reasons.destNextPanel = 'working_in_progress'
+    reasons.destSummonHere = 'working_in_progress'
+  } else {
+    if (!pins.some((p) => p?.kind === 'PANEL')) reasons.destNextPanel = 'no_panel_pin'
+    if (!pins.some((p) => p?.kind === 'HOME')) reasons.destHome = 'no_home_pin'
   }
   return reasons
 }

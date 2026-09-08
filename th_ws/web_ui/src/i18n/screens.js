@@ -322,6 +322,12 @@ export const S21_NEXT_PICK_DEST = '行き先を選ぶ'
 export const S21_NEXT_STOP = '停止'
 export const S21_NEXT_WORK = '作業中'
 export const S21_NEXT_SUMMON = '呼び寄せ'
+// brief-onsite-ux-fix UX-6: 画面ローカルの「押せない理由」バッジ。
+// i18n/reasons.js の REJECT_REASONS は th_state（FSM）が返すキーの写しなので、
+// 画面だけで判定できる理由はここに置く（onsiteSteps.js の onsiteReasons() が使う）。
+export const BADGE_JOG_DENIED = 'このモードでは手動操作できません'
+export const BADGE_NO_PANEL_PIN = '配電盤ピンが登録されていません'
+export const BADGE_NO_HOME_PIN = '待機場所ピンが登録されていません'
 
 // ---------------------------------------------------------------- S-50 設定（WS-9X） ----
 // screens/S50Settings.jsx の表示文字列。Spec-webui.md §3.15 のタブ構成。

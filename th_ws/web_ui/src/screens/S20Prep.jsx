@@ -42,6 +42,7 @@ import { quatToYaw } from '../mapGeometry.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
+  BADGE_JOG_DENIED,
   S20_MAP_ARIA, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TITLE,
   S20_NEXT_REG_HOME, S20_NEXT_REG_PANEL, S20_NEXT_SAVE, S20_NEXT_SELECT_TARGET,
   S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_EDIT, S20_PIN_RENAME,
@@ -125,8 +126,10 @@ export default function S20Prep() {
   const nextAction = isRegister ? null : (nextActions[currentIndex] ?? null)
 
   // UX-2-b/UX-2-d: この画面から「押せない」ことが画面だけでも分かる理由のバッジ。
+  // brief-onsite-ux-fix UX-6-a: onsiteReasons() は i18n/reasons.js を経由しない
+  // （この画面で出うるのは jog_denied だけなので i18n/screens.js の BADGE_* を直接使う）。
   const reasons = onsiteReasons({ mode: state?.mode, attributes })
-  const manualDenyReason = reasons.manual ? (REJECT_REASONS[reasons.manual] ?? reasons.manual) : null
+  const manualDenyReason = reasons.manual === 'jog_denied' ? BADGE_JOG_DENIED : (reasons.manual ?? null)
 
   // REGISTER を離れたら（成功・拒否・ロストで MAPPING へ戻る）ウィザードを初期化。
   useEffect(() => {
@@ -284,7 +287,11 @@ export default function S20Prep() {
           mode={state?.mode}
           stateName={stateName}
           attributes={attributes}
-          slots={{ stop: true, check: false, run: false, save: true, manual: true }}
+          // brief-onsite-ux-fix UX-6-c: 「次にやること」が保存のときは操作カード
+          // 側の保存を出さない（同じ操作の重複表示をやめる）。
+          slots={{
+            stop: true, check: false, run: false, save: nextAction?.kind !== 'save', manual: true,
+          }}
           disabled={disabledAll}
           manualDenyReason={manualDenyReason}
           onTrigger={(trigger) => sendTrigger(trigger)}

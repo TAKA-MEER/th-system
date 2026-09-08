@@ -133,9 +133,12 @@ test('停止/保存の操作カードと対象選択（radar）', async ({ page 
   await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 } })
   await page.locator('#s20').waitFor()
 
-  // 操作カード: 停止(ui.stop) / 保存(ui.save)。
+  // 操作カード: 停止(ui.stop)。保存は、この PINS/TARGETS シードだと全段完了で
+  // 「次にやること」ボタンも保存になるため、重複を避けて操作カード側には出ない
+  // （brief-onsite-ux-fix UX-6-c）。保存自体はそちらのボタンで送る。
   await page.locator('#s20 .op-stop').click()
-  await page.locator('#s20 .op-save').click()
+  await expect(page.locator('#s20 .op-save')).toBeHidden()
+  await page.locator('[data-testid="s20-next-action"]').click()
   const t = await triggers(page)
   expect(t.some((c) => c.trigger === 'ui.stop'), '停止が ui.stop を送っていない').toBe(true)
   expect(t.some((c) => c.trigger === 'ui.save'), '保存が ui.save を送っていない').toBe(true)

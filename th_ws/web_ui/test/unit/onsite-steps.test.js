@@ -81,12 +81,86 @@ test('UX-2-d: 未知モードや attributes 無しは「押せる側」に倒す
   assert.equal(jogAllowedForMode(undefined, {}), true)
 })
 
+// pins に PANEL/HOME を両方持たせて destHome/destNextPanel を消し、manual の
+// 判定だけを見る（両方のピンが無い場合の挙動は UX-6-b のテーブルで別に見る）。
+const PINS_BOTH = [{ kind: 'PANEL' }, { kind: 'HOME' }]
+
 test('UX-2-d: onsiteReasons は手動不可モードにだけ jog_denied を返す', () => {
-  assert.deepEqual(onsiteReasons({ mode: 'IDLE', attributes: attributesLike }), { manual: 'jog_denied' })
-  assert.deepEqual(onsiteReasons({ mode: 'PREP', attributes: attributesLike }), {})
-  assert.deepEqual(onsiteReasons({ mode: 'AT_PANEL', attributes: attributesLike }), {})
-  assert.deepEqual(onsiteReasons({ mode: null, attributes: attributesLike }), {})
-  assert.deepEqual(onsiteReasons({}), {})
+  assert.deepEqual(onsiteReasons({ mode: 'IDLE', attributes: attributesLike, pins: PINS_BOTH }), { manual: 'jog_denied' })
+  assert.deepEqual(onsiteReasons({ mode: 'PREP', attributes: attributesLike, pins: PINS_BOTH }), {})
+  assert.deepEqual(onsiteReasons({ mode: 'AT_PANEL', attributes: attributesLike, pins: PINS_BOTH }), {})
+  assert.deepEqual(onsiteReasons({ mode: null, attributes: attributesLike, pins: PINS_BOTH }), {})
+  // pins/working 無しの既定呼び出し（S20Prep.jsx の実際の呼び方）。pins 既定は
+  // [] なので destHome/destNextPanel も一緒に返るが、mode が無いので manual は無い。
+  assert.deepEqual(onsiteReasons({}), { destHome: 'no_home_pin', destNextPanel: 'no_panel_pin' })
+})
+
+// ── UX-6-b: S-21「次の行き先」3 ボタンのバッジ真偽表 ────────────────────────
+// working 中はピンの有無に関係なく working_in_progress（guards.py の
+// _goto_allowed は ctx.flags.working を pin_kinds より先に見る）。working で
+// なければ、PANEL ピンが無いと destNextPanel、HOME ピンが無いと destHome に
+// no_panel_pin/no_home_pin（venue_nav_core.find_home_goal が HOME ピンを探す）。
+
+test('UX-6-b: working 中は 3 ボタンとも working_in_progress（ピンの有無に関係なく）', () => {
+  assert.deepEqual(
+    onsiteReasons({ mode: 'AT_PANEL', attributes: attributesLike, pins: PINS_BOTH, working: true }),
+    { destHome: 'working_in_progress', destNextPanel: 'working_in_progress', destSummonHere: 'working_in_progress' },
+  )
+  assert.deepEqual(
+    onsiteReasons({ mode: 'AT_PANEL', attributes: attributesLike, pins: [], working: true }),
+    { destHome: 'working_in_progress', destNextPanel: 'working_in_progress', destSummonHere: 'working_in_progress' },
+  )
+})
+
+test('UX-6-b: working でなければ PANEL ピン無しで destNextPanel だけに no_panel_pin', () => {
+  assert.deepEqual(
+    onsiteReasons({ mode: 'AT_PANEL', attributes: attributesLike, pins: [{ kind: 'HOME' }], working: false }),
+    { destNextPanel: 'no_panel_pin' },
+  )
+})
+
+test('UX-6-b: working でなければ HOME ピン無しで destHome だけに no_home_pin', () => {
+  assert.deepEqual(
+    onsiteReasons({ mode: 'AT_PANEL', attributes: attributesLike, pins: [{ kind: 'PANEL' }], working: false }),
+    { destHome: 'no_home_pin' },
+  )
+})
+
+test('UX-6-b: PANEL/HOME どちらも無ければ両方のバッジが出る', () => {
+  assert.deepEqual(
+    onsiteReasons({ mode: 'AT_PANEL', attributes: attributesLike, pins: [], working: false }),
+    { destHome: 'no_home_pin', destNextPanel: 'no_panel_pin' },
+  )
+})
+
+test('UX-6-b: PANEL/HOME どちらも在れば working でなくてもバッジは無い', () => {
+  assert.deepEqual(
+    onsiteReasons({ mode: 'AT_PANEL', attributes: attributesLike, pins: PINS_BOTH, working: false }),
+    {},
+  )
+})
+
+test('UX-6-b: 手動は jog_denied を優先し、SUMMON/WAIT_CLEAR で wait_clear_active', () => {
+  // jog_denied なモード（IDLE）では wait_clear_active の条件を満たしていても jog_denied 優先。
+  assert.deepEqual(
+    onsiteReasons({
+      mode: 'IDLE', stateName: 'WAIT_CLEAR', attributes: attributesLike, pins: PINS_BOTH,
+    }),
+    { manual: 'jog_denied' },
+  )
+  // SUMMON は jog 許可モードなので、WAIT_CLEAR のときだけ wait_clear_active が出る。
+  assert.deepEqual(
+    onsiteReasons({
+      mode: 'SUMMON', stateName: 'WAIT_CLEAR', attributes: attributesLike, pins: PINS_BOTH,
+    }),
+    { manual: 'wait_clear_active' },
+  )
+  assert.deepEqual(
+    onsiteReasons({
+      mode: 'SUMMON', stateName: 'POINT', attributes: attributesLike, pins: PINS_BOTH,
+    }),
+    {},
+  )
 })
 
 // ── prepSteps（S-20） ───────────────────────────────────────

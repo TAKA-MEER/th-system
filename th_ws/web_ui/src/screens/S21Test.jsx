@@ -42,6 +42,7 @@ import { NAV_MODES, testSteps, onsiteReasons } from './onsiteSteps.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
+  BADGE_JOG_DENIED, BADGE_NO_HOME_PIN, BADGE_NO_PANEL_PIN,
   S20_MAP_ARIA, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TITLE,
   S20_TAB_MAP, S20_TAB_TARGET,
   S20_WIZ_MSG, S20_WIZ_REGISTER, S20_WIZ_STEP, S20_PIN_YAW,
@@ -58,6 +59,19 @@ import {
   S21_WAIT_CANCEL, S21_WAIT_CLEARING, S21_WAIT_DIST, S21_WAIT_TITLE,
   S21_WORKING, S21_WORK_ON, S21_WORK_OFF,
 } from '../i18n/screens.js'
+
+// brief-onsite-ux-fix UX-6-a: onsiteReasons() は画面ローカルの意味キーだけを
+// 返す（i18n/reasons.js を経由しない）。文言解決はここで行う。working_in_progress /
+// wait_clear_active は guards.py に実在する reject_reason_key なので、その 2 つ
+// だけ i18n/reasons.js の文言をそのまま使う（新設しない）。jog_denied /
+// no_panel_pin / no_home_pin は画面専用なので i18n/screens.js の BADGE_* を使う。
+const ONSITE_BADGE_TEXT = {
+  jog_denied: BADGE_JOG_DENIED,
+  no_panel_pin: BADGE_NO_PANEL_PIN,
+  no_home_pin: BADGE_NO_HOME_PIN,
+  working_in_progress: REJECT_REASONS.working_in_progress,
+  wait_clear_active: REJECT_REASONS.wait_clear_active,
+}
 
 // brief-onsite-ux UX-1: testSteps() が返す段 id → 表示ラベル（i18n の定数）。
 const S21_STEP_LABELS = {
@@ -225,9 +239,16 @@ export default function S21Test({ onExit }) {
   const stateText = isNavMode ? stateLabel(stateName) : S21_SELECT_HINT
   const pendingYaw = showWizard && wizYaw != null
 
-  // UX-2-b/UX-2-d: この画面から「押せない」ことが画面だけでも分かる理由のバッジ。
-  const reasons = onsiteReasons({ mode, attributes })
-  const manualDenyReason = reasons.manual ? (REJECT_REASONS[reasons.manual] ?? reasons.manual) : null
+  // UX-2-b/UX-2-d/UX-6-b: この画面から「押せない」ことが画面だけでも分かる理由のバッジ。
+  const reasons = onsiteReasons({
+    mode, stateName, attributes, pins, working,
+  })
+  const manualDenyReason = reasons.manual ? (ONSITE_BADGE_TEXT[reasons.manual] ?? reasons.manual) : null
+  const destHomeReason = reasons.destHome ? (ONSITE_BADGE_TEXT[reasons.destHome] ?? reasons.destHome) : null
+  const destNextPanelReason = reasons.destNextPanel
+    ? (ONSITE_BADGE_TEXT[reasons.destNextPanel] ?? reasons.destNextPanel) : null
+  const destSummonHereReason = reasons.destSummonHere
+    ? (ONSITE_BADGE_TEXT[reasons.destSummonHere] ?? reasons.destSummonHere) : null
 
   // ── 手順バー（UX-1）と「次にやること」ボタン ──
   // 段 1「会場地図を開く」だけは /map_session/open の応答 success を画面ローカル
@@ -338,7 +359,11 @@ export default function S21Test({ onExit }) {
           mode={mode}
           stateName={stateName}
           attributes={attributes}
-          slots={{ stop: true, check: false, run: false, save: mapUpdate, manual: true }}
+          // brief-onsite-ux-fix UX-6-c: 「次にやること」が保存のときは操作カード
+          // 側の保存を出さない（S-21 の次操作に保存は現状無いが S-20 と揃えておく）。
+          slots={{
+            stop: true, check: false, run: false, save: mapUpdate && nextAction?.kind !== 'save', manual: true,
+          }}
           disabled={disabledAll}
           manualDenyReason={manualDenyReason}
           onTrigger={(trigger) => sendTrigger(trigger)}
@@ -489,36 +514,57 @@ export default function S21Test({ onExit }) {
               <div className="card">
                 <h3>{S21_NEXT_DEST_TITLE}</h3>
                 <div className="btnrow n3">
-                  <button
-                    type="button"
-                    className={`btn ${OP_BUTTON_KINDS.advance}`}
-                    data-testid="s21-dest-home"
-                    disabled={disabledAll}
-                    onClick={() => gotoDest('HOME')}
-                  >
-                    <IconArrow />
-                    <span>{S21_DEST_HOME}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn ${OP_BUTTON_KINDS.advance}`}
-                    data-testid="s21-dest-next-panel"
-                    disabled={disabledAll}
-                    onClick={pickNextPanel}
-                  >
-                    <IconArrow />
-                    <span>{S21_DEST_NEXT_PANEL}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn ${OP_BUTTON_KINDS.advance}`}
-                    data-testid="s21-dest-summon-here"
-                    disabled={disabledAll}
-                    onClick={startSummon}
-                  >
-                    <IconArrow />
-                    <span>{S21_DEST_SUMMON_HERE}</span>
-                  </button>
+                  <div>
+                    <button
+                      type="button"
+                      className={`btn ${OP_BUTTON_KINDS.advance}`}
+                      data-testid="s21-dest-home"
+                      disabled={disabledAll || !!destHomeReason}
+                      onClick={() => gotoDest('HOME')}
+                    >
+                      <IconArrow />
+                      <span>{S21_DEST_HOME}</span>
+                    </button>
+                    {destHomeReason && (
+                      <span className="reason-badge" data-testid="reason-s21-dest-home">
+                        {destHomeReason}
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <button
+                      type="button"
+                      className={`btn ${OP_BUTTON_KINDS.advance}`}
+                      data-testid="s21-dest-next-panel"
+                      disabled={disabledAll || !!destNextPanelReason}
+                      onClick={pickNextPanel}
+                    >
+                      <IconArrow />
+                      <span>{S21_DEST_NEXT_PANEL}</span>
+                    </button>
+                    {destNextPanelReason && (
+                      <span className="reason-badge" data-testid="reason-s21-dest-next-panel">
+                        {destNextPanelReason}
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <button
+                      type="button"
+                      className={`btn ${OP_BUTTON_KINDS.advance}`}
+                      data-testid="s21-dest-summon-here"
+                      disabled={disabledAll || !!destSummonHereReason}
+                      onClick={startSummon}
+                    >
+                      <IconArrow />
+                      <span>{S21_DEST_SUMMON_HERE}</span>
+                    </button>
+                    {destSummonHereReason && (
+                      <span className="reason-badge" data-testid="reason-s21-dest-summon-here">
+                        {destSummonHereReason}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
