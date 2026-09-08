@@ -9,7 +9,7 @@
 #     この分岐は th_state の外（呼び出し側）が state を見て判断する。
 #   - has_record が true の REPLAY / PANEL_NAV / SUMMON / HOME_NAV / AT_PANEL は
 #     map_update が ON のときだけ意味を持つ（既定 false。※）。
-#   - AT_PANEL の speed_limit は停止だが、jog_active の間だけ v_jog_panel（※※※）。
+#   - AT_PANEL / AT_HOME の speed_limit は停止だが、jog_active の間だけ v_jog_panel（※※※）。
 
 INIT:
   initial_state: CHECK
@@ -171,6 +171,18 @@ HOME_NAV:
   resume_state: PAUSE
   needs_tracker: unused
   speed_limit: v_slow
+  auto_brake_default: on_locked
+  jog: allowed
+  has_record: false
+AT_HOME:
+  # Spec-modes.md §2.3 / §6（2026-09-08 追加）。AT_PANEL と同じ属性。
+  # speed_limit は停止だが、jog_active の間だけ v_jog_panel（※※※。zones.mode_speed_limit）。
+  initial_state: IDLE_H
+  run_state: null
+  resume: ack_only
+  resume_state: IDLE_H
+  needs_tracker: unused
+  speed_limit: stop
   auto_brake_default: on_locked
   jog: allowed
   has_record: false

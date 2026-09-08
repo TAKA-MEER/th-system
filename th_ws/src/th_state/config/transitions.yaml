@@ -1378,8 +1378,8 @@
   state: NAV
   event: evt.arrived
   guard: null
-  to_mode: IDLE
-  to_state: NONE
+  to_mode: AT_HOME
+  to_state: IDLE_H
   effects:
   - name: guide
     args:
@@ -1469,6 +1469,45 @@
   - name: commit_map_patch
     args: {}
   spec_ref: SM-3.1.2-102
+- id: T-ATH-01
+  layer: 10
+  mode: AT_HOME
+  state: IDLE_H
+  event: ui.jog.hold
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: set_jog
+    args:
+      'on': true
+  spec_ref: SM-3.1.2-107
+- id: T-ATH-02
+  layer: 10
+  mode: AT_HOME
+  state: PAUSE
+  event: sys.jog_lease_expired
+  guard: null
+  to_mode: '='
+  to_state: IDLE_H
+  effects:
+  - name: set_jog
+    args:
+      'on': false
+  spec_ref: SM-3.1.2-108
+  override_common: true
+- id: T-ATH-03
+  layer: 10
+  mode: AT_HOME
+  state:
+  - IDLE_H
+  - PAUSE
+  event: ui.goto
+  guard: goto_allowed
+  to_mode: $arg.kind
+  to_state: $initial
+  effects: []
+  spec_ref: SM-3.1.2-109
 - id: T-OPC-01
   layer: 10
   mode: OPCHECK

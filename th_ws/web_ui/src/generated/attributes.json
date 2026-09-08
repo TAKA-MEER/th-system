@@ -1,4 +1,15 @@
 {
+  "AT_HOME": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "IDLE_H",
+    "jog": "allowed",
+    "needs_tracker": "unused",
+    "resume": "ack_only",
+    "resume_state": "IDLE_H",
+    "run_state": null,
+    "speed_limit": "stop"
+  },
   "AT_PANEL": {
     "auto_brake_default": "on_locked",
     "has_record": false,
@@ -159,6 +170,11 @@
     "initial_state": "ROUTE_SEL",
     "jog": "allowed",
     "needs_tracker": "unused",
+    "prep_states": [
+      "ROUTE_SEL",
+      "LOCALIZE",
+      "READY"
+    ],
     "resume": "yes_no",
     "resume_state": "PAUSE",
     "run_state": "RUN",
@@ -181,6 +197,9 @@
     "initial_state": "ROUTE_SEL",
     "jog": "allowed",
     "needs_tracker": "required",
+    "prep_states": [
+      "ROUTE_SEL"
+    ],
     "resume": "yes_no",
     "resume_state": "PAUSE",
     "run_state": "REC",
@@ -192,6 +211,9 @@
     "initial_state": "ROUTE_SEL",
     "jog": "is_drive",
     "needs_tracker": "unused",
+    "prep_states": [
+      "ROUTE_SEL"
+    ],
     "resume": "ack_only",
     "resume_state": "PAUSE",
     "run_state": "REC",

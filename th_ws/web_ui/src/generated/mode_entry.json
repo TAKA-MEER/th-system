@@ -1,4 +1,10 @@
 {
+  "AT_HOME": [
+    "PANEL_NAV",
+    "SUMMON",
+    "HOME_NAV",
+    "IDLE"
+  ],
   "AT_PANEL": [
     "PANEL_NAV",
     "SUMMON",
@@ -17,6 +23,7 @@
     "IDLE"
   ],
   "HOME_NAV": [
+    "AT_HOME",
     "IDLE"
   ],
   "IDLE": [
@@ -28,6 +35,7 @@
     "LINE",
     "LEASH",
     "PREP",
+    "AT_HOME",
     "PANEL_NAV",
     "SUMMON",
     "HOME_NAV",

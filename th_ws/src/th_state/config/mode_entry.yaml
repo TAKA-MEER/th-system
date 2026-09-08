@@ -20,6 +20,7 @@ IDLE:
   - LINE
   - LEASH
   - PREP
+  - AT_HOME
   - PANEL_NAV
   - SUMMON
   - HOME_NAV
@@ -67,6 +68,14 @@ SUMMON:
   - IDLE
 
 HOME_NAV:
+  - AT_HOME
+  - IDLE
+
+AT_HOME:
+  # Spec-modes.md §4.2（2026-09-08 追加）。待機場所での待機。行き先を選ぶとそのモードへ。
+  - PANEL_NAV
+  - SUMMON
+  - HOME_NAV
   - IDLE
 
 OPCHECK:

@@ -30,10 +30,10 @@ if not isinstance(data, dict) or not data:
 # なった場合は None になるので、そこも落とさず [] 扱いにする)
 data = {mode: (entries or []) for mode, entries in data.items()}
 
-# 18 モードあることを検査する。減っていたら書式が変わったとみなして落とす
+# 19 モードあることを検査する（2026-09-08 に AT_HOME を追加。Spec-modes.md §2.3）。減っていたら書式が変わったとみなして落とす
 # (attributes.yaml と同じモード数。gen_attributes.py の検査に合わせる)。
-if len(data) != 18:
-    sys.exit(f"モード数が 18 でない ({len(data)} 件)。mode_entry.yaml の書式を確認すること")
+if len(data) != 19:
+    sys.exit(f"モード数が 19 でない ({len(data)} 件)。mode_entry.yaml の書式を確認すること")
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text(

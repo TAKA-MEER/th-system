@@ -19,7 +19,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Set, Any
 MODES: Set[str] = {
     "INIT", "IDLE", "ESTOP", "CARRY",
     "FOLLOW", "MANUAL", "TEACH_FOLLOW", "TEACH_MANUAL", "REPLAY", "LINE", "LEASH",
-    "PREP", "PANEL_NAV", "AT_PANEL", "SUMMON", "HOME_NAV",
+    "PREP", "PANEL_NAV", "AT_PANEL", "SUMMON", "HOME_NAV", "AT_HOME",
     "OPCHECK", "CALIB",
 }
 
@@ -41,6 +41,9 @@ MODE_STATES: Dict[str, Set[str]] = {
     "AT_PANEL": {"IDLE_P", "WORKING", "PAUSE"},
     "SUMMON": {"POINT", "WAIT_CLEAR", "NAV", "BLOCKED", "PAUSE", "ALIGN"},
     "HOME_NAV": {"NAV", "BLOCKED", "PAUSE"},
+    # Spec-modes.md §2.3（2026-09-08 追加）。AT_PANEL と同型で、作業中ボタンが無いぶん
+    # WORKING を持たない（待機場所で撮影作業はしない）。
+    "AT_HOME": {"IDLE_H", "PAUSE"},
     "OPCHECK": {"LIST", "RUNNING_CHECK", "REPAIR"},
     "CALIB": {"LIST", "S1", "S2", "S3", "S4"},
 }

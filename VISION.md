@@ -22,7 +22,7 @@
 | 知りたいこと | 見る文書 |
 | --- | --- |
 | **何が・どう振る舞うべきか。どういう値が要るか** | [完全設計書](docs/plan/spec/README.md) — 本体は [Spec.md](docs/plan/spec/Spec.md) |
-| 目標 G1〜G5・設計思想 SD-1〜SD-7・走行方式 7・モード 18・1 日の流れ | [Spec.md](docs/plan/spec/Spec.md) |
+| 目標 G1〜G5・設計思想 SD-1〜SD-7・走行方式 7・モード 19・1 日の流れ | [Spec.md](docs/plan/spec/Spec.md) |
 | モード定義と遷移表（状態モデルの正本） | [Spec-modes.md](docs/plan/spec/Spec-modes.md) §3.1 |
 | 安全チェーン 4 層・障害物・非常停止・通信断 | [Spec-safety.md](docs/plan/spec/Spec-safety.md) |
 | 画面一覧（15）と見た目 | [Spec-webui.md](docs/plan/spec/Spec-webui.md) ＋ [mockup/index.html](docs/plan/spec/mockup/index.html) |
@@ -44,7 +44,7 @@
 
 | 項目 | 旧 VISION.md | 現在（両設計書） |
 | --- | --- | --- |
-| モード | 9（`FOLLOWING_MAPLESS` 中心） | **18**。`IDLE` ハブ＆スポーク（[Spec-modes.md](docs/plan/spec/Spec-modes.md)） |
+| モード | 9（`FOLLOWING_MAPLESS` 中心） | **19**。`IDLE` ハブ＆スポーク（[Spec-modes.md](docs/plan/spec/Spec-modes.md)） |
 | 保管場所⇔試験場の移動 | 地図なし追従の 1 本 | **走行方式 7 つを全部作って社内試験で絞る**（[Spec-transit.md](docs/plan/spec/Spec-transit.md)） |
 | フォルト時の扱い | 全フォルトで `IDLE` へ強制遷移 | **2 階級**。回復 → `PAUSE` ／ 重大 → `ESTOP`。**`IDLE` へは落とさない**（[Spec-safety.md](docs/plan/spec/Spec-safety.md) §3.5） |
 | 安全チェーン | twist_mux ＋ ESP32 ウォッチドッグ | **4 層**（物理 E-Stop / ESP32 WD 600ms / 安全監視 100ms / 状態遷移）＋ **障害物リミッタ新設**（[Spec-safety.md](docs/plan/spec/Spec-safety.md) §1） |
@@ -148,6 +148,23 @@
 ### 作業ブランチ
 
 `feat/demo-teach-replay`（`main` の PR #20 マージ後の状態から分岐）。フェーズ 2 も同じブランチで続ける。
+
+### 2026-09-08 — `AT_HOME`（待機場所での待機）モードを追加
+
+**ユーザー承認済みの方針変更。**当日の試験画面（S-21）を `IDLE` のまま開いていたため、
+**その日の最初の 1 回**と**待機場所へ戻ったあと**だけ、待機場所での手動ジョグができなかった
+（実機フィードバック 2026-09-08「手動は前日・当日の両方で動くようにしてほしい」）。
+
+- 当日も行き先を選べば `PANEL_NAV` / `SUMMON` / `HOME_NAV` に入り、盤に着けば `AT_PANEL` で待つ。
+  待つためのモードは**盤前にはあったが待機場所には無かった**、という抜けだった。
+- `IDLE` は起動直後・中断直後と同じモードで、`jog: 不可` ／ 速度上限 `停止`。
+  ここを緩めると**起動直後まで走れるようになる**ので採らない（§2.5「安全チェーンを緩めない」）。
+- `AT_PANEL` と対になる **`AT_HOME`**（状態 `IDLE_H` ⇄ `PAUSE`、速度上限は停止・
+  **ジョグ中のみ `v_jog_panel`**）を足し、影響を試験画面に閉じた。
+  `HOME_NAV` の到着先も `IDLE` から `AT_HOME` に変えた。
+
+正本は [Spec-modes.md](docs/plan/spec/Spec-modes.md) §2.3 / §3.1.2（`SM-3.1.2-107`〜`-110`）/ §4.2 / §6。
+これに伴い `EXCEPTION-LEDGER.md` の `W-17`（S-21 でジョグできない）は CLOSED。
 
 ### 2026-09-07 — 特例スコープ拡大：試験場内動作の実現可能性デモ（フェーズ 2）
 
