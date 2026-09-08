@@ -35,20 +35,27 @@ test('UX-2-b: S-21 の手動ボタンは IDLE で disabled + 理由バッジ（j
   await expect(badge).toHaveText('このモードでは手動操作できません')
 })
 
-// ── UX-3: overflow なし ─────────────────────────────────────────────────────
-// brief の algorithms.js overflowingElements を、Playwright evaluate で
-// ブラウザ内で実行して検証する（== [] が正）。
-
-async function overflowingElements(page, { root = '#stage', items = '> * > *' } = {}) {
-  // brief のアルゴリズムと同一。items は rootEl から相対（:scope を付与して
-  // querySelectorAll がスコープ内で評価されるようにする）。
-  return page.evaluate(({ root, items }) => {
-    const rootEl = document.querySelector(root)
-    if (!rootEl) return []
-    return [...rootEl.querySelectorAll(`:scope ${items}`)].filter(
-      (el) => el.scrollTop > 0 || el.scrollWidth > el.clientWidth,
-    )
-  }, { root, items })
+// ── UX-3 / UX-4: overflow なし ─────────────────────────────────────────────
+// UX-4（brief-onsite-ux-fix）: #stage（1280x720 の論理キャンバス）の下端・右端を
+// 越える要素を矩形判定で列挙する。以前の scrollTop/scrollWidth 判定は縦のはみ出しを
+// 一切見ておらず「絶対に落ちないテスト」だった（2026-09-08 に S-21 が実際にはみ
+// 出しているのに緑になった）。document.scrollingElement を測っても FixedStage が
+// scale する都合で常に 0 になるので、#stage の矩形で比較する。UX-4 時点では S-21 が
+// 実際に落ちる（UX-5 で緑にする）。
+async function overflowingElements(page) {
+  return page.evaluate(() => {
+    const stage = document.querySelector('#stage')
+    if (!stage) return ['no #stage']
+    const r = stage.getBoundingClientRect()
+    return [...stage.querySelectorAll('*')]
+      .filter((el) => {
+        const b = el.getBoundingClientRect()
+        if (b.width === 0 && b.height === 0) return false   // 非表示
+        return b.bottom > r.bottom + 1 || b.right > r.right + 1
+      })
+      .map((el) => el.getAttribute('data-testid') || el.className || el.tagName)
+      .slice(0, 12)
+  })
 }
 
 // S-20: 空シード（デフォルト）で overflow なし
