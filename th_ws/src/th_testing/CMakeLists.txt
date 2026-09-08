@@ -88,6 +88,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_installed_scripts_executable
     test/test_installed_scripts_executable.py
     TIMEOUT 30)
+  # install(PROGRAMS) に載せた th_onsite のノードが bringup.launch.py から
+  # 実際に起動されることを固定する。home_declarer が「ビルドされるのに
+  # 誰も起動しない」状態で実機に出た事故（2026-09-08）の再発防止
+  ament_add_pytest_test(test_onsite_nodes_launched
+    test/test_onsite_nodes_launched.py
+    TIMEOUT 30)
   ament_add_pytest_test(test_route_replay_core
     test/test_route_replay_core.py
     TIMEOUT 30)
