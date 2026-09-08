@@ -1,9 +1,12 @@
-// e2e/onsite-ux2.spec.js — brief-onsite-ux UX-2-a / UX-2-b / UX-3
+// e2e/onsite-ux2.spec.js — brief-onsite-ux UX-2-a / UX-2-b、brief-onsite-ux-fix UX-5
 // UX-2-a: 「停止」ボタンの class（btn-stop）が他のどの kind とも異なること。
 // UX-2-b: S-21 の手動ボタンは IDLE のとき非活性 + 理由バッジ（jog_denied）。
 //         （サーバがこの keys を返さないことが dichotomy 証明で分かっているため
 //         画面側でだけ判定する。UX-2-b の列挙テストは unit で担保済み。）
-// UX-3:   S-20 / S-21 が 1280×720（scale 1）で overflow しないこと。
+// UX-5:   S-20 / S-21 が 1280×720（scale 1）で「本文（#body）がスクロールを
+//         要求しない」こと（元 UX-3 の #stage 矩形判定は「画面外にはみ出す
+//         要素が無いか」しか見ておらず、区画内スクロールと本文スクロールを
+//         区別できなかった。bodyOverflowPx() に置き換えた）。
 import { expect, test } from '@playwright/test'
 import { gotoScreen, gotoScreenWithOnsite } from './helpers.js'
 
@@ -35,86 +38,79 @@ test('UX-2-b: S-21 の手動ボタンは IDLE で disabled + 理由バッジ（j
   await expect(badge).toHaveText('このモードでは手動操作できません')
 })
 
-// ── UX-3 / UX-4: overflow なし ─────────────────────────────────────────────
-// UX-4（brief-onsite-ux-fix）: #stage（1280x720 の論理キャンバス）の下端・右端を
-// 越える要素を矩形判定で列挙する。以前の scrollTop/scrollWidth 判定は縦のはみ出しを
-// 一切見ておらず「絶対に落ちないテスト」だった（2026-09-08 に S-21 が実際にはみ
-// 出しているのに緑になった）。document.scrollingElement を測っても FixedStage が
-// scale する都合で常に 0 になるので、#stage の矩形で比較する。UX-4 時点では S-21 が
-// 実際に落ちる（UX-5 で緑にする）。
-async function overflowingElements(page) {
+// ── UX-5: 「操作者がページをスクロールしなくてよい」を直接測る ──────────────
+// UX-4（brief-onsite-ux-fix）で #stage 矩形判定に是正したが、その判定は
+// 「画面外にはみ出す要素が無いか」であって「本文がスクロールを要求するか」
+// ではなかった。#body が唯一のページスクロール領域（theme.css の
+// #body{overflow-y:auto}）なので、中身が client 高さに収まっていれば本文
+// スクロールは要らない、を直接測る。.lst-scroll / .tabpane のような意図的な
+// 区画内スクロールは許す（区画自身が #body の中に収まっていればよい）。
+async function bodyOverflowPx(page) {
   return page.evaluate(() => {
-    const stage = document.querySelector('#stage')
-    if (!stage) return ['no #stage']
-    const r = stage.getBoundingClientRect()
-    return [...stage.querySelectorAll('*')]
-      .filter((el) => {
-        const b = el.getBoundingClientRect()
-        if (b.width === 0 && b.height === 0) return false   // 非表示
-        return b.bottom > r.bottom + 1 || b.right > r.right + 1
-      })
-      .map((el) => el.getAttribute('data-testid') || el.className || el.tagName)
-      .slice(0, 12)
+    const body = document.querySelector('#body')
+    if (!body) return -1
+    return body.scrollHeight - body.clientHeight
   })
 }
 
-// S-20: 空シード（デフォルト）で overflow なし
-test('UX-3: S-20（空シード）は 1280×720 で overflow しない', async ({ page }) => {
+const PINS6 = [
+  { id: 'p1', name: '配電盤1', kind: 'PANEL', pose: { position: { x: 1, y: 1 } } },
+  { id: 'p2', name: '配電盤2', kind: 'PANEL', pose: { position: { x: 2, y: 2 } } },
+  { id: 'p3', name: '配電盤3', kind: 'PANEL', pose: { position: { x: 3, y: 3 } } },
+  { id: 'p4', name: '配電盤4', kind: 'PANEL', pose: { position: { x: 4, y: 4 } } },
+  { id: 'p5', name: '配電盤5', kind: 'PANEL', pose: { position: { x: 5, y: 5 } } },
+  { id: 'p6', name: '配電盤6', kind: 'PANEL', pose: { position: { x: 6, y: 6 } } },
+]
+const TARGETS4 = [
+  { position: { x: 0.3, y: 0, z: 0 }, score: 0.9, id: 'c1' },
+  { position: { x: -0.3, y: 0, z: 0 }, score: 0.85, id: 'c2' },
+  { position: { x: 0.9, y: 0, z: 0 }, score: 0.7, id: 'c3' },
+  { position: { x: -0.9, y: 0, z: 0 }, score: 0.6, id: 'c4' },
+]
+
+// S-20: 空シード（デフォルト）で本文スクロール不要
+test('UX-5: S-20（空シード）は 1280×720 で本文スクロールしない', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await gotoScreenWithOnsite(page, 'S20', PREP_STATE, { pins: [], targets: [] })
-  const overflowing = await overflowingElements(page)
-  expect(overflowing).toEqual([])
+  expect(await bodyOverflowPx(page)).toBeLessThanOrEqual(1)
 })
 
-// S-20: 中身多めシード（ピン 6 件 + 対象 2 件 + 対象未選択）で overflow なし
-test('UX-3: S-20（中身多め）は 1280×720 で overflow しない', async ({ page }) => {
+// S-20: 中身多めシード（ピン 6 件 + 候補 4 件）で本文スクロール不要
+test('UX-5: S-20（ピン6・候補4）は 1280×720 で本文スクロールしない', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
-  await gotoScreenWithOnsite(page, 'S20', PREP_STATE, {
-    pins: [
-      { id: 'p1', name: '配電盤1', kind: 'PANEL', pose: { position: { x: 1, y: 1 } } },
-      { id: 'p2', name: '配電盤2', kind: 'PANEL', pose: { position: { x: 2, y: 2 } } },
-      { id: 'p3', name: '配電盤3', kind: 'PANEL', pose: { position: { x: 3, y: 3 } } },
-      { id: 'p4', name: '配電盤4', kind: 'PANEL', pose: { position: { x: 4, y: 4 } } },
-      { id: 'p5', name: '配電盤5', kind: 'PANEL', pose: { position: { x: 5, y: 5 } } },
-      { id: 'p6', name: '配電盤6', kind: 'PANEL', pose: { position: { x: 6, y: 6 } } },
-    ],
-    targets: [
-      { position: { x: 0.3, y: 0, z: 0 }, score: 0.9, id: 'c1' },
-      { position: { x: -0.3, y: 0, z: 0 }, score: 0.85, id: 'c2' },
-    ],
-  })
+  await gotoScreenWithOnsite(page, 'S20', PREP_STATE, { pins: PINS6, targets: TARGETS4 })
   // ピン一覧タブを開く
   await page.locator('[data-testid="s20-subtab-pins"]').click()
-  const overflowing = await overflowingElements(page)
-  expect(overflowing).toEqual([])
+  expect(await bodyOverflowPx(page)).toBeLessThanOrEqual(1)
 })
 
-// S-21: 空シードで overflow なし
-test('UX-3: S-21（空シード）は 1280×720 で overflow しない', async ({ page }) => {
+// S-21: 空シード・homeDeclared false で本文スクロール不要
+test('UX-5: S-21（空シード・未宣言）は 1280×720 で本文スクロールしない', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
-  await gotoScreenWithOnsite(page, 'S21', IDLE_STATE, { pins: [], targets: [] })
-  const overflowing = await overflowingElements(page)
-  expect(overflowing).toEqual([])
+  await gotoScreenWithOnsite(page, 'S21', IDLE_STATE, { pins: [], targets: [], homeDeclared: false })
+  expect(await bodyOverflowPx(page)).toBeLessThanOrEqual(1)
 })
 
-// S-21: 中身多めシード（ピン 6 件 + 配電盤前タブ + 対象 2 件）で overflow なし
-test('UX-3: S-21（中身多め）は 1280×720 で overflow しない', async ({ page }) => {
+// S-21: 中身多めシード（ピン 6 件・候補 4 件・宣言済み）で本文スクロール不要
+test('UX-5: S-21（ピン6・候補4・宣言済み）は 1280×720 で本文スクロールしない', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await gotoScreenWithOnsite(page, 'S21', IDLE_STATE, {
-    pins: [
-      { id: 'p1', name: '配電盤1', kind: 'PANEL', pose: { position: { x: 1, y: 1 } } },
-      { id: 'p2', name: '配電盤2', kind: 'PANEL', pose: { position: { x: 2, y: 2 } } },
-      { id: 'p3', name: '配電盤3', kind: 'PANEL', pose: { position: { x: 3, y: 3 } } },
-      { id: 'p4', name: '配電盤4', kind: 'PANEL', pose: { position: { x: 4, y: 4 } } },
-      { id: 'p5', name: '配電盤5', kind: 'PANEL', pose: { position: { x: 5, y: 5 } } },
-      { id: 'p6', name: '配電盤6', kind: 'PANEL', pose: { position: { x: 6, y: 6 } } },
-    ],
-    targets: [
-      { position: { x: 0.3, y: 0, z: 0 }, score: 0.9, id: 'c1' },
-      { position: { x: -0.3, y: 0, z: 0 }, score: 0.85, id: 'c2' },
-    ],
+    pins: PINS6,
+    targets: TARGETS4,
     homeDeclared: true,
   })
-  const overflowing = await overflowingElements(page)
-  expect(overflowing).toEqual([])
+  expect(await bodyOverflowPx(page)).toBeLessThanOrEqual(1)
+})
+
+// S-21: 呼び寄せ・退避待ち（SUMMON/WAIT_CLEAR）+ ピン6・候補4 で本文スクロール不要
+test('UX-5: S-21（SUMMON/WAIT_CLEAR・ピン6・候補4）は 1280×720 で本文スクロールしない', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await gotoScreenWithOnsite(page, 'S21', { mode: 'SUMMON', state: 'WAIT_CLEAR' }, {
+    pins: PINS6,
+    targets: TARGETS4,
+    homeDeclared: true,
+    waitClear: { distance_m: 1.2, remaining_sec: 8, satisfied: false, verdict: 'WAITING' },
+  })
+  await page.locator('[data-testid="s21-subtab-summon"]').click()
+  expect(await bodyOverflowPx(page)).toBeLessThanOrEqual(1)
 })

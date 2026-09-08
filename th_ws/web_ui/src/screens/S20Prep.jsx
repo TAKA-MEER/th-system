@@ -206,7 +206,7 @@ export default function S20Prep() {
       <div className="stepbar-cell">
         <StepBar steps={stepViews} currentIndex={currentIndex} testId="s20" />
       </div>
-      <div>
+      <div className="left-col">
         <div className="top-actions sticky">
           <div className="tabs grow" style={{ margin: 0, border: 'none' }} role="tablist">
             <button

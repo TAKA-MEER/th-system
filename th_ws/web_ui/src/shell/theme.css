@@ -340,7 +340,6 @@ table.lst td.r{text-align:right}
 .screen#s21 .s21-bar i{display:block;height:100%;border-radius:999px;background:var(--warn)}
 .screen#s21 .s21-bar.ok i{background:var(--ok-tx)}
 .screen#s21 .s21-bar.nope i{background:var(--ng-tx)}
-.screen#s21 .s21-map-row{display:flex;align-items:center;justify-content:space-between;margin-top:9px}
 
 /* ---------- UX-1: 手順バー（S-20 / S-21 共用。parts/StepBar.jsx） ----------
    画面本文の一番上（タブ列より上）に横一列で常設。丸番号→ラベル→細線、の並び。
@@ -631,7 +630,6 @@ table.lst td.r{text-align:right}
    は、右列が画面いっぱいを占めると「次の行き先」カードのボタンを覆ってタップを
    奪う（e2e で確定）ので使わない。右列を flex にし、margin-top:auto で下端に
    押し下げる＝文字通り「右下」。短い内容でも画面いっぱいに下がる。 */
-.screen#s20,.screen#s21{min-height:100%}
 .screen#s20.two-col,.screen#s21.two-col{align-items:stretch}
 .screen#s20.two-col > div:last-child,
 .screen#s21.two-col > div:last-child{display:flex;flex-direction:column;align-items:stretch;min-width:0}
@@ -641,3 +639,24 @@ table.lst td.r{text-align:right}
 
 /* UX-3: 手順バー・次操作ボタンが同じことを伝えるレーダー横のヒントは削った
    （本文を詰める。引き算の範疇なので CSS は無い）。 */
+
+/* ---------- UX-5: S-20 / S-21 を #body（唯一のスクロール領域）の高さに収める ----------
+   旧来は min-height:100%（下限のみ・上限なし）だったため、右列（準備カード＋
+   ピン一覧＋行き先ボタン等）の中身が伸びると画面外までそのままはみ出していた。
+   S-21 実測: 空 799px / 中身多め 932px。S-20 も「ピン 6・候補 4」で実測すると
+   728px（#body は 590px）まで伸び、同じ原因で落ちる（旧テストは pins:6 でも
+   candidates が少ない組み合わせでしかこの経路を踏んでおらず見逃していた）。
+   height:100%（min-height ではなく上限を持つ height）を .screen#s20/#s21 に通し、
+   二列レイアウトの行を grid-template-rows: auto minmax(0,1fr) にして「本文行」の
+   高さを頭打ちにする。grid/flex の子は既定で内容ぶんの min-height を持つため、
+   min-height:0 を経路（列 → .subtabs / 左列 → .tabpane.on）すべてに通さないと
+   縮まず、結局はみ出す。溢れる分は .tabpane.on だけを overflow-y:auto にして
+   区画内へ吸収する（#body 自体はスクロールしない＝要件どおり）。 */
+.screen#s20,.screen#s21{height:100%;min-height:0}
+.screen#s20.two-col,.screen#s21.two-col{grid-template-rows:auto minmax(0,1fr)}
+.screen#s20.two-col > div,.screen#s21.two-col > div{min-height:0}
+.screen#s20.two-col > div.left-col,.screen#s21.two-col > div.left-col{display:flex;flex-direction:column}
+.screen#s20.two-col > div.left-col .tabpane.on,.screen#s21.two-col > div.left-col .tabpane.on{
+  flex:1 1 auto;min-height:0;overflow-y:auto}
+.screen#s20 .subtabs,.screen#s21 .subtabs{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
+.screen#s20 .subtabs .tabpane.on,.screen#s21 .subtabs .tabpane.on{flex:1 1 auto;min-height:0;overflow-y:auto}

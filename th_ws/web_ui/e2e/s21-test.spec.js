@@ -64,15 +64,16 @@ test('S-21 表示とタイトル（IDLE のまま直接開く）', async ({ page
   await goto21(page)
   await expect(page.locator('main')).toContainText('試験')
   await expect(page.locator('[data-testid="s21-finish"]')).toBeVisible()
-  // IDLE では「行き先を選んでください」をピルと状態欄の両方に出す。
-  await expect(page.locator('[data-testid="s21-select-hint"]')).toHaveText('行き先を選んでください')
+  // IDLE では「行き先を選んでください」を状態欄に出す（UX-5: タブ列右のピルは
+  // 状態欄と同じ文字列を二重に出していたので削った）。
   await expect(page.locator('[data-testid="s21-state"]')).toHaveText('行き先を選んでください')
   // 地図タブ初期表示: ピン 3 個とロボットマーカー。
   await expect(page.locator('[data-testid="s21-map-pin-p1"]')).toBeVisible()
   await expect(page.locator('[data-testid="s21-map-pin-p3"]')).toBeVisible()
   await expect(page.locator('[data-testid="s21-map-robot"]')).toBeVisible()
-  // 地図更新は OFF 固定（非活性）で、保存は出ない（map_update=false）。
-  await expect(page.locator('[data-testid="s21-map-update"]')).toBeDisabled()
+  // 地図更新は OFF 固定。UX-5 で行（ラベル＋非活性ボタン）から操作カード脇の
+  // 小さな印（pill）に変えた。保存は出ない（map_update=false）。
+  await expect(page.locator('[data-testid="s21-map-update-pill"]')).toHaveText('地図の更新 OFF')
   await expect(page.locator('#s21 .op-save')).toBeHidden()
 })
 
@@ -263,7 +264,6 @@ test('レーダーの空表示と見失い表示', async ({ page }) => {
 test('SUMMON 以外のモードでも見た目はそのまま（PANEL_NAV で状態欄は stateLabel）', async ({ page }) => {
   await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' })
   await expect(page.locator('[data-testid="s21-state"]')).toHaveText('移動中')
-  await expect(page.locator('[data-testid="s21-select-hint"]')).toBeHidden()
 })
 
 // brief-onsite-fix C.5: 実地図シードで s21 地図タブにラスタが描かれ、ピン/ロボットが載る。

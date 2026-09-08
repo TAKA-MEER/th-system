@@ -47,10 +47,10 @@ import {
   S20_WIZ_MSG, S20_WIZ_REGISTER, S20_WIZ_STEP, S20_PIN_YAW,
   S21_ATPANEL_TITLE, S21_DEST_HOME, S21_DEST_NEXT_PANEL, S21_DEST_SUMMON_HERE,
   S21_HOME_DECLARED, S21_HOME_DECLARE, S21_HOME_FORCE_DECLARE,
-  S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_UPDATE, S21_MAP_UPDATE_OFF,
+  S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
   S21_NEXT_DECLARE_HOME, S21_NEXT_OPEN_VENUE, S21_NEXT_PICK_DEST,
   S21_NEXT_STOP, S21_NEXT_SUMMON, S21_NEXT_WORK,
-  S21_NEXT_DEST_TITLE, S21_NOW_AT_HOME, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_MAP,
+  S21_NEXT_DEST_TITLE, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_MAP,
   S21_PICK_PANEL_HINT, S21_PIN_MOVE,
   S21_PREP_TITLE, S21_SELECT_HINT, S21_STEP_DEST, S21_STEP_HOME, S21_STEP_MOVE,
   S21_STEP_OPEN, S21_STEP_WORK, S21_SUBTAB_ATPANEL, S21_SUBTAB_DEST,
@@ -261,7 +261,7 @@ export default function S21Test({ onExit }) {
       <div className="stepbar-cell">
         <StepBar steps={stepViews} currentIndex={currentIndex} testId="s21" />
       </div>
-      <div>
+      <div className="left-col">
         <div className="top-actions sticky">
           <div className="tabs grow" style={{ margin: 0, border: 'none' }} role="tablist">
             <button
@@ -285,9 +285,6 @@ export default function S21Test({ onExit }) {
               {S20_TAB_TARGET}
             </button>
           </div>
-          {!isNavMode && (
-            <span className="pill" data-testid="s21-select-hint">{S21_SELECT_HINT}</span>
-          )}
         </div>
 
         {tab === 'map' && (
@@ -348,18 +345,11 @@ export default function S21Test({ onExit }) {
           onManualClick={() => jogPanel.open()}
         />
         <div className="state" data-testid="s21-state">{stateText}</div>
-        <div className="s21-map-row">
-          <span className="grow sm">{S21_MAP_UPDATE}</span>
-          <button
-            type="button"
-            className="btn sm"
-            data-testid="s21-map-update"
-            disabled
-            title={S21_MAP_UPDATE_OFF}
-          >
-            {S21_MAP_UPDATE_OFF}
-          </button>
-        </div>
+        {/* UX-5: 「地図の更新 OFF」は W-10 により構造的に常時 OFF（行では出さず、
+            操作カード脇の小さな印にする。ボタンは元々非活性で操作を持たなかった）。 */}
+        <span className="pill mt" data-testid="s21-map-update-pill" title={S21_MAP_UPDATE_NOTE}>
+          {S21_MAP_UPDATE} {S21_MAP_UPDATE_OFF}
+        </span>
 
         <div className="subtabs">
           <div className="tabs" role="tablist">
@@ -400,10 +390,9 @@ export default function S21Test({ onExit }) {
               <div className="card">
                 <h3>{S21_PREP_TITLE}</h3>
                 <div className="row mb">
-                  <span className="grow sm">{S21_OPEN_VENUE_MAP}</span>
                   <button
                     type="button"
-                    className="btn sm"
+                    className="btn sm wide"
                     data-testid="s21-open-venue-map"
                     disabled={disabledAll}
                     onClick={() => handleOpenVenueMap()}
@@ -417,7 +406,6 @@ export default function S21Test({ onExit }) {
                   </div>
                 )}
                 <div className="row mb">
-                  <span className="grow sm">{S21_NOW_AT_HOME}</span>
                   <span className={`pill ${homeDeclared ? 'ok' : 'ng'}`} data-testid="s21-home-pill">
                     {homeDeclared ? S21_HOME_DECLARED : S21_HOME_UNDECLARED}
                   </span>
