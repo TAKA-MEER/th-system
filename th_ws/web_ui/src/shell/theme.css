@@ -625,17 +625,13 @@ table.lst td.r{text-align:right}
 .next-action.btn-save-op{background:transparent;border-color:#4caf50;color:#a9e0ad}
 .next-action.btn-stop{background:#7a1010;border-color:#d84343;border-radius:999px}
 
-/* UX-2-a「終了は枠線・右下」+ UX-3: S-20/S-21 は本文を画面（#body）いっぱいに
-   広げ、終了ボタンを右列の最下端（右寄せ）に置く。position:absolute の浮かせ
-   は、右列が画面いっぱいを占めると「次の行き先」カードのボタンを覆ってタップを
-   奪う（e2e で確定）ので使わない。右列を flex にし、margin-top:auto で下端に
-   押し下げる＝文字通り「右下」。短い内容でも画面いっぱいに下がる。 */
+/* brief-onsite-ux2 F-1: 終了は S-11/S-13/S-14 と同じ左上の .top-actions.sticky
+   に統一する（.finish-row による右下配置は誤りだったので廃止）。右列を伸ばす
+   flex 設定は .subtabs の flex:1（UX-5、下の方の定義）を効かせるために残す。 */
 .screen#s20.two-col,.screen#s21.two-col{align-items:stretch}
 .screen#s20.two-col > div:last-child,
 .screen#s21.two-col > div:last-child{display:flex;flex-direction:column;align-items:stretch;min-width:0}
-.finish-row{display:flex;justify-content:flex-end;margin-top:auto;padding-top:9px}
-.finish-row .btn-finish{min-height:44px;padding:10px 16px;font-weight:700;
-  background:transparent;border-color:var(--bd-hi);color:var(--mut)}
+.btn-finish{background:transparent;border-color:var(--bd-hi);color:var(--mut)}
 
 /* UX-3: 手順バー・次操作ボタンが同じことを伝えるレーダー横のヒントは削った
    （本文を詰める。引き算の範疇なので CSS は無い）。 */

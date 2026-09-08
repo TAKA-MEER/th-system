@@ -284,6 +284,19 @@ export default function S21Test({ onExit }) {
       </div>
       <div className="left-col">
         <div className="top-actions sticky">
+          {/* brief-onsite-ux2 F-1: 終了は S-11/S-13/S-14 と同じ左上（top-actions
+              sticky の先頭）。前回のブリーフで右列右下（.finish-row）に置いた
+              のが誤りだったので統一する。 */}
+          <button
+            type="button"
+            className={`btn sm ${OP_BUTTON_KINDS.finish}`}
+            data-testid="s21-finish"
+            disabled={disabledAll}
+            onClick={handleFinish}
+          >
+            <IconClose />
+            <span>{OP_LABELS.finish}</span>
+          </button>
           <div className="tabs grow" style={{ margin: 0, border: 'none' }} role="tablist">
             <button
               type="button"
@@ -654,19 +667,6 @@ export default function S21Test({ onExit }) {
               </div>
             </div>
           )}
-        </div>
-        {/* UX-2-a: 終了は枠線・右下（右列の最下端、右寄せ。theme.css .finish-row）。 */}
-        <div className="finish-row">
-          <button
-            type="button"
-            className="btn btn-finish"
-            data-testid="s21-finish"
-            disabled={disabledAll}
-            onClick={handleFinish}
-          >
-            <IconClose />
-            <span>{OP_LABELS.finish}</span>
-          </button>
         </div>
       </div>
     </div>
