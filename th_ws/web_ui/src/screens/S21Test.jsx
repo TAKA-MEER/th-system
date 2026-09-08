@@ -52,7 +52,7 @@ import {
   S21_NEXT_DECLARE_HOME, S21_NEXT_OPEN_VENUE, S21_NEXT_PICK_DEST,
   S21_NEXT_STOP, S21_NEXT_SUMMON, S21_NEXT_WORK,
   S21_NEXT_DEST_TITLE, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_MAP,
-  S21_PICK_PANEL_HINT, S21_PIN_MOVE,
+  S21_PICK_PANEL_HINT, S21_PIN_MOVE, S21_PINS_EMPTY,
   S21_PREP_TITLE, S21_SELECT_HINT, S21_STEP_DEST, S21_STEP_HOME, S21_STEP_MOVE,
   S21_STEP_OPEN, S21_STEP_WORK, S21_SUBTAB_ATPANEL, S21_SUBTAB_DEST,
   S21_SUBTAB_SUMMON, S21_SUMMON_START, S21_SUMMON_TITLE,
@@ -369,12 +369,14 @@ export default function S21Test({ onExit }) {
           onTrigger={(trigger) => sendTrigger(trigger)}
           onManualClick={() => jogPanel.open()}
         />
-        <div className="state" data-testid="s21-state">{stateText}</div>
-        {/* UX-5: 「地図の更新 OFF」は W-10 により構造的に常時 OFF（行では出さず、
-            操作カード脇の小さな印にする。ボタンは元々非活性で操作を持たなかった）。 */}
-        <span className="pill mt" data-testid="s21-map-update-pill" title={S21_MAP_UPDATE_NOTE}>
-          {S21_MAP_UPDATE} {S21_MAP_UPDATE_OFF}
-        </span>
+        {/* UX-5: 状態表示と「地図の更新 OFF」の印を 1 行に並べる。地図の更新は
+            W-10 により構造的に常時 OFF なので、行を占める操作としては出さない。 */}
+        <div className="row s21-state-row">
+          <span className="state grow" data-testid="s21-state">{stateText}</span>
+          <span className="pill" data-testid="s21-map-update-pill" title={S21_MAP_UPDATE_NOTE}>
+            {S21_MAP_UPDATE} {S21_MAP_UPDATE_OFF}
+          </span>
+        </div>
 
         <div className="subtabs">
           <div className="tabs" role="tablist">
@@ -414,23 +416,16 @@ export default function S21Test({ onExit }) {
             <div className="tabpane on">
               <div className="card">
                 <h3>{S21_PREP_TITLE}</h3>
-                <div className="row mb">
+                <div className="row mb s21-prep-row">
                   <button
                     type="button"
-                    className="btn sm wide"
+                    className="btn sm grow"
                     data-testid="s21-open-venue-map"
                     disabled={disabledAll}
                     onClick={() => handleOpenVenueMap()}
                   >
                     {S21_OPEN_VENUE_MAP}
                   </button>
-                </div>
-                {venueMsg && (
-                  <div className={`note mb${venueMsg.ok ? '' : ' err'}`} data-testid="s21-open-venue-msg">
-                    {venueMsg.text || (venueMsg.ok ? S21_OPEN_VENUE_DONE : null)}
-                  </div>
-                )}
-                <div className="row mb">
                   <span className={`pill ${homeDeclared ? 'ok' : 'ng'}`} data-testid="s21-home-pill">
                     {homeDeclared ? S21_HOME_DECLARED : S21_HOME_UNDECLARED}
                   </span>
@@ -445,6 +440,11 @@ export default function S21Test({ onExit }) {
                     <span>{S21_HOME_DECLARE}</span>
                   </button>
                 </div>
+                {venueMsg && (
+                  <div className={`note mb${venueMsg.ok ? '' : ' err'}`} data-testid="s21-open-venue-msg">
+                    {venueMsg.text || (venueMsg.ok ? S21_OPEN_VENUE_DONE : null)}
+                  </div>
+                )}
                 {homeErr && (
                   <div className="note mb" data-testid="s21-home-err">
                     <div className="mb">{homeErr}</div>
@@ -469,7 +469,7 @@ export default function S21Test({ onExit }) {
                   </div>
                 )}
                 {pins.length === 0 ? (
-                  <div className="note" data-testid="s21-pins-empty">{S21_PREP_TITLE}</div>
+                  <div className="note" data-testid="s21-pins-empty">{S21_PINS_EMPTY}</div>
                 ) : (
                   <>
                     <div className="lst-scroll">

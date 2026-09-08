@@ -660,3 +660,12 @@ table.lst td.r{text-align:right}
   flex:1 1 auto;min-height:0;overflow-y:auto}
 .screen#s20 .subtabs,.screen#s21 .subtabs{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
 .screen#s20 .subtabs .tabpane.on,.screen#s21 .subtabs .tabpane.on{flex:1 1 auto;min-height:0;overflow-y:auto}
+
+/* UX-7: S-21 の右列で、手順の中身（.tabpane）に高さを回すための引き算。
+   - 準備カードの「会場地図を開く」「宣言する」を 1 行に並べる（2 行 → 1 行）
+   - 状態表示と「地図の更新 OFF」の印を 1 行に並べる（2 行 → 1 行）
+   どちらも操作は減らさず、縦だけを詰める。狭いときは折り返して重ならないようにする。 */
+.screen#s21 .s21-prep-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.screen#s21 .s21-prep-row .grow{flex:1 1 auto;min-width:0}
+.screen#s21 .s21-state-row{display:flex;align-items:center;gap:8px;margin-top:9px}
+.screen#s21 .s21-state-row .state{margin-top:0;min-width:0}

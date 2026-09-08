@@ -53,7 +53,8 @@ export default function OnsiteMap({
     return undefined
   }, [mapData])
 
-  const t = onsiteMapTransform(mapData, MAP_VB_W, MAP_VB_H)
+  // UX-7: 縁のピンのラベル（丸の下 26px）が SVG の外で切れないよう内側に寄せる。
+  const t = onsiteMapTransform(mapData, MAP_VB_W, MAP_VB_H, 24, 22)
   const hasMap = !!(mapUrl && t.view)
 
   return (

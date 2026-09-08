@@ -83,7 +83,10 @@ export function baseToWorld(localX, localY, robotPose) {
 //     - mapData: 元の OccupancyGrid（ラスタ描画に使う）。null でもよい
 //     - view: computeMapView() の戻り値（地図あり時）。null なら地図なしフォールバック
 //     - toPx(x, y): map 座標 [m] → SVG ピクセル [px, py]。地図あり/なしで同じ形
-export function onsiteMapTransform(mapData, viewW, viewH, fallbackPxPerM = 24) {
+export function onsiteMapTransform(mapData, viewW, viewH, fallbackPxPerM = 24, insetPx = 0) {
+  // insetPx: 地図を SVG の内側に寄せる余白 [px]。ピンのラベルは丸の下 26px に
+  // 描かれるので、余白ゼロだと縁のピンのラベルが SVG の外で切れる（UX-7）。
+  // 既定 0 なので既存の呼び出し・ユニットテストの期待値は変わらない。
   const info = mapData?.info
   const data = mapData?.data
   const infoOk = info
@@ -103,7 +106,8 @@ export function onsiteMapTransform(mapData, viewW, viewH, fallbackPxPerM = 24) {
       toPx(x, y) { return [viewW / 2 + x * scale, viewH / 2 - y * scale] },
     }
   }
-  const view = computeMapView(info, viewW, viewH)
+  const view = computeMapView(
+    info, viewW - insetPx * 2, viewH - insetPx * 2, { panX: insetPx, panY: insetPx })
   return {
     mapData,
     view,
