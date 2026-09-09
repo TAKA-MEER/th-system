@@ -593,7 +593,7 @@ export default function S20Prep() {
                             onClick={() => setSelectedPinId(pin.id)}
                           >
                             <td className="sm" data-testid={`s20-pin-name-${pin.id}`}>
-                              {pin.name ?? pin.id}
+                              {pin.name || pin.id}
                             </td>
                             <td className="r mono xs">{S20_PIN_YAW(Math.round(yawDeg(pin)))}</td>
                             <td className="r">

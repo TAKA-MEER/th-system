@@ -225,12 +225,20 @@ test('待機場所の宣言: 失敗で force 再宣言を促し、成功で宣�
   await expect(page.locator('[data-testid="s21-home-declare"]')).toBeDisabled()
 })
 
-test('ピンの「移動」は select_pin を保留し、成功後に ui.goto{PANEL}', async ({ page }) => {
+// 2026-09-09 実機で確認: venue_navigator._on_select_pin は pin.id で照合する
+// （名前では照合しない）。以前は `pin.name ?? pin.id` を panel_id に送っていて、
+// このテストの PINS フィクスチャが偶然すべて非空の name を持っていたため
+// （'盤 A-1' 等）バグに気づけなかった。実機の大半のピンは改名しておらず
+// name が空文字 '' で、`??` は null/undefined しかフォールバックしないので
+// 空文字はすり抜け、panel_id:'' が送られて常に「ピンが見つかりません」に
+// なっていた（選択の黄枠自体は画面ローカルの状態なので正常に見えた）。
+// 期待値を id（'p1'）に直し、name が空でも壊れないことも別テストで確認する。
+test('ピンの「移動」は select_pin を保留し、成功後に ui.goto{PANEL}（panel_id は id）', async ({ page }) => {
   await goto21(page, IDLE, { selectPin: { success: true, message: '' } })
   await page.locator('[data-testid="s21-pin-move-p1"]').click()
   const calls = await onsiteServiceCalls(page)
   expect(calls[0].service).toBe('/onsite/select_pin')
-  expect(calls[0].request).toMatchObject({ panel_id: '盤 A-1' })
+  expect(calls[0].request).toMatchObject({ panel_id: 'p1' })
   const gotos = (await triggers(page)).filter((c) => c.trigger === 'ui.goto')
   expect(gotos).toHaveLength(1)
   expect(gotos[0].argJson).toMatchObject({ kind: 'PANEL' })
@@ -241,8 +249,23 @@ test('ピンの「移動」が reject されたらメッセージを出し、ui.
   await page.locator('[data-testid="s21-pin-move-p1"]').click()
   await expect(page.locator('[data-testid="s21-go-err"]')).toContainText('そのピンには行けません')
   const calls = await onsiteServiceCalls(page)
-  expect(calls[0].request).toMatchObject({ panel_id: '盤 A-1' })
+  expect(calls[0].request).toMatchObject({ panel_id: 'p1' })
   expect((await triggers(page)).filter((c) => c.trigger === 'ui.goto'), 'reject なのに ui.goto を送っている').toHaveLength(0)
+})
+
+// 名前が未設定（空文字 ''）のピンでも panel_id が空にならないこと（実機で
+// 踏んだ不具合の直接の再現）。
+test('ピンの「移動」: 名前が空文字のピンでも panel_id は id が送られる', async ({ page }) => {
+  await goto21(page, IDLE, {
+    pins: [
+      { id: 'panel_1', name: '', kind: 'PANEL', registered_at: '',
+        pose: { position: { x: 0.9, y: -0.06, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 } } },
+    ],
+    selectPin: { success: true, message: '' },
+  })
+  await page.locator('[data-testid="s21-pin-move-panel_1"]').click()
+  const calls = await onsiteServiceCalls(page)
+  expect(calls[0].request).toMatchObject({ panel_id: 'panel_1' })
 })
 
 test('次の行き先: 待機場所→ui.goto{HOME}、その場で呼ぶ→ui.goto{SUMMON}、次の配電盤→ピン一覧を促す', async ({ page }) => {

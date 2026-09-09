@@ -190,8 +190,14 @@ test('S-21: 「行き先を選ぶ」で行き先サブタブ＋ピン選択を�
   await expect(page.locator('[data-testid="s21-panel-pick-hint"]')).toBeVisible()
 })
 
-test('S-21: 移動中は「停止」、作業中は「作業中」で ui.working', async ({ page }) => {
-  // PANEL_NAV: 段1〜3が完了（open・home・nav）だが段4（AT_PANEL）未完了 → current=段4「停止」。
+// 2026-09-09 実機フィードバック「移動を押すと停止ボタンが2つ出て両方反応しない」:
+// 段4（move、移動中）の「次にやること」は以前 kind:'stop' で ui.stop を送るだけの
+// ボタンだったが、操作カードに常時ある「停止」（.op-stop）と全く同じ操作の重複
+// だった。段4では「次にやること」自体を出さず、操作カードの停止だけにする
+// （UX-6-c が「保存」で既にやっている「同じ操作を二重に出さない」原則を停止にも
+// 適用）。
+test('S-21: 移動中は「次にやること」を出さない（操作カードの停止のみ）、作業中は「作業中」で ui.working', async ({ page }) => {
+  // PANEL_NAV: 段1〜3が完了（open・home・nav）だが段4（AT_PANEL）未完了 → current=段4。
   await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' }, {
     openVenueMap: { success: true, message: '' },
     homeDeclared: true,
@@ -200,8 +206,9 @@ test('S-21: 移動中は「停止」、作業中は「作業中」で ui.working
   await expect(btn).toHaveText('会場地図を開く')
   await btn.click() // 段1（会場地図を開く）
   await expect(page.locator('[data-testid="step-4"]')).toHaveAttribute('aria-current', 'step')
-  await expect(btn).toHaveText('停止')
-  await btn.click()
+  await expect(btn).toBeHidden()
+  // 停止は操作カード側（常時表示）だけで送る。
+  await page.locator('#s21 .op-stop').click()
   expect((await triggers(page)).some((c) => c.trigger === 'ui.stop'), '停止が ui.stop を送っていない').toBe(true)
 
   // AT_PANEL に着くと段4完了 → current=段5「作業中」。

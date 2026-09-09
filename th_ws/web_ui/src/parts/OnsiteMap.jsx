@@ -181,7 +181,7 @@ export default function OnsiteMap({
           >
             <circle r={10} fill={home ? '#2196f3' : '#e91e63'} stroke={sel ? '#ffd54f' : (home ? '#90caf9' : '#f8bbd0')} strokeWidth={2} />
             <text y={26} textAnchor="middle" fontSize="10" fill={home ? '#90caf9' : '#f8bbd0'}>
-              {pin.name ?? pin.id}
+              {pin.name || pin.id}
             </text>
           </g>
         )

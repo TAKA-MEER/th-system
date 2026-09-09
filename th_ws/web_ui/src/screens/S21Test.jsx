@@ -57,7 +57,7 @@ import {
   S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_GATE_MSG, S21_MAP_LOADING,
   S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
   S21_NEXT_DECLARE_HOME, S21_NEXT_OPEN_VENUE, S21_NEXT_PICK_DEST,
-  S21_NEXT_STOP, S21_NEXT_SUMMON, S21_NEXT_WORK,
+  S21_NEXT_SUMMON, S21_NEXT_WORK,
   S21_NEXT_DEST_TITLE, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_HINT, S21_OPEN_VENUE_MAP,
   S21_PICK_PANEL_HINT, S21_PIN_MOVE, S21_PINS_EMPTY,
   S21_OPEN_VENUE_FAIL, S21_PREP_TITLE, S21_SELECT_HINT, S21_STEP_DEST, S21_STEP_HOME, S21_STEP_MOVE,
@@ -204,9 +204,16 @@ export default function S21Test({ onExit }) {
   }
 
   // ピン行の「移動」: ゴールを保留（select_pin）→ 成功したら ui.goto{PANEL}。
+  // 2026-09-09 実機で確認: venue_navigator._on_select_pin は pin.id で照合する
+  // （名前では照合しない）。以前は `pin.name ?? pin.id` を送っていたが、
+  // name はデフォルトで空文字 '' （改名していない大半のピン）であり、`??` は
+  // null/undefined だけをフォールバックするため空文字はすり抜けて panel_id:'' が
+  // 送られ、「ピンが見つかりません」で常に失敗していた（選択（黄枠）自体は
+  // 画面ローカルの状態なので正常に見えた）。id は常に非空・不変なので
+  // フォールバック自体が不要。
   async function handleMove(pin) {
     setGoErr(null)
-    const res = await selectPin({ panel_id: pin.name ?? pin.id })
+    const res = await selectPin({ panel_id: pin.id })
     if (res?.success) {
       setPanelPick(false)
       sendTrigger('ui.goto', { kind: 'PANEL' })
@@ -304,11 +311,16 @@ export default function S21Test({ onExit }) {
   // 現在段の操作を 1 個だけ出す。押すと必要なサブタブへ自動で切り替わる。
   // 2 点指示ウィザード（POINT）と退避待ち（WAIT_CLEAR）は最優先で見せ、隠す。
   // kind は OP_BUTTON_KINDS に通す（進む=塗り、登録=枠線水色、停止=丸太枠赤）。
+  // 2026-09-09 実機フィードバック「移動を押すと停止ボタンが2つ出て両方反応
+  // しない」: 段3（move、移動中）は以前 kind:'stop' の「次にやること」ボタンを
+  // 出していたが、操作カード側に常時ある「停止」（下記 slots={{stop:true,...}}）
+  // と全く同じ ui.stop を送るだけの重複だった（UX-6-c が「保存」で既にやっている
+  // 「同じ操作を二重に出さない」原則を、停止には適用し忘れていた）。段3は
+  // 「次にやること」を出さず、操作カードの停止だけにする。
   const nextActions = {
     0: { kind: 'advance', label: S21_NEXT_OPEN_VENUE, run: () => handleOpenVenueMap() },
     1: { kind: 'register', label: S21_NEXT_DECLARE_HOME, run: () => { setSubtab('dest'); handleDeclareHome(false) } },
     2: { kind: 'advance', label: S21_NEXT_PICK_DEST, run: () => { setSubtab('dest'); setPanelPick(true) } },
-    3: { kind: 'stop', label: S21_NEXT_STOP, run: () => sendTrigger('ui.stop') },
     // 段 5: 作業中（WORKING⇄IDLE_P のトグル）か、呼び寄せ（SUMMON ならサブタブへ誘導）。
     4: (working || mode === 'AT_PANEL')
       ? { kind: 'advance', label: S21_NEXT_WORK, run: toggleWorking }
@@ -574,7 +586,7 @@ export default function S21Test({ onExit }) {
                               onClick={() => setSelectedPinId(pin.id)}
                             >
                               <td className="sm" data-testid={`s21-pin-name-${pin.id}`}>
-                                {pin.name ?? pin.id}
+                                {pin.name || pin.id}
                               </td>
                               <td className="r">
                                 <button
