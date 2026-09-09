@@ -40,6 +40,7 @@ export default function OnsiteMap({
   robotLabel,
   personPose,
   personLabel,
+  scanPoints,
   overlayText,
   costmapData = null,
   plannedPath = [],
@@ -216,6 +217,19 @@ export default function OnsiteMap({
           {personLabel ? (
             <text y={11} textAnchor="middle" fontSize="10" fill="#ffe0b2">{personLabel}</text>
           ) : null}
+        </g>
+      ) : null}
+
+      {Array.isArray(scanPoints) && scanPoints.length > 0 ? (
+        // MAP-SCAN: LiDAR の生スキャン（/scan_filtered、base_link 相対）を
+        // baseToWorld() で map 座標に変換した点群。costmap（別ブリーフ、赤系）や
+        // 緑のロボット・オレンジの対象者と重ならない明るい水色の小円で描く。
+        // 各点を個別 <circle> にする素朴な実装でよい（360 点程度なら SVG でも軽い）。
+        <g data-testid={`${testId}-map-scan`}>
+          {scanPoints.map((p, i) => {
+            const [px, py] = t.toPx(p.x, p.y)
+            return <circle key={i} cx={px} cy={py} r={1.2} fill="#00e5ff" />
+          })}
         </g>
       ) : null}
 

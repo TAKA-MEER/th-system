@@ -26,6 +26,8 @@ import { useTrigger } from '../ros/useTrigger.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
 import { usePersonTargets } from '../ros/usePersonTargets.js'
 import { usePersonStatus } from '../ros/usePersonStatus.js'
+import { useScan } from '../ros/useScan.js'
+import { scanToPoints } from '../parts/scanToPoints.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { useOnsiteMapView } from '../ros/useOnsiteMapView.js'
 import { useOnsiteCostmap } from '../ros/useCostmap.js'
@@ -90,6 +92,7 @@ export default function S20Prep() {
   const pins = useOnsitePins(ros)
   const personTargets = usePersonTargets(ros)
   const personStatus = usePersonStatus(ros)
+  const scan = useScan(ros)
   const routeMap = useOnsiteMapView(ros)
   const routePose = useRoutePose(ros)
   // brief-MAP-COSTMAP: 地図タブに Nav2 の costmap と直近の経路を重ねる。
@@ -147,6 +150,16 @@ export default function S20Prep() {
   if (routePose && personStatus && personStatus.is_lost === false) {
     const [wx, wy] = baseToWorld(personStatus.position.x, personStatus.position.y, routePose)
     personPose = { x: wx, y: wy }
+  }
+
+  // MAP-SCAN: LiDAR の生スキャン（/scan_filtered、base_link 相対）を map 座標へ。
+  // routePose が未取得のときは変換できないので null（personPose と同じガード）。
+  let scanPoints = null
+  if (routePose && scan) {
+    scanPoints = scanToPoints(scan).map(({ x, y }) => {
+      const [wx, wy] = baseToWorld(x, y, routePose)
+      return { x: wx, y: wy }
+    })
   }
 
   // ── 手順バー（UX-1）と「次にやること」ボタン ──
@@ -386,6 +399,7 @@ export default function S20Prep() {
                   personLabel={S20_MAP_TARGET}
                   costmapData={costmapData}
                   plannedPath={plannedPath}
+                  scanPoints={scanPoints}
                   selectedPinId={selectedPinId}
                   onSelectPin={setSelectedPinId}
                   ariaLabel={S20_MAP_ARIA}

@@ -138,10 +138,10 @@ export async function gotoScreenWithOnsite(
   page, screen, state,
   {
     pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear,
-    routeMap, openVenueMap, mappingActive, personStatus, costmap, plannedPath,
+    routeMap, openVenueMap, mappingActive, personStatus, costmap, plannedPath, scan,
   },
 ) {
-  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm, ma, pst, cm, pp }) => {
+  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm, ma, pst, cm, pp, sc }) => {
     window.__thTestState = s
     window.__thTestScreen = scr
     if (p) window.__thTestOnsitePins = p
@@ -168,11 +168,13 @@ export async function gotoScreenWithOnsite(
     // Nav2 経路（/plan）のシード（ros/useCostmap.js / ros/usePlannedPath.js）。
     if (cm) window.__thTestCostmap = cm
     if (pp) window.__thTestPlannedPath = pp
+    // MAP-SCAN: 地図タブの LiDAR 点群オーバーレイ（ros/useScan.js）。
+    if (sc) window.__thTestScan = sc
   },
   {
     s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose,
     dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear, rm: routeMap, ovm: openVenueMap,
-    ma: mappingActive, pst: personStatus, cm: costmap, pp: plannedPath,
+    ma: mappingActive, pst: personStatus, cm: costmap, pp: plannedPath, sc: scan,
   })
   await page.goto('/')
 }

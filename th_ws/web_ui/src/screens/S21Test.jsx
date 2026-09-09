@@ -25,6 +25,7 @@ import { useTrigger } from '../ros/useTrigger.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
 import { usePersonTargets } from '../ros/usePersonTargets.js'
 import { usePersonStatus } from '../ros/usePersonStatus.js'
+import { useScan } from '../ros/useScan.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { useHomeDeclared } from '../ros/useHomeDeclared.js'
 import { useWaitClearStatus } from '../ros/useWaitClearStatus.js'
@@ -35,6 +36,7 @@ import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
+import { scanToPoints } from '../parts/scanToPoints.js'
 import StepBar from '../parts/StepBar.jsx'
 import {
   IconArrow, IconClose, IconPin, IconStop, OP_BUTTON_KINDS,
@@ -111,6 +113,7 @@ export default function S21Test({ onExit }) {
   const pins = useOnsitePins(ros)
   const personTargets = usePersonTargets(ros)
   const personStatus = usePersonStatus(ros)
+  const scan = useScan(ros)
   const routeMap = useOnsiteMapView(ros)
   const routePose = useRoutePose(ros)
   // brief-MAP-COSTMAP: 地図タブに Nav2 の costmap と直近の経路を重ねる。
@@ -137,6 +140,16 @@ export default function S21Test({ onExit }) {
   if (routePose && personStatus && personStatus.is_lost === false) {
     const [wx, wy] = baseToWorld(personStatus.position.x, personStatus.position.y, routePose)
     personPose = { x: wx, y: wy }
+  }
+
+  // MAP-SCAN: LiDAR の生スキャン（/scan_filtered、base_link 相対）を map 座標へ。
+  // routePose が未取得のときは変換できないので null（personPose と同じガード）。
+  let scanPoints = null
+  if (routePose && scan) {
+    scanPoints = scanToPoints(scan).map(({ x, y }) => {
+      const [wx, wy] = baseToWorld(x, y, routePose)
+      return { x: wx, y: wy }
+    })
   }
 
   // 左列タブ（地図 / 対象選択）と右列サブタブ（行き先 / 呼び寄せ / 配電盤前）。
@@ -384,6 +397,7 @@ export default function S21Test({ onExit }) {
                   personLabel={S20_MAP_TARGET}
                   costmapData={costmapData}
                   plannedPath={plannedPath}
+                  scanPoints={scanPoints}
                   selectedPinId={selectedPinId}
                   onSelectPin={setSelectedPinId}
                   ariaLabel={S20_MAP_ARIA}
