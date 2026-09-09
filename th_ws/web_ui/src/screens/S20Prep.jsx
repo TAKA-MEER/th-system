@@ -25,6 +25,7 @@ import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
 import { usePersonTargets } from '../ros/usePersonTargets.js'
+import { usePersonStatus } from '../ros/usePersonStatus.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { useOnsiteMapView } from '../ros/useOnsiteMapView.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
@@ -40,12 +41,12 @@ import {
 import OperationCard from '../shell/OperationCard.jsx'
 import attributes from '../generated/attributes.json'
 import { prepSteps, onsiteReasons } from './onsiteSteps.js'
-import { quatToYaw } from '../mapGeometry.js'
+import { baseToWorld, quatToYaw } from '../mapGeometry.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
   BADGE_JOG_DENIED,
-  S20_MAP_ARIA, S20_MAP_GATE_BUTTON, S20_MAP_GATE_MSG, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TITLE,
+  S20_MAP_ARIA, S20_MAP_GATE_BUTTON, S20_MAP_GATE_MSG, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TARGET, S20_MAP_TITLE,
   S20_NEXT_REG_HOME, S20_NEXT_REG_PANEL, S20_NEXT_SAVE, S20_NEXT_SELECT_TARGET, S20_NEXT_START_MAPPING,
   S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_EDIT, S20_PIN_RENAME,
   S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REGISTER_TITLE, S20_REG_PANEL,
@@ -83,6 +84,7 @@ export default function S20Prep() {
   const sendTrigger = useTrigger()
   const pins = useOnsitePins(ros)
   const personTargets = usePersonTargets(ros)
+  const personStatus = usePersonStatus(ros)
   const routeMap = useOnsiteMapView(ros)
   const routePose = useRoutePose(ros)
   const { twoPoint, editPin } = useOnsiteService()
@@ -120,6 +122,15 @@ export default function S20Prep() {
   const isRegister = stateName === 'REGISTER'
   const homePinExists = pins.some((p) => p.kind === 'HOME')
   const unsaved = Array.isArray(state?.unsaved) && state.unsaved.length > 0
+
+  // MAP-1: 追従対象者を地図上に表示。/person/status は base_link 相対なので
+  // baseToWorld() で map 座標に変換する（routePose は map フレーム）。is_lost の
+  // ときや routePose が未取得のときは変換できないので null（マーカーを出さない）。
+  let personPose = null
+  if (routePose && personStatus && personStatus.is_lost === false) {
+    const [wx, wy] = baseToWorld(personStatus.position.x, personStatus.position.y, routePose)
+    personPose = { x: wx, y: wy }
+  }
 
   // ── 手順バー（UX-1）と「次にやること」ボタン ──
   // brief-onsite-ux2 F-6: 段 1（地図を作る）の完了条件は mapUnlocked（表示解禁）
@@ -305,6 +316,8 @@ export default function S20Prep() {
                   mapData={routeMap}
                   pins={pins}
                   robotPose={routePose}
+                  personPose={personPose}
+                  personLabel={S20_MAP_TARGET}
                   selectedPinId={selectedPinId}
                   onSelectPin={setSelectedPinId}
                   ariaLabel={S20_MAP_ARIA}
