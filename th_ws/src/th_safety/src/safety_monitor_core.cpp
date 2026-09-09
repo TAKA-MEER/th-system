@@ -83,6 +83,9 @@ const std::map<std::string, std::set<std::string>>& default_mode_states() {
       {"AT_PANEL", {"IDLE_P", "WORKING", "PAUSE"}},
       {"SUMMON", {"POINT", "WAIT_CLEAR", "NAV", "BLOCKED", "PAUSE", "ALIGN"}},
       {"HOME_NAV", {"NAV", "BLOCKED", "PAUSE"}},
+      // Spec-modes.md §2.3（2026-09-08 追加）。待機場所での待機。これが抜けていると
+      // AT_HOME に入った瞬間 STATE_INCONSISTENT(CRITICAL) → ESTOP になる（実機で発生）。
+      {"AT_HOME", {"IDLE_H", "PAUSE"}},
       {"OPCHECK", {"LIST", "RUNNING_CHECK", "REPAIR"}},
       {"CALIB", {"LIST", "S1", "S2", "S3", "S4"}},
       // 旧 FSM（th_mode_manager）は "NONE" を状態として使わないモード名の

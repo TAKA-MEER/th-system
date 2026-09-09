@@ -144,10 +144,11 @@ TEST(JogGateCore, AllModesFromAttributes) {
   const Attributes a = load_attributes_jog(TH_STATE_ATTRIBUTES_YAML);
   const JogGateParams p = params(1.5);
 
-  // 18 モード（DetailedDesign-state.md §8.2）。数が変わったら設計と実装の
-  // どちらかがずれているので、まずここで気づけるようにする。
-  ASSERT_EQ(a.jog.size(), static_cast<std::size_t>(18))
-      << "attributes.yaml のモード数が 18 でない: " << TH_STATE_ATTRIBUTES_YAML;
+  // 19 モード（DetailedDesign-state.md §8.2 / Spec-modes.md §2.3）。数が変わったら
+  // 設計と実装のどちらかがずれているので、まずここで気づけるようにする。
+  // 2026-09-08: AT_HOME（待機場所での待機。jog: allowed）を足して 18 → 19。
+  ASSERT_EQ(a.jog.size(), static_cast<std::size_t>(19))
+      << "attributes.yaml のモード数が 19 でない: " << TH_STATE_ATTRIBUTES_YAML;
 
   // yaml の jog 列そのものを読み直して期待値にする（写像を経由しない）。
   // load_attributes_jog() が全部 DENIED に潰しても気づけるように、
@@ -168,6 +169,10 @@ TEST(JogGateCore, AllModesFromAttributes) {
   EXPECT_EQ(a.jog_for("TEACH_MANUAL"), JogLevel::IS_DRIVE);
   EXPECT_EQ(a.jog_for("IDLE"), JogLevel::DENIED);
   EXPECT_EQ(a.jog_for("FOLLOW"), JogLevel::ALLOWED);
+  // 2026-09-08: 当日の待機場所でジョグできること（AT_PANEL と同じ扱い）。
+  // ここが DENIED に戻ると「当日は行き先を選ぶまで機体を動かせない」に逆戻りする。
+  EXPECT_EQ(a.jog_for("AT_HOME"), JogLevel::ALLOWED);
+  EXPECT_EQ(a.jog_for("AT_PANEL"), JogLevel::ALLOWED);
 }
 
 // ── 読み込みが壊れたときに安全側（DENIED）へ倒れること ────────────

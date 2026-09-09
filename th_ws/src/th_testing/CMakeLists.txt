@@ -94,6 +94,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_onsite_nodes_launched
     test/test_onsite_nodes_launched.py
     TIMEOUT 30)
+  # モード→状態の表が state_core.py（Python）と safety_monitor_core.cpp（C++）で
+  # ずれていないことを固定する。片方だけにモードを足すと、そのモードに入った瞬間に
+  # STATE_INCONSISTENT(CRITICAL) → ESTOP になる（2026-09-08 の AT_HOME で実機発生）
+  ament_add_pytest_test(test_mode_states_sync
+    test/test_mode_states_sync.py
+    TIMEOUT 30)
   ament_add_pytest_test(test_route_replay_core
     test/test_route_replay_core.py
     TIMEOUT 30)

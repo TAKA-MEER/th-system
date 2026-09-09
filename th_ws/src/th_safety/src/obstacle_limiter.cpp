@@ -144,7 +144,13 @@ public:
         // （コアが後退時のキャップに使う値と、AT_PANEL 等が名前で指す値は
         // 同じ registry.yaml の v_reverse なので、パラメータの実体は 1 つ）。
         declare_parameter("v_max", 0.0);
-        declare_parameter("v_slow", 0.0);
+        // WAIVER(demo): W-18 — registry の v_slow は venue_clearance_m（placeholder）から
+        // 逆算する derived 値。null なので生成 yaml に出ず、既定 0.0 のままだと
+        // 場内モード（PREP / PANEL_NAV / SUMMON / HOME_NAV）の前後移動が丸ごと
+        // ゼロにクランプされる（角速度は w_max で別に効くので「超信地旋回だけできる」
+        // という症状になる。2026-09-08 実機で発覚）。W-05 の v_reverse と同じ扱いで、
+        // 場内低速相当の値を C++ 側の宣言既定値に置く。生成 yaml に出れば上書きされる。
+        declare_parameter("v_slow", 0.30);
         // WAIVER(demo): W-05 — 本来 registry の v_reverse は blind_clearance_m
         // (LiDAR 死角。placeholder) から逆算する derived 値。derived だと null →
         // 生成 yaml に出ず → 既定 0.0 で「後退がゼロにクランプされ後退不可」
@@ -152,7 +158,11 @@ public:
         // blind_calibrated:true) なので、デモの間だけ既定を 0.25 m/s (場内低速相当)
         // にする。生成 yaml に v_reverse が入れば (blind_clearance_m 実測後) 上書きされる。
         declare_parameter("v_reverse", 0.25);
-        declare_parameter("v_jog_panel", 0.0);
+        // WAIVER(demo): W-18 — 同上。v_jog_panel は panel_clearance_m（placeholder）から
+        // 逆算する derived 値。AT_PANEL / AT_HOME のジョグはこの上限で走るので、
+        // 0.0 のままだと「盤前・待機場所で前後に動かせない」になる。
+        // A5 の順序（v_jog_panel <= v_reverse <= v_slow <= v_max）を満たす値にする。
+        declare_parameter("v_jog_panel", 0.10);
         // v_check / v_calib / v_leash: 2026-08-27 に registry.yaml の consumers へ
         // obstacle_limiter を追加した（SystemState.speed_limit が "v_check" /
         // "v_calib" / "v_leash" を運びうる。attributes.yaml の OPCHECK / CALIB /
