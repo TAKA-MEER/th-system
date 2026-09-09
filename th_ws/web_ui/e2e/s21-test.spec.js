@@ -259,8 +259,31 @@ test('レーダーの空表示と見失い表示', async ({ page }) => {
   await setTestPersonTargets(page, { candidates: [], selected_index: -1, confidence: 0, is_lost: false, lost_reason: '' })
   await expect(page.locator('[data-testid="radar-empty"]')).toBeVisible()
 
+  // 2026-09-08 実機修正: 候補が居る間は isLost でも候補を隠さずタップ可能にする
+  // （人物追跡ライブラリは見失うと自動で再取得しないため、選び直す手段を必ず残す）。
+  // 候補 0 件 + isLost のときだけ「見失っています」の全面表示。
   await setTestPersonTargets(page, { ...TARGETS, is_lost: true, lost_reason: 'tracker_lost' })
+  await expect(page.locator('[data-testid="radar-lost-reselect"]')).toBeVisible()
+  await expect(page.locator('[data-testid="radar-cand-0"]')).toBeVisible()
+  await expect(page.locator('[data-testid="radar-lost"]')).toHaveCount(0)
+
+  await setTestPersonTargets(page, { candidates: [], selected_index: -1, confidence: 0, is_lost: true, lost_reason: 'tracker_lost' })
   await expect(page.locator('[data-testid="radar-lost"]')).toBeVisible()
+})
+
+// 2026-09-08 実機で確認: 対象を見失った後に再選択できないと復帰不能になる
+// （multiple_sensor_person_tracking は明示選択でしか再取得しない設計）。
+test('見失った状態でも候補をタップして選び直せる（SUMMON/POINT）', async ({ page }) => {
+  await goto21(page, { mode: 'SUMMON', state: 'POINT' }, { targets: { ...TARGETS, is_lost: true } })
+  await page.getByRole('tab', { name: '対象選択' }).click()
+
+  await expect(page.locator('[data-testid="radar-lost-reselect"]')).toBeVisible()
+  await expect(page.locator('[data-testid="radar-cand-1"]')).toBeVisible()
+
+  await page.locator('[data-testid="radar-cand-1"]').click()
+  const sel = (await triggers(page)).find((c) => c.trigger === 'ui.select_target')
+  expect(sel, '見失い中のタップが ui.select_target を送っていない').toBeTruthy()
+  expect(sel.argJson).toMatchObject({ index: 1 })
 })
 
 test('SUMMON 以外のモードでも見た目はそのまま（PANEL_NAV で状態欄は stateLabel）', async ({ page }) => {

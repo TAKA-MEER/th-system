@@ -335,6 +335,9 @@ table.lst td.r{text-align:right}
 .rv-ring{fill:none;stroke:var(--bd);stroke-width:1}
 .rv-axis{stroke:var(--bd);stroke-width:1}
 .rv-msg{fill:var(--mut);font-size:11px;pointer-events:none}
+/* 2026-09-08: 候補があるまま isLost のときに出す非ブロッキングの帯（候補は隠さない）。
+   .rv-msg と違って中心を占有しない（候補のタップを妨げない）ので pointer-events は既定のまま。 */
+.rv-msg-lost{fill:var(--warn);font-size:10px;font-weight:700}
 .rv-cand{cursor:pointer}
 .rv-cand circle{fill:#245089;stroke:#90caf9;stroke-width:1.5}
 .rv-cand.sel circle{fill:#43a047;stroke:#c8e6c9;stroke-width:2}

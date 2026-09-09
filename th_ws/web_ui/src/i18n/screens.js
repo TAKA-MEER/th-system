@@ -271,6 +271,12 @@ export const S20_NEXT_START_MAPPING = '地図作成開始'
 // 対象選択レーダー（parts/RadarSelect.jsx。S-20 / S-21 で共用。Spec-webui.md §9.1）。
 export const RADAR_ARIA = '対象選択レーダー'
 export const RADAR_LOST = '対象を見失っています'
+// 実機で確認（2026-09-08）: multiple_sensor_person_tracking は require_explicit_target_selection
+// が既定 true なので、対象を見失うと自動では再取得しない（安全設計。誤って別人を追わない）。
+// 一方で脚検出（候補）自体は見失っている間も届き続けるので、タップで選び直せるようにする必要が
+// ある。以前は isLost の間、候補を隠して「見失っています」だけを出していたため、候補が複数いる
+// （＝自動再選択が働かない）と操作者に選び直す手段が無いまま復帰不能になっていた。
+export const RADAR_LOST_RESELECT = '対象を見失いました。候補をタップして選び直してください'
 export const RADAR_EMPTY = '試験員が検出されていません'
 export const RADAR_SELECTED = '対象'
 export const RADAR_CONFIDENCE = (c) => `確信度 ${c}`
