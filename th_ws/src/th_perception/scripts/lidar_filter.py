@@ -20,7 +20,7 @@ import time
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from rcl_interfaces.msg import ParameterDescriptor, ParameterType, SetParametersResult
+from rcl_interfaces.msg import ParameterDescriptor, SetParametersResult
 from sensor_msgs.msg import LaserScan
 import copy
 
@@ -39,23 +39,24 @@ class LidarFilter(Node):
         # 既定値は空配列（＝マスクしない）。マスクしすぎて障害物が見えなく
         # なるより、マスクせず広く見える方が安全側（安全側は「マスクしない」）。
         #
-        # **2026-08-27 訂正**: 当初は「空の DOUBLE_ARRAY は型推論に失敗するため
-        # ParameterDescriptor で明示する」と考えていたが、これは誤りだった。
-        # Docker 実起動で本ノードが `parameter_value_from failed for parameter
-        # 'blind_angle_ranges': No parameter value set` で起動失敗することを
-        # 実測で確認した——ParameterDescriptor を付けていても防げていない。
-        # 本当の原因は ROS2 Humble の rcl_yaml_param_parser が空配列の
-        # parameter override をそもそも解決できないこと（declare_parameter の
-        # 型推論の問題ではない）。本当の対処は生成側
-        # （th_bringup/launch/params_generation.py の sanitize_node_params()）
-        # で、空配列のキーは生成 yaml から丸ごと落とすようにした（かつて存在した
-        # reshape_blind_angles() による書き戻しは撤去済み）。したがって
-        # override 自体が空配列になることはもう無い。ここでの
-        # ParameterDescriptor は主たる対処ではなく多層防御として残す
-        # （override が空配列である限り、型を明示しても起動失敗は避けられない）。
+        # **2026-09-09**: registry.yaml の blind_angle_ranges が非空（上部構造の
+        # 死角 4 セクタ）になった。generated/lidar_filter.yaml は非空の
+        # DOUBLE_ARRAY を override で渡してくるが、rclpy(Humble) は
+        #   declare_parameter('...', [], descriptor) の既定値 [] を BYTE_ARRAY と
+        #   推論し、descriptor.type=DOUBLE_ARRAY を無視して override(DOUBLE_ARRAY)
+        #   を `InvalidParameterTypeException: expecting type 'BYTE_ARRAY'` で弾く。
+        # C++ 側(obstacle_limiter) は std::vector<double>{} で型が確定するので
+        # 踏まないが、Python 側はこれで起動失敗した（実機で発覚）。
+        # 対処: dynamic_typing=True で override による型変更を許す。これで
+        #   ・非空 override（現構成）→ そのまま入る
+        #   ・空（registry が空配列→ sanitize がキーごと落とす）→ 既定 [] のまま
+        #   ・WebUI からの空→非空のライブ set_parameters → 通る
+        # の 3 ケースすべてが動く。空配列 override 自体を generated へ書かないのは
+        # 従来どおり（rcl_yaml_param_parser が空配列を扱えないため。
+        # params_generation.sanitize_node_params() が落とす）。
         self.declare_parameter(
             'blind_angle_ranges', [],
-            ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE_ARRAY))
+            ParameterDescriptor(dynamic_typing=True))
         self.declare_parameter('input_topic',  '/scan')
         self.declare_parameter('output_topic', '/scan_filtered')
 
