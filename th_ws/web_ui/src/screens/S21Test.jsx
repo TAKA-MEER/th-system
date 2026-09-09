@@ -45,7 +45,7 @@ import {
   BADGE_JOG_DENIED, BADGE_NO_HOME_PIN, BADGE_NO_PANEL_PIN,
   S20_MAP_ARIA, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TITLE,
   S20_TAB_MAP, S20_TAB_TARGET,
-  S20_WIZ_MSG, S20_WIZ_REGISTER, S20_WIZ_STEP, S20_PIN_YAW,
+  S20_WIZ_MSG_STEP1, S20_WIZ_MSG_STEP2, S20_WIZ_REGISTER, S20_WIZ_STEP, S20_PIN_YAW,
   S21_ATPANEL_TITLE, S21_DEST_HOME, S21_DEST_NEXT_PANEL, S21_DEST_SUMMON_HERE,
   S21_HOME_DECLARED, S21_HOME_DECLARE, S21_HOME_FORCE_DECLARE,
   S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_GATE_MSG, S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
@@ -633,7 +633,7 @@ export default function S21Test({ onExit }) {
                   <div className="well mt" data-testid="s21-wizard">
                     <div className="row mb">
                       <span className="b sm">{S20_WIZ_STEP(wizStep)}</span>
-                      <span className="grow sm mut">{S20_WIZ_MSG}</span>
+                      <span className="grow sm mut">{wizStep === 1 ? S20_WIZ_MSG_STEP1 : S20_WIZ_MSG_STEP2}</span>
                     </div>
                     {wizErr && <div className="note" data-testid="s21-wiz-err">{wizErr}</div>}
                     {pendingYaw ? (

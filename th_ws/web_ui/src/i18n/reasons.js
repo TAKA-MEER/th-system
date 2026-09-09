@@ -22,6 +22,16 @@ export const REJECT_REASONS = {
   params_placeholder_blocking: '起動を止める暫定値が残っています',
   blind_mask_uncalibrated: '死角マスクが未校正です',
   unsaved_remains: '未保存のデータが残っています',
+  // brief-onsite-register-fix REG-1: ピン登録（pin_registrar）の拒否理由。
+  // pin_registrar.py が返す reject_reason_key をそのままキーにする（target_lost は
+  // 登録専用で、既存の対象選択用 tracker_lost とは別物として両方残す）。
+  no_target: '対象が検出されていません',
+  target_lost: '対象を見失っています',
+  low_confidence: '追跡信頼度が不足しています',
+  no_map_tf: '自己位置（地図座標）が取得できません',
+  no_pending: '登録を開始してから押してください',
+  no_first_point: '1 回目を押してから 2 回目を押してください',
+  two_point_too_close: '1 回目からほとんど動いていません。向きたい方向へ一歩進んでから押してください',
 }
 
 export const UNKNOWN_REASON_LABEL = '拒否されました（理由不明）'

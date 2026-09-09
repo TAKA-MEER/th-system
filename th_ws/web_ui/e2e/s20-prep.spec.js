@@ -134,6 +134,48 @@ test('2 点指示が拒否されたら理由を表示して Step を進めない
   await expect(page.locator('[data-testid="s20-wiz-press"]')).toBeVisible()
 })
 
+// brief-onsite-register-fix REG-1: two_point_too_close の実機連発の核心。
+// 拒否理由が i18n に無いと生キーが丸見えになり「なぜ失敗するか」が伝わらない。
+// 日本語（生キーでない）が出ることと、理由があれば Step が進まないことを固定する。
+test('REG-1: two_point_too_close 拒否で日本語の理由が出る（生キーでない）', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, {
+    pins: PINS, targets: TARGETS,
+    twoPoint: { accepted: false, reject_reason_key: 'two_point_too_close' },
+  })
+  await page.locator('#s20').waitFor()
+  await page.locator('[data-testid="s20-reg-home"]').click()
+  await setTestState(page, { state: 'REGISTER' })
+  await page.locator('[data-testid="s20-wiz-press"]').click()
+  const err = page.locator('[data-testid="s20-wiz-err"]')
+  await expect(err).toBeVisible()
+  await expect(err).not.toHaveText('two_point_too_close')
+  await expect(err).toContainText('一歩進んで')
+  // Step 2 へ進まず、押し直しを促すボタンが残る。
+  await expect(page.locator('[data-testid="s20-wiz-press"]')).toBeVisible()
+})
+
+// brief-onsite-register-fix REG-1: 同じ文言だと「2 回目も同じ場所で押せばよい」と
+// 誤解され、一歩進むことを知らされないまま拒否され続ける。Step1/Step2 で
+// 表示文言が変わることを固定する。
+test('REG-1: 2 点指示の Step1 と Step2 で表示文言が変わる', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, {
+    pins: PINS, targets: TARGETS,
+    twoPoint: { accepted: true, reject_reason_key: null, yaw: 0 },
+  })
+  await page.locator('#s20').waitFor()
+  await page.locator('[data-testid="s20-reg-home"]').click()
+  await setTestState(page, { state: 'REGISTER' })
+  await expect(page.locator('[data-testid="s20-wizard"]')).toBeVisible()
+  const step1 = await page.locator('[data-testid="s20-wizard"] .mut').textContent()
+  await expect(page.locator('[data-testid="s20-wiz-press"]')).toBeVisible()
+  await page.locator('[data-testid="s20-wiz-press"]').click()
+  const step2 = await page.locator('[data-testid="s20-wizard"] .mut').textContent()
+  expect(step1, 'Step1 の文言を確認できなかった').toBeTruthy()
+  expect(step2, 'Step2 の文言を確認できなかった').toBeTruthy()
+  expect(step1, 'Step1/Step2 の文言が同じ（誤解の元）').not.toBe(step2)
+  await expect(page.locator('[data-testid="s20-wiz-press"]')).toBeVisible()
+})
+
 test('停止/保存の操作カードと対象選択（radar）', async ({ page }) => {
   await gotoScreenWithOnsite(
     page, 'S20', PREP,

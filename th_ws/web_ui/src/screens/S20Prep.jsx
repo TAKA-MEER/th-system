@@ -52,7 +52,7 @@ import {
   S20_RETURN_HOME, S20_STEP_HOME, S20_STEP_MAP, S20_STEP_PANEL, S20_STEP_SAVE, S20_STEP_TARGET,
   S20_SUBTAB_PINS, S20_SUBTAB_REGISTER,
   S20_TAB_MAP, S20_TAB_TARGET, S20_UNSAVED,
-  S20_WIZ_MSG, S20_WIZ_REGISTER, S20_WIZ_STEP,
+  S20_WIZ_MSG_STEP1, S20_WIZ_MSG_STEP2, S20_WIZ_REGISTER, S20_WIZ_STEP,
 } from '../i18n/screens.js'
 
 // brief-onsite-ux UX-1: prepSteps() が返す段 id → 表示ラベル（i18n の定数）。
@@ -422,7 +422,7 @@ export default function S20Prep() {
                   <div className="well" data-testid="s20-wizard">
                     <div className="row mb">
                       <span className="b sm">{S20_WIZ_STEP(wizStep)}</span>
-                      <span className="grow sm mut">{S20_WIZ_MSG}</span>
+                      <span className="grow sm mut">{wizStep === 1 ? S20_WIZ_MSG_STEP1 : S20_WIZ_MSG_STEP2}</span>
                     </div>
                     {wizErr && <div className="note" data-testid="s20-wiz-err">{wizErr}</div>}
                     {wizYaw != null ? (

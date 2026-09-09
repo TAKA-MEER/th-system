@@ -242,7 +242,11 @@ export const S20_REGISTER_TITLE = '登録'
 export const S20_REG_HOME = '待機場所を登録'
 export const S20_REG_PANEL = '配電盤を登録'
 export const S20_WIZ_STEP = (n) => `Step ${n}/2`
-export const S20_WIZ_MSG = '立ってほしい位置に立って押してください'
+// Step 1: 立ち位置。Step 2: 向きたい方向へ一歩進んだ場所（Spec-onsite §3.1 F-08）。
+// 同じ文言だと「2 回目も同じ場所で押せばよい」と誤解される
+// （実機 2026-09-09。two_point_too_close の連発の原因）。
+export const S20_WIZ_MSG_STEP1 = '登録したい場所に立って押してください'
+export const S20_WIZ_MSG_STEP2 = '機体に向いてほしい方向へ一歩進んで押してください'
 export const S20_WIZ_REGISTER = 'この位置を登録'
 export const S20_PINS_TITLE = 'ピン'
 export const S20_PIN_EDIT = '編集'
