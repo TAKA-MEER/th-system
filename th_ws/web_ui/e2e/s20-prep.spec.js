@@ -227,6 +227,25 @@ test('REG-2: 機体姿勢で登録（PANEL）と失敗時の日本語表示', as
   await expect(msg).toHaveText('自己位置（地図座標）が取得できません')
 })
 
+// 2026-09-09 レビューで確認: ROBOT_POSE は _place_pin_effect() を直接呼ぶため、
+// 2 点指示ウィザードの受付状態（_accepting/_p1/_yaw）を横から上書きして壊してしまう。
+// ウィザードが開いている（isRegister）間はボタンを無効化して、この衝突を防ぐ。
+test('REG-2: 2点指示ウィザードが開いている間は「いまの姿勢で登録」を無効化', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, {
+    pins: PINS, targets: TARGETS,
+    twoPoint: { accepted: true, reject_reason_key: null, yaw: 0 },
+  })
+  await page.locator('#s20').waitFor()
+  await expect(page.locator('[data-testid="s20-reg-home-here"]')).toBeEnabled()
+
+  await page.locator('[data-testid="s20-reg-home"]').click()
+  await setTestState(page, { state: 'REGISTER' })
+  await expect(page.locator('[data-testid="s20-wizard"]')).toBeVisible()
+
+  await expect(page.locator('[data-testid="s20-reg-home-here"]')).toBeDisabled()
+  await expect(page.locator('[data-testid="s20-reg-panel-here"]')).toBeDisabled()
+})
+
 test('停止/保存の操作カードと対象選択（radar）', async ({ page }) => {
   await gotoScreenWithOnsite(
     page, 'S20', PREP,

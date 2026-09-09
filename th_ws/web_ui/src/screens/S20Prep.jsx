@@ -435,7 +435,11 @@ export default function S20Prep() {
                     type="button"
                     className="btn sm btn-register"
                     data-testid="s20-reg-home-here"
-                    disabled={disabledAll}
+                    // isRegister（2 点指示ウィザードが開いている）間は無効化する。
+                    // ROBOT_POSE はバックエンドで _place_pin_effect() を直接呼ぶため、
+                    // 2 点指示の受付状態（_accepting/_p1/_yaw）を横から上書きして
+                    // ウィザードを壊してしまう（2026-09-09 レビューで確認）。
+                    disabled={disabledAll || isRegister}
                     onClick={() => handleRegisterHere('HOME')}
                   >
                     <IconPin />
@@ -445,7 +449,7 @@ export default function S20Prep() {
                     type="button"
                     className="btn sm btn-register"
                     data-testid="s20-reg-panel-here"
-                    disabled={disabledAll}
+                    disabled={disabledAll || isRegister}
                     onClick={() => handleRegisterHere('PANEL')}
                   >
                     <IconPin />
