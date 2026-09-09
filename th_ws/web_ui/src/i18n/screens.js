@@ -236,6 +236,8 @@ export const S20_MAP_TITLE = '試験場内地図'
 export const S20_MAP_ARIA = '試験場内地図とピン'
 export const S20_MAP_ROBOT = '現在位置'
 export const S20_MAP_NO_POSE = '現在位置を取得中…'
+// MAP-1: 地図に表示する追従対象者マーカー（ロボットの緑丸と区別できるラベル）。
+export const S20_MAP_TARGET = '対象'
 export const S20_SUBTAB_REGISTER = '登録'
 export const S20_SUBTAB_PINS = 'ピン'
 export const S20_REGISTER_TITLE = '登録'

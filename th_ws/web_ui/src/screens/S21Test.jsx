@@ -24,6 +24,7 @@ import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
 import { usePersonTargets } from '../ros/usePersonTargets.js'
+import { usePersonStatus } from '../ros/usePersonStatus.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { useHomeDeclared } from '../ros/useHomeDeclared.js'
 import { useWaitClearStatus } from '../ros/useWaitClearStatus.js'
@@ -39,11 +40,12 @@ import {
 import OperationCard from '../shell/OperationCard.jsx'
 import attributes from '../generated/attributes.json'
 import { NAV_MODES, testSteps, onsiteReasons } from './onsiteSteps.js'
+import { baseToWorld } from '../mapGeometry.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
   BADGE_JOG_DENIED, BADGE_NO_HOME_PIN, BADGE_NO_PANEL_PIN,
-  S20_MAP_ARIA, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TITLE,
+  S20_MAP_ARIA, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TARGET, S20_MAP_TITLE,
   S20_TAB_MAP, S20_TAB_TARGET,
   S20_WIZ_MSG_STEP1, S20_WIZ_MSG_STEP2, S20_WIZ_REGISTER, S20_WIZ_STEP, S20_PIN_YAW,
   S21_ATPANEL_TITLE, S21_DEST_HOME, S21_DEST_NEXT_PANEL, S21_DEST_SUMMON_HERE,
@@ -105,6 +107,7 @@ export default function S21Test({ onExit }) {
   const sendTrigger = useTrigger()
   const pins = useOnsitePins(ros)
   const personTargets = usePersonTargets(ros)
+  const personStatus = usePersonStatus(ros)
   const routeMap = useOnsiteMapView(ros)
   const routePose = useRoutePose(ros)
   const homeDeclared = useHomeDeclared(ros)
@@ -120,6 +123,15 @@ export default function S21Test({ onExit }) {
   const working = stateName === 'WORKING'
   const showWizard = mode === 'SUMMON' && stateName === 'POINT'
   const showWait = mode === 'SUMMON' && stateName === 'WAIT_CLEAR'
+
+  // MAP-1: 追従対象者を地図上に表示。base_link 相対を baseToWorld() で map 座標に
+  // 変換する（routePose は map フレーム）。is_lost のときや routePose が未取得の
+  // ときは変換できないので null（マーカーを出さない）。
+  let personPose = null
+  if (routePose && personStatus && personStatus.is_lost === false) {
+    const [wx, wy] = baseToWorld(personStatus.position.x, personStatus.position.y, routePose)
+    personPose = { x: wx, y: wy }
+  }
 
   // 左列タブ（地図 / 対象選択）と右列サブタブ（行き先 / 呼び寄せ / 配電盤前）。
   const [tab, setTab] = useState('map')
@@ -352,6 +364,8 @@ export default function S21Test({ onExit }) {
                   mapData={routeMap}
                   pins={pins}
                   robotPose={routePose}
+                  personPose={personPose}
+                  personLabel={S20_MAP_TARGET}
                   selectedPinId={selectedPinId}
                   onSelectPin={setSelectedPinId}
                   ariaLabel={S20_MAP_ARIA}

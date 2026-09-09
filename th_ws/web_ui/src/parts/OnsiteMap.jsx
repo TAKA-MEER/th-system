@@ -30,6 +30,8 @@ export default function OnsiteMap({
   ariaLabel,
   noPoseLabel,
   robotLabel,
+  personPose,
+  personLabel,
   testId,
 }) {
   // 占有格子ラスタ → dataURL。useRouteMap 由来の mapData.info/data。
@@ -117,6 +119,23 @@ export default function OnsiteMap({
           {noPoseLabel}
         </text>
       )}
+
+      {personPose ? (
+        // MAP-1: 追従対象者。ロボットの緑丸と区別できるようオレンジの丸＋頭の丸（人型）と
+        // ラベルで描く。is_lost のときは呼び出し側が personPose を null にして消す。
+        <g
+          className={`${testId}-map-person`}
+          transform={`translate(${t.toPx(personPose.x, personPose.y)[0]} ${t.toPx(personPose.x, personPose.y)[1]})`}
+          data-testid={`${testId}-map-person`}
+        >
+          {personLabel ? <title>{personLabel}</title> : null}
+          <circle cy={-3} r={6} fill="#fb8c00" stroke="#ffe0b2" strokeWidth={2} />
+          <circle cy={-10} r={2.5} fill="#fb8c00" stroke="#ffe0b2" strokeWidth={1.5} />
+          {personLabel ? (
+            <text y={11} textAnchor="middle" fontSize="10" fill="#ffe0b2">{personLabel}</text>
+          ) : null}
+        </g>
+      ) : null}
     </svg>
   )
 }
