@@ -134,10 +134,10 @@ export async function gotoScreenWithOnsite(
   page, screen, state,
   {
     pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear,
-    routeMap, openVenueMap, mappingActive, personStatus,
+    routeMap, openVenueMap, mappingActive, personStatus, scan,
   },
 ) {
-  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm, ma, pst }) => {
+  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm, ma, pst, sc }) => {
     window.__thTestState = s
     window.__thTestScreen = scr
     if (p) window.__thTestOnsitePins = p
@@ -160,11 +160,13 @@ export async function gotoScreenWithOnsite(
     if (ma !== undefined) window.__thTestMappingActive = ma
     // MAP-1: 地図タブの追従対象者マーカー（ros/usePersonStatus.js）。
     if (pst) window.__thTestPersonStatus = pst
+    // MAP-SCAN: 地図タブの LiDAR 点群オーバーレイ（ros/useScan.js）。
+    if (sc) window.__thTestScan = sc
   },
   {
     s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose,
     dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear, rm: routeMap, ovm: openVenueMap,
-    ma: mappingActive, pst: personStatus,
+    ma: mappingActive, pst: personStatus, sc: scan,
   })
   await page.goto('/')
 }

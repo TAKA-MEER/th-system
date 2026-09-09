@@ -109,6 +109,40 @@ test('MAP-1: 追従対象者は is_lost:false のときだけ地図に出る', a
   await expect(page.locator('[data-testid="s21-map-person"]')).toBeHidden()
 })
 
+// MAP-SCAN: /scan_filtered（sensor_msgs/LaserScan）を地図タブに点群として重ねる。
+// routePose（pose オプション）を seed したときだけ baseToWorld() できるので、
+// 点群が出るのは pose を渡した場合だけ。
+const MINIMAL_SCAN = {
+  angle_min: -Math.PI,
+  angle_max: Math.PI,
+  angle_increment: Math.PI / 2,
+  range_min: 0,
+  range_max: 10,
+  ranges: [1, 1.5, 2, 0.5],
+}
+
+test('MAP-SCAN: 点群は pose があると s21-map-scan に円として出る', async ({ page }) => {
+  await goto21(page, IDLE, {
+    openVenueMap: { success: true, message: '' },
+    scan: MINIMAL_SCAN,
+  })
+  await unlockOnsiteVenueMap(page)
+  const group = page.locator('[data-testid="s21-map-scan"]')
+  await expect(group).toBeVisible()
+  await expect(group.locator('circle')).toHaveCount(MINIMAL_SCAN.ranges.length)
+})
+
+test('MAP-SCAN: pose を渡さないとき点群は出ない', async ({ page }) => {
+  // pose を外すと routePose も未受信になり、baseToWorld() できないので null。
+  await goto21(page, IDLE, {
+    openVenueMap: { success: true, message: '' },
+    scan: MINIMAL_SCAN,
+    pose: undefined,
+  })
+  await unlockOnsiteVenueMap(page)
+  await expect(page.locator('[data-testid="s21-map-scan"]')).toHaveCount(0)
+})
+
 test('終了は ui.finish が 1 回だけ送られる', async ({ page }) => {
   await goto21(page)
   await page.locator('[data-testid="s21-finish"]').click()
