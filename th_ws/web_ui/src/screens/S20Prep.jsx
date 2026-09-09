@@ -48,7 +48,8 @@ import {
   S20_MAP_ARIA, S20_MAP_GATE_BUTTON, S20_MAP_GATE_MSG, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TITLE,
   S20_NEXT_REG_HOME, S20_NEXT_REG_PANEL, S20_NEXT_SAVE, S20_NEXT_SELECT_TARGET, S20_NEXT_START_MAPPING,
   S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_EDIT, S20_PIN_RENAME,
-  S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REGISTER_TITLE, S20_REG_PANEL,
+  S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REG_HOME_HERE, S20_REG_HERE_NOTE,
+  S20_REG_HERE_OK, S20_REGISTER_TITLE, S20_REG_PANEL, S20_REG_PANEL_HERE,
   S20_RETURN_HOME, S20_STEP_HOME, S20_STEP_MAP, S20_STEP_PANEL, S20_STEP_SAVE, S20_STEP_TARGET,
   S20_SUBTAB_PINS, S20_SUBTAB_REGISTER,
   S20_TAB_MAP, S20_TAB_TARGET, S20_UNSAVED,
@@ -85,7 +86,7 @@ export default function S20Prep() {
   const personTargets = usePersonTargets(ros)
   const routeMap = useOnsiteMapView(ros)
   const routePose = useRoutePose(ros)
-  const { twoPoint, editPin } = useOnsiteService()
+  const { twoPoint, editPin, registerPinHere } = useOnsiteService()
   const jogPanel = useJogPanel()
   // brief-onsite-ux2 F-6: 地図タブの表示ゲート。/slam_control/mapping_active
   // は起動コマンド（enable_route_slam:=true）により起動直後から true のことが
@@ -115,6 +116,9 @@ export default function S20Prep() {
   const [wizStep, setWizStep] = useState(1)
   const [wizErr, setWizErr] = useState(null)
   const [wizYaw, setWizYaw] = useState(null)
+  // 機体姿勢での登録（REG-2）の結果メッセージ（success/message を venueMsg と同じ
+  // パターンで出す。2 点指示ウィザードとは独立）。
+  const [hereMsg, setHereMsg] = useState(null)
 
   const stateName = state?.state ?? null
   const isRegister = stateName === 'REGISTER'
@@ -180,6 +184,14 @@ export default function S20Prep() {
   async function handleRegister(kind) {
     setRegisterKind(kind)
     await sendTrigger('ui.register', { kind })
+  }
+
+  // REG-2: 機体姿勢での直接登録（/onsite/register_pin, method=ROBOT_POSE）。
+  // 2 点指示ウィザードを開始/変更せず、応答の success/message を出すだけ。
+  async function handleRegisterHere(kind) {
+    setHereMsg(null)
+    const res = await registerPinHere(kind)
+    setHereMsg({ ok: !!res?.success, text: res?.message || (res?.success ? S20_REG_HERE_OK(kind) : '') })
   }
 
   // 2 点指示（index 1 → 2）。拒否されたら理由を出して Step 1 からやり直し（§2.3）。
@@ -418,6 +430,38 @@ export default function S20Prep() {
                     <span>{S20_REG_PANEL}</span>
                   </button>
                 </div>
+                <div className="btnrow n2 mb">
+                  <button
+                    type="button"
+                    className="btn sm btn-register"
+                    data-testid="s20-reg-home-here"
+                    disabled={disabledAll}
+                    onClick={() => handleRegisterHere('HOME')}
+                  >
+                    <IconPin />
+                    <span>{S20_REG_HOME_HERE}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm btn-register"
+                    data-testid="s20-reg-panel-here"
+                    disabled={disabledAll}
+                    onClick={() => handleRegisterHere('PANEL')}
+                  >
+                    <IconPin />
+                    <span>{S20_REG_PANEL_HERE}</span>
+                  </button>
+                </div>
+                {/* REG-2: 2 点指示と機体姿勢の違いを一目で分かる短い注記 */}
+                <div className="sm mut mb" data-testid="s20-reg-note">{S20_REG_HERE_NOTE}</div>
+                {hereMsg && (
+                  <div
+                    className={`note mb${hereMsg.ok ? '' : ' err'}`}
+                    data-testid="s20-reg-here-msg"
+                  >
+                    {hereMsg.text}
+                  </div>
+                )}
                 {isRegister && (
                   <div className="well" data-testid="s20-wizard">
                     <div className="row mb">

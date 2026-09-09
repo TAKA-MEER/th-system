@@ -54,6 +54,10 @@ export const SERVICES = {
   // WP-UI-06: S-20。2 点指示（two_point）とピンの改名/削除（edit_pin）。
   ONSITE_TWO_POINT: '/onsite/two_point',
   ONSITE_EDIT_PIN: '/onsite/edit_pin',
+  // brief-onsite-register-fix REG-2: 機体姿勢での直接登録（/onsite/register_pin,
+  // RegisterPin.srv, method=ROBOT_POSE）。names.json の endpoints に既にあるので
+  // 辞書ゲートを通る。
+  ONSITE_REGISTER_PIN: '/onsite/register_pin',
   // WP-UI-07: S-21。待機場所の宣言（home_declarer）。選んだ配電盤のゴール保留は
   // `/onsite/select_pin` だが、names.json（辞書ゲート）に無いため TOPICS/SERVICES には
   // 載せず useOnsiteService.js 内のローカル定数で扱う（useOdomPose と同型）。
@@ -98,6 +102,8 @@ export const SRV_TYPES = {
   // WP-UI-06: S-20。2 点指示 / ピン編集。
   ONSITE_TWO_POINT: 'th_system_msgs/TwoPointPress',
   ONSITE_EDIT_PIN: 'th_system_msgs/EditPin',
+  // REG-2: 機体姿勢での直接登録。
+  ONSITE_REGISTER_PIN: 'th_system_msgs/RegisterPin',
   // WP-UI-07: S-21。待機場所宣言 / ピン選択（select_pin はサービス名が
   // names.json に無いため S21Test 側のローカル定数で呼ぶ。型はここ）。
   ONSITE_DECLARE_HOME: 'th_system_msgs/DeclareHome',

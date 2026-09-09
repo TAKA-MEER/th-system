@@ -1,6 +1,6 @@
 string kind
 string name
-string method     # "TWO_POINT"/"PLANE"
+string method     # "TWO_POINT"/"ROBOT_POSE"/"PLANE"
 ---
 bool    success
 Pin     pin

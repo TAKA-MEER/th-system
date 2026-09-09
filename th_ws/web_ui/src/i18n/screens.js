@@ -241,6 +241,15 @@ export const S20_SUBTAB_PINS = 'ピン'
 export const S20_REGISTER_TITLE = '登録'
 export const S20_REG_HOME = '待機場所を登録'
 export const S20_REG_PANEL = '配電盤を登録'
+// brief-onsite-register-fix REG-2: 機体姿勢での登録（/onsite/register_pin,
+// method=ROBOT_POSE）。2 点指示（人が立つ場所を指定）と違い、機体の現在位置・
+// 向きでその場で登録する。
+export const S20_REG_HOME_HERE = 'いまの姿勢で待機場所を登録'
+export const S20_REG_PANEL_HERE = 'いまの姿勢で配電盤を登録'
+export const S20_REG_HERE_NOTE =
+  '「待機場所/配電盤を登録」は 2 点指示（人が立つ場所）、「いまの姿勢で登録」は機体の現在位置で登録します'
+export const S20_REG_HERE_OK = (kind) =>
+  `${kind === 'HOME' ? '待機場所' : '配電盤'}を機体のいまの姿勢で登録しました`
 export const S20_WIZ_STEP = (n) => `Step ${n}/2`
 // Step 1: 立ち位置。Step 2: 向きたい方向へ一歩進んだ場所（Spec-onsite §3.1 F-08）。
 // 同じ文言だと「2 回目も同じ場所で押せばよい」と誤解される

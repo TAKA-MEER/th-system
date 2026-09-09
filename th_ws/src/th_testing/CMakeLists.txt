@@ -206,6 +206,12 @@ if(BUILD_TESTING)
     test/test_home_declare_core.py
     TIMEOUT 30)
 
+  # 機体姿勢ピン登録コア (REG-2。HOME 置換 / PANEL 連番の pin dict 構築。
+  # th_onsite の純ロジック。ROS2 不要)
+  ament_add_pytest_test(test_robot_pose_register_core
+    test/test_robot_pose_register_core.py
+    TIMEOUT 30)
+
   # onsite コンテキスト派生値 (WP-ONSITE-F2。/person/targets・/onsite/pins →
   # Context の candidate_count / target_selected / target_confident / pin_kinds。
   # th_state の純ロジック。ROS2 不要)

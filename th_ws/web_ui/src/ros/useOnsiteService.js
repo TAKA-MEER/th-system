@@ -15,9 +15,9 @@
 // is recorded on window.__thOnsiteServiceCalls ({ service, request }) and
 // answered from a stub read at call time (window.__thTestTwoPoint /
 // window.__thTestEditPin / __thTestDeclareHome / __thTestSelectPin /
-// __thTestOpenVenueMap). Without a stub it resolves as a denial, so a spec
-// that doesn't stub a service behaves like a rejection. Recording every call
-// is what lets e2e prove a button is actually wired
+// __thTestOpenVenueMap / __thTestRegisterPinHere). Without a stub it resolves as
+// a denial, so a spec that doesn't stub a service behaves like a rejection.
+// Recording every call is what lets e2e prove a button is actually wired
 // (opencode-bigpickle-evaluation's known hole: an inert button passing green).
 import { useCallback } from 'react'
 import { useSystemState } from './useSystemState'
@@ -73,5 +73,10 @@ export function useOnsiteService() {
       SERVICES.MAP_SESSION_OPEN, SRV_TYPES.MAP_SESSION_OPEN,
       { slot: 'VENUE', mode: 'reload', session_id: 'venue', has_initial_pose: false },
       '__thTestOpenVenueMap'),
+    // brief-onsite-register-fix REG-2: 機体姿勢での直接登録（RegisterPin.srv,
+    // method=ROBOT_POSE）。2 点指示ウィザードとは独立した即時完了呼び出し。
+    registerPinHere: (kind) => callService(
+      SERVICES.ONSITE_REGISTER_PIN, SRV_TYPES.ONSITE_REGISTER_PIN,
+      { kind, name: '', method: 'ROBOT_POSE' }, '__thTestRegisterPinHere'),
   }
 }

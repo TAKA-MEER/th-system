@@ -15,7 +15,6 @@
 import json
 import math
 import os
-import time
 import uuid
 
 import yaml
@@ -34,6 +33,7 @@ from std_msgs.msg import Header
 from th_system_msgs.msg import Pin, PinList, PersonStatus, StateEffect, StateEvent
 from th_system_msgs.srv import EditPin, RegisterPin, TwoPointPress
 
+from th_onsite.robot_pose_register_core import build_pin_from_robot_pose
 from th_onsite.two_point_core import (
     TwoPointParams, compose_map_pose, is_target_valid, spacing_ok, two_point_yaw,
 )
@@ -44,10 +44,6 @@ def _yaw_from_quat(q) -> float:
     return math.atan2(
         2.0 * (q.w * q.z + q.x * q.y),
         1.0 - 2.0 * (q.y * q.y + q.z * q.z))
-
-
-def _now_unix() -> int:
-    return int(time.time())
 
 
 def _load_pins(path) -> list:
@@ -218,22 +214,30 @@ class PinRegistrar(Node):
             f'yaw={yaw:.3f})')
 
     # ── /onsite/pins publish ──────────────────────────────
+    def _pin_to_msg(self, p) -> Pin:
+        """pin dict → Pin メッセージ。yaw→quaternion 変換もここで行う。
+
+        _publish_pins()（一覧 publish）と ROBOT_POSE 登録の response.pin の
+        両方から使う（重複コードを増やさない）。
+        """
+        pin = Pin()
+        pin.id = p.get('id', '')
+        pin.name = p.get('name', '')
+        pin.kind = p.get('kind', '')
+        pose = p.get('pose', {}) or {}
+        pin.pose.position.x = float(pose.get('x', 0.0))
+        pin.pose.position.y = float(pose.get('y', 0.0))
+        pin.pose.orientation.z = math.sin(float(pose.get('yaw', 0.0)) / 2.0)
+        pin.pose.orientation.w = math.cos(float(pose.get('yaw', 0.0)) / 2.0)
+        pin.registered_at.sec = int(p.get('registered_at', 0))
+        return pin
+
     def _publish_pins(self):
         pl = PinList()
         pl.header = Header()
         pl.header.stamp = self.get_clock().now().to_msg()
         for p in self._pins:
-            pin = Pin()
-            pin.id = p.get('id', '')
-            pin.name = p.get('name', '')
-            pin.kind = p.get('kind', '')
-            pose = p.get('pose', {}) or {}
-            pin.pose.position.x = float(pose.get('x', 0.0))
-            pin.pose.position.y = float(pose.get('y', 0.0))
-            pin.pose.orientation.z = math.sin(float(pose.get('yaw', 0.0)) / 2.0)
-            pin.pose.orientation.w = math.cos(float(pose.get('yaw', 0.0)) / 2.0)
-            pin.registered_at.sec = int(p.get('registered_at', 0))
-            pl.pins.append(pin)
+            pl.pins.append(self._pin_to_msg(p))
         self._pub_pins.publish(pl)
 
     # ── /system/effect 受信 ───────────────────────────────
@@ -265,18 +269,10 @@ class PinRegistrar(Node):
         if self._kind == 'HOME':
             # HOME は 1 個のみ（既存があれば置換）
             self._pins = [p for p in self._pins if p.get('kind') != 'HOME']
-            pid = 'home'
-        else:
-            existing = [p for p in self._pins if p.get('kind') == 'PANEL']
-            pid = f'panel_{len(existing) + 1}'
-        self._pins.append({
-            'id': pid,
-            'name': '',
-            'kind': self._kind,
-            'pose': {'x': round(float(x1), 3), 'y': round(float(y1), 3),
-                     'yaw': round(float(self._yaw), 3)},
-            'registered_at': _now_unix(),
-        })
+        new_pin = build_pin_from_robot_pose(
+            self._kind, x1, y1, float(self._yaw), self._pins)
+        self._pins.append(new_pin)
+        pid = new_pin['id']
         _dump_pins(self._pins_path, self._pins)
         self._publish_pins()
         self.get_logger().info(
@@ -374,6 +370,10 @@ class PinRegistrar(Node):
             response.success = False
             response.message = '方法B(平面登録)は未実装です'
             return response
+        if request.method == 'ROBOT_POSE':
+            # 機体姿勢での直接登録: その場で完了する処理（2 点指示のような
+            # 受付状態を経由しない）。FSM の REGISTER 状態には関与しない。
+            return self._on_register_pin_robot_pose(request, response)
         if request.method != 'TWO_POINT':
             response.success = False
             response.message = f'未知の方法: {request.method}'
@@ -387,6 +387,29 @@ class PinRegistrar(Node):
         self._yaw = None
         response.success = True
         response.message = '2点指示で直接登録を開始しました (P1 を押してください)'
+        return response
+
+    def _on_register_pin_robot_pose(self, request, response):
+        """ROBOT_POSE: 機体の現在姿勢 (map→base_link TF) をそのまま登録する。
+
+        2 点指示と違い、対象検出や 2 点押下を要さず、現在の機体位置・向きで
+        その場でピンを作って永続化する。_map_pose()（TF から (x,y,yaw) を取得）
+        と _place_pin_effect()（pin 生成・永続化・publish の共通処理）を
+        そのまま使い回し、response.pin には登録したピンを詰める
+        （_publish_pins() と同じ yaw→quaternion 変換を _pin_to_msg で共有）。
+        """
+        mp = self._map_pose()
+        if mp is None:
+            response.success = False
+            response.message = '自己位置（地図座標）が取得できません'
+            return response
+        self._p1 = (mp[0], mp[1])
+        self._yaw = mp[2]
+        self._kind = request.kind
+        self._place_pin_effect()
+        response.success = True
+        response.pin = self._pin_to_msg(self._pins[-1])
+        response.message = '機体の現在姿勢で登録しました'
         return response
 
     # ── /onsite/edit_pin (EditPin) ────────────────────────

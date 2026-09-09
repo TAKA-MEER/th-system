@@ -176,6 +176,57 @@ test('REG-1: 2 点指示の Step1 と Step2 で表示文言が変わる', async 
   await expect(page.locator('[data-testid="s20-wiz-press"]')).toBeVisible()
 })
 
+// brief-onsite-register-fix REG-2: 機体姿勢での登録。「いまの姿勢で待機場所を
+// 登録」を押すと /onsite/register_pin に {kind:'HOME', method:'ROBOT_POSE'} が
+// 飛び、成功スタブで成功メッセージ、失敗スタブで生キーでない日本語が出る。
+test('REG-2: 機体姿勢で登録（HOME）は registerPin{method:ROBOT_POSE} を呼ぶ', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS })
+  await page.locator('#s20').waitFor()
+
+  // 成功スタブ（call 時に読むので click 前に設定）。
+  await page.evaluate(() => {
+    window.__thTestRegisterPinHere = { success: true, pin: {}, message: '機体の現在姿勢で登録しました' }
+  })
+  await page.locator('[data-testid="s20-reg-home-here"]').click()
+  const calls = await onsiteServiceCalls(page)
+  const reg = calls.find((c) => c.service === '/onsite/register_pin')
+  expect(reg, '「いまの姿勢で待機場所を登録」が /onsite/register_pin を呼んでいない').toBeTruthy()
+  expect(reg.request).toMatchObject({ kind: 'HOME', method: 'ROBOT_POSE' })
+  await expect(page.locator('[data-testid="s20-reg-here-msg"]')).toHaveText('機体の現在姿勢で登録しました')
+
+  // 失敗スタブ: message が空でも日本語（nil ではなく OK 相当の空を避ける）。
+  await page.evaluate(() => {
+    window.__thTestRegisterPinHere = { success: true, pin: {}, message: '' }
+  })
+  await page.locator('[data-testid="s20-reg-home-here"]').click()
+  await expect(page.locator('[data-testid="s20-reg-here-msg"]')).toContainText('待機場所')
+})
+
+test('REG-2: 機体姿勢で登録（PANEL）と失敗時の日本語表示', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS })
+  await page.locator('#s20').waitFor()
+
+  await page.evaluate(() => {
+    window.__thTestRegisterPinHere = { success: true, pin: {}, message: '' }
+  })
+  await page.locator('[data-testid="s20-reg-panel-here"]').click()
+  const calls = await onsiteServiceCalls(page)
+  const reg = calls.find((c) => c.service === '/onsite/register_pin')
+  expect(reg).toBeTruthy()
+  expect(reg.request).toMatchObject({ kind: 'PANEL', method: 'ROBOT_POSE' })
+  await expect(page.locator('[data-testid="s20-reg-here-msg"]')).toContainText('配電盤')
+
+  // 失敗（TF 無し等）: message をそのまま出す。生キーでないことを確認。
+  await page.evaluate(() => {
+    window.__thTestRegisterPinHere = { success: false, pin: {}, message: '自己位置（地図座標）が取得できません' }
+  })
+  await page.locator('[data-testid="s20-reg-panel-here"]').click()
+  const msg = page.locator('[data-testid="s20-reg-here-msg"]')
+  await expect(msg).toBeVisible()
+  await expect(msg).toHaveClass(/(^|\s)err(\s|$)/)
+  await expect(msg).toHaveText('自己位置（地図座標）が取得できません')
+})
+
 test('停止/保存の操作カードと対象選択（radar）', async ({ page }) => {
   await gotoScreenWithOnsite(
     page, 'S20', PREP,
