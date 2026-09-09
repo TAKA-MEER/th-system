@@ -282,6 +282,13 @@ export const S20_NEXT_SAVE = '保存'
 export const S20_MAP_GATE_MSG = '地図作成を開始してください'
 export const S20_MAP_GATE_BUTTON = '地図作成開始'
 export const S20_NEXT_START_MAPPING = '地図作成開始'
+// WS-9Y: 前回セッションのピンが残っているときだけ出す「新しい試験日として開始」。
+// ArmedButton（二段階確認）で discard_map → reset_pins の順に呼ぶ。
+export const S20_RESET_BANNER = '前回の試験場内地図・ピンが残っています。そのまま使う場合はこのまま「地図作成開始」を押してください。'
+export const S20_RESET_IDLE = '新しい試験日として開始（前回の地図・ピンを消去）'
+export const S20_RESET_ARMED = 'もう一度押すと消去します'
+export const S20_RESET_BUSY = '地図を初期化しています…'
+export const S20_RESET_FAIL = '初期化に失敗しました'
 
 // 対象選択レーダー（parts/RadarSelect.jsx。S-20 / S-21 で共用。Spec-webui.md §9.1）。
 export const RADAR_ARIA = '対象選択レーダー'
@@ -312,6 +319,10 @@ export const S21_OPEN_VENUE_MAP = '保存した会場地図を開く'
 export const S21_OPEN_VENUE_DONE = '会場地図を開きました'
 // 失敗時に message が空で返ることがある（空の黄色い箱だけが出るのを防ぐ）。
 export const S21_OPEN_VENUE_FAIL = '会場地図を開けませんでした'
+// WS-9Y: /map_session/open（reload。最大 45s+30s）の間、地図タブに出す
+// オーバーレイ文言。押す前提は「機体を待機場所（HOME ピン）に置いてから」。
+export const S21_MAP_LOADING = '会場地図を読み込んでいます…'
+export const S21_OPEN_VENUE_HINT = '機体を待機場所（待機場所ピンの位置）に置いてから押してください'
 // brief-onsite-ux2 F-6: 「会場地図を開く」まで地図タブに地図を出さない表示ゲート。
 export const S21_MAP_GATE_MSG = '保存した会場地図を開いてください'
 export const S21_HOME_UNDECLARED = '未宣言'

@@ -120,14 +120,27 @@ from std_srvs.srv import SetBool, Trigger
 from slam_toolbox.srv import (DeserializePoseGraph, SaveMap,
                               SerializePoseGraph)
 
-from th_system_msgs.msg import RobotMode, StateEffect
+from th_system_msgs.msg import PinList, RobotMode, StateEffect
 from th_system_msgs.srv import OpenMapSession
 
 from th_config_manager.service_call import call_and_wait
 from th_config_manager.slam_control_logic import (
-    deserialize_match_type, map_session_base_dir, map_session_filename,
-    map_session_name, open_session_error, slam_restart_complete,
+    deserialize_match_type, effective_reload_pose, map_session_base_dir,
+    map_session_filename, map_session_name, open_session_error,
+    slam_restart_complete,
 )
+
+
+def _yaw_from_quat(q) -> float:
+    """クォータニオン (w,x,y,z フィールドを持つ) から yaw [rad] を返す。
+
+    pin_registrar.py / home_declarer.py と同じ式（重複だが ROS ノード間で
+    共有モジュールを新設するほどの規模ではない）。
+    """
+    import math
+    return math.atan2(
+        2.0 * (q.w * q.z + q.x * q.y),
+        1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 
 # 破棄で終了させる対象の実行ファイル名。bringup.launch.py が起動するものと
@@ -179,6 +192,9 @@ class SlamControl(Node):
         # 物理的に別ディレクトリ）。bringup.launch.py が /root/th_data/venue を渡す。
         self.declare_parameter('venue_map_dir', '/root/th_data/venue')
         self._venue_map_dir = self.get_parameter('venue_map_dir').value
+        # WS-9Y: /onsite/pins の HOME ピン姿勢。VENUE reload で呼び出し側が
+        # 初期姿勢を指定してこなかったときのフォールバックに使う（effective_reload_pose）。
+        self._home_pose = None
         # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
         # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
         self._slam_ready = None
@@ -203,6 +219,14 @@ class SlamControl(Node):
         self.create_subscription(
             StateEffect, '/system/effect', self._on_effect, effect_qos,
             callback_group=cbg)
+
+        # WS-9Y: pin_registrar の /onsite/pins（latched）を購読し、HOME ピンの
+        # 姿勢を VENUE reload の初期姿勢フォールバックに使う。
+        pins_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+                              durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                              history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(
+            PinList, '/onsite/pins', self._on_pins, pins_qos, callback_group=cbg)
 
         # WS-9N: map_and_localization_slam_toolbox_node に差し替えたため、
         # set_localization_mode サービスが存在する（2026-09-03 実機確認済み、success=True）。
@@ -259,6 +283,15 @@ class SlamControl(Node):
     # ── 共通 ────────────────────────────────────────────────
     def _cb_mode(self, msg: RobotMode):
         self._mode = msg.mode
+
+    def _on_pins(self, msg: PinList):
+        home = None
+        for p in msg.pins:
+            if getattr(p, 'kind', '') == 'HOME':
+                pos = p.pose.position
+                home = (float(pos.x), float(pos.y), _yaw_from_quat(p.pose.orientation))
+                break
+        self._home_pose = home
 
     def _mode_allows_change(self) -> bool:
         return self._mode in (RobotMode.IDLE, RobotMode.MANUAL)
@@ -466,6 +499,19 @@ class SlamControl(Node):
                 if request.slot == 'VENUE':
                     return self._handle_venue_commit(response)
                 return self._handle_map_save(response, base)
+            # WS-9Y: VENUE は呼び出し側（試験画面）が初期姿勢を渡してこないため、
+            # 登録済み HOME ピンの姿勢へフォールバックする（無ければ従来どおり
+            # START_AT_FIRST_NODE のまま）。request を直接書き換えて
+            # _handle_map_reload には手を入れない（その中身の順序は AST テストで
+            # 固定されているため）。
+            if request.slot == 'VENUE':
+                has, x, y, yaw = effective_reload_pose(
+                    request.has_initial_pose, request.initial_x, request.initial_y,
+                    request.initial_yaw, self._home_pose)
+                request.has_initial_pose = has
+                request.initial_x = x
+                request.initial_y = y
+                request.initial_yaw = yaw
             # reload は ROUTE / VENUE とも同一（respawn→deserialize）。
             return self._handle_map_reload(response, base, request)
 

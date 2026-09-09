@@ -7,6 +7,7 @@ import { test, expect } from '@playwright/test'
 import {
   gotoScreen, gotoScreenWithOnsite, onsiteServiceCalls,
   setTestState, setTestPersonTargets, setTestOnsitePins, unlockOnsiteMap, stdTriggerCalls,
+  stubServices,
 } from './helpers.js'
 
 // Pin.msg の最小形（pose.position が地図座標、kind が HOME/PANEL）。
@@ -474,6 +475,66 @@ test('F-6: mappingActive===false なら toggle_mapping を呼んでから表示�
   await expect(page.locator('[data-testid="s20-map"]')).toBeVisible()
   const calls = await stdTriggerCalls(page)
   expect(calls.some((c) => c.service === '/slam_control/toggle_mapping')).toBe(true)
+})
+
+// WS-9Y: 前回セッションのピンが残っているときだけ「新しい試験日として開始」を出す。
+test('WS-9Y: ピンが残っていれば地図ゲートにリセット案内が出る', async ({ page }) => {
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    { pins: PINS, targets: TARGETS, mappingActive: true },
+  )
+  await page.locator('#s20').waitFor()
+  await expect(page.locator('[data-testid="s20-reset-venue"]')).toBeVisible()
+})
+
+test('WS-9Y: ピンが 0 件ならリセット案内は出ない', async ({ page }) => {
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    { pins: [], targets: TARGETS, mappingActive: true },
+  )
+  await page.locator('#s20').waitFor()
+  await expect(page.locator('[data-testid="s20-reset-venue"]')).toHaveCount(0)
+})
+
+// WS-9Y の核心: ArmedButton は 2 回押さないと発火しない（誤操作防止）。1 回目では
+// discard_map / reset_pins のどちらも呼ばれず、2 回目で discard_map → reset_pins
+// の順に呼ばれる。
+test('WS-9Y: リセットは2回押しで discard_map → reset_pins の順に呼ぶ', async ({ page }) => {
+  await stubServices(page, {
+    '/slam_control/discard_map': { success: true, message: '' },
+    '/onsite/reset_pins': { success: true, message: '' },
+  })
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    { pins: PINS, targets: TARGETS, mappingActive: true },
+  )
+  await page.locator('#s20').waitFor()
+  const btn = page.locator('[data-testid="s20-reset-venue"] button')
+  await btn.click()
+  expect(await stdTriggerCalls(page)).toEqual([])
+  await btn.click()
+  const calls = await stdTriggerCalls(page)
+  expect(calls.map((c) => c.service)).toEqual([
+    '/slam_control/discard_map', '/onsite/reset_pins',
+  ])
+})
+
+// 失敗時はエラー文言を出し、reset_pins は呼ばない（discard_map の失敗で止まる）。
+test('WS-9Y: discard_map が失敗したら reset_pins を呼ばずエラーを出す', async ({ page }) => {
+  await stubServices(page, {
+    '/slam_control/discard_map': { success: false, message: 'slam_toolbox に接続できません' },
+  })
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    { pins: PINS, targets: TARGETS, mappingActive: true },
+  )
+  await page.locator('#s20').waitFor()
+  const btn = page.locator('[data-testid="s20-reset-venue"] button')
+  await btn.click()
+  await btn.click()
+  await expect(page.locator('[data-testid="s20-reset-err"]')).toBeVisible()
+  const calls = await stdTriggerCalls(page)
+  expect(calls.map((c) => c.service)).toEqual(['/slam_control/discard_map'])
 })
 
 // brief-onsite-fix F-2: レーダーに機体マーク（前方上向き三角＋中心丸）が出る。

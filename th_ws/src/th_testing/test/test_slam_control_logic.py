@@ -40,8 +40,9 @@ sys.path.insert(0, os.path.join(
     'th_config_manager'))
 
 from slam_control_logic import (   # noqa: E402
-    deserialize_match_type, map_session_base_dir, map_session_filename,
-    map_session_name, open_session_error, slam_restart_complete,
+    deserialize_match_type, effective_reload_pose, map_session_base_dir,
+    map_session_filename, map_session_name, open_session_error,
+    slam_restart_complete,
 )
 from route_record_core import _safe_id, finalized_path   # noqa: E402
 
@@ -55,6 +56,30 @@ def test_deserialize_match_type_with_initial_pose():
 def test_deserialize_match_type_without_initial_pose():
     """has_initial_pose=False なら START_AT_FIRST_NODE (1) を返す。"""
     assert deserialize_match_type(False) == 1
+
+
+# ── 1a. effective_reload_pose（WS-9Y: VENUE reload の初期姿勢フォールバック）
+def test_effective_reload_pose_keeps_explicit_pose():
+    """呼び出し側が既に has_initial_pose=True なら、それをそのまま使う。"""
+    got = effective_reload_pose(True, 1.0, 2.0, 0.5, (9.0, 9.0, 9.0))
+    assert got == (True, 1.0, 2.0, 0.5)
+
+
+def test_effective_reload_pose_falls_back_to_home_pin():
+    """has_initial_pose=False で HOME ピンがあれば、その姿勢を初期姿勢にする。
+
+    実機事故 (2026-09-09・WS-9Y): 試験画面が has_initial_pose:false を固定送信
+    していたため START_AT_FIRST_NODE に落ち、機体の実際の現在地と無関係な
+    自己位置から始まり、costmap がずれて ComputePathToPose が失敗し続けた。
+    """
+    got = effective_reload_pose(False, 0.0, 0.0, 0.0, (-0.003, 0.0, -0.05))
+    assert got == (True, -0.003, 0.0, -0.05)
+
+
+def test_effective_reload_pose_no_home_pin_stays_false():
+    """HOME ピンが未登録なら、従来どおり False のまま（START_AT_FIRST_NODE）。"""
+    got = effective_reload_pose(False, 0.0, 0.0, 0.0, None)
+    assert got == (False, 0.0, 0.0, 0.0)
 
 
 # ── 1b. slam_restart_complete（WS-9S: respawn 待ちの純判定）────────────

@@ -32,6 +32,7 @@ export default function OnsiteMap({
   robotLabel,
   personPose,
   personLabel,
+  overlayText,
   testId,
 }) {
   // 占有格子ラスタ → dataURL。useRouteMap 由来の mapData.info/data。
@@ -134,6 +135,17 @@ export default function OnsiteMap({
           {personLabel ? (
             <text y={11} textAnchor="middle" fontSize="10" fill="#ffe0b2">{personLabel}</text>
           ) : null}
+        </g>
+      ) : null}
+
+      {overlayText ? (
+        // WS-9Y: slam_toolbox の再起動待ち（discard_map）／読み直し待ち
+        // （reload。最大 45s+30s）の間、地図が無反応に見えるのを防ぐ。
+        <g data-testid={`${testId}-map-overlay`}>
+          <rect width={MAP_VB_W} height={MAP_VB_H} fill="#000" opacity={0.6} />
+          <text x={MAP_VB_W / 2} y={MAP_VB_H / 2} textAnchor="middle" fill="#fff" fontSize="13">
+            {overlayText}
+          </text>
         </g>
       ) : null}
     </svg>

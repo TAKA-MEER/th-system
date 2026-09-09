@@ -35,6 +35,7 @@ import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
 import StepBar from '../parts/StepBar.jsx'
+import ArmedButton from '../parts/ArmedButton.jsx'
 import {
   IconArrow, IconClose, IconPin, IconSave, IconStop, OP_BUTTON_KINDS,
 } from '../parts/icons.jsx'
@@ -51,6 +52,7 @@ import {
   S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_EDIT, S20_PIN_RENAME,
   S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REG_HOME_HERE, S20_REG_HERE_NOTE,
   S20_REG_HERE_OK, S20_REGISTER_TITLE, S20_REG_PANEL, S20_REG_PANEL_HERE,
+  S20_RESET_ARMED, S20_RESET_BANNER, S20_RESET_BUSY, S20_RESET_FAIL, S20_RESET_IDLE,
   S20_RETURN_HOME, S20_STEP_HOME, S20_STEP_MAP, S20_STEP_PANEL, S20_STEP_SAVE, S20_STEP_TARGET,
   S20_SUBTAB_PINS, S20_SUBTAB_REGISTER,
   S20_TAB_MAP, S20_TAB_TARGET, S20_UNSAVED,
@@ -101,6 +103,12 @@ export default function S20Prep() {
   const mappingActive = useMappingActive(ros)
   const toggleMapping = useStdTrigger('/slam_control/toggle_mapping')
   const [mapUnlocked, setMapUnlocked] = useState(false)
+  // WS-9Y: 前回セッションの地図・ピンをまとめて消す「新しい試験日として開始」。
+  // discard_map（slam_toolbox 再起動）→ reset_pins（pins.yaml を空にする）の順。
+  const discardMap = useStdTrigger('/slam_control/discard_map')
+  const resetPins = useStdTrigger('/onsite/reset_pins')
+  const [resetBusy, setResetBusy] = useState(false)
+  const [resetErr, setResetErr] = useState(null)
 
   const disabledAll = stale || state?.mode == null
 
@@ -189,6 +197,25 @@ export default function S20Prep() {
       if (res?.success === false) return   // 失敗時は解禁しない（留まる）
     }
     setMapUnlocked(true)
+  }
+
+  // WS-9Y: 「新しい試験日として開始」。discard_map（slam_toolbox 再起動、respawn は
+  // 待たない）→ reset_pins（pins.yaml を空にする）の順に呼ぶ。ArmedButton なので
+  // ここに来る時点で操作者の二段階確認は済んでいる。
+  async function handleResetVenue() {
+    setResetErr(null)
+    setResetBusy(true)
+    const d = await discardMap()
+    if (d?.success === false) {
+      setResetErr(d?.message || S20_RESET_FAIL)
+      setResetBusy(false)
+      return
+    }
+    const r = await resetPins()
+    if (r?.success === false) {
+      setResetErr(r?.message || S20_RESET_FAIL)
+    }
+    setResetBusy(false)
   }
 
   // 登録（MAPPING で受理されると FSM が REGISTER にする）。
@@ -309,12 +336,34 @@ export default function S20Prep() {
                 type="button"
                 className={`btn wide mt ${OP_BUTTON_KINDS.advance}`}
                 data-testid="s20-map-gate-start"
-                disabled={disabledAll || mappingActive == null}
+                disabled={disabledAll || mappingActive == null || resetBusy}
                 onClick={handleStartMapping}
               >
                 <IconArrow />
                 <span>{S20_MAP_GATE_BUTTON}</span>
               </button>
+              {/* WS-9Y: 前回セッションのピンが残っているときだけ、まとめて消す
+                  経路を出す。自動では消さない（Spec-onsite §4.0.1「判定は
+                  自動化しない」と同じ考え方）。 */}
+              {pins.length > 0 && (
+                <div className="well mt" data-testid="s20-reset-venue">
+                  {resetBusy ? (
+                    <div className="note" data-testid="s20-reset-busy">{S20_RESET_BUSY}</div>
+                  ) : (
+                    <>
+                      <div className="sm mut mb">{S20_RESET_BANNER}</div>
+                      <ArmedButton
+                        className="wide"
+                        idleLabel={S20_RESET_IDLE}
+                        armedLabel={S20_RESET_ARMED}
+                        disabled={disabledAll}
+                        onConfirm={handleResetVenue}
+                      />
+                      {resetErr && <div className="note err mt" data-testid="s20-reset-err">{resetErr}</div>}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

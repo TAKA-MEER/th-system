@@ -626,6 +626,62 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
   `th_ws/esp32/tools/ws_test_server.py`（削除） / ラズパイ側中継プロセス（新設） /
   `docs/network.md` / `docs/使い方.md` / `docs/architecture.md`。
 
+- **2026-09-09 — 当日、会場地図を開いてもピンへ移動できない（WS-9Y）**: 実機で
+  「当日動作でピンに移動しない。地図の管理系の動作が怪しい。当日動作で地図を開くと
+  新しい地図らしきものを開く。過去のピンが残っている」。
+
+  切り分けで確定（実機 `th_robot`、稼働中の `HOME_NAV` を観測）: `/system/state` が
+  `HOME_NAV`/`BLOCKED` に張り付き `/cmd_vel` が完全に無音（`ComputePathToPose` が
+  通らない＝経路計算そのものが失敗）。`map→base_link` TF（0.796, 0.078, -2.5°）と
+  登録済み `HOME` ピン（-0.003, 0.0, -3°）が約 0.8 m ずれていた。
+
+  原因は 2 つ独立に存在する:
+
+  1. **`useOnsiteService.js` の `openVenueMap()` が `has_initial_pose:false` を
+     固定送信していた。** `/map_session/open`（`slot:VENUE mode:reload`）は
+     `deserialize_match_type(false)` → `match_type=1`（`START_AT_FIRST_NODE`）に
+     フォールバックし、**機体の実際の現在地とは無関係に「ポーズグラフの最初の
+     ノードにいる」と決め打ちで自己位置推定を始める**。これは
+     [Spec-onsite.md](docs/plan/spec/Spec-onsite.md) §4.0 の原典が要求する
+     「待機場所・姿勢を地図初期位置とする」を実装していなかった穴であり、
+     教示再生（`ROUTE`）側は WS-9N/WS-9S で `match_type=3`
+     （`LOCALIZE_AT_POSE` ＋ 経路始点）を既にやっているのに、試験場内（`VENUE`）
+     側だけ抜けていた。ずれた自己位置のまま `/map` の静的レイヤが重なるため、
+     実際には存在しない障害物・自由空間の食い違いが costmap に出て
+     `ComputePathToPose` が失敗し続ける（＝ピンに向かって一歩も動かない）。
+  2. **前日 (`PREP`) の地図作成開始時にも当日のピン登録時にも、過去のセッションの
+     地図・ピンをリセットする手段が無かった。** `pins.yaml` は起動時に読み込んだきり
+     残り続け、`PREP` で地図を作り直しても（新しい SLAM グラフ＝新しい座標系）
+     古いピンの map 座標はそのまま残る。`Spec-onsite.md` §4.0.1 の「段 C（作り直す）」
+     は「ピンは 2 点指示で取り直す」としているが、**古いピンを消す手段が
+     無ければ「取り直す」を実行しても新旧のピンが混在する**。
+
+  **変更（この決定）**:
+
+  - `slam_control`（`th_config_manager`）が `/onsite/pins`（latched）を購読し、
+    `VENUE` の `reload` で呼び出し側が `has_initial_pose:false` のときは
+    **登録済み `HOME` ピンの姿勢を初期姿勢として使う**（`match_type=3` に切り替わる。
+    純ロジックは `slam_control_logic.py`）。これにより「会場地図を開く」の前提が
+    「機体を待機場所（`HOME` ピン）に置いてから押す」になる。教示再生と同じ運用
+    規律（再生前に経路始点へ戻す）をそのまま試験場内へ拡張しただけで、新しい
+    考え方を持ち込んではいない。`home_declarer` の「宣言」はこの後に行う
+    **収束後の照合**として初めて意味を持つ（`Spec-onsite.md` §4.0.1「宣言が
+    そのまま地図ずれの測定器になる」は、先に自己位置を合わせてからでないと
+    成立しない）。
+  - `pin_registrar` に `/onsite/reset_pins`（`Trigger`）を追加し、`th_onsite`
+    画面（S-20）に「新しい試験日として開始（前回の地図・ピンを消去）」を
+    `ArmedButton`（二段階確認。`S01Main.jsx` の地図破棄ボタンと同じ部品）として置く。
+    押すと `/slam_control/discard_map` → `/onsite/reset_pins` の順に呼ぶ。
+    **自動ではリセットしない**（`Spec-onsite.md` §4.0.1「判定は自動化しない」の
+    考え方をここにも適用し、無人での誤消去を避ける）。表示は前回セッションの
+    ピンが残っているときだけ出す。
+  - 地図タブに、再起動待ち（`discard_map`）・読み直し待ち（`reload`。最大
+    `RESPAWN_WAIT_SEC(45s) + DESERIALIZE_TIMEOUT_SEC(30s)`）の間、地図レイヤの上に
+    「起動中…」「読み込み中…」のオーバーレイを出す（それまでは無反応に見えていた）。
+
+  更新: `slam_control.py` / `slam_control_logic.py` / `pin_registrar.py` /
+  `S20Prep.jsx` / `S21Test.jsx` / `useOnsiteService.js` / `docs/使い方.md`。
+
 ---
 
 ## 3. 両設計書が扱っていない事項

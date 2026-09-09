@@ -100,3 +100,32 @@ def map_session_name(slot: str, session_id: str) -> str:
     if slot == 'VENUE':
         return 'map'
     return map_session_filename(session_id)
+
+
+def effective_reload_pose(has_initial_pose: bool, initial_x: float, initial_y: float,
+                          initial_yaw: float, home_pose) -> "tuple":
+    """VENUE の reload で使う実際の初期姿勢を決める（純関数）。
+
+    実機事故 (2026-09-09・WS-9Y): 試験画面（VENUE）は has_initial_pose=false を
+    固定送信していた。deserialize_match_type(False) は match_type=1
+    (START_AT_FIRST_NODE) にフォールバックし、機体の実際の現在地とは無関係に
+    「ポーズグラフの最初のノードにいる」と決め打ちで自己位置推定を始める。
+    ずれた自己位置のまま /map の静的レイヤが重なり、costmap 上に実在しない
+    障害物が出て ComputePathToPose が失敗し続け、ピンへ一歩も動かなくなった
+    （実機確認: map->base_link と HOME ピンが 0.8m ずれ、/cmd_vel が完全に無音）。
+
+    呼び出し側が既に has_initial_pose=True で明示的な姿勢を渡しているなら
+    それを優先する（将来 VENUE 以外や別の呼び出し元が明示指定してきても壊さない）。
+    呼び出し側が指定せず（False）、登録済み HOME ピンの姿勢（home_pose、
+    (x, y, yaw) または None）があれば、それを初期姿勢として使う
+    （match_type=3 LOCALIZE_AT_POSE に切り替わる。deserialize_match_type 経由）。
+    HOME ピンも無ければ何もしない（False のまま。従来どおり START_AT_FIRST_NODE）。
+
+    Returns: (has_initial_pose, x, y, yaw)
+    """
+    if has_initial_pose:
+        return (True, initial_x, initial_y, initial_yaw)
+    if home_pose is not None:
+        hx, hy, hyaw = home_pose
+        return (True, hx, hy, hyaw)
+    return (False, initial_x, initial_y, initial_yaw)

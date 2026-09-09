@@ -79,6 +79,17 @@ test('S-21 表示とタイトル（IDLE のまま直接開く）', async ({ page
   await expect(page.locator('#s21 .op-save')).toBeHidden()
 })
 
+// WS-9Y: 「会場地図を開く」の前提（機体を待機場所に置いてから押す）を画面に出す。
+// これが要る理由: slam_control は HOME ピンの姿勢を初期姿勢にフォールバックする
+// ため、機体が実際に待機場所にいないと自己位置が合わない。
+test('WS-9Y: 会場地図を開く前に「機体を待機場所に置いてから」の案内が出る', async ({ page }) => {
+  await goto21(page, IDLE, { openVenueMap: { success: true, message: '' } })
+  await expect(page.locator('[data-testid="s21-open-venue-hint"]')).toBeVisible()
+  // 開いたあとは地図タブのゲート自体が消える（案内も含めて）。
+  await unlockOnsiteVenueMap(page)
+  await expect(page.locator('[data-testid="s21-open-venue-hint"]')).toHaveCount(0)
+})
+
 // MAP-1: 追従対象者（/person/status、base_link 相対）を地図上に表示する。
 // is_lost:false のときだけ baseToWorld() で map 座標に変換して出す。
 test('MAP-1: 追従対象者は is_lost:false のときだけ地図に出る', async ({ page }) => {

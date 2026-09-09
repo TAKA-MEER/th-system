@@ -30,6 +30,7 @@ import tf2_ros
 
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Header
+from std_srvs.srv import Trigger
 from th_system_msgs.msg import Pin, PinList, PersonStatus, StateEffect, StateEvent
 from th_system_msgs.srv import EditPin, RegisterPin, TwoPointPress
 
@@ -135,6 +136,11 @@ class PinRegistrar(Node):
         self.create_service(RegisterPin, '/onsite/register_pin', self._on_register_pin,
                             callback_group=sub_cbg)
         self.create_service(EditPin, '/onsite/edit_pin', self._on_edit_pin,
+                            callback_group=sub_cbg)
+        # WS-9Y: 前日の地図・ピンをまとめて破棄する（S-20「新しい試験日として
+        # 開始」。/slam_control/discard_map とセットで呼ばれる想定。単発の
+        # 編集・削除（/onsite/edit_pin）と違い、全件を一括で消す）。
+        self.create_service(Trigger, '/onsite/reset_pins', self._on_reset_pins,
                             callback_group=sub_cbg)
 
         # 起動時に既存ピンを publish（再起動後も残る）
@@ -432,6 +438,22 @@ class PinRegistrar(Node):
                 return response
         response.success = False
         response.message = f'ピン {request.id} が見つかりません'
+        return response
+
+    # ── /onsite/reset_pins (Trigger) ──────────────────────
+    def _on_reset_pins(self, request, response):
+        """全ピンを消す（WS-9Y「新しい試験日として開始」）。
+
+        /onsite/edit_pin の 1 件削除と違い、pins.yaml を空にして一括で消す。
+        FSM を経由しない（discard_map と同じくスタンドアロン）。
+        """
+        n = len(self._pins)
+        self._pins = []
+        _dump_pins(self._pins_path, self._pins)
+        self._publish_pins()
+        response.success = True
+        response.message = f'ピンをすべて削除しました ({n} 件)'
+        self.get_logger().info(f'reset_pins: {n} 件のピンを削除しました')
         return response
 
 

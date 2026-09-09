@@ -50,10 +50,11 @@ import {
   S20_WIZ_MSG_STEP1, S20_WIZ_MSG_STEP2, S20_WIZ_REGISTER, S20_WIZ_STEP, S20_PIN_YAW,
   S21_ATPANEL_TITLE, S21_DEST_HOME, S21_DEST_NEXT_PANEL, S21_DEST_SUMMON_HERE,
   S21_HOME_DECLARED, S21_HOME_DECLARE, S21_HOME_FORCE_DECLARE,
-  S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_GATE_MSG, S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
+  S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_GATE_MSG, S21_MAP_LOADING,
+  S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
   S21_NEXT_DECLARE_HOME, S21_NEXT_OPEN_VENUE, S21_NEXT_PICK_DEST,
   S21_NEXT_STOP, S21_NEXT_SUMMON, S21_NEXT_WORK,
-  S21_NEXT_DEST_TITLE, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_MAP,
+  S21_NEXT_DEST_TITLE, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_HINT, S21_OPEN_VENUE_MAP,
   S21_PICK_PANEL_HINT, S21_PIN_MOVE, S21_PINS_EMPTY,
   S21_OPEN_VENUE_FAIL, S21_PREP_TITLE, S21_SELECT_HINT, S21_STEP_DEST, S21_STEP_HOME, S21_STEP_MOVE,
   S21_STEP_OPEN, S21_STEP_WORK, S21_SUBTAB_ATPANEL, S21_SUBTAB_DEST,
@@ -149,6 +150,9 @@ export default function S21Test({ onExit }) {
   const [homeErr, setHomeErr] = useState(null)
   // 会場地図の読み直し（/map_session/open）の結果メッセージ（success/message）。
   const [venueMsg, setVenueMsg] = useState(null)
+  // WS-9Y: reload は respawn 待ち込みで最大 45s+30s かかる。地図が無反応に見える
+  // のを防ぐため、地図タブに「読み込んでいます…」を出す間だけ true にする。
+  const [venueBusy, setVenueBusy] = useState(false)
   // ピン選択（select_pin）の失敗メッセージ。
   const [goErr, setGoErr] = useState(null)
 
@@ -238,8 +242,10 @@ export default function S21Test({ onExit }) {
   // 当日の手順の先頭（brief-onsite-fix E）。success / message を画面に出す。
   async function handleOpenVenueMap() {
     setVenueMsg(null)
+    setVenueBusy(true)
     const res = await openVenueMap()
     setVenueMsg({ ok: !!res?.success, text: res?.message ?? '' })
+    setVenueBusy(false)
   }
 
   // 呼び寄せ対象（RadarSelect）。SUMMON のときだけ set_target（T-SUM-15）。
@@ -341,16 +347,21 @@ export default function S21Test({ onExit }) {
             <div className="card">
               <h3>{S20_MAP_TITLE}</h3>
               <div className="note" data-testid="s21-map-gate-msg">{S21_MAP_GATE_MSG}</div>
-              <button
-                type="button"
-                className={`btn wide mt ${OP_BUTTON_KINDS.advance}`}
-                data-testid="s21-map-gate-open"
-                disabled={disabledAll}
-                onClick={() => handleOpenVenueMap()}
-              >
-                <IconArrow />
-                <span>{S21_OPEN_VENUE_MAP}</span>
-              </button>
+              <div className="sm mut mb" data-testid="s21-open-venue-hint">{S21_OPEN_VENUE_HINT}</div>
+              {venueBusy ? (
+                <div className="note" data-testid="s21-map-gate-busy">{S21_MAP_LOADING}</div>
+              ) : (
+                <button
+                  type="button"
+                  className={`btn wide mt ${OP_BUTTON_KINDS.advance}`}
+                  data-testid="s21-map-gate-open"
+                  disabled={disabledAll}
+                  onClick={() => handleOpenVenueMap()}
+                >
+                  <IconArrow />
+                  <span>{S21_OPEN_VENUE_MAP}</span>
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -371,6 +382,7 @@ export default function S21Test({ onExit }) {
                   ariaLabel={S20_MAP_ARIA}
                   noPoseLabel={S20_MAP_NO_POSE}
                   robotLabel={S20_MAP_ROBOT}
+                  overlayText={venueBusy ? S21_MAP_LOADING : null}
                   testId="s21"
                 />
               </div>
@@ -397,7 +409,7 @@ export default function S21Test({ onExit }) {
             type="button"
             className={`next-action ${OP_BUTTON_KINDS[nextAction.kind] ?? ''}`.trim()}
             data-testid="s21-next-action"
-            disabled={disabledAll}
+            disabled={disabledAll || venueBusy}
             onClick={nextAction.run}
           >
             {NEXT_ACTION_ICONS[nextAction.kind]}
@@ -479,7 +491,7 @@ export default function S21Test({ onExit }) {
                     type="button"
                     className="btn sm grow"
                     data-testid="s21-open-venue-map"
-                    disabled={disabledAll}
+                    disabled={disabledAll || venueBusy}
                     onClick={() => handleOpenVenueMap()}
                   >
                     {S21_OPEN_VENUE_MAP}

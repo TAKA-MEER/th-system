@@ -67,8 +67,11 @@ export function useOnsiteService() {
       SELECT_PIN_SERVICE, SRV_TYPES.ONSITE_SELECT_PIN, request, '__thTestSelectPin'),
     // brief-onsite-fix E: 保存した会場地図（slot:VENUE）を当日に読み直す
     // （/map_session/open → OpenMapSession.srv）。session_id は空不可（VENUE でも
-    // 検証される）なので 'venue' を渡す。deserialize の初期姿勢は未指定
-    // （has_initial_pose=false → match_type=START_AT_FIRST_NODE にフォールバック）。
+    // 検証される）なので 'venue' を渡す。has_initial_pose はここでは常に false
+    // で送る ── WS-9Y（2026-09-09）: slam_control 側が /onsite/pins の HOME ピン
+    // 姿勢へフォールバックする（無ければ従来どおり START_AT_FIRST_NODE）。
+    // フロント側で姿勢を持つ必要はない。押す前提は「機体を待機場所（HOME ピン）
+    // に置いてから」（使い方.md）。
     openVenueMap: () => callService(
       SERVICES.MAP_SESSION_OPEN, SRV_TYPES.MAP_SESSION_OPEN,
       { slot: 'VENUE', mode: 'reload', session_id: 'venue', has_initial_pose: false },
