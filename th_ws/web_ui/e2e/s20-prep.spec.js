@@ -68,6 +68,29 @@ test('S-20 表示とタイトル', async ({ page }) => {
   await expect(page.locator('[data-testid="s20-map-robot"]')).toBeVisible()
 })
 
+// MAP-1: 追従対象者（/person/status、base_link 相対）を地図上に表示する。
+// is_lost:false のときだけ baseToWorld() で map 座標に変換して出す。
+test('MAP-1: 追従対象者は is_lost:false のときだけ地図に出る', async ({ page }) => {
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    {
+      pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, mappingActive: true,
+      personStatus: { position: { x: 1, y: 0, z: 0 }, confidence: 0.9, is_lost: false, lost_reason: '' },
+    },
+  )
+  await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
+  await expect(page.locator('[data-testid="s20-map-person"]')).toBeVisible()
+
+  // is_lost:true に切り替えるとマーカーは消える。
+  await page.evaluate(() => {
+    window.__thSetTestPersonStatus({
+      position: { x: 1, y: 0, z: 0 }, confidence: 0, is_lost: true, lost_reason: 'DETECTION_LOST',
+    })
+  })
+  await expect(page.locator('[data-testid="s20-map-person"]')).toBeHidden()
+})
+
 test('終了は ui.finish が 1 回だけ送られる', async ({ page }) => {
   await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS })
   await page.locator('#s20').waitFor()

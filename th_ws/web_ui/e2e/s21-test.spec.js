@@ -79,6 +79,25 @@ test('S-21 表示とタイトル（IDLE のまま直接開く）', async ({ page
   await expect(page.locator('#s21 .op-save')).toBeHidden()
 })
 
+// MAP-1: 追従対象者（/person/status、base_link 相対）を地図上に表示する。
+// is_lost:false のときだけ baseToWorld() で map 座標に変換して出す。
+test('MAP-1: 追従対象者は is_lost:false のときだけ地図に出る', async ({ page }) => {
+  await goto21(page, IDLE, {
+    openVenueMap: { success: true, message: '' },
+    personStatus: { position: { x: 1, y: 0, z: 0 }, confidence: 0.9, is_lost: false, lost_reason: '' },
+  })
+  await unlockOnsiteVenueMap(page)
+  await expect(page.locator('[data-testid="s21-map-person"]')).toBeVisible()
+
+  // is_lost:true に切り替えるとマーカーは消える。
+  await page.evaluate(() => {
+    window.__thSetTestPersonStatus({
+      position: { x: 1, y: 0, z: 0 }, confidence: 0, is_lost: true, lost_reason: 'DETECTION_LOST',
+    })
+  })
+  await expect(page.locator('[data-testid="s21-map-person"]')).toBeHidden()
+})
+
 test('終了は ui.finish が 1 回だけ送られる', async ({ page }) => {
   await goto21(page)
   await page.locator('[data-testid="s21-finish"]').click()
