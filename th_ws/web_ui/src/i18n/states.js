@@ -26,6 +26,9 @@ export const STATE_NAMES = {
   // WP-UI-07: S-21 試験のサブ状態（transitions.yaml T-ATP-01/02・T-SUM-01/05）。
   WORKING: '作業中',
   WAIT_CLEAR: '退避待ち',
+  // T-PNAV-04/T-HNAV-04（evt.blocked）。stop-banner（STOP_REASON_LABELS.blocked）
+  // が詳しい理由を出すので、ここは短い状態語のみ。
+  BLOCKED: '経路探索中（再試行）',
 }
 
 export const UNKNOWN_STATE_LABEL = '不明'
@@ -135,6 +138,9 @@ export const STOP_REASON_LABELS = {
   presence: 'タブレットの在席が確認できないため停止しています。画面をこのアプリに戻すか、接続を確認してください。',
   obstacle: '前方に障害物があるため停止しています。',
   uncalibrated: '死角の校正が済んでいないため停止しています。',
+  // 2026-09-09: venue_navigator が経路を見つけられず自動で再試行している状態
+  // （evt.blocked。ゴールは変えず、経路が見つかり次第自動で動き出す）。
+  blocked: '目的地までの経路が見つからず、自動で再試行しています。行く手に障害物が無いか確認してください。',
 }
 
 export function stopReasonLabel(reason) {

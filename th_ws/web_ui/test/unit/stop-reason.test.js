@@ -99,3 +99,17 @@ test('非常停止・手押しは走行状態が無いのでゲートで落ち�
     assert.equal(stopReason(s, { action: 'STOP' }, { active: true }, ATTRS), null)
   }
 })
+
+// ── 2026-09-09 実機フィードバック「動かない。失敗理由も出ない」 ─────────
+// venue_navigator の evt.blocked は state だけを BLOCKED にする（mode はその
+// ままなので run_state と一致しない）。走行状態ゲートより先に見る必要がある。
+test('BLOCKED は run_state と一致しなくても拾う（走行状態ゲートの前で見る）', () => {
+  const s = { mode: 'PANEL_NAV', state: 'BLOCKED', zone: 'OUT', speed_limit: 'v_slow' }
+  // PANEL_NAV は ATTRS に無い（未定義 attributes でもゲートに落ちずに拾えること）。
+  assert.equal(stopReason(s, null, null, ATTRS), 'blocked')
+})
+
+test('BLOCKED はフォルト・リミッタ未受信より優先して出す', () => {
+  const s = { mode: 'PANEL_NAV', state: 'BLOCKED', zone: 'NA', speed_limit: 'stop' }
+  assert.equal(stopReason(s, null, { active: true }, ATTRS), 'blocked')
+})

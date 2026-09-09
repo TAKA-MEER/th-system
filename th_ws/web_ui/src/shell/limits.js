@@ -103,10 +103,19 @@ export function operationCardLayout(mode, attributes) {
 //      に一瞬出て点滅する。ノードが死んだ場合は経路状態やフォルトが先に出る。
 //
 // stopReason(state, limiterStatus, fault, attributes)
-//   -> 'estop'|'fault'|'presence'|'obstacle'|'uncalibrated'|null
+//   -> 'estop'|'fault'|'presence'|'obstacle'|'uncalibrated'|'blocked'|null
 // null は「出さない」。厳しい順に判定する。
 export function stopReason(state, limiterStatus, fault, attributes) {
   if (!state) return null
+  // 2026-09-09 実機フィードバック「動かない。失敗理由も出ない」: venue_navigator
+  // が Nav2 の経路計画そのものに失敗すると mode はそのまま state だけ BLOCKED
+  // になる（T-PNAV-04/T-HNAV-04、evt.blocked）。この BLOCKED は
+  // attributes[mode].run_state と一致しない（run_state は 'NAV'）ため、下の
+  // 走行状態ゲートで弾かれて何も表示されなかった——機体は動こうとして失敗して
+  // いるのに、画面には「移動中」の表示すら出ない無反応に見えていた。
+  // BLOCKED はどのモードでも「経路計画の失敗」以外の意味を持たないので、
+  // ゲートより先にモード非依存で見る。
+  if (state.state === 'BLOCKED') return 'blocked'
   // 走るはずでないなら何も出さない（待機・経路選択・準備完了・一時停止中）。
   const runState = attributes?.[state.mode]?.run_state
   if (!runState || state.state !== runState) return null
