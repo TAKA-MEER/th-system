@@ -11,9 +11,17 @@
 //
 // ラスタは canvas putImageData → dataURL を <image> に描くため、S-13/S-14 の
 // RoutePreview と同じ occupancyGridToPixels() を使う（見た目・行反転規則を一致させる）。
+//
+// brief-MAP-COSTMAP: 地図タブには Nav2 のグローバル costmap（/global_costmap/costmap）
+// と直近の Nav2 経路（/plan）も重ねて載せる。レイヤ順は
+// 地図ラスタ → costmap → 経路 → ピン → ロボット → 対象者。costmap は静的地図と
+// 解像度・原点・サイズが一致しないため info の四隅を toPx() で変換してから <image> に
+// 載せる（costmapPixels.js の赤ヒートマップ）。経路は plannedPath（[{x,y},...]）を
+// 水色の <polyline> で描く。両方無ければ何も描かない。
 import { useEffect, useState } from 'react'
 import { onsiteMapTransform, yawToSvgDeg } from '../mapGeometry.js'
 import { occupancyGridToPixels } from '../screens/routePreviewGeom.js'
+import { costmapToPixels } from './costmapPixels.js'
 
 // 論理 viewBox は 340x250（mapGeometry の変換はこの座標系が前提。変更禁止）。
 // 表示サイズは CSS（.mapWrap svg の width:100% / max-height）が決める
@@ -33,6 +41,8 @@ export default function OnsiteMap({
   personPose,
   personLabel,
   overlayText,
+  costmapData = null,
+  plannedPath = [],
   testId,
 }) {
   // 占有格子ラスタ → dataURL。useRouteMap 由来の mapData.info/data。
@@ -56,9 +66,53 @@ export default function OnsiteMap({
     return undefined
   }, [mapData])
 
+  // brief-MAP-COSTMAP: costmap（/global_costmap/costmap）は静的地図と解像度・原点・
+  // サイズが一致しないため、info から実世界の四隅を求めて t.toPx() で SVG ピクセルへ
+  // 変換してから <image> に載せる（単純に t.view の矩形に重ねると位置がずれる。
+  // costmap の origin に回転が付くことは実運用上まず無いので矩形マッピングでよい）。
+  // ラスタ化（canvas putImageData → dataURL）は地図ラスタと同じ手法。
+  const [costmapUrl, setCostmapUrl] = useState(null)
+  useEffect(() => {
+    if (!costmapData?.info) { setCostmapUrl(null); return undefined }
+    const { width, height } = costmapData.info
+    const data = costmapData.data
+    if (!(Array.isArray(data) || ArrayBuffer.isView(data)) || width <= 0 || height <= 0) {
+      setCostmapUrl(null)
+      return undefined
+    }
+    const off = document.createElement('canvas')
+    off.width = width
+    off.height = height
+    const ctx = off.getContext('2d')
+    const img = ctx.createImageData(width, height)
+    img.data.set(costmapToPixels(data, width, height))
+    ctx.putImageData(img, 0, 0)
+    setCostmapUrl(off.toDataURL())
+    return undefined
+  }, [costmapData])
+
   // UX-7: 縁のピンのラベル（丸の下 26px）が SVG の外で切れないよう内側に寄せる。
   const t = onsiteMapTransform(mapData, MAP_VB_W, MAP_VB_H, 24, 22)
   const hasMap = !!(mapUrl && t.view)
+
+  // brief-MAP-COSTMAP: costmap の world 矩形（origin と origin+width*res /
+  // +height*res）を toPx() で対角 2 点に落とし、SVG は y が下向き（worldToCanvas が
+  // 上下反転済み）なので min/abs で <image> の矩形にする。
+  let costmapRect = null
+  if (costmapUrl && costmapData?.info) {
+    const info = costmapData.info
+    const [x0, y0] = t.toPx(info.origin.position.x, info.origin.position.y)
+    const [x1, y1] = t.toPx(
+      info.origin.position.x + info.width * info.resolution,
+      info.origin.position.y + info.height * info.resolution,
+    )
+    costmapRect = {
+      x: Math.min(x0, x1),
+      y: Math.min(y0, y1),
+      width: Math.abs(x1 - x0),
+      height: Math.abs(y1 - y0),
+    }
+  }
 
   // brief-onsite-ux2 F-6/F-7: `${testId}-map` は「地図タブに地図 SVG が
   // マウントされているか」を e2e から直接見るための testid（F-6 の表示ゲート、
@@ -75,6 +129,33 @@ export default function OnsiteMap({
           height={t.view.drawH}
           href={mapUrl}
           data-testid={`${testId}-map-raster`}
+        />
+      ) : null}
+
+      {costmapRect ? (
+        // brief-MAP-COSTMAP: Nav2 のグローバル costmap を赤いヒートマップで重ねる
+        // （地図ラスタより上・ピンより下のレイヤ）。“高いほど濃い赤”が障害物の濃さ。
+        <image
+          x={costmapRect.x}
+          y={costmapRect.y}
+          width={costmapRect.width}
+          height={costmapRect.height}
+          href={costmapUrl}
+          data-testid={`${testId}-map-costmap`}
+        />
+      ) : null}
+
+      {plannedPath.length > 0 ? (
+        // brief-MAP-COSTMAP: 直近の Nav2 グローバル経路（/plan）。地図ラスタ・
+        // costmap より上、ピンより下のレイヤ。目立つ水色の折れ線で描く。
+        <polyline
+          points={plannedPath.map((p) => t.toPx(p.x, p.y).join(',')).join(' ')}
+          fill="none"
+          stroke="#4fc3f7"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          data-testid={`${testId}-map-path`}
         />
       ) : null}
 

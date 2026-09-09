@@ -118,6 +118,10 @@ export async function stubServices(page, services) {
 // (__thTestDeclareHome), /onsite/select_pin (__thTestSelectPin). For S-21 the
 // topic seeds /onsite/home_declared (__thTestHomeDeclared) and /onsite/wait_clear
 // (__thTestWaitClear) are read on first render instead.
+// brief-MAP-COSTMAP: S-20/S-21 の地図タブに重ねるデータもここから seed できる。
+// costmap は /global_costmap/costmap（__thTestCostmap, useOnsiteCostmap）、
+// plannedPath は /plan（__thTestPlannedPath, usePlannedPath、[{x,y},...] の配列）。
+// どちらも無ければ not-present（描かない）側のテストになる。
 // useOnsitePins / usePersonTargets / useOdomPose / useHomeDeclared /
 // useWaitClearStatus read their window.__thTest<Name> on first render, so every
 // seed must be set via addInitScript.
@@ -134,10 +138,10 @@ export async function gotoScreenWithOnsite(
   page, screen, state,
   {
     pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear,
-    routeMap, openVenueMap, mappingActive, personStatus,
+    routeMap, openVenueMap, mappingActive, personStatus, costmap, plannedPath,
   },
 ) {
-  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm, ma, pst }) => {
+  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm, ma, pst, cm, pp }) => {
     window.__thTestState = s
     window.__thTestScreen = scr
     if (p) window.__thTestOnsitePins = p
@@ -160,11 +164,15 @@ export async function gotoScreenWithOnsite(
     if (ma !== undefined) window.__thTestMappingActive = ma
     // MAP-1: 地図タブの追従対象者マーカー（ros/usePersonStatus.js）。
     if (pst) window.__thTestPersonStatus = pst
+    // brief-MAP-COSTMAP: 地図タブの costmap（/global_costmap/costmap）と直近の
+    // Nav2 経路（/plan）のシード（ros/useCostmap.js / ros/usePlannedPath.js）。
+    if (cm) window.__thTestCostmap = cm
+    if (pp) window.__thTestPlannedPath = pp
   },
   {
     s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose,
     dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear, rm: routeMap, ovm: openVenueMap,
-    ma: mappingActive, pst: personStatus,
+    ma: mappingActive, pst: personStatus, cm: costmap, pp: plannedPath,
   })
   await page.goto('/')
 }

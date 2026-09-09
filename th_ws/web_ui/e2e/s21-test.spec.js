@@ -41,14 +41,30 @@ const TARGETS = {
 const IDLE = { mode: 'IDLE', state: 'NONE' }
 
 // 最小 OccupancyGrid（S-20 と同じ。地図シードを渡すと地図タブにラスタが描かれる）。
+// orientation は ROS と同じ 4 成分（x/y/z/w）を必ず書く — x/y を省くと
+// mapGeometry.quatToYaw() が undefined*undefined = NaN になり toPx() が NaN を返す。
 const ROUTE_MAP = {
   info: {
     resolution: 0.5,
     width: 4,
     height: 4,
-    origin: { position: { x: -1, y: -1 }, orientation: { w: 1, z: 0 } },
+    origin: { position: { x: -1, y: -1 }, orientation: { x: 0, y: 0, w: 1, z: 0 } },
   },
   data: [0, 100, -1, 0, 100, 0, 0, -1, -1, 0, 100, 0, 0, -1, 100, 0],
+}
+
+// brief-MAP-COSTMAP: Nav2 グローバル costmap（/global_costmap/costmap）の最小形。
+// 静的地図（ROUTE_MAP）とは別の origin/resolution/サイズでも構わない（OnsiteMap は
+// costmap 自身の info から実世界の四隅を toPx() で変換して配置する）。
+// orientation は ROUTE_MAP と同じく 4 成分を書く（上記コメント参照）。
+const COSTMAP = {
+  info: {
+    resolution: 0.5,
+    width: 4,
+    height: 4,
+    origin: { position: { x: -1, y: -1 }, orientation: { x: 0, y: 0, w: 1, z: 0 } },
+  },
+  data: [0, 50, -1, 0, 100, 0, 0, -1, 0, 0, 80, 0, 0, -1, 100, 40],
 }
 
 async function triggers(page) {
@@ -369,5 +385,30 @@ test('保存した会場地図を開くが /map_session/open を呼ぶ', async (
     (c) => c.service === '/map_session/open')
   expect(open, '「保存した会場地図を開く」が /map_session/open を呼んでいない').toBeTruthy()
   expect(open.request).toMatchObject({ slot: 'VENUE', mode: 'reload', session_id: 'venue' })
+})
+
+// brief-MAP-COSTMAP: costmap（/global_costmap/costmap）と直近の Nav2 経路（/plan）が
+// 地図タブに重なる。シードは gotoScreenWithOnsite の costmap / plannedPath オプション
+// （__thTestCostmap / __thTestPlannedPath）経由。testid は s21-map-costmap /
+// s21-map-path。
+test('MAP-COSTMAP: costmap と Nav2 経路が地図に重なる', async ({ page }) => {
+  await goto21(page, IDLE, {
+    routeMap: ROUTE_MAP,
+    openVenueMap: { success: true, message: '' },
+    costmap: COSTMAP,
+    plannedPath: [{ x: -0.5, y: -0.5 }, { x: 0.5, y: 0.5 }, { x: 1, y: 1 }],
+  })
+  await unlockOnsiteVenueMap(page)
+  await expect(page.locator('[data-testid="s21-map-raster"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s21-map-costmap"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s21-map-path"]')).toBeVisible()
+})
+
+test('MAP-COSTMAP: costmap/経路を seed していなければ何も描かない', async ({ page }) => {
+  await goto21(page, IDLE, { routeMap: ROUTE_MAP, openVenueMap: { success: true, message: '' } })
+  await unlockOnsiteVenueMap(page)
+  await expect(page.locator('[data-testid="s21-map-raster"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s21-map-costmap"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="s21-map-path"]')).toHaveCount(0)
 })
 

@@ -28,6 +28,8 @@ import { usePersonTargets } from '../ros/usePersonTargets.js'
 import { usePersonStatus } from '../ros/usePersonStatus.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { useOnsiteMapView } from '../ros/useOnsiteMapView.js'
+import { useOnsiteCostmap } from '../ros/useCostmap.js'
+import { usePlannedPath } from '../ros/usePlannedPath.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useMappingActive } from '../ros/useMappingActive.js'
 import { useStdTrigger } from '../ros/useStdTrigger.js'
@@ -90,6 +92,9 @@ export default function S20Prep() {
   const personStatus = usePersonStatus(ros)
   const routeMap = useOnsiteMapView(ros)
   const routePose = useRoutePose(ros)
+  // brief-MAP-COSTMAP: 地図タブに Nav2 の costmap と直近の経路を重ねる。
+  const costmapData = useOnsiteCostmap(ros)
+  const plannedPath = usePlannedPath(ros)
   const { twoPoint, editPin, registerPinHere } = useOnsiteService()
   const jogPanel = useJogPanel()
   // brief-onsite-ux2 F-6: 地図タブの表示ゲート。/slam_control/mapping_active
@@ -379,6 +384,8 @@ export default function S20Prep() {
                   robotPose={routePose}
                   personPose={personPose}
                   personLabel={S20_MAP_TARGET}
+                  costmapData={costmapData}
+                  plannedPath={plannedPath}
                   selectedPinId={selectedPinId}
                   onSelectPin={setSelectedPinId}
                   ariaLabel={S20_MAP_ARIA}

@@ -29,6 +29,8 @@ import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { useHomeDeclared } from '../ros/useHomeDeclared.js'
 import { useWaitClearStatus } from '../ros/useWaitClearStatus.js'
 import { useOnsiteMapView } from '../ros/useOnsiteMapView.js'
+import { useOnsiteCostmap } from '../ros/useCostmap.js'
+import { usePlannedPath } from '../ros/usePlannedPath.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
@@ -111,6 +113,9 @@ export default function S21Test({ onExit }) {
   const personStatus = usePersonStatus(ros)
   const routeMap = useOnsiteMapView(ros)
   const routePose = useRoutePose(ros)
+  // brief-MAP-COSTMAP: 地図タブに Nav2 の costmap と直近の経路を重ねる。
+  const costmapData = useOnsiteCostmap(ros)
+  const plannedPath = usePlannedPath(ros)
   const homeDeclared = useHomeDeclared(ros)
   const wait = useWaitClearStatus(ros)
   const { twoPoint, selectPin, declareHome, openVenueMap } = useOnsiteService()
@@ -377,6 +382,8 @@ export default function S21Test({ onExit }) {
                   robotPose={routePose}
                   personPose={personPose}
                   personLabel={S20_MAP_TARGET}
+                  costmapData={costmapData}
+                  plannedPath={plannedPath}
                   selectedPinId={selectedPinId}
                   onSelectPin={setSelectedPinId}
                   ariaLabel={S20_MAP_ARIA}
