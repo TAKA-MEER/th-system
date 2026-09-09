@@ -19,6 +19,8 @@ export const MODE_NAMES = {
   AT_PANEL: '配電盤前',
   SUMMON: '呼び寄せ',
   HOME_NAV: '待機場所へ移動',
+  // Spec-modes.md §2.3（2026-09-08 追加）。当日の試験画面はこのモードで開く。
+  AT_HOME: '試験（当日）',
   OPCHECK: '始業点検',
   CALIB: '校正',
 }

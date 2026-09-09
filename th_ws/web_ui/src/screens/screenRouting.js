@@ -22,6 +22,10 @@ export const SCREEN_IDS = {
 export const MODE_TO_SCREEN = {
   MANUAL: 'S11', TEACH_MANUAL: 'S13', REPLAY: 'S14', PREP: 'S20',
   PANEL_NAV: 'S21', SUMMON: 'S21', AT_PANEL: 'S21', HOME_NAV: 'S21',
+  // 2026-09-08: 当日の待機モード（Spec-modes.md §2.3）。以前は S-21 に対応する
+  // モードが無く main.jsx のローカルフラグ（onsiteTestOpen）で出していたが、
+  // AT_HOME ができたので他の画面と同じく mode から導出する。
+  AT_HOME: 'S21',
 }
 
 // 表示中の画面は SystemState.mode から導出する（純関数）。
@@ -39,17 +43,15 @@ export const MODE_TO_SCREEN = {
 // いれば（MODE_TO_SCREEN にヒット）設定は絶対に出ない = 走行中に設定画面が
 // かぶることは構造上あり得ない。
 //
-// onsiteTestOpen (brief-UI-S21-entry): S-21 試験も同じ「S-01 のサブ画面」方式。
-// S-21 は IDLE で開き、行き先を選んで初めて PANEL_NAV 等に入るので MODE_TO_SCREEN
-// では出せない。動作系モードが最優先なのは S-50 と同じ規則で、
-// onsiteTestOpen と settingsOpen が両方立つことは無いが onsiteTestOpen を先に見る。
-export function resolveScreen({ testScreen, passedConnect, mode, settingsOpen, onsiteTestOpen }) {
+// 2026-09-08: S-21 は AT_HOME モードから導出するようになったので、
+// 以前の onsiteTestOpen（S-01 のサブ画面として開くローカルフラグ）は廃止した。
+// 画面は FSM から導出する、という 2026-09-02 の原則にこれで揃う。
+export function resolveScreen({ testScreen, passedConnect, mode, settingsOpen }) {
   // DRIVE_S11 は本番に存在しない e2e 専用の合成画面。モード導出を迂回する。
   if (testScreen === 'DRIVE_S11') return 'DRIVE_S11'
   if (!passedConnect) return 'S00'
   const base = MODE_TO_SCREEN[mode] ?? 'S01'
   if (base !== 'S01') return base           // 動作系モードが最優先（S-50 と同じ）
-  if (onsiteTestOpen) return 'S21'
   if (settingsOpen) return 'S50'
   return 'S01'
 }

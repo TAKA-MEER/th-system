@@ -79,15 +79,9 @@ function Screens() {
   const [passedConnect, setPassedConnect] = useState(() => initialPassedConnect(TEST_SCREEN))
   // WS-9X: S-50 設定を開いているか（S-01 のサブ画面。ローカル state）。
   const [settingsOpen, setSettingsOpen] = useState(false)
-  // brief-UI-S21-entry: S-01「試験」ボタンで開く S-21 も同じ「S-01 のサブ画面」
-  // 方式（S-50 と同型）。FSM のモードではないので、開いている間 IDLE のまま
-  // S-21 を出し、S-21 の「終了」(ui.finish 送信後に onExit) で false に戻す。
-  const [onsiteTestOpen, setOnsiteTestOpen] = useState(false)
   // モードが実画面（S-11/S-13/S-14）に対応したら設定は畳む（走行に入った・
   // フォルトで飛んだ 等）。INIT / IDLE は S-01 のままなので開いたままでよい。
   // resolveScreen 側も base !== 'S01' なら settingsOpen を無視するので二重の安全。
-  // onsiteTestOpen は畳まない: IDLE に戻っても base==='S01' のあと onsiteTestOpen
-  // が優先して S-21 が出続けるのが目的（閉じる唯一の道は S-21 の「終了」）。
   useEffect(() => {
     if (mode && MODE_TO_SCREEN[mode]) setSettingsOpen(false)
   }, [mode])
@@ -95,7 +89,7 @@ function Screens() {
   const screen = TEST_SCREEN === 'S21'
     ? 'S21'
     : resolveScreen({
-      testScreen: TEST_SCREEN, passedConnect, mode, settingsOpen, onsiteTestOpen,
+      testScreen: TEST_SCREEN, passedConnect, mode, settingsOpen,
     })
 
   if (screen === 'DRIVE_S11') {
@@ -141,14 +135,14 @@ function Screens() {
     )
   }
   if (screen === 'S21') {
-    // brief-UI-S21 §2.1: S-21 は「mode に関係なく直接開く」画面。本番は S-01
-    // の「試験」ボタン（onsiteTestOpen）か PANEL_NAV/SUMMON/AT_PANEL/HOME_NAV
-    // （MODE_TO_SCREEN）経由で、e2e は TEST_SCREEN=='S21' 経由でこの分岐に来る。
-    // onExit は S-21 の「終了」が ui.finish を送った後に呼ばれ、onsiteTestOpen を
-    // 閉じて S-01 へ戻す（S50Settings の onBack と同型）。
+    // 2026-09-08: S-21 は AT_HOME / PANEL_NAV / SUMMON / AT_PANEL / HOME_NAV の
+    // どれかで出る（MODE_TO_SCREEN）。当日の入口は S-01 の「試験（当日）」ボタン
+    // ＝ ui.enter_mode{mode:'AT_HOME'}。「終了」は ui.finish を送るだけで、
+    // FSM が IDLE に戻ればここが S-01 に切り替える（画面は FSM から導出する）。
+    // e2e は TEST_SCREEN=='S21' 経由でもこの分岐に来る。
     return (
       <AppShell screenName={SCREEN_NAMES.S21} screenId={SCREEN_IDS.S21}>
-        <S21Test onExit={() => setOnsiteTestOpen(false)} />
+        <S21Test />
       </AppShell>
     )
   }
@@ -162,13 +156,10 @@ function Screens() {
   return (
     <AppShell screenName={SCREEN_NAMES.S01} screenId={SCREEN_IDS.S01}>
       {/* onEnter は渡さない。ui.enter_mode が受理されれば FSM が
-          モードを変え、その /system/state を見てここが画面を切り替える。
-          onOpenSettings/onOpenOnsiteTest は S-50/S-21（S-01 のサブ画面）を
-          開くだけ（FSM は動かさない）。設定と試験は相互排他。 */}
-      <S01Main
-        onOpenSettings={() => { setSettingsOpen(true); setOnsiteTestOpen(false) }}
-        onOpenOnsiteTest={() => { setOnsiteTestOpen(true); setSettingsOpen(false) }}
-      />
+          モードを変え、その /system/state を見てここが画面を切り替える
+          （「試験（当日）」= AT_HOME もこの経路）。onOpenSettings だけは
+          S-50（S-01 のサブ画面）を開くローカル state。 */}
+      <S01Main onOpenSettings={() => setSettingsOpen(true)} />
     </AppShell>
   )
 }

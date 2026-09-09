@@ -21,20 +21,26 @@
 // that case (i18n/reasons.js), the same way it shows the reasonKey this
 // module hands back for the checks it *can* make locally.
 
-// The 10 buttons S-01 shows (Spec-webui.md §3.2's move(7) + field(PREP) +
-// maintenance(OPCHECK/CALIB) groups). PANEL_NAV / SUMMON / HOME_NAV are
+// The 11 buttons S-01 shows (Spec-webui.md §3.2's move(7) + field(PREP/AT_HOME)
+// + maintenance(OPCHECK/CALIB) groups). PANEL_NAV / SUMMON / HOME_NAV are
 // also reachable from IDLE per mode_entry.yaml, but that's via ui.goto from
 // inside S-21 (the test screen), not an S-01 button
 // (DetailedDesign-names.md §8.1); they're deliberately left out of this list.
+//
+// AT_HOME (2026-09-08, Spec-modes.md §2.3) IS an S-01 button: it is the day-of
+// entry point (「試験（当日）」). It used to be a special-cased local flag in
+// main.jsx because S-21 had no mode of its own; now that the mode exists the
+// button is an ordinary ui.enter_mode like every other one, and the screen is
+// derived from /system/state instead of a UI-local flag.
 export const MENU_MODES = [
   'FOLLOW', 'MANUAL', 'TEACH_FOLLOW', 'TEACH_MANUAL', 'REPLAY', 'LINE', 'LEASH',
-  'PREP',
+  'PREP', 'AT_HOME',
   'OPCHECK', 'CALIB',
 ]
 
 export const MENU_GROUPS = [
   { key: 'move', modes: ['FOLLOW', 'MANUAL', 'TEACH_FOLLOW', 'TEACH_MANUAL', 'REPLAY', 'LINE', 'LEASH'] },
-  { key: 'field', modes: ['PREP'] },
+  { key: 'field', modes: ['PREP', 'AT_HOME'] },
   { key: 'maint', modes: ['OPCHECK', 'CALIB'] },
 ]
 

@@ -31,7 +31,7 @@ import modeEntry from '../generated/mode_entry.json'
 import { modeLabel } from '../i18n/modes.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import {
-  GROUP_MOVE_TITLE, GROUP_FIELD_TITLE, GROUP_MAINT_TITLE, S01_SETTINGS, S01_ONSITE_TEST,
+  GROUP_MOVE_TITLE, GROUP_FIELD_TITLE, GROUP_MAINT_TITLE, S01_SETTINGS,
   S01_FINISH_ESCAPE,
   WIN_REASON_TITLE, WIN_REASON_OK,
   SHUTDOWN_TITLE, SHUTDOWN_UNSAVED_LABEL, SHUTDOWN_NONE, SHUTDOWN_BUTTON, SHUTDOWN_HINT,
@@ -52,7 +52,7 @@ function parseUnsaved(message) {
   }
 }
 
-export default function S01Main({ onEnter, onOpenSettings, onOpenOnsiteTest }) {
+export default function S01Main({ onEnter, onOpenSettings }) {
   const { state, stale } = useSystemState()
   const sendTrigger = useTrigger()
   const shutdownPrepare = useStdTrigger(SERVICES.SHUTDOWN_PREPARE)
@@ -169,27 +169,12 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenOnsiteTest }) {
                   className={`btn ${item.enabled ? '' : 'dis'}`}
                   disabled={disabledAll}
                   onClick={() => handleMenuClick(item)}
+                  data-testid={`s01-mode-${m}`}
                 >
                   {modeLabel(m)}
                 </button>
               )
             })}
-            {/* brief-UI-S21-entry: S-21「試験」は FSM のモードではないので
-                menuItems() にも group.modes にも入れない。押すと onOpenOnsiteTest
-                （main.jsx が onsiteTestOpen を立てて S-21 を出す）。S-21 の中で
-                待機場所宣言・行き先選択をするため IDLE のときだけ押せる。
-                mockup 555 行の「試験（当日）」を「試験準備」の隣に並べる。 */}
-            {group.key === 'field' && onOpenOnsiteTest && (
-              <button
-                type="button"
-                className="btn"
-                disabled={disabledAll || mode !== 'IDLE'}
-                onClick={onOpenOnsiteTest}
-                data-testid="s01-open-onsite-test"
-              >
-                {S01_ONSITE_TEST}
-              </button>
-            )}
           </div>
           {/* WS-9X: 「設定」は FSM のモードではないので menuItems() も
               .btnrow（モード選択ボタンのグリッド）にも入れない。S-50 を開く
