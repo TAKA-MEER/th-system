@@ -582,12 +582,12 @@
   unit: deg_pairs
   class: c
   status: measured
-  value: []
-  measured_at: "2026-08-26"
-  source: "走行体のみの構成では LiDAR に死角が無いことを確認。上部構造を搭載した時点で WP-CALIB-01 の手順で再測定する"
+  value: [-132.8, -125.8, -51.9, -45.4, 45.9, 54.9, 130.3, 138.8]
+  measured_at: "2026-09-09"
+  source: "上部構造（四隅の支柱）搭載後に実測。周囲 500mm 以内の実体を除去した状態で /scan を 300 スキャン集計（scripts/measure_blind_sectors.py）。laser_link 基準・反時計回り正・平坦配列。四隅の支柱が laser 中心から約 0.33m の距離に前左 +45.9..+54.9 / 前右 -51.9..-45.4 / 後左 +130.3..+138.8 / 後右 -132.8..-125.8 の 4 セクタとして恒常的に映る。いずれも obstacle_limiter の前方コーン(±28.6°)・後方コーン(±34.4°)の外なので L5 の v_reverse キャップは発火しない"
   consumers: [lidar_filter, obstacle_limiter]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-wp0.md WP-PARAM-01 §5"
-  note: "死角セクタ（O-4）。現構成（走行体のみ）は死角が無いため空配列で確定。空配列と『未校正』は別物であり、その判定は blind_calibrated（class:b）に委ねる（DetailedDesign-open.md 参照）"
+  note: "死角セクタ（O-4）。平坦配列 [a0,a1, a2,a3, ...]（度）で持ち、lidar_filter._build_blind_ranges() / th_safety::flat_to_range_pairs() が 2 個ずつ組にする。空配列と『未校正』は別物であり、その判定は blind_calibrated（class:b）に委ねる（DetailedDesign-open.md 参照）。上部構造の形状を変えたら WP-CALIB-01 の手順で再測定すること"
 
 - name: blind_calibrated
   unit: null

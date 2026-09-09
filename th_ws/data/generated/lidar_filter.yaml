@@ -1,3 +1,12 @@
 lidar_filter:
   ros__parameters:
+    blind_angle_ranges:
+    - -132.8
+    - -125.8
+    - -51.9
+    - -45.4
+    - 45.9
+    - 54.9
+    - 130.3
+    - 138.8
     blind_calibrated: true

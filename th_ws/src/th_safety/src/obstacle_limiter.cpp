@@ -154,9 +154,13 @@ public:
         // WAIVER(demo): W-05 — 本来 registry の v_reverse は blind_clearance_m
         // (LiDAR 死角。placeholder) から逆算する derived 値。derived だと null →
         // 生成 yaml に出ず → 既定 0.0 で「後退がゼロにクランプされ後退不可」
-        // (実機で発覚)。実機の LiDAR は 360°・死角なし (blind_angle_ranges 空・
-        // blind_calibrated:true) なので、デモの間だけ既定を 0.25 m/s (場内低速相当)
-        // にする。生成 yaml に v_reverse が入れば (blind_clearance_m 実測後) 上書きされる。
+        // (実機で発覚)。デモの間だけ既定を 0.25 m/s (場内低速相当) にする。
+        // 生成 yaml に v_reverse が入れば (blind_clearance_m 実測後) 上書きされる。
+        // 注記(2026-09-09): 上部構造搭載で blind_angle_ranges は非空・4 セクタに
+        // なった（四隅の支柱。laser 中心から約 0.33m）。ただし 4 セクタは前方
+        // コーン(±28.6°)・後方コーン(±34.4°)の外なので L5 の v_reverse キャップは
+        // 前後移動には発火しない。blind_clearance_m の実測値も約 0.33m だが、
+        // registry へ入れるかは別途判断（v_reverse が derived 実値になる）。
         declare_parameter("v_reverse", 0.25);
         // WAIVER(demo): W-18 — 同上。v_jog_panel は panel_clearance_m（placeholder）から
         // 逆算する derived 値。AT_PANEL / AT_HOME のジョグはこの上限で走るので、

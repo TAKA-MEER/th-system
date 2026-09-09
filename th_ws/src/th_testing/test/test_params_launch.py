@@ -292,30 +292,31 @@ def test_twist_mux_end_to_end_via_export():
 
 
 def test_blind_angle_ranges_end_to_end_via_export():
-    """O-4 の結合確認（2026-08-27 に表明を反転): 実際の registry.yaml →
-    export.py → sanitize_node_params() の結果、lidar_filter.yaml /
-    obstacle_limiter.yaml の**どちらにも blind_angle_ranges というキー自体が
-    存在しない**こと（空配列で残っていない）。
+    """O-4 の結合確認: 実際の registry.yaml → export.py →
+    sanitize_node_params() の結果、lidar_filter.yaml / obstacle_limiter.yaml の
+    **両方に registry と同じ平坦配列 blind_angle_ranges が入る**こと。
 
-    以前は「空配列のまま残ること」を検査していたが、これは Docker 実機での
-    起動失敗（`gazebo.launch.py sim:=true` で obstacle_limiter・lidar_filter の
-    両方が `parameter_value_from failed for parameter 'blind_angle_ranges':
-    No parameter value set` で落ちた。実測で確認済み）を固定するテストだった。
-    原因は ROS2 Humble の `rcl_yaml_param_parser` が空配列の parameter
-    override をそもそも扱えないこと（`declare_parameter` の型推論の問題ではない
-    ——素の `tf2_ros::static_transform_publisher` に空配列 1 個だけの
-    params ファイルを渡しても同じ例外で落ちることを実測で確認済み）。
-    `ParameterDescriptor` で型を明示しても override が空である限り解決できない。
+    registry.yaml の値が空配列のときはキーごと生成物から落とす
+    （ROS2 Humble の `rcl_yaml_param_parser` は空配列 override を扱えず、
+    obstacle_limiter・lidar_filter の両方が `parameter_value_from failed for
+    parameter 'blind_angle_ranges': No parameter value set` で起動失敗する。
+    実測で確認済み。素の `tf2_ros::static_transform_publisher` に空配列 1 個
+    だけの params ファイルを渡しても同じ例外で落ちる）。非空配列は正常な
+    override なのでそのまま生成物へ載せる——それが**このテストの検査対象**
+    （2026-09-09 に上部構造搭載で status: measured / 非空になった）。
 
-    「死角なし」と「値が抜けた」の区別は `blind_calibrated`（`class: b` /
-    `given`。N-8）という独立フラグが担うため、`blind_angle_ranges` というキー
-    自体が生成物に存在しなくても意味は失われない——ノード側の
-    `declare_parameter` の既定値（空配列 = マスクなし。安全側）がそのまま
-    使われるだけ。
+    「死角なし」と「未校正」の区別は `blind_calibrated`（`class: b` / `given`。
+    N-8）という独立フラグが担う。
 
     stage=2・sim=False（A8 が blind_angle_ranges の blocking_from_stage:2 を見る条件）
     でも GenerationError にならず完走することも合わせて確認する
-    （registry.yaml が status: measured になったことで A8 の対象から外れているはず）。"""
+    （registry.yaml が status: measured なので A8 の対象から外れている）。"""
+    with open(REGISTRY_YAML, encoding="utf-8") as f:
+        reg = {p["name"]: p for p in yaml.safe_load(f)}
+    expected = reg["blind_angle_ranges"]["value"]
+    assert expected, "registry の blind_angle_ranges が空。空配列の扱いは別テスト"
+    assert len(expected) % 2 == 0, "blind_angle_ranges は平坦配列（偶数長）でなければならない"
+
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = os.path.join(tmp, "generated")
         pg.run_generation(stage=2, sim=False, nodes=list(pg.REGISTRY_NODES),
@@ -323,18 +324,14 @@ def test_blind_angle_ranges_end_to_end_via_export():
 
         with open(os.path.join(out_dir, "lidar_filter.yaml"), encoding="utf-8") as f:
             lidar_params = yaml.safe_load(f)["lidar_filter"]["ros__parameters"]
-        assert "blind_angle_ranges" not in lidar_params, (
-            "blind_angle_ranges が空配列のまま生成物に残っている"
-            "（ROS2 Humble はこの override を扱えずノードが起動失敗する）")
+        assert lidar_params["blind_angle_ranges"] == expected
         assert lidar_params["blind_calibrated"] is True
 
         obstacle_path = os.path.join(out_dir, "obstacle_limiter.yaml")
         assert os.path.exists(obstacle_path), "obstacle_limiter.yaml が生成されていない"
         with open(obstacle_path, encoding="utf-8") as f:
             obstacle_params = yaml.safe_load(f)["obstacle_limiter"]["ros__parameters"]
-        assert "blind_angle_ranges" not in obstacle_params, (
-            "blind_angle_ranges が空配列のまま生成物に残っている"
-            "（ROS2 Humble はこの override を扱えずノードが起動失敗する）")
+        assert obstacle_params["blind_angle_ranges"] == expected
         assert obstacle_params["blind_calibrated"] is True
 
 

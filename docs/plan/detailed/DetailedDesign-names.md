@@ -511,7 +511,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`battery_warn_v`** ／ **`battery_critical_v`** | V | given（[hardware](DetailedDesign-hardware.md) §3.3） |
 | **`obstacle_cone_half_width_rad`** ／ **`obstacle_cone_half_width_reverse_rad`** | rad | (b)。**リミッタの判定コーン幅**（前方／後退で別値） |
 | **`obstacle_min_points`** | count | (b)。障害物とみなすのに必要な点数。円錐内の n 番目に小さい距離を最近傍とする（WS-9P。ノイズ 1 点で止まらないため。VISION.md §2 の 2026-09-04 の項）|
-| **`blind_angle_ranges`** | deg のペア列 | **(c)**。死角セクタ。`list[[a0,a1]]`（[wp2](DetailedDesign-wp2.md) `WP-CALIB-01` §5）。現構成（走行体のみ）は死角が無いことを確認済みで `measured` ＋空配列 |
+| **`blind_angle_ranges`** | deg の平坦配列 | **(c)**。死角セクタ。**as-built は平坦配列 `[a0,a1, a2,a3, ...]`**（`lidar_filter._build_blind_ranges()` / `th_safety::flat_to_range_pairs()` が 2 個ずつ組にする。wp2 §5 の `list[[a0,a1]]` は設計時案）。2026-09-09 に上部構造（四隅の支柱）搭載後に実測し 4 セクタで `measured`（`registry.yaml` / `scripts/measure_blind_sectors.py`） |
 | **`blind_calibrated`** | — | (b)。死角マスクが校正済みかどうかの明示フラグ。空配列と未校正を区別するために置く（`DetailedDesign-safety.md` §4.4） |
 
 ### 7.5 マージン 3 種の使い分け
