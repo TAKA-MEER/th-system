@@ -349,8 +349,17 @@ export default function S20Prep() {
           attributes={attributes}
           // brief-onsite-ux-fix UX-6-c: 「次にやること」が保存のときは操作カード
           // 側の保存を出さない（同じ操作の重複表示をやめる）。
+          //
+          // 2026-09-09 実機で確認: run を false で潰していたため、ジョグ後に
+          // PREP/PAUSE に落ちると「走行」ボタンがどこにも無く、レーダーのタップ
+          // （ui.select_target、guard は mode=PREP state=MAPPING）も静かに拒否
+          // されて詰んでいた（T-PREP-11: PREP/PAUSE --ui.run--> $prev_sub が
+          // 唯一の脱出路）。run は operationCardLayout の既定
+          // （attrs.run_state != null）に任せる（PREP は run_state:'MAPPING'
+          // なので常に表示される。stop と同じ「常に出して FSM に判断させる」
+          // 流儀に揃える）。
           slots={{
-            stop: true, check: false, run: false, save: nextAction?.kind !== 'save', manual: true,
+            stop: true, check: false, save: nextAction?.kind !== 'save', manual: true,
           }}
           disabled={disabledAll}
           manualDenyReason={manualDenyReason}

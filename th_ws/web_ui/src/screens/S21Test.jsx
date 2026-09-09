@@ -396,8 +396,17 @@ export default function S21Test({ onExit }) {
           attributes={attributes}
           // brief-onsite-ux-fix UX-6-c: 「次にやること」が保存のときは操作カード
           // 側の保存を出さない（S-21 の次操作に保存は現状無いが S-20 と揃えておく）。
+          //
+          // 2026-09-09 実機で確認: run を false で潰していたため、PANEL_NAV /
+          // SUMMON / HOME_NAV でジョグ後に PAUSE に落ちると「走行」ボタンが
+          // どこにも無く詰んでいた（T-PNAV-*/T-SUM-*/T-HNAV-* の PAUSE
+          // --ui.run--> NAV が唯一の脱出路）。AT_PANEL / AT_HOME はリース満了で
+          // 自動的に IDLE_P / IDLE_H へ戻る（override_common）ので run は要らず、
+          // operationCardLayout の既定（attrs.run_state != null）が
+          // モードごとに正しく出し分ける（S-20 と同じ「stop と同じ扱いにして
+          // FSM に判断させる」流儀）。
           slots={{
-            stop: true, check: false, run: false, save: mapUpdate && nextAction?.kind !== 'save', manual: true,
+            stop: true, check: false, save: mapUpdate && nextAction?.kind !== 'save', manual: true,
           }}
           disabled={disabledAll}
           manualDenyReason={manualDenyReason}

@@ -142,6 +142,16 @@ test('停止/保存の操作カードと対象選択（radar）', async ({ page 
   await page.locator('#s20').waitFor()
   await unlockOnsiteMap(page)
 
+  // 2026-09-09 実機で確認: PREP はジョグ後に PAUSE へ落ち、脱出路は
+  // ui.run（T-PREP-11）だけなのに操作カードの run が false で潰されていて
+  // 詰んでいた。走行ボタンが出ていること自体を固定する。
+  await expect(page.locator('#s20 .op-run')).toBeVisible()
+  await page.locator('#s20 .op-run').click()
+  expect(
+    (await triggers(page)).some((c) => c.trigger === 'ui.run'),
+    '走行ボタンが ui.run を送っていない',
+  ).toBe(true)
+
   // 操作カード: 停止(ui.stop)。保存は、この PINS/TARGETS シードだと全段完了で
   // 「次にやること」ボタンも保存になるため、重複を避けて操作カード側には出ない
   // （brief-onsite-ux-fix UX-6-c）。保存自体はそちらのボタンで送る。

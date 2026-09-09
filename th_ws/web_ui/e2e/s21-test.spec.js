@@ -86,6 +86,24 @@ test('終了は ui.finish が 1 回だけ送られる', async ({ page }) => {
   expect(finish, '終了が ui.finish を送っていない').toHaveLength(1)
 })
 
+// 2026-09-09 実機で確認: PANEL_NAV / SUMMON / HOME_NAV はジョグ後に PAUSE へ
+// 落ち、脱出路は ui.run（T-PNAV-*/T-SUM-*/T-HNAV-*）だけなのに操作カードの
+// run が false で潰されていて詰んでいた。AT_PANEL / AT_HOME はリース満了で
+// 自動的に IDLE_P/IDLE_H へ戻る（override_common）ので run は要らない
+// （run_state が null なので operationCardLayout が自然に隠す）。
+test('走行ボタン: PANEL_NAV には出る、AT_PANEL には出ない', async ({ page }) => {
+  await goto21(page, { mode: 'PANEL_NAV', state: 'PAUSE' })
+  await expect(page.locator('#s21 .op-run')).toBeVisible()
+  await page.locator('#s21 .op-run').click()
+  expect(
+    (await triggers(page)).some((c) => c.trigger === 'ui.run'),
+    '走行ボタンが ui.run を送っていない',
+  ).toBe(true)
+
+  await goto21(page, { mode: 'AT_PANEL', state: 'IDLE_P' })
+  await expect(page.locator('#s21 .op-run')).toBeHidden()
+})
+
 test('操作カードの停止は ui.stop、map_update のときだけ保存が表示され ui.save', async ({ page }) => {
   await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' })
   await page.locator('#s21 .op-stop').click()
