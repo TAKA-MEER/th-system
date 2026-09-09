@@ -18,10 +18,20 @@ export function resumeChoices(mode, attributes) {
 // cases that share one window (§6.2 "the same window turns into resume?",
 // E-5): mode itself is 'ESTOP' (C-06a/C-06b), or a recoverable fault has
 // pushed the *current* mode into PAUSE without changing it (C-03 --
-// DetailedDesign-state.md §4.1, WP-UI-01 §11 "W-1 generalization"). Shared by
-// shell/Windows.jsx (renders the window) and shell/AppShell.jsx (the
-// header's "reopen" badge needs to know the same thing), so it lives here
-// rather than being computed twice and risking drift.
+// DetailedDesign-state.md §4.1, WP-UI-01 §11 "W-1 generalization").
+//
+// WS-9Z (2026-09-09): call this with the *raw* live faultActive only from
+// shell/AppShell.jsx, which latches the result across a fault that clears
+// before the next render (safety_monitor's RECOVERABLE faults often clear
+// within ~100ms; state_manager's C-03 leaves mode/state parked in PAUSE
+// regardless, pending an explicit ui.resume_* this same window offers --
+// see AppShell.jsx's faultPauseSeen for why the latch exists and what broke
+// without it). AppShell passes the latched result down to Windows.jsx as
+// the `w1Active` prop; nothing else should call this function directly, or
+// the same real-fault-clears-before-render race reopens (it did once
+// already: this function used to be called independently from both files,
+// "computed twice ... risking drift" per this comment's own prior wording,
+// and only one of the two copies got the fix).
 export function isW1Active(mode, stateName, faultActive) {
   return mode === 'ESTOP' || (stateName === 'PAUSE' && !!faultActive)
 }

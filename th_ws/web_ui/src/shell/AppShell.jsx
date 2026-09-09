@@ -100,7 +100,34 @@ function AppShellInner({ screenName, screenId, children }) {
   }, [releaseShown])
 
   const zone = state?.zone && state.zone !== 'NA' ? state.zone : null
-  const w1Active = isW1Active(mode, stateName, !!fault?.active)
+
+  // WS-9Z (2026-09-09): fault 起因の PAUSE が「窓なしで詰む」対策。isW1Active(...)
+  // は fault が「今アクティブか」だけを見るが、safety_monitor の RECOVERABLE
+  // フォルト（ESP32_DISCONNECTED / LIDAR_LOST。既知の WiFi/シリアルのジッタ）は
+  // 実機でおよそ 100ms 以内に自然に消えることが多い。一方 state_manager 側は
+  // C-03 で mode/state を PAUSE に固定したまま、resume は ui.resume_*（この窓の
+  // ボタン）を待つ（fault_cleared ガード）。fault が「アクティブ→解消」の 2 メッセージが
+  // render される前に両方届く/揃うと、isW1Active は false のまま一度も窓を出さない。
+  // run_state が無いモード（AT_HOME / AT_PANEL / OPCHECK / CALIB）は他に走行ボタンの
+  // 迂回路も無いため、これが唯一の脱出路 ── 窓が出ないと真に詰む。
+  // 実機で再現・確認（2026-09-09）: AT_HOME/PAUSE に張り付いたまま窓が一度も出ず、
+  // CLI から `ui.resume_ack` を直接送るまで動かなかった（safety_monitor のログでは
+  // 同じ区間に ESP32_DISCONNECTED の FAULT→FAULT CLEARED が 100ms 以内で完結していた）。
+  //
+  // 対策: 「PAUSE 中に fault がアクティブだったことが一度でもある」をラッチし、
+  // PAUSE を抜けるまで保持する（ESTOP は mode 自体で判定するのでラッチ不要）。
+  // 保険として、画面を開いた/再読込した時点で既に PAUSE ＋ run_state 無しモード ＋
+  // ジョグ中でもない場合も救済する（jog.hold 以外に PAUSE へ入る経路が無いモードでは、
+  // その組合せは fault 由来としか説明できないため）。
+  const [faultPauseSeen, setFaultPauseSeen] = useState(false)
+  useEffect(() => {
+    if (stateName !== 'PAUSE') { setFaultPauseSeen(false); return }
+    const noRunFallback = attributes?.[mode]?.run_state == null
+    const stuckWithNoEscape = noRunFallback && !state?.jog_active
+    if (!!fault?.active || stuckWithNoEscape) setFaultPauseSeen(true)
+  }, [stateName, fault?.active, mode, state?.jog_active])
+
+  const w1Active = isW1Active(mode, stateName, !!fault?.active || faultPauseSeen)
   // WS-9R: 速度上限が 0 に落ちている理由（在席未確認・障害物・指令途絶など）。
   const stopBanner = stopReasonLabel(stopReason(state, limiterStatus, fault, attributes))
   // C-2 (WP-CARRY-01 §4/§7): server-side reject reason for a UI estop press
@@ -195,6 +222,7 @@ function AppShellInner({ screenName, screenId, children }) {
       </ConfirmWindowContext.Provider>
       <Windows
         ros={ros}
+        w1Active={w1Active}
         mode={mode}
         stateName={stateName}
         prevMode={state?.prev_mode ?? null}

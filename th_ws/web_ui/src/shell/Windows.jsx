@@ -33,7 +33,7 @@
 // of where in the JSX tree they're mounted, so they can all live in this
 // one Fragment.
 import { useEffect } from 'react'
-import { resumeChoices, isW1Active } from './limits.js'
+import { resumeChoices } from './limits.js'
 import { faultLabel } from '../i18n/faults.js'
 import { reasonLabel } from '../i18n/reasons.js'
 import { modeLabel } from '../i18n/modes.js'
@@ -66,14 +66,19 @@ const ESTOP_DISABLED_IN_CARRY = 'estop_disabled_in_carry'
 // control the same flag. It now doubles as "W-1 dismissed", covering both
 // the ESTOP and fault-caused-PAUSE cases below.
 export default function Windows({
-  ros, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, attributes, onTrigger,
-  estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
+  ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, attributes,
+  onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose,
 }) {
   const faultActive = !!fault?.active
   // Mutually exclusive: mode can't be both 'ESTOP' and something else at once.
   const w1IsEstop = mode === 'ESTOP'
-  const w1Active = isW1Active(mode, stateName, faultActive)
+  // WS-9Z: w1Active is computed by AppShell now (latched past a fault that
+  // clears before this renders -- see AppShell.jsx's faultPauseSeen). Do not
+  // recompute isW1Active(mode, stateName, faultActive) here: that was the
+  // exact bug (two independent computations of the same derived value,
+  // "risking drift" per this file's own header comment -- and they did
+  // drift, since only this copy would have needed the latch fix too).
 
   // W-6 auto-closes on an estop or fault (Spec-webui.md §4.0 "自動で閉じる").
   // The stick user can keep it open across releases; a drive `ui.stop` /
