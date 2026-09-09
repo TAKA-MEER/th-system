@@ -9,7 +9,6 @@ lidar_filter:
     # （params_generation が th_ws/data/generated/lidar_filter.yaml へ書く）。
     # 現構成（走行体のみ）は死角が無いことを確認済みで空配列。上部構造の
     # 追加で死角ができたら registry.yaml 側を更新すること（WP-CALIB-01）。
-
 person_predictor:
   ros__parameters:
     history_sec: 2.0

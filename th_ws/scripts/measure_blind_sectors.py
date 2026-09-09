@@ -17,7 +17,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
 
-NEAR_M = float(sys.argv[2]) if len(sys.argv) > 2 else 0.5
+NEAR_M = float(sys.argv[2]) if len(sys.argv) > 2 else 0.6
 WANT = int(sys.argv[1]) if len(sys.argv) > 1 else 100
 PERSIST = 0.90  # この割合以上のスキャンで塞がれていたら「死角」
 
@@ -117,7 +117,12 @@ def main():
     if not sectors:
         print('  なし（構造による恒常的な死角は検出されなかった）')
     flat = []
-    MARGIN = 1.0  # deg 余裕
+    # 2026-09-09 実測後の追認（実機フィードバック）: 支柱のグレージング角
+    # (=セクタ端で斜めに柱をかすめるビーム)は、90%persist判定と
+    # NEAR_M しきい値の境界で本来の柱の幅より数度(4〜7度)過小に切り詰め
+    # られ、地図に柱の点群が漏れて写る不具合が実機で確認された。
+    # 1.0deg では吸収しきれないため 5.0deg に拡大。
+    MARGIN = 5.0  # deg 余裕
     for (i0, j) in sectors:
         i1 = j % n
         d0 = beam_deg(i0)
