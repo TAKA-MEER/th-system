@@ -289,6 +289,8 @@ export const S21_NOW_AT_HOME = 'いま待機場所にいる'
 // brief-onsite-fix E: 保存した会場地図（slot:VENUE）を当日に開き直すボタン。
 export const S21_OPEN_VENUE_MAP = '保存した会場地図を開く'
 export const S21_OPEN_VENUE_DONE = '会場地図を開きました'
+// 失敗時に message が空で返ることがある（空の黄色い箱だけが出るのを防ぐ）。
+export const S21_OPEN_VENUE_FAIL = '会場地図を開けませんでした'
 // brief-onsite-ux2 F-6: 「会場地図を開く」まで地図タブに地図を出さない表示ゲート。
 export const S21_MAP_GATE_MSG = '保存した会場地図を開いてください'
 export const S21_HOME_UNDECLARED = '未宣言'

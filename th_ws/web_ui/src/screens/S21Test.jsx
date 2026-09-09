@@ -53,7 +53,7 @@ import {
   S21_NEXT_STOP, S21_NEXT_SUMMON, S21_NEXT_WORK,
   S21_NEXT_DEST_TITLE, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_MAP,
   S21_PICK_PANEL_HINT, S21_PIN_MOVE, S21_PINS_EMPTY,
-  S21_PREP_TITLE, S21_SELECT_HINT, S21_STEP_DEST, S21_STEP_HOME, S21_STEP_MOVE,
+  S21_OPEN_VENUE_FAIL, S21_PREP_TITLE, S21_SELECT_HINT, S21_STEP_DEST, S21_STEP_HOME, S21_STEP_MOVE,
   S21_STEP_OPEN, S21_STEP_WORK, S21_SUBTAB_ATPANEL, S21_SUBTAB_DEST,
   S21_SUBTAB_SUMMON, S21_SUMMON_START, S21_SUMMON_TITLE,
   S21_WAIT_CANCEL, S21_WAIT_CLEARING, S21_WAIT_DIST, S21_WAIT_TITLE,
@@ -477,7 +477,7 @@ export default function S21Test({ onExit }) {
                 </div>
                 {venueMsg && (
                   <div className={`note mb${venueMsg.ok ? '' : ' err'}`} data-testid="s21-open-venue-msg">
-                    {venueMsg.text || (venueMsg.ok ? S21_OPEN_VENUE_DONE : null)}
+                    {venueMsg.text || (venueMsg.ok ? S21_OPEN_VENUE_DONE : S21_OPEN_VENUE_FAIL)}
                   </div>
                 )}
                 {homeErr && (
