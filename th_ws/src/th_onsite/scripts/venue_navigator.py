@@ -99,6 +99,11 @@ class VenueNavigator(Node):
         self._recheck_in_flight = False
         self._recheck_started_at = 0.0
         self._arrival_pending = False
+        # costmap クリア連鎖の締め切り（0.0 = in-flight でない）。サービスが
+        # advertise されているのに応答しない（nav2 再起動中など）と done コール
+        # バックが永久に来ず _recheck_in_flight が 10s 張り付くため、2s で
+        # クリアを諦めて再計算へ進む。
+        self._clear_deadline = 0.0
 
         # ── QoS ─────────────────────────────────────────────
         effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
@@ -195,6 +200,7 @@ class VenueNavigator(Node):
         self._blocked = True
         self._nav_chain_active = False
         self._recheck_in_flight = False
+        self._clear_deadline = 0.0
         self._emit_event('evt.blocked', arg_json)
 
     def _current_goal(self):
@@ -280,6 +286,7 @@ class VenueNavigator(Node):
         self._cancel_requested = False
         self._nav_chain_active = False
         self._recheck_in_flight = False
+        self._clear_deadline = 0.0
         self._arrival_pending = False
 
     # ── /system/effect 受信 ───────────────────────────────
@@ -303,6 +310,7 @@ class VenueNavigator(Node):
         self._blocked = False
         self._nav_chain_active = False
         self._recheck_in_flight = False
+        self._clear_deadline = 0.0
         # _path は保持（resume 用）
 
     def _resume_follow_path(self):
@@ -479,14 +487,15 @@ class VenueNavigator(Node):
                 self._arrival_pending = True
                 self.get_logger().info(
                     f'arrived（state={self._state}）→ evt.unblocked で NAV に戻す')
-            if self._blocked:
-                self._blocked = False
-                self._emit_event('evt.unblocked')
+                if self._blocked:
+                    self._blocked = False
+                    self._emit_event('evt.unblocked')
             return
         self._arrived_latched = True
         self._blocked = False
         self._arrival_pending = False
         self._nav_chain_active = False
+        self._clear_deadline = 0.0
         if self._follow_goal_handle is not None:
             self._cancel_requested = True
             try:
@@ -507,6 +516,15 @@ class VenueNavigator(Node):
         if self._recheck_in_flight and now - self._recheck_started_at > 10.0:
             self.get_logger().warn('recheck が 10s 応答なし → フラグ解放')
             self._recheck_in_flight = False
+            self._clear_deadline = 0.0
+        # costmap クリアが 2s 応答なし → クリアを諦めて再計算へ進む（サービスが
+        # advertise 済みなのに無応答＝ nav2 再起動中などで done が来ないケース）。
+        if (self._recheck_in_flight and not self._nav_chain_active
+                and 0.0 < self._clear_deadline < now):
+            self.get_logger().warn('costmap クリア無応答 → クリアを飛ばして再計算')
+            self._clear_deadline = 0.0
+            self._recheck_compute()
+            return
 
         if not self._blocked:
             return
@@ -518,10 +536,12 @@ class VenueNavigator(Node):
 
         # 到着圏内で BLOCKED に落ちている（盤前で膠着）→ RPP を使わず、
         # evt.unblocked で NAV に戻して _align_timer の到着フォールバックに任せる。
+        # ここに来る時点で self._blocked は True。pending が既に立っていても
+        # 「BLOCKED かつ到着圏内」なら常に unblocked を出し直す（evt.unblocked を
+        # BLOCKED から受けるのは T-PNAV-05 で許容。二重送信は無害）。
         self._refresh_robot_pose()
         robot_xy = self._robot[:2] if self._robot is not None else None
-        if (not self._arrival_pending
-                and should_unblock_for_arrival(robot_xy, goal, self._params)):
+        if should_unblock_for_arrival(robot_xy, goal, self._params):
             self.get_logger().info('BLOCKED だが到着圏内 → evt.unblocked')
             self._arrival_pending = True
             self._blocked = False
@@ -539,8 +559,14 @@ class VenueNavigator(Node):
         """global → local の順に ClearEntireCostmap を非同期で叩き、完了で done_cb。
         地図フレーム固定の global costmap に残る幽霊障害物マーク
         （rolling_window:false・raytrace_max_range:6.0 で 6m 超/視線外は消えない）を
-        毎回の再探索前に一掃する。"""
+        毎回の再探索前に一掃する。done が来ない場合は _blocked_recheck が
+        _clear_deadline で 2s 後に打ち切る。"""
+        self._clear_deadline = self._now() + 2.0
+
         def _after_local(_fut=None):
+            if self._clear_deadline == 0.0:
+                return  # 既に打ち切り済み（二重実行防止）
+            self._clear_deadline = 0.0
             done_cb()
 
         def _after_global(_fut=None):
@@ -557,6 +583,8 @@ class VenueNavigator(Node):
             _after_global()
 
     def _recheck_compute(self):
+        if self._nav_chain_active:
+            return  # 打ち切り後に遅れて来た clear done コールバック等
         goal = self._current_goal()
         if goal is not None and self._blocked:
             self._unblocking = True
