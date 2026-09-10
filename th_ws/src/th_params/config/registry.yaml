@@ -385,7 +385,7 @@
   value: TBD_MEASURE
   consumers: [venue_navigator]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.3（O-a4）"
-  note: "未取得。deviation_budget_m の逆算元"
+  note: "未取得（実会場で実測する）。deviation_budget_m の逆算元。2026-09-10 実機検証で、Nav2 自動走行の直進通路下限は約 1.10m・実機成功は 1.0m・設計推奨は 1.3m 以上（VISION.md「Nav2 の機体モデル ── 実寸正方形 footprint」参照）。実会場がこれを下回る区間は Nav2 対象外（手動ジョグ／教示・再生）"
 
 - name: deviation_budget_m
   unit: m
