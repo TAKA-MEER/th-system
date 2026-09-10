@@ -129,6 +129,12 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: false
+      # WebUI(useCostmap.js)は /global_costmap/costmap の全体しか購読しない。
+      # 既定 false だと起動時 1 回だけ全体を配信し以後は costmap_updates(差分)のみ
+      # なので、WebUI のコストマップが初回スナップショットで凍結する（2026-09-10。
+      # 板を置いても膨張域も反映されず診断に使えなかった）。会場地図は小さい
+      # （~297x186）ので毎周期全体を送っても軽い。
+      always_send_full_costmap: true
       # local_costmap と同じ実寸正方形（VISION.md 参照。2026-09-10）
       footprint: "[[0.275, 0.275], [-0.275, 0.275], [-0.275, -0.275], [0.275, -0.275]]"
       resolution: 0.05
