@@ -104,11 +104,13 @@ def generate_launch_description():
     # 段階 3 で上がる（ピンの map 座標は SLAM の map→base_link TF が要るため）。
     onsite_enabled      = PythonExpression(["int('", stage, "') >= 3"])
     # WS-9E: 人物データを使うノードは、/person/status の publisher が起動する
-    # ときだけ立てる（stub か stage>=4）。実機デモ（stage:=1 / use_stub:=false）では
-    # 入力が 1 件も来ないうえ、出力先の /cmd_vel_retreat は WP-SAFE-03 以降
-    # twist_mux が購読していないので、丸ごと無駄な CPU になる。
-    person_logic_enabled = PythonExpression(
-        ["'", use_stub, "' == 'true' or int('", stage, "') >= 4"])
+    # ときだけ立てる。旧 FOLLOW 系ノード（follow_planner* / person_predictor）は
+    # 出力先の /cmd_vel_retreat を twist_mux が購読しておらず（WP-SAFE-03 以降）、
+    # 新設計で廃止対象（DetailedDesign-reuse.md）。
+    # 2026-09-10（WS-9AB 系）: 従来 stage>=4 でも立てていたが、stage>=4 は
+    # 試験場内デモ（FOLLOW を使わない）専用で、旧 3 ノードが各 10〜12% の CPU を
+    # 食うだけだった。stub 経由の FOLLOW 検証（use_stub:=true）でのみ立てる。
+    person_logic_enabled = PythonExpression(["'", use_stub, "' == 'true'"])
 
     # ── 設定ファイルパス ──────────────────────────────────
     nav2_yaml   = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
@@ -454,6 +456,10 @@ def generate_launch_description():
     ))
 
     # ── 12. panel_navigator ───────────────────────────────
+    # 2026-09-10（WS-9AB 系）: 旧試験場内ナビ。th_onsite の venue_navigator が
+    # 置換済み（DetailedDesign-reuse.md）。onsite（stage>=3）では立てない
+    # ── 旧 /robot/mode でしか動かず venue_navigator と別アクション（NavigateToPose
+    # vs compute_path_to_pose/follow_path）なのでゴール衝突は無いが CPU を食う。
     nodes.append(Node(
         package='th_planning',
         executable='panel_navigator.py',
@@ -462,6 +468,7 @@ def generate_launch_description():
             'panels_yaml': os.path.join(BRINGUP_DIR, 'config', 'panels.yaml'),
         }],
         output='screen',
+        condition=UnlessCondition(onsite_enabled),
     ))
 
     # ── 12b. summon_navigator ──────────────────────────────
@@ -471,6 +478,7 @@ def generate_launch_description():
         name='summon_navigator',
         parameters=[os.path.join(BRINGUP_DIR, 'config', 'planning_params.yaml')],
         output='screen',
+        condition=UnlessCondition(onsite_enabled),
     ))
 
     # ── 13. manual_command_handler ────────────────────────

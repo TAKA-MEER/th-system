@@ -627,14 +627,19 @@ def test_person_logic_nodes_gate_with_condition():
         "bringup.launch.py に person_logic_enabled の定義が無い（WS-9E）")
 
 
-def test_summon_and_panel_navigators_not_gated():
-    """WS-9E の固定: summon_navigator / panel_navigator はスコープ外。従来どおり
-    condition= を持たないこと（必要以上にゲートを広げていないことの固定）。"""
-    src = _read(BRINGUP_PY)
+def test_summon_and_panel_navigators_gated_off_for_onsite():
+    """2026-09-10（WS-9AB 系）: summon_navigator / panel_navigator は th_onsite の
+    venue_navigator が置換済み（DetailedDesign-reuse.md）。試験場内デモ（stage>=3）で
+    両方立てると旧ノードが各 10〜12% の CPU を食うだけなので UnlessCondition(onsite)
+    でゲートする。WS-9E の「スコープ外＝ノーゲート」判断をここで覆した。"""
     for name in ("summon_navigator", "panel_navigator"):
         kw = _node_kwargs_by_name(name)
-        assert "condition" not in kw, (
-            f"bringup.launch.py: name={name!r} に condition= が付いている（スコープ外。WS-9E）")
+        assert "condition" in kw, (
+            f"bringup.launch.py: name={name!r} に condition= が無い（onsite ゲートが要る）")
+        cond = kw["condition"].value
+        assert (isinstance(cond, ast.Call)
+                and getattr(cond.func, "id", None) == "UnlessCondition"), (
+            f"bringup.launch.py: name={name!r} の condition= が UnlessCondition(...) でない")
 
 
 def test_map_downsampler_gate_with_condition():
