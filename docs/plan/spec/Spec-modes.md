@@ -334,6 +334,9 @@ WiFi の受信ギャップ（実測 0.5〜1.2 s・[Spec-params.md](Spec-params.m
 | **`SM-3.1.2-107`** | `AT_HOME` | `IDLE_H` | 手動 UI に触れた | **`PAUSE`** | 待機場所での置き直し・向き直し（速度は `v_jog_panel`。§6）。`AT_PANEL` の -064 と同型 |
 | **`SM-3.1.2-108`** | `AT_HOME` | **`PAUSE`** | **リース満了**（手を離した／通信が途絶えた） | `IDLE_H` | §3.1.1 の「`PAUSE` のまま」に対する 2 つ目の例外。`AT_PANEL` の -065 と同型 |
 | **`SM-3.1.2-109`** | `AT_HOME` | `IDLE_H` ／ **`PAUSE`** | **行き先を選ぶ**（盤／その場で呼ぶ／待機場所へ戻す） | `PANEL_NAV` ／ `SUMMON` ／ `HOME_NAV`（モード遷移） | `AT_PANEL` の -066 と同型。`working == true` の間は拒否する（§4.2） |
+| **`SM-3.1.2-110`** | `PANEL_NAV` | 任意 | **「中断して待機場所へ」** | → `AT_HOME` の `IDLE_H`（モード遷移） | 経路が確保できず着けないとき、非常停止せずに方式をやめる。`cancel_follow_path` ＋ W-5 を閉じる。`AT_HOME` から別の盤・待機場所を選び直せる（2026-09-10。WS-9Z の保留を解消） |
+| **`SM-3.1.2-111`** | `SUMMON` | `POINT` ／ `NAV` ／ `BLOCKED` ／ `ALIGN` ／ `PAUSE` | **「中断して待機場所へ」** | → `AT_HOME` の `IDLE_H`（モード遷移） | 同上。**`WAIT_CLEAR` は既存の `ui.abort → POINT`（-069）を優先**（退避待ちのやり直し）ので、それ以外の状態から |
+| **`SM-3.1.2-112`** | `HOME_NAV` | 任意 | **「中断して待機場所へ」** | → `AT_HOME` の `IDLE_H`（モード遷移） | 同上。待機場所に着けなくても方式を抜けられる |
 | `SM-3.1.2-085` | `OPCHECK` | `LIST` | 項目を選ぶ | `RUNNING_CHECK` | **選んだ瞬間にモニターが立ち上がる** |
 | **`SM-3.1.2-086`** | `OPCHECK` | `RUNNING_CHECK` | **OK** | `LIST` | **結果を記録する**（総合ステータスに反映） |
 | `SM-3.1.2-087` | `OPCHECK` | `RUNNING_CHECK` | NG（IMU / LiDAR） | `LIST` | 「校正へ」導線を出す |
@@ -437,9 +440,9 @@ ID は**参照点であって順序ではない**（§3.1.2 冒頭。欠番を�
 | `MANUAL` | `IDLE`（「終了」）／ **`OPCHECK` / `CALIB`**（保守は `IDLE` と `MANUAL` から始められる。[Spec-checks.md](Spec-checks.md) §1） |
 | `FOLLOW` / `TEACH_*` / `REPLAY` / `LINE` / `LEASH` | `IDLE` のみ（「終了」） |
 | `PREP` | `IDLE` のみ |
-| `PANEL_NAV` | `AT_PANEL`（到着）／ `IDLE`（終了） |
+| `PANEL_NAV` | `AT_PANEL`（到着）／ **`AT_HOME`（`ui.abort` で中断）** ／ `IDLE`（終了） |
 | `AT_PANEL` | `PANEL_NAV`（次の盤）／ `SUMMON`（その場で呼ぶ）／ `HOME_NAV`（待機場所へ）／ `IDLE` |
-| `SUMMON` | `AT_PANEL`（到着）／ `IDLE` |
+| `SUMMON` | `AT_PANEL`（到着）／ **`AT_HOME`（`ui.abort` で中断）** ／ `IDLE` |
 | `HOME_NAV` | **`AT_HOME`（到着）** ／ `IDLE`（終了） |
 | **`AT_HOME`** | `PANEL_NAV`（盤へ）／ `SUMMON`（その場で呼ぶ）／ `HOME_NAV`（待機場所へ戻す）／ `IDLE`（終了） |
 | `OPCHECK` | `CALIB`（「校正へ」導線）／ `IDLE` |

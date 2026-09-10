@@ -29,6 +29,7 @@ import { usePersonStatus } from '../ros/usePersonStatus.js'
 import { useScan } from '../ros/useScan.js'
 import { scanToPoints } from '../parts/scanToPoints.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
+import { usePinWarning } from '../ros/usePinWarning.js'
 import { useOnsiteMapView } from '../ros/useOnsiteMapView.js'
 import { useOnsiteCostmap } from '../ros/useCostmap.js'
 import { usePlannedPath } from '../ros/usePlannedPath.js'
@@ -54,6 +55,7 @@ import {
   S20_MAP_ARIA, S20_MAP_GATE_BUTTON, S20_MAP_GATE_MSG, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TARGET, S20_MAP_TITLE,
   S20_NEXT_REG_HOME, S20_NEXT_REG_PANEL, S20_NEXT_SAVE, S20_NEXT_SELECT_TARGET, S20_NEXT_START_MAPPING,
   S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_EDIT, S20_PIN_RENAME,
+  S20_PINWARN_CANCEL, S20_PINWARN_MSG, S20_PINWARN_PLACE, S20_PINWARN_RETREAT,
   S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REG_HOME_HERE, S20_REG_HERE_NOTE,
   S20_REG_HERE_OK, S20_REGISTER_TITLE, S20_REG_PANEL, S20_REG_PANEL_HERE,
   S20_RESET_ARMED, S20_RESET_BANNER, S20_RESET_BUSY, S20_RESET_FAIL, S20_RESET_IDLE,
@@ -98,7 +100,8 @@ export default function S20Prep() {
   // brief-MAP-COSTMAP: 地図タブに Nav2 の costmap と直近の経路を重ねる。
   const costmapData = useOnsiteCostmap(ros)
   const plannedPath = usePlannedPath(ros)
-  const { twoPoint, editPin, registerPinHere } = useOnsiteService()
+  const { twoPoint, editPin, registerPinHere, resolvePin } = useOnsiteService()
+  const pinWarn = usePinWarning(ros)
   const jogPanel = useJogPanel()
   // brief-onsite-ux2 F-6: 地図タブの表示ゲート。/slam_control/mapping_active
   // は起動コマンド（enable_route_slam:=true）により起動直後から true のことが
@@ -257,6 +260,10 @@ export default function S20Prep() {
     if (res?.accepted) {
       if (wizStep === 1) {
         setWizStep(2)
+      } else if (res.reject_reason_key === 'pin_close_to_wall') {
+        // WS-9AB: 壁に近すぎる。登録は保留され /onsite/pin_warning が立つ。
+        // 「done」にはしない（下の警告ダイアログで 3 択を出す）。
+        setWizYaw(null)
       } else {
         setWizYaw(Math.round(((res.yaw ?? 0) * 180) / Math.PI))
       }
@@ -264,6 +271,12 @@ export default function S20Prep() {
     }
     const key = res?.reject_reason_key
     setWizErr(key ? (REJECT_REASONS[key] ?? key) : null)
+  }
+
+  // WS-9AB: 壁近接警告の 3 択。resolve すると pin_registrar が evt.register_ok /
+  // evt.register_rejected を出して FSM が REGISTER を抜け、ウィザードが閉じる。
+  async function handlePinWarnResolve(action) {
+    await resolvePin(action)
   }
 
   // 1 ボタンで待機場所に戻す（guard: home_pin_exists。無いときは非活性）。
@@ -546,7 +559,41 @@ export default function S20Prep() {
                     {hereMsg.text}
                   </div>
                 )}
-                {isRegister && (
+                {isRegister && pinWarn.active && (
+                  <div className="well" data-testid="s20-pinwarn">
+                    <div className="note">
+                      {S20_PINWARN_MSG(pinWarn.nearest_m?.toFixed(2),
+                        pinWarn.min_m?.toFixed(2))}
+                    </div>
+                    <div className="row">
+                      <button
+                        type="button"
+                        className="btn"
+                        data-testid="s20-pinwarn-place"
+                        onClick={() => handlePinWarnResolve('place')}
+                      >
+                        {S20_PINWARN_PLACE}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn primary"
+                        data-testid="s20-pinwarn-retreat"
+                        onClick={() => handlePinWarnResolve('retreat')}
+                      >
+                        {S20_PINWARN_RETREAT}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        data-testid="s20-pinwarn-cancel"
+                        onClick={() => handlePinWarnResolve('cancel')}
+                      >
+                        {S20_PINWARN_CANCEL}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {isRegister && !pinWarn.active && (
                   <div className="well" data-testid="s20-wizard">
                     <div className="row mb">
                       <span className="b sm">{S20_WIZ_STEP(wizStep)}</span>

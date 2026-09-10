@@ -158,6 +158,34 @@ test('2 点指示が拒否されたら理由を表示して Step を進めない
   await expect(page.locator('[data-testid="s20-wiz-press"]')).toBeVisible()
 })
 
+// WS-9AB: 壁近接警告。②押下で pin_registrar が /onsite/pin_warning を立て、
+// two_point の応答は accepted:true + reject_reason_key:'pin_close_to_wall'。
+// ウィザードは「done」にならず、3 択ダイアログが出て /onsite/resolve_pin を呼ぶ。
+test('WS-9AB: 壁に近すぎる警告で 3 択が出て /onsite/resolve_pin を呼ぶ', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, {
+    pins: PINS, targets: TARGETS,
+    twoPoint: { accepted: true, reject_reason_key: 'pin_close_to_wall', yaw: 0 },
+    pinWarning: {
+      active: true, kind: 'PANEL', nearest_m: 0.22, min_m: 0.35,
+      retreat_x: 3.0, retreat_y: -3.3, retreat_yaw: -1.8,
+    },
+    resolvePin: { success: true, message: 'ok' },
+  })
+  await page.locator('#s20').waitFor()
+  await page.locator('[data-testid="s20-reg-panel"]').click()
+  await setTestState(page, { state: 'REGISTER' })
+  // 警告ダイアログが出てウィザードは隠れる
+  await expect(page.locator('[data-testid="s20-pinwarn"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s20-wizard"]')).not.toBeVisible()
+  await expect(page.locator('[data-testid="s20-wiz-done"]')).not.toBeVisible()
+
+  await page.locator('[data-testid="s20-pinwarn-retreat"]').click()
+  const calls = await onsiteServiceCalls(page)
+  const r = calls.find((c) => c.service === '/onsite/resolve_pin')
+  expect(r, 'resolve_pin が呼ばれていない').toBeTruthy()
+  expect(r.request).toMatchObject({ action: 'retreat' })
+})
+
 // brief-onsite-register-fix REG-1: two_point_too_close の実機連発の核心。
 // 拒否理由が i18n に無いと生キーが丸見えになり「なぜ失敗するか」が伝わらない。
 // 日本語（生キーでない）が出ることと、理由があれば Step が進まないことを固定する。

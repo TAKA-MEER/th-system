@@ -62,6 +62,7 @@
   ],
   "PANEL_NAV": [
     "AT_PANEL",
+    "AT_HOME",
     "IDLE"
   ],
   "PREP": [
@@ -72,6 +73,7 @@
   ],
   "SUMMON": [
     "AT_PANEL",
+    "AT_HOME",
     "IDLE"
   ],
   "TEACH_FOLLOW": [

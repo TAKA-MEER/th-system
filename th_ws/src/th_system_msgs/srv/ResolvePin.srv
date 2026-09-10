@@ -1,0 +1,8 @@
+# WebUI → pin_registrar。PinWarning が出ているピンの扱いを決める（2026-09-10）。
+#   "place"   … そのまま元の座標で登録する
+#   "retreat" … PinWarning.retreat_* の座標で登録する
+#   "cancel"  … 登録をやめる（evt.register_rejected で MAPPING へ）
+string action
+---
+bool   success
+string message

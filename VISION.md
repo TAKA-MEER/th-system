@@ -781,6 +781,27 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
   `state_manager.py` / `safety_monitor_core.cpp` / `RadarSelect.jsx` / `S20Prep.jsx` /
   `attributes.json` / `docs/使い方.md`。
 
+- **2026-09-10 — 盤前へ着けないときの中断路（WS-9AB）**: 実機で盤前移動が
+  `PANEL_NAV/BLOCKED` に張り付いたとき、`PANEL_NAV` / `SUMMON` / `HOME_NAV` から
+  抜ける手段が「UI 非常停止 → 解除 → メインメニュー」しか無かった（WS-9Z で
+  「方針判断が要る」と保留していたギャップ）。
+
+  **変更（ユーザー決定 2026-09-10）**: 3 モードのどの状態からでも **`ui.abort`
+  （画面上は「中断して待機場所へ」）で `AT_HOME/IDLE_H` へ**戻れるようにする
+  （`OPCHECK` / `CALIB` の `ui.abort → LIST`、`SUMMON/WAIT_CLEAR` の
+  `ui.abort → POINT` と同じ流儀の「その方式をやめる」操作）。`AT_HOME` は
+  試験画面が開くのと同じ状態で、そこから別の盤・待機場所を選び直せる／手動で
+  動かせる。`cancel_follow_path` で Nav2 のゴールを取り下げ、W-5（経路が塞がれた
+  ウィンドウ）を閉じる。
+
+  `SUMMON/WAIT_CLEAR` だけは既存の `ui.abort → POINT`（2 点指示からやり直す。
+  `SM-3.1.2-069`）を優先し、新しい中断は他の状態から。
+
+  更新: [Spec-modes.md](docs/plan/spec/Spec-modes.md) §3.1.2（`SM-3.1.2-110`〜`-112`）・§4.2、
+  [Spec-open.md](docs/plan/spec/Spec-open.md)（WS-9Z の保留を解消）、
+  `DetailedDesign-state.md` §8.3、`transitions.yaml` / `mode_entry.yaml` /
+  `S21Test.jsx` / `docs/使い方.md`。
+
 ---
 
 ## 3. 両設計書が扱っていない事項

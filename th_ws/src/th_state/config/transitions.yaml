@@ -1111,6 +1111,24 @@
   - name: commit_map_patch
     args: {}
   spec_ref: SM-3.1.2-099
+# 経路が確保できず盤に着けないとき、非常停止せず方式をやめて待機場所へ戻る
+# （WS-9Z の保留を 2026-09-10 に解消）。cancel_follow_path で Nav2 のゴールを
+# 取り下げ、W-5（経路が塞がれたウィンドウ）を閉じる。
+- id: T-PNAV-10
+  layer: 10
+  mode: PANEL_NAV
+  state: '*'
+  event: ui.abort
+  guard: null
+  to_mode: AT_HOME
+  to_state: IDLE_H
+  effects:
+  - name: cancel_follow_path
+    args: {}
+  - name: close_window
+    args:
+      id: W-5
+  spec_ref: SM-3.1.2-110
 - id: T-ATP-01
   layer: 10
   mode: AT_PANEL
@@ -1378,6 +1396,28 @@
     args:
       index: $arg.index
   spec_ref: SM-3.1.2-106
+# 中断して待機場所へ（2026-09-10）。WAIT_CLEAR は既存の ui.abort→POINT（T-SUM-05）を
+# 優先するので、それ以外の状態から。
+- id: T-SUM-17
+  layer: 10
+  mode: SUMMON
+  state:
+  - POINT
+  - NAV
+  - BLOCKED
+  - ALIGN
+  - PAUSE
+  event: ui.abort
+  guard: null
+  to_mode: AT_HOME
+  to_state: IDLE_H
+  effects:
+  - name: cancel_follow_path
+    args: {}
+  - name: close_window
+    args:
+      id: W-5
+  spec_ref: SM-3.1.2-111
 - id: T-HNAV-01
   layer: 10
   mode: HOME_NAV
@@ -1475,6 +1515,22 @@
   - name: commit_map_patch
     args: {}
   spec_ref: SM-3.1.2-102
+# 待機場所に着けなくても中断できる（2026-09-10）。
+- id: T-HNAV-09
+  layer: 10
+  mode: HOME_NAV
+  state: '*'
+  event: ui.abort
+  guard: null
+  to_mode: AT_HOME
+  to_state: IDLE_H
+  effects:
+  - name: cancel_follow_path
+    args: {}
+  - name: close_window
+    args:
+      id: W-5
+  spec_ref: SM-3.1.2-112
 - id: T-ATH-01
   layer: 10
   mode: AT_HOME

@@ -94,6 +94,9 @@ export const MSG_TYPES = {
   // WP-UI-07: S-21。待機場所宣言済み（home_declarer が latched 配信）。
   BOOL: 'std_msgs/Bool',
   WAIT_CLEAR: 'th_system_msgs/WaitClearStatus',
+  // WS-9AB: S-20。壁近接警告（pin_registrar が latched 配信）。名前は
+  // names.json 辞書に無いので usePinWarning.js のローカル定数で購読する。
+  PIN_WARNING: 'th_system_msgs/PinWarning',
 }
 
 export const SRV_TYPES = {
@@ -110,4 +113,7 @@ export const SRV_TYPES = {
   ONSITE_SELECT_PIN: 'th_system_msgs/GoToPanel',
   // brief-onsite-fix E: /map_session/open の SRV 型。
   MAP_SESSION_OPEN: 'th_system_msgs/OpenMapSession',
+  // WS-9AB: 壁近接警告の 3 択（place / retreat / cancel）。名前は
+  // useOnsiteService.js のローカル定数で扱う（select_pin と同型）。
+  ONSITE_RESOLVE_PIN: 'th_system_msgs/ResolvePin',
 }

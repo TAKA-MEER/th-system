@@ -25,6 +25,7 @@ import { SERVICES, SRV_TYPES } from './topics'
 
 // names.json 辞書ゲート対象外（上記コメント参照）。
 const SELECT_PIN_SERVICE = '/onsite/select_pin'
+const RESOLVE_PIN_SERVICE = '/onsite/resolve_pin'  // WS-9AB。辞書ゲート対象外
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 
@@ -81,5 +82,9 @@ export function useOnsiteService() {
     registerPinHere: (kind) => callService(
       SERVICES.ONSITE_REGISTER_PIN, SRV_TYPES.ONSITE_REGISTER_PIN,
       { kind, name: '', method: 'ROBOT_POSE' }, '__thTestRegisterPinHere'),
+    // WS-9AB: 壁近接警告が出ているピンの扱いを決める（place / retreat / cancel）。
+    resolvePin: (action) => callService(
+      RESOLVE_PIN_SERVICE, SRV_TYPES.ONSITE_RESOLVE_PIN,
+      { action }, '__thTestResolvePin'),
   }
 }

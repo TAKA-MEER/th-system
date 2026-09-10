@@ -875,14 +875,15 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | 遷移元 | 入れる先 |
 | --- | --- |
 | `INIT` | `IDLE` **のみ**（`T-INIT-01` 経由。`ui.enter_mode` では入れない） |
-| **`IDLE`** | `FOLLOW` / `MANUAL` / `TEACH_FOLLOW` / `TEACH_MANUAL` / `REPLAY` / `LINE` / `LEASH` / `PREP` / **`PANEL_NAV` / `SUMMON` / `HOME_NAV`** / `OPCHECK` / `CALIB` |
+| **`IDLE`** | `FOLLOW` / `MANUAL` / `TEACH_FOLLOW` / `TEACH_MANUAL` / `REPLAY` / `LINE` / `LEASH` / `PREP` / **`AT_HOME` / `PANEL_NAV` / `SUMMON` / `HOME_NAV`** / `OPCHECK` / `CALIB` |
 | `MANUAL` | `IDLE` ／ **`OPCHECK` / `CALIB`**（保守は `IDLE` と `MANUAL` から始められる） |
 | `FOLLOW` / `TEACH_FOLLOW` / `TEACH_MANUAL` / `REPLAY` / `LINE` / `LEASH` | `IDLE` **のみ** |
 | `PREP` | `IDLE` **のみ** |
-| `PANEL_NAV` | `AT_PANEL`（到着）／ `IDLE` |
+| `PANEL_NAV` | `AT_PANEL`（到着）／ **`AT_HOME`（`ui.abort` で中断。2026-09-10。SM-3.1.2-110）** ／ `IDLE` |
 | `AT_PANEL` | `PANEL_NAV` / `SUMMON` / `HOME_NAV` / `IDLE` |
-| `SUMMON` | `AT_PANEL`（到着）／ `IDLE` |
-| `HOME_NAV` | `IDLE` |
+| `SUMMON` | `AT_PANEL`（到着）／ **`AT_HOME`（`ui.abort` で中断。2026-09-10。SM-3.1.2-111）** ／ `IDLE` |
+| `HOME_NAV` | `AT_HOME`（到着／`ui.abort` で中断。SM-3.1.2-112）／ `IDLE` |
+| **`AT_HOME`** | `PANEL_NAV` / `SUMMON` / `HOME_NAV` / `IDLE`（2026-09-08 追加） |
 | `OPCHECK` | `CALIB` ／ `IDLE` |
 | `CALIB` | `OPCHECK` ／ `IDLE` |
 | `ESTOP` | `IDLE` **のみ** |

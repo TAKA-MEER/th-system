@@ -55,6 +55,7 @@ PREP:
 
 PANEL_NAV:
   - AT_PANEL
+  - AT_HOME   # ui.abort（中断して待機場所へ）。2026-09-10。SM-3.1.2-110
   - IDLE
 
 AT_PANEL:
@@ -65,6 +66,7 @@ AT_PANEL:
 
 SUMMON:
   - AT_PANEL
+  - AT_HOME   # ui.abort（中断して待機場所へ）。2026-09-10。SM-3.1.2-111
   - IDLE
 
 HOME_NAV:

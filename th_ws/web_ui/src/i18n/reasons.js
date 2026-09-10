@@ -4,6 +4,7 @@
 // when a button is actually pressed and rejected — §7.2 U-11).
 export const REJECT_REASONS = {
   not_allowed: '今の状態ではこの操作はできません',
+  pin_close_to_wall: 'このピンは壁に近すぎます（下の選択肢から選んでください）',
   mode_entry_denied: '今のモードからは移動できません',
   tracker_disabled: '人物追跡がOFFです',
   tracker_lost: '対象を見失っています',

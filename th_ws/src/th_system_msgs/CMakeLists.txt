@@ -37,6 +37,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MapSessionStatus.msg"
   "msg/CheckStatus.msg"
   "msg/CalibStatus.msg"
+  "msg/PinWarning.msg"
   # ── サービス（旧。WP-CLEAN-01 まで維持） ────────
   "srv/SetMode.srv"
   "srv/GoToPanel.srv"
@@ -53,6 +54,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/OpenMapSession.srv"
   "srv/TwoPointPress.srv"
   "srv/RegisterPin.srv"
+  "srv/ResolvePin.srv"
   "srv/EditPin.srv"
   "srv/DeclareHome.srv"
   "srv/EraseMapRegion.srv"

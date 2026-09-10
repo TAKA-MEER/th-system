@@ -55,6 +55,7 @@ import {
   S21_ATPANEL_TITLE, S21_DEST_HOME, S21_DEST_NEXT_PANEL, S21_DEST_SUMMON_HERE,
   S21_HOME_DECLARED, S21_HOME_DECLARE, S21_HOME_FORCE_DECLARE,
   S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_GATE_MSG, S21_MAP_LOADING,
+  S21_BLOCKED_ABORT, S21_BLOCKED_MSG, S21_BLOCKED_REROUTE,
   S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
   S21_NEXT_DECLARE_HOME, S21_NEXT_OPEN_VENUE, S21_NEXT_PICK_DEST,
   S21_NEXT_SUMMON, S21_NEXT_WORK,
@@ -480,6 +481,29 @@ export default function S21Test({ onExit }) {
             {S21_MAP_UPDATE} {S21_MAP_UPDATE_OFF}
           </span>
         </div>
+
+        {/* WS-9AB: BLOCKED（経路が見つからず止まっている）の帯。再検索と、
+            非常停止せず待機場所へ戻る中断（T-PNAV-10 / T-SUM-17 / T-HNAV-09）。 */}
+        {isNavMode && stateName === 'BLOCKED' && (
+          <div className="row s21-blocked" data-testid="s21-blocked">
+            <span className="grow">{S21_BLOCKED_MSG}</span>
+            <button
+              type="button"
+              data-testid="s21-blocked-reroute"
+              onClick={() => sendTrigger('ui.reroute')}
+            >
+              {S21_BLOCKED_REROUTE}
+            </button>
+            <button
+              type="button"
+              className="danger"
+              data-testid="s21-blocked-abort"
+              onClick={() => sendTrigger('ui.abort')}
+            >
+              {S21_BLOCKED_ABORT}
+            </button>
+          </div>
+        )}
 
         <div className="subtabs">
           <div className="tabs" role="tablist">

@@ -259,6 +259,13 @@ export const S20_WIZ_STEP = (n) => `Step ${n}/2`
 export const S20_WIZ_MSG_STEP1 = '登録したい場所に立って押してください'
 export const S20_WIZ_MSG_STEP2 = '機体に向いてほしい方向へ一歩進んで押してください'
 export const S20_WIZ_REGISTER = 'この位置を登録'
+// WS-9AB (2026-09-10): 壁近接警告の 3 択ダイアログ。
+export const S20_PINWARN_MSG = (near, min) =>
+  `このピンは壁から ${near} m しか離れていません（推奨 ${min} m 以上）。`
+  + 'この位置だと配電盤へ経路が引けず、機体が止まる可能性があります。'
+export const S20_PINWARN_PLACE = 'このまま登録'
+export const S20_PINWARN_RETREAT = '壁から離して登録'
+export const S20_PINWARN_CANCEL = 'やめる'
 export const S20_PINS_TITLE = 'ピン'
 export const S20_PIN_EDIT = '編集'
 export const S20_PIN_RENAME = '改名'
@@ -365,6 +372,10 @@ export const S21_NEXT_PICK_DEST = '行き先を選ぶ'
 export const S21_NEXT_STOP = '停止'
 export const S21_NEXT_WORK = '作業中'
 export const S21_NEXT_SUMMON = '呼び寄せ'
+// WS-9AB (2026-09-10): BLOCKED（経路が見つからず止まっている）帯の案内と操作。
+export const S21_BLOCKED_MSG = '行き先までの経路が見つかりません（止まって再試行中）'
+export const S21_BLOCKED_REROUTE = '再検索'
+export const S21_BLOCKED_ABORT = '中断して待機場所へ'
 // brief-onsite-ux-fix UX-6: 画面ローカルの「押せない理由」バッジ。
 // i18n/reasons.js の REJECT_REASONS は th_state（FSM）が返すキーの写しなので、
 // 画面だけで判定できる理由はここに置く（onsiteSteps.js の onsiteReasons() が使う）。

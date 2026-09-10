@@ -200,6 +200,12 @@ if(BUILD_TESTING)
     test/test_venue_nav_core.py
     TIMEOUT 30)
 
+  # ピン壁近接チェックコア (WS-9AB。costmap から最寄り占有セル距離・退避先。
+  # th_onsite の純ロジック。ROS2 不要)
+  ament_add_pytest_test(test_pin_clearance_core
+    test/test_pin_clearance_core.py
+    TIMEOUT 30)
+
   # 待機場所宣言コア (Spec-onsite §4.0。姿勢オフセット・許容差判定。
   # th_onsite の純ロジック。ROS2 不要)
   ament_add_pytest_test(test_home_declare_core

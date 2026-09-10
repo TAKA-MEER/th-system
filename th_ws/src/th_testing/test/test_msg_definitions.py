@@ -45,13 +45,14 @@ def _names_md_path():
                 % _NAMES_MD_CANDIDATES)
 
 
-# names.md §5.1 の新 msg 一覧（reuse.md §2.1 の「(新設)」行と一致。16 件）。
+# names.md §5.1 の新 msg 一覧（reuse.md §2.1 の「(新設)」行と一致。17 件。
+# PinWarning は WS-9AB(2026-09-10) で追加）。
 # FaultStatus.msg（改修のみ）と WheelFeedback.msg（既存のまま）はここに含めない。
 NEW_MSGS = [
     'SystemState', 'StateEvent', 'ActiveScreen', 'LimiterStatus',
     'WaitClearStatus', 'RouteList', 'LinkQuality', 'ParamsStatus',
     'PersonTargets', 'Pin', 'PinList', 'RouteInfo', 'RouteStatus',
-    'MapSessionStatus', 'CheckStatus', 'CalibStatus',
+    'MapSessionStatus', 'CheckStatus', 'CalibStatus', 'PinWarning',
 ]
 
 # M3: 既存の 9 msg・5 srv のうち FaultStatus.msg 以外はバイト単位で不変。

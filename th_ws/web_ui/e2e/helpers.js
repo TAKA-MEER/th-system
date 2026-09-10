@@ -139,9 +139,10 @@ export async function gotoScreenWithOnsite(
   {
     pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear,
     routeMap, openVenueMap, mappingActive, personStatus, costmap, plannedPath, scan,
+    pinWarning, resolvePin,
   },
 ) {
-  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm, ma, pst, cm, pp, sc }) => {
+  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm, ma, pst, cm, pp, sc, pw, rsp }) => {
     window.__thTestState = s
     window.__thTestScreen = scr
     if (p) window.__thTestOnsitePins = p
@@ -170,11 +171,15 @@ export async function gotoScreenWithOnsite(
     if (pp) window.__thTestPlannedPath = pp
     // MAP-SCAN: 地図タブの LiDAR 点群オーバーレイ（ros/useScan.js）。
     if (sc) window.__thTestScan = sc
+    // WS-9AB: 壁近接警告（ros/usePinWarning.js）と 3 択の resolve スタブ。
+    if (pw) window.__thTestPinWarning = pw
+    if (rsp) window.__thTestResolvePin = rsp
   },
   {
     s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose,
     dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear, rm: routeMap, ovm: openVenueMap,
     ma: mappingActive, pst: personStatus, cm: costmap, pp: plannedPath, sc: scan,
+    pw: pinWarning, rsp: resolvePin,
   })
   await page.goto('/')
 }

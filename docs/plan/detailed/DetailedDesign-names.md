@@ -303,10 +303,11 @@ def derive_limits(screens, now_ms, p):
 | **`Pin.msg`** | `string id` / `string name` / `string kind`（`HOME`/`PANEL`） / `geometry_msgs/Pose pose` / `builtin_interfaces/Time registered_at` | 待機場所ピンと配電盤ピン |
 | **`PinList.msg`** | `Header header` / `Pin[] pins` | transient_local |
 | **`RouteInfo.msg`** | `string id` / `string name` / `uint32 generation` / `float32 length_m` / `uint32 point_count` / `float32 start_yaw` / `builtin_interfaces/Time recorded_at` | 教示経路のメタ |
-| **`RouteStatus.msg`** | `Header header` / `string state` / `RouteInfo current` / `float32 recorded_m` / `float32 elapsed_sec` / `uint32 points` / `int32 target_index`（再生中の pure-pursuit 目標点の添字。記録中・未走行は -1。`demo-teach-replay` で追加） / `bool saved`（記録側のみ。`finalize_route_file` 成功時だけ true。FSM の `SAVED` とは無関係。WS-9K-E2 で追加） | S-12/S-13/S-14 の表示源 |
+| **`RouteStatus.msg`** | `Header header` / `string state` / `RouteInfo current` / `float32 recorded_m` / `float32 elapsed_sec` / `uint32 points` / `int32 target_index`（再生中の pure-pursuit 目標点の添字。記録中・未走行は -1。`demo-teach-replay` で追加） / `bool saved`（記録側のみ。`finalize_route_file` 成功時だけ true。FSM の `SAVED` とは無関係。WS-9K-E2 で追加） / `bool arrived`（再生側のみ。経路の終端まで走り切ったときだけ true。`PAUSE` の原因が終端到達かフォルト/ジョグ/停止ボタンかを UI が区別するのに使う。WS-9P で追加） | S-12/S-13/S-14 の表示源 |
 | **`MapSessionStatus.msg`** | `Header header` / `string slot`（`VENUE`/`ROUTE`） / `string session_id` / `string mode`（`UNLOADED`/`MAPPING`/`LOCALIZING`） / `bool dirty` | §6.4 |
 | **`CheckStatus.msg`** | `Header header` / `string item` / `string result`（`OK`/`WARN`/`NG`/`UNKNOWN`） / `string detail` / `string next_screen` | 始業点検 4 項目 |
 | **`CalibStatus.msg`** | `Header header` / `string item` / `string step` / `string result` / `string preview_before` / `string preview_after` / `string detail` | 校正ウィザード |
+| **`PinWarning.msg`** | `bool active` / `string kind` / `float32 nearest_m` / `float32 min_m` / `float32 retreat_x` / `float32 retreat_y` / `float32 retreat_yaw` | `pin_registrar` → WebUI（latched）。登録座標が壁（global costmap の 253 帯）に近すぎるときの警告。`WS-9AB`（2026-09-10）で新設 |
 | `WheelFeedback.msg` | 既存のまま | 実測と指令の両方に使う |
 
 **廃止する msg**: `RobotMode.msg`（§2.1）／`PersonStatus.msg`（`PersonTargets` へ統合）／
@@ -328,7 +329,8 @@ def derive_limits(screens, now_ms, p):
 | `/map_session/save` | `std_srvs/Trigger` | `th_route` |
 | `/map_session/discard` | `std_srvs/Trigger` | `th_route` |
 | `/onsite/two_point` | `TwoPointPress`: `string purpose`（`HOME`/`PANEL`/`SUMMON`/`LINE_POSE`） / `uint8 index`（1 or 2） → `bool accepted` / `string reject_reason_key` / `float32 yaw` | `th_onsite` |
-| `/onsite/register_pin` | `RegisterPin`: `string kind` / `string name` / `string method`（`TWO_POINT`/`PLANE`） → `bool success` / `Pin pin` / `string message` | `th_onsite` |
+| `/onsite/register_pin` | `RegisterPin`: `string kind` / `string name` / `string method`（`TWO_POINT`/`PLANE`/`ROBOT_POSE`） → `bool success` / `Pin pin` / `string message` | `th_onsite` |
+| `/onsite/resolve_pin` | `ResolvePin`: `string action`（`place`/`retreat`/`cancel`） → `bool success` / `string message` | `th_onsite`。`PinWarning` が出ているピンの扱いを決める。`WS-9AB`（2026-09-10）で新設 |
 | `/onsite/edit_pin` | `EditPin`: `string id` / `string new_name` / **`bool is_delete`** → `bool success` / `string message` | `th_onsite`。**`delete` は C++ の予約語**で、rosidl が生成する C++ ヘッダがコンパイル不能になる（`WP-MSG-01` で実測）。`is_delete` に改名した |
 | `/onsite/declare_home` | `DeclareHome`: `bool force` → `bool success` / `float32 offset_m` / `float32 offset_deg` / `string message` | `th_onsite` |
 | `/onsite/map_erase` | `EraseMapRegion`: `float32 x0,y0,x1,y1` / `bool undo` → `bool success` | `th_route` |

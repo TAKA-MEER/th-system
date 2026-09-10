@@ -29,11 +29,16 @@ from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
 import tf2_ros
 
 from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import OccupancyGrid
 from std_msgs.msg import Header
 from std_srvs.srv import Trigger
-from th_system_msgs.msg import Pin, PinList, PersonStatus, StateEffect, StateEvent
-from th_system_msgs.srv import EditPin, RegisterPin, TwoPointPress
+from th_system_msgs.msg import (Pin, PinList, PersonStatus, PinWarning,
+                                StateEffect, StateEvent)
+from th_system_msgs.srv import EditPin, RegisterPin, ResolvePin, TwoPointPress
 
+from th_onsite.pin_clearance_core import (
+    clearance_verdict, nearest_lethal_distance, retreat_pose,
+)
 from th_onsite.robot_pose_register_core import build_pin_from_robot_pose
 from th_onsite.two_point_core import (
     TwoPointParams, compose_map_pose, is_target_valid, spacing_ok, two_point_yaw,
@@ -78,6 +83,12 @@ class PinRegistrar(Node):
         self.declare_parameter('min_confidence', 0.50)
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
+        # WS-9AB: 登録座標が壁（＝global costmap の 253 帯）に近すぎると Nav2 が
+        # 経路を引けず PANEL_NAV/BLOCKED に張り付く。登録時に距離を測って警告する。
+        self.declare_parameter('pin_min_clearance_m', 0.35)
+        self.declare_parameter('pin_retreat_m', 0.30)
+        self.declare_parameter('pin_lethal_threshold', 99)  # OccupancyGrid 値。253(INSCRIBED)→99
+        self.declare_parameter('pin_clearance_search_r_m', 0.8)
 
         venue_dir = self.get_parameter('venue_dir').value
         self._pins_path = os.path.join(venue_dir, 'pins.yaml')
@@ -87,12 +98,23 @@ class PinRegistrar(Node):
             min_confidence=float(self.get_parameter('min_confidence').value))
         self._map_frame = self.get_parameter('map_frame').value
         self._base_frame = self.get_parameter('base_frame').value
+        self._pin_min_clearance_m = float(
+            self.get_parameter('pin_min_clearance_m').value)
+        self._pin_retreat_m = float(self.get_parameter('pin_retreat_m').value)
+        self._pin_lethal_threshold = int(
+            self.get_parameter('pin_lethal_threshold').value)
+        self._pin_search_r_m = float(
+            self.get_parameter('pin_clearance_search_r_m').value)
 
         # ── 状態 ────────────────────────────────────────────
         self._accepting = False          # begin_two_point 受け取り後の受付中状態
         self._kind = ""                  # "HOME" / "PANEL"
         self._p1 = None                  # (map_x, map_y)
         self._yaw = None
+        self._costmap = None             # 直近の /global_costmap/costmap
+        # WS-9AB: 壁近接警告を出して操作者の判断待ちのピン。
+        # {'kind', 'x', 'y', 'yaw', 'via': 'two_point'|'robot_pose'}
+        self._pending_warn = None
         # /onsite/two_point の押下は service コールバック上で受ける（再入）。
         # 直近の対象 (/person/status) を保持して押下時点で変換する。
         self._person = None              # 直近 PersonStatus
@@ -120,6 +142,11 @@ class PinRegistrar(Node):
         # TRANSIENT_LOCAL で購読すると VOLATILE publisher と非互換になり 1 通も来ない。
         self.create_subscription(PersonStatus, '/person/status', self._on_person,
                                  10, callback_group=sub_cbg)
+        # WS-9AB: Nav2 の global costmap（transient_local）。壁近接チェック用。
+        # nav2_params.yaml で always_send_full_costmap:true にしてあるので 1Hz で
+        # 最新が届く。未受信のときはチェックをスキップ（fail-open）。
+        self.create_subscription(OccupancyGrid, '/global_costmap/costmap',
+                                 self._on_costmap, pins_qos, callback_group=sub_cbg)
 
         # ── Publishers ──────────────────────────────────────
         self._pub_event = self.create_publisher(
@@ -129,6 +156,10 @@ class PinRegistrar(Node):
         # transient_local で latched し、mode が SUMMON に入った時に読めるようにする。
         self._pub_summon_goal = self.create_publisher(
             PoseStamped, '/onsite/summon_goal', pins_qos)
+        # WS-9AB: 壁近接警告（latched）。WebUI が 3 択ダイアログを出す。
+        self._pub_pin_warning = self.create_publisher(
+            PinWarning, '/onsite/pin_warning', pins_qos)
+        self._publish_pin_warning(None)  # 起動時は active:false を latch
 
         # ── Services ────────────────────────────────────────
         self.create_service(TwoPointPress, '/onsite/two_point', self._on_two_point,
@@ -136,6 +167,9 @@ class PinRegistrar(Node):
         self.create_service(RegisterPin, '/onsite/register_pin', self._on_register_pin,
                             callback_group=sub_cbg)
         self.create_service(EditPin, '/onsite/edit_pin', self._on_edit_pin,
+                            callback_group=sub_cbg)
+        # WS-9AB: 壁近接警告が出ているピンの扱いを決める（place / retreat / cancel）。
+        self.create_service(ResolvePin, '/onsite/resolve_pin', self._on_resolve_pin,
                             callback_group=sub_cbg)
         # WS-9Y: 前日の地図・ピンをまとめて破棄する（S-20「新しい試験日として
         # 開始」。/slam_control/discard_map とセットで呼ばれる想定。単発の
@@ -255,6 +289,7 @@ class PinRegistrar(Node):
             self._kind = args.get('kind', 'PANEL')
             self._p1 = None
             self._yaw = None
+            self._clear_pin_warning()
             self.get_logger().info(
                 f'begin_two_point 受付中開始 (kind={self._kind})')
         elif name == 'place_pin':
@@ -263,6 +298,7 @@ class PinRegistrar(Node):
             self._accepting = False
             self._p1 = None
             self._yaw = None
+            self._clear_pin_warning()
             self.get_logger().info('reject_register: 受付中状態を破棄 (副作用なし)')
 
     # ── place_pin: 直近の (P1, yaw, kind) からピン生成・永続化 ──
@@ -292,6 +328,103 @@ class PinRegistrar(Node):
     # ── /person/status 受信 ───────────────────────────────
     def _on_person(self, msg: PersonStatus):
         self._person = msg
+
+    # ── /global_costmap/costmap 受信 ──────────────────────
+    def _on_costmap(self, msg: OccupancyGrid):
+        self._costmap = msg
+
+    # ── WS-9AB: 壁近接チェック ────────────────────────────
+    def _check_clearance(self, x, y):
+        """(x, y)[map] の壁からの距離[m] と判定を返す。
+
+        costmap 未受信 → (inf, 'ok')（計測不能で登録を止めない＝fail-open）。
+        """
+        cm = self._costmap
+        if cm is None or not cm.data:
+            return float('inf'), 'ok'
+        info = cm.info
+        d = nearest_lethal_distance(
+            list(cm.data), info.width, info.height, info.resolution,
+            info.origin.position.x, info.origin.position.y,
+            x, y, self._pin_search_r_m, self._pin_lethal_threshold)
+        return d, clearance_verdict(d, self._pin_min_clearance_m)
+
+    def _publish_pin_warning(self, pending):
+        """pending（{'kind','x','y','yaw','nearest_m'} or None）から PinWarning を出す。"""
+        w = PinWarning()
+        if pending is None:
+            w.active = False
+        else:
+            rx, ry = retreat_pose(pending['x'], pending['y'], pending['yaw'],
+                                  self._pin_retreat_m)
+            w.active = True
+            w.kind = pending.get('kind', '')
+            w.nearest_m = float(pending.get('nearest_m', 0.0))
+            w.min_m = float(self._pin_min_clearance_m)
+            w.retreat_x = float(rx)
+            w.retreat_y = float(ry)
+            w.retreat_yaw = float(pending['yaw'])
+        self._pub_pin_warning.publish(w)
+
+    def _hold_pin_warning(self, kind, x, y, yaw, nearest_m, via):
+        self._pending_warn = {
+            'kind': kind, 'x': x, 'y': y, 'yaw': yaw,
+            'nearest_m': nearest_m, 'via': via,
+        }
+        self._publish_pin_warning(self._pending_warn)
+        self.get_logger().warn(
+            f'pin_warning: {kind} が壁から {nearest_m:.2f}m（推奨 '
+            f'{self._pin_min_clearance_m:.2f}m 以上）。操作者の判断待ち')
+
+    def _clear_pin_warning(self):
+        self._pending_warn = None
+        self._publish_pin_warning(None)
+
+    # ── /onsite/resolve_pin (ResolvePin) ──────────────────
+    def _on_resolve_pin(self, request, response):
+        pw = self._pending_warn
+        if pw is None:
+            response.success = False
+            response.message = '処理待ちのピン警告がありません'
+            return response
+        action = request.action
+        if action == 'cancel':
+            if pw['via'] == 'two_point':
+                self._emit_event('evt.register_rejected',
+                                 json.dumps({'reason': 'pin_close_to_wall_cancelled'}))
+            self._accepting = False
+            self._p1 = None
+            self._yaw = None
+            self._clear_pin_warning()
+            response.success = True
+            response.message = '登録をやめました'
+            return response
+
+        if action == 'retreat':
+            x, y = retreat_pose(pw['x'], pw['y'], pw['yaw'], self._pin_retreat_m)
+        elif action == 'place':
+            x, y = pw['x'], pw['y']
+        else:
+            response.success = False
+            response.message = f'未知の action: {action}'
+            return response
+
+        self._p1 = (x, y)
+        self._yaw = pw['yaw']
+        self._kind = pw['kind']
+        self._clear_pin_warning()
+        if pw['via'] == 'two_point':
+            # FSM は REGISTER のまま → evt.register_ok で place_pin effect を呼ばせる
+            self._emit_event('evt.register_ok',
+                             json.dumps({'kind': self._kind,
+                                         'yaw': round(float(self._yaw), 3)}))
+        else:
+            # ROBOT_POSE は FSM を経由しない → その場で置く
+            self._place_pin_effect()
+        response.success = True
+        response.message = ('壁から離して登録しました' if action == 'retreat'
+                            else 'そのまま登録しました')
+        return response
 
     # ── /onsite/two_point (TwoPointPress) ─────────────────
     def _on_two_point(self, request, response):
@@ -361,9 +494,17 @@ class PinRegistrar(Node):
                              json.dumps({'yaw': round(float(yaw), 3)}))
             self._publish_summon_goal(self._p1, yaw)
         else:
-            self._emit_event('evt.register_ok',
-                             json.dumps({'kind': self._kind,
-                                         'yaw': round(float(yaw), 3)}))
+            # WS-9AB: 壁近接チェック。近すぎたら evt.register_ok を出さず、
+            # /onsite/pin_warning を立てて操作者の判断待ちにする（FSM は REGISTER のまま）。
+            nearest_m, verdict = self._check_clearance(self._p1[0], self._p1[1])
+            if verdict == 'warn':
+                self._hold_pin_warning(self._kind, self._p1[0], self._p1[1],
+                                       float(yaw), nearest_m, 'two_point')
+                response.reject_reason_key = 'pin_close_to_wall'
+            else:
+                self._emit_event('evt.register_ok',
+                                 json.dumps({'kind': self._kind,
+                                             'yaw': round(float(yaw), 3)}))
         self.get_logger().info(
             f'P2 記録・確定 (map {tm[0]:.3f}, {tm[1]:.3f}, '
             f'dist={dist:.3f}, yaw={yaw:.3f}, purpose={purpose})')
@@ -409,6 +550,17 @@ class PinRegistrar(Node):
             response.success = False
             response.message = '自己位置（地図座標）が取得できません'
             return response
+        # WS-9AB: 壁近接チェック（2 点指示と同じ。ROBOT_POSE は FSM を経由しないので
+        # /onsite/pin_warning を立てて /onsite/resolve_pin の判断を待つ）。
+        nearest_m, verdict = self._check_clearance(mp[0], mp[1])
+        if verdict == 'warn':
+            self._hold_pin_warning(request.kind, mp[0], mp[1], mp[2],
+                                   nearest_m, 'robot_pose')
+            response.success = False
+            response.message = (
+                f'壁から {nearest_m:.2f}m しかありません。'
+                'このまま登録 / 離して登録 / やめる を選んでください')
+            return response
         self._p1 = (mp[0], mp[1])
         self._yaw = mp[2]
         self._kind = request.kind
@@ -451,6 +603,7 @@ class PinRegistrar(Node):
         self._pins = []
         _dump_pins(self._pins_path, self._pins)
         self._publish_pins()
+        self._clear_pin_warning()
         response.success = True
         response.message = f'ピンをすべて削除しました ({n} 件)'
         self.get_logger().info(f'reset_pins: {n} 件のピンを削除しました')

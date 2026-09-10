@@ -184,6 +184,23 @@ test('走行ボタン: PANEL_NAV には出る、AT_PANEL には出ない', async
   await expect(page.locator('#s21 .op-run')).toBeHidden()
 })
 
+// WS-9AB: BLOCKED（経路が見つからず止まっている）帯。再検索と、非常停止せず
+// 待機場所へ戻る中断（T-PNAV-10 / T-SUM-17 / T-HNAV-09）。
+test('WS-9AB: PANEL_NAV/BLOCKED で「再検索」→ui.reroute、「中断」→ui.abort', async ({ page }) => {
+  await goto21(page, { mode: 'PANEL_NAV', state: 'BLOCKED' })
+  await expect(page.locator('[data-testid="s21-blocked"]')).toBeVisible()
+  await page.locator('[data-testid="s21-blocked-reroute"]').click()
+  expect((await triggers(page)).some((c) => c.trigger === 'ui.reroute'),
+    '再検索が ui.reroute を送っていない').toBe(true)
+  await page.locator('[data-testid="s21-blocked-abort"]').click()
+  expect((await triggers(page)).some((c) => c.trigger === 'ui.abort'),
+    '中断が ui.abort を送っていない').toBe(true)
+
+  // BLOCKED でないときは帯が出ない
+  await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' })
+  await expect(page.locator('[data-testid="s21-blocked"]')).toBeHidden()
+})
+
 test('操作カードの停止は ui.stop、map_update のときだけ保存が表示され ui.save', async ({ page }) => {
   await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' })
   await page.locator('#s21 .op-stop').click()
