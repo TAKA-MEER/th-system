@@ -47,6 +47,21 @@ def arrived(robot_x: float, robot_y: float, goal_x: float, goal_y: float,
     return math.hypot(robot_x - goal_x, robot_y - goal_y) < params.arrival_xy_tol_m
 
 
+def should_unblock_for_arrival(robot_xy, goal, params: VenueNavParams) -> bool:
+    """BLOCKED 中に到着圏内なら evt.unblocked で NAV に戻すべきか（2026-09-10）。
+
+    盤前で膠着（footprint が膨張域に食い込んで RPP が毎回 ABORT）しても、
+    xy が arrival_xy_tol_m 以内なら再探索を繰り返さず NAV に戻して
+    _align_timer の到着フォールバックに完了させる。
+
+    robot_xy: (x, y) or None。goal: {'x','y',...} or None。どちらか無ければ False。
+    """
+    if robot_xy is None or goal is None:
+        return False
+    return arrived(robot_xy[0], robot_xy[1],
+                   float(goal['x']), float(goal['y']), params)
+
+
 def find_home_goal(pins) -> dict | None:
     """kind == 'HOME' のピンからゴール dict {x, y, yaw} を探す。
 

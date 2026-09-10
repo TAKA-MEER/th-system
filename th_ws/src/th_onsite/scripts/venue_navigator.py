@@ -17,7 +17,8 @@ import math
 
 import rclpy
 from rclpy.action import ActionClient
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import (MutuallyExclusiveCallbackGroup,
+                                   ReentrantCallbackGroup)
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
@@ -27,12 +28,14 @@ import tf2_ros
 
 from geometry_msgs.msg import PoseStamped, Twist
 from nav2_msgs.action import ComputePathToPose, FollowPath
+from nav2_msgs.srv import ClearEntireCostmap
 from nav_msgs.msg import Path
 from th_system_msgs.msg import PinList, StateEffect, StateEvent, SystemState
 from th_system_msgs.srv import GoToPanel
 
 from th_onsite.venue_nav_core import (
     VenueNavParams, align_cmd_wz, arrived, find_home_goal,
+    should_unblock_for_arrival,
 )
 
 
@@ -59,8 +62,6 @@ class VenueNavigator(Node):
         self.declare_parameter('arrival_xy_tol_m', 0.30)
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
-        self.declare_parameter('compute_path_timeout_s', 5.0)
-        self.declare_parameter('follow_path_server_wait_s', 5.0)
 
         self._params = VenueNavParams(
             align_tolerance_rad=float(self.get_parameter('align_tolerance_rad').value),
@@ -72,10 +73,6 @@ class VenueNavigator(Node):
         )
         self._map_frame = self.get_parameter('map_frame').value
         self._base_frame = self.get_parameter('base_frame').value
-        self._compute_path_timeout_s = float(
-            self.get_parameter('compute_path_timeout_s').value)
-        self._follow_path_wait_s = float(
-            self.get_parameter('follow_path_server_wait_s').value)
 
         # ── 状態 ────────────────────────────────────────────
         self._mode = ""            # /system/state の mode（PANEL_NAV / SUMMON を対象）
@@ -93,6 +90,15 @@ class VenueNavigator(Node):
         self._blocked = False            # BLOCKED 相当の内部状態
         self._unblocking = False         # 再探索成功で evt.unblocked を出す予約
         self._recheck_timer = None
+        # 2026-09-10 実機バグ対策（venue-navigator-blocked-bugs）:
+        # compute→follow の連鎖が in-flight か / blocked 再探索が in-flight か /
+        # 到着処理を FSM に投げて NAV への復帰待ちか。取りこぼしに備え _started_at で
+        # 10s の stale-escape を持つ。
+        self._nav_chain_active = False
+        self._nav_chain_started_at = 0.0
+        self._recheck_in_flight = False
+        self._recheck_started_at = 0.0
+        self._arrival_pending = False
 
         # ── QoS ─────────────────────────────────────────────
         effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
@@ -107,6 +113,13 @@ class VenueNavigator(Node):
 
         sub_cbg = ReentrantCallbackGroup()
         self._state_cbg = ReentrantCallbackGroup()
+        # 2026-09-10: タイマがアクション結果コールバックに starve されないよう分離する
+        # （旧版は全部ノード既定の MutuallyExclusive グループで、コールバック内の
+        # 同期 wait_for_server が _blocked_recheck を止めていた）。
+        self._align_cbg = MutuallyExclusiveCallbackGroup()
+        self._recheck_cbg = MutuallyExclusiveCallbackGroup()
+        self._action_cbg = ReentrantCallbackGroup()
+        self._clear_cbg = MutuallyExclusiveCallbackGroup()
 
         # ── Subscribers ─────────────────────────────────────
         self.create_subscription(SystemState, '/system/state', self._on_state,
@@ -135,21 +148,35 @@ class VenueNavigator(Node):
 
         # ── Nav2 Action Clients ─────────────────────────────
         self._compute_client = ActionClient(
-            self, ComputePathToPose, 'compute_path_to_pose')
+            self, ComputePathToPose, 'compute_path_to_pose',
+            callback_group=self._action_cbg)
         self._follow_client = ActionClient(
-            self, FollowPath, 'follow_path')
+            self, FollowPath, 'follow_path', callback_group=self._action_cbg)
+
+        # ── costmap クリア（blocked 再探索の前に残留マークを消す）──
+        self._clear_global_cli = self.create_client(
+            ClearEntireCostmap, '/global_costmap/clear_entirely_global_costmap',
+            callback_group=self._clear_cbg)
+        self._clear_local_cli = self.create_client(
+            ClearEntireCostmap, '/local_costmap/clear_entirely_local_costmap',
+            callback_group=self._clear_cbg)
 
         # ── ALIGN 20Hz タイマ ───────────────────────────────
-        self.create_timer(1.0 / 20.0, self._align_timer)
+        self.create_timer(1.0 / 20.0, self._align_timer,
+                          callback_group=self._align_cbg)
 
         # blocked 再探索タイマ（BLOCKED に入ったときに開始）
         self.create_timer(self._params.blocked_recheck_period_s,
-                          self._blocked_recheck)
+                          self._blocked_recheck,
+                          callback_group=self._recheck_cbg)
 
         self.get_logger().info(
             'venue_navigator 起動 (mode を監視: PANEL_NAV/SUMMON/HOME_NAV)')
 
     # ── 便利ヘルパー ──────────────────────────────────────
+    def _now(self) -> float:
+        return self.get_clock().now().nanoseconds / 1e9
+
     def _emit_event(self, event: str, arg_json: str = "{}"):
         ev = StateEvent()
         ev.header.stamp = self.get_clock().now().to_msg()
@@ -158,6 +185,17 @@ class VenueNavigator(Node):
         ev.arg_json = arg_json
         self._pub_event.publish(ev)
         self.get_logger().info(f'/system/event 発行: {event}')
+
+    def _go_blocked(self, arg_json: str = "{}"):
+        """BLOCKED に落ちる全経路の唯一の窓口。内部フラグを必ず整合させてから
+        evt.blocked を出す。旧版は _follow_result_done でしか _blocked=True に
+        ならず、経路計算失敗（no_server / not_accepted / compute_failed / no_goal）
+        では立たなかったため _blocked_recheck の `if not self._blocked` で
+        再試行が武装解除されていた（2026-09-10 実機）。"""
+        self._blocked = True
+        self._nav_chain_active = False
+        self._recheck_in_flight = False
+        self._emit_event('evt.blocked', arg_json)
 
     def _current_goal(self):
         """現モードのゴール dict（pose + yaw）。無ければ None。"""
@@ -200,9 +238,18 @@ class VenueNavigator(Node):
         self._prev_key = key
         self.get_logger().info(f'/system/state: {entered}')
 
-        # NAV に入った瞬間、まだ FollowPath を回していなければ起動
+        # FSM が BLOCKED を publish している間は必ず内部でも blocked（一方向 re-arm。
+        # 内部 _blocked が何かの取りこぼしで False に落ちても、次の recheck が
+        # 再武装されるようにする。逆に内部 _blocked を勝手に False にはしない）。
+        if self._state == 'BLOCKED':
+            self._blocked = True
+
+        # NAV に入った瞬間、まだ何も回っていなければ起動（二重チェーン防止）。
         if self._mode in self._NAV_MODES and self._state == 'NAV':
-            if self._follow_goal_handle is None:
+            if (self._follow_goal_handle is None
+                    and not self._nav_chain_active
+                    and not self._blocked
+                    and not self._arrival_pending):
                 self._start_nav()
             return
 
@@ -210,9 +257,10 @@ class VenueNavigator(Node):
         if self._state == 'ALIGN':
             self._arrived_latched = False
             self._align_latched = False
+            self._arrival_pending = False
             return
 
-        # モードから外れた（IDLE / ESTOP / PAUSE を含む一部）
+        # モードから外れた（IDLE / ESTOP / PAUSE / AT_HOME を含む一部）
         if self._mode not in self._NAV_MODES:
             self._reset_for_exit()
 
@@ -221,7 +269,7 @@ class VenueNavigator(Node):
         if self._follow_goal_handle is not None:
             self._cancel_requested = True
             try:
-                self._follow_goal_handle.cancel_goal()
+                self._follow_goal_handle.cancel_goal_async()
             except Exception:
                 pass
             self._follow_goal_handle = None
@@ -230,6 +278,9 @@ class VenueNavigator(Node):
         self._align_latched = False
         self._blocked = False
         self._cancel_requested = False
+        self._nav_chain_active = False
+        self._recheck_in_flight = False
+        self._arrival_pending = False
 
     # ── /system/effect 受信 ───────────────────────────────
     def _on_effect(self, msg: StateEffect):
@@ -245,15 +296,19 @@ class VenueNavigator(Node):
         if self._follow_goal_handle is not None:
             self._cancel_requested = True
             try:
-                self._follow_goal_handle.cancel_goal()
+                self._follow_goal_handle.cancel_goal_async()
             except Exception:
                 pass
             self._follow_goal_handle = None
         self._blocked = False
+        self._nav_chain_active = False
+        self._recheck_in_flight = False
         # _path は保持（resume 用）
 
     def _resume_follow_path(self):
         self._blocked = False
+        self._recheck_in_flight = False
+        self._arrival_pending = False
         if self._path is None:
             self.get_logger().warn('resume: キャッシュ経路が無い。再探索します')
             self._start_nav()
@@ -262,6 +317,8 @@ class VenueNavigator(Node):
 
     def _replan(self):
         self._blocked = False
+        self._recheck_in_flight = False
+        self._arrival_pending = False
         goal = self._current_goal()
         if goal is None:
             self.get_logger().warn('replan: ゴールが未設定')
@@ -311,15 +368,16 @@ class VenueNavigator(Node):
         goal = self._current_goal()
         if goal is None:
             self.get_logger().warn('NAV: 行き先が未設定。evt.blocked を出して待つ')
-            self._emit_event('evt.blocked', json.dumps({'reason': 'no_goal'}))
+            self._go_blocked(json.dumps({'reason': 'no_goal'}))
             return
         self._compute_and_follow(goal)
 
     def _compute_and_follow(self, goal):
-        if not self._compute_client.wait_for_server(
-                timeout_sec=self._compute_path_timeout_s):
-            self.get_logger().warn('compute_path_to_pose サーバ無し evt.blocked')
-            self._emit_event('evt.blocked', json.dumps({'reason': 'no_server'}))
+        # 非ブロッキング判定。旧版は wait_for_server(timeout=5) をコールバック内で
+        # 同期呼びして executor を詰まらせていた（2026-09-10 実機。CPU 張り付き）。
+        if not self._compute_client.server_is_ready():
+            self.get_logger().warn('compute_path_to_pose サーバ未 ready evt.blocked')
+            self._go_blocked(json.dumps({'reason': 'no_server'}))
             return
         req = ComputePathToPose.Goal()
         req.goal = PoseStamped()
@@ -329,9 +387,10 @@ class VenueNavigator(Node):
         req.goal.pose.position.y = float(goal['y'])
         req.goal.pose.orientation.z = math.sin(float(goal['yaw']) / 2.0)
         req.goal.pose.orientation.w = math.cos(float(goal['yaw']) / 2.0)
-        # 全コールバックはノードの executor で走る（ブロッキング spin はしない）。
-        # MultiThreadedExecutor 上で安全に非同期連鎖する。
+        # 全コールバックは executor で走る（ブロッキング spin はしない）。
         self._compute_goal = goal
+        self._nav_chain_active = True
+        self._nav_chain_started_at = self._now()
         send_future = self._compute_client.send_goal_async(req)
         send_future.add_done_callback(self._compute_goal_done)
 
@@ -339,20 +398,21 @@ class VenueNavigator(Node):
         goal_handle = future.result()
         if goal_handle is None or not goal_handle.accepted:
             self.get_logger().warn('compute_path 受理されず evt.blocked')
-            self._emit_event('evt.blocked', json.dumps({'reason': 'not_accepted'}))
+            self._go_blocked(json.dumps({'reason': 'not_accepted'}))
             return
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self._compute_result_done)
 
     def _compute_result_done(self, future):
+        self._recheck_in_flight = False
         try:
             path = future.result().result.path
         except Exception:
             path = None
         if path is None or len(path.poses) == 0:
             self.get_logger().warn('経路計算失敗 evt.blocked')
-            self._emit_event('evt.blocked', json.dumps({'reason': 'compute_failed'}))
             self._unblocking = False
+            self._go_blocked(json.dumps({'reason': 'compute_failed'}))
             return
         self._path = path
         # blocked 中の再探索成功 → まず unblocked を出してから再開する
@@ -364,9 +424,9 @@ class VenueNavigator(Node):
         self._send_follow_path(path)
 
     def _send_follow_path(self, path: Path):
-        if not self._follow_client.wait_for_server(
-                timeout_sec=self._follow_path_wait_s):
-            self.get_logger().warn('follow_path サーバ無し')
+        if not self._follow_client.server_is_ready():
+            self.get_logger().warn('follow_path サーバ未 ready evt.blocked')
+            self._go_blocked(json.dumps({'reason': 'no_follow_server'}))
             return
         req = FollowPath.Goal()
         req.path = path
@@ -379,7 +439,8 @@ class VenueNavigator(Node):
     def _follow_goal_done(self, future):
         goal_handle = future.result()
         if goal_handle is None or not goal_handle.accepted:
-            self.get_logger().warn('follow_path 受理されず')
+            self.get_logger().warn('follow_path 受理されず evt.blocked')
+            self._go_blocked(json.dumps({'reason': 'follow_not_accepted'}))
             return
         self._follow_goal_handle = goal_handle
         result_future = goal_handle.get_result_async()
@@ -387,6 +448,7 @@ class VenueNavigator(Node):
 
     def _follow_result_done(self, future):
         self._follow_goal_handle = None
+        self._nav_chain_active = False
         # 到着判定は完了コールバックとロボット位置の両方で行う。
         status = None
         try:
@@ -402,21 +464,50 @@ class VenueNavigator(Node):
             return
         # ABORTED / CANCELED（自分でない cancel）→ blocked
         self.get_logger().warn(f'follow_path 終了 status={status} → evt.blocked')
-        self._blocked = True
-        self._emit_event('evt.blocked', json.dumps({'status': int(status)}))
+        self._go_blocked(json.dumps({'status': int(status)}))
 
     def _on_arrived(self):
+        """到着処理。FSM は NAV でしか evt.arrived を受けない（T-PNAV-01 等）ので、
+        NAV 以外（BLOCKED で到着圏内に居るなど）のときは evt.unblocked を出して
+        FSM を NAV に戻し、次の _align_timer フォールバックに evt.arrived を任せる。
+        ラッチは実際に evt.arrived を publish したときだけ立てる（旧版は先にラッチ
+        して return し、_align_timer の到着フォールバックを恒久的に殺していた）。"""
         if self._arrived_latched:
+            return
+        if self._state != 'NAV':
+            if not self._arrival_pending:
+                self._arrival_pending = True
+                self.get_logger().info(
+                    f'arrived（state={self._state}）→ evt.unblocked で NAV に戻す')
+            if self._blocked:
+                self._blocked = False
+                self._emit_event('evt.unblocked')
             return
         self._arrived_latched = True
         self._blocked = False
-        # 既に ALIGN に入っていたら二重送出しない（FSM は NAV でのみ evt.arrived を受ける）
-        if self._state != 'NAV':
-            self.get_logger().debug('arrived: 状態が NAV でないため送出スキップ')
-            return
+        self._arrival_pending = False
+        self._nav_chain_active = False
+        if self._follow_goal_handle is not None:
+            self._cancel_requested = True
+            try:
+                self._follow_goal_handle.cancel_goal_async()
+            except Exception:
+                pass
+            self._follow_goal_handle = None
         self._emit_event('evt.arrived')
+
     # ── blocked 再探索タイマ ──────────────────────────────
     def _blocked_recheck(self):
+        # 取りこぼしに備えた stale-escape（連鎖の done コールバックが 1 つ落ちても
+        # 永久ロックしない）。
+        now = self._now()
+        if self._nav_chain_active and now - self._nav_chain_started_at > 10.0:
+            self.get_logger().warn('nav_chain が 10s 応答なし → フラグ解放')
+            self._nav_chain_active = False
+        if self._recheck_in_flight and now - self._recheck_started_at > 10.0:
+            self.get_logger().warn('recheck が 10s 応答なし → フラグ解放')
+            self._recheck_in_flight = False
+
         if not self._blocked:
             return
         if self._mode not in self._NAV_MODES:
@@ -424,10 +515,54 @@ class VenueNavigator(Node):
         goal = self._current_goal()
         if goal is None:
             return
-        self.get_logger().info('blocked 再探索: 同一ゴールで compute_path_to_pose')
-        # 再探索成功時に evt.unblocked を出してから follow する
-        self._unblocking = True
-        self._compute_and_follow(goal)
+
+        # 到着圏内で BLOCKED に落ちている（盤前で膠着）→ RPP を使わず、
+        # evt.unblocked で NAV に戻して _align_timer の到着フォールバックに任せる。
+        self._refresh_robot_pose()
+        robot_xy = self._robot[:2] if self._robot is not None else None
+        if (not self._arrival_pending
+                and should_unblock_for_arrival(robot_xy, goal, self._params)):
+            self.get_logger().info('BLOCKED だが到着圏内 → evt.unblocked')
+            self._arrival_pending = True
+            self._blocked = False
+            self._emit_event('evt.unblocked')
+            return
+
+        if self._nav_chain_active or self._recheck_in_flight:
+            return
+        self.get_logger().info('blocked 再探索: costmap クリア → compute_path_to_pose')
+        self._recheck_in_flight = True
+        self._recheck_started_at = now
+        self._clear_costmaps_then(self._recheck_compute)
+
+    def _clear_costmaps_then(self, done_cb):
+        """global → local の順に ClearEntireCostmap を非同期で叩き、完了で done_cb。
+        地図フレーム固定の global costmap に残る幽霊障害物マーク
+        （rolling_window:false・raytrace_max_range:6.0 で 6m 超/視線外は消えない）を
+        毎回の再探索前に一掃する。"""
+        def _after_local(_fut=None):
+            done_cb()
+
+        def _after_global(_fut=None):
+            if self._clear_local_cli.service_is_ready():
+                f = self._clear_local_cli.call_async(ClearEntireCostmap.Request())
+                f.add_done_callback(_after_local)
+            else:
+                _after_local()
+
+        if self._clear_global_cli.service_is_ready():
+            f = self._clear_global_cli.call_async(ClearEntireCostmap.Request())
+            f.add_done_callback(_after_global)
+        else:
+            _after_global()
+
+    def _recheck_compute(self):
+        goal = self._current_goal()
+        if goal is not None and self._blocked:
+            self._unblocking = True
+            self._compute_and_follow(goal)
+        else:
+            self._recheck_in_flight = False
 
     # ── 20Hz タイマ（NAV 到着フォールバック + ALIGN）────────
     def _align_timer(self):
@@ -443,6 +578,14 @@ class VenueNavigator(Node):
                            goal['x'], goal['y'], self._params):
                     self.get_logger().info('NAV 到着（xy tol 内）→ evt.arrived')
                     self._on_arrived()
+                elif self._arrival_pending:
+                    # BLOCKED から「到着圏内」で NAV に戻したのに実際は圏外だった
+                    # （自己位置ジャンプ等）→ pending を解いて通常の NAV を起動する。
+                    self.get_logger().info('NAV: 到着圏外 → arrival_pending 解除・NAV 再開')
+                    self._arrival_pending = False
+                    if (self._follow_goal_handle is None
+                            and not self._nav_chain_active):
+                        self._start_nav()
             return
 
         # HOME_NAV には ALIGN 状態が無い。向き合わせは仕様どおり行わない

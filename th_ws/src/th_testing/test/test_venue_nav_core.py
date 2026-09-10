@@ -8,7 +8,8 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(__file__), '..', '..', 'th_onsite'))
 
 from th_onsite.venue_nav_core import (  # noqa: E402
-    VenueNavParams, align_cmd_wz, arrived, find_home_goal, yaw_error)
+    VenueNavParams, align_cmd_wz, arrived, find_home_goal,
+    should_unblock_for_arrival, yaw_error)
 
 
 def approx(a, b, eps=1e-6):
@@ -59,6 +60,25 @@ class TestArrived:
     def test_arrived_false(self):
         # (0,0)-(0.5,0) → False
         assert arrived(0, 0, 0.5, 0, VenueNavParams(arrival_xy_tol_m=0.30)) is False
+
+
+class TestShouldUnblockForArrival:
+    P = VenueNavParams(arrival_xy_tol_m=0.30)
+
+    def test_within_tol_true(self):
+        # 実機で膠着した 0.259m は tol 0.30 内 → True（BLOCKED から NAV に戻す）
+        assert should_unblock_for_arrival(
+            (3.656, -3.684), {'x': 3.509, 'y': -3.897}, self.P) is True
+
+    def test_outside_tol_false(self):
+        assert should_unblock_for_arrival(
+            (0.0, 0.0), {'x': 1.0, 'y': 0.0}, self.P) is False
+
+    def test_none_robot_false(self):
+        assert should_unblock_for_arrival(None, {'x': 0.0, 'y': 0.0}, self.P) is False
+
+    def test_none_goal_false(self):
+        assert should_unblock_for_arrival((0.0, 0.0), None, self.P) is False
 
 
 class TestFindHomeGoal:
