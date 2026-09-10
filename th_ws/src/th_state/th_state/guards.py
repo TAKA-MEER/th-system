@@ -9,7 +9,7 @@ rclpy には依存しない（WP-STATE-01 の対象。state_core.py と同じ制
 from typing import Callable, Dict
 
 # モードによって PAUSE を持たない集合（§4.1.1 末尾。state_core.py の同名集合と同じ定義）。
-_NO_PAUSE_MODES = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB"}
+_NO_PAUSE_MODES = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB", "PREP"}
 
 # C-01 (jog_allowed) の除外表（Spec-modes.md §3.1.1 ジョグ介入の除外）。
 _JOG_EXCLUDED_MODES = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB",
@@ -33,11 +33,9 @@ def _jog_allowed(mode, state, ctx) -> bool:
 
 def _fault_stops_mode(mode, state, ctx) -> bool:
     if mode in _NO_PAUSE_MODES:
-        return False
+        return False  # PREP を含む（2026-09-10）。PREP は登録拒否のみ・地図作成は続行（C-15）
     if ctx.fault_type == "PERSON_TRACKER_LOST":
         if mode not in _TRACKER_FAULT_STOPS_MODES:
-            return False
-        if mode == "PREP":
             return False
     return True
 

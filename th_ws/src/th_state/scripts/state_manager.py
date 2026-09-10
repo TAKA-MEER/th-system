@@ -334,8 +334,10 @@ class StateManager(Node):
         decision = self.core.step(self.mode, self.state, event, ctx)
 
         # prev_sub のラッチ（§7 の latch_prev とは別物。PAUSE に新規で入るときだけ記録する。
-        # PREP が PAUSE から $prev_sub で戻れるようにするための一般化ルール。
-        # mode 名を見ずに to_state だけで判定するので N-1 に触れない）。
+        # 走行状態から PAUSE に入る直前の内部状態を 1 段だけ保持する一般化ルール。
+        # mode 名を見ずに to_state だけで判定するので N-1 に触れない。
+        # 2026-09-10 現在 `$prev_sub` を参照する遷移は無い（PREP が PAUSE を廃止。
+        # DetailedDesign-state.md §4.2 PREP）が、将来用にラッチは残す。
         if decision.to_state == "PAUSE" and self.state != "PAUSE":
             self.prev_sub = self.state
 

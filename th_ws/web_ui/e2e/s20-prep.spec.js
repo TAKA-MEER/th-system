@@ -278,9 +278,8 @@ test('停止/保存の操作カードと対象選択（radar）', async ({ page 
   await page.locator('#s20').waitFor()
   await unlockOnsiteMap(page)
 
-  // 2026-09-09 実機で確認: PREP はジョグ後に PAUSE へ落ち、脱出路は
-  // ui.run（T-PREP-11）だけなのに操作カードの run が false で潰されていて
-  // 詰んでいた。走行ボタンが出ていること自体を固定する。
+  // 「停止」「走行」は PREP では inert（2026-09-10 WS-9AA。将来の追従走行に予約）。
+  // ボタンは両方出て ui.stop / ui.run を送るが、FSM 側は状態を変えない自己ループ。
   await expect(page.locator('#s20 .op-run')).toBeVisible()
   await page.locator('#s20 .op-run').click()
   expect(

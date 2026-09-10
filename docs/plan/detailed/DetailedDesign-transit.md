@@ -388,8 +388,9 @@ Nav2 のコントローラは局所回避を行う設計なので、この 2 つ
 | respawn によるクラッシュ復帰＋モード再適用 | **正しい。**そのまま維持 |
 | `deserialize_map` は localization モード中に黙って何もせず success を返す | **既知の落とし穴。**§5.3 で回避する |
 
-`PREP` の `MAPPING` ⇄ `PAUSE` ⇄ `EDIT` は、この toggle をそのまま状態機械にぶら下げるだけで成立する
+`PREP` の `MAPPING` ⇄ `EDIT` ⇄ `RETURN` は、この toggle をそのまま状態機械にぶら下げるだけで成立する
 （手順 9 の `RETURN` が「作りかけの地図で自己位置推定して戻る」＝ localization モードそのもの）。
+`PREP` は `PAUSE` を持たない（2026-09-10 WS-9AA。`Spec-modes.md` §3.0-②）。
 
 ### 5.2 スロットを 2 つ持つ
 

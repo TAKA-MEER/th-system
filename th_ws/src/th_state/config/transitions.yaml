@@ -931,6 +931,11 @@
   to_state: MAPPING
   effects: []
   spec_ref: SM-3.1.2-049
+# T-PREP-10 / -11: 「停止」「走行」は将来の追従走行（機体を試験員について回らせて
+# 地図作成・登録）の 追従停止/開始 に予約。現状は追従走行が未実装なので inert
+# （状態を変えない自己ループ）。PREP は PAUSE を持たない（Spec-modes.md §3.0-② ／
+# VISION.md 2026-09-10 WS-9AA）。EDIT / SAVED からの「走行」→ MAPPING は
+# T-PREP-09 / -13 が担う（-11 の state に EDIT / SAVED を含めない）。
 - id: T-PREP-10
   layer: 10
   mode: PREP
@@ -938,19 +943,20 @@
   event: ui.stop
   guard: null
   to_mode: '='
-  to_state: PAUSE
-  effects:
-  - name: keep_all
-    args: {}
+  to_state: '='
+  effects: []
   spec_ref: SM-3.1.2-050
 - id: T-PREP-11
   layer: 10
   mode: PREP
-  state: PAUSE
+  state:
+  - MAPPING
+  - REGISTER
+  - RETURN
   event: ui.run
   guard: null
   to_mode: '='
-  to_state: $prev_sub
+  to_state: '='
   effects: []
   spec_ref: SM-3.1.2-051
 - id: T-PREP-12

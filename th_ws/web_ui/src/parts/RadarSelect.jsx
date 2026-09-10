@@ -105,8 +105,10 @@ export default function RadarSelect({
                 >
                   <circle r={10} />
                   {sel && <text y={-18} textAnchor="middle" className="rv-sel">{RADAR_SELECTED}</text>}
-                  {/* 先頭の候補だけ確信度を添える（全部出すと重なるため）。 */}
-                  {i === 0 && candidates.length > 0 && typeof confidence === 'number' && (
+                  {/* 確信度は選択中の候補にだけ添える。confidence は追跡中の対象 1 つを
+                      表すスカラなので、未選択の先頭候補に出すと「確信度 0%」が
+                      対象未選択なだけで出て誤解を招く（2026-09-10 実機フィードバック）。 */}
+                  {sel && typeof confidence === 'number' && (
                     <text y={26} textAnchor="middle" className="rv-cnf">
                       {RADAR_CONFIDENCE(Math.round(confidence * 100))}
                     </text>

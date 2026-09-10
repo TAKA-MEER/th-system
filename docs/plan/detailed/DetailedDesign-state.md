@@ -40,7 +40,9 @@ class Context:
     # --- 直前の状態（ESTOP / CARRY / PREP の復帰用。ラッチはノードが保持する） ---
     prev_mode: str                  # "" なら未ラッチ
     prev_state: str
-    prev_sub: str                   # PREP が PAUSE に入る直前の内部状態
+    prev_sub: str                   # 走行状態から PAUSE に入る直前の内部状態を 1 段ラッチ。
+                                    # 現状 `$prev_sub` を参照する遷移は無い（PREP が
+                                    # PAUSE を廃したため。§4.2 PREP）。将来用に予約。
     # --- フラグ ---
     flags: dict[str, bool]          # jog_active, working, map_update, tracker_enabled, auto_brake
     zone: str                       # "IN" | "OUT" | "NA"
@@ -153,6 +155,7 @@ class StateCore:
 | `$initial` | `attributes[to_mode].initial_state` | `to_state` |
 | `$resume_run` | `attributes[mode].run_state` | `to_state` |
 | `$resume_state` | `attributes[mode].resume_state` | `to_state` |
+| `$pause_unless_prep` | 現在の `state` が `attributes[mode].prep_states` に含まれれば `state`（不変）、そうでなければ `PAUSE`。**「走っていないものは止められない」**（VISION.md 2026-09-02 WS-9 ／ 2026-09-10 WS-9AA）。`REPLAY` の準備 3 状態と `PREP` の全状態がこれで `PAUSE` を回避する | `to_state` |
 | `$prev_mode` / `$prev_state` / `$prev_sub` | `ctx.prev_*` | 両方 |
 | `$arg.<key>` | `ctx.arg[key]`。**`ui.goto` だけ §3.5 の写像を通す** | 両方 |
 
@@ -182,7 +185,7 @@ class StateCore:
 | `rotate_to_start_yaw` / `resume_path` | — | `replay_runner` | 状態で自動 |
 | `widen_search` / `global_localize` | — | `replay_runner` | srv |
 | `commit_map_patch` / `commit_venue_map` | — | `map_session` | srv `/map_session/save` |
-| `keep_all` | — | — | 何もしない（意図の明示） |
+| `keep_all` | — | — | 何もしない（意図の明示）。**2026-09-10 以降どの遷移も参照しない**（`T-PREP-10` の inert 化で不要に。将来用に定義だけ残す） |
 | `begin_two_point` | `{kind}` | `pin_registrar` | srv |
 | `place_pin` | — | `pin_registrar` | srv |
 | `reject_register` | — | `pin_registrar` | |
@@ -227,9 +230,9 @@ class StateCore:
 
 | id | mode | state | event | guard | to_mode | to_state | effects |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `C-01` | `*` | `*` | `ui.jog.hold` | `jog_allowed` | `=` | `PAUSE` | `set_jog{on:true}` |
+| `C-01` | `*` | `*` | `ui.jog.hold` | `jog_allowed` | `=` | `$pause_unless_prep` | `set_jog{on:true}` |
 | `C-02` | `*` | `PAUSE` | `sys.jog_lease_expired` | — | `=` | `PAUSE` | `set_jog{on:false}` |
-| `C-03` | `*` | `*` | `fault.recoverable` | `fault_stops_mode` | `=` | `PAUSE` | `open_window{id:W-1}` |
+| `C-03` | `*` | `*` | `fault.recoverable` | `fault_stops_mode` | `=` | `$pause_unless_prep` | `open_window{id:W-1}` |
 | `C-04` | `*` | `PAUSE` | `ui.resume_yes` | `fault_cleared` | `=` | `$resume_run` | `close_window{id:W-1}` |
 | `C-05` | `*` | `PAUSE` | `ui.resume_no` ／ `ui.resume_ack` | `fault_cleared` | `=` | **`$resume_state`** | `close_window{id:W-1}` |
 | **`C-06a`** | `*` | `*` | `fault.critical` | — | `ESTOP` | `NONE` | `latch_prev` |
@@ -307,9 +310,16 @@ class StateCore:
 | `mode == SUMMON and state == WAIT_CLEAR` | **ゲートが止めている状況で機体を動かさない**（`F-28` の除外） |
 | **`mode ∈ {MANUAL, TEACH_MANUAL}`** | **スティックそのものが走行操作である**（`F-31`） |
 
-**`OPCHECK` / `CALIB` は `PAUSE` を持たない。**したがって `C-03`（回復フォルト → `PAUSE`）も
-この 2 モードには効かせない。`fault_stops_mode` の除外に加え、
-復帰は `attributes.yaml` の `resume_state: LIST` で行う（`Spec-modes.md` §6「確認 1 択 → `LIST`」）。
+**`PREP` はジョグ自体は許可する**（`jog_allowed` は true）が、`C-01` の `to_state` が
+`$pause_unless_prep` で、`prep_states` に全状態を列挙しているため **`PAUSE` には落ちない**
+（ジョグ＝地図作成のための連れ回しであって「一時停止すべき走行」ではない。`Spec-modes.md`
+§3.0-② ／ VISION.md 2026-09-10 WS-9AA）。
+
+**`OPCHECK` / `CALIB` / `PREP` は `PAUSE` を持たない。**したがって `C-03`（回復フォルト → `PAUSE`）も
+効かせない。`OPCHECK` / `CALIB` は `fault_stops_mode` の除外に加え復帰を `resume_state: LIST` で行う
+（`Spec-modes.md` §6「確認 1 択 → `LIST`」）。`PREP` は `fault_stops_mode` が false を返すので `C-03` が
+発火せず、状態も W-1 も動かさない（フォルトは独立したフォルト表示で操作者に伝わる）。ジョグ介入
+（`C-01`）は `$pause_unless_prep` ＋ `prep_states` 全列挙で状態を保つ。
 **`IDLE` も同じ**（状態は `NONE` のみ）。
 
 **`C-03` のガード `fault_stops_mode`**:
@@ -318,7 +328,7 @@ class StateCore:
 | --- | --- |
 | `fault_type == "PERSON_TRACKER_LOST"` かつ `mode ∉ {FOLLOW, TEACH_FOLLOW, SUMMON}` | **false**（`PAUSE` にしない） |
 | `fault_type == "PERSON_TRACKER_LOST"` かつ `mode == PREP` | **false**（登録を拒否するだけ・`C-15`） |
-| **`mode ∈ {IDLE, INIT, OPCHECK, CALIB}`** | **false。**`PAUSE` を持たないモードなので落とせない（§4.1.1 末尾） |
+| **`mode ∈ {IDLE, INIT, OPCHECK, CALIB, PREP}`** | **false。**`PAUSE` を持たないモードなので落とせない（§4.1.1 末尾）。`PREP` は `$pause_unless_prep` が状態を保つ |
 | それ以外 | true |
 
 `OPCHECK` / `CALIB` は代わりに `T-OPC-08` / `T-CAL-08` が `LIST` へ落とす（回復フォルトのみ）。
@@ -459,14 +469,19 @@ class StateCore:
 | `T-PREP-07` | `RETURN` | `evt.arrived` | — | `EDIT` | — |
 | `T-PREP-08` | `MAPPING` ／ `EDIT` | `ui.map_edit` | — | `EDIT` | — |
 | `T-PREP-09` | `EDIT` | `ui.run` | — | `MAPPING` | — |
-| `T-PREP-10` | `*` | `ui.stop` | — | `PAUSE` | `keep_all`（地図・ピン・修正を保持） |
-| `T-PREP-11` | `PAUSE` | `ui.run` | — | `$prev_sub` | — |
+| `T-PREP-10` | `*` | `ui.stop` | — | `=`（不変） | — |
+| `T-PREP-11` | `MAPPING` ／ `REGISTER` ／ `RETURN` | `ui.run` | — | `=`（不変） | — |
 | `T-PREP-12` | `*` | `ui.save` | — | `SAVED` | `commit_venue_map` |
 | `T-PREP-13` | `SAVED` | `ui.run` | — | `MAPPING` | — |
 
-`T-PREP-08` / `-09` / `-11` / `-13` は**正本 `Spec-modes.md` §3.1.2 に反映済み**
-（§9-(d) / §9-(g) ／ `Spec-open.md` F-32 / F-35）。
-`$prev_sub` は `PAUSE` に入る直前の `PREP` 内状態を 1 段ラッチしたもの。
+`T-PREP-08` / `-09` / `-13` は**正本 `Spec-modes.md` §3.1.2 に反映済み**
+（§9-(d) ／ `Spec-open.md` F-32）。
+**`T-PREP-10` / `-11`（「停止」「走行」）は inert な自己ループ**（2026-09-10 WS-9AA）。
+`PREP` は `PAUSE` を持たないので `keep_all` も `$prev_sub` も不要になった
+（`keep_all` effect 自体は §3.3 に残すが、現状どの行も参照しない）。
+`EDIT` / `SAVED` からの「走行」→ `MAPPING` は `T-PREP-09` / `-13` が担うため、
+`-11` の `state` に `EDIT` / `SAVED` を含めない（記載順で `-09` が先、`-13` は
+`-11` の `state` 外なので競合しない）。
 
 #### `PANEL_NAV`
 
@@ -822,7 +837,7 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | `REPLAY` | `ROUTE_SEL` | `RUN` | `yes_no` | `PAUSE` | `unused` | `v_max` | `on_locked` | `allowed` | **true**※ |
 | `LINE` | `SETUP` | `RUN` | `yes_no` | `PAUSE` | `unused` | `v_max` | `on_locked` | `allowed` | false |
 | `LEASH` | `DEV_CHECK` | `RUN` | `yes_no` | `PAUSE` | `unused` | `v_leash` | `on_locked` | `allowed` | false |
-| `PREP` | `MAPPING` | `MAPPING` | `yes_no` | `PAUSE` | `required`※※ | `v_slow` | `on_locked` | `allowed` | **true** |
+| `PREP` | `MAPPING` | `MAPPING` | **`none`** | **`null`** | `required`※※ | `v_slow` | `on_locked` | `allowed` | **true** |
 | `PANEL_NAV` | `NAV` | `NAV` | `yes_no` | `PAUSE` | `unused` | `v_slow` | `on_locked` | `allowed` | false※ |
 | `AT_PANEL` | `IDLE_P` | — | **`ack_only`** | **`IDLE_P`** | `unused` | `stop`※※※ | `on_locked` | `allowed` | false※ |
 | `SUMMON` | `POINT` | `NAV` | **`ack_only`** | **`POINT`** | `required` | `v_slow` | `on_locked` | `allowed` | false※ |
@@ -837,9 +852,11 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 ※※ `PREP` の `needs_tracker` は **`REGISTER` 状態のときだけ `required`**、他は `optional`。
 ※※※ `AT_PANEL` は停止だが、**`jog_active` の間だけ `v_jog_panel`**（`F-24`）。
 
-**`resume_state` は全モード必須。**`yes_no` のモードは `PAUSE` を書く
+**`resume_state` は `PAUSE` を持つ全モードで必須。**`yes_no` のモードは `PAUSE` を書く
 （`C-05`（いいえ／確認）は全モードの `PAUSE` に効くので、`ack_only` のモードだけ定義すると
 `FOLLOW` などで `$resume_state` が解決できず `validate()` ④ が落ちる）。
+**`PAUSE` を持たない `INIT` / `IDLE` / `CARRY` / `PREP` は `null`**（`PAUSE` に入らないので
+`C-05` が発火しない。`ESTOP` だけは `ack_only` で `NONE` を書く）。
 
 **`run_state` が `—` のモードは `ui.resume_yes` を出さない**（`C-04` が起こせない）。
 ただし **`ESTOP` と `AT_PANEL` は `ack_only`** にする。
@@ -894,7 +911,7 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | **(d)** | `SAVED` からの出口が「終了」しか無い。`TEACH_*` / `PREP` / `REPLAY` で**保存直後に固まる** | `T-TEACH-05` / `T-PREP-13` / **`T-REPLAY-10`** を追加 | `Spec-modes.md` §3・§3.1.2 ／ `Spec-transit.md` §3.2・§4.2 ／ `Spec-onsite.md` §2 ／ **F-32** |
 | **(e)** | `ESTOP` / `CARRY` の入れ子（`ESTOP` 中の物理押下、`CARRY` 中の重大フォルト）が未定義 | §7 で 4 通りすべて明示した | `Spec-modes.md` §4.1（入れ子の小節を新設）／ **F-33** |
 | **(f)** | `fault.cleared` が遷移として書かれているように読める | 遷移させず、選択肢は `attributes.yaml` から導出（§7.1） | `Spec-modes.md` §3.1.1 ／ `Spec-webui.md` §4.1 ／ **F-34** |
-| **(g)** | `FOLLOW` / `PREP` の `PAUSE` からの復帰行が無い（`REPLAY` も同様だった） | `T-FOLLOW-07` / `T-PREP-11` / `T-REPLAY-07` | `Spec-modes.md` §3.1.2 ／ **F-35** |
+| **(g)** | `FOLLOW` / `PREP` の `PAUSE` からの復帰行が無い（`REPLAY` も同様だった） | `T-FOLLOW-07` / `T-REPLAY-07`。**`PREP` は 2026-09-10 に `PAUSE` を廃止したため対象外**（`T-PREP-11` は inert 化。§4.2 PREP） | `Spec-modes.md` §3.1.2 ／ **F-35** |
 | **(h)** | `REPLAY` が経路の終端に達したときの状態が無い | `T-REPLAY-09`（`PAUSE` ＋案内）を追加。自動停止は `LINE` のみ（`F-02`）という規則は守る | `Spec-modes.md` §3.1.2 ／ `Spec-transit.md` §0.2・§4.1（**到着判定ではないと明記**）／ **F-36** |
 | **(i)** | §3.1.1 の「はい → 同モードの `RUN`」が、`REC`（教示）/ `NAV`（Nav2 系）のモードで成り立たない。§6.1 と `C-04` は既に走行状態を引く形だった | `C-04` の `$resume_run`（`attributes.yaml` の `run_state`） | `Spec-modes.md` §3.1.1・§6.1 ／ `Spec-webui.md` §4.1 ／ **F-37** |
 | **(j)** | `TEACH_*` の `PAUSE` → `REC` が「走行」ボタン前提だが、**S-13 の操作カードは「停止／保存」だけで「走行」が無い** | `T-TEACH-03M` / `T-TEACH-05M` に分け、`TEACH_MANUAL` は `ui.jog.hold` を契機にした | `Spec-modes.md` §3.1.2 ／ `Spec-webui.md` §3.4 ／ **F-38** |

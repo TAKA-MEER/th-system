@@ -176,7 +176,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | `REPLAY` | `ROUTE_SEL` / `LOCALIZE` / `READY` / `RUN` / `PAUSE` / `SAVED` |
 | `LINE` | `SETUP` / `PLANNED` / `RUN` / `PAUSE` / `ARRIVED` |
 | `LEASH` | `DEV_CHECK` / `READY` / `RUN` / `HOLD` / `PAUSE` |
-| `PREP` | `MAPPING` / `REGISTER` / `RETURN` / `EDIT` / `PAUSE` / `SAVED` |
+| `PREP` | `MAPPING` / `REGISTER` / `RETURN` / `EDIT` / `SAVED` |
 | `PANEL_NAV` | `NAV` / `BLOCKED` / `PAUSE` / `ALIGN` |
 | `AT_PANEL` | `IDLE_P` / `WORKING` / `PAUSE` |
 | `SUMMON` | `POINT` / `WAIT_CLEAR` / `NAV` / `BLOCKED` / `PAUSE` / `ALIGN` |

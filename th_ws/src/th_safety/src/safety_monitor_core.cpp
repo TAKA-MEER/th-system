@@ -78,7 +78,7 @@ const std::map<std::string, std::set<std::string>>& default_mode_states() {
       {"REPLAY", {"ROUTE_SEL", "LOCALIZE", "READY", "RUN", "PAUSE", "SAVED"}},
       {"LINE", {"SETUP", "PLANNED", "RUN", "PAUSE", "ARRIVED"}},
       {"LEASH", {"DEV_CHECK", "READY", "RUN", "HOLD", "PAUSE"}},
-      {"PREP", {"MAPPING", "REGISTER", "RETURN", "EDIT", "PAUSE", "SAVED"}},
+      {"PREP", {"MAPPING", "REGISTER", "RETURN", "EDIT", "SAVED"}},  // PAUSE 無し（Spec-modes.md §3.0-②・2026-09-10 WS-9AA）
       {"PANEL_NAV", {"NAV", "BLOCKED", "PAUSE", "ALIGN"}},
       {"AT_PANEL", {"IDLE_P", "WORKING", "PAUSE"}},
       {"SUMMON", {"POINT", "WAIT_CLEAR", "NAV", "BLOCKED", "PAUSE", "ALIGN"}},

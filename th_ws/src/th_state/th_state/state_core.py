@@ -36,7 +36,7 @@ MODE_STATES: Dict[str, Set[str]] = {
     "REPLAY": {"ROUTE_SEL", "LOCALIZE", "READY", "RUN", "PAUSE", "SAVED"},
     "LINE": {"SETUP", "PLANNED", "RUN", "PAUSE", "ARRIVED"},
     "LEASH": {"DEV_CHECK", "READY", "RUN", "HOLD", "PAUSE"},
-    "PREP": {"MAPPING", "REGISTER", "RETURN", "EDIT", "PAUSE", "SAVED"},
+    "PREP": {"MAPPING", "REGISTER", "RETURN", "EDIT", "SAVED"},
     "PANEL_NAV": {"NAV", "BLOCKED", "PAUSE", "ALIGN"},
     "AT_PANEL": {"IDLE_P", "WORKING", "PAUSE"},
     "SUMMON": {"POINT", "WAIT_CLEAR", "NAV", "BLOCKED", "PAUSE", "ALIGN"},
@@ -61,7 +61,9 @@ BOOT_MODE: str = "INIT"
 ESTOP_MODE: str = "ESTOP"
 
 # DetailedDesign-state.md §4-1-1 末尾・§2 validate()⑥docstring — PAUSE を持たないモード。
-NO_PAUSE_MODES: Set[str] = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB"}
+# PREP は 2026-09-10 追加（Spec-modes.md §3.0-② ／ VISION.md WS-9AA。地図作成＝常時ジョグ、
+# 将来は追従走行がモードの活動そのもので「一時停止すべき走行」が無い。停止/走行は inert）。
+NO_PAUSE_MODES: Set[str] = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB", "PREP"}
 
 # DetailedDesign-state.md §7 — latch_prev を記録しないモード（FMEA②）。
 NO_LATCH_MODES: Set[str] = {"ESTOP", "CARRY"}

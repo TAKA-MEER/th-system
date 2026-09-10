@@ -735,6 +735,52 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
   更新: `slam_control.py` / `slam_control_logic.py` / `pin_registrar.py` /
   `S20Prep.jsx` / `S21Test.jsx` / `useOnsiteService.js` / `docs/使い方.md`。
 
+- **2026-09-10 — 試験準備でジョグを握ると対象選択が死ぬ（WS-9AA）**: 実機で
+  「対象選択がうまくできない。タップしても白い枠が出るだけで反応せず」。稼働中の
+  `th_robot` を観測すると `/system/state` が `PREP`/`PAUSE`・`last_reject_reason:
+  not_allowed`。`ui.select_target`（`T-PREP-14`）は `PREP`/`MAPPING` 限定なので
+  `PAUSE` では全部弾かれていた（白い枠はブラウザのフォーカス枠）。
+
+  なぜ `PAUSE` にいたか: **地図作成のために機体をジョグで動かすと、共通遷移 `C-01`
+  （`ui.jog.hold`）が `PREP` を `PAUSE` に落とす。**`C-01` / `C-03` の
+  `$pause_unless_prep` は名前に反して `attributes.yaml` の `prep_states` に列挙した
+  状態しか除外せず（2026-09-02 の WS で REPLAY / TEACH には入れたが）、**`PREP` には
+  その列挙が無かった**。地図作成中はほぼ常時ジョグしているので、握るたびに `PAUSE`
+  に入り、そのまま候補をタップしても無音で捨てられる（ジョグ自体は `PAUSE` からでも
+  効くので操作者は気づきにくい）。
+
+  **方針変更（ユーザー決定 2026-09-10）**:
+  **試験準備は将来的に「追従走行で機体を試験員について回らせて地図作成・登録する」
+  構想であり、操作カードの「停止」「走行」はその追従の停止／開始に予約する。**
+  現状は追従走行が未実装なので、`PREP` の「停止」「走行」は**押しても状態を変えない
+  （inert）**。地図作成中の setup 操作（対象選択・2 点指示登録・保存）は走行/停止の
+  区別に依らず常に可能にする。
+
+  したがって **`PREP` は `PAUSE` 状態を持たない**（`IDLE` / `OPCHECK` / `CALIB` に
+  次ぐ 4 番目の例外）。理由は `OPCHECK` / `CALIB` と同型で、モードの活動（地図作成＝
+  常時ジョグ、将来は追従走行）そのものが動きを規定しており、「走行中のものを一時停止
+  する」対象が無いこと。ジョグ介入（C-01）は `prep_states` に全状態を列挙して状態を
+  保ち、回復可能フォルト（C-03）は `fault_stops_mode` の対象外にする（`OPCHECK` /
+  `CALIB` と同じ）。フォルト自体は独立したフォルト表示で操作者に伝わる。
+
+  - `state_core.MODE_STATES["PREP"]` から `PAUSE` を削除し `NO_PAUSE_MODES` に追加。
+  - `attributes.yaml` の `PREP` に `prep_states: [MAPPING, REGISTER, RETURN, EDIT,
+    SAVED]`（C-01 ジョグ介入の `$pause_unless_prep` で状態を保つ）、`resume_state: null`。
+    `guards._fault_stops_mode` の `_NO_PAUSE_MODES` にも `PREP` を追加（C-03 を発火させない）。
+  - `transitions.yaml`: `T-PREP-10`（`ui.stop`）と `T-PREP-11`（`ui.run`）を
+    inert な自己ループに（`EDIT` / `SAVED` からの `ui.run → MAPPING`＝`T-PREP-09` /
+    `T-PREP-13` は温存）。`keep_all` effect はどの行も参照しなくなった（定義は残す）。
+  - `safety_monitor_core.cpp` の `default_mode_states()` からも `PREP` の `PAUSE` を削除。
+  - `RadarSelect`: 確信度表示は選択中の候補にだけ添える（先頭候補固定をやめる。
+    未選択で「確信度 0%」が出て誤解を招いていた）。
+
+  更新: [Spec-modes.md](docs/plan/spec/Spec-modes.md) §3.0-②・§3.1.1・§3（`PREP` 状態表）・
+  §3.1.2（`SM-3.1.2-050` / `-051`）・§6、[Spec-open.md](docs/plan/spec/Spec-open.md) U-7 / F-35、
+  [Spec-onsite.md](docs/plan/spec/Spec-onsite.md) §2、`DetailedDesign-state.md` / `-names.md` /
+  `-transit.md`、`state_core.py` / `guards.py` / `transitions.yaml` / `attributes.yaml` /
+  `state_manager.py` / `safety_monitor_core.cpp` / `RadarSelect.jsx` / `S20Prep.jsx` /
+  `attributes.json` / `docs/使い方.md`。
+
 ---
 
 ## 3. 両設計書が扱っていない事項

@@ -159,8 +159,15 @@
     "initial_state": "MAPPING",
     "jog": "allowed",
     "needs_tracker": "required",
-    "resume": "yes_no",
-    "resume_state": "PAUSE",
+    "prep_states": [
+      "MAPPING",
+      "REGISTER",
+      "RETURN",
+      "EDIT",
+      "SAVED"
+    ],
+    "resume": "none",
+    "resume_state": null,
     "run_state": "MAPPING",
     "speed_limit": "v_slow"
   },
