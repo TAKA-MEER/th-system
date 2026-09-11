@@ -930,6 +930,29 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
 
   更新: `venue_navigator.py`。
 
+- **2026-09-11 — 到着位置の精度を詰める（WS-9AJ・実機要検証）**: 配電盤・
+  待機場所への到着位置が地図上で視認できる程度ズレる。ユーザーの実機体感
+  （教示再生の自己位置推定は目視で差が無いほど正確）から、原因は SLAM 側
+  ではなく**到着判定が緩いこと**と判断した。`general_goal_checker` の
+  `xy_goal_tolerance`（Nav2 が「到着」とみなす半径。従来 0.25m）が緩いため、
+  RPP はその半径に入った時点で止まり、それ以上は詰めない。ALIGN／WS-9AI の
+  向き合わせは向きしか直さないので、位置のズレはここが唯一の締め所。
+
+  **変更**: `xy_goal_tolerance` 0.25→0.12m・`yaw_goal_tolerance` 0.25→0.12rad
+  （`nav2_params.yaml`）。`venue_navigator` 側の到着フォールバック
+  `arrival_xy_tol_m`（`follow_path` の result を取りこぼした場合の保険。
+  従来 0.30m）も整合を取って 0.15m に。`align_tolerance_rad`（0.09rad）は
+  既にこれより厳しいので変更なし。
+
+  **リスク（実機でしか確認できない）**: 絞りすぎるとクローラーの低速域
+  スリップ（`nav2_params.yaml` の `rotate_to_heading_angular_vel` 付近の
+  コメント参照）で目標半径付近を微振動して収束しない・進捗チェッカー
+  （`required_movement_radius`/`movement_time_allowance`）に引っかかる
+  おそれがある。今回の値は控えめな第一段階で、実機で様子を見て詰めるか
+  戻すかを判断する。
+
+  更新: `nav2_params.yaml`、`venue_navigator.py`。
+
 ---
 
 ## 3. 両設計書が扱っていない事項

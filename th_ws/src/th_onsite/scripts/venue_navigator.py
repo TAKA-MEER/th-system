@@ -74,7 +74,10 @@ class VenueNavigator(Node):
         self.declare_parameter('align_kp', 1.2)
         self.declare_parameter('align_w_max_rps', 0.6)
         self.declare_parameter('blocked_recheck_period_s', 2.0)
-        self.declare_parameter('arrival_xy_tol_m', 0.30)
+        # WS-9AJ(2026-09-11): nav2_params.yaml の xy_goal_tolerance（0.25→0.12）
+        # と整合を取る。これは follow_path の result を取りこぼした場合の
+        # 到着フォールバックなので、緩いままだと精度改善が骨抜きになる。
+        self.declare_parameter('arrival_xy_tol_m', 0.15)
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
 

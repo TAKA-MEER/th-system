@@ -39,8 +39,12 @@ controller_server:
     general_goal_checker:
       stateful: true
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.25
+      # WS-9AJ(2026-09-11): 0.25/0.25 は地図上で視認できるほど緩かった。実機
+      # フィードバックで SLAM 側は正確と確認済みなので、到着判定を詰める側で
+      # 対処する。クローラーの低速域スリップで目標半径付近が収束しない
+      # おそれがあるので、絞りすぎず様子見の第一段階（VISION.md WS-9AJ）。
+      xy_goal_tolerance: 0.12
+      yaw_goal_tolerance: 0.12
 
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
