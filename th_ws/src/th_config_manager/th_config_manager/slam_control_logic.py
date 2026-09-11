@@ -129,3 +129,24 @@ def effective_reload_pose(has_initial_pose: bool, initial_x: float, initial_y: f
         hx, hy, hyaw = home_pose
         return (True, hx, hy, hyaw)
     return (False, initial_x, initial_y, initial_yaw)
+
+
+def map_instance_ids_match(map_instance_id: str, pins_instance_id: str) -> bool:
+    """WS-9AL(2026-09-11): 読み込む地図の instance_id と、ピンが最後に保存
+    された時点の instance_id が同じ地図の生存世代を指しているかを判定する
+    （純関数）。
+
+    実機事故 (2026-09-11): bringup を再起動するたび SLAM は無関係な新しい
+    座標系でまっさらに始まり直すが、pins.yaml はファイルとして永続化されて
+    いて次回起動時にそのまま再利用される。地図を保存し直さないまま再起動を
+    挟むと、ピンの数値は「もう存在しない古い座標系」のまま残り、次に地図を
+    開いたとき HOME ピンの姿勢を無条件で信用してしまい、配電盤・待機場所・
+    自機と地図がズレた（本人確認: map.data は古い時刻、pins.yaml はそれより
+    後の時刻に更新されていた）。
+
+    どちらか一方でも空（instance_id が付く前の古い保存・未登録）なら
+    「確認できない」ので False（安全側 = HOME ピンの姿勢を信用しない）。
+    """
+    if not map_instance_id or not pins_instance_id:
+        return False
+    return map_instance_id == pins_instance_id

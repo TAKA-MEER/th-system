@@ -40,9 +40,9 @@ sys.path.insert(0, os.path.join(
     'th_config_manager'))
 
 from slam_control_logic import (   # noqa: E402
-    deserialize_match_type, effective_reload_pose, map_session_base_dir,
-    map_session_filename, map_session_name, open_session_error,
-    slam_restart_complete,
+    deserialize_match_type, effective_reload_pose, map_instance_ids_match,
+    map_session_base_dir, map_session_filename, map_session_name,
+    open_session_error, slam_restart_complete,
 )
 from route_record_core import _safe_id, finalized_path   # noqa: E402
 
@@ -80,6 +80,33 @@ def test_effective_reload_pose_no_home_pin_stays_false():
     """HOME ピンが未登録なら、従来どおり False のまま（START_AT_FIRST_NODE）。"""
     got = effective_reload_pose(False, 0.0, 0.0, 0.0, None)
     assert got == (False, 0.0, 0.0, 0.0)
+
+
+# ── 1a-2. map_instance_ids_match（WS-9AL: 地図とピンの生存世代の突き合わせ）
+def test_map_instance_ids_match_same_id():
+    assert map_instance_ids_match('abc123', 'abc123') is True
+
+
+def test_map_instance_ids_match_different_id():
+    """実機事故 (2026-09-11): bringup 再起動のたび SLAM は無関係な新しい座標系
+    でまっさらに始まり直すが、pins.yaml は永続化されていて再利用される。
+    地図を保存し直さないまま再起動を挟むと配電盤・待機場所・自機と地図が
+    ズレた。ここが不一致を検知する核心。"""
+    assert map_instance_ids_match('abc123', 'xyz789') is False
+
+
+def test_map_instance_ids_match_map_side_empty():
+    """instance_id が付く前の古い地図保存（移行期）は確認できないので False。"""
+    assert map_instance_ids_match('', 'abc123') is False
+
+
+def test_map_instance_ids_match_pins_side_empty():
+    """instance_id が付く前の古い pins.yaml（移行期）も同様に False。"""
+    assert map_instance_ids_match('abc123', '') is False
+
+
+def test_map_instance_ids_match_both_empty():
+    assert map_instance_ids_match('', '') is False
 
 
 # ── 1b. slam_restart_complete（WS-9S: respawn 待ちの純判定）────────────

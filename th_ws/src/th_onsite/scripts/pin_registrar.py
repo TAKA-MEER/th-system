@@ -32,8 +32,8 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid
 from std_msgs.msg import Header
 from std_srvs.srv import Trigger
-from th_system_msgs.msg import (Pin, PinList, PersonStatus, PinWarning,
-                                StateEffect, StateEvent)
+from th_system_msgs.msg import (MapSessionStatus, Pin, PinList, PersonStatus,
+                                PinWarning, StateEffect, StateEvent)
 from th_system_msgs.srv import EditPin, RegisterPin, ResolvePin, TwoPointPress
 
 from th_onsite.pin_clearance_core import (
@@ -63,12 +63,14 @@ def _load_pins(path) -> list:
         return []
 
 
-def _dump_pins(path, pins):
+def _dump_pins(path, pins, map_instance_id=''):
+    # WS-9AL(2026-09-11): map_instance_id はこのピン群が有効だった地図の
+    # 生存世代（slam_control の /map_session/status から。VISION.md WS-9AL）。
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
-        yaml.safe_dump({'pins': pins}, f, allow_unicode=True,
-                       default_flow_style=False)
+        yaml.safe_dump({'pins': pins, 'map_instance_id': map_instance_id}, f,
+                       allow_unicode=True, default_flow_style=False)
     os.replace(tmp, path)
 
 
@@ -125,6 +127,12 @@ class PinRegistrar(Node):
         # 直近の対象 (/person/status) を保持して押下時点で変換する。
         self._person = None              # 直近 PersonStatus
         self._pins = _load_pins(self._pins_path)
+        # WS-9AL(2026-09-11): 現在の VENUE 地図の生存世代（slam_control の
+        # /map_session/status から）。ピンを保存するたび pins.yaml へ書き込み、
+        # /onsite/pins にも乗せる。値が届く前（起動直後）は空文字のまま
+        # （その間に保存されたピンは「不明」扱いになり、後で slam_control 側の
+        # 突き合わせが安全側＝不一致として扱う）。
+        self._map_instance_id = ''
 
         self._tf_buffer = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
@@ -153,6 +161,10 @@ class PinRegistrar(Node):
         # 未受信のときはチェックをスキップ（fail-open）。
         self.create_subscription(OccupancyGrid, '/map',
                                  self._on_static_map, pins_qos, callback_group=sub_cbg)
+        # WS-9AL: slam_control が publish する VENUE 地図の生存世代。
+        self.create_subscription(MapSessionStatus, '/map_session/status',
+                                 self._on_map_session_status, pins_qos,
+                                 callback_group=sub_cbg)
 
         # ── Publishers ──────────────────────────────────────
         self._pub_event = self.create_publisher(
@@ -284,6 +296,7 @@ class PinRegistrar(Node):
         pl.header.stamp = self.get_clock().now().to_msg()
         for p in self._pins:
             pl.pins.append(self._pin_to_msg(p))
+        pl.map_instance_id = self._map_instance_id
         self._pub_pins.publish(pl)
 
     # ── /system/effect 受信 ───────────────────────────────
@@ -321,7 +334,7 @@ class PinRegistrar(Node):
             self._kind, x1, y1, float(self._yaw), self._pins)
         self._pins.append(new_pin)
         pid = new_pin['id']
-        _dump_pins(self._pins_path, self._pins)
+        _dump_pins(self._pins_path, self._pins, self._map_instance_id)
         self._publish_pins()
         self.get_logger().info(
             f'place_pin: ピン登録 {pid} (kind={self._kind}, '
@@ -338,6 +351,18 @@ class PinRegistrar(Node):
     # ── /map 受信 ──────────────────────────────────────────
     def _on_static_map(self, msg: OccupancyGrid):
         self._static_map = msg
+
+    # ── WS-9AL: /map_session/status 受信 ──────────────────
+    def _on_map_session_status(self, msg: MapSessionStatus):
+        if msg.slot != 'VENUE':
+            return
+        if msg.instance_id == self._map_instance_id:
+            return
+        self._map_instance_id = msg.instance_id
+        # 起動直後は値が届く前に一度 '' で publish 済みなので、判明ししだい
+        # /onsite/pins を出し直す（pins.yaml 自体は次にピンが変わるまで
+        # 書き換えない。既存ピンは元々どの世代のものか変わらないため）。
+        self._publish_pins()
 
     # ── WS-9AB/9AC: 壁近接チェック ────────────────────────
     def _check_clearance(self, x, y):
@@ -600,14 +625,14 @@ class PinRegistrar(Node):
             if p.get('id') == request.id:
                 if request.is_delete:
                     self._pins.remove(p)
-                    _dump_pins(self._pins_path, self._pins)
+                    _dump_pins(self._pins_path, self._pins, self._map_instance_id)
                     self._publish_pins()
                     response.success = True
                     response.message = f'ピン {request.id} を削除しました'
                     return response
                 # 改名
                 p['name'] = request.new_name
-                _dump_pins(self._pins_path, self._pins)
+                _dump_pins(self._pins_path, self._pins, self._map_instance_id)
                 self._publish_pins()
                 response.success = True
                 response.message = f'ピン {request.id} を改名しました'
@@ -625,7 +650,7 @@ class PinRegistrar(Node):
         """
         n = len(self._pins)
         self._pins = []
-        _dump_pins(self._pins_path, self._pins)
+        _dump_pins(self._pins_path, self._pins, self._map_instance_id)
         self._publish_pins()
         self._clear_pin_warning()
         response.success = True

@@ -301,10 +301,10 @@ def derive_limits(screens, now_ms, p):
 | **`ParamsStatus.msg`** | `Header header` / `uint16 placeholder_count` / `string[] placeholder_names` / `string digest` | ヘッダのバッジ源（§7） |
 | **`PersonTargets.msg`** | `Header header` / `geometry_msgs/Point[] candidates` / `int32 selected_index` / `float32 confidence` / `bool is_lost` / `string lost_reason` | `PersonStatus` ＋候補一覧を 1 本に統合 |
 | **`Pin.msg`** | `string id` / `string name` / `string kind`（`HOME`/`PANEL`） / `geometry_msgs/Pose pose` / `builtin_interfaces/Time registered_at` | 待機場所ピンと配電盤ピン |
-| **`PinList.msg`** | `Header header` / `Pin[] pins` | transient_local |
+| **`PinList.msg`** | `Header header` / `Pin[] pins` / `string map_instance_id`（`MapSessionStatus.instance_id` と同じ意味。ピン登録時点の地図の生存世代。`WS-9AL` で追加） | transient_local |
 | **`RouteInfo.msg`** | `string id` / `string name` / `uint32 generation` / `float32 length_m` / `uint32 point_count` / `float32 start_yaw` / `builtin_interfaces/Time recorded_at` | 教示経路のメタ |
 | **`RouteStatus.msg`** | `Header header` / `string state` / `RouteInfo current` / `float32 recorded_m` / `float32 elapsed_sec` / `uint32 points` / `int32 target_index`（再生中の pure-pursuit 目標点の添字。記録中・未走行は -1。`demo-teach-replay` で追加） / `bool saved`（記録側のみ。`finalize_route_file` 成功時だけ true。FSM の `SAVED` とは無関係。WS-9K-E2 で追加） / `bool arrived`（再生側のみ。経路の終端まで走り切ったときだけ true。`PAUSE` の原因が終端到達かフォルト/ジョグ/停止ボタンかを UI が区別するのに使う。WS-9P で追加） | S-12/S-13/S-14 の表示源 |
-| **`MapSessionStatus.msg`** | `Header header` / `string slot`（`VENUE`/`ROUTE`） / `string session_id` / `string mode`（`UNLOADED`/`MAPPING`/`LOCALIZING`） / `bool dirty` | §6.4 |
+| **`MapSessionStatus.msg`** | `Header header` / `string slot`（`VENUE`/`ROUTE`） / `string session_id` / `string mode`（`UNLOADED`/`MAPPING`/`LOCALIZING`） / `bool dirty` / `string instance_id`（地図の生存世代を表す乱数トークン。まっさらな地図作成を始めるたび新規発行、読み直しに成功したら読み込んだ地図のものを継承。`WS-9AL` で追加） | §6.4 |
 | **`CheckStatus.msg`** | `Header header` / `string item` / `string result`（`OK`/`WARN`/`NG`/`UNKNOWN`） / `string detail` / `string next_screen` | 始業点検 4 項目 |
 | **`CalibStatus.msg`** | `Header header` / `string item` / `string step` / `string result` / `string preview_before` / `string preview_after` / `string detail` | 校正ウィザード |
 | **`PinWarning.msg`** | `bool active` / `string kind` / `float32 nearest_m` / `float32 min_m` / `float32 retreat_x` / `float32 retreat_y` / `float32 retreat_yaw` | `pin_registrar` → WebUI（latched）。登録座標が壁（global costmap の 253 帯）に近すぎるときの警告。`WS-9AB`（2026-09-10）で新設 |

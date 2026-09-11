@@ -107,6 +107,7 @@ import os
 import signal
 import threading
 import time
+import uuid
 
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -120,14 +121,14 @@ from std_srvs.srv import SetBool, Trigger
 from slam_toolbox.srv import (DeserializePoseGraph, SaveMap,
                               SerializePoseGraph)
 
-from th_system_msgs.msg import PinList, RobotMode, StateEffect
+from th_system_msgs.msg import MapSessionStatus, PinList, RobotMode, StateEffect
 from th_system_msgs.srv import OpenMapSession
 
 from th_config_manager.service_call import call_and_wait
 from th_config_manager.slam_control_logic import (
-    deserialize_match_type, effective_reload_pose, map_session_base_dir,
-    map_session_filename, map_session_name, open_session_error,
-    slam_restart_complete,
+    deserialize_match_type, effective_reload_pose, map_instance_ids_match,
+    map_session_base_dir, map_session_filename, map_session_name,
+    open_session_error, slam_restart_complete,
 )
 
 
@@ -195,6 +196,14 @@ class SlamControl(Node):
         # WS-9Y: /onsite/pins の HOME ピン姿勢。VENUE reload で呼び出し側が
         # 初期姿勢を指定してこなかったときのフォールバックに使う（effective_reload_pose）。
         self._home_pose = None
+        # WS-9AL(2026-09-11): VENUE 地図の「生存世代」。まっさらな地図作成を
+        # 始めるたび新規発行し、読み直しに成功したら読み込んだ地図のものを
+        # 継承する。pin_registrar 側の同名フィールド（PinList.map_instance_id）
+        # と突き合わせて、bringup 再起動をまたいだピンと地図の取り違えを検知する
+        # （実機事故: map.data は古い時刻、pins.yaml はそれより後の時刻に更新
+        # されていて、地図と HOME ピンが一致しないまま LOCALIZE_AT_POSE していた）。
+        self._instance_id = self._new_instance_id()
+        self._pins_map_instance_id = ''   # 直近の /onsite/pins が持つ値
         # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
         # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
         self._slam_ready = None
@@ -252,6 +261,11 @@ class SlamControl(Node):
         # 状態が分かるようにするため）
         self._pub_last_result = self.create_publisher(
             String, '/slam_control/last_result', status_qos)
+        # WS-9AL: VENUE 地図の生存世代（instance_id）。pin_registrar が購読し、
+        # ピン保存のたび pins.yaml へ書き込む（DetailedDesign-names.md §6.4 に
+        # 元から予約されていたトピック）。
+        self._pub_venue_status = self.create_publisher(
+            MapSessionStatus, '/map_session/status', status_qos)
 
         self.create_service(
             Trigger, '/slam_control/toggle_mapping', self._cb_toggle,
@@ -292,6 +306,8 @@ class SlamControl(Node):
                 home = (float(pos.x), float(pos.y), _yaw_from_quat(p.pose.orientation))
                 break
         self._home_pose = home
+        # WS-9AL: ピンが最後に保存された時点の地図の生存世代。
+        self._pins_map_instance_id = getattr(msg, 'map_instance_id', '') or ''
 
     def _mode_allows_change(self) -> bool:
         return self._mode in (RobotMode.IDLE, RobotMode.MANUAL)
@@ -309,6 +325,7 @@ class SlamControl(Node):
 
     def _publish_timer_cb(self):
         self._pub_active.publish(Bool(data=self._mapping_active))
+        self._publish_venue_status()
         self._check_slam_restart()
 
     def _check_slam_restart(self):
@@ -339,6 +356,12 @@ class SlamControl(Node):
             return
 
         self.get_logger().warn('slam_toolbox の再起動を検知しました。状態を再適用します')
+        # WS-9AL: reload 経由でない再起動（クラッシュ復帰・地図破棄）はまっさらな
+        # 地図作成を始めるので、生存世代を切り替える。reload 経由（_reload_in_progress
+        # で上のガードに掛かる）はここに来ない ─ _handle_map_reload の成功後に
+        # 読み込んだ地図の instance_id を継承する側で別途扱う。
+        self._instance_id = self._new_instance_id()
+        self._publish_venue_status()
         if not self._lock.acquire(blocking=False):
             self._slam_ready = was_ready   # 次周期でやり直す
             return
@@ -476,6 +499,40 @@ class SlamControl(Node):
                     ' 変わっていない)。slam_toolbox のログを確認してください')
         return None
 
+    # ── WS-9AL: VENUE 地図の生存世代（instance_id）────────────
+    def _new_instance_id(self) -> str:
+        return uuid.uuid4().hex[:12]
+
+    def _venue_instance_id_path(self, base: str) -> str:
+        return base + '.instance_id'
+
+    def _read_venue_instance_id(self, base: str) -> str:
+        """保存済み地図に紐づく instance_id を読む（無ければ空文字。instance_id
+        が付く前に保存された古い地図はここが空になり、map_instance_ids_match が
+        安全側に倒れて False を返す）。"""
+        try:
+            with open(self._venue_instance_id_path(base), 'r', encoding='utf-8') as f:
+                return f.read().strip()
+        except OSError:
+            return ''
+
+    def _write_venue_instance_id(self, base: str, instance_id: str) -> None:
+        try:
+            with open(self._venue_instance_id_path(base), 'w', encoding='utf-8') as f:
+                f.write(instance_id)
+        except OSError as e:
+            self.get_logger().warn(f'instance_id の書き出しに失敗: {e}')
+
+    def _publish_venue_status(self) -> None:
+        msg = MapSessionStatus()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.slot = 'VENUE'
+        msg.session_id = 'venue'
+        msg.mode = 'MAPPING' if self._mapping_active else 'LOCALIZING'
+        msg.dirty = False
+        msg.instance_id = self._instance_id
+        self._pub_venue_status.publish(msg)
+
     # ── 地図の保存・再読込 (WS-9L /map_session/open) ─────────
     def _map_session_base(self, slot: str, session_id: str) -> str:
         """slot に応じた保存/読込先ベース名（拡張子なし）を作る。
@@ -505,14 +562,34 @@ class SlamControl(Node):
             # _handle_map_reload には手を入れない（その中身の順序は AST テストで
             # 固定されているため）。
             if request.slot == 'VENUE':
+                # WS-9AL: 読み込む地図の instance_id と、ピンが最後に保存された
+                # ときの instance_id が違う（＝ bringup 再起動を挟んで地図を
+                # 保存し直さないまま座標系が変わった）なら、HOME ピンの姿勢を
+                # 信用しない。読み直し自体は失敗にせず、従来どおり
+                # START_AT_FIRST_NODE に倒すだけ（宣言時の既存のズレ警告が
+                # 最終防波堤として残る）。
+                map_iid = self._read_venue_instance_id(base)
+                pins_match = map_instance_ids_match(map_iid, self._pins_map_instance_id)
                 has, x, y, yaw = effective_reload_pose(
                     request.has_initial_pose, request.initial_x, request.initial_y,
-                    request.initial_yaw, self._home_pose)
+                    request.initial_yaw,
+                    self._home_pose if pins_match else None)
                 request.has_initial_pose = has
                 request.initial_x = x
                 request.initial_y = y
                 request.initial_yaw = yaw
-            # reload は ROUTE / VENUE とも同一（respawn→deserialize）。
+                result = self._handle_map_reload(response, base, request)
+                if result.success:
+                    if map_iid:
+                        self._instance_id = map_iid
+                    self._publish_venue_status()
+                    if not pins_match and self._home_pose is not None:
+                        result.message += (
+                            '（注意: ピンの登録時と保存済み地図が一致していない'
+                            '可能性があります。自己位置がズレていないか'
+                            '確認してください）')
+                return result
+            # reload は ROUTE のみここに到達する（VENUE は上で return 済み）。
             return self._handle_map_reload(response, base, request)
 
     def _handle_venue_commit(self, response):
@@ -539,7 +616,12 @@ class SlamControl(Node):
         デッドロックする）。
         """
         base = os.path.join(self._venue_map_dir, 'map')
-        return self._serialize(base)
+        err = self._serialize(base)
+        if err is None:
+            # WS-9AL: 保存できた地図に、今の生存世代を紐づける。
+            self._write_venue_instance_id(base, self._instance_id)
+            self._publish_venue_status()
+        return err
 
     def _on_effect(self, msg: StateEffect):
         if msg.dest != 'map_session':
