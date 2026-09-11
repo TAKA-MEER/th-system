@@ -893,6 +893,23 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
 
   更新: `venue_navigator.py`、`docs/使い方.md`（試験準備の該当手順に注記）。
 
+- **2026-09-11 — 「1 ボタンで戻る」が途中で止まったまま動かない（WS-9AH）**:
+  WS-9AG で見送った「経路が見つからないと自動では抜けられない」が、その日の
+  うちに実機で実際に発生した（`RETURN` に入ったまま無反応。手動で
+  `compute_path_to_pose` を叩くと成功したので、一度失敗した後に再試行する
+  仕組みが無いだけだと確認できた）。
+
+  **変更**: `venue_navigator._blocked_recheck`（2s 周期の costmap クリア＋
+  再計算ループ。BLOCKED 状態を持つ 3 モードに元々あったもの）の対象を
+  `_is_nav_state()` に揃え、`PREP/RETURN` にも効かせる。`PREP` に `BLOCKED`
+  という FSM 状態は今回も足していない ── `evt.blocked`/`evt.unblocked` は
+  `not_allowed` で拒否されるだけの無害な no-op のままだが、再試行ループ自体は
+  `venue_navigator` 内部の `_blocked` フラグだけで完結するので、画面の状態表示を
+  増やさずに機能だけ追加できる。「中断」導線（WS-9AB 相当）は今回も見送り、
+  ジョグでの手動脱出のみ残る。
+
+  更新: `venue_navigator.py`。
+
 ---
 
 ## 3. 両設計書が扱っていない事項

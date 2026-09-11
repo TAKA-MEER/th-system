@@ -567,7 +567,13 @@ class VenueNavigator(Node):
 
         if not self._blocked:
             return
-        if self._mode not in self._NAV_MODES:
+        # WS-9AH(2026-09-11): PREP/RETURN も対象（_is_nav_state()）。PREP には
+        # BLOCKED という FSM 状態が無いので evt.blocked/evt.unblocked は
+        # not_allowed で拒否されるだけの無害な no-op になるが、再探索ループ
+        # 自体はこのノード内部の _blocked フラグだけで完結するので機能する。
+        # 実機で「途中で止まったまま動かない」（WS-9AG の意図的な未対応部分）
+        # を確認したため、既存 3 モードと同じ自動再探索を PREP にも効かせる。
+        if not self._is_nav_state():
             return
         goal = self._current_goal()
         if goal is None:
