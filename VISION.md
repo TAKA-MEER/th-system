@@ -802,6 +802,43 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
   `DetailedDesign-state.md` §8.3、`transitions.yaml` / `mode_entry.yaml` /
   `S21Test.jsx` / `docs/使い方.md`。
 
+- **2026-09-11 — 何もない場所がコストマップで赤くなる「幽霊マーク」（WS-9AC）**:
+  実機で WebUI のコストマップ表示に、地図上は白（未探索でも障害物でもない）で
+  現在の点群も無い場所が広く赤く（INSCRIBED_INFLATED〜LETHAL）残る症状を再現。
+  `global_costmap` は `rolling_window:false`・`raytrace_max_range:6.0` で、
+  一度でもマークされたセルはその後 6m 以内・視線内でスキャンし直さない限り
+  一生消えない。地図作成（PREP/MAPPING）中に追従で人が歩き回る／機体を連れ回す
+  ことで写り込んだ一時的な障害物が、そのまま永久マークとして焼き付く。
+  `ClearEntireCostmap` を叩くと実際に消えることを実機で確認した。
+
+  **影響が 2 箇所**:
+  1. 試験当日の盤前移動（`PANEL_NAV`）で、何もない場所の幽霊マークが原因で
+     経路が引けず `BLOCKED` になる（WS-9AB で保留していた元々の謎コスト問題）。
+  2. `pin_registrar` の壁近接チェック（WS-9AB）が `/global_costmap/costmap` を
+     見ているため、ROBOT_POSE 登録時に**操作者自身の足**が近傍のレーザー反射で
+     一時的にマークされ、壁に近くもないのに誤警告が出得る。地図作成中の
+     幽霊マークも同様に誤警告の種になる。「壁までの距離」はそもそも静的な
+     地図形状の問題であり、動く障害物を拾う costmap ではなく **`/map`
+     （slam_toolbox の占有格子。膨張なし）で測るのが筋**。
+
+  **変更**:
+  - `venue_navigator`: `_start_nav()`（ナビ連鎖の起点）で `compute_path_to_pose`
+    の前に必ず 1 回 `ClearEntireCostmap`（global→local）を挟む。`_blocked_recheck`
+    の再探索クリアは BLOCKED 突入ごとに 1 回だけに絞る（毎周期クリアすると、
+    今まさに目の前にある本物の障害物マークまで消してしまい、クリア直後の
+    compute がすり抜けて `FollowPath` 側で ABORT する往復を招くため）。
+  - `pin_registrar`: 壁近接チェックの購読先を `/global_costmap/costmap` から
+    `/map` へ切り替え。膨張が無くなった分、しきい値 `pin_min_clearance_m` は
+    VISION の「壁から 0.45m 以上」に合わせて `0.35`→`0.45` に、
+    `pin_lethal_threshold` は占有格子の一般的な閾値 `65` に変更（`99` は
+    costmap 側の INSCRIBED_INFLATED 用の値で `/map` には意味が無い）。
+    「離して登録」（`retreat`）は退避後の座標でも再チェックし、まだ壁に
+    近ければ登録せず警告を出し直す（従来は無条件に登録していた）。
+
+  更新: `nav2_params.yaml` は変更なし（クリア呼び出し側だけの変更）、
+  `venue_navigator.py` / `pin_registrar.py` / `pin_clearance_core.py`、
+  `docs/使い方.md`（「何もない場所が赤い」の切り分け行）。
+
 ---
 
 ## 3. 両設計書が扱っていない事項

@@ -104,6 +104,11 @@ class VenueNavigator(Node):
         # バックが永久に来ず _recheck_in_flight が 10s 張り付くため、2s で
         # クリアを諦めて再計算へ進む。
         self._clear_deadline = 0.0
+        # WS-9AC(2026-09-11): 幽霊マーク一掃は BLOCKED 突入ごとに 1 回だけ。
+        # 毎周期クリアすると今まさに目の前にある本物の障害物マークまで消して
+        # しまい、クリア直後の compute がすり抜けて FollowPath 側で ABORT する
+        # 往復を招く（VISION.md WS-9AC）。
+        self._cleared_this_episode = False
 
         # ── QoS ─────────────────────────────────────────────
         effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
@@ -197,6 +202,8 @@ class VenueNavigator(Node):
         ならず、経路計算失敗（no_server / not_accepted / compute_failed / no_goal）
         では立たなかったため _blocked_recheck の `if not self._blocked` で
         再試行が武装解除されていた（2026-09-10 実機）。"""
+        if not self._blocked:
+            self._cleared_this_episode = False
         self._blocked = True
         self._nav_chain_active = False
         self._recheck_in_flight = False
@@ -287,6 +294,7 @@ class VenueNavigator(Node):
         self._nav_chain_active = False
         self._recheck_in_flight = False
         self._clear_deadline = 0.0
+        self._cleared_this_episode = False
         self._arrival_pending = False
 
     # ── /system/effect 受信 ───────────────────────────────
@@ -311,6 +319,7 @@ class VenueNavigator(Node):
         self._nav_chain_active = False
         self._recheck_in_flight = False
         self._clear_deadline = 0.0
+        self._cleared_this_episode = False
         # _path は保持（resume 用）
 
     def _resume_follow_path(self):
@@ -378,7 +387,14 @@ class VenueNavigator(Node):
             self.get_logger().warn('NAV: 行き先が未設定。evt.blocked を出して待つ')
             self._go_blocked(json.dumps({'reason': 'no_goal'}))
             return
-        self._compute_and_follow(goal)
+        # WS-9AC(2026-09-11): 地図作成中に付いた幽霊障害物マーク（global costmap は
+        # rolling_window:false・raytrace_max_range:6.0 で視線外/6m 超が消えない。
+        # VISION.md WS-9AC）を初回計算の前に一掃する。_nav_chain_active を先に
+        # 立てて、クリアが in-flight の間に _on_state/_align_timer から
+        # _start_nav が二重に呼ばれるのを防ぐ。
+        self._nav_chain_active = True
+        self._nav_chain_started_at = self._now()
+        self._clear_costmaps_then(lambda: self._compute_and_follow(goal))
 
     def _compute_and_follow(self, goal):
         # 非ブロッキング判定。旧版は wait_for_server(timeout=5) をコールバック内で
@@ -550,10 +566,19 @@ class VenueNavigator(Node):
 
         if self._nav_chain_active or self._recheck_in_flight:
             return
-        self.get_logger().info('blocked 再探索: costmap クリア → compute_path_to_pose')
         self._recheck_in_flight = True
         self._recheck_started_at = now
-        self._clear_costmaps_then(self._recheck_compute)
+        if self._cleared_this_episode:
+            # WS-9AC(2026-09-11): 幽霊マーク一掃はこの BLOCKED episode で既に
+            # 済んでいる。毎周期クリアすると今まさにある本物の障害物マークも
+            # 消してしまい、クリア直後の compute がすり抜けて FollowPath 側で
+            # ABORT する往復を招くため、以降は素の再計算だけ行う。
+            self.get_logger().info('blocked 再探索: compute_path_to_pose（クリア済み）')
+            self._recheck_compute()
+        else:
+            self._cleared_this_episode = True
+            self.get_logger().info('blocked 再探索: costmap クリア → compute_path_to_pose')
+            self._clear_costmaps_then(self._recheck_compute)
 
     def _clear_costmaps_then(self, done_cb):
         """global → local の順に ClearEntireCostmap を非同期で叩き、完了で done_cb。

@@ -83,11 +83,17 @@ class PinRegistrar(Node):
         self.declare_parameter('min_confidence', 0.50)
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
-        # WS-9AB: 登録座標が壁（＝global costmap の 253 帯）に近すぎると Nav2 が
-        # 経路を引けず PANEL_NAV/BLOCKED に張り付く。登録時に距離を測って警告する。
-        self.declare_parameter('pin_min_clearance_m', 0.35)
+        # WS-9AB: 登録座標が壁に近すぎると Nav2 が経路を引けず PANEL_NAV/BLOCKED
+        # に張り付く。登録時に距離を測って警告する。
+        # WS-9AC(2026-09-11): 測る先は global costmap ではなく /map（slam_toolbox
+        # の占有格子・膨張なし）。costmap は動く障害物も乗る＝ROBOT_POSE 登録時に
+        # 操作者自身の足が近傍にマークされて誤警告になり得る上、地図作成中に
+        # 付いた幽霊マーク（VISION.md WS-9AC）も拾ってしまう。「壁までの距離」は
+        # 静的な地図形状の問題なので /map を見るのが筋（VISION.md「壁から
+        # 0.45m 以上」にしきい値もそのまま合わせられる）。
+        self.declare_parameter('pin_min_clearance_m', 0.45)
         self.declare_parameter('pin_retreat_m', 0.30)
-        self.declare_parameter('pin_lethal_threshold', 99)  # OccupancyGrid 値。253(INSCRIBED)→99
+        self.declare_parameter('pin_lethal_threshold', 65)  # /map の占有値。一般的な occupied しきい値
         self.declare_parameter('pin_clearance_search_r_m', 0.8)
 
         venue_dir = self.get_parameter('venue_dir').value
@@ -111,7 +117,7 @@ class PinRegistrar(Node):
         self._kind = ""                  # "HOME" / "PANEL"
         self._p1 = None                  # (map_x, map_y)
         self._yaw = None
-        self._costmap = None             # 直近の /global_costmap/costmap
+        self._static_map = None          # 直近の /map（壁近接チェック用。WS-9AC）
         # WS-9AB: 壁近接警告を出して操作者の判断待ちのピン。
         # {'kind', 'x', 'y', 'yaw', 'via': 'two_point'|'robot_pose'}
         self._pending_warn = None
@@ -142,11 +148,11 @@ class PinRegistrar(Node):
         # TRANSIENT_LOCAL で購読すると VOLATILE publisher と非互換になり 1 通も来ない。
         self.create_subscription(PersonStatus, '/person/status', self._on_person,
                                  10, callback_group=sub_cbg)
-        # WS-9AB: Nav2 の global costmap（transient_local）。壁近接チェック用。
-        # nav2_params.yaml で always_send_full_costmap:true にしてあるので 1Hz で
-        # 最新が届く。未受信のときはチェックをスキップ（fail-open）。
-        self.create_subscription(OccupancyGrid, '/global_costmap/costmap',
-                                 self._on_costmap, pins_qos, callback_group=sub_cbg)
+        # WS-9AC(2026-09-11): slam_toolbox の /map（transient_local）。壁近接
+        # チェック用。global costmap と違って膨張も動く障害物マークも乗らない。
+        # 未受信のときはチェックをスキップ（fail-open）。
+        self.create_subscription(OccupancyGrid, '/map',
+                                 self._on_static_map, pins_qos, callback_group=sub_cbg)
 
         # ── Publishers ──────────────────────────────────────
         self._pub_event = self.create_publisher(
@@ -329,22 +335,22 @@ class PinRegistrar(Node):
     def _on_person(self, msg: PersonStatus):
         self._person = msg
 
-    # ── /global_costmap/costmap 受信 ──────────────────────
-    def _on_costmap(self, msg: OccupancyGrid):
-        self._costmap = msg
+    # ── /map 受信 ──────────────────────────────────────────
+    def _on_static_map(self, msg: OccupancyGrid):
+        self._static_map = msg
 
-    # ── WS-9AB: 壁近接チェック ────────────────────────────
+    # ── WS-9AB/9AC: 壁近接チェック ────────────────────────
     def _check_clearance(self, x, y):
         """(x, y)[map] の壁からの距離[m] と判定を返す。
 
-        costmap 未受信 → (inf, 'ok')（計測不能で登録を止めない＝fail-open）。
+        /map 未受信 → (inf, 'ok')（計測不能で登録を止めない＝fail-open）。
         """
-        cm = self._costmap
-        if cm is None or not cm.data:
+        m = self._static_map
+        if m is None or not m.data:
             return float('inf'), 'ok'
-        info = cm.info
+        info = m.info
         d = nearest_lethal_distance(
-            list(cm.data), info.width, info.height, info.resolution,
+            list(m.data), info.width, info.height, info.resolution,
             info.origin.position.x, info.origin.position.y,
             x, y, self._pin_search_r_m, self._pin_lethal_threshold)
         return d, clearance_verdict(d, self._pin_min_clearance_m)
@@ -402,6 +408,19 @@ class PinRegistrar(Node):
 
         if action == 'retreat':
             x, y = retreat_pose(pw['x'], pw['y'], pw['yaw'], self._pin_retreat_m)
+            # WS-9AC(2026-09-11): 退避後も無条件に登録していた。狭い場所では
+            # 1 回の退避（既定 0.30m）でもまだ壁に近いことがあるので、退避後の
+            # 座標を新しい基準にして再チェックする。まだ近ければ登録せず、
+            # 警告を出し直して操作者にもう一度選ばせる。
+            d, verdict = self._check_clearance(x, y)
+            if verdict == 'warn':
+                self._hold_pin_warning(pw['kind'], x, y, pw['yaw'], d, pw['via'])
+                response.success = False
+                response.message = (
+                    f'退避しても壁から {d:.2f}m しか離れません（推奨 '
+                    f'{self._pin_min_clearance_m:.2f}m 以上）。もう一度「離して登録」で'
+                    'さらに退避するか、やめてください')
+                return response
         elif action == 'place':
             x, y = pw['x'], pw['y']
         else:
