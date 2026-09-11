@@ -376,6 +376,10 @@ export const S21_NEXT_SUMMON = '呼び寄せ'
 export const S21_BLOCKED_MSG = '行き先までの経路が見つかりません（止まって再試行中）'
 export const S21_BLOCKED_REROUTE = '再検索'
 export const S21_BLOCKED_ABORT = '中断して待機場所へ'
+// WS-9AD (2026-09-11): SUMMON/POINT（呼び寄せ待受中）以外では対象選択が
+// 効かない（T-SUM-15）。タップしても反応が無いだけだと分からないので、
+// レーダーの代わりにこの案内を出す。
+export const S21_TARGET_NOT_SELECTABLE = '「呼び寄せ」の行き先待受中だけ対象を選べます'
 // brief-onsite-ux-fix UX-6: 画面ローカルの「押せない理由」バッジ。
 // i18n/reasons.js の REJECT_REASONS は th_state（FSM）が返すキーの写しなので、
 // 画面だけで判定できる理由はここに置く（onsiteSteps.js の onsiteReasons() が使う）。

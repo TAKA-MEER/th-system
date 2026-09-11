@@ -64,6 +64,7 @@ import {
   S21_OPEN_VENUE_FAIL, S21_PREP_TITLE, S21_SELECT_HINT, S21_STEP_DEST, S21_STEP_HOME, S21_STEP_MOVE,
   S21_STEP_OPEN, S21_STEP_WORK, S21_SUBTAB_ATPANEL, S21_SUBTAB_DEST,
   S21_SUBTAB_SUMMON, S21_SUMMON_START, S21_SUMMON_TITLE,
+  S21_TARGET_NOT_SELECTABLE,
   S21_WAIT_CANCEL, S21_WAIT_CLEARING, S21_WAIT_DIST, S21_WAIT_TITLE,
   S21_WORKING, S21_WORK_ON, S21_WORK_OFF,
 } from '../i18n/screens.js'
@@ -274,9 +275,9 @@ export default function S21Test({ onExit }) {
     setVenueBusy(false)
   }
 
-  // 呼び寄せ対象（RadarSelect）。SUMMON のときだけ set_target（T-SUM-15）。
+  // 呼び寄せ対象（RadarSelect）。SUMMON/POINT のときだけ送る（T-SUM-15）。
   function handleSelectTarget(index) {
-    if (mode !== 'SUMMON') return
+    if (mode !== 'SUMMON' || stateName !== 'POINT') return
     sendTrigger('ui.select_target', { index })
   }
 
@@ -426,13 +427,22 @@ export default function S21Test({ onExit }) {
 
         {tab === 'target' && (
           <div className="tabpane on">
-            <RadarSelect
-              candidates={personTargets.candidates}
-              selectedIndex={personTargets.selected_index}
-              isLost={personTargets.is_lost}
-              confidence={personTargets.confidence}
-              onSelect={handleSelectTarget}
-            />
+            {mode === 'SUMMON' && stateName === 'POINT' ? (
+              <RadarSelect
+                candidates={personTargets.candidates}
+                selectedIndex={personTargets.selected_index}
+                isLost={personTargets.is_lost}
+                confidence={personTargets.confidence}
+                onSelect={handleSelectTarget}
+              />
+            ) : (
+              // WS-9AD(2026-09-11): T-SUM-15 は SUMMON/POINT でしか ui.select_target
+              // を受理しない。それ以外でもタブは開けてしまい、以前はタップしても
+              // 無反応（拒否が画面に出ない）だった。選べる場面だけレーダーを出す。
+              <div className="note" data-testid="s21-target-unavailable">
+                {S21_TARGET_NOT_SELECTABLE}
+              </div>
+            )}
           </div>
         )}
       </div>

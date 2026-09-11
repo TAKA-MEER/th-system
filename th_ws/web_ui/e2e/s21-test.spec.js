@@ -379,11 +379,14 @@ test('対象選択レーダー: SUMMON のときだけ ui.select_target を送�
   expect(sel.argJson).toMatchObject({ index: 1 })
 })
 
-test('対象選択レーダー: PANEL_NAV では選べない（set_target を送らない）', async ({ page }) => {
+// WS-9AD(2026-09-11): 以前はタブを開くとレーダーが常に出てタップできてしまい、
+// SUMMON/POINT 以外では ui.select_target が黙って拒否される（無反応に見える）
+// だけだった。選べない場面ではレーダー自体を出さず案内文にする。
+test('対象選択レーダー: PANEL_NAV では選べない（レーダーを出さず案内文にする）', async ({ page }) => {
   await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' })
   await page.getByRole('tab', { name: '対象選択' }).click()
-  await expect(page.locator('[data-testid="radar-cand-0"]')).toBeVisible()
-  await page.locator('[data-testid="radar-cand-1"]').click()
+  await expect(page.locator('[data-testid="s21-target-unavailable"]')).toBeVisible()
+  await expect(page.locator('[data-testid="radar-cand-0"]')).not.toBeVisible()
   expect(
     (await triggers(page)).filter((c) => c.trigger === 'ui.select_target'),
     'PANEL_NAV では ui.select_target を出すべきではない',
