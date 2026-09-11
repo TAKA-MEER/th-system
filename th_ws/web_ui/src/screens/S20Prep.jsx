@@ -273,10 +273,17 @@ export default function S20Prep() {
     setWizErr(key ? (REJECT_REASONS[key] ?? key) : null)
   }
 
-  // WS-9AB: 壁近接警告の 3 択。resolve すると pin_registrar が evt.register_ok /
-  // evt.register_rejected を出して FSM が REGISTER を抜け、ウィザードが閉じる。
+  // WS-9AB: 壁近接警告の 3 択。two_point 経由なら resolve で pin_registrar が
+  // evt.register_ok / evt.register_rejected を出して FSM が REGISTER を抜け、
+  // ウィザードが閉じる。robot_pose 経由は FSM を経由しないので、退避してもまだ
+  // 近い場合（WS-9AC）は success:false で警告が再度立つだけ。hereMsg に出す。
   async function handlePinWarnResolve(action) {
-    await resolvePin(action)
+    const res = await resolvePin(action)
+    if (res?.success === false) {
+      setHereMsg({ ok: false, text: res?.message || '' })
+    } else {
+      setHereMsg(null)
+    }
   }
 
   // 1 ボタンで待機場所に戻す（guard: home_pin_exists。無いときは非活性）。
@@ -506,7 +513,7 @@ export default function S20Prep() {
                     type="button"
                     className="btn sm btn-register"
                     data-testid="s20-reg-home"
-                    disabled={disabledAll}
+                    disabled={disabledAll || pinWarn.active}
                     onClick={() => handleRegister('HOME')}
                   >
                     <IconPin />
@@ -516,7 +523,7 @@ export default function S20Prep() {
                     type="button"
                     className="btn sm btn-register"
                     data-testid="s20-reg-panel"
-                    disabled={disabledAll}
+                    disabled={disabledAll || pinWarn.active}
                     onClick={() => handleRegister('PANEL')}
                   >
                     <IconPin />
@@ -528,11 +535,12 @@ export default function S20Prep() {
                     type="button"
                     className="btn sm btn-register"
                     data-testid="s20-reg-home-here"
-                    // isRegister（2 点指示ウィザードが開いている）間は無効化する。
+                    // isRegister（2 点指示ウィザードが開いている）間、および
+                    // pinWarn.active（未解決の壁近接警告がある）間は無効化する。
                     // ROBOT_POSE はバックエンドで _place_pin_effect() を直接呼ぶため、
                     // 2 点指示の受付状態（_accepting/_p1/_yaw）を横から上書きして
                     // ウィザードを壊してしまう（2026-09-09 レビューで確認）。
-                    disabled={disabledAll || isRegister}
+                    disabled={disabledAll || isRegister || pinWarn.active}
                     onClick={() => handleRegisterHere('HOME')}
                   >
                     <IconPin />
@@ -542,7 +550,7 @@ export default function S20Prep() {
                     type="button"
                     className="btn sm btn-register"
                     data-testid="s20-reg-panel-here"
-                    disabled={disabledAll || isRegister}
+                    disabled={disabledAll || isRegister || pinWarn.active}
                     onClick={() => handleRegisterHere('PANEL')}
                   >
                     <IconPin />
@@ -559,7 +567,10 @@ export default function S20Prep() {
                     {hereMsg.text}
                   </div>
                 )}
-                {isRegister && pinWarn.active && (
+                {/* WS-9AC(2026-09-11): isRegister（REGISTER 状態）に限定していると、
+                    ROBOT_POSE 登録（FSM を経由せず MAPPING のまま拒否される）の
+                    警告が絶対に表示できなかった。pinWarn.active だけで出す。 */}
+                {pinWarn.active && (
                   <div className="well" data-testid="s20-pinwarn">
                     <div className="note">
                       {S20_PINWARN_MSG(pinWarn.nearest_m?.toFixed(2),

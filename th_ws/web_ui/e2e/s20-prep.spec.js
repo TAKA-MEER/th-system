@@ -165,15 +165,21 @@ test('WS-9AB: 壁に近すぎる警告で 3 択が出て /onsite/resolve_pin を
   await gotoScreenWithOnsite(page, 'S20', PREP, {
     pins: PINS, targets: TARGETS,
     twoPoint: { accepted: true, reject_reason_key: 'pin_close_to_wall', yaw: 0 },
-    pinWarning: {
-      active: true, kind: 'PANEL', nearest_m: 0.22, min_m: 0.35,
-      retreat_x: 3.0, retreat_y: -3.3, retreat_yaw: -1.8,
-    },
     resolvePin: { success: true, message: 'ok' },
   })
   await page.locator('#s20').waitFor()
+  // pinWarning は未着火（active:false）の状態で登録を開始できることを確認する
+  // （WS-9AC: 未解決の警告があるときだけ入口ボタンを無効化するので、開始時点では
+  // 押せて良い）。
   await page.locator('[data-testid="s20-reg-panel"]').click()
   await setTestState(page, { state: 'REGISTER' })
+  // ② 押下（Step2）相当で /onsite/pin_warning が立つのを模す。
+  await page.evaluate(() => {
+    window.__thSetTestPinWarning({
+      active: true, kind: 'PANEL', nearest_m: 0.22, min_m: 0.35,
+      retreat_x: 3.0, retreat_y: -3.3, retreat_yaw: -1.8,
+    })
+  })
   // 警告ダイアログが出てウィザードは隠れる
   await expect(page.locator('[data-testid="s20-pinwarn"]')).toBeVisible()
   await expect(page.locator('[data-testid="s20-wizard"]')).not.toBeVisible()
@@ -277,6 +283,33 @@ test('REG-2: 機体姿勢で登録（PANEL）と失敗時の日本語表示', as
   await expect(msg).toBeVisible()
   await expect(msg).toHaveClass(/(^|\s)err(\s|$)/)
   await expect(msg).toHaveText('自己位置（地図座標）が取得できません')
+})
+
+// WS-9AC(2026-09-11): ROBOT_POSE は FSM を経由しないので state は MAPPING の
+// まま（REGISTER にならない）。以前は 3 択ダイアログが isRegister（state===
+// REGISTER）でも囲っていたため、この経路では絶対に表示できなかった。
+test('WS-9AC: いまの姿勢で登録が壁に近いと state=MAPPING のままでも 3 択が出る', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS })
+  await page.locator('#s20').waitFor()
+
+  await page.evaluate(() => {
+    window.__thTestRegisterPinHere = {
+      success: false,
+      message: '壁から 0.28m しかありません。このまま登録 / 離して登録 / やめる を選んでください',
+    }
+  })
+  await page.locator('[data-testid="s20-reg-panel-here"]').click()
+  // MAPPING のまま。/onsite/pin_warning の topic 更新を模す。
+  await page.evaluate(() => {
+    window.__thSetTestPinWarning({
+      active: true, kind: 'PANEL', nearest_m: 0.28, min_m: 0.45,
+      retreat_x: 3.0, retreat_y: -3.3, retreat_yaw: -1.8,
+    })
+  })
+  await expect(page.locator('[data-testid="s20-pinwarn"]')).toBeVisible()
+  // 未解決の警告が出ている間は登録系ボタンを無効化する。
+  await expect(page.locator('[data-testid="s20-reg-panel-here"]')).toBeDisabled()
+  await expect(page.locator('[data-testid="s20-reg-home"]')).toBeDisabled()
 })
 
 // 2026-09-09 レビューで確認: ROBOT_POSE は _place_pin_effect() を直接呼ぶため、
