@@ -100,6 +100,11 @@ class VenueNavigator(Node):
         self._path = None          # compute_path_to_pose のキャッシュ (nav_msgs/Path)
         self._arrived_latched = False
         self._align_latched = False
+        # WS-9AI(2026-09-11): HOME_NAV/PREP には ALIGN という FSM 状態を足さず、
+        # venue_navigator 内部だけで到着後の向き合わせを挟む（evt.arrived を
+        # 出す前に align_cmd_wz でその場旋回する）。PANEL_NAV/SUMMON は
+        # 既存の ALIGN 状態を使うのでこのフラグの対象外。
+        self._final_aligning = False
         self._follow_goal_handle = None
         self._cancel_requested = False   # 自分が cancel したかを区別する
         self._blocked = False            # BLOCKED 相当の内部状態
@@ -312,6 +317,7 @@ class VenueNavigator(Node):
         self._path = None
         self._arrived_latched = False
         self._align_latched = False
+        self._final_aligning = False
         self._blocked = False
         self._cancel_requested = False
         self._nav_chain_active = False
@@ -343,6 +349,7 @@ class VenueNavigator(Node):
         self._recheck_in_flight = False
         self._clear_deadline = 0.0
         self._cleared_this_episode = False
+        self._final_aligning = False
         # _path は保持（resume 用）
 
     def _resume_follow_path(self):
@@ -507,7 +514,7 @@ class VenueNavigator(Node):
             return  # 自分で cancel したので evt を出さない
         # result SUCCEEDED → arrived
         if status == 4:  # GoalStatus.STATUS_SUCCEEDED
-            self._on_arrived()
+            self._arrive_or_align()
             return
         # ABORTED / CANCELED（自分でない cancel）→ blocked
         self.get_logger().warn(f'follow_path 終了 status={status} → evt.blocked')
@@ -543,6 +550,59 @@ class VenueNavigator(Node):
                 pass
             self._follow_goal_handle = None
         self._emit_event('evt.arrived')
+
+    def _needs_final_align(self, mode=None):
+        """WS-9AI(2026-09-11): PANEL_NAV/SUMMON は ALIGN という FSM 状態で
+        向き合わせ済みなので対象外。HOME_NAV/PREP は無いので、ここで扱う。"""
+        mode = self._mode if mode is None else mode
+        return mode in ('HOME_NAV', 'PREP')
+
+    def _arrive_or_align(self):
+        """xy 到着（FollowPath 結果 or 到着フォールバックの両方から呼ぶ）を
+        受けて、ALIGN を持たないモードなら evt.arrived の前にその場旋回を
+        挟む（実機で「待機場所到着時に向きを直さない。当日の地図再読み込みが
+        ピンの登録姿勢＝向きも前提にしているのでズレる」と判明。VISION.md
+        WS-9AI）。ALIGN を持つモードは今までどおり素通しする。"""
+        if not self._needs_final_align():
+            self._on_arrived()
+            return
+        if self._final_aligning or self._arrived_latched:
+            return
+        self._final_aligning = True
+        self._align_latched = False
+        if self._follow_goal_handle is not None:
+            self._cancel_requested = True
+            try:
+                self._follow_goal_handle.cancel_goal_async()
+            except Exception:
+                pass
+            self._follow_goal_handle = None
+        self.get_logger().info('到着（xy tol 内）→ 向きを合わせてから evt.arrived')
+
+    def _run_final_align(self):
+        """_arrive_or_align() が立てた _final_aligning を実際に収束させる
+        （ALIGN 状態の align_cmd_wz ループと同じ純関数を使い回す）。20Hz
+        タイマから呼ぶ想定（self._robot は呼び出し側で更新済みのこと）。"""
+        goal = self._current_goal()
+        if goal is None or self._robot is None:
+            # ゴールが消えた等の異常系。向き合わせは諦めてそのまま到着扱い。
+            self._final_aligning = False
+            self._on_arrived()
+            return
+        current_yaw = self._robot[2]
+        target_yaw = float(goal['yaw'])
+        wz, done = align_cmd_wz(current_yaw, target_yaw, self._params)
+        if done:
+            stop = Twist()
+            self._pub_cmd_behavior.publish(stop)
+            self._final_aligning = False
+            self.get_logger().info('向き合わせ完了 → evt.arrived')
+            self._on_arrived()
+            return
+        twist = Twist()
+        twist.linear.x = 0.0
+        twist.angular.z = float(wz)
+        self._pub_cmd_behavior.publish(twist)
 
     # ── blocked 再探索タイマ ──────────────────────────────
     def _blocked_recheck(self):
@@ -656,12 +716,17 @@ class VenueNavigator(Node):
 
         # NAV 相当中の到着フォールバック（follow_path の result が届かなかった場合の保険）
         if self._is_nav_state() and not self._arrived_latched:
+            # WS-9AI: ALIGN を持たないモード（HOME_NAV/PREP）の向き合わせは
+            # ここで完結させる（_arrive_or_align() が立てたフラグを収束させる）。
+            if self._final_aligning:
+                self._run_final_align()
+                return
             goal = self._current_goal()
             if self._robot is not None and goal is not None:
                 if arrived(self._robot[0], self._robot[1],
                            goal['x'], goal['y'], self._params):
-                    self.get_logger().info('NAV 到着（xy tol 内）→ evt.arrived')
-                    self._on_arrived()
+                    self.get_logger().info('NAV 到着（xy tol 内）')
+                    self._arrive_or_align()
                 elif self._arrival_pending:
                     # BLOCKED から「到着圏内」で NAV に戻したのに実際は圏外だった
                     # （自己位置ジャンプ等）→ pending を解いて通常の NAV を起動する。
@@ -672,7 +737,8 @@ class VenueNavigator(Node):
                         self._start_nav()
             return
 
-        # HOME_NAV / PREP には ALIGN 状態が無い。向き合わせは仕様どおり行わない
+        # HOME_NAV / PREP には ALIGN という FSM 状態が無い（向き合わせ自体は
+        # 上の _final_aligning 経路で行う。WS-9AI）。
         # （逃げの保険。上述の NAV 分岐で既に return しているため通常ここには来ない）。
         if self._mode in ('HOME_NAV', 'PREP'):
             return
