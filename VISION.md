@@ -860,7 +860,38 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
   `_place_pin_effect()` だけがやっていた）`_accepting` を明示的に閉じる。
 
   更新: `transitions.yaml`（`SM-3.1.2-113`〜`-115`）、`guards.py`、
-  `pin_registrar.py`、`Spec-modes.md` §3.1.2、`docs/使い方.md`。
+  `pin_registrar.py`、`Spec-modes.md` §3.1.2。操作手順・文言は変えていない
+  （元々「呼び寄せ」はこの手順で動く前提だったので `docs/使い方.md` はそのまま）。
+
+- **2026-09-11 — 地図作成中の「1 ボタンで待機場所に戻る」が無反応（WS-9AG）**:
+  実機で `PREP/MAPPING` から「1 ボタンで待機場所に戻る」を押しても機体が
+  一切動かなかった。
+
+  原因: `T-PREP-06`（`MAPPING --ui.return_home--> RETURN`）は `effects: []`
+  で、FSM の状態は `RETURN` に変わるが、**実際に機体を待機場所ピンへ走らせる
+  仕組みがどこにも配線されていなかった**（`venue_navigator` は
+  `PANEL_NAV`/`SUMMON`/`HOME_NAV` の 3 モードしか監視しておらず、`PREP` は
+  対象外）。Spec-onsite.md §2.1 は「作りかけの地図で自己位置推定して戻る」と
+  明記しているので、これも実装当初から一度も動いていなかった設計欠落
+  （WS-9AF と同種）。
+
+  **変更**: `venue_navigator` が `PREP/RETURN` も駆動対象に加える。
+  `HOME_NAV`（`ALIGN` を持たず `NAV` 到着だけで完結する、一番単純な形）と
+  同じ扱いにし、ゴールは同じ `find_home_goal()`（待機場所ピン）を使い回す。
+  「NAV 相当かどうか」の判定を `_is_nav_state()` に集約し、`PANEL_NAV`/
+  `SUMMON`/`HOME_NAV` の `state=='NAV'` と `PREP` の `state=='RETURN'` を
+  同じ経路で扱う（ALIGN・PAUSE・resume は元々 3 モード側の内部状態なので
+  `PREP` には影響しない）。
+
+  **意図して見送ったこと**: `PREP` に `BLOCKED` 状態が無い（`prep_states` に
+  含まれない）ため、`RETURN` 中に経路が見つからなくても自動再探索・
+  「中断」導線は無い（`evt.blocked` は FSM に `not_allowed` で拒否される
+  だけの無害な no-op になる）。手詰まりになった場合はジョグ（`PREP` は
+  `jog: allowed`）で手動誘導する以外の脱出路が無い。WS-9AB の
+  「中断して待機場所へ」に相当する仕組みを `PREP/RETURN` にも作るかは
+  次回の実機フィードバック次第（今回は「無反応」の解消を優先）。
+
+  更新: `venue_navigator.py`、`docs/使い方.md`（試験準備の該当手順に注記）。
 
 ---
 

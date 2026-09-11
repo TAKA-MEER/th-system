@@ -50,6 +50,21 @@ class VenueNavigator(Node):
     # このノードが駆動対象とするモード（NAV で走り、必要なら ALIGN）
     _NAV_MODES = ('PANEL_NAV', 'SUMMON', 'HOME_NAV')
 
+    def _is_nav_state(self, mode=None, state=None):
+        """WS-9AG(2026-09-11): 「今 compute/follow を回す対象か」を一箇所に
+        集約する。PANEL_NAV/SUMMON/HOME_NAV は state=='NAV'、PREP は
+        state=='RETURN'（1 ボタンで待機場所へ。Spec-onsite.md §2.1「自己位置
+        推定して戻る」）。PREP の RETURN は HOME_NAV と同じく ALIGN を持たない
+        一番単純な形（到着だけで完結）。PREP の他状態（MAPPING/REGISTER/
+        EDIT/SAVED）や BLOCKED（PREP には無い）はここに含めない。"""
+        mode = self._mode if mode is None else mode
+        state = self._state if state is None else state
+        if mode in self._NAV_MODES:
+            return state == 'NAV'
+        if mode == 'PREP':
+            return state == 'RETURN'
+        return False
+
     def __init__(self):
         super().__init__('venue_navigator')
 
@@ -223,9 +238,10 @@ class VenueNavigator(Node):
             return {'x': float(sg.pose.position.x),
                     'y': float(sg.pose.position.y),
                     'yaw': _yaw_from_quat(sg.pose.orientation)}
-        if self._mode == 'HOME_NAV':
+        if self._mode in ('HOME_NAV', 'PREP'):
             # ゴールは待機場所ピン (kind == HOME)。無ければ None → _start_nav が
-            # evt.blocked を出して待つ。
+            # evt.blocked を出して待つ。WS-9AG: PREP/RETURN（1 ボタンで戻る）も
+            # HOME_NAV と同じゴールを使う。
             return find_home_goal(self._pin_goals())
         return None
 
@@ -257,8 +273,8 @@ class VenueNavigator(Node):
         if self._state == 'BLOCKED':
             self._blocked = True
 
-        # NAV に入った瞬間、まだ何も回っていなければ起動（二重チェーン防止）。
-        if self._mode in self._NAV_MODES and self._state == 'NAV':
+        # NAV 相当に入った瞬間、まだ何も回っていなければ起動（二重チェーン防止）。
+        if self._is_nav_state():
             if (self._follow_goal_handle is None
                     and not self._nav_chain_active
                     and not self._blocked
@@ -266,11 +282,18 @@ class VenueNavigator(Node):
                 self._start_nav()
             return
 
-        # ALIGN に入ったら latched を外す（再入できるように）
+        # ALIGN に入ったら latched を外す（再入できるように）。PREP には無い。
         if self._state == 'ALIGN':
             self._arrived_latched = False
             self._align_latched = False
             self._arrival_pending = False
+            return
+
+        # WS-9AG: PREP は RETURN 以外（MAPPING/REGISTER/EDIT/SAVED）に居る
+        # ときは対象外。RETURN を抜けた直後（到着で EDIT／ジョグで MAPPING へ
+        # 戻る等）の後始末も、他の 3 モードがモードごと外れたときと同じに行う。
+        if self._mode == 'PREP':
+            self._reset_for_exit()
             return
 
         # モードから外れた（IDLE / ESTOP / PAUSE / AT_HOME を含む一部）
@@ -498,7 +521,7 @@ class VenueNavigator(Node):
         して return し、_align_timer の到着フォールバックを恒久的に殺していた）。"""
         if self._arrived_latched:
             return
-        if self._state != 'NAV':
+        if not self._is_nav_state():
             if not self._arrival_pending:
                 self._arrival_pending = True
                 self.get_logger().info(
@@ -619,12 +642,14 @@ class VenueNavigator(Node):
 
     # ── 20Hz タイマ（NAV 到着フォールバック + ALIGN）────────
     def _align_timer(self):
-        if self._mode not in self._NAV_MODES:
+        # WS-9AG: PREP/RETURN も到着フォールバックの対象（HOME_NAV と同じく
+        # ALIGN を持たないので、下の ALIGN 分岐には届かない）。
+        if self._mode not in self._NAV_MODES and self._mode != 'PREP':
             return
         self._refresh_robot_pose()
 
-        # NAV 中の到着フォールバック（follow_path の result が届かなかった場合の保険）
-        if self._state == 'NAV' and not self._arrived_latched:
+        # NAV 相当中の到着フォールバック（follow_path の result が届かなかった場合の保険）
+        if self._is_nav_state() and not self._arrived_latched:
             goal = self._current_goal()
             if self._robot is not None and goal is not None:
                 if arrived(self._robot[0], self._robot[1],
@@ -641,9 +666,9 @@ class VenueNavigator(Node):
                         self._start_nav()
             return
 
-        # HOME_NAV には ALIGN 状態が無い。向き合わせは仕様どおり行わない
+        # HOME_NAV / PREP には ALIGN 状態が無い。向き合わせは仕様どおり行わない
         # （逃げの保険。上述の NAV 分岐で既に return しているため通常ここには来ない）。
-        if self._mode == 'HOME_NAV':
+        if self._mode in ('HOME_NAV', 'PREP'):
             return
 
         if self._state != 'ALIGN':
