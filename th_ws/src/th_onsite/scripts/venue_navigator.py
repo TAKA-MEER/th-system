@@ -50,6 +50,22 @@ class VenueNavigator(Node):
     # このノードが駆動対象とするモード（NAV で走り、必要なら ALIGN）
     _NAV_MODES = ('PANEL_NAV', 'SUMMON', 'HOME_NAV')
 
+    def _recovery_eligible(self):
+        """WS-9AK(2026-09-11): _blocked_recheck（再探索ループ）の対象判定。
+        _is_nav_state() とは意味が違う ── PANEL_NAV/SUMMON/HOME_NAV は
+        state に関わらず対象（`state=='BLOCKED'` のときにこそ効く必要が
+        あるのに、WS-9AH で誤って _is_nav_state()（state=='NAV' 限定）を
+        流用してしまい、FSM が実際に BLOCKED を publish した瞬間に再探索が
+        止まる回帰を起こした。実機で「途中で止まったまま。経路は物理的に
+        空いている」で発覚）。PREP だけ state=='RETURN' に絞る（PREP には
+        BLOCKED という FSM 状態が無いので、`_blocked` フラグの間ずっと
+        state は RETURN のまま）。"""
+        if self._mode in self._NAV_MODES:
+            return True
+        if self._mode == 'PREP':
+            return self._state == 'RETURN'
+        return False
+
     def _is_nav_state(self, mode=None, state=None):
         """WS-9AG(2026-09-11): 「今 compute/follow を回す対象か」を一箇所に
         集約する。PANEL_NAV/SUMMON/HOME_NAV は state=='NAV'、PREP は
@@ -630,13 +646,7 @@ class VenueNavigator(Node):
 
         if not self._blocked:
             return
-        # WS-9AH(2026-09-11): PREP/RETURN も対象（_is_nav_state()）。PREP には
-        # BLOCKED という FSM 状態が無いので evt.blocked/evt.unblocked は
-        # not_allowed で拒否されるだけの無害な no-op になるが、再探索ループ
-        # 自体はこのノード内部の _blocked フラグだけで完結するので機能する。
-        # 実機で「途中で止まったまま動かない」（WS-9AG の意図的な未対応部分）
-        # を確認したため、既存 3 モードと同じ自動再探索を PREP にも効かせる。
-        if not self._is_nav_state():
+        if not self._recovery_eligible():
             return
         goal = self._current_goal()
         if goal is None:

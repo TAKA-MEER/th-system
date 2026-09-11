@@ -910,6 +910,17 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
 
   更新: `venue_navigator.py`。
 
+  **訂正（同日・WS-9AK）**: 上の変更が `PANEL_NAV` 等の既存 3 モードの
+  再探索を壊す回帰だった。`_is_nav_state()`（`state=='NAV'` 限定）を
+  `_blocked_recheck` の対象判定に流用したため、FSM が実際に `BLOCKED` を
+  publish した瞬間（＝再探索が一番効くべき瞬間）に `_blocked_recheck` が
+  即 return するようになっていた。実機で「配電盤へ戻る途中、経路は物理的に
+  空いているのに `PANEL_NAV/BLOCKED` のまま 5 分以上無反応」で発覚
+  （costmap を実測してもコストは低く、幽霊マークでも壁近接でもなかった）。
+  「NAV 相当かどうか」（`_is_nav_state()`）と「再探索ループの対象かどうか」
+  （新設 `_recovery_eligible()`。3 モードは state 不問、`PREP` だけ
+  `state=='RETURN'` に絞る）を別関数に分離して修正。`venue_navigator.py`。
+
 - **2026-09-11 — 待機場所到着時に向きを直さない（WS-9AI）**: `HOME_NAV`
   （当日）と `PREP/RETURN`（前日、WS-9AG）はどちらも「`ALIGN` を持たず
   到着だけで完結する」設計にしていた（コメント「HOME_NAV には ALIGN 状態が
