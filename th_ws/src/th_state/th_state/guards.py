@@ -129,6 +129,14 @@ def _goto_allowed(mode, state, ctx) -> bool:
     return True
 
 
+def _goto_summon(mode, state, ctx) -> bool:
+    """WS-9AF(2026-09-11): ui.goto{kind:SUMMON} だけを狙って先に評価させ、
+    begin_two_point{kind:SUMMON} を挟むための専用ガード（C-09/C-09b と同じ
+    「同一イベント・ガード違いを記載順で振り分ける」流儀。kind==PANEL/HOME は
+    このガードで false になり、後段の汎用 goto_allowed 行にフォールバックする）。"""
+    return ctx.arg.get("kind") == "SUMMON" and _goto_allowed(mode, state, ctx)
+
+
 def _candidate_exists(mode, state, ctx) -> bool:
     return ctx.candidate_count > 0
 
@@ -209,6 +217,7 @@ GUARDS: Dict[str, Callable] = {
     "can_finish": _can_finish,
     "mode_entry_allowed": _mode_entry_allowed,
     "goto_allowed": _goto_allowed,
+    "goto_summon": _goto_summon,
     "candidate_exists": _candidate_exists,
     "target_selected": _target_selected,
     "target_confident": _target_confident,
@@ -226,7 +235,7 @@ GUARDS: Dict[str, Callable] = {
     "estop_resume_prev": _estop_resume_prev,
 }
 
-assert len(GUARDS) == 29, len(GUARDS)
+assert len(GUARDS) == 30, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict) -> Dict[str, Callable]:

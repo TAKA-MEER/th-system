@@ -512,6 +512,11 @@ class PinRegistrar(Node):
             self._emit_event('evt.two_point_done',
                              json.dumps({'yaw': round(float(yaw), 3)}))
             self._publish_summon_goal(self._p1, yaw)
+            # WS-9AF(2026-09-11): SUMMON は _place_pin_effect() を経由しない
+            # （ピンとして永続化しない）ので、そちらがやる _accepting=False を
+            # ここで明示する。次に begin_two_point{kind:SUMMON} が来れば
+            # どのみち再武装されるが、それまで開いたままにしない。
+            self._accepting = False
         else:
             # WS-9AB: 壁近接チェック。近すぎたら evt.register_ok を出さず、
             # /onsite/pin_warning を立てて操作者の判断待ちにする（FSM は REGISTER のまま）。

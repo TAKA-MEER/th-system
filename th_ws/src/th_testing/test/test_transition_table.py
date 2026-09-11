@@ -118,6 +118,7 @@ _STATIC_GUARD_OVERRIDES = {
     "leash_slack": {"leash_taut": False},
     "can_finish": {},
     "goto_allowed": {"flags": {"working": False}, "arg": {"kind": "HOME"}},
+    "goto_summon": {"flags": {"working": False}, "arg": {"kind": "SUMMON"}},
     "candidate_exists": {"candidate_count": 1},
     "target_selected": {"target_selected": True},
     "target_confident": {"target_selected": True, "target_confident": True},

@@ -839,6 +839,29 @@ CLAUDE.md「方針変更時のルール」に従い **spec を先に更新**し�
   `venue_navigator.py` / `pin_registrar.py` / `pin_clearance_core.py`、
   `docs/使い方.md`（「何もない場所が赤い」の切り分け行）。
 
+- **2026-09-11 — 呼び寄せの「この位置を登録」が押せない（WS-9AF）**: 実機で
+  `SUMMON`（呼び寄せ）の 2 点指示ウィザードが常に「登録を開始してから
+  押してください」（`no_pending`）で拒否され、一度も登録できなかった。
+
+  原因: `pin_registrar` の 2 点指示受付（`_accepting`）は `begin_two_point`
+  効果でしか開かない。`transitions.yaml` を見ると `begin_two_point` は
+  `PREP` の `ui.register`（盤／待機場所の登録開始）にしか配線されておらず、
+  `SUMMON` に入る 3 経路（`IDLE`/`AT_PANEL`/`AT_HOME` それぞれからの
+  `ui.goto{kind:SUMMON}`）はどれも `effects: []` だった。つまり `SUMMON` の
+  2 点指示（呼び寄せ先を指す操作）は最初から一度も `_accepting` を開けない
+  設計欠落で、実装当初から動いていなかった。
+
+  **変更**: `ui.goto{kind:SUMMON}` の 3 経路（`IDLE`/`AT_PANEL`/`AT_HOME`）に
+  `SUMMON` 専用の遷移行を追加し、`kind==SUMMON` のときだけ
+  `begin_two_point{kind:SUMMON}` を効果に加える（既存の汎用 `ui.goto` 行は
+  `PANEL`/`HOME` 用にそのまま残す。ガードで `kind` を絞って先に評価させる、
+  `C-09`/`C-09b` と同じ「同一イベント・ガード違いを記載順で振り分ける」流儀）。
+  `pin_registrar` は `SUMMON` の 2 点指示が完了したら（従来は登録完了パスの
+  `_place_pin_effect()` だけがやっていた）`_accepting` を明示的に閉じる。
+
+  更新: `transitions.yaml`（`SM-3.1.2-113`〜`-115`）、`guards.py`、
+  `pin_registrar.py`、`Spec-modes.md` §3.1.2、`docs/使い方.md`。
+
 ---
 
 ## 3. 両設計書が扱っていない事項

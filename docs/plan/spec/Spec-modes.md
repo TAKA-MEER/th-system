@@ -337,6 +337,9 @@ WiFi の受信ギャップ（実測 0.5〜1.2 s・[Spec-params.md](Spec-params.m
 | **`SM-3.1.2-110`** | `PANEL_NAV` | 任意 | **「中断して待機場所へ」** | → `AT_HOME` の `IDLE_H`（モード遷移） | 経路が確保できず着けないとき、非常停止せずに方式をやめる。`cancel_follow_path` ＋ W-5 を閉じる。`AT_HOME` から別の盤・待機場所を選び直せる（2026-09-10。WS-9Z の保留を解消） |
 | **`SM-3.1.2-111`** | `SUMMON` | `POINT` ／ `NAV` ／ `BLOCKED` ／ `ALIGN` ／ `PAUSE` | **「中断して待機場所へ」** | → `AT_HOME` の `IDLE_H`（モード遷移） | 同上。**`WAIT_CLEAR` は既存の `ui.abort → POINT`（-069）を優先**（退避待ちのやり直し）ので、それ以外の状態から |
 | **`SM-3.1.2-112`** | `HOME_NAV` | 任意 | **「中断して待機場所へ」** | → `AT_HOME` の `IDLE_H`（モード遷移） | 同上。待機場所に着けなくても方式を抜けられる |
+| **`SM-3.1.2-113`** | `IDLE` | `NONE` | **`ui.goto{kind:SUMMON}`**（その場で呼ぶ） | → `SUMMON` の `POINT`（モード遷移） | `begin_two_point{kind:SUMMON}` で `pin_registrar` の 2 点指示受付を開く（2026-09-11。無いと `/onsite/two_point` が `no_pending` で拒否され続け、呼び寄せの登録が一度も成立しなかった） |
+| **`SM-3.1.2-114`** | `AT_PANEL` | `IDLE_P` ／ `WORKING` | **`ui.goto{kind:SUMMON}`** | → `SUMMON` の `POINT`（モード遷移） | 同上 |
+| **`SM-3.1.2-115`** | `AT_HOME` | `IDLE_H` ／ `PAUSE` | **`ui.goto{kind:SUMMON}`** | → `SUMMON` の `POINT`（モード遷移） | 同上 |
 | `SM-3.1.2-085` | `OPCHECK` | `LIST` | 項目を選ぶ | `RUNNING_CHECK` | **選んだ瞬間にモニターが立ち上がる** |
 | **`SM-3.1.2-086`** | `OPCHECK` | `RUNNING_CHECK` | **OK** | `LIST` | **結果を記録する**（総合ステータスに反映） |
 | `SM-3.1.2-087` | `OPCHECK` | `RUNNING_CHECK` | NG（IMU / LiDAR） | `LIST` | 「校正へ」導線を出す |

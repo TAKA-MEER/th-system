@@ -281,6 +281,23 @@
     args:
       screen_id: $arg.screen_id
   spec_ref: SM-3.1.1-17
+# WS-9AF(2026-09-11): kind==SUMMON だけを先に拾って begin_two_point を挟む
+# （C-09/C-09b と同じ「同一イベント・ガード違いを記載順で振り分ける」流儀）。
+# 無いと SUMMON の 2 点指示が pin_registrar の _accepting を一度も開けず、
+# /onsite/two_point が no_pending で拒否され続ける（実機で発覚）。
+- id: C-15-summon
+  layer: 0
+  mode: IDLE
+  state: NONE
+  event: ui.goto
+  guard: goto_summon
+  to_mode: SUMMON
+  to_state: $initial
+  effects:
+  - name: begin_two_point
+    args:
+      kind: SUMMON
+  spec_ref: SM-3.1.2-113
 - id: C-15
   layer: 0
   mode: IDLE
@@ -1176,6 +1193,23 @@
       'on': false
   spec_ref: SM-3.1.2-065
   override_common: true
+# WS-9AF(2026-09-11): C-15-summon と同じ理由。AT_PANEL から「その場で呼ぶ」も
+# 同じ穴があった。
+- id: T-ATP-05-summon
+  layer: 10
+  mode: AT_PANEL
+  state:
+  - IDLE_P
+  - WORKING
+  event: ui.goto
+  guard: goto_summon
+  to_mode: SUMMON
+  to_state: $initial
+  effects:
+  - name: begin_two_point
+    args:
+      kind: SUMMON
+  spec_ref: SM-3.1.2-114
 - id: T-ATP-05
   layer: 10
   mode: AT_PANEL
@@ -1558,6 +1592,23 @@
       'on': false
   spec_ref: SM-3.1.2-108
   override_common: true
+# WS-9AF(2026-09-11): C-15-summon と同じ理由。AT_HOME から呼び寄せる経路も
+# 同じ穴があった。
+- id: T-ATH-03-summon
+  layer: 10
+  mode: AT_HOME
+  state:
+  - IDLE_H
+  - PAUSE
+  event: ui.goto
+  guard: goto_summon
+  to_mode: SUMMON
+  to_state: $initial
+  effects:
+  - name: begin_two_point
+    args:
+      kind: SUMMON
+  spec_ref: SM-3.1.2-115
 - id: T-ATH-03
   layer: 10
   mode: AT_HOME
