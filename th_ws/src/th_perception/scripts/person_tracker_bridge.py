@@ -261,10 +261,18 @@ class PersonTrackerBridge(Node):
             self.get_logger().debug(f'effect {msg.name} は未処理 (dest={msg.dest})')
 
     # ── tracker サービス呼び出し（非同期・失敗はログのみ）──
+    # WS-9AE(2026-09-11): wait_for_service(timeout_sec=0.5) は _on_effect（sub_cbg,
+    # MutuallyExclusive）の中で同期ブロッキングしていた。この間 _following_cb/
+    # _candidates_cb（同じグループ）が止まり、タップのたびに追跡パイプライン全体が
+    # 最大 0.5s 固まる（venue_navigator で 2026-09-10 に直したのと同じアンチ
+    # パターン）。サービスは起動直後を過ぎればほぼ常に ready なので、非ブロッキング
+    # 判定に変える（一回のタップに対応する再試行ループが無いので、ready でない
+    # ときは素直に諦める。旧版の「0.5s 待って探す」猶予は失うが、実運用ではその
+    # 猶予より「毎タップ最大0.5s固まる」実害の方が大きい）。
     def _call_select(self, index: int):
-        if not self._select_client.wait_for_service(timeout_sec=0.5):
+        if not self._select_client.service_is_ready():
             self.get_logger().warn(
-                f'select_target サービス未提供 (wait 0.5s) スキップ index={index}')
+                f'select_target サービス未 ready スキップ index={index}')
             return
         req = SelectTarget.Request()
         req.candidate_index = index
@@ -283,8 +291,8 @@ class PersonTrackerBridge(Node):
             self.get_logger().warn(f'select_target 失敗: {resp.message}')
 
     def _call_reset(self):
-        if not self._reset_client.wait_for_service(timeout_sec=0.5):
-            self.get_logger().warn('reset_tracking サービス未提供 (wait 0.5s) スキップ')
+        if not self._reset_client.service_is_ready():
+            self.get_logger().warn('reset_tracking サービス未 ready スキップ')
             return
         req = Trigger.Request()
         future = self._reset_client.call_async(req)
