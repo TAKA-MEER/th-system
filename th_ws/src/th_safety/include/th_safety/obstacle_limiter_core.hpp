@@ -132,6 +132,13 @@ struct ObstacleLimiterParams {
   double scan_stale_sec = 0.0;
   double lock_stale_sec = 0.0;
 
+  // 通常時ランプ（DetailedDesign-safety.md §7.1、2026-09-11 追加）。
+  // /cmd_vel_muxed の生値にだけ効く。0 以下は無制限（従来動作。既存テストとの
+  // 後方互換のための既定値）。障害物ブレーキ・estop・fault_lock・stale は
+  // このランプを経由しない（tier 0〜2 の早期 return はランプ計算より前）。
+  double normal_accel_mps2 = 0.0;
+  double normal_angular_accel_rps2 = 0.0;
+
   bool blind_calibrated = true;
   // [(a0_deg, a1_deg), ...]。lidar_filter / scan_geometry と同じ規約
   // （laser_link 基準・反時計回り正。度で持ち、使う直前にラジアンへ変換する）。
@@ -162,6 +169,13 @@ double v_allow(double nearest_m, double obstacle_floor_distance_m, double brake_
 
 // |val| を [0, max_abs] にクランプする。符号は保存する（L1・L4 の実装基盤）。
 double clamp_toward_zero(double val, double max_abs);
+
+// value を target に向かって最大 max_abs_rate*dt だけ動かす（符号は問わない、
+// 減速方向にも同じ式でよい。main.cpp の rampToward() と同型）。
+// max_abs_rate <= 0.0 は「無制限」（target へ即座に到達。既存動作との後方互換）。
+// dt が有限でない（無限大・NaN）場合も無制限として扱う（起動直後などランプの
+// 起点が定まっていない1回目の呼び出し用）。
+double ramp_toward(double value, double target, double max_abs_rate, double dt);
 
 // L5。direction_rad ± half_width_rad の扇が blind_angle_ranges_deg のいずれかと
 // 重なっているか（角度だけの幾何判定。実スキャンは見ない）。
@@ -196,12 +210,28 @@ class ObstacleLimiterCore {
  public:
   ObstacleLimiterOutput update(const ObstacleLimiterInputs& in, const ObstacleLimiterParams& p);
 
-  // テスト・再起動用。
-  void reset() { stop_latched_ = false; }
+  // テスト・再起動用。通常時ランプの起点（prev_ramped_*）も含めて全状態を
+  // 初期値へ戻す（DetailedDesign-safety.md §7.1）。
+  void reset() {
+    stop_latched_ = false;
+    prev_ramped_linear_ = 0.0;
+    prev_ramped_angular_ = 0.0;
+    prev_now_sec_ = 0.0;
+    prev_now_valid_ = false;
+  }
   bool stop_latched() const { return stop_latched_; }
 
  private:
   bool stop_latched_ = false;
+
+  // 通常時ランプの状態（DetailedDesign-safety.md §7.1）。ランプの起点は
+  // 「クランプ前の値」ではなく「実際に出力した値」で更新する——クランプ前の
+  // 値で更新すると、障害物接近でいったん絞られた直後に障害物が去った瞬間、
+  // 出力が急にジャンプしてしまうため（update() 内のコメント参照）。
+  double prev_ramped_linear_ = 0.0;
+  double prev_ramped_angular_ = 0.0;
+  double prev_now_sec_ = 0.0;
+  bool prev_now_valid_ = false;  // false の間は dt 無制限（ランプなし。初回呼び出し用）
 };
 
 }  // namespace th_safety

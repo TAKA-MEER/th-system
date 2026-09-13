@@ -78,6 +78,20 @@ double clamp_toward_zero(double val, double max_abs) {
   return std::copysign(capped, val);
 }
 
+double ramp_toward(double value, double target, double max_abs_rate, double dt) {
+  if (max_abs_rate <= 0.0 || !std::isfinite(dt)) {
+    return target;  // 無制限（従来動作 / 初回呼び出し）
+  }
+  const double max_step = max_abs_rate * dt;
+  if (value < target) {
+    return std::min(value + max_step, target);
+  }
+  if (value > target) {
+    return std::max(value - max_step, target);
+  }
+  return value;
+}
+
 bool blind_direction_overlap(double direction_rad, double half_width_rad,
                               const std::vector<std::pair<double, double>>& blind_angle_ranges_deg) {
   const double a_start = normalize_angle(direction_rad - half_width_rad);
@@ -166,6 +180,16 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
                                                    const ObstacleLimiterParams& p) {
   ObstacleLimiterOutput out;
 
+  // 通常時ランプ（DetailedDesign-safety.md §7.1）の dt。now_sec の連続差分から
+  // 取る（欠測ティックがあっても実経過時間で正しく計算される）。1回目の呼び出し
+  // （prev_now_valid_ == false）は dt を非有限にして ramp_toward() を無制限
+  // （即座に target）にする——ランプの起点が定まっていない状態で小さい dt を
+  // 使うと、最初の入力が反映されずゼロに張り付く不具合になるため。
+  const double dt = prev_now_valid_ ? (in.now_sec - prev_now_sec_)
+                                     : std::numeric_limits<double>::infinity();
+  prev_now_sec_ = in.now_sec;
+  prev_now_valid_ = true;
+
   // ── tier 0: 未校正ゲート（確認済みの事実③） ─────────────────
   // 死角セクタが 0 個かどうかではなく、明示フラグ blind_calibrated で判定する。
   if (!p.blind_calibrated) {
@@ -173,6 +197,8 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
     out.nearest_obstacle_m = std::numeric_limits<double>::infinity();
     out.source_class = SourceClass::AUTO;
     out.applied_limit_mps = 0.0;
+    prev_ramped_linear_ = 0.0;
+    prev_ramped_angular_ = 0.0;
     return out;
   }
 
@@ -186,6 +212,8 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
     out.nearest_obstacle_m = std::numeric_limits<double>::infinity();
     out.source_class = SourceClass::AUTO;
     out.applied_limit_mps = 0.0;
+    prev_ramped_linear_ = 0.0;
+    prev_ramped_angular_ = 0.0;
     return out;
   }
 
@@ -197,6 +225,8 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
     out.nearest_obstacle_m = std::numeric_limits<double>::infinity();
     out.source_class = SourceClass::AUTO;
     out.applied_limit_mps = 0.0;
+    prev_ramped_linear_ = 0.0;
+    prev_ramped_angular_ = 0.0;
     return out;
   }
 
@@ -207,6 +237,8 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
     out.nearest_obstacle_m = -1.0;  // 「不明」の明示値（+infinity＝空き確認済み、とは区別する）
     out.source_class = compute_source_class(in, p);
     out.applied_limit_mps = 0.0;
+    prev_ramped_linear_ = 0.0;
+    prev_ramped_angular_ = 0.0;
     return out;
   }
 
@@ -282,8 +314,23 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
     angular_ceiling = std::min(angular_ceiling, p.w_align_max);
   }
 
-  out.out.linear_x = clamp_toward_zero(in.muxed.value.linear_x, linear_ceiling);
-  out.out.angular_z = clamp_toward_zero(in.muxed.value.angular_z, angular_ceiling);
+  // 通常時ランプ（DetailedDesign-safety.md §7.1）: /cmd_vel_muxed の**生値**を
+  // 先にランプしてから、安全上限（linear_ceiling / angular_ceiling。障害物
+  // ブレーキ・画面/モード上限・死角キャップを含む）はランプ後の値に対して
+  // 従来どおり即座にクランプする。安全上限自体はランプしない——ここが
+  // 「危険な指令まで鈍らせない」ことを保証する境界線。
+  const double ramped_linear =
+      ramp_toward(prev_ramped_linear_, in.muxed.value.linear_x, p.normal_accel_mps2, dt);
+  const double ramped_angular =
+      ramp_toward(prev_ramped_angular_, in.muxed.value.angular_z, p.normal_angular_accel_rps2, dt);
+
+  out.out.linear_x = clamp_toward_zero(ramped_linear, linear_ceiling);
+  out.out.angular_z = clamp_toward_zero(ramped_angular, angular_ceiling);
+  // 次回ランプの起点は「クランプ前」ではなく「実際の出力」で更新する。
+  // クランプ前の値で更新すると、障害物接近でいったん絞られた直後に障害物が
+  // 去った瞬間、出力が急にジャンプしてしまう（DetailedDesign-safety.md §7.1）。
+  prev_ramped_linear_ = out.out.linear_x;
+  prev_ramped_angular_ = out.out.angular_z;
   // 診断用の距離: 未観測（cone.covered == false）は「不明」の明示値 -1.0
   // （+infinity＝空き確認済み、とは区別する。§3.4.2「古いスキャンで空きと
   // 判定しない」と同じ理屈。N-11）。

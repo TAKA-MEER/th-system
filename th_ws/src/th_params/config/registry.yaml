@@ -214,6 +214,24 @@
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.2 / DetailedDesign-wp0.md WP-PARAM-01 §5"
   note: "最も多くを従属させる 1 つ（O-c1）。**これはランプ停止（/cmd_vel=0）の値**であり、非常停止の空走とは別物（空走は 2.74 m/s2＝約 14 倍短い。N-12）。**測ったのは前進 1 条件のみ。**後退は左右対称のクローラ駆動なので同等と推定したが未測定、場内速度域（v_slow）は未測定（2026-08-21 の判断）。積載時・傾斜での再測定も未計画"
 
+- name: normal_accel_mps2
+  unit: m/s2
+  class: b
+  status: given
+  value: 0.75
+  consumers: [obstacle_limiter, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §7.1"
+  note: "obstacle_limiter が /cmd_vel_muxed の生値（linear_x）に掛ける通常時ランプ。障害物ブレーキ（brake_accel_mps2）・estop・fault_lock・stale 由来のゼロ出力はこのランプを経由せず即座に効く（DetailedDesign-safety.md §7.1）。実機フィードバック（2026-09-11）: ESP32 ファーム単独（PID_OUT_RAMP_RATE=300、速度換算≈1.07 m/s2）でもジョグ操作でまだ急に感じるとの報告を受け、規定 1.5 m/s2（TARGET_RAMP_ACCEL_MPS2 と同値）よりも明確に緩い値を初期値とした（半分の 0.75）。実機再検証(2026-09-11)で mid/high 帯域は改善したが ESP32 側の PID 出力スルーレート由来の下限（≈1.07 m/s2）付近で頭打ちになり、ユーザー判断で「これ以上はソフトでなくハード側（重心・駆動系）の課題」として 0.75 を確定値とした（これ以上緩めない）"
+
+- name: normal_angular_accel_rps2
+  unit: rad/s2
+  class: b
+  status: given
+  value: 0.0
+  consumers: [obstacle_limiter, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §7.1"
+  note: "obstacle_limiter が /cmd_vel_muxed の角速度生値（angular_z）に掛ける通常時ランプ。0.0 = 無制限（ランプ撤去）。2026-09-11 に normal_accel_mps2 と同じ理由・同じ値(0.75)で導入したが、実機で超信地旋回（前進速度ゼロでのその場回転）の立ち上がりが w_max=1.2 rad/s に対し 1.2/0.75≈1.6 秒と大きく遅くなる副作用が発覚（2026-09-04 WS-9T で解消したばかりの操作性を再度悪化させていた）。超信地旋回は前進を伴わず重心が横に投げ出される動きではないため、前進しながらの急旋回ほど転倒リスクが高くないとユーザーが判断し撤去した（前進側の急変は normal_accel_mps2 で引き続き抑制する）。VISION.md「2026-09-11 — 手動ジョグの発進・停止でモーター出力が急変する」参照"
+
 - name: brake_delay_s
   unit: s
   class: b

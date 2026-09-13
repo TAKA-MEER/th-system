@@ -603,3 +603,167 @@ TEST(ObstacleLimiterCoreProperty, HysteresisHoldsUntilClearOfBand) {
 
   EXPECT_EQ(failures, 0) << kHysteresisIterations << " 通り中 " << failures << " 件失敗";
 }
+
+// ── 通常時ランプ（DetailedDesign-safety.md §7.1、2026-09-11 追加） ──────
+// 「危険が無い通常の解放はゆっくり、障害物ブレーキ・estop・fault_lock・stale は
+// 常に即座に効く」という非対称設計そのものを検証する。
+
+namespace {
+
+// ランプ検証専用の基本入力（障害物なし・危険なしの通常走行）。
+ObstacleLimiterInputs make_ramp_base(double now_sec, double linear_x) {
+  ObstacleLimiterInputs in;
+  in.now_sec = now_sec;
+  in.muxed.received = true;
+  in.muxed.stamp_sec = now_sec;
+  in.muxed.value.linear_x = linear_x;
+  in.muxed.value.angular_z = 0.0;
+  in.manual.received = false;  // AUTO 固定
+  in.state.received = true;
+  in.state.stamp_sec = now_sec;
+  in.state.mode = "FOLLOW";
+  in.state.jog_active = false;
+  in.state.zone = Zone::OUT;
+  in.state.auto_brake = true;
+  in.estop = Stamped<bool>{true, now_sec, false};
+  in.fault_lock = Stamped<bool>{true, now_sec, false};
+  in.scan.received = true;
+  in.scan.stamp_sec = now_sec;
+  in.scan.geometry = fixed_geometry();
+  in.scan.ranges.assign(in.scan.geometry.num_ranges, 30.0);  // 障害物なし（十分遠い）
+  in.screen_limit_mps = 2.0;
+  in.mode_limit_mps = 2.0;
+  return in;
+}
+
+ObstacleLimiterParams make_ramp_params(double normal_accel_mps2) {
+  ObstacleLimiterParams p;
+  p.obstacle_floor_distance_m = 0.4;
+  p.hysteresis_band_m = 0.1;
+  p.brake_accel_mps2 = 1.0;
+  p.obstacle_cone_half_width_rad = 0.5;
+  p.obstacle_cone_half_width_reverse_rad = 0.6;
+  p.v_reverse = 0.2;
+  p.w_max = 0.6;
+  p.w_align_max = 0.3;
+  p.manual_joy_timeout_sec = 1.0;
+  p.state_stale_sec = 1.5;
+  p.muxed_stale_sec = 0.2;
+  p.scan_stale_sec = 0.3;
+  p.lock_stale_sec = 0.5;
+  p.blind_calibrated = true;
+  p.normal_accel_mps2 = normal_accel_mps2;
+  p.normal_angular_accel_rps2 = normal_accel_mps2;
+  return p;
+}
+
+}  // namespace
+
+// 通常時（危険なし）はステップ入力が複数周期かけて段階的に反映される。
+TEST(ObstacleLimiterCoreRamp, GentlyRampsTowardTargetOnNormalRelease) {
+  ObstacleLimiterParams p = make_ramp_params(1.0);  // 1.0 m/s^2
+  ObstacleLimiterCore core;
+  const double target = 0.55;
+  double now = 1000.0;
+
+  // 1回目: 初回呼び出しはランプなし（dt 無制限）で target に即座に到達する
+  // 設計（起点が定まっていない状態で急に小さい dt を掛けるとゼロに張り付く
+  // 不具合を避けるため）。
+  ObstacleLimiterOutput o1 = core.update(make_ramp_base(now, target), p);
+  EXPECT_DOUBLE_EQ(o1.out.linear_x, target);
+
+  // 2回目以降（dt=0.1s 固定）: 1.0 m/s^2 * 0.1s = 0.1 m/s ずつ、
+  // …のはずだが 1 回目で既に target に到達しているため、target を上げて
+  // 改めてランプの効きを見る。
+  const double target2 = target + 0.4;  // 0.95 m/s へステップ
+  now += 0.1;
+  ObstacleLimiterOutput o2 = core.update(make_ramp_base(now, target2), p);
+  EXPECT_NEAR(o2.out.linear_x, target + 0.1, kEps)
+      << "1周期で 0.1 m/s^2*0.1s=0.1 m/s だけ動くはず";
+  EXPECT_LT(o2.out.linear_x, target2) << "1周期で target まで到達してはいけない";
+
+  now += 0.1;
+  ObstacleLimiterOutput o3 = core.update(make_ramp_base(now, target2), p);
+  EXPECT_NEAR(o3.out.linear_x, target + 0.2, kEps);
+}
+
+// normal_accel_mps2 <= 0 は「無制限」（既存挙動との後方互換）。
+TEST(ObstacleLimiterCoreRamp, ZeroRateMeansUnlimited) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  double now = 1000.0;
+  core.update(make_ramp_base(now, 0.1), p);
+  now += 0.1;
+  ObstacleLimiterOutput o2 = core.update(make_ramp_base(now, 0.9), p);
+  EXPECT_DOUBLE_EQ(o2.out.linear_x, 0.9) << "レート0は毎回 target に即座に到達するはず";
+}
+
+// 障害物ブレーキ（v_allow）はランプの影響を受けず、次の周期で即座に効く。
+TEST(ObstacleLimiterCoreRamp, ObstacleBrakeIsNeverDelayedByRamp) {
+  ObstacleLimiterParams p = make_ramp_params(0.1);  // かなり緩いランプ
+  ObstacleLimiterCore core;
+  double now = 1000.0;
+
+  // 1周期目: 障害物なしで巡航速度に到達（初回はランプ無制限）。
+  ObstacleLimiterOutput o1 = core.update(make_ramp_base(now, 1.0), p);
+  ASSERT_DOUBLE_EQ(o1.out.linear_x, 1.0);
+
+  // 2周期目: 目の前 floor 未満に障害物が急に現れる。muxed 側の指令は
+  // 変わらず 1.0 m/s のままでも、v_allow が 0 に近い値へ落ちるはず。
+  now += 0.1;
+  ObstacleLimiterInputs in2 = make_ramp_base(now, 1.0);
+  plant_obstacle(&in2.scan.ranges, in2.scan.geometry, 0.0, 0.05, 30.0);  // floor(0.4)未満
+  ObstacleLimiterOutput o2 = core.update(in2, p);
+  EXPECT_NEAR(o2.out.linear_x, 0.0, 0.05)
+      << "緩いランプ(0.1 m/s^2)を設定していても、障害物ブレーキは同一周期で"
+      << "ほぼゼロまで落ちなければならない（ランプは危険側には効かない）";
+  EXPECT_EQ(o2.action, LimiterAction::STOP);
+}
+
+// 障害物が去った直後、出力は「クランプ前の値」からではなく「実際に出力した
+// 低い値」から再スタートする（急なジャンプが起きない）。ランプの起点
+// prev_ramped_ を「実出力」で更新しているという実装上の約束そのものを検証する。
+TEST(ObstacleLimiterCoreRamp, NoJumpImmediatelyAfterHazardClears) {
+  ObstacleLimiterParams p = make_ramp_params(1.0);  // 1.0 m/s^2
+  ObstacleLimiterCore core;
+  double now = 1000.0;
+
+  // 1周期目: 巡航速度 1.0 m/s（初回はランプ無制限で即到達）。
+  ObstacleLimiterOutput o1 = core.update(make_ramp_base(now, 1.0), p);
+  ASSERT_DOUBLE_EQ(o1.out.linear_x, 1.0);
+
+  // 2周期目: 障害物が現れて出力がほぼゼロまで絞られる。
+  now += 0.1;
+  ObstacleLimiterInputs in2 = make_ramp_base(now, 1.0);
+  plant_obstacle(&in2.scan.ranges, in2.scan.geometry, 0.0, 0.05, 30.0);
+  ObstacleLimiterOutput o2 = core.update(in2, p);
+  ASSERT_LT(o2.out.linear_x, 0.1);
+
+  // 3周期目: 障害物が消えて ceiling が即座に回復する。muxed 指令は
+  // 変わらず 1.0 m/s のまま。ここで「クランプ前の値（1.0 m/s 相当まで
+  // ランプが進んでいた）」から再開すると出力が急にジャンプしてしまう。
+  // 正しい実装は「2周期目の実出力（ほぼ0）」から改めてランプする。
+  now += 0.1;
+  ObstacleLimiterOutput o3 = core.update(make_ramp_base(now, 1.0), p);
+  EXPECT_LT(o3.out.linear_x, o2.out.linear_x + 1.0 * 0.1 + kEps)
+      << "障害物が去った直後の出力は 1周期分のランプ幅(1.0 m/s^2*0.1s=0.1 m/s)"
+      << "しか進んではいけない（前の低い出力を起点にランプし直すべき）";
+}
+
+// estop・fault_lock・muxed 途絶・scan 途絶は tier 0〜2（ランプ計算より前）で
+// 即座に return するため、ランプの影響を受けない。
+TEST(ObstacleLimiterCoreRamp, EstopIsNeverDelayedByRamp) {
+  ObstacleLimiterParams p = make_ramp_params(0.1);  // かなり緩いランプ
+  ObstacleLimiterCore core;
+  double now = 1000.0;
+
+  ObstacleLimiterOutput o1 = core.update(make_ramp_base(now, 1.0), p);
+  ASSERT_DOUBLE_EQ(o1.out.linear_x, 1.0);
+
+  now += 0.1;
+  ObstacleLimiterInputs in2 = make_ramp_base(now, 1.0);
+  in2.estop.value = true;  // 物理 E-Stop 相当
+  ObstacleLimiterOutput o2 = core.update(in2, p);
+  EXPECT_DOUBLE_EQ(o2.out.linear_x, 0.0) << "estop は同一周期で必ず 0";
+  EXPECT_EQ(o2.action, LimiterAction::STOP);
+}
