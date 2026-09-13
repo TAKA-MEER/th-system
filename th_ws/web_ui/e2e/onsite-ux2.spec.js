@@ -154,3 +154,24 @@ test('F-7: S-21 で W-6 を開いても地図と重ならない', async ({ page 
   const jogBox = await page.locator('#jogWin').boundingBox()
   expect(overlaps(mapBox, jogBox), 'W-6 が S-21 の地図と重なっている').toBe(false)
 })
+
+// F-7 の右列幅キャップ（38cqw）が効くと、.stickBox の固定幅の兄弟（.spd 84px /
+// .slider 30px）が縮まないぶんを .stick（flex:1 1 auto）だけが吸収し、ジョグ
+// パッドが実質消えていた（2026-09-13 実機タブレット縦向きで発覚。当時の
+// STAGE_PORTRAIT は 720 幅で .screen.two-col が効かず 38cqw 自体を踏まなかったが、
+// 3:4（960 幅）にしたことで縦長でも two-col が常に有効になり、同じ潰れが横長
+// 1280×720 とほぼ同じ経路で再現するようになった）。根本修正は theme.css の
+// .stick に min-width:160px を足したことで、この閾値はその下限を直接検証する。
+// 縦長 768×1024（3:4 実機ちょうど）と横長 1280×720 の両方で固定する。
+for (const [label, size] of [['縦長 768x1024', { width: 768, height: 1024 }], ['横長 1280x720', { width: 1280, height: 720 }]]) {
+  test(`WS-9AM: S-20 ${label} で W-6 を開いてもスティックパッドが潰れない`, async ({ page }) => {
+    await page.setViewportSize(size)
+    await gotoScreenWithOnsite(page, 'S20', PREP_STATE, { pins: [], targets: [], mappingActive: true })
+    await page.locator('#s20').waitFor()
+    await page.locator('#s20 .op-manual').click()
+    await page.locator('#jogWin.show').waitFor()
+
+    const stickBox = await page.locator('#jogWin .stick svg').boundingBox()
+    expect(stickBox.width, 'W-6 のスティックパッドが潰れている').toBeGreaterThanOrEqual(150)
+  })
+}

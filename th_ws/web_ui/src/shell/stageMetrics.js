@@ -15,9 +15,12 @@
 // （test/unit/stage-metrics.test.js）。
 "use strict"
 
-// 横長 16:9 / 縦長 9:16。縦横比はユーザー指定（2026-09-02）。
+// 横長 16:9 / 縦長 3:4。縦横比はユーザー指定（2026-09-02 に 16:9/9:16、
+// 2026-09-13 に縦長だけ 3:4 へ変更 — 現場のタブレットは iPad（実機 4:3）が
+// 多く、9:16 のままだと画面の左右が黒帯で余る。3:4 は iPad をレターボックス
+// 無しで使い切れる。横長は PC モニタ想定のままなので 16:9 は変えない。
 export const STAGE_LANDSCAPE = { width: 1280, height: 720 }
-export const STAGE_PORTRAIT = { width: 720, height: 1280 }
+export const STAGE_PORTRAIT = { width: 960, height: 1280 }
 
 /**
  * ビューポートの実寸から、論理キャンバスの寸法と拡大率を決める。

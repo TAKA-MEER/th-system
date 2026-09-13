@@ -532,7 +532,16 @@ table.lst td.r{text-align:right}
    right column の幅比は .screen.two-col の grid-template-columns（760px〜
    1299px: 1.35fr:1fr ≒ 右列 42.6%、1300px 以上: 1.15fr:1.4fr ≒ 右列 54.9%）
    のうち小さい方（42.6%）を基準に、余裕を持たせて 38cqw を上限にした
-   （実測 1280×720 で地図 SVG と重ならないことを screenshot + bounding-box で確認）。 */
+   （実測 1280×720 で地図 SVG と重ならないことを screenshot + bounding-box で確認）。
+   2026-09-13: 縦長 STAGE_PORTRAIT を 9:16(720幅)から 3:4(960幅)に変えたことで
+   .screen.two-col の 760px ブレークポイントを縦長でも常に満たすようになった
+   （#app の論理幅は横長 1280 / 縦長 960 の定数で、どちらも 760 以上）。かつて
+   ここに置いていた「@container app (min-width:760px) でのみ効かせる」ガードは
+   縦長の 720 幅（旧値）で 38cqw が 253.6px しか無く .stickBox の固定幅の兄弟
+   （.spd 84px / .slider 30px）に .stick（flex:1 1 auto）が押し潰される事故を
+   避けるためのものだったが、根本原因は .stick に min-width が無いことだった
+   （下の .stick 定義で min-width:160px を追加済み）。そちらで直っているので
+   このガードは常に真になるだけの死んだ条件になり、撤去した。 */
 #app[data-screen="S-20"] #jogWin,
 #app[data-screen="S-21"] #jogWin{
   left:auto;right:10px;
@@ -552,8 +561,16 @@ table.lst td.r{text-align:right}
 .screen#s13 > div:last-child > .card:not(.ops),
 .screen#s14 > div:last-child > .card:not(.ops){margin-top:clamp(16px, 6vh, 64px)}
 
-.stickBox{display:flex;gap:10px;align-items:stretch}
-.stick{flex:1 1 auto;position:relative;background:var(--inset);border:1px solid var(--bd);border-radius:var(--r);
+/* .stick は flex:1 1 auto で伸縮するが、既定の min-width:auto は中身（SVG
+   width:100%）が min-content の下限を作らないためほぼ 0 まで潰れうる
+   （S-20/S-21 の右列幅キャップ・38cqw が縦長にも効くようになった 2026-09-13
+   の変更で、.spd 84px / .slider 30px の固定幅兄弟が縮まないぶんを .stick
+   だけが吸収し実機タブレットでパッドが実質消える形で発覚）。min-width で
+   下限を明示し、収まらないときは flex-wrap で SpeedPreset/キーボード凡例を
+   次の行へ折り返す（パッドを潰す代わりに縦へ伸びる。縦長は元々この余白がある
+   — WS-9AM で 1280×720 と 768×1024 の両方を固定）。 */
+.stickBox{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
+.stick{flex:1 1 auto;min-width:160px;position:relative;background:var(--inset);border:1px solid var(--bd);border-radius:var(--r);
   touch-action:none;user-select:none;overflow:hidden}
 .stick svg{display:block;width:100%;height:auto;max-height:min(32cqh,260px)}
 /* `off` (e.g. a stale link) greys the pad so the operator sees the stick is

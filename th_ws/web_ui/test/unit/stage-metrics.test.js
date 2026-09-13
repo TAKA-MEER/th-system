@@ -17,7 +17,7 @@ test('横長のビューポートでは 16:9 の論理サイズを返す', () =>
   assert.equal(m.height, STAGE_LANDSCAPE.height)
 })
 
-test('縦長のビューポートでは 9:16 の論理サイズを返す', () => {
+test('縦長のビューポートでは 3:4 の論理サイズを返す', () => {
   const m = stageMetrics(800, 1280)
   assert.equal(m.orientation, 'portrait')
   assert.equal(m.width, STAGE_PORTRAIT.width)
@@ -39,10 +39,10 @@ test('横に余った画面では高さが律速（縦横同率＝比率を崩�
 })
 
 test('縦に余った画面では幅が律速', () => {
-  // 1280x2000 は縦長判定なので基準は 720x1280。min(1280/720, 2000/1280)
+  // 1280x2000 は縦長判定なので基準は 960x1280。min(1280/960, 2000/1280)
   const m = stageMetrics(1280, 2000)
   assert.equal(m.orientation, 'portrait')
-  close(m.scale, 2000 / 1280, 'width-limited')
+  close(m.scale, 1280 / 960, 'width-limited')
 })
 
 test('拡大後が必ずビューポートに収まる（はみ出さない）', () => {
