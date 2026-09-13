@@ -16,9 +16,13 @@ public:
           // (無制限)。目標速度側のランプ(main.cpp の rampToward)とは別に、
           // PID 計算後の出力そのものの変化率を抑える。実機計測(2026-09-11)で
           // 目標速度側のランプだけでは KP/KFF 由来のオーバーシュートが実出力の
-          // 急変（特に停止側で規定の 1.5 m/s^2 の約2倍）に直結すると確認された
-          // ため追加（VISION.md「2026-09-11 — 手動ジョグの発進・停止で
-          // モーター出力が急変する」参照）。
+          // 急変に直結すると確認されたため追加（VISION.md「2026-09-11 —
+          // 手動ジョグの発進・停止でモーター出力が急変する」参照）。
+          // **setpoint==0 の停止指令には適用されない**（compute() 内で
+          // 即時0を返す。障害物ブレーキ等の緊急停止も setpoint=0 を通る
+          // ため、ランプで緩めると brake_accel_mps2 の実測前提が崩れる。
+          // VISION.md「障害物ブレーキが本来より遅く制動していた回帰」参照）。
+          // 効くのは非ゼロ setpoint 間の変化（発進・速度変更・正逆転）のみ。
           outRampRate_(outRampRate),
           iTerm_(0.0f), prevError_(0.0f), firstCall_(true), prevOutput_(0.0f) {}
 
@@ -28,19 +32,23 @@ public:
         if (dt <= 0.0f) return 0.0f;
         const float maxStep = outRampRate_ * dt;
 
-        // 目標速度がちょうど0の場合、比例・積分・微分項は経由させない
-        // (停止時のにじり出し・積分ワインドアップを防ぐフェイルセーフ、従来どおり)。
-        // ただし出力そのものは outRampRate_ に従って 0 へ寄せる。直接 0 を
-        // 返すと出力スルーレートをすり抜けて瞬時にゼロへ落ち、急停止の
-        // "かくん" が残ってしまうため。
+        // 目標速度がちょうど0の場合、比例・積分・微分項は経由させず即座に
+        // 出力を0にする(停止時のにじり出し・積分ワインドアップを防ぐ
+        // フェイルセーフ、従来どおり)。setpoint=0 は通常のジョグ解放だけで
+        // なく障害物ブレーキ・estop・fault_lock・stale 由来の緊急停止も
+        // すべてこの分岐を通るため、outRampRate_ で緩めてはいけない
+        // (2026-09-14: 一時 outRampRate_ を適用していたところ、実機で
+        // ダンボールに軽く接触する事故が発生。brake_accel_mps2=1.18 は
+        // この分岐が即時0を返す前提で実測した値であり、ランプ化すると
+        // 制動距離がその前提より伸びる。VISION.md「障害物ブレーキが本来
+        // より遅く制動していた回帰」参照)。outRampRate_ は非ゼロ
+        // setpoint 間の変化(速度変更・発進・正逆転切替)にのみ適用する。
         if (setpoint == 0.0f) {
-            iTerm_     = 0.0f;
-            prevError_ = 0.0f;
-            firstCall_ = true;
-            prevOutput_ = (maxStep > 0.0f)
-                ? constrain(0.0f, prevOutput_ - maxStep, prevOutput_ + maxStep)
-                : 0.0f;
-            return prevOutput_;
+            iTerm_      = 0.0f;
+            prevError_  = 0.0f;
+            firstCall_  = true;
+            prevOutput_ = 0.0f;
+            return 0.0f;
         }
 
         float error = setpoint - measured;
