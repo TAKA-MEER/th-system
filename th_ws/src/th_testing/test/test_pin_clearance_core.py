@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(__file__), '..', '..', 'th_onsite'))
 
 from th_onsite.pin_clearance_core import (  # noqa: E402
-    clearance_verdict, nearest_lethal_distance, retreat_pose)
+    cell_occupied, clearance_verdict, nearest_lethal_distance, retreat_pose)
 
 
 def _grid(w, h, occupied_cells):
@@ -74,3 +74,27 @@ class TestRetreatPose:
         x2, y2 = retreat_pose(3.0, -3.0, math.pi / 2, 0.25)
         assert math.isclose(x2, 3.0, abs_tol=1e-9)
         assert math.isclose(y2, -3.25)
+
+
+class TestCellOccupied:
+    # 10x10 セル・resolution 0.1m・origin (0,0) → world 0..1m
+    W = H = 10
+    RES = 0.1
+
+    def test_occupied_cell_center(self):
+        g = _grid(self.W, self.H, {(5, 5)})
+        assert cell_occupied(g, self.W, self.H, self.RES, 0, 0,
+                             0.55, 0.55) is True
+
+    def test_empty_adjacent_cell(self):
+        g = _grid(self.W, self.H, {(5, 5)})
+        assert cell_occupied(g, self.W, self.H, self.RES, 0, 0,
+                             0.45, 0.55) is False
+
+    def test_out_of_bounds(self):
+        g = _grid(self.W, self.H, {(5, 5)})
+        assert cell_occupied(g, self.W, self.H, self.RES, 0, 0,
+                             1.5, 1.5) is False
+
+    def test_empty_grid(self):
+        assert cell_occupied([], 0, 0, 0.1, 0, 0, 0, 0) is False

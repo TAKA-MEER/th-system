@@ -58,3 +58,18 @@ def retreat_pose(x, y, yaw, retreat_m):
     -yaw 方向へ動かせば盤から離れる。yaw と retreat_m はそのまま保持（呼び出し側）。
     """
     return (x - retreat_m * math.cos(yaw), y - retreat_m * math.sin(yaw))
+
+
+def cell_occupied(grid, width, height, resolution, origin_x, origin_y,
+                  x, y, lethal_threshold=100):
+    """(x, y)[m] が属するセルが lethal_threshold 以上（占有）なら True。
+
+    範囲外・grid 空なら False（fail-open。他の関数と同じ方針）。
+    """
+    if not grid or width <= 0 or height <= 0 or resolution <= 0:
+        return False
+    cx = int((x - origin_x) / resolution)
+    cy = int((y - origin_y) / resolution)
+    if cx < 0 or cx >= width or cy < 0 or cy >= height:
+        return False
+    return grid[cy * width + cx] >= lethal_threshold

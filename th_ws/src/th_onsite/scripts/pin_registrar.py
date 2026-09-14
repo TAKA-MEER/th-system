@@ -37,7 +37,7 @@ from th_system_msgs.msg import (MapSessionStatus, Pin, PinList, PersonStatus,
 from th_system_msgs.srv import EditPin, RegisterPin, ResolvePin, TwoPointPress
 
 from th_onsite.pin_clearance_core import (
-    clearance_verdict, nearest_lethal_distance, retreat_pose,
+    cell_occupied, clearance_verdict, nearest_lethal_distance, retreat_pose,
 )
 from th_onsite.robot_pose_register_core import build_pin_from_robot_pose
 from th_onsite.two_point_core import (
@@ -463,7 +463,7 @@ class PinRegistrar(Node):
                              json.dumps({'kind': self._kind,
                                          'yaw': round(float(self._yaw), 3)}))
         else:
-            # ROBOT_POSE は FSM を経由しない → その場で置く
+            # ROBOT_POSE / MAP_TAP は FSM を経由しない → その場で置く
             self._place_pin_effect()
         response.success = True
         response.message = ('壁から離して登録しました' if action == 'retreat'
@@ -570,6 +570,8 @@ class PinRegistrar(Node):
             # 機体姿勢での直接登録: その場で完了する処理（2 点指示のような
             # 受付状態を経由しない）。FSM の REGISTER 状態には関与しない。
             return self._on_register_pin_robot_pose(request, response)
+        if request.method == 'MAP_TAP':
+            return self._on_register_pin_map_tap(request, response)
         if request.method != 'TWO_POINT':
             response.success = False
             response.message = f'未知の方法: {request.method}'
@@ -617,6 +619,56 @@ class PinRegistrar(Node):
         response.success = True
         response.pin = self._pin_to_msg(self._pins[-1])
         response.message = '機体の現在姿勢で登録しました'
+        return response
+
+    def _on_register_pin_map_tap(self, request, response):
+        """MAP_TAP: 地図タップの2点 (map frame) から pose を決めて登録する。
+
+        ①=request.tap1_*（ゴール位置）、②=request.tap2_*（向きを与えるためだけの
+        点。保存されない）。2 点指示（§3.1）と同じ意味論・同じ計算式
+        （two_point_core）を、人物追跡の実座標ではなくタップ座標に適用する。
+        """
+        ok, dist = spacing_ok(request.tap1_x, request.tap1_y,
+                              request.tap2_x, request.tap2_y, self._params)
+        if not ok:
+            response.success = False
+            response.message = (
+                f'2点の間隔が近すぎます（{dist:.2f}m）。向けたい方向へもっと'
+                '離してドラッグしてください')
+            return response
+
+        # 壁そのものを指した場合は警告ではなく即時拒否（3択の「そのまま登録」を
+        # 選べる余地を与えない。実世界の物理制約が無いタップ特有の問題）。
+        if self._static_map is not None and self._static_map.data:
+            m = self._static_map
+            if cell_occupied(list(m.data), m.info.width, m.info.height,
+                             m.info.resolution, m.info.origin.position.x,
+                             m.info.origin.position.y, request.tap1_x, request.tap1_y,
+                             self._pin_lethal_threshold):
+                response.success = False
+                response.message = '壁の上をタップしています。壁の無い場所をタップし直してください'
+                return response
+
+        yaw = two_point_yaw(request.tap1_x, request.tap1_y,
+                            request.tap2_x, request.tap2_y)
+
+        nearest_m, verdict = self._check_clearance(request.tap1_x, request.tap1_y)
+        if verdict == 'warn':
+            self._hold_pin_warning(request.kind, request.tap1_x, request.tap1_y,
+                                   yaw, nearest_m, 'map_tap')
+            response.success = False
+            response.message = (
+                f'壁から {nearest_m:.2f}m しかありません。'
+                'このまま登録 / 離して登録 / やめる を選んでください')
+            return response
+
+        self._p1 = (request.tap1_x, request.tap1_y)
+        self._yaw = yaw
+        self._kind = request.kind
+        self._place_pin_effect()
+        response.success = True
+        response.pin = self._pin_to_msg(self._pins[-1])
+        response.message = '地図タップで登録しました'
         return response
 
     # ── /onsite/edit_pin (EditPin) ────────────────────────
