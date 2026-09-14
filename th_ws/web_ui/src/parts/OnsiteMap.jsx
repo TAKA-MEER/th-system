@@ -354,8 +354,14 @@ export default function OnsiteMap({
               }
             }}
           >
-            <circle r={10} fill={home ? '#2196f3' : '#e91e63'} stroke={sel ? '#ffd54f' : (home ? '#90caf9' : '#f8bbd0')} strokeWidth={2} />
-            <text y={26} textAnchor="middle" fontSize="10" fill={home ? '#90caf9' : '#f8bbd0'}>
+            {/* 実機フィードバック（2026-09-14）: 配電盤ピンがコストマップの赤系
+                ヒートマップ（costmapPixels.js）と同系色で見分けにくかったため、
+                配電盤ピンは黄色系に変更した（コストマップは赤〜橙止まりで
+                緑成分が最大180、黄色は235なので明確に区別できる）。選択時の
+                縁取りは色相に依らず白にして、青(待機場所)・黄(配電盤)どちらの
+                塗りとも常にコントラストが付くようにする。 */}
+            <circle r={10} fill={home ? '#2196f3' : '#ffeb3b'} stroke={sel ? '#ffffff' : (home ? '#90caf9' : '#f57f17')} strokeWidth={2} />
+            <text y={26} textAnchor="middle" fontSize="10" fill={home ? '#90caf9' : '#fff59d'}>
               {pin.name || pin.id}
             </text>
           </g>
