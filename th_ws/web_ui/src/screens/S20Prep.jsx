@@ -53,11 +53,12 @@ import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
   BADGE_JOG_DENIED,
   S20_MAP_ARIA, S20_MAP_GATE_BUTTON, S20_MAP_GATE_MSG, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TARGET, S20_MAP_TITLE,
+  S20_MAPTAP_CANCEL, S20_MAPTAP_CONFIRM, S20_MAPTAP_PREVIEW,
   S20_NEXT_REG_HOME, S20_NEXT_REG_PANEL, S20_NEXT_SAVE, S20_NEXT_SELECT_TARGET, S20_NEXT_START_MAPPING,
   S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_EDIT, S20_PIN_RENAME,
   S20_PINWARN_CANCEL, S20_PINWARN_MSG, S20_PINWARN_PLACE, S20_PINWARN_RETREAT,
-  S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REG_HOME_HERE, S20_REG_HERE_NOTE,
-  S20_REG_HERE_OK, S20_REGISTER_TITLE, S20_REG_PANEL, S20_REG_PANEL_HERE,
+  S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REG_HOME_HERE, S20_REG_HOME_MAPTAP, S20_REG_HERE_NOTE,
+  S20_REG_HERE_OK, S20_REGISTER_TITLE, S20_REG_PANEL, S20_REG_PANEL_HERE, S20_REG_PANEL_MAPTAP,
   S20_RESET_ARMED, S20_RESET_BANNER, S20_RESET_BUSY, S20_RESET_FAIL, S20_RESET_IDLE,
   S20_RETURN_HOME, S20_STEP_HOME, S20_STEP_MAP, S20_STEP_PANEL, S20_STEP_SAVE, S20_STEP_TARGET,
   S20_SUBTAB_PINS, S20_SUBTAB_REGISTER,
@@ -100,7 +101,7 @@ export default function S20Prep() {
   // brief-MAP-COSTMAP: 地図タブに Nav2 の costmap と直近の経路を重ねる。
   const costmapData = useOnsiteCostmap(ros)
   const plannedPath = usePlannedPath(ros)
-  const { twoPoint, editPin, registerPinHere, resolvePin } = useOnsiteService()
+  const { twoPoint, editPin, registerPinHere, registerPinMapTap, resolvePin } = useOnsiteService()
   const pinWarn = usePinWarning(ros)
   const jogPanel = useJogPanel()
   // brief-onsite-ux2 F-6: 地図タブの表示ゲート。/slam_control/mapping_active
@@ -140,6 +141,10 @@ export default function S20Prep() {
   // 機体姿勢での登録（REG-2）の結果メッセージ（success/message を venueMsg と同じ
   // パターンで出す。2 点指示ウィザードとは独立）。
   const [hereMsg, setHereMsg] = useState(null)
+  // brief-MAPTAP-FRONTEND: 地図タップ登録（方式C）。registerKind は 2 点指示・
+  // ROBOT_POSE と共通の state を再利用する（新しい kind state を作らない）。
+  const [tapMode, setTapMode] = useState(false)
+  const [pendingTap, setPendingTap] = useState(null)
 
   const stateName = state?.state ?? null
   const isRegister = stateName === 'REGISTER'
@@ -251,6 +256,29 @@ export default function S20Prep() {
     setHereMsg(null)
     const res = await registerPinHere(kind)
     setHereMsg({ ok: !!res?.success, text: res?.message || (res?.success ? S20_REG_HERE_OK(kind) : '') })
+  }
+
+  // brief-MAPTAP-FRONTEND: 地図タップのジェスチャー完了。ここでは確定させず
+  // pendingTap に積むだけ（確定ボタンを待つ）。
+  function handleMapTapConfirm(tap1, tap2) {
+    setPendingTap({ tap1, tap2 })
+  }
+
+  // 確定待ちタップの向き（プレビュー表示と確定カードで使い回す）。
+  const previewYawRad = pendingTap
+    ? Math.atan2(pendingTap.tap2.y - pendingTap.tap1.y, pendingTap.tap2.x - pendingTap.tap1.x)
+    : null
+
+  // brief-MAPTAP-FRONTEND: 確定ボタン。MAP_TAP でサービスを呼び、応答の
+  // success/message は ROBOT_POSE と同じ hereMsg 領域に出す（分けない）。
+  async function handleMapTapCommit() {
+    if (!pendingTap) return
+    const res = await registerPinMapTap({
+      kind: registerKind, tap1: pendingTap.tap1, tap2: pendingTap.tap2,
+    })
+    setHereMsg({ ok: !!res?.success, text: res?.message || '' })
+    setPendingTap(null)
+    setTapMode(false)
   }
 
   // 2 点指示（index 1 → 2）。拒否されたら理由を出して Step 1 からやり直し（§2.3）。
@@ -426,6 +454,13 @@ export default function S20Prep() {
                   noPoseLabel={S20_MAP_NO_POSE}
                   robotLabel={S20_MAP_ROBOT}
                   testId="s20"
+                  tapMode={tapMode}
+                  onTapConfirm={handleMapTapConfirm}
+                  previewPose={pendingTap ? {
+                    x: pendingTap.tap1.x,
+                    y: pendingTap.tap1.y,
+                    yaw: previewYawRad,
+                  } : null}
                 />
               </div>
             </div>
@@ -559,6 +594,57 @@ export default function S20Prep() {
                 </div>
                 {/* REG-2: 2 点指示と機体姿勢の違いを一目で分かる短い注記 */}
                 <div className="sm mut mb" data-testid="s20-reg-note">{S20_REG_HERE_NOTE}</div>
+                {/* brief-MAPTAP-FRONTEND: 地図タップ登録（方式C）の入口。ガードは
+                    -here 系と同じ理由（MAP_TAP も FSM を経由せず直接登録するため、
+                    2 点指示の受付状態を横から壊す）。押すと地図タブへ切り替える。 */}
+                <div className="btnrow n2 mb">
+                  <button
+                    type="button"
+                    className="btn sm btn-register"
+                    data-testid="s20-reg-home-maptap"
+                    disabled={disabledAll || isRegister || pinWarn.active}
+                    onClick={() => { setRegisterKind('HOME'); setTapMode(true); setTab('map') }}
+                  >
+                    <IconPin />
+                    <span>{S20_REG_HOME_MAPTAP}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm btn-register"
+                    data-testid="s20-reg-panel-maptap"
+                    disabled={disabledAll || isRegister || pinWarn.active}
+                    onClick={() => { setRegisterKind('PANEL'); setTapMode(true); setTab('map') }}
+                  >
+                    <IconPin />
+                    <span>{S20_REG_PANEL_MAPTAP}</span>
+                  </button>
+                </div>
+                {pendingTap && (
+                  <div className="well" data-testid="s20-maptap-confirm-card">
+                    <div className="note" data-testid="s20-maptap-preview">
+                      {S20_MAPTAP_PREVIEW(pendingTap.tap1.x, pendingTap.tap1.y,
+                        Math.round((previewYawRad * 180) / Math.PI))}
+                    </div>
+                    <div className="row">
+                      <button
+                        type="button"
+                        className="btn primary"
+                        data-testid="s20-maptap-confirm"
+                        onClick={handleMapTapCommit}
+                      >
+                        {S20_MAPTAP_CONFIRM}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        data-testid="s20-maptap-cancel"
+                        onClick={() => { setPendingTap(null); setTapMode(false) }}
+                      >
+                        {S20_MAPTAP_CANCEL}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {hereMsg && (
                   <div
                     className={`note mb${hereMsg.ok ? '' : ' err'}`}

@@ -82,6 +82,15 @@ export function useOnsiteService() {
     registerPinHere: (kind) => callService(
       SERVICES.ONSITE_REGISTER_PIN, SRV_TYPES.ONSITE_REGISTER_PIN,
       { kind, name: '', method: 'ROBOT_POSE' }, '__thTestRegisterPinHere'),
+    // brief-MAPTAP-FRONTEND: 地図タップ登録（方式C, method=MAP_TAP）。
+    // tap1/tap2 は map frame [m]。tap1=ゴール地点、tap2=向きを与える点。
+    registerPinMapTap: ({ kind, tap1, tap2 }) => callService(
+      SERVICES.ONSITE_REGISTER_PIN, SRV_TYPES.ONSITE_REGISTER_PIN,
+      {
+        kind, name: '', method: 'MAP_TAP',
+        tap1_x: tap1.x, tap1_y: tap1.y, tap2_x: tap2.x, tap2_y: tap2.y,
+      },
+      '__thTestRegisterPinMapTap'),
     // WS-9AB: 壁近接警告が出ているピンの扱いを決める（place / retreat / cancel）。
     resolvePin: (action) => callService(
       RESOLVE_PIN_SERVICE, SRV_TYPES.ONSITE_RESOLVE_PIN,

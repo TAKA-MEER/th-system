@@ -604,3 +604,83 @@ test('レーダーに機体マーク（radar-heading）が描かれる', async (
   await page.getByRole('tab', { name: '対象選択' }).click()
   await expect(page.locator('[data-testid="radar-heading"]')).toBeVisible()
 })
+
+// brief-MAPTAP-FRONTEND §2.5: 地図タップ登録（方式C）。「地図タップで配電盤を
+// 登録」→ 地図タブへ切り替わり、ドラッグで確定カードが出て、確定で
+// /onsite/register_pin{method:MAP_TAP} が飛ぶ。
+test('MAPTAP: 地図タップ登録はドラッグ→確定で register_pin{method:MAP_TAP} を呼ぶ', async ({ page }) => {
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    {
+      pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, routeMap: ROUTE_MAP,
+      mappingActive: true,
+    },
+  )
+  await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
+  // ズーム/パン配線のツールバー（全体表示＋縮尺）が出ていること。
+  await expect(page.locator('[data-testid="s20-map-reset-view"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s20-map-scale"]')).toBeVisible()
+
+  // 地図タブから離れてから入口ボタンを押す（タブが切り替わることを見るため）。
+  await page.getByRole('tab', { name: '対象選択' }).click()
+  await page.evaluate(() => {
+    window.__thTestRegisterPinMapTap = { success: true, pin: {}, message: '地図タップで登録しました' }
+  })
+  await page.locator('[data-testid="s20-reg-panel-maptap"]').click()
+  await expect(page.locator('[data-testid="s20-tab-map"]')).toHaveAttribute('aria-selected', 'true')
+
+  // SVG 内ドラッグ（press→move→release）で確定カードが出る。
+  const map = page.locator('[data-testid="s20-map"]')
+  const box = await map.boundingBox()
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.4)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.4, { steps: 5 })
+  await page.mouse.up()
+  await expect(page.locator('[data-testid="s20-maptap-confirm-card"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s20-maptap-preview"]')).toContainText('向き')
+  await expect(page.locator('[data-testid="s20-map-preview"]')).toBeVisible()
+
+  await page.locator('[data-testid="s20-maptap-confirm"]').click()
+  const calls = await onsiteServiceCalls(page)
+  const reg = calls[calls.length - 1]
+  expect(reg.service).toBe('/onsite/register_pin')
+  expect(reg.request.method).toBe('MAP_TAP')
+  expect(reg.request.kind).toBe('PANEL')
+  for (const k of ['tap1_x', 'tap1_y', 'tap2_x', 'tap2_y']) {
+    expect(typeof reg.request[k], `${k} が数値で送られていない`).toBe('number')
+  }
+  await expect(page.locator('[data-testid="s20-reg-here-msg"]')).toHaveText('地図タップで登録しました')
+  // 確定後はカードが消える。
+  await expect(page.locator('[data-testid="s20-maptap-confirm-card"]')).toHaveCount(0)
+})
+
+// キャンセル経路: カードが消え、新規のサービス呼び出しが増えない。
+test('MAPTAP: キャンセルでカードが消えサービスを呼ばない', async ({ page }) => {
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    {
+      pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, routeMap: ROUTE_MAP,
+      mappingActive: true,
+    },
+  )
+  await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
+  await page.evaluate(() => {
+    window.__thTestRegisterPinMapTap = { success: true, pin: {}, message: '地図タップで登録しました' }
+  })
+  await page.locator('[data-testid="s20-reg-home-maptap"]').click()
+
+  const map = page.locator('[data-testid="s20-map"]')
+  const box = await map.boundingBox()
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.6)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.3, { steps: 5 })
+  await page.mouse.up()
+  await expect(page.locator('[data-testid="s20-maptap-confirm-card"]')).toBeVisible()
+
+  const before = (await onsiteServiceCalls(page)).length
+  await page.locator('[data-testid="s20-maptap-cancel"]').click()
+  await expect(page.locator('[data-testid="s20-maptap-confirm-card"]')).toHaveCount(0)
+  expect(await onsiteServiceCalls(page)).toHaveLength(before)
+})

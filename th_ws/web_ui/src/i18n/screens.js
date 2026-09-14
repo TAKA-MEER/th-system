@@ -252,6 +252,13 @@ export const S20_REG_HERE_NOTE =
   '「待機場所/配電盤を登録」は 2 点指示（人が立つ場所）、「いまの姿勢で登録」は機体の現在位置で登録します'
 export const S20_REG_HERE_OK = (kind) =>
   `${kind === 'HOME' ? '待機場所' : '配電盤'}を機体のいまの姿勢で登録しました`
+// brief-MAPTAP-FRONTEND: 地図タップ登録（方式C）。Spec-onsite.md §3.7。
+export const S20_REG_HOME_MAPTAP = '地図タップで待機場所を登録'
+export const S20_REG_PANEL_MAPTAP = '地図タップで配電盤を登録'
+export const S20_MAPTAP_CONFIRM = 'この位置で確定'
+export const S20_MAPTAP_CANCEL = 'キャンセル'
+export const S20_MAPTAP_PREVIEW = (x, y, deg) => `x=${x.toFixed(2)}m y=${y.toFixed(2)}m 向き${deg}°`
+export const S20_MAP_RESET_VIEW = '全体表示'
 export const S20_WIZ_STEP = (n) => `Step ${n}/2`
 // Step 1: 立ち位置。Step 2: 向きたい方向へ一歩進んだ場所（Spec-onsite §3.1 F-08）。
 // 同じ文言だと「2 回目も同じ場所で押せばよい」と誤解される

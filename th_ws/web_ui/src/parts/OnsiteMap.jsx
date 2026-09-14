@@ -18,10 +18,11 @@
 // 解像度・原点・サイズが一致しないため info の四隅を toPx() で変換してから <image> に
 // 載せる（costmapPixels.js の赤ヒートマップ）。経路は plannedPath（[{x,y},...]）を
 // 水色の <polyline> で描く。両方無ければ何も描かない。
-import { useEffect, useState } from 'react'
-import { onsiteMapTransform, yawToSvgDeg } from '../mapGeometry.js'
+import { useEffect, useRef, useState } from 'react'
+import { canvasToWorld, onsiteMapTransform, yawToSvgDeg } from '../mapGeometry.js'
 import { occupancyGridToPixels } from '../screens/routePreviewGeom.js'
 import { costmapToPixels } from './costmapPixels.js'
+import { S20_MAP_RESET_VIEW } from '../i18n/screens.js'
 
 // 論理 viewBox は 340x250（mapGeometry の変換はこの座標系が前提。変更禁止）。
 // 表示サイズは CSS（.mapWrap svg の width:100% / max-height）が決める
@@ -45,6 +46,13 @@ export default function OnsiteMap({
   costmapData = null,
   plannedPath = [],
   testId,
+  // brief-MAPTAP-FRONTEND: 地図タップ登録（方式C）。Spec-onsite.md §3.7。
+  // tapMode の間だけ地図背景への press→drag→release をタップ登録ジェスチャー
+  // として受け付け、release 時に onTapConfirm(tap1, tap2)（map frame [m]）を
+  // 1 回だけ呼ぶ。previewPose は親が確定待ちの候補を描かせるための pose。
+  tapMode = false,
+  onTapConfirm = null,
+  previewPose = null,
 }) {
   // 占有格子ラスタ → dataURL。useRouteMap 由来の mapData.info/data。
   const [mapUrl, setMapUrl] = useState(null)
@@ -93,8 +101,94 @@ export default function OnsiteMap({
   }, [costmapData])
 
   // UX-7: 縁のピンのラベル（丸の下 26px）が SVG の外で切れないよう内側に寄せる。
-  const t = onsiteMapTransform(mapData, MAP_VB_W, MAP_VB_H, 24, 22)
+  // brief-MAPTAP-FRONTEND: 内部 zoom/pan state を第6引数に配線する
+  // （mapGeometry.js の変換は 340x250 座標系の内部で描画範囲を動かすだけ。
+  // MAP_VB_W/MAP_VB_H 定数自体は変えない）。
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  // ジェスチャー中のドラッグ表示（viewBox 座標）。release で消える。
+  const [drag, setDrag] = useState(null)
+  const svgRef = useRef(null)
+  const panRef = useRef(null)
+  const t = onsiteMapTransform(mapData, MAP_VB_W, MAP_VB_H, 24, 22,
+    { zoom, panX: pan.x, panY: pan.y })
   const hasMap = !!(mapUrl && t.view)
+
+  // tapMode を抜けたらジェスチャー途中の表示を捨てる。
+  useEffect(() => {
+    if (!tapMode) setDrag(null)
+  }, [tapMode])
+
+  // ブラウザの clientX/clientY → SVG viewBox 座標。表示サイズ・レターボックスに
+  // 依らず正しく落ちるよう getScreenCTM() の逆変換を使う（rect 比率換算だと
+  // preserveAspectRatio の余白分だけずれる）。
+  function toViewBox(e) {
+    const svg = svgRef.current
+    if (!svg || typeof DOMPoint === 'undefined') return null
+    const ctm = svg.getScreenCTM()
+    if (!ctm) return null
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse())
+    return [p.x, p.y]
+  }
+
+  function toWorld(vb) {
+    return canvasToWorld(vb[0], vb[1], mapData.info, t.view)
+  }
+
+  function handleWheel(e) {
+    if (!t.view) return
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
+    setZoom((z) => Math.min(8, Math.max(1, z * factor)))
+  }
+
+  function handlePointerDown(e) {
+    if (!t.view) return
+    const pos = toViewBox(e)
+    if (!pos) return
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* noop */ }
+    if (tapMode) {
+      setDrag({ start: pos, cur: pos })
+    } else {
+      panRef.current = { last: pos }
+    }
+  }
+
+  function handlePointerMove(e) {
+    if (!t.view) return
+    const pos = toViewBox(e)
+    if (!pos) return
+    if (tapMode) {
+      if (drag) setDrag({ start: drag.start, cur: pos })
+    } else if (panRef.current) {
+      const [lx, ly] = panRef.current.last
+      const dx = pos[0] - lx, dy = pos[1] - ly
+      panRef.current = { last: pos }
+      setPan((p) => ({ x: p.x + dx, y: p.y + dy }))
+    }
+  }
+
+  function handlePointerUp(e) {
+    panRef.current = null
+    if (!tapMode || !drag || !t.view) {
+      if (!tapMode) setDrag(null)
+      return
+    }
+    const pos = toViewBox(e) ?? drag.cur
+    const [x1, y1] = toWorld(drag.start)
+    const [x2, y2] = toWorld(pos)
+    setDrag(null)
+    if (onTapConfirm) onTapConfirm({ x: x1, y: y1 }, { x: x2, y: y2 })
+  }
+
+  function handlePointerCancel() {
+    panRef.current = null
+    setDrag(null)
+  }
+
+  function handleResetView() {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }
 
   // brief-MAP-COSTMAP: costmap の world 矩形（origin と origin+width*res /
   // +height*res）を toPx() で対角 2 点に落とし、SVG は y が下向き（worldToCanvas が
@@ -119,8 +213,30 @@ export default function OnsiteMap({
   // マウントされているか」を e2e から直接見るための testid（F-6 の表示ゲート、
   // F-7 の重なり判定の両方が使う）。他の子要素（-map-raster / -map-pin-<id> /
   // -map-robot / -map-no-pose）と同じ `${testId}-map-*` 系列に揃える。
+  //
+  // brief-MAPTAP-FRONTEND: 戻り値は <svg> 単体でなくフラグメントにし、<svg> の
+  // 外にツールバー（全体表示ボタン＋縮尺表示）を置く。呼び出し元は .mapWrap div
+  // でラップしているのでレイアウトは崩れない。
+  //
+  // 縮尺表示: t.view.mPerPx（m/px）から 60px のバーが何 m かを出す（ズームしても
+  // 正直な値になるようバー幅は固定・ラベル側を変える）。
+  const scaleBarM = t.view ? 60 * t.view.mPerPx : null
+  const scaleLabel = scaleBarM == null ? null
+    : scaleBarM >= 1 ? `${scaleBarM.toFixed(1)}m` : `${(scaleBarM * 100).toFixed(0)}cm`
   return (
-    <svg viewBox={`0 0 ${MAP_VB_W} ${MAP_VB_H}`} aria-label={ariaLabel} data-testid={`${testId}-map`}>
+    <>
+    <svg
+      ref={svgRef}
+      viewBox={`0 0 ${MAP_VB_W} ${MAP_VB_H}`}
+      aria-label={ariaLabel}
+      data-testid={`${testId}-map`}
+      style={tapMode ? { cursor: 'crosshair', touchAction: 'none' } : { touchAction: 'pan-y' }}
+      onWheel={handleWheel}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+    >
       <rect width={MAP_VB_W} height={MAP_VB_H} fill="#20242c" />
       {hasMap ? (
         <image
@@ -164,16 +280,21 @@ export default function OnsiteMap({
         const [px, py] = t.toPx(pin.pose?.position?.x ?? 0, pin.pose?.position?.y ?? 0)
         const sel = pin.id === selectedPinId
         const home = pin.kind === 'HOME'
+        // brief-MAPTAP-FRONTEND: tapMode の間はドラッグ＝タップジェスチャーなので
+        // ピン選択とは排他にする（tapMode に入る前に見たい範囲へパンしておく運用）。
+        // 通常時（tapMode=false）のピンタップ＝選択の挙動は変えない。
+        const selectable = !tapMode
         return (
           <g
             key={pin.id}
             className={`${testId}-map-pin${sel ? ' sel' : ''}`}
             transform={`translate(${px} ${py})`}
             role="button"
-            tabIndex={0}
+            tabIndex={selectable ? 0 : -1}
             data-testid={`${testId}-map-pin-${pin.id}`}
-            onClick={() => onSelectPin(pin.id)}
+            onClick={selectable ? () => onSelectPin(pin.id) : undefined}
             onKeyDown={(e) => {
+              if (!selectable) return
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault(); onSelectPin(pin.id)
               }
@@ -243,6 +364,62 @@ export default function OnsiteMap({
           </text>
         </g>
       ) : null}
+
+      {previewPose ? (
+        // brief-MAPTAP-FRONTEND: 確定待ちの候補（release 後も確定/キャンセル待ちの
+        // 間ずっと表示）。緑=ロボット・橙=対象者・青/赤=ピンと衝突しない紫系。
+        <g
+          transform={`translate(${t.toPx(previewPose.x, previewPose.y)[0]} ${t.toPx(previewPose.x, previewPose.y)[1]}) rotate(${yawToSvgDeg(previewPose.yaw)})`}
+          data-testid={`${testId}-map-preview`}
+        >
+          <circle r={9} fill="#8e24aa" stroke="#e1bee7" strokeWidth={2} strokeDasharray="4 2" />
+          <line x1={0} y1={0} x2={16} y2={0} stroke="#e1bee7" strokeWidth={3} strokeLinecap="round" />
+        </g>
+      ) : null}
+
+      {drag ? (
+        // brief-MAPTAP-FRONTEND: ジェスチャー中の自前プレビュー（表示用）。
+        // 保存される yaw はバックエンドが two_point_core.two_point_yaw() で
+        // 計算し直すので、ここの角度は目安でよい。
+        <g data-testid={`${testId}-map-tapline`} pointerEvents="none">
+          <line
+            x1={drag.start[0]} y1={drag.start[1]}
+            x2={drag.cur[0]} y2={drag.cur[1]}
+            stroke="#ce93d8" strokeWidth={2} strokeDasharray="5 3"
+          />
+          <circle cx={drag.start[0]} cy={drag.start[1]} r={4} fill="#ce93d8" />
+          <text
+            x={drag.cur[0] + 8} y={drag.cur[1] - 8}
+            fontSize="11" fill="#e1bee7"
+          >
+            {`${Math.round((Math.atan2(
+              toWorld(drag.cur)[1] - toWorld(drag.start)[1],
+              toWorld(drag.cur)[0] - toWorld(drag.start)[0]) * 180) / Math.PI)}°`}
+          </text>
+        </g>
+      ) : null}
     </svg>
+    {t.view ? (
+      <div className="row mt" style={{ alignItems: 'center' }}>
+        <button
+          type="button"
+          className="btn sm"
+          data-testid={`${testId}-map-reset-view`}
+          onClick={handleResetView}
+        >
+          {S20_MAP_RESET_VIEW}
+        </button>
+        <span className="sm mut" data-testid={`${testId}-map-scale`}>
+          <span
+            style={{
+              display: 'inline-block', width: 60, height: 0,
+              borderTop: '2px solid #9aa4b2', verticalAlign: 'middle', marginRight: 6,
+            }}
+          />
+          {scaleLabel}
+        </span>
+      </div>
+    ) : null}
+    </>
   )
 }
