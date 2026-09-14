@@ -59,6 +59,19 @@ export function worldToCanvas(x, y, mapInfo, view) {
   ]
 }
 
+// worldToCanvas() の逆変換。canvas ピクセル [px, py] → map座標 [x, y] [m]。
+// 地図タップ登録（方式C: Spec-onsite.md §3.7）でタップ地点を map 座標に戻す。
+export function canvasToWorld(px, py, mapInfo, view) {
+  const { resolution, origin } = mapInfo
+  const originYaw = quatToYaw(origin.orientation)
+  const gx = (px - view.offX) / view.scale
+  const gy = (view.offY + view.drawH - py) / view.scale
+  const cos = Math.cos(originYaw), sin = Math.sin(originYaw)
+  const dx = gx * resolution * cos - gy * resolution * sin
+  const dy = gx * resolution * sin + gy * resolution * cos
+  return [origin.position.x + dx, origin.position.y + dy]
+}
+
 // base_link 相対の点 (x=前方, y=左) を map 座標へ。
 // laser_link は base_link と x/y/yaw が同一 (Z のみ車輪半径分違う、
 // th_robot.urdf.xacro の laser_joint) なので、点群・脚検出候補・追跡対象の
@@ -83,7 +96,8 @@ export function baseToWorld(localX, localY, robotPose) {
 //     - mapData: 元の OccupancyGrid（ラスタ描画に使う）。null でもよい
 //     - view: computeMapView() の戻り値（地図あり時）。null なら地図なしフォールバック
 //     - toPx(x, y): map 座標 [m] → SVG ピクセル [px, py]。地図あり/なしで同じ形
-export function onsiteMapTransform(mapData, viewW, viewH, fallbackPxPerM = 24, insetPx = 0) {
+export function onsiteMapTransform(mapData, viewW, viewH, fallbackPxPerM = 24, insetPx = 0,
+  userView = {}) {
   // insetPx: 地図を SVG の内側に寄せる余白 [px]。ピンのラベルは丸の下 26px に
   // 描かれるので、余白ゼロだと縁のピンのラベルが SVG の外で切れる（UX-7）。
   // 既定 0 なので既存の呼び出し・ユニットテストの期待値は変わらない。
@@ -107,7 +121,8 @@ export function onsiteMapTransform(mapData, viewW, viewH, fallbackPxPerM = 24, i
     }
   }
   const view = computeMapView(
-    info, viewW - insetPx * 2, viewH - insetPx * 2, { panX: insetPx, panY: insetPx })
+    info, viewW - insetPx * 2, viewH - insetPx * 2,
+    { zoom: userView.zoom ?? 1, panX: insetPx + (userView.panX ?? 0), panY: insetPx + (userView.panY ?? 0) })
   return {
     mapData,
     view,

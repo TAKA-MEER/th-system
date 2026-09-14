@@ -4,7 +4,9 @@
 // 変換（toPx）を通ることを保証する。回転は yawToSvgDeg() で符号を反転する。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { onsiteMapTransform, yawToSvgDeg } from '../../src/mapGeometry.js'
+import {
+  canvasToWorld, computeMapView, onsiteMapTransform, worldToCanvas, yawToSvgDeg,
+} from '../../src/mapGeometry.js'
 
 test('yawToSvgDeg: 0 は 0', () => {
   assert.equal(yawToSvgDeg(0), 0)
@@ -65,4 +67,65 @@ test('onsiteMapTransform: 地図ありなら computeMapView ベース（等方�
 test('onsiteMapTransform: invalid info（data なし）は地図なし扱い', () => {
   assert.equal(onsiteMapTransform({ info: smallInfo(), data: null }, 340, 250).view, null)
   assert.equal(onsiteMapTransform(undefined, 340, 250).view, null)
+})
+
+// brief-MAPTAP-FRONTEND §1.3: canvasToWorld() は worldToCanvas() の逆変換。
+// 回転なしの地図で round-trip する。
+test('canvasToWorld: round-trip（回転なし）', () => {
+  const info = smallInfo()
+  const grid = { info, data: new Array(25).fill(0) }
+  const { view } = onsiteMapTransform(grid, 340, 250)
+  for (const [x, y] of [[0, 0], [0.3, 0.7], [1, 1], [-0.2, 0.5], [0.8, -0.1]]) {
+    const [px, py] = worldToCanvas(x, y, info, view)
+    const [rx, ry] = canvasToWorld(px, py, info, view)
+    assert.ok(Math.abs(rx - x) < 1e-9, `x が戻らない: ${x} -> ${rx}`)
+    assert.ok(Math.abs(ry - y) < 1e-9, `y が戻らない: ${y} -> ${ry}`)
+  }
+})
+
+// 回転あり（yaw=90°）でも round-trip する。回転なしだけでは符号バグを見逃す。
+test('canvasToWorld: round-trip（origin yaw=90°）', () => {
+  const info = {
+    ...smallInfo(),
+    origin: {
+      position: { x: 1, y: -2, z: 0 },
+      orientation: { x: 0, y: 0, z: Math.sin(Math.PI / 4), w: Math.cos(Math.PI / 4) },
+    },
+  }
+  const grid = { info, data: new Array(25).fill(0) }
+  const { view } = onsiteMapTransform(grid, 340, 250)
+  for (const [x, y] of [[1, -2], [1.3, -1.5], [0.5, -2.8], [2, -1]]) {
+    const [px, py] = worldToCanvas(x, y, info, view)
+    const [rx, ry] = canvasToWorld(px, py, info, view)
+    assert.ok(Math.abs(rx - x) < 1e-9, `x が戻らない: ${x} -> ${rx}`)
+    assert.ok(Math.abs(ry - y) < 1e-9, `y が戻らない: ${y} -> ${ry}`)
+  }
+})
+
+test('onsiteMapTransform: zoom=2 で scale が2倍', () => {
+  const info = smallInfo()
+  const grid = { info, data: new Array(25).fill(0) }
+  const base = onsiteMapTransform(grid, 340, 250, 24, 0)
+  const zoomed = onsiteMapTransform(grid, 340, 250, 24, 0, { zoom: 2 })
+  assert.equal(zoomed.view.scale, base.view.scale * 2)
+})
+
+test('onsiteMapTransform: panX/panY で toPx がずれる', () => {
+  const info = smallInfo()
+  const grid = { info, data: new Array(25).fill(0) }
+  const base = onsiteMapTransform(grid, 340, 250, 24, 0)
+  const panned = onsiteMapTransform(grid, 340, 250, 24, 0, { panX: 10, panY: 5 })
+  const [bx, by] = base.toPx(0, 0)
+  const [px, py] = panned.toPx(0, 0)
+  assert.ok(Math.abs((px - bx) - 10) < 1e-9, `panX が +10 ずれていない: ${px - bx}`)
+  assert.ok(Math.abs((py - by) - 5) < 1e-9, `panY が +5 ずれていない: ${py - by}`)
+})
+
+test('onsiteMapTransform: userView 省略時は従来どおり（zoom=1, pan=0）', () => {
+  const info = smallInfo()
+  const grid = { info, data: new Array(25).fill(0) }
+  const t = onsiteMapTransform(grid, 340, 250, 24, 22)
+  const ref = computeMapView(info, 340 - 44, 250 - 44, { panX: 22, panY: 22 })
+  assert.equal(t.view.scale, ref.scale)
+  assert.deepEqual(t.toPx(0, 0), [ref.offX, ref.offY + ref.drawH])
 })
