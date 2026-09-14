@@ -110,6 +110,10 @@ export default function OnsiteMap({
   const [drag, setDrag] = useState(null)
   const svgRef = useRef(null)
   const panRef = useRef(null)
+  // 実機確認（2026-09-15）: 同時に押されているポインタ（タッチ）を pointerId ごとに
+  // 保持し、2本になったらピンチズームへ切り替える。1本の間はタップジェスチャー／パン。
+  const pointersRef = useRef(new Map())
+  const pinchRef = useRef(null) // { dist, zoom }（2本目が触れた瞬間の基準値）
   const t = onsiteMapTransform(mapData, MAP_VB_W, MAP_VB_H, 24, 22,
     { zoom, panX: pan.x, panY: pan.y })
   const hasMap = !!(mapUrl && t.view)
@@ -119,16 +123,31 @@ export default function OnsiteMap({
     if (!tapMode) setDrag(null)
   }, [tapMode])
 
-  // ブラウザの clientX/clientY → SVG viewBox 座標。表示サイズ・レターボックスに
-  // 依らず正しく落ちるよう getScreenCTM() の逆変換を使う（rect 比率換算だと
-  // preserveAspectRatio の余白分だけずれる）。
-  function toViewBox(e) {
+  // ブラウザの clientX/clientY → SVG viewBox 座標。
+  //
+  // 実機確認（2026-09-15）: 「地図タップの位置が実際にタップした場所とずれる」
+  // 不具合の原因。旧実装は getScreenCTM() の逆変換を使っていたが、このアプリは
+  // shell/FixedStage.jsx が #app 全体を transform: scale(var(--stage-scale)) で
+  // 画面に合わせて拡大する作りで（タブレットでは --stage-scale がほぼ確実に1以外）、
+  // getScreenCTM() がこの手の祖先要素の CSS transform を正しく合成するかはブラウザ
+  // 実装に依存する（デスクトップ Chrome では偶然正しく見えていた）。
+  // getBoundingClientRect() は祖先の transform を含めた最終的な画面上の矩形を
+  // 返すので、そこから viewBox の既定レターボックス（xMidYMid meet）を手計算する
+  // 方が実装依存が無く確実。
+  function clientToViewBox(clientX, clientY) {
     const svg = svgRef.current
-    if (!svg || typeof DOMPoint === 'undefined') return null
-    const ctm = svg.getScreenCTM()
-    if (!ctm) return null
-    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse())
-    return [p.x, p.y]
+    if (!svg) return null
+    const rect = svg.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return null
+    const scale = Math.min(rect.width / MAP_VB_W, rect.height / MAP_VB_H)
+    const drawW = MAP_VB_W * scale, drawH = MAP_VB_H * scale
+    const offX = rect.left + (rect.width - drawW) / 2
+    const offY = rect.top + (rect.height - drawH) / 2
+    return [(clientX - offX) / scale, (clientY - offY) / scale]
+  }
+
+  function toViewBox(e) {
+    return clientToViewBox(e.clientX, e.clientY)
   }
 
   function toWorld(vb) {
@@ -141,11 +160,27 @@ export default function OnsiteMap({
     setZoom((z) => Math.min(8, Math.max(1, z * factor)))
   }
 
+  function pointerDist(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y)
+  }
+
   function handlePointerDown(e) {
     if (!t.view) return
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* noop */ }
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    // 実機確認（2026-09-15）: タブレットでピンチズームができない不具合の対策。
+    // 従来 onWheel（マウスホイール）しか無く、タッチのピンチ操作を一切見ていなかった。
+    if (pointersRef.current.size === 2) {
+      // 2本目が触れた: 進行中のタップジェスチャー／パンは中断してピンチへ切り替える。
+      setDrag(null)
+      panRef.current = null
+      const [a, b] = [...pointersRef.current.values()]
+      pinchRef.current = { dist: pointerDist(a, b), zoom }
+      return
+    }
+    if (pointersRef.current.size > 2) return
     const pos = toViewBox(e)
     if (!pos) return
-    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* noop */ }
     if (tapMode) {
       setDrag({ start: pos, cur: pos })
     } else {
@@ -155,6 +190,17 @@ export default function OnsiteMap({
 
   function handlePointerMove(e) {
     if (!t.view) return
+    if (pointersRef.current.has(e.pointerId)) {
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    }
+    if (pointersRef.current.size === 2 && pinchRef.current) {
+      const [a, b] = [...pointersRef.current.values()]
+      if (pinchRef.current.dist > 0) {
+        const factor = pointerDist(a, b) / pinchRef.current.dist
+        setZoom(Math.min(8, Math.max(1, pinchRef.current.zoom * factor)))
+      }
+      return
+    }
     const pos = toViewBox(e)
     if (!pos) return
     if (tapMode) {
@@ -168,6 +214,8 @@ export default function OnsiteMap({
   }
 
   function handlePointerUp(e) {
+    pointersRef.current.delete(e.pointerId)
+    if (pointersRef.current.size < 2) pinchRef.current = null
     panRef.current = null
     if (!tapMode || !drag || !t.view) {
       if (!tapMode) setDrag(null)
@@ -180,7 +228,9 @@ export default function OnsiteMap({
     if (onTapConfirm) onTapConfirm({ x: x1, y: y1 }, { x: x2, y: y2 })
   }
 
-  function handlePointerCancel() {
+  function handlePointerCancel(e) {
+    pointersRef.current.delete(e.pointerId)
+    if (pointersRef.current.size < 2) pinchRef.current = null
     panRef.current = null
     setDrag(null)
   }
@@ -230,7 +280,11 @@ export default function OnsiteMap({
       viewBox={`0 0 ${MAP_VB_W} ${MAP_VB_H}`}
       aria-label={ariaLabel}
       data-testid={`${testId}-map`}
-      style={tapMode ? { cursor: 'crosshair', touchAction: 'none' } : { touchAction: 'pan-y' }}
+      // 実機確認（2026-09-15）: パン・ピンチズームは JS 側（pointer イベント）で
+      // 自前実装しているので、ブラウザの既定タッチ処理は常に止める
+      // （tapMode=false でも pan-y を許すと、ブラウザ既定のスクロールと自前パンが
+      // 競合しうる）。
+      style={{ cursor: tapMode ? 'crosshair' : 'grab', touchAction: 'none' }}
       onWheel={handleWheel}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

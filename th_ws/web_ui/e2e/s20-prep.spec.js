@@ -9,6 +9,7 @@ import {
   setTestState, setTestPersonTargets, setTestOnsitePins, unlockOnsiteMap, stdTriggerCalls,
   stubServices,
 } from './helpers.js'
+import { onsiteMapTransform } from '../src/mapGeometry.js'
 
 // Pin.msg の最小形（pose.position が地図座標、kind が HOME/PANEL）。
 function pin(id, name, kind, x, y, yawDeg = 90) {
@@ -45,7 +46,10 @@ const ROUTE_MAP = {
     resolution: 0.5,
     width: 4,
     height: 4,
-    origin: { position: { x: -1, y: -1 }, orientation: { w: 1, z: 0 } },
+    // quatToYaw() は x/y も参照する（無回転の単位クォータニオン）。x/y を省くと
+    // NaN になり、pin/toPx が NaN 座標になる（従来のテストは raster の可視性しか
+    // 見ていなかったため気づかれなかった。MAPTAP の非等倍回帰テストで判明）。
+    origin: { position: { x: -1, y: -1 }, orientation: { x: 0, y: 0, z: 0, w: 1 } },
   },
   data: [0, 100, -1, 0, 100, 0, 0, -1, -1, 0, 100, 0, 0, -1, 100, 0],
 }
@@ -683,4 +687,105 @@ test('MAPTAP: キャンセルでカードが消えサービスを呼ばない', 
   await page.locator('[data-testid="s20-maptap-cancel"]').click()
   await expect(page.locator('[data-testid="s20-maptap-confirm-card"]')).toHaveCount(0)
   expect(await onsiteServiceCalls(page)).toHaveLength(before)
+})
+
+// 実機確認（2026-09-15）: 「地図タップの位置が実際にタップした場所とずれる」の回帰
+// テスト。shell/FixedStage.jsx は #app 全体を transform: scale(var(--stage-scale))
+// で画面に合わせて拡大する（論理サイズは stageMetrics.js の 1280x720）。既定の
+// Playwright ビューポートはちょうど 1280x720 なので --stage-scale=1 になり、
+// この問題は再現しない（元のバグが e2e をすり抜けた理由）。ここでは意図的に
+// 1024x768（--stage-scale = min(1024/1280, 768/720) = 0.8）にして、非等倍でも
+// タップした画面座標が正しい map 座標に変換されることを確認する。
+test('MAPTAP: 非等倍の --stage-scale でもタップ位置が正しい map 座標に変換される（実機のタップずれの回帰）', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    {
+      pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, routeMap: ROUTE_MAP,
+      mappingActive: true,
+    },
+  )
+  await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
+  await page.evaluate(() => {
+    window.__thTestRegisterPinMapTap = { success: true, pin: {}, message: 'ok' }
+  })
+  await page.locator('[data-testid="s20-reg-panel-maptap"]').click()
+
+  // OnsiteMap.jsx が実際に使う変換（zoom=1・pan=0 の初期状態）で、選んだ world 座標
+  // が SVG の viewBox 上のどこに来るかを求める（本番コードと同じ mapGeometry.js）。
+  const worldTap1 = { x: 0.2, y: -0.4 }
+  const worldTap2 = { x: 0.7, y: -0.4 }
+  const t = onsiteMapTransform(ROUTE_MAP, 340, 250, 24, 22)
+  const [vx1, vy1] = t.toPx(worldTap1.x, worldTap1.y)
+  const [vx2, vy2] = t.toPx(worldTap2.x, worldTap2.y)
+
+  // viewBox 座標 → 実画面座標。SVG 自身のレターボックス（既定の xMidYMid meet）を
+  // 実際の boundingBox（--stage-scale 込みの最終描画矩形）から計算する
+  // （OnsiteMap.jsx の clientToViewBox の逆。実際に描画された矩形を使うことで
+  // --stage-scale の実際の適用まで検証する）。
+  const box = await page.locator('[data-testid="s20-map"]').boundingBox()
+  const scale = Math.min(box.width / 340, box.height / 250)
+  const drawW = 340 * scale, drawH = 250 * scale
+  const offX = box.x + (box.width - drawW) / 2
+  const offY = box.y + (box.height - drawH) / 2
+  const [sx1, sy1] = [offX + vx1 * scale, offY + vy1 * scale]
+  const [sx2, sy2] = [offX + vx2 * scale, offY + vy2 * scale]
+
+  await page.mouse.move(sx1, sy1)
+  await page.mouse.down()
+  await page.mouse.move(sx2, sy2, { steps: 5 })
+  await page.mouse.up()
+
+  await expect(page.locator('[data-testid="s20-maptap-confirm-card"]')).toBeVisible()
+  await page.locator('[data-testid="s20-maptap-confirm"]').click()
+  const calls = await onsiteServiceCalls(page)
+  const reg = calls[calls.length - 1]
+  expect(reg.request.method).toBe('MAP_TAP')
+  expect(reg.request.tap1_x).toBeCloseTo(worldTap1.x, 1)
+  expect(reg.request.tap1_y).toBeCloseTo(worldTap1.y, 1)
+  expect(reg.request.tap2_x).toBeCloseTo(worldTap2.x, 1)
+  expect(reg.request.tap2_y).toBeCloseTo(worldTap2.y, 1)
+})
+
+// 実機確認（2026-09-15）: 「タブレット操作で地図の拡大ができない」の回帰テスト。
+// 従来は onWheel（マウスホイール）しか無く、タッチのピンチ操作を一切見ていなかった。
+// Playwright にはピンチ操作の高水準 API が無いので、2本指タッチを合成 PointerEvent
+// （pointerType: 'touch'）で dispatch して縮尺表示の変化を見る。
+test('MAPTAP: 2本指ピンチでズームできる（タブレットでの拡大操作の回帰）', async ({ page }) => {
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    {
+      pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, routeMap: ROUTE_MAP,
+      mappingActive: true,
+    },
+  )
+  await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
+
+  const scaleBefore = await page.locator('[data-testid="s20-map-scale"]').innerText()
+
+  await page.evaluate(() => {
+    const svg = document.querySelector('[data-testid="s20-map"]')
+    const rect = svg.getBoundingClientRect()
+    const cy = rect.top + rect.height / 2
+    const mk = (id, x, y, type) => new PointerEvent(type, {
+      pointerId: id, pointerType: 'touch', clientX: x, clientY: y,
+      bubbles: true, cancelable: true,
+    })
+    // 2本指を中心から近い間隔で置き、外側へ広げる（ピンチアウト＝拡大）。
+    const cx = rect.left + rect.width / 2
+    svg.dispatchEvent(mk(1, cx - 10, cy, 'pointerdown'))
+    svg.dispatchEvent(mk(2, cx + 10, cy, 'pointerdown'))
+    svg.dispatchEvent(mk(1, cx - 60, cy, 'pointermove'))
+    svg.dispatchEvent(mk(2, cx + 60, cy, 'pointermove'))
+    svg.dispatchEvent(mk(1, cx - 60, cy, 'pointerup'))
+    svg.dispatchEvent(mk(2, cx + 60, cy, 'pointerup'))
+  })
+
+  const scaleAfter = await page.locator('[data-testid="s20-map-scale"]').innerText()
+  // ズームすると同じ 60px のスケールバーが表す実寸は小さくなる（拡大＝1pxあたりの
+  // 実寸が減る）。数値化して比較する（末尾 "m"/"cm" を含む文字列）。
+  const parseM = (s) => (s.includes('cm') ? parseFloat(s) / 100 : parseFloat(s))
+  expect(parseM(scaleAfter)).toBeLessThan(parseM(scaleBefore))
 })
