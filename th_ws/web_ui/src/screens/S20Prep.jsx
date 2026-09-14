@@ -20,7 +20,7 @@
 //
 // 終了は ui.finish を送るだけ。受理されれば FSM が IDLE になり main.jsx が S-01 に戻す。
 // onTrigger を空関数にしない（全操作ボタンを e2e/s20-prep.spec.js で検証）。
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
@@ -145,6 +145,7 @@ export default function S20Prep() {
   // ROBOT_POSE と共通の state を再利用する（新しい kind state を作らない）。
   const [tapMode, setTapMode] = useState(false)
   const [pendingTap, setPendingTap] = useState(null)
+  const mapTapCardRef = useRef(null)
 
   const stateName = state?.state ?? null
   const isRegister = stateName === 'REGISTER'
@@ -205,6 +206,14 @@ export default function S20Prep() {
     setWizYaw(null)
     return undefined
   }, [isRegister])
+
+  // 実機確認（2026-09-14）: 地図タップ確定カードは登録タブ右パネルの下部に出るが、
+  // 操作者の視線は地図（左）にある紫マーカーへ向いており、パネルが元のスクロール
+  // 位置のままだとカードが画面外に隠れて「確定ボタンが無い」ように見えた。
+  // pendingTap が立った瞬間にカードを自動スクロールして見せる。
+  useEffect(() => {
+    if (pendingTap) mapTapCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [pendingTap])
 
   // 編集中のピンが消えたら（削除・再読込）エディタを閉じる。
   useEffect(() => {
@@ -620,7 +629,7 @@ export default function S20Prep() {
                   </button>
                 </div>
                 {pendingTap && (
-                  <div className="well" data-testid="s20-maptap-confirm-card">
+                  <div className="well" data-testid="s20-maptap-confirm-card" ref={mapTapCardRef}>
                     <div className="note" data-testid="s20-maptap-preview">
                       {S20_MAPTAP_PREVIEW(pendingTap.tap1.x, pendingTap.tap1.y,
                         Math.round((previewYawRad * 180) / Math.PI))}
