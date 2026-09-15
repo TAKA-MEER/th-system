@@ -11,6 +11,8 @@ params_audit:
     intrusion_budget_m: 0.5
     nav_tolerance_deg: 5.0
     nav_tolerance_m: 0.1
+    normal_accel_mps2: 0.75
+    normal_angular_accel_rps2: 0.0
     person_margin_m: 0.4
     safety_margin_m: 0.3
     two_point_spacing_m: 1.0
