@@ -59,3 +59,7 @@ th_ws/data/**/*_tcpdump.txt
 
 # 教示経路の記録（実行時に route_recorder が書く。機体・現場ごとの生成物）
 th_ws/data/routes/
+
+# 試験場内の地図・ピン記録（実行時に pin_registrar/slam_control が書く。試験セッションごとの
+# 実データで、機体・会場が変わるたびに中身も変わる。2026-09-15 に誤ってコミットしたため追加）
+th_ws/data/venue/
