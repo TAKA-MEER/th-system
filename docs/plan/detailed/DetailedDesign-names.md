@@ -107,7 +107,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | 引数 | 既定 | 意味 |
 | --- | --- | --- |
 | `sim` | `false` | Gazebo か実機か |
-| `dev_mode` | `false` | **開発モード。`safety_monitor` と `obstacle_limiter` には渡さない**（構造的な保証） |
+| `dev_mode` | `false` | **開発モード。受け取るのは `connectivity_checker` だけ。`safety_monitor` と `obstacle_limiter` には渡さない**（構造的な保証。WP-DEV-01A） |
 | `lidar_source` | `network` | `local` / `network`（既存） |
 | `imu_enabled` | `false` | 既存 |
 | `scenario` | `''` | Gazebo のシナリオプリセット（既存） |
@@ -115,6 +115,11 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 
 **`use_stub` / `map_yaml` は廃止する。**地図は `map_session` が管理し、
 人物追跡のスタブは `scenario` 側で指定する。
+
+`dev_mode` の受け渡しは `connectivity_checker` のノードローカルパラメータ
+（`dev_mode` 本体＋項目別の `dev_ignore_link` / `dev_ignore_battery` /
+`dev_ignore_opcheck` / `dev_ignore_auto_brake`。`registry.yaml` には載せない。
+`sim` と同じ扱い。WP-DEV-01A）で行う。現在の状態は `/system/dev_mode`（§6.2）に出す。
 
 ---
 
@@ -408,6 +413,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `/system/event` | `StateEvent` | reliable, depth 10 | 事象時 |
 | `/system/effect` | `StateEffect` | reliable, depth 10 | 事象時（`demo-teach-replay` で新設。`state_manager` が self 以外の effect を配送） |
 | `/system/params_status` | `ParamsStatus` | transient_local, depth 1 | 変化時 |
+| `/system/dev_mode` | `std_msgs/String`（JSON。`dev_mode`／項目別の無視指定／実効状態） | transient_local, depth 1, reliable | 1 Hz（発行者は `connectivity_checker`。WP-DEV-01A） |
 | `/ui/active_screen` | `ActiveScreen` | reliable, depth 5 | 2 Hz（端末ごと） |
 | `/safety/estop_hw` | `std_msgs/Bool` | reliable | 10 Hz |
 | `/safety/estop_ui` | `std_msgs/Bool` | reliable | 押下・解除時＋2 Hz |
