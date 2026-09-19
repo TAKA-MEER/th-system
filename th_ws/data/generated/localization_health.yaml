@@ -1,0 +1,7 @@
+localization_health:
+  ros__parameters:
+    localization_expected_nodes:
+    - slam_toolbox
+    - amcl
+    localization_stale_ms: 2000
+    localization_warmup_ms: 30000
