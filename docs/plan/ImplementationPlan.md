@@ -134,14 +134,20 @@ herdr agent get <name>                            # agent_status を 10 秒間�
 - **マージしたブランチはその場で消す**（ローカル・`origin` とも）。溜めない。
 - **放置されたブランチは四半期ごとに棚卸しする。**`main` が大きく動いたあとは、古いブランチの
   土台が古すぎて rebase より作り直しが速いことが多い。
-- **2026-09-20 時点で未マージが 17 本ある**（`main` が 412 コミット動いたため全部が古い）:
+- **2026-09-20 に棚卸しして 37 本を消した**（`main` が 412 コミット動き、全部が古い土台だった）。
+  内訳は未マージ 15 本 ＋ `main` へ取り込み済み 22 本。**消したブランチの SHA は
+  コミット `BRANCH-CLEANUP` のメッセージに残してある**（`git log --grep='ブランチを棚卸し'`）。
+  必要なら `git branch <name> <sha>` で復元できる。
 
-  | 分類 | 本数 | 扱い |
-  | --- | --- | --- |
-  | `recovered/*`（2026-08-18〜24） | 10 | 内容は当時の作業線へ取り込み済み。**消す候補** |
-  | `feat/stage0-1-integration` | 1 | 古い（`lidar_filter` が `scan_geometry` 委譲前）。**消す候補** |
-  | `docs/mapless-follow-test-plan` ／ `experiment/pi-lidar-network-debug` ／ `fix/wsl2-display-workaround` | 3 | 2026-06〜07。前提が変わっている。**消す候補** |
-  | **`tune/exhibition-demo` ／ `feat/zundamon-voice`** | 2 | **展示用の `FACING` モードと話者切替が入っており、`main` に無い実機能。**消す前に要否を決める |
+#### 長期保管するブランチ（`main` には統合しない）
+
+**本来の機能ではないので `main` に入れない。展示などで必要になったときに使う**
+（ユーザー決定 2026-09-20）。**掃除の対象外。**
+
+| ブランチ | 中身 |
+| --- | --- |
+| `tune/exhibition-demo` | 展示ブース用の `FACING` モード（人の方を向く）＋ 旋回速度上限の WebUI 調整 ＋ 音声 |
+| `feat/zundamon-voice` | 展示専用の話者切替（ずんだもん） |
 
 #### `CLAUDE.md` と重複させない
 
