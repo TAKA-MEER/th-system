@@ -13,10 +13,9 @@
 // window.__thSetTestDevMode で表示を更新、window.__thDevParamCalls に送信を記録。
 import { useEffect, useRef, useState } from 'react'
 import { TOPICS, MSG_TYPES } from './topics'
-import { encodeParamValue, withTimeout } from './paramCodec.js'
 import {
   DEV_MODE_NODE, DEV_PARAM_MASTER,
-  parseDevModeState,
+  parseDevModeState, setBoolParamRequest,
 } from './devModeState.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
@@ -25,12 +24,6 @@ const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== unde
 const testSetters = new Set()
 
 const NO_BACKEND = () => Promise.reject(new Error('rosbridge not connected'))
-
-// /connectivity_checker/{set,get}_parameters はノード固有の標準サービス名で
-// 辞書 (names.json) に無いため、useOnsiteService.js の select_pin と同じく
-// ローカル定数で扱い TOPICS/SERVICES には載せない (辞書ゲートの流儀)。
-const SET_PARAMS_SVC = (node) => `/${node}/set_parameters`
-const SET_PARAMS_TYPE = 'rcl_interfaces/SetParameters'
 
 export function useDevMode(ros) {
   const topicRef = useRef(null)
@@ -82,26 +75,9 @@ export function useDevMode(ros) {
       return Promise.resolve({ successful: true })
     }
     if (!ros) return NO_BACKEND()
-    return withTimeout(new Promise((resolve, reject) => {
-      const ROSLIB = window.ROSLIB
-      if (!ROSLIB) { reject(new Error('roslibjs is not loaded')); return }
-      const svc = new ROSLIB.Service({
-        ros,
-        name: SET_PARAMS_SVC(node),
-        serviceType: SET_PARAMS_TYPE,
-      })
-      svc.callService(
-        new ROSLIB.ServiceRequest({
-          parameters: [{ name, value: encodeParamValue(value, { isBool: true }) }],
-        }),
-        (res) => {
-          const bad = (res?.results ?? []).filter((r) => !r.successful)
-          if (bad.length > 0) console.warn('dev parameter apply failed:', bad)
-          resolve(res)
-        },
-        (err) => reject(err),
-      )
-    }), `applying ${node}.${name}`)
+    // 中身は devModeState.setBoolParamRequest（純粋・unit 試験可）。
+    // ここでは window.ROSLIB を渡すだけ。
+    return setBoolParamRequest({ ROSLIB: window.ROSLIB, ros, node, name, value })
   }
 
   return { dev, setDevParam, masterParam: DEV_PARAM_MASTER, node: DEV_MODE_NODE }

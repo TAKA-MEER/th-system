@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import {
   DEV_ITEMS, DEV_NO_GATE_ITEMS, DEV_MODE_NODE, DEV_PARAM_MASTER,
   devIgnoreParam, parseDevModeState, effectiveItems,
+  SET_PARAMS_SVC, SET_PARAMS_TYPE, setBoolParamRequest,
 } from '../../src/ros/devModeState.js'
 
 const FULL = {
@@ -54,4 +55,74 @@ test('定数: ノード・パラメータ名は ROS 側の実装と一致する'
   assert.equal(DEV_MODE_NODE, 'connectivity_checker')
   assert.equal(DEV_PARAM_MASTER, 'dev_mode')
   assert.equal(devIgnoreParam('link'), 'dev_ignore_link')
+})
+
+// ── 本番経路の送信（setBoolParamRequest） ──
+// TEST_MODE を有効にしない（window.__thTestState を定義しない）ことが要件。
+// 偽の window.ROSLIB を注入し、サービス名・型・ペイロードを検証する。
+// useDevMode.js のフック本体は React が要るためここでは触らず、
+// フックが呼ぶ中身（純粋関数）を直接試験する。
+function makeFakeRoslib(capture, { response, error } = {}) {
+  class FakeService {
+    constructor(opts) {
+      capture.svcName = opts.name
+      capture.svcType = opts.serviceType
+      capture.svcRos = opts.ros
+    }
+    callService(req, ok, err) {
+      capture.request = req
+      if (error) err(error)
+      else ok(response ?? { results: [{ successful: true }] })
+    }
+  }
+  class FakeRequest {
+    constructor(obj) { Object.assign(this, obj) }
+  }
+  return { Service: FakeService, ServiceRequest: FakeRequest }
+}
+
+test('setBoolParamRequest: サービス名と型が正しい', async () => {
+  const capture = {}
+  const ros = {}
+  const res = await setBoolParamRequest({
+    ROSLIB: makeFakeRoslib(capture), ros, node: 'connectivity_checker',
+    name: 'dev_mode', value: true,
+  })
+  assert.equal(capture.svcName, '/connectivity_checker/set_parameters')
+  assert.equal(capture.svcType, 'rcl_interfaces/SetParameters')
+  assert.equal(capture.svcRos, ros)
+  assert.deepEqual(res, { results: [{ successful: true }] })
+})
+
+test('setBoolParamRequest: ペイロードは bool 型で正しく詰める', async () => {
+  for (const [name, value] of [['dev_mode', true], ['dev_ignore_link', false]]) {
+    const capture = {}
+    await setBoolParamRequest({
+      ROSLIB: makeFakeRoslib(capture), ros: {}, node: 'connectivity_checker',
+      name, value,
+    })
+    assert.deepEqual(capture.request.parameters, [
+      { name, value: { type: 1, bool_value: value } },
+    ])
+  }
+})
+
+test('setBoolParamRequest: サービス側エラーは reject する', async () => {
+  await assert.rejects(
+    setBoolParamRequest({
+      ROSLIB: makeFakeRoslib({}, { error: new Error('boom') }),
+      ros: {}, node: 'connectivity_checker', name: 'dev_mode', value: true,
+    }),
+    /boom/,
+  )
+})
+
+test('setBoolParamRequest: ROSLIB 不在は reject する', async () => {
+  await assert.rejects(
+    setBoolParamRequest({
+      ROSLIB: undefined, ros: {}, node: 'connectivity_checker',
+      name: 'dev_mode', value: true,
+    }),
+    /roslibjs is not loaded/,
+  )
 })
