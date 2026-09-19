@@ -11,6 +11,7 @@
 //   esp32        /esp32/wheel_feedback タイムアウト          → ESP32_DISCONNECTED (RECOVERABLE)
 //   person       /person/targets タイムアウト                → PERSON_TRACKER_LOST (RECOVERABLE)
 //   limiter      /safety/limiter_status タイムアウト         → LIMITER_DEAD (CRITICAL)
+//   localization /safety/localization_health 途絶・ok==false 継続 → LOCALIZATION_LOST (CRITICAL)
 //   mux          /cmd_vel_muxed ⇄ /cmd_vel の双方向途絶      → MUX_DEAD (CRITICAL)
 //   runaway      /cmd_vel と /esp32/wheel_feedback の乖離    → DRIVE_RUNAWAY (CRITICAL)
 //   state        /system/state タイムアウト・不整合          → STATE_INCONSISTENT (CRITICAL)
@@ -37,6 +38,7 @@
 #include <th_system_msgs/msg/wheel_feedback.hpp>
 #include <th_system_msgs/msg/person_targets.hpp>
 #include <th_system_msgs/msg/limiter_status.hpp>
+#include <th_system_msgs/msg/localization_health.hpp>
 #include <th_system_msgs/msg/system_state.hpp>
 #include <th_system_msgs/msg/link_quality.hpp>
 
@@ -70,6 +72,9 @@ public:
         declare_parameter("esp32_timeout_ms",     2000);
         declare_parameter("person_timeout_ms",    2500);
         declare_parameter("limiter_dead_ms",      250);
+        // WP-SAFE-05: /safety/localization_health（1 Hz）の途絶判定。
+        // 既定値は registry.yaml（localization_topic_timeout_ms）が正。
+        declare_parameter("localization_topic_timeout_ms", 5000);
         declare_parameter("mux_dead_ms",          500);
         declare_parameter("state_stale_ms",       1500);
         declare_parameter("runaway_ratio",        1.5);
@@ -97,6 +102,8 @@ public:
         esp32_timeout_  = std::chrono::milliseconds(get_parameter("esp32_timeout_ms").as_int());
         person_timeout_ = std::chrono::milliseconds(get_parameter("person_timeout_ms").as_int());
         limiter_dead_   = std::chrono::milliseconds(get_parameter("limiter_dead_ms").as_int());
+        localization_topic_timeout_ = std::chrono::milliseconds(
+            get_parameter("localization_topic_timeout_ms").as_int());
         mux_dead_       = std::chrono::milliseconds(get_parameter("mux_dead_ms").as_int());
         state_stale_    = std::chrono::milliseconds(get_parameter("state_stale_ms").as_int());
         runaway_ratio_  = get_parameter("runaway_ratio").as_double();
@@ -105,6 +112,7 @@ public:
         {
             const double hold = get_parameter("critical_fault_hold_ms").as_int() / 1000.0;
             limiter_dead_hold_  = th_safety::HoldTimer(hold);
+            localization_dead_hold_ = th_safety::HoldTimer(hold);
             mux_dead_hold_      = th_safety::HoldTimer(hold);
             state_inconsist_hold_ = th_safety::HoldTimer(hold);
         }
@@ -178,6 +186,16 @@ public:
                 limiter_alive_     = true;
             });
 
+        // WP-SAFE-05: localization_health（重大。publisher は localization_health。
+        // enabled_targets に "localization" を入れるまでは監視しない — F-5・O-7）
+        sub_localization_health_ = create_subscription<th_system_msgs::msg::LocalizationHealth>(
+            "/safety/localization_health", rclcpp::QoS(1).reliable(),
+            [this](const th_system_msgs::msg::LocalizationHealth::SharedPtr msg) {
+                last_localization_time_ = now();
+                localization_alive_     = true;
+                localization_ok_        = msg->ok;
+            });
+
         // §4.1 新設: MUX_DEAD の入力（/cmd_vel_muxed は obstacle_limiter=WP-SAFE-03 が
         // 出力を消費する側の topic。twist_mux の remap 先が変わるまで publisher 無し。
         // enabled_targets に "mux" を入れるまでは監視しない — F-5・O-7）
@@ -244,6 +262,7 @@ public:
         last_person_time_  = t0;
         last_esp32_time_   = t0;
         last_limiter_time_ = t0;
+        last_localization_time_ = t0;
         last_muxed_time_   = t0;
         last_cmd_time_     = t0;
         last_state_time_   = t0;
@@ -301,6 +320,19 @@ private:
                                                  limiter_alive_);
                 updateFaultState("LIMITER_DEAD",
                                   limiter_dead_hold_.update(cond, check_period_sec_));
+            }
+            if (targetEnabled("localization")) {
+                // WP-SAFE-05: ①トピック途絶（未受信は startup_deadline まで待つ。
+                // computeTimeoutFault の is_timeout_fault 経由。limiter と同じ規則）
+                bool topic_dead = computeTimeoutFault(
+                    last_localization_time_, localization_topic_timeout_, t,
+                    localization_alive_);
+                // ②ok==false の継続（1 通でも届いていることが前提。届いていない
+                // 間の ng は①が担う）。どちらも WS-9O の保持時間を課す（単発で撃たない）。
+                bool ng_held = localization_alive_ && !localization_ok_;
+                updateFaultState("LOCALIZATION_LOST",
+                                  localization_dead_hold_.update(topic_dead || ng_held,
+                                                                  check_period_sec_));
             }
             if (targetEnabled("mux")) {
                 // MUX_DEAD は checkTimeout を通らない独自判定だが、未受信の
@@ -471,6 +503,7 @@ private:
     rclcpp::Subscription<th_system_msgs::msg::PersonTargets>::SharedPtr sub_person_;
     rclcpp::Subscription<th_system_msgs::msg::WheelFeedback>::SharedPtr sub_wheel_fb_;
     rclcpp::Subscription<th_system_msgs::msg::LimiterStatus>::SharedPtr sub_limiter_status_;
+    rclcpp::Subscription<th_system_msgs::msg::LocalizationHealth>::SharedPtr sub_localization_health_;
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr       sub_cmd_vel_muxed_;
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr       sub_cmd_vel_;
     rclcpp::Subscription<th_system_msgs::msg::SystemState>::SharedPtr sub_system_state_;
@@ -491,6 +524,7 @@ private:
     rclcpp::Time last_person_time_;
     rclcpp::Time last_esp32_time_;
     rclcpp::Time last_limiter_time_;
+    rclcpp::Time last_localization_time_;
     rclcpp::Time last_muxed_time_;
     rclcpp::Time last_cmd_time_;
     rclcpp::Time last_state_time_;
@@ -499,6 +533,8 @@ private:
     bool esp32_alive_    = false;
     bool person_alive_   = false;
     bool limiter_alive_  = false;
+    bool localization_alive_ = false;
+    bool localization_ok_    = true;
     bool muxed_alive_    = false;
     bool cmd_alive_      = false;
     bool state_alive_    = false;
@@ -524,6 +560,7 @@ private:
     std::chrono::milliseconds esp32_timeout_;
     std::chrono::milliseconds person_timeout_;
     std::chrono::milliseconds limiter_dead_;
+    std::chrono::milliseconds localization_topic_timeout_;
     std::chrono::milliseconds mux_dead_;
     std::chrono::milliseconds state_stale_;
     double runaway_ratio_ = 1.5;
@@ -532,6 +569,7 @@ private:
     // WS-9O: 重大フォルトの単発誤検知よけ（回復可能フォルトは一時停止から
     // 正常に再開できるため対象外）。
     th_safety::HoldTimer limiter_dead_hold_{0.0};
+    th_safety::HoldTimer localization_dead_hold_{0.0};
     th_safety::HoldTimer mux_dead_hold_{0.0};
     th_safety::HoldTimer state_inconsist_hold_{0.0};
     double estop_ui_lease_sec_ = 1.5;
