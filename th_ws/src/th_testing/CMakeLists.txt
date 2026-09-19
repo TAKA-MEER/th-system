@@ -177,6 +177,14 @@ if(BUILD_TESTING)
   ament_add_pytest_test(connectivity_core
     test/test_connectivity_core.py
     TIMEOUT 60)
+  # 自己位置推定の健全性コア＋配線 (WP-SAFE-05。純粋コア・registry・生成 yaml・
+  # launch AST・msg 定義。ROS2 不要)
+  ament_add_pytest_test(test_localization_health_core
+    test/test_localization_health_core.py
+    TIMEOUT 60)
+  ament_add_pytest_test(test_localization_health_launch
+    test/test_localization_health_launch.py
+    TIMEOUT 60)
   # 開発モードの土台 (WP-DEV-01A。dev 分岐・gate 真理値表・launch AST。
   # th_state の純粋コア＋ソース検査。ROS2 不要)
   ament_add_pytest_test(test_dev_mode
@@ -275,6 +283,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_safety_monitor
     test/test_safety_monitor.py
     TIMEOUT 90)
+  # LOCALIZATION_LOST の Docker launch テスト（WP-SAFE-05 §完了条件1〜3。
+  # 継続で発火・単発で発火せず・途絶で発火。CRITICAL の確認を含む）
+  ament_add_pytest_test(test_localization_lost
+    test/test_localization_lost.py
+    TIMEOUT 180)
   ament_add_pytest_test(test_twist_mux
     test/test_twist_mux_priority.py
     TIMEOUT 60)
