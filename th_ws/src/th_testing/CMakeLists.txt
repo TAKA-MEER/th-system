@@ -177,6 +177,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(connectivity_core
     test/test_connectivity_core.py
     TIMEOUT 60)
+  # 開発モードの土台 (WP-DEV-01A。dev 分岐・gate 真理値表・launch AST。
+  # th_state の純粋コア＋ソース検査。ROS2 不要)
+  ament_add_pytest_test(test_dev_mode
+    test/test_dev_mode.py
+    TIMEOUT 60)
   # ゾーン合成コア (WP-STATE-02。derive_limits() の速度上限が §4.1 の規則
   # 「合成は各画面の最小値。ゾーンの強弱では合成しない」を満たすことの担保。N-13)
   ament_add_pytest_test(test_zones

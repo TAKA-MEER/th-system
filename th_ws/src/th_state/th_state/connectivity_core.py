@@ -81,20 +81,22 @@ def evaluate(now_ms: int, last_fb_ms: Optional[int], last_cmd_ms: Optional[int],
         esp32_loopback = True
         missing_nodes: Tuple[str, ...] = ()
         nodes = True
-    elif p.sim:
-        esp32_feedback = True
-        esp32_loopback = True
-        missing_nodes: Tuple[str, ...] = ()
-        nodes = True
+        lidar = True
     else:
-        esp32_feedback = _fresh(now_ms, last_fb_ms, p.esp32_alive_timeout_ms)
-        esp32_loopback = _fresh(now_ms, last_cmd_ms, p.esp32_alive_timeout_ms)
-        present = set(present_nodes)
-        missing_nodes = tuple(n for n in p.required_nodes if n not in present)
-        nodes = len(missing_nodes) == 0
+        if p.sim:
+            esp32_feedback = True
+            esp32_loopback = True
+            missing_nodes = ()
+            nodes = True
+        else:
+            esp32_feedback = _fresh(now_ms, last_fb_ms, p.esp32_alive_timeout_ms)
+            esp32_loopback = _fresh(now_ms, last_cmd_ms, p.esp32_alive_timeout_ms)
+            present = set(present_nodes)
+            missing_nodes = tuple(n for n in p.required_nodes if n not in present)
+            nodes = len(missing_nodes) == 0
 
-    lidar = (_fresh(now_ms, last_scan_ms, p.esp32_alive_timeout_ms)
-              and scan_points == p.scan_expected_points)
+        lidar = (_fresh(now_ms, last_scan_ms, p.esp32_alive_timeout_ms)
+                  and scan_points == p.scan_expected_points)
 
     return LinkReport(
         esp32_feedback=esp32_feedback,
