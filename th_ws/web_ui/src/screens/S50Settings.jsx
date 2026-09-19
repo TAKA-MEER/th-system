@@ -9,13 +9,19 @@
 //   一般     … 実配線のあるパラメータ調整（follow_planner_mapless / lidar_filter /
 //              slam_toolbox）。旧 SettingsPanel.jsx の中身をそのまま移植。
 //   表示     … 文字サイズ（localStorage、parts/fontScale.js）
-//   開発モード … 開発モード ON/OFF（localStorage、parts/devMode.js。現状はヘッダ表示のみ）
+//   開発モード … 開発モード ON/OFF と項目別選択（ros/useDevMode.js 経由で
+//              connectivity_checker のパラメータに書く。表示の正本は
+//              /system/dev_mode。localStorage は見た目の即時反映だけ）
 //
 // 変更できるのは IDLE / MANUAL のときだけ。UI で disabled にするのに加え、
 // config_manager がサーバ側でモードを再確認して拒否する（二重ガード）。
 import { useCallback, useEffect, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTunableParams } from '../ros/useTunableParams.js'
+import { useDevMode } from '../ros/useDevMode.js'
+import {
+  DEV_ITEMS, devIgnoreParam, effectiveItems,
+} from '../ros/devModeState.js'
 import { readFontScale, applyFontScale } from '../parts/fontScale.js'
 import { readDevMode, setDevMode } from '../parts/devMode.js'
 import {
@@ -24,6 +30,11 @@ import {
   S50_SEC_FOLLOW, S50_SEC_LIDAR, S50_SEC_SLAM, S50_SLAM_NOTE,
   S50_FONT_TITLE, S50_FONT_NORMAL, S50_FONT_LARGE, S50_FONT_XLARGE,
   S50_DEV_TITLE, S50_DEV_ENABLE, S50_DEV_DISABLE, S50_DEV_NOTE,
+  S50_DEV_ITEMS_TITLE, S50_DEV_ITEM_LINK, S50_DEV_ITEM_LINK_DESC,
+  S50_DEV_ITEM_BATTERY, S50_DEV_ITEM_OPCHECK, S50_DEV_ITEM_AUTO_BRAKE,
+  S50_DEV_NO_GATE, S50_DEV_EFFECTIVE_TITLE, S50_DEV_NONE,
+  S50_DEV_ESTOP_UNKNOWN, S50_DEV_UNIGNORABLE_TITLE, S50_DEV_UNIGNORABLE,
+  S50_DEV_SEND_FAILED,
 } from '../i18n/screens.js'
 
 // follow_planner_mapless: th_config_manager/tunable_targets.py の params と揃える。
@@ -45,6 +56,26 @@ const MAPLESS_FIELDS = [
 ]
 
 const BLIND_LABELS = ['右前 開始', '右前 終了', '右後 開始', '右後 終了', '左後 開始', '左後 終了', '左前 開始', '左前 終了']
+
+// 開発モードの項目メタ（WP-DEV-01B §2）。キーは devModeState.DEV_ITEMS と揃える。
+// link 以外は as-built に止める側の仕組みが無く、選んでも何も起きない
+// （DEV_NO_GATE_ITEMS。カード末尾の注記で明示する）。
+const DEV_ITEM_META = [
+  { item: 'link', label: S50_DEV_ITEM_LINK, desc: S50_DEV_ITEM_LINK_DESC },
+  { item: 'battery', label: S50_DEV_ITEM_BATTERY, desc: '' },
+  { item: 'opcheck', label: S50_DEV_ITEM_OPCHECK, desc: '' },
+  { item: 'auto_brake', label: S50_DEV_ITEM_AUTO_BRAKE, desc: '' },
+]
+const DEV_ITEM_LABEL = Object.fromEntries(DEV_ITEM_META.map(({ item, label }) => [item, label]))
+
+// いま無視しているものの表示文（/system/dev_mode の effective から作る）。
+// 未受信（devState null）のときは通常運用として扱う。
+function devEffectiveText(devState) {
+  if (!devState?.dev_mode) return S50_DEV_NONE
+  const items = effectiveItems(devState)
+  if (items.length === 0) return S50_DEV_NONE
+  return items.map((item) => DEV_ITEM_LABEL[item] ?? item).join(' / ')
+}
 
 // slam_toolbox: 再生の自己位置推定（スキャンマッチ）。WS-9W。
 const SLAM_FIELDS = [
@@ -174,12 +205,29 @@ export default function S50Settings({ onBack }) {
     applyFontScale(name)
   }
 
-  // ── 開発モードタブ ──
-  const [dev, setDev] = useState(() => readDevMode())
+  // ── 開発モードタブ (WP-DEV-01B) ──
+  // 表示の正本は /system/dev_mode（useDevMode）。localStorage は押した瞬間の
+  // 見た目だけに残す（?dev=1 は据え置き）。トグルはどのモードでも押せる
+  // （INIT を抜けるために要るので、一般タブのような IDLE/MANUAL 縛りは無い）。
+  const { dev: devState, setDevParam } = useDevMode(ros)
+  const [devLocal, setDevLocal] = useState(() => readDevMode())
+  const [devItemsLocal, setDevItemsLocal] = useState(
+    () => Object.fromEntries(DEV_ITEMS.map((item) => [item, true])))
+  const [devStatus, setDevStatus] = useState('')
+  const devShown = devState ? devState.dev_mode : devLocal
+  const devItemsShown = devState ? devState.ignore : devItemsLocal
   const toggleDev = () => {
-    const next = !dev
-    setDev(next)
+    const next = !devShown
+    setDevLocal(next)
     setDevMode(next)
+    setDevStatus('')
+    setDevParam('dev_mode', next).catch(() => setDevStatus(S50_DEV_SEND_FAILED))
+  }
+  const toggleDevItem = (item) => {
+    const next = !devItemsShown[item]
+    setDevItemsLocal((prev) => ({ ...prev, [item]: next }))
+    setDevStatus('')
+    setDevParam(devIgnoreParam(item), next).catch(() => setDevStatus(S50_DEV_SEND_FAILED))
   }
 
   const FONT_OPTIONS = [
@@ -304,12 +352,46 @@ export default function S50Settings({ onBack }) {
             <p className="note">{S50_DEV_NOTE}</p>
             <button
               type="button"
-              className={`btn wide ${dev ? 'on' : ''}`}
+              className={`btn wide ${devShown ? 'on' : ''}`}
               onClick={toggleDev}
               data-testid="s50-dev-toggle"
             >
-              {dev ? S50_DEV_DISABLE : S50_DEV_ENABLE}
+              {devShown ? S50_DEV_DISABLE : S50_DEV_ENABLE}
             </button>
+            {devStatus && <p className="note" data-testid="s50-dev-status">{devStatus}</p>}
+          </div>
+          <div className="card">
+            <h3>{S50_DEV_ITEMS_TITLE}</h3>
+            <div className="s50-grid">
+              {DEV_ITEM_META.map(({ item, label, desc }) => (
+                <div key={item}>
+                  <button
+                    type="button"
+                    className={`btn wide ${devItemsShown[item] ? 'on' : ''}`}
+                    aria-pressed={!!devItemsShown[item]}
+                    onClick={() => toggleDevItem(item)}
+                    data-testid={`s50-dev-ignore-${item}`}
+                  >
+                    {label}
+                  </button>
+                  {desc && <p className="note">{desc}</p>}
+                </div>
+              ))}
+            </div>
+            <p className="note" data-testid="s50-dev-no-gate">{S50_DEV_NO_GATE}</p>
+          </div>
+          <div className="card">
+            <h3>{S50_DEV_EFFECTIVE_TITLE}</h3>
+            <p data-testid="s50-dev-effective">{devEffectiveText(devState)}</p>
+            {devState?.dev_mode && !devState.estop_hw_known && (
+              <p className="note" data-testid="s50-dev-estop-unknown">{S50_DEV_ESTOP_UNKNOWN}</p>
+            )}
+          </div>
+          <div className="card">
+            <h3>{S50_DEV_UNIGNORABLE_TITLE}</h3>
+            <ul data-testid="s50-dev-unignorable">
+              {S50_DEV_UNIGNORABLE.map((name) => <li key={name}>{name}</li>)}
+            </ul>
           </div>
         </div>
       )}

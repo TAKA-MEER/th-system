@@ -17,6 +17,7 @@ import { JogPanelContext } from './jogPanel.js'
 import { ESTOP_RELEASE_NOTE, ESTOP_RELEASE_BUTTON, stopReasonLabel } from '../i18n/states.js'
 import { readFontScale, applyFontScale } from '../parts/fontScale.js'
 import { readDevMode, DEV_MODE_EVENT } from '../parts/devMode.js'
+import { useDevMode } from '../ros/useDevMode.js'
 import './theme.css'
 
 // DetailedDesign-wp1.md WP-UI-01 §3.1: /safety/estop_ui is republished at
@@ -43,12 +44,17 @@ function AppShellInner({ screenName, screenId, children }) {
 
   // WS-9X: ?dev=1 か localStorage['th.devMode']。S-50 開発モードタブの
   // トグルが DEV_MODE_EVENT を投げてくるので、リロード無しで追従する。
-  const [devMode, setDevModeState] = useState(readDevMode)
+  // WP-DEV-01B: /system/dev_mode が届いている間はそちらが正
+  // (Spec-webui.md §5.1)。localStorage は「見た目の即時反映」と
+  // 未接続時の代替だけに残す（?dev=1 は据え置き）。
+  const { dev: topicDevMode } = useDevMode(ros)
+  const [devLocal, setDevLocal] = useState(readDevMode)
   useEffect(() => {
-    const onChange = () => setDevModeState(readDevMode())
+    const onChange = () => setDevLocal(readDevMode())
     window.addEventListener(DEV_MODE_EVENT, onChange)
     return () => window.removeEventListener(DEV_MODE_EVENT, onChange)
   }, [])
+  const devMode = topicDevMode ? topicDevMode.dev_mode : devLocal
 
   // WS-9X: 文字サイズ（S-50 表示タブ）を起動時に復元。#app は AppShell の
   // 描画後に存在するので effect で当てる。

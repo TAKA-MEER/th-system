@@ -431,5 +431,28 @@ export const S50_DEV_TITLE = '開発モード'
 export const S50_DEV_ENABLE = '開発モードを有効にする'
 export const S50_DEV_DISABLE = '開発モードを無効にする'
 export const S50_DEV_NOTE =
-  '安全系のバイパスなど開発向けの設定は今後ここに追加します。'
-  + '現状はヘッダに「開発」表示が出るだけです。'
+  'ON にすると機器が揃っていなくても起動時の確認を進められます。'
+  + '状態の正本は機体側（/system/dev_mode）にあり、この画面はそれを表示します。'
+// 項目ごとの選択（WP-DEV-01B §2。一括トグルにしない）
+export const S50_DEV_ITEMS_TITLE = '無視する警告（項目ごと）'
+export const S50_DEV_ITEM_LINK = '機器未接続・通信不通'
+export const S50_DEV_ITEM_LINK_DESC = '起動時の機器確認を進める（INIT/CHECK→IDLE）'
+export const S50_DEV_ITEM_BATTERY = 'バッテリー電圧低下'
+export const S50_DEV_ITEM_OPCHECK = '始業点検の総合 NG'
+export const S50_DEV_ITEM_AUTO_BRAKE = '手動系の自動ブレーキ既定'
+export const S50_DEV_NO_GATE =
+  '※ 選んでも今は何も起きません（止める側の仕組みが未実装のため。選択だけ記録されます）'
+// いま何を無視しているか（WP-DEV-01B §3）
+export const S50_DEV_EFFECTIVE_TITLE = 'いま無視しているもの'
+export const S50_DEV_NONE = 'なし（通常運用）'
+export const S50_DEV_ESTOP_UNKNOWN =
+  '※ 物理非常停止ボタンの状態は未受信です（ESP32 不在）。押下が分かれば起動確認は止まります'
+// 無視できないもの（Spec-safety.md §10 の右列をそのまま出す）
+export const S50_DEV_UNIGNORABLE_TITLE = '無視できないもの'
+export const S50_DEV_UNIGNORABLE = [
+  '物理非常停止ボタン',
+  'ESP32 のウォッチドッグ',
+  'UI 非常停止ボタン',
+  '自律系の障害物停止',
+]
+export const S50_DEV_SEND_FAILED = '機体への送信に失敗しました'
