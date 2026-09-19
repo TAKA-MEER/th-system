@@ -11,14 +11,36 @@
 
 | 文書 | 役割 |
 | --- | --- |
-| `VISION.md`（リポジトリ直下） | ユーザーが目指す**完成形**。**確定した方針はここが正** |
+| **`docs/plan/spec/`（ここ）** | **完成形の正本。**何が・どう振る舞うべきか。**確定した方針はここが正** |
+| `docs/plan/detailed/` | **詳細設計書。**ノード名・トピック名・ファイル構成・アルゴリズム・作業パケット |
+| `CLAUDE.md`（リポジトリ直下） | 作業のしかた・環境の癖・コードの不変ルール |
 | `docs/architecture.md` | **現状実装**の保守・拡張ガイド（as-built） |
-| `docs/plan/` | **未確定の検討メモ。**`VISION.md` を上書きしない |
-| **`docs/plan/spec/`（ここ）** | **完全設計書。**検討メモを統合し矛盾を解消したもの。**まだ `VISION.md` ではない** |
+| `docs/plan/`（`spec/` `detailed/` 以外） | **未確定の検討メモ。**`spec/` を上書きしない |
 
-**この設計書は `docs/plan/` 配下の検討段階の文書である。**
-方針として確定した時点で、`CLAUDE.md`「方針変更時のルール」に従い、
-**コードを触る前に `VISION.md` を更新する。**
+**2026-09-20 変更（ユーザー決定）**: 以前はここに「この設計書は検討段階の文書であり、
+確定したら `VISION.md` を更新する」と書いていた。**`spec/` 自身を完成形の正本に格上げした**
+（`VISION.md` は縮小・廃止の方向）。方針を変えるときは `CLAUDE.md`「方針変更時のルール」に従い、
+**コードを触る前にここを更新する。**
+
+### 1.2 どこに何が書いてあるか
+
+| 知りたいこと | 見る文書 |
+| --- | --- |
+| **何が・どう振る舞うべきか。どういう値が要るか** | [Spec.md](Spec.md)（本体）＋ 下の §2 の各ファイル |
+| 目標 G1〜G5・設計思想 SD-1〜SD-9・走行方式 7・モード一覧・1 日の流れ | [Spec.md](Spec.md) |
+| 目的とユースケース（誰が何のために使うか） | [Spec.md](Spec.md) §1・§9 |
+| モード定義と遷移表（状態モデルの正本） | [Spec-modes.md](Spec-modes.md) §3.1 |
+| 安全チェーン 4 層・障害物・非常停止・通信断 | [Spec-safety.md](Spec-safety.md) |
+| 画面一覧と見た目 | [Spec-webui.md](Spec-webui.md) ＋ [mockup/index.html](mockup/index.html) |
+| **ノード名・トピック名・ファイル構成・アルゴリズム・作業パケット** | [詳細設計書](../detailed/README.md) — 本体は [DetailedDesign.md](../detailed/DetailedDesign.md) |
+| 名前（発明してはいけない） | [DetailedDesign-names.md](../detailed/DetailedDesign-names.md) |
+| 既存コードを消してよいか | [DetailedDesign-reuse.md](../detailed/DetailedDesign-reuse.md) §1 |
+| 何が決まっていないか | [Spec-open.md](Spec-open.md) §5 ／ [DetailedDesign-open.md](../detailed/DetailedDesign-open.md) §4 |
+| 実装の順番・進捗 | [ImplementationPlan.md](../ImplementationPlan.md) |
+| **デモ特例で省略・バイパスしたままの事項** | [EXCEPTION-LEDGER.md](../EXCEPTION-LEDGER.md) |
+| 音声アナウンス・観客向け表示 | [docs/voice-and-audience.md](../../voice-and-audience.md) |
+| 現状の実装（as-built） | [docs/architecture.md](../../architecture.md) |
+| 実機の動かし方（試験担当者向け） | [docs/使い方.md](../../使い方.md) |
 
 ### 1.1 次の工程
 
