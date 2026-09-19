@@ -13,13 +13,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 方針変更時のルール
 
-このリポジトリでは `VISION.md`(README.md と同じ階層)に、ユーザーが目指す「完成形」(最終的なシステム像・挙動・要件)を記述している。
+**完成形（最終的なシステム像・挙動・要件）の正本は `docs/plan/spec/` である**（2026-09-20 変更。索引は [spec/README.md](docs/plan/spec/README.md) §1.2）。
 
-**追従ロジック・モード遷移・安全設計・アーキテクチャ全般について、ユーザーから方針変更の指示があった場合は、コードを修正する前に必ず `VISION.md` を該当箇所から更新すること。** コード修正はその後に行う。VISION.md とコードの内容に矛盾が生じた場合は、ユーザーに確認しどちらが正か明確にしてから作業を進める。
+**追従ロジック・モード遷移・安全設計・アーキテクチャ全般について、ユーザーから方針変更の指示があった場合は、コードを修正する前に必ず `docs/plan/spec/` の該当箇所を更新すること。** コード修正はその後に行う。spec とコードの内容に矛盾が生じた場合は、ユーザーに確認しどちらが正か明確にしてから作業を進める。
 
-`docs/architecture.md` は現状実装の保守・拡張ガイド(as-built)であり、`VISION.md` とは役割が異なる(目指す姿 vs 今の実装)。両者が食い違う場合は VISION.md 側を優先して実装を追いつかせる。
+**spec に書くのは挙動の水準だけ**（`spec/README.md` §1.1）。ノード名・トピック名・ファイル構成・アルゴリズムは持ち込まない。それらは `docs/plan/detailed/`（どう実装するか）と `docs/architecture.md`（現状どうなっているか）の役割。
 
-`docs/plan/` は**未確定の検討メモ**を置く場所で、VISION.md を上書きしない。書き方のルール（本体は結論と表だけにして一目で読める分量を保ち、根拠・詳細は `<テーマ>-<側面>.md` に分ける）は `docs/plan/README.md` に定義してある。plan 配下を編集する前に必ず読むこと。
+| 文書 | 役割 |
+| --- | --- |
+| `docs/plan/spec/` | **完成形の正本。**何が・どう振る舞うべきか |
+| `docs/plan/detailed/` | 詳細設計。ノード名・トピック名・作業パケット |
+| `docs/architecture.md` | 現状実装の保守・拡張ガイド(as-built)。spec と食い違う場合は spec 側を優先して実装を追いつかせる |
+| `docs/plan/EXCEPTION-LEDGER.md` | デモ特例で省略・バイパスしたままの事項。コードの `WAIVER(demo):` タグと対。**未クローズが何かはこれが唯一の正** |
+| `VISION.md` | 歴史的な文書。内容は spec へ移し終えた。新しく書き足さない |
+
+`docs/plan/` のうち `spec/` と `detailed/` **以外**は未確定の検討メモで、spec を上書きしない。書き方のルール（本体は結論と表だけにして一目で読める分量を保ち、根拠・詳細は `<テーマ>-<側面>.md` に分ける）は `docs/plan/README.md` に定義してある。plan 配下を編集する前に必ず読むこと。
 
 ## 実機マニュアルの保守ルール
 
@@ -245,7 +253,7 @@ ESTOP → IDLE のみ
 
 フォルト発生時は動作系モード（FOLLOWING / FOLLOWING_MAPLESS / SUMMONING / MOVING_TO_PANEL / AT_PANEL / MANUAL）から IDLE へ強制遷移。IDLE 中のフォルトはモード変化なし。
 
-ただし `PERSON_TRACKER_LOST` だけは例外で、試験員データを使うモード（FOLLOWING / FOLLOWING_MAPLESS / SUMMONING）からのみ強制遷移する。MANUAL ジョグや配電盤移動は人物データを使わないため継続できる（VISION.md §5）。
+ただし `PERSON_TRACKER_LOST` だけは例外で、試験員データを使うモード（FOLLOWING / FOLLOWING_MAPLESS / SUMMONING）からのみ強制遷移する。MANUAL ジョグや配電盤移動は人物データを使わないため継続できる（Spec-safety.md §3.5）。
 
 ### カスタムメッセージ型（th_system_msgs）
 

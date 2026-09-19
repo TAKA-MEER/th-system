@@ -308,7 +308,7 @@ def test_ui_estop_release_goes_idle_when_prev_not_resumable_or_critical(state_co
     # WS-9O (2026-09-04): フォルト起因の ESTOP（estop_from_ui=False）でも、フォルトが
     # 消えていて押下前が動作系モードなら復帰の選択肢を出す（C-09）。
     # 以前は estop_from_ui を要求していたため必ず IDLE（C-09b）に落ちており、再生中に
-    # 一瞬のフォルトで止まると経路選択からやり直しになっていた（VISION.md §2）。
+    # 一瞬のフォルトで止まると経路選択からやり直しになっていた（Spec-safety.md §3.5.2）。
     d1b = core.step("ESTOP", "NONE", "ui.estop.release",
                      _mk_ctx(prev_mode="MANUAL", prev_state="RUN",
                              ui_estop=False, hw_estop=False, estop_from_ui=False))

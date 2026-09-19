@@ -146,7 +146,7 @@ class VenueNavigator(Node):
         # WS-9AC(2026-09-11): 幽霊マーク一掃は BLOCKED 突入ごとに 1 回だけ。
         # 毎周期クリアすると今まさに目の前にある本物の障害物マークまで消して
         # しまい、クリア直後の compute がすり抜けて FollowPath 側で ABORT する
-        # 往復を招く（VISION.md WS-9AC）。
+        # 往復を招く（Spec-onsite.md §6.1）。
         self._cleared_this_episode = False
 
         # ── QoS ─────────────────────────────────────────────
@@ -438,7 +438,7 @@ class VenueNavigator(Node):
             return
         # WS-9AC(2026-09-11): 地図作成中に付いた幽霊障害物マーク（global costmap は
         # rolling_window:false・raytrace_max_range:6.0 で視線外/6m 超が消えない。
-        # VISION.md WS-9AC）を初回計算の前に一掃する。_nav_chain_active を先に
+        # Spec-onsite.md §6.1）を初回計算の前に一掃する。_nav_chain_active を先に
         # 立てて、クリアが in-flight の間に _on_state/_align_timer から
         # _start_nav が二重に呼ばれるのを防ぐ。
         self._nav_chain_active = True
@@ -580,7 +580,7 @@ class VenueNavigator(Node):
         """xy 到着（FollowPath 結果 or 到着フォールバックの両方から呼ぶ）を
         受けて、ALIGN を持たないモードなら evt.arrived の前にその場旋回を
         挟む（実機で「待機場所到着時に向きを直さない。当日の地図再読み込みが
-        ピンの登録姿勢＝向きも前提にしているのでズレる」と判明。VISION.md
+        ピンの登録姿勢＝向きも前提にしているのでズレる」と判明。Spec-onsite.md §2.1.1
         WS-9AI）。ALIGN を持つモードは今までどおり素通しする。"""
         if not self._needs_final_align():
             self._on_arrived()

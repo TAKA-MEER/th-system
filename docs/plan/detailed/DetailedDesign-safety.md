@@ -124,7 +124,7 @@ Nav2 controller_server ────────────►/cmd_vel_nav (10) 
 > （`nav2_bringup` からのローカルフォーク）に remap を追加して解決した。
 > 同じフォークで `velocity_smoother`（`cmd_vel_smoothed` → `cmd_vel` の remap を
 > 持ち、同じく最終段 `/cmd_vel` に直接 publish する。上の経路図にも
-> `VISION.md` にも登場しない、このプロジェクトが意図していないノード）も削除した。
+> 旧 `VISION.md` にも登場しない、このプロジェクトが意図していないノード）も削除した。
 > **削除は §7.1 の設計と整合する**——加減速を鈍らせる権威は ESP32 ファームの
 > `TARGET_RAMP_ACCEL_MPS2` であり、**すべての速度源**（ジョグ・Nav2・挙動ノード）
 > に効く設計（§7.1 の表）。Nav2 の `velocity_smoother` はこれと同じ役割を
@@ -598,7 +598,7 @@ blind_angle_ranges の全ペアが幅ゼロ  →  obstacle_limiter は AUTO の�
 ## 7.1 加減速はファームウェアと obstacle_limiter の二層で鈍らせる（`Spec-safety.md` §3）
 
 **2026-09-11 改訂。**旧版は「権威はファーム側だけ」「`obstacle_limiter` は加減速を
-鈍らせない」だったが、実機フィードバック（VISION.md「2026-09-11 — 手動ジョグの
+鈍らせない」だったが、実機フィードバック（[Spec-safety.md](../spec/Spec-safety.md) §3「手動ジョグの
 発進・停止でモーター出力が急変する」）で ESP32 ファーム単独のランプ
 （`TARGET_RAMP_ACCEL_MPS2` / `PID_OUT_RAMP_RATE`）だけでは体感の急変が解消
 しきらないと判明し、**`obstacle_limiter` にも通常時専用の第2のランプを追加**
@@ -636,7 +636,7 @@ PC 側の `rate_limit()`（`follow_core.py`）は**追従にしか効かない**
 > 即座に返す経路）には一切当てはまらない。当てはまるのは「操作者がスティックを
 > 離す」「Nav2 がゴール到達で0を送る」といった**危険を伴わない通常の停止指令**
 > だけであり、これはユーザーが明示的に望んだ挙動である
-> （VISION.md 該当項参照）。
+> （[Spec-safety.md](../spec/Spec-safety.md) §3 参照）。
 
 **確定値と角速度側の撤去（2026-09-11 実機再検証）**: `normal_accel_mps2=0.75`
 で実機再検証したところ mid/high 帯域は改善したが、ESP32 側の PID 出力
@@ -670,7 +670,7 @@ PC 側の `rate_limit()`（`follow_core.py`）は**追従にしか効かない**
 が効くのは非ゼロ setpoint 間の変化（発進・速度変更・正逆転）のみとし、
 ファーム層でも「setpoint=0 は緊急停止として即座に扱う」という規約を明文化
 した（ESP32 は停止指令が通常解放か緊急ブレーキかを区別できないため、
-常に緊急側＝即時とする）。詳細: VISION.md「障害物ブレーキが本来より遅く
+常に緊急側＝即時とする）。詳細: [Spec-safety.md](../spec/Spec-safety.md) §3「障害物ブレーキが本来より遅く
 制動していた回帰」。
 
 ---

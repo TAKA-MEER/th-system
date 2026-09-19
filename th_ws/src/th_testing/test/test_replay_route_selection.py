@@ -13,7 +13,7 @@
   再生が受理され `RUN` へ。`load_route` は一度も発火しない。
   起点合わせでジョグを触る／`ESP32_DISCONNECTED` が一度出るだけで発生した。
 
-対策（VISION.md §2.5「実機フィードバックによる設計変更」2026-09-02）:
+対策（Spec-modes.md §3.1.2 `SM-3.1.2-103` ほか。2026-09-02）:
   A. `C-01` / `C-03` の `to_state` を `$pause_unless_prep` にし、
      `attributes.yaml` の `prep_states` に挙げた状態では `PAUSE` へ落とさない。
   B. `T-REPLAY-07` / `T-REPLAY-10` に `route_loaded` ガードを課し、

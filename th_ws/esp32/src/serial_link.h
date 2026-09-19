@@ -5,8 +5,7 @@
 // serial_link.h — ESP32 ⇔ ラズパイ中継(pi_serial_relay) シリアルプロトコル
 //
 // 2026-09-05: WiFi + WebSocket (ws_link.h) を廃止し、USB-UART (Serial, UART0)
-// でラズパイに直結する構成に変更(VISION.md「ESP32の無線化をやめ、ラズパイ経由の
-// シリアル接続にする」参照)。ラズパイ上の pi_serial_relay がこの反対側を持ち、
+// でラズパイに直結する構成に変更(Spec.md §6.1「ESP32 は無線を使わない」参照)。ラズパイ上の pi_serial_relay がこの反対側を持ち、
 // PC の esp32_bridge (WebSocketサーバー、無変更) へ中継する。
 //
 // ws_protocol フレーム自体 (th_ws/src/th_esp32_bridge/th_esp32_bridge/ws_protocol.py)

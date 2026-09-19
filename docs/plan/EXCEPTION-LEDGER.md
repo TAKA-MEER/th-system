@@ -1,12 +1,58 @@
 # EXCEPTION-LEDGER — 特例運用で省略・バイパスした事項の台帳
 
-**発効 2026-09-01（ユーザー指示）。**根拠と方針は [VISION.md](../../VISION.md) §2.5。
+**発効 2026-09-01（ユーザー指示）。2026-09-20 に特例運用は終了し、本書は `main` 上で消化する
+借金リストとして継続する。**（この節は VISION.md §2.5 から移設した。VISION.md は廃止）
 
-実現可能性デモのため、実装・試験・安全システムの一部を期間限定で省略・バイパスしている。
+実現可能性デモのため、実装・試験・安全システムの一部を期間限定で省略・バイパスした。
 **ここに記録の無い省略・バイパスをしてはいけない。**
 
+## 特例運用とは何だったか（2026-09-01 〜 2026-09-20）
+
+期限までに現行の実装計画では実現可能性（動くデモ）を示せない見込みのため、
+**期間限定の特例**を発動した。対象を 2 フェーズに分けた。
+
+- **フェーズ 1 — 手動教示と教示再生（`REPLAY`）の一気通貫**（2026-09-01〜）。
+  最小ループ ＝ 記録開始 → 手動運転 → 保存 → 一覧から選択 → 初期姿勢合わせ → 順再生。
+  逆再生・地図書き足し・先導同行の作法・KPI 計測は対象外。
+- **フェーズ 2 — 試験場内動作の実現可能性**（2026-09-07〜）。「保管場所⇔試験場の移動」だけでなく
+  **試験場内で行う動作も実現可能**であることを示す必要が出た（2026-09-07 ユーザー指示）。
+  前日の地図作成・登録（**方式 A ＝ 2 点指示のみ**）、当日の盤前移動・呼び寄せ・待機場所への復帰。
+
+### 特例で許可したこと
+
+| バイパス可 | 内容 | フェーズ 2（試験場内動作）での扱い |
+| --- | --- | --- |
+| 障害物リミッタの LiDAR 減速・停止 | 素通し可 | **バイパスしない**（活かす） |
+| 安全監視のフォルトタイムアウト | 判定を緩める／無効化してよい | 緩めない（`W-06` の `runaway` 除外のみ全域で継続） |
+| モード FSM の遷移ガード | 最小ループに必要な遷移だけ通す暫定実装でよい | 同左（場内動作に必要な経路のみ） |
+| params `registry.yaml` の未確定値による起動停止 | 仮値で起動してよい | 同左 |
+| 変異・統合・実機の試験項目 | 省略してよい（記録は必須） | 同左 |
+
+### 特例でも無効化しなかったこと（解除不可）
+
+- **G1（人・物への接触 0 件、意図しない挙動 0 件）** — 特例の上位。バイパスの結果 G1 を脅かすなら止める
+  （[Spec.md](spec/Spec.md) §3）
+- **物理非常停止ボタン** と **ESP32 ウォッチドッグ（600 ms）** — 開発モードでも無効化しない
+  （[Spec-safety.md](spec/Spec-safety.md) §10）
+- **モードの切替はすべて明示操作**（[Spec.md](spec/Spec.md) §5 SD-8）
+- **操作系は WebUI のみ**（同 SD-1）
+
+### 2026-09-20 — 特例運用の終了と `main` マージ
+
+**ユーザー決定。**デモのための実装は完成として通常の開発に戻り、作業ブランチ
+`feat/demo-teach-replay` を `main` にマージした。
+
+- 「台帳を全件クローズするまでマージしない」という門は**撤回した**。理由: 台帳の未クローズ項目は
+  実測待ち（`O-a2` 等）・他部署との結合設計待ち（昇降・撮影）を含み、クローズが外部要因で止まる。
+  その間デモ実装を `main` の外に置き続けると、通常開発のほうが古い土台の上で進む。
+- **`main` は「特例のバイパスが残った状態」である。**`W-06`（`DRIVE_RUNAWAY` の無効化）が最たるもの。
+  **未クローズ項目の一覧は本書が唯一の正。**
+- 「完成形（`spec/`）は変更しない」条項も**撤回した（案 A）**。デモコードを正規実装のベースラインとし、
+  **`spec/` のほうを実装に追いつかせる**。実機フィードバック 15 件の `spec/` への流し込みは
+  2026-09-20 に完了した。
+
 - **フェーズ 1**（手動教示・教示再生の一気通貫）: `W-01`〜`W-07`。
-- **フェーズ 2**（試験場内動作。2026-09-07 スコープ拡大。VISION.md §2.5「### 2026-09-07」）:
+- **フェーズ 2**（試験場内動作。2026-09-07 スコープ拡大。docs/plan/EXCEPTION-LEDGER.md「### 2026-09-07」）:
   `W-08`〜。**安全のソフト層はバイパスしない**（`obstacle_limiter` を活かす・`safety_monitor` を
   緩めない・実物の人物トラッカーを起動）。フェーズ 2 の WAIVER は**仕様どおりの機能の省略**が中心で、
   安全チェーンのバイパスは含めない。
@@ -17,12 +63,12 @@
 - コードには grep 可能なタグを残す — Python `# WAIVER(demo): <ID>`、C++ `// WAIVER(demo): <ID>`、
   JS/JSX `// WAIVER(demo): <ID>`。ID は表の左端（`W-01` …）。
 - ~~**特例解除時、全件を「正規実装で閉じる」まで `feat/demo-teach-replay` を `main` にマージしない。**~~
-  **2026-09-20 のユーザー決定で撤回**（[VISION.md](../../VISION.md) §2.5「### 2026-09-20 — 特例運用の終了と `main` マージ」）。
+  **2026-09-20 のユーザー決定で撤回**（上の「### 2026-09-20 — 特例運用の終了と `main` マージ」）。
   ブランチは `main` にマージ済み。**この台帳は `main` 上で消化する借金リストとして継続する**（廃止しない）。
   未クローズ項目が `main` に載っている状態なので、**何がバイパスされたままかはこの台帳が唯一の正**。
   `WAIVER(demo):` タグはクローズするまで消さない。
 - G1（接触 0・意図しない挙動 0）／物理非常停止ボタン／ESP32 ウォッチドッグ／WebUI 専用／
-  モード切替は明示操作 — これらは特例でも**バイパス禁止**（VISION.md §2.5）。台帳に載せる対象外。
+  モード切替は明示操作 — これらは特例でも**バイパス禁止**（docs/plan/EXCEPTION-LEDGER.md）。台帳に載せる対象外。
 
 ## 台帳
 
@@ -49,7 +95,7 @@
 | W-14 | フェーズ 2 の統合・実機試験項目 | `WP-ONSITE-*` / `WP-UI-06/07` の統合テスト・実機試験項目（故障注入 §10-7 の `WAIT_CLEAR` 系を含む）を省略してよい（記録は必須） | デモ期限（VISION §2.5） | 場内動作の回帰を自動で守れない。実機での退避ゲート・到着精度が未計測 | `test_simulation_scenarios` 系に場内シナリオを追加。`docs/試験項目.md` に実機項目を起こして実施 | — | OPEN |
 | W-16 | `stage:=4` 起動時の N-27（一過性 CPU ストール → CRITICAL → ESTOP） | 根本対策（Nav2 のライフサイクル activate を全ノード安定後にずらす）を入れず、**運用手順で「起動後、非常停止画面が出たら『解除』を 1 回押す」で回避**する（`docs/使い方.md` §2）。実機で確認: 起動 15〜60s に `LIMITER_DEAD`×5・`STATE_INCONSISTENT`×2（各 ~40ms で自己解除）。`safety_monitor` は変更しない（VISION §2.5「フェーズ2で緩めない」を守る） | `stage:=4` は 53 ノード＋Nav2 ライフサイクル＋DR-SPAAM モデルロードが重なる。`critical_fault_hold_ms`(300ms・WS-9O) と DR-SPAAM 8s 遅延（P0）でも足りない。`startup_grace_sec` 延長は §2.5 に抵触するのでユーザー決定 2026-09-07 で「案A（運用手順）」を採用 | 起動のたびに操作者が 1 手間。フォルトは正しく検知されており自己解除するので G1 は脅かさない。走行中には起きない | Nav2 の `autostart:=false` にして全ノード起動後に `lifecycle_manager` を手動 activate（もしくは activate をタイマ遅延）。`navigation_launch.py` のローカルフォークに手を入れる | `docs/使い方.md` §2「stage:=4 で起動したとき」 | OPEN |
 | W-15 | `registry.yaml` の class c placeholder による stage:=4 起動停止 | `person_position_sigma_m`（consumers: `pin_registrar`）と `tracker_lost_grace_ms`（consumers: `person_tracker_bridge`。brief-onsite-ux2 F-4 で消費開始）は `status: placeholder` かつ `blocking_from_stage: 4`。`params_generation` の `A8` が stage:=4 の起動を止める。**両方 `blocking_from_stage: 5` に上げた**（本来 4） | 試験場内デモは Nav2(stage3)＋人物トラッカー(stage4)が要り stage:=4 で起動する。`person_position_sigma_m` は現状**どのノードも実際には消費していない**（`pin_registrar`/`venue_navigator` はノード内リテラル＝`W-13`）ので起動を止める意味が無い。`tracker_lost_grace_ms` はこの根拠が古くなった — brief-onsite-ux2 F-4（is_lost のデバウンス）で `person_tracker_bridge` が実際に消費し始めた（`declare_parameter('tracker_lost_grace_ms', 1500)` のノード内リテラル既定値・`W-13` 扱いで `registry.yaml` からは読まない）。ただし値そのもの（1500ms）はまだ実測（`C-05`）していない仮の既定値なので、`blocking_from_stage: 5` は当面維持する | 実測前に「精度は測ってある」と誤認する余地。特に `person_position_sigma_m` は 2 点指示の角度精度の逆算元で、これが未測定＝到着精度の根拠が無い（`W-09` と同根） | O-c3（`person_position_sigma_m` の実測）と C-05（`tracker_lost_grace_ms`）を実施 → `status: measured`、`blocking_from_stage: 4` に戻す。あわせて `pin_registrar` / `venue_navigator` / `person_tracker_bridge` を registry 駆動にする（`W-13` とまとめてクローズ可） | `registry.yaml` の当該 2 行の `blocking_from_stage` 行 note（`# WAIVER(demo): W-15`） | OPEN |
-| W-17 | S-21 を IDLE のまま開く運用（行き先を選ぶ前の手動ジョグ） | ~~S-01 の「試験」ボタンで開く S-21 は FSM のモードではなく IDLE のままの画面なので、`attributes.yaml` の `IDLE: jog: denied` により行き先を選ぶ前の手動ジョグが一切通らない~~ **2026-09-08 に正規実装で解消。**`AT_PANEL` と対になる **`AT_HOME`**（待機場所での待機。`jog: allowed`／速度上限は停止でジョグ中のみ `v_jog_panel`）を新設し、S-21 はこのモードで開くようにした。`HOME_NAV` の到着先も `IDLE` → `AT_HOME`。安全側の設定（`jog_gate`／`obstacle_limiter`／`guards`）は一切変更していない | ユーザー指示（2026-09-08）「手動は前日・当日の両方で動くようにしてほしい」。`IDLE` 側を緩める案は起動直後・中断直後まで走れるようになるため採らなかった | 解消済み。`AT_HOME` は試験画面でしか出ないので、起動直後の `IDLE` は従来どおり停止・ジョグ不可のまま | — | `docs/plan/spec/Spec-modes.md` §2.3 / §3.1.2（`SM-3.1.2-107`〜`-109`）/ §4.2 / §6、`th_state/config/{attributes,mode_entry,transitions}.yaml`、`state_core.MODE_STATES` | CLOSED（`f7288d9` で正規実装。VISION.md §2.5「2026-09-08」） |
+| W-17 | S-21 を IDLE のまま開く運用（行き先を選ぶ前の手動ジョグ） | ~~S-01 の「試験」ボタンで開く S-21 は FSM のモードではなく IDLE のままの画面なので、`attributes.yaml` の `IDLE: jog: denied` により行き先を選ぶ前の手動ジョグが一切通らない~~ **2026-09-08 に正規実装で解消。**`AT_PANEL` と対になる **`AT_HOME`**（待機場所での待機。`jog: allowed`／速度上限は停止でジョグ中のみ `v_jog_panel`）を新設し、S-21 はこのモードで開くようにした。`HOME_NAV` の到着先も `IDLE` → `AT_HOME`。安全側の設定（`jog_gate`／`obstacle_limiter`／`guards`）は一切変更していない | ユーザー指示（2026-09-08）「手動は前日・当日の両方で動くようにしてほしい」。`IDLE` 側を緩める案は起動直後・中断直後まで走れるようになるため採らなかった | 解消済み。`AT_HOME` は試験画面でしか出ないので、起動直後の `IDLE` は従来どおり停止・ジョグ不可のまま | — | `docs/plan/spec/Spec-modes.md` §2.3 / §3.1.2（`SM-3.1.2-107`〜`-109`）/ §4.2 / §6、`th_state/config/{attributes,mode_entry,transitions}.yaml`、`state_core.MODE_STATES` | CLOSED（`f7288d9` で正規実装。docs/plan/EXCEPTION-LEDGER.md「2026-09-08」） |
 | W-18 | `v_slow` / `v_jog_panel` の既定値を C++ 宣言側に置く | 両方とも `registry.yaml` では `derived`（`v_slow` ← `venue_clearance_m`、`v_jog_panel` ← `panel_clearance_m`）で、逆算元が `placeholder` のため値が null。生成 yaml に出ないので `obstacle_limiter.cpp` の `declare_parameter(..., 0.0)` が効き、**場内モードの前後移動が丸ごと 0 にクランプ**されていた（角速度は `w_max` で別に効くため「超信地旋回だけできる」という症状になる。2026-09-08 実機で発覚）。**C++ の宣言既定値だけ `v_slow=0.30` / `v_jog_panel=0.10` にした**（`W-05` の `v_reverse` と同型）。生成 yaml に出れば上書きされる | `venue_clearance_m`（場内の見通し距離）と `panel_clearance_m`（盤前の余裕）の実測は `O-a2` 待ちで未計画。デモ期限までに測れない | 場内速度・盤前ジョグ速度の根拠が実測でない。A5 の順序（`v_jog_panel` ≤ `v_reverse` ≤ `v_slow` ≤ `v_max`）は満たしているが、会場の実際の見通しから逆算した値ではない | `venue_clearance_m` / `panel_clearance_m` を実測 → 両者を `derived` のまま解決させ、C++ 既定を 0.0 に戻す。`W-05` とまとめてクローズ可 | `obstacle_limiter.cpp` の `declare_parameter("v_slow", ...)` / `declare_parameter("v_jog_panel", ...)`（`// WAIVER(demo): W-18`） | OPEN |
 
 ## 状態の凡例

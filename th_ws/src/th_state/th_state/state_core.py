@@ -61,7 +61,7 @@ BOOT_MODE: str = "INIT"
 ESTOP_MODE: str = "ESTOP"
 
 # DetailedDesign-state.md §4-1-1 末尾・§2 validate()⑥docstring — PAUSE を持たないモード。
-# PREP は 2026-09-10 追加（Spec-modes.md §3.0-② ／ VISION.md WS-9AA。地図作成＝常時ジョグ、
+# PREP は 2026-09-10 追加（Spec-modes.md §3.0-② ／ Spec-modes.md §3.0-②。地図作成＝常時ジョグ、
 # 将来は追従走行がモードの活動そのもので「一時停止すべき走行」が無い。停止/走行は inert）。
 NO_PAUSE_MODES: Set[str] = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB", "PREP"}
 
@@ -428,7 +428,7 @@ class StateCore:
         if raw == "$resume_state":
             return self._attrs.get(mode, {}).get("resume_state")
         if raw == "$pause_unless_prep":
-            # 「走っていないものは止められない」(VISION.md §2.5 実機フィードバック
+            # 「走っていないものは止められない」(Spec-modes.md §3.0-②
             #  2026-09-02)。C-01(ジョグ介入) / C-03(回復可能フォルト) は
             #  mode=* state=* なので、経路をまだ積んでいない準備状態からも
             #  PAUSE に落ちてしまい、そこからの ui.run が「経路は積んである」

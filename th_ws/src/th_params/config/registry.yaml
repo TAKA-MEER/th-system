@@ -230,7 +230,7 @@
   value: 0.0
   consumers: [obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §7.1"
-  note: "obstacle_limiter が /cmd_vel_muxed の角速度生値（angular_z）に掛ける通常時ランプ。0.0 = 無制限（ランプ撤去）。2026-09-11 に normal_accel_mps2 と同じ理由・同じ値(0.75)で導入したが、実機で超信地旋回（前進速度ゼロでのその場回転）の立ち上がりが w_max=1.2 rad/s に対し 1.2/0.75≈1.6 秒と大きく遅くなる副作用が発覚（2026-09-04 WS-9T で解消したばかりの操作性を再度悪化させていた）。超信地旋回は前進を伴わず重心が横に投げ出される動きではないため、前進しながらの急旋回ほど転倒リスクが高くないとユーザーが判断し撤去した（前進側の急変は normal_accel_mps2 で引き続き抑制する）。VISION.md「2026-09-11 — 手動ジョグの発進・停止でモーター出力が急変する」参照"
+  note: "obstacle_limiter が /cmd_vel_muxed の角速度生値（angular_z）に掛ける通常時ランプ。0.0 = 無制限（ランプ撤去）。2026-09-11 に normal_accel_mps2 と同じ理由・同じ値(0.75)で導入したが、実機で超信地旋回（前進速度ゼロでのその場回転）の立ち上がりが w_max=1.2 rad/s に対し 1.2/0.75≈1.6 秒と大きく遅くなる副作用が発覚（2026-09-04 WS-9T で解消したばかりの操作性を再度悪化させていた）。超信地旋回は前進を伴わず重心が横に投げ出される動きではないため、前進しながらの急旋回ほど転倒リスクが高くないとユーザーが判断し撤去した（前進側の急変は normal_accel_mps2 で引き続き抑制する）。Spec-safety.md §3参照"
 
 - name: brake_delay_s
   unit: s
@@ -403,7 +403,7 @@
   value: TBD_MEASURE
   consumers: [venue_navigator]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.3（O-a4）"
-  note: "未取得（実会場で実測する）。deviation_budget_m の逆算元。2026-09-10 実機検証で、Nav2 自動走行の直進通路下限は約 1.10m・実機成功は 1.0m・設計推奨は 1.3m 以上（VISION.md「Nav2 の機体モデル ── 実寸正方形 footprint」参照）。実会場がこれを下回る区間は Nav2 対象外（手動ジョグ／教示・再生）"
+  note: "未取得（実会場で実測する）。deviation_budget_m の逆算元。2026-09-10 実機検証で、Nav2 自動走行の直進通路下限は約 1.10m・実機成功は 1.0m・設計推奨は 1.3m 以上（Spec-onsite.md §6.1.1参照）。実会場がこれを下回る区間は Nav2 対象外（手動ジョグ／教示・再生）"
 
 - name: deviation_budget_m
   unit: m
@@ -578,7 +578,7 @@
   status: given
   value: 3
   consumers: [obstacle_limiter]
-  spec_ref: "VISION.md §2（2026-09-04 WS-9P）"
+  spec_ref: "Spec-safety.md §2.5"
   note: "障害物とみなすのに必要な点数。円錐内の n 番目に小さい距離を最近傍とする。
     1 だと最小値そのもの＝スキャン 1 枚のノイズ 1 点で停止し、次のスキャンで消えるので
     独りでに再開する（実機 2026-09-04「何も無いところで止まってまた走り出した」）。
@@ -810,7 +810,7 @@
   status: given
   value: 300
   consumers: [safety_monitor]
-  spec_ref: "VISION.md §2（2026-09-04 WS-9O）"
+  spec_ref: "Spec-safety.md §3.5.1"
   note: "重大フォルト（LIMITER_DEAD / MUX_DEAD / STATE_INCONSISTENT）の発火に課す保持時間。
     監視ループ（check_period_ms=100）自身が一時的に遅れると複数入力が同じ周期で同時に
     タイムアウト超過に見える。実機で ESP32_DISCONNECTED と LIMITER_DEAD が同じ 1ms に

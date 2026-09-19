@@ -67,7 +67,7 @@ public:
         // ESP32_DISCONNECTED と異なり、走行そのものが危険になるわけではない。
         // 試験員位置に依存するモード（FOLLOWING/FOLLOWING_MAPLESS/SUMMONING）
         // でのみ IDLE へ強制遷移させ、人物データを使わない MANUAL ジョグや
-        // MOVING_TO_PANEL まで巻き添えで止めない（VISION.md §5, 2026-07-24 決定）。
+        // MOVING_TO_PANEL まで巻き添えで止めない（Spec-safety.md §3.5, 2026-07-24 決定）。
         sub_fault_ = create_subscription<FaultStatus>(
             "/safety/fault", 10,
             [this](const FaultStatus::SharedPtr msg) {

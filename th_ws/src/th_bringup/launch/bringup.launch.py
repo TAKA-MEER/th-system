@@ -681,7 +681,7 @@ def generate_launch_description():
     #
     # map_and_localization_slam_toolbox_node は /slam_toolbox/set_localization_mode
     # (std_srvs/SetBool) で同一プロセスのまま切替でき、「地図作成停止 = 地図凍結・
-    # 自己位置推定継続」の要件を満たす唯一の手段 (VISION.md §8)。
+    # 自己位置推定継続」の要件を満たす唯一の手段 (Spec-transit.md §4.2.1)。
     # 2026-09-03 に実機コンテナで単体起動を確認済み（35 秒生存・/map を publish・
     # set_localization_mode / deserialize_map / serialize_map / pause_new_measurements
     # がすべて存在）。respawn: 2026-08-07 実機で SIGSEGV を確認しているため残す。

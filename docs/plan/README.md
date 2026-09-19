@@ -55,8 +55,8 @@
 * **同じファイル内**の節は `§0.1` のようにそのまま書く。
 * **別ファイル**の節は Markdown リンクにする — `[§0.1](transit-premises.md)`。
   番号だけ書くとどのファイルの節か分からなくなる。
-* `VISION.md` / `docs/architecture.md` の節を指すときは
-  **必ずファイル名を付ける**（`VISION.md §8`）。plan 側の節番号と衝突するため。
+* `docs/plan/spec/` / `docs/architecture.md` の節を指すときは
+  **必ずファイル名を付ける**（`Spec-transit.md §4.2.1`）。plan 側の節番号と衝突するため。
 
 ### 分割のタイミング
 

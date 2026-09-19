@@ -155,7 +155,7 @@ class StateCore:
 | `$initial` | `attributes[to_mode].initial_state` | `to_state` |
 | `$resume_run` | `attributes[mode].run_state` | `to_state` |
 | `$resume_state` | `attributes[mode].resume_state` | `to_state` |
-| `$pause_unless_prep` | 現在の `state` が `attributes[mode].prep_states` に含まれれば `state`（不変）、そうでなければ `PAUSE`。**「走っていないものは止められない」**（VISION.md 2026-09-02 WS-9 ／ 2026-09-10 WS-9AA）。`REPLAY` の準備 3 状態と `PREP` の全状態がこれで `PAUSE` を回避する | `to_state` |
+| `$pause_unless_prep` | 現在の `state` が `attributes[mode].prep_states` に含まれれば `state`（不変）、そうでなければ `PAUSE`。**「走っていないものは止められない」**（Spec-modes.md §3.1.2・§3.0-②）。`REPLAY` の準備 3 状態と `PREP` の全状態がこれで `PAUSE` を回避する | `to_state` |
 | `$prev_mode` / `$prev_state` / `$prev_sub` | `ctx.prev_*` | 両方 |
 | `$arg.<key>` | `ctx.arg[key]`。**`ui.goto` だけ §3.5 の写像を通す** | 両方 |
 
@@ -313,7 +313,7 @@ class StateCore:
 **`PREP` はジョグ自体は許可する**（`jog_allowed` は true）が、`C-01` の `to_state` が
 `$pause_unless_prep` で、`prep_states` に全状態を列挙しているため **`PAUSE` には落ちない**
 （ジョグ＝地図作成のための連れ回しであって「一時停止すべき走行」ではない。`Spec-modes.md`
-§3.0-② ／ VISION.md 2026-09-10 WS-9AA）。
+§3.0-②）。
 
 **`OPCHECK` / `CALIB` / `PREP` は `PAUSE` を持たない。**したがって `C-03`（回復フォルト → `PAUSE`）も
 効かせない。`OPCHECK` / `CALIB` は `fault_stops_mode` の除外に加え復帰を `resume_state: LIST` で行う

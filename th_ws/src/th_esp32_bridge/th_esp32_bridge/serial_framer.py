@@ -3,7 +3,7 @@ serial_framer.py — シリアル(UART)用フレームエンベロープ
 ==========================================================
 ROS2 非依存の pure Python。asyncio / pyserial 等の外部依存も import しない。
 
-背景 (VISION.md 2026-09-05): ESP32 を無線 WebSocket から USB-UART 直結に変え、
+背景 (Spec.md §6.1): ESP32 を無線 WebSocket から USB-UART 直結に変え、
 ラズパイの中継が Pi → PC の esp32_bridge (WebSocket サーバー、無変更) へ
 クライアント接続する。シリアルは生のバイトストリームでメッセージ境界が無く、
 ESP32 のブート時 ASCII バナーも混ざりうるため、ここにエンベロープ層を 1 つ追加し、

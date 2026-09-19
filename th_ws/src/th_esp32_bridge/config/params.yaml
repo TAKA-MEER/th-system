@@ -6,7 +6,7 @@ esp32_bridge:
     # odom → base_link TF は ekf_filter_node (robot_localization) が発行するため
     # ここでは出さない。両方が出すと TF ツリーが二重親になり壊れる。
     # 本ノードは /odom (エンコーダ生値) の発行のみを担当し、EKF がそれを
-    # IMU と融合して TF を出す (2026-08-06 変更・VISION.md §9 行12)。
+    # IMU と融合して TF を出す (2026-08-06 変更・docs/architecture.md「オドメトリと TF」)。
     # シミュレーション (gazebo.launch.py) では本ノード自体が起動しないため無関係。
     publish_tf:    false
     feedback_timeout_ms: 500   # ESP32 フィードバック死活監視タイムアウト (ms)

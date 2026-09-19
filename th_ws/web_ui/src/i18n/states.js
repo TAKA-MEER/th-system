@@ -96,7 +96,7 @@ export const WIN_ESTOP_SYSTEM_TITLE = '安全のため停止しました'
 export const WIN_ESTOP_SYSTEM_BODY = '安全監視が異常を検知し、速度指令をゼロにしています。'
 export const WIN_ESTOP_SYSTEM_HINT = '原因が解消したら「確認」を押すとメインメニューに戻ります。'
 // WS-9O (2026-09-04): フォルト起因でも元のモードへ戻れるようになった。戻り先は
-// 停止状態なので、走り出すにはもう一度「再生」を押す必要がある（VISION.md §2）。
+// 停止状態なので、走り出すにはもう一度「再生」を押す必要がある（Spec-safety.md §3.5.2）。
 export const WIN_ESTOP_SYSTEM_HINT_RESUMABLE =
   '原因は解消しました。元のモードに戻ると停止した状態から再開できます。'
 

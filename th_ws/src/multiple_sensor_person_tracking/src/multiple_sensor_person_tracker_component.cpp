@@ -529,7 +529,7 @@ void multiple_sensor_person_tracking::PersonTracker::compensateEgoMotion() {
     // Re-expressing the state in the current target_frame_ separates "the robot moved"
     // from "the person moved", so the gate is spent on the latter only. Widening the
     // gate instead is not an option: it brings back the furniture-leg mis-association
-    // seen on the real robot (VISION.md section 4).
+    // seen on the real robot (docs/architecture.md (person tracking)).
     geometry_msgs::msg::TransformStamped tf_msg;
     try {
         // odom <- target_frame (current). Latest-available TF, consistent with the rest

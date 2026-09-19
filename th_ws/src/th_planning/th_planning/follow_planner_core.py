@@ -417,6 +417,6 @@ class PlannerOutput:
     retreat_blocked: bool  = False
     # 停止・状態の理由。retreat_blocked だけでは「壁際で本当に逃げ場がない」場合と
     # 「絶対姿勢が取れていない」場合を区別できず、前者にだけ鳴らしたい音声通知
-    # (VISION.md §7.7 C4) が costmap 未受信のたびに誤発火するため分けている。
+    # (docs/voice-and-audience.md §2.7 C4) が costmap 未受信のたびに誤発火するため分けている。
     #   "tracking" / "preparing" / "evading" / "retreat_blocked" / "no_pose"
     reason:          str   = "tracking"

@@ -3,7 +3,7 @@
 # verify_spin_tracking.py — verify_spin_tracking.sh から呼ばれる本体
 #
 # odom 上で静止した試験員を置き、ロボットだけを OMEGA [rad/s] で
-# 超信地旋回させる。自機回転補償 (VISION.md §4) が効いていれば、見かけの
+# 超信地旋回させる。自機回転補償 (docs/architecture.md「人物追跡」) が効いていれば、見かけの
 # 移動が打ち消されて EXISTS_LEG(status=1) を維持できる。
 #
 # 判定力について: 補償が無い場合の1フレームあたりの見かけ移動量は

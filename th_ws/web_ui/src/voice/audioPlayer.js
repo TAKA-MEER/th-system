@@ -6,7 +6,7 @@
 //
 // 再生は優先順に3段のフォールバックで試す:
 //   1. entry.clips (動的な数値クリップ。呼び出し時に voiceQueue.announce の
-//      overrides で渡される。VISION.md §7.5) の WAV
+//      overrides で渡される。docs/voice-and-audience.md §2.5) の WAV
 //   2. entry.file (マニフェストの静的な1ファイル) の WAV
 //   3. ビープ合成 (Tier 1 のプレースホルダ。1・2 がどちらも取得できない場合)
 // ============================================================
@@ -76,7 +76,7 @@ async function loadBuffer(c, name) {
  * entry から再生を試す候補を優先順に並べた配列を得る (各要素がクリップ名の配列)。
  * 候補が無ければ空配列 (ビープへ)。
  *
- *   1. entry.clips — 呼び出し時に渡された動的クリップ (数値の差し替え。VISION.md §7.5)
+ *   1. entry.clips — 呼び出し時に渡された動的クリップ (数値の差し替え。docs/voice-and-audience.md §2.5)
  *   2. entry.file  — マニフェストの静的な1ファイル
  *
  * 動的クリップが1つでも取得失敗すると、以前は即ビープに落ちていた。しかし

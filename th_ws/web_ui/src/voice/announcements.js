@@ -1,14 +1,14 @@
 // ============================================================
 // announcements.js — 音声アナウンスのマニフェスト
 //
-// VISION.md §7.7 の文案表をそのままデータ化したもの。
+// docs/voice-and-audience.md §2.7 の文案表をそのままデータ化したもの。
 // このファイルは純データで、再生方法もキュー規則も知らない。
 //
 // 音声ファイルは public/voice/<ID>.mp3 に置く。th_ws/scripts/generate_voice.py が
 // このマニフェストを読んで一括生成するので、文案を直したら流し直すだけでよい。
 //   ・既定では <ID>.mp3 を再生する
 //   ・数値分割合成が要るものは呼び出し側が announce(id, { clips: ['hokaku','3','meter'] })
-//     のように実行時の値でクリップ列を渡す (VISION.md §7.5)。渡された clips が
+//     のように実行時の値でクリップ列を渡す (docs/voice-and-audience.md §2.5)。渡された clips が
 //     1つでも取得失敗すると静的な <ID>.mp3 へフォールバックする (audioPlayer.js)。
 //     現状 N4 のみ実装済み。N7/N15/N16/N19/N20/N36/N37 は未着手で、文案に
 //     書かれた数値がそのまま焼き込まれている
@@ -17,7 +17,7 @@
 //   ・ファイルが取得できない場合は beep のプレースホルダに落ちる
 // ============================================================
 
-/** レイヤ。トグルの単位であり、同時に優先度でもある (VISION.md §7.3/§7.6) */
+/** レイヤ。トグルの単位であり、同時に優先度でもある (docs/voice-and-audience.md §2.3/§2.6) */
 export const LAYER = {
   SAFETY: 'safety',
   DEMO:   'demo',
@@ -42,11 +42,11 @@ export const BEEP = {
   DEMO:     { wave: 'sine',   gain: 0.12, freq: 440, ms: 120, repeats: 1, gapMs: 0  },
 }
 
-/** 再発話の既定打ち切り回数 (VISION.md §7.6) */
+/** 再発話の既定打ち切り回数 (docs/voice-and-audience.md §2.6) */
 export const DEFAULT_REPEAT_MAX = 5
 
 // entry を書くときの定型を減らすヘルパ。
-// 引数の順序は VISION.md §7.7 の表の列順に合わせてある。
+// 引数の順序は docs/voice-and-audience.md §2.7 の表の列順に合わせてある。
 const entry = (id, layer, trigger, text, approxSec, opts = {}) => ({
   id,
   layer,
@@ -99,7 +99,7 @@ const SAFETY_ANNOUNCEMENTS = [
 
 // ── デモ実況レイヤ (38件) ─────────────────────────────────
 // N3・N11・N13・N22・N28・N42 は安全通知と内容が重複するため意図的に欠番
-// (VISION.md §7.7 末尾)。
+// (docs/voice-and-audience.md §2.7 末尾)。
 const DEMO_ANNOUNCEMENTS = [
   entry('N1',  D, 'ノード起動完了', '起動中', 0.77,
     { note: 'ノード起動の観測手段がない。rosbridge 接続で代用するか要検討' }),
@@ -130,7 +130,7 @@ const DEMO_ANNOUNCEMENTS = [
     { auto: AUTO.WIRED }),
   entry('N16', D, '退避方向スキャン開始', '16 方向スキャン', 1.69,
     { note: 'PREPARE 突入と同じエッジで発火するため N15 と区別できない。'
-          + '第一声のみの方針 (VISION.md §7.4) では両方は鳴らせない' }),
+          + '第一声のみの方針 (docs/voice-and-audience.md §2.4) では両方は鳴らせない' }),
   entry('N17', D, '退避方向決定', '右後方に空き', 1.23,
     { note: '退避方向は escape_angle として publish 済み。ただし「右後方」等の'
           + '方位語を音声にするには方位ごとのクリップが必要' }),
@@ -186,7 +186,7 @@ const DEMO_ANNOUNCEMENTS = [
     { auto: AUTO.WIRED }),
 ]
 
-/** VISION.md §7.7 の全 51 件。安全通知 13 + デモ実況 38 */
+/** docs/voice-and-audience.md §2.7 の全 51 件。安全通知 13 + デモ実況 38 */
 export const ANNOUNCEMENTS = [...SAFETY_ANNOUNCEMENTS, ...DEMO_ANNOUNCEMENTS]
 
 const BY_ID = new Map(ANNOUNCEMENTS.map((a) => [a.id, a]))
@@ -202,13 +202,13 @@ export const ANNOUNCEMENTS_BY_LAYER = {
   [LAYER.DEMO]:   DEMO_ANNOUNCEMENTS,
 }
 
-// ── 数値分割合成用の語彙クリップ (VISION.md §7.5) ──────────
+// ── 数値分割合成用の語彙クリップ (docs/voice-and-audience.md §2.5) ──────────
 // ANNOUNCEMENTS とは別枠。1件が1つの完成した発話ではなく、announce() の
 // overrides.clips で組み合わせて使う単語の断片。generate_voice.py が
 // ANNOUNCEMENTS と同じ要領で <id>.mp3 を public/voice/ に生成する。
 //
 // 現状 N4「捕捉。前方 N メートル」のみが実装対象 (hokaku + 数字 + meter)。
-// centi (秒速 N センチ) / ban (配電盤 N) は VISION.md §7.5 に単位として
+// centi (秒速 N センチ) / ban (配電盤 N) は docs/voice-and-audience.md §2.5 に単位として
 // 明記されているが、対応する N7/N36 のトリガ配線はまだ無いため見送っている。
 export const CLIP_WORDS = [
   { id: 'hokaku', text: '捕捉。前方' },

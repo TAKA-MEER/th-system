@@ -1,6 +1,6 @@
 # ============================================================
 # scenario: panel_shuttle — 試験場での一連の運用フロー
-# VISION.md §1-3 の完成形フローを再現する:
+# Spec.md §9 の完成形フローを再現する:
 #   保管場所から FOLLOWING_MAPLESS で試験員に追従 → 試験場到着で IDLE
 #   待機(人物捕捉は継続・速度ゼロ) → 要請ごとに MOVING_TO_PANEL で
 #   各配電盤を巡回(AT_PANEL → IDLE を繰り返す) → 全作業完了後
@@ -8,7 +8,7 @@
 #
 # 起動:  ros2 launch th_bringup gazebo.launch.py scenario:=panel_shuttle
 #
-# 検証手順 (VISION.md の運用フローに沿った一連の操作):
+# 検証手順 (Spec.md §9 の運用フローに沿った一連の操作):
 #   1. 起動直後は IDLE。試験員(inspector)は保管場所付近(スポーン地点)から
 #      通路を抜けて配電盤前エリアまで自動で歩く(waypoints)。
 #   2. FOLLOWING_MAPLESS へ切替 → ロボットが試験員に追従して試験場入口まで移動:
@@ -18,7 +18,7 @@
 #        ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 #          "{requested_mode: 1, requester: 'cli'}"
 #      → /person/status が更新され続け、/cmd_vel が常にゼロであることを確認
-#        (VISION.md §4: 捕捉継続・移動不可の両立)
+#        (docs/architecture.md「人物追跡」: 捕捉継続・移動不可の両立)
 #   4. 配電盤ごとに移動要請 → 作業完了 → IDLE の周期を panel_01/02/03 で繰り返す:
 #        ros2 service call /panel_navigator/go_to_panel \
 #          th_system_msgs/srv/GoToPanel "{panel_id: 'panel_01'}"
@@ -31,7 +31,7 @@
 # ============================================================
 scenario:
   description: >-
-    試験場での一連の運用フロー(VISION.md準拠): mapless追従で試験場到着
+    試験場での一連の運用フロー(Spec.md §9 準拠): mapless追従で試験場到着
     → IDLE待機(捕捉継続・速度ゼロ) → 配電盤を順に巡回(MOVING_TO_PANEL/
     AT_PANEL/IDLE) → mapless追従で保管場所へ帰還
   recommended_mode: 7   # 最初のステップ: FOLLOWING_MAPLESS で試験場へ移動

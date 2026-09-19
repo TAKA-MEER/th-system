@@ -11,7 +11,7 @@
 // 他 ID と同じエッジで発火して区別できないため手動発火のみ。理由は
 // announcements.js の note に個別に書いてある。
 //
-// N4 は距離を実測値で差し替える (数値分割合成。VISION.md §7.5)。他の数値系
+// N4 は距離を実測値で差し替える (数値分割合成。docs/voice-and-audience.md §2.5)。他の数値系
 // (N7/N15/N16/N19/N20/N36/N37) は同じ仕組みに乗せられるが、値の取得元が
 // 未接続のため今は文案の数値のまま
 // ============================================================
@@ -79,7 +79,7 @@ export function useVoiceTriggers(ros, voice) {
     // connected:false が B2 を、mode:null→IDLE が D3 を誤発火させる
     if (prev === null) return
 
-    // 通信断 (全モード)。VISION.md §7.7 B2
+    // 通信断 (全モード)。docs/voice-and-audience.md §2.7 B2
     if (prev.connected && !connected) announce('B2')
 
     // 接続後に初めて mode を受信したとき。mode_manager は起動 500ms で IDLE に
@@ -99,7 +99,7 @@ export function useVoiceTriggers(ros, voice) {
     // 試験員の初回捕捉。再捕捉は N27 だが、捜索中かどうかを区別できないため Tier 2
     if (isFollowingMode && !prev.isTracked && isTracked && !firstCaptureDoneRef.current) {
       firstCaptureDoneRef.current = true
-      // 距離を実測値で差し替える (数値分割合成。VISION.md §7.5)。
+      // 距離を実測値で差し替える (数値分割合成。docs/voice-and-audience.md §2.5)。
       // クリップ (0〜20 の整数 + meter) の生成範囲に合わせて 0〜20m にクランプする。
       // isTracked は同じレンダーの personStatus から導出しているため、ここで
       // 参照する personStatus はその isTracked と矛盾しない値になっている
@@ -117,7 +117,7 @@ export function useVoiceTriggers(ros, voice) {
     }
 
     if (prev.mode !== mode) {
-      // モード遷移系は遷移元を問わず発火させる (VISION.md §7.7・2026-08-05)。
+      // モード遷移系は遷移元を問わず発火させる (docs/voice-and-audience.md §2.7・2026-08-05)。
       // MANUAL → FOLLOWING_MAPLESS のように IDLE を経由しない遷移もあるため
       if (mode === MODE.FOLLOWING_MAPLESS) announce('N5')
       if (mode === MODE.FOLLOWING)         announce('N14')

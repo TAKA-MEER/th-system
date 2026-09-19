@@ -65,7 +65,7 @@ def _load_pins(path) -> list:
 
 def _dump_pins(path, pins, map_instance_id=''):
     # WS-9AL(2026-09-11): map_instance_id はこのピン群が有効だった地図の
-    # 生存世代（slam_control の /map_session/status から。VISION.md WS-9AL）。
+    # 生存世代（slam_control の /map_session/status から。Spec-onsite.md §3.5）。
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
@@ -90,8 +90,8 @@ class PinRegistrar(Node):
         # WS-9AC(2026-09-11): 測る先は global costmap ではなく /map（slam_toolbox
         # の占有格子・膨張なし）。costmap は動く障害物も乗る＝ROBOT_POSE 登録時に
         # 操作者自身の足が近傍にマークされて誤警告になり得る上、地図作成中に
-        # 付いた幽霊マーク（VISION.md WS-9AC）も拾ってしまう。「壁までの距離」は
-        # 静的な地図形状の問題なので /map を見るのが筋（VISION.md「壁から
+        # 付いた幽霊マーク（Spec-onsite.md §6.1）も拾ってしまう。「壁までの距離」は
+        # 静的な地図形状の問題なので /map を見るのが筋（Spec-onsite.md §3.5「壁から
         # 0.45m 以上」にしきい値もそのまま合わせられる）。
         self.declare_parameter('pin_min_clearance_m', 0.45)
         self.declare_parameter('pin_retreat_m', 0.30)

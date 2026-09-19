@@ -79,7 +79,7 @@ ros2 launch th_bringup gazebo.launch.py scenario:=narrow_room
 | `wide_area` | 広所向けパラメータ (stop 1.0 / resume 1.3 / obstacle 1.0) の先行検証 | `scenario:=wide_area` → モード 7 | 約 1.0m で停止・約 1.3m で再開。`ros2 param get /follow_planner_mapless stop_distance` が 1.0 |
 | `cluttered` | 什器（机脚・椅子脚・柱）環境での追従観察 | `scenario:=cluttered` → モード 7 → 2 | 机脚の間を追従。脚と人物の混同挙動を観察・記録（診断用途）。モード 2 で wanderer を回避 |
 | `lost_reacquire` | 人物ロスト → 捜索 → 再捕捉 | `scenario:=lost_reacquire` → モード 7 | 遮蔽板通過 約 1 秒で `/person/status` の `is_lost: true` → 捜索 → 再出現で再捕捉 |
-| `panel_shuttle` | 試験場での一連の運用フロー（[VISION.md](../VISION.md) §1-3 準拠） | `scenario:=panel_shuttle`（下記の手順参照） | mapless追従→IDLE待機(捕捉継続・速度ゼロ)→配電盤巡回→mapless帰還が一通り成立する |
+| `panel_shuttle` | 試験場での一連の運用フロー（[Spec.md](plan/spec/Spec.md) §9 準拠） | `scenario:=panel_shuttle`（下記の手順参照） | mapless追従→IDLE待機(捕捉継続・速度ゼロ)→配電盤巡回→mapless帰還が一通り成立する |
 
 モード切替コマンド（起動 10 秒後・Nav2 active 後）:
 
@@ -88,9 +88,9 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
   "{requested_mode: 7, requester: 'cli'}"     # 7=FOLLOWING_MAPLESS, 2=FOLLOWING
 ```
 
-### panel_shuttle: VISION.md 準拠の一連フロー検証
+### panel_shuttle: Spec.md §9 準拠の一連フロー検証
 
-[VISION.md](../VISION.md) の完成形運用（保管場所⇔試験場は mapless 追従、試験場内は
+[Spec.md](plan/spec/Spec.md) §9 の完成形運用（保管場所⇔試験場は mapless 追従、試験場内は
 IDLE 待機、配電盤へは要請時のみ移動）を一通りなぞる手順。`panel_shuttle` は
 試験員(inspector)が起動直後にスポーン地点(保管場所想定)から通路を抜けて
 配電盤前エリア(試験場想定)まで自動で歩くよう経路を組んである。
@@ -107,7 +107,7 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
   "{requested_mode: 1, requester: 'cli'}"
 # → この間 /person/status が更新され続け、/cmd_vel が常にゼロであることを確認
-#   (VISION.md §4: 捕捉継続と移動不可の両立)
+#   (docs/architecture.md「人物追跡」: 捕捉継続と移動不可の両立)
 ros2 topic echo /person/status
 ros2 topic echo /cmd_vel
 
@@ -406,7 +406,7 @@ ros2 run th_perception person_mover.py --ros-args \
 | ~~近接退避~~ | `pattern:=approach` | ~~0.8m 以内で `/cmd_vel_retreat` が発行され後退~~ **現在は後退しない**（`/cmd_vel_retreat` が twist_mux から外れているため。トピックには値が出る） |
 | 狭路真後ろ追従 | 仕切り壁の通路を通る | 角度オフセットが 0° になる |
 | 静止再配置 | `pattern:=static` | 2 秒後に試験員の側面〜背面に移動 |
-| 試験場の一連フロー | `scenario:=panel_shuttle`(手順は上記参照) | mapless追従→IDLE待機→配電盤巡回→mapless帰還(VISION.md準拠) |
+| 試験場の一連フロー | `scenario:=panel_shuttle`(手順は上記参照) | mapless追従→IDLE待機→配電盤巡回→mapless帰還(Spec.md §9 準拠) |
 | E-Stop | タブレット UI の緊急停止 | ロボットが即時停止し ESTOP モードへ |
 | MAP不要軌跡追従 | `FOLLOWING_MAPLESS` へ切替 + `pattern:=approach` | 地図・Nav2 なしで追従、接近時は退避せず停止(詳細は Step 5 参照) |
 | 狭所追従 | `scenario:=narrow_room` + モード 7 | 幅 1.2m 通路を壁接触なしで追従 |

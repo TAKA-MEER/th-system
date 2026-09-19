@@ -5,7 +5,7 @@ announcements.js のマニフェストを唯一の正として読み、採用話
 web_ui/public/voice/ に書き出す。文案を直したらこれを流し直すだけでよい。
 
 ANNOUNCEMENTS (完成した1発話) に加え、数値分割合成用の語彙 CLIP_WORDS
-(数字・単位。VISION.md §7.5) も同じ要領で <id>.mp3 として生成する。
+(数字・単位。docs/voice-and-audience.md §2.5) も同じ要領で <id>.mp3 として生成する。
 
 前提: VOICEVOX Nemo Engine が起動していること (既定ポート 50121)。
   Docker の voicevox_engine には Nemo は入っていない。詳細は docs/voice-credits.md

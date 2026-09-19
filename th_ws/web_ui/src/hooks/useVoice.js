@@ -14,7 +14,7 @@ import { voiceQueue } from '../voice/voiceQueue.js'
 import { getAudioState, unlockAudio } from '../voice/audioPlayer.js'
 import { LAYER } from '../voice/announcements.js'
 
-// 既定値は VISION.md §7.3 に従い、安全通知 ON・デモ実況 OFF。
+// 既定値は docs/voice-and-audience.md §2.3 に従い、安全通知 ON・デモ実況 OFF。
 // 実運用の既定がこれで、発表時のみ両方 ON にする。
 const SAFETY_KEY = 'th_voice_safety'
 const DEMO_KEY   = 'th_voice_demo'

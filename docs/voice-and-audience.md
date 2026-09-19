@@ -1,10 +1,10 @@
 # 音声フィードバックと観客向け表示
 
 **位置づけ**: 完成形の定義は [完全設計書](plan/spec/README.md)・[詳細設計書](plan/detailed/README.md) に従う
-（[VISION.md](../VISION.md) §0）。ただし**音声アナウンスと観客向け表示は、両設計書が仕様を定義していない。**
+（[spec/README.md](plan/spec/README.md) §1）。ただし**音声アナウンスと観客向け表示は、両設計書が仕様を定義していない。**
 [DetailedDesign-reuse.md](plan/detailed/DetailedDesign-reuse.md) §2.12 が `voice/` 一式・`audience/` 一式とも
 **「維持」**とだけ決めており、中身の設計はどちらにも無い。**この 2 つについては本書が正**であり、
-VISION.md から切り出して置いている。
+旧 VISION.md から切り出して置いている。
 
 > **移行時の注意**: 本書の**発火トリガ（§2.7 の表）は旧モード体系（9 モード・`FOLLOWING_MAPLESS` 等）を
 > 前提に書かれている。**完全設計書の 18 モード体系（[Spec-modes.md](plan/spec/Spec-modes.md)）と
@@ -290,7 +290,7 @@ WebUI のエントリは `src/main.jsx` で、そこから描かれるのは `Ap
 
 繋ぎ直しは `AppShell` で `useVoice()` を呼ぶだけでは済まない。`useVoiceTriggers` の
 発火条件は**旧 9 モード体系（`robotMode.js` の `MODE`）を前提**にしており、
-新 FSM（`th_state` の mode × state）へ引き直す必要がある（`VISION.md` §2.5 の注記と同じ話）。
+新 FSM（`th_state` の mode × state）へ引き直す必要がある（EXCEPTION-LEDGER.md の注記と同じ話）。
 
 **方針（2026-09-02・ユーザー判断）**: 音声はあったほうがよいが**急がない**。
 特例デモ（教示・再生）の完了を優先し、到達不能な 10 ファイルは**消さずに残す**
@@ -330,7 +330,7 @@ WebUI のエントリは `src/main.jsx` で、そこから描かれるのは `Ap
 
 ## 3. 未確定事項
 
-VISION.md 旧 §8 のうち、音声・観客向け表示に関わるものを引き継いだ。
+旧 VISION.md §8 のうち、音声・観客向け表示に関わるものを引き継いだ。
 それ以外の未確定事項は [Spec-open.md](plan/spec/Spec-open.md) §5 と
 [DetailedDesign-open.md](plan/detailed/DetailedDesign-open.md) §4 が正。
 

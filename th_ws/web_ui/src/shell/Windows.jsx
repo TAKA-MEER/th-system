@@ -115,7 +115,7 @@ export default function Windows({
   //
   // WS-9O (2026-09-04): ここに estopFromUi を要求していたのを撤去した。フォルト起因の
   // ESTOP が「確認」→ IDLE しか選べず、再生中に一瞬のフォルトで落ちると経路選択から
-  // やり直しになっていたため（VISION.md §2 の 2026-09-04 の項）。guards._estop_resume_prev
+  // やり直しになっていたため（Spec-safety.md §3.5.1・§3.5.2）。guards._estop_resume_prev
   // と同じ条件にそろえる（両方が真でないと押しても FSM に拒否される）。
   //
   // estopFromUi は文言の出し分けにだけ使う。フォルト起因なら「システムが安全のため

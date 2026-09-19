@@ -11,7 +11,7 @@ ESP32_DISCONNECTED と LIMITER_DEAD が同じ 1ms に発火し 26ms 後に両方
 
 safety_monitor は C++ ノードで、この挙動は実行時にしか現れない（launch テストは
 Docker が要る）。ここでは配線をソース上で固定し、退行を pytest で捕まえる。
-詳細は VISION.md §2 の 2026-09-04 の項。
+詳細は Spec-safety.md §3.5.1・§3.5.2。
 """
 import os
 import re

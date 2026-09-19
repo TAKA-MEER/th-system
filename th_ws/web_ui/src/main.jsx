@@ -21,7 +21,7 @@ import {
   SCREEN_IDS, MODE_TO_SCREEN, resolveScreen, initialPassedConnect,
 } from './screens/screenRouting.js'
 
-// ?view=audience で観客向け表示 (VISION.md §6.3)。
+// ?view=audience で観客向け表示 (docs/voice-and-audience.md §1)。
 // App 側で分岐せずマウントするツリーごと分けている。こうしておくと
 // 操作 UI のジョグ用 setInterval・音声・heartbeat が観客画面では
 // そもそも起動しない = 走行制御に触れないことが構造で保証される。

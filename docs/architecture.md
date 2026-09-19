@@ -108,7 +108,7 @@ case RobotMode::IDLE:
 
 - `IDLE → FOLLOWING` および `IDLE → MANUAL` は外部からのサービス呼び出し（明示操作）のみで発生し、自動では遷移しない。ロボットが操作者の意図しないタイミングで動き出すことを防ぐための方針。
 - `ESTOP` へはどのモードからも即座に遷移できる。`ESTOP` からは `IDLE` にのみ遷移できる。
-- フォルト（`/safety/fault`）は `LIDAR_LOST`・`ESP32_DISCONNECTED` の場合、`FOLLOWING`・`MOVING_TO_PANEL`・`MANUAL`・`AT_PANEL`・`FOLLOWING_MAPLESS`・`SUMMONING` のいずれからでも `IDLE` へ強制遷移させる。`PERSON_TRACKER_LOST` は試験員位置に依存するモード（`FOLLOWING`・`FOLLOWING_MAPLESS`・`SUMMONING`）のみを対象とし、`MANUAL`・`MOVING_TO_PANEL`・`AT_PANEL` は人物データが無関係なため強制遷移させない（VISION.md §5, 2026-07-24 決定）。`IDLE` 中のフォルトはモード変化を起こさない。
+- フォルト（`/safety/fault`）は `LIDAR_LOST`・`ESP32_DISCONNECTED` の場合、`FOLLOWING`・`MOVING_TO_PANEL`・`MANUAL`・`AT_PANEL`・`FOLLOWING_MAPLESS`・`SUMMONING` のいずれからでも `IDLE` へ強制遷移させる。`PERSON_TRACKER_LOST` は試験員位置に依存するモード（`FOLLOWING`・`FOLLOWING_MAPLESS`・`SUMMONING`）のみを対象とし、`MANUAL`・`MOVING_TO_PANEL`・`AT_PANEL` は人物データが無関係なため強制遷移させない（Spec-safety.md §3.5, 2026-07-24 決定）。`IDLE` 中のフォルトはモード変化を起こさない。
 
 ### heartbeat によるMANUAL自動解除
 
@@ -161,7 +161,7 @@ WebUI（S-14）の「再生速度」は `/replay/speed_scale`（`std_msgs/Float3
 > 速度に関わらず 0.40m 固定にしていたため、高速ほど先読み時間が短くなって応答が過敏になり
 > （低速 0.40/0.15≈2.7s に対し高速 0.40/0.45≈0.9s）、**高速再生でふらついていた**。
 > 高速側を 0.60m に引き上げて先読み時間を底上げした（`replay_lookahead_min_m` = 低速側 0.40m）。
-> **この値は実測に基づく調整ではないので、実走行で詰めること**（VISION.md SD-7）。
+> **この値は実測に基づく調整ではないので、実走行で詰めること**（Spec.md §5 SD-7）。
 
 ### 実機で踏んだ落とし穴（再発したらまずここを見る）
 
@@ -602,7 +602,7 @@ KF 側は `KalmanFilter::applyFrameTransform(R, t)` が位置 `p'=Rp+t`・速度
 共分散 `P'=JPJ^T`（`J=blockdiag(R,R)`）で状態を移す。TF が引けない場合とオドメトリの不連続
 （2m/2rad 超）は補償を見送り、基準姿勢を破棄して次フレームから取り直す。
 
-**ゲート半径を広げて対処してはいけない**（VISION.md §4）。机・椅子の脚へ乗り移る誤追跡
+**ゲート半径を広げて対処してはいけない**（docs/architecture.md「人物追跡」）。机・椅子の脚へ乗り移る誤追跡
 （2026-07-11 実機で確認）が再発する。旋回による見かけの移動は補償で消すのが正で、ゲートは
 試験員の実移動量に対して設定する。
 
@@ -752,7 +752,7 @@ ros2 topic echo /person/status --once
 6. web_ui/src/App.jsx（MODE 定数・ボタン・modeColor）と
    web_ui/src/hooks/useRosbridge.js（MODE_NAMES）に追加
    ※ ボタンは「運用」タブのモード操作カードに置く。画面は
-      運用 / 準備 / 診断の 3 タブ構成（VISION.md §6.1）で、
+      運用 / 準備 / 診断の 3 タブ構成（Spec-webui.md §3（旧 3 タブ構成））で、
       緊急停止・モード表示・接続状態・音声クレジットは
       タブ外の常時表示ゾーンに固定されている
 ```
@@ -763,7 +763,7 @@ ros2 topic echo /person/status --once
 
 ## WebUI 設定画面 S-50（パラメータ調整）
 
-VISION.md §6.2 の完成形。タブレット WebUI の **S-50 設定画面**（`web_ui/src/screens/S50Settings.jsx`）
+Spec-webui.md §3.15 の完成形。タブレット WebUI の **S-50 設定画面**（`web_ui/src/screens/S50Settings.jsx`）
 から `follow_planner_mapless` の数値パラメータ、`lidar_filter.blind_angle_ranges`、
 `slam_toolbox` のスキャンマッチ関連（再生の自己位置推定。WS-9W）を確認・変更できる。
 
@@ -849,13 +849,13 @@ S-01 メインメニューの「保守・設定」カードの「設定」ボタ
 ```
 
 対象拡大（`follow_planner`・`person_predictor`・Nav2 パラメータ・`panels.yaml` 等）は
-VISION.md §7 の未確定事項を参照。
+docs/voice-and-audience.md §2 の未確定事項を参照。
 
 ---
 
 ## WebUI 観客向け表示（デモ展示用）
 
-VISION.md §6.3 の完成形を実装したもの。`?view=audience` を付けて開くと、操作 UI の代わりに
+docs/voice-and-audience.md §1 の完成形を実装したもの。`?view=audience` を付けて開くと、操作 UI の代わりに
 観客向けの 2 ペイン表示（左=センサが見る世界 / 右=ロボットの判断）がマウントされる。
 
 ```
@@ -876,7 +876,7 @@ web_ui/src/
 - **`useRosbridge(url, { readOnly: true })` を必ず渡す。** publish を止める。特に
   `/manual/heartbeat` が二重に流れると MANUAL のハートビート源が観客画面にも依存する。
 - **`captionSink.js` から `voiceQueue.js` / `audioPlayer.js` を import しない。** 観客画面は
-  ROS2 スタックのホスト機で動くため、ここから音が出ると VISION.md §7.1/§7.2 の
+  ROS2 スタックのホスト機で動くため、ここから音が出ると docs/voice-and-audience.md §2.1/§2.2 の
   「ロボット側スピーカーは持たない」に反する。import しないこと自体が保証になっている。
 - **地図が無いときはロボット中心表示へフォールバックする。** 主運用の FOLLOWING_MAPLESS は
   地図作成を開始するまで `/map` が流れない。`WorldCanvas.jsx` の `makeProjector()` が

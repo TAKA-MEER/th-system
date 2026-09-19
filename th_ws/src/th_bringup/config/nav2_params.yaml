@@ -42,7 +42,7 @@ controller_server:
       # WS-9AJ(2026-09-11): 0.25/0.25 は地図上で視認できるほど緩かった。実機
       # フィードバックで SLAM 側は正確と確認済みなので、到着判定を詰める側で
       # 対処する。クローラーの低速域スリップで目標半径付近が収束しない
-      # おそれがあるので、絞りすぎず様子見の第一段階（VISION.md WS-9AJ）。
+      # おそれがあるので、絞りすぎず様子見の第一段階（Spec-onsite.md §6.2）。
       xy_goal_tolerance: 0.12
       yaw_goal_tolerance: 0.12
 
@@ -58,7 +58,7 @@ controller_server:
       # (b) 遅延したスキャンが ω×遅延 の角度誤差になり scan matching の探索窓
       #     (coarse_search_angle_offset = 0.349 rad) を食う、
       # (c) 人物トラッカーの見かけ移動量 ω·d·0.5s がゲートを食う
-      # のいずれもが ω に比例する。自機回転補償(VISION.md §4)と IMU 融合で
+      # のいずれもが ω に比例する。自機回転補償(docs/architecture.md「人物追跡」)と IMU 融合で
       # 根本側は対処済みだが、残差も ω に比例するため速度自体も抑える。
       # 実機で旋回が遅すぎる場合はここを戻す前に、地図の歪みと追従維持を
       # 同時に確認すること。
@@ -97,7 +97,7 @@ local_costmap:
       # 円形 robot_radius（0.36→0.40 と変遷）は RPP(nav2 Humble)が外周の
       # 内接帯(253)接触で停止するため狭い直進通路で実寸より不利になる
       # （0.40 で理論下限 1.60m、実寸正方形で 1.10m）。経緯と機能制約は
-      # VISION.md「Nav2 の機体モデル ── 実寸正方形 footprint」参照（2026-09-10）。
+      # Spec-onsite.md §6.1.1参照（2026-09-10）。
       footprint: "[[0.275, 0.275], [-0.275, 0.275], [-0.275, -0.275], [0.275, -0.275]]"
       plugins: ["voxel_layer", "inflation_layer"]
       voxel_layer:
@@ -139,7 +139,7 @@ global_costmap:
       # 板を置いても膨張域も反映されず診断に使えなかった）。会場地図は小さい
       # （~297x186）ので毎周期全体を送っても軽い。
       always_send_full_costmap: true
-      # local_costmap と同じ実寸正方形（VISION.md 参照。2026-09-10）
+      # local_costmap と同じ実寸正方形（spec/ 参照。2026-09-10）
       footprint: "[[0.275, 0.275], [-0.275, 0.275], [-0.275, -0.275], [0.275, -0.275]]"
       resolution: 0.05
       track_unknown_space: true

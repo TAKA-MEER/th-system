@@ -1,5 +1,5 @@
 // ============================================================
-// voiceQueue.js — 再生キュー・優先度・再発話 (VISION.md §7.6)
+// voiceQueue.js — 再生キュー・優先度・再発話 (docs/voice-and-audience.md §2.6)
 //
 // React を一切 import しない。キュー規則という最もバグりやすい部分を
 // UI から切り離し、開発パネルやコンソールから直接叩いて追えるようにする。
@@ -7,7 +7,7 @@
 // 公開 API は「単発」と「継続」の2つに分かれる:
 //   announce(id, overrides)   — モード遷移・サービス応答などの単発イベント。
 //                                overrides.clips で実行時の数値クリップ列を渡せる
-//                                (VISION.md §7.5)。省略時はマニフェストの静的な
+//                                (docs/voice-and-audience.md §2.5)。省略時はマニフェストの静的な
 //                                clips/file をそのまま使う
 //   setCondition(id, active)  — フォルト継続・切断中などの持続状態。冪等
 //
@@ -19,14 +19,14 @@
 import { getAnnouncement, LAYER } from './announcements.js'
 import { playEntry } from './audioPlayer.js'
 
-/** 優先度。VISION.md §7.6 は2段階しかなく、レイヤと一対一で対応する */
+/** 優先度。docs/voice-and-audience.md §2.6 は2段階しかなく、レイヤと一対一で対応する */
 const LAYER_RANK = {
   [LAYER.SAFETY]: 2,
   [LAYER.DEMO]:   1,
 }
 
 // 安全通知が入ったとき、再生中のデモ実況に加えて「待機中の」デモ実況も捨てる。
-// VISION.md §7.6 は「再生中のデモ実況は破棄する」としか書いていないが、古い実況を
+// docs/voice-and-audience.md §2.6 は「再生中のデモ実況は破棄する」としか書いていないが、古い実況を
 // 後から鳴らすと安全通知が数秒遅れるため広めに解釈している。違和感があれば false に。
 const DISCARD_PENDING_DEMO_ON_SAFETY = true
 
@@ -89,7 +89,7 @@ function createVoiceQueue() {
 
   // ── 単発 ────────────────────────────────────────────────
   // overrides.clips を渡すと、その回だけマニフェストの静的な clips/file の代わりに
-  // 実行時のクリップ列で再生する (数値の動的差し替え。VISION.md §7.5)。
+  // 実行時のクリップ列で再生する (数値の動的差し替え。docs/voice-and-audience.md §2.5)。
   // entry 自体は書き換えず、キューに積む分だけコピーする
   function announce(id, overrides = null) {
     const base = getAnnouncement(id)

@@ -146,7 +146,7 @@ class Esp32Bridge(Node):
         # twist_mux はロック作動中、無出力(silent)になり得る実装のため、
         # /cmd_vel の途絶だけに頼らずここでも直接ロック状態を購読し、
         # ロック中は _last_cmd_vel の内容によらず強制的にゼロを送る
-        # (VISION.md §5 参照。2026-08-06 手動ジョグ中の E-Stop で発覚)。
+        # (Spec-safety.md §3.5 参照。2026-08-06 手動ジョグ中の E-Stop で発覚)。
         #
         # ロックトピック自体が途絶した場合 (safety_monitor のクラッシュ等) も
         # twist_mux.yaml の locks.*.timeout(0.5s) と同じ考え方でフェイルセーフに

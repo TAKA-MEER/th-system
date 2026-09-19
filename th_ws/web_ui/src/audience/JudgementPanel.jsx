@@ -1,5 +1,5 @@
 // ============================================================
-// JudgementPanel.jsx — 観客向け「ロボットの判断」(VISION.md §6.3)
+// JudgementPanel.jsx — 観客向け「ロボットの判断」(docs/voice-and-audience.md §1)
 //
 // 左が「何を見ているか」なら、こちらは「何を決めたか」。
 // 文字列の写像は th_system_msgs の各 .msg のコメントが正であり、

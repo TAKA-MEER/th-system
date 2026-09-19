@@ -1,9 +1,9 @@
 // ============================================================
-// AudienceView.jsx — 観客向けデモ表示 (VISION.md §6.3)
+// AudienceView.jsx — 観客向けデモ表示 (docs/voice-and-audience.md §1)
 //
 // 操作 UI とは別のツリーとしてマウントされる (main.jsx で分岐)。
 // ここから ROS2 へ publish は一切しない (readOnly) し、音も鳴らさない
-// (captionSink 経由の字幕のみ)。理由は VISION.md §6.3 / §7.2 参照。
+// (captionSink 経由の字幕のみ)。理由は docs/voice-and-audience.md §1 / §2.2 参照。
 // ============================================================
 import { useState, useEffect, useCallback, useRef } from 'react'
 
@@ -120,7 +120,7 @@ export default function AudienceView() {
             layers={layers}
           />
 
-          {/* 凡例そのものがトグル。色の説明と操作子を兼ねる (VISION.md §6.3) */}
+          {/* 凡例そのものがトグル。色の説明と操作子を兼ねる (docs/voice-and-audience.md §1) */}
           <div className={`aud-legend ${controlsVisible ? '' : 'faded'}`}>
             {LAYERS.map((l) => (
               <button

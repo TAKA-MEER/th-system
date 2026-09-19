@@ -792,7 +792,7 @@ test "$(sort -u /tmp/lq.txt | tr -d '\r' | paste -sd, -)" = "esp32,lidar,ui\"
 
 > **【2026-09-05 追記】この節の検査コマンドはもう実行できない（前提が消滅した）。**
 > ESP32 の無線化をやめてラズパイ経由のシリアル接続にしたため（`1430dcd`。
-> [VISION.md](../../../VISION.md) の 2026-09-05 エントリ）、`wifi_credentials.h` /
+> [Spec.md](../spec/Spec.md) §6.1）、`wifi_credentials.h` /
 > `.example` / `ws_link.h` / `ws_test_server.py` は**すべて削除済み**で、①②③ の
 > `grep` / `test -f` は必ず落ちる。WiFi 認証情報の混入（`DEBT-6`）とフレーム表の
 > 不一致（`DEBT-7`）は、ファイルごと無くなったことで解消した

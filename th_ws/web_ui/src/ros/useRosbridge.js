@@ -20,7 +20,7 @@ const WHEEL_HISTORY_SEC = 15
 // Defaults to the rosbridge on the host serving this page (the robot PC).
 // Pass a different url to connect to a different host's rosbridge.
 //
-// readOnly: for the audience display (VISION.md §6.3). Never publishes
+// readOnly: for the audience display (docs/voice-and-audience.md §1). Never publishes
 // anything to ROS2. In particular it stops /manual/heartbeat, so the
 // audience view doesn't become a second source of the MANUAL heartbeat.
 // Default false = normal behavior for the operator UI.

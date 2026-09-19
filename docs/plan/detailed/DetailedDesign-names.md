@@ -512,7 +512,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`battery_endurance_min`** | 分 | **(c)**（`O-c7`。`WP-MEAS-05`） |
 | **`battery_warn_v`** ／ **`battery_critical_v`** | V | given（[hardware](DetailedDesign-hardware.md) §3.3） |
 | **`obstacle_cone_half_width_rad`** ／ **`obstacle_cone_half_width_reverse_rad`** | rad | (b)。**リミッタの判定コーン幅**（前方／後退で別値） |
-| **`obstacle_min_points`** | count | (b)。障害物とみなすのに必要な点数。円錐内の n 番目に小さい距離を最近傍とする（WS-9P。ノイズ 1 点で止まらないため。VISION.md §2 の 2026-09-04 の項）|
+| **`obstacle_min_points`** | count | (b)。障害物とみなすのに必要な点数。円錐内の n 番目に小さい距離を最近傍とする（WS-9P。ノイズ 1 点で止まらないため。Spec-safety.md §3.5.1・§3.5.2）|
 | **`blind_angle_ranges`** | deg の平坦配列 | **(c)**。死角セクタ。**as-built は平坦配列 `[a0,a1, a2,a3, ...]`**（`lidar_filter._build_blind_ranges()` / `th_safety::flat_to_range_pairs()` が 2 個ずつ組にする。wp2 §5 の `list[[a0,a1]]` は設計時案）。2026-09-09 に上部構造（四隅の支柱）搭載後に実測し 4 セクタで `measured`（`registry.yaml` / `scripts/measure_blind_sectors.py`）。同日中に、支柱をかすめるグレージング角のビームが 90% persist 判定の境界で切り詰められ地図に点群が漏れる不具合を実機で発見し、各セクタを再実測して拡張（`MARGIN` 1.0→5.0deg・`NEAR_M` 既定 0.5→0.6m） |
 | **`blind_calibrated`** | — | (b)。死角マスクが校正済みかどうかの明示フラグ。空配列と未校正を区別するために置く（`DetailedDesign-safety.md` §4.4） |
 | **`normal_accel_mps2`** ／ **`normal_angular_accel_rps2`** | m/s² / rad/s² | (b)。**`obstacle_limiter` が `/cmd_vel_muxed` の生値に掛ける通常時ランプ**（`DetailedDesign-safety.md` §7.1、2026-09-11 追加）。障害物ブレーキ（`brake_accel_mps2`）・estop・fault_lock・stale 由来のゼロ出力は経由しない（非ランプで即座に効く）。ESP32 ファーム側のランプ（`TARGET_RAMP_ACCEL_MPS2`）と役割が異なる二層目。**`normal_accel_mps2=0.75` が実機確定値（線形のみ）。`normal_angular_accel_rps2` は超信地旋回の立ち上がりが遅くなる副作用が実機で発覚し `0.0`（無制限）に撤去**（2026-09-11） |
@@ -546,7 +546,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`limiter_dead_ms`** | ms | (b)。`/safety/limiter_status` の途絶（20 Hz の 5 周期） |
 | **`mux_dead_ms`** | ms | (b)。`MUX_DEAD` の判定（[wp2](DetailedDesign-wp2.md) `WP-SAFE-01` §4.1） |
 | **`runaway_hold_ms`** | ms | (b)。`DRIVE_RUNAWAY` の保持時間 |
-| **`critical_fault_hold_ms`** | ms | (b)。`LIMITER_DEAD` / `MUX_DEAD` / `STATE_INCONSISTENT` の保持時間。監視ループ 1 周期の遅れで生じる単発の誤検知を消す（WS-9O。VISION.md §2 の 2026-09-04 の項）|
+| **`critical_fault_hold_ms`** | ms | (b)。`LIMITER_DEAD` / `MUX_DEAD` / `STATE_INCONSISTENT` の保持時間。監視ループ 1 周期の遅れで生じる単発の誤検知を消す（WS-9O。Spec-safety.md §3.5.1・§3.5.2）|
 | **`link_quality_window_sec`** | s | given。分位点を取る窓（`WP-SAFE-00`） |
 | **`behavior_cmd_timeout_s`** ／ **`nav_cmd_timeout_s`** | s | given。`twist_mux.yaml` の生成元（現行 0.5 s） |
 | **`wheel_radius_scale`** | — | measured（校正の出力） |

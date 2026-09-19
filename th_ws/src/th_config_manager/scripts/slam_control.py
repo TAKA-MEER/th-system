@@ -22,7 +22,7 @@ WebUI / route_recorder / replay_runner からの地図操作要求を仲介す�
   | /slam_control/discard_map      | Trigger        | slam_toolbox を終了 → respawn で再起動   |
   | /map_session/open              | OpenMapSession | save: serialize→freeze / reload: freeze→deserialize |
 
-「地図作成停止」の意味（VISION.md §8）
+「地図作成停止」の意味（Spec-transit.md §4.2.1）
 --------------------------------------
 停止は「地図の更新を止める」であって「自己位置推定を止める」ではない。
 停止後も待機・呼び寄せ・配電盤移動を行う以上、map→odom は走行中ずっと
@@ -826,7 +826,7 @@ class SlamControl(Node):
 
         既定 (startup_mapping=false): 地図作成停止（localization モード）へ倒す。
         slam_toolbox は起動直後 mapping モード（=地図作成中）で立ち上がるため、
-        ここで倒さないと「停止中」と表示したまま地図が更新され続ける。VISION.md
+        ここで倒さないと「停止中」と表示したまま地図が更新され続ける。Spec-transit.md §4.2.1
         §8 の「起動直後は地図作成を停止した状態にする」を満たすための処理。
 
         WS-8B (startup_mapping=true): 倒さず mapping のまま。教示・再生が
