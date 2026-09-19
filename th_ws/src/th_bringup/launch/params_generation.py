@@ -75,6 +75,10 @@ REGISTRY_NODES: tuple[str, ...] = (
     # jog_gate が入っている行）を生成 yaml に載せる。実装・launch 配線が
     # 完了したこのタイミングで追加。
     "jog_gate",
+    # WP-SAFE-05: localization_health は registry.yaml の localization_* 行
+    # （consumers に入っている行）を生成 yaml に載せる。実装・launch 配線が
+    # 完了したこのタイミングで追加（obstacle_limiter / jog_gate と同じ判断）。
+    "localization_health",
 )
 
 # ---------------------------------------------------------------------------
