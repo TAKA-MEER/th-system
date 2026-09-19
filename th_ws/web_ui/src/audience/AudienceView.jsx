@@ -7,7 +7,7 @@
 // ============================================================
 import { useState, useEffect, useCallback, useRef } from 'react'
 
-import { useRosbridge } from '../hooks/useRosbridge'
+import { useRosbridge } from '../ros/useRosbridge'
 import { useVoiceTriggers } from '../hooks/useVoiceTriggers'
 import { useCaptionSink } from './captionSink.js'
 import WorldCanvas, { COLOR } from './WorldCanvas.jsx'

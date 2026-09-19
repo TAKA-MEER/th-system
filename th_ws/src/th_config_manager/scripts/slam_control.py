@@ -2,23 +2,25 @@
 """
 slam_control.py — ROS2 ノード本体
 ====================================
-WebUI からの地図操作要求を仲介する。
+WebUI / route_recorder / replay_runner からの地図操作要求を仲介する。
 
 担当:
   - /robot/mode 購読 → IDLE/MANUAL 以外での操作を拒否（サーバー側の安全
-    ガード。UI 側の表示制御だけに頼らない。config_manager.py と同一ロジック）
+    ガード。UI 側の表示制御だけに頼らない。config_manager.py と同一ロジック。
+    ただし /map_session/open だけは除く。教示・再生の最中に呼ばれるため）
   - 地図操作を slam_toolbox のサービス呼び出しへ転送する（下表）
   - /slam_control/mapping_active (std_msgs/Bool, transient_local) に
     現在のマッピング状態を publish する
 
 提供する操作:
 
-  | slam_control のサービス        | 型      | 転送先                                |
-  |--------------------------------|---------|---------------------------------------|
-  | /slam_control/toggle_mapping   | Trigger | set_localization_mode（トグル）       |
-  | /slam_control/set_mapping      | SetBool | set_localization_mode（明示指定）     |
-  | /slam_control/save_map         | Trigger | save_map + serialize_map              |
-  | /slam_control/discard_map      | Trigger | slam_toolbox を終了 → respawn で再起動 |
+  | slam_control のサービス        | 型             | 転送先                                   |
+  |--------------------------------|----------------|------------------------------------------|
+  | /slam_control/toggle_mapping   | Trigger        | set_localization_mode（トグル）          |
+  | /slam_control/set_mapping      | SetBool        | set_localization_mode（明示指定）        |
+  | /slam_control/save_map         | Trigger        | save_map + serialize_map                 |
+  | /slam_control/discard_map      | Trigger        | slam_toolbox を終了 → respawn で再起動   |
+  | /map_session/open              | OpenMapSession | save: serialize→freeze / reload: freeze→deserialize |
 
 「地図作成停止」の意味（VISION.md §8）
 --------------------------------------
@@ -26,33 +28,42 @@ WebUI からの地図操作要求を仲介する。
 停止後も待機・呼び寄せ・配電盤移動を行う以上、map→odom は走行中ずっと
 更新され続けなければならない。
 
-このため slam_toolbox は `map_and_localization_slam_toolbox_node` で起動し、
-`/slam_toolbox/set_localization_mode` (std_srvs/SetBool, true=localization)
-でモードを切り替える。localization モードはポーズグラフにノードを追加せず
-スキャンマッチングだけ行うため、地図は凍結したまま自己位置推定が続く。
+**WS-9N（2026-09-03）: map_and_localization_slam_toolbox_node による切替。**
+`bringup.launch.py` で SLAM ノードを `map_and_localization_slam_toolbox_node` へ
+差し替え済み。`/slam_toolbox/set_localization_mode`（`std_srvs/srv/SetBool`）により、
+同一プロセスのまま地図作成（mapping, data=False）と地図凍結＋自己位置推定継続
+（localization, data=True）を切り替える（実機確認済み、success=True を返す）。
 
-2026-08-07 まではここで `pause_new_measurements` を呼んでいたが、これは
-スキャン処理そのものを止める実装で（`shouldProcessScan()` が
-`isPaused(NEW_MEASUREMENTS)` を見て早期 return し、`map_to_odom_` は処理
-経路内でしか更新されない）、停止後は map→odom が凍結して純粋な
-デッドレコニングになっていた。実機で停止後の中速走行により地図と自己位置が
-大きくズレ、`tf2_echo map odom` が完全に凍結することを確認している。
+地図の保存・再読込（WS-9N）————————
+`/map_session/open` は route_recorder（教示の「保存」）と replay_runner（再生の
+経路選択）が呼ぶ。`slot:"ROUTE"` / `session_id:<経路名>` / `mode:"save"|"reload"`。
+
+  - save:   mapping モードのまま `serialize_map` で `<map_dir>/<session_id>` へ
+    （.posegraph + .data）。localization モードでは serialize が書き出さないため
+    （2026-09-03 実機確認）、保存は必ず mapping モードで行う。
+    書き出し成功後に `set_localization_mode(True)` を呼んで地図を凍結する。
+  - reload: 先に `set_localization_mode(True)` で地図を凍結し、次に `deserialize_map` を
+    `match_type: 3`(LOCALIZE_AT_POSE) + 初期姿勢（経路の始点）で呼ぶ。
+    ファイルが無ければ success=false。6.9MB のグラフ I/O が重いので専用の
+    長めのタイムアウト（DESERIALIZE_TIMEOUT_SEC）を使う。
+    読み込み後も localization モードのまま維持し、再生中に地図作成へ戻さない。
+
+   2026-09-03 実機確認:
+   - set_localization_mode(true): success=True
+   - deserialize(match_type=3, 始点 pose): 成功、map->base_link と始点の差 1.9cm / 5.5°
+   - localization モードで 40 秒後の serialize: 書き出されない（＝地図は読み取り専用）
+   - mapping モードで 40 秒後の serialize: .posegraph が 27KB 増える（＝再生中に地図作成を走らせてはいけない）
+   - 105 秒間の連続稼働で SIGSEGV なし
 
 地図の破棄について
 ------------------
 slam_toolbox にポーズグラフを空へ戻すサービスは無い。このためプロセスごと
 終了させ、`bringup.launch.py` の `respawn=True` で真っさらに立ち上げ直す。
-
-当初は起動直後の空ポーズグラフを `serialize_map` で退避し、破棄要求時に
-`deserialize_map` で読み戻す方式にしていたが、2026-08-07 の実機で
-**slam_toolbox が SIGSEGV で落ちた**。空に近いグラフの読み込みは想定されて
-いないと判断して廃止した（それ以前は localization モード中に呼んでいたため
-何もせず「OK」を返していた。VISION.md §8 の落とし穴 1・2 を参照）。
+`map_and_localization_slam_toolbox_node` を kill する（SLAM_EXECUTABLE / _find_slam_toolbox_pids）。
 
 クラッシュ耐性
 --------------
-`map_and_localization_slam_toolbox_node` は slam_toolbox の `experimental/`
-配下の実装で、実機で SIGSEGV を確認している。落ちたままだと map→odom が
+slam_toolbox は実機で SIGSEGV を確認している。落ちたままだと map→odom が
 消えて自己位置が失われるうえ、他ノードは全て生きているため気づきにくい。
 `respawn` で自動復帰させ、こちらはサービスの消失→再出現を検知して
 モードを再適用する（_check_slam_restart）。破棄もこの経路に相乗りしている。
@@ -60,7 +71,9 @@ slam_toolbox にポーズグラフを空へ戻すサービスは無い。この�
 スレッドモデル: config_manager.py と同じ理由（サービスコールバックの中から
 別サービスを呼ぶ構成は単純な call_async 発火だけだとハングしうる）で
 MultiThreadedExecutor + ReentrantCallbackGroup + spin_until_future_complete
-を使う。
+を使う。route_recorder / replay_runner から /map_session/open を同期的に呼ぶ
+側も同じ構成（MultiThreadedExecutor + ReentrantCallbackGroup + call_and_wait）
+に揃えてある。
 """
 
 STARTUP_SERVICE_TIMEOUT_SEC = 60.0  # サービスの存在待ち (wait_for_service)。
@@ -75,34 +88,67 @@ STARTUP_CALL_TIMEOUT_SEC    = 20.0  # 起動直後の初回呼び出しの応答
                                      # Gazebo spawn 等と輻輳し、サービスは既に
                                      # 存在していても応答が数秒遅れることがある
 SERVICE_TIMEOUT_SEC         = 5.0   # 通常運用時(ボタン押下時)の応答待ち。
-                                     # serialize/deserialize はディスク I/O を
-                                     # 伴うため toggle より長めに取る
+                                     # serialize はディスク I/O を伴うため
+                                     # toggle より長めに取る
+DESERIALIZE_TIMEOUT_SEC     = 30.0  # deserialize_map は 6.9MB のポーズグラフを
+                                     # 読むのでディスク I/O が重い
+                                     # (2026-09-03 実測 .posegraph 6.9MB + .data
+                                     # 29KB)。SERVICE_TIMEOUT_SEC(5s) では足りない
+                                     # 可能性があるため長めに取る
+RESPAWN_WAIT_SEC           = 45.0   # WS-9S: reload のたび slam_toolbox を SIGTERM →
+                                     # launch の respawn=True で作り直す。旧プロセス
+                                     # 消失 → 新プロセスのサービス復帰までの待ち上限。
+                                     # respawn_delay=2.0 + ノード初期化が Gazebo 等と
+                                     # 輻輳すると 25s 超（STARTUP_SERVICE_TIMEOUT_SEC の
+                                     # コメント参照）になる実績があるため長めに取る
 STATUS_PUBLISH_PERIOD_SEC   = 0.5
 
 import os
 import signal
 import threading
+import time
+import uuid
 
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
+from rclpy.qos import (QoSHistoryPolicy, QoSProfile, QoSDurabilityPolicy,
+                       QoSReliabilityPolicy)
 
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool, Trigger
-from slam_toolbox.srv import SaveMap, SerializePoseGraph
-from std_msgs.msg import String
+from slam_toolbox.srv import (DeserializePoseGraph, SaveMap,
+                              SerializePoseGraph)
 
-from th_system_msgs.msg import RobotMode
+from th_system_msgs.msg import MapSessionStatus, PinList, RobotMode, StateEffect
+from th_system_msgs.srv import OpenMapSession
 
 from th_config_manager.service_call import call_and_wait
+from th_config_manager.slam_control_logic import (
+    deserialize_match_type, effective_reload_pose, map_instance_ids_match,
+    map_session_base_dir, map_session_filename, map_session_name,
+    open_session_error, slam_restart_complete,
+)
+
+
+def _yaw_from_quat(q) -> float:
+    """クォータニオン (w,x,y,z フィールドを持つ) から yaw [rad] を返す。
+
+    pin_registrar.py / home_declarer.py と同じ式（重複だが ROS ノード間で
+    共有モジュールを新設するほどの規模ではない）。
+    """
+    import math
+    return math.atan2(
+        2.0 * (q.w * q.z + q.x * q.y),
+        1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 
 # 破棄で終了させる対象の実行ファイル名。bringup.launch.py が起動するものと
 # 一致させること。pkill -f のようなパターン照合ではなく /proc を直接見るのは、
 # パターンが自分自身のコマンドラインにマッチして自滅する事故を避けるため
-# (CLAUDE.md「環境の癖」参照)。
+# (CLAUDE.md「環境の癖」参照)。現在の教示・再生で使うのは
+# map_and_localization_slam_toolbox_node (WS-9N) なので、これに合わせること。
 SLAM_EXECUTABLE = 'map_and_localization_slam_toolbox_node'
 
 
@@ -131,10 +177,39 @@ class SlamControl(Node):
         super().__init__('slam_control')
         self._mode = RobotMode.IDLE
         self._executor = None   # main() で MultiThreadedExecutor を渡す
-        self._mapping_active = False   # 起動直後は停止状態から始める
+        # WS-8B: enable_route_slam のとき true。起動時に localization へ倒さず
+        # slam_toolbox を既定の mapping モードのまま走らせる（教示・再生で
+        # map→odom を連続補正するため）。
+        self.declare_parameter('startup_mapping', False)
+        self._startup_mapping = bool(
+            self.get_parameter('startup_mapping').value)
+        self._mapping_active = self._startup_mapping   # 起動直後の状態
+        # WS-9L: /map_session/open の保存先ディレクトリ。経路 JSON と同じ場所
+        # (routes_dir) でよい。serialize_map は <name>.posegraph / <name>.data を
+        # 作るが、/route/catalog は .json しか拾わないため一覧は汚れない。
+        self.declare_parameter('map_dir', '/root/th_data/routes')
+        self._map_dir = self.get_parameter('map_dir').value
+        # WP-ONSITE-D: 試験場内地図（slot:VENUE）の保存先。CL-M-9（経路地図と
+        # 物理的に別ディレクトリ）。bringup.launch.py が /root/th_data/venue を渡す。
+        self.declare_parameter('venue_map_dir', '/root/th_data/venue')
+        self._venue_map_dir = self.get_parameter('venue_map_dir').value
+        # WS-9Y: /onsite/pins の HOME ピン姿勢。VENUE reload で呼び出し側が
+        # 初期姿勢を指定してこなかったときのフォールバックに使う（effective_reload_pose）。
+        self._home_pose = None
+        # WS-9AL(2026-09-11): VENUE 地図の「生存世代」。まっさらな地図作成を
+        # 始めるたび新規発行し、読み直しに成功したら読み込んだ地図のものを
+        # 継承する。pin_registrar 側の同名フィールド（PinList.map_instance_id）
+        # と突き合わせて、bringup 再起動をまたいだピンと地図の取り違えを検知する
+        # （実機事故: map.data は古い時刻、pins.yaml はそれより後の時刻に更新
+        # されていて、地図と HOME ピンが一致しないまま LOCALIZE_AT_POSE していた）。
+        self._instance_id = self._new_instance_id()
+        self._pins_map_instance_id = ''   # 直近の /onsite/pins が持つ値
         # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
         # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
         self._slam_ready = None
+        # WS-9S: 再生の地図読み直しは意図的に slam_toolbox を respawn する。その間
+        # _check_slam_restart にモード再適用を走らせない（reload 側が最後まで面倒を見る）。
+        self._reload_in_progress = False
         # 操作の並行実行から状態の読み取り→更新と slam_toolbox 呼び出しまでを
         # まとめて保護する。ReentrantCallbackGroup 下では連続押下等で複数の
         # 要求が並行実行されうるため（実機検証で、ロックなしでは短時間の2連続
@@ -146,12 +221,35 @@ class SlamControl(Node):
         self.create_subscription(RobotMode, '/robot/mode', self._cb_mode, 10,
                                   callback_group=cbg)
 
-        self._cli_mode = self.create_client(
+        # WP-ONSITE-D: state_manager からの effect 配送（dest == 'map_session'）。
+        # commit_venue_map（PREP の「保存」）で venue/map を serialize する。
+        effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
+                                history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(
+            StateEffect, '/system/effect', self._on_effect, effect_qos,
+            callback_group=cbg)
+
+        # WS-9Y: pin_registrar の /onsite/pins（latched）を購読し、HOME ピンの
+        # 姿勢を VENUE reload の初期姿勢フォールバックに使う。
+        pins_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+                              durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                              history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(
+            PinList, '/onsite/pins', self._on_pins, pins_qos, callback_group=cbg)
+
+        # WS-9N: map_and_localization_slam_toolbox_node に差し替えたため、
+        # set_localization_mode サービスが存在する（2026-09-03 実機確認済み、success=True）。
+        # 地図作成中 = localization オフ (False)、地図凍結 = localization オン (True)。
+        self._cli_localization = self.create_client(
             SetBool, '/slam_toolbox/set_localization_mode', callback_group=cbg)
         self._cli_serialize = self.create_client(
             SerializePoseGraph, '/slam_toolbox/serialize_map', callback_group=cbg)
         self._cli_save = self.create_client(
             SaveMap, '/slam_toolbox/save_map', callback_group=cbg)
+        # WS-9L: 地図の再読込。教示の地図を読み直して自己位置を経路の始点に合わせる。
+        self._cli_deserialize = self.create_client(
+            DeserializePoseGraph, '/slam_toolbox/deserialize_map',
+            callback_group=cbg)
 
         status_qos = QoSProfile(
             depth=1,
@@ -163,6 +261,11 @@ class SlamControl(Node):
         # 状態が分かるようにするため）
         self._pub_last_result = self.create_publisher(
             String, '/slam_control/last_result', status_qos)
+        # WS-9AL: VENUE 地図の生存世代（instance_id）。pin_registrar が購読し、
+        # ピン保存のたび pins.yaml へ書き込む（DetailedDesign-names.md §6.4 に
+        # 元から予約されていたトピック）。
+        self._pub_venue_status = self.create_publisher(
+            MapSessionStatus, '/map_session/status', status_qos)
 
         self.create_service(
             Trigger, '/slam_control/toggle_mapping', self._cb_toggle,
@@ -176,6 +279,12 @@ class SlamControl(Node):
         self.create_service(
             Trigger, '/slam_control/discard_map', self._cb_discard_map,
             callback_group=cbg)
+        # WS-9L: 地図の保存・再読込。教示の「保存」と再生の経路選択が呼ぶ。
+        # 教示・再生の最中に呼ばれるため _mode_allows_change のガードは**かけない**
+        # （slot / mode の検証だけ行う。純ロジックは slam_control_logic.py）。
+        self.create_service(
+            OpenMapSession, '/map_session/open', self._cb_map_session_open,
+            callback_group=cbg)
 
         # mode_manager の /robot/mode と同様、定期的に現在状態を再送信する
         # (rosbridge 経由の遅延購読が変化直後の一度きりの publish を
@@ -188,6 +297,17 @@ class SlamControl(Node):
     # ── 共通 ────────────────────────────────────────────────
     def _cb_mode(self, msg: RobotMode):
         self._mode = msg.mode
+
+    def _on_pins(self, msg: PinList):
+        home = None
+        for p in msg.pins:
+            if getattr(p, 'kind', '') == 'HOME':
+                pos = p.pose.position
+                home = (float(pos.x), float(pos.y), _yaw_from_quat(p.pose.orientation))
+                break
+        self._home_pose = home
+        # WS-9AL: ピンが最後に保存された時点の地図の生存世代。
+        self._pins_map_instance_id = getattr(msg, 'map_instance_id', '') or ''
 
     def _mode_allows_change(self) -> bool:
         return self._mode in (RobotMode.IDLE, RobotMode.MANUAL)
@@ -205,6 +325,7 @@ class SlamControl(Node):
 
     def _publish_timer_cb(self):
         self._pub_active.publish(Bool(data=self._mapping_active))
+        self._publish_venue_status()
         self._check_slam_restart()
 
     def _check_slam_restart(self):
@@ -219,7 +340,9 @@ class SlamControl(Node):
         空ポーズグラフも取り直す。再起動でグラフは空に戻っており、この瞬間が
         最も「空」に近いスナップショットを取れるタイミングであるため。
         """
-        ready = self._cli_mode.service_is_ready()
+        if self._reload_in_progress:
+            return   # WS-9S: reload が respawn を意図的に起こしている最中は触らない
+        ready = self._cli_localization.service_is_ready()
         was_ready = self._slam_ready
         self._slam_ready = ready
         if was_ready is None or ready == was_ready:
@@ -233,6 +356,12 @@ class SlamControl(Node):
             return
 
         self.get_logger().warn('slam_toolbox の再起動を検知しました。状態を再適用します')
+        # WS-9AL: reload 経由でない再起動（クラッシュ復帰・地図破棄）はまっさらな
+        # 地図作成を始めるので、生存世代を切り替える。reload 経由（_reload_in_progress
+        # で上のガードに掛かる）はここに来ない ─ _handle_map_reload の成功後に
+        # 読み込んだ地図の instance_id を継承する側で別途扱う。
+        self._instance_id = self._new_instance_id()
+        self._publish_venue_status()
         if not self._lock.acquire(blocking=False):
             self._slam_ready = was_ready   # 次周期でやり直す
             return
@@ -252,56 +381,39 @@ class SlamControl(Node):
     def _report(self, text: str):
         self._pub_last_result.publish(String(data=text))
 
-    def _set_localization(self, localization: bool) -> "str | None":
-        """slam_toolbox のモードを切り替える。エラー文字列 or None を返す。"""
-        if not self._cli_mode.wait_for_service(timeout_sec=1.0):
+    def _set_localization(self, enabled: bool) -> "str | None":
+        """slam_toolbox の localization モードを切り替える。エラー文字列 or None を返す。
+
+        /slam_toolbox/set_localization_mode (std_srvs/srv/SetBool):
+        - enabled=True:  localization モード（地図凍結・自己位置推定継続）
+        - enabled=False: mapping モード（地図作成）
+
+        実機確認 (2026-09-03): サービスが存在し、success=True を返す。
+        応答の success を必ず確認し、False の場合はエラー文字列を返す。
+        """
+        if not self._cli_localization.wait_for_service(timeout_sec=1.0):
             return 'slam_toolbox に接続できません'
-        _, err = call_and_wait(
-            self, self._cli_mode, SetBool.Request(data=localization),
-            SERVICE_TIMEOUT_SEC)
+        req = SetBool.Request(data=enabled)
+        result, err = call_and_wait(
+            self, self._cli_localization, req, SERVICE_TIMEOUT_SEC)
         if err:
             return f'set_localization_mode 呼び出し失敗: {err}'
+        if result is not None and not result.success:
+            msg = result.message if result.message else 'success=False'
+            return f'set_localization_mode 失敗: {msg}'
         return None
 
     def _apply_mapping(self, active: bool) -> "str | None":
-        """マッピングの有効/無効を切り替える。エラー文字列 or None を返す。"""
+        """マッピングの有効/無効を切り替える。エラー文字列 or None を返す。
+
+        地図作成中 (active=True) = localization オフ (enabled=False)。
+        地図作成停止 (active=False) = localization オン (enabled=True、地図凍結・自己位置推定継続)。
+        """
         err = self._set_localization(not active)
         if err:
             return err
         self._set_active(active)
         return None
-
-    def _in_mapping_mode(self, fn) -> "str | None":
-        """mapping モードでしか受け付けられない操作を実行する。
-
-        LocalizationSlamToolbox は serializePoseGraphCallback と
-        deserializePoseGraphCallback を override しており、localization モード中は
-        何もせずエラーを返す（serialize は無条件、deserialize は match_type が
-        LOCALIZE_AT_POSE 以外なら拒否）。
-
-        しかも呼び出し側からは成功と区別がつかない。DeserializePoseGraph.Response
-        にはフィールドが無く、SerializePoseGraph.Response.result も未設定なら
-        0 (=RESULT_SUCCESS) になるためである。実際 2026-08-07 の実機で、
-        地図の破棄が「OK」を返しながら何もしていない事象が発生した。
-        必ずこのヘルパー経由で mapping モードへ入れてから呼ぶこと。
-
-        元のモードは処理後に復元する。一時的に mapping モードへ入る間にスキャンが
-        グラフへ入りうるが、破棄では直後に mapper ごと差し替わるため影響は無く、
-        保存では現在地のスキャンが1枚多く入るだけで実害は無い。
-        """
-        was_mapping = self._mapping_active
-        if not was_mapping:
-            err = self._set_localization(False)
-            if err:
-                return err
-        try:
-            return fn()
-        finally:
-            if not was_mapping:
-                restore_err = self._set_localization(True)
-                if restore_err:
-                    self.get_logger().error(
-                        f'モードを停止状態へ戻せませんでした: {restore_err}')
 
     # ── 地図作成 開始/停止 ──────────────────────────────────
     def _cb_toggle(self, request, response):
@@ -364,9 +476,8 @@ class SlamControl(Node):
 
         成否は応答ではなくファイルの実在で判定する。SerializePoseGraph.Response
         の result は slam_toolbox が早期 return したとき未設定のままとなり、
-        0 (=RESULT_SUCCESS) に見えてしまうため信用できない（_in_mapping_mode の
-        説明を参照）。slam_control は slam_toolbox と同一コンテナで動くので、
-        書けたかどうかは直接確認できる。
+        0 (=RESULT_SUCCESS) に見えてしまうため信用できない。slam_control は
+        slam_toolbox と同一コンテナで動くので、書けたかどうかは直接確認できる。
         """
         if not self._cli_serialize.wait_for_service(timeout_sec=1.0):
             return 'slam_toolbox に接続できません'
@@ -374,16 +485,11 @@ class SlamControl(Node):
         graph_path = path + '.posegraph'
         before = os.path.getmtime(graph_path) if os.path.exists(graph_path) else None
 
-        def _call():
-            req = SerializePoseGraph.Request()
-            req.filename = path
-            _, err = call_and_wait(
-                self, self._cli_serialize, req, SERVICE_TIMEOUT_SEC)
-            return f'serialize_map 呼び出し失敗: {err}' if err else None
-
-        err = self._in_mapping_mode(_call)
+        req = SerializePoseGraph.Request()
+        req.filename = path
+        _, err = call_and_wait(self, self._cli_serialize, req, SERVICE_TIMEOUT_SEC)
         if err:
-            return err
+            return f'serialize_map 呼び出し失敗: {err}'
 
         if not os.path.exists(graph_path):
             return (f'ポーズグラフが書き出されませんでした ({graph_path} が無い)。'
@@ -392,6 +498,282 @@ class SlamControl(Node):
             return (f'ポーズグラフが更新されませんでした ({graph_path} の更新時刻が'
                     ' 変わっていない)。slam_toolbox のログを確認してください')
         return None
+
+    # ── WS-9AL: VENUE 地図の生存世代（instance_id）────────────
+    def _new_instance_id(self) -> str:
+        return uuid.uuid4().hex[:12]
+
+    def _venue_instance_id_path(self, base: str) -> str:
+        return base + '.instance_id'
+
+    def _read_venue_instance_id(self, base: str) -> str:
+        """保存済み地図に紐づく instance_id を読む（無ければ空文字。instance_id
+        が付く前に保存された古い地図はここが空になり、map_instance_ids_match が
+        安全側に倒れて False を返す）。"""
+        try:
+            with open(self._venue_instance_id_path(base), 'r', encoding='utf-8') as f:
+                return f.read().strip()
+        except OSError:
+            return ''
+
+    def _write_venue_instance_id(self, base: str, instance_id: str) -> None:
+        try:
+            with open(self._venue_instance_id_path(base), 'w', encoding='utf-8') as f:
+                f.write(instance_id)
+        except OSError as e:
+            self.get_logger().warn(f'instance_id の書き出しに失敗: {e}')
+
+    def _publish_venue_status(self) -> None:
+        msg = MapSessionStatus()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.slot = 'VENUE'
+        msg.session_id = 'venue'
+        msg.mode = 'MAPPING' if self._mapping_active else 'LOCALIZING'
+        msg.dirty = False
+        msg.instance_id = self._instance_id
+        self._pub_venue_status.publish(msg)
+
+    # ── 地図の保存・再読込 (WS-9L /map_session/open) ─────────
+    def _map_session_base(self, slot: str, session_id: str) -> str:
+        """slot に応じた保存/読込先ベース名（拡張子なし）を作る。
+
+        ROUTE は経路地図ディレクトリ + map_session_filename（route_record_core.
+        _safe_id と同じ規則で無害化済みの id）。VENUE は試験場内地図ディレクトリ +
+        'map' 固定（1 枚のみ保持。CL-M-9）。
+        """
+        base_dir = map_session_base_dir(slot, self._map_dir, self._venue_map_dir)
+        return os.path.join(base_dir, map_session_name(slot, session_id))
+
+    def _cb_map_session_open(self, request, response):
+        err = open_session_error(request.slot, request.mode, request.session_id)
+        if err:
+            return self._finish(response, err, '')
+
+        base = self._map_session_base(request.slot, request.session_id)
+        with self._lock:
+            if request.mode == 'save':
+                # VENUE は ROUTE と違い凍結しない（PREP は保存後も地図作成を続ける）。
+                if request.slot == 'VENUE':
+                    return self._handle_venue_commit(response)
+                return self._handle_map_save(response, base)
+            # WS-9Y: VENUE は呼び出し側（試験画面）が初期姿勢を渡してこないため、
+            # 登録済み HOME ピンの姿勢へフォールバックする（無ければ従来どおり
+            # START_AT_FIRST_NODE のまま）。request を直接書き換えて
+            # _handle_map_reload には手を入れない（その中身の順序は AST テストで
+            # 固定されているため）。
+            if request.slot == 'VENUE':
+                # WS-9AL: 読み込む地図の instance_id と、ピンが最後に保存された
+                # ときの instance_id が違う（＝ bringup 再起動を挟んで地図を
+                # 保存し直さないまま座標系が変わった）なら、HOME ピンの姿勢を
+                # 信用しない。読み直し自体は失敗にせず、従来どおり
+                # START_AT_FIRST_NODE に倒すだけ（宣言時の既存のズレ警告が
+                # 最終防波堤として残る）。
+                map_iid = self._read_venue_instance_id(base)
+                pins_match = map_instance_ids_match(map_iid, self._pins_map_instance_id)
+                has, x, y, yaw = effective_reload_pose(
+                    request.has_initial_pose, request.initial_x, request.initial_y,
+                    request.initial_yaw,
+                    self._home_pose if pins_match else None)
+                request.has_initial_pose = has
+                request.initial_x = x
+                request.initial_y = y
+                request.initial_yaw = yaw
+                result = self._handle_map_reload(response, base, request)
+                if result.success:
+                    if map_iid:
+                        self._instance_id = map_iid
+                    self._publish_venue_status()
+                    if not pins_match and self._home_pose is not None:
+                        result.message += (
+                            '（注意: ピンの登録時と保存済み地図が一致していない'
+                            '可能性があります。自己位置がズレていないか'
+                            '確認してください）')
+                return result
+            # reload は ROUTE のみここに到達する（VENUE は上で return 済み）。
+            return self._handle_map_reload(response, base, request)
+
+    def _handle_venue_commit(self, response):
+        """VENUE の保存（/map_session/open slot:VENUE mode:save のサービス経路）。
+
+        ROUTE の _handle_map_save と違い、_set_localization / _set_active は呼ばず
+        地図作成モードのまま（F-32: PREP は保存後も地図作成を続けられる）。
+        サービス応答は _finish で返す（effect 経由の commit_venue_map は応答なし）。
+        """
+        err = self._commit_venue_map()
+        if err:
+            return self._finish(response, err, '')
+        return self._finish(
+            response, None, '試験場内地図を保存しました (venue/map)')
+
+    def _commit_venue_map(self) -> "str | None":
+        """venue/map へ serialize（既存の _serialize を使う）。凍結しない。
+
+        ROUTE の save と違い地図作成モードのまま（PREP は保存後も地図作成を
+        続けられる）。失敗しても PREP は続くので致命ではない。ログは呼び出し側。
+
+        **呼び出し側が self._lock を保持していること**（self._lock は
+        非再入 threading.Lock。ここで取り直すと _cb_map_session_open 経由で
+        デッドロックする）。
+        """
+        base = os.path.join(self._venue_map_dir, 'map')
+        err = self._serialize(base)
+        if err is None:
+            # WS-9AL: 保存できた地図に、今の生存世代を紐づける。
+            self._write_venue_instance_id(base, self._instance_id)
+            self._publish_venue_status()
+        return err
+
+    def _on_effect(self, msg: StateEffect):
+        if msg.dest != 'map_session':
+            return
+        if msg.name == 'commit_venue_map':
+            with self._lock:
+                err = self._commit_venue_map()
+            if err:
+                self._report(f'NG: commit_venue_map 失敗 ({err})')
+                self.get_logger().warn(f'commit_venue_map 失敗: {err}')
+            else:
+                self._report('OK: commit_venue_map (venue/map をシリアライズ)')
+                self.get_logger().info('commit_venue_map OK: venue/map をシリアライズ')
+        elif msg.name == 'commit_map_patch':
+            # WAIVER(demo): W-11 — 地図書き足しは未実装
+            self.get_logger().info('commit_map_patch: 地図書き足しは未実装（W-11）')
+        else:
+            self.get_logger().debug(
+                f'effect {msg.name} は未処理 (dest={msg.dest})')
+
+    def _handle_map_save(self, response, base: str):
+        """mapping モードのまま serialize_map で保存し、書き終えてから地図を凍結する。
+
+        localization モードでは serialize が書き出さないので保存は必ず
+        mapping モードで行う（2026-09-03 実機確認）。
+        保存成功後に _set_localization(True) で凍結し、self._set_active(False) で
+        状態を合わせる。凍結に失敗したらエラーを返す。
+        """
+        err = self._serialize(base)
+        if err:
+            return self._finish(response, err, '')
+        err = self._set_localization(True)
+        if err:
+            return self._finish(response, f'地図の凍結に失敗: {err}', '')
+        self._set_active(False)
+        return self._finish(
+            response, None, f'地図を保存しました（地図を凍結しました）: {base}.posegraph')
+
+    def _kill_slam_toolbox(self):
+        """稼働中の slam_toolbox プロセスを SIGTERM する。落とした PID の一覧を返す。
+
+        launch の `respawn=True` が作り直す。`_cb_discard_map` と共用。
+        """
+        pids = _find_slam_toolbox_pids()
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                self.get_logger().warn(
+                    f'slam_toolbox (pid {pid}) を終了させました。'
+                    ' respawn による再起動を待ちます')
+            except OSError as e:
+                self.get_logger().warn(f'slam_toolbox (pid {pid}) を終了できません: {e}')
+        return pids
+
+    def _wait_for_slam_restart(self, old_pids, timeout_s: float) -> "str | None":
+        """WS-9S: SIGTERM 後、旧プロセス消失 → 新プロセスのサービス復帰まで待つ。
+
+        戻り値: エラー文字列（タイムアウト等） or None（復帰完了）。
+        """
+        deadline = time.monotonic() + timeout_s
+        # 1. slam_toolbox の PID が総入れ替わりするまで /proc をポーリングする
+        #    （ROS グラフのタイミングに依存しない。純判定は slam_restart_complete）。
+        while time.monotonic() < deadline:
+            if slam_restart_complete(old_pids, _find_slam_toolbox_pids()):
+                break
+            time.sleep(0.5)
+        else:
+            return 'slam_toolbox が再起動しませんでした（respawn 待ちタイムアウト）'
+        # 2. 新ノードのサービスが出そろうのを待つ。
+        remaining = max(1.0, deadline - time.monotonic())
+        if not self._cli_deserialize.wait_for_service(timeout_sec=remaining):
+            return 'slam_toolbox の deserialize_map サービスが復帰しません'
+        if not self._cli_localization.wait_for_service(timeout_sec=5.0):
+            return 'slam_toolbox の set_localization_mode サービスが復帰しません'
+        return None
+
+    def _handle_map_reload(self, response, base: str, request=None):
+        """slam_toolbox を作り直してから deserialize_map で地図を読み直す（WS-9S）。
+
+        順序: (ファイル存在確認) → slam_toolbox を SIGTERM して respawn を待つ
+              → _set_localization(True) → deserialize_map を **1 回だけ**
+
+        WS-9S: 経路選択のたび長寿命ノードへ deserialize を反復するとポーズグラフが
+        上乗せされ、`/map` が選択のたび形を変え `map→odom` が数 m 飛ぶ（2026-09-04
+        実機で確定）。まっさらなノードに deserialize を 1 回、が本来の使い方。
+
+        LocalizationSlamToolbox 側が match_type を扱うため、localization モードに
+        入ってから読み直す（2026-09-03 実機確認。順序は AST テストで固定）。
+
+        - req.filename = base（slam_toolbox が .posegraph を付けるため拡張子なし）
+        - req.match_type = deserialize_match_type(request.has_initial_pose)
+        - has_initial_pose なら req.initial_pose.x/.y/.theta に経路始点を設定
+        - 再生中は localization モードのまま維持し、地図作成（mapping）には戻さない
+          （戻すと地図が汚れ自己位置が発散する。ここが欠陥の中心）。
+        - _set_active(False) で「地図作成停止」を publish する。
+        """
+        graph_path = base + '.posegraph'
+        data_path = base + '.data'
+        # kill する前にファイルの有無を確認して fail-fast する（無いのに slam を
+        # 落とすと自己位置補正が無駄に止まる）。
+        if not os.path.exists(graph_path):
+            return self._finish(
+                response, f'地図ファイルが無いため読み直せません ({graph_path})', '')
+        if not os.path.exists(data_path):
+            return self._finish(
+                response, f'地図データファイルが無いため読み直せません ({data_path})', '')
+
+        # kill の前に立てる。kill 直後に _check_slam_restart が「クラッシュした」と
+        # 誤認するのを防ぐ（この関数は self._lock を持って呼ばれている）。
+        self._reload_in_progress = True
+        try:
+            old_pids = self._kill_slam_toolbox()
+            if not old_pids:
+                self.get_logger().warn(
+                    'slam_toolbox のプロセスが見つかりません。respawn 待ちに入ります'
+                    '（サービス復帰を待って読み直しを試みます）')
+
+            err = self._wait_for_slam_restart(old_pids, RESPAWN_WAIT_SEC)
+            if err:
+                return self._finish(response, err, '')
+
+            # WS-9N: localization モードへ切り替えて地図を凍結する
+            # (/slam_toolbox/set_localization_mode)
+            err = self._set_localization(True)
+            if err:
+                return self._finish(response, f'localization モード切替失敗: {err}', '')
+
+            req = DeserializePoseGraph.Request()
+            req.filename = base   # WS-9M: slam_toolbox が `.posegraph` を付けるため拡張子なし
+            has_init = bool(getattr(request, 'has_initial_pose', False)) if request else False
+            req.match_type = deserialize_match_type(has_init)
+            if has_init:
+                req.initial_pose.x = float(request.initial_x)
+                req.initial_pose.y = float(request.initial_y)
+                req.initial_pose.theta = float(request.initial_yaw)
+
+            _result, err = call_and_wait(
+                self, self._cli_deserialize, req, DESERIALIZE_TIMEOUT_SEC)
+            if err:
+                return self._finish(response, f'deserialize_map 呼び出し失敗: {err}', '')
+
+            # 再生中は localization モードのまま維持（地図作成に戻さない）
+            self._set_active(False)
+            # サービス復帰は確認済み。次周期の _check_slam_restart に
+            # 「再起動を検知」させて余計なモード再適用を走らせない。
+            self._slam_ready = True
+        finally:
+            self._reload_in_progress = False
+
+        return self._finish(
+            response, None,
+            '地図を読み直しました（地図を凍結して自己位置推定に切り替えました）')
 
     # ── 地図の破棄 ──────────────────────────────────────────
     def _cb_discard_map(self, request, response):
@@ -411,23 +793,16 @@ class SlamControl(Node):
             return rejected
 
         with self._lock:
-            pids = _find_slam_toolbox_pids()
-            if not pids:
+            if not _find_slam_toolbox_pids():
                 return self._finish(
                     response, 'slam_toolbox のプロセスが見つかりません', '')
             # 破棄後は「地図作成停止」状態から始める（起動直後と同じ）。
             # 再起動した slam_toolbox は mapping モードで立ち上がるので、
             # _check_slam_restart がこの値を見て停止状態を入れ直す。
             self._set_active(False)
-            for pid in pids:
-                try:
-                    os.kill(pid, signal.SIGTERM)
-                    self.get_logger().warn(
-                        f'地図を破棄するため slam_toolbox (pid {pid}) を終了させました。'
-                        ' respawn による再起動を待ちます')
-                except OSError as e:
-                    return self._finish(
-                        response, f'slam_toolbox (pid {pid}) を終了できません: {e}', '')
+            # _handle_map_reload と違い、ここは respawn を待たない。再起動の検知と
+            # モード再適用は _check_slam_restart() に任せる（従来どおり即返す）。
+            self._kill_slam_toolbox()
 
         return self._finish(
             response, None, '地図を破棄しました（slam_toolbox を再起動中）')
@@ -447,13 +822,25 @@ class SlamControl(Node):
 
     # ── 起動時の初期化 ──────────────────────────────────────
     def _startup(self):
-        """localization モード（=地図作成停止）へ倒す。
+        """起動時の初期モードを確定させる。
 
-        slam_toolbox は起動直後 mapping モードで立ち上がるため、ここで倒さないと
-        「停止中」と表示したまま地図が更新され続ける。VISION.md §8 の
-        「起動直後は地図作成を停止した状態にする」を満たすための処理。
+        既定 (startup_mapping=false): 地図作成停止（localization モード）へ倒す。
+        slam_toolbox は起動直後 mapping モード（=地図作成中）で立ち上がるため、
+        ここで倒さないと「停止中」と表示したまま地図が更新され続ける。VISION.md
+        §8 の「起動直後は地図作成を停止した状態にする」を満たすための処理。
+
+        WS-8B (startup_mapping=true): 倒さず mapping のまま。教示・再生が
+        map→odom の連続補正を必要とするため。ローカル状態は mapping 有効で始める。
         """
-        if not self._cli_mode.wait_for_service(
+        if self._startup_mapping:
+            self._set_active(True)
+            self.get_logger().info(
+                '初期状態: 地図作成 継続（WS-8B / startup_mapping=true。'
+                '地図は再読込時に localization モードで凍結する）')
+            self._slam_ready = self._cli_localization.service_is_ready()
+            return
+
+        if not self._cli_localization.wait_for_service(
                 timeout_sec=STARTUP_SERVICE_TIMEOUT_SEC):
             self.get_logger().warn(
                 'slam_toolbox 未起動のため初期化をスキップします '
@@ -474,7 +861,8 @@ class SlamControl(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = SlamControl()
-    executor = MultiThreadedExecutor()
+    # WS-9U: call_and_wait はポーリング中に worker スレッドを塞ぐので下限 4 本。
+    executor = MultiThreadedExecutor(num_threads=4)
     node._executor = executor
     executor.add_node(node)
     node._startup()

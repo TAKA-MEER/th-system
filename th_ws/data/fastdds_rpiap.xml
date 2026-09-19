@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- ラズパイ AP 構成。/scan はラズパイ (192.168.5.1) から無線で受ける。
+     ★ interfaceWhiteList / useBuiltinTransports=false は入れないこと。
+        入れると共有メモリとループバックまで殺され、**同じコンテナ内の**
+        esp32_bridge → 記録器の受け渡しが止まる（2026-08-20 に 20 分を無駄にした）。
+        有線 (10.42.0.x) に流れるのを防ぐのは、ラズパイ側のプロファイルで
+        wlan0 だけを whiteList する方で足りている。 -->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <participant profile_name="th_rpiap" is_default_profile="true"><rtps>
+    <builtin><initialPeersList>
+      <locator><udpv4><address>192.168.5.1</address></udpv4></locator>
+    </initialPeersList></builtin>
+  </rtps></participant>
+</profiles>

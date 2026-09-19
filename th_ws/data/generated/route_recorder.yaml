@@ -1,0 +1,5 @@
+route_recorder:
+  ros__parameters:
+    route_gap_timeout_ms: 3000
+    route_jump_m: 0.5
+    route_sample_interval_m: 0.1

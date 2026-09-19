@@ -15,6 +15,9 @@ install(PROGRAMS
   scripts/manual_command_handler.py
   scripts/summon_navigator.py
   scripts/crawler_teleop.py
+  scripts/route_recorder.py
+  scripts/replay_runner.py
+  scripts/map_downsampler.py
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})

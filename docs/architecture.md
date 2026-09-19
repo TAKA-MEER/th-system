@@ -7,39 +7,89 @@
 
 本システムは以下の 3 つの原則に基づいて設計されています。
 
-**安全レイヤーの独立性**: `twist_mux` が `/cmd_vel` の最終出力を一元管理し、個々のノードの実装ミスが物理的な動きに影響しないことをアーキテクチャで保証します。`safety_monitor` が `mode_manager` のモード遷移を待たずに `twist_mux` をロックするため、フォルト検知から物理停止までにソフトウェア処理のレイテンシが介在しません。
+**安全レイヤーの独立性**: `twist_mux` が速度指令を一元的に調停し、最終段の
+`obstacle_limiter` だけが `/cmd_vel` を出すことで、個々のノードの実装ミスが物理的な
+動きに影響しないことをアーキテクチャで保証します。`safety_monitor` が FSM のモード遷移を
+待たずに `twist_mux` をロックするため、フォルト検知から物理停止までにソフトウェア処理の
+レイテンシが介在しません。
 
-**テスト可能なコアロジック**: 追従ロジック（`follow_planner_core.py`）を ROS2 非依存の純粋 Python モジュールとして実装しています。これにより ROS2 環境なしでロジックの単体テストが実行でき、アルゴリズムの変更を安全に検証できます。
+**テスト可能なコアロジック**: アルゴリズムを `*_core.py` / `*_core.hpp` として ROS2 非依存に
+実装し、ノード側は配線だけを行う二層構造にしています（`route_replay_core.py`・
+`state_core.py`・`serial_framer.py`・`obstacle_limiter_core.hpp`・`follow_planner_core.py` など）。
+これにより ROS2 環境なしでロジックの単体テストが実行でき（ホストだけで 783 件。
+[testing.md](testing.md)）、アルゴリズムの変更を安全に検証できます。
 
 **パラメータ外部化**: 全ノードの調整値を YAML ファイルで管理し、コード変更なしにチューニングできます。特に追従距離・PID ゲイン・フォルトタイムアウトは現場検証後に頻繁に変更される値であるため、すべてパラメータ化されています。
 
 ---
 
-## 速度指令の排他制御（twist_mux）
+## 速度指令の排他制御（twist_mux → obstacle_limiter）
 
-`/cmd_vel` への速度指令は複数のノードから発行されますが、最終的な出力は常に `twist_mux` が一元管理します。これにより個々のノードが互いの状態を意識する必要がなくなります。
+速度指令は複数のノードから出ますが、`twist_mux` が一元的に調停し、**最終段の
+`obstacle_limiter` だけが `/cmd_vel` を publish します**（`WP-SAFE-03`・2026-08-27）。
 
 ```txt
-優先度（高い方が優先）:
-  255: /safety/estop      lock   — E-Stop 発動中は全入力を無視してゼロ出力
-  254: /safety/fault_lock lock   — LIDAR_LOST/ESP32_DISCONNECTED 検知時も同様
-                                  （PERSON_TRACKER_LOST はここには含めない。
-                                    走行の物理安全とは無関係なため。下記参照）
-   20: /cmd_vel_retreat   topic  — follow_planner からの近接退避指令・person_predictor からの捜索旋回指令（Nav2 を迂回）
-   10: /cmd_vel_nav       topic  — Nav2 controller_server の通常出力
+挙動系（th_planning の replay_runner 等）─→ /cmd_vel_behavior (priority 20) ─┐
+Nav2 controller_server              ─→ /cmd_vel_nav      (priority 10) ─┤
+WebUI の手動ジョグ（jog_gate 経由） ─→ /cmd_vel_manual   (priority 30) ─┤ twist_mux
+                                                                        │
+safety_monitor ─→ /safety/estop      (lock 255) ───────────────────────┤
+safety_monitor ─→ /safety/fault_lock (lock 254) ───────────────────────┘
+                                                                        │
+                                                                  /cmd_vel_muxed
+                                                                        ↓
+/scan・/system/state・/cmd_vel_manual・/safety/estop・/safety/fault_lock →[ obstacle_limiter ]
+                                                                        ↓
+                                                                    /cmd_vel → ESP32
 ```
 
-`retreat` が `nav` より高い優先度を持つため、Nav2 がゴールへの経路を計算し続けていても、退避が必要な瞬間に `follow_planner` が直接 `/cmd_vel_retreat` を発行すれば即座に反映されます。`follow_planner` 側で Nav2 のゴールをキャンセルする必要はありません。
+| 優先度 | 入力 | 出どころ |
+| --- | --- | --- |
+| lock 255 | `/safety/estop` | E-Stop 発動中は全入力を無視してゼロ出力 |
+| lock 254 | `/safety/fault_lock` | `LIDAR_LOST` / `ESP32_DISCONNECTED` / 重大フォルト（`PERSON_TRACKER_LOST` は含めない。走行の物理安全とは無関係なため） |
+| 30 | `/cmd_vel_manual` | 手動ジョグ（`jog_gate` が通した分だけ） |
+| 20 | `/cmd_vel_behavior` | 挙動系ノード（教示再生の `replay_runner` など） |
+| 10 | `/cmd_vel_nav` | Nav2 controller_server の通常出力 |
 
-退避が終了した際は `/cmd_vel_retreat` の発行を止めるだけで、`twist_mux` のタイムアウト（0.5 秒）が経過すると自動的に `/cmd_vel_nav` に切り替わります。これが「退避解除」の実装です。
+> **不変ルール**: `/cmd_vel` に直接 publish するノードを追加してはいけません。
+> `obstacle_limiter` だけが `/cmd_vel` の publisher です。すべての速度指令は
+> twist_mux → `/cmd_vel_muxed` → `obstacle_limiter` を経由します。Nav2 経由の移動は
+> `/cmd_vel_nav`、それ以外の挙動系（点検・校正の走行を含む）は `/cmd_vel_behavior` を使います。
 
-各入力トピックのタイムアウト値変更が必要な場合は `th_safety/config/twist_mux.yaml` を編集します。
+`obstacle_limiter` は **20Hz 固定で出し続け、沈黙しません**（沈黙＝停止ではなく、
+下流から見て「指令が来ない」状態を作らないため）。判定ロジックは ROS2 非依存の
+`th_safety/obstacle_limiter_core.hpp` にあり、ノード側は sub/pub/timer の配線だけを行います。
+起動時に `base_link ← laser_link` の TF を有界リトライで取得します。
+
+各入力トピックのタイムアウト値は `th_safety/config/twist_mux.yaml` で変更します。
+
+> **⚠ `/cmd_vel_retreat` は現在どこにも繋がっていません（2026-09-06）。**
+> 旧設計では優先度 20 が `/cmd_vel_retreat`（`follow_planner` の近接退避・
+> `person_predictor` の捜索旋回）でしたが、`WP-SAFE-03` で `/cmd_vel_behavior` に
+> 置き換わりました。`follow_planner.py` / `follow_planner_mapless.py` /
+> `person_predictor.py` は**いまだに `/cmd_vel_retreat` へ publish しており、
+> twist_mux が購読していないため出力は無音で捨てられます**（トピックを `echo` すれば
+> 値は見えるので紛らわしい）。3ノードとも新設計での廃止対象（`WP-TRANSIT-01`）です。
 
 ---
 
-## 状態管理（mode_manager FSM）
+## 状態管理（現行は th_state。mode_manager は旧 FSM）
 
-### 遷移ルールの実装
+> **⚠ FSM は 2 つ併存しています（2026-09-06）。**
+>
+> | | `th_state`（`state_manager.py`） | `th_mode_manager`（`mode_manager.cpp`） |
+> | --- | --- | --- |
+> | 位置づけ | **現行**。教示再生デモはこちらで動く | 旧 9 モード体系。まだ起動している |
+> | モード | 18 個（`INIT` / `IDLE` / `ESTOP` / `CARRY` / `FOLLOW` / `MANUAL` / **`TEACH_FOLLOW`** / **`TEACH_MANUAL`** / **`REPLAY`** / `LINE` / `LEASH` / `PREP` / `PANEL_NAV` / `AT_PANEL` / `SUMMON` / `HOME_NAV` / `OPCHECK` / `CALIB`） | 9 個（`INIT`〜`FOLLOWING_MAPLESS`） |
+> | 遷移の定義 | **YAML**（`transitions.yaml` / `attributes.yaml` / `mode_entry.yaml`）を純粋コア `th_state/state_core.py` が読む。`step()` は副作用なし | C++ の `isTransitionAllowed()` にハードコード |
+> | テスト | `test_transition_table.py`（137 件）ほか。ROS2 不要 | `test_mode_transitions.py`（ROS2 必要） |
+>
+> **新しいモード・遷移を足すときは `th_state` 側の YAML を編集します。**
+> 以下の `mode_manager` の記述は旧 FSM のもので、教示再生の遷移は説明していません
+> （新 FSM の遷移表は `docs/plan/detailed/DetailedDesign-state.md` と
+> `th_ws/src/th_state/config/*.yaml` が正）。
+
+### 遷移ルールの実装（旧 FSM）
 
 `mode_manager` は `isTransitionAllowed()` 関数で遷移の許可・拒否を判定します。新しいモードを追加する場合はこの関数に遷移元/遷移先のペアを追加するだけで対応できます。
 
@@ -68,7 +118,71 @@ case RobotMode::IDLE:
 
 ---
 
+## 教示再生（route_recorder / replay_runner）★現行デモの主機能
+
+手動で走らせた経路を記録し（教示）、あとから同じ経路を自動で走る（再生）。
+2026-09 現在のデモはこれが主機能で、`th_state` の `TEACH_MANUAL` / `REPLAY` モードで動く。
+
+```txt
+[教示] 手動ジョグ → /odom の姿勢を間引いて記録 → 「保存」で経路 JSON ＋ 地図を凍結保存
+        route_recorder ← route_record_core（純粋コア）
+        slam_control: mapping → localization へ切替（set_localization_mode）
+
+[再生] 経路を選ぶ → slam_toolbox を作り直して地図を1回だけ読み直す → 始点へ自己位置合わせ
+        → pure-pursuit で /cmd_vel_behavior へ (v, ω) を出す
+        replay_runner ← route_replay_core（純粋コア）
+```
+
+| ノード / モジュール | 役割 |
+| --- | --- |
+| `th_planning/scripts/route_recorder.py` | `/system/effect` の `start_record` / `resume_record` / `finalize_route` を受け、`/odom` の姿勢を間引いて `th_data/routes/<id>.json` に保存。`/route/catalog`（latched）・`/route/status` を発行 |
+| `th_planning/th_planning/route_record_core.py` | 記録の純粋コア（間引き・距離計算）。ROS2 非依存 |
+| `th_planning/scripts/replay_runner.py` | `load_route` / `rotate_to_start_yaw` / `resume_path` を受け、pure-pursuit で `/cmd_vel_behavior`（priority 20）へ出力。到着で `evt.arrived` を返す |
+| `th_planning/th_planning/route_replay_core.py` | 再生の純粋コア（pure-pursuit・逆再生・現在地合わせ）。ROS2 非依存 |
+| `th_config_manager/scripts/slam_control.py` | 地図セッション（`/map_session/open`）。教示「保存」で地図を凍結し、再生の経路選択のたび `slam_toolbox` を作り直してから `deserialize_map` を **1 回だけ** 行う |
+| `th_planning/scripts/map_downsampler.py` | WebUI へ送る地図の間引き（帯域対策） |
+
+### 再生の pure-pursuit と速度スケール
+
+`route_replay_core.pure_pursuit()` は、記録点列から `lookahead_m` 以上離れた最初の点を
+目標にして `(v, ω)` を返す。
+
+```txt
+ω = clamp(2 · cruise · sin(alpha) / lookahead, ±max_yaw_rate)
+v = cruise · max(0.2, cos(alpha))        # 旋回が大きいほど落とす
+```
+
+WebUI（S-14）の「再生速度」は `/replay/speed_scale`（`std_msgs/Float32`、比率 0..1）で
+`scale_replay_params()` に渡り、**`cruise_speed_mps` / `max_yaw_rate_rps` / `lookahead_m` を
+最小端〜最大端の間で線形補間する**（低速 ≈0.15 / 中速 ≈0.33 / 高速 ≈0.45 m/s）。
+
+> **`lookahead_m` を速度と一緒にスケールする理由（2026-09-05）**: pure-pursuit の damping は
+> 実質「`lookahead_m / cruise_speed_mps`（先読み時間）」で決まる。以前は `lookahead_m` を
+> 速度に関わらず 0.40m 固定にしていたため、高速ほど先読み時間が短くなって応答が過敏になり
+> （低速 0.40/0.15≈2.7s に対し高速 0.40/0.45≈0.9s）、**高速再生でふらついていた**。
+> 高速側を 0.60m に引き上げて先読み時間を底上げした（`replay_lookahead_min_m` = 低速側 0.40m）。
+> **この値は実測に基づく調整ではないので、実走行で詰めること**（VISION.md SD-7）。
+
+### 実機で踏んだ落とし穴（再発したらまずここを見る）
+
+| 症状 | 原因 | 対策 |
+| --- | --- | --- |
+| 再生開始直後に逆方向へ旋回して壁へ | 別の起動セッションで記録した経路を再生していた（地図は起動ごとに作り直されるので座標が無意味） | 経路に地図セッション ID を付けて弾く（`WS-9K-B`） |
+| 曲がり角で自己位置が外れる | 経路選択のたび同じ `slam_toolbox` に `deserialize_map` を打ち、地図コピーが積み上がっていた | reload のたび `slam_toolbox` を作り直してから 1 回だけ deserialize（`WS-9S`） |
+| 廊下で位置がずれる | IMU（ジャイロ）未融合。クローラの超信地旋回でエンコーダだけでは yaw がずれる | `imu_enabled` の既定を `true` に（`WS-9V`） |
+| 記録した経路が壁に埋まる | `slam_toolbox` のループ閉じ込みで、記録済み経路だけ補正前のフレームに取り残される | `do_loop_closing: false` |
+
+試験の記録は [教示再生走行試験.md](教示再生走行試験.md) にある。
+
+---
+
 ## 試験員追従ロジック（follow_planner_core / mapless_follow_core）
+
+> **⚠ この節のロジックは現在ロボットを動かしていません（2026-09-06）。**
+> 出力先の `/cmd_vel_retreat` が `twist_mux` から外れているためです
+> （上記「速度指令の排他制御」参照）。Nav2 ゴールを出す経路（`FOLLOWING`）は
+> `/cmd_vel_nav` を通るので生きていますが、近接退避・捜索旋回は届きません。
+> 3ノードとも `WP-TRANSIT-01` での削除・作り直し対象です。
 
 追従ロジックは2つの独立した実装があり、モードによって使い分けられます。
 
@@ -150,6 +264,15 @@ UI にフォルト表示・操作要求
 `twist_mux` によるモーター停止は `mode_manager` のモード遷移処理を待ちません。これにより、フォルト検知から物理停止までの時間は `check_period_ms`（100ms）+ twist_mux の処理時間（数 ms）のみです。
 
 ### ESP32 側の二重フェイルセーフ
+
+> **2026-09-05 追記**: ESP32↔PC間は WiFi(WebSocket直結)を廃止し、ESP32はラズパイへ
+> シリアル直結、ラズパイの `pi_serial_relay` が PC の `esp32_bridge` へ接続する構成に
+> 変更した（[network.md](network.md) 参照）。**`esp32_bridge.py` 自体・以下で説明する
+> ウォッチドッグ／キープアライブ／ロック中ゼロ化の設計は無変更。** 以下の
+> 「WiFi ジッタ」を根拠にした数値（WATCHDOG_MS=600ms 等）はその値を導いた当時の
+> 実測に基づく歴史的記録として残すが、ESP32↔PC間の遅延要因としての WiFi は
+> もう存在しない（ESP32↔ラズパイ間はシリアルで遅延がほぼ無視できる。
+> PC↔ラズパイ間は `/scan` と同じ、実測で安定しているWiFi経路）。
 
 ROS2 側の `safety_monitor` に加え、ESP32 ファームウェアにもウォッチドッグが実装されています。
 
@@ -285,7 +408,7 @@ blocking）ため、アプリ層の送信頻度を上げるだけでは TCP 再�
 
 **プロトコル**
 
-ESP32 ⇔ esp32_bridge は WebSocket バイナリフレーム通信（`th_ws/esp32/src/ws_link.h` ⇔ `th_esp32_bridge/th_esp32_bridge/ws_protocol.py`）。`IMU_DATA (0x04)` フレームを ESP32 → bridge 方向に追加し、クォータニオン(qw,qx,qy,qz)・角速度(wx,wy,wz)・線形加速度(ax,ay,az、重力除去済み)・キャリブレーション状態(sys/gyro/accel/magを2bitずつパックした1byte)を毎制御周期(100ms, 10Hz)送信する。BNO055 自体は最大100Hzサンプリングだが、EKF・オドメトリ更新も10Hzのため既存の制御ループに相乗りさせており、独立タイマーは追加していない。
+ESP32 ⇔ esp32_bridge のフレーム定義自体は `th_ws/esp32/src/serial_link.h` ⇔ `th_esp32_bridge/th_esp32_bridge/ws_protocol.py` で、2026-09-05 のシリアル化前後で無変更（ESP32↔ラズパイ間はこのフレームを `serial_framer.py` のエンベロープで包んで運び、ラズパイ↔PC間は従来どおり WebSocket バイナリフレームで運ぶ。[network.md](network.md) 参照）。`IMU_DATA (0x04)` フレームを ESP32 → bridge 方向に追加し、クォータニオン(qw,qx,qy,qz)・角速度(wx,wy,wz)・線形加速度(ax,ay,az、重力除去済み)・キャリブレーション状態(sys/gyro/accel/magを2bitずつパックした1byte)を毎制御周期(100ms, 10Hz)送信する。BNO055 自体は最大100Hzサンプリングだが、EKF・オドメトリ更新も10Hzのため既存の制御ループに相乗りさせており、独立タイマーは追加していない。
 
 bridge 側は `/esp32/imu_data`（`sensor_msgs/Imu`, frame_id=`imu_link`）と `/esp32/imu_calib_status`（`std_msgs/UInt8`）を発行する。
 
@@ -317,10 +440,10 @@ ros2 topic echo /esp32/imu_data
 # 3. 8の字キャリブレーションを実施
 ros2 run th_calibration imu_calib_check.py
 
-# 4. 上記「ジャイロの単位」の検証手順を通してから IMU 入力を有効にする
-#    true で ekf_params.yaml（imu0込み）、false(既定) で
-#    ekf_params_no_imu.yaml（エンコーダのみ）を選択する
-ros2 launch th_bringup bringup.launch.py imu_enabled:=true
+# 4. IMU 融合は既定で有効（WS-9V / 2026-09-04）。true で ekf_params.yaml（imu0込み）、
+#    false で ekf_params_no_imu.yaml（エンコーダのみ）を選択する。
+#    ジャイロ単位未修正のファームの個体でだけ imu_enabled:=false にする。
+ros2 launch th_bringup bringup.launch.py   # imu_enabled:=true が既定
 
 # 5. EKF のチューニング
 #    robot_localization のドキュメントを参照し
@@ -359,7 +482,7 @@ ros2 launch th_bringup bringup.launch.py imu_enabled:=true
    | ほぼ直進中の `wz` が 0.3〜0.5 | 既に rad/s。単位の前提が崩れるので再調査 |
 2. **`/esp32/imu_data` の `angular_velocity`**。`sensor_msgs/Imu` は rad/s 規定なので、EKF が 57.3 倍のヨーレートを信じてオドメトリが壊れる。
 
-`imu.cpp` で dps → rad/s に変換して修正した。**この修正を含むファームウェアを書き込むまで `imu_enabled:=true` にしてはいけない。** 未修正のファームを検知できるよう、`esp32_bridge` は `|wz| > 10 rad/s` でエラーログを出す（低速域では dps の値も閾値を下回るため、気づくための警告であって保証ではない）。
+`imu.cpp` で dps → rad/s に変換して修正した。**この修正を含むファームウェアが書き込まれていない個体では `imu_enabled:=false` で起動すること**（既定は true）。未修正のファームを検知できるよう、`esp32_bridge` は `|wz| > 10 rad/s` でエラーログを出す（低速域では dps の値も閾値を下回るため、気づくための警告であって保証ではない）。
 
 **検証手順**（再書き込み後）:
 
@@ -375,7 +498,7 @@ ros2 topic echo /esp32/imu_data --field angular_velocity.z
 
 **新しい失敗モード（要監視）**: `imu_enabled:=true` にすると、BNO055 のジャイロバイアスがオドメトリに乗る。`ekf_params.yaml` の `imu0` 側の `vyaw` 共分散（0.0025）は `odom0` 側（0.05）の 1/20 なので、EKF はジャイロを強く信頼する。キャリブレーション未実施でバイアスが残っていると、**静止中でも odom がじわじわ回り続ける**。従来は EKF の出力自体が使われていなかったためこの経路は存在しなかった。`ros2 run th_calibration imu_calib_check.py` で gyro が 3（Fully calibrated）になっていることを確認すること。
 
-`imu_enabled` の既定は `false` のまま（上記の再書き込みと検証が済むまで有効にしない）。DSR1603 未装着の個体でも `Imu::init()` が失敗を検出して `IMU_DATA` を送らないだけで、EKF は `odom0` のみで動作するので壊れない。
+**`imu_enabled` の既定は `true`（WS-9V / 2026-09-04）。** ジャイロ単位修正（2026-08-06）・`imu0` 欠落修正（2026-09-02）が済み、実機で gyro が Fully calibrated・`/esp32/imu_data` が 10Hz で届くことを確認したうえで既定化した。動機: 特徴の少ない長い廊下の教示再生で L 字コーナーのクローラースリップ由来の yaw 誤差がそのまま伸び、slam_toolbox の localization（探索窓 ±0.25m）では窓の外に出て補正できなかった（実機 2026-09-04）。ジャイロ単位未修正のファームの個体で動かすときは `imu_enabled:=false`。DSR1603 未装着の個体でも `Imu::init()` が失敗を検出して `IMU_DATA` を送らないだけで、EKF は `odom0` のみで動作するので壊れない（＝既定 true でも安全）。
 
 ---
 
@@ -593,9 +716,14 @@ ros2 topic echo /person/status --once
 
 ---
 
-## 新しいモードの追加方法
+## 新しいモードの追加方法（旧 FSM `mode_manager` の手順）
 
-実例: `FOLLOWING_MAPLESS`（MAP不要の軌跡追従モード）を追加した際の手順です。同じ手順で「自動巡回モード（AUTO_PATROL）」等を追加できます。
+> **⚠ 現行の FSM は `th_state` です（2026-09-06）。** 新しいモード・遷移を足すときは
+> `th_ws/src/th_state/config/*.yaml`（`transitions.yaml` / `attributes.yaml` /
+> `mode_entry.yaml`）を編集し、`test_transition_table.py` で検証します。
+> C++ を触る必要はありません。以下は旧 `mode_manager` の手順で、記録として残します。
+
+実例: `FOLLOWING_MAPLESS`（MAP不要の軌跡追従モード）を追加した際の手順です。
 
 ```txt
 1. th_system_msgs/msg/RobotMode.msg に定数を追加
@@ -633,18 +761,34 @@ ros2 topic echo /person/status --once
 
 ---
 
-## WebUI 設定パネル（パラメータ調整）
+## WebUI 設定画面 S-50（パラメータ調整）
 
-VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web_ui/src/SettingsPanel.jsx`）から
-`follow_planner_mapless` の数値パラメータと `lidar_filter.blind_angle_ranges` を確認・変更できる。
-設定パネル自体はタブに属さないオーバーレイで、ヘッダーの ⚙ からどのタブでも開ける。
+VISION.md §6.2 の完成形。タブレット WebUI の **S-50 設定画面**（`web_ui/src/screens/S50Settings.jsx`）
+から `follow_planner_mapless` の数値パラメータ、`lidar_filter.blind_angle_ranges`、
+`slam_toolbox` のスキャンマッチ関連（再生の自己位置推定。WS-9W）を確認・変更できる。
+
+**画面の位置づけ（WS-9X）**: S-50 は FSM のモードではなく **IDLE のサブ画面**。
+S-01 メインメニューの「保守・設定」カードの「設定」ボタンから開く。`main.jsx` の
+`Screens()` が `settingsOpen` フラグを持ち、`screens/screenRouting.js` の
+`resolveScreen()` が「本来 S-01 を出す」ときだけ `S50` に差し替える。動作系モード
+（`MODE_TO_SCREEN` にヒット）に入ると `settingsOpen` は無視され、かつ `main.jsx` が
+自動で畳む → 走行中に設定画面がかぶることは構造上あり得ない。
+タブは **一般**（上記パラメータ調整）/ **表示**（文字サイズ・`localStorage`。
+`parts/fontScale.js` が `#app` の `--fs-user` を切り替える）/ **開発モード**
+（開発モード ON/OFF・`localStorage`。`parts/devMode.js`。現状はヘッダの「開発」表示のみ）。
+
+> 旧 `SettingsPanel.jsx`（ヘッダー ⚙ のオーバーレイ）は、WebUI の画面構成ベース
+> 再構成（コミット `bbb86f2`）で `App.jsx` ごと孤立し表示されなくなっていた。
+> WS-9X で S-50 として作り直し、`App.jsx` / `SettingsPanel.jsx` / `MapView.jsx` /
+> `WheelSpeedView.jsx` / `VoiceDevPanel.jsx` を削除した。
 
 ### 構成
 
 ```
-[SettingsPanel.jsx]
+[screens/S50Settings.jsx]  ── ros/useTunableParams.js (useSystemState() の ros を使う小さいフック)
   │ getTunableParams()  ─── rcl_interfaces/GetParameters を対象ノードへ直接呼び出し（読み取り専用）
-  │                          /follow_planner_mapless/get_parameters, /lidar_filter/get_parameters
+  │                          /follow_planner_mapless/get_parameters, /lidar_filter/get_parameters,
+  │                          /slam_toolbox/get_parameters
   │
   │ applyTunableParam() ─── th_system_msgs/SetTunableParams
   │ saveTunableParams() ─── th_system_msgs/SaveTunableParams
@@ -659,8 +803,11 @@ VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web
 
 - rosbridge は `rosbridge_websocket` 単体起動で **rosapi は起動していない**ため、
   `ROSLIB.Param`（rosapi 依存）ではなく `rcl_interfaces/srv/{Get,Set}Parameters` を
-  素の `ROSLIB.Service` で直接呼んでいる（`web_ui/src/hooks/useRosbridge.js` の
-  `getTunableParams`/`applyTunableParam`/`saveTunableParams`）。
+  素の `ROSLIB.Service` で直接呼んでいる（`web_ui/src/ros/useTunableParams.js` の
+  `getTunableParams`/`applyTunableParam`/`saveTunableParams`）。`ParameterValue` の
+  JS 変換は `web_ui/src/ros/paramCodec.js` に切り出し、観客ビューが使う
+  `useRosbridge.js` と共用する（WS-9X）。TEST_MODE（e2e）では 3 関数とも即 reject し、
+  rosbridge へは一切繋がない。
 - **実行時反映と YAML 保存は別操作**。`applyTunableParam` は対象ノードへ即座に反映するが
   再起動で失われる。`saveTunableParams` は対象ノードの現在値を取得して YAML に書き戻す
   （設定パネルの「YAML に保存」ボタン）。
@@ -669,13 +816,20 @@ VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web
   そのため両ノードには `add_on_set_parameters_callback` を追加し、`set_parameters` が
   呼ばれた際に内部状態を再構築するようにしてある。**新しいノードをチューニング対象に
   追加する場合、同様のコールバックが無いとライブ反映が機能しない**点に注意。
+- **`slam_toolbox`（WS-9W）はランタイムのパラメータコールバックを持たない**（Karto の
+  マッパーは起動時に確定）。`set_parameters` は値を rclpy のストアに保持するだけで
+  その場では効かないが、`saveTunableParams` が `get_parameters`（＝保持された新値）を
+  読んで `slam_params.yaml` へ書き戻す。WS-9S で「この経路で進む」のたびに
+  slam_toolbox を respawn して `--params-file slam_params.yaml` を読み直すので、
+  「変更 →『YAML に保存』→ 経路を選び直す」で新しい値が効く。パネルにその旨を表示する。
 - YAML への書き戻しは `ruamel.yaml` の round-trip モードを使い、既存のコメント・
   キー順序を保持する（`th_config_manager/th_config_manager/yaml_writer.py`）。
   インデント設定 `yaml.indent(mapping=2, sequence=4, offset=2)` は
   `planning_params.yaml` / `perception_params.yaml` の実際の書式に合わせて検証済み。
-- 変更は `IDLE` / `MANUAL` モード中のみ許可する。`SettingsPanel.jsx` は該当モード以外で
+- 変更は `IDLE` / `MANUAL` モード中のみ許可する。`S50Settings.jsx` は該当モード以外で
   入力を disabled にするが、`config_manager` ノード側でも `/robot/mode` を見て同じ判定を
-  行う（UI の見た目だけに頼らないサーバー側の安全ガード）。
+  行う（UI の見た目だけに頼らないサーバー側の安全ガード）。S-50 自体は S-01（IDLE）
+  からしか開けないので通常は常に editable。
 
 ### 新しいチューニング可能パラメータを追加する手順
 
@@ -685,10 +839,13 @@ VISION.md §6.2 の完成形を実装したもの。タブレット WebUI（`web
 
 2. 対象ノードに add_on_set_parameters_callback が無ければ追加する
    （follow_planner_mapless.py / lidar_filter.py の実装を参照。パラメータが
-    起動時に一度だけ内部状態へコピーされている場合は必須）
+    起動時に一度だけ内部状態へコピーされている場合は必須。
+    slam_toolbox のようにコールバックを持てないノードは「保存 → 再起動で反映」
+    になる旨をパネルに表示する）
 
-3. web_ui/src/SettingsPanel.jsx にフォーム項目を追加
-   （MAPLESS_FIELDS 等のフィールド定義配列にラベル・単位・入力レンジを追記）
+3. web_ui/src/screens/S50Settings.jsx にフォーム項目を追加
+   （MAPLESS_FIELDS / SLAM_FIELDS 等のフィールド定義配列にラベル・単位・入力レンジを追記。
+    名前は tunable_targets.py と一致させる。test_tunable_targets.py が両者の一致を固定する）
 ```
 
 対象拡大（`follow_planner`・`person_predictor`・Nav2 パラメータ・`panels.yaml` 等）は
@@ -740,7 +897,8 @@ localhost 配信を開き、その映像出力をディスプレイへ回す。`
 ## パラメータチューニングガイド
 
 上記の WebUI 設定パネルで調整できるパラメータ（follow_planner_mapless の数値パラメータ全数、
-lidar_filter.blind_angle_ranges）は、以下の CLI 手順の代わりにタブレットから直接変更できる。
+lidar_filter.blind_angle_ranges、slam_toolbox のスキャンマッチ関連）は、以下の CLI 手順の
+代わりにタブレットから直接変更できる。
 
 ### 追従ロジック — FOLLOWING（planning_params.yaml の `follow_planner`）
 
@@ -859,24 +1017,57 @@ ros2 param set /lidar_filter blind_angle_ranges \
 # /scan と /scan_filtered を同時に RViz2 で比較
 ```
 
-### ESP32 が頻繁に再接続する
+### ラズパイの CPU が足りない / LiDAR が遅い・落ちる
+
+**まず `rplidar_node` の CPU を見ること。**このドライバは正常時でも
+**1 コアの約 80 % を食う**（実測 2026-08-20・Raspberry Pi 4 Model B ＠1.5 GHz、
+`scan_mode: Standard`）。「重いから壊れている」のではなく**平常運転がこれ**なので、
+他の原因を探す前にこの前提を思い出すこと。
 
 ```bash
-# esp32_bridge の WebSocket 接続ログを確認 (接続/切断イベントが出力される)
+ssh mirs2602@192.168.5.1 'ps -o pid,etimes,time,pcpu,comm -p $(pgrep -f rplidar_ros/rplidar_node)'
+# → %CPU 80 前後が「正常」。100 を超えていたら別の異常
+```
+
+**内訳（実測）**: ユーザ時間 14.2 % に対し**システム時間 67.2 %**。計算ではなく
+**syscall で潰れている**。`strace -c` 3 秒で `futex` 22377 回・`read` 7026 回・
+`ioctl` 7052 回＝**毎秒およそ 12000 回**。25.6 KB/s（256000 baud）を読むだけの
+仕事としては 1〜2 桁多い。
+
+| 症状 | 原因 |
+| --- | --- |
+| `read` 1 回が約 11 バイト | バッファリングせず小刻みに読んでいる |
+| `ioctl` が `read` と 1 対 1 | 読む前に毎回 `FIONREAD` で残量を問い合わせている |
+| `futex` が最多（毎秒 7459・うちエラー 2748） | SDK が読み取りスレッドからサンプル単位でイベント通知している |
+
+**原因は Slamtec SDK / `rplidar_ros` の実装**であって設定ではない。`scan_mode` を
+`DenseBoost` から `Standard` に落としてもこの値。直すなら upstream に手を入れるか、
+`termios` の `VMIN`/`VTIME` でまとめ読みさせる方向になる。
+
+**2026-08-20 時点では実害を確認していない**（ラズパイ AP ch1 で受信ギャップは
+max 300 ms・跳ね 1 回まで改善している。詳細は
+[`data/meas05/README.md`](plan/detailed/data/meas05/README.md)）。**余裕を食っている
+だけ**なので未着手。ただし Nav2・SLAM・教示再生などラズパイ側の負荷が増えたときは
+**まずここを疑う**こと。4 コアのうち 1 コアが既に埋まっている。
+
+### `pi_serial_relay` が頻繁に再接続する (2026-09-05 シリアル化後)
+
+ESP32 はもう WiFi/WebSocket を持たない。再接続が起きているのはラズパイの
+`pi_serial_relay` ⇔ PC の `esp32_bridge` 間（WebSocket）である。詳細な切り分け
+手順は [network.md](network.md)「`pi_serial_relay` が WS に繋がらない」
+「ESP32 と `pi_serial_relay` の間が繋がらない」参照。要点だけ:
+
+```bash
+# esp32_bridge 側の接続ログ
 ros2 topic echo /rosout | grep esp32_bridge
 
-# ESP32 側のシリアルモニタで WiFi/WS 状態を確認
-# (現行構成では ESP32 はラズパイに USB 接続されているため、ラズパイ側で確認する)
-pio device monitor    # または ラズパイ上で /dev/ttyUSB1 を 115200 で読む
+# pi_serial_relay 側のログ (ラズパイで)
+ssh mirs2602@192.168.5.1 'journalctl -u rpi-serial-relay -f'
 
-# ★5 分周期の切断→即再接続は「定期リフレッシュ」で正常動作(仕様)
+# PC の固定IP (192.168.5.50) が pi_serial_relay の --ws-host/--ws-port と
+# 一致しているか、PC 側ファイアウォールが ws_port をブロックしていないか確認
 
-# AP 構成の場合: PC の固定IP (192.168.4.50) と portproxy (8766→8765) が
-# wifi_credentials.h の WS_SERVER_HOST/PORT と一致しているか確認
-# STA 構成の場合: ホットスポットの SSID/パスワードが一致しているか確認
-# PC 側ファイアウォールが ws_port をブロックしていないか確認
-
-# ウォッチドッグタイムアウトを確認
+# ウォッチドッグタイムアウトを確認 (無変更)
 # config.h: WATCHDOG_MS が通信周期より十分大きいか確認
 ```
 

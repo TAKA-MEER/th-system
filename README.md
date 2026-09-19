@@ -1,26 +1,45 @@
 # TH システム — 配電盤上部確認ロボット 移動機構
 
 2D-LiDAR による脚検知で試験員を追従するクローラーロボット。
-ESP32(モーター制御)+ ラズパイ(LiDAR)+ PC(ROS2 Humble / Docker)の3台構成。
+ESP32(モーター制御)+ ラズパイ(LiDAR + ESP32中継)+ PC(ROS2 Humble / Docker)の3台構成。
+ESP32はラズパイへUSB-UARTで直結し、WiFiは使わない(2026-09-05〜)。
 
 ```txt
-ESP32 (駆動用, WiFi AP)          192.168.4.1   SSID: th-esp32-ap
-  ├── PC (Windows+WSL2, ROS2)   192.168.4.50  (固定IP)
-  │     ESP32 → WebSocket: 192.168.4.50:8766 (コンテナ内 esp32_bridge が直接待ち受け)
-  └── ラズパイ (LiDAR 配信)      192.168.4.2   (DHCP)
+ラズパイ (WiFi AP + LiDAR配信 + pi_serial_relay)  192.168.5.1  SSID: th-rpi-ap (2.4GHz ch1)
+  │  USB-UART
+  ├── ESP32 (駆動用)             (WiFi不使用。シリアル直結のみ)
+  │
+  └── PC 内蔵Intel wlo1         192.168.5.50   固定IP。esp32_bridge が :8766 で待ち受け
         RPLIDAR S1 → rplidar_ros → /scan (ROS_DOMAIN_ID=10, frame_id=laser_link)
+
+PC のインターネットは別系統: Elecom WDC-433SU2M2 (5GHz専用) → NCT-WL-ST
 ```
 
+> **ロボット回線は必ず PC の内蔵 Intel カードを使うこと。** USB ドングル (AIC8800) を
+> 使っていた頃は ロス 18% / RTT 最大 970ms で ESP32 が切れ続けていた。同じ AP・同じ
+> チャネルで内蔵カードに替えるとロス 0% / RTT 2.2ms になる（原因はチャネル混雑では
+> なくドングル）。ESP32 は 2.4GHz 専用なので AP の 5GHz 化は不可。
+>
+> 構成の詳細・復旧手順は [docs/network.md](docs/network.md)。
+
+
 | レイヤー         | 実装                                                         |
-| ---------------- | ------------------------------------------------------------ |
-| ハードウェア制御 | ESP32 (PlatformIO + WebSocket クライアント, PID+FF 速度制御) |
-| ROS2 ブリッジ    | `th_esp32_bridge` (WS サーバー・オドメトリ)                |
-| 安全管理         | `th_safety` (safety_monitor) + `twist_mux`               |
-| 状態管理         | `th_mode_manager` (FSM)                                    |
-| 認識             | `th_perception` + DR-SPAAM 脚検知 (human_kenchi)           |
-| 計画・追従       | `th_planning` (follow_planner / mapless)                   |
+| ------------------ | -------------------------------------------------------------- |
+| ハードウェア制御 | ESP32 (PlatformIO + シリアル直結, PID+FF 速度制御)           |
+| ラズパイ中継     | `pi_serial_relay` (シリアル ⇔ WS クライアント)               |
+| ROS2 ブリッジ    | `th_esp32_bridge` (WS サーバー・オドメトリ)                  |
+| 安全管理         | `th_safety` (safety_monitor・**obstacle_limiter**・jog_gate) + `twist_mux` |
+| 状態管理         | `th_state` (state_manager。**現行の FSM**) ／ `th_mode_manager` (旧 9 モード FSM。併存中) |
+| 認識             | `th_perception` + DR-SPAAM 脚検知 (human_kenchi)             |
+| **教示再生**     | `th_planning` (route_recorder / replay_runner) + `th_config_manager` (slam_control) |
+| 計画・追従       | `th_planning` (follow_planner / mapless。**旧設計・現在は出力が届かない**) |
+| パラメータ       | `th_params` (registry.yaml から生成・監査)                   |
 | ナビゲーション   | Nav2 + SLAM Toolbox + robot_localization                     |
 | UI               | React + rosbridge WebSocket                                  |
+
+> **いま動いているデモは「手動教示 → 教示再生」**（`route_recorder` / `replay_runner`）。
+> 人物追従（`follow_planner` 系）は旧設計の名残で、`/cmd_vel_retreat` へ publish しており
+> **`twist_mux` がもう購読していないため出力は捨てられる**（[docs/architecture.md](docs/architecture.md)）。
 
 ---
 
@@ -28,41 +47,48 @@ ESP32 (駆動用, WiFi AP)          192.168.4.1   SSID: th-esp32-ap
 
 前提: 初回セットアップ([docs/setup.md](docs/setup.md))済み。詳細は [docs/operation.md](docs/operation.md)。
 
-```powershell
-# ① ロボット(ESP32)・ラズパイの電源 ON。PC を th-esp32-ap に接続して疎通確認
-ping 192.168.4.1    # ESP32 (AP)
-ping 192.168.4.2    # ラズパイ (LiDAR は systemd で自動起動)
-# 繋がらない → netsh wlan disconnect → connect (docs/network.md「復旧手順」)
+```bash
+# ① ロボット(ESP32・ラズパイにUSB接続)・ラズパイの電源 ON。PC をロボット AP に繋いで疎通確認
+#      ラズパイ 192.168.5.1   … AP 本体 + /scan 配信元 + pi_serial_relay (systemd で自動起動)
+#      PC       192.168.5.50  … esp32_bridge が :8766 で待ち受け (内蔵 Intel wlo1・固定IP)
+#      ESP32    (WiFi不使用)  … ラズパイへUSB-UART直結。pi_serial_relay 経由でPCと通信
+nmcli connection up th-rpi-ap-wlo1     # autoconnect 済みなら不要
+ping -c3 192.168.5.1                   # ラズパイ (AP 兼 LiDAR 兼 ESP32中継)
+ssh mirs2602@192.168.5.1 'systemctl is-active rpi-serial-relay'  # ESP32中継が動いているか
+# 繋がらない/activeでない → docs/network.md「復旧手順」
 
-# Wi-Fiのバックグラウンドスキャンの無効化
-
-netsh wlan set autoconfig enabled=no interface="<アダプタ名>"   # 走行前
-# netsh wlan set autoconfig enabled=yes interface="<アダプタ名>"  # 終了後
-
-
-# ② (推奨) WSL をクリーンに起動
-wsl --shutdown
+# ② インターネット側 (5GHz) が別アダプタで上がっていること
+nmcli -f NAME,DEVICE,STATE connection show --active
+ip route | head -1                     # default が net5g 側 (wlx...) であること
 ```
 
+> Windows + WSL2 の PC で動かす場合は ① を `netsh wlan connect name=th-rpi-ap ...` に
+> 読み替え、③ の前に `wsl --shutdown` でクリーンに起動する。
+
 ```bash
-# ③ WSL2 (Ubuntu) ターミナルで th_ws/ にて
+# ③ th_ws/ にて
 docker start th_robot
 docker exec -it th_robot bash
 
 # ④ コンテナ内で bringup (地図なし=SLAM モード。地図ありは map_yaml:=... を追加)
 cd /root/th_ws
-colcon build --symlink-install
+colcon build --symlink-install     # C++ 変更時のみ必須。Python のみの変更は --symlink-install で即反映
 source install/setup.bash
 ros2 launch th_bringup bringup.launch.py lidar_source:=network use_stub:=false
 # IMUあり
 ros2 launch th_bringup bringup.launch.py lidar_source:=network use_stub:=false imu_enabled:=true
+
+# 手動教示・教示再生デモ (feat/demo-teach-replay): slam_toolbox を mapping モードで
+# 起動し、教示中も再生中も map→odom を連続補正する。教示画面に地図と LiDAR 点群が出る。
+ros2 launch th_bringup bringup.launch.py lidar_source:=network use_stub:=false enable_route_slam:=true
 
 # 駆動系だけのキーボード操作テスト (LiDAR・安全監視なしの最小構成)
 ros2 launch th_bringup esp32_keyboard_test.launch.py
 
 # ⑤ 健全性確認: 起動直後の [FAULT] は 1〜2 分で全て [FAULT CLEARED] になる。
 #    ならないフォルトがあれば docs/network.md の復旧手順へ
-ros2 topic echo /robot/mode --once    # mode: 1 (IDLE) = 正常
+ros2 topic echo /robot/mode --once     # mode: 1 (IDLE) = 正常
+ros2 topic hz /scan_filtered           # network 時: 10Hz 出ていること。無音なら docs/network.md へ
 
 # ⑥ モード切替 (タブレット UI または CLI)
 ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
@@ -71,20 +97,24 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 
 うまくいかない時の早見表:
 
-| 症状                                     | 対処                                                                                           |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
+
+| 症状                                     | 対処                                                                                            |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | AP に繋がらない / ping 不可              | WiFi 切断→再接続。autoconfig 無効のままなら有効化してから →[docs/network.md](docs/network.md) |
 | LIDAR_LOST が消えない                    | ラズパイの rplidar 再起動・時刻ズレ確認 →[docs/network.md](docs/network.md)                    |
 | ESP32_DISCONNECTED が消えない            | PC の固定 IP・portproxy 残骸確認 →[docs/network.md](docs/network.md)                           |
-| CLI がトピックを見つけない・部分的に不通 | `docker restart th_robot` → だめなら `wsl --shutdown` からやり直し                        |
+| CLI がトピックを見つけない・部分的に不通 | `docker restart th_robot` → だめなら `wsl --shutdown` からやり直し                             |
 | 地図が生成されない/ノイズだらけ          | PC の時刻ズレ →[docs/setup.md §4](docs/setup.md)                                              |
 
 ---
 
 ## ドキュメント目次
 
-| やりたいこと                                             | ドキュメント                                         |
-| -------------------------------------------------------- | ---------------------------------------------------- |
+
+| やりたいこと                                             | ドキュメント                                          |
+| ---------------------------------------------------------- | ------------------------------------------------------- |
+| **実機を動かす（手動走行・教示・再生）**                 | **[docs/使い方.md](docs/使い方.md)**                  |
+| **今回の実機試験で何を確かめるか**                       | **[docs/試験項目.md](docs/試験項目.md)**              |
 | システムの完成形・実装状況を知る                         | [VISION.md](VISION.md)                                |
 | 新しい PC/ラズパイ/ESP32 で環境を作る                    | [docs/setup.md](docs/setup.md)                        |
 | ネットワークの仕組み・通信トラブルの復旧                 | [docs/network.md](docs/network.md)                    |
@@ -108,8 +138,9 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 
 ## モード / フォルト早見表
 
+
 | モード            | 番号 | 状態                           |
-| ----------------- | ---- | ------------------------------ |
+| ------------------- | ------ | -------------------------------- |
 | IDLE              | 1    | 静止待機(起動時の初期状態)     |
 | FOLLOWING         | 2    | 試験員追従(地図・Nav2 使用)    |
 | MOVING_TO_PANEL   | 3    | 配電盤へ移動中                 |
@@ -118,11 +149,12 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 | ESTOP             | 6    | 緊急停止(復帰は IDLE 経由のみ) |
 | FOLLOWING_MAPLESS | 7    | 試験員追従(地図・Nav2 不要)    |
 
-| フォルト                | 意味           | 詳細                                                             |
-| ----------------------- | -------------- | ---------------------------------------------------------------- |
+
+| フォルト              | 意味           | 詳細                                                              |
+| ----------------------- | ---------------- | ------------------------------------------------------------------- |
 | `LIDAR_LOST`          | /scan 途絶     | [docs/operation.md](docs/operation.md#モード早見表--フォルト対応) |
-| `ESP32_DISCONNECTED`  | ESP32 通信途絶 | 同上                                                             |
-| `PERSON_TRACKER_LOST` | 追従データ途絶 | 同上                                                             |
+| `ESP32_DISCONNECTED`  | ESP32 通信途絶 | 同上                                                              |
+| `PERSON_TRACKER_LOST` | 追従データ途絶 | 同上                                                              |
 
 フォルト発生時は twist_mux が即座にモーター出力をゼロにし、IDLE へ強制遷移する
 (検知〜物理停止は ESP32 ウォッチドッグ 600ms が最終保証)。
@@ -143,10 +175,14 @@ th-system/
     ├── src/                      # ROS2 ワークスペース
     │   ├── th_system_msgs/       # カスタム型 (RobotMode/PersonStatus/FaultStatus/WheelFeedback)
     │   ├── th_esp32_bridge/      # ESP32 ↔ ROS2 (WebSocket サーバー・オドメトリ)
-    │   ├── th_safety/            # safety_monitor + twist_mux 設定
-    │   ├── th_mode_manager/      # モード FSM
+    │   ├── th_safety/            # safety_monitor・obstacle_limiter・jog_gate + twist_mux 設定
+    │   ├── th_state/             # state_manager・connectivity_checker (現行 FSM)
+    │   ├── th_mode_manager/      # 旧 9 モード FSM (併存中)
+    │   ├── th_config_manager/    # config_manager・slam_control (地図セッション)
+    │   ├── th_params/            # registry.yaml → 各ノードのパラメータ生成・監査
     │   ├── th_perception/        # lidar_filter・person_predictor・tracker_bridge・stub
-    │   ├── th_planning/          # follow_planner(_mapless)・panel_navigator・teleop
+    │   ├── th_planning/          # route_recorder・replay_runner（教示再生）・panel_navigator・
+    │   │                         # summon_navigator・follow_planner(_mapless)（旧設計）・teleop
     │   │   └── th_planning/      # ROS2 非依存のコアロジック (pytest 対象)
     │   ├── th_calibration/       # オドメトリキャリブツール
     │   ├── th_description/       # URDF (base_link→laser_link 等の TF)

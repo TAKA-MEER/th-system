@@ -3,14 +3,16 @@
 esp32_keyboard_test.launch.py — ESP32以降のみのキーボード操作テスト
 ====================================================================
 LiDAR・安全監視・twist_mux を含まない最小構成。
-keyboard → /cmd_vel → esp32_bridge(WebSocketサーバー) → ESP32(WebSocketクライアント) → モーター
+keyboard → /cmd_vel → esp32_bridge(WebSocketサーバー) → pi_serial_relay(WebSocket
+クライアント、ラズパイ) → ESP32(シリアル) → モーター
+(2026-09-05: ESP32↔PC間の無線WebSocketを廃止し、ラズパイ経由のシリアル接続に
+変更。esp32_bridge 自体・このノードの起動方法は無変更。VISION.md 参照)
 
 使い方:
   ros2 launch th_bringup esp32_keyboard_test.launch.py
 
-ESP32側は th_ws/esp32/src/wifi_credentials.h の WS_SERVER_HOST/WS_SERVER_PORT
-で esp32_bridge のアドレスを指定する(config/params.yaml の ws_host/ws_port と
-一致させること)。
+esp32_bridge のアドレス(config/params.yaml の ws_host/ws_port)へは
+ラズパイの pi_serial_relay が接続しに来る(ESP32 自身はもう WiFi を使わない)。
 """
 import os
 from ament_index_python.packages import get_package_share_directory

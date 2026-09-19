@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- meas05 を今日のラズパイ AP 構成で回すための中立プロファイル。
+     既定の fastdds_profile.xml は ESP32-AP 構成（192.168.4.2）向けの
+     ユニキャスト初期ピアを持ち、今日の 192.168.5.x 構成では /scan を
+     発見できない。今日の構成ではマルチキャストで疎通しているため
+     （実機で /scan 10Hz 受信を確認済み）、何も制約しない profiles を渡す。 -->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+</profiles>

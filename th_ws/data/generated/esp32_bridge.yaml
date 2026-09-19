@@ -1,0 +1,6 @@
+esp32_bridge:
+  ros__parameters:
+    cmd_vel_stale_ms: 400
+    esp32_watchdog_ms: 600
+    esp32_ws_port: 8766
+    wheel_radius_scale: 1.0

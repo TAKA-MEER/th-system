@@ -21,36 +21,45 @@ PC でビルドした `firmware.bin` を scp し、ラズパイ上の esptool �
 ```bash
 # PC 側
 cd esp32 && pio run
-scp .pio/build/esp32dev/firmware.bin mirs2602@192.168.4.2:~/th_firmware.bin
+scp .pio/build/esp32dev/firmware.bin mirs2602@192.168.5.1:~/th_firmware.bin
 
 # ラズパイ側 (baud は 115200 — 460800 は失敗する)
 PYTHONPATH=~/esptool_env/site-packages python3 -m esptool \
   --port /dev/ttyUSB1 --baud 115200 --chip esp32 write-flash 0x10000 ~/th_firmware.bin
 ```
 
-> **⚠ 書き込み中は AP が落ちる** = ssh も切れる。ラズパイ側では `setsid nohup ... &` で
-> 実行し、完了後に各クライアントの WiFi 再接続([network.md](network.md))を行うこと。
+> **⚠ 書き込み中、ラズパイが `pi_serial_relay` でポートを掴んでいると esptool が
+> 失敗する。** `sudo systemctl stop rpi-serial-relay` してから書き込み、終わったら
+> `sudo systemctl start rpi-serial-relay`（再起動時に ESP32 側の起動バナーが
+> 1回出るのは正常。書き込み後の初回起動）。
 
 ### シリアルモニタの注意
 
-シリアルポートを開くと DTR/RTS の自動リセット回路で **ESP32 が再起動する(AP も落ちる)**。
-走行中・通信確認中はシリアルを開かない。開いた後は PC/ラズパイの WiFi 再接続が必要。
+シリアルポートを開くと DTR/RTS の自動リセット回路で **ESP32 が再起動する**。
+走行中・`pi_serial_relay` 稼働中はシリアルを開かない
+（書き込み時も esptool 自身が意図的にこれを使って ESP32 をブートローダへ
+落とすので問題ないが、**シリアルモニタと `pi_serial_relay` を同時に同じポートへ
+繋ごうとしない**こと。ポートは同時に1プロセスしか開けない）。
 
-## WiFi 設定 (`wifi_credentials.h`)
+## ラズパイ接続 (シリアル)
 
-`esp32/src/wifi_credentials.h.example` をコピーして作成(.gitignore 対象)。現行の AP 構成:
+**2026-09-05 以降、ESP32 は WiFi を一切使わない。** USB-UART でラズパイに直結し、
+ラズパイ上の `pi_serial_relay`（`th_ws/scripts/pi_serial_relay.py`）が PC の
+`esp32_bridge` へ WebSocket クライアントとして接続する（旧`wifi_credentials.h`は
+廃止・削除済み）。
 
-```cpp
-#define WIFI_AP_MODE      1
-#define AP_SSID           "th-esp32-ap"
-#define AP_PASSWORD       "<APパスワード>"   // WPA2 は 8 文字以上
+構成の詳細・切り分け手順・導入手順は [network.md](network.md)「ラズパイ:
+pi_serial_relay の導入」参照。要点だけ書くと:
 
-// esp32_bridge (PC 側) の待ち受け先。th_esp32_bridge/config/params.yaml の ws_port と一致させる
-#define WS_SERVER_HOST    "192.168.4.50"
-#define WS_SERVER_PORT    8766
-```
-
-`WIFI_AP_MODE 0` にすると従来の STA モード(既存ホットスポットに接続)に戻る。
+- ESP32 とラズパイの間は USB-UART 1本（フラッシュに使っているケーブルと同じ）。
+  ラズパイ側のポートは **`/dev/serial/by-id/...` で固定**すること
+  （RPLIDAR も同じラズパイの USB-UART で、列挙順は挿抜のたびに入れ替わりうる）。
+- プロトコルは既存の `ws_protocol.py` フレームを変更せず、シリアル区間だけに
+  `serial_framer.py`（sync `0xAA 0x55` + len + CRC8 のエンベロープ）を被せる。
+  ブート時 ASCII バナーが混ざっても resync して後続フレームを正しく拾う。
+- ウォッチドッグ(600ms)・E-Stop は無変更。WiFi 切断イベントで即座にモーターを
+  0 にする最適化（旧`onDisconnect`）はシリアルには対応する概念が無いため無くなったが、
+  従来からある `WATCHDOG_MS` ベースの独立監視がそのまま同じ保護を提供する。
 
 ## 通信仕様 (実装済みの挙動)
 
@@ -58,14 +67,11 @@ PYTHONPATH=~/esptool_env/site-packages python3 -m esptool \
   (停止中に止めると safety_monitor が ESP32_DISCONNECTED を誤検知し odom/TF も途絶するため)
 - `wheel_feedback` には左右速度に加えて**その速度を算出した制御周期 `dt_sec`** を載せる
   (2026-08-06、9→13 byte)。esp32_bridge はこれをオドメトリの積分区間として使う。
-  到着時刻から推測すると WiFi 遅延がそのまま yaw ドリフトになるため。
+  到着時刻から推測すると通信側の遅延がそのまま yaw ドリフトになるため。
   ブリッジは旧形式(9 byte)も受理するので、**書き込み前の個体でもそのまま動く**
   (公称周期にフォールバックするだけ)。ただし旋回精度の改善は書き込み後に効く
-- WebSocket は接続 5 分ごとに**定期リフレッシュ**(意図的な再接続)。ログの周期的な
-  接続/切断は正常。死活検知は 3 秒周期の ping/pong ハートビート
 - ウォッチドッグ: `wheel_cmd` が 600ms 途絶するとモーターを強制停止(ROS 非依存の最終安全。
-  esp32_bridge が 20Hz キープアライブで再送するため、TCP 再送タイムアウトを踏まえ
-  300ms→600ms に緩和。2026-08-05・`docs/architecture.md`「ESP32側の二重フェイルセーフ」)
+  シリアル化後も値は変更していない。2026-08-05・`docs/architecture.md`「ESP32側の二重フェイルセーフ」)
 
 ## 速度制御 (PID + フィードフォワード)
 
@@ -87,25 +93,29 @@ WATCHDOG_MS = 600           wheel_cmd 途絶 → モーター停止
 2. Kp: 振動しない範囲で上げる → Ki: 定常偏差を消す → Kd: 過渡応答
 3. 左右で別々に調整(旋回精度に影響)
 
-## 開発ボード単体での通信テスト (ROS2/Docker 不要)
+## 開発ボード単体での通信テスト (ROS2/Docker/ラズパイ 不要)
 
-モーター等を未配線のボード単体で、書き込みと WiFi/WebSocket 疎通を確認できる:
+モーター等を未配線のボード単体で、PCへ直接USB接続したまま書き込みとシリアル
+プロトコル疎通を確認できる(`pi_serial_relay` を経由しない、PC直結での単体テスト):
 
 ```bash
-# 1. PC 側 (websockets だけ pip で)
-pip install websockets
-python th_ws/esp32/tools/ws_test_server.py --send-test-cmd
+# 1. ESP32 側
+cd th_ws/esp32 && pio run --target upload
 
-# 2. ESP32 側
-cd th_ws/esp32 && pio run --target upload && pio device monitor
+# 2. PC 側 (pyserial だけ pip で)
+pip install pyserial
+python3 th_ws/esp32/tools/serial_test.py /dev/ttyUSB0 --send-test-cmd
 ```
 
-- **書き込み確認**: 起動バナー(`TH System ESP32 Firmware (WebSocket)` + ビルド日時)
-- **通信確認**: ESP32 側に `[WS] esp32_bridge に接続しました`、サーバー側に
-  `[受信] ESTOP_HW ...`。`--send-test-cmd` で PC→ESP32 方向(`[WHEEL_CMD] ...`)も確認可
+- **書き込み確認**: 起動バナー(`TH System ESP32 Firmware (Serial)` + ビルド日時)を
+  そのまま画面に流す(バイナリフレームに混じったASCIIノイズとして表示されるだけで無害)
+- **通信確認**: `[受信] WHEEL_FEEDBACK ...` / `ESTOP_HW ...` がデコードされて表示される。
+  `--send-test-cmd` で PC→ESP32 方向(`WHEEL_CMD`)も確認可(速度0を送るだけなので安全)
 - **注意**: E-Stop スイッチ未配線だと GPIO34 がフローティングになり `ESTOP_HW` が
   不安定になりうる(通信テスト自体には影響なし)。安定させたい場合のみ一時的に
   `config.h` の `ESTOP_BENCH_TEST_BYPASS` を定義し、試験後は必ず戻す
+- ラズパイ経由(`pi_serial_relay` + `esp32_bridge`)の最終疎通確認は
+  [network.md](network.md)「ラズパイ: pi_serial_relay の導入」の手順で別途行うこと
 
 ## E-Stop 配線
 

@@ -1,0 +1,85 @@
+{
+  "AT_HOME": [
+    "PANEL_NAV",
+    "SUMMON",
+    "HOME_NAV",
+    "IDLE"
+  ],
+  "AT_PANEL": [
+    "PANEL_NAV",
+    "SUMMON",
+    "HOME_NAV",
+    "IDLE"
+  ],
+  "CALIB": [
+    "OPCHECK",
+    "IDLE"
+  ],
+  "CARRY": [],
+  "ESTOP": [
+    "IDLE"
+  ],
+  "FOLLOW": [
+    "IDLE"
+  ],
+  "HOME_NAV": [
+    "AT_HOME",
+    "IDLE"
+  ],
+  "IDLE": [
+    "FOLLOW",
+    "MANUAL",
+    "TEACH_FOLLOW",
+    "TEACH_MANUAL",
+    "REPLAY",
+    "LINE",
+    "LEASH",
+    "PREP",
+    "AT_HOME",
+    "PANEL_NAV",
+    "SUMMON",
+    "HOME_NAV",
+    "OPCHECK",
+    "CALIB"
+  ],
+  "INIT": [
+    "IDLE"
+  ],
+  "LEASH": [
+    "IDLE"
+  ],
+  "LINE": [
+    "IDLE"
+  ],
+  "MANUAL": [
+    "IDLE",
+    "OPCHECK",
+    "CALIB"
+  ],
+  "OPCHECK": [
+    "CALIB",
+    "IDLE"
+  ],
+  "PANEL_NAV": [
+    "AT_PANEL",
+    "AT_HOME",
+    "IDLE"
+  ],
+  "PREP": [
+    "IDLE"
+  ],
+  "REPLAY": [
+    "IDLE"
+  ],
+  "SUMMON": [
+    "AT_PANEL",
+    "AT_HOME",
+    "IDLE"
+  ],
+  "TEACH_FOLLOW": [
+    "IDLE"
+  ],
+  "TEACH_MANUAL": [
+    "IDLE"
+  ]
+}

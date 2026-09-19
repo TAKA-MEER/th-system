@@ -1,0 +1,326 @@
+# Copyright (c) 2018 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ============================================================
+# このファイルは nav2_bringup (ros-humble-nav2-bringup パッケージ)
+# 付属の launch/navigation_launch.py の**ローカルフォーク**（2026-08-27。
+# 元は https://github.com/ros-navigation/navigation2/blob/humble/
+# nav2_bringup/launch/navigation_launch.py。取得日 2026-08-27 時点の
+# humble ブランチ HEAD。Dockerfile は `ros-humble-nav2-bringup` をバージョン
+# 指定なしで apt install しているため、apt パッケージの正確なビルド日時・
+# コミットハッシュはこのリポジトリからは特定できない——次に nav2 を上げる際は
+# 上記 URL の履歴と本ファイルの diff を取り直すこと）。
+#
+# **これは保守負債（DetailedDesign-open.md N-20）。**nav2_bringup を
+# アップデートしても本ファイルは自動追従しない。behavior_server /
+# controller_server 周りの実装が変わったら手動で追いつかせる必要がある。
+#
+# フォークした理由（DetailedDesign-open.md N-17）: nav2_bringup 版は
+# behavior_server と velocity_smoother が `/cmd_vel` に**直接** publish する。
+# `twist_mux`/`obstacle_limiter` を通らないため CLAUDE.md の不変ルール
+# 「`/cmd_vel` に直接 publish するノードを追加してはいけない」に反し、
+# `/safety/estop`・`/safety/fault_lock`・obstacle_limiter のすべてを迂回する。
+# nav2 側にはこれを YAML パラメータで直す手段が無い（behavior_server の
+# `cmd_vel` publisher はトピック名がハードコードで、
+# nav2_behaviors/include/nav2_behaviors/timed_behavior.hpp の configure() に
+# `create_publisher<Twist>("cmd_vel", 1)` と書かれているだけ。ROS パラメータでは
+# 変えられないことを humble ブランチのソースで確認済み）。launch 側の remap
+# だけが有効な手段だが、`IncludeLaunchDescription` に remappings を注入する
+# 標準の口は無く、`launch_ros.actions.SetRemap` で外側から被せる方法は
+# 「スコープ内の全ノードの同名remapを上書きする」仕様（launch_ros 本体の
+# docstring に明記）なので、同じスコープに同居する controller_server の
+# 正しい remap（`cmd_vel` → `cmd_vel_nav`）まで巻き込んで壊してしまい使えない。
+# 消去法でこのファイルをフォークし、該当ノードの remappings に直接手を入れる
+# のが唯一の確実な方法という判断（実装管理者からの指示、2026-08-27）。
+#
+# 元ファイルからの変更点は次の2つだけ:
+#
+#   1. behavior_server の remappings に `('cmd_vel', 'cmd_vel_behavior')` を追加。
+#      `/cmd_vel_behavior` は th_safety/config/twist_mux.yaml の priority 20
+#      入力（WP-SAFE-03 で旧 `/cmd_vel_retreat` から改名したもの）。
+#
+#   2. velocity_smoother をまるごと削除（lifecycle_nodes・load_nodes・
+#      load_composable_nodes の3箇所すべてから）。このノードは
+#      `remappings + [('cmd_vel', 'cmd_vel_nav'), ('cmd_vel_smoothed', 'cmd_vel')]`
+#      という remap を持ち、controller_server の出力（`/cmd_vel_nav`）を
+#      横取りして**平滑化した上で `/cmd_vel`（最終段。twist_mux 経由の出力と
+#      同じ名前）に直接 publish する**。CLAUDE.md の速度指令の流れの図
+#      （「Nav2 controller_server ─→ /cmd_vel_nav」で終わり、smoother の記載は
+#      無い）にも存在しない、この project 独自の意図しないノードであり、
+#      実起動で `/cmd_vel` の publisher が 5 件（behavior_server 4 + 名前不明 1）
+#      観測されたうちの「名前不明」1件はこのノードである可能性が高いと判断した
+#      （静的なソース解析からの推定であり、Docker 実起動での確認はしていない。
+#      実装管理者が次回の実機/Gazebo 起動で `/cmd_vel` の publisher 数が
+#      1件（obstacle_limiter のみ）に減ることを確認すること）。
+#      削除してもナビゲーションの安全性は変わらない
+#      （このプロジェクトの最終段の速度平滑化は obstacle_limiter が担う設計で、
+#      controller_server の生出力をそのまま `/cmd_vel_nav` として twist_mux へ
+#      渡す構成が元々の意図だった。twist_mux の入力は変わらない）。
+#      **削除は DetailedDesign-safety.md §7.1「加減速はファームウェアで鈍らせる」
+#      と整合する**——加減速を鈍らせる権威は ESP32 ファームの
+#      `TARGET_RAMP_ACCEL_MPS2` であり、これはジョグ・Nav2・挙動ノードの
+#      **すべての速度源**に効く設計（§7.1 の表）。velocity_smoother は
+#      同じ役割を PC 側でも冗長にやろうとするもので、しかも `/cmd_vel` を
+#      直接叩いて安全チェーンを丸ごと迂回する。冗長な上に安全チェーンを
+#      迂回するので削除一択と判断した。
+#
+# nav2 のバージョンが上がって上流の navigation_launch.py が変わった場合は
+# このファイルも手動で追従させる必要がある（自動追従の仕組みは無い。N-20）。
+# ============================================================
+
+import os
+
+from ament_index_python.packages import get_package_share_directory
+
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable
+from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch_ros.actions import LoadComposableNodes
+from launch_ros.actions import Node
+from launch_ros.descriptions import ComposableNode, ParameterFile
+from nav2_common.launch import RewrittenYaml
+
+
+def generate_launch_description():
+    # Get the launch directory
+    bringup_dir = get_package_share_directory('nav2_bringup')
+
+    namespace = LaunchConfiguration('namespace')
+    use_sim_time = LaunchConfiguration('use_sim_time')
+    autostart = LaunchConfiguration('autostart')
+    params_file = LaunchConfiguration('params_file')
+    use_composition = LaunchConfiguration('use_composition')
+    container_name = LaunchConfiguration('container_name')
+    container_name_full = (namespace, '/', container_name)
+    use_respawn = LaunchConfiguration('use_respawn')
+    log_level = LaunchConfiguration('log_level')
+
+    # WP-SAFE-03 / N-17: velocity_smoother は削除した（上のファイル冒頭コメント参照）。
+    lifecycle_nodes = ['controller_server',
+                       'smoother_server',
+                       'planner_server',
+                       'behavior_server',
+                       'bt_navigator',
+                       'waypoint_follower']
+
+    # Map fully qualified names to relative ones so the node's namespace can be prepended.
+    # In case of the transforms (tf), currently, there doesn't seem to be a better alternative
+    # https://github.com/ros/geometry2/issues/32
+    # https://github.com/ros/robot_state_publisher/pull/30
+    # TODO(orduno) Substitute with `PushNodeRemapping`
+    #              https://github.com/ros2/launch_ros/issues/56
+    remappings = [('/tf', 'tf'),
+                  ('/tf_static', 'tf_static')]
+
+    # Create our own temporary YAML files that include substitutions
+    param_substitutions = {
+        'use_sim_time': use_sim_time,
+        'autostart': autostart}
+
+    configured_params = ParameterFile(
+        RewrittenYaml(
+            source_file=params_file,
+            root_key=namespace,
+            param_rewrites=param_substitutions,
+            convert_types=True),
+        allow_substs=True)
+
+    stdout_linebuf_envvar = SetEnvironmentVariable(
+        'RCUTILS_LOGGING_BUFFERED_STREAM', '1')
+
+    declare_namespace_cmd = DeclareLaunchArgument(
+        'namespace',
+        default_value='',
+        description='Top-level namespace')
+
+    declare_use_sim_time_cmd = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='false',
+        description='Use simulation (Gazebo) clock if true')
+
+    declare_params_file_cmd = DeclareLaunchArgument(
+        'params_file',
+        default_value=os.path.join(bringup_dir, 'params', 'nav2_params.yaml'),
+        description='Full path to the ROS2 parameters file to use for all launched nodes')
+
+    declare_autostart_cmd = DeclareLaunchArgument(
+        'autostart', default_value='true',
+        description='Automatically startup the nav2 stack')
+
+    declare_use_composition_cmd = DeclareLaunchArgument(
+        'use_composition', default_value='False',
+        description='Use composed bringup if True')
+
+    declare_container_name_cmd = DeclareLaunchArgument(
+        'container_name', default_value='nav2_container',
+        description='the name of conatiner that nodes will load in if use composition')
+
+    declare_use_respawn_cmd = DeclareLaunchArgument(
+        'use_respawn', default_value='False',
+        description='Whether to respawn if a node crashes. Applied when composition is disabled.')
+
+    declare_log_level_cmd = DeclareLaunchArgument(
+        'log_level', default_value='info',
+        description='log level')
+
+    load_nodes = GroupAction(
+        condition=IfCondition(PythonExpression(['not ', use_composition])),
+        actions=[
+            Node(
+                package='nav2_controller',
+                executable='controller_server',
+                output='screen',
+                respawn=use_respawn,
+                respawn_delay=2.0,
+                parameters=[configured_params],
+                arguments=['--ros-args', '--log-level', log_level],
+                remappings=remappings + [('cmd_vel', 'cmd_vel_nav')]),
+            Node(
+                package='nav2_smoother',
+                executable='smoother_server',
+                name='smoother_server',
+                output='screen',
+                respawn=use_respawn,
+                respawn_delay=2.0,
+                parameters=[configured_params],
+                arguments=['--ros-args', '--log-level', log_level],
+                remappings=remappings),
+            Node(
+                package='nav2_planner',
+                executable='planner_server',
+                name='planner_server',
+                output='screen',
+                respawn=use_respawn,
+                respawn_delay=2.0,
+                parameters=[configured_params],
+                arguments=['--ros-args', '--log-level', log_level],
+                remappings=remappings),
+            Node(
+                package='nav2_behaviors',
+                executable='behavior_server',
+                name='behavior_server',
+                output='screen',
+                respawn=use_respawn,
+                respawn_delay=2.0,
+                parameters=[configured_params],
+                arguments=['--ros-args', '--log-level', log_level],
+                # WP-SAFE-03 / N-17: 既定は 'cmd_vel'（安全チェーンを迂回する）。
+                # twist_mux の priority 20 入力 '/cmd_vel_behavior' へ remap する。
+                remappings=remappings + [('cmd_vel', 'cmd_vel_behavior')]),
+            Node(
+                package='nav2_bt_navigator',
+                executable='bt_navigator',
+                name='bt_navigator',
+                output='screen',
+                respawn=use_respawn,
+                respawn_delay=2.0,
+                parameters=[configured_params],
+                arguments=['--ros-args', '--log-level', log_level],
+                remappings=remappings),
+            Node(
+                package='nav2_waypoint_follower',
+                executable='waypoint_follower',
+                name='waypoint_follower',
+                output='screen',
+                respawn=use_respawn,
+                respawn_delay=2.0,
+                parameters=[configured_params],
+                arguments=['--ros-args', '--log-level', log_level],
+                remappings=remappings),
+            # WP-SAFE-03 / N-17: velocity_smoother は削除（ファイル冒頭コメント参照）。
+            Node(
+                package='nav2_lifecycle_manager',
+                executable='lifecycle_manager',
+                name='lifecycle_manager_navigation',
+                output='screen',
+                arguments=['--ros-args', '--log-level', log_level],
+                parameters=[{'use_sim_time': use_sim_time},
+                            {'autostart': autostart},
+                            {'node_names': lifecycle_nodes}]),
+        ]
+    )
+
+    load_composable_nodes = LoadComposableNodes(
+        condition=IfCondition(use_composition),
+        target_container=container_name_full,
+        composable_node_descriptions=[
+            ComposableNode(
+                package='nav2_controller',
+                plugin='nav2_controller::ControllerServer',
+                name='controller_server',
+                parameters=[configured_params],
+                remappings=remappings + [('cmd_vel', 'cmd_vel_nav')]),
+            ComposableNode(
+                package='nav2_smoother',
+                plugin='nav2_smoother::SmootherServer',
+                name='smoother_server',
+                parameters=[configured_params],
+                remappings=remappings),
+            ComposableNode(
+                package='nav2_planner',
+                plugin='nav2_planner::PlannerServer',
+                name='planner_server',
+                parameters=[configured_params],
+                remappings=remappings),
+            ComposableNode(
+                package='nav2_behaviors',
+                plugin='behavior_server::BehaviorServer',
+                name='behavior_server',
+                parameters=[configured_params],
+                # WP-SAFE-03 / N-17: load_nodes 側と同じ理由で remap する。
+                remappings=remappings + [('cmd_vel', 'cmd_vel_behavior')]),
+            ComposableNode(
+                package='nav2_bt_navigator',
+                plugin='nav2_bt_navigator::BtNavigator',
+                name='bt_navigator',
+                parameters=[configured_params],
+                remappings=remappings),
+            ComposableNode(
+                package='nav2_waypoint_follower',
+                plugin='nav2_waypoint_follower::WaypointFollower',
+                name='waypoint_follower',
+                parameters=[configured_params],
+                remappings=remappings),
+            # WP-SAFE-03 / N-17: velocity_smoother は削除（ファイル冒頭コメント参照）。
+            ComposableNode(
+                package='nav2_lifecycle_manager',
+                plugin='nav2_lifecycle_manager::LifecycleManager',
+                name='lifecycle_manager_navigation',
+                parameters=[{'use_sim_time': use_sim_time,
+                             'autostart': autostart,
+                             'node_names': lifecycle_nodes}]),
+        ],
+    )
+
+    # Create the launch description and populate
+    ld = LaunchDescription()
+
+    # Set environment variables
+    ld.add_action(stdout_linebuf_envvar)
+
+    # Declare the launch options
+    ld.add_action(declare_namespace_cmd)
+    ld.add_action(declare_use_sim_time_cmd)
+    ld.add_action(declare_params_file_cmd)
+    ld.add_action(declare_autostart_cmd)
+    ld.add_action(declare_use_composition_cmd)
+    ld.add_action(declare_container_name_cmd)
+    ld.add_action(declare_use_respawn_cmd)
+    ld.add_action(declare_log_level_cmd)
+    # Add the actions to launch all of the navigation nodes
+    ld.add_action(load_nodes)
+    ld.add_action(load_composable_nodes)
+
+    return ld

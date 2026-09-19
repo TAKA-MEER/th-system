@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- 切り分け用: ラズパイの /scan を**有線** (10.42.0.2) から購読する。
+     ESP32 の SoftAP に LiDAR の中継負荷を掛けない条件を作るため。 -->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <participant profile_name="th_wired_peers" is_default_profile="true">
+    <rtps><builtin><initialPeersList>
+      <locator><udpv4><address>10.42.0.2</address></udpv4></locator>
+    </initialPeersList></builtin></rtps>
+  </participant>
+</profiles>

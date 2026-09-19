@@ -15,7 +15,8 @@
 # ============================================================
 import rclpy
 from rclpy.node import Node
-from th_system_msgs.msg import PersonStatus
+from geometry_msgs.msg import Point
+from th_system_msgs.msg import PersonStatus, PersonTargets
 import math
 
 
@@ -44,6 +45,7 @@ class PersonTrackerStub(Node):
         rate_hz            = self.get_parameter('publish_rate_hz').value
 
         self._pub = self.create_publisher(PersonStatus, '/person/status', 10)
+        self._pub_targets = self.create_publisher(PersonTargets, '/person/targets', 1)
 
         period = 1.0 / rate_hz
         self._timer = self.create_timer(period, self._publish)
@@ -90,6 +92,21 @@ class PersonTrackerStub(Node):
         msg.lost_reason     = lost_reason
 
         self._pub.publish(msg)
+
+        # WP-ONSITE-F1: stub も /person/targets を出す（候補は常にこの1人・選択中）
+        tg = PersonTargets()
+        tg.header.stamp    = now.to_msg()
+        tg.header.frame_id = 'base_link'
+        p = Point()
+        p.x = x
+        p.y = y
+        p.z = 0.0
+        tg.candidates.append(p)
+        tg.selected_index = 0 if not is_lost else -1
+        tg.confidence     = 0.0 if is_lost else 0.9
+        tg.is_lost        = is_lost
+        tg.lost_reason    = lost_reason
+        self._pub_targets.publish(tg)
 
 
 def main(args=None):

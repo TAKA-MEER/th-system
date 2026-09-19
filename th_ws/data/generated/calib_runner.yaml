@@ -1,0 +1,4 @@
+calib_runner:
+  ros__parameters:
+    v_calib: 0.15
+    wheel_radius_scale_max_dev: 0.1

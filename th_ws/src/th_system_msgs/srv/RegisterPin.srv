@@ -1,0 +1,11 @@
+string kind
+string name
+string method     # "TWO_POINT"/"ROBOT_POSE"/"PLANE"/"MAP_TAP"
+float64 tap1_x    # method="MAP_TAP" のときだけ使用。地図タップ①=ゴール位置 (map frame, m)
+float64 tap1_y
+float64 tap2_x    # ②=向きを与えるためだけの点（保存されない）(map frame, m)
+float64 tap2_y
+---
+bool    success
+Pin     pin
+string  message

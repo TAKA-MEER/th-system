@@ -1,0 +1,6 @@
+wait_clear_gate:
+  ros__parameters:
+    clear_distance_m: 0.575
+    clear_hold_ms: 1000
+    clear_margin_m: 0.3
+    clear_timeout_ms: 5000

@@ -1,0 +1,369 @@
+{
+  "vectors": [
+    {
+      "angle_rad": -3.141592653589793,
+      "expected_index": 0,
+      "name": "full_angle_min_exact",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 360
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": 3.12413936106985,
+      "expected_index": 359,
+      "name": "full_angle_max_exact",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 360
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": -1.5707963267948966,
+      "expected_index": 90,
+      "name": "full_midpoint_grid",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 360
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": -2.960078411382383,
+      "expected_index": 10,
+      "name": "full_between_grid_floor_low",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 360
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": 6.283185307179586,
+      "expected_index": 180,
+      "name": "full_equivalent_angle_ccw_wrap",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 360
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": -1.5707963267948966,
+      "expected_index": 0,
+      "name": "half_angle_min_exact",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": 1.5707963267948966,
+      "expected_index": 180,
+      "name": "half_angle_max_exact",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": 1.658062789394613,
+      "expected_index": null,
+      "name": "half_out_of_range_beyond_max",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": -1.658062789394613,
+      "expected_index": null,
+      "name": "half_out_of_range_before_min",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": 2.9670597283903604,
+      "expected_index": null,
+      "name": "half_out_of_range_far",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": -3.141592653589793,
+      "expected_index": 0,
+      "name": "rplidar_angle_min_exact",
+      "scan": {
+        "angle_increment": 0.004363323129985824,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 1440
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": 3.1372293304598076,
+      "expected_index": 1439,
+      "name": "rplidar_angle_max_exact",
+      "scan": {
+        "angle_increment": 0.004363323129985824,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 1440
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": 1.221730476396031,
+      "expected_index": 1000,
+      "name": "rplidar_grid_1000",
+      "scan": {
+        "angle_increment": 0.004363323129985824,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 1440
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": 3.1372293304598076,
+      "expected_index": 1439,
+      "name": "rplidar_grid_1439",
+      "scan": {
+        "angle_increment": 0.004363323129985824,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 1440
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": 1.5707963267948966,
+      "expected_index": 0,
+      "name": "neg_inc_angle_min_exact",
+      "scan": {
+        "angle_increment": -0.017453292519943295,
+        "angle_min": 1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": -1.5707963267948966,
+      "expected_index": 180,
+      "name": "neg_inc_angle_max_exact",
+      "scan": {
+        "angle_increment": -0.017453292519943295,
+        "angle_min": 1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": 0.7853981633974483,
+      "expected_index": 45,
+      "name": "neg_inc_grid_45",
+      "scan": {
+        "angle_increment": -0.017453292519943295,
+        "angle_min": 1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": -2.9670597283903604,
+      "expected_index": null,
+      "name": "neg_inc_out_of_range",
+      "scan": {
+        "angle_increment": -0.017453292519943295,
+        "angle_min": 1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "angle_rad": 0.0,
+      "expected_index": null,
+      "name": "empty_ranges",
+      "scan": {
+        "angle_increment": 0.01,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 0
+      },
+      "type": "angle_to_index"
+    },
+    {
+      "a0_deg": 170.0,
+      "a1_deg": -170.0,
+      "expected_i0": 350,
+      "expected_i1": 10,
+      "name": "full_wraparound_sector",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 360
+      },
+      "type": "sector_indices"
+    },
+    {
+      "a0_deg": 310.0,
+      "a1_deg": 40.0,
+      "expected_i0": 130,
+      "expected_i1": 220,
+      "name": "full_non_wraparound_front_sector",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 360
+      },
+      "type": "sector_indices"
+    },
+    {
+      "a0_deg": 40.0,
+      "a1_deg": 130.0,
+      "expected_i0": 220,
+      "expected_i1": 310,
+      "name": "full_normal_contiguous_sector",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 360
+      },
+      "type": "sector_indices"
+    },
+    {
+      "a0_deg": 90.0,
+      "a1_deg": 90.0,
+      "expected_i0": 270,
+      "expected_i1": 270,
+      "name": "full_zero_width_sector",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 360
+      },
+      "type": "sector_indices"
+    },
+    {
+      "a0_deg": -180.0,
+      "a1_deg": 179.0,
+      "expected_i0": 0,
+      "expected_i1": 359,
+      "name": "full_full_min_to_max",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 360
+      },
+      "type": "sector_indices"
+    },
+    {
+      "a0_deg": 0.0,
+      "a1_deg": 170.0,
+      "expected_i0": 90,
+      "expected_i1": null,
+      "name": "half_partial_out_of_range",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "sector_indices"
+    },
+    {
+      "a0_deg": 170.0,
+      "a1_deg": -170.0,
+      "expected_i0": null,
+      "expected_i1": null,
+      "name": "half_both_out_of_range",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "sector_indices"
+    },
+    {
+      "a0_deg": -30.0,
+      "a1_deg": 30.0,
+      "expected_i0": 60,
+      "expected_i1": 120,
+      "name": "half_within_range",
+      "scan": {
+        "angle_increment": 0.017453292519943295,
+        "angle_min": -1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "sector_indices"
+    },
+    {
+      "a0_deg": 175.0,
+      "a1_deg": -175.0,
+      "expected_i0": 1420,
+      "expected_i1": 20,
+      "name": "rplidar_wraparound_sector",
+      "scan": {
+        "angle_increment": 0.004363323129985824,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 1440
+      },
+      "type": "sector_indices"
+    },
+    {
+      "a0_deg": 10.0,
+      "a1_deg": 50.0,
+      "expected_i0": 760,
+      "expected_i1": 920,
+      "name": "rplidar_normal_sector",
+      "scan": {
+        "angle_increment": 0.004363323129985824,
+        "angle_min": -3.141592653589793,
+        "num_ranges": 1440
+      },
+      "type": "sector_indices"
+    },
+    {
+      "a0_deg": -30.0,
+      "a1_deg": 30.0,
+      "expected_i0": 120,
+      "expected_i1": 60,
+      "name": "neg_inc_within_range",
+      "scan": {
+        "angle_increment": -0.017453292519943295,
+        "angle_min": 1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "sector_indices"
+    },
+    {
+      "a0_deg": 170.0,
+      "a1_deg": -170.0,
+      "expected_i0": null,
+      "expected_i1": null,
+      "name": "neg_inc_out_of_range_pair",
+      "scan": {
+        "angle_increment": -0.017453292519943295,
+        "angle_min": 1.5707963267948966,
+        "num_ranges": 181
+      },
+      "type": "sector_indices"
+    }
+  ]
+}

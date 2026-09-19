@@ -1,5 +1,10 @@
 # /etc/udev/rules.d/99-th-robot.rules
 #
+# 2026-09-05 時点: このファイルは実機ラズパイに未導入(/etc/udev/rules.d/ 確認済み)。
+# rplidar.service・pi_serial_relay は代わりに /dev/serial/by-id/... を直接指定する
+# 運用にした(docs/setup.md §6-1・docs/network.md「ラズパイ: pi_serial_relay の導入」)。
+# 導入すれば /dev/lidar・/dev/esp32 のシンボリックリンクとして併用できるが必須ではない。
+#
 # インストール手順:
 #   sudo cp udev/99-th-robot.rules /etc/udev/rules.d/
 #   sudo udevadm control --reload-rules

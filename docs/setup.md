@@ -8,7 +8,7 @@
 ## 目次
 
 1. [PC: WSL2 + Docker Engine](#1-pc-wsl2--docker-engine)
-2. [PC: WiFi (ESP32 AP への接続)](#2-pc-wifi-esp32-ap-への接続)
+2. [PC: WiFi (ラズパイ AP への接続)](#2-pc-wifi-ラズパイ-ap-への接続)
 3. [PC: Windows Firewall](#3-pc-windows-firewall)
 4. [PC: 時刻同期](#4-pc-時刻同期)
 5. [PC: コンテナのビルド](#5-pc-コンテナのビルド)
@@ -83,39 +83,68 @@ docker compose version
 
 ---
 
-## 2. PC: WiFi (ESP32 AP への接続)
+## 2. PC: WiFi (ラズパイ AP への接続)
 
-ネットワーク全体像は [network.md](network.md) 参照。PC は物理 WiFi アダプタで
-SSID `th-esp32-ap` に接続する(モバイルホットスポット等の仮想アダプタは
-mirrored networking の対象外なので不可)。
+ネットワーク全体像は [network.md](network.md) 参照。**現行はラズパイが AP**
+(SSID `th-rpi-ap` / 2.4GHz)、PC はその子機（2026-09-05 以降、ESP32 自体は
+WiFi を使わずラズパイへシリアル直結。この WiFi 区間は `/scan` に加えて
+ラズパイの `pi_serial_relay` → PC `esp32_bridge` の通信も運ぶ）。PC は
+**物理の内蔵 WiFi カード**で繋ぐ(USB ドングルは実測で品質が出ない。network.md の対照実験)。
 
-### 2-1. プロファイル設定 (管理者 PowerShell)
+AP 側(ラズパイ)の構築は `th_ws/scripts/rpi_setup_ap.sh`。
+WPA2/CCMP 固定・**PMF (802.11w) 無効**が必須(ラズパイの `pi_serial_relay` が
+接続要求すら送れなくなる。旧ESP32直結時代からの制約を踏襲)。
+
+### 2-1. 接続プロファイル (Linux / NetworkManager)
+
+ロボット回線は**固定 IP `192.168.5.50/24`** にする。ラズパイの
+`pi_serial_relay`(`--ws-host` 既定値)がこの IP 決め打ちで esp32_bridge に
+接続しに来るため必須。
+
+```bash
+nmcli connection add type wifi ifname wlo1 con-name th-rpi-ap-wlo1 ssid th-rpi-ap
+nmcli connection modify th-rpi-ap-wlo1 \
+  wifi-sec.key-mgmt wpa-psk wifi-sec.psk '<APパスフレーズ>' \
+  ipv4.method manual ipv4.addresses 192.168.5.50/24 \
+  ipv4.never-default yes ipv6.method disabled \
+  connection.autoconnect yes connection.autoconnect-priority 10 \
+  802-11-wireless.powersave 2
+nmcli connection up th-rpi-ap-wlo1
+```
+
+- `ipv4.never-default yes` — ロボット AP はインターネットを持たないので、
+  既定経路を奪わせない。
+- `802-11-wireless.powersave 2`(無効) — Ubuntu は
+  `/etc/NetworkManager/conf.d/*powersave*` で省電力 ON が既定。有効のままだと
+  受信ギャップが伸びる。
+- `ifname` は環境で異なる。`nmcli device status` で内蔵カードの名前を確認する。
+
+### 2-2. インターネットは別アダプタ (5GHz) に逃がす
+
+**PC が 2.4GHz を 2 枚同時に使う状態を作らないこと**(機内共存干渉でロボット回線が
+劣化する)。インターネットは 5GHz 専用アダプタで別 AP に繋ぎ、既定経路はそちらに置く。
+
+```bash
+nmcli device wifi connect '<5GHz の SSID>' password '<パスフレーズ>' ifname wlx........ name net5g
+ip route | head -1        # default が 5GHz 側になっていること
+```
+
+### 2-3. Windows + WSL2 の PC で動かす場合
+
+物理 WiFi アダプタで `th-rpi-ap` に接続する(モバイルホットスポット等の仮想アダプタは
+mirrored networking の対象外なので不可)。管理者 PowerShell で:
 
 ```powershell
-# プライベートプロファイルに (Firewall 前提)
 Set-NetConnectionProfile -InterfaceAlias "<アダプタ名>" -NetworkCategory Private
+netsh wlan set profileparameter name=th-rpi-ap connectionmode=auto
 
-# 自動接続に (既定の「手動接続」だと瞬断後に再接続されず数分間通信不能になる)
-netsh wlan set profileparameter name=th-esp32-ap connectionmode=auto
-```
-
-### 2-2. 固定 IP 192.168.4.50 (必須・管理者 PowerShell)
-
-ESP32 の SoftAP DHCP は再起動のたびにリースがリセットされ、PC の IP が変わりうる。
-ESP32 ファームは `192.168.4.50` に接続しに来るため固定必須:
-
-```powershell
+# 固定 IP 192.168.5.50 (ラズパイの pi_serial_relay がこの IP に繋ぎに来るため必須)
 Get-NetIPAddress -InterfaceAlias "<アダプタ名>" -AddressFamily IPv4 | Remove-NetIPAddress -Confirm:$false
-New-NetIPAddress -InterfaceAlias "<アダプタ名>" -IPAddress 192.168.4.50 -PrefixLength 24 -DefaultGateway 192.168.4.1
+New-NetIPAddress -InterfaceAlias "<アダプタ名>" -IPAddress 192.168.5.50 -PrefixLength 24
 ```
 
-実行直後に WiFi が切断されることがある。`netsh wlan show interfaces` で確認し、
-切れていたら `netsh wlan connect name=th-esp32-ap interface="<アダプタ名>"` で再接続。
-
-### 2-3. バックグラウンドスキャン停止 (走行時のみ・管理者 PowerShell)
-
-Windows はインターネットの無い AP 接続中、**約60秒周期のバックグラウンドスキャンで WiFi を微断**させる
-(→ WebSocket が切断され再接続に数十秒かかる)。走行時は止める:
+Windows はインターネットの無い AP 接続中、**約60秒周期のバックグラウンドスキャンで
+WiFi を微断**させる。走行時は止める:
 
 ```powershell
 netsh wlan set autoconfig enabled=no interface="<アダプタ名>"   # 走行前
@@ -124,16 +153,14 @@ netsh wlan set autoconfig enabled=yes interface="<アダプタ名>"  # 終了後
 
 > **⚠ 重要**: この設定は PC 再起動後も残り、**無効のままだと WiFi の再接続自体ができない**
 > (`接続できません。アダプターで WLAN 自動構成が無効になっています`)。
-> 必ず「① enabled=yes → ② th-esp32-ap に接続 → ③ enabled=no」の順で行うこと。
+> 必ず「① enabled=yes → ② `th-rpi-ap` に接続 → ③ enabled=no」の順で行うこと。
 
-### 2-4. 古い portproxy エントリの削除 (管理者 PowerShell)
-
-esp32_bridge は 8766 をコンテナ内で直接待ち受ける構成のため portproxy は**不要かつ有害**
+esp32_bridge は 8766 をコンテナ内で直接待ち受けるため **portproxy は不要かつ有害**
 (残っていると Windows が 8766 を横取りする):
 
 ```powershell
 netsh interface portproxy show all   # 空であること
-netsh interface portproxy delete v4tov4 listenport=8766 listenaddress=192.168.4.50
+netsh interface portproxy delete v4tov4 listenport=8766 listenaddress=192.168.5.50
 ```
 
 ---
@@ -144,8 +171,8 @@ netsh interface portproxy delete v4tov4 listenport=8766 listenaddress=192.168.4.
 
 ```powershell
 # ラズパイからの DDS (/scan 等) 受信許可。IP を変えたらルールも更新すること
-New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound UDP)" -Direction Inbound -Action Allow -Protocol UDP -RemoteAddress 192.168.4.2 -Profile Any
-New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound TCP)" -Direction Inbound -Action Allow -Protocol TCP -RemoteAddress 192.168.4.2 -Profile Any
+New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound UDP)" -Direction Inbound -Action Allow -Protocol UDP -RemoteAddress 192.168.5.1 -Profile Any
+New-NetFirewallRule -DisplayName "TH-System Pi LiDAR (inbound TCP)" -Direction Inbound -Action Allow -Protocol TCP -RemoteAddress 192.168.5.1 -Profile Any
 
 # ESP32 からの WebSocket 受信許可
 New-NetFirewallRule -DisplayName "TH-System ESP32 WS Bridge" -Direction Inbound -Protocol TCP -LocalPort 8765,8766 -Action Allow -Profile Any
@@ -167,7 +194,11 @@ w32tm /stripchart /computer:time.windows.com /samples:3 /dataonly
 Set-Date -Date (Get-Date).AddSeconds(0.7)
 ```
 
-恒久対策(実運用時に推奨・設定済み): AP 配下ではラズパイがインターネットに出られず NTP 同期できないため、
+> **【2026-08-20 更新】開発機が Ubuntu になり、以下の W32Time 手順は使えなくなった。**
+> 現行の手順は本節末尾の「Ubuntu 開発機での恒久対策」を見ること。W32Time の記述は
+> Windows 開発機を使う場合のみ有効な参考情報として残す。
+
+恒久対策(Windows 開発機の場合): AP 配下ではラズパイがインターネットに出られず NTP 同期できないため、
 **PC の Windows Time サービス (W32Time) を NTP サーバー化し、ラズパイの systemd-timesyncd をそこに向ける**。
 
 当初は「PC (WSL) 側に chrony サーバーを立てる」案を検討したが、WSL2 の `networkingMode=mirrored`
@@ -185,13 +216,13 @@ w32tm /resync /force   # 自身も time.windows.com 等の外部 NTP に同期�
 w32tm /query /status   # Source が time.windows.com になっていること
 ```
 
-ファイアウォールは 3 節の `TH-System Pi LiDAR (inbound UDP)` ルール(192.168.4.2 からの UDP を
+ファイアウォールは 3 節の `TH-System Pi LiDAR (inbound UDP)` ルール(192.168.5.1 からの UDP を
 ポート指定なしで許可)がそのまま UDP 123 もカバーするため追加設定は不要。
 
 ```bash
 # ラズパイ側: /etc/systemd/timesyncd.conf
 [Time]
-NTP=192.168.4.50
+NTP=192.168.5.50
 FallbackNTP=
 RootDistanceMaxSec=30
 ```
@@ -201,6 +232,74 @@ sudo systemctl restart systemd-timesyncd
 sudo systemctl enable systemd-timesyncd
 timedatectl status   # "System clock synchronized: yes" になること
 ```
+### Ubuntu 開発機での恒久対策（2026-08-20・現行）
+
+開発機が Ubuntu になったため、上記 W32Time の手順は使えない。**PC 側に `chrony` を立てて配る。**
+
+```bash
+# ① PC（一度だけ）
+sudo bash th_ws/scripts/pc_setup_ntp_server.sh
+
+# ② ラズパイ（一度だけ）
+ssh -t mirs2602@192.168.5.1 'sudo bash /tmp/rpi_fix_clock.sh'   # 先に scp しておく
+```
+
+Ubuntu 既定の `systemd-timesyncd` は**クライアント専用で時刻を配れない**。`chrony` を入れると
+`systemd-timesyncd` は自動で削除される。`local stratum 10` を入れるので、**PC が上流に
+繋がっていなくても配れる**（現場は隔離 AP のため必須）。ラズパイ側の
+`/etc/systemd/timesyncd.conf`（`NTP=192.168.5.50`）は上記のままでよい。
+
+なお WSL2 mirrored モードで chronyd が 123/udp にバインドできなかった問題は、
+**ネイティブ Ubuntu では起きない**（Windows の W32Time が居ないため）。
+
+#### 時計がずれると DDS ごと壊れる（実機で 2 回遭遇・2026-08-20）
+
+ラズパイには**ハードウェア RTC が無く**、起動のたびに時計が過去へ戻る（実際に 3 日ずれた）。
+このとき **DDS のディスカバリ自体が成立しない**。症状は次のとおりで、原因が時刻だと気づきにくい。
+
+- `rplidar` サービスは `active`、ログも正常（health OK / Start）
+- しかし **ラズパイ自身で `ros2 node list --no-daemon` を叩いても何も出ない**
+- PC ↔ ラズパイの DDS 用 UDP は `tcpdump` で**双方向に流れている**
+- それでも参加者としてマッチしない
+
+**時刻を合わせた直後に `/scan` が見えるようになる。**ただし合わせるだけでは足りず、
+**既に起動してしまったノードは回復しない**ので、`rplidar.service` に
+`After=... time-sync.target` / `Wants=time-sync.target` を入れて順序を強制する
+（`rpi_fix_clock.sh` が行う。`systemd-time-wait-sync` は既定で `disabled` だった）。
+
+#### LiDAR の `scan_mode`
+
+> **★ `scan_mode` を変えたら `scan_expected_points` を必ず測り直すこと。**
+> 起動時の疎通判定（`DetailedDesign-state.md` §12.2 行 3）は `/scan` の点数の
+> **厳密一致**を要求する。合わないと `evt.link_ok` が出ず、**`INIT` から永久に
+> 出られない**（WebUI では「全デバイス状態確認中」のまま止まる）。
+> **2026-08-21 に実際に踏んだ。**8/20 に DenseBoost → Standard へ替えた際、
+> `registry.yaml` の `scan_expected_points`（1080＝DenseBoost の実測値）を
+> 直し忘れていた。
+>
+> ```bash
+> # コンテナ内。100 スキャン測って一定かどうかまで見る
+> python3 scripts/check_scan_points.py 100
+> # → 出た値を registry.yaml の scan_expected_points に入れる
+> ```
+>
+> **2026-08-31 に同じ事故が再発していたことが判明した。**8/20 の
+> DenseBoost → Standard 変更に対する `registry.yaml` の追従が結局入っておらず、
+> 11 日間 `1080` のまま残っていた（実機は `720`）。実機で `INIT` から出ようと
+> した時点で発覚。現在の正しい値は **`720`（Standard・10.01 Hz・0.4993°/点）**。
+> **`gazebo_plugins.xacro` の `<samples>` も同じ値に揃えること**——ここが
+> ずれると今度は Gazebo 側の `connectivity_checker` が通らなくなる
+> （実際に WP-TEST-01 で sim 側を `1080` に合わせてしまい、sim が実機から
+> 離れる方向へずれていた）。
+
+
+稼働中の unit が `ros2 launch rplidar_ros rplidar_s1_launch.py` を叩いていると
+**`scan_mode` を指定できない**（この launch ファイルは引数として宣言していない）。
+`scripts/rpi_set_scan_mode.sh` が `ExecStart` を `ros2 run` 形式へ差し替える。
+
+`Standard` と `DenseBoost` の実測差は `docs/plan/detailed/data/meas06/README.md`。
+**Standard で DR-SPAAM が 3.7 → 6.5 Hz、知覚の遅延が 348 → 179 ms になった。**
+
 
 `RootDistanceMaxSec` を既定の 5 から 30 に緩めているのは、W32Time が `RootDispersion` を
 実測より悲観的に(常に数秒オーダーで)申告する仕様のため、既定値のままだと
@@ -259,7 +358,7 @@ After=network.target
 Type=simple
 User=mirs2602
 Environment=ROS_DOMAIN_ID=10
-ExecStart=/bin/bash -lc "source /opt/ros/humble/setup.bash && source /home/mirs2602/ros2_ws/install/setup.bash && exec ros2 run rplidar_ros rplidar_node --ros-args -p serial_port:=/dev/ttyUSB0 -p serial_baudrate:=256000 -p frame_id:=laser_link -p angle_compensate:=true -p scan_mode:=Standard"
+ExecStart=/bin/bash -lc "source /opt/ros/humble/setup.bash && source /home/mirs2602/ros2_ws/install/setup.bash && exec ros2 run rplidar_ros rplidar_node --ros-args -p serial_port:=/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_0b443775f827c8419a0592b44475a0a2-if00-port0 -p serial_baudrate:=256000 -p frame_id:=laser_link -p angle_compensate:=true -p scan_mode:=Standard"
 Restart=always
 RestartSec=5
 
@@ -270,33 +369,52 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now rplidar
 ```
 
+> **2026-09-05 追記: `serial_port` は `/dev/ttyUSB0` ではなく `/dev/serial/by-id/...`
+> を指定すること。** ESP32 もラズパイの USB-UART に直結する構成（[network.md](network.md)）
+> になったため、`/dev/ttyUSB0`/`/dev/ttyUSB1` のような列挙順依存のパスは
+> 起動のたびに LiDAR と ESP32 が入れ替わりうる。上の値は 2026-09-05 に
+> `ls -l /dev/serial/by-id/` で確認したこの個体のパス。**別個体・別ケーブルに
+> 交換したら `ls -l /dev/serial/by-id/` で確認し直して置き換えること。**
+> 既存の稼働機は `sudo systemctl edit rplidar` で `ExecStart` を上書きするか、
+> unit ファイルを直接編集して `daemon-reload && restart` する。
+
 - `scan_mode:=Standard` を推奨: 既定の DenseBoost は点数が多く DR-SPAAM の CPU 推論が
   約2Hz まで落ちて歩行者を見失いやすい。Standard(点数半減)で追跡が安定する。
-- **ラズパイ再起動で `/dev/ttyUSB0` ⇄ `/dev/ttyUSB1` が入れ替わることがある**。
+- **(2026-09-05 以前の旧構成の記録)** ラズパイ再起動で `/dev/ttyUSB0` ⇄ `/dev/ttyUSB1` が入れ替わることがあった。
   起動失敗(`Error, code: 80008004`)時は `ls /dev/ttyUSB*` でポートを確認して差し替えるか、
   udev ルール(`udev/99-th-robot.rules` 参照)で `/dev/lidar` に固定する。
 
-### 6-2. WiFi (th-esp32-ap への接続)
+### 6-2. WiFi (ラズパイを AP にする)
 
-NetworkManager で SSID `th-esp32-ap` に接続する(初回は物理アクセスできる状態で)。
-以後は保存プロファイルで自動再接続される。IP は DHCP(通常 `192.168.4.2`)。
+**ラズパイ自身が親機**。`th_ws/scripts/rpi_setup_ap.sh` をラズパイ上で実行する。
 
 ```bash
-nmcli connection up th-esp32-ap        # 手動で切り替える場合
-ip addr show wlan0 | grep 'inet '      # 取得 IP の確認
+sudo bash rpi_setup_ap.sh th-rpi-ap '<APパスフレーズ>' 1   # SSID / パスフレーズ / ch
+sudo bash rpi_setup_ap.sh --revert                        # AP を止める
+ip addr show wlan0 | grep 'inet '                         # 192.168.5.1 になっていること
 ```
+
+> **⚠ 事前に有線の退路を作っておくこと**(無線設定を誤ると機体に触れなくなる)。
+> 手順はスクリプト冒頭のコメントに書いてある。
+>
+> WPA2/CCMP 固定・**PMF (802.11w) 無効**が必須。PMF が有効だと ESP32 (Arduino) は
+> 接続要求すら送れず、シールド基板ではシリアルログも読めないため切り分けが困難。
+>
+> `hostapd` / `dnsmasq` パッケージは不要(NetworkManager の共有モードが
+> `dnsmasq-base` を使う)。現場の AP は外に出られず `apt` が使えないので重要な性質。
 
 ---
 
-## 7. ESP32: ファームウェア書き込み
+## 7. ESP32: ファームウェア書き込み・ラズパイへの接続
 
 手順の詳細・チューニングは [esp32.md](esp32.md) 参照。初回の要点:
 
-1. `esp32/src/wifi_credentials.h.example` を `wifi_credentials.h` にコピーし、
-   AP モード設定(`WIFI_AP_MODE 1`, `AP_SSID "th-esp32-ap"`, `AP_PASSWORD`,
-   `WS_SERVER_HOST "192.168.4.50"`, `WS_SERVER_PORT 8766`)を記入
-2. PC に USB 接続して `cd esp32 && pio run --target upload`
-3. シリアルモニタで `[WiFi] AP IP=192.168.4.1` が出れば起動成功
+1. PC に USB 接続して `cd esp32 && pio run --target upload`
+   （2026-09-05 以降、WiFi 設定ファイルは不要。ESP32 はもう WiFi を使わない）
+2. シリアルモニタで起動バナー(`TH System ESP32 Firmware (Serial)`)が出れば書き込み成功
+3. 書き込みが済んだら、ESP32 の USB ケーブルを **PC からラズパイへ差し替える**
+4. ラズパイ側に `pi_serial_relay` を導入する（初回のみ。手順は
+   [network.md](network.md)「ラズパイ: pi_serial_relay の導入」参照）
 
 ### Windows での USB シリアル (usbipd — WSL から書き込む場合のみ)
 
@@ -324,10 +442,10 @@ npm run dev    # → http://localhost:5173
 
 roslib.js はローカル同梱(`web_ui/public/roslib.min.js`)のため、
 インターネットの無い AP 配下でもタブレットから動く。
-タブレットは th-esp32-ap に接続し `http://192.168.4.50:5173` を開く。
+タブレットは `th-rpi-ap` に接続し `http://192.168.5.50:5173` を開く。
 rosbridge(9090)は bringup が自動起動する。
 
-### 観客向け表示（デモ展示。VISION.md §6.3）
+### 観客向け表示（デモ展示。[docs/voice-and-audience.md](voice-and-audience.md) §1）
 
 ```
 http://localhost:5173/?view=audience

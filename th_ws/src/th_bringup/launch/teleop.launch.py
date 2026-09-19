@@ -8,12 +8,26 @@ teleop.launch.py — キーボード手動操作
   # 通常操作 (MANUAL モード、twist_mux 経由)
   ros2 launch th_bringup teleop.launch.py
 
-  # SLAM 地図作成時 (twist_mux バイパス)
+  # バックアップ手段 (twist_mux バイパス。下の警告を必ず読むこと)
   ros2 launch th_bringup teleop.launch.py direct:=true
 
 引数:
-  direct   true  → /cmd_vel へ直接送る (SLAM 地図作成時)
+  direct   true  → /cmd_vel へ直接送る (バックアップ手段)
            false → /cmd_vel_nav 経由で twist_mux を通す (デフォルト)
+
+★★★ direct:=true は安全チェーンを丸ごと迂回する ★★★
+
+`/cmd_vel` へ直接送るため、次のいずれも効かない:
+  - `/safety/estop`     (twist_mux の lock priority 255)
+  - `/safety/fault_lock` (同 254)
+  - `obstacle_limiter`  (WP-SAFE-03 で最終段に入った障害物リミッタ)
+
+**非常停止を押しても止まらない。**止める手段は物理非常停止と
+ESP32 のウォッチドッグ (600ms) だけになる。
+
+地図作成は WebUI の手動操作で行うのが通常手順で、この direct モードは
+**それが使えないときのバックアップ**として残してある (2026-08-27 判断。
+DetailedDesign-open.md の N-18)。使うときは人が張り付くこと。
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -53,6 +67,8 @@ def generate_launch_description():
         ),
 
         # ── クローラー専用テレオペ: direct モード (/cmd_vel) ────────
+        # ★ 安全チェーン (estop / fault_lock / obstacle_limiter) を迂回する。
+        #   冒頭の警告を参照。バックアップ手段として意図的に残している (N-18)。
         Node(
             package='th_planning',
             executable='crawler_teleop.py',

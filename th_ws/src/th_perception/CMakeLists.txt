@@ -1,7 +1,13 @@
 cmake_minimum_required(VERSION 3.8)
 project(th_perception)
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(rclpy REQUIRED)
+
+# Python パッケージ (th_perception/) をインストール（WP-CALIB-01a。
+# scan_geometry.py は th_planning と同じ流儀で <pkg>/<pkg>/ に置く）
+ament_python_install_package(th_perception)
+
 install(PROGRAMS
   scripts/lidar_filter.py
   scripts/person_predictor.py

@@ -40,8 +40,10 @@ def generate_test_description():
         parameters=[{
             'lidar_timeout_ms':  LIDAR_TIMEOUT_MS,
             'esp32_timeout_ms':  ESP32_TIMEOUT_MS,
-            'person_timeout_ms': 5000,   # 人物追跡は今回テスト対象外
             'check_period_ms':   50,
+            # F-5・O-7: 人物追跡（/person/targets の publisher が無い）は
+            # このテストの対象外なので enabled_targets に入れない。
+            'enabled_targets':   ['lidar', 'esp32'],
         }],
         output='screen',
     )

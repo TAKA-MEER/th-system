@@ -1,0 +1,6 @@
+# /route/export と /route/import の両方で使う
+string id
+string path
+---
+bool   success
+string message

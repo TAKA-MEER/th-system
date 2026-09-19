@@ -5,15 +5,33 @@
 
 ## 概要
 
-実機（ESP32・RPLIDAR S1）がなくても、Gazebo Classic 上で全追従ロジックを視覚的に確認できます。
+> **⚠ この文書は「人物追従」が主機能だった頃（〜2026-07）に書かれたもので、
+> 現行のデモ（手動教示 → 教示再生）はカバーしていません（2026-09-06 追記）。**
+>
+> - **教示再生はシミュレーションで試せない。** `gazebo.launch.py` は
+>   `route_recorder` / `replay_runner` を起動しない（実機の `bringup.launch.py` だけ）。
+>   教示再生の確認は実機で行う（[使い方.md](使い方.md)）
+> - **近接退避・捜索旋回はもう機体に届かない。** `follow_planner` /
+>   `follow_planner_mapless` / `person_predictor` の出力先 `/cmd_vel_retreat` は
+>   `WP-SAFE-03`（2026-08-27）以降 `twist_mux` が購読していない。トピックを
+>   `echo` すれば値は見えるが、**Gazebo 上でも機体は動かない**
+>   （[architecture.md](architecture.md)「速度指令の排他制御」参照）
+> - 速度指令は現在 `twist_mux` → `/cmd_vel_muxed` → **`obstacle_limiter`** →
+>   `/cmd_vel` を通る。`obstacle_limiter` は Gazebo でも起動する
+> - 以下の追従シナリオは**旧設計の記録**として残す。人物追従を作り直す作業パケットで
+>   配線され次第、この文書も更新する
+
+実機（ESP32・RPLIDAR S1）がなくても、Gazebo Classic 上で追従ロジックを視覚的に確認できます。
 `sim:=true/false` の引数一つで実機とシミュレーションを切り替えられます。
 さらに `scenario:=<name>` でワールド・地図・試験員の動き・スポーン位置・障害物・
 プランナパラメータを一括切替できます（下記「シナリオプリセット」参照）。
 
 ```txt
-実機モード:   sllidar_node + esp32_bridge(WebSocketサーバー) が起動
-シミュレーション: Gazebo が /odom・/scan を発行し上記3ノードは不要
-共通:         mode_manager・follow_planner・Nav2・rosbridge 等は同一ノードが動く
+実機モード:   sllidar_node + esp32_bridge(WSサーバー。ラズパイの pi_serial_relay が繋ぐ) が起動
+シミュレーション: Gazebo が /odom・/scan を発行し上記2ノードは不要
+共通:         mode_manager・state_manager・follow_planner・twist_mux・obstacle_limiter・
+              Nav2・rosbridge 等は同一ノードが動く
+教示再生:     route_recorder / replay_runner は実機のみ（Gazebo では起動しない）
 ```
 
 ---
@@ -310,6 +328,12 @@ ros2 topic echo /rosout | grep follow_planner_mapless
 ros2 topic echo /cmd_vel_retreat
 ```
 
+> **⚠ このトピックは現在どこにも繋がっていない（2026-09-06）。** `twist_mux` は
+> `WP-SAFE-03` 以降 `/cmd_vel_behavior`(20) / `/cmd_vel_nav`(10) / `/cmd_vel_manual`(30)
+> しか購読しないため、ここに値が出ていても**機体は退避しない**。「値は出るのに動かない」
+> のが現在の正常な状態で、故障ではない。実際に機体が受け取る最終指令を見るなら
+> `ros2 topic echo /cmd_vel`（`obstacle_limiter` の出力）を見ること。
+
 > `planning_params.yaml` の `follow_planner_mapless` は現在 **狭所向け設定
 > (stop 0.5 / resume 0.7 / obstacle 0.45 / lookback 0.5)**。広所向け設定
 > (stop 1.0 / resume 1.3 / obstacle 1.0 / lookback 1.0) は `scenario:=wide_area`
@@ -378,8 +402,8 @@ ros2 run th_perception person_mover.py --ros-args \
 
 | シナリオ | 設定 | RViz2 で見るもの |
 | --- | --- | --- |
-| 通常追従 | `pattern:=patrol` | ロボットが試験員の後ろ 1.5m を追従 |
-| 近接退避 | `pattern:=approach` | 0.8m 以内で `/cmd_vel_retreat` が発行され後退 |
+| 通常追従 | `pattern:=patrol` | ロボットが試験員の後ろ 1.5m を追従（Nav2 経由なので現在も動く） |
+| ~~近接退避~~ | `pattern:=approach` | ~~0.8m 以内で `/cmd_vel_retreat` が発行され後退~~ **現在は後退しない**（`/cmd_vel_retreat` が twist_mux から外れているため。トピックには値が出る） |
 | 狭路真後ろ追従 | 仕切り壁の通路を通る | 角度オフセットが 0° になる |
 | 静止再配置 | `pattern:=static` | 2 秒後に試験員の側面〜背面に移動 |
 | 試験場の一連フロー | `scenario:=panel_shuttle`(手順は上記参照) | mapless追従→IDLE待機→配電盤巡回→mapless帰還(VISION.md準拠) |

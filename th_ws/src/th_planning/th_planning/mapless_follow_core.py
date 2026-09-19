@@ -157,6 +157,59 @@ def is_path_blocked(
     return False
 
 
+def observe_cone(
+    ranges: List[float],
+    angle_min: float,
+    angle_increment: float,
+    direction_rad: float,
+    half_width_rad: float,
+) -> Optional[float]:
+    """
+    direction_rad ± half_width_rad の扇内にある有限レンジの最小値を返す。
+
+    is_path_blocked() の bool 判定を最近傍距離に拡張したもの
+    (DetailedDesign-safety.md §3.4.3。C++ 移植版は
+    th_safety::observe_cone()、`th_safety/src/obstacle_limiter_core.cpp`。
+    LimiterStatus.nearest_obstacle_m のような診断値として使う想定で、
+    is_path_blocked() と違い max_check_dist によるフィルタは行わない
+    (「ブロックされているか」ではなく「最近傍がどこか」を返すのが目的
+    なので、距離の閾値判定は呼び出し側の責務にする)。
+
+    is_path_blocked() と異なり person_* による追従対象除外は行わない。
+    これはこの関数の抜け漏れではなく意図的な違い —— C++ 側
+    obstacle_limiter_core は「どのレンジが追従対象(人物)か」を知らない
+    設計にしてある(DetailedDesign-safety.md WP-SAFE-03 §1「作らない」:
+    追従対象の除外は後段の責務ではない)。この Python 版もそれに揃える。
+    除外が要る場面(mapless_follow の障害物判定)は今後も is_path_blocked()
+    を使うこと。
+
+    見つからなければ None(コーン内に条件を満たす有限レンジが1つも無い
+    = 「空き」。C++版 ConeObservation{covered=true, nearest_m=+inf} に相当)。
+
+    アルゴリズムは is_path_blocked() と同じ「全ビームの角度を都度計算して
+    走査する」方式(角度ベース)。C++ 版は scan_geometry.sector_indices()
+    でコーンの両端を先に添字化し、その添字区間だけを走査する(添字ベース)。
+    全周スキャン(360°を1周する angle_min/angle_increment の構成)なら
+    両者は一致するはずだが、境界のビーム1本で食い違う可能性がある
+    (両者の等価性は test_obstacle_cone_equivalence.cpp で検証する。
+    scan がコーンの一部しかカバーしていない場合の「未観測」の扱いは
+    この関数には無い概念で、C++ 版の covered=false と単純には対応しない
+    ―― この関数はどの入力に対しても常に「見つかった/見つからなかった」
+    の2値でしか答えない。詳細は DetailedDesign-open.md N-12 を参照)。
+    """
+    nearest: Optional[float] = None
+    for i, r in enumerate(ranges):
+        if not math.isfinite(r) or r < 0.0:
+            continue
+        angle = angle_min + i * angle_increment
+        diff = math.atan2(math.sin(angle - direction_rad), math.cos(angle - direction_rad))
+        if abs(diff) > half_width_rad:
+            continue
+        if nearest is None or r < nearest:
+            nearest = r
+    return nearest
+
+
 def mapless_target_speed(
     distance_to_person: float,
     stop_distance: float,

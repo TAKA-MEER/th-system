@@ -23,9 +23,15 @@ slam_toolbox:
     debug_logging:         false
     throttle_scans:        1
     transform_publish_period: 0.02   # 50 Hz
-    map_update_interval:   5.0
+    map_update_interval:   2.0   # 2026-09-02: 教示中に地図が伸びるのを見たいので 5.0 から短縮
     resolution:            0.05
     max_laser_range:       12.0      # RPLIDAR S1 最大レンジ
+    # 実機ログ (2026-09-03): slam_toolbox が
+    #   "minimum laser range setting (0.0 m) exceeds the capabilities of the
+    #    used Lidar (0.2 m)"
+    # と警告していた。未設定だと slam_toolbox の既定 0.0 が使われる。
+    # RPLIDAR S1 の最小レンジは 0.2 m なので明示する。
+    min_laser_range:       0.2
     minimum_time_interval: 0.5
     # 実機検証 (2026-07-11): ラズパイ配信の /scan は WiFi 経由でスタンプの
     # 先行/遅延が ±0.6 秒程度発生し、0.2 だと message filter が大半のスキャンを
@@ -38,21 +44,50 @@ slam_toolbox:
     enable_interactive_mode:    true
     use_scan_matching:          true
     use_scan_barycenter:        true
-    minimum_travel_distance:    0.3
-    minimum_travel_heading:     0.3
-    scan_buffer_size:           10
-    scan_buffer_maximum_scan_distance: 10.0
+    # WS-9W (2026-09-04): 再生の特徴の少ない廊下で廊下軸方向にドリフトし、
+    # slam_toolbox の localization が補正できなかった（実機。方位誤差はほぼ無し、
+    # 位置のみ）。原因は「0.3m 進むごとにしか補正しない」＋「探索窓 ±0.25m」。
+    # ドアの縁・角などの手がかりが視野に入ったとき、蓄積ドリフトが窓を超える前に
+    # マッチできるよう、補正間隔を詰めて探索窓を広げる。値は現場ごとに WebUI の
+    # 設定パネル（slam_toolbox）で調整可（tunable_targets.py）。
+    # トレードオフ: minimum_travel_distance を下げると教示のポーズグラフが密になり
+    # .posegraph が大きくなる（157m で 20MB → さらに増える）。0.3→0.2 は中間。
+    minimum_travel_distance:    0.2
+    minimum_travel_heading:     0.25
+    # 2026-09-02: 校舎 1 周（100m 以上）の教示・再生に向けた調整。
+    # 従来値は数 m の短経路を想定していた。
+    # scan_buffer_size: ループ候補の照合に使う直近スキャン数。長い廊下では
+    # 1 枚あたりの情報が乏しいので枚数を増やして拘束を稼ぐ。
+    scan_buffer_size:           30
+    scan_buffer_maximum_scan_distance: 12.0
     link_match_minimum_response_fine: 0.1
     link_scan_maximum_distance: 1.5
+    # ★★ ループ閉じ込みを無効化（2026-09-03 実機で確定）。
+    #   校舎 1 周（185.0 m / 1504 点）の教示を成功させた直後、ループを閉じた
+    #   瞬間に記録点が index 1474→1475 で 0.1 秒の間に 4.09 m・yaw −6.3° 跳び、
+    #   経路と地図が最大 4 m ずれて壁に埋まった。slam_toolbox がループ閉じ込みで
+    #   過去に遡って地図を変形させても、記録済みの経路は補正前のフレームのまま
+    #   残るため、SLAM が地図を変形させ続けている最中に map 絶対座標で経路を
+    #   記録する現設計とは両立しない。→ 意図的に閉じない。
+    #
+    #   トレードオフ:
+    #   - 地図は 1 周して戻ったところで継ぎ目（壁が二重）になる。これは正常。
+    #   - 絶対的な終点誤差はドリフトぶん残る（実測 185 m あたり約 4 m ≒ 2%）。
+    #   - 一方で経路と地図が同じフレームに保たれるので、経路の追従自体は成立する
+    #     （今回失敗したのはまさにここ。こちらを優先する）。
     loop_search_maximum_distance: 3.0
-    do_loop_closing:            true
+    do_loop_closing:            false
     loop_match_minimum_chain_size: 10
     loop_match_maximum_variance_coarse: 3.0
     loop_match_minimum_response_coarse: 0.35
     loop_match_minimum_response_fine:   0.45
 
     # スキャンマッチング
-    correlation_search_space_dimension:      0.5
+    # WS-9W: 探索窓を 0.5→0.8（片側 ±0.4m）。廊下でドリフトが ±0.25m を超えると
+    # 真の pose が窓の外になり補正不能だったため。resolution 据え置き（0.01m/セル）。
+    # 広げすぎると廊下の弱い相関で誤った軸方向位置にロックしうるので中庸に。
+    # 現場調整は WebUI 設定パネル（slam_toolbox）。
+    correlation_search_space_dimension:      0.8
     correlation_search_space_resolution:     0.01
     correlation_search_space_smear_deviation: 0.1
     loop_search_space_dimension:      8.0

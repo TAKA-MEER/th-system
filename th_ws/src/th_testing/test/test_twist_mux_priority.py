@@ -3,11 +3,17 @@ test_twist_mux_priority.py
 ============================
 設計書 10.1 節 § 4 項 — twist_mux 優先度設定テスト
 
+WP-SAFE-03 で twist_mux の出力先を /cmd_vel から /cmd_vel_muxed に変更し
+（後段に obstacle_limiter が入り、/cmd_vel の publisher は obstacle_limiter だけに
+なった）、入力トピック（旧 retreat・優先度20）も /cmd_vel_behavior へ改名した
+（th_safety/config/twist_mux.yaml と同じ）。このテストは twist_mux 単体を
+起動するため obstacle_limiter は含まない。
+
 確認事項:
-  1. /cmd_vel_nav と /cmd_vel_retreat が同時に値を持つ場合、
-     /cmd_vel_retreat が /cmd_vel に出力される（retreat > nav）
-  2. /safety/estop が True の時は lock が作動し /cmd_vel がゼロになる
-  3. lock 解除後は退避指令が再び通る
+  1. /cmd_vel_nav と /cmd_vel_behavior が同時に値を持つ場合、
+     /cmd_vel_behavior が /cmd_vel_muxed に出力される（behavior > nav）
+  2. /safety/estop が True の時は lock が作動し /cmd_vel_muxed がゼロになる
+  3. lock 解除後は挙動系指令が再び通る
 """
 
 import pytest
@@ -35,8 +41,8 @@ def generate_test_description():
         name='twist_mux',
         parameters=[{
             'topics': {
-                'retreat': {
-                    'topic':    '/cmd_vel_retreat',
+                'behavior': {
+                    'topic':    '/cmd_vel_behavior',
                     'timeout':  0.5,
                     'priority': 20,
                 },
@@ -54,7 +60,7 @@ def generate_test_description():
                 },
             },
         }],
-        remappings=[('cmd_vel_out', '/cmd_vel')],
+        remappings=[('cmd_vel_out', '/cmd_vel_muxed')],
         output='screen',
     )
     return launch.LaunchDescription([
@@ -78,18 +84,18 @@ class TestTwistMuxPriority(unittest.TestCase):
 
         self._cmd_vel_history: list[Twist] = []
         self.node.create_subscription(
-            Twist, '/cmd_vel',
+            Twist, '/cmd_vel_muxed',
             lambda m: self._cmd_vel_history.append(m), 10)
 
-        self.pub_nav     = self.node.create_publisher(Twist, '/cmd_vel_nav',     10)
-        self.pub_retreat = self.node.create_publisher(Twist, '/cmd_vel_retreat', 10)
-        self.pub_estop   = self.node.create_publisher(Bool,  '/safety/estop',    10)
+        self.pub_nav      = self.node.create_publisher(Twist, '/cmd_vel_nav',      10)
+        self.pub_behavior = self.node.create_publisher(Twist, '/cmd_vel_behavior', 10)
+        self.pub_estop    = self.node.create_publisher(Bool,  '/safety/estop',     10)
 
         # twist_mux のロックは「ロックトピックが timeout(0.5s) 途絶したら作動」する
         # フェイルセーフ設計。実機では safety_monitor が /safety/estop を 10Hz で
         # 送り続けるためロックは作動しない。テストでもこれを再現するため、
         # _spin() のたびに現在の estop 状態を送り続ける（1回だけだと 0.5s 後に
-        # ロックが作動し /cmd_vel が遮断されてしまう）。
+        # ロックが作動し /cmd_vel_muxed が遮断されてしまう）。
         self._estop_state = False
         time.sleep(1.0)
         self._spin(0.8)
@@ -122,34 +128,34 @@ class TestTwistMuxPriority(unittest.TestCase):
                 abs(tw.angular.z) < 1e-6)
 
     # ════════════════════════════════════════════════════════
-    # 優先度テスト: retreat > nav
+    # 優先度テスト: behavior > nav
     # ════════════════════════════════════════════════════════
 
-    def test_retreat_overrides_nav(self):
+    def test_behavior_overrides_nav(self):
         """
-        /cmd_vel_nav と /cmd_vel_retreat が同時に来た場合、
-        /cmd_vel には retreat の値が出力される。
+        /cmd_vel_nav と /cmd_vel_behavior が同時に来た場合、
+        /cmd_vel_muxed には behavior の値が出力される。
         """
         nav_cmd = Twist()
         nav_cmd.linear.x = 0.3
 
-        ret_cmd = Twist()
-        ret_cmd.linear.x = -0.15   # 後退 (retreat の識別子)
+        beh_cmd = Twist()
+        beh_cmd.linear.x = -0.15   # 後退 (behavior の識別子)
 
         # 両方を同時に送る
         for _ in range(5):
             self.pub_nav.publish(nav_cmd)
-            self.pub_retreat.publish(ret_cmd)
+            self.pub_behavior.publish(beh_cmd)
             self._spin(0.05)
 
         out = self._latest_cmd_vel()
-        assert out is not None, '/cmd_vel が受信できなかった'
+        assert out is not None, '/cmd_vel_muxed が受信できなかった'
         assert abs(out.linear.x - (-0.15)) < 0.05, (
-            f'retreat が優先されていない: /cmd_vel.linear.x={out.linear.x:.3f}'
+            f'behavior が優先されていない: /cmd_vel_muxed.linear.x={out.linear.x:.3f}'
             f' (期待値≈-0.15)')
 
-    def test_nav_used_when_no_retreat(self):
-        """/cmd_vel_retreat が来ていない場合は /cmd_vel_nav が出力される"""
+    def test_nav_used_when_no_behavior(self):
+        """/cmd_vel_behavior が来ていない場合は /cmd_vel_nav が出力される"""
         nav_cmd = Twist()
         nav_cmd.linear.x = 0.26
 
@@ -162,21 +168,21 @@ class TestTwistMuxPriority(unittest.TestCase):
         assert abs(out.linear.x - 0.26) < 0.05, (
             f'nav が出力されていない: {out.linear.x:.3f}')
 
-    def test_nav_resumes_after_retreat_timeout(self):
+    def test_nav_resumes_after_behavior_timeout(self):
         """
-        retreat の送信を停止すると twist_mux のタイムアウト(0.5s)で
+        behavior の送信を停止すると twist_mux のタイムアウト(0.5s)で
         nav に自動切替わる。
         """
         nav_cmd = Twist(); nav_cmd.linear.x = 0.26
-        ret_cmd = Twist(); ret_cmd.linear.x = -0.15
+        beh_cmd = Twist(); beh_cmd.linear.x = -0.15
 
-        # retreat を送り優先させる
+        # behavior を送り優先させる
         for _ in range(5):
             self.pub_nav.publish(nav_cmd)
-            self.pub_retreat.publish(ret_cmd)
+            self.pub_behavior.publish(beh_cmd)
             self._spin(0.05)
 
-        # retreat を停止し nav のみ送り続ける
+        # behavior を停止し nav のみ送り続ける
         self._cmd_vel_history.clear()
         for _ in range(15):   # 約 1.5 秒（タイムアウト 0.5s より長く）
             self.pub_nav.publish(nav_cmd)
@@ -185,7 +191,7 @@ class TestTwistMuxPriority(unittest.TestCase):
         out = self._latest_cmd_vel()
         assert out is not None
         assert abs(out.linear.x - 0.26) < 0.05, (
-            f'retreat タイムアウト後に nav に切り替わっていない: {out.linear.x:.3f}')
+            f'behavior タイムアウト後に nav に切り替わっていない: {out.linear.x:.3f}')
 
     # ════════════════════════════════════════════════════════
     # ロックテスト: estop → ゼロ強制
@@ -194,15 +200,15 @@ class TestTwistMuxPriority(unittest.TestCase):
     def test_estop_lock_zeroes_output(self):
         """
         /safety/estop が True の間は、どの入力があっても
-        /cmd_vel の出力がゼロになる。
+        /cmd_vel_muxed の出力がゼロになる。
         """
         nav_cmd = Twist(); nav_cmd.linear.x = 0.26
-        ret_cmd = Twist(); ret_cmd.linear.x = -0.15
+        beh_cmd = Twist(); beh_cmd.linear.x = -0.15
 
         # まず正常に出力されることを確認
         for _ in range(5):
             self.pub_nav.publish(nav_cmd)
-            self.pub_retreat.publish(ret_cmd)
+            self.pub_behavior.publish(beh_cmd)
             self._spin(0.05)
         assert not self._is_zero(self._latest_cmd_vel()), \
             '正常時にゼロが出てしまっている'
@@ -218,7 +224,7 @@ class TestTwistMuxPriority(unittest.TestCase):
         # E-Stop 中も両方送り続ける
         for _ in range(10):
             self.pub_nav.publish(nav_cmd)
-            self.pub_retreat.publish(ret_cmd)
+            self.pub_behavior.publish(beh_cmd)
             self._spin(0.05)
 
         out = self._latest_cmd_vel()
@@ -248,13 +254,13 @@ class TestTwistMuxPriority(unittest.TestCase):
         assert not self._is_zero(out), \
             'E-Stop 解除後も速度が出力されない'
 
-    def test_retreat_still_zero_during_estop(self):
+    def test_behavior_still_zero_during_estop(self):
         """
-        retreat の優先度がどれだけ高くても、
-        E-Stop lock 中は /cmd_vel がゼロになる。
+        behavior の優先度がどれだけ高くても、
+        E-Stop lock 中は /cmd_vel_muxed がゼロになる。
         （lock が全入力より優先される設計を検証）
         """
-        ret_cmd = Twist(); ret_cmd.linear.x = -0.15
+        beh_cmd = Twist(); beh_cmd.linear.x = -0.15
 
         self._estop_state = True
         self.pub_estop.publish(Bool(data=True))
@@ -262,9 +268,9 @@ class TestTwistMuxPriority(unittest.TestCase):
         self._cmd_vel_history.clear()
 
         for _ in range(10):
-            self.pub_retreat.publish(ret_cmd)
+            self.pub_behavior.publish(beh_cmd)
             self._spin(0.05)
 
         out = self._latest_cmd_vel()
         assert self._is_zero(out), (
-            'E-Stop lock 中に retreat が通過してしまった')
+            'E-Stop lock 中に behavior が通過してしまった')

@@ -45,4 +45,28 @@ TUNABLE_TARGETS = {
             "blind_angle_ranges",
         ],
     },
+    # WS-9W: 再生（教示再生）の自己位置推定の当たり方は現場（廊下の長さ・特徴量）で
+    # 最適値が変わる。slam_toolbox のスキャンマッチ関連をチューニング対象にする。
+    #
+    # 重要な癖: slam_toolbox はランタイムのパラメータコールバックを持たず、Karto の
+    # マッパーは起動時に確定する。config_manager の set_parameters は**値を保持する
+    # だけで、その場では効かない**。ただし WS-9S で「この経路で進む」のたびに
+    # slam_toolbox を respawn して slam_params.yaml を読み直すので、
+    # 「変更 →『YAML に保存』→ 経路を選び直す」で新しい値が効く。
+    #
+    # 対象外にしたもの: resolution / max_laser_range / min_laser_range（センサ・地図の
+    # 基本仕様であり調整値ではない）、do_loop_closing（WS-9K で false 固定。
+    # test_ekf_config.test_slam_loop_closing_is_disabled が縛る）。
+    "slam_toolbox": {
+        "yaml_package": "th_bringup",
+        "yaml_relpath": "config/slam_params.yaml",
+        "block_key": "slam_toolbox",
+        "params": [
+            "minimum_travel_distance",             # 補正する間隔（距離 m）
+            "minimum_travel_heading",              # 補正する間隔（角度 rad）
+            "correlation_search_space_dimension",  # スキャンマッチ探索窓（全幅 m。半分が片側）
+            "correlation_search_space_resolution", # 探索の刻み（m）
+            "link_match_minimum_response_fine",    # マッチ受理の最小相関
+        ],
+    },
 }

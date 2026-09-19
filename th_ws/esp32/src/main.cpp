@@ -1,6 +1,6 @@
 // ============================================================
 // TH System — ESP32 メインファームウェア
-// WiFi + WebSocket (WsLink) + PID 速度制御
+// シリアル(ラズパイ中継) + PID 速度制御
 // ============================================================
 #include <Arduino.h>
 
@@ -9,7 +9,7 @@
 #include "imu.h"
 #include "motor.h"
 #include "pid.h"
-#include "ws_link.h"
+#include "serial_link.h"
 
 // ── タイマー ─────────────────────────────────────────────────
 static unsigned long last_cmd_ms = 0;   // ウォッチドッグ用
@@ -21,9 +21,9 @@ static bool imuPresent = false;
 
 // ── PID ──────────────────────────────────────────────────────
 static PID pidRight(PID_KP_RIGHT, PID_KI_RIGHT, PID_KD_RIGHT,
-                    PID_OUT_MIN,  PID_OUT_MAX,   PID_ITERM_MAX, PID_KFF);
+                    PID_OUT_MIN,  PID_OUT_MAX,   PID_ITERM_MAX, PID_KFF, PID_OUT_RAMP_RATE);
 static PID pidLeft (PID_KP_LEFT,  PID_KI_LEFT,  PID_KD_LEFT,
-                    PID_OUT_MIN,  PID_OUT_MAX,   PID_ITERM_MAX, PID_KFF);
+                    PID_OUT_MIN,  PID_OUT_MAX,   PID_ITERM_MAX, PID_KFF, PID_OUT_RAMP_RATE);
 
 // 目標速度 (m/s) — wheel_cmd で受信した最終目標値
 static volatile float targetLeft  = 0.0f;
@@ -53,28 +53,13 @@ static void onWheelCmd(float left, float right) {
     targetRight = right;
     last_cmd_ms = millis();
 #if LOG_EVERY_WHEEL_CMD
-    // 通信テスト用ログ。開発ボード単体での書き込み・通信確認に使う
-    // (WsLink::sendEstopHw は毎周期送信されるので、モーター未接続でも
-    //  ws_test_server.py 側でこの受信ログと突き合わせて双方向通信を確認できる)
+    // 通信テスト用ログ。開発ボード単体での書き込み・通信確認に使う。
     //
-    // 既定で無効(config.h)。これは WebSocket の受信コールバック内で走り、
-    // esp32_bridge のキープアライブ(20Hz)ぶんだけ毎秒発火する。1行35文字を
-    // 115200bps へ吐くとシリアルバッファが埋まった時点でブロックするため、
-    // 受信処理そのものを遅らせる。走行中の常用ログには向かない。
+    // 既定で無効(config.h)。有効にすると、この Serial.printf が
+    // pi_serial_relay とやり取りしている同じ UART0 に混ざるため、走行中は
+    // 使わないこと(通信確認をしたいときだけ一時的に有効にする)。
     Serial.printf("[WHEEL_CMD] left=%.3f right=%.3f\n", left, right);
 #endif
-}
-
-// ── WS切断時コールバック: 即座に停止 (ウォッチドッグを待たない) ──
-static void onWsDisconnect() {
-    Motor::stopAll();
-    pidRight.reset();
-    pidLeft.reset();
-    targetLeft  = 0.0f;
-    targetRight = 0.0f;
-    rampLeft    = 0.0f;
-    rampRight   = 0.0f;
-    driftIntegral = 0.0f;
 }
 
 // ── 直進ドリフト補正 ─────────────────────────────────────────
@@ -113,12 +98,19 @@ static void cbCtrlTimer() {
     if (dt <= 0.0f || dt > 1.0f) dt = (float)CTRL_PERIOD_MS / 1000.0f;
 
     // E-Stop チェック
-    bool estopActive = ESTOP_LOW_ACTIVE
+    // config.h の ESTOP_BENCH_TEST_BYPASS が有効な間だけ bypassActive が立つ。
+    // このフラグは ESTOP_HW フレームの flags bit0 に載せて PC 側
+    // (/safety/firmware_flags) へ伝え、バイパスが有効な機体を検出できるように
+    // する(DEBT-1)。「有効なときだけフラグとして持つ」形にすることで、
+    // 物理ボタンの読み取り結果を無条件で上書きする代入をソース上から無くす。
+    bool hwEstopActive = ESTOP_LOW_ACTIVE
                        ? (digitalRead(ESTOP_GPIO) == LOW)
                        : (digitalRead(ESTOP_GPIO) == HIGH);
+    bool bypassActive = false;
 #ifdef ESTOP_BENCH_TEST_BYPASS
-    estopActive = false;
+    bypassActive = true;
 #endif
+    bool estopActive = hwEstopActive && !bypassActive;
 
     // ウォッチドッグ: 最後の wheel_cmd 受信から WATCHDOG_MS 超過でゼロ
     // (WS接続状態に関わらずローカルに独立して動作する)
@@ -182,36 +174,30 @@ static void cbCtrlTimer() {
     // odom/TF も途絶して Nav2 が動けなくなる(実機検証で判明)。
     // 「切断検知」は通信途絶そのもので判定されるべきで、フィードバック送信を
     // 止めることを安全機構にしてはいけない。
-    // dt も送る: ブリッジ側はこれをオドメトリの積分区間に使う。到着時刻から
-    // 推測させると WiFi の遅延がそのまま yaw ドリフトになる (2026-08-06)。
-    WsLink::sendWheelFeedback(velL, velR, dt);
+    // dt も送る: 中継・ブリッジ側はこれをオドメトリの積分区間に使う。到着時刻から
+    // 推測させると通信側の遅延がそのまま yaw ドリフトになる (2026-08-06)。
+    SerialLink::sendWheelFeedback(velL, velR, dt);
 
     // ── IMU 送信 (未実装個体はスキップ) ───────────────────────────
     if (imuPresent) {
-        WsLink::sendImuData(imu_qw, imu_qx, imu_qy, imu_qz,
-                             imu_wx, imu_wy, imu_wz,
-                             imu_ax, imu_ay, imu_az, imu_calibStatus);
+        SerialLink::sendImuData(imu_qw, imu_qx, imu_qy, imu_qz,
+                                 imu_wx, imu_wy, imu_wz,
+                                 imu_ax, imu_ay, imu_az, imu_calibStatus);
     }
 
-    // デバッグ用一時ログ: 原因切り分け後に削除すること
-    static int dbgCounter = 0;
-    if (++dbgCounter >= 5) {
-        dbgCounter = 0;
-        Serial.printf("[DBG] estop=%d watchdog=%d tgtL=%.2f tgtR=%.2f rmpL=%.2f rmpR=%.2f velL=%.3f velR=%.3f outL=%.3f outR=%.3f drift=%.4f wz=%.3f\n",
-                      estopActive, watchdogTripped, targetLeft, targetRight, rampLeft, rampRight, velL, velR, outL, outR, driftCorrection, imu_wz);
-    }
-
-    // E-Stop 状態を送信 (毎周期)
-    WsLink::sendEstopHw(estopActive);
+    // E-Stop 状態を送信 (毎周期)。flags bit0 = bypassActive(config.h の
+    // ESTOP_BENCH_TEST_BYPASS が有効かどうか)。残りビットは予約(0)。
+    uint8_t estopFlags = bypassActive ? 0x01 : 0x00;
+    SerialLink::sendEstopHw(estopActive, estopFlags);
 }
 
 // ── setup / loop ─────────────────────────────────────────────
 void setup() {
     Serial.begin(SERIAL_BAUD);
-    delay(300);  // シリアルモニタが接続待ちの間にログを取りこぼさないための猶予
+    delay(300);  // ラズパイ側 pi_serial_relay がポートを開くまでの猶予
     Serial.println();
     Serial.println("================================================");
-    Serial.println("TH System ESP32 Firmware (WebSocket)");
+    Serial.println("TH System ESP32 Firmware (Serial)");
     Serial.print("Build: "); Serial.print(__DATE__); Serial.print(" "); Serial.println(__TIME__);
     Serial.println("書き込み確認: このバナーが表示されていればフラッシュ成功");
     Serial.println("================================================");
@@ -227,16 +213,15 @@ void setup() {
     Serial.printf("[IMU] DSR1603(BNO055) %s\n",
                   imuPresent ? "検出・初期化OK" : "未検出(IMU_DATA送信をスキップ)");
 
-    WsLink::onWheelCmd(onWheelCmd);
-    WsLink::onDisconnect(onWsDisconnect);
-    WsLink::init();
+    SerialLink::onWheelCmd(onWheelCmd);
+    SerialLink::init();
 
     last_cmd_ms  = millis();
     last_ctrl_ms = millis();
 }
 
 void loop() {
-    WsLink::loop();  // 非ブロッキング: WiFi/WebSocket 送受信・自動再接続
+    SerialLink::loop();  // 非ブロッキング: シリアル受信バイトを読めるだけ読む
 
     if ((millis() - last_ctrl_ms) >= CTRL_PERIOD_MS) {
         cbCtrlTimer();
