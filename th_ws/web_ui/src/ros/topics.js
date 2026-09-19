@@ -44,6 +44,9 @@ export const TOPICS = {
   // WP-UI-07: S-21 試験。呼び寄せの退避待ち状態（WaitClearStatus、5Hz・
   // wait_clear_gate が SUMMON/WAIT_CLEAR の間だけ配信）。
   WAIT_CLEAR: '/onsite/wait_clear',
+  // WP-DEV-01B: 開発モードの現在状態（connectivity_checker が std_msgs/String
+  // に JSON で 1Hz・transient_local 配信。names.json の endpoints にある）。
+  DEV_MODE: '/system/dev_mode',
 }
 
 export const SERVICES = {

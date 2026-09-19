@@ -267,3 +267,23 @@ export async function jogPublishes(page, topic) {
   return (await page.evaluate(() => window.__thJogPublishes ?? []))
     .filter((p) => p.topic === topic)
 }
+
+// WP-DEV-01B: /system/dev_mode を種にして画面を開く。useDevMode.js は
+// window.__thTestDevMode を初回値にし、window.__thSetTestDevMode で表示を
+// 更新、送信は window.__thDevParamCalls に記録する（useTrigger.js と同型）。
+export async function gotoScreenWithDevMode(page, screen, state, dev) {
+  await page.addInitScript(({ s, scr, d }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    window.__thTestDevMode = d
+  }, { s: state, scr: screen, d: dev })
+  await page.goto('/')
+}
+
+export async function setTestDevMode(page, value) {
+  await page.evaluate((v) => window.__thSetTestDevMode(v), value)
+}
+
+export async function devParamCalls(page) {
+  return page.evaluate(() => window.__thDevParamCalls ?? [])
+}

@@ -24,7 +24,12 @@ export function decodeParamValue(pv) {
   }
 }
 
-export function encodeParamValue(value, { isArray = false, isInt = false } = {}) {
+export function encodeParamValue(value, { isArray = false, isInt = false, isBool = false } = {}) {
+  if (isBool) {
+    // WP-DEV-01B: 開発モード (connectivity_checker の dev_mode / dev_ignore_* は
+    // boolean)。従来の S-50 調整値は数値だけで bool を送る手段が無かった。
+    return { type: PARAM_TYPE.BOOL, bool_value: !!value }
+  }
   if (isArray) {
     return isInt
       ? { type: PARAM_TYPE.INTEGER_ARRAY, integer_array_value: value }
