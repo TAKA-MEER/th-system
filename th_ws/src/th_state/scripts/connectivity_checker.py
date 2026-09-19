@@ -17,20 +17,22 @@ DetailedDesign-wp1.md WP-STATE-03 §0 のとおり）。
 `link_wait_timeout_ms` の管理（`sys.link_timeout` の生成）は `th_state`
 （state_manager.py）側の責務であり、このノードには無い（§3.3 の注記）。
 """
+import json
 import os
 import signal
 
 import rclpy
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy
+from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
+                       QoSReliabilityPolicy)
 
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 
 from th_system_msgs.msg import StateEvent, WheelFeedback
 
-from th_state.connectivity_core import Params, evaluate
+from th_state.connectivity_core import Params, evaluate, should_emit_link_ok
 
 _EVALUATE_PERIOD_S = 1.0  # §4.2: 1 Hz
 
@@ -58,6 +60,20 @@ class ConnectivityChecker(Node):
         # 追加パラメータ（§8 Gazebo シナリオを満たすための拡張。判断は完了報告に明記）。
         # Gazebo には esp32_bridge が居ないため、ESP32 の2項目と required_nodes を除外する。
         self.declare_parameter('sim', False)
+        # dev_mode 一式: WP-DEV-01A（開発モードの土台）。ROS 側が正本であり、
+        # ブラウザの localStorage は見た目専用（Spec-webui.md §5.1）。
+        # launch 引数 dev_mode から渡す。実行中の切り替えは標準のパラメータ機構
+        #（`ros2 param set connectivity_checker dev_mode true`）で行う。
+        # config_manager（/config_manager/set_tunable_params）には乗せない。
+        # dev_mode が偽なら個別値に関わらず何も無視しない（既定挙動と同一）。
+        # 個別項目の既定は真: 起動引数は dev_mode 1 つだけなので、起動時に個別
+        # 指定する手段が無く、既定偽では dev_mode:=true だけでは link 無視が
+        # 効かず完了条件（機器なしで IDLE 到達）が満たせないため。
+        self.declare_parameter('dev_mode', False)
+        self.declare_parameter('dev_ignore_link', True)
+        self.declare_parameter('dev_ignore_battery', True)
+        self.declare_parameter('dev_ignore_opcheck', True)
+        self.declare_parameter('dev_ignore_auto_brake', True)
 
         self._last_fb_ms = None
         self._last_cmd_ms = None
@@ -71,6 +87,7 @@ class ConnectivityChecker(Node):
         self._estop_seen = False
         self._link_ok_gate_prev = False   # L-3: 立ち上がり検出用のラッチ
         self._restart_count = 0           # restart_control_stack の実行回数（FMEA②）
+        self._dev_logged_state = None     # 開発モード状態の変化検出用（ログは切り替わり時だけ）
 
         self._setup_io()
 
@@ -78,6 +95,7 @@ class ConnectivityChecker(Node):
             self.get_logger().warn(
                 'sim=true: Gazebo には esp32_bridge が居ないため、ESP32 の2項目'
                 '（esp32_feedback/esp32_loopback）と required_nodes の判定を除外する（§8）')
+        self._log_dev_state(force=True)
 
     # ------------------------------------------------------------
     def _setup_io(self):
@@ -95,6 +113,17 @@ class ConnectivityChecker(Node):
 
         event_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
         self._pub_event = self.create_publisher(StateEvent, '/system/event', event_qos)
+
+        # /system/dev_mode: 開発モードの現在状態（names.md §6.2。WP-DEV-01A）。
+        # std_msgs/String に JSON を載せる（/ui/jog_lease が String、
+        # /shutdown/prepare が JSON 文字列を返す前例に倣う。新規 .msg は作らない）。
+        # transient_local + depth 1 で、後から起動した WebUI・ログも最新を読める。
+        dev_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST)
+        self._pub_dev = self.create_publisher(String, '/system/dev_mode', dev_qos)
 
         self.create_timer(_EVALUATE_PERIOD_S, self._on_timer)
 
@@ -126,11 +155,60 @@ class ConnectivityChecker(Node):
             scan_expected_points=self.get_parameter('scan_expected_points').value,
             required_nodes=tuple(self.get_parameter('required_nodes').value or ()),
             sim=bool(self.get_parameter('sim').value),
+            dev_ignore_link=self._dev_effective()['link'],
         )
 
     def _present_node_names(self):
         # §3.2: サービスを新設せず rclpy の get_node_names() で照合する。
         return self.get_node_names()
+
+    # ------------------------------------------------------------
+    # WP-DEV-01A: 開発モードの状態。**正本はこのノードのパラメータ**であり、
+    # ブラウザの localStorage は見た目専用（Spec-webui.md §5.1）。
+    # 実効無視 = dev_mode（マスタ） AND dev_ignore_<項目>（項目別選択）。
+    # ------------------------------------------------------------
+    _DEV_ITEMS = ('link', 'battery', 'opcheck', 'auto_brake')
+
+    def _dev_selected(self) -> dict:
+        return {item: bool(self.get_parameter(f'dev_ignore_{item}').value)
+                for item in self._DEV_ITEMS}
+
+    def _dev_effective(self) -> dict:
+        master = bool(self.get_parameter('dev_mode').value)
+        return {item: (master and sel) for item, sel in self._dev_selected().items()}
+
+    def _dev_state_dict(self) -> dict:
+        return {
+            'dev_mode': bool(self.get_parameter('dev_mode').value),
+            'ignore': self._dev_selected(),
+            'effective': self._dev_effective(),
+            'estop_hw_known': self._estop_seen,
+            'estop_hw_pressed': self._hw_estop,
+        }
+
+    def _log_dev_state(self, force: bool = False) -> None:
+        """開発モードの ON/OFF と無視項目を切り替わるたびにログへ出す（WP-DEV-01A §5）。
+
+        あとから「その検証は開発モードで通したのか」を追えるようにするため。
+        起動時は force=True で必ず出す。
+        """
+        state = self._dev_state_dict()
+        if not force and state == self._dev_logged_state:
+            return
+        self._dev_logged_state = state
+        if not state['dev_mode']:
+            self.get_logger().info('dev_mode=false（通常運用。警告の無視なし）')
+            return
+        ignored = sorted(k for k, v in state['effective'].items() if v)
+        self.get_logger().warn(
+            f"dev_mode=true: 無視項目={ignored}（battery/opcheck/auto_brake は "
+            'as-built に運用開始を止めるゲートが無く、選択状態の保持・配信のみ。'
+            '物理E-Stop・ESP32ウォッチドッグ・UI E-Stop・自律系障害物停止は無効化できない）')
+
+    def _publish_dev_state(self) -> None:
+        msg = String()
+        msg.data = json.dumps(self._dev_state_dict(), sort_keys=True)
+        self._pub_dev.publish(msg)
 
     # ------------------------------------------------------------
     # 責務2・3: 1 Hz で evaluate() を呼び、L-2/L-3 に従って evt.link_ok を出す
@@ -150,13 +228,23 @@ class ConnectivityChecker(Node):
         if not report.nodes and report.missing_nodes:
             self.get_logger().warn(f'必須ノードが不足している: {report.missing_nodes}')
 
-        # L-2: 物理 E-Stop 押下中は evt.link_ok を出さない（CL-B-6・§12.6）。
-        gate = report.all_ok() and self._estop_seen and not self._hw_estop
+        effective_link = self._dev_effective()['link']
+        # L-2 + DEV-01A: 物理 E-Stop 押下中は dev_mode でも evt.link_ok を出さない
+        #（完了条件4）。判定式は connectivity_core.should_emit_link_ok（純粋関数）。
+        gate = should_emit_link_ok(report, self._estop_seen, self._hw_estop,
+                                   effective_link)
 
         # L-3: 立ち上がりで1回だけ。10 Hz(このタイマ自体は1Hzだが)で撃たない。
         if gate and not self._link_ok_gate_prev:
+            if effective_link and not self._estop_seen:
+                self.get_logger().warn(
+                    'dev_mode: /safety/estop_hw 未受信（ESP32 不在）のまま evt.link_ok を出す。'
+                    '押下が判明した時点で link_ok は止まる')
             self._publish_link_ok()
         self._link_ok_gate_prev = gate
+
+        self._publish_dev_state()
+        self._log_dev_state()
 
     def _publish_link_ok(self):
         msg = StateEvent()

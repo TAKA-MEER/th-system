@@ -439,7 +439,11 @@ AP が落ちれば必須通信系統の 3 者がすべて同時に切れる。
 
 **開発段階では ROS 側からも有効にできる**（2026-09-20 ユーザー決定。[Spec-webui.md](Spec-webui.md) §5.1）。
 検証を行う実装管理担当が WebUI を開かずに使えるようにするため。
-**この経路が増えても上の境界は動かさない** —— `dev_mode` を `safety_monitor` と `obstacle_limiter` に
+**1 点だけ緩む**: 物理 E-Stop の状態が**まだ分からない間**（ESP32 未接続で一度も届いていない）、
+開発モードは運用開始を通す。**押されていると分かっている間は開発モードでも止める**ので、
+押されたまま走り出すことはない（[Spec-webui.md](Spec-webui.md) §5.1「物理 E-Stop の扱い」）。
+
+**それ以外の境界は動かさない** —— `dev_mode` を `safety_monitor` と `obstacle_limiter` に
 **渡さない**ことで構造的に保証する（[DetailedDesign-names.md](../detailed/DetailedDesign-names.md) §1.3）。
 両ノードが値を知らなければ、実装を間違えても無効化は起こらない。
 

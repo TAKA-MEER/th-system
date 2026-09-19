@@ -23,11 +23,21 @@ class Params:
     居ないため、ESP32 の2項目（`esp32_feedback`/`esp32_loopback`）と `required_nodes` の
     判定を除外する。「除外の事実を黙って通さない」（§8）はログで表現する
     （呼び出し側 = connectivity_checker.py の責務）。
+
+    `dev_ignore_link`: WP-DEV-01A（開発モード）。真のとき ESP32 の2項目・`lidar`・
+    `required_nodes` の**4 項目すべて**を除外する（`sim` 分岐より広い。`sim` は Gazebo
+    でも `/scan` は出るため `lidar` を残すが、開発モードは「ESP32 もラズパイも
+    繋がっていない状態から `IDLE` に到達できる」ことが完了条件なので `lidar` も
+    除外する）。物理 E-Stop のゲートはここでは扱わない（`should_emit_link_ok()`）。
+    `battery` / `opcheck` / `auto_brake` の無視項目は as-built に運用開始を止める
+    ゲートが存在しないため `evaluate()` の対象外。選択状態の保持・配信・記録だけ
+    行い、ゲート実装時に参照する（呼び出し側の責務）。
     """
     esp32_alive_timeout_ms: int
     scan_expected_points: int
     required_nodes: Tuple[str, ...]
     sim: bool = False
+    dev_ignore_link: bool = False
 
 
 @dataclass(frozen=True)
@@ -63,21 +73,30 @@ def evaluate(now_ms: int, last_fb_ms: Optional[int], last_cmd_ms: Optional[int],
 
     L-1: Wi-Fi AP はどの項目にも現れない（`LinkReport` のフィールド集合そのものが判定項目）。
     `p.sim` が真のとき、行1・行2・行4（ESP32 の2項目と required_nodes）を除外する（§8）。
+    `p.dev_ignore_link` が真のときは行1〜行4の**すべて**（`lidar` を含む）を除外する
+    （WP-DEV-01A。既存の `sim` 分岐と同じ形。`sim` 分岐を壊さないよう独立した分岐にする）。
     """
-    if p.sim:
+    if p.dev_ignore_link:
         esp32_feedback = True
         esp32_loopback = True
         missing_nodes: Tuple[str, ...] = ()
         nodes = True
+        lidar = True
     else:
-        esp32_feedback = _fresh(now_ms, last_fb_ms, p.esp32_alive_timeout_ms)
-        esp32_loopback = _fresh(now_ms, last_cmd_ms, p.esp32_alive_timeout_ms)
-        present = set(present_nodes)
-        missing_nodes = tuple(n for n in p.required_nodes if n not in present)
-        nodes = len(missing_nodes) == 0
+        if p.sim:
+            esp32_feedback = True
+            esp32_loopback = True
+            missing_nodes = ()
+            nodes = True
+        else:
+            esp32_feedback = _fresh(now_ms, last_fb_ms, p.esp32_alive_timeout_ms)
+            esp32_loopback = _fresh(now_ms, last_cmd_ms, p.esp32_alive_timeout_ms)
+            present = set(present_nodes)
+            missing_nodes = tuple(n for n in p.required_nodes if n not in present)
+            nodes = len(missing_nodes) == 0
 
-    lidar = (_fresh(now_ms, last_scan_ms, p.esp32_alive_timeout_ms)
-              and scan_points == p.scan_expected_points)
+        lidar = (_fresh(now_ms, last_scan_ms, p.esp32_alive_timeout_ms)
+                  and scan_points == p.scan_expected_points)
 
     return LinkReport(
         esp32_feedback=esp32_feedback,
@@ -86,3 +105,24 @@ def evaluate(now_ms: int, last_fb_ms: Optional[int], last_cmd_ms: Optional[int],
         nodes=nodes,
         missing_nodes=missing_nodes,
     )
+
+
+def should_emit_link_ok(report: LinkReport, estop_seen: bool, hw_estop: bool,
+                        dev_link_ignored: bool) -> bool:
+    """`evt.link_ok` を出してよいか（WP-DEV-01A。旧 L-2 ゲート式の純粋関数化）。
+
+    - 通常（`dev_link_ignored` が偽）: `report.all_ok()` かつ **物理 E-Stop の状態を
+      受信済み** かつ押されていないときだけ真（L-2・CL-B-6。従来どおり）。
+    - 開発モード（真）: 物理 E-Stop が**押されていると分かっている間は出さない**
+      （Spec-safety.md §10 の境界。`dev_mode` でも外さない）。
+      未受信（`estop_seen` が偽）でも出す —— `/safety/estop_hw` の唯一の publisher
+      は `esp32_bridge` で ESP32 フレーム受信時にしか出さないため、ESP32 が居ない
+      環境では受信を要求すると `link_ok` が永久に出ず、完了条件
+      （機器なしで `IDLE` 到達）が満たせない。不明のまま通した事実は呼び出し側
+      （connectivity_checker.py）がログと `/system/dev_mode` に残す。
+    """
+    if hw_estop:
+        return False
+    if dev_link_ignored:
+        return True
+    return report.all_ok() and estop_seen

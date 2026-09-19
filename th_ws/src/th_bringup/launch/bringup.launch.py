@@ -74,6 +74,15 @@ def generate_launch_description():
                               description='DR-SPAAM/person_tracker_bridge の起動を'
                                           'この秒数だけ遅らせる (N-27: Nav2 lifecycle と'
                                           'モデルロードの同時実行によるCPUストール回避)'),
+        # WP-DEV-01A: 開発モード。受け取るのは connectivity_checker だけ。
+        # safety_monitor と obstacle_limiter には絶対に渡さない
+        #（names.md §1.3 の構造的な保証）。実行中の切替は
+        # `ros2 param set connectivity_checker dev_mode true/false` で行う。
+        DeclareLaunchArgument('dev_mode', default_value='false',
+                              description='開発モード (WP-DEV-01A)。true で機器未接続でも '
+                                          'INIT/CHECK から IDLE へ進める。'
+                                          '物理E-Stop・ウォッチドッグ・UI E-Stop・'
+                                          '自律系障害物停止は無効化できない'),
     ]
 
     use_stub     = LaunchConfiguration('use_stub')
@@ -81,6 +90,7 @@ def generate_launch_description():
     map_yaml     = LaunchConfiguration('map_yaml')
     lidar_source = LaunchConfiguration('lidar_source')
     stage        = LaunchConfiguration('stage')
+    dev_mode     = LaunchConfiguration('dev_mode')
     enable_route_slam = LaunchConfiguration('enable_route_slam')
     lidar_is_local = PythonExpression(["'", lidar_source, "' == 'local'"])
 
@@ -147,7 +157,7 @@ def generate_launch_description():
         "') >= 3 else '省略(段階3から)') + ' / SLAM=' + "
         "('起動' if (int('", stage, "') >= 3 or '", enable_route_slam,
         "'.lower() in ('true','1')) else '省略') + ' / 人物検知=' + "
-        "('起動' if int('", stage, "') >= 4 else '省略(段階4から)')"])))
+        "('起動' if int('", stage, "') >= 4 else '省略(段階4から)') + ' / dev_mode=' + '", dev_mode, "'"])))
 
     # ── 1. robot_state_publisher / joint_state_publisher (URDF → TF) ─
     # base_link → laser_link 等の固定 TF を配信する。これが無いと SLAM /
@@ -288,6 +298,8 @@ def generate_launch_description():
     #   物理非常停止と ESP32 ウォッチドッグ（600ms）は有効なので真の暴走は止まる。
     #   特例解除時に wheel_feedback の鮮度ゲート＋回頭中の Case A 除外＋実測較正で
     #   runaway_hold_ms を右サイズ化してから 'runaway' を戻す。docs/plan/EXCEPTION-LEDGER.md W-06。
+    # dev_mode は渡さない（names.md §1.3。obstacle_limiter と同じ構造的な保証）。
+    # 両ノードが値を知らなければ、実装ミスで無効化されることが起きない。
     SAFETY_ENABLED_TARGETS = ['lidar', 'esp32', 'state', 'firmware', 'limiter']
     nodes.append(Node(
         package='th_safety',
@@ -362,12 +374,28 @@ def generate_launch_description():
         parameters=[os.path.join(GENERATED_DIR, 'state_manager.yaml')],
         output='screen',
     ))
+    # WP-DEV-01A: dev_mode は launch 引数の文字列 ('true'/'false') のため、
+    # bool パラメータへは IfCondition / UnlessCondition で排他的に定義を分けて
+    # 渡す（PythonExpression では起動時に文字列化され型不一致で落ちる）。
+    # 両定義とも name は connectivity_checker（排他起動なので重複しない）。
+    # dev_ignore_* はノード側の既定値（真）のまま。safety_monitor と
+    # obstacle_limiter には dev_mode を渡さない（names.md §1.3）。
     nodes.append(Node(
         package='th_state',
         executable='connectivity_checker.py',
         name='connectivity_checker',
         parameters=[os.path.join(GENERATED_DIR, 'connectivity_checker.yaml'),
-                    {'sim': False}],
+                    {'sim': False, 'dev_mode': False}],
+        condition=UnlessCondition(dev_mode),
+        output='screen',
+    ))
+    nodes.append(Node(
+        package='th_state',
+        executable='connectivity_checker.py',
+        name='connectivity_checker',
+        parameters=[os.path.join(GENERATED_DIR, 'connectivity_checker.yaml'),
+                    {'sim': False, 'dev_mode': True}],
+        condition=IfCondition(dev_mode),
         output='screen',
     ))
 
