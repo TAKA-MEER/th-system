@@ -24,6 +24,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/StateEvent.msg"
   "msg/ActiveScreen.msg"
   "msg/LimiterStatus.msg"
+  "msg/LocalizationHealth.msg"
   "msg/WaitClearStatus.msg"
   "msg/RouteInfo.msg"
   "msg/RouteList.msg"
