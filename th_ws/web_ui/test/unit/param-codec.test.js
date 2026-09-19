@@ -40,3 +40,20 @@ test('round-trip: encode -> decode でスカラ値が保たれる', () => {
     assert.equal(decodeParamValue(encodeParamValue(v)), v)
   }
 })
+
+// WP-DEV-01B: 開発モード (dev_mode / dev_ignore_*) は boolean。
+// 従来の encode は数値しか作れず、bool パラメータを送れなかった。
+test('encodeParamValue: isBool で BOOL 型を作る', () => {
+  assert.deepEqual(
+    encodeParamValue(true, { isBool: true }),
+    { type: PARAM_TYPE.BOOL, bool_value: true })
+  assert.deepEqual(
+    encodeParamValue(false, { isBool: true }),
+    { type: PARAM_TYPE.BOOL, bool_value: false })
+})
+
+test('round-trip: bool も encode -> decode で保たれる', () => {
+  for (const v of [true, false]) {
+    assert.equal(decodeParamValue(encodeParamValue(v, { isBool: true })), v)
+  }
+})
