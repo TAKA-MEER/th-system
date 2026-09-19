@@ -90,8 +90,11 @@ class TestLocalizationLost(unittest.TestCase):
         self._health_timer = self.node.create_timer(0.2, self._publish_health)
 
         # 起動猶予 + 少し余裕（test_safety_monitor.py と同じ考え方）。
+        # この spin で溜まった edge をバッファへ流し込む。
         self._spin(STARTUP_GRACE_SEC + 0.5)
-        self._faults.clear()
+        # blind clear はしない。test_a の fault はこの setup 中に既に edge
+        # 発火している可能性があり（/safety/fault は変化時だけ出る）、
+        # 消すと二度と観測できない。各試験は自分の前後始末を持つ。
 
     def tearDown(self):
         if getattr(self, '_health_timer', None) is not None:
