@@ -184,7 +184,7 @@ herdr agent get <name>                            # agent_status を 10 秒間�
 | # | 内容 | 場所 |
 | --- | --- | --- |
 | **1** | **`DRIVE_RUNAWAY`（駆動系の暴走検知）が無効のまま `main` に載っている** | 台帳 `W-06`。除外理由だった「WiFi 経由の受信ギャップ」は ESP32 のシリアル化（2026-09-05）で消えている可能性が高い |
-| **2** | **`OPCHECK` / `CALIB` に入ると S-01 へ戻れず、全操作が `not_allowed` になる**（詰み） | FSM にモードはあるが、駆動するノードが `bringup.launch.py` にいない。`th_calibration/scripts/` の 4 本も launch 配線なし |
+| **2** | **`OPCHECK` / `CALIB` に入ると戻れない**（詰み） | **FSM ではなく WebUI の問題**（2026-09-20 特定）。`C-08`（任意のモード ＋ 「終了」→ `IDLE`）は実装されており、ガード `can_finish` も両モードで真。**画面が無いので `ui.finish` を送るボタンが無い**のが原因。別件として、駆動するノード（runner）が `bringup.launch.py` にいない・`th_calibration/scripts/` の 4 本も launch 配線なし |
 | **3** | **自己位置を見失っても止まらない。**`LOCALIZATION_LOST` は型（`FaultStatus.msg`・`safety_monitor_core.cpp` の文字列）だけ在り、`SAFETY_ENABLED_TARGETS` に `localization` が無い | 台帳 `W-02` ／ `WP-SAFE-05` |
 | **4** | 旧設計の幽霊ノード 3 本（`follow_planner` / `follow_planner_mapless` / `person_predictor`）が残存。**廃止済みトピック `/cmd_vel_retreat` へ publish している** | 実機では起動しない（`use_stub:=true` のときだけ）ので実害は無いが、`WP-CLEAN-01` の対象 |
 
@@ -376,7 +376,7 @@ S-50 のトグルもそのまま。**通常運用に入る直前に対策を決�
 | --- | --- | --- | --- |
 | **1** | **`DRIVE_RUNAWAY` を戻す** | `W-06` | **駆動系の暴走検知が無効のまま `main` に載っている。**除外理由だった「WiFi 経由の受信ギャップ」は ESP32 のシリアル化（2026-09-05）で消えている可能性が高い。**まず実機で `/cmd_vel` と `/esp32/wheel_feedback` を 10 秒トレースして前提を確かめる**——消えていれば `SAFETY_ENABLED_TARGETS` に戻すだけで閉じるかもしれない |
 | **2** | **自己位置を見失ったら止まる** | `WP-SAFE-05` ／ `W-02` | 型だけ在って検知が無い。**地図上の経路をなぞる動作が、ずれたまま続く。**段階 5・6 を実運用する前提条件 |
-| **3** | **`OPCHECK` / `CALIB` の詰みを塞ぐ** | 段階 7 の入口 | **入ると S-01 へ戻れず全操作が拒否される。**runner を作るか、runner ができるまでモードに入れないようにするかを決める |
+| **3** | **`OPCHECK` / `CALIB` の詰みを塞ぐ** | 段階 7 の入口 | **入ると戻れない。原因は WebUI 側**（2026-09-20 に特定）。FSM は `C-08`（`mode: '*'` ＋ `ui.finish` → `IDLE`、ガード `can_finish` は両モードで真）で**抜けられる**。**画面が無いモードに入ると `ui.finish` を送る手段が無いだけ。**→ 画面の無いモードに入ったときの脱出口を UI に用意すれば塞がる（runner を作るのは `WP-MAINT-01`/`-02` の仕事で、詰みの解消とは別） |
 
 ### 第 2 群 — 試験場内動作を仕上げる（いま実際に使っている機能）
 
