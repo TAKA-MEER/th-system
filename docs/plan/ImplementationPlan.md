@@ -294,7 +294,7 @@ herdr agent get <name>                            # agent_status を 10 秒間�
 | 校正結果を機体へ反映する | `WP-ESP32-02` | **部分到達**（`calib.yaml` があれば bringup が ESP32 パラメータに重ねる。生成は `apply_calib.py` を手で叩く） |
 | 故障診断 | `WP-MAINT-03` | 未着手 |
 | 点検・校正・設定の画面 | `WP-UI-08` | **部分到達**（S-50 設定のみ実装。点検・校正の画面は無い） |
-| **開発モードの実体** | **`WP-DEV-01`** | **配線されていない成果物。**トグルとヘッダ表示だけ在り、警告の無視もログ選択も未実装。**実施順では最優先**（§6 第 0 群） |
+| **開発モードの実体** | **`WP-DEV-01`** | **土台は配線済み**（2026-09-20・`766cc59`）。`dev_mode:=true` で機器ゼロから `IDLE` に到達できることを Docker 実走で確認。**残るのは WebUI 接続・選択ログ記録・battery/opcheck/auto_brake の実ゲート**（§6 第 0 群） |
 | **古いプログラムの削除** | `WP-CLEAN-01` | 未着手（幽霊ノード 3 本 ＋ `panel_navigator` が残存） |
 
 ### 段階 8 — 後回し
@@ -337,7 +337,18 @@ bash scripts/run_tests.sh --all --sim  # 単体 ＋ 結合 ＋ シミュレー�
 
 | # | 作業 | 記号 | 理由 |
 | --- | --- | --- | --- |
-| **0** | **開発モードの実体を作る** | **`WP-DEV-01`**（[詳細](detailed/DetailedDesign-packets.md) §10.1） | **これ自体が以降すべての実装と検証を速くする。**機器が揃っていなくても先へ進めるので、実機・ラズパイ・ESP32 のどれかが無い状態でも画面と FSM を確かめられる |
+| ~~0-A~~ | ~~**開発モードの土台**（ROS 側の正本・`dev_mode` 引数・機器未接続の無視）~~ | `WP-DEV-01` | **完了**（2026-09-20・`766cc59`）。`dev_mode:=true` で**機器ゼロから `IDLE` に到達できる**ことを Docker 実走で確認した。`dev_mode:=false` は従来どおり `INIT/CHECK` で止まる |
+| **0-B** | **WebUI を `/system/dev_mode` に繋ぐ** | `WP-DEV-01` | いま S-50 のトグルは `localStorage` だけで ROS 側に届かない。**画面から開発モードを切り替えられるようにする**（正本は ROS 側） |
+| **0-C** | **選択ログ記録** | `WP-DEV-01` | [Spec-webui.md](spec/Spec-webui.md) §5「選択した特定のログのみをタイムスタンプ付きで記録」 |
+| **0-D** | battery / opcheck / auto_brake の実ゲート | `WP-DEV-01` | **as-built に「運用開始を止めるゲート」がまだ無い。**選択状態の保持・配信だけ先に入れてある。ゲートを作る段（`WP-MAINT-01` 等）で繋ぐ |
+
+**使い方**: `ros2 launch th_bringup bringup.launch.py dev_mode:=true`。
+実行中の切替は `ros2 param set /connectivity_checker dev_mode true|false`。
+現在の状態は `/system/dev_mode`（JSON）で読める。
+
+**土台で分かったこと**: 物理 E-Stop の状態が**まだ分からない間**だけ、開発モードは運用開始を通す
+（ESP32 が居ないと状態が一度も届かないため）。**押されていると分かっている間は開発モードでも止まる。**
+[Spec-webui.md](spec/Spec-webui.md) §5.1 に表で明記した。
 
 **現状はトグルとヘッダ表示だけで中身が無い。**`localStorage['th.devMode']` ＋ S-50 の開発モードタブ ＋
 ヘッダのバッジはあるが、**警告を無視する処理もログの選択記録も実装されていない**
