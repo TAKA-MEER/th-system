@@ -341,9 +341,10 @@
 **現状（2026-09-20）**: **トグルとヘッダ表示だけ在って中身が無い。**
 `web_ui/src/parts/devMode.js`（`localStorage['th.devMode']` ／ `?dev=1`）＋ S-50 の開発モードタブ ＋
 ヘッダのバッジ。**警告を無視する処理もログ選択も実装されていない。**
-`registry.yaml` には `dev_mode`（既定 `false`）が既にあり、
-**`safety_monitor` と `obstacle_limiter` には渡さない**という構造的な保証も決まっている
-（[DetailedDesign-names.md](DetailedDesign-names.md) §1.3）。
+**`dev_mode` はまだ存在しない。**[DetailedDesign-names.md](DetailedDesign-names.md) §1.3 が
+**launch 引数**（既定 `false`）として設計しているだけで、`bringup.launch.py` は宣言していないし
+`registry.yaml` にも無い。同 §1.3 が定める
+**「`safety_monitor` と `obstacle_limiter` には渡さない」**（構造的な保証）はこのパケットで実装する。
 
 | 作ること | 内容 |
 | --- | --- |

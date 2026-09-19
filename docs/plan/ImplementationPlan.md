@@ -346,7 +346,9 @@ bash scripts/run_tests.sh --all --sim  # 単体 ＋ 結合 ＋ シミュレー�
 
 **安全の境界は動かさない。**物理非常停止・ESP32 ウォッチドッグ・UI 非常停止・自律系の障害物停止は
 開発モードでも無効化できない。`safety_monitor` と `obstacle_limiter` に `dev_mode` を**渡さない**
-配線（[DetailedDesign-names.md](detailed/DetailedDesign-names.md) §1.3）で構造的に保証する。ここは変えない。
+（[DetailedDesign-names.md](detailed/DetailedDesign-names.md) §1.3）ことで構造的に保証する。
+**`dev_mode` は launch 引数としての設計があるだけで、まだ実装されていない**（`bringup.launch.py` に
+宣言が無く `registry.yaml` にも無い）。このパケットで作る。
 
 **検証する側（AI エージェントを含む）が WebUI を開かずに使えるようにする**（ユーザー決定 2026-09-20。
 [Spec-webui.md](spec/Spec-webui.md) §5.1）。検証のたびに安全装置の解除で手間取っていたため、
