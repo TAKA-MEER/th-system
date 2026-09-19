@@ -24,10 +24,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `docs/plan/spec/` | **完成形の正本。**何が・どう振る舞うべきか |
 | `docs/plan/detailed/` | 詳細設計。ノード名・トピック名・作業パケット |
 | `docs/architecture.md` | 現状実装の保守・拡張ガイド(as-built)。spec と食い違う場合は spec 側を優先して実装を追いつかせる |
+| `docs/plan/ImplementationPlan.md` | **実装の進め方と進み具合。**何を・どの順で・誰が・どう管理するか（下記「実装作業の進め方」） |
 | `docs/plan/EXCEPTION-LEDGER.md` | デモ特例で省略・バイパスしたままの事項。コードの `WAIVER(demo):` タグと対。**未クローズが何かはこれが唯一の正** |
 | `VISION.md` | 歴史的な文書。内容は spec へ移し終えた。新しく書き足さない |
 
 `docs/plan/` のうち `spec/` と `detailed/` **以外**は未確定の検討メモで、spec を上書きしない。書き方のルール（本体は結論と表だけにして一目で読める分量を保ち、根拠・詳細は `<テーマ>-<側面>.md` に分ける）は `docs/plan/README.md` に定義してある。plan 配下を編集する前に必ず読むこと。
+
+## 実装作業の進め方
+
+**正本は [docs/plan/ImplementationPlan.md](docs/plan/ImplementationPlan.md) §2。着手前に読む。**
+ここには要点だけ書く。
+
+- **「実装して」と言われたら自分でコードを書かない。**herdr の `ImplementAgent` タブに常駐させた
+  **opencode** にブリーフを渡して投げる（手順・落とし穴は ImplementationPlan §2.1）。
+  体数は固定しない。必要なだけ `herdr pane split` でペインを分ける。
+- **何をやるかは ImplementationPlan §6。**段階番号の順ではなく**用途順**。先頭から取る。
+- **検証は必ず自分でやる**（§2.2）。**実装エージェントの「テストが緑」報告は信用しない。**
+  ホストの pytest / npm test を自分で回し、変異チェックを 1〜2 件は自分で再実行する。
+- **git は自分が持つ**（§2.3）。ブランチを切る・`main` へマージ・`push`・掃除は実装管理担当の責任で、
+  エージェントは自分の作業ブランチにコミットするところまで。マージは `--no-ff`、**squash しない**。
+- `tune/exhibition-demo` と `feat/zundamon-voice` は**展示用の長期保管ブランチ**。
+  `main` に統合しない・掃除しない。
 
 ## 実機マニュアルの保守ルール
 
