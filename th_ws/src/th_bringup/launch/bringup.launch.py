@@ -300,7 +300,21 @@ def generate_launch_description():
     #   runaway_hold_ms を右サイズ化してから 'runaway' を戻す。docs/plan/EXCEPTION-LEDGER.md W-06。
     # dev_mode は渡さない（names.md §1.3。obstacle_limiter と同じ構造的な保証）。
     # 両ノードが値を知らなければ、実装ミスで無効化されることが起きない。
+    # WP-SAFE-05: localization 監視は自己位置推定が動く起動のときだけ
+    # （Spec-safety.md §3.5.0「使っていない間は監視しない」）。
+    # 条件は「SLAM が起動する条件」と「AMCL が起動する条件」の OR。
+    # 下の slam_toolbox（map_yaml=='' かつ (stage>=3 or enable_route_slam)）と
+    # localization_launch（map_yaml!='' かつ stage>=3）のどちらかが立つとき。
+    # brief の「stage>=3 または enable_route_slam」だけでは
+    # map_yaml 指定＋stage<3＋enable_route_slam の矛盾した呼び出しで
+    # 推定ノード不在のまま監視が有効になり誤発火するため、map_yaml も見る。
+    localization_enabled = PythonExpression([
+        "(('", map_yaml, "' == '' and ('", enable_route_slam,
+        "'.lower() in ('true', '1') or int('", stage, "') >= 3)) or ('",
+        map_yaml, "' != '' and int('", stage, "') >= 3))"])
     SAFETY_ENABLED_TARGETS = ['lidar', 'esp32', 'state', 'firmware', 'limiter']
+    # dev_mode と同じ流儀（WP-DEV-01A）: If/Unless で排他的に定義を分ける。
+    # W-06 の runaway 除外は両方とも維持する（ここは触らない）。
     nodes.append(Node(
         package='th_safety',
         executable='safety_monitor',
@@ -310,6 +324,30 @@ def generate_launch_description():
             'config', 'safety_monitor.yaml'),
             os.path.join(GENERATED_DIR, 'safety_monitor.yaml'),
             {'enabled_targets': SAFETY_ENABLED_TARGETS}],
+        condition=UnlessCondition(localization_enabled),
+        output='screen',
+    ))
+    nodes.append(Node(
+        package='th_safety',
+        executable='safety_monitor',
+        name='safety_monitor',
+        parameters=[os.path.join(
+            get_package_share_directory('th_safety'),
+            'config', 'safety_monitor.yaml'),
+            os.path.join(GENERATED_DIR, 'safety_monitor.yaml'),
+            {'enabled_targets': SAFETY_ENABLED_TARGETS + ['localization']}],
+        condition=IfCondition(localization_enabled),
+        output='screen',
+    ))
+    # WP-SAFE-05: 健全性の publisher。safety と同じ条件で起動する
+    # （起動していない推定を見て node_down と誤判定しないため。条件式オブジェクト
+    # を共用し、safety 側のゲートとずれないようにする）。
+    nodes.append(Node(
+        package='th_state',
+        executable='localization_health.py',
+        name='localization_health',
+        parameters=[os.path.join(GENERATED_DIR, 'localization_health.yaml')],
+        condition=IfCondition(localization_enabled),
         output='screen',
     ))
 

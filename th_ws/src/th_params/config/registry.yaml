@@ -804,6 +804,45 @@
   spec_ref: "DetailedDesign-names.md §7.3（wp2 WP-SAFE-01 §4.1）"
   note: "MUX_DEAD の判定。暫定値"
 
+- name: localization_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 2000
+  consumers: [localization_health]
+  spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
+  note: "map→odom がこの時間更新されなければ A（stale）。暫定値"
+
+- name: localization_topic_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 5000
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
+  note: "/safety/localization_health の途絶判定（1 Hz の 5 周期）"
+
+- name: localization_warmup_ms
+  unit: ms
+  class: b
+  status: given
+  value: 30000
+  consumers: [localization_health]
+  spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
+  note: "起動猶予。推定ノードの discovery・初回 map→odom に時間がかかるため、
+    この間は ok=true で出す。起動失敗（C）は猶予後に node_down で捕まえる。暫定値"
+
+- name: localization_expected_nodes
+  unit: string_list
+  class: b
+  status: given
+  value:
+    - slam_toolbox
+    - amcl
+  consumers: [localization_health]
+  spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
+  note: "自己位置推定のノード名。いずれも居なければ C（node_down）"
+
 - name: critical_fault_hold_ms
   unit: ms
   class: b

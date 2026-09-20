@@ -13,6 +13,7 @@ ament_python_install_package(th_state)
 install(PROGRAMS
   scripts/state_manager.py
   scripts/connectivity_checker.py
+  scripts/localization_health.py
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})

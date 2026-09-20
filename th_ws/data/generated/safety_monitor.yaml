@@ -14,6 +14,7 @@ safety_monitor:
       lidar: 154
     link_quality_regression_ratio: 1.5
     link_quality_window_sec: 30
+    localization_topic_timeout_ms: 5000
     lock_stale_ms: 500
     mux_dead_ms: 500
     runaway_hold_ms: 500

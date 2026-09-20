@@ -26,7 +26,8 @@ _REGISTRY = os.path.join(
 
 # 保持時間を課す重大フォルト。回復可能フォルト（LIDAR_LOST / ESP32_DISCONNECTED）は
 # 一時停止から正常に再開できるので対象外＝素の checkTimeout のままにする。
-_HELD_CRITICAL = ('LIMITER_DEAD', 'MUX_DEAD', 'STATE_INCONSISTENT')
+_HELD_CRITICAL = ('LIMITER_DEAD', 'MUX_DEAD', 'STATE_INCONSISTENT',
+                  'LOCALIZATION_LOST')
 _NOT_HELD = ('LIDAR_LOST', 'ESP32_DISCONNECTED')
 
 
