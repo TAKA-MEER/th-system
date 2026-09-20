@@ -301,7 +301,7 @@ def derive_limits(screens, now_ms, p):
 | **`ActiveScreen.msg`** | `Header header` / `string screen_id` / `string client_id` / `bool interacting` / **`builtin_interfaces/Time last_input`** | UI → `th_state`。**`header.stamp` は 2 Hz の定期発行時刻であって「最後の操作時刻」ではない。**`last_input` が無いと、画面を開いているだけの端末が永久に「使用中」になる |
 | `FaultStatus.msg` | **`Header header`** / `bool active` / `string fault_type` / `string description` / **`string severity`**（`RECOVERABLE` / `CRITICAL`） | **`severity` を末尾に追加**（`F-20`。`WP-MSG-01`）。**`Header header` を先頭に追加**（`WP-SAFE-01`）——`WP-MSG-01` の `M3` は既存 msg への変更を `severity` 1 件に限定しており、先頭への挿入はその例外を超えるため、`/safety/fault` の publisher を書き換える `WP-SAFE-01` で追加した（`header.stamp` を読む消費者はまだ無い） |
 | **`LimiterStatus.msg`** | `Header header` / `bool alive` / `string action`（`PASS`/`CLAMP`/`STOP`/`ZERO_STALE`/**`BLOCKED_UNCALIBRATED`**） / `float32 in_linear` / `float32 out_linear` / `float32 nearest_obstacle_m` / `string source_class`（`MANUAL`/`AUTO`） / `float32 applied_limit_mps` | 監視と画面表示の両方に使う |
-| **`LocalizationHealth.msg`** | `Header header` / `bool ok` / `string reason`（`""` 正常／`stale` A: `map→odom` が凍結／`node_down` C: 推定ノード不在／`low_confidence` B 用の予約。**B は範囲外（`O-e1`）のため出さない**） / `float32 transform_age_sec` / `bool node_present` | **`safety_monitor` の `localization` 監視の入力（WP-SAFE-05）。`reason` の文字列定義はこの .msg のコメントが正** |
+| **`LocalizationHealth.msg`** | `Header header` / `bool ok` / `string reason`（`""` 正常／`stale` A: `map→odom` が凍結／`node_down` C: 推定ノード不在／`jump` B′: `map→odom` が比較周期に許容超で動いた／`low_confidence` B 用の予約。出さない） / `float32 transform_age_sec` / `bool node_present` | **`safety_monitor` の `localization` 監視の入力（WP-SAFE-05）。`reason` の文字列定義はこの .msg のコメントが正。優先順位は `node_down` ＞ `stale` ＞ `jump`（localization_health_core.py の docstring に理由を記載）** |
 | **`WaitClearStatus.msg`** | `Header header` / `float32 distance_m` / `float32 remaining_sec` / `bool satisfied` / `string verdict`（`OK`/`WAITING`/`NOT_CLEAR`） | 退避待ちの表示 |
 | **`RouteList.msg`** | `Header header` / `RouteInfo[] routes` | transient_local。トピック `/route/catalog` |
 | **`LinkQuality.msg`** | `Header header` / `string link`（`esp32`/`lidar`/`ui`） / `float32 p50_ms` / `float32 p99_ms` / `float32 max_ms` / `uint32 window_sec` | タイムアウトの根拠を実測で持つ |
@@ -423,7 +423,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `/safety/fault` | `FaultStatus` | reliable, depth 5 | 変化時 |
 | `/safety/fault_lock` | `std_msgs/Bool` | reliable | 10 Hz |
 | `/safety/limiter_status` | `LimiterStatus` | best_effort, depth 1 | **20 Hz**（heartbeat 兼用） |
-| **`/safety/localization_health`** | **`LocalizationHealth`** | **reliable, depth 1** | **1 Hz（発行者は `localization_health`。WP-SAFE-05。止まったこと自体が異常の合図）** |
+| **`/safety/localization_health`** | **`LocalizationHealth`** | **reliable, depth 1** | **2 Hz（発行者は `localization_health`。WP-SAFE-05。比較周期 `jump_window_ms` に連動。止まったこと自体が異常の合図）** |
 | `/safety/link_quality` | `LinkQuality` | best_effort | 1 Hz |
 | **`/safety/firmware_flags`** | `std_msgs/UInt8` | **transient_local, depth 1** | 変化時＋接続時（[hardware](DetailedDesign-hardware.md) §3.1） |
 | **`/esp32/battery`** | `sensor_msgs/BatteryState` | reliable, depth 1 | **1 Hz**（[hardware](DetailedDesign-hardware.md) §3.3） |
@@ -557,6 +557,9 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`localization_topic_timeout_ms`** | ms | (b)。**`safety_monitor` が `/safety/localization_health` の途絶を判定する**（1 Hz の 5 周期） |
 | **`localization_warmup_ms`** | ms | (b)。**`localization_health` の起動猶予**。起動直後は推定ノードの discovery・初回 `map→odom` に時間がかかるため、この間は `ok=true` で出す。起動失敗（C）は猶予後に `node_down` で捕まえる |
 | **`localization_expected_nodes`** | string[] | given。**自己位置推定のノード名**（`slam_toolbox`／`amcl`）。いずれも居なければ C（`node_down`） |
+| **`jump_window_ms`** | ms | (b)。**B′ の比較周期。`localization_health` の publish 周期と同一**（比較は tick ごとに行う） |
+| **`jump_translation_m`** | m | (b)。**B′ の並進許容**。比較周期のあいだの `map→odom` 移動がこれを超えたら `jump` |
+| **`jump_rotation_rad`** | rad | (b)。**B′ の回転許容**（同上） |
 | **`mux_dead_ms`** | ms | (b)。`MUX_DEAD` の判定（[wp2](DetailedDesign-wp2.md) `WP-SAFE-01` §4.1） |
 | **`runaway_hold_ms`** | ms | (b)。`DRIVE_RUNAWAY` の保持時間 |
 | **`critical_fault_hold_ms`** | ms | (b)。`LIMITER_DEAD` / `MUX_DEAD` / `STATE_INCONSISTENT` / **`LOCALIZATION_LOST`** の保持時間。監視ループ 1 周期の遅れで生じる単発の誤検知を消す（WS-9O。Spec-safety.md §3.5.1・§3.5.2）|
