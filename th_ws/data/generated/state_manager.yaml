@@ -4,4 +4,5 @@ state_manager:
     jog_lease_ms: 1200
     link_wait_timeout_ms: 10000
     screen_stale_ms: 3000
+    target_confidence_min: 0.5
     ui_active_window_s: 30

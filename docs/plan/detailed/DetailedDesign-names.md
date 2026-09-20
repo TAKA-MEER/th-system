@@ -607,6 +607,18 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `factor` | — | (b)。地図間引きの縮小率（`map_downsampler`。W-03） |
 | `publish_period_ms` | ms | (b)。地図間引きの配信間隔（W-03） |
 | `occupied_threshold` | — | (b)。地図間引きの占有判定閾値（W-03） |
+| `min_confidence` | — | (b)。ピン登録の対象確信度下限（W-13） |
+| `pin_min_clearance_m` | m | (b)。ピン登録の壁クリアランス下限（W-13） |
+| `pin_retreat_m` | m | (b)。ピン登録の退避距離（W-13） |
+| `pin_lethal_threshold` | — | (b)。ピン登録の壁判定占有値（W-13） |
+| `pin_clearance_search_r_m` | m | (b)。ピン登録のクリアランス探索半径（W-13） |
+| `align_kp` | — | (b)。盤前向き合わせの比例ゲイン（W-13） |
+| `align_w_max_rps` | rad/s | (b)。盤前向き合わせの最高旋回速度（W-13） |
+| `blocked_recheck_period_s` | s | (b)。経路ブロック再確認周期（W-13） |
+| `arrival_xy_tol_m` | m | (b)。盤前到着の位置許容（W-13） |
+| `tick_hz` | Hz | (b)。退避待ちゲートの tick レート（W-13） |
+| `match_tol_m` | m | (b)。人物追跡の照合許容距離（W-13） |
+| `target_confidence_min` | — | (b)。人物追跡の対象確信度下限（`state_manager` / `person_tracker_bridge` で同名・同値。W-13） |
 
 **`muxed_stale_ms` と `cmd_vel_stale_ms` は別物である。**
 前者はリミッタの入力（20 Hz 周期より少し長い）、後者は ESP32 の手前（`esp32_watchdog_ms` より短い）。

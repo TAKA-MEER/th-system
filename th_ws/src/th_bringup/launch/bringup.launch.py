@@ -479,6 +479,10 @@ def generate_launch_description():
                 package='th_perception',
                 executable='person_tracker_bridge.py',
                 name='person_tracker_bridge',
+                # W-13: 挙動値は生成 yaml（registry.yaml 駆動）が正。
+                # tracker_lost_grace_ms は生成物から落ちる（W-15 の placeholder
+                # のため null→除去）のでノード既定（1500）のまま。W-15 不接触。
+                parameters=[os.path.join(GENERATED_DIR, 'person_tracker_bridge.yaml')],
                 output='screen',
             ),
         ],
@@ -665,6 +669,7 @@ def generate_launch_description():
         package='th_onsite',
         executable='pin_registrar.py',
         name='pin_registrar',
+        parameters=[os.path.join(GENERATED_DIR, 'pin_registrar.yaml')],
         condition=IfCondition(onsite_enabled),
         output='screen',
     ))
@@ -675,6 +680,7 @@ def generate_launch_description():
         package='th_onsite',
         executable='venue_navigator.py',
         name='venue_navigator',
+        parameters=[os.path.join(GENERATED_DIR, 'venue_navigator.yaml')],
         condition=IfCondition(onsite_enabled),
         output='screen',
     ))
@@ -685,6 +691,12 @@ def generate_launch_description():
         package='th_onsite',
         executable='wait_clear_gate.py',
         name='wait_clear_gate',
+        # W-13: clear_distance_m は導出値（0.575）と live 値（1.0）が
+        # 食い違っている。繋ぐと安全側の余裕が変わるため、生成 yaml の後に
+        # live 値をピン留めする（後勝ち。onsite の factor=1 と同じ流儀）。
+        # 突き合わせは別途判断する（台帳 W-13 の残余）。
+        parameters=[os.path.join(GENERATED_DIR, 'wait_clear_gate.yaml'),
+                    {'clear_distance_m': 1.0}],
         condition=IfCondition(onsite_enabled),
         output='screen',
     ))
@@ -693,10 +705,13 @@ def generate_launch_description():
     # /onsite/declare_home サービスと /onsite/home_declared を提供する。
     # SLAM の map→base_link TF と待機場所ピンを照合するため段階 3 から起動する。
     # パラメータは全てノード内に既定値があるため launch からは渡さない。
+    # W-13: 上のコメントは古い。挙動値は生成 yaml（registry.yaml 駆動）が正。
+    # フレーム名はノード内既定のまま（配線設定のため対象外）。
     nodes.append(Node(
         package='th_onsite',
         executable='home_declarer.py',
         name='home_declarer',
+        parameters=[os.path.join(GENERATED_DIR, 'home_declarer.yaml')],
         condition=IfCondition(onsite_enabled),
         output='screen',
     ))

@@ -133,7 +133,8 @@ class StateManager(Node):
         self.declare_parameter('link_wait_timeout_ms', Parameter.Type.INTEGER)
         self.declare_parameter('ui_active_window_s', Parameter.Type.INTEGER)
         self.declare_parameter('screen_stale_ms', Parameter.Type.INTEGER)
-        # # WAIVER(demo): W-13 — ノード内リテラル既定値（registry 経由にしない）
+        # W-13 解除: target_confidence_min は registry.yaml 駆動
+        # （person_tracker_bridge と同名・同値で共有行）。生成 yaml が上書きする。
         self.declare_parameter('target_confidence_min', 0.5)
 
         transitions, attributes, mode_entry = self._load_config()

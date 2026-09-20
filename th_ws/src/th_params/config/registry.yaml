@@ -362,10 +362,12 @@
   unit: m
   class: b
   status: given
-  value: 0.5
+  value: 0.30
   consumers: [pin_registrar]
   spec_ref: "DetailedDesign-names.md §7.2"
-  note: "2 点指示の最小間隔。two_point_spacing_m の半分を暫定値とした"
+  note: "pin_registrar.py の既定値（変更なし）。旧値 0.5 は未使用のまま
+    ずれていた（two_point_spacing_m の半分という由来と食い違い）。
+    W-13 で live 値に合わせた。暫定値"
 
 - name: intrusion_budget_m
   unit: m
@@ -459,28 +461,34 @@
   unit: m
   class: b
   status: given
-  value: 0.1
-  consumers: [venue_navigator]
+  value: 0.30
+  consumers: [home_declarer]
   spec_ref: "DetailedDesign-names.md §7.2"
-  note: "暫定値"
+  note: "home_declarer.py の既定値（変更なし）。旧値 0.1・旧 consumers
+    venue_navigator は未使用のままずれていた。W-13 で live 値と実際の
+    消費者に合わせた。暫定値"
 
 - name: home_declare_tolerance_deg
   unit: deg
   class: b
   status: given
-  value: 5.0
-  consumers: [venue_navigator]
+  value: 15.0
+  consumers: [home_declarer]
   spec_ref: "DetailedDesign-names.md §7.2"
-  note: "暫定値"
+  note: "home_declarer.py の既定値（変更なし）。旧値 5.0・旧 consumers
+    venue_navigator は未使用のままずれていた。W-13 で live 値と実際の
+    消費者に合わせた。暫定値"
 
 - name: align_tolerance_rad
   unit: rad
   class: b
   status: given
-  value: 0.05
-  consumers: [obstacle_limiter]
+  value: 0.09
+  consumers: [venue_navigator]
   spec_ref: "DetailedDesign-names.md §7.2"
-  note: "暫定値（約 2.9 deg）"
+  note: "venue_navigator.py の既定値（変更なし）。旧値 0.05・旧 consumers
+    obstacle_limiter は未使用のままずれていた（th_safety 全体に参照なし。
+    全文検索で確認）。W-13 で live 値と実際の消費者に合わせた。暫定値"
 
 - name: route_sample_interval_m
   unit: m
@@ -639,27 +647,30 @@
   class: b
   status: given
   value: 2.0
-  consumers: [pin_registrar]
+  consumers: [pin_registrar, person_tracker_bridge]
   spec_ref: "DetailedDesign-names.md §7.3（E-8）"
-  note: "『数秒』の暫定値"
+  note: "『数秒』の暫定値。person_tracker_bridge.py の既定値と一致（変更なし）。
+    pin_registrar は現状この名を宣言していない（残置。未使用キーは起動を壊さない）"
 
 - name: clear_hold_ms
   unit: ms
   class: b
   status: given
-  value: 1000
+  value: 1500
   consumers: [wait_clear_gate]
   spec_ref: "DetailedDesign-names.md §7.3"
-  note: "暫定値"
+  note: "wait_clear_gate.py の既定値（変更なし）。旧値 1000 は未使用のまま
+    ずれていた。W-13 で live 値に合わせた。暫定値"
 
 - name: clear_timeout_ms
   unit: ms
   class: b
   status: given
-  value: 5000
+  value: 30000
   consumers: [wait_clear_gate]
   spec_ref: "DetailedDesign-names.md §7.3"
-  note: "暫定値"
+  note: "wait_clear_gate.py の既定値（変更なし）。旧値 5000 は未使用のまま
+    ずれていた。W-13 で live 値に合わせた。暫定値"
 
 - name: lidar_timeout_ms
   unit: ms
@@ -1386,3 +1397,117 @@
   consumers: [calib_runner]
   spec_ref: "DetailedDesign-names.md §7.4 / DetailedDesign-params.md §6.2（O-c5/F-13） / DetailedDesign-wp0.md WP-PARAM-01 §5"
   note: "校正の合否"
+
+# =========================================================================
+# W-13: 試験場内・人物追跡の挙動値（names §7.2・§7.3）
+# counts as (b) given: 現行ノードの既定値をそのまま移した暫定値。実測値ではない
+# （measured と偽らない）。値の変更は別作業。
+# =========================================================================
+
+- name: min_confidence
+  unit: null
+  class: b
+  status: given
+  value: 0.50
+  consumers: [pin_registrar]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "pin_registrar.py の既定値（変更なし）。暫定値"
+
+- name: pin_min_clearance_m
+  unit: m
+  class: b
+  status: given
+  value: 0.45
+  consumers: [pin_registrar]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "pin_registrar.py の既定値（変更なし）。暫定値"
+
+- name: pin_retreat_m
+  unit: m
+  class: b
+  status: given
+  value: 0.30
+  consumers: [pin_registrar]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "pin_registrar.py の既定値（変更なし）。暫定値"
+
+- name: pin_lethal_threshold
+  unit: null
+  class: b
+  status: given
+  value: 65
+  consumers: [pin_registrar]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "pin_registrar.py の既定値（変更なし）。暫定値"
+
+- name: pin_clearance_search_r_m
+  unit: m
+  class: b
+  status: given
+  value: 0.8
+  consumers: [pin_registrar]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "pin_registrar.py の既定値（変更なし）。暫定値"
+
+- name: align_kp
+  unit: null
+  class: b
+  status: given
+  value: 1.2
+  consumers: [venue_navigator]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "venue_navigator.py の既定値（変更なし）。暫定値"
+
+- name: align_w_max_rps
+  unit: rad/s
+  class: b
+  status: given
+  value: 0.6
+  consumers: [venue_navigator]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "venue_navigator.py の既定値（変更なし）。暫定値"
+
+- name: blocked_recheck_period_s
+  unit: s
+  class: b
+  status: given
+  value: 2.0
+  consumers: [venue_navigator]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "venue_navigator.py の既定値（変更なし）。暫定値"
+
+- name: arrival_xy_tol_m
+  unit: m
+  class: b
+  status: given
+  value: 0.15
+  consumers: [venue_navigator]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "venue_navigator.py の既定値（変更なし）。暫定値"
+
+- name: tick_hz
+  unit: Hz
+  class: b
+  status: given
+  value: 20
+  consumers: [wait_clear_gate]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "wait_clear_gate.py の既定値（変更なし）。暫定値"
+
+- name: match_tol_m
+  unit: m
+  class: b
+  status: given
+  value: 0.35
+  consumers: [person_tracker_bridge]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "person_tracker_bridge.py の既定値（変更なし）。暫定値"
+
+- name: target_confidence_min
+  unit: null
+  class: b
+  status: given
+  value: 0.5
+  consumers: [state_manager, person_tracker_bridge]
+  spec_ref: "DetailedDesign-names.md §7.2"
+  note: "両ノードで同名・同既定値（変更なし）。暫定値"

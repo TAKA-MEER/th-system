@@ -262,6 +262,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_w03_registry_driven
     test/test_w03_registry_driven.py
     TIMEOUT 120)
+  # W-13: 試験場内・人物追跡の registry 駆動（値一致・生成物・launch 配線。
+  # ROS2 不要）
+  ament_add_pytest_test(test_w13_registry_driven
+    test/test_w13_registry_driven.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_prelaunch_guard
     test/test_prelaunch_guard.py
     TIMEOUT 60)
