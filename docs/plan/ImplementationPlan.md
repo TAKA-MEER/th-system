@@ -189,7 +189,7 @@ ESP32 のどれかが無くても `IDLE` まで進んで画面と FSM を確か�
 | # | 内容 | 場所 |
 | --- | --- | --- |
 | **1** | **`DRIVE_RUNAWAY`（駆動系の暴走検知）が無効のまま `main` に載っている** | 台帳 `W-06`。除外理由だった「WiFi 経由の受信ギャップ」は ESP32 のシリアル化（2026-09-05）で消えている可能性が高い |
-| **2** | **`OPCHECK` / `CALIB` に入ると戻れない**（詰み） | **FSM ではなく WebUI の問題**（2026-09-20 特定）。`C-08`（任意のモード ＋ 「終了」→ `IDLE`）は実装されており、ガード `can_finish` も両モードで真。**画面が無いので `ui.finish` を送るボタンが無い**のが原因。別件として、駆動するノード（runner）が `bringup.launch.py` にいない・`th_calibration/scripts/` の 4 本も launch 配線なし |
+| ~~**2**~~ | ~~`OPCHECK` / `CALIB` に入ると戻れない（詰み）~~ **2026-09-20 に確認したところ既に解消済み。** `mainMenuItems.needsFinishEscape()` ＋ S-01 の脱出ボタン（`ui.finish`）が実装され、試験も在る（unit 9 件 ＋ e2e 3 件。`OPCHECK` で実際にボタンが出て `ui.finish` が飛ぶことを確認） | 残る別件: **駆動するノード（runner）が `bringup.launch.py` にいない**・`th_calibration/scripts/` の 4 本も launch 配線なし（`WP-MAINT-01`/`-02` の本体作業） |
 | **3** | **自己位置を見失っても止まらない。**`LOCALIZATION_LOST` は型（`FaultStatus.msg`・`safety_monitor_core.cpp` の文字列）だけ在り、`SAFETY_ENABLED_TARGETS` に `localization` が無い | 台帳 `W-02` ／ `WP-SAFE-05` |
 | **4** | 旧設計の幽霊ノード 3 本（`follow_planner` / `follow_planner_mapless` / `person_predictor`）が残存。**廃止済みトピック `/cmd_vel_retreat` へ publish している** | 実機では起動しない（`use_stub:=true` のときだけ）ので実害は無いが、`WP-CLEAN-01` の対象 |
 
@@ -381,7 +381,7 @@ S-50 のトグルもそのまま。**通常運用に入る直前に対策を決�
 | --- | --- | --- | --- |
 | **1** | **`DRIVE_RUNAWAY` を戻す** | `W-06` | **駆動系の暴走検知が無効のまま `main` に載っている。**除外理由だった「WiFi 経由の受信ギャップ」は ESP32 のシリアル化（2026-09-05）で消えている可能性が高い。**まず実機で `/cmd_vel` と `/esp32/wheel_feedback` を 10 秒トレースして前提を確かめる**——消えていれば `SAFETY_ENABLED_TARGETS` に戻すだけで閉じるかもしれない |
 | **2** | **自己位置を見失ったら止まる** | `WP-SAFE-05` ／ `W-02` | 型だけ在って検知が無い。**地図上の経路をなぞる動作が、ずれたまま続く。**段階 5・6 を実運用する前提条件。**検知条件は 2026-09-20 に決定（A・B・C をすべて採用）**＝ ①補正が凍る ②マッチの確からしさが低い ③推定ノードが死んだ（[Spec-safety.md](spec/Spec-safety.md) §3.5.0）。**使っていないモードでは監視しない**こと。②の信号源だけ実機確認待ち（`O-e1`） |
-| **3** | **`OPCHECK` / `CALIB` の詰みを塞ぐ** | 段階 7 の入口 | **入ると戻れない。原因は WebUI 側**（2026-09-20 に特定）。FSM は `C-08`（`mode: '*'` ＋ `ui.finish` → `IDLE`、ガード `can_finish` は両モードで真）で**抜けられる**。**画面が無いモードに入ると `ui.finish` を送る手段が無いだけ。**→ 画面の無いモードに入ったときの脱出口を UI に用意すれば塞がる（runner を作るのは `WP-MAINT-01`/`-02` の仕事で、詰みの解消とは別） |
+| ~~**3**~~ | ~~`OPCHECK` / `CALIB` の詰みを塞ぐ~~ | — | **作業不要。2026-09-20 に実物を確認したところ既に塞がっていた。**S-01 に `needsFinishEscape()` による脱出ボタンがあり、`ui.finish` → `IDLE` で抜けられる。unit 9 件・e2e 3 件で縛られている（`OPCHECK` を含む）。**「詰む」という記録の方が古かった。** |
 
 ### 第 2 群 — 試験場内動作を仕上げる（いま実際に使っている機能）
 
