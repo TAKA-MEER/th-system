@@ -214,9 +214,24 @@ def person_backstop_ms(grace_ms: float, link_p99_ms: float, factor: float) -> fl
     """safety_monitor の遅いバックストップ。挙動側の grace より必ず長い。"""
     return max(grace_ms * factor, link_p99_ms * factor)
 
-def clear_distance(body_half_length_m: float, clear_margin_m: float) -> float:
-    """退避待ちゲート：対象がゴールから離れるべき距離。"""
-    return body_half_length_m + clear_margin_m
+def clear_distance(body_half_length_m: float, person_margin_m: float,
+                   clear_margin_m: float) -> float:
+    """退避待ちゲート：対象がゴールから離れるべき距離。
+
+    2026-09-20 改訂（ユーザー決定）。**人の分が抜けていた。**
+    旧式（機体の半分 ＋ ゲート余裕）は 0.575 m を返すが、実機で実際に使ってきたのは
+    1.0 m で、registry が現実と食い違ったままだった（台帳 W-13 の残余）。
+
+    - `body_half_length_m` … ゴールに着いたとき機体が占める分
+    - `person_margin_m`    … 人に対する余裕（既存。障害物より大きく取る値）
+    - `clear_margin_m`     … 退避待ちゲート固有の余裕
+
+    **制動距離は入れない。**このゲートが判定するのは「発進してよいか」で、
+    そのときロボットは停止している（「間に合って止まれるか」ではない）。
+    加えて制動距離は `v_slow` 経由で `venue_clearance_m`（未実測 placeholder）に
+    依存するため、入れると解決できずに A8 で起動が止まる（台帳 W-05 / W-18 と同型の罠）。
+    """
+    return body_half_length_m + person_margin_m + clear_margin_m
 
 def hysteresis_band(floor_distance_m: float, ratio: float) -> float:
     """★ d_floor スケール。d_behavior から導くと帯が d_behavior を超えうる（A11）。"""
@@ -427,7 +442,7 @@ digest = sha1( sorted( f"{name}={status}:{value}" for all params ) )[:12]
 | `follow_stop_distance_m` | `braking_distance_plus_margin` | `person_margin_m`, … |
 | `lidar_timeout_ms` ／ `esp32_timeout_ms` | `timeout_from_bounds` | `link_gap_p99_ms`, `intrusion_budget_m`, `v_max` |
 | `person_timeout_ms` | `person_backstop_ms` | `tracker_lost_grace_ms`, `link_gap_p99_ms` |
-| `clear_distance_m` | `clear_distance` | `body_half_length_m`, `clear_margin_m` |
+| `clear_distance_m` | `clear_distance` | `body_half_length_m`, `person_margin_m`, `clear_margin_m` |
 | `hysteresis_band_m` | `hysteresis_band` | **`obstacle_floor_distance_m`**, `hysteresis_ratio`（A11。§4） |
 | `deviation_budget_m` | `deviation_budget_m` | `corridor_width_m`, `body_width_m` |
 
