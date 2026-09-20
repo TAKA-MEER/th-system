@@ -1,6 +1,14 @@
 replay_runner:
   ros__parameters:
+    angular_accel_rps2: 1.5
+    arrive_dist_m: 0.2
     brake_accel_mps2: 1.18
+    control_period_ms: 50
+    cruise_speed_mps: 0.45
+    linear_accel_mps2: 0.5
+    localize_wait_s: 5.0
+    lookahead_m: 0.6
+    max_yaw_rate_rps: 0.9
     obstacle_stop_distance_m:
       v_calib: 0.33953389830508474
       v_check: 0.3110593220338983
@@ -9,4 +17,13 @@ replay_runner:
       v_max: 1.0555254237288134
       v_reverse: null
       v_slow: null
+    odom_stale_ms: 500
+    pose_period_ms: 100
+    preview_heartbeat_ms: 5000
+    replay_cruise_min_mps: 0.12
+    replay_lookahead_min_m: 0.4
+    replay_speed_default_ratio: 0.6
+    replay_yaw_min_rps: 0.4
+    status_period_ms: 500
     v_max: 1.1199999999999999
+    yaw_tol_rad: 0.1

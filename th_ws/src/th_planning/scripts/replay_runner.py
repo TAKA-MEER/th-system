@@ -80,7 +80,14 @@ class ReplayRunner(Node):
         super().__init__('replay_runner')
 
         # ── パラメータ ──────────────────────────────────────
-        # WAIVER(demo): W-03 — 数値は registry.yaml 経由でなくノード内リテラル既定値
+        # W-03 解除: 挙動値（周期・先読み・速度・加減速・到着判定・待ち時間・
+        # 鮮度）は registry.yaml 駆動。launch が渡す生成 yaml が上書きし、
+        # そちらが正になる。既定値は起動単体のフォールバックとして残す。
+        # 移さないもの: routes_dir（パス）・use_map_frame（配線フラグ）・
+        # map_frame/base_frame（フレーム名）・map_session_id（ID）・
+        # odom_topic/odom_filtered_topic（トピック名）。
+        # 調整値ではなく配線設定のため registry の対象外
+        # （th_config_manager/tunable_targets.py と同じ考え方）。
         self.declare_parameter('routes_dir', '/root/th_data/routes')
         self.declare_parameter('control_period_ms', 50)   # 20Hz
         self.declare_parameter('status_period_ms', 500)

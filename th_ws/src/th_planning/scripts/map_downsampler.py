@@ -27,7 +27,12 @@ class MapDownsampler(Node):
         super().__init__('map_downsampler')
 
         # ── パラメータ ──────────────────────────────────────
-        # WAIVER(demo): W-03 — 数値は registry.yaml 経由でなくノード内リテラル既定値
+        # W-03 解除: 挙動値（縮小率・間隔・閾値）は registry.yaml 駆動。
+        # launch が渡す生成 yaml が上書きし、そちらが正になる。既定値は
+        # 起動単体のフォールバックとして残す。
+        # 移さないもの: map_topic/output_topic（トピック名）。
+        # 調整値ではなく配線設定のため registry の対象外
+        # （th_config_manager/tunable_targets.py と同じ考え方）。
         self.declare_parameter('map_topic', '/map')
         self.declare_parameter('output_topic', '/route/map_view')
         # WS-9G: 0.05m/セル → 0.20m/セル（factor=4）に畳む。表示は俯瞰なので十分。

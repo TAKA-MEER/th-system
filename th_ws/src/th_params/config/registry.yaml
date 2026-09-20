@@ -1119,6 +1119,238 @@
   note: "定期校正の催促"
 
 # =========================================================================
+# W-03: 教示・再生・間引きの挙動値（names §7.3）
+# counts as (b) given: 現行ノードの既定値をそのまま移した暫定値。実測値ではない
+# （measured と偽らない）。値の変更は別作業。
+# =========================================================================
+
+- name: sample_period_ms
+  unit: ms
+  class: b
+  status: given
+  value: 100
+  consumers: [route_recorder]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "route_recorder.py の既定値（変更なし）。暫定値"
+
+- name: sample_min_dist_m
+  unit: m
+  class: b
+  status: given
+  value: 0.10
+  consumers: [route_recorder]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "route_recorder.py の既定値（変更なし）。暫定値"
+
+- name: sample_min_yaw_rad
+  unit: rad
+  class: b
+  status: given
+  value: 0.20
+  consumers: [route_recorder]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "route_recorder.py の既定値（変更なし）。暫定値"
+
+- name: status_period_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [route_recorder, replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "両ノードで同名・同既定値（変更なし）。暫定値"
+
+- name: autosave_period_ms
+  unit: ms
+  class: b
+  status: given
+  value: 10000
+  consumers: [route_recorder]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "route_recorder.py の既定値（変更なし）。暫定値"
+
+- name: preview_max_points
+  unit: null
+  class: b
+  status: given
+  value: 400
+  consumers: [route_recorder]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "route_recorder.py の既定値（変更なし）。暫定値"
+
+- name: pose_period_ms
+  unit: ms
+  class: b
+  status: given
+  value: 100
+  consumers: [route_recorder, replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "両ノードで同名・同既定値（変更なし）。暫定値"
+
+- name: odom_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [route_recorder, replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "両ノードで同名・同既定値（変更なし）。暫定値"
+
+- name: control_period_ms
+  unit: ms
+  class: b
+  status: given
+  value: 50
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: preview_heartbeat_ms
+  unit: ms
+  class: b
+  status: given
+  value: 5000
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: lookahead_m
+  unit: m
+  class: b
+  status: given
+  value: 0.60
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: cruise_speed_mps
+  unit: m/s
+  class: b
+  status: given
+  value: 0.45
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: max_yaw_rate_rps
+  unit: rad/s
+  class: b
+  status: given
+  value: 0.9
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: replay_cruise_min_mps
+  unit: m/s
+  class: b
+  status: given
+  value: 0.12
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: replay_yaw_min_rps
+  unit: rad/s
+  class: b
+  status: given
+  value: 0.4
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: replay_lookahead_min_m
+  unit: m
+  class: b
+  status: given
+  value: 0.40
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: replay_speed_default_ratio
+  unit: null
+  class: b
+  status: given
+  value: 0.6
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: arrive_dist_m
+  unit: m
+  class: b
+  status: given
+  value: 0.20
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: yaw_tol_rad
+  unit: rad
+  class: b
+  status: given
+  value: 0.10
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: linear_accel_mps2
+  unit: m/s2
+  class: b
+  status: given
+  value: 0.5
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: angular_accel_rps2
+  unit: rad/s2
+  class: b
+  status: given
+  value: 1.5
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: localize_wait_s
+  unit: s
+  class: b
+  status: given
+  value: 5.0
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "replay_runner.py の既定値（変更なし）。暫定値"
+
+- name: factor
+  unit: null
+  class: b
+  status: given
+  value: 4
+  consumers: [map_downsampler]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "map_downsampler.py の既定値（変更なし）。試験場内インスタンスは
+    launch から 1 を上書きする（従来どおり）。暫定値"
+
+- name: publish_period_ms
+  unit: ms
+  class: b
+  status: given
+  value: 2000
+  consumers: [map_downsampler]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "map_downsampler.py の既定値（変更なし）。暫定値"
+
+- name: occupied_threshold
+  unit: null
+  class: b
+  status: given
+  value: 50
+  consumers: [map_downsampler]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "map_downsampler.py の既定値（変更なし）。暫定値"
+
+# =========================================================================
 # 7.4 許容範囲（校正）（names §7.4）
 # =========================================================================
 
