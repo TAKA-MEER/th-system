@@ -1,0 +1,5 @@
+person_tracker_bridge:
+  ros__parameters:
+    auto_select_hold_s: 2.0
+    match_tol_m: 0.35
+    target_confidence_min: 0.5

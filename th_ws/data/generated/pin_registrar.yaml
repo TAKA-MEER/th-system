@@ -1,5 +1,10 @@
 pin_registrar:
   ros__parameters:
     auto_select_hold_s: 2.0
-    two_point_min_spacing_m: 0.5
+    min_confidence: 0.5
+    pin_clearance_search_r_m: 0.8
+    pin_lethal_threshold: 65
+    pin_min_clearance_m: 0.45
+    pin_retreat_m: 0.3
+    two_point_min_spacing_m: 0.3
     two_point_spacing_m: 1.0

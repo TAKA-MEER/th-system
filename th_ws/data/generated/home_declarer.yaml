@@ -1,0 +1,4 @@
+home_declarer:
+  ros__parameters:
+    home_declare_tolerance_deg: 15.0
+    home_declare_tolerance_m: 0.3

@@ -1,6 +1,5 @@
 obstacle_limiter:
   ros__parameters:
-    align_tolerance_rad: 0.05
     blind_angle_ranges:
     - -132.8
     - -117.5
