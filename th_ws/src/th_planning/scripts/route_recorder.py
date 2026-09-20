@@ -74,7 +74,14 @@ class RouteRecorder(Node):
         super().__init__('route_recorder')
 
         # ── パラメータ ──────────────────────────────────────
-        # WAIVER(demo): W-03 — 数値は registry.yaml 経由でなくノード内リテラル既定値
+        # W-03 解除: 挙動値（周期・間隔・点数・鮮度）は registry.yaml 駆動。
+        # launch が渡す生成 yaml が上書きし、そちらが正になる。既定値は
+        # 起動単体（生成 yaml なし）のフォールバックとして残す。
+        # 移さないもの: routes_dir（パス）・use_map_frame（配線フラグ）・
+        # map_frame/base_frame（フレーム名）・map_session_id（ID）・
+        # odom_topic/odom_filtered_topic（トピック名）。
+        # 調整値ではなく配線設定のため registry の対象外
+        # （th_config_manager/tunable_targets.py と同じ考え方）。
         self.declare_parameter('routes_dir', '/root/th_data/routes')
         self.declare_parameter('sample_period_ms', 100)
         self.declare_parameter('sample_min_dist_m', 0.10)

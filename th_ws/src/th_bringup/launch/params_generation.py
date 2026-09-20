@@ -79,6 +79,12 @@ REGISTRY_NODES: tuple[str, ...] = (
     # （consumers に入っている行）を生成 yaml に載せる。実装・launch 配線が
     # 完了したこのタイミングで追加（obstacle_limiter / jog_gate と同じ判断）。
     "localization_health",
+    # W-03: route_recorder / replay_runner / map_downsampler は registry.yaml の
+    # 教示・再生・間引き行を生成 yaml に載せる。新規行のみで blocking
+    # placeholder を含まないため A8 は armed にならない（試験で縛る）。
+    "route_recorder",
+    "replay_runner",
+    "map_downsampler",
 )
 
 # ---------------------------------------------------------------------------

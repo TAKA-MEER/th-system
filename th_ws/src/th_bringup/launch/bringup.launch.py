@@ -569,22 +569,26 @@ def generate_launch_description():
     map_session_id = f'sess_{int(time.time() * 1000)}'
 
     # ── 13a. route_recorder（教示経路の記録。WP-TRANSIT / demo-teach-replay）──
+    # W-03: 挙動値は生成 yaml（registry.yaml 駆動）が正。後段に重ねて上書きする。
     nodes.append(Node(
         package='th_planning',
         executable='route_recorder.py',
         name='route_recorder',
         parameters=[{'use_map_frame': use_map_frame,
-                     'map_session_id': map_session_id}],
+                     'map_session_id': map_session_id},
+                    os.path.join(GENERATED_DIR, 'route_recorder.yaml')],
         output='screen',
     ))
 
     # ── 13a'. replay_runner（教示再生の走行。WP-TRANSIT / demo-teach-replay）─
+    # W-03: 同上。
     nodes.append(Node(
         package='th_planning',
         executable='replay_runner.py',
         name='replay_runner',
         parameters=[{'use_map_frame': use_map_frame,
-                     'map_session_id': map_session_id}],
+                     'map_session_id': map_session_id},
+                    os.path.join(GENERATED_DIR, 'replay_runner.yaml')],
         output='screen',
     ))
 
@@ -597,6 +601,7 @@ def generate_launch_description():
         package='th_planning',
         executable='map_downsampler.py',
         name='map_downsampler',
+        parameters=[os.path.join(GENERATED_DIR, 'map_downsampler.yaml')],
         condition=IfCondition(PythonExpression(
             ["'", enable_route_slam, "'.lower() in ('true', '1')"])),
         output='screen',
@@ -612,7 +617,10 @@ def generate_launch_description():
         package='th_planning',
         executable='map_downsampler.py',
         name='onsite_map_downsampler',
-        parameters=[{'factor': 1, 'output_topic': '/onsite/map_view'}],
+        # W-03: 生成 yaml を土台にし、インスタンス固有の factor/output_topic を
+        # 後段で上書きする（後勝ち）。factor=1 は変えない（F-2）。
+        parameters=[os.path.join(GENERATED_DIR, 'map_downsampler.yaml'),
+                    {'factor': 1, 'output_topic': '/onsite/map_view'}],
         condition=IfCondition(onsite_enabled),
         output='screen',
     ))
