@@ -257,6 +257,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_params_launch
     test/test_params_launch.py
     TIMEOUT 60)
+  # W-03: 教示・再生・間引きの registry 駆動（値一致・生成物・launch 配線。
+  # ROS2 不要）
+  ament_add_pytest_test(test_w03_registry_driven
+    test/test_w03_registry_driven.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_prelaunch_guard
     test/test_prelaunch_guard.py
     TIMEOUT 60)
