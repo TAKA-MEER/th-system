@@ -820,7 +820,7 @@
   value: 5000
   consumers: [safety_monitor]
   spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
-  note: "/safety/localization_health の途絶判定（1 Hz の 5 周期）"
+  note: "/safety/localization_health の途絶判定（5 s。2 Hz 配信では 10 周期相当）"
 
 - name: localization_warmup_ms
   unit: ms
@@ -842,6 +842,36 @@
   consumers: [localization_health]
   spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
   note: "自己位置推定のノード名。いずれも居なければ C（node_down）"
+
+- name: jump_window_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [localization_health]
+  spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
+  note: "B′ の比較周期。localization_health の publish 周期と同一
+    （比較は tick ごとに行う）。出発点。実機で詰める"
+
+- name: jump_translation_m
+  unit: m
+  class: b
+  status: given
+  value: 0.11
+  consumers: [localization_health]
+  spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
+  note: "B′ の並進許容。Autoware の既定を出発点にする。実測値ではない。
+    実機で詰める"
+
+- name: jump_rotation_rad
+  unit: rad
+  class: b
+  status: given
+  value: 0.0175
+  consumers: [localization_health]
+  spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
+  note: "B′ の回転許容（1°）。Autoware の既定を出発点にする。実測値ではない。
+    実機で詰める"
 
 - name: critical_fault_hold_ms
   unit: ms
