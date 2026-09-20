@@ -85,6 +85,16 @@ REGISTRY_NODES: tuple[str, ...] = (
     "route_recorder",
     "replay_runner",
     "map_downsampler",
+    # W-13: pin_registrar / venue_navigator / wait_clear_gate / home_declarer /
+    # person_tracker_bridge を足す。REGISTRY_NODES は A8 の対象を絞るだけ
+    # （生成は consumers 駆動）。placeholder 行（person_position_sigma_m /
+    # tracker_lost_grace_ms / replay_drift_m_per_100m）はいずれも
+    # blocking_from_stage: 5 のため stage:=1/4 では armed にならない（試験で縛る）。
+    "pin_registrar",
+    "venue_navigator",
+    "wait_clear_gate",
+    "home_declarer",
+    "person_tracker_bridge",
 )
 
 # ---------------------------------------------------------------------------
