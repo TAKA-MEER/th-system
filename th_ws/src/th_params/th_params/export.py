@@ -112,7 +112,8 @@ def _call_formula(formula: str | None, row: dict, deps: dict[str, Any],
         return derive.floor_distance(deps["body_half_length_m"], deps["floor_margin_m"])
 
     if formula == "clear_distance":
-        return derive.clear_distance(deps["body_half_length_m"], deps["clear_margin_m"])
+        return derive.clear_distance(deps["body_half_length_m"], deps["person_margin_m"],
+                                     deps["clear_margin_m"])
 
     if formula == "hysteresis_band":
         return derive.hysteresis_band(deps["obstacle_floor_distance_m"], deps["hysteresis_ratio"])

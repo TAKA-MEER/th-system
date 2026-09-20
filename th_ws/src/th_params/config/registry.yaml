@@ -264,9 +264,9 @@
   class: b
   status: given
   value: 0.4
-  consumers: [params_audit]
+  consumers: [wait_clear_gate, params_audit]
   spec_ref: "DetailedDesign-names.md §7.2・§7.5"
-  note: "follow_stop_distance_m に足す余裕。人に対する余裕は障害物より大きく取る（safety_margin_m より大きい）"
+  note: "follow_stop_distance_m に足す余裕。人に対する余裕は障害物より大きく取る（safety_margin_m より大きい）。clear_distance_m の導出入力としても使う"
 
 - name: body_width_m
   unit: m
@@ -334,7 +334,7 @@
   class: b
   status: derived
   value: null
-  derived_from: [body_half_length_m, clear_margin_m]
+  derived_from: [body_half_length_m, person_margin_m, clear_margin_m]
   formula: clear_distance
   consumers: [wait_clear_gate]
   spec_ref: "DetailedDesign-names.md §7.2"

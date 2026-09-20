@@ -42,7 +42,7 @@ def test_person_backstop_ms_takes_the_max():
 
 
 def test_clear_distance():
-    assert derive.clear_distance(0.35, 0.3) == pytest.approx(0.65)
+    assert derive.clear_distance(0.275, 0.4, 0.3) == pytest.approx(0.975)
 
 
 def test_hysteresis_band_uses_floor_distance_not_stop_distance():
@@ -117,7 +117,7 @@ def test_all_twelve_functions_exist_with_expected_signatures():
         "v_max_from_ceiling": ["ceiling_mps", "headroom_ratio"],
         "floor_distance": ["body_half_length_m", "floor_margin_m"],
         "person_backstop_ms": ["grace_ms", "link_p99_ms", "factor"],
-        "clear_distance": ["body_half_length_m", "clear_margin_m"],
+        "clear_distance": ["body_half_length_m", "person_margin_m", "clear_margin_m"],
         "hysteresis_band": ["floor_distance_m", "ratio"],
         "combined_heading_error": ["two_point_deg", "nav_tolerance_deg"],
         "two_point_angle_error_deg": ["spacing_m", "sigma_m"],

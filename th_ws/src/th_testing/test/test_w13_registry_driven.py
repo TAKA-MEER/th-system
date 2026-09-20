@@ -53,8 +53,8 @@ _W13_NOT_MOVED = {
 # W-15 のため対象外（placeholder のまま。触らない）。
 _W15_REMAINDER = {"tracker_lost_grace_ms"}
 
-# 導出値と live 値が食い違い、launch で live 値をピン留めするもの。
-_PINNED = {"clear_distance_m": 1.0}
+# 導出値のため値突き合わせの対象外（別試験で縛る）。旧ピン留めは外した。
+_DERIVED = {"clear_distance_m"}
 
 
 def _read(path: str) -> str:
@@ -102,11 +102,11 @@ def _node_defaults(path: str) -> dict:
 
 
 def _moved_names() -> dict:
-    """ノードごとに移行対象の {name: default}。配線・W-15・ピン留めを除く。"""
+    """ノードごとに移行対象の {name: default}。配線・W-15・導出値を除く。"""
     out = {}
     for node, path in _W13_NODES.items():
         for name, default in _node_defaults(path).items():
-            if name in _W13_NOT_MOVED or name in _W15_REMAINDER or name in _PINNED:
+            if name in _W13_NOT_MOVED or name in _W15_REMAINDER or name in _DERIVED:
                 continue
             out.setdefault(node, {})[name] = default
     return out
@@ -171,26 +171,19 @@ def test_no_waiver_w13_in_src():
     assert not bad_w13, f"WAIVER(demo): W-13 が残っている: {bad_w13}"
 
 
-def test_clear_distance_pinned_to_live_value():
-    """clear_distance_m は導出値と live 値が食い違うため launch でピン留めする。
-    registry 行は derived のまま（突き合わせは別途）。"""
+def test_clear_distance_derived_and_unpinned():
+    """clear_distance_m は導出値（0.975）が効き、ピン留めが無いこと。
+    ノード既定 1.0 との差（2.5 cm）は意図した変更（spec 差分）。"""
     reg = _registry_rows()
     row = reg["clear_distance_m"]
     assert row["status"] == "derived", "clear_distance_m が derived でない"
-    assert row["value"] is None or row["value"] != 1.0
+    assert "person_margin_m" in (row.get("derived_from") or []), (
+        "derived_from に person_margin_m が無い")
     nodes = _bringup_nodes_by_name("wait_clear_gate")
     assert len(nodes) == 1
-    params = None
-    for kw in nodes[0].keywords:
-        if kw.arg == "parameters" and isinstance(kw.value, ast.List):
-            params = kw.value.elts
-    assert params is not None and len(params) == 2
-    pin = params[1]
-    assert isinstance(pin, ast.Dict), "2 番目がピン留め dict でない"
-    pinned = {k.value: v.value for k, v in zip(pin.keys, pin.values)
-              if isinstance(k, ast.Constant) and isinstance(v, ast.Constant)}
-    assert pinned.get("clear_distance_m") == _PINNED["clear_distance_m"], (
-        "live 値 1.0 のピン留めが無い（安全余裕が変わる）")
+    seg = ast.get_source_segment(_read(BRINGUP_PY), nodes[0]) or ""
+    assert "clear_distance_m" not in seg, (
+        "ピン留めが残っている（生成 yaml の 0.975 が効かない）")
 
 
 # ============================================================================
@@ -228,6 +221,14 @@ def test_generated_yaml_carries_w13_values(stage):
     # 共有行が両方に載る。
     assert docs["state_manager"]["target_confidence_min"] == 0.5
     assert docs["person_tracker_bridge"]["target_confidence_min"] == 0.5
+
+
+@pytest.mark.parametrize("stage", [1, 4])
+def test_generated_clear_distance_is_formula_value(stage):
+    """完了条件1: 生成 yaml の clear_distance_m が式どおり 0.975 になる。
+    ノード既定 1.0 との差は意図した変更（float 誤差は approx で吸収）。"""
+    docs = _generate(stage)
+    assert docs["wait_clear_gate"]["clear_distance_m"] == pytest.approx(0.975)
 
 
 # ============================================================================
