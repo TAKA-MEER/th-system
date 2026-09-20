@@ -1,5 +1,8 @@
 localization_health:
   ros__parameters:
+    jump_rotation_rad: 0.0175
+    jump_translation_m: 0.11
+    jump_window_ms: 500
     localization_expected_nodes:
     - slam_toolbox
     - amcl
