@@ -582,6 +582,31 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `route_gap_timeout_ms` | ms | (b) |
 | `leash_stop_latency_ms` | ms | (c) |
 | `calib_interval_days` | 日 | (c) |
+| `sample_period_ms` | ms | (b)。教示の記録周期（`route_recorder`。W-03） |
+| `sample_min_dist_m` | m | (b)。教示の記録間隔（距離。W-03） |
+| `sample_min_yaw_rad` | rad | (b)。教示の記録間隔（角度。W-03） |
+| `status_period_ms` | ms | (b)。`route_recorder` / `replay_runner` の状態配信周期（W-03） |
+| `autosave_period_ms` | ms | (b)。教示の自動保存間隔（W-03） |
+| `preview_max_points` | — | (b)。教示プレビューの最大点数（W-03） |
+| `pose_period_ms` | ms | (b)。`route_recorder` / `replay_runner` の pose 配信周期（W-03） |
+| `odom_stale_ms` | ms | (b)。自己位置源の鮮度判定（`route_recorder` / `replay_runner` で同名・同値。W-03） |
+| `control_period_ms` | ms | (b)。再生の制御周期（`replay_runner`。W-03） |
+| `preview_heartbeat_ms` | ms | (b)。再生プレビューの配信間隔（W-03） |
+| `lookahead_m` | m | (b)。再生の先読み距離（速度スケール最大端。W-03） |
+| `cruise_speed_mps` | m/s | (b)。再生の巡航速度（速度スケール最大端。W-03） |
+| `max_yaw_rate_rps` | rad/s | (b)。再生の最高旋回速度（W-03） |
+| `replay_cruise_min_mps` | m/s | (b)。再生の巡航速度（速度スケール最小端。W-03） |
+| `replay_yaw_min_rps` | rad/s | (b)。再生の旋回速度（速度スケール最小端。W-03） |
+| `replay_lookahead_min_m` | m | (b)。再生の先読み距離（速度スケール最小端。W-03） |
+| `replay_speed_default_ratio` | — | (b)。再生の速度スケール既定比率（W-03） |
+| `arrive_dist_m` | m | (b)。再生の到着判定距離（W-03） |
+| `yaw_tol_rad` | rad | (b)。再生の到着許容角度（W-03） |
+| `linear_accel_mps2` | m/s2 | (b)。再生の加速度上限（W-03） |
+| `angular_accel_rps2` | rad/s2 | (b)。再生の旋回加速度上限（W-03） |
+| `localize_wait_s` | s | (b)。再生の自己位置推定待ち（W-03） |
+| `factor` | — | (b)。地図間引きの縮小率（`map_downsampler`。W-03） |
+| `publish_period_ms` | ms | (b)。地図間引きの配信間隔（W-03） |
+| `occupied_threshold` | — | (b)。地図間引きの占有判定閾値（W-03） |
 
 **`muxed_stale_ms` と `cmd_vel_stale_ms` は別物である。**
 前者はリミッタの入力（20 Hz 周期より少し長い）、後者は ESP32 の手前（`esp32_watchdog_ms` より短い）。
