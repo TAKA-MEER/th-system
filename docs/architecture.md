@@ -775,7 +775,15 @@ S-01 メインメニューの「保守・設定」カードの「設定」ボタ
 自動で畳む → 走行中に設定画面がかぶることは構造上あり得ない。
 タブは **一般**（上記パラメータ調整）/ **表示**（文字サイズ・`localStorage`。
 `parts/fontScale.js` が `#app` の `--fs-user` を切り替える）/ **開発モード**
-（開発モード ON/OFF・`localStorage`。`parts/devMode.js`。現状はヘッダの「開発」表示のみ）。
+（開発モード ON/OFF。`parts/devMode.js` ＋ `ros/useDevMode.js`）。
+**状態の正本は ROS 側**（`connectivity_checker` のパラメータ）で、画面は
+`/system/dev_mode`（JSON）を購読して表示し、トグルは
+`/connectivity_checker/set_parameters` を直接呼ぶ。`localStorage` と `?dev=1` は
+見た目の即時反映のために残している。ON にすると**機器が揃っていなくても
+起動時の確認を通せる**（`connectivity_checker` が `evt.link_ok` を出す）。
+無視できるのは警告だけで、物理／UI 非常停止・ESP32 ウォッチドッグ・自律系の
+障害物停止は効く（`safety_monitor` と `obstacle_limiter` には `dev_mode` を渡していない）。
+起動引数は `dev_mode:=true`、走行中の切替は `ros2 param set /connectivity_checker dev_mode true`。
 
 > 旧 `SettingsPanel.jsx`（ヘッダー ⚙ のオーバーレイ）は、WebUI の画面構成ベース
 > 再構成（コミット `bbb86f2`）で `App.jsx` ごと孤立し表示されなくなっていた。

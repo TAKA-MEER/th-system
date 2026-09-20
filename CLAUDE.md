@@ -46,6 +46,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `tune/exhibition-demo` と `feat/zundamon-voice` は**展示用の長期保管ブランチ**。
   `main` に統合しない・掃除しない。
 
+### 開発モードを使う（検証で安全装置の解除に手間取らないための道具）
+
+**機器が揃っていなくても起動確認を通せる。**実機・ラズパイ・ESP32 のどれかが無い状態でも、
+画面と FSM を動かして確かめられる。**検証する側（AI エージェントを含む）が WebUI を
+開かずに使えるようにしてある**（ユーザー決定 2026-09-20）。
+
+```bash
+ros2 launch th_bringup bringup.launch.py dev_mode:=true   # 機器ゼロでも IDLE まで進む
+ros2 param set /connectivity_checker dev_mode true|false   # 走らせたまま切替
+ros2 topic echo /system/dev_mode --once                    # いまの状態（JSON）
+```
+
+- 画面から使うなら S-50 の開発モードタブ、または URL に `?dev=1`。
+  **状態の正本は機体側**で、画面はそれを表示している。
+- **無視できるのは警告だけ。**物理非常停止・ESP32 ウォッチドッグ・UI 非常停止・
+  自律系の障害物停止は開発モードでも効く。`safety_monitor` と `obstacle_limiter` には
+  `dev_mode` を**渡していない**（構造的な保証）。
+- **開発モードで通した検証結果を、通常モードの結果と取り違えないこと。**
+  ON/OFF と無視項目はログに残る。
+- 仕様は [Spec-webui.md](docs/plan/spec/Spec-webui.md) §5・§5.1 と
+  [Spec-safety.md](docs/plan/spec/Spec-safety.md) §10。**通常運用での権限・誤有効化の
+  対策は未確定**（`O-d6`。通常運用に入る直前に決める）。
+
 ## 実機マニュアルの保守ルール
 
 `docs/使い方.md` は**実装を知らない試験担当者が実機を動かすための常設マニュアル**で、
