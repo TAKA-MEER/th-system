@@ -3,12 +3,17 @@
 ROS2 非依存（ノードを起動しない・最速）。Spec-safety.md §3.5.0 の A と C、
 起動猶予、B を出さないことを検証する。
 """
+import pytest
+
 from th_state.localization_health_core import (
+    REASON_JUMP,
     REASON_NODE_DOWN,
     REASON_OK,
     REASON_STALE,
     HealthReport,
     Params,
+    TransformSample,
+    detect_jump,
     evaluate,
 )
 
@@ -18,6 +23,9 @@ def _params(**overrides):
         stale_ms=2000,
         warmup_ms=30000,
         expected_nodes=("slam_toolbox", "amcl"),
+        jump_window_ms=500,
+        jump_translation_m=0.11,
+        jump_rotation_rad=0.0175,
     )
     base.update(overrides)
     return Params(**base)
@@ -120,3 +128,106 @@ def test_low_confidence_is_never_emitted():
         r = evaluate(p=p, **kw)
         assert r.reason in (REASON_OK, REASON_STALE, REASON_NODE_DOWN)
         assert r.reason != "low_confidence"
+
+
+# ============================================================================
+# B′: detect_jump（WP-SAFE-05B）
+# ============================================================================
+
+def _sample(t_ms=100_000, x=0.0, y=0.0, yaw=0.0):
+    return TransformSample(t_ms=t_ms, x=x, y=y, yaw=yaw)
+
+
+def test_jump_fires_on_translation():
+    """完了条件1（並進）: 比較周期のあいだに 0.11 m 超動いたら jump。"""
+    p = _params()
+    r = detect_jump(_sample(t_ms=100_000), _sample(t_ms=100_500, x=0.2), p)
+    assert r.is_jump is True
+    assert r.trans_m == pytest.approx(0.2)
+    assert r.rot_rad == pytest.approx(0.0)
+
+
+def test_jump_fires_on_rotation():
+    """完了条件1（回転）: 1°（0.0175 rad）超回ったら jump。"""
+    p = _params()
+    r = detect_jump(_sample(t_ms=100_000), _sample(t_ms=100_500, yaw=0.05), p)
+    assert r.is_jump is True
+    assert r.trans_m == pytest.approx(0.0)
+    assert r.rot_rad == pytest.approx(0.05)
+
+
+def test_jump_fires_on_diagonal():
+    """斜めの合成移動（hypot）で判定すること。x だけでは足りなくても組で超える。"""
+    p = _params()
+    r = detect_jump(_sample(t_ms=100_000), _sample(t_ms=100_500, x=0.08, y=0.08), p)
+    assert r.trans_m == pytest.approx(0.08 * 2 ** 0.5)
+    assert r.is_jump is True   # 0.113 > 0.11
+
+
+def test_jump_boundary_does_not_fire():
+    """完了条件2: 閾値ぴったりでは出ない（`>` であり `>=` ではない）。
+    浮動小数点の 1ulp を避けるため、2 進で正確な値（1.0）で境界を踏む。
+    hypot(1.0, 0.0) は正確に 1.0 になる。"""
+    p = _params(jump_translation_m=1.0, jump_rotation_rad=99.0)
+    assert detect_jump(
+        _sample(t_ms=100_000), _sample(t_ms=100_500, x=1.0), p).is_jump is False
+    assert detect_jump(
+        _sample(t_ms=100_000), _sample(t_ms=100_500, x=1.000001), p).is_jump is True
+
+
+def test_jump_rotation_threshold_is_effective():
+    """回転の閾値が効いている（deg/rad の取り違え等でずれていたら赤）。
+    wrap の浮動小数点誤差（1ulp）を避けるため、閾値の前後で見る。"""
+    p = _params()
+    eps = 1e-9
+    assert detect_jump(
+        _sample(t_ms=100_000),
+        _sample(t_ms=100_500, yaw=0.0175 * (1 - eps)), p).is_jump is False
+    assert detect_jump(
+        _sample(t_ms=100_000),
+        _sample(t_ms=100_500, yaw=0.0175 * (1 + eps)), p).is_jump is True
+
+
+def test_jump_yaw_wraps_around_pi():
+    """±πまたぎ（3.14 → -3.14）は微小回転であり jump ではない。"""
+    p = _params()
+    r = detect_jump(_sample(t_ms=100_000, yaw=3.14),
+                    _sample(t_ms=100_500, yaw=-3.14), p)
+    assert r.rot_rad == pytest.approx(0.0, abs=0.01)
+    assert r.is_jump is False
+
+
+def test_slow_continuous_correction_does_not_fire():
+    """完了条件3: ゆっくりした連続補正では出ない（誤発火の本体）。
+    毎 tick 0.02 m・0.003 rad ずつ 30 回（合計 0.6 m・0.09 rad）動かしても
+    per-window では閾値未満なので ok のまま。"""
+    p = _params()
+    prev = _sample(t_ms=100_000)
+    for i in range(1, 31):
+        curr = _sample(t_ms=100_000 + i * 500, x=0.02 * i, yaw=0.003 * i)
+        r = detect_jump(prev, curr, p)
+        assert r.is_jump is False, f"tick {i} で誤発火: {r}"
+        prev = curr
+
+
+def test_first_sample_does_not_fire():
+    """完了条件4: 初回（prev 無し）は出ない。"""
+    p = _params()
+    r = detect_jump(None, _sample(), p)
+    assert r.is_jump is False
+
+
+def test_gap_beyond_stale_does_not_fire():
+    """不連続（時刻差が stale 超）は出さない。凍結→復帰の飛びは A の担当。"""
+    p = _params()
+    r = detect_jump(_sample(t_ms=100_000, x=0.0),
+                    _sample(t_ms=103_000, x=5.0), p)
+    assert r.is_jump is False
+
+
+def test_backward_clock_does_not_fire():
+    """時刻が戻っていたら出さない（時計の異常時は安全側）。"""
+    p = _params()
+    r = detect_jump(_sample(t_ms=100_500, x=0.0),
+                    _sample(t_ms=100_000, x=5.0), p)
+    assert r.is_jump is False
