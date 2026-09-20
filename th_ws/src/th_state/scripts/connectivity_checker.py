@@ -28,11 +28,14 @@ from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
 
 from sensor_msgs.msg import LaserScan
+from geometry_msgs.msg import Twist
 from std_msgs.msg import Bool, String
 
-from th_system_msgs.msg import StateEvent, WheelFeedback
+from th_system_msgs.msg import FaultStatus, StateEvent, SystemState, WheelFeedback
 
 from th_state.connectivity_core import Params, evaluate, should_emit_link_ok
+from th_state.dev_log_core import (FaultSnap, StateSnap, TwistSum, fault_changed,
+                                   format_line, should_record_cmdvel, state_changed)
 
 _EVALUATE_PERIOD_S = 1.0  # §4.2: 1 Hz
 
@@ -74,6 +77,16 @@ class ConnectivityChecker(Node):
         self.declare_parameter('dev_ignore_battery', True)
         self.declare_parameter('dev_ignore_opcheck', True)
         self.declare_parameter('dev_ignore_auto_brake', True)
+        # WP-DEV-01C（ログの選択記録）: 何を記録するかの選択。既存の
+        # `dev_ignore_*` と同じ流儀のノードローカルパラメータ
+        #（`registry.yaml` には載せない。`sim` と同じ扱い）。
+        # 既定は偽（opt-in）。記録は検証のたびに選び直すものであり、
+        # 起動引数 `dev_mode` だけでは疎通に要らないため、無視項目のような
+        # 「既定真でないと IDLE に届かない」事情が無い。実効記録は
+        # dev_mode（マスタ）AND dev_log_<項目> で、OFF なら何も出さない。
+        self.declare_parameter('dev_log_state', False)
+        self.declare_parameter('dev_log_fault', False)
+        self.declare_parameter('dev_log_cmdvel', False)
 
         self._last_fb_ms = None
         self._last_cmd_ms = None
@@ -88,6 +101,16 @@ class ConnectivityChecker(Node):
         self._link_ok_gate_prev = False   # L-3: 立ち上がり検出用のラッチ
         self._restart_count = 0           # restart_control_stack の実行回数（FMEA②）
         self._dev_logged_state = None     # 開発モード状態の変化検出用（ログは切り替わり時だけ）
+        # WP-DEV-01C: 選択記録の購読最新値（seen）と最終記録値（logged）。
+        # OFF・非選択のあいだは logged を進めない。ON＋選択になった瞬間に
+        # いまの値を 1 行出す（「何を記録しているか」の立証になる）ため。
+        self._seen_state = None
+        self._logged_state = None
+        self._seen_fault = None
+        self._logged_fault = None
+        self._seen_cmdvel = None
+        self._logged_cmdvel = None
+        self._cmdvel_emit_ms = None
 
         self._setup_io()
 
@@ -110,6 +133,20 @@ class ConnectivityChecker(Node):
 
         bool_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
         self.create_subscription(Bool, '/safety/estop_hw', self._on_estop_hw, bool_qos)
+
+        # WP-DEV-01C: 選択記録の購読。判定ロジックには一切触らない（購読専用）。
+        # QoS は発行側に合わせる（state=transient_local・fault=reliable depth5・
+        # cmd_vel=reliable。後から起動しても state の最新は読める）。
+        state_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(SystemState, '/system/state', self._on_system_state, state_qos)
+        fault_qos = QoSProfile(depth=5, reliability=QoSReliabilityPolicy.RELIABLE)
+        self.create_subscription(FaultStatus, '/safety/fault', self._on_fault, fault_qos)
+        cmd_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
+        self.create_subscription(Twist, '/cmd_vel', self._on_cmd_vel, cmd_qos)
 
         event_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
         self._pub_event = self.create_publisher(StateEvent, '/system/event', event_qos)
@@ -148,6 +185,19 @@ class ConnectivityChecker(Node):
         self._hw_estop = bool(msg.data)
         self._estop_seen = True
 
+    # WP-DEV-01C: 購読コールバックは最新値の保持だけ（判定・記録は _on_timer）。
+    def _on_system_state(self, msg):
+        self._seen_state = StateSnap(mode=str(msg.mode), state=str(msg.state))
+
+    def _on_fault(self, msg):
+        self._seen_fault = FaultSnap(
+            active=bool(msg.active),
+            fault_type=str(msg.fault_type),
+            severity=str(msg.severity))
+
+    def _on_cmd_vel(self, msg):
+        self._seen_cmdvel = TwistSum(v=float(msg.linear.x), w=float(msg.angular.z))
+
     # ------------------------------------------------------------
     def _params(self) -> Params:
         return Params(
@@ -169,6 +219,10 @@ class ConnectivityChecker(Node):
     # ------------------------------------------------------------
     _DEV_ITEMS = ('link', 'battery', 'opcheck', 'auto_brake')
 
+    # WP-DEV-01C: 記録対象の項目名。`dev_log_<item>` に対応する。
+    # dev_log_core.LOG_ITEMS と揃えること。
+    _DEV_LOG_ITEMS = ('state', 'fault', 'cmdvel')
+
     def _dev_selected(self) -> dict:
         return {item: bool(self.get_parameter(f'dev_ignore_{item}').value)
                 for item in self._DEV_ITEMS}
@@ -176,6 +230,58 @@ class ConnectivityChecker(Node):
     def _dev_effective(self) -> dict:
         master = bool(self.get_parameter('dev_mode').value)
         return {item: (master and sel) for item, sel in self._dev_selected().items()}
+
+    def _dev_log_selected(self) -> dict:
+        return {item: bool(self.get_parameter(f'dev_log_{item}').value)
+                for item in self._DEV_LOG_ITEMS}
+
+    def _dev_log_effective(self) -> dict:
+        master = bool(self.get_parameter('dev_mode').value)
+        return {item: (master and sel) for item, sel in self._dev_log_selected().items()}
+
+    def _maybe_log_selections(self) -> None:
+        """WP-DEV-01C: 開発モード ON ＋ 選択された対象だけを ROS ログへ出す。
+
+        記録先は ROS のログ（`get_logger().info`）であり、ファイルには書かない
+        （理由は dev_log_core.py のモジュール docstring）。
+        書式は 1 行 1 イベントの JSON（`dev_log_core.format_line`）。
+        先頭の `dev_log: ` は grep 用の目印。
+
+        OFF・非選択のあいだは logged 側を進めない（ON＋選択になった瞬間に
+        いまの値を 1 行出す。沈黙のまま選択だけ切り替わると「記録しているか」
+        が立証できないため）。
+        """
+        eff = self._dev_log_effective()
+        if not any(eff.values()):
+            return
+        now_ms = self._now_ms()
+        if eff['state'] and self._seen_state is not None:
+            if state_changed(self._logged_state, self._seen_state):
+                self.get_logger().info(
+                    'dev_log: ' + format_line(
+                        now_ms, 'state',
+                        {'mode': self._seen_state.mode,
+                         'state': self._seen_state.state}))
+                self._logged_state = self._seen_state
+        if eff['fault'] and self._seen_fault is not None:
+            if fault_changed(self._logged_fault, self._seen_fault):
+                self.get_logger().info(
+                    'dev_log: ' + format_line(
+                        now_ms, 'fault',
+                        {'active': self._seen_fault.active,
+                         'fault_type': self._seen_fault.fault_type,
+                         'severity': self._seen_fault.severity}))
+                self._logged_fault = self._seen_fault
+        if eff['cmdvel'] and self._seen_cmdvel is not None:
+            if should_record_cmdvel(
+                    now_ms, self._cmdvel_emit_ms,
+                    self._logged_cmdvel, self._seen_cmdvel):
+                self.get_logger().info(
+                    'dev_log: ' + format_line(
+                        now_ms, 'cmdvel',
+                        {'v': self._seen_cmdvel.v, 'w': self._seen_cmdvel.w}))
+                self._logged_cmdvel = self._seen_cmdvel
+                self._cmdvel_emit_ms = now_ms
 
     def _dev_state_dict(self) -> dict:
         return {
@@ -245,6 +351,7 @@ class ConnectivityChecker(Node):
 
         self._publish_dev_state()
         self._log_dev_state()
+        self._maybe_log_selections()
 
     def _publish_link_ok(self):
         msg = StateEvent()
