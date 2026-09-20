@@ -32,6 +32,7 @@ BRINGUP_PY = os.path.join(_LAUNCH_DIR, "bringup.launch.py")
 REGISTRY_YAML = os.path.join(_PARAMS_SRC, "config", "registry.yaml")
 SAFETY_CPP = os.path.join(_REPO_SRC, "th_safety", "src", "safety_monitor.cpp")
 HEALTH_MSG = os.path.join(_REPO_SRC, "th_system_msgs", "msg", "LocalizationHealth.msg")
+HEALTH_NODE_PY = os.path.join(_REPO_SRC, "th_state", "scripts", "localization_health.py")
 
 
 def _read(path: str) -> str:
@@ -73,6 +74,21 @@ def test_registry_values_are_sane():
     assert "localization_health" in reg["localization_stale_ms"]["consumers"]
 
 
+def test_registry_jump_rows_are_starting_points():
+    """B′ の 3 行。Autoware の既定を出発点にし、実測値でないことを note に明記。"""
+    reg = _registry_rows()
+    for name in ("jump_window_ms", "jump_translation_m", "jump_rotation_rad"):
+        assert name in reg, f"registry.yaml に {name} が無い（SD-9）"
+        assert reg[name]["consumers"] == ["localization_health"]
+    assert reg["jump_window_ms"]["value"] == 500
+    assert reg["jump_translation_m"]["value"] == 0.11
+    assert reg["jump_rotation_rad"]["value"] == 0.0175
+    for name in ("jump_window_ms", "jump_translation_m", "jump_rotation_rad"):
+        note = reg[name].get("note") or ""
+        assert "出発点" in note and "実機で詰める" in note, (
+            f"{name} の note に「出発点。実機で詰める」が無い")
+
+
 # ============================================================================
 # 生成 yaml への載り（完了条件5）
 # ============================================================================
@@ -93,6 +109,10 @@ def test_generated_yaml_carries_localization_params():
         assert health["localization_stale_ms"] == 2000
         assert health["localization_warmup_ms"] == 30000
         assert set(health["localization_expected_nodes"]) == {"slam_toolbox", "amcl"}
+        # B′ の 3 件も載ること（完了条件5）。
+        assert health["jump_window_ms"] == 500
+        assert health["jump_translation_m"] == 0.11
+        assert health["jump_rotation_rad"] == 0.0175
 
         with open(os.path.join(out_dir, "safety_monitor.yaml"), encoding="utf-8") as f:
             safety = yaml.safe_load(f)["safety_monitor"]["ros__parameters"]
@@ -238,6 +258,32 @@ def test_safety_cpp_wiring():
 def test_health_msg_defines_reasons_and_reserves_low_confidence():
     src = _read(HEALTH_MSG)
     for token in ("bool ok", "string reason", "transform_age_sec", "node_present",
-                  "stale", "node_down", "low_confidence"):
+                  "stale", "node_down", "low_confidence", "jump"):
         assert token in src, f"LocalizationHealth.msg に {token!r} が無い"
     assert "出さない" in src, "low_confidence を出さない旨の注記が無い"
+
+
+# ============================================================================
+# ノード配線（localization_health.py。本文書の試験だけでは「通るだけ」に
+# なるため、純粋関数と実装の接続点を縛る。DEV-01A の結びつき試験と同型）
+# ============================================================================
+
+def test_health_node_wires_detect_jump():
+    """ノードが detect_jump を呼び、結果を reason=jump に載せること。
+    呼び出し削除・reason 付け替えで赤くなる。"""
+    src = _read(HEALTH_NODE_PY)
+    # 呼び出し点そのものを縛る（docstring の `detect_jump()` という文字列だけ
+    # では、呼び出し削除で赤くならない。DEV-01A 変異C の教訓）。
+    assert "jump = detect_jump(self._prev_sample, curr, p)" in src, (
+        "jump 判定の呼び出しが無い")
+    assert "REASON_JUMP" in src, "reason=jump への載せ替えが無い"
+    assert "self._prev_sample = None" in src, (
+        "TF 不連続時の履歴捨てが無い（読み直し直後の飛びを拾ってしまう）")
+    # タイマ周期は比較周期（jump_window_ms）に連動する。数値リテラル禁止。
+    assert "jump_window_ms" in src
+    assert "create_timer" in src
+    # jump は起動猶予中に出さない（A・C と同じ考え方）。
+    assert "in_warmup" in src
+    # jump パラメータ 3 件の宣言（既定値なし・外部から必ず渡す。R2）。
+    for param in ("jump_window_ms", "jump_translation_m", "jump_rotation_rad"):
+        assert f"'{param}'" in src, f"パラメータ '{param}' の宣言が無い"
