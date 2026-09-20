@@ -1,0 +1,5 @@
+map_downsampler:
+  ros__parameters:
+    factor: 4
+    occupied_threshold: 50
+    publish_period_ms: 2000
