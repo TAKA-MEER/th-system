@@ -79,7 +79,12 @@ class PinRegistrar(Node):
         super().__init__('pin_registrar')
 
         # ── パラメータ ──────────────────────────────────────
-        # WAIVER(demo): W-13 — 数値は registry.yaml 経由でなくノード内リテラル既定値
+        # W-13 解除: 挙動値（間隔・確信度・壁判定）は registry.yaml 駆動。
+        # launch が渡す生成 yaml が上書きし、そちらが正になる。既定値は
+        # 起動単体のフォールバックとして残す。
+        # 移さないもの: venue_dir（パス）・map_frame/base_frame（フレーム名）。
+        # 調整値ではなく配線設定のため registry の対象外
+        # （th_config_manager/tunable_targets.py と同じ考え方）。
         self.declare_parameter('venue_dir', '/root/th_data/venue')
         self.declare_parameter('two_point_min_spacing_m', 0.30)
         self.declare_parameter('min_confidence', 0.50)

@@ -55,7 +55,10 @@ from person_tracker_bridge_core import (
     STATUS_EXISTS_LEG,
 )
 
-# WAIVER(demo): W-13 — ノード内リテラル既定値
+# W-13 解除: 挙動値（保持・照合・確信度）は registry.yaml 駆動。
+# launch が渡す生成 yaml が上書きし、そちらが正になる。既定値（DEFAULT_*）
+# は起動単体のフォールバックとして残す。値は変えない。
+# tracker_lost_grace_ms は W-15 の placeholder 行のため対象外（触らない）。
 DEFAULT_AUTO_SELECT_HOLD_S = 2.0
 DEFAULT_MATCH_TOL_M = 0.35
 DEFAULT_TARGET_CONFIDENCE_MIN = 0.5
@@ -79,7 +82,12 @@ class PersonTrackerBridge(Node):
                                history=QoSHistoryPolicy.KEEP_LAST)
         self._pub_event = self.create_publisher(StateEvent, '/system/event', event_qos)
 
-        # ── パラメータ（# WAIVER(demo): W-13）────────────────
+        # ── パラメータ（W-13 解除）────────────────
+        # 挙動値は registry.yaml 駆動（生成 yaml が上書き）。移さないもの:
+        # candidates_topic（トピック名）・select_service/reset_service
+        # （サービス名）。tracker_lost_grace_ms は W-15 のため対象外。
+        # 調整値ではなく配線設定のため registry の対象外
+        # （th_config_manager/tunable_targets.py と同じ考え方）。
         self.declare_parameter('auto_select_hold_s', DEFAULT_AUTO_SELECT_HOLD_S)
         self.declare_parameter('match_tol_m', DEFAULT_MATCH_TOL_M)
         self.declare_parameter('target_confidence_min', DEFAULT_TARGET_CONFIDENCE_MIN)

@@ -40,7 +40,12 @@ class HomeDeclarer(Node):
         super().__init__('home_declarer')
 
         # ── パラメータ ──────────────────────────────────────
-        # WAIVER(demo): W-13 — 数値はノード内リテラル既定値
+        # W-13 解除: 挙動値（宣言許容）は registry.yaml 駆動。launch が渡す
+        # 生成 yaml が上書きし、そちらが正になる。既定値は起動単体の
+        # フォールバックとして残す。
+        # 移さないもの: map_frame/base_frame（フレーム名）。
+        # 調整値ではなく配線設定のため registry の対象外
+        # （th_config_manager/tunable_targets.py と同じ考え方）。
         self.declare_parameter('home_declare_tolerance_m', 0.30)
         self.declare_parameter('home_declare_tolerance_deg', 15.0)
         self.declare_parameter('map_frame', 'map')
