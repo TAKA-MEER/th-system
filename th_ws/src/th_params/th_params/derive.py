@@ -57,9 +57,17 @@ def person_backstop_ms(grace_ms: float, link_p99_ms: float, factor: float) -> fl
     return max(grace_ms * factor, link_p99_ms * factor)
 
 
-def clear_distance(body_half_length_m: float, clear_margin_m: float) -> float:
-    """退避待ちゲート：対象がゴールから離れるべき距離。"""
-    return body_half_length_m + clear_margin_m
+def clear_distance(body_half_length_m: float, person_margin_m: float,
+                   clear_margin_m: float) -> float:
+    """退避待ちゲート：対象がゴールから離れるべき距離。
+
+    DetailedDesign-params.md の docstring と同じ内容（正本はそちら）。
+    2026-09-20 改訂：人の分（person_margin_m）が抜けていた。旧式は 0.575 を
+    返し、実機の live 値 1.0 と食い違っていた。新式は 0.975。
+    制動距離は入れない（判定時にロボットは停止している／v_slow 経由で
+    未実測 placeholder に依存して A8 で起動が止まる）。
+    """
+    return body_half_length_m + person_margin_m + clear_margin_m
 
 
 def hysteresis_band(floor_distance_m: float, ratio: float) -> float:

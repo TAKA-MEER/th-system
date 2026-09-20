@@ -691,12 +691,7 @@ def generate_launch_description():
         package='th_onsite',
         executable='wait_clear_gate.py',
         name='wait_clear_gate',
-        # W-13: clear_distance_m は導出値（0.575）と live 値（1.0）が
-        # 食い違っている。繋ぐと安全側の余裕が変わるため、生成 yaml の後に
-        # live 値をピン留めする（後勝ち。onsite の factor=1 と同じ流儀）。
-        # 突き合わせは別途判断する（台帳 W-13 の残余）。
-        parameters=[os.path.join(GENERATED_DIR, 'wait_clear_gate.yaml'),
-                    {'clear_distance_m': 1.0}],
+        parameters=[os.path.join(GENERATED_DIR, 'wait_clear_gate.yaml')],
         condition=IfCondition(onsite_enabled),
         output='screen',
     ))

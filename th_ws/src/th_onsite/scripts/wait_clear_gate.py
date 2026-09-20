@@ -41,11 +41,9 @@ class WaitClearGate(Node):
         super().__init__('wait_clear_gate')
 
         # ── パラメータ ──────────────────────────────────────
-        # W-13 解除（一部）: clear_hold_ms / clear_timeout_ms / tick_hz は
-        # registry.yaml 駆動。clear_distance_m は導出値（0.575）と live 値
-        # （1.0）が食い違っており、繋ぐと安全側の余裕が変わるため launch では
-        # 1.0 をピン留めする（bringup.launch.py のコメント参照）。突き合わせは
-        # 別途判断する。既定値は起動単体のフォールバックとして残す。
+        # clear_distance_m の導出式は 2026-09-20 改訂で人の分が入った
+        # （0.575 → 0.975。食い違いは解消した）。生成 yaml が上書きし、
+        # そちらが正になる。既定値は起動単体のフォールバックとして残す。
         # 移さないもの: map_frame/base_frame（フレーム名）。
         # 調整値ではなく配線設定のため registry の対象外
         # （th_config_manager/tunable_targets.py と同じ考え方）。
