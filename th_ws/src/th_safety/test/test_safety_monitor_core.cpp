@@ -248,3 +248,100 @@ TEST(SafetyMonitorCore, TimeoutFaultReceivedThenLostEvenRightAfterStartup) {
   // 一度受けた後に途絶えたら、起動直後（since_start が小さい）でも検知する
   EXPECT_TRUE(is_timeout_fault(true, 0.5, 0.25, /*since_start=*/1.0, 15.0));
 }
+
+// ── test_runaway_freshness_gate（W-06 の②・Spec-safety.md §3.5.3） ───
+// 実測が新鮮なときだけ判定し、古いあいだは凍結する（保持時間を進めも戻しも
+// せず、フォルト状態も変えない）。
+
+TEST(SafetyMonitorCore, RunawayFreshnessBoundary) {
+  // 新鮮（age < stale）
+  EXPECT_TRUE(is_runaway_feedback_fresh(/*ever_received=*/true, /*age=*/0.10,
+                                        /*stale=*/0.25));
+  // ちょうどは新鮮（§3.5.3「〜以内」）
+  EXPECT_TRUE(is_runaway_feedback_fresh(true, 0.25, 0.25));
+  // 古い（超過）
+  EXPECT_FALSE(is_runaway_feedback_fresh(true, 0.250001, 0.25));
+  EXPECT_FALSE(is_runaway_feedback_fresh(true, 1.0, 0.25));
+  // 一度も届いていない（ESP32 の不在は ESP32_DISCONNECTED が担う）
+  EXPECT_FALSE(is_runaway_feedback_fresh(/*ever_received=*/false, 0.0, 0.25));
+  EXPECT_FALSE(is_runaway_feedback_fresh(false, 100.0, 0.25));
+}
+
+TEST(SafetyMonitorCore, RunawayFreezeAccumulatesAcrossStaleGap) {
+  // 完了条件 2: condition=true を新鮮 400ms → 古い 300ms（凍結）→ 新鮮 200ms
+  // で合計 600ms が runaway_hold_ms(500ms) を超えて発火する。
+  // 「古いとき保持時間を戻す」実装では発火しないので区別がつく。
+  HoldTimer hold(/*hold_sec=*/0.5);
+  constexpr double dt = 0.1;
+  // 新鮮 400ms（4 周期）。まだ 500ms 未満なので発火しない。
+  for (int i = 0; i < 4; ++i) {
+    auto out = update_runaway_with_freshness(/*fresh=*/true, /*condition=*/true, hold, dt);
+    ASSERT_TRUE(out.has_value());
+    EXPECT_FALSE(*out);
+  }
+  EXPECT_DOUBLE_EQ(hold.held_sec(), 0.4);
+  // 古い 300ms（3 周期）。凍結: nullopt を返し、保持時間に触らない。
+  for (int i = 0; i < 3; ++i) {
+    auto out = update_runaway_with_freshness(/*fresh=*/false, /*condition=*/true, hold, dt);
+    EXPECT_FALSE(out.has_value());
+  }
+  EXPECT_DOUBLE_EQ(hold.held_sec(), 0.4);
+  // 新鮮に戻って condition=true を 200ms。累積 500ms 目で発火し、600ms 目も発火のまま。
+  {
+    auto out = update_runaway_with_freshness(true, true, hold, dt);
+    ASSERT_TRUE(out.has_value());
+    EXPECT_TRUE(*out);  // 累積 500ms 目。runaway_hold_ms(500ms) に到達して発火
+  }
+  {
+    auto out = update_runaway_with_freshness(true, true, hold, dt);
+    ASSERT_TRUE(out.has_value());
+    EXPECT_TRUE(*out);  // 累積 600ms 目。発火のまま
+  }
+}
+
+TEST(SafetyMonitorCore, RunawayFrozenWhileAlreadyFiredStaysFired) {
+  // 完了条件 3: すでに発火している状態で古い実測が来ても解除されない。
+  // （凍結中は updateFaultState を呼ばないのでフォルト状態が変わらない。
+  // ここでは純関数側の契約＝「保持時間が動かず nullopt を返す」を縛る。
+  // 呼び出し側が updateFaultState を呼ばないことは Python の配線試験で縛る。）
+  HoldTimer hold(/*hold_sec=*/0.5);
+  constexpr double dt = 0.1;
+  // 600ms 継続で発火させる。
+  bool fired = false;
+  for (int i = 0; i < 6; ++i) {
+    auto out = update_runaway_with_freshness(true, true, hold, dt);
+    ASSERT_TRUE(out.has_value());
+    fired = *out;
+  }
+  EXPECT_TRUE(fired);
+  const double held_before = hold.held_sec();
+  // 古い実測が来ても凍結（nullopt）し、保持時間は動かない。
+  for (int i = 0; i < 5; ++i) {
+    auto out = update_runaway_with_freshness(/*fresh=*/false, /*condition=*/true, hold, dt);
+    EXPECT_FALSE(out.has_value());
+  }
+  EXPECT_DOUBLE_EQ(hold.held_sec(), held_before);
+  // 新鮮に戻れば発火したまま（保持時間が戻っていない）。
+  {
+    auto out = update_runaway_with_freshness(true, true, hold, dt);
+    ASSERT_TRUE(out.has_value());
+    EXPECT_TRUE(*out);
+  }
+}
+
+TEST(SafetyMonitorCore, RunawayFreshButNoConditionResetsHold) {
+  // 新鮮なのに条件が偽なら通常どおりリセットされる（凍結ではない）。
+  HoldTimer hold(/*hold_sec=*/0.5);
+  constexpr double dt = 0.1;
+  for (int i = 0; i < 4; ++i) {
+    auto out = update_runaway_with_freshness(true, true, hold, dt);
+    ASSERT_TRUE(out.has_value());
+  }
+  EXPECT_DOUBLE_EQ(hold.held_sec(), 0.4);
+  {
+    auto out = update_runaway_with_freshness(true, /*condition=*/false, hold, dt);
+    ASSERT_TRUE(out.has_value());
+    EXPECT_FALSE(*out);
+  }
+  EXPECT_DOUBLE_EQ(hold.held_sec(), 0.0);
+}
