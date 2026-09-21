@@ -74,19 +74,27 @@ def test_registry_values_are_sane():
     assert "localization_health" in reg["localization_stale_ms"]["consumers"]
 
 
-def test_registry_jump_rows_are_starting_points():
-    """B′ の 3 行。Autoware の既定を出発点にし、実測値でないことを note に明記。"""
+def test_registry_jump_rows_are_remeasured_values():
+    """B′ の 3 行。2026-09-21 の実走で決め直した値（Spec-safety.md §3.5.0
+    「実走で分かったこと」）。「Autoware の既定を出発点にする」は誤りだった
+    ため note に残さない。jump_window_ms は変えない。"""
     reg = _registry_rows()
     for name in ("jump_window_ms", "jump_translation_m", "jump_rotation_rad"):
         assert name in reg, f"registry.yaml に {name} が無い（SD-9）"
         assert reg[name]["consumers"] == ["localization_health"]
     assert reg["jump_window_ms"]["value"] == 500
-    assert reg["jump_translation_m"]["value"] == 0.11
-    assert reg["jump_rotation_rad"]["value"] == 0.0175
-    for name in ("jump_window_ms", "jump_translation_m", "jump_rotation_rad"):
+    assert reg["jump_translation_m"]["value"] == 1.0
+    assert reg["jump_rotation_rad"]["value"] == 0.5
+    for name in ("jump_translation_m", "jump_rotation_rad"):
         note = reg[name].get("note") or ""
-        assert "出発点" in note and "実機で詰める" in note, (
-            f"{name} の note に「出発点。実機で詰める」が無い")
+        assert "0.37 m" in note or "10.5" in note, (
+            f"{name} の note に実走の最大値が無い")
+        assert "2.5" in note, (
+            f"{name} の note に「正常な補正の最大の約 2.5 倍」が無い")
+        assert "Spec-safety.md" in note, (
+            f"{name} の note に根拠（Spec-safety.md §3.5.0）が無い")
+        assert "Autoware" not in note, (
+            f"{name} の note に誤った「Autoware の既定を出発点」が残っている")
 
 
 # ============================================================================
@@ -111,8 +119,8 @@ def test_generated_yaml_carries_localization_params():
         assert set(health["localization_expected_nodes"]) == {"slam_toolbox", "amcl"}
         # B′ の 3 件も載ること（完了条件5）。
         assert health["jump_window_ms"] == 500
-        assert health["jump_translation_m"] == 0.11
-        assert health["jump_rotation_rad"] == 0.0175
+        assert health["jump_translation_m"] == 1.0
+        assert health["jump_rotation_rad"] == 0.5
 
         with open(os.path.join(out_dir, "safety_monitor.yaml"), encoding="utf-8") as f:
             safety = yaml.safe_load(f)["safety_monitor"]["ros__parameters"]
