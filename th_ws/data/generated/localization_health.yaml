@@ -6,5 +6,7 @@ localization_health:
     localization_expected_nodes:
     - slam_toolbox
     - amcl
+    localization_post_restart_grace_ms: 5000
+    localization_restart_max_ms: 90000
     localization_stale_ms: 2000
     localization_warmup_ms: 30000
