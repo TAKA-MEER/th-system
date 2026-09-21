@@ -175,12 +175,15 @@ class TestRunawayFreshnessNode(unittest.TestCase):
     def test_c_stale_after_fire_stays_fired(self):
         """発火後に実測が止まる → 解除されない（凍結）。
 
-        test_b で発火した状態を引き継ぐ。wheel を止めて 2.0s のあいだ
-        inactive の FaultStatus が一度も来ないこと。凍結中の解除変異
-        （else 節の false 報告）なら赤くなる。
+        test_b で発火した状態を引き継ぐ。wheel は test_c では一度も
+        出さない。setUp の spin 中も含めて inactive の FaultStatus が
+        一度も来ないこと。凍結中の解除変異（else 節の false 報告）は
+        setUp の spin 中（実測途絶から 250ms 後）に解除を publish する
+        ため、ここで捕まる。blind clear はしない（setup-clear 競合:
+        消すと解除の証拠ごと消えて変異を見逃す。test_localization_lost.py
+        の setUp コメントと同じ理由）。
         """
         self._wheel_enabled = False
-        self._faults.clear()
         deadline = time.time() + 2.0
         while time.time() < deadline:
             self._spin(0.1)
