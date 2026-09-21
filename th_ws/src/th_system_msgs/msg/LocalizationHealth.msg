@@ -11,6 +11,10 @@
 #                    1 つも居ない（起動失敗・クラッシュ）
 #   "jump"           B′: map→odom が比較周期に許容（jump_translation_m ／
 #                    jump_rotation_rad）を超えて動いた（補正が飛んだ）
+#   "restarting"     O-e3: slam_control が示す計画的な推定器の再起動中
+#                    （A・C・B′ を保留する。フォルトではない）
+#   "restart_timeout" O-e3: 再起動が上限（localization_restart_max_ms）を超過
+#                    （立て直しが終わらない本物の異常）
 #   "low_confidence" ゆっくり間違っていく用（O-e2）の予約。出さない。
 #
 # 優先順位は node_down ＞ stale ＞ jump（localization_health_core.py の

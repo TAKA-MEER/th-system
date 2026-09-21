@@ -24,6 +24,8 @@ REASON_OK = ""
 REASON_STALE = "stale"        # A: map→odom が凍結
 REASON_NODE_DOWN = "node_down"  # C: 推定ノード不在
 REASON_JUMP = "jump"          # B′: map→odom が比較周期に許容超で動いた
+REASON_RESTARTING = "restarting"  # O-e3: 計画的な再起動中（保留。フォルトではない）
+REASON_RESTART_TIMEOUT = "restart_timeout"  # O-e3: 再起動が上限を超過（本物の異常）
 # ゆっくり間違っていく用（O-e2）の予約。範囲外のため出さない。
 # REASON_LOW_CONFIDENCE = "low_confidence"
 
@@ -93,6 +95,40 @@ class JumpReport:
 
 def _wrap_pi(angle: float) -> float:
     return (angle + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def check_planned_restart(now_ms: int,
+                          restarting: Optional[bool],
+                          true_since_ms: Optional[int],
+                          false_since_ms: Optional[int],
+                          restart_max_ms: int,
+                          post_restart_grace_ms: int) -> Optional[Tuple[bool, str]]:
+    """O-e3: 計画的な再起動の保留判定（純関数。数値リテラルを持たない）。
+
+    ノードは /slam_control/estimator_restarting の受信値と edge 時刻
+    （自分の時計）を渡す。戻り値 None ＝保留対象外（従来どおり A・C・B′ を
+    評価する）。それ以外は (ok, reason) をそのまま使う:
+    - 再起動中（True 受信中）は (True, 'restarting')。A・C・B′ を評価しない
+    - True になってからの経過が restart_max_ms 超は (False, 'restart_timeout')
+      （立て直しが終わらない本物の異常。publisher が死んで True のまま
+      止まっていても、自分の時計で測るため上限で救える）
+    - 終わって post_restart_grace_ms 以内は (True, 'restarting')
+      （最初の補正を待つ。A・C を評価しない）
+    - 一度も知らせが無い／False（再起動の edge を見ていない）→ None
+      （＝計画的でないものとして従来どおり検知する。安全側）
+
+    境界は既存の流儀に揃える（超えたら ng・以内は ok。evaluate の
+    stale・warmup と同じ向き）: 上限は `>` で超えたら故障、猶予は `<` で
+    以内なら保留（ちょうどは猶予明け＝通常評価）。
+    """
+    if restarting is True:
+        if true_since_ms is not None and now_ms - true_since_ms > restart_max_ms:
+            return (False, REASON_RESTART_TIMEOUT)
+        return (True, REASON_RESTARTING)
+    if (restarting is False and false_since_ms is not None
+            and now_ms - false_since_ms < post_restart_grace_ms):
+        return (True, REASON_RESTARTING)
+    return None
 
 
 def detect_jump(prev: Optional[TransformSample], curr: TransformSample,

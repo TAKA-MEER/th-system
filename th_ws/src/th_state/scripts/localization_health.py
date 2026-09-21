@@ -29,7 +29,9 @@ import rclpy
 import tf2_ros
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
+
+from std_msgs.msg import Bool
 
 from th_system_msgs.msg import LocalizationHealth
 
@@ -37,6 +39,7 @@ from th_state.localization_health_core import (
     REASON_JUMP,
     Params,
     TransformSample,
+    check_planned_restart,
     detect_jump,
     evaluate,
 )
@@ -68,6 +71,10 @@ class LocalizationHealthNode(Node):
         self.declare_parameter('jump_window_ms', Parameter.Type.INTEGER)
         self.declare_parameter('jump_translation_m', Parameter.Type.DOUBLE)
         self.declare_parameter('jump_rotation_rad', Parameter.Type.DOUBLE)
+        # O-e3: 計画的な再起動の上限・再起動後の猶予（既定値なしで宣言し、
+        # 外部から必ず渡す。R2）
+        self.declare_parameter('localization_restart_max_ms', Parameter.Type.INTEGER)
+        self.declare_parameter('localization_post_restart_grace_ms', Parameter.Type.INTEGER)
 
         self._boot_ms = self._now_ms()
         self._last_transform_ms = None
@@ -76,6 +83,12 @@ class LocalizationHealthNode(Node):
         self._prev_sample = None
         self._prev_ok = None
         self._prev_reason = None
+        # O-e3: /slam_control/estimator_restarting の受信状態。時刻はすべて
+        # 自分の時計（publisher が死んで true のまま止まっても上限で救うため）。
+        # edge（False→True／True→False）でのみ時刻を更新する。
+        self._restart_last = None
+        self._restart_true_ms = None
+        self._restart_false_ms = None
 
         self._tf_buffer = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
@@ -83,6 +96,17 @@ class LocalizationHealthNode(Node):
         status_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE)
         self._pub = self.create_publisher(LocalizationHealth, '/safety/localization_health',
                                           status_qos)
+
+        # O-e3: slam_control が示す計画的な再起動の通知を受ける。発行側の
+        # QoS（RELIABLE + TRANSIENT_LOCAL + depth 1）に合わせる。後から起動
+        # しても直近値が届く（再起動の最中にこちらが起動した場合に要る）。
+        restart_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(
+            Bool, '/slam_control/estimator_restarting', self._on_restarting,
+            restart_qos)
 
         # 比較周期ごとに比べる（B′ の定義）。publish 周期と同一。
         period_s = self.get_parameter('jump_window_ms').value / 1000.0
@@ -119,6 +143,16 @@ class LocalizationHealthNode(Node):
             jump_rotation_rad=self.get_parameter('jump_rotation_rad').value,
         )
 
+    def _on_restarting(self, msg: Bool) -> None:
+        """O-e3: 再起動通知の edge を自分の時計で記録する。"""
+        now_ms = self._now_ms()
+        value = bool(msg.data)
+        if value and self._restart_last is not True:
+            self._restart_true_ms = now_ms    # False→True（初回 True 含む）
+        if not value and self._restart_last is True:
+            self._restart_false_ms = now_ms   # True→False
+        self._restart_last = value
+
     # ------------------------------------------------------------
     def _on_timer(self):
         now_ms = self._now_ms()
@@ -134,6 +168,22 @@ class LocalizationHealthNode(Node):
             present_nodes=self.get_node_names(),
             p=p,
         )
+
+        # O-e3: 計画的な再起動の保留判定を先に見る。上限超過の故障もここで
+        # 出す（起動時猶予より優先する）。保留中は B′ の前回値を捨て、
+        # 再起動をまたいだ比較をしない（立て直し前後の map→odom は別物）。
+        # transform_age_sec／node_present は生きた値を載せ続ける。
+        restart = check_planned_restart(
+            now_ms, self._restart_last,
+            self._restart_true_ms, self._restart_false_ms,
+            self.get_parameter('localization_restart_max_ms').value,
+            self.get_parameter('localization_post_restart_grace_ms').value,
+        )
+        if restart is not None:
+            ok, reason = restart
+            self._prev_sample = None
+            self._publish(ok, reason, base)
+            return
 
         # 優先順位は node_down ＞ stale ＞ jump（core の docstring 参照）。
         # jump は base が ok のときだけ評価する（構造で保証）。
@@ -153,6 +203,9 @@ class LocalizationHealthNode(Node):
             # 担う（ここでは触らない）。
             self._prev_sample = None
 
+        self._publish(ok, reason, base)
+
+    def _publish(self, ok: bool, reason: str, base) -> None:
         msg = LocalizationHealth()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.ok = ok

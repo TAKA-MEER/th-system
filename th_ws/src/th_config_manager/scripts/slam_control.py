@@ -126,7 +126,8 @@ from th_system_msgs.srv import OpenMapSession
 
 from th_config_manager.service_call import call_and_wait
 from th_config_manager.slam_control_logic import (
-    deserialize_match_type, effective_reload_pose, map_instance_ids_match,
+    deserialize_match_type, effective_reload_pose, estimator_restarting,
+    map_instance_ids_match,
     map_session_base_dir, map_session_filename, map_session_name,
     open_session_error, slam_restart_complete,
 )
@@ -266,6 +267,16 @@ class SlamControl(Node):
         # 元から予約されていたトピック）。
         self._pub_venue_status = self.create_publisher(
             MapSessionStatus, '/map_session/status', status_qos)
+        # O-e3: 計画的な推定器の再起動中であることの通知。localization_health が
+        # 受けて A・C・B′ を保留する（上限つき）。mapping_active と同じ QoS
+        # （RELIABLE + TRANSIENT_LOCAL + depth 1）。新しい .msg は作らない。
+        self._estimator_restarting = False
+        self._discard_deadline = None   # 破棄後の締切（monotonic 秒）。None＝破棄の再起動なし
+        self._pub_restarting = self.create_publisher(
+            Bool, '/slam_control/estimator_restarting', status_qos)
+        # 起動時に一度 false を publish する（変化のたびに即 publish し、
+        # 周期任せにしない。TRANSIENT_LOCAL なので後から来た購読者にも届く）。
+        self._pub_restarting.publish(Bool(data=False))
 
         self.create_service(
             Trigger, '/slam_control/toggle_mapping', self._cb_toggle,
@@ -342,6 +353,9 @@ class SlamControl(Node):
         """
         if self._reload_in_progress:
             return   # WS-9S: reload が respawn を意図的に起こしている最中は触らない
+        # O-e3: 破棄後の再起動が終わった（サービス復帰）か締切を過ぎたら
+        # estimator_restarting を下ろす。どちらでもなければ true のまま。
+        self._sync_estimator_restarting()
         ready = self._cli_localization.service_is_ready()
         was_ready = self._slam_ready
         self._slam_ready = ready
@@ -380,6 +394,27 @@ class SlamControl(Node):
 
     def _report(self, text: str):
         self._pub_last_result.publish(String(data=text))
+
+    def _sync_estimator_restarting(self, service_ready=None) -> None:
+        """O-e3: 純関数 estimator_restarting() の結果を publish する。
+
+        変化したときだけ即 publish する（周期任せにしない）。False になったら
+        破棄の締切を捨てる（締切が残っていると、後のクラッシュを計画的な
+        再起動と誤認して true を出してしまうため）。
+        service_ready を渡さないときはサービスに問い合わせる。kill 直後は
+        発見情報が残っていて True を返すため、呼び出し側は False を渡して
+        「死んだものとして扱う」こと（_cb_discard_map）。
+        """
+        if service_ready is None:
+            service_ready = self._cli_localization.service_is_ready()
+        value = estimator_restarting(
+            self._reload_in_progress, self._discard_deadline,
+            time.monotonic(), service_ready)
+        if not value:
+            self._discard_deadline = None
+        if value != self._estimator_restarting:
+            self._estimator_restarting = value
+            self._pub_restarting.publish(Bool(data=value))
 
     def _set_localization(self, enabled: bool) -> "str | None":
         """slam_toolbox の localization モードを切り替える。エラー文字列 or None を返す。
@@ -732,6 +767,8 @@ class SlamControl(Node):
         # kill の前に立てる。kill 直後に _check_slam_restart が「クラッシュした」と
         # 誤認するのを防ぐ（この関数は self._lock を持って呼ばれている）。
         self._reload_in_progress = True
+        # O-e3: kill の前に true（_reload_in_progress と同じ区間）。
+        self._sync_estimator_restarting()
         try:
             old_pids = self._kill_slam_toolbox()
             if not old_pids:
@@ -770,6 +807,8 @@ class SlamControl(Node):
             self._slam_ready = True
         finally:
             self._reload_in_progress = False
+            # O-e3: finally で必ず下ろす（例外・タイムアウトでも true のままにしない）。
+            self._sync_estimator_restarting()
 
         return self._finish(
             response, None,
@@ -803,6 +842,13 @@ class SlamControl(Node):
             # _handle_map_reload と違い、ここは respawn を待たない。再起動の検知と
             # モード再適用は _check_slam_restart() に任せる（従来どおり即返す）。
             self._kill_slam_toolbox()
+            # O-e3: kill で true。下ろすのは「サービスが戻ったのを
+            # _check_slam_restart が検知したとき」または「RESPAWN_WAIT_SEC 経過」
+            # の早い方（_sync_estimator_restarting が締切で下ろす）。
+            # kill 直後はサービス発見情報が残っていて ready に見えるため、
+            # 死んだものとして扱って即 true を出す（遅れると node_down が先に発火する）。
+            self._discard_deadline = time.monotonic() + RESPAWN_WAIT_SEC
+            self._sync_estimator_restarting(service_ready=False)
 
         return self._finish(
             response, None, '地図を破棄しました（slam_toolbox を再起動中）')
