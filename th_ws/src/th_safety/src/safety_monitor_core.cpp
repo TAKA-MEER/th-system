@@ -50,6 +50,24 @@ bool is_runaway_condition(double cmd_speed_abs, double feedback_speed_abs, doubl
   return feedback_speed_abs < lo || feedback_speed_abs > hi;
 }
 
+bool is_runaway_feedback_fresh(bool ever_received, double age_sec, double stale_sec) {
+  if (!ever_received) {
+    return false;
+  }
+  // ちょうどは新鮮（Spec-safety.md §3.5.3「〜以内」）。
+  return age_sec <= stale_sec;
+}
+
+std::optional<bool> update_runaway_with_freshness(bool fresh, bool condition_active,
+                                                   HoldTimer& hold, double dt_sec) {
+  if (!fresh) {
+    // 凍結: 保持時間を進めも戻しもしない。呼び出し側はフォルト状態も変えない
+    // （Spec-safety.md §3.5.3。戻すと断続的な途切れで暴走を見逃す）。
+    return std::nullopt;
+  }
+  return hold.update(condition_active, dt_sec);
+}
+
 bool detect_state_inconsistent(bool state_stale, const std::string& mode, const std::string& state,
                                 const std::map<std::string, std::set<std::string>>& mode_states) {
   if (state_stale) {

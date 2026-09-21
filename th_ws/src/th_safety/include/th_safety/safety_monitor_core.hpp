@@ -10,6 +10,8 @@
 //   §5.2.1（同上）                    fault_lock の合成式    → compute_fault_lock()
 //   §4.1（wp2 WP-SAFE-01）            MUX_DEAD（双方向）     → detect_mux_dead()
 //   §4.1（同上）                      DRIVE_RUNAWAY          → is_runaway_condition() + HoldTimer
+//   §3.5.3（safety.md）                DRIVE_RUNAWAY の鮮度ゲート → is_runaway_feedback_fresh() +
+//                                                              update_runaway_with_freshness()
 //   §4.1（同上）                      STATE_INCONSISTENT     → detect_state_inconsistent()
 //   §4.2（同上）                      UI 非常停止の生存確認  → UiEstopLatch
 //   §3.2 / §6.3.1（同上 / safety.md） clear_estop_ui の受理  → decide_clear_estop_ui()
@@ -19,6 +21,7 @@
 #define TH_SAFETY_SAFETY_MONITOR_CORE_HPP_
 
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -63,6 +66,16 @@ bool detect_mux_dead(bool muxed_stale, bool muxed_last_nonzero,
 bool is_runaway_condition(double cmd_speed_abs, double feedback_speed_abs,
                            double runaway_ratio, double runaway_zero_threshold);
 
+// ── §3.5.3 DRIVE_RUNAWAY の鮮度ゲート（W-06 の②）:鮮度判定 ─────────
+// 実測が新鮮なときだけ判定し、古いあいだは凍結する（保持時間を進めも戻しもせず、
+// フォルト状態も変えない）。「スキップして保持時間を戻す」にしない理由:
+// 本物の暴走が起きていて実測が断続的に途切れるとき、保持時間が永遠に溜まらず
+// 暴走を見逃すため（Spec-safety.md §3.5.3）。
+//
+// 実測が新鮮か。age == stale ちょうどは新鮮。ever_received == false
+// （一度も届いていない）は古い扱い（ESP32 の不在は ESP32_DISCONNECTED が担う）。
+bool is_runaway_feedback_fresh(bool ever_received, double age_sec, double stale_sec);
+
 // 条件が連続して真である時間を積算する、ROS2 非依存の保持時間トラッカー。
 // dt_sec は呼び出し側の周期（safety_monitor は check_period_ms 固定周期で
 // 呼ぶ想定）。条件が偽になった時点でリセットする。
@@ -83,10 +96,17 @@ class HoldTimer {
   void reset() { held_sec_ = 0.0; }
   double held_sec() const { return held_sec_; }
 
- private:
-  double hold_sec_;
-  double held_sec_ = 0.0;
+  private:
+   double hold_sec_;
+   double held_sec_ = 0.0;
 };
+
+// ── §3.5.3 DRIVE_RUNAWAY の鮮度ゲート（W-06 の②）:1 ステップ関数 ────
+// fresh == false のときは HoldTimer に触らず std::nullopt を返す（＝凍結。
+// 呼び出し側は updateFaultState も呼ばない）。fresh == true のときだけ条件で
+// HoldTimer を進め、その結果を返す。
+std::optional<bool> update_runaway_with_freshness(bool fresh, bool condition_active,
+                                                   HoldTimer& hold, double dt_sec);
 
 // ── §4.1 STATE_INCONSISTENT ───────────────────────────────────
 // state_stale: /system/state が state_stale_ms 途絶しているか。

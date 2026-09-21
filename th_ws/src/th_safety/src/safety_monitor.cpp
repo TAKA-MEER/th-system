@@ -79,6 +79,9 @@ public:
         declare_parameter("state_stale_ms",       1500);
         declare_parameter("runaway_ratio",        1.5);
         declare_parameter("runaway_hold_ms",      500);
+        // W-06 の②（Spec-safety.md §3.5.3）: DRIVE_RUNAWAY の実測の鮮度しきい値。
+        // 既定値は registry.yaml（runaway_feedback_stale_ms）が正。
+        declare_parameter("runaway_feedback_stale_ms", 250);
         // WS-9O (2026-09-04): 重大フォルトの発火に課す保持時間。
         // 監視ループ (check_period_ms) 自身が一時的に遅れると、複数の入力が同じ
         // 判定周期で同時にタイムアウト超過に見える。実機ログで ESP32_DISCONNECTED と
@@ -108,6 +111,8 @@ public:
         state_stale_    = std::chrono::milliseconds(get_parameter("state_stale_ms").as_int());
         runaway_ratio_  = get_parameter("runaway_ratio").as_double();
         runaway_zero_threshold_ = get_parameter("runaway_zero_threshold").as_double();
+        runaway_feedback_stale_ = std::chrono::milliseconds(
+            get_parameter("runaway_feedback_stale_ms").as_int());
         runaway_hold_   = th_safety::HoldTimer(get_parameter("runaway_hold_ms").as_int() / 1000.0);
         {
             const double hold = get_parameter("critical_fault_hold_ms").as_int() / 1000.0;
@@ -352,12 +357,31 @@ private:
                                   mux_dead_hold_.update(mux_dead, check_period_sec_));
             }
             if (targetEnabled("runaway")) {
+                // W-06 の②（Spec-safety.md §3.5.3）: 実測が新鮮なときだけ判定する。
+                // 古いあいだは凍結する — runaway_hold_.update() を呼ばない（進めも
+                // 戻しもしない）し、updateFaultState() も呼ばない（フォルト状態を
+                // 変えない）。「古いとき update(false) で保持時間を戻す／
+                // updateFaultState(..., false) で解除する」にしない理由:
+                // 本物の暴走が起きていて実測が断続的に途切れるとき、保持時間が
+                // 永遠に溜まらず暴走を見逃すため。凍結される窓は有限
+                // （古いまま esp32_timeout_ms を超えれば ESP32_DISCONNECTED が、
+                // ファームのウォッチドッグ 600ms がそれぞれ担う）。
+                double feedback_age_sec = (t - last_esp32_time_).seconds();
+                double stale_sec =
+                    std::chrono::duration<double>(runaway_feedback_stale_).count();
+                bool fresh = th_safety::is_runaway_feedback_fresh(
+                    esp32_alive_, feedback_age_sec, stale_sec);
                 double feedback_abs = std::fabs((last_wheel_left_ + last_wheel_right_) / 2.0);
                 double cmd_abs = std::fabs(last_cmd_linear_x_);
                 bool condition = th_safety::is_runaway_condition(
                     cmd_abs, feedback_abs, runaway_ratio_, runaway_zero_threshold_);
-                bool runaway = runaway_hold_.update(condition, check_period_sec_);
-                updateFaultState("DRIVE_RUNAWAY", runaway);
+                std::optional<bool> runaway =
+                    th_safety::update_runaway_with_freshness(
+                        fresh, condition, runaway_hold_, check_period_sec_);
+                if (runaway.has_value()) {
+                    updateFaultState("DRIVE_RUNAWAY", *runaway);
+                }
+                // frozen（nullopt）のときは何もしない（上のコメント参照）。
             }
             if (targetEnabled("state")) {
                 bool state_stale = (t - last_state_time_) > rclcpp::Duration(state_stale_);
@@ -565,6 +589,7 @@ private:
     std::chrono::milliseconds state_stale_;
     double runaway_ratio_ = 1.5;
     double runaway_zero_threshold_ = 0.02;
+    std::chrono::milliseconds runaway_feedback_stale_{250};
     th_safety::HoldTimer runaway_hold_;
     // WS-9O: 重大フォルトの単発誤検知よけ（回復可能フォルトは一時停止から
     // 正常に再開できるため対象外）。
