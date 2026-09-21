@@ -907,6 +907,17 @@
   spec_ref: "DetailedDesign-names.md §7.3"
   note: "DRIVE_RUNAWAY の保持時間。暫定値。W-06（特例）で runaway ターゲットは bringup.launch.py から外し監視バイパス中。解除時に実測で右サイズ化"
 
+- name: runaway_feedback_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 250
+  consumers: [safety_monitor]
+  spec_ref: "Spec-safety.md §3.5.3"
+  note: "DRIVE_RUNAWAY の実測の鮮度しきい値。出発点。実機計測(2026-09-21・シリアル直結・25分):
+    間隔 p50 100ms / p99 120.8ms / 最大 361〜480ms / 500ms超 0件。esp32_timeout_ms(322)より短く、
+    runaway_hold_ms(500)より短い。実機で詰める"
+
 - name: link_quality_window_sec
   unit: s
   class: b
