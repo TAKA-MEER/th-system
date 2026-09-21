@@ -242,6 +242,7 @@
     "route_gap_timeout_ms",
     "route_jump_m",
     "route_sample_interval_m",
+    "runaway_feedback_stale_ms",
     "runaway_hold_ms",
     "runaway_ratio",
     "runaway_zero_threshold",

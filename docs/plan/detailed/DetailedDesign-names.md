@@ -562,6 +562,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`jump_rotation_rad`** | rad | (b)。**B′ の回転許容**（同上） |
 | **`mux_dead_ms`** | ms | (b)。`MUX_DEAD` の判定（[wp2](DetailedDesign-wp2.md) `WP-SAFE-01` §4.1） |
 | **`runaway_hold_ms`** | ms | (b)。`DRIVE_RUNAWAY` の保持時間 |
+| **`runaway_feedback_stale_ms`** | ms | (b)。`DRIVE_RUNAWAY` の実測の鮮度しきい値。新鮮なときだけ判定し、古いあいだは凍結する（Spec-safety.md §3.5.3。W-06 の②） |
 | **`critical_fault_hold_ms`** | ms | (b)。`LIMITER_DEAD` / `MUX_DEAD` / `STATE_INCONSISTENT` / **`LOCALIZATION_LOST`** の保持時間。監視ループ 1 周期の遅れで生じる単発の誤検知を消す（WS-9O。Spec-safety.md §3.5.1・§3.5.2）|
 | **`link_quality_window_sec`** | s | given。分位点を取る窓（`WP-SAFE-00`） |
 | **`behavior_cmd_timeout_s`** ／ **`nav_cmd_timeout_s`** | s | given。`twist_mux.yaml` の生成元（現行 0.5 s） |
