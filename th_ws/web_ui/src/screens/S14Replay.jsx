@@ -8,7 +8,7 @@
 //           READY --ui.run--> RUN、RUN --ui.stop--> PAUSE、PAUSE --ui.run--> RUN
 //           RUN --(replay_runner が evt.arrived)--> PAUSE、* --ui.finish--> IDLE
 //
-// 逆再生はデモ範囲外（ボタンを disabled にしておく）。replay_runner の初期姿勢推定は
+// WAIVER(demo): W-19 — 逆再生はデモ範囲外（ボタンを disabled にしておく）。replay_runner の初期姿勢推定は
 // P4 の特例（W-01）で省略済みなので LOCALIZE はほぼ一瞬。
 //
 // 操作カードは stop（ui.stop）と run（ui.run、ラベル「再生」）だけ。
@@ -97,7 +97,8 @@ export default function S14Replay({ onFinish }) {
     }
   }
 
-  // この経路で進む → ui.route_select {id, reverse:false}。逆再生はデモ範囲外。
+  // この経路で進む → ui.route_select {id, reverse:false}。
+  // WAIVER(demo): W-19 — 逆再生はデモ範囲外（reverse は常に false）。
   async function handleProceed() {
     if (selectedId == null) return
     await sendTrigger('ui.route_select', { id: selectedId, reverse: false })
