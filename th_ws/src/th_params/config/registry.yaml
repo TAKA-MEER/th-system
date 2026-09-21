@@ -868,21 +868,25 @@
   unit: m
   class: b
   status: given
-  value: 0.11
+  value: 1.0
   consumers: [localization_health]
   spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
-  note: "B′ の並進許容。Autoware の既定を出発点にする。実測値ではない。
-    実機で詰める"
+  note: "B′ の並進許容。2026-09-21 の実走で正常な補正の最大 0.37 m
+    （その場旋回中）に対し約 2.5 倍の 1.0 m。根拠は Spec-safety.md §3.5.0。
+    限界：記録は約 5 分・1 か所の床面のみ。より滑る床・長い直進・
+    高速旋回では正常な補正がもっと大きい可能性があり見直す"
 
 - name: jump_rotation_rad
   unit: rad
   class: b
   status: given
-  value: 0.0175
+  value: 0.5
   consumers: [localization_health]
   spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
-  note: "B′ の回転許容（1°）。Autoware の既定を出発点にする。実測値ではない。
-    実機で詰める"
+  note: "B′ の回転許容（0.5 rad＝28.6°）。2026-09-21 の実走で正常な補正の
+    最大 10.5° に対し約 2.5 倍。根拠は Spec-safety.md §3.5.0。
+    限界：記録は約 5 分・1 か所の床面のみ。より滑る床・長い直進・
+    高速旋回では正常な補正がもっと大きい可能性があり見直す"
 
 - name: critical_fault_hold_ms
   unit: ms

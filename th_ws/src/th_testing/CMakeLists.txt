@@ -185,6 +185,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_localization_health_launch
     test/test_localization_health_launch.py
     TIMEOUT 60)
+  # B′ 閾値の実走回帰 (2026-09-21。registry 駆動・ROS2 不要。
+  # 旧閾値に戻すと発火しない側が赤くなる)
+  ament_add_pytest_test(test_jump_thresholds
+    test/test_jump_thresholds.py
+    TIMEOUT 60)
   # 開発モードの土台 (WP-DEV-01A。dev 分岐・gate 真理値表・launch AST。
   # th_state の純粋コア＋ソース検査。ROS2 不要)
   ament_add_pytest_test(test_dev_mode
