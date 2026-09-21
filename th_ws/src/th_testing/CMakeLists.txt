@@ -272,6 +272,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_w13_registry_driven
     test/test_w13_registry_driven.py
     TIMEOUT 120)
+  # W-06 の②: DRIVE_RUNAWAY の鮮度ゲート（値一致・生成物・整合・配線。
+  # ROS2 不要）
+  ament_add_pytest_test(test_w06_runaway_freshness
+    test/test_w06_runaway_freshness.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_prelaunch_guard
     test/test_prelaunch_guard.py
     TIMEOUT 60)
@@ -302,6 +307,12 @@ if(BUILD_TESTING)
   # 継続で発火・単発で発火せず・途絶で発火。CRITICAL の確認を含む）
   ament_add_pytest_test(test_localization_lost
     test/test_localization_lost.py
+    TIMEOUT 180)
+  # DRIVE_RUNAWAY の鮮度ゲートの Docker launch テスト（W-06 の② §完了条件。
+  # 未受信で発火せず・新鮮な乖離で発火・発火後の途絶で解除されず。
+  # CRITICAL の確認を含む）
+  ament_add_pytest_test(test_runaway_freshness_node
+    test/test_runaway_freshness_node.py
     TIMEOUT 180)
   ament_add_pytest_test(test_twist_mux
     test/test_twist_mux_priority.py

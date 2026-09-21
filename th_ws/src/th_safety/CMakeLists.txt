@@ -37,10 +37,12 @@ target_include_directories(scan_geometry_core INTERFACE
 target_compile_features(scan_geometry_core INTERFACE cxx_std_17)
 
 # safety_monitor_core（WP-SAFE-01）: ROS2 非依存の判定ロジック層。
+# std::optional（§3.5.3 の鮮度ゲート）に C++17 が必要。
 add_library(safety_monitor_core src/safety_monitor_core.cpp)
 target_include_directories(safety_monitor_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
+target_compile_features(safety_monitor_core PUBLIC cxx_std_17)
 
 # obstacle_limiter_core（DetailedDesign-safety.md §3）: ROS2 非依存の
 # obstacle_limiter 判定ロジック層。scan_geometry.hpp（角度→添字変換）に
