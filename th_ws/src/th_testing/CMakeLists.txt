@@ -308,6 +308,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_localization_lost
     test/test_localization_lost.py
     TIMEOUT 180)
+  # DRIVE_RUNAWAY の鮮度ゲートの Docker launch テスト（W-06 の② §完了条件。
+  # 未受信で発火せず・新鮮な乖離で発火・発火後の途絶で解除されず。
+  # CRITICAL の確認を含む）
+  ament_add_pytest_test(test_runaway_freshness_node
+    test/test_runaway_freshness_node.py
+    TIMEOUT 180)
   ament_add_pytest_test(test_twist_mux
     test/test_twist_mux_priority.py
     TIMEOUT 60)
