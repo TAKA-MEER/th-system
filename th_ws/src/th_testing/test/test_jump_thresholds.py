@@ -19,6 +19,7 @@ import yaml
 from th_state.localization_health_core import (
     Params,
     TransformSample,
+    check_planned_restart,
     detect_jump,
 )
 
@@ -26,10 +27,14 @@ REGISTRY_YAML = os.path.join(
     os.path.dirname(__file__), "..", "..", "th_params", "config", "registry.yaml")
 
 
+def _registry_rows() -> dict:
+    with open(REGISTRY_YAML, encoding="utf-8") as f:
+        return {row["name"]: row for row in yaml.safe_load(f)}
+
+
 def _registry_params() -> Params:
     """registry.yaml の実値から Params を組む。閾値は直書きしない。"""
-    with open(REGISTRY_YAML, encoding="utf-8") as f:
-        rows = {row["name"]: row for row in yaml.safe_load(f)}
+    rows = _registry_rows()
     return Params(
         stale_ms=rows["localization_stale_ms"]["value"],
         warmup_ms=rows["localization_warmup_ms"]["value"],
@@ -38,6 +43,13 @@ def _registry_params() -> Params:
         jump_translation_m=rows["jump_translation_m"]["value"],
         jump_rotation_rad=rows["jump_rotation_rad"]["value"],
     )
+
+
+def _restart_windows() -> tuple:
+    """registry.yaml の実値から (restart_max_ms, post_restart_grace_ms)。"""
+    rows = _registry_rows()
+    return (rows["localization_restart_max_ms"]["value"],
+            rows["localization_post_restart_grace_ms"]["value"])
 
 
 def _jump(trans_m: float, rot_rad: float):
@@ -83,3 +95,47 @@ def test_gross_misalignment_fires(trans_m, rot_rad):
     r = _jump(trans_m, rot_rad)
     assert r.is_jump is True, (
         f"桁違いの飛び ({trans_m} m, {rot_rad} rad) で発火しない: {r}")
+
+
+# ============================================================================
+# O-e3: 再生の地図読み直しの階段（停止中 0.241 m・145.81°＝2.545 rad）
+# 新しい閾値（1.0 m／0.5 rad）を超えるため、再起動の保留（前回値の破棄）が
+# 効いていないと jump が出る。ノードの振る舞い（保留中は prev を渡さない）
+# を純関数の組合せで再現する。
+# ============================================================================
+
+def _reload_stair():
+    prev = TransformSample(t_ms=100_000, x=0.0, y=0.0, yaw=0.0)
+    curr = TransformSample(t_ms=100_500, x=0.241, y=0.0, yaw=2.545)
+    return prev, curr
+
+
+def test_reload_stair_fires_without_hold():
+    """再起動も知らせも無いときに同じ階段を与えたら jump が出る。
+    保留が『いつでも』効いているのではない証拠。"""
+    p = _registry_params()
+    restart_max_ms, post_restart_grace_ms = _restart_windows()
+    verdict = check_planned_restart(
+        100_500, None, None, None, restart_max_ms, post_restart_grace_ms)
+    assert verdict is None
+    prev, curr = _reload_stair()
+    r = detect_jump(prev, curr, p)
+    assert r.is_jump is True, f"読み直しの階段で発火しない: {r}"
+
+
+@pytest.mark.parametrize("hold", ["restarting", "grace"])
+def test_reload_stair_does_not_fire_while_held(hold):
+    """再起動中／猶予中にこの階段を与えても jump が出ない（前回値を捨てる）。"""
+    p = _registry_params()
+    restart_max_ms, post_restart_grace_ms = _restart_windows()
+    if hold == "restarting":
+        verdict = check_planned_restart(
+            100_500, True, 100_000, None, restart_max_ms, post_restart_grace_ms)
+    else:
+        verdict = check_planned_restart(
+            100_500, False, 90_000, 100_000, restart_max_ms, post_restart_grace_ms)
+    assert verdict is not None and verdict[0] is True
+    # ノードは保留中に prev を渡さない（None）。初回と同じ扱いで出ない。
+    _, curr = _reload_stair()
+    r = detect_jump(None, curr, p)
+    assert r.is_jump is False, f"保留中に階段で発火した: {r}"

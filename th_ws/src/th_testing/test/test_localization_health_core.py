@@ -9,10 +9,13 @@ from th_state.localization_health_core import (
     REASON_JUMP,
     REASON_NODE_DOWN,
     REASON_OK,
+    REASON_RESTART_TIMEOUT,
+    REASON_RESTARTING,
     REASON_STALE,
     HealthReport,
     Params,
     TransformSample,
+    check_planned_restart,
     detect_jump,
     evaluate,
 )
@@ -231,3 +234,64 @@ def test_backward_clock_does_not_fire():
     r = detect_jump(_sample(t_ms=100_500, x=0.0),
                     _sample(t_ms=100_000, x=5.0), p)
     assert r.is_jump is False
+
+
+# ============================================================================
+# O-e3: check_planned_restart（計画的な再起動の保留）
+# ============================================================================
+
+# 試験用の上限・猶予（短い値。registry の実値ではない。呼び出し側が渡す想定）。
+_RESTART_MAX_MS = 9_000
+_POST_RESTART_GRACE_MS = 2_000
+
+
+def _restart(now_ms, restarting, true_since_ms, false_since_ms,
+             restart_max_ms=_RESTART_MAX_MS,
+             post_restart_grace_ms=_POST_RESTART_GRACE_MS):
+    return check_planned_restart(
+        now_ms, restarting, true_since_ms, false_since_ms,
+        restart_max_ms, post_restart_grace_ms)
+
+
+def test_restarting_is_ok_while_restarting():
+    """再起動中は ng にならない（A・C・B′ を評価しない）。"""
+    assert _restart(100_000, True, 99_000, None) == (True, REASON_RESTARTING)
+
+
+def test_restart_timeout_after_max():
+    """上限を超えたら restart_timeout（立て直しが終わらない本物の異常）。"""
+    assert _restart(109_001, True, 100_000, None) == (False, REASON_RESTART_TIMEOUT)
+
+
+def test_restart_max_boundary_is_still_restarting():
+    """上限ちょうどはまだ保留（超えたら故障。stale と同じ向き）。"""
+    assert _restart(109_000, True, 100_000, None) == (True, REASON_RESTARTING)
+
+
+def test_post_restart_grace_is_ok():
+    """再起動が終わって猶予以内は ok（最初の補正を待つ）。"""
+    assert _restart(101_999, False, 90_000, 100_000) == (True, REASON_RESTARTING)
+
+
+def test_post_restart_grace_expiry_resumes_detection():
+    """猶予後は再び検知する（ちょうどは猶予明け＝通常評価＝None）。"""
+    assert _restart(102_000, False, 90_000, 100_000) is None
+
+
+def test_no_notice_detects_as_usual():
+    """知らせが無いときは従来どおり検知する（node_down が出る）。
+    変異「知らせが無いときに保留する」はここが赤くなる。"""
+    assert _restart(100_000, None, None, None) is None
+
+
+def test_plain_false_without_edge_detects_as_usual():
+    """False だけ受信（再起動の edge なし）も従来どおり。起動時の
+    false publish や重複 false で保留に入ってはいけない。"""
+    assert _restart(100_000, False, None, None) is None
+
+
+def test_duplicate_true_does_not_extend_restart():
+    """重複 True で true_since が更新されない前提の確認: edge 時刻基準で
+    上限が効く（ノードが edge でのみ記録することの裏付け）。"""
+    # 同じ true_since のまま時間が進めば上限で切れる。
+    assert _restart(109_001, True, 100_000, None) == (False, REASON_RESTART_TIMEOUT)

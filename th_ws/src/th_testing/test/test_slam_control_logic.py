@@ -40,7 +40,8 @@ sys.path.insert(0, os.path.join(
     'th_config_manager'))
 
 from slam_control_logic import (   # noqa: E402
-    deserialize_match_type, effective_reload_pose, map_instance_ids_match,
+    deserialize_match_type, effective_reload_pose, estimator_restarting,
+    map_instance_ids_match,
     map_session_base_dir, map_session_filename, map_session_name,
     open_session_error, slam_restart_complete,
 )
@@ -736,3 +737,108 @@ def test_handle_map_reload_checks_both_files():
     # 存在確認に失敗したらエラー文字列つき _finish（= success=false）で返すこと
     body_src = ast.get_source_segment(src, funcdef) or ''
     assert 'return self._finish(' in body_src
+
+
+# ── O-e3. estimator_restarting（計画的な再起動の区間判定。純関数）───
+def test_estimator_restarting_reload_is_true():
+    """読み直しの区間（kill の前から finally まで）は true。"""
+    assert estimator_restarting(True, None, 0.0, True) is True
+    assert estimator_restarting(True, 999.0, 0.0, False) is True
+
+
+def test_estimator_restarting_normal_is_false():
+    """どちらでもなければ false（finally で下りた後・平常時）。"""
+    assert estimator_restarting(False, None, 0.0, True) is False
+    assert estimator_restarting(False, None, 0.0, False) is False
+
+
+def test_estimator_restarting_discard_until_service_back():
+    """破棄後はサービスが戻るまで true、戻ったら false。"""
+    assert estimator_restarting(False, 100.0, 50.0, False) is True
+    assert estimator_restarting(False, 100.0, 50.0, True) is False
+
+
+def test_estimator_restarting_discard_deadline_expires():
+    """破棄後に締切を過ぎたら false（RESPAWN_WAIT_SEC 経過）。"""
+    assert estimator_restarting(False, 100.0, 100.0, False) is False
+    assert estimator_restarting(False, 100.0, 150.0, False) is False
+
+
+def test_estimator_restarting_crash_is_false():
+    """クラッシュ（計画されていない再起動）では true にならない。
+    締切も reload も無い限り、サービスが死んでいても false。
+    従来どおり A・C が検知する側の担当。"""
+    assert estimator_restarting(False, None, 0.0, False) is False
+
+
+# ── O-e3. estimator_restarting の配線（slam_control.py の AST 静的検証）─
+def _slam_control_funcdef(name: str):
+    import ast as _ast
+    src = open(SLAM_CONTROL, encoding='utf-8').read()
+    tree = _ast.parse(src, filename=SLAM_CONTROL)
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.FunctionDef) and node.name == name:
+            return src, node
+    raise AssertionError(f'slam_control.py に {name} が無い')
+
+
+def test_restarting_publisher_uses_status_qos():
+    """/slam_control/estimator_restarting を mapping_active と同じ QoS で出す。
+    新しい .msg は作らない（std_msgs/Bool）。"""
+    src = open(SLAM_CONTROL, encoding='utf-8').read()
+    assert "'/slam_control/estimator_restarting'" in src
+    assert 'estimator_restarting' in src  # 純関数の import
+    seg_start = src.index("'/slam_control/estimator_restarting'")
+    window = src[max(0, seg_start - 400):seg_start]
+    assert 'status_qos' in window, (
+        'estimator_restarting の publisher が status_qos でない')
+
+
+def test_restarting_published_false_at_startup():
+    """起動時に一度 false を publish する（後から来た購読者にも届く）。"""
+    src, node = _slam_control_funcdef('__init__')
+    import ast as _ast
+    seg = _ast.get_source_segment(src, node) or ''
+    assert seg.count('_pub_restarting.publish') >= 1
+    assert 'Bool(data=False)' in seg
+
+
+def test_reload_sets_true_before_kill_and_false_in_finally():
+    """読み直しは kill の前に true、finally で false（例外時も下ろす）。
+    既存の _reload_in_progress と同じ区間。"""
+    src, node = _slam_control_funcdef('_handle_map_reload')
+    import ast as _ast
+    seg = _ast.get_source_segment(src, node) or ''
+    assert 'self._reload_in_progress = True' in seg
+    assert seg.index('_reload_in_progress = True') < seg.index('_sync_estimator_restarting'), (
+        'フラグを立ててから true を出していない')
+    assert seg.index('_sync_estimator_restarting') < seg.index('_kill_slam_toolbox()'), (
+        'kill の前に true になっていない')
+    assert 'finally:' in seg
+    finally_seg = seg.split('finally:')[1]
+    assert '_reload_in_progress = False' in finally_seg
+    assert '_sync_estimator_restarting' in finally_seg, (
+        'finally で下ろしていない（例外時に true のまま残る）')
+
+
+def test_discard_sets_true_at_kill_with_deadline():
+    """破棄は kill で true。締切（RESPAWN_WAIT_SEC）を同時に設定する。
+    kill 直後は発見情報が残るため ready=False 扱いで即 true を出す。"""
+    src, node = _slam_control_funcdef('_cb_discard_map')
+    import ast as _ast
+    seg = _ast.get_source_segment(src, node) or ''
+    assert seg.index('_kill_slam_toolbox()') < seg.index('_discard_deadline'), (
+        'kill 時に締切を設定していない')
+    assert 'RESPAWN_WAIT_SEC' in seg
+    assert 'service_ready=False' in seg, (
+        'kill 直後の ready 扱いが無い（発見情報が残って true が出ない）')
+
+
+def test_check_slam_restart_lowers_flag():
+    """_check_slam_restart がサービス復帰・締切超過で下ろす。
+    reload 中（_reload_in_progress）は触らない。"""
+    src, node = _slam_control_funcdef('_check_slam_restart')
+    import ast as _ast
+    seg = _ast.get_source_segment(src, node) or ''
+    assert seg.index('_reload_in_progress') < seg.index('_sync_estimator_restarting'), (
+        'reload 中のガードより後に同期が無い')
