@@ -154,6 +154,9 @@ def test_wiring_calls_pure_functions():
     """「配線したつもり」が本番の経路を通っていない事故の再発防止。
 
     純関数だけ試験して本体が別のロジックのままだと保護にならない。
+    特に凍結中の解除（else 節での updateFaultState(..., false)）は
+    「発火した DRIVE_RUNAWAY を古い実測で解除しない」という中核を壊すため、
+    呼び出し箇所の形まで縛る（差し戻し指摘）。
     """
     src = _read(SAFETY_CPP)
     # コメントを除いた実コードで見る（コメント中の言及で誤検知しないため）。
@@ -168,12 +171,26 @@ def test_wiring_calls_pure_functions():
     assert "runaway_hold_.update(" not in code, (
         "runaway_hold_.update を直接呼んでいる。update_runaway_with_freshness 経由にすること"
         "（凍結が素通りになる）")
-    # DRIVE_RUNAWAY の報告は凍結判定（has_value）の内側だけ。
+    # DRIVE_RUNAWAY の報告は凍結判定（has_value）の内側の 1 箇所だけ。
+    # 凍結中（nullopt）の else 節で updateFaultState(..., false) による解除を
+    # 足されると has_value という文字列は残るため、箇所数と引数まで見る。
     assert 'updateFaultState("DRIVE_RUNAWAY"' in code
     assert "has_value()" in code, (
         "凍結（nullopt）のときに updateFaultState を呼ばないガードが無い")
     assert code.index("has_value()") < code.index('updateFaultState("DRIVE_RUNAWAY"'), (
         "updateFaultState(DRIVE_RUNAWAY) が has_value ガードの前に置かれている")
+    calls = re.findall(
+        r'updateFaultState\(\s*"DRIVE_RUNAWAY"\s*,([^)]*)\)', code)
+    assert len(calls) == 1, (
+        f'updateFaultState("DRIVE_RUNAWAY", ...) が {len(calls)} 箇所ある。'
+        "凍結中の解除パスが足されていないか確認すること")
+    assert calls[0].strip() == "*runaway", (
+        f'引数が *runaway でない: {calls[0].strip()!r}')
+    assert 'updateFaultState("DRIVE_RUNAWAY", false)' not in code, (
+        "凍結中にフォルトを解除している（has_value の else 節で false 報告）")
+    assert re.search(
+        r'if\s*\(\s*runaway\.has_value\(\)\s*\)\s*\{[^}]*\}\s*else', code) is None, (
+        "has_value() ブロックに else 節がある。凍結中は何もしないこと")
 
 
 # ============================================================================
