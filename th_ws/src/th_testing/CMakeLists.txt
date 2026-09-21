@@ -319,6 +319,16 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_runaway_freshness_node
     test/test_runaway_freshness_node.py
     TIMEOUT 180)
+  # 計画的な再起動の保留の Docker launch テスト（O-e3 §完了条件3。
+  # 知らせ無しで検知・通知中は保留・上限超過で故障・publisher 死亡でも超過で故障）
+  ament_add_pytest_test(test_planned_restart_node
+    test/test_planned_restart_node.py
+    TIMEOUT 180)
+  # slam_control の再起動通知のインプロセス振る舞い試験（O-e3。
+  # 読み直し・破棄・例外・クラッシュ。rclpy 要＝ホスト除外。TIMEOUT 60）
+  ament_add_pytest_test(test_slam_control_restart
+    test/test_slam_control_restart.py
+    TIMEOUT 60)
   ament_add_pytest_test(test_twist_mux
     test/test_twist_mux_priority.py
     TIMEOUT 60)

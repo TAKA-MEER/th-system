@@ -5,6 +5,7 @@ slam_control.py の pure 関数。ROS 依存なし。
 """
 
 import re
+from typing import Optional
 
 # 経路名・セッション ID として不正な文字。送る側（経路記録側）は
 # route_record_core._safe_id で `/` `\` を `_` に正規化して送ってくる。ここは
@@ -150,3 +151,26 @@ def map_instance_ids_match(map_instance_id: str, pins_instance_id: str) -> bool:
     if not map_instance_id or not pins_instance_id:
         return False
     return map_instance_id == pins_instance_id
+
+
+def estimator_restarting(reload_in_progress: bool,
+                         discard_deadline_monotonic: Optional[float],
+                         now_monotonic: float,
+                         slam_service_ready: bool) -> bool:
+    """O-e3: /slam_control/estimator_restarting に載せる「再起動中か」（純関数）。
+
+    True になるのはシステムが意図的に起こした再起動の区間だけ:
+    - 地図の読み直し中（reload_in_progress。kill の前から finally まで。
+      呼び出し側が kill の前に立て、finally で下ろす）
+    - 地図の破棄後（discard_deadline_monotonic 設定済み）で、サービスが
+      まだ戻らず締切前。サービスが戻るか締切を過ぎたら False
+    - それ以外（締切なし）は False。**クラッシュでは True にしない**
+      （計画されていない再起動は従来どおり A・C が検知する）。
+    """
+    if reload_in_progress:
+        return True
+    if discard_deadline_monotonic is None:
+        return False
+    if slam_service_ready:
+        return False
+    return now_monotonic < discard_deadline_monotonic

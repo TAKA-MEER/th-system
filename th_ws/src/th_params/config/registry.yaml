@@ -888,6 +888,27 @@
     限界：記録は約 5 分・1 か所の床面のみ。より滑る床・長い直進・
     高速旋回では正常な補正がもっと大きい可能性があり見直す"
 
+- name: localization_restart_max_ms
+  unit: ms
+  class: b
+  status: given
+  value: 90000
+  consumers: [localization_health]
+  spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
+  note: "計画的な再起動の上限。再起動中（slam_control が示す）がこれを
+    超えたら故障（restart_timeout）。最長の立て直し 45 秒
+    （RESPAWN_WAIT_SEC）の 2 倍。出発点。実機で詰める"
+
+- name: localization_post_restart_grace_ms
+  unit: ms
+  class: b
+  status: given
+  value: 5000
+  consumers: [localization_health]
+  spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.0"
+  note: "再起動が終わってから最初の補正が届くまでの猶予。この間 A・C を
+    保留する。出発点。実機で詰める"
+
 - name: critical_fault_hold_ms
   unit: ms
   class: b

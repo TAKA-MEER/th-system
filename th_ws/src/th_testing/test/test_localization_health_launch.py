@@ -295,3 +295,45 @@ def test_health_node_wires_detect_jump():
     # jump パラメータ 3 件の宣言（既定値なし・外部から必ず渡す。R2）。
     for param in ("jump_window_ms", "jump_translation_m", "jump_rotation_rad"):
         assert f"'{param}'" in src, f"パラメータ '{param}' の宣言が無い"
+
+
+# ============================================================================
+# O-e3: 再起動通知の配線（localization_health.py。本文書の試験だけでは
+# 「通るだけ」になるため、純粋関数と実装の接続点を縛る）
+# ============================================================================
+
+def test_health_node_wires_planned_restart():
+    """ノードが再起動通知を購読し、保留判定を呼ぶこと。
+    購読削除・呼び出し削除・edge 記録削除で赤くなる。"""
+    src = _read(HEALTH_NODE_PY)
+    assert "'/slam_control/estimator_restarting'" in src, (
+        "再起動通知の購読が無い")
+    assert "TRANSIENT_LOCAL" in src, (
+        "購読 QoS が発行側（TRANSIENT_LOCAL）に合っていない")
+    assert "restart = check_planned_restart(" in src, (
+        "保留判定の呼び出しが無い")
+    assert "self._restart_true_ms" in src and "self._restart_false_ms" in src, (
+        "edge 時刻の記録が無い（自分の時計で測っていない）")
+    assert "self._prev_sample = None" in src
+    # 保留中は B′ の前回値を捨てる（再起動をまたいだ比較をしない）。
+    on_timer = src.split("def _on_timer")[1]
+    hold_block = on_timer.split("if restart is not None:")[1].split("return")[0]
+    assert "self._prev_sample = None" in hold_block, (
+        "保留中に前回値を捨てていない")
+    # 再起動パラメータ 2 件の宣言（既定値なし・外部から必ず渡す。R2）。
+    for param in ("localization_restart_max_ms", "localization_post_restart_grace_ms"):
+        assert f"'{param}'" in src, f"パラメータ '{param}' の宣言が無い"
+
+
+# ============================================================================
+# O-e3: launch 試験の起動定義（ホストで見られる範囲）
+# ============================================================================
+
+def test_planned_restart_node_launches_python_executable():
+    """launch 試験が Python スクリプトを拡張子つきで起動すること。
+    素の 'localization_health' では libexec に無いと起動失敗する
+    （C++ の bare 名と違う。実測で踏んだ）。"""
+    path = os.path.join(os.path.dirname(__file__), "test_planned_restart_node.py")
+    src = _read(path)
+    assert "executable='localization_health.py'" in src, (
+        "Python ノードは executable='localization_health.py' で指定すること")
