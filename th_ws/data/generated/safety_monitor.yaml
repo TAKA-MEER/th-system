@@ -17,6 +17,7 @@ safety_monitor:
     localization_topic_timeout_ms: 5000
     lock_stale_ms: 500
     mux_dead_ms: 500
+    runaway_feedback_stale_ms: 250
     runaway_hold_ms: 500
     runaway_ratio: 1.5
     runaway_zero_threshold: 0.02
