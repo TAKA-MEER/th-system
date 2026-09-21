@@ -324,6 +324,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_planned_restart_node
     test/test_planned_restart_node.py
     TIMEOUT 180)
+  # slam_control の再起動通知のインプロセス振る舞い試験（O-e3。
+  # 読み直し・破棄・例外・クラッシュ。rclpy 要＝ホスト除外。TIMEOUT 60）
+  ament_add_pytest_test(test_slam_control_restart
+    test/test_slam_control_restart.py
+    TIMEOUT 60)
   ament_add_pytest_test(test_twist_mux
     test/test_twist_mux_priority.py
     TIMEOUT 60)
