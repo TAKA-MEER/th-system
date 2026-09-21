@@ -96,9 +96,9 @@ class HoldTimer {
   void reset() { held_sec_ = 0.0; }
   double held_sec() const { return held_sec_; }
 
-  private:
-   double hold_sec_;
-   double held_sec_ = 0.0;
+ private:
+  double hold_sec_;
+  double held_sec_ = 0.0;
 };
 
 // ── §3.5.3 DRIVE_RUNAWAY の鮮度ゲート（W-06 の②）:1 ステップ関数 ────
