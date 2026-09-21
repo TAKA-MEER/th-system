@@ -109,7 +109,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | --- | --- | --- |
 | `sim` | `false` | Gazebo か実機か |
 | `dev_mode` | `false` | **開発モード。受け取るのは `connectivity_checker` だけ。`safety_monitor` と `obstacle_limiter` には渡さない**（構造的な保証。WP-DEV-01A） |
-| `lidar_source` | `network` | `local` / `network`（既存） |
+| `lidar_source` | **`local`** | `local`（USB 直結の `sllidar_node` を起動）/ `network`（ラズパイの `/scan` を使う）。**実装の既定は `local`。実機では `network` を必ず指定する**（`docs/使い方.md` §2。2026-09-21 に設計書が `network` と書いていたのを実装に合わせた） |
 | `imu_enabled` | `false` | 既存 |
 | `scenario` | `''` | Gazebo のシナリオプリセット（既存） |
 | `log_level` | `info` | 既存 |
