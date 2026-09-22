@@ -11,8 +11,9 @@ Spec-safety.md §3.5.3。実測が新鮮なときだけ判定し、古いあい�
   （registry と生成 yaml から読む。将来どちらかを動かして不整合にしたら赤）
 - 配線: safety_monitor.cpp が純関数を実際に呼んでいる
   （純関数だけ試験して本体が別のロジックのままだと保護にならない）
-- 値を変えていない: runaway_hold_ms / runaway_ratio /
-  runaway_zero_threshold / esp32_timeout_ms
+- 決定値の一致: runaway_hold_ms（1000）/ runaway_ratio（1.5）/
+  runaway_zero_threshold（0.08）が registry・C++ 既定値・生成 yaml の
+  三者で一致する（Spec-safety.md §3.5.4。W-06 ③⑤）
 """
 from __future__ import annotations
 
@@ -194,19 +195,33 @@ def test_wiring_calls_pure_functions():
 
 
 # ============================================================================
-# 5. 値を変えていない（範囲外の固定）
+# 5. 決定値の一致（Spec-safety.md §3.5.4。W-06 ③⑤）
 # ============================================================================
 
-def test_untouched_values_are_unchanged():
-    """runaway_hold_ms / runaway_ratio / runaway_zero_threshold /
-    esp32_timeout_ms の値を変えない（brief の範囲外）。"""
+def test_decided_values_match_registry_and_cpp():
+    """runaway_hold_ms（1000）/ runaway_ratio（1.5）/
+    runaway_zero_threshold（0.08）が registry と C++ 既定値で一致する。
+    本体が別の値のままだと保護にならない（変異で赤くなることを確認済み）。"""
     reg = _registry_rows()
-    assert reg["runaway_hold_ms"]["value"] == 500
+    assert reg["runaway_hold_ms"]["value"] == 1000
     assert reg["runaway_ratio"]["value"] == 1.5
-    assert reg["runaway_zero_threshold"]["value"] == 0.02
+    assert reg["runaway_zero_threshold"]["value"] == 0.08
     # esp32_timeout_ms は derived のまま（値を持たない）。
     assert reg["esp32_timeout_ms"]["status"] == "derived"
     src = _read(SAFETY_CPP)
-    assert _cpp_default("runaway_hold_ms") == 500
+    assert _cpp_default("runaway_hold_ms") == 1000
     assert _cpp_default("runaway_ratio") == 1.5
-    assert _cpp_default("runaway_zero_threshold") == 0.02
+    assert _cpp_default("runaway_zero_threshold") == 0.08
+
+
+@pytest.mark.parametrize("stage", [1, 4])
+def test_generated_yaml_carries_tuned_values(stage):
+    """生成 yaml に決定値が載る（本番の経路。既定値のフォールバック頼みにしない）。"""
+    params = _generate(stage)
+    assert params.get("runaway_hold_ms") == 1000, (
+        f"stage={stage}: runaway_hold_ms が 1000 でない "
+        f"（あるのは {params.get('runaway_hold_ms')!r}）")
+    assert params.get("runaway_zero_threshold") == 0.08, (
+        f"stage={stage}: runaway_zero_threshold が 0.08 でない "
+        f"（あるのは {params.get('runaway_zero_threshold')!r}）")
+    assert params.get("runaway_ratio") == 1.5

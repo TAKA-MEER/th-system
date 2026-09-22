@@ -111,6 +111,27 @@ TEST(SafetyMonitorCore, RunawayHoldTimerRequiresContinuousHold) {
   EXPECT_FALSE(hold.update(true, 0.40));  // 再カウント開始、まだ 0.5s 未満
 }
 
+// ── W-06 ③⑤（Spec-safety.md §3.5.4）の決定値を前提にした境界 ─────────────
+// ロジック自体は変えない。閾値・保持時間の実値での振る舞いを固定する。
+
+TEST(SafetyMonitorCore, RunawayZeroThreshold008Boundary) {
+  // 停止判定 0.08 m/s。「以下なら安全」の向き（cmd<=閾値で停止扱い）。
+  // 指令ほぼ 0 かつ実測 0.079 → 乖離とみなさない
+  EXPECT_FALSE(is_runaway_condition(/*cmd=*/0.08, /*feedback=*/0.079,
+                                     /*ratio=*/1.5, /*zero_threshold=*/0.08));
+  // 実測ちょうど 0.08 → 安全側（`>` でないと乖離にしない）
+  EXPECT_FALSE(is_runaway_condition(0.08, 0.08, 1.5, 0.08));
+  // 実測 0.081 → 乖離とみなす
+  EXPECT_TRUE(is_runaway_condition(0.08, 0.081, 1.5, 0.08));
+}
+
+TEST(SafetyMonitorCore, RunawayHold1000Boundary) {
+  // 保持時間 1000 ms。条件成立 0.99 秒では発火せず、1.0 秒で発火する。
+  HoldTimer hold(/*hold_sec=*/1.0);
+  EXPECT_FALSE(hold.update(true, 0.99));
+  EXPECT_TRUE(hold.update(true, 0.01));
+}
+
 // ── test_state_inconsistent ───────────────────────────────────────────────
 
 TEST(SafetyMonitorCore, StateInconsistentOnStaleness) {
