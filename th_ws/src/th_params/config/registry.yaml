@@ -932,8 +932,8 @@
   spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.4"
   note: "DRIVE_RUNAWAY の保持時間。実機計測(2026-09-22・W-06③⑤): 実運用に近い区間（教示再生・ジョグのタップ）
     での乖離の最長成立は0.60秒。500msでは発進・停止直後（加減速 実測1.0〜1.3 m/s²）に最大0.7秒誤発火した。
-    1000msで記録全体の誤発火が0件（詳細 docs/実機作業キュー.md §4.0.2）。W-06（特例）で runaway ターゲットは
-    bringup.launch.py から外し監視バイパス中（⑥。走行日に検知そのものを確かめてから戻す）"
+    1000msで記録全体の誤発火が0件（詳細 docs/実機作業キュー.md §4.0.2）。W-06⑥: 2026-09-22 に実機で
+    A（手で動かして検知）・B（実際に非常停止）の両方を確認し、runaway を SAFETY_ENABLED_TARGETS へ戻した"
 
 - name: runaway_feedback_stale_ms
   unit: ms
@@ -1017,8 +1017,8 @@
     旋回中の本物の片輪異常を見逃す穴の方が大きいため、閾値を上げる方を採った。0.08で記録全体の誤発火が0件
     （詳細 docs/実機作業キュー.md §4.0.2）。**副作用**: v_check(0.05 m/s。OPCHECK)より高いため、OPCHECK中は
     0.08 m/s未満の暴走をDRIVE_RUNAWAYでは検知できない（物理非常停止・ESP32ウォッチドッグに委ねる）。
-    W-06（特例）で runaway ターゲットは bringup.launch.py から外し監視バイパス中（⑥。走行日に検知そのものを
-    確かめてから戻す）"
+    W-06⑥: 2026-09-22 に実機で A（手で動かして検知）・B（実際に非常停止）の両方を確認し、runaway を
+    SAFETY_ENABLED_TARGETS へ戻した"
 
 - name: link_quality_regression_ratio
   unit: null
