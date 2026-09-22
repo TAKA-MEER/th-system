@@ -927,10 +927,13 @@
   unit: ms
   class: b
   status: given
-  value: 500
+  value: 1000
   consumers: [safety_monitor]
-  spec_ref: "DetailedDesign-names.md §7.3"
-  note: "DRIVE_RUNAWAY の保持時間。暫定値。W-06（特例）で runaway ターゲットは bringup.launch.py から外し監視バイパス中。解除時に実測で右サイズ化"
+  spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.4"
+  note: "DRIVE_RUNAWAY の保持時間。実機計測(2026-09-22・W-06③⑤): 実運用に近い区間（教示再生・ジョグのタップ）
+    での乖離の最長成立は0.60秒。500msでは発進・停止直後（加減速 実測1.0〜1.3 m/s²）に最大0.7秒誤発火した。
+    1000msで記録全体の誤発火が0件（詳細 docs/実機作業キュー.md §4.0.2）。W-06（特例）で runaway ターゲットは
+    bringup.launch.py から外し監視バイパス中（⑥。走行日に検知そのものを確かめてから戻す）"
 
 - name: runaway_feedback_stale_ms
   unit: ms
@@ -977,7 +980,10 @@
   value: 1.0
   consumers: [esp32_bridge]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §7"
-  note: "校正の出力（names.md は measured と記す）。校正が一度も走っていない段階の初期値は補正なしの恒等値 1.0 とし given で置いた。calib_runner が測定後に status を measured へ上書きする（params.md §7 の仕組み。WP-CALIB-01 の範囲）。判断は報告に明記"
+  note: "校正の出力（names.md は measured と記す）。校正が一度も走っていない段階の初期値は補正なしの恒等値 1.0 とし given で置いた。calib_runner が測定後に status を measured へ上書きする（params.md §7 の仕組み。WP-CALIB-01 の範囲）。判断は報告に明記。
+    **現状どのノードからも読まれていない**（esp32_bridge 含め未配線。2026-09-22 確認。consumers の esp32_bridge は
+    意図した消費先であり実装待ち）。参考値（実測。まだ status は上げない）: 巻き尺5.5m直進で前進0.930・後退0.938
+    （odomが実距離より7%ほど長い。往復とも±10%＝wheel_radius_scale_max_dev以内。詳細 docs/実機作業キュー.md §4.0.2）"
 
 - name: wheel_radius_scale_max_dev
   unit: null
@@ -1001,10 +1007,17 @@
   unit: m/s
   class: b
   status: given
-  value: 0.02
+  value: 0.08
   consumers: [safety_monitor]
-  spec_ref: "DetailedDesign-names.md §7.3"
-  note: "DRIVE_RUNAWAY の乖離判定。暫定値。W-06（特例）で runaway 監視バイパス中"
+  spec_ref: "DetailedDesign-names.md §7.3 / Spec-safety.md §3.5.4"
+  note: "DRIVE_RUNAWAY の停止判定の閾値。実機計測(2026-09-22・W-06③): 急停止直後（0.5秒以内）にその場旋回すると、
+    急ブレーキで荷重が移動し車体が実際に-0.02〜-0.05 m/s並進する（9回中8回で再現。3.5秒でも旧値0.02を下回らない
+    緩やかな減衰）。停止して数秒後に始めた意図的な旋回では非対称は出ない。旋回中の判定を丸ごと止めると対称な
+    旋回中の本物の片輪異常を見逃す穴の方が大きいため、閾値を上げる方を採った。0.08で記録全体の誤発火が0件
+    （詳細 docs/実機作業キュー.md §4.0.2）。**副作用**: v_check(0.05 m/s。OPCHECK)より高いため、OPCHECK中は
+    0.08 m/s未満の暴走をDRIVE_RUNAWAYでは検知できない（物理非常停止・ESP32ウォッチドッグに委ねる）。
+    W-06（特例）で runaway ターゲットは bringup.launch.py から外し監視バイパス中（⑥。走行日に検知そのものを
+    確かめてから戻す）"
 
 - name: link_quality_regression_ratio
   unit: null
