@@ -78,7 +78,9 @@ public:
         declare_parameter("mux_dead_ms",          500);
         declare_parameter("state_stale_ms",       1500);
         declare_parameter("runaway_ratio",        1.5);
-        declare_parameter("runaway_hold_ms",      500);
+        // Spec-safety.md §3.5.4（W-06 の⑤）: 発進・停止直後の追従遅れ
+        // （最大 0.7 秒）より長く。既定値は registry.yaml（runaway_hold_ms）が正。
+        declare_parameter("runaway_hold_ms",      1000);
         // W-06 の②（Spec-safety.md §3.5.3）: DRIVE_RUNAWAY の実測の鮮度しきい値。
         // 既定値は registry.yaml（runaway_feedback_stale_ms）が正。
         declare_parameter("runaway_feedback_stale_ms", 250);
@@ -90,7 +92,10 @@ public:
         // C-06a (ガード無し) で必ず ESTOP に落ちる。条件が継続したときだけ報告する。
         // タイムアウト値そのもの (limiter_dead_ms 等) は変えない。
         declare_parameter("critical_fault_hold_ms", 300);
-        declare_parameter("runaway_zero_threshold", 0.02);
+        // Spec-safety.md §3.5.4（W-06 の③）: 急停止直後の荷重移動による
+        // わずかな並進（実測 -0.02〜-0.05 m/s）を停止とみなす。
+        // 既定値は registry.yaml（runaway_zero_threshold）が正。
+        declare_parameter("runaway_zero_threshold", 0.08);
         declare_parameter("estop_ui_lease_ms",    1500);
         declare_parameter("link_quality_window_sec", 30);
         declare_parameter("check_period_ms",      100);
@@ -588,7 +593,7 @@ private:
     std::chrono::milliseconds mux_dead_;
     std::chrono::milliseconds state_stale_;
     double runaway_ratio_ = 1.5;
-    double runaway_zero_threshold_ = 0.02;
+    double runaway_zero_threshold_ = 0.08;
     std::chrono::milliseconds runaway_feedback_stale_{250};
     th_safety::HoldTimer runaway_hold_;
     // WS-9O: 重大フォルトの単発誤検知よけ（回復可能フォルトは一時停止から
