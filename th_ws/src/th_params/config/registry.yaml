@@ -982,8 +982,9 @@
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §7"
   note: "校正の出力（names.md は measured と記す）。校正が一度も走っていない段階の初期値は補正なしの恒等値 1.0 とし given で置いた。calib_runner が測定後に status を measured へ上書きする（params.md §7 の仕組み。WP-CALIB-01 の範囲）。判断は報告に明記。
     **現状どのノードからも読まれていない**（esp32_bridge 含め未配線。2026-09-22 確認。consumers の esp32_bridge は
-    意図した消費先であり実装待ち）。参考値（実測。まだ status は上げない）: 巻き尺5.5m直進で前進0.930・後退0.938
-    （odomが実距離より7%ほど長い。往復とも±10%＝wheel_radius_scale_max_dev以内。詳細 docs/実機作業キュー.md §4.0.2）"
+    意図した消費先であり実装待ち）。参考値（実測。まだ status は上げない）: 巻き尺5.8m直進（前進のみ実測。後退は同じテープ間を使用）で
+    前進0.981・後退0.989（odomが実距離より1〜2%ほど長い。ノイズの範囲に近く、補正が要るとは言い切れない。
+    詳細 docs/実機作業キュー.md §4.0.2）"
 
 - name: wheel_radius_scale_max_dev
   unit: null
