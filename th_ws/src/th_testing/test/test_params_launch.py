@@ -97,26 +97,78 @@ def test_generated_before_nodes():
         "gazebo.launch.py: params_generation_action が common_nodes より後にある")
 
 
-def test_bringup_safety_targets_omit_runaway_while_w06_open():
-    """W-06（特例）: `/esp32/wheel_feedback` の WiFi 受信ギャップで DRIVE_RUNAWAY が
-    走行のたびに誤発火するため、`bringup.launch.py` の `SAFETY_ENABLED_TARGETS` から
-    `'runaway'` を外している。EXCEPTION-LEDGER の W-06 を正規実装で閉じるときに
-    `'runaway'` を戻し、このテストも撤去する（撤去し忘れ防止のアンカー）。"""
+def test_bringup_safety_targets_include_runaway_on_both_nodes():
+    """W-06 クローズ: `bringup.launch.py` の両方の safety_monitor 定義
+    （UnlessCondition 側・IfCondition 側）の `enabled_targets` に
+    `'runaway'` が入っている。片方だけ直り漏れると実機で気づきにくいため、
+    両方を ast で見る。`# WAIVER(demo): W-06` はもう無いこと。"""
     src = _read(BRINGUP_PY)
+    assert "# WAIVER(demo): W-06" not in src, (
+        "bringup.launch.py に W-06 の WAIVER タグが残っている（台帳 CLOSED）")
     tree = ast.parse(src, filename=BRINGUP_PY)
-    targets = None
-    for node in ast.walk(tree):
-        if (isinstance(node, ast.Assign)
-                and any(isinstance(t, ast.Name) and t.id == "SAFETY_ENABLED_TARGETS"
-                        for t in node.targets)
-                and isinstance(node.value, (ast.List, ast.Tuple))):
-            targets = [el.value for el in node.value.elts if isinstance(el, ast.Constant)]
-    assert targets is not None, "bringup.launch.py: SAFETY_ENABLED_TARGETS の代入が見つからない"
-    assert "runaway" not in targets, (
-        "SAFETY_ENABLED_TARGETS に 'runaway' が復活している。W-06 を正規実装で"
-        "閉じたなら、このテストごと撤去すること")
-    assert "# WAIVER(demo): W-06" in src, (
-        "bringup.launch.py に W-06 の WAIVER タグが無い")
+
+    def _base_targets() -> list:
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == "SAFETY_ENABLED_TARGETS"
+                            for t in node.targets)
+                    and isinstance(node.value, (ast.List, ast.Tuple))):
+                return [el.value for el in node.value.elts
+                        if isinstance(el, ast.Constant)]
+        raise AssertionError(
+            "bringup.launch.py: SAFETY_ENABLED_TARGETS の代入が見つからない")
+
+    def _nodes_by_name(name: str) -> list:
+        rows = []
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "append"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "nodes"
+                    and node.args):
+                arg = node.args[0]
+                if not (isinstance(arg, ast.Call)
+                        and isinstance(arg.func, ast.Name) and arg.func.id == "Node"):
+                    continue
+                for kw in arg.keywords:
+                    if (kw.arg == "name" and isinstance(kw.value, ast.Constant)
+                            and kw.value.value == name):
+                        rows.append(arg)
+        return rows
+
+    def _targets(node_call: ast.Call) -> list:
+        # enabled_targets は変数参照（SAFETY_ENABLED_TARGETS）または
+        # 変数＋リストの BinOp（+ ['localization']）で渡す。素の List ではない。
+        for kw in node_call.keywords:
+            if kw.arg != "parameters" or not isinstance(kw.value, ast.List):
+                continue
+            for elt in kw.value.elts:
+                if not isinstance(elt, ast.Dict):
+                    continue
+                for k, v in zip(elt.keys, elt.values):
+                    if not (isinstance(k, ast.Constant)
+                            and k.value == "enabled_targets"):
+                        continue
+                    if isinstance(v, ast.Name) and v.id == "SAFETY_ENABLED_TARGETS":
+                        return _base_targets()
+                    if isinstance(v, ast.BinOp) and isinstance(v.op, ast.Add):
+                        extra = []
+                        for side in (v.left, v.right):
+                            if isinstance(side, ast.List):
+                                extra += [e.value for e in side.elts
+                                          if isinstance(e, ast.Constant)]
+                        return _base_targets() + extra
+        return []
+
+    nodes = _nodes_by_name("safety_monitor")
+    assert len(nodes) == 2, (
+        f"safety_monitor の定義は2件のはず（実際 {len(nodes)} 件）")
+    for i, node_call in enumerate(nodes):
+        targets = _targets(node_call)
+        assert "runaway" in targets, (
+            f"safety_monitor 定義 {i} 件目の enabled_targets={targets!r} に "
+            "'runaway' が無い（片方だけ直り漏れている）")
 
 
 def test_bringup_declares_enable_route_slam_arg():

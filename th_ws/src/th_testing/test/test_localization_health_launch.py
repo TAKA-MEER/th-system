@@ -206,9 +206,6 @@ def test_safety_monitor_has_two_variants_with_and_without_localization():
         "片方だけに localization が入っていない（両定義を確認）")
     assert "IfCondition" in ast.dump(with_loc[0]), "あり側が IfCondition でない"
     assert "UnlessCondition" in ast.dump(without_loc[0]), "なし側が UnlessCondition でない"
-    for n in nodes:
-        assert "runaway" not in _targets(n), (
-            "W-06: runaway を戻してはいけない（範囲外）")
 
 
 def test_localization_gate_matches_slam_and_amcl_conditions():
