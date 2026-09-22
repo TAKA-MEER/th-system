@@ -99,7 +99,18 @@ class Rec(Node):
     def _read_label(self):
         try:
             if select.select([sys.stdin], [], [], 0)[0]:
-                line = sys.stdin.readline().strip()
+                line = sys.stdin.readline()
+                # 環境によっては stdin が UTF-8 以外（C ロケール等）で decode され、
+                # 日本語などのマルチバイト文字がそのまま復元できない代替サロゲート
+                # （lone surrogate）になることがある（2026-09-22 実機で発生。
+                # `後退0.30` の直後、印の1文字が化けて UnicodeEncodeError で記録が
+                # 全体停止した）。元のバイト列へ一旦戻し、UTF-8 として読み直す。
+                # それでも直せない場合は安全な文字に置き換える（記録を止めない）。
+                try:
+                    line = line.encode('utf-8', 'surrogateescape').decode('utf-8')
+                except UnicodeError:
+                    line = line.encode('utf-8', 'surrogateescape').decode('utf-8', 'replace')
+                line = line.strip()
                 if line:
                     self.label = line
         except Exception:
@@ -126,12 +137,19 @@ class Rec(Node):
         cmd_age = (now - self.cmd_t) if self.cmd_t is not None else float('nan')
         ox, oy, oyaw = self.odom
         fmt = lambda v, n=4: '' if v is None or (isinstance(v, float) and math.isnan(v)) else round(v, n)
-        self.f.write(','.join(str(x) for x in [
+        row = ','.join(str(x) for x in [
             round(now - self.t0, 2), time.time_ns(),
             round(self.cmd[0], 4), round(self.cmd[1], 4), fmt(cmd_age, 3),
             round(self.fb[0], 4), round(self.fb[1], 4), round(fb_mean, 4), fmt(fb_age, 3),
             fmt(gap_max, 3), int(fresh), int(cond), round(self.held, 2), int(would_fire),
-            fmt(ox), fmt(oy), fmt(oyaw), self.label.replace(',', ' ')]) + '\n')
+            fmt(ox), fmt(oy), fmt(oyaw), self.label.replace(',', ' ')]) + '\n'
+        try:
+            self.f.write(row)
+        except UnicodeEncodeError:
+            # 最後の砦: 印にどうしても書けない文字が残っていても、計測の行自体は
+            # 失わない（実機の計測は録り直しがきかないため。記録を止めるより
+            # 印を欠けさせるほうを選ぶ）。
+            self.f.write(row.encode('utf-8', 'replace').decode('utf-8'))
         self.label = ''
 
 
