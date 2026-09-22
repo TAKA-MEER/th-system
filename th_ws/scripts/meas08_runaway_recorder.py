@@ -39,10 +39,11 @@ from th_system_msgs.msg import WheelFeedback
 DURATION_S = float(sys.argv[1]) if len(sys.argv) > 1 else 1800.0
 OUTDIR = sys.argv[2] if len(sys.argv) > 2 else '/root/th_data/runaway'
 
-# 現行の設定（registry.yaml。記録時点の値を CSV の先頭コメントにも残す）
+# 現行の設定（registry.yaml。記録時点の値を CSV の先頭コメントにも残す）。
+# 2026-09-22 の走行日で決定した値に更新済み（Spec-safety.md §3.5.4。W-06 ③⑤）。
 RATIO = 1.5           # runaway_ratio
-ZERO_THR = 0.02       # runaway_zero_threshold [m/s]
-HOLD_S = 0.5          # runaway_hold_ms
+ZERO_THR = 0.08       # runaway_zero_threshold [m/s]（旧 0.02）
+HOLD_S = 1.0          # runaway_hold_ms（旧 0.5）
 STALE_S = 0.25        # runaway_feedback_stale_ms
 PERIOD_S = 0.1        # safety_monitor の check_period_ms
 
