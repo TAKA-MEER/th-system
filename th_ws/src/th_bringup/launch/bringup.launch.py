@@ -291,13 +291,6 @@ def generate_launch_description():
     # 同様に有効化できる可能性が高い）は**このパケットの範囲外**として意図的に
     # 触れていない——故障注入12「/cmd_vel の途絶」は別パケットの担当であり、
     # mux 検出との相互作用まで含めた検証はそちら側の判断に委ねる。
-    # WAIVER(demo): W-06 — 'runaway'（DRIVE_RUNAWAY）を一時的に外している。
-    #   WiFi 経由の /esp32/wheel_feedback は受信ギャップ（500ms 超）が起きるため、
-    #   走行のたびに safety_monitor が「新鮮な指令 vs 古い実測」を比べて誤発火し、
-    #   手動教示・教示再生のデモが成立しない（実機フィードバック 2026-09-01）。
-    #   物理非常停止と ESP32 ウォッチドッグ（600ms）は有効なので真の暴走は止まる。
-    #   特例解除時に wheel_feedback の鮮度ゲート＋回頭中の Case A 除外＋実測較正で
-    #   runaway_hold_ms を右サイズ化してから 'runaway' を戻す。docs/plan/EXCEPTION-LEDGER.md W-06。
     # dev_mode は渡さない（names.md §1.3。obstacle_limiter と同じ構造的な保証）。
     # 両ノードが値を知らなければ、実装ミスで無効化されることが起きない。
     # WP-SAFE-05: localization 監視は自己位置推定が動く起動のときだけ
@@ -312,9 +305,11 @@ def generate_launch_description():
         "(('", map_yaml, "' == '' and ('", enable_route_slam,
         "'.lower() in ('true', '1') or int('", stage, "') >= 3)) or ('",
         map_yaml, "' != '' and int('", stage, "') >= 3))"])
-    SAFETY_ENABLED_TARGETS = ['lidar', 'esp32', 'state', 'firmware', 'limiter']
+    # W-06 クローズ（2026-09-22 走行日に検知と誤発火の無さを確認済み）。
+    # 'runaway' は両方の safety_monitor 定義に効く（SAFETY_ENABLED_TARGETS の
+    # リテラルに直接足してあるため、If/Unless のどちら側にも入る）。
+    SAFETY_ENABLED_TARGETS = ['lidar', 'esp32', 'state', 'firmware', 'limiter', 'runaway']
     # dev_mode と同じ流儀（WP-DEV-01A）: If/Unless で排他的に定義を分ける。
-    # W-06 の runaway 除外は両方とも維持する（ここは触らない）。
     nodes.append(Node(
         package='th_safety',
         executable='safety_monitor',
