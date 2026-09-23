@@ -28,10 +28,23 @@ import launch_testing.actions
 from geometry_msgs.msg import Point
 from multiple_sensor_person_tracking.msg import FollowingPosition, PersonCandidates
 from multiple_sensor_person_tracking.srv import SelectTarget
+from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
+                       QoSReliabilityPolicy)
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 from th_system_msgs.msg import (PersonStatus, PersonTargets, StateEffect,
                                 StateEvent, SystemState)
+
+# person_tracker_bridge.py の _shared_state_qos と同じ TRANSIENT_LOCAL。
+# plain int（既定 VOLATILE）で publisher を作ると durability 不一致で
+# bridge の購読に一切届かない（QoS incompatible。例外は出ずサイレントに
+# マッチしないだけなので気づきにくい）。
+_STATE_QOS = QoSProfile(
+    depth=1,
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    history=QoSHistoryPolicy.KEEP_LAST,
+    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+)
 
 
 @pytest.mark.launch_test
@@ -97,7 +110,7 @@ class TestPersonTrackerBridgeNode(unittest.TestCase):
         self.pub_stop = self.node.create_publisher(Bool, _STOP_TOPIC, 10)
         self.pub_cands = self.node.create_publisher(PersonCandidates, _CANDIDATES_TOPIC, 10)
         self.pub_effect = self.node.create_publisher(StateEffect, '/system/effect', 10)
-        self.pub_state = self.node.create_publisher(SystemState, '/system/state', 1)
+        self.pub_state = self.node.create_publisher(SystemState, '/system/state', _STATE_QOS)
 
         self._spin(1.0)  # ブリッジの購読マッチングを待つ
 
@@ -203,6 +216,45 @@ class TestPersonTrackerBridgeNode(unittest.TestCase):
         self._publish_tracking(status=0)   # 真に lost
         lost_events = [e for e in self._events if e.event == 'evt.target_lost']
         assert len(lost_events) == 1, f'evt.target_lost が 1 回にならない: {lost_events}'
+
+    def test_off_masks_immediately_without_waiting_for_upstream(self):
+        """OFF 化は upstream の次のメッセージを待たず、即座に disabled へ切り替わる。
+
+        実機では OFF 化から間もなく DR-SPAAM が deactivate され、以降
+        following_position/person_candidates は二度と来ない（§3.2）。
+        bridge が /system/state の変化だけで再計算しないと、/person/status・
+        /person/targets が OFF 直前の値（is_lost=False もあり得る）のまま
+        永久に固まる（安全の中心。§3.3 の回帰）。ここでは意図的に upstream の
+        メッセージを一切 publish せず、OFF の publish だけで即座に masked
+        になることを縛る。
+        """
+        self._publish_tracker_state(True)
+        self._publish_tracking(status=1)   # ON のまま「発見」を確定させる
+        t = self._last_targets()
+        assert t.is_lost is False, '前提: OFF 化前に real found であること'
+
+        n_before = len(self._targets)
+        self._events.clear()
+        # upstream の following_position/candidates を一切 publish しない。
+        self._publish_tracker_state(False)
+
+        assert len(self._targets) > n_before, \
+            'OFF 化しても upstream の新規メッセージなしでは再 publish されない（回帰）'
+        t = self._last_targets()
+        assert t.is_lost is True
+        assert t.lost_reason == 'disabled'
+        assert len(t.candidates) == 0
+        assert t.selected_index == -1
+
+        s = self._status[-1]
+        assert s.is_lost is True
+        assert s.lost_reason == 'disabled'
+
+        # OFF 化そのもの（found→disabled の is_lost False→True）は意図的な
+        # 停止であり見失いではないので evt.target_lost は出さない。
+        lost_events = [e for e in self._events if e.event == 'evt.target_lost']
+        assert lost_events == [], \
+            f'OFF 化の瞬間に evt.target_lost が出た（見失いと誤検出）: {lost_events}'
 
 
 _FOLLOW_TOPIC = 'sobits_follower/multiple_sensor_person_tracking/following_position'

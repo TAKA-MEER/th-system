@@ -27,9 +27,21 @@ import launch_testing
 import launch_testing.actions
 
 from geometry_msgs.msg import Point, Pose, PoseStamped, TransformStamped
+from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
+                       QoSReliabilityPolicy)
 from std_msgs.msg import Header
 from tf2_msgs.msg import TFMessage
 from th_system_msgs.msg import PersonStatus, StateEvent, SystemState
+
+# wait_clear_gate.py の state_qos と同じ TRANSIENT_LOCAL。plain int（既定
+# VOLATILE）で publisher を作ると durability 不一致でゲートの購読に一切届かない
+# （QoS incompatible。例外は出ずサイレントにマッチしないだけなので気づきにくい）。
+_TRANSIENT_LOCAL_QOS = QoSProfile(
+    depth=1,
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+    history=QoSHistoryPolicy.KEEP_LAST,
+)
 
 
 @pytest.mark.launch_test
@@ -68,11 +80,16 @@ class TestWaitClearGateNode(unittest.TestCase):
         self._events = []
         self.node.create_subscription(StateEvent, '/system/event', self._events.append, 10)
 
-        # /system/state ・ /onsite/summon_goal は TRANSIENT_LOCAL で購読される
-        self.pub_state = self.node.create_publisher(SystemState, '/system/state', 1)
-        self.pub_goal = self.node.create_publisher(PoseStamped, '/onsite/summon_goal', 1)
+        # /system/state ・ /onsite/summon_goal・/tf_static はいずれも TRANSIENT_LOCAL
+        # で購読される（wait_clear_gate.py の state_qos/goal_qos、tf2_ros の
+        # StaticTransformBroadcaster の慣習）。plain int（既定 VOLATILE）で
+        # publisher を作ると durability 不一致で一切届かない（QoS incompatible。
+        # 例外は出ず「requesting incompatible QoS」の WARN がノード側に出るだけ
+        # なので、xunit の失敗だけを見ていると気づけない）。
+        self.pub_state = self.node.create_publisher(SystemState, '/system/state', _TRANSIENT_LOCAL_QOS)
+        self.pub_goal = self.node.create_publisher(PoseStamped, '/onsite/summon_goal', _TRANSIENT_LOCAL_QOS)
         self.pub_person = self.node.create_publisher(PersonStatus, '/person/status', 10)
-        self.pub_tf = self.node.create_publisher(TFMessage, '/tf_static', 1)
+        self.pub_tf = self.node.create_publisher(TFMessage, '/tf_static', _TRANSIENT_LOCAL_QOS)
 
         # map ← base_link の恒等 TF（人座標の変換に使う）
         tf = TransformStamped()

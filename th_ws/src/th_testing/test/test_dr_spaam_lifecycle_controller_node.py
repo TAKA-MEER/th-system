@@ -20,8 +20,21 @@ import launch_ros.actions
 import launch_testing
 import launch_testing.actions
 
+from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
+                       QoSReliabilityPolicy)
 from lifecycle_msgs.srv import ChangeState, GetState
 from th_system_msgs.msg import SystemState
+
+# dr_spaam_lifecycle_controller.py の _state_qos() と同じ TRANSIENT_LOCAL。
+# plain int（既定 VOLATILE）で publisher を作ると durability 不一致で
+# コントローラの購読に一切届かない（QoS incompatible。DDS がサイレントに
+# マッチさせないだけで例外は出ないため気づきにくい）。
+_STATE_QOS = QoSProfile(
+    depth=1,
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+    history=QoSHistoryPolicy.KEEP_LAST,
+)
 
 from dr_spaam_lifecycle_controller_core import (
     STATE_ACTIVE, STATE_INACTIVE, TRANSITION_ACTIVATE, TRANSITION_DEACTIVATE)
@@ -89,7 +102,7 @@ class TestDrSpaamLifecycleControllerNode(unittest.TestCase):
 
         # /system/state は TRANSIENT_LOCAL（state_manager の既定）で購読される。
         self.pub_state = self.node.create_publisher(
-            SystemState, '/system/state', 1)
+            SystemState, '/system/state', _STATE_QOS)
         self._tracker = False
         self._pb_timer = self.node.create_timer(
             0.1, lambda: self.pub_state.publish(
