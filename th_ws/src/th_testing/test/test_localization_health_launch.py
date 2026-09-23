@@ -29,6 +29,7 @@ for _p in (_LAUNCH_DIR, _PARAMS_SRC):
 import params_generation as pg  # noqa: E402
 
 BRINGUP_PY = os.path.join(_LAUNCH_DIR, "bringup.launch.py")
+GAZEBO_PY = os.path.join(_LAUNCH_DIR, "gazebo.launch.py")
 REGISTRY_YAML = os.path.join(_PARAMS_SRC, "config", "registry.yaml")
 SAFETY_CPP = os.path.join(_REPO_SRC, "th_safety", "src", "safety_monitor.cpp")
 HEALTH_MSG = os.path.join(_REPO_SRC, "th_system_msgs", "msg", "LocalizationHealth.msg")
@@ -238,6 +239,101 @@ def test_publisher_uses_the_same_gate():
     dump = ast.dump(nodes[0])
     assert "IfCondition" in dump and "localization_enabled" in dump, (
         "publisher が localization_enabled 条件で起動していない")
+
+
+# ============================================================================
+# gazebo.launch.py の配線（故障注入13用。sim は bringup ではなく gazebo.launch.py
+# が safety_monitor と localization_health を起動するため、sim 側にも同じ
+# 「推定が居るときだけ監視を有効にする」結線があることを縛る）
+# ============================================================================
+
+def test_gazebo_sim_targets_base_constant_still_defined():
+    """sim の固定 enabled_targets リストはモジュールレベルに残っていること。
+
+    case_09 の静的読取（`_sim_enabled_targets`）が `SAFETY_ENABLED_TARGETS_SIM`
+    を AST で読み、`'person'` が無いことで明示的に fail する。この定数を
+    消す・名前を変えると case_09 が別の失敗モード（「定数名が変わった」）に
+    化けるため、このテストで現状を固定する。`'localization'` はここには
+    入れず、`_scenario_setup` の sim 分岐で条件付き append する。"""
+    tree = ast.parse(_read(GAZEBO_PY), filename=GAZEBO_PY)
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "SAFETY_ENABLED_TARGETS_SIM"
+                        for t in node.targets)
+                and isinstance(node.value, (ast.List, ast.Tuple))):
+            targets = [e.value for e in node.value.elts if isinstance(e, ast.Constant)]
+            assert 'localization' not in targets, (
+                "'localization' は固定リストへ直接足さず条件付き append すること")
+            assert set(targets) == {'lidar', 'limiter'}
+            return
+    pytest.fail("gazebo.launch.py に SAFETY_ENABLED_TARGETS_SIM の代入が見つからない "
+                "(case_09 の _sim_enabled_targets が壊れる)")
+
+
+def test_gazebo_sim_wires_monitoring_only_with_estimation():
+    """`_scenario_setup` の sim 分岐が監視を「推定あり」条件で結線していること。
+
+    故障注入13の本体（case_13）の前提。ここは**呼び出し削除で赤くなる**束縛:
+    - `estimation_on = slam_on or bool(map_v)`（SLAM 起動・AMCL 起動のどちらか）
+    - `sim_enabled_targets.append('localization')`（変異①。これが無いと
+      case_13 本体で LOCALIZATION_LOST が発火せず赤になるが、静的にも縛る）
+    - `{'enabled_targets': sim_enabled_targets}`（sim の safety_monitor が
+      一時リストを渡す）
+    - `SAFETY_MONITOR_SIM_YAML`（sim 用 static をモジュールレベル定数で参照）
+    - `localization_health.py` が同じ `estimation_on` 条件で起動し、
+      生成 yaml と `use_sim_time: True` を明示的に渡す（sim は /clock 基準。
+      渡さないと TF との時計基準が合わず stale 判定が壊れる）
+    """
+    src = _read(GAZEBO_PY)
+    func_seg = src.split("def _scenario_setup", 1)[1].split("\ndef generate_launch_description", 1)[0]
+    assert func_seg, "_scenario_setup の関数本体が切り出せない"
+    for token in (
+        "estimation_on = slam_on or bool(map_v)",
+        "sim_enabled_targets = list(SAFETY_ENABLED_TARGETS_SIM)",
+        "sim_enabled_targets.append('localization')",
+        "{'enabled_targets': sim_enabled_targets}",
+        "SAFETY_MONITOR_SIM_YAML",
+        "executable='localization_health.py'",
+        "GENERATED_DIR, 'localization_health.yaml'",
+        "{'use_sim_time': True}",
+        "if estimation_on:",
+    ):
+        assert token in func_seg, f"_scenario_setup に {token!r} が無い"
+
+
+def _gazebo_nodes_by_name(tree: ast.AST, name: str) -> list:
+    """gazebo.launch.py は `safety_real_node = Node(...)` の代入形式なので、
+    `_nodes_by_name`（`nodes.append(Node(...))` 専用）は使えない。
+    `generate_launch_description` 内で代入された `Node(...)` を探す。"""
+    func = _find_function(tree, "generate_launch_description")
+    rows = []
+    for node in ast.walk(func):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not (isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Name)
+                and node.value.func.id == "Node"):
+            continue
+        for kw in node.value.keywords:
+            if (kw.arg == "name" and isinstance(kw.value, ast.Constant)
+                    and kw.value.value == name):
+                rows.append(node.value)
+    return rows
+
+
+def test_gazebo_has_single_top_level_safety_monitor():
+    """`generate_launch_description` の safety_monitor 定義は実機用1件だけ。
+
+    sim 用 safety_monitor は `_scenario_setup` の sim 分岐に移したため
+    （enabled_targets が slam_on/map_v 依存）、トップレベルに sim 用の
+    定義が残っていると二重起動になる。実機用は UnlessCondition(sim)。
+    """
+    tree = ast.parse(_read(GAZEBO_PY), filename=GAZEBO_PY)
+    nodes = _gazebo_nodes_by_name(tree, "safety_monitor")
+    assert len(nodes) == 1, (
+        f"generate_launch_description 内の safety_monitor は実機用1件のはず"
+        f"（実際 {len(nodes)} 件。sim 用が残っていると _scenario_setup と二重起動）")
+    assert "UnlessCondition" in ast.dump(nodes[0]), "実機用が UnlessCondition(sim) でない"
 
 
 # ============================================================================
