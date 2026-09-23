@@ -263,7 +263,8 @@ def test_safety_cpp_wiring():
 def test_health_msg_defines_reasons_and_reserves_low_confidence():
     src = _read(HEALTH_MSG)
     for token in ("bool ok", "string reason", "transform_age_sec", "node_present",
-                  "stale", "node_down", "low_confidence", "jump"):
+                  "stale", "node_down", "low_confidence", "jump",
+                  "restarting", "restart_timeout", "inactive"):
         assert token in src, f"LocalizationHealth.msg に {token!r} が無い"
     assert "出さない" in src, "low_confidence を出さない旨の注記が無い"
 
@@ -320,6 +321,42 @@ def test_health_node_wires_planned_restart():
     # 再起動パラメータ 2 件の宣言（既定値なし・外部から必ず渡す。R2）。
     for param in ("localization_restart_max_ms", "localization_post_restart_grace_ms"):
         assert f"'{param}'" in src, f"パラメータ '{param}' の宣言が無い"
+
+
+# ============================================================================
+# WP-SAFE-05修正: モードゲートの配線（localization_health.py。振る舞いは
+# test_localization_mode_gate_node.py（Docker）が見る。ここでは呼び出し削除で
+# 赤くなる結びつきだけを縛る）
+# ============================================================================
+
+def test_health_node_wires_mode_gate():
+    """ノードが /system/state を購読し、配信だけを差し替えること。
+    購読削除・QoS 間違い・判定スキップで赤くなる。"""
+    src = _read(HEALTH_NODE_PY)
+    assert "'/system/state'" in src, "/system/state の購読が無い"
+    assert "is_localization_in_use(self._mode, self._state)" in src, (
+        "モードゲートの呼び出しが無い")
+    assert "REASON_INACTIVE" in src, "reason=inactive への差し替えが無い"
+    # QoS は state_manager の state_qos と同じ（TRANSIENT_LOCAL＋KEEP_LAST）。
+    # 間違えると受信できず全モードで監視が黙って切れる。
+    assert "TRANSIENT_LOCAL" in src
+    assert "KEEP_LAST" in src
+    assert "SystemState" in src
+    # 判定（evaluate・再起動・B′）は毎周期行い、配信だけ差し替える。
+    # 再起動の早期 return が残っていると再起動中に inactive が効かない。
+    on_timer = src.split("def _on_timer")[1].split("def _publish")[0]
+    assert "evaluate(" in on_timer
+    assert "check_planned_restart(" in on_timer
+    assert "detect_jump(" in on_timer
+    assert "self._prev_sample = curr" in on_timer, (
+        "監視外でも B′ の前回値を更新していない（監視に入った瞬間に誤って jump）")
+    assert "self._publish(True, REASON_INACTIVE, base)" in on_timer, (
+        "監視外の配信差し替えが無い")
+    # 監視外の間の実際の判定の変化と、監視外⇔監視中の切り替わりをログに残す。
+    # （切り替わりは f-string の条件式で「開始／終了」を切り替えるため、
+    # 連続した「監視開始」という文字列では縛れない）
+    assert "監視外" in src
+    assert '"開始"' in src and '"終了"' in src
 
 
 # ============================================================================
