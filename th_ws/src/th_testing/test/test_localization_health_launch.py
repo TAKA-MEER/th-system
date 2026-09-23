@@ -334,8 +334,12 @@ def test_health_node_wires_mode_gate():
     購読削除・QoS 間違い・判定スキップで赤くなる。"""
     src = _read(HEALTH_NODE_PY)
     assert "'/system/state'" in src, "/system/state の購読が無い"
-    assert "is_localization_in_use(self._mode, self._state)" in src, (
+    assert "is_localization_in_use(self._mode, self._state," in src, (
         "モードゲートの呼び出しが無い")
+    assert "self._prev_mode, self._prev_state)" in src, (
+        "ESTOP 中の直前モード渡しが無い（非常停止に入った瞬間に inactive になる）")
+    assert "self._prev_mode = msg.prev_mode" in src, (
+        "prev_mode の保持が無い")
     assert "REASON_INACTIVE" in src, "reason=inactive への差し替えが無い"
     # QoS は state_manager の state_qos と同じ（TRANSIENT_LOCAL＋KEEP_LAST）。
     # 間違えると受信できず全モードで監視が黙って切れる。
