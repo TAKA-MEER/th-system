@@ -29,19 +29,22 @@ import rclpy
 import tf2_ros
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
+from rclpy.qos import (QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy,
+                     QoSHistoryPolicy)
 
 from std_msgs.msg import Bool
 
-from th_system_msgs.msg import LocalizationHealth
+from th_system_msgs.msg import LocalizationHealth, SystemState
 
 from th_state.localization_health_core import (
+    REASON_INACTIVE,
     REASON_JUMP,
     Params,
     TransformSample,
     check_planned_restart,
     detect_jump,
     evaluate,
+    is_localization_in_use,
 )
 
 
@@ -89,6 +92,14 @@ class LocalizationHealthNode(Node):
         self._restart_last = None
         self._restart_true_ms = None
         self._restart_false_ms = None
+        # WP-SAFE-05修正: /system/state の最新値。まだ一度も受け取っていない間は
+        # None（＝監視しない。起動中は INIT なので同じ）。
+        self._mode = None
+        self._state = None
+        # 監視外⇔監視中の切り替わりと、監視外の間の実際の判定の変化をログに
+        # 残すための前回値。
+        self._prev_in_use = None
+        self._prev_actual = None
 
         self._tf_buffer = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
@@ -107,6 +118,19 @@ class LocalizationHealthNode(Node):
         self.create_subscription(
             Bool, '/slam_control/estimator_restarting', self._on_restarting,
             restart_qos)
+
+        # WP-SAFE-05修正: 使っていない間は監視しない（Spec-safety.md §3.5.0）。
+        # QoS は publisher（state_manager.py の state_qos）に合わせる:
+        # depth 1・RELIABLE・TRANSIENT_LOCAL・KEEP_LAST。ここを間違えると
+        # 受信できない＝ずっと「未受信＝監視しない」になり、全モードで監視が
+        # 黙って切れる。
+        state_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(SystemState, '/system/state',
+                                 self._on_system_state, state_qos)
 
         # 比較周期ごとに比べる（B′ の定義）。publish 周期と同一。
         period_s = self.get_parameter('jump_window_ms').value / 1000.0
@@ -153,6 +177,12 @@ class LocalizationHealthNode(Node):
             self._restart_false_ms = now_ms   # True→False
         self._restart_last = value
 
+    def _on_system_state(self, msg: SystemState) -> None:
+        """WP-SAFE-05修正: /system/state の mode/state を保持するだけ。
+        判定への反映は _on_timer が行う（次の周期で効く）。"""
+        self._mode = msg.mode
+        self._state = msg.state
+
     # ------------------------------------------------------------
     def _on_timer(self):
         now_ms = self._now_ms()
@@ -173,6 +203,9 @@ class LocalizationHealthNode(Node):
         # 出す（起動時猶予より優先する）。保留中は B′ の前回値を捨て、
         # 再起動をまたいだ比較をしない（立て直し前後の map→odom は別物）。
         # transform_age_sec／node_present は生きた値を載せ続ける。
+        # ここでは publish せず実際の判定（actual）だけを決め、配信の差し替え
+        # （モードゲート）は最後にまとめて行う。再起動中でも監視外なら inactive
+        # が効くようにするため。
         restart = check_planned_restart(
             now_ms, self._restart_last,
             self._restart_true_ms, self._restart_false_ms,
@@ -180,30 +213,57 @@ class LocalizationHealthNode(Node):
             self.get_parameter('localization_post_restart_grace_ms').value,
         )
         if restart is not None:
-            ok, reason = restart
+            actual_ok, actual_reason = restart
             self._prev_sample = None
-            self._publish(ok, reason, base)
-            return
-
-        # 優先順位は node_down ＞ stale ＞ jump（core の docstring 参照）。
-        # jump は base が ok のときだけ評価する（構造で保証）。
-        ok, reason = base.ok, base.reason
-        if sample is not None:
-            curr = TransformSample(t_ms=sample[0], x=sample[1], y=sample[2],
-                                   yaw=sample[3])
-            in_warmup = now_ms - self._boot_ms < p.warmup_ms
-            if base.ok and not in_warmup:
-                jump = detect_jump(self._prev_sample, curr, p)
-                if jump.is_jump:
-                    ok, reason = False, REASON_JUMP
-            self._prev_sample = curr
         else:
-            # TF 不連続（読み直し等）の直後は jump を出さない。次 tick から
-            #  anchor を取り直す。stale 側の aging は _last_transform_ms が
-            # 担う（ここでは触らない）。
-            self._prev_sample = None
+            # 優先順位は node_down ＞ stale ＞ jump（core の docstring 参照）。
+            # jump は base が ok のときだけ評価する（構造で保証）。
+            actual_ok, actual_reason = base.ok, base.reason
+            if sample is not None:
+                curr = TransformSample(t_ms=sample[0], x=sample[1], y=sample[2],
+                                       yaw=sample[3])
+                in_warmup = now_ms - self._boot_ms < p.warmup_ms
+                if base.ok and not in_warmup:
+                    jump = detect_jump(self._prev_sample, curr, p)
+                    if jump.is_jump:
+                        actual_ok, actual_reason = False, REASON_JUMP
+                self._prev_sample = curr
+            else:
+                # TF 不連続（読み直し等）の直後は jump を出さない。次 tick から
+                #  anchor を取り直す。stale 側の aging は _last_transform_ms が
+                # 担う（ここでは触らない）。
+                self._prev_sample = None
 
-        self._publish(ok, reason, base)
+        # WP-SAFE-05修正: 使っていない間は ok=true・reason=inactive を配信する
+        # （Spec-safety.md §3.5.0）。判定（evaluate・再起動・B′・前回値の更新）は
+        # 上で毎回すべて行っており、ここでは配信だけ差し替える。監視に入った
+        # 次の周期で実際の判定がそのまま出る（入った瞬間に効く）。
+        # transform_age_sec／node_present は生の値のまま（_publish が base から
+        # 載せる）。B′ の前回値も監視外で更新を続ける（上で更新済み）。
+        in_use = is_localization_in_use(self._mode, self._state)
+        if self._prev_in_use is not None and in_use != self._prev_in_use:
+            self.get_logger().info(
+                f'localization 監視{"開始" if in_use else "終了"}: '
+                f'mode={self._mode} state={self._state}')
+        self._prev_in_use = in_use
+        actual = (actual_ok, actual_reason)
+        if not in_use and actual != self._prev_actual:
+            if actual_ok:
+                self.get_logger().info(
+                    f'localization 監視外: 実際は ok（復帰） reason={actual_reason} '
+                    f'age={base.transform_age_sec:.1f}s '
+                    f'node_present={base.node_present}')
+            else:
+                self.get_logger().warn(
+                    f'localization 監視外: 実際は ng reason={actual_reason} '
+                    f'age={base.transform_age_sec:.1f}s '
+                    f'node_present={base.node_present}')
+        self._prev_actual = actual
+
+        if in_use:
+            self._publish(actual_ok, actual_reason, base)
+        else:
+            self._publish(True, REASON_INACTIVE, base)
 
     def _publish(self, ok: bool, reason: str, base) -> None:
         msg = LocalizationHealth()
