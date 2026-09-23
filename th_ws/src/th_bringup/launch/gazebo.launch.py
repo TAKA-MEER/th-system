@@ -47,6 +47,19 @@ NAV2_DIR     = get_package_share_directory('nav2_bringup')
 SLAM_DIR     = get_package_share_directory('slam_toolbox')
 SAFETY_DIR   = get_package_share_directory('th_safety')
 
+# sim 用 safety_monitor の enabled_targets の固定分（O-7。F-5 のゲート。
+# spec_ref: DetailedDesign-names.md §7.3）。'localization' は自己位置推定が
+# 起動するときだけ足すため、ここには入れず _scenario_setup 内で一時リストへ
+# append する（WP-SAFE-05 故障注入13。Spec-safety.md §3.5.0「使っていない間は
+# 監視しない」）。case_09 の静的読取（_sim_enabled_targets）がこの名前を
+# 参照しているため、名前は変えていない。
+SAFETY_ENABLED_TARGETS_SIM = ['lidar', 'limiter']
+# sim 用 safety_monitor の静的パラメータ。safety_monitor の構築は「slam_on の
+# 解決が必要」なため _scenario_setup（OpaqueFunction・モジュールレベル関数）の
+# sim 分岐内で行う。そのため generate_launch_description のローカル変数では
+# なくモジュールレベル定数にする。
+SAFETY_MONITOR_SIM_YAML = os.path.join(BRINGUP_DIR, 'config', 'safety_monitor_sim.yaml')
+
 def _set_sim_time(context, *args, **kwargs):
     is_sim = LaunchConfiguration('sim').perform(context).lower() in ('true', '1', 'yes')
     return [SetParameter(name='use_sim_time', value=is_sim)]  # Python bool を渡す
@@ -194,6 +207,40 @@ def _scenario_setup(context, *args, **kwargs):
         return actions
 
     # ── 以下シミュレーション専用 ─────────────────────────────
+    # WP-SAFE-05（故障注入13）: sim 用の safety_monitor はトップレベルでは
+    # 組み立てず、この分岐内で組み立てる。enabled_targets へ 'localization' を
+    # 足すかが slam_on/map_v の解決（上の SLAM・Localization 節）の後で
+    # しか決まらないため。自己位置監視（監視対象＋localization_health の起動）
+    # は「自己位置推定が起動するとき」だけ有効にする（Spec-safety.md §3.5.0
+    # 「使っていない間は監視しない」。bringup.launch.py の localization_enabled
+    # と同じ考え方——推定が居ないのに監視を有効にすると node_down で即誤発火する）。
+    estimation_on = slam_on or bool(map_v)
+    sim_enabled_targets = list(SAFETY_ENABLED_TARGETS_SIM)
+    if estimation_on:
+        sim_enabled_targets.append('localization')
+    actions.append(Node(
+        package='th_safety',
+        executable='safety_monitor',
+        name='safety_monitor',
+        parameters=[SAFETY_MONITOR_SIM_YAML,
+                    os.path.join(GENERATED_DIR, 'safety_monitor.yaml'),
+                    {'enabled_targets': sim_enabled_targets}],
+        output='screen',
+    ))
+    if estimation_on:
+        # 健全性 publisher（safety と同じ条件で起動する。起動していない推定器を
+        # 見て node_down と誤判定しないため。bringup.launch.py と同じ流儀）。
+        # シミュレーションは /clock 基準で動く（use_sim_time）ため明示的に渡す
+        # （渡さないと TF のスタンプと自分側の時計基準が合わず stale 判定が壊れる）。
+        actions.append(Node(
+            package='th_state',
+            executable='localization_health.py',
+            name='localization_health',
+            parameters=[os.path.join(GENERATED_DIR, 'localization_health.yaml'),
+                        {'use_sim_time': True}],
+            output='screen',
+        ))
+
     actions.append(IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(get_package_share_directory('gazebo_ros'),
@@ -326,7 +373,6 @@ def generate_launch_description():
     # ── 設定ファイルパス ─────────────────────────────────────
     nav2_params_sim  = os.path.join(BRINGUP_DIR, 'config', 'nav2_params_sim.yaml')
     nav2_params_real = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
-    safety_sim       = os.path.join(BRINGUP_DIR, 'config', 'safety_monitor_sim.yaml')
     safety_real      = os.path.join(SAFETY_DIR,  'config', 'safety_monitor.yaml')
     ekf_yaml         = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
     calib_yaml       = os.path.join(BRINGUP_DIR, 'config', 'calib.yaml')
@@ -535,25 +581,25 @@ def generate_launch_description():
     # 「DEBT-4を塞ぐ」と明記されているが、その前提となる監視の有効化が
     # 漏れていたと判断し、ここで追加する。新しい安全機能ではなく、既に実装
     # 済みの検出ロジックを実際に有効化するだけの1行修正。
-    SAFETY_ENABLED_TARGETS_SIM = ['lidar', 'limiter']
+    #
+    # WP-SAFE-05（故障注入13）: 自己位置監視（'localization' 対象と
+    # localization_health の起動）は「自己位置推定が起動するとき」だけ有効（slam_on
+    # のとき、または地図指定で localization_launch（AMCL）が起動するとき。
+    # Spec-safety.md §3.5.0「使っていない間は監視しない」。bringup.launch.py の
+    # localization_enabled と同じ考え方）。slam_on/map_v の解決は _scenario_setup
+    # （OpaqueFunction）の中でしか行えないため、sim 用 safety_monitor はそちらの
+    # sim 分岐内で組み立てる（トップレベルの safety_sim_node は撤去した。
+    # 'localization' はモジュールレベルの SAFETY_ENABLED_TARGETS_SIM には足さず、
+    # 推定ありのときだけ一時リストへ append する。case_09 の静的読取が
+    # SAFETY_ENABLED_TARGETS_SIM を参照しているため、名前自体は残す）。
+    #
     # 実機: bringup.launch.py と同じ判断（WP-SAFE-01 完了報告に詳細）＋ 上記と
     # 同じ理由で limiter を追加（obstacle_limiter は実機でも common_nodes で
     # 無条件に起動する）。
     SAFETY_ENABLED_TARGETS_REAL = ['lidar', 'esp32', 'runaway', 'state', 'firmware', 'limiter']
 
-    # safety_monitor: シミュレーション設定
-    # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる (G-4)。
-    safety_sim_node = Node(
-        package='th_safety',
-        executable='safety_monitor',
-        name='safety_monitor',
-        parameters=[safety_sim, os.path.join(GENERATED_DIR, 'safety_monitor.yaml'),
-                    {'enabled_targets': SAFETY_ENABLED_TARGETS_SIM}],
-        output='screen',
-        condition=IfCondition(sim),
-    )
-
     # safety_monitor: 実機設定
+    # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる (G-4)。
     safety_real_node = Node(
         package='th_safety',
         executable='safety_monitor',
@@ -711,8 +757,7 @@ def generate_launch_description():
             # URDF / robot_state_publisher
             *common_nodes,
 
-            # safety_monitor（設定が異なる）
-            safety_sim_node,
+            # safety_monitor（実機設定。sim 用は _scenario_setup の sim 分岐内）
             safety_real_node,
 
             # スタブ試験員ソース

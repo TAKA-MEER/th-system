@@ -414,9 +414,14 @@ if(BUILD_TESTING)
   ament_add_pytest_test(fault_injection_12
     test/fault_injection/case_12_cmd_vel_stale.py
     TIMEOUT 60)
+  # 13 は Gazebo を**2回**起動する（本体: REPLAY で SIGKILL→LOCALIZATION_LOST→
+  # ESTOP の検証に加え、IDLE 対照: 監視が効かないことの検証も別起動で行う）。
+  # 01/02 の1起動あたりの積算見積り（約170秒。上のコメント参照）を2本ぶん
+  # 積むと約340秒。速度低下・後始末（gzserver の SIGINT→SIGTERM→SIGKILL の
+  # 段階的終了待ち）の余裕を見て480秒とした。
   ament_add_pytest_test(fault_injection_13
     test/fault_injection/case_13_localization_loss.py
-    TIMEOUT 60)
+    TIMEOUT 480)
   ament_add_pytest_test(fault_injection_control
     test/fault_injection/control.py
     TIMEOUT 240)
