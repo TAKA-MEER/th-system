@@ -533,8 +533,10 @@ class TestStateManagerNode(unittest.TestCase):
         res = self._trigger('ui.register', {'kind': 'HOME'})
         assert res.accepted, res.reject_reason_key
         assert self._latest().state == 'REGISTER'
-        res = self._trigger('evt.register_ok')
-        assert res.accepted, res.reject_reason_key
+        # evt.* は §11-8（名前空間分離。test_evt_via_trigger_rejected）により
+        # /system/trigger（ui.* 専用）からは拒否される。/system/event に
+        # publish する（§11-7 のテストと同じ経路。self._trigger() は使えない）。
+        self.pub_event.publish(StateEvent(event='evt.register_ok', source_node='test'))
         assert self._latest().state == 'MAPPING'
         assert self._latest().tracker_enabled is True, \
             'PREP のモード内移動で tracker_enabled が落ちてしまった'
