@@ -10,7 +10,8 @@ obstacle_limiter の**ノード本体**で確かめる Docker launch テスト�
 LiDAR が無い状態（/scan を一度も出さない）で:
   obstacle_limiter（項目 scan_stop）
     a. 開発モードの状態が未受信 → MANUAL でも 0
-    b. effective.scan_stop=true → MANUAL は動く。上限は v_reverse 以下
+    b. effective.scan_stop=true → MANUAL は動く。上限は通常と同じ
+       （前進は speed_limit=v_slow まで出て v_reverse を超える。後退は v_reverse）
     c. 同じ状態で AUTO（mode=FOLLOW）→ 0
     d. ignore（選択）だけ真で effective が偽 → 0
     e. /system/dev_mode が途絶えて古くなる → 0 に戻る
@@ -130,6 +131,7 @@ class TestDevModeSafetyNodes(unittest.TestCase):
         cls.pub_dev = n.create_publisher(String, '/system/dev_mode', latched)
 
         cls.mode = 'MANUAL'
+        cls.cmd_x = CMD_LINEAR_X
         cls.dev_payload = None  # None の間は /system/dev_mode を出さない
         cls._t_fast = n.create_timer(1.0 / PUB_HZ, cls._publish_fast)
         cls._t_dev = n.create_timer(1.0 / DEV_HZ, cls._publish_dev)
@@ -143,7 +145,7 @@ class TestDevModeSafetyNodes(unittest.TestCase):
     @classmethod
     def _publish_fast(cls):
         cmd = Twist()
-        cmd.linear.x = CMD_LINEAR_X
+        cmd.linear.x = cls.cmd_x
         cls.pub_muxed.publish(cmd)
         cls.pub_manual.publish(cmd)
         st = SystemState()
@@ -202,14 +204,23 @@ class TestDevModeSafetyNodes(unittest.TestCase):
         assert self.status.source_class == 'MANUAL', self.status.source_class
         assert self._out() == 0.0, f'開発モード未受信なのに動いた: {self._out()}'
 
-    def test_b_limiter_scan_stop_lets_manual_move_capped(self):
+    def test_b_limiter_scan_stop_uses_normal_limits(self):
         self._set_dev(_dev_json(True, ignore=('scan_stop',), effective=('scan_stop',)))
         assert self._wait(lambda: self._out() > 0.0, 3.0), (
             f'scan_stop が実効なのに MANUAL が動かない: {self._out()}')
         self._spin(0.5)
-        assert 0.0 < self._out() <= V_REVERSE + 1e-6, (
-            f'上限 v_reverse={V_REVERSE} を超えた: {self._out()}')
+        # 前進は通常どおり speed_limit（v_slow）まで。未観測を理由に v_reverse へ絞らない。
+        assert abs(self._out() - V_SLOW) < 1e-3, (
+            f'前進の上限が通常（v_slow={V_SLOW}）と違う: {self._out()}')
         assert self.status.nearest_obstacle_m == -1.0, '未観測は -1（不明）のはず'
+        # 後退は通常どおり v_reverse。
+        type(self).cmd_x = -CMD_LINEAR_X
+        try:
+            assert self._wait(lambda: abs(self._out() + V_REVERSE) < 1e-3, 3.0), (
+                f'後退の上限が通常（v_reverse={V_REVERSE}）と違う: {self._out()}')
+        finally:
+            type(self).cmd_x = CMD_LINEAR_X
+        assert self._wait(lambda: self._out() > 0.0, 3.0)
 
     def test_c_limiter_scan_stop_still_stops_auto(self):
         type(self).mode = 'FOLLOW'

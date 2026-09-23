@@ -458,7 +458,7 @@ export const S50_DEV_ITEM_LIDAR_FAULT = 'LiDAR 途絶のフォルト'
 export const S50_DEV_ITEM_LIDAR_FAULT_DESC = 'LIDAR_LOST を出さない（出ていれば解除する）'
 export const S50_DEV_ITEM_SCAN_STOP = 'LiDAR 無しの手動停止'
 export const S50_DEV_ITEM_SCAN_STOP_DESC =
-  'LiDAR が無くても手動で走れる。障害物は見えないため低速上限（後退と同じ）。自律走行は止まったまま'
+  'LiDAR が無くても手動で走れる。速度上限は通常と同じ。障害物は見えず自動では止まらないので注意。自律走行は止まったまま'
 export const S50_DEV_ITEM_BATTERY = 'バッテリー電圧低下'
 export const S50_DEV_ITEM_OPCHECK = '始業点検の総合 NG'
 export const S50_DEV_ITEM_AUTO_BRAKE = '手動系の自動ブレーキ既定'

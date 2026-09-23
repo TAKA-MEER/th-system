@@ -221,7 +221,7 @@ class ConnectivityChecker(Node):
     # ------------------------------------------------------------
     # link        : 疎通確認（ESP32・LiDAR・必須ノード）を合格扱いにする
     # lidar_fault : safety_monitor が LIDAR_LOST を出さない（/system/dev_mode 経由）
-    # scan_stop   : obstacle_limiter が /scan 途絶でも MANUAL を止めない（同上。上限 v_reverse）
+    # scan_stop   : obstacle_limiter が /scan 途絶でも MANUAL を止めない（同上。速度上限は通常と同じ）
     # battery / opcheck / auto_brake : 止めるゲートが as-built に無く、選択の保持・配信のみ
     # dev_mode_core.hpp の kDevItem* と web_ui の DEV_ITEMS と揃えること。
     _DEV_ITEMS = ('link', 'lidar_fault', 'scan_stop', 'battery', 'opcheck', 'auto_brake')

@@ -406,7 +406,7 @@ private:
         if (in.dev_ignore_scan_stop != prev_dev_ignore_scan_stop_) {
             if (in.dev_ignore_scan_stop) {
                 RCLCPP_WARN(get_logger(), "開発モード: scan_stop 有効（/scan 途絶でも MANUAL は止めない。"
-                            "上限は v_reverse=%.2f m/s）", params_.v_reverse);
+                            "障害物は見えない。速度上限は通常と同じ）");
             } else {
                 RCLCPP_INFO(get_logger(), "開発モード: scan_stop 無効（通常どおり /scan 途絶で停止）");
             }

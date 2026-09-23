@@ -274,12 +274,15 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   // 上限を v_reverse にする（全方向ではない。state の新鮮さに関わらず
   // 幾何的に成立する制約なので state_fresh の分岐の外で常に適用する）。
   // 途絶を素通しさせるときは古い点群を観測として使わない（§3.4.2「古いスキャンで
-  // 空きと判定しない」）。未受信と同じ扱い → covered=false → v_reverse 上限。
+  // 空きと判定しない」）。未受信と同じ扱い（covered=false・距離は「不明」）。
+  // ただし速度の上限は通常運用と同じにする（2026-09-23 ユーザー決定。開発モード
+  // だけ仕様が違うのは問題）。未観測による v_reverse 上限は掛けず、前進は画面・
+  // モード由来の上限、後退は上の v_reverse（通常と同じ）、死角も通常どおり。
   const ConeObservation cone = dev_scan_bypass
       ? ConeObservation{}
       : observe_cone(in.scan, direction_rad, half_width, p.obstacle_min_points);
   if (blind_direction_overlap(direction_rad, half_width, p.blind_angle_ranges_deg) ||
-      !cone.covered) {
+      (!cone.covered && !dev_scan_bypass)) {
     applied_limit = std::min(applied_limit, p.v_reverse);
   }
   applied_limit = std::max(0.0, applied_limit);

@@ -27,7 +27,7 @@ namespace th_safety {
 
 // 項目名。connectivity_checker.py の _DEV_ITEMS・web_ui の DEV_ITEMS と揃える。
 inline constexpr const char* kDevItemLidarFault = "lidar_fault";  // safety_monitor: LIDAR_LOST を出さない
-inline constexpr const char* kDevItemScanStop   = "scan_stop";    // obstacle_limiter: /scan 途絶で手動を止めない
+inline constexpr const char* kDevItemScanStop   = "scan_stop";    // obstacle_limiter: /scan 途絶で手動を止めない（上限は通常と同じ）
 
 // /system/dev_mode は 1 Hz。3 周期落ちたら発行者が居ないとみなす。
 inline constexpr double kDevStateStaleSec = 3.0;
