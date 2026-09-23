@@ -32,8 +32,8 @@ from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                         QoSReliabilityPolicy)
 
 from std_msgs.msg import Bool, String
-from th_system_msgs.msg import (ActiveScreen, FaultStatus, RouteInfo, RouteList,
-                                StateEffect, StateEvent, SystemState)
+from th_system_msgs.msg import (ActiveScreen, FaultStatus, PersonTargets, RouteInfo,
+                                RouteList, StateEffect, StateEvent, SystemState)
 from th_system_msgs.srv import SetFlag, UiTrigger
 
 
@@ -121,6 +121,9 @@ class TestStateManagerNode(unittest.TestCase):
         # P2: /route/catalog は route_recorder が latched (TRANSIENT_LOCAL) で publish する前提
         self.pub_routes = self.node.create_publisher(RouteList, '/route/catalog', _STATE_QOS)
 
+        # WP-ONSITE-F2: /person/targets（person_tracker_bridge / stub の RELIABLE/VOLATILE に合わせる）
+        self.pub_person = self.node.create_publisher(PersonTargets, '/person/targets', 1)
+
         self.cli_trigger = self.node.create_client(UiTrigger, '/system/trigger')
         self.cli_set_flag = self.node.create_client(SetFlag, '/system/set_flag')
         assert self.cli_trigger.wait_for_service(timeout_sec=5.0), \
@@ -147,6 +150,26 @@ class TestStateManagerNode(unittest.TestCase):
         future = self.cli_trigger.call_async(req)
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=3.0)
         return future.result()
+
+    def _set_flag(self, flag: str, value: bool) -> SetFlag.Response:
+        req = SetFlag.Request()
+        req.flag = flag
+        req.value = value
+        future = self.cli_set_flag.call_async(req)
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=3.0)
+        return future.result()
+
+    def _publish_tracked_person(self):
+        """/person/targets に追跡中の対象 1 人を publish する（PREP/REGISTER 用）。"""
+        from geometry_msgs.msg import Point
+        msg = PersonTargets()
+        msg.candidates.append(Point(x=1.0, y=0.0, z=0.0))
+        msg.selected_index = 0
+        msg.confidence = 0.9
+        msg.is_lost = False
+        msg.lost_reason = ''
+        self.pub_person.publish(msg)
+        self._spin(0.3)
 
     def _latest(self) -> SystemState:
         self._spin(0.2)
@@ -437,6 +460,86 @@ class TestStateManagerNode(unittest.TestCase):
             screen_id='S-01', client_id=client, interacting=False,
             last_input=self.node.get_clock().now().to_msg()))
         self._spin(0.2)
+
+    # ════════════════════════════════════════════════════════
+    # brief-tracker-default-off §3.1: tracker_enabled の自動停止と OFF 拒否
+    # （Spec-modes.md §9「動かさない」自動停止／§5.1 要 person での OFF 拒否）
+    # ════════════════════════════════════════════════════════
+    def test_set_flag_tracker_enabled_off_allowed_in_idle(self):
+        """IDLE では OFF できる（『動かさない』モードとは逆の要 person でない状態）。"""
+        res = self._set_flag('tracker_enabled', True)
+        assert res.accepted, res.reject_reason_key
+        assert self._latest().tracker_enabled is True
+        res = self._set_flag('tracker_enabled', False)
+        assert res.accepted, res.reject_reason_key
+        assert self._latest().tracker_enabled is False
+
+    def test_set_flag_tracker_enabled_off_rejected_in_summon(self):
+        """SUMMON（要 person・どの状態でも）では OFF が拒否され理由キーが返る。"""
+        res = self._set_flag('tracker_enabled', True)
+        assert res.accepted, res.reject_reason_key
+        res = self._trigger('ui.goto', {'kind': 'SUMMON'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('SUMMON')
+
+        res = self._set_flag('tracker_enabled', False)
+        assert res.accepted is False, 'SUMMON では OFF できるようになってしまった'
+        assert res.reject_reason_key == 'tracker_required', res.reject_reason_key
+        assert self._latest().tracker_enabled is True, '拒否されたのにフラグが落ちた'
+
+    def test_set_flag_tracker_enabled_off_rejected_in_prep_register(self):
+        """PREP の REGISTER（ピン登録中）では OFF が拒否される（MAPPING では許可）。"""
+        self._publish_tracked_person()
+        res = self._trigger('ui.enter_mode', {'mode': 'PREP'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('PREP')
+
+        # MAPPING では OFF も ON もできる。
+        res = self._set_flag('tracker_enabled', True)
+        assert res.accepted, res.reject_reason_key
+
+        res = self._trigger('ui.register', {'kind': 'HOME'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('PREP')
+        assert self._latest().state == 'REGISTER'
+
+        res = self._set_flag('tracker_enabled', False)
+        assert res.accepted is False, 'PREP/REGISTER では OFF できるようになってしまった'
+        assert res.reject_reason_key == 'tracker_required', res.reject_reason_key
+        assert self._latest().tracker_enabled is True
+
+    def test_tracker_autostop_on_entering_mode_without_person(self):
+        """フラグ true のまま「動かさない」モード（MANUAL）へ遷移すると自動で false。"""
+        res = self._set_flag('tracker_enabled', True)
+        assert res.accepted, res.reject_reason_key
+        assert self._latest().tracker_enabled is True
+
+        res = self._trigger('ui.enter_mode', {'mode': 'MANUAL'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('MANUAL')
+        assert self._latest().tracker_enabled is False, \
+            '「動かさない」モードへ入ったのに tracker_enabled が落ちていない'
+
+    def test_tracker_autostop_not_on_prep_internal_moves(self):
+        """試験準備（PREP）のモード内移動では落とさない（試験準備・試験当日は保持）。"""
+        self._publish_tracked_person()
+        res = self._trigger('ui.enter_mode', {'mode': 'PREP'})
+        assert res.accepted, res.reject_reason_key
+        res = self._set_flag('tracker_enabled', True)
+        assert res.accepted, res.reject_reason_key
+        assert self._latest().tracker_enabled is True
+
+        # PREP 内で MAPPING → REGISTER → MAPPING と動いてもフラグは保持される。
+        res = self._trigger('ui.register', {'kind': 'HOME'})
+        assert res.accepted, res.reject_reason_key
+        assert self._latest().state == 'REGISTER'
+        # evt.* は §11-8（名前空間分離。test_evt_via_trigger_rejected）により
+        # /system/trigger（ui.* 専用）からは拒否される。/system/event に
+        # publish する（§11-7 のテストと同じ経路。self._trigger() は使えない）。
+        self.pub_event.publish(StateEvent(event='evt.register_ok', source_node='test'))
+        assert self._latest().state == 'MAPPING'
+        assert self._latest().tracker_enabled is True, \
+            'PREP のモード内移動で tracker_enabled が落ちてしまった'
 
     # ════════════════════════════════════════════════════════
     # P2 — effect の配送と route_ids の供給

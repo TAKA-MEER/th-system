@@ -37,3 +37,14 @@ test('登録専用の target_lost と対象選択用の tracker_lost は別キ�
   assert.ok(REJECT_REASONS.target_lost)
   assert.ok(REJECT_REASONS.tracker_lost)
 })
+
+// brief-tracker-default-off §3.4: state_manager が tracker_enabled=false を
+// 拒否する理由キー（tracker_required）が登録されていて、日本語に解決する
+// ことを固定する（UI は同じ状態でボタンを予め無効化するが、競合で拒否が
+// 届いたとき画面に生キーを出さないため）。
+test('tracker_required が REJECT_REASONS にあり日本語に解決する', () => {
+  assert.ok(REJECT_REASONS.tracker_required, 'tracker_required が REJECT_REASONS に無い')
+  assert.ok(REJECT_REASONS.tracker_required.length > 0)
+  assert.equal(reasonLabel('tracker_required'), REJECT_REASONS.tracker_required)
+  assert.notEqual(reasonLabel('tracker_required'), 'tracker_required')
+})

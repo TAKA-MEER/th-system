@@ -38,7 +38,9 @@ const TEST_STATE_DEFAULTS = {
   jog_active: false,
   estop_ui: false,
   estop_hw: false,
-  tracker_enabled: true,
+  // brief-tracker-default-off §3.4: 人物検出は既定 OFF。実体は state_manager の
+  // tracker_enabled（起動時 false）が正。WebUI のテスト既定もその実体に揃える。
+  tracker_enabled: false,
   auto_brake: true,
   working: false,
   map_update: false,

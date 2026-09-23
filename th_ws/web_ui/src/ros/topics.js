@@ -68,6 +68,10 @@ export const SERVICES = {
   // brief-onsite-fix E: 保存した会場地図（slot:VENUE）を当日に読み直す。
   // S-21 の「保存した会場地図を開く」ボタンが呼ぶ（slam_control /map_session/open）。
   MAP_SESSION_OPEN: '/map_session/open',
+  // brief-tracker-default-off §3.4: /system/set_flag（th_state のフラグ変更。
+  // 「人検出を開始/停止」が tracker_enabled を切り替える。names.json の
+  // endpoints に既にあるので辞書ゲートを通る）。
+  SET_FLAG: '/system/set_flag',
 }
 
 export const MSG_TYPES = {
@@ -116,6 +120,8 @@ export const SRV_TYPES = {
   ONSITE_SELECT_PIN: 'th_system_msgs/GoToPanel',
   // brief-onsite-fix E: /map_session/open の SRV 型。
   MAP_SESSION_OPEN: 'th_system_msgs/OpenMapSession',
+  // brief-tracker-default-off §3.4: /system/set_flag の SRV 型。
+  SET_FLAG: 'th_system_msgs/SetFlag',
   // WS-9AB: 壁近接警告の 3 択（place / retreat / cancel）。名前は
   // useOnsiteService.js のローカル定数で扱う（select_pin と同型）。
   ONSITE_RESOLVE_PIN: 'th_system_msgs/ResolvePin',

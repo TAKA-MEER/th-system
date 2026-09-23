@@ -587,6 +587,52 @@ panels:
 （`0=NO_EXISTS` / `1=EXISTS_LEG`）を `PersonStatus.is_lost` に変換する薄い変換ノード。
 `th_ws/src/th_perception/scripts/person_tracker_bridge.py` を参照。
 
+### 人検出の起動/停止（tracker_enabled、既定 OFF。brief-tracker-default-off）
+
+DR-SPAAM は CPU 推論の負荷が大きい（活性中は CPU 約 300%）ため、常時起動ではなく
+`/system/state.tracker_enabled` フラグ（`th_state`、既定 `false`）で起動/停止する。
+
+```txt
+/system/state (tracker_enabled)
+  → dr_spaam_lifecycle_controller.py (th_perception。新規ノード)
+      /dr_spaam/dr_spaam_ros/{change_state,get_state} (lifecycle_msgs) を発行
+  → dr_spaam_ros のライフサイクル: UNCONFIGURED → (launch起動時に auto_configure) →
+     INACTIVE ⇄ ACTIVE（activate/deactivate をこのノードが駆動）
+```
+
+- **`leg_detection.launch.py`** は DR-SPAAM を `auto_configure=true` / `auto_activate=false`
+  で起動する（モデル読み込みは起動時に済ませ、推論は始めない）。`person_tracker`
+  （`PersonTracker`、lifecycle_manager 配下）は変更していない — 常時 ACTIVE のまま
+  `/scan_filtered` を購読し続ける。
+- **`dr_spaam_lifecycle_controller.py`**（新規。`bringup.launch.py` の perception_real 分岐に
+  常駐）が `/system/state` を購読し、`tracker_enabled` に応じて DR-SPAAM を
+  activate/deactivate する。変化に反応するだけでなく 1 秒周期（`reconcile_period_s`）で
+  実際の lifecycle 状態と突き合わせて合わせ直す（起動遅延・DR-SPAAM の `respawn`・
+  サービス呼び出しの一時失敗を取りこぼさないため）。判断ロジックは
+  `dr_spaam_lifecycle_controller_core.py`（純粋関数、ROS2 非依存）に分離。
+- **`tracker_enabled` の状態遷移**は `th_state/tracker_policy.py` に集約（`state_manager.py`
+  へモード名リテラルを持ち込まない N-1 のため）:
+  - `tracker_autostop(mode)`: Spec-modes.md §9「動かさない」モード群（INIT/IDLE/MANUAL/
+    TEACH_MANUAL/REPLAY/LINE/LEASH/OPCHECK/CALIB）へ遷移したら自動で `false` にする。
+    `ESTOP`/`CARRY` は対象外（直前の値を継続）。
+  - `tracker_off_denied(mode, state)`: SUMMON（全状態）・PREP/REGISTER では
+    `/system/set_flag tracker_enabled=false` を拒否する（Spec-modes.md §5.1。
+    理由キー `tracker_required`）。追従（FOLLOW/TEACH_FOLLOW）の自動起動は未実装のため
+    このゲートには含まれていない。
+- **止まっている間は「見失った」扱いにしない**: `person_tracker_bridge.py` は
+  `tracker_enabled=false` の間 `/person/status` と `/person/targets` を強制的に
+  `is_lost=true` / `lost_reason="disabled"`（`PersonStatus.msg` コメントが値の正本）/
+  `confidence=0.0` にし、候補を空にする（`apply_disabled()`、
+  `person_tracker_bridge_core.py`）。`evt.target_lost` の発行・自動選択・
+  `set_target`/`clear_selection` effect の PersonTracker への転送もこの間は止める。
+  下流（`wait_clear_gate` の退避待ち・`pin_registrar`・`summon_navigator`）は
+  `is_lost` を見て安全側に倒れるため、`lost_reason` の値による分岐は追加していない。
+- **WebUI**（S-20/S-21 対象選択タブ）は `parts/TrackerControl.jsx` が
+  「人検出を開始」（OFF 時）／「人検出を停止」＋起動状態（ON 時。候補 0 件の間は
+  「起動中…」）を出す。実体は `/system/set_flag`（`ros/useSetFlag.js`）。
+  `modes/trackerControlPolicy.js` が `tracker_off_denied` と同じポリシーをコピーして
+  ボタンを事前無効化するが、安全の正本はサーバ（th_state）側。
+
 ### 自機回転補償（2026-08-06 追加）
 
 `PersonTracker` は追跡状態（KF の位置・速度、`previous_target_`、ロスト時の最終位置・速度、
