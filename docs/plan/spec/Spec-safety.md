@@ -650,7 +650,7 @@ UI 非常停止ボタンなど）は、通常どおり効く。項目は必要�
 | --- | --- | --- |
 | `link` | 疎通確認（ESP32・LiDAR・必須ノード）を合格扱いにする（INIT/CHECK → IDLE） | `connectivity_checker` |
 | `lidar_fault` | `LIDAR_LOST` を出さない（出ていれば解除する） | `safety_monitor` |
-| `scan_stop` | `/scan` 途絶でも **MANUAL** の手動走行を止めない。障害物は見えないので上限は `v_reverse`。**AUTO は止めたまま** | `obstacle_limiter` |
+| `scan_stop` | `/scan` 途絶でも **MANUAL** の手動走行を止めない。**障害物は見えない**（障害物による減速・停止は効かない）。速度上限は通常運用と同じ（前進は画面・モード由来、後退は `v_reverse`。2026-09-23 ユーザー決定: 開発モードだけ仕様を変えない）。**AUTO は止めたまま** | `obstacle_limiter` |
 | `battery` / `opcheck` / `auto_brake` | 止めるゲートが as-built に無く、選択の保持・配信のみ | — |
 
 改定の理由: LiDAR が無い状態で手動走行させたい（開発時）。旧版は「自律系の障害物停止」を

@@ -64,7 +64,7 @@ ros2 topic echo /system/dev_mode --once                           # いまの状
 
 - **2026-09-23 改定: `dev_mode:=true` だけでは何も外れない**（通常運用と同じ）。外す項目を
   `dev_ignore:=`（カンマ区切り）か画面で選ぶ。項目: `link`（疎通確認）/ `lidar_fault`
-  （`LIDAR_LOST` を出さない）/ `scan_stop`（`/scan` 途絶でも MANUAL を止めない。上限 `v_reverse`、
+  （`LIDAR_LOST` を出さない）/ `scan_stop`（`/scan` 途絶でも MANUAL を止めない。障害物は見えない。速度上限は通常と同じ、
   AUTO は止めたまま）/ `battery`・`opcheck`・`auto_brake`（ゲート未実装で記録のみ）。
 - 画面から使うなら S-50 の開発モードタブ、または URL に `?dev=1`。**S-00（疎通確認）で
   止まったら「開発モードの設定」から入れる**（`link` を外して IDLE へ進む）。
