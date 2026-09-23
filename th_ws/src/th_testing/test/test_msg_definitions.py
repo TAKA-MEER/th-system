@@ -7,8 +7,11 @@ DetailedDesign-wp0.md `WP-MSG-01` §7:
   - test_all_new_msgs_importable  : names.md §5.1 の全 msg が Python から import できる
   - test_no_uint8_mode_constants  : M1。SystemState に uint8 定数が無い
   - test_legacy_msgs_untouched    : M3。旧 msg のファイルハッシュが変わっていない
-                                     （FaultStatus.msg のみ例外。WP-MSG-01 で末尾に
-                                     severity、WP-SAFE-01 で先頭に Header を追加）
+                                     （FaultStatus.msg と PersonStatus.msg のみ例外。
+                                     FaultStatus.msg は WP-MSG-01 で末尾に severity、
+                                     WP-SAFE-01 で先頭に Header を追加。PersonStatus.msg
+                                     は brief-tracker-default-off §3.3 で lost_reason の
+                                     コメントに "disabled" を追記——フィールド構造は不変）
   - test_fields_match_names_md    : names.md §5.1 の表を機械読みして突き合わせる
 
 このテストは生成済みの th_system_msgs (colcon build 済み・source install/setup.bash
@@ -55,13 +58,14 @@ NEW_MSGS = [
     'MapSessionStatus', 'CheckStatus', 'CalibStatus', 'PinWarning',
 ]
 
-# M3: 既存の 9 msg・5 srv のうち FaultStatus.msg 以外はバイト単位で不変。
-# ハッシュはこのパケット着手前 (git HEAD) の内容から採取した
-# (`git show HEAD:<path> | sha256sum`)。
+# M3: 既存の 9 msg・5 srv のうち FaultStatus.msg と PersonStatus.msg 以外は
+# バイト単位で不変。ハッシュはこのパケット着手前 (git HEAD) の内容から採取した
+# (`git show HEAD:<path> | sha256sum`)。PersonStatus.msg は FaultStatus.msg と
+# 同じ扱い（下の構造チェックへ委譲。brief-tracker-default-off §3.3 で
+# lost_reason のコメントへ "disabled" を追記——フィールド構造は不変）。
 _LEGACY_MSG_HASHES = {
     'FollowStatus.msg':  'd56a4ccf992548dcd5ee84ca1cd227e1a21288fd4196746c7f9243cccf896b36',
     'PanelArrival.msg':  '4862daa531968ddc7bce67596bba6a633101a42c5d00ca332b93b2b516851034',
-    'PersonStatus.msg':  'ee9890b735caca61a3242ee8122c988e8413062ab219a71c761dcb4f51640036',
     'RobotMode.msg':     'c17690ddb264c0c524ef9e6eef10174cfb997cef809802bf9575db00183734bc',
     'SearchStatus.msg':  '6a86c3ffd152d40902d8ebc653c554ff271e3d4d436f0ce820811f9c7afcf9d3',
     'SummonStatus.msg':  'f1a806060672f0a4425f2d0fa20ea3d7b8c00ed6c0143cd468a9368796c13514',
@@ -181,6 +185,19 @@ def test_legacy_msgs_untouched():
         'FaultStatus.msg は Header 1 行 + severity 1 行だけが増えているはず: %s' % (fields,))
     assert fields[4] == ('string', 'severity'), (
         'FaultStatus.msg の末尾フィールドは string severity のはず: %s' % (fields[4],))
+
+    # PersonStatus.msg も同じ扱い。brief-tracker-default-off §3.3 で
+    # lost_reason のコメントへ "disabled" を追記しただけで、5 フィールドの
+    # 型・順序は不変（コメントは _parse_msg_fields が読み飛ばす）。
+    person_path = os.path.join(_TH_SYSTEM_MSGS_ROOT, 'msg', 'PersonStatus.msg')
+    person_fields = _parse_msg_fields(person_path)
+    assert person_fields == [
+        ('std_msgs/Header', 'header'),
+        ('geometry_msgs/Point', 'position'),
+        ('float32', 'confidence'),
+        ('bool', 'is_lost'),
+        ('string', 'lost_reason'),
+    ], 'PersonStatus.msg のフィールド構造が変わっている (M3 違反): %s' % (person_fields,)
 
 
 # ── test_fields_match_names_md ──────────────────────────────────────────
