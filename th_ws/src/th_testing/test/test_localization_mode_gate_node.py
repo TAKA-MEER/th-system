@@ -12,6 +12,10 @@ expected_nodes は存在しない名前にして actual を node_down に固定�
   b. 続けて PANEL_NAV を出す → 1 秒以内に ok=false（node_down か stale）
   c. PREP/MAPPING → inactive
   d. PREP/RETURN → ok=false
+  e. ESTOP＋prev REPLAY（TF なし）→ ok=false のまま（inactive にならない。
+     非常停止中は止まる直前のモードに従う。Spec-safety.md §3.5.0）
+  f. ESTOP＋prev IDLE → inactive
+  g. CARRY＋prev REPLAY → inactive（手押し中は監視しない。prev を見ない）
 
 お手本は test_runaway_freshness_node.py と test_planned_restart_node.py
 （ノードの起動・パラメータの渡し方・test_a_ 順序制御・setup-clear 競合の避け方）。
@@ -109,6 +113,8 @@ class TestLocalizationModeGateNode(unittest.TestCase):
         # と同じ QoS。後から見るノードにも最新が届く。
         self._mode = 'IDLE'
         self._state = 'NONE'
+        self._prev_mode = ''
+        self._prev_state = ''
         self.pub_state = self.node.create_publisher(
             SystemState, '/system/state', _STATE_QOS)
         self._state_timer = self.node.create_timer(0.2, self._publish_state)
@@ -136,14 +142,20 @@ class TestLocalizationModeGateNode(unittest.TestCase):
         msg.header.stamp = self.node.get_clock().now().to_msg()
         msg.mode = self._mode
         msg.state = self._state
+        msg.prev_mode = self._prev_mode
+        msg.prev_state = self._prev_state
         self.pub_state.publish(msg)
 
-    def _set_mode(self, mode: str, state: str):
+    def _set_mode(self, mode: str, state: str,
+                  prev_mode: str = '', prev_state: str = ''):
         """モードを切り替え、切り替え後の証拠だけを見るためバッファを捨てる。
         health は 200ms 周期で出続けるので、捨てた後の証拠は必ず新しいもの
-        （setup-clear 競合は無い）。"""
+        （setup-clear 競合は無い）。prev の既定 '' は state_manager の初期値
+        （ラッチ前）と同じ。"""
         self._mode = mode
         self._state = state
+        self._prev_mode = prev_mode
+        self._prev_state = prev_state
         self._health.clear()
 
     def _wait_for(self, pred, timeout: float):
@@ -189,6 +201,30 @@ class TestLocalizationModeGateNode(unittest.TestCase):
         assert hit, 'PREP/RETURN で ok=false にならない'
         assert hit[0].reason in ('node_down', 'stale'), (
             f'想定外の reason: {hit[0].reason}')
+
+    def test_e_estop_keeps_monitoring_prev_replay(self):
+        """ESTOP＋prev REPLAY（TF なし）→ ok=false のまま（inactive にならない）。
+        非常停止中は止まる直前のモードに従う。推定が止まったままフォルトが
+        解除されてはいけない（2026-09-23 実機で発覚）。"""
+        self._set_mode('ESTOP', 'NONE', prev_mode='REPLAY', prev_state='RUN')
+        hit = self._wait_for(lambda m: not m.ok, timeout=3.0)
+        assert hit, 'ESTOP/prev=REPLAY で ok=false にならない（inactive になった）'
+        assert hit[0].reason in ('node_down', 'stale'), (
+            f'想定外の reason: {hit[0].reason}')
+
+    def test_f_estop_idle_prev_is_inactive(self):
+        """ESTOP＋prev IDLE → inactive（止まる直前も使っていないので監視しない）。"""
+        self._set_mode('ESTOP', 'NONE', prev_mode='IDLE', prev_state='NONE')
+        hit = self._wait_for(lambda m: m.ok and m.reason == 'inactive',
+                             timeout=3.0)
+        assert hit, 'ESTOP/prev=IDLE で inactive にならない'
+
+    def test_g_carry_ignores_prev(self):
+        """CARRY＋prev REPLAY → inactive（手押し中は人が動かすので監視しない）。"""
+        self._set_mode('CARRY', 'NONE', prev_mode='REPLAY', prev_state='RUN')
+        hit = self._wait_for(lambda m: m.ok and m.reason == 'inactive',
+                             timeout=3.0)
+        assert hit, 'CARRY/prev=REPLAY で inactive にならない'
 
 
 if __name__ == '__main__':

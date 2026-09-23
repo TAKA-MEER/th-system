@@ -359,6 +359,24 @@ def test_in_use_none_means_not_monitored():
     assert is_localization_in_use("IDLE", None) is False
 
 
+def test_in_use_estop_follows_prev_mode():
+    """非常停止中は止まる直前のモードに従う（Spec-safety.md §3.5.0）。
+    監視するモードで見失って ESTOP に入ったなら、推定が戻るまで解除しない。"""
+    assert is_localization_in_use("ESTOP", "NONE", "REPLAY", "RUN") is True
+    assert is_localization_in_use("ESTOP", "NONE", "PANEL_NAV", "NAV") is True
+    assert is_localization_in_use("ESTOP", "NONE", "PREP", "RETURN") is True
+    assert is_localization_in_use("ESTOP", "NONE", "PREP", "MAPPING") is False
+    assert is_localization_in_use("ESTOP", "NONE", "IDLE", "NONE") is False
+    assert is_localization_in_use("ESTOP", "NONE", "", "") is False
+    assert is_localization_in_use("ESTOP", "NONE", None, None) is False
+    assert is_localization_in_use("ESTOP", "NONE") is False
+
+
+def test_in_use_carry_ignores_prev_mode():
+    """手押し（CARRY）中は機体を人が動かすので監視しない（prev を見ない）。"""
+    assert is_localization_in_use("CARRY", "NONE", "REPLAY", "RUN") is False
+
+
 def test_inactive_reason_constant():
     """監視外の理由コードは "inactive"（msg コメントが正）。"""
     assert REASON_INACTIVE == "inactive"
