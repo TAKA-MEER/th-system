@@ -96,6 +96,11 @@ class LocalizationHealthNode(Node):
         # None（＝監視しない。起動中は INIT なので同じ）。
         self._mode = None
         self._state = None
+        # WP-SAFE-05追加修正: ESTOP 中は止まる直前のモードに従う
+        # （Spec-safety.md §3.5.0）ためのラッチ。state_manager が ESTOP に
+        # 入るときに記録する。
+        self._prev_mode = None
+        self._prev_state = None
         # 監視外⇔監視中の切り替わりと、監視外の間の実際の判定の変化をログに
         # 残すための前回値。
         self._prev_in_use = None
@@ -182,6 +187,8 @@ class LocalizationHealthNode(Node):
         判定への反映は _on_timer が行う（次の周期で効く）。"""
         self._mode = msg.mode
         self._state = msg.state
+        self._prev_mode = msg.prev_mode
+        self._prev_state = msg.prev_state
 
     # ------------------------------------------------------------
     def _on_timer(self):
@@ -240,11 +247,13 @@ class LocalizationHealthNode(Node):
         # 次の周期で実際の判定がそのまま出る（入った瞬間に効く）。
         # transform_age_sec／node_present は生の値のまま（_publish が base から
         # 載せる）。B′ の前回値も監視外で更新を続ける（上で更新済み）。
-        in_use = is_localization_in_use(self._mode, self._state)
+        in_use = is_localization_in_use(self._mode, self._state,
+                                          self._prev_mode, self._prev_state)
         if self._prev_in_use is not None and in_use != self._prev_in_use:
             self.get_logger().info(
                 f'localization 監視{"開始" if in_use else "終了"}: '
-                f'mode={self._mode} state={self._state}')
+                f'mode={self._mode} state={self._state} '
+                f'prev_mode={self._prev_mode} prev_state={self._prev_state}')
         self._prev_in_use = in_use
         actual = (actual_ok, actual_reason)
         if not in_use and actual != self._prev_actual:

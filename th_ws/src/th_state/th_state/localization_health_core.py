@@ -40,13 +40,22 @@ MONITORED_MODES = frozenset({"REPLAY", "PANEL_NAV", "SUMMON", "HOME_NAV"})
 PREP_MONITORED_STATES = frozenset({"RETURN"})
 
 
-def is_localization_in_use(mode: Optional[str], state: Optional[str]) -> bool:
+def is_localization_in_use(mode: Optional[str], state: Optional[str],
+                           prev_mode: Optional[str] = None,
+                           prev_state: Optional[str] = None) -> bool:
     """/system/state の mode/state から監視対象かを返す（純関数）。
 
     - REPLAY / PANEL_NAV / SUMMON / HOME_NAV はモード全体（状態は見ない）
     - PREP は状態が RETURN のときだけ
+    - ESTOP のときは止まる直前のモード・状態（prev_mode/prev_state）で判定し直す
+      （Spec-safety.md §3.5.0。prev が空・None なら監視しない）
+    - CARRY（手押し）は従来どおり監視しない（prev を見ない）
     - それ以外すべて・未受信（None）は監視しない（起動中は INIT なので同じ）
     """
+    if mode == "ESTOP":
+        if not prev_mode:
+            return False
+        return is_localization_in_use(prev_mode, prev_state)
     if mode is None:
         return False
     if mode in MONITORED_MODES:
