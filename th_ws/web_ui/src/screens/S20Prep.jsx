@@ -23,6 +23,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
+import { useSetFlag, TRACKER_FLAG } from '../ros/useSetFlag.js'
+import { trackerStopAllowed } from '../modes/trackerControlPolicy.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
 import { usePersonTargets } from '../ros/usePersonTargets.js'
 import { usePersonStatus } from '../ros/usePersonStatus.js'
@@ -38,6 +40,7 @@ import { useMappingActive } from '../ros/useMappingActive.js'
 import { useStdTrigger } from '../ros/useStdTrigger.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
+import TrackerControl from '../parts/TrackerControl.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
 import StepBar from '../parts/StepBar.jsx'
 import ArmedButton from '../parts/ArmedButton.jsx'
@@ -64,6 +67,9 @@ import {
   S20_SUBTAB_PINS, S20_SUBTAB_REGISTER,
   S20_TAB_MAP, S20_TAB_TARGET, S20_UNSAVED,
   S20_WIZ_MSG_STEP1, S20_WIZ_MSG_STEP2, S20_WIZ_REGISTER, S20_WIZ_STEP,
+  // brief-tracker-default-off §3.4: 対象選択タブ・登録サブタブの「人検出が
+  // 止まっています」表示（TrackerControl 側の TRACKER_* は部品が import する）。
+  TRACKER_OFF, TRACKER_STOP_DENIED,
 } from '../i18n/screens.js'
 
 // brief-onsite-ux UX-1: prepSteps() が返す段 id → 表示ラベル（i18n の定数）。
@@ -92,6 +98,9 @@ function yawDeg(pin) {
 export default function S20Prep() {
   const { ros, state, stale } = useSystemState()
   const sendTrigger = useTrigger()
+  // brief-tracker-default-off §3.4: 人検出の開始/停止（/system/set_flag
+  // tracker_enabled）。状態の正本は server（state.tracker_enabled）。
+  const setFlag = useSetFlag()
   const pins = useOnsitePins(ros)
   const personTargets = usePersonTargets(ros)
   const personStatus = usePersonStatus(ros)
@@ -151,6 +160,15 @@ export default function S20Prep() {
   const isRegister = stateName === 'REGISTER'
   const homePinExists = pins.some((p) => p.kind === 'HOME')
   const unsaved = Array.isArray(state?.unsaved) && state.unsaved.length > 0
+
+  // brief-tracker-default-off §3.4: 人検出フラグと「起動中（候補まだ出ない）」判定。
+  // 候補 0 件でも追跡対象（selected_index≠-1）はあり得るが、Act on it 側は
+  // 検出候補の有無で「起動中」表示を切り替える（RadarSelect と同じ入力）。
+  const trackerEnabled = state?.tracker_enabled === true
+  const hasCandidate = Array.isArray(personTargets.candidates)
+    && personTargets.candidates.length > 0
+  const trackerCanStop = trackerStopAllowed(state?.mode, stateName)
+  const trackerStopDenied = trackerCanStop ? null : TRACKER_STOP_DENIED
 
   // MAP-1: 追従対象者を地図上に表示。/person/status は base_link 相対なので
   // baseToWorld() で map 座標に変換する（routePose は map フレーム）。is_lost の
@@ -478,13 +496,28 @@ export default function S20Prep() {
 
         {tab === 'target' && (
           <div className="tabpane on">
-            <RadarSelect
-              candidates={personTargets.candidates}
-              selectedIndex={personTargets.selected_index}
-              isLost={personTargets.is_lost}
-              confidence={personTargets.confidence}
-              onSelect={handleSelectTarget}
+            {/* brief-tracker-default-off §3.4: 人検出が止まっている間は中心に
+                「人検出を開始」を出し、レーダーは出さない（候補は定義上無い）。
+                TrackerControl が開始/停止/起動中/理由を担う。 */}
+            <TrackerControl
+              enabled={trackerEnabled}
+              hasCandidate={hasCandidate}
+              canStop={trackerCanStop}
+              stopDeniedReason={trackerStopDenied}
+              onStart={() => setFlag(TRACKER_FLAG, true, 's20-target')}
+              onStop={() => setFlag(TRACKER_FLAG, false, 's20-target')}
+              disabled={disabledAll}
+              testId="s20"
             />
+            {trackerEnabled && (
+              <RadarSelect
+                candidates={personTargets.candidates}
+                selectedIndex={personTargets.selected_index}
+                isLost={personTargets.is_lost}
+                confidence={personTargets.confidence}
+                onSelect={handleSelectTarget}
+              />
+            )}
           </div>
         )}
       </div>
@@ -552,12 +585,18 @@ export default function S20Prep() {
             <div className="tabpane on">
               <div className="card">
                 <h3>{S20_REGISTER_TITLE}</h3>
+                {/* brief-tracker-default-off §3.4: 人検出が止まっている間は 2 点指示の
+                    登録を始められない（guard target_confident が対象を要する）。
+                    ボタンを非活性にし、理由も出す。*/}
+                {!trackerEnabled && (
+                  <div className="note" data-testid="s20-reg-tracker-off">{TRACKER_OFF}</div>
+                )}
                 <div className="btnrow n2 mb">
                   <button
                     type="button"
                     className="btn sm btn-register"
                     data-testid="s20-reg-home"
-                    disabled={disabledAll || pinWarn.active}
+                    disabled={disabledAll || pinWarn.active || !trackerEnabled}
                     onClick={() => handleRegister('HOME')}
                   >
                     <IconPin />
@@ -567,7 +606,7 @@ export default function S20Prep() {
                     type="button"
                     className="btn sm btn-register"
                     data-testid="s20-reg-panel"
-                    disabled={disabledAll || pinWarn.active}
+                    disabled={disabledAll || pinWarn.active || !trackerEnabled}
                     onClick={() => handleRegister('PANEL')}
                   >
                     <IconPin />

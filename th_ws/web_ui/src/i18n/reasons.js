@@ -27,6 +27,11 @@ export const REJECT_REASONS = {
   // pin_registrar.py が返す reject_reason_key をそのままキーにする（target_lost は
   // 登録専用で、既存の対象選択用 tracker_lost とは別物として両方残す）。
   no_target: '対象が検出されていません',
+  // brief-tracker-default-off §3.1: state_manager が tracker_enabled=false を
+  // 拒否したときの理由キー（SUMMON 全状態・PREP/REGISTER）。UI 側は同じ状態で
+  // 「人検出を停止」を予め無効化するので、主に競合（押した瞬間の遷移など）で
+  // 届く。キー→日本語の対応はここで保つ。
+  tracker_required: '人検出が必要です',
   target_lost: '対象を見失っています',
   low_confidence: '追跡信頼度が不足しています',
   no_map_tf: '自己位置（地図座標）が取得できません',

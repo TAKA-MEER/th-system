@@ -22,6 +22,7 @@
 import { useEffect, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
+import { useSetFlag, TRACKER_FLAG } from '../ros/useSetFlag.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
 import { usePersonTargets } from '../ros/usePersonTargets.js'
 import { usePersonStatus } from '../ros/usePersonStatus.js'
@@ -34,7 +35,9 @@ import { useOnsiteCostmap } from '../ros/useCostmap.js'
 import { usePlannedPath } from '../ros/usePlannedPath.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
+import { trackerStopAllowed } from '../modes/trackerControlPolicy.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
+import TrackerControl from '../parts/TrackerControl.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
 import { scanToPoints } from '../parts/scanToPoints.js'
 import StepBar from '../parts/StepBar.jsx'
@@ -67,6 +70,9 @@ import {
   S21_TARGET_NOT_SELECTABLE,
   S21_WAIT_CANCEL, S21_WAIT_CLEARING, S21_WAIT_DIST, S21_WAIT_TITLE,
   S21_WORKING, S21_WORK_ON, S21_WORK_OFF,
+  // brief-tracker-default-off §3.4: 呼び寄せサブタブの「人検出が止まって
+  // います」表示。
+  TRACKER_OFF,
 } from '../i18n/screens.js'
 
 // brief-onsite-ux-fix UX-6-a: onsiteReasons() は画面ローカルの意味キーだけを
@@ -112,6 +118,9 @@ function waitBarPct(wait) {
 export default function S21Test({ onExit }) {
   const { ros, state, stale } = useSystemState()
   const sendTrigger = useTrigger()
+  // brief-tracker-default-off §3.4: 人検出の開始/停止（/system/set_flag
+  // tracker_enabled）。状態の正本は server（state.tracker_enabled）。
+  const setFlag = useSetFlag()
   const pins = useOnsitePins(ros)
   const personTargets = usePersonTargets(ros)
   const personStatus = usePersonStatus(ros)
@@ -134,6 +143,13 @@ export default function S21Test({ onExit }) {
   const working = stateName === 'WORKING'
   const showWizard = mode === 'SUMMON' && stateName === 'POINT'
   const showWait = mode === 'SUMMON' && stateName === 'WAIT_CLEAR'
+
+  // brief-tracker-default-off §3.4: 人検出フラグと「起動中（候補まだ出ない）」判定。
+  // SUMMON（全状態）は人検出が要るので「停止」を事前無効化して理由を出す。
+  const trackerEnabled = state?.tracker_enabled === true
+  const hasCandidate = Array.isArray(personTargets.candidates)
+    && personTargets.candidates.length > 0
+  const trackerCanStop = trackerStopAllowed(mode, stateName)
 
   // MAP-1: 追従対象者を地図上に表示。base_link 相対を baseToWorld() で map 座標に
   // 変換する（routePose は map フレーム）。is_lost のときや routePose が未取得の
@@ -427,7 +443,18 @@ export default function S21Test({ onExit }) {
 
         {tab === 'target' && (
           <div className="tabpane on">
-            {mode === 'SUMMON' && stateName === 'POINT' ? (
+            {/* brief-tracker-default-off §3.4: 中心に人検出の開始/停止。OFF の間は
+                レーダーは出さない（候補は定義上無い）。停止は SUMMON では押せない。 */}
+            <TrackerControl
+              enabled={trackerEnabled}
+              hasCandidate={hasCandidate}
+              canStop={trackerCanStop}
+              onStart={() => setFlag(TRACKER_FLAG, true, 's21-target')}
+              onStop={() => setFlag(TRACKER_FLAG, false, 's21-target')}
+              disabled={disabledAll}
+              testId="s21"
+            />
+            {trackerEnabled && (mode === 'SUMMON' && stateName === 'POINT' ? (
               <RadarSelect
                 candidates={personTargets.candidates}
                 selectedIndex={personTargets.selected_index}
@@ -442,7 +469,7 @@ export default function S21Test({ onExit }) {
               <div className="note" data-testid="s21-target-unavailable">
                 {S21_TARGET_NOT_SELECTABLE}
               </div>
-            )}
+            ))}
           </div>
         )}
       </div>
@@ -711,11 +738,17 @@ export default function S21Test({ onExit }) {
             <div className="tabpane on">
               <div className="card">
                 <h3>{S21_SUMMON_TITLE}</h3>
+                {/* brief-tracker-default-off §3.4: 人検出が止まっている間は呼び寄せ
+                    （2 点指示）を始められない（人検出が要る）。ボタンを非活性にし、
+                    理由も出す。 */}
+                {!trackerEnabled && (
+                  <div className="note" data-testid="s21-summon-tracker-off">{TRACKER_OFF}</div>
+                )}
                 <button
                   type="button"
                   className="btn primary wide"
                   data-testid="s21-summon-start"
-                  disabled={disabledAll}
+                  disabled={disabledAll || !trackerEnabled}
                   onClick={startSummon}
                 >
                   <IconArrow />

@@ -38,6 +38,10 @@ from th_system_msgs.srv import SetFlag, UiTrigger
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
 from th_state.state_core import BOOT_MODE, ESTOP_MODE, Context, StateCore
+# brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
+# 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
+from th_state.tracker_policy import (TRACKER_OFF_DENIED_REASON,
+                                      tracker_autostop, tracker_off_denied)
 from th_state.zones import (ScreenInput, combine_speed_limits, derive_limits,
                              mode_speed_limit)
 
@@ -346,8 +350,19 @@ class StateManager(Node):
 
         self._last_reject_reason = "" if decision.accepted else decision.reject_reason_key
 
+        old_mode = self.mode
         self.mode = decision.to_mode
         self.state = decision.to_state
+
+        # brief-tracker-default-off §3.1: 「動かさない」モードへ遷移したら
+        # tracker_enabled を自動で false に落とす（ESTOP / CARRY は対象外。
+        # 判定は tracker_policy.py に集約。N-1 のためモード名はここに書かない）。
+        # 「モードが変わった」ときだけ（同モード内の state 遷移では落とさない）。
+        if (decision.accepted and self.mode != old_mode
+                and self._flags["tracker_enabled"] and tracker_autostop(decision.to_mode)):
+            self._flags["tracker_enabled"] = False
+            self.get_logger().info(
+                '「動かさない」モードへ遷移したため tracker_enabled=false に自動停止した')
 
         # ESTOP が UI ボタン起因かどうかのラッチ（SM-3.1.1-11。guards._estop_resume_prev が読む）。
         # ESTOP を離れたらクリア。UI ボタンで ESTOP に入ったら True、重大フォルトで入ったら False。
@@ -519,6 +534,13 @@ class StateManager(Node):
         if req.flag not in _SETTABLE_FLAGS:
             res.accepted = False
             res.reject_reason_key = "not_allowed"
+            return res
+        # brief-tracker-default-off §3.1: 要 person の状態（SUMMON 全状態・PREP/REGISTER）
+        # では OFF できない（Spec-modes.md §5.1-2）。判定は tracker_policy.py に集約。
+        if (req.flag == "tracker_enabled" and not req.value
+                and tracker_off_denied(self.mode, self.state)):
+            res.accepted = False
+            res.reject_reason_key = TRACKER_OFF_DENIED_REASON
             return res
         self._flags[req.flag] = bool(req.value)
         res.accepted = True

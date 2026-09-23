@@ -37,7 +37,7 @@ const TARGETS = {
   lost_reason: '',
 }
 
-const PREP = { mode: 'PREP', state: 'MAPPING' }
+const PREP = { mode: 'PREP', state: 'MAPPING', tracker_enabled: true }
 
 // 最小 OccupancyGrid: 4×4, res 0.5, origin (-1,-1) → world x/y ∈ [-1,1]。
 // 0 自由 / 100 占有 / -1 未知（RoutePreview e2e と同じ形）。

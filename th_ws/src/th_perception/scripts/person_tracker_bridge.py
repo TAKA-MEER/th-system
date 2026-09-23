@@ -37,10 +37,11 @@ import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy
+from rclpy.qos import (QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy,
+                       QoSReliabilityPolicy)
 from std_msgs.msg import Bool
 from geometry_msgs.msg import Point
-from th_system_msgs.msg import PersonStatus, PersonTargets, StateEffect, StateEvent
+from th_system_msgs.msg import PersonStatus, PersonTargets, StateEffect, StateEvent, SystemState
 from multiple_sensor_person_tracking.msg import FollowingPosition, PersonCandidates
 from multiple_sensor_person_tracking.srv import SelectTarget
 from std_srvs.srv import Trigger
@@ -50,9 +51,17 @@ from person_tracker_bridge_core import (
     match_selected_index,
     auto_select_step,
     apply_lost_grace,
+    apply_disabled,
     AutoSelectState,
     LostGraceState,
     STATUS_EXISTS_LEG,
+)
+
+_shared_state_qos = QoSProfile(
+    depth=1,
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    history=QoSHistoryPolicy.KEEP_LAST,
+    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
 )
 
 # W-13 解除: 挙動値（保持・照合・確信度）は registry.yaml 駆動。
@@ -125,6 +134,10 @@ class PersonTrackerBridge(Node):
         self._selected_index = -1        # マッチングによる選択中 index
         self._auto_selected = False      # 自動選択発火済みフラグ（1人継続で再発火しない）
         self._lost_grace = LostGraceState()  # brief-onsite-ux2 F-4: is_lost のデバウンス
+        # brief-tracker-default-off §3.3: 人物検出 ON/OFF（/system/state）。
+        # 起動直後は OFF（既定）。実体は state_manager の tracker_enabled が正。
+        self._tracker_enabled = False
+        self._disabled = True
 
         # ── Subscribers ─────────────────────────────────────
         self.create_subscription(
@@ -155,6 +168,13 @@ class PersonTrackerBridge(Node):
             event_qos,
             callback_group=sub_cbg,
         )
+        self.create_subscription(
+            SystemState,
+            '/system/state',
+            self._on_system_state,
+            _shared_state_qos,
+            callback_group=sub_cbg,
+        )
 
         # ── Service clients (stub 運用では未提供 → wait_for_service で見極める) ──
         self._select_client = self.create_client(
@@ -181,6 +201,10 @@ class PersonTrackerBridge(Node):
         self._candidates = [(p.x, p.y) for p in msg.positions]
         self._recompute_and_publish()
 
+    # brief-tracker-default-off §3.3: 人物検出 OFF 中は強制 lost にする。
+    def _on_system_state(self, msg: SystemState):
+        self._tracker_enabled = bool(msg.tracker_enabled)
+
     # ── 再計算・再 publish ───────────────────────────────
     def _recompute_and_publish(self):
         now_ms = int(self.get_clock().now().nanoseconds / 1e6)
@@ -192,43 +216,53 @@ class PersonTrackerBridge(Node):
         # 猶予中に一度も発行されない（復帰時にイベントを出さない、を自動的に満たす）。
         self._lost_grace, decision = apply_lost_grace(
             self._lost_grace, decision, now_ms, self._lost_grace_ms)
+        # brief-tracker-default-off §3.3: OFF 中は検出状態を強制 lost にする。
+        self._disabled = not self._tracker_enabled
+        decision = apply_disabled(decision, self._tracker_enabled)
         is_lost = decision.is_lost
         lost_reason = decision.lost_reason
 
-        # 選択中 index（追跡座標に最も近い候補）
+        # 選択中 index（追跡座標に最も近い候補）。OFF 中は is_lost が True なので
+        # match_selected_index は自動的に -1 を返す。
         followed_xy = None if is_lost else self._last_position
         self._selected_index = match_selected_index(
             self._candidates, followed_xy, is_lost, self._match_tol_m)
 
-        # 自動選択: 候補がちょうど1つ・まだ選ばれていない・追跡継続中のみ
-        already_selected = self._selected_index >= 0 or self._auto_selected
-        state, idx = auto_select_step(
-            self._auto_select, len(self._candidates), now_ms,
-            int(self._auto_select_hold_s * 1000), already_selected)
-        self._auto_select = state
-        if idx >= 0:
-            self._auto_selected = True
-            self._selected_index = idx
-            self.get_logger().info(
-                f'自動選択: 候補1つが {self._auto_select_hold_s}s 継続 → select_target(0)')
-            self._call_select(idx)
-            self._emit_event('evt.auto_selected', json.dumps({'index': idx}))
+        # 自動選択: 候補がちょうど1つ・まだ選ばれていない・追跡継続中のみ。
+        # OFF 中は実施しない（select サービス呼び出しを抑止）。状態も進めない
+        # （OFF→ON で hold が最初から数え直せるようにする）。
+        if not self._disabled:
+            already_selected = self._selected_index >= 0 or self._auto_selected
+            state, idx = auto_select_step(
+                self._auto_select, len(self._candidates), now_ms,
+                int(self._auto_select_hold_s * 1000), already_selected)
+            self._auto_select = state
+            if idx >= 0:
+                self._auto_selected = True
+                self._selected_index = idx
+                self.get_logger().info(
+                    f'自動選択: 候補1つが {self._auto_select_hold_s}s 継続 → select_target(0)')
+                self._call_select(idx)
+                self._emit_event('evt.auto_selected', json.dumps({'index': idx}))
 
-        # evt.target_lost の edge 検出（連続 lost では出し続けない）
+        # evt.target_lost の edge 検出（連続 lost では出し続けない）。
+        # OFF 化（tracking中のモードを止めたとき）も is_lost False→True と同じ
+        # edge として 1 回だけ発行する。
         if self._prev_lost is not None and is_lost and not self._prev_lost:
             self._emit_event('evt.target_lost')
         self._prev_lost = is_lost
 
-        # /person/targets を publish
+        # /person/targets を publish（OFF 中は候補を出さない）
         targets = PersonTargets()
         targets.header.stamp = self._last_stamp if self._last_stamp is not None else self.get_clock().now().to_msg()
         targets.header.frame_id = 'base_link'
-        for (cx, cy) in self._candidates:
-            p = Point()
-            p.x = cx
-            p.y = cy
-            targets.candidates.append(p)
-        targets.selected_index = self._selected_index
+        if not self._disabled:
+            for (cx, cy) in self._candidates:
+                p = Point()
+                p.x = cx
+                p.y = cy
+                targets.candidates.append(p)
+        targets.selected_index = -1 if self._disabled else self._selected_index
         targets.confidence = decision.confidence
         targets.is_lost = is_lost
         targets.lost_reason = lost_reason
@@ -249,6 +283,12 @@ class PersonTrackerBridge(Node):
     # ── /system/effect ───────────────────────────────────
     def _on_effect(self, msg: StateEffect):
         if msg.dest != 'person_tracker':
+            return
+        # brief-tracker-default-off §3.3: OFF 中は選択系の effect を無視する
+        # （PersonTracker へ select/reset を呼ばない）。
+        if self._disabled:
+            self.get_logger().debug(
+                f'人物検出 OFF 中のため effect {msg.name} を無視 (dest={msg.dest})')
             return
         if msg.name == 'set_target':
             try:

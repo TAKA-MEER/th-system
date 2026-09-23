@@ -11,6 +11,7 @@ from person_tracker_bridge_core import (
     match_selected_index,
     auto_select_step,
     apply_lost_grace,
+    apply_disabled,
     AutoSelectState,
     BridgeDecision,
     LostGraceState,
@@ -195,3 +196,32 @@ class TestApplyLostGrace:
         assert out1.is_lost is True
         s, out2 = apply_lost_grace(s, lost, now_ms=10000, grace_ms=1500)  # さらに後
         assert out2.is_lost is True
+
+
+class TestApplyDisabled:
+    """brief-tracker-default-off §3.3: 人物検出 OFF（tracker_enabled=false）中は
+    検出状態を強制 lost にする（真に検出済みでも出力側から隠す）。"""
+
+    def test_disabled_forces_lost_with_disabled_reason(self):
+        tracked = BridgeDecision(is_lost=False, lost_reason="", confidence=TRACKED_CONFIDENCE)
+        out = apply_disabled(tracked, tracker_enabled=False)
+        assert out.is_lost is True
+        assert out.lost_reason == "disabled"
+        assert out.confidence == 0.0
+
+    def test_disabled_masks_detection_lost_too(self):
+        """OFF 中は元の判定が lost でも（理由を変えないまま通さずに）disabled に揃える。"""
+        lost = BridgeDecision(is_lost=True, lost_reason="DETECTION_LOST", confidence=0.0)
+        out = apply_disabled(lost, tracker_enabled=False)
+        assert out.is_lost is True
+        assert out.lost_reason == "disabled"
+
+    def test_enabled_passes_through_tracked(self):
+        tracked = BridgeDecision(is_lost=False, lost_reason="", confidence=TRACKED_CONFIDENCE)
+        out = apply_disabled(tracked, tracker_enabled=True)
+        assert out == tracked
+
+    def test_enabled_passes_through_lost(self):
+        lost = BridgeDecision(is_lost=True, lost_reason="DETECTION_LOST", confidence=0.0)
+        out = apply_disabled(lost, tracker_enabled=True)
+        assert out == lost

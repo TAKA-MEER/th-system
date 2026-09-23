@@ -480,6 +480,16 @@ def generate_launch_description():
                 parameters=[os.path.join(GENERATED_DIR, 'person_tracker_bridge.yaml')],
                 output='screen',
             ),
+            # brief-tracker-default-off §3.2: DR-SPAAM の起動/停止アクチュエータ。
+            # leg_detection.launch.py 側で DR-SPAAM は auto_configure のみにし、
+            # /system/state の tracker_enabled に応じて activate する。
+            # （自動起動の person_tracker 自体がデータを流すのは DR-SPAAM 稼働後）
+            Node(
+                package='th_perception',
+                executable='dr_spaam_lifecycle_controller.py',
+                name='dr_spaam_lifecycle_controller',
+                output='screen',
+            ),
         ],
         condition=IfCondition(_perception_real),
     ))
