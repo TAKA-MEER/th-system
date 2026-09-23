@@ -3,9 +3,15 @@
 ROS2 非依存（ノードを起動しない・最速）。Spec-safety.md §3.5.0 の A と C、
 起動猶予、B を出さないことを検証する。
 """
+import os
+
 import pytest
+import yaml
 
 from th_state.localization_health_core import (
+    MONITORED_MODES,
+    PREP_MONITORED_STATES,
+    REASON_INACTIVE,
     REASON_JUMP,
     REASON_NODE_DOWN,
     REASON_OK,
@@ -18,6 +24,7 @@ from th_state.localization_health_core import (
     check_planned_restart,
     detect_jump,
     evaluate,
+    is_localization_in_use,
 )
 
 
@@ -295,3 +302,93 @@ def test_duplicate_true_does_not_extend_restart():
     上限が効く（ノードが edge でのみ記録することの裏付け）。"""
     # 同じ true_since のまま時間が進めば上限で切れる。
     assert _restart(109_001, True, 100_000, None) == (False, REASON_RESTART_TIMEOUT)
+
+
+# ============================================================================
+# WP-SAFE-05修正: is_localization_in_use（モードゲート）
+# ============================================================================
+
+def test_in_use_monitored_modes_whole_regardless_of_state():
+    """監視する 4 モードはモード全体（状態は見ない）。"""
+    assert MONITORED_MODES == {"REPLAY", "PANEL_NAV", "SUMMON", "HOME_NAV"}
+    for mode in ("REPLAY", "PANEL_NAV", "SUMMON", "HOME_NAV"):
+        for state in ("RUN", "NAV", "PAUSE", "ALIGN", "BLOCKED", "LOCALIZE",
+                      "READY", "NONE", None):
+            assert is_localization_in_use(mode, state) is True, (
+                f"{mode}/{state} が監視対象にならない")
+
+
+def test_in_use_prep_only_return():
+    """PREP は RETURN のときだけ監視する。"""
+    assert PREP_MONITORED_STATES == {"RETURN"}
+    assert is_localization_in_use("PREP", "RETURN") is True
+    for state in ("MAPPING", "REGISTER", "EDIT", "SAVED", "NONE", None):
+        assert is_localization_in_use("PREP", state) is False, (
+            f"PREP/{state} が監視対象になっている")
+
+
+def test_in_use_others_not_monitored():
+    """それ以外は監視しない（IDLE／MANUAL／CARRY／教示／停止中／点検／
+    校正／起動中／ESTOP…）。"""
+    cases = [
+        ("IDLE", "NONE"),
+        ("MANUAL", "RUN"),
+        ("MANUAL", "PAUSE"),
+        ("CARRY", "NONE"),
+        ("TEACH_FOLLOW", "REC"),
+        ("TEACH_MANUAL", "REC"),
+        ("AT_PANEL", "IDLE_P"),
+        ("AT_HOME", "IDLE_H"),
+        ("OPCHECK", "LIST"),
+        ("CALIB", "LIST"),
+        ("INIT", "CHECK"),
+        ("ESTOP", "NONE"),
+        ("FOLLOW", "RUN"),
+        ("LINE", "RUN"),
+        ("LEASH", "RUN"),
+    ]
+    for mode, state in cases:
+        assert is_localization_in_use(mode, state) is False, (
+            f"{mode}/{state} が監視対象になっている")
+
+
+def test_in_use_none_means_not_monitored():
+    """/system/state 未受信（None）は監視しない（起動中は INIT なので同じ）。"""
+    assert is_localization_in_use(None, None) is False
+    assert is_localization_in_use(None, "RUN") is False
+    assert is_localization_in_use("IDLE", None) is False
+
+
+def test_inactive_reason_constant():
+    """監視外の理由コードは "inactive"（msg コメントが正）。"""
+    assert REASON_INACTIVE == "inactive"
+
+
+def test_mode_state_names_exist_in_config():
+    """表のモード名・状態名が実在すること（打ち間違いで監視が黙って切れるのを
+    防ぐ）。attributes.yaml のモードキーと、transitions.yaml の PREP/RETURN を
+    照合する。"""
+    repo_src = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    with open(os.path.join(repo_src, "th_state", "config", "attributes.yaml"),
+              encoding="utf-8") as f:
+        attributes = yaml.safe_load(f)
+    for mode in ("REPLAY", "PANEL_NAV", "SUMMON", "HOME_NAV", "PREP",
+                 "IDLE", "MANUAL", "AT_PANEL", "AT_HOME"):
+        assert mode in attributes, f"attributes.yaml にモード {mode} が無い"
+    assert "RETURN" in (attributes["PREP"].get("prep_states") or []), (
+        "attributes.yaml の PREP prep_states に RETURN が無い")
+
+    with open(os.path.join(repo_src, "th_state", "config", "transitions.yaml"),
+              encoding="utf-8") as f:
+        transitions = yaml.safe_load(f)
+    prep_states: set[str] = set()
+    for row in transitions:
+        if row.get("mode") != "PREP":
+            continue
+        state = row.get("state")
+        if isinstance(state, list):
+            prep_states.update(state)
+        elif isinstance(state, str):
+            prep_states.add(state)
+    assert "RETURN" in prep_states, (
+        "transitions.yaml に PREP の RETURN 状態が無い")
