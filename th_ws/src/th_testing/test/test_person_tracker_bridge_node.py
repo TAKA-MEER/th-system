@@ -135,6 +135,13 @@ class TestPersonTrackerBridgeNode(unittest.TestCase):
             self._spin(0.05)
         return len(self._targets) > base
 
+    def _wait_status(self, timeout: float = 3.0):
+        base = len(self._status)
+        deadline = time.time() + timeout
+        while time.time() < deadline and len(self._status) == base:
+            self._spin(0.05)
+        return len(self._status) > base
+
     def _publish_tracker_state(self, enabled: bool):
         self.pub_state.publish(SystemState(tracker_enabled=enabled))
         self._spin(0.3)
@@ -157,6 +164,7 @@ class TestPersonTrackerBridgeNode(unittest.TestCase):
         self.pub_cands.publish(cands)
         self.pub_stop.publish(Bool(data=False))
         self._wait_targets()
+        self._wait_status()
 
     def _publish_effect(self, name: str):
         ev = StateEffect()
