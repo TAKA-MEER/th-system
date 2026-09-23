@@ -26,8 +26,34 @@ REASON_NODE_DOWN = "node_down"  # C: 推定ノード不在
 REASON_JUMP = "jump"          # B′: map→odom が比較周期に許容超で動いた
 REASON_RESTARTING = "restarting"  # O-e3: 計画的な再起動中（保留。フォルトではない）
 REASON_RESTART_TIMEOUT = "restart_timeout"  # O-e3: 再起動が上限を超過（本物の異常）
+REASON_INACTIVE = "inactive"  # WP-SAFE-05修正: 自律走行しないモードのため監視外
+# （safety_monitor には ok=true として届く。transform_age_sec／node_present は生値）
 # ゆっくり間違っていく用（O-e2）の予約。範囲外のため出さない。
 # REASON_LOW_CONFIDENCE = "low_confidence"
+
+# Spec-safety.md §3.5.0「使っていない間は監視しない」のモード表
+# （2026-09-23 具体化）。「使っている」＝自己位置推定に従って自律走行する
+# モードにいる間。モード単位で決める（向き合わせ・自動再試行のような「人が
+# 押さなくても動き出す」場面を取りこぼさないため）。試験準備だけは地図作成が
+# 中心なので自動帰還（RETURN）の間に限る。
+MONITORED_MODES = frozenset({"REPLAY", "PANEL_NAV", "SUMMON", "HOME_NAV"})
+PREP_MONITORED_STATES = frozenset({"RETURN"})
+
+
+def is_localization_in_use(mode: Optional[str], state: Optional[str]) -> bool:
+    """/system/state の mode/state から監視対象かを返す（純関数）。
+
+    - REPLAY / PANEL_NAV / SUMMON / HOME_NAV はモード全体（状態は見ない）
+    - PREP は状態が RETURN のときだけ
+    - それ以外すべて・未受信（None）は監視しない（起動中は INIT なので同じ）
+    """
+    if mode is None:
+        return False
+    if mode in MONITORED_MODES:
+        return True
+    if mode == "PREP":
+        return state in PREP_MONITORED_STATES
+    return False
 
 
 @dataclass(frozen=True)

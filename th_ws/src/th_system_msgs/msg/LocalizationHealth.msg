@@ -15,6 +15,8 @@
 #                    （A・C・B′ を保留する。フォルトではない）
 #   "restart_timeout" O-e3: 再起動が上限（localization_restart_max_ms）を超過
 #                    （立て直しが終わらない本物の異常）
+#   "inactive"       自律走行しないモードのため監視外。safety_monitor には
+#                    ok=true として届く。transform_age_sec／node_present は生の値
 #   "low_confidence" ゆっくり間違っていく用（O-e2）の予約。出さない。
 #
 # 優先順位は node_down ＞ stale ＞ jump（localization_health_core.py の

@@ -29,6 +29,10 @@ test_a_ 順序制御・setup-clear 競合の避け方）。
 
 試験用に上限・猶予を短くする（restart_max 3 秒・grace 1.5 秒・warmup 1 秒）。
 
+WP-SAFE-05修正: 試験側は /system/state を監視するモード（REPLAY/RUN）で
+出し続ける。出さないと mode gate が inactive を配信し、a〜f の検査が黙って
+何も検査しなくなる。QoS は state_manager と同じ TRANSIENT_LOCAL。
+
 e/f（B′ が再起動をまたがない）用に 2 台目のノードを立てる。a〜d 用の
 1 台目は expected_nodes が不在前提だが、e/f は base が ok になること
 （ノード在席＋新鮮な TF＋猶予明け）が要るため、1 台では両立しない。
@@ -44,7 +48,8 @@ import pytest
 import rclpy
 import tf2_ros
 from geometry_msgs.msg import TransformStamped
-from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
+from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
+                       QoSReliabilityPolicy)
 from std_msgs.msg import Bool
 
 import launch
@@ -52,7 +57,7 @@ import launch_ros.actions
 import launch_testing
 import launch_testing.actions
 
-from th_system_msgs.msg import LocalizationHealth
+from th_system_msgs.msg import LocalizationHealth, SystemState
 
 
 WARMUP_MS = 1000
@@ -67,6 +72,16 @@ _RESTART_QOS = QoSProfile(
     depth=1,
     reliability=QoSReliabilityPolicy.RELIABLE,
     durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+
+# WP-SAFE-05修正: /system/state を監視するモード（REPLAY/RUN）で出し続ける。
+# mode gate が入ったため、出さないと全試験が inactive になって「常に監視」
+# 前提の検査が黙って何も検査しなくなる。QoS は state_manager と同じ
+# （TRANSIENT_LOCAL。VOLATILE ではノード側に届かない）。
+_STATE_QOS = QoSProfile(
+    depth=1,
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+    history=QoSHistoryPolicy.KEEP_LAST)
 
 
 @pytest.mark.launch_test
@@ -147,6 +162,13 @@ class TestPlannedRestartNode(unittest.TestCase):
         self._restart_value = True
         self._restart_timer = self.node.create_timer(0.5, self._publish_restart)
 
+        # WP-SAFE-05修正: 監視するモードで /system/state を出し続ける。
+        # 出さないと mode gate が inactive を配信し、a の node_down 等が
+        # 出なくなる（黙って何も検査しないのが最悪のためここで縛る）。
+        self.pub_state = self.node.create_publisher(
+            SystemState, '/system/state', _STATE_QOS)
+        self._state_timer = self.node.create_timer(0.5, self._publish_state)
+
         # e/f 用の TF 階段。map→odom を動かす。10Hz で現在値を出し続ける。
         self._tf_x = 0.0
         self._tf_yaw = 0.0
@@ -162,6 +184,10 @@ class TestPlannedRestartNode(unittest.TestCase):
             self._restart_timer.cancel()
             self.node.destroy_timer(self._restart_timer)
             self._restart_timer = None
+        if getattr(self, '_state_timer', None) is not None:
+            self._state_timer.cancel()
+            self.node.destroy_timer(self._state_timer)
+            self._state_timer = None
         if getattr(self, '_tf_timer', None) is not None:
             self._tf_timer.cancel()
             self.node.destroy_timer(self._tf_timer)
@@ -173,6 +199,14 @@ class TestPlannedRestartNode(unittest.TestCase):
         deadline = time.time() + duration
         while time.time() < deadline:
             rclpy.spin_once(self.node, timeout_sec=0.05)
+
+    def _publish_state(self):
+        """監視するモード（REPLAY/RUN）を出し続ける。"""
+        msg = SystemState()
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.mode = 'REPLAY'
+        msg.state = 'RUN'
+        self.pub_state.publish(msg)
 
     def _publish_restart(self):
         if not self._restart_enabled:

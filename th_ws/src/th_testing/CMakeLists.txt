@@ -324,6 +324,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_planned_restart_node
     test/test_planned_restart_node.py
     TIMEOUT 180)
+  # mode gate の Docker launch テスト（WP-SAFE-05修正 §2。
+  # IDLE で inactive（生値のまま）・PANEL_NAV で1秒以内に ng・
+  # PREP/MAPPING で inactive・PREP/RETURN で ng）
+  ament_add_pytest_test(test_localization_mode_gate_node
+    test/test_localization_mode_gate_node.py
+    TIMEOUT 180)
   # slam_control の再起動通知のインプロセス振る舞い試験（O-e3。
   # 読み直し・破棄・例外・クラッシュ。rclpy 要＝ホスト除外。TIMEOUT 60）
   ament_add_pytest_test(test_slam_control_restart
