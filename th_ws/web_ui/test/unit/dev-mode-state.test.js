@@ -10,8 +10,14 @@ import {
 
 const FULL = {
   dev_mode: true,
-  ignore: { link: true, battery: false, opcheck: true, auto_brake: false },
-  effective: { link: true, battery: false, opcheck: false, auto_brake: false },
+  ignore: {
+    link: true, lidar_fault: true, scan_stop: false,
+    battery: false, opcheck: true, auto_brake: false,
+  },
+  effective: {
+    link: true, lidar_fault: true, scan_stop: false,
+    battery: false, opcheck: false, auto_brake: false,
+  },
   estop_hw_known: true,
   estop_hw_pressed: false,
 }
@@ -34,23 +40,30 @@ test('parseDevModeState: 壊れた文字列・null・配列は null', () => {
 test('parseDevModeState: 欠けたキーは偽で埋める（沈黙は安全側＝無視なし）', () => {
   assert.deepEqual(parseDevModeState('{}'), {
     dev_mode: false,
-    ignore: { link: false, battery: false, opcheck: false, auto_brake: false },
-    effective: { link: false, battery: false, opcheck: false, auto_brake: false },
+    ignore: {
+      link: false, lidar_fault: false, scan_stop: false,
+      battery: false, opcheck: false, auto_brake: false,
+    },
+    effective: {
+      link: false, lidar_fault: false, scan_stop: false,
+      battery: false, opcheck: false, auto_brake: false,
+    },
     estop_hw_known: false,
     estop_hw_pressed: false,
   })
 })
 
 test('effectiveItems: 実効 true の項目だけを DEV_ITEMS 順で返す', () => {
-  assert.deepEqual(effectiveItems(parseDevModeState(FULL)), ['link'])
+  assert.deepEqual(effectiveItems(parseDevModeState(FULL)), ['link', 'lidar_fault'])
   assert.deepEqual(effectiveItems(null), [])
   assert.deepEqual(parseDevModeState('{}') && effectiveItems(parseDevModeState('{}')), [])
 })
 
 test('定数: ノード・パラメータ名は ROS 側の実装と一致する', () => {
-  // connectivity_checker.py の _DEV_ITEMS / launch の受け取り先と揃える。
-  // 名を変えるときは ROS 側も同時に直すこと。
-  assert.deepEqual(DEV_ITEMS, ['link', 'battery', 'opcheck', 'auto_brake'])
+  // connectivity_checker.py の _DEV_ITEMS・th_safety/dev_mode_core.hpp と揃える。
+  // 名を変えるときは ROS 側も同時に直すこと（test_dev_mode.py が 3 者の一致を縛る）。
+  assert.deepEqual(DEV_ITEMS,
+    ['link', 'lidar_fault', 'scan_stop', 'battery', 'opcheck', 'auto_brake'])
   assert.deepEqual(DEV_NO_GATE_ITEMS, ['battery', 'opcheck', 'auto_brake'])
   assert.equal(DEV_MODE_NODE, 'connectivity_checker')
   assert.equal(DEV_PARAM_MASTER, 'dev_mode')

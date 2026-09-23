@@ -108,7 +108,8 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | 引数 | 既定 | 意味 |
 | --- | --- | --- |
 | `sim` | `false` | Gazebo か実機か |
-| `dev_mode` | `false` | **開発モード。受け取るのは `connectivity_checker` だけ。`safety_monitor` と `obstacle_limiter` には渡さない**（構造的な保証。WP-DEV-01A） |
+| `dev_mode` | `false` | **開発モード。パラメータとして受け取るのは `connectivity_checker` だけ**（正本）。`safety_monitor` と `obstacle_limiter` は `/system/dev_mode` を購読し、`effective` の自分の項目だけに反応する（WP-DEV-01A。2026-09-23 改定・Spec-safety.md §10） |
+| `dev_ignore` | `''` | 開発モードで外す項目（カンマ区切り。`link` / `lidar_fault` / `scan_stop` / `battery` / `opcheck` / `auto_brake`）。`connectivity_checker` の `dev_ignore_at_start` に渡す。`dev_mode:=true` のときだけ効く |
 | `lidar_source` | **`local`** | `local`（USB 直結の `sllidar_node` を起動）/ `network`（ラズパイの `/scan` を使う）。**実装の既定は `local`。実機では `network` を必ず指定する**（`docs/使い方.md` §2。2026-09-21 に設計書が `network` と書いていたのを実装に合わせた） |
 | `imu_enabled` | `false` | 既存 |
 | `scenario` | `''` | Gazebo のシナリオプリセット（既存） |
@@ -118,9 +119,11 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 人物追跡のスタブは `scenario` 側で指定する。
 
 `dev_mode` の受け渡しは `connectivity_checker` のノードローカルパラメータ
-（`dev_mode` 本体＋項目別の `dev_ignore_link` / `dev_ignore_battery` /
-`dev_ignore_opcheck` / `dev_ignore_auto_brake`。`registry.yaml` には載せない。
+（`dev_mode` 本体＋項目別の `dev_ignore_<項目>`（既定はすべて偽）＋起動時の選択
+`dev_ignore_at_start`（文字列）。`registry.yaml` には載せない。
 `sim` と同じ扱い。WP-DEV-01A）で行う。現在の状態は `/system/dev_mode`（§6.2）に出す。
+`safety_monitor`（`lidar_fault`）と `obstacle_limiter`（`scan_stop`）はこれを購読する。
+未受信・3 秒以上更新なし・読めない JSON は「何も外さない」（`th_safety/dev_mode_core.hpp`）。
 
 ---
 
@@ -415,7 +418,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `/system/event` | `StateEvent` | reliable, depth 10 | 事象時 |
 | `/system/effect` | `StateEffect` | reliable, depth 10 | 事象時（`demo-teach-replay` で新設。`state_manager` が self 以外の effect を配送） |
 | `/system/params_status` | `ParamsStatus` | transient_local, depth 1 | 変化時 |
-| `/system/dev_mode` | `std_msgs/String`（JSON。`dev_mode`／項目別の無視指定／実効状態） | transient_local, depth 1, reliable | 1 Hz（発行者は `connectivity_checker`。WP-DEV-01A） |
+| `/system/dev_mode` | `std_msgs/String`（JSON。`dev_mode`／項目別の無視指定／実効状態） | transient_local, depth 1, reliable | 1 Hz（発行者は `connectivity_checker`。WP-DEV-01A。購読者は WebUI・`safety_monitor`・`obstacle_limiter`（2026-09-23）） |
 | `/ui/active_screen` | `ActiveScreen` | reliable, depth 5 | 2 Hz（端末ごと） |
 | `/safety/estop_hw` | `std_msgs/Bool` | reliable | 10 Hz |
 | `/safety/estop_ui` | `std_msgs/Bool` | reliable | 押下・解除時＋2 Hz |

@@ -21,10 +21,13 @@ import {
   S00_CHECK_TITLE, S00_COL_DEVICE, S00_COL_REQ, S00_COL_STATUS, S00_REQUIRED,
   S00_MONITOR, S00_ITEMS, S00_STATUS_CHECKING, S00_STATUS_OK, S00_AP_LABEL,
   S00_AP_NOTE, S00_OVERALL_TITLE, S00_READY, S00_CHECKING, S00_ADVANCE,
+  S00_OPEN_DEV,
 } from '../i18n/screens.js'
 import { DISCONNECTED_LABEL } from '../i18n/states.js'
 
-export default function S00Connect({ onAdvance }) {
+// onOpenSettings（2026-09-23）: 機器が揃わず INIT を抜けられないときに、開発モードの
+// 設定（S-50 の開発モードタブ）へ入って項目を外し、IDLE へ進むための導線。
+export default function S00Connect({ onAdvance, onOpenSettings }) {
   const { state, stale } = useSystemState()
   const mode = state?.mode ?? null
   const ready = !stale && mode != null && mode !== 'INIT'
@@ -72,6 +75,16 @@ export default function S00Connect({ onAdvance }) {
             onClick={onAdvance}
           >
             {S00_ADVANCE}
+          </button>
+        )}
+        {!ready && onOpenSettings && (
+          <button
+            type="button"
+            className="btn wide mt"
+            data-testid="s00-open-dev"
+            onClick={onOpenSettings}
+          >
+            {S00_OPEN_DEV}
           </button>
         )}
       </div>

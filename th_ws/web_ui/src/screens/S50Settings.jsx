@@ -31,9 +31,11 @@ import {
   S50_FONT_TITLE, S50_FONT_NORMAL, S50_FONT_LARGE, S50_FONT_XLARGE,
   S50_DEV_TITLE, S50_DEV_ENABLE, S50_DEV_DISABLE, S50_DEV_NOTE,
   S50_DEV_ITEMS_TITLE, S50_DEV_ITEM_LINK, S50_DEV_ITEM_LINK_DESC,
+  S50_DEV_ITEM_LIDAR_FAULT, S50_DEV_ITEM_LIDAR_FAULT_DESC,
+  S50_DEV_ITEM_SCAN_STOP, S50_DEV_ITEM_SCAN_STOP_DESC,
   S50_DEV_ITEM_BATTERY, S50_DEV_ITEM_OPCHECK, S50_DEV_ITEM_AUTO_BRAKE,
   S50_DEV_NO_GATE, S50_DEV_EFFECTIVE_TITLE, S50_DEV_NONE,
-  S50_DEV_ESTOP_UNKNOWN, S50_DEV_UNIGNORABLE_TITLE, S50_DEV_UNIGNORABLE,
+  S50_DEV_ESTOP_UNKNOWN, S50_DEV_SCOPE_NOTE,
   S50_DEV_SEND_FAILED,
 } from '../i18n/screens.js'
 
@@ -62,6 +64,8 @@ const BLIND_LABELS = ['右前 開始', '右前 終了', '右後 開始', '右後
 // （DEV_NO_GATE_ITEMS。カード末尾の注記で明示する）。
 const DEV_ITEM_META = [
   { item: 'link', label: S50_DEV_ITEM_LINK, desc: S50_DEV_ITEM_LINK_DESC },
+  { item: 'lidar_fault', label: S50_DEV_ITEM_LIDAR_FAULT, desc: S50_DEV_ITEM_LIDAR_FAULT_DESC },
+  { item: 'scan_stop', label: S50_DEV_ITEM_SCAN_STOP, desc: S50_DEV_ITEM_SCAN_STOP_DESC },
   { item: 'battery', label: S50_DEV_ITEM_BATTERY, desc: '' },
   { item: 'opcheck', label: S50_DEV_ITEM_OPCHECK, desc: '' },
   { item: 'auto_brake', label: S50_DEV_ITEM_AUTO_BRAKE, desc: '' },
@@ -136,14 +140,16 @@ function Section({ title, note, saveKey, status, editable, loading, onSave, chil
   )
 }
 
-export default function S50Settings({ onBack }) {
+// initialTab: S-00（疎通確認）から開いたときは 'dev'。INIT では一般タブの
+// 読み込み（config_manager）が通らないため、開発モードタブから始める。
+export default function S50Settings({ onBack, initialTab = 'general' }) {
   const { ros, state, stale } = useSystemState()
   const { getTunableParams, applyTunableParam, saveTunableParams } = useTunableParams(ros)
 
   const mode = state?.mode ?? null
   const editable = !stale && (mode === 'IDLE' || mode === 'MANUAL')
 
-  const [tab, setTab] = useState('general')
+  const [tab, setTab] = useState(initialTab)
 
   // ── 一般タブ ──
   const [mapless, setMapless] = useState({})
@@ -211,8 +217,10 @@ export default function S50Settings({ onBack }) {
   // （INIT を抜けるために要るので、一般タブのような IDLE/MANUAL 縛りは無い）。
   const { dev: devState, setDevParam } = useDevMode(ros)
   const [devLocal, setDevLocal] = useState(() => readDevMode())
+  // 既定は全項目 OFF（connectivity_checker の dev_ignore_* 既定と同じ。
+  // 開発モードに入っただけでは通常運用と同じ。Spec-safety.md §10）。
   const [devItemsLocal, setDevItemsLocal] = useState(
-    () => Object.fromEntries(DEV_ITEMS.map((item) => [item, true])))
+    () => Object.fromEntries(DEV_ITEMS.map((item) => [item, false])))
   const [devStatus, setDevStatus] = useState('')
   const devShown = devState ? devState.dev_mode : devLocal
   const devItemsShown = devState ? devState.ignore : devItemsLocal
@@ -387,12 +395,7 @@ export default function S50Settings({ onBack }) {
               <p className="note" data-testid="s50-dev-estop-unknown">{S50_DEV_ESTOP_UNKNOWN}</p>
             )}
           </div>
-          <div className="card">
-            <h3>{S50_DEV_UNIGNORABLE_TITLE}</h3>
-            <ul data-testid="s50-dev-unignorable">
-              {S50_DEV_UNIGNORABLE.map((name) => <li key={name}>{name}</li>)}
-            </ul>
-          </div>
+          <p className="note" data-testid="s50-dev-scope">{S50_DEV_SCOPE_NOTE}</p>
         </div>
       )}
     </div>

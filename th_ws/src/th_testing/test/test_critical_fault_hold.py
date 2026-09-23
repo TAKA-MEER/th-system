@@ -91,8 +91,12 @@ def test_recoverable_faults_are_not_delayed(fault_type):
     src = _src()
     assert f'checkTimeout("{fault_type}"' in src, (
         f'{fault_type} が checkTimeout を通っていない')
-    assert f'updateFaultState("{fault_type}"' not in src, (
-        f'{fault_type} が updateFaultState を直接呼んでいる。'
+    # 直接呼んでよいのは解除（false）だけ。開発モードの項目 lidar_fault で LIDAR_LOST を
+    # 解除する経路がこれにあたる（Spec-safety.md §10。2026-09-23）。発火側を直接・
+    # 保持時間つきで呼んでいたら赤。
+    direct = re.findall(rf'updateFaultState\("{fault_type}",\s*([^)]*)\)', src)
+    assert all(arg.strip() == 'false' for arg in direct), (
+        f'{fault_type} が updateFaultState を直接呼んでいる（{direct}）。'
         f'保持時間つきに変わっていないか確認すること（WS-9O は重大フォルトのみ対象）')
 
 

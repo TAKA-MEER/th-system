@@ -232,7 +232,11 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
 
   // ── tier 3: /scan の途絶（L2。§3.4.2「古いスキャンで空きと判定しない」） ─
   const bool scan_stale = !in.scan.received || (in.now_sec - in.scan.stamp_sec) > p.scan_stale_sec;
-  if (scan_stale) {
+  // 開発モード（項目 scan_stop。Spec-safety.md §10）: LiDAR 無しで手動走行するため、
+  // MANUAL に限って途絶でも止めない。AUTO は従来どおり STOP。
+  const bool dev_scan_bypass = scan_stale && in.dev_ignore_scan_stop &&
+      compute_source_class(in, p) == SourceClass::MANUAL;
+  if (scan_stale && !dev_scan_bypass) {
     out.action = LimiterAction::STOP;
     out.nearest_obstacle_m = -1.0;  // 「不明」の明示値（+infinity＝空き確認済み、とは区別する）
     out.source_class = compute_source_class(in, p);
@@ -269,8 +273,11 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   // 観測できていない間（未観測は「空き」ではない。N-11）は、その方向の
   // 上限を v_reverse にする（全方向ではない。state の新鮮さに関わらず
   // 幾何的に成立する制約なので state_fresh の分岐の外で常に適用する）。
-  const ConeObservation cone =
-      observe_cone(in.scan, direction_rad, half_width, p.obstacle_min_points);
+  // 途絶を素通しさせるときは古い点群を観測として使わない（§3.4.2「古いスキャンで
+  // 空きと判定しない」）。未受信と同じ扱い → covered=false → v_reverse 上限。
+  const ConeObservation cone = dev_scan_bypass
+      ? ConeObservation{}
+      : observe_cone(in.scan, direction_rad, half_width, p.obstacle_min_points);
   if (blind_direction_overlap(direction_rad, half_width, p.blind_angle_ranges_deg) ||
       !cone.covered) {
     applied_limit = std::min(applied_limit, p.v_reverse);

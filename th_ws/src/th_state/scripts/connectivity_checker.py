@@ -69,14 +69,16 @@ class ConnectivityChecker(Node):
         #（`ros2 param set connectivity_checker dev_mode true`）で行う。
         # config_manager（/config_manager/set_tunable_params）には乗せない。
         # dev_mode が偽なら個別値に関わらず何も無視しない（既定挙動と同一）。
-        # 個別項目の既定は真: 起動引数は dev_mode 1 つだけなので、起動時に個別
-        # 指定する手段が無く、既定偽では dev_mode:=true だけでは link 無視が
-        # 効かず完了条件（機器なしで IDLE 到達）が満たせないため。
+        # 2026-09-23 ユーザー決定（Spec-safety.md §10）: 開発モードに入っただけでは
+        # 通常運用と同じで、必要な項目だけを選んで外す。よって個別項目の既定は偽。
+        # 起動時に選ぶときは dev_ignore_at_start（カンマ区切りの項目名。launch 引数
+        # dev_ignore から渡す）を使う。空配列の既定は rclpy(Humble) が BYTE_ARRAY と
+        # 推論して非空 override を弾くため、文字列にしてある（CLAUDE.md）。
         self.declare_parameter('dev_mode', False)
-        self.declare_parameter('dev_ignore_link', True)
-        self.declare_parameter('dev_ignore_battery', True)
-        self.declare_parameter('dev_ignore_opcheck', True)
-        self.declare_parameter('dev_ignore_auto_brake', True)
+        for item in self._DEV_ITEMS:
+            self.declare_parameter(f'dev_ignore_{item}', False)
+        self.declare_parameter('dev_ignore_at_start', '')
+        self._apply_dev_ignore_at_start()
         # WP-DEV-01C（ログの選択記録）: 何を記録するかの選択。既存の
         # `dev_ignore_*` と同じ流儀のノードローカルパラメータ
         #（`registry.yaml` には載せない。`sim` と同じ扱い）。
@@ -217,11 +219,33 @@ class ConnectivityChecker(Node):
     # ブラウザの localStorage は見た目専用（Spec-webui.md §5.1）。
     # 実効無視 = dev_mode（マスタ） AND dev_ignore_<項目>（項目別選択）。
     # ------------------------------------------------------------
-    _DEV_ITEMS = ('link', 'battery', 'opcheck', 'auto_brake')
+    # link        : 疎通確認（ESP32・LiDAR・必須ノード）を合格扱いにする
+    # lidar_fault : safety_monitor が LIDAR_LOST を出さない（/system/dev_mode 経由）
+    # scan_stop   : obstacle_limiter が /scan 途絶でも MANUAL を止めない（同上。上限 v_reverse）
+    # battery / opcheck / auto_brake : 止めるゲートが as-built に無く、選択の保持・配信のみ
+    # dev_mode_core.hpp の kDevItem* と web_ui の DEV_ITEMS と揃えること。
+    _DEV_ITEMS = ('link', 'lidar_fault', 'scan_stop', 'battery', 'opcheck', 'auto_brake')
 
     # WP-DEV-01C: 記録対象の項目名。`dev_log_<item>` に対応する。
     # dev_log_core.LOG_ITEMS と揃えること。
     _DEV_LOG_ITEMS = ('state', 'fault', 'cmdvel')
+
+    def _apply_dev_ignore_at_start(self) -> None:
+        """起動時の項目選択（dev_ignore_at_start='link,lidar_fault' 等）を反映する。
+
+        知らない項目名は警告して捨てる（打ち間違いで黙って効かないのを防ぐ）。
+        """
+        raw = str(self.get_parameter('dev_ignore_at_start').value or '')
+        names = [n.strip() for n in raw.split(',') if n.strip()]
+        unknown = [n for n in names if n not in self._DEV_ITEMS]
+        if unknown:
+            self.get_logger().warn(
+                f'dev_ignore_at_start に未知の項目 {unknown} がある（無視する。'
+                f'有効な項目: {list(self._DEV_ITEMS)}）')
+        known = [n for n in names if n in self._DEV_ITEMS]
+        if known:
+            self.set_parameters([Parameter(f'dev_ignore_{n}', Parameter.Type.BOOL, True)
+                                 for n in known])
 
     def _dev_selected(self) -> dict:
         return {item: bool(self.get_parameter(f'dev_ignore_{item}').value)
@@ -307,9 +331,9 @@ class ConnectivityChecker(Node):
             return
         ignored = sorted(k for k, v in state['effective'].items() if v)
         self.get_logger().warn(
-            f"dev_mode=true: 無視項目={ignored}（battery/opcheck/auto_brake は "
-            'as-built に運用開始を止めるゲートが無く、選択状態の保持・配信のみ。'
-            '物理E-Stop・ESP32ウォッチドッグ・UI E-Stop・自律系障害物停止は無効化できない）')
+            f"dev_mode=true: 無視項目={ignored}（選んだ項目だけを外す。未選択の項目は"
+            '通常運用と同じ。battery/opcheck/auto_brake は as-built に止めるゲートが無く、'
+            '選択状態の保持・配信のみ）')
 
     def _publish_dev_state(self) -> None:
         msg = String()

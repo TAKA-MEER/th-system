@@ -8,6 +8,8 @@
 //
 // 監視対象（enabled_targets に入っているものだけ。F-5・O-7）:
 //   lidar        /scan タイムアウト                          → LIDAR_LOST (RECOVERABLE)
+//                （開発モードの項目 lidar_fault が実効の間は出さない。/system/dev_mode
+//                  を購読し effective だけを読む。dev_mode_core.hpp・Spec-safety.md §10）
 //   esp32        /esp32/wheel_feedback タイムアウト          → ESP32_DISCONNECTED (RECOVERABLE)
 //   person       /person/targets タイムアウト                → PERSON_TRACKER_LOST (RECOVERABLE)
 //   limiter      /safety/limiter_status タイムアウト         → LIMITER_DEAD (CRITICAL)
@@ -30,6 +32,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/u_int8.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <std_srvs/srv/trigger.hpp>
@@ -44,6 +47,7 @@
 
 #include "th_safety/safety_monitor_core.hpp"
 #include "th_safety/link_quality_core.hpp"
+#include "th_safety/dev_mode_core.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -167,6 +171,16 @@ public:
                 last_scan_time_ = now();
                 lidar_alive_    = true;
                 lidar_gap_.push(now().seconds());
+            });
+
+        // 開発モード（Spec-safety.md §10）。未受信・鮮度切れ・壊れた JSON は
+        // 何も無視しない（dev_mode_core.hpp）。
+        sub_dev_mode_ = create_subscription<std_msgs::msg::String>(
+            "/system/dev_mode", rclcpp::QoS(1).reliable().transient_local(),
+            [this](const std_msgs::msg::String::SharedPtr msg) {
+                dev_mode_.received = true;
+                dev_mode_.stamp_sec = now().seconds();
+                dev_mode_.effective = th_safety::parse_dev_effective(msg->data);
             });
 
         // 試験員追従（PersonStatus → PersonTargets。reuse.md §2.3）
@@ -310,7 +324,12 @@ private:
         if (!in_grace) {
             // ── 回復可能フォルト ──────────────────────────
             if (targetEnabled("lidar")) {
-                checkTimeout("LIDAR_LOST", last_scan_time_, lidar_timeout_, t, lidar_alive_);
+                if (devIgnoreLidarFault(t)) {
+                    // 既に立っている LIDAR_LOST も解除する（飛ばすだけでは fault_lock が残る）。
+                    updateFaultState("LIDAR_LOST", false);
+                } else {
+                    checkTimeout("LIDAR_LOST", last_scan_time_, lidar_timeout_, t, lidar_alive_);
+                }
             }
             if (targetEnabled("esp32")) {
                 checkTimeout("ESP32_DISCONNECTED", last_esp32_time_, esp32_timeout_, t, esp32_alive_);
@@ -404,6 +423,21 @@ private:
 
         // F-1: 沈黙禁止。状態変化の有無にかかわらず毎周期発行する。
         publishLock();
+    }
+
+    // 開発モードの項目 lidar_fault が実効か。切り替わりをログに残す。
+    bool devIgnoreLidarFault(const rclcpp::Time& now_t) {
+        const bool on = th_safety::dev_item_effective(
+            dev_mode_, th_safety::kDevItemLidarFault, now_t.seconds());
+        if (on != prev_dev_ignore_lidar_fault_) {
+            if (on) {
+                RCLCPP_WARN(get_logger(), "開発モード: lidar_fault 有効（LIDAR_LOST を出さない）");
+            } else {
+                RCLCPP_INFO(get_logger(), "開発モード: lidar_fault 無効（LIDAR_LOST の監視を再開）");
+            }
+            prev_dev_ignore_lidar_fault_ = on;
+        }
+        return on;
     }
 
     // 通信途絶タイムアウトによるフォルト判定（回復可能・重大 共通）。
@@ -537,6 +571,7 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr       sub_cmd_vel_;
     rclcpp::Subscription<th_system_msgs::msg::SystemState>::SharedPtr sub_system_state_;
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr            sub_firmware_flags_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr           sub_dev_mode_;
 
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr               srv_clear_estop_ui_;
 
@@ -579,6 +614,9 @@ private:
 
     bool firmware_flags_received_ = false;
     bool firmware_bypass_active_  = false;
+
+    th_safety::DevModeSnapshot dev_mode_;
+    bool prev_dev_ignore_lidar_fault_ = false;
 
     // 現在アクティブなフォルトの集合（fault_lock/clear_estop_ui の判定に使う）
     std::set<std::string> active_faults_;

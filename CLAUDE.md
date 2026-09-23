@@ -55,16 +55,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 開かずに使えるようにしてある**（ユーザー決定 2026-09-20）。
 
 ```bash
-ros2 launch th_bringup bringup.launch.py dev_mode:=true   # 機器ゼロでも IDLE まで進む
-ros2 param set /connectivity_checker dev_mode true|false   # 走らせたまま切替
-ros2 topic echo /system/dev_mode --once                    # いまの状態（JSON）
+ros2 launch th_bringup bringup.launch.py dev_mode:=true dev_ignore:=link   # 機器ゼロでも IDLE まで進む
+ros2 launch th_bringup bringup.launch.py dev_mode:=true dev_ignore:=link,lidar_fault,scan_stop lidar_source:=network  # LiDAR 無しで手動走行
+ros2 param set /connectivity_checker dev_mode true|false          # 走らせたまま切替
+ros2 param set /connectivity_checker dev_ignore_scan_stop true    # 項目を走らせたまま切替
+ros2 topic echo /system/dev_mode --once                           # いまの状態（JSON）
 ```
 
-- 画面から使うなら S-50 の開発モードタブ、または URL に `?dev=1`。
-  **状態の正本は機体側**で、画面はそれを表示している。
-- **無視できるのは警告だけ。**物理非常停止・ESP32 ウォッチドッグ・UI 非常停止・
-  自律系の障害物停止は開発モードでも効く。`safety_monitor` と `obstacle_limiter` には
-  `dev_mode` を**渡していない**（構造的な保証）。
+- **2026-09-23 改定: `dev_mode:=true` だけでは何も外れない**（通常運用と同じ）。外す項目を
+  `dev_ignore:=`（カンマ区切り）か画面で選ぶ。項目: `link`（疎通確認）/ `lidar_fault`
+  （`LIDAR_LOST` を出さない）/ `scan_stop`（`/scan` 途絶でも MANUAL を止めない。上限 `v_reverse`、
+  AUTO は止めたまま）/ `battery`・`opcheck`・`auto_brake`（ゲート未実装で記録のみ）。
+- 画面から使うなら S-50 の開発モードタブ、または URL に `?dev=1`。**S-00（疎通確認）で
+  止まったら「開発モードの設定」から入れる**（`link` を外して IDLE へ進む）。
+  **状態の正本は機体側**（`connectivity_checker`）で、画面はそれを表示している。
+- **開発モードで「無視できない制限」は定めない**（ユーザー決定 2026-09-23）。ただし項目の無い
+  もの（物理非常停止・ESP32 ウォッチドッグ・UI 非常停止など）は通常どおり効く。
+  `safety_monitor` と `obstacle_limiter` は `dev_mode` パラメータを受け取らず、`/system/dev_mode`
+  の **effective に明示された自分の項目だけ**を見る。未受信・3 秒以上更新なし・読めない JSON は
+  何も外さない（`th_safety/dev_mode_core.hpp`）。
 - **開発モードで通した検証結果を、通常モードの結果と取り違えないこと。**
   ON/OFF と無視項目はログに残る。
 - 仕様は [Spec-webui.md](docs/plan/spec/Spec-webui.md) §5・§5.1 と
