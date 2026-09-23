@@ -203,7 +203,23 @@ class PersonTrackerBridge(Node):
 
     # brief-tracker-default-off §3.3: 人物検出 OFF 中は強制 lost にする。
     def _on_system_state(self, msg: SystemState):
-        self._tracker_enabled = bool(msg.tracker_enabled)
+        new_enabled = bool(msg.tracker_enabled)
+        was_enabled = self._tracker_enabled
+        if new_enabled == was_enabled:
+            return
+        self._tracker_enabled = new_enabled
+        if was_enabled and not new_enabled:
+            # OFF 化の瞬間に再計算・再 publish する。次の upstream
+            # （following_position 等）メッセージ待ちにすると、OFF 化で DR-SPAAM
+            # が deactivate されて以降 upstream が二度と来なくなり、
+            # /person/status・/person/targets が OFF 直前の値（is_lost=False も
+            # あり得る）のまま永久に固まってしまう（安全の中心。§3.3）。
+            # ON 化（OFF→ON）は逆に再計算しない: _last_status 等は OFF 中に
+            # 更新されない古いキャッシュなので、ここで再計算すると「起動中」の
+            # 間だけ古い（本来 5.8 秒ほど先の）検出結果を一瞬見せてしまう。
+            # 実際の検出は DR-SPAAM 再起動後、新しい following_position が
+            # 届いた時点で _following_cb 経由で反映される。
+            self._recompute_and_publish()
 
     # ── 再計算・再 publish ───────────────────────────────
     def _recompute_and_publish(self):
@@ -246,9 +262,12 @@ class PersonTrackerBridge(Node):
                 self._emit_event('evt.auto_selected', json.dumps({'index': idx}))
 
         # evt.target_lost の edge 検出（連続 lost では出し続けない）。
-        # OFF 化（tracking中のモードを止めたとき）も is_lost False→True と同じ
-        # edge として 1 回だけ発行する。
-        if self._prev_lost is not None and is_lost and not self._prev_lost:
+        # brief-tracker-default-off §3.3: OFF 化（ON+検出中 → OFF）で is_lost が
+        # False→True に切り替わっても、これは意図的な停止であり実際の見失いでは
+        # ないので evt.target_lost は出さない（`self._disabled` 中は edge 検出
+        # そのものを止める）。
+        if (not self._disabled and self._prev_lost is not None
+                and is_lost and not self._prev_lost):
             self._emit_event('evt.target_lost')
         self._prev_lost = is_lost
 
