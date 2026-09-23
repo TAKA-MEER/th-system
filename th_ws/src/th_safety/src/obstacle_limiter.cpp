@@ -22,6 +22,8 @@
 //   sub /cmd_vel_manual  (Twist)        reliable, depth 1（値は使わず鮮度だけ見る）
 //   sub /safety/estop    (Bool)         reliable
 //   sub /safety/fault_lock (Bool)       reliable
+//   sub /system/dev_mode (String/JSON)  reliable + transient_local, depth 1
+//                                       （開発モードの項目 scan_stop だけを見る。dev_mode_core.hpp）
 //   pub /cmd_vel               (Twist)         reliable, depth 1 — 20Hz固定・沈黙禁止
 //   pub /safety/limiter_status (LimiterStatus) best_effort, depth 1 — 20Hz（heartbeat兼用）
 //
@@ -35,6 +37,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
@@ -44,6 +47,8 @@
 
 #include <th_system_msgs/msg/system_state.hpp>
 #include <th_system_msgs/msg/limiter_status.hpp>
+
+#include "th_safety/dev_mode_core.hpp"
 
 #include <tf2/exceptions.h>
 #include <tf2/time.h>
@@ -369,6 +374,17 @@ public:
                 fault_lock_.value = msg->data;
             });
 
+        // 開発モード（Spec-safety.md §10）。正本は connectivity_checker で、ここは
+        // effective に明示された項目だけを読む。未受信・鮮度切れ・壊れた JSON は
+        // 何も無視しない（dev_mode_core.hpp）。
+        sub_dev_mode_ = create_subscription<std_msgs::msg::String>(
+            "/system/dev_mode", rclcpp::QoS(1).reliable().transient_local(),
+            [this](const std_msgs::msg::String::SharedPtr msg) {
+                dev_mode_.received = true;
+                dev_mode_.stamp_sec = now().seconds();
+                dev_mode_.effective = th_safety::parse_dev_effective(msg->data);
+            });
+
         // ── 20Hz 固定タイマ（§3.1・§3.4.2。入力が全部 stale でも沈黙しない） ──
         timer_ = create_wall_timer(50ms, std::bind(&ObstacleLimiter::tick, this));
 
@@ -385,6 +401,17 @@ private:
         in.state = state_;
         in.estop = estop_;
         in.fault_lock = fault_lock_;
+        in.dev_ignore_scan_stop = th_safety::dev_item_effective(
+            dev_mode_, th_safety::kDevItemScanStop, in.now_sec);
+        if (in.dev_ignore_scan_stop != prev_dev_ignore_scan_stop_) {
+            if (in.dev_ignore_scan_stop) {
+                RCLCPP_WARN(get_logger(), "開発モード: scan_stop 有効（/scan 途絶でも MANUAL は止めない。"
+                            "上限は v_reverse=%.2f m/s）", params_.v_reverse);
+            } else {
+                RCLCPP_INFO(get_logger(), "開発モード: scan_stop 無効（通常どおり /scan 途絶で停止）");
+            }
+            prev_dev_ignore_scan_stop_ = in.dev_ignore_scan_stop;
+        }
 
         const auto resolved = th_safety::resolve_speed_limit_name(
             latest_speed_limit_name_, speed_limit_table_);
@@ -447,6 +474,8 @@ private:
     th_safety::SystemStateSnapshot state_;
     th_safety::Stamped<bool> estop_;
     th_safety::Stamped<bool> fault_lock_;
+    th_safety::DevModeSnapshot dev_mode_;
+    bool prev_dev_ignore_scan_stop_ = false;
 
     // ── Publishers ────────────────────────────────────────
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_cmd_vel_;
@@ -459,6 +488,7 @@ private:
     rclcpp::Subscription<th_system_msgs::msg::SystemState>::SharedPtr sub_state_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_estop_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_fault_lock_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr sub_dev_mode_;
 
     rclcpp::TimerBase::SharedPtr timer_;
 };

@@ -98,7 +98,10 @@ function Screens() {
   if (screen === 'S00') {
     return (
       <AppShell screenName={SCREEN_NAMES.S00} screenId={SCREEN_IDS.S00}>
-        <S00Connect onAdvance={() => setPassedConnect(true)} />
+        <S00Connect
+          onAdvance={() => setPassedConnect(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
       </AppShell>
     )
   }
@@ -149,7 +152,10 @@ function Screens() {
   if (screen === 'S50') {
     return (
       <AppShell screenName={SCREEN_NAMES.S50} screenId={SCREEN_IDS.S50}>
-        <S50Settings onBack={() => setSettingsOpen(false)} />
+        <S50Settings
+          onBack={() => setSettingsOpen(false)}
+          initialTab={passedConnect ? 'general' : 'dev'}
+        />
       </AppShell>
     )
   }

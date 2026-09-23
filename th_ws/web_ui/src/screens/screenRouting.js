@@ -49,7 +49,9 @@ export const MODE_TO_SCREEN = {
 export function resolveScreen({ testScreen, passedConnect, mode, settingsOpen }) {
   // DRIVE_S11 は本番に存在しない e2e 専用の合成画面。モード導出を迂回する。
   if (testScreen === 'DRIVE_S11') return 'DRIVE_S11'
-  if (!passedConnect) return 'S00'
+  // 2026-09-23: S-00 で止まったとき（機器が無く INIT を抜けられない）に開発モードの
+  // 設定へ入れるよう、疎通確認前でも設定は開ける。戻れば S-00 に戻る。
+  if (!passedConnect) return settingsOpen ? 'S50' : 'S00'
   const base = MODE_TO_SCREEN[mode] ?? 'S01'
   if (base !== 'S01') return base           // 動作系モードが最優先（S-50 と同じ）
   if (settingsOpen) return 'S50'

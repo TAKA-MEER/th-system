@@ -22,6 +22,7 @@
        ament_index_cpp で指し、yaml-cpp で読むのに要る。 -->
   <depend>ament_index_cpp</depend>
   <depend>yaml_cpp_vendor</depend>
+  <depend>nlohmann-json-dev</depend>
   <!-- jog_gate は実行時に th_state の share/config/attributes.yaml を読む
        （J-4: th_state の jog_allowed と同じファイル）。ビルドには要らないが
        実行時には必ず要るので exec_depend で表明する。 -->

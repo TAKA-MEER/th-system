@@ -57,6 +57,8 @@ export const S00_OVERALL_TITLE = '総合'
 export const S00_READY = '運用に入れます'
 export const S00_CHECKING = '確認中'
 export const S00_ADVANCE = 'メインメニュー画面へ'
+// 疎通確認で止まったときに開発モードの設定へ入る導線（2026-09-23）
+export const S00_OPEN_DEV = '開発モードの設定'
 
 // ---------------------------------------------------------------- S-01 ----
 export const GROUP_MOVE_TITLE = '移動'
@@ -431,12 +433,17 @@ export const S50_DEV_TITLE = '開発モード'
 export const S50_DEV_ENABLE = '開発モードを有効にする'
 export const S50_DEV_DISABLE = '開発モードを無効にする'
 export const S50_DEV_NOTE =
-  'ON にすると機器が揃っていなくても起動時の確認を進められます。'
+  'ON にしただけでは通常運用と同じです。外したい項目を下で選んでください。'
   + '状態の正本は機体側（/system/dev_mode）にあり、この画面はそれを表示します。'
 // 項目ごとの選択（WP-DEV-01B §2。一括トグルにしない）
 export const S50_DEV_ITEMS_TITLE = '無視する警告（項目ごと）'
 export const S50_DEV_ITEM_LINK = '機器未接続・通信不通'
 export const S50_DEV_ITEM_LINK_DESC = '起動時の機器確認を進める（INIT/CHECK→IDLE）'
+export const S50_DEV_ITEM_LIDAR_FAULT = 'LiDAR 途絶のフォルト'
+export const S50_DEV_ITEM_LIDAR_FAULT_DESC = 'LIDAR_LOST を出さない（出ていれば解除する）'
+export const S50_DEV_ITEM_SCAN_STOP = 'LiDAR 無しの手動停止'
+export const S50_DEV_ITEM_SCAN_STOP_DESC =
+  'LiDAR が無くても手動で走れる。障害物は見えないため低速上限（後退と同じ）。自律走行は止まったまま'
 export const S50_DEV_ITEM_BATTERY = 'バッテリー電圧低下'
 export const S50_DEV_ITEM_OPCHECK = '始業点検の総合 NG'
 export const S50_DEV_ITEM_AUTO_BRAKE = '手動系の自動ブレーキ既定'
@@ -447,12 +454,8 @@ export const S50_DEV_EFFECTIVE_TITLE = 'いま無視しているもの'
 export const S50_DEV_NONE = 'なし（通常運用）'
 export const S50_DEV_ESTOP_UNKNOWN =
   '※ 物理非常停止ボタンの状態は未受信です（ESP32 不在）。押下が分かれば起動確認は止まります'
-// 無視できないもの（Spec-safety.md §10 の右列をそのまま出す）
-export const S50_DEV_UNIGNORABLE_TITLE = '無視できないもの'
-export const S50_DEV_UNIGNORABLE = [
-  '物理非常停止ボタン',
-  'ESP32 のウォッチドッグ',
-  'UI 非常停止ボタン',
-  '自律系の障害物停止',
-]
+// Spec-safety.md §10（2026-09-23 改定）: 開発モードで無視できない制限は定めない。
+// 選んだ項目だけが外れ、項目の無いもの（非常停止など）は通常どおり効く。
+export const S50_DEV_SCOPE_NOTE =
+  '※ 外れるのは選んだ項目だけです。項目の無いもの（非常停止ボタン・ESP32 のウォッチドッグなど）は通常どおり効きます'
 export const S50_DEV_SEND_FAILED = '機体への送信に失敗しました'

@@ -23,8 +23,15 @@ test('動作系モード中は settingsOpen を無視して従来の画面', () 
   }
 })
 
-test('接続確認を通っていなければ settingsOpen でも S-00', () => {
-  assert.equal(resolveScreen({ ...base, passedConnect: false, settingsOpen: true }), 'S00')
+// 2026-09-23: 機器が揃わず INIT を抜けられないとき、S-00 から開発モードの設定へ
+// 入れる（IDLE へ進む経路の確保）。閉じれば S-00 に戻る。
+test('接続確認前でも settingsOpen なら S-50（S-00 からの開発モード導線）', () => {
+  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'INIT', settingsOpen: true }), 'S50')
+})
+
+test('接続確認前で settingsOpen=false なら S-00', () => {
+  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'INIT', settingsOpen: false }), 'S00')
+  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'IDLE', settingsOpen: false }), 'S00')
 })
 
 test('DRIVE_S11（e2e 合成画面）は settingsOpen より優先', () => {

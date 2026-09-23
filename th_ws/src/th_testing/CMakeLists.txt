@@ -319,6 +319,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_runaway_freshness_node
     test/test_runaway_freshness_node.py
     TIMEOUT 180)
+  # 開発モードの項目（Spec-safety.md §10。2026-09-23 改定）の Docker launch テスト。
+  # LiDAR 無しで scan_stop（MANUAL だけ v_reverse 以下で通す・AUTO は止める・
+  # effective だけを読む・鮮度切れで戻る）と lidar_fault（LIDAR_LOST の抑止と再発）。
+  ament_add_pytest_test(test_dev_mode_safety_node
+    test/test_dev_mode_safety_node.py
+    TIMEOUT 180)
   # 計画的な再起動の保留の Docker launch テスト（O-e3 §完了条件3。
   # 知らせ無しで検知・通知中は保留・上限超過で故障・publisher 死亡でも超過で故障）
   ament_add_pytest_test(test_planned_restart_node

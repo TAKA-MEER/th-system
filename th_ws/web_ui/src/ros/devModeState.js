@@ -4,18 +4,19 @@
 // 購読と送信の React 部分は ros/useDevMode.js が持つ。
 //
 // connectivity_checker.py が出す JSON の形 (names.md §6.2):
-//   {"dev_mode": bool, "ignore": {link,battery,opcheck,auto_brake: bool},
+//   {"dev_mode": bool, "ignore": {link,lidar_fault,scan_stop,battery,opcheck,auto_brake: bool},
 //    "effective": {...}, "estop_hw_known": bool, "estop_hw_pressed": bool}
 import { encodeParamValue, withTimeout } from './paramCodec.js'
 
-// connectivity_checker.py の _DEV_ITEMS と揃える。順序は表示順。
-export const DEV_ITEMS = ['link', 'battery', 'opcheck', 'auto_brake']
+// connectivity_checker.py の _DEV_ITEMS・th_safety/dev_mode_core.hpp と揃える。順序は表示順。
+export const DEV_ITEMS = ['link', 'lidar_fault', 'scan_stop', 'battery', 'opcheck', 'auto_brake']
 
 // as-built に運用開始を止めるゲートが無く、選んでも何も起きない項目。
 // 画面にその旨を出す (brief-DEV-01B §2)。
 export const DEV_NO_GATE_ITEMS = ['battery', 'opcheck', 'auto_brake']
 
-// 接続先ノード (launch が dev_mode を渡す唯一の相手。names.md §1.3)。
+// 接続先ノード (開発モードの正本。safety_monitor / obstacle_limiter は
+// /system/dev_mode を購読して従う。names.md §1.3)。
 export const DEV_MODE_NODE = 'connectivity_checker'
 
 export const DEV_PARAM_MASTER = 'dev_mode'

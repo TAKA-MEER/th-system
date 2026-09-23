@@ -74,15 +74,20 @@ def generate_launch_description():
                               description='DR-SPAAM/person_tracker_bridge の起動を'
                                           'この秒数だけ遅らせる (N-27: Nav2 lifecycle と'
                                           'モデルロードの同時実行によるCPUストール回避)'),
-        # WP-DEV-01A: 開発モード。受け取るのは connectivity_checker だけ。
-        # safety_monitor と obstacle_limiter には絶対に渡さない
-        #（names.md §1.3 の構造的な保証）。実行中の切替は
-        # `ros2 param set connectivity_checker dev_mode true/false` で行う。
+        # WP-DEV-01A: 開発モード。パラメータとして受け取るのは connectivity_checker
+        # だけ（正本）。safety_monitor と obstacle_limiter は /system/dev_mode を購読し、
+        # effective に明示された項目だけに反応する（Spec-safety.md §10・names.md §1.3）。
+        # 実行中の切替は `ros2 param set connectivity_checker dev_mode true/false`。
         DeclareLaunchArgument('dev_mode', default_value='false',
-                              description='開発モード (WP-DEV-01A)。true で機器未接続でも '
-                                          'INIT/CHECK から IDLE へ進める。'
-                                          '物理E-Stop・ウォッチドッグ・UI E-Stop・'
-                                          '自律系障害物停止は無効化できない'),
+                              description='開発モード (WP-DEV-01A)。true にしただけでは通常運用と'
+                                          '同じ。外す項目は dev_ignore で選ぶ'),
+        # 2026-09-23: 開発モードで外す項目（カンマ区切り）。既定は空＝何も外さない。
+        # 項目: link, lidar_fault, scan_stop, battery, opcheck, auto_brake
+        # 例（機器なしで IDLE）: dev_ignore:=link
+        # 例（LiDAR 無しで手動走行）: dev_ignore:=link,lidar_fault,scan_stop
+        DeclareLaunchArgument('dev_ignore', default_value='',
+                              description='開発モードで外す項目（カンマ区切り）。dev_mode:=true の'
+                                          'ときだけ効く'),
     ]
 
     use_stub     = LaunchConfiguration('use_stub')
@@ -91,6 +96,7 @@ def generate_launch_description():
     lidar_source = LaunchConfiguration('lidar_source')
     stage        = LaunchConfiguration('stage')
     dev_mode     = LaunchConfiguration('dev_mode')
+    dev_ignore   = LaunchConfiguration('dev_ignore')
     enable_route_slam = LaunchConfiguration('enable_route_slam')
     lidar_is_local = PythonExpression(["'", lidar_source, "' == 'local'"])
 
@@ -157,7 +163,7 @@ def generate_launch_description():
         "') >= 3 else '省略(段階3から)') + ' / SLAM=' + "
         "('起動' if (int('", stage, "') >= 3 or '", enable_route_slam,
         "'.lower() in ('true','1')) else '省略') + ' / 人物検知=' + "
-        "('起動' if int('", stage, "') >= 4 else '省略(段階4から)') + ' / dev_mode=' + '", dev_mode, "'"])))
+        "('起動' if int('", stage, "') >= 4 else '省略(段階4から)') + ' / dev_mode=' + '", dev_mode, "' + ' / dev_ignore=' + '", dev_ignore, "'"])))
 
     # ── 1. robot_state_publisher / joint_state_publisher (URDF → TF) ─
     # base_link → laser_link 等の固定 TF を配信する。これが無いと SLAM /
@@ -291,8 +297,8 @@ def generate_launch_description():
     # 同様に有効化できる可能性が高い）は**このパケットの範囲外**として意図的に
     # 触れていない——故障注入12「/cmd_vel の途絶」は別パケットの担当であり、
     # mux 検出との相互作用まで含めた検証はそちら側の判断に委ねる。
-    # dev_mode は渡さない（names.md §1.3。obstacle_limiter と同じ構造的な保証）。
-    # 両ノードが値を知らなければ、実装ミスで無効化されることが起きない。
+    # dev_mode は渡さない（names.md §1.3）。開発モードは /system/dev_mode を購読し、
+    # effective に明示された項目（lidar_fault）だけに反応する（Spec-safety.md §10）。
     # WP-SAFE-05: localization 監視は自己位置推定が動く起動のときだけ
     # （Spec-safety.md §3.5.0「使っていない間は監視しない」）。
     # 条件は「SLAM が起動する条件」と「AMCL が起動する条件」の OR。
@@ -363,7 +369,8 @@ def generate_launch_description():
     # ── 7b. obstacle_limiter ────────────────────────────────
     # WP-SAFE-03: /cmd_vel_muxed → /cmd_vel の最終段速度リミッタ。/cmd_vel の
     # publisher はこのノードだけ（CLAUDE.md「速度指令の流れ」参照）。
-    # dev_mode は渡さない（names.md §1.3。safety_monitor と同じ構造的な保証）。
+    # dev_mode は渡さない（names.md §1.3）。開発モードは /system/dev_mode を購読し、
+    # effective に明示された項目（scan_stop）だけに反応する（Spec-safety.md §10）。
     # 起動時に base_link<-laser_link TF を有界リトライで取得できないと
     # 起動失敗する（obstacle_limiter.cpp。素通しで動かさない設計）。
     nodes.append(Node(
@@ -411,14 +418,17 @@ def generate_launch_description():
     # bool パラメータへは IfCondition / UnlessCondition で排他的に定義を分けて
     # 渡す（PythonExpression では起動時に文字列化され型不一致で落ちる）。
     # 両定義とも name は connectivity_checker（排他起動なので重複しない）。
-    # dev_ignore_* はノード側の既定値（真）のまま。safety_monitor と
-    # obstacle_limiter には dev_mode を渡さない（names.md §1.3）。
+    # dev_ignore_* はノード側の既定値（偽）で、起動時の選択は dev_ignore_at_start
+    # （launch 引数 dev_ignore）で渡す。文字列型を明示する（'' や 'link' を yaml として
+    # 型推論させない）。safety_monitor と obstacle_limiter には dev_mode を渡さない
+    # （names.md §1.3。/system/dev_mode を購読する）。
     nodes.append(Node(
         package='th_state',
         executable='connectivity_checker.py',
         name='connectivity_checker',
         parameters=[os.path.join(GENERATED_DIR, 'connectivity_checker.yaml'),
-                    {'sim': False, 'dev_mode': False}],
+                    {'sim': False, 'dev_mode': False,
+                     'dev_ignore_at_start': ParameterValue(dev_ignore, value_type=str)}],
         condition=UnlessCondition(dev_mode),
         output='screen',
     ))
@@ -427,7 +437,8 @@ def generate_launch_description():
         executable='connectivity_checker.py',
         name='connectivity_checker',
         parameters=[os.path.join(GENERATED_DIR, 'connectivity_checker.yaml'),
-                    {'sim': False, 'dev_mode': True}],
+                    {'sim': False, 'dev_mode': True,
+                     'dev_ignore_at_start': ParameterValue(dev_ignore, value_type=str)}],
         condition=IfCondition(dev_mode),
         output='screen',
     ))

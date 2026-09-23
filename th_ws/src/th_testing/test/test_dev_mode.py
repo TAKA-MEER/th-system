@@ -8,8 +8,13 @@ launch / ノードのソーステキストに対する AST・文字列検査だ�
      → dev 分岐（4 項目除外）＋ E-Stop 未受信でも通す gate の試験
   2. `dev_mode:=false`（既定）では今と完全に同じ挙動
      → dev 既定 OFF・sim 分岐不変・既存テスト群がそのまま緑の試験
-  3. `dev_mode` が `safety_monitor` / `obstacle_limiter` に現れない
-     → launch 定義を読む AST 試験
+  3. `dev_mode` パラメータは `safety_monitor` / `obstacle_limiter` に渡さない。
+     両ノードは `/system/dev_mode` を購読し effective の項目だけに反応する
+     （2026-09-23 改定。Spec-safety.md §10）→ launch の AST 試験＋項目名の一致試験。
+     振る舞いは th_safety の gtest（test_dev_mode_core）と
+     test_dev_mode_safety_node.py（launch_testing）で縛る。
+  5. 開発モードに入っただけでは通常運用と同じ（項目の既定は全部 OFF）
+     → connectivity_checker の宣言・launch の dev_ignore 引数の試験
   4. 物理 E-Stop 押下中は `dev_mode:=true` でも `evt.link_ok` が出ない
      → `should_emit_link_ok()` の真理値表試験
 
@@ -19,6 +24,9 @@ from __future__ import annotations
 
 import ast
 import os
+import re
+
+import pytest
 
 from th_state.connectivity_core import Params, evaluate, should_emit_link_ok
 
@@ -26,6 +34,8 @@ from th_state.connectivity_core import Params, evaluate, should_emit_link_ok
 _SRC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BRINGUP_PY = os.path.join(_SRC_ROOT, "th_bringup", "launch", "bringup.launch.py")
 CHECKER_PY = os.path.join(_SRC_ROOT, "th_state", "scripts", "connectivity_checker.py")
+DEV_CORE_HPP = os.path.join(_SRC_ROOT, "th_safety", "include", "th_safety", "dev_mode_core.hpp")
+WEB_DEV_STATE_JS = os.path.join(_SRC_ROOT, "..", "web_ui", "src", "ros", "devModeState.js")
 
 
 def _read(path: str) -> str:
@@ -285,6 +295,78 @@ def test_checker_uses_pure_gate_and_publishes_dev_state():
     assert "report.all_ok() and self._estop_seen" not in src, (
         "旧インライン gate 式が残っている（純粋関数への置換が不完全）")
     assert "'/system/dev_mode'" in src, "/system/dev_mode の発行が無い"
-    for param in ("dev_mode", "dev_ignore_link", "dev_ignore_battery",
-                  "dev_ignore_opcheck", "dev_ignore_auto_brake"):
+    for param in ("dev_mode", "dev_ignore_at_start"):
         assert f"'{param}'" in src, f"パラメータ '{param}' の宣言が無い"
+
+
+# ============================================================================
+# 5. 項目（2026-09-23 改定。Spec-safety.md §10）
+# ============================================================================
+
+EXPECTED_DEV_ITEMS = ("link", "lidar_fault", "scan_stop", "battery", "opcheck", "auto_brake")
+
+
+def _checker_dev_items() -> tuple:
+    tree = ast.parse(_read(CHECKER_PY), filename=CHECKER_PY)
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == "_DEV_ITEMS"):
+            return tuple(ast.literal_eval(node.value))
+    raise AssertionError("connectivity_checker.py に _DEV_ITEMS が無い")
+
+
+def test_dev_items_match_across_checker_web_and_cpp():
+    """項目名が 3 か所（正本・WebUI・C++）で一致する。ずれると画面で選んでも効かない。"""
+    assert _checker_dev_items() == EXPECTED_DEV_ITEMS
+    hpp = _read(DEV_CORE_HPP)
+    assert 'kDevItemLidarFault = "lidar_fault"' in hpp
+    assert 'kDevItemScanStop   = "scan_stop"' in hpp
+
+
+def test_dev_items_match_web():
+    """WebUI の DEV_ITEMS も同じ。Docker（web_ui 未マウント）ではスキップし、ホストで縛る。"""
+    if not os.path.isfile(WEB_DEV_STATE_JS):
+        pytest.skip("web_ui がこの環境に無い（Docker の th_robot は src だけをマウントする）")
+    js = _read(WEB_DEV_STATE_JS)
+    m = re.search(r"export const DEV_ITEMS = \[([^\]]*)\]", js)
+    assert m, "devModeState.js に DEV_ITEMS が無い"
+    assert tuple(re.findall(r"'([a-z_]+)'", m.group(1))) == EXPECTED_DEV_ITEMS
+
+
+def test_checker_dev_ignore_defaults_are_false():
+    """開発モードに入っただけでは何も外さない（項目の既定は偽）。"""
+    src = _read(CHECKER_PY)
+    assert "self.declare_parameter(f'dev_ignore_{item}', False)" in src, (
+        "dev_ignore_* の既定が偽で宣言されていない")
+    assert "for item in self._DEV_ITEMS:" in src
+    assert "declare_parameter('dev_ignore_link', True)" not in src
+
+
+def test_bringup_declares_dev_ignore_arg_and_passes_it_as_string():
+    """launch 引数 dev_ignore（既定 ''）を connectivity_checker の dev_ignore_at_start に
+    文字列として渡す（両定義とも）。"""
+    src = _read(BRINGUP_PY)
+    tree = ast.parse(src, filename=BRINGUP_PY)
+    call = _find_declare_arg(tree, "dev_ignore")
+    assert call is not None, "DeclareLaunchArgument('dev_ignore') が無い"
+    defaults = {kw.arg: kw.value for kw in call.keywords}
+    assert isinstance(defaults.get("default_value"), ast.Constant)
+    assert defaults["default_value"].value == "", "dev_ignore の既定は '' のはず"
+    nodes = _find_nodes_by_name(tree, "connectivity_checker")
+    assert len(nodes) == 2
+    for node in nodes:
+        seg = ast.get_source_segment(src, node) or ""
+        assert "'dev_ignore_at_start': ParameterValue(dev_ignore, value_type=str)" in seg
+
+
+def test_safety_nodes_follow_dev_mode_topic_only_via_core():
+    """safety_monitor / obstacle_limiter は /system/dev_mode を購読し、鮮度込みの
+    dev_item_effective() で自分の項目だけを見る（生の JSON を直接読まない）。"""
+    for fname, const in (("safety_monitor.cpp", "kDevItemLidarFault"),
+                         ("obstacle_limiter.cpp", "kDevItemScanStop")):
+        src = _read(os.path.join(_SRC_ROOT, "th_safety", "src", fname))
+        assert '"/system/dev_mode"' in src, f"{fname} が /system/dev_mode を購読していない"
+        assert "parse_dev_effective(msg->data)" in src, f"{fname} が effective を読んでいない"
+        assert "dev_item_effective(" in src
+        assert f"th_safety::{const}" in src, f"{fname} が項目 {const} を見ていない"

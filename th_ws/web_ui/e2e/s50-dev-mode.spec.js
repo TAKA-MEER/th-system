@@ -5,11 +5,12 @@
 // window.__thSetTestDevMode で /system/dev_mode 受信を再現する。
 import { test, expect } from '@playwright/test'
 import {
-  gotoScreen, gotoScreenWithDevMode, setTestDevMode, devParamCalls,
+  gotoScreen, gotoScreenWithDevMode, setTestDevMode, devParamCalls, setTestState,
 } from './helpers.js'
 
-const ALL_TRUE = { link: true, battery: true, opcheck: true, auto_brake: true }
-const ALL_FALSE = { link: false, battery: false, opcheck: false, auto_brake: false }
+const ITEMS = ['link', 'lidar_fault', 'scan_stop', 'battery', 'opcheck', 'auto_brake']
+const ALL_TRUE = Object.fromEntries(ITEMS.map((k) => [k, true]))
+const ALL_FALSE = Object.fromEntries(ITEMS.map((k) => [k, false]))
 
 const DEV_ON = {
   dev_mode: true, ignore: ALL_TRUE, effective: ALL_TRUE,
@@ -56,8 +57,55 @@ test('項目トグルを押すと dev_ignore_* が記録される（完了条件
   const hit = calls.find((c) => c.name === 'dev_ignore_link')
   expect(hit, '項目トグルが dev_ignore_link を送っていない').toBeTruthy()
   expect(hit.node).toBe('connectivity_checker')
-  // 既定 true からの反転なので false が送られる。
-  expect(hit.value).toBe(false)
+  // 既定 false（開発モードに入っただけでは何も外さない）からの反転なので true。
+  expect(hit.value).toBe(true)
+})
+
+test('項目の既定は全部 OFF（開発モードに入っただけでは通常運用と同じ）', async ({ page }) => {
+  await gotoScreen(page, 'S01', { mode: 'IDLE' })
+  await openDevTab(page)
+  for (const item of ITEMS) {
+    await expect(page.getByTestId(`s50-dev-ignore-${item}`)).toHaveAttribute('aria-pressed', 'false')
+  }
+})
+
+test('LiDAR 無し走行の 2 項目は dev_ignore_lidar_fault / dev_ignore_scan_stop を送る', async ({ page }) => {
+  await gotoScreen(page, 'S01', { mode: 'IDLE' })
+  await openDevTab(page)
+  await page.getByTestId('s50-dev-ignore-lidar_fault').click()
+  await page.getByTestId('s50-dev-ignore-scan_stop').click()
+  const calls = await devParamCalls(page)
+  for (const name of ['dev_ignore_lidar_fault', 'dev_ignore_scan_stop']) {
+    const hit = calls.find((c) => c.name === name)
+    expect(hit, `${name} が送られていない`).toBeTruthy()
+    expect(hit.node).toBe('connectivity_checker')
+    expect(hit.value).toBe(true)
+  }
+})
+
+test('S-00 から開発モードの設定に入り、IDLE に達したら戻って進める', async ({ page }) => {
+  await gotoScreen(page, 'S00', { mode: 'INIT' })
+  await page.locator('#s00').waitFor()
+  // INIT のあいだは「進む」は無く、開発モードの導線がある。
+  await expect(page.getByTestId('s00-advance')).toHaveCount(0)
+  await page.getByTestId('s00-open-dev').click()
+
+  // 開発モードタブで始まる（INIT では一般タブの読み込みが通らない）。
+  await page.locator('#s50').waitFor()
+  await expect(page.getByTestId('s50-dev-toggle')).toBeVisible()
+  await page.getByTestId('s50-dev-toggle').click()
+  await page.getByTestId('s50-dev-ignore-link').click()
+  const calls = await devParamCalls(page)
+  expect(calls.find((c) => c.name === 'dev_mode' && c.value === true)).toBeTruthy()
+  expect(calls.find((c) => c.name === 'dev_ignore_link' && c.value === true)).toBeTruthy()
+
+  // 機体側が evt.link_ok を出して IDLE に進んだ。
+  await setTestState(page, { mode: 'IDLE' })
+  await page.getByTestId('s50-back').click()
+
+  await page.locator('#s00').waitFor()
+  await page.getByTestId('s00-advance').click()
+  await page.getByTestId('s01-open-settings').waitFor()
 })
 
 test('/system/dev_mode が来るとヘッダと S-50 が追従する（完了条件2）', async ({ page }) => {
@@ -83,13 +131,12 @@ test('/system/dev_mode が来るとヘッダと S-50 が追従する（完了条
   await expect(page.getByTestId('s50-dev-toggle')).toHaveText('開発モードを有効にする')
 })
 
-test('効かない旨と無視できない一覧が出ている（完了条件4・5）', async ({ page }) => {
+test('効かない旨と「選んだ項目だけが外れる」注記が出ている（Spec-safety.md §10）', async ({ page }) => {
   await gotoScreen(page, 'S01', { mode: 'IDLE' })
   await openDevTab(page)
 
   await expect(page.getByTestId('s50-dev-no-gate')).toBeVisible()
-  const unignorable = page.getByTestId('s50-dev-unignorable')
-  for (const name of ['物理非常停止ボタン', 'ESP32 のウォッチドッグ', 'UI 非常停止ボタン', '自律系の障害物停止']) {
-    await expect(unignorable).toContainText(name)
-  }
+  await expect(page.getByTestId('s50-dev-scope')).toContainText('選んだ項目だけ')
+  // 2026-09-23 改定で「無視できない一覧」は廃止した。
+  await expect(page.getByTestId('s50-dev-unignorable')).toHaveCount(0)
 })

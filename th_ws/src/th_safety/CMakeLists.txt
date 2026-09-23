@@ -20,6 +20,8 @@ find_package(tf2_geometry_msgs  REQUIRED)
 # jog_gate（WP-SAFE-04）: attributes.yaml（th_state と同じファイル）を読むのに要る。
 find_package(ament_index_cpp   REQUIRED)
 find_package(yaml_cpp_vendor   REQUIRED)
+# dev_mode_core（開発モード）: /system/dev_mode の JSON を読むのに要る。
+find_package(nlohmann_json 3 REQUIRED)
 
 # link_quality_core（WP-SAFE-00）: ヘッダオンリーの純粋ロジック層。
 add_library(link_quality_core INTERFACE)
@@ -63,8 +65,17 @@ target_include_directories(obstacle_limiter_params INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 
+# dev_mode_core（Spec-safety.md §10）: /system/dev_mode の effective を読む
+# ヘッダオンリーの純粋ロジック層。safety_monitor と obstacle_limiter が共有する。
+add_library(dev_mode_core INTERFACE)
+target_include_directories(dev_mode_core INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(dev_mode_core INTERFACE nlohmann_json::nlohmann_json)
+target_compile_features(dev_mode_core INTERFACE cxx_std_17)
+
 add_executable(safety_monitor src/safety_monitor.cpp)
-target_link_libraries(safety_monitor safety_monitor_core link_quality_core)
+target_link_libraries(safety_monitor safety_monitor_core link_quality_core dev_mode_core)
 ament_target_dependencies(safety_monitor
   rclcpp std_msgs std_srvs sensor_msgs geometry_msgs th_system_msgs)
 
@@ -72,7 +83,7 @@ ament_target_dependencies(safety_monitor
 # obstacle_limiter_core.hpp の相互変換だけを行うノード（src/obstacle_limiter.cpp
 # 冒頭コメント参照）。launch 配線・twist_mux.yaml の改名は別パケット。
 add_executable(obstacle_limiter src/obstacle_limiter.cpp)
-target_link_libraries(obstacle_limiter obstacle_limiter_core obstacle_limiter_params)
+target_link_libraries(obstacle_limiter obstacle_limiter_core obstacle_limiter_params dev_mode_core)
 ament_target_dependencies(obstacle_limiter
   rclcpp std_msgs sensor_msgs geometry_msgs th_system_msgs tf2 tf2_ros tf2_geometry_msgs)
 
@@ -94,7 +105,7 @@ ament_target_dependencies(jog_gate rclcpp geometry_msgs th_system_msgs ament_ind
 
 install(TARGETS safety_monitor obstacle_limiter jog_gate DESTINATION lib/${PROJECT_NAME})
 install(TARGETS safety_monitor_core obstacle_limiter_core obstacle_limiter_params
-                link_quality_core scan_geometry_core jog_gate_core
+                link_quality_core scan_geometry_core jog_gate_core dev_mode_core
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -103,6 +114,10 @@ install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+
+  # dev_mode_core の単体試験（Spec-safety.md §10。誤って ON と判定しないこと）。
+  ament_add_gtest(test_dev_mode_core test/test_dev_mode_core.cpp)
+  target_link_libraries(test_dev_mode_core dev_mode_core obstacle_limiter_core)
 
   ament_add_gtest(test_link_quality_core test/test_link_quality_core.cpp)
   target_link_libraries(test_link_quality_core link_quality_core)

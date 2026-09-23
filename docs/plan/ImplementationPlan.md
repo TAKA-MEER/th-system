@@ -95,7 +95,8 @@ herdr agent get <name>                            # agent_status を 10 秒間�
 4. ROS2 が要るものは Docker で `colcon build` ＋ 起動スモークまで自分で
    （ホストだけで走る試験の範囲は `CLAUDE.md`「環境の癖」を見る）
 
-**機器が揃っていなくても検証できる。**`dev_mode:=true` で起動すれば、実機・ラズパイ・
+**機器が揃っていなくても検証できる。**`dev_mode:=true dev_ignore:=link` で起動すれば（2026-09-23 改定で
+`dev_mode:=true` だけでは何も外れなくなった）、実機・ラズパイ・
 ESP32 のどれかが無くても `IDLE` まで進んで画面と FSM を確かめられる
 （使い方は `CLAUDE.md`「開発モードを使う」）。**ただし開発モードで通した結果を
 通常モードの結果と取り違えないこと。**
@@ -371,7 +372,8 @@ bash scripts/run_tests.sh --all --sim  # 単体 ＋ 結合 ＋ シミュレー�
 | ~~0-C~~ | ~~**選択ログ記録**~~ | `WP-DEV-01` | **完了**（2026-09-20・`c974449`）。`connectivity_checker` が選ばれた対象（state / fault / cmd_vel）だけを `dev_log: ` の目印付きで ROS ログへ出す。開発モード OFF の間は何も記録しない |
 | 0-D | battery / opcheck / auto_brake の実ゲート | `WP-DEV-01` | **今は着手できない。**as-built に「運用開始を止めるゲート」がまだ無い。選択状態の保持・配信だけ先に入れてあり、S-50 には「選んでも今は何も起きません」と表示している。ゲートを作る段（`WP-MAINT-01` 等）で繋ぐ |
 
-**使い方**: `ros2 launch th_bringup bringup.launch.py dev_mode:=true`。
+**使い方**: `ros2 launch th_bringup bringup.launch.py dev_mode:=true dev_ignore:=link`
+（2026-09-23 改定。項目の既定は全部 OFF。LiDAR 無しの手動走行は `dev_ignore:=link,lidar_fault,scan_stop`）。
 実行中の切替は `ros2 param set /connectivity_checker dev_mode true|false`。
 現在の状態は `/system/dev_mode`（JSON）で読める。
 

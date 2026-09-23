@@ -779,11 +779,12 @@ S-01 メインメニューの「保守・設定」カードの「設定」ボタ
 **状態の正本は ROS 側**（`connectivity_checker` のパラメータ）で、画面は
 `/system/dev_mode`（JSON）を購読して表示し、トグルは
 `/connectivity_checker/set_parameters` を直接呼ぶ。`localStorage` と `?dev=1` は
-見た目の即時反映のために残している。ON にすると**機器が揃っていなくても
-起動時の確認を通せる**（`connectivity_checker` が `evt.link_ok` を出す）。
-無視できるのは警告だけで、物理／UI 非常停止・ESP32 ウォッチドッグ・自律系の
-障害物停止は効く（`safety_monitor` と `obstacle_limiter` には `dev_mode` を渡していない）。
-起動引数は `dev_mode:=true`、走行中の切替は `ros2 param set /connectivity_checker dev_mode true`。
+見た目の即時反映のために残している。ON にしただけでは通常運用と同じで、
+**選んだ項目だけが外れる**（2026-09-23 改定。Spec-safety.md §10）。`link` を外すと
+**機器が揃っていなくても起動時の確認を通せる**（`connectivity_checker` が `evt.link_ok` を出す）。
+`lidar_fault`・`scan_stop` は `safety_monitor`・`obstacle_limiter` が `/system/dev_mode` を
+購読して反映する（LiDAR 無しの手動走行用。AUTO は止めたまま）。S-00 からも設定に入れる。
+起動引数は `dev_mode:=true dev_ignore:=link,...`、走行中の切替は `ros2 param set /connectivity_checker dev_mode true`。
 
 > 旧 `SettingsPanel.jsx`（ヘッダー ⚙ のオーバーレイ）は、WebUI の画面構成ベース
 > 再構成（コミット `bbb86f2`）で `App.jsx` ごと孤立し表示されなくなっていた。
