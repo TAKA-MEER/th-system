@@ -36,7 +36,10 @@ const TARGETS = {
 }
 const NO_TARGET = { ...TARGETS, selected_index: -1, confidence: 0 }
 
-const PREP = { mode: 'PREP', state: 'MAPPING' }
+// brief-tracker-default-off §3.4: このファイルの既存テストは「人検出が走って
+// いる」前提（レーダーへの切替・2 点指示の登録）なので tracker_enabled:true を
+// seed する（既定 OFF の挙動は e2e/tracker-toggle.spec.js が false で検証する）。
+const PREP = { mode: 'PREP', state: 'MAPPING', tracker_enabled: true }
 const IDLE = { mode: 'IDLE', state: 'NONE' }
 
 async function triggers(page) {

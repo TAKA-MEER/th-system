@@ -38,6 +38,13 @@ def _setup(context):
     # 入力は scan_topic (既定 /scan_filtered。bringup 側で lidar_filter.py が
     # ローカル発行する) なので、リモート LiDAR ホストとの DDS discovery は
     # ここでは不要 (必要なのは lidar_filter.py 側。bringup.launch.py 参照)。
+    #
+    # brief-tracker-default-off §3.2: DR-SPAAM の推論は既定停止とする。
+    # - auto_configure=true で起動時には「設定済み（INACTIVE）」まで進める
+    #   （person_tracker とは独立。person_tracker は lifecycle_manager の
+    #   autostart に従うままとし、ここでは変更しない）。
+    # - auto_activate=false。ACTIVATE は dr_spaam_lifecycle_controller.py が
+    #   /system/state の tracker_enabled に応じて発行する。
     dr_spaam_node = Node(
         package="dr_spaam_ros",
         executable="dr_spaam_ros",
@@ -52,8 +59,8 @@ def _setup(context):
             dr_spaam_params,
             {
                 "scan_topic_name": scan_topic,
-                "auto_configure": autostart,
-                "auto_activate": autostart,
+                "auto_configure": True,
+                "auto_activate": False,
             },
         ],
     )
@@ -135,6 +142,8 @@ def generate_launch_description():
             description="Launch RViz."),
         DeclareLaunchArgument(
             "autostart", default_value="true",
-            description="Auto configure+activate the lifecycle nodes."),
+            description="Auto configure+activate the person_tracker lifecycle node "
+                        "(DR-SPAAM は常に auto_configure のみ。activate は "
+                        "dr_spaam_lifecycle_controller が tracker_enabled で制御)."),
     ]
     return LaunchDescription(args + [OpaqueFunction(function=_setup)])

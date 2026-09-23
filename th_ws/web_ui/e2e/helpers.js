@@ -287,3 +287,19 @@ export async function setTestDevMode(page, value) {
 export async function devParamCalls(page) {
   return page.evaluate(() => window.__thDevParamCalls ?? [])
 }
+
+// brief-tracker-default-off §3.4: /system/set_flag の呼び出しを記録した
+// window.__thSetFlagCalls（ros/useSetFlag.js のテストフック。形状
+// { flag, value, requester }）。「人検出を開始/停止」が本当に送ることを
+// e2e が数える（変異③: ボタンを onClick 空にするとこの配列が空のまま赤）。
+export async function setFlagCalls(page) {
+  return page.evaluate(() => window.__thSetFlagCalls ?? [])
+}
+
+// brief-tracker-default-off §3.4: /system/set_flag の応答スタブ
+// （ros/useSetFlag.js の window.__thTestSetFlag、キー=flag名、値=関数）。
+// { tracker_enabled: (value) => ({ accepted: true, reject_reason_key: null }) }
+// の形を addInitScript で渡す。必須ではない（未スタブ時は拒否扱い）。
+export async function stubSetFlag(page, stubs) {
+  await page.addInitScript((s) => { window.__thTestSetFlag = s }, stubs)
+}

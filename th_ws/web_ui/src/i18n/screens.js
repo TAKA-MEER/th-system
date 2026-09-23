@@ -319,6 +319,21 @@ export const RADAR_CONFIDENCE = (c) => `確信度 ${c}`
 // brief-onsite-fix F-2: レーダー機体マークの「前」ラベル。
 export const RADAR_HEADING = '前'
 
+// ---------------------------------------------------------------- 人検出の開始/停止
+// brief-tracker-default-off §3.4: S-20/S-21 の対象選択タブに出す共通 UI
+// （parts/TrackerControl.jsx）。実体は /system/set_flag tracker_enabled。
+export const TRACKER_START = '人検出を開始'
+export const TRACKER_STOP = '人検出を停止'
+export const TRACKER_OFF = '人検出が止まっています'
+export const TRACKER_ON = '人検出 動作中'
+// 起動中（フラグは true だが候補がまだ出ない。DR-SPAAM の activate から最初の
+// 検出まで実測約 5.8 s）。
+export const TRACKER_BOOTING = '起動中…'
+// 「停止」を押せない理由の事前表示（SUMMON 全状態・PREP/REGISTER は人検出が要る。
+// ROS 側の拒否理由 tracker_required の UI 側での事前表示。押せても拒否される
+// ことがアスキーではなく画面でも分かるようにする）。
+export const TRACKER_STOP_DENIED = '人検出を止められません（この操作に人検出が必要です）'
+
 // ---------------------------------------------------------------- S-21 試験（WP-UI-07） ----
 // screens/S21Test.jsx の表示文字列。brief-UI-S21 / mockup 1055〜1153 行。
 // 2 点指示ウィザードと「地図」「対象選択」タブは S-20 の定数をそのまま流用する。

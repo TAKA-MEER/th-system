@@ -12,6 +12,10 @@ from dataclasses import dataclass
 STATUS_EXISTS_LEG = 1
 TRACKED_CONFIDENCE = 0.9  # dr_spaam_param.yaml の conf_thresh を通過した検出のみ EXISTS_LEG になるため固定値
 
+# brief-tracker-default-off §3.3: 人物検出 OFF（tracker_enabled=false）中の
+# lost_reason。PersonStatus.msg のコメントにも「値の正本」として追記してある。
+LOST_REASON_DISABLED = "disabled"
+
 
 @dataclass
 class BridgeDecision:
@@ -35,6 +39,21 @@ def classify(status: int, stop_following: bool) -> BridgeDecision:
     if stop_following:
         return BridgeDecision(is_lost=True, lost_reason="TARGET_SWITCHED", confidence=0.0)
     return BridgeDecision(is_lost=False, lost_reason="", confidence=TRACKED_CONFIDENCE)
+
+
+def apply_disabled(decision: "BridgeDecision", tracker_enabled: bool) -> "BridgeDecision":
+    """人物検出 OFF（tracker_enabled=False）中は検出状態を強制 lost にする。
+
+    brief-tracker-default-off §3.3: 検出の ON/OFF は推論を止めているので、真の
+    検出状態（decision）がたまたま「検出あり」のままでも出力側から隠す。
+    - is_lost=True / lost_reason="disabled" / confidence=0.0 を返す。
+    - 呼び出し側はこの is_lost を match_selected_index へ渡すため、選択 index も
+      自動的に -1 になる（候補表示を残さない）。
+    - OFF から復帰したら真の decision をそのまま通す（次のトラッカー周期で最新状態）。
+    """
+    if not tracker_enabled:
+        return BridgeDecision(is_lost=True, lost_reason=LOST_REASON_DISABLED, confidence=0.0)
+    return decision
 
 
 GRACE_CONFIDENCE = 0.3  # 猶予中に見せる confidence（TRACKED_CONFIDENCE より低く「不確か」を表す）

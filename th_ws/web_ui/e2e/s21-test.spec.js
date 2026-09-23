@@ -72,7 +72,15 @@ async function triggers(page) {
 }
 
 async function goto21(page, state = IDLE, extra = {}) {
-  await gotoScreenWithOnsite(page, 'S21', state, { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, ...extra })
+  // brief-tracker-default-off §3.4: このファイルの既存テストは「人検出が走って
+  // いる」前提でレーダー／呼び寄せを検証しているので、明示が無い限り
+  // tracker_enabled:true を seed する（人検出の既定 OFF は新規
+  // tracker-toggle スペックで false を明示して検証する）。
+  const seed = {
+    ...IDLE, ...state,
+    tracker_enabled: state?.tracker_enabled ?? true,
+  }
+  await gotoScreenWithOnsite(page, 'S21', seed, { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, ...extra })
   await page.locator('#s21').waitFor()
 }
 

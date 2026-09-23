@@ -248,6 +248,26 @@ if(BUILD_TESTING)
     test/test_onsite_context.py
     TIMEOUT 30)
 
+  # tracker_enabled の純ロジック (brief-tracker-default-off §3.1。Spec-modes.md
+  # §9「動かさない」自動停止集合・§5.1 要 person（SUMMON 全状態+PREP/REGISTER）の
+  # OFF 拒否。th_state の純ロジック。ROS2 不要)
+  ament_add_pytest_test(test_tracker_policy
+    test/test_tracker_policy.py
+    TIMEOUT 30)
+
+  # DR-SPAAM 起動/停止判断の純ロジック (brief-tracker-default-off §3.2。
+  # tracker_enabled と lifecycle 状態からの transition_id 決定。ROS2 不要)
+  ament_add_pytest_test(test_dr_spaam_lifecycle_controller_core
+    test/test_dr_spaam_lifecycle_controller_core.py
+    TIMEOUT 30)
+
+  # DR-SPAAM 起動/停止アクチュエータの結合テスト (brief-tracker-default-off §3.2。
+  # /system/state の tracker_enabled を見て DR-SPAAM の lifecycle サービスへ
+  # activate/deactivate を飛ばす本番の経路。launch_testing。rclpy 要）
+  ament_add_pytest_test(test_dr_spaam_lifecycle_controller_node
+    test/test_dr_spaam_lifecycle_controller_node.py
+    TIMEOUT 120)
+
   # ── パラメータ registry コア (th_params。ROS2 不要・純粋単体テスト。WP-PARAM-01) ──
   ament_add_pytest_test(test_params_schema
     test/test_params_schema.py
@@ -323,6 +343,19 @@ if(BUILD_TESTING)
   # 知らせ無しで検知・通知中は保留・上限超過で故障・publisher 死亡でも超過で故障）
   ament_add_pytest_test(test_planned_restart_node
     test/test_planned_restart_node.py
+    TIMEOUT 180)
+  # 人物検出 OFF ゲートの Docker launch テスト（brief-tracker-default-off §3.3。
+  # /system/state.tracker_enabled=false 中は /person/targets・/person/status が
+  # is_lost/disabled を強制し、evt.target_lost と select サービス呼び出しを抑止
+  # する本番の経路。変異②の標的）
+  ament_add_pytest_test(test_person_tracker_bridge_node
+    test/test_person_tracker_bridge_node.py
+    TIMEOUT 180)
+  # 退避待ちゲートの disabled 結合テスト（brief-tracker-default-off §3.3。
+  # /person/status が is_lost=True / lost_reason="disabled" の間 clear_ok を
+  # 出さない。見えている人が十分離れると発火する対照を含む）
+  ament_add_pytest_test(test_wait_clear_gate_node
+    test/test_wait_clear_gate_node.py
     TIMEOUT 180)
   # mode gate の Docker launch テスト（WP-SAFE-05修正 §2。
   # IDLE で inactive（生値のまま）・PANEL_NAV で1秒以内に ng・
