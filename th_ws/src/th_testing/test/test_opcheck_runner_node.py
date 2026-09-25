@@ -29,6 +29,27 @@ mode==OPCHECK のときだけ動く「ノード側でも二重に確認」の実
   ① デッドマンの途絶判定を消す → test_b_motor_hold_and_deadman_release が赤
   ② OPCHECK 以外でも動くようにする → test_a_rejects_outside_opcheck が赤
   ③ judge_motor の符号判定を消す → test_c_motor_sign_mismatch_emits_ng が赤
+
+2026-09-25 追加（実装管理担当の穴指摘 §1-3。opcheck_runner_gates ブランチ）:
+  e/f. 実行中の項目が MOTOR のとき以外は /opcheck/motor_hold を送っても
+       /cmd_vel_behavior に一切出ない（LIST 一覧中・ESTOP 項目中）
+  g. NG のあと FSM が送る record_result effect（state_manager は本テストでは
+     起動しないため直接 /system/effect に publish して模擬する）で項目が閉じ、
+     別の項目を開始できる
+  h. 最終判定（OK/NG/WARN）のあと、次の項目が始まるまで /opcheck/status が
+     UNKNOWN に戻らない
+  i. MOTOR で最終判定（evt.check_result）を出した直後、record_result が
+     届く前（＝self._item がまだ "MOTOR" のまま）でも motor_hold は無視する
+     （実装管理担当の決定・残存 window を塞ぐ追加修正）
+
+追加の変異チェック:
+  ④ _on_motor_hold() と _sync_command() 両方の「項目が MOTOR か」の判定を
+     消す → test_e_motor_hold_ignored_in_list / test_f_motor_hold_ignored_during_estop_item
+     が赤
+  ⑤ _on_effect() の record_result 受信時の _close_item() 呼び出しを消す →
+     test_g_record_result_effect_closes_item_for_next_check が赤
+  ⑥ _on_motor_hold() / _sync_command() の self._final_sent 判定を消す →
+     test_i_motor_hold_ignored_after_final_verdict_before_record_result が赤
 """
 import json
 import time
@@ -46,7 +67,8 @@ import launch_testing.actions
 
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
-from th_system_msgs.msg import CheckStatus, StateEvent, SystemState, WheelFeedback
+from th_system_msgs.msg import (CheckStatus, StateEffect, StateEvent,
+                                SystemState, WheelFeedback)
 from th_system_msgs.srv import RunCheck
 
 
@@ -115,6 +137,11 @@ class TestOpcheckRunnerNode(unittest.TestCase):
             SystemState, '/system/state', _STATE_QOS)
         self.pub_hold = self.node.create_publisher(
             String, '/opcheck/motor_hold', 10)
+        # state_manager が実際に送る effect（record_result 等）を模擬するための
+        # publisher。本テストでは state_manager を起動しないため、FSM が
+        # T-OPC-02/03 で送る record_result を直接 /system/effect に流す。
+        self.pub_effect = self.node.create_publisher(
+            StateEffect, '/system/effect', 10)
         self.pub_wheel_cmd = self.node.create_publisher(
             WheelFeedback, '/esp32/wheel_cmd_speed', 10)
         self.pub_wheel_fb = self.node.create_publisher(
@@ -173,6 +200,15 @@ class TestOpcheckRunnerNode(unittest.TestCase):
         fb.right_speed = meas_r
         self.pub_wheel_fb.publish(fb)
         self._spin(0.05)
+
+    def _publish_effect(self, name: str, args: dict, dest: str = 'opcheck_runner'):
+        eff = StateEffect()
+        eff.header.stamp = self.node.get_clock().now().to_msg()
+        eff.dest = dest
+        eff.name = name
+        eff.args_json = json.dumps(args)
+        self.pub_effect.publish(eff)
+        self._spin(0.15)
 
     def _wait_for_event(self, event: str, timeout: float = 3.0):
         deadline = time.time() + timeout
@@ -266,6 +302,173 @@ class TestOpcheckRunnerNode(unittest.TestCase):
         assert abs(self._cmd[-1].linear.x) < 1e-9 and abs(self._cmd[-1].angular.z) < 1e-9, \
             f'OPCHECK を抜けた直後の指令が 0 になっていない: {self._cmd[-1]}'
         self._publish_hold('NONE')
+
+    # ════════════════════════════════════════════════════════
+    # e. LIST 一覧中（実行中の項目が無い）は motor_hold を無視する
+    # ════════════════════════════════════════════════════════
+    def test_e_motor_hold_ignored_in_list(self):
+        """実行中の項目が無い（LIST）のに /opcheck/motor_hold を送り続けても
+        /cmd_vel_behavior に一度も出ない（①の標的: 修正前は項目を見ていな
+        かったため OPCHECK モードでさえあれば動いてしまっていた）。"""
+        self._set_mode('OPCHECK', 'LIST')
+        self._cmd.clear()
+
+        deadline = time.time() + DEADMAN_S * 2.0
+        while time.time() < deadline:
+            self._publish_hold('FORWARD')
+            self._spin(0.05)
+        self._publish_hold('NONE')
+
+        assert not self._cmd, \
+            f'項目未実行（LIST）なのに /cmd_vel_behavior に出た（①の標的）: {self._cmd}'
+
+    # ════════════════════════════════════════════════════════
+    # f. ESTOP 項目の実行中は motor_hold を無視する
+    # ════════════════════════════════════════════════════════
+    def test_f_motor_hold_ignored_during_estop_item(self):
+        """ESTOP 項目の実行中に motor_hold(FORWARD) を送り続けても
+        /cmd_vel_behavior に一度も出ない（①の標的）。"""
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('ESTOP')
+        assert res.started, res.message
+
+        self._cmd.clear()
+        deadline = time.time() + DEADMAN_S * 2.0
+        while time.time() < deadline:
+            self._publish_hold('FORWARD')
+            self._spin(0.05)
+        self._publish_hold('NONE')
+
+        assert not self._cmd, \
+            f'ESTOP 項目中なのに /cmd_vel_behavior に出た（①の標的）: {self._cmd}'
+
+    # ════════════════════════════════════════════════════════
+    # g. record_result effect（T-OPC-02/03 が送る）で項目が閉じ、
+    #    別の項目を開始できる
+    # ════════════════════════════════════════════════════════
+    def test_g_record_result_effect_closes_item_for_next_check(self):
+        """MOTOR で NG を出したあと、state_manager が送る record_result effect
+        で項目が閉じ、別項目（IMU）を開始できる（②の標的: 修正前は T-OPC-02/03
+        に record_result effect が無く、self._item が残ったまま以後すべての
+        run_item が拒否され続けた）。"""
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('MOTOR')
+        assert res.started, res.message
+
+        self._events.clear()
+        self._publish_hold('FORWARD')
+        self._publish_wheel(cmd_l=V_CHECK, cmd_r=V_CHECK,
+                            meas_l=-V_CHECK, meas_r=V_CHECK)
+        self._publish_hold('NONE')
+        hits = self._wait_for_event('evt.check_result', timeout=3.0)
+        assert hits, 'evt.check_result が出なかった（前提が崩れている）'
+        args = json.loads(hits[-1].arg_json)
+        assert args.get('item') == 'MOTOR' and args.get('result') == 'NG', args
+
+        # record_result が届く前は、まだ MOTOR が実行中扱いのまま。
+        res = self._run_item('IMU')
+        assert res.started is False, \
+            'record_result 前なのに別項目が受理された（前提が崩れている）'
+
+        # 実運用では state_manager の T-OPC-03（NG・非校正）がこれを送る。
+        self._publish_effect('record_result', {'item': 'MOTOR', 'result': 'NG'})
+
+        res = self._run_item('IMU')
+        assert res.started, \
+            f'record_result のあとも別項目を開始できない（②の標的）: {res.message}'
+
+    # ════════════════════════════════════════════════════════
+    # h. 最終判定のあと /opcheck/status が UNKNOWN に戻らない
+    # ════════════════════════════════════════════════════════
+    def test_h_status_stays_final_after_verdict(self):
+        """最終判定（OK/NG/WARN）が出たら、次の項目が始まるまで
+        /opcheck/status が UNKNOWN に戻らない（③の標的: 修正前は
+        _monitor_tick() が 10Hz で無条件に UNKNOWN を出し続けていた。
+        さらに record_result で項目を閉じる _close_item() 自体も
+        UNKNOWN を出していた）。"""
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('MOTOR')
+        assert res.started, res.message
+
+        self._status.clear()
+        self._publish_hold('FORWARD')
+        # 符号一致・追従良好 → OK 判定になるはず。
+        self._publish_wheel(cmd_l=V_CHECK, cmd_r=V_CHECK,
+                            meas_l=V_CHECK, meas_r=V_CHECK)
+        self._publish_hold('NONE')
+
+        final_index = None
+        deadline = time.time() + 3.0
+        while time.time() < deadline and final_index is None:
+            self._spin(0.05)
+            for i, st in enumerate(self._status):
+                if st.result != 'UNKNOWN':
+                    final_index = i
+                    break
+        assert final_index is not None, '最終判定の CheckStatus が一度も出なかった'
+        assert self._status[final_index].result == 'OK', \
+            f'OK になるはずが {self._status[final_index]}'
+
+        # monitor_tick は 10Hz なので、その数周期分待って UNKNOWN が
+        # 再発しないことを確かめる。
+        self._spin(0.6)
+        after = self._status[final_index + 1:]
+        assert not any(st.result == 'UNKNOWN' for st in after), \
+            f'最終判定のあと UNKNOWN に戻った（③の標的）: {[s.result for s in after]}'
+
+        # record_result effect で項目を閉じても UNKNOWN が出ないこと
+        # （_close_item() 自体が UNKNOWN を出していた分もここで検出する）。
+        self._publish_effect('record_result', {'item': 'MOTOR', 'result': 'OK'})
+        self._spin(0.3)
+        after2 = self._status[final_index + 1:]
+        assert not any(st.result == 'UNKNOWN' for st in after2), (
+            'record_result で項目を閉じたあと UNKNOWN が出た（③の標的・'
+            f'_close_item()）: {[s.result for s in after2]}')
+
+    # ════════════════════════════════════════════════════════
+    # i. MOTOR の最終判定後・record_result 到着前の残存 window を塞ぐ
+    #    （実装管理担当の決定・2026-09-25 追加）
+    # ════════════════════════════════════════════════════════
+    def test_i_motor_hold_ignored_after_final_verdict_before_record_result(self):
+        """MOTOR で NG（符号逆）を出した直後、record_result effect が届く前
+        （state_manager を起動しない本テストでは effect は一切来ない）に
+        motor_hold(FORWARD) を送り続けても /cmd_vel_behavior に非ゼロが
+        出ない。
+
+        修正前は「実行中の項目が MOTOR か」だけをゲートにしていたため、
+        evt.check_result を出したあと record_result が FSM から届いて
+        項目が閉じるまでの間（ROS の配送遅延ぶん）は self._item がまだ
+        "MOTOR" のままで、この短い window の間だけ FORWARD が通ってしまう
+        穴が残っていた。
+        """
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('MOTOR')
+        assert res.started, res.message
+
+        self._events.clear()
+        self._publish_hold('FORWARD')
+        self._publish_wheel(cmd_l=V_CHECK, cmd_r=V_CHECK,
+                            meas_l=-V_CHECK, meas_r=V_CHECK)
+        self._publish_hold('NONE')
+        hits = self._wait_for_event('evt.check_result', timeout=3.0)
+        assert hits, '前提が崩れている: evt.check_result が出なかった'
+        args = json.loads(hits[-1].arg_json)
+        assert args.get('item') == 'MOTOR' and args.get('result') == 'NG', \
+            f'前提が崩れている: MOTOR NG が出なかった: {args}'
+
+        # record_result はここでは一切 publish しない
+        # （state_manager を起動しない単体試験の想定どおり）。
+        # この「最終判定は出たがまだ閉じていない」状態で FORWARD を送り続ける。
+        self._cmd.clear()
+        deadline = time.time() + DEADMAN_S * 2.0
+        while time.time() < deadline:
+            self._publish_hold('FORWARD')
+            self._spin(0.05)
+        self._publish_hold('NONE')
+
+        assert not self._cmd, (
+            'MOTOR の最終判定後・record_result 到着前なのに /cmd_vel_behavior '
+            f'に出た（残存 window の標的）: {self._cmd}')
 
 
 if __name__ == '__main__':

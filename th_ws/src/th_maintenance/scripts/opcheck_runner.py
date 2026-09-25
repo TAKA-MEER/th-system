@@ -114,6 +114,9 @@ class OpcheckRunner(Node):
 
         self._item = None
         self._item_started_ms = 0.0
+        # 2026-09-25 修正: 最終判定を出したあと、次の項目が始まるまで
+        # _monitor_tick() の周期 UNKNOWN 上書きを止めるためのフラグ。
+        self._final_sent = False
 
         # MOTOR
         self._hold_val = "NONE"
@@ -257,6 +260,8 @@ class OpcheckRunner(Node):
             return False
         self._item = item
         self._item_started_ms = self._now_ms()
+        self._hold_val = "NONE"
+        self._final_sent = False
         self._reset_accums(item)
         self.get_logger().info(f"項目開始: {item}")
         self._publish_status(detail=f"項目を開始しました ({item})")
@@ -283,13 +288,22 @@ class OpcheckRunner(Node):
             self._last_lidar_verdict = (None, None)
 
     def _close_item(self):
-        self._publish_status(detail=f"項目 {self._item} を終了しました")
+        # 2026-09-25 修正: ここで result="UNKNOWN" の CheckStatus を出すと、
+        # 直前に _publish_final() が出した OK/NG/WARN を即座に踏みつぶしていた
+        # （§3 の要件「最終判定を次の項目が始まるまで出し続ける」に違反）。
+        # 最後の最終判定をそのまま残す（新しい status は出さない）。
+        self.get_logger().info(f"項目 {self._item} を終了しました")
         self._item = None
+        # 2026-09-25 修正（§1）: 項目が MOTOR でなくなった瞬間に指令を 0 にする。
+        # 次の deadman_tick（最大 50ms 後）を待たせない。
+        self._hold_val = "NONE"
+        self._sync_command()
 
     def _abort_item(self):
         if self._item is not None:
             self.get_logger().warn(f"項目 {self._item} を中断")
         self._item = None
+        self._hold_val = "NONE"
         self._halt_motor()
         self._publish_status(detail="中断しました")
 
@@ -330,6 +344,20 @@ class OpcheckRunner(Node):
         val = msg.data.strip().upper() if msg.data else "NONE"
         if val not in ("NONE", "FORWARD", "BACK", "LEFT", "RIGHT"):
             self.get_logger().warn(f"unknown motor_hold: {msg.data}")
+            return
+        # 2026-09-25 修正（§1・安全最優先）: 実行中の項目が MOTOR のとき以外は
+        # 押下を受け付けない。LIST 一覧中や ESTOP/IMU/LIDAR 項目中に届いても無視する。
+        # 2026-09-25 追加修正（実装管理担当の決定・残存 window を塞ぐ）: MOTOR で
+        # 最終判定（evt.check_result）を出したあとは、record_result effect が
+        # FSM から届いて項目が閉じる（_start_item() で次の項目が始まる）までの
+        # 短い間も無視する。record_result の往復には ROS の配送遅延があり、
+        # その間 self._item はまだ "MOTOR" のままなので item チェックだけでは
+        # 塞げない。
+        if val != "NONE" and (self._item != "MOTOR" or self._final_sent):
+            self.get_logger().warn(
+                f"MOTOR 以外／最終判定済み（項目={self._item}, "
+                f"final_sent={self._final_sent}）での motor_hold({val}) を無視した",
+                throttle_duration_sec=1.0)
             return
         prev = self._hold_val
         self._hold_val = val
@@ -389,7 +417,13 @@ class OpcheckRunner(Node):
         return t
 
     def _sync_command(self):
-        if self._mode != "OPCHECK" or (self._estop_ui or self._estop_hw or self._estop_raw):
+        # 2026-09-25 修正（§1・安全最優先）: 実行中の項目が MOTOR のとき以外は
+        # 指令を出さない。_on_motor_hold() 側のゲートと二重に確認する
+        # （どちらか片方が壊れても機体が動かないようにする）。
+        # 2026-09-25 追加修正（実装管理担当の決定）: MOTOR の最終判定が出た
+        # あと、項目が閉じる（次の _start_item()）までも指令を出さない。
+        if (self._mode != "OPCHECK" or self._item != "MOTOR" or self._final_sent
+                or (self._estop_ui or self._estop_hw or self._estop_raw)):
             self._halt_motor()
             return
         direction = self._hold_val
@@ -544,6 +578,9 @@ class OpcheckRunner(Node):
             next_screen = ""
         if next_screen == "imu_calib" and verdict.result == "NG":
             next_screen = "repair"
+        # 2026-09-25 修正（§3）: 最終判定が出たことを記録する。
+        # _monitor_tick() はこれ以降、次の項目が始まるまで UNKNOWN で上書きしない。
+        self._final_sent = True
         self._publish_status(result=verdict.result, detail=verdict.reason,
                              next_screen=next_screen)
 
@@ -564,6 +601,11 @@ class OpcheckRunner(Node):
         self._estop_tick()
         self._imu_tick()
         self._lidar_tick()
+        # 2026-09-25 修正（§3）: 最終判定が出たあとは周期の UNKNOWN 上書きを止める
+        # （上の3つの _tick() が verdict の変化を検知すれば _publish_final() が
+        # 改めて呼ばれ、その時点の判定に更新される）。
+        if self._final_sent:
+            return
         self._publish_status(result="UNKNOWN", detail=self._live_detail())
 
     def _live_detail(self) -> str:

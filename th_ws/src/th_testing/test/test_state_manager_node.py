@@ -639,12 +639,19 @@ class TestStateManagerNode(unittest.TestCase):
         - OK（ESTOP）→ LIST + record_result（T-OPC-04）
         修正前は Context.check_result を常に空文字で渡していたため、この3遷移
         すべてが不成立で RUNNING_CHECK から先に進めなかった（2026-09-25 修正）。
+
+        T-OPC-02/03 の record_result effect（2026-09-25 追加）: 修正前は
+        offer_calib（T-OPC-02）のみ・effects なし（T-OPC-03）で、
+        opcheck_runner 側の self._item を閉じる手段が無く、以後すべての
+        run_item が「別の項目が実行中」で拒否され続けた（実装管理担当の穴
+        指摘 §2）。
         """
         res = self._trigger('ui.enter_mode', {'mode': 'OPCHECK'})
         assert res.accepted, res.reject_reason_key
         assert self._wait_mode('OPCHECK')
 
-        # NG・非校正 (MOTOR) → REPAIR
+        # NG・非校正 (MOTOR) → REPAIR + record_result（T-OPC-03）
+        self._effect_history.clear()
         res = self._trigger('ui.check_item', {'item': 'MOTOR'})
         assert res.accepted, res.reject_reason_key
         assert self._latest().state == 'RUNNING_CHECK'
@@ -655,12 +662,18 @@ class TestStateManagerNode(unittest.TestCase):
         snap = self._latest()
         assert snap.mode == 'OPCHECK' and snap.state == 'REPAIR', \
             f'MOTOR NG が REPAIR に進まなかった（T-OPC-03）: {snap.mode}/{snap.state}'
+        hits = self._wait_effect('record_result', timeout=1.0)
+        assert hits, \
+            'T-OPC-03 で record_result が配送されなかった（opcheck_runner の項目が閉じない）'
+        assert hits[0].dest == 'opcheck_runner', hits[0].dest
+        assert json.loads(hits[0].args_json).get('item') == 'MOTOR', hits[0].args_json
+        assert json.loads(hits[0].args_json).get('result') == 'NG', hits[0].args_json
 
         res = self._trigger('ui.stop')
         assert res.accepted, res.reject_reason_key
         assert self._latest().state == 'LIST', 'T-OPC-06 (REPAIR→LIST) が通らない'
 
-        # NG・校正可能 (IMU) → LIST + offer_calib
+        # NG・校正可能 (IMU) → LIST + offer_calib + record_result（T-OPC-02）
         res = self._trigger('ui.check_item', {'item': 'IMU'})
         assert res.accepted, res.reject_reason_key
         assert self._latest().state == 'RUNNING_CHECK'
@@ -675,6 +688,12 @@ class TestStateManagerNode(unittest.TestCase):
         hits = self._wait_effect('offer_calib', timeout=1.0)
         assert hits, 'T-OPC-02 で offer_calib が配送されなかった'
         assert json.loads(hits[0].args_json).get('item') == 'IMU', hits[0].args_json
+        hits = self._wait_effect('record_result', timeout=1.0)
+        assert hits, \
+            'T-OPC-02 で record_result が配送されなかった（opcheck_runner の項目が閉じない）'
+        assert hits[0].dest == 'opcheck_runner', hits[0].dest
+        assert json.loads(hits[0].args_json).get('item') == 'IMU', hits[0].args_json
+        assert json.loads(hits[0].args_json).get('result') == 'NG', hits[0].args_json
 
         # OK (ESTOP) → LIST + record_result
         res = self._trigger('ui.check_item', {'item': 'ESTOP'})
