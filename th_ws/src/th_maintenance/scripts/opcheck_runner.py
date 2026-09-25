@@ -363,8 +363,11 @@ class OpcheckRunner(Node):
     def _maybe_finalize_motor(self):
         if self._item != "MOTOR":
             return
-        if not self._motor_samples:
-            return
+        # 2026-09-25 修正: サンプルが1つも無い（指令すら通らなかった＝配線断・
+        # ESP32未接続等）を早期 return で無視していたため、judge_motor_samples()
+        # の NG("no_samples") 分岐に一度も到達せず、evt.check_result が
+        # 永遠に出ないまま RUNNING_CHECK に固着していた（モーター全損を検知
+        # できない最悪ケースを取り逃す）。常に judge_motor_samples() を呼ぶ。
         verdict = judge_motor_samples(self._motor_samples, self._p)
         self._motor_samples = []
         self.get_logger().info(f"MOTOR 判定: {verdict.result} ({verdict.reason})")
