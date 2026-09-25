@@ -26,9 +26,9 @@ import time
 try:
     import rclpy
     from rclpy.node import Node
-    from rclpy.parameter import ParameterDescriptor
     from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                            QoSReliabilityPolicy, qos_profile_sensor_data)
+    from rcl_interfaces.msg import ParameterDescriptor
     from geometry_msgs.msg import Twist
     from sensor_msgs.msg import Imu, LaserScan
     from std_msgs.msg import Bool, String, UInt8
