@@ -47,6 +47,13 @@ export const TOPICS = {
   // WP-DEV-01B: 開発モードの現在状態（connectivity_checker が std_msgs/String
   // に JSON で 1Hz・transient_local 配信。names.json の endpoints にある）。
   DEV_MODE: '/system/dev_mode',
+  // WP-UI-08: S-30 始業点検。opcheck_runner が発行する判定結果（CheckStatus）。
+  // reliable depth5。names.json の endpoints にある。
+  OPCHECK_STATUS: '/opcheck/status',
+  // WP-UI-08: S-30 項目2（モーター確認）の指令 vs 実測（ros/useWheelSpeeds.js）。
+  // 型は同じ th_system_msgs/WheelFeedback を esp32_bridge が両方向に使い回す。
+  WHEEL_FEEDBACK: '/esp32/wheel_feedback',
+  WHEEL_CMD_SPEED: '/esp32/wheel_cmd_speed',
 }
 
 export const SERVICES = {
@@ -72,6 +79,13 @@ export const SERVICES = {
   // 「人検出を開始/停止」が tracker_enabled を切り替える。names.json の
   // endpoints に既にあるので辞書ゲートを通る）。
   SET_FLAG: '/system/set_flag',
+  // WP-UI-08: S-30 の ESTOP 項目。目視確認の回答（AnswerCheck）。opcheck_runner
+  // が受ける直接サービスで、FSM トリガではない。names.json の endpoints にある。
+  // 項目の選択自体は /system/trigger の ui.check_item（T-OPC-01 が
+  // start_monitor effect を opcheck_runner へ送る）で行う — /opcheck/run_item
+  // (RunCheck) は使わない。それを呼ぶと FSM を経由せず RUNNING_CHECK に遷移
+  // しないまま opcheck_runner だけが項目を開始し、画面と FSM の状態がずれる。
+  OPCHECK_ANSWER: '/opcheck/answer',
 }
 
 export const MSG_TYPES = {
@@ -104,6 +118,11 @@ export const MSG_TYPES = {
   // WS-9AB: S-20。壁近接警告（pin_registrar が latched 配信）。名前は
   // names.json 辞書に無いので usePinWarning.js のローカル定数で購読する。
   PIN_WARNING: 'th_system_msgs/PinWarning',
+  // WP-UI-08: S-30。始業点検の判定結果。
+  CHECK_STATUS: 'th_system_msgs/CheckStatus',
+  // WheelFeedback は WP-UI-08 の項目2（モーター確認）で指令/実測の両方に使う
+  // （esp32_bridge が同型を両方向で使い回す。DetailedDesign-webui.md §3）。
+  WHEEL_FEEDBACK: 'th_system_msgs/WheelFeedback',
 }
 
 export const SRV_TYPES = {
@@ -125,4 +144,6 @@ export const SRV_TYPES = {
   // WS-9AB: 壁近接警告の 3 択（place / retreat / cancel）。名前は
   // useOnsiteService.js のローカル定数で扱う（select_pin と同型）。
   ONSITE_RESOLVE_PIN: 'th_system_msgs/ResolvePin',
+  // WP-UI-08: S-30 の ESTOP 項目の目視確認回答。
+  OPCHECK_ANSWER: 'th_system_msgs/AnswerCheck',
 }
