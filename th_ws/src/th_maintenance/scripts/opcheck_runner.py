@@ -347,9 +347,16 @@ class OpcheckRunner(Node):
             return
         # 2026-09-25 修正（§1・安全最優先）: 実行中の項目が MOTOR のとき以外は
         # 押下を受け付けない。LIST 一覧中や ESTOP/IMU/LIDAR 項目中に届いても無視する。
-        if val != "NONE" and self._item != "MOTOR":
+        # 2026-09-25 追加修正（実装管理担当の決定・残存 window を塞ぐ）: MOTOR で
+        # 最終判定（evt.check_result）を出したあとは、record_result effect が
+        # FSM から届いて項目が閉じる（_start_item() で次の項目が始まる）までの
+        # 短い間も無視する。record_result の往復には ROS の配送遅延があり、
+        # その間 self._item はまだ "MOTOR" のままなので item チェックだけでは
+        # 塞げない。
+        if val != "NONE" and (self._item != "MOTOR" or self._final_sent):
             self.get_logger().warn(
-                f"MOTOR 以外（項目={self._item}）での motor_hold({val}) を無視した",
+                f"MOTOR 以外／最終判定済み（項目={self._item}, "
+                f"final_sent={self._final_sent}）での motor_hold({val}) を無視した",
                 throttle_duration_sec=1.0)
             return
         prev = self._hold_val
@@ -413,7 +420,9 @@ class OpcheckRunner(Node):
         # 2026-09-25 修正（§1・安全最優先）: 実行中の項目が MOTOR のとき以外は
         # 指令を出さない。_on_motor_hold() 側のゲートと二重に確認する
         # （どちらか片方が壊れても機体が動かないようにする）。
-        if (self._mode != "OPCHECK" or self._item != "MOTOR"
+        # 2026-09-25 追加修正（実装管理担当の決定）: MOTOR の最終判定が出た
+        # あと、項目が閉じる（次の _start_item()）までも指令を出さない。
+        if (self._mode != "OPCHECK" or self._item != "MOTOR" or self._final_sent
                 or (self._estop_ui or self._estop_hw or self._estop_raw)):
             self._halt_motor()
             return
