@@ -39,14 +39,17 @@ test('mode IDLE: every menu button is enabled (mode_entry.yaml allows all 10 fro
 // 検証したいのは menuItems() の「今のモードから入れないボタンは dis 表示、
 // 押すと理由ウィンドウ」という挙動なので、専用画面を持たない＝S-01 が
 // 正しく描画されるモードで同じ形を突く。mode_entry.json の
-// OPCHECK -> ['CALIB', 'IDLE'] は保守系だけ許可・走行系は拒否という
+// CALIB -> ['OPCHECK', 'IDLE'] は保守系だけ許可・走行系は拒否という
 // 同じ構図（MANUAL -> ['IDLE','OPCHECK','CALIB'] の代わり）。
-test('mode OPCHECK: 遷移可能な保守ボタンだけ活性、他は押すと mode_entry_denied', async ({ page }) => {
-  await gotoScreen(page, 'S01', { mode: 'OPCHECK', tracker_enabled: true })
+// WP-UI-08: 以前はここで mode OPCHECK を seed していたが、S-30 始業点検が
+// できたことで OPCHECK は MODE_TO_SCREEN に載り、S-01 ではなく S-30 が
+// 描画されるようになった。CALIB は S-40 がまだ無いので引き続き S-01 が出る。
+test('mode CALIB: 遷移可能な保守ボタンだけ活性、他は押すと mode_entry_denied', async ({ page }) => {
+  await gotoScreen(page, 'S01', { mode: 'CALIB', tracker_enabled: true })
 
-  const calib = page.getByRole('button', { name: '校正' })
-  await expect(calib).toBeEnabled()
-  await expect(calib).not.toHaveClass(/\bdis\b/)
+  const opcheck = page.getByRole('button', { name: '始業点検' })
+  await expect(opcheck).toBeEnabled()
+  await expect(opcheck).not.toHaveClass(/\bdis\b/)
 
   const follow = page.getByRole('button', { name: '追従走行' })
   await expect(follow).toBeEnabled() // clickable so the reason can show, but styled as denied
