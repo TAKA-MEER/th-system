@@ -994,7 +994,7 @@
   class: b
   status: given
   value: 0.10
-  consumers: [calib_runner]
+  consumers: [calib_runner, esp32_bridge]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §4（A10）"
   note: "A10 の閾値。10% を超えるずれは校正ではなく機械的な異常（names.md に明記）"
 
