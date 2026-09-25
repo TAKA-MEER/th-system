@@ -393,6 +393,26 @@ blocking）ため、アプリ層の送信頻度を上げるだけでは TCP 再�
   /robot/mode が IDLE/MANUAL でない場合は安全のため自動的に中断する。
 ```
 
+**`wheel_radius_scale`（WP-ESP32-02。O-d10 のギャップ解消。2026-09-25）**: 上記「1.」の
+ファーム再書き込みは今も要る（`WHEEL_RADIUS_M` はファームの公称値のまま固定）が、
+真の半径とのずれ `k = R_true / R_fw` を `esp32_bridge` のランタイムパラメータ
+`wheel_radius_scale` として PC 側で吸収できるようになった（即時反映・再起動不要。
+設計は [DetailedDesign-maintenance.md](plan/detailed/DetailedDesign-maintenance.md) §4）。
+
+- 実装は `th_esp32_bridge/th_esp32_bridge/wheel_scale_core.py`（ROS 非依存の純粋関数）
+  と `scripts/esp32_bridge.py` の呼び出し側。
+- 指令（PC→ESP32、`WHEEL_CMD`）は `v_send = v_desired / k`。実測（ESP32→PC、
+  `WHEEL_FEEDBACK`）は `v_actual = v_report × k` をオドメトリ積分・`/odom`・
+  `/esp32/wheel_feedback` へ使う前にかける。`/esp32/wheel_cmd_speed` は変換前の
+  値のまま発行する（前節参照。WebUI で指令と実測を同じ真の単位で比べるため）。
+- **A10**: `|wheel_radius_scale − 1| ≤ wheel_radius_scale_max_dev`（既定 0.10）。
+  超える値は起動時に検査してノードを終了させ（`os._exit(1)`）、実行中の
+  `ros2 param set` でも拒否する。10% を超えるずれは校正ではなく機械的な異常
+  という判断（同 §4.3）。
+- **calib_runner（校正ウィザードから `wheel_radius_scale` を書き込む導線）は別パケットで未実装。**
+  現状は `ros2 param set /esp32_bridge wheel_radius_scale <k>` で手動投入するしかない
+  （`registry.yaml` の `wheel_radius_scale` note 参照）。
+
 ### IMU (DSR1603 / BNO055) 追加
 
 超信地旋回時のクローラースリップによる yaw ドリフトを抑えるため、ダイセン電子工業製 9軸デジタルコンパス **DSR1603**（センサIC: Bosch **BNO055**、3軸加速度+3軸ジャイロ+3軸地磁気のオンチップセンサフュージョン）を ESP32 に追加する。
@@ -462,7 +482,7 @@ ros2 launch th_bringup bringup.launch.py   # imu_enabled:=true が既定
 
 ### 車輪速度の指令/実測比較 (`/esp32/wheel_cmd_speed`, WebUI速度表示カード, 2026-07-25 追加)
 
-`esp32_bridge` は `/cmd_vel` を差動駆動変換した左右目標速度(ESP32 へ `WHEEL_CMD` で送る値と同じ)を `/esp32/wheel_cmd_speed`(`th_system_msgs/WheelFeedback` 型を指令値側に再利用)として発行する。WebUI の「車輪速度」カード(`web_ui/src/WheelSpeedView.jsx`)がこれと実測値 `/esp32/wheel_feedback` を左右輪ごとに直近15秒の時系列グラフで重畳表示し、PID の追従遅れ・定常偏差・振動を目視で確認できるようにしている。PID ゲイン自体(`config.h` の `PID_KP_*`/`PID_KI_*`/`PID_KD_*`)は現状コンパイル時定数のままで、WebUI からのライブ調整は未対応(将来検討)。
+`esp32_bridge` は `/cmd_vel` を差動駆動変換した左右目標速度(**wheel_radius_scale 適用前 = 上流が望んだ速度**)を `/esp32/wheel_cmd_speed`(`th_system_msgs/WheelFeedback` 型を指令値側に再利用)として発行する。WebUI の「車輪速度」カード(`web_ui/src/WheelSpeedView.jsx`)がこれと実測値 `/esp32/wheel_feedback`(こちらも wheel_radius_scale 適用後 = 真の単位)を左右輪ごとに直近15秒の時系列グラフで重畳表示し、PID の追従遅れ・定常偏差・振動を目視で確認できるようにしている。PID ゲイン自体(`config.h` の `PID_KP_*`/`PID_KI_*`/`PID_KD_*`)は現状コンパイル時定数のままで、WebUI からのライブ調整は未対応(将来検討)。**ESP32 へ実際に `WHEEL_CMD` で送る値は `/esp32/wheel_cmd_speed` をさらに `wheel_radius_scale` で割った値**(次節参照。2026-09-25 の WP-ESP32-02 以降、両者は等しくない)。
 
 **ジャイロの単位（2026-08-06 修正、要再書き込み）**
 
