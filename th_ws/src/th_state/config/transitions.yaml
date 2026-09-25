@@ -1646,6 +1646,10 @@
   - name: offer_calib
     args:
       item: $arg.item
+  - name: record_result
+    args:
+      item: $arg.item
+      result: $arg.result
   spec_ref: SM-3.1.2-087
 - id: T-OPC-03
   layer: 10
@@ -1655,7 +1659,11 @@
   guard: ng_and_not_calibrable
   to_mode: '='
   to_state: REPAIR
-  effects: []
+  effects:
+  - name: record_result
+    args:
+      item: $arg.item
+      result: $arg.result
   spec_ref: SM-3.1.2-088
 - id: T-OPC-04
   layer: 10
