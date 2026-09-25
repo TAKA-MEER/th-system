@@ -713,3 +713,48 @@ table.lst td.r{text-align:right}
 .screen#s21 .s21-prep-row .grow{flex:1 1 auto;min-width:0}
 .screen#s21 .s21-state-row{display:flex;align-items:center;gap:8px;margin-top:9px}
 .screen#s21 .s21-state-row .state{margin-top:0;min-width:0}
+
+/* ---------- S-30 始業点検（WP-UI-08。screens/S30Opcheck.jsx） ---------- */
+/* 一覧の行（4項目）。押せる行は clickable、実行中は強調。 */
+.s30-row{display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--bd);
+  width:100%;text-align:left;background:none}
+.s30-row:last-child{border-bottom:none}
+.s30-row:not([disabled]):active{background:var(--ctrl-hi)}
+.s30-row.running{background:#1f2634}
+.s30-row .s30-row-label{flex:1 1 auto}
+
+/* ホールドボタン（4方向）。押している間 .on になる（.btn.on と同じ青）。 */
+.hold-btn{min-height:56px}
+.hold-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+
+/* ESTOP の手順表示（Step 1〜4）。 */
+.s30-step{background:var(--panel);border:1px solid var(--bd);border-radius:var(--r);padding:12px;
+  text-align:center}
+.s30-step .s30-step-msg{font-size:calc(var(--fs) * 1.05);font-weight:700;margin-bottom:10px}
+.s30-step .s30-step-sub{color:var(--mut);font-size:calc(var(--fs) * .84);margin-bottom:10px}
+.s30-answer-row{display:flex;gap:10px;justify-content:center}
+.s30-answer-row .btn{min-width:88px}
+
+/* 判定結果カード（最終）。 */
+.s30-verdict{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+
+/* ---------- WheelSpeedView（parts/WheelSpeedView.jsx）----------
+   Ported from the pre-refactor App.css (commit aa5a5b5) as-is; only the
+   selectors moved (App.css defined these globally, this file scopes
+   nothing extra since the class names are already unique). */
+.wheel-speed-wrap{display:flex;flex-direction:column;gap:8px}
+.wheel-speed-svg{display:block;width:100%;max-width:340px;aspect-ratio:340/170;margin:0 auto;
+  background:#12141b;border:1px solid #2a2d35;border-radius:8px}
+.wsv-axis{stroke:#3a3d4a;stroke-width:1}
+.wsv-tick{fill:#888;font-size:9px}
+.wsv-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.wsv-cmd{stroke-dasharray:5 4;opacity:.85}
+.wsv-meas{opacity:1}
+.wsv-crosshair{stroke:#666;stroke-width:1;stroke-dasharray:2 2}
+.wsv-legend{display:flex;flex-wrap:wrap;gap:.5rem 1rem;justify-content:center;
+  font-size:calc(var(--fs) * .72);color:var(--mut)}
+.wsv-legend-item{display:inline-flex;align-items:center;gap:.3rem}
+.wsv-swatch{display:inline-block;width:14px;height:2px;border-radius:1px}
+.wsv-swatch-dash{width:14px;height:0;background:none;border-top:2px dashed}
+.wsv-tooltip{font-size:calc(var(--fs) * .8);color:var(--mut);text-align:center;
+  font-variant-numeric:tabular-nums}

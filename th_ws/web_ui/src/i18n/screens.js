@@ -22,6 +22,10 @@ export const SCREEN_NAMES = {
   // WS-9X: S-50 設定（Spec-webui.md §3.15）。S-01 の「保守・設定」から開く
   // IDLE のサブ画面。
   S50: '設定',
+  // WP-UI-08: S-30 始業点検（OPCHECK）/ S-31 故障診断（OPCHECK・state REPAIR）。
+  // Spec-webui.md §3.12 / §3.13。
+  S30: '始業点検',
+  S31: '故障診断',
 }
 
 // ---------------------------------------------------------------- S-00 ----
@@ -474,3 +478,77 @@ export const S50_DEV_ESTOP_UNKNOWN =
 export const S50_DEV_SCOPE_NOTE =
   '※ 外れるのは選んだ項目だけです。項目の無いもの（非常停止ボタン・ESP32 のウォッチドッグなど）は通常どおり効きます'
 export const S50_DEV_SEND_FAILED = '機体への送信に失敗しました'
+
+// ---------------------------------------------------------------- S-30 (始業点検) ----
+// WP-UI-08 / WP-MAINT-01。Spec-webui.md §3.12、DetailedDesign-maintenance.md §2。
+// 日本語は i18n だけに置く（screens/S30Opcheck.jsx・parts/HoldButton.jsx・
+// parts/WheelSpeedView.jsx はこの定数だけを参照する）。
+export const S30_ITEM_LABELS = {
+  ESTOP: '非常停止ボタン',
+  MOTOR: 'モーター・エンコーダ',
+  IMU: 'IMU',
+  LIDAR: 'LiDAR',
+}
+export const S30_ITEM_ORDER = ['ESTOP', 'MOTOR', 'IMU', 'LIDAR']
+
+export const S30_LIST_TITLE = '始業点検'
+export const S30_COL_ITEM = '項目'
+export const S30_COL_RESULT = '結果'
+export const S30_OVERALL_TITLE = '総合'
+export const S30_RESULT_UNKNOWN = '未確認'
+export const S30_RESULT_OK = '正常'
+export const S30_RESULT_WARN = '要確認'
+export const S30_RESULT_NG = 'NG'
+export const S30_RESULT_RUNNING = '確認中'
+// 結果 -> pill の色クラス（.pill ok/warn/ng。tone 無しは既定色）。
+export const S30_RESULT_TONE = { OK: 'ok', WARN: 'warn', NG: 'ng' }
+
+export function s30OverallLabel(results) {
+  const values = S30_ITEM_ORDER.map((item) => results?.[item]?.result)
+  if (values.some((r) => r === 'NG')) {
+    const n = values.filter((r) => r === 'NG').length
+    return `総合: 要修理 ${n} 件`
+  }
+  if (values.some((r) => r === 'WARN')) {
+    const n = values.filter((r) => r === 'WARN').length
+    return `総合: 要確認 ${n} 件`
+  }
+  if (values.every((r) => r === 'OK')) return '総合: すべて正常'
+  return '総合: 未確認の項目があります'
+}
+
+export const S30_DETAIL_PLACEHOLDER = '項目を選んでください'
+export const S30_DETAIL_RUNNING_OTHER = '別の項目を確認中です'
+export const S30_GOTO_CALIB = '校正へ'
+export const S30_GOTO_REPAIR_NOTE = '故障診断へ移動します'
+export const S30_RECHECK = 'もう一度確認する'
+
+// 項目 1: ESTOP（DetailedDesign-maintenance.md §2.2 の 4 段）。
+export const S30_ESTOP_STEP1 = '非常停止ボタンを押してください'
+export const S30_ESTOP_STEP2 = '押されていることが画面に出ています。実物と一致していますか'
+export const S30_ESTOP_STEP3 = '非常停止ボタンを解除してください'
+export const S30_ESTOP_STEP4 = '解除されたことが画面に出ています。一致していますか'
+export const S30_ESTOP_PRESSED = '押されています'
+export const S30_ESTOP_RELEASED = '解除されています'
+
+// 項目 2: MOTOR（DetailedDesign-maintenance.md §2.3）。
+export const S30_MOTOR_FORWARD = '前進'
+export const S30_MOTOR_BACK = '後退'
+export const S30_MOTOR_LEFT = '左超信地旋回'
+export const S30_MOTOR_RIGHT = '右超信地旋回'
+export const S30_MOTOR_HOLD_NOTE = '押している間だけ低速で動きます。離すと止まります。'
+export const S30_MOTOR_CMD_L = '指令(左)'
+export const S30_MOTOR_CMD_R = '指令(右)'
+export const S30_MOTOR_MEAS_L = '実測(左)'
+export const S30_MOTOR_MEAS_R = '実測(右)'
+
+// 項目 3/4: IMU・LIDAR は /opcheck/status の内容（判定と理由）をそのまま出す。
+export const S30_STATUS_DETAIL_TITLE = '判定の詳細'
+export const S30_STATUS_WAITING = 'データ待ち…'
+
+// ---------------------------------------------------------------- S-31 (故障診断) ----
+export const S31_TITLE = '故障診断'
+export const S31_INTRO = '始業点検で NG が検出されました。修理が必要です。'
+export const S31_SYMPTOM_TITLE = '症状'
+export const S31_NO_SYMPTOM = '症状の情報がありません（画面を開き直した可能性があります）'
+export const S31_BACK_TO_LIST = '一覧へ戻る'

@@ -82,3 +82,28 @@ test('IDLE + settingsOpen なら S-50（AT_HOME を足しても変わらない�
 test('onsiteTestOpen は廃止済み。渡しても IDLE は S-01 のまま', () => {
   assert.equal(resolveScreen({ ...base, mode: 'IDLE', onsiteTestOpen: true }), 'S01')
 })
+
+// WP-UI-08: OPCHECK（始業点検）は S-30。REPAIR 以外の state ではどれも S-30
+// のまま（screenRouting は state を見ない、が原則 -- OPCHECK だけの例外）。
+test('OPCHECK かつ state が REPAIR 以外なら S-30（settingsOpen でも）', () => {
+  for (const subState of ['LIST', 'RUNNING_CHECK', undefined, null]) {
+    assert.equal(resolveScreen({ ...base, mode: 'OPCHECK', subState }), 'S30',
+      `subState=${subState} は S-30`)
+    assert.equal(resolveScreen({ ...base, mode: 'OPCHECK', subState, settingsOpen: true }), 'S30',
+      `subState=${subState} は settingsOpen でも S-30`)
+  }
+})
+
+// WP-UI-08: mode=OPCHECK かつ state=REPAIR のときだけ S-31（Spec-webui.md
+// §3.13「S-31 故障診断 -- OPCHECK（状態 REPAIR）」）。
+test('OPCHECK かつ state が REPAIR なら S-31', () => {
+  assert.equal(resolveScreen({ ...base, mode: 'OPCHECK', subState: 'REPAIR' }), 'S31')
+  assert.equal(resolveScreen({ ...base, mode: 'OPCHECK', subState: 'REPAIR', settingsOpen: true }), 'S31')
+})
+
+// state=REPAIR は OPCHECK 専用の分岐。他モードでは無視される（画面は mode
+// だけから決まる、という 2026-09-02 の原則を崩さない）。
+test('他モードでは subState=REPAIR を無視する', () => {
+  assert.equal(resolveScreen({ ...base, mode: 'IDLE', subState: 'REPAIR' }), 'S01')
+  assert.equal(resolveScreen({ ...base, mode: 'PREP', subState: 'REPAIR' }), 'S20')
+})

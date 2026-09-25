@@ -7,6 +7,8 @@
 export const SCREEN_IDS = {
   S00: 'S-00', S01: 'S-01', S11: 'S-11', S13: 'S-13', S14: 'S-14',
   S20: 'S-20', S21: 'S-21', S50: 'S-50',
+  // WP-UI-08: S-30 始業点検 / S-31 故障診断（names.json の screens にある）。
+  S30: 'S-30', S31: 'S-31',
 }
 
 // mode -> screen-key map. S-01 sends ui.enter_mode; when th_state accepts
@@ -26,6 +28,9 @@ export const MODE_TO_SCREEN = {
   // モードが無く main.jsx のローカルフラグ（onsiteTestOpen）で出していたが、
   // AT_HOME ができたので他の画面と同じく mode から導出する。
   AT_HOME: 'S21',
+  // WP-UI-08: OPCHECK（始業点検）-> S-30。state が REPAIR のときだけ resolveScreen
+  // が S-31 に差し替える（この表は「REPAIR 以外の OPCHECK」の既定を表す）。
+  OPCHECK: 'S30',
 }
 
 // 表示中の画面は SystemState.mode から導出する（純関数）。
@@ -46,12 +51,17 @@ export const MODE_TO_SCREEN = {
 // 2026-09-08: S-21 は AT_HOME モードから導出するようになったので、
 // 以前の onsiteTestOpen（S-01 のサブ画面として開くローカルフラグ）は廃止した。
 // 画面は FSM から導出する、という 2026-09-02 の原則にこれで揃う。
-export function resolveScreen({ testScreen, passedConnect, mode, settingsOpen }) {
+// subState (WP-UI-08): SystemState.state. Only OPCHECK looks at it --
+// mode=OPCHECK と state=REPAIR の組で S-31（Spec-webui.md §3.13: 「S-31
+// 故障診断 -- OPCHECK（状態 REPAIR）」）。他のモードは state を見ない
+// （2026-09-02 の原則どおり、画面は mode だけから決まるのが既定）。
+export function resolveScreen({ testScreen, passedConnect, mode, settingsOpen, subState }) {
   // DRIVE_S11 は本番に存在しない e2e 専用の合成画面。モード導出を迂回する。
   if (testScreen === 'DRIVE_S11') return 'DRIVE_S11'
   // 2026-09-23: S-00 で止まったとき（機器が無く INIT を抜けられない）に開発モードの
   // 設定へ入れるよう、疎通確認前でも設定は開ける。戻れば S-00 に戻る。
   if (!passedConnect) return settingsOpen ? 'S50' : 'S00'
+  if (mode === 'OPCHECK' && subState === 'REPAIR') return 'S31'
   const base = MODE_TO_SCREEN[mode] ?? 'S01'
   if (base !== 'S01') return base           // 動作系モードが最優先（S-50 と同じ）
   if (settingsOpen) return 'S50'
