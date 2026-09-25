@@ -981,8 +981,11 @@
   consumers: [esp32_bridge]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §7"
   note: "校正の出力（names.md は measured と記す）。校正が一度も走っていない段階の初期値は補正なしの恒等値 1.0 とし given で置いた。calib_runner が測定後に status を measured へ上書きする（params.md §7 の仕組み。WP-CALIB-01 の範囲）。判断は報告に明記。
-    **現状どのノードからも読まれていない**（esp32_bridge 含め未配線。2026-09-22 確認。consumers の esp32_bridge は
-    意図した消費先であり実装待ち）。参考値（実測。まだ status は上げない）: 巻き尺5.8m直進（前進のみ実測。後退は同じテープ間を使用）で
+    **esp32_bridge が両方向に適用する**（WP-ESP32-02。2026-09-25 実装。th_esp32_bridge/th_esp32_bridge/wheel_scale_core.py・
+    scripts/esp32_bridge.py）: 指令（PC→ESP32）は `/ k`、実測（ESP32→PC。/odom・/esp32/wheel_feedback へ使う前）は `× k`。
+    起動時と実行中 `ros2 param set` の双方で A10（|wheel_radius_scale − 1| ≤ wheel_radius_scale_max_dev）を検査し、
+    違反なら起動を拒否／変更を拒否する。calib_runner（値の書き込み側）は別パケットで未配線のまま。
+    参考値（実測。まだ status は上げない）: 巻き尺5.8m直進（前進のみ実測。後退は同じテープ間を使用）で
     前進0.981・後退0.989（odomが実距離より1〜2%ほど長い。ノイズの範囲に近く、補正が要るとは言い切れない。
     詳細 docs/実機作業キュー.md §4.0.2）"
 
