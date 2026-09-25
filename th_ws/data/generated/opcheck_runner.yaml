@@ -1,3 +1,22 @@
 opcheck_runner:
   ros__parameters:
+    blind_angle_ranges:
+    - -132.8
+    - -117.5
+    - -59.5
+    - -38.9
+    - 45.9
+    - 61.5
+    - 130.3
+    - 143.5
+    imu_bias_max_rad_s: 0.2
+    imu_wz_implausible_rad_s: 10.0
+    motor_deadband_mps: 0.03
+    motor_follow_min_ratio: 0.5
+    opcheck_blind_tolerance_deg: 5.0
+    opcheck_deadman_timeout_s: 0.5
+    opcheck_imu_window_s: 2.0
+    opcheck_scan_coverage_gap_deg: 2.0
+    opcheck_spin_w_rad_s: 0.3
+    scan_stale_ms: 300
     v_check: 0.05
