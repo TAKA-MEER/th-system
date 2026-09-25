@@ -121,6 +121,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_odom_core
     test/test_odom_core.py
     TIMEOUT 60)
+  # esp32_bridge の wheel_radius_scale（車輪半径スケール）純粋コア
+  # (WP-ESP32-02。O-d10: 指令 /k・実測 ×k・A10 判定。A10 は
+  # th_params.assertions を再利用。ROS2 不要)
+  ament_add_pytest_test(test_wheel_scale_core
+    test/test_wheel_scale_core.py
+    TIMEOUT 60)
   # D-1: WHEEL_CMD 送信コアレッシング (実機計測 2026-08 の受信ギャップ
   # 切り分け作業。in-flight 中の送信要求を保留フレームの上書きで束ねる。
   # ROS2 不要)
