@@ -311,6 +311,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_prelaunch_guard
     test/test_prelaunch_guard.py
     TIMEOUT 60)
+  # OPCHECK の registry 駆動 (WP-MAINT-01。registry.yaml の行 ↔ check_core の
+  # CheckParams ↔ 生成物 opcheck_runner.yaml の 3 点一致と、placeholder 巻き込み
+  # 防止。ROS2 不要)
+  ament_add_pytest_test(test_maintenance_registry_driven
+    test/test_maintenance_registry_driven.py
+    TIMEOUT 120)
   # th_state/zones.py の LIMIT_STRICTNESS と registry.yaml の
   # speed_limit_strictness_rank が一致することの機械的な照合（N-15 レビュー。
   # th_state と th_params の両方を import してよい唯一のテストコード）

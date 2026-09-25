@@ -635,6 +635,22 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 
 `calib_linear_tolerance_ratio` ／ `calib_rotation_tolerance_deg` ／ `calib_blind_tolerance_deg` — すべて **(c)**。
 
+### 7.6 始業点検（OPCHECK）
+
+| 名前 | 単位 | 分類 | 適用先 |
+| --- | --- | --- | --- |
+| `motor_deadband_mps` | m/s | (b) | OPCHECK のモーター追従判定。指令がこれ未満では判定しない |
+| `motor_follow_min_ratio` | — | (b) | OPCHECK のモーター追従判定。|実測| ≥ |指令| × この比率 |
+| `imu_bias_max_rad_s` | rad/s | (b) | OPCHECK の静止時ジャイロ |wz| 許容上限 |
+| `imu_wz_implausible_rad_s` | rad/s | (b) | OPCHECK のジャイロ単位差し違え検知（esp32_bridge の |wz|>10 警告と同じ判定） |
+| `opcheck_imu_window_s` | s | (b) | OPCHECK の IMU 静止観測窓（ジャイロ最大値・バイアス平均の区間） |
+| `opcheck_deadman_timeout_s` | s | (b) | OPCHECK の /opcheck/motor_hold 途絶を「離し」扱いにする時間 |
+| `opcheck_spin_w_rad_s` | rad/s | (b) | OPCHECK の超信地旋回角速度 |
+| `opcheck_blind_tolerance_deg` | deg | (b) | OPCHECK の死角帯ズレ許容（設定 ↔ 1 フレーム推定） |
+| `opcheck_scan_coverage_gap_deg` | deg | (b) | OPCHECK の無効ビーム連続帯の許容幅 |
+
+始業点検の合否判定のしきい値は `registry.yaml` を正とし、ここでは名前・単位・分類だけを固定する（§7 冒頭の `DD-6` と同じ流儀。`opcheck_*` 5 件は OPCHECK 専用の新しい挙動値、`motor_*` と `imu_*` は既存の校正・冗長値の流れを汲む）。
+
 ---
 
 ## 8. トリガと事象の名前
