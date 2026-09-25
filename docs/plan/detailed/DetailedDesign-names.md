@@ -455,6 +455,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `/onsite/pins` | `PinList` | transient_local, depth 1 |
 | `/onsite/wait_clear` | `WaitClearStatus` | reliable, depth 1, 5 Hz |
 | `/opcheck/status` | `CheckStatus` | reliable, depth 5 |
+| **`/opcheck/motor_hold`** | **`std_msgs/String`**（`NONE` / `FORWARD` / `BACK` / `LEFT` / `RIGHT`） | **reliable, depth 1。画面（S-30 のホールドボタン）→ `opcheck_runner`。押している間 100 ms 周期で送り続け、離したら `NONE`。`opcheck_deadman_timeout_s`（0.5 s）途絶で停止（デッドマン）。モーター確認（`MOTOR` 項目の実行中）以外では無視する。2026-09-25 追加（実装から写した）** |
 | `/calib/status` | `CalibStatus` | reliable, depth 5 |
 | `/leash/status` ／ `/line/status` | 各 status | reliable, depth 1 |
 | **`/ui/jog_lease`** | `std_msgs/String`（`client_id`） | **best_effort**, depth 1, 5 Hz 以上 |
