@@ -38,6 +38,9 @@ mode==OPCHECK のときだけ動く「ノード側でも二重に確認」の実
      別の項目を開始できる
   h. 最終判定（OK/NG/WARN）のあと、次の項目が始まるまで /opcheck/status が
      UNKNOWN に戻らない
+  i. MOTOR で最終判定（evt.check_result）を出した直後、record_result が
+     届く前（＝self._item がまだ "MOTOR" のまま）でも motor_hold は無視する
+     （実装管理担当の決定・残存 window を塞ぐ追加修正）
 
 追加の変異チェック:
   ④ _on_motor_hold() と _sync_command() 両方の「項目が MOTOR か」の判定を
@@ -45,6 +48,8 @@ mode==OPCHECK のときだけ動く「ノード側でも二重に確認」の実
      が赤
   ⑤ _on_effect() の record_result 受信時の _close_item() 呼び出しを消す →
      test_g_record_result_effect_closes_item_for_next_check が赤
+  ⑥ _on_motor_hold() / _sync_command() の self._final_sent 判定を消す →
+     test_i_motor_hold_ignored_after_final_verdict_before_record_result が赤
 """
 import json
 import time
@@ -419,6 +424,51 @@ class TestOpcheckRunnerNode(unittest.TestCase):
         assert not any(st.result == 'UNKNOWN' for st in after2), (
             'record_result で項目を閉じたあと UNKNOWN が出た（③の標的・'
             f'_close_item()）: {[s.result for s in after2]}')
+
+    # ════════════════════════════════════════════════════════
+    # i. MOTOR の最終判定後・record_result 到着前の残存 window を塞ぐ
+    #    （実装管理担当の決定・2026-09-25 追加）
+    # ════════════════════════════════════════════════════════
+    def test_i_motor_hold_ignored_after_final_verdict_before_record_result(self):
+        """MOTOR で NG（符号逆）を出した直後、record_result effect が届く前
+        （state_manager を起動しない本テストでは effect は一切来ない）に
+        motor_hold(FORWARD) を送り続けても /cmd_vel_behavior に非ゼロが
+        出ない。
+
+        修正前は「実行中の項目が MOTOR か」だけをゲートにしていたため、
+        evt.check_result を出したあと record_result が FSM から届いて
+        項目が閉じるまでの間（ROS の配送遅延ぶん）は self._item がまだ
+        "MOTOR" のままで、この短い window の間だけ FORWARD が通ってしまう
+        穴が残っていた。
+        """
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('MOTOR')
+        assert res.started, res.message
+
+        self._events.clear()
+        self._publish_hold('FORWARD')
+        self._publish_wheel(cmd_l=V_CHECK, cmd_r=V_CHECK,
+                            meas_l=-V_CHECK, meas_r=V_CHECK)
+        self._publish_hold('NONE')
+        hits = self._wait_for_event('evt.check_result', timeout=3.0)
+        assert hits, '前提が崩れている: evt.check_result が出なかった'
+        args = json.loads(hits[-1].arg_json)
+        assert args.get('item') == 'MOTOR' and args.get('result') == 'NG', \
+            f'前提が崩れている: MOTOR NG が出なかった: {args}'
+
+        # record_result はここでは一切 publish しない
+        # （state_manager を起動しない単体試験の想定どおり）。
+        # この「最終判定は出たがまだ閉じていない」状態で FORWARD を送り続ける。
+        self._cmd.clear()
+        deadline = time.time() + DEADMAN_S * 2.0
+        while time.time() < deadline:
+            self._publish_hold('FORWARD')
+            self._spin(0.05)
+        self._publish_hold('NONE')
+
+        assert not self._cmd, (
+            'MOTOR の最終判定後・record_result 到着前なのに /cmd_vel_behavior '
+            f'に出た（残存 window の標的）: {self._cmd}')
 
 
 if __name__ == '__main__':
