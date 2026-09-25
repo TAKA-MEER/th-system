@@ -60,11 +60,6 @@ _TOL = 1e-3
 _DESIRED = 0.3
 
 # 指令・実測の往復を「偽 ESP32 が受け取った値」そのままで回すための待ち。
-# proc_output の A10 ログも substring で確認する。
-
-
-def _has_a10_startup(output: str) -> bool:
-    return 'A10 違反により起動を中断します' in output
 
 
 @pytest.mark.launch_test
@@ -431,7 +426,6 @@ class TestBadScaleNodeRejectsStartup(unittest.TestCase):
             'A10 違反により起動を中断します',
             process=bad,
             stream='stderr',
-            output_filter=_has_a10_startup,
             timeout=30.0,
         )
         proc_info.assertWaitForShutdown(bad, timeout=30.0)
