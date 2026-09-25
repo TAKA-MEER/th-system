@@ -331,6 +331,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_state_manager_node
     test/test_state_manager_node.py
     TIMEOUT 120)
+  # opcheck_runner ノードの振る舞い試験（WP-MAINT-01 §4-2。ノードを実際に起動し、
+  # /system/state を TRANSIENT_LOCAL で流して OPCHECK 限定動作・MOTOR デッドマン・
+  # 符号逆 NG・OPCHECK 離脱時の即停止を確かめる。state_manager は起動しない）
+  ament_add_pytest_test(test_opcheck_runner_node
+    test/test_opcheck_runner_node.py
+    TIMEOUT 120)
   ament_add_pytest_test(connectivity_checker_node
     test/test_connectivity_checker_node.py
     TIMEOUT 120)
