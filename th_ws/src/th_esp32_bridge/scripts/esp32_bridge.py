@@ -40,6 +40,9 @@ from th_esp32_bridge.bridge_diagnostics import (
 from th_esp32_bridge.odom_core import (
     Pose2D, integrate_pose, resolve_dt, resync_stamp, yaw_to_quaternion_zw,
 )
+from th_esp32_bridge.wheel_scale_core import (
+    a10_violations, scale_wheel_command, scale_wheel_feedback,
+)
 from th_esp32_bridge.rx_backpressure import BoundedFrameQueue
 from th_esp32_bridge.send_coalescer import INITIAL_STATE as _COALESCER_INITIAL_STATE
 from th_esp32_bridge.send_coalescer import complete as coalescer_complete
@@ -56,6 +59,16 @@ class Esp32Bridge(Node):
         super().__init__('esp32_bridge')
 
         self.declare_parameter('wheel_base', 0.39)
+        # WP-ESP32-02 (O-d10): 車輪半径のスケール k = 真の半径 / ファームの
+        # 公称半径。指令は /k、実測は ×k して適用する (wheel_scale_core.py 参照)。
+        # キャリブレーション (直進校正) が generated/esp32_bridge.yaml 経由で
+        # 設定する。ここでの既定値は launch を介さず直接ノードを立てた場合の
+        # フォールバック (継続 = 補正なし)。
+        self.declare_parameter('wheel_radius_scale', 1.0)
+        # A10 (maintenance §4.3): |wheel_radius_scale − 1| ≤ この値 [無次元]。
+        # 超えるずれは校正ではなく機械的な異常とみなし、起動とパラメータ変更を
+        # 拒否する。registry の既定は 0.10。
+        self.declare_parameter('wheel_radius_scale_max_dev', 0.10)
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter('publish_tf', True)
@@ -106,6 +119,22 @@ class Esp32Bridge(Node):
         self._cmd_vel_stale_ms = self.get_parameter('cmd_vel_stale_ms').value
         self._rx_queue_drain_max_per_cycle = \
             self.get_parameter('rx_queue_drain_max_per_cycle').value
+        self._wheel_radius_scale = self.get_parameter('wheel_radius_scale').value
+        self._wheel_radius_scale_max_dev = \
+            self.get_parameter('wheel_radius_scale_max_dev').value
+
+        # A10 起動時検査 (WP-ESP32-02 §4.3): 許容範囲を超える wheel_radius_scale
+        # は「校正結果」ではなく機械的な異常。10% 超えのまま黙って走らせると
+        # オドメトリと実際の移動が大きく食い違うため、WS サーバーを立てる前に
+        # 検査して起動を中断する (launch の respawn で二重に暴走させないため、
+        # raise ではなく os._exit(1) で即座に落とす)。
+        a10_msgs = a10_violations(
+            self._wheel_radius_scale, self._wheel_radius_scale_max_dev)
+        if a10_msgs:
+            self.get_logger().error(
+                "A10 違反により起動を中断します: " + "; ".join(a10_msgs))
+            import os
+            os._exit(1)
 
         # wheel_base はキャリブレーション後にランタイムで再設定されるため、
         # 変更を即座に _cb_cmd_vel / _on_wheel_feedback へ反映する。
@@ -115,7 +144,9 @@ class Esp32Bridge(Node):
         self._pub_odom = self.create_publisher(Odometry, 'odom', 10)
         self._pub_wheel_feedback = self.create_publisher(
             WheelFeedback, '/esp32/wheel_feedback', 10)
-        # /cmd_vel を差動駆動変換した左右目標速度 (WHEEL_CMD で ESP32 へ送る値と同じ)。
+        # /cmd_vel を差動駆動変換した左右目標速度 (wheel_radius_scale 適用前 =
+        # 上流が望んだ速度。WHEEL_CMD で送る値は wheel_radius_scale で割った、
+        # さらにその内側の値になる。WP-ESP32-02 参照)。
         # WheelFeedback 型を指令値側にも再利用する(フィールド形状が同一のため)。
         # WebUI で /esp32/wheel_feedback (実測) と重ねて表示し、PID の追従遅れ・
         # 定常偏差を目視で確認できるようにする。
@@ -257,6 +288,7 @@ class Esp32Bridge(Node):
 
         self.get_logger().info(
             f"esp32_bridge 起動 wheel_base={self._wheel_base:.3f} "
+            f"wheel_radius_scale={self._wheel_radius_scale:.3f} "
             f"ws={self._ws_host}:{self._ws_port}")
 
     # ── パラメータ変更をランタイムで反映 (キャリブレーション用) ────────
@@ -265,6 +297,24 @@ class Esp32Bridge(Node):
             if p.name == 'wheel_base':
                 self._wheel_base = p.value
                 self.get_logger().info(f"wheel_base 更新: {self._wheel_base:.6f} m")
+            elif p.name == 'wheel_radius_scale':
+                # キャリブレーション (直進校正) がこのパラメータを再設定する。
+                # 起動時と同じ A10 検査を通す: 通らなければ変更を拒否し、
+                # 現行値 (と指令・実測のスケール) をそのまま維持する。
+                value = p.value
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    reason = "wheel_radius_scale は数値のみ有効です"
+                    self.get_logger().warn(f"wheel_radius_scale の変更を拒否: {reason}")
+                    return SetParametersResult(successful=False, reason=reason)
+                a10_msgs = a10_violations(
+                    value, self._wheel_radius_scale_max_dev)
+                if a10_msgs:
+                    reason = "A10 違反: " + "; ".join(a10_msgs)
+                    self.get_logger().warn(f"wheel_radius_scale の変更を拒否: {reason}")
+                    return SetParametersResult(successful=False, reason=reason)
+                self._wheel_radius_scale = value
+                self.get_logger().info(
+                    f"wheel_radius_scale 更新: {self._wheel_radius_scale:.6f}")
         return SetParametersResult(successful=True)
 
     # ── WebSocket サーバー (別スレッドの asyncio イベントループ) ──────
@@ -389,11 +439,21 @@ class Esp32Bridge(Node):
         v, w = result.linear, result.angular
         v_right = v + (w * self._wheel_base / 2.0)
         v_left = v - (w * self._wheel_base / 2.0)
-        frame = pack_wheel_cmd(v_left, v_right)
+        # WP-ESP32-02 (O-d10): 指令側は wheel_radius_scale k で割って送る。
+        # ESP32 の PID は「自分の報告値に追随する」ため、真の速度は送った
+        # 値の k 倍になる。望み速度 v (上流が /cmd_vel に出した値) を実現する
+        # には v/k を WHEEL_CMD に載せる。
+        v_left_send = scale_wheel_command(v_left, self._wheel_radius_scale)
+        v_right_send = scale_wheel_command(v_right, self._wheel_radius_scale)
+        frame = pack_wheel_cmd(v_left_send, v_right_send)
 
         cmd_fb = WheelFeedback()
         cmd_fb.header.stamp = self.get_clock().now().to_msg()
         cmd_fb.header.frame_id = self._base_frame
+        # /esp32/wheel_cmd_speed はスケール適用前 (上流が望んだ速度) を出す。
+        # DRIVE_RUNAWAY は /cmd_vel と /esp32/wheel_feedback を直接比較するため、
+        # 両者を「真の単位」に保つにはここも望み速度のままが正しい
+        # (WebUI の速度表示カードで指令 vs 実測の PID 追従差が見える)。
         cmd_fb.left_speed = v_left
         cmd_fb.right_speed = v_right
         self._pub_wheel_cmd.publish(cmd_fb)
@@ -521,6 +581,14 @@ class Esp32Bridge(Node):
         now = self.get_clock().now()
         self._last_feedback_time = now
         self._esp32_alive = True
+
+        # WP-ESP32-02 (O-d10): 実測側は wheel_radius_scale k を掛けて真の単位へ。
+        # ESP32 はファームの公称半径 R_fw で速度を計算するため、真の半径 R_true
+        # との比 k 分だけ実測を補正する。ここで一度だけ変換し、以降の処理
+        # (dt 検証・オドメトリ積分・/esp32/wheel_feedback 発行) は全部
+        # 真の速度を使う。
+        v_left = scale_wheel_feedback(v_left, self._wheel_radius_scale)
+        v_right = scale_wheel_feedback(v_right, self._wheel_radius_scale)
 
         # ── 積分区間は「到着間隔」ではなく ESP32 が速度算出に使った dt ──────
         # ESP32 は velL = counts * distPerCount / dt (esp32/src/main.cpp) で

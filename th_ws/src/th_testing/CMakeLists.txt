@@ -127,6 +127,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_odom_core
     test/test_odom_core.py
     TIMEOUT 60)
+  # esp32_bridge の wheel_radius_scale（車輪半径スケール）純粋コア
+  # (WP-ESP32-02。O-d10: 指令 /k・実測 ×k・A10 判定。A10 は
+  # th_params.assertions を再利用。ROS2 不要)
+  ament_add_pytest_test(test_wheel_scale_core
+    test/test_wheel_scale_core.py
+    TIMEOUT 60)
   # D-1: WHEEL_CMD 送信コアレッシング (実機計測 2026-08 の受信ギャップ
   # 切り分け作業。in-flight 中の送信要求を保留フレームの上書きで束ねる。
   # ROS2 不要)
@@ -409,6 +415,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(esp32_bridge_node
     test/test_esp32_bridge_node.py
     TIMEOUT 90)
+  # esp32_bridge の wheel_radius_scale 両方向適用 + A10 の強制 (WP-ESP32-02)
+  # ノード統合テスト。偽 ESP32 で指令 /k・実測 ×k・起動時拒否・実行時拒否を確認
+  ament_add_pytest_test(esp32_scale
+    test/test_esp32_scale.py
+    TIMEOUT 120)
 
   # ── 故障注入 13 項目 + 対照ケース (WP-TEST-01。fault_injection/) ──
   # DetailedDesign-safety.md §10 の 13 行が仕様。ファイル名は意図的に test_ で
