@@ -103,6 +103,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_route_replay_core
     test/test_route_replay_core.py
     TIMEOUT 30)
+  # 始業点検（OPCHECK）の判定コア (WP-MAINT-01。th_maintenance/check_core.py。
+  # 合否判定の純粋関数。registry.yaml の WP-MAINT-01 ブロックと値が一致することは
+  # test_maintenance_registry_driven が別途検証する。ROS2 不要)
+  ament_add_pytest_test(test_opcheck_core
+    test/test_opcheck_core.py
+    TIMEOUT 60)
   # 自己位置源選択コア (WS-9D。EKF 出力 /odometry/filtered が新鮮ならそれ、
   # 古ければ生 /odom にフォールバック。ROS2 不要)
   ament_add_pytest_test(test_odom_source
