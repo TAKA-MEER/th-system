@@ -587,6 +587,116 @@ class TestStateManagerNode(unittest.TestCase):
         assert hits[0].dest == 'replay_runner', hits[0].dest
         assert json.loads(hits[0].args_json).get('route_id') == 'r9', hits[0].args_json
 
+    # ════════════════════════════════════════════════════════
+    # WP-MAINT-01 — OPCHECK: Context.check_item/check_result の配線
+    # ════════════════════════════════════════════════════════
+    def test_opcheck_estop_item_press_does_not_carry(self):
+        """T-OPC-05: ESTOP 項目の実行中は物理ボタンを押しても CARRY へ落ちない。
+
+        修正前は state_manager.py が Context.check_item を常に空文字で渡して
+        いたため guards.py の _checking_estop_item が一度も成立せず、共通の
+        hw.estop.press 遷移（CARRY へ強制遷移）に落ちていた（2026-09-25 修正）。
+        """
+        res = self._trigger('ui.enter_mode', {'mode': 'OPCHECK'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('OPCHECK')
+        assert self._latest().state == 'LIST'
+
+        res = self._trigger('ui.check_item', {'item': 'ESTOP'})
+        assert res.accepted, res.reject_reason_key
+        snap = self._latest()
+        assert snap.mode == 'OPCHECK' and snap.state == 'RUNNING_CHECK', \
+            f'T-OPC-01 が RUNNING_CHECK に進まなかった: mode={snap.mode} state={snap.state}'
+
+        self._effect_history.clear()
+        self.pub_hw.publish(Bool(data=True))
+        self._spin(0.3)
+        snap = self._latest()
+        assert snap.mode == 'OPCHECK' and snap.state == 'RUNNING_CHECK', (
+            'ESTOP 項目中の物理ボタン押下で CARRY に落ちた（check_item の配線漏れ）: '
+            f'mode={snap.mode} state={snap.state}')
+        hits = self._wait_effect('feed_check_input', timeout=1.0)
+        assert hits, 'T-OPC-05 が発火せず feed_check_input が配送されなかった'
+        assert hits[0].dest == 'opcheck_runner', hits[0].dest
+
+        self.pub_hw.publish(Bool(data=False))
+        self._spin(0.3)
+        snap = self._latest()
+        assert snap.mode == 'OPCHECK' and snap.state == 'RUNNING_CHECK', (
+            'ESTOP 項目中の物理ボタン解除で CARRY に落ちた: '
+            f'mode={snap.mode} state={snap.state}')
+
+        # 後始末（他テストを汚さない）。can_finish は ESTOP/CARRY 以外なら常に真。
+        res = self._trigger('ui.finish')
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('IDLE')
+
+    def test_opcheck_check_result_ok_and_ng_transitions(self):
+        """evt.check_result の OK/NG で T-OPC-02/03/04 のとおり遷移する。
+
+        - NG かつ非校正項目（MOTOR）→ REPAIR（T-OPC-03）
+        - NG かつ校正可能項目（IMU）→ LIST + offer_calib（T-OPC-02）
+        - OK（ESTOP）→ LIST + record_result（T-OPC-04）
+        修正前は Context.check_result を常に空文字で渡していたため、この3遷移
+        すべてが不成立で RUNNING_CHECK から先に進めなかった（2026-09-25 修正）。
+        """
+        res = self._trigger('ui.enter_mode', {'mode': 'OPCHECK'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('OPCHECK')
+
+        # NG・非校正 (MOTOR) → REPAIR
+        res = self._trigger('ui.check_item', {'item': 'MOTOR'})
+        assert res.accepted, res.reject_reason_key
+        assert self._latest().state == 'RUNNING_CHECK'
+        self.pub_event.publish(StateEvent(
+            event='evt.check_result', source_node='opcheck_runner',
+            arg_json=json.dumps({'item': 'MOTOR', 'result': 'NG'})))
+        self._spin(0.3)
+        snap = self._latest()
+        assert snap.mode == 'OPCHECK' and snap.state == 'REPAIR', \
+            f'MOTOR NG が REPAIR に進まなかった（T-OPC-03）: {snap.mode}/{snap.state}'
+
+        res = self._trigger('ui.stop')
+        assert res.accepted, res.reject_reason_key
+        assert self._latest().state == 'LIST', 'T-OPC-06 (REPAIR→LIST) が通らない'
+
+        # NG・校正可能 (IMU) → LIST + offer_calib
+        res = self._trigger('ui.check_item', {'item': 'IMU'})
+        assert res.accepted, res.reject_reason_key
+        assert self._latest().state == 'RUNNING_CHECK'
+        self._effect_history.clear()
+        self.pub_event.publish(StateEvent(
+            event='evt.check_result', source_node='opcheck_runner',
+            arg_json=json.dumps({'item': 'IMU', 'result': 'NG'})))
+        self._spin(0.3)
+        snap = self._latest()
+        assert snap.mode == 'OPCHECK' and snap.state == 'LIST', \
+            f'IMU NG が LIST に進まなかった（T-OPC-02）: {snap.mode}/{snap.state}'
+        hits = self._wait_effect('offer_calib', timeout=1.0)
+        assert hits, 'T-OPC-02 で offer_calib が配送されなかった'
+        assert json.loads(hits[0].args_json).get('item') == 'IMU', hits[0].args_json
+
+        # OK (ESTOP) → LIST + record_result
+        res = self._trigger('ui.check_item', {'item': 'ESTOP'})
+        assert res.accepted, res.reject_reason_key
+        assert self._latest().state == 'RUNNING_CHECK'
+        self._effect_history.clear()
+        self.pub_event.publish(StateEvent(
+            event='evt.check_result', source_node='opcheck_runner',
+            arg_json=json.dumps({'item': 'ESTOP', 'result': 'OK'})))
+        self._spin(0.3)
+        snap = self._latest()
+        assert snap.mode == 'OPCHECK' and snap.state == 'LIST', \
+            f'ESTOP OK が LIST に進まなかった（T-OPC-04）: {snap.mode}/{snap.state}'
+        hits = self._wait_effect('record_result', timeout=1.0)
+        assert hits, 'T-OPC-04 で record_result が配送されなかった'
+        assert hits[0].dest == 'opcheck_runner', hits[0].dest
+        assert json.loads(hits[0].args_json).get('result') == 'OK', hits[0].args_json
+
+        res = self._trigger('ui.finish')
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('IDLE')
+
 
 if __name__ == '__main__':
     unittest.main()

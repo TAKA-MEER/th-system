@@ -37,7 +37,7 @@ from th_system_msgs.srv import SetFlag, UiTrigger
 
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
-from th_state.state_core import BOOT_MODE, ESTOP_MODE, Context, StateCore
+from th_state.state_core import BOOT_MODE, ESTOP_MODE, OPCHECK_MODE, Context, StateCore
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
 from th_state.tracker_policy import (TRACKER_OFF_DENIED_REASON,
@@ -184,6 +184,11 @@ class StateManager(Node):
         self._target_selected = False
         self._target_confident = False
         self._pin_kinds: tuple = ()
+        # WP-MAINT-01: OPCHECK で現在実行中の項目名（T-OPC-01 が受理されたときに
+        # ui.check_item の引数から設定し、OPCHECK を抜けるか LIST に戻ったら空に戻す。
+        # ctx.check_result は前回値を引きずらないよう _build_context() が
+        # evt.check_result のその場の引数からだけ組み立てる（持ち越さない）。
+        self._check_item = ""
 
         now = self._now_ms()
         self._boot_ms = now
@@ -295,9 +300,14 @@ class StateManager(Node):
         window_s = self.get_parameter('ui_active_window_s').value
         return derive_limits(self._screens, self._now_ms(), window_s)
 
-    def _build_context(self, arg: dict) -> Context:
+    def _build_context(self, event: str, arg: dict) -> Context:
         flags = dict(self._flags)
         flags["jog_active"] = self._jog_active
+        # WP-MAINT-01: check_item は OPCHECK で現在実行中の項目名（自分がラッチする。
+        # 下の _process() 参照）。check_result は evt.check_result のその場の引数
+        # からだけ取る（前回値を引きずらない。ほかの event の arg には result キーが
+        # 無いので event 名で絞る）。
+        check_result = str((arg or {}).get('result') or '') if event == 'evt.check_result' else ''
         return Context(
             prev_mode=self.prev_mode,
             prev_state=self.prev_state,
@@ -319,8 +329,8 @@ class StateManager(Node):
             leash_taut=False,
             line_visible=False,
             camera_present=False,
-            check_item="",
-            check_result="",
+            check_item=self._check_item,
+            check_result=check_result,
             calib_item="",
             calib_preview_sane=False,
             map_update_available=False,
@@ -335,7 +345,7 @@ class StateManager(Node):
         if event == "ui.jog.hold":
             self._last_jog_ms = self._now_ms()
 
-        ctx = self._build_context(arg)
+        ctx = self._build_context(event, arg)
         decision = self.core.step(self.mode, self.state, event, ctx)
 
         # prev_sub のラッチ（§7 の latch_prev とは別物。PAUSE に新規で入るときだけ記録する。
@@ -353,6 +363,15 @@ class StateManager(Node):
         old_mode = self.mode
         self.mode = decision.to_mode
         self.state = decision.to_state
+
+        # WP-MAINT-01: check_item のラッチ。T-OPC-01（ui.check_item 受理）で開始した
+        # 項目名を持ち越し、OPCHECK を抜けるか LIST に戻ったら空に戻す
+        # （guards.py の _checking_estop_item 等はこの持ち越し値を読む）。
+        # モード名リテラルは書かない（N-1）。state_core.OPCHECK_MODE を参照する。
+        if event == "ui.check_item" and decision.accepted:
+            self._check_item = str((arg or {}).get('item') or '')
+        if self.mode != OPCHECK_MODE or self.state == "LIST":
+            self._check_item = ""
 
         # brief-tracker-default-off §3.1: 「動かさない」モードへ遷移したら
         # tracker_enabled を自動で false に落とす（ESTOP / CARRY は対象外。
@@ -516,7 +535,13 @@ class StateManager(Node):
             return
         self._hw_estop = bool(msg.data)
         event = "hw.estop.press" if self._hw_estop else "hw.estop.release"
-        self._process(event, {}, "")
+        # WP-MAINT-01: T-OPC-05 の feed_check_input 効果は $arg.pressed を
+        # ctx.arg から解決する（state_core._resolve_effect_args）。ここで arg を
+        # 空のまま渡すと opcheck_runner に常に pressed=null（bool(None)=False）が
+        # 届き、ESTOP 項目中の押下/解除判定が壊れる（前任が「pressed=null の矛盾」
+        # と呼んでいた点。実測: T-OPC-05 発火前は check_item が空でこの guard 自体
+        # 通らなかったため気づかれていなかった）。
+        self._process(event, {"pressed": self._hw_estop}, "")
         self._publish_state()
 
     def _on_estop_ui(self, msg):

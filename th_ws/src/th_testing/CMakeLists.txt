@@ -103,6 +103,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_route_replay_core
     test/test_route_replay_core.py
     TIMEOUT 30)
+  # 始業点検（OPCHECK）の判定コア (WP-MAINT-01。th_maintenance/check_core.py。
+  # 合否判定の純粋関数。registry.yaml の WP-MAINT-01 ブロックと値が一致することは
+  # test_maintenance_registry_driven が別途検証する。ROS2 不要)
+  ament_add_pytest_test(test_opcheck_core
+    test/test_opcheck_core.py
+    TIMEOUT 60)
   # 自己位置源選択コア (WS-9D。EKF 出力 /odometry/filtered が新鮮ならそれ、
   # 古ければ生 /odom にフォールバック。ROS2 不要)
   ament_add_pytest_test(test_odom_source
@@ -311,6 +317,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_prelaunch_guard
     test/test_prelaunch_guard.py
     TIMEOUT 60)
+  # OPCHECK の registry 駆動 (WP-MAINT-01。registry.yaml の行 ↔ check_core の
+  # CheckParams ↔ 生成物 opcheck_runner.yaml の 3 点一致と、placeholder 巻き込み
+  # 防止。ROS2 不要)
+  ament_add_pytest_test(test_maintenance_registry_driven
+    test/test_maintenance_registry_driven.py
+    TIMEOUT 120)
   # th_state/zones.py の LIMIT_STRICTNESS と registry.yaml の
   # speed_limit_strictness_rank が一致することの機械的な照合（N-15 レビュー。
   # th_state と th_params の両方を import してよい唯一のテストコード）
@@ -324,6 +336,12 @@ if(BUILD_TESTING)
     TIMEOUT 120)
   ament_add_pytest_test(test_state_manager_node
     test/test_state_manager_node.py
+    TIMEOUT 120)
+  # opcheck_runner ノードの振る舞い試験（WP-MAINT-01 §4-2。ノードを実際に起動し、
+  # /system/state を TRANSIENT_LOCAL で流して OPCHECK 限定動作・MOTOR デッドマン・
+  # 符号逆 NG・OPCHECK 離脱時の即停止を確かめる。state_manager は起動しない）
+  ament_add_pytest_test(test_opcheck_runner_node
+    test/test_opcheck_runner_node.py
     TIMEOUT 120)
   ament_add_pytest_test(connectivity_checker_node
     test/test_connectivity_checker_node.py

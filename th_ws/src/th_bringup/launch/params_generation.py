@@ -95,6 +95,11 @@ REGISTRY_NODES: tuple[str, ...] = (
     "wait_clear_gate",
     "home_declarer",
     "person_tracker_bridge",
+    # WP-MAINT-01: opcheck_runner は registry.yaml の motor_* ほか OPCHECK 行
+    # （consumers に入っている行）を生成 yaml に載せる。新規行のみで blocking
+    # placeholder を含まないため A8 は armed にならない（opcheck_runner を
+    # consumers に持つ placeholder 行は存在しない。試験で縛る）。
+    "opcheck_runner",
 )
 
 # ---------------------------------------------------------------------------

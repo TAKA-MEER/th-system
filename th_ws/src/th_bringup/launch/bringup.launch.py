@@ -443,6 +443,19 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 8c. opcheck_runner (WP-MAINT-01) ──────────────────
+    # 始業点検の実行部。/system/state を見て OPCHECK のときだけ動く（設計書に
+    # stage の指定が無いため段階1＝常時起動する）。generated/opcheck_runner.yaml
+    # は registry.yaml の WP-MAINT-01 行 + blind_angle_ranges（死角マスク）を運ぶ
+    # （params_generation.py REGISTRY_NODES に opcheck_runner が登録済み）。
+    nodes.append(Node(
+        package='th_maintenance',
+        executable='opcheck_runner.py',
+        name='opcheck_runner',
+        parameters=[os.path.join(GENERATED_DIR, 'opcheck_runner.yaml')],
+        output='screen',
+    ))
+
     # ── 9. 試験員トラッカー (本番 or スタブ) ──────────────
     # スタブ: person_tracker_stub.py
     nodes.append(Node(

@@ -60,6 +60,10 @@ BOOT_MODE: str = "INIT"
 # ノード側にモード名リテラルを書かない。2026-09-01。SM-3.1.1-11）。
 ESTOP_MODE: str = "ESTOP"
 
+# state_manager.py が Context.check_item のラッチ（開始・破棄）で使う参照点（N-1 と
+# 同じ理由でノード側にモード名リテラルを書かない。WP-MAINT-01。2026-09-25）。
+OPCHECK_MODE: str = "OPCHECK"
+
 # DetailedDesign-state.md §4-1-1 末尾・§2 validate()⑥docstring — PAUSE を持たないモード。
 # PREP は 2026-09-10 追加（Spec-modes.md §3.0-② ／ Spec-modes.md §3.0-②。地図作成＝常時ジョグ、
 # 将来は追従走行がモードの活動そのもので「一時停止すべき走行」が無い。停止/走行は inert）。
