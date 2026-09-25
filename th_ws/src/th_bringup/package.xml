@@ -15,6 +15,7 @@
   <exec_depend>th_config_manager</exec_depend>
   <exec_depend>th_state</exec_depend>
   <exec_depend>th_onsite</exec_depend>
+  <exec_depend>th_maintenance</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>robot_localization</exec_depend>

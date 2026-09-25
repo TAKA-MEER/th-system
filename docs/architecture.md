@@ -116,6 +116,34 @@ case RobotMode::IDLE:
 
 （2026-07-24: 実機の WiFi(ESP32 AP)経由では `/scan`・`wheel_feedback`・`/person/status` と同様に heartbeat も 0.5〜1.2 秒程度の受信ギャップが時折発生することが判明したため、1.0 秒から 2.5 秒に緩和した。`safety_monitor.yaml` の同種タイムアウトと揃えている）
 
+### 始業点検（OPCHECK）— th_maintenance / opcheck_runner（WP-MAINT-01）
+
+新 FSM の `OPCHECK` モード（`LIST` → `RUNNING_CHECK` → `LIST`/`REPAIR`）を実際に動かす実行部。
+`th_maintenance` パッケージの `opcheck_runner.py`（`bringup.launch.py` から段階1＝常時起動）が
+`/system/state` を見て **`OPCHECK` のときだけ**動き、`ESTOP`（物理非常停止ボタン）・`MOTOR`
+（エンコーダ追従）・`IMU`（生死・バイアス・校正状態）・`LIDAR`（死活・周期・全周カバレッジ・
+死角マスクとのズレ）の 4 項目を判定する。判定の純粋関数は `th_maintenance/check_core.py`
+（ROS2 非依存。`judge_estop` / `judge_motor_samples` / `judge_imu` / `judge_gyro_unit` /
+`judge_lidar`）。しきい値は `registry.yaml` の WP-MAINT-01 ブロック（`names.md` §7.6）。
+
+- `/system/effect` の自分宛て効果（`start_monitor` / `record_result` / `feed_check_input` /
+  `abort_check`）で項目の開始・終了を進め、判定結果を `evt.check_result {"item","result"}`
+  で `/system/event` へ返す（`state_manager.py` がこれを `T-OPC-02/03/04` のガードに渡す）。
+- **MOTOR 項目は「押している間だけ」動く。**設計書に押下の伝え方が無かったため
+  デッドマン方式で実装した: 画面（未実装。S-30）が `/opcheck/motor_hold`
+  （`std_msgs/String`。`NONE`/`FORWARD`/`BACK`/`LEFT`/`RIGHT`）を周期送信し、
+  `opcheck_deadman_timeout_s`（既定 0.5s）途絶えたら離し扱いで即座に `/cmd_vel_behavior`
+  を 0 にする。速度指令は `/cmd_vel_behavior`（`/cmd_vel_manual` は使わない）。
+- **ESTOP 項目の実行中は物理ボタンを押しても `CARRY` へ落ちない。**FSM 側
+  （`guards.py` の `_checking_estop_item`、`transitions.yaml` の `T-OPC-05`）は元から
+  在ったが、`state_manager.py` が `Context.check_item`/`check_result` を常に空文字で
+  渡していたため一度も発火せず、ESTOP 項目中の物理ボタン押下が共通の `hw.estop.press`
+  遷移に落ちて `CARRY` になっていた（2026-09-25 修正。`check_item` は `T-OPC-01`
+  受理時に持ち回り、`OPCHECK` を抜けるか `LIST` に戻ったら空に戻す。`check_result` は
+  持ち回らず `evt.check_result` のその場の引数から都度組み立てる）。
+- フォルト・非常停止・`OPCHECK` 以外への遷移では `opcheck_runner` が即座に
+  `/cmd_vel_behavior` を 0 にする。
+
 ---
 
 ## 教示再生（route_recorder / replay_runner）★現行デモの主機能
