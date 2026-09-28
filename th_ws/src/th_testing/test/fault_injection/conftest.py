@@ -102,10 +102,11 @@ def _resolved(resolved: dict[str, tuple[str, Any]], name: str) -> Any:
 
 
 # T-1 の唯一の例外（DetailedDesign-safety.md §10 の注・#6行）: 100ms は
-# 「フォルト検知 → 停止」（層3。safety_monitor が /safety/fault_lock 等を
-# 立ててから twist_mux が /cmd_vel をゼロにするまで）の応答時間そのものであり、
-# lidar_timeout_ms 等と違って registry.yaml のパラメータではなく設計上の定数。
-# 次パケットの故障注入6 (test_06_fault_to_stop) がこの値を使う想定。
+# 「フェルト検知 → 停止」（層3。safety_monitor が /safety/fault_lock を
+# 立ててから twist_mux が下位入力を捨てて無音になるまで）の応答時間その
+# ものであり、lidar_timeout_ms 等と違って registry.yaml のパラメータでは
+# なく設計上の定数。twist_mux はロック中に 0 を出さないので「ゼロを出す側」
+# ではない点に注意（DetailedDesign-safety.md §1.1）。
 FAULT_TO_STOP_LAYER3_MS = 100  # noqa: E305
 
 
@@ -647,19 +648,27 @@ class DriveController:
                  period_sec: float = 0.02):
         """`period_sec` の既定を 0.02（50Hz）にしてある理由（重要）:
 
-        `twist_mux` は**入力を受け取ったときに出力を再評価**する。したがって
-        ロック（`/safety/fault_lock`）が立ってから `/cmd_vel_muxed` に
-        ゼロが出るまで、最悪で**この駆動周期ぶん**の遅れが乗る。
+        `twist_mux` は**入力を受け取ったときに出力を再評価**する。ロック
+        （`/safety/fault_lock`）は 0 を出さず、下位入力を捨てて黙る
+        （`DetailedDesign-safety.md` §1.1）。したがって無音が確定するまで
+        の遅れは、twist_mux がロックのメッセージを受け取ってから次の 1 件の
+        `/cmd_vel_nav` を受け取って `hasPriority()` が偽になるまでの
+        **1 駆動周期ぶん**が上限になる。
 
         故障注入 6（`DetailedDesign-safety.md` §10 #6）の合格条件は
-        「フォルト検知から **100 ms 以内**に速度指令が 0」であり、この 100 ms は
-        **層 3（twist_mux のロック）の応答時間の予算**である。
-        既定が 0.1（10Hz）だと最悪 100 ms を試験側の刻みだけで使い切ってしまい、
-        安全チェーンが即座に反応していても不合格になる（実測で確認）。
+        「フェルトから **100 ms を過ぎた以降**、`/cmd_vel_muxed` に非ゼロが
+        1 件も出ない」であり、この 100 ms は**層 3 の応答時間の予算**である。
+        試験側が見ているのは「0 が出る」ことではなく「無音になる」ことだが、
+        駆動周期はその境目（猶予 100ms の手前）にしか効かない。猶予 100ms は
+        緩めずにそのまま使い、駆動周期だけを小さくしておくことで、測定側の
+        取り分が層 3 の予算を食い潰さないようにする。
 
-        0.02（50Hz）なら試験側の取り分は最悪 20 ms で、残り 80 ms を
-        実際の応答時間の測定に使える。**予算 100 ms に対して測定側が何 ms
-        使うかを常に意識すること。**
+        0.1（10Hz）にすると猶予の 100ms のうち最大 100ms を試験側の刻み
+        だけで使い切ってしまい、安全チェーンが即座に反応していても境界上で
+        不合格になる（実測で確認）。
+        0.02（50Hz）なら試験側の取り分は最悪 20 ms で、残り 80 ms を実際の
+        無音が確定するまでの時間に回せる。**予算 100 ms に対して測定側が
+        何 ms 使うかを常に意識すること。**
         """
         from geometry_msgs.msg import Twist
 
@@ -972,7 +981,9 @@ def assert_fault_within(ros_node):
     `watcher`（`/safety/fault` を購読している想定）に、呼び出し時点から `ms`
     ミリ秒以内に `fault_type` が active な `FaultStatus` が届くことを確認する。
     故障注入 5（「通信断 → フォルト検知」）向け。**T-2**: 6（フォルト検知 → 停止）は
-    これと別に `assert_zero_within` で確認すること。1本にまとめない。
+    これと別に `assert_no_nonzero_after` で確認すること（2026-09-28 の判定変更。
+    当初は `assert_zero_within` で判定していたが、`/cmd_vel_muxed` に 0 は来ない
+    ため構造的に通らなかった）。1本にまとめない。
     """
 
     def _assert(watcher: TopicWatcher, fault_type: str, ms: float) -> None:
@@ -990,12 +1001,18 @@ def assert_fault_within(ros_node):
 def assert_zero_within(ros_node):
     """`assert_zero_within(watcher, field, since, ms)` を返すフィクスチャファクトリ。
 
-    `watcher` が `since`（`time.monotonic()` の値。例: 故障検知時刻）より前から
+    `watcher` が `since`（`time.monotonic()` の値。例: フェルト検知時刻）より前から
     監視を続けている前提で、`since` から `ms` ミリ秒以内に `field` が 0 に
     なった記録があることを確認する。`assert_stops_within` との違いは基準時刻が
     「呼び出し時点」ではなく「過去のイベント時刻」であること。
-    故障注入 6（フォルトから `FAULT_TO_STOP_LAYER3_MS`＝100ms 以内）・
-    12（stale から `cmd_vel_stale_ms` 以内）向け。
+
+    **使えるのは「0 を明示的に publish する経路」のみ。** 故障注入 6 の
+    観測点である `/cmd_vel_muxed`（twist_mux の出力）には使えない。twist_mux
+    はロック中に 0 を出さず、下位入力を捨てて黙るだけなので、0 は来ない
+    （`DetailedDesign-safety.md` §1.1）。故障注入 6 は
+    `assert_no_nonzero_after`（無音の確認）で判定する
+    （2026-09-28 ユーザー決定）。現時点で使うのは故障注入 12
+    （`cmd_vel_stale_ms`。zero を作る側＝`obstacle_limiter` を通る `/cmd_vel`）。
 
     【故障注入6の実装中に見つけて直したバグ】
     以前は判定条件が `t <= deadline` だけで `t >= since` が抜けていた。
@@ -1003,9 +1020,11 @@ def assert_zero_within(ros_node):
     たまたま 0 の記録が1件でもあれば、`since` 以降に実際に 0 へ落ちたかを
     一切見ずに合格してしまう（FMEA①「テストが誤って通る」そのもの）。
     このフィクスチャ自体は故障注入6・12向けの「インターフェースとして
-    先に作られた」ものでまだ実戦投入されていなかった
+    先に作られた」もので、当初はまだ実戦投入されていなかった
     （`case_11` は `assert_no_nonzero_after` を使っており、このバグを
-    踏んでいない）。故障注入6で初めて実使用するにあたって修正した。
+    踏んでいない）。故障注入6の実装中に見つけて直したが、2026-09-28 の
+    判定変更で故障注入6 は本フィクスチャをやめ `assert_no_nonzero_after`
+    に移った（上の注意を参照）。修正は故障注入 12 が使っているため残す。
     """
 
     def _assert(watcher: TopicWatcher, field: str, since: float, ms: float,
@@ -1109,8 +1128,11 @@ def assert_no_nonzero_after(ros_node):
     """`assert_no_nonzero_after(watcher, field, since, ms, atol=1e-6)`: `since`
     から `ms` ミリ秒の間に受信した全メッセージについて `field` が 0 であること
     （非ゼロが1件も無いこと）を確認する。`assert_zero_within`（「いずれか1件が
-    0になる」）の裏返しで、「一度停止したあと再び動き出さないか」を見る用途
-    （故障注入11の `/cmd_vel` 向け）。受信0件（トピックが完全に沈黙した）は
+    0になる」）の裏返しで、「停止したあと再び動き出さないか」を見る用途
+    （故障注入11の `/cmd_vel` 向け）。**twist_mux のロック中のように「0 を
+    出さず黙る」ことが正しい挙動の観測点（故障注入6の `/cmd_vel_muxed`）でも
+    使える**——観測点によっては「0 が出る」ことではなく「非ゼロが出ない」ことが
+    合格条件になるため。受信0件（トピックが完全に沈黙した）は
     合格として扱う——publisher が死んでメッセージが来なくなること自体は
     「非ゼロが来ていない」の一種であり、ここで判定したいのは「死んだ後に
     再び動き出さないか」であるため。
@@ -1145,8 +1167,9 @@ def first_match_time(watcher: TopicWatcher, predicate: Callable[[Any], bool]) ->
     """`watcher.records` の中から `predicate(msg)` を満たす最初の
     `(受信時刻[time.monotonic()], msg)` の時刻を返す。無ければ `pytest.fail`。
 
-    故障注入6（`case_06_fault_to_stop.py`）が「フォルトが実際に検知された
-    瞬間」を `assert_zero_within` の `since` に渡すために使う——
+    故障注入6（`case_06_fault_to_stop.py`）が「フェルトが実際に検知された
+    瞬間」を `assert_no_nonzero_after` の `since`（= 検知時刻 + 100ms）に
+    渡すために使う——
     `assert_fault_within` は「立ったかどうか」の bool しか返さないため、
     正確な検知時刻は `watcher.records` から別途拾う必要がある。
     """
