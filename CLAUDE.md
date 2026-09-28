@@ -280,7 +280,7 @@ safety_monitor ─→ /safety/fault_lock (lock 254) ─────────�
 
 ### 安全チェーンの設計
 
-`safety_monitor`（C++）が `/safety/estop` と `/safety/fault_lock` を twist_mux に送る。`mode_manager` の処理を待たずに twist_mux がモーターをゼロにする（フォルト検知 → 物理停止は 100ms 以内）。
+`safety_monitor`（C++）が `/safety/estop` と `/safety/fault_lock` を送り、`mode_manager` の処理を待たずに止める（フォルト検知 → 停止は 100ms 以内）。**twist_mux のロックは 0 を出さず、下位の入力を捨てて黙るだけ**（`/cmd_vel_muxed` が無音になる）。実際に 0 を送って止めるのは、ロックを直接見る `obstacle_limiter` と `esp32_bridge`（`DetailedDesign-safety.md` §1.1）。
 
 ESP32 には独立したウォッチドッグ（600ms、`config.h` の `WATCHDOG_MS`）があり、ROS2 がクラッシュしても停止できる。esp32_bridge は `/cmd_vel` を20Hzキープアライブで再送しており、WiFi ジッタによる誤発動を避けるため2026-08-05に300ms→600msへ緩和した（詳細: `docs/architecture.md`「ESP32側の二重フェイルセーフ」）。
 
