@@ -304,13 +304,16 @@ class TestStateManagerNode(unittest.TestCase):
     def test_latch_roundtrip(self):
         """state.md §7 の6行すべてを実際に踏む。
 
-        注意（設計書との食い違い）: §7 の表は「ESTOP / CARRY 中の ui.finish → IDLE」を
-        1行にまとめているが、guards.py の `_can_finish()` は mode が ESTOP のときは
-        常に False を返す（transitions.yaml の C-08 は `can_finish` ガード付き）。
-        つまり実装上 ui.finish は ESTOP からは絶対に受理されない
-        （ESTOP の出口は C-09 ui.estop.release / C-09f ui.resume_ack のみ）。
-        WP-STATE-01 の成果物（表・ガード）は編集しないので、ここでは実装の
-        実際の経路（ESTOP は ui.estop.release、CARRY は ui.finish）に合わせて検証する。
+        手順 1' の出口は 2026-09-04 の WS-9O で書き換えられている。当時までは
+        「ESTOP 解除後は IDLE のみ」だったが、現在は**入口（UI ボタン／
+        fault.critical）を問わず、フォールトが消え物理ボタンが解放されていれば
+        ui.resume_yes で $prev_mode の PAUSE へ出る**
+        （Spec-safety.md §3.5.2・Spec-modes.md §4.1。§7 も 8692b62 で更新済み）。
+        どれの行が効くか（C-09／C-09c／C-09d／C-09f）は手順 1' で実際に踏む。
+
+        ui.finish は ESTOP からは絶対に受理されない（guards._can_finish は
+        mode==ESTOP で常に False。C-08 の can_finish ガード）。ESTOP の出口は
+        C-09 / C-09c / C-09d / C-09f の4行で、CARRY 側の出口が ui.finish。
         """
         # 1) 動作系 → ESTOP（fault.critical）。prev_mode/prev_state を記録する。
         res = self._trigger('ui.enter_mode', {'mode': 'FOLLOW'})
@@ -323,15 +326,24 @@ class TestStateManagerNode(unittest.TestCase):
         assert snap.prev_mode == 'FOLLOW'
         assert snap.prev_state == 'SELECT'
 
-        # 1') 解除後は IDLE のみ・prev_* は捨てる（§7 行1。出口は ui.estop.release）。
+        # 1') フォールト解消後の出口（§7 行1。2026-09-04 WS-9O で書き換え）。
+        #     ui.estop.release は IDLE に落とすのではなく、ESTOP のまま
+        #     「戻る／メニューへ」を出すだけ（C-09。to_mode/to_state は '='）。
         self.pub_fault.publish(FaultStatus(active=False, fault_type='', severity=''))
         self._spin(0.1)
         res = self._trigger('ui.estop.release')
         assert res.accepted, res.reject_reason_key
+        snap = self._latest()
+        assert snap.mode == 'ESTOP', \
+            f'ui.estop.release で IDLE に落ちてしまった（C-09 ではなく C-09b が効いた）: {snap.mode}'
+
+        #     その先の「確認」→ IDLE。prev_* は捨てる（C-09f。SM-3.1.1-12）。
+        res = self._trigger('ui.resume_ack')
+        assert res.accepted, res.reject_reason_key
         assert self._wait_mode('IDLE')
         snap = self._latest()
         assert snap.prev_mode == '' and snap.prev_state == '', \
-            'ESTOP 解除後は prev_* を捨てるはず（§7 行1）'
+            'ESTOP を IDLE で出たら prev_* を捨てるはず（§7 行1・C-09f）'
 
         # 2) 動作系 → CARRY（hw.estop.press）。prev_mode/prev_state を記録する。
         res = self._trigger('ui.enter_mode', {'mode': 'FOLLOW'})
@@ -388,8 +400,14 @@ class TestStateManagerNode(unittest.TestCase):
             'CARRY 中の ui.finish 後は prev_* を捨てるはず（§7 行6）'
 
     # ════════════════════════════════════════════════════════
-    # 2026-09-01（SM-3.1.1-11）: UI ボタン起因の ESTOP（重大フォルト無し）は
-    # 解除後に「戻る／メニューへ」を選べる。fault 起因は従来どおり IDLE のみ。
+    # SM-3.1.1-11 / 12 — ESTOP からの復帰先。
+    # 2026-09-01: UI ボタン由来の ESTOP（重大フォールト無し）は解除後に
+    #   「戻る／メニューへ」を選べる。
+    # 2026-09-04 WS-9O: 入口が UI ボタンか重大フォールトかを問わない。
+    #   フォールトが消えていれば「戻る」で $prev_mode の PAUSE へ、
+    #   「メニューへ」／「確認」は IDLE へ出る（Spec-safety.md §3.5.2）。
+    #   依然として要求されるのは「フォールトが実際に消えていること」と
+    #   「物理非常停止が解放されていること」の2点。
     # ════════════════════════════════════════════════════════
     def test_ui_estop_resume_to_prev_mode(self):
         res = self._trigger('ui.enter_mode', {'mode': 'MANUAL'})
@@ -412,21 +430,127 @@ class TestStateManagerNode(unittest.TestCase):
         assert self._wait_mode('MANUAL')
         assert self._latest().state == 'PAUSE'
 
-    def test_fault_estop_still_idle_only(self):
+    def test_fault_estop_resume_to_prev_pause(self):
+        """重大フォールト起因の ESTOP も、フォールトが消えれば押下前のモードへ戻る（WS-9O）。
+
+        SM-3.1.1-11（`C-09c`）／Spec-safety.md §3.5.2。2026-09-04 までは UI ボタン
+        起因だけが戻せたので、26ms で消えるような一瞬の重大フォールトでも作業の
+        最初からやり直しになっていた（同節冒頭）。復帰先は `PAUSE`（停止）で、
+        走り出すには操作者がもう一度走行を押す（`PAUSE` に戻しただけなら
+        安全上の追加リスクが無い）。
+
+        手順 3 は「重大フォールトが解けた」と「すべてのフォールトが解けた」を
+        分けて踏む。`C-09c` のガードには severity の項だけでなく `not ctx.fault_active`
+        の項もあるため、severity を落とした回復フォールトが残っている間は戻せない。
+        """
         res = self._trigger('ui.enter_mode', {'mode': 'FOLLOW'})
         assert res.accepted, res.reject_reason_key
         assert self._wait_mode('FOLLOW')
 
-        # 重大フォルト起因の ESTOP。
+        # 1) 重大フォールトで ESTOP。押下前のモードと状態をラッチする。
         self.pub_fault.publish(FaultStatus(active=True, fault_type='OTHER', severity='CRITICAL'))
         assert self._wait_mode('ESTOP')
+        snap = self._latest()
+        assert snap.prev_mode == 'FOLLOW' and snap.prev_state == 'SELECT', \
+            f'重大フォールトで押下前がラッチされていない: {snap.prev_mode}/{snap.prev_state}'
 
-        # フォルト解消 → 「戻る」(ui.resume_yes) は通らない（estop_from_ui=False）。
+        # 2) フォールトがまだ継続している間は「戻る」を拒否する
+        #    （guards._estop_resume_prev。Spec-safety.md §3.5.2「依然として要求すること」）。
+        res = self._trigger('ui.resume_yes')
+        assert res.accepted is False, \
+            'フォールト継続中に ui.resume_yes が通ってしまった（_estop_resume_prev が効いていない）'
+        assert res.reject_reason_key == 'not_allowed', res.reject_reason_key
+        snap = self._latest()
+        assert snap.mode == 'ESTOP', f'フォールト継続中に ESTOP を離れた: {snap.mode}'
+
+        # 3) 重大フォールトだけ解消しても、**他のフォールトが残っている間は**
+        #    「戻る」を拒否する（guards._estop_resume_prev の `not ctx.fault_active`
+        #    項。Spec-safety.md §3.5.2「依然として要求すること」の
+        #    「フォールトが実際に消えていること」）。
+        #    severity を落とした回復フォールト（active=True / severity=''）を
+        #    送ると severity の項では止められないので、active の項を踏む。
+        self.pub_fault.publish(FaultStatus(active=False, fault_type='', severity=''))
+        self._spin(0.2)
+        self.pub_fault.publish(
+            FaultStatus(active=True, fault_type='LIDAR_LOST', severity=''))
+        self._spin(0.2)
+        res = self._trigger('ui.resume_yes')
+        assert res.accepted is False, \
+            '回復フォールトが残っているのに ui.resume_yes が通ってしまった（not ctx.fault_active が効いていない）'
+        assert res.reject_reason_key == 'not_allowed', res.reject_reason_key
+        snap = self._latest()
+        assert snap.mode == 'ESTOP', f'回復フォールト継続中に ESTOP を離れた: {snap.mode}'
+
+        # 4) フォールトがすべて消えたら「戻る」で押下前のモードの PAUSE へ。prev_* は捨てる。
         self.pub_fault.publish(FaultStatus(active=False, fault_type='', severity=''))
         self._spin(0.2)
         res = self._trigger('ui.resume_yes')
-        assert res.accepted is False, 'fault 起因の ESTOP から prev モードへ戻れてはいけない'
-        # 「確認」で IDLE。
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('FOLLOW'), '「戻る」で押下前のモードへ戻っていない（C-09c）'
+        snap = self._latest()
+        assert snap.state == 'PAUSE', \
+            f'復帰先が PAUSE（停止）ではない: {snap.mode}/{snap.state}'
+        assert snap.prev_mode == '' and snap.prev_state == '', \
+            f'復帰後も prev_* が残っている: {snap.prev_mode}/{snap.prev_state}'
+
+    def test_fault_estop_resume_ack_and_no_go_to_idle(self):
+        """重大フォールトで入った ESTOP の「確認」と「メニューへ」はどちらも IDLE へ出る。
+
+        「確認」= `ui.resume_ack`（`C-09f`。SM-3.1.1-12。UI ボタンを押していないので
+        「解除」は来ないが、この行が無いと出られない）／
+        「メニューへ」= `ui.resume_no`（`C-09d`。SM-3.1.1-11）。どちらも `prev_*` は捨てる。
+        """
+        for trigger, label in (('ui.resume_ack', '確認'), ('ui.resume_no', 'メニューへ')):
+            res = self._trigger('ui.enter_mode', {'mode': 'FOLLOW'})
+            assert res.accepted, res.reject_reason_key
+            assert self._wait_mode('FOLLOW')
+            self.pub_fault.publish(
+                FaultStatus(active=True, fault_type='OTHER', severity='CRITICAL'))
+            assert self._wait_mode('ESTOP')
+            self.pub_fault.publish(FaultStatus(active=False, fault_type='', severity=''))
+            self._spin(0.2)
+
+            res = self._trigger(trigger)
+            assert res.accepted, f'{label}（{trigger}）が拒否された: {res.reject_reason_key}'
+            assert self._wait_mode('IDLE'), f'{label}（{trigger}）で IDLE へ出なかった'
+            snap = self._latest()
+            assert snap.prev_mode == '' and snap.prev_state == '', \
+                f'{label} で IDLE へ出たのに prev_* が残っている: {snap.prev_mode}/{snap.prev_state}'
+
+    def test_fault_estop_resume_blocked_while_hw_pressed(self):
+        """物理非常停止が押されたままなら、重大フォールトが解消していても戻れない。
+
+        `guards._estop_resume_prev` の `not ctx.hw_estop` 項
+        （Spec-safety.md §3.5.2「依然として要求すること」）。物理非常停止を押すと
+        `C-07` で CARRY へ移るため、「ESTOP に居る状態で押されている」状態は
+        「CARRY のまま重大フォールト」で作る。`latch_prev` は CARRY/ESTOP では記録
+        されない（state_core.NO_LATCH_MODES）ので、prev_mode は CARRY に入った時の
+        FOLLOW のまま残る。
+        """
+        res = self._trigger('ui.enter_mode', {'mode': 'FOLLOW'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('FOLLOW')
+
+        self.pub_hw.publish(Bool(data=True))
+        assert self._wait_mode('CARRY')
+
+        self.pub_fault.publish(FaultStatus(active=True, fault_type='OTHER', severity='CRITICAL'))
+        assert self._wait_mode('ESTOP')
+        assert self._latest().prev_mode == 'FOLLOW', \
+            'CARRY → ESTOP で prev_mode が上書きされた'
+
+        # 重大フォールトは解消するが、物理非常停止は押したままにする。
+        self.pub_fault.publish(FaultStatus(active=False, fault_type='', severity=''))
+        self._spin(0.2)
+        res = self._trigger('ui.resume_yes')
+        assert res.accepted is False, \
+            '物理非常停止が押されたまま「戻る」が通ってしまった（not ctx.hw_estop が効いていない）'
+        snap = self._latest()
+        assert snap.mode == 'ESTOP', f'物理非常停止が押されたまま ESTOP を離れた: {snap.mode}'
+
+        # 後片付け。物理非常停止を解放してから「確認」で IDLE へ（SM-3.1.1-12）。
+        self.pub_hw.publish(Bool(data=False))
+        self._spin(0.2)
         res = self._trigger('ui.resume_ack')
         assert res.accepted, res.reject_reason_key
         assert self._wait_mode('IDLE')
