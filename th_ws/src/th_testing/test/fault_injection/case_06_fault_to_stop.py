@@ -2,7 +2,7 @@
 case_06_fault_to_stop.py — 故障注入 6「フォルト検知 → 停止」
 （ctest 登録名: fault_injection_06）
 =================================================================
-`DetailedDesign-safety.md` §10 #6: 5 の続きを測る。フェルトから
+`DetailedDesign-safety.md` §10 #6: 5 の続きを測る。フォルトから
 `conftest.FAULT_TO_STOP_LAYER3_MS`（＝100ms。層3の応答時間そのものであり
 パラメータではなく設計上の定数。T-1 の唯一の例外）**経過した以降、
 `twist_mux` の出力 `/cmd_vel_muxed` に非ゼロが 1 件も出ない**ことを確認する。
@@ -62,7 +62,7 @@ velocity 側の priority（behavior 20 / nav 10 / manual_joy 30）より全部�
 `esp32_bridge`）だが、本試験が Gazebo で測るのはその**前段＝`twist_mux` の
 ロック**そのものである。
 
-【フェルト検知時刻の起点】
+【フォルト検知時刻の起点】
 `assert_fault_within` で LIDAR_LOST の active を確認したあと、
 `conftest.first_match_time()` で `fault_watcher.records` から実際に
 「active かつ fault_type == LIDAR_LOST」な最初のメッセージの受信時刻
@@ -75,17 +75,17 @@ twist_mux に届くのは `t_fault` から数 ms 後である。加えて twist_
 twist_mux が `fault_lock` を受け取ってから次の `/cmd_vel_nav`
 （`DriveController` の 50Hz なら最悪 20ms）まで。合計でも 100ms 予算に
 十分収まる。
-`muxed_watcher` は `/scan` を止める**前**（=フェルトより十分前）から購読を
+`muxed_watcher` は `/scan` を止める**前**（=フォルトより十分前）から購読を
 開始しておく（`TopicWatcher` の docstring どおり。取りこぼしによる
 偽陽性を避けるため）。
 
 【走行させている理由】
 `case_01`/`case_11` と同じ理由——「止まっていたものが見かけ上ゼロだった」
-ではなく、「実際に動いていたものがフェルトを境に止まった」ことを示すため、
+ではなく、「実際に動いていたものがフォルトを境に止まった」ことを示すため、
 `enter_manual_mode()` で `MANUAL` に入り `DriveController` で走らせ続けた
-状態でフェルトを注入する。twist_mux のロックは「0 を出さず黙る」だけなので、
+状態でフォルトを注入する。twist_mux のロックは「0 を出さず黙る」だけなので、
 この「実際に走っていた」ことを書くだけでは縛にならない。試験本体で
-「フェルト直前の `_PRE_FAULT_WINDOW_SEC` 秒に `/cmd_vel_muxed` の非ゼロが
+「フォルト直前の `_PRE_FAULT_WINDOW_SEC` 秒に `/cmd_vel_muxed` の非ゼロが
 1 件以上ある」ことを assert している（無いと「最初から止まっていた」状態を
 合格してしまう）。
 
@@ -119,13 +119,13 @@ from fault_injection.conftest import (
 # scaffolding（case_05 と同じ流儀。T-1の対象外）。
 _FAULT_WINDOW_MULTIPLIER = 8
 
-# 「実際に走っていた」ことを確認する遡及窓（秒）。フェルト検知の直前は
+# 「実際に走っていた」ことを確認する遡及窓（秒）。フォルト検知の直前は
 # twist_mux がまだロックしていないので、この区間に非ゼロが1件以上あること
 # が「走っていた」証拠になる。`lidar_timeout_ms`（=308ms）より長い 0.5 秒を
 # 取ることで、LIDAR_LOST が正式に立つ前（/scan を止めた直後）も含めて見る。
 _PRE_FAULT_WINDOW_SEC = 0.5
 
-# フェルトから100ms（層3の予算）を過ぎたあと、どれだけ長く無音を確かめるか。
+# フォルトから100ms（層3の予算）を過ぎたあと、どれだけ長く無音を確かめるか。
 # twist_mux のロックは `/safety/fault_lock` の publisher（safety_monitor）が
 # 生きている間だけ続く（timeout 0.5s は「0.5s 以内に更新がなければロック
 # 解除」）。safety_monitor は 10Hz で publish し続けるので 0.5s より長い
@@ -168,7 +168,7 @@ def test_fault_injection_06_fault_to_stop(
         t_fault = first_match_time(
             fault_watcher, lambda m: m.active and m.fault_type == 'LIDAR_LOST')
 
-        # 前提条件: フェルト直前まで実際に走っていたこと（モジュールdocstring
+        # 前提条件: フォルト直前まで実際に走っていたこと（モジュールdocstring
         # の【走行させている理由】）。twist_mux はロックすると 0 ではなく
         # 黙るだけなので、これが無いと「最初から止まっていた」状態を合格
         # にしてしまう。購読不成立（QoS不一致・トピック名誤り）でも
@@ -177,7 +177,7 @@ def test_fault_injection_06_fault_to_stop(
                      if t_fault - _PRE_FAULT_WINDOW_SEC <= t < t_fault]
         pre_fault_nonzero = [m for m in in_window if abs(m.linear.x) > _NONZERO_ATOL]
         assert pre_fault_nonzero, (
-            f"フェルト（t_fault={t_fault:.3f}）の {_PRE_FAULT_WINDOW_SEC} 秒前に "
+            f"フォルト（t_fault={t_fault:.3f}）の {_PRE_FAULT_WINDOW_SEC} 秒前に "
             f"/cmd_vel_muxed の linear.x が非ゼロだった記録が1件も無い"
             f"（同窓の受信 {len(in_window)} 件"
             f"、直近の値: {in_window[-1].linear.x if in_window else '受信なし'}"
@@ -185,7 +185,7 @@ def test_fault_injection_06_fault_to_stop(
             f"いずれか。合格にしてはいけない。")
 
         # 合格条件（2026-09-28 ユーザー決定。DetailedDesign-safety.md §10 #6）:
-        # フェルトから層3の予算 100ms が過ぎた以降、twist_mux の出力に
+        # フォルトから層3の予算 100ms が過ぎた以降、twist_mux の出力に
         # 非ゼロが1件も出ないこと。twist_mux はロックすると 0 を出すのではなく
         # 下位入力を捨てて黙る（モジュールdocstring 参照）ため、「0 が出る」を
         # 待つ `assert_zero_within` では判定できない。

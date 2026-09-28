@@ -102,7 +102,7 @@ def _resolved(resolved: dict[str, tuple[str, Any]], name: str) -> Any:
 
 
 # T-1 の唯一の例外（DetailedDesign-safety.md §10 の注・#6行）: 100ms は
-# 「フェルト検知 → 停止」（層3。safety_monitor が /safety/fault_lock を
+# 「フォルト検知 → 停止」（層3。safety_monitor が /safety/fault_lock を
 # 立ててから twist_mux が下位入力を捨てて無音になるまで）の応答時間その
 # ものであり、lidar_timeout_ms 等と違って registry.yaml のパラメータでは
 # なく設計上の定数。twist_mux はロック中に 0 を出さないので「ゼロを出す側」
@@ -656,7 +656,7 @@ class DriveController:
         **1 駆動周期ぶん**が上限になる。
 
         故障注入 6（`DetailedDesign-safety.md` §10 #6）の合格条件は
-        「フェルトから **100 ms を過ぎた以降**、`/cmd_vel_muxed` に非ゼロが
+        「フォルトから **100 ms を過ぎた以降**、`/cmd_vel_muxed` に非ゼロが
         1 件も出ない」であり、この 100 ms は**層 3 の応答時間の予算**である。
         試験側が見ているのは「0 が出る」ことではなく「無音になる」ことだが、
         駆動周期はその境目（猶予 100ms の手前）にしか効かない。猶予 100ms は
@@ -1001,7 +1001,7 @@ def assert_fault_within(ros_node):
 def assert_zero_within(ros_node):
     """`assert_zero_within(watcher, field, since, ms)` を返すフィクスチャファクトリ。
 
-    `watcher` が `since`（`time.monotonic()` の値。例: フェルト検知時刻）より前から
+    `watcher` が `since`（`time.monotonic()` の値。例: フォルト検知時刻）より前から
     監視を続けている前提で、`since` から `ms` ミリ秒以内に `field` が 0 に
     なった記録があることを確認する。`assert_stops_within` との違いは基準時刻が
     「呼び出し時点」ではなく「過去のイベント時刻」であること。
@@ -1167,7 +1167,7 @@ def first_match_time(watcher: TopicWatcher, predicate: Callable[[Any], bool]) ->
     """`watcher.records` の中から `predicate(msg)` を満たす最初の
     `(受信時刻[time.monotonic()], msg)` の時刻を返す。無ければ `pytest.fail`。
 
-    故障注入6（`case_06_fault_to_stop.py`）が「フェルトが実際に検知された
+    故障注入6（`case_06_fault_to_stop.py`）が「フォルトが実際に検知された
     瞬間」を `assert_no_nonzero_after` の `since`（= 検知時刻 + 100ms）に
     渡すために使う——
     `assert_fault_within` は「立ったかどうか」の bool しか返さないため、
