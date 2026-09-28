@@ -438,6 +438,10 @@ class TestStateManagerNode(unittest.TestCase):
         最初からやり直しになっていた（同節冒頭）。復帰先は `PAUSE`（停止）で、
         走り出すには操作者がもう一度走行を押す（`PAUSE` に戻しただけなら
         安全上の追加リスクが無い）。
+
+        手順 3 は「重大フォールトが解けた」と「すべてのフォールトが解けた」を
+        分けて踏む。`C-09c` のガードには severity の項だけでなく `not ctx.fault_active`
+        の項もあるため、severity を落とした回復フォールトが残っている間は戻せない。
         """
         res = self._trigger('ui.enter_mode', {'mode': 'FOLLOW'})
         assert res.accepted, res.reject_reason_key
@@ -459,7 +463,25 @@ class TestStateManagerNode(unittest.TestCase):
         snap = self._latest()
         assert snap.mode == 'ESTOP', f'フォールト継続中に ESTOP を離れた: {snap.mode}'
 
-        # 3) フォールトが解消したら「戻る」で押下前のモードの PAUSE へ。prev_* は捨てる。
+        # 3) 重大フォールトだけ解消しても、**他のフォールトが残っている間は**
+        #    「戻る」を拒否する（guards._estop_resume_prev の `not ctx.fault_active`
+        #    項。Spec-safety.md §3.5.2「依然として要求すること」の
+        #    「フォールトが実際に消えていること」）。
+        #    severity を落とした回復フォールト（active=True / severity=''）を
+        #    送ると severity の項では止められないので、active の項を踏む。
+        self.pub_fault.publish(FaultStatus(active=False, fault_type='', severity=''))
+        self._spin(0.2)
+        self.pub_fault.publish(
+            FaultStatus(active=True, fault_type='LIDAR_LOST', severity=''))
+        self._spin(0.2)
+        res = self._trigger('ui.resume_yes')
+        assert res.accepted is False, \
+            '回復フォールトが残っているのに ui.resume_yes が通ってしまった（not ctx.fault_active が効いていない）'
+        assert res.reject_reason_key == 'not_allowed', res.reject_reason_key
+        snap = self._latest()
+        assert snap.mode == 'ESTOP', f'回復フォールト継続中に ESTOP を離れた: {snap.mode}'
+
+        # 4) フォールトがすべて消えたら「戻る」で押下前のモードの PAUSE へ。prev_* は捨てる。
         self.pub_fault.publish(FaultStatus(active=False, fault_type='', severity=''))
         self._spin(0.2)
         res = self._trigger('ui.resume_yes')
