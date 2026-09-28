@@ -70,6 +70,7 @@ class TestSafetyMonitor(unittest.TestCase):
         # 受信バッファ
         self._faults:  list[FaultStatus] = []
         self._estops:  list[bool]        = []
+        self._locks:   list[bool]        = []
 
         self.node.create_subscription(
             FaultStatus, '/safety/fault',
@@ -77,6 +78,9 @@ class TestSafetyMonitor(unittest.TestCase):
         self.node.create_subscription(
             Bool, '/safety/estop',
             lambda m: self._estops.append(m.data), 10)
+        self.node.create_subscription(
+            Bool, '/safety/fault_lock',
+            lambda m: self._locks.append(m.data), 10)
 
         # 入力パブリッシャー
         self.pub_scan   = self.node.create_publisher(LaserScan,     '/scan',               10)
@@ -88,29 +92,37 @@ class TestSafetyMonitor(unittest.TestCase):
         time.sleep(3.5)
         self._faults.clear()
         self._estops.clear()
+        self._locks.clear()
 
     def tearDown(self):
         self.node.destroy_node()
 
     # ── ヘルパー ──────────────────────────────────────────────
-    def _spin(self, sec: float = 0.1):
+    def _pump(self, sec: float, keep_alive=(), period: float = 0.05):
+        """spin しながら keep_alive の publisher を回す（publish は 1/period = 20Hz）"""
         deadline = time.time() + sec
         while time.time() < deadline:
-            rclpy.spin_once(self.node, timeout_sec=0.05)
+            for p in keep_alive:
+                p()
+            rclpy.spin_once(self.node, timeout_sec=period)
 
-    def _wait_for_fault(self, fault_type: str, timeout: float = 3.0) -> bool:
+    def _spin(self, sec: float = 0.1):
+        self._pump(sec)
+
+    def _wait_for_fault(self, fault_type: str, timeout: float = 3.0,
+                        keep_alive=()) -> bool:
         deadline = time.time() + timeout
         while time.time() < deadline:
-            self._spin(0.1)
+            self._pump(0.1, keep_alive)
             for f in self._faults:
                 if f.active and f.fault_type == fault_type:
                     return True
         return False
 
-    def _wait_for_fault_cleared(self, timeout: float = 3.0) -> bool:
+    def _wait_for_fault_cleared(self, timeout: float = 3.0, keep_alive=()) -> bool:
         deadline = time.time() + timeout
         while time.time() < deadline:
-            self._spin(0.1)
+            self._pump(0.1, keep_alive)
             for f in reversed(self._faults):
                 if not f.active:
                     return True
@@ -123,6 +135,28 @@ class TestSafetyMonitor(unittest.TestCase):
             if self._estops and self._estops[-1] == expected:
                 return True
         return False
+
+    def _wait_for_lock(self, expected: bool, timeout: float = 3.0,
+                       keep_alive=()) -> bool:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self._pump(0.1, keep_alive)
+            if self._locks and self._locks[-1] == expected:
+                return True
+        return False
+
+    def _both_alive_and_clean(self):
+        """両センサ入力を 20Hz で送り、前テストの持ち越し fault が消えたことを確認してから
+        受信バッファを空にする（回復試験の前提条件）"""
+        self._pump(0.5, (self._pub_scan_once, self._pub_wheel_feedback_once))
+        self._faults.clear()
+        self._locks.clear()
+        assert self._wait_for_lock(False, timeout=3.0,
+                                   keep_alive=(self._pub_scan_once,
+                                               self._pub_wheel_feedback_once)), \
+            '両入力を alive にしたのに /safety/fault_lock が false にならない（持ち越し fault がある）'
+        self._faults.clear()
+        self._locks.clear()
 
     def _pub_scan_once(self):
         msg = LaserScan()
