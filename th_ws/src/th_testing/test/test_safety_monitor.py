@@ -12,6 +12,10 @@ DetailedDesign-wp2.md `WP-SAFE-01` §7 — safety_monitor フォルト検知テ�
   - mode_manager のモード遷移より前に /safety/fault が発行されること
   - enabled_targets（F-5・O-7）に入っている対象だけが監視されること
     （このテストは lidar・esp32 だけを有効にする）
+  - 回復試験（*_fault_cleared_on_recovery）は「両方 alive → 対象だけ途絶 → 対象を再開」
+    の順に直す。WS-9J-B で「一度も受信していない入力を startup_deadline_sec まで
+    途絶とみなさない」ようになったため、試験側が先に alive にしておかないと
+    LIDAR_LOST / ESP32_DISCONNECTED が立たなくなる。
 """
 
 import pytest
@@ -197,19 +201,47 @@ class TestSafetyMonitor(unittest.TestCase):
             f'LIDAR タイムアウト後 {wait_sec:.1f}s で LIDAR_LOST が発行されなかった'
 
     def test_lidar_fault_cleared_on_recovery(self):
-        """スキャン再開後に LIDAR_LOST フォルトが解除される"""
-        # フォルト発生させる
-        self._spin(LIDAR_TIMEOUT_MS / 1000.0 + 0.5)
-        self._wait_for_fault('LIDAR_LOST')
-        self._faults.clear()
+        """
+        スキャン再開後に LIDAR_LOST フォルトが解除される。
 
-        # スキャン再開
-        for _ in range(10):
-            self._pub_scan_once()
-            self._spin(0.05)
+        解除が「対象のセンサ（LIDAR）由来」であることを区別する方法:
+          解除通知 (/safety/fault の active=false) は fault_type が "NONE" 固定で種別を
+          区別できない（safety_monitor.cpp の publishFault(false, "NONE")）。そのため
+          「解除の通知が起きた」だけでは対象由来だと証明できず、もう片方のセンサの
+          解除を拾って偽陽性になりうる。折衷案として次の 2 点を併せて確認する。
+            ① 回復待ちの間も ESP32 入力 (/esp32/wheel_feedback) を 20Hz で送り続け、
+               ESP32_DISCONNECTED を立てないようにする。加えて試験全体で
+               ESP32_DISCONNECTED が一度も active で現れないことも assert する。
+            ② /safety/fault_lock（LIDAR_LOST || ESP32_DISCONNECTED || CRITICAL）を
+               併せて購読し、LIDAR_LOST 中は true・解除後は false になることまで見る。
+               もう片方が alive のままなら、lock が解けたのは対象の回復による
+               以外ありえない。
+          この 2 つで「解除は対象の回復による」ことが種別を区別できない
+          publishFault(false, "NONE") に左右されず成立する。
+        """
+        self._both_alive_and_clean()
 
-        assert self._wait_for_fault_cleared(), \
-            'スキャン再開後にフォルトが解除されなかった'
+        # 対象（LiDAR）の入力を途絶させ、fault が立ったことを assert する
+        assert self._wait_for_fault(
+            'LIDAR_LOST', timeout=3.0,
+            keep_alive=(self._pub_wheel_feedback_once,)), \
+            'LIDAR タイムアウト後に LIDAR_LOST が発行されなかった'
+        assert self._wait_for_lock(
+            True, timeout=3.0, keep_alive=(self._pub_wheel_feedback_once,)), \
+            'LIDAR_LOST 発行中なのに /safety/fault_lock が true にならなかった'
+        self._locks.clear()
+
+        # 対象の入力を再開 → 解除を確かめる（もう片方も 20Hz で維持する）
+        keep = (self._pub_scan_once, self._pub_wheel_feedback_once)
+        assert self._wait_for_fault_cleared(3.0, keep_alive=keep), \
+            'スキャン再開後に LIDAR_LOST の解除通知が出なかった'
+        assert self._wait_for_lock(False, 3.0, keep_alive=keep), \
+            'スキャン再開後に /safety/fault_lock が false にならなかった'
+
+        other = [f for f in self._faults
+                 if f.active and f.fault_type == 'ESP32_DISCONNECTED']
+        assert not other, \
+            'ESP32_DISCONNECTED が試験中に発火した（LIDAR の解除と区別できない）'
 
     def test_no_lidar_fault_when_active(self):
         """スキャンが定期的に来ている間はフォルトを発行しない"""
@@ -241,17 +273,47 @@ class TestSafetyMonitor(unittest.TestCase):
             'ESP32 タイムアウト後に ESP32_DISCONNECTED が発行されなかった'
 
     def test_esp32_fault_cleared_on_recovery(self):
-        """wheel_feedback 再開後に ESP32_DISCONNECTED フォルトが解除される"""
-        self._spin(ESP32_TIMEOUT_MS / 1000.0 + 0.5)
-        self._wait_for_fault('ESP32_DISCONNECTED')
-        self._faults.clear()
+        """
+        wheel_feedback 再開後に ESP32_DISCONNECTED フォルトが解除される
 
-        for _ in range(10):
-            self._pub_wheel_feedback_once()
-            self._spin(0.05)
+        解除が「対象のセンサ（ESP32）由来」であることを区別する方法:
+          解除通知 (/safety/fault の active=false) は fault_type が "NONE" 固定で種別を
+          区別できない（safety_monitor.cpp の publishFault(false, "NONE")）。そのため
+          「解除の通知が起きた」だけでは対象由来だと証明できず、もう片方のセンサの
+          解除を拾って偽陽性になりうる。折衷案として次の 2 点を併せて確認する。
+            ① 回復待ちの間も LiDAR 入力 (/scan) を 20Hz で送り続け、LIDAR_LOST を
+               立てないようにする。加えて試験全体で LIDAR_LOST が一度も active で
+               現れないことも assert する。
+            ② /safety/fault_lock（LIDAR_LOST || ESP32_DISCONNECTED || CRITICAL）を
+               併せて購読し、ESP32_DISCONNECTED 中は true・解除後は false になること
+               まで見る。もう片方が alive のままなら、lock が解けたのは対象の回復に
+               よる以外ありえない。
+          この 2 つで「解除は対象の回復による」ことが種別を区別できない
+          publishFault(false, "NONE") に左右されず成立する。
+        """
+        self._both_alive_and_clean()
 
-        assert self._wait_for_fault_cleared(), \
-            'wheel_feedback 再開後にフォルトが解除されなかった'
+        # 対象の入力を途絶させ、fault が立ったことを assert する
+        assert self._wait_for_fault(
+            'ESP32_DISCONNECTED', timeout=3.0,
+            keep_alive=(self._pub_scan_once,)), \
+            'ESP32 タイムアウト後に ESP32_DISCONNECTED が発行されなかった'
+        assert self._wait_for_lock(
+            True, timeout=3.0, keep_alive=(self._pub_scan_once,)), \
+            'ESP32_DISCONNECTED 発行中なのに /safety/fault_lock が true にならなかった'
+        self._locks.clear()
+
+        # 対象の入力を再開 → 解除を確かめる（もう片方も 20Hz で維持する）
+        keep = (self._pub_wheel_feedback_once, self._pub_scan_once)
+        assert self._wait_for_fault_cleared(3.0, keep_alive=keep), \
+            'wheel_feedback 再開後に ESP32_DISCONNECTED の解除通知が出なかった'
+        assert self._wait_for_lock(False, 3.0, keep_alive=keep), \
+            'wheel_feedback 再開後に /safety/fault_lock が false にならなかった'
+
+        other = [f for f in self._faults
+                 if f.active and f.fault_type == 'LIDAR_LOST']
+        assert not other, \
+            'LIDAR_LOST が試験中に発火した（ESP32 の解除と区別できない）'
 
     # ════════════════════════════════════════════════════════
     # E-Stop 集約テスト
