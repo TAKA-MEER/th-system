@@ -2,12 +2,28 @@
 # twist_mux 設定
 # 優先度: 高い数値が優先
 # lock: true のトピックが HIGH (true) を受信している間は
-#        他の全入力を無視してゼロ速を出力する
+#        他の全入力を捨てて何も publish しない（0 は出さない）
+#
+# 【重要: このファイルは bringup.launch.py / gazebo.launch.py からは
+# 読まれない】実ノードが読むのは `<data>/generated/twist_mux.yaml` で、
+# その locks/topics の構造は `th_bringup/launch/params_generation.py` の
+# `TWIST_MUX_STRUCTURE` が持ち、registry.yaml 由来の timeout 3種だけが
+# 上書きされる（G-3・二重管理の防止。`test_params_launch.py` が検査）。
+# ここを直しても Gazebo/実機の挙動は変わらない（`slam.launch.py` だけは
+# この静的ファイルを読む）。挙動を変えたいときは params_generation.py を直すこと。
+#
+# 【ロック中に 0 が出ないこと（twist_mux 4.3.0 のソースで確認・2026-09-28）】
+# `LockTopicHandle::callback` は値を覚えるだけで publish せず、
+# `VelocityTopicHandle::callback` は `hasPriority()` が真のときだけ転送する。
+# ロックの priority（255 / 254）は velocity 側の priority（30 / 20 / 10）より
+# 全部高いため、ロック中は全入力がマスクされて `/cmd_vel_muxed` は無音になる。
+# 実際に 0 を送って機体を止めるのは後段の `obstacle_limiter` と `esp32_bridge`。
+# （`DetailedDesign-safety.md` §1.1）
 # ============================================================
 twist_mux:
   ros__parameters:
 
-    # ── ロック (強制ゼロ出力) ─────────────────────────────
+    # ── ロック（下位入力を捨てて無音にする。0 は出さない） ─────────
     locks:
       estop:
         topic:    /safety/estop        # safety_monitor が発行
