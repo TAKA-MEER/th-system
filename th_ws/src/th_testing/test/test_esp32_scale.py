@@ -61,6 +61,9 @@ _DESIRED = 0.3
 
 # 指令・実測の往復を「偽 ESP32 が受け取った値」そのままで回すための待ち。
 
+# 試験ノードの購読が esp32_bridge の publisher と DDS で繋がるのを待つ上限 (秒)。
+_MATCH_WAIT_SEC = 10.0
+
 
 @pytest.mark.launch_test
 def generate_test_description():
@@ -254,8 +257,16 @@ class TestWheelRadiusScale(unittest.TestCase):
         # ① ロック解除状態が伝わり、独立ロック層が解除されるまで待つ
         #    (lock_stale_ms=0.5s より十分長く)。
         self._spin(0.6)
+        # ② 購読が esp32_bridge の publisher と DDS で繋がるまで待つ。
+        #    esp32_bridge は 20Hz のキープアライブで常に /esp32/wheel_cmd_speed を
+        #    publish しているので、1 件でも届けば接続済みの直接の証拠になる。これを
+        #    待たないと、DDS の検出が済む前に判定へ入る最初のメソッド (test_a) だけが
+        #    時折赤になる (2026-09-28: 単独 8 回中 2 回が test_a)。
+        self._wait_cmd_fb_connected(_MATCH_WAIT_SEC)
         self._wait_cmd_value(0.0, timeout=2.0)  # ゼロ指令の初回フレームを貰う
         self.client.clear()
+        # ② の待ちで届いた分を捨ててから各試験に入る。
+        self._clear_buffers()
 
     def tearDown(self):
         self.client.stop()
@@ -329,6 +340,24 @@ class TestWheelRadiusScale(unittest.TestCase):
         self._fb.clear()
         self._cmd_fb.clear()
         self._odom.clear()
+
+    def _wait_cmd_fb_connected(self, timeout: float):
+        """/esp32_scale/wheel_cmd_speed が 1 件でも届くまで待つ。
+
+        esp32_bridge は ESP32 未接続・ロック中でも 20Hz でゼロを publish し続ける
+        ので、1 件でも受け取れた時点で購読は publisher と DDS 上で接続済みだと
+        分かる。0 件のままなら接続していないので、そのまま各試験に進むと
+        「値が出ない」だけで原因の特定ができないため fail する。
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self._cmd_fb:
+                return
+            self._spin(0.05)
+        self.fail(
+            f'wheel_cmd_speed の購読が esp32_bridge と接続されない: {timeout}s 以内に '
+            f'1 件も受け取れなかった (bridge={_WS_PORT_GOOD}。esp32_bridge は 20Hz で '
+            f'常に publish しているので、0 件なら DDS の検出が成立していない)')
 
     def _wait_until(self, desc, predicate, timeout):
         deadline = time.time() + timeout
