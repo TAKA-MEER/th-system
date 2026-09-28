@@ -256,7 +256,7 @@ class StateCore:
 | `C-06a` / `C-06b` | **1 行にまとめると `CARRY` 中の重大フォルトまで拒否される。**`estop_ui_allowed` は UI 起因にだけ掛けるガードなので、事象ごとに行を割る |
 | `C-06r` | **`CARRY` 中の UI 非常停止を受理して `prev_*` を `CARRY` に上書きし、復帰先を壊していた**（`F-26`）。`layer: 0` で `C-06b` より先に置く |
 | `C-09f` | **`fault.critical` で入った `ESTOP` から出る行が無く、トラップ状態だった**（`ui.estop.release` は UI ボタンを押していないので来ない）。**あわせて `attributes.yaml` の `ESTOP` を `resume: ack_only` / `resume_state: NONE` にし、W-1 に「確認」を出す**（`resume: none` のままだと UI が選択肢を出さず、この行を起こせない） |
-| `C-11` | **重大フォルトが継続していても押下前のモードへ戻れてしまった。**`Spec-safety.md` §3.5「重大フォルトの解除後は `IDLE` のみ」に反する |
+| `C-11` | **重大フォルトが継続していても押下前のモードへ戻れてしまった。**重大フォルトが消えていないうちは元のモードへ戻さない（`Spec-safety.md` §3.5.2）に反する |
 | `C-15` | **試験画面（S-21）から `PANEL_NAV` / `SUMMON` / `HOME_NAV` に入る行が無く、試験を開始できなかった**（`Spec-modes.md` §4.2「行き先を選んだ時点で入る」） |
 
 **`latch_prev` は `mode ∈ {ESTOP, CARRY}` のときは記録しない**（§3.3）。
@@ -774,7 +774,7 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 
 | 状況 | 挙動 |
 | --- | --- |
-| 動作系 → `ESTOP` | `prev_mode` / `prev_state` に記録。解除後は `IDLE` のみ（`prev_*` は捨てる） |
+| 動作系 → `ESTOP` | `prev_mode` / `prev_state` に記録。**入口（UI ボタン／`fault.critical`）を問わず**、フォルトが消え物理ボタンが解放されていれば `ui.resume_yes` で `$prev_mode` の `PAUSE` へ（`C-09c`）。`ui.resume_no` ／ `ui.resume_ack` なら `IDLE` へ出て `prev_*` を捨てる（`C-09d` ／ `C-09f`。WS-9O 2026-09-04。`Spec-safety.md` §3.5.2） |
 | 動作系 → `CARRY` | 同じく記録。**`ui.carry_resume` で `prev_*` へ戻る** |
 | **`CARRY` 中に `ui.estop.press`** | **受け付けない**（`F-26`）。`reject_reason_key = "estop_disabled_in_carry"` を返し、W-2 に「駆動は既に切れています」と出す |
 | **`CARRY` 中に `fault.critical`** | `ESTOP` へ移る。**`prev_*` は上書きしない**（`CARRY` を復帰先にしない） |
