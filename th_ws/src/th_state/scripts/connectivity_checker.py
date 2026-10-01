@@ -222,7 +222,10 @@ class ConnectivityChecker(Node):
     # link        : 疎通確認（ESP32・LiDAR・必須ノード）を合格扱いにする
     # lidar_fault : safety_monitor が LIDAR_LOST を出さない（/system/dev_mode 経由）
     # scan_stop   : obstacle_limiter が /scan 途絶でも MANUAL を止めない（同上。速度上限は通常と同じ）
-    # battery / opcheck / auto_brake : 止めるゲートが as-built に無く、選択の保持・配信のみ
+    # opcheck     : 起動時の自動点検（opcheck_auto）の警告を出さない
+    #               （/system/dev_mode の effective を opcheck_auto が見て suppressed にする。
+    #               判定そのものは止めない。Spec-safety.md §10）
+    # battery / auto_brake : 止めるゲートが as-built に無く、選択の保持・配信のみ
     # dev_mode_core.hpp の kDevItem* と web_ui の DEV_ITEMS と揃えること。
     _DEV_ITEMS = ('link', 'lidar_fault', 'scan_stop', 'battery', 'opcheck', 'auto_brake')
 
@@ -332,8 +335,9 @@ class ConnectivityChecker(Node):
         ignored = sorted(k for k, v in state['effective'].items() if v)
         self.get_logger().warn(
             f"dev_mode=true: 無視項目={ignored}（選んだ項目だけを外す。未選択の項目は"
-            '通常運用と同じ。battery/opcheck/auto_brake は as-built に止めるゲートが無く、'
-            '選択状態の保持・配信のみ）')
+            '通常運用と同じ。battery/auto_brake は as-built に止めるゲートが無く、'
+            '選択状態の保持・配信のみ。opcheck は起動時の自動点検の警告を消す'
+            '（判定自体は止めない））')
 
     def _publish_dev_state(self) -> None:
         msg = String()

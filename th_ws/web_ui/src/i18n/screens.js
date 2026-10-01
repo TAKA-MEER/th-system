@@ -467,9 +467,11 @@ export const S50_DEV_ITEM_SCAN_STOP_DESC =
   'LiDAR が無くても手動で走れる。速度上限は通常と同じ。障害物は見えず自動では止まらないので注意。自律走行は止まったまま'
 export const S50_DEV_ITEM_BATTERY = 'バッテリー電圧低下'
 export const S50_DEV_ITEM_OPCHECK = '始業点検の総合 NG'
+export const S50_DEV_ITEM_OPCHECK_DESC =
+  '選ぶと起動時の自動点検の警告を出さなくなります（判定自体は止めません）'
 export const S50_DEV_ITEM_AUTO_BRAKE = '手動系の自動ブレーキ既定'
 export const S50_DEV_NO_GATE =
-  '※ 選んでも今は何も起きません（止める側の仕組みが未実装のため。選択だけ記録されます）'
+  '※ バッテリー・自動ブレーキは選んでも今は何も起きません（止める側の仕組みが未実装のため。選択だけ記録されます）'
 // いま何を無視しているか（WP-DEV-01B §3）
 export const S50_DEV_EFFECTIVE_TITLE = 'いま無視しているもの'
 export const S50_DEV_NONE = 'なし（通常運用）'
