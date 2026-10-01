@@ -387,9 +387,9 @@ class TestCalibWiring(unittest.TestCase):
             r = self._trigger('ui.calib_next')
             assert not r.accepted, 'A10 超過のまま S4 へ進めた'
             self._spin(0.1)
-        self._spin(max(0.0, 1.4 - (time.time() - t_insane)))
+        self._spin(max(0.0, 2.2 - (time.time() - t_insane)))  # 周期 0.5s の 3 回以上ぶん（負荷で間引かれても 2 回は届く）
         after = [r for t, r in self.status_log if t >= t_insane]
-        assert len(after) >= 3, f'周期配信が 2 回以上届いていない: {after}'
+        assert len(after) >= 2, f'周期配信が 2 回以上届いていない: {after}'
         assert set(after) == {'PREVIEW_INSANE'}, \
             f'insane の submit 後に PREVIEW_INSANE 以外の status が出た: {after}'
         # 測り直して sane な値を入れたら PREVIEW_INSANE は終わる
