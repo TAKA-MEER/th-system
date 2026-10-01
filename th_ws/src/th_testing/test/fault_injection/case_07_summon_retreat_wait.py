@@ -334,6 +334,10 @@ class TestSummonRetreatWait(unittest.TestCase):
         self.events: list[StateEvent] = []
         self.node.create_subscription(
             StateEvent, '/system/event', self.events.append, 10)
+        # jog_gate の出力。depth 1 の reliable（jog_gate の publisher と同じ）。
+        self.cmd_manual_rec: list[Twist] = []
+        self.node.create_subscription(
+            Twist, '/cmd_vel_manual', self.cmd_manual_rec.append, 10)
 
         # ── 供給（外側の縁だけ） ───────────────────────────
         self.pub_event = self.node.create_publisher(StateEvent, '/system/event', 10)
@@ -378,6 +382,16 @@ class TestSummonRetreatWait(unittest.TestCase):
         新しい `/person/status` を保持するまで少し回す。"""
         self._person_xy = xy
         self._spin(settle)
+
+    def _publish_jog(self):
+        """`/cmd_vel_manual_raw` に前進のジョグを流す。
+
+        画面が送るのと同じ入力口（`ui.jog.hold` は SUMMON では
+        `prep_states` なしで PAUSE になるため使わない）。
+        """
+        t = Twist()
+        t.linear.x = _JOG_LINEAR_MPS
+        self.pub_raw.publish(t)
 
     # ── 補助 ──────────────────────────────────────────────
     def _spin(self, sec: float = 0.3):
@@ -564,6 +578,66 @@ class TestSummonRetreatWait(unittest.TestCase):
             self._has_event('evt.clear_timeout'),
             'evt.clear_timeout が /system/event に出ていない'
             '（wait_clear_gate が出していない、または state_manager が処理していない）。')
+
+    # ═══════════════════════════════════════════════════════════════════
+    # 手順 6: 退避待ち中のジョグは無効（陽性対照つき）
+    # ═══════════════════════════════════════════════════════════════════
+    def test_2_jog_is_ignored_while_waiting_and_works_at_point(self):
+        """`DetailedDesign-safety.md` §10 #7 の附带条件。
+
+        人が退かず `SUMMON/WAIT_CLEAR` のあいだ、ジョグは効かない。
+        `attributes.yaml` は SUMMON の jog を「許可」にしている（ Point と
+        NAV では走れる）が、`jog_gate_core` は `SUMMON/WAIT_CLEAR` を除外表に
+        入れており、そこでは `/cmd_vel_manual` を一切出さない。
+        """
+        t_wait_clear = self._enter_wait_clear()
+        self._set_person(_P2, settle=0.2)
+        self.assertIsNotNone(t_wait_clear)
+
+        # ── 遮断側: WAIT_CLEAR 中にジョグ入力 ──────────────
+        self._raw_timer = self.node.create_timer(0.05, self._publish_jog)
+        try:
+            blocked_mark = len(self.cmd_manual_rec)
+            self._spin(2.0)
+            blocked_window = self.cmd_manual_rec[blocked_mark:]
+        finally:
+            self.node.destroy_timer(self._raw_timer)
+
+        self.assertFalse(
+            [t for t in blocked_window
+             if abs(t.linear.x) > _NONZERO_ATOL or abs(t.linear.y) > _NONZERO_ATOL],
+            'SUMMON/WAIT_CLEAR 中に /cmd_vel_manual_raw への入力が '
+            '/cmd_vel_manual に出た（＝ジョグが未被遮断で通過している）。'
+            'jog_gate_core の除外表から SUMMON/WAIT_CLEAR が消えている疑い。')
+
+        self.assertFalse(
+            [t for t in blocked_window
+             if abs(t.linear.x) > _NONZERO_ATOL or abs(t.linear.y) > _NONZERO_ATOL],
+            'SUMMON/WAIT_CLEAR 中に /cmd_vel_manual_raw への入力が '
+            '/cmd_vel_manual に出た（＝ジョグが未被遮断で通過している）。'
+            'jog_gate_core の除外表から SUMMON/WAIT_CLEAR が消えている疑い。')
+
+        # ── 陽性対照: WAIT_CLEAR を抜けて POINT に戻し、同じ入力が通る ──
+        res = self._call_trigger('ui.abort')
+        if not res.accepted:
+            self.fail(f'ui.abort が拒否（reject={res.reject_reason_key!r}）')
+        if not self._wait_mode_state('SUMMON', 'POINT', timeout=5.0):
+            self.fail(f'ui.abort 後に SUMMON/POINT に戻らない（{self._mode_state()}）')
+
+        self._raw_timer = self.node.create_timer(0.05, self._publish_jog)
+        try:
+            pass_mark = len(self.cmd_manual_rec)
+            self._spin(2.0)
+            pass_window = self.cmd_manual_rec[pass_mark:]
+        finally:
+            self.node.destroy_timer(self._raw_timer)
+
+        self.assertTrue(
+            [t for t in pass_window
+             if abs(t.linear.x) > _NONZERO_ATOL],
+            'SUMMON/POINT（ジョグ許可状態）で同じ入力が /cmd_vel_manual に出なかった。'
+            '遮断の赤が「jog_gate が単に黙っている」ためではなく、'
+            '配線が生きていることを示せない。')
 
 
 if __name__ == '__main__':
