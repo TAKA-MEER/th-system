@@ -221,6 +221,10 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         self.compute_mode = 'success'  # 'success' | 'fail'(空経路)
         self.follow_mode = 'run'       # 'run'(cancelまで保持) | 'abort'
         self.follow_abort_delay_s = 0.5
+        # `FollowPath` の cancel 要求から結果（CANCELED）を返すまでの遅延。
+        # 不具合 B の再現（取り消し結果の到着前にモード離脱）で 0.5s にする。
+        # 既定 0.0（即時）。
+        self.follow_cancel_result_delay_s = 0.0
         # `FollowPath` の accept 遅延（既定 0＝即時）。#3 の試験だけ 0.3s に
         # 上書きする。本物の Nav2 の accept は行動サーバの executor 経由で
         # 即時ではなく、負荷で数百 ms 遅れる。`resume_follow_path` effect は
@@ -360,23 +364,25 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
                 self.follow_open -= 1
 
     def _exec_follow_body(self, goal_handle):
-        if self.follow_mode == 'run':
-            deadline = time.monotonic() + 60.0
+        def _wait_cancel(deadline: float) -> bool:
             while time.monotonic() < deadline:
                 if goal_handle.is_cancel_requested:
+                    # B の再現用: 結果を遅らせて返す（要求自体は即時に受ける）。
+                    time.sleep(self.follow_cancel_result_delay_s)
                     goal_handle.canceled()
-                    return FollowPath.Result()
+                    return True
                 time.sleep(0.05)
+            return False
+
+        if self.follow_mode == 'run':
+            if _wait_cancel(time.monotonic() + 60.0):
+                return FollowPath.Result()
             goal_handle.succeed()
             return FollowPath.Result()
         # 'abort': 一旦 NAV が観測できるよう少し保持してから ABORT。
         # venue_navigator は ABORTED → evt.blocked。
-        deadline = time.monotonic() + self.follow_abort_delay_s
-        while time.monotonic() < deadline:
-            if goal_handle.is_cancel_requested:
-                goal_handle.canceled()
-                return FollowPath.Result()
-            time.sleep(0.05)
+        if _wait_cancel(time.monotonic() + self.follow_abort_delay_s):
+            return FollowPath.Result()
         goal_handle.abort()
         return FollowPath.Result()
 
@@ -426,6 +432,14 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
     def _n_cancel(self) -> int:
         with self._lock:
             return self.follow_cancel_count
+
+    def _n_open(self) -> int:
+        with self._lock:
+            return self.follow_open
+
+    def _snap_events(self) -> list[str]:
+        with self._lock:
+            return list(self.event_names)
 
     def _wait_count(self, get, target: int, timeout: float) -> bool:
         deadline = time.monotonic() + timeout
@@ -677,6 +691,73 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         # 後片付け
         self._reset_to_home()
         self._mark_passed(f'(compute_total={self._n_compute()})')
+
+    # ═══════════════════════════════════════════════════════════════════
+    # 不具合 A: 受け付け前の一時停止で、取り消しが空振りして走り出す
+    # ═══════════════════════════════════════════════════════════════════
+    def test_cancel_before_accept_cancels_late_accept(self):
+        """不具合 A（安全側。`_send_follow_path` → accept の窓で `ui.stop`）。
+
+        代役 `follow_path` の受け付けを 1.0s 遅らせ、`compute` が飛んだ直後
+        （受け付け前）に `ui.stop` → `PAUSE` する。正しくは受け付けのあと
+        代役のゴールが取り消される（`PAUSE` の間に実行中ゴールが残らない）。
+        今のコードは handle が `None` のため何も取り消せず、受け付け後に
+        走行が続く（本番の不具合で赤。次のコミットで直す）。
+        """
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.follow_accept_delay_s = 1.0
+            self.follow_cancel_result_delay_s = 0.0
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+            self.event_names.clear()
+        try:
+            self._enter_nav()
+            # compute が飛んだ＝送信が飛んだ直後。accept（1.0s 遅延）の前。
+            self.assertTrue(
+                self._wait_count(self._n_compute, 1, timeout=10.0),
+                'NAV に入ったのに compute が 1 回も呼ばれない。')
+            # 送信が代役に届く猶予。accept 遅延 1.0s の窓の中に収める。
+            self._sleep(0.2)
+            with self._lock:
+                n_ev = len(self.event_names)
+            self._call_trigger('ui.stop')
+            if not self._wait_mode_state('PANEL_NAV', 'PAUSE', timeout=5.0):
+                self.fail(f'PAUSE に入らない ({self._mode_state()})')
+
+            # 受け付け自体は届く（窓の確認）。
+            self.assertTrue(
+                self._wait_count(self._n_follow, 1, timeout=5.0),
+                '代役に FollowPath ゴールが届かない。accept 遅延の窓が開いていない。')
+            # 受け付けのあと、代役のゴールが取り消される。
+            self.assertTrue(
+                self._wait_count(self._n_cancel, 1, timeout=5.0),
+                '受け付け前の ui.stop が、受け付け後のゴールに届いていない。'
+                'cancel が空振りして走行が続いている（不具合 A）。')
+            # PAUSE の間に実行中ゴールが残らない。
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline and self._n_open() > 0:
+                time.sleep(0.05)
+            self.assertEqual(
+                self._n_open(), 0,
+                'PAUSE なのに代役のゴールが実行中のまま残っている（不具合 A）。')
+            # 遅れて取り消した結果で偽の evt.blocked を出さない（変異 3 の検出）。
+            self._sleep(1.0)
+            new_events = self._snap_events()[n_ev:]
+            self.assertNotIn(
+                'evt.blocked', new_events,
+                '自分で取り消した結果で evt.blocked が出ている。')
+            self.assertEqual(
+                self._mode_state(), ('PANEL_NAV', 'PAUSE'),
+                f'PAUSE のはずが {self._mode_state()} に動いた。')
+            self._mark_passed(f'(cancel={self._n_cancel()})')
+        finally:
+            with self._lock:
+                self.follow_accept_delay_s = 0.0
+            self._reset_to_home()
 
     # ═══════════════════════════════════════════════════════════════════
     # 陽性対照（#3 の裏）: ui.reroute → replan で compute が増える
