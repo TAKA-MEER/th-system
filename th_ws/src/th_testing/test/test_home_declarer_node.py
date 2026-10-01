@@ -308,8 +308,19 @@ class TestHomeDeclarerNode(unittest.TestCase):
             self.fail('HOME ピンを置き直しても home_declared が false に戻らない')
 
     def _mark_passed(self, note: str = ''):
+        """メソッド終了の証跡。pytest が stdout を捕捉する（-s 無し）ため、
+        コンソールだけでなくファイルにも残す。`HD_MARKER_FILE` 未設定なら
+        何もしない（ホスト単体実行でも壊れない）。"""
         line = f'[hd] {self._testMethodName} PASSED {note}'.rstrip() + '\n'
         print(line, flush=True)
+        path = os.environ.get('HD_MARKER_FILE', '')
+        if not path:
+            return
+        try:
+            with open(path, 'a', encoding='utf-8') as f:
+                f.write(line)
+        except OSError:
+            pass
 
     # ═══════════════════════════════════════════════════════════════════
     # 1: 許容内（ピンから 0.1 m・5°）→ 成功・ずれ一致・declared=true
