@@ -2,6 +2,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  angleFromPoint, rangeFromDrag, blindProblem, rangesFromFlat, blindRangesText, blindLimits,
+  blindReasonKey, scanPointsByMask, BLIND_LIMITS_DEFAULT,
   parseCalibDetail, stepNumber, activeItem, viewKind, canProceed, parseMeasured,
   rotationWarnings, imuProgress, runPercent, formatValues, historyRows, lastCalibrated,
   previewText, isWizardItem, CALIB_STARTABLE,
@@ -107,11 +109,74 @@ test('履歴・最終校正日・補正値の表示', () => {
   assert.equal(previewText(''), '')
 })
 
-test('項目の分類: 直進・旋回はウィザード、IMU は違う、BLIND は開始できない', () => {
+test('項目の分類: 直進・旋回・死角はウィザード、IMU は違う。4 項目すべて開始できる', () => {
   assert.equal(isWizardItem('LINEAR'), true)
   assert.equal(isWizardItem('ROTATION'), true)
+  assert.equal(isWizardItem('BLIND'), true)
   assert.equal(isWizardItem('IMU'), false)
-  assert.deepEqual(CALIB_STARTABLE, ['LINEAR', 'ROTATION', 'IMU'])
+  assert.deepEqual(CALIB_STARTABLE, ['LINEAR', 'ROTATION', 'IMU', 'BLIND'])
+})
+
+test('BLIND の viewKind: S2 は選択、S3 は PREVIEW_OK のときだけプレビュー、S4 は検証中', () => {
+  const k = (fsmState, result) => viewKind({ fsmState, item: 'BLIND', status: { item: 'BLIND', result } })
+  assert.equal(k('S1', 'GUIDE'), 'guide')
+  assert.equal(k('S2', 'RUNNING'), 'blind_select')
+  assert.equal(k('S2', 'PREVIEW_INSANE'), 'blind_select')
+  assert.equal(k('S2', 'RETRY_WAIT'), 'blind_select')        // 検証 NG で戻っても再選択できる
+  assert.equal(k('S3', 'PREVIEW_OK'), 'blind_preview')
+  assert.equal(k('S3', 'PREVIEW_INSANE'), 'blind_select')
+  assert.equal(k('S4', 'VERIFY_RUNNING'), 'verifying')
+  assert.equal(canProceed({ fsmState: 'S3', item: 'BLIND', status: { item: 'BLIND', result: 'PREVIEW_OK' } }), true)
+  assert.equal(canProceed({ fsmState: 'S3', item: 'BLIND', status: { item: 'BLIND', result: 'PREVIEW_INSANE' } }), false)
+})
+
+test('BLIND: ドラッグの角度（前方 0°・左 +90°）と、近い側の弧への正規化', () => {
+  // 画面中心 (100,100)。上 = 前方 0°、左 = +90°、右 = -90°、下 = 180°
+  assert.equal(Math.round(angleFromPoint(100, 50, 100, 100)), 0)
+  assert.equal(Math.round(angleFromPoint(50, 100, 100, 100)), 90)
+  assert.equal(Math.round(angleFromPoint(150, 100, 100, 100)), -90)
+  assert.equal(Math.round(Math.abs(angleFromPoint(100, 150, 100, 100))), 180)
+  assert.deepEqual(rangeFromDrag(10, 40), [10, 40])
+  assert.deepEqual(rangeFromDrag(40, 10), [10, 40])             // 逆向きになぞっても同じ
+  assert.deepEqual(rangeFromDrag(170, -170), [170, -170])       // ±180° をまたぐ
+  assert.deepEqual(rangeFromDrag(-170, 170), [170, -170])
+})
+
+test('BLIND: 幅の上限（1 区間 30°・総幅 90°・8 区間）。機体側と同じ判定', () => {
+  assert.equal(blindProblem([]), null)
+  assert.equal(blindProblem([[0, 30]]), null)
+  assert.equal(blindProblem([[0, 31]]), 'sector_too_wide')
+  assert.equal(blindProblem([[5, 5]]), 'zero_width')
+  assert.equal(blindProblem([[0, 23], [60, 83], [120, 143], [-60, -37]]), 'total_too_wide')
+  const nine = Array.from({ length: 9 }, (_, i) => [i * 40 - 170, i * 40 - 165])
+  assert.equal(blindProblem(nine), 'too_many_sectors')
+  assert.equal(blindProblem([[170, -170]]), null)                // 20°
+  assert.equal(blindProblem([[170, -130]]), 'sector_too_wide')   // 60°
+  // 出荷時のマスク（4 区間・約 68°）は上限内
+  assert.equal(blindProblem(rangesFromFlat([-132.8, -117.5, -59.5, -38.9, 45.9, 61.5, 130.3, 143.5])), null)
+})
+
+test('BLIND: 平坦配列と表示、機体が返す上限を優先する', () => {
+  assert.deepEqual(rangesFromFlat([1, 2, 3, 4, 5]), [[1, 2], [3, 4]])
+  assert.equal(blindRangesText([]), '（なし）')
+  assert.equal(blindRangesText([-12, 12]), '-12〜12°')
+  assert.deepEqual(blindLimits({ blind: { limits: { max_sector_deg: 20, max_total_deg: 50, max_sectors: 4 } } }),
+    { max_sector_deg: 20, max_total_deg: 50, max_sectors: 4 })
+  assert.deepEqual(blindLimits({}), BLIND_LIMITS_DEFAULT)
+  assert.equal(blindReasonKey('sector_too_wide:35.0>30.0'), 'sector_too_wide')
+  assert.equal(previewText('{"blind_angle_ranges":[-12,12],"masked_points":5}').startsWith('-12〜12°'), true)
+})
+
+test('BLIND: スキャンの点を、選択の内側（消える）と外側に分ける', () => {
+  const scan = {
+    angle_min: -Math.PI, angle_increment: Math.PI / 180, range_min: 0.05, range_max: 12,
+    ranges: Array.from({ length: 360 }, () => 2.0),
+  }
+  const { kept, masked } = scanPointsByMask(scan, [[-10, 10]])
+  assert.equal(masked.length, 21)
+  assert.equal(kept.length, 339)
+  assert.equal(scanPointsByMask(scan, []).masked.length, 0)
+  assert.equal(scanPointsByMask(null, [[0, 1]]).kept.length, 0)
 })
 
 test('理由の文言: 数値付きは接頭辞で引き、知らない理由は握りつぶさない', () => {

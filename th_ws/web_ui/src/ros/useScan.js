@@ -23,7 +23,9 @@ const SCAN_MSG = 'sensor_msgs/LaserScan'
 // ONSITE_MAP_THROTTLE_MS と同じ考え方）。
 const SCAN_THROTTLE_MS = 500
 
-export function useScan(ros) {
+// topic: 既定は死角除去後の /scan_filtered。校正 BLIND は死角除去前の生スキャン /scan を見る
+// （マスクの内側がまだ写っていないと、写り込みを選べない）。
+export function useScan(ros, topic = SCAN_TOPIC) {
   const topicRef = useRef(null)
   const [scan, setScan] = useState(
     TEST_MODE ? (window.__thTestScan ?? null) : null,
@@ -43,7 +45,7 @@ export function useScan(ros) {
     if (!ROSLIB) return undefined
     topicRef.current = new ROSLIB.Topic({
       ros,
-      name: SCAN_TOPIC,
+      name: topic,
       messageType: SCAN_MSG,
       queue_length: 1,
       throttle_rate: SCAN_THROTTLE_MS,
@@ -53,7 +55,7 @@ export function useScan(ros) {
       topicRef.current?.unsubscribe()
       topicRef.current = null
     }
-  }, [ros])
+  }, [ros, topic])
 
   return scan
 }

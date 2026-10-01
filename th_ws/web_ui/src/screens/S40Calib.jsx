@@ -11,6 +11,11 @@
 //   * --ui.abort--> LIST (discard_calib)       * --fault.recoverable--> LIST (discard_calib)
 //   LIST --ui.enter_mode{mode:OPCHECK}--> OPCHECK (T-CAL-09)
 //
+// BLIND（LiDAR 死角）は走らない。S2 でライブスキャン（生の /scan）上をなぞって角度帯を選び
+// （parts/BlindScanSelect.jsx）、「確認」が /calib/submit{item:BLIND, arg_json:{ranges}} を送る。
+// 機体が幅の上限（1 区間 30°・総幅 90°・8 区間）を検査し、超えれば PREVIEW_INSANE（S3 へ進めない）。
+// S3 でプレビュー（消える点の数）→「次へ」で適用（3 ノードへ同時）と検証（S4。実測値の入力は無い）。
+//
 // 送信経路（e2e/s40-calib.spec.js が本番の送信を縛る。ボタンが繋がっていることを
 // 実際に送ったリクエストで確かめる）:
 //   項目の選択・次へ・中断  → /system/trigger の ui.calib_item / ui.calib_next / ui.abort
@@ -27,13 +32,15 @@ import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useCalibStatus } from '../ros/useCalibStatus.js'
 import { useCalibService } from '../ros/useCalibService.js'
+import { useScan } from '../ros/useScan.js'
+import BlindScanSelect from '../parts/BlindScanSelect.jsx'
 import StepBar from '../parts/StepBar.jsx'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import * as T from '../i18n/calib.js'
 import {
   CALIB_ITEM_ORDER, CALIB_STARTABLE, isWizardItem, stepNumber, activeItem, viewKind,
   canProceed, parseMeasured, rotationWarnings, imuProgress, runPercent, historyRows,
-  lastCalibrated, previewText,
+  lastCalibrated, previewText, blindLimits, blindReasonKey,
 } from './calibCore.js'
 
 function rejectText(res) {
@@ -55,6 +62,8 @@ export default function S40Calib() {
   const sendTrigger = useTrigger()
   const calib = useCalibService()
   const { status } = useCalibStatus(ros)
+  // BLIND の選択は死角除去前の生スキャンを見る（マスクの内側が写っていないと選べない）。
+  const rawScan = useScan(ros, '/scan')
 
   const fsmState = state?.state ?? null
   const disabledAll = stale || state?.mode == null
@@ -144,6 +153,17 @@ export default function S40Calib() {
     }
   }
 
+  // BLIND: 選んだ角度帯を /calib/submit へ（measured は使わない。ranges が本体）。
+  async function handleBlindSubmit(ranges) {
+    setSubmitMsg(null)
+    try {
+      const res = await calib.submit('BLIND', 0, { ranges })
+      setSubmitMsg({ ok: !!res?.success, before: '', after: '' })
+    } catch {
+      setSubmitMsg({ ok: false, before: '', after: '' })
+    }
+  }
+
   async function handleRetry() {
     setRetryErr(null)
     try {
@@ -199,6 +219,11 @@ export default function S40Calib() {
       )
     }
     const warnings = item === 'ROTATION' ? rotationWarnings(detail) : []
+    const blindAfter = (() => {
+      try { return JSON.parse(status?.preview_after || '{}') } catch { return {} }
+    })()
+    const blindInsane = status?.result === 'PREVIEW_INSANE'
+    const blindNg = item === 'BLIND' && detail?.phase === 'RETRY_WAIT' && detail?.reason
     return (
       <div className="card" data-testid={`s40-view-${kind}`}>
         <h3>{T.S40_ITEM_LABELS[item] ?? item}</h3>
@@ -213,8 +238,37 @@ export default function S40Calib() {
             ))}
             <button type="button" className="btn wide primary" disabled={disabledAll || !proceed}
               data-testid="s40-next" onClick={handleNext}>
-              {T.S40_GUIDE_NEXT}
+              {item === 'BLIND' ? T.S40_GUIDE_NEXT_BLIND : T.S40_GUIDE_NEXT}
             </button>
+          </>
+        )}
+        {(kind === 'blind_select' || kind === 'blind_preview') && (
+          <>
+            {blindNg && (
+              <p className="s40-warn" data-testid="s40-retry-title">
+                {T.S40_RETRY_TITLE}（{T.s40ReasonLabel(detail.reason)}）
+              </p>
+            )}
+            <BlindScanSelect scan={rawScan} registeredFlat={detail?.current?.blind_angle_ranges ?? []}
+              limits={blindLimits(detail)} disabled={disabledAll}
+              problemKey={blindInsane ? blindReasonKey(blindAfter.reason) || 'invalid_format' : null}
+              submitLabel={kind === 'blind_preview' ? T.S40_BLIND_RESUBMIT : T.S40_BLIND_BUTTON_SUBMIT}
+              onSubmit={handleBlindSubmit} />
+            {submitMsg && !submitMsg.ok && !blindInsane && (
+              <p className="note" data-testid="s40-submit-rejected">{T.S40_SUBMIT_REJECTED}</p>
+            )}
+            {kind === 'blind_preview' && (
+              <div className="s40-preview" data-testid="s40-preview">
+                <h4>{T.S40_PREVIEW_TITLE}</h4>
+                <div data-testid="s40-preview-after">{T.s40BlindPreview(blindAfter.masked_points ?? 0, blindAfter.total_deg ?? 0)}</div>
+              </div>
+            )}
+            {kind === 'blind_preview' && (
+              <button type="button" className="btn wide primary" disabled={disabledAll || !proceed}
+                data-testid="s40-next" onClick={handleNext}>
+                {T.S40_BLIND_NEXT}
+              </button>
+            )}
           </>
         )}
         {kind === 'running' && (
@@ -261,8 +315,10 @@ export default function S40Calib() {
         )}
         {kind === 'verifying' && (
           <>
-            <p className="note">{T.S40_RUNNING_VERIFY}</p>
-            <Bar percent={runPercent(detail)} testId="s40-run-bar" />
+            <p className="note" data-testid="s40-verifying">
+              {item === 'BLIND' ? T.S40_BLIND_VERIFYING : T.S40_RUNNING_VERIFY}
+            </p>
+            {item !== 'BLIND' && <Bar percent={runPercent(detail)} testId="s40-run-bar" />}
           </>
         )}
         {kind === 'verify_input' && (
@@ -345,9 +401,7 @@ export default function S40Calib() {
                     <div className="s40-row-main">
                       <span className="s40-row-label">{T.S40_ITEM_LABELS[it]}</span>
                       <span className="note">
-                        {startable
-                          ? `${T.S40_LAST_CALIBRATED}: ${last || T.S40_NEVER_CALIBRATED}`
-                          : T.S40_BLIND_UNSUPPORTED}
+                        {`${T.S40_LAST_CALIBRATED}: ${last || T.S40_NEVER_CALIBRATED}`}
                       </span>
                       {it === 'ROTATION' && (
                         <span className="s40-warn" data-testid="s40-rotation-first">{T.S40_ROTATION_FIRST}</span>
