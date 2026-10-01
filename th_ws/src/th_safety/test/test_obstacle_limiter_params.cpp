@@ -7,6 +7,9 @@
 // ============================================================
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <vector>
+
 #include "th_safety/obstacle_limiter_params.hpp"
 
 using th_safety::flat_to_range_pairs;
@@ -77,4 +80,58 @@ TEST(ResolveSpeedLimitName, EmptyTableFallsBackToZero) {
   auto r = resolve_speed_limit_name("v_max", table);
   EXPECT_DOUBLE_EQ(r.value_mps, 0.0);
   EXPECT_TRUE(r.unknown);
+}
+
+// ── validate_blind_ranges（校正 BLIND の実行中更新の上限。2026-10-01）──
+
+using th_safety::BlindLimits;
+using th_safety::validate_blind_ranges;
+
+TEST(ValidateBlindRanges, EmptyIsValid) {
+  EXPECT_TRUE(validate_blind_ranges({}, BlindLimits{}).ok);
+}
+
+TEST(ValidateBlindRanges, ShippedMaskIsWithinLimits) {
+  EXPECT_TRUE(validate_blind_ranges(
+      {-132.8, -117.5, -59.5, -38.9, 45.9, 61.5, 130.3, 143.5}, BlindLimits{}).ok);
+}
+
+TEST(ValidateBlindRanges, SectorLimitBoundary) {
+  EXPECT_TRUE(validate_blind_ranges({0.0, 30.0}, BlindLimits{}).ok);
+  const auto v = validate_blind_ranges({0.0, 30.5}, BlindLimits{});
+  EXPECT_FALSE(v.ok);
+  EXPECT_EQ(v.reason, "sector_too_wide");
+}
+
+TEST(ValidateBlindRanges, WrapAroundWidthIsCounted) {
+  EXPECT_TRUE(validate_blind_ranges({170.0, -170.0}, BlindLimits{}).ok);   // 20°
+  EXPECT_FALSE(validate_blind_ranges({170.0, -130.0}, BlindLimits{}).ok);  // 60°
+}
+
+TEST(ValidateBlindRanges, TotalLimit) {
+  EXPECT_TRUE(validate_blind_ranges(
+      {0.0, 22.5, 60.0, 82.5, 120.0, 142.5, -60.0, -37.5}, BlindLimits{}).ok);  // 90°
+  const auto v = validate_blind_ranges(
+      {0.0, 23.0, 60.0, 83.0, 120.0, 143.0, -60.0, -37.0}, BlindLimits{});     // 92°
+  EXPECT_FALSE(v.ok);
+  EXPECT_EQ(v.reason, "total_too_wide");
+}
+
+TEST(ValidateBlindRanges, SectorCountLimit) {
+  std::vector<double> nine;
+  for (int i = 0; i < 9; ++i) {
+    nine.push_back(-170.0 + i * 40.0);
+    nine.push_back(-165.0 + i * 40.0);
+  }
+  const auto v = validate_blind_ranges(nine, BlindLimits{});
+  EXPECT_FALSE(v.ok);
+  EXPECT_EQ(v.reason, "too_many_sectors");
+  nine.resize(16);
+  EXPECT_TRUE(validate_blind_ranges(nine, BlindLimits{}).ok);
+}
+
+TEST(ValidateBlindRanges, MalformedRejected) {
+  EXPECT_EQ(validate_blind_ranges({1.0, 2.0, 3.0}, BlindLimits{}).reason, "odd_length");
+  EXPECT_EQ(validate_blind_ranges({5.0, 5.0}, BlindLimits{}).reason, "zero_width");
+  EXPECT_EQ(validate_blind_ranges({0.0, std::nan("")}, BlindLimits{}).reason, "non_finite");
 }

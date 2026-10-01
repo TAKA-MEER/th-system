@@ -10,7 +10,6 @@ export const S40_ITEM_LABELS = {
   IMU: 'IMU 校正',
   BLIND: 'LiDAR 死角',
 }
-export const S40_BLIND_UNSUPPORTED = '未対応（作業中）'
 export const S40_UNIT = { LINEAR: 'm', ROTATION: '°' }
 
 // ── 左カラム ──────────────────────────────────────────────
@@ -37,9 +36,13 @@ export function s40GuideText(item, detail) {
   if (item === 'ROTATION') {
     return `周囲 2 m 以上を空け、分度器か壁の目印を用意してください。ロボットが ${detail?.commanded ?? '?'}° を自律でその場旋回します。止めたいときは「中断」か非常停止を押してください。`
   }
+  if (item === 'BLIND') {
+    return 'ロボットは動きません。次の画面でライブスキャンの上をなぞり、支柱などが写り込んでいる角度帯を選びます。選んだ帯は障害物として見なくなるので、本物の障害物の方向は選ばないでください。止めたいときは「中断」を押してください。'
+  }
   return ''
 }
 export const S40_GUIDE_NEXT = '走り出す'
+export const S40_GUIDE_NEXT_BLIND = 'スキャンを表示する'
 export const S40_RUNNING = '実行中…'
 export const S40_RUNNING_VERIFY = '補正を適用して検証走行中…'
 export const S40_MEASURE_LABEL = {
@@ -92,6 +95,10 @@ const REASONS = {
   no_odom: '自己位置（オドメトリ）が届いていないため走れません',
   odom_stale: '自己位置（オドメトリ）が途絶えたため止めました',
   run_timeout: '走行が時間内に終わらなかったため止めました',
+  offset_exceeds_tolerance: '選んだ範囲の外に写り込みが残っています（許容 5° を超えました）。選び直してください',
+  mask_not_effective: '選んだ範囲の点が /scan_filtered から消えていません（lidar_filter に届いていない疑い）',
+  verify_timeout: 'スキャンが届かず検証できませんでした',
+  blind_limit_violation: '幅の上限を超えるため適用しませんでした',
 }
 
 // calib_runner の detail.reason（"error_exceeds_tolerance:0.2>0.05" のように数値が付く
@@ -100,4 +107,33 @@ export function s40ReasonLabel(reason) {
   if (!reason) return ''
   const head = String(reason).split(':')[0]
   return REASONS[head] ?? reason
+}
+
+
+// ── BLIND（LiDAR 死角）──────────────────────────────────────
+export const S40_BLIND_HINT = 'スキャン上をなぞって、写り込んでいる角度帯を選びます（上が前方）。灰色は登録済み、青が選択中、赤い点は選ぶと消える点です。'
+export const S40_BLIND_NO_SCAN = 'スキャンが届いていません'
+export const S40_BLIND_RANGES_TITLE = '選んだ範囲'
+export const S40_BLIND_NONE = '（なし。確定するとマスクを全部外します）'
+export const S40_BLIND_DELETE = '削除'
+export const S40_BLIND_CLEAR = '全部外す'
+export const S40_BLIND_RESET = '登録済みに戻す'
+export const S40_BLIND_BUTTON_SUBMIT = '確認（プレビュー）'
+export const S40_BLIND_RESUBMIT = '選び直して確認'
+export const S40_BLIND_NEXT = '次へ（適用して検証）'
+export const S40_BLIND_VERIFYING = '死角マスクを適用して検証中…（スキャンから写り込みを推定しています）'
+export const S40_BLIND_CURRENT = '登録済み'
+export function s40BlindTotal(total, limits) {
+  return `総幅 ${Number(total.toFixed(1))}° / 上限 ${limits.max_total_deg}°（1 区間 ${limits.max_sector_deg}°・${limits.max_sectors} 区間まで）`
+}
+export function s40BlindPreview(masked, total) {
+  return `消える点: ${masked} 点 ／ 総幅 ${Number(Number(total).toFixed(1))}°`
+}
+export const S40_BLIND_PROBLEMS = {
+  too_many_sectors: '区間が多すぎます。',
+  sector_too_wide: '広すぎる区間があります。広げすぎると本物の障害物が見えなくなります。',
+  total_too_wide: '総幅が広すぎます。広げすぎると本物の障害物が見えなくなります。',
+  zero_width: '幅のない区間があります。',
+  invalid_format: '選択の形が不正です。',
+  no_scan: 'スキャンが届いていないため確認できません。',
 }

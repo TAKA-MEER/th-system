@@ -114,12 +114,19 @@ class CalibStore:
         self._write_history(item, [entry] + self.history(item))
 
     # ── 確定・ロールバック ───────────────────────────────
-    def commit(self, item: str, values: Dict[str, float], calibrated_at: str,
+    @staticmethod
+    def _as_float(v: Any) -> Any:
+        """スカラは float、配列（BLIND の `blind_angle_ranges`）は float の list。"""
+        if isinstance(v, (list, tuple)):
+            return [float(x) for x in v]
+        return float(v)
+
+    def commit(self, item: str, values: Dict[str, Any], calibrated_at: str,
                verification: Dict[str, Any], operator: str = "",
                params_digest: str = "") -> Dict[str, Any]:
         """校正結果を確定する。置き換えられる current は履歴の先頭へ積む。"""
         entry = {
-            "values": {k: float(v) for k, v in values.items()},
+            "values": {k: self._as_float(v) for k, v in values.items()},
             "calibrated_at": calibrated_at,
             "verification": copy.deepcopy(verification),
             "operator": operator,

@@ -372,7 +372,8 @@ def test_blind_angle_ranges_end_to_end_via_export():
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = os.path.join(tmp, "generated")
         pg.run_generation(stage=2, sim=False, nodes=list(pg.REGISTRY_NODES),
-                           out_dir=out_dir, registry_path=REGISTRY_YAML, env=_subprocess_env())
+                           out_dir=out_dir, registry_path=REGISTRY_YAML, env=_subprocess_env(),
+                           calib_dir=os.path.join(tmp, "no_calib"))
 
         with open(os.path.join(out_dir, "lidar_filter.yaml"), encoding="utf-8") as f:
             lidar_params = yaml.safe_load(f)["lidar_filter"]["ros__parameters"]

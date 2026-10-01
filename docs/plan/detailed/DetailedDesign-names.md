@@ -636,7 +636,15 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 
 ### 7.4 許容範囲（校正）
 
-`calib_linear_tolerance_ratio` ／ `calib_rotation_tolerance_deg` ／ `calib_blind_tolerance_deg` — すべて **(c)**。
+`calib_linear_tolerance_ratio` ／ `calib_rotation_tolerance_deg` ／ `calib_blind_tolerance_deg` — 前 2 つは **(c)**。
+
+**`calib_blind_tolerance_deg` だけは (b) given 5.0**（2026-10-01 ユーザー決定。始業点検の `opcheck_blind_tolerance_deg` と同じ値。Spec-checks.md §3.5）。
+
+| 名前 | 単位 | 分類 | 適用先 |
+| --- | --- | --- | --- |
+| `blind_max_sector_deg` | deg | (b) given 30 | 死角マスク 1 区間の幅の上限（2026-10-01。Spec-checks.md §3.5）。`calib_runner` と `obstacle_limiter` が検査 |
+| `blind_max_total_deg` | deg | (b) given 90 | 死角マスクの総幅の上限（同上） |
+| `blind_max_sectors` | 個 | (b) given 8 | 死角マスクの区間数の上限（同上） |
 
 ### 7.6 始業点検（OPCHECK）
 

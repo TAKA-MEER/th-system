@@ -122,6 +122,14 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_calib_store
     test/test_calib_store.py
     TIMEOUT 60)
+  # 校正 BLIND（死角マスク）の純粋関数（th_maintenance/blind_core.py。ROS2 不要）
+  ament_add_pytest_test(test_calib_blind_core
+    test/test_calib_blind_core.py
+    TIMEOUT 60)
+  # 校正で確定した死角マスクの起動時上書き（params_generation。ROS2 不要）
+  ament_add_pytest_test(test_params_blind_override
+    test/test_params_blind_override.py
+    TIMEOUT 120)
   # S-31 故障診断のチェック手順（repair_hints.yaml）と WebUI 用 json の一致
   # （WP-MAINT-03。ROS2 不要）
   ament_add_pytest_test(test_repair_hints_sync
@@ -379,6 +387,15 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_calib_wiring_node
     test/test_calib_wiring_node.py
     TIMEOUT 300)
+  # 校正 BLIND（死角マスク）を本物の 5 ノードで通す試験（state_manager・calib_runner・
+  # lidar_filter・obstacle_limiter・opcheck_runner。3 ノードへの同時反映・上限・適用前へ戻す）
+  ament_add_pytest_test(test_calib_blind_node
+    test/test_calib_blind_node.py
+    TIMEOUT 600)
+  # obstacle_limiter の起動時 blind_angle_ranges が上限違反ならマスクなしで起動する（観測できる振る舞い）
+  ament_add_pytest_test(test_blind_startup_limit_node
+    test/test_blind_startup_limit_node.py
+    TIMEOUT 180)
   ament_add_pytest_test(connectivity_checker_node
     test/test_connectivity_checker_node.py
     TIMEOUT 120)
