@@ -639,6 +639,44 @@ class TestSummonRetreatWait(unittest.TestCase):
             '遮断の赤が「jog_gate が単に黙っている」ためではなく、'
             '配線が生きていることを示せない。')
 
+    # ═══════════════════════════════════════════════════════════════════
+    # 手順 7: 退避側の陽性対照 — 退けば発進する
+    # ═══════════════════════════════════════════════════════════════════
+    def test_3_person_retreats_and_robot_starts(self):
+        """`DetailedDesign-onsite.md` §9 #5 の陽性対照。
+
+        手順 1〜4 で入れた `WAIT_CLEAR` から、人物をゴール（P1）から
+        `clear_distance_m` 以上離れた位置（FAR）に動かすと、`clear_hold_ms`
+        継続後に `evt.clear_ok` が出て `SUMMON/NAV` へ進む。
+
+        これが付かないと、手順 5 の「発進しない」が
+        「`WAIT_CLEAR` に入ること自体が壊れていて、常に発進しないだけ」
+        という無意味な検証になってしまう。対比して初めて
+        「退かないときだけ止まる」ことが言える。
+        """
+        self._enter_wait_clear()
+
+        # 「退避した」ケース: FAR は P1 から clear_distance_m 以上。
+        self._set_person(_FAR, settle=0.3)
+
+        entered_nav = self._wait_mode_state('SUMMON', 'NAV', timeout=10.0)
+        self.assertTrue(
+            entered_nav,
+            f'人物がゴールから {_CLEAR_DISTANCE_M} m 以上退いても '
+            f'SUMMON/NAV に入らない（現状={self._mode_state()}）。'
+            f'evt.clear_ok = {self._count_event("evt.clear_ok")} 件。'
+            f'退避を検知できないと、人は永久に待たされ続ける。')
+
+        self.assertGreaterEqual(
+            self._count_event('evt.clear_ok'), 1,
+            'SUMMON/NAV に入ったのに evt.clear_ok が出ていない'
+            '（遷移の根拠になっていない）。')
+
+        self.assertEqual(
+            self._count_event('evt.clear_timeout'), 0,
+            '人物が退いたのに evt.clear_timeout まで出てしまった'
+            '（clear_ok と同時発火している、または保持判定が壊れている）。')
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v', '-s'])
