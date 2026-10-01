@@ -515,6 +515,13 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_nav_pause_blocked_node
     test/test_venue_nav_pause_blocked_node.py
     TIMEOUT 240)
+
+  # 待機場所宣言の配線（DetailedDesign-onsite.md §9 #10。Gazebo なしの
+  # launch_testing で pin_registrar＋home_declarer を起動し、TF をずらして
+  # 照合・force・ピン変更時の解除・境界を検証。積算は venue_nav と同じ 240 秒枠）
+  ament_add_pytest_test(test_home_declarer_node
+    test/test_home_declarer_node.py
+    TIMEOUT 240)
 endif()
 
 ament_package()
