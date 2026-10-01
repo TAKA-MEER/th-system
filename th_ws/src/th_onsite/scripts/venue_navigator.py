@@ -131,6 +131,14 @@ class VenueNavigator(Node):
         self._final_aligning = False
         self._follow_goal_handle = None
         self._cancel_requested = False   # 自分が cancel したかを区別する
+        # 不具合 A 対策 (2026-10-01): send_goal_async → accept 判明の窓では
+        # handle が None のため cancel が空振りし、受け付け後に走行が続く。
+        # 送出中かを _follow_send_in_flight で表し、窓の中で取り消しを求め
+        # られたことを _cancel_before_accept に記録して、accept 時点で即座に
+        # cancel する（その結果は _cancel_requested で抑えて evt.blocked を
+        # 出さない）。compute 中の取り消しは対象外（送出自体がまだ無い）。
+        self._follow_send_in_flight = False
+        self._cancel_before_accept = False
         self._blocked = False            # BLOCKED 相当の内部状態
         self._unblocking = False         # 再探索成功で evt.unblocked を出す予約
         self._recheck_timer = None
@@ -368,6 +376,11 @@ class VenueNavigator(Node):
             except Exception:
                 pass
             self._follow_goal_handle = None
+        elif self._follow_send_in_flight:
+            # 不具合 A (2026-10-01): 送信～accept の窓では handle が無く
+            # cancel が空振りする。要求があったことだけ記録し、accept 時に
+            # _follow_goal_done が即座に取り消す。
+            self._cancel_before_accept = True
         self._blocked = False
         self._nav_chain_active = False
         self._recheck_in_flight = False
@@ -522,11 +535,14 @@ class VenueNavigator(Node):
         self._nav_chain_started_at = self._now()
         send_future = self._follow_client.send_goal_async(
             req, feedback_callback=None)
+        self._follow_send_in_flight = True
         send_future.add_done_callback(self._follow_goal_done)
 
     def _follow_goal_done(self, future):
+        self._follow_send_in_flight = False
         goal_handle = future.result()
         if goal_handle is None or not goal_handle.accepted:
+            self._cancel_before_accept = False
             self.get_logger().warn('follow_path 受理されず evt.blocked')
             self._go_blocked(json.dumps({'reason': 'follow_not_accepted'}))
             return
@@ -535,6 +551,16 @@ class VenueNavigator(Node):
         # handle が抑える。立てたままにすると長時間の follow 中に 10 秒の
         # stale-escape（_blocked_recheck 冒頭）が誤って発火する。
         self._nav_chain_active = False
+        if self._cancel_before_accept:
+            # 不具合 A (2026-10-01): 窓の中で取り消しを求められていた。
+            # 受け付けた端から取り消す。結果 (CANCELED) は自分由来なので
+            # _cancel_requested を立てて evt.blocked を出さない。
+            self._cancel_before_accept = False
+            self._cancel_requested = True
+            try:
+                goal_handle.cancel_goal_async()
+            except Exception:
+                pass
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self._follow_result_done)
 
@@ -650,6 +676,10 @@ class VenueNavigator(Node):
         if self._nav_chain_active and now - self._nav_chain_started_at > 10.0:
             self.get_logger().warn('nav_chain が 10s 応答なし → フラグ解放')
             self._nav_chain_active = False
+            # accept が永久に来ない（Nav2 ごと死亡）とき、送出中・取り消し
+            # 予約の印が残ると次の送信の受け付けを誤って殺すので一緒に下ろす。
+            self._follow_send_in_flight = False
+            self._cancel_before_accept = False
         if self._recheck_in_flight and now - self._recheck_started_at > 10.0:
             self.get_logger().warn('recheck が 10s 応答なし → フラグ解放')
             self._recheck_in_flight = False
