@@ -923,6 +923,89 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
             self._reset_to_home()
 
     # ═══════════════════════════════════════════════════════════════════
+    # 古い取り消し結果が、再開後の生きている handle を誤って捨てる問題
+    # ═══════════════════════════════════════════════════════════════════
+    def test_stale_cancel_result_keeps_live_handle(self):
+        """一時停止で seq1 を取り消し → すぐ再開して seq2 が受け付け済み →
+        seq1 の CANCELED が遅れて届く。正しくは seq2 の handle を残す。
+
+        無条件に handle を下ろすと、走行中の seq2 の handle が捨てられ、
+        次の `ui.stop` で seq2 を取り消せず `PAUSE` 中に走り続ける
+        （不具合 A と同じ型。本番の不具合で赤。次のコミットで直す）。
+        """
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.follow_accept_delay_s = 0.0
+            self.follow_cancel_result_delay_s = 1.0
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+            self.event_names.clear()
+        try:
+            self._enter_nav()
+            if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=10.0):
+                self.fail(f'NAV に入らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_follow, 1, timeout=10.0),
+                'FollowPath にゴールが届かない。')
+            with self._lock:
+                n_ev = len(self.event_names)
+                c0 = self.follow_cancel_count
+
+            # 一時停止。seq1 の取り消しを投げる（結果は 1.0s 後に届く）。
+            self._call_trigger('ui.stop')
+            if not self._wait_mode_state('PANEL_NAV', 'PAUSE', timeout=5.0):
+                self.fail(f'PAUSE に入らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_cancel, c0 + 1, timeout=5.0),
+                'ui.stop の cancel が代役に届かない。')
+
+            # 結果が届く前に再開。seq2 を送り、受け付けまで待つ。
+            self._call_trigger('ui.run')
+            if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=5.0):
+                self.fail(f'再開後に NAV に戻らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_follow, 2, timeout=10.0),
+                '再開後に FollowPath に 2 件目のゴールが届かない。')
+
+            # seq1 の遅れた結果が届くのを待つ（stop から 1.0s 超）。
+            # この時点で seq2 は実行中のはず。
+            self._sleep(1.5)
+            self.assertEqual(
+                self._n_open(), 1,
+                f'再開後の実行中ゴールが 1 件でない ({self._n_open()})。')
+
+            # もう一度一時停止。seq2 が取り消されること。
+            self._call_trigger('ui.stop')
+            if not self._wait_mode_state('PANEL_NAV', 'PAUSE', timeout=5.0):
+                self.fail(f'2 回目の PAUSE に入らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_cancel, c0 + 2, timeout=5.0),
+                '古い取り消し結果で生きている handle が捨てられ、seq2 の '
+                'cancel が届いていない（PAUSE 中に走り続ける）。')
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline and self._n_open() > 0:
+                time.sleep(0.05)
+            self.assertEqual(
+                self._n_open(), 0,
+                'PAUSE なのに代役のゴールが実行中のまま残っている。')
+            self._sleep(1.0)
+            new_events = self._snap_events()[n_ev:]
+            self.assertNotIn(
+                'evt.blocked', new_events,
+                '自分で取り消した結果で evt.blocked が出ている。')
+            self.assertEqual(
+                self._mode_state(), ('PANEL_NAV', 'PAUSE'),
+                f'PAUSE のはずが {self._mode_state()} に動いた。')
+            self._mark_passed(f'(cancel={self._n_cancel()})')
+        finally:
+            with self._lock:
+                self.follow_cancel_result_delay_s = 0.0
+            self._reset_to_home()
+
+    # ═══════════════════════════════════════════════════════════════════
     # 陽性対照（#3 の裏）: ui.reroute → replan で compute が増える
     # ═══════════════════════════════════════════════════════════════════
     def test_reroute_replans(self):
