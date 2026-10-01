@@ -8,6 +8,7 @@ import json
 import os
 import re
 
+import pytest
 import yaml
 
 _SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -17,22 +18,29 @@ JSON_PATH = os.path.join(_REPO, "th_ws", "web_ui", "src", "generated", "repair_h
 CHECK_CORE = os.path.join(_SRC, "th_maintenance", "th_maintenance", "check_core.py")
 
 
-def _load():
+def _load_yaml():
     with open(YAML_PATH, encoding="utf-8") as f:
-        y = yaml.safe_load(f)
+        return yaml.safe_load(f)
+
+
+def _load_json():
+    # Docker の colcon test では th_ws/web_ui がコンテナにマウントされない（src だけ）。
+    # json は WebUI 側の生成物なので、無い環境ではこの試験は明示的に skip する
+    # （ホストの pytest では必ず走る。実行されないことを黙って通さない）。
+    if not os.path.exists(JSON_PATH):
+        pytest.skip(f"web_ui が無い環境（Docker の colcon test 等）のため skip: {JSON_PATH}")
     with open(JSON_PATH, encoding="utf-8") as f:
-        j = json.load(f)
-    return y, j
+        return json.load(f)
 
 
 def test_json_is_generated_from_yaml():
-    y, j = _load()
+    y, j = _load_yaml(), _load_json()
     assert j == y, "repair_hints.json が repair_hints.yaml と違う。gen_repair_hints.py を実行すること"
 
 
 def test_every_non_calibrable_ng_reason_has_hints():
     """ESTOP / MOTOR の NG 理由（check_core.py の NG("...")）全部に手順がある。"""
-    y, _ = _load()
+    y = _load_yaml()
     with open(CHECK_CORE, encoding="utf-8") as f:
         src = f.read()
 
@@ -53,5 +61,5 @@ def test_every_non_calibrable_ng_reason_has_hints():
 
 def test_only_non_calibrable_items_have_hints():
     """IMU / LIDAR は校正へ誘導する（故障診断の対象ではない）。"""
-    y, _ = _load()
+    y = _load_yaml()
     assert set(y) == {"ESTOP", "MOTOR"}
