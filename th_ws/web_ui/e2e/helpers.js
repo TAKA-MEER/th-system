@@ -33,6 +33,22 @@ export async function gotoScreen(page, screen, state = {}) {
   await page.goto('/')
 }
 
+// 起動時の自動点検（Spec-ops.md §2.6）: S-00 / S-01 を自動判定の種付きで開く。
+// useAutoCheckStatus.js は window.__thTestAutoCheck を初期値にし、
+// window.__thSetTestAutoCheck で表示を更新する（useDevMode.js と同じ流儀）。
+export async function gotoScreenWithAutoCheck(page, screen, state, auto) {
+  await page.addInitScript(({ s, scr, a }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    window.__thTestAutoCheck = a
+  }, { s: state, scr: screen, a: auto })
+  await page.goto('/')
+}
+
+export async function setTestAutoCheck(page, value) {
+  await page.evaluate((v) => window.__thSetTestAutoCheck(v), value)
+}
+
 // WP-TRANSIT-01: opens a screen with a seeded /safety/limiter_status value.
 // useLimiterStatus.js reads window.__thTestLimiterStatus on first render
 // (mirroring __thTestState), so it must be set via addInitScript.

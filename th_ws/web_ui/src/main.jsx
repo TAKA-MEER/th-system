@@ -189,8 +189,12 @@ function Screens() {
       {/* onEnter は渡さない。ui.enter_mode が受理されれば FSM が
           モードを変え、その /system/state を見てここが画面を切り替える
           （「試験（当日）」= AT_HOME もこの経路）。onOpenSettings だけは
-          S-50（S-01 のサブ画面）を開くローカル state。 */}
-      <S01Main onOpenSettings={() => setSettingsOpen(true)} />
+          S-50（S-01 のサブ画面）を開くローカル state。
+          onOpenConnect は要約カードの「詳細を見る」→ S-00 相当へ戻る。 */}
+      <S01Main
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenConnect={() => setPassedConnect(false)}
+      />
     </AppShell>
   )
 }

@@ -64,7 +64,7 @@ test('定数: ノード・パラメータ名は ROS 側の実装と一致する'
   // 名を変えるときは ROS 側も同時に直すこと（test_dev_mode.py が 3 者の一致を縛る）。
   assert.deepEqual(DEV_ITEMS,
     ['link', 'lidar_fault', 'scan_stop', 'battery', 'opcheck', 'auto_brake'])
-  assert.deepEqual(DEV_NO_GATE_ITEMS, ['battery', 'opcheck', 'auto_brake'])
+  assert.deepEqual(DEV_NO_GATE_ITEMS, ['battery', 'auto_brake'])
   assert.equal(DEV_MODE_NODE, 'connectivity_checker')
   assert.equal(DEV_PARAM_MASTER, 'dev_mode')
   assert.equal(devIgnoreParam('link'), 'dev_ignore_link')

@@ -33,7 +33,8 @@ import {
   S50_DEV_ITEMS_TITLE, S50_DEV_ITEM_LINK, S50_DEV_ITEM_LINK_DESC,
   S50_DEV_ITEM_LIDAR_FAULT, S50_DEV_ITEM_LIDAR_FAULT_DESC,
   S50_DEV_ITEM_SCAN_STOP, S50_DEV_ITEM_SCAN_STOP_DESC,
-  S50_DEV_ITEM_BATTERY, S50_DEV_ITEM_OPCHECK, S50_DEV_ITEM_AUTO_BRAKE,
+  S50_DEV_ITEM_BATTERY, S50_DEV_ITEM_OPCHECK, S50_DEV_ITEM_OPCHECK_DESC,
+  S50_DEV_ITEM_AUTO_BRAKE,
   S50_DEV_NO_GATE, S50_DEV_EFFECTIVE_TITLE, S50_DEV_NONE,
   S50_DEV_ESTOP_UNKNOWN, S50_DEV_SCOPE_NOTE,
   S50_DEV_SEND_FAILED,
@@ -60,14 +61,15 @@ const MAPLESS_FIELDS = [
 const BLIND_LABELS = ['右前 開始', '右前 終了', '右後 開始', '右後 終了', '左後 開始', '左後 終了', '左前 開始', '左前 終了']
 
 // 開発モードの項目メタ（WP-DEV-01B §2）。キーは devModeState.DEV_ITEMS と揃える。
-// link 以外は as-built に止める側の仕組みが無く、選んでも何も起きない
-// （DEV_NO_GATE_ITEMS。カード末尾の注記で明示する）。
+// battery・auto_brake 以外は効く。opcheck は起動時の自動点検の警告を消す
+// （判定自体は止めない）。battery・auto_brake は as-built に止める側の
+// 仕組みが無く、選んでも何も起きない（DEV_NO_GATE_ITEMS。カード末尾の注記で明示する）。
 const DEV_ITEM_META = [
   { item: 'link', label: S50_DEV_ITEM_LINK, desc: S50_DEV_ITEM_LINK_DESC },
   { item: 'lidar_fault', label: S50_DEV_ITEM_LIDAR_FAULT, desc: S50_DEV_ITEM_LIDAR_FAULT_DESC },
   { item: 'scan_stop', label: S50_DEV_ITEM_SCAN_STOP, desc: S50_DEV_ITEM_SCAN_STOP_DESC },
   { item: 'battery', label: S50_DEV_ITEM_BATTERY, desc: '' },
-  { item: 'opcheck', label: S50_DEV_ITEM_OPCHECK, desc: '' },
+  { item: 'opcheck', label: S50_DEV_ITEM_OPCHECK, desc: S50_DEV_ITEM_OPCHECK_DESC },
   { item: 'auto_brake', label: S50_DEV_ITEM_AUTO_BRAKE, desc: '' },
 ]
 const DEV_ITEM_LABEL = Object.fromEntries(DEV_ITEM_META.map(({ item, label }) => [item, label]))

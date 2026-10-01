@@ -17,20 +17,47 @@
 // stale), or mode is still 'INIT', there is nothing to advance to -- no
 // "advance" button is rendered at all (not just disabled).
 import { useSystemState } from '../ros/useSystemState.js'
+import { useAutoCheckStatus } from '../ros/useAutoCheckStatus.js'
 import {
   S00_CHECK_TITLE, S00_COL_DEVICE, S00_COL_REQ, S00_COL_STATUS, S00_REQUIRED,
   S00_MONITOR, S00_ITEMS, S00_STATUS_CHECKING, S00_STATUS_OK, S00_AP_LABEL,
   S00_AP_NOTE, S00_OVERALL_TITLE, S00_READY, S00_CHECKING, S00_ADVANCE,
   S00_OPEN_DEV,
+  S00_AUTO_TITLE, S00_AUTO_CHECKING, S00_AUTO_OK, S00_AUTO_WARN, S00_AUTO_NG,
+  S00_AUTO_SUPPRESSED, S00_AUTO_NOT_YET,
+  S00_AUTO_ITEM_LABELS, S00_AUTO_ITEM_ORDER,
 } from '../i18n/screens.js'
 import { DISCONNECTED_LABEL } from '../i18n/states.js'
+
+// 自動判定の総合 → pill の色クラスと文言。
+function autoOverallView(auto) {
+  if (!auto) return { tone: 'warn', label: S00_AUTO_NOT_YET }
+  if (auto.suppressed) return { tone: '', label: S00_AUTO_SUPPRESSED }
+  switch (auto.overall) {
+    case 'OK': return { tone: 'ok', label: S00_AUTO_OK }
+    case 'WARN': return { tone: 'warn', label: S00_AUTO_WARN }
+    case 'NG': return { tone: 'ng', label: S00_AUTO_NG }
+    default: return { tone: 'warn', label: S00_AUTO_CHECKING }
+  }
+}
+
+function autoItemTone(result) {
+  switch (result) {
+    case 'OK': return 'tone-ok'
+    case 'WARN': return 'tone-warn'
+    case 'NG': return 'tone-ng'
+    default: return 'tone-warn'
+  }
+}
 
 // onOpenSettings（2026-09-23）: 機器が揃わず INIT を抜けられないときに、開発モードの
 // 設定（S-50 の開発モードタブ）へ入って項目を外し、IDLE へ進むための導線。
 export default function S00Connect({ onAdvance, onOpenSettings }) {
-  const { state, stale } = useSystemState()
+  const { state, stale, ros } = useSystemState()
+  const { auto } = useAutoCheckStatus(ros)
   const mode = state?.mode ?? null
   const ready = !stale && mode != null && mode !== 'INIT'
+  const autoView = autoOverallView(auto)
 
   return (
     <div className="screen" id="s00">
@@ -86,6 +113,31 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
           >
             {S00_OPEN_DEV}
           </button>
+        )}
+      </div>
+      <div className="card" data-testid="s00-auto-check">
+        <h3>{S00_AUTO_TITLE}</h3>
+        <div className="row">
+          <span className={`pill ${autoView.tone}`} data-testid="s00-auto-overall">
+            {autoView.label}
+          </span>
+        </div>
+        {auto && !auto.suppressed && (
+          <table className="lst">
+            <tbody>
+              {S00_AUTO_ITEM_ORDER.map((key) => {
+                const it = auto.items[key] ?? { result: 'CHECKING', reason: '' }
+                return (
+                  <tr key={key}>
+                    <td>{S00_AUTO_ITEM_LABELS[key]}</td>
+                    <td className={`r ${autoItemTone(it.result)}`} data-testid={`s00-auto-${key}`}>
+                      {it.result}{it.reason ? ` (${it.reason})` : ''}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         )}
       </div>
     </div>

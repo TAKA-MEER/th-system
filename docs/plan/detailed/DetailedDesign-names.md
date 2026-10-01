@@ -82,6 +82,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | `venue_navigator` | `th_onsite` | `scripts/venue_navigator.py` | `PANEL_NAV` / `SUMMON` / `HOME_NAV` |
 | `wait_clear_gate` | `th_onsite` | `scripts/wait_clear_gate.py` | 退避待ち |
 | `opcheck_runner` | `th_maintenance` | `scripts/opcheck_runner.py` | 始業点検 |
+| `opcheck_auto` | `th_maintenance` | `scripts/opcheck_auto.py` | **起動時の自動点検（Spec-ops.md §2.6。INIT 中から常時起動し、総合ステータスを `/opcheck/auto_status` に出す。`/cmd_vel_behavior` には出さない）** |
 | `calib_runner` | `th_maintenance` | `scripts/calib_runner.py` | 校正 |
 | `lidar_filter` | `th_perception` | `scripts/lidar_filter.py` | 死角マスク（既存） |
 | `person_tracker_bridge` | `th_perception` | `scripts/person_tracker_bridge.py` | 人物追跡の橋渡し（既存） |
@@ -455,6 +456,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `/onsite/pins` | `PinList` | transient_local, depth 1 |
 | `/onsite/wait_clear` | `WaitClearStatus` | reliable, depth 1, 5 Hz |
 | `/opcheck/status` | `CheckStatus` | reliable, depth 5 |
+| **`/opcheck/auto_status`** | **`std_msgs/String`（JSON。`overall`（`OK`/`WARN`/`NG`/`CHECKING`）／`suppressed`（開発モードの `opcheck` で警告を消しているか）／`items`（`ESTOP`/`IMU`/`LIDAR` の `result`・`reason`）。判定そのものは止めない）** | **transient_local, depth 1, reliable。1 Hz（発行者は `opcheck_auto`）** |
 | **`/opcheck/motor_hold`** | **`std_msgs/String`**（`NONE` / `FORWARD` / `BACK` / `LEFT` / `RIGHT`） | **reliable, depth 1。画面（S-30 のホールドボタン）→ `opcheck_runner`。押している間 100 ms 周期で送り続け、離したら `NONE`。`opcheck_deadman_timeout_s`（0.5 s）途絶で停止（デッドマン）。モーター確認（`MOTOR` 項目の実行中）以外では無視する。2026-09-25 追加（実装から写した）** |
 | `/calib/status` | `CalibStatus` | reliable, depth 5 |
 | `/leash/status` ／ `/line/status` | 各 status | reliable, depth 1 |
