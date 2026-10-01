@@ -204,7 +204,7 @@ assert _dist(_P1, _P2) >= _TWO_POINT_MIN_SPACING_M, (
 assert _dist(_P1, _P2) < _CLEAR_DISTANCE_M, (
     f'P1={_P1} と P2={_P2} の間隔 {_dist(_P1, _P2):.3f}m が '
     f'clear_distance_m={_CLEAR_DISTANCE_M} 以上。「退かない」ケースを'
-    f'再現できていない（clear_ok が出 exiled てしまう）。')
+    f'再現できていない（clear_ok が出てしまう）。')
 assert _dist(_P1, _FAR) >= _CLEAR_DISTANCE_M, (
     f'P1={_P1} と FAR={_FAR} の間隔 {_dist(_P1, _FAR):.3f}m が '
     f'clear_distance_m={_CLEAR_DISTANCE_M} 未満。「退いた」ケースを'
@@ -393,6 +393,19 @@ class TestSummonRetreatWait(unittest.TestCase):
         t.linear.x = _JOG_LINEAR_MPS
         self.pub_raw.publish(t)
 
+    def _jog_window(self, sec: float) -> list[Twist]:
+        """`sec` 秒だけジョグ入力を流し、その間の `/cmd_vel_manual` を受け取る。
+
+        遮断側では 0 通、陽性対照側では非ゼロが何通か返ることを期待する。
+        """
+        mark = len(self.cmd_manual_rec)
+        timer = self.node.create_timer(0.05, self._publish_jog)
+        try:
+            self._spin(sec)
+        finally:
+            self.node.destroy_timer(timer)
+        return self.cmd_manual_rec[mark:]
+
     # ── 補助 ──────────────────────────────────────────────
     def _spin(self, sec: float = 0.3):
         deadline = time.monotonic() + sec
@@ -539,7 +552,7 @@ class TestSummonRetreatWait(unittest.TestCase):
             'evt.two_point_done が出ていない（pin_registrar が 2 点指示を完了していない）。')
         self.assertEqual(
             self._count_event('evt.clear_ok'), 0,
-            '人物がまだ誰も kil退いていないのに evt.clear_ok が出た'
+            '人物がまだ退いていないのに evt.clear_ok が出た'
             '（wait_clear_core の距離判定が壊れている）。')
 
         # WAIT_CLEAR の間を観測し、NAV に入らないことを確かめる。
@@ -583,39 +596,26 @@ class TestSummonRetreatWait(unittest.TestCase):
     # 手順 6: 退避待ち中のジョグは無効（陽性対照つき）
     # ═══════════════════════════════════════════════════════════════════
     def test_2_jog_is_ignored_while_waiting_and_works_at_point(self):
-        """`DetailedDesign-safety.md` §10 #7 の附带条件。
+        """`DetailedDesign-onsite.md` §9 受け入れ条件 #6。
 
         人が退かず `SUMMON/WAIT_CLEAR` のあいだ、ジョグは効かない。
-        `attributes.yaml` は SUMMON の jog を「許可」にしている（ Point と
+        `attributes.yaml` は SUMMON の jog を「許可」にしている（POINT と
         NAV では走れる）が、`jog_gate_core` は `SUMMON/WAIT_CLEAR` を除外表に
         入れており、そこでは `/cmd_vel_manual` を一切出さない。
         """
-        t_wait_clear = self._enter_wait_clear()
+        self._enter_wait_clear()
         self._set_person(_P2, settle=0.2)
-        self.assertIsNotNone(t_wait_clear)
 
         # ── 遮断側: WAIT_CLEAR 中にジョグ入力 ──────────────
-        self._raw_timer = self.node.create_timer(0.05, self._publish_jog)
-        try:
-            blocked_mark = len(self.cmd_manual_rec)
-            self._spin(2.0)
-            blocked_window = self.cmd_manual_rec[blocked_mark:]
-        finally:
-            self.node.destroy_timer(self._raw_timer)
+        blocked_window = self._jog_window(2.0)
 
-        self.assertFalse(
-            [t for t in blocked_window
-             if abs(t.linear.x) > _NONZERO_ATOL or abs(t.linear.y) > _NONZERO_ATOL],
-            'SUMMON/WAIT_CLEAR 中に /cmd_vel_manual_raw への入力が '
-            '/cmd_vel_manual に出た（＝ジョグが未被遮断で通過している）。'
-            'jog_gate_core の除外表から SUMMON/WAIT_CLEAR が消えている疑い。')
-
-        self.assertFalse(
-            [t for t in blocked_window
-             if abs(t.linear.x) > _NONZERO_ATOL or abs(t.linear.y) > _NONZERO_ATOL],
-            'SUMMON/WAIT_CLEAR 中に /cmd_vel_manual_raw への入力が '
-            '/cmd_vel_manual に出た（＝ジョグが未被遮断で通過している）。'
-            'jog_gate_core の除外表から SUMMON/WAIT_CLEAR が消えている疑い。')
+        passed = [t for t in blocked_window
+                  if abs(t.linear.x) > _NONZERO_ATOL or abs(t.linear.y) > _NONZERO_ATOL]
+        self.assertEqual(
+            len(passed), 0,
+            f'SUMMON/WAIT_CLEAR 中に /cmd_vel_manual へ {len(passed)} 通の非ゼロが'
+            f'出た（{len(blocked_window)} 通中）。ジョグが未被遮断で通過している。'
+            f'jog_gate_core の除外表から SUMMON/WAIT_CLEAR が消えている疑い。')
 
         # ── 陽性対照: WAIT_CLEAR を抜けて POINT に戻し、同じ入力が通る ──
         res = self._call_trigger('ui.abort')
@@ -624,20 +624,14 @@ class TestSummonRetreatWait(unittest.TestCase):
         if not self._wait_mode_state('SUMMON', 'POINT', timeout=5.0):
             self.fail(f'ui.abort 後に SUMMON/POINT に戻らない（{self._mode_state()}）')
 
-        self._raw_timer = self.node.create_timer(0.05, self._publish_jog)
-        try:
-            pass_mark = len(self.cmd_manual_rec)
-            self._spin(2.0)
-            pass_window = self.cmd_manual_rec[pass_mark:]
-        finally:
-            self.node.destroy_timer(self._raw_timer)
-
+        pass_window = self._jog_window(2.0)
+        moved = [t for t in pass_window if abs(t.linear.x) > _NONZERO_ATOL]
         self.assertTrue(
-            [t for t in pass_window
-             if abs(t.linear.x) > _NONZERO_ATOL],
-            'SUMMON/POINT（ジョグ許可状態）で同じ入力が /cmd_vel_manual に出なかった。'
-            '遮断の赤が「jog_gate が単に黙っている」ためではなく、'
-            '配線が生きていることを示せない。')
+            moved,
+            f'SUMMON/POINT（ジョグ許可状態）で同じ入力が /cmd_vel_manual に'
+            f'出なかった（{len(pass_window)} 通受信）。'
+            f'遮断の赤が「jog_gate が単に黙っている」ためではなく、'
+            f'配線が生きていることを示せない。')
 
     # ═══════════════════════════════════════════════════════════════════
     # 手順 7: 退避側の陽性対照 — 退けば発進する
