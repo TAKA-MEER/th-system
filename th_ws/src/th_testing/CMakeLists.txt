@@ -117,6 +117,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_calib_store
     test/test_calib_store.py
     TIMEOUT 60)
+  # 校正 BLIND（死角マスク）の純粋関数（th_maintenance/blind_core.py。ROS2 不要）
+  ament_add_pytest_test(test_calib_blind_core
+    test/test_calib_blind_core.py
+    TIMEOUT 60)
   # S-31 故障診断のチェック手順（repair_hints.yaml）と WebUI 用 json の一致
   # （WP-MAINT-03。ROS2 不要）
   ament_add_pytest_test(test_repair_hints_sync

@@ -20,9 +20,8 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
-# 項目名（`/calib/start` の item）。BLIND はこのパケットの範囲外（WP-CLEAN-01 の削除対象
-# `th_calibration` の死角スクリプトを使わない。新しい校正フローは別パケット）。
-ITEMS = ("LINEAR", "ROTATION", "IMU")
+# 項目名（`/calib/start` の item）。BLIND の純粋関数は `blind_core.py`。
+ITEMS = ("LINEAR", "ROTATION", "IMU", "BLIND")
 
 # sanity の範囲。補正係数（測定／指令）が 0.5〜2.0 を外れたら桁違い・取り違えとみなす。
 # A10（|k−1| ≤ 0.10）よりずっと緩い「明らかな入力ミス」の弾き。
