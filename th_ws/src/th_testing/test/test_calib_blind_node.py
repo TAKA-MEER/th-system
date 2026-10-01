@@ -64,6 +64,7 @@ from th_system_msgs.srv import RollbackCalib, SubmitCalib, UiTrigger
 CALIB_DIR = tempfile.mkdtemp(prefix='calib_blind_')
 
 V_CALIB = 0.30
+V_SLOW = 0.30
 V_REVERSE = 0.25
 POLE = (-10.0, 10.0)      # 前方の「支柱」（近距離の恒常的な写り込み）
 TARGETS = ('obstacle_limiter', 'lidar_filter', 'opcheck_runner')
@@ -100,6 +101,9 @@ def generate_test_description():
         package='th_safety', executable='obstacle_limiter', name='obstacle_limiter',
         parameters=[{'v_slow': 0.30, 'v_reverse': V_REVERSE, 'v_calib': V_CALIB,
                      'obstacle_floor_distance_m': 0.05}],
+        # 速度上限の入力は state_manager（CALIB では 0 の状態がある）に依存させず、
+        # テストが MANUAL・v_slow を出す専用トピックで与える。
+        remappings=[('/system/state', '/test/limiter_state')],
         output='screen')
     opcheck = launch_ros.actions.Node(
         package='th_maintenance', executable='opcheck_runner.py', name='opcheck_runner',
@@ -151,6 +155,7 @@ class TestCalibBlind(unittest.TestCase):
             qos_profile_sensor_data)
         self.pub_scan = self.node.create_publisher(LaserScan, '/scan', qos_profile_sensor_data)
         self.pub_muxed = self.node.create_publisher(Twist, '/cmd_vel_muxed', 1)
+        self.pub_lim_state = self.node.create_publisher(SystemState, '/test/limiter_state', _STATE_QOS)
         self.pub_estop = self.node.create_publisher(Bool, '/safety/estop', 1)
         self.pub_lock = self.node.create_publisher(Bool, '/safety/fault_lock', 1)
         self.pub_fault = self.node.create_publisher(FaultStatus, '/safety/fault', 5)
@@ -203,6 +208,13 @@ class TestCalibBlind(unittest.TestCase):
         cmd = Twist()
         cmd.linear.x = 0.5
         self.pub_muxed.publish(cmd)
+        st = SystemState()
+        st.mode = 'MANUAL'
+        st.state = 'NONE'
+        st.zone = 'OUT'
+        st.auto_brake = True
+        st.speed_limit = 'v_slow'
+        self.pub_lim_state.publish(st)
         self.pub_estop.publish(Bool(data=False))
         self.pub_lock.publish(Bool(data=False))
         self._last_pub = time.time()
@@ -312,7 +324,7 @@ class TestCalibBlind(unittest.TestCase):
         self._wait(lambda: self._result_is('PREVIEW_OK'), what='PREVIEW_OK')
         return res
 
-    def _go_s4(self):
+    def _go_s4(self, wait_s4=True):
         deadline = time.time() + 6.0
         r = None
         while time.time() < deadline:
@@ -321,7 +333,8 @@ class TestCalibBlind(unittest.TestCase):
                 break
             self._spin(0.2)
         assert r.accepted, f'S3→S4 に進めない: {r.reject_reason_key}'
-        self._wait(lambda: self._state_is('CALIB', 'S4'), what='S4')
+        if wait_s4:    # 適用がすぐ失敗する試験は S4 を経ずに S2 へ戻るので待たない
+            self._wait(lambda: self._state_is('CALIB', 'S4'), what='S4')
 
     def _current_yaml(self):
         path = os.path.join(CALIB_DIR, 'current.yaml')
@@ -460,7 +473,7 @@ class TestCalibBlind(unittest.TestCase):
         try:
             self._enter_blind()
             self._select_to_s3([[-20.0, 20.0]])          # 40°: runner は通すが limiter は拒否する
-            self._go_s4()
+            self._go_s4(wait_s4=False)
             self._wait(lambda: self._state_is('CALIB', 'S2'), timeout=30.0,
                        what='limiter の拒否で S2 へ')
             assert 'apply_failed' in json.loads(self.status.detail)['reason']
