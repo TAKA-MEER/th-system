@@ -147,6 +147,11 @@ public:
         rcl_interfaces::msg::ParameterDescriptor blind_angle_ranges_desc;
         blind_angle_ranges_desc.type = rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY;
         declare_parameter("blind_angle_ranges", std::vector<double>{}, blind_angle_ranges_desc);
+        // 実行中更新（校正 BLIND）の上限。registry の blind_max_*（2026-10-01）。
+        // 生成 yaml が無い環境でも既定値が同じなので上限なしにはならない。
+        declare_parameter("blind_max_sector_deg", 30.0);
+        declare_parameter("blind_max_total_deg", 90.0);
+        declare_parameter("blind_max_sectors", 8);
 
         // 速度上限の名前→数値表（§3.3.1・「確認済みの事実①」）。
         // v_reverse は ObstacleLimiterParams::v_reverse と表の両方に使う
@@ -212,6 +217,61 @@ public:
         params_.blind_calibrated = get_parameter("blind_calibrated").as_bool();
         params_.blind_angle_ranges_deg = th_safety::flat_to_range_pairs(
             get_parameter("blind_angle_ranges").as_double_array());
+        blind_limits_.max_sector_deg = get_parameter("blind_max_sector_deg").as_double();
+        blind_limits_.max_total_deg = get_parameter("blind_max_total_deg").as_double();
+        blind_limits_.max_sectors = static_cast<std::size_t>(
+            std::max<int64_t>(0, get_parameter("blind_max_sectors").as_int()));
+        {
+            // 起動時の値も同じ上限で検査する。超えていたらマスクを使わない
+            // （マスクしすぎて障害物が見えなくなるより、広く見える側が安全）。
+            const auto v = th_safety::validate_blind_ranges(
+                get_parameter("blind_angle_ranges").as_double_array(), blind_limits_);
+            if (!v.ok) {
+                RCLCPP_ERROR(get_logger(),
+                             "起動時の blind_angle_ranges が上限違反（%s）。死角マスクなしで起動する",
+                             v.reason.c_str());
+                params_.blind_angle_ranges_deg.clear();
+            }
+        }
+
+        // 死角マスクの実行中更新（校正 BLIND）。lidar_filter・opcheck_runner と同時に
+        // 効かせ、地図用スキャンと安全判定の食い違いを作らない（Spec-checks.md §3.5）。
+        // 上限を超える値・形の崩れた値はここで拒否し、古い値のまま動く。
+        // 単一スレッドの executor なので、判定側（timer/subscription）と競合しない。
+        blind_param_cb_ = add_on_set_parameters_callback(
+            [this](const std::vector<rclcpp::Parameter>& parameters) {
+              rcl_interfaces::msg::SetParametersResult result;
+              result.successful = true;
+              std::vector<std::pair<double, double>> accepted;
+              bool has_blind = false;
+              for (const auto& p : parameters) {
+                if (p.get_name() != "blind_angle_ranges") {
+                  continue;
+                }
+                if (p.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE_ARRAY) {
+                  result.successful = false;
+                  result.reason = "blind_angle_ranges: double array required";
+                  continue;
+                }
+                const auto flat = p.as_double_array();
+                const auto verdict = th_safety::validate_blind_ranges(flat, blind_limits_);
+                if (!verdict.ok) {
+                  result.successful = false;
+                  result.reason = "blind_angle_ranges rejected: " + verdict.reason;
+                  RCLCPP_WARN(get_logger(),
+                              "blind_angle_ranges の更新を拒否（%s）。古い値のまま動く",
+                              verdict.reason.c_str());
+                  continue;
+                }
+                accepted = th_safety::flat_to_range_pairs(flat);
+                has_blind = true;
+              }
+              if (result.successful && has_blind) {
+                params_.blind_angle_ranges_deg = accepted;
+                RCLCPP_INFO(get_logger(), "blind_angle_ranges を更新: %zu 区間", accepted.size());
+              }
+              return result;
+            });
 
         speed_limit_table_ = {
             {"v_max", get_parameter("v_max").as_double()},
@@ -456,6 +516,8 @@ private:
 
     // ── パラメータ ────────────────────────────────────────
     th_safety::ObstacleLimiterParams params_;
+    th_safety::BlindLimits blind_limits_;
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr blind_param_cb_;
     std::map<std::string, double> speed_limit_table_;
     std::string latest_speed_limit_name_ = "stop";  // 未受信の既定は安全側(停止)
 

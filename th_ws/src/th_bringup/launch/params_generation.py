@@ -46,6 +46,11 @@ from typing import Any, Callable, Mapping, Sequence
 import yaml
 
 GENERATED_DIR = "/root/th_data/generated"
+# 校正の確定値（calib_runner の calib_store が書く）。BLIND の `blind_angle_ranges` は
+# registry（出荷値）より優先して生成物へ重ねる（Spec-checks.md §3.5・2026-10-01 ユーザー決定）。
+CALIB_DIR = "/root/th_data/calib"
+BLIND_OVERRIDE_NODES: tuple[str, ...] = ("lidar_filter", "obstacle_limiter",
+                                          "opcheck_runner", "calib_runner")
 
 # このパケット (WP-PARAM-02) の時点で実際に起動しており、かつ registry.yaml の
 # consumers 語彙と名前が一致するノードだけを挙げる。
@@ -238,6 +243,85 @@ def reshape_twist_mux(flat_params: Mapping[str, Any]) -> dict[str, Any]:
     return {"twist_mux": {"ros__parameters": structure}}
 
 
+def blind_override_flat(current_doc: Any, limits: Mapping[str, Any] | None = None
+                        ) -> tuple[list[float] | None, str]:
+    """calib の current.yaml（読み込み済み dict）から、確定済み BLIND の平坦配列を取り出す（純粋関数）。
+
+    戻り値 `(flat, warning)`。確定値が無ければ `(None, "")`（registry の出荷値のまま）。
+    上限（`blind_max_*`）を超える・形の崩れた確定値は**使わず**（`None`）、理由を warning で返す
+    （広すぎるマスクで障害物が見えなくなるより、出荷値に戻る方が安全）。
+    """
+    if not isinstance(current_doc, Mapping):
+        return None, ""
+    entry = (current_doc.get("items") or {}).get("BLIND")
+    if not isinstance(entry, Mapping):
+        return None, ""
+    values = entry.get("values")
+    flat = values.get("blind_angle_ranges") if isinstance(values, Mapping) else None
+    if not isinstance(flat, list) or not all(isinstance(x, (int, float)) for x in flat):
+        return None, "calib の BLIND が読めない形（blind_angle_ranges が数の配列でない）"
+    flat = [float(x) for x in flat]
+    from th_maintenance import blind_core
+
+    lim = limits or {}
+    sel = blind_core.check_limits(
+        blind_core.pairs_from_flat(flat),
+        max_sector_deg=float(lim.get("blind_max_sector_deg", blind_core.MAX_SECTOR_DEG)),
+        max_total_deg=float(lim.get("blind_max_total_deg", blind_core.MAX_TOTAL_DEG)),
+        max_sectors=int(lim.get("blind_max_sectors", blind_core.MAX_SECTORS)))
+    if len(flat) % 2 != 0:
+        return None, "calib の BLIND が奇数長"
+    if not sel.ok:
+        return None, f"calib の BLIND が上限違反（{sel.reason}）"
+    return flat, ""
+
+
+def apply_calib_blind_override(out_dir: str = GENERATED_DIR, calib_dir: str = CALIB_DIR) -> None:
+    """生成物の `blind_angle_ranges` を、確定済みの校正値で上書きする（起動時に 1 回）。
+
+    lidar_filter / obstacle_limiter / opcheck_runner / calib_runner の**すべて**へ同じ値を入れる
+    （地図用スキャンと安全判定で死角が食い違わないため）。空配列（マスクを全部外す校正）は
+    `sanitize_node_params` と同じくキーを消す（ノード側の既定が空配列）。
+    """
+    current_path = Path(calib_dir) / "current.yaml"
+    try:
+        if not current_path.exists():
+            return
+    except OSError:      # ホストの開発機では /root 配下に入れない。校正データ無しと同じ扱い
+        return
+    try:
+        with open(current_path, encoding="utf-8") as f:
+            doc = yaml.safe_load(f)
+    except (OSError, yaml.YAMLError) as e:
+        print(f"[params_generation] 警告: {current_path} が読めない。registry の死角マスクを使う: {e}",
+              file=sys.stderr)
+        return
+    limits: dict[str, Any] = {}
+    calib_yaml = Path(out_dir) / "calib_runner.yaml"
+    if calib_yaml.exists():
+        with open(calib_yaml, encoding="utf-8") as f:
+            limits = ((yaml.safe_load(f) or {}).get("calib_runner") or {}).get("ros__parameters") or {}
+    flat, warning = blind_override_flat(doc, limits)
+    if warning:
+        print(f"[params_generation] 警告: {warning}。registry の死角マスクを使う", file=sys.stderr)
+    if flat is None:
+        return
+    for node in BLIND_OVERRIDE_NODES:
+        path = Path(out_dir) / f"{node}.yaml"
+        if not path.exists():
+            continue
+        with open(path, encoding="utf-8") as f:
+            node_doc = yaml.safe_load(f) or {}
+        body = node_doc.setdefault(node, {}).setdefault("ros__parameters", {})
+        if flat:
+            body["blind_angle_ranges"] = flat
+        else:
+            body.pop("blind_angle_ranges", None)
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(node_doc, f, allow_unicode=True, sort_keys=True)
+    print(f"[params_generation] 校正済みの死角マスクを適用: {len(flat) // 2} 区間", file=sys.stderr)
+
+
 def _reshape_twist_mux_file(path: Path) -> None:
     if not path.exists():
         return
@@ -297,7 +381,8 @@ class GenerationError(RuntimeError):
 
 def run_generation(*, stage: int, sim: bool, nodes: Sequence[str] | None = REGISTRY_NODES,
                     out_dir: str = GENERATED_DIR, registry_path: str | None = None,
-                    env: Mapping[str, str] | None = None) -> None:
+                    env: Mapping[str, str] | None = None,
+                    calib_dir: str = CALIB_DIR) -> None:
     """registry.yaml から生成物を作る。
 
     FMEA①: 古い generated/ が残って使われることを防ぐため、書く前に必ず削除する。
@@ -346,6 +431,8 @@ def run_generation(*, stage: int, sim: bool, nodes: Sequence[str] | None = REGIS
         _sanitize_node_params_file(yaml_path)
 
     _reshape_twist_mux_file(out / "twist_mux.yaml")
+    # 校正で確定した死角マスクは registry の出荷値より優先（sanitize の後。空配列も正しく扱う）。
+    apply_calib_blind_override(out_dir, calib_dir)
 
 
 # ---------------------------------------------------------------------------
