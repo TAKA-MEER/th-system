@@ -651,7 +651,8 @@ UI 非常停止ボタンなど）は、通常どおり効く。項目は必要�
 | `link` | 疎通確認（ESP32・LiDAR・必須ノード）を合格扱いにする（INIT/CHECK → IDLE） | `connectivity_checker` |
 | `lidar_fault` | `LIDAR_LOST` を出さない（出ていれば解除する） | `safety_monitor` |
 | `scan_stop` | `/scan` 途絶でも **MANUAL** の手動走行を止めない。**障害物は見えない**（障害物による減速・停止は効かない）。速度上限は通常運用と同じ（前進は画面・モード由来、後退は `v_reverse`。2026-09-23 ユーザー決定: 開発モードだけ仕様を変えない）。**AUTO は止めたまま** | `obstacle_limiter` |
-| `battery` / `opcheck` / `auto_brake` | 止めるゲートが as-built に無く、選択の保持・配信のみ | — |
+| `opcheck` | 起動時の自動点検（[Spec-ops.md](Spec-ops.md) §2.6）の**警告を出さない**。始業点検はもともと運用を止めない（警告のみ。`C-r4`）ので、外れるのは表示だけ。始業点検画面（S-30）での人の点検は通常どおり行える（2026-10-01 ユーザー決定） | 起動時の自動点検を出すノード |
+| `battery` / `auto_brake` | 止めるゲートが as-built に無く、選択の保持・配信のみ | — |
 
 改定の理由: LiDAR が無い状態で手動走行させたい（開発時）。旧版は「自律系の障害物停止」を
 無視できないものとし、`dev_mode` を `safety_monitor` と `obstacle_limiter` に渡さないことで
