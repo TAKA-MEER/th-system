@@ -186,9 +186,9 @@ class TestCalibRunnerNode(unittest.TestCase):
 
     def _stopped_now(self):
         self._spin(0.5)
-        recent = self.cmds[-4:]
-        return bool(recent) and all(
-            abs(c.linear.x) < 1e-9 and abs(c.angular.z) < 1e-9 for c in recent)
+        # 最後の指令が 0（止めたあとは publish をやめるので、最後の 1 件を見る）
+        return bool(self.cmds) and abs(self.cmds[-1].linear.x) < 1e-9 \
+            and abs(self.cmds[-1].angular.z) < 1e-9
 
     def _start_running(self):
         self._set_state('CALIB', 'S1')

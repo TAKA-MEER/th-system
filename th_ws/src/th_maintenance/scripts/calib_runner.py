@@ -698,13 +698,13 @@ class CalibRunner(Node):
         response.success = bool(
             self._in_calib() and request.item == self._item
             and self._phase in (APPLYING, VERIFY_RUNNING, VERIFY_WAIT, VERIFIED))
-        response.item = request.item
+        response.message = self._phase if response.success else \
+            f"適用は進行していない（item={self._item} phase={self._phase}）"
         return response
 
     # ── /calib/rollback ──────────────────────────────────
     def _on_rollback(self, request, response):
         response.success = False
-        response.item = request.item
         if not self._in_calib() or self._state != "LIST" or self._phase != IDLE:
             self.get_logger().warn(
                 f"rollback を拒否（mode={self._mode} state={self._state} phase={self._phase}）")

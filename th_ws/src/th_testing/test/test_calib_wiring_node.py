@@ -291,8 +291,9 @@ class TestCalibWiring(unittest.TestCase):
 
     def _cmd_is_zero_now(self):
         self._spin(0.4)
-        recent = [c for c in self.cmds[-5:]]
-        return all(abs(c.linear.x) < 1e-9 and abs(c.angular.z) < 1e-9 for c in recent)
+        # 最後の指令が 0（止めたあとは publish をやめるので、最後の 1 件を見る）
+        last = self.cmds[-1]
+        return abs(last.linear.x) < 1e-9 and abs(last.angular.z) < 1e-9
 
     # ════════════════════════════════════════════════════════
     # 1. 直進の通し
@@ -437,8 +438,9 @@ class TestCalibWiring(unittest.TestCase):
         assert self._trigger('ui.calib_next').accepted
         self._wait(lambda: any(abs(c.linear.x) > 0.01 for c in self.cmds), what='走り出す')
         self.pub_hw.publish(Bool(data=True))
-        self._wait(lambda: self._state_is('ESTOP', 'NONE') or
-                   (self.state is not None and self.state.mode == 'ESTOP'), what='ESTOP')
+        # 物理ボタンの押下は ESTOP ではなく CARRY（手押し）へ落ちる。どちらでも CALIB を抜ける。
+        self._wait(lambda: self.state is not None and self.state.mode != 'CALIB',
+                   what='物理非常停止で CALIB を抜ける')
         assert self._cmd_is_zero_now(), '非常停止で /cmd_vel_behavior が 0 にならない'
         dist = self.sim.phys_dist
         self._spin(0.6)
