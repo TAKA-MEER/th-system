@@ -13,7 +13,7 @@
 
 ## 1. 今どこにいるか
 
-**最終同期: 2026-10-01**（`main` = `4338ad6` までのマージ・実機確認の記録と突き合わせた）。
+**最終同期: 2026-10-01**（`main` = `adddb97` までのマージ・実機確認の記録と突き合わせた）。
 更新のしかたは §2.3「計画書を都度更新する」。
 2026-09-20 以前の表は 2026-08-25 時点のまま「実装 未着手」と書かれており、事実と大きく食い違っていた。
 
@@ -407,7 +407,7 @@ bash scripts/run_tests.sh --all --sim  # 単体 ＋ 結合 ＋ シミュレー�
 | ~~0-A~~ | ~~**開発モードの土台**（ROS 側の正本・`dev_mode` 引数・機器未接続の無視）~~ | `WP-DEV-01` | **完了**（2026-09-20・`766cc59`）。`dev_mode:=true` で**機器ゼロから `IDLE` に到達できる**ことを Docker 実走で確認した。`dev_mode:=false` は従来どおり `INIT/CHECK` で止まる |
 | ~~0-B~~ | ~~**WebUI を `/system/dev_mode` に繋ぐ**~~ | `WP-DEV-01` | **完了**（2026-09-20・`1ab6b42`）。S-50 のトグルが `/connectivity_checker/set_parameters` を呼び、表示は `/system/dev_mode` の購読が正。unit ＋ e2e あり |
 | ~~0-C~~ | ~~**選択ログ記録**~~ | `WP-DEV-01` | **完了**（2026-09-20・`c974449`）。`connectivity_checker` が選ばれた対象（state / fault / cmd_vel）だけを `dev_log: ` の目印付きで ROS ログへ出す。開発モード OFF の間は何も記録しない |
-| 0-D | battery / opcheck / auto_brake の実ゲート | `WP-DEV-01` | **今は着手できない。**as-built に「運用開始を止めるゲート」がまだ無い。選択状態の保持・配信だけ先に入れてあり、S-50 には「選んでも今は何も起きません」と表示している。ゲートを作る段（`WP-MAINT-01` 等）で繋ぐ |
+| 0-D | battery / ~~opcheck~~ / auto_brake の実ゲート | `WP-DEV-01` | **`opcheck` は済み（2026-10-01・`adddb97`。配線済み・実機未確認）**。spec どおり始業点検は運用を止めない（警告のみ。`C-r4`）ので、ゲートではなく**起動時の自動点検（`opcheck_auto`）の警告**を作り、S-00・S-01 に出す。開発モードの `opcheck` はその警告を消す（2026-10-01 ユーザー決定。`Spec-safety.md` §10）。**`battery` / `auto_brake` は引き続き着手できない**（止めるゲートが as-built に無い）。**実機で見ること**: 起動直後に自動点検が「判定中」→ OK になる、非常停止を押したまま起動すると警告が出る |
 
 **使い方**: `ros2 launch th_bringup bringup.launch.py dev_mode:=true dev_ignore:=link`
 （2026-09-23 改定。項目の既定は全部 OFF。LiDAR 無しの手動走行は `dev_ignore:=link,lidar_fault,scan_stop`）。
