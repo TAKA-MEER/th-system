@@ -456,6 +456,19 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 8c2. opcheck_auto (起動時の自動点検。Spec-ops.md §2.6) ──
+    # INIT 中から常時起動し、総合ステータスを /opcheck/auto_status に出す。
+    # 駆動への出力は持たない（/cmd_vel_behavior に出さない）。
+    # パラメータは opcheck_runner と同じ値（同じ生成 yaml を読む。宣言側も
+    # 同値の PARS を持つため余分なキーで落ちない）。
+    nodes.append(Node(
+        package='th_maintenance',
+        executable='opcheck_auto.py',
+        name='opcheck_auto',
+        parameters=[os.path.join(GENERATED_DIR, 'opcheck_runner.yaml')],
+        output='screen',
+    ))
+
     # ── 8d. calib_runner (WP-MAINT-02) ────────────────────
     # 校正の実行部。/system/state を見て CALIB のときだけ動く（自律で走る・回る。
     # 出力は /cmd_vel_behavior のみ）。generated/calib_runner.yaml は registry.yaml の
