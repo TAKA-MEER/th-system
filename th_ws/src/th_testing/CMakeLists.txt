@@ -109,6 +109,14 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_opcheck_core
     test/test_opcheck_core.py
     TIMEOUT 60)
+  # 校正（CALIB）の計算・許容判定コアと履歴の永続化 (WP-MAINT-02。
+  # th_maintenance/calib_core.py・calib_store.py。ROS2 不要)
+  ament_add_pytest_test(test_calib_core
+    test/test_calib_core.py
+    TIMEOUT 60)
+  ament_add_pytest_test(test_calib_store
+    test/test_calib_store.py
+    TIMEOUT 60)
   # 自己位置源選択コア (WS-9D。EKF 出力 /odometry/filtered が新鮮ならそれ、
   # 古ければ生 /odom にフォールバック。ROS2 不要)
   ament_add_pytest_test(test_odom_source
@@ -343,6 +351,18 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_opcheck_runner_node
     test/test_opcheck_runner_node.py
     TIMEOUT 120)
+  # calib_runner ノードの振る舞い試験（WP-MAINT-02。FSM 無しで単体の安全を縛る:
+  # CALIB 以外は動かない・CALIB を抜けたら止まる・/system/state や /odom の途絶・
+  # 検証に合格していない値を確定しない・IMU）
+  ament_add_pytest_test(test_calib_runner_node
+    test/test_calib_runner_node.py
+    TIMEOUT 180)
+  # 校正を本番の経路で通す試験（WP-MAINT-02。state_manager と calib_runner を同時起動し、
+  # 代役の esp32_bridge と物理モデルで 直進→実測→プレビュー→適用→検証→確定・検証NGで戻る・
+  # A10・中断・フォルト/非常停止・ロールバックを通す）
+  ament_add_pytest_test(test_calib_wiring_node
+    test/test_calib_wiring_node.py
+    TIMEOUT 300)
   ament_add_pytest_test(connectivity_checker_node
     test/test_connectivity_checker_node.py
     TIMEOUT 120)

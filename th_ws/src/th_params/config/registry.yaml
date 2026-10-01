@@ -984,7 +984,7 @@
     **esp32_bridge が両方向に適用する**（WP-ESP32-02。2026-09-25 実装。th_esp32_bridge/th_esp32_bridge/wheel_scale_core.py・
     scripts/esp32_bridge.py）: 指令（PC→ESP32）は `/ k`、実測（ESP32→PC。/odom・/esp32/wheel_feedback へ使う前）は `× k`。
     起動時と実行中 `ros2 param set` の双方で A10（|wheel_radius_scale − 1| ≤ wheel_radius_scale_max_dev）を検査し、
-    違反なら起動を拒否／変更を拒否する。calib_runner（値の書き込み側）は別パケットで未配線のまま。
+    違反なら起動を拒否／変更を拒否する。値の書き込み側の calib_runner は WP-MAINT-02（th_maintenance/scripts/calib_runner.py）。校正が確定すると /root/th_data/calib/current.yaml に保存し、起動時に esp32_bridge へ反映する。
     参考値（実測。まだ status は上げない）: 巻き尺5.8m直進（前進のみ実測。後退は同じテープ間を使用）で
     前進0.981・後退0.989（odomが実距離より1〜2%ほど長い。ノイズの範囲に近く、補正が要るとは言い切れない。
     詳細 docs/実機作業キュー.md §4.0.2）"

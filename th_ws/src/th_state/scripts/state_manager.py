@@ -30,14 +30,15 @@ from builtin_interfaces.msg import Time as TimeMsg
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
-from th_system_msgs.msg import (ActiveScreen, FaultStatus, PersonTargets, PinList,
+from th_system_msgs.msg import (ActiveScreen, CalibStatus, FaultStatus, PersonTargets, PinList,
                                 RouteList, RouteStatus, StateEffect, StateEvent,
                                 SystemState)
 from th_system_msgs.srv import SetFlag, UiTrigger
 
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
-from th_state.state_core import BOOT_MODE, ESTOP_MODE, OPCHECK_MODE, Context, StateCore
+from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, OPCHECK_MODE, Context,
+                                  StateCore)
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
 from th_state.tracker_policy import (TRACKER_OFF_DENIED_REASON,
@@ -189,6 +190,11 @@ class StateManager(Node):
         # ctx.check_result は前回値を引きずらないよう _build_context() が
         # evt.check_result のその場の引数からだけ組み立てる（持ち越さない）。
         self._check_item = ""
+        # WP-MAINT-02: CALIB で実行中の項目名（ui.calib_item の受理でラッチ。LIST に戻る・
+        # CALIB を抜けたら空）と、S3 のプレビューが sane か（calib_runner が /calib/status に
+        # 載せる result=="PREVIEW_OK"。T-CAL-04 のガード preview_sane が読む。S3 以外では偽）。
+        self._calib_item = ""
+        self._calib_preview_sane = False
 
         now = self._now_ms()
         self._boot_ms = now
@@ -261,6 +267,12 @@ class StateManager(Node):
                               history=QoSHistoryPolicy.KEEP_LAST)
         self.create_subscription(PinList, '/onsite/pins', self._on_onsite_pins, pins_qos)
 
+        # WP-MAINT-02: calib_runner の /calib/status（reliable depth 5。publisher と同じ）。
+        # S3 のプレビューが sane かどうかを T-CAL-04 のガードへ渡すために読む。
+        calib_qos = QoSProfile(depth=5, reliability=QoSReliabilityPolicy.RELIABLE,
+                               history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(CalibStatus, '/calib/status', self._on_calib_status, calib_qos)
+
         event_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
         self.create_subscription(StateEvent, '/system/event', self._on_event, event_qos)
 
@@ -331,8 +343,8 @@ class StateManager(Node):
             camera_present=False,
             check_item=self._check_item,
             check_result=check_result,
-            calib_item="",
-            calib_preview_sane=False,
+            calib_item=self._calib_item,
+            calib_preview_sane=self._calib_preview_sane,
             map_update_available=False,
             now_ms=self._now_ms(),
             estop_from_ui=self._estop_from_ui,
@@ -344,6 +356,12 @@ class StateManager(Node):
         # N-2: リース時刻は accepted の採否と無関係に更新する（§5・パケット§4.2の例示コード）。
         if event == "ui.jog.hold":
             self._last_jog_ms = self._now_ms()
+
+        # WP-MAINT-02: CALIB の遷移は effect 引数に `$arg.item` を使う（T-CAL-02〜09）。
+        # ui.calib_next / ui.abort / 各 evt.* の送り手が item を付け忘れても、ラッチ済みの
+        # 実行中項目で補う（付いていれば送り手の値を優先）。
+        if self.mode == CALIB_MODE and self._calib_item and not (arg or {}).get('item'):
+            arg = dict(arg or {}, item=self._calib_item)
 
         ctx = self._build_context(event, arg)
         decision = self.core.step(self.mode, self.state, event, ctx)
@@ -372,6 +390,16 @@ class StateManager(Node):
             self._check_item = str((arg or {}).get('item') or '')
         if self.mode != OPCHECK_MODE or self.state == "LIST":
             self._check_item = ""
+
+        # WP-MAINT-02: calib_item のラッチ（check_item と同じ作法）。T-CAL-01 の受理で
+        # 項目名を持ち越し、LIST に戻る／CALIB を抜けたら空に戻す。プレビューの sane は
+        # S3 にいる間だけ有効（S3 を出たら偽に戻す。次の S3 で calib_runner が出し直す）。
+        if event == "ui.calib_item" and decision.accepted:
+            self._calib_item = str((arg or {}).get('item') or '')
+        if self.mode != CALIB_MODE or self.state == "LIST":
+            self._calib_item = ""
+        if self.mode != CALIB_MODE or self.state != "S3":
+            self._calib_preview_sane = False
 
         # brief-tracker-default-off §3.1: 「動かさない」モードへ遷移したら
         # tracker_enabled を自動で false に落とす（ESTOP / CARRY は対象外。
@@ -500,6 +528,13 @@ class StateManager(Node):
             last_input_ms=_stamp_to_ms(msg.last_input),
             last_seen_ms=now)
         self._last_screen_msg_ms = now
+
+    def _on_calib_status(self, msg):
+        # 実行中の項目と一致する PREVIEW_OK だけを sane とみなす（古い項目の状態を持ち込まない）。
+        # S3 以外でのラッチは _process() が毎回落とす。
+        self._calib_preview_sane = bool(
+            msg.result == "PREVIEW_OK" and msg.item and msg.item == self._calib_item
+            and self.mode == CALIB_MODE and self.state == "S3")
 
     def _on_routes_list(self, msg):
         self._route_ids = [r.id for r in msg.routes]
