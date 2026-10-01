@@ -149,7 +149,7 @@ def is_suppressed(dev_mode_raw: str | None, now_ms: float,
     """
     if dev_mode_raw is None or recv_ms is None:
         return False
-    if (now_ms - recv_ms) > DEV_MODE_STALE_MS:
+    if (now_ms - recv_ms) >= DEV_MODE_STALE_MS:
         return False
     try:
         obj = json.loads(dev_mode_raw)

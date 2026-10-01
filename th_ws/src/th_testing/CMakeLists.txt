@@ -109,6 +109,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_opcheck_core
     test/test_opcheck_core.py
     TIMEOUT 60)
+  # 起動時の自動点検の判定コア (Spec-ops.md §2.6。th_maintenance/auto_check_core.py。
+  # ESTOP/IMU/LIDAR の自動判定・総合・開発モードの抑制判定の純粋関数。ROS2 不要)
+  ament_add_pytest_test(test_auto_check_core
+    test/test_auto_check_core.py
+    TIMEOUT 60)
   # 校正（CALIB）の計算・許容判定コアと履歴の永続化 (WP-MAINT-02。
   # th_maintenance/calib_core.py・calib_store.py。ROS2 不要)
   ament_add_pytest_test(test_calib_core
@@ -356,6 +361,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_opcheck_runner_node
     test/test_opcheck_runner_node.py
     TIMEOUT 120)
+  # opcheck_auto ノードの振る舞い試験（起動時の自動点検。ノードを実際に起動し、
+  # 正常時 OK・/scan 未受信 NG・IMU 未受信 NG・押下 NG・開発モードの抑制と
+  # 鮮度・/cmd_vel_behavior に非ゼロが出ないことを確かめる）
+  ament_add_pytest_test(test_opcheck_auto_node
+    test/test_opcheck_auto_node.py
+    TIMEOUT 180)
   # calib_runner ノードの振る舞い試験（WP-MAINT-02。FSM 無しで単体の安全を縛る:
   # CALIB 以外は動かない・CALIB を抜けたら止まる・/system/state や /odom の途絶・
   # 検証に合格していない値を確定しない・IMU）
