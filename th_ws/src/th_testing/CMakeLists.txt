@@ -464,9 +464,17 @@ if(BUILD_TESTING)
   ament_add_pytest_test(fault_injection_06
     test/fault_injection/case_06_fault_to_stop.py
     TIMEOUT 300)
+  # 07 は Gazebo を立てず `state_manager` / `pin_registrar` /
+  # `wait_clear_gate` / `jog_gate` を launch_testing で直接起こすだけなので
+  # 起動コストは数秒。積算は 退避待ちの観測窓（`clear_timeout_ms` の
+  # launch 上書き 6000ms ＋ 余裕 3 秒 ≒ 9 秒）＋ ジョグ遮断/陽性対照 各 10 秒
+  # ＋ 退避の陽性対照（`clear_hold_ms` 1500ms 待ち）≒ 10 秒 ＋ 各 test の
+  # 手順 1〜4（サービス待ちと遷移待ち 各 5 秒上限）≒ 40 秒 ＋ teardown
+  # （rclpy.shutdown と launch_testing の SIGTERM 猶予 最大30秒）を見込み、
+  # 環境負荷のばらつき分を加えた 240 秒とした（01/02/03 と同じ枠）。
   ament_add_pytest_test(fault_injection_07
     test/fault_injection/case_07_summon_retreat_wait.py
-    TIMEOUT 60)
+    TIMEOUT 240)
   ament_add_pytest_test(fault_injection_08
     test/fault_injection/case_08_esp32_watchdog.py
     TIMEOUT 60)
