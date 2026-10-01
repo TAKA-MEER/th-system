@@ -130,13 +130,21 @@ class VenueNavigator(Node):
         # 既存の ALIGN 状態を使うのでこのフラグの対象外。
         self._final_aligning = False
         self._follow_goal_handle = None
-        self._cancel_requested = False   # 自分が cancel したかを区別する
+        # 自分が cancel した goal かを「通番の集合」で区別する。bool 1 個では
+        # 取り消し結果の到着前に次の送信が走ると印を消してしまい、古い結果を
+        # 他人分と誤判定する（再開直後の resume 送信が pause 取り消しの印を
+        # 消して偽の evt.blocked → BLOCKED → 再探索の往復。2026-10-01 実測）。
+        # 通番は単調増加で使い回さないため、古い印が未来の結果を誤って抑える
+        # ことはない。印は対応する結果の到着で消費する。
+        self._follow_seq = 0
+        self._handle_seq = None
+        self._cancel_seqs = set()
         # 不具合 A 対策 (2026-10-01): send_goal_async → accept 判明の窓では
-        # handle が None のため cancel が空振りし、受け付け後に走行が続く。
+        # handle が無いため cancel が空振りし、受け付け後に走行が続く。
         # 送出中かを _follow_send_in_flight で表し、窓の中で取り消しを求め
         # られたことを _cancel_before_accept に記録して、accept 時点で即座に
-        # cancel する（その結果は _cancel_requested で抑えて evt.blocked を
-        # 出さない）。compute 中の取り消しは対象外（送出自体がまだ無い）。
+        # cancel する（その結果は _cancel_seqs に積んで evt.blocked を出さ
+        # ない）。compute 中の取り消しは対象外（送出自体がまだ無い）。
         self._follow_send_in_flight = False
         self._cancel_before_accept = False
         self._blocked = False            # BLOCKED 相当の内部状態
@@ -339,19 +347,33 @@ class VenueNavigator(Node):
 
     def _reset_for_exit(self):
         """モード離脱時に FollowPath を cancel し内部状態をリセット。"""
+        # 不具合 B 対策 (2026-10-01): 取り消しの結果 (CANCELED) が届く前に
+        # 印を消すと「他人に取り消された」と誤判定し、偽の evt.blocked と
+        # _blocked 残留を招く（次 NAV の即時起動が抑止され再探索経由の遠回り
+        # になる）。結果待ちの印は残し、対応する結果の到着で消費する。
+        # 送出中（handle 未確定）の離脱は _cancel_before_accept に記録し、
+        # accept 時に late-cancel する（ESTOP 等は venue へ effect を送らない
+        # ため、この経路だけが頼り。2026-10-01 指摘）。
         if self._follow_goal_handle is not None:
-            self._cancel_requested = True
+            if self._handle_seq is not None:
+                self._cancel_seqs.add(self._handle_seq)
             try:
                 self._follow_goal_handle.cancel_goal_async()
             except Exception:
                 pass
             self._follow_goal_handle = None
+            self._handle_seq = None
+        elif self._follow_send_in_flight:
+            self._cancel_before_accept = True
         self._path = None
         self._arrived_latched = False
         self._align_latched = False
         self._final_aligning = False
         self._blocked = False
-        self._cancel_requested = False
+        # _cancel_seqs は残す（結果待ちの取り消し。不具合 B 対策）。
+        # _cancel_before_accept も残す（accept 時の late-cancel に使う）。
+        # 下りる経路: _follow_result_done の消費／_follow_goal_done の不受理／
+        # stale-escape。いずれも対応する結果か送信に紐づく。
         self._nav_chain_active = False
         self._recheck_in_flight = False
         self._clear_deadline = 0.0
@@ -370,12 +392,14 @@ class VenueNavigator(Node):
 
     def _cancel_follow_path(self):
         if self._follow_goal_handle is not None:
-            self._cancel_requested = True
+            if self._handle_seq is not None:
+                self._cancel_seqs.add(self._handle_seq)
             try:
                 self._follow_goal_handle.cancel_goal_async()
             except Exception:
                 pass
             self._follow_goal_handle = None
+            self._handle_seq = None
         elif self._follow_send_in_flight:
             # 不具合 A (2026-10-01): 送信～accept の窓では handle が無く
             # cancel が空振りする。要求があったことだけ記録し、accept 時に
@@ -522,7 +546,8 @@ class VenueNavigator(Node):
         req = FollowPath.Goal()
         req.path = path
         req.controller_id = 'FollowPath'
-        self._cancel_requested = False
+        # _cancel_seqs はここで消さない。古い取り消しの結果は自分の通番で
+        # 消費する（bool 時代はここで消して偽 blocked を出していた）。
         # SM-3.1.2-056「同じ経路の続きから。再検索はしない」:
         # resume_follow_path の effect は /system/state(NAV) より先に届く
         # （state_manager が effect→state の順に publish する）ため、follow の
@@ -533,12 +558,19 @@ class VenueNavigator(Node):
         # 抑えるので印は下ろす（_follow_goal_done）。
         self._nav_chain_active = True
         self._nav_chain_started_at = self._now()
+        # 送出中の印は send_goal_async の『前』に立てる。後に立てると、
+        # MultiThreadedExecutor で done コールバックが先に走ったときに
+        # 印だけ True のまま残り、次の正常な送信を late-cancel で殺す
+        # （2026-10-01 指摘）。
+        self._follow_send_in_flight = True
+        self._follow_seq += 1
+        seq = self._follow_seq
         send_future = self._follow_client.send_goal_async(
             req, feedback_callback=None)
-        self._follow_send_in_flight = True
-        send_future.add_done_callback(self._follow_goal_done)
+        send_future.add_done_callback(
+            lambda fut: self._follow_goal_done(fut, seq))
 
-    def _follow_goal_done(self, future):
+    def _follow_goal_done(self, future, seq):
         self._follow_send_in_flight = False
         goal_handle = future.result()
         if goal_handle is None or not goal_handle.accepted:
@@ -547,6 +579,7 @@ class VenueNavigator(Node):
             self._go_blocked(json.dumps({'reason': 'follow_not_accepted'}))
             return
         self._follow_goal_handle = goal_handle
+        self._handle_seq = seq
         # _send_follow_path で立てた「送出中」の印を下ろす。以降の NAV 入口は
         # handle が抑える。立てたままにすると長時間の follow 中に 10 秒の
         # stale-escape（_blocked_recheck 冒頭）が誤って発火する。
@@ -554,18 +587,20 @@ class VenueNavigator(Node):
         if self._cancel_before_accept:
             # 不具合 A (2026-10-01): 窓の中で取り消しを求められていた。
             # 受け付けた端から取り消す。結果 (CANCELED) は自分由来なので
-            # _cancel_requested を立てて evt.blocked を出さない。
+            # 通番を積んで evt.blocked を出さない。
             self._cancel_before_accept = False
-            self._cancel_requested = True
+            self._cancel_seqs.add(seq)
             try:
                 goal_handle.cancel_goal_async()
             except Exception:
                 pass
         result_future = goal_handle.get_result_async()
-        result_future.add_done_callback(self._follow_result_done)
+        result_future.add_done_callback(
+            lambda fut: self._follow_result_done(fut, seq))
 
-    def _follow_result_done(self, future):
+    def _follow_result_done(self, future, seq):
         self._follow_goal_handle = None
+        self._handle_seq = None
         self._nav_chain_active = False
         # 到着判定は完了コールバックとロボット位置の両方で行う。
         status = None
@@ -573,8 +608,8 @@ class VenueNavigator(Node):
             status = future.result().status
         except Exception:
             pass
-        if self._cancel_requested:
-            self._cancel_requested = False
+        if seq in self._cancel_seqs:
+            self._cancel_seqs.discard(seq)
             return  # 自分で cancel したので evt を出さない
         # result SUCCEEDED → arrived
         if status == 4:  # GoalStatus.STATUS_SUCCEEDED
@@ -607,12 +642,14 @@ class VenueNavigator(Node):
         self._nav_chain_active = False
         self._clear_deadline = 0.0
         if self._follow_goal_handle is not None:
-            self._cancel_requested = True
+            if self._handle_seq is not None:
+                self._cancel_seqs.add(self._handle_seq)
             try:
                 self._follow_goal_handle.cancel_goal_async()
             except Exception:
                 pass
             self._follow_goal_handle = None
+            self._handle_seq = None
         self._emit_event('evt.arrived')
 
     def _needs_final_align(self, mode=None):
@@ -635,12 +672,14 @@ class VenueNavigator(Node):
         self._final_aligning = True
         self._align_latched = False
         if self._follow_goal_handle is not None:
-            self._cancel_requested = True
+            if self._handle_seq is not None:
+                self._cancel_seqs.add(self._handle_seq)
             try:
                 self._follow_goal_handle.cancel_goal_async()
             except Exception:
                 pass
             self._follow_goal_handle = None
+            self._handle_seq = None
         self.get_logger().info('到着（xy tol 内）→ 向きを合わせてから evt.arrived')
 
     def _run_final_align(self):
