@@ -35,7 +35,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **正本は [docs/plan/ImplementationPlan.md](docs/plan/ImplementationPlan.md) §2。着手前に読む。**
 ここには要点だけ書く。
 
-- **「実装して」と言われたら自分でコードを書かない。****opencode** にブリーフを渡して投げる
+- **「実装して」と言われたら自分でコードを書かない。**ブリーフを **opencode** に渡して投げる
   （手順・落とし穴は ImplementationPlan §2.1）。体数は固定しない。
   **窓口は herdr と orca の 2 つ**（2026-10-01 から乗り換えを検討中）。**いま開いている方を環境変数で見分けて使う**:
   `TERM_PROGRAM=Orca`／`ORCA_TERMINAL_HANDLE` があれば orca（`orca worktree create --setup skip --agent opencode`）、
