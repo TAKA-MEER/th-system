@@ -216,10 +216,23 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         self.compute_count = 0
         self.follow_goals: list[list[tuple[float, float]]] = []  # 経路xy列
         self.follow_cancel_count = 0
+        self.follow_open = 0  # 実行中のゴール数（accept 済・未 return）
         # 代役の振る舞い切替
         self.compute_mode = 'success'  # 'success' | 'fail'(空経路)
         self.follow_mode = 'run'       # 'run'(cancelまで保持) | 'abort'
         self.follow_abort_delay_s = 0.5
+        # `FollowPath` の accept 遅延（既定 0＝即時）。#3 の試験だけ 0.3s に
+        # 上書きする。本物の Nav2 の accept は行動サーバの executor 経由で
+        # 即時ではなく、負荷で数百 ms 遅れる。`resume_follow_path` effect は
+        # `/system/state(NAV)` より先に届くため、accept が遅いと「再送したのに
+        # handle がまだ無い」窓が確実に開き、`_on_state` の NAV 入口が
+        # `_start_nav()` を二重に呼ぶ不具合（SM-3.1.2-056 違反）を確定的に踏む。
+        # accept が速いと窓が閉じてしまい、不具合があっても緑になる弱い試験に
+        # なる。常時遅延にしないのは、accept 待ちのゴールに cancel が届かない
+        # （handle 未確定のため venue が cancel を送れない）まま片付けると
+        # accept 完了時に stale な handle が残り、次の試験の NAV 入口を抑止
+        # してしまうため。遅延は #3 の再開窓だけに限定する。
+        self.follow_accept_delay_s = 0.0
 
         cbg = ReentrantCallbackGroup()
         self.node.create_subscription(
@@ -247,7 +260,7 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         self._follow_server = ActionServer(
             self.node, FollowPath, 'follow_path',
             execute_callback=self._exec_follow,
-            goal_callback=lambda _req: GoalResponse.ACCEPT,
+            goal_callback=self._on_follow_goal,
             cancel_callback=self._on_follow_cancel,
             callback_group=cbg)
         self.node.create_service(
@@ -321,6 +334,10 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         goal_handle.succeed()
         return ComputePathToPose.Result(path=path)
 
+    def _on_follow_goal(self, _goal_req):
+        time.sleep(self.follow_accept_delay_s)
+        return GoalResponse.ACCEPT
+
     def _on_follow_cancel(self, _cancel_req):
         with self._lock:
             self.follow_cancel_count += 1
@@ -331,6 +348,14 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
             self.follow_goals.append(
                 [(float(p.pose.position.x), float(p.pose.position.y))
                  for p in goal_handle.request.path.poses])
+            self.follow_open += 1
+        try:
+            return self._exec_follow_body(goal_handle)
+        finally:
+            with self._lock:
+                self.follow_open -= 1
+
+    def _exec_follow_body(self, goal_handle):
         if self.follow_mode == 'run':
             deadline = time.monotonic() + 60.0
             while time.monotonic() < deadline:
@@ -460,7 +485,15 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
     def _reset_to_home(self):
         """PANEL_NAV 系に居れば `ui.abort` で AT_HOME に戻す。
         INIT/IDLE なら `evt.link_ok` で IDLE にする。既に AT_HOME/IDLE なら何もしない。
-        戻り値: (mode, state)。"""
+        戻り値: (mode, state)。
+
+        `ui.abort` 後は cancel の到達も待つ。`/system/effect` と `/system/state`
+        は別トピックで順序保証が無いため、AT_HOME の state だけ見て次に入ると
+        venue 側の `cancel_follow_path` が未処理で古い `_follow_goal_handle` が
+        残り、次の NAV 入口で `_start_nav()` が抑止されて compute が呼ばれない
+        （何も起きないままになる）。代役が cancel を受けた＝effect が処理された
+        証拠になる。送出済みゴールが無ければ待たない。
+        """
         ms = self._mode_state()
         if ms is None:
             self._sleep(0.5)
@@ -471,9 +504,20 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
                 self.fail(f'evt.link_ok 後に IDLE にならない ({self._mode_state()})')
             return ('IDLE', 'NONE')
         if ms[0] in ('PANEL_NAV', 'SUMMON', 'HOME_NAV'):
+            with self._lock:
+                c0 = self.follow_cancel_count
+                live = self.follow_open > 0
             self._call_trigger('ui.abort')
             if not self._wait_mode_state('AT_HOME', 'IDLE_H', timeout=5.0):
                 self.fail(f'ui.abort 後に AT_HOME にならない ({self._mode_state()})')
+            if live and not self._wait_count(
+                    self._n_cancel, c0 + 1, timeout=5.0):
+                self.fail('ui.abort の cancel が代役に届かない。'
+                          'venue が cancel_follow_path を処理していない。')
+            # accept 応答の飛行中（最大 follow_accept_delay_s）＋ effect/state の
+            # 到着順不定の猶予。ここを待たず次に入ると venue 側に handle だけが
+            # 残り、次の NAV 入口の _start_nav が抑止される。
+            self._sleep(self.follow_accept_delay_s + 0.3)
             return ('AT_HOME', 'IDLE_H')
         return ms
 
@@ -547,6 +591,86 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         # 後片付け（保持中の FollowPath ゴールを cancel して終わる。
         # 置いたまま tearDown すると代役 ActionServer の execute が
         # 終了時エラーを吐く）
+        self._reset_to_home()
+        self._mark_passed(f'(compute_total={self._n_compute()})')
+
+    # ═══════════════════════════════════════════════════════════════════
+    # #3: PAUSE → 再開で再プランが走らない（SM-3.1.2-056「同じ経路の続きから。
+    # 再検索はしない」）
+    # ═══════════════════════════════════════════════════════════════════
+    def test_pause_resume_does_not_replan(self):
+        """`DetailedDesign-onsite.md` §9 #3。
+
+        `ui.stop`（PAUSE）→ `ui.run`（NAV）で `resume_follow_path` がキャッシュ
+        経路を再送するため、`ComputePathToPose` は増えず、2 件目の `FollowPath`
+        ゴールは 1 件目と同一経路。
+        """
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.follow_accept_delay_s = 0.3
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+
+        self._enter_nav()
+        if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=10.0):
+            self.fail(f'NAV に入らない ({self._mode_state()})')
+        self.assertTrue(
+            self._wait_count(self._n_compute, 1, timeout=10.0),
+            'NAV に入ったのに compute が 1 回も呼ばれない。')
+        self.assertTrue(
+            self._wait_count(self._n_follow, 1, timeout=10.0),
+            'compute したのに FollowPath にゴールが届かない。')
+        with self._lock:
+            path_a = list(self.follow_goals[0])
+        self.assertTrue(path_a, '1 件目の経路が空。代役が壊れている。')
+        self.assertEqual(
+            self._n_compute(), 1,
+            f'NAV 突入時点の compute が 1 回でない ({self._n_compute()})。')
+
+        # ── 一時停止: FollowPath が cancel される ──
+        self._call_trigger('ui.stop')
+        if not self._wait_mode_state('PANEL_NAV', 'PAUSE', timeout=5.0):
+            self.fail(f'PAUSE に入らない ({self._mode_state()})')
+        self.assertTrue(
+            self._wait_count(self._n_cancel, 1, timeout=5.0),
+            'ui.stop したのに代役 FollowPath に cancel が届かない。'
+            'cancel_follow_path effect が効いていない。')
+        self.assertEqual(
+            self._n_compute(), 1,
+            f'PAUSE で compute が増えた ({self._n_compute()})。'
+            'cancel 時に再計算が走っている。')
+
+        # ── 再開: キャッシュ再送のみ。compute は増えない・経路は同一 ──
+        self._call_trigger('ui.run')
+        if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=5.0):
+            self.fail(f'再開後に NAV に戻らない ({self._mode_state()})')
+        self.assertTrue(
+            self._wait_count(self._n_follow, 2, timeout=10.0),
+            '再開後に FollowPath に 2 件目のゴールが届かない。'
+            'resume_follow_path effect が効いていない。')
+        with self._lock:
+            path_b = list(self.follow_goals[1])
+        self.assertEqual(
+            len(path_b), len(path_a),
+            f'再送経路の点数が変わった ({len(path_a)} → {len(path_b)})。')
+        for i, (pa, pb) in enumerate(zip(path_a, path_b)):
+            self.assertAlmostEqual(
+                pa[0], pb[0], places=9,
+                msg=f'再送経路の {i} 点目の x が変わった ({pa} → {pb})。')
+            self.assertAlmostEqual(
+                pa[1], pb[1], places=9,
+                msg=f'再送経路の {i} 点目の y が変わった ({pa} → {pb})。')
+        # 再送後にしばらく待っても compute が増えない（再プラン禁止の核心）。
+        self._sleep(3.0)
+        self.assertEqual(
+            self._n_compute(), 1,
+            f'再開後に compute が増えた (1 → {self._n_compute()})。'
+            'SM-3.1.2-056「再検索はしない」に反する再プランが走っている。')
+
+        # 後片付け
         self._reset_to_home()
         self._mark_passed(f'(compute_total={self._n_compute()})')
 
