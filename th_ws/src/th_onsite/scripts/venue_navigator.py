@@ -510,6 +510,16 @@ class VenueNavigator(Node):
         req.path = path
         req.controller_id = 'FollowPath'
         self._cancel_requested = False
+        # SM-3.1.2-056「同じ経路の続きから。再検索はしない」:
+        # resume_follow_path の effect は /system/state(NAV) より先に届く
+        # （state_manager が effect→state の順に publish する）ため、follow の
+        # accept 往復が終わる前に _on_state(NAV) が走る。その時点で handle は
+        # まだ None なので、印が無いと _start_nav() が二重に走って compute が
+        # 2 回目になる（再開なのに再検索）。送出時点で _nav_chain_active を
+        # 立てて「送出中」を表し、二重起動を抑える。accept 完了後は handle が
+        # 抑えるので印は下ろす（_follow_goal_done）。
+        self._nav_chain_active = True
+        self._nav_chain_started_at = self._now()
         send_future = self._follow_client.send_goal_async(
             req, feedback_callback=None)
         send_future.add_done_callback(self._follow_goal_done)
@@ -521,6 +531,10 @@ class VenueNavigator(Node):
             self._go_blocked(json.dumps({'reason': 'follow_not_accepted'}))
             return
         self._follow_goal_handle = goal_handle
+        # _send_follow_path で立てた「送出中」の印を下ろす。以降の NAV 入口は
+        # handle が抑える。立てたままにすると長時間の follow 中に 10 秒の
+        # stale-escape（_blocked_recheck 冒頭）が誤って発火する。
+        self._nav_chain_active = False
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self._follow_result_done)
 
