@@ -54,6 +54,9 @@ export const TOPICS = {
   // 型は同じ th_system_msgs/WheelFeedback を esp32_bridge が両方向に使い回す。
   WHEEL_FEEDBACK: '/esp32/wheel_feedback',
   WHEEL_CMD_SPEED: '/esp32/wheel_cmd_speed',
+  // WP-UI-08 / WP-MAINT-03: S-40 校正。calib_runner が発行する進行状況（CalibStatus。
+  // reliable depth5。detail は JSON 文字列）。names.json の endpoints にある。
+  CALIB_STATUS: '/calib/status',
 }
 
 export const SERVICES = {
@@ -86,6 +89,13 @@ export const SERVICES = {
   // (RunCheck) は使わない。それを呼ぶと FSM を経由せず RUNNING_CHECK に遷移
   // しないまま opcheck_runner だけが項目を開始し、画面と FSM の状態がずれる。
   OPCHECK_ANSWER: '/opcheck/answer',
+  // WP-MAINT-03: S-40 校正。項目の選択・次へ・中断は /system/trigger（ui.calib_item /
+  // ui.calib_next / ui.abort）で行い、ここの 3 つは FSM を経由しない直接サービス。
+  // 実測値の入力（SubmitCalib）・再走行（StartCalib）・履歴のロールバック（RollbackCalib）。
+  // /calib/apply は使わない（適用は FSM の ui.calib_next → apply_and_verify が進める）。
+  CALIB_SUBMIT: '/calib/submit',
+  CALIB_START: '/calib/start',
+  CALIB_ROLLBACK: '/calib/rollback',
 }
 
 export const MSG_TYPES = {
@@ -123,6 +133,8 @@ export const MSG_TYPES = {
   // WheelFeedback は WP-UI-08 の項目2（モーター確認）で指令/実測の両方に使う
   // （esp32_bridge が同型を両方向で使い回す。DetailedDesign-webui.md §3）。
   WHEEL_FEEDBACK: 'th_system_msgs/WheelFeedback',
+  // WP-MAINT-03: S-40。校正の進行状況。
+  CALIB_STATUS: 'th_system_msgs/CalibStatus',
 }
 
 export const SRV_TYPES = {
@@ -146,4 +158,8 @@ export const SRV_TYPES = {
   ONSITE_RESOLVE_PIN: 'th_system_msgs/ResolvePin',
   // WP-UI-08: S-30 の ESTOP 項目の目視確認回答。
   OPCHECK_ANSWER: 'th_system_msgs/AnswerCheck',
+  // WP-MAINT-03: S-40 の直接サービス 3 つ。
+  CALIB_SUBMIT: 'th_system_msgs/SubmitCalib',
+  CALIB_START: 'th_system_msgs/StartCalib',
+  CALIB_ROLLBACK: 'th_system_msgs/RollbackCalib',
 }

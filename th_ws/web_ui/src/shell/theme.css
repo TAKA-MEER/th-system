@@ -758,3 +758,19 @@ table.lst td.r{text-align:right}
 .wsv-swatch-dash{width:14px;height:0;background:none;border-top:2px dashed}
 .wsv-tooltip{font-size:calc(var(--fs) * .8);color:var(--mut);text-align:center;
   font-variant-numeric:tabular-nums}
+
+/* ---------- S-40 校正（WP-MAINT-03。screens/S40Calib.jsx） ---------- */
+.s40-row{display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--bd)}
+.s40-row:last-child{border-bottom:none}
+.s40-row.running{background:#1f2634}
+.s40-row-main{flex:1 1 auto;display:flex;flex-direction:column;gap:2px;min-width:0}
+.s40-row-label{font-weight:700}
+.s40-warn{color:var(--warn-tx);font-size:calc(var(--fs) * .84)}
+.s40-step-title{font-weight:700;margin:0 0 6px}
+.s40-bar{height:12px;border-radius:999px;overflow:hidden;background:var(--inset);
+  border:1px solid var(--bd-hi);min-width:80px;margin:8px 0}
+.s40-bar i{display:block;height:100%;border-radius:999px;background:var(--ok-tx)}
+.s40-input{display:block;width:100%;min-height:44px;font-size:calc(var(--fs) * 1.1);margin-top:4px}
+.s40-preview{margin:10px 0;padding:8px;border:1px solid var(--bd);border-radius:var(--r)}
+.s40-imu-parts{list-style:none;margin:0;padding:0}
+.s40-hist{margin-bottom:10px}

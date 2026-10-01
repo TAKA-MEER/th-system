@@ -14,6 +14,7 @@ import S20Prep from './screens/S20Prep.jsx'
 import S21Test from './screens/S21Test.jsx'
 import S30Opcheck from './screens/S30Opcheck.jsx'
 import S31Repair from './screens/S31Repair.jsx'
+import S40Calib from './screens/S40Calib.jsx'
 import S50Settings from './screens/S50Settings.jsx'
 import DriveTab from './screens/driveTab.jsx'
 import { useJogPanel } from './shell/jogPanel.js'
@@ -163,6 +164,13 @@ function Screens() {
     return (
       <AppShell screenName={SCREEN_NAMES.S31} screenId={SCREEN_IDS.S31}>
         <S31Repair />
+      </AppShell>
+    )
+  }
+  if (screen === 'S40') {
+    return (
+      <AppShell screenName={SCREEN_NAMES.S40} screenId={SCREEN_IDS.S40}>
+        <S40Calib />
       </AppShell>
     )
   }
