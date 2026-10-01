@@ -247,15 +247,23 @@ def corrected_wheel_radius(nominal_r: float, commanded_m: float, measured_m: flo
     return nominal_r * (measured_m / commanded_m)
 
 def corrected_wheel_base(current_base: float, commanded_deg: float, measured_deg: float) -> float:
-    """回りすぎたら車輪間距離が過小。"""
-    return current_base * (measured_deg / commanded_deg)
+    """回りすぎたら車輪間距離が過大。"""
+    return current_base * (commanded_deg / measured_deg)
 
 def sanity(value: float, lo: float, hi: float) -> bool:
     """ゼロ割れ・桁違いを弾く。Step 3 のプレビュー前に必ず通す。"""
     return math.isfinite(value) and lo <= value <= hi
 ```
 
-**`sanity()` を通らない値は Step 3 へ進めない**（`T-CAL-04` のガード `preview_sane`）。
+**旋回の式は 2026-10-01 に訂正した**（旧版は `measured / commanded` で逆数だった。実装 `calib_core.py` が正）。
+旋回は**オドメトリ角が指令角に達したら止める**ので、オドメトリ角 ＝ 弧長差 ／ `wheel_base`（パラメータ）、
+実際の角 ＝ 弧長差 ／ 実際の車輪間距離。よって `measured / commanded ＝ wheel_base / 実際の値` となり、
+正しい補正は `wheel_base × commanded / measured`。回りすぎた（measured > commanded）なら `wheel_base` は**過大**。
+直進の式（`measured / commanded`）は、オドメトリ距離が指令に達したら止める同じ方式で導いて正しい。
+**実機の旋回校正で、検証走行の誤差が小さくなる向きか確かめること。**
+
+**`sanity()` を通らない値は Step 3 → Step 4 へ進めない**（`T-CAL-04` のガード `preview_sane` は S3→S4 にある。
+Step 3 には入れて、補正前後のプレビューと理由を見せる。2026-10-01 に実装に合わせて訂正）。
 
 **順序**: `wheel_radius` と `wheel_base` は互いに影響するので、**必ず直進 → 旋回の順**で行う。
 UI は `ROTATION` の行に「先に直進校正を実施してください」を出し、
@@ -291,9 +299,10 @@ Step 4 の検証で測った誤差 >  許容範囲  → 適用前に戻し、や
 /root/th_data/calib/
 ├── current.yaml        いま適用されている補正値
 └── history/
-    ├── 001.yaml        新しい順に 3 世代
-    ├── 002.yaml
-    └── 003.yaml
+    └── <ITEM>/         項目ごとに分ける（LINEAR / ROTATION / IMU）
+        ├── 001.yaml    新しい順に 3 世代
+        ├── 002.yaml
+        └── 003.yaml
 ```
 
 | 項目 | 内容 |
@@ -304,6 +313,23 @@ Step 4 の検証で測った誤差 >  許容範囲  → 適用前に戻し、や
 | 適用 | `current.yaml` を書き換え、該当ノードのランタイムパラメータへ即時反映 |
 
 **校正して悪化したときに戻す手段がないと、安心して校正できない。**
+
+履歴を**項目ごと**に持つのは、全項目共通の連番だと IMU を 3 回やるだけで直進の履歴が押し出されるため（2026-10-01、実装に合わせて訂正）。
+
+### 3.7 実装で決めたこと（2026-10-01・WP-MAINT-02／WP-MAINT-03）
+
+設計書に無く、実装（`th_maintenance/scripts/calib_runner.py`）で決めた点。挙動の正本は spec、ここは実装の取り決め。
+
+| 項目 | 決めたこと |
+| --- | --- |
+| 起動と再走行 | 通常の起動は `run_measurement` effect。`/calib/start` は**再走行専用**（検証 NG で S2 に戻ったあと・走行失敗後。phase が `RETRY_WAIT` かつ FSM が S2 のときだけ受理）。二重起動は phase で拒否 |
+| 実測値の入力 | `/calib/submit`（FSM を経由しない。`ui.*` の引数に浮動小数を載せて転送する経路が無いため）。phase で「プレビュー」か「検証」かを判別 |
+| 適用・確定 | 適用は FSM（`ui.calib_next` → `apply_and_verify`）。`/calib/apply` は状態を進めない冪等な確認。**確定は検証合格（`VERIFIED`）のときだけ** |
+| 止める手段 | 中断・フォルト・CALIB 離脱・物理／UI 非常停止・`/system/state` 途絶（2 s）・**`/odom` 途絶（0.5 s）**・走行タイムアウト。止めたら適用済みの補正を適用前へ戻す |
+| 許容範囲が未確定の間 | 検証は必ず NG（`tolerance_undefined`）。`calib_*_tolerance_*` が `placeholder` のため |
+| `/calib/status.result` | `IDLE` / `GUIDE` / `RUNNING` / `WAIT_MEASURED` / `PREVIEW_OK` / `PREVIEW_INSANE` / `APPLYING` / `VERIFY_RUNNING` / `WAIT_VERIFY` / `OK` / `NG` / `RETRY_WAIT` / `COMMITTED` / `ABORTED` / `ROLLED_BACK`。**`PREVIEW_INSANE` は次の入力か項目の離脱まで周期配信でも出し続ける**。`state_manager` は `PREVIEW_OK` だけを読む |
+| FSM への受け渡し | `state_manager` が `calib_item`（`ui.calib_item` の受理でラッチ）と `calib_preview_sane`（`PREVIEW_OK`・項目一致・S3 の間だけ）を持つ（`check_item` と同じ作法） |
+| 指定距離・角度 | `calib_linear_distance_m`=1.0 / `calib_rotation_deg`=180 / `calib_run_timeout_s`=60 はノード局所の既定値（`names.md` §7 に未登録） |
 
 ---
 
