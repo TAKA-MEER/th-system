@@ -10,7 +10,7 @@
 // `answer_mismatch` comes from opcheck_runner.py itself (not check_core.py):
 // the ESTOP item's verdict is overridden to NG when the operator answers
 // "いいえ" (mismatch) to the visual-confirm question.
-const BY_ITEM = {
+export const CHECK_REASON_LABELS = {
   ESTOP: {
     no_data: '非常停止ボタンの状態が届いていません（配線・GPIO を確認してください）',
     no_press: '押下を検出できませんでした',
@@ -41,5 +41,5 @@ const BY_ITEM = {
 
 export function checkReasonLabel(item, reason) {
   if (!reason) return ''
-  return BY_ITEM[item]?.[reason] ?? reason
+  return CHECK_REASON_LABELS[item]?.[reason] ?? reason
 }

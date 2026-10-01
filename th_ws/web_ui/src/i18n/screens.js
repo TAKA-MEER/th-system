@@ -26,6 +26,8 @@ export const SCREEN_NAMES = {
   // Spec-webui.md §3.12 / §3.13。
   S30: '始業点検',
   S31: '故障診断',
+  // WP-MAINT-03: S-40 校正（CALIB）。Spec-webui.md §3.14。
+  S40: '校正',
 }
 
 // ---------------------------------------------------------------- S-00 ----
@@ -552,3 +554,5 @@ export const S31_INTRO = '始業点検で NG が検出されました。修理�
 export const S31_SYMPTOM_TITLE = '症状'
 export const S31_NO_SYMPTOM = '症状の情報がありません（画面を開き直した可能性があります）'
 export const S31_BACK_TO_LIST = '一覧へ戻る'
+export const S31_HINTS_TITLE = 'チェック手順'
+export const S31_HINTS_NOTE = 'この画面は診断結果を示すだけです。修理は人が行い、直ったら「一覧へ戻る」で始業点検をやり直してください。'

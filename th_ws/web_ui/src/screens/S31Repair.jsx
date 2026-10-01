@@ -7,6 +7,11 @@
 // -- the full diagnosis screen (repair_hints.yaml driven step lists) is out
 // of scope; "一覧へ戻る" is ui.stop (T-OPC-06: REPAIR -> LIST).
 //
+// WP-MAINT-03 (2026-10-01): 症状ごとに「チェック手順」を出す（DetailedDesign-maintenance.md
+// §2.6）。手順は th_maintenance/config/repair_hints.yaml が正本で、
+// scripts/gen_repair_hints.py が src/generated/repair_hints.json に変換する
+// （コードに文言を埋めない）。理由に対応する手順が無いときは出さない（症状の表示は残る）。
+//
 // Symptom source: ros/useOpcheckStatus.js's module-level latch, not local
 // component state -- this screen mounts fresh (S30Opcheck unmounted when
 // the FSM state flips to REPAIR and screenRouting swaps screens), so
@@ -20,8 +25,10 @@ import { useTrigger } from '../ros/useTrigger.js'
 import { useOpcheckStatus } from '../ros/useOpcheckStatus.js'
 import { checkReasonLabel } from '../i18n/checks.js'
 import { OP_LABELS } from '../i18n/states.js'
+import repairHints from '../generated/repair_hints.json'
 import {
   S30_ITEM_LABELS, S31_INTRO, S31_SYMPTOM_TITLE, S31_NO_SYMPTOM, S31_BACK_TO_LIST,
+  S31_HINTS_TITLE, S31_HINTS_NOTE,
 } from '../i18n/screens.js'
 
 // Only ESTOP / MOTOR route to REPAIR (DetailedDesign-maintenance.md §6 "2つ
@@ -66,6 +73,19 @@ export default function S31Repair() {
           </div>
         ))}
       </div>
+      {symptoms.map(({ item, verdict }) => {
+        const steps = repairHints[item]?.[verdict.detail]
+        if (!steps?.length) return null
+        return (
+          <div key={item} className="card" data-testid={`s31-hints-${item}`}>
+            <h3>{S30_ITEM_LABELS[item]}: {S31_HINTS_TITLE}</h3>
+            <ol className="s31-hints">
+              {steps.map((step) => <li key={step}>{step}</li>)}
+            </ol>
+            <p className="note">{S31_HINTS_NOTE}</p>
+          </div>
+        )
+      })}
       <button type="button" className="btn wide primary" disabled={disabledAll}
         data-testid="s31-back" onClick={handleBack}>
         {S31_BACK_TO_LIST}
