@@ -599,9 +599,15 @@ class VenueNavigator(Node):
             lambda fut: self._follow_result_done(fut, seq))
 
     def _follow_result_done(self, future, seq):
-        self._follow_goal_handle = None
-        self._handle_seq = None
-        self._nav_chain_active = False
+        # 古い結果で生きている handle を捨てない。seq1 の取り消し → 再開で
+        # seq2 が受け付け済み → seq1 の CANCELED が遅れて届く順だと、無条件に
+        # 下ろすと走行中の seq2 の handle が消え、次の取り消しが空振りして
+        # PAUSE 中に走り続ける（不具合 A と同じ型。2026-10-01 指摘）。
+        # 自分の結果のときだけ下ろす。
+        if seq == self._handle_seq:
+            self._follow_goal_handle = None
+            self._handle_seq = None
+            self._nav_chain_active = False
         # 到着判定は完了コールバックとロボット位置の両方で行う。
         status = None
         try:
