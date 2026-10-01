@@ -249,7 +249,7 @@ class TestCalibBlind(unittest.TestCase):
         req.names = ['blind_angle_ranges']
         res = self._call(self.cli_get[node], req)
         v = res.values[0]
-        return list(v.double_array) if v.type == ParameterType.PARAMETER_DOUBLE_ARRAY else []
+        return list(v.double_array_value) if v.type == ParameterType.PARAMETER_DOUBLE_ARRAY else []
 
     def _set_param(self, node, name, value):
         req = SetParameters.Request()
@@ -257,7 +257,7 @@ class TestCalibBlind(unittest.TestCase):
         pm.name = name
         if isinstance(value, list):
             pm.value = ParameterValue(type=ParameterType.PARAMETER_DOUBLE_ARRAY,
-                                      double_array=[float(v) for v in value])
+                                      double_array_value=[float(v) for v in value])
         else:
             pm.value = ParameterValue(type=ParameterType.PARAMETER_DOUBLE,
                                       double_value=float(value))

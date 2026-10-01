@@ -700,7 +700,7 @@ class CalibRunner(Node):
             pm = ParameterMsg()
             pm.name = "blind_angle_ranges"
             pm.value = ParameterValue(type=ParameterType.PARAMETER_DOUBLE_ARRAY,
-                                      double_array=[float(v) for v in flat])
+                                      double_array_value=[float(v) for v in flat])
             req.parameters.append(pm)
             cli.call_async(req).add_done_callback(_one(name))
 
