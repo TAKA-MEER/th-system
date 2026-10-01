@@ -7,7 +7,8 @@
 要点:
   - 直進（LINEAR）の適用先は車輪半径そのものではなく `wheel_radius_scale`（§4.2）。
     `k_new = k_current × (measured / commanded)`。
-  - 旋回（ROTATION）の適用先は `wheel_base`。`base_new = base_current × (measured / commanded)`。
+  - 旋回（ROTATION）の適用先は `wheel_base`。`base_new = base_current × (commanded / measured)`
+    （設計書 §3.4 の式と**逆数**。理由は `corrected_wheel_base` の docstring）。
   - `sanity()` を通らない値は S3（確認）から S4（適用）へ進めない（T-CAL-04 の
     ガード `preview_sane`）。LINEAR はさらに **A10 を超える値を適用しない**。
   - 検証（S4）で測った誤差が許容範囲を超えたら適用前に戻す（T-CAL-06）。
@@ -72,11 +73,21 @@ def corrected_wheel_radius_scale(current_scale: float, commanded_m: float,
 
 
 def corrected_wheel_base(current_base: float, commanded_deg: float, measured_deg: float) -> float:
-    """回りすぎたら車輪間距離が過小（設計書 §3.4 の式）。不正入力は NaN。"""
+    """旋回校正の出力 `wheel_base`。**設計書 §3.4 の式（current × measured/commanded）とは逆数**。
+
+    ロボットは「エンコーダから計算したオドメトリ角」が commanded に達したら止まる。
+    オドメトリ角 = 車輪の弧長差 / base_param、実際の回転角 = 弧長差 / base_real なので
+    `measured / commanded = base_param / base_real`。よって
+    `base_real = base_param × commanded / measured`。回りすぎた（measured > commanded）なら
+    base_param が**過大**で、小さくする。設計書の式と既存の `th_calibration/rotation_calib.py`
+    の補正は逆向き（式のコメント自身の等式 `実走行距離 = base_real × 実測角 = base_param × odom角`
+    から導くと逆数になる）。`test_calib_core.py` の物理シミュレーションで収束を確かめてある。
+    不正入力は NaN。
+    """
     if not (math.isfinite(commanded_deg) and math.isfinite(measured_deg)
             and math.isfinite(current_base)) or commanded_deg <= 0.0 or measured_deg <= 0.0:
         return math.nan
-    return current_base * (measured_deg / commanded_deg)
+    return current_base * (commanded_deg / measured_deg)
 
 
 def ratio_sane(measured: float, commanded: float) -> bool:

@@ -456,6 +456,20 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 8d. calib_runner (WP-MAINT-02) ────────────────────
+    # 校正の実行部。/system/state を見て CALIB のときだけ動く（自律で走る・回る。
+    # 出力は /cmd_vel_behavior のみ）。generated/calib_runner.yaml は registry.yaml の
+    # calib_runner 向け行を運ぶ（許容範囲 calib_*_tolerance_* は status: placeholder の
+    # ため載らない＝検証は合格にならない）。起動時に /root/th_data/calib/current.yaml の
+    # 値を esp32_bridge へ反映する。
+    nodes.append(Node(
+        package='th_maintenance',
+        executable='calib_runner.py',
+        name='calib_runner',
+        parameters=[os.path.join(GENERATED_DIR, 'calib_runner.yaml')],
+        output='screen',
+    ))
+
     # ── 9. 試験員トラッカー (本番 or スタブ) ──────────────
     # スタブ: person_tracker_stub.py
     nodes.append(Node(

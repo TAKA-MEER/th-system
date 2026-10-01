@@ -10,6 +10,7 @@ ament_python_install_package(th_maintenance)
 
 install(PROGRAMS
   scripts/opcheck_runner.py
+  scripts/calib_runner.py
   DESTINATION lib/${PROJECT_NAME})
 
 ament_package()

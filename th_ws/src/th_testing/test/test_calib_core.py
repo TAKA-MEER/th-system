@@ -38,9 +38,36 @@ def test_corrected_values_nan_on_invalid_input():
     assert math.isnan(cc.corrected_wheel_base(0.39, 180.0, math.nan))
 
 
-def test_corrected_wheel_base_overrotation_enlarges_base():
-    # 回りすぎた（実測 190 > 指令 180）→ 車輪間距離を大きく見積もり直す
-    assert cc.corrected_wheel_base(0.39, 180.0, 190.0) == pytest.approx(0.39 * 190.0 / 180.0)
+def test_corrected_wheel_base_overrotation_shrinks_base():
+    # 回りすぎた（実測 190 > 指令 180）→ base_param が過大。小さくする（設計書 §3.4 とは逆数）
+    assert cc.corrected_wheel_base(0.39, 180.0, 190.0) == pytest.approx(0.39 * 180.0 / 190.0)
+
+
+def test_wheel_base_correction_converges_in_physical_model():
+    """物理モデルで補正の向きを固定する（設計書の式のままだと発散する）。
+
+    オドメトリ角 = 弧長差 / base_param、実際の角 = 弧長差 / base_real。
+    オドメトリ角が指令に達したら止まる → 実際の角 = 指令 × base_param / base_real。
+    """
+    base_real, base_param, cmd = 0.38, 0.39, 180.0
+    for _ in range(3):
+        measured = cmd * base_param / base_real
+        base_param = cc.corrected_wheel_base(base_param, cmd, measured)
+    assert base_param == pytest.approx(base_real, rel=1e-9)
+    # 設計書の式（measured/commanded）を使うと遠ざかる
+    base_param = 0.39
+    measured = cmd * base_param / base_real
+    wrong = base_param * measured / cmd
+    assert abs(wrong - base_real) > abs(base_param - base_real)
+
+
+def test_linear_scale_correction_converges_in_physical_model():
+    """LINEAR も同様。止まった地点の実距離 = 指令 × k_true / k_param。"""
+    k_true, k_param, cmd = 0.95, 1.0, 1.0
+    for _ in range(3):
+        measured = cmd * k_true / k_param
+        k_param = cc.corrected_wheel_radius_scale(k_param, cmd, measured)
+    assert k_param == pytest.approx(k_true, rel=1e-9)
 
 
 def test_corrected_wheel_radius_matches_design_formula():
