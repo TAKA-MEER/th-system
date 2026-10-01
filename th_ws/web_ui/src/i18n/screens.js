@@ -66,6 +66,23 @@ export const S00_ADVANCE = 'メインメニュー画面へ'
 // 疎通確認で止まったときに開発モードの設定へ入る導線（2026-09-23）
 export const S00_OPEN_DEV = '開発モードの設定'
 
+// 起動時の自動点検の総合ステータス（Spec-ops.md §2.6。/opcheck/auto_status）。
+// S-00 の「総合」の下に出す。NG でも運用に入れる（警告のみ。C-r4）。
+export const S00_AUTO_TITLE = '始業点検の自動判定'
+export const S00_AUTO_CHECKING = '判定中…'
+export const S00_AUTO_OK = '自動判定: すべて正常'
+export const S00_AUTO_WARN = '自動判定: 要確認'
+export const S00_AUTO_NG = '自動判定: 要確認（警告のみで運用に入れます）'
+export const S00_AUTO_SUPPRESSED =
+  '開発モードで警告を消しています（判定自体は続いています）'
+export const S00_AUTO_NOT_YET = '自動判定の結果はまだ届いていません'
+export const S00_AUTO_ITEM_LABELS = {
+  ESTOP: '非常停止ボタン',
+  IMU: 'IMU',
+  LIDAR: 'LiDAR',
+}
+export const S00_AUTO_ITEM_ORDER = ['ESTOP', 'IMU', 'LIDAR']
+
 // ---------------------------------------------------------------- S-01 ----
 export const GROUP_MOVE_TITLE = '移動'
 export const GROUP_FIELD_TITLE = '試験場'
@@ -79,6 +96,16 @@ export const GROUP_MAINT_TITLE = '保守・設定'
 // (ウィンドウ。押されて初めて出す)").
 export const WIN_REASON_TITLE = 'この操作はできません'
 export const WIN_REASON_OK = '確認'
+
+// ネットワーク接続確認の要約（Spec-webui.md §3.2・Spec-ops.md §2.6）。
+// S-00 と同じ内容の要約。NG / WARN のときに警告を出す（タップで S-00 相当へ）。
+// 警告だけで、ボタン類の活性は変えない（C-r4）。
+export const S01_NET_TITLE = 'ネットワーク接続確認'
+export const S01_NET_OK = '接続・自動判定ともに正常です'
+export const S01_NET_CHECKING = '確認中…'
+export const S01_NET_WARN = '始業点検の自動判定に要確認があります'
+export const S01_NET_SUPPRESSED = '自動判定の警告を開発モードで消しています'
+export const S01_NET_OPEN = '詳細を見る'
 
 // 運用の終了 (DetailedDesign-webui.md §8.3 / Spec-webui.md §3.2.1).
 export const SHUTDOWN_TITLE = '運用の終了'

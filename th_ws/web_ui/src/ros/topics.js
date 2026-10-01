@@ -50,6 +50,10 @@ export const TOPICS = {
   // WP-UI-08: S-30 始業点検。opcheck_runner が発行する判定結果（CheckStatus）。
   // reliable depth5。names.json の endpoints にある。
   OPCHECK_STATUS: '/opcheck/status',
+  // 起動時の自動点検（Spec-ops.md §2.6）。opcheck_auto が総合ステータスを
+  // std_msgs/String の JSON で transient_local・1Hz 配信（S-00 / S-01 用）。
+  // names.json の endpoints にある。
+  AUTO_CHECK: '/opcheck/auto_status',
   // WP-UI-08: S-30 項目2（モーター確認）の指令 vs 実測（ros/useWheelSpeeds.js）。
   // 型は同じ th_system_msgs/WheelFeedback を esp32_bridge が両方向に使い回す。
   WHEEL_FEEDBACK: '/esp32/wheel_feedback',

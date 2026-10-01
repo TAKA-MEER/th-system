@@ -20,6 +20,8 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useSystemState } from '../ros/useSystemState.js'
+import { useAutoCheckStatus } from '../ros/useAutoCheckStatus.js'
+import { autoCheckWarns } from '../ros/autoCheckState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useStdTrigger } from '../ros/useStdTrigger.js'
 import { SERVICES } from '../ros/topics.js'
@@ -33,6 +35,8 @@ import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import {
   GROUP_MOVE_TITLE, GROUP_FIELD_TITLE, GROUP_MAINT_TITLE, S01_SETTINGS,
   S01_FINISH_ESCAPE,
+  S01_NET_TITLE, S01_NET_OK, S01_NET_CHECKING, S01_NET_WARN,
+  S01_NET_SUPPRESSED, S01_NET_OPEN,
   WIN_REASON_TITLE, WIN_REASON_OK,
   SHUTDOWN_TITLE, SHUTDOWN_UNSAVED_LABEL, SHUTDOWN_NONE, SHUTDOWN_BUTTON, SHUTDOWN_HINT,
   SHUTDOWN_WIN_TITLE, SHUTDOWN_WIN_INTRO, SHUTDOWN_WIN_NONE, SHUTDOWN_SAVE,
@@ -52,8 +56,9 @@ function parseUnsaved(message) {
   }
 }
 
-export default function S01Main({ onEnter, onOpenSettings }) {
-  const { state, stale } = useSystemState()
+export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
+  const { state, stale, ros } = useSystemState()
+  const { auto } = useAutoCheckStatus(ros)
   const sendTrigger = useTrigger()
   const shutdownPrepare = useStdTrigger(SERVICES.SHUTDOWN_PREPARE)
   const shutdownExecute = useStdTrigger(SERVICES.SHUTDOWN_EXECUTE)
@@ -156,6 +161,35 @@ export default function S01Main({ onEnter, onOpenSettings }) {
 
   return (
     <div className="screen" id="s01">
+      {/* ネットワーク接続確認の要約（Spec-webui.md §3.2・Spec-ops.md §2.6）。
+          S-00 と同じ警告を出す。警告だけでボタン類の活性は変えない（C-r4）。
+          タップで S-00 相当の詳細へ。 */}
+      <div className="card" data-testid="s01-net-summary">
+        <h3>{S01_NET_TITLE}</h3>
+        {!auto && <div className="note">{S01_NET_CHECKING}</div>}
+        {auto?.suppressed && <div className="note">{S01_NET_SUPPRESSED}</div>}
+        {auto && !auto.suppressed && autoCheckWarns(auto) && (
+          <div className="row mb">
+            <span className="pill ng" data-testid="s01-net-warn">{S01_NET_WARN}</span>
+          </div>
+        )}
+        {auto && !auto.suppressed && !autoCheckWarns(auto) && auto.overall === 'OK' && (
+          <div className="note">{S01_NET_OK}</div>
+        )}
+        {auto && !auto.suppressed && auto.overall !== 'OK' && !autoCheckWarns(auto) && (
+          <div className="note">{S01_NET_CHECKING}</div>
+        )}
+        {onOpenConnect && (
+          <button
+            type="button"
+            className="btn wide mt"
+            onClick={onOpenConnect}
+            data-testid="s01-net-open"
+          >
+            {S01_NET_OPEN}
+          </button>
+        )}
+      </div>
       {MENU_GROUPS.map((group) => (
         <div className="card" key={group.key}>
           <h3>{GROUP_TITLES[group.key]}</h3>
