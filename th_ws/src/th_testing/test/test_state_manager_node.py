@@ -32,7 +32,7 @@ from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                         QoSReliabilityPolicy)
 
 from std_msgs.msg import Bool, String
-from th_system_msgs.msg import (ActiveScreen, FaultStatus, PersonTargets, RouteInfo,
+from th_system_msgs.msg import (ActiveScreen, CalibStatus, FaultStatus, PersonTargets, RouteInfo,
                                 RouteList, StateEffect, StateEvent, SystemState)
 from th_system_msgs.srv import SetFlag, UiTrigger
 
@@ -117,6 +117,8 @@ class TestStateManagerNode(unittest.TestCase):
         self.pub_fault = self.node.create_publisher(FaultStatus, '/safety/fault', 5)
         self.pub_hw = self.node.create_publisher(Bool, '/safety/estop_hw', 10)
         self.pub_ui_estop = self.node.create_publisher(Bool, '/safety/estop_ui', 10)
+        # WP-MAINT-02: calib_runner が出す /calib/status（reliable depth 5）
+        self.pub_calib = self.node.create_publisher(CalibStatus, '/calib/status', 5)
 
         # P2: /route/catalog は route_recorder が latched (TRANSIENT_LOCAL) で publish する前提
         self.pub_routes = self.node.create_publisher(RouteList, '/route/catalog', _STATE_QOS)
@@ -839,6 +841,121 @@ class TestStateManagerNode(unittest.TestCase):
         res = self._trigger('ui.finish')
         assert res.accepted, res.reject_reason_key
         assert self._wait_mode('IDLE')
+
+    # ════════════════════════════════════════════════════════
+    # WP-MAINT-02 — CALIB: Context.calib_item / calib_preview_sane の配線
+    # ════════════════════════════════════════════════════════
+    def _publish_calib_status(self, item: str, result: str):
+        self.pub_calib.publish(CalibStatus(item=item, result=result, step='S3'))
+        self._spin(0.3)
+
+    def _publish_evt(self, event: str, arg: dict = None):
+        self.pub_event.publish(StateEvent(
+            event=event, source_node='calib_runner', arg_json=json.dumps(arg or {})))
+        self._spin(0.3)
+
+    def test_calib_item_latch_and_preview_sane_wiring(self):
+        """T-CAL-01〜08 が配線されている（修正前は calib_item="" ・preview_sane=False 固定）。
+
+        - ui.calib_item でラッチした項目が、item を付けない ui.calib_next / evt.* の
+          effect 引数（$arg.item）へ補われる
+        - T-CAL-04 のガード preview_sane は、calib_runner の /calib/status
+          （result=="PREVIEW_OK"・実行中の項目と一致・S3 の間だけ）でだけ通る
+        - S3 を出たらラッチが落ち、次の S3 で出し直しになる
+        """
+        res = self._trigger('ui.enter_mode', {'mode': 'CALIB'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('CALIB')
+
+        assert self._trigger('ui.calib_item', {'item': 'LINEAR'}).accepted
+        assert self._latest().state == 'S1'
+
+        # item 無しの ui.calib_next（T-CAL-02）→ run_measurement に item が補われる
+        self._effect_history.clear()
+        assert self._trigger('ui.calib_next').accepted
+        assert self._latest().state == 'S2'
+        hits = self._wait_effect('run_measurement', timeout=1.0)
+        assert hits and hits[0].dest == 'calib_runner', 'run_measurement が配送されない'
+        assert json.loads(hits[0].args_json).get('item') == 'LINEAR', \
+            f'$arg.item が補われていない: {hits[0].args_json}'
+
+        # item 無しの evt.calib_step_done（T-CAL-03）→ S3 + build_preview
+        self._effect_history.clear()
+        self._publish_evt('evt.calib_step_done')
+        assert self._latest().state == 'S3', 'evt.calib_step_done で S3 へ進まない'
+        hits = self._wait_effect('build_preview', timeout=1.0)
+        assert hits and json.loads(hits[0].args_json).get('item') == 'LINEAR'
+
+        # sane でない間は S3 から進めない（T-CAL-04 のガード preview_sane）
+        res = self._trigger('ui.calib_next')
+        assert not res.accepted, 'プレビューが sane でないのに S4 へ進めた（配線が常に真）'
+        self._publish_calib_status('LINEAR', 'PREVIEW_INSANE')
+        assert not self._trigger('ui.calib_next').accepted
+        # 別項目の PREVIEW_OK は無視する
+        self._publish_calib_status('ROTATION', 'PREVIEW_OK')
+        assert not self._trigger('ui.calib_next').accepted, '別項目の PREVIEW_OK で進めた'
+
+        # 実行中の項目の PREVIEW_OK で進める
+        self._publish_calib_status('LINEAR', 'PREVIEW_OK')
+        self._effect_history.clear()
+        res = self._trigger('ui.calib_next')
+        assert res.accepted, f'sane なプレビューで S4 へ進めない（配線が常に偽）: {res.reject_reason_key}'
+        assert self._latest().state == 'S4'
+        hits = self._wait_effect('apply_and_verify', timeout=1.0)
+        assert hits and json.loads(hits[0].args_json).get('item') == 'LINEAR'
+
+        # 検証 NG（T-CAL-06）→ S2 + revert_calib
+        self._effect_history.clear()
+        self._publish_evt('evt.calib_verify_ng')
+        assert self._latest().state == 'S2'
+        hits = self._wait_effect('revert_calib', timeout=1.0)
+        assert hits and json.loads(hits[0].args_json).get('item') == 'LINEAR'
+
+        # もう一度 S3 へ。前回の PREVIEW_OK は S3 を出た時点で落ちているので、進めない
+        self._publish_evt('evt.calib_step_done')
+        assert self._latest().state == 'S3'
+        assert not self._trigger('ui.calib_next').accepted, \
+            '前回の S3 の sane が持ち越された（S3 を出てもラッチが落ちない）'
+        self._publish_calib_status('LINEAR', 'PREVIEW_OK')
+        assert self._trigger('ui.calib_next').accepted
+        assert self._latest().state == 'S4'
+
+        # 検証 OK（T-CAL-05）→ LIST + commit_calib（item 付き）+ offer_opcheck
+        self._effect_history.clear()
+        self._publish_evt('evt.calib_step_done')
+        assert self._latest().state == 'LIST'
+        hits = self._wait_effect('commit_calib', timeout=1.0)
+        assert hits and hits[0].dest == 'calib_runner'
+        assert json.loads(hits[0].args_json).get('item') == 'LINEAR', hits[0].args_json
+
+        # LIST に戻ったらラッチは空。次の項目を始められ、abort（T-CAL-07）は新しい item で discard
+        assert self._trigger('ui.calib_item', {'item': 'ROTATION'}).accepted
+        self._effect_history.clear()
+        assert self._trigger('ui.abort').accepted
+        assert self._latest().state == 'LIST'
+        hits = self._wait_effect('discard_calib', timeout=1.0)
+        assert hits and json.loads(hits[0].args_json).get('item') == 'ROTATION', \
+            hits[0].args_json if hits else 'discard_calib が配送されない'
+
+        assert self._trigger('ui.finish').accepted
+        assert self._wait_mode('IDLE')
+
+    def test_calib_fault_discards_with_item(self):
+        """校正中のフォルト（T-CAL-08）で discard_calib が項目付きで配送される（確定しない）。"""
+        assert self._trigger('ui.enter_mode', {'mode': 'CALIB'}).accepted
+        assert self._wait_mode('CALIB')
+        assert self._trigger('ui.calib_item', {'item': 'LINEAR'}).accepted
+        assert self._trigger('ui.calib_next').accepted
+        self._effect_history.clear()
+        self.pub_fault.publish(FaultStatus(
+            active=True, fault_type='LIDAR_LOST', severity='RECOVERABLE'))
+        self._spin(0.4)
+        hits = self._wait_effect('discard_calib', timeout=1.0)
+        assert hits, '校正中のフォルトで discard_calib が配送されない（T-CAL-08）'
+        assert json.loads(hits[0].args_json).get('item') == 'LINEAR', hits[0].args_json
+        assert not self._wait_effect('commit_calib', timeout=0.2), 'フォルトで確定が走った'
+        self.pub_fault.publish(FaultStatus(active=False, fault_type='', severity=''))
+        self._spin(0.2)
 
 
 if __name__ == '__main__':
