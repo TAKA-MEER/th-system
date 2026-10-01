@@ -228,3 +228,17 @@ test('LIST の「始業点検へ戻る」が ui.enter_mode{mode:OPCHECK} を送�
   const calls = await triggerCalls(page)
   expect(calls.some((c) => c.trigger === 'ui.enter_mode' && c.argJson?.mode === 'OPCHECK')).toBeTruthy()
 })
+
+test('PREVIEW_INSANE が続く間は理由が出続け、測り直して状態が変わったら消える', async ({ page }) => {
+  await gotoS40(page, { state: { state: 'S3' }, calibStatus: status({ result: 'PREVIEW_INSANE' }) })
+  await expect(page.getByTestId('s40-insane')).toBeVisible()
+  // calib_runner は 0.5s ごとに同じ PREVIEW_INSANE を再配信する。再配信でも消えない。
+  for (let i = 0; i < 4; i += 1) {
+    await page.waitForTimeout(300)
+    await setStatus(page, status({ result: 'PREVIEW_INSANE' }))
+    await expect(page.getByTestId('s40-insane')).toBeVisible()
+  }
+  await expect(page.getByTestId('s40-next')).toBeDisabled()
+  await setStatus(page, status({ result: 'WAIT_MEASURED' }))
+  await expect(page.getByTestId('s40-insane')).toHaveCount(0)
+})
