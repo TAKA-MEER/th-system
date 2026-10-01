@@ -277,6 +277,10 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         self._spin_thread = threading.Thread(target=self._executor.spin,
                                             daemon=True)
         self._spin_thread.start()
+        # 試験ごとに代役サーバを作り直すため、venue 側クライアントの discovery
+        # が旧 endpoint を向いている隙に goal が吸われて消えることがある
+        # （`server_is_ready` は真なのに届かない）。2s 置いてから手順に入る。
+        time.sleep(2.0)
 
     def tearDown(self):
         try:
