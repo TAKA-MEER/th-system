@@ -200,6 +200,9 @@ class TestCalibRunnerNode(unittest.TestCase):
     # ── a ────────────────────────────────────────────────────
     def test_a_ignores_everything_outside_calib(self):
         self._set_state('IDLE', 'NONE')
+        # state を再送しない（再送が続くと、入口のゲートが壊れていても
+        # 「CALIB でない」state 受信による中断が後から効いて、ゲートの欠陥が隠れる）
+        self.send_state = False
         self._effect('begin_wizard')
         self._effect('run_measurement')
         self._spin(1.0)
