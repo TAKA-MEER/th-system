@@ -221,6 +221,10 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         self.compute_mode = 'success'  # 'success' | 'fail'(空経路)
         self.follow_mode = 'run'       # 'run'(cancelまで保持) | 'abort'
         self.follow_abort_delay_s = 0.5
+        # `FollowPath` の cancel 要求から結果（CANCELED）を返すまでの遅延。
+        # 不具合 B の再現（取り消し結果の到着前にモード離脱）で 0.5s にする。
+        # 既定 0.0（即時）。
+        self.follow_cancel_result_delay_s = 0.0
         # `FollowPath` の accept 遅延（既定 0＝即時）。#3 の試験だけ 0.3s に
         # 上書きする。本物の Nav2 の accept は行動サーバの executor 経由で
         # 即時ではなく、負荷で数百 ms 遅れる。`resume_follow_path` effect は
@@ -360,23 +364,25 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
                 self.follow_open -= 1
 
     def _exec_follow_body(self, goal_handle):
-        if self.follow_mode == 'run':
-            deadline = time.monotonic() + 60.0
+        def _wait_cancel(deadline: float) -> bool:
             while time.monotonic() < deadline:
                 if goal_handle.is_cancel_requested:
+                    # B の再現用: 結果を遅らせて返す（要求自体は即時に受ける）。
+                    time.sleep(self.follow_cancel_result_delay_s)
                     goal_handle.canceled()
-                    return FollowPath.Result()
+                    return True
                 time.sleep(0.05)
+            return False
+
+        if self.follow_mode == 'run':
+            if _wait_cancel(time.monotonic() + 60.0):
+                return FollowPath.Result()
             goal_handle.succeed()
             return FollowPath.Result()
         # 'abort': 一旦 NAV が観測できるよう少し保持してから ABORT。
         # venue_navigator は ABORTED → evt.blocked。
-        deadline = time.monotonic() + self.follow_abort_delay_s
-        while time.monotonic() < deadline:
-            if goal_handle.is_cancel_requested:
-                goal_handle.canceled()
-                return FollowPath.Result()
-            time.sleep(0.05)
+        if _wait_cancel(time.monotonic() + self.follow_abort_delay_s):
+            return FollowPath.Result()
         goal_handle.abort()
         return FollowPath.Result()
 
@@ -426,6 +432,14 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
     def _n_cancel(self) -> int:
         with self._lock:
             return self.follow_cancel_count
+
+    def _n_open(self) -> int:
+        with self._lock:
+            return self.follow_open
+
+    def _snap_events(self) -> list[str]:
+        with self._lock:
+            return list(self.event_names)
 
     def _wait_count(self, get, target: int, timeout: float) -> bool:
         deadline = time.monotonic() + timeout
@@ -677,6 +691,319 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         # 後片付け
         self._reset_to_home()
         self._mark_passed(f'(compute_total={self._n_compute()})')
+
+    # ═══════════════════════════════════════════════════════════════════
+    # 不具合 A: 受け付け前の一時停止で、取り消しが空振りして走り出す
+    # ═══════════════════════════════════════════════════════════════════
+    def test_cancel_before_accept_cancels_late_accept(self):
+        """不具合 A（安全側。`_send_follow_path` → accept の窓で `ui.stop`）。
+
+        代役 `follow_path` の受け付けを 1.0s 遅らせ、`compute` が飛んだ直後
+        （受け付け前）に `ui.stop` → `PAUSE` する。正しくは受け付けのあと
+        代役のゴールが取り消される（`PAUSE` の間に実行中ゴールが残らない）。
+        今のコードは handle が `None` のため何も取り消せず、受け付け後に
+        走行が続く（本番の不具合で赤。次のコミットで直す）。
+        """
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.follow_accept_delay_s = 1.0
+            self.follow_cancel_result_delay_s = 0.0
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+            self.event_names.clear()
+        try:
+            self._enter_nav()
+            # compute が飛んだ＝送信が飛んだ直後。accept（1.0s 遅延）の前。
+            self.assertTrue(
+                self._wait_count(self._n_compute, 1, timeout=10.0),
+                'NAV に入ったのに compute が 1 回も呼ばれない。')
+            # 送信が代役に届く猶予。accept 遅延 1.0s の窓の中に収める。
+            self._sleep(0.2)
+            with self._lock:
+                n_ev = len(self.event_names)
+            self._call_trigger('ui.stop')
+            if not self._wait_mode_state('PANEL_NAV', 'PAUSE', timeout=5.0):
+                self.fail(f'PAUSE に入らない ({self._mode_state()})')
+
+            # 受け付け自体は届く（窓の確認）。
+            self.assertTrue(
+                self._wait_count(self._n_follow, 1, timeout=5.0),
+                '代役に FollowPath ゴールが届かない。accept 遅延の窓が開いていない。')
+            # 受け付けのあと、代役のゴールが取り消される。
+            self.assertTrue(
+                self._wait_count(self._n_cancel, 1, timeout=5.0),
+                '受け付け前の ui.stop が、受け付け後のゴールに届いていない。'
+                'cancel が空振りして走行が続いている（不具合 A）。')
+            # PAUSE の間に実行中ゴールが残らない。
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline and self._n_open() > 0:
+                time.sleep(0.05)
+            self.assertEqual(
+                self._n_open(), 0,
+                'PAUSE なのに代役のゴールが実行中のまま残っている（不具合 A）。')
+            # 遅れて取り消した結果で偽の evt.blocked を出さない（変異 3 の検出）。
+            self._sleep(1.0)
+            new_events = self._snap_events()[n_ev:]
+            self.assertNotIn(
+                'evt.blocked', new_events,
+                '自分で取り消した結果で evt.blocked が出ている。')
+            self.assertEqual(
+                self._mode_state(), ('PANEL_NAV', 'PAUSE'),
+                f'PAUSE のはずが {self._mode_state()} に動いた。')
+            self._mark_passed(f'(cancel={self._n_cancel()})')
+        finally:
+            with self._lock:
+                self.follow_accept_delay_s = 0.0
+            self._reset_to_home()
+
+    # ═══════════════════════════════════════════════════════════════════
+    # 不具合 B: 取り消し中にモードを離れると、あとから偽の evt.blocked が出る
+    # ═══════════════════════════════════════════════════════════════════
+    def test_exit_during_cancel_no_spurious_blocked(self):
+        """不具合 B（`_reset_for_exit` が `_cancel_requested` を無条件に下ろす）。
+
+        走行中（受け付け済み）に `ui.abort` → `AT_HOME`。代役は取り消しの
+        結果を 0.5s 遅らせて返す（effect の cancel と state の離脱の順序差で
+        `_reset_for_exit` が結果到着前に走る窓を開ける）。正しくは離脱後に
+        `evt.blocked` が出ない。今のコードは印を消すため CANCELED を他人分
+        と誤判定して `evt.blocked` を出し、`_blocked` が残る（本番の不具合で
+        赤。次のコミットで直す）。
+        """
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.follow_accept_delay_s = 0.0
+            self.follow_cancel_result_delay_s = 0.5
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+            self.event_names.clear()
+        try:
+            self._enter_nav()
+            if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=10.0):
+                self.fail(f'NAV に入らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_follow, 1, timeout=10.0),
+                'FollowPath にゴールが届かない（受け付け済みにできない）。')
+            with self._lock:
+                n_ev = len(self.event_names)
+                c0 = self.follow_cancel_count
+
+            # 走行中に離脱。cancel が投げられ、結果は 0.5s 後に届く。
+            self._call_trigger('ui.abort')
+            if not self._wait_mode_state('AT_HOME', 'IDLE_H', timeout=5.0):
+                self.fail(f'ui.abort 後に AT_HOME にならない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_cancel, c0 + 1, timeout=5.0),
+                'ui.abort の cancel が代役に届かない。')
+            # 遅れた取り消し結果が届くまで待ち、偽の blocked が無いこと。
+            self._sleep(2.0)
+            new_events = self._snap_events()[n_ev:]
+            self.assertNotIn(
+                'evt.blocked', new_events,
+                '離脱後の取り消し結果で偽の evt.blocked が出ている（不具合 B）。')
+
+            # もう一度 NAV に入る。再探索周期を待たずにすぐ compute が走る
+            # （`_blocked` が残っていれば入口で抑止され、再探索経由の遠回り）。
+            with self._lock:
+                n_ev2 = len(self.event_names)
+                c1 = self.compute_count
+            self._call_select_pin()
+            self._call_trigger('ui.goto', '{"kind":"PANEL"}')
+            if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=5.0):
+                self.fail(f'再突入で NAV に入らない ({self._mode_state()})')
+            t_nav = time.monotonic()
+            t_comp = None
+            deadline = t_nav + 5.0
+            while time.monotonic() < deadline:
+                if self._n_compute() >= c1 + 1:
+                    t_comp = time.monotonic()
+                    break
+                time.sleep(0.05)
+            self.assertIsNotNone(
+                t_comp,
+                '再突入後に compute が走らない（_blocked 残留で入口抑止の疑い）。')
+            elapsed = t_comp - t_nav
+            self.assertLess(
+                elapsed, _BLOCKED_PERIOD_S,
+                f'再突入の compute が {elapsed:.2f}s 後（周期 {_BLOCKED_PERIOD_S}s '
+                '以上）。再探索タイマ経由の遠回りになっている。')
+            new_events2 = self._snap_events()[n_ev2:]
+            self.assertNotIn(
+                'evt.unblocked', new_events2,
+                '再突入で evt.unblocked が出ている（再探索経由で復帰した証拠）。')
+            self._mark_passed(f'(reentry_compute_lag={elapsed:.2f}s)')
+        finally:
+            with self._lock:
+                self.follow_cancel_result_delay_s = 0.0
+            self._reset_to_home()
+
+    # ═══════════════════════════════════════════════════════════════════
+    # 不具合 A の出口経路版: 送出中にモード離脱（ESTOP 相当）→ 受け付け後に
+    # _reset_for_exit 経由で取り消される
+    # ═══════════════════════════════════════════════════════════════════
+    def test_exit_during_send_cancels_late_accept(self):
+        """送出～accept の窓で `ui.estop.press` → `ESTOP`（`_reset_for_exit`）。
+
+        ESTOP 突入は venue に effect を送らない（`latch_prev` のみ）ため、
+        `_cancel_follow_path` は何もできず、`_reset_for_exit` だけが頼り。
+        正しくは受け付けのあと代役のゴールが取り消される。印が無ければ
+        受け付け後に走行が続く（本番の不具合で赤。修正と一緒に直す）。
+        """
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.follow_accept_delay_s = 1.0
+            self.follow_cancel_result_delay_s = 0.0
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+            self.event_names.clear()
+        try:
+            self._enter_nav()
+            # compute が飛んだ＝送信が飛んだ直後。accept（1.0s 遅延）の前。
+            self.assertTrue(
+                self._wait_count(self._n_compute, 1, timeout=10.0),
+                'NAV に入ったのに compute が 1 回も呼ばれない。')
+            # 送信が代役に届く猶予。accept 遅延 1.0s の窓の中に収める。
+            self._sleep(0.2)
+            with self._lock:
+                n_ev = len(self.event_names)
+                c0 = self.follow_cancel_count
+            # モード離脱（ESTOP。venue への effect は無い）。
+            self._call_trigger('ui.estop.press')
+            if not self._wait_mode_state('ESTOP', 'NONE', timeout=5.0):
+                self.fail(f'ESTOP に入らない ({self._mode_state()})')
+
+            # 受け付け自体は届く（窓の確認）。
+            self.assertTrue(
+                self._wait_count(self._n_follow, 1, timeout=5.0),
+                '代役に FollowPath ゴールが届かない。accept 遅延の窓が開いていない。')
+            # 受け付けのあと、代役のゴールが取り消される。
+            self.assertTrue(
+                self._wait_count(self._n_cancel, c0 + 1, timeout=5.0),
+                '送出中のモード離脱が、受け付け後のゴールに届いていない。'
+                '離脱後に走行が続いている（_reset_for_exit の取りこぼし）。')
+            # 離脱後に実行中ゴールが残らない。
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline and self._n_open() > 0:
+                time.sleep(0.05)
+            self.assertEqual(
+                self._n_open(), 0,
+                'ESTOP なのに代役のゴールが実行中のまま残っている。')
+            # 遅れて取り消した結果で偽の evt.blocked を出さない。
+            self._sleep(1.0)
+            new_events = self._snap_events()[n_ev:]
+            self.assertNotIn(
+                'evt.blocked', new_events,
+                '自分で取り消した結果で evt.blocked が出ている。')
+            self.assertEqual(
+                self._mode_state(), ('ESTOP', 'NONE'),
+                f'ESTOP のはずが {self._mode_state()} に動いた。')
+            self._mark_passed(f'(cancel={self._n_cancel()})')
+        finally:
+            with self._lock:
+                self.follow_accept_delay_s = 0.0
+            # ESTOP 復帰: release → resume_yes で PANEL_NAV/PAUSE に戻し、
+            # あとはいつもの abort で AT_HOME へ（release 直行 IDLE の場合も
+            # _reset_to_home がそのまま受け止める）。
+            try:
+                self._call_trigger('ui.estop.release')
+                self._sleep(0.5)
+                if self._mode_state() is not None and self._mode_state()[0] == 'ESTOP':
+                    self._call_trigger('ui.resume_yes')
+                    self._sleep(0.5)
+            except Exception:
+                pass
+            self._reset_to_home()
+
+    # ═══════════════════════════════════════════════════════════════════
+    # 古い取り消し結果が、再開後の生きている handle を誤って捨てる問題
+    # ═══════════════════════════════════════════════════════════════════
+    def test_stale_cancel_result_keeps_live_handle(self):
+        """一時停止で seq1 を取り消し → すぐ再開して seq2 が受け付け済み →
+        seq1 の CANCELED が遅れて届く。正しくは seq2 の handle を残す。
+
+        無条件に handle を下ろすと、走行中の seq2 の handle が捨てられ、
+        次の `ui.stop` で seq2 を取り消せず `PAUSE` 中に走り続ける
+        （不具合 A と同じ型。本番の不具合で赤。次のコミットで直す）。
+        """
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.follow_accept_delay_s = 0.0
+            self.follow_cancel_result_delay_s = 1.0
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+            self.event_names.clear()
+        try:
+            self._enter_nav()
+            if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=10.0):
+                self.fail(f'NAV に入らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_follow, 1, timeout=10.0),
+                'FollowPath にゴールが届かない。')
+            with self._lock:
+                n_ev = len(self.event_names)
+                c0 = self.follow_cancel_count
+
+            # 一時停止。seq1 の取り消しを投げる（結果は 1.0s 後に届く）。
+            self._call_trigger('ui.stop')
+            if not self._wait_mode_state('PANEL_NAV', 'PAUSE', timeout=5.0):
+                self.fail(f'PAUSE に入らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_cancel, c0 + 1, timeout=5.0),
+                'ui.stop の cancel が代役に届かない。')
+
+            # 結果が届く前に再開。seq2 を送り、受け付けまで待つ。
+            self._call_trigger('ui.run')
+            if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=5.0):
+                self.fail(f'再開後に NAV に戻らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_follow, 2, timeout=10.0),
+                '再開後に FollowPath に 2 件目のゴールが届かない。')
+
+            # seq1 の遅れた結果が届くのを待つ（stop から 1.0s 超）。
+            # この時点で seq2 は実行中のはず。
+            self._sleep(1.5)
+            self.assertEqual(
+                self._n_open(), 1,
+                f'再開後の実行中ゴールが 1 件でない ({self._n_open()})。')
+
+            # もう一度一時停止。seq2 が取り消されること。
+            self._call_trigger('ui.stop')
+            if not self._wait_mode_state('PANEL_NAV', 'PAUSE', timeout=5.0):
+                self.fail(f'2 回目の PAUSE に入らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_cancel, c0 + 2, timeout=5.0),
+                '古い取り消し結果で生きている handle が捨てられ、seq2 の '
+                'cancel が届いていない（PAUSE 中に走り続ける）。')
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline and self._n_open() > 0:
+                time.sleep(0.05)
+            self.assertEqual(
+                self._n_open(), 0,
+                'PAUSE なのに代役のゴールが実行中のまま残っている。')
+            self._sleep(1.0)
+            new_events = self._snap_events()[n_ev:]
+            self.assertNotIn(
+                'evt.blocked', new_events,
+                '自分で取り消した結果で evt.blocked が出ている。')
+            self.assertEqual(
+                self._mode_state(), ('PANEL_NAV', 'PAUSE'),
+                f'PAUSE のはずが {self._mode_state()} に動いた。')
+            self._mark_passed(f'(cancel={self._n_cancel()})')
+        finally:
+            with self._lock:
+                self.follow_cancel_result_delay_s = 0.0
+            self._reset_to_home()
 
     # ═══════════════════════════════════════════════════════════════════
     # 陽性対照（#3 の裏）: ui.reroute → replan で compute が増える
