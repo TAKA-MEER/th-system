@@ -507,6 +507,14 @@ if(BUILD_TESTING)
     test/test_simulation_scenarios.py
     TIMEOUT 120
     ENV TH_SKIP_SIM=1)   # CI ではデフォルトでスキップ
+
+  # 盤前移動の一時停止→再開（#3）・BLOCKED タイムアウトなし（#4）
+  # (DetailedDesign-onsite.md §9。Gazebo・Nav2 本体なしの launch_testing。
+  # 積算: 起動 discovery 10 秒 ＋ #3 手順 15 秒 ＋ #4 の 20 周期観測 10 秒 ＋
+  # 陽性対照・reroute 各 10 秒 ＋ teardown 余裕。fault_injection_07 と同じ 240 秒枠)
+  ament_add_pytest_test(test_venue_nav_pause_blocked_node
+    test/test_venue_nav_pause_blocked_node.py
+    TIMEOUT 240)
 endif()
 
 ament_package()
