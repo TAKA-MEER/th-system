@@ -376,6 +376,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_calib_wiring_node
     test/test_calib_wiring_node.py
     TIMEOUT 300)
+  # 校正 BLIND（死角マスク）を本物の 5 ノードで通す試験（state_manager・calib_runner・
+  # lidar_filter・obstacle_limiter・opcheck_runner。3 ノードへの同時反映・上限・適用前へ戻す）
+  ament_add_pytest_test(test_calib_blind_node
+    test/test_calib_blind_node.py
+    TIMEOUT 600)
   ament_add_pytest_test(connectivity_checker_node
     test/test_connectivity_checker_node.py
     TIMEOUT 120)

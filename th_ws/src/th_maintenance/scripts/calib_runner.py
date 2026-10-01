@@ -16,6 +16,13 @@
   - `/system/state` が一定時間来なくなったら止める（`_STATE_STALE_S`）
   - `/odom` が途絶したら止める（自分の位置が分からないまま走らせない）
 
+`BLIND`（LiDAR 死角マスク）は走らない。画面で選んだ角度帯（`/calib/submit` の `ranges`）を、
+**幅の上限（`blind_max_*`）を検査してから** `obstacle_limiter`・`lidar_filter`・`opcheck_runner` の
+3 ノードへ同時にランタイム反映し（1 つでも失敗すれば全部を適用前へ戻す）、適用後の `/scan` から
+写り込みを推定して、選んだ範囲の外に残るずれが `calib_blind_tolerance_deg` 以内かを検証する。
+`/scan_filtered` に実際にマスクが効いていること（選んだ範囲の内側が inf）も確かめる。確定は検証合格のときだけ。
+正本は `calib/current.yaml`（起動時に `params_generation` が生成 yaml へ重ねる）。
+
 動く項目は `LINEAR`（直進）と `ROTATION`（旋回）。速度は `v_calib`、出力先は
 **`/cmd_vel_behavior`**（`/cmd_vel` へは出さない・`/cmd_vel_manual` も使わない）。
 `IMU` は人が機体を 8 の字に動かすので走らせない（`/esp32/imu_calib_status` を見るだけ）。
@@ -43,13 +50,15 @@ try:
     import rclpy
     from rclpy.node import Node
     from rclpy.parameter import Parameter
+    from rclpy.qos import qos_profile_sensor_data
     from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                            QoSReliabilityPolicy)
     from rcl_interfaces.msg import Parameter as ParameterMsg
-    from rcl_interfaces.msg import ParameterType, ParameterValue
+    from rcl_interfaces.msg import ParameterDescriptor, ParameterType, ParameterValue
     from rcl_interfaces.srv import SetParameters
     from geometry_msgs.msg import Twist
     from nav_msgs.msg import Odometry
+    from sensor_msgs.msg import LaserScan
     from std_msgs.msg import Bool, UInt8
     from th_system_msgs.msg import CalibStatus, StateEffect, StateEvent, SystemState
     from th_system_msgs.srv import ApplyCalib, RollbackCalib, StartCalib, SubmitCalib
@@ -60,13 +69,18 @@ except ImportError:
     Node = object
     RS_OK = False
 
-from th_maintenance import calib_core
+from th_maintenance import blind_core, calib_core
+from th_maintenance.check_core import BLIND_MIN_RUN_DEG, BLIND_NEAR_M
 from th_maintenance.calib_store import CalibStore
 
 # registry.yaml と一致させるパラメータの既定値（consumers に calib_runner を持つ行のうち値あり）。
 PARS: dict = {
     "v_calib": 0.15,
     "wheel_radius_scale_max_dev": 0.10,
+    # 死角マスクの幅の上限（registry の blind_max_*。obstacle_limiter も同じ値で独立に検査する）
+    "blind_max_sector_deg": blind_core.MAX_SECTOR_DEG,
+    "blind_max_total_deg": blind_core.MAX_TOTAL_DEG,
+    "blind_max_sectors": blind_core.MAX_SECTORS,
 }
 
 # registry 未登録のノード局所の既定値（names.md §7 に名前が無いため registry へ足していない。
@@ -75,7 +89,13 @@ LOCAL_PARS: dict = {
     "calib_linear_distance_m": 1.0,
     "calib_rotation_deg": 180.0,
     "calib_run_timeout_s": 60.0,
+    # BLIND の検証: 恒常的な写り込みを推定するために集める /scan のフレーム数と、待つ上限。
+    "calib_blind_verify_frames": 15.0,
+    "calib_blind_verify_timeout_s": 10.0,
 }
+
+# BLIND の反映先。obstacle_limiter（安全判定。上限を独立検査して拒否できる）を先頭にする。
+BLIND_TARGET_NODES = ("/obstacle_limiter", "/lidar_filter", "/opcheck_runner")
 
 # 許容範囲は未確定（registry は status: placeholder・生成 YAML には載らない）。
 # 既定の -1.0 は「未確定」の意味で、検証は合格にならない（calib_core.verify_*）。
@@ -83,6 +103,7 @@ TOLERANCE_UNDEFINED = -1.0
 
 ITEM_VALID = calib_core.ITEMS
 MOTION_ITEMS = ("LINEAR", "ROTATION")
+RUNTIME_ITEMS = MOTION_ITEMS + ("BLIND",)    # ランタイム反映と適用前への復帰が要る項目
 
 # 実行 phase
 IDLE = "IDLE"
@@ -133,6 +154,10 @@ class CalibRunner(Node):
             self.declare_parameter(name, value)
         self.declare_parameter("calib_linear_tolerance_ratio", TOLERANCE_UNDEFINED)
         self.declare_parameter("calib_rotation_tolerance_deg", TOLERANCE_UNDEFINED)
+        self.declare_parameter("calib_blind_tolerance_deg", TOLERANCE_UNDEFINED)
+        # 起動時の死角マスク（生成 yaml。確定済みの校正値で上書き済み）。BLIND の「適用前」の値。
+        self.declare_parameter("blind_angle_ranges", [], ParameterDescriptor(dynamic_typing=True))
+        self.declare_parameter("blind_target_nodes", list(BLIND_TARGET_NODES))
         self.declare_parameter("calib_dir", "/root/th_data/calib")
         self.declare_parameter("params_digest_path", "/root/th_data/generated/params_digest.json")
         # esp32_bridge の params.yaml の既定値（校正済みなら current.yaml が優先される）。
@@ -178,6 +203,13 @@ class CalibRunner(Node):
         # IMU
         self._imu_calib = 0
 
+        # BLIND
+        self._scan = None                # 最新の生スキャン (angle_min_rad, inc_rad, ranges, t)
+        self._scan_filtered = None       # 最新の /scan_filtered (同上)
+        self._verify_frames = []         # 検証中に集めた生スキャンの ranges
+        self._verify_t0 = 0.0
+        self._verify_applied_s = 0.0     # 3 ノードへの反映が終わった時刻
+
         self._startup_applied = False
 
         # ── QoS ───────────────────────────────────────────
@@ -200,6 +232,9 @@ class CalibRunner(Node):
         self.create_subscription(Bool, "/safety/estop_hw", self._on_estop_hw, 10)
         self.create_subscription(Odometry, "/odom", self._on_odom, 10)
         self.create_subscription(UInt8, "/esp32/imu_calib_status", self._on_imu_calib, 10)
+        self.create_subscription(LaserScan, "/scan", self._on_scan, qos_profile_sensor_data)
+        self.create_subscription(LaserScan, "/scan_filtered", self._on_scan_filtered,
+                                 qos_profile_sensor_data)
 
         # ── Publishers ────────────────────────────────────
         self._pub_status = self.create_publisher(CalibStatus, "/calib/status", status_qos)
@@ -215,6 +250,9 @@ class CalibRunner(Node):
         # ── esp32_bridge のパラメータ反映 ─────────────────
         bridge = str(self.get_parameter("bridge_node").value).rstrip("/")
         self._cli_set = self.create_client(SetParameters, f"{bridge}/set_parameters")
+        self._blind_clients = {
+            str(n).rstrip("/"): self.create_client(SetParameters, f"{str(n).rstrip('/')}/set_parameters")
+            for n in self.get_parameter("blind_target_nodes").value}
 
         # ── Timers ────────────────────────────────────────
         self.create_timer(_CTRL_PERIOD_S, self._ctrl_tick)
@@ -323,7 +361,14 @@ class CalibRunner(Node):
             return {"wheel_radius_scale": 1.0}
         if item == "ROTATION":
             return {"wheel_base": self._p("nominal_wheel_base_m")}
+        if item == "BLIND":
+            return {"blind_angle_ranges": self._startup_blind_flat()}
         return {}
+
+    def _startup_blind_flat(self) -> list:
+        """起動時の死角マスク（出荷値、または確定済みの校正値で上書きされた生成 yaml の値）。"""
+        value = self.get_parameter("blind_angle_ranges").value
+        return [float(v) for v in (value or [])]
 
     def _start_run(self, item: str, verify: bool) -> bool:
         if not self._in_calib():
@@ -350,6 +395,11 @@ class CalibRunner(Node):
             self._phase = RUNNING
             self._publish_status()
             self._check_imu_done()
+            return True
+        if item == "BLIND":
+            # 走らない。S2 で画面の選択（/calib/submit の ranges）を待つ。
+            self._phase = RUNNING
+            self._publish_status()
             return True
         # LINEAR / ROTATION: 自分の位置（/odom）が無いと走らせない
         if not self._odom_fresh():
@@ -385,6 +435,12 @@ class CalibRunner(Node):
                 and self._now_s() - self._state_last_s > _STATE_STALE_S):
             self.get_logger().warn("/system/state が途絶 → 走行を止める")
             self._abort_all("state_stale")
+            return
+        if self._item == "BLIND" and self._phase == VERIFY_RUNNING:
+            if self._estopped():
+                self._abort_all("estop")
+                return
+            self._blind_verify_tick()
             return
         if self._phase not in _MOVING_PHASES or self._item not in MOTION_ITEMS:
             self._halt()
@@ -476,7 +532,11 @@ class CalibRunner(Node):
         if not self._in_calib():
             response.preview_after = f"CALIB 以外のモード（{self._mode}）では受け付けません"
             return response
-        if item != self._item or self._phase not in (WAIT_MEASURED, PREVIEW, VERIFY_WAIT):
+        accept = (WAIT_MEASURED, PREVIEW, VERIFY_WAIT)
+        if item == "BLIND":
+            # BLIND は S2（選択待ち＝RUNNING。検証 NG 後は RETRY_WAIT）でも選択を受ける。
+            accept = (RUNNING, RETRY_WAIT, WAIT_MEASURED, PREVIEW)
+        if item != self._item or self._phase not in accept:
             response.preview_after = f"今は実測値を受け付けない（item={self._item} phase={self._phase}）"
             return response
         try:
@@ -485,6 +545,8 @@ class CalibRunner(Node):
             extra = {}
         if isinstance(extra, dict) and extra.get("operator"):
             self._operator = str(extra["operator"])
+        if item == "BLIND":
+            return self._submit_blind(extra if isinstance(extra, dict) else {}, response)
         measured = float(request.measured)
         if self._phase == VERIFY_WAIT:
             return self._submit_verify(item, measured, response)
@@ -543,6 +605,151 @@ class CalibRunner(Node):
             self._fail_verify(verdict.reason)
         return response
 
+    # ── BLIND: 選択 → プレビュー ─────────────────────────
+    def _on_scan(self, msg):
+        self._scan = (msg.angle_min, msg.angle_increment, list(msg.ranges), self._now_s())
+        if self._item == "BLIND" and self._phase == VERIFY_RUNNING \
+                and self._now_s() >= self._verify_applied_s > 0.0:
+            self._verify_frames.append(list(msg.ranges))
+
+    def _on_scan_filtered(self, msg):
+        self._scan_filtered = (msg.angle_min, msg.angle_increment, list(msg.ranges), self._now_s())
+
+    def _blind_limits(self) -> dict:
+        return {"max_sector_deg": self._p("blind_max_sector_deg"),
+                "max_total_deg": self._p("blind_max_total_deg"),
+                "max_sectors": int(self._p("blind_max_sectors"))}
+
+    def _submit_blind(self, extra: dict, response):
+        """選んだ角度帯（ranges=[[a0,a1],...]）を検査し、プレビューを作る。
+
+        上限を超える選択・幅ゼロ・形の崩れは**適用に進めない**（PREVIEW_INSANE。LINEAR の A10 と同じ扱い）。
+        """
+        was_s2 = self._phase in (RUNNING, RETRY_WAIT)
+        cur = self._current_value("BLIND")
+        before = {"blind_angle_ranges": cur["blind_angle_ranges"]}
+        sel = blind_core.validate_selection(extra.get("ranges"), **self._blind_limits())
+        reason = sel.reason
+        masked = 0
+        if sel.ok:
+            if self._scan is None:
+                reason = "no_scan"
+            else:
+                a_min, a_inc, rng, _t = self._scan
+                masked = blind_core.count_masked(sel.ranges, a_min, a_inc, rng)
+        sane = bool(sel.ok and reason == "")
+        flat = blind_core.flat_from_pairs(sel.ranges) if sel.ok else []
+        after = {"blind_angle_ranges": flat, "masked_points": masked,
+                 "total_deg": round(sel.total_deg, 2), "reason": reason}
+        self._preview = (json.dumps(before), json.dumps(after))
+        self._preview_sane = sane
+        self._preview_insane = not sane
+        self._pending = {"blind_angle_ranges": flat} if sane else None
+        self._measured = None
+        self._reason = reason
+        self.get_logger().info(f"BLIND プレビュー: {after} sane={sane}")
+        if sane:
+            self._phase = PREVIEW
+            self._publish_status(result="PREVIEW_OK")
+            if was_s2:
+                self._emit("evt.calib_step_done", item="BLIND")
+        else:
+            if not was_s2:
+                self._phase = WAIT_MEASURED
+            self._publish_status(result="PREVIEW_INSANE")
+        response.success = sane
+        response.preview_before, response.preview_after = self._preview
+        return response
+
+    # ── BLIND: 適用（3 ノードへ同時）と検証 ──────────────
+    def _set_blind(self, flat: list, on_done):
+        """`blind_angle_ranges` を obstacle_limiter・lidar_filter・opcheck_runner の**全部**へ送る。
+
+        1 つでも届かない・拒否されたら on_done(False, 理由)。呼び出し側が全部を適用前へ戻す。
+        """
+        clients = self._blind_clients
+        for name, cli in clients.items():
+            if not cli.service_is_ready():
+                if on_done:
+                    on_done(False, f"node_unavailable:{name}")
+                else:
+                    self.get_logger().warn(f"{name} に届かず死角マスクを戻せなかった")
+                return
+        results = {}
+        total = len(clients)
+
+        def _one(name):
+            def _done(fut):
+                try:
+                    res = fut.result().results
+                    ok = bool(res) and all(r.successful for r in res)
+                    reason = "; ".join(r.reason for r in res if not r.successful)
+                except Exception as e:  # noqa: BLE001
+                    ok, reason = False, str(e)
+                results[name] = (ok, reason)
+                if not ok:
+                    self.get_logger().warn(f"{name} への死角マスク反映に失敗: {reason}")
+                if len(results) == total:
+                    bad = [f"{n}:{r}" for n, (o, r) in results.items() if not o]
+                    if on_done:
+                        on_done(not bad, ",".join(bad))
+            return _done
+
+        for name, cli in clients.items():
+            req = SetParameters.Request()
+            pm = ParameterMsg()
+            pm.name = "blind_angle_ranges"
+            pm.value = ParameterValue(type=ParameterType.PARAMETER_DOUBLE_ARRAY,
+                                      double_array=[float(v) for v in flat])
+            req.parameters.append(pm)
+            cli.call_async(req).add_done_callback(_one(name))
+
+    def _start_blind_verify(self):
+        self._verify_frames = []
+        self._verify_t0 = self._now_s()
+        self._verify_applied_s = self._now_s()
+        self._phase = VERIFY_RUNNING
+        self._reason = ""
+        self.get_logger().info("BLIND 検証を開始（/scan を集めて写り込みを推定する）")
+        self._publish_status()
+
+    def _blind_verify_tick(self):
+        if self._now_s() - self._verify_t0 > self._p("calib_blind_verify_timeout_s"):
+            self._fail_verify("verify_timeout:no_scan" if not self._verify_frames
+                              else "verify_timeout:no_filtered_scan")
+            return
+        need = max(1, int(self._p("calib_blind_verify_frames")))
+        filt = self._scan_filtered
+        if len(self._verify_frames) < need or filt is None or filt[3] < self._verify_applied_s:
+            return
+        selected = [tuple(p) for p in blind_core.pairs_from_flat(
+            (self._pending or {}).get("blind_angle_ranges", []))]
+        a_min, a_inc, _r, _t = self._scan
+        # 1) マスクが lidar_filter に実際に効いている（選んだ範囲の内側が /scan_filtered で inf）
+        leaked = blind_core.unmasked_inside(selected, filt[0], filt[1], filt[2])
+        if leaked > 0:
+            self._fail_verify(f"mask_not_effective:{leaked}")
+            return
+        # 2) 恒常的な写り込みが、選んだ範囲の外に許容以上残っていない
+        inc_deg = math.degrees(a_inc)
+        persistent = blind_core.persistent_near_ranges(self._verify_frames, BLIND_NEAR_M)
+        from th_maintenance.check_core import estimate_blind_sectors
+        est = blind_core.shift_bands(
+            estimate_blind_sectors(persistent, inc_deg, BLIND_NEAR_M, BLIND_MIN_RUN_DEG),
+            math.degrees(a_min))
+        verdict = blind_core.verify_blind(
+            est, selected, self._tolerance(self._p("calib_blind_tolerance_deg")))
+        self._verify_measured = None
+        if verdict.ok:
+            self._phase = VERIFIED
+            self._reason = verdict.reason
+            self.get_logger().info(f"BLIND 検証 OK（{verdict.reason}）")
+            self._publish_status(result="OK")
+            self._emit("evt.calib_step_done", item="BLIND")
+        else:
+            self.get_logger().warn(f"BLIND 検証 NG（{verdict.reason}）→ 適用前へ戻す")
+            self._fail_verify(verdict.reason)
+
     # ── S4: 適用と検証 ───────────────────────────────────
     def _apply_and_verify(self, item: str):
         if not self._in_calib() or item != self._item or self._phase != PREVIEW \
@@ -559,6 +766,21 @@ class CalibRunner(Node):
             self._emit("evt.calib_step_done", item=item)
             return
         pending = dict(self._pending or {})
+        if item == "BLIND":
+            # プレビューで弾いているが、適用の直前にも上限を必ず通す（二重確認）。
+            sel = blind_core.check_limits(
+                blind_core.pairs_from_flat(pending.get("blind_angle_ranges", [])),
+                **self._blind_limits())
+            if not sel.ok:
+                self.get_logger().warn(f"上限違反の死角マスクは適用しない（{sel.reason}）")
+                self._fail_verify(f"blind_limit_violation:{sel.reason}")
+                return
+            self._phase = APPLYING
+            self._revert_to = self._current_value(item)
+            self._applied = True      # 一部のノードにだけ入った場合も戻せるよう、送る前から立てる
+            self._publish_status(result="APPLYING")
+            self._set_blind(pending["blind_angle_ranges"], self._on_applied)
+            return
         # A10（LINEAR）。プレビューで弾いているが、適用の直前にも必ず通す。
         if item == "LINEAR" and not calib_core.a10_ok(
                 pending.get("wheel_radius_scale", math.nan), self._p("wheel_radius_scale_max_dev")):
@@ -574,14 +796,17 @@ class CalibRunner(Node):
         if self._phase != APPLYING:
             # 適用の応答が返る前に中断された。反映済みの値を戻す。
             if ok and self._revert_to is not None and self._item is not None:
-                self._set_bridge(self._item, self._revert_to, None)
+                self._set_runtime(self._item, self._revert_to)
             return
         item = self._item
         if not ok:
             self._fail_verify(f"apply_failed:{reason}")
             return
         self._applied = True
-        self.get_logger().info(f"{item} をランタイムへ適用: {self._pending}（検証走行へ）")
+        self.get_logger().info(f"{item} をランタイムへ適用: {self._pending}（検証へ）")
+        if item == "BLIND":
+            self._start_blind_verify()
+            return
         self._start_run(item, verify=True)
 
     def _fail_verify(self, reason: str):
@@ -606,9 +831,9 @@ class CalibRunner(Node):
 
     def _revert_runtime(self):
         """ランタイムに入れた未確定の値を適用前へ戻す（冪等）。"""
-        if self._applied and self._revert_to is not None and self._item in MOTION_ITEMS:
+        if self._applied and self._revert_to is not None and self._item in RUNTIME_ITEMS:
             self.get_logger().warn(f"{self._item} を適用前の値へ戻す: {self._revert_to}")
-            self._set_bridge(self._item, self._revert_to, None)
+            self._set_runtime(self._item, self._revert_to)
         self._applied = False
 
     # ── 確定・破棄 ───────────────────────────────────────
@@ -622,6 +847,13 @@ class CalibRunner(Node):
         if item == "IMU":
             values = {"calib_status": float(self._imu_calib)}
             verification = {"result": "OK", "calib_status": int(self._imu_calib)}
+        elif item == "BLIND":
+            values = dict(self._pending or {})
+            verification = {
+                "result": "OK",
+                "tolerance_deg": self._p("calib_blind_tolerance_deg"),
+                "detail": self._reason,
+            }
         else:
             values = dict(self._pending or {})
             verification = {
@@ -658,6 +890,7 @@ class CalibRunner(Node):
         self._preview_sane = False
         self._preview_insane = False
         self._measured = None
+        self._verify_frames = []
         self._reason = reason
         if was_active:
             self._publish_status(result="ABORTED")
@@ -686,7 +919,7 @@ class CalibRunner(Node):
         if not self._in_calib():
             response.message = f"CALIB 以外のモード（{self._mode}）では実行できません"
             return response
-        if request.item != self._item or request.item not in MOTION_ITEMS:
+        if request.item != self._item or request.item not in RUNTIME_ITEMS:
             response.message = f"今は {request.item} を再走行できない（実行中の項目={self._item}）"
             return response
         if self._phase != RETRY_WAIT or self._state != "S2":
@@ -728,15 +961,30 @@ class CalibRunner(Node):
                 self._p("wheel_radius_scale_max_dev")):
             self.get_logger().warn("A10 違反の履歴値へは戻せない")
             return response
+        if request.item == "BLIND":
+            # 履歴の値も上限を通す（上限を後から変えた・壊れた履歴を安全判定へ入れない）。
+            sel = blind_core.check_limits(
+                blind_core.pairs_from_flat(list(target.get("blind_angle_ranges", []))),
+                **self._blind_limits())
+            if not sel.ok:
+                self.get_logger().warn(f"上限違反の履歴値へは戻せない（{sel.reason}）")
+                return response
         restored = self._store.rollback(request.item, gen)
         if restored is None:
             return response
-        if request.item in MOTION_ITEMS:
-            self._set_bridge(request.item, restored["values"], None)
+        if request.item in RUNTIME_ITEMS:
+            self._set_runtime(request.item, restored["values"])
         self.get_logger().info(f"{request.item} を世代 {gen} へ戻した: {restored['values']}")
         response.success = True
         self._publish_status(result="ROLLED_BACK")
         return response
+
+    def _set_runtime(self, item: str, values: dict):
+        """適用前への復帰・ロールバックの反映先を項目で振り分ける（結果は問わない）。"""
+        if item == "BLIND":
+            self._set_blind(list(values.get("blind_angle_ranges", [])), None)
+        else:
+            self._set_bridge(item, values, None)
 
     # ── esp32_bridge への反映 ────────────────────────────
     def _set_bridge(self, item: str, values: dict, on_done):
@@ -815,6 +1063,18 @@ class CalibRunner(Node):
             detail["commanded"] = self._commanded(item)
             detail["current"] = self._current_value(item)
             detail["progress"] = round(self._run_progress, 3)
+        if item == "BLIND":
+            sel_flat = (self._pending or {}).get("blind_angle_ranges")
+            detail["current"] = self._current_value("BLIND")
+            detail["blind"] = {
+                "selected": sel_flat,
+                "limits": {"max_sector_deg": self._p("blind_max_sector_deg"),
+                           "max_total_deg": self._p("blind_max_total_deg"),
+                           "max_sectors": int(self._p("blind_max_sectors"))},
+                "tolerance_deg": self._p("calib_blind_tolerance_deg"),
+                "scan_received": self._scan is not None,
+                "verify_frames": len(self._verify_frames),
+            }
         if item == "IMU":
             c = self._imu_calib
             detail["imu"] = {"sys": (c >> 6) & 3, "gyro": (c >> 4) & 3,
@@ -842,11 +1102,13 @@ class CalibRunner(Node):
     def _publish_status(self, result: str = ""):
         if not result:
             result = {
-                IDLE: "IDLE", GUIDE: "GUIDE", RUNNING: "RUNNING",
+                IDLE: "IDLE", GUIDE: "GUIDE",
+                RUNNING: "PREVIEW_INSANE" if self._preview_insane else "RUNNING",
                 WAIT_MEASURED: "PREVIEW_INSANE" if self._preview_insane else "WAIT_MEASURED",
                 PREVIEW: "PREVIEW_OK" if self._preview_sane else "WAIT_MEASURED",
                 APPLYING: "APPLYING", VERIFY_RUNNING: "VERIFY_RUNNING",
-                VERIFY_WAIT: "WAIT_VERIFY", VERIFIED: "OK", RETRY_WAIT: "RETRY_WAIT",
+                VERIFY_WAIT: "WAIT_VERIFY", VERIFIED: "OK",
+                RETRY_WAIT: "PREVIEW_INSANE" if self._preview_insane else "RETRY_WAIT",
             }[self._phase]
         st = CalibStatus()
         st.header.stamp = self.get_clock().now().to_msg()
