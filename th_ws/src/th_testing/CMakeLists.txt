@@ -381,6 +381,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_calib_blind_node
     test/test_calib_blind_node.py
     TIMEOUT 600)
+  # obstacle_limiter の起動時 blind_angle_ranges が上限違反ならマスクなしで起動する（観測できる振る舞い）
+  ament_add_pytest_test(test_blind_startup_limit_node
+    test/test_blind_startup_limit_node.py
+    TIMEOUT 180)
   ament_add_pytest_test(connectivity_checker_node
     test/test_connectivity_checker_node.py
     TIMEOUT 120)
