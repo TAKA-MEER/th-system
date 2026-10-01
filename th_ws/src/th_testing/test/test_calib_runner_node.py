@@ -190,11 +190,11 @@ class TestCalibRunnerNode(unittest.TestCase):
         return bool(self.cmds) and abs(self.cmds[-1].linear.x) < 1e-9 \
             and abs(self.cmds[-1].angular.z) < 1e-9
 
-    def _start_running(self):
+    def _start_running(self, item='LINEAR'):
         self._set_state('CALIB', 'S1')
-        self._effect('begin_wizard')
+        self._effect('begin_wizard', item=item)
         self._set_state('CALIB', 'S2')
-        self._effect('run_measurement')
+        self._effect('run_measurement', item=item)
         self._wait(self._moving, what='走り出す')
 
     # ── a ────────────────────────────────────────────────────
@@ -256,6 +256,38 @@ class TestCalibRunnerNode(unittest.TestCase):
         x_stop = self.odom_x
         self._spin(1.0)
         assert self.odom_x - x_stop < 0.01
+
+    # ── i: 走行中に /odom が途絶したら止める（自分の位置が分からないまま走らせない）──
+    def _assert_stops_on_odom_silence(self, item):
+        self._start_running(item)
+        self.events.clear()
+        self.send_odom = False           # ここで /odom を止める
+        # _ODOM_STALE_S(0.5s) + 余裕の内に 0 になる
+        self._wait(lambda: bool(self.cmds) and abs(self.cmds[-1].linear.x) < 1e-9
+                   and abs(self.cmds[-1].angular.z) < 1e-9,
+                   timeout=1.5, what=f'{item}: /odom 途絶で /cmd_vel_behavior が 0 になる（⑦の標的）')
+        n = len(self.cmds)
+        self._spin(1.0)
+        later = self.cmds[n:]
+        assert all(abs(c.linear.x) < 1e-9 and abs(c.angular.z) < 1e-9 for c in later), \
+            '/odom 途絶のあとにまた動かした'
+        assert not any(e.event == 'evt.calib_step_done' for e in self.events), \
+            '/odom 途絶で測定走行が「完了」扱いになった'
+        assert not os.path.exists(os.path.join(CALIB_DIR, 'current.yaml')), \
+            '/odom 途絶で補正値が確定された'
+        # /odom が戻っても勝手に再開しない（再走行は /calib/start だけ）
+        self.send_odom = True
+        self._spin(1.0)
+        assert not self._moving_since(n), '/odom が戻ったら勝手に走り出した'
+
+    def _moving_since(self, n):
+        return any(abs(c.linear.x) > 1e-9 or abs(c.angular.z) > 1e-9 for c in self.cmds[n:])
+
+    def test_i_odom_silence_stops_linear(self):
+        self._assert_stops_on_odom_silence('LINEAR')
+
+    def test_i_odom_silence_stops_rotation(self):
+        self._assert_stops_on_odom_silence('ROTATION')
 
     # ── d ────────────────────────────────────────────────────
     def test_d_no_odom_does_not_start(self):

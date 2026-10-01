@@ -107,3 +107,11 @@ test('他モードでは subState=REPAIR を無視する', () => {
   assert.equal(resolveScreen({ ...base, mode: 'IDLE', subState: 'REPAIR' }), 'S01')
   assert.equal(resolveScreen({ ...base, mode: 'PREP', subState: 'REPAIR' }), 'S20')
 })
+
+// WP-MAINT-03: CALIB（校正）は state（LIST/S1〜S4）によらず S-40。
+test('CALIB は state によらず S-40（settingsOpen でも）', () => {
+  for (const subState of ['LIST', 'S1', 'S2', 'S3', 'S4', undefined, null]) {
+    assert.equal(resolveScreen({ ...base, mode: 'CALIB', subState }), 'S40', `subState=${subState}`)
+    assert.equal(resolveScreen({ ...base, mode: 'CALIB', subState, settingsOpen: true }), 'S40')
+  }
+})

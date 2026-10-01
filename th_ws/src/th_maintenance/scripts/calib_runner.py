@@ -161,6 +161,9 @@ class CalibRunner(Node):
         self._operator = ""
         self._preview = ("", "")
         self._preview_sane = False
+        # 直近の /calib/submit が sane でなかった（次の submit か項目の離脱まで、周期配信でも
+        # result=PREVIEW_INSANE を出し続ける。S-40 が「補正が大きすぎます」を出し続けるため）。
+        self._preview_insane = False
 
         # 走行
         self._cmd_active = False
@@ -300,6 +303,7 @@ class CalibRunner(Node):
         self._pending = None
         self._preview = ("", "")
         self._preview_sane = False
+        self._preview_insane = False
         self.get_logger().info(f"校正開始（案内）: {item}")
         self._publish_status()
 
@@ -340,6 +344,7 @@ class CalibRunner(Node):
             self._pending = None
             self._preview = ("", "")
             self._preview_sane = False
+            self._preview_insane = False
             self._measured = None
         if item == "IMU":
             self._phase = RUNNING
@@ -505,6 +510,7 @@ class CalibRunner(Node):
             pending = {"wheel_base": new}
         self._preview = (json.dumps(before), json.dumps(after, default=str))
         self._preview_sane = bool(sane)
+        self._preview_insane = not sane
         self._pending = pending if sane else None
         self._phase = PREVIEW if sane else WAIT_MEASURED
         self.get_logger().info(
@@ -650,6 +656,7 @@ class CalibRunner(Node):
         self._pending = None
         self._preview = ("", "")
         self._preview_sane = False
+        self._preview_insane = False
         self._measured = None
         self._reason = reason
         if was_active:
@@ -836,7 +843,8 @@ class CalibRunner(Node):
         if not result:
             result = {
                 IDLE: "IDLE", GUIDE: "GUIDE", RUNNING: "RUNNING",
-                WAIT_MEASURED: "WAIT_MEASURED", PREVIEW: "PREVIEW_OK" if self._preview_sane else "WAIT_MEASURED",
+                WAIT_MEASURED: "PREVIEW_INSANE" if self._preview_insane else "WAIT_MEASURED",
+                PREVIEW: "PREVIEW_OK" if self._preview_sane else "WAIT_MEASURED",
                 APPLYING: "APPLYING", VERIFY_RUNNING: "VERIFY_RUNNING",
                 VERIFY_WAIT: "WAIT_VERIFY", VERIFIED: "OK", RETRY_WAIT: "RETRY_WAIT",
             }[self._phase]

@@ -131,12 +131,14 @@ class TestCalibWiring(unittest.TestCase):
         self.bridge.add_on_set_parameters_callback(self._on_bridge_set)
 
         self.sim = _Sim()
+        self.send_odom = True
         self._last_cmd = Twist()
         self._last_cmd_t = 0.0
         self.cmds = []
         self.node.create_subscription(Twist, '/cmd_vel_behavior', self._on_cmd, 10)
         self.pub_odom = self.node.create_publisher(Odometry, '/odom', 10)
         self.status = None
+        self.status_log = []
         self.node.create_subscription(CalibStatus, '/calib/status', self._on_status, 10)
         self.state = None
         self.node.create_subscription(SystemState, '/system/state', self._on_state, _STATE_QOS)
@@ -183,6 +185,7 @@ class TestCalibWiring(unittest.TestCase):
 
     def _on_status(self, msg):
         self.status = msg
+        self.status_log.append((time.time(), msg.result))
 
     def _on_state(self, msg):
         self.state = msg
@@ -201,7 +204,8 @@ class TestCalibWiring(unittest.TestCase):
         odom.pose.pose.position.x = self.sim.odom_x
         odom.pose.pose.orientation.z = math.sin(self.sim.odom_yaw / 2.0)
         odom.pose.pose.orientation.w = math.cos(self.sim.odom_yaw / 2.0)
-        self.pub_odom.publish(odom)
+        if self.send_odom:
+            self.pub_odom.publish(odom)
 
     def _spin(self, duration=0.2):
         deadline = time.time() + duration
@@ -376,10 +380,24 @@ class TestCalibWiring(unittest.TestCase):
         res = self._submit('LINEAR', measured)
         assert not res.success, 'A10 を超える補正のプレビューが sane になった'
         self._wait(lambda: self._result_is('PREVIEW_INSANE'), what='PREVIEW_INSANE')
+        # 周期配信（0.5s ごと）を 2 回以上またいでも PREVIEW_INSANE のまま
+        # （定期配信が WAIT_MEASURED で上書きすると、S-40 の「補正が大きすぎます」が 0.5s で消える）
+        t_insane = time.time()
         for _ in range(5):
             r = self._trigger('ui.calib_next')
             assert not r.accepted, 'A10 超過のまま S4 へ進めた'
             self._spin(0.1)
+        self._spin(max(0.0, 2.2 - (time.time() - t_insane)))  # 周期 0.5s の 3 回以上ぶん（負荷で間引かれても 2 回は届く）
+        after = [r for t, r in self.status_log if t >= t_insane]
+        assert len(after) >= 2, f'周期配信が 2 回以上届いていない: {after}'
+        assert set(after) == {'PREVIEW_INSANE'}, \
+            f'insane の submit 後に PREVIEW_INSANE 以外の status が出た: {after}'
+        # 測り直して sane な値を入れたら PREVIEW_INSANE は終わる
+        res = self._submit('LINEAR', DIST_M * 0.95)
+        assert res.success
+        self._wait(lambda: self._result_is('PREVIEW_OK'), what='sane な再入力で PREVIEW_OK')
+        self._spin(0.7)
+        assert self._result_is('PREVIEW_OK'), 'PREVIEW_OK が周期配信で維持されない'
         assert self._state_is('CALIB', 'S3')
         assert not [s for s in self.bridge_sets if s[0] == 'wheel_radius_scale'], \
             f'A10 超過の値が esp32_bridge へ送られた: {self.bridge_sets}'
@@ -413,6 +431,46 @@ class TestCalibWiring(unittest.TestCase):
         self._wait(lambda: abs(self._bridge_value('wheel_radius_scale') - 1.0) < 1e-9,
                    what='中断で適用前へ戻る')
         assert not os.path.exists(os.path.join(CALIB_DIR, 'current.yaml'))
+
+    # ════════════════════════════════════════════════════════
+    # 4b. 走行中に /odom が途絶したら止める（測定走行・検証走行とも。確定しない）
+    # ════════════════════════════════════════════════════════
+    def test_odom_silence_during_measure_run_stops(self):
+        self._enter_calib('LINEAR')
+        assert self._trigger('ui.calib_next').accepted
+        self._wait(lambda: any(abs(c.linear.x) > 0.01 for c in self.cmds), what='走り出す')
+        self.send_odom = False
+        self._wait(lambda: abs(self.cmds[-1].linear.x) < 1e-9, timeout=1.5,
+                   what='測定走行: /odom 途絶で停止（⑦の標的）')
+        n = len(self.cmds)
+        self._spin(1.0)
+        assert all(abs(c.linear.x) < 1e-9 for c in self.cmds[n:])
+        self._wait(lambda: self._result_is('RETRY_WAIT') or self._result_is('NG'),
+                   what='再走行待ち（RETRY_WAIT）になる')
+        assert not os.path.exists(os.path.join(CALIB_DIR, 'current.yaml'))
+        self.send_odom = True
+
+    def test_odom_silence_during_verify_run_stops_and_reverts(self):
+        self._enter_calib('LINEAR')
+        self._run_to_s3()
+        measured = self.sim.phys_dist
+        self.sim.reset()
+        self._preview_and_apply('LINEAR', measured)
+        self._wait(lambda: abs(self._bridge_value('wheel_radius_scale') - 0.95) < 0.03,
+                   what='bridge への適用')
+        # 検証走行が走っている間に /odom を止める
+        self._wait(lambda: any(abs(c.linear.x) > 0.01 for c in self.cmds[-5:]), what='検証走行中')
+        self.send_odom = False
+        self._wait(lambda: abs(self.cmds[-1].linear.x) < 1e-9, timeout=1.5,
+                   what='検証走行: /odom 途絶で停止（⑦の標的）')
+        # 検証 NG と同じ扱い: 適用前へ戻り、S2 へ。確定しない
+        self._wait(lambda: abs(self._bridge_value('wheel_radius_scale') - 1.0) < 1e-9,
+                   what='/odom 途絶で適用前の値へ戻る')
+        self._wait(lambda: self._state_is('CALIB', 'S2'), what='S2 へ（T-CAL-06）')
+        assert any(e.event == 'evt.calib_verify_ng' for e in self.events)
+        assert not os.path.exists(os.path.join(CALIB_DIR, 'current.yaml')), \
+            '/odom 途絶で補正値が確定された'
+        self.send_odom = True
 
     # ════════════════════════════════════════════════════════
     # 5. フォルト・非常停止で確定しない（§7 #3）

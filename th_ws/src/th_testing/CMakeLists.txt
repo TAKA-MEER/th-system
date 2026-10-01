@@ -117,6 +117,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_calib_store
     test/test_calib_store.py
     TIMEOUT 60)
+  # S-31 故障診断のチェック手順（repair_hints.yaml）と WebUI 用 json の一致
+  # （WP-MAINT-03。ROS2 不要）
+  ament_add_pytest_test(test_repair_hints_sync
+    test/test_repair_hints_sync.py
+    TIMEOUT 60)
   # 自己位置源選択コア (WS-9D。EKF 出力 /odometry/filtered が新鮮ならそれ、
   # 古ければ生 /odom にフォールバック。ROS2 不要)
   ament_add_pytest_test(test_odom_source
