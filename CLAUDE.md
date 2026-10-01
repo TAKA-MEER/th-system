@@ -35,9 +35,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **正本は [docs/plan/ImplementationPlan.md](docs/plan/ImplementationPlan.md) §2。着手前に読む。**
 ここには要点だけ書く。
 
-- **「実装して」と言われたら自分でコードを書かない。**herdr の `ImplementAgent` タブに常駐させた
-  **opencode** にブリーフを渡して投げる（手順・落とし穴は ImplementationPlan §2.1）。
-  体数は固定しない。必要なだけ `herdr pane split` でペインを分ける。
+- **「実装して」と言われたら自分でコードを書かない。****opencode** にブリーフを渡して投げる
+  （手順・落とし穴は ImplementationPlan §2.1）。体数は固定しない。
+  **窓口は herdr と orca の 2 つ**（2026-10-01 から乗り換えを検討中）。**いま開いている方を環境変数で見分けて使う**:
+  `TERM_PROGRAM=Orca`／`ORCA_TERMINAL_HANDLE` があれば orca（`orca worktree create --setup skip --agent opencode`）、
+  `HERDR_PANE_ID`／`HERDR_ENV` があれば herdr（`ImplementAgent` タブ・`herdr pane split`）。
 - **何をやるかは ImplementationPlan §6。**段階番号の順ではなく**用途順**。先頭から取る。
   **取る前に `git log --merges` と突き合わせ、マージ・実機確認・台帳の変更のたびに計画書を更新する**（§2.3「計画書を都度更新する」）。
 - **検証は必ず自分でやる**（§2.2）。**実装エージェントの「テストが緑」報告は信用しない。**
