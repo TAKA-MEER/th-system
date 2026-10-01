@@ -211,6 +211,22 @@ assert _dist(_P1, _FAR) >= _CLEAR_DISTANCE_M, (
     f'再現できていない（clear_ok が出ない）。')
 
 
+# ── UI/2 点指示のサービス呼び出しに与える retry 上限 ─────────────────────────
+# 同じコンテナ内で 14 本の故障注入を連続実行すると、前後の Gazebo 起動/終了と
+# DDS discovery の収束が遅れ、`wait_for_service` は通るのに応答が届かない、
+# あるいは `no_pending`（`begin_two_point` の effect が未着）で拒否される
+# ことがある。単体実行では出ないが、全件を 1 本の `colcon test` で回す運用では
+# 確実に出る。押せる状態になるまで押し直すのは人が画面を操作する時の挙動と
+# 同じなので、その分を retry で吸収する。
+_SERVICE_RETRY_BUDGET_SEC = 30.0
+# retry してよい拒否理由。「押せる状態になっていない/周縁が未整」の系だけ。
+# `two_point_too_close` は本試験の前提（P1/P2 の間隔）についての主張なので
+# 入らない。
+_RETRYABLE_REJECT_KEYS = frozenset({
+    'no_pending', 'no_map_tf', 'target_lost', 'low_confidence',
+})
+
+
 # ===========================================================================
 # 「ゼロ」と「非ゼロ」を切り分けるしきい値
 # ===========================================================================
@@ -433,43 +449,77 @@ class TestSummonRetreatWait(unittest.TestCase):
     def _count_event(self, name: str) -> int:
         return sum(1 for e in self.events if e.event == name)
 
-    def _call_trigger(self, trigger: str, arg_json: str = '{}', timeout: float = 10.0):
-        cli = self.node.create_client(UiTrigger, '/system/trigger')
-        try:
-            if not cli.wait_for_service(timeout_sec=timeout):
-                self.fail(f'/system/trigger が見つからない（state_manager 未起動？）')
-            req = UiTrigger.Request()
-            req.trigger = trigger
-            req.arg_json = arg_json
-            req.requester = 'case_07'
-            fut = cli.call_async(req)
-            rclpy.spin_until_future_complete(self.node, fut, timeout_sec=timeout)
-            res = fut.result()
-            if res is None:
-                self.fail(f'/system/trigger({trigger}) が {timeout}s 以内に応答しなかった')
-            return res
-        finally:
-            self.node.destroy_client(cli)
+    def _call_trigger(self, trigger: str, arg_json: str = '{}'):
+        """`/system/trigger` を 1 回呼ぶ。応答が無ければ retry する。
 
-    def _call_two_point(self, index: int, timeout: float = 10.0):
-        cli = self.node.create_client(TwoPointPress, '/onsite/two_point')
-        try:
-            if not cli.wait_for_service(timeout_sec=timeout):
-                self.fail('/onsite/two_point が見つからない（pin_registrar 未起動？）')
-            req = TwoPointPress.Request()
-            req.purpose = 'SUMMON'
-            req.index = index
-            fut = cli.call_async(req)
-            rclpy.spin_until_future_complete(self.node, fut, timeout_sec=timeout)
-            res = fut.result()
-            if res is None:
-                self.fail(f'/onsite/two_point(index={index}) が応答しなかった')
-            return res
-        finally:
-            self.node.destroy_client(cli)
+        `wait_for_service` が通っても応答が届かないことがある。DDS の
+        discovery が前の故障注入（Gazebo を使うもの）の後拖着
+        1〜2 秒遅れるためで、`fault_injection_07` 単体の実行では出ない。
+        同じコンテナ内で 14 本連続して回すと必ず顔を出すので、
+        「押せる状態になるまで押し直す」に相当する retry を入れる。
+        """
+        deadline = time.monotonic() + _SERVICE_RETRY_BUDGET_SEC
+        attempt = 0
+        while time.monotonic() < deadline:
+            attempt += 1
+            cli = self.node.create_client(UiTrigger, '/system/trigger')
+            try:
+                if cli.wait_for_service(timeout_sec=2.0):
+                    req = UiTrigger.Request()
+                    req.trigger = trigger
+                    req.arg_json = arg_json
+                    req.requester = 'case_07'
+                    fut = cli.call_async(req)
+                    rclpy.spin_until_future_complete(self.node, fut, timeout_sec=3.0)
+                    res = fut.result()
+                    if res is not None:
+                        return res, attempt
+            finally:
+                self.node.destroy_client(cli)
+            self._spin(0.5)
+        self.fail(f'/system/trigger({trigger}) が '
+                  f'{_SERVICE_RETRY_BUDGET_SEC:.0f}s 以内に応答しなかった'
+                  f'（{attempt} 回試行）')
+
+    def _call_two_point(self, index: int):
+        """`/onsite/two_point` を 1 回押し、受理されるまで retry する。
+
+        retry するのは **「押せる状態になっていない」系**だけ:
+        - 応答自体が来ない（discovery 未収束）
+        - `no_pending`（`begin_two_point` の effect がまだ届いていない）
+        - `no_map_tf` / `target_lost` / `low_confidence`（周縁がまだ揃っていない）
+
+        `two_point_too_close` は retry しない。これは本試験の前提
+        （P1/P2 の間隔）についての主張であり、人物の位置を変えて
+        押し直して通すのは意味を潰す。
+        """
+        deadline = time.monotonic() + _SERVICE_RETRY_BUDGET_SEC
+        attempt = 0
+        last_reason = '応答なし'
+        while time.monotonic() < deadline:
+            attempt += 1
+            cli = self.node.create_client(TwoPointPress, '/onsite/two_point')
+            try:
+                if cli.wait_for_service(timeout_sec=2.0):
+                    req = TwoPointPress.Request()
+                    req.purpose = 'SUMMON'
+                    req.index = index
+                    fut = cli.call_async(req)
+                    rclpy.spin_until_future_complete(self.node, fut, timeout_sec=3.0)
+                    res = fut.result()
+                    if res is not None:
+                        last_reason = res.reject_reason_key
+                        if res.accepted or last_reason not in _RETRYABLE_REJECT_KEYS:
+                            return res, attempt
+            finally:
+                self.node.destroy_client(cli)
+            self._spin(0.5)
+        self.fail(f'/onsite/two_point(index={index}) が '
+                  f'{_SERVICE_RETRY_BUDGET_SEC:.0f}s 以に受理されなかった'
+                  f'（{attempt} 回試行、最終 reject={last_reason!r}）')
 
     # ── 手順 1〜4（起動 → IDLE → SUMMON/POINT → 2 点指示 → WAIT_CLEAR） ──
-    def _enter_wait_clear(self) -> tuple[float, float]:
+    def _enter_wait_clear(self) -> float:
         """手順 1〜4 を実行し、`WAIT_CLEAR` に入った時刻を返す。
 
         1. `evt.link_ok` → `IDLE`
@@ -483,7 +533,7 @@ class TestSummonRetreatWait(unittest.TestCase):
         """
         # 0. 前回のはじまりをリセット。
         if self._mode_state() != ('IDLE', 'NONE'):
-            res = self._call_trigger('ui.finish')
+            res, _n = self._call_trigger('ui.finish')
             if not res.accepted:
                 self.fail(f'ui.finish が拒否（reject={res.reject_reason_key!r}）')
             if not self._wait_mode_state('IDLE', 'NONE', timeout=5.0):
@@ -503,7 +553,7 @@ class TestSummonRetreatWait(unittest.TestCase):
                 self.fail(f'evt.link_ok を出して IDLE にならない（{self._mode_state()}）')
 
         # 2. SUMMON に入る。
-        res = self._call_trigger('ui.goto', '{"kind":"SUMMON"}')
+        res, _n = self._call_trigger('ui.goto', '{"kind":"SUMMON"}')
         if not res.accepted:
             self.fail(f'ui.goto(SUMMON) が拒否（reject={res.reject_reason_key!r}）')
         if not self._wait_mode_state('SUMMON', 'POINT', timeout=5.0):
@@ -512,15 +562,17 @@ class TestSummonRetreatWait(unittest.TestCase):
 
         # 3. P1 を 1 点目として押す。
         self._set_person(_P1)
-        r1 = self._call_two_point(1)
+        r1, n1 = self._call_two_point(1)
         if not r1.accepted:
-            self.fail(f'2 点指示 index=1 が拒否（reject={r1.reject_reason_key!r}）')
+            self.fail(f'2 点指示 index=1 が拒否（reject={r1.reject_reason_key!r}、'
+                      f'{n1} 回試行）')
 
         # 4. P2 を 2 点目として押す → evt.two_point_done → WAIT_CLEAR。
         self._set_person(_P2)
-        r2 = self._call_two_point(2)
+        r2, n2 = self._call_two_point(2)
         if not r2.accepted:
-            self.fail(f'2 点指示 index=2 が拒否（reject={r2.reject_reason_key!r}）')
+            self.fail(f'2 点指示 index=2 が拒否（reject={r2.reject_reason_key!r}、'
+                      f'{n2} 回試行）')
 
         t_wait_clear = time.monotonic()
         if not self._wait_mode_state('SUMMON', 'WAIT_CLEAR', timeout=5.0):
@@ -618,7 +670,7 @@ class TestSummonRetreatWait(unittest.TestCase):
             f'jog_gate_core の除外表から SUMMON/WAIT_CLEAR が消えている疑い。')
 
         # ── 陽性対照: WAIT_CLEAR を抜けて POINT に戻し、同じ入力が通る ──
-        res = self._call_trigger('ui.abort')
+        res, _n = self._call_trigger('ui.abort')
         if not res.accepted:
             self.fail(f'ui.abort が拒否（reject={res.reject_reason_key!r}）')
         if not self._wait_mode_state('SUMMON', 'POINT', timeout=5.0):
