@@ -103,6 +103,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_route_replay_core
     test/test_route_replay_core.py
     TIMEOUT 30)
+  # 全域ローカライズの確度スコア s・m と粗→細探索（W-01 P1。th_planning/localize_core.py）。
+  # numpy / scipy が要るのでホストの素の python3 では走らない（Docker で回す。
+  # CLAUDE.md の除外一覧に載せてある）。合成地図の探索を含むので TIMEOUT は長め
+  ament_add_pytest_test(test_localize_core
+    test/test_localize_core.py
+    TIMEOUT 300)
   # 始業点検（OPCHECK）の判定コア (WP-MAINT-01。th_maintenance/check_core.py。
   # 合否判定の純粋関数。registry.yaml の WP-MAINT-01 ブロックと値が一致することは
   # test_maintenance_registry_driven が別途検証する。ROS2 不要)
