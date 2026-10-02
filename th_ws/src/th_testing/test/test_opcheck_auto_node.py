@@ -292,7 +292,11 @@ class TestOpcheckAutoNode(unittest.TestCase):
         self._feed_imu = True
         self._feed_scan = True
         self._scan_custom = _band_scan
+        # 注意: /opcheck/auto_status は TRANSIENT_LOCAL のため、購読直後に
+        # 前テストの最終メッセージ（OK）が即届く。最新 1 件だけ見ると帯スキャン
+        # を評価する前に述語が成立して空振りになるので、購読後に配信された
+        # 新しいメッセージ（2 件目以降）で判定する。
         auto = self._wait_auto(
-            lambda a: a['overall'] == 'OK'
+            lambda a: len(self._auto) >= 2 and a['overall'] == 'OK'
             and a['items']['LIDAR']['result'] == 'OK', timeout=8.0)
         assert auto['items']['LIDAR']['reason'] == '', auto
