@@ -53,7 +53,11 @@ SAFETY_DIR   = get_package_share_directory('th_safety')
 # append する（WP-SAFE-05 故障注入13。Spec-safety.md §3.5.0「使っていない間は
 # 監視しない」）。case_09 の静的読取（_sim_enabled_targets）がこの名前を
 # 参照しているため、名前は変えていない。
-SAFETY_ENABLED_TARGETS_SIM = ['lidar', 'limiter']
+SAFETY_ENABLED_TARGETS_SIM = ['lidar', 'limiter',
+                              # §5.5（P-02）: person を監視対象に足す。tracker OFF
+                              # （既定）の間は safety 側のゲートで判定しない。
+                              # report_only=true のため sim の挙動は変わらない。
+                              'person']
 # sim 用 safety_monitor の静的パラメータ。safety_monitor の構築は「slam_on の
 # 解決が必要」なため _scenario_setup（OpaqueFunction・モジュールレベル関数）の
 # sim 分岐内で行う。そのため generate_launch_description のローカル変数では
@@ -596,7 +600,9 @@ def generate_launch_description():
     # 実機: bringup.launch.py と同じ判断（WP-SAFE-01 完了報告に詳細）＋ 上記と
     # 同じ理由で limiter を追加（obstacle_limiter は実機でも common_nodes で
     # 無条件に起動する）。
-    SAFETY_ENABLED_TARGETS_REAL = ['lidar', 'esp32', 'runaway', 'state', 'firmware', 'limiter']
+    SAFETY_ENABLED_TARGETS_REAL = ['lidar', 'esp32', 'runaway', 'state', 'firmware', 'limiter',
+                                   # §5.5（P-02）: bringup.launch.py の実機側と揃える。
+                                   'person']
 
     # safety_monitor: 実機設定
     # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる (G-4)。

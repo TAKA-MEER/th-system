@@ -16,6 +16,8 @@
 //   §4.2（同上）                      UI 非常停止の生存確認  → UiEstopLatch
 //   §3.2 / §6.3.1（同上 / safety.md） clear_estop_ui の受理  → decide_clear_estop_ui()
 //   F-5（wp2 WP-SAFE-01 §4.3・O-7）   enabled_targets ゲート → is_target_enabled()
+//   §5.5.1/§5.5.2（safety.md）         person 判定のゲート（tracker_enabled＋
+//                                      ON 直後の猶予）→ person_gate()
 // ============================================================
 #ifndef TH_SAFETY_SAFETY_MONITOR_CORE_HPP_
 #define TH_SAFETY_SAFETY_MONITOR_CORE_HPP_
@@ -168,6 +170,31 @@ ClearEstopUiDecision decide_clear_estop_ui(bool estop_hw, bool has_critical_faul
 // ── F-5 enabled_targets ゲート（O-7） ─────────────────────────
 // enabled_targets に無い対象は監視しない（フォルトを立てない）。
 bool is_target_enabled(const std::string& target, const std::vector<std::string>& enabled_targets);
+
+// ── §5.5.1/§5.5.2 person 判定のゲート（tracker_enabled＋ON 直後の猶予） ──
+//
+// safety_monitor が `/system/state.tracker_enabled` を保持し、`false` の間は
+// `person` 判定をスキップし、既存の `PERSON_TRACKER_LOST` も解除する
+// （devIgnoreLidarFault と同型）。`false`→`true` エッジから
+// `person_startup_grace_ms` の間も判定を保留する（理由 `starting`。
+// フォルトではない）。
+//
+// 戻り値の使い分け（呼び出し側＝safety_monitor.cpp）:
+//   SKIP_DISABLED → 判定せず `updateFaultState("PERSON_TRACKER_LOST", false)`
+//                   で既存フォルトを解除する
+//   SKIP_GRACE    → 判定せず何もしない（フォルト状態を変えない）
+//   CHECK         → 通常の途絶判定（`is_timeout_fault`）の結果を適用する
+enum class PersonGate { SKIP_DISABLED, SKIP_GRACE, CHECK };
+
+// tracker_enabled: `/system/state` の最新値。
+// since_enable_sec: `false`→`true` エッジからの経過 [s]。
+// grace_sec: `person_startup_grace_ms` [s]。
+inline PersonGate person_gate(bool tracker_enabled, double since_enable_sec,
+                              double grace_sec) {
+  if (!tracker_enabled) return PersonGate::SKIP_DISABLED;
+  if (since_enable_sec < grace_sec) return PersonGate::SKIP_GRACE;
+  return PersonGate::CHECK;
+}
 
 // ── 起動直後の未受信を「途絶」と誤判定しないための判定 ────────
 //

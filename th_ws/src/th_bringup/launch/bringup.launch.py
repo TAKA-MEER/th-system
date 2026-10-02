@@ -314,7 +314,11 @@ def generate_launch_description():
     # W-06 クローズ（2026-09-22 走行日に検知と誤発火の無さを確認済み）。
     # 'runaway' は両方の safety_monitor 定義に効く（SAFETY_ENABLED_TARGETS の
     # リテラルに直接足してあるため、If/Unless のどちら側にも入る）。
-    SAFETY_ENABLED_TARGETS = ['lidar', 'esp32', 'state', 'firmware', 'limiter', 'runaway']
+    SAFETY_ENABLED_TARGETS = ['lidar', 'esp32', 'state', 'firmware', 'limiter', 'runaway',
+                              # §5.5（P-02）: person を監視対象に足す。tracker OFF
+                              # （既定）の間は safety 側のゲートで判定しない。
+                              # report_only=true（既定）のため実機の挙動は変わらない。
+                              'person']
     # dev_mode と同じ流儀（WP-DEV-01A）: If/Unless で排他的に定義を分ける。
     nodes.append(Node(
         package='th_safety',

@@ -540,7 +540,7 @@ sim の配信元は stub（`use_stub:=true`）。故障注入 09 は OFF／ON �
 | --- | --- |
 | 新項目 | `person_startup_grace_ms`（(c)・`placeholder`・`TBD_MEASURE`。`registry.yaml` に行を足す） |
 | 実測方法 | 実機で `set_flag ON` 時刻〜最初の上流（`following_position`／`candidates`）到着の差を N 回。起動直後（モデルロード含む）と 2 回目以降は分けて測り p99＋余裕。8-c の残り（CPU・N-27 効果）と合同で測る |
-| アサーション追加 | `person_startup_grace_ms < person_timeout_ms`（猶予がバックストップを覆い隠さない） |
+| アサーション追加 | 無し。`person_startup_grace_ms < person_timeout_ms` は入れない。ON 直後の DR-SPAAM の立ち上がりが 2.5 s に収まる根拠が無く、猶予は途絶判定の前段（判定自体を遅らせるだけで閾値を緩めない）なのでバックストップの覆い隠しにならない |
 
 ### 5.5.3 切替わりで偽フォルトを出さない（Q3）
 

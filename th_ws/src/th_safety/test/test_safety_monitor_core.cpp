@@ -11,6 +11,10 @@
 //   test_clear_estop_ui_requires_hw_released      : §3.2。物理側が押されている間は拒否
 //   test_clear_estop_ui_logs                      : 受理・拒否の両方が記録される
 //   test_enabled_targets                          : F-5
+//   test_person_gate                              : §5.5.1/§5.5.2。OFF→判定しない／
+//                                                   ON 直後の猶予中→しない／
+//                                                   猶予後に途絶→成立／
+//                                                   OFF にした瞬間に解除
 // ============================================================
 #include <gtest/gtest.h>
 
@@ -365,4 +369,46 @@ TEST(SafetyMonitorCore, RunawayFreshButNoConditionResetsHold) {
     EXPECT_FALSE(*out);
   }
   EXPECT_DOUBLE_EQ(hold.held_sec(), 0.0);
+}
+
+// ── test_person_gate（DetailedDesign-safety.md §5.5.1/§5.5.2） ─────────
+// OFF→判定しない／ON 直後の猶予中→しない／猶予後に途絶→成立／
+// OFF にした瞬間に解除（呼び出し側が SKIP_DISABLED で updateFaultState(false)）。
+// 猶予中の SKIP_GRACE は「フォルト状態を変えない」（解除もしない）。
+// 途絶成立の本体は is_timeout_fault が担う（従来の検知が壊れていないことも縛る）。
+
+TEST(SafetyMonitorCore, PersonGateOffSkips) {
+  // OFF の間は経過時間によらず判定しない。
+  EXPECT_EQ(person_gate(/*tracker_enabled=*/false, /*since_enable=*/0.0,
+                        /*grace=*/5.0),
+            PersonGate::SKIP_DISABLED);
+  EXPECT_EQ(person_gate(false, 100.0, 5.0), PersonGate::SKIP_DISABLED);
+}
+
+TEST(SafetyMonitorCore, PersonGateGraceSkips) {
+  // ON 直後の猶予中は判定しない（境界: grace ちょうどは CHECK）。
+  EXPECT_EQ(person_gate(true, 0.0, 5.0), PersonGate::SKIP_GRACE);
+  EXPECT_EQ(person_gate(true, 4.999, 5.0), PersonGate::SKIP_GRACE);
+  EXPECT_EQ(person_gate(true, 5.0, 5.0), PersonGate::CHECK);
+  EXPECT_EQ(person_gate(true, 100.0, 5.0), PersonGate::CHECK);
+}
+
+TEST(SafetyMonitorCore, PersonGateCheckAfterGraceTimeoutFires) {
+  // 猶予後に途絶→成立（途絶本体は is_timeout_fault。従来の検知）。
+  ASSERT_EQ(person_gate(true, 6.0, 5.0), PersonGate::CHECK);
+  EXPECT_TRUE(is_timeout_fault(/*ever_received=*/true, /*since_last=*/3.0,
+                               /*timeout=*/2.5, /*since_start=*/100.0,
+                               /*startup_deadline=*/15.0));
+  // 猶予後でも届いていれば成立しない。
+  ASSERT_EQ(person_gate(true, 6.0, 5.0), PersonGate::CHECK);
+  EXPECT_FALSE(is_timeout_fault(true, 0.1, 2.5, 100.0, 15.0));
+}
+
+TEST(SafetyMonitorCore, PersonGateOffClearsImmediately) {
+  // OFF にした瞬間に解除（呼び出し側の契約: SKIP_DISABLED を見たら
+  // updateFaultState("PERSON_TRACKER_LOST", false)。ここではゲートが
+  // 猶予中でも何でもなく SKIP_DISABLED を返すことを縛る）。
+  EXPECT_EQ(person_gate(false, 0.0, 5.0), PersonGate::SKIP_DISABLED);
+  // 対照: 猶予中の SKIP_GRACE は解除の合図ではない（区別がつくこと）。
+  EXPECT_NE(person_gate(true, 0.0, 5.0), PersonGate::SKIP_DISABLED);
 }
