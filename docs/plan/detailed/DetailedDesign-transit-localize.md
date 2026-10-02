@@ -36,7 +36,7 @@ FSM の行は足りているが、発火元（`evt.localize_low` の発行者・
 | # | 内容 | 触るファイル | 完了条件（緑になる試験） | Gazebo / 実機 |
 | --- | --- | --- | --- | --- |
 | P0 | **オフライン実現性検証**（コード変更なし）。実機の経路地図（`th_ws/data/routes/` の `.posegraph`／`.data` 12 本。入力の具体名は options §0）で、Python＋numpy の粗→細の段階探索の所要時間と取り違え起きやすさを PC だけで測る。**結果次第で案 A 続行か案 B（AMCL）切替かを判断する**（判断基準は options §0） | 測定スクリプト（`.briefs/tmp/` 置き。製品コードにしない） | 測定記録（所要時間・`s`／`m` 分布）。試験の緑赤ではない | PC だけ（Gazebo・実機いずれも要らない） |
-| P1 | 自前スコア（`s`＋`m`）の純関数＋単体試験 | `route_replay_core.py`（追加のみ）、`test_route_replay_core.py` | 追加したテストが host pytest で緑 | Gazebo 不要 |
+| P1 | 自前スコア（`s`＋`m`）と粗→細探索の純関数＋単体試験。**置き場所は `route_replay_core.py` ではなく新モジュール `localize_core.py`**（numpy／scipy が要り、ホストの python3 には numpy が無いので、`route_replay_core.py` に入れるとホストで走る `test_route_replay_core.py` が全滅する）。ROS 非依存。既定値は `LOCALIZE_DEFAULTS` に集約（P5 で registry へ） | `th_planning/localize_core.py`（新規）、`test_localize_core.py`（新規）、`th_testing/CMakeLists.txt` | 追加した試験が**Docker の colcon test** で緑（ホストでは走らない。`CLAUDE.md` の除外一覧に記載） | Gazebo 不要 |
 | P2 | `widen_search` / `global_localize` 実装＋`evt.localize_low` 発行。保存時の `pgm` 併存（options §3）を含む | `replay_runner.py`、`slam_control.py`（探索 API・保存拡張）、`transitions.yaml` は不変 | `test_route_replay_core.py`＋新規ノード試験。故障注入 13 が緑のまま | Gazebo 可（新シナリオ `replay_localize`）／所要時間の実値は実機 |
 | P3 | S-14: 「完全グローバルで探す」ボタン・確度表示・READY 確認 | `S14Replay.jsx` 系、`DetailedDesign-webui.md` 追記 | 画面試験（W-19 の④と統合可） | Gazebo 可（表示確認） |
 | P4 | 途中復帰（`from_index` 再開＋向き合わせ再利用） | `replay_runner.py`、`route_replay_core.py` | P1 の延長＋Gazebo 通し試験 | Gazebo 可／ずれ量の実値は実機 |
