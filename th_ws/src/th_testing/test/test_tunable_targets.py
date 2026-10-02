@@ -9,6 +9,12 @@ WS-9W: WebUI 設定パネルの調整対象（th_config_manager/tunable_targets.
 SettingsPanel.jsx の各 FIELDS 配列とも名前が一致していること（UI と
 tunable_targets のドリフト防止）を ast で確認する。
 
+S-50 から LiDAR 死角マスクの直接編集を外した (2026-10-02 Spec-webui.md §3.15)。
+lidar_filter は調整対象に含めない。含めようとするとこのファイルが赤になる。
+config_manager ノードは TUNABLE_TARGETS に無いノードへの set/save を
+「未知のノード」で拒否する (config_manager.py の _cb_set/_cb_save) ため、
+対象外であること自体がサービス直呼びへの拒否の縛りになる。
+
 ROS2 なし・純粋 Python。
 """
 import ast
@@ -40,13 +46,7 @@ def _yaml_block(pkg: str, relpath: str, block_key: str) -> dict:
     return doc[block_key]['ros__parameters']
 
 
-# lidar_filter.blind_angle_ranges は例外: 出所は registry.yaml で、
-# perception_params.yaml には最初「保存」するまでキーが無い（config_manager の
-# update_ros_params_yaml が書き足す）。YAML 実在チェックの対象外にする。
-_YAML_KEY_EXEMPT = {'lidar_filter'}
-
-
-@pytest.mark.parametrize('name', sorted(set(TUNABLE_TARGETS) - _YAML_KEY_EXEMPT))
+@pytest.mark.parametrize('name', sorted(TUNABLE_TARGETS))
 def test_every_tunable_param_exists_in_its_yaml(name):
     """TUNABLE_TARGETS[name].params が参照先 YAML に実在すること。"""
     t = TUNABLE_TARGETS[name]
@@ -63,6 +63,19 @@ def test_all_tunable_targets_have_required_keys():
         for k in ('yaml_package', 'yaml_relpath', 'block_key', 'params'):
             assert k in t, f'{name} に {k} が無い'
         assert isinstance(t['params'], list) and t['params'], f'{name}: params が空/非リスト'
+
+
+def test_lidar_filter_is_not_a_tunable_target():
+    """S-50 の死角マスク直接編集の廃止 (2026-10-02 Spec-webui.md §3.15)。
+
+    lidar_filter.blind_angle_ranges を調整対象に戻すと、上限検査・3 ノードへの
+    同時反映・校正の履歴とロールバックを素通りする書き換え経路が復活する。
+    TUNABLE_TARGETS に無いノードへの set/save は config_manager が拒否する
+    (未知のノード) ので、この不在こそが拒否の縛りになる。
+    """
+    assert 'lidar_filter' not in TUNABLE_TARGETS, (
+        'lidar_filter が調整対象に戻っている。'
+        '死角マスクの変更は校正 S-40 の BLIND 経路だけにする (Spec-webui.md §3.15)')
 
 
 def test_slam_toolbox_is_a_tunable_target():

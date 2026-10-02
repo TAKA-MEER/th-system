@@ -37,14 +37,11 @@ TUNABLE_TARGETS = {
             "max_angular_accel_rad_s2",
         ],
     },
-    "lidar_filter": {
-        "yaml_package": "th_bringup",
-        "yaml_relpath": "config/perception_params.yaml",
-        "block_key": "lidar_filter",
-        "params": [
-            "blind_angle_ranges",
-        ],
-    },
+    # lidar_filter.blind_angle_ranges は意図的に対象外 (2026-10-02 Spec-webui.md §3.15)。
+    # 死角マスクの変更は校正 S-40 の BLIND 経路だけにする。設定画面からの直接書き換えは
+    # 幅の上限 (Spec-checks.md §3.5)・obstacle_limiter への同時反映・校正の履歴と
+    # ロールバックをすべて素通りするため。ここに無いノードへの set/save は
+    # config_manager が「未知のノード」で拒否する (サービス直呼びの穴も塞がる)。
     # WS-9W: 再生（教示再生）の自己位置推定の当たり方は現場（廊下の長さ・特徴量）で
     # 最適値が変わる。slam_toolbox のスキャンマッチ関連をチューニング対象にする。
     #
