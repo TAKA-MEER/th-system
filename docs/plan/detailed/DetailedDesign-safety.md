@@ -515,6 +515,7 @@ sim の配信元は stub（`use_stub:=true`）。故障注入 09 は OFF／ON �
 | P-9 | OFF 中は `lost_reason="disabled"` の強制 lost。`evt.target_lost` は出さない | `person_tracker_bridge_core.py:17,44-55`、`person_tracker_bridge.py:264-272` |
 | P-10 | `guards.py` の PAUSE 対象は `FOLLOW`／`TEACH_FOLLOW`／`SUMMON` のみ（`PREP` は維持＋登録拒否）。`Spec-modes.md` §5 と一致 | `guards.py:18-40` |
 | P-11 | `person_timeout_ms` は registry で derived・値 null のためノード既定（2500）が効く。`tracker_lost_grace_ms` は placeholder（TBD）のまま | `registry.yaml:633-706` |
+| P-12 | ON 中に人が 0 人でも上流は配信を続ける（無人＝途絶にならない）。`dr_spaam_callback`（749 行〜）は DR-SPAAM の出力ごとに `callbackPoseArray` を呼び、候補一覧は 840〜856 行で検出 0 件でも publish する（0 件時は `NO_EXISTS` の `following_position` も出す。859 行〜）。ただし手前の早期 return（scan フレーム未到着 788 行・TF 失敗 815 行付近）では配信されないので、それは途絶＝フォルトとして正しい | `multiple_sensor_person_tracker_component.cpp:749-869` |
 
 ### 5.5.1 生存の判定は safety 側のゲートで取る（Q1。bridge は触らない）
 
@@ -611,7 +612,7 @@ PAUSE 遷移は sim 本体では縛らない。sim で `FOLLOW` に入る前提
 | P-01 | safety のゲート＋猶予＋report-only | `safety_monitor.cpp`（＋単体試験）、`registry.yaml`（`person_startup_grace_ms` 1 行）、`DetailedDesign-names.md`（2 名登録） | host pytest＋Docker `colcon test` 緑 | 無し（値は TBD のまま） |
 | P-02 | `person` を有効化 | `bringup.launch.py`（`SAFETY_ENABLED_TARGETS`）、`gazebo.launch.py`（SIM 側） | OFF 既定のまま起動し `PERSON_TRACKER_LOST` が出ない（実機・sim） | 無し |
 | P-03 | 故障注入 09 本体（T1／T2） | `case_09_person_detection_off.py`（sim は `person_report_only=false` で起動） | sim で緑 | 無し |
-| P-04 | 実機計測＋本有効化（8-c 残りと合同） | パラメータ値のみ | ON 中の誤発火ゼロ＋意図的 kill で発火＋CPU 低下を確認し `person_report_only=false`・猶予に実測値 | **全部**（起動〜初検出時間・CPU・N-27 効果） |
+| P-04 | 実機計測＋本有効化（8-c 残りと合同） | パラメータ値のみ | ON 中の誤発火ゼロ＋意図的 kill で発火＋CPU 低下を確認し `person_report_only=false`・猶予に実測値 | **全部**（起動〜初検出時間・CPU・N-27 効果。加えて DR-SPAAM ノード自体が空の検出でも毎スキャン出すか＝P-12 の前提を実機で確かめる） |
 
 依存: P-01 → P-02 → P-03。P-04 は P-02 の後いつでも。
 
