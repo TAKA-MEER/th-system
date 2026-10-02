@@ -467,6 +467,12 @@ export const S50_LOAD_FAILED = '現在値を取得できませんでした'
 // 一般タブ: 3 セクション見出し
 export const S50_SEC_FOLLOW = '軌跡追従（follow_planner_mapless）'
 export const S50_SEC_LIDAR = 'LiDAR 死角マスク（lidar_filter）'
+// 死角マスクは S-50 では編集しない（2026-10-02 Spec-webui.md §3.15）。
+// 変更は校正 S-40 の「LiDAR 死角」だけ。ここは今の値の表示と導線だけを置く。
+export const S50_BLIND_GOTO_CALIB = '校正で変更する'
+export const S50_BLIND_NOTE =
+  '今の死角マスクの表示だけです。変えるときは校正（S-40 の「LiDAR 死角」）で行います'
+  + '（上限の検査・安全判定への同時反映・履歴が付きます）。'
 export const S50_SEC_SLAM = '再生の自己位置推定（slam_toolbox）'
 export const S50_SLAM_NOTE =
   '変更は「YAML に保存」してから、次に「この経路で進む」を押したときに有効になります'
