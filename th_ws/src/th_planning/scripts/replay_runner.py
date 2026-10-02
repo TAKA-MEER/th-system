@@ -63,8 +63,9 @@ from th_planning.route_record_core import (
     _safe_id, can_replay_route, finalized_path, owns_route_status, polyline_length,
     route_from_dict)
 from th_planning.route_replay_core import (
-    ReplayParams, advance_index, align_path_to_current, pure_pursuit,
-    ramp_toward, reverse_points, rotate_toward, scale_replay_params,
+    ReplayParams, advance_index, align_path_to_current, cross_track_error,
+    pure_pursuit, ramp_toward, reverse_points, rotate_toward,
+    scale_replay_params,
 )
 
 
@@ -192,6 +193,11 @@ class ReplayRunner(Node):
         self._last_preview_ms = 0.0          # WS-9F: 直前に preview を publish した時刻
         self._was_moving = False
         self._target_index = -1
+        # S-14「経路からのずれ」表示用（Spec-webui.md §3.7 / Spec-transit.md §4.4）。
+        # いまのずれ [m] とこの再生での最大値 [m]。PAUSE では保ち（何もしない）、
+        # 次の再生（load_route）で 0 に戻す。
+        self._cross_track_m = 0.0
+        self._cross_track_max_m = 0.0
         self._cur_v = 0.0   # ランプ後の実際の publish 値
         self._cur_w = 0.0
         self._pose = None                 # /odom 由来 (x, y, yaw)
@@ -334,6 +340,9 @@ class ReplayRunner(Node):
             self._start_yaw = pts[0][2] if pts else rec_start_yaw
             self._from_index = 0
             self._target_index = -1
+            # 次の再生を始めたらずれ・最大値を 0 から数え直す（S-14 の仕様）。
+            self._cross_track_m = 0.0
+            self._cross_track_max_m = 0.0
             self._need_rotate = False
             self._rotated = False
             self._arrived_sent = False
@@ -572,6 +581,12 @@ class ReplayRunner(Node):
         # （W-02 縮小）。odom 経路は従来どおり補正なし。
         # 先に通過済みの点まで index を進めてから、同じ index で pure-pursuit する。
         self._from_index = advance_index(pose, self._points, self._from_index, self._params)
+        # 走行中（RUN）に毎 tick 測り、最大値を保持する。PAUSE ではこの節に
+        # 来ないので最大値は保たれる（S-14 の仕様。Spec-webui.md §3.7）。
+        self._cross_track_m = cross_track_error(
+            pose, self._points, self._from_index)
+        if self._cross_track_m > self._cross_track_max_m:
+            self._cross_track_max_m = self._cross_track_m
         cmd = pure_pursuit(pose, self._points, self._params, self._from_index)
         self._target_index = cmd.target_index
         if cmd.arrived:
@@ -613,6 +628,9 @@ class ReplayRunner(Node):
         # WS-9P: 一時停止の理由を UI に伝える。PAUSE は終端到達だけでなくフォルト・
         # ジョグ介入・停止ボタンでも起きるので、状態名だけでは区別できない。
         msg.arrived = bool(self._arrived_sent)
+        # S-14「経路からのずれ」表示用。PAUSE 中も最大値は残ったまま出る。
+        msg.cross_track_m = float(self._cross_track_m)
+        msg.cross_track_max_m = float(self._cross_track_max_m)
         if self._route is not None:
             info = RouteInfo()
             info.id = self._route.id

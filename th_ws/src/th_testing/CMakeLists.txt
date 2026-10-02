@@ -422,6 +422,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_runaway_freshness_node
     test/test_runaway_freshness_node.py
     TIMEOUT 180)
+  # S-14「経路からのずれ」の Docker launch テスト（台帳 W-02 の一部。
+  # 横にずらした odom で /route/status のずれが増え、load_route で 0 に戻る。
+  # rclpy 要＝ホスト除外。TIMEOUT 180）
+  ament_add_pytest_test(test_replay_cross_track_node
+    test/test_replay_cross_track_node.py
+    TIMEOUT 180)
   # 開発モードの項目（Spec-safety.md §10。2026-09-23 改定）の Docker launch テスト。
   # LiDAR 無しで scan_stop（MANUAL だけ v_reverse 以下で通す・AUTO は止める・
   # effective だけを読む・鮮度切れで戻る）と lidar_fault（LIDAR_LOST の抑止と再発）。
