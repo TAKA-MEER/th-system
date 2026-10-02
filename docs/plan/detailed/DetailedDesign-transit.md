@@ -374,6 +374,10 @@ Nav2 のコントローラは局所回避を行う設計なので、この 2 つ
 「走行開始時に決定した経路を逸脱しない」との関係を先に詰める必要がある
 （[DetailedDesign-open.md](DetailedDesign-open.md) へ申し送り）。
 
+**全域ローカライズ・経路途中からの復帰（台帳 W-01）の設計は
+[DetailedDesign-transit-localize.md](DetailedDesign-transit-localize.md) に分けた。**
+根拠は [DetailedDesign-transit-localize-options.md](DetailedDesign-transit-localize-options.md)。
+
 ---
 
 ## 5. 地図セッション（`REPLAY` / `PREP` 共通）

@@ -486,10 +486,135 @@ blind_angle_ranges の全ペアが幅ゼロ  →  obstacle_limiter は AUTO の�
 | 段 | パラメータ | 用途 | 誰が持つか |
 | --- | --- | --- | --- |
 | 1 | **猶予なし（0）** | 登録（座標を確定する） | `th_onsite` の `pin_registrar` |
-| 2 | `tracker_lost_grace_ms`（**(c)・`placeholder`**。`blocking_from_stage: 4`） | 追従・呼び寄せの停止判断 | 挙動ノード |
+| 2 | `tracker_lost_grace_ms`（**(c)・`placeholder`**。`blocking_from_stage: 5`。W-15 で 4→5 に延期。旧「4」の表記が残っていたら registry が正） | 追従・呼び寄せの停止判断 | 挙動ノード |
 | 3 | `person_timeout_ms`（**(b)・derived**。`person_backstop_ms()`） | `safety_monitor` の遅いバックストップ | `safety_monitor` |
 
 `0 < tracker_lost_grace_ms < person_timeout_ms` を起動時にアサートする。
+
+---
+
+## 5.5 人物追跡の途絶と意図的 OFF の区別（故障注入 09）
+
+**結論: `safety_monitor` が `/system/state.tracker_enabled` を見て ON の間だけ
+`person` 判定する（bridge 改修なし）。ON 直後の猶予だけ新 placeholder を置く。
+sim の配信元は stub（`use_stub:=true`）。故障注入 09 は OFF／ON の両方向を縛る。
+最初は記録だけ（`person_report_only`）で入れ、実機で誤発火ゼロを確かめてから止める側に回す。**
+
+### 5.5.0 前提（as-built。2026-10-02 時点の main で確認）
+
+| # | 事実 | 根拠 |
+| --- | --- | --- |
+| P-1 | `person` は実機・sim どちらでも `enabled_targets` に無い。フォルトは出ない | `bringup.launch.py:317`、`gazebo.launch.py:56`（REAL 側 `SAFETY_ENABLED_TARGETS_REAL` にも無い） |
+| P-2 | `safety_monitor` の `person` 判定は `/person/targets` の受信途絶（既定 2500 ms）。`targetEnabled("person")` でゲート | `safety_monitor.cpp:77,337-338` |
+| P-3 | 判定は**内容盲**。`is_lost=True` の受信でもタイムアウトはリフレッシュされる | `safety_monitor.cpp:187-192`（受信で `last_person_time_` を更新するだけ） |
+| P-4 | bridge にタイマは無い。上流コールバック駆動＋OFF 化の瞬間の一発 publish のみ | `person_tracker_bridge.py`（`create_timer` 無し。`_on_system_state:204-222`） |
+| P-5 | stub は 10 Hz タイマで `/person/targets` を出し続け、`tracker_enabled` を見ない | `person_tracker_stub.py:48-51`（購読は無し） |
+| P-6 | 既定 sim（`use_stub:=false`）の targets 配信元は無い。relay は旧 `/person/status` のみ | `gazebo.launch.py:282-288`（relay）、`gazebo_person_relay.py:76` |
+| P-7 | `tracker_enabled` 既定 false。lifecycle controller はこのフラグ**だけ**見て DR-SPAAM を activate/deactivate（ESTOP／CARRY 中も継続） | `state_manager.py:166`、`dr_spaam_lifecycle_controller.py:59-60` |
+| P-8 | `safety_monitor` は `/system/state` を購読済みだが mode／state しか保持しない | `safety_monitor.cpp:245-252` |
+| P-9 | OFF 中は `lost_reason="disabled"` の強制 lost。`evt.target_lost` は出さない | `person_tracker_bridge_core.py:17,44-55`、`person_tracker_bridge.py:264-272` |
+| P-10 | `guards.py` の PAUSE 対象は `FOLLOW`／`TEACH_FOLLOW`／`SUMMON` のみ（`PREP` は維持＋登録拒否）。`Spec-modes.md` §5 と一致 | `guards.py:18-40` |
+| P-11 | `person_timeout_ms` は registry で derived・値 null のためノード既定（2500）が効く。`tracker_lost_grace_ms` は placeholder（TBD）のまま | `registry.yaml:633-706` |
+| P-12 | ON 中に人が 0 人でも上流は配信を続ける（無人＝途絶にならない）。`dr_spaam_callback`（749 行〜）は DR-SPAAM の出力ごとに `callbackPoseArray` を呼び、候補一覧は 840〜856 行で検出 0 件でも publish する（0 件時は `NO_EXISTS` の `following_position` も出す。859 行〜）。ただし手前の早期 return（scan フレーム未到着 788 行・TF 失敗 815 行付近）では配信されないので、それは途絶＝フォルトとして正しい | `multiple_sensor_person_tracker_component.cpp:749-869` |
+
+### 5.5.1 生存の判定は safety 側のゲートで取る（Q1。bridge は触らない）
+
+| 項目 | 決定 |
+| --- | --- |
+| 方式 | **`safety_monitor` が `/system/state.tracker_enabled` を保持し、`false` の間は `person` 判定をスキップ＋既存 `PERSON_TRACKER_LOST` を解除する**（`devIgnoreLidarFault` と同型） |
+| ON の間 | 現行の途絶判定をそのまま使う（変えない） |
+| 「bridge は生きているが DR-SPAAM が死んだ」 | **取りこぼさない。**bridge は上流駆動なので一緒に黙り（P-4）、途絶判定に落ちる |
+| bridge 側の変更 | 無し。OFF 化の一発 publish は残す（直前の非 lost 値を固めない。P-3 により無害） |
+| stub 側の変更 | 無し。`tracker_enabled` を見ないままにする（§5.5.6 の T1 に使う） |
+
+切り分け（bridge 死 vs 上流死）が将来要れば、`targets.header.stamp`
+（bridge は上流時刻を入れる。`person_tracker_bridge.py:276`）の古さを見る
+`upstream_stale` 判定を足す余地がある。最小構成には含めない（診断用）。
+
+### 5.5.2 ON 直後の猶予は新 placeholder に置く（Q2）
+
+`tracker_enabled` の false→true エッジから `person_startup_grace_ms` の間、
+`person` 判定を保留する（理由 `starting`。フォルトではない）。
+
+| 項目 | 決定 |
+| --- | --- |
+| 新項目 | `person_startup_grace_ms`（(c)・`placeholder`・`TBD_MEASURE`。`registry.yaml` に行を足す） |
+| 実測方法 | 実機で `set_flag ON` 時刻〜最初の上流（`following_position`／`candidates`）到着の差を N 回。起動直後（モデルロード含む）と 2 回目以降は分けて測り p99＋余裕。8-c の残り（CPU・N-27 効果）と合同で測る |
+| アサーション追加 | `person_startup_grace_ms < person_timeout_ms`（猶予がバックストップを覆い隠さない） |
+
+### 5.5.3 切替わりで偽フォルトを出さない（Q3）
+
+- **OFF 化**: `/system/state` は 10 Hz・`person_timeout_ms` は秒級なので、OFF 化から
+  フラグ到達までの窓（~100 ms＋通信遅延）でタイムアウトすることはない。
+- **ON 化**: §5.5.2 の猶予で吸収する。
+- **ESTOP／CARRY**: `tracker_enabled` は不変なので判定は継続する。既に停止中のため
+  出ても表示のみで実害は無い。lifecycle controller は mode を見ないので
+  DR-SPAAM を落とさず、解除後にそのまま再開できる（`Spec-modes.md` §9）。
+
+### 5.5.4 モード別の挙動（Q4。guards 通りで食い違いなし）
+
+| モード | `PERSON_TRACKER_LOST` が立ったら | 根拠 |
+| --- | --- | --- |
+| `FOLLOW`／`TEACH_FOLLOW`／`SUMMON` | モード保持＋`PAUSE`（復帰は `Spec-modes.md` §6 の表） | `guards.py:37-39` |
+| `PREP` | 状態を保つ。登録だけ拒否（猶予なし） | 同上＋`SM-3.1.2-045` |
+| `MANUAL` を含むその他 | 継続（人物データを使わない） | 同上 |
+| `IDLE` | 表示のみ | `Spec-modes.md` §5 |
+
+> **申し送り（spec 側の判断事項。spec は書換えない）**:
+> `Spec-modes.md` §5.1-2 は「人物追跡を要するモードではそもそも OFF にできない」と書くが、
+> 実装の OFF 拒否は `(SUMMON,*)`・`(PREP,REGISTER)` のみ
+> （`tracker_policy.py:21-24`、`state_manager.py:600-604`）で
+> `FOLLOW`／`TEACH_FOLLOW` を含まない。自動起動自体が未実装（第 4 群 #12）のため現状実害は無い。
+> FOLLOW 系の自動起動を実装するときに拒否範囲を spec 通りに広げるか決めること。
+
+### 5.5.5 実機の挙動変化と log-only の段取り（Q5）
+
+変わる点（いまは出ないフォルトが出るようになる）:
+
+1. ON 中に上流が止まると `PERSON_TRACKER_LOST`（回復）が出る
+2. `FOLLOW`／`TEACH_FOLLOW`／`SUMMON` が `PAUSE` に落ちる（guards は実装済み）
+3. `PREP` で登録が拒否される。OFF 中は無変化（判定スキップ）
+
+段取り（自己位置喪失 B′ と同じ。検出→記録→誤発火ゼロ確認→有効化）:
+
+| 順 | 作業 |
+| --- | --- |
+| 1 | `safety_monitor` に `person_report_only`（bool・既定 true。`DetailedDesign-names.md` に登録）を設ける。true の間は `FaultStatus` を出さず内部ログ＋カウンタのみ。guards は実装済みだがフォルトが出ない間は動かないため log-only が成立する |
+| 2 | 実機で tracker ON 中の誤発火ゼロ（走行 N 分＋意図的 kill で発火すること）を確認 |
+| 3 | `person_report_only=false` にして本有効化。§5.5.2 の実測値も同時に入れる |
+
+### 5.5.6 sim の配信元は stub を使う（Q6。relay 改修なし）
+
+- 故障注入 09 は `use_stub:=true` で起動する。stub が `/person/targets` を 10 Hz で出す。
+- stub が `tracker_enabled` を見ないことは**好都合**である。
+  T1（§5.5.7）は「出し続けているのにフォルトにならない」を縛る厳しい条件になる。
+- relay（`/person/status` のみ）の改修は要らない。relay と stub の `/person/status`
+  重複は safety に影響しない（`targets` しか見ない）。
+
+### 5.5.7 故障注入 09 は OFF／ON の両方向を縛る（Q7。順序 T1→T2）
+
+| 試験 | 手順 | 合格条件 |
+| --- | --- | --- |
+| T1「OFF ではフォルトにならない」 | `use_stub:=true`・`tracker_enabled=false` のまま `person_timeout_ms`＋余裕だけ待つ | `PERSON_TRACKER_LOST` が立たない・モード強制遷移なし（`IDLE` のまま） |
+| T2「ON で配信元を殺すとフォルトになる」 | `set_flag tracker_enabled=true` → 猶予待ち → stub を kill | `person_timeout_ms` 以内に `PERSON_TRACKER_LOST` が active |
+
+片方だけだと沈黙で通る。T1 だけでは `person` 未有効でも緑になる（有効化の証明が無い）。
+T2 だけでは常時フォルトでも赤にならない（ゲートの証明が無い）。**両方必須。**
+
+PAUSE 遷移は sim 本体では縛らない。sim で `FOLLOW` に入る前提
+（自動起動 #12・`mode_entry` 前提条件）が未整備のためである。
+代わりに `guards.py` の単体試験（`test_transition_table.py` の `fault_stops_mode` 系）で縛る。
+
+### 5.5.8 作業パケットへの分割（Q8。1 パケット＝1 ブランチ）
+
+| # | 内容 | 触るファイル | 完了条件 | 実機でしか分からないこと |
+| --- | --- | --- | --- | --- |
+| P-01 | safety のゲート＋猶予＋report-only | `safety_monitor.cpp`（＋単体試験）、`registry.yaml`（`person_startup_grace_ms` 1 行）、`DetailedDesign-names.md`（2 名登録） | host pytest＋Docker `colcon test` 緑 | 無し（値は TBD のまま） |
+| P-02 | `person` を有効化 | `bringup.launch.py`（`SAFETY_ENABLED_TARGETS`）、`gazebo.launch.py`（SIM 側） | OFF 既定のまま起動し `PERSON_TRACKER_LOST` が出ない（実機・sim） | 無し |
+| P-03 | 故障注入 09 本体（T1／T2） | `case_09_person_detection_off.py`（sim は `person_report_only=false` で起動） | sim で緑 | 無し |
+| P-04 | 実機計測＋本有効化（8-c 残りと合同） | パラメータ値のみ | ON 中の誤発火ゼロ＋意図的 kill で発火＋CPU 低下を確認し `person_report_only=false`・猶予に実測値 | **全部**（起動〜初検出時間・CPU・N-27 効果。加えて DR-SPAAM ノード自体が空の検出でも毎スキャン出すか＝P-12 の前提を実機で確かめる） |
+
+依存: P-01 → P-02 → P-03。P-04 は P-02 の後いつでも。
 
 ---
 
@@ -749,7 +874,7 @@ S-00 とヘッダに「Wi-Fi AP ＝単一障害点」を明示する。
 | 6 | **フォルト検知 → 停止** | 5 の**続き**を測る | フォルトから **100 ms 以内**に速度指令が 0。**Gazebo では「フォルトから 100 ms 経った以降、`twist_mux` の出力に非ゼロが 1 件も出ない」で判定する**（§1.1 の注記。2026-09-28 ユーザー決定） | Gazebo ＋ 実機 |
 | 7 | 呼び寄せの退避待ち | 退かずに待つ | 発進しない → タイムアウトで中止 | Gazebo |
 | 8 | ESP32 ウォッチドッグ | ROS2 側を落とす | 600 ms 以内に停止 | **実機のみ** |
-| 9 | 人検知 OFF とフォルトの区別 | 意図的に OFF | フォルトにならない・強制遷移しない | Gazebo |
+| 9 | 人検知 OFF とフォルトの区別 | **両方向**を縛る（T1: `use_stub:=true`・OFF のまま `person_timeout_ms`＋余裕を待ってもフォルトなし・遷移なし。T2: ON→猶予待ち→stub を kill し `person_timeout_ms` 以内に `PERSON_TRACKER_LOST`）。PAUSE 遷移は `guards.py` の単体試験で縛る（sim で `FOLLOW` に入る前提が未整備のため）。詳細は §5.5.7 | Gazebo |
 | 10 | 物理ボタン起動時押下 | 押したまま起動 | 運用に入れず解除を案内 | **実機のみ** |
 | **11** | **リミッタの死** | `obstacle_limiter` を SIGKILL | **重大フォルト → `ESTOP` → 駆動ゼロ**（`DEBT-4`） | Gazebo ＋ 実機 |
 | **12** | **`/cmd_vel` の途絶** | `obstacle_limiter` を止めたまま非ゼロ指令を残す | `cmd_vel_stale_ms` 以内に ESP32 への指令がゼロ | Gazebo ＋ 実機 |
