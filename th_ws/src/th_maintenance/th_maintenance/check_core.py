@@ -21,6 +21,8 @@ import math
 from dataclasses import dataclass
 from typing import Sequence
 
+from th_maintenance.blind_core import shift_bands
+
 # 近距離帯（死角として写る支柱等）の判定距離。measure_blind_sectors.py の NEAR_M と同値。
 BLIND_NEAR_M = 0.6
 # 死角帯として扱う最小幅（measure_blind_sectors.py の MARGIN に相当する
@@ -295,6 +297,46 @@ def estimate_blind_sectors(ranges: Sequence[float], angle_increment_deg: float,
     return sectors
 
 
+def merge_seam_split(
+        bands: Sequence[tuple[float, float]],
+        angle_min_deg: float) -> list[tuple[float, float]]:
+    """シフト後の帯のうち、継ぎ目（`angle_min`）で接するペアを 1 本に戻す。
+
+    `estimate_blind_sectors` は添字 0（＝ `angle_min`）をまたぐ帯を 2 つに
+    割る。シフト後はその割れ目が `angle_min` 上の人工的な境界として残り、
+    `blind_offset_deg`（境界点集合の比較）に混ざって誤 NG を出す。割れ目で
+    接するペアだけを結合し直す（推定が返す極大ラン同士は 1 ビーム以上の隙間
+    があるため、mod 360 で接するのは継ぎ目割れのペアだけ）。
+    """
+    out = [(float(s), float(e)) for s, e in bands]
+    if len(out) < 2:
+        return out
+    eps = 1e-9
+    seam = angle_min_deg % 360.0
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(out)):
+            for j in range(len(out)):
+                if i == j:
+                    continue
+                s1, e1 = out[i]
+                s2, e2 = out[j]
+                # i の終端と j の始端がどちらも継ぎ目上 → 継ぎ目割れのペア
+                if min((e1 - seam) % 360.0, (seam - e1) % 360.0) <= eps \
+                        and min((s2 - seam) % 360.0, (seam - s2) % 360.0) <= eps:
+                    w = (e1 - s1) + (e2 - s2)
+                    new = (s1, s1 + w)
+                    # i, j を除き new を足す（順序は比較に使わない）
+                    out = [b for k, b in enumerate(out) if k not in (i, j)]
+                    out.append(new)
+                    merged = True
+                    break
+            if merged:
+                break
+    return out
+
+
 def blind_offset_deg(estimated: Sequence[tuple[float, float]],
                      configured_flat: Sequence[float]) -> float | None:
     """推定した死角帯と設定済み `blind_angle_ranges` のズレ（最大、度）。
@@ -318,12 +360,19 @@ def blind_offset_deg(estimated: Sequence[tuple[float, float]],
 
 def judge_lidar(alive: bool, period_s: float | None, ranges: Sequence[float],
                 angle_increment_deg: float, configured_ranges: Sequence[float],
-                p: CheckParams) -> CheckVerdict:
+                p: CheckParams, *, angle_min_deg: float) -> CheckVerdict:
     """LiDAR の死活・周期・カバレッジ・死角マスクのズレ（maintenance.md §2.5）。
 
     順に: データが届いているか → 周期が `scan_stale_ms` 以内か → 全周に欠損が
     無いか → 推定した死角帯が設定 `blind_angle_ranges` と `opcheck_blind_tolerance`
     以上ズレていないか。
+
+    `angle_min_deg`（必須キーワード。`LaserScan.angle_min` の度数。既定値を
+    付けると呼び忘れが黙って通るため付けない）: `estimate_blind_sectors` は
+    添字 × 刻み＝0..360° で帯を返すが、`configured_ranges`（registry の
+    `blind_angle_ranges`）は laser_link 基準の実角度なので、比べる前に
+    `angle_min` 起点へ直す（校正 BLIND の `shift_bands` と同じ考え方）。
+    継ぎ目（添字 0）で割れた帯は 1 本に戻してから比べる。
     """
     if not alive:
         return NG("no_data")
@@ -332,6 +381,7 @@ def judge_lidar(alive: bool, period_s: float | None, ranges: Sequence[float],
     if scan_coverage_gap_deg(ranges, angle_increment_deg) >= p.opcheck_scan_coverage_gap_deg:
         return NG("coverage_gap")
     estimated = estimate_blind_sectors(ranges, angle_increment_deg)
+    estimated = merge_seam_split(shift_bands(estimated, angle_min_deg), angle_min_deg)
     offset = blind_offset_deg(estimated, configured_ranges)
     if offset is not None and offset > p.opcheck_blind_tolerance_deg:
         return NG("blind_mismatch")

@@ -12,8 +12,9 @@ DetailedDesign-maintenance.md §2.7 の写実。`scripts/opcheck_auto.py` が
   - ファイル・環境・ROS2 を一切触らない。引数だけで完結する
     （ホストの素の pytest で直接走れるようにするため）。
   - 既存の判定（judge_imu・judge_gyro_unit・judge_lidar・judge_estop の
-    考え方）は `check_core` を import して使い回す。**check_core.py の
-    既存関数は変えない**。
+    考え方）は `check_core` を import して使い回す。**引数変更時はここも
+    合わせる**（`judge_lidar` の `angle_min_deg` 等。呼び忘れ防止のため
+    必須キーワードで受けてそのまま渡す）。
   - 開発モードの鮮度判定（dev_mode_core.hpp と同じ考え方:
     未受信・3 秒以上更新なし・読めない JSON は消さない）も純粋関数
     `is_suppressed()` としてここに置く。Python 側の既存実装は
@@ -96,10 +97,11 @@ def judge_imu_auto(calib_status: int, gyro_bias_rad_s: float,
 def judge_lidar_auto(alive: bool, period_s: float | None,
                      ranges: Sequence[float], angle_increment_deg: float,
                      configured_ranges: Sequence[float],
-                     p: CheckParams) -> AutoItemVerdict:
+                     p: CheckParams, *, angle_min_deg: float) -> AutoItemVerdict:
     """LiDAR の自動判定（check_core.judge_lidar の写し）。
 
-    死活・周期・全周の有効性・死角マスクのズレを順に見る。
+    死活・周期・全周の有効性・死角マスクのズレを順に見る。`angle_min_deg`
+    は `LaserScan.angle_min` の度数（必須キーワード。そのまま渡す）。
     """
     verdict = judge_lidar(
         alive=alive,
@@ -108,6 +110,7 @@ def judge_lidar_auto(alive: bool, period_s: float | None,
         angle_increment_deg=angle_increment_deg,
         configured_ranges=configured_ranges,
         p=p,
+        angle_min_deg=angle_min_deg,
     )
     return AutoItemVerdict(verdict.result, verdict.reason)
 
