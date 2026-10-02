@@ -300,6 +300,22 @@ def _near_arr(mask, inc=0.25, near=0.2):
     return [near if v else 3.0 for v in mask]
 
 
+def _real_band_scan(bands_real, angle_min_deg=-180.0, inc=1.0, n=360,
+                    near=0.2, far=5.0):
+    """実角度の帯 `[a0, a1)` に近距離を置いたスキャン配列を返す。
+
+    ビーム i の実角度は `angle_min + i * inc`。帯をまたぐ添字（負・n 超え）
+    は全周で折り返す。
+    """
+    ranges = [far] * n
+    for a0, a1 in bands_real:
+        i0 = int(round((a0 - angle_min_deg) / inc))
+        i1 = int(round((a1 - angle_min_deg) / inc))
+        for i in range(i0, i1):
+            ranges[i % n] = near
+    return ranges
+
+
 class TestEstimateBlindSectors:
     def test_no_near_points(self):
         assert estimate_blind_sectors([3.0] * 40, 9.0) == []
@@ -370,43 +386,46 @@ class TestJudgeLidar:
     def test_ok(self):
         p = make_params()
         ranges = [1.0] * 1440
-        assert judge_lidar(True, 0.2, ranges, 0.25, [], p) == OK()
+        assert judge_lidar(True, 0.2, ranges, 0.25, [], p, angle_min_deg=0.0) == OK()
 
     def test_no_data(self):
         p = make_params()
-        v = judge_lidar(False, None, [], 0.25, [], p)
+        v = judge_lidar(False, None, [], 0.25, [], p, angle_min_deg=0.0)
         assert v.reason == "no_data"
 
     def test_stale_period(self):
         p = make_params(scan_stale_ms=300.0)
-        v = judge_lidar(True, 0.4, [1.0] * 10, 1.0, [], p)
+        v = judge_lidar(True, 0.4, [1.0] * 10, 1.0, [], p, angle_min_deg=0.0)
         assert v.reason == "scan_stale"
 
     def test_period_at_threshold_ok(self):
         p = make_params(scan_stale_ms=300.0)
-        assert judge_lidar(True, 0.3, [1.0] * 10, 1.0, [], p) == OK()
+        assert judge_lidar(True, 0.3, [1.0] * 10, 1.0, [], p, angle_min_deg=0.0) == OK()
 
     def test_period_none_skips_stale_check(self):
         p = make_params()
-        assert judge_lidar(True, None, [1.0] * 10, 1.0, [], p) == OK()
+        assert judge_lidar(True, None, [1.0] * 10, 1.0, [], p, angle_min_deg=0.0) == OK()
 
     def test_coverage_gap(self):
         p = make_params(opcheck_scan_coverage_gap_deg=2.0)
         mask = [True] * 8 + [False] * 1 + [True] * 1  # 3deg の欠損 > 2deg
-        v = judge_lidar(True, 0.2, _scan_array(mask, inc=3.0), 3.0, [], p)
+        v = judge_lidar(True, 0.2, _scan_array(mask, inc=3.0), 3.0, [], p,
+                        angle_min_deg=0.0)
         assert v.reason == "coverage_gap"
 
     def test_coverage_under_threshold_ok(self):
         p = make_params(opcheck_scan_coverage_gap_deg=2.0)
         mask = [True] * 8 + [False] * 1 + [True] * 1  # 1deg の欠損 < 2deg
-        assert judge_lidar(True, 0.2, _scan_array(mask, inc=1.0), 1.0, [], p) == OK()
+        assert judge_lidar(True, 0.2, _scan_array(mask, inc=1.0), 1.0, [], p,
+                           angle_min_deg=0.0) == OK()
 
     def test_blind_mismatch(self):
         p = make_params(opcheck_blind_tolerance_deg=5.0)
         inc = 5.0
         # 死角は実測 25..45deg（単一帯）。設定が 0..20 で 25deg ズレ → NG
         mask = [False] * 5 + [True] * 4 + [False] * 5
-        v = judge_lidar(True, 0.2, _near_arr(mask, inc, near=0.2), inc, [0.0, 20.0], p)
+        v = judge_lidar(True, 0.2, _near_arr(mask, inc, near=0.2), inc, [0.0, 20.0], p,
+                        angle_min_deg=0.0)
         assert v.reason == "blind_mismatch"
 
     def test_blind_within_tolerance_ok(self):
@@ -414,17 +433,62 @@ class TestJudgeLidar:
         inc = 5.0
         mask = [False] * 5 + [True] * 4 + [False] * 5  # 単一帯 25..45deg
         config = [25.0, 45.0]
-        assert judge_lidar(True, 0.2, _near_arr(mask, inc, near=0.2), inc, config, p) == OK()
+        assert judge_lidar(True, 0.2, _near_arr(mask, inc, near=0.2), inc, config, p,
+                           angle_min_deg=0.0) == OK()
 
     def test_no_blind_map_never_ng(self):
         # blind_angle_ranges が空（未校正）なら盲点は比較しない
         p = make_params()
         inc = 5.0
         mask = [True] * 5 + [False] * 5 + [True] * 5
-        assert judge_lidar(True, 0.2, _near_arr(mask, inc, near=0.2), inc, [], p) == OK()
+        assert judge_lidar(True, 0.2, _near_arr(mask, inc, near=0.2), inc, [], p,
+                           angle_min_deg=0.0) == OK()
 
     def test_stale_beats_gap_order(self):
         # 周期異常と欠損は周期を先に判定
         p = make_params()
-        v = judge_lidar(True, 9.9, [], 0.25, [], p)
+        v = judge_lidar(True, 9.9, [], 0.25, [], p, angle_min_deg=0.0)
         assert v.reason == "scan_stale"
+
+
+class TestJudgeLidarAngleMin:
+    """`angle_min != 0` のスキャンでも実角度で比べること（実機は -π）。
+
+    回帰の由来: `estimate_blind_sectors` は添字 × 刻み＝0..360° で帯を返す
+    ため、`angle_min` を見ずに比べると実機（`angle_min=-π`）では推定帯が
+    180° ずれた座標で比較されていた。
+    """
+
+    def test_match_at_minus_pi_is_ok(self):
+        # 実角度 10..20° の帯が設定どおり → OK（直さないと 180° ずれて NG）
+        p = make_params(opcheck_blind_tolerance_deg=5.0)
+        ranges = _real_band_scan([(10.0, 20.0)], angle_min_deg=-180.0)
+        v = judge_lidar(True, 0.1, ranges, 1.0, [10.0, 20.0], p,
+                        angle_min_deg=-180.0)
+        assert v == OK()
+
+    def test_shifted_10deg_at_minus_pi_is_ng(self):
+        # 実角度 10..20° に対し設定が 10° ずれて 20..30° → 許容 5° 超で NG
+        p = make_params(opcheck_blind_tolerance_deg=5.0)
+        ranges = _real_band_scan([(10.0, 20.0)], angle_min_deg=-180.0)
+        v = judge_lidar(True, 0.1, ranges, 1.0, [20.0, 30.0], p,
+                        angle_min_deg=-180.0)
+        assert v.reason == "blind_mismatch"
+
+    def test_zero_angle_min_unchanged(self):
+        # angle_min=0 では添字空間＝実角度。従来どおり OK
+        p = make_params(opcheck_blind_tolerance_deg=5.0)
+        ranges = _real_band_scan([(190.0, 200.0)], angle_min_deg=0.0)
+        v = judge_lidar(True, 0.1, ranges, 1.0, [190.0, 200.0], p,
+                        angle_min_deg=0.0)
+        assert v == OK()
+
+    def test_band_across_seam_is_merged(self):
+        # 継ぎ目（angle_min＝-180°）をまたぐ実角度 -185..-175° の帯。
+        # 推定は添字 0 で 2 つに割れるが、シフト後に 1 本へ戻して比べる。
+        # 人工的な境界（±180°）が残ると許容 2° に対して 5° のズレに見える。
+        p = make_params(opcheck_blind_tolerance_deg=2.0)
+        ranges = _real_band_scan([(-185.0, -175.0)], angle_min_deg=-180.0)
+        v = judge_lidar(True, 0.1, ranges, 1.0, [-185.0, -175.0], p,
+                        angle_min_deg=-180.0)
+        assert v == OK()
