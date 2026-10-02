@@ -188,6 +188,77 @@ def advance_index(
     return idx
 
 
+# ──────────────────────────────────────────────────────────────────
+# 経路からの横ずれ（S-14 表示用。Spec-webui.md §3.7 / Spec-transit.md §4.4）
+# ──────────────────────────────────────────────────────────────────
+def cross_track_error(
+    robot: Pose2D,
+    points: Sequence[Pose2D],
+    from_index: int = 0,
+    window_behind: int = 2,
+    window_ahead: int = 10,
+) -> float:
+    """現在位置が経路（折れ線）から横にどれだけ外れているか [m] を返す。
+
+    最寄り区間への垂線距離（**符号なし・非負**。「どれだけ外れているか」だけを
+    示し、左右どちらかは示さない。S-14 の表示が「0.12 m / 最大 0.45 m」の形に
+    なることを想定している）。
+    yaw は使わない（位置だけの幾何。向きがずれていても位置が経路上なら 0）。
+
+    探索は全点ではなく `from_index` 付近の窓
+    `[from_index - window_behind, from_index + window_ahead]`（区間単位）に限る。
+    理由:
+      - `from_index` は `advance_index` が単調に進める「いま辿っている区間」の
+        目安であり、機体の近傍はその前後にあるはず。
+      - 経路が自分と交差・並走する（往復経路など）と全点探索は離れた周回へ
+        吸着して 0 に潰れる。窓に限ることで「いま走っている側」で測れる。
+      - 後ろ側を少し含めるのは、区間を通過し切る直前の機体が「さっきの区間」に
+        最も近い状態を拾うため。前側を広めに取るのは、pure_pursuit の目標点が
+        前方にあることとの整合（通り過ぎた点だけを見ない）。
+    窓が空になる（from_index が範囲外・点が 1 点以下など）ときは窓を無視して
+    測れるものだけ測る（下の縁の扱い）。
+
+    縁の扱い:
+      - 点列が空 → 0.0（測れない。呼び出し側は前回値を保つなどすること）
+      - 点が 1 点だけ → その点までのユークリッド距離
+      - 長さ 0 の区間（同一点の連続）→ 区間ではなく点として距離を測る
+        （0 除算しない）
+    """
+    rx, ry, _ = robot
+    n = len(points)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        px, py, _ = points[0]
+        return math.hypot(rx - px, ry - py)
+
+    def seg_dist(px, py, nx, ny):
+        seg_x, seg_y = nx - px, ny - py
+        seg_sq = seg_x * seg_x + seg_y * seg_y
+        if seg_sq <= 1e-12:
+            # 同一点の連続 → 始点への距離
+            return math.hypot(rx - px, ry - py)
+        t = ((rx - px) * seg_x + (ry - py) * seg_y) / seg_sq
+        t = 0.0 if t < 0.0 else 1.0 if t > 1.0 else t
+        cx, cy = px + t * seg_x, py + t * seg_y
+        return math.hypot(rx - cx, ry - cy)
+
+    # 区間 idx は points[idx]→points[idx+1]。窓を区間添字に直す。
+    lo = max(0, from_index - window_behind)
+    hi = min(n - 2, from_index + window_ahead)
+    if hi < lo:
+        # from_index が末尾より後ろ等 → 全区間を見る（窓を無視）
+        lo, hi = 0, n - 2
+    best = float('inf')
+    for idx in range(lo, hi + 1):
+        px, py, _ = points[idx]
+        nx, ny, _ = points[idx + 1]
+        d = seg_dist(px, py, nx, ny)
+        if d < best:
+            best = d
+    return best if best != float('inf') else 0.0
+
+
 def pure_pursuit(
     robot: Pose2D,
     points: Sequence[Pose2D],

@@ -251,6 +251,11 @@ export const S14_LENGTH = '距離'
 export const S14_POINTS = '点数'
 // WS-9T: 再生速度の低速/中速/高速 切替（走行中も変更可）。
 export const S14_SPEED_TITLE = '再生速度'
+// 経路からのずれ（Spec-webui.md §3.7 / Spec-transit.md §4.4）。
+// 走行中、現在位置が経路から横にどれだけ外れているか [m] とこの再生での最大値。
+export const S14_XTRACK_TITLE = '経路からのずれ'
+export const S14_XTRACK_EMPTY = '--'
+export const S14_XTRACK_VALUE = (nowM, maxM) => `いま ${nowM.toFixed(2)} m・最大 ${maxM.toFixed(2)} m`
 
 // ---------------------------------------------------------------- 経路プレビュー（WS-3） ----
 // src/screens/RoutePreview.jsx の表示文字列。
