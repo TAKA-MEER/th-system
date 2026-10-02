@@ -18,6 +18,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTunableParams } from '../ros/useTunableParams.js'
+import { useTrigger } from '../ros/useTrigger.js'
+import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
+import { blindRangesText } from './calibCore.js'
 import { useDevMode } from '../ros/useDevMode.js'
 import {
   DEV_ITEMS, devIgnoreParam, effectiveItems,
@@ -28,6 +31,7 @@ import {
   S50_BACK, S50_TAB_GENERAL, S50_TAB_DISPLAY, S50_TAB_DEV, S50_GUARD,
   S50_SAVE_YAML, S50_SAVING, S50_SAVED, S50_SAVE_FAILED, S50_LOAD_FAILED,
   S50_SEC_FOLLOW, S50_SEC_LIDAR, S50_SEC_SLAM, S50_SLAM_NOTE,
+  S50_BLIND_GOTO_CALIB, S50_BLIND_NOTE,
   S50_FONT_TITLE, S50_FONT_NORMAL, S50_FONT_LARGE, S50_FONT_XLARGE,
   S50_DEV_TITLE, S50_DEV_ENABLE, S50_DEV_DISABLE, S50_DEV_NOTE,
   S50_DEV_ITEMS_TITLE, S50_DEV_ITEM_LINK, S50_DEV_ITEM_LINK_DESC,
@@ -58,7 +62,10 @@ const MAPLESS_FIELDS = [
   { name: 'max_angular_accel_rad_s2',      label: '旋回加速度上限',       unit: 'rad/s²', min: 0.5, max: 8,  step: 0.1 },
 ]
 
-const BLIND_LABELS = ['右前 開始', '右前 終了', '右後 開始', '右後 終了', '左後 開始', '左後 終了', '左前 開始', '左前 終了']
+// 一般タブの LiDAR 死角は読み取り専用（2026-10-02 Spec-webui.md §3.15）。
+// 変更は校正 S-40 の BLIND 経路だけにするため、編集欄も「YAML に保存」も置かない。
+// 値の読み出しは lidar_filter の get_parameters を直接叩く従来の経路のまま
+// （表示は config_manager の調整対象でなくても読める）。
 
 // 開発モードの項目メタ（WP-DEV-01B §2）。キーは devModeState.DEV_ITEMS と揃える。
 // battery・auto_brake 以外は効く。opcheck は起動時の自動点検の警告を消す
@@ -147,6 +154,12 @@ function Section({ title, note, saveKey, status, editable, loading, onSave, chil
 export default function S50Settings({ onBack, initialTab = 'general' }) {
   const { ros, state, stale } = useSystemState()
   const { getTunableParams, applyTunableParam, saveTunableParams } = useTunableParams(ros)
+  // S-40（校正）への導線。FSM が真実なので画面側で遷移はしない — 受理されれば
+  // /system/state が CALIB になり、main.jsx が S-50 を畳んで S-40 を出す。
+  // 拒否されたら理由をその場に出す（S-01 の理由ウィンドウと同型。S-30 の
+  // 発射しっぱなしにはしない）。
+  const sendTrigger = useTrigger()
+  const [calibErr, setCalibErr] = useState('')
 
   const mode = state?.mode ?? null
   const editable = !stale && (mode === 'IDLE' || mode === 'MANUAL')
@@ -183,11 +196,11 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
     setMapless((prev) => ({ ...prev, [name]: value }))
     applyTunableParam('follow_planner_mapless', name, value, { isInt }).catch(() => {})
   }
-  const applyBlindRange = (index) => (value) => {
-    const next = blindRanges.slice()
-    next[index] = value
-    setBlindRanges(next)
-    applyTunableParam('lidar_filter', 'blind_angle_ranges', next, { isArray: true }).catch(() => {})
+  const gotoCalib = () => {
+    setCalibErr('')
+    sendTrigger('ui.enter_mode', { mode: 'CALIB' }).then((res) => {
+      if (!res?.accepted) setCalibErr(reasonLabel(res?.reject_reason_key) ?? UNKNOWN_REASON_LABEL)
+    }).catch(() => setCalibErr(UNKNOWN_REASON_LABEL))
   }
   const applySlam = (name) => (value) => {
     setSlam((prev) => ({ ...prev, [name]: value }))
@@ -300,21 +313,24 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
             ))}
           </Section>
 
-          <Section
-            title={S50_SEC_LIDAR} saveKey="lidar_filter"
-            status={status.lidar_filter} editable={editable} loading={loading}
-            onSave={() => save('lidar_filter')}
-          >
-            {BLIND_LABELS.map((label, i) => (
-              <NumberField
-                key={i} label={label} unit="deg"
-                min={0} max={360} step={1}
-                value={blindRanges?.[i]}
-                disabled={!editable || loading || !blindRanges}
-                onCommit={applyBlindRange(i)}
-              />
-            ))}
-          </Section>
+          <div className="card">
+            <div className="row" style={{ marginBottom: 8 }}>
+              <h3 className="grow" style={{ margin: 0 }}>{S50_SEC_LIDAR}</h3>
+              <button
+                type="button"
+                className="btn sm"
+                onClick={gotoCalib}
+                data-testid="s50-goto-calib"
+              >
+                {S50_BLIND_GOTO_CALIB}
+              </button>
+            </div>
+            <p className="note">{S50_BLIND_NOTE}</p>
+            <p data-testid="s50-blind-current">
+              {blindRanges == null ? (loading ? '' : S50_LOAD_FAILED) : blindRangesText(blindRanges)}
+            </p>
+            {calibErr && <p className="note" data-testid="s50-calib-err">{calibErr}</p>}
+          </div>
 
           <Section
             title={S50_SEC_SLAM} saveKey="slam_toolbox" note={S50_SLAM_NOTE}
@@ -404,6 +420,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   )
 }
 
-// テスト（test_tunable_targets.py）がこの配列名を正規表現で拾う。
-// 名前を変えるときは向こうも直すこと。
-export { MAPLESS_FIELDS, SLAM_FIELDS, BLIND_LABELS }
+// テスト（test_tunable_targets.py）が MAPLESS_FIELDS / SLAM_FIELDS の配列名を
+// 正規表現で拾う。名前を変えるときは向こうも直すこと。
+// BLIND_LABELS は廃止（2026-10-02。死角の編集欄を S-50 から外した）。
+export { MAPLESS_FIELDS, SLAM_FIELDS }
