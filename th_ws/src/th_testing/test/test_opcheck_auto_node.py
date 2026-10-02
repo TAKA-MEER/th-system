@@ -21,6 +21,9 @@ test_opcheck_auto_node.py
   g. 自動点検の間、/cmd_vel_behavior に非ゼロが 1 件も出ない。
      構造的にも opcheck_auto は /cmd_vel_behavior の publisher を持たない
      （非ゼロを出す変異はここで赤になる＝変異チェック③の標的）
+  h. `angle_min=-π` の /scan でも死角マスクと実角度で比べる。
+     実角度どおりの帯なら LIDAR OK（ノード側で `angle_min` を渡し忘れる
+     変異はここで赤になる）
 """
 import json
 import math
@@ -66,6 +69,9 @@ def generate_test_description():
             'imu_wz_implausible_rad_s': 10.0,
             'opcheck_blind_tolerance_deg': 5.0,
             'opcheck_scan_coverage_gap_deg': 2.0,
+            # h 用の死角マスク（実角度）。b〜g のフラットスキャンには帯が無い
+            # ので影響しない（推定が空 → 比較不能 → OK のまま）
+            'blind_angle_ranges': [10.0, 20.0],
         }],
         output='screen',
     )
@@ -134,6 +140,7 @@ class TestOpcheckAutoNode(unittest.TestCase):
         self._estop_pressed = False
         self._feed_imu = False
         self._feed_scan = False
+        self._scan_custom = None  # None 以外なら _flat_scan の代わりに流す関数
         self._feed_dev = None  # None=未受信 / str=JSON を流す
         # 周期配信スレッドの代わりに spin しながら流すためのタイマ記録
         self._last_feed = 0.0
@@ -159,7 +166,10 @@ class TestOpcheckAutoNode(unittest.TestCase):
             self.pub_imu.publish(_imu(self.node))
             self.pub_calib.publish(UInt8(data=0xFF))
         if self._feed_scan:
-            self.pub_scan.publish(_flat_scan(self.node))
+            if self._scan_custom is not None:
+                self.pub_scan.publish(self._scan_custom(self.node))
+            else:
+                self.pub_scan.publish(_flat_scan(self.node))
         if self._feed_dev is not None:
             self.pub_dev.publish(String(data=self._feed_dev))
 
@@ -266,3 +276,27 @@ class TestOpcheckAutoNode(unittest.TestCase):
         pubs = dict(self.node.get_publisher_names_and_types_by_node(
             'opcheck_auto', ''))
         assert '/cmd_vel_behavior' not in pubs, pubs
+
+    # ── h: angle_min=-π でも実角度で比べる ──
+    def test_h_blind_mask_compared_in_real_angles(self):
+        # 実角度 10..20° に近距離帯（=`blind_angle_ranges` どおり）。
+        # angle_min を見ずに比べる変異では推定帯が (190, 200) になり NG。
+        def _band_scan(node):
+            msg = _flat_scan(node)
+            msg.ranges = list(msg.ranges)
+            for i in range(190, 200):
+                msg.ranges[i] = 0.3
+            return msg
+
+        self._feed_estop = True
+        self._feed_imu = True
+        self._feed_scan = True
+        self._scan_custom = _band_scan
+        # 注意: /opcheck/auto_status は TRANSIENT_LOCAL のため、購読直後に
+        # 前テストの最終メッセージ（OK）が即届く。最新 1 件だけ見ると帯スキャン
+        # を評価する前に述語が成立して空振りになるので、購読後に配信された
+        # 新しいメッセージ（2 件目以降）で判定する。
+        auto = self._wait_auto(
+            lambda a: len(self._auto) >= 2 and a['overall'] == 'OK'
+            and a['items']['LIDAR']['result'] == 'OK', timeout=8.0)
+        assert auto['items']['LIDAR']['reason'] == '', auto

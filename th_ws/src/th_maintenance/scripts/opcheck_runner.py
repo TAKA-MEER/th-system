@@ -151,6 +151,7 @@ class OpcheckRunner(Node):
         self._scan_period = None
         self._scan_ranges = []
         self._scan_angle_inc = math.radians(1.0)
+        self._scan_angle_min = 0.0  # rad。初回受信まで alive が偽なので値は使われない
         self._last_lidar_verdict = (None, None)
 
         # ── QoS ───────────────────────────────────────────
@@ -529,6 +530,7 @@ class OpcheckRunner(Node):
                 self._scan_period = dt
         self._scan_prev_stamp = stamp
         self._scan_ranges = list(msg.ranges)
+        self._scan_angle_min = msg.angle_min
         if msg.angle_increment > 0.0:
             self._scan_angle_inc = msg.angle_increment
         if self._item == "LIDAR":
@@ -553,7 +555,8 @@ class OpcheckRunner(Node):
             ranges=self._scan_ranges,
             angle_increment_deg=math.degrees(self._scan_angle_inc),
             configured_ranges=self._configured_blind(),
-            p=self._p)
+            p=self._p,
+            angle_min_deg=math.degrees(self._scan_angle_min))
         key = (verdict.result, verdict.reason)
         if key != self._last_lidar_verdict:
             self._last_lidar_verdict = key

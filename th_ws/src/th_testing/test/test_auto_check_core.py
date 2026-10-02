@@ -96,16 +96,18 @@ class TestImuAuto:
 
 class TestLidarAuto:
     def test_healthy_is_ok(self):
-        v = judge_lidar_auto(True, 0.1, flat_scan(), 1.0, [], make_params())
+        v = judge_lidar_auto(True, 0.1, flat_scan(), 1.0, [], make_params(),
+                             angle_min_deg=0.0)
         assert v.result == "OK"
 
     def test_no_scan_is_ng(self):
-        v = judge_lidar_auto(False, None, [], 1.0, [], make_params())
+        v = judge_lidar_auto(False, None, [], 1.0, [], make_params(), angle_min_deg=0.0)
         assert v.result == "NG"
         assert v.reason == "no_data"
 
     def test_stale_period_is_ng(self):
-        v = judge_lidar_auto(True, 1.0, flat_scan(), 1.0, [], make_params())
+        v = judge_lidar_auto(True, 1.0, flat_scan(), 1.0, [], make_params(),
+                             angle_min_deg=0.0)
         assert v.result == "NG"
         assert v.reason == "scan_stale"
 
@@ -114,9 +116,44 @@ class TestLidarAuto:
         ranges = [5.0] * 360
         for i in range(10, 20):
             ranges[i] = 0.3
-        v = judge_lidar_auto(True, 0.1, ranges, 1.0, [100.0, 110.0], make_params())
+        v = judge_lidar_auto(True, 0.1, ranges, 1.0, [100.0, 110.0], make_params(),
+                             angle_min_deg=0.0)
         assert v.result == "NG"
         assert v.reason == "blind_mismatch"
+
+
+class TestLidarAutoAngleMin:
+    """`angle_min=-π`（実機）でも実角度で比べること（check_core の写し）。"""
+
+    @staticmethod
+    def _real_band_scan(bands_real, angle_min_deg=-180.0, inc=1.0, n=360):
+        ranges = [5.0] * n
+        for a0, a1 in bands_real:
+            i0 = int(round((a0 - angle_min_deg) / inc))
+            i1 = int(round((a1 - angle_min_deg) / inc))
+            for i in range(i0, i1):
+                ranges[i % n] = 0.3
+        return ranges
+
+    def test_match_at_minus_pi_is_ok(self):
+        ranges = self._real_band_scan([(10.0, 20.0)])
+        v = judge_lidar_auto(True, 0.1, ranges, 1.0, [10.0, 20.0],
+                             make_params(), angle_min_deg=-180.0)
+        assert v.result == "OK"
+
+    def test_shifted_10deg_at_minus_pi_is_ng(self):
+        ranges = self._real_band_scan([(10.0, 20.0)])
+        v = judge_lidar_auto(True, 0.1, ranges, 1.0, [20.0, 30.0],
+                             make_params(), angle_min_deg=-180.0)
+        assert v.result == "NG"
+        assert v.reason == "blind_mismatch"
+
+    def test_band_across_seam_is_merged(self):
+        ranges = self._real_band_scan([(-185.0, -175.0)])
+        p = make_params(opcheck_blind_tolerance_deg=2.0)
+        v = judge_lidar_auto(True, 0.1, ranges, 1.0, [-185.0, -175.0],
+                             p, angle_min_deg=-180.0)
+        assert v.result == "OK"
 
 
 # ── 総合 ──

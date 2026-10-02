@@ -52,13 +52,14 @@ mode==OPCHECK のときだけ動く「ノード側でも二重に確認」の実
      test_i_motor_hold_ignored_after_final_verdict_before_record_result が赤
 """
 import json
+import math
 import time
 import unittest
 
 import pytest
 import rclpy
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
-                       QoSReliabilityPolicy)
+                       QoSReliabilityPolicy, qos_profile_sensor_data)
 
 import launch
 import launch_ros.actions
@@ -66,6 +67,7 @@ import launch_testing
 import launch_testing.actions
 
 from geometry_msgs.msg import Twist
+from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 from th_system_msgs.msg import (CheckStatus, StateEffect, StateEvent,
                                 SystemState, WheelFeedback)
@@ -101,6 +103,9 @@ def generate_test_description():
             'v_check': V_CHECK,
             'motor_deadband_mps': MOTOR_DEADBAND,
             'motor_follow_min_ratio': MOTOR_FOLLOW_MIN_RATIO,
+            # j 用の死角マスク（実角度）。a〜i は LIDAR 項目を使わないので
+            # 影響しない
+            'blind_angle_ranges': [10.0, 20.0],
         }],
         output='screen',
     )
@@ -146,6 +151,8 @@ class TestOpcheckRunnerNode(unittest.TestCase):
             WheelFeedback, '/esp32/wheel_cmd_speed', 10)
         self.pub_wheel_fb = self.node.create_publisher(
             WheelFeedback, '/esp32/wheel_feedback', 10)
+        self.pub_scan = self.node.create_publisher(
+            LaserScan, '/scan', qos_profile_sensor_data)
 
         self.cli_run = self.node.create_client(RunCheck, '/opcheck/run_item')
         assert self.cli_run.wait_for_service(timeout_sec=5.0), \
@@ -469,6 +476,52 @@ class TestOpcheckRunnerNode(unittest.TestCase):
         assert not self._cmd, (
             'MOTOR の最終判定後・record_result 到着前なのに /cmd_vel_behavior '
             f'に出た（残存 window の標的）: {self._cmd}')
+
+    # ── ヘルパー（j 用） ──────────────────────────────────
+    def _publish_band_scan(self):
+        # angle_min=-π（実機と同じ）の 360 ビームに、実角度 10..20° の
+        # 近距離帯（=`blind_angle_ranges` どおり）を置く
+        msg = LaserScan()
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.header.frame_id = 'laser_link'
+        msg.angle_min = -math.pi
+        msg.angle_max = math.pi
+        msg.angle_increment = 2.0 * math.pi / 360.0
+        msg.range_min = 0.05
+        msg.range_max = 12.0
+        msg.ranges = [5.0] * 360
+        for i in range(190, 200):
+            msg.ranges[i] = 0.3
+        self.pub_scan.publish(msg)
+
+    # ════════════════════════════════════════════════════════
+    # j. LIDAR: angle_min=-π でも実角度で比べる（本番の経路）
+    # ════════════════════════════════════════════════════════
+    def test_j_lidar_blind_compared_in_real_angles(self):
+        """実角度どおりの帯なら LIDAR 項目が OK になる。
+
+        ノード側で `angle_min` を渡し忘れる変異では推定帯が (190, 200) 扱いに
+        なり `blind_mismatch` の NG が出る（＝この試験が赤になる）。
+        """
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('LIDAR')
+        assert res.started, res.message
+
+        self._events.clear()
+        deadline = time.time() + 4.0
+        hits = []
+        while time.time() < deadline:
+            self._publish_band_scan()
+            self._spin(0.1)
+            hits = [e for e in self._events
+                    if e.event == 'evt.check_result'
+                    and json.loads(e.arg_json).get('item') == 'LIDAR']
+            if hits:
+                break
+        assert hits, 'LIDAR 項目の evt.check_result が出なかった'
+        args = json.loads(hits[-1].arg_json)
+        assert args.get('result') == 'OK', \
+            f'実角度どおりの帯なのに LIDAR が OK にならなかった: {args}'
 
 
 if __name__ == '__main__':

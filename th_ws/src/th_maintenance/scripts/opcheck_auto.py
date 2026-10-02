@@ -112,6 +112,7 @@ class OpcheckAuto(Node):
         self._scan_period = None
         self._scan_ranges: list = []
         self._scan_angle_inc = math.radians(1.0)
+        self._scan_angle_min = 0.0  # rad。初回受信まで scan_alive が偽なので値は使われない
         # /system/dev_mode（JSON 文字列）と受信時刻
         self._dev_raw = None
         self._dev_recv_ms = None
@@ -172,6 +173,7 @@ class OpcheckAuto(Node):
                 self._scan_period = dt
         self._scan_prev_stamp = stamp
         self._scan_ranges = list(msg.ranges)
+        self._scan_angle_min = msg.angle_min
         if msg.angle_increment > 0.0:
             self._scan_angle_inc = msg.angle_increment
 
@@ -212,7 +214,8 @@ class OpcheckAuto(Node):
                 ranges=self._scan_ranges,
                 angle_increment_deg=math.degrees(self._scan_angle_inc),
                 configured_ranges=self._configured_blind(),
-                p=self._p)
+                p=self._p,
+                angle_min_deg=math.degrees(self._scan_angle_min))
             overall = combine_overall(estop, imu, lidar)
 
         suppressed = is_suppressed(self._dev_raw, now, self._dev_recv_ms)

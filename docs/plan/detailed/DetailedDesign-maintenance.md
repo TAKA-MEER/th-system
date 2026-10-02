@@ -169,6 +169,9 @@ def judge_imu(calib_status: int, gyro_bias_rad_s: float, alive: bool, p) -> Chec
 
 **ズレの自動検知**: 静止状態で `/scan` を平均し、**恒常的に近距離を返す角度帯**を推定して
 `blind_angle_ranges` と比べる。差が `calib_blind_tolerance_deg` を超えたら NG。
+角度は laser_link 基準・反時計回り正（registry の `blind_angle_ranges` と同じ）。
+`/scan` の添字 × 刻みで推定した帯は `angle_min` 起点の実角度へ直してから比べる
+（`angle_min=-π` の実機では 180° ずれる。添字 0 で割れた帯は継ぎ目で 1 本に戻す）。
 
 **`DEBT-2`（幅ゼロのマスク）はここで必ず NG になる。**
 推定された角度帯（4 か所・幅あり）と設定（幅ゼロ）が食い違うため。
