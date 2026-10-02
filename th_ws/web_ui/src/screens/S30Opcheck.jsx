@@ -44,6 +44,7 @@ import { useMotorHold } from '../ros/useMotorHold.js'
 import { useWheelSpeeds } from '../ros/useWheelSpeeds.js'
 import HoldButton from '../parts/HoldButton.jsx'
 import WheelSpeedView from '../parts/WheelSpeedView.jsx'
+import { setCalibGuide, clearCalibGuide } from './calibGuide.js'
 import { checkReasonLabel } from '../i18n/checks.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS } from '../i18n/states.js'
@@ -89,7 +90,7 @@ function VerdictCard({ item, verdict, disabledAll, onGotoCalib }) {
       </div>
       {showCalib && (
         <button type="button" className="btn wide" disabled={disabledAll}
-          data-testid="s30-goto-calib" onClick={onGotoCalib}>
+          data-testid="s30-goto-calib" onClick={() => onGotoCalib(item, verdict)}>
           {S30_GOTO_CALIB}
         </button>
       )}
@@ -185,7 +186,7 @@ function SimpleStatusMonitor({ item, status, disabledAll, onGotoCalib }) {
       )}
       {verdict && (verdict.next_screen === 'imu_calib' || verdict.next_screen === 'lidar_calib') && (
         <button type="button" className="btn wide" disabled={disabledAll}
-          data-testid="s30-goto-calib" onClick={onGotoCalib}>
+          data-testid="s30-goto-calib" onClick={() => onGotoCalib(item, verdict)}>
           {S30_GOTO_CALIB}
         </button>
       )}
@@ -251,8 +252,19 @@ export default function S30Opcheck() {
     try { await sendTrigger('ui.finish') } catch { /* rosbridge 一時失敗。留まる */ }
   }
 
-  function handleGotoCalib() {
-    sendTrigger('ui.enter_mode', { mode: 'CALIB' })
+  // S-40 への誘導元を受け渡してから ui.enter_mode{CALIB} を送る（T-OPC-07 に
+  // 項目を運ぶ仕組みは無いので画面側の受け渡し。screens/calibGuide.js）。
+  // 拒否・送信失敗では受け渡しを消す（S-01 など別経路で S-40 に入ったときに
+  // 古い誘導が残らないようにする）。対応表に無い項目（ESTOP・MOTOR）は
+  // setCalibGuide が置かずに捨てる。
+  async function handleGotoCalib(item, verdict) {
+    setCalibGuide({ from: item, result: verdict?.result })
+    try {
+      const res = await sendTrigger('ui.enter_mode', { mode: 'CALIB' })
+      if (!res?.accepted) clearCalibGuide()
+    } catch {
+      clearCalibGuide() // rosbridge 一時失敗。受け渡しを残さない
+    }
   }
 
   return (

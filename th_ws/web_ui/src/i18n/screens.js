@@ -5,6 +5,7 @@
 // screens/ isn't one of U-4's three machine-checked directories (shell/
 // parts/ros), but the task's intent ("Japanese lives only under i18n/")
 // applies here too -- see DetailedDesign-wp1.md WP-UI-02 instructions.
+import { S40_ITEM_LABELS } from './calib.js'
 export const SCREEN_NAMES = {
   S00: '接続確認',
   S01: 'メインメニュー',
@@ -585,3 +586,16 @@ export const S31_NO_SYMPTOM = '症状の情報がありません（画面を開�
 export const S31_BACK_TO_LIST = '一覧へ戻る'
 export const S31_HINTS_TITLE = 'チェック手順'
 export const S31_HINTS_NOTE = 'この画面は診断結果を示すだけです。修理は人が行い、直ったら「一覧へ戻る」で始業点検をやり直してください。'
+
+// ---------------------------------------------------------------- S-30 → S-40 の誘導 ----
+ // S-30 の「校正へ」から S-40 に入ったとき、CALIB/LIST で 1 回だけ出す案内
+ // （計画書 §6 #11。受け渡しは screens/calibGuide.js の { from, result, target }）。
+ // 自動で開始しない（開始は人が押す。Spec.md SD-8）ので「「開始」を押して」と書く。
+ // WARN（IMU・LiDAR の要確認）から来ることもあるので結果を見て言い換える
+ // （IMU の NG は故障診断へ行き、ここには来ない。opcheck_runner.py 参照）。
+export function s40CalibGuideText(guide) {
+  const op = S30_ITEM_LABELS[guide?.from] ?? guide?.from ?? ''
+  const item = S40_ITEM_LABELS[guide?.target] ?? guide?.target ?? ''
+  const word = guide?.result === 'WARN' ? '要確認' : 'NG'
+  return `始業点検の${op}が${word}でした。「${item}」の「開始」を押して校正してください。`
+}

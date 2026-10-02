@@ -27,12 +27,14 @@
 // 状態の正本は機体側（FSM と calib_runner）。この画面は /system/state と
 // /calib/status を表示しているだけで、「次へ」が押せるかも同じ条件で導く
 // （screens/calibCore.js。S3 は PREVIEW_OK のときだけ）。
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useCalibStatus } from '../ros/useCalibStatus.js'
 import { useCalibService } from '../ros/useCalibService.js'
 import { useScan } from '../ros/useScan.js'
+import { takeCalibGuide } from './calibGuide.js'
+import { s40CalibGuideText } from '../i18n/screens.js'
 import BlindScanSelect from '../parts/BlindScanSelect.jsx'
 import StepBar from '../parts/StepBar.jsx'
 import { REJECT_REASONS } from '../i18n/reasons.js'
@@ -83,6 +85,8 @@ export default function S40Calib() {
   const step = stepNumber(fsmState)
   const inWizard = step > 0
   const proceed = canProceed({ fsmState, item, status })
+  // S-30 からの誘導の案内・強調は LIST の項目タブでだけ出す。
+  const showGuide = guide && fsmState === 'LIST'
 
   // LIST に戻ったら入力欄・押した項目を畳む。ステップが変わったら入力と直前の応答も畳む。
   useEffect(() => {
@@ -91,6 +95,20 @@ export default function S40Calib() {
     setSubmitMsg(null)
     setRetryErr(null)
   }, [fsmState])
+
+  // S-30 の「校正へ」からの誘導（screens/calibGuide.js）。CALIB/LIST で 1 回だけ
+  // 読んで消す。StrictMode の二重 effect でも 2 回取らないよう ref で guard
+  // （take は消費するので素の effect だと 2 回目の setup が空で潰す）。
+  // ウィザードに入ったら案内は畳む（誘導は果たした。開始は人が押した）。
+  const [guide, setGuide] = useState(null)
+  const guideTakenRef = useRef(false)
+  useEffect(() => {
+    if (guideTakenRef.current) return
+    guideTakenRef.current = true
+    const g = takeCalibGuide()
+    if (g) setGuide(g)
+  }, [])
+  useEffect(() => { if (inWizard) setGuide(null) }, [inWizard])
 
   // 確定の通知は calib_runner が 1 回だけ result=COMMITTED で出す。次の校正を始めるまで残す。
   useEffect(() => {
@@ -392,11 +410,16 @@ export default function S40Calib() {
           </div>
           {tab === 'items' && (
             <>
+              {showGuide && (
+                <p className="s40-guide" data-testid="s40-calib-guide">
+                  {s40CalibGuideText(guide)}
+                </p>
+              )}
               {CALIB_ITEM_ORDER.map((it) => {
                 const startable = CALIB_STARTABLE.includes(it)
                 const last = lastCalibrated(detail, it)
                 return (
-                  <div key={it} className={`s40-row ${item === it ? 'running' : ''}`}
+                  <div key={it} className={`s40-row ${item === it ? 'running' : ''}${showGuide && guide.target === it ? ' guided' : ''}`}
                     data-testid={`s40-item-${it}`}>
                     <div className="s40-row-main">
                       <span className="s40-row-label">{T.S40_ITEM_LABELS[it]}</span>
