@@ -35,7 +35,7 @@ FSM の行は足りているが、発火元（`evt.localize_low` の発行者・
 
 | # | 内容 | 触るファイル | 完了条件（緑になる試験） | Gazebo / 実機 |
 | --- | --- | --- | --- | --- |
-| P0 | **オフライン実現性検証**（コード変更なし）。保存済み実機地図＋記録スキャンで、Python＋numpy の粗→細の段階探索の所要時間と取り違え起きやすさを PC だけで測る。**結果次第で案 A 続行か案 B（AMCL）切替かを判断する**（判断基準は options §0） | 測定スクリプト（`.briefs/tmp/` 置き。製品コードにしない） | 測定記録（所要時間・`s`／`m` 分布）。試験の緑赤ではない | 実機の地図・スキャンを持ち込むか、無ければ Gazebo 生成地図で代用。いずれも PC だけ |
+| P0 | **オフライン実現性検証**（コード変更なし）。実機の経路地図（`th_ws/data/routes/` の `.posegraph`／`.data` 12 本。入力の具体名は options §0）で、Python＋numpy の粗→細の段階探索の所要時間と取り違え起きやすさを PC だけで測る。**結果次第で案 A 続行か案 B（AMCL）切替かを判断する**（判断基準は options §0） | 測定スクリプト（`.briefs/tmp/` 置き。製品コードにしない） | 測定記録（所要時間・`s`／`m` 分布）。試験の緑赤ではない | PC だけ（Gazebo・実機いずれも要らない） |
 | P1 | 自前スコア（`s`＋`m`）の純関数＋単体試験 | `route_replay_core.py`（追加のみ）、`test_route_replay_core.py` | 追加したテストが host pytest で緑 | Gazebo 不要 |
 | P2 | `widen_search` / `global_localize` 実装＋`evt.localize_low` 発行。保存時の `pgm` 併存（options §3）を含む | `replay_runner.py`、`slam_control.py`（探索 API・保存拡張）、`transitions.yaml` は不変 | `test_route_replay_core.py`＋新規ノード試験。故障注入 13 が緑のまま | Gazebo 可（新シナリオ `replay_localize`）／所要時間の実値は実機 |
 | P3 | S-14: 「完全グローバルで探す」ボタン・確度表示・READY 確認 | `S14Replay.jsx` 系、`DetailedDesign-webui.md` 追記 | 画面試験（W-19 の④と統合可） | Gazebo 可（表示確認） |
