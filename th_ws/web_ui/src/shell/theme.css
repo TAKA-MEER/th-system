@@ -763,6 +763,11 @@ table.lst td.r{text-align:right}
 .s40-row{display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--bd)}
 .s40-row:last-child{border-bottom:none}
 .s40-row.running{background:#1f2634}
+/* S-30 の「校正へ」からの誘導先（計画書 §6 #11。screens/calibGuide.js）。
+   running と同じ背景に警告色の左帯で、色だけに頼らず形でも分かるようにする。 */
+.s40-row.guided{background:#1f2634;box-shadow:inset 4px 0 0 var(--warn-tx)}
+.s40-guide{margin:0 0 8px;padding:8px;border-left:4px solid var(--warn-tx);
+  background:#1f2634;font-size:calc(var(--fs) * .92)}
 .s40-row-main{flex:1 1 auto;display:flex;flex-direction:column;gap:2px;min-width:0}
 .s40-row-label{font-weight:700}
 .s40-warn{color:var(--warn-tx);font-size:calc(var(--fs) * .84)}
