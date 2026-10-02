@@ -8,8 +8,9 @@ Docker launch テスト。replay_runner を実際に起動し、/odom を偽装�
 リセット——を見る。静的な配線検査だけだと「最大値を保持しない」
 「リセットしない」変異がすり抜けるため）:
   a. 経路読み込み直後 → ずれ・最大値ともほぼ 0（現在地合わせで始点一致）
-  b. /odom を横に 0.5m ずらす → ずれが増え、最大値が残る
+  b. /odom を横に 0.5m ずらす → ずれが増え、経路上に戻しても最大値が残る
   c. load_route をもう一度 → ずれ・最大値が 0 に戻る
+  d. RUN→PAUSE に切り替えても最大値が残る
 
 お手本は test_runaway_freshness_node.py（起動方法・test_a_ 順序制御）。
 
@@ -111,6 +112,8 @@ class TestReplayCrossTrackNode(unittest.TestCase):
             history=QoSHistoryPolicy.KEEP_LAST)
         self.pub_state = self.node.create_publisher(
             SystemState, '/system/state', state_qos)
+        # 流す state は可変にする（test_d で RUN→PAUSE に切り替える）。
+        self._fsm_state = 'RUN'
         self._state_timer = self.node.create_timer(0.1, self._publish_state)
 
         self.pub_effect = self.node.create_publisher(
@@ -146,7 +149,7 @@ class TestReplayCrossTrackNode(unittest.TestCase):
     def _publish_state(self):
         msg = SystemState()
         msg.mode = 'REPLAY'
-        msg.state = 'RUN'
+        msg.state = self._fsm_state
         self.pub_state.publish(msg)
 
     def _publish_odom(self):
@@ -184,7 +187,11 @@ class TestReplayCrossTrackNode(unittest.TestCase):
             f'読み込み直後の最大値が 0 でない: {st.cross_track_max_m}')
 
     def test_b_lateral_offset_grows_and_latches_max(self):
-        """odom を横に 0.5m → ずれが増え、最大値に残る。"""
+        """odom を横に 0.5m → ずれが増え、経路上に戻しても最大値に残る。
+
+        「最大値＝現在値で上書き」の変異（保持していない）は、戻した後だと
+        現在値≈0 になるためここで赤くなる（戻す前だけ見ると通ってしまう）。
+        """
         self._wait_status(lambda s: s.points > 0, timeout=8.0, what='points>0')
         self._odom_xy[1] = _LATERAL_M
         st = self._wait_status(
@@ -194,6 +201,37 @@ class TestReplayCrossTrackNode(unittest.TestCase):
             f'ずれが横ずれ量と合わない: {st.cross_track_m}')
         assert st.cross_track_max_m >= _LATERAL_M - 0.1, (
             f'最大値が残っていない: {st.cross_track_max_m}')
+        # 経路上に戻す → いまのずれは 0 に戻るが、最大値は残る。
+        # clear してから待つ（溜まった古い status＝横ずれ前の max=0 に
+        # マッチして偽陽性／偽陰性になるレースを避ける）。
+        self._odom_xy[1] = 0.0
+        self._statuses.clear()
+        back = self._wait_status(
+            lambda s: s.cross_track_m <= 0.05,
+            timeout=8.0, what='復帰後のずれ<=0.05')
+        assert back.cross_track_m == pytest.approx(0.0, abs=0.05), (
+            f'復帰後のずれが 0 でない: {back.cross_track_m}')
+        assert back.cross_track_max_m >= _LATERAL_M - 0.1, (
+            f'復帰後に最大値が消えた（保持していない）: {back.cross_track_max_m}')
+
+    def test_d_pause_keeps_max(self):
+        """RUN→PAUSE に切り替えても最大値が残る（S-14 の仕様）。"""
+        self._wait_status(lambda s: s.points > 0, timeout=8.0, what='points>0')
+        # まず最大値を育てる（他メソッドの順序に依存しない）。
+        self._odom_xy[1] = _LATERAL_M
+        grown = self._wait_status(
+            lambda s: s.cross_track_max_m >= _LATERAL_M - 0.1,
+            timeout=8.0, what='最大値の育ち')
+        assert grown.cross_track_max_m > 0.3
+        # 一時停止。mode は REPLAY のままなので status は出続けるが、
+        # control が止まるため最大値は更新されず残るはず。
+        self._fsm_state = 'PAUSE'
+        self._spin(1.5)
+        assert self._statuses, 'PAUSE 中に /route/status が来ない'
+        last = self._statuses[-1]
+        assert last.points > 0
+        assert last.cross_track_max_m >= _LATERAL_M - 0.1, (
+            f'PAUSE 中に最大値が消えた: {last.cross_track_max_m}')
 
     def test_c_reload_resets_to_zero(self):
         """load_route をもう一度 → ずれ・最大値が 0 に戻る。"""
