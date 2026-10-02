@@ -13,10 +13,10 @@ FSM の行は足りているが、発火元（`evt.localize_low` の発行者・
 
 | 項目 | 決定 |
 | --- | --- |
-| 推奨 | **案 A: slam_toolbox のまま二段構え**（粗探索 → `LOCALIZE_AT_POSE` で確定） |
-| 捨てる | 案 B: AMCL 置換（地図形式・TF 競合・工数で非推奨。将来の置換候補として記録のみ） |
+| 推奨 | **案 A: slam_toolbox のまま二段構え**（保存時に併存させた `pgm` 上で粗探索 → 上位 1 候補だけ `LOCALIZE_AT_POSE` で確定）。P0 の測定で続行可否を判断する |
+| 捨てる | 案 B: AMCL 置換（地図形式・TF 競合・工数で非推奨。**P0 で案 A が不成立なら切り替え先**として記録を残す） |
 | 捨てる | 案 C: 周辺拡大のみ（spec §4.1 手順 4「最初から完全グローバルも選べる」を満たさない） |
-| 確度 | **自前一致度スコア**（`/scan` と凍結地図の一致率。共分散は使えないことが実測済み） |
+| 確度 | **自前一致度スコア `s`（最良候補）と、マージン `m`（最良と 2 番目＝別の場所の候補の差）の組**。対称な部屋・廊下では複数姿勢が同点になるため、`s` だけでは取り違える。`m` が小さいときは READY で警告する（閾値以下なら不成立） |
 | 途中復帰 | 確定姿勢に最も近い**前向きの**経路点を再開 index とする（向きで前後を解く） |
 | 安全 | 探索中は既存の「計画的再起動の保留」を拡張（上限付き）。READY 中も監視は効かせたまま |
 
@@ -26,7 +26,7 @@ FSM の行は足りているが、発火元（`evt.localize_low` の発行者・
 
 | 既存の行 | 状態 | 足りないもの |
 | --- | --- | --- |
-| `T-REPLAY-02`（`evt.localize_low` → `widen_search`） | 待ち受けだけある | **発行者がいない。**確度評価（replay_runner 拡張）が `arg_json{score}` 付きで出す |
+| `T-REPLAY-02`（`evt.localize_low` → `widen_search`） | 待ち受けだけある | **発行者がいない。**確度評価（replay_runner 拡張）が `arg_json{score, margin}` 付きで出す |
 | `T-REPLAY-03`（`ui.localize_global` → `global_localize`） | 同上 | **画面ボタンが無い**（S-14 に足す） |
 | `widen_search` / `global_localize` effect | no-op（`WAIVER W-01`） | 探索の実体を実装する（中身は [§2](DetailedDesign-transit-localize-options.md)） |
 | 経路途中からの再開 | 行が無い | `load_route` に `from_index` 任意引数（effect 転送が passthrough なら行追加は不要。要確認） |
@@ -35,8 +35,9 @@ FSM の行は足りているが、発火元（`evt.localize_low` の発行者・
 
 | # | 内容 | 触るファイル | 完了条件（緑になる試験） | Gazebo / 実機 |
 | --- | --- | --- | --- | --- |
-| P1 | 自前スコアの純関数＋単体試験 | `route_replay_core.py`（追加のみ）、`test_route_replay_core.py` | 追加したテストが host pytest で緑 | Gazebo 不要 |
-| P2 | `widen_search` / `global_localize` 実装＋`evt.localize_low` 発行 | `replay_runner.py`、`slam_control.py`（探索 API）、`transitions.yaml` は不変 | `test_route_replay_core.py`＋新規ノード試験。故障注入 13 が緑のまま | Gazebo 可（新シナリオ `replay_localize`）／所要時間の実値は実機 |
+| P0 | **オフライン実現性検証**（コード変更なし）。保存済み実機地図＋記録スキャンで、Python＋numpy の粗→細の段階探索の所要時間と取り違え起きやすさを PC だけで測る。**結果次第で案 A 続行か案 B（AMCL）切替かを判断する**（判断基準は options §0） | 測定スクリプト（`.briefs/tmp/` 置き。製品コードにしない） | 測定記録（所要時間・`s`／`m` 分布）。試験の緑赤ではない | 実機の地図・スキャンを持ち込むか、無ければ Gazebo 生成地図で代用。いずれも PC だけ |
+| P1 | 自前スコア（`s`＋`m`）の純関数＋単体試験 | `route_replay_core.py`（追加のみ）、`test_route_replay_core.py` | 追加したテストが host pytest で緑 | Gazebo 不要 |
+| P2 | `widen_search` / `global_localize` 実装＋`evt.localize_low` 発行。保存時の `pgm` 併存（options §3）を含む | `replay_runner.py`、`slam_control.py`（探索 API・保存拡張）、`transitions.yaml` は不変 | `test_route_replay_core.py`＋新規ノード試験。故障注入 13 が緑のまま | Gazebo 可（新シナリオ `replay_localize`）／所要時間の実値は実機 |
 | P3 | S-14: 「完全グローバルで探す」ボタン・確度表示・READY 確認 | `S14Replay.jsx` 系、`DetailedDesign-webui.md` 追記 | 画面試験（W-19 の④と統合可） | Gazebo 可（表示確認） |
 | P4 | 途中復帰（`from_index` 再開＋向き合わせ再利用） | `replay_runner.py`、`route_replay_core.py` | P1 の延長＋Gazebo 通し試験 | Gazebo 可／ずれ量の実値は実機 |
 | P5 | registry placeholder＋保留拡張 | `registry.yaml`、`params_generation.py`、`localization_health*`、試験 | `test_params_assertions.py`、`test_planned_restart_node.py` 系が緑 | Gazebo 可 |
