@@ -85,8 +85,6 @@ export default function S40Calib() {
   const step = stepNumber(fsmState)
   const inWizard = step > 0
   const proceed = canProceed({ fsmState, item, status })
-  // S-30 からの誘導の案内・強調は LIST の項目タブでだけ出す。
-  const showGuide = guide && fsmState === 'LIST'
 
   // LIST に戻ったら入力欄・押した項目を畳む。ステップが変わったら入力と直前の応答も畳む。
   useEffect(() => {
@@ -109,6 +107,8 @@ export default function S40Calib() {
     if (g) setGuide(g)
   }, [])
   useEffect(() => { if (inWizard) setGuide(null) }, [inWizard])
+  // S-30 からの誘導の案内・強調は LIST の項目タブでだけ出す。
+  const showGuide = guide && fsmState === 'LIST'
 
   // 確定の通知は calib_runner が 1 回だけ result=COMMITTED で出す。次の校正を始めるまで残す。
   useEffect(() => {
