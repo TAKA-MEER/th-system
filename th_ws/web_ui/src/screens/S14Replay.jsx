@@ -35,6 +35,7 @@ import {
   S14_TAB_REPLAY, S14_SELECT_TITLE, S14_EMPTY, S14_FWD, S14_REV, S14_PROCEED,
   S14_POSE_TITLE, S14_POSE_LOCALIZE, S14_POSE_LOCALIZE_TIMEOUT, S14_POSE_READY, S14_POSE_RUN, S14_POSE_PAUSE, S14_POSE_PAUSE_RESUMABLE,
   S14_LENGTH, S14_POINTS, S14_SPEED_TITLE,
+  S14_XTRACK_TITLE, S14_XTRACK_EMPTY, S14_XTRACK_VALUE,
 } from '../i18n/screens.js'
 import { stateLabel } from '../i18n/states.js'
 import { OP_LABELS } from '../i18n/states.js'
@@ -196,6 +197,20 @@ export default function S14Replay({ onFinish }) {
               <div className="note" data-testid="s14-localize-stuck">{S14_POSE_LOCALIZE_TIMEOUT}</div>
             )}
           </div>
+
+          {/* 経路からのずれ（Spec-webui.md §3.7）。走行中・一時停止中に
+              /route/status の cross_track_m / cross_track_max_m を出す。
+              停止しても最大値は残る。小数 2 桁。 */}
+          {(stateName === 'RUN' || stateName === 'PAUSE') && (
+            <div className="card">
+              <h3>{S14_XTRACK_TITLE}</h3>
+              <div className="note" data-testid="s14-xtrack">
+                {routeStatus?.cross_track_m != null && routeStatus?.cross_track_max_m != null
+                  ? S14_XTRACK_VALUE(routeStatus.cross_track_m, routeStatus.cross_track_max_m)
+                  : S14_XTRACK_EMPTY}
+              </div>
+            </div>
+          )}
 
           {/* WS-9X: 再生速度は経路準備段階の設定なので左列（右列は操作＋手動介入で
               統一する。モックアップ two-col の右列と同じ並び）。 */}
