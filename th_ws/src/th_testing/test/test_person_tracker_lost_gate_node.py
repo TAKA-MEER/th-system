@@ -45,7 +45,11 @@ PERSON_TIMEOUT_MS = 400
 STARTUP_GRACE_MS = 300
 
 
-def _safety_node(name: str, report_only: bool, fault_ns: str):
+LONG_GRACE_MS = 3000
+
+
+def _safety_node(name: str, report_only: bool, fault_ns: str,
+                 grace_ms: int = STARTUP_GRACE_MS):
     return launch_ros.actions.Node(
         package='th_safety',
         executable='safety_monitor',
@@ -55,7 +59,7 @@ def _safety_node(name: str, report_only: bool, fault_ns: str):
             'startup_grace_sec': STARTUP_GRACE_SEC,
             'startup_deadline_sec': STARTUP_DEADLINE_SEC,
             'person_timeout_ms': PERSON_TIMEOUT_MS,
-            'person_startup_grace_ms': STARTUP_GRACE_MS,
+            'person_startup_grace_ms': grace_ms,
             'person_report_only': report_only,
             # このファイルが検証する対象だけを有効化する（F-5・O-7）。
             'enabled_targets': ['person'],
@@ -72,10 +76,15 @@ def generate_test_description():
     # A: 記録だけ OFF（本番相当）。B: 記録だけ ON（既定）。
     node_a = _safety_node('safety_person_a', False, '/test/person_a')
     node_b = _safety_node('safety_person_b', True, '/test/person_b')
+    # C: A と同じ（report_only=false）だが猶予が長い。ON 直後の猶予
+    # （§5.5.2）を縛る対照。A が出ている間 C は出てはならない。
+    node_c = _safety_node('safety_person_c', False, '/test/person_c',
+                          LONG_GRACE_MS)
     return launch.LaunchDescription([
-        node_a, node_b,
+        node_a, node_b, node_c,
         launch_testing.actions.ReadyToTest(),
-    ]), {'safety_person_a': node_a, 'safety_person_b': node_b}
+    ]), {'safety_person_a': node_a, 'safety_person_b': node_b,
+         'safety_person_c': node_c}
 
 
 class TestPersonTrackerLostGate(unittest.TestCase):
@@ -91,6 +100,10 @@ class TestPersonTrackerLostGate(unittest.TestCase):
                               cls.faults_a.append, 10)
         n.create_subscription(FaultStatus, '/test/person_b/fault',
                               cls.faults_b.append, 10)
+
+        cls.faults_c = []
+        n.create_subscription(FaultStatus, '/test/person_c/fault',
+                              cls.faults_c.append, 10)
 
         cls.pub_targets = n.create_publisher(PersonTargets, '/person/targets', 10)
         latched = QoSProfile(depth=1,
@@ -197,6 +210,28 @@ class TestPersonTrackerLostGate(unittest.TestCase):
             lambda: not self._is_active(type(self).faults_a,
                                         'PERSON_TRACKER_LOST'),
             5.0), 'OFF にしても PERSON_TRACKER_LOST が解除されない'
+
+    def test_e_startup_grace_holds_judgement(self):
+        """§5.5.2 ON 直後の猶予。同じ入力で A（猶予 0.3s）は出るが
+        C（猶予 3s）は猶予中は出ず、猶予後に出る。"""
+        assert not self._is_active(type(self).faults_a, 'PERSON_TRACKER_LOST')
+        start_c = len(type(self).faults_c)
+        type(self).targets_enabled = False
+        type(self).tracker_enabled = True   # false→true エッジ。targets は来ない
+        assert self._wait(
+            lambda: self._is_active(type(self).faults_a, 'PERSON_TRACKER_LOST'),
+            2.5), 'A（猶予短）が猶予後に出ない'
+        # A が出た時点で ON から 0.3s 超〜約 1.5s 以内。C の猶予（3s）はまだ。
+        # C が猶予を無視して出る変異でも検出できるよう、メッセージが届く分だけ
+        # 待ってから見る（A と C は同じ周期で判定するため）。
+        self._spin(0.5)
+        assert not self._is_active(type(self).faults_c[start_c:],
+                                   'PERSON_TRACKER_LOST'), (
+            'ON 直後の猶予中なのに PERSON_TRACKER_LOST が出た（C）')
+        assert self._wait(
+            lambda: self._is_active(type(self).faults_c[start_c:],
+                                    'PERSON_TRACKER_LOST'),
+            8.0), 'C が猶予後に出ない（猶予が永久になっていないか）'
 
 
 if __name__ == '__main__':
