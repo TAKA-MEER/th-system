@@ -103,6 +103,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_route_replay_core
     test/test_route_replay_core.py
     TIMEOUT 30)
+  # 全域ローカライズの確度スコア s・m と粗→細探索（W-01 P1。th_planning/localize_core.py）。
+  # numpy / scipy が要るのでホストの素の python3 では走らない（Docker で回す。
+  # CLAUDE.md の除外一覧に載せてある）。合成地図の探索を含むので TIMEOUT は長め
+  ament_add_pytest_test(test_localize_core
+    test/test_localize_core.py
+    TIMEOUT 300)
   # 始業点検（OPCHECK）の判定コア (WP-MAINT-01。th_maintenance/check_core.py。
   # 合否判定の純粋関数。registry.yaml の WP-MAINT-01 ブロックと値が一致することは
   # test_maintenance_registry_driven が別途検証する。ROS2 不要)
@@ -415,6 +421,12 @@ if(BUILD_TESTING)
   # CRITICAL の確認を含む）
   ament_add_pytest_test(test_runaway_freshness_node
     test/test_runaway_freshness_node.py
+    TIMEOUT 180)
+  # S-14「経路からのずれ」の Docker launch テスト（台帳 W-02 の一部。
+  # 横にずらした odom で /route/status のずれが増え、load_route で 0 に戻る。
+  # rclpy 要＝ホスト除外。TIMEOUT 180）
+  ament_add_pytest_test(test_replay_cross_track_node
+    test/test_replay_cross_track_node.py
     TIMEOUT 180)
   # 開発モードの項目（Spec-safety.md §10。2026-09-23 改定）の Docker launch テスト。
   # LiDAR 無しで scan_stop（MANUAL だけ v_reverse 以下で通す・AUTO は止める・

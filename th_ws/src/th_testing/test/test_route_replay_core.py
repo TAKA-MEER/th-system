@@ -25,6 +25,7 @@ from route_replay_core import (
     ReplayParams, ReplayCommand,
     reverse_points, rotate_toward, pure_pursuit, advance_index, normalize_angle,
     align_path_to_current, ramp_toward, scale_replay_params,
+    cross_track_error,
 )
 
 REPLAY_RUNNER = os.path.abspath(os.path.join(
@@ -301,6 +302,68 @@ def test_scale_replay_params_leaves_other_fields_untouched():
     # 元のインスタンスは変更しない（複製を返す）。
     assert _BASE.cruise_speed_mps == 0.45
     assert _BASE.lookahead_m == 0.6
+
+
+# ── cross_track_error（S-14 経路からのずれ。Spec-webui.md §3.7）───
+def test_cross_track_on_path_is_zero():
+    points = [(float(i), 0.0, 0.0) for i in range(0, 11)]
+    assert cross_track_error((3.0, 0.0, 0.0), points) == pytest.approx(0.0)
+    # 区間の途中（点の真上でなくても 0）
+    assert cross_track_error((3.5, 0.0, math.pi / 2), points) == pytest.approx(0.0)
+
+
+def test_cross_track_lateral_offset():
+    points = [(float(i), 0.0, 0.0) for i in range(0, 11)]
+    # 真横 1m → 垂線距離 1m（符号なし・非負）
+    assert cross_track_error((3.0, 1.0, 0.0), points) == pytest.approx(1.0)
+    assert cross_track_error((3.0, -0.25, 0.0), points) == pytest.approx(0.25)
+
+
+def test_cross_track_diagonal_segment_uses_perpendicular():
+    # (0,0)→(4,4) の対角線。点 (0,4) からの垂線距離は 4/√2。
+    points = [(0.0, 0.0, 0.0), (4.0, 4.0, 0.0)]
+    assert cross_track_error((0.0, 4.0, 0.0), points) == pytest.approx(
+        4.0 / math.sqrt(2.0))
+    # yaw が違っても位置だけ見る
+    assert cross_track_error((0.0, 4.0, 2.1), points) == pytest.approx(
+        4.0 / math.sqrt(2.0))
+
+
+def test_cross_track_clamps_beyond_endpoints():
+    # 区間の端を越えた先 → 端点までの距離（無限延長の直線ではない）
+    points = [(0.0, 0.0, 0.0), (2.0, 0.0, 0.0)]
+    assert cross_track_error((5.0, 0.0, 0.0), points) == pytest.approx(3.0)
+    assert cross_track_error((-1.0, 0.0, 0.0), points) == pytest.approx(1.0)
+
+
+def test_cross_track_empty_single_degenerate():
+    assert cross_track_error((1.0, 2.0, 0.0), []) == pytest.approx(0.0)
+    assert cross_track_error((1.0, 0.0, 0.0), [(4.0, 0.0, 0.0)]) == pytest.approx(3.0)
+    # 同一点の連続（長さ 0 の区間）は 0 除算せず点として測る
+    pts = [(1.0, 1.0, 0.0), (1.0, 1.0, 0.0), (3.0, 1.0, 0.0)]
+    assert cross_track_error((1.0, 3.0, 0.0), pts) == pytest.approx(2.0)
+
+
+def test_cross_track_window_ignores_distant_loop():
+    # 往復経路: 行き (y=0) と帰り (y=10)。機体は行きの y=0 側のそば (y=0.3)。
+    # 全点探索なら帰り側も遠いので問題ないが、逆に機体が帰り側にいるときに
+    # 行き側へ吸着しないことを from_index 付きで縛る。
+    out = [(float(i), 0.0, 0.0) for i in range(0, 11)]
+    back = [(float(10 - i), 10.0, 0.0) for i in range(0, 11)]
+    points = out + back
+    # 帰り側の区間 (from_index=12) で y=9.7 → 帰り側へのずれ 0.3
+    assert cross_track_error((5.0, 9.7, 0.0), points, from_index=12) == pytest.approx(0.3)
+    # 同じ位置でも from_index が行き側 (2) なら行き側で測る（窓の存在意義。
+    # 窓を狭めて角の区間が入らないようにする）
+    assert cross_track_error(
+        (5.0, 9.7, 0.0), points, from_index=2,
+        window_behind=2, window_ahead=3) == pytest.approx(9.7)
+
+
+def test_cross_track_window_out_of_range_falls_back():
+    points = [(float(i), 0.0, 0.0) for i in range(0, 11)]
+    # from_index が末尾より後ろ → 全区間にフォールバックして測れる
+    assert cross_track_error((5.0, 2.0, 0.0), points, from_index=99) == pytest.approx(2.0)
 
 
 # ── replay_runner.py の配線（ast 静的検査。ROS 不要）──────────────────
