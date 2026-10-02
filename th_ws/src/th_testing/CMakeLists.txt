@@ -434,6 +434,13 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_dev_mode_safety_node
     test/test_dev_mode_safety_node.py
     TIMEOUT 180)
+  # PERSON_TRACKER_LOST のゲート・猶予・記録だけモードの Docker launch テスト
+  # （DetailedDesign-safety.md §5.5 P-01＋P-02。
+  # OFFでは出ない・ONで止めると出る（report_only=false）・
+  # report_only=trueでは出ない・OFFで解除される）
+  ament_add_pytest_test(test_person_tracker_lost_gate_node
+    test/test_person_tracker_lost_gate_node.py
+    TIMEOUT 180)
   # 計画的な再起動の保留の Docker launch テスト（O-e3 §完了条件3。
   # 知らせ無しで検知・通知中は保留・上限超過で故障・publisher 死亡でも超過で故障）
   ament_add_pytest_test(test_planned_restart_node

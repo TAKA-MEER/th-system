@@ -12,6 +12,10 @@
 //                  を購読し effective だけを読む。dev_mode_core.hpp・Spec-safety.md §10）
 //   esp32        /esp32/wheel_feedback タイムアウト          → ESP32_DISCONNECTED (RECOVERABLE)
 //   person       /person/targets タイムアウト                → PERSON_TRACKER_LOST (RECOVERABLE)
+//                （§5.5: /system/state.tracker_enabled が false の間は判定せず
+//                  既存フォルトを解除。false→true エッジから
+//                  person_startup_grace_ms の間も保留。person_report_only=true
+//                  の間は FaultStatus／fault_lock を出さず記録だけ）
 //   limiter      /safety/limiter_status タイムアウト         → LIMITER_DEAD (CRITICAL)
 //   localization /safety/localization_health 途絶・ok==false 継続 → LOCALIZATION_LOST (CRITICAL)
 //   mux          /cmd_vel_muxed ⇄ /cmd_vel の双方向途絶      → MUX_DEAD (CRITICAL)
@@ -75,6 +79,14 @@ public:
         declare_parameter("lidar_timeout_ms",     2000);
         declare_parameter("esp32_timeout_ms",     2000);
         declare_parameter("person_timeout_ms",    2500);
+        // §5.5.2: tracker_enabled の false→true エッジから person 判定を
+        // 保留する猶予。既定値は registry.yaml（person_startup_grace_ms）が正。
+        // 未計測のため 5000 ms（仮。P-04 で実測）。
+        declare_parameter("person_startup_grace_ms", 5000);
+        // §5.5.5: true の間は PERSON_TRACKER_LOST が成立しても FaultStatus／
+        // fault_lock を出さず内部ログ＋カウンタのみ。false なら従来どおり
+        // フォルト。P-04 の本有効化で false にする。
+        declare_parameter("person_report_only", true);
         declare_parameter("limiter_dead_ms",      250);
         // WP-SAFE-05: /safety/localization_health（1 Hz）の途絶判定。
         // 既定値は registry.yaml（localization_topic_timeout_ms）が正。
@@ -113,6 +125,9 @@ public:
         lidar_timeout_  = std::chrono::milliseconds(get_parameter("lidar_timeout_ms").as_int());
         esp32_timeout_  = std::chrono::milliseconds(get_parameter("esp32_timeout_ms").as_int());
         person_timeout_ = std::chrono::milliseconds(get_parameter("person_timeout_ms").as_int());
+        person_startup_grace_ = std::chrono::milliseconds(
+            get_parameter("person_startup_grace_ms").as_int());
+        person_report_only_ = get_parameter("person_report_only").as_bool();
         limiter_dead_   = std::chrono::milliseconds(get_parameter("limiter_dead_ms").as_int());
         localization_topic_timeout_ = std::chrono::milliseconds(
             get_parameter("localization_topic_timeout_ms").as_int());
@@ -242,6 +257,8 @@ public:
 
         // §4.1 新設: STATE_INCONSISTENT。last_mode_/last_state_ は enabled_targets
         // に関わらず常に更新する（clear_estop_ui のログに使うため）。
+        // §5.5.1: tracker_enabled もここで保持する。false→true の変化時刻を
+        // 覚え、§5.5.2 の猶予（person_startup_grace_ms）の起点にする。
         sub_system_state_ = create_subscription<th_system_msgs::msg::SystemState>(
             "/system/state", rclcpp::QoS(1).reliable().transient_local(),
             [this](const th_system_msgs::msg::SystemState::SharedPtr msg) {
@@ -249,6 +266,10 @@ public:
                 state_alive_     = true;
                 last_mode_  = msg->mode;
                 last_state_ = msg->state;
+                if (msg->tracker_enabled && !tracker_enabled_) {
+                    tracker_enable_edge_time_ = now();
+                }
+                tracker_enabled_ = msg->tracker_enabled;
             });
 
         // DEBT-1: ESTOP_HW バイパス検出（safety.md §11.1）
@@ -282,6 +303,7 @@ public:
 
         rclcpp::Time t0 = now();
         node_start_time_   = t0;
+        tracker_enable_edge_time_ = t0;
         last_scan_time_    = t0;
         last_person_time_  = t0;
         last_esp32_time_   = t0;
@@ -335,7 +357,56 @@ private:
                 checkTimeout("ESP32_DISCONNECTED", last_esp32_time_, esp32_timeout_, t, esp32_alive_);
             }
             if (targetEnabled("person")) {
-                checkTimeout("PERSON_TRACKER_LOST", last_person_time_, person_timeout_, t, person_alive_);
+                // §5.5.1/§5.5.2: tracker OFF の間は判定せず既存フォルトを解除する。
+                // ON 直後の猶予中は判定せず何もしない。猶予後は通常の途絶判定。
+                // §5.5.5: report_only の間は成立しても FaultStatus／fault_lock を
+                // 出さず、スロットル付き WARN とカウンタで記録だけする。
+                const double grace_sec =
+                    std::chrono::duration<double>(person_startup_grace_).count();
+                const double since_enable_sec = (t - tracker_enable_edge_time_).seconds();
+                switch (th_safety::person_gate(tracker_enabled_, since_enable_sec, grace_sec)) {
+                    case th_safety::PersonGate::SKIP_DISABLED:
+                        updateFaultState("PERSON_TRACKER_LOST", false);
+                        prev_person_report_lost_ = false;
+                        break;
+                    case th_safety::PersonGate::SKIP_GRACE:
+                        break;
+                    case th_safety::PersonGate::CHECK: {
+                        const bool lost = computeTimeoutFault(
+                            last_person_time_, person_timeout_, t, person_alive_);
+                        if (lost && person_report_only_) {
+                            if (!prev_person_report_lost_) {
+                                ++person_report_only_episodes_;
+                                RCLCPP_WARN(
+                                    get_logger(),
+                                    "[PERSON_TRACKER_LOST 記録だけ %zu 件目] "
+                                    "tracker ON 中に /person/targets が途絶 "
+                                    "(person_timeout_ms=%lld)。"
+                                    "report_only のためフォルトは出さない",
+                                    person_report_only_episodes_,
+                                    static_cast<long long>(person_timeout_.count()));
+                            } else {
+                                RCLCPP_WARN_THROTTLE(
+                                    get_logger(), *get_clock(), 30000,
+                                    "[PERSON_TRACKER_LOST 記録だけ] 途絶が継続中 "
+                                    "(これまでの検出 %zu 件)。"
+                                    "report_only のためフォルトは出さない",
+                                    person_report_only_episodes_);
+                            }
+                        } else {
+                            if (!lost && prev_person_report_lost_) {
+                                RCLCPP_INFO(
+                                    get_logger(),
+                                    "[PERSON_TRACKER_LOST 記録だけ] 途絶が解消 "
+                                    "(これまでの検出 %zu 件)",
+                                    person_report_only_episodes_);
+                            }
+                            updateFaultState("PERSON_TRACKER_LOST", lost);
+                        }
+                        prev_person_report_lost_ = lost;
+                        break;
+                    }
+                }
             }
             // UI_DISCONNECTED は enabled_targets の対象外（常時監視。§4.2）
             updateFaultState("UI_DISCONNECTED",
@@ -611,6 +682,15 @@ private:
 
     std::string last_mode_  = "";
     std::string last_state_ = "";
+    // §5.5.1: /system/state.tracker_enabled の最新値。false の間は person 判定
+    // しない。§5.5.2: false→true エッジの時刻。猶予の起点。
+    // §5.5.5: report_only 中の記録（途絶エピソード数と直前の途絶有無）。
+    bool tracker_enabled_ = false;
+    rclcpp::Time tracker_enable_edge_time_;
+    bool person_report_only_ = true;
+    std::chrono::milliseconds person_startup_grace_{5000};
+    size_t person_report_only_episodes_ = 0;
+    bool prev_person_report_lost_ = false;
 
     bool firmware_flags_received_ = false;
     bool firmware_bypass_active_  = false;

@@ -705,6 +705,28 @@
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §3.1.2・§6.4"
   note: "safety_monitor の遅いバックストップ。tracker_lost_grace_ms より必ず長い（A3）"
 
+- name: person_startup_grace_ms
+  unit: ms
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 5   # WAIVER(demo): W-15 と同じ扱い — 起動は止めない
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-safety.md §5.5.2"
+  note: "tracker_enabled の false→true エッジから person 判定を保留する猶予。
+    C++ 側の宣言既定は 5000 ms（仮）。未計測。P-04 で実測（起動直後と2回目以降は分けて測り p99＋余裕）"
+
+- name: person_report_only
+  unit: null
+  class: b
+  status: given
+  value: true
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-safety.md §5.5.5"
+  note: "true の間は PERSON_TRACKER_LOST が成立しても FaultStatus／fault_lock を
+    出さず内部ログ＋カウンタのみ。false なら従来どおりフォルト。P-04 の本有効化で false にする"
+
 - name: muxed_stale_ms
   unit: ms
   class: b

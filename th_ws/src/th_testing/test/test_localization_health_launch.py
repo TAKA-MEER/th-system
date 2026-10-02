@@ -251,10 +251,11 @@ def test_gazebo_sim_targets_base_constant_still_defined():
     """sim の固定 enabled_targets リストはモジュールレベルに残っていること。
 
     case_09 の静的読取（`_sim_enabled_targets`）が `SAFETY_ENABLED_TARGETS_SIM`
-    を AST で読み、`'person'` が無いことで明示的に fail する。この定数を
-    消す・名前を変えると case_09 が別の失敗モード（「定数名が変わった」）に
-    化けるため、このテストで現状を固定する。`'localization'` はここには
-    入れず、`_scenario_setup` の sim 分岐で条件付き append する。"""
+    を AST で読む。この定数を消す・名前を変えると case_09 が別の失敗モード
+    （「定数名が変わった」）に化けるため、このテストで現状を固定する。
+    `'localization'` はここには入れず、`_scenario_setup` の sim 分岐で
+    条件付き append する。`'person'` は §5.5（P-02）で監視対象に入った
+    （tracker OFF 既定＋report_only のため sim の挙動は変わらない）。"""
     tree = ast.parse(_read(GAZEBO_PY), filename=GAZEBO_PY)
     for node in ast.walk(tree):
         if (isinstance(node, ast.Assign)
@@ -264,7 +265,7 @@ def test_gazebo_sim_targets_base_constant_still_defined():
             targets = [e.value for e in node.value.elts if isinstance(e, ast.Constant)]
             assert 'localization' not in targets, (
                 "'localization' は固定リストへ直接足さず条件付き append すること")
-            assert set(targets) == {'lidar', 'limiter'}
+            assert set(targets) == {'lidar', 'limiter', 'person'}
             return
     pytest.fail("gazebo.launch.py に SAFETY_ENABLED_TARGETS_SIM の代入が見つからない "
                 "(case_09 の _sim_enabled_targets が壊れる)")
