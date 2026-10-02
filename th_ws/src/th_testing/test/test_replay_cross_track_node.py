@@ -32,6 +32,8 @@ import launch
 import launch_ros.actions
 import launch_testing
 import launch_testing.actions
+from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
+                       QoSReliabilityPolicy)
 
 from th_system_msgs.msg import RouteStatus, StateEffect, SystemState
 
@@ -101,7 +103,14 @@ class TestReplayCrossTrackNode(unittest.TestCase):
 
         # /system/state は REPLAY/RUN を流し続ける（止めると status が
         # owns_route_status で出なくなり、control も止まる）。
-        self.pub_state = self.node.create_publisher(SystemState, '/system/state', 10)
+        # replay_runner 側の購読は transient_local のため、合わせないと
+        # DURABILITY 不一致で届かない（本番の state_manager も transient_local）。
+        state_qos = QoSProfile(
+            depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST)
+        self.pub_state = self.node.create_publisher(
+            SystemState, '/system/state', state_qos)
         self._state_timer = self.node.create_timer(0.1, self._publish_state)
 
         self.pub_effect = self.node.create_publisher(
