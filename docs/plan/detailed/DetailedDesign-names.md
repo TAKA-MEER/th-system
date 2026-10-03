@@ -314,7 +314,7 @@ def derive_limits(screens, now_ms, p):
 | **`Pin.msg`** | `string id` / `string name` / `string kind`（`HOME`/`PANEL`） / `geometry_msgs/Pose pose` / `builtin_interfaces/Time registered_at` | 待機場所ピンと配電盤ピン |
 | **`PinList.msg`** | `Header header` / `Pin[] pins` / `string map_instance_id`（`MapSessionStatus.instance_id` と同じ意味。ピン登録時点の地図の生存世代。`WS-9AL` で追加） | transient_local |
 | **`RouteInfo.msg`** | `string id` / `string name` / `uint32 generation` / `float32 length_m` / `uint32 point_count` / `float32 start_yaw` / `builtin_interfaces/Time recorded_at` | 教示経路のメタ |
-| **`RouteStatus.msg`** | `Header header` / `string state` / `RouteInfo current` / `float32 recorded_m` / `float32 elapsed_sec` / `uint32 points` / `int32 target_index`（再生中の pure-pursuit 目標点の添字。記録中・未走行は -1。`demo-teach-replay` で追加） / `bool saved`（記録側のみ。`finalize_route_file` 成功時だけ true。FSM の `SAVED` とは無関係。WS-9K-E2 で追加） / `bool arrived`（再生側のみ。経路の終端まで走り切ったときだけ true。`PAUSE` の原因が終端到達かフォルト/ジョグ/停止ボタンかを UI が区別するのに使う。WS-9P で追加） / `float32 cross_track_m`（再生側のみ。現在位置の経路からの横ずれ [m]。S-14 表示用） / `float32 cross_track_max_m`（再生側のみ。この再生での横ずれの最大値 [m]。停止しても残し `load_route` で 0 に戻す） | S-12/S-13/S-14 の表示源 |
+| **`RouteStatus.msg`** | `Header header` / `string state` / `RouteInfo current` / `float32 recorded_m` / `float32 elapsed_sec` / `uint32 points` / `int32 target_index`（再生中の pure-pursuit 目標点の添字。記録中・未走行は -1。`demo-teach-replay` で追加） / `bool saved`（記録側のみ。`finalize_route_file` 成功時だけ true。FSM の `SAVED` とは無関係。WS-9K-E2 で追加） / `bool arrived`（再生側のみ。経路の終端まで走り切ったときだけ true。`PAUSE` の原因が終端到達かフォルト/ジョグ/停止ボタンかを UI が区別するのに使う。WS-9P で追加） / `float32 cross_track_m`（再生側のみ。現在位置の経路からの横ずれ [m]。S-14 表示用） / `float32 cross_track_max_m`（再生側のみ。この再生での横ずれの最大値 [m]。停止しても残し `load_route` で 0 に戻す） / `string localize_quality`（再生側のみ。全域ローカライズの確度。`''` 未評価／`searching` 探索中／`high` 成立／`low_margin` 成立したが `m` 低／`failed` 不成立／`unknown` pgm 無しの旧経路。W-01 P2） / `float32 localize_score`（再生側のみ。最後の探索の `s`。W-01 P2） / `float32 localize_margin`（再生側のみ。最後の探索の `m`。W-01 P2） | S-12/S-13/S-14 の表示源 |
 | **`MapSessionStatus.msg`** | `Header header` / `string slot`（`VENUE`/`ROUTE`） / `string session_id` / `string mode`（`UNLOADED`/`MAPPING`/`LOCALIZING`） / `bool dirty` / `string instance_id`（地図の生存世代を表す乱数トークン。まっさらな地図作成を始めるたび新規発行、読み直しに成功したら読み込んだ地図のものを継承。`WS-9AL` で追加） | §6.4 |
 | **`CheckStatus.msg`** | `Header header` / `string item` / `string result`（`OK`/`WARN`/`NG`/`UNKNOWN`） / `string detail` / `string next_screen` | 始業点検 4 項目 |
 | **`CalibStatus.msg`** | `Header header` / `string item` / `string step` / `string result` / `string preview_before` / `string preview_after` / `string detail` | 校正ウィザード |
@@ -616,6 +616,9 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `linear_accel_mps2` | m/s2 | (b)。再生の加速度上限（W-03） |
 | `angular_accel_rps2` | rad/s2 | (b)。再生の旋回加速度上限（W-03） |
 | `localize_wait_s` | s | (b)。再生の自己位置推定待ち（W-03） |
+| `localize_match_low` | — | (b)。全域ローカライズの `s` 下限。これ未満は `evt.localize_low` → `widen_search`（`replay_runner`。W-01 P2。registry 登録は P5） |
+| `localize_margin_low` | — | (b)。全域ローカライズの `m` 警告。これ未満は `low_margin`（似た場所あり。READY へは進む。W-01 P2。registry 登録は P5） |
+| `localize_margin_min` | — | (b)。全域ローカライズの `m` 下限。これ未満は不成立（`evt.localize_done` を出さず LOCALIZE に留まる。W-01 P2。registry 登録は P5） |
 | `factor` | — | (b)。地図間引きの縮小率（`map_downsampler`。W-03） |
 | `publish_period_ms` | ms | (b)。地図間引きの配信間隔（W-03） |
 | `occupied_threshold` | — | (b)。地図間引きの占有判定閾値（W-03） |

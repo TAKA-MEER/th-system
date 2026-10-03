@@ -18,3 +18,12 @@ float32   cross_track_m    # 再生側のみ使用。現在位置が経路から
 float32   cross_track_max_m # 再生側のみ使用。この再生での cross_track_m の最大値 [m]。
                           # 停止しても残し、次の再生（load_route）で 0 に戻す。
                           # 記録側は出さない（常に 0）。
+string    localize_quality  # 再生側のみ。全域ローカライズの確度（W-01 P2）。
+                          # '' 未評価／'searching' 探索中／'high' 成立／
+                          # 'low_margin' 成立したが m < localize_margin_low
+                          # （似た場所あり。READY へは進む）／'failed' 不成立
+                          # （LOCALIZE に留まる）／'unknown' pgm 無しの旧経路
+                          # （始点決め打ち）。load_route で '' に戻す。
+                          # READY・RUN・PAUSE 中も最後の値を出し続ける。
+float32   localize_score    # 再生側のみ。最後の探索の s（0〜1）。未評価は 0。
+float32   localize_margin   # 再生側のみ。最後の探索の m。未評価は 0。
