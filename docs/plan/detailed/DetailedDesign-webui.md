@@ -446,6 +446,20 @@ z-index も解除バー 70 > W-6 60）。
 | 切替 | 人物追跡を要するモードの実行中は**押しても切り替えず、理由を出す** |
 | OFF の波及 | S-01 の**追従走行・教示（追従）**を非活性にし、理由を表示（`CL-X-5`） |
 
+### 8.4.1 S-14 の初期姿勢の確度と完全グローバル（W-01 P3）
+
+`Spec-webui.md` §3.7 の「確度の表示」「完全グローバルで探すボタン」の詳細。
+正本は [transit-localize](DetailedDesign-transit-localize.md) §4 と
+[options §4](DetailedDesign-transit-localize-options.md)。
+**spec に無い詳細は設計で決めた**（options §4 の表の「設計」行）。
+
+| 項目 | 仕様 | 出どころ |
+| --- | --- | --- |
+| 確度 | `localize_quality` を数値なしの 2 値＋目安文に写す。`high` →「高い」、 `low_margin` →「低い」＋「似た場所が複数あり、取り違えの可能性があります」（READY の再生は押せるまま。警告のみ）、`failed` →「見つかりません」＋「完全グローバルで探すか、経路を選び直してください」、 `searching` →「探しています」、 `unknown`／`''` → 確度欄を出さない（旧経路は現行どおり） | spec（2 値の方向）＋設計（文言・数値を出さない） |
+| 「完全グローバルで探す」ボタン | `REPLAY/LOCALIZE` のときだけ出す。押すと `ui.localize_global`（既存の `ui.*` 送信の仕組み）。`searching` の間は押せない。READY・RUN・PAUSE では出さない（FSM が拒否するため。`transitions.yaml` T-REPLAY-03） | spec |
+| 60 秒注記 | `searching` の間は既存の 60 秒「長引いている」注記を出さない（探索＋地図の読み直しで 60 秒を超えうる） | 設計 |
+| 「経路を選び直す」 | ボタンは作らない。既存の「終了」（`ui.finish` → IDLE。`C-08` の `can_finish` は REPLAY で真）で抜けて選び直す。LOCALIZE から `ui.route_select` を受ける行は無い（`T-REPLAY-01` は ROUTE_SEL から、`T-REPLAY-11` は PAUSE から）ため、新しい FSM の行は要らない | 設計（既存遷移の流用） |
+
 ### 8.5 開発モード
 
 | 機能 | 内容 |
@@ -529,6 +543,7 @@ git diff --exit-code th_ws/web_ui/src/ros/names.json   # 生成物が最新で�
 | §3.5（起動中表示） / `E-10` | §8.2 |
 | §3.10・§3.11（対象選択タブ） / `U-14` | §8 |
 | §3.15（人物追跡 ON/OFF） / `CL-X-1` / `CL-X-5` | §8.4 |
+| §3.7（S-14 初期姿勢） / W-01 P3 | §8.4.1 |
 | §4（ウィンドウ W-1〜W-6） / `E-5` / `E-6` / `F-34` / `F-37` | §6 |
 | §5（開発モード） | §8.5 |
 | §6（共通部品） | §3 |
