@@ -78,6 +78,9 @@ _NEXT_SCREEN = {
 }
 
 _ESTOP_STALE_MS = 3000.0  # /safety/estop_hw がこれだけ来なかったら「届いていない」とみなす
+# 項目を始めてから /scan が一度も届かないまま、これだけ経ったら「届いていない」（NG no_data）。
+# 届かないと判定が永遠に出ず、項目から抜けられなかった（2026-10-04）。
+_LIDAR_NO_DATA_MS = 3000.0
 
 
 def _json_str(text: str) -> str:
@@ -475,6 +478,13 @@ class OpcheckRunner(Node):
     def _estop_tick(self):
         if self._item != "ESTOP":
             return
+        # 項目を始めてから一度も届かない（ESP32 未接続など）。ESP32 は毎周期送るので、
+        # 待っても来ない。判定を出さないと項目から抜けられない（2026-10-04）。
+        if (self._estop_pressed is None and not self._final_sent
+                and self._now_ms() - self._item_started_ms > _ESTOP_STALE_MS):
+            self.get_logger().warn("/safety/estop_hw が届かない（ESTOP 項目）")
+            self._update_estop_verdict()
+            return
         fresh = self._now_ms() - self._estop_last_ms <= _ESTOP_STALE_MS
         if self._estop_alive and not fresh:
             self._estop_alive = False
@@ -541,7 +551,14 @@ class OpcheckRunner(Node):
             self._update_lidar_verdict()
 
     def _lidar_tick(self):
-        if self._item != "LIDAR" or not self._scan_alive:
+        if self._item != "LIDAR":
+            return
+        if not self._scan_alive:
+            # 一度も届いていない（LiDAR 未接続など）。判定を出さないと項目から抜けられない。
+            if (not self._final_sent
+                    and self._now_ms() - self._item_started_ms > _LIDAR_NO_DATA_MS):
+                self.get_logger().warn("/scan が届かない（LIDAR 項目）")
+                self._update_lidar_verdict()
             return
         if self._now_ms() - self._scan_last_ms > self._p.scan_stale_ms:
             self._scan_alive = False

@@ -33,7 +33,7 @@ from std_msgs.msg import Bool, String
 
 from th_system_msgs.msg import FaultStatus, StateEvent, SystemState, WheelFeedback
 
-from th_state.connectivity_core import Params, evaluate, should_emit_link_ok
+from th_state.connectivity_core import Params, evaluate, link_status, should_emit_link_ok
 from th_state.dev_log_core import (FaultSnap, StateSnap, TwistSum, fault_changed,
                                    format_line, should_record_cmdvel, state_changed)
 
@@ -163,6 +163,9 @@ class ConnectivityChecker(Node):
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             history=QoSHistoryPolicy.KEEP_LAST)
         self._pub_dev = self.create_publisher(String, '/system/dev_mode', dev_qos)
+        # /system/link_status: S-00 の機器別の行（Spec-webui.md §3.1）。項目別の本当の状態と
+        # 受信間隔・不足ノード。/system/dev_mode と同じ JSON・QoS（names.md §6.2）。
+        self._pub_link = self.create_publisher(String, '/system/link_status', dev_qos)
 
         self.create_timer(_EVALUATE_PERIOD_S, self._on_timer)
 
@@ -378,8 +381,22 @@ class ConnectivityChecker(Node):
         self._link_ok_gate_prev = gate
 
         self._publish_dev_state()
+        self._publish_link_status(p)
         self._log_dev_state()
         self._maybe_log_selections()
+
+    def _publish_link_status(self, p):
+        payload = link_status(
+            now_ms=self._now_ms(),
+            last_fb_ms=self._last_fb_ms,
+            last_cmd_ms=self._last_cmd_ms,
+            last_scan_ms=self._last_scan_ms,
+            scan_points=self._scan_points,
+            present_nodes=self._present_node_names(),
+            p=p,
+            estop_seen=self._estop_seen,
+            hw_estop=self._hw_estop)
+        self._pub_link.publish(String(data=json.dumps(payload, sort_keys=True)))
 
     def _publish_link_ok(self):
         msg = StateEvent()

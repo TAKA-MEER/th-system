@@ -39,11 +39,8 @@ export const S00_COL_STATUS = '状態'
 export const S00_REQUIRED = '必須'
 export const S00_MONITOR = '監視'
 
-// DetailedDesign-state.md §12.2's four pass/fail rows. The WebUI has no
-// per-item breakdown to show (only /system/state's single mode field is in
-// this packet's interface contract -- see the completion report for why),
-// so all four rows always share one status; the labels still name the four
-// checks individually so the operator knows what "揃うと運用可" covers.
+// DetailedDesign-state.md §12.2's four pass/fail rows. key は /system/link_status の
+// items のキーと同じ（各行は項目別の状態を出す。2026-10-04）。
 export const S00_ITEMS = [
   { key: 'esp32_feedback', label: 'ESP32（ホイールフィードバック）' },
   { key: 'esp32_loopback', label: 'ESP32（速度指令の折り返し）' },
@@ -53,6 +50,14 @@ export const S00_ITEMS = [
 
 export const S00_STATUS_CHECKING = '確認中'
 export const S00_STATUS_OK = '疎通'
+// 機器別の行（/system/link_status。ros/linkStatusState.js の linkRowView に渡す）。
+export const S00_LINK_TEXT = {
+  checking: S00_STATUS_CHECKING, ok: `✓ ${S00_STATUS_OK}`, ng: '× 未接続', excluded: '対象外',
+  excludedDetail: 'シミュレーションでは判定しない',
+  nodesOk: '必須ノードが揃っている', nodesMissing: '不足: ', unknown: '不明',
+  never: '一度も受信していない', lastRx: '最後の受信 ', points: '点数 ',
+  ignored: '（開発モードで無視中）', msAgo: ' ms 前', secAgo: ' 秒前',
+}
 
 // DetailedDesign-safety.md §8.3 / this packet's brief: Wi-Fi AP is a single
 // point of failure, shown here explicitly, and it is *not* one of the four
@@ -107,6 +112,7 @@ export const S01_NET_CHECKING = '確認中…'
 export const S01_NET_WARN = '始業点検の自動判定に要確認があります'
 export const S01_NET_SUPPRESSED = '自動判定の警告を開発モードで消しています'
 export const S01_NET_OPEN = '詳細を見る'
+export const S01_NET_LINK_DOWN = '未接続: '
 
 // 運用の終了 (DetailedDesign-webui.md §8.3 / Spec-webui.md §3.2.1).
 export const SHUTDOWN_TITLE = '運用の終了'
@@ -574,6 +580,8 @@ export function s30OverallLabel(results) {
 }
 
 export const S30_DETAIL_PLACEHOLDER = '項目を選んでください'
+export const S30_ABORT = '中断（一覧へ戻る）'
+export const S30_ABORT_NOTE = '結果は記録しません。左の一覧から別の項目を選ぶと切り替わります'
 export const S30_DETAIL_RUNNING_OTHER = '別の項目を確認中です'
 export const S30_GOTO_CALIB = '校正へ'
 export const S30_GOTO_REPAIR_NOTE = '故障診断へ移動します'

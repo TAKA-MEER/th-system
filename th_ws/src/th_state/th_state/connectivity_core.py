@@ -127,3 +127,41 @@ def should_emit_link_ok(report: LinkReport, estop_seen: bool, hw_estop: bool,
     if dev_link_ignored:
         return True
     return report.all_ok() and estop_seen
+
+
+def _age_ms(now_ms: int, last_ms: Optional[int]) -> Optional[int]:
+    return None if last_ms is None else max(0, int(now_ms - last_ms))
+
+
+def link_status(now_ms: int, last_fb_ms: Optional[int], last_cmd_ms: Optional[int],
+                last_scan_ms: Optional[int], scan_points: int,
+                present_nodes: Iterable[str], p: Params,
+                estop_seen: bool, hw_estop: bool) -> dict:
+    """S-00 の機器別の行（Spec-webui.md §3.1）に出す項目別の状態。`/system/link_status` の中身。
+
+    `ok` は**本当の状態**（開発モードの `link` で外していても実際の受信で判定する）。
+    外していることは `ignored` で別に伝える。外した項目を「繋がっている」と画面に出すと、
+    機器が無いことに気づけない（`evt.link_ok` の判定そのものは `evaluate()` のまま）。
+    `sim` で判定から除外している項目は `excluded`（Gazebo に居ない機器）。
+    `age_ms` は最後に受信してからの経過（未受信は None）。
+    """
+    raw = evaluate(now_ms, last_fb_ms, last_cmd_ms, last_scan_ms, scan_points, present_nodes,
+                   Params(esp32_alive_timeout_ms=p.esp32_alive_timeout_ms,
+                          scan_expected_points=p.scan_expected_points,
+                          required_nodes=p.required_nodes, sim=False, dev_ignore_link=False))
+    ignored = bool(p.dev_ignore_link)
+    return {
+        "items": {
+            "esp32_feedback": {"ok": raw.esp32_feedback, "age_ms": _age_ms(now_ms, last_fb_ms),
+                               "ignored": ignored, "excluded": bool(p.sim)},
+            "esp32_loopback": {"ok": raw.esp32_loopback, "age_ms": _age_ms(now_ms, last_cmd_ms),
+                               "ignored": ignored, "excluded": bool(p.sim)},
+            "lidar": {"ok": raw.lidar, "age_ms": _age_ms(now_ms, last_scan_ms),
+                      "points": int(scan_points), "expected_points": int(p.scan_expected_points),
+                      "ignored": ignored, "excluded": False},
+            "nodes": {"ok": raw.nodes, "missing": list(raw.missing_nodes),
+                      "ignored": ignored, "excluded": bool(p.sim)},
+        },
+        "timeout_ms": int(p.esp32_alive_timeout_ms),
+        "estop_hw": {"seen": bool(estop_seen), "pressed": bool(hw_estop)},
+    }

@@ -95,7 +95,7 @@ LOCAL_PARS: dict = {
 }
 
 # BLIND の反映先。obstacle_limiter（安全判定。上限を独立検査して拒否できる）を先頭にする。
-BLIND_TARGET_NODES = ("/obstacle_limiter", "/lidar_filter", "/opcheck_runner")
+BLIND_TARGET_NODES = ("/obstacle_limiter", "/lidar_filter", "/opcheck_runner", "/opcheck_auto")
 
 # 許容範囲は未確定（registry は status: placeholder・生成 YAML には載らない）。
 # 既定の -1.0 は「未確定」の意味で、検証は合格にならない（calib_core.verify_*）。
@@ -663,7 +663,7 @@ class CalibRunner(Node):
 
     # ── BLIND: 適用（3 ノードへ同時）と検証 ──────────────
     def _set_blind(self, flat: list, on_done):
-        """`blind_angle_ranges` を obstacle_limiter・lidar_filter・opcheck_runner の**全部**へ送る。
+        """`blind_angle_ranges` を obstacle_limiter・lidar_filter・opcheck_runner・opcheck_auto の**全部**へ送る。
 
         1 つでも届かない・拒否されたら on_done(False, 理由)。呼び出し側が全部を適用前へ戻す。
         """

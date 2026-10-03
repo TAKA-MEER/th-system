@@ -67,7 +67,7 @@ V_CALIB = 0.30
 V_SLOW = 0.30
 V_REVERSE = 0.25
 POLE = (-10.0, 10.0)      # 前方の「支柱」（近距離の恒常的な写り込み）
-TARGETS = ('obstacle_limiter', 'lidar_filter', 'opcheck_runner')
+TARGETS = ('obstacle_limiter', 'lidar_filter', 'opcheck_runner', 'opcheck_auto')
 
 _STATE_QOS = QoSProfile(
     depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
@@ -108,8 +108,11 @@ def generate_test_description():
     opcheck = launch_ros.actions.Node(
         package='th_maintenance', executable='opcheck_runner.py', name='opcheck_runner',
         output='screen')
+    opcheck_auto = launch_ros.actions.Node(
+        package='th_maintenance', executable='opcheck_auto.py', name='opcheck_auto',
+        output='screen')
     return launch.LaunchDescription([
-        tf, state_manager, calib_runner, lidar_filter, limiter, opcheck,
+        tf, state_manager, calib_runner, lidar_filter, limiter, opcheck, opcheck_auto,
         launch_testing.actions.ReadyToTest(),
     ]), {}
 

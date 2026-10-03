@@ -50,7 +50,7 @@ GENERATED_DIR = "/root/th_data/generated"
 # registry（出荷値）より優先して生成物へ重ねる（Spec-checks.md §3.5・2026-10-01 ユーザー決定）。
 CALIB_DIR = "/root/th_data/calib"
 BLIND_OVERRIDE_NODES: tuple[str, ...] = ("lidar_filter", "obstacle_limiter",
-                                          "opcheck_runner", "calib_runner")
+                                          "opcheck_runner", "opcheck_auto", "calib_runner")
 
 # このパケット (WP-PARAM-02) の時点で実際に起動しており、かつ registry.yaml の
 # consumers 語彙と名前が一致するノードだけを挙げる。
@@ -90,6 +90,9 @@ REGISTRY_NODES: tuple[str, ...] = (
     "route_recorder",
     "replay_runner",
     "map_downsampler",
+    # 試験場内用の 2 個目のインスタンス。同じ行を消費する（registry の consumers に併記）。
+    # map_downsampler.yaml を別名ノードで読むとキーが合わず値が効かない（2026-10-04）。
+    "onsite_map_downsampler",
     # W-13: pin_registrar / venue_navigator / wait_clear_gate / home_declarer /
     # person_tracker_bridge を足す。REGISTRY_NODES は A8 の対象を絞るだけ
     # （生成は consumers 駆動）。placeholder 行（person_position_sigma_m /
@@ -105,6 +108,10 @@ REGISTRY_NODES: tuple[str, ...] = (
     # placeholder を含まないため A8 は armed にならない（opcheck_runner を
     # consumers に持つ placeholder 行は存在しない。試験で縛る）。
     "opcheck_runner",
+    # 起動時の自動点検。opcheck_runner と同じ行を消費する（registry の consumers に併記）。
+    # 2026-10-04 まで opcheck_runner.yaml を別名ノードで読んでいたため、トップレベルの
+    # キー（ノード名）が合わず値が一切効いていなかった（死角マスクが空のまま比較していた）。
+    "opcheck_auto",
 )
 
 # ---------------------------------------------------------------------------
@@ -279,7 +286,7 @@ def blind_override_flat(current_doc: Any, limits: Mapping[str, Any] | None = Non
 def apply_calib_blind_override(out_dir: str = GENERATED_DIR, calib_dir: str = CALIB_DIR) -> None:
     """生成物の `blind_angle_ranges` を、確定済みの校正値で上書きする（起動時に 1 回）。
 
-    lidar_filter / obstacle_limiter / opcheck_runner / calib_runner の**すべて**へ同じ値を入れる
+    lidar_filter / obstacle_limiter / opcheck_runner / opcheck_auto / calib_runner の**すべて**へ同じ値を入れる
     （地図用スキャンと安全判定で死角が食い違わないため）。空配列（マスクを全部外す校正）は
     `sanitize_node_params` と同じくキーを消す（ノード側の既定が空配列）。
     """

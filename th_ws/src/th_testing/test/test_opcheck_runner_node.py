@@ -494,6 +494,52 @@ class TestOpcheckRunnerNode(unittest.TestCase):
             f'に出た（残存 window の標的）: {self._cmd}')
 
     # ── ヘルパー（j 用） ──────────────────────────────────
+    # ════════════════════════════════════════════════════════
+    # a2. 機器が無い項目でも判定が出る（2026-10-04）。出ないと項目から抜けられない。
+    #     名前を a2 にして、/scan を流す j より先に走らせる（「一度も届かない」経路）。
+    # ════════════════════════════════════════════════════════
+    def test_a2_lidar_without_scan_emits_no_data(self):
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('LIDAR')
+        assert res.started, res.message
+        hits = [e for e in self._wait_for_event('evt.check_result', timeout=6.0)
+                if json.loads(e.arg_json).get('item') == 'LIDAR']
+        assert hits, '/scan が一度も届かないのに LIDAR の判定が出ない（項目から抜けられない）'
+        assert json.loads(hits[-1].arg_json).get('result') == 'NG'
+        assert any(st.item == 'LIDAR' and st.result == 'NG' and st.detail == 'no_data'
+                   for st in self._status), [(s.item, s.result, s.detail) for s in self._status]
+        self._publish_effect('record_result', {'item': 'LIDAR', 'result': 'NG'})
+
+    def test_k_estop_without_hw_emits_no_data(self):
+        # このテストは /safety/estop_hw を一切出さない（ESP32 未接続と同じ）
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('ESTOP')
+        assert res.started, res.message
+        hits = [e for e in self._wait_for_event('evt.check_result', timeout=6.0)
+                if json.loads(e.arg_json).get('item') == 'ESTOP']
+        assert hits, '/safety/estop_hw が届かないのに ESTOP の判定が出ない（項目から抜けられない）'
+        assert json.loads(hits[-1].arg_json).get('result') == 'NG'
+        self._publish_effect('record_result', {'item': 'ESTOP', 'result': 'NG'})
+
+    # ════════════════════════════════════════════════════════
+    # l. 別の項目へ切り替え（T-OPC-10: abort_check → start_monitor）。
+    #    前の項目（MOTOR）の押下はもう効かない。
+    # ════════════════════════════════════════════════════════
+    def test_l_switch_item_by_abort_then_start(self):
+        self._set_mode('OPCHECK', 'RUNNING_CHECK')
+        self._publish_effect('start_monitor', {'item': 'MOTOR'})
+        self._publish_effect('abort_check', {})
+        self._publish_effect('start_monitor', {'item': 'IMU'})
+        self._spin(0.3)
+        assert any(st.item == 'IMU' for st in self._status), \
+            f'切り替え後に IMU が始まっていない: {[(s.item, s.detail) for s in self._status]}'
+        self._cmd.clear()
+        self._publish_hold('FORWARD')
+        self._spin(0.3)
+        assert not any(abs(c.linear.x) > 0 for c in self._cmd), \
+            '切り替え後も前の項目（MOTOR）の押下で指令が出た'
+        self._publish_hold('NONE')
+
     def _publish_band_scan(self):
         # angle_min=-π（実機と同じ）の 360 ビームに、実角度 10..20° の
         # 近距離帯（=`blind_angle_ranges` どおり）を置く

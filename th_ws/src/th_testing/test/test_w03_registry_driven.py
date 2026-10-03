@@ -230,7 +230,9 @@ def test_launch_passes_generated_yaml():
     for name, fname in (("route_recorder", "route_recorder.yaml"),
                         ("replay_runner", "replay_runner.yaml"),
                         ("map_downsampler", "map_downsampler.yaml"),
-                        ("onsite_map_downsampler", "map_downsampler.yaml")):
+                        # 自分の名前の生成 yaml（map_downsampler.yaml はトップレベルのキーが
+                        # 合わず値が効かない。2026-10-04 修正）
+                        ("onsite_map_downsampler", "onsite_map_downsampler.yaml")):
         nodes = _bringup_nodes_by_name(name)
         assert nodes, f"bringup に name={name!r} が無い"
         for node in nodes:

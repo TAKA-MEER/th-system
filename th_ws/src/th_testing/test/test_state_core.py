@@ -394,3 +394,30 @@ def test_manual_run_self_loop(state_core_bundle):
     # RUN -> RUN（自己ループ。ここが無いと繰り返し送られる合図が拒否される）
     d2 = core.step("MANUAL", "RUN", "ui.jog.hold", _mk_ctx())
     assert d2.accepted is True and d2.to_state == "RUN" and d2.rule_id == "T-MANUAL-01"
+
+
+# ============================================================
+# SM-3.1.2-116 / -117（2026-10-04）: 実行中の項目から抜けられる・別の項目へ移れる。
+# 結果は記録しない（record_result を出さない）。runner には abort_check を必ず送る
+# （送らないと前の項目のモニター・モーター指令が残る）。
+# ============================================================
+@pytest.mark.rule("T-OPC-09")
+def test_opcheck_running_abort_returns_to_list(state_core_bundle):
+    core, _, _, _ = state_core_bundle
+    d = core.step("OPCHECK", "RUNNING_CHECK", "ui.abort", _mk_ctx(check_item="LIDAR"))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("OPCHECK", "LIST")
+    names = [e.name for e in d.effects]
+    assert names == ["abort_check"], names
+
+
+@pytest.mark.rule("T-OPC-10")
+def test_opcheck_running_select_other_item_switches(state_core_bundle):
+    core, _, _, _ = state_core_bundle
+    d = core.step("OPCHECK", "RUNNING_CHECK", "ui.check_item",
+                  _mk_ctx(check_item="LIDAR", arg={"item": "MOTOR"}))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("OPCHECK", "RUNNING_CHECK")
+    names = [e.name for e in d.effects]
+    assert names == ["abort_check", "start_monitor"], names
+    assert d.effects[1].args == {"item": "MOTOR"}
