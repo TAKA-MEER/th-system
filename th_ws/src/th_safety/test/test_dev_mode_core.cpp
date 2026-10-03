@@ -3,7 +3,7 @@
 //
 // 1. dev_mode_core.hpp: /system/dev_mode の JSON から effective だけを読み、
 //    読めない・古い・未受信は「何も無視しない」に倒すこと。
-// 2. obstacle_limiter_core の項目 scan_stop: /scan 途絶でも MANUAL だけ通し、
+// 2. obstacle_limiter_core の項目 scan_stop: /scan 途絶でも MANUAL と OPCHECK だけ通し、
 //    古い点群を観測として使わない。速度上限は通常運用と同じ（前進は画面・モード
 //    由来、後退は v_reverse。2026-09-23 ユーザー決定）。AUTO は止める。
 // ============================================================
@@ -198,6 +198,76 @@ TEST(ObstacleLimiterDevScanStop, OnStillStopsAuto) {
   EXPECT_EQ(out.source_class, SourceClass::AUTO);
   EXPECT_EQ(out.action, LimiterAction::STOP);
   EXPECT_EQ(out.out.linear_x, 0.0);
+}
+
+// 始業点検（OPCHECK）のモーター確認: opcheck_runner が /cmd_vel_behavior に
+// v_check を出す（ジョイは無い＝source_class は AUTO）。2026-10-04 ユーザー決定で
+// scan_stop の対象に入れた（LiDAR 無しで配線を確かめるため）。
+namespace {
+ObstacleLimiterInputs make_opcheck_no_scan(double now) {
+  auto in = make_manual_no_scan(now);
+  in.manual = Stamped<Twist2D>{};          // ジョイ無し
+  in.muxed.value = Twist2D{0.05, 0.0};     // v_check
+  in.state.mode = "OPCHECK";
+  in.state.zone = Zone::NA;
+  in.mode_limit_mps = 0.05;
+  return in;
+}
+}  // namespace
+
+TEST(ObstacleLimiterDevScanStop, OffStopsOpcheckWithoutScan) {
+  ObstacleLimiterCore core;
+  const auto out = core.update(make_opcheck_no_scan(1000.0), make_params());
+  EXPECT_EQ(out.source_class, SourceClass::AUTO);
+  EXPECT_EQ(out.action, LimiterAction::STOP);
+  EXPECT_EQ(out.out.linear_x, 0.0);
+}
+
+TEST(ObstacleLimiterDevScanStop, OnLetsOpcheckMotorMove) {
+  ObstacleLimiterCore core;
+  auto in = make_opcheck_no_scan(1000.0);
+  in.dev_ignore_scan_stop = true;
+  const auto out = core.update(in, make_params());
+  EXPECT_DOUBLE_EQ(out.out.linear_x, 0.05);
+  EXPECT_DOUBLE_EQ(out.applied_limit_mps, 0.05) << "上限はモード由来（v_check）のまま";
+  EXPECT_DOUBLE_EQ(out.nearest_obstacle_m, -1.0);
+  // 超信地旋回（LEFT/RIGHT）も通る
+  ObstacleLimiterCore core2;
+  in.muxed.value = Twist2D{0.0, 0.3};
+  EXPECT_DOUBLE_EQ(core2.update(in, make_params()).out.angular_z, 0.3);
+}
+
+TEST(ObstacleLimiterDevScanStop, OnOpcheckStillCappedByModeLimit) {
+  ObstacleLimiterCore core;
+  auto in = make_opcheck_no_scan(1000.0);
+  in.dev_ignore_scan_stop = true;
+  in.muxed.value.linear_x = 0.8;
+  const auto out = core.update(in, make_params());
+  EXPECT_DOUBLE_EQ(out.out.linear_x, 0.05);
+}
+
+TEST(ObstacleLimiterDevScanStop, OnOpcheckStopsWhenStateIsStale) {
+  // /system/state が古ければ OPCHECK と信じない（AUTO 扱いで止める）。
+  ObstacleLimiterCore core;
+  auto in = make_opcheck_no_scan(1000.0);
+  in.dev_ignore_scan_stop = true;
+  in.state.stamp_sec = 1000.0 - 5.0;
+  const auto out = core.update(in, make_params());
+  EXPECT_EQ(out.action, LimiterAction::STOP);
+  EXPECT_EQ(out.out.linear_x, 0.0);
+}
+
+TEST(ObstacleLimiterDevScanStop, OnOtherAutoModesStillStop) {
+  for (const char* mode : {"CALIB", "REPLAY", "FOLLOW", "VENUE_NAV", "IDLE"}) {
+    SCOPED_TRACE(mode);
+    ObstacleLimiterCore core;
+    auto in = make_opcheck_no_scan(1000.0);
+    in.dev_ignore_scan_stop = true;
+    in.state.mode = mode;
+    const auto out = core.update(in, make_params());
+    EXPECT_EQ(out.action, LimiterAction::STOP);
+    EXPECT_EQ(out.out.linear_x, 0.0);
+  }
 }
 
 TEST(ObstacleLimiterDevScanStop, OnStillStopsWhenJoyIsStale) {

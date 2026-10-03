@@ -111,7 +111,8 @@ struct ObstacleLimiterInputs {
   double mode_limit_mps = 0.0;    // モード由来の上限（同上）
 
   // 開発モードの項目 scan_stop が実効か（呼び出し側で /system/dev_mode の鮮度込みで
-  // 解決済み。dev_mode_core.hpp）。真でも効くのは source_class == MANUAL のときだけ。
+  // 解決済み。dev_mode_core.hpp）。真でも効くのは source_class == MANUAL のときと、
+  // mode が OPCHECK（始業点検のモーター確認。/system/state が新鮮なとき）だけ。
   bool dev_ignore_scan_stop = false;
 };
 

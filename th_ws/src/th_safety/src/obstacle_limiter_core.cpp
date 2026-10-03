@@ -233,9 +233,14 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   // ── tier 3: /scan の途絶（L2。§3.4.2「古いスキャンで空きと判定しない」） ─
   const bool scan_stale = !in.scan.received || (in.now_sec - in.scan.stamp_sec) > p.scan_stale_sec;
   // 開発モード（項目 scan_stop。Spec-safety.md §10）: LiDAR 無しで手動走行するため、
-  // MANUAL に限って途絶でも止めない。AUTO は従来どおり STOP。
+  // MANUAL に限って途絶でも止めない。始業点検（OPCHECK）のモーター確認も同じ扱い
+  // （押している間だけ v_check で動く人の操作。LiDAR 無しで配線を確かめる。
+  // 2026-10-04 ユーザー決定）。/system/state が古いときは OPCHECK と信じない。
+  // それ以外の AUTO は従来どおり STOP。
+  const bool opcheck_fresh = in.state.received &&
+      (in.now_sec - in.state.stamp_sec) <= p.state_stale_sec && in.state.mode == "OPCHECK";
   const bool dev_scan_bypass = scan_stale && in.dev_ignore_scan_stop &&
-      compute_source_class(in, p) == SourceClass::MANUAL;
+      (compute_source_class(in, p) == SourceClass::MANUAL || opcheck_fresh);
   if (scan_stale && !dev_scan_bypass) {
     out.action = LimiterAction::STOP;
     out.nearest_obstacle_m = -1.0;  // 「不明」の明示値（+infinity＝空き確認済み、とは区別する）
