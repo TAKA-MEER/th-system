@@ -616,11 +616,17 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `linear_accel_mps2` | m/s2 | (b)。再生の加速度上限（W-03） |
 | `angular_accel_rps2` | rad/s2 | (b)。再生の旋回加速度上限（W-03） |
 | `localize_wait_s` | s | (b)。再生の自己位置推定待ち（W-03） |
-| `localize_match_low` | — | (b)。全域ローカライズの `s` 下限。これ未満は `evt.localize_low` → `widen_search`（`replay_runner`。W-01 P2。registry 登録は P5） |
-| `localize_margin_low` | — | (b)。全域ローカライズの `m` 警告。これ未満は `low_margin`（似た場所あり。READY へは進む。W-01 P2。registry 登録は P5） |
-| `localize_margin_min` | — | (b)。全域ローカライズの `m` 下限。これ未満は不成立（`evt.localize_done` を出さず LOCALIZE に留まる。W-01 P2。registry 登録は P5） |
-| `search_radius_m` | m | (b)。`load_route` 直後の探索窓の半径（経路始点中心。W-01 P2。`m_sep_m` より広く取る。registry 登録は P5） |
-| `widen_radius_m` | m | (b)。`widen_search` の再探索窓の半径（最良候補中心。W-01 P2。registry 登録は P5） |
+
+W-01 P2 の全域ローカライズ確度パラメータ（`replay_runner` が宣言し、既定値は
+`localize_core.LOCALIZE_DEFAULTS`。P0 の測定記録が根拠）。registry への登録は
+P5 で行うため、ここでは表に入れず予約名として挙げる（表に入れると
+`test_params_registry.py` が registry.yaml との一致を要求して落ちる）。
+P5 で registry に載せるときはこの 5 名を §7 の表へ移す。
+予約名: localize_match_low（widen の引き金になる s の下限）、
+localize_margin_low（警告になる m の下限。似た場所あり。READY へは進む）、
+localize_margin_min（不成立になる m の下限。LOCALIZE に留まる）、
+search_radius_m（load_route 直後の探索窓の半径。経路始点中心）、
+widen_radius_m（widen 再探索の窓半径。最良候補中心）。
 | `factor` | — | (b)。地図間引きの縮小率（`map_downsampler`。W-03） |
 | `publish_period_ms` | ms | (b)。地図間引きの配信間隔（W-03） |
 | `occupied_threshold` | — | (b)。地図間引きの占有判定閾値（W-03） |
