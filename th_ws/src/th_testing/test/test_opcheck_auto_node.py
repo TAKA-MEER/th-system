@@ -63,7 +63,7 @@ def generate_test_description():
         executable='opcheck_auto.py',
         name='opcheck_auto',
         parameters=[{
-            'scan_stale_ms': float(SCAN_STALE_MS),
+            'scan_stale_ms': int(SCAN_STALE_MS),  # 宣言は整数（registry・生成 yaml と同じ型）
             'opcheck_imu_window_s': IMU_WINDOW_S,
             'imu_bias_max_rad_s': 0.2,
             'imu_wz_implausible_rad_s': 10.0,
