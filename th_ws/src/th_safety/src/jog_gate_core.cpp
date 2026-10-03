@@ -5,6 +5,7 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <cmath>
 #include <fstream>
 #include <stdexcept>
 #include <utility>
@@ -81,7 +82,11 @@ Attributes load_attributes_jog_lenient(const std::string& yaml_path) {
 namespace {
 
 // -1〜1 に丸める（範囲外の比率を受けても上限を超えさせない。W-07）。
+// 非有限（NaN・±inf）は 0 に倒す（安全側）。±inf を ±1 に丸める手もあるが、
+// inf は「壊れた入力」の兆候であり上限いっぱいで走らせるより止める側に倒す。
+// NaN は > も < も偽になるため明示的に弾く（素通しにしない）。
 double clamp_ratio(double r) {
+  if (!std::isfinite(r)) return 0.0;
   if (r > 1.0) return 1.0;
   if (r < -1.0) return -1.0;
   return r;

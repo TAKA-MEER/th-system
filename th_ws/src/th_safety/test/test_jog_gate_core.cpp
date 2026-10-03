@@ -7,6 +7,7 @@
 //   ScaledByLimits            : W-07（判定が通ったら比率に上限を掛けて転送。
 //                                旧 J-3「そのまま転送」からの仕様変更）
 //   ClampedToLimits           : W-07（範囲外の比率は ±1 に丸める。上限を超えない）
+//   NonFiniteBecomesZero      : W-07 受け入れ（NaN・±inf は 0 に倒す。素通しにしない）
 //   IsDrivePasses             : MANUAL / TEACH_MANUAL（is_drive）を通す
 //   WaitClearBlocked          : F-28（SUMMON / WAIT_CLEAR は塞ぐ）
 //   AllModesFromAttributes    : 18 モードを attributes.yaml から回す
@@ -18,6 +19,8 @@
 // ============================================================
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -147,6 +150,28 @@ TEST(JogGateCore, ClampedToLimits) {
   const JogCmd under_out = jog_apply_limits(under, lim);
   EXPECT_DOUBLE_EQ(under_out.vx, -0.55);
   EXPECT_DOUBLE_EQ(under_out.wz, -1.0);
+}
+
+// ── W-07 受け入れ: 非有限（NaN・±inf）は 0 に倒す ─────────────
+// NaN は > も < も偽なので、明示的に弾かないと上限掛けが NaN のまま
+// /cmd_vel_manual に載る。±inf は ±1 丸めでなく 0 に倒す（壊れた入力の
+// 兆候なので上限いっぱいで走らせない）。
+TEST(JogGateCore, NonFiniteBecomesZero) {
+  JogSpeedLimits lim;
+  lim.v_jog_max = 0.55;
+  lim.w_jog_max = 1.0;
+
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  JogRatio nan_in{nan, nan};
+  const JogCmd nan_out = jog_apply_limits(nan_in, lim);
+  EXPECT_DOUBLE_EQ(nan_out.vx, 0.0);
+  EXPECT_DOUBLE_EQ(nan_out.wz, 0.0);
+
+  JogRatio inf_in{std::numeric_limits<double>::infinity(),
+                  -std::numeric_limits<double>::infinity()};
+  const JogCmd inf_out = jog_apply_limits(inf_in, lim);
+  EXPECT_DOUBLE_EQ(inf_out.vx, 0.0);
+  EXPECT_DOUBLE_EQ(inf_out.wz, 0.0);
 }
 
 // ── is_drive（MANUAL / TEACH_MANUAL）は通す（FMEA③を避ける） ──

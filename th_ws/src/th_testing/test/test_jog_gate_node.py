@@ -3,7 +3,7 @@ test_jog_gate_node.py
 ======================
 DetailedDesign-wp2.md WP-SAFE-04 §7 のノード統合テスト。
 
-4 本のテスト:
+5 本のテスト:
 
 `test_silent_when_state_stale`（**J-1 の直接検証**）:
   /system/state が古いあいだ /cmd_vel_manual_raw を送り続けても、
@@ -45,6 +45,7 @@ J-1 の意味するところ:
 """
 
 import time
+import math
 import unittest
 
 import pytest
@@ -311,3 +312,32 @@ class TestJogGateNode(unittest.TestCase):
                 out.angular.z, exp_wz, places=2,
                 msg=f'raw_wz={raw_wz} → angular.z={out.angular.z:.3f}。'
                     f'期待 {exp_wz}（比率×w_jog_max=1.0。範囲外は丸め）')
+
+    # ════════════════════════════════════════════════════════
+    # W-07 受け入れ: NaN の比率は 0（有限）になって出る
+    # 本番の jog_gate ノードを起動して振る舞いを見る（launch_testing）。
+    # NaN は > も < も偽なので、弾かないと NaN のまま載る。
+    # ════════════════════════════════════════════════════════
+    def test_nan_ratio_becomes_zero(self):
+        # MANUAL は attributes.yaml で jog: is_drive → 通す
+        self._state.mode = 'MANUAL'
+        self._state.state = 'RUN'
+        self._pump(0.5)
+        self._manual.clear()
+
+        self._pump(0.6, raw=self._twist(float('nan'), float('nan')))
+
+        self.assertTrue(
+            self._manual,
+            'NaN を送ったのに /cmd_vel_manual に 1 通も出ていない')
+        out = self._manual[-1]
+        self.assertTrue(
+            math.isfinite(out.linear.x) and math.isfinite(out.angular.z),
+            f'NaN がそのまま出ている: linear.x={out.linear.x!r} '
+            f'angular.z={out.angular.z!r}（非有限は 0 に倒す）')
+        self.assertAlmostEqual(
+            out.linear.x, 0.0, places=6,
+            msg=f'NaN → linear.x={out.linear.x!r}。期待 0.0')
+        self.assertAlmostEqual(
+            out.angular.z, 0.0, places=6,
+            msg=f'NaN → angular.z={out.angular.z!r}。期待 0.0')

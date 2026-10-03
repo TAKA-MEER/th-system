@@ -1028,6 +1028,7 @@ bool jog_passes(const StateView& st, double state_age_ms,
 | `test_jog_gate_core::SilentWhenStateStale` | 同上 | J-2 |
 | `test_jog_gate_core::ScaledByLimits` | 同上 | **W-07（旧 `PassthroughUnchanged`＝J-3 からの仕様変更）。比率×上限** |
 | `test_jog_gate_core::ClampedToLimits` | 同上 | **W-07。範囲外の比率は ±1 に丸める** |
+| `test_jog_gate_core::NonFiniteBecomesZero` | 同上 | **W-07 受け入れ。NaN・±inf は 0 に倒す** |
 | `test_jog_gate_core::IsDrivePasses` | 同上 | `MANUAL` / `TEACH_MANUAL` |
 | `test_jog_gate_core::WaitClearBlocked` | 同上 | `F-28` |
 | `test_jog_gate_core::AllModesFromAttributes` | 同上 | **18 モードを attributes から回す** |
