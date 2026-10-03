@@ -8,8 +8,14 @@
 // They live module-local here instead of in a screen so every caller (the
 // perpetual stick, the W-6 panel) shares one definition.
 
-// 緩旋回 (直進 + 旋回同時) 時の旋回レート。crawler_teleop の緩旋回と同じ 0.5 倍。
-const JOG_ARC_ANG_SCALE = 0.5
+// 緩旋回 (直進 + 旋回同時) 時の旋回レート。
+// W-07 受け入れで 0.5 → 0.275 に換算した。旧 0.5 は「速度プリセットが m/s だった
+// 時代」の定数で、緩旋回の実旋回速度は wn(=0.5×m)×speedPct [rad/s] だった。
+// いま画面が送るのは比率で、機体側の jog_gate が前進に v_jog_max=0.55 を、
+// 旋回に w_jog_max=1.0 を掛ける。緩旋回の実速度（vx・wz とも。曲率半径を含む）を
+// 変えないには、wn の係数を 0.5 × v_jog_max / w_jog_max = 0.5×0.55/1.0 = 0.275
+// にする（stickToCmd の形は変えず定数だけ。後退緩旋回も同じ定数なので同じ）。
+const JOG_ARC_ANG_SCALE = 0.275
 // スティックのデッドゾーン。中心からの倒し量がこの割合未満なら停止。
 const STICK_DEADZONE = 0.15
 
@@ -23,7 +29,7 @@ export function rampToward(current, target, maxDelta) {
 
 // スティック位置 → 正規化コマンド。
 // dx: 右+ / dy: 上+ (いずれも -1..1)。8方向セクター (45°幅) で判定:
-//   上下 = 直進 / 真横 = 超信地旋回 / 斜め = 緩旋回 (旋回 0.5 倍)
+//   上下 = 直進 / 真横 = 超信地旋回 / 斜め = 緩旋回 (旋回 0.275 倍。W-07 受け入れの換算)
 // 倒し量 (デッドゾーン超過分を 0→1 に正規化) が速度の比率になる。
 // 戻り値 { vn, wn, label } の vn / wn は正規化比率 (-1..1) であって物理速度
 // そのものではない。物理速度への換算は下流 (obstacle_limiter) が持つ上限に
