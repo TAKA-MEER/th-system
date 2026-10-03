@@ -27,8 +27,10 @@ params_audit:
     two_point_spacing_m: 1.0
     v_calib: 0.15
     v_check: 0.05
+    v_jog_max: 0.55
     v_leash: 1.0
     v_max: 1.1199999999999999
     v_max_headroom_ratio: 0.8
     w_align_max: 0.3
+    w_jog_max: 1.0
     w_max: 1.2
