@@ -152,12 +152,20 @@ def judge_motor_samples(samples: Sequence[tuple[float, float, float, float]],
     `samples` は `(cmd_l, meas_l, cmd_r, meas_r)` の列。1 回の押下中に複数
     サンプルが届くので、以下の要領で 1 個の verdict にまとめる:
       - サンプルが 1 つも無い（指令すら通らなかった）→ NG("no_samples")
+      - 指令（`/esp32/wheel_cmd_speed`＝ESP32 へ実際に届いた値）が全サンプルで
+        デッドバンド未満 → NG("no_command")。安全装置（obstacle_limiter 等）が
+        指令を 0 にしていて車輪へ届いていない。全行を「判定しない」で素通しすると
+        何も試していないのに OK になる（2026-10-04 に発見。LiDAR 無しで /cmd_vel が
+        0 のまま MOTOR が OK になった）
       - いずれかのサンプルで符号不一致 → NG（左右入れ替え等の構造的なエラー）
       - 追従率は「最も良く動いた瞬間」（左右実測の絶対値和が最大のサンプル）で
         判定する。立ち上がり等の一時的な低実測で誤 NG しないため。
     """
     if not samples:
         return NG("no_samples")
+    if all(abs(cl) < p.motor_deadband_mps and abs(cr) < p.motor_deadband_mps
+           for cl, _, cr, _ in samples):
+        return NG("no_command")
     for cmd_l, meas_l, cmd_r, meas_r in samples:
         verdict = judge_motor(cmd_l, meas_l, cmd_r, meas_r, p)
         if verdict.result == "NG":

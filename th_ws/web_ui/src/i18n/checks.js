@@ -18,6 +18,7 @@ export const CHECK_REASON_LABELS = {
     answer_mismatch: '実物と画面表示が一致しないと回答されました',
   },
   MOTOR: {
+    no_command: '指令が車輪まで届きませんでした（安全装置が止めています）',
     no_samples: '指令を送っても応答がありませんでした',
     sign_mismatch_L: '左輪の指令と実測の符号が逆です（配線・極性を確認してください）',
     sign_mismatch_R: '右輪の指令と実測の符号が逆です（配線・極性を確認してください）',

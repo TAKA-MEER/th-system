@@ -174,8 +174,22 @@ class TestJudgeMotorSamples:
 
     def test_deadband_row_never_ng(self):
         p = make_params()
-        samples = [(0.0, 0.5, 0.0, -0.5)]  # 非ゼロ実測でも指令 0 だから判定しない
+        # 指令 0 の行は非ゼロ実測でも判定しない（指令が届いた行があれば OK）
+        samples = [(0.0, 0.5, 0.0, -0.5), (-0.05, -0.049, 0.05, 0.05)]
         assert judge_motor_samples(samples, p) == OK()
+
+    def test_command_never_reached_is_ng(self):
+        # 押している間ずっと指令が 0（安全装置が止めていて ESP32 まで届かない）。
+        # 判定しない行だけで OK にしてはいけない。
+        p = make_params()
+        samples = [(0.0, 0.0, 0.0, 0.0)] * 30
+        v = judge_motor_samples(samples, p)
+        assert v.result == "NG" and v.reason == "no_command"
+
+    def test_command_below_deadband_is_ng(self):
+        p = make_params(motor_deadband_mps=0.03)
+        samples = [(0.02, 0.02, -0.02, -0.02)] * 5
+        assert judge_motor_samples(samples, p).reason == "no_command"
 
 
 # ── IMU ─────────────────────────────────────────────────────────────────────
