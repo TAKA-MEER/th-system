@@ -197,3 +197,45 @@ test('MOTOR: 非常停止(estop_hw)が押されると保持中でも NONE で止
   const pubs = await motorHoldPublishes(page)
   expect(pubs[pubs.length - 1].data).toBe('NONE')
 })
+
+// SM-3.1.2-116/-117（2026-10-04）: 実行中の項目から抜けられる・別の項目へ移れる。
+test('実行中に「中断」を押すと ui.abort が実際に送られる', async ({ page }) => {
+  await stubTrigger(page, { 'ui.abort': { accepted: true } })
+  await gotoS30(page, {
+    state: { state: 'RUNNING_CHECK' },
+    opcheckStatus: { item: 'LIDAR', result: 'UNKNOWN', detail: '', next_screen: '' },
+  })
+  await page.getByTestId('s30-abort').click()
+  const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
+  expect(calls.some((c) => c.trigger === 'ui.abort')).toBeTruthy()
+})
+
+test('実行中に一覧の別の項目を押すと、その項目で ui.check_item が送られ詳細が切り替わる', async ({ page }) => {
+  await stubTrigger(page, { 'ui.check_item': { accepted: true } })
+  await gotoS30(page, {
+    state: { state: 'RUNNING_CHECK' },
+    opcheckStatus: { item: 'LIDAR', result: 'UNKNOWN', detail: '', next_screen: '' },
+  })
+  await expect(page.getByTestId('s30-item-MOTOR')).toBeEnabled()
+  await page.getByTestId('s30-item-MOTOR').click()
+  const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
+  expect(calls.some((c) => c.trigger === 'ui.check_item' && c.argJson?.item === 'MOTOR')).toBeTruthy()
+  // status.item がまだ LIDAR でも、押した MOTOR の詳細（ホールドボタン）が出る
+  await expect(page.getByTestId('s30-motor-forward')).toBeVisible()
+})
+
+test('実行中の項目そのものを押しても何も送らない', async ({ page }) => {
+  await stubTrigger(page, { 'ui.check_item': { accepted: true } })
+  await gotoS30(page, {
+    state: { state: 'RUNNING_CHECK' },
+    opcheckStatus: { item: 'LIDAR', result: 'UNKNOWN', detail: '', next_screen: '' },
+  })
+  await page.getByTestId('s30-item-LIDAR').click()
+  const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
+  expect(calls.some((c) => c.trigger === 'ui.check_item')).toBeFalsy()
+})
+
+test('一覧（LIST）では「中断」を出さない', async ({ page }) => {
+  await gotoS30(page, { state: { state: 'LIST' } })
+  await expect(page.getByTestId('s30-abort')).toHaveCount(0)
+})

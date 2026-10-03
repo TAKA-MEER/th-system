@@ -1705,6 +1705,34 @@
   to_state: LIST
   effects: []
   spec_ref: SM-3.1.2-090
+# 実行中の項目をやめる・別の項目へ移る（2026-10-04 ユーザー決定）。結果は記録しない。
+- id: T-OPC-09
+  layer: 10
+  mode: OPCHECK
+  state: RUNNING_CHECK
+  event: ui.abort
+  guard: null
+  to_mode: '='
+  to_state: LIST
+  effects:
+  - name: abort_check
+    args: {}
+  spec_ref: SM-3.1.2-116
+- id: T-OPC-10
+  layer: 10
+  mode: OPCHECK
+  state: RUNNING_CHECK
+  event: ui.check_item
+  guard: null
+  to_mode: '='
+  to_state: RUNNING_CHECK
+  effects:
+  - name: abort_check
+    args: {}
+  - name: start_monitor
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.2-117
 - id: T-OPC-07
   layer: 10
   mode: OPCHECK

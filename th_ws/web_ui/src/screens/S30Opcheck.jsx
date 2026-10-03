@@ -51,7 +51,7 @@ import { OP_LABELS } from '../i18n/states.js'
 import {
   S30_ITEM_ORDER, S30_ITEM_LABELS, S30_LIST_TITLE, S30_OVERALL_TITLE,
   S30_RESULT_UNKNOWN, S30_RESULT_OK, S30_RESULT_WARN, S30_RESULT_NG, S30_RESULT_RUNNING,
-  S30_RESULT_TONE, s30OverallLabel, S30_DETAIL_PLACEHOLDER, S30_GOTO_CALIB,
+  S30_RESULT_TONE, s30OverallLabel, S30_DETAIL_PLACEHOLDER, S30_ABORT, S30_ABORT_NOTE, S30_GOTO_CALIB,
   S30_ESTOP_STEP1, S30_ESTOP_STEP2, S30_ESTOP_STEP3, S30_ESTOP_STEP4,
   S30_MOTOR_FORWARD, S30_MOTOR_BACK, S30_MOTOR_LEFT, S30_MOTOR_RIGHT, S30_MOTOR_HOLD_NOTE,
   S30_STATUS_DETAIL_TITLE, S30_STATUS_WAITING,
@@ -218,7 +218,9 @@ export default function S30Opcheck() {
     if (stateName === 'LIST') setSelectedItem(null)
   }, [stateName])
 
-  const activeItem = running ? (status?.item || selectedItem) : null
+  // 実行中に別の項目へ切り替えた直後は、status.item がまだ前の項目のことがある
+  // （abort_check → start_monitor の往復待ち）。押した項目を優先する（SM-3.1.2-117）。
+  const activeItem = running ? (selectedItem || status?.item) : null
 
   // MOTOR's hold must stop the instant this screen is not in a state where
   // opcheck_runner's deadman is supposed to be listened to -- re-derived
@@ -233,19 +235,28 @@ export default function S30Opcheck() {
   function motorPress(dir) { setMotorDir(dir); motorHold.press(dir) }
   function motorRelease() { setMotorDir(null); motorHold.release() }
 
+  // LIST では項目を始める。RUNNING_CHECK では今の項目を中断して選んだ項目へ切り替える
+  // （SM-3.1.2-116/-117。2026-10-04 まで実行中は一覧が押せず、判定が出るまで抜けられなかった）。
   async function handleSelect(item) {
-    if (stateName !== 'LIST' || disabledAll) return
+    if (!(stateName === 'LIST' || running) || disabledAll) return
+    if (running && item === activeItem) return
+    const prevSelected = selectedItem
     setSelectErr(null)
     setSelectedItem(item)
     try {
       const res = await sendTrigger('ui.check_item', { item })
       if (!res?.accepted) {
-        setSelectedItem(null)
+        setSelectedItem(prevSelected)
         setSelectErr(res?.reject_reason_key ? (REJECT_REASONS[res.reject_reason_key] ?? res.reject_reason_key) : null)
       }
     } catch {
-      setSelectedItem(null)
+      setSelectedItem(prevSelected)
     }
+  }
+
+  // 実行中の項目をやめて一覧へ戻る（結果は記録しない。SM-3.1.2-116）。
+  async function handleAbort() {
+    try { await sendTrigger('ui.abort') } catch { /* rosbridge 一時失敗。留まる */ }
   }
 
   async function handleFinish() {
@@ -283,7 +294,7 @@ export default function S30Opcheck() {
               key={item}
               type="button"
               className={`s30-row ${activeItem === item ? 'running' : ''}`}
-              disabled={disabledAll || stateName !== 'LIST'}
+              disabled={disabledAll || !(stateName === 'LIST' || running)}
               data-testid={`s30-item-${item}`}
               onClick={() => handleSelect(item)}
             >
@@ -304,6 +315,15 @@ export default function S30Opcheck() {
       <div>
         {!activeItem && (
           <div className="card"><p className="note">{S30_DETAIL_PLACEHOLDER}</p></div>
+        )}
+        {running && (
+          <div className="top-actions">
+            <button type="button" className="btn sm" data-testid="s30-abort"
+              disabled={disabledAll} onClick={handleAbort}>
+              {S30_ABORT}
+            </button>
+            <span className="xs mut">{S30_ABORT_NOTE}</span>
+          </div>
         )}
         {activeItem === 'ESTOP' && (
           <EstopMonitor

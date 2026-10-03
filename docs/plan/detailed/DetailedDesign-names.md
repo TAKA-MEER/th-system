@@ -712,13 +712,13 @@ widen_radius_m（widen 再探索の窓半径。最良候補中心）。
 | `ui.select_target` | S-10 / S-12 / S-20 / S-21 | レーダーの候補タップ。`arg_json` に `{"index": n}` |
 | `ui.route_select` | S-12 / S-13 / S-14 | 経路の選択。`{"id": "...", "reverse": bool}` |
 | `ui.resume_yes` ／ `ui.resume_no` ／ `ui.resume_ack` | 異常ウィンドウ W-1 | はい／いいえ／確認 |
-| `ui.abort` | S-21（退避待ち） / S-40（校正） | **中止** |
+| `ui.abort` | S-21（退避待ち） / S-30（実行中の項目の中断） / S-40（校正） | **中止** |
 | `ui.working` | S-21 | 作業中ボタン。`{"on": bool}` |
 | `ui.goto` | S-21 | 行き先の選択。`{"kind": "PANEL"|"HOME"|"SUMMON", "pin_id": "..."}` |
 | `ui.register` | S-20 | 「待機場所を登録」「配電盤を登録」 |
 | `ui.return_home` | S-20 | 「1 ボタンで待機場所に戻す」 |
 | `ui.map_edit` | S-20 | 地図修正へ入る |
-| `ui.check_item` | S-30 | 点検項目の選択。`{"item": "..."}` |
+| `ui.check_item` | S-30 | 点検項目の選択。`{"item": "..."}`。実行中に押すと今の項目を中断して切り替える（T-OPC-10） |
 | `ui.calib_item` | S-40 | 校正項目の「開始」。`{"item": "..."}` |
 | `ui.calib_next` | S-40 | ウィザードの次へ |
 | `ui.reroute` | W-5 | 「再検索する」 |

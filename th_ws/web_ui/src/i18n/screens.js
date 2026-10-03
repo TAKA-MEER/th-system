@@ -574,6 +574,8 @@ export function s30OverallLabel(results) {
 }
 
 export const S30_DETAIL_PLACEHOLDER = '項目を選んでください'
+export const S30_ABORT = '中断（一覧へ戻る）'
+export const S30_ABORT_NOTE = '結果は記録しません。左の一覧から別の項目を選ぶと切り替わります'
 export const S30_DETAIL_RUNNING_OTHER = '別の項目を確認中です'
 export const S30_GOTO_CALIB = '校正へ'
 export const S30_GOTO_REPAIR_NOTE = '故障診断へ移動します'
