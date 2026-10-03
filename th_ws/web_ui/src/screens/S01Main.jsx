@@ -21,6 +21,8 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useAutoCheckStatus } from '../ros/useAutoCheckStatus.js'
+import { useLinkStatus } from '../ros/useLinkStatus.js'
+import { linkDownKeys } from '../ros/linkStatusState.js'
 import { autoCheckWarns } from '../ros/autoCheckState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useStdTrigger } from '../ros/useStdTrigger.js'
@@ -36,7 +38,7 @@ import {
   GROUP_MOVE_TITLE, GROUP_FIELD_TITLE, GROUP_MAINT_TITLE, S01_SETTINGS,
   S01_FINISH_ESCAPE,
   S01_NET_TITLE, S01_NET_OK, S01_NET_CHECKING, S01_NET_WARN,
-  S01_NET_SUPPRESSED, S01_NET_OPEN,
+  S01_NET_SUPPRESSED, S01_NET_OPEN, S01_NET_LINK_DOWN, S00_ITEMS,
   WIN_REASON_TITLE, WIN_REASON_OK,
   SHUTDOWN_TITLE, SHUTDOWN_UNSAVED_LABEL, SHUTDOWN_NONE, SHUTDOWN_BUTTON, SHUTDOWN_HINT,
   SHUTDOWN_WIN_TITLE, SHUTDOWN_WIN_INTRO, SHUTDOWN_WIN_NONE, SHUTDOWN_SAVE,
@@ -59,6 +61,9 @@ function parseUnsaved(message) {
 export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
   const { state, stale, ros } = useSystemState()
   const { auto } = useAutoCheckStatus(ros)
+  const { link } = useLinkStatus(ros)
+  // S-00 の機器別の行と同じ値（Spec-webui.md §3.2「S-00 と同じ内容を要約表示」）。
+  const linkDown = linkDownKeys(link)
   const sendTrigger = useTrigger()
   const shutdownPrepare = useStdTrigger(SERVICES.SHUTDOWN_PREPARE)
   const shutdownExecute = useStdTrigger(SERVICES.SHUTDOWN_EXECUTE)
@@ -166,6 +171,14 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
           タップで S-00 相当の詳細へ。 */}
       <div className="card" data-testid="s01-net-summary">
         <h3>{S01_NET_TITLE}</h3>
+        {linkDown.length > 0 && (
+          <div className="row mb">
+            <span className="pill ng" data-testid="s01-net-link-down">
+              {S01_NET_LINK_DOWN}
+              {linkDown.map((k) => S00_ITEMS.find((it) => it.key === k)?.label ?? k).join('、')}
+            </span>
+          </div>
+        )}
         {!auto && <div className="note">{S01_NET_CHECKING}</div>}
         {auto?.suppressed && <div className="note">{S01_NET_SUPPRESSED}</div>}
         {auto && !auto.suppressed && autoCheckWarns(auto) && (
@@ -173,7 +186,7 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
             <span className="pill ng" data-testid="s01-net-warn">{S01_NET_WARN}</span>
           </div>
         )}
-        {auto && !auto.suppressed && !autoCheckWarns(auto) && auto.overall === 'OK' && (
+        {auto && !auto.suppressed && !autoCheckWarns(auto) && auto.overall === 'OK' && linkDown.length === 0 && (
           <div className="note">{S01_NET_OK}</div>
         )}
         {auto && !auto.suppressed && auto.overall !== 'OK' && !autoCheckWarns(auto) && (

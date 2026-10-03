@@ -3,7 +3,7 @@
 ROS2 非依存（ノードを起動しない・最速）。DetailedDesign-state.md §12.2 の4行と、
 そのフェイルセーフ既定（6.2）・L-1 を検証する。
 """
-from th_state.connectivity_core import LinkReport, Params, evaluate
+from th_state.connectivity_core import LinkReport, Params, evaluate, link_status
 
 
 def _params(**overrides):
@@ -119,3 +119,55 @@ def test_sim_excludes_esp32_and_nodes():
     assert r.nodes is True
     assert r.missing_nodes == ()
     assert r.all_ok()   # lidar（Gazebo でも /scan は出る）さえ揃えば通る
+
+
+# ── link_status()（S-00 の機器別の行。Spec-webui.md §3.1。2026-10-04）──────────
+
+def _status(p=None, **overrides):
+    kw = dict(_ALL_OK_KWARGS)
+    kw.update(overrides)
+    return link_status(p=p or _params(), estop_seen=True, hw_estop=False, **kw)
+
+
+def test_link_status_all_ok_with_ages():
+    st = _status()
+    it = st["items"]
+    assert all(it[k]["ok"] for k in ("esp32_feedback", "esp32_loopback", "lidar", "nodes"))
+    assert it["esp32_feedback"]["age_ms"] == 500
+    assert it["esp32_loopback"]["age_ms"] == 400
+    assert it["lidar"]["age_ms"] == 200
+    assert it["lidar"]["points"] == 360 and it["lidar"]["expected_points"] == 360
+    assert it["nodes"]["missing"] == []
+    assert st["timeout_ms"] == 3000
+
+
+def test_link_status_each_row_is_independent():
+    """4 行が別々に判定されること（以前の画面は 4 行とも全体の合否を出していた）。"""
+    it = _status(last_fb_ms=None)["items"]
+    assert it["esp32_feedback"]["ok"] is False and it["esp32_feedback"]["age_ms"] is None
+    assert it["esp32_loopback"]["ok"] and it["lidar"]["ok"] and it["nodes"]["ok"]
+
+    it = _status(scan_points=359)["items"]
+    assert it["lidar"]["ok"] is False and it["lidar"]["points"] == 359
+    assert it["esp32_feedback"]["ok"] and it["nodes"]["ok"]
+
+    it = _status(present_nodes=("state_manager",))["items"]
+    assert it["nodes"]["ok"] is False and it["nodes"]["missing"] == ["safety_monitor"]
+    assert it["lidar"]["ok"]
+
+
+def test_link_status_dev_ignore_shows_real_state():
+    """開発モードで link を外していても ok は本当の受信で決める（外していることは ignored）。"""
+    p = _params(dev_ignore_link=True)
+    it = _status(p=p, last_fb_ms=None, last_cmd_ms=None, last_scan_ms=None,
+                 present_nodes=())["items"]
+    for k in ("esp32_feedback", "esp32_loopback", "lidar", "nodes"):
+        assert it[k]["ok"] is False, k
+        assert it[k]["ignored"] is True, k
+
+
+def test_link_status_sim_marks_excluded():
+    it = _status(p=_params(sim=True), last_fb_ms=None)["items"]
+    assert it["esp32_feedback"]["excluded"] and it["esp32_loopback"]["excluded"]
+    assert it["nodes"]["excluded"] and not it["lidar"]["excluded"]
+    assert it["esp32_feedback"]["ok"] is False   # 除外しても実際の受信は偽のまま

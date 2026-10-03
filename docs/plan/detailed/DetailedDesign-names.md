@@ -420,6 +420,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `/system/effect` | `StateEffect` | reliable, depth 10 | 事象時（`demo-teach-replay` で新設。`state_manager` が self 以外の effect を配送） |
 | `/system/params_status` | `ParamsStatus` | transient_local, depth 1 | 変化時 |
 | `/system/dev_mode` | `std_msgs/String`（JSON。`dev_mode`／項目別の無視指定／実効状態） | transient_local, depth 1, reliable | 1 Hz（発行者は `connectivity_checker`。WP-DEV-01A。購読者は WebUI・`safety_monitor`・`obstacle_limiter`（2026-09-23）） |
+| **`/system/link_status`** | **`std_msgs/String`（JSON。`items` に `esp32_feedback`／`esp32_loopback`／`lidar`／`nodes` の `ok`（本当の受信で判定。開発モードで外しても偽のまま）・`age_ms`（最後の受信からの経過。未受信は null）・`ignored`（開発モードの `link`）・`excluded`（`sim`）、`lidar` は `points`／`expected_points`、`nodes` は `missing`。ほかに `timeout_ms`・`estop_hw`（`seen`／`pressed`））** | **transient_local, depth 1, reliable** | **1 Hz（発行者は `connectivity_checker`。購読者は WebUI の S-00。Spec-webui.md §3.1 の機器別の行。2026-10-04）** |
 | `/ui/active_screen` | `ActiveScreen` | reliable, depth 5 | 2 Hz（端末ごと） |
 | `/safety/estop_hw` | `std_msgs/Bool` | reliable | 10 Hz |
 | `/safety/estop_ui` | `std_msgs/Bool` | reliable | 押下・解除時＋2 Hz |

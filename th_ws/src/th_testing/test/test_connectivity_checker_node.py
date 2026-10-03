@@ -12,11 +12,13 @@ L-3: 立ち上がりで1回だけ）だけを検証する。
 除外し（§8）、`/scan` の疎通と `/safety/estop_hw` だけで gate を制御できるようにする
 （テストの単純化。実機の ESP32/必須ノード群を用意せずに L-2/L-3 だけを閉じたテストにできる）。
 """
+import json
 import time
 import unittest
 
 import pytest
 import rclpy
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 
 import launch
 import launch_ros.actions
@@ -24,7 +26,7 @@ import launch_testing
 import launch_testing.actions
 
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 from th_system_msgs.msg import StateEvent
 
 
@@ -158,6 +160,35 @@ class TestConnectivityCheckerNode(unittest.TestCase):
         self._spin(2.5)
         count = len(self._link_ok_events())
         assert count == 1, f'evt.link_ok が立ち上がり以外でも出ている: {count} 件'
+
+
+    def test_link_status_per_item(self):
+        """S-00 の機器別の行（Spec-webui.md §3.1。2026-10-04）: /system/link_status に
+        項目別の状態が出る。/scan を流すと lidar だけ ok になり、点数・受信間隔が載る。
+        sim=True なので ESP32 と nodes は excluded。"""
+        latest = {}
+        qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+                         durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        self.node.create_subscription(
+            String, '/system/link_status',
+            lambda m: latest.__setitem__('v', json.loads(m.data)), qos)
+        self._start_scan_keepalive()
+        deadline = time.time() + 4.0
+        while time.time() < deadline:
+            self._spin(0.2)
+            v = latest.get('v')
+            if v and v['items']['lidar']['ok']:
+                break
+        v = latest.get('v')
+        assert v, '/system/link_status が届かない'
+        lidar = v['items']['lidar']
+        assert lidar['ok'] is True, v
+        assert lidar['points'] == SCAN_EXPECTED_POINTS
+        assert lidar['age_ms'] is not None and lidar['age_ms'] < ESP32_ALIVE_TIMEOUT_MS
+        # ESP32 は一度も来ていない。本当の状態（偽）を出し、sim の除外は別に示す
+        assert v['items']['esp32_feedback']['ok'] is False
+        assert v['items']['esp32_feedback']['excluded'] is True
+        assert v['estop_hw']['seen'] is True and v['estop_hw']['pressed'] is True
 
 
 if __name__ == '__main__':

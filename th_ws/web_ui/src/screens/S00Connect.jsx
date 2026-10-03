@@ -6,21 +6,23 @@
 // connectivity_checker (WP-STATE-03) entirely server-side; it only ever
 // surfaces the *result* as evt.link_ok, which folds into SystemState.mode
 // leaving 'INIT' (DetailedDesign-state.md §12.1 step 7, T-INIT-01 is the
-// only way out of INIT). This packet's interface contract
-// (DetailedDesign-wp1.md WP-UI-02 §3.1: "same as WP-UI-01, nothing added")
-// gives S-00 no other signal to work from, so it cannot show a genuine
-// per-item breakdown -- the four rows below necessarily share one status.
-// See this packet's completion report for why, and what a future packet
-// would need to add to make the rows independent.
+// only way out of INIT).
+//
+// 機器別の行（Spec-webui.md §3.1。2026-10-04）: 以前は 4 行とも全体の合否を
+// 出すだけだった。connectivity_checker が /system/link_status に項目別の本当の
+// 状態（受信間隔・点数・不足ノード）を出すので、各行はそれを表示する。
+// 開発モードの link で外していても実際の状態を出し、「無視中」と添える。
 //
 // §6.2 fail-safe: while /system/state hasn't arrived yet (or has gone
 // stale), or mode is still 'INIT', there is nothing to advance to -- no
 // "advance" button is rendered at all (not just disabled).
 import { useSystemState } from '../ros/useSystemState.js'
 import { useAutoCheckStatus } from '../ros/useAutoCheckStatus.js'
+import { useLinkStatus } from '../ros/useLinkStatus.js'
+import { linkRowView } from '../ros/linkStatusState.js'
 import {
   S00_CHECK_TITLE, S00_COL_DEVICE, S00_COL_REQ, S00_COL_STATUS, S00_REQUIRED,
-  S00_MONITOR, S00_ITEMS, S00_STATUS_CHECKING, S00_STATUS_OK, S00_AP_LABEL,
+  S00_MONITOR, S00_ITEMS, S00_LINK_TEXT, S00_AP_LABEL,
   S00_AP_NOTE, S00_OVERALL_TITLE, S00_READY, S00_CHECKING, S00_ADVANCE,
   S00_OPEN_DEV,
   S00_AUTO_TITLE, S00_AUTO_CHECKING, S00_AUTO_OK, S00_AUTO_WARN, S00_AUTO_NG,
@@ -55,6 +57,7 @@ function autoItemTone(result) {
 export default function S00Connect({ onAdvance, onOpenSettings }) {
   const { state, stale, ros } = useSystemState()
   const { auto } = useAutoCheckStatus(ros)
+  const { link } = useLinkStatus(ros)
   const mode = state?.mode ?? null
   const ready = !stale && mode != null && mode !== 'INIT'
   const autoView = autoOverallView(auto)
@@ -70,15 +73,23 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
               <th>{S00_COL_REQ}</th>
               <th className="r">{S00_COL_STATUS}</th>
             </tr>
-            {S00_ITEMS.map((item) => (
-              <tr key={item.key}>
-                <td>{item.label}</td>
-                <td><span className="pill">{S00_REQUIRED}</span></td>
-                <td className={`r ${ready ? 'tone-ok' : 'tone-warn'}`}>
-                  {ready ? S00_STATUS_OK : S00_STATUS_CHECKING}
-                </td>
-              </tr>
-            ))}
+            {S00_ITEMS.map((item) => {
+              const view = linkRowView(link, item.key, S00_LINK_TEXT)
+              return (
+                <tr key={item.key}>
+                  <td>
+                    {item.label}
+                    {view.detail && (
+                      <div className="xs mut" data-testid={`s00-link-detail-${item.key}`}>{view.detail}</div>
+                    )}
+                  </td>
+                  <td><span className="pill">{S00_REQUIRED}</span></td>
+                  <td className={`r ${view.tone}`} data-testid={`s00-link-${item.key}`}>
+                    {view.label}
+                  </td>
+                </tr>
+              )
+            })}
             <tr>
               <td>{S00_AP_LABEL}</td>
               <td><span className="pill">{S00_MONITOR}</span></td>

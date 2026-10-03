@@ -47,6 +47,9 @@ export const TOPICS = {
   // WP-DEV-01B: 開発モードの現在状態（connectivity_checker が std_msgs/String
   // に JSON で 1Hz・transient_local 配信。names.json の endpoints にある）。
   DEV_MODE: '/system/dev_mode',
+  // S-00 の機器別の行（Spec-webui.md §3.1）。connectivity_checker が項目別の状態を
+  // std_msgs/String の JSON で transient_local・1Hz 配信。names.json の endpoints にある。
+  LINK_STATUS: '/system/link_status',
   // WP-UI-08: S-30 始業点検。opcheck_runner が発行する判定結果（CheckStatus）。
   // reliable depth5。names.json の endpoints にある。
   OPCHECK_STATUS: '/opcheck/status',
