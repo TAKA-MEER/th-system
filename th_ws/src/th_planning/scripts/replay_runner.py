@@ -682,6 +682,16 @@ class ReplayRunner(Node):
             f'localize 探索結果 kind={kind} s={s:.3f} m={m:.3f} → {quality}')
         base_pose, laser_pose, reload_err = None, None, None
         if quality in ('high', 'low_margin') and result.best is not None:
+            # 探索中に試験員が REPLAY を抜けた／別の load_route が来た場合、
+            # 古い探索が reload（slam_toolbox の respawn・地図凍結）して
+            # 別モードの地図作成を壊さないよう、reload の直前に再確認する。
+            if gen != self._search_gen or self._mode != 'REPLAY' \
+                    or self._state != 'LOCALIZE':
+                self.get_logger().info(
+                    f'localize 探索: 探索中に状態が変わった'
+                    f'（gen={gen}/{self._search_gen} '
+                    f'{self._mode}/{self._state}）ため reload せず破棄する')
+                return
             laser_pose = (result.best.x, result.best.y, result.best.yaw)
             base_pose = _laser_pose_to_base(laser_pose, off)
             # 1 回の探索につき reload は最良候補の 1 回だけ（WS-9S を保つ）。
@@ -741,6 +751,10 @@ class ReplayRunner(Node):
             return
         gen, kind, route_id, quality, s, m, base_pose, laser_pose, reload_err = item
         if gen != self._search_gen:
+            return
+        if self._mode != 'REPLAY':
+            self.get_logger().info(
+                f'localize 探索: REPLAY を抜けた後の結果（{self._mode}）を捨てる')
             return
         if laser_pose is not None:
             self._last_best_laser = laser_pose

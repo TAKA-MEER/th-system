@@ -175,6 +175,7 @@ class TestReplayLocalizeNode(unittest.TestCase):
             depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             history=QoSHistoryPolicy.KEEP_LAST)
+        self._state_value = 'LOCALIZE'
         self.pub_state = self.node.create_publisher(
             SystemState, '/system/state', state_qos)
         self._state_timer = self.node.create_timer(0.1, self._publish_state)
@@ -203,8 +204,10 @@ class TestReplayLocalizeNode(unittest.TestCase):
         # 疎通の証拠）を待ってから load_route を送る（同じ discovery で event 側も
         # 繋がる）。待たずに送ると、low の 1 発を取りこぼして 25s 空振りする。
         self._wait_status(lambda s: True, timeout=10.0, what='最初の /route/status')
-        self._send_load_route()
-        self._spin(1.0)
+        self._state_value = 'LOCALIZE'
+        if not self._testMethodName.startswith('test_d_'):
+            self._send_load_route()
+            self._spin(1.0)
 
     def tearDown(self):
         for name in ('_state_timer', '_scan_timer', '_odom_timer'):
@@ -227,8 +230,8 @@ class TestReplayLocalizeNode(unittest.TestCase):
 
     def _publish_state(self):
         msg = SystemState()
-        msg.mode = 'REPLAY'
-        msg.state = 'LOCALIZE'
+        msg.mode = 'REPLAY' if self._state_value == 'LOCALIZE' else 'IDLE'
+        msg.state = self._state_value
         self.pub_state.publish(msg)
 
     def _publish_scan(self):
@@ -361,6 +364,27 @@ class TestReplayLocalizeNode(unittest.TestCase):
         dones = [e for e in self._events if e.event == 'evt.localize_done']
         assert not dones, (
             f'不成立なのに evt.localize_done が出た（{len(dones)} 件）')
+
+    def test_d_search_discarded_when_replay_left(self):
+        """探索中に REPLAY を抜けたら、古い探索は reload も結果通知もしない。
+
+        reload 直前のガード（世代・mode/state）を外す変異ではここが赤くなる
+        （代役の /map_session/open が呼ばれてしまう）。
+        """
+        self._events.clear()
+        self._open_requests.clear()
+        self._scan_mode = 'match'
+        self._spin(0.3)
+        self._send_load_route()
+        # 探索（pgm 読み込み＋粗探索）が走っている間に IDLE へ抜ける。
+        self._state_value = 'IDLE'
+        self._publish_state()
+        self._spin(12.0)  # 探索の完了を十分に待つ
+        assert not self._open_requests, (
+            f'REPLAY を抜けた後に reload が呼ばれた（{len(self._open_requests)} 件）')
+        bad = [e.event for e in self._events
+               if e.event in ('evt.localize_done', 'evt.localize_low')]
+        assert not bad, f'REPLAY を抜けた後に探索結果のイベントが出た: {bad}'
 
 
 if __name__ == '__main__':
