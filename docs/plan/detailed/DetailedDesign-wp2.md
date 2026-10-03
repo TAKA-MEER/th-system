@@ -960,6 +960,8 @@ test "$(timeout 3 ros2 topic echo /safety/limiter_status --field action --once)"
 | 名前 | 単位 | class | status | 備考 |
 | --- | --- | --- | --- | --- |
 | `state_stale_ms` | ms | b | derived | `/system/state` の途絶判定 |
+| `v_jog_max` | m/s | b | given (0.55) | **手動ジョグの前進上限**（W-07）。`/cmd_vel_manual_raw` の比率に掛ける |
+| `w_jog_max` | rad/s | b | given (1.0) | **手動ジョグの旋回上限**（W-07）。`/cmd_vel_manual_raw` の比率に掛ける |
 
 **`attributes.yaml` を直接読む**（`th_state` と同じファイル。判定を二重に持たない）。
 
@@ -989,7 +991,10 @@ bool jog_passes(const StateView& st, double state_age_ms,
 
 #### 4.2 ノードの責務
 
-`/cmd_vel_manual_raw` のコールバックで `jog_passes()` を呼び、真なら**そのまま転送**、偽なら**何もしない**。
+`/cmd_vel_manual_raw` のコールバックで `jog_passes()` を呼び、真なら**比率に
+上限を掛けて転送**（`jog_apply_limits()`。`linear.x × v_jog_max`、
+`angular.z × w_jog_max`。範囲外の比率は ±1 に丸める）、偽なら**何もしない**。
+（W-07 で「そのまま転送」から変更。掛け算の置き場所は機体側）
 
 #### 4.3 不変条件
 
@@ -997,7 +1002,7 @@ bool jog_passes(const StateView& st, double state_age_ms,
 | --- | --- | --- |
 | **J-1** | **通さないときは publish しない（沈黙する）。ゼロを撃たない** | `/cmd_vel_manual` は priority 30。ゼロを撃ち続けると `manual_joy` が常に非タイムアウトになり、**twist_mux が priority 20/10 を永久に選ばない**＝**自律走行と Nav2 が構造的に一切出力されない** |
 | **J-2** | `/system/state` 途絶 → **沈黙** | 安全側。ゼロではない |
-| **J-3** | 速度の大きさは変えない（**ゲートであってリミッタではない**） | 上限のクランプは `obstacle_limiter` の仕事 |
+| **J-3** | **通すときは比率に上限を掛けて転送する**（`linear.x × v_jog_max`、`angular.z × w_jog_max`。範囲外の比率は ±1 に丸め、上限を超えさせない） | **掛け算の置き場所は機体側**（W-07。旧「速度の大きさは変えない」からの仕様変更）。上限より先のクランプは `obstacle_limiter` の仕事のまま |
 | **J-4** | `th_state` の `jog_allowed` と**同じ `attributes.yaml`** を読む | 判定を二重に持たない |
 
 > **「沈黙禁止」を課すのは多重化の後段だけ**（`obstacle_limiter` と `esp32_bridge`）。
@@ -1021,10 +1026,12 @@ bool jog_passes(const StateView& st, double state_age_ms,
 | --- | --- | --- |
 | `test_jog_gate_core`（gtest）`SilentWhenBlocked` | `test_jog_gate_core`（`th_safety`） | **J-1。publish 回数が 0** |
 | `test_jog_gate_core::SilentWhenStateStale` | 同上 | J-2 |
-| `test_jog_gate_core::PassthroughUnchanged` | 同上 | J-3 |
+| `test_jog_gate_core::ScaledByLimits` | 同上 | **W-07（旧 `PassthroughUnchanged`＝J-3 からの仕様変更）。比率×上限** |
+| `test_jog_gate_core::ClampedToLimits` | 同上 | **W-07。範囲外の比率は ±1 に丸める** |
 | `test_jog_gate_core::IsDrivePasses` | 同上 | `MANUAL` / `TEACH_MANUAL` |
 | `test_jog_gate_core::WaitClearBlocked` | 同上 | `F-28` |
 | `test_jog_gate_core::AllModesFromAttributes` | 同上 | **18 モードを attributes から回す** |
+| **`test_jog_gate_node.py::test_ratio_scaling`** | `jog_gate_node`（`th_testing`） | **W-07。比率 1.0／0.5／2.0 → 上限×1.0／×0.5／×1.0（前進・旋回）** |
 | **`test_jog_gate_node.py::test_mux_can_select_priority_20`** | `jog_gate_node`（`th_testing`） | **J-1 の帰結。`jog_gate` が黙っている間に `/cmd_vel_behavior` が `/cmd_vel_muxed` に出る** |
 
 ```cmake
