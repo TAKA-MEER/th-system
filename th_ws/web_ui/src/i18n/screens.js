@@ -256,6 +256,19 @@ export const S14_SPEED_TITLE = '再生速度'
 export const S14_XTRACK_TITLE = '経路からのずれ'
 export const S14_XTRACK_EMPTY = '--'
 export const S14_XTRACK_VALUE = (nowM, maxM) => `いま ${nowM.toFixed(2)} m・最大 ${maxM.toFixed(2)} m`
+// 初期姿勢の確度（W-01 P3 / DetailedDesign-transit-localize-options.md §4）。
+// /route/status（RouteStatus）の localize_quality を数値なしの 2 値＋目安文に写す。
+// 数値を出さないのは設計判断（数値の意味を試験員に説明できないため）。
+export const S14_QUALITY_TITLE = '確度'
+export const S14_QUALITY_HIGH = '高い'
+export const S14_QUALITY_LOW = '低い'
+export const S14_QUALITY_LOW_HINT = '似た場所が複数あり、取り違えの可能性があります'
+export const S14_QUALITY_FAILED = '見つかりません'
+export const S14_QUALITY_FAILED_HINT = '完全グローバルで探すか、経路を選び直してください'
+export const S14_QUALITY_SEARCHING = '探しています'
+// 「完全グローバルで探す」ボタン（Spec-webui.md §3.7）。押すと ui.localize_global。
+// FSM は REPLAY/LOCALIZE でだけ受け付ける（transitions.yaml T-REPLAY-03）。
+export const S14_GLOBAL_BUTTON = '完全グローバルで探す'
 
 // ---------------------------------------------------------------- 経路プレビュー（WS-3） ----
 // src/screens/RoutePreview.jsx の表示文字列。
