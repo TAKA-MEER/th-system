@@ -463,13 +463,14 @@ def generate_launch_description():
     # ── 8c2. opcheck_auto (起動時の自動点検。Spec-ops.md §2.6) ──
     # INIT 中から常時起動し、総合ステータスを /opcheck/auto_status に出す。
     # 駆動への出力は持たない（/cmd_vel_behavior に出さない）。
-    # パラメータは opcheck_runner と同じ値（同じ生成 yaml を読む。宣言側も
-    # 同値の PARS を持つため余分なキーで落ちない）。
+    # パラメータは自分の生成 yaml（registry の consumers に opcheck_auto を併記。
+    # 中身は opcheck_runner と同じ値）。opcheck_runner.yaml を読ませると、トップ
+    # レベルのキー（ノード名）が合わず値が一切効かない（2026-10-04 に発見）。
     nodes.append(Node(
         package='th_maintenance',
         executable='opcheck_auto.py',
         name='opcheck_auto',
-        parameters=[os.path.join(GENERATED_DIR, 'opcheck_runner.yaml')],
+        parameters=[os.path.join(GENERATED_DIR, 'opcheck_auto.yaml')],
         output='screen',
     ))
 
@@ -683,7 +684,8 @@ def generate_launch_description():
         name='onsite_map_downsampler',
         # W-03: 生成 yaml を土台にし、インスタンス固有の factor/output_topic を
         # 後段で上書きする（後勝ち）。factor=1 は変えない（F-2）。
-        parameters=[os.path.join(GENERATED_DIR, 'map_downsampler.yaml'),
+        # 生成 yaml は自分の名前のもの（map_downsampler.yaml はキーが合わず効かない）。
+        parameters=[os.path.join(GENERATED_DIR, 'onsite_map_downsampler.yaml'),
                     {'factor': 1, 'output_topic': '/onsite/map_view'}],
         condition=IfCondition(onsite_enabled),
         output='screen',

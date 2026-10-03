@@ -751,3 +751,42 @@ def test_onsite_cmake_and_launch_both_cover_four_executables():
             f"th_onsite/CMakeLists.txt: install(PROGRAMS ...) に {script}.py が無い")
         assert f"executable='{script}.py'" in launch_src, (
             f"bringup.launch.py: {script}.py の Node(executable=...) が無い")
+
+
+def _generated_yaml_names(call: ast.Call) -> list[str]:
+    """Node(parameters=[...]) の中の os.path.join(GENERATED_DIR, '<x>.yaml') の <x> を拾う。"""
+    out = []
+    for kw in call.keywords:
+        if kw.arg != "parameters" or not isinstance(kw.value, ast.List):
+            continue
+        for elt in kw.value.elts:
+            if (isinstance(elt, ast.Call) and isinstance(elt.func, ast.Attribute)
+                    and elt.func.attr == "join" and len(elt.args) == 2
+                    and isinstance(elt.args[0], ast.Name) and elt.args[0].id == "GENERATED_DIR"
+                    and isinstance(elt.args[1], ast.Constant)
+                    and str(elt.args[1].value).endswith(".yaml")):
+                out.append(str(elt.args[1].value)[:-len(".yaml")])
+    return out
+
+
+@pytest.mark.parametrize("launch_py", [BRINGUP_PY, GAZEBO_PY])
+def test_generated_yaml_matches_node_name(launch_py):
+    """生成 yaml のトップレベルのキーはノード名。別名のノードに渡すと値が一切効かない
+    （rclpy はキーが合わない params ファイルを黙って無視する）。2026-10-04 まで
+    opcheck_auto が opcheck_runner.yaml を読んでいて、死角マスクが空のまま比較していた。"""
+    tree = ast.parse(_read(launch_py), filename=launch_py)
+    checked = 0
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "Node"):
+            continue
+        name = next((kw.value.value for kw in node.keywords
+                     if kw.arg == "name" and isinstance(kw.value, ast.Constant)), None)
+        for stem in _generated_yaml_names(node):
+            checked += 1
+            if stem == "twist_mux":
+                continue  # twist_mux は reshape して同名キーで出す（name も twist_mux）
+            assert name == stem, (
+                f"{os.path.basename(launch_py)}: ノード {name!r} に {stem}.yaml を渡している"
+                f"（トップレベルのキーが {stem!r} なので値が効かない）")
+    assert checked > 0, "生成 yaml を渡す Node が 1 つも見つからない（検査が空振り）"

@@ -39,10 +39,10 @@ from th_maintenance import blind_core  # noqa: E402
 REGISTRY_YAML = os.path.join(_PARAMS_SRC, "config", "registry.yaml")
 
 # (スクリプト, launch が渡す生成 yaml のノード名)。bringup.launch.py の
-# parameters= と同じ対応にする（opcheck_auto は opcheck_runner.yaml を読む）。
+# parameters= と同じ対応にする。
 _CASES = [
     ("opcheck_runner.py", "opcheck_runner"),
-    ("opcheck_auto.py", "opcheck_runner"),
+    ("opcheck_auto.py", "opcheck_auto"),
     ("calib_runner.py", "calib_runner"),
 ]
 
