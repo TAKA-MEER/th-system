@@ -319,6 +319,9 @@ class TestReplayLocalizeNode(unittest.TestCase):
     def test_b_mismatched_scan_emits_low(self):
         """地図と合わないスキャン → evt.localize_low が出る。"""
         self._scan_mode = 'mismatch'
+        # 切替後のスキャンがノードの保持する最新になるまで待つ（直後に
+        # load_route すると切替前の match スキャンで探索してしまう）。
+        self._spin(0.5)
         self._events.clear()
         self._open_requests.clear()
         self._send_load_route()
@@ -335,6 +338,7 @@ class TestReplayLocalizeNode(unittest.TestCase):
         不成立でも done を出す変異ではここが赤くなる。
         """
         self._scan_mode = 'mismatch'
+        self._spin(0.5)
         self._events.clear()
         self._statuses.clear()
         self._send_load_route()
