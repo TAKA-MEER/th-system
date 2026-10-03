@@ -14,6 +14,13 @@
 // 操作カードは stop（ui.stop）と run（ui.run、ラベル「再生」）だけ。
 // onTrigger を空関数にしない（S-11 の既知バグ。この画面では「再生」ボタンが
 // 実際に ui.run を送ることを e2e/s14-replay-button-sends-ui-run.spec.js で検証する）。
+//
+// W-01 P3: 初期姿勢の確度（/route/status の localize_quality を 2 値＋目安文に写す。
+// 写像は screens/s14Localize.js）と「完全グローバルで探す」ボタン
+// （REPLAY/LOCALIZE のときだけ出し、押すと ui.localize_global。
+// FSM は LOCALIZE でだけ受け付ける: transitions.yaml T-REPLAY-03）。
+// failed の「経路を選び直す」は既存の「終了」（ui.finish → IDLE → 選び直し）で
+// 足りるためボタンは作らない（LOCALIZE から ui.route_select を受ける行は無い）。
 import { useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
@@ -34,9 +41,11 @@ import {
   S11_MANUAL_TITLE,
   S14_TAB_REPLAY, S14_SELECT_TITLE, S14_EMPTY, S14_FWD, S14_REV, S14_PROCEED,
   S14_POSE_TITLE, S14_POSE_LOCALIZE, S14_POSE_LOCALIZE_TIMEOUT, S14_POSE_READY, S14_POSE_RUN, S14_POSE_PAUSE, S14_POSE_PAUSE_RESUMABLE,
+  S14_GLOBAL_BUTTON,
   S14_LENGTH, S14_POINTS, S14_SPEED_TITLE,
   S14_XTRACK_TITLE, S14_XTRACK_EMPTY, S14_XTRACK_VALUE,
 } from '../i18n/screens.js'
+import { localizeQualityView, localizeQualityText } from './s14Localize.js'
 import { stateLabel } from '../i18n/states.js'
 import { OP_LABELS } from '../i18n/states.js'
 
@@ -80,6 +89,17 @@ export default function S14Replay({ onFinish }) {
   const empty = routes.length === 0
   const selected = selectedId != null
 
+  // W-01 P3: 初期姿勢の確度（/route/status の localize_quality。ROS 側 P2 が
+  // 足す 3 フィールドの 1 つ。未マージの間は undefined → 確度欄を出さない）。
+  // 数値は出さず「高い／低い」の 2 値＋目安文（options §4）。
+  const qualityView = localizeQualityView(routeStatus?.localize_quality)
+  const qualityText = localizeQualityText(qualityView.level)
+  const showQuality = qualityView.visible
+    && (stateName === 'LOCALIZE' || stateName === 'READY')
+  // searching（探索＋地図の読み直し）は 60 秒を超えうるので、既存の
+  // 「長引いている」注記は出さない（P3 ブリーフ §やること 1）。
+  const showStuckNote = localizeStuck && qualityView.level !== 'searching'
+
   // LOCALIZE が長く続いたら（＝地図の読み直し失敗の可能性）手がかりを出す。
   useEffect(() => {
     if (stateName !== 'LOCALIZE') { setLocalizeStuck(false); return undefined }
@@ -103,6 +123,17 @@ export default function S14Replay({ onFinish }) {
   async function handleProceed() {
     if (selectedId == null) return
     await sendTrigger('ui.route_select', { id: selectedId, reverse: false })
+  }
+
+  // W-01 P3: 完全グローバルで探す → ui.localize_global。
+  // FSM は REPLAY/LOCALIZE でだけ受け付ける（transitions.yaml T-REPLAY-03）。
+  // ボタン自体を LOCALIZE のときだけ出す。探索中は押せない。
+  async function handleGlobalLocalize() {
+    try {
+      await sendTrigger('ui.localize_global')
+    } catch {
+      // rosbridge の一時的な失敗。留まる（安全側）
+    }
   }
 
   return (
@@ -193,7 +224,21 @@ export default function S14Replay({ onFinish }) {
             <div className="note" data-testid="s14-pose">
               {pose ?? stateLabel(stateName)}
             </div>
-            {localizeStuck && (
+            {showQuality && (
+              <div className="note" data-testid="s14-localize-quality">{qualityText}</div>
+            )}
+            {stateName === 'LOCALIZE' && (
+              <button
+                type="button"
+                className="btn sm mt"
+                data-testid="s14-localize-global"
+                disabled={disabledAll || qualityView.level === 'searching'}
+                onClick={handleGlobalLocalize}
+              >
+                {S14_GLOBAL_BUTTON}
+              </button>
+            )}
+            {showStuckNote && (
               <div className="note" data-testid="s14-localize-stuck">{S14_POSE_LOCALIZE_TIMEOUT}</div>
             )}
           </div>
