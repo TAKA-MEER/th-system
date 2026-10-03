@@ -61,7 +61,11 @@ PARS: dict = {
     "opcheck_blind_tolerance_deg": 5.0,
     "opcheck_scan_coverage_gap_deg": 2.0,
     "v_check": 0.05,
-    "scan_stale_ms": 300.0,
+    # 整数で宣言する（registry の value: 300 は生成 yaml に整数で載る。rclpy は
+    # INTEGER↔DOUBLE を変換せず、300.0 で宣言すると起動時に
+    # InvalidParameterTypeException で落ちる。2026-10-02 実機で opcheck_runner が
+    # これで起動せず、始業点検の MOTOR が指令を一切出さなかった）。
+    "scan_stale_ms": 300,
 }
 
 _ESTOP_STALE_MS = 3000.0  # /safety/estop_hw がこれだけ来なかったら「届いていない」

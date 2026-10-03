@@ -53,6 +53,7 @@ mode==OPCHECK のときだけ動く「ノード側でも二重に確認」の実
 """
 import json
 import math
+import os
 import time
 import unittest
 
@@ -92,13 +93,28 @@ _STATE_QOS = QoSProfile(
     history=QoSHistoryPolicy.KEEP_LAST)
 
 
+# 本番の bringup と同じ生成 yaml を先に読ませ、上の短縮値は dict で後から
+# 上書きする。2026-10-02 に生成 yaml の scan_stale_ms（整数）と宣言（実数）の
+# 型ずれで本番だけ起動に失敗していたのに、dict だけ渡すこの試験は緑のままだった。
+_WS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+
+
+def _generated_yaml(node: str) -> str:
+    for d in (os.environ.get('TH_GENERATED_DIR', ''), '/root/th_data/generated',
+              os.path.join(_WS_ROOT, 'data', 'generated')):
+        path = os.path.join(d, f'{node}.yaml') if d else ''
+        if path and os.path.exists(path):
+            return path
+    raise FileNotFoundError(f'生成 yaml {node}.yaml が見つからない')
+
+
 @pytest.mark.launch_test
 def generate_test_description():
     opcheck_runner = launch_ros.actions.Node(
         package='th_maintenance',
         executable='opcheck_runner.py',
         name='opcheck_runner',
-        parameters=[{
+        parameters=[_generated_yaml('opcheck_runner'), {
             'opcheck_deadman_timeout_s': DEADMAN_S,
             'v_check': V_CHECK,
             'motor_deadband_mps': MOTOR_DEADBAND,

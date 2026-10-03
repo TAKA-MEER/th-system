@@ -355,6 +355,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_maintenance_registry_driven
     test/test_maintenance_registry_driven.py
     TIMEOUT 120)
+  # 保守系ノード（opcheck_runner / opcheck_auto / calib_runner）の宣言型が生成 yaml の
+  # 値の型と一致すること（rclpy は INTEGER↔DOUBLE を変換せず起動時に落ちる。
+  # 2026-10-02 実機で opcheck_runner が起動しなかった。ROS2 不要)
+  ament_add_pytest_test(test_maintenance_param_types
+    test/test_maintenance_param_types.py
+    TIMEOUT 120)
   # th_state/zones.py の LIMIT_STRICTNESS と registry.yaml の
   # speed_limit_strictness_rank が一致することの機械的な照合（N-15 レビュー。
   # th_state と th_params の両方を import してよい唯一のテストコード）

@@ -66,8 +66,8 @@ ros2 topic echo /system/dev_mode --once                           # いまの状
 
 - **2026-09-23 改定: `dev_mode:=true` だけでは何も外れない**（通常運用と同じ）。外す項目を
   `dev_ignore:=`（カンマ区切り）か画面で選ぶ。項目: `link`（疎通確認）/ `lidar_fault`
-  （`LIDAR_LOST` を出さない）/ `scan_stop`（`/scan` 途絶でも MANUAL を止めない。障害物は見えない。速度上限は通常と同じ、
-  AUTO は止めたまま）/ `battery`・`opcheck`・`auto_brake`（ゲート未実装で記録のみ）。
+  （`LIDAR_LOST` を出さない）/ `scan_stop`（`/scan` 途絶でも MANUAL と始業点検のモーター確認を止めない。障害物は見えない。速度上限は通常と同じ、
+  それ以外の AUTO は止めたまま）/ `battery`・`opcheck`・`auto_brake`（ゲート未実装で記録のみ）。
 - 画面から使うなら S-50 の開発モードタブ、または URL に `?dev=1`。**S-00（疎通確認）で
   止まったら「開発モードの設定」から入れる**（`link` を外して IDLE へ進む）。
   **状態の正本は機体側**（`connectivity_checker`）で、画面はそれを表示している。
@@ -106,7 +106,7 @@ ros2 topic echo /system/dev_mode --once                           # いまの状
 - `ros2 node list` はデーモンキャッシュの影響で新規ノードが反映されないことがある。`ros2 node list --no-daemon`（または `ros2 daemon stop` 後に再実行）で確実に最新状態を取得する。
   **ただし `--no-daemon` でも生きているノードを取りこぼすことがある。**「一覧に出ない」だけで死んだと判断しないこと。launch のログに `process has died` が無いか、当該ノードの起動 INFO が出ているかを併せて見る（`lidar_filter` が正常起動しているのに一覧に出ず、誤って「修正が効いていない」と判断しかけた）。
 - **`th_robot` コンテナはユーザーが実機作業中のセッションであることがある。** デバッグ用にノードを起動・停止する前に必ず `docker exec th_robot ps -eo pid,etimes,args` で稼働中のプロセスを確認し、自分が起動したものだけを PID 指定で止めること（実際に `rotation_calib.py` が 50 分間走っている最中に遭遇した）。
-- `docker exec th_robot bash -lc '... pkill -f <pattern> ...'` は、パターンがこのシェル自身のコマンドライン（`-lc` の引数文字列全体）にマッチして**自分を殺す**。出力が一切出ず exit 143 になったらこれを疑う。スクリプトをファイルに書いてから実行するか、PID 指定で止める。
+- `docker exec th_robot bash -lc '... pkill -f <pattern> ...'`（`kill $(pgrep -f ...)` も同じ）は、パターンがこのシェル自身のコマンドライン（`-lc` の引数文字列全体）にマッチして**自分を殺す**。出力が一切出ず exit 143 になったらこれを疑う。スクリプトをファイルに書いてから実行するか、PID 指定で止める。
 - 長時間動くノード（`component_container_mt` 等）を `docker exec` から `&` で起動すると、シェル終了時に道連れになる。`setsid ... > log 2>&1 < /dev/null &` で切り離す。
 - **コンテナ内で launch を起動すると `th_ws/data/generated/` が root 所有で書き換わる。**`th_ws/data` は `/root/th_data` にバインドマウントされており、`params_generation` の生成先（`/root/th_data/generated`）がそこに含まれる。生成物は tracked なので `git status` に `M` が並び、しかもホスト側ユーザでは `git checkout --` すら「許可がありません」で失敗する。`docker compose run --rm th_robot bash -lc 'chown -R 1000:1000 /root/th_data'` で所有権を戻してから復元する。
 - **`docker-compose.yml` はリポジトリ直下ではなく `th_ws/` にある。** リポジトリルートから `docker compose run ...` を実行すると `no configuration file provided: not found` で即死する。必ず `th_ws/` から実行すること（コンテナ名が `th_ws-th_robot-run-*` になるのはこのため）。
@@ -176,6 +176,7 @@ ros2 topic echo /system/dev_mode --once                           # いまの状
 - **このリポジトリは `core.fileMode = false`。`chmod +x` しても git の index に反映されない。** 新しく実行するスクリプト（`install(PROGRAMS ...)` に載せるもの）を追加したら `git update-index --chmod=+x <path>` を明示的に叩くこと。忘れると **git 上は 100644 のまま**で、`colcon build` は成功しテストも通るのに、実機の launch だけが `executable '<name>' not found on the libexec directory` で落ちる。`--symlink-install` では install 先がソースへのシンボリックリンクになるため、CMake の `install(PROGRAMS)` が付けるはずの実行権限が効かず、ソース側の権限がそのまま runtime に出るのが理由。**エラー文言が「見つからない」なので権限だと気づけない**（2026-09-03 に `map_downsampler.py` で実際に踏んだ）。`test_installed_scripts_executable.py` が再発を止める。
 - **`pkill -f <パターン>` は docker 外（ホスト）でも自分のシェルを殺す。** `pkill -f vite` で exit 144 になり、後続の `rm` が実行されなかった。ホストでも PID 指定で止めること。
 - **rclpy(Humble) で `declare_parameter(name, [], descriptor)` は既定値 `[]` を `BYTE_ARRAY` と推論し、`descriptor.type` を無視する。** そのため非空の `DOUBLE_ARRAY` を params ファイルや `ros2 param set` で渡すと `InvalidParameterTypeException: expecting type 'BYTE_ARRAY'`（または `Wrong parameter type, expected 'Type.BYTE_ARRAY'`）で弾かれ、**ノードが起動失敗する**。C++ 側は `std::vector<double>{}` で型が確定するので踏まない。対処は `ParameterDescriptor(dynamic_typing=True)`（`type=` は付けない）。これで「空既定のまま override 無し」「非空 override で起動」「空→非空のライブ `set_parameters`」の 3 ケースすべて通る。2026-09-09 に `lidar_filter` の `blind_angle_ranges` を死角校正で非空にしたとき実機で起動失敗して発覚（`f5c347e` 以降）。空配列 override 自体を生成 yaml へ書かない対処（`params_generation.sanitize_node_params()`）は別問題（`rcl_yaml_param_parser` が空配列 override を扱えない）なので従来どおり残す。
+- **rclpy の `declare_parameter` は既定値の型で決まり、params ファイルの INTEGER↔DOUBLE を変換しない。**registry の `value: 300` は生成 yaml に整数で載るので、ノード側で `300.0` と宣言すると**本番の bringup でだけ**起動時に `InvalidParameterTypeException` で落ちる（launch には `process has died` が 1 行出るだけ）。2026-10-02 に `opcheck_runner` がこれで起動せず、始業点検の MOTOR が指令を一切出さなかった。ノード試験は dict で上書きすると本番の経路を通らないので、**生成 yaml を先に渡してから dict で上書きする**。`test_maintenance_param_types.py` が保守系ノードの型を生成 yaml と突き合わせる。
 
 ## 開発環境
 

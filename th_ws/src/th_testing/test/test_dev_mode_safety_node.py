@@ -11,6 +11,7 @@ LiDAR が無い状態（/scan を一度も出さない）で:
   obstacle_limiter（項目 scan_stop）
     a. 開発モードの状態が未受信 → MANUAL でも 0
     b. effective.scan_stop=true → MANUAL は動く。上限は通常と同じ
+    c3. effective.scan_stop=true → OPCHECK（始業点検のモーター確認）も動く
        （前進は speed_limit=v_slow まで出て v_reverse を超える。後退は v_reverse）
     c. 同じ状態で AUTO（mode=FOLLOW）→ 0
     d. ignore（選択）だけ真で effective が偽 → 0
@@ -230,6 +231,23 @@ class TestDevModeSafetyNodes(unittest.TestCase):
             assert self._out() == 0.0, f'AUTO が /scan 途絶で動いた: {self._out()}'
         finally:
             type(self).mode = 'MANUAL'
+        assert self._wait(lambda: self._out() > 0.0, 3.0), 'MANUAL に戻しても動かない'
+
+    def test_c3_limiter_scan_stop_lets_opcheck_move(self):
+        # 始業点検のモーター確認（OPCHECK）。ジョイは関係なく AUTO 扱いだが、
+        # scan_stop が実効なら /scan 途絶でも止めない（2026-10-04 ユーザー決定）。
+        self._set_dev(_dev_json(True, ignore=('scan_stop',), effective=('scan_stop',)))
+        type(self).mode = 'OPCHECK'
+        try:
+            assert self._wait(lambda: self.status.source_class == 'AUTO', 2.0)
+            assert self._wait(lambda: self._out() > 0.0, 3.0), (
+                f'scan_stop が実効なのに OPCHECK が動かない: {self._out()}')
+            self._set_dev(_dev_json(True, ignore=(), effective=()))
+            assert self._wait(lambda: self._out() == 0.0, 2.0), (
+                f'scan_stop を外しても OPCHECK が /scan 途絶で動いた: {self._out()}')
+        finally:
+            type(self).mode = 'MANUAL'
+            self._set_dev(_dev_json(True, ignore=('scan_stop',), effective=('scan_stop',)))
         assert self._wait(lambda: self._out() > 0.0, 3.0), 'MANUAL に戻しても動かない'
 
     def test_d_limiter_ignores_selection_that_is_not_effective(self):
