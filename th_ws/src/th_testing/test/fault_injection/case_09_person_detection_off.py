@@ -252,8 +252,9 @@ class TestPersonDetectionOff(unittest.TestCase):
         future = cls.cli_flag.call_async(req)
         rclpy.spin_until_future_complete(cls.node, future, timeout_sec=10.0)
         res = future.result()
-        assert res is not None and res.success, (
-            f'/system/set_flag(tracker_enabled={value}) が失敗した: {res}')
+        assert res is not None and res.accepted, (
+            f'/system/set_flag(tracker_enabled={value}) が拒否された: '
+            f'{getattr(res, "reject_reason_key", "")}')
 
     @classmethod
     def _start_stub(cls):
