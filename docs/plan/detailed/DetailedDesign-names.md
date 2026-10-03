@@ -619,6 +619,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `localize_match_low` | — | (b)。全域ローカライズの `s` 下限。これ未満は `evt.localize_low` → `widen_search`（`replay_runner`。W-01 P2。registry 登録は P5） |
 | `localize_margin_low` | — | (b)。全域ローカライズの `m` 警告。これ未満は `low_margin`（似た場所あり。READY へは進む。W-01 P2。registry 登録は P5） |
 | `localize_margin_min` | — | (b)。全域ローカライズの `m` 下限。これ未満は不成立（`evt.localize_done` を出さず LOCALIZE に留まる。W-01 P2。registry 登録は P5） |
+| `search_radius_m` | m | (b)。`load_route` 直後の探索窓の半径（経路始点中心。W-01 P2。`m_sep_m` より広く取る。registry 登録は P5） |
+| `widen_radius_m` | m | (b)。`widen_search` の再探索窓の半径（最良候補中心。W-01 P2。registry 登録は P5） |
 | `factor` | — | (b)。地図間引きの縮小率（`map_downsampler`。W-03） |
 | `publish_period_ms` | ms | (b)。地図間引きの配信間隔（W-03） |
 | `occupied_threshold` | — | (b)。地図間引きの占有判定閾値（W-03） |

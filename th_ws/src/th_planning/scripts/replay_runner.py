@@ -8,9 +8,10 @@
 #
 # 特例（EXCEPTION-LEDGER W-01 / W-02。WS-8B で縮小）:
 #   - map フレーム経路: slam_toolbox の map→base_link TF で追従。走行中も
-#     map→odom 連続補正が効く（W-02 縮小）。load_route で TF を最大 5s 待ってから
-#     evt.localize_done。ただし保存地図ロード・全域ローカライズは未実装で、
-#     始点マーク運用が前提（W-01 縮小）。widen_search/global_localize は no-op のまま。
+#     map→odom 連続補正が効く（W-02 縮小）。load_route で保存 pgm 上の粗探索
+#     （W-01 P2。localize_core の純関数）→ 最良候補を初期姿勢に reload →
+#     TF 到着で evt.localize_done（arg_json{score, margin} 付き）。pgm 無しの
+#     旧経路だけ始点決め打ち（localize_quality='unknown'）。
 #   - odom フレーム経路（slam 未起動）: 従来どおり align_path_to_current で
 #     現在地を始点とみなす・走行中補正なし。
 # 速度指令の宛先は必ず /cmd_vel_behavior。/cmd_vel には直接 publish しない
@@ -19,6 +20,8 @@
 import json
 import math
 import os
+import threading
+import time
 
 import rclpy
 import rclpy.time
@@ -26,7 +29,8 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
-                       QoSReliabilityPolicy)
+                       QoSReliabilityPolicy, qos_profile_sensor_data)
+from sensor_msgs.msg import LaserScan
 
 import tf2_ros
 
@@ -67,6 +71,17 @@ from th_planning.route_replay_core import (
     pure_pursuit, ramp_toward, reverse_points, rotate_toward,
     scale_replay_params,
 )
+from th_planning.localize_core import (
+    LOCALIZE_DEFAULTS, judge_localize, load_pgm_map, search as localize_search,
+)
+
+
+# W-01 P2: 探索スレッドの待ち上限。P0 の実測は最大 ~8s（i7-1165G7。実機値は P6）。
+# executor を止めないよう別スレッドで走らせ、ここを超えたら打ち切って
+# timed_out として扱う。ROS パラメータ化はしない（registry 登録は P5）。
+_LOCALIZE_SEARCH_TIMEOUT_S = 30.0
+# 探索開始時に最新の /scan を待つ上限（LOCALIZE 中は機体が止まっている前提）。
+_LOCALIZE_SCAN_WAIT_S = 3.0
 
 
 def _yaw_from_quat(q) -> float:
@@ -74,6 +89,19 @@ def _yaw_from_quat(q) -> float:
     return math.atan2(
         2.0 * (q.w * q.z + q.x * q.y),
         1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+
+def _laser_pose_to_base(laser_pose, offset):
+    """laser フレームの姿勢 (x, y, yaw) を base_link の姿勢に直す。
+
+    offset は laser 基準の base_link 姿勢 (x, y, yaw)（_laser_to_base_offset）。
+    合成: base_map = laser_map ⊕ offset（回転を畳み込む）。
+    """
+    lx, ly, lyaw = laser_pose
+    ox, oy, oyaw = offset
+    c, s = math.cos(lyaw), math.sin(lyaw)
+    yaw = (lyaw + oyaw + math.pi) % (2 * math.pi) - math.pi
+    return (lx + ox * c - oy * s, ly + ox * s + oy * c, yaw)
 
 
 class ReplayRunner(Node):
@@ -141,6 +169,22 @@ class ReplayRunner(Node):
         # map フレームなら、このセッション ID と一致したときだけ再生を進める。
         self.declare_parameter('map_session_id', '')
         self.declare_parameter('localize_wait_s', 5.0)
+        # W-01 P2: 全域ローカライズの確度閾値。既定値は LOCALIZE_DEFAULTS
+        # （P0 の測定記録が根拠）。registry への登録は P5 なのでやらない。
+        # DetailedDesign-names.md §7 に新規名として予約済み。
+        self.declare_parameter(
+            'localize_match_low', float(LOCALIZE_DEFAULTS['localize_match_low']))
+        self.declare_parameter(
+            'localize_margin_low', float(LOCALIZE_DEFAULTS['localize_margin_low']))
+        self.declare_parameter(
+            'localize_margin_min', float(LOCALIZE_DEFAULTS['localize_margin_min']))
+        # 死角（laser 基準・度・[start, end] の平坦配列）。lidar_filter と同じ
+        # 取り方（registry.yaml が出所・空は死角なし）。空配列 override を
+        # 受けられるよう dynamic_typing=True（CLAUDE.md「環境の癖」参照）。
+        from rcl_interfaces.msg import ParameterDescriptor
+        self.declare_parameter(
+            'blind_angle_ranges', [],
+            ParameterDescriptor(dynamic_typing=True))
         # WS-9D: 自己位置源の EKF 出力 (/odometry/filtered) を優先し、古ければ
         # 生 /odom にフォールバックする。両ノードで同名・同既定にすること。
         self.declare_parameter('odom_topic', '/odom')
@@ -151,6 +195,12 @@ class ReplayRunner(Node):
         self._base_frame = self.get_parameter('base_frame').value
         self._map_session_id = self.get_parameter('map_session_id').value
         self._localize_wait_s = float(self.get_parameter('localize_wait_s').value)
+        self._localize_match_low = float(
+            self.get_parameter('localize_match_low').value)
+        self._localize_margin_low = float(
+            self.get_parameter('localize_margin_low').value)
+        self._localize_margin_min = float(
+            self.get_parameter('localize_margin_min').value)
         self._odom_topic = self.get_parameter('odom_topic').value
         self._odom_filtered_topic = self.get_parameter('odom_filtered_topic').value
         self._odom_stale_ms = int(self.get_parameter('odom_stale_ms').value)
@@ -183,6 +233,7 @@ class ReplayRunner(Node):
 
         # ── 状態 ────────────────────────────────────────────
         self._route = None
+        self._route_id = None           # W-01 P2: 探索・reload が参照する現経路
         self._points = []
         self._start_yaw = 0.0
         self._from_index = 0
@@ -204,6 +255,20 @@ class ReplayRunner(Node):
         self._route_frame = 'odom'        # 読み込んだ経路のフレーム
         self._localize_pending = False    # map TF 待ち（W-01 縮小）
         self._localize_deadline = 0.0
+        self._localize_pending_arg = '{}'  # TF 待ちの末に evt.localize_done へ載せる arg_json
+        # W-01 P2: 確度表示（/route/status）。load_route で ''/0/0 に戻し、
+        # READY・RUN・PAUSE 中も最後の値を出し続ける。
+        self._localize_quality = ''
+        self._localize_score = 0.0
+        self._localize_margin = 0.0
+        # W-01 P2: 探索スレッドの管理。executor を数秒止めないよう別スレッドで
+        # 走らせ、結果を _poll_search（_control_timer から呼ぶ）で拾う。
+        # 探索中も /route/status は出し続ける（_status_timer は独立）。
+        self._search_lock = threading.Lock()
+        self._search_gen = 0              # 世代。load_route で進めて旧探索を無効化
+        self._search_result = None        # (gen, kind, route_id, result, base_pose)
+        self._last_best_laser = None      # widen の中心にする直近の最良（laser 姿勢）
+        self._last_scan = None            # 最新の /scan（探索スレッドが読む）
         self._mode = ""
         self._state = ""
         # WS-9D: 自己位置源の選択（生 odom / EKF 出力）。(pose, stamp_ms) の組。
@@ -255,6 +320,12 @@ class ReplayRunner(Node):
             Odometry, self._odom_topic, self._on_odom, odom_qos)
         self.create_subscription(
             Odometry, self._odom_filtered_topic, self._on_odom_filtered, odom_qos)
+
+        # W-01 P2: 粗探索の入力。センサストリームは必ず BEST_EFFORT で購読する
+        # （lidar_filter と同じ。既定 QoS だと実機の WiFi で届かない）。
+        # 最新の 1 件だけ保持し、探索スレッドが読みに来る。
+        self.create_subscription(
+            LaserScan, '/scan', self._on_scan, qos_profile_sensor_data)
 
         # ── Publishers（速度は /cmd_vel_behavior のみ）──────
         cmd_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
@@ -343,30 +414,61 @@ class ReplayRunner(Node):
             # 次の再生を始めたらずれ・最大値を 0 から数え直す（S-14 の仕様）。
             self._cross_track_m = 0.0
             self._cross_track_max_m = 0.0
+            # W-01 P2: 確度表示も '' に戻す（READY・RUN・PAUSE 中は最後の値を保つ）。
+            # 進行中の探索・TF 待ちはこの load_route が上書きする（旧世代は無効）。
+            self._search_gen += 1
+            with self._search_lock:
+                self._search_result = None
+            self._localize_pending = False
+            self._localize_pending_arg = '{}'
+            self._localize_quality = ''
+            self._localize_score = 0.0
+            self._localize_margin = 0.0
+            self._last_best_laser = None
             self._need_rotate = False
             self._rotated = False
             self._arrived_sent = False
+            self._route_id = route_id
             if map_route:
-                # WS-9L: 経路が map フレーム。手で機体を始点へ戻したうえで、教示の
-                # 地図を読み直す（deserialize。自己位置が地図の最初のノード＝経路の
-                # 始点に一致する）。成功したときだけ evt.localize_done へ進める。
-                # 失敗したら LOCALIZE から進まない（error ログのみ）。
-                err = self._reload_map(route_id)
-                if err is None:
-                    # map TF が来るまで（最大 localize_wait_s）待って evt.localize_done。
-                    # これで LOCALIZE 状態が「数秒の実待ち」になる。
-                    self._localize_pending = True
-                    self._localize_deadline = (
-                        self.get_clock().now().nanoseconds / 1e9
-                        + self._localize_wait_s)
+                pgm_base = self._route_pgm_base(route_id)
+                if pgm_base is not None:
+                    # W-01 P2: 保存 pgm 上で経路始点の周辺を探索し、最良候補を
+                    # 初期姿勢に reload する（始点決め打ちをやめる）。探索は
+                    # 別スレッド（executor を数秒止めない）。結果は _poll_search
+                    # で拾い、成立したら reload → TF 待ち → evt.localize_done。
+                    # s 不足なら evt.localize_low → FSM が widen_search を返す。
+                    self._localize_quality = 'searching'
+                    center = ((float(self._points[0][0]), float(self._points[0][1]))
+                              if self._points else None)
+                    self._start_search(
+                        route_id, kind='initial', center=center,
+                        radius=float(LOCALIZE_DEFAULTS['search_radius_m']))
                     self.get_logger().info(
                         f'load_route: id={route_id} reverse={reverse} 点={len(pts)} '
-                        f'frame=map（地図を読み直しました。map→base_link TF を最大 '
-                        f'{self._localize_wait_s:.0f}s 待つ）')
+                        f'frame=map（保存地図上で探索中。終わり次第 reload）')
                 else:
-                    self.get_logger().error(
-                        f'地図を読み直せなかったため LOCALIZE から進めない: '
-                        f'id={route_id} ({err})')
+                    # pgm が無い旧経路: 現行どおり始点決め打ちで reload し、
+                    # localize_quality='unknown' とする。
+                    self._localize_quality = 'unknown'
+                    # WS-9L: 経路が map フレーム。手で機体を始点へ戻したうえで、教示の
+                    # 地図を読み直す（deserialize。自己位置が地図の最初のノード＝経路の
+                    # 始点に一致する）。成功したときだけ evt.localize_done へ進める。
+                    # 失敗したら LOCALIZE から進まない（error ログのみ）。
+                    err = self._reload_map(route_id)
+                    if err is None:
+                        self._localize_pending = True
+                        self._localize_deadline = (
+                            self.get_clock().now().nanoseconds / 1e9
+                            + self._localize_wait_s)
+                        self.get_logger().info(
+                            f'load_route: id={route_id} reverse={reverse} 点={len(pts)} '
+                            f'frame=map（pgm 無しのため始点決め打ち。地図を読み直しました。'
+                            f'map→base_link TF を最大 '
+                            f'{self._localize_wait_s:.0f}s 待つ）')
+                    else:
+                        self.get_logger().error(
+                            f'地図を読み直せなかったため LOCALIZE から進めない: '
+                            f'id={route_id} ({err})')
             else:
                 self.get_logger().info(
                     f'load_route: id={route_id} reverse={reverse} 点={len(pts)} '
@@ -384,12 +486,13 @@ class ReplayRunner(Node):
             self._arrived_sent = False
             self.get_logger().info('resume_path: 追従を再開（index は保持）')
         elif name == 'widen_search':
-            # WAIVER(demo): W-01 — デモでは来ない想定。ログのみ。
-            self.get_logger().info('widen_search: 受信したが探索省略（WAIVER(demo): W-01）')
+            # W-01 P2: 直前の探索の最良候補の周辺の広い窓で再探索する。
+            # それでも不成立なら evt を出さず LOCALIZE に留まる（failed）。
+            self._start_followup_search('widen')
         elif name == 'global_localize':
-            # WAIVER(demo): W-01 — no-op。念のため READY に進める。
-            self.get_logger().info('global_localize: no-op（WAIVER(demo): W-01）')
-            self._emit_event('evt.localize_done')
+            # W-01 P2: 地図全域で探索する。不成立なら evt.localize_done を
+            # 出さず LOCALIZE に留まる（failed）。no-op の即 done はやめた。
+            self._start_followup_search('global')
         else:
             self.get_logger().debug(f'無視する effect: {name}')
 
@@ -411,11 +514,13 @@ class ReplayRunner(Node):
             f'yaw {self._params.max_yaw_rate_rps:.2f} rad/s / '
             f'lookahead {self._params.lookahead_m:.2f} m')
 
-    def _reload_map(self, route_id: str) -> "str | None":
+    def _reload_map(self, route_id: str, init_pose=None) -> "str | None":
         """/map_session/open reload で教示の地図を読み直す。エラー文字列 or None。
 
-        WS-9N: 経路の始点（self._points[0] と self._start_yaw）を初期姿勢として渡し、
-        deserialize_map(match_type=3 LOCALIZE_AT_POSE) で自己位置を経路始点に合わせる。
+        init_pose: (x, y, yaw) の初期姿勢（map フレーム・base_link）。省略時は
+        従来どおり経路始点（self._points[0] と self._start_yaw）。W-01 P2 では
+        探索の最良候補を渡す（始点決め打ちをやめる）。
+        deserialize_map(match_type=3 LOCALIZE_AT_POSE) で自己位置を初期姿勢に合わせる。
         再生中は地図を凍結したまま自己位置推定のみ継続する。
 
         WS-9S: slam_control 側は読み直しのたび slam_toolbox を respawn してから
@@ -429,10 +534,15 @@ class ReplayRunner(Node):
         # 保存名（finalized_path が内部で _safe_id する）と地図ファイル名を一致させる
         # ため。受ける側（slam_control_logic）は未正規化 id を拒否するだけ。
         session_id = _safe_id(route_id)
-        has_init = bool(self._points)
-        init_x = float(self._points[0][0]) if has_init else 0.0
-        init_y = float(self._points[0][1]) if has_init else 0.0
-        init_yaw = float(self._start_yaw) if has_init else 0.0
+        if init_pose is not None:
+            init_x, init_y, init_yaw = (float(init_pose[0]), float(init_pose[1]),
+                                        float(init_pose[2]))
+            has_init = True
+        else:
+            has_init = bool(self._points)
+            init_x = float(self._points[0][0]) if has_init else 0.0
+            init_y = float(self._points[0][1]) if has_init else 0.0
+            init_yaw = float(self._start_yaw) if has_init else 0.0
         req = OpenMapSession.Request(
             slot='ROUTE',
             session_id=session_id,
@@ -458,6 +568,198 @@ class ReplayRunner(Node):
         p = msg.pose.pose.position
         self._filtered_sample = (
             (p.x, p.y, _yaw_from_quat(msg.pose.pose.orientation)), self._now_ms())
+
+    def _on_scan(self, msg: LaserScan):
+        # W-01 P2: 最新の 1 件だけ保持する（探索スレッドが読みに来る）。
+        self._last_scan = msg
+
+    # ── 全域ローカライズの探索（W-01 P2）─────────────────────────
+    def _route_pgm_base(self, route_id: str):
+        """経路 id に対応する保存地図の base 名（拡張子なし）。pgm＋yaml が
+        揃っていなければ None（pgm 無しの旧経路＝始点決め打ち・'unknown'）。"""
+        base = os.path.join(self._routes_dir, _safe_id(route_id))
+        if os.path.exists(base + '.pgm') and os.path.exists(base + '.yaml'):
+            return base
+        return None
+
+    def _start_search(self, route_id: str, kind: str, center, radius):
+        """探索スレッドを起こす（kind: initial／widen／global）。
+
+        ROS 側で読む入力（死角）はここでスナップショットし、重い探索本体は
+        別スレッド（_run_search）で走らせる。結果は _poll_search が拾う。
+        1 回の探索につき reload は最良候補の 1 回だけ（WS-9S の対策を保つ）。
+        """
+        self._search_gen += 1
+        gen = self._search_gen
+        blind = list(self.get_parameter('blind_angle_ranges').value or [])
+        t = threading.Thread(
+            target=self._run_search,
+            args=(gen, route_id, kind, center, radius, blind),
+            daemon=True)
+        t.start()
+        self.get_logger().info(
+            f'localize 探索開始 kind={kind} id={route_id} '
+            f'center={center} radius={radius}')
+
+    def _start_followup_search(self, kind: str) -> bool:
+        """widen_search／global_localize effect の受け口。探索を起こせたら True。
+
+        起こせない（経路なし・odom 経路・pgm なし）ときは警告ログだけで
+        False（evt は出さず LOCALIZE に留まる）。
+        """
+        route_id = self._route_id
+        if self._route is None or route_id is None or self._route_frame != self._map_frame:
+            self.get_logger().warn(
+                f'{kind}: 地図経路が読み込まれていないため探索できない')
+            return False
+        if self._route_pgm_base(route_id) is None:
+            self.get_logger().warn(
+                f'{kind}: 保存地図（pgm）が無いため探索できない id={route_id}')
+            return False
+        if kind == 'widen':
+            # 最良候補の周辺の広い窓で再探索する。直前の最良が無ければ経路始点。
+            if self._last_best_laser is not None:
+                center = (self._last_best_laser[0], self._last_best_laser[1])
+            else:
+                center = ((float(self._points[0][0]), float(self._points[0][1]))
+                          if self._points else None)
+            radius = float(LOCALIZE_DEFAULTS['widen_radius_m'])
+        else:
+            center, radius = None, None
+        self._localize_quality = 'searching'
+        self._start_search(route_id, kind=kind, center=center, radius=radius)
+        return True
+
+    def _run_search(self, gen: int, route_id: str, kind: str, center, radius, blind):
+        """探索スレッド本体（executor を止めない）。結果だけを置いて終わる。"""
+        pgm_base = self._route_pgm_base(route_id)
+        if pgm_base is None:
+            result, base_pose, laser_pose = None, None, None
+        else:
+            try:
+                fld = load_pgm_map(pgm_base + '.pgm', pgm_base + '.yaml')
+            except Exception as e:
+                self.get_logger().warn(f'localize 探索: 地図を読めない: {e}')
+                fld = None
+            scan = self._wait_scan()
+            if fld is None or scan is None:
+                if scan is None:
+                    self.get_logger().warn('localize 探索: /scan が来ないため探索できない')
+                result, base_pose, laser_pose = None, None, None
+            else:
+                off = self._laser_to_base_offset(scan.header.frame_id)
+                try:
+                    result = localize_search(
+                        fld, list(scan.ranges), scan.angle_min,
+                        scan.angle_increment, blind,
+                        center=center, radius=radius,
+                        timeout_s=_LOCALIZE_SEARCH_TIMEOUT_S)
+                except Exception as e:
+                    self.get_logger().warn(f'localize 探索: 探索が例外で終わった: {e}')
+                    result = None
+                if result is not None and result.timed_out:
+                    self.get_logger().warn(
+                        f'localize 探索: 時間切れ（{result.elapsed_s:.1f}s）')
+                if result is not None and result.best is not None:
+                    laser_pose = (result.best.x, result.best.y, result.best.yaw)
+                    base_pose = _laser_pose_to_base(laser_pose, off)
+                else:
+                    base_pose, laser_pose = None, None
+        with self._search_lock:
+            # 新しい load_route が来ていたら世代が進んでいるので置かない
+            # （古い探索が新しい結果を消さない）。
+            if gen == self._search_gen:
+                self._search_result = (gen, kind, route_id, result, base_pose, laser_pose)
+
+    def _wait_scan(self):
+        """最新の /scan を待つ（_LOCALIZE_SCAN_WAIT_S まで）。無ければ None。"""
+        deadline = time.monotonic() + _LOCALIZE_SCAN_WAIT_S
+        while time.monotonic() < deadline:
+            scan = self._last_scan
+            if scan is not None and len(scan.ranges) > 0:
+                return scan
+            time.sleep(0.1)
+        return None
+
+    def _laser_to_base_offset(self, laser_frame: str):
+        """laser フレーム基準の base_link 姿勢 (x, y, yaw)。TF が無ければ原点。"""
+        if self._tf_buffer is None or not laser_frame:
+            return (0.0, 0.0, 0.0)
+        try:
+            tf = self._tf_buffer.lookup_transform(
+                laser_frame, self._base_frame, rclpy.time.Time())
+        except Exception:
+            self.get_logger().warn(
+                f'localize 探索: {laser_frame}→{self._base_frame} TF が無いため'
+                f'オフセット無しで探索する')
+            return (0.0, 0.0, 0.0)
+        t = tf.transform.translation
+        return (t.x, t.y, _yaw_from_quat(tf.transform.rotation))
+
+    def _poll_search(self):
+        """探索スレッドの結果を拾う（_control_timer から毎 tick 呼ぶ）。"""
+        with self._search_lock:
+            item = self._search_result
+            self._search_result = None
+        if item is None:
+            return
+        gen, kind, route_id, result, base_pose, laser_pose = item
+        if gen != self._search_gen:
+            return
+        if laser_pose is not None:
+            self._last_best_laser = laser_pose
+        if result is None:
+            # 地図・スキャン・探索のいずれかが用意できなかった。不成立扱いで留まる。
+            self._localize_quality = 'failed'
+            self._localize_score = 0.0
+            self._localize_margin = 0.0
+            return
+        s, m = float(result.s), float(result.m)
+        quality = judge_localize(
+            s, m, self._localize_match_low, self._localize_margin_low,
+            self._localize_margin_min)
+        self.get_logger().info(
+            f'localize 探索結果 kind={kind} s={s:.3f} m={m:.3f} → {quality}')
+        if quality in ('high', 'low_margin'):
+            if base_pose is None:
+                self.get_logger().warn(
+                    'localize 探索: 成立したが姿勢が無いため LOCALIZE に留まる')
+                self._localize_quality = 'failed'
+                return
+            self._localize_quality = quality
+            self._localize_score = s
+            self._localize_margin = m
+            # 1 回の探索につき reload は最良候補の 1 回だけ（WS-9S を保つ）。
+            err = self._reload_map(route_id, init_pose=base_pose)
+            if err is None:
+                self._localize_pending = True
+                self._localize_deadline = (
+                    self.get_clock().now().nanoseconds / 1e9
+                    + self._localize_wait_s)
+                self._localize_pending_arg = json.dumps(
+                    {'score': s, 'margin': m})
+                self.get_logger().info(
+                    f'localize 探索: 最良候補を初期姿勢に reload '
+                    f'({base_pose[0]:.2f}, {base_pose[1]:.2f}). '
+                    f'map→base_link TF を最大 {self._localize_wait_s:.0f}s 待つ')
+            else:
+                self._localize_quality = 'failed'
+                self.get_logger().error(
+                    f'地図を読み直せなかったため LOCALIZE から進めない: '
+                    f'id={route_id} ({err})')
+        elif quality == 'low' and kind == 'initial':
+            # s 不足 → evt.localize_low → FSM が widen_search を返す。
+            # widen／global の low はここで止める（failed に落とす）。
+            self._localize_score = s
+            self._localize_margin = m
+            self._emit_event(
+                'evt.localize_low', json.dumps({'score': s, 'margin': m}))
+        else:
+            self._localize_quality = 'failed'
+            self._localize_score = s
+            self._localize_margin = m
+            self.get_logger().warn(
+                f'localize 探索: 不成立のため LOCALIZE に留まる（{quality}）')
 
     # ── フレーム解決 ──────────────────────────────────────
     def _map_pose(self):
@@ -536,17 +838,20 @@ class ReplayRunner(Node):
         """map フレーム経路の LOCALIZE 待ち: TF が来たら / 期限切れで localize_done。"""
         if not self._localize_pending:
             return
+        arg = self._localize_pending_arg
         now_s = self.get_clock().now().nanoseconds / 1e9
         if self._map_pose() is not None:
             self._localize_pending = False
+            self._localize_pending_arg = '{}'
             self.get_logger().info('map→base_link TF 取得 → evt.localize_done')
-            self._emit_event('evt.localize_done')
+            self._emit_event('evt.localize_done', arg)
         elif now_s >= self._localize_deadline:
             self._localize_pending = False
+            self._localize_pending_arg = '{}'
             self.get_logger().warn(
                 'map→base_link TF が来ないまま期限切れ → evt.localize_done'
                 '（slam_toolbox 未起動の可能性。デモ継続優先）')
-            self._emit_event('evt.localize_done')
+            self._emit_event('evt.localize_done', arg)
 
     def _publish_ramped(self, target_v: float, target_w: float):
         """目標 (v, w) へランプで近づけてから publish（#2: DRIVE_RUNAWAY 対策）。"""
@@ -561,6 +866,7 @@ class ReplayRunner(Node):
     # ── 制御ループ（20Hz）────────────────────────────────
     def _control_timer(self):
         self._tick_localize_pending()
+        self._poll_search()  # W-01 P2: 探索スレッドの結果を拾う（非ブロッキング）
         pose = self._get_pose()
         # 走行条件が揃っていない → ランプで 0 へ戻す（急な 0 もステップになる）
         if self._mode != 'REPLAY' or self._state != 'RUN' or \
@@ -599,14 +905,14 @@ class ReplayRunner(Node):
         self._was_moving = True
 
     # ── イベント発行 ─────────────────────────────────────
-    def _emit_event(self, name: str):
+    def _emit_event(self, name: str, arg_json: str = '{}'):
         ev = StateEvent()
         ev.header.stamp = self.get_clock().now().to_msg()
         ev.event = name
         ev.source_node = 'replay_runner'
-        ev.arg_json = '{}'
+        ev.arg_json = arg_json
         self._pub_event.publish(ev)
-        self.get_logger().info(f'/system/event 発行: {name}')
+        self.get_logger().info(f'/system/event 発行: {name} {arg_json}')
 
     # ── ステータス publish ───────────────────────────────
     def _status_timer(self):
@@ -631,6 +937,10 @@ class ReplayRunner(Node):
         # S-14「経路からのずれ」表示用。PAUSE 中も最大値は残ったまま出る。
         msg.cross_track_m = float(self._cross_track_m)
         msg.cross_track_max_m = float(self._cross_track_max_m)
+        # W-01 P2: 全域ローカライズの確度。READY・RUN・PAUSE 中も最後の値を出す。
+        msg.localize_quality = self._localize_quality
+        msg.localize_score = float(self._localize_score)
+        msg.localize_margin = float(self._localize_margin)
         if self._route is not None:
             info = RouteInfo()
             info.id = self._route.id
