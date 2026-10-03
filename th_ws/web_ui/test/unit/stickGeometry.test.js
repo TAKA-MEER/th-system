@@ -30,15 +30,16 @@ test('left spin: wz>0 mirror', () => {
   assert.ok(r.wn > 0)
 })
 
-// Arc (diagonal) -> both, spin half-scaled.
+// Arc (diagonal) -> both, spin arc-scaled.
+// W-07 受け入れで JOG_ARC_ANG_SCALE は 0.5 → 0.275（= 0.5 × v_jog_max / w_jog_max）。
 test('arc: diagonal combines vn and scaled spin', () => {
   const r = stickToCmd(1, 1, 1) // 45deg: right-forward
   assert.equal(r.label, 'arc')
   assert.ok(r.vn > 0)
   assert.ok(r.wn < 0)
-  // vz/wn ratio must reflect the 0.5 arc scale: at a 45deg diagonal both
-  // branches carry equal magnitude m, so |wn| = 0.5 * vn.
-  assert.ok(Math.abs(Math.abs(r.wn / r.vn) - 0.5) < 1e-9)
+  // vz/wn ratio must reflect the arc scale: at a 45deg diagonal both
+  // branches carry equal magnitude m, so |wn| = 0.275 * vn.
+  assert.ok(Math.abs(Math.abs(r.wn / r.vn) - 0.275) < 1e-9)
 })
 
 // Reverse (bottom) -> vn<0.
@@ -93,6 +94,47 @@ test('scaleJogCmd: forward/reverse/arc still scale both axes by speedPct', () =>
 
 test('scaleJogCmd: deadzone {0,0} stays {0,0}', () => {
   assert.deepEqual(scaleJogCmd({ vn: 0, wn: 0 }, 0.55), { vx: 0, wz: 0 })
+})
+
+// W-07 受け入れ: 緩旋回（arc / rev_arc）の実速度は変更前と一致すること。
+// 変更前の実値（preset が m/s だった時代。JOG_ARC_ANG_SCALE=0.5。全倒し斜め）:
+//   低速 0.15: vx 0.15 / wz ∓0.075 ／ 中速 0.30: vx 0.30 / wz ∓0.15 ／
+//   高速 0.55: vx 0.55 / wz ∓0.275（曲率半径 2.0 m）
+// 変更後は stickToCmd の wn が 0.275（= 0.5 × v_jog_max / w_jog_max）になり、
+// jog_gate が ×(v_jog_max=0.55, w_jog_max=1.0) する。ここでは比率段の出力を
+// 上限で戻して旧実値と比べ、±2% 以内を要求する（上限掛け自体は jog_gate 側の
+// ScaledByLimits / test_ratio_scaling が縛る）。天井値（0.55 / 1.0）は
+// registry.yaml の v_jog_max / w_jog_max と同じ。変えたらこのテストが赤になる
+// のが正しい（実速度が変わるため）。
+test('arc keeps pre-change physical speed within 2% (all presets)', () => {
+  const V_JOG_MAX = 0.55
+  const W_JOG_MAX = 1.0
+  const arc = stickToCmd(1, 1, 1) // full right-forward diagonal
+  assert.equal(arc.label, 'arc')
+  assert.ok(Math.abs(arc.vn - 1) < 1e-9)
+  assert.ok(Math.abs(arc.wn - -0.275) < 1e-9)
+  const cases = [
+    // [speedPct, oldVx, oldWz]
+    [0.27, 0.15, -0.075],  // low
+    [0.55, 0.30, -0.15],   // mid
+    [1.0, 0.55, -0.275],   // high
+  ]
+  for (const [sp, oldVx, oldWz] of cases) {
+    const s = scaleJogCmd(arc, sp)
+    const vx = s.vx * V_JOG_MAX
+    const wz = s.wz * W_JOG_MAX
+    assert.ok(Math.abs(vx - oldVx) / oldVx < 0.02,
+      `preset ${sp}: vx=${vx} vs pre-change ${oldVx}`)
+    assert.ok(Math.abs(wz - oldWz) / Math.abs(oldWz) < 0.02,
+      `preset ${sp}: wz=${wz} vs pre-change ${oldWz}`)
+  }
+})
+
+test('rev_arc keeps pre-change ratio (same constant as arc)', () => {
+  const r = stickToCmd(1, -1, 1) // 135deg (right-rear), full throw
+  assert.equal(r.label, 'rev_arc')
+  assert.ok(Math.abs(r.vn - -1) < 1e-9)
+  assert.ok(Math.abs(r.wn - -0.275) < 1e-9)
 })
 
 // rampToward clamps the step change.

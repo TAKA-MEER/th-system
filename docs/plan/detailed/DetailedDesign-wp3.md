@@ -82,18 +82,19 @@
 
 | 名前 | 単位 | class | status | registry 行 |
 | --- | --- | --- | --- | --- |
-| `speed_preset_low` | ratio | b | given (0.3) | `registry.yaml`:173 |
-| `speed_preset_mid` | ratio | b | given (0.6) | `registry.yaml`:182 |
-| `speed_preset_high` | ratio | b | given (1.0) | `registry.yaml`:191 |
-| `jog_lease_ms` | ms | b | given (1200) | `registry.yaml`:687（**送出周期の上限の根拠**。UI は直接使わない） |
+| `speed_preset_low` | ratio | b | given (0.27) | `registry.yaml` |
+| `speed_preset_mid` | ratio | b | given (0.55) | `registry.yaml` |
+| `speed_preset_high` | ratio | b | given (1.0) | `registry.yaml` |
+| `jog_lease_ms` | ms | b | given (1200) | `registry.yaml`（**送出周期の上限の根拠**。UI は直接使わない） |
 
 3 つの `speed_preset_*` はいずれも `consumers: [web_ui]`。
-**JSX に `0.3` などの数値を書かない**（規約 `R2`）。`scripts/gen_attributes.py` と同じ流儀で
+**JSX に数値を書かない**（規約 `R2`）。`scripts/gen_speed_presets.py` と同じ流儀で
 `registry.yaml` から `src/generated/speed_presets.json` を生成し、それを import する。
 
 > **プリセットは「上限に対する割合」であって上限そのものではない。**
-> 速度の権威は `obstacle_limiter`（[transit](DetailedDesign-transit.md) §2.1 の表）。
-> ブラウザ側のスケーリングは利便性にすぎない。**現行 `App.jsx:136 stickToCmd` は
+> 実速度への換算は機体側の `jog_gate` が持つ（`v_jog_max` / `w_jog_max`。
+> W-07。旧「速度の権威は `obstacle_limiter`」から変更）。
+> ブラウザ側のスケーリングは利便性にすぎない。**旧 `App.jsx:136 stickToCmd` は
 > `JOG_LIN_MAX = 0.5` をブラウザに持っており、上限がブラウザにしか無い**——これを引き継がない。
 
 #### 3.4 フレーム
@@ -110,8 +111,10 @@ stickToCmd(dx, dy, len) -> { vn, wn, label }   // 既存 App.jsx:136 をその�
 rampToward(current, target, maxDelta) -> number // 既存 App.jsx:127 をそのまま移す
 ```
 
-**`stickToCmd()` の中身は変えない。**8 方向セクター（45° 幅）・デッドゾーン 0.15・
-斜めの旋回 0.5 倍という既存の挙動は実機で調整済みの値であり、この パケットの範囲外。
+**`stickToCmd()` の形は変えない。**8 方向セクター（45° 幅）・デッドゾーン 0.15 は
+実機で調整済みの値であり、このパケットの範囲外。斜めの旋回係数だけ W-07 受け入れで
+0.5 → 0.275 に換算した（= 旧 0.5 × v_jog_max / w_jog_max。旧 preset が m/s だったぶんの
+換算。緩旋回の実速度を変えないため。`stickGeometry.js` のコメント参照）。
 **移設と単体テストの追加だけを行う。**
 
 #### 4.2 コンポーネントの責務

@@ -47,7 +47,7 @@
   value: null
   derived_from: [drivetrain_ceiling_mps, v_max_headroom_ratio]
   formula: v_max_from_ceiling
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner, jog_gate, params_audit]
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1・§6.4"
   note: "ゾーン OUT の上限。A1 の 2 本制約を満たせなければ 1 回だけ引き下げられる（P-5）"
   # speed_limit_strictness_rank（N-15・A13）: この行の値が「speed_limit 名の厳しさ順」
@@ -117,7 +117,7 @@
   value: null
   derived_from: [panel_clearance_m, brake_accel_mps2, brake_delay_s]
   formula: speed_from_braking_distance
-  consumers: [jog_gate, obstacle_limiter, params_audit]
+  consumers: [obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "AT_PANEL のジョグ。A2a は課さない（極低速軸。params.md §4.1）"
   speed_limit_strictness_rank: 3  # N-15・A13。v_max(43行目のコメント) 参照
@@ -157,7 +157,7 @@
   class: b
   status: given
   value: 1.2
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, jog_gate, params_audit]
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1"
   note: "角速度上限。逆算式が無いため given。暫定値（P1 fail-slow）。2026-09-04（WS-9T）実機で手動ジョグのその場旋回が遅い（0.6=34°/s、90°に約2.6s）との報告を受け 0.6→1.2 に引き上げ。w_align_max（d_floor 割れ時の追加絞り）は 0.3 のまま据え置き"
 
@@ -170,32 +170,50 @@
   spec_ref: "DetailedDesign-names.md §7.1"
   note: "d_floor を割っている間の角速度上限（safety L3）。w_max より小さい暫定値"
 
+- name: v_jog_max
+  unit: m/s
+  class: b
+  status: given
+  value: 0.55
+  consumers: [jog_gate, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1"
+  note: "手動ジョグの前進上限。jog_gate が /cmd_vel_manual_raw の比率（-1〜1）に掛ける。値は変更前の高速プリセットの実速度 0.55 m/s を維持（W-07 で新設）。根拠は speed_preset_high から引き継ぐ: (1) 2026-09-02 実機で前進が速すぎ教示精度が不安との報告を受け 1.0 から下げた値。(2) 駆動系のフィードフォワード飽和点が約 0.71 m/s（config.h の k≈280 と PID_OUT_MAX=200 から逆算）で、超えると指令と実速度が乖離し /odom そのものが劣化する"
+
+- name: w_jog_max
+  unit: rad/s
+  class: b
+  status: given
+  value: 1.0
+  consumers: [jog_gate, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.1"
+  note: "手動ジョグの旋回上限。jog_gate が /cmd_vel_manual_raw の比率（-1〜1）に掛ける。値は変更前のその場旋回の最大 1.0 rad/s を維持（W-07 で新設。wn 最大 1.0 がそのまま rad/s になっていた）。w_max（1.2）以下"
+
 - name: speed_preset_low
   unit: ratio
   class: b
   status: given
-  value: 0.15
+  value: 0.27
   consumers: [web_ui]
   spec_ref: "DetailedDesign-names.md §7.1"
-  note: "# WAIVER(demo): W-07 — UI プリセット。**現状これがそのまま m/s になる**。2026-09-02 実機で前進が速すぎ教示精度が不安との報告を受け 0.3/0.6/1.0 から下げた。根拠: (1) 駆動系のフィードフォワード飽和点が約 0.71 m/s（config.h の k≈280 と PID_OUT_MAX=200 から逆算）で、超えると指令と実速度が乖離し /odom そのものが劣化する。(2) route_recorder の記録間隔は max(0.10m, v×0.1s) なので v≤0.6 なら距離ゲートが支配的で空間分解能 10cm が保たれる"
+  note: "UI プリセット。手動ジョグの上限（v_jog_max）に対する割合。0.27×0.55=0.1485 m/s で変更前の実速度 0.15 m/s を保つ（W-07 で割合に戻した）"
 
 - name: speed_preset_mid
-  unit: ratio
-  class: b
-  status: given
-  value: 0.30
-  consumers: [web_ui]
-  spec_ref: "DetailedDesign-names.md §7.1"
-  note: "# WAIVER(demo): W-07 — UI プリセット。**現状これがそのまま m/s になる**。2026-09-02 実機で前進が速すぎ教示精度が不安との報告を受け 0.3/0.6/1.0 から下げた。根拠: (1) 駆動系のフィードフォワード飽和点が約 0.71 m/s（config.h の k≈280 と PID_OUT_MAX=200 から逆算）で、超えると指令と実速度が乖離し /odom そのものが劣化する。(2) route_recorder の記録間隔は max(0.10m, v×0.1s) なので v≤0.6 なら距離ゲートが支配的で空間分解能 10cm が保たれる"
-
-- name: speed_preset_high
   unit: ratio
   class: b
   status: given
   value: 0.55
   consumers: [web_ui]
   spec_ref: "DetailedDesign-names.md §7.1"
-  note: "# WAIVER(demo): W-07 — UI プリセット。**現状これがそのまま m/s になる**。2026-09-02 実機で前進が速すぎ教示精度が不安との報告を受け 0.3/0.6/1.0 から下げた。根拠: (1) 駆動系のフィードフォワード飽和点が約 0.71 m/s（config.h の k≈280 と PID_OUT_MAX=200 から逆算）で、超えると指令と実速度が乖離し /odom そのものが劣化する。(2) route_recorder の記録間隔は max(0.10m, v×0.1s) なので v≤0.6 なら距離ゲートが支配的で空間分解能 10cm が保たれる"
+  note: "UI プリセット。手動ジョグの上限（v_jog_max）に対する割合。0.55×0.55=0.3025 m/s で変更前の実速度 0.30 m/s を保つ（W-07 で割合に戻した）"
+
+- name: speed_preset_high
+  unit: ratio
+  class: b
+  status: given
+  value: 1.0
+  consumers: [web_ui]
+  spec_ref: "DetailedDesign-names.md §7.1"
+  note: "UI プリセット。手動ジョグの上限（v_jog_max）に対する割合。高速は上限そのまま（1.0×0.55=0.55 m/s。W-07 で割合に戻した）"
 
 # =========================================================================
 # 7.2 距離（names §7.2・§7.5 / params §6.1〜§6.4）
@@ -210,7 +228,7 @@
   source: "実測（WP-MEAS-01）。前進 0.89 m/s から 3 本。巻尺 4.20/4.25/4.26 m で較正した積分値。制動距離 0.314〜0.336 m、実効減速度 1.18/1.19/1.26 m/s2 の最悪値。TARGET_RAMP_ACCEL_MPS2=1.5（config.h:69）に対し実測は約 2 割低い。記録: th_ws/data/brake_032431.csv, th_ws/data/brake_032737.csv"
   blocking: true
   blocking_from_stage: 0
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner, jog_gate]
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.2 / DetailedDesign-wp0.md WP-PARAM-01 §5"
   note: "最も多くを従属させる 1 つ（O-c1）。**これはランプ停止（/cmd_vel=0）の値**であり、非常停止の空走とは別物（空走は 2.74 m/s2＝約 14 倍短い。N-12）。**測ったのは前進 1 条件のみ。**後退は左右対称のクローラ駆動なので同等と推定したが未測定、場内速度域（v_slow）は未測定（2026-08-21 の判断）。積載時・傾斜での再測定も未計画"
 
@@ -759,7 +777,7 @@
   class: b
   status: given
   value: 1200
-  consumers: [jog_gate, state_manager]
+  consumers: [state_manager]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §4（A4）"
   note: "manual_joy_timeout(1.0s=1000ms) 以上（A4）"
 
@@ -768,7 +786,7 @@
   class: b
   status: given
   value: 1.0
-  consumers: [twist_mux, jog_gate, obstacle_limiter]
+  consumers: [twist_mux, obstacle_limiter]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-safety.md §3.2"
   note: "twist_mux.yaml の manual_joy.timeout と同一の値（1.0 s。safety.md §3.2 に明記）。registry から生成する"
 

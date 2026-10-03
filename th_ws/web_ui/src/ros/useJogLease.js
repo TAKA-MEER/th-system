@@ -43,8 +43,10 @@ const CMD_MS = 100
 // rampToward だけが stickGeometry.js へ移植され、**呼び出しが失われていた**
 // （本番から一度も呼ばれていなかった）。急発進は車輪を滑らせ、/odom は車輪速度
 // フィードバック由来なので教示精度そのものを損なう。
-const JOG_LIN_ACCEL = 1.0   // m/s^2
-const JOG_ANG_ACCEL = 4.0   // rad/s^2
+// W-07: ここを通る cmd は -1〜1 の比率なので、ランプの単位も比率/s
+// （前進 1.0/s ≒ 実速度 0.55 m/s²、旋回 4.0/s ≒ 実速度 4.0 rad/s²）。
+const JOG_LIN_ACCEL = 1.0   // 比率/s
+const JOG_ANG_ACCEL = 4.0   // 比率/s
 
 export function useJogLease(ros, held, cmd, enabled = true) {
   const leaseTopicRef = useRef(null)

@@ -5,9 +5,10 @@
 // th_safety/jog_gate_core.hpp（ROS2 非依存）に置き、このファイルは
 // ROS2 との配線（sub/pub）だけを行う（obstacle_limiter.cpp と同じ書き方）。
 //
-// /cmd_vel_manual_raw（WebUI が rosbridge 直に publish）を購読し、
+// /cmd_vel_manual_raw（WebUI が rosbridge 直に publish。-1〜1 の比率）を購読し、
 // /system/state の鮮度と attributes.yaml の jog 列・除外表で判定して、
-// 通すときだけ /cmd_vel_manual（twist_mux priority 30）へそのまま転送する。
+// 通すときだけ比率に手動ジョグ上限（v_jog_max / w_jog_max）を掛けて
+// /cmd_vel_manual（twist_mux priority 30）へ出す。
 // 通さないときは**何も publish しない**（沈黙）。ゼロを撃たない（J-1）。
 //
 // 入力駆動（/cmd_vel_manual_raw を受けたときだけ判定・転送。固定レートで撃たない）。
@@ -42,6 +43,14 @@ public:
         declare_parameter("state_stale_ms", 1500);
         state_stale_sec_ =
             get_parameter("state_stale_ms").as_int() / 1000.0;
+
+        // W-07: 手動ジョグ専用の上限（registry.yaml の v_jog_max / w_jog_max
+        // 由来。生成 yaml が配線されるまでは registry と同じ値＝変更前の
+        // 実速度を保つ既定値を置く）。
+        declare_parameter("v_jog_max", 0.55);
+        declare_parameter("w_jog_max", 1.0);
+        limits_.v_jog_max = get_parameter("v_jog_max").as_double();
+        limits_.w_jog_max = get_parameter("w_jog_max").as_double();
 
         // attributes.yaml のパス。テストではこのパラメータで差し替える
         // （詳細設計 §3.3。既定は th_state の share/config）。
@@ -80,19 +89,31 @@ public:
             });
 
         // 入力駆動。/cmd_vel_manual_raw を受けたときだけ判定して、通すとき
-        // だけ転送する。通さないときは何も publish しない（J-1・J-2）。
+        // だけ比率に上限を掛けて転送する。通さないときは何も publish しない（J-1・J-2）。
         sub_raw_ = create_subscription<geometry_msgs::msg::Twist>(
             "/cmd_vel_manual_raw", rclcpp::QoS(1).reliable(),
             [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
                 if (!jog_passes_now()) {
                     return;  // 沈黙。ゼロを撃たない（J-1）
                 }
-                // J-3: 速度の大きさは変えない（ゲートであってリミッタではない）
-                pub_manual_->publish(*msg);
+                // W-07: 入力は -1〜1 の比率。範囲外は ±1 に丸めて上限を掛ける
+                // （jog_apply_limits。大きな値を受けても上限を超えない）。
+                // linear.y/z・angular.x/y は UI が送らない（常に 0）ので写すだけ。
+                th_safety::JogRatio ratio;
+                ratio.vx_ratio = msg->linear.x;
+                ratio.wz_ratio = msg->angular.z;
+                const th_safety::JogCmd cmd =
+                    th_safety::jog_apply_limits(ratio, limits_);
+                geometry_msgs::msg::Twist out(*msg);
+                out.linear.x = cmd.vx;
+                out.angular.z = cmd.wz;
+                pub_manual_->publish(out);
             });
 
-        RCLCPP_INFO(get_logger(), "jog_gate 起動（state_stale_ms=%ld）",
-            static_cast<long>(get_parameter("state_stale_ms").as_int()));
+        RCLCPP_INFO(get_logger(),
+            "jog_gate 起動（state_stale_ms=%ld v_jog_max=%.3f w_jog_max=%.3f）",
+            static_cast<long>(get_parameter("state_stale_ms").as_int()),
+            limits_.v_jog_max, limits_.w_jog_max);
     }
 
 private:
@@ -126,6 +147,7 @@ private:
 
     // ── パラメータ ────────────────────────────────────────
     double state_stale_sec_ = 0.0;
+    th_safety::JogSpeedLimits limits_;
     th_safety::Attributes attrs_;
 
     // ── /system/state の最新値（コールバックが保持するだけ） ──

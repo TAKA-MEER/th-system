@@ -74,10 +74,36 @@ Attributes load_attributes_jog_lenient(const std::string& yaml_path);
 //   2. attrs[st.mode].jog != "denied"（is_drive は通す）
 //   3. (st.mode, st.state) が除外表に当たらない（SUMMON/WAIT_CLEAR）
 //
-// 戻り値 true = 通す（そのまま転送）、false = 沈黙する（publish しない）。
+// 戻り値 true = 通す（比率に上限を掛けて転送）、false = 沈黙する（publish しない）。
 // 不変条件 J-1（通さないときはゼロを撃たず沈黙する）の判定の本体。
 bool jog_passes(const JogGateStateView& st, const Attributes& attrs,
                 const JogGateParams& p);
+
+// ── 比率 → 実速度の換算（W-07） ────────────────────────────────
+// /cmd_vel_manual_raw は -1〜1 の比率（WebUI の stickToCmd の vn/wn に
+// 速度プリセットを掛けたもの。m/s・rad/s ではない）。jog_gate が
+// 手動ジョグ専用の上限（registry.yaml の v_jog_max / w_jog_max 由来）を
+// 掛けて /cmd_vel_manual へ出す（Spec-params §2「プリセットは上限に対する
+// 割合」・Spec-transit §4.2「換算は機体側」）。
+//
+// 範囲外の比率（|r| > 1）は ±1 に丸めてから掛ける。大きな値を受けても
+// 上限を超えない（安全側）。ROS2 非依存の純粋関数。
+struct JogSpeedLimits {
+  double v_jog_max = 0.0;  // 前進上限 [m/s]（registry: v_jog_max）
+  double w_jog_max = 0.0;  // 旋回上限 [rad/s]（registry: w_jog_max）
+};
+
+struct JogRatio {
+  double vx_ratio = 0.0;  // /cmd_vel_manual_raw の linear.x（-1〜1 のはず）
+  double wz_ratio = 0.0;  // /cmd_vel_manual_raw の angular.z（-1〜1 のはず）
+};
+
+struct JogCmd {
+  double vx = 0.0;  // /cmd_vel_manual の linear.x [m/s]
+  double wz = 0.0;  // /cmd_vel_manual の angular.z [rad/s]
+};
+
+JogCmd jog_apply_limits(const JogRatio& r, const JogSpeedLimits& lim);
 
 }  // namespace th_safety
 

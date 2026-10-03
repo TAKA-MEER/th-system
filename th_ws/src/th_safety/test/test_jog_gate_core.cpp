@@ -4,17 +4,23 @@
 // 対応する仕様（docs/plan/detailed/DetailedDesign-wp2.md `WP-SAFE-04` §7）:
 //   SilentWhenBlocked         : 不変条件 J-1（通さないときは沈黙＝publish 0）
 //   SilentWhenStateStale      : 不変条件 J-2（/system/state 途絶・未受信は沈黙）
-//   PassthroughUnchanged      : 不変条件 J-3（ゲートであってリミッタではない。
-//                                判定が通ったら速度を変えず転送）
+//   ScaledByLimits            : W-07（判定が通ったら比率に上限を掛けて転送。
+//                                旧 J-3「そのまま転送」からの仕様変更）
+//   ClampedToLimits           : W-07（範囲外の比率は ±1 に丸める。上限を超えない）
+//   NonFiniteBecomesZero      : W-07 受け入れ（NaN・±inf は 0 に倒す。素通しにしない）
 //   IsDrivePasses             : MANUAL / TEACH_MANUAL（is_drive）を通す
 //   WaitClearBlocked          : F-28（SUMMON / WAIT_CLEAR は塞ぐ）
 //   AllModesFromAttributes    : 18 モードを attributes.yaml から回す
 //
 // テスト名は設計書 §7 に固定（変更不能）。登録名（ctest）は
 // test_jog_gate_core（th_safety）。
+// （W-07 で PassthroughUnchanged を ScaledByLimits / ClampedToLimits に
+// 置き換えた。設計書 §7 も同時に更新）
 // ============================================================
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -93,19 +99,79 @@ TEST(JogGateCore, SilentWhenStateStale) {
   EXPECT_TRUE(jog_passes(fresh_state("FOLLOW", "RUN", 1.5), a, p));
 }
 
-// ── J-3: 判定が通ったら速度を変えずそのまま転送 ────────────────
-// 判定コアは速度の値を一切持たない（ゲートであってリミッタではない）。
-// 通ったら true（ノードが *msg を変更せず publish する）。値そのものの
-// 不変性はノード側の `pub_manual_->publish(*msg)`（コピー転送）で担保される。
-TEST(JogGateCore, PassthroughUnchanged) {
+// ── W-07: 判定が通ったら比率に上限を掛けて転送 ────────────────
+// 入力は -1〜1 の比率。linear.x × v_jog_max、angular.z × w_jog_max。
+// 旧 J-3「速度の大きさは変えない（そのまま転送）」からの仕様変更。
+TEST(JogGateCore, ScaledByLimits) {
+  JogSpeedLimits lim;
+  lim.v_jog_max = 0.55;
+  lim.w_jog_max = 1.0;
+
+  // 比率 1.0 → 上限そのまま
+  JogRatio full{1.0, 1.0};
+  const JogCmd full_out = jog_apply_limits(full, lim);
+  EXPECT_DOUBLE_EQ(full_out.vx, 0.55);
+  EXPECT_DOUBLE_EQ(full_out.wz, 1.0);
+
+  // 比率 0.5 → 上限の半分（前進・旋回の両方）
+  JogRatio half{0.5, -0.5};
+  const JogCmd half_out = jog_apply_limits(half, lim);
+  EXPECT_DOUBLE_EQ(half_out.vx, 0.275);
+  EXPECT_DOUBLE_EQ(half_out.wz, -0.5);
+
+  // ゼロ → ゼロ（離したら出す明示ゼロがそのまま 0 になる）
+  JogRatio zero{0.0, 0.0};
+  const JogCmd zero_out = jog_apply_limits(zero, lim);
+  EXPECT_DOUBLE_EQ(zero_out.vx, 0.0);
+  EXPECT_DOUBLE_EQ(zero_out.wz, 0.0);
+
+  // 判定コア自体は速度を見ない（ゲートの開閉だけが仕事）。
+  // 通す／通さないの判定は jog_passes() が担う。
   Attributes a = real_attributes();
   const JogGateParams p = params(1.5);
-
-  // allowed かつ新鮮なら通る。速度値はコアでは見ない。
   EXPECT_TRUE(jog_passes(fresh_state("FOLLOW", "RUN"), a, p));
   EXPECT_TRUE(jog_passes(fresh_state("MANUAL", "RUN"), a, p));
-  // 速度の大きさはコアに含まれない＝それが証拠
-  // （J-3 は「クランプしない」。リミッタは obstacle_limiter の仕事）。
+}
+
+// ── W-07: 範囲外の比率は ±1 に丸める（上限を超えない） ─────────
+TEST(JogGateCore, ClampedToLimits) {
+  JogSpeedLimits lim;
+  lim.v_jog_max = 0.55;
+  lim.w_jog_max = 1.0;
+
+  // 2.0（範囲外）→ 上限×1.0 に丸まる。上限を超えない
+  JogRatio over{2.0, 2.0};
+  const JogCmd over_out = jog_apply_limits(over, lim);
+  EXPECT_DOUBLE_EQ(over_out.vx, 0.55);
+  EXPECT_DOUBLE_EQ(over_out.wz, 1.0);
+
+  // 負の範囲外も対称に丸まる
+  JogRatio under{-3.0, -1.5};
+  const JogCmd under_out = jog_apply_limits(under, lim);
+  EXPECT_DOUBLE_EQ(under_out.vx, -0.55);
+  EXPECT_DOUBLE_EQ(under_out.wz, -1.0);
+}
+
+// ── W-07 受け入れ: 非有限（NaN・±inf）は 0 に倒す ─────────────
+// NaN は > も < も偽なので、明示的に弾かないと上限掛けが NaN のまま
+// /cmd_vel_manual に載る。±inf は ±1 丸めでなく 0 に倒す（壊れた入力の
+// 兆候なので上限いっぱいで走らせない）。
+TEST(JogGateCore, NonFiniteBecomesZero) {
+  JogSpeedLimits lim;
+  lim.v_jog_max = 0.55;
+  lim.w_jog_max = 1.0;
+
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  JogRatio nan_in{nan, nan};
+  const JogCmd nan_out = jog_apply_limits(nan_in, lim);
+  EXPECT_DOUBLE_EQ(nan_out.vx, 0.0);
+  EXPECT_DOUBLE_EQ(nan_out.wz, 0.0);
+
+  JogRatio inf_in{std::numeric_limits<double>::infinity(),
+                  -std::numeric_limits<double>::infinity()};
+  const JogCmd inf_out = jog_apply_limits(inf_in, lim);
+  EXPECT_DOUBLE_EQ(inf_out.vx, 0.0);
+  EXPECT_DOUBLE_EQ(inf_out.wz, 0.0);
 }
 
 // ── is_drive（MANUAL / TEACH_MANUAL）は通す（FMEA③を避ける） ──
