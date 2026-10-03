@@ -492,6 +492,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `v_check` | m/s | (b) | `OPCHECK` のモーター確認 |
 | `v_calib` | m/s | (b) | `CALIB` の自律走行・旋回 |
 | `w_max` | rad/s | (b) | 角速度上限 |
+| **`v_jog_max`** | m/s | (b) | **手動ジョグの前進上限**。`jog_gate` が `/cmd_vel_manual_raw` の比率に掛ける（W-07） |
+| **`w_jog_max`** | rad/s | (b) | **手動ジョグの旋回上限**。`jog_gate` が `/cmd_vel_manual_raw` の比率に掛ける（W-07） |
 | **`w_align_max`** | rad/s | (b) | **`d_floor` を割っている間の角速度上限**（safety L3） |
 | `speed_preset_low` ／ `_mid` ／ `_high` | 比率 | given | UI プリセット。**上限に対する割合**。`consumers: [web_ui]` |
 | `drivetrain_ceiling_mps` | m/s | (b) | 出力上限 ÷ フィードフォワード係数 |
