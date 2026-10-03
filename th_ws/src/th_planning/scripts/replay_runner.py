@@ -585,16 +585,18 @@ class ReplayRunner(Node):
     def _start_search(self, route_id: str, kind: str, center, radius):
         """探索スレッドを起こす（kind: initial／widen／global）。
 
-        ROS 側で読む入力（死角）はここでスナップショットし、重い探索本体は
+        ROS 側で読む入力（死角・確度閾値）はここでスナップショットし、重い探索本体は
         別スレッド（_run_search）で走らせる。結果は _poll_search が拾う。
         1 回の探索につき reload は最良候補の 1 回だけ（WS-9S の対策を保つ）。
         """
         self._search_gen += 1
         gen = self._search_gen
         blind = list(self.get_parameter('blind_angle_ranges').value or [])
+        thresholds = (self._localize_match_low, self._localize_margin_low,
+                      self._localize_margin_min)
         t = threading.Thread(
             target=self._run_search,
-            args=(gen, route_id, kind, center, radius, blind),
+            args=(gen, route_id, kind, center, radius, blind, thresholds),
             daemon=True)
         t.start()
         self.get_logger().info(
@@ -630,46 +632,76 @@ class ReplayRunner(Node):
         self._start_search(route_id, kind=kind, center=center, radius=radius)
         return True
 
-    def _run_search(self, gen: int, route_id: str, kind: str, center, radius, blind):
-        """探索スレッド本体（executor を止めない）。結果だけを置いて終わる。"""
+    def _run_search(self, gen: int, route_id: str, kind: str, center, radius,
+                    blind, thresholds):
+        """探索スレッド本体（executor を止めない）。結果だけを置いて終わる。
+
+        reload（/map_session/open の同期呼び出し）もここで行う。call_and_wait
+        は worker スレッド上でポーリングする設計（service_call.py）で、ROS
+        コールバック（_control_timer 等）の中から呼ぶと、同じコールバック
+        グループの応答とデッドロックするため。
+        """
+        match_low, margin_low, margin_min = thresholds
         pgm_base = self._route_pgm_base(route_id)
         if pgm_base is None:
-            result, base_pose, laser_pose = None, None, None
-        else:
-            try:
-                fld = load_pgm_map(pgm_base + '.pgm', pgm_base + '.yaml')
-            except Exception as e:
-                self.get_logger().warn(f'localize 探索: 地図を読めない: {e}')
-                fld = None
-            scan = self._wait_scan()
-            if fld is None or scan is None:
-                if scan is None:
-                    self.get_logger().warn('localize 探索: /scan が来ないため探索できない')
-                result, base_pose, laser_pose = None, None, None
-            else:
-                off = self._laser_to_base_offset(scan.header.frame_id)
-                try:
-                    result = localize_search(
-                        fld, list(scan.ranges), scan.angle_min,
-                        scan.angle_increment, blind,
-                        center=center, radius=radius,
-                        timeout_s=_LOCALIZE_SEARCH_TIMEOUT_S)
-                except Exception as e:
-                    self.get_logger().warn(f'localize 探索: 探索が例外で終わった: {e}')
-                    result = None
-                if result is not None and result.timed_out:
-                    self.get_logger().warn(
-                        f'localize 探索: 時間切れ（{result.elapsed_s:.1f}s）')
-                if result is not None and result.best is not None:
-                    laser_pose = (result.best.x, result.best.y, result.best.yaw)
-                    base_pose = _laser_pose_to_base(laser_pose, off)
-                else:
-                    base_pose, laser_pose = None, None
+            self._store_search_result(
+                gen, kind, route_id, 'failed', 0.0, 0.0, None, None, None)
+            return
+        try:
+            fld = load_pgm_map(pgm_base + '.pgm', pgm_base + '.yaml')
+        except Exception as e:
+            self.get_logger().warn(f'localize 探索: 地図を読めない: {e}')
+            fld = None
+        scan = self._wait_scan()
+        if fld is None or scan is None:
+            if scan is None:
+                self.get_logger().warn('localize 探索: /scan が来ないため探索できない')
+            self._store_search_result(
+                gen, kind, route_id, 'failed', 0.0, 0.0, None, None, None)
+            return
+        off = self._laser_to_base_offset(scan.header.frame_id)
+        try:
+            result = localize_search(
+                fld, list(scan.ranges), scan.angle_min,
+                scan.angle_increment, blind,
+                center=center, radius=radius,
+                timeout_s=_LOCALIZE_SEARCH_TIMEOUT_S)
+        except Exception as e:
+            self.get_logger().warn(f'localize 探索: 探索が例外で終わった: {e}')
+            result = None
+        if result is None:
+            self._store_search_result(
+                gen, kind, route_id, 'failed', 0.0, 0.0, None, None, None)
+            return
+        if result.timed_out:
+            self.get_logger().warn(
+                f'localize 探索: 時間切れ（{result.elapsed_s:.1f}s）')
+        s, m = float(result.s), float(result.m)
+        quality = judge_localize(s, m, match_low, margin_low, margin_min)
+        self.get_logger().info(
+            f'localize 探索結果 kind={kind} s={s:.3f} m={m:.3f} → {quality}')
+        base_pose, laser_pose, reload_err = None, None, None
+        if quality in ('high', 'low_margin') and result.best is not None:
+            laser_pose = (result.best.x, result.best.y, result.best.yaw)
+            base_pose = _laser_pose_to_base(laser_pose, off)
+            # 1 回の探索につき reload は最良候補の 1 回だけ（WS-9S を保つ）。
+            reload_err = self._reload_map(route_id, init_pose=base_pose)
+            if reload_err is not None:
+                self.get_logger().error(
+                    f'地図を読み直せなかったため LOCALIZE から進めない: '
+                    f'id={route_id} ({reload_err})')
+        self._store_search_result(
+            gen, kind, route_id, quality, s, m, base_pose, laser_pose,
+            reload_err)
+
+    def _store_search_result(self, gen, kind, route_id, quality, s, m,
+                             base_pose, laser_pose, reload_err):
         with self._search_lock:
             # 新しい load_route が来ていたら世代が進んでいるので置かない
             # （古い探索が新しい結果を消さない）。
             if gen == self._search_gen:
-                self._search_result = (gen, kind, route_id, result, base_pose, laser_pose)
+                self._search_result = (gen, kind, route_id, quality, s, m,
+                                       base_pose, laser_pose, reload_err)
 
     def _wait_scan(self):
         """最新の /scan を待つ（_LOCALIZE_SCAN_WAIT_S まで）。無ければ None。"""
@@ -697,59 +729,44 @@ class ReplayRunner(Node):
         return (t.x, t.y, _yaw_from_quat(tf.transform.rotation))
 
     def _poll_search(self):
-        """探索スレッドの結果を拾う（_control_timer から毎 tick 呼ぶ）。"""
+        """探索スレッドの結果を拾う（_control_timer から毎 tick 呼ぶ）。
+
+        ここでは重い呼び出し（reload 等）をしない。TF 待ちの開始
+        （_localize_pending）は代入だけなので安全。
+        """
         with self._search_lock:
             item = self._search_result
             self._search_result = None
         if item is None:
             return
-        gen, kind, route_id, result, base_pose, laser_pose = item
+        gen, kind, route_id, quality, s, m, base_pose, laser_pose, reload_err = item
         if gen != self._search_gen:
             return
         if laser_pose is not None:
             self._last_best_laser = laser_pose
-        if result is None:
-            # 地図・スキャン・探索のいずれかが用意できなかった。不成立扱いで留まる。
-            self._localize_quality = 'failed'
-            self._localize_score = 0.0
-            self._localize_margin = 0.0
-            return
-        s, m = float(result.s), float(result.m)
-        quality = judge_localize(
-            s, m, self._localize_match_low, self._localize_margin_low,
-            self._localize_margin_min)
-        self.get_logger().info(
-            f'localize 探索結果 kind={kind} s={s:.3f} m={m:.3f} → {quality}')
         if quality in ('high', 'low_margin'):
-            if base_pose is None:
-                self.get_logger().warn(
-                    'localize 探索: 成立したが姿勢が無いため LOCALIZE に留まる')
+            if reload_err is not None or base_pose is None:
                 self._localize_quality = 'failed'
+                self._localize_score = s
+                self._localize_margin = m
                 return
             self._localize_quality = quality
             self._localize_score = s
             self._localize_margin = m
-            # 1 回の探索につき reload は最良候補の 1 回だけ（WS-9S を保つ）。
-            err = self._reload_map(route_id, init_pose=base_pose)
-            if err is None:
-                self._localize_pending = True
-                self._localize_deadline = (
-                    self.get_clock().now().nanoseconds / 1e9
-                    + self._localize_wait_s)
-                self._localize_pending_arg = json.dumps(
-                    {'score': s, 'margin': m})
-                self.get_logger().info(
-                    f'localize 探索: 最良候補を初期姿勢に reload '
-                    f'({base_pose[0]:.2f}, {base_pose[1]:.2f}). '
-                    f'map→base_link TF を最大 {self._localize_wait_s:.0f}s 待つ')
-            else:
-                self._localize_quality = 'failed'
-                self.get_logger().error(
-                    f'地図を読み直せなかったため LOCALIZE から進めない: '
-                    f'id={route_id} ({err})')
+            self._localize_pending = True
+            self._localize_deadline = (
+                self.get_clock().now().nanoseconds / 1e9
+                + self._localize_wait_s)
+            self._localize_pending_arg = json.dumps(
+                {'score': s, 'margin': m})
+            self.get_logger().info(
+                f'localize 探索: 最良候補を初期姿勢に reload 済み '
+                f'({base_pose[0]:.2f}, {base_pose[1]:.2f}). '
+                f'map→base_link TF を最大 {self._localize_wait_s:.0f}s 待つ')
         elif quality == 'low' and kind == 'initial':
             # s 不足 → evt.localize_low → FSM が widen_search を返す。
             # widen／global の low はここで止める（failed に落とす）。
+            self._localize_quality = 'searching'
             self._localize_score = s
             self._localize_margin = m
             self._emit_event(
