@@ -418,3 +418,114 @@ def test_params_override_and_unknown_param_rejected():
     except ValueError:
         return
     raise AssertionError("未知のパラメータを受け付けた")
+
+
+# ------------------------------------------------------------
+# 判定境界（W-01 P2。judge_localize）
+# ------------------------------------------------------------
+def test_judge_boundaries():
+    """成立／low／failed／low_margin の境界。s 不足を先に見る。"""
+    d = lc.LOCALIZE_DEFAULTS
+    ml, mlo, mmi = d["localize_match_low"], d["localize_margin_low"], d["localize_margin_min"]
+    assert lc.judge_localize(ml, mlo) == "high"
+    assert lc.judge_localize(1.0, 1.0) == "high"
+    # s 不足 → widen の引き金（m が良くても low）
+    assert lc.judge_localize(ml - 1e-9, 1.0) == "low"
+    assert lc.judge_localize(0.0, 0.0) == "low"
+    # s は足りるが m が下限未満 → 不成立（留まる）
+    assert lc.judge_localize(ml, mmi - 1e-9) == "failed"
+    assert lc.judge_localize(ml, 0.0) == "failed"
+    # 警告帯 → 成立だが low_margin（READY へは進む）
+    assert lc.judge_localize(ml, mmi) == "low_margin"
+    assert lc.judge_localize(ml, mlo - 1e-9) == "low_margin"
+    assert lc.judge_localize(ml, mlo) == "high"
+    # 変異チェック用: 判定の順序（s 不足と m 不足が同時なら low）
+    assert lc.judge_localize(0.0, 0.0) == "low"
+
+
+def test_judge_on_real_search_results():
+    """実探索の s・m を judge に通すと、L 字の角は high／low_margin 側・
+    対称部屋は failed／low_margin 側（取り違えの検知が効く）。"""
+    occ, fld = _l()
+    res = _search(fld, raycast(occ, 12.0, 2.0, 1.7, 40.0))
+    assert lc.judge_localize(res.s, res.m) in ("high", "low_margin"), (res.s, res.m)
+    occ_s = make_symmetric_room()
+    res_s = _search(_make(occ_s), raycast(occ_s, 3.0, 3.0, 0.4, 40.0))
+    assert lc.judge_localize(res_s.s, res_s.m) in ("failed", "low_margin"), (
+        f"対称部屋で high になった: s={res_s.s} m={res_s.m}")
+
+
+# ------------------------------------------------------------
+# pgm／yaml 読み込み（W-01 P2。load_pgm_map）
+# ------------------------------------------------------------
+def _write_test_pgm(tmp_path):
+    """6x5 m の部屋＋中央の間仕切り壁の pgm＋yaml を書く（解像度 0.05・原点 (0, 0)）。
+
+    解像度はこのファイルの RES と同じにしてある（模擬スキャンの raycast と
+    共有できる）。間仕切り（x=4.0 の壁・y 1.0〜3.0）が 180° 対称を崩すため、
+    部屋の中の姿勢は別の場所と区別がつき m が出る。真値の目安は (2.0, 2.5, 0.3)。
+    """
+    w, h = 120, 100
+    img = np.full((h, w), 254, dtype=np.uint8)
+    img[0, :] = 0
+    img[h - 1, :] = 0
+    img[:, 0] = 0
+    img[:, w - 1] = 0
+    img[20:61, 80] = 0
+    pgm = tmp_path / "t.pgm"
+    with open(pgm, "wb") as f:
+        f.write(b"P5\n# test\n%d %d\n255\n" % (w, h))
+        f.write(img.tobytes())
+    yaml = tmp_path / "t.yaml"
+    yaml.write_text(
+        "image: t.pgm\nresolution: 0.050000\n"
+        "origin: [0.000000, 0.000000, 0.000000]\n"
+        "negate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.196\n",
+        encoding="utf-8")
+    return str(pgm), str(yaml)
+
+
+def _pgm_occ():
+    """_write_test_pgm と同じ配置の占有格子（模擬スキャン用。RES=0.05・原点 (0, 0)）。"""
+    occ = np.zeros((100, 120), dtype=bool)
+    occ[0, :] = True
+    occ[99, :] = True
+    occ[:, 0] = True
+    occ[:, 119] = True
+    occ[20:61, 80] = True
+    return occ
+
+
+def test_load_pgm_map_builds_field(tmp_path):
+    pgm, yaml = _write_test_pgm(tmp_path)
+    fld = lc.load_pgm_map(pgm, yaml)
+    assert fld.width == 120 and fld.height == 100
+    assert fld.res == abs(0.05) and fld.ox == 0.0 and fld.oy == 0.0
+    # 外周壁と間仕切りが占有、部屋の中央が free
+    assert fld.dt.shape == (100, 120)
+    assert not fld.free[0, :].any() and not fld.free[:, 0].any()
+    assert not fld.free[40, 80]
+    assert fld.free[50, 40]
+
+
+def test_load_pgm_map_missing_files_raise(tmp_path):
+    pgm, yaml = _write_test_pgm(tmp_path)
+    for bad_pgm, bad_yaml in ((str(tmp_path / "no.pgm"), yaml),
+                              (pgm, str(tmp_path / "no.yaml"))):
+        try:
+            lc.load_pgm_map(bad_pgm, bad_yaml)
+        except (OSError, ValueError):
+            continue
+        raise AssertionError(f"無い地図を読めた: {bad_pgm} {bad_yaml}")
+
+
+def test_load_pgm_map_search_finds_wall_pose(tmp_path):
+    """読み込んだ地図で探索し、部屋の中の真値が最良になる（読み→探索の通し）。"""
+    pgm, yaml = _write_test_pgm(tmp_path)
+    fld = lc.load_pgm_map(pgm, yaml)
+    # 真値 (2.0, 2.5, 0.3) からの全周スキャン（N_BEAMS 本・ノイズなし）
+    ranges = raycast(_pgm_occ(), 2.0, 2.5, 0.3, 40.0)
+    res = lc.search(fld, ranges, ANGLE_MIN, ANGLE_INC)
+    assert res.best is not None
+    assert math.hypot(res.best.x - 2.0, res.best.y - 2.5) <= 0.5, res.best
+    assert lc.judge_localize(res.s, res.m) in ("high", "low_margin"), (res.s, res.m)
