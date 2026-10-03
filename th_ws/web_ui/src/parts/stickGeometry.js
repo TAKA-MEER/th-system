@@ -43,11 +43,13 @@ export function stickToCmd(dx, dy, len) {
   return { vn: -m, wn: 0, label: 'reverse' }
 }
 
-// 正規化コマンド { vn, wn } を速度プリセット比率で実指令 { vx, wz } に換算する。
+// 正規化コマンド { vn, wn } を速度プリセット比率で**比率指令 { vx, wz }** に換算する。
+// 出力は m/s・rad/s ではなく -1〜1 の比率であり、実速度への換算（上限掛け）は
+// 機体側の jog_gate（v_jog_max / w_jog_max）が持つ（W-07。画面に m/s の上限を置かない）。
 // WS-9T: **その場旋回（前進成分ゼロ・旋回成分あり）は speedPct を掛けない。**
 // 教示は前進を低速にしたいが、曲がり角のその場旋回まで一緒に遅くなると 90° 回るのに
 // 10 秒かかって使い物にならない（2026-09-04 実機報告）。その場旋回のときは wn（倒し量）
-// をそのまま比率として送り、実 rad/s 上限は下流の obstacle_limiter（w_max）が握る。
+// をそのまま比率として送り、実 rad/s 上限は下流の jog_gate（w_jog_max）が握る。
 // 前進・後退・緩旋回（arc / rev_arc、前進しながら曲がる）は従来どおり speedPct で絞る。
 // stickToCmd() は設計で凍結なので触らず、換算だけをここに足す。
 export function scaleJogCmd({ vn, wn }, speedPct) {

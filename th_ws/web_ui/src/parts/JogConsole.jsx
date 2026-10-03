@@ -6,9 +6,11 @@
 // It owns the drag-state (held / raw vn,wn) and the speed preset, scales the
 // normalized command by the preset (vx = vn * speedPct, wz = wn * speedPct),
 // and drives ros/useJogLease.js -- the only place anything is published.
-// Because `scaled` is recomputed on every render and useJogLease reads the
-// latest cmd from a ref each tick, changing the preset (or slider) while a
-// finger is still on the stick takes effect from the next 10 Hz tick.
+// The scaled { vx, wz } is a -1..1 ratio, not m/s: the physical ceiling lives
+// in jog_gate on the robot (v_jog_max / w_jog_max. W-07). Because `scaled` is
+// recomputed on every render and useJogLease reads the latest cmd from a ref
+// each tick, changing the preset (or slider) while a finger is still on the
+// stick takes effect from the next 10 Hz tick.
 //
 // It never publishes directly; all it knows about the wire is that
 // useJogLease exists. This keeps "送出を 1 箇所に閉じる" (§4.2).
@@ -35,8 +37,8 @@ export default function JogConsole({ ros, disabled = false, keyboard = false }) 
   const effectiveHeld = held || kbd.held
   const effectiveRaw = held ? rawCmd : kbd.cmd
 
-  // Scaled to "the chosen speed as a ratio of the (unknown-to-us) ceiling";
-  // obstacle_limiter holds the actual m/s rad/s ceilings (WP-UI-03 §3.3).
+  // Scaled to "the chosen speed as a ratio of the jog ceiling";
+  // jog_gate holds the actual m/s rad/s ceilings (WP-UI-03 §3.3 / W-07).
   // WS-9T: scaleJogCmd leaves a pure in-place turn unscaled by speedPct so the
   // low forward preset doesn't also slow cornering (stickGeometry.js).
   const scaled = scaleJogCmd(effectiveRaw, speedPct)

@@ -3,7 +3,7 @@ test_jog_gate_node.py
 ======================
 DetailedDesign-wp2.md WP-SAFE-04 §7 のノード統合テスト。
 
-3 本のテスト:
+4 本のテスト:
 
 `test_silent_when_state_stale`（**J-1 の直接検証**）:
   /system/state が古いあいだ /cmd_vel_manual_raw を送り続けても、
@@ -19,10 +19,15 @@ DetailedDesign-wp2.md WP-SAFE-04 §7 のノード統合テスト。
   （priority 30 の manual が 0.5 s でタイムアウトしてしまうため）
   **テストが緑のまま通った**（2026-09-01 に変異テストで実測）。
 
-`test_forwards_unchanged_when_allowed`（J-3）:
-  通す場面（MANUAL = is_drive）で、速度の値を変えずそのまま
-  /cmd_vel_manual へ転送すること。初版はこれを検証しておらず、
-  転送値をゼロに潰す変異が**素通りした**。
+`test_forwards_scaled_when_allowed`（W-07）:
+  通す場面（MANUAL = is_drive）で、/cmd_vel_manual_raw の比率に上限を掛けて
+  /cmd_vel_manual へ出すこと。旧 J-3「値を変えずそのまま転送」からの仕様変更
+  （W-07。旧 test_forwards_unchanged_when_allowed を置き換えた）。
+
+`test_ratio_scaling`（W-07。ブリーフ §4 のノード試験）:
+  jog_gate を起動し /cmd_vel_manual_raw に比率 1.0／0.5／2.0（範囲外）を流して、
+  /cmd_vel_manual が 上限×1.0／上限×0.5／上限×1.0 になることを見る（前進・旋回の両方）。
+  範囲外が上限を超えたら赤（丸めの検証）。
 
 J-1 の意味するところ:
   /cmd_vel_manual は twist_mux の priority 30（最高）。もし jog_gate が IDLE で
@@ -98,7 +103,11 @@ def generate_test_description():
         output='screen',
     )
 
-    jog_gate_params = [{'state_stale_ms': 1500}]
+    jog_gate_params = [{'state_stale_ms': 1500,
+                        # W-07: 比率に掛ける上限。registry.yaml と同じ値
+                        # （v_jog_max=0.55 / w_jog_max=1.0）を明示する
+                        # （C++ の既定値への依存を断つ）。
+                        'v_jog_max': 0.55, 'w_jog_max': 1.0}]
     if attrs_path:
         jog_gate_params.append({'attributes_yaml_path': attrs_path})
 
@@ -240,16 +249,17 @@ class TestJogGateNode(unittest.TestCase):
                 f'twist_mux は priority 20/10 を永久に選ばない（J-1 の理由そのもの）')
 
     # ════════════════════════════════════════════════════════
-    # J-3: 通す場面では速度を変えずそのまま転送する
+    # W-07: 通す場面では比率に上限を掛けて転送する
+    # （旧 J-3「そのまま転送」からの仕様変更）
     # ════════════════════════════════════════════════════════
-    def test_forwards_unchanged_when_allowed(self):
+    def test_forwards_scaled_when_allowed(self):
         # MANUAL は attributes.yaml で jog: is_drive → 通す
         self._state.mode = 'MANUAL'
         self._state.state = 'RUN'
         self._pump(0.5)
         self._manual.clear()
 
-        raw = self._twist(0.37, -0.21)
+        raw = self._twist(0.4, -0.2)
         self._pump(1.0, raw=raw)
 
         self.assertTrue(
@@ -258,10 +268,46 @@ class TestJogGateNode(unittest.TestCase):
             'is_drive を denied と同じに扱うと MANUAL で走れなくなる（FMEA ③）')
         out = self._manual[-1]
         self.assertAlmostEqual(
-            out.linear.x, 0.37, places=6,
-            msg=f'linear.x が変わっている: {out.linear.x!r}。'
-                f'jog_gate はゲートであってリミッタではない（J-3）。'
-                f'クランプは obstacle_limiter の仕事')
+            out.linear.x, 0.4 * 0.55, places=6,
+            msg=f'linear.x が 比率×v_jog_max でない: {out.linear.x!r}。'
+                f'W-07: jog_gate が比率に上限を掛ける')
         self.assertAlmostEqual(
-            out.angular.z, -0.21, places=6,
-            msg=f'angular.z が変わっている: {out.angular.z!r}（J-3）')
+            out.angular.z, -0.2 * 1.0, places=6,
+            msg=f'angular.z が 比率×w_jog_max でない: {out.angular.z!r}（W-07）')
+
+    # ════════════════════════════════════════════════════════
+    # W-07: 比率 1.0／0.5／2.0（範囲外）→ 上限×1.0／×0.5／×1.0
+    # 前進・旋回の両方。本番の jog_gate ノードを起動して振る舞いを見る
+    # （launch_testing。文字列検査ではない）。
+    # ════════════════════════════════════════════════════════
+    def test_ratio_scaling(self):
+        # MANUAL は attributes.yaml で jog: is_drive → 通す
+        self._state.mode = 'MANUAL'
+        self._state.state = 'RUN'
+        self._pump(0.5)
+
+        cases = [
+            # (raw_vx, raw_wz, exp_vx, exp_wz)
+            (1.0, 0.0, 0.55, 0.0),     # 前進の比率 1.0 → 上限そのまま
+            (0.5, 0.0, 0.275, 0.0),    # 前進の比率 0.5 → 上限の半分
+            (2.0, 0.0, 0.55, 0.0),     # 前進の範囲外 → ±1 に丸めて上限
+            (0.0, 1.0, 0.0, 1.0),      # 旋回の比率 1.0 → 上限そのまま
+            (0.0, 0.5, 0.0, 0.5),      # 旋回の比率 0.5 → 上限の半分
+            (0.0, 2.0, 0.0, 1.0),      # 旋回の範囲外 → ±1 に丸めて上限
+            (0.0, -2.0, 0.0, -1.0),   # 負の範囲外も対称に丸まる
+        ]
+        for raw_vx, raw_wz, exp_vx, exp_wz in cases:
+            self._manual.clear()
+            self._pump(0.6, raw=self._twist(raw_vx, raw_wz))
+            self.assertTrue(
+                self._manual,
+                f'raw=({raw_vx}, {raw_wz}) なのに /cmd_vel_manual に 1 通も出ていない')
+            out = self._manual[-1]
+            self.assertAlmostEqual(
+                out.linear.x, exp_vx, places=2,
+                msg=f'raw_vx={raw_vx} → linear.x={out.linear.x:.3f}。'
+                    f'期待 {exp_vx}（比率×v_jog_max=0.55。範囲外は丸め）')
+            self.assertAlmostEqual(
+                out.angular.z, exp_wz, places=2,
+                msg=f'raw_wz={raw_wz} → angular.z={out.angular.z:.3f}。'
+                    f'期待 {exp_wz}（比率×w_jog_max=1.0。範囲外は丸め）')

@@ -78,4 +78,22 @@ Attributes load_attributes_jog_lenient(const std::string& yaml_path) {
   }
 }
 
+namespace {
+
+// -1〜1 に丸める（範囲外の比率を受けても上限を超えさせない。W-07）。
+double clamp_ratio(double r) {
+  if (r > 1.0) return 1.0;
+  if (r < -1.0) return -1.0;
+  return r;
+}
+
+}  // namespace
+
+JogCmd jog_apply_limits(const JogRatio& r, const JogSpeedLimits& lim) {
+  JogCmd out;
+  out.vx = clamp_ratio(r.vx_ratio) * lim.v_jog_max;
+  out.wz = clamp_ratio(r.wz_ratio) * lim.w_jog_max;
+  return out;
+}
+
 }  // namespace th_safety
