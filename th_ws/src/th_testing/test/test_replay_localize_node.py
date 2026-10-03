@@ -198,6 +198,11 @@ class TestReplayLocalizeNode(unittest.TestCase):
         self._odom_timer = self.node.create_timer(0.05, self._publish_odom)
 
         self._spin(0.5)
+        # /system/event は transient ではないため、discovery が済む前に出た
+        # 単発イベントは二度と届かない。先に /route/status の到着（ノード→試験の
+        # 疎通の証拠）を待ってから load_route を送る（同じ discovery で event 側も
+        # 繋がる）。待たずに送ると、low の 1 発を取りこぼして 25s 空振りする。
+        self._wait_status(lambda s: True, timeout=10.0, what='最初の /route/status')
         self._send_load_route()
         self._spin(1.0)
 
