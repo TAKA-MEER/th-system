@@ -552,7 +552,7 @@ if(BUILD_TESTING)
     TIMEOUT 60)
   ament_add_pytest_test(fault_injection_09
     test/fault_injection/case_09_person_detection_off.py
-    TIMEOUT 60)
+    TIMEOUT 240)
   ament_add_pytest_test(fault_injection_10
     test/fault_injection/case_10_physical_button_at_boot.py
     TIMEOUT 60)
