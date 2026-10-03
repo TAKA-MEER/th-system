@@ -682,9 +682,18 @@ class SlamControl(Node):
 
         localization モードでは serialize が書き出さないので保存は必ず
         mapping モードで行う（2026-09-03 実機確認）。
+        W-01 P2: 粗探索に使う占有格子（pgm＋yaml）も同じ base 名で併存させる
+        （_cb_save_map の SaveMap 呼び出しと同じ流儀）。SaveMap が失敗しても
+        posegraph の保存は成功扱いのまま（警告ログのみ。再生は始点決め打ちの
+        'unknown' 経路として動く）。
         保存成功後に _set_localization(True) で凍結し、self._set_active(False) で
         状態を合わせる。凍結に失敗したらエラーを返す。
         """
+        err = self._save_occupancy_grid(base)
+        if err:
+            self.get_logger().warn(
+                f'占有格子（pgm/yaml）の保存に失敗。全域ローカライズは'
+                f'始点決め打ちになる: {err}')
         err = self._serialize(base)
         if err:
             return self._finish(response, err, '')
@@ -694,6 +703,28 @@ class SlamControl(Node):
         self._set_active(False)
         return self._finish(
             response, None, f'地図を保存しました（地図を凍結しました）: {base}.posegraph')
+
+    def _save_occupancy_grid(self, base: str) -> "str | None":
+        """SaveMap で <base>.pgm / <base>.yaml を書き出す（W-01 P2）。
+
+        _cb_save_map の占有格子部分と同じ呼び出し。呼び出し失敗・応答の
+        失敗コードのいずれもエラー文字列で返す（呼び出し側が警告に落とす）。
+        """
+        if not self._cli_save.wait_for_service(timeout_sec=1.0):
+            return 'slam_toolbox に接続できません'
+        os.makedirs(os.path.dirname(base) or '.', exist_ok=True)
+        req = SaveMap.Request()
+        req.name = String(data=base)
+        result, err = call_and_wait(
+            self, self._cli_save, req, SERVICE_TIMEOUT_SEC)
+        if err:
+            return f'save_map 呼び出し失敗: {err}'
+        if result.result != SaveMap.Response.RESULT_SUCCESS:
+            reason = ('地図がまだ生成されていません'
+                      if result.result == SaveMap.Response.RESULT_NO_MAP_RECEIEVD
+                      else f'result={result.result}')
+            return f'占有格子の保存に失敗: {reason}'
+        return None
 
     def _kill_slam_toolbox(self):
         """稼働中の slam_toolbox プロセスを SIGTERM する。落とした PID の一覧を返す。

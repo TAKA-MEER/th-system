@@ -51,7 +51,14 @@ B は地図形式と TF 競合の解消に別設計が要り、共分散が使�
    最良候補の周辺グリッドで再探索し、更新された最良候補で deserialize し直す
 4. それでも不成立、または ui.localize_global → global_localize:
    地図全域の粗探索 → 最良候補で deserialize（＝完全グローバル）
-5. READY。m が小さいときは警告を出し、閾値以下なら不成立として再生させない（§4）
+5. READY。m が小さいときは警告を出す（`localize_margin_low` 未満）。
+   `m < localize_margin_min` の不成立と `s < localize_match_low` の widen
+   でも拾えないものは READY に進めず **LOCALIZE に留まる**
+   （`localize_quality='failed'`。試験員は画面の「完全グローバルで探す」か
+   選び直しを選ぶ）。`ui.localize_global` は LOCALIZE でしか受け付けない
+   （`transitions.yaml` は変えない）ので、この扱いで足りる（P2 決定）。
+   ※旧版は「READY で『再生』を非活性」と書いていたが、READY に進めたうえで
+   ボタンを殺すより LOCALIZE に留めるほうが FSM の行追加が要らないため改めた。
 ```
 
 `match_type=1`（`START_AT_FIRST_NODE`。`slam_control_logic.py:28-31`）は
@@ -99,7 +106,7 @@ B は地図形式と TF 競合の解消に別設計が要り、共分散が使�
 | --- | --- | --- |
 | 地図・経路・現在位置 | 現行どおり | spec §3.7 |
 | 確度 | **「高い／低い」の 2 値＋目安文**（例: 「低いときは完全グローバルで探すか経路を選び直す」）。**数値は出さない**（設計で決めた。数値の意味を試験員に説明できないため）。`m` が `localize_margin_low` 未満なら「似た場所が複数あり取り違えの可能性」と明示する | 設計 |
-| 不成立 | `m` が `localize_margin_min` 未満なら**完全グローバル不成立**として「再生」を非活性にし、経路の選び直しを案内する（設計で決めた。取り違えたまま走らせるより止める） | 設計 |
+| 不成立 | `s < localize_match_low` の widen でも不成立、または `m` が `localize_margin_min` 未満なら **LOCALIZE に留まる**（`localize_quality='failed'`。`evt.localize_done` を出さない。試験員は「完全グローバルで探す」か経路の選び直しを選ぶ。設計で決めた。取り違えたまま走らせるより止める。※旧版の「READY で『再生』を非活性」から P2 で改めた。理由は §1 手順 5 参照） | 設計 |
 | 「完全グローバルで探す」ボタン | spec どおり。押すと `ui.localize_global` | spec §3.7 |
 | 「経路を選び直す」 | `PAUSE` からの選び直し（`SM-3.1.2-103`）と同型。`ROUTE_SEL` へ戻す | 設計（既存遷移の流用） |
 | 操作カード | 停止／再生／手動（現行どおり） | spec §3.7 |

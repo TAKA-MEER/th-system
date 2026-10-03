@@ -428,6 +428,13 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_replay_cross_track_node
     test/test_replay_cross_track_node.py
     TIMEOUT 180)
+  # 全域ローカライズの探索の実体（W-01 P2）の Docker launch テスト。
+  # replay_runner を起動し、代役サービス・/scan・既知 pgm で
+  # (a) 正位置で done＋探索姿勢 (b) 不一致で low (c) global 不成立で done 無し
+  # を見る。rclpy 要＝ホスト除外。TIMEOUT 180）
+  ament_add_pytest_test(test_replay_localize_node
+    test/test_replay_localize_node.py
+    TIMEOUT 180)
   # 開発モードの項目（Spec-safety.md §10。2026-09-23 改定）の Docker launch テスト。
   # LiDAR 無しで scan_stop（MANUAL だけ v_reverse 以下で通す・AUTO は止める・
   # effective だけを読む・鮮度切れで戻る）と lidar_fault（LIDAR_LOST の抑止と再発）。

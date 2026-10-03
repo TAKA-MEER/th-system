@@ -53,6 +53,23 @@ LOCALIZE_DEFAULTS = {
     "min_range_m": 0.1,
     "max_range_m": 40.0,
     "chunk": 20000,              # 候補を何件ずつ採点するか（メモリ上限と打ち切り確認の粒度）
+    # ── 確度の判定境界（W-01 P2。値の根拠は P0 の測定記録） ──
+    # s 単独では成功と失敗が重なる（成功の s 最小 0.75〜0.97・失敗の s 最大
+    # 0.87〜0.95）。occluded 条件の成功中央値 0.86〜0.87 を下回らない出発点として
+    # 0.8 に置く。実スキャン（P0 は同一地図の模擬で楽観的）での詰めは P6。
+    "localize_match_low": 0.8,   # s がこれ未満 → widen の引き金（evt.localize_low）
+    # 失敗 17 件の m はすべて 0.20 以下。m < 0.2 の警告で失敗は全部拾えるが
+    # 成功にも誤警告が出る（成功の m 最小は 0.00〜0.05）。警告≠不成立の二段構え。
+    "localize_margin_low": 0.2,   # m がこれ未満 → low_margin（似た場所あり。READY へは進む）
+    # m < 0.05 で失敗の大半は止まるが、m = 0.16〜0.20 の廊下沿いズレはすり抜ける
+    # ため READY 目視と併用する（P0 §4）。不成立単独に頼らない。
+    "localize_margin_min": 0.05,  # m がこれ未満 → 不成立（LOCALIZE に留まる）
+    # ── 探索窓（W-01 P2） ──
+    # load_route 直後の探索は経路始点の周辺だけ見る。m_sep_m（2.0）より狭いと
+    # 「別の場所」の候補が取れず m が効かない（P1→P2 への申送り）ため、それより
+    # 広く取る。widen は最良候補の周辺のさらに広い窓。global は全域（窓なし）。
+    "search_radius_m": 5.0,      # 初期探索の窓半径（経路始点中心）
+    "widen_radius_m": 10.0,      # widen 再探索の窓半径（最良候補中心）
 }
 
 
@@ -359,3 +376,128 @@ def search(fld: LikelihoodField, ranges, angle_min: float, angle_increment: floa
         second = refine(A[far[int(np.argmax(sA[far]))]])
     s2 = second.s if second is not None else 0.0
     return done(best=best, s=best.s, m=best.s - s2, second=second, cands=refined, n=len(A))
+
+
+# ------------------------------------------------------------
+# 確度の判定（W-01 P2）
+# ------------------------------------------------------------
+# RouteStatus.localize_quality に載る 4 値（''／searching／unknown は
+# ノード側が lifecycle で付けるためここでは出さない）。
+#   high       成立（s・m とも閾値以上。reload → evt.localize_done）
+#   low_margin 成立したが m < localize_margin_low（似た場所あり。READY へは進む）
+#   low        s < localize_match_low（evt.localize_low → widen_search）
+#   failed     m < localize_margin_min（不成立。evt.localize_done を出さず留まる）
+# 順序が意味を持つ: s 不足を先に見て widen の引き金にし、次に m の下限で
+# 不成立を止め、最後に警告帯を切り分ける。
+def judge_localize(s: float, m: float,
+                   match_low: float = LOCALIZE_DEFAULTS["localize_match_low"],
+                   margin_low: float = LOCALIZE_DEFAULTS["localize_margin_low"],
+                   margin_min: float = LOCALIZE_DEFAULTS["localize_margin_min"]) -> str:
+    if s < match_low:
+        return "low"
+    if m < margin_min:
+        return "failed"
+    if m < margin_low:
+        return "low_margin"
+    return "high"
+
+
+# ------------------------------------------------------------
+# 保存 pgm／yaml の読み込み（W-01 P2）
+# ------------------------------------------------------------
+# 教示保存時に slam_toolbox の SaveMap で併存させた <base>.pgm／.yaml を読み、
+# 粗探索用の尤度場を作る。map_server への依存は持たない（replay_runner が
+# deserialize の前に地図を読まないと順序が逆になる。options §1）。
+# yaml は pyyaml に頼らず自前で読む（要るのは平坦な 6 キーだけ）。
+def _parse_map_yaml(path: str) -> dict:
+    vals: dict = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.split("#", 1)[0].strip()
+            if not line or ":" not in line:
+                continue
+            key, _, raw = line.partition(":")
+            vals[key.strip()] = raw.strip()
+    for key in ("image", "resolution", "origin", "negate",
+                "occupied_thresh", "free_thresh"):
+        if key not in vals:
+            raise ValueError(f"{path}: map yaml に {key} が無い")
+    try:
+        res = float(vals["resolution"])
+        origin = [float(v) for v in vals["origin"].strip("[]").split(",")]
+        negate = int(vals["negate"]) != 0
+        occ_th = float(vals["occupied_thresh"])
+        free_th = float(vals["free_thresh"])
+    except ValueError as e:
+        raise ValueError(f"{path}: map yaml の数値が読めない: {e}")
+    if len(origin) != 3:
+        raise ValueError(f"{path}: origin は [x, y, yaw] の 3 要素のはず: {origin}")
+    if abs(_wrap(origin[2])) > 1e-6:
+        raise ValueError(f"{path}: origin の yaw が 0 でない（回転した格子に"
+                         f"は未対応）: {origin[2]}")
+    return {"image": vals["image"], "resolution": res,
+            "origin": (origin[0], origin[1]), "negate": negate,
+            "occupied_thresh": occ_th, "free_thresh": free_th}
+
+
+def _read_pgm(path: str) -> Tuple[np.ndarray, int, int]:
+    """pgm（P5 バイナリ／P2 アスキー）を読む。(pixels[H, W] uint8, W, H)。"""
+    with open(path, "rb") as f:
+        magic = f.readline().strip()
+        if magic not in (b"P5", b"P2"):
+            raise ValueError(f"{path}: pgm の magic が P5/P2 でない: {magic!r}")
+        tokens: List[bytes] = []
+        # ヘッダ（幅・高さ・最大値）をコメント越しに集める
+        raw = b""
+        while len(tokens) < 3:
+            line = f.readline()
+            if not line:
+                raise ValueError(f"{path}: pgm のヘッダが途中で終わった")
+            line = line.split(b"#", 1)[0]
+            raw += b" " + line
+            tokens = raw.split()
+        width, height, maxval = (int(tokens[0]), int(tokens[1]), int(tokens[2]))
+        if width <= 0 or height <= 0 or maxval <= 0 or maxval > 65535:
+            raise ValueError(f"{path}: pgm のヘッダが不正: {width}x{height} max={maxval}")
+        if maxval > 255:
+            raise ValueError(f"{path}: 2 バイト/画素の pgm には未対応: max={maxval}")
+        if magic == b"P5":
+            # ヘッダの直後（単一の空白の後）が画素列。tokens の余りは捨て、
+            # 現在位置から読み直す代わりに残りをそのまま読む。
+            rest = f.read()
+            # tokens 消費後の区切り空白を 1 バイト戻す必要はない（read が
+            # ヘッダ行末の改行の次を指している）。画素が足りなければ不正。
+            if len(rest) < width * height:
+                raise ValueError(f"{path}: pgm の画素が足りない "
+                                 f"({len(rest)} < {width * height})")
+            pixels = np.frombuffer(rest[:width * height], dtype=np.uint8)
+        else:
+            vals = np.fromstring(f.read().decode("ascii"), dtype=int, sep=" ")
+            if vals.size < width * height:
+                raise ValueError(f"{path}: pgm の画素が足りない")
+            pixels = vals[:width * height].astype(np.uint8)
+    return pixels.reshape(height, width), width, height
+
+
+def load_pgm_map(pgm_path: str, yaml_path: str) -> LikelihoodField:
+    """保存 pgm／yaml から探索用の尤度場を作る。
+
+    pgm の先頭行が最大 y なので上下反転して渡す（P0 の load_map と同じ約束）。
+    画素値→占有の換算は map_server と同じ流儀（occupied_thresh／free_thresh・
+    negate）。未知セルは free 側に入れず、候補位置にもしない（build の既定
+    free=~occ と違い、ここでは pgm の白だけを free にする。壁の外側の未知を
+    候補にすると地図外の姿勢が最良になりやすいため）。
+    """
+    meta = _parse_map_yaml(yaml_path)
+    pixels, _w, _h = _read_pgm(pgm_path)
+    # 上下反転: pgm の 0 行目が最大 y。反転後は 0 行目が origin_y（最小 y）。
+    img = pixels[::-1, :].astype(np.float64) / 255.0
+    # 占有確率 o（map_server と同じ流儀。既定は黒=占有・白=空き。negate で反転）。
+    occ_prob = 1.0 - img
+    if meta["negate"]:
+        occ_prob = 1.0 - occ_prob
+    occ = occ_prob > meta["occupied_thresh"]
+    free = occ_prob < meta["free_thresh"]
+    return build_likelihood_field(occ, meta["resolution"],
+                                  meta["origin"][0], meta["origin"][1],
+                                  free=free)
