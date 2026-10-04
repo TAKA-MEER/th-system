@@ -30,10 +30,10 @@
 | **SG-A9** | **「作業中」をサーバ側で確かめていない。**`working` フラグを立てる者がいない。守っているのは画面のボタン無効化だけ（複数端末なら作業中に発進しうる）。台帳 `W-12` のタグ「venue_navigator の working 購読」はコードに実体が無い | `guards.py:124-129`（`flags["working"]`）、S-21 は `ui.working` で状態を変えるだけ | 確定 |
 | **SG-A10** | **地図の破棄・切替（`slam_control`）とパラメータ変更（`config_manager`）の「走行中は拒否」が、旧 FSM の `/robot/mode` を見ている。**旧 `mode_manager` は起動後ずっと `IDLE` を出すので、ガードは常に通る。許可条件にも `MANUAL` が入っている（SD-9「停止中だけ」に反する）。**注意: PREP の `discard_map` が動いているのは、このガードが壊れているから。**付け替えるだけでは直らない。観客ビューと音声も `/robot/mode` を見ている | `config_manager.py:86,106-115`、`slam_control.py:222,309-331`、`bringup.launch.py:402-408`（旧 `mode_manager` は今も起動）。`DetailedDesign-open.md:306` は「対応済み」と誤記 | 確定 |
 | **SG-A11** | **速度指令の多重化の故障（`MUX_DEAD`）を監視していない。**`Spec-safety.md` §3.5 は重大フォルトに挙げている。`DetailedDesign-open.md` `N-24` が未決のまま | `bringup.launch.py:317` の `SAFETY_ENABLED_TARGETS` に `mux` が無い（`gazebo.launch.py:55` も同じ） | 確定 |
-| **SG-A12** | **タブレットが途切れても `PAUSE` にならず、速度上限が 0 になるだけ。**戻ると操作なしで走行を再開する。`Spec-safety.md` §6.1 は「`PAUSE`」、詳細設計（`DetailedDesign-state.md` §6）と `Spec-safety.md` §6.2.1 は「一時停止ではない」（→ 判断が要る） | `zones.derive_limits` → `obstacle_limiter` の画面由来の上限。遷移表に該当するイベントが無い | 確定 |
+| **SG-A12** | **タブレットが途切れても `PAUSE` にならず、速度上限が 0 になるだけ。**戻ると操作なしで走行を再開する。`Spec-safety.md` §6.1 は「`PAUSE`」、詳細設計（`DetailedDesign-state.md` §6）と `Spec-safety.md` §6.2.1 は「一時停止ではない」（→ **2026-10-04 決定**: 走行中だけ `PAUSE`＋再開確認。下の「ユーザー決定」） | `zones.derive_limits` → `obstacle_limiter` の画面由来の上限。遷移表に該当するイベントが無い | 確定 |
 | **SG-A13** | **始業点検 MOTOR は、最初に手を離した時点で判定が確定する。**前進だけで OK になり、左右モーターの入れ替わりを検出できない（入れ替わりが見えるのは旋回だけ。`Spec-checks.md` §2.4 #2 は 4 方向） | `opcheck_runner.py:369-405` | 確定（4 方向を必須とするかは spec の解釈しだい） |
 | **SG-A14** | **`v_max` が 1.12 m/s。**`drivetrain_ceiling_mps`=1.4（暫定・データシート未確認）× 0.8 から導出している。spec の計画は 0.7 m/s、天井は約 0.91 m/s（`Spec-params.md` §1）。OUT ゾーンの上限と `obstacle_stop_distance_m` がこれに従う | `registry.yaml` | 確定 |
-| **SG-A15** | **試験場内で経路が塞がれると、2 秒ごとに経路を計算し直して自動で迂回する。**`Spec-onsite.md` §6・`SM-3.1.2-060`「自動でルートを変えない」に反する。W-5 の「再検索」も中身は同じ処理。`blocked_lookahead_m` / `blocked_hold_ms` / `unblocked_hold_ms` は読まれていない（WS-9AK で実機の失敗を受けて入れた経緯がある → 判断が要る） | `venue_navigator.py:668-727`（`_blocked_recheck` → `_compute_and_follow`） | 確定 |
+| **SG-A15** | **試験場内で経路が塞がれると、2 秒ごとに経路を計算し直して自動で迂回する。**`Spec-onsite.md` §6・`SM-3.1.2-060`「自動でルートを変えない」に反する。W-5 の「再検索」も中身は同じ処理。`blocked_lookahead_m` / `blocked_hold_ms` / `unblocked_hold_ms` は読まれていない（WS-9AK で実機の失敗を受けて入れた経緯がある → **2026-10-04 決定**: 迂回しない） | `venue_navigator.py:668-727`（`_blocked_recheck` → `_compute_and_follow`） | 確定 |
 | **SG-A16** | `IDLE` から `ui.enter_mode` で `PANEL_NAV`/`SUMMON`/`HOME_NAV` に直接入れる。`goto_allowed`（作業中・ピンの有無）と `begin_two_point` を通らない。画面はこの送り方をしない | `mode_entry.yaml` の IDLE 行、`C-13` | 確定（発進先は要確認） |
 
 ## SG-B 運用不能・データ消失・「済み」の裏の欠陥
@@ -50,7 +50,7 @@
 | **SG-B8** | **`/params/set` で書いた値が効かない。**`overrides.yaml` に出どころ付きで書かれるが、`params_generation` も `bringup` も読まない（再起動しても反映されない）。`/params/get` は重ねた値を返すので、実際に効いている値と表示がずれる。WebUI からの呼び出しも無い | `params_audit.py:54,331-360` | 確定 |
 | **SG-B9** | **S-50 の一般タブが、本番の起動では読み込み全体に失敗する。**`use_stub:=true` でしか起動しない `follow_planner_mapless` の読み込み失敗を、全体の失敗として扱うため。そのうえ一般タブには、廃止予定の旧ノードの 14 項目（`v_max` は 1.5 まで）が並び、registry を経由せずに YAML へ保存できる | `S50Settings.jsx:45-60,175-190,300-313`、`tunable_targets.py:14-39` | 要確認 |
 | **SG-B10** | **自動ブレーキが常に ON 固定。**場外の手動走行の既定 OFF（`Spec-safety.md` §2.1）も、試験員による切り替え（`Spec-webui.md` §3.5）も無い。`zones.derive_limits` の値も `attributes.yaml` の `auto_brake_default` も使われていない。S-11 は表示だけ（`DetailedDesign-wp3.md` c5 で「別パケット」とされたまま） | `state_manager.py:167,675`、`S11Manual.jsx:98-105` | 確定 |
-| **SG-B11** | **保存したあとに記録を続ける機能（F-32、`SM-3.1.2-017/-018`）が、コードで意図して無効化されている。**spec・コード・`docs/使い方.md:236-239` の 3 つが食い違う（→ 判断が要る） | `route_recorder.py:322-336,371-394`、`slam_control.py:680-705` | 確定 |
+| **SG-B11** | **保存したあとに記録を続ける機能（F-32、`SM-3.1.2-017/-018`）が、コードで意図して無効化されている。**spec・コード・`docs/使い方.md:236-239` の 3 つが食い違う（→ **2026-10-04 決定**: 保存＝確定。spec を改定） | `route_recorder.py:322-336,371-394`、`slam_control.py:680-705` | 確定 |
 | **SG-B12** | **経路の旧版を 1 世代残すのは JSON だけで、地図は固定名で上書きされる。**`.prev` の経路を戻しても地図と合わない。`generation` は常に 1。**台帳 `W-04` は CLOSED だが、半分しか満たしていない** | `route_record_core.finalize_route_file`（:270-288）、`slam_control._map_session_base`（:572-580） | 確定 |
 | **SG-B13** | **走行方式を選ぶ前の前提を判定していない**（`Spec-transit.md` §0.6）。経路が 0 本でも教示再生を押せる。`no_route_recorded` / `device_not_connected` を出す側が無い。「保管場所から開始してください」の案内も無い | `guards.py:115-121,241-256`（「対象外」と明記）、`mainMenuItems.js:56-80`、`reasons.js:17,19` | 確定 |
 | **SG-B14** | **S-14 に「地図の更新」トグルと「保存」が無い。**FSM 側も `map_update_available=False` を固定で渡しているので、`T-REPLAY-08` は通らない。台帳 `W-11` は試験場内（S-21）だけを扱う | `state_manager.py:348`、`S14Replay.jsx:278-280`、`slam_control.py:672-674` | 確定 |
@@ -108,6 +108,20 @@
 | 台帳 `W-04` CLOSED | 地図は旧版を残さない | SG-B12 |
 | 台帳 `W-12` のタグ「venue_navigator の working 購読」 | コードに実体が無い | SG-A9 |
 | `DetailedDesign-open.md:306`「`/robot/mode` → `/system/state` 対応済み」 | 移行していない | SG-A10 |
+
+## ユーザー決定（2026-10-04）
+
+判断が要った 5 件（コードが意図して spec から外れていたもの）の決定。**spec は同日に改定済み。**
+
+| ID | 決定 | spec の改定 | 実装でやること |
+| --- | --- | --- | --- |
+| `SG-B11` | **保存＝記録の確定。**保存後は記録を続けない（F-32 のうち教示の分を撤回） | `Spec-transit.md` §3.2、`Spec-modes.md` `SM-3.1.2-017/-018`・§3、`Spec-webui.md` §3.4、`Spec-open.md` F-32 | `SAVED` でスティック・「走行」を拒否し、状態だけ `REC` になる誤表示を無くす（1b-7）。`docs/使い方.md` は改定済み |
+| `SG-A15` | **自動で迂回しない。**自動の再試行は決めた経路の残りでの走り直しだけ。別ルートは「再検索」のときだけ | `Spec-onsite.md` §2.1・§6、`Spec-modes.md` `SM-3.1.2-058`、`Spec-webui.md` W-5 | `venue_navigator` の再探索を、保持した経路の残りの再送に変える（1b-14）。最初の計画失敗時の経路探しは残す |
+| `SG-A12` | **走行中に端末が離れたときだけ `PAUSE` にし、戻ったら再開を問う。**走行中でなければ速度 0 だけで確認は出さない。**30 秒（`tablet_active_window_s`）は実測して見直す** | `Spec-safety.md` §6.1・§6.2.1・§6.2.2（新設）、`Spec-modes.md` `SM-3.1.1-03`、`Spec-params.md` | 在席喪失を走行中だけ回復フォルト相当で `PAUSE` に落とす（1b-1）。実測は実機 |
+| `SG-A14` | **天井をファームの出力上限から逆算した 0.71 m/s にする**（`v_max` ≈ 0.57） | `Spec-params.md` §1・§2 | `registry.yaml` の `drivetrain_ceiling_mps` を 0.71 に（1b-10） |
+| `SG-B10` | **spec どおり**（場外の手動は既定 OFF・警告のみ、場内は既定 ON、切替可）。**実装時に注意表示の追加を検討する** | 変更なし | 切替の経路と既定値の適用を作る（1b-15） |
+
+これに伴い `SG-D3`（タブレット）・`SG-D5` のうち再試行の中身・`SG-D7` のうち W-5 の解除条件は解消した。
 
 ## 確認して spec どおりだったもの（再調査を省くため）
 
