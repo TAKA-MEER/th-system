@@ -38,6 +38,15 @@ _PYTEST_CALL_RE = re.compile(r'ament_add_pytest_test\s*\(\s*(\S+)\s+([^\s)]+)')
 _GTEST_CALL_RE = re.compile(r'ament_add_gtest\s*\(\s*(\S+)\s+([^\s)]+)')
 
 
+# ホスト専用で colcon test に登録しない test_*.py（th_testing/test からの相対パス）。
+# Docker の colcon test ではコンテナに th_ws 直下（start.sh・setup.sh・web_ui/ 等）が
+# マウントされず git も無いため、これらは登録すると必ず落ちる。ホストの pytest で
+# 直接実行する（各ファイルの docstring にホスト専用の旨を書くこと）。
+HOST_ONLY_PYTESTS = frozenset({
+    'test_start_setup_scripts.py',
+})
+
+
 def _all_cmakelists():
     """th_ws/src 直下の各パッケージの CMakeLists.txt の絶対パス一覧。"""
     return sorted(glob.glob(os.path.join(_SRC_ROOT, '*', 'CMakeLists.txt')))
@@ -69,6 +78,7 @@ class TestPythonTestFilesAreRegistered:
         actual = {
             os.path.normpath(p)
             for p in glob.glob(os.path.join(test_dir, 'test_*.py'))
+            if os.path.basename(p) not in HOST_ONLY_PYTESTS
         }
         registered = {
             abs_path for (_name, _cmake, abs_path) in _registered_entries(_PYTEST_CALL_RE)
