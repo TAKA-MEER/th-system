@@ -25,6 +25,7 @@ STARTSH_RESTART_MAX="${STARTSH_RESTART_MAX:-3}" # bringup の起動は最大何�
 STARTSH_RESTART_WAIT="${STARTSH_RESTART_WAIT:-5}" # 立て直しの前に待つ秒数
 STARTSH_WEBUI_LOG="${STARTSH_WEBUI_LOG:-}"        # WebUI 配信のログ（空なら th_ws/log/start-webui.log）
 STARTSH_WEBUI_WAIT="${STARTSH_WEBUI_WAIT:-2}"     # WebUI の生死確認まで待つ秒数
+STARTSH_STOP_WAIT="${STARTSH_STOP_WAIT:-30}"      # Ctrl-C 後に launch が止まるのを待つ上限（秒）
 
 # bringup の既定の launch 引数（同じキーが渡されたら渡された方を使う）
 DEFAULT_LAUNCH_ARGS=(lidar_source:=network use_stub:=false enable_route_slam:=true)
@@ -67,6 +68,7 @@ launch 引数:
   STARTSH_RESTART_WAIT（既定 5 秒。立て直しの前の待ち時間）
   STARTSH_WEBUI_LOG（既定 th_ws/log/start-webui.log。WebUI 配信のログ）
   STARTSH_WEBUI_WAIT（既定 2 秒。WebUI の生死確認まで待つ時間）
+  STARTSH_STOP_WAIT（既定 30 秒。Ctrl-C 後に launch が止まるのを待つ上限）
 
 止め方: Ctrl-C（launch に INT を送って子ノードごと止め、WebUI の配信も止める）
 USAGE
@@ -118,7 +120,8 @@ DRY
   6. WebUI を配信: web_ui/dist/ を npx vite preview --host --port ${WEBUI_PORT} --strictPort で配信
      出力はログ（既定 th_ws/log/start-webui.log。git 管理外）に残し、起動直後に死んでいたら止まる
      タブレット: http://${ROBOT_UI_IP}:${WEBUI_PORT} ／ PC: http://localhost:${WEBUI_PORT}
-  7. Ctrl-C で launch に INT を送って子ノードごと止め、WebUI の配信も止めて終わる
+  7. Ctrl-C で launch に INT を送って子ノードごと止め（止まるのを上限 30 秒まで待つ）、
+     WebUI の配信も止めて終わる
 DRY
     exit 0
 fi
@@ -218,6 +221,24 @@ request_stop() {
     if [ -n "${lp:-}" ]; then
         info "bringup (PID ${lp}) に INT を送って止める..."
         docker exec th_robot kill -INT "$lp" || true
+        # 子ノードの後始末には数秒かかる。止まったのを見届けてから終わる。
+        # すぐ打ち直すと「二重起動」で拒否されるため。強制終了はしない。
+        # 前提: 前景の docker exec は INT で終わるので、この trap が走る。
+        # launch 側が INT を無視して残り続けると、docker exec が終わるまで
+        # ここには来ない（bash は前景の完了まで trap を遅延させる）。
+        waited=0
+        while [ "$waited" -lt "$STARTSH_STOP_WAIT" ]; do
+            lp="$(find_launch_pid || true)"
+            if [ -z "${lp:-}" ]; then
+                info "bringup が止まった。"
+                return 0
+            fi
+            last_pid="$lp"
+            sleep 1 || true  # 2 回目の INT でも落ちないよう受け止める
+            waited=$((waited + 1))
+        done
+        warn "bringup (PID ${last_pid}) がまだ止まっていない。そのまま終わる（強制終了はしない）。"
+        warn "止まってから打ち直すこと。止まらないときは作業者に確認する。"
     fi
 }
 trap request_stop INT TERM

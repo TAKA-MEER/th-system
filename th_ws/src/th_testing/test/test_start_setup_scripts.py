@@ -47,15 +47,24 @@ if [ "${1:-}" = "exec" ]; then
         n=$((n + 1)); echo "$n" > "$FAKE_PS_COUNT"
         if [ -n "${FAKE_PS_ALWAYS:-}" ]; then
             printf '%s\\n' "$FAKE_PS_ALWAYS"
-        elif [ "$n" -ge 2 ] && [ -n "${FAKE_PS_LATER:-}" ]; then
-            printf '%s\\n' "$FAKE_PS_LATER"
+        elif [ -n "${FAKE_PS_LATER:-}" ] && [ "$n" -ge 2 ]; then
+            if [ -f "$FAKE_KILL_MARK" ]; then
+                k=$(cat "$FAKE_KILL_MARK"); l=${FAKE_PS_LINGER:-0}
+                if [ $((n - k)) -le "$l" ]; then
+                    printf '%s\\n' "$FAKE_PS_LATER"
+                else
+                    echo "PID COMMAND"
+                fi
+            else
+                printf '%s\\n' "$FAKE_PS_LATER"
+            fi
         else
             echo "PID COMMAND"
         fi
         exit 0
     fi
     case "$*" in
-        *"kill -INT"*) exit 0 ;;
+        *"kill -INT"*) cat "$FAKE_PS_COUNT" 2>/dev/null > "$FAKE_KILL_MARK"; exit 0 ;;
     esac
     case "$*" in
         *"ros2 launch"*)
@@ -111,6 +120,7 @@ def fakebin(tmp_path):
         env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
         env["FAKE_LOG"] = str(log)
         env["FAKE_PS_COUNT"] = str(tmp_path / "pscount")
+        env["FAKE_KILL_MARK"] = str(tmp_path / "killmark")
         env["FAKE_NPX_PID"] = str(tmp_path / "npx.pid")
         env["STARTSH_RESTART_WAIT"] = "0"
         env["STARTSH_WEBUI_WAIT"] = "0"
@@ -349,6 +359,65 @@ def test_sigint_stops_launch_and_webui(fakebin, with_dist, tmp_path):
     npx_pid = int(npx_pid_file.read_text(encoding="utf-8").strip())
     with pytest.raises(OSError):
         os.kill(npx_pid, 0)
+
+
+def _wait_for_launch_call(log, timeout=20):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if any("ros2 launch" in c for c in _calls(log)):
+            return
+        time.sleep(0.2)
+    raise AssertionError("launch が起動しなかった:\n" + "\n".join(_calls(log)))
+
+
+def test_sigint_waits_for_launch_exit(fakebin, with_dist):
+    # 差し戻し D: INT 後、launch が消えるまで待ってから終わる（ps が複数回出る）。
+    _, make_env, log = fakebin
+    env = make_env(FAKE_LAUNCH_MODE="block", FAKE_NPX_MODE="block",
+                   FAKE_PS_LATER="PID COMMAND\n4242 ros2 launch th_bringup bringup.launch.py lidar_source:=network",
+                   FAKE_PS_LINGER="2")
+    proc = subprocess.Popen(["bash", START_SH], stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, env=env,
+                            start_new_session=True)
+    try:
+        _wait_for_launch_call(log)
+        os.killpg(proc.pid, signal.SIGINT)
+        out = proc.communicate(timeout=30)[0]
+        assert proc.returncode == 0, out
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+    ps_calls = [c for c in _calls(log) if "ps -eo pid,args" in c]
+    assert len(ps_calls) >= 4, _calls(log)  # 確認＋INT 時の特定＋見届けの再確認
+    assert "bringup が止まった" in out
+
+
+def test_sigint_warns_when_launch_lingers(fakebin, with_dist):
+    # 差し戻し D: 上限（STARTSH_STOP_WAIT）を過ぎても止まらなければ警告して
+    # 終わる。強制終了はしない。
+    _, make_env, log = fakebin
+    env = make_env(FAKE_LAUNCH_MODE="block", FAKE_NPX_MODE="block",
+                   FAKE_PS_LATER="PID COMMAND\n4242 ros2 launch th_bringup bringup.launch.py lidar_source:=network",
+                   FAKE_PS_LINGER="99", STARTSH_STOP_WAIT="3")
+    proc = subprocess.Popen(["bash", START_SH], stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, env=env,
+                            start_new_session=True)
+    try:
+        _wait_for_launch_call(log)
+        os.killpg(proc.pid, signal.SIGINT)
+        # trap が INT→見届け（上限 3 秒）→警告→後片付けと進み、終わる
+        out = proc.communicate(timeout=30)[0]
+        assert proc.returncode == 0, out
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+            out = proc.communicate(timeout=20)[0]
+    assert "まだ止まっていない" in out
+    assert "4242" in out
+    calls = _calls(log)
+    assert len(_launch_execs(calls)) == 1, calls  # 打ち直していない
+    assert not any("kill -KILL" in c or "kill -9" in c for c in calls), calls
 
 
 def test_no_dangerous_kill_patterns():
