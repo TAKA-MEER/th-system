@@ -24,6 +24,7 @@ function cleanItem(src) {
   return {
     ok: src?.ok === true,
     ageMs: num(src?.age_ms),
+    reportedAgeMs: num(src?.reported_age_ms),
     ignored: src?.ignored === true,
     excluded: src?.excluded === true,
     points: num(src?.points),
@@ -59,6 +60,8 @@ export const DEFAULT_LINK_TEXT = {
   nodesOk: '必須ノードが揃っている', nodesMissing: '不足: ', unknown: '不明',
   never: '一度も受信していない', lastRx: '最後の受信 ', points: '点数 ',
   ignored: '（開発モードで無視中）', msAgo: ' ms 前', secAgo: ' 秒前',
+  loopNoReport: 'ESP32 が折り返しを報告していない（ファームの書き込みが必要）',
+  loopNotAlive: 'ESP32 に速度指令が届いていない',
 }
 
 function fmtAge(ms, t) {
@@ -74,6 +77,12 @@ export function linkRowView(status, key, t = DEFAULT_LINK_TEXT) {
   let detail
   if (key === 'nodes') {
     detail = it.ok ? t.nodesOk : `${t.nodesMissing}${it.missing.join(', ') || t.unknown}`
+  } else if (key === 'esp32_loopback' && !it.ok && status.items.esp32_feedback?.ok
+             && it.reportedAgeMs == null) {
+    // フィードバックは来るのに報告が一度も無い＝報告しない古いファーム（Spec-ops.md §2.2）
+    detail = t.loopNoReport
+  } else if (key === 'esp32_loopback' && !it.ok && it.reportedAgeMs != null) {
+    detail = t.loopNotAlive
   } else if (it.ageMs == null) {
     detail = t.never
   } else {

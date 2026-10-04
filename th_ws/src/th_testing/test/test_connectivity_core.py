@@ -19,7 +19,7 @@ def _params(**overrides):
 _ALL_OK_KWARGS = dict(
     now_ms=10_000,
     last_fb_ms=9_500,
-    last_cmd_ms=9_600,
+    last_cmd_alive_ms=9_600,
     last_scan_ms=9_800,
     scan_points=360,
     present_nodes=("state_manager", "safety_monitor", "connectivity_checker"),
@@ -44,7 +44,7 @@ def test_four_items():
 
     # 行2（ESP32/esp32_loopback）: 速度指令の折り返し（wheel_cmd_speed）が古い。
     kw = dict(_ALL_OK_KWARGS)
-    kw["last_cmd_ms"] = _ALL_OK_KWARGS["now_ms"] - p.esp32_alive_timeout_ms - 1
+    kw["last_cmd_alive_ms"] = _ALL_OK_KWARGS["now_ms"] - p.esp32_alive_timeout_ms - 1
     r = evaluate(p=p, **kw)
     assert r.esp32_loopback is False
     assert not r.all_ok()
@@ -78,7 +78,7 @@ def test_unreceived_is_fail():
     r = evaluate(
         now_ms=10_000,
         last_fb_ms=None,
-        last_cmd_ms=None,
+        last_cmd_alive_ms=None,
         last_scan_ms=None,
         scan_points=0,
         present_nodes=(),
@@ -108,7 +108,7 @@ def test_sim_excludes_esp32_and_nodes():
     r = evaluate(
         now_ms=10_000,
         last_fb_ms=None,   # ESP32 は一度も来ない想定でも
-        last_cmd_ms=None,
+        last_cmd_alive_ms=None,
         last_scan_ms=9_800,
         scan_points=360,
         present_nodes=(),  # required_nodes も一切揃っていない想定でも
@@ -159,7 +159,7 @@ def test_link_status_each_row_is_independent():
 def test_link_status_dev_ignore_shows_real_state():
     """開発モードで link を外していても ok は本当の受信で決める（外していることは ignored）。"""
     p = _params(dev_ignore_link=True)
-    it = _status(p=p, last_fb_ms=None, last_cmd_ms=None, last_scan_ms=None,
+    it = _status(p=p, last_fb_ms=None, last_cmd_alive_ms=None, last_scan_ms=None,
                  present_nodes=())["items"]
     for k in ("esp32_feedback", "esp32_loopback", "lidar", "nodes"):
         assert it[k]["ok"] is False, k
@@ -171,3 +171,15 @@ def test_link_status_sim_marks_excluded():
     assert it["esp32_feedback"]["excluded"] and it["esp32_loopback"]["excluded"]
     assert it["nodes"]["excluded"] and not it["lidar"]["excluded"]
     assert it["esp32_feedback"]["ok"] is False   # 除外しても実際の受信は偽のまま
+
+
+def test_link_status_loopback_reports_firmware_report_age():
+    """折り返し（2026-10-04）: ESP32 が報告していなければ reported_age_ms は None
+    （古いファーム）。報告はあるが受信中でないときは age_ms だけ古い／None。"""
+    it = _status(last_cmd_alive_ms=None)["items"]["esp32_loopback"]
+    assert it["ok"] is False and it["reported_age_ms"] is None
+
+    it = link_status(p=_params(), estop_seen=True, hw_estop=False,
+                     last_cmd_report_ms=9_900, **dict(_ALL_OK_KWARGS, last_cmd_alive_ms=None))
+    it = it["items"]["esp32_loopback"]
+    assert it["ok"] is False and it["reported_age_ms"] == 100 and it["age_ms"] is None

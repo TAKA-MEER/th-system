@@ -57,6 +57,8 @@ export const S00_LINK_TEXT = {
   nodesOk: '必須ノードが揃っている', nodesMissing: '不足: ', unknown: '不明',
   never: '一度も受信していない', lastRx: '最後の受信 ', points: '点数 ',
   ignored: '（開発モードで無視中）', msAgo: ' ms 前', secAgo: ' 秒前',
+  loopNoReport: 'ESP32 が折り返しを報告していない（ファームの書き込みが必要）',
+  loopNotAlive: 'ESP32 に速度指令が届いていない',
 }
 
 // DetailedDesign-safety.md §8.3 / this packet's brief: Wi-Fi AP is a single

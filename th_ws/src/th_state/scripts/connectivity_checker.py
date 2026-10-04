@@ -91,7 +91,10 @@ class ConnectivityChecker(Node):
         self.declare_parameter('dev_log_cmdvel', False)
 
         self._last_fb_ms = None
-        self._last_cmd_ms = None
+        # 「速度指令の折り返し」: ESP32 自身が受信中と報告した最後の時刻（/esp32/cmd_alive が真）と、
+        # 報告そのもの（真偽を問わず）を最後に受けた時刻。後者が None なら報告しないファーム。
+        self._last_cmd_alive_ms = None
+        self._last_cmd_report_ms = None
         self._last_scan_ms = None
         self._scan_points = 0
         self._hw_estop = False
@@ -128,7 +131,7 @@ class ConnectivityChecker(Node):
         self.create_subscription(
             WheelFeedback, '/esp32/wheel_feedback', self._on_wheel_feedback, wf_qos)
         self.create_subscription(
-            WheelFeedback, '/esp32/wheel_cmd_speed', self._on_wheel_cmd_speed, wf_qos)
+            Bool, '/esp32/cmd_alive', self._on_cmd_alive, 10)
 
         scan_qos = QoSProfile(depth=5, reliability=QoSReliabilityPolicy.BEST_EFFORT)
         self.create_subscription(LaserScan, '/scan', self._on_scan, scan_qos)
@@ -179,8 +182,13 @@ class ConnectivityChecker(Node):
     def _on_wheel_feedback(self, msg):
         self._last_fb_ms = self._now_ms()
 
-    def _on_wheel_cmd_speed(self, msg):
-        self._last_cmd_ms = self._now_ms()
+    def _on_cmd_alive(self, msg):
+        # 2026-10-04 まで /esp32/wheel_cmd_speed を見ていたが、それは esp32_bridge が
+        # /cmd_vel から計算して出す値で、ESP32 が居なくても合格になっていた。
+        now = self._now_ms()
+        self._last_cmd_report_ms = now
+        if msg.data:
+            self._last_cmd_alive_ms = now
 
     def _on_scan(self, msg):
         self._last_scan_ms = self._now_ms()
@@ -355,7 +363,7 @@ class ConnectivityChecker(Node):
         report = evaluate(
             now_ms=self._now_ms(),
             last_fb_ms=self._last_fb_ms,
-            last_cmd_ms=self._last_cmd_ms,
+            last_cmd_alive_ms=self._last_cmd_alive_ms,
             last_scan_ms=self._last_scan_ms,
             scan_points=self._scan_points,
             present_nodes=self._present_node_names(),
@@ -389,13 +397,14 @@ class ConnectivityChecker(Node):
         payload = link_status(
             now_ms=self._now_ms(),
             last_fb_ms=self._last_fb_ms,
-            last_cmd_ms=self._last_cmd_ms,
+            last_cmd_alive_ms=self._last_cmd_alive_ms,
             last_scan_ms=self._last_scan_ms,
             scan_points=self._scan_points,
             present_nodes=self._present_node_names(),
             p=p,
             estop_seen=self._estop_seen,
-            hw_estop=self._hw_estop)
+            hw_estop=self._hw_estop,
+            last_cmd_report_ms=self._last_cmd_report_ms)
         self._pub_link.publish(String(data=json.dumps(payload, sort_keys=True)))
 
     def _publish_link_ok(self):

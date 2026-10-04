@@ -41,7 +41,7 @@ test('行: 項目ごとに独立した状態と詳細を出す', () => {
   assert.match(fb.detail, /120 ms 前/)
   const lb = linkRowView(s, 'esp32_loopback')
   assert.equal(lb.tone, 'tone-ng')
-  assert.match(lb.detail, /一度も受信していない/)
+  assert.match(lb.detail, /ファームの書き込みが必要/)  // フィードバックはあるのに報告が無い
   const li = linkRowView(s, 'lidar')
   assert.equal(li.tone, 'tone-ng')
   assert.match(li.detail, /359／720/)
@@ -78,4 +78,22 @@ test('S-01 要約: 繋がっていない項目だけを返す（除外・未受�
   const sim = parseLinkStatus({ items: { esp32_feedback: { ok: false, excluded: true },
     esp32_loopback: { ok: true }, lidar: { ok: true }, nodes: { ok: true } } })
   assert.deepEqual(linkDownKeys(sim), [])
+})
+
+test('折り返し: フィードバックは来るのに報告が無い＝古いファームと出す', () => {
+  const s = parseLinkStatus({ items: {
+    esp32_feedback: { ok: true, age_ms: 50 },
+    esp32_loopback: { ok: false, age_ms: null, reported_age_ms: null },
+  } })
+  const v = linkRowView(s, 'esp32_loopback')
+  assert.equal(v.tone, 'tone-ng')
+  assert.match(v.detail, /ファームの書き込みが必要/)
+})
+
+test('折り返し: 報告はあるが受信中でない＝指令が届いていない', () => {
+  const s = parseLinkStatus({ items: {
+    esp32_feedback: { ok: true, age_ms: 50 },
+    esp32_loopback: { ok: false, age_ms: null, reported_age_ms: 80 },
+  } })
+  assert.match(linkRowView(s, 'esp32_loopback').detail, /速度指令が届いていない/)
 })

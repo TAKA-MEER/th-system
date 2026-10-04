@@ -215,3 +215,37 @@ class TestMalformedInput:
         assert peek_type(pack_wheel_feedback(0.0, 0.0)) == WHEEL_FEEDBACK
         assert peek_type(pack_estop_hw(True)) == ESTOP_HW
         assert peek_type(pack_imu_data(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0)) == IMU_DATA
+
+
+class TestCmdAliveFlags:
+    """ESTOP_HW flags bit1/bit2（2026-10-04）: ESP32 が速度指令を受け取れているかの報告。
+    疎通確認の「速度指令の折り返し」はこれで判定する。"""
+
+    def test_reported_and_alive(self):
+        from th_esp32_bridge.ws_protocol import cmd_alive_from_flags
+        assert cmd_alive_from_flags(0x06) is True
+        assert cmd_alive_from_flags(0x07) is True   # バイパスと独立
+
+    def test_reported_but_not_alive(self):
+        from th_esp32_bridge.ws_protocol import cmd_alive_from_flags
+        assert cmd_alive_from_flags(0x04) is False
+        assert cmd_alive_from_flags(0x05) is False
+
+    def test_old_firmware_is_none(self):
+        from th_esp32_bridge.ws_protocol import cmd_alive_from_flags
+        assert cmd_alive_from_flags(0x00) is None   # 報告しない 3 byte ファーム
+        assert cmd_alive_from_flags(0x01) is None
+        assert cmd_alive_from_flags(0x02) is None   # bit2 無しの bit1 は信じない
+
+    def test_unknown_flags_is_none_not_alive(self):
+        """旧 2 byte 形式（flags 不明 0xFF）は bit1・bit2 とも立っているが、受信中と扱わない。"""
+        from th_esp32_bridge.ws_protocol import cmd_alive_from_flags, FIRMWARE_FLAGS_UNKNOWN
+        assert cmd_alive_from_flags(FIRMWARE_FLAGS_UNKNOWN) is None
+
+    def test_firmware_source_sets_bits(self):
+        """ファームが bit1（cmd_alive）と bit2（報告あり）を実際に立てていること。"""
+        import os
+        src = open(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'esp32', 'src',
+                                'main.cpp'), encoding='utf-8').read()
+        assert '? 0x02 : 0x00)' in src and '| 0x04;' in src
+        assert 'cmd_received_once && !watchdogTripped' in src

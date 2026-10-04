@@ -27,7 +27,7 @@ import launch_testing.actions
 
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Bool, String
-from th_system_msgs.msg import StateEvent
+from th_system_msgs.msg import StateEvent, WheelFeedback
 
 
 SCAN_EXPECTED_POINTS = 8
@@ -189,6 +189,36 @@ class TestConnectivityCheckerNode(unittest.TestCase):
         assert v['items']['esp32_feedback']['ok'] is False
         assert v['items']['esp32_feedback']['excluded'] is True
         assert v['estop_hw']['seen'] is True and v['estop_hw']['pressed'] is True
+
+
+    def test_loopback_uses_esp32_report_not_bridge_value(self):
+        """速度指令の折り返し（2026-10-04）: esp32_bridge が自分で計算して出す
+        /esp32/wheel_cmd_speed では合格にせず、ESP32 自身の報告 /esp32/cmd_alive で決める。"""
+        latest = {}
+        qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+                         durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        self.node.create_subscription(
+            String, '/system/link_status',
+            lambda m: latest.__setitem__('v', json.loads(m.data)), qos)
+        pub_cmd_speed = self.node.create_publisher(WheelFeedback, '/esp32/wheel_cmd_speed', 10)
+        pub_alive = self.node.create_publisher(Bool, '/esp32/cmd_alive', 10)
+
+        deadline = time.time() + 2.5
+        while time.time() < deadline:
+            pub_cmd_speed.publish(WheelFeedback())
+            self._spin(0.1)
+        loop = latest['v']['items']['esp32_loopback']
+        assert loop['ok'] is False, f'wheel_cmd_speed だけで折り返しが合格になった: {loop}'
+        assert loop['reported_age_ms'] is None
+
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            pub_alive.publish(Bool(data=True))
+            self._spin(0.1)
+            loop = latest['v']['items']['esp32_loopback']
+            if loop['ok']:
+                break
+        assert loop['ok'] is True, f'/esp32/cmd_alive=true でも折り返しが合格にならない: {loop}'
 
 
 if __name__ == '__main__':

@@ -44,7 +44,8 @@ void onWheelCmd(void (*callback)(float left, float right));
 // dtSec: この left/right を算出した制御周期[s]。中継・ブリッジ側はこれを
 // オドメトリの積分区間として使うため、速度算出に使った値をそのまま渡すこと。
 void sendWheelFeedback(float left, float right, float dtSec);
-// flags: ESTOP_HW のファーム構成フラグ。bit0 = bypass_active。残りビットは予約(0)。
+// flags: ESTOP_HW のフラグ。bit0 = bypass_active / bit1 = cmd_alive（速度指令を受信中）/
+// bit2 = cmd_alive を報告するファーム（常に 1）。残りビットは予約(0)。
 void sendEstopHw(bool active, uint8_t flags);
 void sendImuData(float qw, float qx, float qy, float qz,
                   float wx, float wy, float wz,

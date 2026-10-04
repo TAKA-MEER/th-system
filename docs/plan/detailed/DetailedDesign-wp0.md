@@ -882,7 +882,7 @@ docker compose run --rm th_robot bash -lc \
 | **pub**（`esp32_bridge`） | **`/safety/firmware_flags`** | `std_msgs/UInt8` | **transient_local, depth 1** | 変化時＋接続時 |
 | pub（既存） | `/safety/estop_hw` | `std_msgs/Bool` | reliable | 10 Hz |
 
-**bit 0 = `bypass_active`。**残りは予約（0）。
+**bit 0 = `bypass_active`。**bit 1 = `cmd_alive`（速度指令を受信中＝一度は受信し、ウォッチドッグ未発動）、bit 2 = `cmd_alive` を報告するファーム（常に 1。2026-10-04 追加。`esp32_bridge` が `/esp32/cmd_alive` へ中継し、疎通確認の折り返しに使う）。残りは予約（0）。
 **新しい msg 型を作らない**（`WP-MSG-01` は締めてある。`UInt8` で足りる）。
 
 #### 3.2 プロトコル
