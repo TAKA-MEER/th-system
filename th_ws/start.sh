@@ -205,6 +205,10 @@ trap request_stop INT TERM
 # （Spec-ops.md §2.4「再起動しても直らない場合」）。
 attempt=0
 while [ "$attempt" -lt "$STARTSH_RESTART_MAX" ]; do
+    if [ "$STOPPED" -eq 1 ]; then
+        info "操作者の停止により終わる。"
+        break
+    fi
     attempt=$((attempt + 1))
     if [ "$attempt" -eq 1 ]; then
         info "${C_BOLD}bringup を起動します（1 回目／上限 ${STARTSH_RESTART_MAX} 回）${C_RESET}"
@@ -225,7 +229,13 @@ while [ "$attempt" -lt "$STARTSH_RESTART_MAX" ]; do
         exit 1
     fi
     warn "bringup が終了した（コード ${rc}）。${STARTSH_RESTART_WAIT} 秒待って立て直す..."
-    sleep "$STARTSH_RESTART_WAIT"
+    # INT で中断されると sleep は非0で終わる（set -e で落ちないよう受け止める）。
+    # 待ち時間中の停止は次の起動に進まず抜ける。
+    sleep "$STARTSH_RESTART_WAIT" || true
+    if [ "$STOPPED" -eq 1 ]; then
+        info "操作者の停止により終わる。"
+        break
+    fi
 done
 
 # ── 7. 終了 ─────────────────────────────────────────────────
