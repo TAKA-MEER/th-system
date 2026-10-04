@@ -9,6 +9,7 @@ WS クライアント (esp32_bridge がサーバー側であることに注意) 
 DetailedDesign-safety.md §10 の故障注入 12「/cmd_vel の途絶」に対応する。
 満たす仕様: docs/plan/detailed/DetailedDesign-wp2.md WP-SAFE-02 §4.3 (K-1)。
 """
+import struct
 import threading
 import time
 import unittest
@@ -24,7 +25,7 @@ from std_msgs.msg import Bool
 
 # conftest.py が th_esp32_bridge/th_esp32_bridge (ws_protocol.py の置き場所) を
 # sys.path に追加済み。
-from ws_protocol import WHEEL_CMD, peek_type, unpack_wheel_cmd
+from ws_protocol import ESTOP_HW, WHEEL_CMD, peek_type, unpack_wheel_cmd
 
 # 実機・他テストの esp32_bridge (既定 8766) と衝突しないポートを使う。
 _WS_PORT = 18765
@@ -135,6 +136,12 @@ class _WsMockEsp32:
             except (OSError, ConnectionRefusedError):
                 await asyncio.sleep(0.3)
 
+    def send(self, data: bytes):
+        """ESP32 → PC 方向のフレームを送る（ESTOP_HW など）。"""
+        import asyncio
+        fut = asyncio.run_coroutine_threadsafe(self._ws.send(data), self._loop)
+        fut.result(timeout=2.0)
+
     def snapshot(self):
         with self._lock:
             return list(self.frames)
@@ -200,6 +207,31 @@ class TestEsp32BridgeCmdVelStaleTimeout(unittest.TestCase):
             self._spin(0.05)
         self.fail(f'{min_count} 件のフレームを {timeout}s 以内に受信できなかった'
                    ' (esp32_bridge の WS サーバーに接続できていない可能性)')
+
+    # ════════════════════════════════════════════════════════
+    # ESP32 自身の「速度指令を受信中」報告（ESTOP_HW flags bit1/bit2。2026-10-04）。
+    # 疎通確認の「速度指令の折り返し」はこれで判定する。
+    def _collect_cmd_alive(self, flags: int, sec: float = 1.0):
+        got = []
+        sub = self.node.create_subscription(Bool, '/esp32/cmd_alive', lambda m: got.append(m.data), 10)
+        try:
+            deadline = time.time() + sec
+            while time.time() < deadline:
+                self.client.send(struct.pack('<BBB', ESTOP_HW, 0, flags))
+                self._spin(0.1)
+        finally:
+            self.node.destroy_subscription(sub)
+        return got
+
+    def test_cmd_alive_relayed_from_new_firmware(self):
+        got = self._collect_cmd_alive(0x06)
+        assert got and all(got), f'flags=0x06 で /esp32/cmd_alive が真で出ない: {got}'
+        got = self._collect_cmd_alive(0x04)
+        assert got and not any(got), f'flags=0x04 で /esp32/cmd_alive が偽で出ない: {got}'
+
+    def test_cmd_alive_not_published_for_old_firmware(self):
+        got = self._collect_cmd_alive(0x00)
+        assert got == [], f'報告しないファーム（bit2=0）で /esp32/cmd_alive が出た: {got}'
 
     # ════════════════════════════════════════════════════════
     def test_still_publishes_at_20hz_when_stale(self):

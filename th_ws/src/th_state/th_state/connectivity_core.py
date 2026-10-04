@@ -60,7 +60,7 @@ def _fresh(now_ms: int, last_ms: Optional[int], timeout_ms: int) -> bool:
     return (now_ms - last_ms) <= timeout_ms
 
 
-def evaluate(now_ms: int, last_fb_ms: Optional[int], last_cmd_ms: Optional[int],
+def evaluate(now_ms: int, last_fb_ms: Optional[int], last_cmd_alive_ms: Optional[int],
              last_scan_ms: Optional[int], scan_points: int,
              present_nodes: Iterable[str], p: Params) -> LinkReport:
     """DetailedDesign-state.md §12.2 の4行を判定する。
@@ -68,7 +68,7 @@ def evaluate(now_ms: int, last_fb_ms: Optional[int], last_cmd_ms: Optional[int],
     | 対象 | 実装 |
     | --- | --- |
     | 行1 ESP32 | `/esp32/wheel_feedback` の受信間隔が `esp32_alive_timeout_ms` 以内 |
-    | 行2 ESP32 | `/esp32/wheel_cmd_speed` の受信間隔が同時間内（キープアライブの折り返し） |
+    | 行2 ESP32 | ESP32 が「速度指令を受信中」と報告した最後の時刻（`/esp32/cmd_alive` が真）が同時間内（キープアライブの折り返し。報告しない古いファームは不合格） |
     | 行3 RaspberryPi4 | `/scan` の受信間隔が同時間内 かつ `ranges` の点数が `scan_expected_points` に一致 |
     | 行4 PC | `required_nodes` が全て `present_nodes` に含まれる |
 
@@ -91,7 +91,7 @@ def evaluate(now_ms: int, last_fb_ms: Optional[int], last_cmd_ms: Optional[int],
             nodes = True
         else:
             esp32_feedback = _fresh(now_ms, last_fb_ms, p.esp32_alive_timeout_ms)
-            esp32_loopback = _fresh(now_ms, last_cmd_ms, p.esp32_alive_timeout_ms)
+            esp32_loopback = _fresh(now_ms, last_cmd_alive_ms, p.esp32_alive_timeout_ms)
             present = set(present_nodes)
             missing_nodes = tuple(n for n in p.required_nodes if n not in present)
             nodes = len(missing_nodes) == 0
@@ -133,19 +133,22 @@ def _age_ms(now_ms: int, last_ms: Optional[int]) -> Optional[int]:
     return None if last_ms is None else max(0, int(now_ms - last_ms))
 
 
-def link_status(now_ms: int, last_fb_ms: Optional[int], last_cmd_ms: Optional[int],
+def link_status(now_ms: int, last_fb_ms: Optional[int], last_cmd_alive_ms: Optional[int],
                 last_scan_ms: Optional[int], scan_points: int,
                 present_nodes: Iterable[str], p: Params,
-                estop_seen: bool, hw_estop: bool) -> dict:
+                estop_seen: bool, hw_estop: bool,
+                last_cmd_report_ms: Optional[int] = None) -> dict:
     """S-00 の機器別の行（Spec-webui.md §3.1）に出す項目別の状態。`/system/link_status` の中身。
 
     `ok` は**本当の状態**（開発モードの `link` で外していても実際の受信で判定する）。
     外していることは `ignored` で別に伝える。外した項目を「繋がっている」と画面に出すと、
     機器が無いことに気づけない（`evt.link_ok` の判定そのものは `evaluate()` のまま）。
     `sim` で判定から除外している項目は `excluded`（Gazebo に居ない機器）。
-    `age_ms` は最後に受信してからの経過（未受信は None）。
+    `age_ms` は最後に受信してからの経過（未受信は None）。折り返しの `age_ms` は ESP32 が
+    「受信中」と報告した最後からの経過、`reported_age_ms` は報告そのもの（真偽を問わず）の経過。
+    フィードバックは来るのに `reported_age_ms` が None なら、報告しない古いファーム。
     """
-    raw = evaluate(now_ms, last_fb_ms, last_cmd_ms, last_scan_ms, scan_points, present_nodes,
+    raw = evaluate(now_ms, last_fb_ms, last_cmd_alive_ms, last_scan_ms, scan_points, present_nodes,
                    Params(esp32_alive_timeout_ms=p.esp32_alive_timeout_ms,
                           scan_expected_points=p.scan_expected_points,
                           required_nodes=p.required_nodes, sim=False, dev_ignore_link=False))
@@ -154,7 +157,8 @@ def link_status(now_ms: int, last_fb_ms: Optional[int], last_cmd_ms: Optional[in
         "items": {
             "esp32_feedback": {"ok": raw.esp32_feedback, "age_ms": _age_ms(now_ms, last_fb_ms),
                                "ignored": ignored, "excluded": bool(p.sim)},
-            "esp32_loopback": {"ok": raw.esp32_loopback, "age_ms": _age_ms(now_ms, last_cmd_ms),
+            "esp32_loopback": {"ok": raw.esp32_loopback, "age_ms": _age_ms(now_ms, last_cmd_alive_ms),
+                               "reported_age_ms": _age_ms(now_ms, last_cmd_report_ms),
                                "ignored": ignored, "excluded": bool(p.sim)},
             "lidar": {"ok": raw.lidar, "age_ms": _age_ms(now_ms, last_scan_ms),
                       "points": int(scan_points), "expected_points": int(p.scan_expected_points),

@@ -51,6 +51,7 @@ from th_esp32_bridge.send_coalescer import offer as coalescer_offer
 from th_esp32_bridge.ws_protocol import (
     ProtocolError, WHEEL_FEEDBACK, ESTOP_HW, IMU_DATA,
     pack_wheel_cmd, unpack_wheel_feedback, unpack_estop_hw_flags, unpack_imu_data, peek_type,
+    cmd_alive_from_flags,
 )
 
 
@@ -153,6 +154,10 @@ class Esp32Bridge(Node):
         self._pub_wheel_cmd = self.create_publisher(
             WheelFeedback, '/esp32/wheel_cmd_speed', 10)
         self._pub_estop_hw = self.create_publisher(Bool, '/safety/estop_hw', 10)
+        # ESP32 自身が「速度指令を受け取れている」と返した値（ESTOP_HW の flags bit1）。
+        # connectivity_checker の「速度指令の折り返し」はこれで判定する（Spec-ops.md §2.2）。
+        # 報告しない古いファームでは出さない（＝折り返しは不合格のまま）。
+        self._pub_cmd_alive = self.create_publisher(Bool, '/esp32/cmd_alive', 10)
         # ファーム構成フラグ (ESTOP_HW の flags をそのまま流すだけ。判定は
         # safety_monitor が行う。WP-SAFE-01)。transient_local: 後から立ち上がる
         # 購読側(safety_monitor)が起動順序に関わらず最新値を受け取れるように。
@@ -548,6 +553,9 @@ class Esp32Bridge(Node):
             elif msg_type == ESTOP_HW:
                 estop, flags = unpack_estop_hw_flags(data)
                 self._pub_estop_hw.publish(Bool(data=estop))
+                cmd_alive = cmd_alive_from_flags(flags)
+                if cmd_alive is not None:
+                    self._pub_cmd_alive.publish(Bool(data=cmd_alive))
                 # 判定はしない(safety_monitor が WP-SAFE-01 で行う)。ここは
                 # 変化時 ＋ 接続時(_handle_client で _last_firmware_flags を
                 # None に戻す)だけ publish する。

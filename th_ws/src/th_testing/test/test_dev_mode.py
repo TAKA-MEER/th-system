@@ -57,7 +57,7 @@ def _params(**overrides):
 _NOTHING_KWARGS = dict(
     now_ms=10_000,
     last_fb_ms=None,
-    last_cmd_ms=None,
+    last_cmd_alive_ms=None,
     last_scan_ms=None,
     scan_points=0,
     present_nodes=(),
@@ -120,7 +120,7 @@ def _ok_report():
         p=_params(),
         now_ms=10_000,
         last_fb_ms=9_500,
-        last_cmd_ms=9_600,
+        last_cmd_alive_ms=9_600,
         last_scan_ms=9_800,
         scan_points=360,
         present_nodes=("state_manager", "safety_monitor"),

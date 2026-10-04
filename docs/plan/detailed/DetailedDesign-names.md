@@ -431,6 +431,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`/safety/localization_health`** | **`LocalizationHealth`** | **reliable, depth 1** | **2 Hz（発行者は `localization_health`。WP-SAFE-05。比較周期 `jump_window_ms` に連動。止まったこと自体が異常の合図）** |
 | `/safety/link_quality` | `LinkQuality` | best_effort | 1 Hz |
 | **`/safety/firmware_flags`** | `std_msgs/UInt8` | **transient_local, depth 1** | 変化時＋接続時（[hardware](DetailedDesign-hardware.md) §3.1） |
+| **`/esp32/cmd_alive`** | `std_msgs/Bool` | reliable, depth 10 | ESP32 の `ESTOP_HW` フレームごと（10 Hz）。**ESP32 自身が「速度指令を受け取れている」と報告した値**（flags bit1。bit2 が立つファームのときだけ出す）。発行者は `esp32_bridge`、購読者は `connectivity_checker`（疎通確認の「速度指令の折り返し」。2026-10-04） |
 | **`/esp32/battery`** | `sensor_msgs/BatteryState` | reliable, depth 1 | **1 Hz**（[hardware](DetailedDesign-hardware.md) §3.3） |
 
 ### 6.3 知覚

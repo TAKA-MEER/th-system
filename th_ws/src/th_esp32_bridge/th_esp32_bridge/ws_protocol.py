@@ -50,6 +50,23 @@ _IMU_STRUCT = struct.Struct('<BffffffffffB')  # type tag + 10 floats + calib_sta
 # 予約する。0xFF は他の flags 値 (bit0 のみ有効・残りは予約) と衝突しない。
 FIRMWARE_FLAGS_UNKNOWN = 0xFF
 
+# ESTOP_HW の flags のビット（esp32/src/main.cpp と一致させる）。
+FLAG_BYPASS_ACTIVE = 0x01
+FLAG_CMD_ALIVE = 0x02           # 速度指令を受け取れている（一度は受信し、ウォッチドッグ未発動）
+FLAG_CMD_ALIVE_REPORTED = 0x04  # cmd_alive を報告するファーム（2026-10-04 以降。常に 1）
+
+
+def cmd_alive_from_flags(flags: int):
+    """flags から「ESP32 が速度指令を受け取れているか」を返す。
+
+    報告しないファーム（bit2 が 0、または旧形式で flags 不明 = 0xFF）は None。
+    0xFF は bit2 も立っているので、先に UNKNOWN を弾く（立っているからと
+    受信中扱いにすると、古いファームで疎通確認が素通りする）。
+    """
+    if flags == FIRMWARE_FLAGS_UNKNOWN or not (flags & FLAG_CMD_ALIVE_REPORTED):
+        return None
+    return bool(flags & FLAG_CMD_ALIVE)
+
 
 class ProtocolError(ValueError):
     """フレームの type tag 不一致・長さ不正など、デコード不能な入力"""

@@ -13,6 +13,9 @@
 
 // ── タイマー ─────────────────────────────────────────────────
 static unsigned long last_cmd_ms = 0;   // ウォッチドッグ用
+// 起動後に WHEEL_CMD を一度でも受け取ったか。setup() が last_cmd_ms を起動時刻に
+// するので、これが無いと起動直後の WATCHDOG_MS の間は受信していなくても「受信中」に見える。
+static bool cmd_received_once = false;
 static unsigned long last_ctrl_ms = 0;
 
 // ── IMU (DSR1603/BNO055) ────────────────────────────────────
@@ -52,6 +55,7 @@ static void onWheelCmd(float left, float right) {
     targetLeft  = left;
     targetRight = right;
     last_cmd_ms = millis();
+    cmd_received_once = true;
 #if LOG_EVERY_WHEEL_CMD
     // 通信テスト用ログ。開発ボード単体での書き込み・通信確認に使う。
     //
@@ -185,9 +189,17 @@ static void cbCtrlTimer() {
                                  imu_ax, imu_ay, imu_az, imu_calibStatus);
     }
 
-    // E-Stop 状態を送信 (毎周期)。flags bit0 = bypassActive(config.h の
-    // ESTOP_BENCH_TEST_BYPASS が有効かどうか)。残りビットは予約(0)。
-    uint8_t estopFlags = bypassActive ? 0x01 : 0x00;
+    // E-Stop 状態を送信 (毎周期)。flags:
+    //   bit0 = bypassActive(config.h の ESTOP_BENCH_TEST_BYPASS が有効かどうか)
+    //   bit1 = cmd_alive: 速度指令を受け取れている(一度は受信し、ウォッチドッグ未発動)。
+    //          PC 側の疎通確認「速度指令の折り返し」はこのビットで判定する
+    //          (Spec-ops.md §2.2。2026-10-04 まで PC 側で計算した値を見ていて、
+    //          ESP32 が居なくても合格になっていた)
+    //   bit2 = cmd_alive を報告するファームであること(常に 1)。古いファームと区別する
+    //   残りビットは予約(0)。
+    uint8_t estopFlags = (bypassActive ? 0x01 : 0x00)
+                       | ((cmd_received_once && !watchdogTripped) ? 0x02 : 0x00)
+                       | 0x04;
     SerialLink::sendEstopHw(estopActive, estopFlags);
 }
 

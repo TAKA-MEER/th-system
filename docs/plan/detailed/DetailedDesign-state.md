@@ -999,7 +999,7 @@ python3 -m pytest src/th_testing/test/test_transition_table.py -v
 | 対象 | 合格条件 | 実装 |
 | --- | --- | --- |
 | ESP32 | `esp32_alive_timeout_ms` 以内にホイールフィードバックが届き続けている | `/esp32/wheel_feedback` の受信間隔 |
-| ESP32 | 速度指令が折り返し確認できる（キープアライブが成立） | `/esp32/wheel_cmd_speed` と `/esp32/wheel_feedback` の対応 |
+| ESP32 | 速度指令が折り返し確認できる（キープアライブが成立） | `/esp32/cmd_alive`（ESP32 が `ESTOP_HW` フレームの flags で「最後の速度指令から `WATCHDOG_MS` 以内」を報告し、`esp32_bridge` が中継）が真で、その受信間隔が `esp32_alive_timeout_ms` 以内。**2026-10-04 まで `/esp32/wheel_cmd_speed` を見ていたが、これは `esp32_bridge` が `/cmd_vel` から計算して出す値で、ESP32 が居なくても合格になっていた** |
 | RaspberryPi4 | スキャンが規定の周期・規定の点数で届いている | `/scan` の `ranges.size()` と受信間隔 |
 | PC | 必要なノードがすべて起動している | `connectivity_checker` が `get_node_names()` を照合 |
 
