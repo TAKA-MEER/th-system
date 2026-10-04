@@ -109,8 +109,8 @@ DRY
     fi
     cat <<DRY
   5. bringup を起動: docker exec th_robot bash -lc '... exec ${INNER_LAUNCH#*exec }'
-     launch が異常終了したら立て直す（最大 ${STARTSH_RESTART_MAX} 回まで。その後は機体の電源再投入・AP・ケーブルの確認を案内）。
-     正常終了・操作者の停止では立て直さない
+     終了コードにかかわらず立て直す（最大 ${STARTSH_RESTART_MAX} 回まで。その後は機体の電源再投入・AP・ケーブルの確認を案内）。
+     立て直さないのは操作者の停止（Ctrl-C/SIGTERM）だけ
   6. WebUI を配信: web_ui/dist/ を npx vite preview --host --port ${WEBUI_PORT} --strictPort で配信
      タブレット: http://${ROBOT_UI_IP}:${WEBUI_PORT} ／ PC: http://localhost:${WEBUI_PORT}
   7. Ctrl-C で launch に INT を送って子ノードごと止め、WebUI の配信も止めて終わる
@@ -197,8 +197,12 @@ request_stop() {
 trap request_stop INT TERM
 
 # ── 5. bringup の起動と見張り ────────────────────────────────
-# launch が終了したら立て直す。回数はこのスクリプトが数え、上限に
-# 達したら立て直さずに止める（Spec-ops.md §2.4「再起動しても直らない場合」）。
+# 終了コードにかかわらず立て直す。bringup は通常自分から正常終了せず、
+# restart_control_stack は SIGTERM で落とす作りで ros2 launch は後始末して
+# 0 を返しうるため、0 をもって直ったとはみなさない。立て直さないのは
+# 操作者の停止（Ctrl-C/SIGTERM をこのスクリプトが受けた）だけ。
+# 回数はこのスクリプトが数え、上限に達したら立て直さずに止める
+# （Spec-ops.md §2.4「再起動しても直らない場合」）。
 attempt=0
 while [ "$attempt" -lt "$STARTSH_RESTART_MAX" ]; do
     attempt=$((attempt + 1))
@@ -211,10 +215,6 @@ while [ "$attempt" -lt "$STARTSH_RESTART_MAX" ]; do
     docker exec th_robot bash -lc "$INNER_LAUNCH" || rc=$?
     if [ "$STOPPED" -eq 1 ]; then
         info "操作者の停止により終わる。"
-        break
-    fi
-    if [ "$rc" -eq 0 ]; then
-        info "bringup が正常終了した。終わる。"
         break
     fi
     if [ "$attempt" -ge "$STARTSH_RESTART_MAX" ]; then

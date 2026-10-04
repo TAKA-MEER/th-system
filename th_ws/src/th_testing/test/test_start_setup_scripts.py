@@ -143,6 +143,9 @@ def _launch_execs(calls):
 
 
 # ── 1. 既定の引数・追加・上書き ─────────────────────────────
+#
+# bringup は自分から正常終了しないため、FAKE_LAUNCH_RC=0 でも上限まで
+# 立て直して非0で止まる（差し戻し A）。引数の検証は 1 回目の呼び出しで行う。
 
 def test_default_launch_args(fakebin, with_dist):
     _, make_env, log = fakebin
@@ -150,7 +153,7 @@ def test_default_launch_args(fakebin, with_dist):
                    STARTSH_RESTART_MAX="1")
     r = subprocess.run(["bash", START_SH], capture_output=True, text=True,
                        env=env, timeout=60)
-    assert r.returncode == 0, r.stderr
+    assert r.returncode != 0  # 上限（1 回）に達して止まる
     execs = _launch_execs(_calls(log))
     assert len(execs) == 1
     for want in ("lidar_source:=network", "use_stub:=false",
@@ -164,7 +167,7 @@ def test_extra_launch_arg_appended(fakebin, with_dist):
                    STARTSH_RESTART_MAX="1")
     r = subprocess.run(["bash", START_SH, "stage:=4"], capture_output=True,
                        text=True, env=env, timeout=60)
-    assert r.returncode == 0, r.stderr
+    assert r.returncode != 0  # 上限（1 回）に達して止まる
     execs = _launch_execs(_calls(log))
     assert len(execs) == 1
     assert "stage:=4" in execs[0]
@@ -177,7 +180,7 @@ def test_launch_arg_override_wins(fakebin, with_dist):
                    STARTSH_RESTART_MAX="1")
     r = subprocess.run(["bash", START_SH, "enable_route_slam:=false"],
                        capture_output=True, text=True, env=env, timeout=60)
-    assert r.returncode == 0, r.stderr
+    assert r.returncode != 0  # 上限（1 回）に達して止まる
     execs = _launch_execs(_calls(log))
     assert len(execs) == 1
     assert "enable_route_slam:=false" in execs[0]
@@ -228,6 +231,22 @@ def test_restart_until_limit(fakebin, with_dist):
     assert r.returncode != 0
     execs = _launch_execs(_calls(log))
     assert len(execs) == 3, execs  # 上限どおり（上限+1 ではない）
+    out = r.stdout + r.stderr
+    assert "再起動しています" in out
+    assert "電源再投入" in out
+
+
+def test_restart_even_on_zero_exit(fakebin, with_dist):
+    # 差し戻し A: ros2 launch は SIGTERM での後始末で 0 を返しうる。
+    # 操作者の停止でない限り、0 でも立て直す。
+    _, make_env, log = fakebin
+    env = make_env(FAKE_LAUNCH_MODE="exit", FAKE_LAUNCH_RC="0",
+                   STARTSH_RESTART_MAX="3")
+    r = subprocess.run(["bash", START_SH], capture_output=True, text=True,
+                       env=env, timeout=120)
+    assert r.returncode != 0
+    execs = _launch_execs(_calls(log))
+    assert len(execs) == 3, execs
     out = r.stdout + r.stderr
     assert "再起動しています" in out
     assert "電源再投入" in out
