@@ -455,6 +455,14 @@ def test_setup_dry_run(fakebin):
     assert "npm run build" in r.stdout
 
 
+def test_setup_platformio_guidance():
+    # 差し戻し E: pip での導入は案内しない（anyio が pytest を全滅させる）。
+    with open(SETUP_SH, encoding="utf-8") as f:
+        body = f.read()
+    assert "pip install platformio" not in body
+    assert "pipx install platformio" in body
+
+
 def test_setup_does_not_touch_udev():
     with open(SETUP_SH, encoding="utf-8") as f:
         body = f.read()

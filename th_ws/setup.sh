@@ -83,7 +83,7 @@ if command -v pio &>/dev/null; then
     echo "      ESP32 書込み: cd esp32 && pio run --target upload（手順は docs/esp32.md）"
 else
     echo "      PlatformIO が見つかりません（ESP32 の書き込みに要る）"
-    echo "      インストール: pip install platformio"
+    echo "      インストール: pipx install platformio（ホストの pytest 環境を壊さないため pip は使わない）"
     echo "      または VS Code 拡張 'PlatformIO IDE' をインストールしてください"
     echo "      書き込み手順は docs/esp32.md"
 fi
