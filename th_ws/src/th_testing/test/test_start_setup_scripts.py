@@ -78,8 +78,8 @@ exit "${FAKE_RC:-0}"
 FAKE_NPX = """#!/usr/bin/env bash
 echo "npx $*" >> "$FAKE_LOG"
 echo "$$" > "$FAKE_NPX_PID"
-if [ "${FAKE_NPX_MODE:-once}" = "block" ]; then sleep 300; fi
-exit 0
+if [ "${FAKE_NPX_MODE:-block}" = "block" ]; then sleep 300; fi
+exit "${FAKE_NPX_RC:-0}"
 """
 
 
@@ -113,6 +113,7 @@ def fakebin(tmp_path):
         env["FAKE_PS_COUNT"] = str(tmp_path / "pscount")
         env["FAKE_NPX_PID"] = str(tmp_path / "npx.pid")
         env["STARTSH_RESTART_WAIT"] = "0"
+        env["STARTSH_WEBUI_WAIT"] = "0"
         env.update({k: str(v) for k, v in overrides.items()})
         return env
 
@@ -299,6 +300,21 @@ def test_dist_missing_guides_to_build(fakebin):
 
 
 # ── 5. SIGINT は launch に INT を送り、WebUI も止める ────────
+
+def test_webui_failure_stops_before_launch(fakebin, with_dist, tmp_path):
+    # 差し戻し C: vite preview がすぐ死ぬ（ポート競合等）と、launch せず非0で止まる。
+    _, make_env, log = fakebin
+    webui_log = tmp_path / "webui.log"
+    env = make_env(FAKE_NPX_MODE="once", FAKE_NPX_RC="1",
+                   STARTSH_WEBUI_LOG=str(webui_log), STARTSH_WEBUI_WAIT="2")
+    r = subprocess.run(["bash", START_SH], capture_output=True, text=True,
+                       env=env, timeout=60)
+    assert r.returncode != 0
+    assert not _launch_execs(_calls(log)), _calls(log)  # bringup はまだ
+    out = r.stdout + r.stderr
+    assert "WebUI" in out
+    assert str(webui_log) in out  # ログの置き場を案内する
+
 
 def test_sigint_stops_launch_and_webui(fakebin, with_dist, tmp_path):
     _, make_env, log = fakebin

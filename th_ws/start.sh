@@ -23,6 +23,8 @@ ROBOT_UI_IP="${ROBOT_UI_IP:-192.168.5.50}"      # ロボット回線の PC 側 I
 WEBUI_PORT="${WEBUI_PORT:-5173}"                # WebUI の配信ポート
 STARTSH_RESTART_MAX="${STARTSH_RESTART_MAX:-3}" # bringup の起動は最大何回まで（初回を含む）
 STARTSH_RESTART_WAIT="${STARTSH_RESTART_WAIT:-5}" # 立て直しの前に待つ秒数
+STARTSH_WEBUI_LOG="${STARTSH_WEBUI_LOG:-}"        # WebUI 配信のログ（空なら th_ws/log/start-webui.log）
+STARTSH_WEBUI_WAIT="${STARTSH_WEBUI_WAIT:-2}"     # WebUI の生死確認まで待つ秒数
 
 # bringup の既定の launch 引数（同じキーが渡されたら渡された方を使う）
 DEFAULT_LAUNCH_ARGS=(lidar_source:=network use_stub:=false enable_route_slam:=true)
@@ -63,6 +65,8 @@ launch 引数:
   ROBOT_UI_IP（既定 192.168.5.50）/ WEBUI_PORT（既定 5173）
   STARTSH_RESTART_MAX（既定 3。起動は初回を含め最大この回数まで）
   STARTSH_RESTART_WAIT（既定 5 秒。立て直しの前の待ち時間）
+  STARTSH_WEBUI_LOG（既定 th_ws/log/start-webui.log。WebUI 配信のログ）
+  STARTSH_WEBUI_WAIT（既定 2 秒。WebUI の生死確認まで待つ時間）
 
 止め方: Ctrl-C（launch に INT を送って子ノードごと止め、WebUI の配信も止める）
 USAGE
@@ -112,6 +116,7 @@ DRY
      終了コードにかかわらず立て直す（最大 ${STARTSH_RESTART_MAX} 回まで。その後は機体の電源再投入・AP・ケーブルの確認を案内）。
      立て直さないのは操作者の停止（Ctrl-C/SIGTERM）だけ
   6. WebUI を配信: web_ui/dist/ を npx vite preview --host --port ${WEBUI_PORT} --strictPort で配信
+     出力はログ（既定 th_ws/log/start-webui.log。git 管理外）に残し、起動直後に死んでいたら止まる
      タブレット: http://${ROBOT_UI_IP}:${WEBUI_PORT} ／ PC: http://localhost:${WEBUI_PORT}
   7. Ctrl-C で launch に INT を送って子ノードごと止め、WebUI の配信も止めて終わる
 DRY
@@ -172,9 +177,30 @@ if [ ! -d "$SCRIPT_DIR/web_ui/dist" ]; then
 fi
 
 # ── 6. WebUI の配信（bringup の見張りの前に裏で立てる） ──────
+# 出力はログファイルに残す（th_ws/log/ は git 管理外）。起動直後に死んで
+# いたら（ポートが埋まっている等。--strictPort は競合で即終了する）、
+# ログの末尾を出して止める。bringup はまだ起動していないので止めるものは無い。
 info "WebUI を配信する (port ${WEBUI_PORT})..."
-( cd "$SCRIPT_DIR/web_ui" && exec npx vite preview --host --port "$WEBUI_PORT" --strictPort ) >/dev/null 2>&1 &
+if [ -z "$STARTSH_WEBUI_LOG" ]; then
+    STARTSH_WEBUI_LOG="$SCRIPT_DIR/log/start-webui.log"
+fi
+mkdir -p "$(dirname "$STARTSH_WEBUI_LOG")"
+( cd "$SCRIPT_DIR/web_ui" && exec npx vite preview --host --port "$WEBUI_PORT" --strictPort ) >>"$STARTSH_WEBUI_LOG" 2>&1 &
 WEBUI_PID=$!
+sleep "$STARTSH_WEBUI_WAIT"
+webui_dead=0
+if ! kill -0 "$WEBUI_PID" 2>/dev/null; then
+    webui_dead=1
+elif [ -r "/proc/$WEBUI_PID/stat" ] && [ "$(awk '{print $3}' "/proc/$WEBUI_PID/stat")" = "Z" ]; then
+    webui_dead=1  # 終了済みで回収待ち（ゾンビ）。kill -0 では生きているように見える
+fi
+if [ "$webui_dead" -eq 1 ]; then
+    wait "$WEBUI_PID" 2>/dev/null || true  # 終わっていた分を回収
+    err "WebUI の配信が起動しなかった（port ${WEBUI_PORT} が埋まっている等）。ログ (${STARTSH_WEBUI_LOG}) の末尾:"
+    tail -n 20 "$STARTSH_WEBUI_LOG" >&2 || true
+    err "ポートを使っているものを止めるか、WEBUI_PORT を変えて起動すること。"
+    exit 1
+fi
 info "タブレット: http://${ROBOT_UI_IP}:${WEBUI_PORT}"
 info "PC で見るだけ: http://localhost:${WEBUI_PORT}"
 
