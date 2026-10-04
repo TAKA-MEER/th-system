@@ -88,11 +88,6 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_installed_scripts_executable
     test/test_installed_scripts_executable.py
     TIMEOUT 30)
-  # start.sh / setup.sh の試験（1b-16。ROS 不要。docker・ping・ssh・npx を
-  # 偽コマンドに差し替えて本番の経路を縛る。実機・本物のコンテナに触れない）
-  ament_add_pytest_test(test_start_setup_scripts
-    test/test_start_setup_scripts.py
-    TIMEOUT 120)
   # install(PROGRAMS) に載せた th_onsite のノードが bringup.launch.py から
   # 実際に起動されることを固定する。home_declarer が「ビルドされるのに
   # 誰も起動しない」状態で実機に出た事故（2026-09-08）の再発防止

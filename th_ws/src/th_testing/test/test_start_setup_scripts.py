@@ -1,8 +1,13 @@
-"""test_start_setup_scripts.py — start.sh / setup.sh の試験。
+"""test_start_setup_scripts.py — start.sh / setup.sh の試験（ホスト専用）。
 
 本物の実機・本物の th_robot コンテナに触れずに、本番の経路を縛る。
 docker・ping・ssh・npx・npm・nmcli を偽物のコマンド（PATH の先頭に置いた
 スクリプト）に差し替え、呼ばれた引数を記録させて検証する。ROS 不要。
+
+ホスト専用のため CMakeLists.txt の ament_add_pytest_test には登録しない。
+Docker の colcon test ではコンテナに th_ws/start.sh・setup.sh・web_ui/ が
+マウントされず git も無いので、登録すると必ず落ちる。実行はホストで:
+python3 -m pytest -p no:anyio src/th_testing/test/test_start_setup_scripts.py
 
 対象: th_ws/start.sh（新設）、th_ws/setup.sh（改修）。
 ブリーフ .briefs/brief-startsh.md §3 の必須項目 1〜8 に対応する。
