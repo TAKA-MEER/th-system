@@ -179,34 +179,8 @@ if [ ! -d "$SCRIPT_DIR/web_ui/dist" ]; then
     exit 1
 fi
 
-# ── 6. WebUI の配信（bringup の見張りの前に裏で立てる） ──────
-# 出力はログファイルに残す（th_ws/log/ は git 管理外）。起動直後に死んで
-# いたら（ポートが埋まっている等。--strictPort は競合で即終了する）、
-# ログの末尾を出して止める。bringup はまだ起動していないので止めるものは無い。
-info "WebUI を配信する (port ${WEBUI_PORT})..."
-if [ -z "$STARTSH_WEBUI_LOG" ]; then
-    STARTSH_WEBUI_LOG="$SCRIPT_DIR/log/start-webui.log"
-fi
-mkdir -p "$(dirname "$STARTSH_WEBUI_LOG")"
-( cd "$SCRIPT_DIR/web_ui" && exec npx vite preview --host --port "$WEBUI_PORT" --strictPort ) >>"$STARTSH_WEBUI_LOG" 2>&1 &
-WEBUI_PID=$!
-sleep "$STARTSH_WEBUI_WAIT"
-webui_dead=0
-if ! kill -0 "$WEBUI_PID" 2>/dev/null; then
-    webui_dead=1
-elif [ -r "/proc/$WEBUI_PID/stat" ] && [ "$(awk '{print $3}' "/proc/$WEBUI_PID/stat")" = "Z" ]; then
-    webui_dead=1  # 終了済みで回収待ち（ゾンビ）。kill -0 では生きているように見える
-fi
-if [ "$webui_dead" -eq 1 ]; then
-    wait "$WEBUI_PID" 2>/dev/null || true  # 終わっていた分を回収
-    err "WebUI の配信が起動しなかった（port ${WEBUI_PORT} が埋まっている等）。ログ (${STARTSH_WEBUI_LOG}) の末尾:"
-    tail -n 20 "$STARTSH_WEBUI_LOG" >&2 || true
-    err "ポートを使っているものを止めるか、WEBUI_PORT を変えて起動すること。"
-    exit 1
-fi
-info "タブレット: http://${ROBOT_UI_IP}:${WEBUI_PORT}"
-info "PC で見るだけ: http://localhost:${WEBUI_PORT}"
-
+# WebUI の生死待ち・立て直しの待ち時間中の停止に備え、ここで trap を入れる
+#（sleep 中の INT に trap が無いと即死する）。
 STOPPED=0
 cleanup_webui() {
     if [ "${WEBUI_PID:-0}" -ne 0 ] && kill -0 "$WEBUI_PID" 2>/dev/null; then
@@ -241,7 +215,43 @@ request_stop() {
         warn "止まってから打ち直すこと。止まらないときは作業者に確認する。"
     fi
 }
+
 trap request_stop INT TERM
+
+# ── 6. WebUI の配信（bringup の見張りの前に裏で立てる） ──────
+# 出力はログファイルに残す（th_ws/log/ は git 管理外）。起動直後に死んで
+# いたら（ポートが埋まっている等。--strictPort は競合で即終了する）、
+# ログの末尾を出して止める。bringup はまだ起動していないので止めるものは無い。
+info "WebUI を配信する (port ${WEBUI_PORT})..."
+if [ -z "$STARTSH_WEBUI_LOG" ]; then
+    STARTSH_WEBUI_LOG="$SCRIPT_DIR/log/start-webui.log"
+fi
+mkdir -p "$(dirname "$STARTSH_WEBUI_LOG")"
+( cd "$SCRIPT_DIR/web_ui" && exec npx vite preview --host --port "$WEBUI_PORT" --strictPort ) >>"$STARTSH_WEBUI_LOG" 2>&1 &
+WEBUI_PID=$!
+# INT で中断されると sleep は非0で終わる（set -e で落ちないよう受け止める）。
+sleep "$STARTSH_WEBUI_WAIT" || true
+if [ "$STOPPED" -eq 1 ]; then
+    info "操作者の停止により終わる。"
+    cleanup_webui
+    trap - INT TERM
+    exit 0
+fi
+webui_dead=0
+if ! kill -0 "$WEBUI_PID" 2>/dev/null; then
+    webui_dead=1
+elif [ -r "/proc/$WEBUI_PID/stat" ] && [ "$(awk '{print $3}' "/proc/$WEBUI_PID/stat")" = "Z" ]; then
+    webui_dead=1  # 終了済みで回収待ち（ゾンビ）。kill -0 では生きているように見える
+fi
+if [ "$webui_dead" -eq 1 ]; then
+    wait "$WEBUI_PID" 2>/dev/null || true  # 終わっていた分を回収
+    err "WebUI の配信が起動しなかった（port ${WEBUI_PORT} が埋まっている等）。ログ (${STARTSH_WEBUI_LOG}) の末尾:"
+    tail -n 20 "$STARTSH_WEBUI_LOG" >&2 || true
+    err "ポートを使っているものを止めるか、WEBUI_PORT を変えて起動すること。"
+    exit 1
+fi
+info "タブレット: http://${ROBOT_UI_IP}:${WEBUI_PORT}"
+info "PC で見るだけ: http://localhost:${WEBUI_PORT}"
 
 # ── 5. bringup の起動と見張り ────────────────────────────────
 # 終了コードにかかわらず立て直す。bringup は通常自分から正常終了せず、

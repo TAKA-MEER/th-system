@@ -263,6 +263,35 @@ def test_restart_even_on_zero_exit(fakebin, with_dist):
     assert "電源再投入" in out
 
 
+def test_sigint_before_first_launch_starts_nothing(fakebin, with_dist):
+    # 差し戻し B（ループ先頭の確認）: 初回起動の前に止めたら、何も起動しない。
+    # WebUI の生死確認の待ち時間中に INT を送る。
+    _, make_env, log = fakebin
+    env = make_env(FAKE_LAUNCH_MODE="exit", FAKE_LAUNCH_RC="1",
+                   STARTSH_RESTART_MAX="3", STARTSH_WEBUI_WAIT="3")
+    proc = subprocess.Popen(["bash", START_SH], stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, env=env,
+                            start_new_session=True)
+    try:
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            if any(c.startswith("npx ") for c in _calls(log)):
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("WebUI の配信が始まらなかった")
+        time.sleep(0.5)  # WebUI の生死確認の待ち時間に入っているはず
+        os.killpg(proc.pid, signal.SIGINT)
+        out = proc.communicate(timeout=20)[0]
+        assert proc.returncode == 0, out
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+    assert not _launch_execs(_calls(log)), _calls(log)
+    assert "bringup を起動します" not in out
+
+
 def test_sigint_during_restart_wait_starts_only_once(fakebin, with_dist):
     # 差し戻し B: 立て直しの待ち時間中に Ctrl-C しても、もう一度起動しない。
     _, make_env, log = fakebin
