@@ -66,34 +66,25 @@ ip route | head -1                     # default が net5g 側 (wlx...) であ�
 > 読み替え、③ の前に `wsl --shutdown` でクリーンに起動する。
 
 ```bash
-# ③ th_ws/ にて
-docker start th_robot
-docker exec -it th_robot bash
+# ③ th_ws/ にて起動（bringup＋WebUI の配信を 1 コマンドで）
+cd th_ws
+./start.sh                     # 教示再生デモ（stage 1・SLAM あり）の既定値で起動
+./start.sh stage:=4            # 試験場内デモ（PREP／盤前移動／呼び寄せ）
+# 止めるときは Ctrl-C（launch に INT を送って子ノードごと止める）
 
-# ④ コンテナ内で bringup (地図なし=SLAM モード。地図ありは map_yaml:=... を追加)
-cd /root/th_ws
-colcon build --symlink-install     # C++ 変更時のみ必須。Python のみの変更は --symlink-install で即反映
-source install/setup.bash
-ros2 launch th_bringup bringup.launch.py lidar_source:=network use_stub:=false
-# IMUあり
-ros2 launch th_bringup bringup.launch.py lidar_source:=network use_stub:=false imu_enabled:=true
-
-# 手動教示・教示再生デモ (feat/demo-teach-replay): slam_toolbox を mapping モードで
-# 起動し、教示中も再生中も map→odom を連続補正する。教示画面に地図と LiDAR 点群が出る。
-ros2 launch th_bringup bringup.launch.py lidar_source:=network use_stub:=false enable_route_slam:=true
-
-# 駆動系だけのキーボード操作テスト (LiDAR・安全監視なしの最小構成)
-ros2 launch th_bringup esp32_keyboard_test.launch.py
-
-# ⑤ 健全性確認: 起動直後の [FAULT] は 1〜2 分で全て [FAULT CLEARED] になる。
+# ④ 健全性確認: 起動直後の [FAULT] は 1〜2 分で全て [FAULT CLEARED] になる。
 #    ならないフォルトがあれば docs/network.md の復旧手順へ
 ros2 topic echo /robot/mode --once     # mode: 1 (IDLE) = 正常
 ros2 topic hz /scan_filtered           # network 時: 10Hz 出ていること。無音なら docs/network.md へ
 
-# ⑥ モード切替 (タブレット UI または CLI)
+# ⑤ モード切替 (タブレット UI または CLI)
 ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
   "{requested_mode: 7, requester: 'cli'}"    # 7=FOLLOWING_MAPLESS, 2=FOLLOWING, 1=IDLE
 ```
+
+タブレットは `http://192.168.5.50:5173` を開く（`start.sh` が表示する）。
+`start.sh` を使わない切り分け用の手作業手順は
+[docs/使い方.md §1-4](docs/使い方.md#1-4-startsh-を使わずに起動する不具合の切り分け用)。
 
 うまくいかない時の早見表:
 

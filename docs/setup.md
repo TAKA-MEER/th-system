@@ -431,13 +431,15 @@ winget install usbipd                                          # 初回のみ
 
 ## 8. Web UI
 
-```bash
-# コンテナの外 (Windows または WSL2) で、初回のみ
-cd th_ws/web_ui
-npm install
+初回の導入は `th_ws/setup.sh` がまとめて行う（`npm ci` → `npm run build` で
+本番ビルド `dist/` を作成）。ふだんの起動では `th_ws/start.sh` が `dist/` を
+`vite preview` で配信する（ポート 5173）ため、`npm run dev` で別途立てる必要は無い。
 
-# 起動
-npm run dev    # → http://localhost:5173
+```bash
+# コンテナの外 (Windows または WSL2) で、手作業で作り直すときだけ
+cd th_ws/web_ui
+npm ci
+npm run build  # → dist/ ができる。起動は ./start.sh が行う
 ```
 
 roslib.js はローカル同梱(`web_ui/public/roslib.min.js`)のため、
@@ -463,11 +465,14 @@ localhost で開けば rosbridge 接続も localhost に閉じ、WiFi を一切�
 
 ## 9. Linux 実機 (Ubuntu) の場合
 
-一括セットアップスクリプトがある(udev ルール適用・イメージビルド等をまとめて実行):
+一括セットアップスクリプトがある(イメージビルド・colcon ビルド・WebUI 本番ビルド等をまとめて実行。
+PC への udev ルール導入は行わない。LiDAR も ESP32 も PC に繋がないため):
 
 ```bash
 # th_ws/ で
 bash setup.sh
+# 毎回の起動は
+./start.sh
 ```
 
 以下は手動で行う場合の内訳。Docker は[公式ドキュメント](https://docs.docker.com/engine/install/ubuntu/)準拠:
