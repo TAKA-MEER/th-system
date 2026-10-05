@@ -156,13 +156,14 @@ class _FaultDriver:
     def all_alive(self):
         return (self.pub_scan_once, self.pub_wf_once, self.pub_limiter_once)
 
-    def go_alive_and_clean(self, timeout: float = 25.0):
+    def go_alive_and_clean(self, timeout: float = 60.0, stable_sec: float = 2.0):
         """送達ハンドシェイク付きの前提条件回復。
 
         1. 全入力を止めてフォルトが立つのを待つ（monitor→test 方向の証明）。
            edge を取り逃がしていても /safety/fault_lock（常時 20Hz）で active を見る。
-        2. 3 入力を送って解消 edge を待つ（test→monitor 方向の証明。
-           解消には入力の到着が必須）。
+        2. 3 入力を送り続け、/safety/fault_lock が stable_sec 連続で false のまま
+           なのを確認する（test→monitor 方向の証明。単発の false では、
+           scan がバースト的に届く不安定な送達での瞬間的解消を拾ってしまう）。
         3. バッファを空にして返す。
         """
         deadline = time.time() + timeout
@@ -179,15 +180,20 @@ class _FaultDriver:
             '入力停止後にフォルトが立たない（safety_monitor へ届いていないか受信できていない）'
         self.faults.clear()
         self.locks.clear()
+        stable_since = None
         deadline = time.time() + timeout
-        ok = False
         while time.time() < deadline:
             self.pump(0.1, self.all_alive())
-            if any(not f.active for f in self.faults):
-                ok = True
-                break
-        assert ok, \
-            'alive 送信後に解消 edge が来ない（入力が safety_monitor へ届いていない）'
+            if self.locks and self.locks[-1] is True:
+                stable_since = None
+            elif self.locks:
+                if stable_since is None:
+                    stable_since = time.time()
+                if time.time() - stable_since >= stable_sec:
+                    break
+        assert stable_since is not None and (time.time() - stable_since) >= stable_sec, \
+            'alive 送信後も /safety/fault_lock が false に安定しない' \
+            f'（入力の送達が不安定。{self.fault_summary()}）'
         self.faults.clear()
         self.locks.clear()
 

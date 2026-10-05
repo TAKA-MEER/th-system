@@ -422,7 +422,7 @@ if(BUILD_TESTING)
   # state_manager 経由で「はい」が残フォルト中は拒否されること。rclpy 要＝ホスト除外）
   ament_add_pytest_test(test_fault_aggregate_node
     test/test_fault_aggregate_node.py
-    TIMEOUT 240)
+    TIMEOUT 300)
   # LOCALIZATION_LOST の Docker launch テスト（WP-SAFE-05 §完了条件1〜3。
   # 継続で発火・単発で発火せず・途絶で発火。CRITICAL の確認を含む）
   ament_add_pytest_test(test_localization_lost
