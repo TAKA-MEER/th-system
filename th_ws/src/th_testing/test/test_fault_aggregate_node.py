@@ -201,6 +201,10 @@ class _FaultDriver:
                     return True
         return False
 
+    def fault_summary(self) -> str:
+        kinds = [(f.active, f.fault_type, f.severity) for f in self.faults]
+        return f'n={len(self.faults)} locks={len(self.locks)} last_lock={self.locks[-1] if self.locks else None} kinds={kinds[-12:]}'
+
     def wait_for_cleared(self, timeout: float = 5.0, keep_alive=()) -> bool:
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -237,7 +241,7 @@ class TestFaultAggregateMessage(unittest.TestCase):
         # 両方を途絶させる（limiter だけ alive 維持）
         assert drv.wait_for_fault(
             'LIDAR_LOST', keep_alive=(drv.pub_limiter_once,)), \
-            'LIDAR_LOST が立たなかった'
+            f'LIDAR_LOST が立たなかった: {drv.fault_summary()}'
         assert drv.wait_for_fault(
             'ESP32_DISCONNECTED', keep_alive=(drv.pub_limiter_once,)), \
             'ESP32_DISCONNECTED が立たなかった'
@@ -283,7 +287,7 @@ class TestFaultAggregateMessage(unittest.TestCase):
         # さらに scan を止めて LIDAR_LOST を重ねる
         assert drv.wait_for_fault(
             'LIDAR_LOST', keep_alive=(drv.pub_wf_once,)), \
-            'LIDAR_LOST が立たなかった'
+            f'LIDAR_LOST が立たなかった: {drv.fault_summary()}'
 
         mark = len(drv.faults)
         # limiter だけ再開（scan は止めたまま）→ 代表は LIDAR_LOST のはず
@@ -390,7 +394,7 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         # A・B（LIDAR_LOST + ESP32_DISCONNECTED）を発生させる
         assert drv.wait_for_fault(
             'LIDAR_LOST', keep_alive=(drv.pub_limiter_once,)), \
-            'LIDAR_LOST が立たなかった'
+            f'LIDAR_LOST が立たなかった: {drv.fault_summary()}'
         assert drv.wait_for_fault(
             'ESP32_DISCONNECTED', keep_alive=(drv.pub_limiter_once,)), \
             'ESP32_DISCONNECTED が立たなかった'
