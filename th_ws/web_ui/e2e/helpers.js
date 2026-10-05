@@ -319,3 +319,22 @@ export async function setFlagCalls(page) {
 export async function stubSetFlag(page, stubs) {
   await page.addInitScript((s) => { window.__thTestSetFlag = s }, stubs)
 }
+
+// SG-B9: S-50 の一般タブが読むパラメータ取得の部分スタブ。
+// `window.__thTunableStubs = { [nodeName]: { values: {...} } }`（ros/useTunableParams.js
+// のテストフック）。エントリがあるノードは values を返し、無いノードは reject
+// （本番でノードが起動していないときの到達不能と同じ）になる。
+// apply/save の呼び出しは `window.__thTunableApplyCalls` /
+// `window.__thTunableSaveCalls` に記録される。
+export async function gotoScreenWithTunables(page, screen, state, stubs) {
+  await page.addInitScript(({ s, scr, t }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    window.__thTunableStubs = t
+  }, { s: state, scr: screen, t: stubs })
+  await page.goto('/')
+}
+
+export async function tunableApplyCalls(page) {
+  return page.evaluate(() => window.__thTunableApplyCalls ?? [])
+}
