@@ -25,8 +25,20 @@ import yaml
 from th_params import derive, export
 
 _SRC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-_GENERATED_DIR = os.path.abspath(os.path.join(
-    os.path.dirname(__file__), '..', '..', '..', 'data', 'generated'))
+
+
+def _find_generated_dir():
+    """生成物ディレクトリの解決（`test_home_declarer_node.py` と同じ順序）。
+    コンテナ内では `/root/th_data/generated`（`th_ws/data` のバインド先）、
+    ホストではリポジトリ相対。どこにも無ければ明示的に落とす。"""
+    for d in (os.environ.get('TH_GENERATED_DIR', ''),
+              '/root/th_data/generated',
+              os.path.abspath(os.path.join(_SRC_ROOT, '..', 'data', 'generated'))):
+        if d and os.path.isdir(d):
+            return d
+    raise AssertionError(
+        '生成物ディレクトリが無い（TH_GENERATED_DIR / /root/th_data/generated / '
+        'th_ws/data/generated のいずれにも無い）。生成スクリプトで作り直すこと')
 
 
 def test_ceiling_matches_firmware_limits(registry_rows):
@@ -58,10 +70,11 @@ def test_generated_v_max_matches_resolved(registry_rows):
         registry_rows, resolved, stage=0, nodes=None)
     assert errors == [], f"設定値の検査 (A1 など) が通らない: {errors}"
     checked = 0
-    for fname in sorted(os.listdir(_GENERATED_DIR)):
+    generated_dir = _find_generated_dir()
+    for fname in sorted(os.listdir(generated_dir)):
         if not fname.endswith('.yaml'):
             continue
-        with open(os.path.join(_GENERATED_DIR, fname), encoding='utf-8') as f:
+        with open(os.path.join(generated_dir, fname), encoding='utf-8') as f:
             doc = yaml.safe_load(f) or {}
         for node_body in doc.values():
             params = (node_body or {}).get('ros__parameters') or {}
