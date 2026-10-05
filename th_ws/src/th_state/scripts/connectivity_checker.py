@@ -9,10 +9,14 @@ DetailedDesign-wp1.md WP-STATE-03 §0 のとおり）。
 このノードは DetailedDesign-wp1.md WP-STATE-03 §4.2 のとおり、次だけを行う。
 
   1. 4項目の入力（受信間隔・スキャン点数・起動済みノード一覧）を集める
-  2. 1 Hz で `evaluate()` を呼ぶ
-  3. `all_ok()` かつ **物理 E-Stop が押されていない**とき `evt.link_ok` を
-     **立ち上がりで1回だけ**（L-3）`/system/event` へ出す（L-2）
-  4. `restart_control_stack` を「実行できる」ようにしておく（§12.3・L-4）
+   2. 1 Hz で `evaluate()` を呼ぶ
+   3. `all_ok()` かつ **物理 E-Stop が押されていない**とき `evt.link_ok` を
+      **立ち上がりで1回だけ**（L-3）`/system/event` へ出す（L-2）。
+      ただし `/system/state` で `INIT` への到着を見たら立ち上がり検出のラッチを
+      リセットする（1b-2 SG-A5。ESTOP から `INIT/CHECK` に戻ったとき、
+      gate が真のままでは再送されず疎通確認からやり直せないため。
+      `INIT` 以外の遷移ではリセットしない）
+   4. `restart_control_stack` を「実行できる」ようにしておく（§12.3・L-4）
 
 `link_wait_timeout_ms` の管理（`sys.link_timeout` の生成）は `th_state`
 （state_manager.py）側の責務であり、このノードには無い（§3.3 の注記）。
@@ -104,6 +108,8 @@ class ConnectivityChecker(Node):
         # evt.link_ok を出してしまい、押しっぱなしの機体がそのまま運用に入る。
         self._estop_seen = False
         self._link_ok_gate_prev = False   # L-3: 立ち上がり検出用のラッチ
+        # 1b-2（SG-A5）: /system/state で最後に見た mode。INIT への到着検出用。
+        self._last_state_mode = None
         self._restart_count = 0           # restart_control_stack の実行回数（FMEA②）
         self._dev_logged_state = None     # 開発モード状態の変化検出用（ログは切り替わり時だけ）
         # WP-DEV-01C: 選択記録の購読最新値（seen）と最終記録値（logged）。
@@ -201,6 +207,16 @@ class ConnectivityChecker(Node):
     # WP-DEV-01C: 購読コールバックは最新値の保持だけ（判定・記録は _on_timer）。
     def _on_system_state(self, msg):
         self._seen_state = StateSnap(mode=str(msg.mode), state=str(msg.state))
+        # 1b-2（SG-A5）: INIT への到着を見たら立ち上がり検出のラッチをリセットする。
+        # ESTOP から INIT/CHECK に戻ったとき（SM-3.1.1-11 の 2026-10-05 決定）、
+        # gate が真のままでは evt.link_ok が再送されず疎通確認からやり直せない。
+        # リセット後の次の 1Hz ティックで gate が真なら出し直す。
+        # gate が偽なら従来どおり立ち上がりを待つ。INIT 以外の遷移では
+        # リセットしない（L-3 の「立ち上がりで1回だけ」を保つ）。
+        new_mode = str(msg.mode)
+        if new_mode == "INIT" and self._last_state_mode != "INIT":
+            self._link_ok_gate_prev = False
+        self._last_state_mode = new_mode
 
     def _on_fault(self, msg):
         self._seen_fault = FaultSnap(

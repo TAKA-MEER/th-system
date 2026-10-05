@@ -380,6 +380,17 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_state_manager_node
     test/test_state_manager_node.py
     TIMEOUT 120)
+  # 1b-2（SG-A5）: INIT からの非常停止の往復を state_manager と connectivity_checker
+  # の同時起動で縛る（C-09b-init → T-INIT-01。link_ok 再送の境界を含む）
+  ament_add_pytest_test(test_estop_init_link_resume_node
+    test/test_estop_init_link_resume_node.py
+    TIMEOUT 120)
+  # 1b-2（SG-A5 の境界）: ESTOP に入る前に gate が真でも、INIT に戻ったあと
+  # link_ok が再送されて IDLE まで進む（別 launch。同一 launch では起動直後の
+  # 前提が崩れるため分ける）
+  ament_add_pytest_test(test_estop_init_link_reemit_node
+    test/test_estop_init_link_reemit_node.py
+    TIMEOUT 120)
   # opcheck_runner ノードの振る舞い試験（WP-MAINT-01 §4-2。ノードを実際に起動し、
   # /system/state を TRANSIENT_LOCAL で流して OPCHECK 限定動作・MOTOR デッドマン・
   # 符号逆 NG・OPCHECK 離脱時の即停止を確かめる。state_manager は起動しない）

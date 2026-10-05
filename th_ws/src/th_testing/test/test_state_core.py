@@ -260,7 +260,7 @@ def test_estop_is_not_a_trap(state_core_bundle):
 # ============================================================
 @pytest.mark.rule("C-06b")
 @pytest.mark.rule("C-09")
-@pytest.mark.rule("C-09c")
+@pytest.mark.rule("C-09c-running")
 @pytest.mark.rule("C-09d")
 def test_ui_estop_resume_to_prev_mode(state_core_bundle):
     core, _, _, _ = state_core_bundle
@@ -283,7 +283,7 @@ def test_ui_estop_resume_to_prev_mode(state_core_bundle):
     d3 = core.step("ESTOP", "NONE", "ui.resume_yes", ctx)
     assert d3.accepted is True
     assert d3.to_mode == "MANUAL" and d3.to_state == "PAUSE"
-    assert d3.rule_id == "C-09c"
+    assert d3.rule_id == "C-09c-running"
     assert "close_window" in [e.name for e in d3.effects]
 
     # 「メインメニューへ」→ IDLE。
@@ -294,7 +294,7 @@ def test_ui_estop_resume_to_prev_mode(state_core_bundle):
 
 
 @pytest.mark.rule("C-09b")
-@pytest.mark.rule("C-09c")
+@pytest.mark.rule("C-09c-running")
 def test_ui_estop_release_goes_idle_when_prev_not_resumable_or_critical(state_core_bundle):
     core, _, _, _ = state_core_bundle
 
@@ -320,7 +320,7 @@ def test_ui_estop_release_goes_idle_when_prev_not_resumable_or_critical(state_co
     d1c = core.step("ESTOP", "NONE", "ui.resume_yes",
                      _mk_ctx(prev_mode="MANUAL", prev_state="RUN",
                              ui_estop=False, hw_estop=False, estop_from_ui=False))
-    assert d1c.accepted is True and d1c.rule_id == "C-09c"
+    assert d1c.accepted is True and d1c.rule_id == "C-09c-running"
     assert d1c.to_mode == "MANUAL" and d1c.to_state == "PAUSE"
 
     # 押下前が復帰不能なモードなら、フォルト起因でも IDLE（C-09b）。
@@ -455,3 +455,360 @@ def test_opcheck_ng_lidar_returns_to_list_then_calib(state_core_bundle):
         "LIST からの ui.enter_mode{CALIB} が拒否された（T-OPC-07 の標的）"
     assert (d3.to_mode, d3.to_state) == ("CALIB", "LIST")
     assert d3.rule_id == "T-OPC-07"
+
+
+# ============================================================
+# 1b-2 追補: ESTOP／CARRY に入るとき jog を解除する。
+# jog 中（jog_active）に非常停止・物理ボタンを押すと、ESTOP/CARRY をまたいで
+# jog_active が残り、復帰先で stale のままになる。突入時に set_jog{on:false} で
+# 落とす（既存の effect 駆動。state_core 側に特別な処理は無い）。
+# 復帰後に触れれば通常どおりリースが始まる。
+# ============================================================
+@pytest.mark.rule("C-06a")
+@pytest.mark.rule("C-06b")
+@pytest.mark.rule("C-07")
+def test_estop_carry_entry_clears_jog(state_core_bundle):
+    core, _, _, _ = state_core_bundle
+
+    d = core.step("FOLLOW", "PAUSE", "fault.critical", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("ESTOP", "NONE")
+    assert d.rule_id == "C-06a"
+    by_name = {e.name: e.args for e in d.effects}
+    assert by_name.get("set_jog") == {"on": False}, \
+        f"C-06a が jog を解除していない: {[e.name for e in d.effects]}"
+
+    d = core.step("FOLLOW", "PAUSE", "ui.estop.press", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("ESTOP", "NONE")
+    assert d.rule_id == "C-06b"
+    by_name = {e.name: e.args for e in d.effects}
+    assert by_name.get("set_jog") == {"on": False}, \
+        f"C-06b が jog を解除していない: {[e.name for e in d.effects]}"
+
+    d = core.step("FOLLOW", "PAUSE", "hw.estop.press", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("CARRY", "NONE")
+    assert d.rule_id == "C-07"
+    by_name = {e.name: e.args for e in d.effects}
+    assert by_name.get("set_jog") == {"on": False}, \
+        f"C-07 が jog を解除していない: {[e.name for e in d.effects]}"
+
+
+# ============================================================
+# 1b-2（SG-A3・SG-D1）: ESTOP からの「戻る」は §6 の復帰先へ。
+# 走行中（自律走行・記録中）なら同モードの PAUSE、止まっている状態なら
+# 押下前の状態へ入口からやり直す。PAUSE を持たないモードに PAUSE を作らない。
+# 本番の経路（StateCore.step）を「押下 → 解除 → 戻る」の順で回す。
+# ============================================================
+# 走行中（自律走行・記録中）なら同モードの PAUSE、止まっている状態なら
+# 押下前の状態へ入口からやり直す。PAUSE を持たないモードに PAUSE を作らない。
+# 本番の経路（StateCore.step）を「押下 → 解除 → 戻る」の順で回す。
+# ============================================================
+def _resume_ctx(prev_mode, prev_state, **over):
+    kw = dict(prev_mode=prev_mode, prev_state=prev_state,
+              fault_active=False, fault_severity="", fault_type="",
+              hw_estop=False, ui_estop=False)
+    kw.update(over)
+    return _mk_ctx(**kw)
+
+
+@pytest.mark.rule("C-09c-running")
+def test_estop_resume_running_goes_to_pause(state_core_bundle):
+    """走行中の 9 モードは同モードの PAUSE へ（勝手に走り出さない）。"""
+    core, _, _, _ = state_core_bundle
+    for prev_mode, run_state in [
+            ("FOLLOW", "RUN"), ("MANUAL", "RUN"),
+            ("TEACH_FOLLOW", "REC"), ("TEACH_MANUAL", "REC"),
+            ("REPLAY", "RUN"), ("LINE", "RUN"), ("LEASH", "RUN"),
+            ("PANEL_NAV", "NAV"), ("HOME_NAV", "NAV")]:
+        d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                      _resume_ctx(prev_mode, run_state))
+        assert d.accepted is True, f"{prev_mode}/{run_state} が拒否された"
+        assert (d.to_mode, d.to_state) == (prev_mode, "PAUSE"), \
+            f"{prev_mode}/{run_state} の戻り先が PAUSE ではない: {d.to_mode}/{d.to_state}"
+        assert d.rule_id == "C-09c-running", f"{prev_mode}: {d.rule_id}"
+        assert "clear_prev" in [e.name for e in d.effects]
+
+
+@pytest.mark.rule("C-09c-generic")
+def test_estop_resume_stopped_returns_to_prev_state(state_core_bundle):
+    """止まっている状態は押下前の状態へ（入口からやり直す）。effect は出さない
+    （通常の入口の遷移も effect を持たない状態だけがここに来る）。"""
+    core, _, _, _ = state_core_bundle
+    for prev_mode, prev_state in [
+            ("FOLLOW", "SELECT"),
+            ("TEACH_FOLLOW", "ROUTE_SEL"), ("TEACH_FOLLOW", "PAUSE"),
+            ("TEACH_FOLLOW", "SAVED"),
+            ("TEACH_MANUAL", "ROUTE_SEL"), ("TEACH_MANUAL", "PAUSE"),
+            ("TEACH_MANUAL", "SAVED"),
+            ("REPLAY", "ROUTE_SEL"), ("REPLAY", "READY"), ("REPLAY", "PAUSE"),
+            ("REPLAY", "SAVED"),
+            ("LINE", "SETUP"), ("LINE", "PLANNED"), ("LINE", "PAUSE"),
+            ("LINE", "ARRIVED"),
+            ("LEASH", "DEV_CHECK"), ("LEASH", "READY"), ("LEASH", "HOLD"),
+            ("LEASH", "PAUSE"),
+            ("PANEL_NAV", "PAUSE"), ("PANEL_NAV", "ALIGN"),
+            ("HOME_NAV", "PAUSE")]:
+        # AT_HOME/PAUSE は C-09c-at-home（IDLE_H）が先に拾うためここに含めない。
+        d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                      _resume_ctx(prev_mode, prev_state))
+        assert d.accepted is True, f"{prev_mode}/{prev_state} が拒否された"
+        assert (d.to_mode, d.to_state) == (prev_mode, prev_state), \
+            f"戻り先が押下前の状態ではない: {d.to_mode}/{d.to_state}"
+        assert d.rule_id == "C-09c-generic", f"{prev_mode}/{prev_state}: {d.rule_id}"
+
+
+@pytest.mark.rule("C-09c-generic")
+def test_estop_resume_teach_route_sel_emits_no_start_record(state_core_bundle):
+    """SG-A3 の再発防止: TEACH_MANUAL/ROUTE_SEL から戻って REC に入る経路が無い。
+    ROUTE_SEL へ戻り、start_record は出さない（選び直したときに出る）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                  _resume_ctx("TEACH_MANUAL", "ROUTE_SEL"))
+    assert (d.to_mode, d.to_state) == ("TEACH_MANUAL", "ROUTE_SEL")
+    assert "start_record" not in [e.name for e in d.effects]
+    assert "resume_record" not in [e.name for e in d.effects]
+
+
+@pytest.mark.rule("C-09c-confirm")
+def test_estop_resume_follow_confirm_refaces_target(state_core_bundle):
+    """FOLLOW/CONFIRM へ戻り、向き直し（face_target）を再実行する（確認を飛ばさない）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                  _resume_ctx("FOLLOW", "CONFIRM"))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("FOLLOW", "CONFIRM")
+    assert d.rule_id == "C-09c-confirm"
+    assert "face_target" in [e.name for e in d.effects]
+
+
+@pytest.mark.rule("C-09c-localize")
+def test_estop_resume_replay_localize_reloads_route(state_core_bundle):
+    """REPLAY/LOCALIZE へ戻り、経路読み込み（load_route）を再実行する。
+    route_id / reverse は ui.resume_yes の arg から解決する
+    （state_manager がラッチ済みの選択で補完する。本番の経路）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                  _resume_ctx("REPLAY", "LOCALIZE",
+                              arg={"id": "R1", "reverse": False}))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("REPLAY", "LOCALIZE")
+    assert d.rule_id == "C-09c-localize"
+    by_name = {e.name: e.args for e in d.effects}
+    assert by_name.get("load_route") == {"route_id": "R1", "reverse": False}, \
+        f"load_route の引数が違う: {by_name}"
+
+
+@pytest.mark.rule("C-09c-blocked")
+def test_estop_resume_blocked_reopens_window(state_core_bundle):
+    """BLOCKED へ戻り、W-5 を開き直す（塞がれ中の表示を復元する）。"""
+    core, _, _, _ = state_core_bundle
+    for prev_mode in ("PANEL_NAV", "HOME_NAV"):
+        d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                      _resume_ctx(prev_mode, "BLOCKED"))
+        assert d.accepted is True
+        assert (d.to_mode, d.to_state) == (prev_mode, "BLOCKED")
+        assert d.rule_id == "C-09c-blocked", f"{prev_mode}: {d.rule_id}"
+        opened = [e.args.get("id") for e in d.effects if e.name == "open_window"]
+        assert "W-5" in opened, f"W-5 を開き直していない: {[e.name for e in d.effects]}"
+
+
+@pytest.mark.rule("C-09c-summon")
+def test_estop_resume_summon_returns_to_point(state_core_bundle):
+    """SG-A2: SUMMON はどの状態からでも POINT（退避待ちからやり直す）。
+    NAV／PAUSE に戻すと T-SUM-07（ガード無し）で退避待ちを飛ばして発進できる。"""
+    core, _, _, _ = state_core_bundle
+    for prev_state in ("POINT", "WAIT_CLEAR", "NAV", "BLOCKED", "PAUSE", "ALIGN"):
+        d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                      _resume_ctx("SUMMON", prev_state))
+        assert d.accepted is True, f"SUMMON/{prev_state} が拒否された"
+        assert (d.to_mode, d.to_state) == ("SUMMON", "POINT"), \
+            f"SUMMON/{prev_state} の戻り先が POINT ではない: {d.to_mode}/{d.to_state}"
+        assert d.rule_id == "C-09c-summon", f"SUMMON/{prev_state}: {d.rule_id}"
+    names = [e.name for e in d.effects]
+    assert "enable_jog_ui" in names, \
+        "WAIT_CLEAR で無効化した手動 UI を戻していない"
+
+
+@pytest.mark.rule("C-09c-at-panel")
+@pytest.mark.rule("C-09c-at-home")
+def test_estop_resume_at_panel_home(state_core_bundle):
+    """AT_PANEL→IDLE_P／AT_HOME→IDLE_H（§6 の右列。確認をやり直す）。"""
+    core, _, _, _ = state_core_bundle
+    for prev_mode, prev_state, dst in [("AT_PANEL", "WORKING", "IDLE_P"),
+                                       ("AT_PANEL", "PAUSE", "IDLE_P"),
+                                       ("AT_PANEL", "IDLE_P", "IDLE_P"),
+                                       ("AT_HOME", "PAUSE", "IDLE_H"),
+                                       ("AT_HOME", "IDLE_H", "IDLE_H")]:
+        d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                      _resume_ctx(prev_mode, prev_state))
+        assert d.accepted is True, f"{prev_mode}/{prev_state} が拒否された"
+        assert (d.to_mode, d.to_state) == (prev_mode, dst), \
+            f"戻り先が違う: {d.to_mode}/{d.to_state}"
+
+
+@pytest.mark.rule("C-09c-opcheck")
+@pytest.mark.rule("C-09c-calib")
+def test_estop_resume_opcheck_calib_returns_to_list(state_core_bundle):
+    """SG-A3: OPCHECK／CALIB は LIST（定義外の X/PAUSE に入らない）。
+    実行中の項目は通常のフォルト時と同じ effect で畳む。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                  _resume_ctx("OPCHECK", "RUNNING_CHECK"))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("OPCHECK", "LIST")
+    assert d.rule_id == "C-09c-opcheck"
+    assert "abort_check" in [e.name for e in d.effects]
+
+    d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                  _resume_ctx("CALIB", "S2"))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("CALIB", "LIST")
+    assert d.rule_id == "C-09c-calib"
+    assert "discard_calib" in [e.name for e in d.effects]
+
+
+@pytest.mark.rule("C-09c-prep-return")
+@pytest.mark.rule("C-09c-prep")
+def test_estop_resume_prep_returns_to_prev_state(state_core_bundle):
+    """PREP は押下前の状態へ。RETURN だった場合は今回は MAPPING
+    （RETURN の PAUSE は別パケット 1b-1 で作る）。"""
+    core, _, _, _ = state_core_bundle
+    for prev_state, dst in [("MAPPING", "MAPPING"), ("REGISTER", "REGISTER"),
+                            ("RETURN", "MAPPING"), ("EDIT", "EDIT"),
+                            ("SAVED", "SAVED")]:
+        d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                      _resume_ctx("PREP", prev_state))
+        assert d.accepted is True, f"PREP/{prev_state} が拒否された"
+        assert (d.to_mode, d.to_state) == ("PREP", dst), \
+            f"PREP/{prev_state} の戻り先が違う: {d.to_mode}/{d.to_state}"
+
+
+# ============================================================
+# 1b-2（SG-A5）: 押下前が INIT なら INIT/CHECK へ戻り疎通確認からやり直す。
+# 「メニューへ」（C-09d）もフォルト解消・両非常停止解放のときだけ。
+# ============================================================
+@pytest.mark.rule("C-09b-init")
+def test_estop_release_from_init_returns_to_check(state_core_bundle):
+    core, _, _, _ = state_core_bundle
+
+    # UI 非常停止 → 解除で INIT/CHECK（IDLE へ行かない）。
+    d = core.step("ESTOP", "NONE", "ui.estop.release",
+                  _mk_ctx(prev_mode="INIT", prev_state="CHECK",
+                           fault_active=False, fault_severity="",
+                           hw_estop=False, ui_estop=False))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("INIT", "CHECK")
+    assert d.rule_id == "C-09b-init"
+
+    # 物理非常停止が押されたままでも IDLE に入れない（T-INIT-03 が留める）。
+    d = core.step("ESTOP", "NONE", "ui.estop.release",
+                  _mk_ctx(prev_mode="INIT", prev_state="CHECK",
+                           fault_active=False, fault_severity="",
+                           hw_estop=True, ui_estop=False))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("INIT", "CHECK"), \
+        "物理押下中のまま IDLE に入ってしまう（SG-A5）"
+    assert d.rule_id == "C-09b-init"
+
+
+@pytest.mark.rule("C-09d")
+def test_estop_menu_requires_fault_cleared_and_released(state_core_bundle):
+    """C-09d「メニューへ」は C-09f と同じガード（重大フォルト中・押下中は拒否）。"""
+    core, _, _, _ = state_core_bundle
+    cleared = dict(prev_mode="FOLLOW", prev_state="RUN",
+                   fault_active=False, fault_severity="",
+                   hw_estop=False, ui_estop=False)
+    d = core.step("ESTOP", "NONE", "ui.resume_no", _mk_ctx(**cleared))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("IDLE", "NONE")
+    assert d.rule_id == "C-09d"
+
+    for bad in [dict(fault_active=True, fault_severity="CRITICAL"),
+                dict(fault_active=True, fault_severity=""),
+                dict(hw_estop=True),
+                dict(ui_estop=True)]:
+        kw = dict(cleared)
+        kw.update(bad)
+        d = core.step("ESTOP", "NONE", "ui.resume_no", _mk_ctx(**kw))
+        assert d.accepted is False, f"{bad} のまま C-09d が通ってしまった"
+
+
+# ============================================================
+# 1b-2（SG-B22）: C-04／C-05 が state=None を作らない。
+# ============================================================
+@pytest.mark.rule("C-04")
+def test_c04_rejected_where_run_state_is_null(state_core_bundle):
+    """run_state が null のモード（AT_PANEL／AT_HOME／OPCHECK／CALIB）では
+    ui.resume_yes を遷移させない（None を publish して state_manager を落とす
+    SG-B22 の穴）。走行状態を持つモードは従来どおり通る。"""
+    core, _, _, attrs = state_core_bundle
+    for mode, state in [("AT_PANEL", "PAUSE"), ("AT_HOME", "PAUSE")]:
+        assert attrs[mode]["run_state"] is None, "前提（run_state null）が崩れている"
+        d = core.step(mode, state, "ui.resume_yes", _mk_ctx(fault_active=False))
+        assert d.accepted is False, f"{mode}/{state} で C-04 が通ってしまった"
+        assert d.to_state is not None
+    d = core.step("FOLLOW", "PAUSE", "ui.resume_yes", _mk_ctx(fault_active=False))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("FOLLOW", "RUN")
+
+
+@pytest.mark.rule("C-05")
+def test_c05_rejected_where_resume_state_is_null(state_core_bundle):
+    """resume_state が null の PREP では ui.resume_no／ui.resume_ack を遷移させない。
+    他のモードは §6 の復帰先へ送る（spec §6.1 の読み方どおり）。"""
+    core, _, _, attrs = state_core_bundle
+    assert attrs["PREP"]["resume_state"] is None, "前提（resume_state null）が崩れている"
+    for event in ("ui.resume_no", "ui.resume_ack"):
+        d = core.step("PREP", "PAUSE", event, _mk_ctx(fault_active=False))
+        assert d.accepted is False, f"PREP/PAUSE で {event} が通ってしまった"
+    d = core.step("AT_PANEL", "PAUSE", "ui.resume_ack", _mk_ctx(fault_active=False))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("AT_PANEL", "IDLE_P")
+
+
+def test_c04_c05_have_availability_guards(state_core_bundle):
+    """SG-B22 の再発防止: C-04／C-05 のガードが availability ガードであること。
+    _validate_combos は None 解決をガードに委ねるため、ガードが差し戻されると
+    None が復活する。この test がそれを縛る。"""
+    _, transitions, _, _ = state_core_bundle
+    by_id = {row["id"]: row for row in transitions}
+    assert by_id["C-04"]["guard"] == "resume_run_available", \
+        f"C-04 のガードが差し戻されている: {by_id['C-04']['guard']}"
+    assert by_id["C-05"]["guard"] == "resume_state_available", \
+        f"C-05 のガードが差し戻されている: {by_id['C-05']['guard']}"
+
+
+def test_estop_resume_run_matches_attributes_run_state(state_core_bundle):
+    """「走行中」の判定（ESTOP_RESUME_RUN）が attributes.yaml の run_state と一致する。
+    食い違うと、走行中なのに旧状態へ戻って確認を飛ばす／止まっているのに PAUSE に
+    落ちて入口を飛ばす。どちらも SG-A3 と同じ型の穴。"""
+    from th_state.state_core import ESTOP_RESUME_RUN
+    _, _, _, attrs = state_core_bundle
+    for mode, run_state in ESTOP_RESUME_RUN.items():
+        assert attrs[mode]["run_state"] == run_state, \
+            f"{mode}: ESTOP_RESUME_RUN={run_state} が attributes run_state=" \
+            f"{attrs[mode]['run_state']} と食い違う"
+    # PREP／SUMMON は別行が先に拾うためここに含めない（一貫性の宣言）。
+    assert "PREP" not in ESTOP_RESUME_RUN and "SUMMON" not in ESTOP_RESUME_RUN
+
+
+def test_validate_combos_catches_pause_fixed_regression(state_core_bundle):
+    """組み合わせ検査（_validate_combos）の検出力: C-09c 系を PAUSE 固定に戻す変異は
+    validate() で赤くなること（SG-A3 の再発を起動時に止める）。"""
+    import copy
+    core, transitions, mode_entry, attributes = state_core_bundle
+    assert core.validate() == [], f"現行表で validate が赤: {core.validate()}"
+    mutated = copy.deepcopy(transitions)
+    for row in mutated:
+        if row["id"].startswith("C-09c-"):
+            row["guard"] = "estop_resume_prev"
+            row["to_mode"] = "$prev_mode"
+            row["to_state"] = "PAUSE"
+    from th_state.state_core import StateCore
+    from th_state import guards as guards_module
+    core2 = StateCore(mutated, mode_entry, attributes,
+                      guards_module.build_guards(mode_entry))
+    errors = [e for e in core2.validate() if "組合せ" in e]
+    assert errors, "PAUSE 固定に戻す変異を組み合わせ検査が捕まえていない"

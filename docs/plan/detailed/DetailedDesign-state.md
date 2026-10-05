@@ -233,14 +233,29 @@ class StateCore:
 | `C-01` | `*` | `*` | `ui.jog.hold` | `jog_allowed` | `=` | `$pause_unless_prep` | `set_jog{on:true}` |
 | `C-02` | `*` | `PAUSE` | `sys.jog_lease_expired` | — | `=` | `PAUSE` | `set_jog{on:false}` |
 | `C-03` | `*` | `*` | `fault.recoverable` | `fault_stops_mode` | `=` | `$pause_unless_prep` | `open_window{id:W-1}` |
-| `C-04` | `*` | `PAUSE` | `ui.resume_yes` | `fault_cleared` | `=` | `$resume_run` | `close_window{id:W-1}` |
-| `C-05` | `*` | `PAUSE` | `ui.resume_no` ／ `ui.resume_ack` | `fault_cleared` | `=` | **`$resume_state`** | `close_window{id:W-1}` |
-| **`C-06a`** | `*` | `*` | `fault.critical` | — | `ESTOP` | `NONE` | `latch_prev` |
+| `C-04` | `*` | `PAUSE` | `ui.resume_yes` | **`resume_run_available`**（`fault_cleared` ＋ `run_state` が null でない。SG-B22） | `=` | `$resume_run` | `close_window{id:W-1}` |
+| `C-05` | `*` | `PAUSE` | `ui.resume_no` ／ `ui.resume_ack` | **`resume_state_available`**（`fault_cleared` ＋ `resume_state` が null でない。SG-B22） | `=` | **`$resume_state`** | `close_window{id:W-1}` |
+| **`C-06a`** | `*` | `*` | `fault.critical` | — | `ESTOP` | `NONE` | `latch_prev`, **`set_jog{on:false}`**（1b-2 追補。ESTOP をまたいで `jog_active` を残さない） |
 | **`C-06r`** | `CARRY` | `NONE` | `ui.estop.press` | — | — | — | **`reject: true`**（`reject_reason_key: estop_disabled_in_carry`）。**`C-06b` より上の行に置く**（§3.1 規則 1 は記載順に走査する） |
-| **`C-06b`** | `*` | `*` | `ui.estop.press` | `estop_ui_allowed` | `ESTOP` | `NONE` | `latch_prev` |
-| `C-07` | `*` | `*` | `hw.estop.press` | `not_checking_estop` | `CARRY` | `NONE` | `latch_prev`, `open_window{id:W-2}` |
+| **`C-06b`** | `*` | `*` | `ui.estop.press` | `estop_ui_allowed` | `ESTOP` | `NONE` | `latch_prev`, **`set_jog{on:false}`**（同上） |
+| `C-07` | `*` | `*` | `hw.estop.press` | `not_checking_estop` | `CARRY` | `NONE` | `latch_prev`, **`set_jog{on:false}`**（同上。手押し中に stale の jog を残さない）, `open_window{id:W-2}` |
 | `C-08` | `*` | `*` | `ui.finish` | **`can_finish`** | `IDLE` | `NONE` | `ask_save_if_unsaved`, `clear_prev` |
-| `C-09` | `ESTOP` | `NONE` | `ui.estop.release` | `no_critical_fault` | `IDLE` | `NONE` | `clear_prev` |
+| `C-09` | `ESTOP` | `NONE` | `ui.estop.release` | `estop_resume_prev` | `=` | `=` | `show_resume` |
+| **`C-09b-init`** | `ESTOP` | `NONE` | `ui.estop.release` | **`estop_prev_is_init`**（押下前 `INIT`。SG-A5。`C-09b` より前に置く） | `INIT` | `CHECK` | `clear_prev` |
+| `C-09b` | `ESTOP` | `NONE` | `ui.estop.release` | `no_critical_fault` | `IDLE` | `NONE` | `clear_prev` |
+| **`C-09c-summon`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_summon`** | `SUMMON` | `POINT` | `clear_prev`, `close_window{id:W-1}`, `enable_jog_ui` |
+| **`C-09c-at-panel`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_at_panel`** | `AT_PANEL` | `IDLE_P` | `clear_prev`, `close_window{id:W-1}` |
+| **`C-09c-at-home`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_at_home`** | `AT_HOME` | `IDLE_H` | `clear_prev`, `close_window{id:W-1}` |
+| **`C-09c-opcheck`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_opcheck`** | `OPCHECK` | `LIST` | `clear_prev`, `close_window{id:W-1}`, `abort_check` |
+| **`C-09c-calib`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_calib`** | `CALIB` | `LIST` | `clear_prev`, `close_window{id:W-1}`, `discard_calib{item}` |
+| **`C-09c-prep-return`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_prep_return`**（`PREP/RETURN`。今回は `MAPPING`） | `PREP` | `MAPPING` | `clear_prev`, `close_window{id:W-1}` |
+| **`C-09c-prep`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_prep`** | `PREP` | `$prev_state` | `clear_prev`, `close_window{id:W-1}` |
+| **`C-09c-running`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_was_running`**（押下前が走行中） | `$prev_mode` | `PAUSE` | `clear_prev`, `close_window{id:W-1}` |
+| **`C-09c-confirm`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_follow_confirm`** | `FOLLOW` | `CONFIRM` | `clear_prev`, `close_window{id:W-1}`, `face_target` |
+| **`C-09c-localize`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_replay_localize`** | `REPLAY` | `LOCALIZE` | `clear_prev`, `close_window{id:W-1}`, `load_route{id,reverse}` |
+| **`C-09c-blocked`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_blocked`** | `$prev_mode` | `BLOCKED` | `clear_prev`, `close_window{id:W-1}`, `open_window{id:W-5}` |
+| **`C-09c-generic`** | `ESTOP` | `NONE` | `ui.resume_yes` | `estop_resume_prev` | `$prev_mode` | `$prev_state` | `clear_prev`, `close_window{id:W-1}` |
+| `C-09d` | `ESTOP` | `NONE` | `ui.resume_no` | **`fault_cleared_and_ui_released`**（SG-A5。`C-09f` と同じ） | `IDLE` | `NONE` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09f`** | `ESTOP` | `NONE` | `ui.resume_ack` | **`fault_cleared_and_ui_released`** | `IDLE` | `NONE` | `clear_prev`, `close_window{id:W-1}` |
 | `C-10` | `CARRY` | `NONE` | `hw.estop.release` | — | `=` | `=` | `show_resume` |
 | `C-11` | `CARRY` | `NONE` | `ui.carry_resume` | **`hw_released_and_no_critical`** | `$prev_mode` | `$prev_state` | `close_window{id:W-2}` |
@@ -250,6 +265,12 @@ class StateCore:
 | **`C-15`** | `IDLE` | `NONE` | `ui.goto` | `goto_allowed` | **`$arg.kind`**（§3.5） | `$initial` | — |
 
 **`C-06r` / `C-09f` / `C-15` は新設。**それぞれ次の穴を塞ぐ。
+
+**`C-09b-init` / `C-09c-*`（12 行）/ `C-09d` のガード変更は 1b-2（2026-10-05。SG-A3・SG-A5）。**
+`C-09c` の `PAUSE` 固定では、確認・位置合わせ・2 点指示を飛ばして走り出せた
+（SG-A2・SG-A3）。戻り先は §6 の「異常解決後の復帰」列に従う。
+`C-09b-init` が無いと起動中の非常停止で疎通確認を飛ばして `IDLE` に入れた（SG-A5）。
+`C-09d` が無条件だと重大フォルト継続中・押下中に `IDLE` へ抜けられた（SG-A5）。
 
 | 行 | 塞ぐ穴 |
 | --- | --- |
@@ -262,7 +283,12 @@ class StateCore:
 **`latch_prev` は `mode ∈ {ESTOP, CARRY}` のときは記録しない**（§3.3）。
 `ESTOP` 中の物理押下・`CARRY` 中の重大フォルトで復帰先が壊れるのを防ぐ。
 
-### 4.1.1 ガードの定義（**全 27 件**）
+**`ESTOP`／`CARRY` に入るときは `jog_active` を落とす**（`C-06a`／`C-06b`／`C-07` の
+`set_jog{on:false}`。1b-2 追補）。入れないと、ジョグ中に押した非常停止のリースが
+`ESTOP` 中に満了せず（`sys.jog_lease_expired` は `ESTOP`／`NONE` ではどの行にも当たらない）、
+復帰先で stale の `jog_active` が残る。復帰後に触れれば通常どおりリースが始まる。
+
+### 4.1.1 ガードの定義（**全 44 件**。1b-2 で 14 件追加）
 
 **`guards.py` の述語は `(mode, state, ctx)` の 3 引数を取る。**「参照する `Context`」列に
 **`mode` / `state` と書いてあるものは第 1・第 2 引数**を読む（`Context` にこの 2 つは無い）。
@@ -299,6 +325,17 @@ class StateCore:
 | `check_result_ok` | `check_result == "OK"` | `check_result` |
 | `ng_and_calibrable` | `check_result == "NG" and check_item in {"IMU","LIDAR"}` | 同 |
 | `ng_and_not_calibrable` | `check_result == "NG" and check_item in {"ESTOP","MOTOR"}` | 同 |
+| `estop_resume_prev` | `not fault_active and severity != CRITICAL and not hw_estop and prev_mode ∉ {"",INIT,IDLE,ESTOP,CARRY}` | `fault_active`, `fault_severity`, `hw_estop`, `prev_mode` |
+| **`estop_prev_is_init`** | 上の3項（`hw_estop` を問わない。`INIT/CHECK` に戻れば `T-INIT-03` が留める）`and prev_mode == "INIT"` | `fault_active`, `fault_severity`, `prev_mode` |
+| **`estop_prev_is_summon`／`_at_panel`／`_at_home`／`_opcheck`／`_calib`** | 上の3項 `and prev_mode == {SUMMON／AT_PANEL／AT_HOME／OPCHECK／CALIB}`（1b-2。§6 の右列への振り分け） | 同上＋`hw_estop` |
+| **`estop_prev_is_prep_return`** | 上の3項 `and prev_mode == "PREP" and prev_state == "RETURN"`（今回は `MAPPING`。`RETURN` の `PAUSE` は 1b-1 で作る） | 同上＋`prev_state` |
+| **`estop_prev_is_prep`** | 上の3項 `and prev_mode == "PREP" and prev_state != "RETURN"` | 同上 |
+| **`estop_prev_was_running`** | 上の3項 `and prev_state == ESTOP_RESUME_RUN[prev_mode]`（走行中の 9 モード。`attributes.yaml` の `run_state` の転記。一致は test で縛る） | 同上 |
+| **`estop_prev_is_follow_confirm`** | 上の3項 `and (FOLLOW, CONFIRM)`（`face_target` を再実行） | 同上 |
+| **`estop_prev_is_replay_localize`** | 上の3項 `and (REPLAY, LOCALIZE)`（`load_route` を再実行。引数はノードがラッチ） | 同上 |
+| **`estop_prev_is_blocked`** | 上の3項 `and prev_mode ∈ {PANEL_NAV,HOME_NAV} and prev_state == "BLOCKED"`（W-5 を開き直す） | 同上 |
+| **`resume_run_available`** | `not fault_active and mode ∉ {AT_PANEL,AT_HOME,OPCHECK,CALIB}`（SG-B22。`C-04` の `None` 対策） | `fault_active`, **`mode`** |
+| **`resume_state_available`** | `not fault_active and mode != "PREP"`（SG-B22。`C-05` の `None` 対策） | `fault_active`, **`mode`** |
 
 > **改名**: `ok` → **`check_result_ok`**。「何が ok なのか読めない」ため。
 
@@ -643,7 +680,7 @@ UI がエラー表示すべきか判断できなくなる。
 
 | 実測値 | |
 | --- | --- |
-| 詳細設計の行数 | **共通 18 ＋ モード内 110 ＝ 128** |
+| 詳細設計の行数 | **共通 34 ＋ モード内 125 ＝ 159**（2026-10-05 1b-2 時点。`C-09b-init` と `C-09c` 12 分割で共通が +12） |
 | 正本の ID 数 | §3.1.1 **17** ＋ §3.1.2 **102** ＝ **119** |
 | 覆えていない正本 ID | **0** |
 | 正本に無い `spec_ref` | **0** |
@@ -654,17 +691,25 @@ UI がエラー表示すべきか判断できなくなる。
 #### 4.4.1 共通（§4.1 → `Spec-modes.md` §3.1.1）
 
 | 詳細 | `spec_ref` | 詳細 | `spec_ref` |
-| --- | --- | --- | --- |
 | `C-01` | `SM-3.1.1-01` | `C-09` | `SM-3.1.1-11` |
-| `C-02` | `SM-3.1.1-02` | `C-09f` | `SM-3.1.1-12` |
-| `C-03` | `SM-3.1.1-03` | `C-10` | `SM-3.1.1-13` |
-| `C-04` | `SM-3.1.1-04` | `C-11` | `SM-3.1.1-14` |
-| `C-05` | `SM-3.1.1-05` | **`C-12`** | **`SM-3.1.1-10`**（同じ「終了」の行。`CARRY` からの分岐） |
-| `C-06a` | `SM-3.1.1-06` | `C-13` | `SM-3.1.1-15` |
-| `C-06b` | `SM-3.1.1-07` | `C-14` | `SM-3.1.1-17` |
-| `C-06r` | `SM-3.1.1-08` | `C-15` | `SM-3.1.1-16` |
-| `C-07` | `SM-3.1.1-09` | | |
-| `C-08` | `SM-3.1.1-10` | | |
+| `C-02` | `SM-3.1.1-02` | **`C-09b-init`** | **`SM-3.1.1-11`**（1b-2。押下前 `INIT`） |
+| `C-03` | `SM-3.1.1-03` | `C-09b` | `SM-3.1.1-11` |
+| `C-04` | `SM-3.1.1-04` | **`C-09c-*`（12 行）** | **`SM-3.1.1-11`**（1b-2。下の注記） |
+| `C-05` | `SM-3.1.1-05` | `C-09d` | `SM-3.1.1-11` |
+| `C-06a` | `SM-3.1.1-06` | `C-09f` | `SM-3.1.1-12` |
+| `C-06b` | `SM-3.1.1-07` | `C-10` | `SM-3.1.1-13` |
+| `C-06r` | `SM-3.1.1-08` | `C-11` | `SM-3.1.1-14` |
+| `C-07` | `SM-3.1.1-09` | **`C-12`** | **`SM-3.1.1-10`**（同じ「終了」の行。`CARRY` からの分岐） |
+| `C-08` | `SM-3.1.1-10` | `C-13` | `SM-3.1.1-15` |
+| | | `C-14` | `SM-3.1.1-17` |
+| | | `C-15`（`C-15-summon` を含む） | `SM-3.1.1-16` |
+
+**`C-09c-*` の 12 行**（`summon` / `at-panel` / `at-home` / `opcheck` / `calib` /
+`prep-return` / `prep` / `running` / `confirm` / `localize` / `blocked` / `generic`）は
+すべて `SM-3.1.1-11`（§4.4.3 の 6 組に加え、正本の 1 行を押下前のモード・状態で
+割り振る 7 組目の fan-out。1b-2）。**`SM-3.1.1-11` の fan-out は 16 行**
+（`C-09` / `C-09b-init` / `C-09b` / `C-09c-*` 12 行 / `C-09d`）。
+`test_transition_table.py` の `SPEC_FANOUT` が機械的に縛る。
 
 #### 4.4.2 モード内（§4.2 → `Spec-modes.md` §3.1.2）
 
@@ -774,7 +819,7 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 
 | 状況 | 挙動 |
 | --- | --- |
-| 動作系 → `ESTOP` | `prev_mode` / `prev_state` に記録。**入口（UI ボタン／`fault.critical`）を問わず**、フォルトが消え物理ボタンが解放されていれば `ui.resume_yes` で `$prev_mode` の `PAUSE` へ（`C-09c`）。`ui.resume_no` ／ `ui.resume_ack` なら `IDLE` へ出て `prev_*` を捨てる（`C-09d` ／ `C-09f`。WS-9O 2026-09-04。`Spec-safety.md` §3.5.2） |
+| 動作系 → `ESTOP` | `prev_mode` / `prev_state` に記録。**入口（UI ボタン／`fault.critical`）を問わず**、フォルトが消え物理ボタンが解放されていれば `ui.resume_yes` で押下前のモードの §6「異常解決後の復帰」列へ（`C-09c-*`。走行中なら `PAUSE`、止まっている状態なら押下前の状態へ入口から。1b-2。旧記述「`$prev_mode` の `PAUSE` へ」は廃止）。`ui.resume_no` ／ `ui.resume_ack` なら `IDLE` へ出て `prev_*` を捨てる（`C-09d` ／ `C-09f`。WS-9O 2026-09-04。`Spec-safety.md` §3.5.2）。押下前が `INIT` なら解除で `INIT/CHECK` へ戻る（`C-09b-init`。1b-2） |
 | 動作系 → `CARRY` | 同じく記録。**`ui.carry_resume` で `prev_*` へ戻る** |
 | **`CARRY` 中に `ui.estop.press`** | **受け付けない**（`F-26`）。`reject_reason_key = "estop_disabled_in_carry"` を返し、W-2 に「駆動は既に切れています」と出す |
 | **`CARRY` 中に `fault.critical`** | `ESTOP` へ移る。**`prev_*` は上書きしない**（`CARRY` を復帰先にしない） |

@@ -38,7 +38,7 @@ from th_system_msgs.srv import SetFlag, UiTrigger
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
 from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, OPCHECK_MODE, Context,
-                                  StateCore)
+                                   REPLAY_MODE, StateCore)
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
 from th_state.tracker_policy import (TRACKER_OFF_DENIED_REASON,
@@ -195,6 +195,11 @@ class StateManager(Node):
         # 載せる result=="PREVIEW_OK"。T-CAL-04 のガード preview_sane が読む。S3 以外では偽）。
         self._calib_item = ""
         self._calib_preview_sane = False
+        # 1b-2 SG-A3: REPLAY で最後に選んだ経路（T-REPLAY-01/-11 の受理でラッチ。
+        # C-09c-localize が load_route を再実行するとき、ui.resume_yes の arg に
+        # 補完する。TEACH_* の ui.route_select は対象外＝上書きしない。
+        # モード名リテラルは書かない（N-1）。state_core.REPLAY_MODE を参照する。
+        self._replay_route = {}
 
         now = self._now_ms()
         self._boot_ms = now
@@ -363,6 +368,15 @@ class StateManager(Node):
         if self.mode == CALIB_MODE and self._calib_item and not (arg or {}).get('item'):
             arg = dict(arg or {}, item=self._calib_item)
 
+        # 1b-2 SG-A3: C-09c-localize の load_route{route_id, reverse} は
+        # `$arg.id` / `$arg.reverse` で解決する。ui.resume_yes の送り手は経路を
+        # 知らないので、ラッチ済みの選択で補う（付いていれば送り手の値を優先。
+        # 上の calib_item と同じ作法）。
+        if event == "ui.resume_yes" and self._replay_route:
+            merged = dict(self._replay_route)
+            merged.update(arg or {})
+            arg = merged
+
         ctx = self._build_context(event, arg)
         decision = self.core.step(self.mode, self.state, event, ctx)
 
@@ -400,6 +414,16 @@ class StateManager(Node):
             self._calib_item = ""
         if self.mode != CALIB_MODE or self.state != "S3":
             self._calib_preview_sane = False
+
+        # 1b-2 SG-A3: REPLAY の経路選択のラッチ（check_item と同じ作法）。
+        # T-REPLAY-01/-11（ui.route_select 受理）で id / reverse を持ち越す。
+        # ESTOP をまたいで使う（C-09c-localize）ので、REPLAY を抜けても捨てない
+        # （prev_mode / prev_state と同じく「押下前の情報」として保持する）。
+        # 次に REPLAY で選び直せば上書きされる。
+        # モード名リテラルは書かない（N-1）。state_core.REPLAY_MODE を参照する。
+        if event == "ui.route_select" and decision.accepted and self.mode == REPLAY_MODE:
+            self._replay_route = {"id": (arg or {}).get("id"),
+                                  "reverse": (arg or {}).get("reverse")}
 
         # brief-tracker-default-off §3.1: 「動かさない」モードへ遷移したら
         # tracker_enabled を自動で false に落とす（ESTOP / CARRY は対象外。
