@@ -564,19 +564,34 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         drv.pump(0.5, (drv.pub_wf_once,))
         assert self._latest().mode == 'CARRY', 'HW 解除で CARRY を離れた'
 
-        # C-11「手押し復帰」は重大継続中は拒否される。
+        # 重大継続中は元の走行系モード（FOLLOW）へ戻れない（本試験の本質 b）。
+        # 代表（重大）の再送は fault.critical として届き、C-06a で CARRY→ESTOP に
+        # 移ることがある。重大フォルトは任意の状態から ESTOP なので安全側の正しい挙動。
+        # したがって CARRY / ESTOP のどちらに居てもよいが、FOLLOW には戻らない。
+        drv.pump(0.5, (drv.pub_wf_once,))
         res = self._trigger('ui.carry_resume')
         assert res.accepted is False, \
             '重大フォルト継続中に ui.carry_resume が通った（C-11・hw_released_and_no_critical）'
-        assert res.reject_reason_key == 'not_allowed', res.reject_reason_key
+        # 「戻る」（C-09c。estop_resume_prev が重大を見る）も同様に通らない。
+        res = self._trigger('ui.resume_yes')
+        assert res.accepted is False, \
+            '重大フォルト継続中に ui.resume_yes が通った（C-09c・estop_resume_prev）'
+        drv.pump(0.5, (drv.pub_wf_once,))
         snap = self._latest()
-        assert (snap.mode, snap.state) == ('CARRY', 'NONE'), \
-            f'重大継続中に CARRY を離れた: {snap.mode}/{snap.state}'
+        assert snap.mode in ('CARRY', 'ESTOP') and snap.mode != ret_mode, \
+            f'重大継続中に走行系モードへ戻った: {snap.mode}/{snap.state}'
 
-        # 対照：全解消 → 今度は通って FOLLOW/SELECT に戻る。
+        # 対照：全解消 → 復帰できる。CARRY なら C-11（手押し復帰）で元の
+        # モード/状態へ、ESTOP なら C-09c（resume_yes）で元のモードの PAUSE へ。
         assert drv.wait_for_cleared(8.0, keep_alive=drv.all_alive()), \
             '全解消の active=false が出なかった'
-        res = self._trigger('ui.carry_resume')
+        drv.pump(0.5, drv.all_alive())
+        if self._latest().mode == 'CARRY':
+            res = self._trigger('ui.carry_resume')
+            want = (ret_mode, ret_state)
+        else:
+            res = self._trigger('ui.resume_yes')
+            want = (ret_mode, 'PAUSE')
         assert res.accepted, res.reject_reason_key
         deadline = time.time() + 5.0
         back = False
@@ -584,8 +599,8 @@ class TestStateManagerAggregateResume(unittest.TestCase):
             self.drv.pump(0.1, self.drv.all_alive())
             if self._state_history:
                 cur = self._state_history[-1]
-                if cur.mode == ret_mode and cur.state == ret_state:
+                if (cur.mode, cur.state) == want:
                     back = True
                     break
         assert back, \
-            f'全解消後の手押し復帰で {ret_mode}/{ret_state} に戻らなかった（C-11）'
+            f'全解消後の復帰で {want} に戻らなかった（C-11 / C-09c）'
