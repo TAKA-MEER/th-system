@@ -43,7 +43,7 @@ except ImportError:
     Node = object
     RS_OK = False
 
-from th_maintenance.check_core import (CheckParams, NG, judge_estop, judge_gyro_unit,
+from th_maintenance.check_core import (CheckParams, NG, OK, judge_estop, judge_gyro_unit,
                                        judge_imu, judge_lidar,
                                        judge_motor_samples, verdict_to_fsm_result)
 
@@ -84,6 +84,12 @@ _ESTOP_STALE_MS = 3000.0  # /safety/estop_hw がこれだけ来なかったら�
 # 実手順（10 秒前後）に余裕を持たせた値。押下が一度も来ない側（no_press）は
 # 時間で NG にしない（来ないまま待つか、T-OPC-09 の中断で抜ける）。
 _ESTOP_RELEASE_TIMEOUT_MS = 30000.0
+# MOTOR の 4 方向（brief-a13・SG-A13）。OK はこの全方向で合ってはじめて確定する。
+_MOTOR_DIRS = ("FORWARD", "BACK", "LEFT", "RIGHT")
+# 1 回の押下がこれより短くサンプルも無いときは「短すぎて測れていない」として
+# 未実施扱いにする（確定しない）。これ以上押しているのにサンプルが無ければ
+# ESP32 側が死んでいる（NG no_samples）。期待レート 10 Hz に対する余裕値。
+_MOTOR_TOO_BRIEF_MS = 500.0
 # 項目を始めてから /scan が一度も届かないまま、これだけ経ったら「届いていない」（NG no_data）。
 # 届かないと判定が永遠に出ず、項目から抜けられなかった（2026-10-04）。
 _LIDAR_NO_DATA_MS = 3000.0
@@ -131,11 +137,13 @@ class OpcheckRunner(Node):
         # _monitor_tick() の周期 UNKNOWN 上書きを止めるためのフラグ。
         self._final_sent = False
 
-        # MOTOR
+        # MOTOR（brief-a13・SG-A13: 方向別に集計し、4 方向すべて OK で確定）
         self._hold_val = "NONE"
         self._hold_ms = 0.0
         self._cmd_last = (0.0, 0.0)
-        self._motor_samples = []
+        self._motor_dir_samples = {d: [] for d in _MOTOR_DIRS}
+        self._motor_dir_done = set()
+        self._motor_press_start_ms = 0.0
         self._cmd_active = False
 
         # ESTOP
@@ -283,7 +291,9 @@ class OpcheckRunner(Node):
         return True
 
     def _reset_accums(self, item: str):
-        self._motor_samples = []
+        self._motor_dir_samples = {d: [] for d in _MOTOR_DIRS}
+        self._motor_dir_done = set()
+        self._motor_press_start_ms = 0.0
         if item == "ESTOP":
             self._estop_alive = False
             self._estop_pressed = None
@@ -380,10 +390,11 @@ class OpcheckRunner(Node):
         self._hold_ms = self._now_ms()
         if val == "NONE":
             if prev != "NONE":
-                self._maybe_finalize_motor()
+                self._finalize_motor_direction(prev)
         else:
             if prev == "NONE":
-                self._motor_samples = []
+                self._motor_dir_samples[val] = []
+                self._motor_press_start_ms = self._now_ms()
                 self.get_logger().info(f"MOTOR 押下開始: {val}")
         self._sync_command()
 
@@ -392,8 +403,9 @@ class OpcheckRunner(Node):
             if self._now_ms() - self._hold_ms > self._p.opcheck_deadman_timeout_s * 1000.0:
                 self.get_logger().warn(
                     f"MOTOR 押下が {self._p.opcheck_deadman_timeout_s}s 途絶 → 離し扱い")
-                self._maybe_finalize_motor()
+                direction = self._hold_val
                 self._hold_val = "NONE"
+                self._finalize_motor_direction(direction)
         self._sync_command()
 
     def _on_wheel_cmd(self, msg: WheelFeedback):
@@ -401,22 +413,47 @@ class OpcheckRunner(Node):
 
     def _on_wheel_feedback(self, msg: WheelFeedback):
         if self._item == "MOTOR" and self._mode == "OPCHECK" and self._hold_val != "NONE":
-            self._motor_samples.append(
+            self._motor_dir_samples[self._hold_val].append(
                 (self._cmd_last[0], msg.left_speed, self._cmd_last[1], msg.right_speed))
 
-    def _maybe_finalize_motor(self):
-        if self._item != "MOTOR":
+    def _finalize_motor_direction(self, direction: str):
+        """1 方向の解放時にその方向だけ判定する（brief-a13・SG-A13）。
+
+        - NG ならその場で NG 確定（理由に方向を含める `DIR:reason`）。
+        - OK なら済みに入れ、4 方向すべて済んだら OK 確定。
+        - 未実施（サンプル無し）の方向は確定しない。ただし押下が
+          `_MOTOR_TOO_BRIEF_MS` 以上の長さでサンプルが無いのは ESP32 側が
+          死んでいる（2026-09-25 修正の no_samples 経路の方向別版）。
+        """
+        if self._item != "MOTOR" or direction not in _MOTOR_DIRS:
             return
-        # 2026-09-25 修正: サンプルが1つも無い（指令すら通らなかった＝配線断・
-        # ESP32未接続等）を早期 return で無視していたため、judge_motor_samples()
-        # の NG("no_samples") 分岐に一度も到達せず、evt.check_result が
-        # 永遠に出ないまま RUNNING_CHECK に固着していた（モーター全損を検知
-        # できない最悪ケースを取り逃す）。常に judge_motor_samples() を呼ぶ。
-        verdict = judge_motor_samples(self._motor_samples, self._p)
-        self._motor_samples = []
-        self.get_logger().info(f"MOTOR 判定: {verdict.result} ({verdict.reason})")
-        self._publish_final("MOTOR", verdict)
-        self._emit_result("MOTOR", verdict)
+        samples = self._motor_dir_samples.get(direction, [])
+        self._motor_dir_samples[direction] = []
+        if not samples:
+            held_ms = self._now_ms() - self._motor_press_start_ms
+            if held_ms < _MOTOR_TOO_BRIEF_MS:
+                self.get_logger().info(
+                    f"MOTOR {direction}: サンプル無し（{held_ms:.0f}ms のみ）→ 未実施のまま")
+                self._publish_status(result="UNKNOWN", detail=self._live_detail())
+                return
+            verdict = NG("no_samples")
+        else:
+            verdict = judge_motor_samples(samples, self._p)
+        if verdict.result == "NG":
+            directed = NG(f"{direction}:{verdict.reason}")
+            self.get_logger().info(f"MOTOR 判定: {directed.result} ({directed.reason})")
+            self._publish_final("MOTOR", directed)
+            self._emit_result("MOTOR", directed)
+            return
+        self._motor_dir_done.add(direction)
+        self.get_logger().info(
+            f"MOTOR {direction} OK（済み {sorted(self._motor_dir_done)}）")
+        if set(_MOTOR_DIRS) <= self._motor_dir_done:
+            self.get_logger().info("MOTOR 判定: OK（4 方向すべて合致）")
+            self._publish_final("MOTOR", OK())
+            self._emit_result("MOTOR", OK())
+        else:
+            self._publish_status(result="UNKNOWN", detail=self._live_detail())
 
     def _twist_for(self, direction: str):
         t = Twist()
@@ -663,8 +700,10 @@ class OpcheckRunner(Node):
         item = self._item
         if item == "MOTOR":
             cmd_l, cmd_r = self._cmd_last
-            n = len(self._motor_samples)
-            return (f"hold={self._hold_val} "
+            hold = self._hold_val
+            n = len(self._motor_dir_samples.get(hold, [])) if hold != "NONE" else 0
+            done = ",".join(d for d in _MOTOR_DIRS if d in self._motor_dir_done)
+            return (f"done={done} hold={hold} "
                     f"L {cmd_l:.2f} / R {cmd_r:.2f} サンプル {n}")
         if item == "IMU":
             return (f"alive={int(self._imu_alive)} "
