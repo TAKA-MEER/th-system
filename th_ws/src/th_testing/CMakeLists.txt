@@ -417,6 +417,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_safety_monitor
     test/test_safety_monitor.py
     TIMEOUT 90)
+  # SG-A8 フォルト集約の Docker launch テスト（1b-4。
+  # 2 重フォルトで 1 つ解消しても active=true（残りの代表）・全解消で active=false、
+  # state_manager 経由で「はい」が残フォルト中は拒否されること。rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_fault_aggregate_node
+    test/test_fault_aggregate_node.py
+    TIMEOUT 240)
   # LOCALIZATION_LOST の Docker launch テスト（WP-SAFE-05 §完了条件1〜3。
   # 継続で発火・単発で発火せず・途絶で発火。CRITICAL の確認を含む）
   ament_add_pytest_test(test_localization_lost
