@@ -611,11 +611,11 @@ if(BUILD_TESTING)
 
   # 盤前移動の一時停止→再開（#3）・BLOCKED タイムアウトなし（#4）
   # (DetailedDesign-onsite.md §9。Gazebo・Nav2 本体なしの launch_testing。
-  # 積算: 起動 discovery 10 秒 ＋ #3 手順 15 秒 ＋ #4 の 20 周期観測 10 秒 ＋
-  # 陽性対照・reroute 各 10 秒 ＋ teardown 余裕。fault_injection_07 と同じ 240 秒枠)
+  # 積算: 起動 discovery 10 秒 ＋ 既存 7 件 ＋ SG-A1/A15 の 6 件追加（各 10〜15 秒）
+  # ＋ teardown 余裕。fault_injection_07 と同じ 240 秒枠では足りないので 400 秒)
   ament_add_pytest_test(test_venue_nav_pause_blocked_node
     test/test_venue_nav_pause_blocked_node.py
-    TIMEOUT 240)
+    TIMEOUT 400)
 
   # 待機場所宣言の配線（DetailedDesign-onsite.md §9 #10。Gazebo なしの
   # launch_testing で pin_registrar＋home_declarer を起動し、TF をずらして

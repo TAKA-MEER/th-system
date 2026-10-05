@@ -6,9 +6,17 @@
 # - NAV: Nav2 の ComputePathToPose → FollowPath（経路を1回計算してキャッシュ。
 #   高水準アクションは使わない＝自動リプラン禁止・Spec-onsite §6）。
 #   到着（result SUCCEEDED または xy が arrival_xy_tol_m 以内）で evt.arrived。
-#   ABORTED/CANCELED → evt.blocked、同一ゴールで経路再探索を繰り返し成功で
-#   evt.unblocked（タイムアウトしない・ゴールは変えない）。
+#   ABORTED/CANCELED → evt.blocked。BLOCKED 中の自動再試行は保持した経路の
+#   残りの再送だけ（再計算しない。SG-A15・Spec-onsite §2.1/§6）。
+#   再送した FollowPath が受け付けられ走行中なのを次の周期で観測したら
+#   evt.unblocked（＝決めた経路が通れた）。別ルートは ui.reroute → replan の
+#   ときだけ計算する。最初の計画が失敗した（キャッシュ無し）ときの経路探しの
+#   再試行は残す（WS-9AK の再発防止）。
 # - cancel/resume_follow_path: 経路キャッシュを再送。replan だけ取り直し。
+# - PAUSE に入ったら FollowPath を取り消して止まる（SG-A1。C-01/C-03 の共通行や
+#   BLOCKED からの ui.stop には cancel_follow_path が無いが、共通行に足すと
+#   PREP/RETURN のジョグまで取り消して復帰不能にするため、PAUSE 状態を見て
+#   取り消す）。再開までは動かない。再開は残りの再送（再計算しない）。
 # - ALIGN: /cmd_vel_behavior で超信地旋回。収束で Twist() を出して evt.align_done。
 #
 # 純コア (venue_nav_core) に旋回誤差・旋回指令・到着判定を寄せる。
@@ -265,6 +273,7 @@ class VenueNavigator(Node):
         if not self._blocked:
             self._cleared_this_episode = False
         self._blocked = True
+        self._unblocking = False
         self._nav_chain_active = False
         self._recheck_in_flight = False
         self._clear_deadline = 0.0
@@ -324,7 +333,19 @@ class VenueNavigator(Node):
                     and not self._nav_chain_active
                     and not self._blocked
                     and not self._arrival_pending):
-                self._start_nav()
+                self._resume_or_start()
+            return
+
+        # SG-A1(2026-10-05): PAUSE に入ったら FollowPath を取り消して止まる。
+        # 再開（ui.run / W-1 の「はい」等）まで動かない。_path は保持するので
+        # 再開は残りの再送になる（SM-3.1.2-056）。
+        # effect（transitions.yaml に cancel_follow_path を足す）方式は採らない。
+        # C-01/C-03 は全モード共通の行で、足すと PREP/RETURN でのジョグ（状態を
+        # 保つだけ・復帰の遷移が無い）まで取り消して戻る動作が詰む。PAUSE 状態を
+        # 見て取り消す方が、C-01/C-03・T-PNAV-06/T-SUM-10/T-HNAV-06・C-09c の
+        # 全入口を一網打尽にでき、PREP（PAUSE を持たない）にも影響しない。
+        if self._state == 'PAUSE' and self._mode in self._NAV_MODES:
+            self._cancel_follow_path()
             return
 
         # ALIGN に入ったら latched を外す（再入できるように）。PREP には無い。
@@ -370,6 +391,7 @@ class VenueNavigator(Node):
         self._align_latched = False
         self._final_aligning = False
         self._blocked = False
+        self._unblocking = False
         # _cancel_seqs は残す（結果待ちの取り消し。不具合 B 対策）。
         # _cancel_before_accept も残す（accept 時の late-cancel に使う）。
         # 下りる経路: _follow_result_done の消費／_follow_goal_done の不受理／
@@ -406,6 +428,7 @@ class VenueNavigator(Node):
             # _follow_goal_done が即座に取り消す。
             self._cancel_before_accept = True
         self._blocked = False
+        self._unblocking = False
         self._nav_chain_active = False
         self._recheck_in_flight = False
         self._clear_deadline = 0.0
@@ -415,13 +438,34 @@ class VenueNavigator(Node):
 
     def _resume_follow_path(self):
         self._blocked = False
+        self._unblocking = False
         self._recheck_in_flight = False
         self._arrival_pending = False
         if self._path is None:
             self.get_logger().warn('resume: キャッシュ経路が無い。再探索します')
             self._start_nav()
             return
+        if (self._follow_goal_handle is not None
+                or self._follow_send_in_flight):
+            # _resume_or_start と同じ理由（到着順不定の重複）。送出済みなら送らない。
+            self.get_logger().info('resume: 送出済みのため再送しない')
+            return
         self._send_follow_path(self._path)
+
+    def _resume_or_start(self):
+        """NAV 系への入口（effect を伴わない復帰＝C-04/C-05 の W-1「はい」等を含む）。
+        キャッシュ経路があれば残りを送り直すだけで、計算し直さない
+        （SM-3.1.2-056。f126534 で縛った挙動）。無ければ最初から計画する。"""
+        if (self._follow_goal_handle is not None
+                or self._follow_send_in_flight):
+            # 再開要求の重複（resume effect と /system/state(NAV) は別トピックで
+            # 到着順が不定。3ms 差で逆順に処理され二重送出になった実例あり）。
+            # 送出済み・送出中なら何もしない。
+            return
+        if self._path is not None:
+            self._send_follow_path(self._path)
+        else:
+            self._start_nav()
 
     def _replan(self):
         self._blocked = False
@@ -530,7 +574,24 @@ class VenueNavigator(Node):
             self._go_blocked(json.dumps({'reason': 'compute_failed'}))
             return
         self._path = path
+        # SG-A1(2026-10-05): 計算中に PAUSE に入っていたら送らず、キャッシュだけ
+        # 残す。走り出すのは再開時の残り再送（_resume_or_start / resume effect）。
+        if self._state == 'PAUSE':
+            self._unblocking = False
+            return
+        # モード離脱後に届いた計算結果は捨てる（送らない・キャッシュも残さない）。
+        # _reset_for_exit が _path=None にした後なので、残すと離脱先のモードで
+        # 走り出すうえ、次の episode の NAV 入口が古い経路を送ってしまう。
+        # ui.abort → 離脱 → 結果到着の順で実際に走り出した（09e8346 の競合と
+        # 同じ型。IDLE_H で FollowPath が送られ次の試験を汚染した）。
+        if not self._recovery_eligible():
+            self._path = None
+            self._unblocking = False
+            self._recheck_in_flight = False
+            return
         # blocked 中の再探索成功 → まず unblocked を出してから再開する
+        # （経路未確定＝初回計画失敗時の再試行の経路。SG-A15 の残り再送は
+        # _resend_cached 側で扱い、ここには来ない）。
         if self._unblocking:
             self._unblocking = False
             self._blocked = False
@@ -584,11 +645,17 @@ class VenueNavigator(Node):
         # handle が抑える。立てたままにすると長時間の follow 中に 10 秒の
         # stale-escape（_blocked_recheck 冒頭）が誤って発火する。
         self._nav_chain_active = False
+        # SG-A15(2026-10-05): BLOCKED 中の残り再送（プローブ）の受け付け。
+        # ここでは evt.unblocked を出さない ── 次の再探索周期で「まだ走行中」を
+        # 観測できたときだけ通れたとみなす（受け付け直後の ABORT で
+        # BLOCKED↔NAV が往復するのを防ぐ）。_recheck_in_flight は結果か
+        # 次周期の観測まで立てたままにし、二重送信を抑える。
         if self._cancel_before_accept:
             # 不具合 A (2026-10-01): 窓の中で取り消しを求められていた。
             # 受け付けた端から取り消す。結果 (CANCELED) は自分由来なので
             # 通番を積んで evt.blocked を出さない。
             self._cancel_before_accept = False
+            self._unblocking = False
             self._cancel_seqs.add(seq)
             try:
                 goal_handle.cancel_goal_async()
@@ -616,9 +683,12 @@ class VenueNavigator(Node):
             pass
         if seq in self._cancel_seqs:
             self._cancel_seqs.discard(seq)
+            self._unblocking = False
             return  # 自分で cancel したので evt を出さない
         # result SUCCEEDED → arrived
         if status == 4:  # GoalStatus.STATUS_SUCCEEDED
+            self._unblocking = False
+            self._recheck_in_flight = False
             self._arrive_or_align()
             return
         # ABORTED / CANCELED（自分でない cancel）→ blocked
@@ -733,9 +803,9 @@ class VenueNavigator(Node):
         # advertise 済みなのに無応答＝ nav2 再起動中などで done が来ないケース）。
         if (self._recheck_in_flight and not self._nav_chain_active
                 and 0.0 < self._clear_deadline < now):
-            self.get_logger().warn('costmap クリア無応答 → クリアを飛ばして再計算')
+            self.get_logger().warn('costmap クリア無応答 → クリアを飛ばして再試行')
             self._clear_deadline = 0.0
-            self._recheck_compute()
+            self._recheck_send()
             return
 
         if not self._blocked:
@@ -757,24 +827,72 @@ class VenueNavigator(Node):
             self.get_logger().info('BLOCKED だが到着圏内 → evt.unblocked')
             self._arrival_pending = True
             self._blocked = False
+            self._unblocking = False
             self._emit_event('evt.unblocked')
+            return
+
+        # SG-A15(2026-10-05): 前周期に送った残り再送のプローブが受け付けられ、
+        # まだ走行中＝決めた経路が通れた。evt.unblocked で NAV に戻す
+        # （別ルートは探していない。受け付け直後の ABORT では往復しないよう、
+        # 受け付け時点ではなく次の周期の観測で判定する）。
+        # 再計算の経路（_path 無し→_compute_and_follow）の成功は
+        # _compute_result_done 側で unblocked を出すので、ここには来ない
+        # （_unblocking はその場で下ろす）。
+        if self._unblocking and self._follow_goal_handle is not None:
+            self.get_logger().info('blocked 解除: 残りの走り直しが通れた → evt.unblocked')
+            self._unblocking = False
+            self._recheck_in_flight = False
+            if self._blocked:
+                self._blocked = False
+                self._emit_event('evt.unblocked')
             return
 
         if self._nav_chain_active or self._recheck_in_flight:
             return
         self._recheck_in_flight = True
         self._recheck_started_at = now
+        self._recheck_send()
+
+    def _recheck_send(self):
+        """再探索タイマの送出部。経路未確定なら計算、確定済みなら残りの再送。"""
+        if self._path is None:
+            # まだ経路が決まっていない（最初の計画の失敗）。経路を探す再試行は
+            # 残す（WS-9AK の再発防止。止まり続けたら実機で詰む）。
+            if self._cleared_this_episode:
+                # WS-9AC(2026-09-11): 幽霊マーク一掃はこの BLOCKED episode で既に
+                # 済んでいる。毎周期クリアすると今まさにある本物の障害物マークも
+                # 消してしまい、クリア直後の compute がすり抜けて FollowPath 側で
+                # ABORT する往復を招くため、以降は素の再計算だけ行う。
+                self.get_logger().info('blocked 再探索: compute_path_to_pose（クリア済み）')
+                self._recheck_compute()
+            else:
+                self._cleared_this_episode = True
+                self.get_logger().info('blocked 再探索: costmap クリア → compute_path_to_pose')
+                self._clear_costmaps_then(self._recheck_compute)
+            return
+        # SG-A15(2026-10-05): 経路決定後の自動再試行は、保持した経路の残りの
+        # 再送だけ。別ルートは探さない（再検索 ui.reroute → _replan のときだけ
+        # _compute_and_follow が走る）。コストマップの一掃は初回だけ
+        # （Spec-onsite §6.1。毎周期消すと本物の障害物マークまで消す）。
         if self._cleared_this_episode:
-            # WS-9AC(2026-09-11): 幽霊マーク一掃はこの BLOCKED episode で既に
-            # 済んでいる。毎周期クリアすると今まさにある本物の障害物マークも
-            # 消してしまい、クリア直後の compute がすり抜けて FollowPath 側で
-            # ABORT する往復を招くため、以降は素の再計算だけ行う。
-            self.get_logger().info('blocked 再探索: compute_path_to_pose（クリア済み）')
-            self._recheck_compute()
+            self.get_logger().info('blocked 再試行: 保持した経路の残りを再送（再計算しない）')
+            self._resend_cached()
         else:
             self._cleared_this_episode = True
-            self.get_logger().info('blocked 再探索: costmap クリア → compute_path_to_pose')
-            self._clear_costmaps_then(self._recheck_compute)
+            self.get_logger().info('blocked 再試行: costmap クリア → 残りを再送')
+            self._clear_costmaps_then(self._resend_cached)
+
+    def _resend_cached(self):
+        """保持した経路の残りを FollowPath に送り直す（_recheck_compute の
+        残り再送版。送っただけでは unblocked を出さず、次の周期に「まだ
+        走行中」を観測できたら通れたとみなす）。"""
+        if self._nav_chain_active:
+            return  # 打ち切り後に遅れて来た clear done コールバック等
+        if self._path is None or not self._blocked:
+            self._recheck_in_flight = False
+            return
+        self._unblocking = True
+        self._send_follow_path(self._path)
 
     def _clear_costmaps_then(self, done_cb):
         """global → local の順に ClearEntireCostmap を非同期で叩き、完了で done_cb。
