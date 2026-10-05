@@ -551,13 +551,22 @@ private:
     }
 
     // フォルトの edge 検出 + publish。active_faults_ を更新する（fault_lock の合成に使う）。
+    //
+    // SG-A8: 発生時はそのフォルト自身の型を出す（従来どおり。代表に寄せると
+    // 単一フォルト由来の既存試験・購読者の種別判定が曇る）。解消時は残りが
+    // あれば代表（最も重いもの。重大 > 回復）を active=true で出し続け、
+    // 全部消えたときだけ active=false, NONE を出す。state_manager は最後の
+    // メッセージで上書きするだけなので、この出し方で fault_cleared /
+    // estop_resume_prev が正しく効く（C-04・C-09c）。残存中の代表再送による
+    // 余計な fault.critical 再発火は、ESTOP/CARRY での latch 抑制（N-3）と
+    // C-03 のガードで無害（PAUSE では同状態への再遷移＋W-1 再送のみ）。
     void updateFaultState(const std::string& fault_type, bool faulted) {
         bool was_fault = active_faults_.count(fault_type) != 0;
         if (faulted && !was_fault) {
             active_faults_.insert(fault_type);
             RCLCPP_ERROR(get_logger(), "[FAULT] %s (severity=%s)", fault_type.c_str(),
                          th_safety::severity_to_string(th_safety::classify_severity(fault_type)));
-            publishFault(true, representativeFault());
+            publishFault(true, fault_type);
         } else if (!faulted && was_fault) {
             active_faults_.erase(fault_type);
             RCLCPP_INFO(get_logger(), "[FAULT CLEARED] %s", fault_type.c_str());
