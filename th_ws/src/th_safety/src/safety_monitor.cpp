@@ -531,6 +531,25 @@ private:
                           computeTimeoutFault(last_time, timeout, now_t, ever_received));
     }
 
+    // SG-A8: フォルトの集約。active_faults_ に何か残っている間は
+    // active=true を出し続け、代表は最も重いもの（重大 > 回復。同一階級では
+    // 辞書順最小で決定的にする）。全部消えたときだけ active=false, NONE。
+    // state_manager は最後のメッセージで上書きするだけなので、この出し方で
+    // fault_cleared / estop_resume_prev が正しく効く（C-04・C-09c）。
+    std::string representativeFault() const {
+        std::string best;
+        bool best_critical = false;
+        for (const auto& ft : active_faults_) {
+            bool crit = (th_safety::classify_severity(ft) == th_safety::Severity::CRITICAL);
+            if (best.empty() || (crit && !best_critical) ||
+                (crit == best_critical && ft < best)) {
+                best = ft;
+                best_critical = crit;
+            }
+        }
+        return best;
+    }
+
     // フォルトの edge 検出 + publish。active_faults_ を更新する（fault_lock の合成に使う）。
     void updateFaultState(const std::string& fault_type, bool faulted) {
         bool was_fault = active_faults_.count(fault_type) != 0;
@@ -538,11 +557,15 @@ private:
             active_faults_.insert(fault_type);
             RCLCPP_ERROR(get_logger(), "[FAULT] %s (severity=%s)", fault_type.c_str(),
                          th_safety::severity_to_string(th_safety::classify_severity(fault_type)));
-            publishFault(true, fault_type);
+            publishFault(true, representativeFault());
         } else if (!faulted && was_fault) {
             active_faults_.erase(fault_type);
             RCLCPP_INFO(get_logger(), "[FAULT CLEARED] %s", fault_type.c_str());
-            publishFault(false, "NONE");
+            if (active_faults_.empty()) {
+                publishFault(false, "NONE");
+            } else {
+                publishFault(true, representativeFault());
+            }
         }
     }
 
