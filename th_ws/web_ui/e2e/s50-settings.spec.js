@@ -5,7 +5,13 @@
 // config_manager の service 呼び出しは TEST_MODE（window.__thTestState 定義時）
 // では useTunableParams.js が即 reject するので、ネット無しで回る。
 import { test, expect } from '@playwright/test'
+import { readFileSync } from 'node:fs'
 import { gotoScreen, setTestState, stubTrigger, gotoScreenWithTunables, tunableApplyCalls } from './helpers.js'
+
+// registry 連動の上限（scripts/gen_param_limits.py の生成物）。天井が変われば
+// 作り直されるので、ここでは値を直書きせず生成物を読む。
+const PARAM_LIMITS = JSON.parse(
+  readFileSync(new URL('../src/generated/param_limits.json', import.meta.url), 'utf8'))
 
 async function openS50General(page) {
   await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
@@ -128,7 +134,7 @@ test('片方の取得に失敗しても一般タブ全体は落ちない（節�
 })
 
 // SG-B9: 旧ノードの v_max（UI 上限 1.5）は registry の v_max を超えて保存
-// できない。1.5 を入れても天井（約 0.57）で丸められて送られる。
+// できない。1.5 を入れても天井（param_limits.json）で丸められて送られる。
 test('v_max に上限超えを入れても registry の天井で丸められる', async ({ page }) => {
   await gotoScreenWithTunables(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
     follow_planner_mapless: { values: { v_max: 0.3 } },
@@ -144,5 +150,7 @@ test('v_max に上限超えを入れても registry の天井で丸められる'
   const vMaxCalls = calls.filter((c) => c.paramName === 'v_max')
   expect(vMaxCalls).toHaveLength(1)
   expect(vMaxCalls[0].nodeName).toBe('follow_planner_mapless')
-  expect(vMaxCalls[0].value).toBeLessThanOrEqual(0.568 + 1e-9)
+  // 上限自体が昔の UI 上限（1.5）より小さいことが、この試験が空振りでないことの保証。
+  expect(PARAM_LIMITS.v_max).toBeLessThan(1.5)
+  expect(vMaxCalls[0].value).toBe(PARAM_LIMITS.v_max)
 })
