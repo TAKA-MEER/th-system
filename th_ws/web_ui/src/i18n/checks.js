@@ -40,7 +40,23 @@ export const CHECK_REASON_LABELS = {
   },
 }
 
+import { stripMotorDir } from '../ros/motorDirs.js'
+
+// MOTOR の確定 NG の理由に付く方向プレフィクス（`LEFT:sign_mismatch_L`）の訳。
+// 素の理由のラベルは CHECK_REASON_LABELS のまま（repair_hints.yaml との 1 対 1 を保つ）。
+const MOTOR_DIR_LABELS = {
+  FORWARD: '前進',
+  BACK: '後退',
+  LEFT: '左旋回',
+  RIGHT: '右旋回',
+}
+
 export function checkReasonLabel(item, reason) {
   if (!reason) return ''
+  if (item === 'MOTOR') {
+    const { dir, reason: base } = stripMotorDir(reason)
+    const label = CHECK_REASON_LABELS.MOTOR[base] ?? base
+    return dir ? `${label}（${MOTOR_DIR_LABELS[dir] ?? dir}）` : label
+  }
   return CHECK_REASON_LABELS[item]?.[reason] ?? reason
 }

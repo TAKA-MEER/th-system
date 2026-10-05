@@ -46,6 +46,7 @@ import HoldButton from '../parts/HoldButton.jsx'
 import WheelSpeedView from '../parts/WheelSpeedView.jsx'
 import { setCalibGuide, clearCalibGuide } from './calibGuide.js'
 import { checkReasonLabel } from '../i18n/checks.js'
+import { MOTOR_DIRS, parseMotorDone } from '../ros/motorDirs.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS } from '../i18n/states.js'
 import {
@@ -159,8 +160,31 @@ function EstopMonitor({ status, estopHw, disabledAll, onAnswer, onGotoCalib }) {
   )
 }
 
-function SimpleStatusMonitor({ item, status, disabledAll, onGotoCalib }) {
-  const verdict = useStickyVerdict(status, item)
+const MOTOR_DIR_LABELS = {
+  FORWARD: S30_MOTOR_FORWARD,
+  BACK: S30_MOTOR_BACK,
+  LEFT: S30_MOTOR_LEFT,
+  RIGHT: S30_MOTOR_RIGHT,
+}
+
+// MOTOR の 4 方向の済み／未（brief-a13・SG-A13）。runner が UNKNOWN の detail
+// 先頭に `done=...` で進捗を載せる（msg 不変）。spec §2.4 #2「未実施の方向がある間は
+// 判定を確定しない」の途中経過表示。
+function MotorDirProgress({ status }) {
+  const done = status?.item === 'MOTOR' ? parseMotorDone(status.detail) : []
+  return (
+    <div className="s30-motor-dirs" data-testid="s30-motor-dirs">
+      {MOTOR_DIRS.map((dir) => (
+        <span key={dir} className={`pill ${done.includes(dir) ? 'ok' : ''}`}
+          data-testid={`s30-motor-dir-${dir}`}>
+          {MOTOR_DIR_LABELS[dir]} {done.includes(dir) ? '済' : '未'}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function SimpleStatusMonitor({ item, status, disabledAll, onGotoCalib }) {  const verdict = useStickyVerdict(status, item)
   const live = status?.item === item ? status : null
   const shown = verdict ?? live
 
@@ -289,21 +313,38 @@ export default function S30Opcheck() {
         </div>
         <div className="card">
           <h3>{S30_LIST_TITLE}</h3>
-          {S30_ITEM_ORDER.map((item) => (
-            <button
-              key={item}
-              type="button"
-              className={`s30-row ${activeItem === item ? 'running' : ''}`}
-              disabled={disabledAll || !(stateName === 'LIST' || running)}
-              data-testid={`s30-item-${item}`}
-              onClick={() => handleSelect(item)}
-            >
-              <span className="s30-row-label">{S30_ITEM_LABELS[item]}</span>
-              <span className={`pill ${S30_RESULT_TONE[results[item]?.result] ?? ''}`}>
-                {resultLabel(results[item]?.result)}
-              </span>
-            </button>
-          ))}
+          {S30_ITEM_ORDER.map((item) => {
+            // SG-B5（1b-8）: 判定と同時に FSM は LIST へ戻る（T-OPC-02/04）のに
+            // 「校正へ」は RUNNING_CHECK の詳細カードにしか無かった。LIST の行にも
+            // 直近の判定（results ラッチ。S-31 と同じ流儀）から出す。FSM 側は
+            // spec（SM-3.1.2-087「校正へ導線を出す」・-092「LIST → CALIB」）
+            // どおりなので変えない。T-OPC-07 は LIST 限定のため LIST のときだけ出す。
+            const calibVerdict = (results[item]?.next_screen === 'imu_calib' || results[item]?.next_screen === 'lidar_calib')
+              ? results[item] : null
+            return (
+              <div key={item} className="s30-row-wrap">
+                <button
+                  type="button"
+                  className={`s30-row ${activeItem === item ? 'running' : ''}`}
+                  disabled={disabledAll || !(stateName === 'LIST' || running)}
+                  data-testid={`s30-item-${item}`}
+                  onClick={() => handleSelect(item)}
+                >
+                  <span className="s30-row-label">{S30_ITEM_LABELS[item]}</span>
+                  <span className={`pill ${S30_RESULT_TONE[results[item]?.result] ?? ''}`}>
+                    {resultLabel(results[item]?.result)}
+                  </span>
+                </button>
+                {calibVerdict && stateName === 'LIST' && (
+                  <button type="button" className="btn wide" disabled={disabledAll}
+                    data-testid={`s30-goto-calib-${item}`}
+                    onClick={() => handleGotoCalib(item, calibVerdict)}>
+                    {S30_GOTO_CALIB}
+                  </button>
+                )}
+              </div>
+            )
+          })}
           {selectErr && <p className="note" data-testid="s30-select-err">{selectErr}</p>}
         </div>
         <div className="card">
@@ -341,6 +382,7 @@ export default function S30Opcheck() {
           return (
             <div className="card">
               <p className="note">{S30_MOTOR_HOLD_NOTE}</p>
+              <MotorDirProgress status={status} />
               <div className="hold-grid">
                 <HoldButton direction="FORWARD" label={S30_MOTOR_FORWARD}
                   active={motorDir === 'FORWARD'} disabled={disabledAll || !motorHoldGate}

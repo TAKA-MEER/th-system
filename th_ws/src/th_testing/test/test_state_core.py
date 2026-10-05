@@ -421,3 +421,37 @@ def test_opcheck_running_select_other_item_switches(state_core_bundle):
     names = [e.name for e in d.effects]
     assert names == ["abort_check", "start_monitor"], names
     assert d.effects[1].args == {"item": "MOTOR"}
+
+
+# ============================================================
+# 1b-8 (SG-B5): NG → LIST →「校正へ」→ CALIB の本番の順番。
+# T-OPC-02（NG・校正可 → LIST）→ T-OPC-07（LIST → CALIB）が通ることを
+# 実際の順番で回して縛る。画面はこの順番にボタンを出す（e2e 側）。
+# ============================================================
+@pytest.mark.rule("T-OPC-02")
+@pytest.mark.rule("T-OPC-07")
+def test_opcheck_ng_lidar_returns_to_list_then_calib(state_core_bundle):
+    core, _, _, _ = state_core_bundle
+    d1 = core.step("OPCHECK", "LIST", "ui.check_item",
+                   _mk_ctx(arg={"item": "LIDAR"}))
+    assert d1.accepted is True
+    assert (d1.to_mode, d1.to_state) == ("OPCHECK", "RUNNING_CHECK")
+    assert [e.name for e in d1.effects] == ["start_monitor"]
+
+    # runner が出す evt.check_result（IMU/LIDAR の NG → LIST＋校正導線）。
+    d2 = core.step("OPCHECK", "RUNNING_CHECK", "evt.check_result",
+                   _mk_ctx(check_item="LIDAR", check_result="NG",
+                           arg={"item": "LIDAR", "result": "NG"}))
+    assert d2.accepted is True, "T-OPC-02 が通らない（前提が崩れている）"
+    assert (d2.to_mode, d2.to_state) == ("OPCHECK", "LIST")
+    assert d2.rule_id == "T-OPC-02"
+    assert [e.name for e in d2.effects] == ["offer_calib", "record_result"], \
+        [e.name for e in d2.effects]
+
+    # LIST で「校正へ」（T-OPC-07 は LIST 限定。本番の順番どおり）。
+    d3 = core.step("OPCHECK", "LIST", "ui.enter_mode",
+                   _mk_ctx(arg={"mode": "CALIB"}))
+    assert d3.accepted is True, \
+        "LIST からの ui.enter_mode{CALIB} が拒否された（T-OPC-07 の標的）"
+    assert (d3.to_mode, d3.to_state) == ("CALIB", "LIST")
+    assert d3.rule_id == "T-OPC-07"

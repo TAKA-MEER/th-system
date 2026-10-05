@@ -89,6 +89,15 @@ th_maintenance/
 
 **押す・離すの両方を試す。**片方だけでは配線の断線・短絡を区別できない。
 
+**判定の確定は「両方を見てから」**（`opcheck_runner._update_estop_verdict`）。
+押下だけ・未押下の中間状態では `evt.check_result` を出さず、解除を待つ。
+押した瞬間に `NG(stuck_release)` で確定してはいけない（SG-B4）。
+最終形は OK（両方検出・目視の「いいえ」無し）・`no_data`（3 秒途絶）・
+`answer_mismatch`（「いいえ」回答あり）のいずれか。
+**押したまま 30 秒（`_ESTOP_RELEASE_TIMEOUT_MS`）離さないと `NG(stuck_release)`**
+で確定する。spec に時間の規定は無いため値は実装側の決定（1b-8 の報告参照）。
+押下が一度も来ない側は時間で NG にしない（中断で抜ける）。
+
 **この項目の実行中だけ、物理ボタン押下で `CARRY` に遷移させない**（`T-OPC-05`）。
 押下のたびに手押しモードへ落ちると確認そのものが実行できない。この間も駆動は物理的に切れている。
 
@@ -107,6 +116,14 @@ th_maintenance/
 左右輪それぞれ「指令 −0.10 m/s ／ 実測 −0.09 m/s ／ ✓」の形で並べる。
 データ源は `/esp32/wheel_cmd_speed`（指令）と `/esp32/wheel_feedback`（実測）。
 **既存の `WheelSpeedView.jsx` の時系列グラフをそのまま流用できる。**
+
+**4 方向すべてで合ってはじめて OK**（brief-a13・SG-A13。`Spec-checks.md` §2.4 #2）。
+`opcheck_runner` は方向別にサンプルを集計し、1 方向の解放ごとにその方向だけ判定する。
+NG の方向があればその場で NG 確定（理由は `DIR:reason` 形で方向を含む）。
+未実施の方向が残る間は `evt.check_result` を出さず、途中経過（済み方向）を
+`CheckStatus.detail` の先頭 `done=...` に載せる（msg 不変）。
+サンプル無しで `_MOTOR_TOO_BRIEF_MS`（500 ms）未満の押下は未実施扱い、
+それ以上は `NG no_samples`（ESP32 側の死）。
 
 `check_core.py`:
 

@@ -1,7 +1,13 @@
 // e2e/s40-calib-guide.spec.js — S-30「校正へ」→ S-40 誘導（計画書 §6 #11）。
-// 本番の送信経路を縛る:
-//   - S-30 の「校正へ」が ui.enter_mode{mode:CALIB} を /system/trigger へ実際に送る
-//   - CALIB/LIST に入ると受け渡し（screens/calibGuide.js）を 1 回だけ読んで
+// 本番の送信経路・本番の順番を縛る（1b-8・SG-B5 で作り直し。以前は
+// RUNNING_CHECK＋判定済みという本番では起きない安定状態を手で作っていた。
+// 本番は判定と同時に FSM が LIST へ戻る（T-OPC-02/04）ので、ボタンは LIST の
+// 行に出ていなければならない）:
+//   1. S-30 を RUNNING_CHECK＋判定前（UNKNOWN）で開く
+//   2. 判定が届く（/opcheck/status の到着を模擬）
+//   3. FSM が LIST へ戻る（T-OPC-02/04 を模擬）
+//   4. LIST の行の「校正へ」が ui.enter_mode{mode:CALIB} を実際に送る
+//   5. CALIB/LIST に入ると受け渡し（screens/calibGuide.js）を 1 回だけ読んで
 //     該当項目（LIDAR→BLIND / IMU→IMU）を強調し、案内を出す。自動では始まらない
 //     （開始は人が押す。Spec.md SD-8）
 //   - enter_mode 拒否では受け渡しが残らない／別経路（S-01 等）では何も出ない
@@ -12,20 +18,17 @@
 import { test, expect } from '@playwright/test'
 import { stubTrigger } from './helpers.js'
 
-// S-30 を RUNNING_CHECK＋判定済みで開く（s30-opcheck.spec.js の gotoS30 と同型に
-// calib 側の種も足したもの）。S-40 に遷る段階では __thSetTestState で mode だけ
-// 変えるので、__thTestScreen='S30' のまま S-40 がマウントされる。
-async function gotoS30WithVerdict(page, opcheckStatus) {
-  await page.addInitScript(({ os, cs }) => {
+// S-30 を判定前の RUNNING_CHECK で開く（本番の項目実行中の状態）。
+async function gotoS30Running(page, item) {
+  await page.addInitScript(({ it }) => {
     window.__thTestState = { mode: 'OPCHECK', state: 'RUNNING_CHECK' }
     window.__thTestScreen = 'S30'
     window.__thTestOpcheckAnswer = () => ({ accepted: true })
-    window.__thTestOpcheckStatus = os
-    window.__thTestCalibStatus = cs
-  }, {
-    os: opcheckStatus,
-    cs: { item: '', step: '', result: 'IDLE', preview_before: '', preview_after: '', detail: {} },
-  })
+    window.__thTestOpcheckStatus = { item: it, result: 'UNKNOWN', detail: '', next_screen: '' }
+    window.__thTestCalibStatus = {
+      item: '', step: '', result: 'IDLE', preview_before: '', preview_after: '', detail: {},
+    }
+  }, { it: item })
   await page.goto('/')
 }
 
@@ -41,11 +44,19 @@ async function gotoS40Direct(page) {
 }
 
 const setState = (page, patch) => page.evaluate((p) => window.__thSetTestState(p), patch)
+const setOpcheckStatus = (page, os) => page.evaluate((o) => window.__thSetTestOpcheckStatus(o), os)
 const triggerCalls = (page) => page.evaluate(() => window.__thTriggerCalls ?? [])
 
-async function clickGotoCalib(page) {
-  await expect(page.getByTestId('s30-goto-calib')).toBeVisible()
-  await page.getByTestId('s30-goto-calib').click()
+// 本番の順番: 判定の到着 → FSM が LIST へ戻る → LIST の行のボタン。
+async function verdictThenBackToList(page, opcheckStatus) {
+  await setOpcheckStatus(page, opcheckStatus)
+  await setState(page, { state: 'LIST' })
+}
+
+async function clickGotoCalibInList(page, item) {
+  const btn = page.getByTestId(`s30-goto-calib-${item}`)
+  await expect(btn).toBeVisible()
+  await btn.click()
   await page.waitForFunction(
     () => (window.__thTriggerCalls ?? []).some((c) => c.trigger === 'ui.enter_mode'),
   )
@@ -60,11 +71,12 @@ async function enterCalibList(page) {
   await expect(page.getByTestId('s40-tab-items')).toBeVisible()
 }
 
-test('LIDAR が NG →「校正へ」→ S-40 で BLIND が強調され案内が出る（自動では始まらない）', async ({ page }) => {
+test('LIDAR が NG → LIST の行の「校正へ」→ S-40 で BLIND が強調され案内が出る（自動では始まらない）', async ({ page }) => {
   await stubTrigger(page, { 'ui.enter_mode': { accepted: true } })
-  await gotoS30WithVerdict(page, { item: 'LIDAR', result: 'NG', detail: '', next_screen: 'lidar_calib' })
+  await gotoS30Running(page, 'LIDAR')
+  await verdictThenBackToList(page, { item: 'LIDAR', result: 'NG', detail: '', next_screen: 'lidar_calib' })
 
-  await clickGotoCalib(page)
+  await clickGotoCalibInList(page, 'LIDAR')
   await enterCalibList(page)
 
   await expect(page.getByTestId('s40-calib-guide')).toContainText('始業点検')
@@ -79,11 +91,12 @@ test('LIDAR が NG →「校正へ」→ S-40 で BLIND が強調され案内が
   await expect(page.getByTestId('s40-start-BLIND')).toBeEnabled()
 })
 
-test('IMU が要確認（WARN）→「校正へ」→ S-40 で IMU が強調される', async ({ page }) => {
+test('IMU が要確認（WARN）→ LIST の行の「校正へ」→ S-40 で IMU が強調される', async ({ page }) => {
   await stubTrigger(page, { 'ui.enter_mode': { accepted: true } })
-  await gotoS30WithVerdict(page, { item: 'IMU', result: 'WARN', detail: '', next_screen: 'imu_calib' })
+  await gotoS30Running(page, 'IMU')
+  await verdictThenBackToList(page, { item: 'IMU', result: 'WARN', detail: '', next_screen: 'imu_calib' })
 
-  await clickGotoCalib(page)
+  await clickGotoCalibInList(page, 'IMU')
   await enterCalibList(page)
 
   await expect(page.getByTestId('s40-calib-guide')).toContainText('要確認でした')
@@ -91,11 +104,31 @@ test('IMU が要確認（WARN）→「校正へ」→ S-40 で IMU が強調さ�
   await expect(page.getByTestId('s40-item-BLIND')).not.toHaveClass(/guided/)
 })
 
+test('IMU が NG → LIST の行の「校正へ」が出る（repair 行きではなく校正へ）', async ({ page }) => {
+  await stubTrigger(page, { 'ui.enter_mode': { accepted: true } })
+  await gotoS30Running(page, 'IMU')
+  await verdictThenBackToList(page, { item: 'IMU', result: 'NG', detail: 'bias_too_large', next_screen: 'imu_calib' })
+
+  await clickGotoCalibInList(page, 'IMU')
+  await enterCalibList(page)
+
+  await expect(page.getByTestId('s40-calib-guide')).toContainText('始業点検')
+  await expect(page.getByTestId('s40-item-IMU')).toHaveClass(/guided/)
+})
+
+test('判定前（UNKNOWN）の行には「校正へ」は出ない', async ({ page }) => {
+  await stubTrigger(page, { 'ui.enter_mode': { accepted: true } })
+  await gotoS30Running(page, 'LIDAR')
+  await setState(page, { state: 'LIST' })
+  await expect(page.getByTestId('s30-goto-calib-LIDAR')).toHaveCount(0)
+})
+
 test('enter_mode が拒否されたら誘導は残らない（別経路で入っても出ない）', async ({ page }) => {
   await stubTrigger(page, { 'ui.enter_mode': { accepted: false, reject_reason_key: 'not_allowed' } })
-  await gotoS30WithVerdict(page, { item: 'LIDAR', result: 'NG', detail: '', next_screen: 'lidar_calib' })
+  await gotoS30Running(page, 'LIDAR')
+  await verdictThenBackToList(page, { item: 'LIDAR', result: 'NG', detail: '', next_screen: 'lidar_calib' })
 
-  await clickGotoCalib(page)
+  await clickGotoCalibInList(page, 'LIDAR')
   // 送ったが拒否された
   const calls = await triggerCalls(page)
   expect(calls.some((c) => c.trigger === 'ui.enter_mode' && c.argJson?.mode === 'CALIB')).toBeTruthy()
@@ -118,9 +151,10 @@ test('誘導の案内はウィザードに入ると畳まれ、LIST に戻って
     'ui.enter_mode': { accepted: true },
     'ui.calib_item': { accepted: true },
   })
-  await gotoS30WithVerdict(page, { item: 'LIDAR', result: 'NG', detail: '', next_screen: 'lidar_calib' })
+  await gotoS30Running(page, 'LIDAR')
+  await verdictThenBackToList(page, { item: 'LIDAR', result: 'NG', detail: '', next_screen: 'lidar_calib' })
 
-  await clickGotoCalib(page)
+  await clickGotoCalibInList(page, 'LIDAR')
   await enterCalibList(page)
   await expect(page.getByTestId('s40-calib-guide')).toBeVisible()
 

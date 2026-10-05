@@ -18,8 +18,7 @@
 export const OPCHECK_TO_CALIB = { LIDAR: 'BLIND', IMU: 'IMU' }
 
 // 誘導元として受け付ける点検結果（「校正へ」ボタンが出るのは NG・WARN のとき。
-// opcheck_runner.py の _NEXT_SCREEN と _publish_fanout 参照。IMU の NG は
-// next_screen=repair になるのでボタン自体が出ない）。
+// opcheck_runner.py の _NEXT_SCREEN 参照）。
 const GUIDEABLE_RESULTS = ['NG', 'WARN']
 
 let slot = null

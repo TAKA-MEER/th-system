@@ -34,6 +34,14 @@ test('MOTOR no_follow_R は右輪の手順', async ({ page }) => {
   await expect(page.getByTestId('s31-hints-MOTOR')).not.toContainText('左輪')
 })
 
+// brief-a13（SG-A13）: 確定 NG の理由は `DIR:reason` 形。症状は方向込みで出て、
+// 手順は素の理由で引く（strip しないと手順が出ない）。
+test('MOTOR の DIR:付き理由は方向込みの症状と素の理由の手順が出る', async ({ page }) => {
+  await gotoS31(page, { item: 'MOTOR', result: 'NG', detail: 'LEFT:sign_mismatch_L', next_screen: 'repair' })
+  await expect(page.getByTestId('s31-symptom-MOTOR')).toContainText('左旋回')
+  await expect(page.getByTestId('s31-hints-MOTOR')).toContainText('エンコーダの極性')
+})
+
 test('症状が無ければ手順は出さない', async ({ page }) => {
   await gotoS31(page, null)
   await expect(page.getByTestId('s31-hints-ESTOP')).toHaveCount(0)

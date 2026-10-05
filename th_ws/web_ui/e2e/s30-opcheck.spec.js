@@ -99,6 +99,33 @@ test('LIST 状態では MOTOR のホールドボタンは存在しない（ゲ�
   await expect(page.getByTestId('s30-motor-forward')).toHaveCount(0)
 })
 
+// brief-a13（SG-A13）: 4 方向の済み／未は /opcheck/status の detail（done=...）から出す。
+// 本番は runner が UNKNOWN の detail 先頭に進捗を載せる。
+test('MOTOR: 4方向の済み/未が表示される（done= の進捗）', async ({ page }) => {
+  await gotoS30(page, {
+    state: { state: 'RUNNING_CHECK' },
+    opcheckStatus: { item: 'MOTOR', result: 'UNKNOWN', detail: 'done=FORWARD hold=NONE', next_screen: '' },
+  })
+  await expect(page.getByTestId('s30-motor-dirs')).toBeVisible()
+  await expect(page.getByTestId('s30-motor-dir-FORWARD')).toContainText('済')
+  await expect(page.getByTestId('s30-motor-dir-BACK')).toContainText('未')
+  await expect(page.getByTestId('s30-motor-dir-LEFT')).toContainText('未')
+  await expect(page.getByTestId('s30-motor-dir-RIGHT')).toContainText('未')
+})
+
+test('MOTOR: 進捗が届くと済みが増える', async ({ page }) => {
+  await gotoS30(page, {
+    state: { state: 'RUNNING_CHECK' },
+    opcheckStatus: { item: 'MOTOR', result: 'UNKNOWN', detail: 'done= hold=NONE', next_screen: '' },
+  })
+  await expect(page.getByTestId('s30-motor-dir-FORWARD')).toContainText('未')
+  await page.evaluate(() => window.__thSetTestOpcheckStatus(
+    { item: 'MOTOR', result: 'UNKNOWN', detail: 'done=FORWARD,BACK hold=NONE', next_screen: '' }))
+  await expect(page.getByTestId('s30-motor-dir-FORWARD')).toContainText('済')
+  await expect(page.getByTestId('s30-motor-dir-BACK')).toContainText('済')
+  await expect(page.getByTestId('s30-motor-dir-LEFT')).toContainText('未')
+})
+
 test('MOTOR: 押している間 motor_hold が繰り返し送られ、離すと NONE で止まる（以後増えない）', async ({ page }) => {
   await gotoS30(page, {
     state: { state: 'RUNNING_CHECK' },
