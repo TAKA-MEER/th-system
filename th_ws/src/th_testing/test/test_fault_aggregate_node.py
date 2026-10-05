@@ -156,7 +156,7 @@ class _FaultDriver:
     def all_alive(self):
         return (self.pub_scan_once, self.pub_wf_once, self.pub_limiter_once)
 
-    def go_alive_and_clean(self, timeout: float = 8.0):
+    def go_alive_and_clean(self, timeout: float = 15.0):
         """3 入力を送り、持ち越し fault が消えたことを確かめてから空にする。"""
         self.pump(1.5, self.all_alive())
         self.faults.clear()
@@ -168,11 +168,13 @@ class _FaultDriver:
             if self.locks and self.locks[-1] is False:
                 ok = True
                 break
-        assert ok, '3 入力を alive にしたのに /safety/fault_lock が false にならない（持ち越し fault がある）'
+        assert ok, \
+            '3 入力を alive にしたのに /safety/fault_lock が false にならない' \
+            f'（持ち越し fault がある。受信: fault={len(self.faults)} lock={len(self.locks)}）'
         self.faults.clear()
         self.locks.clear()
 
-    def wait_for_fault(self, fault_type: str, timeout: float = 5.0,
+    def wait_for_fault(self, fault_type: str, timeout: float = 8.0,
                        keep_alive=()) -> bool:
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -206,7 +208,7 @@ class TestFaultAggregateMessage(unittest.TestCase):
     def setUp(self):
         self.node = rclpy.create_node('test_fault_aggregate_msg')
         self.drv = _FaultDriver(self.node)
-        time.sleep(2.0)  # 起動猶予 + discovery
+        time.sleep(3.5)  # 起動猶予 + discovery（test_safety_monitor と同じ）
         self.drv.go_alive_and_clean()
 
     def tearDown(self):
@@ -310,7 +312,7 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         self.cli_trigger = self.node.create_client(UiTrigger, '/system/trigger')
         assert self.cli_trigger.wait_for_service(timeout_sec=10.0), \
             'state_manager が起動していない'
-        time.sleep(2.0)  # 起動猶予 + discovery
+        time.sleep(3.5)  # 起動猶予 + discovery（test_safety_monitor と同じ）
         self.drv.go_alive_and_clean()
         self._reset_to_idle()
         self._state_history.clear()
@@ -379,9 +381,22 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         assert self._wait_mode_state('FOLLOW', 'PAUSE', timeout=5.0), \
             '2 重フォルトで FOLLOW/PAUSE に落ちなかった'
 
-        # A（scan）だけ再開 → B が残っているので「はい」は通らない
+        # A（scan）だけ再開 → B が残っているので「はい」は通らない。
+        # 代表メッセージ（残った ESP32_DISCONNECTED の active=true）が
+        # safety_monitor から出たのを確認してから送る（state_manager の受信順を確定させる）。
         keep = (drv.pub_scan_once, drv.pub_limiter_once)
-        drv.pump(1.5, keep)  # safety_monitor の代表メッセージを待つ
+        mark = len(drv.faults)
+        deadline = time.time() + 8.0
+        saw_representative = False
+        while time.time() < deadline:
+            drv.pump(0.1, keep)
+            new = drv.faults[mark:]
+            if new and new[-1].active and new[-1].fault_type == 'ESP32_DISCONNECTED':
+                saw_representative = True
+                break
+        assert saw_representative, \
+            'LIDAR_LOST 解消後に残った ESP32_DISCONNECTED の active=true が出なかった（SG-A8）'
+        self._spin(0.5)  # state_manager が _on_fault を処理する余裕
         res = self._trigger('ui.resume_yes')
         assert res.accepted is False, \
             'ESP32_DISCONNECTED が残っているのに ui.resume_yes が通った（SG-A8・C-04）'
