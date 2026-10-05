@@ -444,3 +444,96 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         assert res.accepted, res.reject_reason_key
         assert self._wait_mode_state('FOLLOW', 'RUN', timeout=5.0), \
             '全解消後の「はい」で FOLLOW/RUN に戻らなかった（C-04）'
+
+    def test_carry_resume_blocked_while_critical_remains(self):
+        """重大→回復の順で発生 → 最後の severity は CRITICAL のまま。
+
+        発生時は自型が基本だが、新しいフォルトが残存の最重より軽いときだけ
+        代表（重大）を出し直す（2026-10-05 受け入れ検査）。こうしないと
+        state_manager の _fault_severity が RECOVERABLE に落ち、
+        C-11（CARRY→復帰。guard hw_released_and_no_critical）が重大継続中に
+        通ってしまう。最後に全解消→「手押し復帰」で FOLLOW に戻る対照付き。
+        """
+        drv = self.drv
+        res = self._trigger('ui.enter_mode', {'mode': 'FOLLOW'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode_state('FOLLOW', 'SELECT', timeout=5.0)
+        self.drv.go_alive_and_clean()
+        self._state_history.clear()
+        self.drv.faults.clear()
+
+        # 手押しへ（prev=FOLLOW をラッチ）。離しても CARRY のまま。
+        drv.pub_hw.publish(Bool(data=True))
+        assert self._wait_mode_state('CARRY', 'NONE', timeout=5.0)
+        drv.pub_hw.publish(Bool(data=False))
+        self._spin(0.5)
+        assert self._latest().mode == 'CARRY', 'HW 解除で CARRY を離れた'
+        assert self._latest().prev_mode == 'FOLLOW', 'CARRY 入場時の latch が無い'
+
+        # 重大を先に（limiter 停止。scan + wf は維持）
+        assert drv.wait_for_fault(
+            'LIMITER_DEAD', timeout=10.0,
+            keep_alive=(drv.pub_scan_once, drv.pub_wf_once)), \
+            f'LIMITER_DEAD が立たなかった: {drv.fault_summary()}'
+        assert self._wait_mode_state('ESTOP', 'NONE', timeout=5.0), \
+            '重大フォルトで ESTOP に落ちなかった（C-06a）'
+        assert self._latest().prev_mode == 'FOLLOW', \
+            'CARRY からの C-06a で prev_* が上書きされた（N-3 違反）'
+
+        # ESTOP 遷移待ちは入力を出さないため余計なフォルトが立っている。
+        # 立て直す（全解消。fault.cleared は ESTOP で遷移しないので ESTOP のまま）。
+        self.drv.go_alive_and_clean()
+        self._state_history.clear()
+        self.drv.faults.clear()
+        assert self._latest().mode == 'ESTOP', '立て直しで ESTOP を離れた'
+
+        # 改めて重大だけ立てる（空集合への追加なので自型が出る）。
+        assert drv.wait_for_fault(
+            'LIMITER_DEAD', timeout=10.0,
+            keep_alive=(drv.pub_scan_once, drv.pub_wf_once)), \
+            f'LIMITER_DEAD が立たなかった: {drv.fault_summary()}'
+
+        # 回復を重ねる（scan 停止。wf は維持）。代表の再送を待つ。
+        mark = len(drv.faults)
+        deadline = time.time() + 10.0
+        new = []
+        while time.time() < deadline:
+            drv.pump(0.1, (drv.pub_wf_once,))
+            new = [f for f in drv.faults[mark:] if f.active]
+            if new:
+                break
+        assert new, f'scan 停止後に active なメッセージが来ない: {drv.fault_summary()}'
+        assert new[-1].severity == 'CRITICAL', \
+            f'重大継続中の追加フォルトで severity が落ちた: {new[-1].fault_type}/{new[-1].severity}'
+        assert new[-1].fault_type == 'LIMITER_DEAD', \
+            f'代表が最重（LIMITER_DEAD）ではない: {new[-1].fault_type}'
+
+        # ESTOP → 手押しへ戻す（prev=FOLLOW は維持される）。
+        # hw は押下済みでないと C-07 が出ないため立て直す。
+        drv.pub_hw.publish(Bool(data=False))
+        self._spin(0.2)
+        drv.pub_hw.publish(Bool(data=True))
+        assert self._wait_mode_state('CARRY', 'NONE', timeout=5.0), \
+            'ESTOP から手押しに戻らなかった（C-07）'
+        assert self._latest().prev_mode == 'FOLLOW', \
+            'ESTOP 中の hw.estop.press で prev_* が上書きされた'
+        drv.pub_hw.publish(Bool(data=False))
+        self._spin(0.5)
+        assert self._latest().mode == 'CARRY', 'HW 解除で CARRY を離れた'
+
+        # C-11「手押し復帰」は重大継続中は拒否される。
+        res = self._trigger('ui.carry_resume')
+        assert res.accepted is False, \
+            '重大フォルト継続中に ui.carry_resume が通った（C-11・hw_released_and_no_critical）'
+        assert res.reject_reason_key == 'not_allowed', res.reject_reason_key
+        snap = self._latest()
+        assert (snap.mode, snap.state) == ('CARRY', 'NONE'), \
+            f'重大継続中に CARRY を離れた: {snap.mode}/{snap.state}'
+
+        # 対照：全解消 → 今度は通って FOLLOW/SELECT に戻る。
+        assert drv.wait_for_cleared(8.0, keep_alive=drv.all_alive()), \
+            '全解消の active=false が出なかった'
+        res = self._trigger('ui.carry_resume')
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode_state('FOLLOW', 'SELECT', timeout=5.0), \
+            '全解消後の手押し復帰で FOLLOW/SELECT に戻らなかった（C-11）'

@@ -552,21 +552,34 @@ private:
 
     // フォルトの edge 検出 + publish。active_faults_ を更新する（fault_lock の合成に使う）。
     //
-    // SG-A8: 発生時はそのフォルト自身の型を出す（従来どおり。代表に寄せると
-    // 単一フォルト由来の既存試験・購読者の種別判定が曇る）。解消時は残りが
-    // あれば代表（最も重いもの。重大 > 回復）を active=true で出し続け、
-    // 全部消えたときだけ active=false, NONE を出す。state_manager は最後の
-    // メッセージで上書きするだけなので、この出し方で fault_cleared /
-    // estop_resume_prev が正しく効く（C-04・C-09c）。残存中の代表再送による
-    // 余計な fault.critical 再発火は、ESTOP/CARRY での latch 抑制（N-3）と
-    // C-03 のガードで無害（PAUSE では同状態への再遷移＋W-1 再送のみ）。
+    // SG-A8: 発生時はそのフォルト自身の型を出すのが基本（単一フォルト由来の
+    // 既存試験・購読者の種別判定が曇らないよう）。ただし新しいフォルトが
+    // 「いま残っている最も重いもの」より軽いときだけ代表（重い方）を
+    // active=true で出し直す。こうしないと最後のメッセージの severity が
+    // 軽くなり、state_manager の重大専用ガード（_hw_released_and_no_critical・
+    // _no_critical_fault。C-11 系）が重大継続中に通ってしまう（2026-10-05
+    // 受け入れ検査）。同じ重さ以上なら自型（回復同士の既存試験を壊さない）。
+    // 解消時は残りがあれば代表を active=true で出し続け、全部消えたときだけ
+    // active=false, NONE を出す。state_manager は最後のメッセージで上書き
+    // するだけなので、この出し方で fault_cleared / estop_resume_prev が正しく
+    // 効く（C-04・C-09c）。残存中の代表再送による余計な fault.critical 再発火は、
+    // ESTOP/CARRY での latch 抑制（N-3）と C-03 のガードで無害（PAUSE では
+    // 同状態への再遷移＋W-1 再送のみ。CARRY では C-06a で ESTOP に戻るが、
+    // 重大が継続している以上は安全側であり、既存試験の §7 行4 と同じ扱い）。
     void updateFaultState(const std::string& fault_type, bool faulted) {
         bool was_fault = active_faults_.count(fault_type) != 0;
         if (faulted && !was_fault) {
+            // insert 前の代表が新しいフォルトより重い（＝重大が残っているのに
+            // 回復が来た）ときだけ代表を出す。階級は Spec-safety.md §3.5 の 2 階級。
+            std::string prev_rep = representativeFault();
+            const bool heavier_remains =
+                !prev_rep.empty() &&
+                th_safety::classify_severity(prev_rep) == th_safety::Severity::CRITICAL &&
+                th_safety::classify_severity(fault_type) != th_safety::Severity::CRITICAL;
             active_faults_.insert(fault_type);
             RCLCPP_ERROR(get_logger(), "[FAULT] %s (severity=%s)", fault_type.c_str(),
                          th_safety::severity_to_string(th_safety::classify_severity(fault_type)));
-            publishFault(true, fault_type);
+            publishFault(true, heavier_remains ? representativeFault() : fault_type);
         } else if (!faulted && was_fault) {
             active_faults_.erase(fault_type);
             RCLCPP_INFO(get_logger(), "[FAULT CLEARED] %s", fault_type.c_str());
