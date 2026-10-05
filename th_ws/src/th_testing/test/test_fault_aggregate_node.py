@@ -128,7 +128,7 @@ class _FaultDriver:
         node.create_subscription(
             FaultStatus, '/safety/fault', self.faults.append, 10)
         node.create_subscription(
-            Bool, '/safety/fault_lock', self.locks.append, 10)
+            Bool, '/safety/fault_lock', lambda m: self.locks.append(m.data), 10)
         self.pub_scan = node.create_publisher(LaserScan, '/scan', 10)
         self.pub_wf = node.create_publisher(
             WheelFeedback, '/esp32/wheel_feedback', 10)
