@@ -13,8 +13,8 @@ replay_runner:
       v_calib: 0.33953389830508474
       v_check: 0.3110593220338983
       v_jog_panel: null
-      v_leash: 0.923728813559322
-      v_max: 1.0555254237288134
+      v_leash: 0.5059322033898306
+      v_max: 0.5503050847457627
       v_reverse: null
       v_slow: null
     odom_stale_ms: 500
@@ -25,5 +25,5 @@ replay_runner:
     replay_speed_default_ratio: 0.6
     replay_yaw_min_rps: 0.4
     status_period_ms: 500
-    v_max: 1.1199999999999999
+    v_max: 0.568
     yaw_tol_rad: 0.1

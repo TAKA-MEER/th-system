@@ -26,10 +26,10 @@
   unit: m/s
   class: b
   status: given
-  value: 1.4
+  value: 0.71
   consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §6.1"
-  note: "出力上限 ÷ フィードフォワード係数。暫定値。実機データシート未確認（P1 fail-slow）。v_max の逆算元"
+  note: "ESP32 ファームの出力上限 200 PWM ÷ フィードフォワード係数 280 PWM/(m/s)（config.h の PID_OUT_MAX / PID_KFF。2026-07-11 実測で PWM 140 ≒ 0.45〜0.5 m/s → k ≒ 280 と一致）。ファームがこれ以上の出力を出さない物理的上限。v_max の逆算元（Spec-params.md §1・2026-10-04 ユーザー決定）"
 
 - name: v_max_headroom_ratio
   unit: null
@@ -126,10 +126,10 @@
   unit: m/s
   class: b
   status: given
-  value: 1.0
+  value: 0.5
   consumers: [leash_runner, obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
-  note: "LEASH（一定速）。逆算対象が無いため given（方針値）。人の歩行速度を想定した暫定値。obstacle_limiter は SystemState.speed_limit=\"v_leash\" を数値へ解決するために必要（attributes.yaml の LEASH が speed_limit: v_leash）"
+  note: "LEASH（一定速）。逆算対象が無いため given（方針値）。2026-10-05 ユーザー決定の暫定 0.5 m/s（旧 1.0 は駆動系の天井 0.71 m/s を超えていた。A13 違反で発覚）。LEASH 実装時に実測で見直す（Spec-params.md §2 は改定済み。main の 3297feb）。obstacle_limiter は SystemState.speed_limit=\"v_leash\" を数値へ解決するために必要（attributes.yaml の LEASH が speed_limit: v_leash）"
   speed_limit_strictness_rank: 5  # N-15・A13。v_max(43行目のコメント) 参照
 
 - name: v_check

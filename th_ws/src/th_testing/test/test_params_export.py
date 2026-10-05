@@ -219,7 +219,7 @@ def test_main_completes_with_zero_exit_when_a6_violated(registry_rows, tmp_path)
 # N-7（DetailedDesign-open.md）: A1 の v_max クランプ（`_apply_v_max_clamp`）
 # ---------------------------------------------------------------------------
 #
-# 現行 registry.yaml では drivetrain_ceiling_mps が小さく（v_max ≈ 1.12 m/s）、
+# 現行 registry.yaml では drivetrain_ceiling_mps が小さく（v_max ≈ 0.57 m/s）、
 # クランプは発火しない（発火させるには v_max が概ね 1.55 m/s を超える必要がある）。
 # 以下のテストは drivetrain_ceiling_mps だけを人工的に底上げして発火させる。
 

@@ -1,4 +1,17 @@
 calib_runner:
   ros__parameters:
+    blind_angle_ranges:
+    - -132.8
+    - -117.5
+    - -59.5
+    - -38.9
+    - 45.9
+    - 61.5
+    - 130.3
+    - 143.5
+    blind_max_sector_deg: 30.0
+    blind_max_sectors: 8
+    blind_max_total_deg: 90.0
+    calib_blind_tolerance_deg: 5.0
     v_calib: 0.15
     wheel_radius_scale_max_dev: 0.1
