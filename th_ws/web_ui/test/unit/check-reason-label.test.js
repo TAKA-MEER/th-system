@@ -35,3 +35,11 @@ test('未知のキーはそのまま返す（訳が無くても情報を消さ�
   assert.equal(checkReasonLabel('ESTOP', 'totally_unknown_key'), 'totally_unknown_key')
   assert.equal(checkReasonLabel('UNKNOWN_ITEM', 'no_data'), 'no_data')
 })
+
+test('MOTOR の DIR:付き理由は方向を含めて日本語になる（brief-a13・SG-A13）', () => {
+  const left = checkReasonLabel('MOTOR', 'LEFT:sign_mismatch_L')
+  assert.ok(left.includes('左旋回'), left)
+  assert.ok(left.includes(checkReasonLabel('MOTOR', 'sign_mismatch_L')), left)
+  const back = checkReasonLabel('MOTOR', 'BACK:no_follow_R')
+  assert.ok(back.includes('後退'), back)
+})

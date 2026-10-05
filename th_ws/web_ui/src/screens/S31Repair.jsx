@@ -24,6 +24,7 @@ import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useOpcheckStatus } from '../ros/useOpcheckStatus.js'
 import { checkReasonLabel } from '../i18n/checks.js'
+import { stripMotorDir } from '../ros/motorDirs.js'
 import { OP_LABELS } from '../i18n/states.js'
 import repairHints from '../generated/repair_hints.json'
 import {
@@ -74,7 +75,11 @@ export default function S31Repair() {
         ))}
       </div>
       {symptoms.map(({ item, verdict }) => {
-        const steps = repairHints[item]?.[verdict.detail]
+        // MOTOR の確定 NG の理由は `DIR:reason` 形（brief-a13・SG-A13）。
+        // 手順表（repair_hints.yaml）のキーは素の理由なので剥がして引く。
+        // 表示のほうは checkReasonLabel が方向込みで訳す。
+        const baseReason = item === 'MOTOR' ? stripMotorDir(verdict.detail).reason : verdict.detail
+        const steps = repairHints[item]?.[baseReason]
         if (!steps?.length) return null
         return (
           <div key={item} className="card" data-testid={`s31-hints-${item}`}>

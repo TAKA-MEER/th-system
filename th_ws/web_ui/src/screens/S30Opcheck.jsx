@@ -46,6 +46,7 @@ import HoldButton from '../parts/HoldButton.jsx'
 import WheelSpeedView from '../parts/WheelSpeedView.jsx'
 import { setCalibGuide, clearCalibGuide } from './calibGuide.js'
 import { checkReasonLabel } from '../i18n/checks.js'
+import { MOTOR_DIRS, parseMotorDone } from '../ros/motorDirs.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS } from '../i18n/states.js'
 import {
@@ -159,8 +160,31 @@ function EstopMonitor({ status, estopHw, disabledAll, onAnswer, onGotoCalib }) {
   )
 }
 
-function SimpleStatusMonitor({ item, status, disabledAll, onGotoCalib }) {
-  const verdict = useStickyVerdict(status, item)
+const MOTOR_DIR_LABELS = {
+  FORWARD: S30_MOTOR_FORWARD,
+  BACK: S30_MOTOR_BACK,
+  LEFT: S30_MOTOR_LEFT,
+  RIGHT: S30_MOTOR_RIGHT,
+}
+
+// MOTOR の 4 方向の済み／未（brief-a13・SG-A13）。runner が UNKNOWN の detail
+// 先頭に `done=...` で進捗を載せる（msg 不変）。spec §2.4 #2「未実施の方向がある間は
+// 判定を確定しない」の途中経過表示。
+function MotorDirProgress({ status }) {
+  const done = status?.item === 'MOTOR' ? parseMotorDone(status.detail) : []
+  return (
+    <div className="s30-motor-dirs" data-testid="s30-motor-dirs">
+      {MOTOR_DIRS.map((dir) => (
+        <span key={dir} className={`pill ${done.includes(dir) ? 'ok' : ''}`}
+          data-testid={`s30-motor-dir-${dir}`}>
+          {MOTOR_DIR_LABELS[dir]} {done.includes(dir) ? '済' : '未'}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function SimpleStatusMonitor({ item, status, disabledAll, onGotoCalib }) {  const verdict = useStickyVerdict(status, item)
   const live = status?.item === item ? status : null
   const shown = verdict ?? live
 
@@ -358,6 +382,7 @@ export default function S30Opcheck() {
           return (
             <div className="card">
               <p className="note">{S30_MOTOR_HOLD_NOTE}</p>
+              <MotorDirProgress status={status} />
               <div className="hold-grid">
                 <HoldButton direction="FORWARD" label={S30_MOTOR_FORWARD}
                   active={motorDir === 'FORWARD'} disabled={disabledAll || !motorHoldGate}
