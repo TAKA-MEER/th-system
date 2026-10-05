@@ -318,7 +318,7 @@ def evaluate(now_ms, last_fb_ms, last_cmd_ms, last_scan_ms, scan_points,
 | --- | --- |
 | **L-1** | **Wi-Fi AP を判定項目に入れない**（`C-01`） |
 | **L-2** | 物理 E-Stop 押下中は `evt.link_ok` を出さない（`CL-B-6`） |
-| **L-3** | `evt.link_ok` は**立ち上がりで 1 回だけ**。10 Hz で撃たない |
+| **L-3** | `evt.link_ok` は**立ち上がりで 1 回だけ**。10 Hz で撃たない。**例外: `/system/state` で `INIT` への到着を見たら立ち上がり検出のラッチをリセットする**（1b-2 SG-A5。ESTOP から `INIT/CHECK` に戻ったとき、gate が真のままでは再送されず疎通確認からやり直せない。`INIT` 以外の遷移ではリセットしない） |
 | **L-4** | `restart_control_stack` は**機体の電源に触れない**。PC 側のプロセスグループへ SIGTERM |
 
 ### 5. 表駆動データ
@@ -342,6 +342,7 @@ def evaluate(now_ms, last_fb_ms, last_cmd_ms, last_scan_ms, scan_points,
 | `test_connectivity_core.py::test_ap_not_a_criterion` | 同上 | L-1 |
 | `test_connectivity_checker_node.py::test_estop_blocks_link_ok` | `connectivity_checker_node` | L-2（`CL-B-6`） |
 | `test_connectivity_checker_node.py::test_link_ok_once` | 同上 | L-3 |
+| `test_estop_init_link_reemit_node.py::test_link_reemitted_after_return_to_init` | `test_estop_init_link_reemit_node` | L-3 の例外（1b-2。gate 真のまま `INIT`→`ESTOP`→`INIT/CHECK` でも `IDLE` まで進む） |
 
 ```cmake
 # src/th_testing/CMakeLists.txt — if(BUILD_TESTING) の中
