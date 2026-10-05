@@ -31,8 +31,12 @@ _SPEC_ID_RE = re.compile(r"SM-3\.1\.[12]-\d+")
 # DetailedDesign-state.md §4.4.3 — 1つの正本IDに複数の詳細行が対応する組（これが行数差の全部）。
 # SM-3.1.1-11 は 2026-09-01 の UI 非常停止復帰変更で 1 → 4 行に分割（C-09 / -09b / -09c / -09d。
 # Spec-modes.md §3.1.1 SM-3.1.1-11 の 1 行が「解除／戻る／メニューへ」を包含する）。
+# 2026-10-05 の 1b-2（SG-A3・SG-A5）で C-09b-init を足し、C-09c を 12 行に分割。
+# 内訳: C-09 / C-09b-init / C-09b / C-09c-summon / -at-panel / -at-home / -opcheck /
+# -calib / -prep-return / -prep / -running / -confirm / -localize / -blocked / -generic /
+# C-09d = 16。
 SPEC_FANOUT = {
-    "SM-3.1.1-10": 2, "SM-3.1.1-11": 4, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
+    "SM-3.1.1-10": 2, "SM-3.1.1-11": 16, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
     "SM-3.1.2-043": 2, "SM-3.1.2-069": 3, "SM-3.1.2-094": 4,
     # WP-ONSITE-F3: PREP / SUMMON の「対象選択」は ui.select_target と
     # evt.auto_selected の 2 経路（FOLLOW の SM-3.1.2-004 と同じ形）。
@@ -135,6 +139,44 @@ _STATIC_GUARD_OVERRIDES = {
     "ng_and_not_calibrable": {"check_result": "NG", "check_item": "MOTOR"},
     "estop_resume_prev": {"estop_from_ui": True, "fault_active": False,
                           "fault_severity": "", "hw_estop": False, "prev_mode": "MANUAL"},
+    # 1b-2（SG-A3・SG-A5・SG-B22）: C-09b-init／C-09c fan-out／C-04・C-05 の新ガード。
+    "estop_prev_is_init": {"fault_active": False, "fault_severity": "",
+                           "prev_mode": "INIT", "prev_state": "CHECK"},
+    "estop_prev_is_summon": {"fault_active": False, "fault_severity": "",
+                             "hw_estop": False, "prev_mode": "SUMMON",
+                             "prev_state": "NAV"},
+    "estop_prev_is_at_panel": {"fault_active": False, "fault_severity": "",
+                               "hw_estop": False, "prev_mode": "AT_PANEL",
+                               "prev_state": "WORKING"},
+    "estop_prev_is_at_home": {"fault_active": False, "fault_severity": "",
+                              "hw_estop": False, "prev_mode": "AT_HOME",
+                              "prev_state": "IDLE_H"},
+    "estop_prev_is_opcheck": {"fault_active": False, "fault_severity": "",
+                              "hw_estop": False, "prev_mode": "OPCHECK",
+                              "prev_state": "RUNNING_CHECK"},
+    "estop_prev_is_calib": {"fault_active": False, "fault_severity": "",
+                            "hw_estop": False, "prev_mode": "CALIB",
+                            "prev_state": "S2"},
+    "estop_prev_is_prep_return": {"fault_active": False, "fault_severity": "",
+                                  "hw_estop": False, "prev_mode": "PREP",
+                                  "prev_state": "RETURN"},
+    "estop_prev_is_prep": {"fault_active": False, "fault_severity": "",
+                           "hw_estop": False, "prev_mode": "PREP",
+                           "prev_state": "MAPPING"},
+    "estop_prev_was_running": {"fault_active": False, "fault_severity": "",
+                               "hw_estop": False, "prev_mode": "FOLLOW",
+                               "prev_state": "RUN"},
+    "estop_prev_is_follow_confirm": {"fault_active": False, "fault_severity": "",
+                                     "hw_estop": False, "prev_mode": "FOLLOW",
+                                     "prev_state": "CONFIRM"},
+    "estop_prev_is_replay_localize": {"fault_active": False, "fault_severity": "",
+                                      "hw_estop": False, "prev_mode": "REPLAY",
+                                      "prev_state": "LOCALIZE"},
+    "estop_prev_is_blocked": {"fault_active": False, "fault_severity": "",
+                              "hw_estop": False, "prev_mode": "PANEL_NAV",
+                              "prev_state": "BLOCKED"},
+    "resume_run_available": {"fault_active": False},
+    "resume_state_available": {"fault_active": False},
 }
 assert set(_STATIC_GUARD_OVERRIDES) | {"mode_entry_allowed"} == set(
     __import__("th_state.guards", fromlist=["GUARDS"]).GUARDS)
