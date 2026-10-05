@@ -289,21 +289,38 @@ export default function S30Opcheck() {
         </div>
         <div className="card">
           <h3>{S30_LIST_TITLE}</h3>
-          {S30_ITEM_ORDER.map((item) => (
-            <button
-              key={item}
-              type="button"
-              className={`s30-row ${activeItem === item ? 'running' : ''}`}
-              disabled={disabledAll || !(stateName === 'LIST' || running)}
-              data-testid={`s30-item-${item}`}
-              onClick={() => handleSelect(item)}
-            >
-              <span className="s30-row-label">{S30_ITEM_LABELS[item]}</span>
-              <span className={`pill ${S30_RESULT_TONE[results[item]?.result] ?? ''}`}>
-                {resultLabel(results[item]?.result)}
-              </span>
-            </button>
-          ))}
+          {S30_ITEM_ORDER.map((item) => {
+            // SG-B5（1b-8）: 判定と同時に FSM は LIST へ戻る（T-OPC-02/04）のに
+            // 「校正へ」は RUNNING_CHECK の詳細カードにしか無かった。LIST の行にも
+            // 直近の判定（results ラッチ。S-31 と同じ流儀）から出す。FSM 側は
+            // spec（SM-3.1.2-087「校正へ導線を出す」・-092「LIST → CALIB」）
+            // どおりなので変えない。T-OPC-07 は LIST 限定のため LIST のときだけ出す。
+            const calibVerdict = (results[item]?.next_screen === 'imu_calib' || results[item]?.next_screen === 'lidar_calib')
+              ? results[item] : null
+            return (
+              <div key={item} className="s30-row-wrap">
+                <button
+                  type="button"
+                  className={`s30-row ${activeItem === item ? 'running' : ''}`}
+                  disabled={disabledAll || !(stateName === 'LIST' || running)}
+                  data-testid={`s30-item-${item}`}
+                  onClick={() => handleSelect(item)}
+                >
+                  <span className="s30-row-label">{S30_ITEM_LABELS[item]}</span>
+                  <span className={`pill ${S30_RESULT_TONE[results[item]?.result] ?? ''}`}>
+                    {resultLabel(results[item]?.result)}
+                  </span>
+                </button>
+                {calibVerdict && stateName === 'LIST' && (
+                  <button type="button" className="btn wide" disabled={disabledAll}
+                    data-testid={`s30-goto-calib-${item}`}
+                    onClick={() => handleGotoCalib(item, calibVerdict)}>
+                    {S30_GOTO_CALIB}
+                  </button>
+                )}
+              </div>
+            )
+          })}
           {selectErr && <p className="note" data-testid="s30-select-err">{selectErr}</p>}
         </div>
         <div className="card">
