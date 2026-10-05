@@ -1,12 +1,18 @@
-"""guards.py — 状態遷移のガード述語（27件）
+"""guards.py — 状態遷移のガード述語
 
 DetailedDesign-state.md §4.1.1 が正。ガードは (mode, state, ctx) の 3 引数を取る
 純粋関数で、Context のフィールドと mode / state だけを読む（S-4）。
 時刻・ファイル・環境変数は読まない。
 
 rclpy には依存しない（WP-STATE-01 の対象。state_core.py と同じ制約）。
+state_core.py からの import はモード名・状態名の集合（文字列の転記）だけで、
+循環参照は無い（state_core は guards を import しない）。
 """
 from typing import Callable, Dict
+
+from th_state.state_core import (ESTOP_RESUME_BLOCKED_MODES, ESTOP_RESUME_RUN,
+                                 RESUME_RUN_UNAVAILABLE_MODES,
+                                 RESUME_STATE_UNAVAILABLE_MODES)
 
 # モードによって PAUSE を持たない集合（§4.1.1 末尾。state_core.py の同名集合と同じ定義）。
 _NO_PAUSE_MODES = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB", "PREP"}
@@ -98,6 +104,98 @@ def _estop_resume_prev(mode, state, ctx) -> bool:
             and ctx.fault_severity != "CRITICAL"
             and not ctx.hw_estop
             and ctx.prev_mode not in _ESTOP_PREV_NONRESUMABLE)
+
+
+def _estop_base_ok(ctx) -> bool:
+    """C-09c fan-out 共通の土台（_estop_resume_prev と同じ3項。押下前モードの判定は
+    各ガードが行う）。フォルト継続中・重大フォルト中・物理ボタン押下中は戻さない
+    （Spec-modes.md SM-3.1.1-11・Spec-safety.md §3.5.2「依然として要求すること」）。"""
+    return (not ctx.fault_active
+            and ctx.fault_severity != "CRITICAL"
+            and not ctx.hw_estop)
+
+
+# 1b-2（SG-A3・SG-A5）— C-09c fan-out／C-09b-init の押下前モード・状態の振り分け。
+# いずれも上記の土台に加えて prev_mode（/ prev_state）だけを見る。
+# C-09b-init（estop_prev_is_init）だけ物理ボタン押下中も許す:
+# INIT/CHECK に戻れば T-INIT-03 が「解除してください」と案内して留めるため、
+# 押されたまま IDLE に入れる（SG-A5）より安全側。
+def _estop_prev_is_init(mode, state, ctx) -> bool:
+    return (not ctx.fault_active
+            and ctx.fault_severity != "CRITICAL"
+            and ctx.prev_mode == "INIT")
+
+
+def _estop_prev_is_summon(mode, state, ctx) -> bool:
+    return _estop_base_ok(ctx) and ctx.prev_mode == "SUMMON"
+
+
+def _estop_prev_is_at_panel(mode, state, ctx) -> bool:
+    return _estop_base_ok(ctx) and ctx.prev_mode == "AT_PANEL"
+
+
+def _estop_prev_is_at_home(mode, state, ctx) -> bool:
+    return _estop_base_ok(ctx) and ctx.prev_mode == "AT_HOME"
+
+
+def _estop_prev_is_opcheck(mode, state, ctx) -> bool:
+    return _estop_base_ok(ctx) and ctx.prev_mode == "OPCHECK"
+
+
+def _estop_prev_is_calib(mode, state, ctx) -> bool:
+    return _estop_base_ok(ctx) and ctx.prev_mode == "CALIB"
+
+
+def _estop_prev_is_prep_return(mode, state, ctx) -> bool:
+    # PREP/RETURN だった場合は今回は MAPPING（RETURN の PAUSE は別パケット 1b-1 で
+    # 作る。作られたら C-09c-prep-return の行き先をそちらに差し替えること）。
+    return (_estop_base_ok(ctx) and ctx.prev_mode == "PREP"
+            and ctx.prev_state == "RETURN")
+
+
+def _estop_prev_is_prep(mode, state, ctx) -> bool:
+    return (_estop_base_ok(ctx) and ctx.prev_mode == "PREP"
+            and ctx.prev_state != "RETURN")
+
+
+def _estop_prev_was_running(mode, state, ctx) -> bool:
+    """押下前が走行中（自律走行・記録中）なら同モードの PAUSE へ（SM-3.1.1-11）。
+    走行中かどうかは ESTOP_RESUME_RUN（attributes.yaml の run_state の転記）で引く。
+    「走行中」の判定を属性で持つ方式ではなく状態名の一覧で持つ方式にした理由は
+    state_core.ESTOP_RESUME_RUN のコメントを参照（ガードは attributes を読めない）。"""
+    return (_estop_base_ok(ctx)
+            and ESTOP_RESUME_RUN.get(ctx.prev_mode) == ctx.prev_state)
+
+
+def _estop_prev_is_follow_confirm(mode, state, ctx) -> bool:
+    return (_estop_base_ok(ctx) and ctx.prev_mode == "FOLLOW"
+            and ctx.prev_state == "CONFIRM")
+
+
+def _estop_prev_is_replay_localize(mode, state, ctx) -> bool:
+    return (_estop_base_ok(ctx) and ctx.prev_mode == "REPLAY"
+            and ctx.prev_state == "LOCALIZE")
+
+
+def _estop_prev_is_blocked(mode, state, ctx) -> bool:
+    return (_estop_base_ok(ctx) and ctx.prev_mode in ESTOP_RESUME_BLOCKED_MODES
+            and ctx.prev_state == "BLOCKED")
+
+
+# 1b-2（SG-B22）— C-04/C-05 が state=None を作らないためのガード。
+# fault_cleared を含む（従来のガードの条件を保ったまま、None になる組合せだけ弾く）。
+def _resume_run_available(mode, state, ctx) -> bool:
+    """C-04（ui.resume_yes）用。run_state が null のモードでは遷移しない
+    （RESUME_RUN_UNAVAILABLE_MODES。None を publish して state_manager を落とす
+    SG-B22 の穴）。UI は ack_only のモードで resume_yes 自体を出さないので、
+    通常運用ではこのガードに当たらない（防御専用）。"""
+    return not ctx.fault_active and mode not in RESUME_RUN_UNAVAILABLE_MODES
+
+
+def _resume_state_available(mode, state, ctx) -> bool:
+    """C-05（ui.resume_no／ui.resume_ack）用。resume_state が null の PREP では
+    遷移しない（同上。PREP は PAUSE を持たないので通常は到達不能。防御専用）。"""
+    return not ctx.fault_active and mode not in RESUME_STATE_UNAVAILABLE_MODES
 
 
 def _leash_slack(mode, state, ctx) -> bool:
@@ -201,7 +299,7 @@ def _ng_and_not_calibrable(mode, state, ctx) -> bool:
     return ctx.check_result == "NG" and ctx.check_item in _NOT_CALIBRABLE_ITEMS
 
 
-# 28 件。§4.1.1 のとおり（`not_working` 削除で 27 → `estop_resume_prev` 追加で 28）。
+# 44 件。§4.1.1 のとおり（1b-2 SG-A3/SG-A5/SG-B22 で 14 件追加）。
 GUARDS: Dict[str, Callable] = {
     "jog_allowed": _jog_allowed,
     "fault_stops_mode": _fault_stops_mode,
@@ -233,9 +331,23 @@ GUARDS: Dict[str, Callable] = {
     "ng_and_calibrable": _ng_and_calibrable,
     "ng_and_not_calibrable": _ng_and_not_calibrable,
     "estop_resume_prev": _estop_resume_prev,
+    "estop_prev_is_init": _estop_prev_is_init,
+    "estop_prev_is_summon": _estop_prev_is_summon,
+    "estop_prev_is_at_panel": _estop_prev_is_at_panel,
+    "estop_prev_is_at_home": _estop_prev_is_at_home,
+    "estop_prev_is_opcheck": _estop_prev_is_opcheck,
+    "estop_prev_is_calib": _estop_prev_is_calib,
+    "estop_prev_is_prep_return": _estop_prev_is_prep_return,
+    "estop_prev_is_prep": _estop_prev_is_prep,
+    "estop_prev_was_running": _estop_prev_was_running,
+    "estop_prev_is_follow_confirm": _estop_prev_is_follow_confirm,
+    "estop_prev_is_replay_localize": _estop_prev_is_replay_localize,
+    "estop_prev_is_blocked": _estop_prev_is_blocked,
+    "resume_run_available": _resume_run_available,
+    "resume_state_available": _resume_state_available,
 }
 
-assert len(GUARDS) == 30, len(GUARDS)
+assert len(GUARDS) == 44, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict) -> Dict[str, Callable]:

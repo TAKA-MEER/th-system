@@ -55,7 +55,7 @@
   mode: '*'
   state: PAUSE
   event: ui.resume_yes
-  guard: fault_cleared
+  guard: resume_run_available
   to_mode: '='
   to_state: $resume_run
   effects:
@@ -70,7 +70,7 @@
   event:
   - ui.resume_no
   - ui.resume_ack
-  guard: fault_cleared
+  guard: resume_state_available
   to_mode: '='
   to_state: $resume_state
   effects:
@@ -143,13 +143,19 @@
   - name: clear_prev
     args: {}
   spec_ref: SM-3.1.1-10
-# C-09 / C-09b / C-09c / C-09d: 1 正本 SM-3.1.1-11 の fan-out（2026-09-01 変更）。
+# C-09 / C-09b-init / C-09b / C-09c-* / C-09d: 1 正本 SM-3.1.1-11 の fan-out
+# （2026-09-01 変更。2026-10-05 に SG-A3・SG-A5 で拡張）。
 # UI ボタン起因の ESTOP 解除。重大フォルトを伴わず押下前が復帰可能なら
 # 「戻る／メニューへ」を選ばせる（CARRY の C-10 / C-11 と同型）。
 #   C-09  解除 → estop_resume_prev が真: ESTOP のまま show_resume
+#   C-09b-init 解除 → 押下前が INIT: INIT/CHECK へ戻り疎通確認からやり直す
+#     （SG-A5。C-09b より前に置く。物理ボタン押下中も許し、T-INIT-03 が留める）
 #   C-09b 解除 → それ以外（押下前が復帰不能／重大フォルト無し）: IDLE
-#   C-09c 「戻る」→ 押下前モードの PAUSE
-#   C-09d 「メニューへ」→ IDLE
+#   C-09c-* 「戻る」→ 押下前のモードの §6「異常解決後の復帰」列に従う（SG-A3）。
+#     走行中なら同モードの PAUSE、止まっている状態なら押下前の状態へ入口から
+#     やり直す（入るときの effect を再実行）。PAUSE を持たないモードに PAUSE を作らない。
+#     layer 0 内は記載順に走査するため、具体的な行を汎用行より前に置く。
+#   C-09d 「メニューへ」→ IDLE（C-09f と同じガード。SG-A5）
 - id: C-09
   layer: 0
   mode: ESTOP
@@ -160,6 +166,18 @@
   to_state: '='
   effects:
   - name: show_resume
+    args: {}
+  spec_ref: SM-3.1.1-11
+- id: C-09b-init
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.estop.release
+  guard: estop_prev_is_init
+  to_mode: INIT
+  to_state: CHECK
+  effects:
+  - name: clear_prev
     args: {}
   spec_ref: SM-3.1.1-11
 - id: C-09b
@@ -174,14 +192,219 @@
   - name: clear_prev
     args: {}
   spec_ref: SM-3.1.1-11
-- id: C-09c
+# C-09c-summon: SUMMON は POINT からやり直す（退避待ちを飛ばさない。SG-A2）。
+# WAIT_CLEAR で無効化した手動 UI を戻す（enable_jog_ui は T-SUM-03〜05 と同じ）。
+- id: C-09c-summon
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_is_summon
+  to_mode: SUMMON
+  to_state: POINT
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  - name: enable_jog_ui
+    args: {}
+  spec_ref: SM-3.1.1-11
+# C-09c-at-panel / -at-home: §6 の右列どおり IDLE_P / IDLE_H（確認をやり直す）。
+- id: C-09c-at-panel
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_is_at_panel
+  to_mode: AT_PANEL
+  to_state: IDLE_P
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-11
+- id: C-09c-at-home
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_is_at_home
+  to_mode: AT_HOME
+  to_state: IDLE_H
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-11
+# C-09c-opcheck / -calib: §6 の右列どおり LIST。実行中の項目は通常のフォルト時と
+# 同じ effect（abort_check / discard_calib。T-OPC-08 / T-CAL-08 と同じ）で畳む。
+- id: C-09c-opcheck
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_is_opcheck
+  to_mode: OPCHECK
+  to_state: LIST
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  - name: abort_check
+    args: {}
+  spec_ref: SM-3.1.1-11
+- id: C-09c-calib
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_is_calib
+  to_mode: CALIB
+  to_state: LIST
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  - name: discard_calib
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.1-11
+# C-09c-prep-return / -prep: PREP は押下前の状態へ（§6）。RETURN だった場合は
+# 今回は MAPPING（RETURN の PAUSE は別パケット 1b-1 で作る。作られたらこの行の
+# 行き先をそちらに差し替えること。SG-D4／SG-A7）。
+# REGISTER へ戻るとき begin_two_point を再実行しない: pin_registrar は
+# /system/state を見ないので受付状態（_accepting）が ESTOP をまたいで残り、
+# そのまま 2 点指示を続けられる。
+- id: C-09c-prep-return
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_is_prep_return
+  to_mode: PREP
+  to_state: MAPPING
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-11
+- id: C-09c-prep
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_is_prep
+  to_mode: PREP
+  to_state: $prev_state
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-11
+# C-09c-running: 押下前が走行中（自律走行・記録中）なら同モードの PAUSE
+# （勝手に走り出さない）。SUMMON/PREP は上の行が先に拾う。
+- id: C-09c-running
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_was_running
+  to_mode: $prev_mode
+  to_state: PAUSE
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-11
+# C-09c-confirm: FOLLOW/CONFIRM へ戻り、向き直し（face_target。T-FOLLOW-03 と同じ）
+# を再実行する（確認を飛ばさない）。
+- id: C-09c-confirm
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_is_follow_confirm
+  to_mode: FOLLOW
+  to_state: CONFIRM
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  - name: face_target
+    args: {}
+  spec_ref: SM-3.1.1-11
+# C-09c-localize: REPLAY/LOCALIZE へ戻り、経路読み込み（load_route。T-REPLAY-01 と
+# 同じ）を再実行する。route_id / reverse は state_manager が T-REPLAY-01/-11 受理時に
+# ラッチし、ui.resume_yes の arg に補完する（送り手の値を優先）。
+- id: C-09c-localize
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_is_replay_localize
+  to_mode: REPLAY
+  to_state: LOCALIZE
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  - name: load_route
+    args:
+      route_id: $arg.id
+      reverse: $arg.reverse
+  spec_ref: SM-3.1.1-11
+# C-09c-blocked: BLOCKED へ戻り、W-5（T-PNAV-04 / T-HNAV-04 と同じ）を開き直す。
+- id: C-09c-blocked
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_is_blocked
+  to_mode: $prev_mode
+  to_state: BLOCKED
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
+  - name: open_window
+    args:
+      id: W-5
+  spec_ref: SM-3.1.1-11
+# C-09c-generic: 上のいずれにも当たらない止まっている状態は、押下前の状態へ
+# そのまま戻す（PAUSE を持たないモードに PAUSE を作らない。SG-A3）。
+# 通常の入口の effect が無い状態（SELECT / ROUTE_SEL / READY / SETUP / PLANNED /
+# DEV_CHECK / READY / HOLD / ARRIVED / NAV 以外の ALIGN / PAUSE / SAVED / EDIT /
+# IDLE_P・IDLE_H 以外の WORKING 等）は effect なしで戻し、操作者が選び直す。
+- id: C-09c-generic
   layer: 0
   mode: ESTOP
   state: NONE
   event: ui.resume_yes
   guard: estop_resume_prev
   to_mode: $prev_mode
-  to_state: PAUSE
+  to_state: $prev_state
   effects:
   - name: clear_prev
     args: {}
@@ -194,7 +417,7 @@
   mode: ESTOP
   state: NONE
   event: ui.resume_no
-  guard: null
+  guard: fault_cleared_and_ui_released
   to_mode: IDLE
   to_state: NONE
   effects:

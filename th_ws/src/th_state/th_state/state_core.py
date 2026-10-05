@@ -68,6 +68,11 @@ OPCHECK_MODE: str = "OPCHECK"
 # （同上。WP-MAINT-02）。
 CALIB_MODE: str = "CALIB"
 
+# state_manager.py が REPLAY の経路選択（ui.route_select）のラッチで使う参照点
+# （同上。1b-2 SG-A3。C-09c-localize が load_route を再実行するため、
+# T-REPLAY-01/-11 受理時の route_id / reverse を保持する）。
+REPLAY_MODE: str = "REPLAY"
+
 # DetailedDesign-state.md §4-1-1 末尾・§2 validate()⑥docstring — PAUSE を持たないモード。
 # PREP は 2026-09-10 追加（Spec-modes.md §3.0-② ／ Spec-modes.md §3.0-②。地図作成＝常時ジョグ、
 # 将来は追従走行がモードの活動そのもので「一時停止すべき走行」が無い。停止/走行は inert）。
@@ -75,6 +80,57 @@ NO_PAUSE_MODES: Set[str] = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB"
 
 # DetailedDesign-state.md §7 — latch_prev を記録しないモード（FMEA②）。
 NO_LATCH_MODES: Set[str] = {"ESTOP", "CARRY"}
+
+# 1b-2（SG-A3・SG-B22）— ESTOP からの「戻る」（C-09c fan-out）と C-04/C-05 の
+# None 対策が共有する集合。attributes.yaml の転記であり、数値ではないので R2 の対象外。
+#
+# 走行中かどうかの判定は「押下前の状態 == そのモードの run_state」で行う
+# （attributes.yaml に run_state を持たせる方式ではなく、状態名の一覧で持つ方式。
+# 理由: ガードは (mode, state, ctx) しか読めず attributes.yaml を引けないため。
+# attributes.yaml の run_state と一致させること。不一致は test で縛る）。
+ESTOP_RESUME_RUN: Dict[str, str] = {
+    "FOLLOW": "RUN",
+    "MANUAL": "RUN",
+    "TEACH_FOLLOW": "REC",
+    "TEACH_MANUAL": "REC",
+    "REPLAY": "RUN",
+    "LINE": "RUN",
+    "LEASH": "RUN",
+    "PANEL_NAV": "NAV",
+    "HOME_NAV": "NAV",
+}
+
+# C-09c-blocked が戻す BLOCKED を持つモード（Spec-modes.md §3）。
+ESTOP_RESUME_BLOCKED_MODES: Set[str] = {"PANEL_NAV", "HOME_NAV"}
+
+# C-04（$resume_run）が None になるモード。attributes.yaml の run_state が
+# null のモードのうち、PAUSE に入りうるもの（SG-B22）。ガード resume_run_available が
+# これを弾く（guards.py がこの集合を参照する）。
+RESUME_RUN_UNAVAILABLE_MODES: Set[str] = {"AT_PANEL", "AT_HOME", "OPCHECK", "CALIB"}
+
+# C-05（$resume_state）が None になるモード。resume_state が null のうち、
+# PAUSE に入りうるものは PREP だけ（INIT/IDLE/ESTOP/CARRY は PAUSE を持たない。
+# SG-B22）。ガード resume_state_available が弾く。
+RESUME_STATE_UNAVAILABLE_MODES: Set[str] = {"PREP"}
+
+# _validate_combos が $prev_mode を展開するとき、ガードごとに許す押下前モード。
+# 未知のガード（C-11 の hw_released_and_no_critical 等）は展開せず検査を省く
+# （$prev_state と組のときはラッチ済みの実在組合せに戻るだけなので常に安全）。
+ESTOP_PREV_MODES: Dict[str, Set[str]] = {
+    "estop_prev_is_init": {"INIT"},
+    "estop_prev_is_summon": {"SUMMON"},
+    "estop_prev_is_at_panel": {"AT_PANEL"},
+    "estop_prev_is_at_home": {"AT_HOME"},
+    "estop_prev_is_opcheck": {"OPCHECK"},
+    "estop_prev_is_calib": {"CALIB"},
+    "estop_prev_is_prep_return": {"PREP"},
+    "estop_prev_is_prep": {"PREP"},
+    "estop_prev_was_running": set(ESTOP_RESUME_RUN.keys()),
+    "estop_prev_is_follow_confirm": {"FOLLOW"},
+    "estop_prev_is_replay_localize": {"REPLAY"},
+    "estop_prev_is_blocked": set(ESTOP_RESUME_BLOCKED_MODES),
+    "estop_resume_prev": set(MODES) - {"INIT", "IDLE", "ESTOP", "CARRY"},
+}
 
 # DetailedDesign-state.md §3-5 — ui.goto の kind → モード写像。
 GOTO_KIND_MAP: Dict[str, str] = {
@@ -226,6 +282,7 @@ class StateCore:
         """起動時に呼ぶ。空でなければ起動を止める（S-5）。"""
         errors: List[str] = []
         errors.extend(self._validate_names())
+        errors.extend(self._validate_combos())
         errors.extend(self._validate_guards())
         errors.extend(self._validate_effects())
         errors.extend(self._validate_tokens())
@@ -259,6 +316,92 @@ class StateCore:
             if mode not in MODES:
                 errors.append(f"mode_entry.yaml: 未知のモード '{mode}'")
         return errors
+
+    def _validate_combos(self) -> List[str]:
+        """⑧ 到達しうる (to_mode, to_state) の組合せが §3 の状態一覧に含まれる
+        （1b-2 SG-A3。`X/PAUSE` のような定義外の組合せを作らない）。
+        _validate_names は名前単体しか見ないため、`PAUSE` を持たないモードへの
+        `PAUSE` 遷移のような組合せの誤りがすり抜ける。ルール:
+        - 静的 to_mode + 静的 to_state（行の mode がワイルドカードでないとき）:
+          そのまま組合せ検査。
+        - `$resume_run` / `$resume_state`: 遷移元モードごとの解決値で検査。
+          None は、対応する availability ガードがそのモードを弾く場合だけ許す
+          （RESUME_GUARD_EXCLUSIONS。それ以外は SG-B22 と同じ穴なので落とす）。
+        - `$initial`: 遷移先モードごとの解決値で検査。
+        - `$prev_mode` + 静的 to_state: ESTOP_PREV_MODES に載っているガードの
+          ときだけ、その押下前モード集合の全要素と検査。未知のガードは省く。
+        - `$prev_state` / `$prev_sub` と組のときは検査しない（ラッチ済みの実在
+          組合せに戻るだけなので常に安全。C-11・C-09c-prep・C-09c-generic）。
+        - `$arg.*` / `=` と組のときは検査しない（実行時値・不変のため）。
+        - to_mode が `=` で行の mode がワイルドカードのとき、静的 to_state は
+          検査しない（C-02 のように遷移元と同じ組合せに戻るだけの行を、
+          到達不能な遷移元（CALIB/PAUSE 等）で誤検出するため）。
+        """
+        errors: List[str] = []
+        for row in self._transitions:
+            rid = row.get("id", "<no id>")
+            guard = row.get("guard")
+            to_mode_raw = row.get("to_mode")
+            to_state_raw = row.get("to_state")
+            wildcard_src = row.get("mode") == "*"
+            for src_mode in self._expand_modes(row.get("mode")):
+                if src_mode not in MODE_STATES:
+                    continue
+                for tm in self._combo_dest_modes(to_mode_raw, src_mode, guard):
+                    if tm is None or tm not in MODE_STATES:
+                        continue
+                    for ts in self._combo_dest_states(
+                            to_state_raw, src_mode, tm, guard):
+                        if ts is None:
+                            continue
+                        if (to_mode_raw in ("=", None) and wildcard_src
+                                and not (isinstance(to_state_raw, str)
+                                         and to_state_raw.startswith("$"))):
+                            continue
+                        if ts not in MODE_STATES[tm]:
+                            errors.append(
+                                f"{rid}: 到達しうる組合せ {tm}.{ts} が §3 の状態一覧に無い")
+        return errors
+
+    def _expand_modes(self, val) -> List[str]:
+        if val == "*":
+            return sorted(MODES)
+        if isinstance(val, list):
+            return list(val)
+        return [val]
+
+    def _combo_dest_modes(self, raw, src_mode: str, guard) -> List[Any]:
+        """検査用の to_mode 展開。検査不能（None 要素）を含むことがある。"""
+        if raw in ("=", None):
+            return [src_mode]
+        if isinstance(raw, str) and not raw.startswith("$"):
+            return [raw]
+        if raw == "$prev_mode":
+            allowed = ESTOP_PREV_MODES.get(guard)
+            if allowed is None:
+                return [None]
+            return sorted(allowed)
+        return [None]
+
+    def _combo_dest_states(self, raw, src_mode: str, target_mode: str,
+                           guard) -> List[Any]:
+        """検査用の to_state 展開。検査不能は None 要素で表す（呼び出し側が省く）。"""
+        if raw in ("=", None):
+            return [None]
+        if isinstance(raw, str) and not raw.startswith("$"):
+            return [raw]
+        if raw == "$initial":
+            return [self._attrs.get(target_mode, {}).get("initial_state")]
+        if raw in ("$resume_run", "$resume_state"):
+            val = self._attrs.get(src_mode, {}).get(
+                "run_state" if raw == "$resume_run" else "resume_state")
+            if val is None:
+                # None 解決はガード（resume_run/state_available）の仕事。
+                # ここでは落とさず、ガードの有無は test で縛る
+                # （test_c04_c05_have_availability_guards）。
+                return [None]
+            return [val]
+        return [None]
 
     def _validate_guards(self) -> List[str]:
         """② ガード名が guards.py に存在し、シグネチャが (mode, state, ctx) で、
