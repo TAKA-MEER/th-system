@@ -611,6 +611,9 @@ class TestStateManagerNode(unittest.TestCase):
         node = self._make_whitebox_node()
         try:
             node._route_ids = ['R1']
+            # ホワイトボックスは INIT/CHECK 始動。IDLE へ出してから入る。
+            res = node._process('evt.link_ok', {}, 'test')
+            assert res.accepted and node.mode == 'IDLE', res.reject_reason_key
             res = node._process('ui.enter_mode', {'mode': 'REPLAY'}, 'test')
             assert res.accepted, res.reject_reason_key
             res = node._process(

@@ -195,39 +195,10 @@ class TestEstopInitLinkResumeNode(unittest.TestCase):
             'INIT に戻ったあと疎通が揃っても IDLE まで進まない'
         assert self._link_ok_events(), 'evt.link_ok が一度も出ていない'
 
-    def test_init_estop_with_link_already_ok(self):
-        """SG-A5 の境界: ESTOP に入る前に gate が真になっていた（evt.link_ok を
-        出し終えていて二度と来ない）場合でも、INIT に戻ったあと IDLE まで進む。
-
-        ブリーフの指示（「来ないなら止まって報告」）の検証そのもの。
-        connectivity_checker の立ち上がり検出（L-3）は gate が真のままでは
-        再送しないため、このテストは現実装では赤くなるはず。
-        赤いままなら connectivity_checker 側の対処（spec 判断が要る）をせず、
-        報告して止まる。
-        """
-        assert self._wait_state('INIT', 'CHECK'), \
-            '起動直後が INIT/CHECK ではない（前提が崩れている）'
-
-        # 1) UI 非常停止 → ESTOP（まだ疎通は揃っていない）。
-        self._start_hw_keepalive(value=False)
-        self.pub_ui_estop.publish(Bool(data=True))
-        assert self._wait_state('ESTOP', 'NONE'), 'UI 非常停止で ESTOP に入らない'
-
-        # 2) ESTOP のあいだに疎通が揃う → evt.link_ok は ESTOP 中に捨てられる。
-        self._start_scan_keepalive()
-        deadline = time.time() + 5.0
-        while time.time() < deadline and not self._link_ok_events():
-            self._spin(0.2)
-        assert self._link_ok_events(), \
-            'ESTOP 中に evt.link_ok が一度も出ない（gate 自体が立たない）'
-        assert self._latest().mode == 'ESTOP', \
-            'ESTOP 中の evt.link_ok で ESTOP を離れてしまった'
-
-        # 3) 解除 → INIT/CHECK に戻る。
-        self.pub_ui_estop.publish(Bool(data=False))
-        assert self._wait_state('INIT', 'CHECK'), \
-            '解除で INIT/CHECK に戻っていない（SG-A5）'
-
-        # 4) 疎通は揃ったまま → IDLE まで進む（link_ok の再送が要る）。
-        assert self._wait_state('IDLE', 'NONE', timeout=8.0), \
-            'INIT に戻ったあと IDLE まで進まない（evt.link_ok が再送されない）'
+    # NOTE（1b-2・SG-A5 の境界）: ESTOP に入る前に gate が真になっていた
+    # （evt.link_ok を出し終えていて二度と来ない）場合の再送は、同じ launch では
+    # 検証できない（state_manager が一度 IDLE に出ると INIT に戻れないため、
+    # 2 本目は起動直後の前提が崩れる）。別 launch の使い捨てプローブ
+    #（.briefs/tmp/probe_link_reemit.py。コミット対象外）で確かめ、
+    # 結果は .briefs/tmp/report.md に残す。来なければ connectivity_checker 側の
+    # 対処はせず報告して止まる（ブリーフの指示）。
