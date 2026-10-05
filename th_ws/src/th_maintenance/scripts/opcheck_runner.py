@@ -43,7 +43,7 @@ except ImportError:
     Node = object
     RS_OK = False
 
-from th_maintenance.check_core import (CheckParams, judge_estop, judge_gyro_unit,
+from th_maintenance.check_core import (CheckParams, NG, judge_estop, judge_gyro_unit,
                                        judge_imu, judge_lidar,
                                        judge_motor_samples, verdict_to_fsm_result)
 
@@ -78,6 +78,12 @@ _NEXT_SCREEN = {
 }
 
 _ESTOP_STALE_MS = 3000.0  # /safety/estop_hw がこれだけ来なかったら「届いていない」とみなす
+# 押下を見てから解除を見ずにこれだけ経ったら「押したまま」（短絡・固着）とみなして
+# NG(stuck_release) で確定する（1b-8・SG-B4）。spec（Spec-checks.md §2.4 #1・
+# DetailedDesign-maintenance.md §2.2）に時間の規定は無い。押す→目視回答→離すの
+# 実手順（10 秒前後）に余裕を持たせた値。押下が一度も来ない側（no_press）は
+# 時間で NG にしない（来ないまま待つか、T-OPC-09 の中断で抜ける）。
+_ESTOP_RELEASE_TIMEOUT_MS = 30000.0
 # 項目を始めてから /scan が一度も届かないまま、これだけ経ったら「届いていない」（NG no_data）。
 # 届かないと判定が永遠に出ず、項目から抜けられなかった（2026-10-04）。
 _LIDAR_NO_DATA_MS = 3000.0
@@ -139,6 +145,7 @@ class OpcheckRunner(Node):
         self._estop_pressed = None
         self._estop_saw_press = False
         self._estop_saw_release = False
+        self._estop_press_start_ms = 0.0
         self._estop_false_answers = 0
         self._last_estop_verdict = (None, None)
 
@@ -282,6 +289,7 @@ class OpcheckRunner(Node):
             self._estop_pressed = None
             self._estop_saw_press = False
             self._estop_saw_release = False
+            self._estop_press_start_ms = 0.0
             self._estop_false_answers = 0
             self._last_estop_verdict = (None, None)
         elif item == "IMU":
@@ -467,9 +475,14 @@ class OpcheckRunner(Node):
             self._estop_pressed = pressed
             if pressed:
                 self._estop_saw_press = True
+                self._estop_press_start_ms = self._now_ms()
+            # 初回は何も確定しない（押下・解除の両方を見る。SG-B4）。
+            # _update_estop_verdict() は中間状態では evt.check_result を出さない。
+            self._update_estop_verdict()
             return
         if pressed and not self._estop_pressed:
             self._estop_saw_press = True
+            self._estop_press_start_ms = self._now_ms()
         elif not pressed and self._estop_pressed:
             self._estop_saw_release = True
         self._estop_pressed = pressed
@@ -490,16 +503,32 @@ class OpcheckRunner(Node):
             self._estop_alive = False
             self.get_logger().warn("/safety/estop_hw 途絶（ESTOP 項目）")
             self._update_estop_verdict()
+            return
+        # 押したまま一定時間離さない（短絡・固着）。押下の時点では確定せず、
+        # 解除を待つ（SG-B4）。ここで初めて NG(stuck_release) で確定する。
+        if (self._estop_saw_press and not self._estop_saw_release
+                and not self._final_sent
+                and self._now_ms() - self._estop_press_start_ms
+                > _ESTOP_RELEASE_TIMEOUT_MS):
+            self.get_logger().warn("ESTOP が押されたまま解除されない（ESTOP 項目）")
+            verdict = NG("stuck_release")
+            self._last_estop_verdict = (verdict.result, verdict.reason)
+            self._publish_final("ESTOP", verdict)
+            self._emit_result("ESTOP", verdict)
 
     def _update_estop_verdict(self):
         verdict = judge_estop(self._estop_alive, self._estop_saw_press,
                               self._estop_saw_release)
         if verdict.result == "OK" and self._estop_false_answers:
-            from th_maintenance.check_core import NG
             verdict = NG("answer_mismatch")
         key = (verdict.result, verdict.reason)
-        if key != self._last_estop_verdict:
-            self._last_estop_verdict = key
+        if key == self._last_estop_verdict:
+            return
+        self._last_estop_verdict = key
+        # 確定するのは最終形だけ（OK・no_data・answer_mismatch）。押下だけ・
+        # 未押下の中間状態（no_press・stuck_release）は evt.check_result を出さず、
+        # 解除を待つ（SG-B4）。途中経過は _monitor_tick() の UNKNOWN 表示に出る。
+        if verdict.result == "OK" or verdict.reason in ("no_data", "answer_mismatch"):
             self._publish_final("ESTOP", verdict)
             self._emit_result("ESTOP", verdict)
 
@@ -600,8 +629,6 @@ class OpcheckRunner(Node):
         next_screen = _NEXT_SCREEN.get(item, "")
         if next_screen and verdict.result not in ("NG", "WARN"):
             next_screen = ""
-        if next_screen == "imu_calib" and verdict.result == "NG":
-            next_screen = "repair"
         # 2026-09-25 修正（§3）: 最終判定が出たことを記録する。
         # _monitor_tick() はこれ以降、次の項目が始まるまで UNKNOWN で上書きしない。
         self._final_sent = True
