@@ -1091,6 +1091,192 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
             self._reset_to_home()
 
     # ═══════════════════════════════════════════════════════════════════
+    # 計算中に PAUSE に入る → 結果が届いても送らない（キャッシュだけ残す）
+    # ═══════════════════════════════════════════════════════════════════
+    def test_compute_in_pause_not_sent_jog(self):
+        """SG-A1（C-01）。計算の飛行中に `ui.jog.hold` → PAUSE。
+        遅れて届いた計算結果は送らずキャッシュだけ残し、PAUSE の間は
+        FollowPath が送られない。`ui.run` の再開で同じ経路が送られる
+        （再計算しない）。`_compute_result_done` の PAUSE ガードを外すと
+        PAUSE 中に送られて赤になる。"""
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.compute_result_delay_s = 2.0
+            self.follow_accept_delay_s = 0.0
+            self.follow_cancel_result_delay_s = 0.0
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+        try:
+            self._enter_nav()
+            if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=10.0):
+                self.fail(f'NAV に入らない ({self._mode_state()})')
+            # 計算が飛行中（代役で 2.0s 眠っている）のうちに PAUSE に入る。
+            self.assertTrue(
+                self._wait_count(self._n_compute, 1, timeout=10.0),
+                'compute が 1 回も呼ばれない。')
+            self._call_trigger('ui.jog.hold')
+            if not self._wait_mode_state('PANEL_NAV', 'PAUSE', timeout=5.0):
+                self.fail(f'PAUSE に入らない ({self._mode_state()})')
+            # 遅れた計算結果が届いても送出は無い。
+            self._sleep(3.0)
+            self.assertEqual(
+                self._mode_state(), ('PANEL_NAV', 'PAUSE'),
+                f'PAUSE のはずが {self._mode_state()} に動いた。')
+            self.assertEqual(
+                self._n_follow(), 0,
+                f'PAUSE 中に FollowPath が送られた ({self._n_follow()})。'
+                '計算中の PAUSE 入りを検出していない。')
+            self.assertEqual(
+                self._n_open(), 0,
+                'PAUSE なのに代役のゴールが実行中になっている。')
+
+            # 再開でキャッシュの経路が送られる。compute は増えない。
+            self._call_trigger('ui.run')
+            if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=5.0):
+                self.fail(f'再開後に NAV に戻らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_follow, 1, timeout=10.0),
+                '再開後に FollowPath にゴールが届かない。')
+            with self._lock:
+                path = list(self.follow_goals[0])
+            self.assertTrue(path, '再送された経路が空。')
+            self._sleep(2.0)
+            self.assertEqual(
+                self._n_compute(), 1,
+                f'再開後に compute が増えた (1 → {self._n_compute()})。')
+            self._mark_passed(f'(compute_total={self._n_compute()})')
+        finally:
+            with self._lock:
+                self.compute_result_delay_s = 0.0
+            self._reset_to_home()
+
+    def test_compute_in_pause_not_sent_fault(self):
+        """SG-A1（C-03/C-04）。回復フォルトで PAUSE に入った場合も同じ。
+        フォルト解消だけでは動かず、W-1「はい」でキャッシュの経路が送られる
+        （再計算しない）。PAUSE ガードを外すと PAUSE 中に送られて赤になる。"""
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.compute_result_delay_s = 2.0
+            self.follow_accept_delay_s = 0.0
+            self.follow_cancel_result_delay_s = 0.0
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+        try:
+            self._enter_nav()
+            if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=10.0):
+                self.fail(f'NAV に入らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_compute, 1, timeout=10.0),
+                'compute が 1 回も呼ばれない。')
+            self._publish_fault(True)
+            if not self._wait_mode_state('PANEL_NAV', 'PAUSE', timeout=5.0):
+                self.fail(f'回復フォルトで PAUSE に入らない ({self._mode_state()})')
+            self._sleep(3.0)
+            self.assertEqual(
+                self._mode_state(), ('PANEL_NAV', 'PAUSE'),
+                f'PAUSE のはずが {self._mode_state()} に動いた。')
+            self.assertEqual(
+                self._n_follow(), 0,
+                f'PAUSE 中に FollowPath が送られた ({self._n_follow()})。')
+            self.assertEqual(self._n_open(), 0)
+
+            # フォルト解消だけでは動かない。
+            self._publish_fault(False)
+            self._sleep(1.0)
+            self.assertEqual(
+                self._mode_state(), ('PANEL_NAV', 'PAUSE'),
+                f'フォルト解消だけで {self._mode_state()} に動いた。')
+            self.assertEqual(self._n_follow(), 0)
+
+            # W-1「はい」→ NAV。effect 無し復帰でもキャッシュの再送。
+            self._call_trigger('ui.resume_yes')
+            if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=5.0):
+                self.fail(f'ui.resume_yes 後に NAV に戻らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_follow, 1, timeout=10.0),
+                '復帰後に FollowPath にゴールが届かない。')
+            self._sleep(2.0)
+            self.assertEqual(
+                self._n_compute(), 1,
+                f'復帰後に compute が増えた (1 → {self._n_compute()})。')
+            self._mark_passed(f'(compute_total={self._n_compute()})')
+        finally:
+            with self._lock:
+                self.compute_result_delay_s = 0.0
+            self._publish_fault(False)
+            self._reset_to_home()
+
+    def test_compute_in_pause_not_sent_blocked_recheck(self):
+        """SG-A1（T-PNAV-06）。初回計画失敗 → BLOCKED 後の再探索計算の
+        飛行中に「停止」→ PAUSE。遅れた計算結果は送らず、`evt.unblocked`
+        も出さない。`ui.run` の再開でキャッシュの経路が送られる
+        （再計算しない）。PAUSE ガードを外すと PAUSE 中に送られて赤になる。"""
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'fail'
+            self.follow_mode = 'run'
+            self.compute_result_delay_s = 2.0
+            self.follow_accept_delay_s = 0.0
+            self.follow_cancel_result_delay_s = 0.0
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.event_names.clear()
+        try:
+            self._enter_nav()
+            if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=10.0):
+                self.fail(f'NAV に入らない ({self._mode_state()})')
+            if not self._wait_mode_state('PANEL_NAV', 'BLOCKED', timeout=10.0):
+                self.fail(f'BLOCKED に入らない ({self._mode_state()})')
+            # 再探索の計算が飛行中になるのを待ってから塞がりを成功に戻す…
+            # ではなく、そのまま「停止」する。計算は飛行中のまま PAUSE に入る。
+            with self._lock:
+                self.compute_mode = 'success'
+            self.assertTrue(
+                self._wait_count(self._n_compute, 2, timeout=10.0),
+                '再探索の compute が呼ばれない。')
+            with self._lock:
+                c0 = self.compute_count
+                n_ev = len(self.event_names)
+            self._call_trigger('ui.stop')
+            if not self._wait_mode_state('PANEL_NAV', 'PAUSE', timeout=5.0):
+                self.fail(f'PAUSE に入らない ({self._mode_state()})')
+            self._sleep(3.0)
+            self.assertEqual(
+                self._mode_state(), ('PANEL_NAV', 'PAUSE'),
+                f'PAUSE のはずが {self._mode_state()} に動いた。')
+            self.assertEqual(
+                self._n_follow(), 0,
+                f'PAUSE 中に FollowPath が送られた ({self._n_follow()})。')
+            with self._lock:
+                new_events = self.event_names[n_ev:]
+            self.assertNotIn(
+                'evt.unblocked', new_events,
+                'PAUSE 中に evt.unblocked が出ている。')
+
+            # 再開でキャッシュの経路が送られる。compute は増えない。
+            self._call_trigger('ui.run')
+            if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=5.0):
+                self.fail(f'再開後に NAV に戻らない ({self._mode_state()})')
+            self.assertTrue(
+                self._wait_count(self._n_follow, 1, timeout=10.0),
+                '再開後に FollowPath にゴールが届かない。')
+            self.assertEqual(
+                self._n_compute(), c0,
+                f'再開後に compute が増えた ({c0} → {self._n_compute()})。')
+            self._mark_passed(f'(compute_total={self._n_compute()})')
+        finally:
+            with self._lock:
+                self.compute_result_delay_s = 0.0
+                self.compute_mode = 'success'
+            self._reset_to_home()
+
+    # ═══════════════════════════════════════════════════════════════════
     # 古い取り消し結果が、再開後の生きている handle を誤って捨てる問題
     # ═══════════════════════════════════════════════════════════════════
     def test_stale_cancel_result_keeps_live_handle(self):

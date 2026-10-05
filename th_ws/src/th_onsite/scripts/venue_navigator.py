@@ -445,12 +445,23 @@ class VenueNavigator(Node):
             self.get_logger().warn('resume: キャッシュ経路が無い。再探索します')
             self._start_nav()
             return
+        if (self._follow_goal_handle is not None
+                or self._follow_send_in_flight):
+            # _resume_or_start と同じ理由（到着順不定の重複）。送出済みなら送らない。
+            self.get_logger().info('resume: 送出済みのため再送しない')
+            return
         self._send_follow_path(self._path)
 
     def _resume_or_start(self):
         """NAV 系への入口（effect を伴わない復帰＝C-04/C-05 の W-1「はい」等を含む）。
         キャッシュ経路があれば残りを送り直すだけで、計算し直さない
         （SM-3.1.2-056。f126534 で縛った挙動）。無ければ最初から計画する。"""
+        if (self._follow_goal_handle is not None
+                or self._follow_send_in_flight):
+            # 再開要求の重複（resume effect と /system/state(NAV) は別トピックで
+            # 到着順が不定。3ms 差で逆順に処理され二重送出になった実例あり）。
+            # 送出済み・送出中なら何もしない。
+            return
         if self._path is not None:
             self._send_follow_path(self._path)
         else:
