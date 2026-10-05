@@ -100,6 +100,12 @@ ros2 topic echo /system/dev_mode --once                           # いまの状
 
 ## 環境の癖・注意点
 
+- **Windows PC（WSL2・`networkingMode=mirrored`）で Docker 検証するときの必須設定**（2026-10-06 に確定）。リポジトリを WSL 内（`~/project/th-system`）に置き、`wsl -d Ubuntu -- ...` から回す。
+  - **`export FASTDDS_BUILTIN_TRANSPORTS=SHM`**: mirrored では DDS の UDP 探索が通らず、ノードを起動する試験が**ほぼ全滅する**（`/scan` を送ってもノードに届かず `LIDAR_LOST` が出る）。`ros2 topic echo` の単発確認は通るので気づきにくい。
+  - **`unset DISPLAY` と `GAZEBO_MODEL_DATABASE_URI=`**: compose が `DISPLAY=:0` を入れるため、gzserver が X 接続に失敗した直後に `rcl node's context is invalid` で落ち、`fault_injection_*` が `sim_stack: 90.0秒以内に準備完了条件…` で error になる。
+  - **`wsl` コマンドが終わるとディストリビューションごと止まり、`docker compose run -d` のコンテナも消える。**デタッチではなく、フォアグラウンドの `wsl ... docker compose run --rm -T` を Bash の `run_in_background` で回す。
+  - Windows ホストの pytest では、bash スクリプトを呼ぶ `test_start_setup_scripts.py` と、SIGKILL を使う `test_prelaunch_guard.py` が 18 件落ちる（Linux では通る。環境の差であって回帰ではない）。
+  - 上記の設定で回した `main`（`f71aa5d`）では、落ちたのが基準の 4 本（`fault_injection_02/04/08/10`）だけになった（06・11 も一度落ちたが、単独で回すと 2 回とも通った）。WSL の load average は使っていなくても 45 前後と表示されるので、負荷の判断には使わない。
 - **`pip3 install platformio` をホストの `python3 -m pytest` と同じ環境に入れると、依存の `anyio` が pytest プラグインとして自動登録され、`ModuleNotFoundError: No module named '_pytest.scope'` でテストが全滅する**（この環境の `pytest` は 6.2.5 で `anyio` の新しめのプラグインAPIと非互換）。`python3 -m pytest -p no:anyio ...` で回避できる。ESP32 ファームを `pio run` でビルドしたい場合に踏む（2026-09-05）。
 - **ラズパイ (`mirs2602@192.168.5.1`) には `pip3` が無く、`ip route` に default gateway も無いためインターネットに出られない。** Python ライブラリが要る場合は、開発機で `pip3 download --platform manylinux2014_aarch64 --python-version 310 --implementation cp --only-binary=:all: <pkg>` して wheel を展開し、`PYTHONPATH` で読ませる（`docs/network.md`「ラズパイ: pi_serial_relay の導入」に実例）。`sudo` もパスワードが必要で非対話 SSH からは実行できない（systemd unit のインストール等は対話セッションでやる必要がある）。
 - **pyserial の `ser.read(size)` は `timeout` の間「`size` バイト溜まるまで」待ち続ける実装**であり、`size > 1` に有限 `timeout` を組み合わせると必ず `timeout` の粒度で足止めされる固定ポーリングになる。ESP32 側が 100ms 周期で送信しているのに `pi_serial_relay.py` が `ser.read(4096)` を `timeout=0.05` で呼んでいたところ、2 つの周期がビート（うなり）を起こして `/esp32/wheel_feedback` が毎周期バースト受信になった（2026-09-05 実機で発覚。教示再生のふらつき増加の原因だった）。低遅延・低ジッタが要る受信は `ser.read(1, timeout=None)`（無期限待ち）→即座に `ser.in_waiting` 分だけノンブロッキングで追い読み、の2段構えにする。
