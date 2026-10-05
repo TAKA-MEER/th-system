@@ -290,10 +290,19 @@ class TestFaultAggregateMessage(unittest.TestCase):
         crit = [f for f in drv.faults if f.active and f.fault_type == 'LIMITER_DEAD'][-1]
         assert crit.severity == 'CRITICAL', \
             f'LIMITER_DEAD の severity が CRITICAL ではない: {crit.severity}'
-        # さらに scan を止めて LIDAR_LOST を重ねる
-        assert drv.wait_for_fault(
-            'LIDAR_LOST', keep_alive=(drv.pub_wf_once,)), \
-            f'LIDAR_LOST が立たなかった: {drv.fault_summary()}'
+        # さらに scan を止めて LIDAR_LOST を重ねる。
+        # LIMITER_DEAD が残っているため、追加時の自型は出ず代表（LIMITER_DEAD）
+        # が再送される。ここでは「何か active な edge が来た」だけを見る。
+        # 種別の特定は次の代表フェーズで行う。
+        mark = len(drv.faults)
+        deadline = time.time() + 10.0
+        new = []
+        while time.time() < deadline:
+            drv.pump(0.1, (drv.pub_wf_once,))
+            new = [f for f in drv.faults[mark:] if f.active]
+            if new:
+                break
+        assert new, f'scan 停止後に active なメッセージが来ない: {drv.fault_summary()}'
 
         mark = len(drv.faults)
         # limiter だけ再開（scan は止めたまま）→ 代表は LIDAR_LOST のはず
@@ -372,6 +381,19 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         deadline = time.time() + timeout
         while time.time() < deadline:
             self._spin(0.1)
+            if self._state_history:
+                cur = self._state_history[-1]
+                if cur.mode == mode and cur.state == state:
+                    return True
+        return False
+
+    def _wait_mode_state_keep(self, mode: str, state: str, keep=(),
+                              timeout: float = 8.0) -> bool:
+        """_wait_mode_state の keep-alive 付き版。待ちの間も入力を出し続け、
+        関係ないフォルトの発火でモードが動くのを防ぐ（CARRY/ESTOP 滞在用）。"""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self.drv.pump(0.1, keep)
             if self._state_history:
                 cur = self._state_history[-1]
                 if cur.mode == mode and cur.state == state:
@@ -457,16 +479,20 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         drv = self.drv
         res = self._trigger('ui.enter_mode', {'mode': 'FOLLOW'})
         assert res.accepted, res.reject_reason_key
-        assert self._wait_mode_state('FOLLOW', 'SELECT', timeout=5.0)
+        assert self._wait_mode_state_keep(
+            'FOLLOW', 'SELECT', drv.all_alive(), timeout=5.0)
         self.drv.go_alive_and_clean()
         self._state_history.clear()
         self.drv.faults.clear()
 
         # 手押しへ（prev=FOLLOW をラッチ）。離しても CARRY のまま。
+        # 待ちの間も入力を出し続ける（無発行ギャップで LIMITER_DEAD 等が
+        # 立って ESTOP に運ばれるのを防ぐ）。
         drv.pub_hw.publish(Bool(data=True))
-        assert self._wait_mode_state('CARRY', 'NONE', timeout=5.0)
+        assert self._wait_mode_state_keep(
+            'CARRY', 'NONE', drv.all_alive(), timeout=5.0)
         drv.pub_hw.publish(Bool(data=False))
-        self._spin(0.5)
+        drv.pump(0.5, drv.all_alive())
         assert self._latest().mode == 'CARRY', 'HW 解除で CARRY を離れた'
         assert self._latest().prev_mode == 'FOLLOW', 'CARRY 入場時の latch が無い'
 
@@ -475,7 +501,9 @@ class TestStateManagerAggregateResume(unittest.TestCase):
             'LIMITER_DEAD', timeout=10.0,
             keep_alive=(drv.pub_scan_once, drv.pub_wf_once)), \
             f'LIMITER_DEAD が立たなかった: {drv.fault_summary()}'
-        assert self._wait_mode_state('ESTOP', 'NONE', timeout=5.0), \
+        assert self._wait_mode_state_keep(
+            'ESTOP', 'NONE', (drv.pub_scan_once, drv.pub_wf_once),
+            timeout=5.0), \
             '重大フォルトで ESTOP に落ちなかった（C-06a）'
         assert self._latest().prev_mode == 'FOLLOW', \
             'CARRY からの C-06a で prev_* が上書きされた（N-3 違反）'
@@ -513,12 +541,14 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         drv.pub_hw.publish(Bool(data=False))
         self._spin(0.2)
         drv.pub_hw.publish(Bool(data=True))
-        assert self._wait_mode_state('CARRY', 'NONE', timeout=5.0), \
+        # limiter + scan は止めたまま（wf のみ維持）。重大・回復とも残す。
+        assert self._wait_mode_state_keep(
+            'CARRY', 'NONE', (drv.pub_wf_once,), timeout=5.0), \
             'ESTOP から手押しに戻らなかった（C-07）'
         assert self._latest().prev_mode == 'FOLLOW', \
             'ESTOP 中の hw.estop.press で prev_* が上書きされた'
         drv.pub_hw.publish(Bool(data=False))
-        self._spin(0.5)
+        drv.pump(0.5, (drv.pub_wf_once,))
         assert self._latest().mode == 'CARRY', 'HW 解除で CARRY を離れた'
 
         # C-11「手押し復帰」は重大継続中は拒否される。
@@ -535,5 +565,6 @@ class TestStateManagerAggregateResume(unittest.TestCase):
             '全解消の active=false が出なかった'
         res = self._trigger('ui.carry_resume')
         assert res.accepted, res.reject_reason_key
-        assert self._wait_mode_state('FOLLOW', 'SELECT', timeout=5.0), \
+        assert self._wait_mode_state_keep(
+            'FOLLOW', 'SELECT', drv.all_alive(), timeout=5.0), \
             '全解消後の手押し復帰で FOLLOW/SELECT に戻らなかった（C-11）'
