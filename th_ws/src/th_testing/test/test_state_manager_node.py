@@ -406,10 +406,13 @@ class TestStateManagerNode(unittest.TestCase):
     # 2026-09-01: UI ボタン由来の ESTOP（重大フォールト無し）は解除後に
     #   「戻る／メニューへ」を選べる。
     # 2026-09-04 WS-9O: 入口が UI ボタンか重大フォールトかを問わない。
-    #   フォールトが消えていれば「戻る」で $prev_mode の PAUSE へ、
+    #   フォールトが消えていれば「戻る」で押下前のモードへ、
     #   「メニューへ」／「確認」は IDLE へ出る（Spec-safety.md §3.5.2）。
     #   依然として要求されるのは「フォールトが実際に消えていること」と
     #   「物理非常停止が解放されていること」の2点。
+    # 2026-10-05 1b-2（SG-A3）: 「戻る」の戻り先は §6 の復帰先へ。
+    #   走行中なら同モードの PAUSE、止まっている状態なら押下前の状態へ
+    #   入口からやり直す（勝手には走り出さない）。
     # ════════════════════════════════════════════════════════
     def test_ui_estop_resume_to_prev_mode(self):
         res = self._trigger('ui.enter_mode', {'mode': 'MANUAL'})
@@ -435,14 +438,16 @@ class TestStateManagerNode(unittest.TestCase):
     def test_fault_estop_resume_to_prev_pause(self):
         """重大フォールト起因の ESTOP も、フォールトが消えれば押下前のモードへ戻る（WS-9O）。
 
-        SM-3.1.1-11（`C-09c`）／Spec-safety.md §3.5.2。2026-09-04 までは UI ボタン
+        SM-3.1.1-11（`C-09c-*`）／Spec-safety.md §3.5.2。2026-09-04 までは UI ボタン
         起因だけが戻せたので、26ms で消えるような一瞬の重大フォールトでも作業の
-        最初からやり直しになっていた（同節冒頭）。復帰先は `PAUSE`（停止）で、
-        走り出すには操作者がもう一度走行を押す（`PAUSE` に戻しただけなら
-        安全上の追加リスクが無い）。
+        最初からやり直しになっていた（同節冒頭）。
+        2026-10-05 1b-2（SG-A3）: 復帰先は §6 の復帰先へ。FOLLOW/SELECT のように
+        止まっている状態からは押下前の状態へ戻り（SELECT から選び直す）、
+        走行中（RUN）からだけ PAUSE（停止）に戻る。走り出すには操作者が
+        もう一度走行を押す（勝手には走り出さない）。
 
         手順 3 は「重大フォールトが解けた」と「すべてのフォールトが解けた」を
-        分けて踏む。`C-09c` のガードには severity の項だけでなく `not ctx.fault_active`
+        分けて踏む。`C-09c-*` のガードには severity の項だけでなく `not ctx.fault_active`
         の項もあるため、severity を落とした回復フォールトが残っている間は戻せない。
         """
         res = self._trigger('ui.enter_mode', {'mode': 'FOLLOW'})
@@ -483,15 +488,17 @@ class TestStateManagerNode(unittest.TestCase):
         snap = self._latest()
         assert snap.mode == 'ESTOP', f'回復フォールト継続中に ESTOP を離れた: {snap.mode}'
 
-        # 4) フォールトがすべて消えたら「戻る」で押下前のモードの PAUSE へ。prev_* は捨てる。
+        # 4) フォールトがすべて消えたら「戻る」で押下前の状態へ。prev_* は捨てる。
+        #    FOLLOW/SELECT は止まっている状態なので SELECT に戻る（C-09c-generic。
+        #    1b-2 SG-A3。旧仕様の PAUSE ではない。対象を選び直してから走行する）。
         self.pub_fault.publish(FaultStatus(active=False, fault_type='', severity=''))
         self._spin(0.2)
         res = self._trigger('ui.resume_yes')
         assert res.accepted, res.reject_reason_key
-        assert self._wait_mode('FOLLOW'), '「戻る」で押下前のモードへ戻っていない（C-09c）'
+        assert self._wait_mode('FOLLOW'), '「戻る」で押下前のモードへ戻っていない（C-09c-generic）'
         snap = self._latest()
-        assert snap.state == 'PAUSE', \
-            f'復帰先が PAUSE（停止）ではない: {snap.mode}/{snap.state}'
+        assert snap.state == 'SELECT', \
+            f'復帰先が押下前の状態（SELECT）ではない: {snap.mode}/{snap.state}'
         assert snap.prev_mode == '' and snap.prev_state == '', \
             f'復帰後も prev_* が残っている: {snap.prev_mode}/{snap.prev_state}'
 
@@ -556,6 +563,129 @@ class TestStateManagerNode(unittest.TestCase):
         res = self._trigger('ui.resume_ack')
         assert res.accepted, res.reject_reason_key
         assert self._wait_mode('IDLE')
+
+    # ════════════════════════════════════════════════════════
+    # 1b-2（SG-A5・SG-A3・SG-B22）— state_manager を実際に起動する試験。
+    # launch したノードは setUp で IDLE まで進んでいるため、INIT からの往復と
+    # 経路ラッチはホワイトボックス（別インスタンスを直接構築。起動直後の
+    # INIT/CHECK から始まる）で縛る。C-04 の None ケースは launch したノードで踏む。
+    # ════════════════════════════════════════════════════════
+    def _make_whitebox_node(self):
+        from rclpy.parameter import Parameter as RclpyParameter
+        module = _load_state_manager_module()
+        return module.StateManager(parameter_overrides=[
+            RclpyParameter('jog_lease_ms', RclpyParameter.Type.INTEGER, JOG_LEASE_MS),
+            RclpyParameter('link_wait_timeout_ms', RclpyParameter.Type.INTEGER,
+                           LINK_WAIT_TIMEOUT_MS),
+            RclpyParameter('ui_active_window_s', RclpyParameter.Type.INTEGER,
+                           UI_ACTIVE_WINDOW_S),
+            RclpyParameter('screen_stale_ms', RclpyParameter.Type.INTEGER, SCREEN_STALE_MS),
+        ])
+
+    def test_init_estop_returns_to_check(self):
+        """SG-A5: 起動直後（INIT/CHECK）に UI 非常停止を押して離すと
+        INIT/CHECK に戻り疎通確認からやり直す（IDLE に入らない。C-09b-init）。"""
+        node = self._make_whitebox_node()
+        try:
+            assert (node.mode, node.state) == ('INIT', 'CHECK'), \
+                f'起動直後が INIT/CHECK ではない: {node.mode}/{node.state}'
+            d1 = node._process('ui.estop.press', {}, 'test')
+            assert d1.accepted, d1.reject_reason_key
+            assert node.mode == 'ESTOP'
+            assert (node.prev_mode, node.prev_state) == ('INIT', 'CHECK')
+
+            d2 = node._process('ui.estop.release', {}, 'test')
+            assert d2.accepted, d2.reject_reason_key
+            assert d2.rule_id == 'C-09b-init', f'効いた行が違う: {d2.rule_id}'
+            assert (node.mode, node.state) == ('INIT', 'CHECK'), \
+                f'INIT/CHECK に戻っていない: {node.mode}/{node.state}'
+            assert node.prev_mode == '' and node.prev_state == '', \
+                'INIT に戻ったのに prev_* が残っている'
+            node._publish_state()  # 落ちずに publish できること
+        finally:
+            node.destroy_node()
+
+    def test_replay_route_latched_for_estop_resume(self):
+        """SG-A3: REPLAY の経路選択をラッチし、C-09c-localize の load_route に載せる。
+        TEACH_* の選択では上書きしない（別モードの経路で復帰しない）。"""
+        node = self._make_whitebox_node()
+        try:
+            node._route_ids = ['R1']
+            res = node._process('ui.enter_mode', {'mode': 'REPLAY'}, 'test')
+            assert res.accepted, res.reject_reason_key
+            res = node._process(
+                'ui.route_select', {'id': 'R1', 'reverse': True}, 'test')
+            assert res.accepted, res.reject_reason_key
+            assert res.rule_id == 'T-REPLAY-01'
+            assert node._replay_route == {'id': 'R1', 'reverse': True}
+
+            node._fault_active = True
+            node._fault_severity = 'CRITICAL'
+            res = node._process('fault.critical', {}, 'test')
+            assert node.mode == 'ESTOP'
+            assert (node.prev_mode, node.prev_state) == ('REPLAY', 'LOCALIZE')
+
+            node._fault_active = False
+            node._fault_severity = ''
+            res = node._process('ui.resume_yes', {}, 'test')
+            assert res.accepted, res.reject_reason_key
+            assert res.rule_id == 'C-09c-localize', f'効いた行が違う: {res.rule_id}'
+            assert (node.mode, node.state) == ('REPLAY', 'LOCALIZE')
+            by_name = {e.name: e.args for e in res.effects}
+            assert by_name.get('load_route') == {'route_id': 'R1', 'reverse': True}, \
+                f'load_route の引数が違う: {by_name}'
+
+            # TEACH_MANUAL の選択では上書きしない。
+            node._process('ui.finish', {}, 'test')
+            assert node.mode == 'IDLE'
+            res = node._process('ui.enter_mode', {'mode': 'TEACH_MANUAL'}, 'test')
+            assert res.accepted, res.reject_reason_key
+            res = node._process('ui.route_select', {'new': True}, 'test')
+            assert res.accepted, res.reject_reason_key
+            assert node._replay_route == {'id': 'R1', 'reverse': True}, \
+                'TEACH の選択で REPLAY のラッチが上書きされた'
+        finally:
+            node.destroy_node()
+
+    def test_c04_none_rejected_and_node_survives(self):
+        """SG-B22: AT_HOME/PAUSE で ui.resume_yes は拒否され、state=None を作らない。
+        publish の型検査で state_manager が落ちないこと（拒否後も応答すること）。
+
+        PAUSE へは回復フォルト（C-03）で入る。ジョグ経由だとリース満了
+        （T-ATH-02・300ms）で IDLE_H に戻ってしまい timing が不安定なため。
+        フォルト解消後は PAUSE のまま残る（fault.cleared は遷移を起こさない。
+        §7.1）ので、フォルト無しの状態で ui.resume_yes を踏める。
+        """
+        res = self._trigger('ui.goto', {'kind': 'HOME'})
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('HOME_NAV')
+        self.pub_event.publish(StateEvent(
+            event='evt.arrived', source_node='test', arg_json=''))
+        assert self._wait_mode('AT_HOME')
+        self.pub_fault.publish(
+            FaultStatus(active=True, fault_type='LIDAR_LOST', severity=''))
+        self._spin(0.3)
+        snap = self._latest()
+        assert (snap.mode, snap.state) == ('AT_HOME', 'PAUSE'), \
+            f'AT_HOME/PAUSE に入れていない: {snap.mode}/{snap.state}'
+        self.pub_fault.publish(FaultStatus(active=False, fault_type='', severity=''))
+        self._spin(0.3)
+        snap = self._latest()
+        assert (snap.mode, snap.state) == ('AT_HOME', 'PAUSE'), \
+            f'フォルト解消で PAUSE を離れた: {snap.mode}/{snap.state}'
+
+        res = self._trigger('ui.resume_yes')
+        assert res.accepted is False, \
+            'run_state が null の AT_HOME で ui.resume_yes が通ってしまった（SG-B22）'
+        snap = self._latest()
+        assert (snap.mode, snap.state) == ('AT_HOME', 'PAUSE'), \
+            f'拒否後に状態が動いた: {snap.mode}/{snap.state}'
+        assert snap.state is not None
+        # 落ちていないこと: 次の trigger に応答する。
+        res = self._trigger('ui.resume_ack')
+        assert res.accepted, res.reject_reason_key
+        assert self._wait_mode('AT_HOME')
+        assert self._latest().state == 'IDLE_H'
 
     # ════════════════════════════════════════════════════════
     # names.md §4.1 — derive_limits() の3ケース（zone）
