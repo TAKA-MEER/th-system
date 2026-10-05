@@ -400,6 +400,16 @@ class TestStateManagerAggregateResume(unittest.TestCase):
                     return True
         return False
 
+    def _wait_mode_keep(self, mode: str, keep=(), timeout: float = 8.0) -> bool:
+        """モード到達待ち（状態は問わない）。入場直後の SELECT/PAUSE 競合
+        （C-03 が先に PAUSE へ落とす）を避けたいときに使う。"""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self.drv.pump(0.1, keep)
+            if self._state_history and self._state_history[-1].mode == mode:
+                return True
+        return False
+
     def _reset_to_idle(self):
         self.drv.pump(0.5, self.drv.all_alive())
         self.drv.pub_hw.publish(Bool(data=True))
@@ -479,8 +489,9 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         drv = self.drv
         res = self._trigger('ui.enter_mode', {'mode': 'FOLLOW'})
         assert res.accepted, res.reject_reason_key
-        assert self._wait_mode_state_keep(
-            'FOLLOW', 'SELECT', drv.all_alive(), timeout=5.0)
+        # 入場直後は SELECT と PAUSE（C-03 先行）のどちらもありうる。
+        # モード到達だけ見て、戻り先はラッチされた prev_* で動的に決める。
+        assert self._wait_mode_keep('FOLLOW', drv.all_alive(), timeout=5.0)
         self.drv.go_alive_and_clean()
         self._state_history.clear()
         self.drv.faults.clear()
@@ -493,8 +504,10 @@ class TestStateManagerAggregateResume(unittest.TestCase):
             'CARRY', 'NONE', drv.all_alive(), timeout=5.0)
         drv.pub_hw.publish(Bool(data=False))
         drv.pump(0.5, drv.all_alive())
-        assert self._latest().mode == 'CARRY', 'HW 解除で CARRY を離れた'
-        assert self._latest().prev_mode == 'FOLLOW', 'CARRY 入場時の latch が無い'
+        snap = self._latest()
+        assert snap.mode == 'CARRY', 'HW 解除で CARRY を離れた'
+        assert snap.prev_mode == 'FOLLOW', 'CARRY 入場時の latch が無い'
+        ret_mode, ret_state = snap.prev_mode, snap.prev_state
 
         # 重大を先に（limiter 停止。scan + wf は維持）
         assert drv.wait_for_fault(
@@ -565,6 +578,14 @@ class TestStateManagerAggregateResume(unittest.TestCase):
             '全解消の active=false が出なかった'
         res = self._trigger('ui.carry_resume')
         assert res.accepted, res.reject_reason_key
-        assert self._wait_mode_state_keep(
-            'FOLLOW', 'SELECT', drv.all_alive(), timeout=5.0), \
-            '全解消後の手押し復帰で FOLLOW/SELECT に戻らなかった（C-11）'
+        deadline = time.time() + 5.0
+        back = False
+        while time.time() < deadline:
+            self.drv.pump(0.1, self.drv.all_alive())
+            if self._state_history:
+                cur = self._state_history[-1]
+                if cur.mode == ret_mode and cur.state == ret_state:
+                    back = True
+                    break
+        assert back, \
+            f'全解消後の手押し復帰で {ret_mode}/{ret_state} に戻らなかった（C-11）'
