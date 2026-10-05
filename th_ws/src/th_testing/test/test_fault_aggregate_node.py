@@ -156,21 +156,38 @@ class _FaultDriver:
     def all_alive(self):
         return (self.pub_scan_once, self.pub_wf_once, self.pub_limiter_once)
 
-    def go_alive_and_clean(self, timeout: float = 15.0):
-        """3 入力を送り、持ち越し fault が消えたことを確かめてから空にする。"""
-        self.pump(1.5, self.all_alive())
+    def go_alive_and_clean(self, timeout: float = 25.0):
+        """送達ハンドシェイク付きの前提条件回復。
+
+        1. 全入力を止めてフォルトが立つのを待つ（monitor→test 方向の証明）。
+           edge を取り逃がしていても /safety/fault_lock（常時 20Hz）で active を見る。
+        2. 3 入力を送って解消 edge を待つ（test→monitor 方向の証明。
+           解消には入力の到着が必須）。
+        3. バッファを空にして返す。
+        """
+        deadline = time.time() + timeout
+        seen_active = False
+        while time.time() < deadline:
+            self.pump(0.1)
+            if any(f.active for f in self.faults):
+                seen_active = True
+                break
+            if self.locks and self.locks[-1] is True:
+                seen_active = True
+                break
+        assert seen_active, \
+            '入力停止後にフォルトが立たない（safety_monitor へ届いていないか受信できていない）'
         self.faults.clear()
         self.locks.clear()
         deadline = time.time() + timeout
         ok = False
         while time.time() < deadline:
             self.pump(0.1, self.all_alive())
-            if self.locks and self.locks[-1] is False:
+            if any(not f.active for f in self.faults):
                 ok = True
                 break
         assert ok, \
-            '3 入力を alive にしたのに /safety/fault_lock が false にならない' \
-            f'（持ち越し fault がある。受信: fault={len(self.faults)} lock={len(self.locks)}）'
+            'alive 送信後に解消 edge が来ない（入力が safety_monitor へ届いていない）'
         self.faults.clear()
         self.locks.clear()
 
