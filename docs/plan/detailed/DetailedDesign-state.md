@@ -235,10 +235,10 @@ class StateCore:
 | `C-03` | `*` | `*` | `fault.recoverable` | `fault_stops_mode` | `=` | `$pause_unless_prep` | `open_window{id:W-1}` |
 | `C-04` | `*` | `PAUSE` | `ui.resume_yes` | **`resume_run_available`**（`fault_cleared` ＋ `run_state` が null でない。SG-B22） | `=` | `$resume_run` | `close_window{id:W-1}` |
 | `C-05` | `*` | `PAUSE` | `ui.resume_no` ／ `ui.resume_ack` | **`resume_state_available`**（`fault_cleared` ＋ `resume_state` が null でない。SG-B22） | `=` | **`$resume_state`** | `close_window{id:W-1}` |
-| **`C-06a`** | `*` | `*` | `fault.critical` | — | `ESTOP` | `NONE` | `latch_prev` |
+| **`C-06a`** | `*` | `*` | `fault.critical` | — | `ESTOP` | `NONE` | `latch_prev`, **`set_jog{on:false}`**（1b-2 追補。ESTOP をまたいで `jog_active` を残さない） |
 | **`C-06r`** | `CARRY` | `NONE` | `ui.estop.press` | — | — | — | **`reject: true`**（`reject_reason_key: estop_disabled_in_carry`）。**`C-06b` より上の行に置く**（§3.1 規則 1 は記載順に走査する） |
-| **`C-06b`** | `*` | `*` | `ui.estop.press` | `estop_ui_allowed` | `ESTOP` | `NONE` | `latch_prev` |
-| `C-07` | `*` | `*` | `hw.estop.press` | `not_checking_estop` | `CARRY` | `NONE` | `latch_prev`, `open_window{id:W-2}` |
+| **`C-06b`** | `*` | `*` | `ui.estop.press` | `estop_ui_allowed` | `ESTOP` | `NONE` | `latch_prev`, **`set_jog{on:false}`**（同上） |
+| `C-07` | `*` | `*` | `hw.estop.press` | `not_checking_estop` | `CARRY` | `NONE` | `latch_prev`, **`set_jog{on:false}`**（同上。手押し中に stale の jog を残さない）, `open_window{id:W-2}` |
 | `C-08` | `*` | `*` | `ui.finish` | **`can_finish`** | `IDLE` | `NONE` | `ask_save_if_unsaved`, `clear_prev` |
 | `C-09` | `ESTOP` | `NONE` | `ui.estop.release` | `estop_resume_prev` | `=` | `=` | `show_resume` |
 | **`C-09b-init`** | `ESTOP` | `NONE` | `ui.estop.release` | **`estop_prev_is_init`**（押下前 `INIT`。SG-A5。`C-09b` より前に置く） | `INIT` | `CHECK` | `clear_prev` |
@@ -282,6 +282,11 @@ class StateCore:
 
 **`latch_prev` は `mode ∈ {ESTOP, CARRY}` のときは記録しない**（§3.3）。
 `ESTOP` 中の物理押下・`CARRY` 中の重大フォルトで復帰先が壊れるのを防ぐ。
+
+**`ESTOP`／`CARRY` に入るときは `jog_active` を落とす**（`C-06a`／`C-06b`／`C-07` の
+`set_jog{on:false}`。1b-2 追補）。入れないと、ジョグ中に押した非常停止のリースが
+`ESTOP` 中に満了せず（`sys.jog_lease_expired` は `ESTOP`／`NONE` ではどの行にも当たらない）、
+復帰先で stale の `jog_active` が残る。復帰後に触れれば通常どおりリースが始まる。
 
 ### 4.1.1 ガードの定義（**全 44 件**。1b-2 で 14 件追加）
 

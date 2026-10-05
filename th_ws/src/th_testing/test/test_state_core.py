@@ -458,7 +458,49 @@ def test_opcheck_ng_lidar_returns_to_list_then_calib(state_core_bundle):
 
 
 # ============================================================
+# 1b-2 追補: ESTOP／CARRY に入るとき jog を解除する。
+# jog 中（jog_active）に非常停止・物理ボタンを押すと、ESTOP/CARRY をまたいで
+# jog_active が残り、復帰先で stale のままになる。突入時に set_jog{on:false} で
+# 落とす（既存の effect 駆動。state_core 側に特別な処理は無い）。
+# 復帰後に触れれば通常どおりリースが始まる。
+# ============================================================
+@pytest.mark.rule("C-06a")
+@pytest.mark.rule("C-06b")
+@pytest.mark.rule("C-07")
+def test_estop_carry_entry_clears_jog(state_core_bundle):
+    core, _, _, _ = state_core_bundle
+
+    d = core.step("FOLLOW", "PAUSE", "fault.critical", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("ESTOP", "NONE")
+    assert d.rule_id == "C-06a"
+    by_name = {e.name: e.args for e in d.effects}
+    assert by_name.get("set_jog") == {"on": False}, \
+        f"C-06a が jog を解除していない: {[e.name for e in d.effects]}"
+
+    d = core.step("FOLLOW", "PAUSE", "ui.estop.press", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("ESTOP", "NONE")
+    assert d.rule_id == "C-06b"
+    by_name = {e.name: e.args for e in d.effects}
+    assert by_name.get("set_jog") == {"on": False}, \
+        f"C-06b が jog を解除していない: {[e.name for e in d.effects]}"
+
+    d = core.step("FOLLOW", "PAUSE", "hw.estop.press", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("CARRY", "NONE")
+    assert d.rule_id == "C-07"
+    by_name = {e.name: e.args for e in d.effects}
+    assert by_name.get("set_jog") == {"on": False}, \
+        f"C-07 が jog を解除していない: {[e.name for e in d.effects]}"
+
+
+# ============================================================
 # 1b-2（SG-A3・SG-D1）: ESTOP からの「戻る」は §6 の復帰先へ。
+# 走行中（自律走行・記録中）なら同モードの PAUSE、止まっている状態なら
+# 押下前の状態へ入口からやり直す。PAUSE を持たないモードに PAUSE を作らない。
+# 本番の経路（StateCore.step）を「押下 → 解除 → 戻る」の順で回す。
+# ============================================================
 # 走行中（自律走行・記録中）なら同モードの PAUSE、止まっている状態なら
 # 押下前の状態へ入口からやり直す。PAUSE を持たないモードに PAUSE を作らない。
 # 本番の経路（StateCore.step）を「押下 → 解除 → 戻る」の順で回す。

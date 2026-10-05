@@ -89,6 +89,9 @@
   effects:
   - name: latch_prev
     args: {}
+  - name: set_jog
+    args:
+      'on': false
   spec_ref: SM-3.1.1-06
 - id: C-06r
   layer: 0
@@ -113,6 +116,9 @@
   effects:
   - name: latch_prev
     args: {}
+  - name: set_jog
+    args:
+      'on': false
   spec_ref: SM-3.1.1-07
 - id: C-07
   layer: 0
@@ -125,6 +131,9 @@
   effects:
   - name: latch_prev
     args: {}
+  - name: set_jog
+    args:
+      'on': false
   - name: open_window
     args:
       id: W-2
