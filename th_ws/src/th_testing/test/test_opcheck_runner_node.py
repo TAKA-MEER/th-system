@@ -56,6 +56,11 @@ mode==OPCHECK のときだけ動く「ノード側でも二重に確認」の実
    n. 押したまま離さないと NG(stuck_release) で確定する
  2026-10-05 追加（1b-8・SG-B5。IMU NG の行き先）:
    o. IMU の NG は next_screen=imu_calib のまま（repair 書き換え禁止）
+ 2026-10-05 追加（brief-a13・SG-A13。MOTOR は 4 方向すべてで OK）:
+   p. 前進だけで離しても確定しない（UNKNOWN のまま）
+   q. 4 方向とも正常で初めて OK（3 方向まで確定しない）
+   r. 左右入れ替えは前進が通って旋回で NG（理由に LEFT を含む）
+   s. 1 方向だけ符号逆なら即 NG（理由に BACK を含む）
 
  追加の変異チェック:
    ⑦ _note_estop() の初回 return／_update_estop_verdict() の確定条件を外して
@@ -64,6 +69,10 @@ mode==OPCHECK のときだけ動く「ノード側でも二重に確認」の実
       test_n_estop_stuck_pressed_emits_ng が赤
    ⑨ _publish_final() の IMU NG→repair 書き換えを戻す →
       test_o_imu_ng_routes_to_imu_calib が赤
+   ⑩ _maybe_finalize_motor() を最初の解放で確定する元に戻す →
+      test_p/q/r が赤
+   ⑪ 方向集計から 1 方向（RIGHT）を落とす → test_q が赤（3 方向で確定する）
+   ⑫ 旋回（LEFT/RIGHT）の符号比較を外す（常に OK 扱い）→ test_r が赤
 """
 import json
 import math
@@ -239,6 +248,29 @@ class TestOpcheckRunnerNode(unittest.TestCase):
         return [e for e in self._events
                 if e.event == 'evt.check_result'
                 and json.loads(e.arg_json).get('item') == 'ESTOP']
+
+    def _motor_events(self):
+        return [e for e in self._events
+                if e.event == 'evt.check_result'
+                and json.loads(e.arg_json).get('item') == 'MOTOR']
+
+    # 方向ごとの指令（差動。LEFT/RIGHT は超信地旋回）。
+    _DIR_CMDS = {
+        'FORWARD': (V_CHECK, V_CHECK),
+        'BACK': (-V_CHECK, -V_CHECK),
+        'LEFT': (-V_CHECK, V_CHECK),
+        'RIGHT': (V_CHECK, -V_CHECK),
+    }
+
+    def _motor_dir_ok(self, direction: str, swap: bool = False, repeats: int = 2):
+        """1 方向を正常に実施する（離すまで）。swap=True で左右の実測を入れ替える。"""
+        cmd_l, cmd_r = self._DIR_CMDS[direction]
+        meas_l, meas_r = (cmd_r, cmd_l) if swap else (cmd_l, cmd_r)
+        self._publish_hold(direction)
+        for _ in range(repeats):
+            self._publish_wheel(cmd_l=cmd_l, cmd_r=cmd_r,
+                                meas_l=meas_l, meas_r=meas_r)
+        self._publish_hold('NONE')
 
     def _publish_wheel(self, cmd_l: float, cmd_r: float, meas_l: float, meas_r: float):
         cmd = WheelFeedback()
@@ -443,11 +475,10 @@ class TestOpcheckRunnerNode(unittest.TestCase):
         assert res.started, res.message
 
         self._status.clear()
-        self._publish_hold('FORWARD')
-        # 符号一致・追従良好 → OK 判定になるはず。
-        self._publish_wheel(cmd_l=V_CHECK, cmd_r=V_CHECK,
-                            meas_l=V_CHECK, meas_r=V_CHECK)
-        self._publish_hold('NONE')
+        # 4 方向とも符号一致・追従良好 → OK 判定になるはず
+        # （brief-a13・SG-A13: 1 方向だけでは確定しない）。
+        for direction in ('FORWARD', 'BACK', 'LEFT', 'RIGHT'):
+            self._motor_dir_ok(direction)
 
         final_index = None
         deadline = time.time() + 3.0
@@ -725,6 +756,109 @@ class TestOpcheckRunnerNode(unittest.TestCase):
                    and st.next_screen == 'imu_calib' for st in self._status), \
             [(s.item, s.result, s.detail, s.next_screen) for s in self._status]
         self._publish_effect('record_result', {'item': 'IMU', 'result': 'NG'})
+
+    # ════════════════════════════════════════════════════════
+    # p. MOTOR: 前進だけで離しても確定しない（SG-A13）
+    # ════════════════════════════════════════════════════════
+    def test_p_forward_only_does_not_finalize(self):
+        """前進だけ実施して離しても evt.check_result は出ない。
+
+        修正前は最初の解放で確定（OK）する（SG-A13 の標的）。
+        """
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('MOTOR')
+        assert res.started, res.message
+
+        self._events.clear()
+        self._status.clear()
+        self._motor_dir_ok('FORWARD')
+        self._spin(0.5)
+        assert not self._motor_events(), \
+            '前進だけで MOTOR の判定が確定した（SG-A13 の標的）'
+        motor_status = [st for st in self._status if st.item == 'MOTOR']
+        assert motor_status, '/opcheck/status に MOTOR が一度も出ない'
+        assert motor_status[-1].result == 'UNKNOWN', \
+            f'前進だけで最終判定になった: {motor_status[-1].result}'
+
+    # ════════════════════════════════════════════════════════
+    # q. MOTOR: 4 方向とも正常で初めて OK（SG-A13）
+    # ════════════════════════════════════════════════════════
+    def test_q_all_four_dirs_ok(self):
+        """4 方向すべて正常に実施して初めて OK が確定する。"""
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('MOTOR')
+        assert res.started, res.message
+
+        self._events.clear()
+        for direction in ('FORWARD', 'BACK', 'LEFT'):
+            self._motor_dir_ok(direction)
+            self._spin(0.2)
+            assert not self._motor_events(), \
+                f'{direction} までで MOTOR の判定が確定した（SG-A13 の標的）'
+        self._motor_dir_ok('RIGHT')
+        hits = [e for e in self._wait_for_event('evt.check_result', timeout=3.0)
+                if json.loads(e.arg_json).get('item') == 'MOTOR']
+        assert hits, '4 方向とも正常なのに MOTOR の判定が出ない'
+        assert json.loads(hits[-1].arg_json).get('result') == 'OK', \
+            f'4 方向とも正常なのに OK にならない: {hits[-1].arg_json}'
+        self._publish_effect('record_result', {'item': 'MOTOR', 'result': 'OK'})
+
+    # ════════════════════════════════════════════════════════
+    # r. MOTOR: 左右入れ替えは旋回で NG（SG-A13）
+    # ════════════════════════════════════════════════════════
+    def test_r_swapped_wheels_ng_on_turn(self):
+        """左右の実測が入れ替わっていると、前進は通るが旋回で NG になる。
+
+        前進・後退だけでは入れ替わりが見えないことの裏返し（SG-A13 の核心）。
+        """
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('MOTOR')
+        assert res.started, res.message
+
+        self._events.clear()
+        self._status.clear()
+        # 入れ替えでも前進は合う（左右同値のため）。確定もしない。
+        self._motor_dir_ok('FORWARD', swap=True)
+        self._spin(0.3)
+        assert not self._motor_events(), \
+            '入れ替えなのに前進の時点で確定した（SG-A13 の標的）'
+        # 左旋回で符号が逆になる → その場で NG（理由に方向を含む）。
+        self._motor_dir_ok('LEFT', swap=True)
+        hits = [e for e in self._wait_for_event('evt.check_result', timeout=3.0)
+                if json.loads(e.arg_json).get('item') == 'MOTOR']
+        assert hits, '旋回で符号が逆なのに MOTOR の判定が出ない'
+        assert json.loads(hits[-1].arg_json).get('result') == 'NG', \
+            f'入れ替えの旋回なのに NG にならない: {hits[-1].arg_json}'
+        assert any(st.item == 'MOTOR' and st.result == 'NG' and 'LEFT' in st.detail
+                   for st in self._status), \
+            [(s.item, s.result, s.detail) for s in self._status]
+        self._publish_effect('record_result', {'item': 'MOTOR', 'result': 'NG'})
+
+    # ════════════════════════════════════════════════════════
+    # s. MOTOR: 1 方向だけ符号が逆なら即 NG（SG-A13）
+    # ════════════════════════════════════════════════════════
+    def test_s_single_dir_sign_ng(self):
+        """1 方向だけ符号が逆なら、他が未実施でもその場で NG（理由に方向を含む）。"""
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('MOTOR')
+        assert res.started, res.message
+
+        self._events.clear()
+        self._status.clear()
+        cmd_l, cmd_r = self._DIR_CMDS['BACK']
+        self._publish_hold('BACK')
+        self._publish_wheel(cmd_l=cmd_l, cmd_r=cmd_r,
+                            meas_l=-cmd_l, meas_r=cmd_r)
+        self._publish_hold('NONE')
+        hits = [e for e in self._wait_for_event('evt.check_result', timeout=3.0)
+                if json.loads(e.arg_json).get('item') == 'MOTOR']
+        assert hits, '符号逆なのに MOTOR の判定が出ない'
+        assert json.loads(hits[-1].arg_json).get('result') == 'NG', \
+            f'符号逆なのに NG にならない: {hits[-1].arg_json}'
+        assert any(st.item == 'MOTOR' and st.result == 'NG' and 'BACK' in st.detail
+                   for st in self._status), \
+            [(s.item, s.result, s.detail) for s in self._status]
+        self._publish_effect('record_result', {'item': 'MOTOR', 'result': 'NG'})
 
 
 if __name__ == '__main__':
