@@ -397,6 +397,12 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         assert res.accepted, res.reject_reason_key
         assert self._wait_mode_state('FOLLOW', 'SELECT', timeout=5.0)
 
+        # FOLLOW 遷移中は入力を出さないギャップがあるため、その間にフォルトが
+        # 立って edge を取り逃がしていることがある。ここで送達を立て直す。
+        self.drv.go_alive_and_clean()
+        self._state_history.clear()
+        self.drv.faults.clear()
+
         # A・B（LIDAR_LOST + ESP32_DISCONNECTED）を発生させる
         assert drv.wait_for_fault(
             'LIDAR_LOST', keep_alive=(drv.pub_limiter_once,)), \
