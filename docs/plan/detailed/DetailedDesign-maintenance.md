@@ -117,6 +117,14 @@ th_maintenance/
 データ源は `/esp32/wheel_cmd_speed`（指令）と `/esp32/wheel_feedback`（実測）。
 **既存の `WheelSpeedView.jsx` の時系列グラフをそのまま流用できる。**
 
+**4 方向すべてで合ってはじめて OK**（brief-a13・SG-A13。`Spec-checks.md` §2.4 #2）。
+`opcheck_runner` は方向別にサンプルを集計し、1 方向の解放ごとにその方向だけ判定する。
+NG の方向があればその場で NG 確定（理由は `DIR:reason` 形で方向を含む）。
+未実施の方向が残る間は `evt.check_result` を出さず、途中経過（済み方向）を
+`CheckStatus.detail` の先頭 `done=...` に載せる（msg 不変）。
+サンプル無しで `_MOTOR_TOO_BRIEF_MS`（500 ms）未満の押下は未実施扱い、
+それ以上は `NG no_samples`（ESP32 側の死）。
+
 `check_core.py`:
 
 ```python
