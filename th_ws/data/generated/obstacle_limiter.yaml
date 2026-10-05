@@ -10,6 +10,9 @@ obstacle_limiter:
     - 130.3
     - 143.5
     blind_calibrated: true
+    blind_max_sector_deg: 30.0
+    blind_max_sectors: 8
+    blind_max_total_deg: 90.0
     body_half_length_m: 0.275
     body_width_m: 0.55
     brake_accel_mps2: 1.18
@@ -27,7 +30,7 @@ obstacle_limiter:
     state_stale_ms: 1500
     v_calib: 0.15
     v_check: 0.05
-    v_leash: 1.0
-    v_max: 1.1199999999999999
+    v_leash: 0.5
+    v_max: 0.568
     w_align_max: 0.3
     w_max: 1.2

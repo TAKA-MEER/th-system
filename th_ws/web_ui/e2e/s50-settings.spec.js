@@ -5,7 +5,13 @@
 // config_manager の service 呼び出しは TEST_MODE（window.__thTestState 定義時）
 // では useTunableParams.js が即 reject するので、ネット無しで回る。
 import { test, expect } from '@playwright/test'
-import { gotoScreen, setTestState, stubTrigger } from './helpers.js'
+import { readFileSync } from 'node:fs'
+import { gotoScreen, setTestState, stubTrigger, gotoScreenWithTunables, tunableApplyCalls } from './helpers.js'
+
+// registry 連動の上限（scripts/gen_param_limits.py の生成物）。天井が変われば
+// 作り直されるので、ここでは値を直書きせず生成物を読む。
+const PARAM_LIMITS = JSON.parse(
+  readFileSync(new URL('../src/generated/param_limits.json', import.meta.url), 'utf8'))
 
 async function openS50General(page) {
   await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
@@ -95,4 +101,56 @@ test('「校正で変更する」が受理されたら理由は出ない', async
   expect(calls).toHaveLength(1)
   expect(calls[0].argJson).toEqual({ mode: 'CALIB' })
   await expect(page.getByTestId('s50-calib-err')).toHaveCount(0)
+})
+
+// SG-B9: 本番の bringup（use_stub なし）では follow_planner_mapless が起動して
+// いないので、その読み込み失敗を全体の失敗として扱ってはならない。起動して
+// いるぶん（lidar_filter / slam_toolbox）は出す。
+test('片方の取得に失敗しても一般タブ全体は落ちない（節ごとの注記になる）', async ({ page }) => {
+  await gotoScreenWithTunables(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
+    // follow_planner_mapless のエントリ無し = reject（未起動ノードと同じ）。
+    lidar_filter: { values: { blind_angle_ranges: [] } },
+    slam_toolbox: {
+      values: {
+        minimum_travel_distance: 0.1,
+        minimum_travel_heading: 0.1,
+        correlation_search_space_dimension: 0.5,
+        correlation_search_space_resolution: 0.01,
+        link_match_minimum_response_fine: 0.1,
+      },
+    },
+  })
+  await page.getByTestId('s01-open-settings').click()
+  await expect(page.locator('#s50')).toBeVisible()
+
+  // 全体の失敗にしない。
+  await expect(page.getByTestId('s50-load-error')).toHaveCount(0)
+  // 失敗した節だけ注記が出る。
+  await expect(page.getByTestId('s50-status-follow_planner_mapless'))
+    .toHaveText('現在値を取得できませんでした')
+  // 取れた節は使えるまま（保存ボタンと取得値が見える）。
+  await expect(page.getByTestId('s50-save-slam_toolbox')).toBeVisible()
+  await expect(page.getByTestId('s50-save-follow_planner_mapless')).toBeVisible()
+})
+
+// SG-B9: 旧ノードの v_max（UI 上限 1.5）は registry の v_max を超えて保存
+// できない。1.5 を入れても天井（param_limits.json）で丸められて送られる。
+test('v_max に上限超えを入れても registry の天井で丸められる', async ({ page }) => {
+  await gotoScreenWithTunables(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
+    follow_planner_mapless: { values: { v_max: 0.3 } },
+    lidar_filter: { values: { blind_angle_ranges: [] } },
+    slam_toolbox: { values: {} },
+  })
+  await page.getByTestId('s01-open-settings').click()
+  await expect(page.locator('#s50')).toBeVisible()
+
+  await page.getByLabel(/最高速度/).fill('1.5')
+  await page.getByLabel(/最高速度/).press('Tab')
+  const calls = await tunableApplyCalls(page)
+  const vMaxCalls = calls.filter((c) => c.paramName === 'v_max')
+  expect(vMaxCalls).toHaveLength(1)
+  expect(vMaxCalls[0].nodeName).toBe('follow_planner_mapless')
+  // 上限自体が昔の UI 上限（1.5）より小さいことが、この試験が空振りでないことの保証。
+  expect(PARAM_LIMITS.v_max).toBeLessThan(1.5)
+  expect(vMaxCalls[0].value).toBe(PARAM_LIMITS.v_max)
 })

@@ -5,7 +5,7 @@ params_audit:
     body_width_m: 0.55
     brake_delay_s: 0.2
     clear_margin_m: 0.3
-    drivetrain_ceiling_mps: 1.4
+    drivetrain_ceiling_mps: 0.71
     floor_margin_m: 0.15
     hysteresis_ratio: 0.2
     imu_bias_max_rad_s: 0.2
@@ -28,8 +28,8 @@ params_audit:
     v_calib: 0.15
     v_check: 0.05
     v_jog_max: 0.55
-    v_leash: 1.0
-    v_max: 1.1199999999999999
+    v_leash: 0.5
+    v_max: 0.568
     v_max_headroom_ratio: 0.8
     w_align_max: 0.3
     w_jog_max: 1.0

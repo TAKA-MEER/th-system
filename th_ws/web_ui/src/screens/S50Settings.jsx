@@ -27,6 +27,8 @@ import {
 } from '../ros/devModeState.js'
 import { readFontScale, applyFontScale } from '../parts/fontScale.js'
 import { readDevMode, setDevMode } from '../parts/devMode.js'
+import PARAM_LIMITS from '../generated/param_limits.json'
+import { clampTunableParam, tunableFieldMax } from '../ros/s50TunableLimits.js'
 import {
   S50_BACK, S50_TAB_GENERAL, S50_TAB_DISPLAY, S50_TAB_DEV, S50_GUARD,
   S50_SAVE_YAML, S50_SAVING, S50_SAVED, S50_SAVE_FAILED, S50_LOAD_FAILED,
@@ -61,6 +63,11 @@ const MAPLESS_FIELDS = [
   { name: 'max_linear_decel_mps2',         label: '減速度上限',           unit: 'm/s²', min: 0.2, max: 4,    step: 0.1 },
   { name: 'max_angular_accel_rad_s2',      label: '旋回加速度上限',       unit: 'rad/s²', min: 0.5, max: 8,  step: 0.1 },
 ]
+
+// SG-B9: 廃止予定ノードの項目のうち上限が registry と食い違うものは、
+// registry の値を超えて保存できないようにする（対象: mapless の v_max。
+// 上限値自体は scripts/gen_param_limits.py が registry.yaml から作る）。
+const REGISTRY_CAPS = { follow_planner_mapless: { v_max: PARAM_LIMITS.v_max } }
 
 // 一般タブの LiDAR 死角は読み取り専用（2026-10-02 Spec-webui.md §3.15）。
 // 変更は校正 S-40 の BLIND 経路だけにするため、編集欄も「YAML に保存」も置かない。
@@ -175,26 +182,48 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
 
   const reload = useCallback(() => {
     setLoading(true)
-    Promise.all([
+    // SG-B9: 起動していないノードの失敗で全体を落とさない。節ごとに成否を
+    // 扱い、取れたぶんは出す（本番の bringup では use_stub なしだと
+    // follow_planner_mapless が起動しておらず、その取得だけ失敗する）。
+    Promise.allSettled([
       getTunableParams('follow_planner_mapless', MAPLESS_FIELDS.map((f) => f.name)),
       getTunableParams('lidar_filter', ['blind_angle_ranges']),
-      // slam_toolbox は enable_route_slam のときだけ存在する。取れなくても
-      // パネル全体を止めない。
-      getTunableParams('slam_toolbox', SLAM_FIELDS.map((f) => f.name)).catch(() => ({})),
-    ]).then(([maplessVals, lidarVals, slamVals]) => {
-      setMapless(maplessVals)
-      setBlindRanges(lidarVals.blind_angle_ranges ?? [])
-      setSlam(slamVals ?? {})
-    }).catch(() => {
-      setStatus((s) => ({ ...s, load: S50_LOAD_FAILED }))
+      getTunableParams('slam_toolbox', SLAM_FIELDS.map((f) => f.name)),
+    ]).then(([maplessRes, lidarRes, slamRes]) => {
+      const loadErr = {}
+      if (maplessRes.status === 'fulfilled') {
+        setMapless(maplessRes.value)
+      } else {
+        setMapless({})
+        loadErr.follow_planner_mapless = S50_LOAD_FAILED
+      }
+      if (lidarRes.status === 'fulfilled') {
+        setBlindRanges(lidarRes.value.blind_angle_ranges ?? [])
+      } else {
+        // 読み取り専用表示は従来どおり「取得できませんでした」になる
+        //（s50-blind-current。節の注記は出さない）。
+        setBlindRanges(null)
+      }
+      if (slamRes.status === 'fulfilled') {
+        setSlam(slamRes.value ?? {})
+      } else {
+        setSlam({})
+        loadErr.slam_toolbox = S50_LOAD_FAILED
+      }
+      if (Object.keys(loadErr).length > 0) {
+        setStatus((s) => ({ ...s, ...loadErr }))
+      }
     }).finally(() => setLoading(false))
   }, [getTunableParams])
 
   useEffect(() => { reload() }, [reload])
 
   const applyMapless = (name, isInt) => (value) => {
-    setMapless((prev) => ({ ...prev, [name]: value }))
-    applyTunableParam('follow_planner_mapless', name, value, { isInt }).catch(() => {})
+    // SG-B9: registry の上限を超えて送らない（欄の max と二重の網。
+    // 保存はこの生値を YAML に書くので、ここで丸めた値が保存される値になる）。
+    const capped = clampTunableParam(REGISTRY_CAPS, 'follow_planner_mapless', name, value)
+    setMapless((prev) => ({ ...prev, [name]: capped }))
+    applyTunableParam('follow_planner_mapless', name, capped, { isInt }).catch(() => {})
   }
   const gotoCalib = () => {
     setCalibErr('')
@@ -292,11 +321,6 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
 
       {tab === 'general' && (
         <div className="tabpane on">
-          {status.load && (
-            <p className="note" data-testid="s50-load-error" style={{ gridColumn: '1 / -1' }}>
-              {status.load}
-            </p>
-          )}
           <Section
             title={S50_SEC_FOLLOW} saveKey="follow_planner_mapless"
             status={status.follow_planner_mapless} editable={editable} loading={loading}
@@ -305,7 +329,9 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
             {MAPLESS_FIELDS.map((f) => (
               <NumberField
                 key={f.name} label={f.label} unit={f.unit}
-                min={f.min} max={f.max} step={f.step}
+                min={f.min}
+                max={tunableFieldMax(REGISTRY_CAPS, 'follow_planner_mapless', f.name, f.max)}
+                step={f.step}
                 value={mapless[f.name]}
                 disabled={!editable || loading}
                 onCommit={applyMapless(f.name, f.isInt)}

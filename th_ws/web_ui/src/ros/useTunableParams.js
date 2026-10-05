@@ -25,7 +25,40 @@ const NO_BACKEND = () => Promise.reject(new Error('rosbridge not connected'))
 
 export function useTunableParams(ros) {
   return useMemo(() => {
+    // e2e 用の部分スタブ (SG-B9)。`window.__thTunableStubs = { [node]: { values } }`
+    // があるノードだけ解決し、無いノードは reject（本番でノードが起動していない
+    // ときの `get_parameters` 到達不能と同じ扱い）にする。スタブが無ければ
+    // 従来どおり全 reject（TEST_MODE）/ ros 未接続時の reject。
+    // apply/save の呼び出しは `window.__thTunableApplyCalls` /
+    // `window.__thTunableSaveCalls` に記録し、成功を返す。
+    const stubsOf = () => (
+      (typeof window !== 'undefined' && window.__thTunableStubs) || null
+    )
     if (TEST_MODE || !ros) {
+      const stubs = stubsOf()
+      if (stubs) {
+        return {
+          getTunableParams: (nodeName, paramNames) => {
+            const stub = stubs[nodeName]
+            if (stub && stub.values) {
+              const out = {}
+              paramNames.forEach((name) => { out[name] = stub.values[name] })
+              return Promise.resolve(out)
+            }
+            return Promise.reject(new Error(`no tunable stub for ${nodeName}`))
+          },
+          applyTunableParam: (nodeName, paramName, value) => {
+            window.__thTunableApplyCalls = window.__thTunableApplyCalls ?? []
+            window.__thTunableApplyCalls.push({ nodeName, paramName, value })
+            return Promise.resolve({ success: true, message: 'OK' })
+          },
+          saveTunableParams: (nodeName) => {
+            window.__thTunableSaveCalls = window.__thTunableSaveCalls ?? []
+            window.__thTunableSaveCalls.push({ nodeName })
+            return Promise.resolve({ success: true, message: 'OK' })
+          },
+        }
+      }
       return {
         getTunableParams: NO_BACKEND,
         applyTunableParam: NO_BACKEND,
