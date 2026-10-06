@@ -25,7 +25,12 @@ REASON_STALE = "stale"        # A: map→odom が凍結
 REASON_NODE_DOWN = "node_down"  # C: 推定ノード不在
 REASON_JUMP = "jump"          # B′: map→odom が比較周期に許容超で動いた
 REASON_RESTARTING = "restarting"  # O-e3: 計画的な再起動中（保留。フォルトではない）
-REASON_RESTART_TIMEOUT = "restart_timeout"  # O-e3: 再起動が上限を超過（本物の異常）
+REASON_RESTART_TIMEOUT = "restart_timeout"  # O-e3/W-01 P5: 再起動・探索の計画窓が
+# 上限を超過（本物の異常）。探索（global_localizing）の上限超過もこの理由で出す
+# （上限自体が「計画した窓」の意味で共通のため。msg の注記参照）
+REASON_GLOBAL_LOCALIZING = "global_localizing"  # W-01 P5: replay_runner が示す
+# 全域ローカライズの探索中（初期／widen／global。A・C・B′ を保留する。
+# フォルトではない。機体は LOCALIZE で止まっている間の上限付きの保留）
 REASON_INACTIVE = "inactive"  # WP-SAFE-05修正: 自律走行しないモードのため監視外
 # （safety_monitor には ok=true として届く。transform_age_sec／node_present は生値）
 # ゆっくり間違っていく用（O-e2）の予約。範囲外のため出さない。
@@ -166,8 +171,37 @@ def check_planned_restart(now_ms: int,
     return None
 
 
+def check_explore_hold(now_ms: int,
+                       exploring: Optional[bool],
+                       true_since_ms: Optional[int],
+                       explore_max_ms: int) -> Optional[Tuple[bool, str]]:
+    """W-01 P5: 全域ローカライズの探索中の保留判定（純関数。数値リテラルを持たない）。
+
+    ノードは /replay_runner/localizing の受信値と edge 時刻（自分の時計）を渡す。
+    戻り値 None ＝保留対象外（従来どおり A・C・B′ を評価する）。それ以外は
+    (ok, reason) をそのまま使う:
+    - 探索中（True 受信中）は (True, 'global_localizing')。A・C・B′ を評価しない
+    - True になってからの経過が explore_max_ms 超は (False, 'restart_timeout')
+      （探索が終わらない本物の異常。publisher が死んで True のまま止まって
+      いても、自分の時計で測るため上限で救える。理由名は再起動の上限超過と
+      共通＝「計画した窓」の超過の意味）
+    - False（一度も知らせが無い場合を含む）→ None（＝計画的でないものとして
+      従来どおり検知する。安全側）
+
+    上限には localization_restart_max_ms を流用する（options §6 が許す選択肢。
+    探索の実時間＝粗探索の上限 30 秒＋TF 待ち数秒に対し 90 秒は十分な余裕で、
+    新設の行を増やさない）。境界は check_planned_restart と同じ向き
+    （超えたら ng・ちょうどは保留継続）。
+    """
+    if exploring is True:
+        if true_since_ms is not None and now_ms - true_since_ms > explore_max_ms:
+            return (False, REASON_RESTART_TIMEOUT)
+        return (True, REASON_GLOBAL_LOCALIZING)
+    return None
+
+
 def detect_jump(prev: Optional[TransformSample], curr: TransformSample,
-                p: Params) -> JumpReport:
+                 p: Params) -> JumpReport:
     """B′: 比較周期のあいだの map→odom の動きが許容を超えたか（WP-SAFE-05B）。
 
     呼び出し側（ノード）が tick ごとに呼ぶ。tick 間隔が比較周期
