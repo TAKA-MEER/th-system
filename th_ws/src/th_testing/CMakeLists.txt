@@ -366,6 +366,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_maintenance_param_types
     test/test_maintenance_param_types.py
     TIMEOUT 120)
+  # SG-B21（1b-10）: consumers に挙がっていたのに読み手がいない行の除去と、
+  # 点検・校正の直書きタイムアウトの registry 化（値・型・生成物の 3 点一致と、
+  # 外した consumers の否定試験。ROS2 不要）
+  ament_add_pytest_test(test_sgb21_registry_wiring
+    test/test_sgb21_registry_wiring.py
+    TIMEOUT 120)
   # th_state/zones.py の LIMIT_STRICTNESS と registry.yaml の
   # speed_limit_strictness_rank が一致することの機械的な照合（N-15 レビュー。
   # th_state と th_params の両方を import してよい唯一のテストコード）
