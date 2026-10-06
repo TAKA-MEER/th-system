@@ -455,6 +455,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`/route/catalog`** | `RouteList` | **transient_local**, depth 1（サービス `/route/list` と同内容） |
 | `/map_session/status` | `MapSessionStatus` | transient_local, depth 1 |
 | **`/slam_control/estimator_restarting`** | **`std_msgs/Bool`** | **transient_local, depth 1, reliable（変化時＋起動時。発行者は `slam_control`。計画的な推定器の再起動中だけ `true`。O-e3）** |
+| **`/replay_runner/localizing`** | **`std_msgs/Bool`** | **transient_local, depth 1, reliable（変化時＋探索開始時。発行者は `replay_runner`。全域ローカライズの探索（初期／widen／global）の最中だけ `true`。`localization_health` が受けて A・C・B′ を保留し `reason=global_localizing` で出す。上限は `localization_restart_max_ms` を流用。W-01 P5）** |
 | `/onsite/pins` | `PinList` | transient_local, depth 1 |
 | `/onsite/wait_clear` | `WaitClearStatus` | reliable, depth 1, 5 Hz |
 | `/opcheck/status` | `CheckStatus` | reliable, depth 5 |
@@ -627,20 +628,12 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `linear_accel_mps2` | m/s2 | (b)。再生の加速度上限（W-03） |
 | `angular_accel_rps2` | rad/s2 | (b)。再生の旋回加速度上限（W-03） |
 | `localize_wait_s` | s | (b)。再生の自己位置推定待ち（W-03） |
-
-W-01 P2 の全域ローカライズ確度パラメータ（`replay_runner` が宣言し、既定値は
-`localize_core.LOCALIZE_DEFAULTS`。P0 の測定記録が根拠）。registry への登録は
-P5 で行うため、ここでは表に入れず予約名として挙げる（表に入れると
-`test_params_registry.py` が registry.yaml との一致を要求して落ちる）。
-P5 で registry に載せるときはこの 5 名を §7 の表へ移す。
-予約名: localize_match_low（widen の引き金になる s の下限）、
-localize_margin_low（警告になる m の下限。似た場所あり。READY へは進む）、
-localize_margin_min（不成立になる m の下限。LOCALIZE に留まる）、
-search_radius_m（load_route 直後の探索窓の半径。経路始点中心）、
-widen_radius_m（widen 再探索の窓半径。最良候補中心）、
-resume_max_dist_m（W-01 P4。確定姿勢からこの距離以内の前向き点が無ければ
-途中復帰しない。`replay_runner` が宣言し、既定値は
-`localize_core.LOCALIZE_DEFAULTS["resume_max_dist_m"]`）。
+| `localize_match_low` | ratio | (c)。全域ローカライズの確度 `s` の下限。未満で widen の引き金（`evt.localize_low`）。`replay_runner` が宣言し、既定値は `localize_core.LOCALIZE_DEFAULTS`（P0 の測定記録が根拠。W-01 P5 で registry 化。実スキャンでの詰めは P6 のため placeholder） |
+| `localize_margin_low` | ratio | (c)。全域ローカライズのマージン `m` の警告下限。未満で `low_margin`（似た場所あり。READY へは進む）。同上 |
+| `localize_margin_min` | ratio | (c)。全域ローカライズのマージン `m` の不成立下限。未満で LOCALIZE に留まる。同上 |
+| `search_radius_m` | m | (b)。`load_route` 直後の初期探索の窓半径（経路始点中心）。`m_sep_m`（2.0 m）より狭いと `m` が効かないため広く取る（W-01 P5 で registry 化。出発点。P6 で詰める） |
+| `widen_radius_m` | m | (b)。widen 再探索の窓半径（直前の最良候補中心）。初期探索より広い窓（W-01 P5 で registry 化。出発点。P6 で詰める） |
+| `resume_max_dist_m` | m | (c)。確定姿勢からこの距離以内の前向き点が無ければ途中復帰しない上限（LOCALIZE に留まる。W-01 P4。W-01 P5 で registry 化。環境依存で逆算できないため placeholder。P6 で実測） |
 | `factor` | — | (b)。地図間引きの縮小率（`map_downsampler`。W-03） |
 | `publish_period_ms` | ms | (b)。地図間引きの配信間隔（W-03） |
 | `occupied_threshold` | — | (b)。地図間引きの占有判定閾値（W-03） |
