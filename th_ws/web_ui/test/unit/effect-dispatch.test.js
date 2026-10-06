@@ -132,6 +132,12 @@ test('自動クローズ: guide より後に入ったモードに変わったら
   assert.equal(shouldGuideClose(guide, { mode: 'HOME_NAV', sinceMs: 200000, estopHw: false }), false)
 })
 
+test('自動クローズ: 同じ遷移で since が stamp+5ms でも閉じない・+1500ms のモード変化では閉じる', () => {
+  const guide = { key: 'home_arrived', modeAtOpen: 'HOME_NAV', stampMs: 100000, seenPressed: false }
+  assert.equal(shouldGuideClose(guide, { mode: 'AT_HOME', sinceMs: 100005, estopHw: false }), false)
+  assert.equal(shouldGuideClose(guide, { mode: 'IDLE', sinceMs: 101500, estopHw: false }), true)
+})
+
 test('自動クローズ: stamp／since が比較不能ならモードでは閉じない', () => {
   const noStamp = { key: 'home_arrived', modeAtOpen: 'HOME_NAV', stampMs: null, seenPressed: false }
   assert.equal(shouldGuideClose(noStamp, { mode: 'IDLE', sinceMs: 200000, estopHw: false }), false)

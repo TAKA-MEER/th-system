@@ -13,8 +13,8 @@ function guide(key, dest = 'WebUI', stampSec = null) {
   return msg
 }
 
-function since(sec) {
-  return { sec, nanosec: 0 }
+function since(sec, nanosec = 0) {
+  return { sec, nanosec }
 }
 
 test('guide(summon_clear_timeout) が W-3 の帯に文言で出る', async ({ page }) => {
@@ -73,7 +73,7 @@ test('home_arrived は同じ遷移の到着では閉じず次のモード変化�
     guide('home_arrived', 'WebUI', 100),
   )
   await expect(page.getByTestId('w3-guide')).toContainText('待機場所に到着')
-  await setTestState(page, { mode: 'AT_HOME', state: 'IDLE_H', since: since(100) })
+  await setTestState(page, { mode: 'AT_HOME', state: 'IDLE_H', since: since(100, 5000000) })
   await expect(page.getByTestId('w3-guide')).toBeVisible()
   await setTestState(page, { mode: 'IDLE', state: 'NONE', since: since(200) })
   await expect(page.getByTestId('w3-guide')).toHaveCount(0)

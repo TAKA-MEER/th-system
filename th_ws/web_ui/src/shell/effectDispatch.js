@@ -87,17 +87,23 @@ export function dispatchEffect(msg) {
 // /system/state を publish する (画面には guide → 新しい状態の順で届く)。
 // そのため単なる「モードが変わった」では、同じ遷移でモードが変わる guide
 // (home_arrived 等) が出た瞬間に閉じてしまう。guide より後に入ったモード
-// (since が guide の stamp より後) に変わったときだけ閉じる。同時刻
-// (同じ遷移の effect→state は通常同一 ms) は閉じない。
+// (since が guide の stamp より GUIDE_SAME_TRANSITION_GRACE_MS を超えて後)
+// に変わったときだけ閉じる。
+// 猶予の理由: 機体側は effect を publish した後に _publish_state() で since
+// を取る (effect ごとの logger.info を挟む) ため、同じ遷移でも since は
+// stamp より数百 µs〜数 ms 後になり、ms 境界をまたぐと出た瞬間に閉じる。
+// 次の遷移は人の操作・秒単位の時間経過で起きるので 1 秒あれば区別できる。
 // estop_held_at_boot は「押されているのを一度見てから離れた」ときだけ閉じる
 // (guide 到着時に estop_hw=false のまま＝状態が後から届く、では閉じない)。
 // stamp／since のどちらかが比較不能 (0・欠落) のときはモードでは閉じない
 // (閉じるボタンは常にある。消える方向の誤動作より残る方向を選ぶ)。
+export const GUIDE_SAME_TRANSITION_GRACE_MS = 1000
+
 export function shouldGuideClose(guide, { mode, sinceMs, estopHw }) {
   if (!guide) return true
   if (mode !== guide.modeAtOpen) {
     if (guide.stampMs == null || sinceMs == null) return false
-    if (sinceMs > guide.stampMs) return true
+    if (sinceMs > guide.stampMs + GUIDE_SAME_TRANSITION_GRACE_MS) return true
   }
   if (guide.key === 'estop_held_at_boot' && guide.seenPressed && !estopHw) return true
   return false
