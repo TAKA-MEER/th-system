@@ -598,6 +598,13 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `route_gap_timeout_ms` | ms | (b) |
 | `leash_stop_latency_ms` | ms | (c) |
 | `calib_interval_days` | 日 | (c) |
+| `calib_linear_distance_m` | m | (b)。校正 LINEAR の指定距離（SG-B21） |
+| `calib_rotation_deg` | deg | (b)。校正 ROTATION の指定角度（SG-B21） |
+| `calib_run_timeout_ms` | ms | (b)。校正の自律走行のタイムアウト（SG-B21） |
+| `calib_blind_verify_frames` | 個 | (b)。校正 BLIND 検証で集める `/scan` フレーム数（SG-B21） |
+| `calib_blind_verify_timeout_ms` | ms | (b)。校正 BLIND 検証で待つ上限（SG-B21） |
+| `calib_state_stale_ms` | ms | (b)。校正の `/system/state` 途絶判定。`state_stale_ms`（リミッタ用）とは別物（SG-B21） |
+| `calib_odom_stale_ms` | ms | (b)。校正の `/odom` 途絶判定（SG-B21） |
 | `sample_period_ms` | ms | (b)。教示の記録周期（`route_recorder`。W-03） |
 | `sample_min_dist_m` | m | (b)。教示の記録間隔（距離。W-03） |
 | `sample_min_yaw_rad` | rad | (b)。教示の記録間隔（角度。W-03） |
@@ -676,8 +683,12 @@ widen_radius_m（widen 再探索の窓半径。最良候補中心）。
 | `opcheck_spin_w_rad_s` | rad/s | (b) | OPCHECK の超信地旋回角速度 |
 | `opcheck_blind_tolerance_deg` | deg | (b) | OPCHECK の死角帯ズレ許容（設定 ↔ 1 フレーム推定） |
 | `opcheck_scan_coverage_gap_deg` | deg | (b) | OPCHECK の無効ビーム連続帯の許容幅 |
+| `opcheck_estop_stale_ms` | ms | (b) | OPCHECK の `/safety/estop_hw` 途絶判定（SG-B21） |
+| `opcheck_estop_release_timeout_ms` | ms | (b) | OPCHECK の ESTOP 項目の「押したまま」判定時間（SG-B21） |
+| `opcheck_motor_too_brief_ms` | ms | (b) | OPCHECK の MOTOR 項目の「短すぎて測れていない」判定時間（SG-B21） |
+| `opcheck_lidar_no_data_ms` | ms | (b) | OPCHECK の LIDAR 項目の「届いていない」判定時間（SG-B21） |
 
-始業点検の合否判定のしきい値は `registry.yaml` を正とし、ここでは名前・単位・分類だけを固定する（§7 冒頭の `DD-6` と同じ流儀。`opcheck_*` 5 件は OPCHECK 専用の新しい挙動値、`motor_*` と `imu_*` は既存の校正・冗長値の流れを汲む）。
+始業点検の合否判定のしきい値は `registry.yaml` を正とし、ここでは名前・単位・分類だけを固定する（§7 冒頭の `DD-6` と同じ流儀。`opcheck_*` 9 件は OPCHECK 専用の新しい挙動値、`motor_*` と `imu_*` は既存の校正・冗長値の流れを汲む）。
 
 ---
 

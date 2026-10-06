@@ -73,7 +73,7 @@ def generate_test_description():
         name='esp32_bridge_scale',
         parameters=[{
             'ws_host': '127.0.0.1',
-            'ws_port': _WS_PORT_GOOD,
+            'esp32_ws_port': _WS_PORT_GOOD,
             'wheel_radius_scale': _GOOD_SCALE,
             'wheel_radius_scale_max_dev': 0.10,
             # フィードバック死活監視のタイムアウト警告でログが汚れないよう緩める。
@@ -101,7 +101,7 @@ def generate_test_description():
         name='esp32_bridge_scale_bad',
         parameters=[{
             'ws_host': '127.0.0.1',
-            'ws_port': _WS_PORT_BAD,
+            'esp32_ws_port': _WS_PORT_BAD,
             'wheel_radius_scale': _BAD_SCALE,
             'wheel_radius_scale_max_dev': 0.10,
             'feedback_timeout_ms': 60000,
