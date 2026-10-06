@@ -36,8 +36,11 @@ _SPEC_ID_RE = re.compile(r"SM-3\.1\.[12]-\d+")
 # -calib / -prep-return / -prep / -running / -confirm / -localize / -blocked / -generic /
 # C-09d = 16。
 SPEC_FANOUT = {
+    "SM-3.1.1-03": 2, "SM-3.1.1-04": 2, "SM-3.1.1-05": 2,
     "SM-3.1.1-10": 2, "SM-3.1.1-11": 16, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
     "SM-3.1.2-043": 2, "SM-3.1.2-069": 3, "SM-3.1.2-094": 4,
+    # 1b-1 SG-A7: SM-3.1.1-04 は C-04 と T-PREP-16、-05 は C-05 と T-PREP-17 の 2 行。
+    # 1b-1 SG-A12: SM-3.1.1-03 は C-03（回復フォルト）と C-16（在席喪失）の 2 行。
     # WP-ONSITE-F3: PREP / SUMMON の「対象選択」は ui.select_target と
     # evt.auto_selected の 2 経路（FOLLOW の SM-3.1.2-004 と同じ形）。
     "SM-3.1.2-105": 2, "SM-3.1.2-106": 2,
@@ -177,8 +180,12 @@ _STATIC_GUARD_OVERRIDES = {
                               "prev_state": "BLOCKED"},
     "resume_run_available": {"fault_active": False},
     "resume_state_available": {"fault_active": False},
+    # 1b-1 SG-A12: presence_stops_mode は attributes 束縛の動的ガード
+    # （build_guards が state_core.is_driving で束縛）。静的な ctx 上書きでは
+    # 真にできないため、ここには載せない（下の表明で mode_entry_allowed と
+    # 同じく除外し、_scenario_for で走行中の三つ組を組み立てる）。
 }
-assert set(_STATIC_GUARD_OVERRIDES) | {"mode_entry_allowed"} == set(
+assert set(_STATIC_GUARD_OVERRIDES) | {"mode_entry_allowed", "presence_stops_mode"} == set(
     __import__("th_state.guards", fromlist=["GUARDS"]).GUARDS)
 
 
@@ -233,6 +240,14 @@ def _scenario_for(row):
     if guard == "mode_entry_allowed":
         targets = _MODE_ENTRY.get(mode, [])
         kwargs["arg"] = {"mode": targets[0]} if targets else {}
+    elif guard == "presence_stops_mode":
+        # 1b-1 SG-A12: C-16 は走行中の三つ組でないと発火しない。具体モードの
+        # run_state（PREP だけ RETURN）に入れて走行中にする。
+        run = (_ATTRIBUTES.get(mode) or {}).get("run_state")
+        if run is not None and mode != "PREP":
+            state = run
+        elif mode == "PREP":
+            state = "RETURN"
     elif guard is not None:
         override = _STATIC_GUARD_OVERRIDES.get(guard, {})
         for key, val in override.items():

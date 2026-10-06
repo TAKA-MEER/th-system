@@ -897,3 +897,75 @@ def test_prep_tracker_lost_never_pauses(state_core_bundle):
                       _mk_ctx(fault_active=True, fault_type="PERSON_TRACKER_LOST"))
         assert d.accepted is False, \
             f"PREP/{state} が人物追跡ロストで動いた: {d.to_mode}/{d.to_state}"
+
+
+# ============================================================
+# 1b-1（SG-A12）: 「走行中」の判定と sys.presence_lost。
+# ============================================================
+def test_is_driving_matches_brief_table(state_core_bundle):
+    """「走行中」の判定がブリーフの一覧と一致すること。全モード×全状態の表で縛る。
+    run_state は attributes.yaml から読むので、新しい走行状態が増えたら
+    自動で拾われる（PREP/MAPPING だけ除外。向き合わせ・帰還は明示）。"""
+    from th_state.state_core import MODE_STATES, is_driving
+    _, _, _, attrs = state_core_bundle
+    expected = set()
+    for mode, row in attrs.items():
+        run = (row or {}).get("run_state")
+        if run is not None and mode != "PREP":
+            expected.add((mode, run))
+    expected |= {("PANEL_NAV", "ALIGN"), ("SUMMON", "ALIGN"), ("PREP", "RETURN")}
+    for mode, states in MODE_STATES.items():
+        for state in states:
+            assert is_driving(mode, state, attrs) == ((mode, state) in expected), \
+                f"is_driving({mode}, {state}) が一覧と違う"
+    # PREP の run_state（MAPPING）は走行ではない。
+    assert is_driving("PREP", "MAPPING", attrs) is False
+    # MANUAL はスティックが走行操作そのものなので、jog 中は PAUSE でも走行中。
+    assert is_driving("MANUAL", "PAUSE", attrs, jog_active=False) is False
+    assert is_driving("MANUAL", "PAUSE", attrs, jog_active=True) is True
+    assert is_driving("MANUAL", "RUN", attrs, jog_active=False) is True
+    # 含めないもの（CALIB の S2/S3・READY・BLOCKED・WAIT_CLEAR・PAUSE 自身）。
+    for mode, state in [("CALIB", "S2"), ("CALIB", "S3"), ("REPLAY", "LOCALIZE"),
+                        ("REPLAY", "READY"), ("PANEL_NAV", "BLOCKED"),
+                        ("SUMMON", "WAIT_CLEAR"), ("FOLLOW", "PAUSE"),
+                        ("AT_PANEL", "IDLE_P"), ("IDLE", "NONE")]:
+        assert is_driving(mode, state, attrs) is False, \
+            f"is_driving({mode}, {state}) が真になった"
+
+
+@pytest.mark.rule("C-16")
+def test_presence_lost_pauses_only_when_driving(state_core_bundle):
+    """走行中の sys.presence_lost → PAUSE（W-1 を開く）。PREP/RETURN は PREP/PAUSE。
+    走行中でなければ弾く（速度上限 0 だけ。状態は変えない）。"""
+    core, _, _, _ = state_core_bundle
+    for mode, state, dst in [("FOLLOW", "RUN", "PAUSE"),
+                             ("MANUAL", "RUN", "PAUSE"),
+                             ("TEACH_FOLLOW", "REC", "PAUSE"),
+                             ("REPLAY", "RUN", "PAUSE"),
+                             ("LINE", "RUN", "PAUSE"),
+                             ("PANEL_NAV", "NAV", "PAUSE"),
+                             ("PANEL_NAV", "ALIGN", "PAUSE"),
+                             ("SUMMON", "ALIGN", "PAUSE"),
+                             ("PREP", "RETURN", "PAUSE")]:
+        d = core.step(mode, state, "sys.presence_lost", _mk_ctx())
+        assert d.accepted is True, f"{mode}/{state} で C-16 が通らない"
+        assert (d.to_mode, d.to_state) == (mode, dst), \
+            f"{mode}/{state} の行き先が違う: {d.to_mode}/{d.to_state}"
+        assert d.rule_id == "C-16"
+        assert any(e.name == "open_window" and e.args.get("id") == "W-1"
+                   for e in d.effects), f"{mode}/{state} で W-1 が開かない"
+    # ジョグ中の MANUAL/PAUSE も走行中として落とす。
+    d = core.step("MANUAL", "PAUSE", "sys.presence_lost",
+                  _mk_ctx(flags={"jog_active": True}))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("MANUAL", "PAUSE")
+    # 走行中でない状態では弾く。
+    for mode, state in [("IDLE", "NONE"), ("REPLAY", "READY"),
+                        ("REPLAY", "LOCALIZE"), ("AT_PANEL", "IDLE_P"),
+                        ("PANEL_NAV", "BLOCKED"), ("SUMMON", "WAIT_CLEAR"),
+                        ("CALIB", "S2"), ("PREP", "MAPPING"),
+                        ("FOLLOW", "PAUSE"), ("MANUAL", "PAUSE")]:
+        d = core.step(mode, state, "sys.presence_lost", _mk_ctx())
+        assert d.accepted is False, \
+            f"{mode}/{state} で C-16 が通ってしまった"
+        assert (d.to_mode, d.to_state) == (mode, state)
