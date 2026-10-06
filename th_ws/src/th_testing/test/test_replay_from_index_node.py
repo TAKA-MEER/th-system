@@ -28,6 +28,7 @@ test_replay_cross_track_node.py（RUN まわり）。
 import json
 import math
 import os
+import shutil
 import tempfile
 import time
 import unittest
@@ -52,6 +53,7 @@ from th_system_msgs.srv import OpenMapSession
 
 
 _ROUTE_ID = 'from-index-test'
+_HOOK_ID = 'from-index-hook'
 _SESSION_ID = 'test-sess'
 # a/d の真値（laser 姿勢。北向き区間のそば。向きは東寄り 0.3）
 _TRUTH = (2.5, 3.0, 0.3)
@@ -84,6 +86,44 @@ def _route_points():
     pts = [[0.5 + i * 0.5, 1.0, 0.0] for i in range(5)]
     pts += [[2.5, 1.5 + j * 0.5, math.pi / 2] for j in range(6)]
     return pts
+
+
+def _hook_points():
+    """コの字（往路が復路の「前方」に残る）。advance_index が 0 から自力で
+    追いつけない経路。
+
+      A 東  (0.5,3.5)→(2.5,3.5)  index 0..4
+      B 南  (2.5,3.0)→(2.5,1.0)  index 5..9
+      C 西  (2.0,1.0)→(1.0,1.0)  index 10..12
+      D 北  (1.0,1.5)→(1.0,3.0)  index 13..16
+
+    D の途中 (1.0,2.0)（index 14）で再開する。index 0 から追うと advance_index は
+    A の 2 点目で止まり、A の点 1 (1.0,3.5) が D 上のロボットの真正面にあるため
+    目標が index 1 になる。再開 index が使われていれば目標は 14 以降。
+    """
+    pts = [[0.5 + i * 0.5, 3.5, 0.0] for i in range(5)]
+    pts += [[2.5, 3.0 - j * 0.5, -math.pi / 2] for j in range(5)]
+    pts += [[2.0 - k * 0.5, 1.0, math.pi] for k in range(3)]
+    pts += [[1.0, 1.5 + m * 0.5, math.pi / 2] for m in range(4)]
+    return pts
+
+
+def _write_route(routes_dir: str, route_id: str, points, start_yaw: float) -> None:
+    base = os.path.join(routes_dir, route_id)
+    shutil.copyfile(os.path.join(routes_dir, _ROUTE_ID + '.pgm'), base + '.pgm')
+    with open(base + '.yaml', 'w', encoding='utf-8') as f:
+        f.write('image: %s.pgm\nresolution: 0.050000\n'
+                'origin: [0.000000, 0.000000, 0.000000]\n'
+                'negate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.196\n'
+                % route_id)
+    route = {
+        'id': route_id, 'name': 'コの字', 'generation': 1,
+        'length_m': 0.5 * (len(points) - 1), 'point_count': len(points),
+        'start_yaw': start_yaw, 'recorded_at_ms': 0, 'frame_id': 'map',
+        'map_session_id': _SESSION_ID, 'points': points,
+    }
+    with open(base + '.json', 'w', encoding='utf-8') as f:
+        json.dump(route, f)
 
 
 def _write_fixtures(routes_dir: str) -> None:
@@ -139,6 +179,7 @@ def _raycast(x, y, yaw, max_range=40.0):
 
 _ROUTES_DIR = tempfile.mkdtemp(prefix='from-index-routes-')
 _write_fixtures(_ROUTES_DIR)
+_write_route(_ROUTES_DIR, _HOOK_ID, _hook_points(), 0.0)
 
 
 @pytest.mark.launch_test
@@ -274,10 +315,10 @@ class TestReplayFromIndexNode(unittest.TestCase):
         response.message = 'test stub ok'
         return response
 
-    def _send_load_route(self, reverse=False):
+    def _send_load_route(self, reverse=False, route_id=_ROUTE_ID):
         msg = StateEffect()
         msg.name = 'load_route'
-        msg.args_json = json.dumps({'route_id': _ROUTE_ID, 'reverse': reverse})
+        msg.args_json = json.dumps({'route_id': route_id, 'reverse': reverse})
         self.pub_effect.publish(msg)
 
     def _send_effect(self, name):
@@ -415,6 +456,41 @@ class TestReplayFromIndexNode(unittest.TestCase):
         assert len(neg) >= len(rots) // 2, (
             f'再開点の向き（南）へ回っていない（w<0 が {len(neg)}/{len(rots)} 件）: '
             f'{[round(c.angular.z, 3) for c in rots[:8]]}')
+
+    def test_e_hook_route_uses_resume_index(self):
+        """コの字の復路（D）の途中で確定 → 追従の目標が再開 index 以降になる。
+
+        `_from_index = resume` を外す（index 0 から advance_index に任せる）変異
+        では、目標が往路 A の index 1（D 上のロボットの真正面）に張り付き、
+        ここが赤くなる。直線的な L 字経路の a は、advance_index が 0 から
+        追いつけてしまうためこの変異を捕まえられない。
+        """
+        truth = (1.0, 2.0, 0.3)
+        self._scan_pose = truth
+        self._tf_pose = truth
+        self._spin(0.3)
+        self._send_load_route(reverse=False, route_id=_HOOK_ID)
+        self._wait_event(
+            lambda e: e.event == 'evt.localize_done', timeout=60.0,
+            what='evt.localize_done（コの字）')
+        self._send_effect('rotate_to_start_yaw')
+        self._fsm_state = 'RUN'
+        # 再開点（D・北向き）の向きへ回る。
+        self._cmds.clear()
+        self._spin(1.0)
+        assert self._cmds and any(c.angular.z > 0.01 for c in self._cmds), (
+            '再開点の向き（北）へ回っていない')
+        # 回り切ったことにして、追従の目標 index を見る。
+        self._tf_pose = (1.0, 2.0, math.pi / 2)
+        self._spin(1.0)
+        self._send_effect('resume_path')
+        self._statuses.clear()
+        self._spin(1.5)
+        tgts = [s.target_index for s in self._statuses if s.target_index >= 0]
+        assert tgts, '追従中の target_index が /route/status に出ない'
+        assert min(tgts) >= 14, (
+            f'再開 index（14）が使われていない。目標が手前（往路側）にある: '
+            f'target_index={sorted(set(tgts))}')
 
 
 if __name__ == '__main__':
