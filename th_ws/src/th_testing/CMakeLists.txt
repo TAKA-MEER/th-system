@@ -463,6 +463,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_replay_localize_node
     test/test_replay_localize_node.py
     TIMEOUT 180)
+  # 経路の途中からの復帰（W-01 P4）の Docker launch テスト。
+  # replay_runner を起動し、確定姿勢→再開 index→向き合わせ→RUN／遠すぎたら
+  # 留まる・逆再生でも 1 本を見る。rclpy 要＝ホスト除外。TIMEOUT 300）
+  ament_add_pytest_test(test_replay_from_index_node
+    test/test_replay_from_index_node.py
+    TIMEOUT 300)
   # 開発モードの項目（Spec-safety.md §10。2026-09-23 改定）の Docker launch テスト。
   # LiDAR 無しで scan_stop（MANUAL だけ v_reverse 以下で通す・AUTO は止める・
   # effective だけを読む・鮮度切れで戻る）と lidar_fault（LIDAR_LOST の抑止と再発）。
