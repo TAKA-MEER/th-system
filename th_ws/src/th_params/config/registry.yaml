@@ -372,9 +372,11 @@
   class: b
   status: given
   value: 1.0
-  consumers: [pin_registrar, params_audit]
+  consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.1"
-  note: "推奨 1.0 m（params.md §6.1）"
+  note: "推奨 1.0 m（params.md §6.1）。SG-B21 で pin_registrar を consumers から外した:
+    ノードは two_point_min_spacing_m（下限）しか使わず、この推奨値の読み手がいない
+    （decision-1・2026-10-06）"
 
 - name: two_point_min_spacing_m
   unit: m
@@ -441,18 +443,23 @@
   class: b
   status: given
   value: 0.1
-  consumers: [venue_navigator, params_audit]
+  consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.1"
-  note: "Nav2 の現行設定値。暫定値（実際の nav2_params.yaml との突き合わせ未確認）"
+  note: "Nav2 の現行設定値。暫定値（実際の nav2_params.yaml との突き合わせ未確認）。
+    SG-B21 で venue_navigator を consumers から外した: ノード内に使用箇所が無く
+    （到着判定は arrival_xy_tol_m。別ブランチが作業中）、読み手がいない
+    （decision-1・2026-10-06。registry 側だけの修正）"
 
 - name: nav_tolerance_deg
   unit: deg
   class: b
   status: given
   value: 5.0
-  consumers: [venue_navigator, params_audit]
+  consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.1"
-  note: "Nav2 の現行設定値。暫定値（実際の nav2_params.yaml との突き合わせ未確認）"
+  note: "Nav2 の現行設定値。暫定値（実際の nav2_params.yaml との突き合わせ未確認）。
+    SG-B21 で venue_navigator を consumers から外した（nav_tolerance_m と同じ理由。
+    decision-1・2026-10-06。registry 側だけの修正）"
 
 - name: person_position_sigma_m
   unit: m
@@ -547,7 +554,8 @@
   source: "th_ws/data/meas04_after.csv（2026-08-21 11:41〜12:03 の 22 分間、/safety/link_quality を `ros2 topic echo --csv` で記録。列は header.stamp.sec, nanosec, frame_id, link, p50_ms, p99_ms, max_ms, window_sec(=30)）。30 秒窓 p99 の最悪窓を軸ごとに取り、実測 160.2ms(esp32) / 153.2ms(lidar) を切り上げて 161 / 154 とした（切り上げる方が p99 が大きくなり誤フォルトに対して安全側）。ui 軸は ui_gap_p99_ms へ切り出し、ここからは除外した"
   consumers: [safety_monitor]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §7 / DetailedDesign-wp0.md WP-PARAM-01 §5"
-  note: "esp32／lidar のみ（ui は ui_gap_p99_ms へ分離）。esp32 は 22 分間に 600ms 超の断が3回残っている（最悪 4105.6ms）。p99 は健全だが裾は健全でない"
+  note: "esp32／lidar のみ（ui は ui_gap_p99_ms へ分離）。esp32 は 22 分間に 600ms 超の断が3回残っている（最悪 4105.6ms）。p99 は健全だが裾は健全でない。
+    ノードはこの生値を直接読まない。導出した lidar/esp32_timeout_ms 経由の間接消費（SG-B21・decision-1）"
 
 - name: ui_gap_p99_ms
   unit: ms
@@ -665,10 +673,11 @@
   class: b
   status: given
   value: 2.0
-  consumers: [pin_registrar, person_tracker_bridge]
+  consumers: [person_tracker_bridge]
   spec_ref: "DetailedDesign-names.md §7.3（E-8）"
   note: "『数秒』の暫定値。person_tracker_bridge.py の既定値と一致（変更なし）。
-    pin_registrar は現状この名を宣言していない（残置。未使用キーは起動を壊さない）"
+    SG-B21 で pin_registrar を consumers から外した: ノード内に使用箇所が無い
+    （decision-1・2026-10-06）"
 
 - name: clear_hold_ms
   unit: ms
@@ -1068,9 +1077,12 @@
   class: b
   status: given
   value: 1.5
-  consumers: [safety_monitor]
+  consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.3（hardware §2.1）"
-  note: "カメラ接続後の /scan p99 悪化の許容比。暫定値"
+  note: "カメラ接続後の /scan p99 悪化の許容比。暫定値。SG-B21 で safety_monitor を
+    consumers から外した: 判定に使う設計が無く（safety_monitor のリンク品質系は
+    計測値の publish に留まる）、読ませるとダミー宣言になる。使う設計ができたら
+    戻す（decision-1・2026-10-06）"
 
 - name: ui_active_window_s
   unit: s
