@@ -17,17 +17,18 @@ bool map_update           # 地図の書き足しが ON
 
 string[] unsaved          # 未保存の種別 ("venue_map" / "route" / "calib" / "map_patch")
 
-string pause_reason        # PAUSE に入った理由 ("" / "fault" / "jog" / "presence_lost")。
-                          # PAUSE を抜けたら ""。端末が離れていた間に PAUSE に落ちても、
-                          # 戻ってきた端末は一回きりの effect を受け取れないため、
-                          # 状態から再開確認（W-1）を出す（Spec-safety.md §6.2.2）
-
 builtin_interfaces/Time since   # 現在の mode/state に入った時刻
 string last_event               # 直近に処理した evt.*
 string last_reject_reason       # 直近に拒否された遷移の理由キー ("" なら無し)
 
 string speed_limit        # 速度上限。registry のパラメータ名 or "stop"（数値ではない）
-                           # 画面由来（names.md §4.1 derive_limits）とモード由来
-                           # （attributes.yaml）を combine_speed_limits() で合成した
-                           # 結果。obstacle_limiter はこれに v_reverse と障害物
-                           # クランプを重ねる（N-13 で新設・N-15 で合成対象を拡張）
+                            # 画面由来（names.md §4.1 derive_limits）とモード由来
+                            # （attributes.yaml）を combine_speed_limits() で合成した
+                            # 結果。obstacle_limiter はこれに v_reverse と障害物
+                            # クランプを重ねる（N-13 で新設・N-15 で合成対象を拡張）
+
+string pause_reason        # PAUSE に入った理由 ("" / "fault" / "jog" / "presence_lost")。
+                            # PAUSE を抜けたら ""。端末が離れていた間に PAUSE に落ちても、
+                            # 戻ってきた端末は一回きりの effect を受け取れないため、
+                            # 状態から再開確認（W-1）を出す（Spec-safety.md §6.2.2）。
+                            # 末尾に追加（既存フィールドの順序は変えない）
