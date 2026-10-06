@@ -29,6 +29,17 @@ function parseArgs(argsJson) {
   }
 }
 
+// ROS の時刻 (header.stamp / SystemState.since) を ms にする。rosbridge は
+// secs/nsecs、rcl の JSON は sec/nanosec で来るので両方読む。0・欠落は
+// null (比較不能。後述のフォールバック)。
+export function stampToMs(stamp) {
+  if (!stamp || typeof stamp !== 'object') return null
+  const sec = Number(stamp.sec ?? stamp.secs ?? NaN)
+  const nsec = Number(stamp.nanosec ?? stamp.nsecs ?? 0)
+  if (!Number.isFinite(sec) || sec <= 0) return null
+  return sec * 1000 + Math.floor(nsec / 1e6)
+}
+
 // effect メッセージ -> { kind: 'guide', key } | { kind: 'ignore' }.
 // dest が WebUI を含まないものは見ない (例: restart_control_stack は
 // connectivity_checker 宛)。dest が "WebUI+jog_gate" のように + 結合の
@@ -40,7 +51,9 @@ export function dispatchEffect(msg) {
   switch (name) {
     case 'guide': {
       const key = parseArgs(msg?.args_json).key
-      if (typeof key === 'string' && key && guideLabel(key)) return { kind: 'guide', key }
+      if (typeof key === 'string' && key && guideLabel(key)) {
+        return { kind: 'guide', key, stampMs: stampToMs(msg?.header?.stamp) }
+      }
       warnOnce(`guide:${String(key)}`)
       return { kind: 'ignore' }
     }
@@ -69,11 +82,23 @@ export function dispatchEffect(msg) {
 }
 
 // W-3 の自動クローズ条件 (Spec-webui.md §4「条件解消で自動クローズ」)。
-// 少なくともモードが変わったら閉じる。estop_held_at_boot は物理非常停止が
-// 離されたら閉じる。
-export function shouldGuideClose(guide, { mode, estopHw }) {
+//
+// state_manager は 1 回の遷移で effect を先に publish し、そのあと
+// /system/state を publish する (画面には guide → 新しい状態の順で届く)。
+// そのため単なる「モードが変わった」では、同じ遷移でモードが変わる guide
+// (home_arrived 等) が出た瞬間に閉じてしまう。guide より後に入ったモード
+// (since が guide の stamp より後) に変わったときだけ閉じる。同時刻
+// (同じ遷移の effect→state は通常同一 ms) は閉じない。
+// estop_held_at_boot は「押されているのを一度見てから離れた」ときだけ閉じる
+// (guide 到着時に estop_hw=false のまま＝状態が後から届く、では閉じない)。
+// stamp／since のどちらかが比較不能 (0・欠落) のときはモードでは閉じない
+// (閉じるボタンは常にある。消える方向の誤動作より残る方向を選ぶ)。
+export function shouldGuideClose(guide, { mode, sinceMs, estopHw }) {
   if (!guide) return true
-  if (mode !== guide.modeAtOpen) return true
-  if (guide.key === 'estop_held_at_boot' && !estopHw) return true
+  if (mode !== guide.modeAtOpen) {
+    if (guide.stampMs == null || sinceMs == null) return false
+    if (sinceMs > guide.stampMs) return true
+  }
+  if (guide.key === 'estop_held_at_boot' && guide.seenPressed && !estopHw) return true
   return false
 }
