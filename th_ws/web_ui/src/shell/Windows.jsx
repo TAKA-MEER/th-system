@@ -22,11 +22,10 @@
 // dialogs share this file's z-order guarantees without Windows.jsx needing
 // to know anything about their content.
 //
-// W-3 (guide banner), W-5 (route-blocked) and W-6 (manual panel) still need
-// screen-supplied content (a guide key, a jog target) no screen provides
-// yet. Their DOM mount points are kept here (matching theme.css's
-// #winGuide / .win.blocked / #jogWin) so screens can drive them later
-// without touching the shell again, but nothing opens them yet.
+// W-3 (guide banner) is driven by /system/effect via shell/useGuideBanner.js
+// (1b-6, SG-B2) and rendered here into #winGuide. W-5 (route-blocked) and
+// W-6 (manual panel) still need screen-supplied content (a jog target); W-6's
+// panel body lives below.
 //
 // All of #overlay / #winGuide / #jogWin are direct children of #app; CSS
 // `order` (theme.css) puts them in the right stacking position regardless
@@ -39,6 +38,7 @@ import { reasonLabel } from '../i18n/reasons.js'
 import { modeLabel } from '../i18n/modes.js'
 import { W6_TITLE, W6_CLOSE, W6_MODE } from '../i18n/screens.js'
 import JogConsole from '../parts/JogConsole.jsx'
+import GuideBanner from './GuideBanner.jsx'
 import {
   WIN_HIDE_LABEL, WIN_RESUME_ACK, WIN_RESUME_YES, WIN_RESUME_NO,
   WIN_ESTOP_RESUME_PREV, WIN_ESTOP_TO_MENU,
@@ -68,7 +68,7 @@ const ESTOP_DISABLED_IN_CARRY = 'estop_disabled_in_carry'
 export default function Windows({
   ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, attributes,
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
-  lastRejectReason, jogOpen, onJogClose,
+  lastRejectReason, jogOpen, onJogClose, guideKey, onGuideClose,
 }) {
   const faultActive = !!fault?.active
   // Mutually exclusive: mode can't be both 'ESTOP' and something else at once.
@@ -224,8 +224,11 @@ export default function Windows({
         {/* W-5 (route-blocked): opened by screens (WP-UI-03+) */}
       </div>
 
-      {/* W-3 guide banner: mount point only, no screen supplies guide{key} yet */}
-      <div id="winGuide" />
+      {/* W-3 guide banner (1b-6, SG-B2): shell/useGuideBanner.js が立てた
+          guide だけ出す。中身は GuideBanner.jsx。 */}
+      <div id="winGuide" className={guideKey ? 'show' : ''}>
+        {guideKey && <GuideBanner guideKey={guideKey} onClose={onGuideClose} />}
+      </div>
 
       {/* W-6 manual-operation panel (DetailedDesign-webui.md §6/§6.3).
           A floating card, `position:absolute` in theme.css, so opening it

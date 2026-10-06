@@ -119,6 +119,24 @@ export async function gotoScreenWithRouteRobot(page, screen, state, { routes, pr
   await page.goto('/')
 }
 
+// 1b-6 (SG-B2): /system/effect を種にして画面を開く。useSystemEffect.js は
+// window.__thTestSystemEffect を初回値にし、window.__thSetTestSystemEffect で
+// 表示を更新する (useWaitClearStatus.js と同じ流儀)。ソケットは張らないが、
+// 帯の表示は本番の購読 hook (useSystemEffect -> useGuideBanner -> GuideBanner)
+// を通る (部品に直接 props を渡さない)。
+export async function gotoScreenWithEffect(page, screen, state, effect) {
+  await page.addInitScript(({ s, scr, e }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    if (e) window.__thTestSystemEffect = e
+  }, { s: state, scr: screen, e: effect })
+  await page.goto('/')
+}
+
+export async function setTestEffect(page, value) {
+  await page.evaluate((v) => window.__thSetTestSystemEffect(v), value)
+}
+
 // Stubs a std_srvs/Trigger-shaped service call (ros/useStdTrigger.js's test
 // hook) for /shutdown/prepare / /shutdown/execute. Must be called via
 // addInitScript (before the page's first render) since S01Main reads

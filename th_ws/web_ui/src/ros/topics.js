@@ -64,6 +64,9 @@ export const TOPICS = {
   // WP-UI-08 / WP-MAINT-03: S-40 校正。calib_runner が発行する進行状況（CalibStatus。
   // reliable depth5。detail は JSON 文字列）。names.json の endpoints にある。
   CALIB_STATUS: '/calib/status',
+  // 1b-6 (SG-B2): 機体側から WebUI 宛ての案内 (StateEffect。state_manager が
+  // publish。names.json の endpoints にある)。
+  SYSTEM_EFFECT: '/system/effect',
 }
 
 export const SERVICES = {
@@ -142,6 +145,8 @@ export const MSG_TYPES = {
   WHEEL_FEEDBACK: 'th_system_msgs/WheelFeedback',
   // WP-MAINT-03: S-40。校正の進行状況。
   CALIB_STATUS: 'th_system_msgs/CalibStatus',
+  // 1b-6 (SG-B2): /system/effect の型 (names.json の msgs にある)。
+  STATE_EFFECT: 'th_system_msgs/StateEffect',
 }
 
 export const SRV_TYPES = {
