@@ -461,6 +461,53 @@ def test_health_node_wires_mode_gate():
 
 
 # ============================================================================
+# W-01 P5: 探索中の保留の配線（localization_health.py。本文書の試験だけでは
+# 「通るだけ」になるため、純粋関数と実装の接続点を縛る）
+# ============================================================================
+
+def test_health_msg_defines_global_localizing():
+    src = _read(HEALTH_MSG)
+    assert "global_localizing" in src, (
+        "LocalizationHealth.msg に global_localizing が無い（W-01 P5）")
+
+
+def test_health_node_wires_explore_hold():
+    """ノードが探索中通知を購読し、保留判定を呼ぶこと。
+    購読削除・呼び出し削除・edge 記録削除で赤くなる。"""
+    src = _read(HEALTH_NODE_PY)
+    assert "'/replay_runner/localizing'" in src, (
+        "探索中通知の購読が無い")
+    assert "TRANSIENT_LOCAL" in src, (
+        "購読 QoS が発行側（TRANSIENT_LOCAL）に合っていない")
+    assert "explore = check_explore_hold(" in src, (
+        "探索中の保留判定の呼び出しが無い")
+    assert "self._explore_true_ms" in src, (
+        "探索の True edge 時刻の記録が無い（自分の時計で測っていない）")
+    # 保留中は B′ の前回値を捨てる（探索をまたいだ比較をしない）。
+    on_timer = src.split("def _on_timer")[1].split("def _publish")[0]
+    assert "check_explore_hold(" in on_timer
+    assert "self._prev_sample = None" in on_timer
+    # 上限は localization_restart_max_ms を流用する（新設しない。options §6）。
+    assert "localization_restart_max_ms" in on_timer
+    # 上限超過の ng は保留より優先する（再起動・探索のどちらも同じ扱い）。
+    assert "not restart[0]" in on_timer and "not explore[0]" in on_timer, (
+        "上限超過の ng を保留より優先していない")
+
+
+def test_replay_runner_publishes_localizing_flag():
+    """replay_runner が探索中フラグを出して下ろすこと。
+    publish 削除・世代ガードの欠落で赤くなる（振る舞いは Docker で見る）。"""
+    path = os.path.join(_REPO_SRC, "th_planning", "scripts", "replay_runner.py")
+    src = _read(path)
+    assert "'/replay_runner/localizing'" in src, (
+        "探索中フラグの publisher が無い")
+    assert "self._set_localizing(True)" in src, (
+        "探索開始でフラグを立てていない")
+    assert "self._set_localizing(False)" in src, (
+        "探索終了・破棄でフラグを下ろしていない")
+
+
+# ============================================================================
 # O-e3: launch 試験の起動定義（ホストで見られる範囲）
 # ============================================================================
 
