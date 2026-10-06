@@ -11,6 +11,7 @@ import { TOPICS, MSG_TYPES } from '../ros/topics.js'
 import attributes from '../generated/attributes.json'
 import Header from './Header.jsx'
 import Windows from './Windows.jsx'
+import { useGuideBanner } from './useGuideBanner.js'
 import { isW1Active, stopReason } from './limits.js'
 import { ConfirmWindowContext } from './confirmWindow.js'
 import { JogPanelContext } from './jogPanel.js'
@@ -93,6 +94,9 @@ function AppShellInner({ screenName, screenId, children }) {
   const stateName = state?.state ?? null
   const estopUi = !!state?.estop_ui
   const estopHw = !!state?.estop_hw
+
+  // 1b-6 (SG-B2): /system/effect の guide を W-3 の帯に出す。
+  const { guideKey, closeGuide } = useGuideBanner(ros, mode, estopHw)
 
   // W-6 bottom edge floats above the estop release bar: --dock-h feeds
   // #jogWin's `bottom: calc(var(--dock-h, 0px) + 10px)` (theme.css, ported
@@ -245,6 +249,8 @@ function AppShellInner({ screenName, screenId, children }) {
         lastRejectReason={lastRejectReason}
         jogOpen={jogOpen}
         onJogClose={() => setJogOpen(false)}
+        guideKey={guideKey}
+        onGuideClose={closeGuide}
       />
       <EstopReleaseBar show={uiEngaged || mode === 'ESTOP'} onRelease={handleRelease} />
     </div>
