@@ -69,7 +69,7 @@ from th_planning.route_record_core import (
 from th_planning.route_replay_core import (
     ReplayParams, advance_index, align_path_to_current, cross_track_error,
     pure_pursuit, ramp_toward, reverse_points, rotate_toward,
-    scale_replay_params,
+    scale_replay_params, select_resume_index,
 )
 from th_planning.localize_core import (
     LOCALIZE_DEFAULTS, judge_localize, load_pgm_map, search as localize_search,
@@ -178,6 +178,11 @@ class ReplayRunner(Node):
             'localize_margin_low', float(LOCALIZE_DEFAULTS['localize_margin_low']))
         self.declare_parameter(
             'localize_margin_min', float(LOCALIZE_DEFAULTS['localize_margin_min']))
+        # W-01 P4: 確定姿勢からこの距離以内の前向き点が無ければ途中復帰しない
+        # （LOCALIZE に留まる）。既定値は LOCALIZE_DEFAULTS（P5 で registry へ）。
+        # DetailedDesign-names.md §7 に予約名として記載。
+        self.declare_parameter(
+            'resume_max_dist_m', float(LOCALIZE_DEFAULTS['resume_max_dist_m']))
         # 死角（laser 基準・度・[start, end] の平坦配列）。lidar_filter と同じ
         # 取り方（registry.yaml が出所・空は死角なし）。空配列 override を
         # 受けられるよう dynamic_typing=True（CLAUDE.md「環境の癖」参照）。
@@ -201,6 +206,8 @@ class ReplayRunner(Node):
             self.get_parameter('localize_margin_low').value)
         self._localize_margin_min = float(
             self.get_parameter('localize_margin_min').value)
+        self._resume_max_dist_m = float(
+            self.get_parameter('resume_max_dist_m').value)
         self._odom_topic = self.get_parameter('odom_topic').value
         self._odom_filtered_topic = self.get_parameter('odom_filtered_topic').value
         self._odom_stale_ms = int(self.get_parameter('odom_stale_ms').value)
@@ -764,6 +771,28 @@ class ReplayRunner(Node):
                 self._localize_score = s
                 self._localize_margin = m
                 return
+            # W-01 P4: 確定姿勢に最も近い前向き点を再開 index とし、その点の
+            # yaw へ回す（_control_timer の rotate_toward が _start_yaw を読む）。
+            # 遠すぎたら failed で LOCALIZE に留まる（index 0 から走り出すと
+            # 離れた始点へ向かうため）。self._points は反転済みなら反転後の
+            # 点列なので、逆再生も同じ規則でよい（W-19 と直交）。
+            resume = select_resume_index(
+                self._points, base_pose, self._resume_max_dist_m)
+            if resume < 0:
+                self._localize_quality = 'failed'
+                self._localize_score = s
+                self._localize_margin = m
+                self.get_logger().warn(
+                    f'localize 探索: 確定したが経路から遠いため LOCALIZE に留まる '
+                    f'(base=({base_pose[0]:.2f}, {base_pose[1]:.2f}) '
+                    f'max_dist={self._resume_max_dist_m:.1f}m)')
+                return
+            self._from_index = resume
+            if self._points:
+                self._start_yaw = float(self._points[resume][2])
+            self.get_logger().info(
+                f'localize 探索: 再開 index={resume} '
+                f'(yaw={self._start_yaw:.2f} へ回してから追従)')
             self._localize_quality = quality
             self._localize_score = s
             self._localize_margin = m
