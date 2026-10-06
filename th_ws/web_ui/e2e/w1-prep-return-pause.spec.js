@@ -5,7 +5,7 @@
 // 「いいえ」（ui.resume_no→MAPPING）だけ。PREP の「走行」は inert なので、
 // W-1 が出ないと詰む。pause_reason は jog や空になる。
 import { test, expect } from '@playwright/test'
-import { gotoWithState, setTestState } from './helpers.js'
+import { gotoScreen, gotoWithState, setTestState } from './helpers.js'
 
 const triggers = async (page) =>
   (await page.evaluate(() => window.__thTriggerCalls ?? [])).map((c) => c.trigger)
@@ -34,4 +34,25 @@ test('pause_reason が空の PREP/PAUSE（非常停止から戻った状態）�
   await expect(win.getByRole('button', { name: 'はい' })).toBeVisible()
   await win.getByRole('button', { name: 'いいえ' }).click()
   expect(await triggers(page)).toContain('ui.resume_no')
+})
+
+test('PREP/RETURN で停止ボタンが押せて ui.stop を送る（SM-3.1.2-050a の入口）', async ({ page }) => {
+  await gotoScreen(page, 'S20', { mode: 'PREP', state: 'RETURN' })
+  await page.locator('#s20').waitFor()
+  const stop = page.locator('#s20 .op-stop')
+  await expect(stop).toBeVisible()
+  await expect(stop).toBeEnabled()
+  await stop.click()
+  expect(await triggers(page)).toContain('ui.stop')
+})
+
+test('停止起点の PREP/PAUSE（理由なし）でも W-1 が出て、はいで ui.resume_yes', async ({ page }) => {
+  // T-PREP-18 は effect を持たないので pause_reason は空のまま。非常停止から
+  // 戻った場合と同じ表示になり、「はい」で RETURN（経路の残りから帰還）。
+  await gotoWithState(page, { mode: 'PREP', state: 'PAUSE', jog_active: false, pause_reason: '' })
+  const win = page.locator('.win.fault.show')
+  await expect(win).toBeVisible()
+  await expect(win).toContainText('自動帰還を一時停止しています')
+  await win.getByRole('button', { name: 'はい' }).click()
+  expect(await triggers(page)).toContain('ui.resume_yes')
 })
