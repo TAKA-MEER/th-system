@@ -106,6 +106,11 @@ export const SERVICES = {
   CALIB_SUBMIT: '/calib/submit',
   CALIB_START: '/calib/start',
   CALIB_ROLLBACK: '/calib/rollback',
+  // SG-B8: S-50 の速度プリセット区画。/params/get で効き値と保存済み上書きを
+  // 読み、/params/set で出どころ付きで保存する（次の起動から効く）。
+  // どちらも names.json の endpoints にあるので辞書ゲートを通る。
+  PARAMS_GET: '/params/get',
+  PARAMS_SET: '/params/set',
 }
 
 export const MSG_TYPES = {
@@ -174,4 +179,7 @@ export const SRV_TYPES = {
   CALIB_SUBMIT: 'th_system_msgs/SubmitCalib',
   CALIB_START: 'th_system_msgs/StartCalib',
   CALIB_ROLLBACK: 'th_system_msgs/RollbackCalib',
+  // SG-B8: /params/get（GetParams）・/params/set（SetParams）。
+  PARAMS_GET: 'th_system_msgs/GetParams',
+  PARAMS_SET: 'th_system_msgs/SetParams',
 }
