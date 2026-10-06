@@ -292,6 +292,102 @@ def resolve_registry(rows: list[dict], clamp_warnings: list[str] | None = None,
 
 
 # ---------------------------------------------------------------------------
+# 起動時の overrides 重ね（SG-B8。Spec-params.md §6「次の起動から効く」）
+# ---------------------------------------------------------------------------
+#
+# `/params/set` が書いた `overrides.yaml` を、起動時の設定生成で registry の
+# 既定値に重ねる。走行中の値は変えない（次の起動から効く）。
+# 通らない上書きは**その行だけ適用せず**、理由を `rejected` に残して
+# 既定値のまま起動する（2026-10-07 ユーザー決定: 既定値で起動＋警告）。
+# 起動そのものを止めるのは、残った有効な組合せがアサーション違反のときだけ
+# （G-2。`main()` の既存経路）。
+
+
+def _override_entry_value(entry: Any) -> Any:
+    """overrides.yaml の1行から値を取り出す（/params/set が書く dict 形と手編集の素値を両対応）。"""
+    if isinstance(entry, Mapping):
+        return entry.get("value")
+    return entry
+
+
+def _override_entry_meta(entry: Any) -> dict[str, Any]:
+    """出どころ（set_at/set_by/reason）を取り出す。無ければ空文字。"""
+    if isinstance(entry, Mapping):
+        return {
+            "set_at": entry.get("set_at", ""),
+            "set_by": entry.get("set_by", ""),
+            "reason": entry.get("reason", ""),
+        }
+    return {"set_at": "", "set_by": "", "reason": ""}
+
+
+def apply_overrides_to_rows(rows: list[dict], overrides: Mapping[str, Any] | None
+                            ) -> tuple[list[dict], dict[str, str], dict[str, dict[str, Any]]]:
+    """overrides を registry 行へ1件ずつ試し当てし、検査に通るものだけ適用する（純粋関数）。
+
+    戻り値は `(patched_rows, rejected, applied_meta)`。
+    `rejected` は {name: 理由}（適用せず既定値のまま残した行）。
+    `applied_meta` は {name: {set_at, set_by, reason}}（適用できた行の出どころ）。
+
+    検査は `/params/set` と同じ水準: 未知名・given 以外は拒否し、
+    `schema.validate_registry` と `run_assertions(stage=8, nodes=None,
+    include_a8=False)`（A1〜A7・A10・A11・A13＝値そのものの物理的整合性）に通す。
+    1件ずつ通した組合せ同士が干渉して全体で違反する場合は呼び出し側
+    （`main()` の G-2 経路）が起動を止める。
+    """
+    import copy
+
+    patched = copy.deepcopy(rows)
+    rejected: dict[str, str] = {}
+    applied_meta: dict[str, dict[str, Any]] = {}
+    rows_by_name = {row["name"]: row for row in patched}
+    for name, entry in (overrides or {}).items():
+        row = rows_by_name.get(name)
+        if row is None:
+            rejected[name] = f"未知のパラメータ: {name}"
+            continue
+        if row.get("status") != "given":
+            rejected[name] = (
+                f"{name} は status:{row.get('status')} のため変更できない"
+                "（given の行のみ調整可能）")
+            continue
+        candidate = copy.deepcopy(patched)
+        for crow in candidate:
+            if crow["name"] == name:
+                crow["value"] = _override_entry_value(entry)
+                break
+        schema_errors = schema.validate_registry(candidate)
+        if schema_errors:
+            rejected[name] = "; ".join(schema_errors)
+            continue
+        clamp_warnings: list[str] = []
+        clamp_errors: list[str] = []
+        resolved = resolve_registry(candidate, clamp_warnings=clamp_warnings,
+                                    clamp_errors=clamp_errors)
+        assertion_errors, _warnings = run_assertions(
+            candidate, resolved, stage=8, nodes=None, include_a8=False,
+            clamp_warnings=clamp_warnings, clamp_errors=clamp_errors)
+        if assertion_errors:
+            rejected[name] = "; ".join(assertion_errors)
+            continue
+        for prow in patched:
+            if prow["name"] == name:
+                prow["value"] = _override_entry_value(entry)
+                break
+        applied_meta[name] = _override_entry_meta(entry)
+    return patched, rejected, applied_meta
+
+
+def build_provenance(applied_meta: Mapping[str, dict[str, Any]],
+                     rejected: Mapping[str, str]) -> dict[str, Any]:
+    """生成物の出どころ記録（params_provenance.json の中身）。"""
+    origins: dict[str, Any] = {}
+    for name, meta in applied_meta.items():
+        origins[name] = {"origin": "override", **dict(meta)}
+    return {"origins": origins, "rejected": dict(rejected)}
+
+
+# ---------------------------------------------------------------------------
 # 出力（ノード別 YAML ＋ twist_mux.yaml）
 # ---------------------------------------------------------------------------
 
@@ -490,6 +586,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--stage", type=int, default=8, help="A8 判定用の現在段階。既定は最大値")
     parser.add_argument("--sim", action="store_true", help="allow_placeholder: true")
     parser.add_argument("--nodes", default=None, help="今回の launch で起動するノード（カンマ区切り）")
+    parser.add_argument("--overrides", default=None,
+                        help="overrides.yaml のパス（SG-B8。省略時や存在しないときは重ねない）")
     args = parser.parse_args(argv)
 
     with open(args.registry, encoding="utf-8") as f:
@@ -500,6 +598,21 @@ def main(argv: list[str] | None = None) -> int:
         for e in schema_errors:
             print(e, file=sys.stderr)
         return 2
+
+    # SG-B8: overrides.yaml を既定値に重ねる（次の起動から効く）。
+    # 通らない上書きはその行だけ適用せず、理由を残して既定値のまま起動する
+    # （2026-10-07 ユーザー決定: 既定値で起動＋警告。起動を止めない）。
+    overrides: dict = {}
+    if args.overrides:
+        try:
+            with open(args.overrides, encoding="utf-8") as f:
+                overrides = yaml.safe_load(f) or {}
+        except FileNotFoundError:
+            overrides = {}
+    rows, rejected, applied_meta = apply_overrides_to_rows(rows, overrides)
+    for name, reason in rejected.items():
+        print(f"overrides の {name} を適用しなかった（既定値のまま起動）: {reason}",
+              file=sys.stderr)
 
     # A1 のクランプ（N-7）は --sim では適用しない。A1〜A11・A13 が全てスキップされる
     # 既存挙動（このブロックの if not args.sim: と同じ思想）を壊さないため。
@@ -533,6 +646,12 @@ def main(argv: list[str] | None = None) -> int:
     digest = compute_digest(resolved)
     with open(os.path.join(args.out, "params_digest.json"), "w", encoding="utf-8") as f:
         json.dump({"params_digest": digest}, f)
+
+    # SG-B8: 生成物に出どころ（registry／override）を残す。
+    # origins＝適用できた上書きとその出どころ、rejected＝適用せず既定値のままにした行と理由。
+    with open(os.path.join(args.out, "params_provenance.json"), "w", encoding="utf-8") as f:
+        json.dump(build_provenance(applied_meta, rejected), f,
+                  ensure_ascii=False, indent=2, sort_keys=True)
 
     return 0
 
