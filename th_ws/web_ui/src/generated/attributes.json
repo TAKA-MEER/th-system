@@ -162,11 +162,10 @@
     "prep_states": [
       "MAPPING",
       "REGISTER",
-      "RETURN",
       "EDIT",
       "SAVED"
     ],
-    "resume": "none",
+    "resume": "yes_no",
     "resume_state": null,
     "run_state": "MAPPING",
     "speed_limit": "v_slow"

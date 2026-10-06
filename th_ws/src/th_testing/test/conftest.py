@@ -207,7 +207,7 @@ def state_core_bundle():
     with open(config_dir / 'mode_entry.yaml', encoding='utf-8') as f:
         mode_entry = yaml.safe_load(f)
 
-    guards = guards_module.build_guards(mode_entry)
+    guards = guards_module.build_guards(mode_entry, attributes)
     core = StateCore(transitions, mode_entry, attributes, guards)
     return core, transitions, mode_entry, attributes
 

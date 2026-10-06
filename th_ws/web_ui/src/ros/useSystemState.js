@@ -45,6 +45,7 @@ const TEST_STATE_DEFAULTS = {
   working: false,
   map_update: false,
   unsaved: [],
+  pause_reason: '',
   since: { sec: 0, nanosec: 0 },
   last_event: '',
   last_reject_reason: '',

@@ -36,7 +36,7 @@ MODE_STATES: Dict[str, Set[str]] = {
     "REPLAY": {"ROUTE_SEL", "LOCALIZE", "READY", "RUN", "PAUSE", "SAVED"},
     "LINE": {"SETUP", "PLANNED", "RUN", "PAUSE", "ARRIVED"},
     "LEASH": {"DEV_CHECK", "READY", "RUN", "HOLD", "PAUSE"},
-    "PREP": {"MAPPING", "REGISTER", "RETURN", "EDIT", "SAVED"},
+    "PREP": {"MAPPING", "REGISTER", "RETURN", "EDIT", "SAVED", "PAUSE"},
     "PANEL_NAV": {"NAV", "BLOCKED", "PAUSE", "ALIGN"},
     "AT_PANEL": {"IDLE_P", "WORKING", "PAUSE"},
     "SUMMON": {"POINT", "WAIT_CLEAR", "NAV", "BLOCKED", "PAUSE", "ALIGN"},
@@ -74,9 +74,9 @@ CALIB_MODE: str = "CALIB"
 REPLAY_MODE: str = "REPLAY"
 
 # DetailedDesign-state.md §4-1-1 末尾・§2 validate()⑥docstring — PAUSE を持たないモード。
-# PREP は 2026-09-10 追加（Spec-modes.md §3.0-② ／ Spec-modes.md §3.0-②。地図作成＝常時ジョグ、
-# 将来は追従走行がモードの活動そのもので「一時停止すべき走行」が無い。停止/走行は inert）。
-NO_PAUSE_MODES: Set[str] = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB", "PREP"}
+# PREP は 2026-09-10 に追加したが 2026-10-06 に除外（Spec-modes.md §3.0-② 追記。
+# RETURN（自動帰還）だけ PAUSE を持つ。地図作成＝常時ジョグの部分は prep_states で保つ）。
+NO_PAUSE_MODES: Set[str] = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB"}
 
 # DetailedDesign-state.md §7 — latch_prev を記録しないモード（FMEA②）。
 NO_LATCH_MODES: Set[str] = {"ESTOP", "CARRY"}
@@ -99,6 +99,34 @@ ESTOP_RESUME_RUN: Dict[str, str] = {
     "PANEL_NAV": "NAV",
     "HOME_NAV": "NAV",
 }
+
+# 1b-1（SG-A12）— 「走行中」の判定。在席喪失（sys.presence_lost）で PAUSE に
+# 落とすかどうかの唯一の判定点。モード名を散らさずここに集約する。
+# attributes.yaml の run_state を読むので、新しい走行状態が増えても自動で
+# 拾われる。run_state の外にある走行（向き合わせ・帰還）だけ明示する。
+# PREP の run_state（MAPPING。地図作成中の連れ回し）は走行ではないので除く。
+_DRIVING_EXTRA_STATES = frozenset({
+    ("PANEL_NAV", "ALIGN"), ("SUMMON", "ALIGN"), ("PREP", "RETURN"),
+})
+
+
+def is_driving(mode: str, state: str, attrs: Dict[str, dict],
+               jog_active: bool = False) -> bool:
+    """走行中なら True。state_manager（在席喪失の検出）と guards.py の
+    presence_stops_mode（StateCore 側の二重化）が同じ関数を読む。
+    MANUAL はスティックが走行操作そのものなので、jog_active の間は
+    PAUSE でも走行中とみなす（手をかけている最中の離脱を見逃さない）。"""
+    if mode == "PREP":
+        return (mode, state) in _DRIVING_EXTRA_STATES
+    run_state = (attrs.get(mode) or {}).get("run_state")
+    if run_state is not None and state == run_state:
+        return True
+    if (mode, state) in _DRIVING_EXTRA_STATES:
+        return True
+    if jog_active and mode == "MANUAL":
+        return True
+    return False
+
 
 # C-09c-blocked が戻す BLOCKED を持つモード（Spec-modes.md §3）。
 ESTOP_RESUME_BLOCKED_MODES: Set[str] = {"PANEL_NAV", "HOME_NAV"}

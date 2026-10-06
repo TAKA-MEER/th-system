@@ -139,7 +139,8 @@ function AppShellInner({ screenName, screenId, children }) {
     if (!!fault?.active || stuckWithNoEscape) setFaultPauseSeen(true)
   }, [stateName, fault?.active, mode, state?.jog_active])
 
-  const w1Active = isW1Active(mode, stateName, !!fault?.active || faultPauseSeen)
+  const w1Active = isW1Active(mode, stateName, !!fault?.active || faultPauseSeen,
+    state?.pause_reason ?? '', !!state?.jog_active)
   // WS-9R: 速度上限が 0 に落ちている理由（在席未確認・障害物・指令途絶など）。
   const stopBanner = stopReasonLabel(stopReason(state, limiterStatus, fault, attributes))
   // C-2 (WP-CARRY-01 §4/§7): server-side reject reason for a UI estop press
@@ -242,6 +243,7 @@ function AppShellInner({ screenName, screenId, children }) {
         estopHw={estopHw}
         estopFromUi={!!state?.estop_from_ui}
         fault={fault}
+        pauseReason={state?.pause_reason ?? ''}
         attributes={attributes}
         onTrigger={sendTrigger}
         estopDismissed={estopDismissed}

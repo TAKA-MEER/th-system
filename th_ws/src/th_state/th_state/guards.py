@@ -11,11 +11,13 @@ state_core.py からの import はモード名・状態名の集合（文字列�
 from typing import Callable, Dict
 
 from th_state.state_core import (ESTOP_RESUME_BLOCKED_MODES, ESTOP_RESUME_RUN,
-                                 RESUME_RUN_UNAVAILABLE_MODES,
-                                 RESUME_STATE_UNAVAILABLE_MODES)
+                                  RESUME_RUN_UNAVAILABLE_MODES,
+                                  RESUME_STATE_UNAVAILABLE_MODES,
+                                  is_driving)
 
 # モードによって PAUSE を持たない集合（§4.1.1 末尾。state_core.py の同名集合と同じ定義）。
-_NO_PAUSE_MODES = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB", "PREP"}
+# PREP は 2026-10-06 に除外（RETURN だけ PAUSE を持つ。state_core.py のコメント参照）。
+_NO_PAUSE_MODES = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB"}
 
 # C-01 (jog_allowed) の除外表（Spec-modes.md §3.1.1 ジョグ介入の除外）。
 _JOG_EXCLUDED_MODES = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB",
@@ -39,7 +41,12 @@ def _jog_allowed(mode, state, ctx) -> bool:
 
 def _fault_stops_mode(mode, state, ctx) -> bool:
     if mode in _NO_PAUSE_MODES:
-        return False  # PREP を含む（2026-09-10）。PREP は登録拒否のみ・地図作成は続行（C-15）
+        return False
+    if mode == "PREP" and state != "RETURN":
+        # SG-A7: 地図作成中（MAPPING/REGISTER/EDIT/SAVED。PAUSE 中を含む）は
+        # C-03 の対象外。状態も W-1 も動かさない（Spec-modes.md §6。
+        # フォルトは独立したフォルト表示で操作者に伝わる）。
+        return False
     if ctx.fault_type == "PERSON_TRACKER_LOST":
         if mode not in _TRACKER_FAULT_STOPS_MODES:
             return False
@@ -182,6 +189,16 @@ def _estop_prev_is_blocked(mode, state, ctx) -> bool:
             and ctx.prev_state == "BLOCKED")
 
 
+# 1b-1（SG-A12）— sys.presence_lost（在席喪失）用。走行中だけ PAUSE に落とす。
+# 走行中の判定は state_core.is_driving（attributes.yaml の run_state 駆動）に
+# 集約し、ここでは attributes を束縛した版を build_guards() が差す
+# （mode_entry_allowed と同じ作法。ガードはファイルを読めないため）。
+def _presence_stops_mode(mode, state, ctx) -> bool:
+    raise NotImplementedError(
+        "presence_stops_mode は build_guards(mode_entry, attributes) で束縛してから使う"
+        "（guards.build_guards() を参照）")
+
+
 # 1b-2（SG-B22）— C-04/C-05 が state=None を作らないためのガード。
 # fault_cleared を含む（従来のガードの条件を保ったまま、None になる組合せだけ弾く）。
 def _resume_run_available(mode, state, ctx) -> bool:
@@ -299,7 +316,8 @@ def _ng_and_not_calibrable(mode, state, ctx) -> bool:
     return ctx.check_result == "NG" and ctx.check_item in _NOT_CALIBRABLE_ITEMS
 
 
-# 44 件。§4.1.1 のとおり（1b-2 SG-A3/SG-A5/SG-B22 で 14 件追加）。
+# 44 件 + presence_stops_mode（1b-1 SG-A12）。§4.1.1 のとおり
+# （1b-2 SG-A3/SG-A5/SG-B22 で 14 件、1b-1 SG-A12 で 1 件追加）。
 GUARDS: Dict[str, Callable] = {
     "jog_allowed": _jog_allowed,
     "fault_stops_mode": _fault_stops_mode,
@@ -345,18 +363,24 @@ GUARDS: Dict[str, Callable] = {
     "estop_prev_is_blocked": _estop_prev_is_blocked,
     "resume_run_available": _resume_run_available,
     "resume_state_available": _resume_state_available,
+    "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 44, len(GUARDS)
+assert len(GUARDS) == 45, len(GUARDS)
 
 
-def build_guards(mode_entry: Dict) -> Dict[str, Callable]:
+def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:
     """mode_entry.yaml の許可表を束縛した mode_entry_allowed を差し替えた GUARDS のコピーを返す。
 
     mode_entry_allowed は §4.1.1 のとおり「表を見る」ガードだが、guards.py 単体では
     表（mode_entry.yaml）を持たない。StateCore.__init__ がこの関数経由で束縛する。
     前提条件（DetailedDesign-transit.md §0.4）は WP-STATE-01 の対象外なので、
     ここでは mode_entry.yaml の許可表だけを見る。
+
+    attributes を渡すと presence_stops_mode（sys.presence_lost 用）も束縛する。
+    走行中の判定は state_core.is_driving に集約し、attributes.yaml の run_state を
+    読む（新しい走行状態は自動で拾われる）。渡さないと未束縛のまま残り、発火時に
+    NotImplementedError になる（呼び出し側は必ず渡すこと）。
     """
     guards = dict(GUARDS)
 
@@ -366,4 +390,10 @@ def build_guards(mode_entry: Dict) -> Dict[str, Callable]:
         return target in allowed_targets
 
     guards["mode_entry_allowed"] = _bound_mode_entry_allowed
+
+    if attributes is not None:
+        def _bound_presence_stops_mode(mode, state, ctx) -> bool:
+            return is_driving(mode, state, attributes,
+                              bool((ctx.flags or {}).get("jog_active")))
+        guards["presence_stops_mode"] = _bound_presence_stops_mode
     return guards

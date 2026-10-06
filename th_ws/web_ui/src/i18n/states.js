@@ -108,6 +108,13 @@ export const WIN_ESTOP_SYSTEM_HINT_RESUMABLE =
 // remedy) comes from i18n/faults.js, keyed by FaultStatus.fault_type.
 export const WIN_FAULT_TITLE = '異常が発生しました'
 export const WIN_FAULT_HINT = '解決すると、この画面が再開の選択肢に変わります。'
+// 1b-1 SG-A12: 走行中に操作端末が離れた一時停止。フォルトでは無いので
+// 最初から「再開しますか」の形で出す（Spec-safety.md §6.2.2）。
+export const WIN_PRESENCE_TITLE = '一時停止しました'
+export const WIN_PRESENCE_BODY = '操作端末が離れたため一時停止しました。再開するには「はい」を押してください。'
+// 試験準備の自動帰還の一時停止（ジョグ・非常停止から戻った場合など。理由は問わない）。
+export const WIN_PREP_PAUSE_TITLE = '一時停止しました'
+export const WIN_PREP_PAUSE_BODY = '自動帰還を一時停止しています。再開するには「はい」、やめて地図作成に戻るには「いいえ」を押してください。'
 export const WIN_CARRY_TITLE = '手押しモード'
 export const WIN_CARRY_BODY = '物理非常停止ボタンが押されています。人が機体を押して運んでいるとみなします。'
 export const WIN_CARRY_HINT = '解除方法：機体後部の赤いボタンを右へひねってください。ロックが外れて飛び出します。'

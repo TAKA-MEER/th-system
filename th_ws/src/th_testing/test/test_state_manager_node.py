@@ -1091,5 +1091,111 @@ class TestStateManagerNode(unittest.TestCase):
         self._spin(0.2)
 
 
+    # ════════════════════════════════════════════════════════
+    # 1b-1 SG-A12: 走行中の在席喪失 → PAUSE＋pause_reason=presence_lost
+    # ════════════════════════════════════════════════════════
+    def _publish_presence(self, client='tablet-presence-test', interacting=True):
+        self.pub_screen.publish(ActiveScreen(
+            screen_id='S-11', client_id=client, interacting=interacting,
+            last_input=self.node.get_clock().now().to_msg()))
+
+    def _wait_mode_state(self, mode, state, timeout=3.0):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self._spin(0.1)
+            if self._state_history and (
+                    self._state_history[-1].mode,
+                    self._state_history[-1].state) == (mode, state):
+                return True
+        hist = self._state_history[-1] if self._state_history else None
+        last = (hist.mode, hist.state) if hist else None
+        return last == (mode, state)
+
+    def test_presence_lost_while_driving_pauses_with_reason(self):
+        """走行中（MANUAL/RUN）に /ui/active_screen が途絶えると、窓
+        （ui_active_window_s）経過後に PAUSE＋pause_reason=presence_lost。
+        再び流し始めても PAUSE のまま（勝手に走らない）。"""
+        self._publish_presence()
+        self._spin(0.3)
+        assert self._trigger('ui.enter_mode', {'mode': 'MANUAL'}).accepted
+        assert self._wait_mode_state('MANUAL', 'PAUSE')
+        # スティック（jog lease）で走行に入る（T-MANUAL-01）。
+        self.pub_jog.publish(String(data='presence-test'))
+        assert self._wait_mode_state('MANUAL', 'RUN', timeout=3.0), \
+            'MANUAL/RUN に入らない'
+        assert self._latest().pause_reason == ''
+        # 流し続けている間は走行のまま。
+        for _ in range(4):
+            self._publish_presence()
+            self._spin(1.0)
+        assert (self._latest().mode, self._latest().state) == ('MANUAL', 'RUN')
+
+        # 流すのを止める → 窓の経過後に PAUSE＋理由。速度上限は stop。
+        assert self._wait_mode_state(
+            'MANUAL', 'PAUSE', timeout=UI_ACTIVE_WINDOW_S + 5.0), \
+            '在席喪失で PAUSE に落ちない（SG-A12）'
+        snap = self._latest()
+        assert snap.pause_reason == 'presence_lost', snap.pause_reason
+        assert snap.speed_limit == 'stop', snap.speed_limit
+
+        # 再び流し始めても PAUSE のまま（勝手に走らない）。理由も保つ。
+        for _ in range(4):
+            self._publish_presence()
+            self._spin(1.0)
+        snap = self._latest()
+        assert (snap.mode, snap.state) == ('MANUAL', 'PAUSE'), \
+            '端末が戻っただけで走り出した（SD-8 違反）'
+        assert snap.pause_reason == 'presence_lost'
+
+        # 「確認」は受理される（MANUAL は ack_only → PAUSE のまま。生き残る）。
+        res = self._trigger('ui.resume_ack')
+        assert res.accepted, res.reject_reason_key
+        assert self._trigger('ui.finish').accepted
+        assert self._wait_mode('IDLE')
+
+    def test_presence_lost_while_idle_changes_nothing(self):
+        """走行中でなければ在席喪失でも状態は変わらない（速度上限 0 だけ）。
+        確認は求めない。"""
+        self._publish_presence()
+        self._spin(0.3)
+        assert (self._latest().mode, self._latest().state) == ('IDLE', 'NONE')
+        self._spin(UI_ACTIVE_WINDOW_S + 2.0)
+        snap = self._latest()
+        assert (snap.mode, snap.state) == ('IDLE', 'NONE'), \
+            '走行中でないのに在席喪失で動いた'
+        assert snap.pause_reason == '', snap.pause_reason
+
+    def test_presence_lost_does_not_fire_without_prior_presence(self):
+        """起動直後（一度も使用中の端末が無い）の _on_timer では、走行中の
+        mode/state を積んでいても発火しない（「前回が使用中あり」の条件）。
+        変異「前回条件を外す」はここが赤くなる。"""
+        from rclpy.parameter import Parameter as RclpyParameter
+        module = _load_state_manager_module()
+        node = module.StateManager(parameter_overrides=[
+            RclpyParameter('jog_lease_ms', RclpyParameter.Type.INTEGER, JOG_LEASE_MS),
+            RclpyParameter('link_wait_timeout_ms', RclpyParameter.Type.INTEGER,
+                           LINK_WAIT_TIMEOUT_MS),
+            RclpyParameter('ui_active_window_s', RclpyParameter.Type.INTEGER,
+                           UI_ACTIVE_WINDOW_S),
+            RclpyParameter('screen_stale_ms', RclpyParameter.Type.INTEGER, SCREEN_STALE_MS),
+        ])
+        try:
+            node.mode = 'FOLLOW'
+            node.state = 'RUN'
+            node._presence_active = False
+            node._screens = {}
+            node._on_timer()
+            assert (node.mode, node.state) == ('FOLLOW', 'RUN'), \
+                '一度も在席が無いのに presence_lost が発火した'
+            # 前回あり → 今なしなら発火する（本番の経路。ガードの二重化）。
+            node._presence_active = True
+            node._on_timer()
+            assert (node.mode, node.state) == ('FOLLOW', 'PAUSE'), \
+                '在席喪失で PAUSE に落ちない'
+            assert node._pause_reason == 'presence_lost', node._pause_reason
+        finally:
+            node.destroy_node()
+
+
 if __name__ == '__main__':
     unittest.main()

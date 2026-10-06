@@ -111,6 +111,16 @@ class Limits:
     auto_brake: bool
 
 
+def active_screens(screens: Mapping[str, ScreenInput], now_ms: int,
+                   ui_active_window_s: int) -> list:
+    """「使用中」の端末だけを返す（derive_limits と state_manager の在席喪失検出
+    が同じ定義を読む。1b-1 SG-A12）。使用中 = interacting かつ最後にメッセージが
+    届いてから ui_active_window_s 以内。"""
+    window_ms = ui_active_window_s * 1000
+    return [s for s in screens.values()
+            if s.interacting and now_ms - s.last_seen_ms <= window_ms]
+
+
 def derive_limits(screens: Mapping[str, ScreenInput], now_ms: int,
                    ui_active_window_s: int) -> Limits:
     """DetailedDesign-names.md §4.1 の `derive_limits()`。
@@ -134,9 +144,7 @@ def derive_limits(screens: Mapping[str, ScreenInput], now_ms: int,
       - 端末が落ちる・回線が切れる       → 受信が途絶えて窓を超える → stop
     （`screens` の辞書からは古い端末が消えないので、窓による生存判定は必須。）
     """
-    window_ms = ui_active_window_s * 1000
-    active = [s for s in screens.values()
-              if s.interacting and now_ms - s.last_seen_ms <= window_ms]
+    active = active_screens(screens, now_ms, ui_active_window_s)
 
     if not active:
         return Limits(zone="NA", speed_limit="stop", auto_brake=True)

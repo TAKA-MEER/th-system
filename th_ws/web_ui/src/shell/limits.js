@@ -12,13 +12,20 @@ export function resumeChoices(mode, attributes) {
   return attributes?.[mode]?.resume ?? 'none'
 }
 
-// isW1Active(mode, stateName, faultActive) -> bool
+// isW1Active(mode, stateName, faultActive, pauseReason) -> bool
 //
 // W-1 (the fault/estop window, DetailedDesign-webui.md §6) fires in two
 // cases that share one window (§6.2 "the same window turns into resume?",
 // E-5): mode itself is 'ESTOP' (C-06a/C-06b), or a recoverable fault has
 // pushed the *current* mode into PAUSE without changing it (C-03 --
 // DetailedDesign-state.md §4.1, WP-UI-01 §11 "W-1 generalization").
+//
+// 1b-1 SG-A12: a third case. When the operating terminal leaves mid-drive,
+// state_manager parks the mode in PAUSE with pause_reason === 'presence_lost'
+// (C-16, Spec-safety.md §6.2.2). There is no fault, so faultActive never
+// fires -- and the returning terminal missed the one-shot open_window effect
+// entirely. The reason persists in /system/state, so the window is derived
+// from state and survives a page reload.
 //
 // WS-9Z (2026-09-09): call this with the *raw* live faultActive only from
 // shell/AppShell.jsx, which latches the result across a fault that clears
@@ -32,8 +39,20 @@ export function resumeChoices(mode, attributes) {
 // already: this function used to be called independently from both files,
 // "computed twice ... risking drift" per this comment's own prior wording,
 // and only one of the two copies got the fix).
-export function isW1Active(mode, stateName, faultActive) {
+//
+// 1b-1 (PREP/RETURN の帰還の一時停止): 第4のケース。PREP の `PREP/PAUSE` は
+// 「RETURN（自動帰還）の一時停止」以外に存在せず（ジョグ・回復フォルト・端末離脱・
+// 非常停止からの「戻る」で入る）、出る手段は W-1 の「はい」（T-PREP-16→RETURN）／
+// 「いいえ」（T-PREP-17→MAPPING）だけ。PREP の run_state は MAPPING で、走行ボタン
+// （ui.run）は inert のため、他モードのように「走行」で戻る迂回路が無い。
+// pause_reason は jog・空（非常停止から戻った場合）・fault などになるので理由を問わず出す。
+// ただしジョグ中（jogActive）は W-1 で手動操作パネルを覆わない。離したら出る。
+// attributes.yaml で表せる性質ではない（run_state はあるが走行ボタンが効かない）
+// ので、PREP を明示する。他モードのジョグ PAUSE は走行ボタンで戻れるので対象外。
+export function isW1Active(mode, stateName, faultActive, pauseReason = '', jogActive = false) {
   return mode === 'ESTOP' || (stateName === 'PAUSE' && !!faultActive)
+    || (stateName === 'PAUSE' && pauseReason === 'presence_lost')
+    || (mode === 'PREP' && stateName === 'PAUSE' && !jogActive)
 }
 
 // stateToBlueButton(mode, stateName, attributes) -> 'stop' | 'run' | 'check' | null

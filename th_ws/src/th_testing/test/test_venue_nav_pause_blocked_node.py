@@ -1808,5 +1808,199 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         self._mark_passed(f'(compute_total={self._n_compute()})')
 
 
+    def _enter_prep_return_and_record_first_path(self):
+        """SG-A7 の共通前置き。IDLE（なければ戻す）→ PREP → `ui.return_home` で
+        RETURN に入り、compute 1 回・follow 1 件を待って 1 件目の経路を返す。"""
+        ms = self._mode_state()
+        if ms is None or ms == ('INIT', 'CHECK'):
+            self._reset_to_home()
+        ms = self._mode_state()
+        if ms is not None and ms[0] in ('PANEL_NAV', 'SUMMON', 'HOME_NAV'):
+            self._reset_to_home()
+            ms = self._mode_state()
+        if ms is not None and ms != ('IDLE', 'NONE'):
+            # PREP / AT_HOME / AT_PANEL 等 → 終了で IDLE に畳む（C-08）。
+            self._call_trigger('ui.finish')
+            if not self._wait_mode_state('IDLE', 'NONE', timeout=5.0):
+                self.fail(f'ui.finish 後に IDLE に戻らない ({self._mode_state()})')
+        self._call_trigger('ui.enter_mode', '{"mode":"PREP"}')
+        if not self._wait_mode_state('PREP', 'MAPPING', timeout=10.0):
+            self.fail(f'PREP/MAPPING に入らない ({self._mode_state()})')
+        # HOME ピンの到着を待って受理されるまで押し直す（_call_trigger が retry）。
+        self._call_trigger('ui.return_home')
+        if not self._wait_mode_state('PREP', 'RETURN', timeout=10.0):
+            self.fail(f'PREP/RETURN に入らない ({self._mode_state()})')
+        self.assertTrue(
+            self._wait_count(self._n_compute, 1, timeout=10.0),
+            'RETURN に入ったのに compute が 1 回も呼ばれない。')
+        self.assertTrue(
+            self._wait_count(self._n_follow, 1, timeout=10.0),
+            'compute したのに FollowPath にゴールが届かない。')
+        with self._lock:
+            path_a = list(self.follow_goals[0])
+        self.assertTrue(path_a, '1 件目の経路が空。代役が壊れている。')
+        return path_a
+
+    def _reset_prep_to_idle(self):
+        """PREP 系に居れば `ui.finish` で IDLE に畳む（次の試験のため）。"""
+        ms = self._mode_state()
+        if ms is not None and ms[0] == 'PREP':
+            self._call_trigger('ui.finish')
+            if not self._wait_mode_state('IDLE', 'NONE', timeout=5.0):
+                self.fail(f'ui.finish 後に IDLE に戻らない ({self._mode_state()})')
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SG-A7: PREP/RETURN の一時停止（T-PREP-16/-17・C-09c-prep-return）
+    # ═══════════════════════════════════════════════════════════════════
+    def test_prep_pause_via_jog_then_resume_yes_resends_residual(self):
+        """SG-A7（C-01／T-PREP-16）。PREP/RETURN で `ui.jog.hold` → PREP/PAUSE で
+        FollowPath が取り消される。手を離しても（リース満了）勝手に再開せず、
+        W-1「はい」(`ui.resume_yes` → RETURN) で同じ経路の残りが送られる
+        （再計算しない）。修正前は PAUSE に入らず走り続けるので赤になる。"""
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.follow_accept_delay_s = 0.0
+            self.follow_cancel_result_delay_s = 0.0
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+        path_a = self._enter_prep_return_and_record_first_path()
+
+        with self._lock:
+            c0 = self.follow_cancel_count
+        self._call_trigger('ui.jog.hold')
+        if not self._wait_mode_state('PREP', 'PAUSE', timeout=5.0):
+            self.fail(f'PREP/PAUSE に入らない ({self._mode_state()})')
+        self.assertTrue(
+            self._wait_count(self._n_cancel, c0 + 1, timeout=5.0),
+            'ui.jog.hold したのに代役 FollowPath に cancel が届かない。'
+            'PREP/PAUSE で取り消していない（SG-A7）。')
+
+        # リース満了をまたいでも PAUSE のまま・送出なし。
+        self._sleep(2.5)
+        self.assertEqual(
+            self._mode_state(), ('PREP', 'PAUSE'),
+            f'PAUSE のはずが {self._mode_state()} に動いた。')
+        self.assertEqual(self._n_follow(), 1,
+                         'PAUSE の間に FollowPath が送られた（勝手に再開）。')
+        self.assertEqual(self._n_compute(), 1,
+                         'PAUSE の間に compute が走った。')
+        self.assertEqual(self._n_open(), 0,
+                         'PAUSE なのに代役のゴールが実行中のまま残っている。')
+
+        # W-1「はい」→ RETURN。残りの再送（再計算しない）。
+        self._call_trigger('ui.resume_yes')
+        if not self._wait_mode_state('PREP', 'RETURN', timeout=5.0):
+            self.fail(f'ui.resume_yes 後に RETURN に戻らない ({self._mode_state()})')
+        self.assertTrue(
+            self._wait_count(self._n_follow, 2, timeout=10.0),
+            '復帰後に FollowPath に 2 件目のゴールが届かない。')
+        self._assert_same_path(path_a, 1)
+        self._sleep(2.0)
+        self.assertEqual(
+            self._n_compute(), 1,
+            f'復帰後に compute が増えた (1 → {self._n_compute()})。')
+
+        self._reset_prep_to_idle()
+        self._mark_passed(f'(compute_total={self._n_compute()})')
+
+    def test_prep_pause_via_fault_then_resume_yes_resends_residual(self):
+        """SG-A7（C-03／T-PREP-16）。PREP/RETURN で回復フォルト → PREP/PAUSE で
+        取り消し。フォルト解消だけでは動かず、W-1「はい」で同じ経路の残りが
+        送られる（再計算しない）。修正前は PAUSE に入らず走り続けるので赤になる。"""
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.follow_accept_delay_s = 0.0
+            self.follow_cancel_result_delay_s = 0.0
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+        path_a = self._enter_prep_return_and_record_first_path()
+
+        with self._lock:
+            c0 = self.follow_cancel_count
+        self._publish_fault(True)
+        if not self._wait_mode_state('PREP', 'PAUSE', timeout=5.0):
+            self.fail(f'回復フォルトで PREP/PAUSE に入らない ({self._mode_state()})')
+        self.assertTrue(
+            self._wait_count(self._n_cancel, c0 + 1, timeout=5.0),
+            '回復フォルトで PREP/PAUSE に入ったのに cancel が届かない（SG-A7）。')
+        self._sleep(2.0)
+        self.assertEqual(
+            self._mode_state(), ('PREP', 'PAUSE'),
+            f'PAUSE のはずが {self._mode_state()} に動いた。')
+        self.assertEqual(self._n_follow(), 1,
+                         'PAUSE の間に FollowPath が送られた（勝手に再開）。')
+        self.assertEqual(self._n_compute(), 1)
+        self.assertEqual(self._n_open(), 0,
+                         'PAUSE なのに代役のゴールが実行中のまま残っている。')
+
+        # フォルト解消だけでは動かない。
+        self._publish_fault(False)
+        self._sleep(1.0)
+        self.assertEqual(
+            self._mode_state(), ('PREP', 'PAUSE'),
+            f'フォルト解消だけで {self._mode_state()} に動いた。')
+        self.assertEqual(self._n_follow(), 1,
+                         'フォルト解消で勝手に走り出した（SG-A7）。')
+
+        # W-1「はい」→ RETURN。残りの再送（再計算しない）。
+        self._call_trigger('ui.resume_yes')
+        if not self._wait_mode_state('PREP', 'RETURN', timeout=5.0):
+            self.fail(f'ui.resume_yes 後に RETURN に戻らない ({self._mode_state()})')
+        self.assertTrue(
+            self._wait_count(self._n_follow, 2, timeout=10.0),
+            '復帰後に FollowPath に 2 件目のゴールが届かない。')
+        self._assert_same_path(path_a, 1)
+        self._sleep(2.0)
+        self.assertEqual(
+            self._n_compute(), 1,
+            f'復帰後に compute が増えた (1 → {self._n_compute()})。'
+            '残りの再送でなく再計算している。')
+
+        self._reset_prep_to_idle()
+        self._mark_passed(f'(compute_total={self._n_compute()})')
+
+    def test_prep_pause_resume_no_goes_to_mapping_and_drops_path(self):
+        """SG-A7（T-PREP-17）。PREP/PAUSE の「いいえ」→ MAPPING。
+        経路は捨てられ、何も送られない。修正前は MAPPING 行きの行が無く、
+        汎用 C-05 は PREP を弾くので赤になる。"""
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.follow_accept_delay_s = 0.0
+            self.follow_cancel_result_delay_s = 0.0
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+        self._enter_prep_return_and_record_first_path()
+
+        self._publish_fault(True)
+        if not self._wait_mode_state('PREP', 'PAUSE', timeout=5.0):
+            self.fail(f'回復フォルトで PREP/PAUSE に入らない ({self._mode_state()})')
+        self.assertTrue(
+            self._wait_count(self._n_cancel, 1, timeout=5.0),
+            'PREP/PAUSE で cancel が届かない（SG-A7）。')
+        self._publish_fault(False)
+        self._sleep(1.0)
+
+        self._call_trigger('ui.resume_no')
+        if not self._wait_mode_state('PREP', 'MAPPING', timeout=5.0):
+            self.fail(f'ui.resume_no 後に MAPPING に戻らない ({self._mode_state()})')
+        self._sleep(2.0)
+        self.assertEqual(self._n_follow(), 1,
+                         'MAPPING に戻ったのに FollowPath が送られた（経路を捨てていない）。')
+        self.assertEqual(self._n_compute(), 1,
+                         'MAPPING に戻ったのに compute が走った。')
+
+        self._reset_prep_to_idle()
+        self._mark_passed(f'(compute_total={self._n_compute()})')
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v', '-s'])
