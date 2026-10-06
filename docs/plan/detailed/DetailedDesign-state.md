@@ -262,6 +262,7 @@ class StateCore:
 | `C-12` | `CARRY` | `NONE` | `ui.finish` | `hw_released` | `IDLE` | `NONE` | `clear_prev` |
 | `C-13` | `IDLE` ／ `MANUAL` | `*` | `ui.enter_mode` | `mode_entry_allowed` | `$arg.mode` | `$initial` | — |
 | `C-14` | `*` | `*` | `ui.screen` | — | `=` | `=` | `set_screen{screen_id}` |
+| **`C-16`** | `*` | `*` | `sys.presence_lost` | **`presence_stops_mode`**（走行中だけ真。`state_core.is_driving` に束縛。1b-1 SG-A12） | `=` | `PAUSE`（`PREP/RETURN` では `PREP/PAUSE`） | `open_window{id:W-1}` |
 | **`C-15`** | `IDLE` | `NONE` | `ui.goto` | `goto_allowed` | **`$arg.kind`**（§3.5） | `$initial` | — |
 
 **`C-06r` / `C-09f` / `C-15` は新設。**それぞれ次の穴を塞ぐ。
@@ -288,7 +289,7 @@ class StateCore:
 `ESTOP` 中に満了せず（`sys.jog_lease_expired` は `ESTOP`／`NONE` ではどの行にも当たらない）、
 復帰先で stale の `jog_active` が残る。復帰後に触れれば通常どおりリースが始まる。
 
-### 4.1.1 ガードの定義（**全 44 件**。1b-2 で 14 件追加）
+### 4.1.1 ガードの定義（**全 45 件**。1b-2 で 14 件、1b-1 SG-A12 で 1 件追加）
 
 **`guards.py` の述語は `(mode, state, ctx)` の 3 引数を取る。**「参照する `Context`」列に
 **`mode` / `state` と書いてあるものは第 1・第 2 引数**を読む（`Context` にこの 2 つは無い）。
@@ -298,7 +299,7 @@ class StateCore:
 | ガード | 真になる条件 | 参照する `Context` |
 | --- | --- | --- |
 | `jog_allowed` | 下の除外表のいずれにも当たらない | **`mode`, `state`**（除外表は両方を見る） |
-| `fault_stops_mode` | 下の表で true | `fault_type`, **`mode`** |
+| `fault_stops_mode` | 下の表で true（`PREP` は `RETURN` 中と `PREP/PAUSE` 以外 false。1b-1 SG-A7） | `fault_type`, **`mode`**, **`state`** |
 | `fault_cleared` | `not fault_active` | `fault_active` |
 | `fault_cleared_and_ui_released` | `not fault_active and not ui_estop and not hw_estop` | 同上 |
 | `estop_ui_allowed` | `mode != "CARRY"` | **`mode`** |
@@ -336,6 +337,7 @@ class StateCore:
 | **`estop_prev_is_blocked`** | 上の3項 `and prev_mode ∈ {PANEL_NAV,HOME_NAV} and prev_state == "BLOCKED"`（W-5 を開き直す） | 同上 |
 | **`resume_run_available`** | `not fault_active and mode ∉ {AT_PANEL,AT_HOME,OPCHECK,CALIB}`（SG-B22。`C-04` の `None` 対策） | `fault_active`, **`mode`** |
 | **`resume_state_available`** | `not fault_active and mode != "PREP"`（SG-B22。`C-05` の `None` 対策） | `fault_active`, **`mode`** |
+| **`presence_stops_mode`** | `is_driving(mode, state, attributes, flags["jog_active"])`（走行中だけ真。`C-16`。1b-1 SG-A12） | **`mode`**, **`state`**, `flags` |
 
 > **改名**: `ok` → **`check_result_ok`**。「何が ok なのか読めない」ため。
 

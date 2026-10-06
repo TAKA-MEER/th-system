@@ -37,7 +37,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     transitions, attributes, mode_entry = _load_config(args.config)
-    guards = guards_module.build_guards(mode_entry)
+    guards = guards_module.build_guards(mode_entry, attributes)
     core = StateCore(transitions, mode_entry, attributes, guards)
 
     errors = core.validate()

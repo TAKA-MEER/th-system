@@ -817,7 +817,7 @@ def test_validate_combos_catches_pause_fixed_regression(state_core_bundle):
     from th_state.state_core import StateCore
     from th_state import guards as guards_module
     core2 = StateCore(mutated, mode_entry, attributes,
-                      guards_module.build_guards(mode_entry))
+                      guards_module.build_guards(mode_entry, attributes))
     errors = [e for e in core2.validate() if "組合せ" in e]
     assert errors, "PAUSE 固定に戻す変異を組み合わせ検査が捕まえていない"
 

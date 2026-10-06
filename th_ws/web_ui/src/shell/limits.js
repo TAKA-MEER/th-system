@@ -12,13 +12,20 @@ export function resumeChoices(mode, attributes) {
   return attributes?.[mode]?.resume ?? 'none'
 }
 
-// isW1Active(mode, stateName, faultActive) -> bool
+// isW1Active(mode, stateName, faultActive, pauseReason) -> bool
 //
 // W-1 (the fault/estop window, DetailedDesign-webui.md §6) fires in two
 // cases that share one window (§6.2 "the same window turns into resume?",
 // E-5): mode itself is 'ESTOP' (C-06a/C-06b), or a recoverable fault has
 // pushed the *current* mode into PAUSE without changing it (C-03 --
 // DetailedDesign-state.md §4.1, WP-UI-01 §11 "W-1 generalization").
+//
+// 1b-1 SG-A12: a third case. When the operating terminal leaves mid-drive,
+// state_manager parks the mode in PAUSE with pause_reason === 'presence_lost'
+// (C-16, Spec-safety.md §6.2.2). There is no fault, so faultActive never
+// fires -- and the returning terminal missed the one-shot open_window effect
+// entirely. The reason persists in /system/state, so the window is derived
+// from state and survives a page reload.
 //
 // WS-9Z (2026-09-09): call this with the *raw* live faultActive only from
 // shell/AppShell.jsx, which latches the result across a fault that clears
@@ -32,8 +39,9 @@ export function resumeChoices(mode, attributes) {
 // already: this function used to be called independently from both files,
 // "computed twice ... risking drift" per this comment's own prior wording,
 // and only one of the two copies got the fix).
-export function isW1Active(mode, stateName, faultActive) {
+export function isW1Active(mode, stateName, faultActive, pauseReason = '') {
   return mode === 'ESTOP' || (stateName === 'PAUSE' && !!faultActive)
+    || (stateName === 'PAUSE' && pauseReason === 'presence_lost')
 }
 
 // stateToBlueButton(mode, stateName, attributes) -> 'stop' | 'run' | 'check' | null

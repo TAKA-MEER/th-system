@@ -100,6 +100,34 @@ ESTOP_RESUME_RUN: Dict[str, str] = {
     "HOME_NAV": "NAV",
 }
 
+# 1b-1（SG-A12）— 「走行中」の判定。在席喪失（sys.presence_lost）で PAUSE に
+# 落とすかどうかの唯一の判定点。モード名を散らさずここに集約する。
+# attributes.yaml の run_state を読むので、新しい走行状態が増えても自動で
+# 拾われる。run_state の外にある走行（向き合わせ・帰還）だけ明示する。
+# PREP の run_state（MAPPING。地図作成中の連れ回し）は走行ではないので除く。
+_DRIVING_EXTRA_STATES = frozenset({
+    ("PANEL_NAV", "ALIGN"), ("SUMMON", "ALIGN"), ("PREP", "RETURN"),
+})
+
+
+def is_driving(mode: str, state: str, attrs: Dict[str, dict],
+               jog_active: bool = False) -> bool:
+    """走行中なら True。state_manager（在席喪失の検出）と guards.py の
+    presence_stops_mode（StateCore 側の二重化）が同じ関数を読む。
+    MANUAL はスティックが走行操作そのものなので、jog_active の間は
+    PAUSE でも走行中とみなす（手をかけている最中の離脱を見逃さない）。"""
+    if mode == "PREP":
+        return (mode, state) in _DRIVING_EXTRA_STATES
+    run_state = (attrs.get(mode) or {}).get("run_state")
+    if run_state is not None and state == run_state:
+        return True
+    if (mode, state) in _DRIVING_EXTRA_STATES:
+        return True
+    if jog_active and mode == "MANUAL":
+        return True
+    return False
+
+
 # C-09c-blocked が戻す BLOCKED を持つモード（Spec-modes.md §3）。
 ESTOP_RESUME_BLOCKED_MODES: Set[str] = {"PANEL_NAV", "HOME_NAV"}
 

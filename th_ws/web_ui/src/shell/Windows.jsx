@@ -44,6 +44,7 @@ import {
   WIN_ESTOP_RESUME_PREV, WIN_ESTOP_TO_MENU,
   WIN_ESTOP_SYSTEM_TITLE, WIN_ESTOP_SYSTEM_BODY, WIN_ESTOP_SYSTEM_HINT, WIN_ESTOP_SYSTEM_HINT_RESUMABLE,
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
+  WIN_PRESENCE_TITLE, WIN_PRESENCE_BODY,
   WIN_CARRY_TITLE, WIN_CARRY_BODY, WIN_CARRY_HINT, WIN_CARRY_RELEASED,
   WIN_CARRY_RESUME, WIN_CARRY_DISMISS, WIN_CARRY_ESTOP_DISABLED,
 } from '../i18n/states.js'
@@ -66,13 +67,18 @@ const ESTOP_DISABLED_IN_CARRY = 'estop_disabled_in_carry'
 // control the same flag. It now doubles as "W-1 dismissed", covering both
 // the ESTOP and fault-caused-PAUSE cases below.
 export default function Windows({
-  ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, attributes,
+  ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, pauseReason, attributes,
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose,
 }) {
   const faultActive = !!fault?.active
   // Mutually exclusive: mode can't be both 'ESTOP' and something else at once.
   const w1IsEstop = mode === 'ESTOP'
+  // 1b-1 SG-A12: 在席喪失の一時停止（pause_reason === 'presence_lost'）。
+  // フォルトでは無いので、W-1 は最初から「再開しますか」の形で出る
+  // （w1Resolved が真。Spec-safety.md §6.2.2）。
+  const w1IsPresencePause = !w1IsEstop && stateName === 'PAUSE'
+    && pauseReason === 'presence_lost'
   // WS-9Z: w1Active is computed by AppShell now (latched past a fault that
   // clears before this renders -- see AppShell.jsx's faultPauseSeen). Do not
   // recompute isW1Active(mode, stateName, faultActive) here: that was the
@@ -92,7 +98,7 @@ export default function Windows({
   useEffect(() => {
     if (w1Active) setEstopDismissed(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [w1IsEstop, stateName, faultActive, setEstopDismissed])
+  }, [w1IsEstop, stateName, faultActive, pauseReason, setEstopDismissed])
 
   const w1Open = w1Active && !estopDismissed
   const carryOpen = mode === 'CARRY'
@@ -145,12 +151,14 @@ export default function Windows({
           <div className={`win fault ${w1Open ? 'show' : ''} ${w1Resolved ? 'resolved' : ''}`}>
             <header>
               {w1IsFaultEstop ? WIN_ESTOP_SYSTEM_TITLE
-                : w1IsEstop ? WIN_ESTOP_TITLE : WIN_FAULT_TITLE}
+                : w1IsEstop ? WIN_ESTOP_TITLE
+                : w1IsPresencePause ? WIN_PRESENCE_TITLE : WIN_FAULT_TITLE}
             </header>
             <div className="bodyw">
               <p>
                 {w1IsFaultEstop ? WIN_ESTOP_SYSTEM_BODY
-                  : w1IsEstop ? WIN_ESTOP_BODY : faultLabel(fault?.fault_type)}
+                  : w1IsEstop ? WIN_ESTOP_BODY
+                  : w1IsPresencePause ? WIN_PRESENCE_BODY : faultLabel(fault?.fault_type)}
               </p>
               {w1IsFaultEstop && fault?.fault_type && (
                 <p className="hint mt">{faultLabel(fault.fault_type)}</p>

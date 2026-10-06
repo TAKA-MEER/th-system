@@ -17,6 +17,11 @@ bool map_update           # 地図の書き足しが ON
 
 string[] unsaved          # 未保存の種別 ("venue_map" / "route" / "calib" / "map_patch")
 
+string pause_reason        # PAUSE に入った理由 ("" / "fault" / "jog" / "presence_lost")。
+                          # PAUSE を抜けたら ""。端末が離れていた間に PAUSE に落ちても、
+                          # 戻ってきた端末は一回きりの effect を受け取れないため、
+                          # 状態から再開確認（W-1）を出す（Spec-safety.md §6.2.2）
+
 builtin_interfaces/Time since   # 現在の mode/state に入った時刻
 string last_event               # 直近に処理した evt.*
 string last_reject_reason       # 直近に拒否された遷移の理由キー ("" なら無し)

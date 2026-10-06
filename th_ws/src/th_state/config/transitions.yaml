@@ -78,6 +78,24 @@
     args:
       id: W-1
   spec_ref: SM-3.1.1-05
+# C-16: 走行中に使用中の端末が離れた（sys.presence_lost。
+# Spec-safety.md §6.2.2・Spec-modes.md SM-3.1.1-03）。回復フォルトと同じ扱いで
+# モードを保ったまま PAUSE に落とし、W-1 で再開を問う。走行中でなければ
+# presence_stops_mode が弾く（速度上限 0 だけ。状態は変えない）。
+# PREP/RETURN では (PREP, PAUSE) になる（to_state は状態名そのまま）。
+- id: C-16
+  layer: 0
+  mode: '*'
+  state: '*'
+  event: sys.presence_lost
+  guard: presence_stops_mode
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: open_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-03
 - id: C-06a
   layer: 0
   mode: '*'

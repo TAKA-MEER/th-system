@@ -38,13 +38,13 @@ from th_system_msgs.srv import SetFlag, UiTrigger
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
 from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, OPCHECK_MODE, Context,
-                                   REPLAY_MODE, StateCore)
+                                   REPLAY_MODE, StateCore, is_driving)
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
 from th_state.tracker_policy import (TRACKER_OFF_DENIED_REASON,
                                       tracker_autostop, tracker_off_denied)
-from th_state.zones import (ScreenInput, combine_speed_limits, derive_limits,
-                             mode_speed_limit)
+from th_state.zones import (ScreenInput, active_screens, combine_speed_limits,
+                             derive_limits, mode_speed_limit)
 
 # ============================================================
 # state.md §3.3 の effect 宛先表（転記。ログ用）。
@@ -114,6 +114,16 @@ def _fault_event_name(active: bool, severity: str) -> str:
     return "fault.recoverable"
 
 
+# 1b-1 SG-A12: PAUSE に入った事象 → pause_reason の写像。載っていない事象
+# （C-09c の ESTOP 復帰・MANUAL の ui.stop 等）では ""（W-1 の出し分けは
+# 従来どおり。isW1Active は presence_lost だけを新規に扱う）。
+_PAUSE_REASON_BY_EVENT = {
+    "fault.recoverable": "fault",
+    "ui.jog.hold": "jog",
+    "sys.presence_lost": "presence_lost",
+}
+
+
 def _ms_to_time(ms: int) -> TimeMsg:
     t = TimeMsg()
     t.sec = ms // 1000
@@ -143,8 +153,11 @@ class StateManager(Node):
         self.declare_parameter('target_confidence_min', 0.5)
 
         transitions, attributes, mode_entry = self._load_config()
-        guards = guards_module.build_guards(mode_entry)
+        guards = guards_module.build_guards(mode_entry, attributes)
         self.core = StateCore(transitions, mode_entry, attributes, guards)
+        # 1b-1 SG-A12: 在席喪失の「走行中」判定（is_driving）が読む attributes。
+        # モード名リテラルは state_core 側に集約し、ここには書かない（N-1）。
+        self._attributes = attributes
 
         errors = self.core.validate()
         if errors:
@@ -174,6 +187,12 @@ class StateManager(Node):
         # 現在の ESTOP が UI ボタン起因かどうか（重大フォルト起因と区別。SM-3.1.1-11）。
         self._estop_from_ui = False
         self._screens = {}          # client_id -> ScreenInput
+        # 1b-1 SG-A12: 前回 tick の在席（使用中の端末あり）。起動直後は False
+        # （一度も使用中の端末が無い＝走行中のはずが無いので発火させない）。
+        self._presence_active = False
+        # 1b-1 SG-A12: PAUSE に入った理由（W-1 の出し分け用）。"" / "fault" /
+        # "jog" / "presence_lost"。PAUSE を抜けたら "" に戻す。
+        self._pause_reason = ""
         self._unsaved = []          # このパケットでは常に空（記録系ノードは未実装）
         self._last_event = ""
         self._last_reject_reason = ""
@@ -387,6 +406,15 @@ class StateManager(Node):
         # DetailedDesign-state.md §4.2 PREP）が、将来用にラッチは残す。
         if decision.to_state == "PAUSE" and self.state != "PAUSE":
             self.prev_sub = self.state
+
+        # 1b-1 SG-A12: PAUSE に入った理由を記録する（/system/state.pause_reason。
+        # 端末が離れていた間に PAUSE に落ちても、戻ってきた端末は一回きりの
+        # effect（open_window）を受け取れないため、状態から再開確認を出す）。
+        # 新規で入るときだけ立て、PAUSE 中の別事象では保つ。抜けたら ""。
+        if decision.to_state == "PAUSE" and self.state != "PAUSE":
+            self._pause_reason = _PAUSE_REASON_BY_EVENT.get(event, "")
+        elif decision.to_state != "PAUSE":
+            self._pause_reason = ""
 
         self._apply_effects(decision.effects, requester)
 
@@ -671,6 +699,18 @@ class StateManager(Node):
             if now - self._last_screen_msg_ms >= stale_ms:
                 self._screens = {}
 
+        # 1b-1 SG-A12: 在席（使用中の端末あり → なし）の立ち下がりを検出し、
+        # 走行中なら sys.presence_lost を流す（C-16 → PAUSE＋W-1。再開確認が要る）。
+        # 走行中でなければ何もしない（速度上限 0 だけ。derive_limits の
+        # フェイルセーフが担う）。前回も無しなら発火させない（起動直後の誤爆防止）。
+        window_s = self.get_parameter('ui_active_window_s').value
+        presence_now = bool(active_screens(self._screens, now, window_s))
+        if self._presence_active and not presence_now:
+            if is_driving(self.mode, self.state, self._attributes,
+                           self._jog_active):
+                self._process("sys.presence_lost", {}, "")
+        self._presence_active = presence_now
+
         self._publish_state()
 
     def _publish_state(self):
@@ -700,6 +740,7 @@ class StateManager(Node):
         msg.working = self._flags["working"]
         msg.map_update = self._flags["map_update"]
         msg.unsaved = list(self._unsaved)
+        msg.pause_reason = self._pause_reason
         msg.since = _ms_to_time(self._since_ms)
         msg.last_event = self._last_event
         msg.last_reject_reason = self._last_reject_reason
