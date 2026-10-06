@@ -39,9 +39,20 @@ export function resumeChoices(mode, attributes) {
 // already: this function used to be called independently from both files,
 // "computed twice ... risking drift" per this comment's own prior wording,
 // and only one of the two copies got the fix).
-export function isW1Active(mode, stateName, faultActive, pauseReason = '') {
+//
+// 1b-1 (PREP/RETURN の帰還の一時停止): 第4のケース。PREP の `PREP/PAUSE` は
+// 「RETURN（自動帰還）の一時停止」以外に存在せず（ジョグ・回復フォルト・端末離脱・
+// 非常停止からの「戻る」で入る）、出る手段は W-1 の「はい」（T-PREP-16→RETURN）／
+// 「いいえ」（T-PREP-17→MAPPING）だけ。PREP の run_state は MAPPING で、走行ボタン
+// （ui.run）は inert のため、他モードのように「走行」で戻る迂回路が無い。
+// pause_reason は jog・空（非常停止から戻った場合）・fault などになるので理由を問わず出す。
+// ただしジョグ中（jogActive）は W-1 で手動操作パネルを覆わない。離したら出る。
+// attributes.yaml で表せる性質ではない（run_state はあるが走行ボタンが効かない）
+// ので、PREP を明示する。他モードのジョグ PAUSE は走行ボタンで戻れるので対象外。
+export function isW1Active(mode, stateName, faultActive, pauseReason = '', jogActive = false) {
   return mode === 'ESTOP' || (stateName === 'PAUSE' && !!faultActive)
     || (stateName === 'PAUSE' && pauseReason === 'presence_lost')
+    || (mode === 'PREP' && stateName === 'PAUSE' && !jogActive)
 }
 
 // stateToBlueButton(mode, stateName, attributes) -> 'stop' | 'run' | 'check' | null

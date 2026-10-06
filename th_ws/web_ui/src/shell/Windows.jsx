@@ -44,7 +44,7 @@ import {
   WIN_ESTOP_RESUME_PREV, WIN_ESTOP_TO_MENU,
   WIN_ESTOP_SYSTEM_TITLE, WIN_ESTOP_SYSTEM_BODY, WIN_ESTOP_SYSTEM_HINT, WIN_ESTOP_SYSTEM_HINT_RESUMABLE,
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
-  WIN_PRESENCE_TITLE, WIN_PRESENCE_BODY,
+  WIN_PRESENCE_TITLE, WIN_PRESENCE_BODY, WIN_PREP_PAUSE_TITLE, WIN_PREP_PAUSE_BODY,
   WIN_CARRY_TITLE, WIN_CARRY_BODY, WIN_CARRY_HINT, WIN_CARRY_RELEASED,
   WIN_CARRY_RESUME, WIN_CARRY_DISMISS, WIN_CARRY_ESTOP_DISABLED,
 } from '../i18n/states.js'
@@ -79,6 +79,10 @@ export default function Windows({
   // （w1Resolved が真。Spec-safety.md §6.2.2）。
   const w1IsPresencePause = !w1IsEstop && stateName === 'PAUSE'
     && pauseReason === 'presence_lost'
+  // PREP の帰還の一時停止（ジョグ・非常停止から戻った場合など。pause_reason は問わない）。
+  // 端末離脱・フォルトの文言が優先。それ以外で PREP/PAUSE なら帰還の文言にする。
+  const w1IsPrepPause = !w1IsEstop && mode === 'PREP' && stateName === 'PAUSE'
+    && !w1IsPresencePause && !faultActive
   // WS-9Z: w1Active is computed by AppShell now (latched past a fault that
   // clears before this renders -- see AppShell.jsx's faultPauseSeen). Do not
   // recompute isW1Active(mode, stateName, faultActive) here: that was the
@@ -152,13 +156,15 @@ export default function Windows({
             <header>
               {w1IsFaultEstop ? WIN_ESTOP_SYSTEM_TITLE
                 : w1IsEstop ? WIN_ESTOP_TITLE
-                : w1IsPresencePause ? WIN_PRESENCE_TITLE : WIN_FAULT_TITLE}
+                : w1IsPresencePause ? WIN_PRESENCE_TITLE
+                : w1IsPrepPause ? WIN_PREP_PAUSE_TITLE : WIN_FAULT_TITLE}
             </header>
             <div className="bodyw">
               <p>
                 {w1IsFaultEstop ? WIN_ESTOP_SYSTEM_BODY
                   : w1IsEstop ? WIN_ESTOP_BODY
-                  : w1IsPresencePause ? WIN_PRESENCE_BODY : faultLabel(fault?.fault_type)}
+                  : w1IsPresencePause ? WIN_PRESENCE_BODY
+                  : w1IsPrepPause ? WIN_PREP_PAUSE_BODY : faultLabel(fault?.fault_type)}
               </p>
               {w1IsFaultEstop && fault?.fault_type && (
                 <p className="hint mt">{faultLabel(fault.fault_type)}</p>

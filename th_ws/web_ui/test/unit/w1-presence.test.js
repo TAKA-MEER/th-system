@@ -19,3 +19,23 @@ test('第4引数なしでも従来どおり動く（既存呼び出しの互換�
   assert.equal(isW1Active('FOLLOW', 'PAUSE', false), false)
   assert.equal(isW1Active('FOLLOW', 'PAUSE', true), true)
 })
+
+// 1b-1: PREP/PAUSE は「帰還の一時停止」しか無く、出る手段が W-1 だけ。理由を問わず出す。
+test('PREP/PAUSE は理由（jog・空・fault・presence_lost）を問わず W-1 を出す', () => {
+  for (const reason of ['jog', '', 'fault', 'presence_lost']) {
+    assert.equal(isW1Active('PREP', 'PAUSE', false, reason), true, `reason=${reason}`)
+  }
+})
+
+test('PREP/PAUSE でもジョグ中は W-1 を出さない（手動操作パネルを覆わない）', () => {
+  assert.equal(isW1Active('PREP', 'PAUSE', false, 'jog', true), false)
+  assert.equal(isW1Active('PREP', 'PAUSE', false, '', true), false)
+  assert.equal(isW1Active('PREP', 'PAUSE', false, 'jog', false), true)
+})
+
+test('PREP 以外のジョグ PAUSE と PREP の非 PAUSE は今までどおり出さない', () => {
+  assert.equal(isW1Active('FOLLOW', 'PAUSE', false, 'jog'), false)
+  assert.equal(isW1Active('PANEL_NAV', 'PAUSE', false, 'jog'), false)
+  assert.equal(isW1Active('PREP', 'RETURN', false, ''), false)
+  assert.equal(isW1Active('PREP', 'MAPPING', false, ''), false)
+})
