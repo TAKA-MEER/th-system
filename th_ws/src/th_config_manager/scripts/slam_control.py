@@ -705,6 +705,13 @@ class SlamControl(Node):
         if msg.dest != 'map_session':
             return
         if msg.name == 'commit_venue_map':
+            # 1b-5: 保存も停止中だけ（サービス経路と同じ条件）。遷移表 T-PREP-12
+            # が PREP/* から通るため、RETURN/PAUSE 由来の effect はここで落とす。
+            rejected = self._stop_only_reject_reason()
+            if rejected is not None:
+                self._report(f'NG: commit_venue_map を拒否 ({rejected})')
+                self.get_logger().warn(f'commit_venue_map を拒否: {rejected}')
+                return
             with self._lock:
                 err = self._commit_venue_map()
             if err:

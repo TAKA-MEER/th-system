@@ -303,7 +303,7 @@
 | ~~10~~ | 網羅-3・4 | `F-18` / `T-r11` / `T-r12` / `DF-D-7`（ハードウェア構成表） | **対応済み** → 下記 C（[hardware](DetailedDesign-hardware.md) を新設） |
 | **11** | 安全-34 | 数の主張が実数と合わない | **対応済み**（**48 パケット**／18 モード中 **16 モード**を覆う／**ガード 27 件**。数は機械的に数える旨も明記） |
 | **12** | 安全-30・31 | `tracker_lost_grace_ms`（暫定 500 ms）など裸の数値 | **対応済み**（[safety](DetailedDesign-safety.md) §5.4 を `class`/`status` の記述に置換。`WP-SAFE-01` §11 で `blocking_from_stage: 4` を明示） |
-| **13** | 安全-36・37 ／ 実装-34・35 | `estop_ui_lease_ms` 未使用・`sim_override` がスキーマに無い・`/robot/mode` 参照が残る・`conftest.py` の `_repo_root` | **対応済み**（`estop_ui_lease_ms` は `UI_DISCONNECTED` の契機として用途を確定 → `WP-SAFE-01` §4.2。`sim_override` は廃し `--sim` ＋ launch 引数に。`/robot/mode` は `/system/state` へ。`_repo_root` の修正は `WP-STATE-01` §7 の作業に入れた） |
+| **13** | 安全-36・37 ／ 実装-34・35 | `estop_ui_lease_ms` 未使用・`sim_override` がスキーマに無い・`/robot/mode` 参照が残る・`conftest.py` の `_repo_root` | **一部対応**（`estop_ui_lease_ms` は `UI_DISCONNECTED` の契機として用途を確定 → `WP-SAFE-01` §4.2。`sim_override` は廃し `--sim` ＋ launch 引数に。`_repo_root` の修正は `WP-STATE-01` §7 の作業に入れた。`/robot/mode` は**未移行のままだった**（1b-5 で判明。旧 `mode_manager` が起動後ずっと `IDLE` を出すため `config_manager`・`slam_control` のガードは常に通っていた）。1b-5 で `config_manager`・`slam_control`・`params_audit` の停止中ガードを `/system/state` へ付け替え済み。残る参照（幽霊ノード・観客ビュー・音声・校正スクリプト）は `WP-CLEAN-01` で扱う） |
 
 ### 2 回目の指摘の追跡（**残るのは `D` の 1 件だけ**）
 
