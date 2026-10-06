@@ -774,31 +774,52 @@
   - name: finalize_route
     args: {}
   spec_ref: SM-3.1.2-016
+# T-TEACH-05 / -05M / -05J: SAVED からの記録再開は拒否する（保存＝記録の確定。
+# 2026-10-04 ユーザー決定・SG-B11。Spec-modes.md SM-3.1.2-017/-018）。
+# 拒否しないと、記録を閉じた recorder に resume_record が届いて無視され、
+# 状態だけ REC になって画面が「記録中」を出す（記録していない）。
+# -05J は -017 の派生: TEACH_FOLLOW/SAVED でスティックに触れると C-01 が
+# SAVED → PAUSE へ動かして SAVED を抜けてしまう（そこから T-TEACH-03 で
+# REC に入るのと同じ穴）。-017 の契機は「走行」だけだが、Spec-transit.md
+# §3.2「保存後のスティック操作は受け付けない」に従い jog も拒否する。
 - id: T-TEACH-05
   layer: 10
   mode: TEACH_FOLLOW
   state: SAVED
   event: ui.run
   guard: null
-  to_mode: '='
-  to_state: REC
-  effects:
-  - name: resume_record
-    args: {}
+  to_mode: null
+  to_state: null
+  effects: []
   spec_ref: SM-3.1.2-017
+  reject: true
+  reject_reason_key: teach_saved_finalized
+- id: T-TEACH-05J
+  layer: 10
+  mode: TEACH_FOLLOW
+  state: SAVED
+  event: ui.jog.hold
+  guard: null
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-017
+  override_common: true
+  reject: true
+  reject_reason_key: teach_saved_finalized
 - id: T-TEACH-05M
   layer: 10
   mode: TEACH_MANUAL
   state: SAVED
   event: ui.jog.hold
   guard: null
-  to_mode: '='
-  to_state: REC
-  effects:
-  - name: resume_record
-    args: {}
+  to_mode: null
+  to_state: null
+  effects: []
   spec_ref: SM-3.1.2-018
   override_common: true
+  reject: true
+  reject_reason_key: teach_saved_finalized
 - id: T-TEACH-06
   layer: 10
   mode:

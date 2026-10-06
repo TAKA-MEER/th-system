@@ -969,3 +969,48 @@ def test_presence_lost_pauses_only_when_driving(state_core_bundle):
         assert d.accepted is False, \
             f"{mode}/{state} で C-16 が通ってしまった"
         assert (d.to_mode, d.to_state) == (mode, state)
+
+
+# ============================================================
+# 1b-7（SG-B11）: 保存＝記録の確定。SAVED からは記録を再開しない。
+# T-TEACH-05（ui.run）/ -05J（jog）/ -05M（jog）はいずれも拒否し、
+# SAVED のまま留まる。resume_record は出さない（出ると記録を閉じた
+# recorder が無視し、状態だけ REC の「記録中なのに記録していない」になる）。
+# ============================================================
+@pytest.mark.rule("T-TEACH-05")
+@pytest.mark.rule("T-TEACH-05J")
+@pytest.mark.rule("T-TEACH-05M")
+def test_saved_does_not_resume_recording(state_core_bundle):
+    """SAVED での「走行」・スティック操作は拒否され、SAVED のまま留まる。"""
+    core, _, _, _ = state_core_bundle
+    cases = [
+        ("TEACH_FOLLOW", "SAVED", "ui.run", "T-TEACH-05"),
+        ("TEACH_FOLLOW", "SAVED", "ui.jog.hold", "T-TEACH-05J"),
+        ("TEACH_MANUAL", "SAVED", "ui.jog.hold", "T-TEACH-05M"),
+    ]
+    for mode, state, event, rule_id in cases:
+        d = core.step(mode, state, event, _mk_ctx())
+        assert d.accepted is False, \
+            f"{mode}/{state} {event} が受理された（保存後に記録が再開する）"
+        assert d.rule_id == rule_id, \
+            f"{mode}/{state} {event}: {d.rule_id}（{rule_id} で拒否されること）"
+        assert d.reject_reason_key == "teach_saved_finalized", \
+            f"{mode}/{state} {event}: 理由キーが違う: {d.reject_reason_key!r}"
+        assert (d.to_mode, d.to_state) == (mode, state), \
+            f"{mode}/{state} {event}: SAVED のまま留まらない: {d.to_mode}/{d.to_state}"
+        assert "resume_record" not in [e.name for e in d.effects], \
+            f"{mode}/{state} {event}: resume_record が出ている"
+        assert list(d.effects) == [], \
+            f"{mode}/{state} {event}: effect が出ている: {[e.name for e in d.effects]}"
+
+
+@pytest.mark.rule("T-TEACH-05J")
+def test_saved_jog_does_not_leave_saved_via_common(state_core_bundle):
+    """TEACH_FOLLOW/SAVED でのスティックは C-01（jog → PAUSE）に落ちない。
+    -05J の override_common が先に拾って拒否すること（変異: override_common を
+    消すと C-01 が通り SAVED を抜けてしまう → このテストが赤くなる）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("TEACH_FOLLOW", "SAVED", "ui.jog.hold", _mk_ctx())
+    assert d.accepted is False
+    assert d.rule_id == "T-TEACH-05J"
+    assert (d.to_mode, d.to_state) == ("TEACH_FOLLOW", "SAVED")

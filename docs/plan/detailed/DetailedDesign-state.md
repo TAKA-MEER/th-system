@@ -463,16 +463,25 @@ class StateCore:
 | `T-TEACH-03` | `TEACH_FOLLOW` | `PAUSE` | `ui.run` | — | `REC` | `resume_record`（一時停止は記録に残さない） |
 | **`T-TEACH-03M`** | **`TEACH_MANUAL`** | `PAUSE` ／ **`REC`** | **`ui.jog.hold`** | — | `REC` | 同上。**S-13 に「走行」ボタンが無い**（`Spec-webui.md` §3.4）。**`REC` 発の自己ループを含む**（`T-MANUAL-01` と同じ理由。正本 `SM-3.1.2-015`） |
 | `T-TEACH-04` | 両方 | `REC` ／ `PAUSE` | `ui.save` | — | `SAVED` | `finalize_route` |
-| `T-TEACH-05` | `TEACH_FOLLOW` | `SAVED` | `ui.run` | — | `REC` | `resume_record` |
-| **`T-TEACH-05M`** | **`TEACH_MANUAL`** | `SAVED` | **`ui.jog.hold`** | — | `REC` | 同上 |
+| **`T-TEACH-05`** | **`TEACH_FOLLOW`** | **`SAVED`** | **`ui.run`** | — | **拒否**（`reject: true`、`SAVED` のまま） | — |
+| **`T-TEACH-05J`** | **`TEACH_FOLLOW`** | **`SAVED`** | **`ui.jog.hold`** | — | **拒否**（同上。`override_common`。`C-01` が `SAVED` → `PAUSE` へ動かすのを抑える） | — |
+| **`T-TEACH-05M`** | **`TEACH_MANUAL`** | **`SAVED`** | **`ui.jog.hold`** | — | **拒否**（同上。`override_common`） | — |
 | `T-TEACH-06` | 両方 | `*` | `evt.record_broken` | — | **§4.3 参照** | `ask_save` |
 
-`T-TEACH-05` / `-05M` は**正本 `Spec-modes.md` §3.1.2 に反映済み**（§9-(d) ／ `Spec-open.md` F-32）。
-続けて `ui.save` した場合は `F-04` に従い**新版**として保存する。
+**`T-TEACH-05` / `-05J` / `-05M` は保存＝記録の確定（2026-10-04 ユーザー決定・`SG-B11`）。
+`Spec-modes.md` `SM-3.1.2-017`／`-018` 改定に合わせ、旧 `→ REC ＋ resume_record` を
+撤回した。拒否理由キーは `teach_saved_finalized`（§10）。`-05J` は `-017` の派生で、
+`SM-3.1.2-017` の契機は「走行」だけだが `C-01` がスティックで `SAVED` を抜けて
+`T-TEACH-03` 経由で `REC` に入る穴を塞ぐため（`Spec-transit.md` §3.2
+「保存後のスティック操作は受け付けない」）。**
+
+`T-TEACH-05` / `-05J` / `-05M` は**正本 `Spec-modes.md` §3.1.2 に反映済み**
+（`SM-3.1.2-017`／`-018`「拒否・`SAVED` のまま」。§9-(d) ／ `Spec-open.md` F-32）。
 `T-TEACH-06` は `Spec-modes.md` §5「そのモードを続けられないときだけ `IDLE` へ落とす」の実体。
 
 `TEACH_MANUAL` も同じく、**`T-TEACH-03M` と `T-TEACH-05M` の 2 行だけ** `override_common: true` にする
 （`ui.jog.hold` に対して `C-01` を打ち消す）。**モード単位のフラグにしない**（上の囲みと同じ理由）。
+`-05J` は `TEACH_FOLLOW` 側の同型（`SAVED` での `ui.jog.hold` に対して `C-01` を打ち消す）。
 **`-03M` / `-05M` を分けたのは、手動系ではスティックが走行操作そのものだからである**
 （§9-(j) ／ `Spec-open.md` F-38）。`ui.run` を `TEACH_MANUAL` に残すと、
 **押せるボタンが存在しない遷移**が表に入る。
@@ -1004,6 +1013,7 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | `params_placeholder_blocking` | 起動を止める暫定値が残っている |
 | **`blind_mask_uncalibrated`** | 死角マスクが未校正のまま自律走行を始めようとした（[safety](DetailedDesign-safety.md) §4.4） |
 | **`unsaved_remains`** | 未保存が残ったまま `/shutdown/execute` を呼んだ（§12.5） |
+| **`teach_saved_finalized`** | 保存済みの教示に記録を続けようとした（`T-TEACH-05`／`-05J`／`-05M`。保存＝確定のため拒否） |
 
 ---
 
