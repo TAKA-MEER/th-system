@@ -672,17 +672,20 @@ def test_estop_resume_opcheck_calib_returns_to_list(state_core_bundle):
 @pytest.mark.rule("C-09c-prep-return")
 @pytest.mark.rule("C-09c-prep")
 def test_estop_resume_prep_returns_to_prev_state(state_core_bundle):
-    """PREP は押下前の状態へ。RETURN だった場合は今回は MAPPING
-    （RETURN の PAUSE は別パケット 1b-1 で作る）。"""
+    """PREP は押下前の状態へ。RETURN だった場合は PREP/PAUSE
+    （SG-A7。RETURN の PAUSE を 1b-1 で作った）。"""
     core, _, _, _ = state_core_bundle
     for prev_state, dst in [("MAPPING", "MAPPING"), ("REGISTER", "REGISTER"),
-                            ("RETURN", "MAPPING"), ("EDIT", "EDIT"),
+                            ("RETURN", "PAUSE"), ("EDIT", "EDIT"),
                             ("SAVED", "SAVED")]:
         d = core.step("ESTOP", "NONE", "ui.resume_yes",
                       _resume_ctx("PREP", prev_state))
         assert d.accepted is True, f"PREP/{prev_state} が拒否された"
         assert (d.to_mode, d.to_state) == ("PREP", dst), \
             f"PREP/{prev_state} の戻り先が違う: {d.to_mode}/{d.to_state}"
+    d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                  _resume_ctx("PREP", "RETURN"))
+    assert d.rule_id == "C-09c-prep-return"
 
 
 # ============================================================
@@ -755,14 +758,19 @@ def test_c04_rejected_where_run_state_is_null(state_core_bundle):
 
 
 @pytest.mark.rule("C-05")
+@pytest.mark.rule("T-PREP-17")
 def test_c05_rejected_where_resume_state_is_null(state_core_bundle):
-    """resume_state が null の PREP では ui.resume_no／ui.resume_ack を遷移させない。
+    """resume_state が null の PREP では汎用の C-05 は通らない（SG-B22）。
+    PREP/PAUSE の「いいえ」は専用の T-PREP-17 が MAPPING へ送る（SG-A7）。
     他のモードは §6 の復帰先へ送る（spec §6.1 の読み方どおり）。"""
     core, _, _, attrs = state_core_bundle
     assert attrs["PREP"]["resume_state"] is None, "前提（resume_state null）が崩れている"
     for event in ("ui.resume_no", "ui.resume_ack"):
         d = core.step("PREP", "PAUSE", event, _mk_ctx(fault_active=False))
-        assert d.accepted is False, f"PREP/PAUSE で {event} が通ってしまった"
+        assert d.accepted is True, f"PREP/PAUSE で {event} が拒否された"
+        assert (d.to_mode, d.to_state) == ("PREP", "MAPPING"), \
+            f"PREP/PAUSE の {event} の行き先が違う: {d.to_mode}/{d.to_state}"
+        assert d.rule_id == "T-PREP-17"
     d = core.step("AT_PANEL", "PAUSE", "ui.resume_ack", _mk_ctx(fault_active=False))
     assert d.accepted is True
     assert (d.to_mode, d.to_state) == ("AT_PANEL", "IDLE_P")
@@ -812,3 +820,80 @@ def test_validate_combos_catches_pause_fixed_regression(state_core_bundle):
                       guards_module.build_guards(mode_entry))
     errors = [e for e in core2.validate() if "組合せ" in e]
     assert errors, "PAUSE 固定に戻す変異を組み合わせ検査が捕まえていない"
+
+
+# ============================================================
+# 1b-1（SG-A7）: PREP/RETURN の一時停止。
+# RETURN 中だけジョグ・回復フォルトで PREP/PAUSE に落とす。
+# ============================================================
+@pytest.mark.rule("C-01")
+def test_prep_return_jog_falls_to_pause(state_core_bundle):
+    """PREP/RETURN 中のジョグ介入 → PREP/PAUSE（C-01。set_jog 付き）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("PREP", "RETURN", "ui.jog.hold", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("PREP", "PAUSE")
+    assert d.rule_id == "C-01"
+    assert any(e.name == "set_jog" and e.args.get("on") is True for e in d.effects)
+
+
+@pytest.mark.rule("C-03")
+def test_prep_return_recoverable_fault_falls_to_pause(state_core_bundle):
+    """PREP/RETURN 中の回復フォルト → PREP/PAUSE（C-03。W-1 を開く）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("PREP", "RETURN", "fault.recoverable",
+                  _mk_ctx(fault_active=True, fault_type="LIDAR_LOST"))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("PREP", "PAUSE")
+    assert d.rule_id == "C-03"
+    assert any(e.name == "open_window" and e.args.get("id") == "W-1" for e in d.effects)
+
+
+@pytest.mark.rule("C-01")
+@pytest.mark.rule("C-03")
+def test_prep_non_return_states_hold_on_jog_and_fault(state_core_bundle):
+    """MAPPING／REGISTER／EDIT／SAVED ではジョグ・回復フォルトで状態が変わらない
+    （地図作成中の連れ回し。既存の $pause_unless_prep の縛り）。"""
+    core, _, _, _ = state_core_bundle
+    for state in ("MAPPING", "REGISTER", "EDIT", "SAVED"):
+        d = core.step("PREP", state, "ui.jog.hold", _mk_ctx())
+        assert d.accepted is True
+        assert (d.to_mode, d.to_state) == ("PREP", state), \
+            f"PREP/{state} がジョグで動いた: {d.to_mode}/{d.to_state}"
+        # 回復フォルトは C-03 の対象外（拒否。状態も W-1 も動かさない）。
+        d = core.step("PREP", state, "fault.recoverable",
+                      _mk_ctx(fault_active=True, fault_type="LIDAR_LOST"))
+        assert d.accepted is False, f"PREP/{state} で C-03 が通ってしまった"
+        assert (d.to_mode, d.to_state) == ("PREP", state), \
+            f"PREP/{state} が回復フォルトで動いた: {d.to_mode}/{d.to_state}"
+
+
+@pytest.mark.rule("T-PREP-16")
+def test_prep_pause_resume_yes_returns_to_return(state_core_bundle):
+    """PREP/PAUSE の「はい」→ RETURN（T-PREP-16。汎用 C-04 の MAPPING ではない）。
+    venue_navigator が PAUSE 中に取り消した FollowPath の残りを送り直す
+    （状態遷移で戻るだけ。effect は close_window のみ）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("PREP", "PAUSE", "ui.resume_yes", _mk_ctx(fault_active=False))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("PREP", "RETURN"), \
+        f"行き先が違う: {d.to_mode}/{d.to_state}"
+    assert d.rule_id == "T-PREP-16"
+    assert any(e.name == "close_window" and e.args.get("id") == "W-1" for e in d.effects)
+    # フォルト継続中は「はい」を受け付けない（C-04 と同じ fault_cleared）。
+    d = core.step("PREP", "PAUSE", "ui.resume_yes",
+                  _mk_ctx(fault_active=True, fault_type="LIDAR_LOST"))
+    assert d.accepted is False, "フォルト継続中に PREP/PAUSE の「はい」が通ってしまった"
+    assert (d.to_mode, d.to_state) == ("PREP", "PAUSE")
+
+
+@pytest.mark.rule("C-03")
+def test_prep_tracker_lost_never_pauses(state_core_bundle):
+    """PREP では PERSON_TRACKER_LOST で PAUSE にしない（RETURN／PAUSE 中も。
+    Spec-modes.md §5 の表どおり。登録拒否だけで地図作成は続く）。"""
+    core, _, _, _ = state_core_bundle
+    for state in ("RETURN", "PAUSE", "MAPPING"):
+        d = core.step("PREP", state, "fault.recoverable",
+                      _mk_ctx(fault_active=True, fault_type="PERSON_TRACKER_LOST"))
+        assert d.accepted is False, \
+            f"PREP/{state} が人物追跡ロストで動いた: {d.to_mode}/{d.to_state}"

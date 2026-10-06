@@ -319,10 +319,11 @@ def test_in_use_monitored_modes_whole_regardless_of_state():
 
 
 def test_in_use_prep_only_return():
-    """PREP は RETURN のときだけ監視する。"""
+    """PREP は RETURN のときだけ監視する。PAUSE 中（PREP/PAUSE）は止まっているので
+    監視しない（SG-A7 で PAUSE が増えた。MAPPING 等と同じ扱い）。"""
     assert PREP_MONITORED_STATES == {"RETURN"}
     assert is_localization_in_use("PREP", "RETURN") is True
-    for state in ("MAPPING", "REGISTER", "EDIT", "SAVED", "NONE", None):
+    for state in ("MAPPING", "REGISTER", "EDIT", "SAVED", "PAUSE", "NONE", None):
         assert is_localization_in_use("PREP", state) is False, (
             f"PREP/{state} が監視対象になっている")
 
@@ -393,8 +394,9 @@ def test_mode_state_names_exist_in_config():
     for mode in ("REPLAY", "PANEL_NAV", "SUMMON", "HOME_NAV", "PREP",
                  "IDLE", "MANUAL", "AT_PANEL", "AT_HOME"):
         assert mode in attributes, f"attributes.yaml にモード {mode} が無い"
-    assert "RETURN" in (attributes["PREP"].get("prep_states") or []), (
-        "attributes.yaml の PREP prep_states に RETURN が無い")
+    assert "RETURN" not in (attributes["PREP"].get("prep_states") or []), (
+        "attributes.yaml の PREP prep_states に RETURN が残っている"
+        "（SG-A7: RETURN 中は PAUSE に落とすので保つ側から外す）")
 
     with open(os.path.join(repo_src, "th_state", "config", "transitions.yaml"),
               encoding="utf-8") as f:
