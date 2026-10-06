@@ -5,8 +5,10 @@ config_manager.py — ROS2 ノード本体
 WebUI からのパラメータ調整要求を仲介する。
 
 担当:
-  - /robot/mode 購読 → IDLE/MANUAL 以外での変更を拒否（サーバー側の安全ガード。
-    UI 側の表示制御だけに頼らない）
+  - /system/state 購読 → 停止中（IDLE・PREP の地図作業中）かつジョグ中でない
+    ときだけ変更を受け付ける（サーバー側の安全ガード。UI 側の表示制御だけに
+    頼らない。Spec.md SD-9。1b-5 で旧 /robot/mode から付け替え）
+    。/system/state 未受信・古いときは拒否する（安全側）
   - /config_manager/set_tunable_params → 対象ノードの標準 set_parameters に
     透過的にフォワード（実行時反映のみ、YAML には書かない）
   - /config_manager/save_tunable_params → 対象ノードの標準 get_parameters で
@@ -29,19 +31,22 @@ ReentrantCallbackGroup + 同期的な spin_until_future_complete という
 
 SERVICE_TIMEOUT_SEC = 2.0
 import os
+import time
 
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 
 from ament_index_python.packages import get_package_share_directory
 from rcl_interfaces.msg import ParameterType
 from rcl_interfaces.srv import GetParameters, SetParameters
 
-from th_system_msgs.msg import RobotMode
+from th_system_msgs.msg import SystemState
 from th_system_msgs.srv import SaveTunableParams, SetTunableParams
 
+from th_config_manager.stop_only_guard import STATE_STALE_SEC, stop_only_allows
 from th_config_manager.tunable_targets import TUNABLE_TARGETS
 from th_config_manager.yaml_writer import update_ros_params_yaml
 from th_config_manager.service_call import call_and_wait
@@ -73,7 +78,14 @@ def _param_value_to_python(value):
 class ConfigManager(Node):
     def __init__(self):
         super().__init__("config_manager")
-        self._mode = RobotMode.IDLE
+        # 1b-5: /system/state の最新像。未受信の間は拒否する（安全側）。
+        self._state_mode = None
+        self._state_name = ""
+        self._jog_active = False
+        self._state_at = None   # 最後に受けた時刻（monotonic 秒）
+        # 鮮度の上限。registry の state_stale_ms=1500 と同じ既定
+        # （jog_gate / obstacle_limiter / safety_monitor と同じ値）。
+        self.declare_parameter("state_stale_ms", int(STATE_STALE_SEC * 1000.0))
         # main() で spin に使う MultiThreadedExecutor を明示的に受け取る。
         # rclpy.spin_until_future_complete() は executor 未指定だと内部で
         # 一時的な別 Executor を作って同じノードを二重に spin してしまい、
@@ -83,7 +95,12 @@ class ConfigManager(Node):
         # 元のリクエスト処理コールバックと並行実行できるよう同一の
         # ReentrantCallbackGroup にまとめる（MultiThreadedExecutor 前提）。
         cbg = ReentrantCallbackGroup()
-        self.create_subscription(RobotMode, "/robot/mode", self._cb_mode, 10, callback_group=cbg)
+        state_qos = QoSProfile(
+            depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(
+            SystemState, "/system/state", self._cb_state, state_qos,
+            callback_group=cbg)
 
         self._get_clients = {
             name: self.create_client(GetParameters, f"/{name}/get_parameters", callback_group=cbg)
@@ -103,16 +120,34 @@ class ConfigManager(Node):
 
         self.get_logger().info("config_manager 起動")
 
-    def _cb_mode(self, msg: RobotMode):
-        self._mode = msg.mode
+    def _cb_state(self, msg: SystemState):
+        self._state_mode = msg.mode
+        self._state_name = msg.state
+        self._jog_active = bool(msg.jog_active)
+        self._state_at = time.monotonic()
 
-    def _mode_allows_change(self) -> bool:
-        return self._mode in (RobotMode.IDLE, RobotMode.MANUAL)
+    def _reject_if_not_stopped(self):
+        """停止中だけの条件を満たさなければ拒否理由の文言、満たせば None。"""
+        received = self._state_at is not None
+        age = (time.monotonic() - self._state_at) if received else None
+        stale_ms = self.get_parameter("state_stale_ms").value
+        allowed, reason = stop_only_allows(
+            self._state_mode, self._state_name, self._jog_active,
+            received, age, stale_ms / 1000.0)
+        if allowed:
+            return None
+        detail = {
+            "state_not_received": "/system/state を受信していないため",
+            "state_stale": "/system/state が古いため",
+            "jog_active": "ジョグ中のため",
+        }.get(reason, f"いまの状態（{self._state_mode}/{self._state_name}）では")
+        return f"停止中（IDLE・PREP の地図作業中）のみ操作できます（{detail}拒否）"
 
     def _cb_set(self, request, response):
-        if not self._mode_allows_change():
+        rejected = self._reject_if_not_stopped()
+        if rejected:
             response.success = False
-            response.message = "IDLE/MANUAL モード中のみ変更できます"
+            response.message = rejected.replace("操作できます", "変更できます")
             return response
         if request.node_name not in TUNABLE_TARGETS:
             response.success = False
@@ -139,9 +174,10 @@ class ConfigManager(Node):
         return response
 
     def _cb_save(self, request, response):
-        if not self._mode_allows_change():
+        rejected = self._reject_if_not_stopped()
+        if rejected:
             response.success = False
-            response.message = "IDLE/MANUAL モード中のみ保存できます"
+            response.message = rejected.replace("操作できます", "保存できます")
             return response
         target = TUNABLE_TARGETS.get(request.node_name)
         if target is None:
