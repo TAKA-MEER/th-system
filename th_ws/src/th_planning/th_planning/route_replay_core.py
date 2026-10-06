@@ -136,6 +136,57 @@ def align_path_to_current(
 
 
 # ──────────────────────────────────────────────────────────────────
+# 途中復帰（W-01 P4。numpy 不要なのでここに置く）
+# ──────────────────────────────────────────────────────────────────
+def select_resume_index(
+    points: Sequence[Pose2D],
+    pose: Pose2D,
+    max_dist_m: float = 2.0,
+) -> int:
+    """確定姿勢から再開する経路点の添字を返す。見つからなければ -1。
+
+    規則（DetailedDesign-transit-localize-options §3）:
+      - 確定姿勢に最も近い点のうち、進行方向との内積が正（前向き）のもの。
+      - 最も近い前向き点までの距離が max_dist_m を超えたら途中復帰しない (-1)。
+      - 同点（完全な同値）は先勝ち＝index の小さい方（安全側・手前。終点側へ飛ばない）。
+
+    既定値 2.0 は出発点（P6 で実測で詰める）。正本の既定は
+    localize_core.LOCALIZE_DEFAULTS["resume_max_dist_m"] で、呼び出し側
+    （replay_runner）が ROS パラメータ化して渡す。ここに直書きするのは、
+    このモジュールが numpy 依存の localize_core を import できないため
+    （host の試験が全滅する。P1 の注記）。
+
+    点 i の進行方向は区間 i→i+1、最終点だけ区間 i-1→i、1 点だけなら
+    その点の yaw。反転後の点列にも同じ規則を適用する（呼び出し側が反転済みの
+    点列を渡すこと。W-19 と直交）。
+    """
+    n = len(points)
+    if n == 0:
+        return -1
+    rx, ry, ryaw = pose
+    cos_r, sin_r = math.cos(ryaw), math.sin(ryaw)
+    best_i = -1
+    best_d2 = max_dist_m * max_dist_m
+    for i, (px, py, pyaw) in enumerate(points):
+        # 同値は上書きしない（狭義 < のみ）＝手前の index 優先。終点側へ飛ばない。
+        if n == 1:
+            hx, hy = math.cos(pyaw), math.sin(pyaw)
+        elif i + 1 < n:
+            nx, ny, _ = points[i + 1]
+            hx, hy = nx - px, ny - py
+        else:
+            qx, qy, _ = points[i - 1]
+            hx, hy = px - qx, py - qy
+        if hx * cos_r + hy * sin_r <= 0.0:
+            continue
+        d2 = (px - rx) ** 2 + (py - ry) ** 2
+        if d2 < best_d2 or (best_i == -1 and d2 <= best_d2):
+            best_i = i
+            best_d2 = d2
+    return best_i
+
+
+# ──────────────────────────────────────────────────────────────────
 # 旋回
 # ──────────────────────────────────────────────────────────────────
 def rotate_toward(
