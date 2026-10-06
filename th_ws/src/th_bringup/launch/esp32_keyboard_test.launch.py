@@ -11,7 +11,7 @@ keyboard → /cmd_vel → esp32_bridge(WebSocketサーバー) → pi_serial_rela
 使い方:
   ros2 launch th_bringup esp32_keyboard_test.launch.py
 
-esp32_bridge のアドレス(config/params.yaml の ws_host/ws_port)へは
+esp32_bridge のアドレス(config/params.yaml の ws_host/esp32_ws_port)へは
 ラズパイの pi_serial_relay が接続しに来る(ESP32 自身はもう WiFi を使わない)。
 """
 import os

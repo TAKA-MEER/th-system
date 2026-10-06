@@ -78,7 +78,11 @@ class Esp32Bridge(Node):
         # WHEEL_FEEDBACK 1 フレームが表す走行時間そのもので、オドメトリ積分の dt になる。
         self.declare_parameter('feedback_period_ms', 100)
         self.declare_parameter('ws_host', '0.0.0.0')
-        self.declare_parameter('ws_port', 8765)
+        # SG-B21: registry の esp32_ws_port が正。旧名 ws_port は使わない
+        # （生成 esp32_bridge.yaml の esp32_ws_port が死にキーになっていた）。
+        # 既定値は静的 params.yaml と同じ 8766（ラズパイの pi_serial_relay が
+        # 決め打ちで接続しに来る）。
+        self.declare_parameter('esp32_ws_port', 8766)
         # DEBT-4 対処 (WP-SAFE-02): /cmd_vel がこの時間 [ms] 途絶したら、
         # キープアライブの参照値をゼロへ書き換える (esp32_bridge.py 側で
         # 先に止める。A7: esp32_watchdog_ms=600ms より短いこと)。
@@ -116,7 +120,7 @@ class Esp32Bridge(Node):
         self._base_frame = self.get_parameter('base_frame').value
         self._publish_tf = self.get_parameter('publish_tf').value
         self._ws_host = self.get_parameter('ws_host').value
-        self._ws_port = self.get_parameter('ws_port').value
+        self._ws_port = self.get_parameter('esp32_ws_port').value
         self._cmd_vel_stale_ms = self.get_parameter('cmd_vel_stale_ms').value
         self._rx_queue_drain_max_per_cycle = \
             self.get_parameter('rx_queue_drain_max_per_cycle').value

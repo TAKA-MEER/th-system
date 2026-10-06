@@ -1169,7 +1169,7 @@ ros2 topic echo /rosout | grep esp32_bridge
 ssh mirs2602@192.168.5.1 'journalctl -u rpi-serial-relay -f'
 
 # PC の固定IP (192.168.5.50) が pi_serial_relay の --ws-host/--ws-port と
-# 一致しているか、PC 側ファイアウォールが ws_port をブロックしていないか確認
+# 一致しているか、PC 側ファイアウォールが esp32_ws_port をブロックしていないか確認
 
 # ウォッチドッグタイムアウトを確認 (無変更)
 # config.h: WATCHDOG_MS が通信周期より十分大きいか確認
