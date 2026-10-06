@@ -29,7 +29,7 @@ FSM の行は足りているが、発火元（`evt.localize_low` の発行者・
 | `T-REPLAY-02`（`evt.localize_low` → `widen_search`） | 待ち受けだけある | **発行者がいない。**確度評価（replay_runner 拡張）が `arg_json{score, margin}` 付きで出す |
 | `T-REPLAY-03`（`ui.localize_global` → `global_localize`） | 同上 | **画面ボタンが無い**（S-14 に足す） |
 | `widen_search` / `global_localize` effect | no-op（`WAIVER W-01`） | 探索の実体を実装する（中身は [§2](DetailedDesign-transit-localize-options.md)） |
-| 経路途中からの再開 | 行が無い | `load_route` に `from_index` 任意引数（effect 転送が passthrough なら行追加は不要。要確認） |
+| 経路途中からの再開 | 行が無い | 行追加なし。`replay_runner` が確定姿勢から再開 index を内部で決める（P4 決定。`load_route` に `from_index` 引数を足さない。`transitions.yaml` の effect 転送は明示対応付けであって passthrough ではないため、引数足しは `state_core.EFFECT_ARG_SPECS`・`transitions.yaml`・`state_manager` のラッチまで波及する。FSM を触らない方が差分が小さい） |
 
 ## 3. 作業パケットへの分割（1 パケット＝1 ブランチ）
 

@@ -97,8 +97,9 @@ B は地図形式と TF 競合の解消に別設計が要り、共分散が使�
 | --- | --- |
 | 点の選び方 | `p` に最も近い点のうち、**進行方向との内積が正**（前向き）のもの。向きで前後関係の曖昧さを解く |
 | 向き | 再開点の `yaw` まで既存の超信地旋回（`rotate_toward`）で合わせる。`rotate_to_start_yaw` の実体を再利用し、目標ヨーだけ差し替える |
-| 再開の渡し方 | `load_route` に `from_index` 任意引数（`transitions.yaml` の effect 転送が passthrough なら行追加は不要。**実装時に確認**。だめなら新 effect `seek_route{index}` を足す） |
+| 再開の渡し方 | FSM・`load_route` 引数を足さない。`replay_runner` が確定時（探索成功の poll）に確定姿勢から再開 index を計算して保持し、`rotate_to_start_yaw` でその点の向きに合わせる（P4 決定。`transitions.yaml` の effect 転送は明示対応付けであって passthrough ではないことを `state_core._resolve_effect_args`＋`EFFECT_ARG_SPECS` で確認済み。引数渡しも新 effect `seek_route{index}` も要らない） |
 | 逆再生との関係 | W-19 の裏側（`reverse_points`）は `from_index` と直交する。反転後の点列に同じ規則を適用する |
+| 同値・遠すぎ | 完全同点は手前（index の小さい方）を取る（安全側。終点側へ飛ばない）。最も近い前向き点まで `resume_max_dist_m`（既定 2.0 m。出発点。実測で詰めるのは P6）を超えたら途中復帰せず `failed` で LOCALIZE に留まる（`index 0` から走り出すと離れた始点へ向かうため） |
 
 ## §4. READY 確認画面（S-14。spec に無い詳細は設計で決めたと明記）
 
