@@ -868,6 +868,25 @@ def test_prep_non_return_states_hold_on_jog_and_fault(state_core_bundle):
             f"PREP/{state} が回復フォルトで動いた: {d.to_mode}/{d.to_state}"
 
 
+@pytest.mark.rule("T-PREP-18")
+@pytest.mark.rule("T-PREP-10")
+def test_prep_return_stop_falls_to_pause_others_inert(state_core_bundle):
+    """PREP/RETURN 中の「停止」→ PREP/PAUSE（T-PREP-18。SM-3.1.2-050a）。
+    RETURN 以外は inert のまま（T-PREP-10。SM-3.1.2-050）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("PREP", "RETURN", "ui.stop", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("PREP", "PAUSE"), \
+        f"行き先が違う: {d.to_mode}/{d.to_state}"
+    assert d.rule_id == "T-PREP-18"
+    for state in ("MAPPING", "REGISTER", "EDIT", "SAVED", "PAUSE"):
+        d = core.step("PREP", state, "ui.stop", _mk_ctx())
+        assert d.accepted is True, f"PREP/{state} で停止が拒否された"
+        assert (d.to_mode, d.to_state) == ("PREP", state), \
+            f"PREP/{state} が停止で動いた: {d.to_mode}/{d.to_state}"
+        assert d.rule_id == "T-PREP-10"
+
+
 @pytest.mark.rule("T-PREP-16")
 def test_prep_pause_resume_yes_returns_to_return(state_core_bundle):
     """PREP/PAUSE の「はい」→ RETURN（T-PREP-16。汎用 C-04 の MAPPING ではない）。

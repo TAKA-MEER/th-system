@@ -1965,6 +1965,57 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         self._reset_prep_to_idle()
         self._mark_passed(f'(compute_total={self._n_compute()})')
 
+    def test_prep_pause_via_stop_then_resume_yes_resends_residual(self):
+        """SM-3.1.2-050a（T-PREP-18）。PREP/RETURN で `ui.stop` → PREP/PAUSE で
+        FollowPath が取り消される。W-1「はい」(`ui.resume_yes` → RETURN) で同じ経路の
+        残りが送られる（再計算しない）。修正前は inert のまま走り続けるので赤になる。"""
+        self._reset_to_home()
+        with self._lock:
+            self.compute_mode = 'success'
+            self.follow_mode = 'run'
+            self.follow_accept_delay_s = 0.0
+            self.follow_cancel_result_delay_s = 0.0
+            self.compute_count = 0
+            self.follow_goals.clear()
+            self.follow_cancel_count = 0
+        path_a = self._enter_prep_return_and_record_first_path()
+
+        with self._lock:
+            c0 = self.follow_cancel_count
+        self._call_trigger('ui.stop')
+        if not self._wait_mode_state('PREP', 'PAUSE', timeout=5.0):
+            self.fail(f'ui.stop で PREP/PAUSE に入らない ({self._mode_state()})')
+        self.assertTrue(
+            self._wait_count(self._n_cancel, c0 + 1, timeout=5.0),
+            'ui.stop したのに代役 FollowPath に cancel が届かない。'
+            'PREP/RETURN の停止で取り消していない（SM-3.1.2-050a）。')
+        self._sleep(2.0)
+        self.assertEqual(
+            self._mode_state(), ('PREP', 'PAUSE'),
+            f'PAUSE のはずが {self._mode_state()} に動いた。')
+        self.assertEqual(self._n_follow(), 1,
+                         'PAUSE の間に FollowPath が送られた（勝手に再開）。')
+        self.assertEqual(self._n_compute(), 1,
+                         'PAUSE の間に compute が走った。')
+        self.assertEqual(self._n_open(), 0,
+                         'PAUSE なのに代役のゴールが実行中のまま残っている。')
+
+        # W-1「はい」→ RETURN。残りの再送（再計算しない）。
+        self._call_trigger('ui.resume_yes')
+        if not self._wait_mode_state('PREP', 'RETURN', timeout=5.0):
+            self.fail(f'ui.resume_yes 後に RETURN に戻らない ({self._mode_state()})')
+        self.assertTrue(
+            self._wait_count(self._n_follow, 2, timeout=10.0),
+            '復帰後に FollowPath に 2 件目のゴールが届かない。')
+        self._assert_same_path(path_a, 1)
+        self._sleep(2.0)
+        self.assertEqual(
+            self._n_compute(), 1,
+            f'復帰後に compute が増えた (1 → {self._n_compute()})。')
+
+        self._reset_prep_to_idle()
+        self._mark_passed(f'(compute_total={self._n_compute()})')
+
     def test_prep_pause_resume_no_goes_to_mapping_and_drops_path(self):
         """SG-A7（T-PREP-17）。PREP/PAUSE の「いいえ」→ MAPPING。
         経路は捨てられ、何も送られない。修正前は MAPPING 行きの行が無く、

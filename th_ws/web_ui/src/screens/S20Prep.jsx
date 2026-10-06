@@ -1,11 +1,12 @@
 // screens/S20Prep.jsx — S-20, 試験準備 (SCREEN_NAMES.S20 in i18n/screens.js;
 // brief-UI-S20 / WP-UI-06). Spec-webui.md §3.10 / mockup 957〜1054 行。
 //
-// FSM（th_state/config/transitions.yaml T-PREP-01〜15）:
+// FSM（th_state/config/transitions.yaml T-PREP-01〜18）:
 //   MAPPING --ui.register{kind}(target_confident)--> REGISTER（2 点指示）
 //           --ui.select_target{index}(candidate_exists)--> set_target
 //           --ui.return_home(home_pin_exists)--> RETURN
-//           --ui.stop--> PAUSE、PAUSE --ui.run--> $prev_sub
+//           RETURN --ui.stop--> PAUSE（SM-3.1.2-050a。RETURN 以外の停止は inert）
+//           PAUSE --ui.resume_yes--> RETURN ／ --ui.resume_no--> MAPPING
 //           * --ui.save--> SAVED（+ commit_venue_map effect）
 //           * --ui.finish--> IDLE、SAVED --ui.run--> MAPPING
 // 2 点指示は /onsite/two_point を index 1→2 で呼ぶ（サーバが evt.register_ok を出して
@@ -543,9 +544,10 @@ export default function S20Prep() {
           // 側の保存を出さない（同じ操作の重複表示をやめる）。
           //
           // 「停止」「走行」は PREP では inert（将来の追従走行の停止/開始に予約。
-          // 2026-09-10 WS-9AA。PREP は PAUSE を持たず、ジョグを握っても状態を
-          // 保つ）。ボタンは operationCardLayout の既定どおり両方出すが、押しても
-          // 状態は変わらない。対象選択（ui.select_target、guard は
+          // 2026-09-10 WS-9AA。ただし RETURN 中の「停止」だけは PAUSE に落とす
+          // （SM-3.1.2-050a。2026-10-07）。ボタンは operationCardLayout の
+          // 既定どおり両方出す。RETURN 以外で押しても状態は変わらない。
+          // 対象選択（ui.select_target、guard は
           // mode=PREP state=MAPPING）は走行/停止に関係なく MAPPING で常に通る。
           slots={{
             stop: true, check: false, save: nextAction?.kind !== 'save', manual: true,
