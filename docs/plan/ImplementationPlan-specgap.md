@@ -135,6 +135,15 @@
 
 これに伴い `SG-D3`（タブレット）・`SG-D5` のうち再試行の中身・`SG-D7` のうち W-5 の解除条件は解消した。
 
+**2026-10-07 追加の決定（spec 改定済み）**
+
+| ID | 決定 | spec の改定 | 実装でやること |
+| --- | --- | --- | --- |
+| `SG-B8` | **画面から変えた値は次の起動から効く。**走行中の値は変えない | `Spec-params.md` §6 | 起動時の設定生成で `overrides.yaml` を重ね、画面に「再起動後に反映」（1b-10） |
+| 1b-1 の未決 | **`PREP/RETURN` 中の「停止」で `PAUSE`**（他の `PREP` 状態では従来どおり inert） | `Spec-modes.md` `SM-3.1.2-050`／`-050a`（新設） | 遷移表に `-050a`（1b-1 追補） |
+| `SG-A10`／`SG-A6` | **地図の破棄・切替・読み込みと設定値の変更は「停止中」だけ**＝`IDLE` と `PREP` の `MAPPING`／`REGISTER`／`EDIT`／`SAVED`、かつジョグ中でないとき | `Spec.md` SD-9 | ガードを `/system/state` へ付け替え（1b-5） |
+| `SG-B10` の注意表示 | **OFF 中の接近警告（速度は落とさない）と、ON→OFF の切替確認。**スピーカーを追加したら接近警告を音でも出す | `Spec-webui.md` §3.5、`Spec-safety.md` §2.1 | 1b-15 |
+
 ## 確認して spec どおりだったもの（再調査を省くため）
 
 spec の `SM-*` の ID はすべて `transitions.yaml` にある（欠落 0）。`mode_entry.yaml`（SG-A16 を除く）と `attributes.yaml` は spec と一致。ほかに spec どおりだったもの:
