@@ -53,6 +53,11 @@ from th_params import export, schema
 
 OVERRIDES_PATH = "/root/th_data/params/overrides.yaml"
 CALIB_PATH = "/root/th_data/calib/current.yaml"
+# SG-B8: 起動時の設定生成が書いた出どころ記録。/params/get が「いま効いている値
+# （前回起動時に適用されたもの）」と「保存済みで次回から効く上書き値」を
+# 区別するための正本（Spec-params.md §6）。
+GENERATED_DIR = "/root/th_data/generated"
+PROVENANCE_FILENAME = "params_provenance.json"
 
 # /params/set /params/save を受理するモード（§3.2。現行 config_manager の流儀を維持）。
 ALLOWED_MODES = ("IDLE", "MANUAL")
@@ -75,6 +80,10 @@ class ParamsAudit(Node):
         self.declare_parameter("registry_path", "")
         self.declare_parameter("overrides_path", "")
         self.declare_parameter("calib_path", "")
+        # SG-B8: 生成物の置き場所（params_provenance.json を読むため）。
+        # 既定は空文字列（空ならモジュール定数 GENERATED_DIR を使う。
+        # registry_path と同じ流儀）。テストが一時パスを注入できるようにする。
+        self.declare_parameter("generated_dir", "")
 
         # /system/state を一度も受け取っていない間はモード不明。フェイルセーフ既定として
         # 「不明」を IDLE/MANUAL のいずれでもない扱いにする（R5: 沈黙禁止・安全側へ倒す。
@@ -119,6 +128,22 @@ class ParamsAudit(Node):
     def _calib_path(self) -> str:
         override = self.get_parameter("calib_path").value
         return override or CALIB_PATH
+
+    def _generated_dir(self) -> str:
+        override = self.get_parameter("generated_dir").value
+        return override or GENERATED_DIR
+
+    def _load_provenance(self) -> dict:
+        """起動時の設定生成が書いた出どころ記録を読む（SG-B8）。
+
+        無ければ（初回起動前・テスト等）空を返す。その場合は「前回起動時に
+        適用された上書き」は不明なので、/params/get は空扱いにする。"""
+        try:
+            with open(os.path.join(self._generated_dir(), PROVENANCE_FILENAME),
+                      encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+        except (FileNotFoundError, OSError):
+            return {}
 
     def _load_registry_rows(self) -> list[dict]:
         with open(self._registry_path(), encoding="utf-8") as f:
@@ -217,17 +242,65 @@ class ParamsAudit(Node):
             return response
 
     def _cb_get_impl(self, request, response):
-        resolved = self._resolved()
-        names = list(request.names) if request.names else sorted(resolved.keys())
-        result = {}
-        for name in names:
-            if name in resolved:
-                status, value = resolved[name]
-                # P-2/sentinel: TBD_MEASURE をそのまま外に出さない。export.py の
-                # build_node_outputs() が生成物で placeholder を null にする流儀と
-                # 揃える。
-                result[name] = None if status == "placeholder" else value
-        response.json = json.dumps(result, ensure_ascii=False)
+        # SG-B8（Spec-params.md §6）: 「いま効いている値（生成物＝前回起動時に
+        # 適用されたもの）」と「保存済みで次回から効く上書き値」を区別して返す。
+        # 走行中の値は変えない（次の起動から効く）ため、/params/set の受理直後は
+        # 両者がずれる。画面には「再起動後に反映」と出す。
+        rows = self._load_registry_rows()
+        self._apply_calib(rows)
+        base_resolved = export.resolve_registry(copy.deepcopy(rows))
+
+        overrides = self._load_overrides()
+        provenance = self._load_provenance()
+        applied = provenance.get("origins", {}) or {}
+
+        eff_rows = copy.deepcopy(rows)
+        self._apply_overrides(eff_rows, {
+            name: meta for name, meta in applied.items() if name in overrides})
+        effective = export.resolve_registry(eff_rows)
+
+        def _public(resolved: dict) -> dict:
+            out = {}
+            for name, (status, value) in resolved.items():
+                out[name] = None if status == "placeholder" else value
+            return out
+
+        effective_pub = _public(effective)
+        pending: dict = {}
+        origins: dict = {}
+        for name, entry in (overrides or {}).items():
+            value = entry.get("value") if isinstance(entry, dict) else entry
+            applied_value = applied.get(name, {}).get("value") if isinstance(
+                applied.get(name), dict) else None
+            # 前回起動時に適用されたものと同じ値は「効き済み」であり、
+            # 次回から効く上書き（pending）には入れない。
+            if name in applied and applied_value == value:
+                continue
+            pending[name] = value
+            if isinstance(entry, dict):
+                origins[name] = {
+                    "set_at": entry.get("set_at", ""),
+                    "set_by": entry.get("set_by", ""),
+                    "reason": entry.get("reason", ""),
+                }
+            else:
+                origins[name] = {"set_at": "", "set_by": "", "reason": ""}
+
+        names = list(request.names) if request.names else sorted(base_resolved.keys())
+
+        def _pick(mapping: dict) -> dict:
+            return {name: mapping[name] for name in names if name in mapping}
+
+        # 後方互換: names を指定した呼び出しには従来どおりフラットな実効値も残す
+        # （`effective` が正本。フラット部は将来削る）。
+        flat = _pick(_public(self._resolved()))
+        response.json = json.dumps({
+            **flat,
+            "effective": _pick(effective_pub),
+            "pending": _pick(pending),
+            "origins": {name: origins[name] for name in names if name in origins},
+            "restart_required": any(name in pending for name in names),
+        }, ensure_ascii=False)
         return response
 
     # ------------------------------------------------------------
