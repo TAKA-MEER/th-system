@@ -36,7 +36,7 @@ MODE_STATES: Dict[str, Set[str]] = {
     "REPLAY": {"ROUTE_SEL", "LOCALIZE", "READY", "RUN", "PAUSE", "SAVED"},
     "LINE": {"SETUP", "PLANNED", "RUN", "PAUSE", "ARRIVED"},
     "LEASH": {"DEV_CHECK", "READY", "RUN", "HOLD", "PAUSE"},
-    "PREP": {"MAPPING", "REGISTER", "RETURN", "EDIT", "SAVED"},
+    "PREP": {"MAPPING", "REGISTER", "RETURN", "EDIT", "SAVED", "PAUSE"},
     "PANEL_NAV": {"NAV", "BLOCKED", "PAUSE", "ALIGN"},
     "AT_PANEL": {"IDLE_P", "WORKING", "PAUSE"},
     "SUMMON": {"POINT", "WAIT_CLEAR", "NAV", "BLOCKED", "PAUSE", "ALIGN"},
@@ -74,9 +74,9 @@ CALIB_MODE: str = "CALIB"
 REPLAY_MODE: str = "REPLAY"
 
 # DetailedDesign-state.md §4-1-1 末尾・§2 validate()⑥docstring — PAUSE を持たないモード。
-# PREP は 2026-09-10 追加（Spec-modes.md §3.0-② ／ Spec-modes.md §3.0-②。地図作成＝常時ジョグ、
-# 将来は追従走行がモードの活動そのもので「一時停止すべき走行」が無い。停止/走行は inert）。
-NO_PAUSE_MODES: Set[str] = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB", "PREP"}
+# PREP は 2026-09-10 に追加したが 2026-10-06 に除外（Spec-modes.md §3.0-② 追記。
+# RETURN（自動帰還）だけ PAUSE を持つ。地図作成＝常時ジョグの部分は prep_states で保つ）。
+NO_PAUSE_MODES: Set[str] = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB"}
 
 # DetailedDesign-state.md §7 — latch_prev を記録しないモード（FMEA②）。
 NO_LATCH_MODES: Set[str] = {"ESTOP", "CARRY"}

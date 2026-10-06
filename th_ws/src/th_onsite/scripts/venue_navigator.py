@@ -15,8 +15,10 @@
 # - cancel/resume_follow_path: 経路キャッシュを再送。replan だけ取り直し。
 # - PAUSE に入ったら FollowPath を取り消して止まる（SG-A1。C-01/C-03 の共通行や
 #   BLOCKED からの ui.stop には cancel_follow_path が無いが、共通行に足すと
-#   PREP/RETURN のジョグまで取り消して復帰不能にするため、PAUSE 状態を見て
-#   取り消す）。再開までは動かない。再開は残りの再送（再計算しない）。
+#   PREP の地図作成中のジョグ（状態を保つだけ・復帰の遷移が無い）まで取り消して
+#   戻る動作が詰むため、PAUSE 状態を見て取り消す。PREP/RETURN だけは PAUSE を
+#   持つ（SG-A7）ので PREP/PAUSE でも取り消す）。再開までは動かない。
+#   再開は残りの再送（再計算しない）。
 # - ALIGN: /cmd_vel_behavior で超信地旋回。収束で Twist() を出して evt.align_done。
 #
 # 純コア (venue_nav_core) に旋回誤差・旋回指令・到着判定を寄せる。
@@ -340,11 +342,16 @@ class VenueNavigator(Node):
         # 再開（ui.run / W-1 の「はい」等）まで動かない。_path は保持するので
         # 再開は残りの再送になる（SM-3.1.2-056）。
         # effect（transitions.yaml に cancel_follow_path を足す）方式は採らない。
-        # C-01/C-03 は全モード共通の行で、足すと PREP/RETURN でのジョグ（状態を
-        # 保つだけ・復帰の遷移が無い）まで取り消して戻る動作が詰む。PAUSE 状態を
-        # 見て取り消す方が、C-01/C-03・T-PNAV-06/T-SUM-10/T-HNAV-06・C-09c の
-        # 全入口を一網打尽にでき、PREP（PAUSE を持たない）にも影響しない。
-        if self._state == 'PAUSE' and self._mode in self._NAV_MODES:
+        # C-01/C-03 は全モード共通の行で、足すと PREP の地図作成中のジョグ
+        # （状態を保つだけ・復帰の遷移が無い）まで取り消して戻る動作が詰む。
+        # PAUSE 状態を見て取り消す方が、C-01/C-03・T-PNAV-06/T-SUM-10/T-HNAV-06・
+        # C-09c の全入口を一網打尽にでき、PAUSE を持たない PREP の状態
+        # （MAPPING/REGISTER/EDIT/SAVED。そもそも PAUSE に入らない）にも影響しない。
+        # SG-A7(2026-10-06): PREP/RETURN だけ PAUSE を持つので、PREP/PAUSE でも
+        # 取り消す（「はい」で RETURN に戻ったら残りを再送。「いいえ」で MAPPING へ
+        # 行ったら下の PREP 節で _reset_for_exit し経路を捨てる）。
+        if self._state == 'PAUSE' and (self._mode in self._NAV_MODES
+                                       or self._mode == 'PREP'):
             self._cancel_follow_path()
             return
 
@@ -355,10 +362,11 @@ class VenueNavigator(Node):
             self._arrival_pending = False
             return
 
-        # WS-9AG: PREP は RETURN 以外（MAPPING/REGISTER/EDIT/SAVED）に居る
-        # ときは対象外。RETURN を抜けた直後（到着で EDIT／ジョグで MAPPING へ
+        # WS-9AG: PREP は RETURN / PAUSE 以外（MAPPING/REGISTER/EDIT/SAVED）に居る
+        # ときは対象外。RETURN を抜けた直後（到着で EDIT／「いいえ」で MAPPING へ
         # 戻る等）の後始末も、他の 3 モードがモードごと外れたときと同じに行う。
-        if self._mode == 'PREP':
+        # PREP/PAUSE では経路を保持する（「はい」で RETURN に戻ったら残りを再送）。
+        if self._mode == 'PREP' and self._state not in ('RETURN', 'PAUSE'):
             self._reset_for_exit()
             return
 

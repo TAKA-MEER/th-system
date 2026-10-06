@@ -155,7 +155,7 @@ class StateCore:
 | `$initial` | `attributes[to_mode].initial_state` | `to_state` |
 | `$resume_run` | `attributes[mode].run_state` | `to_state` |
 | `$resume_state` | `attributes[mode].resume_state` | `to_state` |
-| `$pause_unless_prep` | 現在の `state` が `attributes[mode].prep_states` に含まれれば `state`（不変）、そうでなければ `PAUSE`。**「走っていないものは止められない」**（Spec-modes.md §3.1.2・§3.0-②）。`REPLAY` の準備 3 状態と `PREP` の全状態がこれで `PAUSE` を回避する | `to_state` |
+| `$pause_unless_prep` | 現在の `state` が `attributes[mode].prep_states` に含まれれば `state`（不変）、そうでなければ `PAUSE`。**「走っていないものは止められない」**（Spec-modes.md §3.1.2・§3.0-②）。`REPLAY` の準備 3 状態と `PREP` の地図作成中の状態がこれで `PAUSE` を回避する（`PREP/RETURN` は `PAUSE` に落とす。1b-1 SG-A7） | `to_state` |
 | `$prev_mode` / `$prev_state` / `$prev_sub` | `ctx.prev_*` | 両方 |
 | `$arg.<key>` | `ctx.arg[key]`。**`ui.goto` だけ §3.5 の写像を通す** | 両方 |
 
@@ -248,7 +248,7 @@ class StateCore:
 | **`C-09c-at-home`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_at_home`** | `AT_HOME` | `IDLE_H` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-opcheck`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_opcheck`** | `OPCHECK` | `LIST` | `clear_prev`, `close_window{id:W-1}`, `abort_check` |
 | **`C-09c-calib`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_calib`** | `CALIB` | `LIST` | `clear_prev`, `close_window{id:W-1}`, `discard_calib{item}` |
-| **`C-09c-prep-return`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_prep_return`**（`PREP/RETURN`。今回は `MAPPING`） | `PREP` | `MAPPING` | `clear_prev`, `close_window{id:W-1}` |
+| **`C-09c-prep-return`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_prep_return`**（`PREP/RETURN` → `PREP/PAUSE`。1b-1 SG-A7） | `PREP` | `PAUSE` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-prep`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_prep`** | `PREP` | `$prev_state` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-running`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_was_running`**（押下前が走行中） | `$prev_mode` | `PAUSE` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-confirm`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_follow_confirm`** | `FOLLOW` | `CONFIRM` | `clear_prev`, `close_window{id:W-1}`, `face_target` |
@@ -328,7 +328,7 @@ class StateCore:
 | `estop_resume_prev` | `not fault_active and severity != CRITICAL and not hw_estop and prev_mode ∉ {"",INIT,IDLE,ESTOP,CARRY}` | `fault_active`, `fault_severity`, `hw_estop`, `prev_mode` |
 | **`estop_prev_is_init`** | 上の3項（`hw_estop` を問わない。`INIT/CHECK` に戻れば `T-INIT-03` が留める）`and prev_mode == "INIT"` | `fault_active`, `fault_severity`, `prev_mode` |
 | **`estop_prev_is_summon`／`_at_panel`／`_at_home`／`_opcheck`／`_calib`** | 上の3項 `and prev_mode == {SUMMON／AT_PANEL／AT_HOME／OPCHECK／CALIB}`（1b-2。§6 の右列への振り分け） | 同上＋`hw_estop` |
-| **`estop_prev_is_prep_return`** | 上の3項 `and prev_mode == "PREP" and prev_state == "RETURN"`（今回は `MAPPING`。`RETURN` の `PAUSE` は 1b-1 で作る） | 同上＋`prev_state` |
+| **`estop_prev_is_prep_return`** | 上の3項 `and prev_mode == "PREP" and prev_state == "RETURN"`（`PREP/PAUSE` へ。1b-1 SG-A7） | 同上＋`prev_state` |
 | **`estop_prev_is_prep`** | 上の3項 `and prev_mode == "PREP" and prev_state != "RETURN"` | 同上 |
 | **`estop_prev_was_running`** | 上の3項 `and prev_state == ESTOP_RESUME_RUN[prev_mode]`（走行中の 9 モード。`attributes.yaml` の `run_state` の転記。一致は test で縛る） | 同上 |
 | **`estop_prev_is_follow_confirm`** | 上の3項 `and (FOLLOW, CONFIRM)`（`face_target` を再実行） | 同上 |
@@ -348,15 +348,16 @@ class StateCore:
 | **`mode ∈ {MANUAL, TEACH_MANUAL}`** | **スティックそのものが走行操作である**（`F-31`） |
 
 **`PREP` はジョグ自体は許可する**（`jog_allowed` は true）が、`C-01` の `to_state` が
-`$pause_unless_prep` で、`prep_states` に全状態を列挙しているため **`PAUSE` には落ちない**
+`$pause_unless_prep` で、`prep_states` に地図作成中の状態（`MAPPING`／`REGISTER`／
+`EDIT`／`SAVED`）を列挙しているため **`RETURN` 以外では `PAUSE` に落ちない**
 （ジョグ＝地図作成のための連れ回しであって「一時停止すべき走行」ではない。`Spec-modes.md`
-§3.0-②）。
+§3.0-②）。**`RETURN`（自動帰還）中だけ `PAUSE` に落とす**（1b-1 SG-A7）。
 
-**`OPCHECK` / `CALIB` / `PREP` は `PAUSE` を持たない。**したがって `C-03`（回復フォルト → `PAUSE`）も
-効かせない。`OPCHECK` / `CALIB` は `fault_stops_mode` の除外に加え復帰を `resume_state: LIST` で行う
-（`Spec-modes.md` §6「確認 1 択 → `LIST`」）。`PREP` は `fault_stops_mode` が false を返すので `C-03` が
+**`OPCHECK` / `CALIB` は `PAUSE` を持たない。**したがって `C-03`（回復フォルト → `PAUSE`）も
+効かせない（`Spec-modes.md` §6「確認 1 択 → `LIST`」）。`PREP` は `RETURN` 中と
+`PREP/PAUSE` 以外では `fault_stops_mode` が false を返すので `C-03` が
 発火せず、状態も W-1 も動かさない（フォルトは独立したフォルト表示で操作者に伝わる）。ジョグ介入
-（`C-01`）は `$pause_unless_prep` ＋ `prep_states` 全列挙で状態を保つ。
+（`C-01`）は `$pause_unless_prep` ＋ `prep_states` で状態を保つ。
 **`IDLE` も同じ**（状態は `NONE` のみ）。
 
 **`C-03` のガード `fault_stops_mode`**:
@@ -365,7 +366,8 @@ class StateCore:
 | --- | --- |
 | `fault_type == "PERSON_TRACKER_LOST"` かつ `mode ∉ {FOLLOW, TEACH_FOLLOW, SUMMON}` | **false**（`PAUSE` にしない） |
 | `fault_type == "PERSON_TRACKER_LOST"` かつ `mode == PREP` | **false**（登録を拒否するだけ・`C-15`） |
-| **`mode ∈ {IDLE, INIT, OPCHECK, CALIB, PREP}`** | **false。**`PAUSE` を持たないモードなので落とせない（§4.1.1 末尾）。`PREP` は `$pause_unless_prep` が状態を保つ |
+| **`mode ∈ {IDLE, INIT, OPCHECK, CALIB}`** | **false。**`PAUSE` を持たないモードなので落とせない（§4.1.1 末尾） |
+| **`mode == PREP` かつ `state != RETURN`** | **false。**地図作成中は `C-03` の対象外（`PREP/PAUSE` を含む。SG-A7） |
 | それ以外 | true |
 
 `OPCHECK` / `CALIB` は代わりに `T-OPC-08` / `T-CAL-08` が `LIST` へ落とす（回復フォルトのみ）。
@@ -510,12 +512,17 @@ class StateCore:
 | `T-PREP-11` | `MAPPING` ／ `REGISTER` ／ `RETURN` | `ui.run` | — | `=`（不変） | — |
 | `T-PREP-12` | `*` | `ui.save` | — | `SAVED` | `commit_venue_map` |
 | `T-PREP-13` | `SAVED` | `ui.run` | — | `MAPPING` | — |
+| **`T-PREP-16`** | `PAUSE` | `ui.resume_yes` | `fault_cleared` | `RETURN` | `close_window{id:W-1}`（**`override_common`**。汎用 `C-04` は `$resume_run`＝`MAPPING` に行ってしまうため先に拾う。1b-1 SG-A7） |
+| **`T-PREP-17`** | `PAUSE` | `ui.resume_no` ／ `ui.resume_ack` | `fault_cleared` | `MAPPING` | `close_window{id:W-1}`（**`override_common`**。`C-05` は `resume_state_available` が `PREP` を弾くため。1b-1 SG-A7） |
 
 `T-PREP-08` / `-09` / `-13` は**正本 `Spec-modes.md` §3.1.2 に反映済み**
 （§9-(d) ／ `Spec-open.md` F-32）。
 **`T-PREP-10` / `-11`（「停止」「走行」）は inert な自己ループ**（2026-09-10 WS-9AA）。
-`PREP` は `PAUSE` を持たないので `keep_all` も `$prev_sub` も不要になった
+`PREP` は `RETURN` 以外では `PAUSE` を持たないので `keep_all` も `$prev_sub` も不要になった
 （`keep_all` effect 自体は §3.3 に残すが、現状どの行も参照しない）。
+**`T-PREP-16` / `-17`（`PREP/PAUSE` の再開。1b-1 SG-A7）**: 「はい」は `RETURN`
+（venue_navigator が `PAUSE` 中に取り消した FollowPath の残りを送り直す。再計算しない）、
+「いいえ」は `MAPPING`（経路を捨てる）。
 `EDIT` / `SAVED` からの「走行」→ `MAPPING` は `T-PREP-09` / `-13` が担うため、
 `-11` の `state` に `EDIT` / `SAVED` を含めない（記載順で `-09` が先、`-13` は
 `-11` の `state` 外なので競合しない）。
@@ -724,7 +731,7 @@ UI がエラー表示すべきか判断できなくなる。
 | `REPLAY` | `T-REPLAY-01`→020 ／ `-02`→021 ／ `-03`→022 ／ `-04`→023 ／ `-05`→024 ／ `-06`→025 ／ `-07`→026 ／ **`-08`→028** ／ **`-09`→027** ／ `-10`→029 |
 | `LINE` | `T-LINE-01`→030 ／ `-02`→031 ／ `-03`→032 ／ `-04`→033 ／ `-05`→034 ／ `-06`→035 |
 | `LEASH` | `T-LEASH-01`→036 ／ **`-07`→037** ／ `-02`→**038** ／ `-03`→**038** ／ `-04`→039 ／ `-05`→040 ／ `-06`→041 |
-| `PREP` | `T-PREP-01`→042 ／ `-02`→**043** ／ `-03`→**043** ／ `-04`→044 ／ `-05`→045 ／ `-06`→046 ／ `-07`→047 ／ `-08`→048 ／ `-09`→049 ／ `-10`→050 ／ `-11`→051 ／ `-12`→052 ／ `-13`→053 |
+| `PREP` | `T-PREP-01`→042 ／ `-02`→**043** ／ `-03`→**043** ／ `-04`→044 ／ `-05`→045 ／ `-06`→046 ／ `-07`→047 ／ `-08`→048 ／ `-09`→049 ／ `-10`→050 ／ `-11`→051 ／ `-12`→052 ／ `-13`→053 ／ **`-16`→04 ／ `-17`→05**（1b-1 SG-A7） |
 | `PANEL_NAV` | `T-PNAV-01`→054 ／ `-02`→055 ／ `-03`→056 ／ `-04`→057 ／ `-05`→058 ／ `-06`→059 ／ `-07`→060 ／ `-08`→061 ／ **`-09`→099** |
 | `AT_PANEL` | `T-ATP-01`→062 ／ `-02`→063 ／ `-03`→064 ／ `-04`→065 ／ `-05`→066 ／ **`-07`→100** |
 | `SUMMON` | `T-SUM-01`→067 ／ `-02`→068 ／ `-03`→**069** ／ `-04`→**069** ／ `-05`→**069** ／ `-06`→070 ／ `-07`→071 ／ `-08`→072 ／ `-09`→073 ／ `-10`→074 ／ **`-13`→075** ／ `-11`→076 ／ `-12`→077 ／ **`-14`→101** |
@@ -882,7 +889,7 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | `REPLAY` | `ROUTE_SEL` | `RUN` | `yes_no` | `PAUSE` | `unused` | `v_max` | `on_locked` | `allowed` | **true**※ |
 | `LINE` | `SETUP` | `RUN` | `yes_no` | `PAUSE` | `unused` | `v_max` | `on_locked` | `allowed` | false |
 | `LEASH` | `DEV_CHECK` | `RUN` | `yes_no` | `PAUSE` | `unused` | `v_leash` | `on_locked` | `allowed` | false |
-| `PREP` | `MAPPING` | `MAPPING` | **`none`** | **`null`** | `required`※※ | `v_slow` | `on_locked` | `allowed` | **true** |
+| `PREP` | `MAPPING` | `MAPPING` | **`yes_no`**（`PREP/PAUSE` の W-1 で「はい／いいえ」。1b-1 SG-A7） | **`null`**（`C-05` は `resume_state_available` が弾く。`T-PREP-17` が担う） | `required`※※ | `v_slow` | `on_locked` | `allowed` | **true** |
 | `PANEL_NAV` | `NAV` | `NAV` | `yes_no` | `PAUSE` | `unused` | `v_slow` | `on_locked` | `allowed` | false※ |
 | `AT_PANEL` | `IDLE_P` | — | **`ack_only`** | **`IDLE_P`** | `unused` | `stop`※※※ | `on_locked` | `allowed` | false※ |
 | `SUMMON` | `POINT` | `NAV` | **`ack_only`** | **`POINT`** | `required` | `v_slow` | `on_locked` | `allowed` | false※ |
@@ -900,8 +907,9 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 **`resume_state` は `PAUSE` を持つ全モードで必須。**`yes_no` のモードは `PAUSE` を書く
 （`C-05`（いいえ／確認）は全モードの `PAUSE` に効くので、`ack_only` のモードだけ定義すると
 `FOLLOW` などで `$resume_state` が解決できず `validate()` ④ が落ちる）。
-**`PAUSE` を持たない `INIT` / `IDLE` / `CARRY` / `PREP` は `null`**（`PAUSE` に入らないので
-`C-05` が発火しない。`ESTOP` だけは `ack_only` で `NONE` を書く）。
+**`PAUSE` を持たない `INIT` / `IDLE` / `CARRY` は `null`**（`PAUSE` に入らないので
+`C-05` が発火しない。`ESTOP` だけは `ack_only` で `NONE` を書く）。`PREP` も `null`
+だが `PREP/PAUSE` に入るので `T-PREP-17` が復帰を担う（`C-05` は弾かれる）。
 
 **`run_state` が `—` のモードは `ui.resume_yes` を出さない**（`C-04` が起こせない）。
 ただし **`ESTOP` と `AT_PANEL` は `ack_only`** にする。

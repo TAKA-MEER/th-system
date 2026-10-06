@@ -289,8 +289,7 @@
       item: $arg.item
   spec_ref: SM-3.1.1-11
 # C-09c-prep-return / -prep: PREP は押下前の状態へ（§6）。RETURN だった場合は
-# 今回は MAPPING（RETURN の PAUSE は別パケット 1b-1 で作る。作られたらこの行の
-# 行き先をそちらに差し替えること。SG-D4／SG-A7）。
+# PREP/PAUSE（RETURN の PAUSE は 1b-1 で作った。SG-D4／SG-A7）。
 # REGISTER へ戻るとき begin_two_point を再実行しない: pin_registrar は
 # /system/state を見ないので受付状態（_accepting）が ESTOP をまたいで残り、
 # そのまま 2 点指示を続けられる。
@@ -301,7 +300,7 @@
   event: ui.resume_yes
   guard: estop_prev_is_prep_return
   to_mode: PREP
-  to_state: MAPPING
+  to_state: PAUSE
   effects:
   - name: clear_prev
     args: {}
@@ -1256,6 +1255,43 @@
     args:
       index: $arg.index
   spec_ref: SM-3.1.2-105
+# T-PREP-16 / -17: PREP/PAUSE（RETURN 中のジョグ・回復フォルト・端末離脱で入る。
+# Spec-modes.md §3.0-② 追記・§6）の再開。「はい」は RETURN に戻り、venue_navigator が
+# PAUSE 中に取り消した FollowPath の残りを送り直す（再計算しない。状態遷移で戻る
+# だけで effect は要らない。SG-A1 と同型）。「いいえ」は MAPPING（経路を捨てる。
+# venue_navigator は PREP 非 RETURN/PAUSE で _reset_for_exit）。
+# 汎用の C-04（$resume_run=MAPPING に行ってしまう）/ C-05（resume_state_available が
+# PREP を弾く）では担えないため、override_common で先に拾う（T-MANUAL-01 と同型）。
+- id: T-PREP-16
+  layer: 10
+  mode: PREP
+  state: PAUSE
+  event: ui.resume_yes
+  guard: fault_cleared
+  to_mode: '='
+  to_state: RETURN
+  effects:
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-04
+  override_common: true
+- id: T-PREP-17
+  layer: 10
+  mode: PREP
+  state: PAUSE
+  event:
+  - ui.resume_no
+  - ui.resume_ack
+  guard: fault_cleared
+  to_mode: '='
+  to_state: MAPPING
+  effects:
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.1-05
+  override_common: true
 - id: T-PNAV-01
   layer: 10
   mode: PANEL_NAV

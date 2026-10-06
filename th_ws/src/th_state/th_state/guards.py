@@ -15,7 +15,8 @@ from th_state.state_core import (ESTOP_RESUME_BLOCKED_MODES, ESTOP_RESUME_RUN,
                                  RESUME_STATE_UNAVAILABLE_MODES)
 
 # モードによって PAUSE を持たない集合（§4.1.1 末尾。state_core.py の同名集合と同じ定義）。
-_NO_PAUSE_MODES = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB", "PREP"}
+# PREP は 2026-10-06 に除外（RETURN だけ PAUSE を持つ。state_core.py のコメント参照）。
+_NO_PAUSE_MODES = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB"}
 
 # C-01 (jog_allowed) の除外表（Spec-modes.md §3.1.1 ジョグ介入の除外）。
 _JOG_EXCLUDED_MODES = {"INIT", "IDLE", "ESTOP", "CARRY", "OPCHECK", "CALIB",
@@ -39,7 +40,12 @@ def _jog_allowed(mode, state, ctx) -> bool:
 
 def _fault_stops_mode(mode, state, ctx) -> bool:
     if mode in _NO_PAUSE_MODES:
-        return False  # PREP を含む（2026-09-10）。PREP は登録拒否のみ・地図作成は続行（C-15）
+        return False
+    if mode == "PREP" and state != "RETURN":
+        # SG-A7: 地図作成中（MAPPING/REGISTER/EDIT/SAVED。PAUSE 中を含む）は
+        # C-03 の対象外。状態も W-1 も動かさない（Spec-modes.md §6。
+        # フォルトは独立したフォルト表示で操作者に伝わる）。
+        return False
     if ctx.fault_type == "PERSON_TRACKER_LOST":
         if mode not in _TRACKER_FAULT_STOPS_MODES:
             return False

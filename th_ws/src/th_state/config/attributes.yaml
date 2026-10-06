@@ -125,14 +125,18 @@ LEASH:
   jog: allowed
   has_record: false
 PREP:
-  # PAUSE を持たない（Spec-modes.md §3.0-② ／ Spec-modes.md §3.0-②）。
-  # prep_states に全状態を列挙 → C-01（ジョグ介入）/ C-03（回復フォルト）の
+  # RETURN（自動帰還）だけ PAUSE を持つ（Spec-modes.md §3.0-② 追記・2026-10-05 決定）。
+  # prep_states に残した状態では C-01（ジョグ介入）/ C-03（回復フォルト）の
   # $pause_unless_prep が状態を保つ（地図作成中の連れ回しで PAUSE に落ちない）。
-  # resume_state は null（PAUSE が無いので C-04/C-05 の復帰先を持たない）。
-  prep_states: [MAPPING, REGISTER, RETURN, EDIT, SAVED]
+  # resume は yes_no（PREP/PAUSE の W-1 で「はい／いいえ」を出す。
+  # 「はい」は T-PREP-16 で RETURN（残りの経路で帰還を続ける）、
+  # 「いいえ」は T-PREP-17 で MAPPING。汎用の C-04（$resume_run=MAPPING）は
+  # override_common の T-PREP-16 が先に拾う。C-05 は resume_state_available が
+  # PREP を弾くので T-PREP-17 が担う）。
+  prep_states: [MAPPING, REGISTER, EDIT, SAVED]
   initial_state: MAPPING
   run_state: MAPPING
-  resume: none
+  resume: yes_no
   resume_state: null
   needs_tracker: required
   speed_limit: v_slow
