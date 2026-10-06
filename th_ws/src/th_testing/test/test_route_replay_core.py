@@ -25,7 +25,7 @@ from route_replay_core import (
     ReplayParams, ReplayCommand,
     reverse_points, rotate_toward, pure_pursuit, advance_index, normalize_angle,
     align_path_to_current, ramp_toward, scale_replay_params,
-    cross_track_error,
+    cross_track_error, select_resume_index,
 )
 
 REPLAY_RUNNER = os.path.abspath(os.path.join(
@@ -364,6 +364,73 @@ def test_cross_track_window_out_of_range_falls_back():
     points = [(float(i), 0.0, 0.0) for i in range(0, 11)]
     # from_index が末尾より後ろ → 全区間にフォールバックして測れる
     assert cross_track_error((5.0, 2.0, 0.0), points, from_index=99) == pytest.approx(2.0)
+
+
+# ── 途中復帰（W-01 P4）─────────────────────────────────────
+def test_resume_straight_picks_forward_nearest():
+    # 直線 x=0..10（東向き）。機体は (3.1, 0.2) で東向き → index 3。
+    pts = [(float(i), 0.0, 0.0) for i in range(0, 11)]
+    assert select_resume_index(pts, (3.1, 0.2, 0.0)) == 3
+
+
+def test_resume_at_start_is_zero():
+    # 保管場所（始点付近）にいるときは 0 が選ばれ、今と同じ挙動になる。
+    pts = [(float(i), 0.0, 0.0) for i in range(0, 11)]
+    assert select_resume_index(pts, (0.1, 0.0, 0.0)) == 0
+
+
+def test_resume_backward_heading_skips_ahead_point():
+    # 同じ位置でも西向きなら、前向き条件で東向き区間の点は外れる。
+    # 最終点は前区間（東向き）基準なので外れ、全点外 → -1（留まる）。
+    pts = [(float(i), 0.0, 0.0) for i in range(0, 11)]
+    assert select_resume_index(pts, (5.0, 0.0, math.pi)) == -1
+
+
+def test_resume_l_shape_uses_segment_direction():
+    # L 字: (0,0)→(5,0)→(5,5)。角の先 (5.1, 2.0) で北向き → 北向き区間の index 7。
+    pts = ([(float(i), 0.0, 0.0) for i in range(0, 6)]
+           + [(5.0, float(j), math.pi / 2) for j in range(1, 6)])
+    assert select_resume_index(pts, (5.1, 2.0, math.pi / 2)) == 7
+
+
+def test_resume_round_trip_prefers_earlier_index():
+    # 往復: 行き y=0（東向き）→帰り y=2（西向き）。行きのそばで東向きなら行き側。
+    out = [(float(i), 0.0, 0.0) for i in range(0, 6)]
+    back = [(float(5 - i), 2.0, math.pi) for i in range(0, 6)]
+    pts = out + back
+    assert select_resume_index(pts, (2.1, 0.2, 0.0)) == 2
+    # 帰りのそばで西向きなら帰り側（index 6 以降）。
+    assert select_resume_index(pts, (2.9, 1.9, math.pi)) == 8
+
+
+def test_resume_self_crossing_tie_goes_earlier():
+    # 自己交差: 同一点 (5,0) を index 2 と 8 で通る。完全同点の同値は手前優先。
+    pts = [(2.0, 0.0, 0.0), (4.0, 0.0, 0.0), (5.0, 0.0, 0.0),
+           (6.0, 1.0, 0.5), (6.0, -1.0, -0.5), (4.0, 0.0, 0.0),
+           (5.0, 0.0, 0.0), (6.0, 0.0, 0.0), (5.0, 0.0, 0.0),
+           (4.0, 0.0, 0.0)]
+    got = select_resume_index(pts, (5.0, 0.0, 0.0))
+    assert got == 2, got
+
+
+def test_resume_too_far_returns_minus_one():
+    pts = [(float(i), 0.0, 0.0) for i in range(0, 11)]
+    assert select_resume_index(pts, (5.0, 5.0, 0.0), max_dist_m=2.0) == -1
+    # 境界: ちょうど max_dist_m は復帰する、超えたらしない。
+    assert select_resume_index(pts, (5.0, 2.0, 0.0), max_dist_m=2.0) == 5
+    assert select_resume_index(pts, (5.0, 2.01, 0.0), max_dist_m=2.0) == -1
+
+
+def test_resume_empty_is_minus_one():
+    assert select_resume_index([], (0.0, 0.0, 0.0)) == -1
+
+
+def test_resume_on_reversed_points():
+    # 逆再生: 反転後の点列に同じ規則を適用する（呼び出し側が反転済みを渡す）。
+    fwd = [(float(i), 0.0, 0.0) for i in range(0, 11)]
+    rev = reverse_points(fwd)
+    # 反転後は西向きの点列。機体は x=7 付近で西向き → 反転後の index 3（=元の 7）。
+    assert select_resume_index(rev, (7.1, 0.1, math.pi)) == 3
 
 
 # ── replay_runner.py の配線（ast 静的検査。ROS 不要）──────────────────

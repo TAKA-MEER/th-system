@@ -637,7 +637,10 @@ P5 で registry に載せるときはこの 5 名を §7 の表へ移す。
 localize_margin_low（警告になる m の下限。似た場所あり。READY へは進む）、
 localize_margin_min（不成立になる m の下限。LOCALIZE に留まる）、
 search_radius_m（load_route 直後の探索窓の半径。経路始点中心）、
-widen_radius_m（widen 再探索の窓半径。最良候補中心）。
+widen_radius_m（widen 再探索の窓半径。最良候補中心）、
+resume_max_dist_m（W-01 P4。確定姿勢からこの距離以内の前向き点が無ければ
+途中復帰しない。`replay_runner` が宣言し、既定値は
+`localize_core.LOCALIZE_DEFAULTS["resume_max_dist_m"]`）。
 | `factor` | — | (b)。地図間引きの縮小率（`map_downsampler`。W-03） |
 | `publish_period_ms` | ms | (b)。地図間引きの配信間隔（W-03） |
 | `occupied_threshold` | — | (b)。地図間引きの占有判定閾値（W-03） |
