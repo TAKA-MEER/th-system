@@ -510,7 +510,8 @@ class StateCore:
 | `T-PREP-07` | `RETURN` | `evt.arrived` | — | `EDIT` | — |
 | `T-PREP-08` | `MAPPING` ／ `EDIT` | `ui.map_edit` | — | `EDIT` | — |
 | `T-PREP-09` | `EDIT` | `ui.run` | — | `MAPPING` | — |
-| `T-PREP-10` | `*` | `ui.stop` | — | `=`（不変） | — |
+| `T-PREP-10` | `MAPPING` ／ `REGISTER` ／ `EDIT` ／ `SAVED` ／ `PAUSE` | `ui.stop` | — | `=`（不変） | — |
+| **`T-PREP-18`** | `RETURN` | `ui.stop` | — | `PAUSE` | —（`T-PREP-10` より前に置き `RETURN` を先に拾う。`SM-3.1.2-050a`。2026-10-07） |
 | `T-PREP-11` | `MAPPING` ／ `REGISTER` ／ `RETURN` | `ui.run` | — | `=`（不変） | — |
 | `T-PREP-12` | `*` | `ui.save` | — | `SAVED` | `commit_venue_map` |
 | `T-PREP-13` | `SAVED` | `ui.run` | — | `MAPPING` | — |
@@ -520,6 +521,8 @@ class StateCore:
 `T-PREP-08` / `-09` / `-13` は**正本 `Spec-modes.md` §3.1.2 に反映済み**
 （§9-(d) ／ `Spec-open.md` F-32）。
 **`T-PREP-10` / `-11`（「停止」「走行」）は inert な自己ループ**（2026-09-10 WS-9AA）。
+**ただし `RETURN` 中の「停止」だけは `T-PREP-18` で `PAUSE` に落とす**
+（2026-10-07 ユーザー決定。`SM-3.1.2-050a`）。
 `PREP` は `RETURN` 以外では `PAUSE` を持たないので `keep_all` も `$prev_sub` も不要になった
 （`keep_all` effect 自体は §3.3 に残すが、現状どの行も参照しない）。
 **`T-PREP-16` / `-17`（`PREP/PAUSE` の再開。1b-1 SG-A7）**: 「はい」は `RETURN`
