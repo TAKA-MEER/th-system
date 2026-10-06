@@ -48,6 +48,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_slam_control_logic
     test/test_slam_control_logic.py
     TIMEOUT 30)
+  # 1b-5: 停止中だけのガードの純関数（stop_only_guard.py）の真理値表。
+  # SD-9 の許可条件・拒否条件・鮮度境界と、3 ノードの配線の静的固定。ROS2 不要
+  ament_add_pytest_test(test_stop_only_guard
+    test/test_stop_only_guard.py
+    TIMEOUT 30)
   # WS-9U: call_and_wait が再入 spin をやめてポーリングになったことの ast 検証と、
   # fake client での戻り値・タイムアウト挙動。ROS2 不要
   ament_add_pytest_test(test_service_call
@@ -480,6 +485,18 @@ if(BUILD_TESTING)
   # effective だけを読む・鮮度切れで戻る）と lidar_fault（LIDAR_LOST の抑止と再発）。
   ament_add_pytest_test(test_dev_mode_safety_node
     test/test_dev_mode_safety_node.py
+    TIMEOUT 180)
+  # 停止中だけのガードの Docker launch テスト（1b-5・SG-A10/SG-A6。
+  # state_manager＋slam_control＋config_manager を実際に起動し、
+  # IDLE・PREP/MAPPING で通り、PREP/RETURN・MANUAL で拒否されることを縛る）
+  ament_add_pytest_test(test_stop_only_guards_node
+    test/test_stop_only_guards_node.py
+    TIMEOUT 180)
+  # 同ガードのうち state_manager では作れない条件の Docker launch テスト
+  # （試験用の /system/state 発行者で、未受信・走行系・PREP/RETURN・PAUSE・
+  # ジョグ中・途絶での拒否を縛る）
+  ament_add_pytest_test(test_stop_only_freshness_node
+    test/test_stop_only_freshness_node.py
     TIMEOUT 180)
   # PERSON_TRACKER_LOST のゲート・猶予・記録だけモードの Docker launch テスト
   # （DetailedDesign-safety.md §5.5 P-01＋P-02。

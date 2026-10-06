@@ -9,7 +9,9 @@ DetailedDesign-params.md §5「②監査」の実体。**生成はしない**
 このノードの責務（§5 の「`params_audit` の責務」表）:
   - `/system/params_status`（ParamsStatus。transient_local）を publish
   - `/params/get` `/params/set` `/params/save` を提供
-    （`/params/set` `/params/save` は IDLE/MANUAL 以外を拒否）
+    （`/params/set` `/params/save` は停止中＝IDLE・PREP の地図作業中かつ
+    非ジョグのときだけ受理。Spec.md SD-9。1b-5 で条件を SD-9 に寄せた。
+    以前の IDLE/MANUAL 条件は MANUAL を許しており SD-9 に反していた）
   - 校正値の取り込み（`/root/th_data/calib/current.yaml`。§5 の責務表）
 
 `/params/get` `/system/params_status` は「今読める最新の実効値」
@@ -36,6 +38,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import time
 from datetime import datetime, timezone
 
 import rclpy
@@ -49,13 +52,11 @@ from std_srvs.srv import Trigger
 from th_system_msgs.msg import ParamsStatus, SystemState
 from th_system_msgs.srv import GetParams, SetParams
 
+from th_config_manager.stop_only_guard import STATE_STALE_SEC, stop_only_allows
 from th_params import export, schema
 
 OVERRIDES_PATH = "/root/th_data/params/overrides.yaml"
 CALIB_PATH = "/root/th_data/calib/current.yaml"
-
-# /params/set /params/save を受理するモード（§3.2。現行 config_manager の流儀を維持）。
-ALLOWED_MODES = ("IDLE", "MANUAL")
 
 
 class ParamsAudit(Node):
@@ -75,11 +76,16 @@ class ParamsAudit(Node):
         self.declare_parameter("registry_path", "")
         self.declare_parameter("overrides_path", "")
         self.declare_parameter("calib_path", "")
+        # 1b-5: /system/state の鮮度の上限。registry の state_stale_ms=1500 と
+        # 同じ既定（jog_gate / obstacle_limiter / safety_monitor と同じ値）。
+        self.declare_parameter("state_stale_ms", int(STATE_STALE_SEC * 1000.0))
 
-        # /system/state を一度も受け取っていない間はモード不明。フェイルセーフ既定として
-        # 「不明」を IDLE/MANUAL のいずれでもない扱いにする（R5: 沈黙禁止・安全側へ倒す。
-        # 途絶時に /params/set を許してしまう方が危険なので、既知の許可モードだけを通す）。
-        self._mode: str | None = None
+        # /system/state の最新像。未受信・古い間は拒否する（安全側。
+        # 途絶時に /params/set を許してしまう方が危険なので、既知の許可条件だけを通す）。
+        self._state_mode: str | None = None
+        self._state_name: str = ""
+        self._jog_active: bool = False
+        self._state_at: float | None = None
 
         self._setup_io()
         self._publish_status()
@@ -101,7 +107,29 @@ class ParamsAudit(Node):
         self.create_service(Trigger, "/params/save", self._cb_save)
 
     def _on_state(self, msg: SystemState):
-        self._mode = msg.mode
+        self._state_mode = msg.mode
+        self._state_name = msg.state
+        self._jog_active = bool(msg.jog_active)
+        self._state_at = time.monotonic()
+
+    def _stop_only_reject_reason(self) -> str | None:
+        """停止中だけの条件を満たさなければ拒否理由の文言、満たせば None。"""
+        received = self._state_at is not None
+        age = (time.monotonic() - self._state_at) if received else None
+        stale_ms = self.get_parameter("state_stale_ms").value
+        allowed, reason = stop_only_allows(
+            self._state_mode, self._state_name, self._jog_active,
+            received, age, stale_ms / 1000.0)
+        if allowed:
+            return None
+        detail = {
+            "state_not_received": "/system/state を受信していないため",
+            "state_stale": "/system/state が古いため",
+            "jog_active": "ジョグ中のため",
+        }.get(
+            reason,
+            f"いまの状態（{self._state_mode}/{self._state_name}）では")
+        return f"停止中（IDLE・PREP の地図作業中）のみ操作できます（{detail}拒否）"
 
     # ------------------------------------------------------------
     # 実効値の解決（registry → calib → overrides の順に重ね書き。§5.3「読み込み順」）
@@ -249,9 +277,10 @@ class ParamsAudit(Node):
             return response
 
     def _cb_set_impl(self, request, response):
-        if self._mode not in ALLOWED_MODES:
+        rejected = self._stop_only_reject_reason()
+        if rejected is not None:
             response.success = False
-            response.message = f"IDLE/MANUAL 以外では変更できません（現在のモード: {self._mode}）"
+            response.message = rejected.replace("操作できます", "変更できます")
             return response
 
         try:
@@ -377,9 +406,10 @@ class ParamsAudit(Node):
             return response
 
     def _cb_save_impl(self, request, response):
-        if self._mode not in ALLOWED_MODES:
+        rejected = self._stop_only_reject_reason()
+        if rejected is not None:
             response.success = False
-            response.message = f"IDLE/MANUAL 以外では保存できません（現在のモード: {self._mode}）"
+            response.message = rejected.replace("操作できます", "保存できます")
             return response
         response.success = True
         response.message = "変更は /params/set の時点で overrides.yaml に保存済み"

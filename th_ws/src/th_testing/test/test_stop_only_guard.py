@@ -130,7 +130,7 @@ def test_nodes_use_stop_only_guard():
         tree = ast.parse(src)
         imported = set()
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module == "stop_only_guard":
+            if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("stop_only_guard"):
                 imported.update(a.name for a in node.names)
         assert "stop_only_allows" in imported, f"{path} が stop_only_guard を import していない"
         assert "'/robot/mode'" not in src and '"/robot/mode"' not in src, \
