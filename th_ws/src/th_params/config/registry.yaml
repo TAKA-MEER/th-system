@@ -372,9 +372,11 @@
   class: b
   status: given
   value: 1.0
-  consumers: [pin_registrar, params_audit]
+  consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.1"
-  note: "推奨 1.0 m（params.md §6.1）"
+  note: "推奨 1.0 m（params.md §6.1）。SG-B21 で pin_registrar を consumers から外した:
+    ノードは two_point_min_spacing_m（下限）しか使わず、この推奨値の読み手がいない
+    （decision-1・2026-10-06）"
 
 - name: two_point_min_spacing_m
   unit: m
@@ -441,18 +443,23 @@
   class: b
   status: given
   value: 0.1
-  consumers: [venue_navigator, params_audit]
+  consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.1"
-  note: "Nav2 の現行設定値。暫定値（実際の nav2_params.yaml との突き合わせ未確認）"
+  note: "Nav2 の現行設定値。暫定値（実際の nav2_params.yaml との突き合わせ未確認）。
+    SG-B21 で venue_navigator を consumers から外した: ノード内に使用箇所が無く
+    （到着判定は arrival_xy_tol_m。別ブランチが作業中）、読み手がいない
+    （decision-1・2026-10-06。registry 側だけの修正）"
 
 - name: nav_tolerance_deg
   unit: deg
   class: b
   status: given
   value: 5.0
-  consumers: [venue_navigator, params_audit]
+  consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.1"
-  note: "Nav2 の現行設定値。暫定値（実際の nav2_params.yaml との突き合わせ未確認）"
+  note: "Nav2 の現行設定値。暫定値（実際の nav2_params.yaml との突き合わせ未確認）。
+    SG-B21 で venue_navigator を consumers から外した（nav_tolerance_m と同じ理由。
+    decision-1・2026-10-06。registry 側だけの修正）"
 
 - name: person_position_sigma_m
   unit: m
@@ -547,7 +554,8 @@
   source: "th_ws/data/meas04_after.csv（2026-08-21 11:41〜12:03 の 22 分間、/safety/link_quality を `ros2 topic echo --csv` で記録。列は header.stamp.sec, nanosec, frame_id, link, p50_ms, p99_ms, max_ms, window_sec(=30)）。30 秒窓 p99 の最悪窓を軸ごとに取り、実測 160.2ms(esp32) / 153.2ms(lidar) を切り上げて 161 / 154 とした（切り上げる方が p99 が大きくなり誤フォルトに対して安全側）。ui 軸は ui_gap_p99_ms へ切り出し、ここからは除外した"
   consumers: [safety_monitor]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §7 / DetailedDesign-wp0.md WP-PARAM-01 §5"
-  note: "esp32／lidar のみ（ui は ui_gap_p99_ms へ分離）。esp32 は 22 分間に 600ms 超の断が3回残っている（最悪 4105.6ms）。p99 は健全だが裾は健全でない"
+  note: "esp32／lidar のみ（ui は ui_gap_p99_ms へ分離）。esp32 は 22 分間に 600ms 超の断が3回残っている（最悪 4105.6ms）。p99 は健全だが裾は健全でない。
+    ノードはこの生値を直接読まない。導出した lidar/esp32_timeout_ms 経由の間接消費（SG-B21・decision-1）"
 
 - name: ui_gap_p99_ms
   unit: ms
@@ -665,10 +673,11 @@
   class: b
   status: given
   value: 2.0
-  consumers: [pin_registrar, person_tracker_bridge]
+  consumers: [person_tracker_bridge]
   spec_ref: "DetailedDesign-names.md §7.3（E-8）"
   note: "『数秒』の暫定値。person_tracker_bridge.py の既定値と一致（変更なし）。
-    pin_registrar は現状この名を宣言していない（残置。未使用キーは起動を壊さない）"
+    SG-B21 で pin_registrar を consumers から外した: ノード内に使用箇所が無い
+    （decision-1・2026-10-06）"
 
 - name: clear_hold_ms
   unit: ms
@@ -1068,9 +1077,12 @@
   class: b
   status: given
   value: 1.5
-  consumers: [safety_monitor]
+  consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.3（hardware §2.1）"
-  note: "カメラ接続後の /scan p99 悪化の許容比。暫定値"
+  note: "カメラ接続後の /scan p99 悪化の許容比。暫定値。SG-B21 で safety_monitor を
+    consumers から外した: 判定に使う設計が無く（safety_monitor のリンク品質系は
+    計測値の publish に留まる）、読ませるとダミー宣言になる。使う設計ができたら
+    戻す（decision-1・2026-10-06）"
 
 - name: ui_active_window_s
   unit: s
@@ -1139,8 +1151,8 @@
   value: 8766
   consumers: [esp32_bridge]
   spec_ref: "DetailedDesign-wp0.md WP-NET-01 §3 / WP-ESP32-01 §3.3"
-  source: "th_esp32_bridge/config/params.yaml ws_port ／ ラズパイの pi_serial_relay --ws-port（2026-09-05〜。旧 esp32/src/wifi_credentials.h WS_SERVER_PORT は廃止）"
-  note: "esp32_bridge の WebSocket 待受ポート。ラズパイの pi_serial_relay と一致させること。WP-PARAM-01 時点で未登録だった行（WP-ESP32-01 で追加）"
+  source: "th_esp32_bridge/config/params.yaml esp32_ws_port ／ ラズパイの pi_serial_relay --ws-port（2026-09-05〜。旧 esp32/src/wifi_credentials.h WS_SERVER_PORT は廃止）"
+  note: "esp32_bridge の WebSocket 待受ポート。ラズパイの pi_serial_relay と一致させること。WP-PARAM-01 時点で未登録だった行（WP-ESP32-01 で追加）。SG-B21 でノード側をこの名に寄せた（旧 ws_port。decision-1）"
 
 - name: link_wait_timeout_ms
   unit: ms
@@ -1716,3 +1728,113 @@
   consumers: [opcheck_runner, opcheck_auto, params_audit]
   spec_ref: "DetailedDesign-names.md §7.6"
   note: "OPCHECK の無効ビーム連続帯の許容幅。全周がこれだけ欠損しても scan_stale になっていなければ NG にはしない（方針値）"
+
+# =========================================================================
+# SG-B21: 始業点検・校正の直書きタイムアウトの registry 化（1b-10）
+# counts as (b) given: 現行ノードのモジュール定数をそのまま移した暫定値。
+# 実測値ではない（measured と偽らない）。値の変更は別作業。
+# 時間は _ms の整数（registry の慣行。rclpy は INTEGER↔DOUBLE を変換しない）、
+# 回数は整数。decision-1・2026-10-06。
+# check_core.py の BLIND_NEAR_M / BLIND_MIN_RUN_DEG は registry 化しない
+# （docstring の「registry に持つまでもない校正時の内部定数」の方針を尊重。
+# measure_blind_sectors.py の NEAR_M・MARGIN と合わせ三重管理になっている）。
+# =========================================================================
+
+- name: opcheck_estop_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 3000
+  consumers: [opcheck_runner, opcheck_auto, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.6"
+  note: "OPCHECK の /safety/estop_hw 途絶判定。opcheck_runner.py の _ESTOP_STALE_MS（変更なし）。opcheck_auto と同名・同値"
+
+- name: opcheck_estop_release_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 30000
+  consumers: [opcheck_runner, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.6"
+  note: "OPCHECK の ESTOP 項目: 押下後に解除を見ずにこれだけ経ったら「押したまま」（短絡・固着）とみなす。opcheck_runner.py の _ESTOP_RELEASE_TIMEOUT_MS（変更なし）。押す→目視回答→離すの実手順（10 秒前後）に余裕を持たせた値。時間の規定は spec になし（1b-8・SG-B4）"
+
+- name: opcheck_motor_too_brief_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [opcheck_runner, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.6"
+  note: "OPCHECK の MOTOR 項目: 1 回の押下がこれより短くサンプルも無ければ「短すぎて測れていない」として未実施扱いにする。opcheck_runner.py の _MOTOR_TOO_BRIEF_MS（変更なし）。期待レート 10 Hz に対する余裕値"
+
+- name: opcheck_lidar_no_data_ms
+  unit: ms
+  class: b
+  status: given
+  value: 3000
+  consumers: [opcheck_runner, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.6"
+  note: "OPCHECK の LIDAR 項目: /scan が一度も届かないままこれだけ経ったら「届いていない」（NG no_data）。opcheck_runner.py の _LIDAR_NO_DATA_MS（変更なし）。届かないと判定が永遠に出ず項目から抜けられなかった（2026-10-04）"
+
+- name: calib_linear_distance_m
+  unit: m
+  class: b
+  status: given
+  value: 1.0
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の LINEAR 項目の指定距離。calib_runner.py の LOCAL_PARS（変更なし）。PARS へ移した"
+
+- name: calib_rotation_deg
+  unit: deg
+  class: b
+  status: given
+  value: 180.0
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の ROTATION 項目の指定角度。calib_runner.py の LOCAL_PARS（変更なし）。PARS へ移した"
+
+- name: calib_run_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 60000
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の自律走行のタイムアウト。calib_runner.py の LOCAL_PARS calib_run_timeout_s=60.0（変更なし。_ms 整数に寄せた）。PARS へ移した"
+
+- name: calib_blind_verify_frames
+  unit: count
+  class: b
+  status: given
+  value: 15
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の BLIND 検証で集める /scan フレーム数。calib_runner.py の LOCAL_PARS calib_blind_verify_frames=15.0（変更なし。整数に寄せた）。PARS へ移した"
+
+- name: calib_blind_verify_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 10000
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の BLIND 検証で待つ上限。calib_runner.py の LOCAL_PARS calib_blind_verify_timeout_s=10.0（変更なし。_ms 整数に寄せた）。PARS へ移した"
+
+- name: calib_state_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 2000
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の /system/state 途絶判定（超えたら走行を止める）。calib_runner.py の _STATE_STALE_S=2.0（変更なし。_ms 整数に寄せた）。registry の state_stale_ms（1500。リミッタ用）とは別物"
+
+- name: calib_odom_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の /odom 途絶判定（超えたら走らせない）。calib_runner.py の _ODOM_STALE_S=0.5（変更なし。_ms 整数に寄せた）"

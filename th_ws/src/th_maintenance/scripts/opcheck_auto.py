@@ -66,9 +66,10 @@ PARS: dict = {
     # InvalidParameterTypeException で落ちる。2026-10-02 実機で opcheck_runner が
     # これで起動せず、始業点検の MOTOR が指令を一切出さなかった）。
     "scan_stale_ms": 300,
+    # SG-B21: _ESTOP_STALE_MS を registry 行にした（opcheck_runner と同名・同値）。
+    "opcheck_estop_stale_ms": 3000,
 }
 
-_ESTOP_STALE_MS = 3000.0  # /safety/estop_hw がこれだけ来なかったら「届いていない」
 _PUBLISH_PERIOD_S = 1.0
 
 
@@ -194,7 +195,8 @@ class OpcheckAuto(Node):
         now = self._now_ms()
 
         estop_alive = (self._estop_last_ms is not None
-                       and now - self._estop_last_ms <= _ESTOP_STALE_MS)
+                       and now - self._estop_last_ms
+                       <= int(self.get_parameter("opcheck_estop_stale_ms").value))
         imu_alive = (self._imu_last_ms is not None
                      and now - self._imu_last_ms <= self._p.scan_stale_ms)
         scan_alive = (self._scan_last_ms is not None

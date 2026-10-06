@@ -11,6 +11,7 @@ params_audit:
     imu_bias_max_rad_s: 0.2
     imu_wz_implausible_rad_s: 10.0
     intrusion_budget_m: 0.5
+    link_quality_regression_ratio: 1.5
     motor_deadband_mps: 0.03
     motor_follow_min_ratio: 0.5
     nav_tolerance_deg: 5.0
@@ -19,7 +20,11 @@ params_audit:
     normal_angular_accel_rps2: 0.0
     opcheck_blind_tolerance_deg: 5.0
     opcheck_deadman_timeout_s: 0.5
+    opcheck_estop_release_timeout_ms: 30000
+    opcheck_estop_stale_ms: 3000
     opcheck_imu_window_s: 2.0
+    opcheck_lidar_no_data_ms: 3000
+    opcheck_motor_too_brief_ms: 500
     opcheck_scan_coverage_gap_deg: 2.0
     opcheck_spin_w_rad_s: 0.3
     person_margin_m: 0.4

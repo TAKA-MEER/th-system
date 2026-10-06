@@ -40,7 +40,7 @@ def generate_test_description():
         name='esp32_bridge',
         parameters=[{
             'ws_host': '127.0.0.1',
-            'ws_port': _WS_PORT,
+            'esp32_ws_port': _WS_PORT,
             'cmd_vel_stale_ms': _STALE_MS,
             # フィードバック死活監視のタイムアウト警告でログが汚れないよう緩める
             # (WHEEL_FEEDBACK を送るモックではないため常に鳴るが、テストの

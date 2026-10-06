@@ -82,7 +82,7 @@ def generate_test_description():
             'v_calib': V_CALIB,
             'calib_linear_tolerance_ratio': LIN_TOL,
             'calib_rotation_tolerance_deg': ROT_TOL,
-            'calib_run_timeout_s': 20.0,
+            'calib_run_timeout_ms': 20000,
         }],
         output='screen')
     return launch.LaunchDescription([

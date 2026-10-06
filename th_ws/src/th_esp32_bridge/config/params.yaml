@@ -19,4 +19,6 @@ esp32_bridge:
     # 8766 で直接待ち受ける (実機検証 2026-07-11: WSL mirrored networking でも
     # 外部デバイスから直接届くため、netsh portproxy は不要。むしろ Windows 側に
     # 8766 の portproxy が残っていると横取りされるので削除すること)。
-    ws_port: 8766           # WebSocket サーバー ポート
+    # パラメータ名は registry.yaml の esp32_ws_port（SG-B21 で ws_port から改名。
+    # 生成 esp32_bridge.yaml が後段に重なりこちらを上書きする）。
+    esp32_ws_port: 8766   # WebSocket サーバー ポート

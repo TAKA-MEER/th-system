@@ -15,6 +15,7 @@ opcheck_auto:
     motor_follow_min_ratio: 0.5
     opcheck_blind_tolerance_deg: 5.0
     opcheck_deadman_timeout_s: 0.5
+    opcheck_estop_stale_ms: 3000
     opcheck_imu_window_s: 2.0
     opcheck_scan_coverage_gap_deg: 2.0
     opcheck_spin_w_rad_s: 0.3
