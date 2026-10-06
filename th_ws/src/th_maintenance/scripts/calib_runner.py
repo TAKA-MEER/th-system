@@ -13,8 +13,8 @@
   - 中断（`ui.abort` → `discard_calib`）・フォルト（`fault.recoverable` → `discard_calib`）
   - `/system/state` が `CALIB` でなくなる（非常停止・IDLE への強制遷移を含む）→ 即停止・適用前へ戻す
   - 物理／UI 非常停止の直接購読
-  - `/system/state` が一定時間来なくなったら止める（`_STATE_STALE_S`）
-  - `/odom` が途絶したら止める（自分の位置が分からないまま走らせない）
+   - `/system/state` が一定時間来なくなったら止める（`calib_state_stale_ms`）
+   - `/odom` が途絶したら止める（自分の位置が分からないまま走らせない）
 
 `BLIND`（LiDAR 死角マスク）は走らない。画面で選んだ角度帯（`/calib/submit` の `ranges`）を、
 **幅の上限（`blind_max_*`）を検査してから** `obstacle_limiter`・`lidar_filter`・`opcheck_runner` の
@@ -74,6 +74,9 @@ from th_maintenance.check_core import BLIND_MIN_RUN_DEG, BLIND_NEAR_M
 from th_maintenance.calib_store import CalibStore
 
 # registry.yaml と一致させるパラメータの既定値（consumers に calib_runner を持つ行のうち値あり）。
+# SG-B21: LOCAL_PARS だった指定距離・指定角度・タイムアウトも registry 行になった
+# のでここへ移した。時間は _ms の整数（registry の慣行。rclpy は INTEGER↔DOUBLE を
+# 変換しない）。test_maintenance_param_types.py が生成 yaml と型を突き合わせる。
 PARS: dict = {
     "v_calib": 0.15,
     "wheel_radius_scale_max_dev": 0.10,
@@ -81,17 +84,16 @@ PARS: dict = {
     "blind_max_sector_deg": blind_core.MAX_SECTOR_DEG,
     "blind_max_total_deg": blind_core.MAX_TOTAL_DEG,
     "blind_max_sectors": blind_core.MAX_SECTORS,
-}
-
-# registry 未登録のノード局所の既定値（names.md §7 に名前が無いため registry へ足していない。
-# 校正の「指定距離・指定角度」と走行の安全タイムアウト。値の正式な置き場は実装管理担当が決める）。
-LOCAL_PARS: dict = {
+    # 校正の「指定距離・指定角度」と走行の安全タイムアウト（SG-B21 で registry 化。
+    # 値は従来の直書きと同じ。_ms は使う側で /1000.0 して秒に戻す）
     "calib_linear_distance_m": 1.0,
     "calib_rotation_deg": 180.0,
-    "calib_run_timeout_s": 60.0,
+    "calib_run_timeout_ms": 60000,
     # BLIND の検証: 恒常的な写り込みを推定するために集める /scan のフレーム数と、待つ上限。
-    "calib_blind_verify_frames": 15.0,
-    "calib_blind_verify_timeout_s": 10.0,
+    "calib_blind_verify_frames": 15,
+    "calib_blind_verify_timeout_ms": 10000,
+    "calib_state_stale_ms": 2000,
+    "calib_odom_stale_ms": 500,
 }
 
 # BLIND の反映先。obstacle_limiter（安全判定。上限を独立検査して拒否できる）を先頭にする。
@@ -119,8 +121,6 @@ RETRY_WAIT = "RETRY_WAIT"        # 検証 NG／走行失敗で S2 に戻った�
 
 _MOVING_PHASES = (RUNNING, VERIFY_RUNNING)
 
-_STATE_STALE_S = 2.0     # /system/state がこれだけ来なかったら止める（state_manager は 10Hz）
-_ODOM_STALE_S = 0.5      # /odom がこれだけ来なかったら止める
 _CTRL_PERIOD_S = 0.05    # 20Hz
 _STATUS_PERIOD_S = 0.5
 
@@ -150,7 +150,7 @@ class CalibRunner(Node):
         if not RS_OK:
             raise ImportError("rclpy が無い環境で CalibRunner を実体化した")
         super().__init__("calib_runner")
-        for name, value in {**PARS, **LOCAL_PARS}.items():
+        for name, value in PARS.items():
             self.declare_parameter(name, value)
         self.declare_parameter("calib_linear_tolerance_ratio", TOLERANCE_UNDEFINED)
         self.declare_parameter("calib_rotation_tolerance_deg", TOLERANCE_UNDEFINED)
@@ -427,12 +427,14 @@ class CalibRunner(Node):
 
     def _odom_fresh(self) -> bool:
         return (self._odom is not None and self._odom_last_s is not None
-                and self._now_s() - self._odom_last_s <= _ODOM_STALE_S)
+                and self._now_s() - self._odom_last_s
+                <= self._p("calib_odom_stale_ms") / 1000.0)
 
     def _ctrl_tick(self):
         # /system/state が来なくなったら、CALIB のつもりのまま走り続けない。
         if (self._phase in _MOVING_PHASES and self._state_last_s is not None
-                and self._now_s() - self._state_last_s > _STATE_STALE_S):
+                and self._now_s() - self._state_last_s
+                > self._p("calib_state_stale_ms") / 1000.0):
             self.get_logger().warn("/system/state が途絶 → 走行を止める")
             self._abort_all("state_stale")
             return
@@ -451,7 +453,7 @@ class CalibRunner(Node):
         if not self._odom_fresh():
             self._run_failed("odom_stale")
             return
-        if self._now_s() - self._run_t0 > self._p("calib_run_timeout_s"):
+        if self._now_s() - self._run_t0 > self._p("calib_run_timeout_ms") / 1000.0:
             self._run_failed("run_timeout")
             return
 
@@ -714,7 +716,8 @@ class CalibRunner(Node):
         self._publish_status()
 
     def _blind_verify_tick(self):
-        if self._now_s() - self._verify_t0 > self._p("calib_blind_verify_timeout_s"):
+        if (self._now_s() - self._verify_t0
+                > self._p("calib_blind_verify_timeout_ms") / 1000.0):
             self._fail_verify("verify_timeout:no_scan" if not self._verify_frames
                               else "verify_timeout:no_filtered_scan")
             return

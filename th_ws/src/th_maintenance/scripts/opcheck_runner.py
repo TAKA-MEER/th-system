@@ -65,6 +65,12 @@ PARS: dict = {
     # InvalidParameterTypeException で落ちる。2026-10-02 実機で opcheck_runner が
     # これで起動せず、始業点検の MOTOR が指令を一切出さなかった）。
     "scan_stale_ms": 300,
+    # SG-B21: ノード内の直書きタイムアウトを registry 行にした（値は従来と同じ。
+    # 時間は _ms の整数。test_maintenance_param_types.py が生成 yaml と型を突き合わせる）。
+    "opcheck_estop_stale_ms": 3000,
+    "opcheck_estop_release_timeout_ms": 30000,
+    "opcheck_motor_too_brief_ms": 500,
+    "opcheck_lidar_no_data_ms": 3000,
 }
 
 ITEM_VALID = ("ESTOP", "MOTOR", "IMU", "LIDAR")
@@ -77,22 +83,14 @@ _NEXT_SCREEN = {
     "LIDAR": "lidar_calib",
 }
 
-_ESTOP_STALE_MS = 3000.0  # /safety/estop_hw がこれだけ来なかったら「届いていない」とみなす
-# 押下を見てから解除を見ずにこれだけ経ったら「押したまま」（短絡・固着）とみなして
-# NG(stuck_release) で確定する（1b-8・SG-B4）。spec（Spec-checks.md §2.4 #1・
-# DetailedDesign-maintenance.md §2.2）に時間の規定は無い。押す→目視回答→離すの
-# 実手順（10 秒前後）に余裕を持たせた値。押下が一度も来ない側（no_press）は
-# 時間で NG にしない（来ないまま待つか、T-OPC-09 の中断で抜ける）。
-_ESTOP_RELEASE_TIMEOUT_MS = 30000.0
+# SG-B21: タイムアウトの直書き定数（_ESTOP_STALE_MS=3000.0・
+# _ESTOP_RELEASE_TIMEOUT_MS=30000.0・_MOTOR_TOO_BRIEF_MS=500.0・
+# _LIDAR_NO_DATA_MS=3000.0）は registry の opcheck_*_ms 行へ移した（値は同じ）。
+# 押下が一度も来ない側（no_press）は時間で NG にしない（来ないまま待つか、
+# T-OPC-09 の中断で抜ける）。残すのは _MOTOR_DIRS だけ（方向の文字列タプル。
+# 数値ではなく registry の対象外）。
 # MOTOR の 4 方向（brief-a13・SG-A13）。OK はこの全方向で合ってはじめて確定する。
 _MOTOR_DIRS = ("FORWARD", "BACK", "LEFT", "RIGHT")
-# 1 回の押下がこれより短くサンプルも無いときは「短すぎて測れていない」として
-# 未実施扱いにする（確定しない）。これ以上押しているのにサンプルが無ければ
-# ESP32 側が死んでいる（NG no_samples）。期待レート 10 Hz に対する余裕値。
-_MOTOR_TOO_BRIEF_MS = 500.0
-# 項目を始めてから /scan が一度も届かないまま、これだけ経ったら「届いていない」（NG no_data）。
-# 届かないと判定が永遠に出ず、項目から抜けられなかった（2026-10-04）。
-_LIDAR_NO_DATA_MS = 3000.0
 
 
 def _json_str(text: str) -> str:
@@ -124,6 +122,15 @@ class OpcheckRunner(Node):
             v_check=float(self.get_parameter("v_check").value),
             scan_stale_ms=float(self.get_parameter("scan_stale_ms").value),
         )
+        # SG-B21: registry 駆動のタイムアウト（CheckParams の判定しきい値ではなく
+        # ノードの待ち時間なので dataclass には入れない）。
+        self._estop_stale_ms = int(self.get_parameter("opcheck_estop_stale_ms").value)
+        self._estop_release_timeout_ms = int(
+            self.get_parameter("opcheck_estop_release_timeout_ms").value)
+        self._motor_too_brief_ms = int(
+            self.get_parameter("opcheck_motor_too_brief_ms").value)
+        self._lidar_no_data_ms = int(
+            self.get_parameter("opcheck_lidar_no_data_ms").value)
 
         # ── 内部状態 ──────────────────────────────────────
         self._mode = "INIT"
@@ -422,7 +429,7 @@ class OpcheckRunner(Node):
         - NG ならその場で NG 確定（理由に方向を含める `DIR:reason`）。
         - OK なら済みに入れ、4 方向すべて済んだら OK 確定。
         - 未実施（サンプル無し）の方向は確定しない。ただし押下が
-          `_MOTOR_TOO_BRIEF_MS` 以上の長さでサンプルが無いのは ESP32 側が
+          `opcheck_motor_too_brief_ms` 以上の長さでサンプルが無いのは ESP32 側が
           死んでいる（2026-09-25 修正の no_samples 経路の方向別版）。
         """
         if self._item != "MOTOR" or direction not in _MOTOR_DIRS:
@@ -431,7 +438,7 @@ class OpcheckRunner(Node):
         self._motor_dir_samples[direction] = []
         if not samples:
             held_ms = self._now_ms() - self._motor_press_start_ms
-            if held_ms < _MOTOR_TOO_BRIEF_MS:
+            if held_ms < self._motor_too_brief_ms:
                 self.get_logger().info(
                     f"MOTOR {direction}: サンプル無し（{held_ms:.0f}ms のみ）→ 未実施のまま")
                 self._publish_status(result="UNKNOWN", detail=self._live_detail())
@@ -531,11 +538,11 @@ class OpcheckRunner(Node):
         # 項目を始めてから一度も届かない（ESP32 未接続など）。ESP32 は毎周期送るので、
         # 待っても来ない。判定を出さないと項目から抜けられない（2026-10-04）。
         if (self._estop_pressed is None and not self._final_sent
-                and self._now_ms() - self._item_started_ms > _ESTOP_STALE_MS):
+                and self._now_ms() - self._item_started_ms > self._estop_stale_ms):
             self.get_logger().warn("/safety/estop_hw が届かない（ESTOP 項目）")
             self._update_estop_verdict()
             return
-        fresh = self._now_ms() - self._estop_last_ms <= _ESTOP_STALE_MS
+        fresh = self._now_ms() - self._estop_last_ms <= self._estop_stale_ms
         if self._estop_alive and not fresh:
             self._estop_alive = False
             self.get_logger().warn("/safety/estop_hw 途絶（ESTOP 項目）")
@@ -546,7 +553,7 @@ class OpcheckRunner(Node):
         if (self._estop_saw_press and not self._estop_saw_release
                 and not self._final_sent
                 and self._now_ms() - self._estop_press_start_ms
-                > _ESTOP_RELEASE_TIMEOUT_MS):
+                > self._estop_release_timeout_ms):
             self.get_logger().warn("ESTOP が押されたまま解除されない（ESTOP 項目）")
             verdict = NG("stuck_release")
             self._last_estop_verdict = (verdict.result, verdict.reason)
@@ -622,7 +629,7 @@ class OpcheckRunner(Node):
         if not self._scan_alive:
             # 一度も届いていない（LiDAR 未接続など）。判定を出さないと項目から抜けられない。
             if (not self._final_sent
-                    and self._now_ms() - self._item_started_ms > _LIDAR_NO_DATA_MS):
+                    and self._now_ms() - self._item_started_ms > self._lidar_no_data_ms):
                 self.get_logger().warn("/scan が届かない（LIDAR 項目）")
                 self._update_lidar_verdict()
             return

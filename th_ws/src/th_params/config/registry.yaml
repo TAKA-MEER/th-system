@@ -1728,3 +1728,113 @@
   consumers: [opcheck_runner, opcheck_auto, params_audit]
   spec_ref: "DetailedDesign-names.md §7.6"
   note: "OPCHECK の無効ビーム連続帯の許容幅。全周がこれだけ欠損しても scan_stale になっていなければ NG にはしない（方針値）"
+
+# =========================================================================
+# SG-B21: 始業点検・校正の直書きタイムアウトの registry 化（1b-10）
+# counts as (b) given: 現行ノードのモジュール定数をそのまま移した暫定値。
+# 実測値ではない（measured と偽らない）。値の変更は別作業。
+# 時間は _ms の整数（registry の慣行。rclpy は INTEGER↔DOUBLE を変換しない）、
+# 回数は整数。decision-1・2026-10-06。
+# check_core.py の BLIND_NEAR_M / BLIND_MIN_RUN_DEG は registry 化しない
+# （docstring の「registry に持つまでもない校正時の内部定数」の方針を尊重。
+# measure_blind_sectors.py の NEAR_M・MARGIN と合わせ三重管理になっている）。
+# =========================================================================
+
+- name: opcheck_estop_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 3000
+  consumers: [opcheck_runner, opcheck_auto, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.6"
+  note: "OPCHECK の /safety/estop_hw 途絶判定。opcheck_runner.py の _ESTOP_STALE_MS（変更なし）。opcheck_auto と同名・同値"
+
+- name: opcheck_estop_release_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 30000
+  consumers: [opcheck_runner, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.6"
+  note: "OPCHECK の ESTOP 項目: 押下後に解除を見ずにこれだけ経ったら「押したまま」（短絡・固着）とみなす。opcheck_runner.py の _ESTOP_RELEASE_TIMEOUT_MS（変更なし）。押す→目視回答→離すの実手順（10 秒前後）に余裕を持たせた値。時間の規定は spec になし（1b-8・SG-B4）"
+
+- name: opcheck_motor_too_brief_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [opcheck_runner, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.6"
+  note: "OPCHECK の MOTOR 項目: 1 回の押下がこれより短くサンプルも無ければ「短すぎて測れていない」として未実施扱いにする。opcheck_runner.py の _MOTOR_TOO_BRIEF_MS（変更なし）。期待レート 10 Hz に対する余裕値"
+
+- name: opcheck_lidar_no_data_ms
+  unit: ms
+  class: b
+  status: given
+  value: 3000
+  consumers: [opcheck_runner, params_audit]
+  spec_ref: "DetailedDesign-names.md §7.6"
+  note: "OPCHECK の LIDAR 項目: /scan が一度も届かないままこれだけ経ったら「届いていない」（NG no_data）。opcheck_runner.py の _LIDAR_NO_DATA_MS（変更なし）。届かないと判定が永遠に出ず項目から抜けられなかった（2026-10-04）"
+
+- name: calib_linear_distance_m
+  unit: m
+  class: b
+  status: given
+  value: 1.0
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の LINEAR 項目の指定距離。calib_runner.py の LOCAL_PARS（変更なし）。PARS へ移した"
+
+- name: calib_rotation_deg
+  unit: deg
+  class: b
+  status: given
+  value: 180.0
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の ROTATION 項目の指定角度。calib_runner.py の LOCAL_PARS（変更なし）。PARS へ移した"
+
+- name: calib_run_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 60000
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の自律走行のタイムアウト。calib_runner.py の LOCAL_PARS calib_run_timeout_s=60.0（変更なし。_ms 整数に寄せた）。PARS へ移した"
+
+- name: calib_blind_verify_frames
+  unit: count
+  class: b
+  status: given
+  value: 15
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の BLIND 検証で集める /scan フレーム数。calib_runner.py の LOCAL_PARS calib_blind_verify_frames=15.0（変更なし。整数に寄せた）。PARS へ移した"
+
+- name: calib_blind_verify_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 10000
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の BLIND 検証で待つ上限。calib_runner.py の LOCAL_PARS calib_blind_verify_timeout_s=10.0（変更なし。_ms 整数に寄せた）。PARS へ移した"
+
+- name: calib_state_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 2000
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の /system/state 途絶判定（超えたら走行を止める）。calib_runner.py の _STATE_STALE_S=2.0（変更なし。_ms 整数に寄せた）。registry の state_stale_ms（1500。リミッタ用）とは別物"
+
+- name: calib_odom_stale_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [calib_runner]
+  spec_ref: "DetailedDesign-names.md §7.3"
+  note: "CALIB の /odom 途絶判定（超えたら走らせない）。calib_runner.py の _ODOM_STALE_S=0.5（変更なし。_ms 整数に寄せた）"

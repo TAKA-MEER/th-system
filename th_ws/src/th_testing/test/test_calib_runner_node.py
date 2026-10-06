@@ -64,7 +64,7 @@ def generate_test_description():
             'calib_linear_distance_m': DIST_M,
             'v_calib': V_CALIB,
             'calib_linear_tolerance_ratio': 0.05,
-            'calib_run_timeout_s': 30.0,
+            'calib_run_timeout_ms': 30000,
         }],
         output='screen')
     return launch.LaunchDescription([
@@ -262,7 +262,7 @@ class TestCalibRunnerNode(unittest.TestCase):
         self._start_running(item)
         self.events.clear()
         self.send_odom = False           # ここで /odom を止める
-        # _ODOM_STALE_S(0.5s) + 余裕の内に 0 になる
+        # calib_odom_stale_ms(500ms) + 余裕の内に 0 になる
         self._wait(lambda: bool(self.cmds) and abs(self.cmds[-1].linear.x) < 1e-9
                    and abs(self.cmds[-1].angular.z) < 1e-9,
                    timeout=1.5, what=f'{item}: /odom 途絶で /cmd_vel_behavior が 0 になる（⑦の標的）')

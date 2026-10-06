@@ -90,8 +90,8 @@ def generate_test_description():
             'calib_dir': CALIB_DIR,
             'params_digest_path': os.path.join(CALIB_DIR, 'no_such_digest.json'),
             'calib_blind_tolerance_deg': 5.0,
-            'calib_blind_verify_frames': 8.0,
-            'calib_blind_verify_timeout_s': 20.0,
+            'calib_blind_verify_frames': 8,
+            'calib_blind_verify_timeout_ms': 20000,
         }],
         output='screen')
     lidar_filter = launch_ros.actions.Node(
