@@ -263,8 +263,17 @@ class TestStopOnlyGuards(unittest.TestCase):
         """MANUAL（手動走行）では 4 経路とも拒否される（SD-9）。"""
         res = self._trigger('ui.enter_mode', {'mode': 'MANUAL'})
         assert res.accepted, f'MANUAL に入らない: {res.reason}'
-        # MANUAL の入口状態は RUN（state_core.ESTOP_RESUME_RUN の run_state）。
-        assert self._wait_mode_state('MANUAL', 'RUN', timeout=5.0),             f'MANUAL/RUN に入らない ({self._mode_state()})'
+        # MANUAL の入口状態は RUN だが、試験環境にはジョグのリースが無く
+        # sys.jog_lease_expired（T-MANUAL-02）で PAUSE へ落ちる。SD-9 は状態に
+        # よらず拒否なので、mode が MANUAL になれば RUN/PAUSE のどちらでもよい。
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            ms = self._mode_state()
+            if ms is not None and ms[0] == 'MANUAL':
+                break
+            self._spin(0.1)
+        ms = self._mode_state()
+        assert ms is not None and ms[0] == 'MANUAL' and ms[1] in ('RUN', 'PAUSE'),             f'MANUAL に入らない ({ms})'
         self._assert_denies('MANUAL')
 
     def test_prep_mapping_allows(self):
