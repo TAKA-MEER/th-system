@@ -33,7 +33,8 @@ import rclpy
 import yaml
 from geometry_msgs.msg import Quaternion
 from nav_msgs.msg import Odometry
-from rclpy.parameter_client import AsyncParameterClient
+from rcl_interfaces.msg import ParameterType
+from rcl_interfaces.srv import GetParameters
 from sensor_msgs.msg import LaserScan
 
 import launch
@@ -325,27 +326,42 @@ class TestReplayLocalizeRegistryNode(unittest.TestCase):
             f'{what} を満たす /route/status が {timeout}s 来ない '
             f'(受信 {len(self._statuses)} 件)')
 
+    def _call_get_parameters(self, names) -> list:
+        """起動中ノードのパラメータを本番の取得経路で読む。
+
+        Humble には rclpy.parameter_client が無い（Iron 以降）ため、
+        `/replay_runner/get_parameters` のサービスクライアントを直接呼ぶ
+        （test_esp32_scale.py と同じ流儀）。
+        """
+        cli = self.node.create_client(GetParameters, '/replay_runner/get_parameters')
+        assert cli.wait_for_service(timeout_sec=10.0), (
+            'replay_runner のパラメータサービスに繋がらない')
+        req = GetParameters.Request()
+        req.names = list(names)
+        deadline = time.time() + 10.0
+        while time.time() < deadline:
+            fut = cli.call_async(req)
+            while not fut.done():
+                if time.time() > deadline:
+                    break
+                rclpy.spin_once(self.node, timeout_sec=0.02)
+            if fut.done() and fut.result() is not None:
+                return list(fut.result().values)
+        self.fail('get_parameters が 10s 以内に完了しない')
+        return []  # fail で終わるため到達しない
+
     def _read_node_params(self) -> dict:
-        """起動中ノードのパラメータを本番の取得経路で読む（値＋型）。
+        """起動中ノードのパラメータを読む（値＋型）。
         未宣言のパラメータは NOT_SET（double_value 0.0）で返るため、
         値だけでなく型（DOUBLE）も見る。resume の試験値が 0.0 なので、
         型を見ないと「宣言忘れ」が緑に化ける。"""
-        from rclpy.parameter import Parameter
-        cli = AsyncParameterClient(self.node, 'replay_runner')
-        assert cli.wait_for_service(timeout_sec=10.0), (
-            'replay_runner のパラメータサービスに繋がらない')
-        fut = cli.get_parameter_types(_TEST_NAMES)
-        rclpy.spin_until_future_complete(self.node, fut, timeout_sec=10.0)
-        assert fut.done() and fut.result() is not None
-        for name, t in zip(_TEST_NAMES, fut.result().types):
-            assert t == Parameter.Type.DOUBLE, (
-                f'{name}: 型が DOUBLE でない（{t}）。INTEGER↔DOUBLE の罠')
-        fut = cli.get_parameters(_TEST_NAMES)
-        rclpy.spin_until_future_complete(self.node, fut, timeout_sec=10.0)
-        assert fut.done() and fut.result() is not None, (
-            'パラメータの読み戻しが終わらない')
-        return {name: p.double_value
-                for name, p in zip(_TEST_NAMES, fut.result().values)}
+        values = self._call_get_parameters(_TEST_NAMES)
+        assert len(values) == len(_TEST_NAMES), (
+            f'返ってきた値の数が違う（{len(values)} != {len(_TEST_NAMES)}）')
+        for name, v in zip(_TEST_NAMES, values):
+            assert v.type == ParameterType.PARAMETER_DOUBLE, (
+                f'{name}: 型が DOUBLE でない（{v.type}）。INTEGER↔DOUBLE の罠')
+        return {name: v.double_value for name, v in zip(_TEST_NAMES, values)}
 
     # ════════════════════════════════════════════════════════
     def test_a_params_arrive_via_generated_yaml(self):
