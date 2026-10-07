@@ -157,6 +157,10 @@ struct ObstacleLimiterOutput {
   double nearest_obstacle_m = 0.0;  // 不明（scan stale 等）なら -1.0、空き確認済みなら +infinity
   SourceClass source_class = SourceClass::AUTO;
   double applied_limit_mps = 0.0;   // 障害物クランプ「前」の速度上限（screen/mode/reverse/blind の合成）
+  // 1b-15 SG-B10: 自動ブレーキが OFF の手動系で、ON なら障害物で減速が始まる距離に
+  // 入っている（速度は落とさない。画面の接近警告の元信号）。ON のとき・AUTO・
+  // /system/state 途絶・scan 途絶・未観測では常に false。
+  bool approach_warning = false;
 };
 
 // ── 純粋関数群（テストから直接呼べるように公開する） ────────────────
