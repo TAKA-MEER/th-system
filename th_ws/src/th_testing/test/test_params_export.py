@@ -452,3 +452,265 @@ def test_main_rejects_startup_when_a13_violated(registry_rows, tmp_path):
     out_dir = tmp_path / "out"
     rc = export.main(["--registry", str(registry_path), "--out", str(out_dir), "--stage", "0"])
     assert rc == 1
+
+
+# ============================================================================
+# SG-B8: 起動時の overrides 重ね（apply_overrides_to_rows / --overrides）
+# ============================================================================
+
+def _sgb8_rows():
+    """SG-B8 試験専用の最小 rows（given 2行＋derived 1行＋measured 1行）。"""
+    return [
+        {"name": "test_ratio_a", "unit": "ratio", "class": "b", "status": "given",
+         "value": 0.5, "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "調整可能な given 行"},
+        {"name": "test_ratio_b", "unit": "ratio", "class": "b", "status": "given",
+         "value": 0.3, "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "調整可能な given 行"},
+        {"name": "test_derived_value", "unit": "m", "class": "b", "status": "derived",
+         "value": None, "formula": "floor_distance",
+         "derived_from": ["body_half_length_m", "floor_margin_m"],
+         "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "derived 行（上書き対象外）"},
+        {"name": "body_half_length_m", "unit": "m", "class": "b", "status": "given",
+         "value": 0.3, "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "derived の依存行（floor_distance が固定名を要求）"},
+        {"name": "floor_margin_m", "unit": "m", "class": "b", "status": "given",
+         "value": 0.05, "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "derived の依存行"},
+        {"name": "test_measured_accel", "unit": "m/s2", "class": "c", "status": "measured",
+         "value": 0.5, "measured_at": "2026-10-01", "source": "test",
+         "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "実測値（brake_accel_mps2 に準じる。上書き対象外）"},
+    ]
+
+
+def test_apply_overrides_applies_valid_entry_with_provenance():
+    """有効な上書きは適用され、出どころが残る。元の rows は壊さない。"""
+    rows = _sgb8_rows()
+    overrides = {"test_ratio_a": {"value": 0.6, "set_at": "t", "set_by": "tester",
+                                  "reason": "ut"}}
+    patched, rejected, meta = export.apply_overrides_to_rows(rows, overrides)
+    assert rejected == {}
+    by_name = {r["name"]: r for r in patched}
+    assert by_name["test_ratio_a"]["value"] == 0.6
+    assert meta["test_ratio_a"] == {"set_at": "t", "set_by": "tester", "reason": "ut"}
+    # 元の rows は不変（呼び出し側が既定値を失わない）。
+    assert {r["name"]: r for r in rows}["test_ratio_a"]["value"] == 0.5
+
+
+def test_apply_overrides_rejects_unknown_and_derived():
+    """未知名・given 以外の上書きは適用せず理由を残す（既定値のまま）。
+
+    注意: schema.validate_registry は S1〜S5・構造だけを見て値の型・範囲を
+    見ないため、型違いの上書きはここでは拒否されない（/params/set 側も同じ
+    水準。SG-B8 の完了報告に「検査の穴」として記載）。値の妥当性は A1〜A13
+    の整合検査が受け持つ（下の A5 テスト）。"""
+    rows = _sgb8_rows()
+    overrides = {
+        "no_such_param": {"value": 1.0},
+        "test_derived_value": {"value": 1.0},
+    }
+    patched, rejected, meta = export.apply_overrides_to_rows(rows, overrides)
+    assert set(rejected) == {"no_such_param", "test_derived_value"}
+    assert meta == {}
+    by_name = {r["name"]: r for r in patched}
+    assert by_name["test_ratio_b"]["value"] == 0.3
+
+
+def test_apply_overrides_rejects_measured_row():
+    """measured 行への上書きは rejected に入り、値が変わらない。
+
+    derived（P-3）・class:a の placeholder（S2）と違い、measured 行の上書きは
+    schema／assertions の網をすり抜けるため、given 検査（status が given でない
+    行を弾く if 文）だけが守っている。この検査を `if False` に変える変異は
+    このテストで赤になる（受け入れ検査のすり抜け対策）。"""
+    rows = _sgb8_rows()
+    overrides = {"test_measured_accel": {"value": 0.9}}
+    patched, rejected, meta = export.apply_overrides_to_rows(rows, overrides)
+    assert "test_measured_accel" in rejected
+    assert "test_measured_accel" not in meta
+    by_name = {r["name"]: r for r in patched}
+    assert by_name["test_measured_accel"]["value"] == 0.5
+
+
+def test_apply_overrides_rejects_class_b_placeholder_row():
+    """class:b の placeholder 行への上書きは rejected に入り、値が変わらない。
+
+    注意: class:b＋placeholder は S3 違反の不正 registry なので、_sgb8_rows には
+    足さずこのテスト専用の rows を使う（足すと export.main のベース検証が
+    rc=2 になり他テストが壊れる）。given 検査が第一関門として弾く。検査を
+    `if False` に変える変異下でも S3 で rejected になるため、このテスト自体は
+    緑のまま（変異の検出役は上の measured テスト）。仕様の縛りとして置く。"""
+    rows = [
+        {"name": "test_ratio_ok", "unit": "ratio", "class": "b", "status": "given",
+         "value": 0.5, "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "調整可能な given 行"},
+        {"name": "test_b_placeholder", "unit": "m", "class": "b", "status": "placeholder",
+         "value": "TBD_MEASURE", "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "未測定行（S3 違反の不正 registry を意図的に再現）"},
+    ]
+    overrides = {"test_b_placeholder": {"value": 0.1}}
+    patched, rejected, meta = export.apply_overrides_to_rows(rows, overrides)
+    assert "test_b_placeholder" in rejected
+    assert "test_b_placeholder" not in meta
+    by_name = {r["name"]: r for r in patched}
+    assert by_name["test_b_placeholder"]["value"] == "TBD_MEASURE"
+
+
+def test_apply_overrides_rejects_assertion_violation_but_keeps_valid_ones():
+    """A5（速度順序）を破る上書きはその行だけ外し、正当な上書きは残す。"""
+    rows = [
+        {"name": "v_reverse", "unit": "m/s", "class": "b", "status": "given",
+         "value": 0.5, "consumers": ["params_audit"], "spec_ref": "sgb8", "note": ""},
+        {"name": "v_slow", "unit": "m/s", "class": "b", "status": "given",
+         "value": 0.6, "consumers": ["params_audit"], "spec_ref": "sgb8", "note": ""},
+        {"name": "v_max", "unit": "m/s", "class": "b", "status": "given",
+         "value": 1.0, "consumers": ["params_audit"], "spec_ref": "sgb8", "note": ""},
+        {"name": "v_jog_panel", "unit": "m/s", "class": "b", "status": "given",
+         "value": 0.4, "consumers": ["params_audit"], "spec_ref": "sgb8", "note": ""},
+    ]
+    # v_reverse=0.9 は v_slow(0.6) を上回り A5 違反 → 拒否。
+    # v_slow=0.95 は v_reverse(0.5) ≤ 0.95 ≤ v_max(1.0) で通る。
+    # 1件ずつ試し当てのため順序依存はある（docstring に明記）。
+    overrides = {"v_reverse": {"value": 0.9}, "v_slow": {"value": 0.95}}
+    patched, rejected, meta = export.apply_overrides_to_rows(rows, overrides)
+    assert "v_reverse" in rejected
+    assert "v_slow" in meta
+    by_name = {r["name"]: r for r in patched}
+    assert by_name["v_reverse"]["value"] == 0.5
+    assert by_name["v_slow"]["value"] == 0.95
+
+
+def test_main_applies_overrides_to_generated_yaml_and_provenance(tmp_path):
+    """export.main --overrides: 生成 yaml に上書き値が乗り、provenance に
+    出どころと rejected の理由が残る（本物の registry ではなく合成 registry で
+    回す。実物との結合は test_params_launch.py が持つ）。"""
+    import yaml
+    rows = _sgb8_rows()
+    registry_path = tmp_path / "registry.yaml"
+    with open(registry_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(rows, f, allow_unicode=True)
+    overrides_path = tmp_path / "overrides.yaml"
+    with open(overrides_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump({
+            "test_ratio_a": {"value": 0.6, "set_at": "t", "set_by": "tester",
+                             "reason": "ut"},
+            "no_such_param": {"value": 1.0},
+        }, f, allow_unicode=True)
+
+    out_dir = tmp_path / "out"
+    rc = export.main(["--registry", str(registry_path), "--out", str(out_dir),
+                      "--stage", "8", "--overrides", str(overrides_path)])
+    assert rc == 0
+
+    import json
+    with open(out_dir / "params_audit.yaml", encoding="utf-8") as f:
+        gen = yaml.safe_load(f)
+    params = gen["params_audit"]["ros__parameters"]
+    assert params["test_ratio_a"] == 0.6
+    with open(out_dir / "params_provenance.json", encoding="utf-8") as f:
+        prov = json.load(f)
+    assert prov["origins"]["test_ratio_a"]["origin"] == "override"
+    assert prov["origins"]["test_ratio_a"]["set_by"] == "tester"
+    assert "no_such_param" in prov["rejected"]
+
+
+def test_main_without_overrides_file_behaves_as_before(tmp_path):
+    """--overrides 省略時・存在しないパス時は従来どおり（provenance は空）。"""
+    import json
+    import yaml
+    rows = _sgb8_rows()
+    registry_path = tmp_path / "registry.yaml"
+    with open(registry_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(rows, f, allow_unicode=True)
+
+    out_dir = tmp_path / "out"
+    rc = export.main(["--registry", str(registry_path), "--out", str(out_dir),
+                      "--stage", "8",
+                      "--overrides", str(tmp_path / "does-not-exist.yaml")])
+    assert rc == 0
+    with open(out_dir / "params_provenance.json", encoding="utf-8") as f:
+        prov = json.load(f)
+    assert prov == {"origins": {}, "rejected": {}}
+
+
+# ============================================================================
+# SG-B8 追補: /params/get の effective 計算（Docker 赤の再現と回帰防止）
+# ============================================================================
+
+def _sgb8_generation(tmp_path, overrides_entries):
+    """試験 registry＋overrides で export.main を回し、(rows, overrides, prov) を返す。
+
+    launch_testing（test_params_overrides_node.py）の _setup_generation と同じ状況を
+    ホストで再現するための材料。rows は registry 読み直し（calib 無し）。"""
+    import copy
+    import json
+    import yaml
+    rows = _sgb8_rows()
+    registry_path = tmp_path / "registry.yaml"
+    with open(registry_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(rows, f, allow_unicode=True)
+    overrides_path = tmp_path / "overrides.yaml"
+    with open(overrides_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(overrides_entries, f, allow_unicode=True)
+    out_dir = tmp_path / "out"
+    rc = export.main(["--registry", str(registry_path), "--out", str(out_dir),
+                      "--stage", "8", "--overrides", str(overrides_path)])
+    assert rc == 0
+    with open(out_dir / "params_provenance.json", encoding="utf-8") as f:
+        prov = json.load(f)
+    with open(overrides_path, encoding="utf-8") as f:
+        overrides = yaml.safe_load(f)
+    return copy.deepcopy(rows), overrides, prov
+
+
+def test_split_effective_pending_applies_boot_time_overrides(tmp_path):
+    """起動時に適用された上書きは effective に乗り、pending は空。
+    Docker 赤（effective が None）のホスト再現。"""
+    rows, overrides, prov = _sgb8_generation(tmp_path, {
+        "test_ratio_a": {"value": 0.6, "set_at": "t0", "set_by": "tester",
+                         "reason": "setup"},
+    })
+    effective, pending, origins = export.split_effective_pending(rows, overrides, prov)
+    pub = export.public_values(effective)
+    assert pub["test_ratio_a"] == 0.6, \
+        "起動時適用値が effective に届いていない（Docker 赤の再現）"
+    assert pub["test_ratio_b"] == 0.3
+    assert pending == {}
+    assert origins == {}
+
+
+def test_split_effective_pending_keeps_post_boot_set_in_pending(tmp_path):
+    """起動後の /params/set 値（provenance に無い）は pending にだけ現れ、
+    effective（走行中の値）に触れない。"""
+    rows, overrides, prov = _sgb8_generation(tmp_path, {
+        "test_ratio_a": {"value": 0.6, "set_at": "t0", "set_by": "tester",
+                         "reason": "setup"},
+    })
+    # 起動後の /params/set を再現: overrides ファイルに新値を足す（生成は回さない）。
+    overrides["test_ratio_b"] = {"value": 0.9, "set_at": "t1", "set_by": "tester",
+                                 "reason": "post-boot"}
+    effective, pending, origins = export.split_effective_pending(rows, overrides, prov)
+    pub = export.public_values(effective)
+    assert pub["test_ratio_a"] == 0.6
+    assert pub["test_ratio_b"] == 0.3, "走行中の値が変わっている"
+    assert pending == {"test_ratio_b": 0.9}
+    assert origins["test_ratio_b"]["set_by"] == "tester"
+
+
+def test_split_effective_pending_falls_back_for_legacy_provenance(tmp_path):
+    """旧形式 provenance（origins に value 無し）でも起動時適用値は effective に乗る。
+    ただし起動後に変えた既存キーは区別できない（仕様の限界。docstring に明記）。"""
+    rows, overrides, prov = _sgb8_generation(tmp_path, {
+        "test_ratio_a": {"value": 0.6, "set_at": "t0", "set_by": "tester",
+                         "reason": "setup"},
+    })
+    legacy = {"origins": {
+        name: {k: v for k, v in meta.items() if k != "value"}
+        for name, meta in prov["origins"].items()},
+        "rejected": dict(prov["rejected"])}
+    effective, pending, _origins = export.split_effective_pending(
+        rows, overrides, legacy)
+    assert export.public_values(effective)["test_ratio_a"] == 0.6
+    assert pending == {}

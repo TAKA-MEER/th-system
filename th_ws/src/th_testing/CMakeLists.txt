@@ -436,6 +436,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_params_audit_node
     test/test_params_audit_node.py
     TIMEOUT 120)
+  # SG-B8: overrides → 生成 → 生成 yaml → ノード起動の本番経路
+  # （launch_testing。ROS2 要）
+  ament_add_pytest_test(test_params_overrides_node
+    test/test_params_overrides_node.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_safety_monitor
     test/test_safety_monitor.py
     TIMEOUT 90)
