@@ -254,6 +254,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_zones
     test/test_zones.py
     TIMEOUT 60)
+  # 自動ブレーキの有効／無効の純関数（1b-15 SG-B10。attributes.yaml の全モード×ゾーン×ジョグ×要求。ROS2 不要）
+  ament_add_pytest_test(test_auto_brake
+    test/test_auto_brake.py
+    TIMEOUT 60)
   # 2点指示コア (WP-ONSITE-01。方位・点間距離・対象妥当性・base_link→map 合成。
   # th_onsite の純ロジック。ROS2 不要)
   ament_add_pytest_test(test_two_point_core
