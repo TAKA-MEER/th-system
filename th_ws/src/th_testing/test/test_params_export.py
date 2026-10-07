@@ -633,3 +633,84 @@ def test_main_without_overrides_file_behaves_as_before(tmp_path):
     with open(out_dir / "params_provenance.json", encoding="utf-8") as f:
         prov = json.load(f)
     assert prov == {"origins": {}, "rejected": {}}
+
+
+# ============================================================================
+# SG-B8 追補: /params/get の effective 計算（Docker 赤の再現と回帰防止）
+# ============================================================================
+
+def _sgb8_generation(tmp_path, overrides_entries):
+    """試験 registry＋overrides で export.main を回し、(rows, overrides, prov) を返す。
+
+    launch_testing（test_params_overrides_node.py）の _setup_generation と同じ状況を
+    ホストで再現するための材料。rows は registry 読み直し（calib 無し）。"""
+    import copy
+    import json
+    import yaml
+    rows = _sgb8_rows()
+    registry_path = tmp_path / "registry.yaml"
+    with open(registry_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(rows, f, allow_unicode=True)
+    overrides_path = tmp_path / "overrides.yaml"
+    with open(overrides_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(overrides_entries, f, allow_unicode=True)
+    out_dir = tmp_path / "out"
+    rc = export.main(["--registry", str(registry_path), "--out", str(out_dir),
+                      "--stage", "8", "--overrides", str(overrides_path)])
+    assert rc == 0
+    with open(out_dir / "params_provenance.json", encoding="utf-8") as f:
+        prov = json.load(f)
+    with open(overrides_path, encoding="utf-8") as f:
+        overrides = yaml.safe_load(f)
+    return copy.deepcopy(rows), overrides, prov
+
+
+def test_split_effective_pending_applies_boot_time_overrides(tmp_path):
+    """起動時に適用された上書きは effective に乗り、pending は空。
+    Docker 赤（effective が None）のホスト再現。"""
+    rows, overrides, prov = _sgb8_generation(tmp_path, {
+        "test_ratio_a": {"value": 0.6, "set_at": "t0", "set_by": "tester",
+                         "reason": "setup"},
+    })
+    effective, pending, origins = export.split_effective_pending(rows, overrides, prov)
+    pub = export.public_values(effective)
+    assert pub["test_ratio_a"] == 0.6, \
+        "起動時適用値が effective に届いていない（Docker 赤の再現）"
+    assert pub["test_ratio_b"] == 0.3
+    assert pending == {}
+    assert origins == {}
+
+
+def test_split_effective_pending_keeps_post_boot_set_in_pending(tmp_path):
+    """起動後の /params/set 値（provenance に無い）は pending にだけ現れ、
+    effective（走行中の値）に触れない。"""
+    rows, overrides, prov = _sgb8_generation(tmp_path, {
+        "test_ratio_a": {"value": 0.6, "set_at": "t0", "set_by": "tester",
+                         "reason": "setup"},
+    })
+    # 起動後の /params/set を再現: overrides ファイルに新値を足す（生成は回さない）。
+    overrides["test_ratio_b"] = {"value": 0.9, "set_at": "t1", "set_by": "tester",
+                                 "reason": "post-boot"}
+    effective, pending, origins = export.split_effective_pending(rows, overrides, prov)
+    pub = export.public_values(effective)
+    assert pub["test_ratio_a"] == 0.6
+    assert pub["test_ratio_b"] == 0.3, "走行中の値が変わっている"
+    assert pending == {"test_ratio_b": 0.9}
+    assert origins["test_ratio_b"]["set_by"] == "tester"
+
+
+def test_split_effective_pending_falls_back_for_legacy_provenance(tmp_path):
+    """旧形式 provenance（origins に value 無し）でも起動時適用値は effective に乗る。
+    ただし起動後に変えた既存キーは区別できない（仕様の限界。docstring に明記）。"""
+    rows, overrides, prov = _sgb8_generation(tmp_path, {
+        "test_ratio_a": {"value": 0.6, "set_at": "t0", "set_by": "tester",
+                         "reason": "setup"},
+    })
+    legacy = {"origins": {
+        name: {k: v for k, v in meta.items() if k != "value"}
+        for name, meta in prov["origins"].items()},
+        "rejected": dict(prov["rejected"])}
+    effective, pending, _origins = export.split_effective_pending(
+        rows, overrides, legacy)
+    assert export.public_values(effective)["test_ratio_a"] == 0.6
+    assert pending == {}

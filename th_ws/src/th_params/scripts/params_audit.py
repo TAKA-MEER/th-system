@@ -246,45 +246,16 @@ class ParamsAudit(Node):
         # 適用されたもの）」と「保存済みで次回から効く上書き値」を区別して返す。
         # 走行中の値は変えない（次の起動から効く）ため、/params/set の受理直後は
         # 両者がずれる。画面には「再起動後に反映」と出す。
+        # 計算本体は export.split_effective_pending（純粋関数。host 試験で縛る）。
         rows = self._load_registry_rows()
         self._apply_calib(rows)
         base_resolved = export.resolve_registry(copy.deepcopy(rows))
 
         overrides = self._load_overrides()
         provenance = self._load_provenance()
-        applied = provenance.get("origins", {}) or {}
-
-        eff_rows = copy.deepcopy(rows)
-        self._apply_overrides(eff_rows, {
-            name: meta for name, meta in applied.items() if name in overrides})
-        effective = export.resolve_registry(eff_rows)
-
-        def _public(resolved: dict) -> dict:
-            out = {}
-            for name, (status, value) in resolved.items():
-                out[name] = None if status == "placeholder" else value
-            return out
-
-        effective_pub = _public(effective)
-        pending: dict = {}
-        origins: dict = {}
-        for name, entry in (overrides or {}).items():
-            value = entry.get("value") if isinstance(entry, dict) else entry
-            applied_value = applied.get(name, {}).get("value") if isinstance(
-                applied.get(name), dict) else None
-            # 前回起動時に適用されたものと同じ値は「効き済み」であり、
-            # 次回から効く上書き（pending）には入れない。
-            if name in applied and applied_value == value:
-                continue
-            pending[name] = value
-            if isinstance(entry, dict):
-                origins[name] = {
-                    "set_at": entry.get("set_at", ""),
-                    "set_by": entry.get("set_by", ""),
-                    "reason": entry.get("reason", ""),
-                }
-            else:
-                origins[name] = {"set_at": "", "set_by": "", "reason": ""}
+        effective, pending, origins = export.split_effective_pending(
+            rows, overrides, provenance)
+        effective_pub = export.public_values(effective)
 
         names = list(request.names) if request.names else sorted(base_resolved.keys())
 
@@ -293,7 +264,7 @@ class ParamsAudit(Node):
 
         # 後方互換: names を指定した呼び出しには従来どおりフラットな実効値も残す
         # （`effective` が正本。フラット部は将来削る）。
-        flat = _pick(_public(self._resolved()))
+        flat = _pick(export.public_values(self._resolved()))
         response.json = json.dumps({
             **flat,
             "effective": _pick(effective_pub),

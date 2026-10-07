@@ -378,13 +378,84 @@ def apply_overrides_to_rows(rows: list[dict], overrides: Mapping[str, Any] | Non
     return patched, rejected, applied_meta
 
 
-def build_provenance(applied_meta: Mapping[str, dict[str, Any]],
+def build_provenance(rows_after: list[dict],
+                     applied_meta: Mapping[str, dict[str, Any]],
                      rejected: Mapping[str, str]) -> dict[str, Any]:
-    """生成物の出どころ記録（params_provenance.json の中身）。"""
+    """生成物の出どころ記録（params_provenance.json の中身）。
+
+    origins には適用した値そのもの（`value`）も残す。/params/get が「いま
+    効いている値」を計算するのに要る（値が無いと起動時適用値を復元できず
+    effective が None になる。Docker 赤の原因だった）。
+    """
+    rows_by_name = {row["name"]: row for row in rows_after}
     origins: dict[str, Any] = {}
     for name, meta in applied_meta.items():
-        origins[name] = {"origin": "override", **dict(meta)}
+        origins[name] = {"origin": "override",
+                         "value": rows_by_name.get(name, {}).get("value"),
+                         **dict(meta)}
     return {"origins": origins, "rejected": dict(rejected)}
+
+
+def public_values(resolved: Mapping[str, tuple[str, Any]]) -> dict[str, Any]:
+    """解決済み (status, value) を JSON 公開値に変換する（純粋関数）。
+
+    P-2 の生成物と同流儀: placeholder は sentinel を外に出さず None にする。
+    """
+    return {name: (None if status == "placeholder" else value)
+            for name, (status, value) in resolved.items()}
+
+
+def split_effective_pending(rows: list[dict],
+                            overrides: Mapping[str, Any] | None,
+                            provenance: Mapping[str, Any] | None
+                            ) -> tuple[dict[str, tuple[str, Any]], dict[str, Any], dict[str, Any]]:
+    """「いま効いている値」と「保存済みで次回から効く上書き値」に分ける（純粋関数）。
+
+    `rows` は registry＋calib 適用済み行。`provenance` は起動時の設定生成が書いた
+    params_provenance.json の中身（前回起動時に適用された上書きの正本）。
+    戻り値は `(effective, pending, origins)`:
+      - `effective`: 前回起動時適用値を重ねて解決した {name: (status, value)}
+      - `pending`: overrides のうち起動時適用と同値でないもの {name: value}
+      - `origins`: pending の出どころ {name: {set_at, set_by, reason}}
+
+    旧形式の provenance（origins に `value` が無い。build_provenance 修正前）は
+    現 overrides 値を起動時適用値とみなすフォールバックで読む（起動後に値を
+    変えた既存キーは区別できない。新形式では区別できる）。
+    """
+    import copy
+    applied = (provenance or {}).get("origins", {}) or {}
+    overrides = overrides or {}
+    eff_rows = copy.deepcopy(rows)
+    eff_by_name = {row["name"]: row for row in eff_rows}
+    for name, meta in applied.items():
+        if name not in overrides:
+            continue
+        row = eff_by_name.get(name)
+        if row is None or row.get("status") != "given":
+            continue
+        if isinstance(meta, dict) and "value" in meta:
+            row["value"] = meta["value"]
+        else:
+            # 旧形式フォールバック: 起動後に set されていなければ現値が適用値。
+            row["value"] = _override_entry_value(overrides[name])
+    effective = resolve_registry(eff_rows)
+    pending: dict[str, Any] = {}
+    origins: dict[str, Any] = {}
+    for name, entry in overrides.items():
+        value = _override_entry_value(entry)
+        if name in applied:
+            meta = applied[name]
+            if isinstance(meta, dict) and "value" in meta:
+                # 前回起動時に適用されたものと同じ値は「効き済み」であり、
+                # 次回から効く上書き（pending）には入れない。
+                if meta["value"] == value:
+                    continue
+            else:
+                # 旧形式フォールバック: 効き済みとみなす（上記の限界あり）。
+                continue
+        pending[name] = value
+        origins[name] = _override_entry_meta(entry)
+    return effective, pending, origins
 
 
 # ---------------------------------------------------------------------------
@@ -648,9 +719,9 @@ def main(argv: list[str] | None = None) -> int:
         json.dump({"params_digest": digest}, f)
 
     # SG-B8: 生成物に出どころ（registry／override）を残す。
-    # origins＝適用できた上書きとその出どころ、rejected＝適用せず既定値のままにした行と理由。
+    # origins＝適用できた上書きとその出どころ＋適用値、rejected＝適用せず既定値のままにした行と理由。
     with open(os.path.join(args.out, "params_provenance.json"), "w", encoding="utf-8") as f:
-        json.dump(build_provenance(applied_meta, rejected), f,
+        json.dump(build_provenance(rows, applied_meta, rejected), f,
                   ensure_ascii=False, indent=2, sort_keys=True)
 
     return 0
