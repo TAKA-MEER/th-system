@@ -104,6 +104,7 @@ ros2 topic echo /system/dev_mode --once                           # いまの状
 - **Windows PC（WSL2・`networkingMode=mirrored`）で Docker 検証するときの必須設定**（2026-10-06 に確定）。リポジトリを WSL 内（`~/project/th-system`）に置き、`wsl -d Ubuntu -- ...` から回す。
   - **`export FASTDDS_BUILTIN_TRANSPORTS=SHM`**: mirrored では DDS の UDP 探索が通らず、ノードを起動する試験が**ほぼ全滅する**（`/scan` を送ってもノードに届かず `LIDAR_LOST` が出る）。`ros2 topic echo` の単発確認は通るので気づきにくい。
   - **`unset DISPLAY` と `GAZEBO_MODEL_DATABASE_URI=`**: compose が `DISPLAY=:0` を入れるため、gzserver が X 接続に失敗した直後に `rcl node's context is invalid` で落ち、`fault_injection_*` が `sim_stack: 90.0秒以内に準備完了条件…` で error になる。
+  - **git-bash から `wsl -d Ubuntu -- bash -lc '...'` に渡すコマンドでは、シェル変数（`$w` など）が空に展開されることがある。**`rm -rf ~/verify/$w` が `~/verify/` ごと消した（2026-10-07）。変数を使う処理はスクリプトファイルに書き、`/mnt/c/...` から WSL へコピーして実行する。
   - **`wsl` コマンドが終わるとディストリビューションごと止まり、`docker compose run -d` のコンテナも消える。**デタッチではなく、フォアグラウンドの `wsl ... docker compose run --rm -T` を Bash の `run_in_background` で回す。
   - Windows ホストの pytest では、bash スクリプトを呼ぶ `test_start_setup_scripts.py` と、SIGKILL を使う `test_prelaunch_guard.py` が 18 件落ちる（Linux では通る。環境の差であって回帰ではない）。
   - 上記の設定で回した `main`（`f71aa5d`）では、落ちたのが基準の 4 本（`fault_injection_02/04/08/10`）だけになった（06・11 も一度落ちたが、単独で回すと 2 回とも通った）。WSL の load average は使っていなくても 45 前後と表示されるので、負荷の判断には使わない。
