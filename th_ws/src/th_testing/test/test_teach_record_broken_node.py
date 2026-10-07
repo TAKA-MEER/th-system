@@ -163,11 +163,20 @@ class TestTeachRecordBrokenNode(unittest.TestCase):
             '正常な走行で record_broken が出た'
         # 一気に 5 m 飛ばす（route_jump_m=0.5 を十分超える）。
         self._x += 5.0
-        for _ in range(5):
+        # 飛んだ後も odom を送り続ける（跳んだ位置から少しずつ進む）。
+        # 送るのを止めて長く待つと途切れ判定（3 秒）が満たされ、jump 検出を
+        # 殺す変異がすり抜ける。途切れの半分の 1.5 秒以内に出ることを縛る。
+        deadline = time.time() + 1.5
+        found = False
+        while time.time() < deadline:
+            self._x += 0.05
             self.pub_odom.publish(_odom_msg(self._x))
-            self._spin(0.2)
-        assert self._wait_broken_event(), \
-            '5 m 飛んでも evt.record_broken が出ない'
+            self._spin(0.05)
+            if any(e.event == 'evt.record_broken' for e in self._events):
+                found = True
+                break
+        assert found, \
+            '5 m 飛んで 1.5 秒以内に evt.record_broken が出ない'
         assert self._broken_from_recorder(), \
             'evt.record_broken の source_node が route_recorder でない'
 
