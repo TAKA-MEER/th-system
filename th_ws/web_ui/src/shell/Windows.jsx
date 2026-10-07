@@ -38,10 +38,12 @@ import { reasonLabel } from '../i18n/reasons.js'
 import { modeLabel } from '../i18n/modes.js'
 import { W6_TITLE, W6_CLOSE, W6_MODE } from '../i18n/screens.js'
 import JogConsole from '../parts/JogConsole.jsx'
+import ArmedButton from '../parts/ArmedButton.jsx'
 import GuideBanner from './GuideBanner.jsx'
 import {
   WIN_HIDE_LABEL, WIN_RESUME_ACK, WIN_RESUME_YES, WIN_RESUME_NO,
   WIN_ESTOP_RESUME_PREV, WIN_ESTOP_TO_MENU,
+  WIN_SAVE_TITLE, WIN_SAVE_BODY, WIN_SAVE_YES, WIN_SAVE_NO_IDLE, WIN_SAVE_NO_ARMED,
   WIN_ESTOP_SYSTEM_TITLE, WIN_ESTOP_SYSTEM_BODY, WIN_ESTOP_SYSTEM_HINT, WIN_ESTOP_SYSTEM_HINT_RESUMABLE,
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
   WIN_PRESENCE_TITLE, WIN_PRESENCE_BODY, WIN_PREP_PAUSE_TITLE, WIN_PREP_PAUSE_BODY,
@@ -70,6 +72,7 @@ export default function Windows({
   ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, pauseReason, attributes,
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose, guideKey, onGuideClose,
+  saveAsk, onSaveYes, onSaveNo,
 }) {
   const faultActive = !!fault?.active
   // Mutually exclusive: mode can't be both 'ESTOP' and something else at once.
@@ -106,7 +109,9 @@ export default function Windows({
 
   const w1Open = w1Active && !estopDismissed
   const carryOpen = mode === 'CARRY'
-  const hasModal = w1Open || carryOpen || confirmOpen
+  // W-4（保存確認。1b-7 SG-B3）はシェル所有。W-1／W-2 と同じ modal 扱い。
+  const saveOpen = !!saveAsk
+  const hasModal = w1Open || carryOpen || confirmOpen || saveOpen
 
   // C-09f (ESTOP) / C-04,C-05 (fault-caused PAUSE): once the underlying
   // condition clears, the window becomes a resume confirmation instead of a
@@ -234,6 +239,30 @@ export default function Windows({
             into this node (shell/confirmWindow.js) -- the ref callback
             here is how AppShell learns the mount node exists. */}
         {confirmOpen && <div className="win confirm show" ref={onConfirmMount} />}
+
+        {/* W-4 保存確認（教示の記録。1b-7 SG-B3）。ask_save／ask_save_if_unsaved
+            で開くシェル所有の確認窓。「はい」→ ui.save（保存）、
+            「いいえ」→ ui.discard（破棄。二段階アーム式。Spec-webui.md §6）。
+            画面の portal ではなくシェルが直接描く（「終了」後は画面が S-01 に
+            変わっているため）。 */}
+        {saveOpen && (
+          <div className="win confirm show" data-testid="w4-save-ask">
+            <header>{WIN_SAVE_TITLE}</header>
+            <div className="bodyw">
+              <p>{WIN_SAVE_BODY(saveAsk.routeId)}</p>
+            </div>
+            <footer>
+              <button type="button" className="btn primary" data-testid="w4-save-yes" onClick={onSaveYes}>
+                {WIN_SAVE_YES}
+              </button>
+              <ArmedButton
+                idleLabel={WIN_SAVE_NO_IDLE}
+                armedLabel={WIN_SAVE_NO_ARMED}
+                onConfirm={onSaveNo}
+              />
+            </footer>
+          </div>
+        )}
 
         {/* W-5 (route-blocked): opened by screens (WP-UI-03+) */}
       </div>

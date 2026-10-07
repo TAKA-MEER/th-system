@@ -12,6 +12,7 @@ import attributes from '../generated/attributes.json'
 import Header from './Header.jsx'
 import Windows from './Windows.jsx'
 import { useGuideBanner } from './useGuideBanner.js'
+import { useSaveConfirm } from './useSaveConfirm.js'
 import { stampToMs } from './effectDispatch.js'
 import { isW1Active, stopReason } from './limits.js'
 import { ConfirmWindowContext } from './confirmWindow.js'
@@ -100,6 +101,10 @@ function AppShellInner({ screenName, screenId, children }) {
   // 今のモード／状態に入った時刻 (自動クローズの比較用)。
   const { guideKey, closeGuide } = useGuideBanner(ros, mode, stampToMs(state?.since), estopHw)
 
+  // 1b-7 (SG-B3): /system/effect の ask_save／ask_save_if_unsaved を W-4 の
+  // 保存確認に出す。「はい」→ ui.save（保存）、「いいえ」→ ui.discard（破棄）。
+  const { saveAsk, closeSaveAsk } = useSaveConfirm(ros)
+
   // W-6 bottom edge floats above the estop release bar: --dock-h feeds
   // #jogWin's `bottom: calc(var(--dock-h, 0px) + 10px)` (theme.css, ported
   // from the mockup's layoutDock()). Measure the release bar when it's
@@ -146,6 +151,22 @@ function AppShellInner({ screenName, screenId, children }) {
   // C-2 (WP-CARRY-01 §4/§7): server-side reject reason for a UI estop press
   // rejected during CARRY (C-06r), surfaced to W-2 -- see Windows.jsx.
   const lastRejectReason = state?.last_reject_reason ?? ''
+
+  // 1b-7 (SG-B3): W-1／W-2 が勝つ。IDLE を離れたら（別の方式に入った）W-4 は
+  // 閉じる（答えの送り先 T-IDLE-01/-02 は IDLE でしか受けない）。
+  useEffect(() => {
+    if (!saveAsk) return
+    if (w1Active || mode === 'CARRY' || mode !== 'IDLE') closeSaveAsk()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [w1Active, mode, saveAsk])
+  const handleSaveYes = useCallback(() => {
+    closeSaveAsk()
+    sendTrigger('ui.save').catch(() => {})
+  }, [closeSaveAsk, sendTrigger])
+  const handleSaveNo = useCallback(() => {
+    closeSaveAsk()
+    sendTrigger('ui.discard').catch(() => {})
+  }, [closeSaveAsk, sendTrigger])
 
   // A higher-priority window (W-1/W-2) always wins; a confirm window a
   // screen opened before the fault/estop landed must not linger underneath
@@ -255,6 +276,9 @@ function AppShellInner({ screenName, screenId, children }) {
         onJogClose={() => setJogOpen(false)}
         guideKey={guideKey}
         onGuideClose={closeGuide}
+        saveAsk={saveAsk}
+        onSaveYes={handleSaveYes}
+        onSaveNo={handleSaveNo}
       />
       <EstopReleaseBar show={uiEngaged || mode === 'ESTOP'} onRelease={handleRelease} />
     </div>
