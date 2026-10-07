@@ -243,8 +243,22 @@ def _mode_entry_allowed(mode, state, ctx) -> bool:
         "（guards.build_guards() を参照）")
 
 
+def is_working(mode, state) -> bool:
+    """「作業中」の正本（1b-9 SG-A9）。**機体側の状態そのもの**で決める: `AT_PANEL` ×
+    `WORKING`（Spec-modes.md SM-3.1.2-062／063。`ui.working` が立て下ろしする）。
+    別のフラグを持たないので、立て忘れ・下ろし忘れ・画面と機体のずれが起きない。
+    `AT_PANEL` を出れば（ESTOP を挟んだ復帰も含め）自動的に偽になる。
+    # WAIVER(demo): W-12 — 「作業中」は暫定の押しボタン。正式 IF（到着通知／昇降完了／
+    # 撮影完了／中断通知。O-a6）に置き換えるまで、この判定を仮のまま使う。"""
+    return mode == "AT_PANEL" and state == "WORKING"
+
+
+def _working(mode, state, ctx) -> bool:
+    return is_working(mode, state)
+
+
 def _goto_allowed(mode, state, ctx) -> bool:
-    if ctx.flags.get("working"):
+    if is_working(mode, state):
         return False
     if ctx.arg.get("kind") == "PANEL":
         return "PANEL" in ctx.pin_kinds
@@ -340,6 +354,7 @@ GUARDS: Dict[str, Callable] = {
     "can_finish": _can_finish,
     "mode_entry_allowed": _mode_entry_allowed,
     "goto_allowed": _goto_allowed,
+    "working": _working,
     "goto_summon": _goto_summon,
     "candidate_exists": _candidate_exists,
     "target_selected": _target_selected,
@@ -373,7 +388,7 @@ GUARDS: Dict[str, Callable] = {
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 45, len(GUARDS)
+assert len(GUARDS) == 46, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:

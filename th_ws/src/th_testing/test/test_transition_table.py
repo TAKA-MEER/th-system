@@ -48,6 +48,9 @@ SPEC_FANOUT = {
     # WP-ONSITE-F3: PREP / SUMMON の「対象選択」は ui.select_target と
     # evt.auto_selected の 2 経路（FOLLOW の SM-3.1.2-004 と同じ形）。
     "SM-3.1.2-105": 2, "SM-3.1.2-106": 2, "SM-3.1.2-017": 2,
+    # 1b-9 SG-A9: SM-3.1.2-066（作業中は行き先を拒否）は、IDLE_P からの遷移行 T-ATP-05 と、
+    # WORKING の拒否行 T-ATP-05-working（拒否理由 working_in_progress を返す）の 2 行。
+    "SM-3.1.2-066": 2,
 }
 
 
@@ -130,6 +133,7 @@ _STATIC_GUARD_OVERRIDES = {
     "can_finish": {},
     "goto_allowed": {"flags": {"working": False}, "arg": {"kind": "HOME"}},
     "goto_summon": {"flags": {"working": False}, "arg": {"kind": "SUMMON"}},
+    "working": {},
     "candidate_exists": {"candidate_count": 1},
     "target_selected": {"target_selected": True},
     "target_confident": {"target_selected": True, "target_confident": True},

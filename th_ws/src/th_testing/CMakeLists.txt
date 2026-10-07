@@ -309,6 +309,11 @@ if(BUILD_TESTING)
     test/test_tracker_policy.py
     TIMEOUT 30)
 
+  # 「作業中」の判定と遷移表の拒否行（1b-9 SG-A9。th_state の純ロジック。ROS2 不要）
+  ament_add_pytest_test(test_working_guard
+    test/test_working_guard.py
+    TIMEOUT 30)
+
   # DR-SPAAM 起動/停止判断の純ロジック (brief-tracker-default-off §3.2。
   # tracker_enabled と lifecycle 状態からの transition_id 決定。ROS2 不要)
   ament_add_pytest_test(test_dr_spaam_lifecycle_controller_core
@@ -695,6 +700,12 @@ if(BUILD_TESTING)
   # 照合・force・ピン変更時の解除・境界を検証。積算は venue_nav と同じ 240 秒枠）
   ament_add_pytest_test(test_home_declarer_node
     test/test_home_declarer_node.py
+    TIMEOUT 240)
+
+  # 「作業中」のサーバ側ガード（1b-9 SG-A9）。state_manager を起動して、作業中の
+  # ui.goto 拒否（working_in_progress）と作業終了後の許可を縛る。
+  ament_add_pytest_test(test_working_guard_node
+    test/test_working_guard_node.py
     TIMEOUT 240)
 endif()
 
