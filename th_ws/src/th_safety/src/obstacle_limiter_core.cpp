@@ -312,11 +312,15 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
 
   const bool policy_active = policy_stops(source_class, in.state.zone, eff_auto_brake);
   double linear_ceiling = applied_limit;
+  const double v_allow_now =
+      v_allow(nearest_for_v_allow, p.obstacle_floor_distance_m, p.brake_accel_mps2);
   if (policy_active) {
-    linear_ceiling =
-        std::min(linear_ceiling, v_allow(nearest_for_v_allow, p.obstacle_floor_distance_m,
-                                          p.brake_accel_mps2));
+    linear_ceiling = std::min(linear_ceiling, v_allow_now);
   }
+  // 1b-15 SG-B10: 自動ブレーキ OFF の手動系は減速しない代わりに、ON なら減速が始まる距離
+  // （v_allow が速度上限を下回る距離）に入ったことを知らせる。policy_active のとき（ON・AUTO・
+  // NA・state 途絶）は常に false。減速はしない（上の if に入らない）ので速度は変わらない。
+  out.approach_warning = !policy_active && v_allow_now < applied_limit;
   linear_ceiling = std::max(0.0, linear_ceiling);
 
   // 角速度の一般上限は w_max（常に効く）。L3: 前方障害物では linear.x だけを

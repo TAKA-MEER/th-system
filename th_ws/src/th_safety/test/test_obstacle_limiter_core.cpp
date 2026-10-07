@@ -767,3 +767,125 @@ TEST(ObstacleLimiterCoreRamp, EstopIsNeverDelayedByRamp) {
   EXPECT_DOUBLE_EQ(o2.out.linear_x, 0.0) << "estop は同一周期で必ず 0";
   EXPECT_EQ(o2.action, LimiterAction::STOP);
 }
+
+// ── 手動系の自動ブレーキ ON/OFF と接近警告（1b-15 SG-B10） ──────────────
+// OFF は「手動系の障害物減速だけ」を外す。ON・AUTO・NA・/system/state 途絶・
+// estop・fault_lock は変えない。
+
+namespace {
+
+// 前方 obstacle_m に障害物を置いた手動走行（MANUAL・場外・ジョイ新鮮）。
+ObstacleLimiterInputs make_manual_in(double now_sec, double obstacle_m, bool auto_brake) {
+  ObstacleLimiterInputs in = make_ramp_base(now_sec, 1.0);
+  in.manual.received = true;
+  in.manual.stamp_sec = now_sec;
+  in.state.mode = "MANUAL";
+  in.state.zone = Zone::OUT;
+  in.state.auto_brake = auto_brake;
+  plant_obstacle(&in.scan.ranges, in.scan.geometry, 0.0, obstacle_m, 30.0);
+  return in;
+}
+
+}  // namespace
+
+TEST(ObstacleLimiterCoreAutoBrake, OnDeceleratesNoWarning) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_manual_in(1000.0, 0.5, true), p);
+  EXPECT_EQ(o.source_class, SourceClass::MANUAL);
+  EXPECT_LT(o.out.linear_x, 1.0) << "ON は障害物で減速する";
+  EXPECT_NEAR(o.out.linear_x, std::sqrt(2.0 * 1.0 * (0.5 - 0.4)), 1e-6);
+  EXPECT_FALSE(o.approach_warning) << "ON のときは警告ではなく減速";
+}
+
+TEST(ObstacleLimiterCoreAutoBrake, OffDoesNotDecelerateButWarns) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_manual_in(1000.0, 0.5, false), p);
+  EXPECT_EQ(o.source_class, SourceClass::MANUAL);
+  EXPECT_DOUBLE_EQ(o.out.linear_x, 1.0) << "OFF は速度を落とさない";
+  EXPECT_TRUE(o.approach_warning) << "OFF は ON なら減速が始まる距離で警告する";
+}
+
+TEST(ObstacleLimiterCoreAutoBrake, OffBelowFloorStillDoesNotStopLinear) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_manual_in(1000.0, 0.2, false), p);
+  EXPECT_DOUBLE_EQ(o.out.linear_x, 1.0);
+  EXPECT_TRUE(o.approach_warning);
+}
+
+TEST(ObstacleLimiterCoreAutoBrake, OffFarObstacleNoWarning) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  // v_allow が速度上限（2.0）以上になる距離: margin >= 2.0 → nearest >= 2.4 m。
+  const auto o = core.update(make_manual_in(1000.0, 3.0, false), p);
+  EXPECT_DOUBLE_EQ(o.out.linear_x, 1.0);
+  EXPECT_FALSE(o.approach_warning);
+}
+
+TEST(ObstacleLimiterCoreAutoBrake, OffDoesNotRelaxAuto) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  ObstacleLimiterInputs in = make_manual_in(1000.0, 0.3, false);
+  in.manual.received = false;
+  in.state.mode = "FOLLOW";
+  const auto o = core.update(in, p);
+  EXPECT_EQ(o.source_class, SourceClass::AUTO);
+  EXPECT_DOUBLE_EQ(o.out.linear_x, 0.0) << "AUTO は auto_brake=false でも止まる（無効化不可）";
+  EXPECT_FALSE(o.approach_warning);
+}
+
+TEST(ObstacleLimiterCoreAutoBrake, OffDoesNotRelaxZoneNa) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  ObstacleLimiterInputs in = make_manual_in(1000.0, 0.3, false);
+  in.state.zone = Zone::NA;
+  const auto o = core.update(in, p);
+  EXPECT_DOUBLE_EQ(o.out.linear_x, 0.0);
+  EXPECT_FALSE(o.approach_warning);
+}
+
+TEST(ObstacleLimiterCoreAutoBrake, StaleStateFallsBackToOn) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  ObstacleLimiterInputs in = make_manual_in(1000.0, 0.5, false);
+  in.state.stamp_sec = in.now_sec - p.state_stale_sec - 0.1;  // /system/state 途絶
+  const auto o = core.update(in, p);
+  // 途絶は AUTO・ゾーン最低（上限 0）に倒れる。OFF のまま素通りしてはいけない。
+  EXPECT_EQ(o.source_class, SourceClass::AUTO);
+  EXPECT_DOUBLE_EQ(o.out.linear_x, 0.0);
+  EXPECT_FALSE(o.approach_warning);
+}
+
+TEST(ObstacleLimiterCoreAutoBrake, EstopAndFaultLockStopEvenWhenOff) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  {
+    ObstacleLimiterCore core;
+    ObstacleLimiterInputs in = make_manual_in(1000.0, 30.0, false);
+    in.estop.value = true;
+    const auto o = core.update(in, p);
+    EXPECT_DOUBLE_EQ(o.out.linear_x, 0.0);
+    EXPECT_EQ(o.action, LimiterAction::STOP);
+    EXPECT_FALSE(o.approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;
+    ObstacleLimiterInputs in = make_manual_in(1000.0, 30.0, false);
+    in.fault_lock.value = true;
+    const auto o = core.update(in, p);
+    EXPECT_DOUBLE_EQ(o.out.linear_x, 0.0);
+    EXPECT_EQ(o.action, LimiterAction::STOP);
+    EXPECT_FALSE(o.approach_warning);
+  }
+}
+
+TEST(ObstacleLimiterCoreAutoBrake, OffKeepsSpeedLimit) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  ObstacleLimiterInputs in = make_manual_in(1000.0, 30.0, false);
+  in.screen_limit_mps = 0.3;
+  in.mode_limit_mps = 0.3;
+  const auto o = core.update(in, p);
+  EXPECT_DOUBLE_EQ(o.out.linear_x, 0.3) << "速度上限は OFF でも変わらない";
+}

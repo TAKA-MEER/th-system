@@ -511,6 +511,7 @@ private:
         status.nearest_obstacle_m = static_cast<float>(out.nearest_obstacle_m);
         status.source_class = sourceClassToString(out.source_class);
         status.applied_limit_mps = static_cast<float>(out.applied_limit_mps);
+        status.approach_warning = out.approach_warning;
         pub_limiter_status_->publish(status);
     }
 

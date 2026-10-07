@@ -259,6 +259,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_zones
     test/test_zones.py
     TIMEOUT 60)
+  # 自動ブレーキの有効／無効の純関数（1b-15 SG-B10。attributes.yaml の全モード×ゾーン×ジョグ×要求。ROS2 不要）
+  ament_add_pytest_test(test_auto_brake
+    test/test_auto_brake.py
+    TIMEOUT 60)
   # 2点指示コア (WP-ONSITE-01。方位・点間距離・対象妥当性・base_link→map 合成。
   # th_onsite の純ロジック。ROS2 不要)
   ament_add_pytest_test(test_two_point_core
@@ -506,6 +510,16 @@ if(BUILD_TESTING)
   # effective だけを読む・鮮度切れで戻る）と lidar_fault（LIDAR_LOST の抑止と再発）。
   ament_add_pytest_test(test_dev_mode_safety_node
     test/test_dev_mode_safety_node.py
+    TIMEOUT 180)
+  # 自動ブレーキの正本（1b-15 SG-B10）。state_manager を起動して、場外 OFF・場内 ON・
+  # 切替要求・入り直しで既定へ戻る・自律系で拒否・画面途絶で ON を縛る。rclpy 要＝ホスト除外。
+  ament_add_pytest_test(test_auto_brake_state_node
+    test/test_auto_brake_state_node.py
+    TIMEOUT 180)
+  # 手動系の自動ブレーキ ON/OFF を obstacle_limiter 本体で縛る（1b-15 SG-B10。ON は減速・
+  # OFF は減速せず接近警告・state 途絶で ON・estop／fault_lock／AUTO／NA は OFF でも止める）。
+  ament_add_pytest_test(test_auto_brake_limiter_node
+    test/test_auto_brake_limiter_node.py
     TIMEOUT 180)
   # 停止中だけのガードの Docker launch テスト（1b-5・SG-A10/SG-A6。
   # state_manager＋slam_control＋config_manager を実際に起動し、
