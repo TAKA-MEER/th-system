@@ -459,7 +459,7 @@ def test_main_rejects_startup_when_a13_violated(registry_rows, tmp_path):
 # ============================================================================
 
 def _sgb8_rows():
-    """SG-B8 試験専用の最小 rows（given 2行＋derived 1行）。"""
+    """SG-B8 試験専用の最小 rows（given 2行＋derived 1行＋measured 1行）。"""
     return [
         {"name": "test_ratio_a", "unit": "ratio", "class": "b", "status": "given",
          "value": 0.5, "consumers": ["params_audit"], "spec_ref": "sgb8",
@@ -478,6 +478,10 @@ def _sgb8_rows():
         {"name": "floor_margin_m", "unit": "m", "class": "b", "status": "given",
          "value": 0.05, "consumers": ["params_audit"], "spec_ref": "sgb8",
          "note": "derived の依存行"},
+        {"name": "test_measured_accel", "unit": "m/s2", "class": "c", "status": "measured",
+         "value": 0.5, "measured_at": "2026-10-01", "source": "test",
+         "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "実測値（brake_accel_mps2 に準じる。上書き対象外）"},
     ]
 
 
@@ -512,6 +516,46 @@ def test_apply_overrides_rejects_unknown_and_derived():
     assert meta == {}
     by_name = {r["name"]: r for r in patched}
     assert by_name["test_ratio_b"]["value"] == 0.3
+
+
+def test_apply_overrides_rejects_measured_row():
+    """measured 行への上書きは rejected に入り、値が変わらない。
+
+    derived（P-3）・class:a の placeholder（S2）と違い、measured 行の上書きは
+    schema／assertions の網をすり抜けるため、given 検査（status が given でない
+    行を弾く if 文）だけが守っている。この検査を `if False` に変える変異は
+    このテストで赤になる（受け入れ検査のすり抜け対策）。"""
+    rows = _sgb8_rows()
+    overrides = {"test_measured_accel": {"value": 0.9}}
+    patched, rejected, meta = export.apply_overrides_to_rows(rows, overrides)
+    assert "test_measured_accel" in rejected
+    assert "test_measured_accel" not in meta
+    by_name = {r["name"]: r for r in patched}
+    assert by_name["test_measured_accel"]["value"] == 0.5
+
+
+def test_apply_overrides_rejects_class_b_placeholder_row():
+    """class:b の placeholder 行への上書きは rejected に入り、値が変わらない。
+
+    注意: class:b＋placeholder は S3 違反の不正 registry なので、_sgb8_rows には
+    足さずこのテスト専用の rows を使う（足すと export.main のベース検証が
+    rc=2 になり他テストが壊れる）。given 検査が第一関門として弾く。検査を
+    `if False` に変える変異下でも S3 で rejected になるため、このテスト自体は
+    緑のまま（変異の検出役は上の measured テスト）。仕様の縛りとして置く。"""
+    rows = [
+        {"name": "test_ratio_ok", "unit": "ratio", "class": "b", "status": "given",
+         "value": 0.5, "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "調整可能な given 行"},
+        {"name": "test_b_placeholder", "unit": "m", "class": "b", "status": "placeholder",
+         "value": "TBD_MEASURE", "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "未測定行（S3 違反の不正 registry を意図的に再現）"},
+    ]
+    overrides = {"test_b_placeholder": {"value": 0.1}}
+    patched, rejected, meta = export.apply_overrides_to_rows(rows, overrides)
+    assert "test_b_placeholder" in rejected
+    assert "test_b_placeholder" not in meta
+    by_name = {r["name"]: r for r in patched}
+    assert by_name["test_b_placeholder"]["value"] == "TBD_MEASURE"
 
 
 def test_apply_overrides_rejects_assertion_violation_but_keeps_valid_ones():
