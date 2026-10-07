@@ -77,8 +77,26 @@ def test_recorder_declares_preview_max_points():
 
 def test_recorder_preview_publish_path_calls_decimate_polyline():
     # 表示用の /route/preview だけを間引く（保存 JSON の points は触らない）。
-    assert _function_calls(_tree(ROUTE_RECORDER), '_status_timer', 'decimate_polyline') is True, (
-        'route_recorder.py の _status_timer で decimate_polyline が呼ばれていない')
+    # 間引きは _build_status_msg（_status_timer と _publish_status_snapshot の共有）に
+    # あり、_status_timer はそれを使う（1b-7。保存・破棄直後の snapshot も同じ間引き）。
+    assert _function_calls(_tree(ROUTE_RECORDER), '_build_status_msg', 'decimate_polyline') is True, (
+        'route_recorder.py の _build_status_msg で decimate_polyline が呼ばれていない')
+    assert _function_calls_method(_tree(ROUTE_RECORDER), '_status_timer', '_build_status_msg') is True, (
+        'route_recorder.py の _status_timer が _build_status_msg を使っていない')
+
+
+def _function_calls_method(tree, fn_name: str, method: str) -> bool:
+    """関数 fn_name の本体の中で self.<method>() を呼び出しているか。"""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == fn_name:
+            return any(
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute)
+                and isinstance(n.func.value, ast.Name)
+                and n.func.value.id == 'self'
+                and n.func.attr == method
+                for n in ast.walk(node))
+    return False
 
 
 # ============================================================================

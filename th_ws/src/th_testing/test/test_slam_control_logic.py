@@ -42,6 +42,7 @@ sys.path.insert(0, os.path.join(
 from slam_control_logic import (   # noqa: E402
     deserialize_match_type, effective_reload_pose, estimator_restarting,
     map_instance_ids_match,
+    map_previous_path, rotate_map_previous,
     map_session_base_dir, map_session_filename, map_session_name,
     open_session_error, slam_restart_complete,
 )
@@ -842,3 +843,91 @@ def test_check_slam_restart_lowers_flag():
     seg = _ast.get_source_segment(src, node) or ''
     assert seg.index('_reload_in_progress') < seg.index('_sync_estimator_restarting'), (
         'reload 中のガードより後に同期が無い')
+
+
+# ── 1b-7 SG-B12: 経路地図も旧版 1 世代を残す ──────────────────────────
+# 経路 JSON の .prev と対になる地図の旧版（<base>.prev.<ext>）。
+# VENUE（試験場内地図）は 1 枚のみ保持のため回さない（Spec-params.md §6）。
+def _write(path, text):
+    import os as _os
+    _os.makedirs(_os.path.dirname(path) or '.', exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(text)
+
+
+def _read_text(path):
+    with open(path, encoding='utf-8') as f:
+        return f.read()
+
+
+def test_map_previous_path_naming():
+    """旧版は `<base>.prev<ext>`（経路 JSON の `<id>.prev` と対になる命名）。"""
+    assert map_previous_path('/d/r1', '.posegraph') == '/d/r1.prev.posegraph'
+    assert map_previous_path('/d/r1', '.yaml') == '/d/r1.prev.yaml'
+
+
+def test_rotate_map_previous_moves_current_to_prev(tmp_path):
+    """既存の 4 ファイルが旧版へ退避される。無い拡張子は飛ばす。"""
+    base = str(tmp_path / 'maps' / 'r1')
+    _write(base + '.posegraph', 'v1-graph')
+    _write(base + '.data', 'v1-data')
+    rotated = rotate_map_previous(base)
+    assert sorted(rotated) == sorted([base + '.prev.posegraph', base + '.prev.data'])
+    assert _read_text(base + '.prev.posegraph') == 'v1-graph'
+    assert _read_text(base + '.prev.data') == 'v1-data'
+    # 現行は消える（次に保存する側が書く）。
+    import os as _os
+    assert not _os.path.exists(base + '.posegraph')
+    assert not _os.path.exists(base + '.data')
+
+
+def test_rotate_map_previous_keeps_only_one_generation(tmp_path):
+    """3 回回しても旧版は 1 世代だけ（古い prev は消える）。"""
+    base = str(tmp_path / 'r1')
+    _write(base + '.posegraph', 'v1')
+    rotate_map_previous(base)
+    _write(base + '.posegraph', 'v2')
+    rotate_map_previous(base)
+    assert _read_text(base + '.prev.posegraph') == 'v2'
+    _write(base + '.posegraph', 'v3')
+    rotated = rotate_map_previous(base)
+    assert rotated == [base + '.prev.posegraph']
+    assert _read_text(base + '.prev.posegraph') == 'v3'
+
+
+def test_rotate_map_previous_without_current_is_noop(tmp_path):
+    """現行が無ければ何もしない（初回保存で旧版はできない）。"""
+    base = str(tmp_path / 'r1')
+    assert rotate_map_previous(base) == []
+
+
+def test_map_save_rotates_only_for_route_slot():
+    """_handle_map_save が keep_previous で回し、VENUE 側は回さないこと。
+
+    変異: _cb の ROUTE 側から keep_previous=True を消すと赤くなる。
+    VENUE（_handle_venue_commit／_commit_venue_map）に回転が入ると赤くなる
+    （試験場内地図は 1 枚のみ保持）。
+    """
+    src, node = _slam_control_funcdef('_cb_map_session_open')
+    import ast as _ast
+    seg = _ast.get_source_segment(src, node) or ''
+    assert 'keep_previous=True' in seg, (
+        'ROUTE の保存で旧版退避が有効になっていない')
+    assert '_handle_map_save' in seg
+    for name in ('_handle_venue_commit', '_commit_venue_map'):
+        _, vnode = _slam_control_funcdef(name)
+        vseg = _ast.get_source_segment(src, vnode) or ''
+        assert 'rotate_map_previous' not in vseg, (
+            f'{name} が旧版退避している（VENUE は 1 枚のみ保持）')
+
+
+def test_handle_map_save_rotates_before_save():
+    """_handle_map_save が保存より前に回すこと（回した後に書く）。
+    変異: 回転を保存の後に移すと赤くなる（新版を旧版で潰す）。"""
+    src, node = _slam_control_funcdef('_handle_map_save')
+    import ast as _ast
+    seg = _ast.get_source_segment(src, node) or ''
+    assert 'rotate_map_previous' in seg
+    assert seg.index('rotate_map_previous') < seg.index('_save_occupancy_grid'), (
+        '旧版退避が保存より後に来ている')
+    assert 'keep_previous' in seg, 'keep_previous フラグが無い'

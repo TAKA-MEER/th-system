@@ -176,11 +176,12 @@ class StateCore:
 | `face_target` | — | `follow_runner` | 状態を見て自動（サービス不要） |
 | `open_window` / `close_window` | `{id: "W-1".."W-6"}` | WebUI | `/system/state` の表示で伝える |
 | `guide` | `{key}` | WebUI | 同上（W-3） |
-| `ask_save_if_unsaved` / `ask_save` | — | WebUI | W-4 |
+| `ask_save_if_unsaved` / `ask_save` | `{route_id?}`（`_teach_route` ラッチから補完。1b-7） | WebUI | W-4 |
 | `enable_main_menu` | — | WebUI | |
 | `show_resume` | — | WebUI | W-2 |
 | `restart_control_stack` | — | `connectivity_checker` | プロセス再起動 |
 | `start_record` / `resume_record` / `finalize_route` | `{route_id?}` | `route_recorder` | srv |
+| **`discard_route`** | — | **`route_recorder`** | 開いている記録を保存せず捨てる（`T-IDLE-02`。1b-7） |
 | `load_route` | `{route_id, reverse}` | `replay_runner` | srv |
 | `rotate_to_start_yaw` / `resume_path` | — | `replay_runner` | 状態で自動 |
 | `widen_search` / `global_localize` | — | `replay_runner` | srv |
@@ -299,7 +300,7 @@ class StateCore:
 | ガード | 真になる条件 | 参照する `Context` |
 | --- | --- | --- |
 | `jog_allowed` | 下の除外表のいずれにも当たらない | **`mode`, `state`**（除外表は両方を見る） |
-| `fault_stops_mode` | 下の表で true（`PREP` は `RETURN` 中と `PREP/PAUSE` 以外 false。1b-1 SG-A7） | `fault_type`, **`mode`**, **`state`** |
+| `fault_stops_mode` | 下の表で true（`PREP` は `RETURN` 中と `PREP/PAUSE` 以外 false。1b-1 SG-A7。**`TEACH_*` の `SAVED` は false**。1b-7 SG-B11） | `fault_type`, **`mode`**, **`state`** |
 | `fault_cleared` | `not fault_active` | `fault_active` |
 | `fault_cleared_and_ui_released` | `not fault_active and not ui_estop and not hw_estop` | 同上 |
 | `estop_ui_allowed` | `mode != "CARRY"` | **`mode`** |
@@ -463,19 +464,48 @@ class StateCore:
 | `T-TEACH-03` | `TEACH_FOLLOW` | `PAUSE` | `ui.run` | — | `REC` | `resume_record`（一時停止は記録に残さない） |
 | **`T-TEACH-03M`** | **`TEACH_MANUAL`** | `PAUSE` ／ **`REC`** | **`ui.jog.hold`** | — | `REC` | 同上。**S-13 に「走行」ボタンが無い**（`Spec-webui.md` §3.4）。**`REC` 発の自己ループを含む**（`T-MANUAL-01` と同じ理由。正本 `SM-3.1.2-015`） |
 | `T-TEACH-04` | 両方 | `REC` ／ `PAUSE` | `ui.save` | — | `SAVED` | `finalize_route` |
-| `T-TEACH-05` | `TEACH_FOLLOW` | `SAVED` | `ui.run` | — | `REC` | `resume_record` |
-| **`T-TEACH-05M`** | **`TEACH_MANUAL`** | `SAVED` | **`ui.jog.hold`** | — | `REC` | 同上 |
+| **`T-TEACH-05`** | **`TEACH_FOLLOW`** | **`SAVED`** | **`ui.run`** | — | **拒否**（`reject: true`、`SAVED` のまま） | — |
+| **`T-TEACH-05J`** | **`TEACH_FOLLOW`** | **`SAVED`** | **`ui.jog.hold`** | — | **拒否**（同上。`override_common`。`C-01` が `SAVED` → `PAUSE` へ動かすのを抑える） | — |
+| **`T-TEACH-05M`** | **`TEACH_MANUAL`** | **`SAVED`** | **`ui.jog.hold`** | — | **拒否**（同上。`override_common`） | — |
 | `T-TEACH-06` | 両方 | `*` | `evt.record_broken` | — | **§4.3 参照** | `ask_save` |
 
-`T-TEACH-05` / `-05M` は**正本 `Spec-modes.md` §3.1.2 に反映済み**（§9-(d) ／ `Spec-open.md` F-32）。
-続けて `ui.save` した場合は `F-04` に従い**新版**として保存する。
+**`T-TEACH-05` / `-05J` / `-05M` は保存＝記録の確定（2026-10-04 ユーザー決定・`SG-B11`）。
+`Spec-modes.md` `SM-3.1.2-017`／`-018` 改定に合わせ、旧 `→ REC ＋ resume_record` を
+撤回した。拒否理由キーは `teach_saved_finalized`（§10）。`-05J` は `-017` の派生で、
+`SM-3.1.2-017` の契機は「走行」だけだが `C-01` がスティックで `SAVED` を抜けて
+`T-TEACH-03` 経由で `REC` に入る穴を塞ぐため（`Spec-transit.md` §3.2
+「保存後のスティック操作は受け付けない」）。
+**回復フォルトでも `SAVED` からは `PAUSE` に落とさない**（`fault_stops_mode` が
+`TEACH_*`／`SAVED` を弾く。落とすと「はい」で `REC` に入るが recorder は閉じた
+ままで、記録していないのに記録中になる。フォルトは独立した表示で伝わる）。**
+
+`T-TEACH-05` / `-05J` / `-05M` は**正本 `Spec-modes.md` §3.1.2 に反映済み**
+（`SM-3.1.2-017`／`-018`「拒否・`SAVED` のまま」。§9-(d) ／ `Spec-open.md` F-32）。
 `T-TEACH-06` は `Spec-modes.md` §5「そのモードを続けられないときだけ `IDLE` へ落とす」の実体。
+`evt.record_broken` を出すのは `route_recorder`（1b-7 SG-B18）。
+記録フレームの姿勢を見て、途絶（`route_gap_timeout_ms`＝3000 ms。オドメトリ途絶・
+自己位置喪失）か飛び（`route_jump_m`＝0.5 m。手押し・TF の飛び）でラッチし、
+`/system/event` に出す。しきい値は `registry.yaml`（暫定値）。切れたら点の追加を
+凍結する（切れ目以降を混ぜない）。教示系を抜けたらラッチを下ろす（W-4 が引き継ぐ）。
 
 `TEACH_MANUAL` も同じく、**`T-TEACH-03M` と `T-TEACH-05M` の 2 行だけ** `override_common: true` にする
 （`ui.jog.hold` に対して `C-01` を打ち消す）。**モード単位のフラグにしない**（上の囲みと同じ理由）。
+`-05J` は `TEACH_FOLLOW` 側の同型（`SAVED` での `ui.jog.hold` に対して `C-01` を打ち消す）。
 **`-03M` / `-05M` を分けたのは、手動系ではスティックが走行操作そのものだからである**
 （§9-(j) ／ `Spec-open.md` F-38）。`ui.run` を `TEACH_MANUAL` に残すと、
 **押せるボタンが存在しない遷移**が表に入る。
+
+#### `IDLE`（W-4 の答え）
+
+| id | state | event | guard | to_state | effects |
+| --- | --- | --- | --- | --- | --- |
+| **`T-IDLE-01`** | `NONE` | **`ui.save`** | — | `=`（不変） | **`finalize_route`**（W-4「はい」。1b-7） |
+| **`T-IDLE-02`** | `NONE` | **`ui.discard`** | — | `=`（不変） | **`discard_route`**（W-4「いいえ」。1b-7） |
+
+「終了」（`C-08`）や記録途切れ（`T-TEACH-06`）は `IDLE` へ抜けてから問うので、
+答えは `IDLE` で受ける。ガードは付けない（記録が開いていなければ
+`route_recorder` が無視するだけ。開閉の正本は recorder）。`spec_ref` は
+`SM-3.1.1-10`（「未保存があれば保存可否を問う」の受け口）。
 
 #### `REPLAY`
 
@@ -1007,6 +1037,7 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | `params_placeholder_blocking` | 起動を止める暫定値が残っている |
 | **`blind_mask_uncalibrated`** | 死角マスクが未校正のまま自律走行を始めようとした（[safety](DetailedDesign-safety.md) §4.4） |
 | **`unsaved_remains`** | 未保存が残ったまま `/shutdown/execute` を呼んだ（§12.5） |
+| **`teach_saved_finalized`** | 保存済みの教示に記録を続けようとした（`T-TEACH-05`／`-05J`／`-05M`。保存＝確定のため拒否） |
 
 ---
 

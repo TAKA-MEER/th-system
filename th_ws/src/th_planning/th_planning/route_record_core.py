@@ -194,24 +194,6 @@ def owns_route_status(mode: str, *, recorder: bool) -> bool:
     return mode == 'REPLAY'
 
 
-def should_autofinalize(prev_mode: str, new_mode: str, recording: bool) -> bool:
-    """教示中にモードが教示系から出たか（出たら記録を保存して閉じる）(WS-9K-D)。
-
-    実機 2026-09-03: transitions.yaml の C-06a（重大フォルト --> ESTOP/NONE）で、
-    重大フォルトが 1 回出ただけで TEACH_MANUAL から ESTOP へ飛んだ。FSM はもう
-    finalize_route を発行できず、route_recorder は self._recorder を持ったまま
-    点列と .wip を保持し続ける→記録は永久に保存できない（185 m も .wip だけ
-    残って .json が無かった）。
-
-    記録中（recording=True）に prev_mode が教示系（TEACH_MANUAL / TEACH_FOLLOW）
-    から new_mode が教示系以外へ出たら True。モード内の遷移や通常の finalize は
-    False。
-    """
-    if not recording:
-        return False
-    return prev_mode in _TEACH_MODES and new_mode not in _TEACH_MODES
-
-
 # ──────────────────────────────────────────────────────────────────
 # 経路ファイルの保存（WS-9H。ROS2 非依存・os/json のみで完結）
 # ──────────────────────────────────────────────────────────────────
@@ -265,6 +247,54 @@ def save_route_atomic(path, route_dict):
         json.dump(route_dict, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
     return path
+
+
+# ──────────────────────────────────────────────────────────────────
+# 記録の連続性切れの判定（1b-7 SG-B18。SM-3.1.2-019 `evt.record_broken`）
+# ──────────────────────────────────────────────────────────────────
+# 教示の記録は「自己位置喪失・オドメトリ途絶など」で連続性が切れたら続けず、
+# IDLE へ抜けて保存可否を問う（Spec-modes.md §5・§6.1）。切れ目の検出は
+# route_recorder が自己位置源の姿勢を見て行い、しきい値は registry.yaml
+# （route_gap_timeout_ms・route_jump_m。ノード内リテラルにしない）。
+# どちらも「切れたか」の純判定。時刻の取得・発行はノード側。
+
+
+def pose_gap_broken(last_pose_ms, now_ms, gap_timeout_ms) -> bool:
+    """自己位置の姿勢が途絶えたまま制限を超えたか（オドメトリ途絶・自己位置喪失）。
+
+    last_pose_ms が None（まだ姿勢を一度も得ていない）は切れていない
+    （記録開始直後の未受信と、途中で失ったものは区別する）。
+    """
+    if last_pose_ms is None:
+        return False
+    return (now_ms - last_pose_ms) > gap_timeout_ms
+
+
+def pose_jump_broken(last_pose, pose, jump_threshold_m) -> bool:
+    """前回姿勢からの平面移動がしきい値を超えたか（手押し・TF の飛び）。
+
+    last_pose が None（初回・再同期直後）は切れていない。yaw の変化は見ない
+    （その場旋回は連続性を切らない）。
+    """
+    if last_pose is None or pose is None:
+        return False
+    dx = pose[0] - last_pose[0]
+    dy = pose[1] - last_pose[1]
+    return math.hypot(dx, dy) > jump_threshold_m
+
+
+def next_generation(routes_dir, route_id):
+    """今回保存する経路の世代番号（1b-7 SG-B12）。
+
+    既存の <id>.json があればその generation＋1（旧版は .prev へ退避済みか、
+    これから退避される）。無ければ・読めなければ・数値でなければ 1。
+    """
+    try:
+        with open(finalized_path(routes_dir, route_id), encoding='utf-8') as f:
+            current = int(json.load(f).get('generation', 0))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 1
+    return current + 1
 
 
 def finalize_route_file(routes_dir, route_id, route_dict):

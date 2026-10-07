@@ -11,9 +11,10 @@ state_core.py からの import はモード名・状態名の集合（文字列�
 from typing import Callable, Dict
 
 from th_state.state_core import (ESTOP_RESUME_BLOCKED_MODES, ESTOP_RESUME_RUN,
-                                  RESUME_RUN_UNAVAILABLE_MODES,
-                                  RESUME_STATE_UNAVAILABLE_MODES,
-                                  is_driving)
+                                   RESUME_RUN_UNAVAILABLE_MODES,
+                                   RESUME_STATE_UNAVAILABLE_MODES,
+                                   TEACH_MODES,
+                                   is_driving)
 
 # モードによって PAUSE を持たない集合（§4.1.1 末尾。state_core.py の同名集合と同じ定義）。
 # PREP は 2026-10-06 に除外（RETURN だけ PAUSE を持つ。state_core.py のコメント参照）。
@@ -41,6 +42,12 @@ def _jog_allowed(mode, state, ctx) -> bool:
 
 def _fault_stops_mode(mode, state, ctx) -> bool:
     if mode in _NO_PAUSE_MODES:
+        return False
+    if mode in TEACH_MODES and state == "SAVED":
+        # 1b-7 SG-B11: 保存済みは終端なので回復フォルトでも PAUSE に落とさない。
+        # 落とすと「はい」で REC に入るが recorder は保存時に閉じたままで、
+        # 記録していないのに記録中になる（項目 2「記録中と記録の一致」）。
+        # フォルト自体は独立したフォルト表示で操作者に伝わる（PREP と同じ）。
         return False
     if mode == "PREP" and state != "RETURN":
         # SG-A7: 地図作成中（MAPPING/REGISTER/EDIT/SAVED。PAUSE 中を含む）は

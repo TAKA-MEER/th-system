@@ -62,10 +62,19 @@ export function dispatchEffect(msg) {
     case 'open_window':
     case 'close_window':
     case 'show_resume':
-    // 教示の保存 (SG-B3)・運用の終了 (SG-B6) の作業で扱う。state_manager の
-    // 挙動を変える必要があるので、この作業では触らない。
+      return { kind: 'ignore' }
+    // 教示の保存確認 (1b-7, SG-B3)。機体側が ask_save（記録途切れ）／
+    // ask_save_if_unsaved（「終了」）を出し、WebUI が W-4 を出して
+    //「はい」で保存・「いいえ」で破棄する。開く条件は shouldOpenSaveAsk。
     case 'ask_save':
-    case 'ask_save_if_unsaved':
+    case 'ask_save_if_unsaved': {
+      const { route_id } = parseArgs(msg?.args_json)
+      return {
+        kind: name,
+        routeId: typeof route_id === 'string' && route_id ? route_id : null,
+        stampMs: stampToMs(msg?.header?.stamp),
+      }
+    }
     case 'enable_main_menu':
     // ジョグ UI の有効化は別パケット。ここでは何もしない。
     case 'disable_jog_ui':
@@ -107,4 +116,30 @@ export function shouldGuideClose(guide, { mode, sinceMs, estopHw }) {
   }
   if (guide.key === 'estop_held_at_boot' && guide.seenPressed && !estopHw) return true
   return false
+}
+
+// W-4（保存確認）を開くかの純粋判定 (1b-7, SG-B3)。
+//
+// decided: dispatchEffect の戻り値（kind が ask_save / ask_save_if_unsaved のもの）。
+// status: /route/status の最新値（route_recorder が教示系モードのときだけ出す）。
+//   replay_runner も同じトピックに出すが、経路読み込み中は current.id が入る
+//   （記録側は載せない）ので、current.id があるものは記録の未保存とみなさない。
+//
+// - ask_save（記録の連続性切れ → IDLE）: 未保存の記録があるとき開く。
+//   status 未到来（途切れが記録開始の直後で status がまだ無い）は開かない
+//   （空の記録を保存してゴミの経路を作らない。recorder は開いたままなので
+//   次の教示が上書きする）。
+// - ask_save_if_unsaved（「終了」→ IDLE）: どのモードの終了でも飛ぶので、
+//   未保存の教示記録があるときだけ開く（無ければ開かないのが「あれば問う」）。
+export function shouldOpenSaveAsk(decided, status) {
+  if (!decided || (decided.kind !== 'ask_save' && decided.kind !== 'ask_save_if_unsaved')) {
+    return false
+  }
+  return isUnsavedRecording(status)
+}
+
+export function isUnsavedRecording(status) {
+  if (!status || status.saved === true) return false
+  if (status.current?.id) return false
+  return (status.points ?? 0) > 0
 }

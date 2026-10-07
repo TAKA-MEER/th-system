@@ -12,6 +12,11 @@ import { TOPICS, MSG_TYPES } from './topics'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 
+// TEST_MODE で同じトピックの購読者が複数いても全員に届ける（1b-7: シェルが
+// W-4 の未保存判定（useSaveConfirm）で購読し、S-13 等の画面も購読する。
+// useSystemEffect.js と同じ流儀）。
+const _testSinks = new Set()
+
 export function useRouteStatus(ros) {
   const topicRef = useRef(null)
   const [status, setStatus] = useState(
@@ -20,8 +25,10 @@ export function useRouteStatus(ros) {
   // TEST_MODE: let e2e mutate the seeded status after mount.
   useEffect(() => {
     if (!TEST_MODE) return undefined
-    window.__thSetTestRouteStatus = (v) => setStatus(v)
-    return () => { delete window.__thSetTestRouteStatus }
+    const sink = (v) => setStatus(v)
+    _testSinks.add(sink)
+    window.__thSetTestRouteStatus = (v) => { _testSinks.forEach((fn) => fn(v)) }
+    return () => { _testSinks.delete(sink) }
   }, [])
 
   // Real mode: hold a rosbridge Topic across re-renders.

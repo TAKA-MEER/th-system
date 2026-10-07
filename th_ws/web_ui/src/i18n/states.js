@@ -117,6 +117,18 @@ export const WIN_PREP_PAUSE_TITLE = '一時停止しました'
 export const WIN_PREP_PAUSE_BODY = '自動帰還を一時停止しています。再開するには「はい」、やめて地図作成に戻るには「いいえ」を押してください。'
 export const WIN_CARRY_TITLE = '手押しモード'
 export const WIN_CARRY_BODY = '物理非常停止ボタンが押されています。人が機体を押して運んでいるとみなします。'
+// W-4 保存確認（教示の記録。1b-7 SG-B3）。ask_save（記録途切れ）／
+// ask_save_if_unsaved（「終了」で未保存あり）で開く。はい→ ui.save（保存）、
+// いいえ→ ui.discard（破棄。同名の既存経路は押し出さない）。
+export const WIN_SAVE_TITLE = '記録を保存しますか'
+export function WIN_SAVE_BODY(routeId) {
+  const what = routeId ? `「${routeId}」の記録` : '教示の記録'
+  return `${what}が保存されていません。保存すると経路と地図が確定します。` +
+    '破棄すると今回の記録は捨てられ、同名の既存の経路はそのまま残ります。'
+}
+export const WIN_SAVE_YES = '保存する'
+export const WIN_SAVE_NO_IDLE = '破棄する'
+export const WIN_SAVE_NO_ARMED = '本当に破棄する'
 export const WIN_CARRY_HINT = '解除方法：機体後部の赤いボタンを右へひねってください。ロックが外れて飛び出します。'
 export const WIN_CARRY_RELEASED = '解除されました'
 export const WIN_CARRY_RESUME = '押下前のモードで再開する'
