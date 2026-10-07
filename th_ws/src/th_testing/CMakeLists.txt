@@ -372,6 +372,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_sgb21_registry_wiring
     test/test_sgb21_registry_wiring.py
     TIMEOUT 120)
+  # W-01 P5: 全域ローカライズ 6 値の registry 化（registry ↔ ノード既定値 ↔
+  # 生成物の 3 点一致、placeholder の載らなさ、stage 5 の A8 armed、宣言型の
+  # 一致。ROS2 不要）
+  ament_add_pytest_test(test_w01p5_localize_registry
+    test/test_w01p5_localize_registry.py
+    TIMEOUT 120)
   # th_state/zones.py の LIMIT_STRICTNESS と registry.yaml の
   # speed_limit_strictness_rank が一致することの機械的な照合（N-15 レビュー。
   # th_state と th_params の両方を import してよい唯一のテストコード）
