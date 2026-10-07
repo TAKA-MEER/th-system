@@ -9,7 +9,7 @@
 //         区別できなかった。bodyOverflowPx() に置き換えた）。
 import { expect, test } from '@playwright/test'
 import {
-  gotoScreen, gotoScreenWithOnsite, unlockOnsiteMap, unlockOnsiteVenueMap,
+  gotoScreen, gotoScreenWithOnsite, setTestState, unlockOnsiteMap, unlockOnsiteVenueMap,
 } from './helpers.js'
 
 // ── UX-2-a: 「停止」の形は他と異なる ──────────────────────────────────────────
@@ -141,12 +141,15 @@ test('F-7: S-20 で W-6 を開いても地図と重ならない', async ({ page 
 
 test('F-7: S-21 で W-6 を開いても地図と重ならない', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
+  // 地図タブの解禁（会場地図を開く）は IDLE で行い、その後 PANEL_NAV/NAV へ
+  // 切り替える（停止中以外は押せない。1b-5。重なりの検証意図はモードに依らない）。
   await gotoScreenWithOnsite(
-    page, 'S21', { mode: 'PANEL_NAV', state: 'NAV' },
+    page, 'S21', { mode: 'IDLE', state: 'NONE' },
     { pins: [], targets: [], openVenueMap: { success: true, message: '' } },
   )
   await page.locator('#s21').waitFor()
   await unlockOnsiteVenueMap(page)
+  await setTestState(page, { mode: 'PANEL_NAV', state: 'NAV' })
   await page.locator('#s21 .op-manual').click()
   await page.locator('#jogWin.show').waitFor()
 
