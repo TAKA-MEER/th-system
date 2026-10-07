@@ -505,6 +505,15 @@ export const S50_SLAM_NOTE =
   '変更は「YAML に保存」してから、次に「この経路で進む」を押したときに有効になります'
   + '（SLAM がその場では読み直さないため）。補正頻度を上げる＝間隔を小さく、'
   + '廊下でのずれに強くする＝探索窓を広げる。'
+// SG-B8: 速度プリセット区画（/params/set 経由。次の起動から効く）。
+export const S50_SEC_PRESET = '速度プリセットの割合'
+export const S50_PRESET_NOTE =
+  '「保存」は走行中の値に触れません。次の起動から有効になります'
+  + '（再起動後に反映）。保存済みでまだ効いていない値は「次回から」で示します。'
+export const S50_PRESET_SAVE = '保存（再起動後に反映）'
+export const S50_PRESET_REASON_LABEL = '変えた理由（必須）'
+export const S50_PRESET_REASON_NEED = '変えた理由を入れてください'
+export const S50_PRESET_NEXT_PREFIX = '次回から'
 // 表示タブ: 文字サイズ
 export const S50_FONT_TITLE = '文字サイズ'
 export const S50_FONT_NORMAL = '標準'

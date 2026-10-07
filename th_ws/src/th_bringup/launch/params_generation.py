@@ -46,6 +46,9 @@ from typing import Any, Callable, Mapping, Sequence
 import yaml
 
 GENERATED_DIR = "/root/th_data/generated"
+# SG-B8: /params/set が書く上書き（出どころ付き）。起動時の設定生成で registry の
+# 既定値に重ねる（Spec-params.md §6「次の起動から効く」）。存在しなければ重ねない。
+OVERRIDES_PATH = "/root/th_data/params/overrides.yaml"
 # 校正の確定値（calib_runner の calib_store が書く）。BLIND の `blind_angle_ranges` は
 # registry（出荷値）より優先して生成物へ重ねる（Spec-checks.md §3.5・2026-10-01 ユーザー決定）。
 CALIB_DIR = "/root/th_data/calib"
@@ -389,7 +392,8 @@ class GenerationError(RuntimeError):
 def run_generation(*, stage: int, sim: bool, nodes: Sequence[str] | None = REGISTRY_NODES,
                     out_dir: str = GENERATED_DIR, registry_path: str | None = None,
                     env: Mapping[str, str] | None = None,
-                    calib_dir: str = CALIB_DIR) -> None:
+                    calib_dir: str = CALIB_DIR,
+                    overrides_path: str | None = OVERRIDES_PATH) -> None:
     """registry.yaml から生成物を作る。
 
     FMEA①: 古い generated/ が残って使われることを防ぐため、書く前に必ず削除する。
@@ -416,6 +420,10 @@ def run_generation(*, stage: int, sim: bool, nodes: Sequence[str] | None = REGIS
         cmd.append("--sim")
     if nodes:
         cmd += ["--nodes", ",".join(nodes)]
+    # SG-B8: overrides.yaml があれば既定値に重ねる。無ければ（初回起動など）
+    # 重ねない。export.py 側も存在しないパスは無視する二重の保険。
+    if overrides_path and Path(overrides_path).exists():
+        cmd += ["--overrides", overrides_path]
 
     result = subprocess.run(cmd, capture_output=True, text=True, env=env)
     if result.returncode != 0:

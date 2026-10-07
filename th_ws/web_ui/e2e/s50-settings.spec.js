@@ -6,7 +6,7 @@
 // では useTunableParams.js が即 reject するので、ネット無しで回る。
 import { test, expect } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-import { gotoScreen, setTestState, stubTrigger, gotoScreenWithTunables, tunableApplyCalls } from './helpers.js'
+import { gotoScreen, setTestState, stubTrigger, gotoScreenWithTunables, tunableApplyCalls, gotoScreenWithParams, paramsSetCalls } from './helpers.js'
 
 // registry 連動の上限（scripts/gen_param_limits.py の生成物）。天井が変われば
 // 作り直されるので、ここでは値を直書きせず生成物を読む。
@@ -170,4 +170,42 @@ test('v_max に上限超えを入れても registry の天井で丸められる'
   // 上限自体が昔の UI 上限（1.5）より小さいことが、この試験が空振りでないことの保証。
   expect(PARAM_LIMITS.v_max).toBeLessThan(1.5)
   expect(vMaxCalls[0].value).toBe(PARAM_LIMITS.v_max)
+})
+
+// SG-B8: 速度プリセット区画は /params/get で効き値を読み、保存は /params/set
+//（出どころ付き）で行う。走行中の値には触れない（再起動後に反映）。
+// 保存済みでまだ効いていない値は「次回から」で示す。
+test('速度プリセット区画は効き値と次回反映の差を出し、保存は /params/set を呼ぶ', async ({ page }) => {
+  await gotoScreenWithParams(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
+    get: {
+      effective: { speed_preset_low: 0.27, speed_preset_mid: 0.55, speed_preset_high: 1.0 },
+      pending: { speed_preset_mid: 0.6 },
+      origins: {},
+      restart_required: true,
+    },
+    set: { success: true, message: 'OK' },
+  })
+  await page.getByTestId('s01-open-settings').click()
+  await expect(page.locator('#s50')).toBeVisible()
+
+  // 「再起動後に反映」の注記と、効き値と保存済み値の差がある。
+  await expect(page.getByTestId('s50-save-preset')).toBeVisible()
+  await expect(page.getByTestId('s50-preset-pending')).toContainText('次回から')
+  await expect(page.getByTestId('s50-preset-pending')).toContainText('speed_preset_mid')
+
+  // 理由なしでは送らない（PT-4: 出どころの無い数値を作らない）。
+  await page.getByTestId('s50-save-preset').click()
+  await expect(page.getByTestId('s50-status-preset')).toContainText('理由')
+  expect(await paramsSetCalls(page)).toHaveLength(0)
+
+  // 理由を入れて値を変えて保存すると /params/set が呼ばれる。
+  await page.getByTestId('s50-preset-reason').fill('現場で低速を詰める')
+  await page.getByLabel(/中速/).fill('0.65')
+  await page.getByLabel(/中速/).press('Tab')
+  await page.getByTestId('s50-save-preset').click()
+  const calls = await paramsSetCalls(page)
+  expect(calls).toHaveLength(1)
+  expect(calls[0].setBy).toBe('web_ui')
+  expect(calls[0].reason).toBe('現場で低速を詰める')
+  expect(calls[0].values).toEqual({ speed_preset_mid: 0.65 })
 })

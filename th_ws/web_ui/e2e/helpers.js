@@ -356,3 +356,20 @@ export async function gotoScreenWithTunables(page, screen, state, stubs) {
 export async function tunableApplyCalls(page) {
   return page.evaluate(() => window.__thTunableApplyCalls ?? [])
 }
+
+// SG-B8: S-50 の速度プリセット区画が読む /params/get・/params/set の部分スタブ
+// （ros/useParamsOverrides.js のテストフック）。
+// `window.__thParamsStubs = { get: {...}|(names)=>({...}), set: {...}|(values)=>({...}) }`。
+// /params/set の呼び出しは `window.__thParamsSetCalls` に記録される。
+export async function gotoScreenWithParams(page, screen, state, stubs) {
+  await page.addInitScript(({ s, scr, p }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    window.__thParamsStubs = p
+  }, { s: state, scr: screen, p: stubs })
+  await page.goto('/')
+}
+
+export async function paramsSetCalls(page) {
+  return page.evaluate(() => window.__thParamsSetCalls ?? [])
+}

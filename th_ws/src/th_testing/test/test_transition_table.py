@@ -26,7 +26,7 @@ with open(_CONFIG_DIR / "mode_entry.yaml", encoding="utf-8") as _f:
 with open(_CONFIG_DIR / "attributes.yaml", encoding="utf-8") as _f:
     _ATTRIBUTES = _yaml.safe_load(_f)
 
-_SPEC_ID_RE = re.compile(r"SM-3\.1\.[12]-\d+")
+_SPEC_ID_RE = re.compile(r"SM-3\.1\.[12]-\d+[a-z]?")
 
 # DetailedDesign-state.md §4.4.3 — 1つの正本IDに複数の詳細行が対応する組（これが行数差の全部）。
 # SM-3.1.1-11 は 2026-09-01 の UI 非常停止復帰変更で 1 → 4 行に分割（C-09 / -09b / -09c / -09d。

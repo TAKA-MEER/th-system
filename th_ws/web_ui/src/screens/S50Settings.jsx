@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { mapOrParamOpAllowed } from '../modes/stopOnlyGuard.js'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTunableParams } from '../ros/useTunableParams.js'
+import { useParamsOverrides, pendingDiff } from '../ros/useParamsOverrides.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import { blindRangesText } from './calibCore.js'
@@ -35,6 +36,8 @@ import {
   S50_BACK, S50_TAB_GENERAL, S50_TAB_DISPLAY, S50_TAB_DEV, S50_GUARD,
   S50_SAVE_YAML, S50_SAVING, S50_SAVED, S50_SAVE_FAILED, S50_LOAD_FAILED,
   S50_SEC_FOLLOW, S50_SEC_LIDAR, S50_SEC_SLAM, S50_SLAM_NOTE,
+  S50_SEC_PRESET, S50_PRESET_NOTE, S50_PRESET_SAVE,
+  S50_PRESET_REASON_LABEL, S50_PRESET_REASON_NEED, S50_PRESET_NEXT_PREFIX,
   S50_BLIND_GOTO_CALIB, S50_BLIND_NOTE,
   S50_FONT_TITLE, S50_FONT_NORMAL, S50_FONT_LARGE, S50_FONT_XLARGE,
   S50_DEV_TITLE, S50_DEV_ENABLE, S50_DEV_DISABLE, S50_DEV_NOTE,
@@ -65,6 +68,16 @@ const MAPLESS_FIELDS = [
   { name: 'max_linear_decel_mps2',         label: '減速度上限',           unit: 'm/s²', min: 0.2, max: 4,    step: 0.1 },
   { name: 'max_angular_accel_rad_s2',      label: '旋回加速度上限',       unit: 'rad/s²', min: 0.5, max: 8,  step: 0.1 },
 ]
+
+// SG-B8: 速度プリセットの割合（registry の speed_preset_*。
+// /params/get で効き値を読み、/params/set で出どころ付きで保存する。
+// 走行中の値は変えない＝次の起動から効く）。
+const PRESET_FIELDS = [
+  { name: 'speed_preset_low', label: '低速', unit: '割合', min: 0.05, max: 1, step: 0.01 },
+  { name: 'speed_preset_mid', label: '中速', unit: '割合', min: 0.05, max: 1, step: 0.01 },
+  { name: 'speed_preset_high', label: '高速', unit: '割合', min: 0.05, max: 1, step: 0.01 },
+]
+const PRESET_NAMES = PRESET_FIELDS.map((f) => f.name)
 
 // SG-B9: 廃止予定ノードの項目のうち上限が registry と食い違うものは、
 // registry の値を超えて保存できないようにする（対象: mapless の v_max。
@@ -163,6 +176,8 @@ function Section({ title, note, saveKey, status, editable, loading, onSave, chil
 export default function S50Settings({ onBack, initialTab = 'general' }) {
   const { ros, state, stale } = useSystemState()
   const { getTunableParams, applyTunableParam, saveTunableParams } = useTunableParams(ros)
+  // SG-B8: 速度プリセット区画（/params/get・/params/set。次の起動から効く）。
+  const { getParams, setParams } = useParamsOverrides(ros)
   // S-40（校正）への導線。FSM が真実なので画面側で遷移はしない — 受理されれば
   // /system/state が CALIB になり、main.jsx が S-50 を畳んで S-40 を出す。
   // 拒否されたら理由をその場に出す（S-01 の理由ウィンドウと同型。S-30 の
@@ -182,6 +197,14 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   const [slam, setSlam] = useState({})
   const [status, setStatus] = useState({})
   const [loading, setLoading] = useState(false)
+  // ── SG-B8: 速度プリセット区画 ──
+  // presetEff＝いま効いている値、presetPending＝保存済みで次回から効く上書き、
+  // presetDraft＝編集中。保存は /params/set（出どころ付き）で一括し、
+  // 走行中の値には触れない（次の起動から効く）。
+  const [presetEff, setPresetEff] = useState({})
+  const [presetPending, setPresetPending] = useState({})
+  const [presetDraft, setPresetDraft] = useState({})
+  const [presetReason, setPresetReason] = useState('')
 
   const reload = useCallback(() => {
     setLoading(true)
@@ -217,7 +240,17 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
         setStatus((s) => ({ ...s, ...loadErr }))
       }
     }).finally(() => setLoading(false))
-  }, [getTunableParams])
+    // SG-B8: 速度プリセットは /params/get で効き値と保存済み上書きを区別して読む。
+    // 取れなくても他区画は出す（節ごとの成否。各区画の保存ボタンだけ無効化）。
+    getParams(PRESET_NAMES).then((payload) => {
+      setPresetEff(payload?.effective ?? {})
+      setPresetPending(payload?.pending ?? {})
+      // 編集の出発点は「次に効く値」（保存済みがあればそれ、無ければ効き値）。
+      setPresetDraft({ ...(payload?.effective ?? {}), ...(payload?.pending ?? {}) })
+    }).catch(() => {
+      setStatus((s) => ({ ...s, preset: S50_LOAD_FAILED }))
+    })
+  }, [getTunableParams, getParams])
 
   useEffect(() => { reload() }, [reload])
 
@@ -250,6 +283,41 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
         ...s, [nodeName]: `${S50_SAVE_FAILED}: ${e.message ?? e}`,
       })))
   }
+
+  // SG-B8: 速度プリセットの保存（/params/set。出どころ必須＝PT-4）。
+  // 即時の set_parameters はしない（走行中の値は変えない。次の起動から効く）。
+  const applyPreset = (name) => (value) => {
+    setPresetDraft((prev) => ({ ...prev, [name]: value }))
+  }
+  const savePreset = () => {
+    if (!presetReason) {
+      setStatus((s) => ({ ...s, preset: S50_PRESET_REASON_NEED }))
+      return
+    }
+    setStatus((s) => ({ ...s, preset: S50_SAVING }))
+    // 効き値から変わったものだけ送る（触っていない行に触らない）。
+    const values = {}
+    for (const name of PRESET_NAMES) {
+      if (presetDraft[name] !== presetEff[name]) values[name] = presetDraft[name]
+    }
+    if (Object.keys(values).length === 0) {
+      setStatus((s) => ({ ...s, preset: S50_SAVED }))
+      return
+    }
+    setParams(values, 'web_ui', presetReason)
+      .then((res) => {
+        if (res?.success) {
+          setStatus((s) => ({ ...s, preset: S50_SAVED }))
+          reload()
+        } else {
+          setStatus((s) => ({ ...s, preset: `${S50_SAVE_FAILED}: ${res?.message ?? ''}` }))
+        }
+      })
+      .catch((e) => setStatus((s) => ({
+        ...s, preset: `${S50_SAVE_FAILED}: ${e.message ?? e}`,
+      })))
+  }
+  const presetDiffs = pendingDiff(PRESET_NAMES, presetEff, presetPending)
 
   // ── 表示タブ ──
   const [fontScale, setFontScale] = useState(() => readFontScale())
@@ -376,6 +444,51 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
               />
             ))}
           </Section>
+
+          <div className="card">
+            <div className="row" style={{ marginBottom: 8 }}>
+              <h3 className="grow" style={{ margin: 0 }}>{S50_SEC_PRESET}</h3>
+              <button
+                type="button"
+                className="btn save sm"
+                disabled={!editable || loading}
+                onClick={savePreset}
+                data-testid="s50-save-preset"
+              >
+                {S50_PRESET_SAVE}
+              </button>
+            </div>
+            {status.preset && <p className="note" data-testid="s50-status-preset">{status.preset}</p>}
+            <p className="note">{S50_PRESET_NOTE}</p>
+            {presetDiffs.length > 0 && (
+              <p className="note" data-testid="s50-preset-pending">
+                {presetDiffs.map(({ name, effective, pending }) => (
+                  `${S50_PRESET_NEXT_PREFIX} ${name}: ${effective} → ${pending}`
+                )).join(' ／ ')}
+              </p>
+            )}
+            <div className="s50-grid">
+              {PRESET_FIELDS.map((f) => (
+                <NumberField
+                  key={f.name} label={f.label} unit={f.unit}
+                  min={f.min} max={f.max} step={f.step}
+                  value={presetDraft[f.name]}
+                  disabled={!editable || loading || !(f.name in presetDraft)}
+                  onCommit={applyPreset(f.name)}
+                />
+              ))}
+            </div>
+            <label className="s50-field">
+              <span className="s50-field-label">{S50_PRESET_REASON_LABEL}</span>
+              <input
+                type="text"
+                value={presetReason}
+                disabled={!editable || loading}
+                onChange={(e) => setPresetReason(e.target.value)}
+                data-testid="s50-preset-reason"
+              />
+            </label>
+          </div>
         </div>
       )}
 

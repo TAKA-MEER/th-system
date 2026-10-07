@@ -291,6 +291,61 @@ def test_generation_success_does_not_swallow_export_stderr(capsys):
 
 
 # ============================================================================
+# SG-B8: 起動時の overrides 重ね（本物の registry と本物の overrides で通す）
+# ============================================================================
+
+
+def _write_overrides(path: str, entries: dict) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(entries, f, allow_unicode=True, sort_keys=True)
+
+
+def test_overrides_reach_generated_yaml_with_real_registry():
+    """SG-B8 完了条件: 本物の registry.yaml と本物の overrides.yaml（一時ファイル）を
+    run_generation() に通し、上書き値が生成 yaml に乗ること。通らない上書きは
+    適用されず、理由が params_provenance.json に残ること。"""
+    import json
+    with tempfile.TemporaryDirectory() as tmp:
+        overrides_path = os.path.join(tmp, "overrides.yaml")
+        _write_overrides(overrides_path, {
+            "speed_preset_mid": {"value": 0.6, "set_at": "t", "set_by": "tester",
+                                 "reason": "sgb8 test"},
+            "v_max": {"value": 99.0, "set_at": "t", "set_by": "tester",
+                      "reason": "derived なので拒否されるはず"},
+            "no_such_param_xyz": {"value": 1.0},
+        })
+        out_dir = os.path.join(tmp, "generated")
+        pg.run_generation(stage=1, sim=True, nodes=list(pg.REGISTRY_NODES),
+                           out_dir=out_dir, registry_path=REGISTRY_YAML,
+                           env=_subprocess_env(), overrides_path=overrides_path)
+
+        with open(os.path.join(out_dir, "web_ui.yaml"), encoding="utf-8") as f:
+            web_ui = yaml.safe_load(f)
+        assert web_ui["web_ui"]["ros__parameters"]["speed_preset_mid"] == 0.6
+
+        with open(os.path.join(out_dir, "params_provenance.json"), encoding="utf-8") as f:
+            prov = json.load(f)
+        assert prov["origins"]["speed_preset_mid"]["origin"] == "override"
+        assert prov["origins"]["speed_preset_mid"]["set_by"] == "tester"
+        assert "v_max" in prov["rejected"]
+        assert "no_such_param_xyz" in prov["rejected"]
+
+
+def test_overrides_missing_file_behaves_as_before():
+    """overrides.yaml が無い初回起動では重ねず、provenance は空。"""
+    import json
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = os.path.join(tmp, "generated")
+        pg.run_generation(stage=1, sim=True, nodes=list(pg.REGISTRY_NODES),
+                           out_dir=out_dir, registry_path=REGISTRY_YAML,
+                           env=_subprocess_env(),
+                           overrides_path=os.path.join(tmp, "no-such-overrides.yaml"))
+        with open(os.path.join(out_dir, "params_provenance.json"), encoding="utf-8") as f:
+            prov = json.load(f)
+        assert prov == {"origins": {}, "rejected": {}}
+
+
+# ============================================================================
 # G-3: twist_mux.yaml も生成対象（階層構造への組み直し）
 # ============================================================================
 
