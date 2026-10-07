@@ -114,6 +114,24 @@ class TestTeachRecordBrokenNode(unittest.TestCase):
         self.pub_effect.publish(eff)
         self._spin(0.5)
 
+    def _isolate_recorder(self):
+        """前の試験の記録・ラッチ・再送を落として分離する。
+
+        同じ route_recorder プロセスを使い回すため、前の試験の記録が開いたまま
+        （ラッチ済みなら _status_timer が evt.record_broken を出し続ける）だと、
+        新しい試験の購読に混ざる。discard_route で前の記録を閉じる
+        （閉じれば _sample_timer は何も見ない・再送も止まる）と、観測済みを捨てる。
+        記録が開いていなければ discard は無視されるだけ。各試験の最初に呼ぶこと。
+        前提 assert（正常走行で出ない）は残す。
+        """
+        eff = StateEffect()
+        eff.name = 'discard_route'
+        eff.dest = 'route_recorder'
+        eff.args_json = '{}'
+        self.pub_effect.publish(eff)
+        self._spin(0.5)
+        self._events.clear()
+
     def _feed_odom(self, steps: int, dx: float = 0.15, rate_hz: float = 20.0):
         period = 1.0 / rate_hz
         for _ in range(steps):
@@ -138,6 +156,7 @@ class TestTeachRecordBrokenNode(unittest.TestCase):
     # ── 本体 ──────────────────────────────────────────────
     def test_jump_emits_record_broken(self):
         """5 m の飛び（手押し相当）で evt.record_broken が出る。"""
+        self._isolate_recorder()
         self._begin_recording(ROUTE_JUMP)
         self._feed_odom(10)
         assert not any(e.event == 'evt.record_broken' for e in self._events), \
@@ -155,6 +174,7 @@ class TestTeachRecordBrokenNode(unittest.TestCase):
     def test_odom_gap_emits_record_broken(self):
         """オドメトリ途絶（3 s 超）で evt.record_broken が出る。
         registry の route_gap_timeout_ms=3000 の本番値で見る。"""
+        self._isolate_recorder()
         self._begin_recording(ROUTE_GAP)
         self._feed_odom(10)
         assert not any(e.event == 'evt.record_broken' for e in self._events), \

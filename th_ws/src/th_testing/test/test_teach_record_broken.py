@@ -193,3 +193,50 @@ def test_broken_latch_cleared_on_leaving_teach_and_on_start():
                         and n.value.value is False):
                     found = True
     assert found, 'start_record 分岐で self._broken = False にしていない'
+
+
+def _start_record_branch_assigns(tree):
+    """_on_effect の start_record 分岐内の `self.<attr> = <定数>` を集める。"""
+    out = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.FunctionDef) and node.name == '_on_effect'):
+            continue
+        # 先頭の if name == '...' / elif 鎖をたどる。
+        branch = next((s for s in node.body if isinstance(s, ast.If)), None)
+        while isinstance(branch, ast.If):
+            test = branch.test
+            is_start = (isinstance(test, ast.Compare)
+                        and isinstance(test.left, ast.Name) and test.left.id == 'name'
+                        and len(test.ops) == 1 and isinstance(test.ops[0], ast.Eq)
+                        and len(test.comparators) == 1
+                        and isinstance(test.comparators[0], ast.Constant)
+                        and test.comparators[0].value == 'start_record')
+            if is_start:
+                for n in ast.walk(ast.Module(body=branch.body, type_ignores=[])):
+                    if (isinstance(n, ast.Assign) and len(n.targets) == 1
+                            and isinstance(n.targets[0], ast.Attribute)
+                            and isinstance(n.targets[0].value, ast.Name)
+                            and n.targets[0].value.id == 'self'
+                            and isinstance(n.value, ast.Constant)):
+                        out.append((n.targets[0].attr, n.value.value))
+                return out
+            if branch.orelse and isinstance(branch.orelse[0], ast.If):
+                branch = branch.orelse[0]
+            else:
+                break
+    return out
+
+
+def test_start_record_resets_continuity_baselines():
+    """新しい記録の開始で連続性監視の基準・時刻・ラッチを初期化すること。
+
+    前の記録の最後の姿勢（別地点）が残っていると、新しい教示の最初の点が
+    飛びと判定され、別の場所から教示を始めただけで切れる。変異: 初期化の
+    いずれかを消すと赤くなる。
+    """
+    assigns = dict(_start_record_branch_assigns(_tree(ROUTE_RECORDER)))
+    for attr in ('_last_pose', '_last_pose_ms', '_broken', '_odom_resync'):
+        assert attr in assigns, f'start_record 分岐が {attr} を初期化していない'
+    assert assigns['_broken'] is False
+    assert assigns['_last_pose'] is None
+    assert assigns['_last_pose_ms'] is None
