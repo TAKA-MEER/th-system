@@ -36,6 +36,7 @@ import { usePlannedPath } from '../ros/usePlannedPath.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import { trackerStopAllowed } from '../modes/trackerControlPolicy.js'
+import { mapOrParamOpAllowed } from '../modes/stopOnlyGuard.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import TrackerControl from '../parts/TrackerControl.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
@@ -136,6 +137,9 @@ export default function S21Test({ onExit }) {
   const jogPanel = useJogPanel()
 
   const disabledAll = stale || state?.mode == null
+  // 1b-5 (SG-A6): 会場地図の読み直しは停止中だけ（Spec.md SD-9）。サーバ側が
+  // 正で、画面は同じ条件で事前に押せなくする（走行中の押下で SLAM が再起動した）。
+  const mapOpAllowed = mapOrParamOpAllowed(state, stale)
   const mode = state?.mode ?? null
   const stateName = state?.state ?? null
   const isNavMode = NAV_MODES.includes(mode)
@@ -283,7 +287,9 @@ export default function S21Test({ onExit }) {
 
   // 保存した会場地図を開く（/map_session/open, slot:VENUE / mode:reload）。
   // 当日の手順の先頭（brief-onsite-fix E）。success / message を画面に出す。
+  // 停止中以外は送らない（サーバ側も拒否する。二重の守り）。
   async function handleOpenVenueMap() {
+    if (!mapOpAllowed) return
     setVenueMsg(null)
     setVenueBusy(true)
     const res = await openVenueMap()
@@ -403,7 +409,7 @@ export default function S21Test({ onExit }) {
                   type="button"
                   className={`btn wide mt ${OP_BUTTON_KINDS.advance}`}
                   data-testid="s21-map-gate-open"
-                  disabled={disabledAll}
+                  disabled={disabledAll || !mapOpAllowed}
                   onClick={() => handleOpenVenueMap()}
                 >
                   <IconArrow />
@@ -480,7 +486,7 @@ export default function S21Test({ onExit }) {
             type="button"
             className={`next-action ${OP_BUTTON_KINDS[nextAction.kind] ?? ''}`.trim()}
             data-testid="s21-next-action"
-            disabled={disabledAll || venueBusy}
+            disabled={disabledAll || venueBusy || (currentIndex === 0 && !mapOpAllowed)}
             onClick={nextAction.run}
           >
             {NEXT_ACTION_ICONS[nextAction.kind]}
@@ -585,7 +591,7 @@ export default function S21Test({ onExit }) {
                     type="button"
                     className="btn sm grow"
                     data-testid="s21-open-venue-map"
-                    disabled={disabledAll || venueBusy}
+                    disabled={disabledAll || venueBusy || !mapOpAllowed}
                     onClick={() => handleOpenVenueMap()}
                   >
                     {S21_OPEN_VENUE_MAP}

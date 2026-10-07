@@ -483,8 +483,9 @@ export const S50_BACK = '戻る'
 export const S50_TAB_GENERAL = '一般'
 export const S50_TAB_DISPLAY = '表示'
 export const S50_TAB_DEV = '開発モード'
-// 変更可能なのは IDLE / MANUAL のときだけ（config_manager がサーバ側で再確認する）。
-export const S50_GUARD = 'IDLE または MANUAL のときだけ変更できます（今は変更不可）'
+// 変更可能なのは停止中（IDLE・PREP の地図作業中・非ジョグ）のときだけ
+// （config_manager がサーバ側で同じ条件を再確認する。1b-5）。
+export const S50_GUARD = '停止中（IDLE・PREP の地図作業中）のときだけ変更できます（今は変更不可）'
 export const S50_SAVE_YAML = 'YAML に保存'
 export const S50_SAVING = '保存中…'
 export const S50_SAVED = '保存しました'

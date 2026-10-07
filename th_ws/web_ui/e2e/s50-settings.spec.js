@@ -56,6 +56,23 @@ test('S-50 表示中にモードが IDLE を離れたら設定は閉じて画面
   await expect(page.locator('#s14')).toBeVisible()
 })
 
+// 1b-5: MANUAL（手動走行）では設定を変更できない。S-50 は MANUAL では
+// 開けない（S-11 に切り替わり設定は畳まれる）ため、入力の無効表示ではなく
+// 画面遷移で縛る。入力欄の無効化そのものは test/unit/stop-only-guard.test.js
+//（mapOrParamOpAllowed(MANUAL)=false）とサーバ側の拒否が担う。
+test('MANUAL では S-50 が閉じて設定を変更できない（S-11 に追随）', async ({ page }) => {
+  await openS50General(page)
+  // IDLE では入力できる（対照。空振り防止）。
+  await expect(page.getByLabel(/最高速度/)).toBeEnabled()
+  await expect(page.getByTestId('s50-guard')).toHaveCount(0)
+
+  await setTestState(page, { mode: 'MANUAL', state: 'NONE' })
+
+  // S-50 は畳まれ、手動走行（S-11）になる。設定は開けない＝変更できない。
+  await expect(page.locator('#s50')).toHaveCount(0)
+  await expect(page.locator('#s11')).toBeVisible()
+})
+
 test('「設定」は他のメニューが押せない状況でも押せる（disabledAll に縛られない）', async ({ page }) => {
   // mode=INIT ではモード選択ボタンが全部 disabled（menuItems の M-1）だが、
   // 設定は FSM を動かさないので読めるようにしてある。

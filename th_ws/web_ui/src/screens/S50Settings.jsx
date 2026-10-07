@@ -13,9 +13,11 @@
 //              connectivity_checker のパラメータに書く。表示の正本は
 //              /system/dev_mode。localStorage は見た目の即時反映だけ）
 //
-// 変更できるのは IDLE / MANUAL のときだけ。UI で disabled にするのに加え、
-// config_manager がサーバ側でモードを再確認して拒否する（二重ガード）。
+// 変更できるのは停止中（IDLE・PREP の地図作業中・非ジョグ）のときだけ
+// （Spec.md SD-9。1b-5）。UI で disabled にするのに加え、config_manager が
+// サーバ側で同じ条件を再確認して拒否する（二重ガード）。
 import { useCallback, useEffect, useState } from 'react'
+import { mapOrParamOpAllowed } from '../modes/stopOnlyGuard.js'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTunableParams } from '../ros/useTunableParams.js'
 import { useParamsOverrides, pendingDiff } from '../ros/useParamsOverrides.js'
@@ -183,8 +185,9 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   const sendTrigger = useTrigger()
   const [calibErr, setCalibErr] = useState('')
 
-  const mode = state?.mode ?? null
-  const editable = !stale && (mode === 'IDLE' || mode === 'MANUAL')
+  // 1b-5: サーバ側（config_manager）と同じ停止中条件に揃える。MANUAL は
+  // 拒否されるようになったため外す（以前は IDLE/MANUAL だった）。
+  const editable = mapOrParamOpAllowed(state, stale)
 
   const [tab, setTab] = useState(initialTab)
 
@@ -326,7 +329,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   // ── 開発モードタブ (WP-DEV-01B) ──
   // 表示の正本は /system/dev_mode（useDevMode）。localStorage は押した瞬間の
   // 見た目だけに残す（?dev=1 は据え置き）。トグルはどのモードでも押せる
-  // （INIT を抜けるために要るので、一般タブのような IDLE/MANUAL 縛りは無い）。
+  // （INIT を抜けるために要るので、一般タブのような停止中の縛りは無い）。
   const { dev: devState, setDevParam } = useDevMode(ros)
   const [devLocal, setDevLocal] = useState(() => readDevMode())
   // 既定は全項目 OFF（connectivity_checker の dev_ignore_* 既定と同じ。
