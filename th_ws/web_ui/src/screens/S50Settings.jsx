@@ -328,7 +328,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
 
   // ── 開発モードタブ (WP-DEV-01B) ──
   // 表示の正本は /system/dev_mode（useDevMode）。localStorage は押した瞬間の
-  // 見目だけに残す（?dev=1 は据え置き）。トグルはどのモードでも押せる
+  // 見た目だけに残す（?dev=1 は据え置き）。トグルはどのモードでも押せる
   // （INIT を抜けるために要るので、一般タブのような停止中の縛りは無い）。
   const { dev: devState, setDevParam } = useDevMode(ros)
   const [devLocal, setDevLocal] = useState(() => readDevMode())
