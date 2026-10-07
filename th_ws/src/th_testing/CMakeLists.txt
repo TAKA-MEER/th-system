@@ -502,6 +502,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_auto_brake_state_node
     test/test_auto_brake_state_node.py
     TIMEOUT 180)
+  # 手動系の自動ブレーキ ON/OFF を obstacle_limiter 本体で縛る（1b-15 SG-B10。ON は減速・
+  # OFF は減速せず接近警告・state 途絶で ON・estop／fault_lock／AUTO／NA は OFF でも止める）。
+  ament_add_pytest_test(test_auto_brake_limiter_node
+    test/test_auto_brake_limiter_node.py
+    TIMEOUT 180)
   # PERSON_TRACKER_LOST のゲート・猶予・記録だけモードの Docker launch テスト
   # （DetailedDesign-safety.md §5.5 P-01＋P-02。
   # OFFでは出ない・ONで止めると出る（report_only=false）・
