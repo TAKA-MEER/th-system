@@ -452,3 +452,140 @@ def test_main_rejects_startup_when_a13_violated(registry_rows, tmp_path):
     out_dir = tmp_path / "out"
     rc = export.main(["--registry", str(registry_path), "--out", str(out_dir), "--stage", "0"])
     assert rc == 1
+
+
+# ============================================================================
+# SG-B8: 起動時の overrides 重ね（apply_overrides_to_rows / --overrides）
+# ============================================================================
+
+def _sgb8_rows():
+    """SG-B8 試験専用の最小 rows（given 2行＋derived 1行）。"""
+    return [
+        {"name": "test_ratio_a", "unit": "ratio", "class": "b", "status": "given",
+         "value": 0.5, "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "調整可能な given 行"},
+        {"name": "test_ratio_b", "unit": "ratio", "class": "b", "status": "given",
+         "value": 0.3, "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "調整可能な given 行"},
+        {"name": "test_derived_value", "unit": "m", "class": "b", "status": "derived",
+         "value": None, "formula": "floor_distance",
+         "derived_from": ["body_half_length_m", "floor_margin_m"],
+         "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "derived 行（上書き対象外）"},
+        {"name": "body_half_length_m", "unit": "m", "class": "b", "status": "given",
+         "value": 0.3, "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "derived の依存行（floor_distance が固定名を要求）"},
+        {"name": "floor_margin_m", "unit": "m", "class": "b", "status": "given",
+         "value": 0.05, "consumers": ["params_audit"], "spec_ref": "sgb8",
+         "note": "derived の依存行"},
+    ]
+
+
+def test_apply_overrides_applies_valid_entry_with_provenance():
+    """有効な上書きは適用され、出どころが残る。元の rows は壊さない。"""
+    rows = _sgb8_rows()
+    overrides = {"test_ratio_a": {"value": 0.6, "set_at": "t", "set_by": "tester",
+                                  "reason": "ut"}}
+    patched, rejected, meta = export.apply_overrides_to_rows(rows, overrides)
+    assert rejected == {}
+    by_name = {r["name"]: r for r in patched}
+    assert by_name["test_ratio_a"]["value"] == 0.6
+    assert meta["test_ratio_a"] == {"set_at": "t", "set_by": "tester", "reason": "ut"}
+    # 元の rows は不変（呼び出し側が既定値を失わない）。
+    assert {r["name"]: r for r in rows}["test_ratio_a"]["value"] == 0.5
+
+
+def test_apply_overrides_rejects_unknown_and_derived():
+    """未知名・given 以外の上書きは適用せず理由を残す（既定値のまま）。
+
+    注意: schema.validate_registry は S1〜S5・構造だけを見て値の型・範囲を
+    見ないため、型違いの上書きはここでは拒否されない（/params/set 側も同じ
+    水準。SG-B8 の完了報告に「検査の穴」として記載）。値の妥当性は A1〜A13
+    の整合検査が受け持つ（下の A5 テスト）。"""
+    rows = _sgb8_rows()
+    overrides = {
+        "no_such_param": {"value": 1.0},
+        "test_derived_value": {"value": 1.0},
+    }
+    patched, rejected, meta = export.apply_overrides_to_rows(rows, overrides)
+    assert set(rejected) == {"no_such_param", "test_derived_value"}
+    assert meta == {}
+    by_name = {r["name"]: r for r in patched}
+    assert by_name["test_ratio_b"]["value"] == 0.3
+
+
+def test_apply_overrides_rejects_assertion_violation_but_keeps_valid_ones():
+    """A5（速度順序）を破る上書きはその行だけ外し、正当な上書きは残す。"""
+    rows = [
+        {"name": "v_reverse", "unit": "m/s", "class": "b", "status": "given",
+         "value": 0.5, "consumers": ["params_audit"], "spec_ref": "sgb8", "note": ""},
+        {"name": "v_slow", "unit": "m/s", "class": "b", "status": "given",
+         "value": 0.6, "consumers": ["params_audit"], "spec_ref": "sgb8", "note": ""},
+        {"name": "v_max", "unit": "m/s", "class": "b", "status": "given",
+         "value": 1.0, "consumers": ["params_audit"], "spec_ref": "sgb8", "note": ""},
+        {"name": "v_jog_panel", "unit": "m/s", "class": "b", "status": "given",
+         "value": 0.4, "consumers": ["params_audit"], "spec_ref": "sgb8", "note": ""},
+    ]
+    # v_reverse=0.9 は v_slow(0.6) を上回り A5 違反 → 拒否。
+    # v_slow=0.95 は v_reverse(0.5) ≤ 0.95 ≤ v_max(1.0) で通る。
+    # 1件ずつ試し当てのため順序依存はある（docstring に明記）。
+    overrides = {"v_reverse": {"value": 0.9}, "v_slow": {"value": 0.95}}
+    patched, rejected, meta = export.apply_overrides_to_rows(rows, overrides)
+    assert "v_reverse" in rejected
+    assert "v_slow" in meta
+    by_name = {r["name"]: r for r in patched}
+    assert by_name["v_reverse"]["value"] == 0.5
+    assert by_name["v_slow"]["value"] == 0.95
+
+
+def test_main_applies_overrides_to_generated_yaml_and_provenance(tmp_path):
+    """export.main --overrides: 生成 yaml に上書き値が乗り、provenance に
+    出どころと rejected の理由が残る（本物の registry ではなく合成 registry で
+    回す。実物との結合は test_params_launch.py が持つ）。"""
+    import yaml
+    rows = _sgb8_rows()
+    registry_path = tmp_path / "registry.yaml"
+    with open(registry_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(rows, f, allow_unicode=True)
+    overrides_path = tmp_path / "overrides.yaml"
+    with open(overrides_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump({
+            "test_ratio_a": {"value": 0.6, "set_at": "t", "set_by": "tester",
+                             "reason": "ut"},
+            "no_such_param": {"value": 1.0},
+        }, f, allow_unicode=True)
+
+    out_dir = tmp_path / "out"
+    rc = export.main(["--registry", str(registry_path), "--out", str(out_dir),
+                      "--stage", "8", "--overrides", str(overrides_path)])
+    assert rc == 0
+
+    import json
+    with open(out_dir / "params_audit.yaml", encoding="utf-8") as f:
+        gen = yaml.safe_load(f)
+    params = gen["params_audit"]["ros__parameters"]
+    assert params["test_ratio_a"] == 0.6
+    with open(out_dir / "params_provenance.json", encoding="utf-8") as f:
+        prov = json.load(f)
+    assert prov["origins"]["test_ratio_a"]["origin"] == "override"
+    assert prov["origins"]["test_ratio_a"]["set_by"] == "tester"
+    assert "no_such_param" in prov["rejected"]
+
+
+def test_main_without_overrides_file_behaves_as_before(tmp_path):
+    """--overrides 省略時・存在しないパス時は従来どおり（provenance は空）。"""
+    import json
+    import yaml
+    rows = _sgb8_rows()
+    registry_path = tmp_path / "registry.yaml"
+    with open(registry_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(rows, f, allow_unicode=True)
+
+    out_dir = tmp_path / "out"
+    rc = export.main(["--registry", str(registry_path), "--out", str(out_dir),
+                      "--stage", "8",
+                      "--overrides", str(tmp_path / "does-not-exist.yaml")])
+    assert rc == 0
+    with open(out_dir / "params_provenance.json", encoding="utf-8") as f:
+        prov = json.load(f)
+    assert prov == {"origins": {}, "rejected": {}}
