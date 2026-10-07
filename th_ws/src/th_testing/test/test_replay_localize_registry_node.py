@@ -62,8 +62,12 @@ REGISTRY_YAML = os.path.join(_PARAMS_SRC, "config", "registry.yaml")
 
 # 試験用の値（本番の既定値と区別できる数値。届いたかどうかを見るため）。
 # resume 0.0 は「確定しても必ず遠すぎ」→ failed に留まる。
+# match_low だけは既定値（0.8）より**緩く**置く（0.5）。厳しく置く
+# （例: 0.97）と、合成スキャンの離散化で s が閾値に届かず low→searching の
+# まま resume 判定に到達しない。到達の証明（test_a の読み戻し）は値が
+# 区別できれば果たせるので、振る舞いの試験（test_b）は緩い側に倒す。
 _TEST_VALUES = {
-    "localize_match_low": 0.97,
+    "localize_match_low": 0.5,
     "localize_margin_low": 0.91,
     "localize_margin_min": 0.01,
     "search_radius_m": 4.0,
@@ -372,22 +376,42 @@ class TestReplayLocalizeRegistryNode(unittest.TestCase):
             assert got[name] == _TEST_VALUES[name], (
                 f'{name}: ノードの値 {got[name]!r} != 生成 yaml {_TEST_VALUES[name]!r}')
 
+    def _quality_summary(self) -> str:
+        """受信した /route/status の (quality, score, margin) の一覧。
+        失敗時の切り分け用（どの quality で止まったかを見る）。"""
+        return ', '.join(
+            f'{s.localize_quality}(s={s.localize_score:.3f},m={s.localize_margin:.3f})'
+            for s in self._statuses[-12:])
+
     def test_b_resume_limit_blocks_distant_start(self):
         """途中復帰の上限（resume_max_dist_m=0.0）が振る舞いに効く。
-        探索は成立する（score が試験用の match_low 0.97 以上）が、再開点が
-        見つからず LOCALIZE に留まり done が出ない。ノードが値を読まず
-        既定値 2.0 を使う変異では done が出て赤くなる。"""
+        探索は成立する（score が本番の既定 gate 0.8 以上。P2 の test_a が
+        同じ地図・スキャンで done を確認済み）が、再開点が見つからず
+        LOCALIZE に留まり done が出ない。ノードが値を読まず既定値 2.0 を
+        使う変異では done が出て赤くなる。到達の証明は test_a（読み戻し）が
+        担い、ここでは「使うこと」を縛る。"""
         self._send_load_route()
-        st = self._wait_status(
-            lambda s: s.localize_quality == 'failed',
-            timeout=30.0, what="quality failed")
-        assert st.localize_score >= 0.97, (
-            f'探索自体が不成立（score={st.localize_score}）。試験用の match_low '
-            f'0.97 を上回るはずの一致スキャンで low になった')
+        try:
+            st = self._wait_status(
+                lambda s: s.localize_quality == 'failed',
+                timeout=30.0, what="quality failed")
+        except AssertionError:
+            raise AssertionError(
+                f'failed に留まらない。受信 quality: [{self._quality_summary()}] '
+                f'（受信 {len(self._statuses)} 件）')
+        assert st.localize_score >= 0.8, (
+            f'探索自体が不成立（score={st.localize_score:.3f}）。一致スキャンで '
+            f'本番の既定 gate 0.8 を下回った。受信 quality: '
+            f'[{self._quality_summary()}]')
+        assert st.localize_margin >= 0.01, (
+            f'margin が試験用の margin_min 0.01 を下回った '
+            f'(margin={st.localize_margin:.3f})。failed の原因が resume でなく '
+            f'margin の可能性。受信 quality: [{self._quality_summary()}]')
         dones = [e for e in self._events if e.event == 'evt.localize_done']
         assert not dones, (
             f'resume 上限 0.0 なのに evt.localize_done が出た（{len(dones)} 件）。'
-            f'ノードが生成 yaml の値を読んでいない')
+            f'ノードが生成 yaml の値を読んでいない。受信 quality: '
+            f'[{self._quality_summary()}]')
 
 
 if __name__ == '__main__':
