@@ -100,7 +100,7 @@ _EFFECT_DESTINATIONS = {
 
 # /system/set_flag で外から変更してよいフラグ。jog_active はリース方式（§5）で
 # th_state が自分で管理するので対象外（Spec の「ui.jog.hold」経由でしか動かさない）。
-_SETTABLE_FLAGS = ("working", "map_update", "tracker_enabled", "auto_brake")
+_SETTABLE_FLAGS = ("map_update", "tracker_enabled", "auto_brake")
 
 # state.md §3.1 の固定レート。registry.yaml の tunable パラメータ（R2 対象）ではなく
 # インターフェース契約そのものの値なので、ここでは定数として扱う。
@@ -176,7 +176,6 @@ class StateManager(Node):
         self.prev_sub = ""
         self._jog_active = False
         self._flags = {
-            "working": False,
             "map_update": False,
             "tracker_enabled": False,
             "auto_brake": True,   # 6.2 フェイルセーフ既定
@@ -769,7 +768,7 @@ class StateManager(Node):
         msg.estop_from_ui = self._estop_from_ui
         msg.tracker_enabled = self._flags["tracker_enabled"]
         msg.auto_brake = self._flags["auto_brake"]
-        msg.working = self._flags["working"]
+        msg.working = guards_module.is_working(self.mode, self.state)  # 状態が正本（1b-9）
         msg.map_update = self._flags["map_update"]
         msg.unsaved = list(self._unsaved)
         msg.pause_reason = self._pause_reason

@@ -679,6 +679,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_home_declarer_node
     test/test_home_declarer_node.py
     TIMEOUT 240)
+
+  # 「作業中」のサーバ側ガード（1b-9 SG-A9）。state_manager を起動して、作業中の
+  # ui.goto 拒否（working_in_progress）と作業終了後の許可を縛る。
+  ament_add_pytest_test(test_working_guard_node
+    test/test_working_guard_node.py
+    TIMEOUT 240)
 endif()
 
 ament_package()
