@@ -63,9 +63,16 @@ export default function S13TeachManual({ onFinish }) {
 
   const [tab, setTab] = useState('drive')
   const [name, setName] = useState('')
-  const [recording, setRecording] = useState(false)
 
   const stateName = state?.state ?? null
+  const modeName = state?.mode ?? null
+
+  // 1b-7 SG-B1/SG-C5: 「記録中」は画面ローカルのフラグで決めない。FSM の状態が
+  // 教示系の REC のときだけ出す（PAUSE・SAVED・ESTOP・終了後は出さない）。
+  // 記録していないのに「記録中」と見える状態を作らない。REC では recorder が
+  // 開いていることと一致する（機体側は明示の保存・破棄でのみ記録を閉じる）。
+  const recording = (modeName === 'TEACH_MANUAL' || modeName === 'TEACH_FOLLOW')
+    && stateName === 'REC'
 
   // 終了 → ui.finish → 承認で S-01 へ戻る（S11Manual の handleFinish と同じ）。
   async function handleFinish() {
@@ -78,15 +85,15 @@ export default function S13TeachManual({ onFinish }) {
   }
 
   // 経路名を入れて「記録開始」→ ui.route_select {new:true,id}。
-  // 受理されたら記録中表示に切り替える。
+  // 受理されたら FSM が REC へ進み、「記録中」は FSM の状態から出る
+  //（ローカルフラグは持たない。SG-B1/SG-C5）。
   // 入力欄の値を id に使う（WS-9K E-1）。空欄のときだけ日時ベースの自動名。
   // / \ は保存側で _ に置換されるので、ここで同じ置換をして画面の表示名と
   // 保存名が食い違わないようにする。
   async function handleRecordStart() {
     const trimmed = name.replace(/[\\/]/g, '_').trim()
     const id = trimmed || 'route_' + Date.now()
-    const res = await sendTrigger('ui.route_select', { new: true, id })
-    if (res?.accepted) setRecording(true)
+    await sendTrigger('ui.route_select', { new: true, id })
   }
 
   const st = routeStatus

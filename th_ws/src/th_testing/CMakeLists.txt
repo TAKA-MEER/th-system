@@ -627,6 +627,11 @@ if(BUILD_TESTING)
     TIMEOUT 120
     ENV TH_SKIP_SIM=1)   # CI ではデフォルトでスキップ
 
+  # 1b-7 SG-B1: 教示中の非常停止 → 解除 → 戻る、で「記録中」と実際の記録が
+  # 一致すること（state_manager＋route_recorder の本番の経路。rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_teach_estop_resume_node
+    test/test_teach_estop_resume_node.py
+    TIMEOUT 120)
   # 盤前移動の一時停止→再開（#3）・BLOCKED タイムアウトなし（#4）
   # (DetailedDesign-onsite.md §9。Gazebo・Nav2 本体なしの launch_testing。
   # 積算: 起動 discovery 10 秒 ＋ 既存 7 件 ＋ SG-A1/A15 の 6 件追加（各 10〜15 秒）
