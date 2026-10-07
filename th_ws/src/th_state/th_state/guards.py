@@ -247,7 +247,9 @@ def is_working(mode, state) -> bool:
     """「作業中」の正本（1b-9 SG-A9）。**機体側の状態そのもの**で決める: `AT_PANEL` ×
     `WORKING`（Spec-modes.md SM-3.1.2-062／063。`ui.working` が立て下ろしする）。
     別のフラグを持たないので、立て忘れ・下ろし忘れ・画面と機体のずれが起きない。
-    `AT_PANEL` を出れば（ESTOP を挟んだ復帰も含め）自動的に偽になる。"""
+    `AT_PANEL` を出れば（ESTOP を挟んだ復帰も含め）自動的に偽になる。
+    # WAIVER(demo): W-12 — 「作業中」は暫定の押しボタン。正式 IF（到着通知／昇降完了／
+    # 撮影完了／中断通知。O-a6）に置き換えるまで、この判定を仮のまま使う。"""
     return mode == "AT_PANEL" and state == "WORKING"
 
 
