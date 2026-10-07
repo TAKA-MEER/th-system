@@ -263,7 +263,8 @@ class TestStopOnlyGuards(unittest.TestCase):
         """MANUAL（手動走行）では 4 経路とも拒否される（SD-9）。"""
         res = self._trigger('ui.enter_mode', {'mode': 'MANUAL'})
         assert res.accepted, f'MANUAL に入らない: {res.reason}'
-        assert self._wait_mode_state('MANUAL', 'NONE', timeout=5.0)
+        # MANUAL の入口状態は RUN（state_core.ESTOP_RESUME_RUN の run_state）。
+        assert self._wait_mode_state('MANUAL', 'RUN', timeout=5.0),             f'MANUAL/RUN に入らない ({self._mode_state()})'
         self._assert_denies('MANUAL')
 
     def test_prep_mapping_allows(self):
