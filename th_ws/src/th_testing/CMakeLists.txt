@@ -304,6 +304,11 @@ if(BUILD_TESTING)
     test/test_tracker_policy.py
     TIMEOUT 30)
 
+  # 「作業中」の判定と遷移表の拒否行（1b-9 SG-A9。th_state の純ロジック。ROS2 不要）
+  ament_add_pytest_test(test_working_guard
+    test/test_working_guard.py
+    TIMEOUT 30)
+
   # DR-SPAAM 起動/停止判断の純ロジック (brief-tracker-default-off §3.2。
   # tracker_enabled と lifecycle 状態からの transition_id 決定。ROS2 不要)
   ament_add_pytest_test(test_dr_spaam_lifecycle_controller_core
