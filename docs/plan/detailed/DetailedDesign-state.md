@@ -300,7 +300,7 @@ class StateCore:
 | ガード | 真になる条件 | 参照する `Context` |
 | --- | --- | --- |
 | `jog_allowed` | 下の除外表のいずれにも当たらない | **`mode`, `state`**（除外表は両方を見る） |
-| `fault_stops_mode` | 下の表で true（`PREP` は `RETURN` 中と `PREP/PAUSE` 以外 false。1b-1 SG-A7） | `fault_type`, **`mode`**, **`state`** |
+| `fault_stops_mode` | 下の表で true（`PREP` は `RETURN` 中と `PREP/PAUSE` 以外 false。1b-1 SG-A7。**`TEACH_*` の `SAVED` は false**。1b-7 SG-B11） | `fault_type`, **`mode`**, **`state`** |
 | `fault_cleared` | `not fault_active` | `fault_active` |
 | `fault_cleared_and_ui_released` | `not fault_active and not ui_estop and not hw_estop` | 同上 |
 | `estop_ui_allowed` | `mode != "CARRY"` | **`mode`** |
@@ -474,7 +474,10 @@ class StateCore:
 撤回した。拒否理由キーは `teach_saved_finalized`（§10）。`-05J` は `-017` の派生で、
 `SM-3.1.2-017` の契機は「走行」だけだが `C-01` がスティックで `SAVED` を抜けて
 `T-TEACH-03` 経由で `REC` に入る穴を塞ぐため（`Spec-transit.md` §3.2
-「保存後のスティック操作は受け付けない」）。**
+「保存後のスティック操作は受け付けない」）。
+**回復フォルトでも `SAVED` からは `PAUSE` に落とさない**（`fault_stops_mode` が
+`TEACH_*`／`SAVED` を弾く。落とすと「はい」で `REC` に入るが recorder は閉じた
+ままで、記録していないのに記録中になる。フォルトは独立した表示で伝わる）。**
 
 `T-TEACH-05` / `-05J` / `-05M` は**正本 `Spec-modes.md` §3.1.2 に反映済み**
 （`SM-3.1.2-017`／`-018`「拒否・`SAVED` のまま」。§9-(d) ／ `Spec-open.md` F-32）。

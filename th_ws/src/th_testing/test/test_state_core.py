@@ -1017,6 +1017,28 @@ def test_saved_jog_does_not_leave_saved_via_common(state_core_bundle):
     assert (d.to_mode, d.to_state) == ("TEACH_FOLLOW", "SAVED")
 
 
+@pytest.mark.rule("C-03")
+def test_saved_holds_on_recoverable_fault(state_core_bundle):
+    """TEACH/SAVED での回復フォルトは PAUSE に落とさない（SAVED のまま）。
+    落とすと「はい」で REC に入るが recorder は閉じたままで、記録していない
+    のに記録中になる（項目 2）。変異: ガードの除外を消すと赤くなる。"""
+    core, _, _, _ = state_core_bundle
+    for mode in ("TEACH_FOLLOW", "TEACH_MANUAL"):
+        d = core.step(mode, "SAVED", "fault.recoverable",
+                      _mk_ctx(fault_active=True, fault_severity="MINOR",
+                              fault_type="LIDAR_LOST"))
+        assert d.accepted is False, \
+            f"{mode}/SAVED で C-03 が通ってしまった"
+        assert (d.to_mode, d.to_state) == (mode, "SAVED")
+    # 対照: REC・PAUSE では従来どおり PAUSE に落ちる。
+    d = core.step("TEACH_FOLLOW", "REC", "fault.recoverable",
+                  _mk_ctx(fault_active=True, fault_severity="MINOR",
+                          fault_type="LIDAR_LOST"))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("TEACH_FOLLOW", "PAUSE")
+    assert d.rule_id == "C-03"
+
+
 # ============================================================
 # 1b-7（SG-B3）: W-4 の答えを IDLE で受ける（T-IDLE-01/-02）。
 # 「終了」（C-08）や記録途切れ（T-TEACH-06）は IDLE へ抜けてから問うので、
