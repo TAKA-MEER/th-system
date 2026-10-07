@@ -5,9 +5,14 @@ slam_control.py — ROS2 ノード本体
 WebUI / route_recorder / replay_runner からの地図操作要求を仲介する。
 
 担当:
-  - /robot/mode 購読 → IDLE/MANUAL 以外での操作を拒否（サーバー側の安全
-    ガード。UI 側の表示制御だけに頼らない。config_manager.py と同一ロジック。
-    ただし /map_session/open だけは除く。教示・再生の最中に呼ばれるため）
+  - /system/state 購読 → 停止中（IDLE・PREP の地図作業中）かつジョグ中で
+    ないときだけ操作を受け付ける（サーバー側の安全ガード。UI 側の表示制御
+    だけに頼らない。Spec.md SD-9。1b-5 で旧 /robot/mode から付け替え）。
+    /system/state 未受信・古いときは拒否する（安全側）。
+    ただし /map_session/open の slot:ROUTE は除く。教示の保存と再生の読み直し
+    が route_recorder / replay_runner から TEACH / REPLAY の最中に呼ぶため
+    （FSM の遷移が既に縛っている内部経路）。slot:VENUE（画面からの会場地図の
+    保存・読み直し）には同じガードを掛ける
   - 地図操作を slam_toolbox のサービス呼び出しへ転送する（下表）
   - /slam_control/mapping_active (std_msgs/Bool, transient_local) に
     現在のマッピング状態を publish する
@@ -121,10 +126,11 @@ from std_srvs.srv import SetBool, Trigger
 from slam_toolbox.srv import (DeserializePoseGraph, SaveMap,
                               SerializePoseGraph)
 
-from th_system_msgs.msg import MapSessionStatus, PinList, RobotMode, StateEffect
+from th_system_msgs.msg import MapSessionStatus, PinList, StateEffect, SystemState
 from th_system_msgs.srv import OpenMapSession
 
 from th_config_manager.service_call import call_and_wait
+from th_config_manager.stop_only_guard import STATE_STALE_SEC, stop_only_allows
 from th_config_manager.slam_control_logic import (
     deserialize_match_type, effective_reload_pose, estimator_restarting,
     map_instance_ids_match,
@@ -176,7 +182,14 @@ def _find_slam_toolbox_pids():
 class SlamControl(Node):
     def __init__(self):
         super().__init__('slam_control')
-        self._mode = RobotMode.IDLE
+        # 1b-5: /system/state の最新像。未受信の間は拒否する（安全側）。
+        self._state_mode = None
+        self._state_name = ''
+        self._jog_active = False
+        self._state_at = None   # 最後に受けた時刻（monotonic 秒）
+        # 鮮度の上限。registry の state_stale_ms=1500 と同じ既定
+        # （jog_gate / obstacle_limiter / safety_monitor と同じ値）。
+        self.declare_parameter('state_stale_ms', int(STATE_STALE_SEC * 1000.0))
         self._executor = None   # main() で MultiThreadedExecutor を渡す
         # WS-8B: enable_route_slam のとき true。起動時に localization へ倒さず
         # slam_toolbox を既定の mapping モードのまま走らせる（教示・再生で
@@ -219,8 +232,11 @@ class SlamControl(Node):
         self._lock = threading.Lock()
 
         cbg = ReentrantCallbackGroup()
-        self.create_subscription(RobotMode, '/robot/mode', self._cb_mode, 10,
-                                  callback_group=cbg)
+        state_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+                               durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                               history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(SystemState, '/system/state', self._cb_state,
+                                 state_qos, callback_group=cbg)
 
         # WP-ONSITE-D: state_manager からの effect 配送（dest == 'map_session'）。
         # commit_venue_map（PREP の「保存」）で venue/map を serialize する。
@@ -291,13 +307,15 @@ class SlamControl(Node):
             Trigger, '/slam_control/discard_map', self._cb_discard_map,
             callback_group=cbg)
         # WS-9L: 地図の保存・再読込。教示の「保存」と再生の経路選択が呼ぶ。
-        # 教示・再生の最中に呼ばれるため _mode_allows_change のガードは**かけない**
+        # slot:ROUTE は教示・再生の最中に呼ばれるため停止中ガードの対象外
         # （slot / mode の検証だけ行う。純ロジックは slam_control_logic.py）。
+        # slot:VENUE（画面からの会場地図の保存・読み直し）には停止中ガードを掛ける
+        # （1b-5。_cb_map_session_open 参照）。
         self.create_service(
             OpenMapSession, '/map_session/open', self._cb_map_session_open,
             callback_group=cbg)
 
-        # mode_manager の /robot/mode と同様、定期的に現在状態を再送信する
+        # state_manager の /system/state と同様、定期的に現在状態を再送信する
         # (rosbridge 経由の遅延購読が変化直後の一度きりの publish を
         #  取りこぼし、WebUI の表示が古いまま固まるのを防ぐため)
         self.create_timer(STATUS_PUBLISH_PERIOD_SEC, self._publish_timer_cb,
@@ -306,8 +324,11 @@ class SlamControl(Node):
         self.get_logger().info('slam_control 起動')
 
     # ── 共通 ────────────────────────────────────────────────
-    def _cb_mode(self, msg: RobotMode):
-        self._mode = msg.mode
+    def _cb_state(self, msg: SystemState):
+        self._state_mode = msg.mode
+        self._state_name = msg.state
+        self._jog_active = bool(msg.jog_active)
+        self._state_at = time.monotonic()
 
     def _on_pins(self, msg: PinList):
         home = None
@@ -320,14 +341,29 @@ class SlamControl(Node):
         # WS-9AL: ピンが最後に保存された時点の地図の生存世代。
         self._pins_map_instance_id = getattr(msg, 'map_instance_id', '') or ''
 
-    def _mode_allows_change(self) -> bool:
-        return self._mode in (RobotMode.IDLE, RobotMode.MANUAL)
+    def _stop_only_reject_reason(self) -> "str | None":
+        """停止中だけの条件を満たさなければ拒否理由の文言、満たせば None。"""
+        received = self._state_at is not None
+        age = (time.monotonic() - self._state_at) if received else None
+        stale_ms = self.get_parameter('state_stale_ms').value
+        allowed, reason = stop_only_allows(
+            self._state_mode, self._state_name, self._jog_active,
+            received, age, stale_ms / 1000.0)
+        if allowed:
+            return None
+        detail = {
+            'state_not_received': '/system/state を受信していないため',
+            'state_stale': '/system/state が古いため',
+            'jog_active': 'ジョグ中のため',
+        }.get(reason, f'いまの状態（{self._state_mode}/{self._state_name}）では')
+        return f'停止中（IDLE・PREP の地図作業中）のみ操作できます（{detail}拒否）'
 
     def _reject_if_mode_disallows(self, response):
-        if self._mode_allows_change():
+        rejected = self._stop_only_reject_reason()
+        if rejected is None:
             return None
         response.success = False
-        response.message = 'IDLE/MANUAL モード中のみ操作できます'
+        response.message = rejected
         return response
 
     def _set_active(self, active: bool):
@@ -583,6 +619,13 @@ class SlamControl(Node):
         err = open_session_error(request.slot, request.mode, request.session_id)
         if err:
             return self._finish(response, err, '')
+        # 1b-5 (SG-A6): slot:VENUE（画面からの会場地図の保存・読み直し）には
+        # 停止中だけのガードを掛ける。slot:ROUTE は教示の保存・再生の読み直しが
+        # TEACH / REPLAY の最中に呼ぶ内部経路のため対象外（FSM の遷移が縛る）。
+        if request.slot == 'VENUE':
+            rejected = self._reject_if_mode_disallows(response)
+            if rejected:
+                return rejected
 
         base = self._map_session_base(request.slot, request.session_id)
         with self._lock:
@@ -664,6 +707,13 @@ class SlamControl(Node):
         if msg.dest != 'map_session':
             return
         if msg.name == 'commit_venue_map':
+            # 1b-5: 保存も停止中だけ（サービス経路と同じ条件）。遷移表 T-PREP-12
+            # が PREP/* から通るため、RETURN/PAUSE 由来の effect はここで落とす。
+            rejected = self._stop_only_reject_reason()
+            if rejected is not None:
+                self._report(f'NG: commit_venue_map を拒否 ({rejected})')
+                self.get_logger().warn(f'commit_venue_map を拒否: {rejected}')
+                return
             with self._lock:
                 err = self._commit_venue_map()
             if err:

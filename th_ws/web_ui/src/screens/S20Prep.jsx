@@ -26,6 +26,7 @@ import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useSetFlag, TRACKER_FLAG } from '../ros/useSetFlag.js'
 import { trackerStopAllowed } from '../modes/trackerControlPolicy.js'
+import { mapOrParamOpAllowed } from '../modes/stopOnlyGuard.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
 import { usePersonTargets } from '../ros/usePersonTargets.js'
 import { usePersonStatus } from '../ros/usePersonStatus.js'
@@ -133,6 +134,9 @@ export default function S20Prep() {
   const [resetErr, setResetErr] = useState(null)
 
   const disabledAll = stale || state?.mode == null
+  // 1b-5 (SG-A10): 地図の開始・破棄は停止中だけ（Spec.md SD-9）。サーバ側が
+  // 正で、画面は同じ条件で事前に押せなくする。
+  const mapOpAllowed = mapOrParamOpAllowed(state, stale)
 
   // 左列タブ（地図 / 対象選択）と右列サブタブ（登録 / ピン）。
   const [tab, setTab] = useState('map')
@@ -246,6 +250,7 @@ export default function S20Prep() {
   // toggle_mapping を呼ぶ。起動時から動いている通常ケース（true）はサービスを
   // 呼ばず表示だけ解禁する（呼ぶと動いている地図作成を止めてしまう）。
   async function handleStartMapping() {
+    if (!mapOpAllowed) return   // 停止中以外は送らない（サーバ側も拒否する）
     if (mappingActive === false) {
       const res = await toggleMapping()
       if (res?.success === false) return   // 失敗時は解禁しない（留まる）
@@ -257,6 +262,7 @@ export default function S20Prep() {
   // 待たない）→ reset_pins（pins.yaml を空にする）の順に呼ぶ。ArmedButton なので
   // ここに来る時点で操作者の二段階確認は済んでいる。
   async function handleResetVenue() {
+    if (!mapOpAllowed) return   // 停止中以外は送らない（サーバ側も拒否する）
     setResetErr(null)
     setResetBusy(true)
     const d = await discardMap()
@@ -430,7 +436,7 @@ export default function S20Prep() {
                 type="button"
                 className={`btn wide mt ${OP_BUTTON_KINDS.advance}`}
                 data-testid="s20-map-gate-start"
-                disabled={disabledAll || mappingActive == null || resetBusy}
+                disabled={disabledAll || mappingActive == null || resetBusy || !mapOpAllowed}
                 onClick={handleStartMapping}
               >
                 <IconArrow />
@@ -450,7 +456,7 @@ export default function S20Prep() {
                         className="wide"
                         idleLabel={S20_RESET_IDLE}
                         armedLabel={S20_RESET_ARMED}
-                        disabled={disabledAll}
+                        disabled={disabledAll || !mapOpAllowed}
                         onConfirm={handleResetVenue}
                       />
                       {resetErr && <div className="note err mt" data-testid="s20-reset-err">{resetErr}</div>}
@@ -529,7 +535,7 @@ export default function S20Prep() {
             type="button"
             className={`next-action ${OP_BUTTON_KINDS[nextAction.kind] ?? ''}`.trim()}
             data-testid="s20-next-action"
-            disabled={disabledAll}
+            disabled={disabledAll || (currentIndex === 0 && !mapOpAllowed)}
             onClick={nextAction.run}
           >
             {NEXT_ACTION_ICONS[nextAction.kind]}

@@ -213,9 +213,10 @@ class TestParamsAuditNode(unittest.TestCase):
         assert msg.digest, 'digest が空'
 
     def test_set_rejected_outside_idle(self):
-        """§3.2 / PT-3: IDLE/MANUAL 以外では /params/set が拒否される
-        （accepted=false 相当。success=False で値は保持しない）。
-        IDLE に切り替えれば（かつ given 行・妥当な値であれば）受理される。"""
+        """§3.2 / PT-3: 停止中（1b-5 以降は Spec.md SD-9 の条件）以外では
+        /params/set が拒否される（accepted=false 相当。success=False で値は保持しない）。
+        IDLE に切り替えれば（かつ given 行・妥当な値であれば）受理される。
+        MANUAL も今は拒否される（SD-9 は手動走行を除外。1b-5 で条件を寄せた）。"""
         self._publish_mode('FOLLOWING')
         result = self._call_set({'test_given_speed': 2.0})
         assert result.success is False, \
