@@ -531,7 +531,7 @@
   value: 0.5
   consumers: [route_recorder]
   spec_ref: "DetailedDesign-names.md §7.2"
-  note: "暫定値"
+  note: "暫定値。1b-7 で教示の記録の連続性切れ（SM-3.1.2-019）のしきい値として使う"
 
 - name: replay_drift_m_per_100m
   unit: m
@@ -1210,7 +1210,7 @@
   value: 3000
   consumers: [route_recorder]
   spec_ref: "DetailedDesign-names.md §7.3"
-  note: "暫定値"
+  note: "暫定値。1b-7 で教示の記録の連続性切れ（SM-3.1.2-019）のしきい値として使う"
 
 - name: leash_stop_latency_ms
   unit: ms

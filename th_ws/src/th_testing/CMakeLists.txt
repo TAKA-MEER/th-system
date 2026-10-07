@@ -38,6 +38,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_route_record_files
     test/test_route_record_files.py
     TIMEOUT 30)
+  # 1b-7 SG-B18: 記録の連続性切れの純判定（pose_gap/jump_broken）と
+  # しきい値宣言・配線の AST 検証。ROS2 不要
+  ament_add_pytest_test(test_teach_record_broken
+    test/test_teach_record_broken.py
+    TIMEOUT 30)
   # WS-9K-B: 地図セッション ID。経路に記録セッションの印を付け、別セッションの
   # map 経路を再生に進ませない判定 (can_replay_route) を固定。ROS2 不要
   ament_add_pytest_test(test_route_map_session
@@ -631,6 +636,11 @@ if(BUILD_TESTING)
   # 一致すること（state_manager＋route_recorder の本番の経路。rclpy 要＝ホスト除外）
   ament_add_pytest_test(test_teach_estop_resume_node
     test/test_teach_estop_resume_node.py
+    TIMEOUT 120)
+  # 1b-7 SG-B18: 記録の連続性切れで evt.record_broken が出ること
+  # （route_recorder 単体の本番の経路。rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_teach_record_broken_node
+    test/test_teach_record_broken_node.py
     TIMEOUT 120)
   # 盤前移動の一時停止→再開（#3）・BLOCKED タイムアウトなし（#4）
   # (DetailedDesign-onsite.md §9。Gazebo・Nav2 本体なしの launch_testing。

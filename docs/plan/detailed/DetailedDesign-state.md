@@ -479,6 +479,11 @@ class StateCore:
 `T-TEACH-05` / `-05J` / `-05M` は**正本 `Spec-modes.md` §3.1.2 に反映済み**
 （`SM-3.1.2-017`／`-018`「拒否・`SAVED` のまま」。§9-(d) ／ `Spec-open.md` F-32）。
 `T-TEACH-06` は `Spec-modes.md` §5「そのモードを続けられないときだけ `IDLE` へ落とす」の実体。
+`evt.record_broken` を出すのは `route_recorder`（1b-7 SG-B18）。
+記録フレームの姿勢を見て、途絶（`route_gap_timeout_ms`＝3000 ms。オドメトリ途絶・
+自己位置喪失）か飛び（`route_jump_m`＝0.5 m。手押し・TF の飛び）でラッチし、
+`/system/event` に出す。しきい値は `registry.yaml`（暫定値）。切れたら点の追加を
+凍結する（切れ目以降を混ぜない）。教示系を抜けたらラッチを下ろす（W-4 が引き継ぐ）。
 
 `TEACH_MANUAL` も同じく、**`T-TEACH-03M` と `T-TEACH-05M` の 2 行だけ** `override_common: true` にする
 （`ui.jog.hold` に対して `C-01` を打ち消す）。**モード単位のフラグにしない**（上の囲みと同じ理由）。

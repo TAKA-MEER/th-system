@@ -249,6 +249,40 @@ def save_route_atomic(path, route_dict):
     return path
 
 
+# ──────────────────────────────────────────────────────────────────
+# 記録の連続性切れの判定（1b-7 SG-B18。SM-3.1.2-019 `evt.record_broken`）
+# ──────────────────────────────────────────────────────────────────
+# 教示の記録は「自己位置喪失・オドメトリ途絶など」で連続性が切れたら続けず、
+# IDLE へ抜けて保存可否を問う（Spec-modes.md §5・§6.1）。切れ目の検出は
+# route_recorder が自己位置源の姿勢を見て行い、しきい値は registry.yaml
+# （route_gap_timeout_ms・route_jump_m。ノード内リテラルにしない）。
+# どちらも「切れたか」の純判定。時刻の取得・発行はノード側。
+
+
+def pose_gap_broken(last_pose_ms, now_ms, gap_timeout_ms) -> bool:
+    """自己位置の姿勢が途絶えたまま制限を超えたか（オドメトリ途絶・自己位置喪失）。
+
+    last_pose_ms が None（まだ姿勢を一度も得ていない）は切れていない
+    （記録開始直後の未受信と、途中で失ったものは区別する）。
+    """
+    if last_pose_ms is None:
+        return False
+    return (now_ms - last_pose_ms) > gap_timeout_ms
+
+
+def pose_jump_broken(last_pose, pose, jump_threshold_m) -> bool:
+    """前回姿勢からの平面移動がしきい値を超えたか（手押し・TF の飛び）。
+
+    last_pose が None（初回・再同期直後）は切れていない。yaw の変化は見ない
+    （その場旋回は連続性を切らない）。
+    """
+    if last_pose is None or pose is None:
+        return False
+    dx = pose[0] - last_pose[0]
+    dy = pose[1] - last_pose[1]
+    return math.hypot(dx, dy) > jump_threshold_m
+
+
 def next_generation(routes_dir, route_id):
     """今回保存する経路の世代番号（1b-7 SG-B12）。
 

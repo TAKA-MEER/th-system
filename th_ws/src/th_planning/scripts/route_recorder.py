@@ -28,7 +28,7 @@ from builtin_interfaces.msg import Time as TimeMsg
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry, Path
 from th_system_msgs.msg import (RouteInfo, RouteList, RouteStatus, StateEffect,
-                                SystemState)
+                                StateEvent, SystemState)
 from th_system_msgs.srv import OpenMapSession
 
 # WS-9L: 教示の「保存」で地図を同期保存するための共通ヘルパー。
@@ -57,7 +57,7 @@ from th_planning.route_record_core import (
     RouteRecorderCore, RouteRecordParams, autosave_path,
     _safe_id, decimate_polyline, finalize_route_file,
     list_finalized_route_files, next_generation, owns_route_status, polyline_length,
-    previous_path,
+    pose_gap_broken, pose_jump_broken, previous_path,
     route_from_dict,
     route_to_dict, save_route_atomic,
 )
@@ -119,6 +119,15 @@ class RouteRecorder(Node):
         self.declare_parameter('odom_topic', '/odom')
         self.declare_parameter('odom_filtered_topic', '/odometry/filtered')
         self.declare_parameter('odom_stale_ms', 500)
+        # 1b-7 SG-B18: 記録の連続性切れのしきい値（registry.yaml 駆動。
+        # launch が渡す生成 yaml が上書きし、そちらが正になる。既定値は
+        # registry と同じ値＝起動単体のフォールバック）。
+        # route_gap_timeout_ms: 自己位置の姿勢がこの時間途絶えたら切れたとみなす
+        #   （オドメトリ途絶・自己位置喪失。registry 暫定値 3000）。
+        # route_jump_m: 前回姿勢からの平面移動がこれを超えたら切れたとみなす
+        #   （手押し・TF の飛び。registry 暫定値 0.5）。
+        self.declare_parameter('route_gap_timeout_ms', 3000)
+        self.declare_parameter('route_jump_m', 0.5)
         self._routes_dir = self.get_parameter('routes_dir').value
         sample_ms = self.get_parameter('sample_period_ms').value
         status_ms = self.get_parameter('status_period_ms').value
@@ -129,6 +138,9 @@ class RouteRecorder(Node):
         self._odom_topic = self.get_parameter('odom_topic').value
         self._odom_filtered_topic = self.get_parameter('odom_filtered_topic').value
         self._odom_stale_ms = int(self.get_parameter('odom_stale_ms').value)
+        self._record_gap_timeout_ms = int(
+            self.get_parameter('route_gap_timeout_ms').value)
+        self._record_jump_m = float(self.get_parameter('route_jump_m').value)
         self._preview_max_points = int(self.get_parameter('preview_max_points').value)
         # WS-9H: 途中経過の自動保存。0 以下なら無効。_status_timer(2Hz) の中から
         # 前回時刻と比べて間隔が来たときだけ書く（専用タイマは増やさない）。
@@ -157,6 +169,16 @@ class RouteRecorder(Node):
         # _reset_autosave_state でまっさらに戻す（2 本目の教示で前の点数列が
         # 残って抑止されないため）。
         self._reset_autosave_state()
+        # 1b-7 SG-B18: 連続性監視の状態。start_record ごとにまっさらに戻す。
+        # _last_pose(_ms): 前回得た記録フレームの姿勢（とその時刻）。
+        # _broken: 連続性切れのラッチ（T-TEACH-06 が拾って IDLE へ抜けるまで
+        # 保持。切れたら点の追加を凍結する）。
+        # _odom_resync: 自己位置源が filtered↔raw へ切り替わった直後の 1 回だけ、
+        # 前回姿勢との比較を飛ばす（出所の違いによる段差を飛びと誤認しない）。
+        self._last_pose: tuple[float, float, float] | None = None
+        self._last_pose_ms: int | None = None
+        self._broken = False
+        self._odom_resync = False
 
         self._tf_buffer = None
         self._tf_listener = None
@@ -200,6 +222,11 @@ class RouteRecorder(Node):
                                 durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
                                 history=QoSHistoryPolicy.KEEP_LAST)
         self._pub_routes = self.create_publisher(RouteList, '/route/catalog', routes_qos)
+
+        # 1b-7 SG-B18: 記録の連続性切れ（evt.record_broken）の発行先。
+        # state_manager が /system/event から拾って T-TEACH-06（→ IDLE＋ask_save）
+        # を起こす（replay_runner の _pub_event と同じ流儀）。
+        self._pub_event = self.create_publisher(StateEvent, '/system/event', 10)
 
         status_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
                                 history=QoSHistoryPolicy.KEEP_LAST)
@@ -301,6 +328,12 @@ class RouteRecorder(Node):
             # WS-9H-2: 新しい recorder は点数が 0 から数え直しになるので、前の教示の
             # 点数列が間引き比較に残らないよう自動保存の状態をまっさらに戻す。
             self._reset_autosave_state()
+            # 1b-7 SG-B18: 連続性監視もまっさらに戻す（前の教示の基準・ラッチを
+            # 引きずらない）。
+            self._last_pose = None
+            self._last_pose_ms = None
+            self._broken = False
+            self._odom_resync = False
             # WS-9K-E2: 新しい記録はまだ保存していないので saved を false に戻す。
             self._saved = False
             # WS-8B: 記録開始時に map TF があれば経路全体を map フレームで記録する。
@@ -366,6 +399,12 @@ class RouteRecorder(Node):
     def _on_state(self, msg: SystemState):
         self._mode = msg.mode
         self._state = msg.state
+        # 1b-7 SG-B18: 教示系を抜けたら連続性切れのラッチを下ろす
+        # （T-TEACH-06 が IDLE へ抜けた・「終了」で IDLE へ抜けた。どちらも
+        # W-4 が保存可否の判断を引き継ぐ）。ESTOP・手押しでは下ろさない
+        # （戻ってから T-TEACH-06 が拾う）。
+        if not owns_route_status(self._mode, recorder=True):
+            self._broken = False
 
     def _finalize_and_close(self):
         """現在の記録を RouteData に落とし finalize_route_file で保存して閉じる。
@@ -432,6 +471,7 @@ class RouteRecorder(Node):
         戻って続きから記録する）。
         """
         self._recorder = None
+        self._broken = False
         self._reset_autosave_state()
 
     def _discard_and_close(self):
@@ -475,6 +515,11 @@ class RouteRecorder(Node):
         self._current_source = source
         if prev is None:
             return  # 初回は切替ではない（移り変わりの起点）ので出さない
+        # 1b-7 SG-B18: 生死両方の出所がある間の切替（filtered↔raw）は姿勢が
+        # 段差を持ちうるので、次サンプルの飛び判定を 1 回だけ飛ばす（基準置換）。
+        # 片方消滅（→None・None→）は飛ばさない（途絶・復帰の飛びは見る）。
+        if prev is not None and source is not None:
+            self._odom_resync = True
         if source == 'raw' and prev == 'filtered':
             self.get_logger().info(
                 f'自己位置源を filtered → raw に切替'
@@ -485,8 +530,9 @@ class RouteRecorder(Node):
             self.get_logger().info(f'自己位置源を {prev} → {source} に切替')
 
     def _sample_timer(self):
-        # PAUSE 中は積まない。REC の間だけ姿勢を間引いて記録する。
-        if self._recorder is None or self._state != 'REC':
+        # 記録が開いている間は FSM の状態によらず連続性を見る（ESTOP・手押し・
+        # PAUSE 中の移動も掴む）。点の追加は REC の間だけ（PAUSE 中は積まない）。
+        if self._recorder is None:
             return
         # 記録フレームに合わせて pose を取る。map フレーム記録中に TF が
         # 一時的に切れたらそのサンプルは飛ばす（フレームを混ぜない）。
@@ -495,9 +541,57 @@ class RouteRecorder(Node):
         else:
             # WS-9D: EKF 出力が新鮮ならそれ、古ければ生 odom にフォールバック。
             pose = self._odom_pose()
-        if pose is None:
+        self._update_continuity(pose, self._now_ms())
+        # 1b-7 SG-B18: 連続性が切れたら点の追加を凍結する（切れ目以降の点を
+        # 混ぜない。切れ目までの点列は保存・破棄の判断に残す）。
+        if pose is None or self._state != 'REC' or self._broken:
             return
         self._recorder.add_pose(*pose)
+
+    def _update_continuity(self, pose, now_ms):
+        """自己位置の連続性を更新し、切れたら evt.record_broken を出す（SG-B18）。
+
+        pose は記録フレームの現在姿勢（無ければ None）。切れ目の条件と
+        しきい値は route_record_core の純関数（pose_gap_broken／
+        pose_jump_broken）。ラッチ後は凍結したまま（T-TEACH-06 が IDLE へ
+        抜けるまで出し続けるのは _status_timer）。
+        """
+        if self._broken:
+            return
+        if self._odom_resync:
+            # 自己位置源の切替直後: 前回姿勢との比較が無意味なので基準だけ置く。
+            self._odom_resync = False
+            if pose is not None:
+                self._last_pose = pose
+                self._last_pose_ms = now_ms
+            return
+        if pose is None:
+            if pose_gap_broken(self._last_pose_ms, now_ms,
+                               self._record_gap_timeout_ms):
+                self._on_record_broken('gap')
+            return
+        if pose_jump_broken(self._last_pose, pose, self._record_jump_m):
+            self._on_record_broken('jump')
+            return
+        self._last_pose = pose
+        self._last_pose_ms = now_ms
+
+    def _on_record_broken(self, reason: str):
+        """連続性切れをラッチし、即時 1 回 evt.record_broken を出す。"""
+        self._broken = True
+        self.get_logger().warn(
+            f'教示の記録の連続性が切れたため記録を凍結した（{reason}）: '
+            '保存可否を問う')
+        self._publish_record_broken()
+
+    def _publish_record_broken(self):
+        """evt.record_broken を /system/event に出す（T-TEACH-06 の入口）。"""
+        msg = StateEvent()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.event = 'evt.record_broken'
+        msg.source_node = 'route_recorder'
+        msg.arg_json = '{}'
+        self._pub_event.publish(msg)
 
     def _build_status_msg(self):
         """_status_timer と _publish_status_snapshot が共有する RouteStatus 組み立て。
@@ -553,6 +647,12 @@ class RouteRecorder(Node):
                 preview_points, frame_id=self._frame_id, stamp=stamp))
         # WS-9H: 記録中だけ、間隔が来て点が増えていたら途中経過を .wip へ自動保存する。
         self._maybe_autosave()
+        # 1b-7 SG-B18: 連続性切れのラッチ中は、教示系にいる間出し続ける。
+        # ESTOP・手押し中に切れた場合、FSM はその場では拾えない（T-TEACH-06 は
+        # 教示系モードの行）。戻ってから拾って IDLE へ抜ける。
+        if (self._broken and self._recorder is not None
+                and owns_route_status(self._mode, recorder=True)):
+            self._publish_record_broken()
 
     def _reset_autosave_state(self):
         """自動保存の間引き用の記録をまっさらに戻す。
