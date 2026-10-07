@@ -14,6 +14,12 @@ import { TOPICS, MSG_TYPES } from './topics'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 
+// TEST_MODE で同じトピックの購読者が複数いても全員に届ける（1b-7: シェルが
+// W-3（useGuideBanner）と W-4（useSaveConfirm）で 2 口購読する。後勝ちの単一
+// setter だと後からの更新が片方にしか届かない）。実モードは各 hook が自分の
+// Topic を持つので関係ない。
+const _testSinks = new Set()
+
 export function useSystemEffect(ros) {
   const topicRef = useRef(null)
   const [effect, setEffect] = useState(
@@ -23,8 +29,10 @@ export function useSystemEffect(ros) {
   // useSystemState.js's window.__thSetTestState).
   useEffect(() => {
     if (!TEST_MODE) return undefined
-    window.__thSetTestSystemEffect = (v) => setEffect(v ?? null)
-    return () => { delete window.__thSetTestSystemEffect }
+    const sink = (v) => setEffect(v ?? null)
+    _testSinks.add(sink)
+    window.__thSetTestSystemEffect = (v) => { _testSinks.forEach((fn) => fn(v)) }
+    return () => { _testSinks.delete(sink) }
   }, [])
 
   // Real mode: hold a rosbridge Topic across re-renders.
