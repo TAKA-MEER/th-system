@@ -1438,6 +1438,80 @@
   spec_ref: "DetailedDesign-names.md §7.3"
   note: "replay_runner.py の既定値（変更なし）。暫定値"
 
+# =========================================================================
+# W-01 P5: 全域ローカライズの確度・探索窓・途中復帰の挙動値（names §7.3）
+# 確度の 3 件は P0 の模擬スキャン（同一地図・静環境で楽観的）しか根拠が無く、
+# 実スキャンでの詰め（P6）待ちのため class:c placeholder（options §2・W-15 の
+# 教訓で blocking_from_stage: 5＝起動は止めない）。探索窓の 2 件は m_sep_m
+# （2.0 m。「別の場所」の定義）からの逆算で出発点として置けるため class:b
+# given（jump_translation_m 等と同じ「出発点。P6 で詰める」扱い）。途中復帰の
+# 上限は環境依存で逆算できないため class:c placeholder（P6 で実測）。
+# いずれも replay_runner が宣言し、生成 yaml 経由で渡す。placeholder の行は
+# 生成物に載らずノードの既定値（LOCALIZE_DEFAULTS と同値）が効く。値は変えない。
+# =========================================================================
+
+- name: localize_match_low
+  unit: ratio
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 5
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-transit-localize-options.md §2"
+  note: "全域ローカライズの確度 s の下限（未満で widen の引き金・evt.localize_low）。P0 の模擬で成功最小 0.75〜0.97・失敗最大 0.87〜0.95 が重なるため出発点 0.8 はコードの既定値（LOCALIZE_DEFAULTS）に残し、registry は実スキャン（P6）の測定まで placeholder。値は変えない"
+
+- name: localize_margin_low
+  unit: ratio
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 5
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-transit-localize-options.md §2"
+  note: "全域ローカライズのマージン m の警告下限（未満で low_margin。READY へは進む）。P0 で失敗 17 件すべて m 0.20 以下だったが成功にも誤警告が出るため出発点 0.2 はコードの既定値に残し、registry は実スキャン（P6）の測定まで placeholder。値は変えない"
+
+- name: localize_margin_min
+  unit: ratio
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 5
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-transit-localize-options.md §2"
+  note: "全域ローカライズのマージン m の不成立下限（未満で LOCALIZE に留まる）。m 0.16〜0.20 の廊下沿いズレは単独で止められず READY 目視と併用するため出発点 0.05 はコードの既定値に残し、registry は実スキャン（P6）の測定まで placeholder。値は変えない"
+
+- name: search_radius_m
+  unit: m
+  class: b
+  status: given
+  value: 5.0
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-transit-localize-options.md §1"
+  note: "load_route 直後の初期探索の窓半径（経路始点中心）。m_sep_m（2.0 m）より狭いと「別の場所」の候補が取れず m が効かない（P1→P2 申送り）ため、それより広く 5.0（約 2.5 倍。jump_translation_m と同じ置き方）を出発点に置いた。replay_runner.py の既定値（変更なし）。P6 の実スキャンで詰める"
+
+- name: widen_radius_m
+  unit: m
+  class: b
+  status: given
+  value: 10.0
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-transit-localize-options.md §1"
+  note: "widen 再探索の窓半径（直前の最良候補中心）。初期探索より広く・全域より狭い中間として 10.0（初期探索の 2 倍）を出発点に置いた。replay_runner.py の既定値（変更なし）。P6 の実スキャンで詰める"
+
+- name: resume_max_dist_m
+  unit: m
+  class: c
+  status: placeholder
+  value: TBD_MEASURE
+  blocking: true
+  blocking_from_stage: 5
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-transit-localize-options.md §3"
+  note: "確定姿勢からこの距離以内の前向き点が無ければ途中復帰しない上限（LOCALIZE に留まる）。環境依存で逆算できないため出発点 2.0 はコードの既定値（LOCALIZE_DEFAULTS）に残し、registry は実スキャン（P6）の測定まで placeholder。値は変えない"
+
 - name: factor
   unit: null
   class: b

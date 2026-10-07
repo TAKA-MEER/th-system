@@ -372,6 +372,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_sgb21_registry_wiring
     test/test_sgb21_registry_wiring.py
     TIMEOUT 120)
+  # W-01 P5: 全域ローカライズ 6 値の registry 化（registry ↔ ノード既定値 ↔
+  # 生成物の 3 点一致、placeholder の載らなさ、stage 5 の A8 armed、宣言型の
+  # 一致。ROS2 不要）
+  ament_add_pytest_test(test_w01p5_localize_registry
+    test/test_w01p5_localize_registry.py
+    TIMEOUT 120)
   # th_state/zones.py の LIMIT_STRICTNESS と registry.yaml の
   # speed_limit_strictness_rank が一致することの機械的な照合（N-15 レビュー。
   # th_state と th_params の両方を import してよい唯一のテストコード）
@@ -498,6 +504,18 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_planned_restart_node
     test/test_planned_restart_node.py
     TIMEOUT 180)
+  # 全域ローカライズの探索中の保留の Docker launch テスト（W-01 P5 §完了条件。
+  # 知らせ無しで検知・探索通知中は global_localizing で保留・上限超過で故障・
+  # 保留中は階段でも jump 無し・知らせ無しなら jump が出る対照）
+  ament_add_pytest_test(test_explore_hold_node
+    test/test_explore_hold_node.py
+    TIMEOUT 180)
+  # 全域ローカライズの数値が registry→生成 yaml→ノードへ届くことの Docker launch
+  # テスト（W-01 P5 §完了条件。生成 yaml を先に渡して起動し、dict 上書きしない。
+  # 6 値の読み戻し＋resume 上限が振る舞いに効くこと）
+  ament_add_pytest_test(test_replay_localize_registry_node
+    test/test_replay_localize_registry_node.py
+    TIMEOUT 300)
   # 人物検出 OFF ゲートの Docker launch テスト（brief-tracker-default-off §3.3。
   # /system/state.tracker_enabled=false 中は /person/targets・/person/status が
   # is_lost/disabled を強制し、evt.target_lost と select サービス呼び出しを抑止

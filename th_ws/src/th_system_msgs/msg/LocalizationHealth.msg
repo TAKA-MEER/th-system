@@ -13,8 +13,12 @@
 #                    jump_rotation_rad）を超えて動いた（補正が飛んだ）
 #   "restarting"     O-e3: slam_control が示す計画的な推定器の再起動中
 #                    （A・C・B′ を保留する。フォルトではない）
-#   "restart_timeout" O-e3: 再起動が上限（localization_restart_max_ms）を超過
-#                    （立て直しが終わらない本物の異常）
+#   "restart_timeout" O-e3／W-01 P5: 再起動・探索の計画窓が上限
+#                    （localization_restart_max_ms）を超過（立て直し・探索が
+#                    終わらない本物の異常）
+#   "global_localizing" W-01 P5: replay_runner が示す全域ローカライズの探索中
+#                    （初期／widen／global。A・C・B′ を保留する。フォルトでは
+#                    ない。探索は LOCALIZE で止まったまま行う上限付きの保留）
 #   "inactive"       自律走行しないモードのため監視外。safety_monitor には
 #                    ok=true として届く。transform_age_sec／node_present は生の値
 #   "low_confidence" ゆっくり間違っていく用（O-e2）の予約。出さない。
