@@ -557,6 +557,37 @@
   to_state: $initial
   effects: []
   spec_ref: SM-3.1.1-16
+# T-IDLE-01 / -02: W-4（保存確認）の答えを受ける行（1b-7 SG-B3）。
+# 教示の「終了」（C-08）や記録の連続性切れ（T-TEACH-06）は IDLE へ抜けたうえで
+# ask_save_if_unsaved／ask_save を出す。WebUI が W-4 を出して、試験員が選んだ
+# 答えを ui.save／ui.discard で返す。spec_ref は「終了」の SM-3.1.1-10
+# （未保存があれば保存可否を問う。その答えの受け口が無かった）。
+# ガードは付けない（記録が開いていなければ route_recorder が無視するだけ。
+# recorder が開閉の正本）。W-4 を開く条件（未保存があるときだけ）は WebUI 側で見る。
+- id: T-IDLE-01
+  layer: 10
+  mode: IDLE
+  state: NONE
+  event: ui.save
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: finalize_route
+    args: {}
+  spec_ref: SM-3.1.1-10
+- id: T-IDLE-02
+  layer: 10
+  mode: IDLE
+  state: NONE
+  event: ui.discard
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: discard_route
+    args: {}
+  spec_ref: SM-3.1.1-10
 - id: T-INIT-01
   layer: 10
   mode: INIT

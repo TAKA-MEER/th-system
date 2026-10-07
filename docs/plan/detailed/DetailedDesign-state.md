@@ -176,11 +176,12 @@ class StateCore:
 | `face_target` | — | `follow_runner` | 状態を見て自動（サービス不要） |
 | `open_window` / `close_window` | `{id: "W-1".."W-6"}` | WebUI | `/system/state` の表示で伝える |
 | `guide` | `{key}` | WebUI | 同上（W-3） |
-| `ask_save_if_unsaved` / `ask_save` | — | WebUI | W-4 |
+| `ask_save_if_unsaved` / `ask_save` | `{route_id?}`（`_teach_route` ラッチから補完。1b-7） | WebUI | W-4 |
 | `enable_main_menu` | — | WebUI | |
 | `show_resume` | — | WebUI | W-2 |
 | `restart_control_stack` | — | `connectivity_checker` | プロセス再起動 |
 | `start_record` / `resume_record` / `finalize_route` | `{route_id?}` | `route_recorder` | srv |
+| **`discard_route`** | — | **`route_recorder`** | 開いている記録を保存せず捨てる（`T-IDLE-02`。1b-7） |
 | `load_route` | `{route_id, reverse}` | `replay_runner` | srv |
 | `rotate_to_start_yaw` / `resume_path` | — | `replay_runner` | 状態で自動 |
 | `widen_search` / `global_localize` | — | `replay_runner` | srv |
@@ -485,6 +486,18 @@ class StateCore:
 **`-03M` / `-05M` を分けたのは、手動系ではスティックが走行操作そのものだからである**
 （§9-(j) ／ `Spec-open.md` F-38）。`ui.run` を `TEACH_MANUAL` に残すと、
 **押せるボタンが存在しない遷移**が表に入る。
+
+#### `IDLE`（W-4 の答え）
+
+| id | state | event | guard | to_state | effects |
+| --- | --- | --- | --- | --- | --- |
+| **`T-IDLE-01`** | `NONE` | **`ui.save`** | — | `=`（不変） | **`finalize_route`**（W-4「はい」。1b-7） |
+| **`T-IDLE-02`** | `NONE` | **`ui.discard`** | — | `=`（不変） | **`discard_route`**（W-4「いいえ」。1b-7） |
+
+「終了」（`C-08`）や記録途切れ（`T-TEACH-06`）は `IDLE` へ抜けてから問うので、
+答えは `IDLE` で受ける。ガードは付けない（記録が開いていなければ
+`route_recorder` が無視するだけ。開閉の正本は recorder）。`spec_ref` は
+`SM-3.1.1-10`（「未保存があれば保存可否を問う」の受け口）。
 
 #### `REPLAY`
 

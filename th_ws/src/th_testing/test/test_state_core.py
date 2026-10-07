@@ -50,6 +50,7 @@ _EVENT_UNIVERSE = [
     "ui.return_home", "ui.map_edit", "ui.check_item", "ui.calib_item",
     "ui.calib_next", "ui.reroute", "ui.localize_global", "ui.screen",
     "ui.carry_resume", "ui.estop.press", "ui.estop.release", "ui.enter_mode",
+    "ui.save", "ui.discard",
     "evt.link_ok", "evt.arrived", "evt.align_done", "evt.blocked", "evt.unblocked",
     "evt.target_lost", "evt.auto_selected", "evt.clear_ok", "evt.clear_timeout",
     "evt.localize_done", "evt.localize_low", "evt.leash_taut", "evt.leash_slack",
@@ -1014,3 +1015,32 @@ def test_saved_jog_does_not_leave_saved_via_common(state_core_bundle):
     assert d.accepted is False
     assert d.rule_id == "T-TEACH-05J"
     assert (d.to_mode, d.to_state) == ("TEACH_FOLLOW", "SAVED")
+
+
+# ============================================================
+# 1b-7（SG-B3）: W-4 の答えを IDLE で受ける（T-IDLE-01/-02）。
+# 「終了」（C-08）や記録途切れ（T-TEACH-06）は IDLE へ抜けてから問うので、
+# 答え（ui.save／ui.discard）は IDLE で受けて finalize_route／discard_route
+# を出す。IDLE に留まる（モードは変えない）。
+# ============================================================
+@pytest.mark.rule("T-IDLE-01")
+def test_idle_save_finalizes_route(state_core_bundle):
+    """IDLE での ui.save → finalize_route（W-4「はい」。IDLE のまま）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("IDLE", "NONE", "ui.save", _mk_ctx())
+    assert d.accepted is True, f'IDLE の ui.save が拒否された: {d.reject_reason_key}'
+    assert d.rule_id == "T-IDLE-01"
+    assert (d.to_mode, d.to_state) == ("IDLE", "NONE")
+    assert [e.name for e in d.effects] == ["finalize_route"]
+
+
+@pytest.mark.rule("T-IDLE-02")
+def test_idle_discard_discards_route(state_core_bundle):
+    """IDLE での ui.discard → discard_route（W-4「いいえ」。IDLE のまま）。
+    変異: effect を finalize_route に変えると赤くなる（破棄なのに保存する）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("IDLE", "NONE", "ui.discard", _mk_ctx())
+    assert d.accepted is True, f'IDLE の ui.discard が拒否された: {d.reject_reason_key}'
+    assert d.rule_id == "T-IDLE-02"
+    assert (d.to_mode, d.to_state) == ("IDLE", "NONE")
+    assert [e.name for e in d.effects] == ["discard_route"]

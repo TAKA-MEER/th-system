@@ -73,6 +73,11 @@ CALIB_MODE: str = "CALIB"
 # T-REPLAY-01/-11 受理時の route_id / reverse を保持する）。
 REPLAY_MODE: str = "REPLAY"
 
+# state_manager.py が TEACH の経路選択のラッチで使う参照点（同上。1b-7 SG-B3。
+# ask_save／ask_save_if_unsaved に経路 id を添えて WebUI の W-4 に出すため、
+# T-TEACH-01 受理時の route_id を保持する）。
+TEACH_MODES = frozenset({"TEACH_FOLLOW", "TEACH_MANUAL"})
+
 # DetailedDesign-state.md §4-1-1 末尾・§2 validate()⑥docstring — PAUSE を持たないモード。
 # PREP は 2026-09-10 に追加したが 2026-10-06 に除外（Spec-modes.md §3.0-② 追記。
 # RETURN（自動帰還）だけ PAUSE を持つ。地図作成＝常時ジョグの部分は prep_states で保つ）。
@@ -192,14 +197,15 @@ EFFECT_ARG_SPECS: Dict[str, Dict[str, str]] = {
     "open_window": {"id": _STR},
     "close_window": {"id": _STR},
     "guide": {"key": _STR},
-    "ask_save_if_unsaved": {},
-    "ask_save": {},
+    "ask_save_if_unsaved": {"route_id": _STR},
+    "ask_save": {"route_id": _STR},
     "enable_main_menu": {},
     "show_resume": {},
     "restart_control_stack": {},
     "start_record": {"route_id": _STR},
     "resume_record": {},
     "finalize_route": {"route_id": _STR},
+    "discard_route": {},
     "load_route": {"route_id": _STR, "reverse": _STR},
     "rotate_to_start_yaw": {},
     "resume_path": {},
