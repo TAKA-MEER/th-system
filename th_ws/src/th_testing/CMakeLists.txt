@@ -497,6 +497,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_dev_mode_safety_node
     test/test_dev_mode_safety_node.py
     TIMEOUT 180)
+  # 自動ブレーキの正本（1b-15 SG-B10）。state_manager を起動して、場外 OFF・場内 ON・
+  # 切替要求・入り直しで既定へ戻る・自律系で拒否・画面途絶で ON を縛る。rclpy 要＝ホスト除外。
+  ament_add_pytest_test(test_auto_brake_state_node
+    test/test_auto_brake_state_node.py
+    TIMEOUT 180)
   # PERSON_TRACKER_LOST のゲート・猶予・記録だけモードの Docker launch テスト
   # （DetailedDesign-safety.md §5.5 P-01＋P-02。
   # OFFでは出ない・ONで止めると出る（report_only=false）・

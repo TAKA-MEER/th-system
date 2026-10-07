@@ -44,6 +44,8 @@ from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, OPCHECK_MODE
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
 from th_state.tracker_policy import (TRACKER_OFF_DENIED_REASON,
                                       tracker_autostop, tracker_off_denied)
+from th_state.auto_brake import (AUTO_BRAKE_LOCKED_REASON, effective_auto_brake,
+                                  override_allowed)
 from th_state.zones import (ScreenInput, active_screens, combine_speed_limits,
                              derive_limits, mode_speed_limit)
 
@@ -179,8 +181,11 @@ class StateManager(Node):
             "working": False,
             "map_update": False,
             "tracker_enabled": False,
-            "auto_brake": True,   # 6.2 フェイルセーフ既定
+            "auto_brake": True,   # 6.2 フェイルセーフ既定。実効値は _refresh_auto_brake() が決める
         }
+        # 1b-15 SG-B10: 試験員の自動ブレーキ切替要求（None = 要求なし＝ゾーン既定に従う）。
+        # 正本は機体側（ここ）。モードが変わるたびに None へ戻して既定を適用し直す。
+        self._auto_brake_override = None
         self._fault_active = False
         self._fault_severity = ""
         self._fault_type = ""
@@ -341,7 +346,24 @@ class StateManager(Node):
         window_s = self.get_parameter('ui_active_window_s').value
         return derive_limits(self._screens, self._now_ms(), window_s)
 
+    def _refresh_auto_brake(self, zone: str) -> bool:
+        """1b-15 SG-B10: 自動ブレーキの実効値を決めて _flags に反映する。
+
+        切り替えを許さない状況（自律系の走行・待機など）に入ったら、古い要求は捨てる
+        （次にジョグへ入ったとき OFF が勝手に復活しない）。ゾーン NA（画面途絶を含む）は
+        要求があっても ON（auto_brake.effective_auto_brake）。"""
+        attrs = self.core.attributes(self.mode)
+        if (self._auto_brake_override is not None
+                and not override_allowed(attrs, self._jog_active)):
+            self._auto_brake_override = None
+        value = effective_auto_brake(attrs, zone, self._jog_active,
+                                     self._auto_brake_override)
+        self._flags["auto_brake"] = value
+        return value
+
     def _build_context(self, event: str, arg: dict) -> Context:
+        zone = self._current_limits().zone
+        self._refresh_auto_brake(zone)
         flags = dict(self._flags)
         flags["jog_active"] = self._jog_active
         # WP-MAINT-01: check_item は OPCHECK で現在実行中の項目名（自分がラッチする。
@@ -354,7 +376,7 @@ class StateManager(Node):
             prev_state=self.prev_state,
             prev_sub=self.prev_sub,
             flags=flags,
-            zone=self._current_limits().zone,
+            zone=zone,
             candidate_count=self._candidate_count,
             target_selected=self._target_selected,
             target_confident=self._target_confident,
@@ -428,6 +450,10 @@ class StateManager(Node):
         old_mode = self.mode
         self.mode = decision.to_mode
         self.state = decision.to_state
+
+        # 1b-15 SG-B10: モードに入ったら自動ブレーキは既定（ゾーン既定）に戻す。
+        if self.mode != old_mode:
+            self._auto_brake_override = None
 
         # WP-MAINT-01: check_item のラッチ。T-OPC-01（ui.check_item 受理）で開始した
         # 項目名を持ち越し、OPCHECK を抜けるか LIST に戻ったら空に戻す
@@ -686,6 +712,19 @@ class StateManager(Node):
             res.accepted = False
             res.reject_reason_key = TRACKER_OFF_DENIED_REASON
             return res
+        if req.flag == "auto_brake":
+            # 1b-15 SG-B10: 切替は手動系（手動走行・教示（手動））とジョグ中だけ。
+            # 自律系は無効化できない（Spec-safety.md §2.1）。要求は「試験員の選択」として
+            # 保持し、実効値は _refresh_auto_brake() が決める（ゾーン NA は ON のまま）。
+            if not override_allowed(self.core.attributes(self.mode), self._jog_active):
+                res.accepted = False
+                res.reject_reason_key = AUTO_BRAKE_LOCKED_REASON
+                return res
+            self._auto_brake_override = bool(req.value)
+            res.accepted = True
+            res.reject_reason_key = ""
+            self._publish_state()
+            return res
         self._flags[req.flag] = bool(req.value)
         res.accepted = True
         res.reject_reason_key = ""
@@ -758,6 +797,7 @@ class StateManager(Node):
         msg.prev_state = self.prev_state
         limits = self._current_limits()
         msg.zone = limits.zone
+        auto_brake = self._refresh_auto_brake(limits.zone)
         # N-15: speed_limit は「画面由来」単体ではなく、画面由来とモード由来
         # （attributes.yaml。AT_PANEL × jog_active の v_jog_panel 特例を含む）の
         # 厳しい方（DetailedDesign-safety.md §3.3.1）。
@@ -768,7 +808,7 @@ class StateManager(Node):
         msg.estop_hw = self._hw_estop
         msg.estop_from_ui = self._estop_from_ui
         msg.tracker_enabled = self._flags["tracker_enabled"]
-        msg.auto_brake = self._flags["auto_brake"]
+        msg.auto_brake = auto_brake
         msg.working = self._flags["working"]
         msg.map_update = self._flags["map_update"]
         msg.unsaved = list(self._unsaved)
