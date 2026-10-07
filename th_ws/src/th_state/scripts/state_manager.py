@@ -12,9 +12,10 @@ DetailedDesign-state.md §2 のとおり、遷移の判断は `state_core.StateC
   6. `/system/state` を publish する
 
 ★ N-1（最重要）: このファイルにモード名の文字列比較を **1 つも書かない**。
-  書けば完了条件①（AST 検査）が落ちる。起動時モードは `state_core.BOOT_MODE` を
-  import して使う（リテラルをここに書かない）。
+   書けば完了条件①（AST 検査）が落ちる。起動時モードは `state_core.BOOT_MODE` を
+   import して使う（リテラルをここに書かない）。
 """
+from dataclasses import replace as _dc_replace
 import json
 import os
 
@@ -38,7 +39,7 @@ from th_system_msgs.srv import SetFlag, UiTrigger
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
 from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, OPCHECK_MODE, Context,
-                                   REPLAY_MODE, StateCore, is_driving)
+                                   REPLAY_MODE, StateCore, TEACH_MODES, is_driving)
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
 from th_state.tracker_policy import (TRACKER_OFF_DENIED_REASON,
@@ -67,6 +68,7 @@ _EFFECT_DESTINATIONS = {
     "start_record": "route_recorder",
     "resume_record": "route_recorder",
     "finalize_route": "route_recorder",
+    "discard_route": "route_recorder",
     "load_route": "replay_runner",
     "rotate_to_start_yaw": "replay_runner",
     "resume_path": "replay_runner",
@@ -219,6 +221,9 @@ class StateManager(Node):
         # 補完する。TEACH_* の ui.route_select は対象外＝上書きしない。
         # モード名リテラルは書かない（N-1）。state_core.REPLAY_MODE を参照する。
         self._replay_route = {}
+        # 1b-7 SG-B3: TEACH で最後に選んだ経路（T-TEACH-01 の受理でラッチ。
+        # ask_save／ask_save_if_unsaved に route_id として補完する）。
+        self._teach_route = {}
 
         now = self._now_ms()
         self._boot_ms = now
@@ -453,6 +458,18 @@ class StateManager(Node):
             self._replay_route = {"id": (arg or {}).get("id"),
                                   "reverse": (arg or {}).get("reverse")}
 
+        # 1b-7 SG-B3: TEACH の経路選択のラッチ（_replay_route と同じ作法）。
+        # T-TEACH-01（ui.route_select 受理）で id を持ち越す。教示系モードを
+        # 抜けても捨てない（ask_save／ask_save_if_unsaved に添えて WebUI の
+        # W-4 に「どの経路か」を出すため）。次に教示で選び直せば上書きされ、
+        # finalize_route／discard_route の受理で空に戻す（記録が解決済み）。
+        # モード名リテラルは書かない（N-1）。state_core.TEACH_MODES を参照する。
+        if event == "ui.route_select" and decision.accepted and self.mode in TEACH_MODES:
+            self._teach_route = {"id": (arg or {}).get("id")}
+        if decision.accepted and any(
+                e.name in ("finalize_route", "discard_route") for e in decision.effects):
+            self._teach_route = {}
+
         # brief-tracker-default-off §3.1: 「動かさない」モードへ遷移したら
         # tracker_enabled を自動で false に落とす（ESTOP / CARRY は対象外。
         # 判定は tracker_policy.py に集約。N-1 のためモード名はここに書かない）。
@@ -472,6 +489,21 @@ class StateManager(Node):
             self._estop_from_ui = True
         elif decision.accepted and event == "fault.critical":
             self._estop_from_ui = False
+
+        # 1b-7 SG-B3: ask_save／ask_save_if_unsaved に教示の経路 id を添える
+        # （C-09c-localize の route 補完と同じ作法。送り手の値は優先しない——
+        # この 2 effect の args は遷移表では空で、ここで決めるのが唯一の出どころ）。
+        # W-4 に「どの経路か」を出すため。latch が空（教示を選んでいない）なら
+        # 何も付けない。
+        if decision.accepted and self._teach_route.get("id") and any(
+                e.name in ("ask_save", "ask_save_if_unsaved") for e in decision.effects):
+            decision = _dc_replace(
+                decision,
+                effects=tuple(
+                    _dc_replace(e, args={**(e.args or {}),
+                                         "route_id": self._teach_route["id"]})
+                    if e.name in ("ask_save", "ask_save_if_unsaved") else e
+                    for e in decision.effects))
 
         return decision
 

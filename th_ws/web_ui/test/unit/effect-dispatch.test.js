@@ -3,7 +3,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  dispatchEffect, shouldGuideClose, resetEffectWarningsForTest, stampToMs,
+  dispatchEffect, shouldGuideClose, shouldOpenSaveAsk, isUnsavedRecording,
+  resetEffectWarningsForTest, stampToMs,
 } from '../../src/shell/effectDispatch.js'
 
 function guideMsg(key, dest = 'WebUI', stampSec = null) {
@@ -50,7 +51,7 @@ test('dest が WebUI+jog_gate のように + 結合でも WebUI を含めば見�
   )
 })
 
-test('今回は実装しない effect は何もしない (open_window/close_window/show_resume/ask_save 系/offer 系)', () => {
+test('今回は実装しない effect は何もしない (open_window/close_window/show_resume/enable_main_menu/offer 系)', () => {
   resetEffectWarningsForTest()
   const warnings = []
   const orig = console.warn
@@ -58,7 +59,7 @@ test('今回は実装しない effect は何もしない (open_window/close_wind
   try {
     for (const name of [
       'open_window', 'close_window', 'show_resume',
-      'ask_save', 'ask_save_if_unsaved', 'enable_main_menu',
+      'enable_main_menu',
       'offer_calib', 'offer_opcheck',
     ]) {
       assert.deepEqual(
@@ -154,4 +155,59 @@ test('自動クローズ: estop_held_at_boot は押されているのを一度�
   assert.equal(shouldGuideClose(seen, { mode: 'INIT', sinceMs: 50000, estopHw: true }), false)
   // 離されたら閉じる
   assert.equal(shouldGuideClose(seen, { mode: 'INIT', sinceMs: 50000, estopHw: false }), true)
+})
+
+// 1b-7 (SG-B3): ask_save／ask_save_if_unsaved の振り分けと W-4 を開く条件。
+// 変異: ask を捨てる／route_id を落とす／未保存判定を外すと赤くなること。
+function askMsg(name, routeId = null) {
+  const args = routeId ? { route_id: routeId } : {}
+  return { name, dest: 'WebUI', args_json: JSON.stringify(args) }
+}
+
+test('ask_save／ask_save_if_unsaved は route_id 付きで振り分けられる', () => {
+  resetEffectWarningsForTest()
+  assert.deepEqual(
+    dispatchEffect(askMsg('ask_save', 'demo-route')),
+    { kind: 'ask_save', routeId: 'demo-route', stampMs: null },
+  )
+  assert.deepEqual(
+    dispatchEffect(askMsg('ask_save_if_unsaved')),
+    { kind: 'ask_save_if_unsaved', routeId: null, stampMs: null },
+  )
+  // dest が WebUI でなければ見ない。
+  assert.deepEqual(
+    dispatchEffect({ name: 'ask_save', dest: 'route_recorder', args_json: '{}' }),
+    { kind: 'ignore' },
+  )
+})
+
+test('未保存の教示記録があるときだけ W-4 を開く', () => {
+  const unsaved = { points: 12, saved: false }
+  assert.equal(
+    shouldOpenSaveAsk({ kind: 'ask_save', routeId: null }, unsaved), true)
+  assert.equal(
+    shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved', routeId: null }, unsaved), true)
+  // 保存済み・空・未到来では開かない（ゴミの経路を作らない・無いものを問わない）。
+  assert.equal(
+    shouldOpenSaveAsk({ kind: 'ask_save' }, { points: 12, saved: true }), false)
+  assert.equal(
+    shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' }, { points: 0, saved: false }), false)
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' }, null), false)
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save' }, null), false)
+  // 再生側の status（current.id あり）は記録の未保存とみなさない。
+  assert.equal(
+    shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' },
+      { points: 30, saved: false, current: { id: 'r1' } }), false)
+  // ask 以外では開かない。
+  assert.equal(shouldOpenSaveAsk({ kind: 'guide' }, unsaved), false)
+  assert.equal(shouldOpenSaveAsk({ kind: 'ignore' }, unsaved), false)
+  assert.equal(shouldOpenSaveAsk(null, unsaved), false)
+})
+
+test('isUnsavedRecording: saved=true・current.id あり・0 点は未保存ではない', () => {
+  assert.equal(isUnsavedRecording({ points: 5, saved: false }), true)
+  assert.equal(isUnsavedRecording({ points: 5, saved: true }), false)
+  assert.equal(isUnsavedRecording({ points: 0, saved: false }), false)
+  assert.equal(isUnsavedRecording(null), false)
+  assert.equal(isUnsavedRecording(undefined), false)
 })

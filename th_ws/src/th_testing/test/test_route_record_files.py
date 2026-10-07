@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.join(
 from route_record_core import (
     autosave_path, previous_path, finalized_path,
     save_route_atomic, finalize_route_file, list_finalized_route_files,
-    should_autofinalize,
+    next_generation,
 )
 
 
@@ -105,6 +105,49 @@ def test_finalize_route_file_keeps_only_latest_and_one_previous(tmp_path):
     assert sorted(os.listdir(routes_dir)) == ['r.json', 'r.prev']
     assert json.load(open(finalized_path(routes_dir, 'r'), encoding='utf-8')) == {'g': 3}
     assert json.load(open(previous_path(routes_dir, 'r'), encoding='utf-8')) == {'g': 2}
+
+
+# ============================================================================
+# 1b-7 SG-B12: 同名の録り直しは世代を進める（旧版は .prev へ）。
+# finalize() の generation 既定 1 のままでは、録り直しても generation が 1 の
+# まま（新版・旧版の区別が付かない）。next_generation（既存 .json＋1）を
+# _finalize_and_close が使って刻む。
+# ============================================================================
+def test_next_generation_starts_at_one_without_existing(tmp_path):
+    routes_dir = _mkroutes(tmp_path)
+    assert next_generation(routes_dir, 'r') == 1
+
+
+def test_next_generation_increments_existing(tmp_path):
+    routes_dir = _mkroutes(tmp_path)
+    finalize_route_file(routes_dir, 'r', {'id': 'r', 'generation': 1})
+    assert next_generation(routes_dir, 'r') == 2
+    finalize_route_file(routes_dir, 'r', {'id': 'r', 'generation': 2})
+    assert next_generation(routes_dir, 'r') == 3
+
+
+def test_next_generation_falls_back_to_one_on_unreadable(tmp_path):
+    routes_dir = _mkroutes(tmp_path)
+    dest = finalized_path(routes_dir, 'r')
+    with open(dest, 'w', encoding='utf-8') as f:
+        f.write('壊れた json {')
+    assert next_generation(routes_dir, 'r') == 1
+    with open(dest, 'w', encoding='utf-8') as f:
+        json.dump({'id': 'r', 'generation': 'x'}, f)
+    assert next_generation(routes_dir, 'r') == 1
+
+
+def test_finalize_and_close_stamps_next_generation():
+    """_finalize_and_close が next_generation で世代を刻むこと。
+    変異: generation 引数を消すと赤くなる（録り直しても generation=1 のまま）。
+    """
+    tree = _tree(ROUTE_RECORDER)
+    node = _method_def(tree, '_finalize_and_close')
+    assert node is not None, '_finalize_and_close が無い'
+    calls = [n for n in ast.walk(ast.Module(body=node.body, type_ignores=[]))
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+             and n.func.id == 'next_generation']
+    assert calls, '_finalize_and_close が next_generation を使っていない'
 
 
 def test_finalize_route_file_removes_leftover_autosave(tmp_path):
@@ -364,53 +407,18 @@ def test_finalize_then_read_back_round_trip(tmp_path):
 
 
 # ============================================================================
-# WS-9K-D: 重大フォルト（C-06a）で教示モードを弾き飛ばされると記録が孤児になる。
+# 1b-7 SG-B1: モードを出ただけでは保存も閉鎖もしない。
 #
-# transitions.yaml の C-06a（`mode=* state=* --fault.critical--> ESTOP/NONE`）は、
-# 重大フォルトが 1 回出ただけで TEACH_MANUAL から即 ESTOP へ飛ぶ。ESTOP からの
-# 復帰は C-09b（IDLE）だけで、元の TEACH_MANUAL へは戻れない。つまり FSM はもう
-# finalize_route を発行できず、route_recorder は self._recorder を持ったまま点列と
-# .wip を保持し続ける → 記録は永久に保存できない（2026-09-03 の校舎 1 周 185 m も
-# .wip だけ残って .json が無かった。SLAM 有効で CPU 負荷が増え LIMITER_DEAD
-# (CRITICAL) が出るようになったのが引き金）。
+# WS-9K-D（旧対策）は「記録中に教示系モードを出たらその場で finalize して閉じる」
+# だったが、これが SG-B1 の正体である: 非常停止・手押しから戻っても記録は再開
+# せず（resume_record は閉じた recorder に無視される）、それでも画面は「記録中」を
+# 出して後半が無言で失われた。
 #
-# 対策: 記録中にモードが教示系（TEACH_MANUAL / TEACH_FOLLOW）から出たことを
-# 検出したら、その場で finalize_route_file して記録を閉じる（self._recorder=None）。
-# 判定は純関数 should_autofinalize(prev_mode, new_mode, recording) としてコアに置く。
+# 新対策: 記録は明示の finalize_route（保存）か discard_route（破棄）でのみ閉じる。
+# モードを出ても recorder は開いたまま（_on_state は見るだけ）なので、戻って
+# PAUSE → REC へ進めば続きから記録する（Spec-modes.md §6「記録は続きから」）。
+# 非常停止中に落ちても .wip 自動保存（10 秒）が保険になる。
 # ============================================================================
-
-
-# ── 判定 (should_autofinalize) の純関数テスト ──────────────────────────────
-
-def test_autofinalize_teach_manual_to_estop_while_recording():
-    assert should_autofinalize('TEACH_MANUAL', 'ESTOP', True) is True
-
-
-def test_autofinalize_teach_manual_to_idle_while_recording():
-    assert should_autofinalize('TEACH_MANUAL', 'IDLE', True) is True
-
-
-def test_autofinalize_same_teaching_mode_while_recording():
-    """TEACH_MANUAL → TEACH_MANUAL は遷移でないので保存しない。"""
-    assert should_autofinalize('TEACH_MANUAL', 'TEACH_MANUAL', True) is False
-
-
-def test_autofinalize_teach_follow_to_estop_while_recording():
-    assert should_autofinalize('TEACH_FOLLOW', 'ESTOP', True) is True
-
-
-def test_autofinalize_not_recording_is_always_false():
-    """記録していなければモードが何でも保存しない（既知の穴）。"""
-    assert should_autofinalize('TEACH_MANUAL', 'ESTOP', False) is False
-    assert should_autofinalize('TEACH_MANUAL', 'IDLE', False) is False
-
-
-def test_autofinalize_entering_teaching_mode_is_false():
-    """IDLE → TEACH_MANUAL は（記録前提でも）「教示から出た」ではない。"""
-    assert should_autofinalize('IDLE', 'TEACH_MANUAL', True) is False
-
-
-# ── ast: route_recorder.py がモード逸脱で finalize する・finalize が記録を閉じる ──
 
 
 def _method_def(tree, name):
@@ -431,29 +439,36 @@ def _method_calls(tree, method, callee):
         for n in ast.walk(ast.Module(body=node.body, type_ignores=[])))
 
 
-def test_route_recorder_mode_lost_triggers_autofinalize():
-    """記録中モード逸脱の自動保存処理が、終端的に finalize_route_file を呼ぶ。
+def test_route_recorder_does_not_autofinalize_on_mode_leave():
+    """モード逸脱の自動保存が無いこと（旧 WS-9K-D の撤回）。
+    _on_state はモード・状態の記録だけし、_finalize_and_close を呼ばない。
+    _autofinalize_mode_left は存在しない。
 
-    経路: _on_state → _autofinalize_mode_left → _finalize_and_close →
-    finalize_route_file。モード遷移を見る関数（_on_state）が存在し、その先で
-    finalize_route_file が呼ばれることを固定する。
-
-    変異チェック D1: _finalize_and_close（または _autofinalize_mode_left）が
-    finalize_route_file を呼ばなくなると赤くなる。
+    変異チェック: _on_state に自動保存を戻すと赤くなる。
     """
     tree = _tree(ROUTE_RECORDER)
     assert _method_def(tree, '_on_state') is not None, '_on_state が無い'
-    # _on_state がモード逸脱の自動保存へ進む（should_autofinalize を使う）
-    assert _method_calls(tree, '_autofinalize_mode_left', '_finalize_and_close') is True, (
-        '_autofinalize_mode_left が _finalize_and_close を呼ばない')
-    # _finalize_and_close が finalize_route_file（モジュール関数）を呼ぶ
-    fclose = _method_def(tree, '_finalize_and_close')
-    assert fclose is not None, '_finalize_and_close が無い'
-    calls_finalize_file = any(
-        isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-        and n.func.id == 'finalize_route_file'
-        for n in ast.walk(ast.Module(body=fclose.body, type_ignores=[])))
-    assert calls_finalize_file, '_finalize_and_close が finalize_route_file を呼ばない'
+    assert _method_def(tree, '_autofinalize_mode_left') is None, (
+        '_autofinalize_mode_left が残っている（モード逸脱で自動保存する旧挙動）')
+    assert _method_calls(tree, '_on_state', '_finalize_and_close') is False, (
+        '_on_state が _finalize_and_close を呼んでいる（モード逸脱で自動保存する旧挙動）')
+
+
+def test_route_recorder_mode_leave_keeps_recorder_open():
+    """_on_state が self._recorder に触らないこと（開いたままにする）。
+    代入（None を含む）があれば、戻っても記録が再開しない旧挙動に戻っている。
+    """
+    tree = _tree(ROUTE_RECORDER)
+    node = _method_def(tree, '_on_state')
+    assert node is not None, '_on_state が無い'
+    assigns = [
+        n for n in ast.walk(ast.Module(body=node.body, type_ignores=[]))
+        if isinstance(n, ast.Assign)
+        and any(isinstance(t, ast.Attribute)
+                and isinstance(t.value, ast.Name) and t.value.id == 'self'
+                and t.attr == '_recorder' for t in n.targets)
+    ]
+    assert not assigns, '_on_state が self._recorder に触っている（記録が閉じる旧挙動）'
 
 
 def test_route_recorder_closes_recording_on_finalize():
@@ -475,11 +490,61 @@ def test_route_recorder_closes_recording_on_finalize():
         and isinstance(n.value, ast.Constant) and n.value.value is None
     ]
     assert len(assigns_none) >= 1, '_close_recording が self._recorder = None にしない'
-    # 通常の保存分岐（finalize_route）とモード逸脱の両方がこの _close_recording を
-    # 通る。finalize_route 分岐と _finalize_and_close が閉じる経路を持つこと。
+    # finalize_route 分岐と _finalize_and_close が閉じる経路を持つこと。
     assert _method_calls(tree, '_finalize_and_close', '_close_recording') is True, (
         '_finalize_and_close が _close_recording を呼ばない')
-    assert _method_calls(tree, '_autofinalize_mode_left', '_finalize_and_close') is True
+    assert _effect_branch_calls_method(
+        tree, 'finalize_route', '_finalize_and_close') is True, (
+        'finalize_route 分岐が _finalize_and_close を呼ばない')
+
+
+def test_discard_route_branch_discards_without_saving():
+    """discard_route（W-4「いいえ」）分岐が _discard_and_close を呼ぶこと。
+    finalize_route_file を呼ばない（同名の既存 .json・.prev に触れない）。
+
+    変異チェック: discard 側に finalize を混ぜると赤くなる。
+    """
+    tree = _tree(ROUTE_RECORDER)
+    assert _effect_branch_calls_method(
+        tree, 'discard_route', '_discard_and_close') is True, (
+        'discard_route 分岐が _discard_and_close を呼ばない')
+    assert _effect_branch_calls_method(
+        tree, 'discard_route', '_finalize_and_close') is False, (
+        'discard_route 分岐が _finalize_and_close を呼んでいる（破棄なのに保存する）')
+
+
+def test_discard_and_close_removes_wip_and_closes():
+    """_discard_and_close が .wip を消し、記録を閉じ、状態を publish し直すこと。
+    .wip を残すと、捨てた記録の残骸が起動時警告に出続け、復旧手順と混ざる。
+    publish が無いと、IDLE にいる WebUI の W-4 が破棄済みを見られない。
+    """
+    tree = _tree(ROUTE_RECORDER)
+    node = _method_def(tree, '_discard_and_close')
+    assert node is not None, '_discard_and_close が無い'
+    assert _method_calls(tree, '_discard_and_close', '_close_recording') is True, (
+        '_discard_and_close が _close_recording を呼ばない')
+    assert _method_calls(
+        tree, '_discard_and_close', '_publish_status_snapshot') is True, (
+        '_discard_and_close が _publish_status_snapshot を呼ばない')
+    # .wip の削除（autosave_path と os.remove の両方を使う）。
+    body = ast.Module(body=node.body, type_ignores=[])
+    assert any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+               and n.func.id == 'autosave_path' for n in ast.walk(body)), (
+        '_discard_and_close が autosave_path を使っていない')
+    assert any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+               and n.func.attr == 'remove' for n in ast.walk(body)), (
+        '_discard_and_close が .wip を消していない')
+
+
+def test_finalize_and_close_publishes_snapshot():
+    """_finalize_and_close が閉じた直後に状態を publish し直すこと。
+    保存直後は IDLE 等にいることがあり、_status_timer のモードゲートを
+    通らない。publish が無いと WebUI の W-4 が saved=true を見られない。
+    """
+    tree = _tree(ROUTE_RECORDER)
+    assert _method_calls(
+        tree, '_finalize_and_close', '_publish_status_snapshot') is True, (
+        '_finalize_and_close が _publish_status_snapshot を呼ばない')
 
 
 # ============================================================================
@@ -561,10 +626,12 @@ def test_route_recorder_sets_saved_true_only_on_successful_save():
 
 
 def test_route_recorder_status_publishes_saved():
-    """/route/status publish が msg.saved に _saved を載せる。"""
+    """/route/status publish が msg.saved に _saved を載せる。
+    msg の組み立ては _build_status_msg（_status_timer と _publish_status_snapshot
+    の共有）にあり、_status_timer はそれを使う。"""
     tree = _tree(ROUTE_RECORDER)
-    node = _method_def(tree, '_status_timer')
-    assert node is not None, '_status_timer が無い'
+    node = _method_def(tree, '_build_status_msg')
+    assert node is not None, '_build_status_msg が無い'
     assigns = [
         n for n in ast.walk(ast.Module(body=node.body, type_ignores=[]))
         if isinstance(n, ast.Assign)
@@ -573,7 +640,9 @@ def test_route_recorder_status_publishes_saved():
         and isinstance(n.targets[0].value, ast.Name)
         and n.targets[0].value.id == 'msg'
     ]
-    assert assigns, '_status_timer が msg.saved を set していない'
+    assert assigns, '_build_status_msg が msg.saved を set していない'
+    assert _method_calls(tree, '_status_timer', '_build_status_msg') is True, (
+        '_status_timer が _build_status_msg を使っていない')
 
 
 # ── E2-補: self._saved = True が finalize_route_file の呼び出しより後にあること ──

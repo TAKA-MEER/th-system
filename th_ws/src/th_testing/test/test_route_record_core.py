@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(
 from route_record_core import (
     RouteRecordParams, RouteData, RouteRecorderCore,
     polyline_length, route_to_dict, route_from_dict, normalize_angle,
-    decimate_polyline,
+    decimate_polyline, pose_gap_broken, pose_jump_broken,
 )
 
 
@@ -178,4 +178,33 @@ def test_decimate_does_not_mutate_input():
     snapshot = list(pts)
     decimate_polyline(pts, 400)
     assert pts == snapshot
+
+
+# ============================================================================
+# 1b-7 SG-B18: 記録の連続性切れの純判定（SM-3.1.2-019）
+# ============================================================================
+def test_pose_gap_broken_after_timeout():
+    assert pose_gap_broken(1000, 1000 + 3000, 3000) is False  # 境界は切れない
+    assert pose_gap_broken(1000, 1000 + 3001, 3000) is True
+    assert pose_gap_broken(1000, 1000 + 100, 3000) is False
+
+
+def test_pose_gap_broken_without_first_pose_is_false():
+    """まだ姿勢を一度も得ていない（記録開始直後の未受信）は切れていない。"""
+    assert pose_gap_broken(None, 5000, 3000) is False
+
+
+def test_pose_jump_broken_on_teleport():
+    assert pose_jump_broken((0.0, 0.0, 0.0), (0.4, 0.0, 0.0), 0.5) is False
+    assert pose_jump_broken((0.0, 0.0, 0.0), (0.5, 0.0, 0.0), 0.5) is False  # 境界は切れない
+    assert pose_jump_broken((0.0, 0.0, 0.0), (0.51, 0.0, 0.0), 0.5) is True
+    # 斜めの飛びも平面距離で見る。
+    assert pose_jump_broken((0.0, 0.0, 0.0), (0.4, 0.4, 0.0), 0.5) is True
+
+
+def test_pose_jump_ignores_yaw_and_missing_baseline():
+    """その場旋回は切らない。初回・再同期直後（基準無し）は切らない。"""
+    assert pose_jump_broken((0.0, 0.0, 0.0), (0.0, 0.0, 3.0), 0.5) is False
+    assert pose_jump_broken(None, (9.0, 9.0, 0.0), 0.5) is False
+    assert pose_jump_broken((0.0, 0.0, 0.0), None, 0.5) is False
 

@@ -41,6 +41,7 @@ from th_state.localization_health_core import (
     REASON_JUMP,
     Params,
     TransformSample,
+    check_explore_hold,
     check_planned_restart,
     detect_jump,
     evaluate,
@@ -92,6 +93,12 @@ class LocalizationHealthNode(Node):
         self._restart_last = None
         self._restart_true_ms = None
         self._restart_false_ms = None
+        # W-01 P5: /replay_runner/localizing の受信状態。探索の最中だけ true。
+        # 上限（localization_restart_max_ms を流用）で救うため、True edge の
+        # 時刻だけを自分の時計で記録する（探索後の猶予は要らない。成立時は
+        # estimator 側の保留へ引き継ぎ、不成立時は TF に変化が無いため）。
+        self._explore_last = None
+        self._explore_true_ms = None
         # WP-SAFE-05修正: /system/state の最新値。まだ一度も受け取っていない間は
         # None（＝監視しない。起動中は INIT なので同じ）。
         self._mode = None
@@ -122,6 +129,14 @@ class LocalizationHealthNode(Node):
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(
             Bool, '/slam_control/estimator_restarting', self._on_restarting,
+            restart_qos)
+
+        # W-01 P5: replay_runner が示す全域ローカライズの探索中の通知を受ける。
+        # 発行側（replay_runner.py）の QoS（RELIABLE + TRANSIENT_LOCAL + depth 1）
+        # に合わせる。後から起動しても直近値が届く（探索の最中にこちらが起動
+        # した場合に要る）。
+        self.create_subscription(
+            Bool, '/replay_runner/localizing', self._on_exploring,
             restart_qos)
 
         # WP-SAFE-05修正: 使っていない間は監視しない（Spec-safety.md §3.5.0）。
@@ -182,6 +197,14 @@ class LocalizationHealthNode(Node):
             self._restart_false_ms = now_ms   # True→False
         self._restart_last = value
 
+    def _on_exploring(self, msg: Bool) -> None:
+        """W-01 P5: 探索中通知の True edge を自分の時計で記録する。"""
+        now_ms = self._now_ms()
+        value = bool(msg.data)
+        if value and self._explore_last is not True:
+            self._explore_true_ms = now_ms    # False→True（初回 True 含む）
+        self._explore_last = value
+
     def _on_system_state(self, msg: SystemState) -> None:
         """WP-SAFE-05修正: /system/state の mode/state を保持するだけ。
         判定への反映は _on_timer が行う（次の周期で効く）。"""
@@ -219,8 +242,25 @@ class LocalizationHealthNode(Node):
             self.get_parameter('localization_restart_max_ms').value,
             self.get_parameter('localization_post_restart_grace_ms').value,
         )
-        if restart is not None:
-            actual_ok, actual_reason = restart
+        # W-01 P5: 探索中の保留判定。上限（localization_restart_max_ms を流用。
+        # options §6 が許す選択肢）を超えた ng は、再起動の上限超過と同じく
+        # 保留より優先する（どちらも理由名は restart_timeout＝「計画した窓」
+        # の超過の意味）。ok 同士が重なったときは再起動側を出す（従来の表示）。
+        explore = check_explore_hold(
+            now_ms, self._explore_last, self._explore_true_ms,
+            self.get_parameter('localization_restart_max_ms').value,
+        )
+        hold = None
+        if restart is not None and not restart[0]:
+            hold = restart
+        elif explore is not None and not explore[0]:
+            hold = explore
+        elif restart is not None:
+            hold = restart
+        else:
+            hold = explore  # None のままなら通常評価へ
+        if hold is not None:
+            actual_ok, actual_reason = hold
             self._prev_sample = None
         else:
             # 優先順位は node_down ＞ stale ＞ jump（core の docstring 参照）。

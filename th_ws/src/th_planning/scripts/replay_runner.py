@@ -169,9 +169,13 @@ class ReplayRunner(Node):
         # map フレームなら、このセッション ID と一致したときだけ再生を進める。
         self.declare_parameter('map_session_id', '')
         self.declare_parameter('localize_wait_s', 5.0)
-        # W-01 P2: 全域ローカライズの確度閾値。既定値は LOCALIZE_DEFAULTS
-        # （P0 の測定記録が根拠）。registry への登録は P5 なのでやらない。
-        # DetailedDesign-names.md §7 に新規名として予約済み。
+        # W-01 P5: 全域ローカライズの確度閾値・探索窓・途中復帰上限。
+        # いずれも registry.yaml 駆動（生成 yaml が上書きし、そちらが正になる）。
+        # 既定値は LOCALIZE_DEFAULTS（P0 の測定記録・P2 の出発点が根拠）。
+        # 確度 3 件と resume は registry が placeholder の間は生成物に載らず、
+        # この既定値が効く（値は変えない）。rclpy は INTEGER↔DOUBLE を変換
+        # しないため、registry の値と同じ DOUBLE（float）で宣言する
+        # （CLAUDE.md「環境の癖」参照）。
         self.declare_parameter(
             'localize_match_low', float(LOCALIZE_DEFAULTS['localize_match_low']))
         self.declare_parameter(
@@ -179,10 +183,14 @@ class ReplayRunner(Node):
         self.declare_parameter(
             'localize_margin_min', float(LOCALIZE_DEFAULTS['localize_margin_min']))
         # W-01 P4: 確定姿勢からこの距離以内の前向き点が無ければ途中復帰しない
-        # （LOCALIZE に留まる）。既定値は LOCALIZE_DEFAULTS（P5 で registry へ）。
-        # DetailedDesign-names.md §7 に予約名として記載。
+        # （LOCALIZE に留まる）。P5 で registry へ（placeholder の間は既定値）。
         self.declare_parameter(
             'resume_max_dist_m', float(LOCALIZE_DEFAULTS['resume_max_dist_m']))
+        # W-01 P5: 探索窓の半径 2 件。registry が given のため生成物に載る。
+        self.declare_parameter(
+            'search_radius_m', float(LOCALIZE_DEFAULTS['search_radius_m']))
+        self.declare_parameter(
+            'widen_radius_m', float(LOCALIZE_DEFAULTS['widen_radius_m']))
         # 死角（laser 基準・度・[start, end] の平坦配列）。lidar_filter と同じ
         # 取り方（registry.yaml が出所・空は死角なし）。空配列 override を
         # 受けられるよう dynamic_typing=True（CLAUDE.md「環境の癖」参照）。
@@ -208,6 +216,10 @@ class ReplayRunner(Node):
             self.get_parameter('localize_margin_min').value)
         self._resume_max_dist_m = float(
             self.get_parameter('resume_max_dist_m').value)
+        self._search_radius_m = float(
+            self.get_parameter('search_radius_m').value)
+        self._widen_radius_m = float(
+            self.get_parameter('widen_radius_m').value)
         self._odom_topic = self.get_parameter('odom_topic').value
         self._odom_filtered_topic = self.get_parameter('odom_filtered_topic').value
         self._odom_stale_ms = int(self.get_parameter('odom_stale_ms').value)
@@ -344,6 +356,21 @@ class ReplayRunner(Node):
         # WS-8B: WebUI が地図上にロボットを描くための pose（map or odom フレーム）。
         self._pub_robot_pose = self.create_publisher(
             PoseStamped, '/route/robot_pose', cmd_qos)
+        # W-01 P5: 探索中フラグ。localization_health が受けて A・C・B′ を
+        # 保留する（reason=global_localizing。上限付き）。QoS は
+        # /slam_control/estimator_restarting と同じ（RELIABLE +
+        # TRANSIENT_LOCAL + depth 1。後から起動しても直近値が届く）。
+        # 起動時に一度 false を出す（変化のたびに即 publish し、周期任せに
+        # しない。slam_control.py と同じ流儀）。
+        from std_msgs.msg import Bool
+        localizing_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        self._pub_localizing = self.create_publisher(
+            Bool, '/replay_runner/localizing', localizing_qos)
+        self._localizing = False
+        self._pub_localizing.publish(Bool(data=False))
 
         # ── Timers ─────────────────────────────────────────
         self.create_timer(control_ms / 1000.0, self._control_timer)
@@ -426,6 +453,10 @@ class ReplayRunner(Node):
             self._search_gen += 1
             with self._search_lock:
                 self._search_result = None
+            # W-01 P5: 前の探索のフラグを下ろす（古い探索が新しい結果を消さない
+            # よう世代で守っているのと同じく、フラグも新しい load_route が
+            # 引き継ぐ。map 経路なら下の _start_search がすぐ true に戻す）。
+            self._set_localizing(False)
             self._localize_pending = False
             self._localize_pending_arg = '{}'
             self._localize_quality = ''
@@ -449,7 +480,7 @@ class ReplayRunner(Node):
                               if self._points else None)
                     self._start_search(
                         route_id, kind='initial', center=center,
-                        radius=float(LOCALIZE_DEFAULTS['search_radius_m']))
+                        radius=float(self._search_radius_m))
                     self.get_logger().info(
                         f'load_route: id={route_id} reverse={reverse} 点={len(pts)} '
                         f'frame=map（保存地図上で探索中。終わり次第 reload）')
@@ -589,6 +620,15 @@ class ReplayRunner(Node):
             return base
         return None
 
+    def _set_localizing(self, value: bool) -> None:
+        """探索中フラグを変えたときだけ publish する（変化時＋起動時。
+        slam_control.py の _sync_estimator_restarting と同じ流儀）。"""
+        from std_msgs.msg import Bool
+        if value == self._localizing:
+            return
+        self._localizing = value
+        self._pub_localizing.publish(Bool(data=value))
+
     def _start_search(self, route_id: str, kind: str, center, radius):
         """探索スレッドを起こす（kind: initial／widen／global）。
 
@@ -598,6 +638,9 @@ class ReplayRunner(Node):
         """
         self._search_gen += 1
         gen = self._search_gen
+        # W-01 P5: 探索の最中であることを外へ示す（localization_health が
+        # 計画的な不連続として保留する。結果の消費・破棄で下ろす）。
+        self._set_localizing(True)
         blind = list(self.get_parameter('blind_angle_ranges').value or [])
         thresholds = (self._localize_match_low, self._localize_margin_low,
                       self._localize_margin_min)
@@ -632,7 +675,7 @@ class ReplayRunner(Node):
             else:
                 center = ((float(self._points[0][0]), float(self._points[0][1]))
                           if self._points else None)
-            radius = float(LOCALIZE_DEFAULTS['widen_radius_m'])
+            radius = float(self._widen_radius_m)
         else:
             center, radius = None, None
         self._localize_quality = 'searching'
@@ -758,7 +801,12 @@ class ReplayRunner(Node):
             return
         gen, kind, route_id, quality, s, m, base_pose, laser_pose, reload_err = item
         if gen != self._search_gen:
+            # 古い探索の結果は捨てる。フラグは新しい探索のものなので触らない。
             return
+        # W-01 P5: この世代の探索が終わったのでフラグを下ろす（結果の成否に
+        # 関わらず。reload を伴う成立時は estimator_restarting 側の保留へ
+        # 引き継ぐ）。
+        self._set_localizing(False)
         if self._mode != 'REPLAY':
             self.get_logger().info(
                 f'localize 探索: REPLAY を抜けた後の結果（{self._mode}）を捨てる')

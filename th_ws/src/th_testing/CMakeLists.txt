@@ -38,6 +38,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_route_record_files
     test/test_route_record_files.py
     TIMEOUT 30)
+  # 1b-7 SG-B18: 記録の連続性切れの純判定（pose_gap/jump_broken）と
+  # しきい値宣言・配線の AST 検証。ROS2 不要
+  ament_add_pytest_test(test_teach_record_broken
+    test/test_teach_record_broken.py
+    TIMEOUT 30)
   # WS-9K-B: 地図セッション ID。経路に記録セッションの印を付け、別セッションの
   # map 経路を再生に進ませない判定 (can_replay_route) を固定。ROS2 不要
   ament_add_pytest_test(test_route_map_session
@@ -377,6 +382,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_sgb21_registry_wiring
     test/test_sgb21_registry_wiring.py
     TIMEOUT 120)
+  # W-01 P5: 全域ローカライズ 6 値の registry 化（registry ↔ ノード既定値 ↔
+  # 生成物の 3 点一致、placeholder の載らなさ、stage 5 の A8 armed、宣言型の
+  # 一致。ROS2 不要）
+  ament_add_pytest_test(test_w01p5_localize_registry
+    test/test_w01p5_localize_registry.py
+    TIMEOUT 120)
   # th_state/zones.py の LIMIT_STRICTNESS と registry.yaml の
   # speed_limit_strictness_rank が一致することの機械的な照合（N-15 レビュー。
   # th_state と th_params の両方を import してよい唯一のテストコード）
@@ -515,6 +526,18 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_planned_restart_node
     test/test_planned_restart_node.py
     TIMEOUT 180)
+  # 全域ローカライズの探索中の保留の Docker launch テスト（W-01 P5 §完了条件。
+  # 知らせ無しで検知・探索通知中は global_localizing で保留・上限超過で故障・
+  # 保留中は階段でも jump 無し・知らせ無しなら jump が出る対照）
+  ament_add_pytest_test(test_explore_hold_node
+    test/test_explore_hold_node.py
+    TIMEOUT 180)
+  # 全域ローカライズの数値が registry→生成 yaml→ノードへ届くことの Docker launch
+  # テスト（W-01 P5 §完了条件。生成 yaml を先に渡して起動し、dict 上書きしない。
+  # 6 値の読み戻し＋resume 上限が振る舞いに効くこと）
+  ament_add_pytest_test(test_replay_localize_registry_node
+    test/test_replay_localize_registry_node.py
+    TIMEOUT 300)
   # 人物検出 OFF ゲートの Docker launch テスト（brief-tracker-default-off §3.3。
   # /system/state.tracker_enabled=false 中は /person/targets・/person/status が
   # is_lost/disabled を強制し、evt.target_lost と select サービス呼び出しを抑止
@@ -649,6 +672,16 @@ if(BUILD_TESTING)
     TIMEOUT 120
     ENV TH_SKIP_SIM=1)   # CI ではデフォルトでスキップ
 
+  # 1b-7 SG-B1: 教示中の非常停止 → 解除 → 戻る、で「記録中」と実際の記録が
+  # 一致すること（state_manager＋route_recorder の本番の経路。rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_teach_estop_resume_node
+    test/test_teach_estop_resume_node.py
+    TIMEOUT 120)
+  # 1b-7 SG-B18: 記録の連続性切れで evt.record_broken が出ること
+  # （route_recorder 単体の本番の経路。rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_teach_record_broken_node
+    test/test_teach_record_broken_node.py
+    TIMEOUT 120)
   # 盤前移動の一時停止→再開（#3）・BLOCKED タイムアウトなし（#4）
   # (DetailedDesign-onsite.md §9。Gazebo・Nav2 本体なしの launch_testing。
   # 積算: 起動 discovery 10 秒 ＋ 既存 7 件 ＋ SG-A1/A15 の 6 件追加（各 10〜15 秒）

@@ -135,7 +135,7 @@ from th_config_manager.slam_control_logic import (
     deserialize_match_type, effective_reload_pose, estimator_restarting,
     map_instance_ids_match,
     map_session_base_dir, map_session_filename, map_session_name,
-    open_session_error, slam_restart_complete,
+    open_session_error, rotate_map_previous, slam_restart_complete,
 )
 
 
@@ -633,7 +633,9 @@ class SlamControl(Node):
                 # VENUE は ROUTE と違い凍結しない（PREP は保存後も地図作成を続ける）。
                 if request.slot == 'VENUE':
                     return self._handle_venue_commit(response)
-                return self._handle_map_save(response, base)
+                # 1b-7 SG-B12: 経路地図は旧版 1 世代を残す（VENUE は 1 枚のみ保持
+                # のため回さない。Spec-params.md §6）。
+                return self._handle_map_save(response, base, keep_previous=True)
             # WS-9Y: VENUE は呼び出し側（試験画面）が初期姿勢を渡してこないため、
             # 登録済み HOME ピンの姿勢へフォールバックする（無ければ従来どおり
             # START_AT_FIRST_NODE のまま）。request を直接書き換えて
@@ -727,7 +729,7 @@ class SlamControl(Node):
             self.get_logger().debug(
                 f'effect {msg.name} は未処理 (dest={msg.dest})')
 
-    def _handle_map_save(self, response, base: str):
+    def _handle_map_save(self, response, base: str, keep_previous: bool = False):
         """mapping モードのまま serialize_map で保存し、書き終えてから地図を凍結する。
 
         localization モードでは serialize が書き出さないので保存は必ず
@@ -736,9 +738,17 @@ class SlamControl(Node):
         （_cb_save_map の SaveMap 呼び出しと同じ流儀）。SaveMap が失敗しても
         posegraph の保存は成功扱いのまま（警告ログのみ。再生は始点決め打ちの
         'unknown' 経路として動く）。
+        keep_previous が真のときは、先に rotate_map_previous で既存の保存を
+        旧版 1 世代へ退避する（1b-7 SG-B12。経路 JSON の .prev と対になる。
+        VENUE からは呼ばない＝1 枚のみ保持）。
         保存成功後に _set_localization(True) で凍結し、self._set_active(False) で
         状態を合わせる。凍結に失敗したらエラーを返す。
         """
+        if keep_previous:
+            rotated = rotate_map_previous(base)
+            if rotated:
+                self.get_logger().info(
+                    f'旧版の地図を退避した: {rotated}')
         err = self._save_occupancy_grid(base)
         if err:
             self.get_logger().warn(

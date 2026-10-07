@@ -557,6 +557,37 @@
   to_state: $initial
   effects: []
   spec_ref: SM-3.1.1-16
+# T-IDLE-01 / -02: W-4（保存確認）の答えを受ける行（1b-7 SG-B3）。
+# 教示の「終了」（C-08）や記録の連続性切れ（T-TEACH-06）は IDLE へ抜けたうえで
+# ask_save_if_unsaved／ask_save を出す。WebUI が W-4 を出して、試験員が選んだ
+# 答えを ui.save／ui.discard で返す。spec_ref は「終了」の SM-3.1.1-10
+# （未保存があれば保存可否を問う。その答えの受け口が無かった）。
+# ガードは付けない（記録が開いていなければ route_recorder が無視するだけ。
+# recorder が開閉の正本）。W-4 を開く条件（未保存があるときだけ）は WebUI 側で見る。
+- id: T-IDLE-01
+  layer: 10
+  mode: IDLE
+  state: NONE
+  event: ui.save
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: finalize_route
+    args: {}
+  spec_ref: SM-3.1.1-10
+- id: T-IDLE-02
+  layer: 10
+  mode: IDLE
+  state: NONE
+  event: ui.discard
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: discard_route
+    args: {}
+  spec_ref: SM-3.1.1-10
 - id: T-INIT-01
   layer: 10
   mode: INIT
@@ -774,31 +805,52 @@
   - name: finalize_route
     args: {}
   spec_ref: SM-3.1.2-016
+# T-TEACH-05 / -05M / -05J: SAVED からの記録再開は拒否する（保存＝記録の確定。
+# 2026-10-04 ユーザー決定・SG-B11。Spec-modes.md SM-3.1.2-017/-018）。
+# 拒否しないと、記録を閉じた recorder に resume_record が届いて無視され、
+# 状態だけ REC になって画面が「記録中」を出す（記録していない）。
+# -05J は -017 の派生: TEACH_FOLLOW/SAVED でスティックに触れると C-01 が
+# SAVED → PAUSE へ動かして SAVED を抜けてしまう（そこから T-TEACH-03 で
+# REC に入るのと同じ穴）。-017 の契機は「走行」だけだが、Spec-transit.md
+# §3.2「保存後のスティック操作は受け付けない」に従い jog も拒否する。
 - id: T-TEACH-05
   layer: 10
   mode: TEACH_FOLLOW
   state: SAVED
   event: ui.run
   guard: null
-  to_mode: '='
-  to_state: REC
-  effects:
-  - name: resume_record
-    args: {}
+  to_mode: null
+  to_state: null
+  effects: []
   spec_ref: SM-3.1.2-017
+  reject: true
+  reject_reason_key: teach_saved_finalized
+- id: T-TEACH-05J
+  layer: 10
+  mode: TEACH_FOLLOW
+  state: SAVED
+  event: ui.jog.hold
+  guard: null
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-017
+  override_common: true
+  reject: true
+  reject_reason_key: teach_saved_finalized
 - id: T-TEACH-05M
   layer: 10
   mode: TEACH_MANUAL
   state: SAVED
   event: ui.jog.hold
   guard: null
-  to_mode: '='
-  to_state: REC
-  effects:
-  - name: resume_record
-    args: {}
+  to_mode: null
+  to_state: null
+  effects: []
   spec_ref: SM-3.1.2-018
   override_common: true
+  reject: true
+  reject_reason_key: teach_saved_finalized
 - id: T-TEACH-06
   layer: 10
   mode:

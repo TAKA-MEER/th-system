@@ -11,6 +11,7 @@ import yaml
 from th_state.localization_health_core import (
     MONITORED_MODES,
     PREP_MONITORED_STATES,
+    REASON_GLOBAL_LOCALIZING,
     REASON_INACTIVE,
     REASON_JUMP,
     REASON_NODE_DOWN,
@@ -21,6 +22,7 @@ from th_state.localization_health_core import (
     HealthReport,
     Params,
     TransformSample,
+    check_explore_hold,
     check_planned_restart,
     detect_jump,
     evaluate,
@@ -302,6 +304,51 @@ def test_duplicate_true_does_not_extend_restart():
     上限が効く（ノードが edge でのみ記録することの裏付け）。"""
     # 同じ true_since のまま時間が進めば上限で切れる。
     assert _restart(109_001, True, 100_000, None) == (False, REASON_RESTART_TIMEOUT)
+
+
+# ============================================================================
+# W-01 P5: check_explore_hold（全域ローカライズの探索中の保留）
+# ============================================================================
+
+# 試験用の上限（短い値。registry の実値ではない。呼び出し側が渡す想定）。
+_EXPLORE_MAX_MS = 9_000
+
+
+def _explore(now_ms, exploring, true_since_ms,
+             explore_max_ms=_EXPLORE_MAX_MS):
+    return check_explore_hold(now_ms, exploring, true_since_ms, explore_max_ms)
+
+
+def test_exploring_holds_with_global_localizing():
+    """探索中は ng にならない（A・C・B′ を評価しない）。"""
+    assert _explore(100_000, True, 99_000) == (True, REASON_GLOBAL_LOCALIZING)
+
+
+def test_explore_timeout_after_max():
+    """上限を超えたら restart_timeout（探索が終わらない本物の異常）。"""
+    assert _explore(109_001, True, 100_000) == (False, REASON_RESTART_TIMEOUT)
+
+
+def test_explore_max_boundary_still_holds():
+    """上限ちょうどはまだ保留（超えたら故障。restart と同じ向き）。"""
+    assert _explore(109_000, True, 100_000) == (True, REASON_GLOBAL_LOCALIZING)
+
+
+def test_no_explore_notice_detects_as_usual():
+    """知らせが無いときは従来どおり検知する。
+    変異「知らせが無いときに保留する」はここが赤くなる。"""
+    assert _explore(100_000, None, None, None) is None
+
+
+def test_plain_false_without_edge_detects_as_usual():
+    """False だけ受信（探索の edge なし）も従来どおり。起動時の
+    false publish や重複 false で保留に入ってはいけない。"""
+    assert _explore(100_000, False, None, None) is None
+
+
+def test_global_localizing_reason_constant():
+    """探索中の理由コードは "global_localizing"（msg コメントが正）。"""
+    assert REASON_GLOBAL_LOCALIZING == "global_localizing"
 
 
 # ============================================================================
