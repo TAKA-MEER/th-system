@@ -164,6 +164,12 @@ def test_i_discard_true_then_false_on_service_back(slam, probe, monkeypatch):
                         lambda: [424242])
     monkeypatch.setattr(slam, '_kill_slam_toolbox', lambda: [424242])
 
+    # 1b-5 の停止中ガード: IDLE を新鮮に受信済みの状態を与える。
+    slam._state_mode = 'IDLE'
+    slam._state_name = 'NONE'
+    slam._jog_active = False
+    slam._state_at = time.monotonic()
+
     resp = SimpleNamespace(success=None, message='')
     out = slam._cb_discard_map(SimpleNamespace(), resp)
     assert out.success is True

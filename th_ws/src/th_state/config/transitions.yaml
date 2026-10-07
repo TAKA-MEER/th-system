@@ -1549,6 +1549,21 @@
       'on': false
   spec_ref: SM-3.1.2-065
   override_common: true
+# 1b-9（SG-A9）: 作業中（AT_PANEL × WORKING）は行き先をすべて拒否する（SM-3.1.2-066）。
+# 拒否理由 working_in_progress を画面へ返すため、明示の拒否行にする（無ければ
+# not_allowed になり理由が出ない）。SUMMON も含め、下の 2 行より先に評価される。
+- id: T-ATP-05-working
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event: ui.goto
+  guard: working
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-066
+  reject: true
+  reject_reason_key: working_in_progress
 # WS-9AF(2026-09-11): C-15-summon と同じ理由。AT_PANEL から「その場で呼ぶ」も
 # 同じ穴があった。
 - id: T-ATP-05-summon

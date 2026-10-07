@@ -13,5 +13,6 @@
   <depend>ament_index_python</depend>
   <depend>std_srvs</depend>
   <depend>th_system_msgs</depend>
+  <depend>th_config_manager</depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

@@ -48,3 +48,10 @@ test('tracker_required が REJECT_REASONS にあり日本語に解決する', ()
   assert.equal(reasonLabel('tracker_required'), REJECT_REASONS.tracker_required)
   assert.notEqual(reasonLabel('tracker_required'), 'tracker_required')
 })
+
+// 1b-9 SG-A9: 作業中の行き先拒否は state_manager（transitions.yaml T-ATP-05-working）が
+// この reject_reason_key で返す。画面の文言が消えると理由が生キーで出る。
+test('作業中の拒否理由 working_in_progress が日本語に解決する', () => {
+  assert.ok(REJECT_REASONS.working_in_progress)
+  assert.equal(reasonLabel('working_in_progress'), REJECT_REASONS.working_in_progress)
+})
