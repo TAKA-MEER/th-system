@@ -1,11 +1,12 @@
 """
 slam_control_logic.py
-=====================
+====================
 slam_control.py の pure 関数。ROS 依存なし。
 """
 
+import os
 import re
-from typing import Optional
+from typing import List, Optional, Tuple
 
 # 経路名・セッション ID として不正な文字。送る側（経路記録側）は
 # route_record_core._safe_id で `/` `\` を `_` に正規化して送ってくる。ここは
@@ -154,9 +155,9 @@ def map_instance_ids_match(map_instance_id: str, pins_instance_id: str) -> bool:
 
 
 def estimator_restarting(reload_in_progress: bool,
-                         discard_deadline_monotonic: Optional[float],
-                         now_monotonic: float,
-                         slam_service_ready: bool) -> bool:
+                          discard_deadline_monotonic: Optional[float],
+                          now_monotonic: float,
+                          slam_service_ready: bool) -> bool:
     """O-e3: /slam_control/estimator_restarting に載せる「再起動中か」（純関数）。
 
     True になるのはシステムが意図的に起こした再起動の区間だけ:
@@ -174,3 +175,39 @@ def estimator_restarting(reload_in_progress: bool,
     if slam_service_ready:
         return False
     return now_monotonic < discard_deadline_monotonic
+
+
+# 経路地図の保存ファイル拡張子（1b-7 SG-B12）。_serialize が .posegraph／.data、
+# SaveMap が .pgm／.yaml を同じ base 名で書く。
+MAP_SAVE_EXTENSIONS: Tuple[str, ...] = ('.posegraph', '.data', '.pgm', '.yaml')
+
+
+def map_previous_path(base: str, ext: str) -> str:
+    """旧版 1 世代の退避先（`<base>.prev<ext>`。例: `<base>.prev.posegraph`）。
+
+    経路 JSON の `<id>.prev` と対になる命名（旧版であることが一目でわかる）。
+    """
+    return base + '.prev' + ext
+
+
+def rotate_map_previous(base: str,
+                        extensions: Tuple[str, ...] = MAP_SAVE_EXTENSIONS) -> List[str]:
+    """既存の地図保存ファイルを旧版 1 世代へ退避する（純関数。os のみ）。
+
+    各 ext について: 古い `<base>.prev<ext>` があれば消し、`<base><ext>` が
+    あれば `<base>.prev<ext>` へ移す（1 世代だけ残し、積み上げない）。
+    戻り値は退避した旧版パスの列。ファイルが無ければ何もしない。
+    """
+    rotated: List[str] = []
+    directory = os.path.dirname(base)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    for ext in extensions:
+        current = base + ext
+        previous = map_previous_path(base, ext)
+        if os.path.exists(previous):
+            os.remove(previous)
+        if os.path.exists(current):
+            os.replace(current, previous)
+            rotated.append(previous)
+    return rotated

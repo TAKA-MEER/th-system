@@ -249,6 +249,20 @@ def save_route_atomic(path, route_dict):
     return path
 
 
+def next_generation(routes_dir, route_id):
+    """今回保存する経路の世代番号（1b-7 SG-B12）。
+
+    既存の <id>.json があればその generation＋1（旧版は .prev へ退避済みか、
+    これから退避される）。無ければ・読めなければ・数値でなければ 1。
+    """
+    try:
+        with open(finalized_path(routes_dir, route_id), encoding='utf-8') as f:
+            current = int(json.load(f).get('generation', 0))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 1
+    return current + 1
+
+
 def finalize_route_file(routes_dir, route_id, route_dict):
     """完成した経路を保存する。戻り値は保存先のパス。
 

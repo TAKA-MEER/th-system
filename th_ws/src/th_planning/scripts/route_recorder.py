@@ -56,7 +56,8 @@ from th_planning.odom_source import pick_odom_source
 from th_planning.route_record_core import (
     RouteRecorderCore, RouteRecordParams, autosave_path,
     _safe_id, decimate_polyline, finalize_route_file,
-    list_finalized_route_files, owns_route_status, polyline_length, previous_path,
+    list_finalized_route_files, next_generation, owns_route_status, polyline_length,
+    previous_path,
     route_from_dict,
     route_to_dict, save_route_atomic,
 )
@@ -378,7 +379,9 @@ class RouteRecorder(Node):
         """
         route = self._recorder.finalize(
             self._route_id, self._name, self._now_ms(),
-            frame_id=self._frame_id, map_session_id=self._current_session_for_route())
+            frame_id=self._frame_id, map_session_id=self._current_session_for_route(),
+            # 1b-7 SG-B12: 同名の録り直しは世代を進める（旧版は .prev へ）。
+            generation=next_generation(self._routes_dir, self._route_id))
         dest = finalize_route_file(self._routes_dir, self._route_id,
                                    route_to_dict(route))
         # WS-9L: 経路が map フレームで記録されたときだけ、地図を凍結保存する

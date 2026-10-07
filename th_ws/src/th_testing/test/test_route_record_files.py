@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.join(
 from route_record_core import (
     autosave_path, previous_path, finalized_path,
     save_route_atomic, finalize_route_file, list_finalized_route_files,
+    next_generation,
 )
 
 
@@ -104,6 +105,49 @@ def test_finalize_route_file_keeps_only_latest_and_one_previous(tmp_path):
     assert sorted(os.listdir(routes_dir)) == ['r.json', 'r.prev']
     assert json.load(open(finalized_path(routes_dir, 'r'), encoding='utf-8')) == {'g': 3}
     assert json.load(open(previous_path(routes_dir, 'r'), encoding='utf-8')) == {'g': 2}
+
+
+# ============================================================================
+# 1b-7 SG-B12: 同名の録り直しは世代を進める（旧版は .prev へ）。
+# finalize() の generation 既定 1 のままでは、録り直しても generation が 1 の
+# まま（新版・旧版の区別が付かない）。next_generation（既存 .json＋1）を
+# _finalize_and_close が使って刻む。
+# ============================================================================
+def test_next_generation_starts_at_one_without_existing(tmp_path):
+    routes_dir = _mkroutes(tmp_path)
+    assert next_generation(routes_dir, 'r') == 1
+
+
+def test_next_generation_increments_existing(tmp_path):
+    routes_dir = _mkroutes(tmp_path)
+    finalize_route_file(routes_dir, 'r', {'id': 'r', 'generation': 1})
+    assert next_generation(routes_dir, 'r') == 2
+    finalize_route_file(routes_dir, 'r', {'id': 'r', 'generation': 2})
+    assert next_generation(routes_dir, 'r') == 3
+
+
+def test_next_generation_falls_back_to_one_on_unreadable(tmp_path):
+    routes_dir = _mkroutes(tmp_path)
+    dest = finalized_path(routes_dir, 'r')
+    with open(dest, 'w', encoding='utf-8') as f:
+        f.write('壊れた json {')
+    assert next_generation(routes_dir, 'r') == 1
+    with open(dest, 'w', encoding='utf-8') as f:
+        json.dump({'id': 'r', 'generation': 'x'}, f)
+    assert next_generation(routes_dir, 'r') == 1
+
+
+def test_finalize_and_close_stamps_next_generation():
+    """_finalize_and_close が next_generation で世代を刻むこと。
+    変異: generation 引数を消すと赤くなる（録り直しても generation=1 のまま）。
+    """
+    tree = _tree(ROUTE_RECORDER)
+    node = _method_def(tree, '_finalize_and_close')
+    assert node is not None, '_finalize_and_close が無い'
+    calls = [n for n in ast.walk(ast.Module(body=node.body, type_ignores=[]))
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+             and n.func.id == 'next_generation']
+    assert calls, '_finalize_and_close が next_generation を使っていない'
 
 
 def test_finalize_route_file_removes_leftover_autosave(tmp_path):
