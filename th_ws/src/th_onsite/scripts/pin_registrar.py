@@ -687,6 +687,20 @@ class PinRegistrar(Node):
                     response.success = True
                     response.message = f'ピン {request.id} を削除しました'
                     return response
+                # SG-B16: 同じ id のまま位置と向きを登録し直す（名前は維持。
+                # new_name が非空なら改名も同時に行う）。id は振り直さない。
+                if request.update_pose:
+                    pose = p.setdefault('pose', {})
+                    pose['x'] = float(request.x)
+                    pose['y'] = float(request.y)
+                    pose['yaw'] = float(request.yaw)
+                    if request.new_name:
+                        p['name'] = request.new_name
+                    _dump_pins(self._pins_path, self._pins, self._map_instance_id)
+                    self._publish_pins()
+                    response.success = True
+                    response.message = f'ピン {request.id} の位置を登録し直しました'
+                    return response
                 # 改名
                 p['name'] = request.new_name
                 _dump_pins(self._pins_path, self._pins, self._map_instance_id)

@@ -2,9 +2,17 @@
 # あり rosidl の生成コードが `this->delete = ...` のような不正な式を出力して
 # ビルドできない（実測。WP-MSG-01 で判明）。名前だけを `is_delete` に変更する
 # （意味・型・列順は変えていない）。names.md 側の修正は別途要検討。
+#
+# SG-B16(2026-10-08): 同じ id・同じ名前のまま位置と向きを登録し直す
+# （Spec-onsite.md §2.3）。`update_pose=true` のとき `x`/`y`/`yaw`
+# (map frame) で上書きし、id は振り直さない。`new_name` が非空なら改名も同時に行う。
 string id
 string new_name
 bool   is_delete
+bool   update_pose
+float64 x
+float64 y
+float64 yaw
 ---
 bool   success
 string message

@@ -60,7 +60,8 @@ import {
   S20_MAP_ARIA, S20_MAP_GATE_BUTTON, S20_MAP_GATE_MSG, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TARGET, S20_MAP_TITLE,
   S20_MAPTAP_CANCEL, S20_MAPTAP_CONFIRM, S20_MAPTAP_PREVIEW,
   S20_NEXT_REG_HOME, S20_NEXT_REG_PANEL, S20_NEXT_SAVE, S20_NEXT_SELECT_TARGET, S20_NEXT_START_MAPPING,
-  S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_EDIT, S20_PIN_RENAME,
+  S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_DELETE_ARMED, S20_PIN_EDIT, S20_PIN_RENAME,
+  S20_PIN_REREGISTER_HERE, S20_PIN_REREGISTER_MAPTAP, S20_PIN_REREGISTER_NO_POSE,
   S20_PINWARN_CANCEL, S20_PINWARN_MSG, S20_PINWARN_PLACE, S20_PINWARN_RETREAT,
   S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REG_HOME_HERE, S20_REG_HOME_MAPTAP, S20_REG_HERE_NOTE,
   S20_REG_HERE_OK, S20_REGISTER_TITLE, S20_REG_PANEL, S20_REG_PANEL_HERE, S20_REG_PANEL_MAPTAP,
@@ -159,6 +160,12 @@ export default function S20Prep() {
   // ROBOT_POSE と共通の state を再利用する（新しい kind state を作らない）。
   const [tapMode, setTapMode] = useState(false)
   const [pendingTap, setPendingTap] = useState(null)
+  // SG-C7: 確定前の数値補正（Spec-onsite.md §3.7）。ドラッグの精度だけに頼らず
+  // x, y, yaw を数値入力で直せる。pendingTap が立つたび初期化する。
+  const [tapDraft, setTapDraft] = useState(null)
+  // SG-B16: 地図タップ（2 点指示と同じ操作）で既存ピンを登録し直すときの対象 id。
+  // 立っている間、確定は新規登録ではなく EditPin(update_pose) になる。
+  const [reregTargetId, setReregTargetId] = useState(null)
   const mapTapCardRef = useRef(null)
 
   const stateName = state?.state ?? null
@@ -303,16 +310,58 @@ export default function S20Prep() {
     ? Math.atan2(pendingTap.tap2.y - pendingTap.tap1.y, pendingTap.tap2.x - pendingTap.tap1.x)
     : null
 
+  // SG-C7: pendingTap が立ったら数値補正の初期値を入れる。キャンセル・確定で消す。
+  useEffect(() => {
+    if (pendingTap) {
+      const yaw = Math.atan2(pendingTap.tap2.y - pendingTap.tap1.y,
+        pendingTap.tap2.x - pendingTap.tap1.x)
+      setTapDraft({
+        x: pendingTap.tap1.x.toFixed(2),
+        y: pendingTap.tap1.y.toFixed(2),
+        deg: Math.round((yaw * 180) / Math.PI),
+      })
+    } else {
+      setTapDraft(null)
+    }
+  }, [pendingTap])
+
   // brief-MAPTAP-FRONTEND: 確定ボタン。MAP_TAP でサービスを呼び、応答の
   // success/message は ROBOT_POSE と同じ hereMsg 領域に出す（分けない）。
+  // SG-C7: 送る値は数値補正の draft（tapDraft が無ければ pendingTap のまま）。
   async function handleMapTapCommit() {
     if (!pendingTap) return
-    const res = await registerPinMapTap({
-      kind: registerKind, tap1: pendingTap.tap1, tap2: pendingTap.tap2,
-    })
+    const draft = tapDraft ?? {
+      x: pendingTap.tap1.x, y: pendingTap.tap1.y,
+      deg: Math.round((previewYawRad * 180) / Math.PI),
+    }
+    const tap1 = { x: Number(draft.x), y: Number(draft.y) }
+    // 向きを触っていなければドラッグで得た値をそのまま使う（度への丸めで
+    // 微小に変えない）。触ったときは②までの距離 L を保ったまま向きだけ変える
+    // （L は 2 点の間隔チェックの対象なので変えない）。
+    const dragDeg = Math.round((previewYawRad * 180) / Math.PI)
+    const yawRad = Number(draft.deg) === dragDeg
+      ? previewYawRad : (Number(draft.deg) * Math.PI) / 180
+    const span = Math.hypot(pendingTap.tap2.x - pendingTap.tap1.x,
+      pendingTap.tap2.y - pendingTap.tap1.y)
+    const tap2 = {
+      x: tap1.x + span * Math.cos(yawRad),
+      y: tap1.y + span * Math.sin(yawRad),
+    }
+    let res
+    if (reregTargetId != null) {
+      // SG-B16: 同じ id・同じ名前のまま位置と向きだけ上書き（新しい id を振らない）。
+      res = await editPin({
+        id: reregTargetId, new_name: '', is_delete: false, update_pose: true,
+        x: tap1.x, y: tap1.y, yaw: yawRad,
+      })
+    } else {
+      res = await registerPinMapTap({ kind: registerKind, tap1, tap2 })
+    }
     setHereMsg({ ok: !!res?.success, text: res?.message || '' })
     setPendingTap(null)
+    setTapDraft(null)
     setTapMode(false)
+    setReregTargetId(null)
   }
 
   // 2 点指示（index 1 → 2）。拒否されたら理由を出して Step 1 からやり直し（§2.3）。
@@ -378,6 +427,26 @@ export default function S20Prep() {
     if (editingPinId == null) return
     await editPin({ id: editingPinId, new_name: '', is_delete: true })
     setEditingPinId(null)
+  }
+
+  // SG-B16: 同じ id・同じ名前のまま位置と向きを登録し直す。機体の現在姿勢
+  // （map 座標の routePose）をそのまま送る。frame が odom のとき・未取得の
+  // ときは押せない（map が無いとピンの座標系と合わない）。
+  const reregPose = routePose && routePose.frame !== 'odom' ? routePose : null
+  const [reregMsg, setReregMsg] = useState(null)
+
+  async function doPinReregister() {
+    if (editingPinId == null || !reregPose) return
+    setReregMsg(null)
+    const res = await editPin({
+      id: editingPinId, new_name: '', is_delete: false, update_pose: true,
+      x: reregPose.x, y: reregPose.y, yaw: reregPose.yaw,
+    })
+    if (res?.success) {
+      setEditingPinId(null)
+    } else {
+      setReregMsg(res?.message || null)
+    }
   }
 
   const editingPin = pins.find((p) => p.id === editingPinId) ?? null
@@ -491,9 +560,11 @@ export default function S20Prep() {
                   tapMode={tapMode}
                   onTapConfirm={handleMapTapConfirm}
                   previewPose={pendingTap ? {
-                    x: pendingTap.tap1.x,
-                    y: pendingTap.tap1.y,
-                    yaw: previewYawRad,
+                    x: tapDraft != null ? Number(tapDraft.x) : pendingTap.tap1.x,
+                    y: tapDraft != null ? Number(tapDraft.y) : pendingTap.tap1.y,
+                    yaw: tapDraft != null
+                      ? (Number(tapDraft.deg) * Math.PI) / 180
+                      : previewYawRad,
                   } : null}
                 />
               </div>
@@ -681,6 +752,33 @@ export default function S20Prep() {
                       {S20_MAPTAP_PREVIEW(pendingTap.tap1.x, pendingTap.tap1.y,
                         Math.round((previewYawRad * 180) / Math.PI))}
                     </div>
+                    {/* SG-C7: 数値で補正する入力欄（Spec-onsite.md §3.7）。 */}
+                    <div className="row mb" data-testid="s20-maptap-edit">
+                      <label className="sm">x[m]
+                        <input
+                          type="number" step="0.01"
+                          data-testid="s20-maptap-x"
+                          value={tapDraft?.x ?? ''}
+                          onChange={(e) => setTapDraft((d) => ({ ...d, x: e.target.value }))}
+                        />
+                      </label>
+                      <label className="sm">y[m]
+                        <input
+                          type="number" step="0.01"
+                          data-testid="s20-maptap-y"
+                          value={tapDraft?.y ?? ''}
+                          onChange={(e) => setTapDraft((d) => ({ ...d, y: e.target.value }))}
+                        />
+                      </label>
+                      <label className="sm">向き[°]
+                        <input
+                          type="number" step="1"
+                          data-testid="s20-maptap-yaw"
+                          value={tapDraft?.deg ?? ''}
+                          onChange={(e) => setTapDraft((d) => ({ ...d, deg: e.target.value }))}
+                        />
+                      </label>
+                    </div>
                     <div className="row">
                       <button
                         type="button"
@@ -694,7 +792,7 @@ export default function S20Prep() {
                         type="button"
                         className="btn"
                         data-testid="s20-maptap-cancel"
-                        onClick={() => { setPendingTap(null); setTapMode(false) }}
+                        onClick={() => { setPendingTap(null); setTapMode(false); setReregTargetId(null) }}
                       >
                         {S20_MAPTAP_CANCEL}
                       </button>
@@ -819,6 +917,7 @@ export default function S20Prep() {
                         onChange={(e) => setPinNameDraft(e.target.value)}
                       />
                     </div>
+                    {reregMsg && <div className="note err mb" data-testid="s20-pin-rereg-msg">{reregMsg}</div>}
                     <div className="btnrow n3">
                       <button
                         type="button"
@@ -828,14 +927,16 @@ export default function S20Prep() {
                       >
                         {S20_PIN_RENAME}
                       </button>
-                      <button
-                        type="button"
-                        className="btn sm danger"
-                        data-testid="s20-pin-delete"
-                        onClick={doPinDelete}
-                      >
-                        {S20_PIN_DELETE}
-                      </button>
+                      {/* SG-C12: ピン削除は二段階アーム式（Spec-webui.md §6）。
+                          部品は既存の ArmedButton を使い回す（新規ファイルなし）。 */}
+                      <span data-testid="s20-pin-delete">
+                        <ArmedButton
+                          className="sm"
+                          idleLabel={S20_PIN_DELETE}
+                          armedLabel={S20_PIN_DELETE_ARMED}
+                          onConfirm={doPinDelete}
+                        />
+                      </span>
                       <button
                         type="button"
                         className="btn sm"
@@ -844,6 +945,40 @@ export default function S20Prep() {
                       >
                         {S20_PIN_CANCEL}
                       </button>
+                    </div>
+                    <div className="mt">
+                      <button
+                        type="button"
+                        className="btn sm btn-register wide mb"
+                        data-testid="s20-pin-reregister-maptap"
+                        disabled={disabledAll || isRegister || pinWarn.active}
+                        onClick={() => {
+                          setReregTargetId(editingPinId)
+                          setEditingPinId(null)
+                          setTapMode(true)
+                          setTab('map')
+                          setSubtab('register')  // 確定カードは登録タブにある
+                        }}
+                      >
+                        <IconPin />
+                        <span>{S20_PIN_REREGISTER_MAPTAP}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn sm btn-register wide"
+                        data-testid="s20-pin-reregister"
+                        disabled={disabledAll || !reregPose}
+                        title={!reregPose ? S20_PIN_REREGISTER_NO_POSE : undefined}
+                        onClick={doPinReregister}
+                      >
+                        <IconPin />
+                        <span>{S20_PIN_REREGISTER_HERE}</span>
+                      </button>
+                      {!reregPose && (
+                        <div className="sm mut mt" data-testid="s20-pin-rereg-nopose">
+                          {S20_PIN_REREGISTER_NO_POSE}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

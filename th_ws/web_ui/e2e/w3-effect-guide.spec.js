@@ -93,3 +93,26 @@ test('estop_held_at_boot は押下を見るまでは閉じない', async ({ page
   await setTestState(page, { estop_hw: false })
   await expect(page.getByTestId('w3-guide')).toHaveCount(0)
 })
+
+
+// 1b-11 (Spec-webui.md §4.2): S-20/S-21 では帯が地図（本文）の上端に出る。
+// 他の画面（S-01 など）は従来どおり本文の下。
+for (const [scr, id, st] of [
+  ['S20', 'S-20', { mode: 'PREP', state: 'MAPPING' }], ['S21', 'S-21', { mode: 'IDLE', state: 'NONE' }]]) {
+  test(`${id}: W-3 の帯は本文の上に出る`, async ({ page }) => {
+    await gotoScreenWithEffect(page, scr, st, guide('summon_clear_timeout'))
+    await expect(page.locator('#app')).toHaveAttribute('data-screen', id)
+    await expect(page.getByTestId('w3-guide')).toBeVisible()
+    const g = await page.locator('#winGuide').boundingBox()
+    const b = await page.locator('#body').boundingBox()
+    expect(g.y + g.height, '帯が本文より下にある').toBeLessThanOrEqual(b.y + 1)
+  })
+}
+
+test('S-01: W-3 の帯は従来どおり本文の下', async ({ page }) => {
+  await gotoScreenWithEffect(page, 'S01', { mode: 'IDLE', state: 'NONE' }, guide('summon_clear_timeout'))
+  await expect(page.locator('#app')).toHaveAttribute('data-screen', 'S-01')
+  const g = await page.locator('#winGuide').boundingBox()
+  const b = await page.locator('#body').boundingBox()
+  expect(g.y).toBeGreaterThanOrEqual(b.y + b.height - 1)
+})

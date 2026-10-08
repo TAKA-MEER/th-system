@@ -578,6 +578,19 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_person_tracker_bridge_node
     test/test_person_tracker_bridge_node.py
     TIMEOUT 180)
+  # 1b-11 SG-B15: 到着許容差 0.12 の一本化（registry→生成 yaml→Nav2／venue_navigator。
+  # ROS2 不要）
+  ament_add_pytest_test(test_arrival_tol_registry
+    test/test_arrival_tol_registry.py
+    TIMEOUT 120)
+  # 1b-11 SG-B15: venue_navigator の到着判定（生成 yaml の値で境界を見る launch_testing）
+  ament_add_pytest_test(test_venue_nav_arrival_tol_node
+    test/test_venue_nav_arrival_tol_node.py
+    TIMEOUT 180)
+  # 1b-11 SG-B16: pin_registrar のピン再登録（同じ id・同じ名前のまま位置と向きだけ。launch_testing）
+  ament_add_pytest_test(test_pin_reregister_node
+    test/test_pin_reregister_node.py
+    TIMEOUT 180)
   # 退避待ちゲートの disabled 結合テスト（brief-tracker-default-off §3.3。
   # /person/status が is_lost=True / lost_reason="disabled" の間 clear_ok を
   # 出さない。見えている人が十分離れると発火する対照を含む）

@@ -342,7 +342,7 @@ def derive_limits(screens, now_ms, p):
 | `/onsite/two_point` | `TwoPointPress`: `string purpose`（`HOME`/`PANEL`/`SUMMON`/`LINE_POSE`） / `uint8 index`（1 or 2） → `bool accepted` / `string reject_reason_key` / `float32 yaw` | `th_onsite` |
 | `/onsite/register_pin` | `RegisterPin`: `string kind` / `string name` / `string method`（`TWO_POINT`/`PLANE`/`ROBOT_POSE`） → `bool success` / `Pin pin` / `string message` | `th_onsite` |
 | `/onsite/resolve_pin` | `ResolvePin`: `string action`（`place`/`retreat`/`cancel`） → `bool success` / `string message` | `th_onsite`。`PinWarning` が出ているピンの扱いを決める。`WS-9AB`（2026-09-10）で新設 |
-| `/onsite/edit_pin` | `EditPin`: `string id` / `string new_name` / **`bool is_delete`** → `bool success` / `string message` | `th_onsite`。**`delete` は C++ の予約語**で、rosidl が生成する C++ ヘッダがコンパイル不能になる（`WP-MSG-01` で実測）。`is_delete` に改名した |
+| `/onsite/edit_pin` | `EditPin`: `string id` / `string new_name` / **`bool is_delete`** → `bool success` / `string message` | `th_onsite`。**`delete` は C++ の予約語**で、rosidl が生成する C++ ヘッダがコンパイル不能になる（`WP-MSG-01` で実測）。`is_delete` に改名した。**SG-B16（1b-11）で再登録を追加**: `bool update_pose` / `float64 x` / `float64 y` / `float64 yaw`（map frame）。`update_pose=true` で同じ id のまま位置と向きを上書きする（`Spec-onsite.md` §2.3）。`new_name` が非空なら改名も同時に行う |
 | `/onsite/declare_home` | `DeclareHome`: `bool force` → `bool success` / `float32 offset_m` / `float32 offset_deg` / `string message` | `th_onsite` |
 | `/onsite/map_erase` | `EraseMapRegion`: `float32 x0,y0,x1,y1` / `bool undo` → `bool success` | `th_route` |
 | `/opcheck/run_item` | `RunCheck`: `string item` → `bool started` / `string message` | `th_maintenance` |

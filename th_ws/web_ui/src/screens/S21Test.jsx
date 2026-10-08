@@ -19,7 +19,7 @@
 // 呼び寄せ先の選択は /person/targets を RadarSelect で表示し、
 // SUMMON のときだけ ui.select_target を送る（FSM に定義されたモード限定）。
 // 終了は ui.finish を送るだけ。受理されれば FSM が IDLE になり main.jsx が S-01 に戻す。
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useSetFlag, TRACKER_FLAG } from '../ros/useSetFlag.js'
@@ -58,6 +58,7 @@ import {
   S20_WIZ_MSG_STEP1, S20_WIZ_MSG_STEP2, S20_WIZ_REGISTER, S20_WIZ_STEP, S20_PIN_YAW,
   S21_ATPANEL_TITLE, S21_DEST_HOME, S21_DEST_NEXT_PANEL, S21_DEST_SUMMON_HERE,
   S21_HOME_DECLARED, S21_HOME_DECLARE, S21_HOME_FORCE_DECLARE,
+  S21_HOME_OFFSET,
   S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_GATE_MSG, S21_MAP_LOADING,
   S21_BLOCKED_ABORT, S21_BLOCKED_MSG, S21_BLOCKED_REROUTE,
   S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
@@ -98,22 +99,22 @@ const S21_STEP_LABELS = {
   work: S21_STEP_WORK,
 }
 
-// 退避待ちの想定タイムアウト。バー幅の計算にだけ使い、実挙動には関与しない
-// （真の値は wait_clear_gate が持つ。残り時間の減少が「そのまま進捗」に見える係数）。
-const WAIT_BAR_SEC = 15
+// SG-C8: 退避待ちバーの全体時間は画面に直書きしない。ノードが出す
+// remaining_sec の初回値（= clear_timeout_ms）をその回の全体とみなす。
+// 真の値は wait_clear_gate が持つ。残り時間の減少がそのまま進捗に見える係数。
+function waitBarPct(wait, totalSec) {
+  if (wait.verdict === 'OK') return 100
+  if (wait.verdict === 'NOT_CLEAR') return 4
+  if (!(totalSec > 0)) return 4
+  const remain = Math.max(0, wait.remaining_sec)
+  return Math.max(4, Math.min(96, 100 - (remain / totalSec) * 100))
+}
 
 // UX-2-a: 次操作ボタンにも形の種別（OP_BUTTON_KINDS）とアイコンを付ける。
 const NEXT_ACTION_ICONS = {
   advance: <IconArrow />,
   register: <IconPin />,
   stop: <IconStop />,
-}
-
-function waitBarPct(wait) {
-  if (wait.verdict === 'OK') return 100
-  if (wait.verdict === 'NOT_CLEAR') return 4
-  const remain = Math.max(0, wait.remaining_sec)
-  return Math.max(4, Math.min(96, 100 - (remain / WAIT_BAR_SEC) * 100))
 }
 
 export default function S21Test({ onExit }) {
@@ -188,6 +189,10 @@ export default function S21Test({ onExit }) {
 
   // 待機場所の宣言エラー（success=false のときのメッセージと再宣言）。
   const [homeErr, setHomeErr] = useState(null)
+  // SG-C8: 宣言成功時のずれ量（DeclareHome の offset_m/offset_deg）。
+  const [homeOffset, setHomeOffset] = useState(null)
+  // SG-C8: 退避待ちバーの全体時間。WAIT_CLEAR に入るたび remaining の初回値を取る。
+  const waitTotalRef = useRef(0)
   // 会場地図の読み直し（/map_session/open）の結果メッセージ（success/message）。
   const [venueMsg, setVenueMsg] = useState(null)
   // WS-9Y: reload は respawn 待ち込みで最大 45s+30s かかる。地図が無反応に見える
@@ -203,6 +208,17 @@ export default function S21Test({ onExit }) {
     setWizYaw(null)
     return undefined
   }, [showWizard])
+
+  // SG-C8: WAIT_CLEAR に入った回の remaining 初回値を全体時間にする。
+  // 残りが増えたら（入り直し）取り直す。減るだけなら据え置く。
+  useEffect(() => {
+    if (showWait && wait.remaining_sec > waitTotalRef.current) {
+      waitTotalRef.current = wait.remaining_sec
+    }
+    if (!showWait) {
+      waitTotalRef.current = 0
+    }
+  }, [showWait, wait.remaining_sec])
 
   // ── 操作 ─────────────────────────────────────────────
   // brief-UI-S21-entry: 「終了」は ui.finish を送り、そのあと main.jsx 経由で
@@ -277,11 +293,15 @@ export default function S21Test({ onExit }) {
   }
 
   // 待機場所の宣言（home_declarer）。失敗時は force 再宣言を促す（§2.3）。
+  // 成功時はずれ量を出す（SG-C8）。
   async function handleDeclareHome(force) {
     setHomeErr(null)
+    setHomeOffset(null)
     const res = await declareHome({ force })
     if (!res?.success) {
       setHomeErr(res?.message ?? null)
+    } else if (typeof res?.offset_m === 'number') {
+      setHomeOffset({ m: res.offset_m, deg: res.offset_deg ?? 0 })
     }
   }
 
@@ -615,6 +635,11 @@ export default function S21Test({ onExit }) {
                     {venueMsg.text || (venueMsg.ok ? S21_OPEN_VENUE_DONE : S21_OPEN_VENUE_FAIL)}
                   </div>
                 )}
+                {homeOffset && (
+                  <div className="note mb" data-testid="s21-home-offset">
+                    {S21_HOME_OFFSET(homeOffset.m, homeOffset.deg)}
+                  </div>
+                )}
                 {homeErr && (
                   <div className="note mb" data-testid="s21-home-err">
                     <div className="mb">{homeErr}</div>
@@ -789,7 +814,7 @@ export default function S21Test({ onExit }) {
                     <div className="b sm mb">{S21_WAIT_TITLE}</div>
                     <div className="row mb">
                       <div className={`s21-bar grow ${wait.verdict === 'OK' ? 'ok' : (wait.verdict === 'NOT_CLEAR' ? 'nope' : '')}`} data-testid="s21-clear-bar">
-                        <i style={{ width: `${waitBarPct(wait)}%` }} />
+                        <i style={{ width: `${waitBarPct(wait, waitTotalRef.current)}%` }} />
                       </div>
                       <span className="mono b" data-testid="s21-clear-dist">{S21_WAIT_DIST(wait.distance_m)}</span>
                     </div>

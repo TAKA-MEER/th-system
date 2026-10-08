@@ -344,6 +344,69 @@ def _reshape_twist_mux_file(path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Nav2 到着許容差: registry の arrival_xy_tol_m を実機用 nav2_params.yaml へ写す
+# ---------------------------------------------------------------------------
+#
+# Nav2 の `params_file` は静的なフル YAML を 1 本読む作りで、registry 駆動の
+# flat 生成物（`{node: {ros__parameters: {...}}}`）をそのまま重ねられない。
+# よって静的ファイル（実機用 `config/nav2_params.yaml`）を複写し、
+# `controller_server.general_goal_checker` の 2 値だけ registry 値で上書きした
+# `generated/nav2_params.yaml` を作り、launch はこちらを読む（SG-B15）。
+# xy と yaw は Spec-onsite.md §6.2 の「1 つの値」なので同じ値を入れる。
+# sim 用（`nav2_params_sim.yaml` 0.25）は対象外。sim の物理が違い spec §6.2 も
+# 実機の話のため（1b-11 報告に記載）。
+
+
+def patch_nav2_goal_tolerance(nav2_doc: Mapping[str, Any], tol: float) -> dict[str, Any]:
+    """Nav2 パラメータ dict の到着許容差 2 値を tol で上書きする（純粋関数）。
+    該当節が無い・形が違う doc はそのまま返す（上書きせず。呼び出し側が警告）。"""
+    doc = copy.deepcopy(dict(nav2_doc))
+    try:
+        checker = (doc["controller_server"]["ros__parameters"]
+                   ["general_goal_checker"])
+    except (KeyError, TypeError):
+        return doc
+    if not isinstance(checker, dict):
+        return doc
+    checker["xy_goal_tolerance"] = float(tol)
+    checker["yaw_goal_tolerance"] = float(tol)
+    return doc
+
+
+def default_nav2_static_path() -> str:
+    # launch/ と config/ は install 後も兄弟（share/th_bringup/）なので相対で引く。
+    # ament_index に頼ると ROS 無しのホスト試験で import できず落ちる。
+    return os.path.normpath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "config", "nav2_params.yaml"))
+
+
+def apply_nav2_tol_override(out_dir: str = GENERATED_DIR,
+                            nav2_static_path: str | None = None) -> None:
+    """`generated/venue_navigator.yaml` の arrival 値を `generated/nav2_params.yaml`
+    へ写す（起動時に 1 回）。venue 側の生成物が無ければ何もしない。"""
+    venue_path = Path(out_dir) / "venue_navigator.yaml"
+    try:
+        with open(venue_path, encoding="utf-8") as f:
+            venue_doc = yaml.safe_load(f) or {}
+        tol = ((venue_doc.get("venue_navigator") or {})
+               .get("ros__parameters") or {}).get("arrival_xy_tol_m")
+        if tol is None:
+            print("[params_generation] 警告: arrival_xy_tol_m が生成物に無い。"
+                  "nav2 許容差は静的ファイルのまま", file=sys.stderr)
+            return
+        static_path = nav2_static_path or default_nav2_static_path()
+        with open(static_path, encoding="utf-8") as f:
+            nav2_doc = yaml.safe_load(f) or {}
+    except OSError as e:
+        print(f"[params_generation] 警告: nav2 許容差の写しを飛ばす: {e}",
+              file=sys.stderr)
+        return
+    patched = patch_nav2_goal_tolerance(nav2_doc, float(tol))
+    with open(Path(out_dir) / "nav2_params.yaml", "w", encoding="utf-8") as f:
+        yaml.safe_dump(patched, f, allow_unicode=True, sort_keys=True)
+
+
+# ---------------------------------------------------------------------------
 # blind_angle_ranges: 空配列を生成物へ書き戻す reshape は撤去した（2026-08-27）
 # ---------------------------------------------------------------------------
 #
@@ -393,7 +456,8 @@ def run_generation(*, stage: int, sim: bool, nodes: Sequence[str] | None = REGIS
                     out_dir: str = GENERATED_DIR, registry_path: str | None = None,
                     env: Mapping[str, str] | None = None,
                     calib_dir: str = CALIB_DIR,
-                    overrides_path: str | None = OVERRIDES_PATH) -> None:
+                    overrides_path: str | None = OVERRIDES_PATH,
+                    nav2_static_path: str | None = None) -> None:
     """registry.yaml から生成物を作る。
 
     FMEA①: 古い generated/ が残って使われることを防ぐため、書く前に必ず削除する。
@@ -448,6 +512,8 @@ def run_generation(*, stage: int, sim: bool, nodes: Sequence[str] | None = REGIS
     _reshape_twist_mux_file(out / "twist_mux.yaml")
     # 校正で確定した死角マスクは registry の出荷値より優先（sanitize の後。空配列も正しく扱う）。
     apply_calib_blind_override(out_dir, calib_dir)
+    # SG-B15: 到着許容差を Nav2 の実機用 params へ写す（sim は対象外）。
+    apply_nav2_tol_override(out_dir, nav2_static_path)
 
 
 # ---------------------------------------------------------------------------

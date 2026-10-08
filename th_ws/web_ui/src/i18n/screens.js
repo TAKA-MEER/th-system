@@ -393,7 +393,14 @@ export const S20_PINS_TITLE = 'ピン'
 export const S20_PIN_EDIT = '編集'
 export const S20_PIN_RENAME = '改名'
 export const S20_PIN_DELETE = '削除'
+// SG-C12: ピン削除は二段階アーム式（Spec-webui.md §6）。部品は既存の ArmedButton。
+export const S20_PIN_DELETE_ARMED = '本当に削除する'
 export const S20_PIN_CANCEL = 'やめる'
+// SG-B16 (1b-11): 同じ id・同じ名前のまま位置と向きを登録し直す
+// （Spec-onsite.md §2.3）。機体の現在姿勢（map 座標）で上書きする。
+export const S20_PIN_REREGISTER_MAPTAP = '地図タップで位置と向きを登録し直す'
+export const S20_PIN_REREGISTER_HERE = 'いまの機体位置で更新'
+export const S20_PIN_REREGISTER_NO_POSE = '機体の地図上の位置がまだ分かりません'
 export const S20_PIN_YAW = (deg) => `向き ${deg}°`
 export const S20_RETURN_HOME = '1 ボタンで待機場所に戻す'
 export const S20_RETURN_HINT = '待機場所のピン "HOME" を登録すると使えます'
@@ -487,7 +494,10 @@ export const S21_PINS_EMPTY = '登録済みのピンがありません（前日�
 export const S21_SUMMON_TITLE = '(b) その場で呼ぶ'
 export const S21_SUMMON_START = '呼び寄せ（2 点指示）'
 export const S21_WAIT_TITLE = '退避待ち — 退いてください'
-export const S21_WAIT_DIST = (m) => `${m.toFixed(1)} m`
+// SG-C8: 見失っている間（distance_m < 0）は距離を出さない。
+export const S21_WAIT_DIST = (m) => (m < 0 ? '—' : `${m.toFixed(1)} m`)
+// SG-C8: 宣言成功時のずれ量（DeclareHome の offset_m/offset_deg）。
+export const S21_HOME_OFFSET = (m, deg) => `ずれ ${m.toFixed(2)}m・${deg.toFixed(0)}°`
 export const S21_WAIT_CANCEL = '中止'
 export const S21_WAIT_CLEARING = '対象の場所が空き次第、自動で続行します'
 export const S21_ATPANEL_TITLE = '配電盤前'

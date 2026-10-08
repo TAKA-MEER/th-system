@@ -72,6 +72,7 @@ class WaitClearGate(Node):
         self._person = None           # 直近 PersonStatus
         self._goal = None             # 直近 PoseStamped (map フレーム)
         self._last_distance = 0.0
+        self._last_visible = True  # 直近ティックで対象が見えていたか（SG-C8）
         self._last_verdict = 'NOT_CLEAR'   # _tick が step() から受け取った verdict
 
         self._tf_buffer = tf2_ros.Buffer()
@@ -190,6 +191,9 @@ class WaitClearGate(Node):
             distance_m = math.hypot(person_xy[0] - gx, person_xy[1] - gy)
             target_visible = True
             self._last_distance = distance_m
+        # SG-C8: 見失い中は最後の距離を保持せず「見えていない」を残す。
+        # 画面は distance_m < 0 を「—」で出す。
+        self._last_visible = target_visible
 
         self._state, verdict, events = step(
             self._state, self._dt_ms, distance_m, target_visible, self._params)
@@ -206,7 +210,10 @@ class WaitClearGate(Node):
         if not self._in_wait_clear:
             return
 
-        msg.distance_m = self._last_distance
+        if self._last_visible:
+            msg.distance_m = self._last_distance
+        else:
+            msg.distance_m = -1.0  # 見失い中。画面は「—」で出す（SG-C8）
         msg.remaining_sec = remaining_sec(self._state, self._params)
         msg.satisfied = bool(self._state.fired_ok)
         # verdict は _tick の step() が返した値をそのまま配信する（判定を 2 か所に
