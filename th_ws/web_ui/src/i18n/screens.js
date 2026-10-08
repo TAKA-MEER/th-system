@@ -697,6 +697,12 @@ export const S30_MOTOR_MEAS_R = '実測(右)'
 // 項目 3/4: IMU・LIDAR は /opcheck/status の内容（判定と理由）をそのまま出す。
 export const S30_STATUS_DETAIL_TITLE = '判定の詳細'
 export const S30_STATUS_WAITING = 'データ待ち…'
+// SG-C13: IMU の校正状態・LiDAR のライブスキャンと死角マスク（Spec-checks.md §2.4 #3・#4）
+export const S30_IMU_CALIB_TITLE = '校正状態（3 が校正済み）'
+export const S30_IMU_CALIB_LABELS = { sys: 'sys', gyro: 'gyro', accel: 'accel', mag: 'mag' }
+export const S30_LIDAR_VIEW_TITLE = '生スキャン（灰色の扇＝死角マスク、赤い点＝マスクの内側）'
+export const S30_LIDAR_NO_SCAN = 'スキャン待ち…'
+export const S30_LIDAR_MASK_UNKNOWN = '死角マスクを取得できませんでした'
 
 // ---------------------------------------------------------------- S-31 (故障診断) ----
 export const S31_TITLE = '故障診断'

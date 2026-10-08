@@ -42,6 +42,11 @@ import { useOpcheckStatus } from '../ros/useOpcheckStatus.js'
 import { useOpcheckAnswer } from '../ros/useOpcheckAnswer.js'
 import { useMotorHold } from '../ros/useMotorHold.js'
 import { useWheelSpeeds } from '../ros/useWheelSpeeds.js'
+import { useImuCalib } from '../ros/useImuCalib.js'
+import { useScan } from '../ros/useScan.js'
+import { useTunableParams } from '../ros/useTunableParams.js'
+import { rangesFromFlat } from './calibCore.js'
+import ScanMaskView from '../parts/ScanMaskView.jsx'
 import HoldButton from '../parts/HoldButton.jsx'
 import WheelSpeedView from '../parts/WheelSpeedView.jsx'
 import { setCalibGuide, clearCalibGuide } from './calibGuide.js'
@@ -56,6 +61,8 @@ import {
   S30_ESTOP_STEP1, S30_ESTOP_STEP2, S30_ESTOP_STEP3, S30_ESTOP_STEP4,
   S30_MOTOR_FORWARD, S30_MOTOR_BACK, S30_MOTOR_LEFT, S30_MOTOR_RIGHT, S30_MOTOR_HOLD_NOTE,
   S30_STATUS_DETAIL_TITLE, S30_STATUS_WAITING,
+  S30_IMU_CALIB_TITLE, S30_IMU_CALIB_LABELS, S30_LIDAR_VIEW_TITLE, S30_LIDAR_NO_SCAN,
+  S30_LIDAR_MASK_UNKNOWN,
 } from '../i18n/screens.js'
 import { WIN_RESUME_YES, WIN_RESUME_NO } from '../i18n/states.js'
 
@@ -184,7 +191,53 @@ function MotorDirProgress({ status }) {
   )
 }
 
-function SimpleStatusMonitor({ item, status, disabledAll, onGotoCalib }) {  const verdict = useStickyVerdict(status, item)
+// SG-C13（Spec-checks.md §2.4 #3-3）: IMU の校正状態 sys/gyro/accel/mag のリアルタイム表示。
+function ImuCalibPanel({ ros }) {
+  const calib = useImuCalib(ros)
+  return (
+    <div data-testid="s30-imu-calib">
+      <h4>{S30_IMU_CALIB_TITLE}</h4>
+      {!calib && <p className="note" data-testid="s30-imu-calib-waiting">{S30_STATUS_WAITING}</p>}
+      {calib && (
+        <div className="row">
+          {Object.keys(S30_IMU_CALIB_LABELS).map((k) => (
+            <span key={k} className={`pill ${calib[k] >= 3 ? 'ok' : 'warn'}`}
+              data-testid={`s30-imu-${k}`}>
+              {S30_IMU_CALIB_LABELS[k]} {calib[k]}/3
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// SG-C13（Spec-checks.md §2.4 #4-1・#4-3）: 生スキャンのライブ表示に死角マスクを重ねる。
+// マスクは機体の値（lidar_filter の blind_angle_ranges）を読む。画面に値を持たない。
+// 死角除去前の生スキャン /scan を見る（マスクの内側の写り込みが見えるように。S-40 と同じ）。
+function LidarMaskPanel({ ros }) {
+  const scan = useScan(ros, '/scan')
+  const { getTunableParams } = useTunableParams(ros)
+  const [ranges, setRanges] = useState(null)
+  useEffect(() => {
+    let alive = true
+    getTunableParams('lidar_filter', ['blind_angle_ranges'])
+      .then((v) => { if (alive) setRanges(rangesFromFlat(v.blind_angle_ranges ?? [])) })
+      .catch(() => { if (alive) setRanges(null) })
+    return () => { alive = false }
+  }, [getTunableParams])
+  return (
+    <div data-testid="s30-lidar-panel">
+      <h4>{S30_LIDAR_VIEW_TITLE}</h4>
+      {!scan && <p className="note" data-testid="s30-lidar-no-scan">{S30_LIDAR_NO_SCAN}</p>}
+      {ranges === null && <p className="note" data-testid="s30-lidar-mask-unknown">{S30_LIDAR_MASK_UNKNOWN}</p>}
+      <ScanMaskView scan={scan} ranges={ranges ?? []} />
+    </div>
+  )
+}
+
+function SimpleStatusMonitor({ item, ros, status, disabledAll, onGotoCalib }) {
+  const verdict = useStickyVerdict(status, item)
   const live = status?.item === item ? status : null
   const shown = verdict ?? live
 
@@ -208,6 +261,8 @@ function SimpleStatusMonitor({ item, status, disabledAll, onGotoCalib }) {  cons
           )}
         </>
       )}
+      {item === 'IMU' && <ImuCalibPanel ros={ros} />}
+      {item === 'LIDAR' && <LidarMaskPanel ros={ros} />}
       {verdict && (verdict.next_screen === 'imu_calib' || verdict.next_screen === 'lidar_calib') && (
         <button type="button" className="btn wide" disabled={disabledAll}
           data-testid="s30-goto-calib" onClick={() => onGotoCalib(item, verdict)}>
@@ -402,7 +457,7 @@ export default function S30Opcheck() {
           )
         })()}
         {(activeItem === 'IMU' || activeItem === 'LIDAR') && (
-          <SimpleStatusMonitor item={activeItem} status={status} disabledAll={disabledAll} onGotoCalib={handleGotoCalib} />
+          <SimpleStatusMonitor item={activeItem} ros={ros} status={status} disabledAll={disabledAll} onGotoCalib={handleGotoCalib} />
         )}
       </div>
     </div>

@@ -16,14 +16,17 @@
 import { test, expect } from '@playwright/test'
 import { stubTrigger } from './helpers.js'
 
-async function gotoS30(page, { state, opcheckStatus, wheelSpeeds } = {}) {
-  await page.addInitScript(({ s, os, ws }) => {
+async function gotoS30(page, { state, opcheckStatus, wheelSpeeds, imuCalib, scan, tunables } = {}) {
+  await page.addInitScript(({ s, os, ws, ic, sc, tu }) => {
+    if (ic != null) window.__thTestImuCalib = ic
+    if (sc) window.__thTestScan = sc
+    if (tu) window.__thTunableStubs = tu
     window.__thTestState = s
     window.__thTestScreen = 'S30'
     window.__thTestOpcheckAnswer = () => ({ accepted: true })
     if (os) window.__thTestOpcheckStatus = os
     if (ws) window.__thTestWheelSpeeds = ws
-  }, { s: { mode: 'OPCHECK', state: 'LIST', ...state }, os: opcheckStatus, ws: wheelSpeeds })
+  }, { s: { mode: 'OPCHECK', state: 'LIST', ...state }, os: opcheckStatus, ws: wheelSpeeds, ic: imuCalib, sc: scan, tu: tunables })
   await page.goto('/')
 }
 
@@ -265,4 +268,59 @@ test('実行中の項目そのものを押しても何も送らない', async ({
 test('一覧（LIST）では「中断」を出さない', async ({ page }) => {
   await gotoS30(page, { state: { state: 'LIST' } })
   await expect(page.getByTestId('s30-abort')).toHaveCount(0)
+})
+
+// ---- SG-C13: IMU の校正状態・LiDAR のライブスキャンと死角マスク（Spec-checks.md §2.4 #3・#4）----
+const RUNNING = (item) => ({ item, result: 'UNKNOWN', detail: '', next_screen: '' })
+
+test('IMU: 校正状態 sys/gyro/accel/mag が届いた値で出て、値が変わると追従する', async ({ page }) => {
+  // 0b11_10_01_00 = sys3 / gyro2 / accel1 / mag0
+  await gotoS30(page, { state: { state: 'RUNNING_CHECK' }, opcheckStatus: RUNNING('IMU'), imuCalib: 0b11100100 })
+  await page.getByTestId('s30-item-IMU').click()
+  await expect(page.getByTestId('s30-imu-sys')).toContainText('3/3')
+  await expect(page.getByTestId('s30-imu-gyro')).toContainText('2/3')
+  await expect(page.getByTestId('s30-imu-accel')).toContainText('1/3')
+  await expect(page.getByTestId('s30-imu-mag')).toContainText('0/3')
+  await page.evaluate(() => window.__thSetTestImuCalib(0xff))
+  await expect(page.getByTestId('s30-imu-mag')).toContainText('3/3')
+  await expect(page.getByTestId('s30-imu-gyro')).toContainText('3/3')
+})
+
+test('IMU: 校正状態がまだ届かないときはデータ待ち', async ({ page }) => {
+  await gotoS30(page, { state: { state: 'RUNNING_CHECK' }, opcheckStatus: RUNNING('IMU') })
+  await page.getByTestId('s30-item-IMU').click()
+  await expect(page.getByTestId('s30-imu-calib-waiting')).toBeVisible()
+})
+
+// 前方 (0°) と左 (+90°) に 1 点ずつ。左 (80〜100°) が死角マスク。
+const SCAN = { angle_min: 0, angle_increment: Math.PI / 2, range_min: 0.1, range_max: 10,
+  ranges: [1.0, 1.0, null, null] }
+
+test('LIDAR: 生スキャンが出て、機体の死角マスク（registry の値）が扇で重なる。マスク内の点は赤', async ({ page }) => {
+  await gotoS30(page, {
+    state: { state: 'RUNNING_CHECK' }, opcheckStatus: RUNNING('LIDAR'), scan: SCAN,
+    tunables: { lidar_filter: { values: { blind_angle_ranges: [80, 100, 170, 190] } } },
+  })
+  await page.getByTestId('s30-item-LIDAR').click()
+  await expect(page.getByTestId('s30-lidar-view')).toBeVisible()
+  await expect(page.getByTestId('s30-lidar-mask-wedge')).toHaveCount(2)
+  // 90° の点だけがマスクの内側（赤）、0° の点は外側
+  await expect(page.locator('[data-testid="s30-lidar-view"] circle[fill="crimson"]')).toHaveCount(1)
+})
+
+test('LIDAR: マスクの値が変われば扇も変わる（画面に直書きしていない）', async ({ page }) => {
+  await gotoS30(page, {
+    state: { state: 'RUNNING_CHECK' }, opcheckStatus: RUNNING('LIDAR'), scan: SCAN,
+    tunables: { lidar_filter: { values: { blind_angle_ranges: [40, 50] } } },
+  })
+  await page.getByTestId('s30-item-LIDAR').click()
+  await expect(page.getByTestId('s30-lidar-mask-wedge')).toHaveCount(1)
+  await expect(page.locator('[data-testid="s30-lidar-view"] circle[fill="crimson"]')).toHaveCount(0)
+})
+
+test('LIDAR: マスクを取得できないときは扇を出さず、取得できない旨を出す', async ({ page }) => {
+  await gotoS30(page, { state: { state: 'RUNNING_CHECK' }, opcheckStatus: RUNNING('LIDAR'), scan: SCAN })
+  await page.getByTestId('s30-item-LIDAR').click()
+  await expect(page.getByTestId('s30-lidar-mask-unknown')).toBeVisible()
+  await expect(page.getByTestId('s30-lidar-mask-wedge')).toHaveCount(0)
 })
