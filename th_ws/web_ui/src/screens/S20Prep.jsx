@@ -61,6 +61,7 @@ import {
   S20_MAPTAP_CANCEL, S20_MAPTAP_CONFIRM, S20_MAPTAP_PREVIEW,
   S20_NEXT_REG_HOME, S20_NEXT_REG_PANEL, S20_NEXT_SAVE, S20_NEXT_SELECT_TARGET, S20_NEXT_START_MAPPING,
   S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_EDIT, S20_PIN_RENAME,
+  S20_PIN_REREGISTER_HERE, S20_PIN_REREGISTER_NO_POSE,
   S20_PINWARN_CANCEL, S20_PINWARN_MSG, S20_PINWARN_PLACE, S20_PINWARN_RETREAT,
   S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REG_HOME_HERE, S20_REG_HOME_MAPTAP, S20_REG_HERE_NOTE,
   S20_REG_HERE_OK, S20_REGISTER_TITLE, S20_REG_PANEL, S20_REG_PANEL_HERE, S20_REG_PANEL_MAPTAP,
@@ -378,6 +379,26 @@ export default function S20Prep() {
     if (editingPinId == null) return
     await editPin({ id: editingPinId, new_name: '', is_delete: true })
     setEditingPinId(null)
+  }
+
+  // SG-B16: 同じ id・同じ名前のまま位置と向きを登録し直す。機体の現在姿勢
+  // （map 座標の routePose）をそのまま送る。routePose が odom のとき・未取得の
+  // ときは押せない（map が無いとピンの座標系と合わない）。
+  const reregPose = routePose?.frame === 'map' ? routePose : null
+  const [reregMsg, setReregMsg] = useState(null)
+
+  async function doPinReregister() {
+    if (editingPinId == null || !reregPose) return
+    setReregMsg(null)
+    const res = await editPin({
+      id: editingPinId, new_name: '', is_delete: false, update_pose: true,
+      x: reregPose.x, y: reregPose.y, yaw: reregPose.yaw,
+    })
+    if (res?.success) {
+      setEditingPinId(null)
+    } else {
+      setReregMsg(res?.message || null)
+    }
   }
 
   const editingPin = pins.find((p) => p.id === editingPinId) ?? null
@@ -819,6 +840,7 @@ export default function S20Prep() {
                         onChange={(e) => setPinNameDraft(e.target.value)}
                       />
                     </div>
+                    {reregMsg && <div className="note err mb" data-testid="s20-pin-rereg-msg">{reregMsg}</div>}
                     <div className="btnrow n3">
                       <button
                         type="button"
@@ -844,6 +866,24 @@ export default function S20Prep() {
                       >
                         {S20_PIN_CANCEL}
                       </button>
+                    </div>
+                    <div className="mt">
+                      <button
+                        type="button"
+                        className="btn sm btn-register wide"
+                        data-testid="s20-pin-reregister"
+                        disabled={disabledAll || !reregPose}
+                        title={!reregPose ? S20_PIN_REREGISTER_NO_POSE : undefined}
+                        onClick={doPinReregister}
+                      >
+                        <IconPin />
+                        <span>{S20_PIN_REREGISTER_HERE}</span>
+                      </button>
+                      {!reregPose && (
+                        <div className="sm mut mt" data-testid="s20-pin-rereg-nopose">
+                          {S20_PIN_REREGISTER_NO_POSE}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

@@ -349,6 +349,10 @@ export const S20_PIN_EDIT = '編集'
 export const S20_PIN_RENAME = '改名'
 export const S20_PIN_DELETE = '削除'
 export const S20_PIN_CANCEL = 'やめる'
+// SG-B16 (1b-11): 同じ id・同じ名前のまま位置と向きを登録し直す
+// （Spec-onsite.md §2.3）。機体の現在姿勢（map 座標）で上書きする。
+export const S20_PIN_REREGISTER_HERE = 'いまの機体位置で更新'
+export const S20_PIN_REREGISTER_NO_POSE = '機体の地図上の位置がまだ分かりません'
 export const S20_PIN_YAW = (deg) => `向き ${deg}°`
 export const S20_RETURN_HOME = '1 ボタンで待機場所に戻す'
 export const S20_RETURN_HINT = '待機場所のピン "HOME" を登録すると使えます'
