@@ -141,7 +141,7 @@ def generate_launch_description():
     # registry の arrival_xy_tol_m から params_generation が写す。生成は
     # ノード起動より前の OpaqueFunction で同期実行される（G-1）ため、ここで
     # 参照する時点で中身は新しい。静的 config/nav2_params.yaml は複写元。
-    nav2_yaml   = os.path.join(GENERATED_DIR, 'nav2_params.yaml')
+    nav2_yaml   = os.path.join(GENERATED_DIR, 'nav2', 'nav2_params.yaml')
     # imu_enabled:=true(既定) → エンコーダ+IMU の vyaw、false → エンコーダのみ
     ekf_yaml_imu    = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
     ekf_yaml_no_imu = os.path.join(BRINGUP_DIR, 'config', 'ekf_params_no_imu.yaml')

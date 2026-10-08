@@ -351,7 +351,7 @@ def _reshape_twist_mux_file(path: Path) -> None:
 # flat 生成物（`{node: {ros__parameters: {...}}}`）をそのまま重ねられない。
 # よって静的ファイル（実機用 `config/nav2_params.yaml`）を複写し、
 # `controller_server.general_goal_checker` の 2 値だけ registry 値で上書きした
-# `generated/nav2_params.yaml` を作り、launch はこちらを読む（SG-B15）。
+# `generated/nav2/nav2_params.yaml` を作り、launch はこちらを読む（SG-B15）。
 # xy と yaw は Spec-onsite.md §6.2 の「1 つの値」なので同じ値を入れる。
 # sim 用（`nav2_params_sim.yaml` 0.25）は対象外。sim の物理が違い spec §6.2 も
 # 実機の話のため（1b-11 報告に記載）。
@@ -382,7 +382,7 @@ def default_nav2_static_path() -> str:
 
 def apply_nav2_tol_override(out_dir: str = GENERATED_DIR,
                             nav2_static_path: str | None = None) -> None:
-    """`generated/venue_navigator.yaml` の arrival 値を `generated/nav2_params.yaml`
+    """`generated/venue_navigator.yaml` の arrival 値を `generated/nav2/nav2_params.yaml`
     へ写す（起動時に 1 回）。venue 側の生成物が無ければ何もしない。"""
     venue_path = Path(out_dir) / "venue_navigator.yaml"
     try:
@@ -402,7 +402,11 @@ def apply_nav2_tol_override(out_dir: str = GENERATED_DIR,
               file=sys.stderr)
         return
     patched = patch_nav2_goal_tolerance(nav2_doc, float(tol))
-    with open(Path(out_dir) / "nav2_params.yaml", "w", encoding="utf-8") as f:
+    # サブディレクトリに置く: generated/ 直下は「1 ファイル 1 ノード」の約束
+    # （{node: {ros__parameters}}）で、Nav2 のフル設定は複数ノードなので混ぜない。
+    nav2_dir = Path(out_dir) / "nav2"
+    nav2_dir.mkdir(parents=True, exist_ok=True)
+    with open(nav2_dir / "nav2_params.yaml", "w", encoding="utf-8") as f:
         yaml.safe_dump(patched, f, allow_unicode=True, sort_keys=True)
 
 
