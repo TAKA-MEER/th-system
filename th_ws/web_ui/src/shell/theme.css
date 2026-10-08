@@ -597,6 +597,13 @@ table.lst td.r{text-align:right}
 /* Bottom-to-top stacking order. The release bar never moves from the very
    bottom (DetailedDesign-webui.md §2.1). */
 #hdr{order:0} #body{order:1} #winGuide{order:2} #release{order:3}
+/* 1b-11 (Spec-webui.md §4.2): S-20/S-21 では W-3 の帯を地図の上端（本文の直上）に
+   細く出す。下端のままだと解除バーや W-6 と並び、地図と登録ボタンを避けた位置に
+   ならない。帯の中身・寿命は変えず、並び順と区切り線の辺だけ替える。 */
+#app[data-screen="S-20"] #body, #app[data-screen="S-21"] #body{order:2}
+#app[data-screen="S-20"] #winGuide, #app[data-screen="S-21"] #winGuide{
+  order:1;padding-top:4px;padding-bottom:4px;border-top:0;border-bottom:2px solid var(--brand);
+}
 
 /* ---------- estop release bar (fixed to the bottom, away from the estop button) ----------
    z-index:70 — above #overlay's windows (50) and W-6 (60), below the header

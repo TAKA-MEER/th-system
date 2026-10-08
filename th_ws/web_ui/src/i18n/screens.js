@@ -353,6 +353,7 @@ export const S20_PIN_DELETE_ARMED = '本当に削除する'
 export const S20_PIN_CANCEL = 'やめる'
 // SG-B16 (1b-11): 同じ id・同じ名前のまま位置と向きを登録し直す
 // （Spec-onsite.md §2.3）。機体の現在姿勢（map 座標）で上書きする。
+export const S20_PIN_REREGISTER_MAPTAP = '地図タップで位置と向きを登録し直す'
 export const S20_PIN_REREGISTER_HERE = 'いまの機体位置で更新'
 export const S20_PIN_REREGISTER_NO_POSE = '機体の地図上の位置がまだ分かりません'
 export const S20_PIN_YAW = (deg) => `向き ${deg}°`

@@ -443,9 +443,14 @@ test('ピン一覧の編集（改名）と削除は /onsite/edit_pin を呼ぶ',
   expect(rename, '改名が /onsite/edit_pin を呼んでいない').toBeTruthy()
   expect(rename.request).toMatchObject({ id: 'p1', new_name: '盤 A-1改', is_delete: false })
 
-  // 削除。
+  // 削除（SG-C12: 二段階アーム。1 回目は何も送らず、2 回目で送る）。
   await page.locator('[data-testid="s20-pin-edit-p1"]').click()
-  await page.locator('[data-testid="s20-pin-delete"]').click()
+  const delBtn = page.locator('[data-testid="s20-pin-delete"] button')
+  await delBtn.click()
+  expect((await onsiteServiceCalls(page)).some((c) => c.request?.is_delete === true),
+    '1 回押しただけで削除が送られた（アームになっていない）').toBe(false)
+  await expect(delBtn).toHaveText('本当に削除する')
+  await delBtn.click()
   const del = (await onsiteServiceCalls(page)).find(
     (c) => c.service === '/onsite/edit_pin' && c.request.is_delete === true)
   expect(del, '削除が is_delete:true の /onsite/edit_pin を呼んでいない').toBeTruthy()
@@ -789,4 +794,95 @@ test('MAPTAP: 2本指ピンチでズームできる（タブレットでの拡�
   // 実寸が減る）。数値化して比較する（末尾 "m"/"cm" を含む文字列）。
   const parseM = (s) => (s.includes('cm') ? parseFloat(s) / 100 : parseFloat(s))
   expect(parseM(scaleAfter)).toBeLessThan(parseM(scaleBefore))
+})
+
+// ── 1b-11 ──────────────────────────────────────────────────
+
+// SG-B16: ピンの再登録（機体の現在姿勢）。同じ id のまま update_pose で送る。
+test('ピン再登録: 機体位置で更新は同じ id の edit_pin(update_pose) を呼ぶ', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, {
+    pins: PINS, targets: TARGETS, pose: { x: 1.25, y: -0.5, yaw: 0.5 },
+    editPin: { success: true, message: '更新しました' },
+  })
+  await page.locator('#s20').waitFor()
+  await page.getByRole('tab', { name: 'ピン' }).click()
+  await page.locator('[data-testid="s20-pin-edit-p1"]').click()
+  await page.locator('[data-testid="s20-pin-reregister"]').click()
+  const calls = (await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/edit_pin')
+  expect(calls).toHaveLength(1)
+  expect(calls[0].request).toMatchObject({
+    id: 'p1', is_delete: false, update_pose: true, x: 1.25, y: -0.5, yaw: 0.5,
+  })
+  // 改名や新規登録は呼ばない（同じ id・同じ名前のまま）。
+  expect(calls[0].request.new_name).toBe('')
+  expect((await onsiteServiceCalls(page)).some((c) => c.service === '/onsite/register_pin')).toBe(false)
+})
+
+// SG-B16 + SG-C7: 地図タップ（2 点指示と同じ操作）で再登録。数値補正した値が
+// 同じ id の edit_pin に載り、register_pin は呼ばれない。
+test('ピン再登録: 地図タップ→数値補正→確定は register_pin でなく edit_pin(update_pose)', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, {
+    pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, routeMap: ROUTE_MAP,
+    mappingActive: true, editPin: { success: true, message: '更新しました' },
+  })
+  await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
+  await page.getByRole('tab', { name: 'ピン' }).click()
+  await page.locator('[data-testid="s20-pin-edit-p2"]').click()
+  await page.locator('[data-testid="s20-pin-reregister-maptap"]').click()
+  await expect(page.locator('[data-testid="s20-tab-map"]')).toHaveAttribute('aria-selected', 'true')
+
+  const box = await page.locator('[data-testid="s20-map"]').boundingBox()
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.4)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.4, { steps: 5 })
+  // SG-C7: ドラッグ中（離す前）に x, y, 向きがライブ表示される。
+  await expect(page.locator('[data-testid="s20-map-tapreadout"]')).toContainText(/x=-?\d+\.\d+ y=-?\d+\.\d+ -?\d+°/)
+  await page.mouse.up()
+
+  // SG-C7: 数値で補正できる。
+  await expect(page.locator('[data-testid="s20-maptap-confirm-card"]')).toBeVisible()
+  await page.locator('[data-testid="s20-maptap-x"]').fill('0.40')
+  await page.locator('[data-testid="s20-maptap-y"]').fill('-0.20')
+  await page.locator('[data-testid="s20-maptap-yaw"]').fill('90')
+  await page.locator('[data-testid="s20-maptap-confirm"]').click()
+
+  const all = await onsiteServiceCalls(page)
+  expect(all.some((c) => c.service === '/onsite/register_pin'),
+    '再登録なのに register_pin（新しい id になる経路）を呼んだ').toBe(false)
+  const e = all.filter((c) => c.service === '/onsite/edit_pin')
+  expect(e).toHaveLength(1)
+  expect(e[0].request).toMatchObject({ id: 'p2', is_delete: false, update_pose: true })
+  expect(e[0].request.x).toBeCloseTo(0.4, 5)
+  expect(e[0].request.y).toBeCloseTo(-0.2, 5)
+  expect(e[0].request.yaw).toBeCloseTo(Math.PI / 2, 5)
+})
+
+// SG-C7: 通常の新規登録でも補正値が register_pin に載る。
+test('MAPTAP: 数値補正した x,y,向きが register_pin(MAP_TAP) に載る', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, {
+    pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, routeMap: ROUTE_MAP,
+    mappingActive: true,
+  })
+  await page.locator('#s20').waitFor()
+  await unlockOnsiteMap(page)
+  await page.evaluate(() => {
+    window.__thTestRegisterPinMapTap = { success: true, pin: {}, message: 'ok' }
+  })
+  await page.locator('[data-testid="s20-reg-panel-maptap"]').click()
+  const box = await page.locator('[data-testid="s20-map"]').boundingBox()
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.4)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.4, { steps: 5 })
+  await page.mouse.up()
+  await page.locator('[data-testid="s20-maptap-x"]').fill('0.10')
+  await page.locator('[data-testid="s20-maptap-y"]').fill('0.30')
+  await page.locator('[data-testid="s20-maptap-yaw"]').fill('180')
+  await page.locator('[data-testid="s20-maptap-confirm"]').click()
+  const reg = (await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/register_pin').pop()
+  expect(reg.request.tap1_x).toBeCloseTo(0.1, 5)
+  expect(reg.request.tap1_y).toBeCloseTo(0.3, 5)
+  // 向き 180°: ② は ① の真左。
+  expect(reg.request.tap2_y).toBeCloseTo(0.3, 5)
+  expect(reg.request.tap2_x).toBeLessThan(reg.request.tap1_x)
 })

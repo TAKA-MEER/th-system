@@ -61,7 +61,7 @@ import {
   S20_MAPTAP_CANCEL, S20_MAPTAP_CONFIRM, S20_MAPTAP_PREVIEW,
   S20_NEXT_REG_HOME, S20_NEXT_REG_PANEL, S20_NEXT_SAVE, S20_NEXT_SELECT_TARGET, S20_NEXT_START_MAPPING,
   S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_DELETE_ARMED, S20_PIN_EDIT, S20_PIN_RENAME,
-  S20_PIN_REREGISTER_HERE, S20_PIN_REREGISTER_NO_POSE,
+  S20_PIN_REREGISTER_HERE, S20_PIN_REREGISTER_MAPTAP, S20_PIN_REREGISTER_NO_POSE,
   S20_PINWARN_CANCEL, S20_PINWARN_MSG, S20_PINWARN_PLACE, S20_PINWARN_RETREAT,
   S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REG_HOME_HERE, S20_REG_HOME_MAPTAP, S20_REG_HERE_NOTE,
   S20_REG_HERE_OK, S20_REGISTER_TITLE, S20_REG_PANEL, S20_REG_PANEL_HERE, S20_REG_PANEL_MAPTAP,
@@ -163,6 +163,9 @@ export default function S20Prep() {
   // SG-C7: 確定前の数値補正（Spec-onsite.md §3.7）。ドラッグの精度だけに頼らず
   // x, y, yaw を数値入力で直せる。pendingTap が立つたび初期化する。
   const [tapDraft, setTapDraft] = useState(null)
+  // SG-B16: 地図タップ（2 点指示と同じ操作）で既存ピンを登録し直すときの対象 id。
+  // 立っている間、確定は新規登録ではなく EditPin(update_pose) になる。
+  const [reregTargetId, setReregTargetId] = useState(null)
   const mapTapCardRef = useRef(null)
 
   const stateName = state?.state ?? null
@@ -332,16 +335,33 @@ export default function S20Prep() {
       deg: Math.round((previewYawRad * 180) / Math.PI),
     }
     const tap1 = { x: Number(draft.x), y: Number(draft.y) }
-    const yawRad = (Number(draft.deg) * Math.PI) / 180
+    // 向きを触っていなければドラッグで得た値をそのまま使う（度への丸めで
+    // 微小に変えない）。触ったときは②までの距離 L を保ったまま向きだけ変える
+    // （L は 2 点の間隔チェックの対象なので変えない）。
+    const dragDeg = Math.round((previewYawRad * 180) / Math.PI)
+    const yawRad = Number(draft.deg) === dragDeg
+      ? previewYawRad : (Number(draft.deg) * Math.PI) / 180
+    const span = Math.hypot(pendingTap.tap2.x - pendingTap.tap1.x,
+      pendingTap.tap2.y - pendingTap.tap1.y)
     const tap2 = {
-      x: tap1.x + Math.cos(yawRad),
-      y: tap1.y + Math.sin(yawRad),
+      x: tap1.x + span * Math.cos(yawRad),
+      y: tap1.y + span * Math.sin(yawRad),
     }
-    const res = await registerPinMapTap({ kind: registerKind, tap1, tap2 })
+    let res
+    if (reregTargetId != null) {
+      // SG-B16: 同じ id・同じ名前のまま位置と向きだけ上書き（新しい id を振らない）。
+      res = await editPin({
+        id: reregTargetId, new_name: '', is_delete: false, update_pose: true,
+        x: tap1.x, y: tap1.y, yaw: yawRad,
+      })
+    } else {
+      res = await registerPinMapTap({ kind: registerKind, tap1, tap2 })
+    }
     setHereMsg({ ok: !!res?.success, text: res?.message || '' })
     setPendingTap(null)
     setTapDraft(null)
     setTapMode(false)
+    setReregTargetId(null)
   }
 
   // 2 点指示（index 1 → 2）。拒否されたら理由を出して Step 1 からやり直し（§2.3）。
@@ -772,7 +792,7 @@ export default function S20Prep() {
                         type="button"
                         className="btn"
                         data-testid="s20-maptap-cancel"
-                        onClick={() => { setPendingTap(null); setTapMode(false) }}
+                        onClick={() => { setPendingTap(null); setTapMode(false); setReregTargetId(null) }}
                       >
                         {S20_MAPTAP_CANCEL}
                       </button>
@@ -927,6 +947,22 @@ export default function S20Prep() {
                       </button>
                     </div>
                     <div className="mt">
+                      <button
+                        type="button"
+                        className="btn sm btn-register wide mb"
+                        data-testid="s20-pin-reregister-maptap"
+                        disabled={disabledAll || isRegister || pinWarn.active}
+                        onClick={() => {
+                          setReregTargetId(editingPinId)
+                          setEditingPinId(null)
+                          setTapMode(true)
+                          setTab('map')
+                          setSubtab('register')  // 確定カードは登録タブにある
+                        }}
+                      >
+                        <IconPin />
+                        <span>{S20_PIN_REREGISTER_MAPTAP}</span>
+                      </button>
                       <button
                         type="button"
                         className="btn sm btn-register wide"
