@@ -151,7 +151,8 @@ class TestWaitClearGateNode(unittest.TestCase):
         assert self._clear_ok_events() == [], \
             'disabled 中に evt.clear_ok が出た'
 
-    def test_disabled_blocks_then_far_person_fires(self):        """対照: disabled 中は塞ぎ、抜けて「見えている人が十分離れる」と発火する。"""
+    def test_disabled_blocks_then_far_person_fires(self):
+        """対照: disabled 中は塞ぎ、抜けて「見えている人が十分離れる」と発火する。"""
         for _ in range(10):            # disabled で塞がれている状態
             self._publish_person(is_lost=True, lost_reason='disabled')
         assert self._clear_ok_events() == []

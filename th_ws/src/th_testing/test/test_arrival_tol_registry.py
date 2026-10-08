@@ -88,3 +88,18 @@ def test_generation_propagates_registry_change(tmp_path, registry_rows):
     checker = nav2['controller_server']['ros__parameters']['general_goal_checker']
     assert checker['xy_goal_tolerance'] == pytest.approx(0.09)
     assert checker['yaw_goal_tolerance'] == pytest.approx(0.09)
+
+
+def test_launch_files_read_generated_nav2_params():
+    """実機用 Nav2 の params は生成物を読む（静的 config を直接読むと registry の
+    値が Nav2 に届かない）。launch の配線の 3 か所を縛る。"""
+    import re
+    launch_dir = os.path.join(_SRC_ROOT, 'th_bringup', 'launch')
+    expect = {
+        'bringup.launch.py': r"nav2_yaml\s*=\s*os\.path\.join\(GENERATED_DIR,\s*'nav2_params\.yaml'\)",
+        'gazebo.launch.py': r"nav2_params_real\s*=\s*os\.path\.join\(GENERATED_DIR,\s*'nav2_params\.yaml'\)",
+    }
+    for fname, pat in expect.items():
+        with open(os.path.join(launch_dir, fname), encoding='utf-8') as f:
+            src = f.read()
+        assert re.search(pat, src), f'{fname} が静的な nav2_params.yaml を読んでいる'

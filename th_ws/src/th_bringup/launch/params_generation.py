@@ -374,9 +374,10 @@ def patch_nav2_goal_tolerance(nav2_doc: Mapping[str, Any], tol: float) -> dict[s
 
 
 def default_nav2_static_path() -> str:
-    from ament_index_python.packages import get_package_share_directory
-    return os.path.join(get_package_share_directory("th_bringup"),
-                        "config", "nav2_params.yaml")
+    # launch/ と config/ は install 後も兄弟（share/th_bringup/）なので相対で引く。
+    # ament_index に頼ると ROS 無しのホスト試験で import できず落ちる。
+    return os.path.normpath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "config", "nav2_params.yaml"))
 
 
 def apply_nav2_tol_override(out_dir: str = GENERATED_DIR,
