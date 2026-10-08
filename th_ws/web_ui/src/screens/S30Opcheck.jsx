@@ -44,6 +44,7 @@ import { useMotorHold } from '../ros/useMotorHold.js'
 import { useWheelSpeeds } from '../ros/useWheelSpeeds.js'
 import { useImuCalib } from '../ros/useImuCalib.js'
 import { useScan } from '../ros/useScan.js'
+import { TOPICS } from '../ros/topics.js'
 import { useTunableParams } from '../ros/useTunableParams.js'
 import { rangesFromFlat } from './calibCore.js'
 import ScanMaskView from '../parts/ScanMaskView.jsx'
@@ -216,7 +217,7 @@ function ImuCalibPanel({ ros }) {
 // マスクは機体の値（lidar_filter の blind_angle_ranges）を読む。画面に値を持たない。
 // 死角除去前の生スキャン /scan を見る（マスクの内側の写り込みが見えるように。S-40 と同じ）。
 function LidarMaskPanel({ ros }) {
-  const scan = useScan(ros, '/scan')
+  const scan = useScan(ros, TOPICS.SCAN)
   const { getTunableParams } = useTunableParams(ros)
   const [ranges, setRanges] = useState(null)
   useEffect(() => {
