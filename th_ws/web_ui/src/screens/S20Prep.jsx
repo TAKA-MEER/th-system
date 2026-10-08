@@ -160,6 +160,9 @@ export default function S20Prep() {
   // ROBOT_POSE と共通の state を再利用する（新しい kind state を作らない）。
   const [tapMode, setTapMode] = useState(false)
   const [pendingTap, setPendingTap] = useState(null)
+  // SG-C7: 確定前の数値補正（Spec-onsite.md §3.7）。ドラッグの精度だけに頼らず
+  // x, y, yaw を数値入力で直せる。pendingTap が立つたび初期化する。
+  const [tapDraft, setTapDraft] = useState(null)
   const mapTapCardRef = useRef(null)
 
   const stateName = state?.state ?? null
@@ -304,15 +307,40 @@ export default function S20Prep() {
     ? Math.atan2(pendingTap.tap2.y - pendingTap.tap1.y, pendingTap.tap2.x - pendingTap.tap1.x)
     : null
 
+  // SG-C7: pendingTap が立ったら数値補正の初期値を入れる。キャンセル・確定で消す。
+  useEffect(() => {
+    if (pendingTap) {
+      const yaw = Math.atan2(pendingTap.tap2.y - pendingTap.tap1.y,
+        pendingTap.tap2.x - pendingTap.tap1.x)
+      setTapDraft({
+        x: pendingTap.tap1.x.toFixed(2),
+        y: pendingTap.tap1.y.toFixed(2),
+        deg: Math.round((yaw * 180) / Math.PI),
+      })
+    } else {
+      setTapDraft(null)
+    }
+  }, [pendingTap])
+
   // brief-MAPTAP-FRONTEND: 確定ボタン。MAP_TAP でサービスを呼び、応答の
   // success/message は ROBOT_POSE と同じ hereMsg 領域に出す（分けない）。
+  // SG-C7: 送る値は数値補正の draft（tapDraft が無ければ pendingTap のまま）。
   async function handleMapTapCommit() {
     if (!pendingTap) return
-    const res = await registerPinMapTap({
-      kind: registerKind, tap1: pendingTap.tap1, tap2: pendingTap.tap2,
-    })
+    const draft = tapDraft ?? {
+      x: pendingTap.tap1.x, y: pendingTap.tap1.y,
+      deg: Math.round((previewYawRad * 180) / Math.PI),
+    }
+    const tap1 = { x: Number(draft.x), y: Number(draft.y) }
+    const yawRad = (Number(draft.deg) * Math.PI) / 180
+    const tap2 = {
+      x: tap1.x + Math.cos(yawRad),
+      y: tap1.y + Math.sin(yawRad),
+    }
+    const res = await registerPinMapTap({ kind: registerKind, tap1, tap2 })
     setHereMsg({ ok: !!res?.success, text: res?.message || '' })
     setPendingTap(null)
+    setTapDraft(null)
     setTapMode(false)
   }
 
@@ -512,9 +540,11 @@ export default function S20Prep() {
                   tapMode={tapMode}
                   onTapConfirm={handleMapTapConfirm}
                   previewPose={pendingTap ? {
-                    x: pendingTap.tap1.x,
-                    y: pendingTap.tap1.y,
-                    yaw: previewYawRad,
+                    x: tapDraft != null ? Number(tapDraft.x) : pendingTap.tap1.x,
+                    y: tapDraft != null ? Number(tapDraft.y) : pendingTap.tap1.y,
+                    yaw: tapDraft != null
+                      ? (Number(tapDraft.deg) * Math.PI) / 180
+                      : previewYawRad,
                   } : null}
                 />
               </div>
@@ -701,6 +731,33 @@ export default function S20Prep() {
                     <div className="note" data-testid="s20-maptap-preview">
                       {S20_MAPTAP_PREVIEW(pendingTap.tap1.x, pendingTap.tap1.y,
                         Math.round((previewYawRad * 180) / Math.PI))}
+                    </div>
+                    {/* SG-C7: 数値で補正する入力欄（Spec-onsite.md §3.7）。 */}
+                    <div className="row mb" data-testid="s20-maptap-edit">
+                      <label className="sm">x[m]
+                        <input
+                          type="number" step="0.01"
+                          data-testid="s20-maptap-x"
+                          value={tapDraft?.x ?? ''}
+                          onChange={(e) => setTapDraft((d) => ({ ...d, x: e.target.value }))}
+                        />
+                      </label>
+                      <label className="sm">y[m]
+                        <input
+                          type="number" step="0.01"
+                          data-testid="s20-maptap-y"
+                          value={tapDraft?.y ?? ''}
+                          onChange={(e) => setTapDraft((d) => ({ ...d, y: e.target.value }))}
+                        />
+                      </label>
+                      <label className="sm">向き[°]
+                        <input
+                          type="number" step="1"
+                          data-testid="s20-maptap-yaw"
+                          value={tapDraft?.deg ?? ''}
+                          onChange={(e) => setTapDraft((d) => ({ ...d, deg: e.target.value }))}
+                        />
+                      </label>
                     </div>
                     <div className="row">
                       <button

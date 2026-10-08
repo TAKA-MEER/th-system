@@ -30,6 +30,13 @@ import { S20_MAP_RESET_VIEW } from '../i18n/screens.js'
 const MAP_VB_W = 340
 const MAP_VB_H = 250
 
+// SG-C7 (1b-11): ドラッグ中の読み値。yaw だけでなく x, y (m) も出す
+// （Spec-onsite.md §3.7）。保存される yaw はバックエンドが計算し直すので目安。
+function dragReadout(startW, curW) {
+  const deg = Math.round((Math.atan2(curW[1] - startW[1], curW[0] - startW[0]) * 180) / Math.PI)
+  return `x=${startW[0].toFixed(2)} y=${startW[1].toFixed(2)} ${deg}°`
+}
+
 export default function OnsiteMap({
   mapData,
   pins,
@@ -451,10 +458,9 @@ export default function OnsiteMap({
           <text
             x={drag.cur[0] + 8} y={drag.cur[1] - 8}
             fontSize="11" fill="#e1bee7"
+            data-testid={`${testId}-map-tapreadout`}
           >
-            {`${Math.round((Math.atan2(
-              toWorld(drag.cur)[1] - toWorld(drag.start)[1],
-              toWorld(drag.cur)[0] - toWorld(drag.start)[0]) * 180) / Math.PI)}°`}
+            {dragReadout(toWorld(drag.start), toWorld(drag.cur))}
           </text>
         </g>
       ) : null}
