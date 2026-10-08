@@ -404,7 +404,13 @@ class ReplayRunner(Node):
                 with open(path, encoding='utf-8') as f:
                     self._route = route_from_dict(json.load(f))
             except Exception as e:
+                # 1b-11 SG-B19: 無言で return しない。確度を failed に倒して
+                # 状態に残し、FSM 経由で原因どおりの案内（W-3）を出す。
                 self.get_logger().error(f'経路を読み込めない: {path}: {e}')
+                self._route = None
+                self._route_has_map = False
+                self._localize_quality = 'failed'
+                self._emit_event('evt.route_unreadable')
                 return
             # use_map_frame オフ（通常起動）なら map フレーム経路も odom 扱いにし、
             # 従来どおり align_path_to_current で現在地を始点とみなす。
@@ -421,10 +427,16 @@ class ReplayRunner(Node):
             route_session = self._route.map_session_id or ''
             if not can_replay_route(
                     file_frame, route_session, self._map_session_id, self._map_frame):
+                # 1b-11 SG-B19: 地図を持たない経路は拒否する（Spec-transit.md
+                # §4.2.3）。無言で return せず、確度を failed に倒して状態に残し、
+                # FSM 経由で原因どおりの案内（W-3）を出す。
                 self.get_logger().error(
                     'この経路には保存された地図が無い（教示の「保存」が完了して'
                     'いない可能性）。再生できない。教示からやり直すこと')
                 self._route = None
+                self._route_has_map = False
+                self._localize_quality = 'failed'
+                self._emit_event('evt.route_no_map')
                 return
             pts = list(self._route.points)
             if reverse:
@@ -508,9 +520,15 @@ class ReplayRunner(Node):
                             f'map→base_link TF を最大 '
                             f'{self._localize_wait_s:.0f}s 待つ）')
                     else:
+                        # 1b-11 SG-B19: 地図を読み直せない経路は LOCALIZE から
+                        # 進めない。error ログだけでなく、確度を failed に倒して
+                        # 状態に残し、FSM 経由で原因どおりの案内（W-3）を出す。
                         self.get_logger().error(
                             f'地図を読み直せなかったため LOCALIZE から進めない: '
                             f'id={route_id} ({err})')
+                        self._localize_quality = 'failed'
+                        self._route_has_map = False
+                        self._emit_event('evt.route_no_map')
             else:
                 self.get_logger().info(
                     f'load_route: id={route_id} reverse={reverse} 点={len(pts)} '

@@ -103,3 +103,23 @@ def test_replay_save_rejected_when_no_map(core):
                   _ctx(flags={"map_update": True}, map_update_available=False))
     assert not d.accepted
     assert d.reject_reason_key == "map_update_off"
+
+
+# ── SG-B19: 地図・経路が読めないときは原因どおりの案内 ─────────────
+def test_route_no_map_guides_with_cause(core):
+    """地図の無い経路 → LOCALIZE のまま route_no_map の案内（T-REPLAY-12）。"""
+    d = core.step("REPLAY", "LOCALIZE", "evt.route_no_map", _ctx())
+    assert d.accepted
+    assert d.rule_id == "T-REPLAY-12"
+    assert (d.to_mode, d.to_state) == ("REPLAY", "LOCALIZE")
+    assert [(e.name, e.args.get("key")) for e in d.effects] == [
+        ("guide", "route_no_map")]
+
+
+def test_route_unreadable_guides_with_cause(core):
+    """読めない経路ファイル → LOCALIZE のまま route_unreadable の案内（T-REPLAY-13）。"""
+    d = core.step("REPLAY", "LOCALIZE", "evt.route_unreadable", _ctx())
+    assert d.accepted
+    assert d.rule_id == "T-REPLAY-13"
+    assert [(e.name, e.args.get("key")) for e in d.effects] == [
+        ("guide", "route_unreadable")]

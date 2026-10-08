@@ -1045,6 +1045,37 @@
       route_id: $arg.id
       reverse: $arg.reverse
   spec_ref: SM-3.1.2-103
+# T-REPLAY-12 / -13: 1b-11 SG-B19（Spec-transit.md §4.2.3）。
+# load_route を受けた replay_runner が経路・骨格地図を読めなかったときの
+# 受け口。LOCALIZE に留めたうえで、原因どおりの案内（W-3）を出す。
+# 無言で return しない（60 秒後の汎用タイムアウト案内に頼らない）。
+# spec_ref は経路選択の SM-3.1.2-020（この 2 行はその失敗枝。報告参照）。
+- id: T-REPLAY-12
+  layer: 10
+  mode: REPLAY
+  state: LOCALIZE
+  event: evt.route_no_map
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: guide
+    args:
+      key: route_no_map
+  spec_ref: SM-3.1.2-020
+- id: T-REPLAY-13
+  layer: 10
+  mode: REPLAY
+  state: LOCALIZE
+  event: evt.route_unreadable
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: guide
+    args:
+      key: route_unreadable
+  spec_ref: SM-3.1.2-020
 - id: T-LINE-01
   layer: 10
   mode: LINE
