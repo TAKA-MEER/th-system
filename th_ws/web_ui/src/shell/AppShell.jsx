@@ -14,7 +14,7 @@ import Windows from './Windows.jsx'
 import { useGuideBanner } from './useGuideBanner.js'
 import { useSaveConfirm } from './useSaveConfirm.js'
 import { stampToMs } from './effectDispatch.js'
-import { isW1Active, stopReason } from './limits.js'
+import { isW1Active, stopReason, showEstopRelease } from './limits.js'
 import { ConfirmWindowContext } from './confirmWindow.js'
 import { JogPanelContext } from './jogPanel.js'
 import { ESTOP_RELEASE_NOTE, ESTOP_RELEASE_BUTTON, stopReasonLabel } from '../i18n/states.js'
@@ -109,7 +109,7 @@ function AppShellInner({ screenName, screenId, children }) {
   // #jogWin's `bottom: calc(var(--dock-h, 0px) + 10px)` (theme.css, ported
   // from the mockup's layoutDock()). Measure the release bar when it's
   // actually shown so the panel never sits under anything reachable.
-  const releaseShown = uiEngaged || mode === 'ESTOP'
+  const releaseShown = showEstopRelease(uiEngaged, mode, estopUi)
   useLayoutEffect(() => {
     const releaseEl = document.getElementById('release')
     const h = releaseEl && releaseShown ? releaseEl.offsetHeight : 0
@@ -279,8 +279,9 @@ function AppShellInner({ screenName, screenId, children }) {
         saveAsk={saveAsk}
         onSaveYes={handleSaveYes}
         onSaveNo={handleSaveNo}
+        autoBrake={state?.auto_brake}
       />
-      <EstopReleaseBar show={uiEngaged || mode === 'ESTOP'} onRelease={handleRelease} />
+      <EstopReleaseBar show={releaseShown} onRelease={handleRelease} />
     </div>
   )
 }

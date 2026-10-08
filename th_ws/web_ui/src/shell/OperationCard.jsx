@@ -9,7 +9,9 @@
 // icon, never colour alone). UX-2-b / UX-2-d: when a screen passes
 // manualDenyReason, the manual button is disabled and the reason is shown in
 // a badge directly beneath it (data-testid="reason-manual").
-import { operationCardLayout, stateToBlueButton } from './limits.js'
+import { useContext } from 'react'
+import { operationCardLayout, stateToBlueButton, opButtonTone } from './limits.js'
+import { JogPanelContext } from './jogPanel.js'
 import { OP_LABELS } from '../i18n/states.js'
 import {
   IconArrow, IconJoystick, IconSave, IconStop, OP_BUTTON_KINDS,
@@ -30,9 +32,21 @@ export default function OperationCard({
   const slots = { ...layout, ...slotOverrides }
   const blue = stateToBlueButton(mode, stateName, attributes)
 
+  // W-6（手動操作パネル）は、操作カードの停止・確認・走行・保存を押したら閉じる
+  // （Spec-webui.md §4.0「自動で閉じる」。SG-C11）。手動は閉じない。
+  // useJogPanel() は AppShell の外で投げるので、無くても動く素の useContext を使う。
+  const jogPanel = useContext(JogPanelContext)
+
   const fire = (trigger) => {
+    jogPanel?.close()
     if (!onTrigger) return
     onTrigger(trigger)
+  }
+
+  // 色は slot ごとにここで決めない。opButtonTone()（U-17 の表）の結果をクラスにする。
+  const tone = (slot) => {
+    const t = opButtonTone(slot, blue)
+    return `tone-${t}${t === 'current' ? ' on' : ''}`
   }
 
   return (
@@ -41,7 +55,7 @@ export default function OperationCard({
         {slots.stop && (
           <button
             type="button"
-            className={`btn op-stop ${OP_BUTTON_KINDS.stop} ${blue === 'stop' ? 'on' : ''}`}
+            className={`btn op-stop ${OP_BUTTON_KINDS.stop} ${tone('stop')}`}
             disabled={disabled}
             onClick={() => fire('ui.stop')}
           >
@@ -52,7 +66,7 @@ export default function OperationCard({
         {slots.check && (
           <button
             type="button"
-            className={`btn op-check ${blue === 'check' ? 'on' : ''}`}
+            className={`btn op-check ${tone('check')}`}
             disabled={disabled}
             onClick={() => fire('ui.confirm')}
           >
@@ -62,7 +76,7 @@ export default function OperationCard({
         {slots.run && (
           <button
             type="button"
-            className={`btn op-run ${OP_BUTTON_KINDS.advance} ${blue === 'run' ? 'on' : ''}`}
+            className={`btn op-run ${OP_BUTTON_KINDS.advance} ${tone('run')}`}
             disabled={disabled}
             onClick={() => fire('ui.run')}
           >
@@ -73,7 +87,7 @@ export default function OperationCard({
         {slots.save && (
           <button
             type="button"
-            className={`btn save op-save ${OP_BUTTON_KINDS.save}`}
+            className={`btn op-save ${OP_BUTTON_KINDS.save} ${tone('save')}`}
             disabled={disabled}
             onClick={() => fire('ui.save')}
           >
@@ -85,7 +99,7 @@ export default function OperationCard({
           <div className="manual-cell">
             <button
               type="button"
-              className={`btn op-manual ${OP_BUTTON_KINDS.manual}`}
+              className={`btn op-manual ${OP_BUTTON_KINDS.manual} ${tone('manual')}`}
               disabled={disabled || !!manualDenyReason}
               onClick={onManualClick}
             >

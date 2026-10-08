@@ -223,6 +223,13 @@ export const FOLLOW_RADAR_SLOT = '対象選択'
 export const W6_TITLE = '手動操作（触れている間だけ）'
 export const W6_CLOSE = '閉じる'
 export const W6_MODE = 'モードは「{mode}」のまま変わりません'
+// SG-C9 (W-6 分)。後方の死角は Spec-safety.md §2.3 の文言。自動ブレーキの状態は
+// ジョグ中に必ず出す（Spec-modes.md §8「無効化不可が外れることを試験員に隠さない」）。
+export const W6_REAR_BLIND = '後方は死角があります'
+export const W6_AUTO_BRAKE_LABEL = '自動ブレーキ'
+export const W6_AUTO_BRAKE_ON = 'ON'
+export const W6_AUTO_BRAKE_OFF = 'OFF'
+export const W6_AUTO_BRAKE_UNKNOWN = '不明'
 
 // 手動操作タブの「手動」ボタン (driveTab kind='manual' から W-6 を開く)。
 export const DRIVE_MANUAL = '手動'

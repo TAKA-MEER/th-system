@@ -12,14 +12,21 @@
 import { useSystemState } from './ros/useSystemState.js'
 import OperationCard from './shell/OperationCard.jsx'
 import attributes from './generated/attributes.json'
+import { useJogPanel } from './shell/jogPanel.js'
 
 export default function OperationCardHarness() {
   const { state, stale } = useSystemState()
   const mode = state?.mode ?? null
   const stateName = state?.state ?? null
+  // 1b-12 SG-C11: 操作カードの各ボタンで W-6 が閉じることを確かめるため、W-6 を開く
+  // 口を置く（本番の画面の「手動」ボタンと同じ jogPanel.open()）。
+  const jogPanel = useJogPanel()
 
   return (
     <div data-testid="opcard-harness">
+      <button type="button" className="btn sm" data-testid="harness-open-jog" onClick={() => jogPanel.open()}>
+        W-6
+      </button>
       <OperationCard
         mode={mode}
         stateName={stateName}

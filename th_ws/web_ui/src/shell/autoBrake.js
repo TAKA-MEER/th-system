@@ -26,3 +26,11 @@ export function showApproachWarning(limiterStatus, autoBrakeOn) {
   if (autoBrakeOn !== false) return false
   return limiterStatus?.approach_warning === true
 }
+
+// W-6（ジョグ中）に出す自動ブレーキの状態。正本は機体側の /system/state.auto_brake。
+// 未受信（null / undefined）は ON とも OFF とも言わず 'unknown'（隠さない・断言しない）。
+export function autoBrakeLabelKey(autoBrake) {
+  if (autoBrake === true) return 'on'
+  if (autoBrake === false) return 'off'
+  return 'unknown'
+}

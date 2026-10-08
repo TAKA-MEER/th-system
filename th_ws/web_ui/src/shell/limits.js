@@ -72,6 +72,46 @@ export function stateToBlueButton(mode, stateName, attributes) {
   return 'check'
 }
 
+// showEstopRelease(uiEngaged, mode, estopUi) -> bool
+//
+// 画面下端の「非常停止を解除」バーを出すか（Spec-safety.md §4.2「解除の配置」。SG-C10）。
+// このバーが解除できるのは UI 非常停止（/safety/estop_ui）だけ。重大フォルトで入った
+// ESTOP は押しても何も起きない（解除は W-1 の「確認」／「元のモードに戻る」）ので出さない。
+//   - 自分が押した（uiEngaged）あいだ
+//   - ESTOP で、UI 非常停止が実際に保持されているあいだ（再読込・別の端末が押した場合）
+// CARRY は従来どおり、押した直後（uiEngaged）には出る。
+export function showEstopRelease(uiEngaged, mode, estopUi) {
+  return !!uiEngaged || (mode === 'ESTOP' && !!estopUi)
+}
+
+// headerTone(mode, devMode, stale) -> 'estop' | 'carry' | 'dev' | 'normal'
+//
+// ヘッダの色（SG-C3）。Spec-webui.md §8「非常停止＝赤／解除待ち＝紫」、§5「開発モード中は
+// ヘッダの色を変える」。優先は安全側から: 非常停止 > 手押し > 開発モード。
+// 通信が古い（stale）ときは機体の状態が分からないので色で断言しない（normal）。
+export function headerTone(mode, devMode, stale = false) {
+  if (stale) return devMode ? 'dev' : 'normal'
+  if (mode === 'ESTOP') return 'estop'
+  if (mode === 'CARRY') return 'carry'
+  if (devMode) return 'dev'
+  return 'normal'
+}
+
+// opButtonTone(slot, blue) -> 'current' | 'confirm' | 'outline'
+//
+// Spec-webui.md §3.3.1（U-17）の色の表:
+//   青（塗り）  = いまの状態 … 停止／確認／走行のうち、いま該当している 1 つだけ
+//   緑（塗り）  = 押すと確定する動作 … 保存
+//   枠のみ      = 押せるが、いまの状態ではない … それ以外（手動もここ）
+// slot は 'stop'|'check'|'run'|'save'|'manual'、blue は stateToBlueButton() の結果。
+// 色の決め方はここ 1 か所。OperationCard.jsx は返り値をクラスにするだけ
+// （画面ごとに決めさせない）。
+export function opButtonTone(slot, blue) {
+  if (slot === 'save') return 'confirm'
+  if ((slot === 'stop' || slot === 'check' || slot === 'run') && blue === slot) return 'current'
+  return 'outline'
+}
+
 // operationCardLayout(mode, attributes) -> { stop, check, run, save, manual }
 //
 // Only `stop`, `run` and `save` can be derived purely from mode + attributes.
