@@ -37,6 +37,7 @@ import { takeCalibGuide } from './calibGuide.js'
 import { s40CalibGuideText } from '../i18n/screens.js'
 import BlindScanSelect from '../parts/BlindScanSelect.jsx'
 import StepBar from '../parts/StepBar.jsx'
+import ArmedButton from '../parts/ArmedButton.jsx'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import * as T from '../i18n/calib.js'
 import {
@@ -455,12 +456,14 @@ export default function S40Calib() {
                           <span>{T.s40Generation(r.generation)}: {r.text}</span>
                           <span className="note">{r.calibratedAt}</span>
                         </div>
-                        <button type="button" className="btn sm"
-                          data-testid={`s40-rollback-${it}-${r.generation}`}
+                        <ArmedButton
+                          idleLabel={T.S40_HISTORY_ROLLBACK}
+                          armedLabel={T.S40_HISTORY_ROLLBACK_ARMED}
+                          className="sm"
+                          testId={`s40-rollback-${it}-${r.generation}`}
                           disabled={disabledAll || fsmState !== 'LIST'}
-                          onClick={() => handleRollback(it, r.generation)}>
-                          {T.S40_HISTORY_ROLLBACK}
-                        </button>
+                          onConfirm={() => handleRollback(it, r.generation)}
+                        />
                       </div>
                     ))}
                   </div>

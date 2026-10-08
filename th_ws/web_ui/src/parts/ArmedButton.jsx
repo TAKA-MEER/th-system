@@ -14,6 +14,7 @@ export default function ArmedButton({
   disabled = false,
   armMs = DEFAULT_ARM_MS,
   className = '',
+  testId,
 }) {
   const [armed, setArmed] = useState(false)
   const timerRef = useRef(null)
@@ -47,6 +48,7 @@ export default function ArmedButton({
       type="button"
       className={`btn ${armed ? 'danger' : ''} ${className}`}
       disabled={disabled}
+      data-testid={testId}
       onClick={handleClick}
     >
       {armed ? armedLabel : idleLabel}
