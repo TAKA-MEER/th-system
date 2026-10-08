@@ -54,9 +54,15 @@ SourceClass compute_source_class(const ObstacleLimiterInputs& in, const Obstacle
   return (manual_fresh && state_fresh && manual_like) ? SourceClass::MANUAL : SourceClass::AUTO;
 }
 
-bool policy_stops(SourceClass source_class, Zone zone, bool auto_brake) {
+bool policy_stops(SourceClass source_class, Zone zone, bool auto_brake,
+                  bool dev_auto_brake_off) {
   if (source_class == SourceClass::AUTO) {
-    return true;  // 無効化不可（L7・Spec-safety.md §2.1）
+    // 無効化不可（L7・Spec-safety.md §2.1）。例外は開発モードの項目 auto_brake
+    // （§10。2026-10-08 改定）が実効のときだけ。点検・校正の NA ゾーンは対象外。
+    if (dev_auto_brake_off && zone != Zone::NA) {
+      return auto_brake;
+    }
+    return true;
   }
   if (zone == Zone::NA) {
     return true;  // OPCHECK/CALIB は極低速で人が張り付いている
@@ -310,7 +316,8 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   // else: floor と floor+band の間 → 直前の stop_latched_ を維持する。
   const double nearest_for_v_allow = stop_latched_ ? p.obstacle_floor_distance_m : nearest_m;
 
-  const bool policy_active = policy_stops(source_class, in.state.zone, eff_auto_brake);
+  const bool policy_active = policy_stops(source_class, in.state.zone, eff_auto_brake,
+                                         in.dev_auto_brake_off);
   double linear_ceiling = applied_limit;
   const double v_allow_now =
       v_allow(nearest_for_v_allow, p.obstacle_floor_distance_m, p.brake_accel_mps2);

@@ -23,7 +23,7 @@
 //   sub /safety/estop    (Bool)         reliable
 //   sub /safety/fault_lock (Bool)       reliable
 //   sub /system/dev_mode (String/JSON)  reliable + transient_local, depth 1
-//                                       （開発モードの項目 scan_stop だけを見る。dev_mode_core.hpp）
+//                                       （開発モードの項目 scan_stop・auto_brake だけを見る。dev_mode_core.hpp）
 //   pub /cmd_vel               (Twist)         reliable, depth 1 — 20Hz固定・沈黙禁止
 //   pub /safety/limiter_status (LimiterStatus) best_effort, depth 1 — 20Hz（heartbeat兼用）
 //
@@ -463,6 +463,17 @@ private:
         in.fault_lock = fault_lock_;
         in.dev_ignore_scan_stop = th_safety::dev_item_effective(
             dev_mode_, th_safety::kDevItemScanStop, in.now_sec);
+        in.dev_auto_brake_off = th_safety::dev_item_effective(
+            dev_mode_, th_safety::kDevItemAutoBrake, in.now_sec);
+        if (in.dev_auto_brake_off != prev_dev_auto_brake_off_) {
+            if (in.dev_auto_brake_off) {
+                RCLCPP_WARN(get_logger(), "開発モード: auto_brake 有効（自律系でも自動ブレーキ OFF の切替に従う。"
+                            "OFF の間は減速しない・接近警告のみ。点検・校正は従来どおり止める）");
+            } else {
+                RCLCPP_INFO(get_logger(), "開発モード: auto_brake 無効（自律系は常に自動ブレーキ ON）");
+            }
+            prev_dev_auto_brake_off_ = in.dev_auto_brake_off;
+        }
         if (in.dev_ignore_scan_stop != prev_dev_ignore_scan_stop_) {
             if (in.dev_ignore_scan_stop) {
                 RCLCPP_WARN(get_logger(), "開発モード: scan_stop 有効（/scan 途絶でも MANUAL と始業点検のモーター確認は止めない。"
@@ -539,6 +550,7 @@ private:
     th_safety::Stamped<bool> fault_lock_;
     th_safety::DevModeSnapshot dev_mode_;
     bool prev_dev_ignore_scan_stop_ = false;
+    bool prev_dev_auto_brake_off_ = false;
 
     // ── Publishers ────────────────────────────────────────
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_cmd_vel_;

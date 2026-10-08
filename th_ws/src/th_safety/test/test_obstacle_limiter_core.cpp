@@ -889,3 +889,108 @@ TEST(ObstacleLimiterCoreAutoBrake, OffKeepsSpeedLimit) {
   const auto o = core.update(in, p);
   EXPECT_DOUBLE_EQ(o.out.linear_x, 0.3) << "速度上限は OFF でも変わらない";
 }
+
+// ── 開発モードの項目 auto_brake（Spec-safety.md §10。2026-10-08 改定） ──────
+// dev_auto_brake_off が真のときだけ、AUTO も auto_brake に従う。
+// NA・/system/state 途絶・estop・fault_lock は変えない。
+
+TEST(ObstacleLimiterCoreDevAutoBrake, PolicyStopsAutoFollowsAutoBrakeOnlyWithDevItem) {
+  // 項目なし（既定）: 従来どおり AUTO は常に止める。
+  for (Zone z : {Zone::IN, Zone::OUT, Zone::NA}) {
+    EXPECT_TRUE(policy_stops(SourceClass::AUTO, z, true, false));
+    EXPECT_TRUE(policy_stops(SourceClass::AUTO, z, false, false));
+  }
+  // 項目あり: IN/OUT で auto_brake=false なら止めない。true なら止める。NA は常に止める。
+  for (Zone z : {Zone::IN, Zone::OUT}) {
+    EXPECT_FALSE(policy_stops(SourceClass::AUTO, z, false, true));
+    EXPECT_TRUE(policy_stops(SourceClass::AUTO, z, true, true));
+  }
+  EXPECT_TRUE(policy_stops(SourceClass::AUTO, Zone::NA, false, true));
+  EXPECT_TRUE(policy_stops(SourceClass::AUTO, Zone::NA, true, true));
+  // MANUAL は項目の有無で変わらない。
+  for (Zone z : {Zone::IN, Zone::OUT, Zone::NA}) {
+    for (bool ab : {true, false}) {
+      EXPECT_EQ(policy_stops(SourceClass::MANUAL, z, ab, true),
+                policy_stops(SourceClass::MANUAL, z, ab, false));
+    }
+  }
+}
+
+namespace {
+// 前方 obstacle_m に障害物を置いた自律走行（FOLLOW・場外・ジョイなし）。
+ObstacleLimiterInputs make_auto_in(double now_sec, double obstacle_m, bool auto_brake,
+                                   bool dev_item) {
+  ObstacleLimiterInputs in = make_manual_in(now_sec, obstacle_m, auto_brake);
+  in.manual.received = false;
+  in.state.mode = "FOLLOW";
+  in.dev_auto_brake_off = dev_item;
+  return in;
+}
+}  // namespace
+
+TEST(ObstacleLimiterCoreDevAutoBrake, AutoDoesNotDecelerateButWarnsWithDevItem) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_auto_in(1000.0, 0.5, false, true), p);
+  EXPECT_EQ(o.source_class, SourceClass::AUTO);
+  EXPECT_DOUBLE_EQ(o.out.linear_x, 1.0) << "項目ありで OFF なら AUTO も減速しない";
+  EXPECT_TRUE(o.approach_warning) << "OFF の間は手動の OFF と同じく接近警告を出す";
+}
+
+TEST(ObstacleLimiterCoreDevAutoBrake, AutoStillBrakesWithoutDevItem) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_auto_in(1000.0, 0.5, false, false), p);
+  EXPECT_NEAR(o.out.linear_x, std::sqrt(2.0 * 1.0 * (0.5 - 0.4)), 1e-6);
+  EXPECT_FALSE(o.approach_warning);
+}
+
+TEST(ObstacleLimiterCoreDevAutoBrake, DevItemWithAutoBrakeOnStillBrakes) {
+  // 項目を選んだだけ（切り替えていない＝auto_brake=true）では減速する。
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_auto_in(1000.0, 0.5, true, true), p);
+  EXPECT_NEAR(o.out.linear_x, std::sqrt(2.0 * 1.0 * (0.5 - 0.4)), 1e-6);
+  EXPECT_FALSE(o.approach_warning);
+}
+
+TEST(ObstacleLimiterCoreDevAutoBrake, DevItemDoesNotRelaxZoneNaStaleStateEstopLock) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  {  // NA（点検・校正）
+    ObstacleLimiterCore core;
+    auto in = make_auto_in(1000.0, 0.3, false, true);
+    in.state.zone = Zone::NA;
+    const auto o = core.update(in, p);
+    EXPECT_DOUBLE_EQ(o.out.linear_x, 0.0);
+    EXPECT_FALSE(o.approach_warning);
+  }
+  {  // /system/state 途絶 → ON に倒れる
+    ObstacleLimiterCore core;
+    auto in = make_auto_in(1000.0, 0.5, false, true);
+    in.state.stamp_sec = in.now_sec - p.state_stale_sec - 0.1;
+    const auto o = core.update(in, p);
+    EXPECT_DOUBLE_EQ(o.out.linear_x, 0.0);
+    EXPECT_FALSE(o.approach_warning);
+  }
+  {  // estop
+    ObstacleLimiterCore core;
+    auto in = make_auto_in(1000.0, 30.0, false, true);
+    in.estop.value = true;
+    EXPECT_DOUBLE_EQ(core.update(in, p).out.linear_x, 0.0);
+  }
+  {  // fault_lock
+    ObstacleLimiterCore core;
+    auto in = make_auto_in(1000.0, 30.0, false, true);
+    in.fault_lock.value = true;
+    EXPECT_DOUBLE_EQ(core.update(in, p).out.linear_x, 0.0);
+  }
+}
+
+TEST(ObstacleLimiterCoreDevAutoBrake, DevItemKeepsSpeedLimitForAuto) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  auto in = make_auto_in(1000.0, 30.0, false, true);
+  in.screen_limit_mps = 0.3;
+  in.mode_limit_mps = 0.3;
+  EXPECT_DOUBLE_EQ(core.update(in, p).out.linear_x, 0.3) << "速度上限は変わらない";
+}

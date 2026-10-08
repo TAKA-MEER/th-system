@@ -29,6 +29,11 @@ namespace th_safety {
 inline constexpr const char* kDevItemLidarFault = "lidar_fault";  // safety_monitor: LIDAR_LOST を出さない
 inline constexpr const char* kDevItemScanStop   = "scan_stop";    // obstacle_limiter: /scan 途絶で手動を止めない（上限は通常と同じ）
 
+// obstacle_limiter: 自律系（AUTO）でも auto_brake=false に従う（2026-10-08 改定。
+// 点検・校正の NA ゾーンは対象外）。選んだだけでは OFF にならず、OFF にするのは
+// 試験員の切替（/system/state.auto_brake）。
+inline constexpr const char* kDevItemAutoBrake  = "auto_brake";
+
 // /system/dev_mode は 1 Hz。3 周期落ちたら発行者が居ないとみなす。
 inline constexpr double kDevStateStaleSec = 3.0;
 
