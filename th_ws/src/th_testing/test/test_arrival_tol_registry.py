@@ -2,7 +2,7 @@
 
 registry の `arrival_xy_tol_m`（0.12）が venue_navigator の到着判定と Nav2
 （実機用）の `xy_goal_tolerance`／`yaw_goal_tolerance` の両方の根拠であること。
-Nav2 側へは params_generation が生成 nav2_params.yaml に写す
+Nav2 側へは params_generation が生成 nav2/nav2_params.yaml に写す
 （Nav2 の params_file は registry 駆動にできないため）。
 
 ROS2 不要（host で走る）。
@@ -83,7 +83,7 @@ def test_generation_propagates_registry_change(tmp_path, registry_rows):
         venue = yaml.safe_load(f)
     assert venue['venue_navigator']['ros__parameters']['arrival_xy_tol_m'] == \
         pytest.approx(0.09)
-    with open(out_dir / 'nav2_params.yaml', encoding='utf-8') as f:
+    with open(out_dir / 'nav2' / 'nav2_params.yaml', encoding='utf-8') as f:
         nav2 = yaml.safe_load(f)
     checker = nav2['controller_server']['ros__parameters']['general_goal_checker']
     assert checker['xy_goal_tolerance'] == pytest.approx(0.09)
@@ -96,10 +96,32 @@ def test_launch_files_read_generated_nav2_params():
     import re
     launch_dir = os.path.join(_SRC_ROOT, 'th_bringup', 'launch')
     expect = {
-        'bringup.launch.py': r"nav2_yaml\s*=\s*os\.path\.join\(GENERATED_DIR,\s*'nav2_params\.yaml'\)",
-        'gazebo.launch.py': r"nav2_params_real\s*=\s*os\.path\.join\(GENERATED_DIR,\s*'nav2_params\.yaml'\)",
+        'bringup.launch.py': r"nav2_yaml\s*=\s*os\.path\.join\(GENERATED_DIR,\s*'nav2',\s*'nav2_params\.yaml'\)",
+        'gazebo.launch.py': r"nav2_params_real\s*=\s*os\.path\.join\(GENERATED_DIR,\s*'nav2',\s*'nav2_params\.yaml'\)",
     }
     for fname, pat in expect.items():
         with open(os.path.join(launch_dir, fname), encoding='utf-8') as f:
             src = f.read()
         assert re.search(pat, src), f'{fname} が静的な nav2_params.yaml を読んでいる'
+
+
+def test_generated_top_level_is_one_node_per_file(tmp_path, registry_rows):
+    """generated/ 直下の *.yaml は {<ファイル名>: {ros__parameters}} の 1 ノード 1 ファイル。
+    Nav2 のフル設定は直下に置かない（nav2/ の下）。"""
+    reg_path = tmp_path / 'registry.yaml'
+    with open(reg_path, 'w', encoding='utf-8') as f:
+        yaml.safe_dump(registry_rows, f, allow_unicode=True)
+    out_dir = tmp_path / 'generated'
+    env = dict(os.environ)
+    env['PYTHONPATH'] = os.path.join(_SRC_ROOT, 'th_params') + (
+        os.pathsep + env['PYTHONPATH'] if env.get('PYTHONPATH') else '')
+    run_generation(stage=4, sim=False, nodes=['venue_navigator'],
+                   out_dir=str(out_dir), registry_path=str(reg_path),
+                   env=env, calib_dir=str(tmp_path / 'calib'),
+                   overrides_path=None, nav2_static_path=_STATIC_NAV2)
+    assert not (out_dir / 'nav2_params.yaml').exists()
+    assert (out_dir / 'nav2' / 'nav2_params.yaml').exists()
+    for y in out_dir.glob('*.yaml'):
+        with open(y, encoding='utf-8') as f:
+            doc = yaml.safe_load(f)
+        assert y.stem in doc and 'ros__parameters' in doc[y.stem], y.name

@@ -325,6 +325,7 @@ class TestVenueNavArrivalTol(unittest.TestCase):
                 self.fail(f'ui.abort 後に AT_HOME にならない ({self._mode_state()})')
 
     def _enter_nav(self):
+        since0 = len(self._snap_events())
         ms = self._mode_state()
         if ms is None or ms == ('INIT', 'CHECK'):
             self._reset_to_home()
@@ -339,8 +340,17 @@ class TestVenueNavArrivalTol(unittest.TestCase):
         else:
             self.fail('/onsite/select_pin が成功しない')
         self._call_trigger('ui.goto', '{"kind":"PANEL"}')
-        if not self._wait_mode_state('PANEL_NAV', 'NAV', timeout=10.0):
-            self.fail(f'PANEL_NAV/NAV に入らない ({self._mode_state()})')
+        # Nav2 の代役が居ないので NAV はすぐ BLOCKED に移る（高負荷だと NAV を
+        # 観測できずに BLOCKED だけ見えることがある）。PANEL_NAV に入ったことは
+        # 状態を問わず、到着が既に出ていればそれも「入った」とみなす。
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline:
+            ms = self._mode_state()
+            if (ms is not None and ms[0] == 'PANEL_NAV') or \
+                    'evt.arrived' in self._snap_events()[since0:]:
+                return since0
+            time.sleep(0.05)
+        self.fail(f'PANEL_NAV に入らない ({self._mode_state()})')
 
     # ═══════════════════════════════════════════════════════════════════
     # 境界の外 → 到着にならない／境界の内 → なる／ちょうど境界 → ならない
@@ -348,8 +358,7 @@ class TestVenueNavArrivalTol(unittest.TestCase):
     def test_arrival_inside_tol(self):
         """tol - 0.01 m で evt.arrived が出る（生成 yaml の値で判定している）。"""
         self._set_distance(_D_IN)
-        self._enter_nav()
-        since = len(self._snap_events())
+        since = self._enter_nav()
         if not self._wait_event('evt.arrived', since, timeout=15.0):
             self.fail(f'tol-{0.01} m で evt.arrived が出ない '
                       f'(tol={_TOL}, events={self._snap_events()[since:]})')
