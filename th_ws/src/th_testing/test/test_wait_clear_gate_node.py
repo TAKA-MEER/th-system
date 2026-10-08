@@ -31,7 +31,7 @@ from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
 from std_msgs.msg import Header
 from tf2_msgs.msg import TFMessage
-from th_system_msgs.msg import PersonStatus, StateEvent, SystemState
+from th_system_msgs.msg import PersonStatus, StateEvent, SystemState, WaitClearStatus
 
 # wait_clear_gate.py の state_qos と同じ TRANSIENT_LOCAL。plain int（既定
 # VOLATILE）で publisher を作ると durability 不一致でゲートの購読に一切届かない
@@ -79,6 +79,9 @@ class TestWaitClearGateNode(unittest.TestCase):
 
         self._events = []
         self.node.create_subscription(StateEvent, '/system/event', self._events.append, 10)
+        self._wait_msgs = []
+        self.node.create_subscription(
+            WaitClearStatus, '/onsite/wait_clear', self._wait_msgs.append, 10)
 
         # /system/state ・ /onsite/summon_goal・/tf_static はいずれも TRANSIENT_LOCAL
         # で購読される（wait_clear_gate.py の state_qos/goal_qos、tf2_ros の
@@ -148,8 +151,7 @@ class TestWaitClearGateNode(unittest.TestCase):
         assert self._clear_ok_events() == [], \
             'disabled 中に evt.clear_ok が出た'
 
-    def test_disabled_blocks_then_far_person_fires(self):
-        """対照: disabled 中は塞ぎ、抜けて「見えている人が十分離れる」と発火する。"""
+    def test_disabled_blocks_then_far_person_fires(self):        """対照: disabled 中は塞ぎ、抜けて「見えている人が十分離れる」と発火する。"""
         for _ in range(10):            # disabled で塞がれている状態
             self._publish_person(is_lost=True, lost_reason='disabled')
         assert self._clear_ok_events() == []
@@ -162,3 +164,33 @@ class TestWaitClearGateNode(unittest.TestCase):
                 break
         assert self._clear_ok_events(), \
             '見えている人が十分離れているのに disabled のせいで発火しない（ゲートがへんな状態）'
+
+    def _last_wait(self):
+        return self._wait_msgs[-1] if self._wait_msgs else None
+
+    def _wait_for_wait_msg(self, timeout: float = 3.0):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self._spin(0.1)
+            if self._wait_msgs:
+                return True
+        return bool(self._wait_msgs)
+
+    def test_lost_publishes_negative_distance(self):
+        """SG-C8: 見失っている間は distance_m < 0（画面は「—」で出す）。
+        最後の値のままになっていたら赤くなる。"""
+        for _ in range(10):
+            self._publish_person(is_lost=True, lost_reason='occluded')
+        assert self._wait_for_wait_msg(), '/onsite/wait_clear が来ない'
+        last = self._last_wait()
+        assert last.distance_m < 0, \
+            f'見失い中に最後の距離のまま ({last.distance_m})'
+
+    def test_visible_publishes_real_distance(self):
+        """対照: 見えている間は実距離（>= 0）が出る。"""
+        for _ in range(10):
+            self._publish_person(is_lost=False, lost_reason='')
+        assert self._wait_for_wait_msg(), '/onsite/wait_clear が来ない'
+        last = self._last_wait()
+        assert last.distance_m >= 0, \
+            f'見えているのに距離が出ない ({last.distance_m})'

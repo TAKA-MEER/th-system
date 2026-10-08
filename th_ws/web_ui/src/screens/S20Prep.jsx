@@ -60,7 +60,7 @@ import {
   S20_MAP_ARIA, S20_MAP_GATE_BUTTON, S20_MAP_GATE_MSG, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TARGET, S20_MAP_TITLE,
   S20_MAPTAP_CANCEL, S20_MAPTAP_CONFIRM, S20_MAPTAP_PREVIEW,
   S20_NEXT_REG_HOME, S20_NEXT_REG_PANEL, S20_NEXT_SAVE, S20_NEXT_SELECT_TARGET, S20_NEXT_START_MAPPING,
-  S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_EDIT, S20_PIN_RENAME,
+  S20_PIN_CANCEL, S20_PIN_DELETE, S20_PIN_DELETE_ARMED, S20_PIN_EDIT, S20_PIN_RENAME,
   S20_PIN_REREGISTER_HERE, S20_PIN_REREGISTER_NO_POSE,
   S20_PINWARN_CANCEL, S20_PINWARN_MSG, S20_PINWARN_PLACE, S20_PINWARN_RETREAT,
   S20_PINS_TITLE, S20_PIN_YAW, S20_REG_HOME, S20_REG_HOME_HERE, S20_REG_HOME_MAPTAP, S20_REG_HERE_NOTE,
@@ -410,9 +410,9 @@ export default function S20Prep() {
   }
 
   // SG-B16: 同じ id・同じ名前のまま位置と向きを登録し直す。機体の現在姿勢
-  // （map 座標の routePose）をそのまま送る。routePose が odom のとき・未取得の
+  // （map 座標の routePose）をそのまま送る。frame が odom のとき・未取得の
   // ときは押せない（map が無いとピンの座標系と合わない）。
-  const reregPose = routePose?.frame === 'map' ? routePose : null
+  const reregPose = routePose && routePose.frame !== 'odom' ? routePose : null
   const [reregMsg, setReregMsg] = useState(null)
 
   async function doPinReregister() {
@@ -907,14 +907,16 @@ export default function S20Prep() {
                       >
                         {S20_PIN_RENAME}
                       </button>
-                      <button
-                        type="button"
-                        className="btn sm danger"
-                        data-testid="s20-pin-delete"
-                        onClick={doPinDelete}
-                      >
-                        {S20_PIN_DELETE}
-                      </button>
+                      {/* SG-C12: ピン削除は二段階アーム式（Spec-webui.md §6）。
+                          部品は既存の ArmedButton を使い回す（新規ファイルなし）。 */}
+                      <span data-testid="s20-pin-delete">
+                        <ArmedButton
+                          className="sm"
+                          idleLabel={S20_PIN_DELETE}
+                          armedLabel={S20_PIN_DELETE_ARMED}
+                          onConfirm={doPinDelete}
+                        />
+                      </span>
                       <button
                         type="button"
                         className="btn sm"
