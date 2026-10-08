@@ -55,3 +55,12 @@ test('作業中の拒否理由 working_in_progress が日本語に解決する',
   assert.ok(REJECT_REASONS.working_in_progress)
   assert.equal(reasonLabel('working_in_progress'), REJECT_REASONS.working_in_progress)
 })
+
+// 1b-7 S-13: SAVED で「走行」・スティックを拒否した理由 teach_saved_finalized
+//（T-TEACH-05/-05J/-05M）が日本語に解決する。S-13 が state.last_reject_reason
+// から出す。消えると理由が生キーか「理由不明」で出る。
+test('保存確定の拒否理由 teach_saved_finalized が日本語に解決する', () => {
+  assert.ok(REJECT_REASONS.teach_saved_finalized)
+  assert.equal(reasonLabel('teach_saved_finalized'), REJECT_REASONS.teach_saved_finalized)
+  assert.notEqual(reasonLabel('teach_saved_finalized'), 'teach_saved_finalized')
+})

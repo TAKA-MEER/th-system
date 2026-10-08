@@ -6,6 +6,9 @@ float32   recorded_m
 float32   elapsed_sec
 uint32    points
 int32     target_index   # 再生中の pure-pursuit 目標点の添字。記録中や未走行は -1
+float32   start_yaw      # 記録側のみ使用。記録開始時の向き [rad]
+                         # （S-13「開始時の向き」表示用。Spec-webui.md §3.6）。
+                         # 記録を開いていないときは 0。
 bool      saved          # 記録側のみ使用。finalize_route_file が成功したときだけ true。
                          # FSM の状態（SAVED）とは無関係。ファイルが書けたかどうかだけ。
 bool      arrived        # 再生側のみ使用。経路の終端まで走り切ったときだけ true。
