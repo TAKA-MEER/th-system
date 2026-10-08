@@ -94,9 +94,9 @@
 | SG-D2 | `SM-3.1.1-03`「`PAUSE` を持たない 3 モード」→ `PREP` を加えて 4 モード。`Spec-modes.md` §3 の「`WAIT_CLEAR` に `PAUSE` は無い」と `-03`「任意の状態 → `PAUSE`」が衝突している（SG-A2 の入口） | `PAUSE` に落とす |
 | SG-D3 | `Spec-safety.md` §6.1（タブレットが途切れたら `PAUSE`）と §6.2.1（一時停止ではない） | 後者（SG-A12） |
 | SG-D4 | `Spec-modes.md` §3.0-②（PREP には止める対象が無い）が、自動帰還（RETURN）を見落としている | SG-A7 |
-| SG-D5 | `Spec-onsite.md` §2.1（塞がれた状態かを問わず再試行）と §6（自動でルートを変えない）。到達許容 0.25 m（`Spec-onsite.md` L36・L194、`Spec-params.md` §1・§3）と 0.12 m（`Spec-onsite.md` §6.2）が混在 | 自動再試行（SG-A15） |
-| SG-D6 | `Spec-params.md` §6（車輪半径は書き込みで適用）と `Spec-checks.md` §3.6（PC 側のスケール係数）。`Spec-params.md` §1 の「現状」値（2000 ms・0.45 m・0.5 m/s²）が古い | 後者 |
-| SG-D7 | W-5 の解除条件（`Spec-webui.md` §4「再検索まで出続ける」と `SM-3.1.2-058`「通れたら自動再開」）。`Spec-webui.md` §1.4 の文字サイズ表と §7 の固定キャンバス。`Spec-modes.md` §8・§4.3 の AT_HOME の書き漏れ。§7 の S-01/S-50 の速度上限（`v_max`。コードは `stop`）。`Spec-onsite.md` §5 と `SM-3.1.2-069` の軽い食い違い | — |
+| ~~SG-D5~~ **（2026-10-08・解消。`cec5edf`・`26ce6d5`）** | `Spec-onsite.md` §2.1（塞がれた状態かを問わず再試行）と §6（自動でルートを変えない）。到達許容 0.25 m（`Spec-onsite.md` L36・L194、`Spec-params.md` §1・§3）と 0.12 m（`Spec-onsite.md` §6.2）が混在 | 自動再試行（SG-A15） |
+| ~~SG-D6~~ **（2026-10-08・解消。`cec5edf`・`26ce6d5`）** | `Spec-params.md` §6（車輪半径は書き込みで適用）と `Spec-checks.md` §3.6（PC 側のスケール係数）。`Spec-params.md` §1 の「現状」値（2000 ms・0.45 m・0.5 m/s²）が古い | 後者 |
+| ~~SG-D7~~ **（2026-10-08・解消。`cec5edf`・`26ce6d5`）** | W-5 の解除条件（`Spec-webui.md` §4「再検索まで出続ける」と `SM-3.1.2-058`「通れたら自動再開」）。`Spec-webui.md` §1.4 の文字サイズ表と §7 の固定キャンバス。`Spec-modes.md` §8・§4.3 の AT_HOME の書き漏れ。§7 の S-01/S-50 の速度上限（`v_max`。コードは `stop`）。`Spec-onsite.md` §5 と `SM-3.1.2-069` の軽い食い違い | — |
 
 ## 計画書・台帳・詳細設計の記述が事実と違うもの
 
@@ -143,6 +143,15 @@
 | 1b-1 の未決 | **`PREP/RETURN` 中の「停止」で `PAUSE`**（他の `PREP` 状態では従来どおり inert） | `Spec-modes.md` `SM-3.1.2-050`／`-050a`（新設） | 遷移表に `-050a`（1b-1 追補） |
 | `SG-A10`／`SG-A6` | **地図の破棄・切替・読み込みと設定値の変更は「停止中」だけ**＝`IDLE` と `PREP` の `MAPPING`／`REGISTER`／`EDIT`／`SAVED`、かつジョグ中でないとき | `Spec.md` SD-9 | ガードを `/system/state` へ付け替え（1b-5） |
 | `SG-B10` の注意表示 | **OFF 中の接近警告（速度は落とさない）と、ON→OFF の切替確認。**スピーカーを追加したら接近警告を音でも出す | `Spec-webui.md` §3.5、`Spec-safety.md` §2.1 | 1b-15 |
+
+**2026-10-08 追加の決定**
+
+| ID | 決定 | spec の改定 | 実装でやること |
+| --- | --- | --- | --- |
+| `SG-D5`／`SG-B15` | **盤前到着の許容差は 0.12 m / 0.12 rad。到着の判定はこの 1 つの値で行う**（`venue_navigator` の 0.15 と Nav2 の 0.12 を分けない） | `Spec-onsite.md` §0・§3.3・§6.2、`Spec-params.md` §1・§3、`Spec-open.md` F-22（`cec5edf`） | registry の 1 行から `venue_navigator` と Nav2 の両方へ（1b-11） |
+| `SG-D6`・`SG-D7` の残り | **実装（as-built）に合わせて spec を直す**（車輪半径は PC 側のスケール係数／`Spec-params` §1 の古い現状値／AT_HOME の書き漏れ／S-01・S-50 の速度上限は停止／退避待ちで追跡が切れたら `POINT`／文字サイズ表は論理幅で読む） | `26ce6d5` | なし |
+| `SG-A11` | **`MUX_DEAD` は生存確認を新設して検知する**（twist_mux のノードの存在または出力の鮮度）。**最初は記録だけ**（誤検知を見てから停止に使う） | 変更なし（§3.5 の重大フォルトのまま。走行で確かめる前の検知は記録だけ、という従来の進め方） | 1b-9 の残り |
+| 開発モードの `auto_brake` | **自律系のモード・場内でも、自動ブレーキを OFF にできる**（項目を選んだだけでは OFF にならない） | `Spec-safety.md` §10（`26ce6d5`） | 1b-15 の残り |
 
 ## 確認して spec どおりだったもの（再調査を省くため）
 
