@@ -3,7 +3,8 @@
 ROS2 非依存（ノードを起動しない・最速）。DetailedDesign-state.md §12.2 の4行と、
 そのフェイルセーフ既定（6.2）・L-1 を検証する。
 """
-from th_state.connectivity_core import LinkReport, Params, evaluate, link_status
+from th_state.connectivity_core import (LinkReport, Params, evaluate, link_status,
+                                        restart_allowed)
 
 
 def _params(**overrides):
@@ -183,3 +184,19 @@ def test_link_status_loopback_reports_firmware_report_age():
                      last_cmd_report_ms=9_900, **dict(_ALL_OK_KWARGS, last_cmd_alive_ms=None))
     it = it["items"]["esp32_loopback"]
     assert it["ok"] is False and it["reported_age_ms"] == 100 and it["age_ms"] is None
+
+
+def test_restart_allowed_with_max_count():
+    """上限が決まっていれば count < max（FMEA②）。start.sh の下かどうかは関係しない。"""
+    assert restart_allowed(0, 2, supervised=False)
+    assert restart_allowed(1, 2, supervised=True)
+    assert not restart_allowed(2, 2, supervised=True)
+    assert not restart_allowed(0, 0, supervised=True)
+
+
+def test_restart_allowed_unset_max_requires_start_sh():
+    """上限が未確定（O-d4。本番の生成 yaml に載らず None）のとき、start.sh の下
+    （回数の正本）でだけ許す。ros2 launch 直接では立て直す者がいないので撃たない。"""
+    assert restart_allowed(0, None, supervised=True)
+    assert restart_allowed(5, None, supervised=True)   # 上限は start.sh が数える
+    assert not restart_allowed(0, None, supervised=False)

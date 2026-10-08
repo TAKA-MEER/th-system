@@ -459,11 +459,19 @@ if(BUILD_TESTING)
     test/test_connectivity_checker_node.py
     TIMEOUT 120)
   # 1b-6（SG-B6・SG-B7）: sys.link_timeout → restart effect → 再起動の実呼出し
-  # （dryrun）と、未保存がある間の execute 拒否・解消後の印ファイル
+  # （kill は偽物に差し替え）と、未保存がある間の execute 拒否・解消後の印ファイル
   # （launch_testing。ROS2 要）
   ament_add_pytest_test(test_1b6_restart_shutdown_node
     test/test_1b6_restart_shutdown_node.py
-    TIMEOUT 180)
+    TIMEOUT 400)
+  # 1b-6 SG-B6: slam_control が /map_session/status の VENUE の dirty を実際に出す
+  # （launch_testing。ROS2 要）
+  ament_add_pytest_test(test_1b6_restart_unset_max_node
+    test/test_1b6_restart_unset_max_node.py
+    TIMEOUT 200)
+  ament_add_pytest_test(test_venue_dirty_node
+    test/test_venue_dirty_node.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_params_audit_node
     test/test_params_audit_node.py
     TIMEOUT 120)

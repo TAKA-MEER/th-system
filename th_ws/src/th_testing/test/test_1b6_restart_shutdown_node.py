@@ -5,12 +5,13 @@ test_1b6_restart_shutdown_node.py
 
 SG-B7: state_manager の sys.link_timeout → T-INIT-02 の restart_control_stack
 effect → connectivity_checker が restart_control_stack() を呼ぶ（本番の経路）。
-SIGTERM は restart_dryrun で撃たず、回数だけ数える（本物はプロセスグループへ
-SIGTERM を送るため試験で撃つと launch_testing・colcon ごと死ぬ）。
-観測点は /system/link_status の restart.calls / restart.attempt。
+killpg は restart_kill_log の偽物に差し替える（本物はプロセスグループへ SIGTERM を
+送るため試験で撃つと launch_testing・colcon ごと死ぬ）。偽物は「呼ばれた」ことを
+ファイルへ追記するだけで、回数の判定・pgid の取得・_killpg の呼び出しは本番と同じ。
+観測点は偽の kill のログ行数と /system/link_status の restart.calls / restart.attempt。
 
 SG-B6: 未保存がある間は /shutdown/execute が拒否し、無くなれば印ファイルを
-置いて成功する（shutdown_dryrun で SIGTERM は撃たない）。未保存の種は
+置いて成功し、応答の後に（遅延つきで）kill が 1 回だけ呼ばれる（shutdown_kill_log の偽物）。未保存の種は
 /route/status（route）・/map_session/status（venue_map）。
 
 生成 yaml（data/generated/）を先に渡してから dict で上書きする
@@ -49,6 +50,8 @@ GENERATED_DIR = '/root/th_data/generated'
 # 共有。コンテナ内の使い捨てパス。試験後に消す）。
 _TMP_DIR = tempfile.mkdtemp(prefix='th_test_1b6_')
 _MARKER_PATH = os.path.join(_TMP_DIR, 'control_stop')
+_RESTART_KILL_LOG = os.path.join(_TMP_DIR, 'restart_kill.log')
+_SHUTDOWN_KILL_LOG = os.path.join(_TMP_DIR, 'shutdown_kill.log')
 
 LINK_WAIT_TIMEOUT_MS = 1500  # T-INIT-02 を試験中に発火させる（本番は 10000）
 RESTART_MAX_COUNT = 2        # 上限の試験用（timeout 由来＋直接 effect で使い切る）
@@ -66,7 +69,8 @@ def generate_test_description():
             {
                 'link_wait_timeout_ms': LINK_WAIT_TIMEOUT_MS,
                 'shutdown_marker_path': _MARKER_PATH,
-                'shutdown_dryrun': True,
+                'shutdown_kill_log': _SHUTDOWN_KILL_LOG,
+                'shutdown_kill_delay_s': 0.3,
             },
         ],
         output='screen',
@@ -83,7 +87,7 @@ def generate_test_description():
                 'required_nodes': ['unused_in_sim'],  # sim=True のため判定に使わない
                 'restart_max_count': RESTART_MAX_COUNT,
                 'restart_wait_ms': 5000,
-                'restart_dryrun': True,
+                'restart_kill_log': _RESTART_KILL_LOG,
                 'control_attempt': CONTROL_ATTEMPT,
                 'sim': True,
             },
@@ -145,6 +149,14 @@ class Test1b6RestartShutdownNode(unittest.TestCase):
             os.remove(_MARKER_PATH)
 
     # ── ヘルパー ──────────────────────────────────────────────
+    @staticmethod
+    def _kill_lines(path):
+        try:
+            with open(path, encoding='utf-8') as f:
+                return [ln for ln in f.read().splitlines() if ln.strip()]
+        except OSError:
+            return []
+
     def _spin(self, duration: float = 0.3):
         deadline = time.time() + duration
         while time.time() < deadline:
@@ -168,7 +180,7 @@ class Test1b6RestartShutdownNode(unittest.TestCase):
             return None
         return (payload.get('restart') or {}).get('attempt')
 
-    def _wait_calls(self, want, timeout=25.0):
+    def _wait_calls(self, want, timeout=70.0):
         deadline = time.time() + timeout
         while time.time() < deadline:
             calls = self._restart_calls()
@@ -214,36 +226,40 @@ class Test1b6RestartShutdownNode(unittest.TestCase):
             self._spin(0.2)
 
     # ── SG-B7 ─────────────────────────────────────────────────
+    # 順序は名前の昇順（a→b→c→d）。上限 2 を a(1) → c(2) → d(上限超え) の順に使い、
+    # b（別宛て）は上限に達する前に置いて、dest の判定を外す変異で calls が進むようにする。
     def test_a_link_timeout_restarts(self):
-        # 本番の経路: sys.link_timeout → T-INIT-02 の effect → restart が 1 回呼ばれる。
+        # 本番の経路: sys.link_timeout → T-INIT-02 の effect → 偽の kill が 1 回呼ばれる。
         # /scan を出さないので INIT に留まり、T-INIT-02 が発火する。
         calls = self._wait_calls(1)
-        self.assertIsNotNone(calls)
-        self.assertGreaterEqual(calls, 1)
+        self.assertEqual(calls, 1)
         # 購読 1 行（_on_effect）を消す変異では calls が進まずここで赤になる。
+        self.assertEqual(len(self._kill_lines(_RESTART_KILL_LOG)), 1)
         self.assertEqual(self._restart_attempt(), int(CONTROL_ATTEMPT))
 
-    def test_b_direct_effect_restarts(self):
-        # 自分宛ての effect でもう 1 回（上限 2 回目）。dest の判定を外す変異では
-        # test_d が赤になる（ここでは正しい dest で呼ぶ）。
-        self._send_effect('restart_control_stack', 'connectivity_checker')
-        calls = self._wait_calls(2)
-        self.assertEqual(calls, 2)
+    def test_b_wrong_dest_ignored(self):
+        # 別宛ての effect では呼ばれない。上限（2）にまだ余裕がある時点で送るので、
+        # dest の判定を外す変異では calls が 2 になって赤くなる。
+        before = self._restart_calls()
+        self.assertEqual(before, 1)
+        self._send_effect('restart_control_stack', 'WebUI')
+        self._spin(3.0)
+        self.assertEqual(self._restart_calls(), 1)
+        self.assertEqual(len(self._kill_lines(_RESTART_KILL_LOG)), 1)
 
-    def test_c_over_limit_not_called(self):
+    def test_c_direct_effect_restarts(self):
+        # 自分宛ての effect でもう 1 回（上限 2 回目）。
+        self._send_effect('restart_control_stack', 'connectivity_checker')
+        self.assertEqual(self._wait_calls(2), 2)
+        self.assertEqual(len(self._kill_lines(_RESTART_KILL_LOG)), 2)
+
+    def test_d_over_limit_not_called(self):
         # 上限（restart_max_count=2）に達したら呼ばれない。上限の比較を外す変異では
-        # calls が 3 になって赤くなる。
+        # calls が 3・kill が 3 回になって赤くなる。
         self._send_effect('restart_control_stack', 'connectivity_checker')
         self._spin(3.0)
         self.assertEqual(self._restart_calls(), 2)
-
-    def test_d_wrong_dest_ignored(self):
-        # 別宛ての effect では呼ばれない（dest 判定）。上限いっぱいなので calls は
-        # 動かないことが正しい。購読自体の有無は test_a が縛る。
-        before = self._restart_calls()
-        self._send_effect('restart_control_stack', 'WebUI')
-        self._spin(3.0)
-        self.assertEqual(self._restart_calls(), before)
+        self.assertEqual(len(self._kill_lines(_RESTART_KILL_LOG)), 2)
 
     # ── SG-B6 ─────────────────────────────────────────────────
     def test_e_route_unsaved_blocks_execute(self):
@@ -256,14 +272,21 @@ class Test1b6RestartShutdownNode(unittest.TestCase):
         self.assertFalse(res.success)
         self.assertEqual(res.message, 'unsaved_remains')
         self.assertFalse(os.path.exists(_MARKER_PATH))
+        self._spin(1.0)
+        self.assertEqual(self._kill_lines(_SHUTDOWN_KILL_LOG), [])   # 拒否では kill しない
         # 未保存の判定を常に空にする変異では prepare が [] になって赤になる。
 
     def test_f_saved_route_executes_with_marker(self):
-        # 保存済みになれば execute が通り、印ファイルを置く（SIGTERM は dryrun）。
+        # 保存済みになれば execute が通り、印ファイルを置く（kill は偽物）。
         self._publish_route(points=5, saved=True)
         res = self._call(self.cli_execute)
         self.assertTrue(res.success, res.message)
         self.assertTrue(os.path.exists(_MARKER_PATH))
+        # 応答の後に kill が 1 回だけ呼ばれる（遅延 0.3 秒）。kill の行を消す変異で赤。
+        deadline = time.time() + 5.0
+        while time.time() < deadline and not self._kill_lines(_SHUTDOWN_KILL_LOG):
+            self._spin(0.2)
+        self.assertEqual(len(self._kill_lines(_SHUTDOWN_KILL_LOG)), 1)
 
     def test_g_venue_dirty_blocks_execute(self):
         # /map_session/status の VENUE dirty は venue_map として検出する。
