@@ -97,3 +97,23 @@ test('初回起動（attempt 1）では再起動表示は出ない', async ({ pa
   await gotoS00(page, { mode: 'INIT' }, { ...PARTIAL, restart: { attempt: 1, calls: 0 } })
   await expect(page.getByTestId('s00-restart')).toHaveCount(0)
 })
+
+test('再起動表示は、運用に入れる（IDLE）ようになったら消える', async ({ page }) => {
+  await gotoS00(page, { mode: 'IDLE' }, { ...PARTIAL, restart: { attempt: 3, calls: 0 } })
+  await expect(page.getByTestId('s00-restart')).toHaveCount(0)
+})
+
+test('全項目が疎通しているのに INIT のとき（link_ok の直前）は「確認中」のまま', async ({ page }) => {
+  const ALL_OK = JSON.parse(JSON.stringify(PARTIAL))
+  ALL_OK.items.lidar.ok = true
+  ALL_OK.items.nodes.ok = true
+  await gotoS00(page, { mode: 'INIT' }, ALL_OK)
+  await expect(page.getByTestId('s00-overall')).toContainText('確認中')
+  await expect(page.getByTestId('s00-overall')).not.toContainText('繋がっていません')
+})
+
+test('タブレット行と AP 行に状態が出る（接続中は ✓）', async ({ page }) => {
+  await gotoS00(page, { mode: 'INIT' }, PARTIAL)
+  await expect(page.getByTestId('s00-tablet')).toContainText('接続している')
+  await expect(page.getByTestId('s00-ap')).toContainText('通信できている')
+})

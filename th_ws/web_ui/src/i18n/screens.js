@@ -66,6 +66,12 @@ export const S00_LINK_TEXT = {
 // required rows above (C-01).
 export const S00_AP_LABEL = 'Wi-Fi AP'
 export const S00_AP_NOTE = '単一障害点'
+// 1b-6 SG-C4: AP とタブレットの状態。どちらもこの画面（タブレット）が rosbridge に
+// 繋がっているかで決める（AP を直接測る手段は無い。繋がっていれば AP を通れている）。
+export const S00_AP_OK = '✓ 通信できている'
+export const S00_AP_UNKNOWN = '× 通信できていない'
+export const S00_TABLET_LABEL = 'タブレット（この画面）'
+export const S00_TABLET_OK = '✓ 接続している'
 
 export const S00_OVERALL_TITLE = '総合'
 export const S00_READY = '運用に入れます'
@@ -155,6 +161,11 @@ export const SHUTDOWN_LOADING = '確認しています…'
 export const SHUTDOWN_STOPPING = '停止しています…'
 // 未保存が残っている間は「停止する」を押せない（§3.2.1 手順 4）。押せない理由。
 export const SHUTDOWN_BLOCKED_HINT = (n) => `未保存の扱いを決めてください（残り ${n} 件）`
+
+// 保存・破棄の操作が通らなかった／反映が確認できなかったとき（項目の下に出す）。
+export const SHUTDOWN_ITEM_FAILED = '処理できませんでした。もう一度お試しください。'
+// 機体側に画面から呼べる保存・破棄の操作が無い項目（校正の補正値・地図の書き足し）。
+export const SHUTDOWN_NO_ACTION = 'この画面からは扱えません'
 
 export const SHUTDOWN_DONE_TITLE = '停止が完了しました'
 export const SHUTDOWN_DONE_BODY = '電源を切って構いません。'

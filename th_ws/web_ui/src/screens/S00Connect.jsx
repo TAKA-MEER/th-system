@@ -19,12 +19,12 @@
 import { useSystemState } from '../ros/useSystemState.js'
 import { useAutoCheckStatus } from '../ros/useAutoCheckStatus.js'
 import { useLinkStatus } from '../ros/useLinkStatus.js'
-import { linkRowView } from '../ros/linkStatusState.js'
+import { linkRowView, linkDownKeys } from '../ros/linkStatusState.js'
 import {
   S00_CHECK_TITLE, S00_COL_DEVICE, S00_COL_REQ, S00_COL_STATUS, S00_REQUIRED,
   S00_MONITOR, S00_ITEMS, S00_LINK_TEXT, S00_AP_LABEL,
   S00_AP_NOTE, S00_OVERALL_TITLE, S00_READY, S00_CHECKING, S00_NOT_READY,
-  S00_RESTARTING, S00_ADVANCE,
+  S00_RESTARTING, S00_ADVANCE, S00_TABLET_LABEL, S00_TABLET_OK, S00_AP_OK, S00_AP_UNKNOWN,
   S00_OPEN_DEV,
   S00_AUTO_TITLE, S00_AUTO_CHECKING, S00_AUTO_OK, S00_AUTO_WARN, S00_AUTO_NG,
   S00_AUTO_SUPPRESSED, S00_AUTO_NOT_YET,
@@ -65,16 +65,18 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
   const autoView = autoOverallView(auto)
   // 1b-6 SG-C4: 項目別の状態が届いているのに必須 3 者が揃わないときは
   // 「必須機器が繋がっていません」（従来は「確認中」のままだった）。
-  const linkSeen = link != null
+  // 繋がっていない項目が実際にあるときだけ（全項目 OK のまま INIT に留まる
+  // 場合＝非常停止が押されたまま等・link_ok の直前では出さない）。
+  const linkNotReady = linkDownKeys(link).length > 0
   const overallLabel = stale ? DISCONNECTED_LABEL
     : ready ? S00_READY
-    : linkSeen ? S00_NOT_READY
+    : linkNotReady ? S00_NOT_READY
     : S00_CHECKING
-  const overallTone = ready ? 'ok' : (linkSeen ? 'ng' : 'warn')
+  const overallTone = ready ? 'ok' : (linkNotReady ? 'ng' : 'warn')
   // 1b-6 SG-B7: 再起動中（start.sh が数えた起動回数が 2 以上）の表示。
   // Spec-ops.md §2.4・Spec-webui.md §3.1 の文言どおり。
   const restartAttempt = link?.restart?.attempt
-  const restarting = !stale && restartAttempt != null && restartAttempt >= 2
+  const restarting = !stale && !ready && restartAttempt != null && restartAttempt >= 2
 
   return (
     <div className="screen" id="s00">
@@ -105,9 +107,20 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
               )
             })}
             <tr>
-              <td>{S00_AP_LABEL}</td>
+              <td>{S00_AP_LABEL}<div className="xs mut">{S00_AP_NOTE}</div></td>
               <td><span className="pill">{S00_MONITOR}</span></td>
-              <td className="r xs mut">{S00_AP_NOTE}</td>
+              {/* AP の状態を直接測る手段は無い。タブレット（この画面）が AP 経由で
+                  rosbridge に繋がっていれば AP は生きている。 */}
+              <td className={`r ${stale ? 'tone-ng' : 'tone-ok'}`} data-testid="s00-ap">
+                {stale ? S00_AP_UNKNOWN : S00_AP_OK}
+              </td>
+            </tr>
+            <tr>
+              <td>{S00_TABLET_LABEL}</td>
+              <td><span className="pill">{S00_MONITOR}</span></td>
+              <td className={`r ${stale ? 'tone-ng' : 'tone-ok'}`} data-testid="s00-tablet">
+                {stale ? DISCONNECTED_LABEL : S00_TABLET_OK}
+              </td>
             </tr>
           </tbody>
         </table>
