@@ -72,6 +72,21 @@ export function stateToBlueButton(mode, stateName, attributes) {
   return 'check'
 }
 
+// opButtonTone(slot, blue) -> 'current' | 'confirm' | 'outline'
+//
+// Spec-webui.md §3.3.1（U-17）の色の表:
+//   青（塗り）  = いまの状態 … 停止／確認／走行のうち、いま該当している 1 つだけ
+//   緑（塗り）  = 押すと確定する動作 … 保存
+//   枠のみ      = 押せるが、いまの状態ではない … それ以外（手動もここ）
+// slot は 'stop'|'check'|'run'|'save'|'manual'、blue は stateToBlueButton() の結果。
+// 色の決め方はここ 1 か所。OperationCard.jsx は返り値をクラスにするだけ
+// （画面ごとに決めさせない）。
+export function opButtonTone(slot, blue) {
+  if (slot === 'save') return 'confirm'
+  if ((slot === 'stop' || slot === 'check' || slot === 'run') && blue === slot) return 'current'
+  return 'outline'
+}
+
 // operationCardLayout(mode, attributes) -> { stop, check, run, save, manual }
 //
 // Only `stop`, `run` and `save` can be derived purely from mode + attributes.

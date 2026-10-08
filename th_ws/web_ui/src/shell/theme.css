@@ -442,11 +442,9 @@ table.lst td.r{text-align:right}
 .op-save  {grid-column:1;grid-row:2}
 .op-manual{grid-column:3;grid-row:2}
 .opsgrid .btn{padding:calc(var(--fs) * .62) 8px}
-/* When a row holds only one button, let it span the row instead of looking
-   unfinished. "manual" never moves off bottom-right though (its position is
-   memorized as "the jog control"). */
-.opsgrid:not(:has(.op-check)):not(:has(.op-run)) .op-stop{grid-column:1 / -1}
-.opsgrid:not(:has(.op-manual)) .op-save{grid-column:1 / -1}
+/* 操作カードの格子は固定（Spec-webui.md §3.3）。以前は行にボタンが 1 つだけのとき
+   grid-column:1 / -1 で行いっぱいに伸ばしていたが、置くボタンの幅が画面ごとに変わる
+   ので廃止した（SG-C2）。ボタンは常に 3 等分の 1 マスの幅。 */
 .state{margin-top:9px;font-size:calc(var(--fs) * .95);font-weight:700}
 
 @container app (max-width:559px){
@@ -672,6 +670,20 @@ table.lst td.r{text-align:right}
   color:var(--ng-tx);background:#3a1414;border:1px solid #7a2a2a;border-radius:6px;
   padding:3px 6px;text-align:center;
 }
+
+/* ---------- 操作カードの色（Spec-webui.md §3.3.1 / U-17。SG-C2） ----------
+   青（塗り）= いまの状態（停止／確認／走行のうち 1 つだけ）／緑（塗り）= 押すと確定する
+   動作（保存）／枠のみ = 押せるが、いまの状態ではない（それ以外）。
+   どのクラスが付くかは shell/limits.js の opButtonTone() が決める（表は unit で固定）。
+   上の UX-2 の .btn-* は形（丸太枠・アイコン）のためだけに残し、色はここで上書きする。
+   青は状態表示専用なので、強調のために使わない。 */
+.opsgrid .btn.tone-outline{background:transparent;border:2px solid var(--bd-hi);color:var(--tx)}
+.opsgrid .btn.tone-outline:active{background:var(--ctrl)}
+.opsgrid .btn.tone-current{background:var(--ctrl-on);border:2px solid var(--brand);color:#fff}
+.opsgrid .btn.tone-confirm{background:#17361d;border:2px solid #2f7a38;color:#a9e0ad;font-weight:700}
+.opsgrid .btn.tone-confirm:active{background:#1f4a27}
+/* 停止の丸太枠（形で区別する。色だけにしない）は残す */
+.opsgrid .btn.op-stop{border-width:4px;border-radius:999px;font-weight:800}
 
 /* UX-1 の「次にやること」主ボタンにも形の種別を載せる（アイコン＋塗り分け）。
    進む=塗りつぶし青（既定）、登録=枠線水色、保存=枠線緑、停止=塗りつぶし赤・丸。 */
