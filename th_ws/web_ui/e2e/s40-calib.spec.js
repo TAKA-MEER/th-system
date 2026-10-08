@@ -204,6 +204,10 @@ test('履歴: 「この値に戻す」が /calib/rollback を item・generation 
   await page.getByTestId('s40-tab-history').click()
   await expect(page.getByTestId('s40-history-LINEAR')).toContainText('1 世代前: wheel_radius_scale=0.98')
   await expect(page.getByTestId('s40-history-ROTATION')).toContainText('履歴はありません')
+  // 二段階アーム（Spec-webui.md §6）: 1 回目は「本当に戻す？」に変わるだけで送らない
+  await page.getByTestId('s40-rollback-LINEAR-1').click()
+  await expect(page.getByTestId('s40-rollback-LINEAR-1')).toHaveText('本当に戻す？')
+  expect((await calibCalls(page)).some((c) => c.service === 'rollback')).toBe(false)
   await page.getByTestId('s40-rollback-LINEAR-1').click()
   expect(await calibCalls(page)).toContainEqual({ service: 'rollback', item: 'LINEAR', generation: 1 })
   await expect(page.getByTestId('s40-rollback-msg')).toContainText('戻しました')
@@ -215,6 +219,7 @@ test('履歴: 「この値に戻す」が /calib/rollback を item・generation 
 test('ロールバック失敗の応答では失敗を表示する', async ({ page }) => {
   await gotoS40(page, { calibStatus: status({ result: 'IDLE', item: '' }), calibStubs: { rollback: { success: false } } })
   await page.getByTestId('s40-tab-history').click()
+  await page.getByTestId('s40-rollback-LINEAR-1').click()
   await page.getByTestId('s40-rollback-LINEAR-1').click()
   await expect(page.getByTestId('s40-rollback-msg')).toContainText('戻せませんでした')
 })
@@ -414,6 +419,7 @@ test('BLIND: 履歴に死角の世代が出て、「この値に戻す」が /ca
   })
   await page.getByTestId('s40-tab-history').click()
   await expect(page.getByTestId('s40-history-BLIND')).toContainText('1 世代前: 40〜60°')
+  await page.getByTestId('s40-rollback-BLIND-1').click()
   await page.getByTestId('s40-rollback-BLIND-1').click()
   expect(await calibCalls(page)).toContainEqual({ service: 'rollback', item: 'BLIND', generation: 1 })
 })

@@ -61,6 +61,9 @@ export const TOPICS = {
   // 型は同じ th_system_msgs/WheelFeedback を esp32_bridge が両方向に使い回す。
   WHEEL_FEEDBACK: '/esp32/wheel_feedback',
   WHEEL_CMD_SPEED: '/esp32/wheel_cmd_speed',
+  // SG-C13: S-30 IMU の校正状態（std_msgs/UInt8）と LiDAR の生スキャン（死角除去前）。
+  IMU_CALIB_STATUS: '/esp32/imu_calib_status',
+  SCAN: '/scan',
   // WP-UI-08 / WP-MAINT-03: S-40 校正。calib_runner が発行する進行状況（CalibStatus。
   // reliable depth5。detail は JSON 文字列）。names.json の endpoints にある。
   CALIB_STATUS: '/calib/status',

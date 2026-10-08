@@ -75,6 +75,7 @@ export const S40_IMU_COMMIT = '確定する'
 // ── 履歴 ─────────────────────────────────────────────────
 export const S40_HISTORY_EMPTY = '履歴はありません'
 export const S40_HISTORY_ROLLBACK = 'この値に戻す'
+export const S40_HISTORY_ROLLBACK_ARMED = '本当に戻す？'
 export function s40Generation(n) { return `${n} 世代前` }
 export const S40_ROLLBACK_DONE = '戻しました'
 export const S40_ROLLBACK_FAILED = '戻せませんでした（一覧の状態で、適用できる値のときだけ戻せます）'
