@@ -6,6 +6,7 @@
 import { LOGO_DATA_URI } from './logo.js'
 import { modeLabel, MODE_UNKNOWN_LABEL } from '../i18n/modes.js'
 import { faultLabel } from '../i18n/faults.js'
+import { headerTone } from './limits.js'
 import {
   CONNECTED_LABEL, DISCONNECTED_LABEL, ESTOP_ACTIVE_LABEL, ESTOP_BUTTON_LABEL,
   PROJECT_NAME_JA, REOPEN_WINDOW_LABEL, ZONE_LABELS, DEV_MODE_LABEL, AP_SPOF_NOTE,
@@ -52,7 +53,7 @@ export default function Header({
   }
 
   return (
-    <header id="hdr">
+    <header id="hdr" data-tone={headerTone(mode, devMode, stale)}>
       <div className="row1">
         <div id="logo"><img src={LOGO_DATA_URI} alt="" /></div>
         <div className="proj">MIRS2602-<b>{PROJECT_NAME_JA}</b></div>

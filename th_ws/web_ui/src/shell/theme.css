@@ -77,6 +77,12 @@ table{border-collapse:collapse;width:100%}
   background:linear-gradient(180deg,#16283f,#101a29);
   border-bottom:2px solid var(--brand);
 }
+/* ヘッダの色（SG-C3。shell/limits.js の headerTone()）。Spec-webui.md §8
+   「非常停止＝赤／解除待ち＝紫」、§5「開発モード中はヘッダの色を変える」。
+   開発モードの色は #devPill と同じ系統（spec は色を指定していない）。 */
+#hdr[data-tone="estop"]{background:linear-gradient(180deg,#4a1414,#2a0c0c);border-bottom-color:var(--estop)}
+#hdr[data-tone="carry"]{background:linear-gradient(180deg,#2e1b46,#1c1226);border-bottom-color:var(--carry)}
+#hdr[data-tone="dev"]{background:linear-gradient(180deg,#4a1030,#2a0a1c);border-bottom-color:#8a2a5a}
 /* flex-wrap:nowrap は必須（2026-09-02）。wrap だと、幅が足りなくなったとき
    #screenName が省略記号で縮む前に行が増え、ヘッダーの高さごと変わってしまう
    （＝本文の高さが動く。DetailedDesign-webui.md §2.5）。実機では row2 の
@@ -513,7 +519,9 @@ table.lst td.r{text-align:right}
 #jogWin .jw-hd{display:flex;align-items:center;gap:10px;flex-wrap:nowrap}
 #jogWin .jw-t{font-weight:700;font-size:calc(var(--fs) * .92);color:#8fe0bb;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-#jogWin .jw-m{font-size:calc(var(--fs) * .8);color:var(--mut);margin:2px 0 8px}
+#jogWin .jw-m{font-size:calc(var(--fs) * .8);color:var(--mut);margin:2px 0 4px}
+#jogWin .jw-s{display:flex;gap:12px;flex-wrap:wrap;font-size:calc(var(--fs) * .78);font-weight:700;margin:0 0 8px}
+#jogWin .jw-s .warn-tx{color:var(--warn-tx)}
 /* W-6's stick is the same component as the perpetual one, but capped a
    little lower so the panel fits the floating card (mockup L363). */
 #jogWin .stick svg{max-height:min(30cqh,210px)}

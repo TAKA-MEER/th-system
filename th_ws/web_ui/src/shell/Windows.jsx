@@ -36,7 +36,11 @@ import { resumeChoices } from './limits.js'
 import { faultLabel } from '../i18n/faults.js'
 import { reasonLabel } from '../i18n/reasons.js'
 import { modeLabel } from '../i18n/modes.js'
-import { W6_TITLE, W6_CLOSE, W6_MODE } from '../i18n/screens.js'
+import {
+  W6_TITLE, W6_CLOSE, W6_MODE, W6_REAR_BLIND, W6_AUTO_BRAKE_LABEL,
+  W6_AUTO_BRAKE_ON, W6_AUTO_BRAKE_OFF, W6_AUTO_BRAKE_UNKNOWN,
+} from '../i18n/screens.js'
+import { autoBrakeLabelKey } from './autoBrake.js'
 import JogConsole from '../parts/JogConsole.jsx'
 import ArmedButton from '../parts/ArmedButton.jsx'
 import GuideBanner from './GuideBanner.jsx'
@@ -72,7 +76,7 @@ export default function Windows({
   ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, pauseReason, attributes,
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose, guideKey, onGuideClose,
-  saveAsk, onSaveYes, onSaveNo,
+  saveAsk, onSaveYes, onSaveNo, autoBrake,
 }) {
   const faultActive = !!fault?.active
   // Mutually exclusive: mode can't be both 'ESTOP' and something else at once.
@@ -304,6 +308,16 @@ export default function Windows({
           <button type="button" className="btn sm" onClick={onJogClose}>{W6_CLOSE}</button>
         </div>
         <div className="jw-m">{W6_MODE.replace('{mode}', modeLabel(mode))}</div>
+        {/* SG-C9: ジョグ中の自動ブレーキの状態と、後方の死角（Spec-modes.md §8、
+            Spec-safety.md §2.3）。表示だけ（切替は S-11/S-13 の画面側）。 */}
+        <div className="jw-s" data-testid="w6-status">
+          <span data-testid="w6-auto-brake" data-state={autoBrakeLabelKey(autoBrake)}>
+            {W6_AUTO_BRAKE_LABEL}：{{
+              on: W6_AUTO_BRAKE_ON, off: W6_AUTO_BRAKE_OFF, unknown: W6_AUTO_BRAKE_UNKNOWN,
+            }[autoBrakeLabelKey(autoBrake)]}
+          </span>
+          <span className="warn-tx" data-testid="w6-rear-blind">{W6_REAR_BLIND}</span>
+        </div>
         <JogConsole ros={ros} disabled={!jogOpen} keyboard />
       </div>
     </>
