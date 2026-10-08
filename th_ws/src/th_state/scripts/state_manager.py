@@ -46,7 +46,8 @@ from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, IDLE_MODE, O
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
 from th_state.tracker_policy import (TRACKER_OFF_DENIED_REASON,
                                       tracker_autostop, tracker_off_denied)
-from th_state.auto_brake import (AUTO_BRAKE_LOCKED_REASON, effective_auto_brake,
+from th_state.auto_brake import (AUTO_BRAKE_LOCKED_REASON, DEV_ITEM_AUTO_BRAKE,
+                                  dev_item_effective, effective_auto_brake,
                                   override_allowed)
 from th_state.zones import (ScreenInput, active_screens, combine_speed_limits,
                              derive_limits, mode_speed_limit)
@@ -199,6 +200,11 @@ class StateManager(Node):
         # 1b-15 SG-B10: 試験員の自動ブレーキ切替要求（None = 要求なし＝ゾーン既定に従う）。
         # 正本は機体側（ここ）。モードが変わるたびに None へ戻して既定を適用し直す。
         self._auto_brake_override = None
+        # 開発モードの項目 auto_brake（SG-B10 の残り。Spec-safety.md §10）。
+        # /system/dev_mode の生 JSON と受信時刻（ms）。実効かどうかは使う瞬間に
+        # _dev_auto_brake() が鮮度込みで決める（3 秒来なければ外れる）。
+        self._dev_raw = None
+        self._dev_recv_ms = None
         self._fault_active = False
         self._fault_severity = ""
         self._fault_type = ""
@@ -369,6 +375,13 @@ class StateManager(Node):
         self.create_subscription(Bool, '/safety/estop_hw', self._on_estop_hw, bool_qos)
         self.create_subscription(Bool, '/safety/estop_ui', self._on_estop_ui, bool_qos)
 
+        # 開発モード（connectivity_checker が 1 Hz・transient_local で出す JSON）。
+        # auto_brake の項目だけを読む。
+        dev_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+                             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                             history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(String, '/system/dev_mode', self._on_dev_mode, dev_qos)
+
         self.create_service(UiTrigger, '/system/trigger', self._on_trigger)
         self.create_service(SetFlag, '/system/set_flag', self._on_set_flag)
         self.create_service(Trigger, '/shutdown/prepare', self._on_shutdown_prepare)
@@ -391,6 +404,15 @@ class StateManager(Node):
         window_s = self.get_parameter('ui_active_window_s').value
         return derive_limits(self._screens, self._now_ms(), window_s)
 
+    def _dev_auto_brake(self) -> bool:
+        """開発モードの項目 auto_brake が実効か。未受信・失効・壊れた JSON は偽。"""
+        return dev_item_effective(self._dev_raw, self._now_ms(), self._dev_recv_ms,
+                                  DEV_ITEM_AUTO_BRAKE)
+
+    def _on_dev_mode(self, msg):
+        self._dev_raw = msg.data
+        self._dev_recv_ms = self._now_ms()
+
     def _refresh_auto_brake(self, zone: str) -> bool:
         """1b-15 SG-B10: 自動ブレーキの実効値を決めて _flags に反映する。
 
@@ -398,11 +420,14 @@ class StateManager(Node):
         （次にジョグへ入ったとき OFF が勝手に復活しない）。ゾーン NA（画面途絶を含む）は
         要求があっても ON（auto_brake.effective_auto_brake）。"""
         attrs = self.core.attributes(self.mode)
+        dev = self._dev_auto_brake()
+        # 開発モードの項目が外れた（OFF・項目を外した・3 秒以上来ない）ら、自律系での
+        # OFF 要求は捨てて ON に戻す（10 Hz のタイマーが毎回通る）。
         if (self._auto_brake_override is not None
-                and not override_allowed(attrs, self._jog_active)):
+                and not override_allowed(attrs, self._jog_active, dev)):
             self._auto_brake_override = None
         value = effective_auto_brake(attrs, zone, self._jog_active,
-                                     self._auto_brake_override)
+                                     self._auto_brake_override, dev)
         self._flags["auto_brake"] = value
         return value
 
@@ -799,9 +824,11 @@ class StateManager(Node):
             return res
         if req.flag == "auto_brake":
             # 1b-15 SG-B10: 切替は手動系（手動走行・教示（手動））とジョグ中だけ。
-            # 自律系は無効化できない（Spec-safety.md §2.1）。要求は「試験員の選択」として
+            # 自律系は無効化できない（Spec-safety.md §2.1）。例外は開発モードの項目
+            # auto_brake が実効のとき（§10）。要求は「試験員の選択」として
             # 保持し、実効値は _refresh_auto_brake() が決める（ゾーン NA は ON のまま）。
-            if not override_allowed(self.core.attributes(self.mode), self._jog_active):
+            if not override_allowed(self.core.attributes(self.mode), self._jog_active,
+                                    self._dev_auto_brake()):
                 res.accepted = False
                 res.reject_reason_key = AUTO_BRAKE_LOCKED_REASON
                 return res

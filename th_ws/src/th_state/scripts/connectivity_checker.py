@@ -280,7 +280,10 @@ class ConnectivityChecker(Node):
     # opcheck     : 起動時の自動点検（opcheck_auto）の警告を出さない
     #               （/system/dev_mode の effective を opcheck_auto が見て suppressed にする。
     #               判定そのものは止めない。Spec-safety.md §10）
-    # battery / auto_brake : 止めるゲートが as-built に無く、選択の保持・配信のみ
+    # auto_brake  : 自律系・場内でも自動ブレーキを OFF にできる（/system/dev_mode 経由。
+    #               state_manager が切替を受け付け、obstacle_limiter が従う。選んだだけでは
+    #               OFF にならず、既定は通常と同じ。Spec-safety.md §10）
+    # battery     : 止めるゲートが as-built に無く、選択の保持・配信のみ
     # dev_mode_core.hpp の kDevItem* と web_ui の DEV_ITEMS と揃えること。
     _DEV_ITEMS = ('link', 'lidar_fault', 'scan_stop', 'battery', 'opcheck', 'auto_brake')
 
