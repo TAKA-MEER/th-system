@@ -41,7 +41,7 @@ import launch_testing.actions
 
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
-from th_system_msgs.msg import MapSessionStatus, RouteStatus, StateEffect
+from th_system_msgs.msg import MapSessionStatus, RouteStatus, StateEffect, StateEvent, SystemState
 
 
 GENERATED_DIR = '/root/th_data/generated'
@@ -139,6 +139,11 @@ class Test1b6RestartShutdownNode(unittest.TestCase):
         self.pub_route = self.node.create_publisher(RouteStatus, '/route/status', 10)
         self.pub_map = self.node.create_publisher(
             MapSessionStatus, '/map_session/status', _MAP_QOS)
+        self.pub_event = self.node.create_publisher(StateEvent, '/system/event', 10)
+        self._modes = []
+        self.node.create_subscription(
+            SystemState, '/system/state', lambda m: self._modes.append((m.mode, m.state)),
+            _LINK_QOS)
         self.cli_prepare = self.node.create_client(Trigger, '/shutdown/prepare')
         self.cli_execute = self.node.create_client(Trigger, '/shutdown/execute')
         self._spin(1.0)
@@ -261,8 +266,34 @@ class Test1b6RestartShutdownNode(unittest.TestCase):
         self.assertEqual(self._restart_calls(), 2)
         self.assertEqual(len(self._kill_lines(_RESTART_KILL_LOG)), 2)
 
+    def _go_idle(self):
+        # evt.link_ok を自分で出して INIT → IDLE にする（SG-B7 の試験が終わった後だけ
+        # 使う。IDLE では sys.link_timeout の再起動が起きないため）。
+        deadline = time.time() + 30.0
+        while time.time() < deadline:
+            if self._modes and self._modes[-1] == ('IDLE', 'NONE'):
+                return
+            msg = StateEvent()
+            msg.event = 'evt.link_ok'
+            msg.source_node = 'connectivity_checker'
+            self.pub_event.publish(msg)
+            self._spin(0.5)
+        self.fail(f'IDLE に入れない: {self._modes[-1:]}')
+
     # ── SG-B6 ─────────────────────────────────────────────────
+    def test_e0_not_idle_rejected_without_marker_or_kill(self):
+        # 運用の終了は IDLE（NONE）でだけ受け付ける。ここはまだ INIT（IDLE へ入る前）。
+        # 未保存は無いので、モード判定を外す変異では成功して印と kill が起きて赤になる。
+        self.assertNotEqual(self._modes[-1:] , [('IDLE', 'NONE')])
+        res = self._call(self.cli_execute)
+        self.assertFalse(res.success)
+        self.assertEqual(res.message, 'shutdown_not_idle')
+        self._spin(1.5)
+        self.assertFalse(os.path.exists(_MARKER_PATH))
+        self.assertEqual(self._kill_lines(_SHUTDOWN_KILL_LOG), [])
+
     def test_e_route_unsaved_blocks_execute(self):
+        self._go_idle()
         # 未保存の教示記録がある間は execute が拒否される。
         self._publish_route(points=5, saved=False)
         res = self._call(self.cli_prepare)
@@ -278,6 +309,7 @@ class Test1b6RestartShutdownNode(unittest.TestCase):
 
     def test_f_saved_route_executes_with_marker(self):
         # 保存済みになれば execute が通り、印ファイルを置く（kill は偽物）。
+        self._go_idle()
         self._publish_route(points=5, saved=True)
         res = self._call(self.cli_execute)
         self.assertTrue(res.success, res.message)
@@ -290,6 +322,7 @@ class Test1b6RestartShutdownNode(unittest.TestCase):
 
     def test_g_venue_dirty_blocks_execute(self):
         # /map_session/status の VENUE dirty は venue_map として検出する。
+        self._go_idle()
         self._publish_map(slot='VENUE', dirty=True)
         res = self._call(self.cli_prepare)
         self.assertTrue(res.success)

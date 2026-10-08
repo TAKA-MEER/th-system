@@ -40,7 +40,7 @@ from th_system_msgs.srv import SetFlag, UiTrigger
 
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
-from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, OPCHECK_MODE, Context,
+from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, IDLE_MODE, OPCHECK_MODE, Context,
                                    REPLAY_MODE, StateCore, TEACH_MODES, is_driving)
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
@@ -818,6 +818,13 @@ class StateManager(Node):
         self._killpg(os.getpgrp(), signal.SIGTERM)
 
     def _on_shutdown_execute(self, req, res):
+        # 破壊的な操作は停止中だけ（Spec.md SD-9）。運用の終了は S-01（IDLE）からの
+        # 操作。走行中・ジョグ中・ESTOP 中などに呼ばれても制御系を落とさない。
+        # 印ファイルも kill も、この判定より前には起きない。
+        if self.mode != IDLE_MODE or self.state != "NONE" or self._jog_active:
+            res.success = False
+            res.message = "shutdown_not_idle"
+            return res
         self._refresh_unsaved()
         if self._unsaved:
             res.success = False
