@@ -26,6 +26,10 @@ STARTSH_RESTART_WAIT="${STARTSH_RESTART_WAIT:-5}" # 立て直しの前に待つ�
 STARTSH_WEBUI_LOG="${STARTSH_WEBUI_LOG:-}"        # WebUI 配信のログ（空なら th_ws/log/start-webui.log）
 STARTSH_WEBUI_WAIT="${STARTSH_WEBUI_WAIT:-2}"     # WebUI の生死確認まで待つ秒数
 STARTSH_STOP_WAIT="${STARTSH_STOP_WAIT:-30}"      # Ctrl-C 後に launch が止まるのを待つ上限（秒）
+# 1b-6 SG-B6: 「運用の終了」（制御系を停止する）の印ファイル。state_manager の
+# /shutdown/execute がコンテナ内の /root/th_data（＝下の既定値のホスト側）に置き、
+# このスクリプトが bringup の終了後に見て立て直さずに終わる。
+STARTSH_STOP_MARKER="${STARTSH_STOP_MARKER:-$SCRIPT_DIR/data/.control_stop}"
 
 # bringup の既定の launch 引数（同じキーが渡されたら渡された方を使う）
 DEFAULT_LAUNCH_ARGS=(lidar_source:=network use_stub:=false enable_route_slam:=true)
@@ -69,6 +73,7 @@ launch 引数:
   STARTSH_WEBUI_LOG（既定 th_ws/log/start-webui.log。WebUI 配信のログ）
   STARTSH_WEBUI_WAIT（既定 2 秒。WebUI の生死確認まで待つ時間）
   STARTSH_STOP_WAIT（既定 30 秒。Ctrl-C 後に launch が止まるのを待つ上限）
+  STARTSH_STOP_MARKER（既定 th_ws/data/.control_stop。「運用の終了」の印ファイル）
 
 止め方: Ctrl-C（launch に INT を送って子ノードごと止め、WebUI の配信も止める）
 USAGE
@@ -100,7 +105,19 @@ for def in "${DEFAULT_LAUNCH_ARGS[@]}"; do
 done
 LAUNCH_ARGS+=("${USER_LAUNCH_ARGS[@]}")
 
-INNER_LAUNCH="source /opt/ros/humble/setup.bash && source /root/th_ws/install/setup.bash && exec ros2 launch th_bringup bringup.launch.py ${LAUNCH_ARGS[*]:-}"
+# 1b-6 SG-B7: bringup へ起動回数を渡す（control_attempt:=n。1 回目=1）。
+# connectivity_checker が S-00 の「制御系を再起動しています（n 回目）」表示に使う。
+# 回数の正本はこのスクリプト（ノードは再起動で消えるため数えられない）。
+# 使用者が control_attempt を直接渡したらそちらを優先する。
+CONTROL_ATTEMPT_FROM_USER=0
+for u in "${USER_LAUNCH_ARGS[@]}"; do
+    if [ "${u%%:=*}" = "control_attempt" ]; then CONTROL_ATTEMPT_FROM_USER=1; break; fi
+done
+inner_launch() {
+    local extra=""
+    if [ "$CONTROL_ATTEMPT_FROM_USER" -eq 0 ]; then extra=" control_attempt:=${attempt}"; fi
+    echo "source /opt/ros/humble/setup.bash && source /root/th_ws/install/setup.bash && exec ros2 launch th_bringup bringup.launch.py ${LAUNCH_ARGS[*]:-}${extra}"
+}
 
 if [ "$DRY_RUN" -eq 1 ]; then
     cat <<DRY
@@ -114,9 +131,11 @@ DRY
         echo "  4. --build: コンテナ内で colcon build --symlink-install、ホストで npm run build（web_ui）"
     fi
     cat <<DRY
-  5. bringup を起動: docker exec th_robot bash -lc '... exec ${INNER_LAUNCH#*exec }'
-     終了コードにかかわらず立て直す（最大 ${STARTSH_RESTART_MAX} 回まで。その後は機体の電源再投入・AP・ケーブルの確認を案内）。
-     立て直さないのは操作者の停止（Ctrl-C/SIGTERM）だけ
+  5. bringup を起動: docker exec th_robot bash -lc '... exec ros2 launch th_bringup bringup.launch.py <launch 引数> control_attempt:=n'
+      起動ごとに control_attempt:=n（n は 1 始まりの起動回数）を付けて渡す。
+      終了コードにかかわらず立て直す（最大 ${STARTSH_RESTART_MAX} 回まで。その後は機体の電源再投入・AP・ケーブルの確認を案内）。
+      立て直さないのは操作者の停止（Ctrl-C/SIGTERM）と「運用の終了」の停止要求
+      （印ファイル ${STARTSH_STOP_MARKER}。/shutdown/execute が置く）だけ
   6. WebUI を配信: web_ui/dist/ を npx vite preview --host --port ${WEBUI_PORT} --strictPort で配信
      出力はログ（既定 th_ws/log/start-webui.log。git 管理外）に残し、起動直後に死んでいたら止まる
      タブレット: http://${ROBOT_UI_IP}:${WEBUI_PORT} ／ PC: http://localhost:${WEBUI_PORT}
@@ -257,10 +276,18 @@ info "PC で見るだけ: http://localhost:${WEBUI_PORT}"
 # 終了コードにかかわらず立て直す。bringup は通常自分から正常終了せず、
 # restart_control_stack は SIGTERM で落とす作りで ros2 launch は後始末して
 # 0 を返しうるため、0 をもって直ったとはみなさない。立て直さないのは
-# 操作者の停止（Ctrl-C/SIGTERM をこのスクリプトが受けた）だけ。
+# 操作者の停止（Ctrl-C/SIGTERM をこのスクリプトが受けた）と「運用の終了」の
+# 停止要求（印ファイル。/shutdown/execute が置く）だけ。
 # 回数はこのスクリプトが数え、上限に達したら立て直さずに止める
 # （Spec-ops.md §2.4「再起動しても直らない場合」）。
+# 1b-6 SG-B7: 回数は bringup へ control_attempt:=n として渡す（S-00 の表示用）。
 attempt=0
+# 前回の「運用の終了」の印が残っていたら消してから始める（前回は止めるつもりで
+# 印を置いたままこのスクリプトが異常終了した場合の残骸。新規起動では無効）。
+if [ -f "$STARTSH_STOP_MARKER" ]; then
+    info "古い停止要求の印 (${STARTSH_STOP_MARKER}) を消してから始める。"
+    rm -f "$STARTSH_STOP_MARKER"
+fi
 while [ "$attempt" -lt "$STARTSH_RESTART_MAX" ]; do
     if [ "$STOPPED" -eq 1 ]; then
         info "操作者の停止により終わる。"
@@ -273,9 +300,16 @@ while [ "$attempt" -lt "$STARTSH_RESTART_MAX" ]; do
         info "${C_BOLD}制御系を再起動しています（${attempt} 回目／上限 ${STARTSH_RESTART_MAX} 回）${C_RESET}"
     fi
     rc=0
-    docker exec th_robot bash -lc "$INNER_LAUNCH" || rc=$?
+    docker exec th_robot bash -lc "$(inner_launch)" || rc=$?
     if [ "$STOPPED" -eq 1 ]; then
         info "操作者の停止により終わる。"
+        break
+    fi
+    # 1b-6 SG-B6: 「運用の終了」（S-01 の「制御系を停止する」→ /shutdown/execute）
+    # の停止要求があれば、立て直さずに終わる（正常終了）。
+    if [ -f "$STARTSH_STOP_MARKER" ]; then
+        rm -f "$STARTSH_STOP_MARKER"
+        info "運用の終了の停止要求により終わる。"
         break
     fi
     if [ "$attempt" -ge "$STARTSH_RESTART_MAX" ]; then

@@ -32,8 +32,11 @@ test('S-00: NG のとき自動判定の警告が出て、項目別の理由も�
   await gotoScreenWithAutoCheck(page, 'S00', { mode: 'IDLE' }, NG_AUTO)
   await expect(page.locator('[data-testid="s00-auto-check"]')).toBeVisible()
   await expect(page.locator('[data-testid="s00-auto-overall"]')).toContainText('要確認')
-  await expect(page.locator('[data-testid="s00-auto-LIDAR"]')).toContainText('NG')
+  // 1b-6 SG-C4: 項目別の結果は日本語で出す（OK/NG/WARN の英字を出さない）。
+  await expect(page.locator('[data-testid="s00-auto-LIDAR"]')).toContainText('異常')
+  await expect(page.locator('[data-testid="s00-auto-LIDAR"]')).not.toContainText('NG')
   await expect(page.locator('[data-testid="s00-auto-LIDAR"]')).toContainText('no_data')
+  await expect(page.locator('[data-testid="s00-auto-ESTOP"]')).toContainText('正常')
 })
 
 test('S-00: NG でもメインメニューへ進める（警告のみでゲートしない）', async ({ page }) => {

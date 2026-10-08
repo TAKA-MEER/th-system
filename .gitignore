@@ -64,3 +64,5 @@ th_ws/data/routes/
 # 実データで、機体・会場が変わるたびに中身も変わる。2026-09-15 に誤ってコミットしたため追加）
 th_ws/data/venue/
 th_ws/data/runaway/
+# 「運用の終了」の停止要求の印（state_manager が書き start.sh が消す。実行時の一時ファイル）
+th_ws/data/.control_stop

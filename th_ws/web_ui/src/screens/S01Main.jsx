@@ -9,15 +9,15 @@
 // button press, since M-3 forbids expanding the unsaved list into the card
 // itself.
 //
-// Known limitation (DetailedDesign-wp1.md WP-UI-02 §11, and this packet's
-// own out-of-scope column): no functional node sets SystemState.unsaved
-// yet, so /shutdown/prepare's list is expected to be empty in practice, and
-// the per-item save/discard buttons below only mark an item as locally
-// resolved -- there is no per-item save/discard service to call yet (each
-// item type would need a different one: /map_session/save, /route/save,
-// ...). This screen wires the 5-step *path* through; real persistence is
-// future work.
-import { useState } from 'react'
+// 1b-6 (SG-B6): W-4 の「保存」「破棄」は項目ごとの本物の操作を呼ぶ。
+//   venue_map … 保存: /map_session/open (slot VENUE, mode save)
+//               破棄: /slam_control/discard_map
+//   route     … 保存: ui.save ／ 破棄: ui.discard（T-IDLE-01/02）
+//   calib・map_patch … 機体側に画面から呼べる操作が無い（報告参照）。
+//               ボタンを出さず理由を出し、「停止する」は押せないままにする。
+// 「処理済み」は操作の応答ではなく、/shutdown/prepare を呼び直して一覧から
+// 消えたことで決める（機体側が正本。応答だけで済んだことにしない）。
+import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useAutoCheckStatus } from '../ros/useAutoCheckStatus.js'
@@ -26,6 +26,7 @@ import { linkDownKeys } from '../ros/linkStatusState.js'
 import { autoCheckWarns } from '../ros/autoCheckState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useStdTrigger } from '../ros/useStdTrigger.js'
+import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { SERVICES } from '../ros/topics.js'
 import { useConfirmWindow } from '../shell/confirmWindow.js'
 import ArmedButton from '../parts/ArmedButton.jsx'
@@ -43,8 +44,9 @@ import {
   SHUTDOWN_TITLE, SHUTDOWN_UNSAVED_LABEL, SHUTDOWN_NONE, SHUTDOWN_BUTTON, SHUTDOWN_HINT,
   SHUTDOWN_WIN_TITLE, SHUTDOWN_WIN_INTRO, SHUTDOWN_WIN_NONE, SHUTDOWN_SAVE,
   SHUTDOWN_DISCARD_IDLE, SHUTDOWN_DISCARD_ARMED, SHUTDOWN_CANCEL, SHUTDOWN_CONFIRM,
-  SHUTDOWN_LOADING, SHUTDOWN_DONE_TITLE, SHUTDOWN_DONE_BODY, SHUTDOWN_RESOLVED,
-  SHUTDOWN_LOAD_ERROR, unsavedCountLabel, unsavedLabel,
+  SHUTDOWN_LOADING, SHUTDOWN_STOPPING, SHUTDOWN_BLOCKED_HINT,
+  SHUTDOWN_DONE_TITLE, SHUTDOWN_DONE_BODY, SHUTDOWN_RESOLVED,
+  SHUTDOWN_LOAD_ERROR, SHUTDOWN_ITEM_FAILED, SHUTDOWN_NO_ACTION, unsavedCountLabel, unsavedLabel,
 } from '../i18n/screens.js'
 
 const GROUP_TITLES = { move: GROUP_MOVE_TITLE, field: GROUP_FIELD_TITLE, maint: GROUP_MAINT_TITLE }
@@ -67,15 +69,25 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
   const sendTrigger = useTrigger()
   const shutdownPrepare = useStdTrigger(SERVICES.SHUTDOWN_PREPARE)
   const shutdownExecute = useStdTrigger(SERVICES.SHUTDOWN_EXECUTE)
+  const discardMap = useStdTrigger('/slam_control/discard_map')
+  const onsite = useOnsiteService()
   const confirmWindow = useConfirmWindow()
 
   // null | { kind: 'reason', reasonKey } | { kind: 'shutdown' }
   const [activeWindow, setActiveWindow] = useState(null)
 
-  const [shutdownPhase, setShutdownPhase] = useState('idle') // idle|loading|ready|executing|done
+  const [shutdownPhase, setShutdownPhase] = useState('idle') // idle|loading|ready|executing|stopping|done
   const [unsavedItems, setUnsavedItems] = useState([])
   const [resolvedItems, setResolvedItems] = useState(new Set())
   const [shutdownError, setShutdownError] = useState(null) // reject_reason_key, or a raw string for load failures
+  const [busyKey, setBusyKey] = useState(null)       // 保存／破棄の応答待ちの項目
+  const [itemErrors, setItemErrors] = useState({})   // 項目 → 失敗の理由（文字列）
+
+  // 1b-6 SG-B6: /shutdown/execute が通っただけでは完了にしない。実際に止まった
+  // （接続が切れて stale になった）のを確かめてから「電源を切って構いません」を出す。
+  useEffect(() => {
+    if (shutdownPhase === 'stopping' && stale) setShutdownPhase('done')
+  }, [shutdownPhase, stale])
 
   const mode = state?.mode ?? null
   // M-1 (nothing pressable while starting up) + the general fail-safe rule
@@ -130,6 +142,7 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
       const res = await shutdownPrepare()
       setUnsavedItems(parseUnsaved(res?.message))
       setResolvedItems(new Set())
+      setItemErrors({})
       setShutdownPhase('ready')
     } catch {
       setUnsavedItems([])
@@ -139,8 +152,48 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
     }
   }
 
-  function resolveItem(key) {
-    setResolvedItems((prev) => new Set(prev).add(key))
+  // 項目ごとの本物の操作（無いものは null）。上のファイル冒頭コメント参照。
+  const ITEM_ACTIONS = {
+    venue_map: {
+      save: () => onsite.saveVenueMap(),
+      discard: () => discardMap(),
+    },
+    route: {
+      save: () => sendTrigger('ui.save'),
+      discard: () => sendTrigger('ui.discard'),
+    },
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+  // 操作を呼び、/shutdown/prepare を呼び直して一覧から消えたら処理済みにする。
+  async function runItem(key, kind) {
+    const action = ITEM_ACTIONS[key]?.[kind]
+    if (!action || busyKey) return
+    setBusyKey(key)
+    setItemErrors((prev) => ({ ...prev, [key]: null }))
+    try {
+      const res = await action()
+      if (res && (res.success === false || res.accepted === false)) {
+        setItemErrors((prev) => ({ ...prev, [key]: res.message || reasonLabel(res.reject_reason_key) || SHUTDOWN_ITEM_FAILED }))
+        return
+      }
+      // 機体側が反映するまで少し待ちながら確かめる（教示経路の確定は非同期）。
+      for (let i = 0; i < 8; i += 1) {
+        const p = await shutdownPrepare()
+        const remaining = parseUnsaved(p?.message)
+        if (!remaining.includes(key)) {
+          setResolvedItems((prev) => new Set(prev).add(key))
+          return
+        }
+        await sleep(400)
+      }
+      setItemErrors((prev) => ({ ...prev, [key]: SHUTDOWN_ITEM_FAILED }))
+    } catch {
+      setItemErrors((prev) => ({ ...prev, [key]: SHUTDOWN_ITEM_FAILED }))
+    } finally {
+      setBusyKey(null)
+    }
   }
 
   const allResolved = unsavedItems.length === 0 || unsavedItems.every((k) => resolvedItems.has(k))
@@ -152,7 +205,9 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
     try {
       const res = await shutdownExecute()
       if (res?.success) {
-        setShutdownPhase('done')
+        // 完了は stale（実際に止まったこと）を見てから。ここでは進捗表示にして
+        // ウィンドウを閉じる（応答を待たずに完了を出さない。SG-B6）。
+        setShutdownPhase('stopping')
         closeWindow()
       } else {
         setShutdownError(res?.message || 'unsaved_remains')
@@ -274,6 +329,10 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
             <div className="b">{SHUTDOWN_DONE_TITLE}</div>
             <div>{SHUTDOWN_DONE_BODY}</div>
           </div>
+        ) : shutdownPhase === 'stopping' ? (
+          <div className="note" data-testid="shutdown-stopping">
+            <div className="b">{SHUTDOWN_STOPPING}</div>
+          </div>
         ) : (
           <>
             <div className="row mb">
@@ -322,9 +381,19 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
                           <td className="r">
                             {resolvedItems.has(key) ? (
                               <span className="pill ok">{SHUTDOWN_RESOLVED}</span>
+                            ) : !ITEM_ACTIONS[key] ? (
+                              <span className="xs mut" data-testid={`shutdown-noaction-${key}`}>
+                                {SHUTDOWN_NO_ACTION}
+                              </span>
                             ) : (
                               <>
-                                <button type="button" className="btn sm" onClick={() => resolveItem(key)}>
+                                <button
+                                  type="button"
+                                  className="btn sm"
+                                  disabled={busyKey != null}
+                                  onClick={() => runItem(key, 'save')}
+                                  data-testid={`shutdown-save-${key}`}
+                                >
                                   {SHUTDOWN_SAVE}
                                 </button>
                                 {' '}
@@ -332,8 +401,13 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
                                   className="sm"
                                   idleLabel={SHUTDOWN_DISCARD_IDLE}
                                   armedLabel={SHUTDOWN_DISCARD_ARMED}
-                                  onConfirm={() => resolveItem(key)}
+                                  onConfirm={() => runItem(key, 'discard')}
                                 />
+                                {itemErrors[key] && (
+                                  <div className="xs tone-ng" data-testid={`shutdown-error-${key}`}>
+                                    {itemErrors[key]}
+                                  </div>
+                                )}
                               </>
                             )}
                           </td>
@@ -348,6 +422,11 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
           </div>
           <footer>
             <button type="button" className="btn" onClick={closeWindow}>{SHUTDOWN_CANCEL}</button>
+            {!allResolved && shutdownPhase === 'ready' && (
+              <span className="hint" data-testid="shutdown-blocked-reason">
+                {SHUTDOWN_BLOCKED_HINT(unsavedItems.length - resolvedItems.size)}
+              </span>
+            )}
             <button
               type="button"
               className="btn danger"

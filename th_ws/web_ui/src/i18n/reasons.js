@@ -23,6 +23,8 @@ export const REJECT_REASONS = {
   params_placeholder_blocking: '起動を止める暫定値が残っています',
   blind_mask_uncalibrated: '死角マスクが未校正です',
   unsaved_remains: '未保存のデータが残っています',
+  // 運用の終了は停止中（メインメニュー画面）からだけ受け付ける（/shutdown/execute）
+  shutdown_not_idle: '走行中・操作中・非常停止中は制御系を停止できません。メインメニュー画面で停止中にしてください',
   // brief-onsite-register-fix REG-1: ピン登録（pin_registrar）の拒否理由。
   // pin_registrar.py が返す reject_reason_key をそのままキーにする（target_lost は
   // 登録専用で、既存の対象選択用 tracker_lost とは別物として両方残す）。

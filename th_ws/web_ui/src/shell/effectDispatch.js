@@ -76,11 +76,18 @@ export function dispatchEffect(msg) {
       }
     }
     case 'enable_main_menu':
+    // 1b-6: 画面だけで閉じている。疎通確認が済むまでメインメニューを押せない
+    // ことは /system/state の INIT で既に代わりになっている（S-00 の進行
+    // ボタンは IDLE 到達まで出ず、S-01 の操作は mode INIT/stale で disabledAll）。
+    // effect は読まず ignore のままにする。
     // ジョグ UI の有効化は別パケット。ここでは何もしない。
     case 'disable_jog_ui':
     case 'enable_jog_ui':
-    // 校正・点検の誘導。押すと既存の遷移 (ui.enter_mode) を送るだけで画面から
-    // 閉じられるが、この作業では扱わない (報告参照)。
+    // 校正・点検の誘導。1b-6 で調べた結果、Spec-checks.md に「どの画面に何を
+    // 出し、押すと何を送るか」の定義が無いため作らない（報告参照）。
+    // なお誘導の導線自体は別に存在する（S-30 の「校正へ」・S-40 の「始業点検へ
+    // 戻る」）。spec に定義が足されたら、押すと既存の遷移（ui.enter_mode）を
+    // 送るだけの形で実装する。
     case 'offer_calib':
     case 'offer_opcheck':
       return { kind: 'ignore' }
