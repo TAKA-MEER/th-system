@@ -140,11 +140,14 @@ class TestTeachStartYawNode(unittest.TestCase):
         state.state = 'REC'
         for _ in range(3):
             self.pub_state.publish(state)
-            self._spin(0.2)
+            # odom は鮮度（odom_stale_ms）が切れないよう流し続ける。
+            self.pub_odom.publish(_odom_msg(0.0, yaw))
+            self._spin(0.1)
         eff = StateEffect()
         eff.name = 'start_record'
         eff.dest = 'route_recorder'
         eff.args_json = json.dumps({'route_id': 'test_start_yaw'})
+        self.pub_odom.publish(_odom_msg(0.0, yaw))
         self.pub_effect.publish(eff)
         # 記録中は odom を流し続ける（途絶えると連続性切れで別経路に入る）。
         deadline = time.time() + 8.0
@@ -152,7 +155,8 @@ class TestTeachStartYawNode(unittest.TestCase):
         x = 0.0
         while time.time() < deadline and st is None:
             x += 0.05
-            self.pub_odom.publish(_odom_msg(x, yaw))
+            # 開始後は向きを変えて流す（「現在の向き」を載せる変異を検出する）。
+            self.pub_odom.publish(_odom_msg(x, yaw + 0.5))
             self._spin(0.1)
             for s in self._statuses:
                 if s.points > 0:
