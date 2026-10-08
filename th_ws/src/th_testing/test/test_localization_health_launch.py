@@ -255,7 +255,9 @@ def test_gazebo_sim_targets_base_constant_still_defined():
     （「定数名が変わった」）に化けるため、このテストで現状を固定する。
     `'localization'` はここには入れず、`_scenario_setup` の sim 分岐で
     条件付き append する。`'person'` は §5.5（P-02）で監視対象に入った
-    （tracker OFF 既定＋report_only のため sim の挙動は変わらない）。"""
+    （tracker OFF 既定＋report_only のため sim の挙動は変わらない）。
+    `'mux'` は SG-A11（2026-10-08）で入った（twist_mux の生存確認。mux_report_only=true の
+    既定で記録だけのため sim の挙動は変わらない）。"""
     tree = ast.parse(_read(GAZEBO_PY), filename=GAZEBO_PY)
     for node in ast.walk(tree):
         if (isinstance(node, ast.Assign)
@@ -265,7 +267,7 @@ def test_gazebo_sim_targets_base_constant_still_defined():
             targets = [e.value for e in node.value.elts if isinstance(e, ast.Constant)]
             assert 'localization' not in targets, (
                 "'localization' は固定リストへ直接足さず条件付き append すること")
-            assert set(targets) == {'lidar', 'limiter', 'person'}
+            assert set(targets) == {'lidar', 'limiter', 'person', 'mux'}
             return
     pytest.fail("gazebo.launch.py に SAFETY_ENABLED_TARGETS_SIM の代入が見つからない "
                 "(case_09 の _sim_enabled_targets が壊れる)")

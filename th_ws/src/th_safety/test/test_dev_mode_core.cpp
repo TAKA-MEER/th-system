@@ -325,3 +325,26 @@ TEST(ObstacleLimiterDevScanStop, FreshScanIsUnaffected) {
   EXPECT_DOUBLE_EQ(off.out.linear_x, on.out.linear_x);
   EXPECT_DOUBLE_EQ(off.applied_limit_mps, on.applied_limit_mps);
 }
+
+TEST(DevModeCoreAutoBrake, AutoBrakeItemOnlyWhenExplicitAndFresh) {
+  using namespace th_safety;
+  DevModeSnapshot snap;
+  snap.received = true;
+  snap.stamp_sec = 100.0;
+  snap.effective = parse_dev_effective(
+      R"({"dev_mode": true, "effective": {"auto_brake": true, "scan_stop": false}})");
+  EXPECT_TRUE(dev_item_effective(snap, kDevItemAutoBrake, 100.0));
+  EXPECT_TRUE(dev_item_effective(snap, kDevItemAutoBrake, 100.0 + kDevStateStaleSec));
+  EXPECT_FALSE(dev_item_effective(snap, kDevItemAutoBrake, 100.0 + kDevStateStaleSec + 0.1));
+  EXPECT_FALSE(dev_item_effective(snap, kDevItemScanStop, 100.0));
+  // ignore（選択）だけ・マスタ OFF・文字列の "true" は採らない。
+  snap.effective = parse_dev_effective(
+      R"({"dev_mode": true, "ignore": {"auto_brake": true}, "effective": {"auto_brake": false}})");
+  EXPECT_FALSE(dev_item_effective(snap, kDevItemAutoBrake, 100.0));
+  snap.effective = parse_dev_effective(
+      R"({"dev_mode": false, "effective": {"auto_brake": true}})");
+  EXPECT_FALSE(dev_item_effective(snap, kDevItemAutoBrake, 100.0));
+  snap.effective = parse_dev_effective(
+      R"({"dev_mode": true, "effective": {"auto_brake": "true"}})");
+  EXPECT_FALSE(dev_item_effective(snap, kDevItemAutoBrake, 100.0));
+}

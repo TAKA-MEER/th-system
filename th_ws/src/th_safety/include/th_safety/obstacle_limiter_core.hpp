@@ -114,6 +114,11 @@ struct ObstacleLimiterInputs {
   // 解決済み。dev_mode_core.hpp）。真でも効くのは source_class == MANUAL のときと、
   // mode が OPCHECK（始業点検のモーター確認。/system/state が新鮮なとき）だけ。
   bool dev_ignore_scan_stop = false;
+
+  // 開発モードの項目 auto_brake が実効か（同上。呼び出し側で鮮度込みで解決済み）。
+  // 真のときだけ、AUTO でも /system/state.auto_brake=false に従う（減速しない。
+  // 接近警告は出す）。NA ゾーン（点検・校正）と /system/state 途絶では効かない。
+  bool dev_auto_brake_off = false;
 };
 
 // ── 静的パラメータ（registry.yaml 由来。起動時に一度だけ決まる） ───────
@@ -170,7 +175,10 @@ SourceClass compute_source_class(const ObstacleLimiterInputs& in, const Obstacle
 
 // §3.3 の 4 行そのもの。AUTO は常に true（無効化不可・L7）。
 // MANUAL の IN/OUT は auto_brake で決まる（既定値が違うだけで式は同じ。§3.3 注記）。
-bool policy_stops(SourceClass source_class, Zone zone, bool auto_brake);
+// dev_auto_brake_off（開発モードの項目 auto_brake。Spec-safety.md §10）が真のときだけ、
+// AUTO も auto_brake に従う（NA は除く）。既定は偽＝無効化不可のまま。
+bool policy_stops(SourceClass source_class, Zone zone, bool auto_brake,
+                  bool dev_auto_brake_off = false);
 
 // §3.4.3。braking_distance の逆関数（mapless_target_speed() と同型）。
 // ヒステリシスは含まない（ObstacleLimiterCore::update() が別途適用する）。

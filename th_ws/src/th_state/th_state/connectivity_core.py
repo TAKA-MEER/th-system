@@ -29,8 +29,11 @@ class Params:
     でも `/scan` は出るため `lidar` を残すが、開発モードは「ESP32 もラズパイも
     繋がっていない状態から `IDLE` に到達できる」ことが完了条件なので `lidar` も
     除外する）。物理 E-Stop のゲートはここでは扱わない（`should_emit_link_ok()`）。
-    `battery` / `auto_brake` の無視項目は as-built に運用開始を止める
-    ゲートが存在しないため `evaluate()` の対象外（`opcheck` はゲートではなく
+    `battery` の無視項目は as-built に運用開始を止める
+    ゲートが存在しないため `evaluate()` の対象外。`auto_brake` も疎通確認には
+    関係しない（`/system/dev_mode` を state_manager と obstacle_limiter が読み、
+    自律系・場内でも自動ブレーキを OFF にできるようにする。Spec-safety.md §10）。
+    （`opcheck` はゲートではなく
     起動時の自動点検の警告表示の抑制であり、opcheck_auto が /system/dev_mode
     を見て判断する。呼び出し側の責務）。
     """

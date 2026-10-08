@@ -9,8 +9,9 @@ import os
 import pytest
 import yaml
 
-from th_state.auto_brake import (AUTO_BRAKE_LOCKED_REASON, effective_auto_brake,
-                                  override_allowed, zone_default)
+from th_state.auto_brake import (AUTO_BRAKE_LOCKED_REASON, DEV_ITEM_AUTO_BRAKE,
+                                  DEV_MODE_STALE_MS, dev_item_effective,
+                                  effective_auto_brake, override_allowed, zone_default)
 
 _ATTR = os.path.join(os.path.dirname(__file__), '..', '..', 'th_state', 'config',
                      'attributes.yaml')
@@ -106,3 +107,65 @@ def test_reject_reason_key_is_registered_in_webui_reasons():
         pytest.skip('web_ui が見えない環境（Docker）。ホストで確かめる')
     with open(path, encoding='utf-8') as f:
         assert AUTO_BRAKE_LOCKED_REASON in f.read()
+
+
+# ── 開発モードの項目 auto_brake（Spec-safety.md §10。2026-10-08 改定） ─────────
+
+def _dev(dev_mode=True, effective=None):
+    import json
+    return json.dumps({'dev_mode': dev_mode,
+                       'effective': effective if effective is not None
+                       else {DEV_ITEM_AUTO_BRAKE: True}})
+
+
+@pytest.mark.parametrize('mode', LOCKED)
+@pytest.mark.parametrize('zone', ['IN', 'OUT'])
+def test_dev_item_lets_autonomous_toggle_but_default_is_unchanged(mode, zone):
+    # 項目ありで自律系・場内外でも OFF にできる。要求なしの既定は通常と同じ（ON）。
+    assert override_allowed(ATTRS[mode], False, True) is True
+    assert effective_auto_brake(ATTRS[mode], zone, False, False, True) is False
+    assert effective_auto_brake(ATTRS[mode], zone, False, None, True) is True
+    assert zone_default(ATTRS[mode], zone, False) is True
+
+
+@pytest.mark.parametrize('mode', LOCKED)
+def test_dev_item_absent_never_turns_autonomous_off(mode):
+    assert override_allowed(ATTRS[mode], False, False) is False
+    assert effective_auto_brake(ATTRS[mode], 'OUT', False, False, False) is True
+
+
+@pytest.mark.parametrize('mode', list(ATTRS))
+def test_dev_item_never_off_in_zone_na(mode):
+    assert effective_auto_brake(ATTRS[mode], 'NA', False, False, True) is True
+
+
+def test_dev_item_default_does_not_depend_on_item():
+    for mode, zone, jog in itertools.product(ATTRS, ['IN', 'OUT', 'NA'], [False, True]):
+        assert effective_auto_brake(ATTRS[mode], zone, jog, None, True) == \
+            effective_auto_brake(ATTRS[mode], zone, jog, None, False)
+
+
+def test_dev_item_effective_requires_explicit_true_and_fresh():
+    ok = _dev()
+    assert dev_item_effective(ok, 1000.0, 1000.0, DEV_ITEM_AUTO_BRAKE) is True
+    # 鮮度: ちょうど 3 秒は有効、超えたら失効。
+    assert dev_item_effective(ok, 1000.0 + DEV_MODE_STALE_MS, 1000.0, DEV_ITEM_AUTO_BRAKE) is True
+    assert dev_item_effective(ok, 1000.0 + DEV_MODE_STALE_MS + 1, 1000.0,
+                              DEV_ITEM_AUTO_BRAKE) is False
+    # 未受信
+    assert dev_item_effective(None, 1000.0, None, DEV_ITEM_AUTO_BRAKE) is False
+    # マスタ OFF・effective 無し・型違い・別項目・壊れた JSON
+    assert dev_item_effective(_dev(dev_mode=False), 0, 0, DEV_ITEM_AUTO_BRAKE) is False
+    assert dev_item_effective('{"dev_mode": true}', 0, 0, DEV_ITEM_AUTO_BRAKE) is False
+    assert dev_item_effective('{"dev_mode": true, "effective": []}', 0, 0,
+                              DEV_ITEM_AUTO_BRAKE) is False
+    assert dev_item_effective(_dev(effective={'scan_stop': True}), 0, 0,
+                              DEV_ITEM_AUTO_BRAKE) is False
+    assert dev_item_effective(_dev(effective={DEV_ITEM_AUTO_BRAKE: 'true'}), 0, 0,
+                              DEV_ITEM_AUTO_BRAKE) is False
+    assert dev_item_effective(_dev(effective={DEV_ITEM_AUTO_BRAKE: 1}), 0, 0,
+                              DEV_ITEM_AUTO_BRAKE) is False
+    assert dev_item_effective('{"dev_mode": "true", "effective": {"auto_brake": true}}', 0, 0,
+                              DEV_ITEM_AUTO_BRAKE) is False
+    assert dev_item_effective('{broken', 0, 0, DEV_ITEM_AUTO_BRAKE) is False
+    assert dev_item_effective('[]', 0, 0, DEV_ITEM_AUTO_BRAKE) is False
