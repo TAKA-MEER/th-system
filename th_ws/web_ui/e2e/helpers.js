@@ -145,6 +145,12 @@ export async function stubServices(page, services) {
   await page.addInitScript((s) => { window.__thTestServices = s }, services)
 }
 
+// 1b-6 SG-B6: 接続断（stale）のふり。S-01 は /shutdown/execute の成功だけでは
+// 完了を出さず、stale を待つ。ros/useSystemState.js の試験専用の縫い目。
+export async function setTestStale(page, value) {
+  await page.evaluate((v) => window.__thSetTestStale(v), value)
+}
+
 // WP-UI-06/07: opens S-20/S-21 with the onsite data seeded -- /onsite/pins
 // (PinList's pins array), /person/targets (PersonTargets-shaped msg), /odom pose
 // ({x,y,yaw}), and service stubs read at call time: /onsite/two_point

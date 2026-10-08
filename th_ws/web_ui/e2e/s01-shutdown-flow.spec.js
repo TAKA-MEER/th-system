@@ -7,7 +7,7 @@
 // ros/useStdTrigger.js's test hook (no rosbridge backend in this spec, same
 // as every other shell e2e test -- U-3).
 import { test, expect } from '@playwright/test'
-import { gotoScreen, setTestState, stubServices } from './helpers.js'
+import { gotoScreen, setTestState, setTestStale, stubServices } from './helpers.js'
 
 test('shutdown card shows the live unsaved count from SystemState.unsaved', async ({ page }) => {
   await gotoScreen(page, 'S01', { mode: 'IDLE', unsaved: ['route', 'calib'] })
@@ -48,12 +48,46 @@ test('5-step flow: prepare -> per-item resolve -> gated confirm -> execute -> co
   // Step 4: press "停止する" -> /shutdown/execute (stubbed success).
   await confirmBtn.click()
 
-  // Step 5: completion shows on the screen, not inside the window; the
-  // window itself closes.
+  // Step 5 (1b-6 SG-B6): execute の成功だけでは完了を出さない。進捗表示になり、
+  // 実際に止まった（接続が切れた）のを確かめてから完了を出す。
   await expect(win).toHaveCount(0)
   const card = page.locator('.card', { hasText: '運用の終了' })
+  await expect(card).toContainText('停止しています')
+  await expect(card).not.toContainText('停止が完了しました')
+
+  // 接続が切れたら完了表示。
+  await setTestStale(page, true)
   await expect(card).toContainText('停止が完了しました')
   await expect(card).toContainText('電源を切って構いません')
+})
+
+test('execute が通っても接続が切れなければ完了を出さない（応答待ちの変異の標的）', async ({ page }) => {
+  await stubServices(page, {
+    '/shutdown/prepare': { success: true, message: '[]' },
+    '/shutdown/execute': { success: true, message: '' },
+  })
+  await gotoScreen(page, 'S01', { mode: 'IDLE' })
+  await page.getByRole('button', { name: '制御系を停止する' }).click()
+
+  const win = page.locator('.win.confirm.show')
+  await win.getByRole('button', { name: '停止する' }).click()
+  await expect(win).toHaveCount(0)
+  const card = page.locator('.card', { hasText: '運用の終了' })
+  await expect(card).toContainText('停止しています')
+  await expect(card).not.toContainText('停止が完了しました')
+})
+
+test('未保存が残っている間は「停止する」が押せず理由が出る', async ({ page }) => {
+  await stubServices(page, {
+    '/shutdown/prepare': { success: true, message: JSON.stringify(['route', 'calib']) },
+  })
+  await gotoScreen(page, 'S01', { mode: 'IDLE', unsaved: ['route', 'calib'] })
+  await page.getByRole('button', { name: '制御系を停止する' }).click()
+
+  const win = page.locator('.win.confirm.show')
+  const confirmBtn = win.getByRole('button', { name: '停止する' })
+  await expect(confirmBtn).toBeDisabled()
+  await expect(win.getByTestId('shutdown-blocked-reason')).toContainText('残り 2 件')
 })
 
 test('discard uses the two-stage armed button (§3.2.1 step 3)', async ({ page }) => {

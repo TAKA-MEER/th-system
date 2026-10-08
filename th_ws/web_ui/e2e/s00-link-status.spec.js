@@ -73,3 +73,27 @@ test('S-01 の要約に、繋がっていない機器の名前が出る', async 
   await expect(page.getByTestId('s01-net-link-down')).toContainText('PC（ノード起動）')
   await expect(page.getByTestId('s01-net-link-down')).not.toContainText('ホイールフィードバック')
 })
+
+// 1b-6 SG-C4: 項目別の状態が届いているのに揃わないときは、総合欄に
+// 「必須機器が繋がっていません」（従来は「確認中」のままだった）。
+test('総合欄: 項目別の状態が届いて揃わなければ「必須機器が繋がっていません」', async ({ page }) => {
+  await gotoS00(page, { mode: 'INIT' }, PARTIAL)
+  await expect(page.getByTestId('s00-overall')).toContainText('必須機器が繋がっていません')
+})
+
+test('総合欄: 項目別の状態が届いていなければ「確認中」のまま', async ({ page }) => {
+  await gotoS00(page, { mode: 'INIT' }, null)
+  await expect(page.getByTestId('s00-overall')).toContainText('確認中')
+})
+
+// 1b-6 SG-B7: 再起動中（restart.attempt >= 2）は「制御系を再起動しています（n 回目）」。
+// Spec-ops.md §2.4・Spec-webui.md §3.1 の文言どおり。
+test('再起動中は「制御系を再起動しています（n 回目）」が出る', async ({ page }) => {
+  await gotoS00(page, { mode: 'INIT' }, { ...PARTIAL, restart: { attempt: 2, calls: 1 } })
+  await expect(page.getByTestId('s00-restart')).toContainText('制御系を再起動しています（2 回目）')
+})
+
+test('初回起動（attempt 1）では再起動表示は出ない', async ({ page }) => {
+  await gotoS00(page, { mode: 'INIT' }, { ...PARTIAL, restart: { attempt: 1, calls: 0 } })
+  await expect(page.getByTestId('s00-restart')).toHaveCount(0)
+})

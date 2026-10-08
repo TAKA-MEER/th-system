@@ -17,7 +17,7 @@
 // item type would need a different one: /map_session/save, /route/save,
 // ...). This screen wires the 5-step *path* through; real persistence is
 // future work.
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useAutoCheckStatus } from '../ros/useAutoCheckStatus.js'
@@ -43,7 +43,8 @@ import {
   SHUTDOWN_TITLE, SHUTDOWN_UNSAVED_LABEL, SHUTDOWN_NONE, SHUTDOWN_BUTTON, SHUTDOWN_HINT,
   SHUTDOWN_WIN_TITLE, SHUTDOWN_WIN_INTRO, SHUTDOWN_WIN_NONE, SHUTDOWN_SAVE,
   SHUTDOWN_DISCARD_IDLE, SHUTDOWN_DISCARD_ARMED, SHUTDOWN_CANCEL, SHUTDOWN_CONFIRM,
-  SHUTDOWN_LOADING, SHUTDOWN_DONE_TITLE, SHUTDOWN_DONE_BODY, SHUTDOWN_RESOLVED,
+  SHUTDOWN_LOADING, SHUTDOWN_STOPPING, SHUTDOWN_BLOCKED_HINT,
+  SHUTDOWN_DONE_TITLE, SHUTDOWN_DONE_BODY, SHUTDOWN_RESOLVED,
   SHUTDOWN_LOAD_ERROR, unsavedCountLabel, unsavedLabel,
 } from '../i18n/screens.js'
 
@@ -72,10 +73,16 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
   // null | { kind: 'reason', reasonKey } | { kind: 'shutdown' }
   const [activeWindow, setActiveWindow] = useState(null)
 
-  const [shutdownPhase, setShutdownPhase] = useState('idle') // idle|loading|ready|executing|done
+  const [shutdownPhase, setShutdownPhase] = useState('idle') // idle|loading|ready|executing|stopping|done
   const [unsavedItems, setUnsavedItems] = useState([])
   const [resolvedItems, setResolvedItems] = useState(new Set())
   const [shutdownError, setShutdownError] = useState(null) // reject_reason_key, or a raw string for load failures
+
+  // 1b-6 SG-B6: /shutdown/execute が通っただけでは完了にしない。実際に止まった
+  // （接続が切れて stale になった）のを確かめてから「電源を切って構いません」を出す。
+  useEffect(() => {
+    if (shutdownPhase === 'stopping' && stale) setShutdownPhase('done')
+  }, [shutdownPhase, stale])
 
   const mode = state?.mode ?? null
   // M-1 (nothing pressable while starting up) + the general fail-safe rule
@@ -152,7 +159,9 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
     try {
       const res = await shutdownExecute()
       if (res?.success) {
-        setShutdownPhase('done')
+        // 完了は stale（実際に止まったこと）を見てから。ここでは進捗表示にして
+        // ウィンドウを閉じる（応答を待たずに完了を出さない。SG-B6）。
+        setShutdownPhase('stopping')
         closeWindow()
       } else {
         setShutdownError(res?.message || 'unsaved_remains')
@@ -274,6 +283,10 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
             <div className="b">{SHUTDOWN_DONE_TITLE}</div>
             <div>{SHUTDOWN_DONE_BODY}</div>
           </div>
+        ) : shutdownPhase === 'stopping' ? (
+          <div className="note" data-testid="shutdown-stopping">
+            <div className="b">{SHUTDOWN_STOPPING}</div>
+          </div>
         ) : (
           <>
             <div className="row mb">
@@ -348,6 +361,11 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
           </div>
           <footer>
             <button type="button" className="btn" onClick={closeWindow}>{SHUTDOWN_CANCEL}</button>
+            {!allResolved && shutdownPhase === 'ready' && (
+              <span className="hint" data-testid="shutdown-blocked-reason">
+                {SHUTDOWN_BLOCKED_HINT(unsavedItems.length - resolvedItems.size)}
+              </span>
+            )}
             <button
               type="button"
               className="btn danger"

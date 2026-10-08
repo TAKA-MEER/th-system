@@ -50,6 +50,11 @@ export function parseLinkStatus(raw) {
     items,
     timeoutMs: num(obj.timeout_ms),
     estopHw: { seen: obj.estop_hw?.seen === true, pressed: obj.estop_hw?.pressed === true },
+    // 1b-6 SG-B7: 再起動の回数（start.sh が control_attempt で渡した起動回数と、
+    // このノードが restart_control_stack を実行した回数）。S-00 の
+    // 「制御系を再起動しています（n 回目）」表示に使うのは attempt。
+    // 無い（古い機体側）ときは null。
+    restart: { attempt: num(obj.restart?.attempt), calls: num(obj.restart?.calls) },
   }
 }
 

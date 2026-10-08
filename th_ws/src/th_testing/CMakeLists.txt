@@ -458,6 +458,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(connectivity_checker_node
     test/test_connectivity_checker_node.py
     TIMEOUT 120)
+  # 1b-6（SG-B6・SG-B7）: sys.link_timeout → restart effect → 再起動の実呼出し
+  # （dryrun）と、未保存がある間の execute 拒否・解消後の印ファイル
+  # （launch_testing。ROS2 要）
+  ament_add_pytest_test(test_1b6_restart_shutdown_node
+    test/test_1b6_restart_shutdown_node.py
+    TIMEOUT 180)
   ament_add_pytest_test(test_params_audit_node
     test/test_params_audit_node.py
     TIMEOUT 120)

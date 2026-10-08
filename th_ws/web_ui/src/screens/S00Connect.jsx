@@ -23,11 +23,13 @@ import { linkRowView } from '../ros/linkStatusState.js'
 import {
   S00_CHECK_TITLE, S00_COL_DEVICE, S00_COL_REQ, S00_COL_STATUS, S00_REQUIRED,
   S00_MONITOR, S00_ITEMS, S00_LINK_TEXT, S00_AP_LABEL,
-  S00_AP_NOTE, S00_OVERALL_TITLE, S00_READY, S00_CHECKING, S00_ADVANCE,
+  S00_AP_NOTE, S00_OVERALL_TITLE, S00_READY, S00_CHECKING, S00_NOT_READY,
+  S00_RESTARTING, S00_ADVANCE,
   S00_OPEN_DEV,
   S00_AUTO_TITLE, S00_AUTO_CHECKING, S00_AUTO_OK, S00_AUTO_WARN, S00_AUTO_NG,
   S00_AUTO_SUPPRESSED, S00_AUTO_NOT_YET,
   S00_AUTO_ITEM_LABELS, S00_AUTO_ITEM_ORDER,
+  s00AutoResultLabel,
 } from '../i18n/screens.js'
 import { DISCONNECTED_LABEL } from '../i18n/states.js'
 
@@ -61,6 +63,18 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
   const mode = state?.mode ?? null
   const ready = !stale && mode != null && mode !== 'INIT'
   const autoView = autoOverallView(auto)
+  // 1b-6 SG-C4: 項目別の状態が届いているのに必須 3 者が揃わないときは
+  // 「必須機器が繋がっていません」（従来は「確認中」のままだった）。
+  const linkSeen = link != null
+  const overallLabel = stale ? DISCONNECTED_LABEL
+    : ready ? S00_READY
+    : linkSeen ? S00_NOT_READY
+    : S00_CHECKING
+  const overallTone = ready ? 'ok' : (linkSeen ? 'ng' : 'warn')
+  // 1b-6 SG-B7: 再起動中（start.sh が数えた起動回数が 2 以上）の表示。
+  // Spec-ops.md §2.4・Spec-webui.md §3.1 の文言どおり。
+  const restartAttempt = link?.restart?.attempt
+  const restarting = !stale && restartAttempt != null && restartAttempt >= 2
 
   return (
     <div className="screen" id="s00">
@@ -101,10 +115,17 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
       <div className="card">
         <h3>{S00_OVERALL_TITLE}</h3>
         <div className="row">
-          <span className={`pill ${ready ? 'ok' : 'warn'}`}>
-            {stale ? DISCONNECTED_LABEL : (ready ? S00_READY : S00_CHECKING)}
+          <span className={`pill ${overallTone}`} data-testid="s00-overall">
+            {overallLabel}
           </span>
         </div>
+        {restarting && (
+          <div className="row mt">
+            <span className="pill warn" data-testid="s00-restart">
+              {S00_RESTARTING(restartAttempt)}
+            </span>
+          </div>
+        )}
         {ready && (
           <button
             type="button"
@@ -142,7 +163,7 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
                   <tr key={key}>
                     <td>{S00_AUTO_ITEM_LABELS[key]}</td>
                     <td className={`r ${autoItemTone(it.result)}`} data-testid={`s00-auto-${key}`}>
-                      {it.result}{it.reason ? ` (${it.reason})` : ''}
+                      {s00AutoResultLabel(it.result)}{it.reason ? ` (${it.reason})` : ''}
                     </td>
                   </tr>
                 )

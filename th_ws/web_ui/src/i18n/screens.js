@@ -70,6 +70,12 @@ export const S00_AP_NOTE = '単一障害点'
 export const S00_OVERALL_TITLE = '総合'
 export const S00_READY = '運用に入れます'
 export const S00_CHECKING = '確認中'
+// 1b-6 SG-C4: 項目別の状態が届いているのに必須 3 者が揃わないとき。
+// 従来は「確認中」のままで、何を待っているか分からなかった。
+export const S00_NOT_READY = '必須機器が繋がっていません'
+// 1b-6 SG-B7: start.sh が数えた起動回数（control_attempt。2 以上が再起動）。
+// Spec-ops.md §2.4・Spec-webui.md §3.1 の文言どおり。
+export const S00_RESTARTING = (n) => `制御系を再起動しています（${n} 回目）`
 export const S00_ADVANCE = 'メインメニュー画面へ'
 // 疎通確認で止まったときに開発モードの設定へ入る導線（2026-09-23）
 export const S00_OPEN_DEV = '開発モードの設定'
@@ -84,6 +90,17 @@ export const S00_AUTO_NG = '自動判定: 要確認（警告のみで運用に�
 export const S00_AUTO_SUPPRESSED =
   '開発モードで警告を消しています（判定自体は続いています）'
 export const S00_AUTO_NOT_YET = '自動判定の結果はまだ届いていません'
+// 1b-6 SG-C4: 自動点検の項目別の結果を日本語で出す（OK/NG/WARN の英字を出さない）。
+export const S00_AUTO_RESULT_LABELS = {
+  OK: '正常',
+  WARN: '要確認',
+  NG: '異常',
+  CHECKING: '判定中',
+}
+
+export function s00AutoResultLabel(result) {
+  return S00_AUTO_RESULT_LABELS[result] ?? result
+}
 export const S00_AUTO_ITEM_LABELS = {
   ESTOP: '非常停止ボタン',
   IMU: 'IMU',
@@ -132,6 +149,12 @@ export const SHUTDOWN_DISCARD_ARMED = '本当に破棄'
 export const SHUTDOWN_CANCEL = 'やめる'
 export const SHUTDOWN_CONFIRM = '停止する'
 export const SHUTDOWN_LOADING = '確認しています…'
+// 1b-6 SG-B6: /shutdown/execute が通ったあと、実際に止まった（接続が切れた）のを
+// 確かめるまでの進捗（Spec-webui.md §3.2.1 手順 5）。応答が来ただけでは
+// 「電源を切って構いません」を出さない。
+export const SHUTDOWN_STOPPING = '停止しています…'
+// 未保存が残っている間は「停止する」を押せない（§3.2.1 手順 4）。押せない理由。
+export const SHUTDOWN_BLOCKED_HINT = (n) => `未保存の扱いを決めてください（残り ${n} 件）`
 
 export const SHUTDOWN_DONE_TITLE = '停止が完了しました'
 export const SHUTDOWN_DONE_BODY = '電源を切って構いません。'
