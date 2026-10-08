@@ -88,6 +88,12 @@ def generate_launch_description():
         DeclareLaunchArgument('dev_ignore', default_value='',
                               description='開発モードで外す項目（カンマ区切り）。dev_mode:=true の'
                                           'ときだけ効く'),
+        # 1b-6 SG-B7: start.sh が数えた起動回数（1 始まり。2 以上が再起動）。
+        # connectivity_checker の control_attempt へ渡し、S-00 の「制御系を
+        # 再起動しています（n 回目）」表示に使う。start.sh 以外（ros2 launch
+        # 直接）では 1 のまま（「再起動しています」は出ない）。
+        DeclareLaunchArgument('control_attempt', default_value='1',
+                              description='起動回数（1b-6 SG-B7。start.sh が付ける）'),
     ]
 
     use_stub     = LaunchConfiguration('use_stub')
@@ -97,6 +103,7 @@ def generate_launch_description():
     stage        = LaunchConfiguration('stage')
     dev_mode     = LaunchConfiguration('dev_mode')
     dev_ignore   = LaunchConfiguration('dev_ignore')
+    control_attempt = LaunchConfiguration('control_attempt')
     enable_route_slam = LaunchConfiguration('enable_route_slam')
     lidar_is_local = PythonExpression(["'", lidar_source, "' == 'local'"])
 
@@ -432,7 +439,8 @@ def generate_launch_description():
         name='connectivity_checker',
         parameters=[os.path.join(GENERATED_DIR, 'connectivity_checker.yaml'),
                     {'sim': False, 'dev_mode': False,
-                     'dev_ignore_at_start': ParameterValue(dev_ignore, value_type=str)}],
+                     'dev_ignore_at_start': ParameterValue(dev_ignore, value_type=str),
+                     'control_attempt': ParameterValue(control_attempt, value_type=str)}],
         condition=UnlessCondition(dev_mode),
         output='screen',
     ))
@@ -442,7 +450,8 @@ def generate_launch_description():
         name='connectivity_checker',
         parameters=[os.path.join(GENERATED_DIR, 'connectivity_checker.yaml'),
                     {'sim': False, 'dev_mode': True,
-                     'dev_ignore_at_start': ParameterValue(dev_ignore, value_type=str)}],
+                     'dev_ignore_at_start': ParameterValue(dev_ignore, value_type=str),
+                     'control_attempt': ParameterValue(control_attempt, value_type=str)}],
         condition=IfCondition(dev_mode),
         output='screen',
     ))

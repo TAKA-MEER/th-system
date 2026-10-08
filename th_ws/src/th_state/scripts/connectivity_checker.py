@@ -35,7 +35,7 @@ from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Bool, String
 
-from th_system_msgs.msg import FaultStatus, StateEvent, SystemState, WheelFeedback
+from th_system_msgs.msg import FaultStatus, StateEffect, StateEvent, SystemState, WheelFeedback
 
 from th_state.connectivity_core import Params, evaluate, link_status, should_emit_link_ok
 from th_state.dev_log_core import (FaultSnap, StateSnap, TwistSum, fault_changed,
@@ -56,13 +56,20 @@ class ConnectivityChecker(Node):
         self.declare_parameter('scan_expected_points', Parameter.Type.INTEGER)
         self.declare_parameter('required_nodes', Parameter.Type.STRING_ARRAY)
         # restart_control_stack の打ち切り条件（O-d4。registry.yaml では placeholder のまま。
-        # §11 既知の負債の判断: 現時点では th_state 側からこの effect を配送する経路が
-        # まだ無い（state_manager.py の _EFFECT_DESTINATIONS には宛先として書かれているが、
-        # 実際の配送は未実装。WP-STATE-02 §11）。このパケットの §2 にも配送経路の節は
-        # 挙げられていないので、自動起動の配線は対象外とする（R1）。ここでは
-        # 「実行する能力」（このファイル末尾の restart_control_stack()）だけを用意する。
+        # 生成 yaml に載らないため、起動時は None（＝上限に達したとみなして実行しない）。
+        # 本番の値はマニュアル側で決めて overrides.yaml 等で上書きする（O-d4）。
         self.declare_parameter('restart_max_count', Parameter.Type.INTEGER)
         self.declare_parameter('restart_wait_ms', Parameter.Type.INTEGER)
+        # 1b-6 SG-B7: start.sh が数える起動回数（launch 引数 control_attempt 経由。
+        # 文字列型で受けるのは dev_ignore_at_start と同じ理由）。S-00 の
+        # 「制御系を再起動しています（n 回目）」表示の n になる
+        # （Spec-ops.md §2.4・Spec-webui.md §3.1）。2 回目以降が再起動。
+        self.declare_parameter('control_attempt', '1')
+        # 1b-6 SG-B7: 真のとき SIGTERM を送らず回数だけ数える（試験用。
+        # 本物は PC 側のプロセスグループへ SIGTERM を送るため、試験で撃つと
+        # launch_testing・colcon ごと死ぬ。kill 部分は self._killpg に切り出し、
+        # 試験では dryrun で迂回する）。
+        self.declare_parameter('restart_dryrun', False)
         # sim: DetailedDesign-wp1.md WP-STATE-03 §3.3 の表には無い、このノード独自の
         # 追加パラメータ（§8 Gazebo シナリオを満たすための拡張。判断は完了報告に明記）。
         # Gazebo には esp32_bridge が居ないため、ESP32 の2項目と required_nodes を除外する。
@@ -111,6 +118,7 @@ class ConnectivityChecker(Node):
         # 1b-2（SG-A5）: /system/state で最後に見た mode。INIT への到着検出用。
         self._last_state_mode = None
         self._restart_count = 0           # restart_control_stack の実行回数（FMEA②）
+        self._killpg = os.killpg          # 1b-6 SG-B7: 試験で差し替えられる形にする
         self._dev_logged_state = None     # 開発モード状態の変化検出用（ログは切り替わり時だけ）
         # WP-DEV-01C: 選択記録の購読最新値（seen）と最終記録値（logged）。
         # OFF・非選択のあいだは logged を進めない。ON＋選択になった瞬間に
@@ -161,6 +169,12 @@ class ConnectivityChecker(Node):
 
         event_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
         self._pub_event = self.create_publisher(StateEvent, '/system/event', event_qos)
+
+        # 1b-6 SG-B7: T-INIT-02 の restart_control_stack を受ける。
+        # state_manager が /system/effect に出しているが、このノードは購読して
+        # いなかったため誰も呼ばなかった（SG-B7）。dest が自分宛てのものだけ実行する。
+        effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
+        self.create_subscription(StateEffect, '/system/effect', self._on_effect, effect_qos)
 
         # /system/dev_mode: 開発モードの現在状態（names.md §6.2。WP-DEV-01A）。
         # std_msgs/String に JSON を載せる（/ui/jog_lease が String、
@@ -226,6 +240,14 @@ class ConnectivityChecker(Node):
 
     def _on_cmd_vel(self, msg):
         self._seen_cmdvel = TwistSum(v=float(msg.linear.x), w=float(msg.angular.z))
+
+    def _on_effect(self, msg):
+        """1b-6 SG-B7: 自分宛ての restart_control_stack を実行する。"""
+        if msg.name != 'restart_control_stack':
+            return
+        if msg.dest != self.get_name():
+            return
+        self.restart_control_stack()
 
     # ------------------------------------------------------------
     def _params(self) -> Params:
@@ -409,6 +431,14 @@ class ConnectivityChecker(Node):
         self._log_dev_state()
         self._maybe_log_selections()
 
+    def _control_attempt(self) -> int:
+        """start.sh が数えた起動回数（1 始まり。2 以上が再起動）。読めなければ 1。"""
+        try:
+            n = int(str(self.get_parameter('control_attempt').value or '1'))
+        except (TypeError, ValueError):
+            return 1
+        return n if n >= 1 else 1
+
     def _publish_link_status(self, p):
         payload = link_status(
             now_ms=self._now_ms(),
@@ -421,6 +451,14 @@ class ConnectivityChecker(Node):
             estop_seen=self._estop_seen,
             hw_estop=self._hw_estop,
             last_cmd_report_ms=self._last_cmd_report_ms)
+        # 1b-6 SG-B7: 再起動の回数とこのノードが実行した回数（S-00 の
+        # 「制御系を再起動しています（n 回目）」と試験の観測点）。
+        # 回数の正本は start.sh（control_attempt）。restart_calls は
+        # ノードと一緒に消えるため表示には使わない。
+        payload["restart"] = {
+            "attempt": self._control_attempt(),
+            "calls": self._restart_count,
+        }
         self._pub_link.publish(String(data=json.dumps(payload, sort_keys=True)))
 
     def _publish_link_ok(self):
@@ -434,8 +472,8 @@ class ConnectivityChecker(Node):
     # ------------------------------------------------------------
     # restart_control_stack（DetailedDesign-wp1.md WP-STATE-03 §1・§4.2・§12.3・L-4）。
     #
-    # 呼び出し元が無い（このパケットのスコープ外。ファイル冒頭のコメント参照）ため、
-    # 現時点ではどこからも自動では呼ばれない。「実行する能力」を用意するだけ。
+    # 呼び出し元: T-INIT-02 の effect（/system/effect の restart_control_stack。
+    # 上の _on_effect）。疎通確認の時間切れ（sys.link_timeout）で自動実行する（SG-B7）。
     # ------------------------------------------------------------
     def restart_control_stack(self) -> bool:
         """PC 側の ROS2 ノード群のプロセスグループへ SIGTERM を送る（L-4）。
@@ -445,6 +483,7 @@ class ConnectivityChecker(Node):
         （= 同じ launch から起動された PC 側 ROS2 ノード群。§12.3「launch のプロセス
         グループへ SIGTERM」）。`restart_max_count` を超えたら何もしない
         （FMEA②: 無限ループの打ち切り）。戻り値は実際に SIGTERM を送ったかどうか。
+        `restart_dryrun` が真のときは送らずに回数だけ数える（試験用）。
         """
         max_count = self.get_parameter('restart_max_count').value
         if max_count is None or self._restart_count >= max_count:
@@ -456,7 +495,9 @@ class ConnectivityChecker(Node):
         self.get_logger().warn(
             f'restart_control_stack: PC側プロセスグループ (pgid={pgid}) へ SIGTERM '
             f'（{self._restart_count}/{max_count} 回目）')
-        os.killpg(pgid, signal.SIGTERM)
+        if bool(self.get_parameter('restart_dryrun').value):
+            return True
+        self._killpg(pgid, signal.SIGTERM)
         return True
 
 

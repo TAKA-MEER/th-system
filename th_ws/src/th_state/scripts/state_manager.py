@@ -18,6 +18,7 @@ DetailedDesign-state.md §2 のとおり、遷移の判断は `state_core.StateC
 from dataclasses import replace as _dc_replace
 import json
 import os
+import signal
 
 import rclpy
 import yaml
@@ -31,9 +32,10 @@ from builtin_interfaces.msg import Time as TimeMsg
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
-from th_system_msgs.msg import (ActiveScreen, CalibStatus, FaultStatus, PersonTargets, PinList,
-                                RouteList, RouteStatus, StateEffect, StateEvent,
-                                SystemState)
+from th_system_msgs.msg import (ActiveScreen, CalibStatus, FaultStatus, MapSessionStatus,
+                                 PersonTargets, PinList,
+                                 RouteList, RouteStatus, StateEffect, StateEvent,
+                                 SystemState)
 from th_system_msgs.srv import SetFlag, UiTrigger
 
 from th_state import guards as guards_module
@@ -155,6 +157,14 @@ class StateManager(Node):
         # W-13 解除: target_confidence_min は registry.yaml 駆動
         # （person_tracker_bridge と同名・同値で共有行）。生成 yaml が上書きする。
         self.declare_parameter('target_confidence_min', 0.5)
+        # 1b-6 SG-B6: /shutdown/execute が bringup を止めるための印ファイル
+        # （コンテナ内の /root/th_data＝ホストの th_ws/data。start.sh が見て
+        # 立て直さずに終わる）。試験では tmp のパスを上書きする。
+        self.declare_parameter('shutdown_marker_path', '/root/th_data/.control_stop')
+        # 1b-6 SG-B6: 真のとき SIGTERM を送らず印ファイルだけ書く（試験用。
+        # 本物は自分が属するプロセスグループへ SIGTERM を送るため、試験で撃つと
+        # launch_testing・colcon ごと死ぬ）。
+        self.declare_parameter('shutdown_dryrun', False)
 
         transitions, attributes, mode_entry = self._load_config()
         guards = guards_module.build_guards(mode_entry, attributes)
@@ -199,7 +209,17 @@ class StateManager(Node):
         # 1b-1 SG-A12: PAUSE に入った理由（W-1 の出し分け用）。"" / "fault" /
         # "jog" / "presence_lost"。PAUSE を抜けたら "" に戻す。
         self._pause_reason = ""
-        self._unsaved = []          # このパケットでは常に空（記録系ノードは未実装）
+        # 1b-6 SG-B6: 未保存の検出（Spec-ops.md §4.1）。_unsaved は
+        # _refresh_unsaved() が次の 4 つから決める（判定できるものだけ。
+        # 届いていないものは未保存とみなさない）:
+        #   venue_map … /map_session/status の slot VENUE の dirty
+        #   route     … /route/status が未保存の記録（WebUI と同じ判定）
+        #   calib     … CALIB で項目を実行中（LIST に戻る・抜けたら解消）
+        #   map_patch … /map_session/status の slot ROUTE の dirty
+        self._unsaved = []
+        self._route_unsaved = False
+        self._map_dirty = {}
+        self._killpg = os.killpg  # 1b-6 SG-B6: 試験で差し替えられる形にする
         self._last_event = ""
         self._last_reject_reason = ""
         self._route_ids = []          # /route/catalog から。既存経路の選択ガード用（P2）
@@ -299,6 +319,15 @@ class StateManager(Node):
                               durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
                               history=QoSHistoryPolicy.KEEP_LAST)
         self.create_subscription(PinList, '/onsite/pins', self._on_onsite_pins, pins_qos)
+
+        # 1b-6 SG-B6: slam_control の /map_session/status（RELIABLE +
+        # TRANSIENT_LOCAL + depth 1。発行側と同じ QoS で購読しないと latched
+        # 値を読めない）。slot 別の dirty が未保存（venue_map / map_patch）の種になる。
+        map_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+                             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                             history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(MapSessionStatus, '/map_session/status',
+                                 self._on_map_session, map_qos)
 
         # WP-MAINT-02: calib_runner の /calib/status（reliable depth 5。publisher と同じ）。
         # S3 のプレビューが sane かどうかを T-CAL-04 のガードへ渡すために読む。
@@ -652,6 +681,10 @@ class StateManager(Node):
         # 点が 1 つも無ければ「積んでいない」。replay_runner は経路を読み込むと
         # points を載せて publish する（未読込は points=0 / id='' / target_index=-1）。
         self._route_loaded = bool(msg.points > 0 and msg.current.id)
+        # 1b-6 SG-B6: 未保存の教示記録（WebUI の isUnsavedRecording と同じ判定。
+        # 再生側は current.id が入るので記録とみなさない。保存済みは除く）。
+        self._route_unsaved = bool(
+            not msg.saved and not msg.current.id and msg.points > 0)
 
     def _on_person_targets(self, msg):
         thr = self.get_parameter('target_confidence_min').value
@@ -662,6 +695,32 @@ class StateManager(Node):
 
     def _on_onsite_pins(self, msg):
         self._pin_kinds = derive_pin_kinds([p.kind for p in msg.pins])
+
+    def _on_map_session(self, msg):
+        # 1b-6 SG-B6: slot 別の dirty を覚える（_refresh_unsaved が読む）。
+        self._map_dirty[str(msg.slot)] = bool(msg.dirty)
+
+    def _refresh_unsaved(self):
+        """1b-6 SG-B6: _unsaved をいま分かる範囲で決め直す（Spec-ops.md §4.1）。
+
+        判定できないもの（/route/status・/map_session/status が一度も届いて
+        いない）は未保存とみなさない（黙って空のままにしないよう、届いていない
+        ことはログと報告に残す。呼び出し側＝/shutdown/* と _publish_state）。
+        順序は SystemState.unsaved の表示順（venue_map / route / calib / map_patch）。
+        """
+        items = []
+        if self._map_dirty.get("VENUE"):
+            items.append("venue_map")
+        if self._route_unsaved:
+            items.append("route")
+        # 校正の補正値: ウィザードを検証まで終えずに離れた（CALIB で項目を実行中。
+        # LIST に戻る・CALIB を抜けたら _calib_item が空になるので解消）。
+        # モード名リテラルは書かない（N-1）。state_core.CALIB_MODE を参照する。
+        if self.mode == CALIB_MODE and self._calib_item and self.state != "LIST":
+            items.append("calib")
+        if self._map_dirty.get("ROUTE"):
+            items.append("map_patch")
+        self._unsaved = items
 
     # ------------------------------------------------------------
     # /safety/* の購読 → fault.* / hw.* / ui.estop.* の内部生成
@@ -734,15 +793,32 @@ class StateManager(Node):
     # /shutdown/prepare, /shutdown/execute（state.md §3.2。詳細手順は §12.5 の対象外）
     # ------------------------------------------------------------
     def _on_shutdown_prepare(self, req, res):
+        self._refresh_unsaved()
         res.success = True
         res.message = json.dumps(self._unsaved)
         return res
 
     def _on_shutdown_execute(self, req, res):
+        self._refresh_unsaved()
         if self._unsaved:
             res.success = False
             res.message = "unsaved_remains"
             return res
+        # 1b-6 SG-B6: 停止の実体。印ファイルを置いてから自分が属するプロセス
+        # グループ（＝同じ launch の bringup）へ SIGTERM を送る。start.sh は
+        # 印を見て立て直さずに終わる（印が無い SIGTERM 死は再起動と区別できない
+        # ため立て直す）。印が書けなければ殺さない（立て直しの無限再起動になる）。
+        marker = str(self.get_parameter('shutdown_marker_path').value or '')
+        try:
+            with open(marker, 'w', encoding='utf-8') as f:
+                f.write('shutdown\n')
+        except OSError as e:
+            self.get_logger().error(f'/shutdown/execute: 印ファイル {marker} が書けない: {e}')
+            res.success = False
+            res.message = "marker_failed"
+            return res
+        if not bool(self.get_parameter('shutdown_dryrun').value):
+            self._killpg(os.getpgrp(), signal.SIGTERM)
         res.success = True
         res.message = ""
         return res
@@ -788,6 +864,7 @@ class StateManager(Node):
             self._since_ms = self._now_ms()
             self._last_published_mode_state = (self.mode, self.state)
 
+        self._refresh_unsaved()
         msg = SystemState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.mode = self.mode
