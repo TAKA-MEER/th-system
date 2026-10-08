@@ -51,6 +51,14 @@ SPEC_FANOUT = {
     # 1b-9 SG-A9: SM-3.1.2-066（作業中は行き先を拒否）は、IDLE_P からの遷移行 T-ATP-05 と、
     # WORKING の拒否行 T-ATP-05-working（拒否理由 working_in_progress を返す）の 2 行。
     "SM-3.1.2-066": 2,
+    # 1b-11 SG-B13: SM-3.1.1-15 は C-13（遷移）に加え、前提の拒否行
+    # C-13-replay-no-route（no_route_recorded）・C-13-leash-no-device
+    # （device_not_connected）の 3 行。
+    "SM-3.1.1-15": 3,
+    # 1b-11 SG-B14: 地図更新 OFF の「保存」は理由付きで拒否する（map_update_off）。
+    # 遷移行と拒否行（T-REPLAY-08X ほか）の 2 行ずつ。
+    "SM-3.1.2-028": 2, "SM-3.1.2-099": 2, "SM-3.1.2-100": 2,
+    "SM-3.1.2-101": 2, "SM-3.1.2-102": 2,
 }
 
 
@@ -142,6 +150,11 @@ _STATIC_GUARD_OVERRIDES = {
     "route_loaded": {"route_loaded": True},
     "home_pin_exists": {"pin_kinds": ("HOME",)},
     "map_update": {"flags": {"map_update": True}, "map_update_available": True},
+    # 1b-11 SG-B14: map_update_off は flags 空（OFF）の素の ctx で真。
+    "map_update_off": {},
+    # 1b-11 SG-B13: 方式選択の前提の拒否行ガード。
+    "enter_replay_no_route": {"route_ids": (), "arg": {"mode": "REPLAY"}},
+    "enter_leash_no_device": {"leash_present": False, "arg": {"mode": "LEASH"}},
     "line_visible": {"line_visible": True},
     "leash_taut": {"leash_taut": True},
     "preview_sane": {"calib_preview_sane": True},

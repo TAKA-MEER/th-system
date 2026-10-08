@@ -602,6 +602,9 @@ class RouteRecorder(Node):
         stamp = self.get_clock().now().to_msg()
         msg.header.stamp = stamp
         msg.target_index = -1   # 記録側は目標点を持たない
+        # 1b-11 SG-B14: 記録側は has_map を出さない（常に false）。
+        # 地図の有無は再生側（replay_runner）が load_route で判定する。
+        msg.has_map = False
         # WS-9K-E2: 「ファイルに書けたか」を載せる（FSM の SAVED ではない）。
         msg.saved = self._saved
         if self._recorder is None:

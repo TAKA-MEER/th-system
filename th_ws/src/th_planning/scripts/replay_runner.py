@@ -272,6 +272,9 @@ class ReplayRunner(Node):
         self._cur_w = 0.0
         self._pose = None                 # /odom 由来 (x, y, yaw)
         self._route_frame = 'odom'        # 読み込んだ経路のフレーム
+        # 1b-11 SG-B14: 読み込んだ経路に保存地図があるか。/route/status の
+        # has_map → state_manager の map_update_available の材料。
+        self._route_has_map = False
         self._localize_pending = False    # map TF 待ち（W-01 縮小）
         self._localize_deadline = 0.0
         self._localize_pending_arg = '{}'  # TF 待ちの末に evt.localize_done へ載せる arg_json
@@ -408,6 +411,7 @@ class ReplayRunner(Node):
             file_frame = self._route.frame_id or 'odom'
             map_route = self._use_map_frame and file_frame == self._map_frame
             self._route_frame = self._map_frame if map_route else 'odom'
+            self._route_has_map = bool(map_route)
             # WS-9K-B / WS-9U: map フレーム経路は自身の .posegraph を読み直すので
             # 別セッションでも再生してよい（WS-9S で経路選択のたび slam_toolbox を
             # 作り直してその経路の地図を deserialize する）。保存地図が無い
@@ -1049,6 +1053,8 @@ class ReplayRunner(Node):
         msg.localize_quality = self._localize_quality
         msg.localize_score = float(self._localize_score)
         msg.localize_margin = float(self._localize_margin)
+        # 1b-11 SG-B14: 保存地図の有無（T-REPLAY-08 の map_update ガードの材料）。
+        msg.has_map = bool(self._route_has_map)
         if self._route is not None:
             info = RouteInfo()
             info.id = self._route.id

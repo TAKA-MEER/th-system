@@ -488,6 +488,9 @@ export const S01_SETTINGS = '設定'            // S-01「保守・設定」カ�
 export const S01_ONSITE_TEST = '試験（当日）'
 // brief-onsite-fix A: 画面の無いモードで S-01 が出ているとき、ui.finish で IDLE に戻す導線。
 export const S01_FINISH_ESCAPE = '終了して待機に戻る'
+// 1b-11 SG-B13: 教示 2 種は保管場所起点（Spec-transit.md §0.6・§3.5）。
+// 判定は人の責任なので S-01 に常時出す（DetailedDesign-transit.md §0.4）。
+export const S01_TEACH_NOTE = '教示は保管場所から開始してください（復路では教示できません）'
 export const S50_BACK = '戻る'
 export const S50_TAB_GENERAL = '一般'
 export const S50_TAB_DISPLAY = '表示'

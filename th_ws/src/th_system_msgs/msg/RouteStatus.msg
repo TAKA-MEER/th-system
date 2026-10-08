@@ -27,3 +27,7 @@ string    localize_quality  # 再生側のみ。全域ローカライズの確�
                           # READY・RUN・PAUSE 中も最後の値を出し続ける。
 float32   localize_score    # 再生側のみ。最後の探索の s（0〜1）。未評価は 0。
 float32   localize_margin   # 再生側のみ。最後の探索の m。未評価は 0。
+bool      has_map           # 再生側のみ。読み込んだ経路に保存地図があるか（1b-11 SG-B14）。
+                            # state_manager が map_update_available の材料にする。
+                            # 記録側は出さない（常に false）。
+                            # 末尾に追加（既存フィールドの順序は変えない）。

@@ -218,6 +218,11 @@ class SlamControl(Node):
         # されていて、地図と HOME ピンが一致しないまま LOCALIZE_AT_POSE していた）。
         self._instance_id = self._new_instance_id()
         self._pins_map_instance_id = ''   # 直近の /onsite/pins が持つ値
+        # 1b-11 SG-B14: 最後に開いた ROUTE セッションの保存先ベース名。
+        # commit_map_patch（教示再生・試験場内の「保存」）は effect に経路 id を
+        # 持たないため、直近に save/reload したセッションへ書き足しを確定する。
+        # 成功したときだけ更新する（失敗したセッションへ誤って上書きしない）。
+        self._open_route_base = ''
         # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
         # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
         self._slam_ready = None
@@ -635,7 +640,10 @@ class SlamControl(Node):
                     return self._handle_venue_commit(response)
                 # 1b-7 SG-B12: 経路地図は旧版 1 世代を残す（VENUE は 1 枚のみ保持
                 # のため回さない。Spec-params.md §6）。
-                return self._handle_map_save(response, base, keep_previous=True)
+                saved = self._handle_map_save(response, base, keep_previous=True)
+                if saved.success:
+                    self._open_route_base = base
+                return saved
             # WS-9Y: VENUE は呼び出し側（試験画面）が初期姿勢を渡してこないため、
             # 登録済み HOME ピンの姿勢へフォールバックする（無ければ従来どおり
             # START_AT_FIRST_NODE のまま）。request を直接書き換えて
@@ -670,7 +678,10 @@ class SlamControl(Node):
                             '確認してください）')
                 return result
             # reload は ROUTE のみここに到達する（VENUE は上で return 済み）。
-            return self._handle_map_reload(response, base, request)
+            reloaded = self._handle_map_reload(response, base, request)
+            if reloaded.success:
+                self._open_route_base = base
+            return reloaded
 
     def _handle_venue_commit(self, response):
         """VENUE の保存（/map_session/open slot:VENUE mode:save のサービス経路）。
@@ -723,8 +734,29 @@ class SlamControl(Node):
                 self._report('OK: commit_venue_map (venue/map をシリアライズ)')
                 self.get_logger().info('commit_venue_map OK: venue/map をシリアライズ')
         elif msg.name == 'commit_map_patch':
-            # WAIVER(demo): W-11 — 地図書き足しは未実装
-            self.get_logger().info('commit_map_patch: 地図書き足しは未実装（W-11）')
+            # 1b-11 SG-B14: 地図更新 ON のときの「保存」（T-REPLAY-08 ほか
+            # SM-3.1.2-099〜-102）。直近に開いた ROUTE セッションへ書き足しを
+            # 確定する（旧版 1 世代を残す。1b-7 SG-B12 と同じ規則）。
+            # 走行中の保存は commit_venue_map と同じ停止中ガードで縛る。
+            rejected = self._stop_only_reject_reason()
+            if rejected is not None:
+                self._report(f'NG: commit_map_patch を拒否 ({rejected})')
+                self.get_logger().warn(f'commit_map_patch を拒否: {rejected}')
+                return
+            if not self._open_route_base:
+                self._report('NG: commit_map_patch（開いている経路地図が無い）')
+                self.get_logger().warn(
+                    'commit_map_patch: 開いている ROUTE セッションが無いため保存しない')
+                return
+            with self._lock:
+                err = self._commit_route_patch(self._open_route_base)
+            if err:
+                self._report(f'NG: commit_map_patch 失敗 ({err})')
+                self.get_logger().warn(f'commit_map_patch 失敗: {err}')
+            else:
+                self._report('OK: commit_map_patch（書き足しを確定）')
+                self.get_logger().info(
+                    f'commit_map_patch OK: {self._open_route_base} へ書き足しを確定')
         else:
             self.get_logger().debug(
                 f'effect {msg.name} は未処理 (dest={msg.dest})')
@@ -763,6 +795,30 @@ class SlamControl(Node):
         self._set_active(False)
         return self._finish(
             response, None, f'地図を保存しました（地図を凍結しました）: {base}.posegraph')
+
+    def _commit_route_patch(self, base: str) -> "str | None":
+        """書き足しの確定（effect 経路の commit_map_patch 用）。
+
+        _handle_map_save と同じ中身（旧版 1 世代へ退避→占有格子→serialize→
+        凍結）だが、サービス応答が無い effect 経路のためエラー文字列で返す。
+        **呼び出し側が self._lock を保持していること**（_commit_venue_map と同じ）。
+        """
+        rotated = rotate_map_previous(base)
+        if rotated:
+            self.get_logger().info(f'旧版の地図を退避した: {rotated}')
+        err = self._save_occupancy_grid(base)
+        if err:
+            self.get_logger().warn(
+                f'占有格子（pgm/yaml）の保存に失敗。全域ローカライズは'
+                f'始点決め打ちになる: {err}')
+        err = self._serialize(base)
+        if err:
+            return err
+        err = self._set_localization(True)
+        if err:
+            return f'地図の凍結に失敗: {err}'
+        self._set_active(False)
+        return None
 
     def _save_occupancy_grid(self, base: str) -> "str | None":
         """SaveMap で <base>.pgm / <base>.yaml を書き出す（W-01 P2）。

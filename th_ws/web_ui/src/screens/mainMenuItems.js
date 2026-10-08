@@ -12,14 +12,13 @@
 //
 // This is a *display convenience*, not the authority (DetailedDesign-webui.md
 // §4.1: "the UI may pre-decide for convenience, but it is not the
-// authority" -- th_state's mode_entry_allowed guard is what actually
-// accepts or rejects /system/trigger's ui.enter_mode). It intentionally
-// does not attempt every precondition mode_entry_allowed checks server-side
-// (route existence, device connectivity, ...) -- those aren't visible from
-// /system/state, so a click that looked enabled here can still come back
-// rejected; the caller must show reject_reason_key from the response in
-// that case (i18n/reasons.js), the same way it shows the reasonKey this
-// module hands back for the checks it *can* make locally.
+// authority" -- th_state's guards are what actually accept or reject
+// /system/trigger's ui.enter_mode). preconds (routeCount / leashPresent)
+// covers what the screen can see; the rest (e.g. camera presence, which has
+// no signal source) isn't gated here, so a click that looked enabled here
+// can still come back rejected; the caller must show reject_reason_key from
+// the response in that case (i18n/reasons.js), the same way it shows the
+// reasonKey this module hands back for the checks it *can* make locally.
 
 // The 11 buttons S-01 shows (Spec-webui.md §3.2's move(7) + field(PREP/AT_HOME)
 // + maintenance(OPCHECK/CALIB) groups). PANEL_NAV / SUMMON / HOME_NAV are
@@ -52,8 +51,14 @@ export const MENU_GROUPS = [
 // still applies once inside PREP; this module only affects display).
 const TRACKER_GATE_EXEMPT = new Set(['PREP'])
 
-// menuItems(systemState, modeEntry, attributes) -> [{mode, enabled, reasonKey}]
-export function menuItems(systemState, modeEntry, attributes) {
+// menuItems(systemState, modeEntry, attributes, preconds) -> [{mode, enabled, reasonKey}]
+//
+// preconds は画面が別経路で知る前提条件（1b-11 SG-B13。DetailedDesign-transit.md
+// §0.4）。{ routeCount: 経路の本数（/route/catalog）, leashPresent:
+// /system/state.leash_present }。どちらも undefined（＝まだ分からない）なら
+// その前提では止めない（サーバ側のガードが正本で、押せば理由付きで拒否される）。
+// カメラ（LINE）は信号源が無いためここでは見ない（報告参照）。
+export function menuItems(systemState, modeEntry, attributes, preconds = {}) {
   const mode = systemState?.mode ?? null
 
   // M-1: nothing pressable while starting up. Also the fail-safe default
@@ -64,10 +69,21 @@ export function menuItems(systemState, modeEntry, attributes) {
   }
 
   const allowed = new Set(modeEntry?.[mode] ?? [])
+  const routeCount = preconds?.routeCount
+  const leashPresent = preconds?.leashPresent
 
   return MENU_MODES.map((m) => {
     if (!allowed.has(m)) {
       return { mode: m, enabled: false, reasonKey: 'mode_entry_denied' }
+    }
+    // 1b-11 SG-B13: 教示再生は経路 0 本で押せない（no_route_recorded）。
+    // 本数がまだ分からない（undefined）間は止めない。
+    if (m === 'REPLAY' && typeof routeCount === 'number' && routeCount === 0) {
+      return { mode: m, enabled: false, reasonKey: 'no_route_recorded' }
+    }
+    // 1b-11 SG-B13: 電子リードはデバイス未接続で押せない（device_not_connected）。
+    if (m === 'LEASH' && leashPresent === false) {
+      return { mode: m, enabled: false, reasonKey: 'device_not_connected' }
     }
     const attrs = attributes?.[m]
     if (attrs?.needs_tracker === 'required' && !TRACKER_GATE_EXEMPT.has(m) && !systemState.tracker_enabled) {
