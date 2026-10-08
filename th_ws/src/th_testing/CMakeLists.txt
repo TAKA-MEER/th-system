@@ -318,6 +318,12 @@ if(BUILD_TESTING)
     test/test_working_guard.py
     TIMEOUT 30)
 
+  # 方式選択の前提と地図更新の保存の遷移（1b-11 SG-B13・SG-B14・SG-B19。
+  # state_core を直接 step()。ROS2 不要）
+  ament_add_pytest_test(test_transit_entry_guards_1b11
+    test/test_transit_entry_guards_1b11.py
+    TIMEOUT 60)
+
   # DR-SPAAM 起動/停止判断の純ロジック (brief-tracker-default-off §3.2。
   # tracker_enabled と lifecycle 状態からの transition_id 決定。ROS2 不要)
   ament_add_pytest_test(test_dr_spaam_lifecycle_controller_core
@@ -714,6 +720,16 @@ if(BUILD_TESTING)
   # 照合・force・ピン変更時の解除・境界を検証。積算は venue_nav と同じ 240 秒枠）
   ament_add_pytest_test(test_home_declarer_node
     test/test_home_declarer_node.py
+    TIMEOUT 240)
+
+  # 方式選択の前提・地図更新の保存（1b-11 SG-B13・SG-B14）。state_manager を起動し、
+  # 経路 0 本・デバイス未接続・地図の有無が本番の配線で効くことを縛る。
+  ament_add_pytest_test(test_transit_entry_guards_node
+    test/test_transit_entry_guards_node.py
+    TIMEOUT 240)
+  # 使えない経路の原因別の通知（1b-11 SG-B19）と has_map（SG-B14）。replay_runner を起動。
+  ament_add_pytest_test(test_transit_route_unusable_node
+    test/test_transit_route_unusable_node.py
     TIMEOUT 240)
 
   # 「作業中」のサーバ側ガード（1b-9 SG-A9）。state_manager を起動して、作業中の
