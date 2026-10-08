@@ -231,8 +231,18 @@ export const S13_TAB_TEACH = '教示'
 export const S13_TEACH_TITLE = '教示'
 export const S13_ROUTE_NAME_LABEL = '経路名'
 export const S13_ROUTE_NAME_PLACEHOLDER = '経路名を入力'
-export const S13_RECORD_START = '記録開始'
+// 1b-7 S-13: 経路選択（Spec-webui.md §3.6「新規経路」／「既存経路の再設定」）。
+// 「記録開始」ボタンは無い（Spec-transit.md §3.2 手順 4）。選ぶとすぐに記録が始まる。
+export const S13_ROUTE_NEW_TITLE = '新規経路'
+export const S13_ROUTE_EXISTING_TITLE = '既存経路の再設定'
+export const S13_NEW_START = 'この名前で記録を始める'
+// 既存の録り直し・同名の新規は上書き（旧版は 1 世代残る）なので二段階アーム式
+// （Spec-webui.md §6）。parts/ArmedButton.jsx の idle/armed に渡す。
+export const S13_RESELECT = '録り直す'
+export const S13_RESELECT_ARMED = '本当に上書きする'
 export const S13_RECORDING = '記録中'
+export const S13_PAUSED = '一時停止中'
+export const S13_PAUSE_HINT = 'スティックを操作すると続きから記録します'
 export const S13_SAVED = '保存しました'
 export const S13_SAVE_FAILED = '保存されていません'
 export const S13_RECORDED_LABEL = '記録距離'
@@ -242,7 +252,8 @@ export const S13_START_YAW_LABEL = '開始時の向き'
 export const S13_SEC = (s) => `${s} 秒`
 export const S13_M = (m) => `${m} m`
 export const S13_DEG = (deg) => `${deg}°`
-export const S13_REC_DIRECTION = '経路名を入れて「記録開始」を押すと、操作での走行を経路として記録します。'
+// 1b-7 S-13: 選択直後から記録が始まる（Spec-transit.md §3.2 手順 2〜4）。
+export const S13_REC_DIRECTION = '新規か既存かを選ぶと、すぐに記録が始まります。保存するまで終点は確定しません。'
 
 // ---------------------------------------------------------------- S-14 (教示再生) ----
 // P5 / demo-teach-replay. Spec-webui.md §3.7 の簡略版。

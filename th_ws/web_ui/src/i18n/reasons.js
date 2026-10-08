@@ -35,6 +35,10 @@ export const REJECT_REASONS = {
   // 1b-15 SG-B10: 自動ブレーキの切替は手動系（手動走行・教示（手動）・ジョグ中）だけ。
   // 自律系は無効化できない（Spec-safety.md §2.1）。
   auto_brake_locked: 'この状態では自動ブレーキを切り替えられません',
+  // 1b-7 SG-B11: 保存＝記録の確定。SAVED で「走行」・スティックを拒否した
+  // ときの理由キー（T-TEACH-05/-05J/-05M。Spec-modes.md SM-3.1.2-017/-018）。
+  // S-13 が state.last_reject_reason から出す。
+  teach_saved_finalized: '保存済みのため記録を続けられません',
   target_lost: '対象を見失っています',
   low_confidence: '追跡信頼度が不足しています',
   no_map_tf: '自己位置（地図座標）が取得できません',
