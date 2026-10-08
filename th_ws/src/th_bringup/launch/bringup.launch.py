@@ -129,7 +129,11 @@ def generate_launch_description():
     person_logic_enabled = PythonExpression(["'", use_stub, "' == 'true'"])
 
     # ── 設定ファイルパス ──────────────────────────────────
-    nav2_yaml   = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
+    # SG-B15(2026-10-08): Nav2 の実機用 params は生成物を読む。到着許容差だけ
+    # registry の arrival_xy_tol_m から params_generation が写す。生成は
+    # ノード起動より前の OpaqueFunction で同期実行される（G-1）ため、ここで
+    # 参照する時点で中身は新しい。静的 config/nav2_params.yaml は複写元。
+    nav2_yaml   = os.path.join(GENERATED_DIR, 'nav2_params.yaml')
     # imu_enabled:=true(既定) → エンコーダ+IMU の vyaw、false → エンコーダのみ
     ekf_yaml_imu    = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
     ekf_yaml_no_imu = os.path.join(BRINGUP_DIR, 'config', 'ekf_params_no_imu.yaml')

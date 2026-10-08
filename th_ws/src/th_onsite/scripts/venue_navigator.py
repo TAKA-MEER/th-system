@@ -108,7 +108,9 @@ class VenueNavigator(Node):
         # WS-9AJ(2026-09-11): nav2_params.yaml の xy_goal_tolerance（0.25→0.12）
         # と整合を取る。これは follow_path の result を取りこぼした場合の
         # 到着フォールバックなので、緩いままだと精度改善が骨抜きになる。
-        self.declare_parameter('arrival_xy_tol_m', 0.15)
+        # SG-B15(2026-10-08): registry の arrival_xy_tol_m（0.12）と同値。
+        # 生成 yaml が正で、ここは起動単体のフォールバック。
+        self.declare_parameter('arrival_xy_tol_m', 0.12)
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
 

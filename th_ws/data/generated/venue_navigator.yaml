@@ -3,7 +3,7 @@ venue_navigator:
     align_kp: 1.2
     align_tolerance_rad: 0.09
     align_w_max_rps: 0.6
-    arrival_xy_tol_m: 0.15
+    arrival_xy_tol_m: 0.12
     blocked_recheck_period_s: 2.0
     brake_accel_mps2: 1.18
     obstacle_stop_distance_m:
