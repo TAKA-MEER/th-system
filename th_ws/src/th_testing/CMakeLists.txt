@@ -541,6 +541,20 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_auto_brake_limiter_node
     test/test_auto_brake_limiter_node.py
     TIMEOUT 180)
+  # 開発モードの項目 auto_brake（Spec-safety.md §10。2026-10-08 改定）。自律系・場内でも
+  # OFF にできる。state_manager の受け付け・失効（3 秒）と obstacle_limiter の従い方・失効を
+  # ノード本体で縛る（選んだだけでは OFF にならない・NA／state 途絶／estop は変えない）。
+  ament_add_pytest_test(test_auto_brake_dev_state_node
+    test/test_auto_brake_dev_state_node.py
+    TIMEOUT 180)
+  ament_add_pytest_test(test_auto_brake_dev_limiter_node
+    test/test_auto_brake_dev_limiter_node.py
+    TIMEOUT 180)
+  # MUX_DEAD の生存確認（SG-A11）。本物の twist_mux と safety_monitor を起動し、停止中に
+  # twist_mux を落として検知する・既定は記録だけ。enabled_targets は launch の値を使う。
+  ament_add_pytest_test(test_mux_liveness_node
+    test/test_mux_liveness_node.py
+    TIMEOUT 180)
   # 停止中だけのガードの Docker launch テスト（1b-5・SG-A10/SG-A6。
   # state_manager＋slam_control＋config_manager を実際に起動し、
   # IDLE・PREP/MAPPING で通り、PREP/RETURN・MANUAL で拒否されることを縛る）
