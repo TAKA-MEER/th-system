@@ -6,12 +6,15 @@
 import { test, expect } from '@playwright/test'
 import { gotoWithState } from './helpers.js'
 
+// playwright.config.js と同じポート（PW_PORT。既定 4173）。
+const ORIGIN = `http://localhost:${process.env.PW_PORT || '4173'}`
+
 test('no requests go to a host other than the page origin', async ({ page }) => {
   const external = []
   page.on('request', (req) => {
     const url = new URL(req.url())
     if (url.protocol === 'data:' || url.protocol === 'blob:') return
-    if (url.origin !== 'http://localhost:4173') external.push(req.url())
+    if (url.origin !== ORIGIN) external.push(req.url())
   })
 
   await gotoWithState(page, { mode: 'IDLE' })
@@ -29,7 +32,7 @@ test('no requests go to a host other than the page origin (rosbridge-less, no te
   page.on('request', (req) => {
     const url = new URL(req.url())
     if (url.protocol === 'data:' || url.protocol === 'blob:') return
-    if (url.origin !== 'http://localhost:4173') external.push(req.url())
+    if (url.origin !== ORIGIN) external.push(req.url())
   })
 
   await page.goto('/')
