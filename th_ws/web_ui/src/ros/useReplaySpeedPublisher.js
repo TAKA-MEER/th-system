@@ -36,14 +36,18 @@ export function useReplaySpeedPublisher(ros, ratio) {
   useEffect(() => {
     if (typeof ratio !== 'number' || Number.isNaN(ratio)) return
     if (lastSentRef.current === ratio) return
-    lastSentRef.current = ratio
     if (TEST_MODE) {
+      // 1b-11 SG-B23③: 送ったことにするのは実際に送ったときだけ。
+      // 以前は未接続の最初の描画で lastSent を立ててしまい、接続後に
+      // 同じ比率を送り直さず、表示と実速度がずれていた。
       window.__thReplaySpeedPublishes = window.__thReplaySpeedPublishes ?? []
       window.__thReplaySpeedPublishes.push(ratio)
+      lastSentRef.current = ratio
       return
     }
     if (topicRef.current && window.ROSLIB) {
       topicRef.current.publish(new window.ROSLIB.Message({ data: ratio }))
+      lastSentRef.current = ratio
     }
   }, [ros, ratio])
 }

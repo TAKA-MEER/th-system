@@ -23,6 +23,8 @@ export const REJECT_REASONS = {
   params_placeholder_blocking: '起動を止める暫定値が残っています',
   blind_mask_uncalibrated: '死角マスクが未校正です',
   unsaved_remains: '未保存のデータが残っています',
+  // 運用の終了は停止中（メインメニュー画面）からだけ受け付ける（/shutdown/execute）
+  shutdown_not_idle: '走行中・操作中・非常停止中は制御系を停止できません。メインメニュー画面で停止中にしてください',
   // brief-onsite-register-fix REG-1: ピン登録（pin_registrar）の拒否理由。
   // pin_registrar.py が返す reject_reason_key をそのままキーにする（target_lost は
   // 登録専用で、既存の対象選択用 tracker_lost とは別物として両方残す）。
@@ -35,6 +37,10 @@ export const REJECT_REASONS = {
   // 1b-15 SG-B10: 自動ブレーキの切替は手動系（手動走行・教示（手動）・ジョグ中）だけ。
   // 自律系は無効化できない（Spec-safety.md §2.1）。
   auto_brake_locked: 'この状態では自動ブレーキを切り替えられません',
+  // 1b-7 SG-B11: 保存＝記録の確定。SAVED で「走行」・スティックを拒否した
+  // ときの理由キー（T-TEACH-05/-05J/-05M。Spec-modes.md SM-3.1.2-017/-018）。
+  // S-13 が state.last_reject_reason から出す。
+  teach_saved_finalized: '保存済みのため記録を続けられません',
   target_lost: '対象を見失っています',
   low_confidence: '追跡信頼度が不足しています',
   no_map_tf: '自己位置（地図座標）が取得できません',

@@ -602,6 +602,14 @@ class RouteRecorder(Node):
         stamp = self.get_clock().now().to_msg()
         msg.header.stamp = stamp
         msg.target_index = -1   # 記録側は目標点を持たない
+        # 1b-7 S-13: 記録開始時の向き（S-13「開始時の向き」表示用。Spec-webui.md
+        # §3.6）。RouteRecorderCore.start が確定した値をそのまま載せる。
+        # 記録を開いていないときは 0（msg の既定。画面は points>0 のときだけ出す）。
+        msg.start_yaw = float(self._recorder.start_yaw) \
+            if self._recorder is not None else 0.0
+        # 1b-11 SG-B14: 記録側は has_map を出さない（常に false）。
+        # 地図の有無は再生側（replay_runner）が load_route で判定する。
+        msg.has_map = False
         # WS-9K-E2: 「ファイルに書けたか」を載せる（FSM の SAVED ではない）。
         msg.saved = self._saved
         if self._recorder is None:

@@ -505,6 +505,37 @@
   - name: clear_prev
     args: {}
   spec_ref: SM-3.1.1-10
+# C-13-replay-no-route / C-13-leash-no-device: 1b-11 SG-B13（方式選択の前提。
+# DetailedDesign-transit.md §0.4）。C-13 より前に置き、前提を満たさない選択だけ
+# 理由付きで拒否する（T-ATP-05-working と同じ明示の拒否行の流儀）。
+# mode は IDLE に限る（MANUAL からは mode_entry 表自体が REPLAY/LEASH を許さない
+# ので C-13 の mode_entry_denied が出る）。LINE のカメラは信号源（/camera/status
+# の発行者）がリポジトリに無いため対象外（報告参照。deny 既定にすると LINE に
+# 入れなくなる後退になる）。
+- id: C-13-replay-no-route
+  layer: 0
+  mode: IDLE
+  state: '*'
+  event: ui.enter_mode
+  guard: enter_replay_no_route
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.1-15
+  reject: true
+  reject_reason_key: no_route_recorded
+- id: C-13-leash-no-device
+  layer: 0
+  mode: IDLE
+  state: '*'
+  event: ui.enter_mode
+  guard: enter_leash_no_device
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.1-15
+  reject: true
+  reject_reason_key: device_not_connected
 - id: C-13
   layer: 0
   mode:
@@ -947,6 +978,22 @@
   - name: resume_path
     args: {}
   spec_ref: SM-3.1.2-026
+# T-REPLAY-08X: 1b-11 SG-B14 — 地図更新 OFF（または利用不可）のときの「保存」は
+# 理由付きで拒否する（map_update_off。reasons.js に文言あり）。
+# ガード不成立は行のキーでは出ない（規則6の not_allowed になる）ため、
+# T-REPLAY-08 の前に置く明示の拒否行が要る（T-ATP-05-working と同じ流儀）。
+- id: T-REPLAY-08X
+  layer: 10
+  mode: REPLAY
+  state: PAUSE
+  event: ui.save
+  guard: map_update_off
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-028
+  reject: true
+  reject_reason_key: map_update_off
 - id: T-REPLAY-08
   layer: 10
   mode: REPLAY
@@ -998,6 +1045,37 @@
       route_id: $arg.id
       reverse: $arg.reverse
   spec_ref: SM-3.1.2-103
+# T-REPLAY-12 / -13: 1b-11 SG-B19（Spec-transit.md §4.2.3）。
+# load_route を受けた replay_runner が経路・骨格地図を読めなかったときの
+# 受け口。LOCALIZE に留めたうえで、原因どおりの案内（W-3）を出す。
+# 無言で return しない（60 秒後の汎用タイムアウト案内に頼らない）。
+# spec_ref は経路選択の SM-3.1.2-020（この 2 行はその失敗枝。報告参照）。
+- id: T-REPLAY-12
+  layer: 10
+  mode: REPLAY
+  state: LOCALIZE
+  event: evt.route_no_map
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: guide
+    args:
+      key: route_no_map
+  spec_ref: SM-3.1.2-020
+- id: T-REPLAY-13
+  layer: 10
+  mode: REPLAY
+  state: LOCALIZE
+  event: evt.route_unreadable
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: guide
+    args:
+      key: route_unreadable
+  spec_ref: SM-3.1.2-020
 - id: T-LINE-01
   layer: 10
   mode: LINE
@@ -1472,6 +1550,20 @@
   to_state: IDLE_P
   effects: []
   spec_ref: SM-3.1.2-061
+# T-PNAV-09X: 1b-11 SG-B14 — T-REPLAY-08X と同じく地図更新 OFF の「保存」を
+# 理由付きで拒否する（map_update_off）。
+- id: T-PNAV-09X
+  layer: 10
+  mode: PANEL_NAV
+  state: PAUSE
+  event: ui.save
+  guard: map_update_off
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-099
+  reject: true
+  reject_reason_key: map_update_off
 - id: T-PNAV-09
   layer: 10
   mode: PANEL_NAV
@@ -1593,6 +1685,20 @@
   to_state: $initial
   effects: []
   spec_ref: SM-3.1.2-066
+# T-ATP-07X: 1b-11 SG-B14 — T-REPLAY-08X と同じく地図更新 OFF の「保存」を
+# 理由付きで拒否する（map_update_off）。
+- id: T-ATP-07X
+  layer: 10
+  mode: AT_PANEL
+  state: IDLE_P
+  event: ui.save
+  guard: map_update_off
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-100
+  reject: true
+  reject_reason_key: map_update_off
 - id: T-ATP-07
   layer: 10
   mode: AT_PANEL
@@ -1763,6 +1869,20 @@
   to_state: IDLE_P
   effects: []
   spec_ref: SM-3.1.2-077
+# T-SUM-14X: 1b-11 SG-B14 — T-REPLAY-08X と同じく地図更新 OFF の「保存」を
+# 理由付きで拒否する（map_update_off）。
+- id: T-SUM-14X
+  layer: 10
+  mode: SUMMON
+  state: PAUSE
+  event: ui.save
+  guard: map_update_off
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-101
+  reject: true
+  reject_reason_key: map_update_off
 - id: T-SUM-14
   layer: 10
   mode: SUMMON
@@ -1908,6 +2028,20 @@
   - name: replan
     args: {}
   spec_ref: SM-3.1.2-084
+# T-HNAV-08X: 1b-11 SG-B14 — T-REPLAY-08X と同じく地図更新 OFF の「保存」を
+# 理由付きで拒否する（map_update_off）。
+- id: T-HNAV-08X
+  layer: 10
+  mode: HOME_NAV
+  state: PAUSE
+  event: ui.save
+  guard: map_update_off
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-102
+  reject: true
+  reject_reason_key: map_update_off
 - id: T-HNAV-08
   layer: 10
   mode: HOME_NAV

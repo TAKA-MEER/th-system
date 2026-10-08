@@ -97,3 +97,15 @@ test('折り返し: 報告はあるが受信中でない＝指令が届いてい
   } })
   assert.match(linkRowView(s, 'esp32_loopback').detail, /速度指令が届いていない/)
 })
+
+test('parse: restart（起動回数・実行回数）を落とさず通す', () => {
+  const s = parseLinkStatus({ ...SAMPLE, restart: { attempt: 2, calls: 1 } })
+  assert.equal(s.restart.attempt, 2)
+  assert.equal(s.restart.calls, 1)
+})
+
+test('parse: restart が無い（古い機体側）ときは null', () => {
+  const s = parseLinkStatus(SAMPLE)
+  assert.equal(s.restart.attempt, null)
+  assert.equal(s.restart.calls, null)
+})

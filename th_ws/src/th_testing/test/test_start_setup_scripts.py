@@ -11,6 +11,7 @@ python3 -m pytest -p no:anyio src/th_testing/test/test_start_setup_scripts.py
 
 対象: th_ws/start.sh（新設）、th_ws/setup.sh（改修）。
 ブリーフ .briefs/brief-startsh.md §3 の必須項目 1〜8 に対応する。
+1b-6 で 5 件追加し 26 件（§9: control_attempt の受け渡しと運用終了の印）。
 """
 import os
 import signal
@@ -74,6 +75,8 @@ if [ "${1:-}" = "exec" ]; then
     case "$*" in
         *"ros2 launch"*)
             if [ "${FAKE_LAUNCH_MODE:-exit}" = "block" ]; then sleep 300; exit 0; fi
+            # 1b-6 SG-B6: /shutdown/execute のふり（印ファイルを置いてから死ぬ）。
+            if [ -n "${FAKE_LAUNCH_MARKER:-}" ]; then touch "$FAKE_LAUNCH_MARKER"; fi
             exit "${FAKE_LAUNCH_RC:-1}"
             ;;
     esac
@@ -528,3 +531,81 @@ def test_scripts_have_shebang_and_syntax():
         r = subprocess.run(["bash", "-n", path], capture_output=True, text=True,
                            timeout=30)
         assert r.returncode == 0, r.stderr
+
+
+# ── 9. 1b-6: 起動回数の受け渡しと「運用の終了」の印 ────────────
+
+def test_control_attempt_passed_per_attempt(fakebin, with_dist):
+    # SG-B7: 起動ごとに control_attempt:=n（1 始まり）を bringup へ渡す。
+    # connectivity_checker が S-00 の「制御系を再起動しています（n 回目）」に使う。
+    _, make_env, log = fakebin
+    env = make_env(FAKE_LAUNCH_MODE="exit", FAKE_LAUNCH_RC="1",
+                   STARTSH_RESTART_MAX="3")
+    r = subprocess.run(["bash", START_SH], capture_output=True, text=True,
+                       env=env, timeout=120)
+    assert r.returncode != 0
+    execs = _launch_execs(_calls(log))
+    assert len(execs) == 3, execs
+    for i, call in enumerate(execs, start=1):
+        assert f"control_attempt:={i}" in call, call
+
+
+def test_control_attempt_user_override_wins(fakebin, with_dist):
+    # 使用者が control_attempt を直接渡したらそちらを優先し、付け足さない。
+    _, make_env, log = fakebin
+    env = make_env(FAKE_LAUNCH_MODE="exit", FAKE_LAUNCH_RC="0",
+                   STARTSH_RESTART_MAX="1")
+    r = subprocess.run(["bash", START_SH, "control_attempt:=7"], capture_output=True,
+                       text=True, env=env, timeout=60)
+    assert r.returncode != 0
+    execs = _launch_execs(_calls(log))
+    assert len(execs) == 1, execs
+    assert "control_attempt:=7" in execs[0], execs[0]
+    assert "control_attempt:=1" not in execs[0], execs[0]
+
+
+def test_stop_marker_stops_without_restart(fakebin, with_dist, tmp_path):
+    # SG-B6: bringup が印ファイルを置いて死んだら（/shutdown/execute の実体）、
+    # 立て直さずに正常終了する。印は消す。
+    _, make_env, log = fakebin
+    marker = tmp_path / "control_stop"
+    env = make_env(FAKE_LAUNCH_MODE="exit", FAKE_LAUNCH_RC="1",
+                   STARTSH_RESTART_MAX="3",
+                   FAKE_LAUNCH_MARKER=str(marker),
+                   STARTSH_STOP_MARKER=str(marker))
+    r = subprocess.run(["bash", START_SH], capture_output=True, text=True,
+                       env=env, timeout=120)
+    assert r.returncode == 0, r.stdout + r.stderr
+    execs = _launch_execs(_calls(log))
+    assert len(execs) == 1, execs  # 立て直していない
+    assert not marker.exists()  # 印は消費した
+    out = r.stdout + r.stderr
+    assert "運用の終了" in out
+    assert "再起動しています" not in out
+
+
+def test_stale_marker_cleaned_at_startup(fakebin, with_dist, tmp_path):
+    # 前回の残骸（起動前に既にある印）は消してから始め、通常どおり起動する。
+    _, make_env, log = fakebin
+    marker = tmp_path / "control_stop"
+    marker.write_text("shutdown\n", encoding="utf-8")
+    env = make_env(FAKE_LAUNCH_MODE="exit", FAKE_LAUNCH_RC="1",
+                   STARTSH_RESTART_MAX="1",
+                   STARTSH_STOP_MARKER=str(marker))
+    r = subprocess.run(["bash", START_SH], capture_output=True, text=True,
+                       env=env, timeout=120)
+    assert r.returncode != 0  # 印は起動前の残骸なので立て直しの対象（上限で止まる）
+    assert len(_launch_execs(_calls(log))) == 1
+    assert not marker.exists()
+    assert "古い停止要求" in (r.stdout + r.stderr)
+
+
+def test_stop_marker_path_in_dry_run(fakebin):
+    # --dry-run の説明に印ファイルと control_attempt が出る（本番経路の文書化）。
+    _, make_env, log = fakebin
+    env = make_env()
+    r = subprocess.run(["bash", START_SH, "--dry-run"], capture_output=True,
+                       text=True, env=env, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert "control_attempt" in r.stdout
+    assert _calls(log) == []

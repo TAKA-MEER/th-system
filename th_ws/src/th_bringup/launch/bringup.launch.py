@@ -88,6 +88,13 @@ def generate_launch_description():
         DeclareLaunchArgument('dev_ignore', default_value='',
                               description='開発モードで外す項目（カンマ区切り）。dev_mode:=true の'
                                           'ときだけ効く'),
+        # 1b-6 SG-B7: start.sh が数えた起動回数（1 始まり。2 以上が再起動）。
+        # connectivity_checker の control_attempt へ渡し、S-00 の「制御系を
+        # 再起動しています（n 回目）」表示に使う。0＝start.sh の下で動いていない
+        # （ros2 launch 直接。既定）。このとき疎通確認の時間切れでも制御系を
+        # 再起動しない（立て直す者がいないため。restart_allowed）。
+        DeclareLaunchArgument('control_attempt', default_value='0',
+                              description='起動回数（1b-6 SG-B7。start.sh が付ける。0＝start.sh 外）'),
     ]
 
     use_stub     = LaunchConfiguration('use_stub')
@@ -97,6 +104,7 @@ def generate_launch_description():
     stage        = LaunchConfiguration('stage')
     dev_mode     = LaunchConfiguration('dev_mode')
     dev_ignore   = LaunchConfiguration('dev_ignore')
+    control_attempt = LaunchConfiguration('control_attempt')
     enable_route_slam = LaunchConfiguration('enable_route_slam')
     lidar_is_local = PythonExpression(["'", lidar_source, "' == 'local'"])
 
@@ -129,7 +137,11 @@ def generate_launch_description():
     person_logic_enabled = PythonExpression(["'", use_stub, "' == 'true'"])
 
     # ── 設定ファイルパス ──────────────────────────────────
-    nav2_yaml   = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
+    # SG-B15(2026-10-08): Nav2 の実機用 params は生成物を読む。到着許容差だけ
+    # registry の arrival_xy_tol_m から params_generation が写す。生成は
+    # ノード起動より前の OpaqueFunction で同期実行される（G-1）ため、ここで
+    # 参照する時点で中身は新しい。静的 config/nav2_params.yaml は複写元。
+    nav2_yaml   = os.path.join(GENERATED_DIR, 'nav2', 'nav2_params.yaml')
     # imu_enabled:=true(既定) → エンコーダ+IMU の vyaw、false → エンコーダのみ
     ekf_yaml_imu    = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
     ekf_yaml_no_imu = os.path.join(BRINGUP_DIR, 'config', 'ekf_params_no_imu.yaml')
@@ -432,7 +444,8 @@ def generate_launch_description():
         name='connectivity_checker',
         parameters=[os.path.join(GENERATED_DIR, 'connectivity_checker.yaml'),
                     {'sim': False, 'dev_mode': False,
-                     'dev_ignore_at_start': ParameterValue(dev_ignore, value_type=str)}],
+                     'dev_ignore_at_start': ParameterValue(dev_ignore, value_type=str),
+                     'control_attempt': ParameterValue(control_attempt, value_type=str)}],
         condition=UnlessCondition(dev_mode),
         output='screen',
     ))
@@ -442,7 +455,8 @@ def generate_launch_description():
         name='connectivity_checker',
         parameters=[os.path.join(GENERATED_DIR, 'connectivity_checker.yaml'),
                     {'sim': False, 'dev_mode': True,
-                     'dev_ignore_at_start': ParameterValue(dev_ignore, value_type=str)}],
+                     'dev_ignore_at_start': ParameterValue(dev_ignore, value_type=str),
+                     'control_attempt': ParameterValue(control_attempt, value_type=str)}],
         condition=IfCondition(dev_mode),
         output='screen',
     ))

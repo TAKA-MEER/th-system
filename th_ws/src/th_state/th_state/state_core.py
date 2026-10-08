@@ -55,6 +55,8 @@ assert set(MODE_STATES.keys()) == MODES
 # 起動時モードの参照点をここに 1 箇所だけ置く。判断ロジックではなく定数の公開なので
 # WP-STATE-01 の「遷移の判断」の範囲には入らない。
 BOOT_MODE: str = "INIT"
+# 運用の終了（/shutdown/execute）を受け付ける唯一のモード（Spec-ops.md §4・Spec-webui.md §3.2.1）。
+IDLE_MODE: str = "IDLE"
 
 # state_manager.py が UI 非常停止起因の ESTOP ラッチ判定で使う参照点（N-1 と同じ理由で
 # ノード側にモード名リテラルを書かない。2026-09-01。SM-3.1.1-11）。

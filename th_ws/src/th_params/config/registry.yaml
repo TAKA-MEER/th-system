@@ -1687,10 +1687,14 @@
   unit: m
   class: b
   status: given
-  value: 0.15
+  value: 0.12
   consumers: [venue_navigator]
   spec_ref: "DetailedDesign-names.md §7.2"
-  note: "venue_navigator.py の既定値（変更なし）。暫定値"
+  note: "盤前到着の許容差（Spec-onsite.md §6.2。2026-10-08 に 0.12 m / 0.12 rad の
+    1 つの値に改定）。venue_navigator の到着判定と Nav2 の xy_goal_tolerance／
+    yaw_goal_tolerance（実機用）の両方の根拠。Nav2 側へは params_generation が
+    生成 nav2_params.yaml に写す（Nav2 の params_file は registry 駆動にできない
+    ため）。yaw 側も同じ値（0.12 rad）を使う。旧値 0.15（SG-B15）"
 
 - name: tick_hz
   unit: Hz

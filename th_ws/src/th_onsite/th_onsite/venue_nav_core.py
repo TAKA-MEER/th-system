@@ -20,7 +20,7 @@ class VenueNavParams:
     align_kp: float = 1.2                 # 旋回 P ゲイン
     align_w_max_rps: float = 0.6          # 旋回上限（指令生成側の上限）
     blocked_recheck_period_s: float = 2.0
-    arrival_xy_tol_m: float = 0.30
+    arrival_xy_tol_m: float = 0.12
 
 
 def yaw_error(current_yaw: float, target_yaw: float) -> float:

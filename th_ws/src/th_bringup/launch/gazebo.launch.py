@@ -144,7 +144,9 @@ def _scenario_setup(context, *args, **kwargs):
 
     planning_yaml = os.path.join(BRINGUP_DIR, 'config', 'planning_params.yaml')
     nav2_params_sim  = os.path.join(BRINGUP_DIR, 'config', 'nav2_params_sim.yaml')
-    nav2_params_real = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
+    # SG-B15(2026-10-08): 実機用だけ生成物を読む（到着許容差を registry から写す）。
+    # sim 用は静的のまま（0.25。spec §6.2 は実機の話）。生成はノード起動より前（G-1）。
+    nav2_params_real = os.path.join(GENERATED_DIR, 'nav2', 'nav2_params.yaml')
     slam_params_sim  = os.path.join(BRINGUP_DIR, 'config', 'slam_params_sim.yaml')
     slam_params_real = os.path.join(BRINGUP_DIR, 'config', 'slam_params.yaml')
 
@@ -376,7 +378,8 @@ def generate_launch_description():
 
     # ── 設定ファイルパス ─────────────────────────────────────
     nav2_params_sim  = os.path.join(BRINGUP_DIR, 'config', 'nav2_params_sim.yaml')
-    nav2_params_real = os.path.join(BRINGUP_DIR, 'config', 'nav2_params.yaml')
+    # SG-B15: 実機用だけ生成物（上と同じ理由）。sim は静的のまま。
+    nav2_params_real = os.path.join(GENERATED_DIR, 'nav2', 'nav2_params.yaml')
     safety_real      = os.path.join(SAFETY_DIR,  'config', 'safety_monitor.yaml')
     ekf_yaml         = os.path.join(BRINGUP_DIR, 'config', 'ekf_params.yaml')
     calib_yaml       = os.path.join(BRINGUP_DIR, 'config', 'calib.yaml')

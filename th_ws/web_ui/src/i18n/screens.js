@@ -66,10 +66,22 @@ export const S00_LINK_TEXT = {
 // required rows above (C-01).
 export const S00_AP_LABEL = 'Wi-Fi AP'
 export const S00_AP_NOTE = '単一障害点'
+// 1b-6 SG-C4: AP とタブレットの状態。どちらもこの画面（タブレット）が rosbridge に
+// 繋がっているかで決める（AP を直接測る手段は無い。繋がっていれば AP を通れている）。
+export const S00_AP_OK = '✓ 通信できている'
+export const S00_AP_UNKNOWN = '× 通信できていない'
+export const S00_TABLET_LABEL = 'タブレット（この画面）'
+export const S00_TABLET_OK = '✓ 接続している'
 
 export const S00_OVERALL_TITLE = '総合'
 export const S00_READY = '運用に入れます'
 export const S00_CHECKING = '確認中'
+// 1b-6 SG-C4: 項目別の状態が届いているのに必須 3 者が揃わないとき。
+// 従来は「確認中」のままで、何を待っているか分からなかった。
+export const S00_NOT_READY = '必須機器が繋がっていません'
+// 1b-6 SG-B7: start.sh が数えた起動回数（control_attempt。2 以上が再起動）。
+// Spec-ops.md §2.4・Spec-webui.md §3.1 の文言どおり。
+export const S00_RESTARTING = (n) => `制御系を再起動しています（${n} 回目）`
 export const S00_ADVANCE = 'メインメニュー画面へ'
 // 疎通確認で止まったときに開発モードの設定へ入る導線（2026-09-23）
 export const S00_OPEN_DEV = '開発モードの設定'
@@ -84,6 +96,17 @@ export const S00_AUTO_NG = '自動判定: 要確認（警告のみで運用に�
 export const S00_AUTO_SUPPRESSED =
   '開発モードで警告を消しています（判定自体は続いています）'
 export const S00_AUTO_NOT_YET = '自動判定の結果はまだ届いていません'
+// 1b-6 SG-C4: 自動点検の項目別の結果を日本語で出す（OK/NG/WARN の英字を出さない）。
+export const S00_AUTO_RESULT_LABELS = {
+  OK: '正常',
+  WARN: '要確認',
+  NG: '異常',
+  CHECKING: '判定中',
+}
+
+export function s00AutoResultLabel(result) {
+  return S00_AUTO_RESULT_LABELS[result] ?? result
+}
 export const S00_AUTO_ITEM_LABELS = {
   ESTOP: '非常停止ボタン',
   IMU: 'IMU',
@@ -132,6 +155,17 @@ export const SHUTDOWN_DISCARD_ARMED = '本当に破棄'
 export const SHUTDOWN_CANCEL = 'やめる'
 export const SHUTDOWN_CONFIRM = '停止する'
 export const SHUTDOWN_LOADING = '確認しています…'
+// 1b-6 SG-B6: /shutdown/execute が通ったあと、実際に止まった（接続が切れた）のを
+// 確かめるまでの進捗（Spec-webui.md §3.2.1 手順 5）。応答が来ただけでは
+// 「電源を切って構いません」を出さない。
+export const SHUTDOWN_STOPPING = '停止しています…'
+// 未保存が残っている間は「停止する」を押せない（§3.2.1 手順 4）。押せない理由。
+export const SHUTDOWN_BLOCKED_HINT = (n) => `未保存の扱いを決めてください（残り ${n} 件）`
+
+// 保存・破棄の操作が通らなかった／反映が確認できなかったとき（項目の下に出す）。
+export const SHUTDOWN_ITEM_FAILED = '処理できませんでした。もう一度お試しください。'
+// 機体側に画面から呼べる保存・破棄の操作が無い項目（校正の補正値・地図の書き足し）。
+export const SHUTDOWN_NO_ACTION = 'この画面からは扱えません'
 
 export const SHUTDOWN_DONE_TITLE = '停止が完了しました'
 export const SHUTDOWN_DONE_BODY = '電源を切って構いません。'
@@ -231,8 +265,18 @@ export const S13_TAB_TEACH = '教示'
 export const S13_TEACH_TITLE = '教示'
 export const S13_ROUTE_NAME_LABEL = '経路名'
 export const S13_ROUTE_NAME_PLACEHOLDER = '経路名を入力'
-export const S13_RECORD_START = '記録開始'
+// 1b-7 S-13: 経路選択（Spec-webui.md §3.6「新規経路」／「既存経路の再設定」）。
+// 「記録開始」ボタンは無い（Spec-transit.md §3.2 手順 4）。選ぶとすぐに記録が始まる。
+export const S13_ROUTE_NEW_TITLE = '新規経路'
+export const S13_ROUTE_EXISTING_TITLE = '既存経路の再設定'
+export const S13_NEW_START = 'この名前で記録を始める'
+// 既存の録り直し・同名の新規は上書き（旧版は 1 世代残る）なので二段階アーム式
+// （Spec-webui.md §6）。parts/ArmedButton.jsx の idle/armed に渡す。
+export const S13_RESELECT = '録り直す'
+export const S13_RESELECT_ARMED = '本当に上書きする'
 export const S13_RECORDING = '記録中'
+export const S13_PAUSED = '一時停止中'
+export const S13_PAUSE_HINT = 'スティックを操作すると続きから記録します'
 export const S13_SAVED = '保存しました'
 export const S13_SAVE_FAILED = '保存されていません'
 export const S13_RECORDED_LABEL = '記録距離'
@@ -242,7 +286,8 @@ export const S13_START_YAW_LABEL = '開始時の向き'
 export const S13_SEC = (s) => `${s} 秒`
 export const S13_M = (m) => `${m} m`
 export const S13_DEG = (deg) => `${deg}°`
-export const S13_REC_DIRECTION = '経路名を入れて「記録開始」を押すと、操作での走行を経路として記録します。'
+// 1b-7 S-13: 選択直後から記録が始まる（Spec-transit.md §3.2 手順 2〜4）。
+export const S13_REC_DIRECTION = '新規か既存かを選ぶと、すぐに記録が始まります。保存するまで終点は確定しません。'
 
 // ---------------------------------------------------------------- S-14 (教示再生) ----
 // P5 / demo-teach-replay. Spec-webui.md §3.7 の簡略版。
@@ -283,9 +328,18 @@ export const S14_QUALITY_LOW_HINT = '似た場所が複数あり、取り違え�
 export const S14_QUALITY_FAILED = '見つかりません'
 export const S14_QUALITY_FAILED_HINT = '完全グローバルで探すか、経路を選び直してください'
 export const S14_QUALITY_SEARCHING = '探しています'
+// 1b-11 SG-B19: 探索・読み直しの待ち時間（Spec-transit.md §4.2.2）。
+// 原因を断定しない文言にする（§4.2.3）。
+export const S14_QUALITY_SEARCHING_HINT = '地図を読み込んでいます。短い経路で数秒、長い地図で30〜45秒かかります'
 // 「完全グローバルで探す」ボタン（Spec-webui.md §3.7）。押すと ui.localize_global。
 // FSM は REPLAY/LOCALIZE でだけ受け付ける（transitions.yaml T-REPLAY-03）。
 export const S14_GLOBAL_BUTTON = '完全グローバルで探す'
+// 1b-11 SG-B14: 地図の更新トグル（Spec-webui.md §3.7）。既定 OFF。
+// ON のときだけ操作カードに「保存」が出る（Spec-transit.md §0.1）。
+export const S14_MAP_UPDATE_TITLE = '地図の更新'
+export const S14_MAP_UPDATE_ON = 'ON（書き足し中）'
+export const S14_MAP_UPDATE_OFF = 'OFF'
+export const S14_MAP_UPDATE_NOTE = 'ON にすると走りながら地図に書き足します。「保存」で確定します'
 
 // ---------------------------------------------------------------- 経路プレビュー（WS-3） ----
 // src/screens/RoutePreview.jsx の表示文字列。
@@ -348,7 +402,14 @@ export const S20_PINS_TITLE = 'ピン'
 export const S20_PIN_EDIT = '編集'
 export const S20_PIN_RENAME = '改名'
 export const S20_PIN_DELETE = '削除'
+// SG-C12: ピン削除は二段階アーム式（Spec-webui.md §6）。部品は既存の ArmedButton。
+export const S20_PIN_DELETE_ARMED = '本当に削除する'
 export const S20_PIN_CANCEL = 'やめる'
+// SG-B16 (1b-11): 同じ id・同じ名前のまま位置と向きを登録し直す
+// （Spec-onsite.md §2.3）。機体の現在姿勢（map 座標）で上書きする。
+export const S20_PIN_REREGISTER_MAPTAP = '地図タップで位置と向きを登録し直す'
+export const S20_PIN_REREGISTER_HERE = 'いまの機体位置で更新'
+export const S20_PIN_REREGISTER_NO_POSE = '機体の地図上の位置がまだ分かりません'
 export const S20_PIN_YAW = (deg) => `向き ${deg}°`
 export const S20_RETURN_HOME = '1 ボタンで待機場所に戻す'
 export const S20_RETURN_HINT = '待機場所のピン "HOME" を登録すると使えます'
@@ -442,7 +503,10 @@ export const S21_PINS_EMPTY = '登録済みのピンがありません（前日�
 export const S21_SUMMON_TITLE = '(b) その場で呼ぶ'
 export const S21_SUMMON_START = '呼び寄せ（2 点指示）'
 export const S21_WAIT_TITLE = '退避待ち — 退いてください'
-export const S21_WAIT_DIST = (m) => `${m.toFixed(1)} m`
+// SG-C8: 見失っている間（distance_m < 0）は距離を出さない。
+export const S21_WAIT_DIST = (m) => (m < 0 ? '—' : `${m.toFixed(1)} m`)
+// SG-C8: 宣言成功時のずれ量（DeclareHome の offset_m/offset_deg）。
+export const S21_HOME_OFFSET = (m, deg) => `ずれ ${m.toFixed(2)}m・${deg.toFixed(0)}°`
 export const S21_WAIT_CANCEL = '中止'
 export const S21_WAIT_CLEARING = '対象の場所が空き次第、自動で続行します'
 export const S21_ATPANEL_TITLE = '配電盤前'
@@ -488,6 +552,9 @@ export const S01_SETTINGS = '設定'            // S-01「保守・設定」カ�
 export const S01_ONSITE_TEST = '試験（当日）'
 // brief-onsite-fix A: 画面の無いモードで S-01 が出ているとき、ui.finish で IDLE に戻す導線。
 export const S01_FINISH_ESCAPE = '終了して待機に戻る'
+// 1b-11 SG-B13: 教示 2 種は保管場所起点（Spec-transit.md §0.6・§3.5）。
+// 判定は人の責任なので S-01 に常時出す（DetailedDesign-transit.md §0.4）。
+export const S01_TEACH_NOTE = '教示は保管場所から開始してください（復路では教示できません）'
 export const S50_BACK = '戻る'
 export const S50_TAB_GENERAL = '一般'
 export const S50_TAB_DISPLAY = '表示'

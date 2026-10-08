@@ -8,7 +8,7 @@
 // UI here; the "server said no after all" path is covered by menuItems()
 // unit tests + code review, not by clicking through a live service.
 import { test, expect } from '@playwright/test'
-import { gotoScreen, setTestState } from './helpers.js'
+import { gotoScreen, gotoScreenWithRouteCatalog, setTestState } from './helpers.js'
 
 test('M-1: every menu button is disabled while mode is INIT', async ({ page }) => {
   await gotoScreen(page, 'S01', { mode: 'INIT' })
@@ -21,7 +21,9 @@ test('M-1: every menu button is disabled while mode is INIT', async ({ page }) =
 })
 
 test('mode IDLE: every menu button is enabled (mode_entry.yaml allows all 10 from IDLE)', async ({ page }) => {
-  await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
+  // 1b-11 SG-B13: 教示再生は経路が 1 本以上、電子リードはデバイス接続済みが前提。
+  await gotoScreenWithRouteCatalog(page, 'S01', { mode: 'IDLE', tracker_enabled: true, leash_present: true },
+    [{ id: 'r1', name: '経路1', length_m: 5, point_count: 10 }])
   const buttons = page.locator('.btnrow .btn')
   const count = await buttons.count()
   for (let i = 0; i < count; i++) {

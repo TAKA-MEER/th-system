@@ -295,6 +295,19 @@ def _route_exists(mode, state, ctx) -> bool:
     return ctx.arg.get("id") in ctx.route_ids
 
 
+# 1b-11（SG-B13）— 方式選択の前提（DetailedDesign-transit.md §0.4）。
+# C-13（ui.enter_mode）の前に置く明示の拒否行が使う。真＝前提を満たさない。
+def _enter_replay_no_route(mode, state, ctx) -> bool:
+    """教示再生を選んだのに教示済み経路が 1 本も無い（no_route_recorded）。"""
+    return ctx.arg.get("mode") == "REPLAY" and len(ctx.route_ids) == 0
+
+
+def _enter_leash_no_device(mode, state, ctx) -> bool:
+    """電子リード走行を選んだのにリードデバイスの存在を知らない
+    （device_not_connected。evt.leash_present 未受信＝未接続扱い）。"""
+    return ctx.arg.get("mode") == "LEASH" and not ctx.leash_present
+
+
 def _route_loaded(mode, state, ctx) -> bool:
     """replay_runner が実際に追従できる経路を積んでいるか。
 
@@ -311,6 +324,15 @@ def _home_pin_exists(mode, state, ctx) -> bool:
 
 def _map_update(mode, state, ctx) -> bool:
     return bool(ctx.flags.get("map_update")) and ctx.map_update_available
+
+
+def _map_update_off(mode, state, ctx) -> bool:
+    """1b-11 SG-B14: 地図更新 OFF（または利用不可）のときの「保存」。
+    T-REPLAY-08 ほかの前に置く明示の拒否行が使い、map_update_off を返す。
+    ガード不成立は行の reject_reason_key を出さない（state_core の規則6の
+    not_allowed になる）ため、理由を出すにはこの形が要る
+    （T-ATP-05-working と同じ流儀）。"""
+    return not (bool(ctx.flags.get("map_update")) and ctx.map_update_available)
 
 
 def _line_visible(mode, state, ctx) -> bool:
@@ -338,7 +360,8 @@ def _ng_and_not_calibrable(mode, state, ctx) -> bool:
 
 
 # 44 件 + presence_stops_mode（1b-1 SG-A12）。§4.1.1 のとおり
-# （1b-2 SG-A3/SG-A5/SG-B22 で 14 件、1b-1 SG-A12 で 1 件追加）。
+# （1b-2 SG-A3/SG-A5/SG-B22 で 14 件、1b-1 SG-A12 で 1 件、
+# 1b-11 SG-B13 で 2 件追加）。
 GUARDS: Dict[str, Callable] = {
     "jog_allowed": _jog_allowed,
     "fault_stops_mode": _fault_stops_mode,
@@ -361,9 +384,12 @@ GUARDS: Dict[str, Callable] = {
     "target_confident": _target_confident,
     "route_arg_valid": _route_arg_valid,
     "route_exists": _route_exists,
+    "enter_replay_no_route": _enter_replay_no_route,
+    "enter_leash_no_device": _enter_leash_no_device,
     "route_loaded": _route_loaded,
     "home_pin_exists": _home_pin_exists,
     "map_update": _map_update,
+    "map_update_off": _map_update_off,
     "line_visible": _line_visible,
     "leash_taut": _leash_taut,
     "preview_sane": _preview_sane,
@@ -388,7 +414,7 @@ GUARDS: Dict[str, Callable] = {
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 46, len(GUARDS)
+assert len(GUARDS) == 49, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:

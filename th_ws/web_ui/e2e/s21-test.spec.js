@@ -497,3 +497,40 @@ test('MAP-COSTMAP: costmap/経路を seed していなければ何も描かな�
   await expect(page.locator('[data-testid="s21-map-path"]')).toHaveCount(0)
 })
 
+
+
+// ── 1b-11 ──────────────────────────────────────────────────
+
+// SG-C8: 宣言成功時にずれ量を出す。
+test('待機場所の宣言: 成功でずれ量が出る', async ({ page }) => {
+  await goto21(page, IDLE, { declareHome: { success: true, offset_m: 0.034, offset_deg: 2.4, message: '' } })
+  await expect(page.locator('[data-testid="s21-home-offset"]')).toHaveCount(0)
+  await page.locator('[data-testid="s21-home-declare"]').click()
+  await expect(page.locator('[data-testid="s21-home-offset"]')).toHaveText('ずれ 0.03m・2°')
+})
+
+// SG-C8: 退避待ちのバーは、ノードが出す remaining_sec の最初の値（= 実際の時間切れ）
+// を全体とする。画面に 15 や 30 を直書きしない。全体が 30 でも 60 でも半分で 50%。
+for (const total of [30, 60]) {
+  test(`退避待ち: バーの全体はノードの残り時間の初回値（${total}s）から取る`, async ({ page }) => {
+    await goto21(page, IDLE, { waitClear: { distance_m: 0.4, remaining_sec: total, satisfied: false, verdict: 'WAITING' } })
+    await page.locator('[data-testid="s21-subtab-summon"]').click()
+    await page.locator('[data-testid="s21-summon-start"]').click()
+    await setTestState(page, { mode: 'SUMMON', state: 'WAIT_CLEAR' })
+    await expect(page.locator('[data-testid="s21-clear-box"]')).toBeVisible()
+    await setTestWaitClear(page, { distance_m: 0.4, remaining_sec: total / 2, satisfied: false, verdict: 'WAITING' })
+    const w = async () => page.locator('[data-testid="s21-clear-bar"] i').evaluate((el) => el.style.width)
+    await expect.poll(w).toBe('50%')
+  })
+}
+
+// SG-C8: 見失っている間（distance_m < 0）は最後の距離を出さず「—」。
+test('退避待ち: 見失い中は距離を「—」にする', async ({ page }) => {
+  await goto21(page, IDLE, { waitClear: { distance_m: 0.4, remaining_sec: 20, satisfied: false, verdict: 'NOT_CLEAR' } })
+  await page.locator('[data-testid="s21-subtab-summon"]').click()
+  await page.locator('[data-testid="s21-summon-start"]').click()
+  await setTestState(page, { mode: 'SUMMON', state: 'WAIT_CLEAR' })
+  await expect(page.locator('[data-testid="s21-clear-dist"]')).toHaveText('0.4 m')
+  await setTestWaitClear(page, { distance_m: -1, remaining_sec: 19, satisfied: false, verdict: 'NOT_CLEAR' })
+  await expect(page.locator('[data-testid="s21-clear-dist"]')).toHaveText('—')
+})

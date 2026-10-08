@@ -272,6 +272,9 @@ class ReplayRunner(Node):
         self._cur_w = 0.0
         self._pose = None                 # /odom 由来 (x, y, yaw)
         self._route_frame = 'odom'        # 読み込んだ経路のフレーム
+        # 1b-11 SG-B14: 読み込んだ経路に保存地図があるか。/route/status の
+        # has_map → state_manager の map_update_available の材料。
+        self._route_has_map = False
         self._localize_pending = False    # map TF 待ち（W-01 縮小）
         self._localize_deadline = 0.0
         self._localize_pending_arg = '{}'  # TF 待ちの末に evt.localize_done へ載せる arg_json
@@ -401,13 +404,20 @@ class ReplayRunner(Node):
                 with open(path, encoding='utf-8') as f:
                     self._route = route_from_dict(json.load(f))
             except Exception as e:
+                # 1b-11 SG-B19: 無言で return しない。確度を failed に倒して
+                # 状態に残し、FSM 経由で原因どおりの案内（W-3）を出す。
                 self.get_logger().error(f'経路を読み込めない: {path}: {e}')
+                self._route = None
+                self._route_has_map = False
+                self._localize_quality = 'failed'
+                self._emit_event('evt.route_unreadable')
                 return
             # use_map_frame オフ（通常起動）なら map フレーム経路も odom 扱いにし、
             # 従来どおり align_path_to_current で現在地を始点とみなす。
             file_frame = self._route.frame_id or 'odom'
             map_route = self._use_map_frame and file_frame == self._map_frame
             self._route_frame = self._map_frame if map_route else 'odom'
+            self._route_has_map = bool(map_route)
             # WS-9K-B / WS-9U: map フレーム経路は自身の .posegraph を読み直すので
             # 別セッションでも再生してよい（WS-9S で経路選択のたび slam_toolbox を
             # 作り直してその経路の地図を deserialize する）。保存地図が無い
@@ -417,10 +427,16 @@ class ReplayRunner(Node):
             route_session = self._route.map_session_id or ''
             if not can_replay_route(
                     file_frame, route_session, self._map_session_id, self._map_frame):
+                # 1b-11 SG-B19: 地図を持たない経路は拒否する（Spec-transit.md
+                # §4.2.3）。無言で return せず、確度を failed に倒して状態に残し、
+                # FSM 経由で原因どおりの案内（W-3）を出す。
                 self.get_logger().error(
                     'この経路には保存された地図が無い（教示の「保存」が完了して'
                     'いない可能性）。再生できない。教示からやり直すこと')
                 self._route = None
+                self._route_has_map = False
+                self._localize_quality = 'failed'
+                self._emit_event('evt.route_no_map')
                 return
             pts = list(self._route.points)
             if reverse:
@@ -504,9 +520,15 @@ class ReplayRunner(Node):
                             f'map→base_link TF を最大 '
                             f'{self._localize_wait_s:.0f}s 待つ）')
                     else:
+                        # 1b-11 SG-B19: 地図を読み直せない経路は LOCALIZE から
+                        # 進めない。error ログだけでなく、確度を failed に倒して
+                        # 状態に残し、FSM 経由で原因どおりの案内（W-3）を出す。
                         self.get_logger().error(
                             f'地図を読み直せなかったため LOCALIZE から進めない: '
                             f'id={route_id} ({err})')
+                        self._localize_quality = 'failed'
+                        self._route_has_map = False
+                        self._emit_event('evt.route_no_map')
             else:
                 self.get_logger().info(
                     f'load_route: id={route_id} reverse={reverse} 点={len(pts)} '
@@ -1049,6 +1071,8 @@ class ReplayRunner(Node):
         msg.localize_quality = self._localize_quality
         msg.localize_score = float(self._localize_score)
         msg.localize_margin = float(self._localize_margin)
+        # 1b-11 SG-B14: 保存地図の有無（T-REPLAY-08 の map_update ガードの材料）。
+        msg.has_map = bool(self._route_has_map)
         if self._route is not None:
             info = RouteInfo()
             info.id = self._route.id

@@ -75,7 +75,15 @@ export function SystemStateProvider({ url = `ws://${window.location.hostname}:90
     window.__thSetTestFault = (patch) => {
       setFault((prev) => ({ ...(prev ?? TEST_FAULT_DEFAULTS), ...patch }))
     }
-    return () => { delete window.__thSetTestState; delete window.__thSetTestFault }
+    // 1b-6 SG-B6: 停止完了（接続断）のふり。S-01 は /shutdown/execute の成功
+    // だけでは「電源を切って構いません」を出さず、stale（実際に止まったこと）を
+    // 待つ。e2e がその待ちを閉じるための試験専用の縫い目（本番の挙動は不変）。
+    window.__thSetTestStale = (v) => setStale(v === true)
+    return () => {
+      delete window.__thSetTestState
+      delete window.__thSetTestFault
+      delete window.__thSetTestStale
+    }
   }, [])
 
   // ── Real mode: rosbridge connection ─────────────────────────────────

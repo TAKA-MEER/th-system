@@ -24,6 +24,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
+import { useSetFlag, MAP_UPDATE_FLAG } from '../ros/useSetFlag.js'
 import { useRouteCatalog } from '../ros/useRouteCatalog.js'
 import { useRouteStatus } from '../ros/useRouteStatus.js'
 import { useRoutePreview } from '../ros/useRoutePreview.js'
@@ -38,12 +39,14 @@ import { REPLAY_SPEED_RATIOS } from '../parts/replaySpeed.js'
 import DriveTab from './driveTab.jsx'
 import attributes from '../generated/attributes.json'
 import {
-  S11_MANUAL_TITLE,
+  S11_MANUAL_TITLE, S11_REAR_TITLE, S11_REAR_NOTE,
   S14_TAB_REPLAY, S14_SELECT_TITLE, S14_EMPTY, S14_FWD, S14_REV, S14_PROCEED,
   S14_POSE_TITLE, S14_POSE_LOCALIZE, S14_POSE_LOCALIZE_TIMEOUT, S14_POSE_READY, S14_POSE_RUN, S14_POSE_PAUSE, S14_POSE_PAUSE_RESUMABLE,
   S14_GLOBAL_BUTTON,
   S14_LENGTH, S14_POINTS, S14_SPEED_TITLE,
   S14_XTRACK_TITLE, S14_XTRACK_EMPTY, S14_XTRACK_VALUE,
+  S14_MAP_UPDATE_TITLE, S14_MAP_UPDATE_ON, S14_MAP_UPDATE_OFF, S14_MAP_UPDATE_NOTE,
+  S14_QUALITY_SEARCHING_HINT,
 } from '../i18n/screens.js'
 import { localizeQualityView, localizeQualityText } from './s14Localize.js'
 import { stateLabel } from '../i18n/states.js'
@@ -69,6 +72,7 @@ function poseText(stateName, arrived) {
 export default function S14Replay({ onFinish }) {
   const { ros, state, stale } = useSystemState()
   const sendTrigger = useTrigger()
+  const setFlag = useSetFlag()
   const routes = useRouteCatalog(ros)
   const routeStatus = useRouteStatus(ros)
   const routePreview = useRoutePreview(ros)
@@ -98,7 +102,17 @@ export default function S14Replay({ onFinish }) {
     && (stateName === 'LOCALIZE' || stateName === 'READY')
   // searching（探索＋地図の読み直し）は 60 秒を超えうるので、既存の
   // 「長引いている」注記は出さない（P3 ブリーフ §やること 1）。
-  const showStuckNote = localizeStuck && qualityView.level !== 'searching'
+  // 1b-11 SG-B19: failed（原因別の案内が出ている）ときも出さない。
+  // 汎用のタイムアウト文言（「始点マークに置き直す」）は原因と違うことがある。
+  const showStuckNote = localizeStuck
+    && qualityView.level !== 'searching'
+    && qualityView.level !== 'failed'
+  // 1b-11 SG-B19: 探索・読み直しの待ち時間（Spec-transit.md §4.2.2）。
+  const showSearchingHint = qualityView.level === 'searching'
+    && (stateName === 'LOCALIZE' || stateName === 'READY')
+  // 1b-11 SG-B14: 地図の更新（Spec-webui.md §3.7）。既定 OFF。
+  // ON のときだけ操作カードに「保存」が出る。
+  const mapUpdate = !!state?.map_update
 
   // LOCALIZE が長く続いたら（＝地図の読み直し失敗の可能性）手がかりを出す。
   useEffect(() => {
@@ -131,6 +145,16 @@ export default function S14Replay({ onFinish }) {
   async function handleGlobalLocalize() {
     try {
       await sendTrigger('ui.localize_global')
+    } catch {
+      // rosbridge の一時的な失敗。留まる（安全側）
+    }
+  }
+
+  // 1b-11 SG-B14: 地図の更新トグル → /system/set_flag map_update。
+  // 受理は機体が決める（T-REPLAY-08 のガードが保存の可否を縛る）。
+  async function handleMapUpdateToggle() {
+    try {
+      await setFlag(MAP_UPDATE_FLAG, !mapUpdate, 's14')
     } catch {
       // rosbridge の一時的な失敗。留まる（安全側）
     }
@@ -227,6 +251,11 @@ export default function S14Replay({ onFinish }) {
             {showQuality && (
               <div className="note" data-testid="s14-localize-quality">{qualityText}</div>
             )}
+            {/* 1b-11 SG-B19: 読み直しの待ち時間（Spec-transit.md §4.2.2）。
+                原因を断定しない文言にする（§4.2.3）。 */}
+            {showSearchingHint && (
+              <div className="note" data-testid="s14-localize-wait">{S14_QUALITY_SEARCHING_HINT}</div>
+            )}
             {stateName === 'LOCALIZE' && (
               <button
                 type="button"
@@ -257,6 +286,25 @@ export default function S14Replay({ onFinish }) {
             </div>
           )}
 
+          {/* 1b-11 SG-B14: 地図の更新（Spec-webui.md §3.7）。既定 OFF。
+              ON のときだけ操作カードに「保存」が出る。 */}
+          <div className="card">
+            <h3>{S14_MAP_UPDATE_TITLE}</h3>
+            <div className="row mt">
+              <button
+                type="button"
+                className="btn sm"
+                data-testid="s14-map-update-toggle"
+                aria-pressed={mapUpdate}
+                disabled={disabledAll}
+                onClick={handleMapUpdateToggle}
+              >
+                {mapUpdate ? S14_MAP_UPDATE_ON : S14_MAP_UPDATE_OFF}
+              </button>
+            </div>
+            <div className="note">{S14_MAP_UPDATE_NOTE}</div>
+          </div>
+
           {/* WS-9X: 再生速度は経路準備段階の設定なので左列（右列は操作＋手動介入で
               統一する。モックアップ two-col の右列と同じ並び）。 */}
           <div className="card">
@@ -272,12 +320,13 @@ export default function S14Replay({ onFinish }) {
 
       <div>
         {/* 操作カードは右列先頭（S11 と同じ位置）。run→ui.run（ラベル「再生」）、
-            stop→ui.stop。onTrigger を空関数にしない。 */}
+            stop→ui.stop。save は地図更新 ON のときだけ（1b-11 SG-B14）。
+            onTrigger を空関数にしない。 */}
         <OperationCard
           mode={state?.mode}
           stateName={stateName}
           attributes={attributes}
-          slots={{ stop: true, check: false, run: true, save: false, manual: false }}
+          slots={{ stop: true, check: false, run: true, save: mapUpdate, manual: false }}
           runLabel={S14_TAB_REPLAY}
           disabled={disabledAll}
           onTrigger={(trigger) => sendTrigger(trigger)}
@@ -286,6 +335,10 @@ export default function S14Replay({ onFinish }) {
           <h3>{S11_MANUAL_TITLE}</h3>
           {/* 手動介入用（常設。Spec-transit §0.4） */}
           <DriveTab kind="manual" />
+          {/* 1b-11 SG-C9 の S-14 分：後方は死角（Spec-safety.md §2.3）。
+              S-11 / S-13 と同じ文言。W-6 の分は別ブランチが扱う。 */}
+          <h3>{S11_REAR_TITLE}</h3>
+          <div className="note">{S11_REAR_NOTE}</div>
         </div>
         <div className="state">{stateLabel(stateName)}</div>
       </div>

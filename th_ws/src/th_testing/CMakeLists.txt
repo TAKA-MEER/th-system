@@ -318,6 +318,12 @@ if(BUILD_TESTING)
     test/test_working_guard.py
     TIMEOUT 30)
 
+  # 方式選択の前提と地図更新の保存の遷移（1b-11 SG-B13・SG-B14・SG-B19。
+  # state_core を直接 step()。ROS2 不要）
+  ament_add_pytest_test(test_transit_entry_guards_1b11
+    test/test_transit_entry_guards_1b11.py
+    TIMEOUT 60)
+
   # DR-SPAAM 起動/停止判断の純ロジック (brief-tracker-default-off §3.2。
   # tracker_enabled と lifecycle 状態からの transition_id 決定。ROS2 不要)
   ament_add_pytest_test(test_dr_spaam_lifecycle_controller_core
@@ -458,6 +464,20 @@ if(BUILD_TESTING)
   ament_add_pytest_test(connectivity_checker_node
     test/test_connectivity_checker_node.py
     TIMEOUT 120)
+  # 1b-6（SG-B6・SG-B7）: sys.link_timeout → restart effect → 再起動の実呼出し
+  # （kill は偽物に差し替え）と、未保存がある間の execute 拒否・解消後の印ファイル
+  # （launch_testing。ROS2 要）
+  ament_add_pytest_test(test_1b6_restart_shutdown_node
+    test/test_1b6_restart_shutdown_node.py
+    TIMEOUT 400)
+  # 1b-6 SG-B6: slam_control が /map_session/status の VENUE の dirty を実際に出す
+  # （launch_testing。ROS2 要）
+  ament_add_pytest_test(test_1b6_restart_unset_max_node
+    test/test_1b6_restart_unset_max_node.py
+    TIMEOUT 200)
+  ament_add_pytest_test(test_venue_dirty_node
+    test/test_venue_dirty_node.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_params_audit_node
     test/test_params_audit_node.py
     TIMEOUT 120)
@@ -563,6 +583,19 @@ if(BUILD_TESTING)
   # する本番の経路。変異②の標的）
   ament_add_pytest_test(test_person_tracker_bridge_node
     test/test_person_tracker_bridge_node.py
+    TIMEOUT 180)
+  # 1b-11 SG-B15: 到着許容差 0.12 の一本化（registry→生成 yaml→Nav2／venue_navigator。
+  # ROS2 不要）
+  ament_add_pytest_test(test_arrival_tol_registry
+    test/test_arrival_tol_registry.py
+    TIMEOUT 120)
+  # 1b-11 SG-B15: venue_navigator の到着判定（生成 yaml の値で境界を見る launch_testing）
+  ament_add_pytest_test(test_venue_nav_arrival_tol_node
+    test/test_venue_nav_arrival_tol_node.py
+    TIMEOUT 180)
+  # 1b-11 SG-B16: pin_registrar のピン再登録（同じ id・同じ名前のまま位置と向きだけ。launch_testing）
+  ament_add_pytest_test(test_pin_reregister_node
+    test/test_pin_reregister_node.py
     TIMEOUT 180)
   # 退避待ちゲートの disabled 結合テスト（brief-tracker-default-off §3.3。
   # /person/status が is_lost=True / lost_reason="disabled" の間 clear_ok を
@@ -701,6 +734,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_teach_record_broken_node
     test/test_teach_record_broken_node.py
     TIMEOUT 120)
+  # 1b-7 S-13（SG-C5）: 記録開始の姿勢が /route/status.start_yaw に載ること
+  # （route_recorder 単体の本番の経路。rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_teach_start_yaw_node
+    test/test_teach_start_yaw_node.py
+    TIMEOUT 120)
   # 盤前移動の一時停止→再開（#3）・BLOCKED タイムアウトなし（#4）
   # (DetailedDesign-onsite.md §9。Gazebo・Nav2 本体なしの launch_testing。
   # 積算: 起動 discovery 10 秒 ＋ 既存 7 件 ＋ SG-A1/A15 の 6 件追加（各 10〜15 秒）
@@ -714,6 +752,16 @@ if(BUILD_TESTING)
   # 照合・force・ピン変更時の解除・境界を検証。積算は venue_nav と同じ 240 秒枠）
   ament_add_pytest_test(test_home_declarer_node
     test/test_home_declarer_node.py
+    TIMEOUT 240)
+
+  # 方式選択の前提・地図更新の保存（1b-11 SG-B13・SG-B14）。state_manager を起動し、
+  # 経路 0 本・デバイス未接続・地図の有無が本番の配線で効くことを縛る。
+  ament_add_pytest_test(test_transit_entry_guards_node
+    test/test_transit_entry_guards_node.py
+    TIMEOUT 240)
+  # 使えない経路の原因別の通知（1b-11 SG-B19）と has_map（SG-B14）。replay_runner を起動。
+  ament_add_pytest_test(test_transit_route_unusable_node
+    test/test_transit_route_unusable_node.py
     TIMEOUT 240)
 
   # 「作業中」のサーバ側ガード（1b-9 SG-A9）。state_manager を起動して、作業中の

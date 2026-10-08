@@ -169,3 +169,18 @@ def link_status(now_ms: int, last_fb_ms: Optional[int], last_cmd_alive_ms: Optio
         "timeout_ms": int(p.esp32_alive_timeout_ms),
         "estop_hw": {"seen": bool(estop_seen), "pressed": bool(hw_estop)},
     }
+
+
+def restart_allowed(count: int, max_count: Optional[int], supervised: bool) -> bool:
+    """restart_control_stack を実行してよいか（1b-6 SG-B7）。
+
+    max_count が決まっていれば count < max_count（FMEA②: 無限ループの打ち切り）。
+    max_count が未確定（registry の placeholder＝O-d4。生成 yaml に載らず None）
+    のときは、start.sh の下で動いている（supervised）場合に限り許す。回数の正本は
+    start.sh の立て直しの上限（STARTSH_RESTART_MAX）で、上限に達したら start.sh が
+    止まる。start.sh 無し（ros2 launch 直接）では立て直す者がいないので撃たない
+    （撃つと bringup が落ちたまま戻らない）。
+    """
+    if max_count is not None:
+        return count < max_count
+    return bool(supervised)
