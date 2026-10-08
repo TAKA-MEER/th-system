@@ -198,6 +198,12 @@ class SlamControl(Node):
         self._startup_mapping = bool(
             self.get_parameter('startup_mapping').value)
         self._mapping_active = self._startup_mapping   # 起動直後の状態
+        # 1b-6 SG-B6: 試験場内地図の未保存（Spec-ops.md §4.1）。画面から地図作成を
+        # 開始してから venue/map へ保存するまでの間と、新しい地図世代
+        # （クラッシュ復帰・破棄）の直後は保存した地図と中身が違う。
+        # startup_mapping（教示・再生の連続補正用）では立てない（試験場内地図を
+        # 作っているのではないため）。
+        self._venue_dirty = False
         # WS-9L: /map_session/open の保存先ディレクトリ。経路 JSON と同じ場所
         # (routes_dir) でよい。serialize_map は <name>.posegraph / <name>.data を
         # 作るが、/route/catalog は .json しか拾わないため一覧は汚れない。
@@ -411,6 +417,7 @@ class SlamControl(Node):
         # で上のガードに掛かる）はここに来ない ─ _handle_map_reload の成功後に
         # 読み込んだ地図の instance_id を継承する側で別途扱う。
         self._instance_id = self._new_instance_id()
+        self._venue_dirty = False   # 1b-6 SG-B6: まっさらな地図。未保存の中身は無い
         self._publish_venue_status()
         if not self._lock.acquire(blocking=False):
             self._slam_ready = was_ready   # 次周期でやり直す
@@ -493,6 +500,8 @@ class SlamControl(Node):
             return rejected
         with self._lock:
             err = self._apply_mapping(not self._mapping_active)
+            if err is None and self._mapping_active:
+                self._venue_dirty = True   # 1b-6 SG-B6: 画面から地図作成を始めた＝未保存
         return self._finish(response, err,
                             f'地図作成を{"開始" if self._mapping_active else "停止"}しました')
 
@@ -502,6 +511,8 @@ class SlamControl(Node):
             return rejected
         with self._lock:
             err = self._apply_mapping(request.data)
+            if err is None and self._mapping_active:
+                self._venue_dirty = True   # 1b-6 SG-B6: 画面から地図作成を始めた＝未保存
         return self._finish(response, err,
                             f'地図作成を{"開始" if self._mapping_active else "停止"}しました')
 
@@ -600,7 +611,7 @@ class SlamControl(Node):
         msg.slot = 'VENUE'
         msg.session_id = 'venue'
         msg.mode = 'MAPPING' if self._mapping_active else 'LOCALIZING'
-        msg.dirty = False
+        msg.dirty = self._venue_dirty
         msg.instance_id = self._instance_id
         self._pub_venue_status.publish(msg)
 
@@ -660,6 +671,7 @@ class SlamControl(Node):
                 request.initial_yaw = yaw
                 result = self._handle_map_reload(response, base, request)
                 if result.success:
+                    self._venue_dirty = False   # 1b-6 SG-B6: 保存済みを読み直した
                     if map_iid:
                         self._instance_id = map_iid
                     self._publish_venue_status()
@@ -698,6 +710,7 @@ class SlamControl(Node):
         base = os.path.join(self._venue_map_dir, 'map')
         err = self._serialize(base)
         if err is None:
+            self._venue_dirty = False   # 1b-6 SG-B6: 保存できた
             # WS-9AL: 保存できた地図に、今の生存世代を紐づける。
             self._write_venue_instance_id(base, self._instance_id)
             self._publish_venue_status()
@@ -930,6 +943,7 @@ class SlamControl(Node):
             # 再起動した slam_toolbox は mapping モードで立ち上がるので、
             # _check_slam_restart がこの値を見て停止状態を入れ直す。
             self._set_active(False)
+            self._venue_dirty = False   # 1b-6 SG-B6: 捨てた＝未保存は残らない
             # _handle_map_reload と違い、ここは respawn を待たない。再起動の検知と
             # モード再適用は _check_slam_restart() に任せる（従来どおり即返す）。
             self._kill_slam_toolbox()

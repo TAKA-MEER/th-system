@@ -161,10 +161,14 @@ class StateManager(Node):
         # （コンテナ内の /root/th_data＝ホストの th_ws/data。start.sh が見て
         # 立て直さずに終わる）。試験では tmp のパスを上書きする。
         self.declare_parameter('shutdown_marker_path', '/root/th_data/.control_stop')
-        # 1b-6 SG-B6: 真のとき SIGTERM を送らず印ファイルだけ書く（試験用。
-        # 本物は自分が属するプロセスグループへ SIGTERM を送るため、試験で撃つと
-        # launch_testing・colcon ごと死ぬ）。
-        self.declare_parameter('shutdown_dryrun', False)
+        # 1b-6 SG-B6: 空でないとき、本物の killpg の代わりに「呼ばれた」ことを
+        # このファイルへ追記する偽物を使う（試験用。本物は自分が属するプロセス
+        # グループへ SIGTERM を送るため、試験で撃つと launch_testing・colcon ごと
+        # 死ぬ）。経路（印ファイル → 遅延 → _killpg）は本番と同じ。
+        self.declare_parameter('shutdown_kill_log', '')
+        # 応答を返してから kill するまでの遅れ（秒）。kill を応答の前に撃つと、
+        # このノード自身が応答を返す前に死に、WebUI は応答を受け取れない。
+        self.declare_parameter('shutdown_kill_delay_s', 0.5)
 
         transitions, attributes, mode_entry = self._load_config()
         guards = guards_module.build_guards(mode_entry, attributes)
@@ -220,6 +224,13 @@ class StateManager(Node):
         self._route_unsaved = False
         self._map_dirty = {}
         self._killpg = os.killpg  # 1b-6 SG-B6: 試験で差し替えられる形にする
+        kill_log = str(self.get_parameter('shutdown_kill_log').value or '')
+        if kill_log:
+            def _fake_killpg(pgid, sig, _path=kill_log):
+                with open(_path, 'a', encoding='utf-8') as f:
+                    f.write(f'{pgid} {int(sig)}\n')
+            self._killpg = _fake_killpg
+        self._kill_timer = None
         self._last_event = ""
         self._last_reject_reason = ""
         self._route_ids = []          # /route/catalog から。既存経路の選択ガード用（P2）
@@ -798,6 +809,14 @@ class StateManager(Node):
         res.message = json.dumps(self._unsaved)
         return res
 
+    def _fire_shutdown_kill(self):
+        # 1b-6 SG-B6: 一回きり。自分が属するプロセスグループ（＝同じ launch の
+        # bringup）へ SIGTERM。start.sh は印ファイルを見て立て直さずに終わる。
+        if self._kill_timer is not None:
+            self._kill_timer.cancel()
+        self.get_logger().warn('/shutdown/execute: 制御系を停止する（SIGTERM）')
+        self._killpg(os.getpgrp(), signal.SIGTERM)
+
     def _on_shutdown_execute(self, req, res):
         self._refresh_unsaved()
         if self._unsaved:
@@ -817,8 +836,10 @@ class StateManager(Node):
             res.success = False
             res.message = "marker_failed"
             return res
-        if not bool(self.get_parameter('shutdown_dryrun').value):
-            self._killpg(os.getpgrp(), signal.SIGTERM)
+        # 応答を返してから撃つ（一回きりのタイマー）。二重に押されても 1 回だけ。
+        if self._kill_timer is None:
+            delay = float(self.get_parameter('shutdown_kill_delay_s').value)
+            self._kill_timer = self.create_timer(delay, self._fire_shutdown_kill)
         res.success = True
         res.message = ""
         return res

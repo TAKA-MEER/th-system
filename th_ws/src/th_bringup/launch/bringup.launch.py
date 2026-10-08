@@ -90,10 +90,11 @@ def generate_launch_description():
                                           'ときだけ効く'),
         # 1b-6 SG-B7: start.sh が数えた起動回数（1 始まり。2 以上が再起動）。
         # connectivity_checker の control_attempt へ渡し、S-00 の「制御系を
-        # 再起動しています（n 回目）」表示に使う。start.sh 以外（ros2 launch
-        # 直接）では 1 のまま（「再起動しています」は出ない）。
-        DeclareLaunchArgument('control_attempt', default_value='1',
-                              description='起動回数（1b-6 SG-B7。start.sh が付ける）'),
+        # 再起動しています（n 回目）」表示に使う。0＝start.sh の下で動いていない
+        # （ros2 launch 直接。既定）。このとき疎通確認の時間切れでも制御系を
+        # 再起動しない（立て直す者がいないため。restart_allowed）。
+        DeclareLaunchArgument('control_attempt', default_value='0',
+                              description='起動回数（1b-6 SG-B7。start.sh が付ける。0＝start.sh 外）'),
     ]
 
     use_stub     = LaunchConfiguration('use_stub')

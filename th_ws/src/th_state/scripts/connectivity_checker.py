@@ -26,6 +26,7 @@ import os
 import signal
 
 import rclpy
+from rclpy.exceptions import ParameterUninitializedException
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
@@ -37,7 +38,8 @@ from std_msgs.msg import Bool, String
 
 from th_system_msgs.msg import FaultStatus, StateEffect, StateEvent, SystemState, WheelFeedback
 
-from th_state.connectivity_core import Params, evaluate, link_status, should_emit_link_ok
+from th_state.connectivity_core import (Params, evaluate, link_status, restart_allowed,
+                                        should_emit_link_ok)
 from th_state.dev_log_core import (FaultSnap, StateSnap, TwistSum, fault_changed,
                                    format_line, should_record_cmdvel, state_changed)
 
@@ -64,12 +66,13 @@ class ConnectivityChecker(Node):
         # 文字列型で受けるのは dev_ignore_at_start と同じ理由）。S-00 の
         # 「制御系を再起動しています（n 回目）」表示の n になる
         # （Spec-ops.md §2.4・Spec-webui.md §3.1）。2 回目以降が再起動。
-        self.declare_parameter('control_attempt', '1')
-        # 1b-6 SG-B7: 真のとき SIGTERM を送らず回数だけ数える（試験用。
-        # 本物は PC 側のプロセスグループへ SIGTERM を送るため、試験で撃つと
-        # launch_testing・colcon ごと死ぬ。kill 部分は self._killpg に切り出し、
-        # 試験では dryrun で迂回する）。
-        self.declare_parameter('restart_dryrun', False)
+        self.declare_parameter('control_attempt', '0')
+        # 1b-6 SG-B7: 空でないとき、本物の killpg の代わりに「呼ばれた」ことを
+        # このファイルへ追記する偽物を使う（試験用。本物は PC 側のプロセス
+        # グループへ SIGTERM を送るため、試験で撃つと launch_testing・colcon ごと
+        # 死ぬ）。呼び出しの経路（回数の判定・pgid の取得・_killpg の呼び出し）は
+        # 本番と同じで、差し替わるのは kill の 1 点だけ。
+        self.declare_parameter('restart_kill_log', '')
         # sim: DetailedDesign-wp1.md WP-STATE-03 §3.3 の表には無い、このノード独自の
         # 追加パラメータ（§8 Gazebo シナリオを満たすための拡張。判断は完了報告に明記）。
         # Gazebo には esp32_bridge が居ないため、ESP32 の2項目と required_nodes を除外する。
@@ -119,6 +122,9 @@ class ConnectivityChecker(Node):
         self._last_state_mode = None
         self._restart_count = 0           # restart_control_stack の実行回数（FMEA②）
         self._killpg = os.killpg          # 1b-6 SG-B7: 試験で差し替えられる形にする
+        kill_log = str(self.get_parameter('restart_kill_log').value or '')
+        if kill_log:
+            self._killpg = self._make_fake_killpg(kill_log)
         self._dev_logged_state = None     # 開発モード状態の変化検出用（ログは切り替わり時だけ）
         # WP-DEV-01C: 選択記録の購読最新値（seen）と最終記録値（logged）。
         # OFF・非選択のあいだは logged を進めない。ON＋選択になった瞬間に
@@ -432,12 +438,23 @@ class ConnectivityChecker(Node):
         self._maybe_log_selections()
 
     def _control_attempt(self) -> int:
-        """start.sh が数えた起動回数（1 始まり。2 以上が再起動）。読めなければ 1。"""
+        """start.sh が数えた起動回数（1 始まり。2 以上が再起動）。
+
+        0＝start.sh の下で動いていない（ros2 launch 直接。bringup の既定）。
+        読めなければ 0。
+        """
         try:
-            n = int(str(self.get_parameter('control_attempt').value or '1'))
+            n = int(str(self.get_parameter('control_attempt').value or '0'))
         except (TypeError, ValueError):
-            return 1
-        return n if n >= 1 else 1
+            return 0
+        return n if n >= 0 else 0
+
+    @staticmethod
+    def _make_fake_killpg(path):
+        def _fake(pgid, sig):
+            with open(path, 'a', encoding='utf-8') as f:
+                f.write(f'{pgid} {int(sig)}\n')
+        return _fake
 
     def _publish_link_status(self, p):
         payload = link_status(
@@ -483,20 +500,26 @@ class ConnectivityChecker(Node):
         （= 同じ launch から起動された PC 側 ROS2 ノード群。§12.3「launch のプロセス
         グループへ SIGTERM」）。`restart_max_count` を超えたら何もしない
         （FMEA②: 無限ループの打ち切り）。戻り値は実際に SIGTERM を送ったかどうか。
-        `restart_dryrun` が真のときは送らずに回数だけ数える（試験用）。
+        `restart_kill_log` が空でないときは kill の1点だけ偽物（試験用）。
         """
-        max_count = self.get_parameter('restart_max_count').value
-        if max_count is None or self._restart_count >= max_count:
+        # 未確定（O-d4。生成 yaml に載らない）の宣言だけのパラメータは、読むと
+        # ParameterUninitializedException を投げる（購読コールバックごと落ちて
+        # ノードが死ぬ）。None（＝未確定）として扱う。
+        try:
+            max_count = self.get_parameter('restart_max_count').value
+        except ParameterUninitializedException:
+            max_count = None
+        if not restart_allowed(self._restart_count, max_count,
+                               supervised=self._control_attempt() >= 1):
             self.get_logger().error(
-                f'restart_control_stack: restart_max_count ({max_count}) に達したため中止')
+                f'restart_control_stack: 中止（restart_max_count={max_count}、'
+                f'{self._restart_count} 回実行済み、start.sh 下={self._control_attempt() >= 1}）')
             return False
         self._restart_count += 1
         pgid = os.getpgrp()
         self.get_logger().warn(
             f'restart_control_stack: PC側プロセスグループ (pgid={pgid}) へ SIGTERM '
             f'（{self._restart_count}/{max_count} 回目）')
-        if bool(self.get_parameter('restart_dryrun').value):
-            return True
         self._killpg(pgid, signal.SIGTERM)
         return True
 
