@@ -235,6 +235,12 @@ class StateManager(Node):
         self._last_reject_reason = ""
         self._route_ids = []          # /route/catalog から。既存経路の選択ガード用（P2）
         self._route_loaded = False    # /route/status から。空振りの再生を止めるガード用
+        # 1b-11 SG-B13: リードデバイスの存在（evt.leash_present/absent でラッチ。
+        # 未受信＝未接続扱い。方式選択の前提 DetailedDesign-transit.md §0.4）。
+        self._leash_present = False
+        # 1b-11 SG-B14: 読み込んだ経路に地図があるか（/route/status の has_map。
+        # T-REPLAY-08 の map_update ガードへ渡す map_update_available の材料）。
+        self._route_has_map = False
         # WP-ONSITE-F2: /person/targets と /onsite/pins 由来。次の event 受信時に
         # _build_context() が読む（_route_ids / _route_loaded と同じ設計）。
         self._candidate_count = 0
@@ -427,7 +433,7 @@ class StateManager(Node):
             route_ids=tuple(self._route_ids),
             route_loaded=self._route_loaded,
             pin_kinds=self._pin_kinds,
-            leash_present=False,
+            leash_present=self._leash_present,
             leash_taut=False,
             line_visible=False,
             camera_present=False,
@@ -435,7 +441,9 @@ class StateManager(Node):
             check_result=check_result,
             calib_item=self._calib_item,
             calib_preview_sane=self._calib_preview_sane,
-            map_update_available=False,
+            # 1b-11 SG-B14: 経路を積んでおり、かつその経路に地図があるときだけ
+            # 真（T-REPLAY-08 の map_update ガードの材料。条件の選び方は報告参照）。
+            map_update_available=bool(self._route_loaded and self._route_has_map),
             now_ms=self._now_ms(),
             estop_from_ui=self._estop_from_ui,
             arg=arg or {},
@@ -653,6 +661,12 @@ class StateManager(Node):
                 f"(source={msg.source_node}) が来た。名前空間の分離により無視する（§11-7）")
             return
         arg = self._parse_arg_json(msg.arg_json)
+        # 1b-11 SG-B13: リードデバイスの存在をラッチする（_process より先に。
+        # 方式選択の前提ガードがこの受信から使える）。
+        if msg.event == "evt.leash_present":
+            self._leash_present = True
+        elif msg.event == "evt.leash_absent":
+            self._leash_present = False
         self._process(msg.event, arg, msg.source_node)
         self._publish_state()
 
@@ -696,6 +710,8 @@ class StateManager(Node):
         # 再生側は current.id が入るので記録とみなさない。保存済みは除く）。
         self._route_unsaved = bool(
             not msg.saved and not msg.current.id and msg.points > 0)
+        # 1b-11 SG-B14: 地図の有無（replay_runner が load_route で判定して載せる）。
+        self._route_has_map = bool(msg.has_map)
 
     def _on_person_targets(self, msg):
         thr = self.get_parameter('target_confidence_min').value
@@ -917,6 +933,7 @@ class StateManager(Node):
         msg.map_update = self._flags["map_update"]
         msg.unsaved = list(self._unsaved)
         msg.pause_reason = self._pause_reason
+        msg.leash_present = self._leash_present
         msg.since = _ms_to_time(self._since_ms)
         msg.last_event = self._last_event
         msg.last_reject_reason = self._last_reject_reason

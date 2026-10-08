@@ -607,6 +607,9 @@ class RouteRecorder(Node):
         # 記録を開いていないときは 0（msg の既定。画面は points>0 のときだけ出す）。
         msg.start_yaw = float(self._recorder.start_yaw) \
             if self._recorder is not None else 0.0
+        # 1b-11 SG-B14: 記録側は has_map を出さない（常に false）。
+        # 地図の有無は再生側（replay_runner）が load_route で判定する。
+        msg.has_map = False
         # WS-9K-E2: 「ファイルに書けたか」を載せる（FSM の SAVED ではない）。
         msg.saved = self._saved
         if self._recorder is None:

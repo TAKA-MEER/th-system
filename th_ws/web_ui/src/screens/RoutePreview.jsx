@@ -157,6 +157,30 @@ export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
       ctx.stroke()
     }
 
+    // ①b 始点・終点の印（1b-11 SG-C6。Spec-webui.md §3.7「地図・経路・
+    // 始点・終点・現在位置」）。始点＝緑丸、終点＝橙四角（白縁）。
+    let endpointsDrawn = { start: false, end: false }
+    if (preview && preview.length) {
+      const s = preview[0]
+      ctx.beginPath()
+      ctx.arc(px(s), py(s), 6, 0, Math.PI * 2)
+      ctx.fillStyle = '#66bb6a'
+      ctx.fill()
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+      endpointsDrawn.start = true
+      const e = preview[preview.length - 1]
+      const ex = px(e), ey = py(e)
+      ctx.fillStyle = '#ffa726'
+      ctx.fillRect(ex - 5, ey - 5, 10, 10)
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(ex - 5, ey - 5, 10, 10)
+      endpointsDrawn.end = true
+    }
+    if (TEST_MODE) window.__thRoutePreviewEndpointsDrawn = endpointsDrawn
+
     // ② /scan_filtered point cloud (laser_link = base_link x/y/yaw). WS-8A:
     // the clip now honours the sensor's scanData.range_max (open-venue walls
     // past the old 7.5m hard clip are drawn), converted to world via the pure

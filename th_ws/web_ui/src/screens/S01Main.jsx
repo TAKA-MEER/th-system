@@ -20,6 +20,7 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useSystemState } from '../ros/useSystemState.js'
+import { useRouteCatalog } from '../ros/useRouteCatalog.js'
 import { useAutoCheckStatus } from '../ros/useAutoCheckStatus.js'
 import { useLinkStatus } from '../ros/useLinkStatus.js'
 import { linkDownKeys } from '../ros/linkStatusState.js'
@@ -37,7 +38,7 @@ import { modeLabel } from '../i18n/modes.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import {
   GROUP_MOVE_TITLE, GROUP_FIELD_TITLE, GROUP_MAINT_TITLE, S01_SETTINGS,
-  S01_FINISH_ESCAPE,
+  S01_FINISH_ESCAPE, S01_TEACH_NOTE,
   S01_NET_TITLE, S01_NET_OK, S01_NET_CHECKING, S01_NET_WARN,
   S01_NET_SUPPRESSED, S01_NET_OPEN, S01_NET_LINK_DOWN, S00_ITEMS,
   WIN_REASON_TITLE, WIN_REASON_OK,
@@ -62,6 +63,7 @@ function parseUnsaved(message) {
 
 export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
   const { state, stale, ros } = useSystemState()
+  const routes = useRouteCatalog(ros)
   const { auto } = useAutoCheckStatus(ros)
   const { link } = useLinkStatus(ros)
   // S-00 の機器別の行と同じ値（Spec-webui.md §3.2「S-00 と同じ内容を要約表示」）。
@@ -97,7 +99,13 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
   // but the link just went stale".
   const disabledAll = stale || mode == null || mode === 'INIT'
 
-  const items = menuItems(state, modeEntry, attributes)
+  const items = menuItems(state, modeEntry, attributes, {
+    // 1b-11 SG-B13: 経路の本数は /route/catalog、リードデバイスは /system/state。
+    // TEST_MODE の未 seed（useRouteCatalog 初期値 []）は「0 本」として扱い、
+    // 教示再生を止める（空の一覧で押せる方が誤り。サーバ側も同じく拒否する）。
+    routeCount: routes.length,
+    leashPresent: state?.leash_present,
+  })
   const liveUnsaved = state?.unsaved ?? []
 
   function closeWindow() {
@@ -261,6 +269,10 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
       {MENU_GROUPS.map((group) => (
         <div className="card" key={group.key}>
           <h3>{GROUP_TITLES[group.key]}</h3>
+          {/* 1b-11 SG-B13: 教示は保管場所起点（Spec-transit.md §0.6・§3.5）。
+              判定は人の責任なので S-01 に常時案内を出す
+              （DetailedDesign-transit.md §0.4）。 */}
+          {group.key === 'move' && <div className="note">{S01_TEACH_NOTE}</div>}
           <div className="btnrow n2">
             {group.modes.map((m) => {
               const item = items.find((it) => it.mode === m)

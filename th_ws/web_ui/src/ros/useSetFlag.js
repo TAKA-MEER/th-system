@@ -16,6 +16,9 @@ import { SERVICES, SRV_TYPES } from './topics'
 export const TRACKER_FLAG = 'tracker_enabled'
 // 1b-15 SG-B10: 自動ブレーキの切替要求。受理は機体が決める（手動系とジョグ中だけ）。
 export const AUTO_BRAKE_FLAG = 'auto_brake'
+// 1b-11 SG-B14: S-14 の地図更新トグル。受理は機体が決める（T-REPLAY-08 の
+// map_update ガードが保存の可否を縛る）。
+export const MAP_UPDATE_FLAG = 'map_update'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 

@@ -328,9 +328,18 @@ export const S14_QUALITY_LOW_HINT = '似た場所が複数あり、取り違え�
 export const S14_QUALITY_FAILED = '見つかりません'
 export const S14_QUALITY_FAILED_HINT = '完全グローバルで探すか、経路を選び直してください'
 export const S14_QUALITY_SEARCHING = '探しています'
+// 1b-11 SG-B19: 探索・読み直しの待ち時間（Spec-transit.md §4.2.2）。
+// 原因を断定しない文言にする（§4.2.3）。
+export const S14_QUALITY_SEARCHING_HINT = '地図を読み込んでいます。短い経路で数秒、長い地図で30〜45秒かかります'
 // 「完全グローバルで探す」ボタン（Spec-webui.md §3.7）。押すと ui.localize_global。
 // FSM は REPLAY/LOCALIZE でだけ受け付ける（transitions.yaml T-REPLAY-03）。
 export const S14_GLOBAL_BUTTON = '完全グローバルで探す'
+// 1b-11 SG-B14: 地図の更新トグル（Spec-webui.md §3.7）。既定 OFF。
+// ON のときだけ操作カードに「保存」が出る（Spec-transit.md §0.1）。
+export const S14_MAP_UPDATE_TITLE = '地図の更新'
+export const S14_MAP_UPDATE_ON = 'ON（書き足し中）'
+export const S14_MAP_UPDATE_OFF = 'OFF'
+export const S14_MAP_UPDATE_NOTE = 'ON にすると走りながら地図に書き足します。「保存」で確定します'
 
 // ---------------------------------------------------------------- 経路プレビュー（WS-3） ----
 // src/screens/RoutePreview.jsx の表示文字列。
@@ -543,6 +552,9 @@ export const S01_SETTINGS = '設定'            // S-01「保守・設定」カ�
 export const S01_ONSITE_TEST = '試験（当日）'
 // brief-onsite-fix A: 画面の無いモードで S-01 が出ているとき、ui.finish で IDLE に戻す導線。
 export const S01_FINISH_ESCAPE = '終了して待機に戻る'
+// 1b-11 SG-B13: 教示 2 種は保管場所起点（Spec-transit.md §0.6・§3.5）。
+// 判定は人の責任なので S-01 に常時出す（DetailedDesign-transit.md §0.4）。
+export const S01_TEACH_NOTE = '教示は保管場所から開始してください（復路では教示できません）'
 export const S50_BACK = '戻る'
 export const S50_TAB_GENERAL = '一般'
 export const S50_TAB_DISPLAY = '表示'

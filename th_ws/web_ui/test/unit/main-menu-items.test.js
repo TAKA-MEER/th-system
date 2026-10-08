@@ -77,3 +77,27 @@ test('mode MANUAL: only OPCHECK/CALIB are allowed (mode_entry.yaml: MANUAL -> [I
   assert.equal(items.FOLLOW.enabled, false)
   assert.equal(items.FOLLOW.reasonKey, 'mode_entry_denied')
 })
+
+// 1b-11 SG-B13: 方式選択の前提（経路の本数・リードデバイス）。
+test('SG-B13: 経路 0 本なら教示再生は押せない（no_route_recorded）、1 本以上なら押せる', () => {
+  const st = { mode: 'IDLE', tracker_enabled: true }
+  const zero = byMode(menuItems(st, modeEntry, attributes, { routeCount: 0 }))
+  assert.equal(zero.REPLAY.enabled, false)
+  assert.equal(zero.REPLAY.reasonKey, 'no_route_recorded')
+  assert.equal(zero.MANUAL.enabled, true)
+  const one = byMode(menuItems(st, modeEntry, attributes, { routeCount: 1 }))
+  assert.equal(one.REPLAY.enabled, true)
+  // 本数がまだ分からない間は止めない（サーバ側のガードが正本）
+  const unknown = byMode(menuItems(st, modeEntry, attributes, {}))
+  assert.equal(unknown.REPLAY.enabled, true)
+})
+
+test('SG-B13: リードデバイス未接続なら電子リードは押せない（device_not_connected）', () => {
+  const st = { mode: 'IDLE', tracker_enabled: true }
+  const off = byMode(menuItems(st, modeEntry, attributes, { leashPresent: false }))
+  assert.equal(off.LEASH.enabled, false)
+  assert.equal(off.LEASH.reasonKey, 'device_not_connected')
+  const on = byMode(menuItems(st, modeEntry, attributes, { leashPresent: true }))
+  assert.equal(on.LEASH.enabled, true)
+  assert.equal(on.REPLAY.enabled, true)
+})
