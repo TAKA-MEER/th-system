@@ -330,7 +330,10 @@ def generate_launch_description():
                               # §5.5（P-02）: person を監視対象に足す。tracker OFF
                               # （既定）の間は safety 側のゲートで判定しない。
                               # report_only=true（既定）のため実機の挙動は変わらない。
-                              'person']
+                              'person',
+                              # SG-A11（2026-10-08）: mux を監視対象に足す。twist_mux の生存確認を
+                              # 含む。mux_report_only=true（既定）のため記録だけで実機の挙動は変わらない。
+                              'mux']
     # dev_mode と同じ流儀（WP-DEV-01A）: If/Unless で排他的に定義を分ける。
     nodes.append(Node(
         package='th_safety',

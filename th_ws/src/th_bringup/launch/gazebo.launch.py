@@ -57,7 +57,9 @@ SAFETY_ENABLED_TARGETS_SIM = ['lidar', 'limiter',
                               # §5.5（P-02）: person を監視対象に足す。tracker OFF
                               # （既定）の間は safety 側のゲートで判定しない。
                               # report_only=true のため sim の挙動は変わらない。
-                              'person']
+                              'person',
+                              # SG-A11: 記録だけ（mux_report_only=true）。bringup と揃える。
+                              'mux']
 # sim 用 safety_monitor の静的パラメータ。safety_monitor の構築は「slam_on の
 # 解決が必要」なため _scenario_setup（OpaqueFunction・モジュールレベル関数）の
 # sim 分岐内で行う。そのため generate_launch_description のローカル変数では
@@ -605,7 +607,9 @@ def generate_launch_description():
     # 無条件に起動する）。
     SAFETY_ENABLED_TARGETS_REAL = ['lidar', 'esp32', 'runaway', 'state', 'firmware', 'limiter',
                                    # §5.5（P-02）: bringup.launch.py の実機側と揃える。
-                                   'person']
+                                   'person',
+                                   # SG-A11: bringup.launch.py と同じ（記録だけ）。
+                                   'mux']
 
     # safety_monitor: 実機設定
     # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる (G-4)。
