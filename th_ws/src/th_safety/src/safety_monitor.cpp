@@ -18,7 +18,10 @@
 //                  の間は FaultStatus／fault_lock を出さず記録だけ）
 //   limiter      /safety/limiter_status タイムアウト         → LIMITER_DEAD (CRITICAL)
 //   localization /safety/localization_health 途絶・ok==false 継続 → LOCALIZATION_LOST (CRITICAL)
-//   mux          /cmd_vel_muxed ⇄ /cmd_vel の双方向途絶      → MUX_DEAD (CRITICAL)
+//   mux          /cmd_vel_muxed ⇄ /cmd_vel の双方向途絶 ＋ twist_mux の生存確認
+//                （/cmd_vel_muxed の publisher に twist_mux が居るか）→ MUX_DEAD (CRITICAL)
+//                （mux_report_only=true の間は FaultStatus／fault_lock を出さず記録だけ。
+//                  人物追跡の person_report_only と同じ形）
 //   runaway      /cmd_vel と /esp32/wheel_feedback の乖離    → DRIVE_RUNAWAY (CRITICAL)
 //   state        /system/state タイムアウト・不整合          → STATE_INCONSISTENT (CRITICAL)
 //   firmware     /safety/firmware_flags の bypass_active ビット → ESTOP_BYPASS_ACTIVE (CRITICAL)
@@ -92,6 +95,16 @@ public:
         // 既定値は registry.yaml（localization_topic_timeout_ms）が正。
         declare_parameter("localization_topic_timeout_ms", 5000);
         declare_parameter("mux_dead_ms",          500);
+        // SG-A11（2026-10-08 ユーザー決定）: twist_mux の生存確認。
+        // /cmd_vel_muxed の publisher に twist_mux ノードが居ない状態がこの時間
+        // 続いたら死んだとみなす（入力が無くて出力が黙っているだけの停止中でも
+        // 検知できる）。起動直後は publisher 未発見のまま startup_deadline_sec まで待つ。
+        // 既定値は registry.yaml（mux_liveness_grace_ms）が正。
+        declare_parameter("mux_liveness_grace_ms", 1000);
+        // true の間は MUX_DEAD が成立しても FaultStatus／fault_lock を出さず
+        // ログ＋カウンタのみ（person_report_only と同じ形）。誤検知がないことを
+        // 実機で確かめてから false にする。既定値は registry.yaml が正。
+        declare_parameter("mux_report_only", true);
         declare_parameter("state_stale_ms",       1500);
         declare_parameter("runaway_ratio",        1.5);
         // Spec-safety.md §3.5.4（W-06 の⑤）: 発進・停止直後の追従遅れ
@@ -132,6 +145,9 @@ public:
         localization_topic_timeout_ = std::chrono::milliseconds(
             get_parameter("localization_topic_timeout_ms").as_int());
         mux_dead_       = std::chrono::milliseconds(get_parameter("mux_dead_ms").as_int());
+        mux_liveness_grace_ = std::chrono::milliseconds(
+            get_parameter("mux_liveness_grace_ms").as_int());
+        mux_report_only_ = get_parameter("mux_report_only").as_bool();
         state_stale_    = std::chrono::milliseconds(get_parameter("state_stale_ms").as_int());
         runaway_ratio_  = get_parameter("runaway_ratio").as_double();
         runaway_zero_threshold_ = get_parameter("runaway_zero_threshold").as_double();
@@ -143,6 +159,7 @@ public:
             limiter_dead_hold_  = th_safety::HoldTimer(hold);
             localization_dead_hold_ = th_safety::HoldTimer(hold);
             mux_dead_hold_      = th_safety::HoldTimer(hold);
+            mux_report_hold_    = th_safety::HoldTimer(hold);
             state_inconsist_hold_ = th_safety::HoldTimer(hold);
         }
         estop_ui_lease_sec_ = get_parameter("estop_ui_lease_ms").as_int() / 1000.0;
@@ -310,6 +327,7 @@ public:
         last_limiter_time_ = t0;
         last_localization_time_ = t0;
         last_muxed_time_   = t0;
+        last_mux_node_time_ = t0;
         last_cmd_time_     = t0;
         last_state_time_   = t0;
 
@@ -445,11 +463,44 @@ private:
                 bool cmd_stale = th_safety::is_timeout_fault(
                     cmd_alive_, (t - last_cmd_time_).seconds(), mux_dead_sec,
                     since_start, startup_deadline_sec_);
-                bool mux_dead = th_safety::detect_mux_dead(
+                const bool flow_dead = th_safety::detect_mux_dead(
                     muxed_stale, muxed_last_nonzero_, cmd_stale, cmd_last_nonzero_);
-                // WS-9O: 単発の誤検知よけ
-                updateFaultState("MUX_DEAD",
-                                  mux_dead_hold_.update(mux_dead, check_period_sec_));
+                // SG-A11: 生存確認。入力が無く出力が黙っている停止中の死は上の
+                // 流れの判定では見えないので、ノードの存在そのものを見る。
+                const bool mux_absent = muxNodeAbsent(t, since_start);
+                const bool mux_cond = flow_dead || mux_absent;
+                if (!mux_report_only_) {
+                    // WS-9O: 単発の誤検知よけ
+                    updateFaultState("MUX_DEAD",
+                                      mux_dead_hold_.update(mux_cond, check_period_sec_));
+                } else {
+                    // 記録だけ。FaultStatus／fault_lock は出さない（立っている
+                    // MUX_DEAD があれば解除する。実行中に記録だけへ戻した場合）。
+                    // 保持時間は同じ（誤検知を記録に数えない）。
+                    updateFaultState("MUX_DEAD", false);
+                    const bool held = mux_report_hold_.update(mux_cond, check_period_sec_);
+                    if (held && !prev_mux_report_dead_) {
+                        ++mux_report_only_episodes_;
+                        RCLCPP_WARN(
+                            get_logger(),
+                            "[MUX_DEAD 記録だけ %zu 件目] twist_mux の異常を検知 "
+                            "(生存確認=%s 流れ=%s)。mux_report_only のためフォルトは出さない",
+                            mux_report_only_episodes_,
+                            mux_absent ? "twist_mux が居ない" : "居る",
+                            flow_dead ? "不整合" : "正常");
+                    } else if (held) {
+                        RCLCPP_WARN_THROTTLE(
+                            get_logger(), *get_clock(), 30000,
+                            "[MUX_DEAD 記録だけ] 異常が継続中 (これまでの検出 %zu 件)。"
+                            "mux_report_only のためフォルトは出さない",
+                            mux_report_only_episodes_);
+                    } else if (prev_mux_report_dead_) {
+                        RCLCPP_INFO(get_logger(),
+                                    "[MUX_DEAD 記録だけ] 異常が解消 (これまでの検出 %zu 件)",
+                                    mux_report_only_episodes_);
+                    }
+                    prev_mux_report_dead_ = held;
+                }
             }
             if (targetEnabled("runaway")) {
                 // W-06 の②（Spec-safety.md §3.5.3）: 実測が新鮮なときだけ判定する。
@@ -494,6 +545,32 @@ private:
 
         // F-1: 沈黙禁止。状態変化の有無にかかわらず毎周期発行する。
         publishLock();
+    }
+
+    // SG-A11: /cmd_vel_muxed の publisher に twist_mux ノードが居ないか。
+    // 居なくなってから mux_liveness_grace_ms を超えたら真（起動直後に一度も
+    // 見えないときは startup_deadline_sec まで待つ。detect_mux_absent）。
+    // グラフの問い合わせが失敗したときは「居た」ことにする（不明を死と決めない）。
+    bool muxNodeAbsent(const rclcpp::Time& t, double since_start) {
+        try {
+            const auto pubs = get_publishers_info_by_topic("/cmd_vel_muxed");
+            bool present = false;
+            for (const auto& info : pubs) {
+                if (info.node_name() == kMuxNodeName) { present = true; break; }
+            }
+            if (present) {
+                last_mux_node_time_ = t;
+                mux_node_seen_ = true;
+            }
+        } catch (const std::exception& e) {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 10000,
+                                 "twist_mux の生存確認に失敗 (%s)。今回は判定しない", e.what());
+            last_mux_node_time_ = t;
+        }
+        return th_safety::detect_mux_absent(
+            mux_node_seen_, (t - last_mux_node_time_).seconds(),
+            std::chrono::duration<double>(mux_liveness_grace_).count(),
+            since_start, startup_deadline_sec_);
     }
 
     // 開発モードの項目 lidar_fault が実効か。切り替わりをログに残す。
@@ -706,6 +783,8 @@ private:
     rclcpp::Time last_limiter_time_;
     rclcpp::Time last_localization_time_;
     rclcpp::Time last_muxed_time_;
+    rclcpp::Time last_mux_node_time_;   // twist_mux が /cmd_vel_muxed の publisher に最後に見えた時刻
+    bool mux_node_seen_ = false;
     rclcpp::Time last_cmd_time_;
     rclcpp::Time last_state_time_;
 
@@ -754,6 +833,11 @@ private:
     std::chrono::milliseconds limiter_dead_;
     std::chrono::milliseconds localization_topic_timeout_;
     std::chrono::milliseconds mux_dead_;
+    std::chrono::milliseconds mux_liveness_grace_{1000};
+    bool mux_report_only_ = true;
+    bool prev_mux_report_dead_ = false;
+    std::size_t mux_report_only_episodes_ = 0;
+    static constexpr const char* kMuxNodeName = "twist_mux";
     std::chrono::milliseconds state_stale_;
     double runaway_ratio_ = 1.5;
     double runaway_zero_threshold_ = 0.08;
@@ -764,6 +848,7 @@ private:
     th_safety::HoldTimer limiter_dead_hold_{0.0};
     th_safety::HoldTimer localization_dead_hold_{0.0};
     th_safety::HoldTimer mux_dead_hold_{0.0};
+    th_safety::HoldTimer mux_report_hold_{0.0};   // mux_report_only の間だけ使う（記録の保持時間）
     th_safety::HoldTimer state_inconsist_hold_{0.0};
     double estop_ui_lease_sec_ = 1.5;
     double check_period_sec_ = 0.1;

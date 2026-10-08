@@ -867,6 +867,26 @@
   spec_ref: "DetailedDesign-names.md §7.3（wp2 WP-SAFE-01 §4.1）"
   note: "MUX_DEAD の判定。暫定値"
 
+- name: mux_liveness_grace_ms
+  unit: ms
+  class: b
+  status: given
+  value: 1000
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-safety.md §5.6（SG-A11）"
+  note: "twist_mux の生存確認。/cmd_vel_muxed の publisher に twist_mux ノードが居ない状態がこの時間続いたら MUX_DEAD。
+    起動直後に一度も見えないときは startup_deadline_sec まで待つ。暫定値（実機で誤検知ゼロを確かめて決める）"
+
+- name: mux_report_only
+  unit: null
+  class: b
+  status: given
+  value: true
+  consumers: [safety_monitor]
+  spec_ref: "DetailedDesign-safety.md §5.6（SG-A11）"
+  note: "true の間は MUX_DEAD が成立しても FaultStatus／fault_lock を出さず内部ログ＋カウンタのみ（person_report_only と同じ形）。
+    誤検知の無いことを実機で確かめてから false にして重大フォルトとして止める"
+
 - name: localization_stale_ms
   unit: ms
   class: b

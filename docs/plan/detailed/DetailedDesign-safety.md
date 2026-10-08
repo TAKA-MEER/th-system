@@ -616,6 +616,25 @@ PAUSE 遷移は sim 本体では縛らない。sim で `FOLLOW` に入る前提
 
 依存: P-01 → P-02 → P-03。P-04 は P-02 の後いつでも。
 
+## 5.6 多重化（`twist_mux`）の生存確認（`SG-A11`。2026-10-08 ユーザー決定）
+
+`MUX_DEAD`（重大。`Spec-safety.md` §3.5）には、流れの判定（[wp2](DetailedDesign-wp2.md) §4.1 の両方向）しか無く、
+**入力が無くて `/cmd_vel_muxed` が元から黙っている停止中に `twist_mux` が死んでも検知できなかった**
+（死ぬと `obstacle_limiter` が `muxed_stale_ms` 後にゼロを出すので安全側には倒れる）。生存確認を足し、**最初は記録だけ**にする。
+
+| 項目 | 決め方 |
+| --- | --- |
+| 方式 | `safety_monitor` が `/cmd_vel_muxed` の publisher を ROS グラフから引き（`get_publishers_info_by_topic`）、**ノード名 `twist_mux` の publisher が居るか**を見る。publisher は起動時に作られるので、入力が無く出力が黙っている間も存在は変わらない。入力・出力の流れには依存しない（停止中でも死を検知できる）。`twist_mux` を起動しているのは `bringup.launch.py`・`gazebo.launch.py` のいずれも `name='twist_mux'` |
+| 猶予 | 居なくなってから **`mux_liveness_grace_ms`**（registry。暫定 1000 ms）を超えたら死。一度も見えていないときは `startup_deadline_sec`（DDS の発見待ち）まで待つ。判定は `detect_mux_absent()`（`safety_monitor_core.hpp`。`is_timeout_fault` と同じ規則）。そのうえで `critical_fault_hold_ms` の保持を課す（単発の誤検知よけ） |
+| 流れの判定との関係 | `MUX_DEAD` = 流れの判定 **OR** 生存確認。どちらも同じ保持・同じ記録だけの扱い |
+| 記録だけ | **`mux_report_only`**（registry。既定 true）。true の間は成立しても `FaultStatus`／`fault_lock` を出さず、ログ（`[MUX_DEAD 記録だけ N 件目]`）とカウンタのみ。形は `person_report_only`（§5.5.5）と同じ。false にすると重大フォルトとして `ESTOP` に落ちる。誤検知が無いことを実機で確かめてから false にする（走行で確かめる前の検知は記録だけ、という従来の進め方） |
+| 有効化 | `SAFETY_ENABLED_TARGETS`（`bringup.launch.py`）と `SAFETY_ENABLED_TARGETS_SIM`／`_REAL`（`gazebo.launch.py`）に `mux` を足す。記録だけなので実機・sim の挙動は変わらない |
+| 計画的な再起動 | 現行の計画的再起動（`O-e3`）は SLAM／自己位置推定ノードだけで、`twist_mux` は含まない。将来 `twist_mux` を再起動対象にするなら、再起動の間（`mux_liveness_grace_ms` を超える）は保留する扱いを足すこと |
+| 限界 | プロセスが正常終了せず消えた（`kill -9`・電源断）場合、グラフから消えるまでは DDS の参加者リース（既定 20 秒程度）に依る。`obstacle_limiter` の `muxed_stale_ms` による 0 出力が先に効くので、安全側の動作には影響しない |
+
+試験: `safety_monitor_core` の gtest（`detect_mux_absent`）、`test_mux_liveness_node.py`（本物の `twist_mux` と `safety_monitor` を起動。
+停止中に `kill -TERM` → 止める側は `MUX_DEAD`・既定は記録だけ。`enabled_targets` は launch の値）。
+
 ---
 
 ## 6. 非常停止（`O-d7` の解決）
@@ -934,8 +953,8 @@ colcon test --packages-select th_testing --event-handlers console_direct+ \
 | 機器未接続の警告 | **物理非常停止ボタン**（層 1） |
 | バッテリー電圧低下の警告 | **ESP32 のウォッチドッグ**（層 2） |
 | 始業点検の総合ステータス NG | **UI 非常停止ボタン** |
-| 必須通信系統の不通による運用開始の禁止 | **`AUTO` の障害物停止**（`obstacle_limiter`） |
-| 手動系の自動ブレーキ（場内でも OFF 可） | **`DEBT-1` バイパス検出の重大フォルト**（表示は消せるが駆動は許可しない） |
+| 必須通信系統の不通による運用開始の禁止 | **`AUTO` の障害物停止**（`obstacle_limiter`。ただし開発モードの項目 `auto_brake` が実効で、試験員が OFF にしたときを除く。点検・校正の `NA` ゾーンは対象外。`Spec-safety.md` §10 の 2026-10-08 改定） |
+| 自動ブレーキ（手動系は場内でも OFF 可。自律系・場内も開発モードの項目 `auto_brake` が実効のときだけ OFF 可。項目を選んだだけでは OFF にならない） | **`DEBT-1` バイパス検出の重大フォルト**（表示は消せるが駆動は許可しない） |
 | パラメータ暫定値のバッジ | **§7 ② の起動時アサーション** |
 
 **層 1・2 は開発モードでも無効化できない**（`Spec-safety.md` §10）。

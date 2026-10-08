@@ -225,6 +225,22 @@ inline bool is_timeout_fault(bool ever_received,
   return since_last_sec > timeout_sec;
 }
 
+// ── §4.1 MUX_DEAD の生存確認（SG-A11・2026-10-08 ユーザー決定） ───────
+// detect_mux_dead は「流れ」を見るので、入力が無くて出力が黙っている停止中に
+// twist_mux が死んでも見えない。こちらは twist_mux ノードが /cmd_vel_muxed の
+// publisher として存在するかを見る（停止中でも検知できる）。
+//   ever_seen            : twist_mux が一度でも見えたか
+//   absent_sec           : 最後に見えてからの経過 [s]（居る間は 0 付近）
+//   grace_sec            : 居なくなってから死とみなすまでの猶予 [s]（mux_liveness_grace_ms）
+//   since_start_sec      : ノード起動からの経過 [s]
+//   startup_deadline_sec : 一度も見えない状態を許す上限 [s]（DDS の発見待ち）
+// 猶予の内側（再起動の合間・起動直後）では偽。
+inline bool detect_mux_absent(bool ever_seen, double absent_sec, double grace_sec,
+                              double since_start_sec, double startup_deadline_sec) {
+  return is_timeout_fault(ever_seen, absent_sec, grace_sec, since_start_sec,
+                          startup_deadline_sec);
+}
+
 }  // namespace th_safety
 
 #endif  // TH_SAFETY_SAFETY_MONITOR_CORE_HPP_

@@ -412,3 +412,31 @@ TEST(SafetyMonitorCore, PersonGateOffClearsImmediately) {
   // 対照: 猶予中の SKIP_GRACE は解除の合図ではない（区別がつくこと）。
   EXPECT_NE(person_gate(true, 0.0, 5.0), PersonGate::SKIP_DISABLED);
 }
+
+// ── MUX_DEAD の生存確認（SG-A11・2026-10-08） ─────────────────────────────
+// twist_mux が /cmd_vel_muxed の publisher に居るかを見る。入力が無く出力が黙っている
+// 停止中でも死を検知できる（detect_mux_dead は流れを見るので見えない）。
+
+TEST(SafetyMonitorCore, MuxAbsentDetectedWhileIdleAfterGrace) {
+  // 一度見えた twist_mux が居なくなって grace(1.0s) を超えた → 死。
+  // 入力・出力の流れが無い停止中でも成立する（流れの引数を取らないのが要点）。
+  EXPECT_TRUE(detect_mux_absent(/*ever_seen=*/true, /*absent=*/1.01, /*grace=*/1.0,
+                                /*since_start=*/60.0, /*deadline=*/15.0));
+  // 流れの判定は停止中は偽のまま（これだけでは見えない）。
+  EXPECT_FALSE(detect_mux_dead(true, false, true, false));
+}
+
+TEST(SafetyMonitorCore, MuxAbsentNotDetectedInsideGrace) {
+  // 計画的な再起動の合間など、猶予の内側では出さない（ちょうど grace も出さない）。
+  EXPECT_FALSE(detect_mux_absent(true, 0.0, 1.0, 60.0, 15.0));
+  EXPECT_FALSE(detect_mux_absent(true, 0.99, 1.0, 60.0, 15.0));
+  EXPECT_FALSE(detect_mux_absent(true, 1.0, 1.0, 60.0, 15.0));
+}
+
+TEST(SafetyMonitorCore, MuxAbsentNeverSeenWaitsForStartupDeadline) {
+  // 起動直後（DDS の発見待ち）に一度も見えていない間は、deadline までは死としない。
+  EXPECT_FALSE(detect_mux_absent(false, 5.0, 1.0, /*since_start=*/5.0, /*deadline=*/15.0));
+  EXPECT_FALSE(detect_mux_absent(false, 15.0, 1.0, 15.0, 15.0));
+  // deadline を超えても一度も見えなければ、twist_mux が起動していない → 死。
+  EXPECT_TRUE(detect_mux_absent(false, 15.1, 1.0, 15.1, 15.0));
+}

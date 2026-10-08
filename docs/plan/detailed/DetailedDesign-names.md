@@ -556,6 +556,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `lidar_timeout_ms` ／ `esp32_timeout_ms` ／ `person_timeout_ms` | ms | (b) 導出 |
 | **`person_startup_grace_ms`** | ms | (c) placeholder。**`tracker_enabled` の false→true エッジから `person` 判定を保留する猶予**（`safety_monitor`。DetailedDesign-safety.md §5.5.2） |
 | **`person_report_only`** | — | given bool。true の間は `PERSON_TRACKER_LOST` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。同 §5.5.5） |
+| **`mux_liveness_grace_ms`** | ms | (b)。`MUX_DEAD` の生存確認（`twist_mux` が `/cmd_vel_muxed` の publisher から居なくなってこの時間で死とみなす。`safety_monitor`。`DetailedDesign-safety.md` §5.6） |
+| **`mux_report_only`** | — | given bool。true の間は `MUX_DEAD` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。同 §5.6） |
 | **`muxed_stale_ms`** | ms | (b)。**リミッタ**が `/cmd_vel_muxed` の途絶を判定する |
 | **`cmd_vel_stale_ms`** | ms | (b)。**`esp32_bridge`** が `/cmd_vel` の途絶を判定する（`< esp32_watchdog_ms`） |
 | **`scan_stale_ms`** | ms | (b)。**リミッタ**が `/scan` の途絶を判定する。超えたら `action = STOP` |
