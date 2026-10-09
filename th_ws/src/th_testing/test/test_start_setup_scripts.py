@@ -51,7 +51,10 @@ if [ "${1:-}" = "exec" ]; then
         n=0
         if [ -f "$FAKE_PS_COUNT" ]; then n=$(cat "$FAKE_PS_COUNT"); fi
         n=$((n + 1)); echo "$n" > "$FAKE_PS_COUNT"
-        if [ -n "${FAKE_PS_ALWAYS:-}" ]; then
+        if [ -n "${FAKE_PS_UNTIL_KILL:-}" ]; then
+            # 他で動いている bringup のふり。kill -INT を受けたら消える。
+            if [ -f "$FAKE_KILL_MARK" ]; then echo "PID COMMAND"; else printf '%s\\n' "$FAKE_PS_UNTIL_KILL"; fi
+        elif [ -n "${FAKE_PS_ALWAYS:-}" ]; then
             printf '%s\\n' "$FAKE_PS_ALWAYS"
         elif [ -n "${FAKE_PS_LATER:-}" ] && [ "$n" -ge 2 ]; then
             if [ -f "$FAKE_KILL_MARK" ]; then
@@ -227,19 +230,66 @@ def test_ping_failure_touches_nothing(fakebin, with_dist):
     assert "network.md" in (r.stdout + r.stderr)
 
 
-# ── 3. 二重起動は「起動もしないし何も止めない」 ─────────────
+# ── 3. 他で起動していたら、確認のうえ止めて引き継ぐ ──────────
 
-def test_double_start_stops_nothing(fakebin, with_dist):
+OTHER_LAUNCH = "PID COMMAND\n1234 ros2 launch th_bringup bringup.launch.py lidar_source:=network"
+
+
+def test_double_start_without_confirmation_stops_nothing(fakebin, with_dist):
+    # 端末が無く --yes も無ければ確認できない → 何も起動せず何も止めない。
     _, make_env, log = fakebin
-    env = make_env(
-        FAKE_PS_ALWAYS="PID COMMAND\n1234 ros2 launch th_bringup bringup.launch.py lidar_source:=network")
+    env = make_env(FAKE_PS_ALWAYS=OTHER_LAUNCH)
     r = subprocess.run(["bash", START_SH], capture_output=True, text=True,
-                       env=env, timeout=60)
+                       env=env, timeout=60, stdin=subprocess.DEVNULL)
     assert r.returncode != 0
     calls = _calls(log)
     assert not _launch_execs(calls), calls  # 起動しない
     assert not any("kill" in c for c in calls), calls  # 止めない
-    assert "既に動いている" in (r.stdout + r.stderr)
+    assert "他で起動している" in (r.stdout + r.stderr)
+
+
+def test_double_start_yes_stops_other_and_starts(fakebin, with_dist):
+    # --yes: 他の bringup に INT を PID 指定で送り、止まったのを見届けて起動する。
+    _, make_env, log = fakebin
+    env = make_env(FAKE_PS_UNTIL_KILL=OTHER_LAUNCH, FAKE_LAUNCH_RC="0",
+                   STARTSH_RESTART_MAX="1")
+    r = subprocess.run(["bash", START_SH, "--yes"], capture_output=True, text=True,
+                       env=env, timeout=60, stdin=subprocess.DEVNULL)
+    calls = _calls(log)
+    kills = [c for c in calls if "kill -INT 1234" in c]
+    assert kills, calls  # PID 指定の INT
+    assert not any("kill -KILL" in c or "kill -9" in c for c in calls), calls
+    assert _launch_execs(calls), calls  # こちらで起動した
+    assert calls.index(kills[0]) < calls.index(_launch_execs(calls)[0])
+    assert "他で動いていたものが止まった" in (r.stdout + r.stderr)
+
+
+def test_other_start_sh_is_terminated_via_pidfile(fakebin, with_dist, tmp_path):
+    # pidfile に載った別の start.sh（cmdline に start.sh を含む）へ TERM を送る。
+    _, make_env, log = fakebin
+    other = tmp_path / "start.sh"  # cmdline に "start.sh" が出るダミー
+    other.write_text("#!/usr/bin/env bash\ntrap 'exit 0' TERM\nwhile :; do sleep 1; done\n",
+                     encoding="utf-8")
+    # テストの子にすると終了後にゾンビで残り kill -0 が通ってしまう。親を切り離して起動する。
+    out = subprocess.run(["bash", "-c", "bash '%s' >/dev/null 2>&1 </dev/null & echo $!" % other],
+                         capture_output=True, text=True, check=True)
+    pid = int(out.stdout.strip())
+    pidfile = tmp_path / "start-sh.pid"
+    pidfile.write_text(str(pid), encoding="utf-8")
+    try:
+        time.sleep(0.5)
+        env = make_env(STARTSH_PIDFILE=pidfile, FAKE_LAUNCH_RC="0", STARTSH_RESTART_MAX="1")
+        r = subprocess.run(["bash", START_SH, "--yes"], capture_output=True, text=True,
+                           env=env, timeout=60, stdin=subprocess.DEVNULL)
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)  # TERM で止まっている
+        assert "別の start.sh" in (r.stdout + r.stderr)
+        assert _launch_execs(_calls(log))
+    finally:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
 
 # ── 4. 立て直しは上限どおり・上限で案内して止まる ────────────

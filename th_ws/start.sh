@@ -26,6 +26,7 @@ STARTSH_RESTART_WAIT="${STARTSH_RESTART_WAIT:-5}" # 立て直しの前に待つ�
 STARTSH_WEBUI_LOG="${STARTSH_WEBUI_LOG:-}"        # WebUI 配信のログ（空なら th_ws/log/start-webui.log）
 STARTSH_WEBUI_WAIT="${STARTSH_WEBUI_WAIT:-2}"     # WebUI の生死確認まで待つ秒数
 STARTSH_STOP_WAIT="${STARTSH_STOP_WAIT:-30}"      # Ctrl-C 後に launch が止まるのを待つ上限（秒）
+STARTSH_PIDFILE="${STARTSH_PIDFILE:-$SCRIPT_DIR/log/start-sh.pid}" # 動作中の start.sh の PID（他での起動の検出用）
 # 1b-6 SG-B6: 「運用の終了」（制御系を停止する）の印ファイル。state_manager の
 # /shutdown/execute がコンテナ内の /root/th_data（＝下の既定値のホスト側）に置き、
 # このスクリプトが bringup の終了後に見て立て直さずに終わる。
@@ -58,6 +59,8 @@ usage() {
   --build      コンテナ内で colcon build、ホストで WebUI の本番ビルドを行う
                （既定ではしない。時間がかかるため）
   --dry-run    何も実行せず、これから何をするかだけ表示する
+  --yes, -y    他で起動していたとき、確認せずにそれを止めてこちらで起動する
+               （既定では確認する。端末が無く --yes も無ければ何も止めずに終わる）
   --help, -h   この表示
 
 launch 引数:
@@ -74,6 +77,7 @@ launch 引数:
   STARTSH_WEBUI_WAIT（既定 2 秒。WebUI の生死確認まで待つ時間）
   STARTSH_STOP_WAIT（既定 30 秒。Ctrl-C 後に launch が止まるのを待つ上限）
   STARTSH_STOP_MARKER（既定 th_ws/data/.control_stop。「運用の終了」の印ファイル）
+  STARTSH_PIDFILE（既定 th_ws/log/start-sh.pid。動作中の start.sh の PID）
 
 止め方: Ctrl-C（launch に INT を送って子ノードごと止め、WebUI の配信も止める）
 USAGE
@@ -82,12 +86,14 @@ USAGE
 # ── 引数の仕分け ────────────────────────────────────────────
 DO_BUILD=0
 DRY_RUN=0
+ASSUME_YES=0
 USER_LAUNCH_ARGS=()
 for arg in "$@"; do
     case "$arg" in
         --help|-h) usage; exit 0 ;;
         --build) DO_BUILD=1 ;;
         --dry-run) DRY_RUN=1 ;;
+        --yes|-y) ASSUME_YES=1 ;;
         --*) err "未知のオプション: $arg（--help を参照）"; exit 2 ;;
         *) USER_LAUNCH_ARGS+=("$arg") ;;
     esac
@@ -125,7 +131,10 @@ if [ "$DRY_RUN" -eq 1 ]; then
   1. ping -c 3 ${RPI_IP}（届かなければ docs/network.md「復旧手順」を案内して終了）
      ssh ${RPI_SSH_USER}@${RPI_IP} で rpi-serial-relay を確認（失敗は警告のみ）
   2. コンテナ th_robot が無ければ \`docker compose up -d th_robot\`（th_ws/ で）、止まっていれば \`docker start th_robot\`
-  3. コンテナ内で ros2 launch th_bringup bringup.launch.py が既に動いていれば、止めずに案内して終了
+  3. 他で起動していれば（別の start.sh、またはコンテナ内の bringup）、内容を表示して確認する
+     「y」なら他方を止めてから、こちらで起動する（start.sh には TERM、bringup には INT を PID 指定で送り、
+     止まるのを上限 ${STARTSH_STOP_WAIT} 秒まで待つ。強制終了はしない）。
+     「y」以外・端末なし（--yes 無し）・止まらなかったときは、何も起動せずに終了
 DRY
     if [ "$DO_BUILD" -eq 1 ]; then
         echo "  4. --build: コンテナ内で colcon build --symlink-install、ホストで npm run build（web_ui）"
@@ -171,19 +180,96 @@ else
     info "コンテナ th_robot は起動済み。"
 fi
 
-# ── 3. 二重起動の防止 ───────────────────────────────────────
+# ── 3. 他で起動している場合の確認と引き継ぎ ──────────────────
 # コンテナ内のプロセス一覧をホスト側で調べる。名前での一括停止は
 # 自分のシェルを殺すことがあるため使わず、PID を特定するだけに留める。
 find_launch_pid() {
     docker exec th_robot ps -eo pid,args 2>/dev/null \
         | awk '$0 ~ /bringup\.launch\.py/ && $0 ~ /ros2/ {print $1; exit}'
 }
+
+# 他で動いている start.sh の PID（pidfile から。自分は除く。PID の使い回しは cmdline で除く）
+find_other_start_pid() {
+    local pid
+    pid="$(cat "$STARTSH_PIDFILE" 2>/dev/null || true)"
+    case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+    [ "$pid" -ne "$$" ] || return 0
+    kill -0 "$pid" 2>/dev/null || return 0
+    if tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -q 'start\.sh'; then
+        echo "$pid"
+    fi
+}
+
+# 他で起動しているものを、確認のうえ止める。止められなければ非0を返す。
+takeover_existing() {
+    local other_start="$1" other_launch="$2" ans waited running
+    warn "他で起動している:"
+    if [ -n "$other_start" ]; then
+        warn "  - 別の start.sh (PID ${other_start})"
+    fi
+    if [ -n "$other_launch" ]; then
+        warn "  - コンテナ内の bringup (PID ${other_launch})"
+    fi
+    warn "誰かが実機作業中の可能性がある。止めると、その作業は中断される。"
+    if [ "$ASSUME_YES" -eq 1 ]; then
+        info "--yes が指定されているので確認せずに進める。"
+    elif [ -t 0 ]; then
+        printf '%s' "止めて、こちらで起動しますか？ [y/N] "
+        read -r ans || ans=""
+        case "$ans" in
+            y|Y|yes|YES) ;;
+            *) err "止めないので、何もせずに終わる。"; return 1 ;;
+        esac
+    else
+        err "端末から確認できない（--yes も無い）ので、何も止めずに終わる。"
+        return 1
+    fi
+
+    # 別の start.sh には TERM を先に送り、続けて launch に INT を送る。
+    # 相手は前景の docker exec が終わるまで trap を保留するので、launch を止めて
+    # docker exec が終わった時点で「操作者の停止」として扱われ、立て直しに入らない。
+    # start.sh 経由でない bringup（手作業の起動）も同じ INT で止まる。
+    if [ -n "$other_start" ]; then
+        info "start.sh (PID ${other_start}) に TERM を送る..."
+        kill -TERM "$other_start" 2>/dev/null || true
+    fi
+    if [ -n "$other_launch" ]; then
+        info "bringup (PID ${other_launch}) に INT を送って止める..."
+        docker exec th_robot kill -INT "$other_launch" || true
+    fi
+    waited=0
+    while [ "$waited" -lt $((STARTSH_STOP_WAIT + 10)) ]; do
+        running=0
+        if [ -n "$other_start" ] && kill -0 "$other_start" 2>/dev/null; then running=1; fi
+        if [ -n "$(find_launch_pid || true)" ]; then running=1; fi
+        [ "$running" -eq 1 ] || break
+        sleep 1; waited=$((waited + 1))
+    done
+    if [ -n "$other_start" ] && kill -0 "$other_start" 2>/dev/null; then
+        err "start.sh (PID ${other_start}) が止まらなかった。強制終了はしない。止まってから打ち直すこと。"
+        return 1
+    fi
+    if [ -n "$(find_launch_pid || true)" ]; then
+        err "bringup が止まらなかった。強制終了はしない。止まってから打ち直すこと。"
+        return 1
+    fi
+    info "他で動いていたものが止まった。"
+    return 0
+}
+
+OTHER_START_PID="$(find_other_start_pid || true)"
 EXISTING_PID="$(find_launch_pid || true)"
-if [ -n "${EXISTING_PID:-}" ]; then
-    err "コンテナ内で bringup が既に動いている (PID ${EXISTING_PID})。何も止めずに終わる。"
-    err "誰かが実機作業中の可能性がある。止めて起動し直すときは、その作業者に確認してから止めること。"
-    exit 1
+if [ -n "${OTHER_START_PID:-}" ] || [ -n "${EXISTING_PID:-}" ]; then
+    takeover_existing "${OTHER_START_PID:-}" "${EXISTING_PID:-}" || exit 1
 fi
+
+# 自分の PID を残す（次に起動した start.sh が、他で起動していると気づけるように）
+mkdir -p "$(dirname "$STARTSH_PIDFILE")"
+echo "$$" >"$STARTSH_PIDFILE"
+remove_pidfile() {
+    if [ "$(cat "$STARTSH_PIDFILE" 2>/dev/null || true)" = "$$" ]; then rm -f "$STARTSH_PIDFILE"; fi
+}
+trap remove_pidfile EXIT
 
 # ── 4. （任意）ビルド ───────────────────────────────────────
 if [ "$DO_BUILD" -eq 1 ]; then
