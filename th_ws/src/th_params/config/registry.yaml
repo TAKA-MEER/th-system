@@ -1482,7 +1482,7 @@
   blocking_from_stage: 5
   consumers: [replay_runner]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-transit-localize-options.md §2"
-  note: "全域ローカライズの確度 s の下限（未満で widen の引き金・evt.localize_low）。P0 の模擬で成功最小 0.75〜0.97・失敗最大 0.87〜0.95 が重なるため出発点 0.8 はコードの既定値（LOCALIZE_DEFAULTS）に残し、registry は実スキャン（P6）の測定まで placeholder。値は変えない"
+  note: "全域ローカライズの確度 s の下限（未満で widen の引き金・evt.localize_low）。P0 の模擬で成功最小 0.75〜0.97・失敗最大 0.87〜0.95 が重なるため出発点 0.8 はコードの既定値（LOCALIZE_DEFAULTS）に残し、registry は実スキャン（P6）の測定まで placeholder。【2026-10-09 実機の最初の実測】正しい姿勢でも s=0.74〜0.79（m=0.26〜0.35）で 0.8 に届かず再生が LOCALIZE に留まったため、コードの既定値を 0.70 に下げた（別の場所の最良は s≈0.49）。きれいな地図での再測定で詰める"
 
 - name: localize_margin_low
   unit: ratio

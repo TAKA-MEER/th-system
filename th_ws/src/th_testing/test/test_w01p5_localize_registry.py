@@ -48,9 +48,10 @@ _EXPECTED = {
     "resume_max_dist_m": ("c", "placeholder"),
 }
 
-# P1〜P4 の仮置き値。変えたら P6 の実測として別作業にする（値は変えない）。
+# P1〜P4 の仮置き値。変えたら P6 の実測として別作業にする。
+# localize_match_low だけは 2026-10-09 の実機実測（localize_core.py の注記）で 0.8→0.70。
 _FALLBACK_VALUES = {
-    "localize_match_low": 0.8,
+    "localize_match_low": 0.70,
     "localize_margin_low": 0.2,
     "localize_margin_min": 0.05,
     "search_radius_m": 5.0,
