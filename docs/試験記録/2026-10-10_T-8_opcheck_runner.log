@@ -1,0 +1,49 @@
+[INFO] [1791583838.959811259] [opcheck_runner]: opcheck_runner 起動（v_check=0.05, deadman=0.5s）
+[INFO] [1791584546.578041306] [opcheck_runner]: 項目開始: ESTOP
+[WARN] [1791584548.088034567] [opcheck_runner]: 項目 ESTOP を中断
+[INFO] [1791584548.089954239] [opcheck_runner]: 項目開始: MOTOR
+[WARN] [1791584549.100200459] [opcheck_runner]: 項目 MOTOR を中断
+[INFO] [1791584549.108222218] [opcheck_runner]: 項目開始: ESTOP
+[WARN] [1791584553.630799883] [opcheck_runner]: OPCHECK を離脱（IDLE）→ 実行中の項目 ESTOP を中断する
+[WARN] [1791584553.633054236] [opcheck_runner]: 項目 ESTOP を中断
+[INFO] [1791584595.899666944] [opcheck_runner]: 項目開始: ESTOP
+[INFO] [1791584608.979293083] [opcheck_runner]: /system/event 発行: evt.check_result {"item": "ESTOP", "result": "OK"}
+[INFO] [1791584608.995284788] [opcheck_runner]: record_result(ESTOP) → 項目を閉じる
+[INFO] [1791584608.996068878] [opcheck_runner]: 項目 ESTOP を終了しました
+[INFO] [1791584612.753444184] [opcheck_runner]: 項目開始: MOTOR
+[INFO] [1791584619.907338467] [opcheck_runner]: MOTOR 押下開始: LEFT
+[INFO] [1791584619.908172025] [opcheck_runner]: /cmd_vel_behavior に指令（LEFT）
+[INFO] [1791584628.008209174] [opcheck_runner]: MOTOR 判定: NG (LEFT:sign_mismatch_L)
+[INFO] [1791584628.009048276] [opcheck_runner]: /system/event 発行: evt.check_result {"item": "MOTOR", "result": "NG"}
+[INFO] [1791584628.009685788] [opcheck_runner]: /cmd_vel_behavior を 0 にした
+[INFO] [1791584628.010892834] [opcheck_runner]: record_result(MOTOR) → 項目を閉じる
+[INFO] [1791584628.012953506] [opcheck_runner]: 項目 MOTOR を終了しました
+[INFO] [1791585072.864773800] [opcheck_runner]: 項目開始: IMU
+[INFO] [1791585074.965094028] [opcheck_runner]: IMU 判定: WARN (needs_calibration) bias=-0.000 maxwz=0.0021816615480929613
+[INFO] [1791585074.968391980] [opcheck_runner]: /system/event 発行: evt.check_result {"item": "IMU", "result": "NG"}
+[INFO] [1791585074.983214101] [opcheck_runner]: record_result(IMU) → 項目を閉じる
+[INFO] [1791585074.989257248] [opcheck_runner]: 項目 IMU を終了しました
+[INFO] [1791585078.148811531] [opcheck_runner]: 項目開始: LIDAR
+[INFO] [1791585078.199313732] [opcheck_runner]: /system/event 発行: evt.check_result {"item": "LIDAR", "result": "NG"}
+[INFO] [1791585078.204632149] [opcheck_runner]: record_result(LIDAR) → 項目を閉じる
+[INFO] [1791585078.206021067] [opcheck_runner]: 項目 LIDAR を終了しました
+[INFO] [1791585085.363347224] [opcheck_runner]: 項目開始: IMU
+[INFO] [1791585087.364667011] [opcheck_runner]: IMU 判定: WARN (needs_calibration) bias=0.000 maxwz=0.003272492438554764
+[INFO] [1791585087.368663280] [opcheck_runner]: /system/event 発行: evt.check_result {"item": "IMU", "result": "NG"}
+[INFO] [1791585087.381716012] [opcheck_runner]: record_result(IMU) → 項目を閉じる
+[INFO] [1791585087.382751724] [opcheck_runner]: 項目 IMU を終了しました
+[INFO] [1791585088.504947857] [opcheck_runner]: 項目開始: IMU
+[INFO] [1791585090.564495926] [opcheck_runner]: IMU 判定: WARN (needs_calibration) bias=0.000 maxwz=0.0021816615480929613
+[INFO] [1791585090.566722870] [opcheck_runner]: /system/event 発行: evt.check_result {"item": "IMU", "result": "NG"}
+[INFO] [1791585090.574400656] [opcheck_runner]: record_result(IMU) → 項目を閉じる
+[INFO] [1791585090.575672863] [opcheck_runner]: 項目 IMU を終了しました
+[INFO] [1791585125.777225698] [opcheck_runner]: 項目開始: IMU
+[INFO] [1791585127.864694331] [opcheck_runner]: IMU 判定: WARN (needs_calibration) bias=-0.001 maxwz=0.0021816615480929613
+[INFO] [1791585127.867078199] [opcheck_runner]: /system/event 発行: evt.check_result {"item": "IMU", "result": "NG"}
+[INFO] [1791585127.878076473] [opcheck_runner]: record_result(IMU) → 項目を閉じる
+[INFO] [1791585127.883828823] [opcheck_runner]: 項目 IMU を終了しました
+[INFO] [1791585203.359439835] [opcheck_runner]: 項目開始: IMU
+[INFO] [1791585205.364547071] [opcheck_runner]: IMU 判定: WARN (needs_calibration) bias=0.000 maxwz=0.003272492438554764
+[INFO] [1791585205.366424795] [opcheck_runner]: /system/event 発行: evt.check_result {"item": "IMU", "result": "NG"}
+[INFO] [1791585205.372566574] [opcheck_runner]: record_result(IMU) → 項目を閉じる
+[INFO] [1791585205.373688050] [opcheck_runner]: 項目 IMU を終了しました
