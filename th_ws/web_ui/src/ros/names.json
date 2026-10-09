@@ -144,6 +144,8 @@
     "angular_accel_rps2",
     "arrival_xy_tol_m",
     "arrive_dist_m",
+    "auto_brake_default_indoor",
+    "auto_brake_default_outdoor",
     "auto_select_hold_s",
     "autosave_period_ms",
     "battery_critical_v",

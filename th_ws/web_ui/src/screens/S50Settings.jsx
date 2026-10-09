@@ -40,6 +40,8 @@ import {
   S50_SEC_PRESET, S50_PRESET_NOTE, S50_PRESET_SAVE,
   S50_PRESET_REASON_LABEL, S50_PRESET_REASON_NEED, S50_PRESET_NEXT_PREFIX,
   S50_PRESET_ORDER_REASONS,
+  S50_SEC_BRAKE, S50_BRAKE_NOTE, S50_BRAKE_OUTDOOR, S50_BRAKE_INDOOR,
+  S50_BRAKE_OFF, S50_BRAKE_ON,
   S50_BLIND_GOTO_CALIB, S50_BLIND_NOTE,
   S50_FONT_TITLE, S50_FONT_NORMAL, S50_FONT_LARGE, S50_FONT_XLARGE,
   S50_DEV_TITLE, S50_DEV_ENABLE, S50_DEV_DISABLE, S50_DEV_NOTE,
@@ -80,6 +82,19 @@ const PRESET_FIELDS = [
   { name: 'speed_preset_high', label: '高速', unit: '割合', min: 0.05, max: 1, step: 0.01 },
 ]
 const PRESET_NAMES = PRESET_FIELDS.map((f) => f.name)
+
+// SG-C14: 自動ブレーキの既定（registry の auto_brake_default_*。
+// /params/get で効き値を読み、/params/set で出どころ付きで保存する。
+// 走行中の値は変えない＝次の起動から効く。state_manager が起動時に読む）。
+const BRAKE_FIELDS = [
+  { name: 'auto_brake_default_outdoor', label: S50_BRAKE_OUTDOOR },
+  { name: 'auto_brake_default_indoor', label: S50_BRAKE_INDOOR },
+]
+const BRAKE_NAMES = BRAKE_FIELDS.map((f) => f.name)
+const BRAKE_OPTIONS = [
+  { value: 'off', label: S50_BRAKE_OFF },
+  { value: 'on', label: S50_BRAKE_ON },
+]
 
 // SG-B9: 廃止予定ノードの項目のうち上限が registry と食い違うものは、
 // registry の値を超えて保存できないようにする（対象: mapless の v_max。
@@ -207,6 +222,10 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   const [presetPending, setPresetPending] = useState({})
   const [presetDraft, setPresetDraft] = useState({})
   const [presetReason, setPresetReason] = useState('')
+  // ── SG-C14: 自動ブレーキ既定区画（preset と同じ /params 経路）──
+  const [brakeEff, setBrakeEff] = useState({})
+  const [brakeDraft, setBrakeDraft] = useState({})
+  const [brakeReason, setBrakeReason] = useState('')
 
   const reload = useCallback(() => {
     setLoading(true)
@@ -251,6 +270,13 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
       setPresetDraft({ ...(payload?.effective ?? {}), ...(payload?.pending ?? {}) })
     }).catch(() => {
       setStatus((s) => ({ ...s, preset: S50_LOAD_FAILED }))
+    })
+    // SG-C14: 自動ブレーキの既定も同じ経路で読む（次に効く値を編集の出発点にする）。
+    getParams(BRAKE_NAMES).then((payload) => {
+      setBrakeEff(payload?.effective ?? {})
+      setBrakeDraft({ ...(payload?.effective ?? {}), ...(payload?.pending ?? {}) })
+    }).catch(() => {
+      setStatus((s) => ({ ...s, brake: S50_LOAD_FAILED }))
     })
   }, [getTunableParams, getParams])
 
@@ -327,6 +353,40 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
       })))
   }
   const presetDiffs = pendingDiff(PRESET_NAMES, presetEff, presetPending)
+
+  // SG-C14: 自動ブレーキ既定の保存（/params/set。出どころ必須＝PT-4）。
+  // 即時の set_parameters はしない（走行中の値は変えない。次の起動から効く）。
+  const applyBrake = (name) => (value) => {
+    if (value !== 'on' && value !== 'off') return
+    setBrakeDraft((prev) => ({ ...prev, [name]: value }))
+  }
+  const saveBrake = () => {
+    if (!brakeReason) {
+      setStatus((s) => ({ ...s, brake: S50_PRESET_REASON_NEED }))
+      return
+    }
+    setStatus((s) => ({ ...s, brake: S50_SAVING }))
+    const values = {}
+    for (const name of BRAKE_NAMES) {
+      if (brakeDraft[name] !== brakeEff[name]) values[name] = brakeDraft[name]
+    }
+    if (Object.keys(values).length === 0) {
+      setStatus((s) => ({ ...s, brake: S50_SAVED }))
+      return
+    }
+    setParams(values, 'web_ui', brakeReason)
+      .then((res) => {
+        if (res?.success) {
+          setStatus((s) => ({ ...s, brake: S50_SAVED }))
+          reload()
+        } else {
+          setStatus((s) => ({ ...s, brake: `${S50_SAVE_FAILED}: ${res?.message ?? ''}` }))
+        }
+      })
+      .catch((e) => setStatus((s) => ({
+        ...s, brake: `${S50_SAVE_FAILED}: ${e.message ?? e}`,
+      })))
+  }
 
   // ── 表示タブ ──
   const [fontScale, setFontScale] = useState(() => readFontScale())
@@ -500,6 +560,51 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
                 disabled={!editable || loading}
                 onChange={(e) => setPresetReason(e.target.value)}
                 data-testid="s50-preset-reason"
+              />
+            </label>
+          </div>
+
+          <div className="card">
+            <div className="row" style={{ marginBottom: 8 }}>
+              <h3 className="grow" style={{ margin: 0 }}>{S50_SEC_BRAKE}</h3>
+              <button
+                type="button"
+                className="btn save sm"
+                disabled={!editable || loading}
+                onClick={saveBrake}
+                data-testid="s50-save-brake"
+              >
+                {S50_PRESET_SAVE}
+              </button>
+            </div>
+            {status.brake && <p className="note" data-testid="s50-status-brake">{status.brake}</p>}
+            <p className="note">{S50_BRAKE_NOTE}</p>
+            <div className="s50-grid">
+              {BRAKE_FIELDS.map((f) => (
+                <label className="s50-field" key={f.name}>
+                  <span className="s50-field-label">{f.label}</span>
+                  <select
+                    value={brakeDraft[f.name] ?? ''}
+                    disabled={!editable || loading || !(f.name in brakeDraft)}
+                    onChange={(e) => applyBrake(f.name)(e.target.value)}
+                    data-testid={`s50-brake-${f.name === BRAKE_NAMES[0] ? 'outdoor' : 'indoor'}`}
+                  >
+                    {!(f.name in brakeDraft) && <option value="">—</option>}
+                    {BRAKE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+            <label className="s50-field">
+              <span className="s50-field-label">{S50_PRESET_REASON_LABEL}</span>
+              <input
+                type="text"
+                value={brakeReason}
+                disabled={!editable || loading}
+                onChange={(e) => setBrakeReason(e.target.value)}
+                data-testid="s50-brake-reason"
               />
             </label>
           </div>

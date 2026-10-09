@@ -598,6 +598,17 @@ export const S50_PRESET_SAVE = '保存（再起動後に反映）'
 export const S50_PRESET_REASON_LABEL = '変えた理由（必須）'
 export const S50_PRESET_REASON_NEED = '変えた理由を入れてください'
 export const S50_PRESET_NEXT_PREFIX = '次回から'
+// SG-C14: 自動ブレーキの既定（場外の手動・場内）。S-50 で変えた既定は
+// 再起動後も維持する（/params/set 経由。次の起動から効く）。
+export const S50_SEC_BRAKE = '自動ブレーキの既定'
+export const S50_BRAKE_NOTE =
+  '場外の手動は既定 OFF（警告のみ）、場内は既定 ON（Spec-safety §2.1）。'
+  + '「保存」は走行中の値に触れません。次の起動から有効になります。'
+  + '自律系の無効化不可・ゾーン不明時の ON は変わりません（安全側）。'
+export const S50_BRAKE_OUTDOOR = '場外の手動'
+export const S50_BRAKE_INDOOR = '場内'
+export const S50_BRAKE_OFF = 'OFF'
+export const S50_BRAKE_ON = 'ON'
 // SG-C14: 速度プリセット 3 段階の順序（低速≦中速≦高速、高の天井は 100%）。
 // 違反は保存不可。キーは ros/presetOrder.js の presetOrderError と揃える。
 export const S50_PRESET_ORDER_REASONS = {

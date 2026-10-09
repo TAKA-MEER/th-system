@@ -499,9 +499,10 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`w_jog_max`** | rad/s | (b) | **手動ジョグの旋回上限**。`jog_gate` が `/cmd_vel_manual_raw` の比率に掛ける（W-07） |
 | **`w_align_max`** | rad/s | (b) | **`d_floor` を割っている間の角速度上限**（safety L3） |
 | `speed_preset_low` ／ `_mid` ／ `_high` | 比率 | given | UI プリセット。**上限に対する割合**。`consumers: [web_ui]` |
+| `auto_brake_default_outdoor` ／ `auto_brake_default_indoor` | on/off | given | S-50 で変える自動ブレーキの既定（場外の手動系／場内）。`consumers: [state_manager]`。Spec-safety §2.1 |
 | `drivetrain_ceiling_mps` | m/s | (b) | 出力上限 ÷ フィードフォワード係数 |
 | **`v_max_headroom_ratio`** | — | given | `v_max` を天井の何割にするか（補正の余地を残す） |
-| **`venue_clearance_m`** ／ **`blind_clearance_m`** ／ **`panel_clearance_m`** | m | (a)／方針値 | `v_slow` ／ `v_reverse` ／ `v_jog_panel` の逆算元 |
+| **`venue_clearance_m`** ／ **`blind_clearance_m`** ／ **`panel_clearance_m`** | m | (a)／方針値 | `v_slow`・`v_reverse` ／ `v_jog_panel` の逆算元（`blind_clearance_m` は現構成では未使用。2026-10-09） |
 
 ### 7.2 距離
 

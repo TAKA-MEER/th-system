@@ -215,6 +215,24 @@
   spec_ref: "DetailedDesign-names.md §7.1"
   note: "UI プリセット。手動ジョグの上限（v_jog_max）に対する割合。高速は上限そのまま（1.0×0.55=0.55 m/s。W-07 で割合に戻した）"
 
+- name: auto_brake_default_outdoor
+  unit: null
+  class: b
+  status: given
+  value: 'off'
+  consumers: [state_manager]
+  spec_ref: "DetailedDesign-names.md §7.1 / Spec-safety.md §2.1"
+  note: "S-50 で変える自動ブレーキの既定（場外の手動系。'on'/'off'）。state_manager が MANUAL / TEACH_MANUAL の attributes 既定に優先して使う。既定 'off'（Spec-safety §2.1）。ゾーン NA は値に関わらず ON（安全側）"
+
+- name: auto_brake_default_indoor
+  unit: null
+  class: b
+  status: given
+  value: 'on'
+  consumers: [state_manager]
+  spec_ref: "DetailedDesign-names.md §7.1 / Spec-safety.md §2.1"
+  note: "S-50 で変える自動ブレーキの既定（場内。'on'/'off'）。state_manager のゾーン既定に使う。既定 'on'（Spec-safety §2.1）。ゾーン NA は値に関わらず ON（安全側）"
+
 # =========================================================================
 # 7.2 距離（names §7.2・§7.5 / params §6.1〜§6.4）
 # =========================================================================

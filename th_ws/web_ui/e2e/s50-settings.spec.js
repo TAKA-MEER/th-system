@@ -236,3 +236,48 @@ test('速度プリセットの順序違反は保存不可で理由を表示す�
   await expect(page.getByTestId('s50-save-preset')).toBeDisabled()
   expect(await paramsSetCalls(page)).toHaveLength(0)
 })
+
+// SG-C14: 自動ブレーキの既定（場外の手動・場内）は /params/set で保存し、
+// 次の起動から効く。理由なしでは送らない（PT-4）。
+test('自動ブレーキ既定区画は /params/set で保存する', async ({ page }) => {
+  await gotoScreenWithParams(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
+    get: (names) => {
+      const all = {
+        effective: {
+          speed_preset_low: 0.27, speed_preset_mid: 0.55, speed_preset_high: 1.0,
+          auto_brake_default_outdoor: 'off', auto_brake_default_indoor: 'on',
+        },
+        pending: {},
+        origins: {},
+        restart_required: false,
+      }
+      return {
+        effective: Object.fromEntries(names.map((n) => [n, all.effective[n]])),
+        pending: {},
+        origins: {},
+        restart_required: false,
+      }
+    },
+    set: { success: true, message: 'OK' },
+  })
+  await page.getByTestId('s01-open-settings').click()
+  await expect(page.locator('#s50')).toBeVisible()
+
+  await expect(page.getByTestId('s50-brake-outdoor')).toHaveValue('off')
+  await expect(page.getByTestId('s50-brake-indoor')).toHaveValue('on')
+
+  // 理由なしでは送らない。
+  await page.getByTestId('s50-save-brake').click()
+  await expect(page.getByTestId('s50-status-brake')).toContainText('理由')
+  expect(await paramsSetCalls(page)).toHaveLength(0)
+
+  // 場外の既定を ON に変えて保存すると /params/set が呼ばれる。
+  await page.getByTestId('s50-brake-outdoor').selectOption('on')
+  await page.getByTestId('s50-brake-reason').fill('場内で試す')
+  await page.getByTestId('s50-save-brake').click()
+  const calls = await paramsSetCalls(page)
+  expect(calls).toHaveLength(1)
+  expect(calls[0].setBy).toBe('web_ui')
+  expect(calls[0].reason).toBe('場内で試す')
+  expect(calls[0].values).toEqual({ auto_brake_default_outdoor: 'on' })
+})
