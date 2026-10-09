@@ -241,22 +241,17 @@ test('速度プリセットの順序違反は保存不可で理由を表示す�
 // 次の起動から効く。理由なしでは送らない（PT-4）。
 test('自動ブレーキ既定区画は /params/set で保存する', async ({ page }) => {
   await gotoScreenWithParams(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
-    get: (names) => {
-      const all = {
-        effective: {
-          speed_preset_low: 0.27, speed_preset_mid: 0.55, speed_preset_high: 1.0,
-          auto_brake_default_outdoor: 'off', auto_brake_default_indoor: 'on',
-        },
-        pending: {},
-        origins: {},
-        restart_required: false,
-      }
-      return {
-        effective: Object.fromEntries(names.map((n) => [n, all.effective[n]])),
-        pending: {},
-        origins: {},
-        restart_required: false,
-      }
+    // get は object 形式（addInitScript の引数は関数を運べない）。
+    // プリセット区画と既定区画の両方が同じ get を呼ぶので、5 件まとめて返す
+    // （各区画は自分の名前だけ読む）。
+    get: {
+      effective: {
+        speed_preset_low: 0.27, speed_preset_mid: 0.55, speed_preset_high: 1.0,
+        auto_brake_default_outdoor: 'off', auto_brake_default_indoor: 'on',
+      },
+      pending: {},
+      origins: {},
+      restart_required: false,
     },
     set: { success: true, message: 'OK' },
   })
