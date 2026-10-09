@@ -209,7 +209,7 @@ export default function S13TeachManual({ onFinish }) {
 
   return (
     <div className="screen two-col" id="s13">
-      <div>
+      <div className="left-col">
         <div className="top-actions sticky">
           <button
             type="button"

@@ -36,6 +36,7 @@ import {
   S50_BACK, S50_TAB_GENERAL, S50_TAB_DISPLAY, S50_TAB_DEV, S50_GUARD,
   S50_SAVE_YAML, S50_SAVING, S50_SAVED, S50_SAVE_FAILED, S50_LOAD_FAILED,
   S50_SEC_FOLLOW, S50_SEC_LIDAR, S50_SEC_SLAM, S50_SLAM_NOTE,
+  S50_SEC_FOLLOW_TAB, S50_SEC_LIDAR_TAB, S50_SEC_SLAM_TAB, S50_SEC_PRESET_TAB,
   S50_SEC_PRESET, S50_PRESET_NOTE, S50_PRESET_SAVE,
   S50_PRESET_REASON_LABEL, S50_PRESET_REASON_NEED, S50_PRESET_NEXT_PREFIX,
   S50_BLIND_GOTO_CALIB, S50_BLIND_NOTE,
@@ -149,6 +150,13 @@ function NumberField({ label, unit, value, min, max, step, disabled, onCommit })
   )
 }
 
+const SECTION_TABS = [
+  ['follow', S50_SEC_FOLLOW_TAB],
+  ['lidar', S50_SEC_LIDAR_TAB],
+  ['slam', S50_SEC_SLAM_TAB],
+  ['preset', S50_SEC_PRESET_TAB],
+]
+
 function Section({ title, note, saveKey, status, editable, loading, onSave, children }) {
   return (
     <div className="card">
@@ -190,6 +198,9 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   const editable = mapOrParamOpAllowed(state, stale)
 
   const [tab, setTab] = useState(initialTab)
+  // 一般タブの区画（追従 / LiDAR / SLAM / 速度プリセット）。1 画面に全部は並ばないので
+  // 区画ごとに出す（スクロール無しで収めるため。2026-10-10）。
+  const [section, setSection] = useState('follow')
 
   // ── 一般タブ ──
   const [mapless, setMapless] = useState({})
@@ -391,7 +402,23 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
       )}
 
       {tab === 'general' && (
-        <div className="tabpane on">
+        <div className="tabpane on s50-general">
+          <div className="tabs s50-sections" role="tablist">
+            {SECTION_TABS.map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={section === key}
+                className={`tab ${section === key ? 'on' : ''}`}
+                onClick={() => setSection(key)}
+                data-testid={`s50-sec-${key}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {section === 'follow' && (
           <Section
             title={S50_SEC_FOLLOW} saveKey="follow_planner_mapless"
             status={status.follow_planner_mapless} editable={editable} loading={loading}
@@ -409,7 +436,9 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
               />
             ))}
           </Section>
+          )}
 
+          {section === 'lidar' && (
           <div className="card">
             <div className="row" style={{ marginBottom: 8 }}>
               <h3 className="grow" style={{ margin: 0 }}>{S50_SEC_LIDAR}</h3>
@@ -428,7 +457,9 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
             </p>
             {calibErr && <p className="note" data-testid="s50-calib-err">{calibErr}</p>}
           </div>
+          )}
 
+          {section === 'slam' && (
           <Section
             title={S50_SEC_SLAM} saveKey="slam_toolbox" note={S50_SLAM_NOTE}
             status={status.slam_toolbox} editable={editable} loading={loading}
@@ -444,7 +475,9 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
               />
             ))}
           </Section>
+          )}
 
+          {section === 'preset' && (
           <div className="card">
             <div className="row" style={{ marginBottom: 8 }}>
               <h3 className="grow" style={{ margin: 0 }}>{S50_SEC_PRESET}</h3>
@@ -489,6 +522,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
               />
             </label>
           </div>
+          )}
         </div>
       )}
 
@@ -514,7 +548,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
       )}
 
       {tab === 'dev' && (
-        <div className="tabpane on">
+        <div className="tabpane on s50-dev">
           <div className="card">
             <h3>{S50_DEV_TITLE}</h3>
             <p className="note">{S50_DEV_NOTE}</p>
@@ -530,7 +564,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
           </div>
           <div className="card">
             <h3>{S50_DEV_ITEMS_TITLE}</h3>
-            <div className="s50-grid">
+            <div className="s50-grid s50-dev-items">
               {DEV_ITEM_META.map(({ item, label, desc }) => (
                 <div key={item}>
                   <button
@@ -548,6 +582,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
             </div>
             <p className="note" data-testid="s50-dev-no-gate">{S50_DEV_NO_GATE}</p>
           </div>
+          <div className="s50-dev-stack">
           <div className="card">
             <h3>{S50_DEV_EFFECTIVE_TITLE}</h3>
             <p data-testid="s50-dev-effective">{devEffectiveText(devState)}</p>
@@ -556,6 +591,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
             )}
           </div>
           <p className="note" data-testid="s50-dev-scope">{S50_DEV_SCOPE_NOTE}</p>
+          </div>
         </div>
       )}
     </div>

@@ -227,8 +227,50 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
     }
   }
 
+  const renderGroup = (group) => (
+    <div className="card" key={group.key}>
+      <h3>{GROUP_TITLES[group.key]}</h3>
+      {/* 1b-11 SG-B13: 教示は保管場所起点（Spec-transit.md §0.6・§3.5）。
+          判定は人の責任なので S-01 に常時案内を出す
+          （DetailedDesign-transit.md §0.4）。 */}
+      {group.key === 'move' && <div className="note">{S01_TEACH_NOTE}</div>}
+      <div className="btnrow n2">
+        {group.modes.map((m) => {
+          const item = items.find((it) => it.mode === m)
+          return (
+            <button
+              key={m}
+              type="button"
+              className={`btn ${item.enabled ? '' : 'dis'}`}
+              disabled={disabledAll}
+              onClick={() => handleMenuClick(item)}
+              data-testid={`s01-mode-${m}`}
+            >
+              {modeLabel(m)}
+            </button>
+          )
+        })}
+      </div>
+      {/* WS-9X: 「設定」は FSM のモードではないので menuItems() も
+          .btnrow（モード選択ボタンのグリッド）にも入れない。S-50 を開く
+          だけ（onOpenSettings）。stale / INIT でも設定は読めるように
+          disabledAll では切らない。 */}
+      {group.key === 'maint' && onOpenSettings && (
+        <button
+          type="button"
+          className="btn wide mt"
+          onClick={onOpenSettings}
+          data-testid="s01-open-settings"
+        >
+          {S01_SETTINGS}
+        </button>
+      )}
+    </div>
+  )
+
   return (
     <div className="screen" id="s01">
+      <div className="split-col">
       {/* ネットワーク接続確認の要約（Spec-webui.md §3.2・Spec-ops.md §2.6）。
           S-00 と同じ警告を出す。警告だけでボタン類の活性は変えない（C-r4）。
           タップで S-00 相当の詳細へ。 */}
@@ -266,46 +308,10 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
           </button>
         )}
       </div>
-      {MENU_GROUPS.map((group) => (
-        <div className="card" key={group.key}>
-          <h3>{GROUP_TITLES[group.key]}</h3>
-          {/* 1b-11 SG-B13: 教示は保管場所起点（Spec-transit.md §0.6・§3.5）。
-              判定は人の責任なので S-01 に常時案内を出す
-              （DetailedDesign-transit.md §0.4）。 */}
-          {group.key === 'move' && <div className="note">{S01_TEACH_NOTE}</div>}
-          <div className="btnrow n2">
-            {group.modes.map((m) => {
-              const item = items.find((it) => it.mode === m)
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  className={`btn ${item.enabled ? '' : 'dis'}`}
-                  disabled={disabledAll}
-                  onClick={() => handleMenuClick(item)}
-                  data-testid={`s01-mode-${m}`}
-                >
-                  {modeLabel(m)}
-                </button>
-              )
-            })}
-          </div>
-          {/* WS-9X: 「設定」は FSM のモードではないので menuItems() も
-              .btnrow（モード選択ボタンのグリッド）にも入れない。S-50 を開く
-              だけ（onOpenSettings）。stale / INIT でも設定は読めるように
-              disabledAll では切らない。 */}
-          {group.key === 'maint' && onOpenSettings && (
-            <button
-              type="button"
-              className="btn wide mt"
-              onClick={onOpenSettings}
-              data-testid="s01-open-settings"
-            >
-              {S01_SETTINGS}
-            </button>
-          )}
-        </div>
-      ))}
+      {MENU_GROUPS.filter((g) => g.key === 'move').map(renderGroup)}
+      </div>
+      <div className="split-col">
+      {MENU_GROUPS.filter((g) => g.key !== 'move').map(renderGroup)}
 
       {needsFinishEscape(mode) && (
         <div className="card">
@@ -359,6 +365,8 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
             <div className="hint mt">{SHUTDOWN_HINT}</div>
           </>
         )}
+      </div>
+
       </div>
 
       {activeWindow?.kind === 'reason' && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(

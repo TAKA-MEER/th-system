@@ -162,7 +162,7 @@ export default function S14Replay({ onFinish }) {
 
   return (
     <div className="screen two-col" id="s14">
-      <div>
+      <div className="left-col">
         <div className="top-actions sticky">
           <button
             type="button"
@@ -180,7 +180,8 @@ export default function S14Replay({ onFinish }) {
           </div>
         </div>
 
-        <div className="tabpane on">
+        <div className="tabpane on pane-grid">
+         <div className="pane-col">
           <div className="card">
             <h3>{S14_SELECT_TITLE}</h3>
             {empty ? (
@@ -243,6 +244,8 @@ export default function S14Replay({ onFinish }) {
             targetIndex={routeStatus?.target_index ?? -1}
           />
 
+         </div>
+         <div className="pane-col">
           <div className="card">
             <h3>{S14_POSE_TITLE}</h3>
             <div className="note" data-testid="s14-pose">
@@ -315,6 +318,7 @@ export default function S14Replay({ onFinish }) {
               disabled={disabledAll}
             />
           </div>
+         </div>
         </div>
       </div>
 

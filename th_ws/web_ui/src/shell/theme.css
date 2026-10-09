@@ -219,11 +219,27 @@ table{border-collapse:collapse;width:100%}
 /* WS-9X: 横長では S-01 をスクロール無しのハブに、S-50 の各タブを 2 列に
    (docs/plan/spec/mockup/index.html L168-177 相当。実 DOM は .active クラス無し)。 */
 @container app (min-width:1000px){
-  #s01{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;align-items:start}
-  #s01 .card{margin-bottom:0}
-  #s01 .card:first-child{grid-row:span 3}   /* 「移動」カードを左列に立てる */
+  /* S-01: 左列＝接続確認＋移動、右列＝試験場＋保守・設定＋運用の終了。S-00: 左列＝
+     疎通確認の表、右列＝総合＋自動判定。2 つの列は独立した縦積み（.split-col）なので、
+     片方が伸びても他方の行がずれない（本文 592px に収める）。縦長では .split-col は
+     ただの縦積みで、DOM 順がそのまま上から下の順になる。 */
+  #s01,#s00{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;align-items:start}
+  #s01 .card,#s00 .card{margin-bottom:0}
+  #s01 .split-col,#s00 .split-col{display:flex;flex-direction:column;gap:10px;min-width:0}
   #s50 .tabpane.on{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
   #s50 .tabpane.on > .card{margin-bottom:0}
+  /* 一般タブは区画を 1 つずつ全幅で出す（区画の切替は .s50-sections）。 */
+  #s50 .tabpane.on.s50-general{grid-template-columns:1fr}
+  /* 開発モード: 左＝有効化・現在の状態、右＝項目（ボタン｜説明の行）。 */
+  #s50 .tabpane.on.s50-dev{grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-rows:auto minmax(0,1fr)}
+  #s50 .s50-dev > .card:nth-child(1){grid-column:1;grid-row:1}
+  #s50 .s50-dev > .card:nth-child(2){grid-column:2;grid-row:1 / span 2}
+  #s50 .s50-dev > .s50-dev-stack{grid-column:1;grid-row:2;display:flex;flex-direction:column;gap:10px}
+  #s50 .s50-dev-stack > .card{margin-bottom:0}
+  #s50 .s50-dev-items{grid-template-columns:1fr;gap:6px}
+  #s50 .s50-dev-items > div{display:grid;grid-template-columns:212px 1fr;gap:8px;align-items:center}
+  #s50 .s50-dev-items .btn{padding-top:8px;padding-bottom:8px}
+  #s50 .s50-dev-items > div > .note{margin:0}
 }
 
 /* ---------- generic pieces ---------- */
@@ -242,6 +258,9 @@ table{border-collapse:collapse;width:100%}
    canvas は常時マウントし、データが無い間だけオーバレイ文言を重ねる（DOM を差し替えない
    ので #4 の点滅がさらに減る）。 */
 .routePreview{position:relative}
+/* 縦長（高さに余裕はあるが、S-14 の再生中は経路からのずれのカードが増える）では
+   プレビューを少し低くして本文に収める。横長は S-13/S-14 側が残りの高さで決める。 */
+@container app (max-width:999px){ .route-preview{max-height:min(32cqh,240px)} }
 .routePreviewOverlay{position:absolute;inset:0;display:grid;place-items:center;
   margin:0;pointer-events:none;color:var(--mut)}
 /* WS-4 / demo-teach-replay: 走行スティック下のキーボード操作の凡例。
@@ -418,6 +437,8 @@ table.lst td.r{text-align:right}
 
 /* ---------- S-50 設定のパラメータ入力（WS-9X。screens/S50Settings.jsx） ----------
    数値フィールドを詰めて並べる。指で触れる高さは確保する。 */
+.s50-sections{margin-bottom:9px}
+.s50-dev-stack{display:contents}
 .s50-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px 12px}
 .s50-field{display:flex;flex-direction:column;gap:3px;font-size:calc(var(--fs) * .82)}
 .s50-field-label{color:var(--mut);line-height:1.3}
@@ -732,6 +753,35 @@ table.lst td.r{text-align:right}
 .screen#s20 .subtabs,.screen#s21 .subtabs{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
 .screen#s20 .subtabs .tabpane.on,.screen#s21 .subtabs .tabpane.on{flex:1 1 auto;min-height:0;overflow-y:auto}
 
+/* ---------- 横長で S-13 / S-14 を #body の高さに収める（2026-10-10） ----------
+   S-20/S-21 と同じ考え方（上の UX-5）。.screen に上限つきの height を通し、
+   左列の中で「経路プレビュー」だけが残りの高さを埋める（flex:1・下限 120px）。
+   プレビューは canvas を絶対配置で枠いっぱいに置き、object-fit:contain で
+   縦横比を保つので、枠が低くなっても歪まない。S-14 は左列の本文が多いので
+   .pane-grid で 2 列（経路選択＋地図 | 状態の各カード）に割る。縦長は従来どおり
+   縦積み（.pane-grid は横長のときだけ grid）。 */
+@container app (min-width:1000px){
+  .screen#s13,.screen#s14{height:100%;min-height:0}
+  .screen#s13.two-col,.screen#s14.two-col{grid-template-rows:minmax(0,1fr);align-items:stretch}
+  .screen#s13.two-col > div,.screen#s14.two-col > div{min-height:0}
+  .screen#s13 .left-col,.screen#s14 .left-col{display:flex;flex-direction:column}
+  .screen#s13 .left-col .tabpane.on,.screen#s14 .left-col .tabpane.on{flex:1 1 auto;min-height:0}
+  .screen#s13 .left-col .tabpane.on{display:flex;flex-direction:column}
+  .screen#s14 .left-col .tabpane.on.pane-grid{display:grid;grid-template-columns:1fr 1fr;
+    grid-template-rows:minmax(0,1fr);gap:10px}
+  .pane-col{display:flex;flex-direction:column;min-height:0;min-width:0}
+  .pane-col > .card,.screen#s13 .tabpane > .card{flex:none}
+  /* S-13 の既存経路の一覧は、地図（経路プレビュー）の下限 120px を残すため低めに。 */
+  .screen#s13 .lst-scroll{max-height:clamp(96px,18cqh,130px)}
+  .screen#s13 .routePreview,.screen#s14 .routePreview{flex:1 1 120px;min-height:120px;margin-bottom:10px}
+  .screen#s13 .routePreview canvas,.screen#s14 .routePreview canvas{
+    position:absolute;inset:0;width:100%;height:100%;max-height:none}
+}
+
+/* S-14 の再生速度は 3 つ横並び（カード内の縦積み 3 段は高さを食うだけ）。 */
+.screen#s14 .pane-col .spd{flex-direction:row;flex:none}
+.screen#s14 .pane-col .spd .btn{flex:1 1 0}
+
 /* UX-7: S-21 の右列で、手順の中身（.tabpane）に高さを回すための引き算。
    - 準備カードの「会場地図を開く」「宣言する」を 1 行に並べる（2 行 → 1 行）
    - 状態表示と「地図の更新 OFF」の印を 1 行に並べる（2 行 → 1 行）
@@ -740,6 +790,81 @@ table.lst td.r{text-align:right}
 .screen#s21 .s21-prep-row .grow{flex:1 1 auto;min-width:0}
 .screen#s21 .s21-state-row{display:flex;align-items:center;gap:8px;margin-top:9px}
 .screen#s21 .s21-state-row .state{margin-top:0;min-width:0}
+
+/* 横長の S-21: 右列の縦を詰めて「行き先」タブを（ピン未登録の既定状態で）スクロール
+   無しに収める（2026-10-10。空のとき 65px 溢れていた）。
+   - 右列を格子にして、主ボタン（次にやること）と状態行を同じ行に並べる。
+     最後の行（手順タブ）だけが残りの高さを取る。ボタンの位置（操作カードの格子）は動かさない。
+   - 手順バーと左右列の間・タブ見出しの余白を詰める。 */
+@container app (min-width:1000px){
+  .screen#s21.two-col > div:last-child{display:grid;
+    grid-template-columns:minmax(0,36fr) minmax(0,64fr);grid-template-rows:auto auto auto minmax(0,1fr);
+    column-gap:10px;row-gap:0;align-content:start}
+  .screen#s21.two-col > div:last-child > .next-action{grid-column:1;grid-row:1}
+  .screen#s21.two-col > div:last-child > .s21-state-row{grid-column:2;grid-row:1;margin-top:0;
+    flex-wrap:wrap}
+  .screen#s21.two-col > div:last-child > .card.ops{grid-column:1 / -1;grid-row:2}
+  .screen#s21.two-col > div:last-child > .s21-blocked{grid-column:1 / -1;grid-row:3}
+  .screen#s21.two-col > div:last-child > .subtabs{grid-column:1 / -1;grid-row:4;min-height:0}
+  .screen#s21.two-col > .stepbar-cell{margin-bottom:0}
+  .screen#s21 .subtabs > .tabs{margin-bottom:5px}
+  .screen#s21 .subtabs > .tabs .tab{padding-top:7px;padding-bottom:7px}
+  .screen#s21 .subtabs .card{padding:8px 10px;margin-bottom:8px}
+  .screen#s21 .subtabs .card > h3{margin-bottom:5px}
+  .screen#s21 .opsgrid .btn{padding-top:calc(var(--fs) * .45);padding-bottom:calc(var(--fs) * .45)}
+  .screen#s21 .next-action{padding-top:calc(var(--fs) * .5);padding-bottom:calc(var(--fs) * .5);margin-bottom:8px}
+  .screen#s21 .subtabs .btn{padding-top:calc(var(--fs) * .5);padding-bottom:calc(var(--fs) * .5)}
+  .screen#s21 .subtabs .btn.sm{padding-top:5px;padding-bottom:5px}
+  .screen#s21 .subtabs .mb{margin-bottom:5px}
+}
+
+/* ピン一覧（S-20 ピンタブ・S-21 行き先）は 2 列。1 行 1 ピンの縦積みだと
+   6 本で枠（上限 24cqh）を超えて枠内スクロールになる。2 列にして 3 行に収める。
+   行の中身（名前・向き・ボタン）はそのまま、両端に寄せて並べる。 */
+@container app (min-width:760px){
+  .pin-list table.lst,.pin-list table.lst tbody{display:block}
+  .pin-list table.lst tbody{display:grid;grid-template-columns:1fr 1fr;column-gap:14px}
+  .pin-list table.lst tr{display:flex;align-items:center;gap:8px;min-width:0}
+  .pin-list table.lst td{border-bottom:none;padding:2px}
+  .pin-list table.lst tr{border-bottom:1px solid var(--bd)}
+  .pin-list table.lst td:first-child{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
+
+/* LiDAR 死角の図（S-30 の LiDAR 点検）。幅なりに最大 420px。 */
+.scan-mask-svg{width:100%;max-width:420px}
+
+/* 横長の S-40 LiDAR 死角: 図（420px 四方）を縦に積むと右列のカードが本文を 213px 超える。
+   図を左、説明・一覧・ボタンを右に並べる（図は 270px まで。扇形の指定には足りる）。 */
+@container app (min-width:1000px){
+  .s40-blind{display:grid;grid-template-columns:minmax(0,270px) minmax(0,1fr);column-gap:12px;align-items:start}
+  .s40-blind > :first-child{grid-column:1 / -1}
+  .s40-blind > .s40-blind-svg{grid-column:1;grid-row:2 / span 8}
+  .s40-blind > :not(.s40-blind-svg):not(:first-child){grid-column:2}
+}
+
+/* 横長の S-30（モーター確認）: 4 方向ボタンと車輪速の図を少し詰めて、右列のカードを
+   本文の高さに収める（33px 溢れていた）。 */
+@container app (min-width:1000px){
+  #s30 .hold-btn{min-height:48px}
+  #s30 .hold-grid{margin:6px 0;gap:6px}
+  #s30 .wheel-speed-svg{max-width:300px}
+  #s30 .scan-mask-svg{max-width:min(420px,44cqh)}
+}
+
+/* 横長の S-20 も同じ詰め方（登録タブが 57px 溢れていた）。状態ラベルは行を取らず、
+   手順タブの行の右の空きに重ねる（タブは左に寄っていて右半分は空いている。
+   ラベルは pointer-events:none でタブを邪魔しない）。 */
+@container app (min-width:1000px){
+  .screen#s20.two-col > div:last-child > .state{
+    position:relative;z-index:1;pointer-events:none;margin:0 0 -44px;height:44px;
+    display:flex;align-items:center;justify-content:flex-end;padding-right:8px}
+  .screen#s20.two-col > .stepbar-cell{margin-bottom:0}
+  .screen#s20 .subtabs > .tabs{margin-bottom:5px}
+  .screen#s20 .subtabs > .tabs .tab{padding-top:7px;padding-bottom:7px}
+  .screen#s20 .subtabs .card{padding:8px 10px;margin-bottom:8px}
+  .screen#s20 .subtabs .card > h3{margin-bottom:5px}
+  .screen#s20 .opsgrid .btn{padding-top:calc(var(--fs) * .45);padding-bottom:calc(var(--fs) * .45)}
+}
 
 /* ---------- S-30 始業点検（WP-UI-08。screens/S30Opcheck.jsx） ---------- */
 /* 一覧の行（4項目）。押せる行は clickable、実行中は強調。 */

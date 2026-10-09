@@ -877,7 +877,7 @@ export default function S20Prep() {
                 {pins.length === 0 ? (
                   <div className="note" data-testid="s20-pins-empty">{S20_PIN_EDIT}</div>
                 ) : (
-                  <div className="lst-scroll">
+                  <div className="lst-scroll pin-list">
                     <table className="lst">
                       <tbody>
                         {pins.map((pin) => (

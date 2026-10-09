@@ -576,6 +576,11 @@ export const S50_SAVE_FAILED = '保存に失敗しました'
 export const S50_LOAD_FAILED = '現在値を取得できませんでした'
 // 一般タブ: 3 セクション見出し
 export const S50_SEC_FOLLOW = '軌跡追従（follow_planner_mapless）'
+// 一般タブの区画切替（短い名前。見出しの方は上の S50_SEC_*）
+export const S50_SEC_FOLLOW_TAB = '軌跡追従'
+export const S50_SEC_LIDAR_TAB = 'LiDAR 死角'
+export const S50_SEC_SLAM_TAB = '自己位置推定'
+export const S50_SEC_PRESET_TAB = '速度プリセット'
 export const S50_SEC_LIDAR = 'LiDAR 死角マスク（lidar_filter）'
 // 死角マスクは S-50 では編集しない（2026-10-02 Spec-webui.md §3.15）。
 // 変更は校正 S-40 の「LiDAR 死角」だけ。ここは今の値の表示と導線だけを置く。

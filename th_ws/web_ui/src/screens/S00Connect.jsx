@@ -80,6 +80,7 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
 
   return (
     <div className="screen" id="s00">
+      <div className="split-col">
       <div className="card">
         <h3>{S00_CHECK_TITLE}</h3>
         <table className="lst">
@@ -125,6 +126,8 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
           </tbody>
         </table>
       </div>
+      </div>
+      <div className="split-col">
       <div className="card">
         <h3>{S00_OVERALL_TITLE}</h3>
         <div className="row">
@@ -184,6 +187,7 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
             </tbody>
           </table>
         )}
+      </div>
       </div>
     </div>
   )

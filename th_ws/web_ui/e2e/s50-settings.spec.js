@@ -28,7 +28,9 @@ test('S-01 →「設定」→ S-50、タブ切替、戻る', async ({ page }) =>
   await expect(s50).toBeVisible()
   await expect(page.locator('#screenName')).toHaveText('設定')
 
-  // 既定は一般タブ。3 セクションの保存ボタンが見える。
+  // 既定は一般タブ（2026-10-10 から区画ごとに出す。既定は軌跡追従）。
+  await expect(page.getByTestId('s50-save-follow_planner_mapless')).toBeVisible()
+  await page.getByTestId('s50-sec-slam').click()
   await expect(page.getByTestId('s50-save-slam_toolbox')).toBeVisible()
 
   // 表示タブへ
@@ -87,6 +89,7 @@ test('「設定」は他のメニューが押せない状況でも押せる（di
 // 読み取り専用の表示と S-40 への導線だけを置く。
 test('S-50 一般タブに死角の編集欄は無く、表示と「校正で変更する」がある', async ({ page }) => {
   await openS50General(page)
+  await page.getByTestId('s50-sec-lidar').click()
 
   // 編集欄も保存ボタンも無い（誤って戻すとここが赤になる）。
   await expect(page.getByTestId('s50-save-lidar_filter')).toHaveCount(0)
@@ -98,6 +101,7 @@ test('S-50 一般タブに死角の編集欄は無く、表示と「校正で変
 
 test('「校正で変更する」は ui.enter_mode{CALIB} を送り、拒否されたら理由を出す', async ({ page }) => {
   await openS50General(page)
+  await page.getByTestId('s50-sec-lidar').click()
 
   // スタブ無し = 拒否扱い（useTrigger の TEST_MODE 既定）。
   await page.getByTestId('s50-goto-calib').click()
@@ -112,6 +116,7 @@ test('「校正で変更する」は ui.enter_mode{CALIB} を送り、拒否さ�
 test('「校正で変更する」が受理されたら理由は出ない', async ({ page }) => {
   await stubTrigger(page, { 'ui.enter_mode': { accepted: true } })
   await openS50General(page)
+  await page.getByTestId('s50-sec-lidar').click()
 
   await page.getByTestId('s50-goto-calib').click()
   const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
@@ -146,8 +151,9 @@ test('片方の取得に失敗しても一般タブ全体は落ちない（節�
   await expect(page.getByTestId('s50-status-follow_planner_mapless'))
     .toHaveText('現在値を取得できませんでした')
   // 取れた節は使えるまま（保存ボタンと取得値が見える）。
-  await expect(page.getByTestId('s50-save-slam_toolbox')).toBeVisible()
   await expect(page.getByTestId('s50-save-follow_planner_mapless')).toBeVisible()
+  await page.getByTestId('s50-sec-slam').click()
+  await expect(page.getByTestId('s50-save-slam_toolbox')).toBeVisible()
 })
 
 // SG-B9: 旧ノードの v_max（UI 上限 1.5）は registry の v_max を超えて保存
@@ -189,6 +195,7 @@ test('速度プリセット区画は効き値と次回反映の差を出し、�
   await expect(page.locator('#s50')).toBeVisible()
 
   // 「再起動後に反映」の注記と、効き値と保存済み値の差がある。
+  await page.getByTestId('s50-sec-preset').click()
   await expect(page.getByTestId('s50-save-preset')).toBeVisible()
   await expect(page.getByTestId('s50-preset-pending')).toContainText('次回から')
   await expect(page.getByTestId('s50-preset-pending')).toContainText('speed_preset_mid')

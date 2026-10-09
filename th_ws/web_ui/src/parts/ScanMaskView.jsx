@@ -25,8 +25,7 @@ export default function ScanMaskView({ scan, ranges }) {
   const { kept, masked } = scanPointsByMask(scan, ranges)
   const toXY = (p) => [C - p.y * SCALE, C - p.x * SCALE]
   return (
-    <svg viewBox={`0 0 ${SIZE} ${SIZE}`} data-testid="s30-lidar-view"
-      style={{ width: '100%', maxWidth: 420 }}>
+    <svg viewBox={`0 0 ${SIZE} ${SIZE}`} data-testid="s30-lidar-view" className="scan-mask-svg">
       <circle cx={C} cy={C} r={R} fill="none" stroke="currentColor" strokeOpacity="0.25" />
       <circle cx={C} cy={C} r={R / 2} fill="none" stroke="currentColor" strokeOpacity="0.15" />
       {ranges.map((rg, i) => (
