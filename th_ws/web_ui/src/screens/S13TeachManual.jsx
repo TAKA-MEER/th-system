@@ -286,7 +286,8 @@ export default function S13TeachManual({ onFinish }) {
         )}
 
         {tab === 'teach' && (
-          <div className="tabpane on">
+          <div className="tabpane on pane-grid">
+           <div className="pane-col">
             <div className="card">
               <h3>{S13_TEACH_TITLE}</h3>
               <div className="note">{S13_REC_DIRECTION}</div>
@@ -358,9 +359,6 @@ export default function S13TeachManual({ onFinish }) {
                 </>
               ) : null}
             </div>
-            {/* WS-3: 教示タブの経路プレビュー（記録中の点列。記録中は target_index=-1、
-                /scan_filtered は RoutePreview 内部で購読） */}
-            <RoutePreview preview={routePreview} pose={routePose ?? odomPose} mapData={routeMap} />
             {(recording || paused) && (
               <div className="card">
                 <h3>{S13_RECORDED_LABEL}</h3>
@@ -406,6 +404,12 @@ export default function S13TeachManual({ onFinish }) {
                 )}
               </div>
             )}
+           </div>
+           <div className="pane-col">
+            {/* WS-3: 教示タブの経路プレビュー（記録中の点列。記録中は target_index=-1、
+                /scan_filtered は RoutePreview 内部で購読）。横長では右の列に大きく置く。 */}
+            <RoutePreview preview={routePreview} pose={routePose ?? odomPose} mapData={routeMap} />
+           </div>
           </div>
         )}
       </div>

@@ -33,12 +33,41 @@ const H = 380
 // 60fps・pose 10Hz（= 6 フレームに 1 回更新）で、0.25 なら 1 更新分の差を
 // おおむね次の更新までに詰めきる（0.75^6 ≒ 0.18 まで縮む）。
 const POSE_SMOOTH_ALPHA = 0.25
+// 枠に追従して大きく描く配置（size が既定でない）のときの半径。既定の ±10 m は小さな
+// 枠（350px 前後）に押し込む前提の広さで、大きな枠では経路が点のように小さく見える。
+const SPAN_FITTED_M = 8
+const spanFor = (sz) => (sz.w === W && sz.h === H ? ROUTE_PREVIEW_HALF_SPAN_M : SPAN_FITTED_M)
 
 export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
   const { ros } = useSystemState()
   const canvasRef = useRef(null)
   const offscreenRef = useRef(null)
   const [scanData, setScanData] = useState(null)
+  // 描画解像度。既定は論理 600x380。横長の S-13/S-14 では canvas が枠いっぱい
+  // （position:absolute）に置かれるので、枠の実寸に合わせて描き直す。固定の
+  // 600x380 を CSS で縮めると地図が小さく・縦に余白だらけになるため（2026-10-10）。
+  // 枠を測るのは「枠に追従する配置」のときだけ（縦積みの通常配置では canvas 自身が
+  // 枠の大きさを決めるので、測ると自分の大きさを測る循環になる）。
+  const wrapRef = useRef(null)
+  const [size, setSize] = useState({ w: W, h: H })
+  useEffect(() => {
+    if (TEST_MODE && !window.__thTestRouteMeasure) return undefined
+    const wrap = wrapRef.current
+    const canvas = canvasRef.current
+    if (!wrap || !canvas || typeof ResizeObserver === 'undefined') return undefined
+    const ro = new ResizeObserver(() => {
+      if (getComputedStyle(canvas).position !== 'absolute') {
+        setSize((o) => (o.w === W && o.h === H ? o : { w: W, h: H }))
+        return
+      }
+      const w = Math.round(wrap.clientWidth)
+      const h = Math.round(wrap.clientHeight)
+      if (w < 80 || h < 80) return
+      setSize((o) => (o.w === w && o.h === h ? o : { w, h }))
+    })
+    ro.observe(wrap)
+    return () => ro.disconnect()
+  }, [])
 
   // Off-screen map raster (OccupancyGrid -> ImageData), rebuilt on map change.
   // Mirrors MapView.jsx: row 0 of the grid is the map-frame bottom, ImageData
@@ -91,8 +120,8 @@ export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
   // `fit` はここでは「描けるデータがあるか」の判定とオーバレイ表示にだけ使う。
   // 実際の描画は下の rAF ループが補間後の pose から毎フレーム作り直す。
   const fit = pose
-    ? centeredTransform(pose, ROUTE_PREVIEW_HALF_SPAN_M, W, H)
-    : fitTransform(points, W, H, ROUTE_PREVIEW_PAD)
+    ? centeredTransform(pose, spanFor(size), size.w, size.h)
+    : fitTransform(points, size.w, size.h, ROUTE_PREVIEW_PAD)
 
   // TEST_MODE: reflect what was actually drawn so e2e can assert the passed
   // targetIndex really reaches the canvas (mutation 3). No production effect.
@@ -108,19 +137,19 @@ export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
   // だったため、/system/state の 10Hz 再レンダーのたびに中身が変わっていなくても
   // フル再描画していた（地図 blit ＋ 数百 fillRect）。
   const latestRef = useRef(null)
-  latestRef.current = { preview, scanData, targetIndex, mapData, pose }
+  latestRef.current = { preview, scanData, targetIndex, mapData, pose, size }
 
   const drawFrame = useCallback((dpose) => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const { preview, scanData, targetIndex, mapData } = latestRef.current
+    const { preview, scanData, targetIndex, mapData, size: sz } = latestRef.current
     const pose = dpose
     const pts = []
     if (preview) pts.push(...preview)
     if (pose) pts.push(pose)
     const fit = pose
-      ? centeredTransform(pose, ROUTE_PREVIEW_HALF_SPAN_M, W, H)
-      : fitTransform(pts, W, H, ROUTE_PREVIEW_PAD)
+      ? centeredTransform(pose, spanFor(sz), sz.w, sz.h)
+      : fitTransform(pts, sz.w, sz.h, ROUTE_PREVIEW_PAD)
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     if (TEST_MODE) window.__thRoutePreviewFit = { scale: fit ? fit.scale : null }
@@ -250,19 +279,19 @@ export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
     if (!TEST_MODE) return
     smoothRef.current = pose ? { ...pose } : null
     drawFrame(smoothRef.current)
-  }, [drawFrame, pose, preview, scanData, targetIndex, mapData])
+  }, [drawFrame, pose, preview, scanData, targetIndex, mapData, size])
 
   // WS-6.4: the canvas is ALWAYS mounted (so a zero-frame gap never swaps the
   // DOM, further reducing #4 flicker). With no drawable data the placeholder
   // overlay shows on top; with data it hides behind the drawing.
   return (
-    <div className="routePreview">
+    <div className="routePreview" ref={wrapRef}>
       <canvas
         ref={canvasRef}
         data-testid="route-preview"
         data-target-index={drawnTarget}
-        width={W}
-        height={H}
+        width={size.w}
+        height={size.h}
         className="route-preview"
       />
       {!fit && (

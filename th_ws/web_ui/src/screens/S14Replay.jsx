@@ -160,6 +160,30 @@ export default function S14Replay({ onFinish }) {
     }
   }
 
+  // 経路を選び終えたあと（読み直し・再生・一時停止）は経路を選び直せない。選択カードを
+  // 畳んで、その高さと幅を地図に回す（地図が小さいという実機指摘。2026-10-10）。
+  const selecting = stateName === 'ROUTE_SEL'
+
+  // 地図と再生速度のカードは、経路選択中とそれ以外で置く列を入れ替える（下の JSX）。
+  const mapEl = (
+    <RoutePreview
+      preview={routePreview}
+      pose={routePose ?? odomPose}
+      mapData={routeMap}
+      targetIndex={routeStatus?.target_index ?? -1}
+    />
+  )
+  const speedCard = (
+    <div className="card">
+      <h3>{S14_SPEED_TITLE}</h3>
+      <ReplaySpeedControl
+        value={speedRatio}
+        onSelect={setSpeedRatio}
+        disabled={disabledAll}
+      />
+    </div>
+  )
+
   return (
     <div className="screen two-col" id="s14">
       <div className="left-col">
@@ -180,8 +204,9 @@ export default function S14Replay({ onFinish }) {
           </div>
         </div>
 
-        <div className="tabpane on pane-grid">
+        <div className={`tabpane on pane-grid${selecting ? '' : ' map-first'}`}>
          <div className="pane-col">
+          {selecting && (
           <div className="card">
             <h3>{S14_SELECT_TITLE}</h3>
             {empty ? (
@@ -219,9 +244,7 @@ export default function S14Replay({ onFinish }) {
             <div className="row mt">
               <span className="grow sm">{S14_FWD}</span>
               <span className="pill ok">{S14_FWD}</span>
-            </div>
-            <div className="row mt">
-              <span className="grow sm">{S14_REV}</span>
+              <span className="sm">{S14_REV}</span>
               <button type="button" className="btn sm" disabled>{S14_REV}</button>
             </div>
             <button
@@ -234,18 +257,12 @@ export default function S14Replay({ onFinish }) {
               {S14_PROCEED}
             </button>
           </div>
+          )}
 
-          {/* WS-3: 経路プレビュー（再生中の点列＋現在地。targetIndex は /route/status の
-              pure-pursuit 目標点。記録中・未走行は -1） */}
-          <RoutePreview
-            preview={routePreview}
-            pose={routePose ?? odomPose}
-            mapData={routeMap}
-            targetIndex={routeStatus?.target_index ?? -1}
-          />
-
+          {selecting ? speedCard : mapEl}
          </div>
          <div className="pane-col">
+          {selecting && mapEl}
           <div className="card">
             <h3>{S14_POSE_TITLE}</h3>
             <div className="note" data-testid="s14-pose">
@@ -308,16 +325,7 @@ export default function S14Replay({ onFinish }) {
             <div className="note">{S14_MAP_UPDATE_NOTE}</div>
           </div>
 
-          {/* WS-9X: 再生速度は経路準備段階の設定なので左列（右列は操作＋手動介入で
-              統一する。モックアップ two-col の右列と同じ並び）。 */}
-          <div className="card">
-            <h3>{S14_SPEED_TITLE}</h3>
-            <ReplaySpeedControl
-              value={speedRatio}
-              onSelect={setSpeedRatio}
-              disabled={disabledAll}
-            />
-          </div>
+          {!selecting && speedCard}
          </div>
         </div>
       </div>

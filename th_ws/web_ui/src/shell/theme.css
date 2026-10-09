@@ -766,9 +766,13 @@ table.lst td.r{text-align:right}
   .screen#s13.two-col > div,.screen#s14.two-col > div{min-height:0}
   .screen#s13 .left-col,.screen#s14 .left-col{display:flex;flex-direction:column}
   .screen#s13 .left-col .tabpane.on,.screen#s14 .left-col .tabpane.on{flex:1 1 auto;min-height:0}
-  .screen#s13 .left-col .tabpane.on{display:flex;flex-direction:column}
+  .screen#s13 .left-col .tabpane.on.pane-grid,
   .screen#s14 .left-col .tabpane.on.pane-grid{display:grid;grid-template-columns:1fr 1fr;
     grid-template-rows:minmax(0,1fr);gap:10px}
+  /* 地図を大きく: S-13 は左＝記録の文言・数値、右＝地図。S-14 は経路選択を畳んだ後
+     （.map-first）は左＝地図を広く。 */
+  .screen#s13 .left-col .tabpane.on.pane-grid{grid-template-columns:minmax(0,5fr) minmax(0,6fr)}
+  .screen#s14 .left-col .tabpane.on.pane-grid.map-first{grid-template-columns:minmax(0,3fr) minmax(0,2fr)}
   .pane-col{display:flex;flex-direction:column;min-height:0;min-width:0}
   .pane-col > .card,.screen#s13 .tabpane > .card{flex:none}
   /* S-13 の既存経路の一覧は、地図（経路プレビュー）の下限 120px を残すため低めに。 */
