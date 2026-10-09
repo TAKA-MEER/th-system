@@ -70,7 +70,11 @@ def generate_launch_description():
                               description='教示・再生用に slam_toolbox を mapping '
                                           'モードで起動する (WS-8B。stage<3 でも可)'),
         # WP-ONSITE-P0: stage>=4 で DR-SPAAM を Nav2 起動と重ねないための遅延（N-27）。
-        DeclareLaunchArgument('perception_start_delay', default_value='8.0',
+        # 2026-10-10: 8.0→45.0。8 秒だと Nav2 の lifecycle 起動（起動から約 12 秒で完了）と重なり、
+        # 実機で controller_server の local costmap が止まって（/local_costmap/costmap が
+        # 出なくなり map→odom も止まる）配電盤へ動けなくなった。stage:=3（人物検出なし）では
+        # 起きなかった。Nav2 が落ち着いてから人物検出を立てる。
+        DeclareLaunchArgument('perception_start_delay', default_value='45.0',
                               description='DR-SPAAM/person_tracker_bridge の起動を'
                                           'この秒数だけ遅らせる (N-27: Nav2 lifecycle と'
                                           'モデルロードの同時実行によるCPUストール回避)'),
