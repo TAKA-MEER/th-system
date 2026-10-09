@@ -1084,13 +1084,19 @@ class CalibRunner(Node):
                              "accel": (c >> 2) & 3, "mag": c & 3}
         last = {}
         history = {}
+        last_verification = {}
         for it in ITEM_VALID:
             entry = self._store.current_entry(it)
             last[it] = (entry or {}).get("calibrated_at", "")
+            # S-40 の一覧・履歴に「前回検証誤差」を出す（Spec-webui §3.14）。
+            # 要再校正の自動判定はしない（Spec-checks §3.7）。判断の材料だけ載せる。
+            last_verification[it] = ((entry or {}).get("verification") or {})
             history[it] = [{"generation": i + 1, "values": h.get("values"),
-                            "calibrated_at": h.get("calibrated_at", "")}
+                            "calibrated_at": h.get("calibrated_at", ""),
+                            "verification": (h.get("verification") or {})}
                            for i, h in enumerate(self._store.history(it))]
         detail["last_calibrated"] = last
+        detail["last_verification"] = last_verification
         detail["history"] = history
         warnings = []
         if item == "ROTATION":

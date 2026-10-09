@@ -133,7 +133,8 @@ export function formatValues(values) {
     .join(', ')
 }
 
-// 履歴の行（新しい順。generation 1 が 1 つ前）。
+// 履歴の行（新しい順。generation 1 が 1 つ前）。検証誤差（verification）も
+// 並べる（Spec-webui §3.14。要再校正の自動判定はしない Spec-checks §3.7）。
 export function historyRows(detail, item) {
   const rows = detail?.history?.[item]
   if (!Array.isArray(rows)) return []
@@ -141,12 +142,46 @@ export function historyRows(detail, item) {
     generation: Number(r.generation),
     text: formatValues(r.values),
     calibratedAt: r.calibrated_at ?? '',
+    verify: verifyErrorText(item, r.verification),
   }))
 }
 
 // 項目の最終校正日（無ければ空）。
 export function lastCalibrated(detail, item) {
   return detail?.last_calibrated?.[item] ?? ''
+}
+
+// 項目の前回検証誤差の表示文（無ければ空。S-40 の一覧に出す）。
+export function lastVerification(detail, item) {
+  return verifyErrorText(item, detail?.last_verification?.[item])
+}
+
+// 確定時に保存した verification → 検証誤差の表示文。内訳:
+//   LINEAR / ROTATION … 検証走行の実測と指令から誤差を再計算
+//     （calib_core.verify_* と同じ式。tolerance との比較はしない）
+//   IMU … 検証時の calib_status（sys/gyro/accel/mag）
+//   BLIND … 検証の detail（マスク検証の理由文）。無ければ result が OK のときだけ OK
+// 無い・壊れているときは空文字（「記録なし」の表示は呼び出し側）。
+export function verifyErrorText(item, verification) {
+  if (!verification || typeof verification !== 'object') return ''
+  if (item === 'LINEAR' || item === 'ROTATION') {
+    const cmd = Number(verification.commanded)
+    const mv = Number(verification.measured_verify)
+    if (!Number.isFinite(cmd) || !Number.isFinite(mv) || cmd <= 0 || mv <= 0) return ''
+    if (item === 'LINEAR') return `${((Math.abs(mv - cmd) / cmd) * 100).toFixed(2)}%`
+    return `${Math.abs(mv - cmd).toFixed(2)}°`
+  }
+  if (item === 'IMU') {
+    const c = Number(verification.calib_status)
+    if (!Number.isFinite(c)) return ''
+    const parts = IMU_PARTS.map((key, i) => Math.min(3, Math.max(0, (c >> ((3 - i) * 2)) & 3)))
+    return parts.join('/')
+  }
+  if (item === 'BLIND') {
+    if (typeof verification.detail === 'string' && verification.detail) return verification.detail
+    return verification.result === 'OK' ? 'OK' : ''
+  }
+  return ''
 }
 
 // 検証 NG・走行失敗の理由（detail.reason）→ 表示用キー。"error_exceeds_tolerance:0.2>0.05" の
