@@ -540,6 +540,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_auto_brake_state_node
     test/test_auto_brake_state_node.py
     TIMEOUT 180)
+  # SG-C14: S-50 で変える自動ブレーキの既定が state_manager の実効値に効くこと。
+  # 逆にした既定（場外 on・場内 off）を渡して場外 ON・場内 OFF になることと、
+  # ロック（自律系・待機・ゾーン NA は ON のまま）をノード本体で縛る。
+  ament_add_pytest_test(test_auto_brake_defaults_node
+    test/test_auto_brake_defaults_node.py
+    TIMEOUT 180)
   # 手動系の自動ブレーキ ON/OFF を obstacle_limiter 本体で縛る（1b-15 SG-B10。ON は減速・
   # OFF は減速せず接近警告・state 途絶で ON・estop／fault_lock／AUTO／NA は OFF でも止める）。
   ament_add_pytest_test(test_auto_brake_limiter_node
