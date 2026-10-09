@@ -1,5 +1,7 @@
 state_manager:
   ros__parameters:
+    auto_brake_default_indoor: 'on'
+    auto_brake_default_outdoor: 'off'
     esp32_alive_timeout_ms: 3000
     jog_lease_ms: 1200
     link_wait_timeout_ms: 10000
