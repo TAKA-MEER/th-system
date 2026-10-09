@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import copy
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import yaml
 
@@ -158,3 +158,29 @@ class CalibStore:
         items[item] = target
         self._save_current(items)
         return dict(target)
+
+
+def status_view(store: "CalibStore", items: Iterable[str]
+                ) -> Tuple[Dict[str, str], Dict[str, Dict[str, Any]], Dict[str, list]]:
+    """S-40 の一覧・履歴に出す 3 つ（`/calib/status` の detail の形そのまま）。
+
+    - `last`: 項目 → 前回校正日（無ければ空）
+    - `last_verification`: 項目 → 前回の検証記録（`commit` 時の `verification`。
+      無ければ空 dict。要再校正の自動判定はしない Spec-checks §3.7。
+      判断の材料＝前回校正日と検証誤差だけを載せる）
+    - `history`: 項目 → 世代の行（`generation` / `values` / `calibrated_at` /
+      `verification`）。新しい順（先頭が 1 世代前）
+    """
+    last: Dict[str, str] = {}
+    last_verification: Dict[str, Dict[str, Any]] = {}
+    history: Dict[str, list] = {}
+    for it in items:
+        entry = store.current_entry(it)
+        last[it] = (entry or {}).get("calibrated_at", "")
+        verification = ((entry or {}).get("verification") or {})
+        last_verification[it] = dict(verification) if isinstance(verification, dict) else {}
+        history[it] = [{"generation": i + 1, "values": h.get("values"),
+                        "calibrated_at": h.get("calibrated_at", ""),
+                        "verification": (h.get("verification") or {})}
+                       for i, h in enumerate(store.history(it))]
+    return last, last_verification, history

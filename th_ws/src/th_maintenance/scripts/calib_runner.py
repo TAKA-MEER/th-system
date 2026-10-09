@@ -71,7 +71,7 @@ except ImportError:
 
 from th_maintenance import blind_core, calib_core
 from th_maintenance.check_core import BLIND_MIN_RUN_DEG, BLIND_NEAR_M
-from th_maintenance.calib_store import CalibStore
+from th_maintenance.calib_store import CalibStore, status_view
 
 # registry.yaml と一致させるパラメータの既定値（consumers に calib_runner を持つ行のうち値あり）。
 # SG-B21: LOCAL_PARS だった指定距離・指定角度・タイムアウトも registry 行になった
@@ -1082,19 +1082,7 @@ class CalibRunner(Node):
             c = self._imu_calib
             detail["imu"] = {"sys": (c >> 6) & 3, "gyro": (c >> 4) & 3,
                              "accel": (c >> 2) & 3, "mag": c & 3}
-        last = {}
-        history = {}
-        last_verification = {}
-        for it in ITEM_VALID:
-            entry = self._store.current_entry(it)
-            last[it] = (entry or {}).get("calibrated_at", "")
-            # S-40 の一覧・履歴に「前回検証誤差」を出す（Spec-webui §3.14）。
-            # 要再校正の自動判定はしない（Spec-checks §3.7）。判断の材料だけ載せる。
-            last_verification[it] = ((entry or {}).get("verification") or {})
-            history[it] = [{"generation": i + 1, "values": h.get("values"),
-                            "calibrated_at": h.get("calibrated_at", ""),
-                            "verification": (h.get("verification") or {})}
-                           for i, h in enumerate(self._store.history(it))]
+        last, last_verification, history = status_view(self._store, ITEM_VALID)
         detail["last_calibrated"] = last
         detail["last_verification"] = last_verification
         detail["history"] = history

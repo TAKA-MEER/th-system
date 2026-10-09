@@ -98,3 +98,26 @@ def test_write_is_atomic_no_tmp_left(tmp_path):
     assert leftovers == []
     with open(tmp_path / "current.yaml", encoding="utf-8") as f:
         assert yaml.safe_load(f)["items"]["LINEAR"]
+
+
+def test_status_view_carries_verification_for_s40(tmp_path):
+    """S-40 の一覧・履歴に出す 3 つ（last / last_verification / history）。
+    検証記録（verification）が前回値と世代の行に載ること。
+    要再校正の自動判定はしない（判定の材料だけ）。"""
+    from th_maintenance.calib_store import status_view
+    s = CalibStore(str(tmp_path / "calib"))
+    s.commit("LINEAR", {"wheel_radius_scale": 0.98}, "2026-10-01T00:00:00",
+             {"result": "OK", "commanded": 2.0, "measured_verify": 1.99},
+             operator="tester")
+    s.commit("LINEAR", {"wheel_radius_scale": 0.99}, "2026-10-02T00:00:00",
+             {"result": "OK", "commanded": 2.0, "measured_verify": 2.01},
+             operator="tester")
+    last, last_verification, history = status_view(s, ["LINEAR", "ROTATION"])
+    assert last == {"LINEAR": "2026-10-02T00:00:00", "ROTATION": ""}
+    assert last_verification["LINEAR"]["measured_verify"] == 2.01
+    assert last_verification["ROTATION"] == {}
+    assert [r["generation"] for r in history["LINEAR"]] == [1]
+    # 履歴の先頭（1 世代前）は 1 回目の確定＝古い方の値と検証記録。
+    assert history["LINEAR"][0]["values"]["wheel_radius_scale"] == 0.98
+    assert history["LINEAR"][0]["verification"]["measured_verify"] == 1.99
+    assert history["ROTATION"] == []
