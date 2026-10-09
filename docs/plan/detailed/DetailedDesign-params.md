@@ -188,7 +188,7 @@ def speed_from_braking_distance(d_allow: float, a: float, t_delay: float) -> flo
 | 導出されるもの | `d_allow` に入れるもの | 意味 |
 | --- | --- | --- |
 | `v_slow` | `venue_clearance_m` | 試験場内。**納品する製品が置いてある**ので、それに触れずに止まれる距離 |
-| `v_reverse` | `blind_clearance_m` | 後退。**LiDAR 死角**なので、見えていない範囲でも止まれる距離 |
+| `v_reverse` | `venue_clearance_m`（現構成は死角なし。2026-10-09 決定）。死角のある構成では `blind_clearance_m` を足して再設計 | 後退。死角が無いので `v_slow` と同じ「見えている範囲で止まれる距離」 |
 | `v_jog_panel` | `panel_clearance_m` | 盤前。盤に触れずに止まれる距離 |
 
 `venue_clearance_m` / `blind_clearance_m` / `panel_clearance_m` は **(a)／方針値**
