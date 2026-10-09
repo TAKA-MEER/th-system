@@ -12,8 +12,9 @@ case_02_obstacle_limiter_backward.py — 故障注入 2「障害物リミッタ�
 `p.v_reverse` を `min` で重ねる（§3.3.1・L4）。
 
 `v_reverse` は `registry.yaml` 上 `status: derived`（`derived_from:
-[blind_clearance_m, ...]`）だが、その依存先 `blind_clearance_m` 自体が
-`status: placeholder`（コメント:「`v_reverse` の逆算元。**LiDAR死角**。
+[venue_clearance_m, ...]`。LiDAR に死角が無い現構成では `v_slow` と同じ
+`venue_clearance_m` からの逆算。2026-10-09）だが、その依存先
+`venue_clearance_m` 自体が `status: placeholder`（コメント:「`v_slow` の逆算元。
 `O-a2` が決まるまで placeholder」）。`resolve_registry()` は依存が
 placeholder のまま解決できない値を呼び出し側に placeholder として
 伝播するため、`v_reverse` も実際には未解決（実測済み。

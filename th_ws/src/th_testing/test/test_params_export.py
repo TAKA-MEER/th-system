@@ -384,7 +384,8 @@ def test_main_sim_flag_skips_v_max_clamp(registry_rows, tmp_path):
 #
 # th_state.zones.LIMIT_STRICTNESS の並びが registry.yaml の解決済みの数値の昇順と
 # 一致しているかを検査する。v_slow / v_reverse / v_jog_panel は現行 registry.yaml では
-# 逆算元（venue_clearance_m / blind_clearance_m / panel_clearance_m）が placeholder
+# 逆算元（venue_clearance_m / panel_clearance_m。v_reverse は v_slow と同じ
+# venue_clearance_m 由来。2026-10-09）が placeholder
 # なので、以下は意図的に v_jog_panel の行を status:given に上書きして「measured 値が
 # 入って LIMIT_STRICTNESS の位置と食い違った」状況を再現する（レビュー指摘の再発防止）。
 # ---------------------------------------------------------------------------
@@ -394,6 +395,32 @@ def test_baseline_registry_passes_a13_because_speed_axes_are_still_placeholder(r
     resolved = export.resolve_registry(registry_rows)
     errors, _warnings = export.run_assertions(registry_rows, resolved, stage=0, nodes=None)
     assert not any("A13" in e for e in errors)
+
+
+def test_v_reverse_derives_from_venue_clearance_like_v_slow(registry_rows):
+    """`v_reverse` は `v_slow` と同じ導出（2026-10-09。LiDAR に死角が無い現構成）。
+    registry→解決の配線を縛る: derived_from が一致し、`blind_clearance_m` を
+    含まない。`venue_clearance_m` が placeholder の間は S5 伝播で placeholder
+    のまま、A2a/A11 も違反しない。実測が入れば両者は同じ値に解決される。"""
+    import copy
+    rows_by_name = {r["name"]: r for r in registry_rows}
+    assert rows_by_name["v_reverse"]["derived_from"] == \
+        rows_by_name["v_slow"]["derived_from"] == \
+        ["venue_clearance_m", "brake_accel_mps2", "brake_delay_s"]
+    assert rows_by_name["v_reverse"]["formula"] == "speed_from_braking_distance"
+
+    resolved = export.resolve_registry(registry_rows)
+    assert resolved["v_reverse"][0] == "placeholder"
+    errors, _warnings = export.run_assertions(registry_rows, resolved, stage=0, nodes=None)
+    assert not any("A2a" in e or "A11" in e for e in errors)
+
+    rows_copy = copy.deepcopy(registry_rows)
+    by_name = {r["name"]: r for r in rows_copy}
+    by_name["venue_clearance_m"]["status"] = "given"
+    by_name["venue_clearance_m"]["value"] = 5.0
+    resolved2 = export.resolve_registry(rows_copy)
+    assert resolved2["v_reverse"][0] == "derived"
+    assert resolved2["v_reverse"][1] == pytest.approx(resolved2["v_slow"][1])
 
 
 def test_a13_fires_when_v_jog_panel_measured_value_breaks_the_order(registry_rows):
