@@ -14,3 +14,13 @@ export function mapOrParamOpAllowed(state, stale) {
   if (state.mode === 'PREP' && STOP_ONLY_PREP_STATES.includes(state.state)) return true
   return false
 }
+
+// 当日の「保存した会場地図を開く」。試験画面は待機場所の待機状態（AT_HOME／IDLE_H）で
+// 開くので、停止中の許可に加えてここだけ許す（Spec.md SD-9 の 2026-10-09 の例外。
+// サーバ側 venue_open_allows と同じ）。
+export function venueOpenAllowed(state, stale) {
+  if (stale || state == null) return false
+  if (state.jog_active) return false
+  if (state.mode === 'AT_HOME' && state.state === 'IDLE_H') return true
+  return mapOrParamOpAllowed(state, stale)
+}

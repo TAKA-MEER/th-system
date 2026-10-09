@@ -83,3 +83,28 @@ def teach_reset_allows(mode: Optional[str],
         return True, ""
     return stop_only_allows(mode, state, jog_active, state_received,
                             state_age_sec, stale_sec)
+
+
+def venue_open_allows(mode: Optional[str],
+                      state: Optional[str],
+                      jog_active: bool,
+                      state_received: bool,
+                      state_age_sec: Optional[float],
+                      stale_sec: float = STATE_STALE_SEC) -> "tuple[bool, str]":
+    """当日の「保存した会場地図を開く」（slot:VENUE の reload）を受け付けてよいか（純関数）。
+
+    試験画面(S-21)は待機場所の待機状態（AT_HOME／IDLE_H。機体は自分で走らない）で開き、
+    最初の操作がこの読み直しなので、IDLE・PREP の停止状態に加えてここだけ許す
+    （Spec.md SD-9 の 2026-10-09 の例外）。AT_HOME の PAUSE や、盤前・呼び寄せ・
+    待機場所への移動などの走行系は許さない。それ以外の判定は stop_only_allows と同じ。
+    """
+    if mode == "AT_HOME" and state == "IDLE_H":
+        if not state_received:
+            return False, "state_not_received"
+        if state_age_sec is None or state_age_sec > stale_sec:
+            return False, "state_stale"
+        if jog_active:
+            return False, "jog_active"
+        return True, ""
+    return stop_only_allows(mode, state, jog_active, state_received,
+                            state_age_sec, stale_sec)

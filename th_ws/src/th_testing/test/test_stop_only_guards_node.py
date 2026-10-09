@@ -312,6 +312,29 @@ class TestStopOnlyGuards(unittest.TestCase):
             'リースが切れても jog_active が下りない（準備状態でスティックを離したのに地図操作が拒否され続ける）'
         self._assert_allows('PREP/MAPPING（ジョグ後）')
 
+    def test_at_home_allows_only_venue_open(self):
+        """当日の試験画面は AT_HOME／IDLE_H で開く。ここでは会場地図の読み直しだけ通り、
+        地図の破棄・作成の切替・設定値の変更は拒否のまま（Spec.md SD-9 の 2026-10-09 の例外。
+        10/8 のガードで試験当日の「会場地図を開く」が押せなくなった不具合の修正）。"""
+        res = self._trigger('ui.enter_mode', {'mode': 'AT_HOME'})
+        assert res.accepted, f'AT_HOME に入らない: {res.reason}'
+        assert self._wait_mode_state('AT_HOME', 'IDLE_H', timeout=10.0), \
+            f'AT_HOME/IDLE_H に入らない ({self._mode_state()})'
+        r = self._venue_reload_missing()
+        assert r.success is False and GUARD_WORD not in r.message and '停止中' not in r.message, \
+            f'AT_HOME で会場地図の読み直しがガードで拒否された: {r.message}'
+        assert '地図ファイルが無い' in r.message, \
+            f'ファイル不在の応答でない: {r.message}'
+        r = self._discard()
+        assert r.success is False and GUARD_WORD in r.message, \
+            f'AT_HOME で地図の破棄が通った: {r.message}'
+        r = self._toggle()
+        assert r.success is False and GUARD_WORD in r.message, \
+            f'AT_HOME で地図作成の切替が通った: {r.message}'
+        r = self._config_unknown_node()
+        assert r.success is False and GUARD_WORD in r.message, \
+            f'AT_HOME で設定値の変更が通った: {r.message}'
+
     def test_prep_return_denies(self):
         """PREP/RETURN（自律走行）では 4 経路とも拒否される（SD-9）。"""
         res = self._trigger('ui.enter_mode', {'mode': 'PREP'})

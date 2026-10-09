@@ -36,7 +36,7 @@ import { usePlannedPath } from '../ros/usePlannedPath.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import { trackerStopAllowed } from '../modes/trackerControlPolicy.js'
-import { mapOrParamOpAllowed } from '../modes/stopOnlyGuard.js'
+import { venueOpenAllowed } from '../modes/stopOnlyGuard.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import TrackerControl from '../parts/TrackerControl.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
@@ -140,7 +140,7 @@ export default function S21Test({ onExit }) {
   const disabledAll = stale || state?.mode == null
   // 1b-5 (SG-A6): 会場地図の読み直しは停止中だけ（Spec.md SD-9）。サーバ側が
   // 正で、画面は同じ条件で事前に押せなくする（走行中の押下で SLAM が再起動した）。
-  const mapOpAllowed = mapOrParamOpAllowed(state, stale)
+  const mapOpAllowed = venueOpenAllowed(state, stale)
   const mode = state?.mode ?? null
   const stateName = state?.state ?? null
   const isNavMode = NAV_MODES.includes(mode)

@@ -21,6 +21,7 @@ from stop_only_guard import (  # noqa: E402
     STATE_STALE_SEC,
     stop_only_allows,
     teach_reset_allows,
+    venue_open_allows,
 )
 
 _CONF_SCRIPTS = os.path.abspath(os.path.join(
@@ -169,3 +170,33 @@ def test_teach_reset_state_freshness_and_jog():
     assert _reset("TEACH_MANUAL", "ROUTE_SEL", age=STATE_STALE_SEC + 0.1)[1] == "state_stale"
     assert _reset("TEACH_MANUAL", "ROUTE_SEL", age=None)[1] == "state_stale"
     assert _reset("TEACH_MANUAL", "ROUTE_SEL", jog=True)[1] == "jog_active"
+
+
+# ── 当日の会場地図の読み直し（venue_open_allows。Spec.md SD-9 の 2026-10-09 の例外）──
+def _venue(mode, state="NONE", jog=False, received=True, age=0.0):
+    return venue_open_allows(mode, state, jog, received, age)
+
+
+def test_venue_open_allowed_at_home_idle_and_stop_states():
+    assert _venue("AT_HOME", "IDLE_H") == (True, "")
+    assert _venue("IDLE") == (True, "")
+    assert _venue("PREP", "MAPPING") == (True, "")
+
+
+def test_venue_open_refused_when_not_waiting_at_home():
+    assert not _venue("AT_HOME", "PAUSE")[0]
+    for mode in ("PANEL_NAV", "HOME_NAV", "SUMMON", "AT_PANEL", "MANUAL", "ESTOP"):
+        assert not _venue(mode, "NAV")[0], mode
+    assert not _venue("PREP", "RETURN")[0]
+
+
+def test_venue_open_at_home_state_freshness_and_jog():
+    assert _venue("AT_HOME", "IDLE_H", received=False)[1] == "state_not_received"
+    assert _venue("AT_HOME", "IDLE_H", age=STATE_STALE_SEC + 0.1)[1] == "state_stale"
+    assert _venue("AT_HOME", "IDLE_H", age=None)[1] == "state_stale"
+    assert _venue("AT_HOME", "IDLE_H", jog=True)[1] == "jog_active"
+
+
+def test_other_map_ops_still_refuse_at_home():
+    """例外は会場地図の読み直しだけ。一般の停止中ガードは AT_HOME を通さない。"""
+    assert not stop_only_allows("AT_HOME", "IDLE_H", False, True, 0.0)[0]

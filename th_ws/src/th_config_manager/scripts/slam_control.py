@@ -131,7 +131,7 @@ from th_system_msgs.srv import OpenMapSession
 
 from th_config_manager.service_call import call_and_wait
 from th_config_manager.stop_only_guard import (
-    STATE_STALE_SEC, stop_only_allows, teach_reset_allows)
+    STATE_STALE_SEC, stop_only_allows, teach_reset_allows, venue_open_allows)
 from th_config_manager.slam_control_logic import (
     deserialize_match_type, effective_reload_pose, estimator_restarting,
     map_instance_ids_match,
@@ -382,6 +382,24 @@ class SlamControl(Node):
             return None
         return (f'教示の入口（待機・経路選択）でのみ地図を作り直せます '
                 f'（{reason}。いまの状態 {self._state_mode}/{self._state_name}）')
+
+    def _venue_open_reject_reason(self) -> "str | None":
+        """当日の会場地図の読み直しを受け付けてよいか。拒否なら理由の文言、可なら None。"""
+        received = self._state_at is not None
+        age = (time.monotonic() - self._state_at) if received else None
+        stale_ms = self.get_parameter('state_stale_ms').value
+        allowed, reason = venue_open_allows(
+            self._state_mode, self._state_name, self._jog_active,
+            received, age, stale_ms / 1000.0)
+        if allowed:
+            return None
+        detail = {
+            'state_not_received': '/system/state を受信していないため',
+            'state_stale': '/system/state が古いため',
+            'jog_active': 'ジョグ中のため',
+        }.get(reason, f'いまの状態（{self._state_mode}/{self._state_name}）では')
+        return (f'停止中（IDLE・PREP の地図作業中）のみ操作できます（{detail}拒否）。'
+                '会場地図の読み直しは待機場所での待機中も可')
 
     def _reject_if_mode_disallows(self, response):
         rejected = self._stop_only_reject_reason()
@@ -653,9 +671,15 @@ class SlamControl(Node):
         # 停止中だけのガードを掛ける。slot:ROUTE は教示の保存・再生の読み直しが
         # TEACH / REPLAY の最中に呼ぶ内部経路のため対象外（FSM の遷移が縛る）。
         if request.slot == 'VENUE':
-            rejected = self._reject_if_mode_disallows(response)
-            if rejected:
-                return rejected
+            if request.mode == 'reload':
+                # 当日の試験画面は AT_HOME／IDLE_H で開く。ここだけ読み直しを許す。
+                reason = self._venue_open_reject_reason()
+                if reason is not None:
+                    return self._finish(response, reason, '')
+            else:
+                rejected = self._reject_if_mode_disallows(response)
+                if rejected:
+                    return rejected
 
         if request.mode == 'reset':
             # 教示の開始時の地図リセット。教示の入口（ROUTE_SEL）か直前の IDLE
