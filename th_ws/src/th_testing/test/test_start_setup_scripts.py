@@ -103,6 +103,16 @@ exit "${FAKE_NPX_RC:-0}"
 """
 
 
+# 偽 ss。FAKE_SS_PORT のポートだけ、FAKE_SS_PID が生きている間「使用中」と答える。
+FAKE_SS = """#!/usr/bin/env bash
+port="${*: -1}"; port="${port##*:}"
+if [ "$port" = "${FAKE_SS_PORT:-}" ] && kill -0 "${FAKE_SS_PID:-0}" 2>/dev/null; then
+    echo "LISTEN 0 511 0.0.0.0:$port 0.0.0.0:* users:((\\"node\\",pid=$FAKE_SS_PID,fd=20))"
+fi
+exit 0
+"""
+
+
 def _write(path, content):
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -121,6 +131,7 @@ def fakebin(tmp_path):
     for name in ("ping", "ssh", "npm", "nmcli"):
         _write(str(bin_dir / name), FAKE_SIMPLE.replace("$FAKE_NAME", name))
     _write(str(bin_dir / "npx"), FAKE_NPX)
+    _write(str(bin_dir / "ss"), FAKE_SS)
 
     log = tmp_path / "calls.log"
     log.write_text("", encoding="utf-8")
@@ -662,3 +673,52 @@ def test_stop_marker_path_in_dry_run(fakebin):
     assert r.returncode == 0, r.stderr
     assert "control_attempt" in r.stdout
     assert _calls(log) == []
+
+
+# ── 3b. ポートが他に取られている ────────────────────────────
+
+def _squatter():
+    out = subprocess.run(["bash", "-c", "sleep 300 >/dev/null 2>&1 </dev/null & echo $!"],
+                         capture_output=True, text=True, check=True)
+    return int(out.stdout.strip())
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+        with open("/proc/%d/stat" % pid) as f:
+            return f.read().split()[2] != "Z"
+    except (ProcessLookupError, FileNotFoundError):
+        return False
+
+
+def test_port_taken_without_confirmation_touches_nothing(fakebin, with_dist):
+    _, make_env, log = fakebin
+    pid = _squatter()
+    try:
+        env = make_env(FAKE_SS_PORT="5173", FAKE_SS_PID=pid)
+        r = subprocess.run(["bash", START_SH], capture_output=True, text=True,
+                           env=env, timeout=60, stdin=subprocess.DEVNULL)
+        assert r.returncode != 0
+        assert _alive(pid)
+        assert not _launch_execs(_calls(log))
+        assert "ポート 5173 が他に取られている" in (r.stdout + r.stderr)
+    finally:
+        if _alive(pid):
+            os.kill(pid, signal.SIGKILL)
+
+
+def test_port_taken_yes_terminates_holder_and_starts(fakebin, with_dist):
+    _, make_env, log = fakebin
+    pid = _squatter()
+    try:
+        env = make_env(FAKE_SS_PORT="5173", FAKE_SS_PID=pid, FAKE_LAUNCH_RC="0",
+                       STARTSH_RESTART_MAX="1")
+        r = subprocess.run(["bash", START_SH, "--yes"], capture_output=True, text=True,
+                           env=env, timeout=60, stdin=subprocess.DEVNULL)
+        assert not _alive(pid)
+        assert "ポート 5173 を空けた" in (r.stdout + r.stderr)
+        assert _launch_execs(_calls(log))
+    finally:
+        if _alive(pid):
+            os.kill(pid, signal.SIGKILL)

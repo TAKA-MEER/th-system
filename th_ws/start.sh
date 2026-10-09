@@ -61,6 +61,7 @@ usage() {
   --dry-run    何も実行せず、これから何をするかだけ表示する
   --yes, -y    他で起動していたとき、確認せずにそれを止めてこちらで起動する
                （既定では確認する。端末が無く --yes も無ければ何も止めずに終わる）
+               ポートが他に取られていたときの持ち主の停止にも効く
   --help, -h   この表示
 
 launch 引数:
@@ -140,6 +141,7 @@ DRY
         echo "  4. --build: コンテナ内で colcon build --symlink-install、ホストで npm run build（web_ui）"
     fi
     cat <<DRY
+     WebUI のポート ${WEBUI_PORT}（と 8766・9090）が他に取られていれば、持ち主を表示して同様に確認し、TERM で止めて空ける
   5. bringup を起動: docker exec th_robot bash -lc '... exec ros2 launch th_bringup bringup.launch.py <launch 引数> control_attempt:=n'
       起動ごとに control_attempt:=n（n は 1 始まりの起動回数）を付けて渡す。
       終了コードにかかわらず立て直す（最大 ${STARTSH_RESTART_MAX} 回まで。その後は機体の電源再投入・AP・ケーブルの確認を案内）。
@@ -262,6 +264,60 @@ EXISTING_PID="$(find_launch_pid || true)"
 if [ -n "${OTHER_START_PID:-}" ] || [ -n "${EXISTING_PID:-}" ]; then
     takeover_existing "${OTHER_START_PID:-}" "${EXISTING_PID:-}" || exit 1
 fi
+
+# ── 3b. ポートが他に取られている場合 ─────────────────────────
+# ホスト側で待ち受けているプロセスの PID を返す（ss。見えないときは空）。
+port_holder_pids() {
+    ss -H -ltnp "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u || true
+}
+port_in_use() {
+    [ -n "$(ss -H -ltn "sport = :$1" 2>/dev/null || true)" ]
+}
+
+# 使うポートが他に取られていたら、確認のうえ持ち主を TERM で止めて空ける。
+# $2 が required なら空けられないと終了、optional なら警告のみ。
+free_port() {
+    local port="$1" mode="$2" pids pid cmd waited ans
+    port_in_use "$port" || return 0
+    pids="$(port_holder_pids "$port")"
+    if [ -z "$pids" ]; then
+        # 持ち主の PID が見えない（他ユーザー・コンテナ内のプロセス等）。止められない。
+        if [ "$mode" = "required" ]; then
+            err "ポート ${port} が他に取られている（持ち主を特定できない）。解放してから打ち直すこと。"
+            return 1
+        fi
+        warn "ポート ${port} が他に取られている（持ち主を特定できない）。bringup 側の後始末に任せる。"
+        return 0
+    fi
+    warn "ポート ${port} が他に取られている:"
+    for pid in $pids; do
+        cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | cut -c1-120 || true)"
+        warn "  - PID ${pid}: ${cmd}"
+    done
+    if [ "$ASSUME_YES" -eq 1 ]; then
+        info "--yes が指定されているので確認せずに止める。"
+    elif [ -t 0 ]; then
+        printf '%s' "これらを止めてポート ${port} を空けますか？ [y/N] "
+        read -r ans || ans=""
+        case "$ans" in y|Y|yes|YES) ;; *) err "止めないので、何もせずに終わる。"; return 1 ;; esac
+    else
+        err "端末から確認できない（--yes も無い）ので、何も止めずに終わる。"
+        return 1
+    fi
+    for pid in $pids; do kill -TERM "$pid" 2>/dev/null || true; done
+    waited=0
+    while port_in_use "$port" && [ "$waited" -lt 10 ]; do sleep 1; waited=$((waited + 1)); done
+    if port_in_use "$port"; then
+        err "ポート ${port} が空かなかった。強制終了はしない。持ち主を確かめて止めてから打ち直すこと。"
+        return 1
+    fi
+    info "ポート ${port} を空けた。"
+}
+
+free_port "$WEBUI_PORT" required || exit 1
+for p in 8766 9090; do  # esp32_bridge / rosbridge（コンテナは host ネットワーク）
+    free_port "$p" optional || exit 1
+done
 
 # 自分の PID を残す（次に起動した start.sh が、他で起動していると気づけるように）
 mkdir -p "$(dirname "$STARTSH_PIDFILE")"
