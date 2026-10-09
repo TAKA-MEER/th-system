@@ -47,6 +47,27 @@ def arrived(robot_x: float, robot_y: float, goal_x: float, goal_y: float,
     return math.hypot(robot_x - goal_x, robot_y - goal_y) < params.arrival_xy_tol_m
 
 
+# Nav2 が SUCCEEDED を返したとき、機体がゴールからこれ以上離れていたら鵜呑みにしない [m]。
+# 通常の許容差(arrival_xy_tol_m・Nav2 の goal checker)よりずっと大きい値にして、
+# 正規の到着を弾かない。
+SPURIOUS_SUCCESS_DIST_M = 0.5
+
+
+def success_is_plausible(robot_xy, goal, max_dist: float = SPURIOUS_SUCCESS_DIST_M) -> bool:
+    """Nav2 の FollowPath が SUCCEEDED を返したのが本当に到着か（純関数）。
+
+    2026-10-09 実機: Nav2 controller の tf バッファの map→odom が約 57 秒止まり
+    (`Transform data too old`)、ゴールを変換できないまま「Reached the goal!」と
+    即成功を返した。venue_navigator がそれを信じて、ゴールの 1.7 m 手前で
+    「待機場所に着いた」として向き合わせを始め、戻れなかった。
+    位置が分からない(None)ときは判定できないので信じる(従来どおり)。
+    """
+    if robot_xy is None or goal is None:
+        return True
+    return math.hypot(robot_xy[0] - float(goal['x']),
+                      robot_xy[1] - float(goal['y'])) <= max_dist
+
+
 def should_unblock_for_arrival(robot_xy, goal, params: VenueNavParams) -> bool:
     """BLOCKED 中に到着圏内なら evt.unblocked で NAV に戻すべきか（2026-09-10）。
 

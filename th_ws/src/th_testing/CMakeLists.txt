@@ -750,6 +750,11 @@ if(BUILD_TESTING)
     TIMEOUT 120)
   # 教示の入口で地図をまっさらに戻し、start_record はその完了を待つ
   # （2026-10-09 実機。route_recorder の本番の経路。rclpy 要＝ホスト除外）
+  # Nav2 の成功の誤報を到着扱いにしない（2026-10-09 実機。venue_navigator の
+  # 本番の経路。Nav2 の代役つき。rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_venue_nav_spurious_success_node
+    test/test_venue_nav_spurious_success_node.py
+    TIMEOUT 180)
   ament_add_pytest_test(test_teach_map_reset_node
     test/test_teach_map_reset_node.py
     TIMEOUT 120)

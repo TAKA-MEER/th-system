@@ -44,7 +44,7 @@ from th_system_msgs.msg import PinList, StateEffect, StateEvent, SystemState
 from th_system_msgs.srv import GoToPanel
 
 from th_onsite.venue_nav_core import (
-    VenueNavParams, align_cmd_wz, arrived, find_home_goal,
+    VenueNavParams, align_cmd_wz, arrived, find_home_goal, success_is_plausible,
     should_unblock_for_arrival,
 )
 
@@ -141,6 +141,7 @@ class VenueNavigator(Node):
         # 出す前に align_cmd_wz でその場旋回する）。PANEL_NAV/SUMMON は
         # 既存の ALIGN 状態を使うのでこのフラグの対象外。
         self._final_aligning = False
+        self._spurious_timer = None
         self._follow_goal_handle = None
         # 自分が cancel した goal かを「通番の集合」で区別する。bool 1 個では
         # 取り消し結果の到着前に次の送信が走ると印を消してしまい、古い結果を
@@ -699,11 +700,41 @@ class VenueNavigator(Node):
         if status == 4:  # GoalStatus.STATUS_SUCCEEDED
             self._unblocking = False
             self._recheck_in_flight = False
+            self._refresh_robot_pose()
+            goal = self._current_goal()
+            robot_xy = self._robot[:2] if self._robot is not None else None
+            if not success_is_plausible(robot_xy, goal):
+                # Nav2 が自己位置の変換に失敗して即「成功」と返したとき。到着扱いに
+                # せず、少し待って計画からやり直す(Nav2 の tf が戻れば進む)。
+                self.get_logger().warn(
+                    f'follow_path が成功を返したがゴールまで '
+                    f'{math.hypot(robot_xy[0] - goal["x"], robot_xy[1] - goal["y"]):.2f} m '
+                    f'離れている → 到着扱いにせず再計画する')
+                self._schedule_spurious_retry()
+                return
             self._arrive_or_align()
             return
         # ABORTED / CANCELED（自分でない cancel）→ blocked
         self.get_logger().warn(f'follow_path 終了 status={status} → evt.blocked')
         self._go_blocked(json.dumps({'status': int(status)}))
+
+    def _schedule_spurious_retry(self, delay_s: float = 2.0):
+        """成功の誤報のあと、delay_s 後に NAV を最初から計画し直す(1 回きりのタイマ)。"""
+        if getattr(self, '_spurious_timer', None) is not None:
+            return
+        self._spurious_timer = self.create_timer(delay_s, self._spurious_retry)
+
+    def _spurious_retry(self):
+        timer = self._spurious_timer
+        self._spurious_timer = None
+        if timer is not None:
+            timer.cancel()
+            self.destroy_timer(timer)
+        if (self._is_nav_state() and not self._arrived_latched
+                and self._follow_goal_handle is None
+                and not self._nav_chain_active):
+            self.get_logger().info('成功の誤報のあと: NAV を計画からやり直す')
+            self._start_nav()
 
     def _on_arrived(self):
         """到着処理。FSM は NAV でしか evt.arrived を受けない（T-PNAV-01 等）ので、

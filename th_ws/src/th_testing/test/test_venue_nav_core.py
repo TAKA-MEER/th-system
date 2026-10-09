@@ -100,3 +100,24 @@ class TestFindHomeGoal:
 
     def test_none_returns_none(self):
         assert find_home_goal(None) is None
+
+
+# ── Nav2 の成功の誤報（2026-10-09 実機）──
+from th_onsite.venue_nav_core import success_is_plausible, SPURIOUS_SUCCESS_DIST_M  # noqa: E402
+
+
+def test_success_plausible_near_goal():
+    goal = {'x': 3.0, 'y': 0.0}
+    assert success_is_plausible((3.0, 0.0), goal)
+    assert success_is_plausible((3.0 - SPURIOUS_SUCCESS_DIST_M, 0.0), goal)   # ちょうど境界は信じる
+
+
+def test_success_implausible_when_far():
+    goal = {'x': 0.0, 'y': 0.0}
+    assert not success_is_plausible((0.857, -1.52), goal)   # 実機: 1.7 m 手前
+    assert not success_is_plausible((SPURIOUS_SUCCESS_DIST_M + 0.01, 0.0), goal)
+
+
+def test_success_unknown_pose_is_trusted():
+    assert success_is_plausible(None, {'x': 0.0, 'y': 0.0})
+    assert success_is_plausible((0.0, 0.0), None)
