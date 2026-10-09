@@ -910,6 +910,14 @@ class StateManager(Node):
             lease_ms = self.get_parameter('jog_lease_ms').value
             if now - self._last_jog_ms >= lease_ms:
                 self._process("sys.jog_lease_expired", {}, "")
+                # 状態を保つ準備状態（PREP の MAPPING／EDIT 等、attributes の
+                # prep_states）では C-01 がジョグ介入で状態を変えない＝PAUSE に入らない。
+                # C-02 は PAUSE でしか拾わないため、どの遷移にも当たらず jog_active が
+                # 立ったまま残った（2026-10-09 実機: 試験準備で一度スティックを触ると、
+                # 会場地図の保存・読み直しが「ジョグ中のため拒否」され続けた）。
+                # リースが切れたのに遷移で下ろされなかったときは、ここで下ろす。
+                if self._jog_active:
+                    self._eff_set_jog({'on': False}, "")
 
         if self._screens:
             stale_ms = self.get_parameter('screen_stale_ms').value

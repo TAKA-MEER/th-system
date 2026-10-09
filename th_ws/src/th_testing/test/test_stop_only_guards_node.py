@@ -64,7 +64,9 @@ def generate_test_description():
     state_manager = launch_ros.actions.Node(
         package='th_state', executable='state_manager.py', name='state_manager',
         parameters=[{'link_wait_timeout_ms': 600_000, 'screen_stale_ms': 600_000,
-                     'ui_active_window_s': 5}],
+                     'ui_active_window_s': 5,
+                     # 実機は生成 yaml（registry の jog_lease_ms）が渡す。
+                     'jog_lease_ms': 1200}],
         output='screen')
     slam_control = launch_ros.actions.Node(
         package='th_config_manager', executable='slam_control.py', name='slam_control',
@@ -284,6 +286,31 @@ class TestStopOnlyGuards(unittest.TestCase):
         assert self._wait_mode_state('PREP', 'MAPPING', timeout=10.0), \
             f'PREP/MAPPING に入らない ({self._mode_state()})'
         self._assert_allows('PREP/MAPPING')
+
+    def test_prep_jog_lease_releases_guard(self):
+        """PREP/MAPPING で一度スティックを握っても、離せば jog_active が下りて
+        地図操作が通る（2026-10-09 実機: 準備状態では PAUSE に入らず C-02 に当たらない
+        ため jog_active が立ったまま残り、会場地図の保存・読み直しが「ジョグ中のため
+        拒否」され続けた）。握っている間は拒否される。"""
+        res = self._trigger('ui.enter_mode', {'mode': 'PREP'})
+        assert res.accepted, f'PREP に入らない: {res.reason}'
+        assert self._wait_mode_state('PREP', 'MAPPING', timeout=10.0)
+        res = self._trigger('ui.jog.hold')
+        assert res.accepted, f'ジョグ介入が受理されない: {res.reason}'
+        self._spin(0.3)
+        assert self._state_history[-1].jog_active, 'ジョグ介入で jog_active が立たない'
+        assert self._mode_state() == ('PREP', 'MAPPING'), \
+            f'準備状態なのに状態が変わった ({self._mode_state()})'
+        r = self._discard()
+        assert r.success is False and 'ジョグ中' in r.message, \
+            f'握っている間は拒否されるはず: {r.message}'
+        # リース（1.2 秒）が切れたら下りる。
+        deadline = time.time() + 6.0
+        while time.time() < deadline and self._state_history[-1].jog_active:
+            self._spin(0.2)
+        assert not self._state_history[-1].jog_active, \
+            'リースが切れても jog_active が下りない（準備状態でスティックを離したのに地図操作が拒否され続ける）'
+        self._assert_allows('PREP/MAPPING（ジョグ後）')
 
     def test_prep_return_denies(self):
         """PREP/RETURN（自律走行）では 4 経路とも拒否される（SD-9）。"""
