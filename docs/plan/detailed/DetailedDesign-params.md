@@ -412,7 +412,7 @@ digest = sha1( sorted( f"{name}={status}:{value}" for all params ) )[:12]
 | `tracker_lost_grace_ms` | 追従・呼び寄せの停止判断 | `C-05` |
 | `replay_drift_m_per_100m` | 1 経路の長さの上限 | `O-c4` |
 | `calib_linear_tolerance_ratio` / `calib_rotation_tolerance_deg` / `calib_blind_tolerance_deg` | 校正の合否 | `O-c5` / `F-13` |
-| `calib_interval_days` | 定期校正の催促 | `O-c5` |
+| ~~`calib_interval_days`~~ | ~~定期校正の催促~~ | **廃止**（2026-10-09。間隔・悪化の基準は使用者が決める。[Spec-checks.md](Spec-checks.md) §3.7） |
 | `battery_endurance_min` | 目標 G5 | `O-c7` |
 
 ### 6.3 外部から与えられる（`class: a`・**未取得の間は `placeholder`**）

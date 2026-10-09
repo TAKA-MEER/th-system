@@ -1246,17 +1246,6 @@
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-wp0.md WP-PARAM-01 §5"
   note: "段階 8 まで測りようがない"
 
-- name: calib_interval_days
-  unit: days
-  class: c
-  status: placeholder
-  value: TBD_MEASURE
-  blocking: true
-  blocking_from_stage: 7
-  consumers: [calib_runner, web_ui]
-  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §6.2（O-c5） / DetailedDesign-wp0.md WP-PARAM-01 §5"
-  note: "定期校正の催促"
-
 # =========================================================================
 # W-03: 教示・再生・間引きの挙動値（names §7.3）
 # counts as (b) given: 現行ノードの既定値をそのまま移した暫定値。実測値ではない

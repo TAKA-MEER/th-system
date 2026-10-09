@@ -600,7 +600,6 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `blocked_hold_ms` ／ `unblocked_hold_ms` | ms | (b) |
 | `route_gap_timeout_ms` | ms | (b) |
 | `leash_stop_latency_ms` | ms | (c) |
-| `calib_interval_days` | 日 | (c) |
 | `calib_linear_distance_m` | m | (b)。校正 LINEAR の指定距離（SG-B21） |
 | `calib_rotation_deg` | deg | (b)。校正 ROTATION の指定角度（SG-B21） |
 | `calib_run_timeout_ms` | ms | (b)。校正の自律走行のタイムアウト（SG-B21） |
