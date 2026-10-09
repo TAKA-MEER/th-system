@@ -165,11 +165,11 @@ public:
         // という症状になる。2026-09-08 実機で発覚）。W-05 の v_reverse と同じ扱いで、
         // 場内低速相当の値を C++ 側の宣言既定値に置く。生成 yaml に出れば上書きされる。
         declare_parameter("v_slow", 0.30);
-        // WAIVER(demo): W-05 — 本来 registry の v_reverse は blind_clearance_m
-        // (LiDAR 死角。placeholder) から逆算する derived 値。derived だと null →
+        // WAIVER(demo): W-05 — 本来 registry の v_reverse は venue_clearance_m
+        // (試験場内の見通し。placeholder) から逆算する derived 値。derived だと null →
         // 生成 yaml に出ず → 既定 0.0 で「後退がゼロにクランプされ後退不可」
         // (実機で発覚)。デモの間だけ既定を 0.25 m/s (場内低速相当) にする。
-        // 生成 yaml に v_reverse が入れば (blind_clearance_m 実測後) 上書きされる。
+        // 生成 yaml に v_reverse が入れば (venue_clearance_m 実測後) 上書きされる。
         // 注記(2026-09-09): 上部構造搭載で blind_angle_ranges は非空・4 セクタに
         // なった（四隅の支柱。laser 中心から約 0.33m）。ただし 4 セクタは前方
         // コーン(±28.6°)・後方コーン(±34.4°)の外なので L5 の v_reverse キャップは
