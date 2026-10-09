@@ -20,6 +20,7 @@ from stop_only_guard import (  # noqa: E402
     ALLOWED_PREP_STATES,
     STATE_STALE_SEC,
     stop_only_allows,
+    teach_reset_allows,
 )
 
 _CONF_SCRIPTS = os.path.abspath(os.path.join(
@@ -136,3 +137,35 @@ def test_nodes_use_stop_only_guard():
         assert "'/robot/mode'" not in src and '"/robot/mode"' not in src, \
             f"{path} が旧 /robot/mode をまだ購読している"
         assert "/system/state" in src, f"{path} に /system/state の購読が無い"
+
+
+# ── 教示の開始時の地図リセット（teach_reset_allows）──────────────────
+def _reset(mode, state="NONE", jog=False, received=True, age=0.0):
+    return teach_reset_allows(mode, state, jog, received, age)
+
+
+def test_teach_reset_allowed_at_route_sel_and_idle():
+    """教示の入口（ROUTE_SEL）と、その直前の IDLE（状態の伝わる前）は許す。"""
+    assert _reset("TEACH_MANUAL", "ROUTE_SEL") == (True, "")
+    assert _reset("TEACH_FOLLOW", "ROUTE_SEL") == (True, "")
+    assert _reset("IDLE") == (True, "")
+
+
+def test_teach_reset_refused_once_recording():
+    """記録に入ったあと（REC／PAUSE／SAVED）は拒否する。経路ごと地図が壊れる。"""
+    for st in ("REC", "PAUSE", "SAVED"):
+        ok, why = _reset("TEACH_MANUAL", st)
+        assert not ok and why.startswith("mode_state_not_stopped"), st
+
+
+def test_teach_reset_refused_in_running_modes():
+    for mode in ("REPLAY", "MANUAL", "ESTOP"):
+        assert not _reset(mode)[0], mode
+
+
+def test_teach_reset_state_freshness_and_jog():
+    """ROUTE_SEL でも状態が未受信・古い・ジョグ中なら拒否する（安全側）。"""
+    assert _reset("TEACH_MANUAL", "ROUTE_SEL", received=False)[1] == "state_not_received"
+    assert _reset("TEACH_MANUAL", "ROUTE_SEL", age=STATE_STALE_SEC + 0.1)[1] == "state_stale"
+    assert _reset("TEACH_MANUAL", "ROUTE_SEL", age=None)[1] == "state_stale"
+    assert _reset("TEACH_MANUAL", "ROUTE_SEL", jog=True)[1] == "jog_active"

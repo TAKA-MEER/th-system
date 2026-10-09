@@ -931,3 +931,10 @@ def test_handle_map_save_rotates_before_save():
     assert seg.index('rotate_map_previous') < seg.index('_save_occupancy_grid'), (
         '旧版退避が保存より後に来ている')
     assert 'keep_previous' in seg, 'keep_previous フラグが無い'
+
+
+# ── 教示の開始時の地図リセット（mode=reset）────────────────────────
+def test_open_session_error_reset_is_route_only():
+    """reset は ROUTE だけ（VENUE の地図は教示の開始で捨てない）。"""
+    assert open_session_error('ROUTE', 'reset', 'teach') is None
+    assert open_session_error('VENUE', 'reset', 'venue') is not None

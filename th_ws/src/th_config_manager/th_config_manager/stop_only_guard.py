@@ -54,3 +54,32 @@ def stop_only_allows(mode: Optional[str],
     if mode == "PREP" and state in ALLOWED_PREP_STATES:
         return True, ""
     return False, f"mode_state_not_stopped:{mode}/{state}"
+
+
+TEACH_MODES = ("TEACH_FOLLOW", "TEACH_MANUAL")
+
+
+def teach_reset_allows(mode: Optional[str],
+                       state: Optional[str],
+                       jog_active: bool,
+                       state_received: bool,
+                       state_age_sec: Optional[float],
+                       stale_sec: float = STATE_STALE_SEC) -> "tuple[bool, str]":
+    """教示の開始時に地図をまっさらに戻してよいか（純関数）。
+
+    教示の入口（TEACH_* の ROUTE_SEL。機体は止まっていて記録はまだ始まっていない）か、
+    その直前の IDLE（route_recorder が /system/state の変化を受けて呼ぶので、
+    こちらの /system/state がまだ IDLE のことがある）のときだけ許す。
+    REC／PAUSE／SAVED など記録に入ったあとは許さない（記録中に地図を捨てると
+    経路が地図ごと壊れる）。それ以外の判定は stop_only_allows と同じ。
+    """
+    if mode in TEACH_MODES and state == "ROUTE_SEL":
+        if not state_received:
+            return False, "state_not_received"
+        if state_age_sec is None or state_age_sec > stale_sec:
+            return False, "state_stale"
+        if jog_active:
+            return False, "jog_active"
+        return True, ""
+    return stop_only_allows(mode, state, jog_active, state_received,
+                            state_age_sec, stale_sec)

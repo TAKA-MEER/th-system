@@ -35,3 +35,14 @@ export function routeMapTopicConfig(ros) {
     compression: 'cbor',
   }
 }
+
+// 教示の開始時、機体は地図をまっさらに作り直す（slam_toolbox を再起動する）。
+// 再起動中を知らせる /slam_control/estimator_restarting が true になったら、
+// 画面に残っている古い地図を捨てる（捨てないと新しい地図が届くまで前の地図の上に
+// 経路が描かれて、リセットされていないように見える。2026-10-09 実機）。
+export const ESTIMATOR_RESTARTING_TOPIC = '/slam_control/estimator_restarting'
+
+// msg は std_msgs/Bool。true のときだけ消す（false は消さない）。
+export function restartClearsMap(msg) {
+  return msg?.data === true
+}

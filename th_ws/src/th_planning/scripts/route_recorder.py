@@ -12,6 +12,7 @@
 import json
 import math
 import os
+import threading
 import time
 
 import rclpy
@@ -180,6 +181,10 @@ class RouteRecorder(Node):
         self._broken = False
         self._odom_resync = False
 
+        # 教示の入口で地図をまっさらに戻す作業（_reset_map_worker）。start_record は
+        # これが終わるまで待つ（再起動中に記録を始めると map TF が無く odom 記録になる）。
+        self._reset_thread: "threading.Thread | None" = None
+
         self._tf_buffer = None
         self._tf_listener = None
         if self._use_map_frame:
@@ -308,6 +313,7 @@ class RouteRecorder(Node):
     def _on_effect(self, msg: StateEffect):
         name = msg.name
         if name == 'start_record':
+            self._await_map_reset()
             args = json.loads(msg.args_json or '{}')
             route_id = args.get('route_id') or ''
             if not route_id:
@@ -397,14 +403,86 @@ class RouteRecorder(Node):
             self.get_logger().debug(f"無視する effect: {name}")
 
     def _on_state(self, msg: SystemState):
+        entered_teach_sel = (
+            msg.mode in ('TEACH_FOLLOW', 'TEACH_MANUAL')
+            and msg.state == 'ROUTE_SEL'
+            and not (self._mode in ('TEACH_FOLLOW', 'TEACH_MANUAL')
+                     and self._state == 'ROUTE_SEL'))
         self._mode = msg.mode
         self._state = msg.state
+        if entered_teach_sel and self._use_map_frame:
+            self._start_map_reset()
         # 1b-7 SG-B18: 教示系を抜けたら連続性切れのラッチを下ろす
         # （T-TEACH-06 が IDLE へ抜けた・「終了」で IDLE へ抜けた。どちらも
         # W-4 が保存可否の判断を引き継ぐ）。ESTOP・手押しでは下ろさない
         # （戻ってから T-TEACH-06 が拾う）。
         if not owns_route_status(self._mode, recorder=True):
             self._broken = False
+
+    # ── 教示の入口での地図リセット ────────────────────────
+    def _start_map_reset(self):
+        """教示の経路選択に入ったら、地図をまっさらに戻す作業を別スレッドで始める。
+
+        slam_toolbox の作り直しは数秒〜十数秒かかり、/system/state のコールバックを
+        塞げない。start_record は _await_map_reset でこの完了を待つ。
+        """
+        t = self._reset_thread
+        if t is not None and t.is_alive():
+            return   # 前の作業がまだ走っている（状態の再送など）
+        self._reset_thread = threading.Thread(
+            target=self._reset_map_worker, name='teach_map_reset', daemon=True)
+        self._reset_thread.start()
+
+    def _await_map_reset(self, timeout_sec: float = 120.0):
+        t = self._reset_thread
+        if t is None:
+            return
+        if t.is_alive():
+            self.get_logger().info('地図の作り直しが終わるのを待ってから記録を始めます')
+            t.join(timeout=timeout_sec)
+            if t.is_alive():
+                self.get_logger().warn(
+                    '地図の作り直しが終わらないまま記録を始めます（odom 記録になる可能性）')
+        self._reset_thread = None
+
+    def _map_tf_fresh(self, max_age_s: float = 1.0) -> bool:
+        """map→base_link が取れ、しかも最近のもの（死んだ slam の最後の TF ではない）か。"""
+        if self._tf_buffer is None:
+            return False
+        try:
+            tf = self._tf_buffer.lookup_transform(
+                self._map_frame, self._base_frame, rclpy.time.Time())
+        except Exception:
+            return False
+        stamp = tf.header.stamp
+        age = self.get_clock().now().nanoseconds / 1e9 - (stamp.sec + stamp.nanosec / 1e9)
+        return age <= max_age_s
+
+    def _reset_map_worker(self):
+        if not self._map_session_client.wait_for_service(timeout_sec=2.0):
+            self.get_logger().warn(
+                '地図をまっさらに戻せません: /map_session/open に接続できません'
+                '（いまの地図の上に教示します）')
+            return
+        req = OpenMapSession.Request(slot='ROUTE', session_id='teach', mode='reset')
+        try:
+            resp, err = call_and_wait(self, self._map_session_client, req, 90.0)
+        except Exception as e:   # noqa: BLE001
+            self.get_logger().warn(f'地図をまっさらに戻せません: {e}')
+            return
+        if err or not resp.success:
+            self.get_logger().warn(
+                f'地図をまっさらに戻せません（いまの地図の上に教示します）: '
+                f'{err or resp.message}')
+            return
+        # 新しい slam_toolbox が最初のスキャンを処理して map TF を出すまで待つ。
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline:
+            if self._map_tf_fresh():
+                self.get_logger().info('地図をまっさらに戻しました（map TF 復帰を確認）')
+                return
+            time.sleep(0.2)
+        self.get_logger().warn('地図は作り直したが map TF が戻らない（odom 記録になる可能性）')
 
     def _finalize_and_close(self):
         """現在の記録を RouteData に落とし finalize_route_file で保存して閉じる。

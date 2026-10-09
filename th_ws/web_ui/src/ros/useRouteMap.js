@@ -12,20 +12,30 @@
 // useRouteCatalog pattern: owns its own rosbridge Topic, and in TEST_MODE reads
 // window.__thTestRouteMap (seed) for e2e.
 import { useEffect, useRef, useState } from 'react'
-import { routeMapTopicConfig, MAP_THROTTLE_MS } from './routeMapTopicConfig.js'
+import {
+  routeMapTopicConfig, MAP_THROTTLE_MS,
+  ESTIMATOR_RESTARTING_TOPIC, restartClearsMap,
+} from './routeMapTopicConfig.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 
-export function useRouteMap(ros) {
+export function useRouteMap(ros, { clearOnRestart = false } = {}) {
   const topicRef = useRef(null)
+  const restartRef = useRef(null)
   const [mapData, setMapData] = useState(
     TEST_MODE ? (window.__thTestRouteMap ?? null) : null)
 
   useEffect(() => {
     if (!TEST_MODE) return undefined
     window.__thSetTestRouteMap = (v) => setMapData(v)
-    return () => { delete window.__thSetTestRouteMap }
-  }, [])
+    window.__thTestRouteMapRestart = (v) => {
+      if (clearOnRestart && restartClearsMap(v)) setMapData(null)
+    }
+    return () => {
+      delete window.__thSetTestRouteMap
+      delete window.__thTestRouteMapRestart
+    }
+  }, [clearOnRestart])
 
   useEffect(() => {
     if (TEST_MODE || !ros) { topicRef.current = null; return undefined }
@@ -36,11 +46,22 @@ export function useRouteMap(ros) {
       if (!grid?.info || !grid.data) return
       setMapData(grid)
     })
+    if (clearOnRestart) {
+      restartRef.current = new ROSLIB.Topic({
+        ros, name: ESTIMATOR_RESTARTING_TOPIC, messageType: 'std_msgs/Bool',
+        queue_length: 1,
+      })
+      restartRef.current.subscribe((msg) => {
+        if (restartClearsMap(msg)) setMapData(null)
+      })
+    }
     return () => {
       topicRef.current?.unsubscribe()
       topicRef.current = null
+      restartRef.current?.unsubscribe()
+      restartRef.current = null
     }
-  }, [ros])
+  }, [ros, clearOnRestart])
 
   return mapData
 }

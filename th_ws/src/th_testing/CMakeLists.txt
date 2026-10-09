@@ -748,6 +748,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_teach_record_broken_node
     test/test_teach_record_broken_node.py
     TIMEOUT 120)
+  # 教示の入口で地図をまっさらに戻し、start_record はその完了を待つ
+  # （2026-10-09 実機。route_recorder の本番の経路。rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_teach_map_reset_node
+    test/test_teach_map_reset_node.py
+    TIMEOUT 120)
   # 1b-7 S-13（SG-C5）: 記録開始の姿勢が /route/status.start_yaw に載ること
   # （route_recorder 単体の本番の経路。rclpy 要＝ホスト除外）
   ament_add_pytest_test(test_teach_start_yaw_node

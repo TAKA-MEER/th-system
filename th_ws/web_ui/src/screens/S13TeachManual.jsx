@@ -89,7 +89,7 @@ export default function S13TeachManual({ onFinish }) {
   const routePreview = useRoutePreview(ros)
   const odomPose = useOdomPose(ros)
   const routePose = useRoutePose(ros)
-  const routeMap = useRouteMap(ros)
+  const routeMap = useRouteMap(ros, { clearOnRestart: true })
   const warn = obstacleWarning(limiter)
   const disabledAll = stale || state?.mode == null
 

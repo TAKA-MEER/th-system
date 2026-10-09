@@ -29,3 +29,14 @@ test('topic keeps messageType name and default throttling', () => {
   assert.equal(cfg.queue_length, 1)
   assert.ok(cfg.ros, 'ros ハンドルを引き継ぐ')
 })
+
+// 教示の開始時に機体が地図を作り直す。再起動中（true）のときだけ画面の古い地図を捨てる。
+import { restartClearsMap, ESTIMATOR_RESTARTING_TOPIC } from '../../src/ros/routeMapTopicConfig.js'
+
+test('restartClearsMap: true のときだけ地図を捨てる', () => {
+  assert.equal(ESTIMATOR_RESTARTING_TOPIC, '/slam_control/estimator_restarting')
+  assert.equal(restartClearsMap({ data: true }), true)
+  assert.equal(restartClearsMap({ data: false }), false)
+  assert.equal(restartClearsMap(undefined), false)
+  assert.equal(restartClearsMap({}), false)
+})

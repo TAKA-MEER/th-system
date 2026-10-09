@@ -204,3 +204,65 @@ def test_j_crash_never_true(slam, probe, monkeypatch):
     _spin(node, 0.5)
     assert True not in _values(received), (
         f'クラッシュで true が出た: {_values(received)}')
+
+
+def _fresh_state(slam, mode, state):
+    slam._state_mode = mode
+    slam._state_name = state
+    slam._jog_active = False
+    slam._state_at = time.monotonic()
+
+
+def _open_reset_request():
+    return SimpleNamespace(slot='ROUTE', session_id='teach', mode='reset',
+                           has_initial_pose=False, initial_x=0.0,
+                           initial_y=0.0, initial_yaw=0.0)
+
+
+def test_k_teach_reset_restarts_in_mapping_mode(slam, probe, monkeypatch):
+    """k: 教示の開始時の reset（2026-10-09）。kill の前に再起動中 true を出し、
+    作り直したあとは mapping に戻して地図作成中にし、最後は false。
+    前の経路の地図への書き足し保存（_open_route_base）は向けたままにしない。"""
+    node, received = probe
+    _settle(node, received)
+    calls = []
+    kill_saw = {}
+
+    def fake_kill():
+        _spin(node, 0.3)
+        kill_saw['true_already'] = True in _values(received)
+        calls.append('kill')
+        return [424242]
+
+    monkeypatch.setattr(slam, '_kill_slam_toolbox', fake_kill)
+    monkeypatch.setattr(slam, '_wait_for_slam_restart', lambda *a: None)
+    monkeypatch.setattr(slam, '_set_localization',
+                        lambda enabled: calls.append(('loc', enabled)))
+    slam._open_route_base = '/x/前の経路'
+    slam._set_active(False)       # 直前の再生で凍結されていた状況
+    old_instance = slam._instance_id
+    _fresh_state(slam, 'TEACH_MANUAL', 'ROUTE_SEL')
+
+    resp = SimpleNamespace(success=None, message='')
+    out = slam._cb_map_session_open(_open_reset_request(), resp)
+    assert out.success is True, out.message
+    assert kill_saw.get('true_already') is True, 'kill の前に再起動中を出していない'
+    assert calls == ['kill', ('loc', False)], f'mapping へ戻していない: {calls}'
+    assert slam._mapping_active is True, '地図作成中に戻っていない'
+    assert slam._open_route_base == '', '前の経路の地図が書き足し保存の対象に残っている'
+    assert slam._instance_id != old_instance, '生存世代が切り替わっていない'
+    _spin(node, 0.5)
+    values = _values(received)
+    assert values[-1] is False, f'再起動中が下りていない: {values}'
+
+
+def test_l_teach_reset_refused_once_recording(slam, monkeypatch):
+    """l: 記録に入ったあと（REC）は reset を拒否し、slam_toolbox には触れない。"""
+    touched = []
+    monkeypatch.setattr(slam, '_kill_slam_toolbox',
+                        lambda: touched.append('kill') or [1])
+    _fresh_state(slam, 'TEACH_MANUAL', 'REC')
+    resp = SimpleNamespace(success=None, message='')
+    out = slam._cb_map_session_open(_open_reset_request(), resp)
+    assert out.success is False
+    assert touched == [], '記録中なのに slam_toolbox を落とした'

@@ -53,7 +53,8 @@ def open_session_error(slot: str, mode: str, session_id: str) -> "str | None":
     """/map_session/open の引数検証（純関数）。
 
     - slot は "ROUTE"（経路地図）と "VENUE"（試験場内地図）のみ受け付ける
-    - mode は "save" / "reload" のみ
+    - mode は "save" / "reload" / "reset"（reset は ROUTE のみ。教示の開始時に
+      地図をまっさらに戻す）
     - session_id が空は拒否
     - session_id に `/` `\\` `..` が含まれる（未正規化）は拒否
 
@@ -61,8 +62,10 @@ def open_session_error(slot: str, mode: str, session_id: str) -> "str | None":
     """
     if slot not in ('ROUTE', 'VENUE'):
         return f'slot は ROUTE / VENUE のみ対応 (given {slot!r})'
-    if mode not in ('save', 'reload'):
-        return f'mode は save/reload のみ対応 (given {mode!r})'
+    if mode not in ('save', 'reload', 'reset'):
+        return f'mode は save/reload/reset のみ対応 (given {mode!r})'
+    if mode == 'reset' and slot != 'ROUTE':
+        return f'mode=reset は slot=ROUTE のみ対応 (given {slot!r})'
     if not session_id:
         return 'session_id が空'
     if _UNSAFE_ID_RE.search(session_id):

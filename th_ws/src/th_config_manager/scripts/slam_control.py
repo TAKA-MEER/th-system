@@ -130,7 +130,8 @@ from th_system_msgs.msg import MapSessionStatus, PinList, StateEffect, SystemSta
 from th_system_msgs.srv import OpenMapSession
 
 from th_config_manager.service_call import call_and_wait
-from th_config_manager.stop_only_guard import STATE_STALE_SEC, stop_only_allows
+from th_config_manager.stop_only_guard import (
+    STATE_STALE_SEC, stop_only_allows, teach_reset_allows)
 from th_config_manager.slam_control_logic import (
     deserialize_match_type, effective_reload_pose, estimator_restarting,
     map_instance_ids_match,
@@ -368,6 +369,19 @@ class SlamControl(Node):
             'jog_active': 'ジョグ中のため',
         }.get(reason, f'いまの状態（{self._state_mode}/{self._state_name}）では')
         return f'停止中（IDLE・PREP の地図作業中）のみ操作できます（{detail}拒否）'
+
+    def _teach_reset_reject_reason(self) -> "str | None":
+        """教示の地図リセットを受け付けてよいか。拒否なら理由の文言、可なら None。"""
+        received = self._state_at is not None
+        age = (time.monotonic() - self._state_at) if received else None
+        stale_ms = self.get_parameter('state_stale_ms').value
+        allowed, reason = teach_reset_allows(
+            self._state_mode, self._state_name, self._jog_active,
+            received, age, stale_ms / 1000.0)
+        if allowed:
+            return None
+        return (f'教示の入口（待機・経路選択）でのみ地図を作り直せます '
+                f'（{reason}。いまの状態 {self._state_mode}/{self._state_name}）')
 
     def _reject_if_mode_disallows(self, response):
         rejected = self._stop_only_reject_reason()
@@ -642,6 +656,15 @@ class SlamControl(Node):
             rejected = self._reject_if_mode_disallows(response)
             if rejected:
                 return rejected
+
+        if request.mode == 'reset':
+            # 教示の開始時の地図リセット。教示の入口（ROUTE_SEL）か直前の IDLE
+            # のときだけ。記録に入ったあとは拒否する（経路ごと地図が壊れる）。
+            rejected = self._teach_reset_reject_reason()
+            if rejected is not None:
+                return self._finish(response, rejected, '')
+            with self._lock:
+                return self._handle_map_reset(response)
 
         base = self._map_session_base(request.slot, request.session_id)
         with self._lock:
@@ -973,6 +996,42 @@ class SlamControl(Node):
         return self._finish(
             response, None,
             '地図を読み直しました（地図を凍結して自己位置推定に切り替えました）')
+
+    def _handle_map_reset(self, response):
+        """教示の開始時に slam_toolbox を作り直し、まっさらな地図作成から始める。
+
+        起動からの蓄積や、直前の再生で読み込んだ地図の上に教示を重ねない（2026-10-09
+        実機: 起動から約 3.7 時間ぶんの地図の上に 4 m の経路を教示し、その地図で再生の
+        自己位置合わせが「low」になり続けた）。順序は _handle_map_reload と同じ
+        （kill の前に再起動中を立てる → respawn を待つ）で、deserialize だけ行わず、
+        mapping モードのまま始める。**呼び出し側が self._lock を保持していること。**
+        """
+        self._reload_in_progress = True
+        self._sync_estimator_restarting()
+        try:
+            old_pids = self._kill_slam_toolbox()
+            if not old_pids:
+                self.get_logger().warn(
+                    'slam_toolbox のプロセスが見つかりません。respawn 待ちに入ります')
+            err = self._wait_for_slam_restart(old_pids, RESPAWN_WAIT_SEC)
+            if err:
+                return self._finish(response, err, '')
+            # 再起動したノードは mapping モードで立ち上がる。明示しておく
+            # （前回が localization で凍結されていても必ず作成中から始める）。
+            err = self._set_localization(False)
+            if err:
+                return self._finish(response, f'mapping モード切替失敗: {err}', '')
+            self._set_active(True)
+            self._slam_ready = True
+            self._open_route_base = ''   # 前の経路の地図への書き足し保存を向けない
+            self._instance_id = self._new_instance_id()
+            self._venue_dirty = False
+            self._publish_venue_status()
+        finally:
+            self._reload_in_progress = False
+            self._sync_estimator_restarting()
+        return self._finish(
+            response, None, '地図をまっさらに戻しました（地図作成を始めました）')
 
     # ── 地図の破棄 ──────────────────────────────────────────
     def _cb_discard_map(self, request, response):
