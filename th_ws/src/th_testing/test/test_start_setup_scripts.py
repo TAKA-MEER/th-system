@@ -176,7 +176,7 @@ def test_default_launch_args(fakebin, with_dist):
     execs = _launch_execs(_calls(log))
     assert len(execs) == 1
     for want in ("lidar_source:=network", "use_stub:=false",
-                 "enable_route_slam:=true"):
+                 "enable_route_slam:=true", "stage:=4"):
         assert want in execs[0], execs[0]
 
 
@@ -184,12 +184,15 @@ def test_extra_launch_arg_appended(fakebin, with_dist):
     _, make_env, log = fakebin
     env = make_env(FAKE_LAUNCH_MODE="exit", FAKE_LAUNCH_RC="0",
                    STARTSH_RESTART_MAX="1")
-    r = subprocess.run(["bash", START_SH, "stage:=4"], capture_output=True,
-                       text=True, env=env, timeout=60)
+    r = subprocess.run(["bash", START_SH, "stage:=1", "perception_start_delay:=3.0"],
+                       capture_output=True, text=True, env=env, timeout=60)
     assert r.returncode != 0  # 上限（1 回）に達して止まる
     execs = _launch_execs(_calls(log))
     assert len(execs) == 1
-    assert "stage:=4" in execs[0]
+    # 同じキーは渡した方が優先（既定の stage:=4 は消える）。別のキーは足される。
+    assert "stage:=1" in execs[0]
+    assert "stage:=4" not in execs[0]
+    assert "perception_start_delay:=3.0" in execs[0]
     assert "lidar_source:=network" in execs[0]
 
 

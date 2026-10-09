@@ -32,7 +32,7 @@ STARTSH_STOP_WAIT="${STARTSH_STOP_WAIT:-30}"      # Ctrl-C 後に launch が止�
 STARTSH_STOP_MARKER="${STARTSH_STOP_MARKER:-$SCRIPT_DIR/data/.control_stop}"
 
 # bringup の既定の launch 引数（同じキーが渡されたら渡された方を使う）
-DEFAULT_LAUNCH_ARGS=(lidar_source:=network use_stub:=false enable_route_slam:=true)
+DEFAULT_LAUNCH_ARGS=(lidar_source:=network use_stub:=false enable_route_slam:=true stage:=4)
 
 # ── 表示 ────────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -50,9 +50,9 @@ usage() {
 
   毎回の起動（bringup＋WebUI の配信）を 1 コマンドで行う。
   例: ./start.sh
-      ./start.sh stage:=4
+      ./start.sh stage:=1          # 教示再生だけの軽い起動（既定は stage:=4）
       ./start.sh enable_route_slam:=false
-      ./start.sh --build stage:=4
+      ./start.sh --build
 
 オプション:
   --build      コンテナ内で colcon build、ホストで WebUI の本番ビルドを行う
@@ -62,7 +62,7 @@ usage() {
 
 launch 引数:
   `key:=value` 形式で bringup.launch.py にそのまま渡す。
-  既定（lidar_source:=network use_stub:=false enable_route_slam:=true）と
+  既定（lidar_source:=network use_stub:=false enable_route_slam:=true stage:=4）と
   同じキーがあれば、渡された方が優先される。
 
 環境変数:
