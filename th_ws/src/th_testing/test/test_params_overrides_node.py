@@ -63,6 +63,38 @@ _TEST_REGISTRY_ROWS = [
         "spec_ref": "test_params_overrides_node.py",
         "note": "/params/set で後から書く given 行",
     },
+    # SG-C14: 速度プリセット 3 段階（本物と同名。サーバ側の順序ガードが
+    # 実効値で拒否することを縛る。部分更新でも崩せない）。
+    {
+        "name": "speed_preset_low",
+        "unit": "ratio",
+        "class": "b",
+        "status": "given",
+        "value": 0.27,
+        "consumers": ["params_audit"],
+        "spec_ref": "test_params_overrides_node.py",
+        "note": "SG-C14 順序ガード用",
+    },
+    {
+        "name": "speed_preset_mid",
+        "unit": "ratio",
+        "class": "b",
+        "status": "given",
+        "value": 0.55,
+        "consumers": ["params_audit"],
+        "spec_ref": "test_params_overrides_node.py",
+        "note": "SG-C14 順序ガード用",
+    },
+    {
+        "name": "speed_preset_high",
+        "unit": "ratio",
+        "class": "b",
+        "status": "given",
+        "value": 1.0,
+        "consumers": ["params_audit"],
+        "spec_ref": "test_params_overrides_node.py",
+        "note": "SG-C14 順序ガード用",
+    },
     {
         "name": "test_derived_value",
         "unit": "m",
@@ -276,6 +308,32 @@ class TestParamsOverridesNode(unittest.TestCase):
             "生成の回し直し（次回起動相当）で値が効いていない"
         assert payload["pending"] == {}
         assert payload["restart_required"] is False
+
+    def test_e_preset_order_violation_is_rejected(self):
+        """SG-C14: 速度プリセットの順序違反（中速＜低速）は /params/set が
+        理由付きで拒否する（保存不可。UI 側の無効化との二重ガード）。"""
+        self._publish_mode('IDLE')
+        result = self._call_set({"speed_preset_mid": 0.1})
+        assert result.success is False, \
+            "順序違反が受理されている（低速 0.27 に対して中速 0.1）"
+        assert "低速" in result.message and "中速" in result.message, \
+            f"拒否理由が順序に触れていない: {result.message}"
+
+    def test_f_preset_valid_set_then_regeneration_applies(self):
+        """SG-C14: 順序どおりのプリセット保存は受理され、生成の回し直し
+        （＝次回起動）で効く（保存→再起動後の復元の配線）。"""
+        self._publish_mode('IDLE')
+        result = self._call_set({"speed_preset_mid": 0.65})
+        assert result.success is True, f"/params/set が拒否された: {result.message}"
+
+        payload = self._call_get(["speed_preset_mid"])
+        assert payload["pending"]["speed_preset_mid"] == 0.65
+
+        self._regenerate()
+
+        payload = self._call_get(["speed_preset_mid"])
+        assert payload["effective"]["speed_preset_mid"] == 0.65, \
+            "生成の回し直し（次回起動相当）で値が効いていない"
 
 
 if __name__ == '__main__':
