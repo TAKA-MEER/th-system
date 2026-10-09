@@ -29,6 +29,12 @@ import {
   DEV_ITEMS, devIgnoreParam, effectiveItems,
 } from '../ros/devModeState.js'
 import { readFontScale, applyFontScale } from '../parts/fontScale.js'
+import { readVoiceMaster, applyVoiceMaster } from '../parts/voiceMaster.js'
+import {
+  readStageOrientation, writeStageOrientation,
+  ORIENTATION_AUTO, ORIENTATION_LANDSCAPE, ORIENTATION_PORTRAIT,
+} from '../parts/stageOrientation.js'
+import { readCostmapVisible, writeCostmapVisible } from '../parts/costmapVisibility.js'
 import { readDevMode, setDevMode } from '../parts/devMode.js'
 import PARAM_LIMITS from '../generated/param_limits.json'
 import { clampTunableParam, tunableFieldMax } from '../ros/s50TunableLimits.js'
@@ -44,6 +50,10 @@ import {
   S50_BRAKE_OFF, S50_BRAKE_ON,
   S50_BLIND_GOTO_CALIB, S50_BLIND_NOTE,
   S50_FONT_TITLE, S50_FONT_NORMAL, S50_FONT_LARGE, S50_FONT_XLARGE,
+  S50_VOICE_TITLE, S50_VOICE_ON, S50_VOICE_OFF,
+  S50_ORIENTATION_TITLE, S50_ORIENTATION_AUTO, S50_ORIENTATION_PORTRAIT,
+  S50_ORIENTATION_LANDSCAPE,
+  S50_COSTMAP_TITLE, S50_COSTMAP_SHOW, S50_COSTMAP_HIDE,
   S50_DEV_TITLE, S50_DEV_ENABLE, S50_DEV_DISABLE, S50_DEV_NOTE,
   S50_DEV_ITEMS_TITLE, S50_DEV_ITEM_LINK, S50_DEV_ITEM_LINK_DESC,
   S50_DEV_ITEM_LIDAR_FAULT, S50_DEV_ITEM_LIDAR_FAULT_DESC,
@@ -394,6 +404,21 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
     setFontScale(name)
     applyFontScale(name)
   }
+  // ── SG-C14: 表示タブ（音声 ON/OFF・縦横の固定・コストマップ表示）──
+  // 機体を動かさない表示だけの設定なので、文字サイズと同じく停止中の縛りは無い。
+  const [voiceOn, setVoiceOn] = useState(() => readVoiceMaster())
+  const chooseVoice = (on) => {
+    setVoiceOn(on)
+    applyVoiceMaster(on)
+  }
+  const [orientation, setOrientation] = useState(() => readStageOrientation())
+  const chooseOrientation = (value) => {
+    setOrientation(writeStageOrientation(value))
+  }
+  const [costmapVisible, setCostmapVisible] = useState(() => readCostmapVisible())
+  const chooseCostmap = (visible) => {
+    setCostmapVisible(writeCostmapVisible(visible))
+  }
 
   // ── 開発モードタブ (WP-DEV-01B) ──
   // 表示の正本は /system/dev_mode（useDevMode）。localStorage は押した瞬間の
@@ -623,6 +648,64 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
                   className={`btn ${fontScale === key ? 'on' : ''}`}
                   onClick={() => chooseFont(key)}
                   data-testid={`s50-font-${key}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="card">
+            <h3>{S50_VOICE_TITLE}</h3>
+            <div className="btnrow n3">
+              {[
+                [true, S50_VOICE_ON, 's50-voice-on'],
+                [false, S50_VOICE_OFF, 's50-voice-off'],
+              ].map(([value, label, testId]) => (
+                <button
+                  key={testId}
+                  type="button"
+                  className={`btn ${voiceOn === value ? 'on' : ''}`}
+                  onClick={() => chooseVoice(value)}
+                  data-testid={testId}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="card">
+            <h3>{S50_ORIENTATION_TITLE}</h3>
+            <div className="btnrow n3">
+              {[
+                [ORIENTATION_AUTO, S50_ORIENTATION_AUTO, 's50-orientation-auto'],
+                [ORIENTATION_PORTRAIT, S50_ORIENTATION_PORTRAIT, 's50-orientation-portrait'],
+                [ORIENTATION_LANDSCAPE, S50_ORIENTATION_LANDSCAPE, 's50-orientation-landscape'],
+              ].map(([value, label, testId]) => (
+                <button
+                  key={testId}
+                  type="button"
+                  className={`btn ${orientation === value ? 'on' : ''}`}
+                  onClick={() => chooseOrientation(value)}
+                  data-testid={testId}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="card">
+            <h3>{S50_COSTMAP_TITLE}</h3>
+            <div className="btnrow n3">
+              {[
+                [true, S50_COSTMAP_SHOW, 's50-costmap-show'],
+                [false, S50_COSTMAP_HIDE, 's50-costmap-hide'],
+              ].map(([value, label, testId]) => (
+                <button
+                  key={testId}
+                  type="button"
+                  className={`btn ${costmapVisible === value ? 'on' : ''}`}
+                  onClick={() => chooseCostmap(value)}
+                  data-testid={testId}
                 >
                   {label}
                 </button>

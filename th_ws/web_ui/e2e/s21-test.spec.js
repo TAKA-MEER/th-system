@@ -534,3 +534,22 @@ test('退避待ち: 見失い中は距離を「—」にする', async ({ page }
   await setTestWaitClear(page, { distance_m: -1, remaining_sec: 19, satisfied: false, verdict: 'NOT_CLEAR' })
   await expect(page.locator('[data-testid="s21-clear-dist"]')).toHaveText('—')
 })
+
+// SG-C14: S-50 でコストマップを非表示にすると、地図タブに costmap が重ならない
+// （seed していても描かない。購読自体も止める）。
+test('MAP-COSTMAP: 非表示設定では seed しても costmap を描かない', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('th.costmapVisible', '0')
+  })
+  await goto21(page, IDLE, {
+    routeMap: ROUTE_MAP,
+    openVenueMap: { success: true, message: '' },
+    costmap: COSTMAP,
+    plannedPath: [{ x: -0.5, y: -0.5 }, { x: 0.5, y: 0.5 }, { x: 1, y: 1 }],
+  })
+  await unlockOnsiteVenueMap(page)
+  await expect(page.locator('[data-testid="s21-map-raster"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s21-map-costmap"]')).toHaveCount(0)
+  // 経路はコストマップ設定に縛られない（対照）。
+  await expect(page.locator('[data-testid="s21-map-path"]')).toBeVisible()
+})

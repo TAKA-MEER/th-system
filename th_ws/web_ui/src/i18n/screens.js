@@ -622,6 +622,18 @@ export const S50_FONT_TITLE = '文字サイズ'
 export const S50_FONT_NORMAL = '標準'
 export const S50_FONT_LARGE = '大'
 export const S50_FONT_XLARGE = '特大'
+// SG-C14: 表示タブ（音声 ON/OFF のみ・縦横の固定 3 択・コストマップ表示/非表示）。
+// いずれもブラウザに記憶され、すぐ反映される（機体を動かさない表示だけの設定）。
+export const S50_VOICE_TITLE = '音声'
+export const S50_VOICE_ON = 'ON'
+export const S50_VOICE_OFF = 'OFF'
+export const S50_ORIENTATION_TITLE = '縦横の固定'
+export const S50_ORIENTATION_AUTO = '自動'
+export const S50_ORIENTATION_PORTRAIT = '縦固定'
+export const S50_ORIENTATION_LANDSCAPE = '横固定'
+export const S50_COSTMAP_TITLE = '地図の表示項目'
+export const S50_COSTMAP_SHOW = 'コストマップ表示'
+export const S50_COSTMAP_HIDE = 'コストマップ非表示'
 // 開発モードタブ
 export const S50_DEV_TITLE = '開発モード'
 export const S50_DEV_ENABLE = '開発モードを有効にする'

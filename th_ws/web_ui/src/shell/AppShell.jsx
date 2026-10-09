@@ -19,6 +19,7 @@ import { ConfirmWindowContext } from './confirmWindow.js'
 import { JogPanelContext } from './jogPanel.js'
 import { ESTOP_RELEASE_NOTE, ESTOP_RELEASE_BUTTON, stopReasonLabel } from '../i18n/states.js'
 import { readFontScale, applyFontScale } from '../parts/fontScale.js'
+import { readVoiceMaster, applyVoiceMaster } from '../parts/voiceMaster.js'
 import { readDevMode, DEV_MODE_EVENT } from '../parts/devMode.js'
 import { useDevMode } from '../ros/useDevMode.js'
 import './theme.css'
@@ -62,6 +63,8 @@ function AppShellInner({ screenName, screenId, children }) {
   // WS-9X: 文字サイズ（S-50 表示タブ）を起動時に復元。#app は AppShell の
   // 描画後に存在するので effect で当てる。
   useEffect(() => { applyFontScale(readFontScale()) }, [])
+  // SG-C14: 音声 ON/OFF（S-50 表示タブ）を起動時に復元。既定 ON。
+  useEffect(() => { applyVoiceMaster(readVoiceMaster()) }, [])
   // This client's own intent to hold the UI estop latch up. Deliberately
   // local, not derived from state.estop_ui: a freshly loaded/reloaded page
   // must not start repeating "true" just because some other client is

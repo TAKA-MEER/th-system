@@ -30,6 +30,8 @@ export const STAGE_PORTRAIT = { width: 960, height: 1280 }
  *
  * @param {number} viewportW ビューポート幅 (px)
  * @param {number} viewportH ビューポート高さ (px)
++ * @param {object} [opts] lock: 'landscape' | 'portrait' で向きを固定（S-50）。
+ *   それ以外（'auto'・未指定）はビューポートの縦横で決める従来どおり。
  * @returns {{width:number, height:number, scale:number, orientation:'landscape'|'portrait'}}
  */
 export function stageMetrics(viewportW, viewportH, opts = {}) {
@@ -45,7 +47,11 @@ export function stageMetrics(viewportW, viewportH, opts = {}) {
   }
 
   // 正方形はどちらでもよいので横長に倒す（タブレットの既定の持ち方）。
-  const orientation = viewportW >= viewportH ? 'landscape' : 'portrait'
+  // lock があればビューポートの縦横より優先する（S-50 の縦横の固定）。
+  const detected = viewportW >= viewportH ? 'landscape' : 'portrait'
+  const orientation = opts.lock === 'landscape' || opts.lock === 'portrait'
+    ? opts.lock
+    : detected
   const base = orientation === 'landscape' ? landscape : portrait
   const scale = Math.min(viewportW / base.width, viewportH / base.height)
 
