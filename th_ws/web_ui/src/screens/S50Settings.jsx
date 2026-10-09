@@ -32,12 +32,14 @@ import { readFontScale, applyFontScale } from '../parts/fontScale.js'
 import { readDevMode, setDevMode } from '../parts/devMode.js'
 import PARAM_LIMITS from '../generated/param_limits.json'
 import { clampTunableParam, tunableFieldMax } from '../ros/s50TunableLimits.js'
+import { presetOrderError } from '../ros/presetOrder.js'
 import {
   S50_BACK, S50_TAB_GENERAL, S50_TAB_DISPLAY, S50_TAB_DEV, S50_GUARD,
   S50_SAVE_YAML, S50_SAVING, S50_SAVED, S50_SAVE_FAILED, S50_LOAD_FAILED,
   S50_SEC_FOLLOW, S50_SEC_LIDAR, S50_SEC_SLAM, S50_SLAM_NOTE,
   S50_SEC_PRESET, S50_PRESET_NOTE, S50_PRESET_SAVE,
   S50_PRESET_REASON_LABEL, S50_PRESET_REASON_NEED, S50_PRESET_NEXT_PREFIX,
+  S50_PRESET_ORDER_REASONS,
   S50_BLIND_GOTO_CALIB, S50_BLIND_NOTE,
   S50_FONT_TITLE, S50_FONT_NORMAL, S50_FONT_LARGE, S50_FONT_XLARGE,
   S50_DEV_TITLE, S50_DEV_ENABLE, S50_DEV_DISABLE, S50_DEV_NOTE,
@@ -286,10 +288,17 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
 
   // SG-B8: 速度プリセットの保存（/params/set。出どころ必須＝PT-4）。
   // 即時の set_parameters はしない（走行中の値は変えない。次の起動から効く）。
+  // SG-C14: 低速≦中速≦高速でなければ保存不可（サーバ側も同じ規則で拒否する）。
+  const presetOrderKey = presetOrderError(presetDraft)
+  const presetOrderReason = presetOrderKey ? (S50_PRESET_ORDER_REASONS[presetOrderKey] ?? presetOrderKey) : ''
   const applyPreset = (name) => (value) => {
     setPresetDraft((prev) => ({ ...prev, [name]: value }))
   }
   const savePreset = () => {
+    if (presetOrderReason) {
+      setStatus((s) => ({ ...s, preset: presetOrderReason }))
+      return
+    }
     if (!presetReason) {
       setStatus((s) => ({ ...s, preset: S50_PRESET_REASON_NEED }))
       return
@@ -451,7 +460,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
               <button
                 type="button"
                 className="btn save sm"
-                disabled={!editable || loading}
+                disabled={!editable || loading || !!presetOrderReason}
                 onClick={savePreset}
                 data-testid="s50-save-preset"
               >
@@ -460,6 +469,11 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
             </div>
             {status.preset && <p className="note" data-testid="s50-status-preset">{status.preset}</p>}
             <p className="note">{S50_PRESET_NOTE}</p>
+            {presetOrderReason && (
+              <p className="note" data-testid="s50-preset-order">
+                {presetOrderReason}
+              </p>
+            )}
             {presetDiffs.length > 0 && (
               <p className="note" data-testid="s50-preset-pending">
                 {presetDiffs.map(({ name, effective, pending }) => (

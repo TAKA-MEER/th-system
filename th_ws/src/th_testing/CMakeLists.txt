@@ -350,6 +350,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_params_export
     test/test_params_export.py
     TIMEOUT 60)
+  # SG-C14: S-50 速度プリセット 3 段階の順序（低速≦中速≦高速。ROS2 不要）
+  ament_add_pytest_test(test_params_preset_order
+    test/test_params_preset_order.py
+    TIMEOUT 60)
   # SG-A14 (1b-10): 駆動系の天井と v_max の導出・生成物の一致（ROS2 不要）。
   # §1 が A13 ブロック中のため 2 件は赤のまま（報告参照）。登録自体は正規の手順。
   ament_add_pytest_test(test_drivetrain_ceiling

@@ -593,10 +593,19 @@ export const S50_SEC_PRESET = '速度プリセットの割合'
 export const S50_PRESET_NOTE =
   '「保存」は走行中の値に触れません。次の起動から有効になります'
   + '（再起動後に反映）。保存済みでまだ効いていない値は「次回から」で示します。'
+  + '低速≦中速≦高速でなければ保存できません（高速の上限は 100%）。'
 export const S50_PRESET_SAVE = '保存（再起動後に反映）'
 export const S50_PRESET_REASON_LABEL = '変えた理由（必須）'
 export const S50_PRESET_REASON_NEED = '変えた理由を入れてください'
 export const S50_PRESET_NEXT_PREFIX = '次回から'
+// SG-C14: 速度プリセット 3 段階の順序（低速≦中速≦高速、高の天井は 100%）。
+// 違反は保存不可。キーは ros/presetOrder.js の presetOrderError と揃える。
+export const S50_PRESET_ORDER_REASONS = {
+  below_min: '割合は 0.05 以上にしてください',
+  over_ceiling: '高速は 100%（1.0）以下にしてください',
+  low_gt_mid: '低速は中速以下にしてください',
+  mid_gt_high: '中速は高速以下にしてください',
+}
 // 表示タブ: 文字サイズ
 export const S50_FONT_TITLE = '文字サイズ'
 export const S50_FONT_NORMAL = '標準'

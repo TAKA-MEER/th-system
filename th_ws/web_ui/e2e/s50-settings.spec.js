@@ -209,3 +209,30 @@ test('速度プリセット区画は効き値と次回反映の差を出し、�
   expect(calls[0].reason).toBe('現場で低速を詰める')
   expect(calls[0].values).toEqual({ speed_preset_mid: 0.65 })
 })
+
+// SG-C14: 速度プリセットは低速≦中速≦高速でなければ保存不可。違反は理由を表示し、
+// 保存ボタンは押せなくなる（サーバ側 /params/set も同じ規則で拒否する二重ガード）。
+test('速度プリセットの順序違反は保存不可で理由を表示する', async ({ page }) => {
+  await gotoScreenWithParams(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
+    get: {
+      effective: { speed_preset_low: 0.27, speed_preset_mid: 0.55, speed_preset_high: 1.0 },
+      pending: {},
+      origins: {},
+      restart_required: false,
+    },
+    set: { success: true, message: 'OK' },
+  })
+  await page.getByTestId('s01-open-settings').click()
+  await expect(page.locator('#s50')).toBeVisible()
+
+  // 対照: 順序どおりなら保存ボタンは押せる。
+  await expect(page.getByTestId('s50-save-preset')).toBeEnabled()
+  await expect(page.getByTestId('s50-preset-order')).toHaveCount(0)
+
+  // 中速を低速より下げると違反。
+  await page.getByLabel(/中速/).fill('0.1')
+  await page.getByLabel(/中速/).press('Tab')
+  await expect(page.getByTestId('s50-preset-order')).toContainText('中速以下')
+  await expect(page.getByTestId('s50-save-preset')).toBeDisabled()
+  expect(await paramsSetCalls(page)).toHaveLength(0)
+})
