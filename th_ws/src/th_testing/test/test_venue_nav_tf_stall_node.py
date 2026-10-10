@@ -439,18 +439,23 @@ class TestVenueNavTfStall(unittest.TestCase):
             self._reset_quietly()
 
     def test_moving_between_aborts_does_not_emit(self):
-        """打ち切りを繰り返しても機体が進んでいれば出ない（誤検知の防止）。"""
+        """打ち切りを繰り返しても機体が進んでいれば出ない（誤検知の防止）。
+
+        判定の直前だけ動かすのでは足りない（止まった後の打ち切りが 3 回
+        積み上がると出るのが正しい挙動）。観測窓の全体で動かし続ける。
+        0.4 秒ごとに 0.3 m ずつ進めば、打ち切り間隔（0.7 秒以上）より密に
+        錨が動くため、3 回連続の静止はあり得ない。
+        """
         try:
+            with self._lock:
+                self._robot_x = -4.0
             since = self._enter_nav()
             self.assertTrue(self._wait_follow_calls(1),
                             'FollowPath が呼ばれない')
-            # 打ち切りごとに 25 cm 進む（本番の閾値 20 cm 超）。
-            for _ in range(4):
-                self._robot_x += 0.25
-                time.sleep(0.5)
-            self.assertTrue(self._wait_follow_calls(5),
-                            'FollowPath の再送が続かない')
-            time.sleep(4.0)
+            for _ in range(15):
+                time.sleep(0.4)
+                with self._lock:
+                    self._robot_x += 0.3
             self.assertNotIn('evt.nav_tf_stall', self._snap_events()[since:],
                              '進んでいるのに evt.nav_tf_stall が出た')
         finally:
@@ -473,10 +478,16 @@ class TestVenueNavTfStall(unittest.TestCase):
             self._reset_quietly()
 
     def test_stale_wire_does_not_emit(self):
-        """`/tf` ごと古ければ出ない（SLAM 側を見る）。"""
+        """`/tf` ごと古ければ出ない（SLAM 側を見る）。
+
+        tf2 の「最新」は受信順ではなく時刻印順なので、古い時刻印を出し
+        始めた直後は setUp 時の新しい見本が「最新」として残る。11 秒待って
+        追い出して（tf2 の保持は 10 秒）から NAV に入る。
+        """
         try:
             with self._lock:
                 self._stale_tf = True
+            time.sleep(11.0)
             since = self._enter_nav()
             self.assertTrue(self._wait_follow_calls(4),
                             'FollowPath の再送が続かない')
