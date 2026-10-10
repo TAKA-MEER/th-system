@@ -53,7 +53,7 @@ import OperationCard from '../shell/OperationCard.jsx'
 import attributes from '../generated/attributes.json'
 import { prepSteps, onsiteReasons } from './onsiteSteps.js'
 import { baseToWorld, quatToYaw } from '../mapGeometry.js'
-import { REJECT_REASONS } from '../i18n/reasons.js'
+import { REJECT_REASONS, reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
   BADGE_JOG_DENIED,
@@ -104,6 +104,20 @@ export default function S20Prep() {
   // brief-tracker-default-off §3.4: 人検出の開始/停止（/system/set_flag
   // tracker_enabled）。状態の正本は server（state.tracker_enabled）。
   const setFlag = useSetFlag()
+  // fix-setflag-requester: 拒否・通信失敗を押した人に見せる（S-11/S-13 と同じ
+  // reasonLabel の流儀。受理されるまで表示は /system/state に従う）。
+  const [trackerErr, setTrackerErr] = useState(null)
+  async function requestTracker(next) {
+    setTrackerErr(null)
+    try {
+      const res = await setFlag(TRACKER_FLAG, next, 's20-target')
+      if (!res?.accepted) {
+        setTrackerErr(reasonLabel(res?.reject_reason_key) ?? UNKNOWN_REASON_LABEL)
+      }
+    } catch {
+      setTrackerErr(UNKNOWN_REASON_LABEL)
+    }
+  }
   const pins = useOnsitePins(ros)
   const personTargets = usePersonTargets(ros)
   const personStatus = usePersonStatus(ros)
@@ -582,11 +596,14 @@ export default function S20Prep() {
               hasCandidate={hasCandidate}
               canStop={trackerCanStop}
               stopDeniedReason={trackerStopDenied}
-              onStart={() => setFlag(TRACKER_FLAG, true, 's20-target')}
-              onStop={() => setFlag(TRACKER_FLAG, false, 's20-target')}
+              onStart={() => requestTracker(true)}
+              onStop={() => requestTracker(false)}
               disabled={disabledAll}
               testId="s20"
             />
+            {trackerErr && (
+              <div className="note" data-testid="s20-tracker-error">{trackerErr}</div>
+            )}
             {trackerEnabled && (
               <RadarSelect
                 candidates={personTargets.candidates}

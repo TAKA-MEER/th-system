@@ -49,6 +49,7 @@ import {
   S14_QUALITY_SEARCHING_HINT,
 } from '../i18n/screens.js'
 import { localizeQualityView, localizeQualityText } from './s14Localize.js'
+import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import { stateLabel } from '../i18n/states.js'
 import { OP_LABELS } from '../i18n/states.js'
 
@@ -152,11 +153,17 @@ export default function S14Replay({ onFinish }) {
 
   // 1b-11 SG-B14: 地図の更新トグル → /system/set_flag map_update。
   // 受理は機体が決める（T-REPLAY-08 のガードが保存の可否を縛る）。
+  // fix-setflag-requester: 拒否・通信失敗を押した人に見せる（S-11 と同じ流儀）。
+  const [mapUpdateErr, setMapUpdateErr] = useState(null)
   async function handleMapUpdateToggle() {
+    setMapUpdateErr(null)
     try {
-      await setFlag(MAP_UPDATE_FLAG, !mapUpdate, 's14')
+      const res = await setFlag(MAP_UPDATE_FLAG, !mapUpdate, 's14')
+      if (!res?.accepted) {
+        setMapUpdateErr(reasonLabel(res?.reject_reason_key) ?? UNKNOWN_REASON_LABEL)
+      }
     } catch {
-      // rosbridge の一時的な失敗。留まる（安全側）
+      setMapUpdateErr(UNKNOWN_REASON_LABEL)
     }
   }
 
@@ -322,6 +329,9 @@ export default function S14Replay({ onFinish }) {
                 {mapUpdate ? S14_MAP_UPDATE_ON : S14_MAP_UPDATE_OFF}
               </button>
             </div>
+            {mapUpdateErr && (
+              <div className="note" data-testid="s14-map-update-error">{mapUpdateErr}</div>
+            )}
             <div className="note">{S14_MAP_UPDATE_NOTE}</div>
           </div>
 
