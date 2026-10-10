@@ -61,6 +61,10 @@ def _yaw_from_quat(q) -> float:
 class VenueNavigator(Node):
     # このノードが駆動対象とするモード（NAV で走り、必要なら ALIGN）
     _NAV_MODES = ('PANEL_NAV', 'SUMMON', 'HOME_NAV')
+    # TF 停滞検知の「/tf が新しい」判定の幅（age = 現在 - map->odom の stamp）。
+    # 実機の slam_toolbox は未来 stamp（+0.65 s 前後）を出すので未来側を許す。
+    _TF_FUTURE_TOL_S = 2.0
+    _TF_STALE_S = 5.0
 
     def _recovery_eligible(self):
         """WS-9AK(2026-09-11): _blocked_recheck（再探索ループ）の対象判定。
@@ -606,7 +610,10 @@ class VenueNavigator(Node):
                 self._map_frame, 'odom', rclpy.time.Time())
             age = self._now() - (tf.header.stamp.sec +
                                  tf.header.stamp.nanosec / 1e9)
-            wire_fresh = 0.0 <= age < 5.0
+            # slam_toolbox は map->odom を未来の stamp で出す（実機実測
+            # stamp-now = +0.63〜+0.72 s。transform_timeout ぶん先）ので age は
+            # 負になる。未来側にも余裕を持たせる。極端な未来（時計異常）は新しいと見なさない。
+            wire_fresh = -self._TF_FUTURE_TOL_S <= age < 1e9
         except Exception:
             wire_fresh = False
         if not wire_fresh:

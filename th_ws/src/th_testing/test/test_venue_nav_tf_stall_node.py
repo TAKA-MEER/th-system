@@ -169,7 +169,9 @@ class TestVenueNavTfStall(unittest.TestCase):
         self.event_names: list[str] = []
         self.event_args: list[str] = []
         self._robot_x = 0.0  # 既定は静止（原点）
-        self._stale_tf = False  # True: /tf の map→odom を古い時刻で出す
+        # /tf の stamp を現在時刻からずらす秒数。既定は実機の slam_toolbox と
+        # 同じ約 +0.7 秒の未来 stamp（過去 stamp の代役では本番の経路を縛れない）。
+        self._tf_offset_s = 0.7
         self._send_progress = False  # 既定は実機と同じく /rosout に何も流さない
         self._abort_budget: int | None = None  # None: 常に打ち切り
 
@@ -294,8 +296,7 @@ class TestVenueNavTfStall(unittest.TestCase):
 
     def _publish_tf(self):
         now_ns = self.node.get_clock().now().nanoseconds
-        if self._stale_tf:
-            now_ns -= 30_000_000_000
+        now_ns += int(self._tf_offset_s * 1e9)
         stamp = rclpy.time.Time(nanoseconds=now_ns).to_msg()
         od = TransformStamped()
         od.header.stamp = stamp
@@ -441,7 +442,10 @@ class TestVenueNavTfStall(unittest.TestCase):
             pass
 
     def test_repeated_aborts_emit_stall(self):
-        """打ち切りの連続（静止・TF 新・/rosout 無し）で出る（記録だけ）。"""
+        """打ち切りの連続（静止・TF 新・/rosout 無し）で出る（記録だけ）。
+
+        /tf は実機と同じ約 +0.7 秒の未来 stamp（setUp の既定）で出している。
+        """
         try:
             since = self._enter_nav()
             self.assertTrue(self._wait_follow_calls(1),
@@ -511,7 +515,7 @@ class TestVenueNavTfStall(unittest.TestCase):
         """
         try:
             with self._lock:
-                self._stale_tf = True
+                self._tf_offset_s = -30.0
             time.sleep(11.0)
             since = self._enter_nav()
             self.assertTrue(self._wait_follow_calls(4),
@@ -519,6 +523,21 @@ class TestVenueNavTfStall(unittest.TestCase):
             time.sleep(3.0)
             self.assertNotIn('evt.nav_tf_stall', self._snap_events()[since:],
                              '/tf が古いのに evt.nav_tf_stall が出た')
+        finally:
+            self._reset_quietly()
+
+    def test_far_future_wire_does_not_emit(self):
+        """極端な未来 stamp（+10 秒＝時計異常）は新しいと見なさず出ない。"""
+        try:
+            with self._lock:
+                self._tf_offset_s = 10.0
+            time.sleep(1.0)
+            since = self._enter_nav()
+            self.assertTrue(self._wait_follow_calls(4),
+                            'FollowPath の再送が続かない')
+            time.sleep(3.0)
+            self.assertNotIn('evt.nav_tf_stall', self._snap_events()[since:],
+                             '/tf が極端な未来なのに evt.nav_tf_stall が出た')
         finally:
             self._reset_quietly()
 
