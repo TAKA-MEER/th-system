@@ -7,6 +7,9 @@ DR-SPAAM 本体の代わりに、テストノードが fake の lifecycle サー
 
 変異チェック: 「tracker_enabled を見ずに常に activate する」等の配線バグを、
 本ノードのテストは変化なし状態（OFF・INACTIVE）で ChangeState が来ないことで弾く。
+core の transition ID が lifecycle_msgs の実値からずれると、activate のつもりの
+要求が CLEANUP 等に化けて fake の状態が期待と違う方向へ動くため、やはり赤になる
+（2026-10-10 の実機事故の再発防止。fake は core の定数と比べない）。
 """
 import time
 import unittest
@@ -22,6 +25,8 @@ import launch_testing.actions
 
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
+from lifecycle_msgs.msg import State as LifecycleState
+from lifecycle_msgs.msg import Transition as LifecycleTransition
 from lifecycle_msgs.srv import ChangeState, GetState
 from th_system_msgs.msg import SystemState
 
@@ -36,8 +41,57 @@ _STATE_QOS = QoSProfile(
     history=QoSHistoryPolicy.KEEP_LAST,
 )
 
-from dr_spaam_lifecycle_controller_core import (
-    STATE_ACTIVE, STATE_INACTIVE, TRANSITION_ACTIVATE, TRANSITION_DEACTIVATE)
+class _FakeLifecycle(Node):
+    """DR-SPAAM になりきる 2 サービス。本物の lifecycle 遷移表で応答する。
+
+    受け付けるのは lifecycle_msgs の実値（CONFIGURE=1 / CLEANUP=2 /
+    ACTIVATE=3 / DEACTIVATE=4）のみで、core の定数とは比べない。
+    不正な遷移には success=false を返す（本物と同様）。
+    """
+
+    def __init__(self):
+        super().__init__('fake_dr_spaam_lifecycle')
+        self.state_id = LifecycleState.PRIMARY_STATE_INACTIVE
+        self.change_requests = []
+
+        self.create_service(
+            GetState, '/dr_spaam/dr_spaam_ros/get_state', self._on_get_state)
+        self.create_service(
+            ChangeState, '/dr_spaam/dr_spaam_ros/change_state', self._on_change_state)
+
+    def _on_get_state(self, request, response):
+        response.current_state.id = self.state_id
+        response.current_state.label = {
+            LifecycleState.PRIMARY_STATE_UNCONFIGURED: 'unconfigured',
+            LifecycleState.PRIMARY_STATE_INACTIVE: 'inactive',
+            LifecycleState.PRIMARY_STATE_ACTIVE: 'active'}.get(
+            self.state_id, 'unknown')
+        return response
+
+    def _on_change_state(self, request, response):
+        tid = request.transition.id
+        self.change_requests.append(tid)
+        ok = (
+            (tid == LifecycleTransition.TRANSITION_ACTIVATE
+             and self.state_id == LifecycleState.PRIMARY_STATE_INACTIVE,
+             LifecycleState.PRIMARY_STATE_ACTIVE),
+            (tid == LifecycleTransition.TRANSITION_DEACTIVATE
+             and self.state_id == LifecycleState.PRIMARY_STATE_ACTIVE,
+             LifecycleState.PRIMARY_STATE_INACTIVE),
+            (tid == LifecycleTransition.TRANSITION_CONFIGURE
+             and self.state_id == LifecycleState.PRIMARY_STATE_UNCONFIGURED,
+             LifecycleState.PRIMARY_STATE_INACTIVE),
+            (tid == LifecycleTransition.TRANSITION_CLEANUP
+             and self.state_id == LifecycleState.PRIMARY_STATE_INACTIVE,
+             LifecycleState.PRIMARY_STATE_UNCONFIGURED),
+        )
+        for valid, next_state in ok:
+            if valid:
+                self.state_id = next_state
+                response.success = True
+                return response
+        response.success = False
+        return response
 
 
 @pytest.mark.launch_test
@@ -53,37 +107,6 @@ def generate_test_description():
         controller,
         launch_testing.actions.ReadyToTest(),
     ])
-
-
-class _FakeLifecycle(Node):
-    """DR-SPAAM になりきる 2 サービス。state_id と記録された要求を持つ。"""
-
-    def __init__(self):
-        super().__init__('fake_dr_spaam_lifecycle')
-        self.state_id = STATE_INACTIVE
-        self.change_requests = []
-
-        self.create_service(
-            GetState, '/dr_spaam/dr_spaam_ros/get_state', self._on_get_state)
-        self.create_service(
-            ChangeState, '/dr_spaam/dr_spaam_ros/change_state', self._on_change_state)
-
-    def _on_get_state(self, request, response):
-        response.current_state.id = self.state_id
-        response.current_state.label = {STATE_ACTIVE: 'active',
-                                        STATE_INACTIVE: 'inactive'}.get(
-            self.state_id, 'unknown')
-        return response
-
-    def _on_change_state(self, request, response):
-        self.change_requests.append(request.transition.id)
-        response.success = True
-        # configure(0)→inactive / activate(2)→active / deactivate(3)→inactive
-        if request.transition.id == 2 and self.state_id != STATE_ACTIVE:
-            self.state_id = STATE_ACTIVE
-        else:
-            self.state_id = STATE_INACTIVE
-        return response
 
 
 class TestDrSpaamLifecycleControllerNode(unittest.TestCase):
@@ -145,20 +168,20 @@ class TestDrSpaamLifecycleControllerNode(unittest.TestCase):
     def test_activate_when_enabled_then_deactivate_when_disabled(self):
         """ON（S-20/S-21 の人検出開始）→ activate、OFF → deactivate。"""
         self._publish_tracker(True)
-        assert self._wait_transition(TRANSITION_ACTIVATE), \
+        assert self._wait_transition(LifecycleTransition.TRANSITION_ACTIVATE), \
             'tracker_enabled=true なのに activate が DR-SPAAM へ届かない'
 
         self._publish_tracker(False)
-        assert self._wait_transition(TRANSITION_DEACTIVATE), \
+        assert self._wait_transition(LifecycleTransition.TRANSITION_DEACTIVATE), \
             'tracker_enabled=false なのに deactivate が DR-SPAAM へ届かない'
 
     def test_reconcile_reactivates_after_external_deactivate(self):
         """突き合わせ: ON のまま外部から deactivate されても次周期で activate し直す。"""
         self._publish_tracker(True)
-        assert self._wait_transition(TRANSITION_ACTIVATE)
+        assert self._wait_transition(LifecycleTransition.TRANSITION_ACTIVATE)
         self.fake.change_requests.clear()
 
         # 外部（別の何か）が DR-SPAAM を deactivate した状態を取り戻す
-        self.fake.state_id = STATE_INACTIVE
-        assert self._wait_transition(TRANSITION_ACTIVATE), \
+        self.fake.state_id = LifecycleState.PRIMARY_STATE_INACTIVE
+        assert self._wait_transition(LifecycleTransition.TRANSITION_ACTIVATE), \
             'ON のまま DR-SPAAM が INACTIVE に戻されたのに再 activate されない'

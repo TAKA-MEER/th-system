@@ -11,15 +11,17 @@ from __future__ import annotations
 # 何もしない（アクションなしの意味でのみ使う特別値。実 transition_id 0 と衝突させない）
 TRANSITION_NONE = -1
 
-# lifecycle_msgs/msg/Transition の PRIMARY_STATE_* に対応
+# lifecycle_msgs/msg/State の PRIMARY_STATE_* に対応
 STATE_UNCONFIGURED = 1
 STATE_INACTIVE = 2
 STATE_ACTIVE = 3
 
 # lifecycle_msgs/msg/Transition の TRANSITION_* に対応
-TRANSITION_CONFIGURE = 0
-TRANSITION_ACTIVATE = 2
-TRANSITION_DEACTIVATE = 3
+# （直書き。rclpy 非依存を保つため import しない。値は
+# test_dr_spaam_lifecycle_transition_ids.py が lifecycle_msgs の実値と照合）
+TRANSITION_CONFIGURE = 1
+TRANSITION_ACTIVATE = 3
+TRANSITION_DEACTIVATE = 4
 
 TRANSITION_LABELS = {
     TRANSITION_ACTIVATE: '起動(activate)',

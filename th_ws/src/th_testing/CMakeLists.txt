@@ -330,6 +330,13 @@ if(BUILD_TESTING)
     test/test_dr_spaam_lifecycle_controller_core.py
     TIMEOUT 30)
 
+  # core 直書きの transition ID と lifecycle_msgs 実値の照合 (fix-tracker-lifecycle。
+  # core は rclpy 非依存のため ID を直書きしており、自分自身と比べる試験だけでは
+  # ずれを見逃す。lifecycle_msgs の import が要るため ROS 環境専用。rclpy 要)
+  ament_add_pytest_test(test_dr_spaam_lifecycle_transition_ids
+    test/test_dr_spaam_lifecycle_transition_ids.py
+    TIMEOUT 30)
+
   # DR-SPAAM 起動/停止アクチュエータの結合テスト (brief-tracker-default-off §3.2。
   # /system/state の tracker_enabled を見て DR-SPAAM の lifecycle サービスへ
   # activate/deactivate を飛ばす本番の経路。launch_testing。rclpy 要）
