@@ -9,9 +9,16 @@
 // was sent on `window.__thSetFlagCalls` and can stub a response via
 // `window.__thTestSetFlag`. Defaults to a rejected response so a spec that
 // doesn't stub behaves like a denial.
+//
+// SetFlag.srv has only `flag` + `value` (no `requester` — unlike UiTrigger /
+// SetMode). rosbridge rejects unknown fields, so the production payload must
+// be exactly buildSetFlagRequest(flag, value). The 3rd `requester` argument
+// stays only as a TEST_MODE record tag (which screen sent it), never on the
+// wire. test/unit/service-request-fields.test.js locks both.
 import { useCallback } from 'react'
 import { useSystemState } from './useSystemState'
 import { SERVICES, SRV_TYPES } from './topics'
+import { buildSetFlagRequest } from './setFlagPayload.js'
 
 export const TRACKER_FLAG = 'tracker_enabled'
 // 1b-15 SG-B10: 自動ブレーキの切替要求。受理は機体が決める（手動系とジョグ中だけ）。
@@ -19,6 +26,9 @@ export const AUTO_BRAKE_FLAG = 'auto_brake'
 // 1b-11 SG-B14: S-14 の地図更新トグル。受理は機体が決める（T-REPLAY-08 の
 // map_update ガードが保存の可否を縛る）。
 export const MAP_UPDATE_FLAG = 'map_update'
+
+// (buildSetFlagRequest は ./setFlagPayload.js に定義。純粋・React 非依存で
+// unit 試験から直接 import できるようにするため。)
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 
@@ -47,7 +57,7 @@ export function useSetFlag() {
         serviceType: SRV_TYPES.SET_FLAG,
       })
       svc.callService(
-        new ROSLIB.ServiceRequest({ flag, value, requester }),
+        new ROSLIB.ServiceRequest(buildSetFlagRequest(flag, value)),
         (res) => resolve(res),
         (err) => reject(err),
       )
