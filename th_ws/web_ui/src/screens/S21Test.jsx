@@ -49,7 +49,7 @@ import OperationCard from '../shell/OperationCard.jsx'
 import attributes from '../generated/attributes.json'
 import { NAV_MODES, testSteps, onsiteReasons } from './onsiteSteps.js'
 import { baseToWorld } from '../mapGeometry.js'
-import { REJECT_REASONS } from '../i18n/reasons.js'
+import { REJECT_REASONS, reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
   BADGE_JOG_DENIED, BADGE_NO_HOME_PIN, BADGE_NO_PANEL_PIN,
@@ -123,6 +123,19 @@ export default function S21Test({ onExit }) {
   // brief-tracker-default-off §3.4: 人検出の開始/停止（/system/set_flag
   // tracker_enabled）。状態の正本は server（state.tracker_enabled）。
   const setFlag = useSetFlag()
+  // fix-setflag-requester: 拒否・通信失敗を押した人に見せる（S-20 と同じ）。
+  const [trackerErr, setTrackerErr] = useState(null)
+  async function requestTracker(next) {
+    setTrackerErr(null)
+    try {
+      const res = await setFlag(TRACKER_FLAG, next, 's21-target')
+      if (!res?.accepted) {
+        setTrackerErr(reasonLabel(res?.reject_reason_key) ?? UNKNOWN_REASON_LABEL)
+      }
+    } catch {
+      setTrackerErr(UNKNOWN_REASON_LABEL)
+    }
+  }
   const pins = useOnsitePins(ros)
   const personTargets = usePersonTargets(ros)
   const personStatus = usePersonStatus(ros)
@@ -475,11 +488,14 @@ export default function S21Test({ onExit }) {
               enabled={trackerEnabled}
               hasCandidate={hasCandidate}
               canStop={trackerCanStop}
-              onStart={() => setFlag(TRACKER_FLAG, true, 's21-target')}
-              onStop={() => setFlag(TRACKER_FLAG, false, 's21-target')}
+              onStart={() => requestTracker(true)}
+              onStop={() => requestTracker(false)}
               disabled={disabledAll}
               testId="s21"
             />
+            {trackerErr && (
+              <div className="note" data-testid="s21-tracker-error">{trackerErr}</div>
+            )}
             {trackerEnabled && (mode === 'SUMMON' && stateName === 'POINT' ? (
               <RadarSelect
                 candidates={personTargets.candidates}

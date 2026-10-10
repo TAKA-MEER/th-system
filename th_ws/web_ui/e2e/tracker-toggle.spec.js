@@ -165,3 +165,35 @@ test('S-21: 人検出が止まっている間は呼び寄せ（2 点指示）が
   await expect(page.locator('[data-testid="s21-summon-tracker-off"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="s21-summon-start"]')).toBeEnabled()
 })
+
+// ── 失敗表示（fix-setflag-requester） ──────────────────────────────────────
+// rosbridge の拒否・通信失敗は押した人に見せる（S-11/S-13 と同じ流儀）。
+
+test('S-20: 人検出の開始が機体に拒否されたら理由が出て、ボタンは残る', async ({ page }) => {
+  // addInitScript の引数に関数は渡せない（シリアライズで落ちる）ため、
+  // s11-auto-brake.spec.js と同じくスクリプト内に直接書く。goto の前。
+  await page.addInitScript(() => {
+    window.__thTestSetFlag = {
+      tracker_enabled: () => ({ accepted: false, reject_reason_key: 'tracker_required' }),
+    }
+  })
+  await openS20(page, PREP_OFF)
+  await page.getByRole('tab', { name: '対象選択' }).click()
+
+  await page.locator('[data-testid="s20-tracker-start"]').click()
+  await expect(page.locator('[data-testid="s20-tracker-error"]')).toContainText('人検出が必要です')
+  await expect(page.locator('[data-testid="s20-tracker-start"]')).toBeVisible()
+})
+
+test('S-21: 人検出の開始が理由なく拒否されたら「理由不明」が出る', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__thTestSetFlag = {
+      tracker_enabled: () => ({ accepted: false, reject_reason_key: null }),
+    }
+  })
+  await openS21(page, { mode: 'SUMMON', state: 'POINT' })
+  await page.getByRole('tab', { name: '対象選択' }).click()
+
+  await page.locator('[data-testid="s21-tracker-start"]').click()
+  await expect(page.locator('[data-testid="s21-tracker-error"]')).toContainText('理由不明')
+})
