@@ -762,6 +762,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_nav_spurious_success_node
     test/test_venue_nav_spurious_success_node.py
     TIMEOUT 180)
+  # Nav2 controller の TF 停滞の検知（記録だけ。2026-10-10 実機。
+  # venue_navigator の本番の経路。Nav2・/rosout の代役つき。rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_venue_nav_tf_stall_node
+    test/test_venue_nav_tf_stall_node.py
+    TIMEOUT 180)
   ament_add_pytest_test(test_teach_map_reset_node
     test/test_teach_map_reset_node.py
     TIMEOUT 120)
