@@ -1,0 +1,9 @@
+# T-3 2026-10-10 再起動後 (bringup 起動 1791611617)
+1 panel_1 start=1791611751 AT_PANEL<=1791611807 pose=(3.561,-0.742,-74.147deg) pin=(3.639,-0.833,-79.25deg) dist=12.0cm dyaw=5.1deg 途中 ESP32_DISCONNECTED(0.1s)でPAUSE 1回
+新地図 起動1791617407 1 home→panel_1 start=1791617511 到着1791617526(15s) pose=(-2.407,0.943,-2.19deg) pin=(-2.304,0.937,1.72deg) dist=10.3cm dyaw=-3.9deg 揺れ無し・BLOCKED無し
+2 panel_1→panel_2 start=1791617546 完了1791617572(26s) pose=(-4.048,0.986,177.83deg) pin=(-4.150,1.000,182.83deg) dist=10.3cm dyaw=-5.0deg 揺れ無し・BLOCKED無し
+3 panel_2→home start=1791617591 完了1791617613(22s) pose=(-3.676,1.710,-80.53deg) pin=(-3.588,1.788,-85.03deg) dist=11.8cm dyaw=+4.5deg 揺れ無し・BLOCKED無し (1周目完了)
+lap2_panel_1 start=1791617633 done=1791617653 (20s) aborts=0 stall_detect=0 pose: - Translation: [-2.407, 0.939, 0.000] - Rotation: in RPY (degree) [0.000, 0.000, -1.319] 
+lap2_panel_2 start=1791617662 done=1791617699 (37s) aborts=0 stall_detect=0 pose: - Translation: [-4.050, 1.054, 0.000] - Rotation: in RPY (degree) [0.000, -0.000, -172.699] 
+lap2_home start=1791617707 done=1791617735 (28s) aborts=0 stall_detect=0 pose: - Translation: [-3.674, 1.712, 0.000] - Rotation: in RPY (degree) [0.000, 0.000, -79.738] 
+FINISHED
