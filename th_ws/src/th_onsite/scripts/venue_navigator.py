@@ -613,7 +613,7 @@ class VenueNavigator(Node):
             # slam_toolbox は map->odom を未来の stamp で出す（実機実測
             # stamp-now = +0.63〜+0.72 s。transform_timeout ぶん先）ので age は
             # 負になる。未来側にも余裕を持たせる。極端な未来（時計異常）は新しいと見なさない。
-            wire_fresh = -self._TF_FUTURE_TOL_S <= age < 1e9
+            wire_fresh = -self._TF_FUTURE_TOL_S <= age < self._TF_STALE_S
         except Exception:
             wire_fresh = False
         if not wire_fresh:
