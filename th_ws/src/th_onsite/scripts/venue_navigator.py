@@ -609,6 +609,8 @@ class VenueNavigator(Node):
             wire_fresh = 0.0 <= age < 5.0
         except Exception:
             wire_fresh = False
+        if not wire_fresh:
+            return
         path_age_s = -1.0
         try:
             if self._path is not None:
