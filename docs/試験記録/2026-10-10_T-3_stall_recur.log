@@ -1,0 +1,77 @@
+### controller_server tail
+[ERROR] [1791607884.767808788] [tf_help]: Data time: 1791607576s 626538591ns, Transform time: 1791603418s 336496436ns
+[ERROR] [1791607884.866586684] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791607884.866638927] [tf_help]: Data time: 1791607576s 626538591ns, Transform time: 1791603418s 336496436ns
+[ERROR] [1791607884.969956459] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791607884.970036316] [tf_help]: Data time: 1791607576s 626538591ns, Transform time: 1791603418s 336496436ns
+[ERROR] [1791607885.067377855] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791607885.067451038] [tf_help]: Data time: 1791607576s 626538591ns, Transform time: 1791603418s 336496436ns
+[ERROR] [1791607885.167156601] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791607885.167227639] [tf_help]: Data time: 1791607576s 626538591ns, Transform time: 1791603418s 336496436ns
+[ERROR] [1791607885.266573450] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791607885.266625584] [tf_help]: Data time: 1791607576s 626538591ns, Transform time: 1791603418s 336496436ns
+[ERROR] [1791607885.366912162] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791607885.366973247] [tf_help]: Data time: 1791607576s 626538591ns, Transform time: 1791603418s 336496436ns
+[ERROR] [1791607885.467789169] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791607885.467862093] [tf_help]: Data time: 1791607576s 626538591ns, Transform time: 1791603418s 336496436ns
+[ERROR] [1791607885.567927788] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791607885.568009982] [tf_help]: Data time: 1791607576s 626538591ns, Transform time: 1791603418s 336496436ns
+[ERROR] [1791607885.666987205] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791607885.667034319] [tf_help]: Data time: 1791607576s 626538591ns, Transform time: 1791603418s 336496436ns
+[ERROR] [1791607885.765928315] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791607885.765979476] [tf_help]: Data time: 1791607576s 626538591ns, Transform time: 1791603418s 336496436ns
+[ERROR] [1791607885.867533491] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791607885.867578141] [tf_help]: Data time: 1791607576s 626538591ns, Transform time: 1791603418s 336496436ns
+[INFO] [1791607885.965515948] [controller_server]: Goal was canceled. Stopping the robot.
+[INFO] [1791607885.965629420] [controller_server]: [follow_path] [ActionServer] Client requested to cancel the goal. Cancelling.
+
+### venue_navigator
+[INFO] [1791607822.088147531] [venue_navigator]: /system/state: ('PANEL_NAV', 'BLOCKED')
+[INFO] [1791607823.851806255] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791607825.852092621] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791607825.858895451] [venue_navigator]: /system/event 発行: evt.unblocked
+[INFO] [1791607825.871909616] [venue_navigator]: /system/state: ('PANEL_NAV', 'NAV')
+[WARN] [1791607834.096125895] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791607834.096995226] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791607834.109545751] [venue_navigator]: /system/state: ('PANEL_NAV', 'BLOCKED')
+[INFO] [1791607835.851349667] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791607837.851017259] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791607837.854958436] [venue_navigator]: /system/event 発行: evt.unblocked
+[INFO] [1791607837.869831883] [venue_navigator]: /system/state: ('PANEL_NAV', 'NAV')
+[WARN] [1791607846.077697643] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791607846.078694404] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791607846.111482452] [venue_navigator]: /system/state: ('PANEL_NAV', 'BLOCKED')
+[INFO] [1791607847.851958966] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791607849.851885220] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791607849.853484389] [venue_navigator]: /system/event 発行: evt.unblocked
+[INFO] [1791607849.877021302] [venue_navigator]: /system/state: ('PANEL_NAV', 'NAV')
+[WARN] [1791607858.082997347] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791607858.085327078] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791607858.091824960] [venue_navigator]: /system/state: ('PANEL_NAV', 'BLOCKED')
+[INFO] [1791607859.851649299] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791607861.851797864] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791607861.852740101] [venue_navigator]: /system/event 発行: evt.unblocked
+[INFO] [1791607861.865072658] [venue_navigator]: /system/state: ('PANEL_NAV', 'NAV')
+[WARN] [1791607870.067356131] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791607870.078050890] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791607870.078861788] [venue_navigator]: /system/state: ('PANEL_NAV', 'BLOCKED')
+[INFO] [1791607871.852056934] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791607873.851699462] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791607873.860443380] [venue_navigator]: /system/event 発行: evt.unblocked
+[INFO] [1791607873.870230909] [venue_navigator]: /system/state: ('PANEL_NAV', 'NAV')
+[WARN] [1791607882.071646496] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791607882.076632859] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791607882.082175924] [venue_navigator]: /system/state: ('PANEL_NAV', 'BLOCKED')
+[INFO] [1791607883.851896383] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791607885.864573288] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791607885.865416982] [venue_navigator]: /system/event 発行: evt.unblocked
+[INFO] [1791607885.865617065] [venue_navigator]: /system/state: ('PANEL_NAV', 'PAUSE')
+
+### 観測メモ（2026-10-10 夕。1791607572 に ui.goto PANEL を送信）
+- 起動（bringup）は 1791602499。controller_server の Transform time は 1791603418 で固定（起動の約 920 秒後から止まる）。
+- /local_costmap/costmap は 0 件。controller_server の全スレッドは futex／ソケット待ち（13 + 3）。
+- venue_navigator のログに `Nav2 TF stall` は 0 件（検知が発火しなかった）。
+- 原因: `Transform data too old` は rclcpp::get_logger("tf_help") から出る。ノードに紐づかないロガーは /rosout に流れない。
+  外から /rosout を 150 秒購読したが `too old` は 0 件（同じ controller_server の別メッセージ 8 件は届いた）。
+- 一過性のフォルトで PAUSE になった: ESP32_DISCONNECTED（1791607612.46 に 0.1 s）、LIDAR_LOST（1791607631.86 に 0.1 s）。
+- 再開後は 12 秒周期で `Failed to make progress` → follow_path status=6 → evt.blocked → costmap クリア → 再送。cmd_vel_nav は angular.z=0.4 の旋回のみ。
