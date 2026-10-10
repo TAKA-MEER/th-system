@@ -8,20 +8,22 @@ launch_testing 試験（2026-10-10 実機の follow_path 連続打ち切り）�
 unblocked を繰り返して回復しなかった。止める・再起動する動作はまだ入れない
 （記録だけ）。旧版は `/rosout` の `Transform data too old`（tf_help ロガー）
 を見ていたが、ノードに紐づかないロガーは `/rosout` に流れないため実機で
-発火しなかった。本試験は作り直した信号（A: 打ち切りの連続＋位置不動、
-B: `/rosout` の controller_server の進捗失敗）を本番ノードで縛る。
+発火しなかった。2 版目は /rosout の進捗失敗（B）を必須にしていたため、
+停滞中は /rosout が届かない本番で発火しなかった。本試験は A（打ち切りの
+連続＋位置不動＋/tf 新）だけで発火することを本番ノードで縛る。
 
 本番ノード（state_manager / pin_registrar / venue_navigator）を起動し、Nav2
 の代役（ComputePathToPose と、**中断だけを返し続ける FollowPath**）で実機と
 同じ系列（follow_path の打ち切り、位置がほぼ不動、TF 新しい）を作る。
-判定の閾値は本番の値（3 回連続・20 cm・progress 併用）を直接使い、周期だけ
+判定の閾値は本番の値（3 回連続・20 cm）を直接使い、周期だけ
 縮める（blocked 再探索 0.3 秒・打ち切り 0.4 秒）。
 
-  - 3 回連続の打ち切り（静止・TF 新・progress 有り）→ `evt.nav_tf_stall`
+  - 3 回連続の打ち切り（静止・TF 新・/rosout 無し）→ `evt.nav_tf_stall`
+    （`progress_count` は 0。実機と同じく /rosout は何も届かない）
   - 打ち切りを繰り返しても機体が進んでいれば → 出ない（誤検知の防止）
   - 単発の打ち切り → 出ない
   - `/tf` ごと古ければ → 出ない（SLAM 側を見る）
-  - progress の裏付けが無ければ → 出ない（B の併用を縛る）
+  - /rosout の進捗失敗が届けば → `progress_count` に載る（発火の条件ではない）
 """
 from __future__ import annotations
 
@@ -168,7 +170,7 @@ class TestVenueNavTfStall(unittest.TestCase):
         self.event_args: list[str] = []
         self._robot_x = 0.0  # 既定は静止（原点）
         self._stale_tf = False  # True: /tf の map→odom を古い時刻で出す
-        self._send_progress = True  # False: B の裏付け無しを再現
+        self._send_progress = False  # 既定は実機と同じく /rosout に何も流さない
         self._abort_budget: int | None = None  # None: 常に打ち切り
 
         cbg = ReentrantCallbackGroup()
@@ -242,9 +244,9 @@ class TestVenueNavTfStall(unittest.TestCase):
         return res
 
     def _exec_follow(self, goal_handle):
-        # 実機では controller が約 10 秒ごとに `Failed to make progress` で
-        # 打ち切った。代役も打ち切りの直前に同じ文言をノード名
-        # `controller_server` で /rosout へ流す（実機と同じ経路）。
+        # 実機では停滞中の controller_server の /rosout は他プロセスに届かない。
+        # 既定の代役は /rosout に何も流さない。`_send_progress` を立てた試験
+        # だけ「届いた場合」を再現して進捗失敗のログを流す。
         with self._lock:
             self.follow_calls += 1
             send_progress = self._send_progress
@@ -439,7 +441,7 @@ class TestVenueNavTfStall(unittest.TestCase):
             pass
 
     def test_repeated_aborts_emit_stall(self):
-        """打ち切りの連続（静止・TF 新・progress 有り）で出る（記録だけ）。"""
+        """打ち切りの連続（静止・TF 新・/rosout 無し）で出る（記録だけ）。"""
         try:
             since = self._enter_nav()
             self.assertTrue(self._wait_follow_calls(1),
@@ -454,8 +456,8 @@ class TestVenueNavTfStall(unittest.TestCase):
                             f'/tf が新しいのに wire_fresh でない ({arg})')
             self.assertGreaterEqual(arg.get('abort_count', 0), 3,
                                     f'打ち切り回数が足りない ({arg})')
-            self.assertGreaterEqual(arg.get('progress_count', 0), 1,
-                                    f'progress の裏付けが無い ({arg})')
+            self.assertEqual(arg.get('progress_count', -1), 0,
+                             f'/rosout 無しなのに progress_count が 0 でない ({arg})')
             self.assertLess(arg.get('moved_cm', 9999.0), 20.0,
                             f'静止なのに moved_cm が大きい ({arg})')
         finally:
@@ -520,16 +522,18 @@ class TestVenueNavTfStall(unittest.TestCase):
         finally:
             self._reset_quietly()
 
-    def test_aborts_without_progress_does_not_emit(self):
-        """progress の裏付けが無ければ出ない（B の併用を縛る）。"""
+    def test_progress_logs_recorded_when_delivered(self):
+        """/rosout の進捗失敗が届けば progress_count に載る（条件ではない）。"""
         try:
             with self._lock:
-                self._send_progress = False
+                self._send_progress = True
             since = self._enter_nav()
-            self.assertTrue(self._wait_follow_calls(4),
-                            'FollowPath の再送が続かない')
-            time.sleep(3.0)
-            self.assertNotIn('evt.nav_tf_stall', self._snap_events()[since:],
-                             'progress 無しなのに evt.nav_tf_stall が出た')
+            self.assertTrue(
+                self._wait_event('evt.nav_tf_stall', since, timeout=30.0),
+                '打ち切りの連続なのに evt.nav_tf_stall が出ない')
+            arg = self._stall_arg_since(since)
+            assert arg is not None
+            self.assertGreaterEqual(arg.get('progress_count', 0), 1,
+                                    f'届いた進捗失敗が載らない ({arg})')
         finally:
             self._reset_quietly()

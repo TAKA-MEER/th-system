@@ -536,7 +536,7 @@ class VenueNavigator(Node):
     def _on_summon(self, msg: PoseStamped):
         self._summon_goal = msg
 
-    # ── /rosout 受信（Nav2 TF 停滞の検知の補助 B・記録だけ）────
+    # ── /rosout 受信（Nav2 TF 停滞の検知の補助 B・届けば件数を記録するだけ）──
     # 2026-10-10 実機: controller_server の TF バッファの map→odom が約
     # 2 時間止まり、約 10 秒ごとに `Failed to make progress` で follow_path
     # が打ち切られ、再送では回復しなかった。止める・再起動する動作は入れ
@@ -591,13 +591,13 @@ class VenueNavigator(Node):
             return
         if self._stall_aborts < self._tf_stall_aborts:
             return
-        # B（補助）: 直近に controller_server の進捗失敗があること。
+        # B（/rosout の進捗失敗）は発火条件にしない。停滞中の controller_server
+        # の /rosout は他プロセスに届かない（2026-10-10 実機）ので、条件に
+        # 入れると本番では絶対に満たされない。届いた件数を arg に載せるだけ。
         now = self._now()
         while self._progress_times and \
                 now - self._progress_times[0] > self._tf_stall_progress_window_s:
             self._progress_times.popleft()
-        if not self._progress_times:
-            return
         # /tf 自体が新しいのに controller だけが古い＝今回の故障の形。
         # /tf ごと古い（wire_fresh=false）なら SLAM 側を見る。
         wire_fresh = False
