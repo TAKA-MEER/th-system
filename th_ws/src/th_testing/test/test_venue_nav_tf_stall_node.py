@@ -1,19 +1,27 @@
 """
-test_venue_nav_tf_stall_node.py — Nav2 controller の TF 停滞の検知（記録だけ）
-launch_testing 試験（2026-10-10 実機の `Transform data too old`）。
+test_venue_nav_tf_stall_node.py — Nav2 TF 停滞の検知（記録だけ）
+launch_testing 試験（2026-10-10 実機の follow_path 連続打ち切り）。
 
-実機で、Nav2 の `controller_server` の TF バッファの map→odom が約 2 時間
-止まったまま（`/tf` 自体は新しい）、`Transform data too old ... Data time`
-固定・`Transform time` 固定のまま `follow_path` が約 10 秒ごとに打ち切られ、
-`venue_navigator` は 12 秒周期で再送を繰り返して回復しなかった。止める・
-再起動する動作はまだ入れない（記録だけ）。本試験はその検知が出ることと、
-単発の `too old`（一過性）では出ないことを確かめる。
+実機で、Nav2 の `controller_server` の TF バッファの map→odom が止まったまま
+（`/tf` 自体は新しい）、約 10 秒ごとに `Failed to make progress` で follow_path
+が打ち切られ（status=6）、`venue_navigator` は 12 秒周期で blocked→再送→
+unblocked を繰り返して回復しなかった。止める・再起動する動作はまだ入れない
+（記録だけ）。旧版は `/rosout` の `Transform data too old`（tf_help ロガー）
+を見ていたが、ノードに紐づかないロガーは `/rosout` に流れないため実機で
+発火しなかった。本試験は作り直した信号（A: 打ち切りの連続＋位置不動、
+B: `/rosout` の controller_server の進捗失敗）を本番ノードで縛る。
 
 本番ノード（state_manager / pin_registrar / venue_navigator）を起動し、Nav2
-の代役（ComputePathToPose と、受け付けたまま終わらない FollowPath）だけ
-試験が務める。controller の `too old` は `/rosout` の代役発行で再現する。
-  - `/rosout` に controller の `too old` が短時間に集中 → `evt.nav_tf_stall`
-  - 単発（しきい値未満）では出ない
+の代役（ComputePathToPose と、**中断だけを返し続ける FollowPath**）で実機と
+同じ系列（follow_path の打ち切り、位置がほぼ不動、TF 新しい）を作る。
+判定の閾値は本番の値（3 回連続・20 cm・progress 併用）を直接使い、周期だけ
+縮める（blocked 再探索 0.3 秒・打ち切り 0.4 秒）。
+
+  - 3 回連続の打ち切り（静止・TF 新・progress 有り）→ `evt.nav_tf_stall`
+  - 打ち切りを繰り返しても機体が進んでいれば → 出ない（誤検知の防止）
+  - 単発の打ち切り → 出ない
+  - `/tf` ごと古ければ → 出ない（SLAM 側を見る）
+  - progress の裏付けが無ければ → 出ない（B の併用を縛る）
 """
 from __future__ import annotations
 
@@ -93,12 +101,9 @@ def _prepare_venue_dir() -> None:
 
 _prepare_venue_dir()
 
-# ── 検知しきい値の launch 上書き ─────────────────────────────────────
-# 本番の既定（30 件/30 秒）では試験が長い。要件は「集中すれば出る・単発では
-# 出ない」の境界なので、小さい値に縮める。
-_STALL_COUNT = 5
-_STALL_WINDOW_S = 5.0
+# ── 周期だけ縮める。判定の閾値（3 回・20 cm・progress 併用）は本番の値 ──
 _BLOCKED_PERIOD_S = 0.3
+_ABORT_DELAY_S = 0.4
 
 _SERVICE_RETRY_BUDGET_SEC = 30.0
 
@@ -134,9 +139,7 @@ def generate_test_description():
         executable='venue_navigator.py',
         name='venue_navigator',
         parameters=[_VENUE_YAML,
-                    {'blocked_recheck_period_s': _BLOCKED_PERIOD_S,
-                     'nav_tf_stall_count': _STALL_COUNT,
-                     'nav_tf_stall_window_s': _STALL_WINDOW_S}],
+                    {'blocked_recheck_period_s': _BLOCKED_PERIOD_S}],
         output='screen',
     )
     return launch.LaunchDescription([
@@ -163,7 +166,10 @@ class TestVenueNavTfStall(unittest.TestCase):
         self.states: list[tuple[str, str]] = []
         self.event_names: list[str] = []
         self.event_args: list[str] = []
-        self._robot_x = _GOAL_XY[0] - 3.0  # 既定は圏外（原点）
+        self._robot_x = 0.0  # 既定は静止（原点）
+        self._stale_tf = False  # True: /tf の map→odom を古い時刻で出す
+        self._send_progress = True  # False: B の裏付け無しを再現
+        self._abort_budget: int | None = None  # None: 常に打ち切り
 
         cbg = ReentrantCallbackGroup()
         self.node.create_subscription(
@@ -226,12 +232,30 @@ class TestVenueNavTfStall(unittest.TestCase):
         return res
 
     def _exec_follow(self, goal_handle):
-        # 実機では controller が 10 秒ごとに打ち切った。ここでは検知の窓の
-        # あいだ goal を生かしたままにする（打ち切り後の再送でも同じ）。
+        # 実機では controller が約 10 秒ごとに `Failed to make progress` で
+        # 打ち切った。代役も打ち切りの直前に同じ文言をノード名
+        # `controller_server` で /rosout へ流す（実機と同じ経路）。
         with self._lock:
             self.follow_calls += 1
-        self._follow_stop.wait(timeout=30.0)
-        goal_handle.succeed()
+            send_progress = self._send_progress
+            if self._abort_budget is not None:
+                do_abort = self._abort_budget > 0
+                if do_abort:
+                    self._abort_budget -= 1
+            else:
+                do_abort = True
+        if send_progress:
+            msg = Log()
+            msg.stamp = self.node.get_clock().now().to_msg()
+            msg.level = 40
+            msg.name = 'controller_server'
+            msg.msg = 'Failed to make progress (代役の進捗失敗)'
+            self.pub_rosout.publish(msg)
+        time.sleep(_ABORT_DELAY_S)
+        if do_abort:
+            goal_handle.abort()
+        else:
+            goal_handle.succeed()
         return FollowPath.Result()
 
     def _on_state(self, msg: SystemState):
@@ -244,35 +268,22 @@ class TestVenueNavTfStall(unittest.TestCase):
             self.event_args.append(msg.arg_json)
 
     def _publish_tf(self):
-        now = self.node.get_clock().now().to_msg()
+        now_ns = self.node.get_clock().now().nanoseconds
+        if self._stale_tf:
+            now_ns -= 30_000_000_000
+        stamp = rclpy.time.Time(nanoseconds=now_ns).to_msg()
         od = TransformStamped()
-        od.header.stamp = now
+        od.header.stamp = stamp
         od.header.frame_id = 'map'
         od.child_frame_id = 'odom'
         od.transform.rotation.w = 1.0
         base = TransformStamped()
-        base.header.stamp = now
+        base.header.stamp = stamp
         base.header.frame_id = 'odom'
         base.child_frame_id = 'base_link'
         base.transform.translation.x = float(self._robot_x)
         base.transform.rotation.w = 1.0
         self.pub_tf.publish(TFMessage(transforms=[od, base]))
-
-    def _burst_too_old(self, n: int):
-        """controller の `too old`（map→odom）の代役を n 件出す。
-
-        実機のロガー名は `tf_help`（nav2 の nav_2d_utils）。検知は名前で
-        絞らないため、代役も実機と同じ名前にして本番の経路を縛る。
-        """
-        for _ in range(n):
-            msg = Log()
-            msg.stamp = self.node.get_clock().now().to_msg()
-            msg.level = 40
-            msg.name = 'tf_help'
-            msg.msg = ('Transform data too old when converting from map to odom '
-                       '(Data time / Transform time は省略)')
-            self.pub_rosout.publish(msg)
-            time.sleep(0.1)
 
     # ── 待ち・呼び出し ──────────────────────────────────────
     def _mode_state(self) -> tuple[str, str] | None:
@@ -298,6 +309,26 @@ class TestVenueNavTfStall(unittest.TestCase):
                 return True
             time.sleep(0.05)
         return name in self._snap_events()[since:]
+
+    def _follow_count(self) -> int:
+        with self._lock:
+            return self.follow_calls
+
+    def _wait_follow_calls(self, n: int, timeout: float = 20.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self._follow_count() >= n:
+                return True
+            time.sleep(0.05)
+        return self._follow_count() >= n
+
+    def _stall_arg_since(self, since: int) -> dict | None:
+        with self._lock:
+            for name, arg in zip(self.event_names[since:],
+                                 self.event_args[since:]):
+                if name == 'evt.nav_tf_stall':
+                    return json.loads(arg or '{}')
+        return None
 
     def _call_srv(self, srv_type, srv_name: str, req, timeout: float = 8.0):
         cli = self.node.create_client(srv_type, srv_name)
@@ -378,51 +409,93 @@ class TestVenueNavTfStall(unittest.TestCase):
             time.sleep(0.05)
         self.fail(f'PANEL_NAV に入らない ({self._mode_state()})')
 
-    def _follow_count(self) -> int:
-        with self._lock:
-            return self.follow_calls
-
-    def _wait_follow_active(self, timeout: float = 10.0) -> bool:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if self._follow_count() >= 1:
-                return True
-            time.sleep(0.05)
-        return self._follow_count() >= 1
-
     def _reset_quietly(self):
         try:
             self._reset_to_home()
         except Exception:
             pass
 
-    def test_burst_emits_nav_tf_stall(self):
-        """`too old` が集中すれば `evt.nav_tf_stall` が出る（記録だけ）。"""
+    def test_repeated_aborts_emit_stall(self):
+        """打ち切りの連続（静止・TF 新・progress 有り）で出る（記録だけ）。"""
         try:
             since = self._enter_nav()
-            self.assertTrue(self._wait_follow_active(),
+            self.assertTrue(self._wait_follow_calls(1),
                             'FollowPath が呼ばれない')
-            self._burst_too_old(_STALL_COUNT + 3)
             self.assertTrue(
-                self._wait_event('evt.nav_tf_stall', since, timeout=15.0),
-                'too old の集中なのに evt.nav_tf_stall が出ない')
-            with self._lock:
-                idx = self.event_names.index('evt.nav_tf_stall')
-                arg = json.loads(self.event_args[idx] or '{}')
+                self._wait_event('evt.nav_tf_stall', since, timeout=30.0),
+                '打ち切りの連続なのに evt.nav_tf_stall が出ない')
+            arg = self._stall_arg_since(since)
+            self.assertIsNotNone(arg, 'evt.nav_tf_stall の引数が無い')
+            assert arg is not None
             self.assertTrue(arg.get('wire_fresh', False),
                             f'/tf が新しいのに wire_fresh でない ({arg})')
+            self.assertGreaterEqual(arg.get('abort_count', 0), 3,
+                                    f'打ち切り回数が足りない ({arg})')
+            self.assertGreaterEqual(arg.get('progress_count', 0), 1,
+                                    f'progress の裏付けが無い ({arg})')
+            self.assertLess(arg.get('moved_cm', 9999.0), 20.0,
+                            f'静止なのに moved_cm が大きい ({arg})')
         finally:
             self._reset_quietly()
 
-    def test_single_too_old_is_ignored(self):
-        """単発（しきい値未満）では `evt.nav_tf_stall` は出ない。"""
+    def test_moving_between_aborts_does_not_emit(self):
+        """打ち切りを繰り返しても機体が進んでいれば出ない（誤検知の防止）。"""
         try:
             since = self._enter_nav()
-            self.assertTrue(self._wait_follow_active(),
+            self.assertTrue(self._wait_follow_calls(1),
                             'FollowPath が呼ばれない')
-            self._burst_too_old(2)
-            time.sleep(8.0)
+            # 打ち切りごとに 25 cm 進む（本番の閾値 20 cm 超）。
+            for _ in range(4):
+                self._robot_x += 0.25
+                time.sleep(0.5)
+            self.assertTrue(self._wait_follow_calls(5),
+                            'FollowPath の再送が続かない')
+            time.sleep(4.0)
             self.assertNotIn('evt.nav_tf_stall', self._snap_events()[since:],
-                             '単発の too old なのに evt.nav_tf_stall が出た')
+                             '進んでいるのに evt.nav_tf_stall が出た')
+        finally:
+            self._reset_quietly()
+
+    def test_single_abort_does_not_emit(self):
+        """単発の打ち切りでは出ない（回数の閾値を縛る）。"""
+        try:
+            with self._lock:
+                self._abort_budget = 1
+            since = self._enter_nav()
+            self.assertTrue(
+                self._wait_event('evt.blocked', since, timeout=15.0),
+                '打ち切り後の evt.blocked が出ない')
+            self._reset_to_home()
+            time.sleep(3.0)
+            self.assertNotIn('evt.nav_tf_stall', self._snap_events()[since:],
+                             '単発の打ち切りなのに evt.nav_tf_stall が出た')
+        finally:
+            self._reset_quietly()
+
+    def test_stale_wire_does_not_emit(self):
+        """`/tf` ごと古ければ出ない（SLAM 側を見る）。"""
+        try:
+            with self._lock:
+                self._stale_tf = True
+            since = self._enter_nav()
+            self.assertTrue(self._wait_follow_calls(4),
+                            'FollowPath の再送が続かない')
+            time.sleep(3.0)
+            self.assertNotIn('evt.nav_tf_stall', self._snap_events()[since:],
+                             '/tf が古いのに evt.nav_tf_stall が出た')
+        finally:
+            self._reset_quietly()
+
+    def test_aborts_without_progress_does_not_emit(self):
+        """progress の裏付けが無ければ出ない（B の併用を縛る）。"""
+        try:
+            with self._lock:
+                self._send_progress = False
+            since = self._enter_nav()
+            self.assertTrue(self._wait_follow_calls(4),
+                            'FollowPath の再送が続かない')
+            time.sleep(3.0)
+            self.assertNotIn('evt.nav_tf_stall', self._snap_events()[since:],
+                             'progress 無しなのに evt.nav_tf_stall が出た')
         finally:
             self._reset_quietly()
