@@ -1,0 +1,117 @@
+### venue_navigator (tail 60)
+[INFO] [1791591273.910836904] [venue_navigator]: /system/event 発行: evt.unblocked
+[WARN] [1791591282.122126261] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791591282.128380083] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791591283.907168808] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791591285.903723219] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791591285.911569350] [venue_navigator]: /system/event 発行: evt.unblocked
+[WARN] [1791591294.122576475] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791591294.123943083] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791591295.905702753] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791591297.902265168] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791591297.903919226] [venue_navigator]: /system/event 発行: evt.unblocked
+[WARN] [1791591306.119663722] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791591306.120849892] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791591307.901487706] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791591309.911669481] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791591309.912949844] [venue_navigator]: /system/event 発行: evt.unblocked
+[WARN] [1791591318.116924462] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791591318.118062694] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791591319.902616474] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791591321.904311444] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791591321.907817815] [venue_navigator]: /system/event 発行: evt.unblocked
+[WARN] [1791591330.127671499] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791591330.129332452] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791591331.909237840] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791591333.908478196] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791591333.909652491] [venue_navigator]: /system/event 発行: evt.unblocked
+[WARN] [1791591342.127604980] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791591342.128516247] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791591343.918142605] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791591345.914462933] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791591345.917891188] [venue_navigator]: /system/event 発行: evt.unblocked
+[WARN] [1791591354.130199365] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791591354.131163729] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791591355.901416861] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791591357.908190210] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791591357.909650752] [venue_navigator]: /system/event 発行: evt.unblocked
+[WARN] [1791591366.122436760] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791591366.124716342] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791591367.904052004] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791591369.902121909] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791591369.903410062] [venue_navigator]: /system/event 発行: evt.unblocked
+[WARN] [1791591378.121532766] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791591378.122554725] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791591379.908142591] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791591381.902938139] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791591381.906713722] [venue_navigator]: /system/event 発行: evt.unblocked
+[WARN] [1791591390.125614823] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791591390.126052479] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791591391.903071989] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791591393.904600571] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791591393.906000166] [venue_navigator]: /system/event 発行: evt.unblocked
+[WARN] [1791591402.117794245] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791591402.118499518] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791591403.901189856] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791591405.900107601] [venue_navigator]: blocked 解除: 残りの走り直しが通れた → evt.unblocked
+[INFO] [1791591405.900691593] [venue_navigator]: /system/event 発行: evt.unblocked
+[WARN] [1791591414.151950651] [venue_navigator]: follow_path 終了 status=6 → evt.blocked
+[INFO] [1791591414.169872828] [venue_navigator]: /system/event 発行: evt.blocked
+[INFO] [1791591415.899291448] [venue_navigator]: blocked 再試行: costmap クリア → 残りを再送
+[INFO] [1791591416.425787647] [venue_navigator]: /system/state: ('PREP', 'PAUSE')
+
+### controller_server (head of errors / tail)
+[ERROR] [1791591188.030350754] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591188.030389504] [tf_help]: Data time: 1791591188s 23289042ns, Transform time: 1791584310s 171387654ns
+[ERROR] [1791591188.130363568] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591413.612797232] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591413.612934123] [tf_help]: Data time: 1791591188s 23289042ns, Transform time: 1791584310s 171387654ns
+[ERROR] [1791591413.712327843] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591413.712382838] [tf_help]: Data time: 1791591188s 23289042ns, Transform time: 1791584310s 171387654ns
+[ERROR] [1791591413.812578033] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591413.812637265] [tf_help]: Data time: 1791591188s 23289042ns, Transform time: 1791584310s 171387654ns
+[ERROR] [1791591413.912312624] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591413.912363206] [tf_help]: Data time: 1791591188s 23289042ns, Transform time: 1791584310s 171387654ns
+[ERROR] [1791591414.012766284] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591414.012835578] [tf_help]: Data time: 1791591188s 23289042ns, Transform time: 1791584310s 171387654ns
+[ERROR] [1791591414.113240989] [controller_server]: Failed to make progress
+[WARN] [1791591414.113374554] [controller_server]: [follow_path] [ActionServer] Aborting handle.
+[INFO] [1791591415.901654974] [local_costmap.local_costmap]: Received request to clear entirely the local_costmap
+[INFO] [1791591415.903290728] [controller_server]: Received a goal, begin computing control effort.
+[ERROR] [1791591416.043628283] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591416.043685611] [tf_help]: Data time: 1791591188s 23289042ns, Transform time: 1791584310s 171387654ns
+[WARN] [1791591416.043694139] [controller_server]: Control loop missed its desired rate of 10.0000Hz
+[ERROR] [1791591416.043808840] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591416.043818974] [tf_help]: Data time: 1791591188s 23289042ns, Transform time: 1791584310s 171387654ns
+[ERROR] [1791591416.114449007] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591416.114505240] [tf_help]: Data time: 1791591188s 23289042ns, Transform time: 1791584310s 171387654ns
+[ERROR] [1791591416.219596338] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591416.219655909] [tf_help]: Data time: 1791591188s 23289042ns, Transform time: 1791584310s 171387654ns
+[ERROR] [1791591416.303819813] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591416.303881298] [tf_help]: Data time: 1791591188s 23289042ns, Transform time: 1791584310s 171387654ns
+[ERROR] [1791591416.403790975] [tf_help]: Transform data too old when converting from map to odom
+[ERROR] [1791591416.403863777] [tf_help]: Data time: 1791591188s 23289042ns, Transform time: 1791584310s 171387654ns
+[INFO] [1791591416.503731856] [controller_server]: Goal was canceled. Stopping the robot.
+[INFO] [1791591416.503794501] [controller_server]: [follow_path] [ActionServer] Client requested to cancel the goal. Cancelling.
+[WARN] [1791591518.387423781] [controller_server.rclcpp]: failed to send response to /controller_server/get_state (timeout): client will not receive response, at ./src/rmw_response.cpp:154, at ./src/rcl/service.c:314
+
+### slam_toolbox 18068
+[INFO] [1791591073.243724481] [slam_toolbox]: Node using stack size 40000000
+[INFO] [1791591074.121219242] [slam_toolbox]: Using solver plugin solver_plugins::CeresSolver
+[INFO] [1791591074.121341118] [slam_toolbox]: CeresSolver: Using SCHUR_JACOBI preconditioner.
+[INFO] [1791591074.125350509] [slam_toolbox]: Enabling mapping ...
+[INFO] [1791591076.375225049] [slam_toolbox]: Enabling localization ...
+[INFO] [1791591104.430727307] [slam_toolbox]: Enabling mapping ...
+### slam_toolbox 16608 (old)
+[INFO] [1791583838.979167270] [slam_toolbox]: Enabling mapping ...
+[INFO] [1791583885.322800653] [slam_toolbox]: Message Filter dropping message: frame 'laser_link' at time 1791583884.916 for reason 'discarding message because the queue is full'
+[INFO] [1791588545.676724063] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+
+### 取得時の観測（2026-10-10、機体は 1791591407 の時点で PREP/RETURN、約 1791591416 に PAUSE へ）
+- /cmd_vel_nav = angular.z -0.4（右回りの旋回のみ、linear 0）、/cmd_vel_behavior は無音、/cmd_vel の標本は 0
+- tf map->base_link = (1.036, -1.184), yaw 165.2°（その後 3 回の標本とも 165.199° で止まっていた）
+- tf map->odom は新しい stamp（now−約 2 s）で出ている。controller_server の buffer だけが map->odom を Transform time=1791584310（約 7100 秒前）のまま持つ
+- controller_server: 'Transform data too old when converting from map to odom' が 1942 行、最初は 1791591188。10 秒ごとに 'Failed to make progress' → follow_path 中止
+- venue_navigator: 12 秒周期で follow_path status=6 → evt.blocked → costmap クリア → 再送 → evt.unblocked を繰り返す
+- /local_costmap/costmap は発行されていない（hz 0 件）。/local_costmap・/controller_server lifecycle は active
+- slam_toolbox は pid 16608 が 1791588545 に SIGINT/SIGTERM で終了、17350 を経て現行 18068 が 1791591073 に起動（mapping→localization→mapping を 1791591076/104 に切替）
