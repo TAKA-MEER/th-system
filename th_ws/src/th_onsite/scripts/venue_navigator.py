@@ -117,13 +117,19 @@ class VenueNavigator(Node):
         self.declare_parameter('base_frame', 'base_link')
         # Nav2 TF 停滞の検知（2026-10-10 実機。記録だけ・動作は変えない）。
         # controller_server が map→odom の変換に繰り返し失敗すると
-        # follow_path が約 10 秒ごとに打ち切られ、再送を繰り返しても回復
-        # しない。/rosout の `too old` の集中を見て evt.nav_tf_stall を出す
-        # （FSM は知らない事象なので無視する＝止める・再起動はしない）。
+        # follow_path が約 10 秒ごとに打ち切られ（`Failed to make progress`）、
+        # 再送を繰り返しても回復しない。主信号は自分で見ているもの：
+        # follow_path の打ち切り（自分で cancel したものを除く）が N 回連続し、
+        # そのあいだ機体の map 位置が M m 以上進んでいない（A）。
+        # 補助に /rosout の controller_server の `Failed to make progress`
+        # （B。ノード名付きのログなので /rosout に届く）を併用し、両方で発火。
+        # 旧版は /rosout の `Transform data too old`（tf_help ロガー）を見て
+        # いたが、ノードに紐づかないロガーは /rosout に流れないため実機で
+        # 発火しなかった（2026-10-10 夕。検知の取りこぼし）。
         # 検知の調整値であり走行の挙動値ではないので registry の対象外。
-        # 本番の既定（30 件/30 秒）は実機の発火頻度（約 10Hz）から。
-        self.declare_parameter('nav_tf_stall_count', 30)
-        self.declare_parameter('nav_tf_stall_window_s', 30.0)
+        self.declare_parameter('nav_stall_abort_count', 3)
+        self.declare_parameter('nav_stall_move_tol_m', 0.20)
+        self.declare_parameter('nav_stall_progress_window_s', 120.0)
 
         self._params = VenueNavParams(
             align_tolerance_rad=float(self.get_parameter('align_tolerance_rad').value),
@@ -135,9 +141,12 @@ class VenueNavigator(Node):
         )
         self._map_frame = self.get_parameter('map_frame').value
         self._base_frame = self.get_parameter('base_frame').value
-        self._tf_stall_count = int(self.get_parameter('nav_tf_stall_count').value)
-        self._tf_stall_window_s = float(
-            self.get_parameter('nav_tf_stall_window_s').value)
+        self._tf_stall_aborts = int(
+            self.get_parameter('nav_stall_abort_count').value)
+        self._tf_stall_move_tol_m = float(
+            self.get_parameter('nav_stall_move_tol_m').value)
+        self._tf_stall_progress_window_s = float(
+            self.get_parameter('nav_stall_progress_window_s').value)
 
         # ── 状態 ────────────────────────────────────────────
         self._mode = ""            # /system/state の mode（PANEL_NAV / SUMMON を対象）
@@ -196,9 +205,12 @@ class VenueNavigator(Node):
         # しまい、クリア直後の compute がすり抜けて FollowPath 側で ABORT する
         # 往復を招く（Spec-onsite.md §6.1）。
         self._cleared_this_episode = False
-        # Nav2 TF 停滞の検知用。controller の `too old`（/rosout）の受信時刻
-        # の列と、episode ごとの発火ラッチ（1 episode 1 回だけ出す）。
-        self._too_old_times = deque()
+        # Nav2 TF 停滞の検知用。打ち切り回数と最初の打ち切り時の機体位置
+        # （錨。ここから動かなければ停滞）、controller の progress 失敗
+        # （/rosout）の受信時刻の列と、episode ごとの発火ラッチ。
+        self._stall_aborts = 0
+        self._stall_anchor_xy = None
+        self._progress_times = deque()
         self._nav_tf_stall_latched = False
 
         # ── QoS ─────────────────────────────────────────────
@@ -439,8 +451,7 @@ class VenueNavigator(Node):
         self._cleared_this_episode = False
         self._arrival_pending = False
         # 検知のラッチも episode ごとに下ろす（次の episode は改めて判定）。
-        self._nav_tf_stall_latched = False
-        self._too_old_times.clear()
+        self._stall_reset()
 
     # ── /system/effect 受信 ───────────────────────────────
     def _on_effect(self, msg: StateEffect):
@@ -525,32 +536,67 @@ class VenueNavigator(Node):
     def _on_summon(self, msg: PoseStamped):
         self._summon_goal = msg
 
-    # ── /rosout 受信（Nav2 TF 停滞の検知・記録だけ）─────────
+    # ── /rosout 受信（Nav2 TF 停滞の検知の補助 B・記録だけ）────
     # 2026-10-10 実機: controller_server の TF バッファの map→odom が約
-    # 2 時間止まり、`Transform data too old` が約 10Hz で出続けたまま
-    # follow_path が約 10 秒ごとに打ち切られ、再送では回復しなかった。
-    # 止める・再起動する動作は入れない（記録だけ）。FSM は evt.nav_tf_stall
-    # を知らないので無視する（遷移しない）。
-    # 注意: 実機のロガー名は `tf_help`（nav2 の nav_2d_utils）であり
-    # `controller_server` ではない。名前では絞らず本文だけで判定する。
+    # 2 時間止まり、約 10 秒ごとに `Failed to make progress` で follow_path
+    # が打ち切られ、再送では回復しなかった。止める・再起動する動作は入れ
+    # ない（記録だけ）。FSM は evt.nav_tf_stall を知らないので無視する。
+    # 注意: `Transform data too old` を出すのは `tf_help`（nav2 の
+    # nav_2d_utils。ノードに紐づかないロガー）であり /rosout に流れない。
+    # こちらで数えるのはノード名 `controller_server` の進捗失敗だけ。
     def _on_rosout(self, msg: Log):
-        if 'Transform data too old' not in msg.msg:
+        if msg.name != 'controller_server':
             return
-        if 'map to odom' not in msg.msg:
+        if 'failed to make progress' not in msg.msg.lower():
             return
         now = self._now()
-        self._too_old_times.append(now)
-        while self._too_old_times and \
-                now - self._too_old_times[0] > self._tf_stall_window_s:
-            self._too_old_times.popleft()
-        if len(self._too_old_times) < self._tf_stall_count:
+        self._progress_times.append(now)
+        while self._progress_times and \
+                now - self._progress_times[0] > self._tf_stall_progress_window_s:
+            self._progress_times.popleft()
+
+    def _stall_reset(self):
+        """停滞 episode の作り直し（到着・成功・離脱・新しい計画で呼ぶ）。"""
+        self._stall_aborts = 0
+        self._stall_anchor_xy = None
+        self._progress_times.clear()
+        self._nav_tf_stall_latched = False
+
+    def _stall_note_abort(self):
+        """follow_path の打ち切り（自分で cancel したものを除く）を数える。
+        機体が動いていれば（再送で進めた正常系）錨を下ろし直して数え直す
+        ので、本物の障害物で BLOCKED→再送→進めるを繰り返す系列では発火
+        しない。動かずに打ち切りだけが積み上がるのが今回の故障の形。"""
+        if not self._recovery_eligible():
             return
+        self._refresh_robot_pose()
+        if self._robot is None:
+            return
+        xy = (self._robot[0], self._robot[1])
+        if self._stall_anchor_xy is None:
+            self._stall_anchor_xy = xy
+            self._stall_aborts = 1
+        else:
+            moved = math.hypot(xy[0] - self._stall_anchor_xy[0],
+                               xy[1] - self._stall_anchor_xy[1])
+            if moved >= self._tf_stall_move_tol_m:
+                self._stall_anchor_xy = xy
+                self._stall_aborts = 1
+            else:
+                self._stall_aborts += 1
         self._check_nav_tf_stall()
 
     def _check_nav_tf_stall(self):
         if self._nav_tf_stall_latched:
             return
-        if not self._recovery_eligible():
+        if self._stall_aborts < self._tf_stall_aborts:
+            return
+        # B（補助）: 直近に controller_server の進捗失敗があること。
+        now = self._now()
+        while self._progress_times and \
+                now - self._progress_times[0] > self._tf_stall_progress_window_s:
+            self._progress_times.popleft()
+        if not self._progress_times:
             return
         # /tf 自体が新しいのに controller だけが古い＝今回の故障の形。
         # /tf ごと古い（wire_fresh=false）なら SLAM 側を見る。
@@ -563,6 +609,8 @@ class VenueNavigator(Node):
             wire_fresh = 0.0 <= age < 5.0
         except Exception:
             wire_fresh = False
+        if not wire_fresh:
+            return
         path_age_s = -1.0
         try:
             if self._path is not None:
@@ -571,17 +619,26 @@ class VenueNavigator(Node):
         except Exception:
             path_age_s = -1.0
         self._nav_tf_stall_latched = True
+        moved_cm = 0.0
+        try:
+            if self._stall_anchor_xy is not None and self._robot is not None:
+                moved_cm = math.hypot(
+                    self._robot[0] - self._stall_anchor_xy[0],
+                    self._robot[1] - self._stall_anchor_xy[1]) * 100.0
+        except Exception:
+            moved_cm = 0.0
         arg = {
             'reason': 'controller_tf_stall',
-            'too_old_count': len(self._too_old_times),
-            'window_s': self._tf_stall_window_s,
+            'abort_count': self._stall_aborts,
+            'progress_count': len(self._progress_times),
+            'moved_cm': round(moved_cm, 1),
             'wire_fresh': wire_fresh,
             'path_age_s': round(path_age_s, 1),
         }
         self.get_logger().warn(
-            'Nav2 TF stall を検知（記録だけ）: controller_server が map→odom '
-            f'の変換に {len(self._too_old_times)} 回/'
-            f'{self._tf_stall_window_s:.0f}s 失敗。/tf は'
+            'Nav2 TF stall を検知（記録だけ）: follow_path が '
+            f'{self._stall_aborts} 回連続で打ち切られ、そのあいだ機体は '
+            f'{moved_cm:.0f} cm しか進んでいない。/tf は'
             f'{"新しい" if wire_fresh else "古い"}。再送では直らないので'
             '制御系を起動し直す（使い方 §7）。')
         self._emit_event('evt.nav_tf_stall', json.dumps(arg))
@@ -631,8 +688,7 @@ class VenueNavigator(Node):
         self._nav_chain_active = True
         self._nav_chain_started_at = self._now()
         # 新しい episode は検知も改めて判定する。
-        self._nav_tf_stall_latched = False
-        self._too_old_times.clear()
+        self._stall_reset()
         self._clear_costmaps_then(lambda: self._compute_and_follow(goal))
 
     def _compute_and_follow(self, goal):
@@ -793,6 +849,7 @@ class VenueNavigator(Node):
         if status == 4:  # GoalStatus.STATUS_SUCCEEDED
             self._unblocking = False
             self._recheck_in_flight = False
+            self._stall_reset()
             self._refresh_robot_pose()
             goal = self._current_goal()
             robot_xy = self._robot[:2] if self._robot is not None else None
@@ -809,6 +866,7 @@ class VenueNavigator(Node):
             return
         # ABORTED / CANCELED（自分でない cancel）→ blocked
         self.get_logger().warn(f'follow_path 終了 status={status} → evt.blocked')
+        self._stall_note_abort()
         self._go_blocked(json.dumps({'status': int(status)}))
 
     def _schedule_spurious_retry(self, delay_s: float = 2.0):

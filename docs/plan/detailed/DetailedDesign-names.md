@@ -760,7 +760,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `evt.register_ok` ／ `evt.register_rejected` | `pin_registrar` |
 | `evt.record_broken` | `route_recorder`（記録の連続性が切れた → `IDLE` へ） |
 | `evt.check_result` | `opcheck_runner`。`{"item":..., "result":...}` |
-| `evt.nav_tf_stall` | `venue_navigator`（Nav2 TF 停滞の検知・記録だけ。止める・再起動しない。FSM は無視） |
+| `evt.nav_tf_stall` | `venue_navigator`（Nav2 TF 停滞の検知・記録だけ。follow_path の打ち切りの 3 回連続＋位置不動＋`/tf` 新＋`controller_server` の進捗失敗で発火。止める・再起動しない。FSM は無視） |
 | `evt.calib_step_done` ／ `evt.calib_verify_ng` | `calib_runner` |
 | `evt.unsaved.set` ／ `evt.unsaved.clear` | 記録を持つ全ノード |
 
