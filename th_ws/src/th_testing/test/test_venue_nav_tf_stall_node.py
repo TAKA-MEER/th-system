@@ -187,6 +187,7 @@ class TestVenueNavTfStall(unittest.TestCase):
         self._tf_timer = self.node.create_timer(0.1, self._publish_tf,
                                                 callback_group=cbg)
         self.follow_calls = 0
+        self._follow_done = 0
         self._follow_stop = threading.Event()
         self._compute_srv = ActionServer(
             self.node, ComputePathToPose, 'compute_path_to_pose',
@@ -203,6 +204,15 @@ class TestVenueNavTfStall(unittest.TestCase):
 
     def tearDown(self):
         self._follow_stop.set()
+        # 実行中の _exec_follow が goal_handle に触らなくなるまで待つ。
+        # 待たずに executor／ノードを壊すと、目覚めた代役の abort/succeed が
+        # 死んだ action server を叩いて segfault する（return code -11）。
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            with self._lock:
+                if self.follow_calls <= self._follow_done:
+                    break
+            time.sleep(0.05)
         try:
             self._executor.shutdown()
         except Exception:
@@ -250,12 +260,25 @@ class TestVenueNavTfStall(unittest.TestCase):
             msg.level = 40
             msg.name = 'controller_server'
             msg.msg = 'Failed to make progress (代役の進捗失敗)'
-            self.pub_rosout.publish(msg)
-        time.sleep(_ABORT_DELAY_S)
-        if do_abort:
-            goal_handle.abort()
-        else:
-            goal_handle.succeed()
+            try:
+                self.pub_rosout.publish(msg)
+            except Exception:
+                pass
+        self._follow_stop.wait(timeout=_ABORT_DELAY_S)
+        if self._follow_stop.is_set():
+            # tearDown 中。goal_handle に触らず静かに抜ける。
+            with self._lock:
+                self._follow_done += 1
+            return FollowPath.Result()
+        try:
+            if do_abort:
+                goal_handle.abort()
+            else:
+                goal_handle.succeed()
+        except Exception:
+            pass
+        with self._lock:
+            self._follow_done += 1
         return FollowPath.Result()
 
     def _on_state(self, msg: SystemState):
