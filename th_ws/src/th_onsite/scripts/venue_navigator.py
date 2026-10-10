@@ -24,6 +24,7 @@
 # 純コア (venue_nav_core) に旋回誤差・旋回指令・到着判定を寄せる。
 import json
 import math
+from collections import deque
 
 import rclpy
 from rclpy.action import ActionClient
@@ -40,6 +41,7 @@ from geometry_msgs.msg import PoseStamped, Twist
 from nav2_msgs.action import ComputePathToPose, FollowPath
 from nav2_msgs.srv import ClearEntireCostmap
 from nav_msgs.msg import Path
+from rcl_interfaces.msg import Log
 from th_system_msgs.msg import PinList, StateEffect, StateEvent, SystemState
 from th_system_msgs.srv import GoToPanel
 
@@ -113,6 +115,15 @@ class VenueNavigator(Node):
         self.declare_parameter('arrival_xy_tol_m', 0.12)
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('base_frame', 'base_link')
+        # Nav2 TF 停滞の検知（2026-10-10 実機。記録だけ・動作は変えない）。
+        # controller_server が map→odom の変換に繰り返し失敗すると
+        # follow_path が約 10 秒ごとに打ち切られ、再送を繰り返しても回復
+        # しない。/rosout の `too old` の集中を見て evt.nav_tf_stall を出す
+        # （FSM は知らない事象なので無視する＝止める・再起動はしない）。
+        # 検知の調整値であり走行の挙動値ではないので registry の対象外。
+        # 本番の既定（30 件/30 秒）は実機の発火頻度（約 10Hz）から。
+        self.declare_parameter('nav_tf_stall_count', 30)
+        self.declare_parameter('nav_tf_stall_window_s', 30.0)
 
         self._params = VenueNavParams(
             align_tolerance_rad=float(self.get_parameter('align_tolerance_rad').value),
@@ -124,6 +135,9 @@ class VenueNavigator(Node):
         )
         self._map_frame = self.get_parameter('map_frame').value
         self._base_frame = self.get_parameter('base_frame').value
+        self._tf_stall_count = int(self.get_parameter('nav_tf_stall_count').value)
+        self._tf_stall_window_s = float(
+            self.get_parameter('nav_tf_stall_window_s').value)
 
         # ── 状態 ────────────────────────────────────────────
         self._mode = ""            # /system/state の mode（PANEL_NAV / SUMMON を対象）
@@ -182,6 +196,10 @@ class VenueNavigator(Node):
         # しまい、クリア直後の compute がすり抜けて FollowPath 側で ABORT する
         # 往復を招く（Spec-onsite.md §6.1）。
         self._cleared_this_episode = False
+        # Nav2 TF 停滞の検知用。controller の `too old`（/rosout）の受信時刻
+        # の列と、episode ごとの発火ラッチ（1 episode 1 回だけ出す）。
+        self._too_old_times = deque()
+        self._nav_tf_stall_latched = False
 
         # ── QoS ─────────────────────────────────────────────
         effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
@@ -213,6 +231,14 @@ class VenueNavigator(Node):
                                  state_qos, callback_group=sub_cbg)
         self.create_subscription(PoseStamped, '/onsite/summon_goal', self._on_summon,
                                  state_qos, callback_group=sub_cbg)
+        # Nav2 TF 停滞の検知（記録だけ）。/rosout は VOLATILE 購読にする
+        # （rcl の発行側が TRANSIENT_LOCAL でも VOLATILE でも合うよう）。
+        rosout_qos = QoSProfile(depth=100,
+                                reliability=QoSReliabilityPolicy.RELIABLE,
+                                durability=QoSDurabilityPolicy.VOLATILE,
+                                history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(Log, '/rosout', self._on_rosout,
+                                 rosout_qos, callback_group=sub_cbg)
 
         # ロボット姿勢は TF map->base_link で取る（経路・ピンは map 系。odom 系だと
         # map->odom ぶんずれる。pin_registrar._map_pose と同じ非ブロッキング取得）。
@@ -412,6 +438,9 @@ class VenueNavigator(Node):
         self._clear_deadline = 0.0
         self._cleared_this_episode = False
         self._arrival_pending = False
+        # 検知のラッチも episode ごとに下ろす（次の episode は改めて判定）。
+        self._nav_tf_stall_latched = False
+        self._too_old_times.clear()
 
     # ── /system/effect 受信 ───────────────────────────────
     def _on_effect(self, msg: StateEffect):
@@ -496,6 +525,67 @@ class VenueNavigator(Node):
     def _on_summon(self, msg: PoseStamped):
         self._summon_goal = msg
 
+    # ── /rosout 受信（Nav2 TF 停滞の検知・記録だけ）─────────
+    # 2026-10-10 実機: controller_server の TF バッファの map→odom が約
+    # 2 時間止まり、`Transform data too old` が約 10Hz で出続けたまま
+    # follow_path が約 10 秒ごとに打ち切られ、再送では回復しなかった。
+    # 止める・再起動する動作は入れない（記録だけ）。FSM は evt.nav_tf_stall
+    # を知らないので無視する（遷移しない）。
+    # 注意: 実機のロガー名は `tf_help`（nav2 の nav_2d_utils）であり
+    # `controller_server` ではない。名前では絞らず本文だけで判定する。
+    def _on_rosout(self, msg: Log):
+        if 'Transform data too old' not in msg.msg:
+            return
+        if 'map to odom' not in msg.msg:
+            return
+        now = self._now()
+        self._too_old_times.append(now)
+        while self._too_old_times and \
+                now - self._too_old_times[0] > self._tf_stall_window_s:
+            self._too_old_times.popleft()
+        if len(self._too_old_times) < self._tf_stall_count:
+            return
+        self._check_nav_tf_stall()
+
+    def _check_nav_tf_stall(self):
+        if self._nav_tf_stall_latched:
+            return
+        if not self._recovery_eligible():
+            return
+        # /tf 自体が新しいのに controller だけが古い＝今回の故障の形。
+        # /tf ごと古い（wire_fresh=false）なら SLAM 側を見る。
+        wire_fresh = False
+        try:
+            tf = self._tf_buffer.lookup_transform(
+                self._map_frame, 'odom', rclpy.time.Time())
+            age = self._now() - (tf.header.stamp.sec +
+                                 tf.header.stamp.nanosec / 1e9)
+            wire_fresh = 0.0 <= age < 5.0
+        except Exception:
+            wire_fresh = False
+        path_age_s = -1.0
+        try:
+            if self._path is not None:
+                stamp = self._path.header.stamp
+                path_age_s = self._now() - (stamp.sec + stamp.nanosec / 1e9)
+        except Exception:
+            path_age_s = -1.0
+        self._nav_tf_stall_latched = True
+        arg = {
+            'reason': 'controller_tf_stall',
+            'too_old_count': len(self._too_old_times),
+            'window_s': self._tf_stall_window_s,
+            'wire_fresh': wire_fresh,
+            'path_age_s': round(path_age_s, 1),
+        }
+        self.get_logger().warn(
+            'Nav2 TF stall を検知（記録だけ）: controller_server が map→odom '
+            f'の変換に {len(self._too_old_times)} 回/'
+            f'{self._tf_stall_window_s:.0f}s 失敗。/tf は'
+            f'{"新しい" if wire_fresh else "古い"}。再送では直らないので'
+            '制御系を起動し直す（使い方 §7）。')
+        self._emit_event('evt.nav_tf_stall', json.dumps(arg))
+
     # ── ロボット姿勢（TF map->base_link・非ブロッキング）──
     def _refresh_robot_pose(self):
         try:
@@ -540,6 +630,9 @@ class VenueNavigator(Node):
         # _start_nav が二重に呼ばれるのを防ぐ。
         self._nav_chain_active = True
         self._nav_chain_started_at = self._now()
+        # 新しい episode は検知も改めて判定する。
+        self._nav_tf_stall_latched = False
+        self._too_old_times.clear()
         self._clear_costmaps_then(lambda: self._compute_and_follow(goal))
 
     def _compute_and_follow(self, goal):
