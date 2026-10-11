@@ -5,7 +5,7 @@
 // 降ろす」だけをする。表示は shell/GuideBanner.jsx。
 import { useEffect, useState } from 'react'
 import { useSystemEffect } from '../ros/useSystemEffect.js'
-import { dispatchEffect, shouldGuideClose } from './effectDispatch.js'
+import { dispatchEffect, shouldGuideClose, initEstopHeldGuideKey } from './effectDispatch.js'
 
 export function useGuideBanner(ros, mode, sinceMs, estopHw) {
   const effect = useSystemEffect(ros)
@@ -38,5 +38,19 @@ export function useGuideBanner(ros, mode, sinceMs, estopHw) {
     if (shouldGuideClose(latched, { mode, sinceMs, estopHw })) setGuide(null)
   }, [guide, mode, sinceMs, estopHw])
 
-  return { guideKey: guide?.key ?? null, closeGuide: () => setGuide(null) }
+  // 起動時の物理非常停止の案内は状態から導く (一回きりの effect を取りこぼす
+  // 画面でも出す。SM-3.1.2-003)。閉じても、離されて押し直されるまでは出し直さない。
+  const heldKey = initEstopHeldGuideKey({ mode, estopHw })
+  const [heldDismissed, setHeldDismissed] = useState(false)
+  useEffect(() => {
+    if (!heldKey) setHeldDismissed(false)
+  }, [heldKey])
+
+  const effectKey = guide?.key ?? null
+  const guideKey = effectKey ?? (heldDismissed ? null : heldKey)
+  const closeGuide = () => {
+    setGuide(null)
+    if (heldKey) setHeldDismissed(true)
+  }
+  return { guideKey, closeGuide }
 }

@@ -804,6 +804,35 @@ class TestOpcheckRunnerNode(unittest.TestCase):
         self._publish_effect('record_result', {'item': 'MOTOR', 'result': 'OK'})
 
     # ════════════════════════════════════════════════════════
+    # q2. MOTOR: 実測が指令に遅れて追従する機体でも OK（2026-10-10 T-8 実機）
+    # ════════════════════════════════════════════════════════
+    def test_q2_lagging_feedback_all_four_dirs_ok(self):
+        """押下直後は指令が出ているのに実測がまだ 0（本物の機体の遅れ）。
+        この立ち上がりを符号違い・追従不足にしてはいけない。LEFT を含む 4 方向で OK。"""
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('MOTOR')
+        assert res.started, res.message
+
+        self._events.clear()
+        for direction in ('FORWARD', 'BACK', 'LEFT', 'RIGHT'):
+            cmd_l, cmd_r = self._DIR_CMDS[direction]
+            self._publish_hold(direction)
+            # 実測 0 のサンプルが先に何個か届き、その後で追従する
+            for frac in (0.0, 0.0, 0.0, 0.2, 0.6, 1.0, 1.0):
+                # 画面は押している間 hold を送り続ける（デッドマンで離し扱いにしない）
+                self.pub_hold.publish(String(data=direction))
+                self._publish_wheel(cmd_l=cmd_l, cmd_r=cmd_r,
+                                    meas_l=cmd_l * frac, meas_r=cmd_r * frac)
+            self._publish_hold('NONE')
+            self._spin(0.2)
+        hits = [e for e in self._wait_for_event('evt.check_result', timeout=3.0)
+                if json.loads(e.arg_json).get('item') == 'MOTOR']
+        assert hits, '遅れのある正常な機体で MOTOR の判定が出ない'
+        assert json.loads(hits[-1].arg_json).get('result') == 'OK', \
+            f'遅れのある正常な機体が NG になった: {hits[-1].arg_json}'
+        self._publish_effect('record_result', {'item': 'MOTOR', 'result': 'OK'})
+
+    # ════════════════════════════════════════════════════════
     # r. MOTOR: 左右入れ替えは旋回で NG（SG-A13）
     # ════════════════════════════════════════════════════════
     def test_r_swapped_wheels_ng_on_turn(self):

@@ -146,7 +146,8 @@ class TestJudgeMotorSamples:
 
     def test_any_sign_mismatch_fails(self):
         p = make_params()
-        samples = [(-0.05, -0.048, 0.05, 0.047), (-0.05, 0.0, 0.05, 0.047)]
+        # 追従したあとで逆向きに動いた（立ち上がりの遅れではない）
+        samples = [(-0.05, -0.048, 0.05, 0.047), (-0.05, 0.048, 0.05, 0.047)]
         v = judge_motor_samples(samples, p)
         assert v.result == "NG" and v.reason == "sign_mismatch_L"
 
@@ -190,6 +191,59 @@ class TestJudgeMotorSamples:
         p = make_params(motor_deadband_mps=0.03)
         samples = [(0.02, 0.02, -0.02, -0.02)] * 5
         assert judge_motor_samples(samples, p).reason == "no_command"
+
+
+class TestJudgeMotorSamplesWithLag:
+    """実機（2026-10-10 T-8）: 指令に対し実測が数百 ms 遅れて追従する機体で OK になること。
+
+    以前は押下直後の「指令は出たが実測がまだ 0」のサンプルを符号不一致
+    （`cmd * meas <= 0`）と見て、正常な機体を毎回 sign_mismatch で NG にしていた。
+    """
+
+    @staticmethod
+    def _press(cmd_l, cmd_r, lag_samples=12, hold_samples=60, tau=4.0):
+        """20Hz。指令は 1 サンプル目から階段、実測は lag_samples 個 0 のあと一次遅れで追従。"""
+        out = []
+        ml = mr = 0.0
+        for i in range(hold_samples):
+            if i >= lag_samples:
+                ml += (cmd_l - ml) / tau
+                mr += (cmd_r - mr) / tau
+            out.append((cmd_l, ml, cmd_r, mr))
+        return out
+
+    @pytest.mark.parametrize("name,cl,cr", [
+        ("FORWARD", 0.05, 0.05),
+        ("BACK", -0.05, -0.05),
+        ("LEFT", -0.06, 0.06),
+        ("RIGHT", 0.06, -0.06),
+    ])
+    @pytest.mark.parametrize("lag", [0, 6, 12, 20])
+    def test_lagging_healthy_machine_is_ok(self, name, cl, cr, lag):
+        v = judge_motor_samples(self._press(cl, cr, lag_samples=lag), make_params())
+        assert v == OK(), f"{name} lag={lag}: {v}"
+
+    def test_lag_with_previous_residue_is_ok(self):
+        # 前の押下の残り（逆符号の小さな実測）が先頭に残っていても追従すれば OK
+        p = make_params()
+        samples = [(-0.06, 0.01, 0.06, -0.01)] * 3 + self._press(-0.06, 0.06, 8)
+        assert judge_motor_samples(samples, p) == OK()
+
+    def test_truly_reversed_wheel_still_ng(self):
+        # 左輪が逆に回る（極性逆）は、遅れがあっても NG
+        samples = self._press(-0.06, 0.06, 8)
+        samples = [(cl, -ml, cr, mr) for cl, ml, cr, mr in samples]
+        v = judge_motor_samples(samples, make_params())
+        assert v.result == "NG" and v.reason == "sign_mismatch_L"
+
+    def test_never_moves_is_ng(self):
+        samples = [(-0.06, 0.0, 0.06, 0.0)] * 60
+        v = judge_motor_samples(samples, make_params())
+        assert v.result == "NG" and v.reason in ("sign_mismatch_L", "no_follow_L")
+
+    def test_only_one_wheel_moves_is_ng(self):
+        samples = [(0.05, 0.05, 0.05, 0.0)] * 60
+        assert judge_motor_samples(samples, make_params()).result == "NG"
 
 
 # ── IMU ─────────────────────────────────────────────────────────────────────
