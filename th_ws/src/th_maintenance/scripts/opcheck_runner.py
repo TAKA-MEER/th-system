@@ -654,6 +654,10 @@ class OpcheckRunner(Node):
         key = (verdict.result, verdict.reason)
         if key != self._last_lidar_verdict:
             self._last_lidar_verdict = key
+            # 実機 2026-10-10 T-8: LIDAR は NG の理由がログに残らず原因を追えなかった
+            self.get_logger().info(
+                f"LIDAR 判定: {verdict.result} ({verdict.reason or '-'}) "
+                f"period={self._scan_period} angle_min={self._scan_angle_min:.3f}")
             self._publish_final("LIDAR", verdict)
             self._emit_result("LIDAR", verdict)
 
