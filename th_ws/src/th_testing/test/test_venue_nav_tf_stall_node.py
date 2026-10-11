@@ -52,7 +52,7 @@ from tf2_msgs.msg import TFMessage
 from th_system_msgs.msg import StateEvent, SystemState
 from th_system_msgs.srv import GoToPanel, UiTrigger
 from nav2_msgs.action import ComputePathToPose, FollowPath
-from nav_msgs.msg import Path
+from nav_msgs.msg import OccupancyGrid, Path
 from geometry_msgs.msg import PoseStamped
 
 
@@ -190,6 +190,15 @@ class TestVenueNavTfStall(unittest.TestCase):
         self._publish_tf()
         self._tf_timer = self.node.create_timer(0.1, self._publish_tf,
                                                 callback_group=cbg)
+
+        # Spec-onsite §6.3: 障害物マップの代役。実機の発行側（Nav2 costmap）と同じ
+        # RELIABLE + TRANSIENT_LOCAL で、経路上が空いた全体を 1 Hz で流す。
+        # 「塞がれた経路は、先が空くまで再送しない」ので、再送を期待する試験には要る。
+        self._pub_costmap = self.node.create_publisher(
+            OccupancyGrid, '/global_costmap/costmap', _tl_qos())
+        self._costmap_timer = self.node.create_timer(
+            1.0, self._publish_costmap, callback_group=cbg)
+        self._publish_costmap()
         self.follow_calls = 0
         self._follow_done = 0
         self._follow_stop = threading.Event()
@@ -205,6 +214,19 @@ class TestVenueNavTfStall(unittest.TestCase):
                                              daemon=True)
         self._spin_thread.start()
         time.sleep(2.0)
+
+    def _publish_costmap(self):
+        m = OccupancyGrid()
+        m.header.frame_id = 'map'
+        m.header.stamp = self.node.get_clock().now().to_msg()
+        m.info.resolution = 0.05
+        m.info.width = 200
+        m.info.height = 200
+        m.info.origin.position.x = -5.0
+        m.info.origin.position.y = -5.0
+        m.info.origin.orientation.w = 1.0
+        m.data = [0] * (200 * 200)
+        self._pub_costmap.publish(m)
 
     def tearDown(self):
         self._follow_stop.set()
