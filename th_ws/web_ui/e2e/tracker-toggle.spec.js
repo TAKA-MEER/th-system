@@ -53,6 +53,7 @@ function startCall(calls) {
 // ── S-20（試験準備） ─────────────────────────────────────────────────────────
 
 test('S-20: 人検出が止まっている間は対象選択タブの中心に「人検出を開始」でレーダーは出ない', async ({ page }) => {
+  await stubSetFlag(page, { tracker_enabled: { accepted: true, reject_reason_key: null } })
   await openS20(page, PREP_OFF)
   await page.getByRole('tab', { name: '対象選択' }).click()
 
@@ -63,9 +64,6 @@ test('S-20: 人検出が止まっている間は対象選択タブの中心に�
 
   // 「人検出を開始」が本当に /system/set_flag tracker_enabled=true を送る
   // （変異③: onClick 空にするとこの検証が赤になる）。
-  await stubSetFlag(page, {
-    tracker_enabled: (value) => ({ accepted: true, reject_reason_key: null }),
-  })
   await page.locator('[data-testid="s20-tracker-start"]').click()
   const calls = await setFlagCalls(page)
   const start = startCall(calls)
@@ -183,6 +181,15 @@ test('S-20: 人検出の開始が機体に拒否されたら理由が出て、�
   await page.locator('[data-testid="s20-tracker-start"]').click()
   await expect(page.locator('[data-testid="s20-tracker-error"]')).toContainText('人検出が必要です')
   await expect(page.locator('[data-testid="s20-tracker-start"]')).toBeVisible()
+})
+
+test('S-20: stubSetFlag の応答が実際に効く（拒否理由がスタブのキーで出る）', async ({ page }) => {
+  // helper が効いていないと既定（reject_reason_key: null）になり「理由不明」が出て赤になる。
+  await stubSetFlag(page, { tracker_enabled: { accepted: false, reject_reason_key: 'tracker_required' } })
+  await openS20(page, PREP_OFF)
+  await page.getByRole('tab', { name: '対象選択' }).click()
+  await page.locator('[data-testid="s20-tracker-start"]').click()
+  await expect(page.locator('[data-testid="s20-tracker-error"]')).toContainText('人検出が必要です')
 })
 
 test('S-21: 人検出の開始が理由なく拒否されたら「理由不明」が出る', async ({ page }) => {

@@ -338,10 +338,19 @@ export async function setFlagCalls(page) {
 
 // brief-tracker-default-off §3.4: /system/set_flag の応答スタブ
 // （ros/useSetFlag.js の window.__thTestSetFlag、キー=flag名、値=関数）。
-// { tracker_enabled: (value) => ({ accepted: true, reject_reason_key: null }) }
-// の形を addInitScript で渡す。必須ではない（未スタブ時は拒否扱い）。
-export async function stubSetFlag(page, stubs) {
-  await page.addInitScript((s) => { window.__thTestSetFlag = s }, stubs)
+// 関数は addInitScript の引数では渡せない（シリアライズで落ち、何もスタブされない）
+// ので、応答の定義を JSON で受け取り、スクリプト内で関数を組み立てる:
+//   stubSetFlag(page, { tracker_enabled: { accepted: true, reject_reason_key: null } })
+// goto の前に呼ぶこと（addInitScript は次のナビゲーションから効く）。
+// 必須ではない（未スタブ時は拒否扱い）。
+export async function stubSetFlag(page, defs) {
+  await page.addInitScript((d) => {
+    const stubs = {}
+    for (const [flag, res] of Object.entries(d)) {
+      stubs[flag] = () => ({ accepted: !!res.accepted, reject_reason_key: res.reject_reason_key ?? null })
+    }
+    window.__thTestSetFlag = stubs
+  }, defs)
 }
 
 // SG-B9: S-50 の一般タブが読むパラメータ取得の部分スタブ。
