@@ -429,6 +429,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_estop_init_link_resume_node
     test/test_estop_init_link_resume_node.py
     TIMEOUT 120)
+  # T-6: 物理非常停止が押されたまま起動 → INIT/CHECK に留まり、案内の根拠が
+  # 状態に載り、戻せば IDLE（state_manager と connectivity_checker の同時起動）
+  ament_add_pytest_test(test_init_estop_held_guide_node
+    test/test_init_estop_held_guide_node.py
+    TIMEOUT 120)
   # 1b-2（SG-A5 の境界）: ESTOP に入る前に gate が真でも、INIT に戻ったあと
   # link_ok が再送されて IDLE まで進む（別 launch。同一 launch では起動直後の
   # 前提が崩れるため分ける）
