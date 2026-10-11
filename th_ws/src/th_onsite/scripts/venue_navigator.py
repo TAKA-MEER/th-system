@@ -159,6 +159,7 @@ class VenueNavigator(Node):
         self._pins = []            # /onsite/pins の保持
         self._pending_goal = None  # select_pin で保留した PIN goal (dict)
         self._summon_goal = None   # /onsite/summon_goal の最新 (PoseStamped)
+        self._robot_updated_at = None  # _robot を最後に TF から更新できた時刻（self._now()）
         self._robot = None         # (x, y, yaw) 最新（TF map->base_link。到着判定/ALIGN は map 系で行う）
         self._path = None          # compute_path_to_pose のキャッシュ (nav_msgs/Path)
         self._arrived_latched = False
@@ -656,9 +657,53 @@ class VenueNavigator(Node):
             tf = self._tf_buffer.lookup_transform(
                 self._map_frame, self._base_frame, rclpy.time.Time())
         except Exception:
-            return
+            return False
         t = tf.transform.translation
         self._robot = (t.x, t.y, _yaw_from_quat(tf.transform.rotation))
+        self._robot_updated_at = self._now()
+        return True
+
+    # 経路計算の開始位置に使う機体位置の許容経過時間 [s]。送る直前に TF を引き直し、
+    # 引けたら新鮮。引けず、最後に引けてから これを超えたら start を付けない。
+    _START_POSE_MAX_AGE_S = 2.0
+
+    def _build_compute_goal(self, goal):
+        """ComputePathToPose.Goal を組み立てる（経路計算の唯一の入口）。
+
+        2026-10-10 実機: start を渡さないと planner_server が自分の TF から機体位置を
+        取り、その TF が古いと直前の位置（待機場所）から計画した。venue_navigator が持つ
+        map->base_link を start として明示する。送る直前に引き直し、引けなければ
+        古い値は 2 秒まで許す。それを超える／一度も無いなら従来どおり start 無し。
+        """
+        req = ComputePathToPose.Goal()
+        req.goal = PoseStamped()
+        req.goal.header.frame_id = self._map_frame
+        req.goal.header.stamp = self.get_clock().now().to_msg()
+        req.goal.pose.position.x = float(goal['x'])
+        req.goal.pose.position.y = float(goal['y'])
+        req.goal.pose.orientation.z = math.sin(float(goal['yaw']) / 2.0)
+        req.goal.pose.orientation.w = math.cos(float(goal['yaw']) / 2.0)
+        self._refresh_robot_pose()
+        age = None
+        if self._robot is not None and self._robot_updated_at is not None:
+            age = self._now() - self._robot_updated_at
+        if self._robot is None or age is None or age > self._START_POSE_MAX_AGE_S:
+            self.get_logger().warn(
+                '経路計算: 機体位置が取れない／古い（'
+                + ('未取得' if age is None else f'{age:.1f}s 前')
+                + '）ので start を付けず planner に任せる')
+            req.use_start = False
+            return req
+        x, y, yaw = self._robot
+        req.use_start = True
+        req.start = PoseStamped()
+        req.start.header.frame_id = self._map_frame
+        req.start.header.stamp = req.goal.header.stamp
+        req.start.pose.position.x = float(x)
+        req.start.pose.position.y = float(y)
+        req.start.pose.orientation.z = math.sin(yaw / 2.0)
+        req.start.pose.orientation.w = math.cos(yaw / 2.0)
+        return req
 
     # ── /onsite/select_pin ────────────────────────────────
     def _on_select_pin(self, request, response):
@@ -705,14 +750,7 @@ class VenueNavigator(Node):
             self.get_logger().warn('compute_path_to_pose サーバ未 ready evt.blocked')
             self._go_blocked(json.dumps({'reason': 'no_server'}))
             return
-        req = ComputePathToPose.Goal()
-        req.goal = PoseStamped()
-        req.goal.header.frame_id = self._map_frame
-        req.goal.header.stamp = self.get_clock().now().to_msg()
-        req.goal.pose.position.x = float(goal['x'])
-        req.goal.pose.position.y = float(goal['y'])
-        req.goal.pose.orientation.z = math.sin(float(goal['yaw']) / 2.0)
-        req.goal.pose.orientation.w = math.cos(float(goal['yaw']) / 2.0)
+        req = self._build_compute_goal(goal)
         # 全コールバックは executor で走る（ブロッキング spin はしない）。
         self._compute_goal = goal
         self._nav_chain_active = True

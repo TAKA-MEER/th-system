@@ -772,6 +772,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_nav_tf_stall_node
     test/test_venue_nav_tf_stall_node.py
     TIMEOUT 180)
+  # 経路計算に機体位置を start として明示して渡す（2026-10-10 実機。
+  # venue_navigator の本番の経路。Nav2 の代役つき。rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_venue_nav_start_pose_node
+    test/test_venue_nav_start_pose_node.py
+    TIMEOUT 180)
   ament_add_pytest_test(test_teach_map_reset_node
     test/test_teach_map_reset_node.py
     TIMEOUT 120)
