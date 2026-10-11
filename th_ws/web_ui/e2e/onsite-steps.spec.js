@@ -73,13 +73,13 @@ test('S-20: 「対象を選ぶ」で対象選択タブに切り替わる', async
   await expect(page.locator('[data-testid="radar-cand-0"]')).toBeVisible()
 })
 
-test('S-20: 「待機場所を登録」で登録サブタブへ切り替わり ui.register{HOME}', async ({ page }) => {
+test('S-20: 「人の位置で待機場所を登録」で登録サブタブへ切り替わり ui.register{HOME}', async ({ page }) => {
   await gotoScreenWithOnsite(page, 'S20', PREP, { pins: [], targets: TARGETS, mappingActive: true })
   await page.locator('#s20').waitFor()
   await unlockOnsiteMap(page)
 
   const btn = page.locator('[data-testid="s20-next-action"]')
-  await expect(btn).toHaveText('待機場所を登録')
+  await expect(btn).toHaveText('人の位置で待機場所を登録')
   await btn.click()
   await expect(page.locator('[data-testid="s20-subtab-register"]')).toHaveAttribute('aria-selected', 'true')
   const reg = (await triggers(page)).filter((c) => c.trigger === 'ui.register')
@@ -87,13 +87,13 @@ test('S-20: 「待機場所を登録」で登録サブタブへ切り替わり u
   expect(reg[0].argJson).toMatchObject({ kind: 'HOME' })
 })
 
-test('S-20: 「配電盤を登録」で ui.register{PANEL}', async ({ page }) => {
+test('S-20: 「人の位置で配電盤を登録」で ui.register{PANEL}', async ({ page }) => {
   await gotoScreenWithOnsite(page, 'S20', PREP, { pins: HOME_ONLY, targets: TARGETS, mappingActive: true })
   await page.locator('#s20').waitFor()
   await unlockOnsiteMap(page)
 
   const btn = page.locator('[data-testid="s20-next-action"]')
-  await expect(btn).toHaveText('配電盤を登録')
+  await expect(btn).toHaveText('人の位置で配電盤を登録')
   await btn.click()
   const reg = (await triggers(page)).filter((c) => c.trigger === 'ui.register')
   expect(reg, '配電盤の登録が ui.register を送っていない').toHaveLength(1)

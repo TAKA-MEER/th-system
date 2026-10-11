@@ -324,3 +324,59 @@ test('LIDAR: マスクを取得できないときは扇を出さず、取得で�
   await expect(page.getByTestId('s30-lidar-mask-unknown')).toBeVisible()
   await expect(page.getByTestId('s30-lidar-mask-wedge')).toHaveCount(0)
 })
+
+// --- 判定の保持表示（Spec-webui §3.12「結果」/ 2026-10-12 決定）---
+// 実機と同じ順序: 判定（/opcheck/status の最終）が先に届き、その後 state が
+// RUNNING_CHECK -> LIST へ変わる（state_manager は effect を先、state を後に publish）。
+// 判定の後に opcheck_runner は同じ項目の UNKNOWN を 100ms ごとに流し続ける。
+async function finishRun(page, item, result, detail, nextScreen = '') {
+  await page.evaluate(() => window.__thSetTestState({ state: 'RUNNING_CHECK' }))
+  await page.evaluate((v) => window.__thSetTestOpcheckStatus({ item: v.item, result: 'UNKNOWN', detail: '', next_screen: '' }), { item })
+  await page.evaluate((v) => window.__thSetTestOpcheckStatus({ item: v.item, result: v.result, detail: v.detail, next_screen: v.nextScreen }), { item, result, detail, nextScreen })
+  await page.evaluate((v) => window.__thSetTestOpcheckStatus({ item: v.item, result: 'UNKNOWN', detail: '', next_screen: '' }), { item })
+  await page.evaluate(() => window.__thSetTestState({ state: 'LIST' }))
+}
+
+test('結果の保持: IMU WARN と LiDAR NG は LIST に戻っても「戻る」まで残り、校正へ導線も出る', async ({ page }) => {
+  await stubTrigger(page, { 'ui.check_item': { accepted: true } })
+  await gotoS30(page, { state: { state: 'LIST' } })
+  await expect(page.getByTestId('s30-held-result')).toHaveCount(0)
+
+  await finishRun(page, 'IMU', 'WARN', 'needs_calibration', 'imu_calib')
+  const panel = page.getByTestId('s30-held-result')
+  await expect(panel).toBeVisible()
+  await expect(panel).toContainText('校正が必要です')
+  await expect(panel.getByTestId('s30-goto-calib')).toBeVisible()
+  await expect(panel.locator('.pill')).toHaveText('要確認')
+
+  await page.getByTestId('s30-held-back').click()
+  await expect(panel).toHaveCount(0)
+
+  await finishRun(page, 'LIDAR', 'NG', 'blind_mismatch', 'lidar_calib')
+  await expect(panel).toBeVisible()
+  await expect(panel.locator('.pill')).toHaveText('NG')
+  await expect(panel).toContainText('死角マスクの設定と実際の死角がずれています')
+  await expect(panel.getByTestId('s30-goto-calib')).toBeVisible()
+  // 放置しても機体へは何も送らない（ui.check_item / ui.abort を余計に出さない）
+  await page.waitForTimeout(500)
+  await expect(panel).toBeVisible()
+  const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
+  expect(calls.filter((c) => c.trigger === 'ui.check_item' || c.trigger === 'ui.abort')).toHaveLength(0)
+})
+
+test('結果の保持: 「戻る」で消える', async ({ page }) => {
+  await gotoS30(page, { state: { state: 'LIST' } })
+  await finishRun(page, 'IMU', 'OK', '')
+  await expect(page.getByTestId('s30-held-result')).toBeVisible()
+  await page.getByTestId('s30-held-back').click()
+  await expect(page.getByTestId('s30-held-result')).toHaveCount(0)
+})
+
+test('結果の保持: 別の項目を押すと消える', async ({ page }) => {
+  await stubTrigger(page, { 'ui.check_item': { accepted: true } })
+  await gotoS30(page, { state: { state: 'LIST' } })
+  await finishRun(page, 'LIDAR', 'NG', 'blind_mismatch', 'lidar_calib')
+  await expect(page.getByTestId('s30-held-result')).toBeVisible()
+  await page.getByTestId('s30-item-IMU').click()
+  await expect(page.getByTestId('s30-held-result')).toHaveCount(0)
+})

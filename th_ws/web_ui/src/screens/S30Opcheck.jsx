@@ -58,7 +58,7 @@ import { OP_LABELS } from '../i18n/states.js'
 import {
   S30_ITEM_ORDER, S30_ITEM_LABELS, S30_LIST_TITLE, S30_OVERALL_TITLE,
   S30_RESULT_UNKNOWN, S30_RESULT_OK, S30_RESULT_WARN, S30_RESULT_NG, S30_RESULT_RUNNING,
-  S30_RESULT_TONE, s30OverallLabel, S30_DETAIL_PLACEHOLDER, S30_ABORT, S30_ABORT_NOTE, S30_GOTO_CALIB,
+  S30_RESULT_TONE, s30OverallLabel, S30_DETAIL_PLACEHOLDER, S30_ABORT, S30_ABORT_NOTE, S30_GOTO_CALIB, S30_RESULT_TITLE, S30_RESULT_BACK,
   S30_ESTOP_STEP1, S30_ESTOP_STEP2, S30_ESTOP_STEP3, S30_ESTOP_STEP4,
   S30_MOTOR_FORWARD, S30_MOTOR_BACK, S30_MOTOR_LEFT, S30_MOTOR_RIGHT, S30_MOTOR_HOLD_NOTE,
   S30_STATUS_DETAIL_TITLE, S30_STATUS_WAITING,
@@ -103,6 +103,22 @@ function VerdictCard({ item, verdict, disabledAll, onGotoCalib }) {
           {S30_GOTO_CALIB}
         </button>
       )}
+    </div>
+  )
+}
+
+// 判定の保持表示（Spec-webui §3.12「結果」）。判定が確定すると FSM は LIST へ戻る
+// （SM-3.1.2-086/087）ので、画面が結果を持ち続け、「戻る」を押すまで消さない。
+// 「戻る」は画面の表示を閉じるだけで何も送らない（FSM・機体に影響しない）。
+function HeldResultPanel({ held, disabledAll, onGotoCalib, onBack }) {
+  return (
+    <div className="card" data-testid="s30-held-result">
+      <h3>{S30_RESULT_TITLE}</h3>
+      <p className="note">{S30_ITEM_LABELS[held.item]}</p>
+      <VerdictCard item={held.item} verdict={held} disabledAll={disabledAll} onGotoCalib={onGotoCalib} />
+      <button type="button" className="btn wide" data-testid="s30-held-back" onClick={onBack}>
+        {S30_RESULT_BACK}
+      </button>
     </div>
   )
 }
@@ -289,6 +305,15 @@ export default function S30Opcheck() {
 
   const [selectedItem, setSelectedItem] = useState(null)
   const [selectErr, setSelectErr] = useState(null)
+  // 確定した判定の保持（「戻る」か別項目の選択まで消さない）。
+  const [held, setHeld] = useState(null)
+  const initialStatusRef = useRef(status)
+  useEffect(() => {
+    if (status === initialStatusRef.current) return // 開いた時点で既にある値は今回の判定ではない
+    if (status?.item && status.result && status.result !== 'UNKNOWN') {
+      setHeld({ item: status.item, result: status.result, detail: status.detail, next_screen: status.next_screen })
+    }
+  }, [status])
 
   // The item that is actually running server-side takes priority over the
   // locally-clicked one (status.item is authoritative once it arrives);
@@ -322,6 +347,7 @@ export default function S30Opcheck() {
     if (running && item === activeItem) return
     const prevSelected = selectedItem
     setSelectErr(null)
+    setHeld(null) // 新しい確認が始まる
     setSelectedItem(item)
     try {
       const res = await sendTrigger('ui.check_item', { item })
@@ -410,7 +436,11 @@ export default function S30Opcheck() {
       </div>
 
       <div>
-        {!activeItem && (
+        {!activeItem && held && (
+          <HeldResultPanel held={held} disabledAll={disabledAll}
+            onGotoCalib={handleGotoCalib} onBack={() => setHeld(null)} />
+        )}
+        {!activeItem && !held && (
           <div className="card"><p className="note">{S30_DETAIL_PLACEHOLDER}</p></div>
         )}
         {running && (
