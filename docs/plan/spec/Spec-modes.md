@@ -294,7 +294,7 @@ WiFi の受信ギャップ（実測 0.5〜1.2 s・[Spec-params.md](Spec-params.m
 | `SM-3.1.2-056` | `PANEL_NAV` | **`PAUSE`** | **「走行」** | `NAV` | **同じ経路の続きから。**再検索はしない |
 | **`SM-3.1.2-099`** | `PANEL_NAV` | **`PAUSE`** | **「保存」**（地図更新 ON のときだけ） | **`PAUSE` のまま** | 書き足した地図を確定（F-41 ／ [Spec-onsite.md](Spec-onsite.md) §4.0.1）。**`SAVED` を作らない**（§3.0-③） |
 | `SM-3.1.2-057` | `PANEL_NAV` | `NAV` | 経路が塞がれた | `BLOCKED` | W-5。**タイムアウトしない**（[Spec-safety.md](Spec-safety.md) §7） |
-| `SM-3.1.2-058` | `PANEL_NAV` | `BLOCKED` | 経路が通れるようになった | `NAV` | 自動で再開。**同じ経路の残りで走り直す。別のルートを探して迂回しない**（[Spec-onsite.md](Spec-onsite.md) §6。ユーザー決定 2026-10-04） |
+| `SM-3.1.2-058` | `PANEL_NAV` | `BLOCKED` | 経路が通れるようになった（**残りの経路の先が、いまの障害物マップで空いていること**。[Spec-onsite.md](Spec-onsite.md) §6.3） | `NAV` | 自動で再開。**同じ経路の残りで走り直す。別のルートを探して迂回しない**（[Spec-onsite.md](Spec-onsite.md) §6。ユーザー決定 2026-10-04）。**空いていない間は経路を送らず、止まったまま `BLOCKED` で待つ**（2026-10-12） |
 | `SM-3.1.2-059` | `PANEL_NAV` | `BLOCKED` | **「停止」**／手動 UI に触れた | **`PAUSE`** | **`BLOCKED` からも一時停止できる**（待たされている間に手で動かしたい場合） |
 | **`SM-3.1.2-060`** | `PANEL_NAV` | `BLOCKED` | **「再検索」**（W-5 のボタン） | `NAV` | **経路を引き直す。**試験員が指示したときだけ行う |
 | `SM-3.1.2-061` | `PANEL_NAV` | `ALIGN` | 向き合わせ完了 | → `AT_PANEL` の `IDLE_P`（モード遷移） | **到着は通過するだけ**（§3.0-①） |
