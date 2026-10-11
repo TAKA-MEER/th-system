@@ -166,10 +166,25 @@ def judge_motor_samples(samples: Sequence[tuple[float, float, float, float]],
     if all(abs(cl) < p.motor_deadband_mps and abs(cr) < p.motor_deadband_mps
            for cl, _, cr, _ in samples):
         return NG("no_command")
+    # 符号の突き合わせ（遅れを許す）。実機の機体は指令に対し実測が数百 ms 遅れて
+    # 追従する。押下直後は「指令は出たが実測はまだ 0（または前の押下の残り）」なので、
+    # `cmd * meas <= 0` を全サンプルに当てると正常な機体が毎回 sign_mismatch になる
+    # （2026-10-10 T-8 実機）。そこで:
+    #   - 「逆符号」と見なすのは、実測がデッドバンド以上の大きさで指令と逆向きに
+    #     動いたサンプルだけ（0 付近の揺れは符号違いと見ない）
+    #   - さらに、その輪が一度も指令の向きへ動き出していない間（立ち上がりの遅れ・
+    #     前の押下の残り）の逆符号は捨てる。極性が逆の輪は最初から最後まで逆に動く
+    #     ので、追従後の逆符号か、最良サンプルの符号で必ず捕まる。
+    # 追従率は従来どおり最良サンプルだけで見る（立ち上がりの低実測で誤 NG しない）。
+    followed = {"L": False, "R": False}
     for cmd_l, meas_l, cmd_r, meas_r in samples:
-        verdict = judge_motor(cmd_l, meas_l, cmd_r, meas_r, p)
-        if verdict.result == "NG":
-            return verdict
+        for c, m, side in ((cmd_l, meas_l, "L"), (cmd_r, meas_r, "R")):
+            if abs(c) < p.motor_deadband_mps:
+                continue
+            if c * m > 0 and abs(m) >= p.motor_deadband_mps:
+                followed[side] = True
+            elif c * m < 0 and abs(m) >= p.motor_deadband_mps and followed[side]:
+                return NG(f"sign_mismatch_{side}")
     peak = max(samples, key=lambda s: abs(s[1]) + abs(s[3]))
     return judge_motor(peak[0], peak[1], peak[2], peak[3], p)
 
