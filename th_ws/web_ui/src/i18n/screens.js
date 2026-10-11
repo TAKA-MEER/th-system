@@ -373,8 +373,8 @@ export const S20_MAP_TARGET = '対象'
 export const S20_SUBTAB_REGISTER = '登録'
 export const S20_SUBTAB_PINS = 'ピン'
 export const S20_REGISTER_TITLE = '登録'
-export const S20_REG_HOME = '待機場所を登録'
-export const S20_REG_PANEL = '配電盤を登録'
+export const S20_REG_HOME = '人の位置で待機場所を登録'
+export const S20_REG_PANEL = '人の位置で配電盤を登録'
 // brief-onsite-register-fix REG-2: 機体姿勢での登録（/onsite/register_pin,
 // method=ROBOT_POSE）。2 点指示（人が立つ場所を指定）と違い、機体の現在位置・
 // 向きでその場で登録する。
@@ -428,8 +428,8 @@ export const S20_STEP_HOME = '待機場所を登録'
 export const S20_STEP_PANEL = '配電盤を登録'
 export const S20_STEP_SAVE = '保存'
 export const S20_NEXT_SELECT_TARGET = '対象を選ぶ'
-export const S20_NEXT_REG_HOME = '待機場所を登録'
-export const S20_NEXT_REG_PANEL = '配電盤を登録'
+export const S20_NEXT_REG_HOME = '人の位置で待機場所を登録'
+export const S20_NEXT_REG_PANEL = '人の位置で配電盤を登録'
 export const S20_NEXT_SAVE = '保存'
 // brief-onsite-ux2 F-6: 「地図作成開始」を押すまで地図を出さない表示ゲート。
 export const S20_MAP_GATE_MSG = '地図作成を開始してください'
@@ -684,6 +684,9 @@ export const S30_ABORT = '中断（一覧へ戻る）'
 export const S30_ABORT_NOTE = '結果は記録しません。左の一覧から別の項目を選ぶと切り替わります'
 export const S30_DETAIL_RUNNING_OTHER = '別の項目を確認中です'
 export const S30_GOTO_CALIB = '校正へ'
+// 判定の保持表示（Spec-webui §3.12「結果」）。「戻る」を押すまで消さない。
+export const S30_RESULT_TITLE = '判定結果'
+export const S30_RESULT_BACK = '戻る'
 export const S30_GOTO_REPAIR_NOTE = '故障診断へ移動します'
 export const S30_RECHECK = 'もう一度確認する'
 
