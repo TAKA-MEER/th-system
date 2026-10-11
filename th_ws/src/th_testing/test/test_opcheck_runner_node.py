@@ -819,6 +819,8 @@ class TestOpcheckRunnerNode(unittest.TestCase):
             self._publish_hold(direction)
             # 実測 0 のサンプルが先に何個か届き、その後で追従する
             for frac in (0.0, 0.0, 0.0, 0.2, 0.6, 1.0, 1.0):
+                # 画面は押している間 hold を送り続ける（デッドマンで離し扱いにしない）
+                self.pub_hold.publish(String(data=direction))
                 self._publish_wheel(cmd_l=cmd_l, cmd_r=cmd_r,
                                     meas_l=cmd_l * frac, meas_r=cmd_r * frac)
             self._publish_hold('NONE')
