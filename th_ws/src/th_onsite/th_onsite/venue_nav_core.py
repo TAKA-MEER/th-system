@@ -96,3 +96,73 @@ def find_home_goal(pins) -> dict | None:
             return {'x': float(pin['x']), 'y': float(pin['y']),
                     'yaw': float(pin['yaw'])}
     return None
+
+
+# ── 塞がれた経路の先の確認（Spec-onsite §6.3。2026-10-12）────────────────
+# 「通れるようになった」＝残りの経路の先が、いまの障害物マップで空いていること。
+# 走り出せたかどうかでは判定しない（実機 2026-10-10 は障害物へ向かって走り直す往復）。
+
+# 経路の先を確認する距離 [m]（機体の現在位置に最も近い経路上の点から経路に沿って）。
+PATH_AHEAD_CHECK_M = 1.5
+
+# 通れない値の下限（nav_msgs/OccupancyGrid の値。Nav2 costmap の公開値）。
+# 致死(100)だけでなく内接(99)も通れない扱いにする。機体は 0.55 m 角で、
+# 経路中心が内接域なら機体は壁に触れるため。内接より低い値(膨張域 1〜98)は通れる。
+# 未知(-1)は障害物ではないので通れる扱い（経路計画が未知を許す設定と揃える）。
+COSTMAP_BLOCKED_MIN = 99
+
+# 障害物マップがこれ以上更新されていなければ「確認できない＝空いていない」[s]。
+COSTMAP_STALE_S = 5.0
+
+
+def _cell_blocked(grid, x: float, y: float) -> bool:
+    """map 座標 (x, y) のセルが通れないか。範囲外は確認できないので True。
+
+    grid: width/height/resolution/origin_x/origin_y/data を持つもの。
+    原点の向きは無回転（Nav2 の costmap は常に無回転）として扱う。
+    """
+    res = float(grid.resolution)
+    ix = int(math.floor((x - float(grid.origin_x)) / res))
+    iy = int(math.floor((y - float(grid.origin_y)) / res))
+    if ix < 0 or iy < 0 or ix >= grid.width or iy >= grid.height:
+        return True
+    return int(grid.data[iy * grid.width + ix]) >= COSTMAP_BLOCKED_MIN
+
+
+def path_ahead_clear(path_xy, robot_xy, grid,
+                     ahead_m: float = PATH_AHEAD_CHECK_M) -> bool:
+    """経路の先 ahead_m [m] が空いているか（純関数）。
+
+    path_xy: 経路の (x, y) の列（map 系）。robot_xy: 機体位置 (x, y)。
+    機体に最も近い経路上の点から経路に沿って ahead_m まで、点の間も
+    解像度の半分刻みで補間して、通れないセルが 1 つでもあれば False。
+    経路が空・機体位置不明・マップ無しは確認できないので False。
+    """
+    if grid is None or robot_xy is None or not path_xy:
+        return False
+    pts = [(float(p[0]), float(p[1])) for p in path_xy]
+    rx, ry = float(robot_xy[0]), float(robot_xy[1])
+    start = min(range(len(pts)),
+                key=lambda i: (pts[i][0] - rx) ** 2 + (pts[i][1] - ry) ** 2)
+    step = max(float(grid.resolution) * 0.5, 1e-3)
+    if _cell_blocked(grid, *pts[start]):
+        return False
+    travelled = 0.0
+    for i in range(start, len(pts) - 1):
+        ax, ay = pts[i]
+        bx, by = pts[i + 1]
+        seg = math.hypot(bx - ax, by - ay)
+        if seg <= 0.0:
+            continue
+        remain = ahead_m - travelled
+        end = min(seg, remain)
+        n = max(1, int(math.ceil(end / step)))
+        for k in range(1, n + 1):
+            d = end * k / n
+            t = d / seg
+            if _cell_blocked(grid, ax + (bx - ax) * t, ay + (by - ay) * t):
+                return False
+        travelled += end
+        if travelled >= ahead_m - 1e-9:
+            break
+    return True

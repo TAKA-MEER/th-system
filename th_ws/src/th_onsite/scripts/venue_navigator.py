@@ -40,13 +40,14 @@ import tf2_ros
 from geometry_msgs.msg import PoseStamped, Twist
 from nav2_msgs.action import ComputePathToPose, FollowPath
 from nav2_msgs.srv import ClearEntireCostmap
-from nav_msgs.msg import Path
+from nav_msgs.msg import OccupancyGrid, Path
 from rcl_interfaces.msg import Log
 from th_system_msgs.msg import PinList, StateEffect, StateEvent, SystemState
 from th_system_msgs.srv import GoToPanel
 
 from th_onsite.venue_nav_core import (
-    VenueNavParams, align_cmd_wz, arrived, find_home_goal, success_is_plausible,
+    COSTMAP_STALE_S, PATH_AHEAD_CHECK_M, VenueNavParams, align_cmd_wz, arrived,
+    find_home_goal, path_ahead_clear, success_is_plausible,
     should_unblock_for_arrival,
 )
 
@@ -56,6 +57,19 @@ def _yaw_from_quat(q) -> float:
     return math.atan2(
         2.0 * (q.w * q.z + q.x * q.y),
         1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+
+class _GridView:
+    """OccupancyGrid を純コア（path_ahead_clear）が読む形にする薄いラッパ。"""
+
+    def __init__(self, msg):
+        info = msg.info
+        self.width = int(info.width)
+        self.height = int(info.height)
+        self.resolution = float(info.resolution)
+        self.origin_x = float(info.origin.position.x)
+        self.origin_y = float(info.origin.position.y)
+        self.data = msg.data
 
 
 class VenueNavigator(Node):
@@ -210,6 +224,14 @@ class VenueNavigator(Node):
         # しまい、クリア直後の compute がすり抜けて FollowPath 側で ABORT する
         # 往復を招く（Spec-onsite.md §6.1）。
         self._cleared_this_episode = False
+        # Spec-onsite §6.3(2026-10-12): 塞がれた経路は、経路の先が空くまで走り直さない。
+        # 障害物マップ（/global_costmap/costmap）の最新と受信時刻、コストマップ消去が
+        # 終わった時刻（消去後に障害物が再び記録されるのを待つ起点。0.0 = 未消去）、
+        # 警告ログを episode に 1 回に絞る印。
+        self._costmap = None
+        self._costmap_rx_at = None
+        self._clear_done_at = 0.0
+        self._costmap_warned = False
         # Nav2 TF 停滞の検知用。打ち切り回数と最初の打ち切り時の機体位置
         # （錨。ここから動かなければ停滞）、controller の progress 失敗
         # （/rosout）の受信時刻の列と、episode ごとの発火ラッチ。
@@ -256,6 +278,16 @@ class VenueNavigator(Node):
                                 history=QoSHistoryPolicy.KEEP_LAST)
         self.create_subscription(Log, '/rosout', self._on_rosout,
                                  rosout_qos, callback_group=sub_cbg)
+        # 障害物マップ。Nav2(Humble) の costmap 発行側は RELIABLE + TRANSIENT_LOCAL
+        # （実機と同じイメージで `ros2 topic info -v` により確認 2026-10-12）。
+        # 発行側と同じにする（BEST_EFFORT だと RELIABLE 発行側と合わず 1 件も届かない）。
+        costmap_qos = QoSProfile(depth=1,
+                                 reliability=QoSReliabilityPolicy.RELIABLE,
+                                 durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                                 history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(OccupancyGrid, '/global_costmap/costmap',
+                                 self._on_costmap, costmap_qos,
+                                 callback_group=sub_cbg)
 
         # ロボット姿勢は TF map->base_link で取る（経路・ピンは map 系。odom 系だと
         # map->odom ぶんずれる。pin_registrar._map_pose と同じ非ブロッキング取得）。
@@ -320,6 +352,8 @@ class VenueNavigator(Node):
         再試行が武装解除されていた（2026-09-10 実機）。"""
         if not self._blocked:
             self._cleared_this_episode = False
+            self._clear_done_at = 0.0
+            self._costmap_warned = False
         self._blocked = True
         self._unblocking = False
         self._nav_chain_active = False
@@ -454,6 +488,8 @@ class VenueNavigator(Node):
         self._recheck_in_flight = False
         self._clear_deadline = 0.0
         self._cleared_this_episode = False
+        self._clear_done_at = 0.0
+        self._costmap_warned = False
         self._arrival_pending = False
         # 検知のラッチも episode ごとに下ろす（次の episode は改めて判定）。
         self._stall_reset()
@@ -489,6 +525,7 @@ class VenueNavigator(Node):
         self._recheck_in_flight = False
         self._clear_deadline = 0.0
         self._cleared_this_episode = False
+        self._clear_done_at = 0.0
         self._final_aligning = False
         # _path は保持（resume 用）
 
@@ -1111,13 +1148,73 @@ class VenueNavigator(Node):
         # 再送だけ。別ルートは探さない（再検索 ui.reroute → _replan のときだけ
         # _compute_and_follow が走る）。コストマップの一掃は初回だけ
         # （Spec-onsite §6.1。毎周期消すと本物の障害物マークまで消す）。
-        if self._cleared_this_episode:
-            self.get_logger().info('blocked 再試行: 保持した経路の残りを再送（再計算しない）')
+        # Spec-onsite §6.3(2026-10-12): 経路の先が空くまで送らない。消去は episode に
+        # 1 回だけで、消した後は障害物が再び記録されるのを待ってから最初の確認をする。
+        if not self._cleared_this_episode:
+            self._cleared_this_episode = True
+            self.get_logger().info('blocked 再試行: costmap クリア → 障害物の再記録を待つ')
+            self._clear_costmaps_then(self._after_clear_wait)
+            return
+        if self._path_ahead_is_clear():
+            self.get_logger().info('blocked 再試行: 経路の先が空いた → 残りを再送')
             self._resend_cached()
         else:
-            self._cleared_this_episode = True
-            self.get_logger().info('blocked 再試行: costmap クリア → 残りを再送')
-            self._clear_costmaps_then(self._resend_cached)
+            self._recheck_in_flight = False
+
+    # 消去のあと障害物が再び記録されるまで待つ [s]（約 2 秒。Spec-onsite §6.3）。
+    _CLEAR_SETTLE_S = 1.5
+
+    def _after_clear_wait(self):
+        """コストマップ消去の完了。ここでは送らず待ちの起点だけ置く。"""
+        self._clear_done_at = self._now()
+        self._recheck_in_flight = False
+
+    def _on_costmap(self, msg: OccupancyGrid):
+        self._costmap = msg
+        self._costmap_rx_at = self._now()
+
+    def _warn_once(self, text: str):
+        if not self._costmap_warned:
+            self._costmap_warned = True
+            self.get_logger().warn(text)
+
+    def _path_ahead_is_clear(self) -> bool:
+        """保持した経路の先（機体から 1.5 m）が、いまの障害物マップで空いているか。
+        マップが無い・古い・座標系違い・機体位置不明は確認できない＝空いていない。"""
+        now = self._now()
+        cm = self._costmap
+        if cm is None or self._costmap_rx_at is None:
+            self._warn_once('障害物マップ未受信 → 経路の先は空いていないものとして待つ')
+            return False
+        if now - self._costmap_rx_at > COSTMAP_STALE_S:
+            self._warn_once(
+                f'障害物マップが {now - self._costmap_rx_at:.1f} s 更新されない '
+                f'→ 経路の先は空いていないものとして待つ')
+            return False
+        if cm.header.frame_id != self._map_frame:
+            self._warn_once(
+                f'障害物マップの座標系が {cm.header.frame_id!r}（{self._map_frame!r} でない）'
+                f' → 空いていないものとして待つ')
+            return False
+        self._refresh_robot_pose()
+        robot_xy = self._robot[:2] if self._robot is not None else None
+        if robot_xy is None or self._path is None:
+            return False
+        # 消去直後は何も無く見える。障害物が再び記録される（消去の約 2 秒後）まで
+        # 確認しない。消去後に受けたマップが無ければ待つ（警告ではない）。
+        if self._clear_done_at > 0.0 and (
+                now < self._clear_done_at + self._CLEAR_SETTLE_S
+                or self._costmap_rx_at < self._clear_done_at + 1.0):
+            return False
+        self._costmap_warned = False
+        grid = _GridView(cm)
+        clear = path_ahead_clear(
+            [(p.pose.position.x, p.pose.position.y) for p in self._path.poses],
+            robot_xy, grid, PATH_AHEAD_CHECK_M)
+        if not clear:
+            self.get_logger().info(
+                f'blocked: 経路の先 {PATH_AHEAD_CHECK_M} m に障害物 → 送らずに待つ')
+        return clear
 
     def _resend_cached(self):
         """保持した経路の残りを FollowPath に送り直す（_recheck_compute の

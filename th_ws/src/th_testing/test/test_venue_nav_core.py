@@ -121,3 +121,83 @@ def test_success_implausible_when_far():
 def test_success_unknown_pose_is_trusted():
     assert success_is_plausible(None, {'x': 0.0, 'y': 0.0})
     assert success_is_plausible((0.0, 0.0), None)
+
+
+# ── 塞がれた経路の先の確認（Spec-onsite §6.3）────────────────────────────
+from th_onsite.venue_nav_core import (  # noqa: E402
+    COSTMAP_BLOCKED_MIN, PATH_AHEAD_CHECK_M, path_ahead_clear,
+)
+
+
+class _Grid:
+    def __init__(self, w=200, h=200, res=0.05, ox=-5.0, oy=-5.0):
+        self.width, self.height, self.resolution = w, h, res
+        self.origin_x, self.origin_y = ox, oy
+        self.data = [0] * (w * h)
+
+    def paint(self, x0, x1, val, y0=-0.5, y1=0.5):
+        for iy in range(self.height):
+            y = self.origin_y + (iy + 0.5) * self.resolution
+            for ix in range(self.width):
+                x = self.origin_x + (ix + 0.5) * self.resolution
+                if x0 <= x < x1 and y0 <= y <= y1:
+                    self.data[iy * self.width + ix] = val
+
+
+_PATH = [(0.0, 0.0), (0.75, 0.0), (1.5, 0.0), (2.25, 0.0), (3.0, 0.0)]
+
+
+class TestPathAheadClear:
+    def test_free(self):
+        assert path_ahead_clear(_PATH, (0.0, 0.0), _Grid())
+
+    def test_lethal_within_range_blocks(self):
+        g = _Grid()
+        g.paint(1.0, 1.1, 100)
+        assert not path_ahead_clear(_PATH, (0.0, 0.0), g)
+
+    def test_inscribed_blocks(self):
+        g = _Grid()
+        g.paint(1.0, 1.1, 99)
+        assert not path_ahead_clear(_PATH, (0.0, 0.0), g)
+
+    def test_inflation_passes(self):
+        g = _Grid()
+        g.paint(1.0, 1.1, COSTMAP_BLOCKED_MIN - 1)
+        assert path_ahead_clear(_PATH, (0.0, 0.0), g)
+
+    def test_unknown_is_not_an_obstacle(self):
+        g = _Grid()
+        g.paint(1.0, 1.1, -1)
+        assert path_ahead_clear(_PATH, (0.0, 0.0), g)
+
+    def test_obstacle_between_poses_is_seen(self):
+        # 経路の点(0.75, 1.5)の間にだけある薄い障害物（点の判定だけだとすり抜ける）
+        g = _Grid()
+        g.paint(1.1, 1.15, 100)
+        assert not path_ahead_clear(_PATH, (0.0, 0.0), g)
+
+    def test_beyond_range_is_ignored(self):
+        g = _Grid()
+        g.paint(PATH_AHEAD_CHECK_M + 0.3, PATH_AHEAD_CHECK_M + 0.5, 100)
+        assert path_ahead_clear(_PATH, (0.0, 0.0), g)
+
+    def test_range_is_measured_from_nearest_point(self):
+        g = _Grid()
+        g.paint(2.0, 2.1, 100)
+        assert path_ahead_clear(_PATH, (0.0, 0.0), g)
+        assert not path_ahead_clear(_PATH, (1.5, 0.0), g)
+
+    def test_behind_robot_is_ignored(self):
+        g = _Grid()
+        g.paint(0.5, 0.6, 100)
+        assert path_ahead_clear(_PATH, (1.5, 0.0), g)
+
+    def test_out_of_grid_is_not_clear(self):
+        g = _Grid(w=40, h=40, ox=-1.0, oy=-1.0)  # x は -1..1 まで
+        assert not path_ahead_clear(_PATH, (0.0, 0.0), g)
+
+    def test_unknowns_are_not_clear(self):
+        assert not path_ahead_clear(_PATH, (0.0, 0.0), None)
+        assert not path_ahead_clear(_PATH, None, _Grid())
+        assert not path_ahead_clear([], (0.0, 0.0), _Grid())

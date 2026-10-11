@@ -793,6 +793,14 @@ if(BUILD_TESTING)
     test/test_venue_nav_pause_blocked_node.py
     TIMEOUT 400)
 
+  # 塞がれた経路は先が空くまで走り直さない（Spec-onsite §6.3。launch_testing）
+  ament_add_pytest_test(test_venue_nav_blocked_hold_node
+    test/test_venue_nav_blocked_hold_node.py
+    TIMEOUT 400)
+  ament_add_pytest_test(test_venue_nav_blocked_hold_stale_node
+    test/test_venue_nav_blocked_hold_stale_node.py
+    TIMEOUT 200)
+
   # 待機場所宣言の配線（DetailedDesign-onsite.md §9 #10。Gazebo なしの
   # launch_testing で pin_registrar＋home_declarer を起動し、TF をずらして
   # 照合・force・ピン変更時の解除・境界を検証。積算は venue_nav と同じ 240 秒枠）

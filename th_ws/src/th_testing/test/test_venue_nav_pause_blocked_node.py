@@ -60,7 +60,7 @@ from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav2_msgs.action import ComputePathToPose, FollowPath
 from nav2_msgs.srv import ClearEntireCostmap
-from nav_msgs.msg import Path
+from nav_msgs.msg import OccupancyGrid, Path
 from tf2_msgs.msg import TFMessage
 from th_system_msgs.msg import FaultStatus, StateEffect, StateEvent, SystemState
 from th_system_msgs.srv import GoToPanel, UiTrigger
@@ -273,6 +273,15 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         self._tf_timer = self.node.create_timer(1.0, self._publish_tf,
                                                 callback_group=cbg)
 
+        # Spec-onsite §6.3: 障害物マップの代役。実機の発行側（Nav2 costmap）と同じ
+        # RELIABLE + TRANSIENT_LOCAL で、経路上が空いた全体を 1 Hz で流す。
+        # 「塞がれた経路は、先が空くまで再送しない」ので、再送を期待する試験には要る。
+        self._pub_costmap = self.node.create_publisher(
+            OccupancyGrid, '/global_costmap/costmap', _tl_qos())
+        self._costmap_timer = self.node.create_timer(
+            1.0, self._publish_costmap, callback_group=cbg)
+        self._publish_costmap()
+
         self._compute_server = ActionServer(
             self.node, ComputePathToPose, 'compute_path_to_pose',
             execute_callback=self._exec_compute,
@@ -324,6 +333,19 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         t.child_frame_id = 'base_link'
         t.transform.rotation.w = 1.0
         self.pub_tf.publish(TFMessage(transforms=[t]))
+
+    def _publish_costmap(self):
+        m = OccupancyGrid()
+        m.header.frame_id = 'map'
+        m.header.stamp = self.node.get_clock().now().to_msg()
+        m.info.resolution = 0.05
+        m.info.width = 200
+        m.info.height = 200
+        m.info.origin.position.x = -5.0
+        m.info.origin.position.y = -5.0
+        m.info.origin.orientation.w = 1.0
+        m.data = [0] * (200 * 200)
+        self._pub_costmap.publish(m)
 
     def _on_state(self, msg: SystemState):
         with self._lock:
