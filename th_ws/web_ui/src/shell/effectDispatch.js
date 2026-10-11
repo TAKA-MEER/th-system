@@ -115,6 +115,17 @@ export function dispatchEffect(msg) {
 // (閉じるボタンは常にある。消える方向の誤動作より残る方向を選ぶ)。
 export const GUIDE_SAME_TRANSITION_GRACE_MS = 1000
 
+// 起動時に物理非常停止が押されたままのときの案内 (SM-3.1.2-003 ／ CL-B-6) を、
+// 状態から導く純粋判定。T-INIT-03 の guide effect は一回きりの /system/effect
+// なので、画面を開く前・制御系の再起動の前に出た分は取りこぼす (2026-10-10
+// T-6 で案内が出なかった原因)。/system/state は transient_local なので後から開いた
+// 画面でも読める。「INIT かつ物理ボタン押下」の間だけ出し、離されるかモードが
+// 変われば消える (閉じる判定を持たない = 状態が真実)。
+export const ESTOP_HELD_AT_BOOT_KEY = 'estop_held_at_boot'
+export function initEstopHeldGuideKey({ mode, estopHw }) {
+  return (mode === 'INIT' && estopHw === true) ? ESTOP_HELD_AT_BOOT_KEY : null
+}
+
 export function shouldGuideClose(guide, { mode, sinceMs, estopHw }) {
   if (!guide) return true
   if (mode !== guide.modeAtOpen) {
