@@ -726,7 +726,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `ui.abort` | S-21（退避待ち） / S-30（実行中の項目の中断） / S-40（校正） | **中止** |
 | `ui.working` | S-21 | 作業中ボタン。`{"on": bool}` |
 | `ui.goto` | S-21 | 行き先の選択。`{"kind": "PANEL"|"HOME"|"SUMMON", "pin_id": "..."}` |
-| `ui.register` | S-20 | 「待機場所を登録」「配電盤を登録」 |
+| `ui.register` | S-20 | 「人の位置で待機場所を登録」「人の位置で配電盤を登録」 |
 | `ui.return_home` | S-20 | 「1 ボタンで待機場所に戻す」 |
 | `ui.map_edit` | S-20 | 地図修正へ入る |
 | `ui.check_item` | S-30 | 点検項目の選択。`{"item": "..."}`。実行中に押すと今の項目を中断して切り替える（T-OPC-10） |

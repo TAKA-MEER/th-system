@@ -934,4 +934,7 @@ table.lst td.r{text-align:right}
 .s40-input{display:block;width:100%;min-height:44px;font-size:calc(var(--fs) * 1.1);margin-top:4px}
 .s40-preview{margin:10px 0;padding:8px;border:1px solid var(--bd);border-radius:var(--r)}
 .s40-imu-parts{list-style:none;margin:0;padding:0}
+/* S-31 チェック手順: 全体リセット(*{padding:0})で番号が枠の外へ出ていたので、番号の分の余白を戻す */
+.s31-hints{list-style:decimal outside;padding-left:1.8em;margin:0 0 8px}
+.s31-hints li{padding-left:.2em;margin-bottom:4px;overflow-wrap:anywhere}
 .s40-hist{margin-bottom:10px}

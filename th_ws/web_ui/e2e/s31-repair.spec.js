@@ -55,3 +55,31 @@ test('「一覧へ戻る」が ui.stop を送る', async ({ page }) => {
   const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
   expect(calls.some((c) => c.trigger === 'ui.stop')).toBeTruthy()
 })
+
+// 実機 2026-10-10: 番号付きの手順が枠(card)の左端より外へはみ出していた。
+// 番号(list marker)は li の左に付くので、li の左端が card の内側の余白より右にあれば
+// 番号も枠内に収まる（marker 幅は li の padding-left 分の内側に入るよう確保している）。
+test('チェック手順の番号は枠の内側に収まる', async ({ page }) => {
+  await gotoS31(page, { item: 'MOTOR', result: 'NG', detail: 'sign_mismatch_L', next_screen: 'repair' })
+  const card = page.getByTestId('s31-hints-MOTOR')
+  await expect(card.locator('li').first()).toBeVisible()
+  const m = await page.evaluate(() => {
+    const card = document.querySelector('[data-testid="s31-hints-MOTOR"]')
+    const ol = card.querySelector('ol')
+    const li = ol.querySelector('li')
+    const cs = getComputedStyle(ol)
+    const c = card.getBoundingClientRect()
+    const l = li.getBoundingClientRect()
+    return {
+      cardLeft: c.left, liLeft: l.left, liRight: l.right, cardRight: c.right,
+      pad: parseFloat(cs.paddingLeft), pos: cs.listStylePosition, type: cs.listStyleType,
+      fs: parseFloat(getComputedStyle(li).fontSize),
+    }
+  })
+  // 番号は li の左端の外側（outside）に描かれる。幅は桁数×約 0.6em + 余白。
+  const markerLeft = m.liLeft - m.fs * 1.5
+  expect(m.pos).toBe('outside')
+  expect(m.type).toBe('decimal')
+  expect(markerLeft).toBeGreaterThanOrEqual(m.cardLeft)
+  expect(m.liRight).toBeLessThanOrEqual(m.cardRight)
+})
