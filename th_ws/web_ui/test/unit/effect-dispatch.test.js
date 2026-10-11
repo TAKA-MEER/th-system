@@ -3,7 +3,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  dispatchEffect, shouldGuideClose, shouldOpenSaveAsk, isUnsavedRecording,
+  dispatchEffect, shouldGuideClose, shouldOpenSaveAsk, isUnsavedRecording, initEstopHeldGuideKey,
   resetEffectWarningsForTest, stampToMs,
 } from '../../src/shell/effectDispatch.js'
 
@@ -210,4 +210,15 @@ test('isUnsavedRecording: saved=true・current.id あり・0 点は未保存で�
   assert.equal(isUnsavedRecording({ points: 0, saved: false }), false)
   assert.equal(isUnsavedRecording(null), false)
   assert.equal(isUnsavedRecording(undefined), false)
+})
+
+// SM-3.1.2-003: 起動時の物理非常停止の案内は一回きりの effect ではなく状態から導く
+// (画面を開く前に出た effect を取りこぼすため。T-6 2026-10-10)。
+// 変異: INIT の条件を外す／押下の条件を外す／キーを変えると赤くなること。
+test('起動時の物理非常停止の案内: INIT かつ押下のときだけ立つ', () => {
+  assert.equal(initEstopHeldGuideKey({ mode: 'INIT', estopHw: true }), 'estop_held_at_boot')
+  assert.equal(initEstopHeldGuideKey({ mode: 'INIT', estopHw: false }), null)
+  assert.equal(initEstopHeldGuideKey({ mode: 'IDLE', estopHw: true }), null)
+  assert.equal(initEstopHeldGuideKey({ mode: 'CARRY', estopHw: true }), null)
+  assert.equal(initEstopHeldGuideKey({ mode: null, estopHw: true }), null)
 })
