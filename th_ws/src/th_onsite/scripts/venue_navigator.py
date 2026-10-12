@@ -543,7 +543,7 @@ class VenueNavigator(Node):
             # _resume_or_start と同じ理由（到着順不定の重複）。送出済みなら送らない。
             self.get_logger().info('resume: 送出済みのため再送しない')
             return
-        self._send_follow_path(self._path)
+        self._send_resumed_path()
 
     def _resume_or_start(self):
         """NAV 系への入口（effect を伴わない復帰＝C-04/C-05 の W-1「はい」等を含む）。
@@ -556,9 +556,20 @@ class VenueNavigator(Node):
             # 送出済み・送出中なら何もしない。
             return
         if self._path is not None:
-            self._send_follow_path(self._path)
+            self._send_resumed_path()
         else:
             self._start_nav()
+
+    def _send_resumed_path(self):
+        """再開（PAUSE/CARRY/フォルト解決の「はい」）で保持経路を送る唯一の窓口。
+        Spec-onsite §6.3(2026-10-12): 再開のときも走り出す前に経路の先を確認する。
+        空いていなければ送らず NAV から BLOCKED へ移す（SM-3.1.2-057）。以降は
+        BLOCKED の既存の流れ（消去→待ち→空いたら再送→evt.unblocked）。"""
+        if self._path_ahead_is_clear():
+            self._send_follow_path(self._path)
+            return
+        self.get_logger().warn('resume: 経路の先が空いていない／確認できない → 走り出さず BLOCKED')
+        self._go_blocked(json.dumps({'reason': 'resume_path_blocked'}))
 
     def _replan(self):
         self._blocked = False
