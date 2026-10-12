@@ -1939,3 +1939,21 @@
   consumers: [calib_runner]
   spec_ref: "DetailedDesign-names.md §7.3"
   note: "CALIB の /odom 途絶判定（超えたら走らせない）。calib_runner.py の _ODOM_STALE_S=0.5（変更なし。_ms 整数に寄せた）"
+
+- name: fault_outcome_window_ms
+  unit: ms
+  class: b
+  status: given
+  value: 1000
+  consumers: [fault_recorder]
+  spec_ref: "Spec-safety.md §3.5.5"
+  note: "フォルト履歴で、フォルトの結果（PAUSE／ESTOP）とみなす遷移を待つ窓。継続中は開始から、解消済みは解消からこの時間以内に届いた PAUSE(fault)／ESTOP への遷移をそのフォルトの結果にする。遷移の通知は数十ミリ秒遅れ、0.1 秒で解消するフォルトでは解消の後に届き得る。その遅れの 10 倍以上で、無関係な停止を拾いにくい長さ。出発点。実機で詰める"
+
+- name: fault_log_max_bytes
+  unit: bytes
+  class: b
+  status: given
+  value: 2097152
+  consumers: [fault_recorder]
+  spec_ref: "Spec-safety.md §3.5.5"
+  note: "フォルト履歴ファイル（JSON Lines）の大きさの上限。超えたら .1 へ退避する（1 世代）。1 件 2 行・約 300 byte なので約 3500 件分"
