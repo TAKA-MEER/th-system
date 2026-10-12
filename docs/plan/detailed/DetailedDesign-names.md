@@ -72,6 +72,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | `twist_mux` | （外部） | — | 多重化 |
 | `connectivity_checker` | `th_state` | `scripts/connectivity_checker.py` | 起動時の疎通確認 |
 | **`localization_health`** | **`th_state`** | **`scripts/localization_health.py`** | **自己位置推定の健全性（WP-SAFE-05。`map→odom` の鮮度＋推定ノードの有無）** |
+| **`fault_recorder`** | **`th_state`** | **`scripts/fault_recorder.py`** | **フォルト履歴の記録（Spec-safety.md §3.5.5）。`/safety/active_faults` と `/system/state` を購読し `/system/fault_history` とファイルへ書くだけ。純コアは `th_state/fault_history_core.py`。挙動に影響しない** |
 | `follow_runner` | `th_transit` | `scripts/follow_runner.py` | `FOLLOW` / `TEACH_FOLLOW` / `PREP` の走行 |
 | `line_runner` | `th_transit` | `scripts/line_runner.py` | `LINE`（後回し） |
 | `leash_runner` | `th_transit` | `scripts/leash_runner.py` | `LEASH`（後回し） |
@@ -304,6 +305,9 @@ def derive_limits(screens, now_ms, p):
 | **`StateEffect.msg`** | `Header header` / `string name`（effect 名） / `string dest`（宛先ノード名。不明なら `unknown`） / `string args_json` | `th_state` → 挙動ノード（`route_recorder` / `replay_runner` 等）。`state_core` の effect を外へ配送する。**`demo-teach-replay` で新設** |
 | **`ActiveScreen.msg`** | `Header header` / `string screen_id` / `string client_id` / `bool interacting` / **`builtin_interfaces/Time last_input`** | UI → `th_state`。**`header.stamp` は 2 Hz の定期発行時刻であって「最後の操作時刻」ではない。**`last_input` が無いと、画面を開いているだけの端末が永久に「使用中」になる |
 | `FaultStatus.msg` | **`Header header`** / `bool active` / `string fault_type` / `string description` / **`string severity`**（`RECOVERABLE` / `CRITICAL`） | **`severity` を末尾に追加**（`F-20`。`WP-MSG-01`）。**`Header header` を先頭に追加**（`WP-SAFE-01`）——`WP-MSG-01` の `M3` は既存 msg への変更を `severity` 1 件に限定しており、先頭への挿入はその例外を超えるため、`/safety/fault` の publisher を書き換える `WP-SAFE-01` で追加した（`header.stamp` を読む消費者はまだ無い） |
+| **`ActiveFaults.msg`** | `Header header` / `string[] types`（いま立っているフォルト種別。辞書順で安定） / `string[] severities`（`types` と同じ順。`RECOVERABLE`／`CRITICAL`） | **`safety_monitor` が `active_faults_` の変化のたびに出す（Spec-safety §3.5.5 の記録用）。`/safety/fault` は代表 1 件しか運ばず複数同時が見えないため別に出す。判定には使わない** |
+| **`FaultRecord.msg`** | `string fault_type` / `float64 started_at`（epoch 秒） / `float64 duration_s`（継続中は -1.0） / `bool ongoing` / `string mode` / `string state`（発生時） / `string severity` / `string outcome`（`PAUSE`／`ESTOP`／`NONE`） | **フォルト履歴の 1 件** |
+| **`FaultHistory.msg`** | `Header header` / `FaultRecord[] records`（新しい順・最大 50 件） | **`fault_recorder` が出す履歴。表示は WebUI（Spec-webui §3.15）** |
 | **`LimiterStatus.msg`** | `Header header` / `bool alive` / `string action`（`PASS`/`CLAMP`/`STOP`/`ZERO_STALE`/**`BLOCKED_UNCALIBRATED`**） / `float32 in_linear` / `float32 out_linear` / `float32 nearest_obstacle_m` / `string source_class`（`MANUAL`/`AUTO`） / `float32 applied_limit_mps` / `bool approach_warning`（自動ブレーキ OFF の手動系が、ON なら減速が始まる距離に入った。速度は落とさない。1b-15 SG-B10） | 監視と画面表示の両方に使う |
 | **`LocalizationHealth.msg`** | `Header header` / `bool ok` / `string reason`（`""` 正常／`stale` A: `map→odom` が凍結／`node_down` C: 推定ノード不在／`jump` B′: `map→odom` が比較周期に許容超で動いた／`restarting` O-e3: 計画的な推定器の再起動中（A・C・B′ を保留）／`restart_timeout` O-e3: 再起動が上限（`localization_restart_max_ms`）を超過／`low_confidence` B 用の予約。出さない） / `float32 transform_age_sec` / `bool node_present` | **`safety_monitor` の `localization` 監視の入力（WP-SAFE-05）。`reason` の文字列定義はこの .msg のコメントが正。優先順位は `node_down` ＞ `stale` ＞ `jump`（localization_health_core.py の docstring に理由を記載）** |
 | **`WaitClearStatus.msg`** | `Header header` / `float32 distance_m` / `float32 remaining_sec` / `bool satisfied` / `string verdict`（`OK`/`WAITING`/`NOT_CLEAR`） | 退避待ちの表示 |
@@ -416,6 +420,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | トピック | 型 | QoS | レート |
 | --- | --- | --- | --- |
 | `/system/state` | `SystemState` | transient_local, depth 1, reliable | 10 Hz ＋ 変化時即時 |
+| **`/system/fault_history`** | **`FaultHistory`** | **reliable, transient_local, depth 1** | **記録が変わるたび（発生・解消・outcome 確定）。継続中の継続時間は流し続けない（`started_at` から計算）。発行者は `fault_recorder`** |
 | `/system/event` | `StateEvent` | reliable, depth 10 | 事象時 |
 | `/system/effect` | `StateEffect` | reliable, depth 10 | 事象時（`demo-teach-replay` で新設。`state_manager` が self 以外の effect を配送） |
 | `/system/params_status` | `ParamsStatus` | transient_local, depth 1 | 変化時 |
@@ -426,6 +431,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `/safety/estop_ui` | `std_msgs/Bool` | reliable | 押下・解除時＋2 Hz |
 | `/safety/estop` | `std_msgs/Bool` | reliable | 10 Hz |
 | `/safety/fault` | `FaultStatus` | reliable, depth 5 | 変化時 |
+| **`/safety/active_faults`** | **`ActiveFaults`** | **reliable, transient_local, depth 1** | **変化時＋起動直後に空を 1 回（発行者は `safety_monitor`。記録用）** |
 | `/safety/fault_lock` | `std_msgs/Bool` | reliable | 10 Hz |
 | `/safety/limiter_status` | `LimiterStatus` | best_effort, depth 1 | **20 Hz**（heartbeat 兼用） |
 | **`/safety/localization_health`** | **`LocalizationHealth`** | **reliable, depth 1** | **2 Hz（発行者は `localization_health`。WP-SAFE-05。比較周期 `jump_window_ms` に連動。止まったこと自体が異常の合図）** |
@@ -578,6 +584,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`jump_rotation_rad`** | rad | (b)。**B′ の回転許容**（同上） |
 | **`localization_restart_max_ms`** | ms | (b)。**計画的な再起動の上限。`slam_control` が示す再起動中がこれを超えたら故障（`restart_timeout`）。最長の立て直し 45 秒（`RESPAWN_WAIT_SEC`）の 2 倍。出発点。実機で詰める**（Spec-safety.md §3.5.0。O-e3） |
 | **`localization_post_restart_grace_ms`** | ms | (b)。**再起動が終わってから最初の補正が届くまでの猶予。この間 A・C を保留する。出発点。実機で詰める**（Spec-safety.md §3.5.0。O-e3） |
+| **`fault_outcome_window_ms`** | ms | (b)。**`fault_recorder`** が PAUSE／ESTOP への遷移をフォルトの結果とみなす窓 |
+| **`fault_log_max_bytes`** | bytes | (b)。**`fault_recorder`** の履歴ファイルの上限。超えたら `.1` へ退避 |
 | **`mux_dead_ms`** | ms | (b)。`MUX_DEAD` の判定（[wp2](DetailedDesign-wp2.md) `WP-SAFE-01` §4.1） |
 | **`runaway_hold_ms`** | ms | (b)。`DRIVE_RUNAWAY` の保持時間 |
 | **`runaway_feedback_stale_ms`** | ms | (b)。`DRIVE_RUNAWAY` の実測の鮮度しきい値。新鮮なときだけ判定し、古いあいだは凍結する（Spec-safety.md §3.5.3。W-06 の②） |

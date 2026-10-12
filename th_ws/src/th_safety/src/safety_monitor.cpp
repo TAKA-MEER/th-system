@@ -45,6 +45,7 @@
 #include <std_srvs/srv/trigger.hpp>
 
 #include <th_system_msgs/msg/fault_status.hpp>
+#include <th_system_msgs/msg/active_faults.hpp>
 #include <th_system_msgs/msg/wheel_feedback.hpp>
 #include <th_system_msgs/msg/person_targets.hpp>
 #include <th_system_msgs/msg/limiter_status.hpp>
@@ -176,6 +177,11 @@ public:
             "/safety/fault_lock", rclcpp::QoS(1).reliable());
         pub_link_quality_ = create_publisher<th_system_msgs::msg::LinkQuality>(
             "/safety/link_quality", rclcpp::QoS(1).best_effort());
+        // 記録用（Spec-safety §3.5.5）。立っているフォルト種別の集合を出すだけ。
+        // 判定・/safety/fault・fault_lock には一切関与しない。
+        pub_active_faults_ = create_publisher<th_system_msgs::msg::ActiveFaults>(
+            "/safety/active_faults", rclcpp::QoS(1).reliable().transient_local());
+        publishActiveFaults();  // 起動直後に空の集合を 1 回出す
 
         // ── Subscribers ────────────────────────────────────
         sub_estop_hw_ = create_subscription<std_msgs::msg::Bool>(
@@ -654,11 +660,13 @@ private:
                 th_safety::classify_severity(prev_rep) == th_safety::Severity::CRITICAL &&
                 th_safety::classify_severity(fault_type) != th_safety::Severity::CRITICAL;
             active_faults_.insert(fault_type);
+            publishActiveFaults();
             RCLCPP_ERROR(get_logger(), "[FAULT] %s (severity=%s)", fault_type.c_str(),
                          th_safety::severity_to_string(th_safety::classify_severity(fault_type)));
             publishFault(true, heavier_remains ? representativeFault() : fault_type);
         } else if (!faulted && was_fault) {
             active_faults_.erase(fault_type);
+            publishActiveFaults();
             RCLCPP_INFO(get_logger(), "[FAULT CLEARED] %s", fault_type.c_str());
             if (active_faults_.empty()) {
                 publishFault(false, "NONE");
@@ -666,6 +674,18 @@ private:
                 publishFault(true, representativeFault());
             }
         }
+    }
+
+    // active_faults_ が変わった直後に呼ぶ。std::set なので types は辞書順で安定。
+    void publishActiveFaults() {
+        th_system_msgs::msg::ActiveFaults msg;
+        msg.header.stamp = now();
+        for (const auto& ft : active_faults_) {
+            msg.types.push_back(ft);
+            msg.severities.push_back(th_safety::severity_to_string(
+                th_safety::classify_severity(ft)));
+        }
+        pub_active_faults_->publish(msg);
     }
 
     void publishFault(bool active, const std::string& type) {
@@ -749,6 +769,7 @@ private:
     // ── Publishers ────────────────────────────────────────
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr                pub_estop_;
     rclcpp::Publisher<th_system_msgs::msg::FaultStatus>::SharedPtr   pub_fault_;
+    rclcpp::Publisher<th_system_msgs::msg::ActiveFaults>::SharedPtr  pub_active_faults_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr                pub_fault_lock_;
     rclcpp::Publisher<th_system_msgs::msg::LinkQuality>::SharedPtr   pub_link_quality_;
 

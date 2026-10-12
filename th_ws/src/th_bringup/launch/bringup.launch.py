@@ -375,6 +375,17 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # Spec-safety §3.5.5: フォルト履歴の記録。購読と publish とファイル書きだけ
+    # （挙動を変えない）。safety_monitor・state_manager の起動順に依存しない
+    # （購読は発行側と同じ transient_local）。
+    nodes.append(Node(
+        package='th_state',
+        executable='fault_recorder.py',
+        name='fault_recorder',
+        parameters=[os.path.join(GENERATED_DIR, 'fault_recorder.yaml')],
+        output='screen',
+    ))
+
     # ── 7. twist_mux ──────────────────────────────────────
     # 静的 th_safety/config/twist_mux.yaml は読まない。generated/twist_mux.yaml が
     # 階層構造(locks/topics)を完全に持つ唯一の情報源 (G-3, 二重管理の防止)。

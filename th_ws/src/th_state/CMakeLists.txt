@@ -14,6 +14,7 @@ install(PROGRAMS
   scripts/state_manager.py
   scripts/connectivity_checker.py
   scripts/localization_health.py
+  scripts/fault_recorder.py
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
