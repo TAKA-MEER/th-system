@@ -63,3 +63,37 @@ test('未知の種別だけが「種別不明」になる', () => {
   assert.equal(faultLabel('NO_SUCH_FAULT'), FAULT_UNKNOWN_LABEL)
   assert.equal(faultLabel(''), null)
 })
+
+// ── フォルト履歴の短い名前（Spec-webui.md §1・§3.15・§4.1。2026-10-12）──
+import { FAULT_SHORT_LABELS, FAULT_OUTCOME_LABELS, FAULT_SEVERITY_LABELS, faultShortLabel } from '../../src/i18n/faults.js'
+
+test('safety_monitor が出しうるフォルト種別のすべてに短い名前がある', () => {
+  for (const t of extractFaultTypes()) {
+    const label = FAULT_SHORT_LABELS[t]
+    assert.ok(label, `${t} に短い名前が無い`)
+    assert.ok(/[぀-ヿ一-鿿]/.test(label), `${t} の短い名前が日本語でない: ${label}`)
+    assert.ok(label.length <= 12, `${t} の短い名前が長すぎる（ヘッダに載せる）: ${label}`)
+    assert.equal(faultShortLabel(t), label)
+  }
+})
+
+test('短い名前の表に実在しない種別が残っていない', () => {
+  const real = new Set(extractFaultTypes())
+  for (const t of Object.keys(FAULT_SHORT_LABELS)) assert.ok(real.has(t), `${t} は出ない種別`)
+})
+
+test('FaultRecord.msg の outcome／severity の値すべてに表記がある', () => {
+  const msg = SRC('th_system_msgs/msg/FaultRecord.msg')
+  for (const field of ['severity', 'outcome']) {
+    const line = msg.split('\n').find((l) => l.includes(`string ${field}`))
+    const values = [...line.matchAll(/"([A-Z_]+)"/g)].map((m) => m[1])
+    assert.ok(values.length >= 2, `${field} の値が抽出できない`)
+    const table = field === 'severity' ? FAULT_SEVERITY_LABELS : FAULT_OUTCOME_LABELS
+    for (const v of values) assert.ok(table[v], `${field}=${v} の表記が無い`)
+  }
+  assert.equal(FAULT_OUTCOME_LABELS.PAUSE, '一時停止')
+  assert.equal(FAULT_OUTCOME_LABELS.ESTOP, '非常停止')
+  assert.equal(FAULT_OUTCOME_LABELS.NONE, '停止なし')
+  assert.equal(FAULT_SEVERITY_LABELS.RECOVERABLE, '回復')
+  assert.equal(FAULT_SEVERITY_LABELS.CRITICAL, '重大')
+})

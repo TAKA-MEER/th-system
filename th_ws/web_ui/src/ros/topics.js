@@ -114,6 +114,9 @@ export const SERVICES = {
   // どちらも names.json の endpoints にあるので辞書ゲートを通る。
   PARAMS_GET: '/params/get',
   PARAMS_SET: '/params/set',
+  // フォルトの履歴（Spec-safety.md §3.5.5）。RELIABLE＋TRANSIENT_LOCAL・depth 1 で
+  // 最新の 1 通（直近 50 件）。
+  FAULT_HISTORY: '/system/fault_history',
 }
 
 export const MSG_TYPES = {
@@ -122,6 +125,7 @@ export const MSG_TYPES = {
   ACTIVE_SCREEN: 'th_system_msgs/ActiveScreen',
   BOOL: 'std_msgs/Bool',
   FAULT_STATUS: 'th_system_msgs/FaultStatus',
+  FAULT_HISTORY: 'th_system_msgs/FaultHistory',
   // WP-UI-03: geometry_msgs/Twist (roslib shorthand "geometry_msgs/Twist")
   // and std_msgs/String are both built into roslib, no custom message.
   TWIST: 'geometry_msgs/Twist',
