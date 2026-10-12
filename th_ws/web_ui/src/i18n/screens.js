@@ -740,3 +740,6 @@ export function s40CalibGuideText(guide) {
   const word = guide?.result === 'WARN' ? '要確認' : 'NG'
   return `始業点検の${op}が${word}でした。「${item}」の「開始」を押して校正してください。`
 }
+
+// S-50 のフォルト履歴タブ（Spec-webui.md §3.15。2026-10-12）。
+export const S50_TAB_FAULT_HISTORY = 'フォルト履歴'

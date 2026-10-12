@@ -44,6 +44,8 @@ import { autoBrakeLabelKey } from './autoBrake.js'
 import JogConsole from '../parts/JogConsole.jsx'
 import ArmedButton from '../parts/ArmedButton.jsx'
 import GuideBanner from './GuideBanner.jsx'
+import FaultHistoryList from '../parts/FaultHistoryList.jsx'
+import { latestResolved, resolvedSummary } from '../ros/faultHistoryState.js'
 import {
   WIN_HIDE_LABEL, WIN_RESUME_ACK, WIN_RESUME_YES, WIN_RESUME_NO,
   WIN_ESTOP_RESUME_PREV, WIN_ESTOP_TO_MENU,
@@ -53,6 +55,7 @@ import {
   WIN_PRESENCE_TITLE, WIN_PRESENCE_BODY, WIN_PREP_PAUSE_TITLE, WIN_PREP_PAUSE_BODY,
   WIN_CARRY_TITLE, WIN_CARRY_BODY, WIN_CARRY_HINT, WIN_CARRY_RELEASED,
   WIN_CARRY_RESUME, WIN_CARRY_DISMISS, WIN_CARRY_ESTOP_DISABLED,
+  FH_RESOLVED_PREFIX, FH_RESOLVED_MORE, FH_WIN_TITLE, FH_WIN_CLOSE,
 } from '../i18n/states.js'
 
 // UI 非常停止（重大フォルト無し）解除後に「元のモードに戻る」を出せる押下前モード。
@@ -77,6 +80,7 @@ export default function Windows({
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose, guideKey, onGuideClose,
   saveAsk, onSaveYes, onSaveNo, autoBrake,
+  faultRecords = [], w1FaultType = '', historyOpen = false, onHistoryClose,
 }) {
   const faultActive = !!fault?.active
   // Mutually exclusive: mode can't be both 'ESTOP' and something else at once.
@@ -115,7 +119,7 @@ export default function Windows({
   const carryOpen = mode === 'CARRY'
   // W-4（保存確認。1b-7 SG-B3）はシェル所有。W-1／W-2 と同じ modal 扱い。
   const saveOpen = !!saveAsk
-  const hasModal = w1Open || carryOpen || confirmOpen || saveOpen
+  const hasModal = w1Open || carryOpen || confirmOpen || saveOpen || historyOpen
 
   // C-09f (ESTOP) / C-04,C-05 (fault-caused PAUSE): once the underlying
   // condition clears, the window becomes a resume confirmation instead of a
@@ -155,6 +159,15 @@ export default function Windows({
 
   const fire = (trigger) => onTrigger?.(trigger)
 
+  // 解消後の再開確認に添える「解消した異常」（Spec-webui.md §4.1）。直近に解消した
+  // 記録（W-1 で見たフォルト種別があればその種別の中で）。再開を押して W-1 が
+  // 閉じるまで残る。履歴の到着が遅れても、届いた時点で現れる。
+  const resolvedRec = w1Resolved
+    ? latestResolved(w1FaultType
+      ? faultRecords.filter((r) => r.fault_type === w1FaultType) : faultRecords)
+    : null
+  const resolvedInfo = resolvedRec ? resolvedSummary(faultRecords, resolvedRec) : null
+
   return (
     <>
       <div id="overlay" className={hasModal ? 'has-modal' : ''}>
@@ -175,6 +188,14 @@ export default function Windows({
                   : w1IsPresencePause ? WIN_PRESENCE_BODY
                   : w1IsPrepPause ? WIN_PREP_PAUSE_BODY : faultLabel(fault?.fault_type)}
               </p>
+              {resolvedInfo && (
+                <p className="hint mt fh-resolved" data-testid="w1-resolved-fault">
+                  {FH_RESOLVED_PREFIX}{resolvedInfo.label}（{resolvedInfo.duration}・{resolvedInfo.clock}）
+                  {resolvedInfo.others > 0 && (
+                    <span data-testid="w1-resolved-more"> {FH_RESOLVED_MORE(resolvedInfo.others)}</span>
+                  )}
+                </p>
+              )}
               {w1IsFaultEstop && fault?.fault_type && (
                 <p className="hint mt">{faultLabel(fault.fault_type)}</p>
               )}
@@ -205,6 +226,18 @@ export default function Windows({
               )}
               <button type="button" className="btn" onClick={() => setEstopDismissed(true)}>
                 {WIN_HIDE_LABEL}
+              </button>
+            </footer>
+          </div>
+        )}
+
+        {historyOpen && (
+          <div className="win confirm fh-win show" data-testid="fh-window">
+            <header>{FH_WIN_TITLE}</header>
+            <div className="bodyw"><FaultHistoryList records={faultRecords} /></div>
+            <footer>
+              <button type="button" className="btn primary" data-testid="fh-close" onClick={onHistoryClose}>
+                {FH_WIN_CLOSE}
               </button>
             </footer>
           </div>

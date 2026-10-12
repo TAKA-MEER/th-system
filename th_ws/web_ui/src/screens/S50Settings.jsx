@@ -25,6 +25,8 @@ import { useTrigger } from '../ros/useTrigger.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import { blindRangesText } from './calibCore.js'
 import { useDevMode } from '../ros/useDevMode.js'
+import { useFaultHistory } from '../ros/useFaultHistory.js'
+import FaultHistoryList from '../parts/FaultHistoryList.jsx'
 import {
   DEV_ITEMS, devIgnoreParam, effectiveItems,
 } from '../ros/devModeState.js'
@@ -33,7 +35,7 @@ import { readDevMode, setDevMode } from '../parts/devMode.js'
 import PARAM_LIMITS from '../generated/param_limits.json'
 import { clampTunableParam, tunableFieldMax } from '../ros/s50TunableLimits.js'
 import {
-  S50_BACK, S50_TAB_GENERAL, S50_TAB_DISPLAY, S50_TAB_DEV, S50_GUARD,
+  S50_BACK, S50_TAB_GENERAL, S50_TAB_DISPLAY, S50_TAB_DEV, S50_TAB_FAULT_HISTORY, S50_GUARD,
   S50_SAVE_YAML, S50_SAVING, S50_SAVED, S50_SAVE_FAILED, S50_LOAD_FAILED,
   S50_SEC_FOLLOW, S50_SEC_LIDAR, S50_SEC_SLAM, S50_SLAM_NOTE,
   S50_SEC_FOLLOW_TAB, S50_SEC_LIDAR_TAB, S50_SEC_SLAM_TAB, S50_SEC_PRESET_TAB,
@@ -342,6 +344,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   // 見た目だけに残す（?dev=1 は据え置き）。トグルはどのモードでも押せる
   // （INIT を抜けるために要るので、一般タブのような停止中の縛りは無い）。
   const { dev: devState, setDevParam } = useDevMode(ros)
+  const faultRecords = useFaultHistory(ros)
   const [devLocal, setDevLocal] = useState(() => readDevMode())
   // 既定は全項目 OFF（connectivity_checker の dev_ignore_* 既定と同じ。
   // 開発モードに入っただけでは通常運用と同じ。Spec-safety.md §10）。
@@ -381,6 +384,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
             ['general', S50_TAB_GENERAL],
             ['display', S50_TAB_DISPLAY],
             ['dev', S50_TAB_DEV],
+            ['faults', S50_TAB_FAULT_HISTORY],
           ].map(([key, label]) => (
             <button
               key={key}
@@ -544,6 +548,12 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {tab === 'faults' && (
+        <div className="tabpane on s50-faults" data-testid="s50-faults">
+          <FaultHistoryList records={faultRecords} />
         </div>
       )}
 

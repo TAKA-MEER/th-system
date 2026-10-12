@@ -23,6 +23,8 @@ export default function Header({
   onEstopClick,
   faultBadgeVisible,
   onFaultBadgeClick,
+  recentFaultText,
+  onRecentFaultClick,
 }) {
   const modeText = stale ? MODE_UNKNOWN_LABEL : modeLabel(mode)
   const zoneLabels = zone ? ZONE_LABELS[zone] : null
@@ -77,6 +79,13 @@ export default function Header({
         <div id="faultBox" title={AP_SPOF_NOTE}>
           <span id="faultDot" className={faultDotClass} />
           <span id="faultTx">{faultText}</span>
+          {/* 解消した直近の異常を残す（Spec-webui.md §1）。押すと履歴の一覧。
+              継続中のフォルトは上の faultText が優先で、これは出さない。 */}
+          {recentFaultText && !stale && !fault?.active && (
+            <button type="button" id="recentFault" data-testid="recent-fault" onClick={onRecentFaultClick}>
+              {recentFaultText}
+            </button>
+          )}
           <span className="spacer grow" />
           {faultBadgeVisible && (
             <button id="faultBadge" className="show" onClick={onFaultBadgeClick}>
