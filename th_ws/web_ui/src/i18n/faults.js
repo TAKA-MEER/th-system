@@ -28,3 +28,37 @@ export function faultLabel(faultType) {
   if (!faultType) return null
   return FAULT_LABELS[faultType] ?? FAULT_UNKNOWN_LABEL
 }
+
+// ── フォルト履歴の表示 (Spec-webui.md §1・§3.15・§4.1、Spec-safety.md §3.5.5) ──
+// 短い名前。FaultStatus.msg とフォルトの種別すべてに在ることを
+// test/unit/fault-labels.test.js が機械的に縛る（足したのに載せ忘れない）。
+export const FAULT_SHORT_LABELS = {
+  LIDAR_LOST: 'LiDAR 途絶',
+  ESP32_DISCONNECTED: 'ESP32 切断',
+  PERSON_TRACKER_LOST: '人物追跡 途絶',
+  UI_DISCONNECTED: 'タブレット切断',
+  LIMITER_DEAD: 'リミッタ無応答',
+  MUX_DEAD: '速度指令経路 途絶',
+  DRIVE_RUNAWAY: '駆動の暴走',
+  STATE_INCONSISTENT: '状態の食い違い',
+  LOCALIZATION_LOST: '自己位置の喪失',
+  ESTOP_BYPASS_ACTIVE: '非常停止の回避設定',
+}
+
+export const FAULT_SHORT_UNKNOWN = '種別不明'
+
+export function faultShortLabel(faultType) {
+  if (!faultType) return FAULT_SHORT_UNKNOWN
+  return FAULT_SHORT_LABELS[faultType] ?? faultType
+}
+
+// FaultRecord.outcome（止まったか）／ severity（重大度）。
+export const FAULT_OUTCOME_LABELS = {
+  PAUSE: '一時停止',
+  ESTOP: '非常停止',
+  NONE: '停止なし',
+}
+export const FAULT_SEVERITY_LABELS = {
+  RECOVERABLE: '回復',
+  CRITICAL: '重大',
+}

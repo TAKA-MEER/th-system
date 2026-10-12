@@ -168,3 +168,13 @@ export const STOP_REASON_LABELS = {
 export function stopReasonLabel(reason) {
   return STOP_REASON_LABELS[reason] ?? null
 }
+
+// フォルト履歴（Spec-webui.md §1・§3.15・§4.1、Spec-safety.md §3.5.5。2026-10-12）。
+export const FH_RESOLVED_PREFIX = '解消した異常：'
+export const FH_RESOLVED_MORE = (n) => `ほか ${n} 回`
+export const FH_WIN_TITLE = 'フォルト履歴'
+export const FH_WIN_CLOSE = '閉じる'
+export const FH_EMPTY = 'フォルトの記録はありません'
+export const FH_ONGOING = '継続中'
+export const FH_MODE_STATE = (mode, state) => `${mode} / ${state}`
+export const FH_NOTE = '直近 50 件を新しい順に表示します（見るだけです）。'

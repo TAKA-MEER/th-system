@@ -938,3 +938,22 @@ table.lst td.r{text-align:right}
 .s31-hints{list-style:decimal outside;padding-left:1.8em;margin:0 0 8px}
 .s31-hints li{padding-left:.2em;margin-bottom:4px;overflow-wrap:anywhere}
 .s40-hist{margin-bottom:10px}
+
+/* フォルト履歴（Spec-webui.md §1・§3.15）。一覧は S-50 タブと窓で共通。 */
+.fh-rows{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.fh-row{border:1px solid var(--bd-hi);border-radius:8px;padding:6px 10px;background:#151b26}
+.fh-row.ongoing{border-color:var(--ng)}
+.fh-l1{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.fh-time{font-variant-numeric:tabular-nums;opacity:.85}
+.fh-dur{margin-left:auto}
+.fh-l2{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:calc(var(--fs) * .8);opacity:.85}
+.fh-sev.crit{color:var(--ng-tx);font-weight:700}
+.win.fh-win > .bodyw{max-height:60vh}
+/* ヘッダの「直近の異常」。#faultBox 内で縮めるだけ（ヘッダの高さを変えない）。 */
+#recentFault{
+  flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-size:calc(var(--fs) * .74);font-weight:700;padding:3px 9px;border-radius:999px;
+  background:#2a2a14;border:1px solid #6a6a2a;color:var(--warn-tx);cursor:pointer;
+}
+/* W-1 の再開確認に添える「解消した異常」。 */
+.fh-resolved{color:var(--warn-tx)}

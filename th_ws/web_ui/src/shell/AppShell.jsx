@@ -21,6 +21,8 @@ import { ESTOP_RELEASE_NOTE, ESTOP_RELEASE_BUTTON, stopReasonLabel } from '../i1
 import { readFontScale, applyFontScale } from '../parts/fontScale.js'
 import { readDevMode, DEV_MODE_EVENT } from '../parts/devMode.js'
 import { useDevMode } from '../ros/useDevMode.js'
+import { useFaultHistory } from '../ros/useFaultHistory.js'
+import { latestRecord, recentFaultText } from '../ros/faultHistoryState.js'
 import './theme.css'
 
 // DetailedDesign-wp1.md WP-UI-01 §3.1: /safety/estop_ui is republished at
@@ -69,6 +71,11 @@ function AppShellInner({ screenName, screenId, children }) {
   // semantics for a single operator client).
   const [uiEngaged, setUiEngaged] = useState(false)
   const [estopDismissed, setEstopDismissed] = useState(false)
+
+  // フォルト履歴（Spec-safety.md §3.5.5）。W-1 の再開確認に「解消した異常」を添え、
+  // ヘッダに「直近の異常」を残し、押すと一覧の窓を開く（Spec-webui.md §1・§4.1）。
+  const faultRecords = useFaultHistory(ros)
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   // W-6 (manual-operation panel, DetailedDesign-webui.md §6 W-6): open/close
   // is owned here so the shell decides when the panel is legal (it floats
@@ -144,6 +151,13 @@ function AppShellInner({ screenName, screenId, children }) {
     if (!!fault?.active || stuckWithNoEscape) setFaultPauseSeen(true)
   }, [stateName, fault?.active, mode, state?.jog_active])
 
+  // W-1 が出ている間に最後に見たフォルト種別。解消後の再開確認に添える記録を、
+  // その種別に絞る（前の episode の記録を出さない）。履歴の到着が解消より遅くても
+  // 早くても揃うよう、render 中に ref で持つ（effect だと同じ batch で
+  // active→解消 が来たときに取りこぼす）。
+  const w1FaultTypeRef = useRef('')
+  if (fault?.active && fault.fault_type) w1FaultTypeRef.current = fault.fault_type
+
   const w1Active = isW1Active(mode, stateName, !!fault?.active || faultPauseSeen,
     state?.pause_reason ?? '', !!state?.jog_active)
   // WS-9R: 速度上限が 0 に落ちている理由（在席未確認・障害物・指令途絶など）。
@@ -151,6 +165,10 @@ function AppShellInner({ screenName, screenId, children }) {
   // C-2 (WP-CARRY-01 §4/§7): server-side reject reason for a UI estop press
   // rejected during CARRY (C-06r), surfaced to W-2 -- see Windows.jsx.
   const lastRejectReason = state?.last_reject_reason ?? ''
+
+  if (!w1Active) w1FaultTypeRef.current = ''
+  // 履歴の窓は W-1／W-2 より下（それらが出ている間は開かない）。
+  const historyShown = historyOpen && !(w1Active && !estopDismissed) && mode !== 'CARRY'
 
   // 1b-7 (SG-B3): W-1／W-2 が勝つ。IDLE を離れたら（別の方式に入った）W-4 は
   // 閉じる（答えの送り先 T-IDLE-01/-02 は IDLE でしか受けない）。
@@ -230,6 +248,8 @@ function AppShellInner({ screenName, screenId, children }) {
         onEstopClick={handleEstopClick}
         faultBadgeVisible={w1Active && estopDismissed}
         onFaultBadgeClick={() => setEstopDismissed(false)}
+        recentFaultText={recentFaultText(latestRecord(faultRecords))}
+        onRecentFaultClick={() => setHistoryOpen(true)}
       />
       {/* Screens (WP-UI-02+) read mode/state/stale themselves via
           useSystemState() -- see ros/useSystemState.js -- rather than
@@ -280,6 +300,10 @@ function AppShellInner({ screenName, screenId, children }) {
         onSaveYes={handleSaveYes}
         onSaveNo={handleSaveNo}
         autoBrake={state?.auto_brake}
+        faultRecords={faultRecords}
+        w1FaultType={w1FaultTypeRef.current}
+        historyOpen={historyShown}
+        onHistoryClose={() => setHistoryOpen(false)}
       />
       <EstopReleaseBar show={releaseShown} onRelease={handleRelease} />
     </div>
