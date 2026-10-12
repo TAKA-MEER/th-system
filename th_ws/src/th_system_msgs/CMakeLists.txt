@@ -12,6 +12,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   # ── メッセージ（旧。WP-CLEAN-01 まで維持） ──────
   "msg/RobotMode.msg"
   "msg/FaultStatus.msg"
+  "msg/ActiveFaults.msg"
+  "msg/FaultRecord.msg"
+  "msg/FaultHistory.msg"
   "msg/WheelCommand.msg"
   "msg/WheelFeedback.msg"
   "msg/PanelArrival.msg"
