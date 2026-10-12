@@ -291,6 +291,10 @@ UI にフォルト表示・操作要求
 
 `twist_mux` によるモーター停止は `mode_manager` のモード遷移処理を待ちません。これにより、フォルト検知から物理停止までの時間は `check_period_ms`（100ms）+ twist_mux の処理時間（数 ms）のみです。
 
+### フォルト履歴の記録（fault_recorder。Spec-safety §3.5.5）
+
+`safety_monitor` は `/safety/fault` に**代表 1 件**しか出さず、複数同時や重大フォルト継続中の回復フォルトが見えない。そこで `active_faults_` が変わるたびに `/safety/active_faults`（`ActiveFaults`: 立っている種別と重大度。transient_local）を**出すだけ**で足してある（判定・`/safety/fault`・`fault_lock` は変えない）。`th_state/scripts/fault_recorder.py`（純コア `fault_history_core.py`）がこれと `/system/state` を購読し、種別ごとに開始・解消を取って `/system/fault_history`（直近 50 件・新しい順）を出し、`fault_log_dir`（既定 `/root/th_data/fault_log/`）の `fault_log.jsonl` へ追記する。1 件につき開始時と確定時（解消から `fault_outcome_window_ms` 後）の 2 行。`fault_log_max_bytes` を超えたら `.1` へ退避。書けなくてもノードは落ちない。記録だけで他ノードの挙動には影響しない。
+
 ### ESP32 側の二重フェイルセーフ
 
 > **2026-09-05 追記**: ESP32↔PC間は WiFi(WebSocket直結)を廃止し、ESP32はラズパイへ

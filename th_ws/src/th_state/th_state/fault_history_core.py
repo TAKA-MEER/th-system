@@ -19,8 +19,8 @@ outcome の判定窓（OUTCOME_WINDOW_S は registry の fault_outcome_window_ms
     * 解消済みのフォルト: 解消から窓以内に届いた遷移のエッジを結果とみなす
   とし、解消済みの記録は解消から窓が過ぎるまで確定させない（その間は outcome が
   更新され得る）。窓は 1 秒: 通常の遅れ（数十ミリ秒）の 10 倍以上で、無関係な
-  ESTOP／PAUSE を拾う確率が小さい長さ。逆順（遷移が先に届く）も、直前の窓以内の
-  エッジを覚えておいて拾う。
+  ESTOP／PAUSE を拾う確率が小さい長さ。逆順（遷移が先に届く）も、直前の窓以内のエッジを覚えておいて拾う
+  （ただし止まりが解けたらそのエッジは捨てる）。
   「エッジ」とは「PAUSE(fault)／ESTOP でなかった状態からそうなった」こと。
   すでに止まっている最中に立ったフォルトは NONE（新たに止めたわけではない）。
   PAUSE のあとに ESTOP へ進んだら ESTOP に上書きする（重い方）。
@@ -128,6 +128,10 @@ class FaultHistoryCore:
                         changed = True
         elif stop and stop != self._stop:
             pass  # ESTOP → PAUSE(fault) は軽くなる方向。結果にしない
+        if not stop:
+            # 止まりが解けたら、そのエッジは「いま起きたフォルトの結果」の候補にしない
+            # （直前に別の理由で止まって戻った直後のフォルトを誤って結びつけない）
+            self._last_edge = None
         self._mode, self._state, self._stop = mode, state, stop
         return changed
 

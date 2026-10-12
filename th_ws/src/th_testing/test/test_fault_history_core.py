@@ -130,3 +130,11 @@ def test_writes_open_then_final():
     c.tick(2.2)
     w = c.drain_writes()
     assert len(w) == 1 and w[0]['final'] and w[0]['outcome'] == 'PAUSE' and not w[0]['ongoing']
+
+
+def test_old_edge_after_recovery_is_not_attributed_to_new_fault():
+    c = mk()
+    c.on_state(1.0, 'ESTOP', 'NONE', '')
+    c.on_state(1.1, 'FOLLOW', 'RUN', '')
+    c.on_active(1.2, ['LIDAR_LOST'], ['RECOVERABLE'])
+    assert c.records()[0]['outcome'] == 'NONE'
