@@ -790,6 +790,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_nav_start_pose_node
     test/test_venue_nav_start_pose_node.py
     TIMEOUT 180)
+  # Nav2 の進捗判定は旋回も進捗に数える（2026-10-13 実機 R-41。本物の
+  # controller_server を実機と同じ nav2_params.yaml で起動。rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_nav2_progress_checker_node
+    test/test_nav2_progress_checker_node.py
+    TIMEOUT 240)
   ament_add_pytest_test(test_teach_map_reset_node
     test/test_teach_map_reset_node.py
     TIMEOUT 120)
