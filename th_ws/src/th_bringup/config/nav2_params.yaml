@@ -148,15 +148,8 @@ global_costmap:
       # 板を置いても膨張域も反映されず診断に使えなかった）。会場地図は小さい
       # （~297x186）ので毎周期全体を送っても軽い。
       always_send_full_costmap: true
-      # 経路計画用の地図だけ外接円で膨らませる（Spec-onsite.md §6.1.1 追補・
-      # 2026-10-13 ユーザー決定）。計画（NavFn）は機体を点として経路を引くので、
-      # 実寸正方形だと内接円 0.275m が通る隙間（壁から約 0.3m）に経路を引き、
-      # 四角い機体の角が当たって追従側が「前方に衝突」で打ち切る／側面が接触した。
-      # 半径 0.389 = √2×0.275 = 0.38891 を切り上げた値（切り捨てると角が 0.1mm 足りない）。
-      # footprint を残すと robot_radius は無視されるので置かない。
-      # 円形をやめた過去の理由（RPP が外周の内接帯接触で止まる）は、RPP が見る
-      # local_costmap（上の実寸正方形・変更なし）の話で、この global には当たらない。
-      robot_radius: 0.389
+      # local_costmap と同じ実寸正方形（spec/ 参照。2026-09-10）
+      footprint: "[[0.275, 0.275], [-0.275, 0.275], [-0.275, -0.275], [0.275, -0.275]]"
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
