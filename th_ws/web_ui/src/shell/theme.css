@@ -292,6 +292,8 @@ table{border-collapse:collapse;width:100%}
 .btn.save:active{background:#1f4a27}
 .btn.danger{background:#4a1414;border-color:#8a2a2a;color:var(--ng-tx)}
 .btn.wide{width:100%}
+/* S-21 BLOCKED 帯のボタン: タップしやすい大きさ（最小 44px） */
+.s21-blocked .btn{min-height:44px}
 .btn[disabled],.btn.dis{opacity:.4;cursor:not-allowed}
 .btn.sm{padding:7px 10px;font-size:calc(var(--fs) * .84)}
 

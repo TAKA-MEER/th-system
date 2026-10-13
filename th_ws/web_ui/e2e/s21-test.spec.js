@@ -209,6 +209,22 @@ test('WS-9AB: PANEL_NAV/BLOCKED で「再検索」→ui.reroute、「中断」�
   await expect(page.locator('[data-testid="s21-blocked"]')).toBeHidden()
 })
 
+test('BLOCKED 帯の「再検索」「中断」はボタンの見た目(.btn)・44px 以上で描画される', async ({ page }) => {
+  await goto21(page, { mode: 'PANEL_NAV', state: 'BLOCKED' })
+  const re = page.getByRole('button', { name: '再検索' })
+  const ab = page.getByRole('button', { name: '中断して待機場所へ' })
+  await expect(re).toHaveClass(/\bbtn\b/)
+  await expect(ab).toHaveClass(/\bbtn\b/)
+  await expect(ab).toHaveClass(/\bdanger\b/)
+  for (const b of [re, ab]) {
+    const box = await b.boundingBox()
+    expect(box.height, '高さが 44px 未満').toBeGreaterThanOrEqual(44)
+    // 枠線が描画されている（素のテキストに見えない）
+    expect(await b.evaluate((e) => getComputedStyle(e).borderTopWidth)).not.toBe('0px')
+  }
+  await page.screenshot({ path: '../../.briefs/tmp/s21-blocked.png' })
+})
+
 test('操作カードの停止は ui.stop、map_update のときだけ保存が表示され ui.save', async ({ page }) => {
   await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' })
   await page.locator('#s21 .op-stop').click()
