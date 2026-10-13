@@ -32,8 +32,17 @@ controller_server:
     controller_plugins: ["FollowPath"]
 
     progress_checker:
-      plugin: "nav2_controller::SimpleProgressChecker"
+      # SimpleProgressChecker は位置だけを見るので、走り出す前の「その場で経路の
+      # 向きへ旋回」(rotate_to_heading_angular_vel 0.4 rad/s・半周で約 8 秒) が進捗に
+      # 数えられず、10 秒で Failed to make progress になり一時停止していた
+      # (2026-10-13 実機 R-41)。PoseProgressChecker は位置 or 向きのどちらかが
+      # 動けば進捗とみなす。
+      # required_movement_angle: 0.4 rad/s × 10 秒 = 4 rad 回れる旋回に対し、
+      # 0.5 rad (約 29 度) なら約 1.3 秒で届き十分余裕がある。一方 IMU/ホイールの
+      # 揺れや微小な首振り(数度)では届かないので、固着の検知は損なわない。
+      plugin: "nav2_controller::PoseProgressChecker"
       required_movement_radius: 0.5
+      required_movement_angle: 0.5
       movement_time_allowance: 10.0
 
     general_goal_checker:
