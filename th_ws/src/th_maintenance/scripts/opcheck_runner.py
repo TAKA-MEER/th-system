@@ -43,9 +43,11 @@ except ImportError:
     Node = object
     RS_OK = False
 
-from th_maintenance.check_core import (CheckParams, NG, OK, judge_estop, judge_gyro_unit,
+from th_maintenance.check_core import (CheckParams, NG, OK, basis_to_json, judge_estop,
+                                       judge_gyro_unit,
                                        judge_imu, judge_lidar,
-                                       judge_motor_samples, verdict_to_fsm_result)
+                                       judge_motor_samples, verdict_to_fsm_result,
+                                       with_basis)
 
 # registry.yaml（WP-MAINT-01 ブロック）と一致させるパラメータの既定値。
 # test_maintenance_registry_driven.py が registry と照合する。
@@ -58,7 +60,7 @@ PARS: dict = {
     "opcheck_deadman_timeout_s": 0.5,
     "opcheck_spin_w_rad_s": 0.3,
     "opcheck_blind_tolerance_deg": 5.0,
-    "opcheck_scan_coverage_gap_deg": 2.0,
+    "opcheck_scan_coverage_gap_deg": 20.0,
     "v_check": 0.05,
     # 整数で宣言する（registry の value: 300 は生成 yaml に整数で載る。rclpy は
     # INTEGER↔DOUBLE を変換せず、300.0 で宣言すると起動時に
@@ -598,10 +600,14 @@ class OpcheckRunner(Node):
         verdict = judge_imu(self._imu_calib, self._imu_bias, self._imu_alive, self._p)
         unit = judge_gyro_unit(self._imu_max_wz, self._p)
         if unit.result == "NG":
-            verdict = unit
+            verdict = with_basis(unit, verdict.basis)
+        else:
+            verdict = with_basis(verdict, unit.basis)
+        # 根拠（測った値と基準）も 1 行で残す。校正状態は判定の数秒後には画面から
+        # 消えるため、ログにも残して後から読めるようにする（2026-10-13）。
         self.get_logger().info(
             f"IMU 判定: {verdict.result} ({verdict.reason}) bias={self._imu_bias:.3f} "
-            f"maxwz={self._imu_max_wz}")
+            f"maxwz={self._imu_max_wz} basis={basis_to_json(verdict.basis)}")
         self._publish_final("IMU", verdict)
         self._emit_result("IMU", verdict)
 
@@ -657,7 +663,8 @@ class OpcheckRunner(Node):
             # 実機 2026-10-10 T-8: LIDAR は NG の理由がログに残らず原因を追えなかった
             self.get_logger().info(
                 f"LIDAR 判定: {verdict.result} ({verdict.reason or '-'}) "
-                f"period={self._scan_period} angle_min={self._scan_angle_min:.3f}")
+                f"period={self._scan_period} angle_min={self._scan_angle_min:.3f} "
+                f"basis={basis_to_json(verdict.basis)}")
             self._publish_final("LIDAR", verdict)
             self._emit_result("LIDAR", verdict)
 
@@ -681,16 +688,18 @@ class OpcheckRunner(Node):
         # _monitor_tick() はこれ以降、次の項目が始まるまで UNKNOWN で上書きしない。
         self._final_sent = True
         self._publish_status(result=verdict.result, detail=verdict.reason,
-                             next_screen=next_screen)
+                             next_screen=next_screen,
+                             basis_json=basis_to_json(getattr(verdict, "basis", ())))
 
     def _publish_status(self, result: str = "UNKNOWN", detail: str = "",
-                        next_screen: str = ""):
+                        next_screen: str = "", basis_json: str = ""):
         st = CheckStatus()
         st.header.stamp = self.get_clock().now().to_msg()
         st.item = self._item or ""
         st.result = result
         st.detail = detail
         st.next_screen = next_screen
+        st.basis_json = basis_json
         self._pub_status.publish(st)
 
     # ── 定期モニター（10 Hz）─────────────────────────────

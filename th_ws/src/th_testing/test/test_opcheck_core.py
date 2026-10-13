@@ -47,7 +47,7 @@ def make_params(**overrides):
         opcheck_deadman_timeout_s=0.5,
         opcheck_spin_w_rad_s=0.3,
         opcheck_blind_tolerance_deg=5.0,
-        opcheck_scan_coverage_gap_deg=2.0,
+        opcheck_scan_coverage_gap_deg=20.0,
         v_check=0.05,
         scan_stale_ms=300.0,
     )
@@ -560,3 +560,130 @@ class TestJudgeLidarAngleMin:
         v = judge_lidar(True, 0.1, ranges, 1.0, [-185.0, -175.0], p,
                         angle_min_deg=-180.0)
         assert v == OK()
+
+# ── 実機の形のスキャン（2026-10-13）と判定の根拠 ──────────────────────────────
+
+import json  # noqa: E402
+import math  # noqa: E402
+
+from th_maintenance.check_core import basis_to_json  # noqa: E402
+
+# 実機 2026-10-13 の生スキャン: 720 ビーム・angle_min = -3.124 rad（≒ -179°）・
+# 刻み 0.5°。正常でも約 -32° に無効（∞）が 8° 連続する。
+_REAL_N = 720
+_REAL_INC_DEG = 0.5
+_REAL_ANGLE_MIN_DEG = math.degrees(-3.124)
+
+
+def _real_scan(gap_deg: float, start_idx: int = 295) -> list[float]:
+    ranges = [4.0] * _REAL_N
+    for i in range(start_idx, start_idx + int(round(gap_deg / _REAL_INC_DEG))):
+        ranges[i] = float("inf")
+    return ranges
+
+
+def _basis_by_key(verdict):
+    return {b["key"]: b for b in verdict.basis}
+
+
+class TestJudgeLidarRealScan:
+    """registry の既定（無効帯の許容 20°）で、実機の形のスキャンを判定する。"""
+
+    def _p(self):
+        return make_params(opcheck_scan_coverage_gap_deg=20.0)
+
+    def test_8deg_invalid_band_is_ok(self):
+        v = judge_lidar(True, 0.1, _real_scan(8.0), _REAL_INC_DEG, [], self._p(),
+                        angle_min_deg=_REAL_ANGLE_MIN_DEG)
+        assert v.result == "OK", v
+        b = _basis_by_key(v)["coverage_gap_deg"]
+        assert b["value"] == pytest.approx(8.0)
+        assert b["threshold"] == 20.0 and b["ok"] is True
+
+    def test_25deg_invalid_band_is_coverage_gap(self):
+        v = judge_lidar(True, 0.1, _real_scan(25.0), _REAL_INC_DEG, [], self._p(),
+                        angle_min_deg=_REAL_ANGLE_MIN_DEG)
+        assert (v.result, v.reason) == ("NG", "coverage_gap")
+        b = _basis_by_key(v)["coverage_gap_deg"]
+        assert b["value"] == pytest.approx(25.0) and b["ok"] is False
+
+    def test_boundary_just_under_and_at_threshold(self):
+        # 19.5° は合格・20.0° ちょうどは「20° 未満」を満たさないので NG
+        ok = judge_lidar(True, 0.1, _real_scan(19.5), _REAL_INC_DEG, [], self._p(),
+                         angle_min_deg=_REAL_ANGLE_MIN_DEG)
+        ng = judge_lidar(True, 0.1, _real_scan(20.0), _REAL_INC_DEG, [], self._p(),
+                         angle_min_deg=_REAL_ANGLE_MIN_DEG)
+        assert ok.result == "OK"
+        assert (ng.result, ng.reason) == ("NG", "coverage_gap")
+
+    def test_registry_default_is_20(self):
+        # 値を 2.0 に戻す変異で赤にする（registry の値そのものを縛る）
+        import yaml
+        from pathlib import Path
+        reg = Path(__file__).resolve().parents[2] / "th_params" / "config" / "registry.yaml"
+        rows = yaml.safe_load(reg.read_text(encoding="utf-8"))
+        rows = rows["params"] if isinstance(rows, dict) and "params" in rows else rows
+        row = next(r for r in rows if r.get("name") == "opcheck_scan_coverage_gap_deg")
+        assert row["value"] == 20.0
+
+
+class TestJudgmentBasis:
+    def test_lidar_basis_has_three_items_with_threshold(self):
+        p = make_params(opcheck_scan_coverage_gap_deg=20.0, scan_stale_ms=2000.0,
+                        opcheck_blind_tolerance_deg=5.0)
+        v = judge_lidar(True, 0.1, _real_scan(8.0), _REAL_INC_DEG, [], p,
+                        angle_min_deg=_REAL_ANGLE_MIN_DEG)
+        by = _basis_by_key(v)
+        assert set(by) == {"coverage_gap_deg", "scan_period_s", "blind_offset_deg"}
+        assert by["scan_period_s"]["value"] == pytest.approx(0.1)
+        assert by["scan_period_s"]["threshold"] == pytest.approx(2.0)
+        assert by["blind_offset_deg"]["value"] is None  # 設定が空＝比較不能
+        assert by["blind_offset_deg"]["threshold"] == 5.0
+        assert all(b["ok"] for b in v.basis)
+
+    def test_lidar_stale_marks_only_period_not_ok(self):
+        p = make_params(opcheck_scan_coverage_gap_deg=20.0, scan_stale_ms=300.0)
+        v = judge_lidar(True, 0.5, _real_scan(8.0), _REAL_INC_DEG, [], p,
+                        angle_min_deg=_REAL_ANGLE_MIN_DEG)
+        assert v.reason == "scan_stale"
+        bad = [b["key"] for b in v.basis if not b["ok"]]
+        assert bad == ["scan_period_s"]
+
+    def test_lidar_no_data_basis(self):
+        v = judge_lidar(False, None, [], 0.25, [], make_params(), angle_min_deg=0.0)
+        assert [(b["key"], b["ok"]) for b in v.basis] == [("scan_alive", False)]
+
+    def test_imu_needs_calibration_keeps_calib_state_in_basis(self):
+        # 実機の WARN(needs_calibration) bias≈0.000 maxwz≈0.002
+        p = make_params()
+        v = judge_imu(0b11_11_10_00, 0.0004, True, p)  # sys3 gyro3 accel2 mag0
+        assert (v.result, v.reason) == ("WARN", "needs_calibration")
+        by = _basis_by_key(v)
+        assert by["calib_sys"]["value"] == 3 and by["calib_sys"]["ok"] is True
+        assert by["calib_accel"]["value"] == 2 and by["calib_accel"]["ok"] is False
+        assert by["calib_mag"]["value"] == 0 and by["calib_mag"]["ok"] is False
+        assert by["imu_bias"]["ok"] is True and by["imu_bias"]["threshold"] == 0.2
+
+    def test_imu_bias_too_large_marks_bias(self):
+        v = judge_imu(0xFF, 0.5, True, make_params())
+        assert v.reason == "bias_too_large"
+        assert [b["key"] for b in v.basis if not b["ok"]] == ["imu_bias"]
+
+    def test_gyro_unit_basis(self):
+        v = judge_gyro_unit(0.002, make_params())
+        assert _basis_by_key(v)["imu_max_wz"]["value"] == pytest.approx(0.002)
+        bad = judge_gyro_unit(15.0, make_params())
+        assert bad.reason == "wz_implausible"
+        assert _basis_by_key(bad)["imu_max_wz"]["ok"] is False
+        none = judge_gyro_unit(None, make_params())
+        assert _basis_by_key(none)["imu_max_wz"]["value"] is None
+
+    def test_basis_does_not_affect_equality(self):
+        assert judge_imu(0xFF, 0.0, True, make_params()) == OK()
+
+    def test_basis_to_json_roundtrip_and_empty(self):
+        v = judge_imu(0xFF, 0.0, True, make_params())
+        parsed = json.loads(basis_to_json(v.basis))
+        assert parsed[0].keys() >= {"key", "value", "threshold", "unit", "cmp", "ok"}
+        assert basis_to_json(()) == ""
+        assert basis_to_json(OK().basis) == ""

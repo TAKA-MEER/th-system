@@ -17,8 +17,9 @@
 """
 from __future__ import annotations
 
+import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Sequence
 
 from th_maintenance.blind_core import shift_bands
@@ -32,22 +33,72 @@ BLIND_MIN_RUN_DEG = 5.0
 
 @dataclass(frozen=True)
 class CheckVerdict:
-    """1 項目の合否。`result` は "OK" / "WARN" / "NG" の 3 値。"""
+    """1 項目の合否。`result` は "OK" / "WARN" / "NG" の 3 値。
+
+    `basis` は判定に使った測定値と基準の組（`basis_item` で作る dict の列）。
+    画面が「測った値 ／ 基準」を並べるための材料で、合否には関与しない。
+    そのため `compare=False`（`== OK()` のような比較は basis を無視する）。
+    """
 
     result: str
     reason: str = ""
+    basis: tuple = field(default=(), compare=False)
 
 
-def OK() -> CheckVerdict:
-    return CheckVerdict("OK")
+def OK(basis: Sequence[dict] = ()) -> CheckVerdict:
+    return CheckVerdict("OK", "", tuple(basis))
 
 
-def WARN(reason: str) -> CheckVerdict:
-    return CheckVerdict("WARN", reason)
+def WARN(reason: str, basis: Sequence[dict] = ()) -> CheckVerdict:
+    return CheckVerdict("WARN", reason, tuple(basis))
 
 
-def NG(reason: str) -> CheckVerdict:
-    return CheckVerdict("NG", reason)
+def NG(reason: str, basis: Sequence[dict] = ()) -> CheckVerdict:
+    return CheckVerdict("NG", reason, tuple(basis))
+
+
+def with_basis(verdict: CheckVerdict, *extra: Sequence[dict]) -> CheckVerdict:
+    """verdict の basis の後ろへ extra を足した新しい verdict を返す。"""
+    merged = list(verdict.basis)
+    for e in extra:
+        merged.extend(e)
+    return replace(verdict, basis=tuple(merged))
+
+
+# 判定の根拠 1 件の比較種別。画面は cmp を見て「基準 20 未満」「基準 5 以内」のように書く。
+#   lt: value < threshold が合格 / le: value <= threshold / ge: value >= threshold
+_CMP_OK = {
+    "lt": lambda v, t: v < t,
+    "le": lambda v, t: v <= t,
+    "ge": lambda v, t: v >= t,
+}
+
+
+def basis_item(key: str, value: float | None, threshold: float, unit: str,
+               cmp: str, *, ok: bool | None = None) -> dict:
+    """判定の根拠 1 件（測った値と基準）。
+
+    キー→日本語ラベルは機体側では持たない（WebUI の i18n が持つ。表記は画面側で
+    直せるようにするため）。`value` が None は「測れなかった」で、`ok` を省くと
+    合格扱い（その項目では不合格にしない＝他の項目が理由を担う）。
+    """
+    if ok is None:
+        ok = True if value is None else bool(_CMP_OK[cmp](value, threshold))
+    return {
+        "key": key,
+        "value": None if value is None else round(float(value), 4),
+        "threshold": round(float(threshold), 4),
+        "unit": unit,
+        "cmp": cmp,
+        "ok": bool(ok),
+    }
+
+
+def basis_to_json(basis: Sequence[dict]) -> str:
+    """CheckStatus.basis_json に載せる文字列。根拠なしは空文字（古い画面と同じ見え方）。"""
+    if not basis:
+        return ""
+    return json.dumps(list(basis), ensure_ascii=False, separators=(",", ":"))
 
 
 def verdict_to_fsm_result(verdict: CheckVerdict) -> str:
@@ -200,13 +251,22 @@ def judge_imu(calib_status: int, gyro_bias_rad_s: float, alive: bool,
     にはしない）。
     """
     sys_, gyro, accel, mag = unpack_calib(calib_status)
+    basis = []
     if not alive:
-        return NG("no_data")
+        basis.append(basis_item("imu_alive", 0, 1, "", "ge"))
+    basis.append(basis_item("imu_bias", gyro_bias_rad_s, p.imu_bias_max_rad_s,
+                            "rad/s", "le",
+                            ok=abs(gyro_bias_rad_s) <= p.imu_bias_max_rad_s))
+    for key, val in (("calib_sys", sys_), ("calib_gyro", gyro),
+                     ("calib_accel", accel), ("calib_mag", mag)):
+        basis.append(basis_item(key, val, 3, "", "ge"))
+    if not alive:
+        return NG("no_data", basis)
     if abs(gyro_bias_rad_s) > p.imu_bias_max_rad_s:
-        return NG("bias_too_large")
+        return NG("bias_too_large", basis)
     if min(sys_, gyro, accel, mag) < 3:
-        return WARN("needs_calibration")
-    return OK()
+        return WARN("needs_calibration", basis)
+    return OK(basis)
 
 
 def judge_gyro_unit(max_wz_rad_s: float | None, p: CheckParams) -> CheckVerdict:
@@ -220,10 +280,13 @@ def judge_gyro_unit(max_wz_rad_s: float | None, p: CheckParams) -> CheckVerdict:
     `max_wz_rad_s` が None（窓内サンプル無し）なら WARN（生死は judge_imu が判定）。
     """
     if max_wz_rad_s is None:
-        return WARN("no_samples")
+        return WARN("no_samples", [basis_item(
+            "imu_max_wz", None, p.imu_wz_implausible_rad_s, "rad/s", "le", ok=False)])
+    basis = [basis_item("imu_max_wz", abs(max_wz_rad_s), p.imu_wz_implausible_rad_s,
+                        "rad/s", "le")]
     if abs(max_wz_rad_s) > p.imu_wz_implausible_rad_s:
-        return NG("wz_implausible")
-    return OK()
+        return NG("wz_implausible", basis)
+    return OK(basis)
 
 
 # ── 項目 4: LiDAR ───────────────────────────────────────────────────────────
@@ -398,14 +461,22 @@ def judge_lidar(alive: bool, period_s: float | None, ranges: Sequence[float],
     継ぎ目（添字 0）で割れた帯は 1 本に戻してから比べる。
     """
     if not alive:
-        return NG("no_data")
-    if period_s is not None and period_s > (p.scan_stale_ms / 1000.0):
-        return NG("scan_stale")
-    if scan_coverage_gap_deg(ranges, angle_increment_deg) >= p.opcheck_scan_coverage_gap_deg:
-        return NG("coverage_gap")
+        return NG("no_data", [basis_item("scan_alive", 0, 1, "", "ge")])
+    gap = scan_coverage_gap_deg(ranges, angle_increment_deg)
     estimated = estimate_blind_sectors(ranges, angle_increment_deg)
     estimated = merge_seam_split(shift_bands(estimated, angle_min_deg), angle_min_deg)
     offset = blind_offset_deg(estimated, configured_ranges)
+    # 根拠は途中で NG が決まっても 3 件とも載せる（どの項目が基準を外れたかを
+    # 画面で見比べられるように）。判定の順序は reason 側が担う。
+    basis = [
+        basis_item("coverage_gap_deg", gap, p.opcheck_scan_coverage_gap_deg, "deg", "lt"),
+        basis_item("scan_period_s", period_s, p.scan_stale_ms / 1000.0, "s", "le"),
+        basis_item("blind_offset_deg", offset, p.opcheck_blind_tolerance_deg, "deg", "le"),
+    ]
+    if period_s is not None and period_s > (p.scan_stale_ms / 1000.0):
+        return NG("scan_stale", basis)
+    if gap >= p.opcheck_scan_coverage_gap_deg:
+        return NG("coverage_gap", basis)
     if offset is not None and offset > p.opcheck_blind_tolerance_deg:
-        return NG("blind_mismatch")
-    return OK()
+        return NG("blind_mismatch", basis)
+    return OK(basis)

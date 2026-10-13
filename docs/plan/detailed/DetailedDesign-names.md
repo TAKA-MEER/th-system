@@ -320,7 +320,7 @@ def derive_limits(screens, now_ms, p):
 | **`RouteInfo.msg`** | `string id` / `string name` / `uint32 generation` / `float32 length_m` / `uint32 point_count` / `float32 start_yaw` / `builtin_interfaces/Time recorded_at` | 教示経路のメタ |
 | **`RouteStatus.msg`** | `Header header` / `string state` / `RouteInfo current` / `float32 recorded_m` / `float32 elapsed_sec` / `uint32 points` / `int32 target_index`（再生中の pure-pursuit 目標点の添字。記録中・未走行は -1。`demo-teach-replay` で追加） / `float32 start_yaw`（記録側のみ。記録開始時の向き [rad]。記録を開いていないときは 0。S-13 表示用。1b-7 S-13 で追加） / `bool saved`（記録側のみ。`finalize_route_file` 成功時だけ true。FSM の `SAVED` とは無関係。WS-9K-E2 で追加） / `bool arrived`（再生側のみ。経路の終端まで走り切ったときだけ true。`PAUSE` の原因が終端到達かフォルト/ジョグ/停止ボタンかを UI が区別するのに使う。WS-9P で追加） / `float32 cross_track_m`（再生側のみ。現在位置の経路からの横ずれ [m]。S-14 表示用） / `float32 cross_track_max_m`（再生側のみ。この再生での横ずれの最大値 [m]。停止しても残し `load_route` で 0 に戻す） / `string localize_quality`（再生側のみ。全域ローカライズの確度。`''` 未評価／`searching` 探索中／`high` 成立／`low_margin` 成立したが `m` 低／`failed` 不成立／`unknown` pgm 無しの旧経路。W-01 P2） / `float32 localize_score`（再生側のみ。最後の探索の `s`。W-01 P2） / `float32 localize_margin`（再生側のみ。最後の探索の `m`。W-01 P2） / `bool has_map`（再生側のみ。読み込んだ経路に保存地図があるか。1b-11 SG-B14） | S-12/S-13/S-14 の表示源 |
 | **`MapSessionStatus.msg`** | `Header header` / `string slot`（`VENUE`/`ROUTE`） / `string session_id` / `string mode`（`UNLOADED`/`MAPPING`/`LOCALIZING`） / `bool dirty` / `string instance_id`（地図の生存世代を表す乱数トークン。まっさらな地図作成を始めるたび新規発行、読み直しに成功したら読み込んだ地図のものを継承。`WS-9AL` で追加） | §6.4 |
-| **`CheckStatus.msg`** | `Header header` / `string item` / `string result`（`OK`/`WARN`/`NG`/`UNKNOWN`） / `string detail` / `string next_screen` | 始業点検 4 項目 |
+| **`CheckStatus.msg`** | `Header header` / `string item` / `string result`（`OK`/`WARN`/`NG`/`UNKNOWN`） / `string detail` / `string next_screen` / `string basis_json`（判定の根拠。JSON 配列 `{key,value,threshold,unit,cmp,ok}`。最終判定のときだけ。ラベルは WebUI の i18n） | 始業点検 4 項目 |
 | **`CalibStatus.msg`** | `Header header` / `string item` / `string step` / `string result` / `string preview_before` / `string preview_after` / `string detail` | 校正ウィザード |
 | **`PinWarning.msg`** | `bool active` / `string kind` / `float32 nearest_m` / `float32 min_m` / `float32 retreat_x` / `float32 retreat_y` / `float32 retreat_yaw` | `pin_registrar` → WebUI（latched）。登録座標が壁（global costmap の 253 帯）に近すぎるときの警告。`WS-9AB`（2026-09-10）で新設 |
 | `WheelFeedback.msg` | 既存のまま | 実測と指令の両方に使う |
@@ -688,7 +688,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `opcheck_deadman_timeout_s` | s | (b) | OPCHECK の /opcheck/motor_hold 途絶を「離し」扱いにする時間 |
 | `opcheck_spin_w_rad_s` | rad/s | (b) | OPCHECK の超信地旋回角速度 |
 | `opcheck_blind_tolerance_deg` | deg | (b) | OPCHECK の死角帯ズレ許容（設定 ↔ 1 フレーム推定） |
-| `opcheck_scan_coverage_gap_deg` | deg | (b) | OPCHECK の無効ビーム連続帯の許容幅 |
+| `opcheck_scan_coverage_gap_deg` | deg | (b) | OPCHECK の無効ビーム連続帯の許容幅（未満が合格。20.0 = 2026-10-13 決定） |
 | `opcheck_estop_stale_ms` | ms | (b) | OPCHECK の `/safety/estop_hw` 途絶判定（SG-B21） |
 | `opcheck_estop_release_timeout_ms` | ms | (b) | OPCHECK の ESTOP 項目の「押したまま」判定時間（SG-B21） |
 | `opcheck_motor_too_brief_ms` | ms | (b) | OPCHECK の MOTOR 項目の「短すぎて測れていない」判定時間（SG-B21） |
