@@ -655,6 +655,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `align_kp` | — | (b)。盤前向き合わせの比例ゲイン（W-13） |
 | `align_w_max_rps` | rad/s | (b)。盤前向き合わせの最高旋回速度（W-13） |
 | `blocked_recheck_period_s` | s | (b)。経路ブロック再確認周期（W-13） |
+| `collision_retry_max_s` | s | (b)。衝突で連続して打ち切られるときの走り直し間隔の上限（Spec-onsite §6.3） |
+| `collision_retry_factor` | — | (b)。同、打ち切りごとに間隔へ掛ける倍率 |
 | `arrival_xy_tol_m` | m | (b)。盤前到着の位置許容（W-13） |
 | `tick_hz` | Hz | (b)。退避待ちゲートの tick レート（W-13） |
 | `match_tol_m` | m | (b)。人物追跡の照合許容距離（W-13） |

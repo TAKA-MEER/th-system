@@ -148,6 +148,11 @@ class VenueNavigator(Node):
         self.declare_parameter('nav_stall_abort_count', 3)
         self.declare_parameter('nav_stall_move_tol_m', 0.20)
         self.declare_parameter('nav_stall_progress_window_s', 120.0)
+        # Spec-onsite §6.3(2026-10-13 実機): Nav2 が「前方に衝突」で連続して打ち切る
+        # ときの走り直し間隔。基準は blocked_recheck_period_s、打ち切りのたびに
+        # factor 倍して max で頭打ち（2→4→8→10 秒）。registry の値。
+        self.declare_parameter('collision_retry_factor', 2.0)
+        self.declare_parameter('collision_retry_max_s', 10.0)
 
         self._params = VenueNavParams(
             align_tolerance_rad=float(self.get_parameter('align_tolerance_rad').value),
@@ -165,6 +170,10 @@ class VenueNavigator(Node):
             self.get_parameter('nav_stall_move_tol_m').value)
         self._tf_stall_progress_window_s = float(
             self.get_parameter('nav_stall_progress_window_s').value)
+        self._collision_retry_factor = max(
+            1.0, float(self.get_parameter('collision_retry_factor').value))
+        self._collision_retry_max_s = float(
+            self.get_parameter('collision_retry_max_s').value)
 
         # ── 状態 ────────────────────────────────────────────
         self._mode = ""            # /system/state の mode（PANEL_NAV / SUMMON を対象）
@@ -239,6 +248,14 @@ class VenueNavigator(Node):
         self._stall_anchor_xy = None
         self._progress_times = deque()
         self._nav_tf_stall_latched = False
+        # 衝突による打ち切り（controller_server の /rosout `collision ahead`）。
+        # FollowPath(Humble) の結果には理由が無いので、ログの到着時刻を覚え、
+        # 直後の打ち切りに 1 回だけ紐づける。連続数・錨・次に送ってよい時刻は
+        # 走り直しの間隔延長（Spec-onsite §6.3）用。
+        self._collision_log_at = None
+        self._collision_streak = 0
+        self._collision_anchor_xy = None
+        self._resend_not_before = 0.0
 
         # ── QoS ─────────────────────────────────────────────
         effect_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE,
@@ -607,6 +624,9 @@ class VenueNavigator(Node):
     def _on_rosout(self, msg: Log):
         if msg.name != 'controller_server':
             return
+        if self._COLLISION_LOG_KEY in msg.msg.lower():
+            self._collision_log_at = self._now()
+            return
         if 'failed to make progress' not in msg.msg.lower():
             return
         now = self._now()
@@ -615,8 +635,46 @@ class VenueNavigator(Node):
                 now - self._progress_times[0] > self._tf_stall_progress_window_s:
             self._progress_times.popleft()
 
+    # RPP の `RegulatedPurePursuitController detected collision ahead!`。
+    # controller_server が ERROR で /rosout に流す（ノード名付きなので届く）。
+    _COLLISION_LOG_KEY = 'collision ahead'
+    # このログから打ち切りの結果が届くまでの許容 [s]。
+    _COLLISION_LOG_WINDOW_S = 3.0
+
+    def _consume_collision_log(self) -> bool:
+        """直前（窓内）に衝突のログが届いていれば True を返し、1 回で消費する。"""
+        at = self._collision_log_at
+        self._collision_log_at = None
+        return at is not None and 0.0 <= self._now() - at <= self._COLLISION_LOG_WINDOW_S
+
+    def _collision_note_abort(self):
+        """衝突による打ち切り。連続数を数え、次に送ってよい時刻を延ばす。
+        機体が nav_stall_move_tol_m 以上動いていれば数え直す（進めた＝詰まっていない）。"""
+        self._refresh_robot_pose()
+        xy = (self._robot[0], self._robot[1]) if self._robot is not None else None
+        moved = (xy is not None and self._collision_anchor_xy is not None
+                 and math.hypot(xy[0] - self._collision_anchor_xy[0],
+                                xy[1] - self._collision_anchor_xy[1])
+                 >= self._tf_stall_move_tol_m)
+        if self._collision_streak == 0 or moved:
+            self._collision_streak = 1
+            self._collision_anchor_xy = xy
+        else:
+            self._collision_streak += 1
+        base = self._params.blocked_recheck_period_s
+        delay = min(base * self._collision_retry_factor ** (self._collision_streak - 1),
+                    max(self._collision_retry_max_s, base))
+        self._resend_not_before = self._now() + delay
+        self.get_logger().warn(
+            f'follow_path が衝突で打ち切られた（{self._collision_streak} 回連続）→ '
+            f'走り直しは {delay:.1f} s 後から（TF 停滞には数えない）')
+
     def _stall_reset(self):
         """停滞 episode の作り直し（到着・成功・離脱・新しい計画で呼ぶ）。"""
+        self._collision_log_at = None
+        self._collision_streak = 0
+        self._collision_anchor_xy = None
+        self._resend_not_before = 0.0
         self._stall_aborts = 0
         self._stall_anchor_xy = None
         self._progress_times.clear()
@@ -966,7 +1024,15 @@ class VenueNavigator(Node):
             return
         # ABORTED / CANCELED（自分でない cancel）→ blocked
         self.get_logger().warn(f'follow_path 終了 status={status} → evt.blocked')
-        self._stall_note_abort()
+        # 衝突による打ち切りは TF 停滞に数えない（TF の停滞ではない）。連続数は
+        # 据え置く（0 に戻すと、衝突が1回挟まるだけで本物の停滞の検知が遅れる）。
+        # 衝突でない打ち切りは「同じ原因の連続」を断つので衝突の連続数は戻す。
+        if self._consume_collision_log():
+            self._collision_note_abort()
+        else:
+            self._collision_streak = 0
+            self._resend_not_before = 0.0
+            self._stall_note_abort()
         self._go_blocked(json.dumps({'status': int(status)}))
 
     def _schedule_spurious_retry(self, delay_s: float = 2.0):
@@ -1172,6 +1238,10 @@ class VenueNavigator(Node):
             self._cleared_this_episode = True
             self.get_logger().info('blocked 再試行: costmap クリア → 障害物の再記録を待つ')
             self._clear_costmaps_then(self._after_clear_wait)
+            return
+        if self._now() < self._resend_not_before:
+            # 衝突で打ち切られ続けている間は走り直しの間隔を延ばす（Spec-onsite §6.3）。
+            self._recheck_in_flight = False
             return
         if self._path_ahead_is_clear():
             self.get_logger().info('blocked 再試行: 経路の先が空いた → 残りを再送')
