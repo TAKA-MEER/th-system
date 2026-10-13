@@ -17,14 +17,20 @@
 import { useState } from 'react'
 import { useJogLease } from '../ros/useJogLease.js'
 import { scaleJogCmd } from './stickGeometry.js'
+import { clampPresetForZone } from '../screens/screenZone.js'
 import { useKeyboardJog } from './useKeyboardJog.js'
 import VirtualStick from './VirtualStick.jsx'
 import SpeedPreset from './SpeedPreset.jsx'
 import preset from '../generated/speed_presets.json'
 import { SPD_SLIDER_ARIA, KBD_HINT, KBD_HINT_KEYS } from '../i18n/screens.js'
 
-export default function JogConsole({ ros, disabled = false, keyboard = false }) {
-  const [speedPct, setSpeedPct] = useState(preset.speed_preset_mid)
+export default function JogConsole({ ros, disabled = false, keyboard = false, inZone = false }) {
+  const [selectedPct, setSelectedPct] = useState(preset.speed_preset_mid)
+  // 場内の画面（S-20・S-21）は中速までに制限する（Spec-webui.md「速度プリセット」）。
+  // 選択が高速のまま場内の画面に入っても、ここで中速に落ちる（表示・送出の両方）。
+  // 上限の権威は機体側（ブラウザは割合を返すだけ）。
+  const speedPct = clampPresetForZone(selectedPct, inZone, preset.speed_preset_mid)
+  const setSpeedPct = setSelectedPct
   const [held, setHeld] = useState(false)
   const [rawCmd, setRawCmd] = useState({ vn: 0, wn: 0 })
 
@@ -60,7 +66,7 @@ export default function JogConsole({ ros, disabled = false, keyboard = false }) 
         <input
           type="range"
           min="0"
-          max="100"
+          max={Math.round((inZone ? preset.speed_preset_mid : 1) * 100)}
           step="5"
           value={Math.round(speedPct * 100)}
           aria-label={SPD_SLIDER_ARIA}
@@ -68,7 +74,7 @@ export default function JogConsole({ ros, disabled = false, keyboard = false }) 
         />
       </div>
       <VirtualStick disabled={disabled} onChange={handleChange} onRelease={handleRelease} />
-      <SpeedPreset value={speedPct} onSelect={setSpeedPct} />
+      <SpeedPreset value={speedPct} onSelect={setSpeedPct} allowHigh={!inZone} />
       {keyboard && (
         <div className={`kbdHint${kbd.held ? ' on' : ''}`}>
           <span className="kbdKeys">{KBD_HINT_KEYS}</span>

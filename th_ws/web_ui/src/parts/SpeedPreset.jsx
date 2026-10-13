@@ -18,10 +18,12 @@ const ORDER = [
   { key: 'speed_preset_low', label: SPD_LOW },
 ]
 
-export default function SpeedPreset({ value, onSelect }) {
+export default function SpeedPreset({ value, onSelect, allowHigh = true }) {
+  // 場内の画面（S-20・S-21）は allowHigh=false で「高速」を出さない（Spec-webui.md）。
+  const items = allowHigh ? ORDER : ORDER.filter(({ key }) => key !== 'speed_preset_high')
   return (
     <div className="spd">
-      {ORDER.map(({ key, label }) => (
+      {items.map(({ key, label }) => (
         <button
           key={key}
           type="button"

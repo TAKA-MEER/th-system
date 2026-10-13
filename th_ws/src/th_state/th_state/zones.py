@@ -92,6 +92,10 @@ LIMIT_STRICTNESS = (
     "stop", "v_check", "v_calib", "v_jog_panel", "v_slow", "v_leash", "v_max")
 
 
+# attributes.yaml の jog_speed_limit を省略した行のジョグ中の上限名（最も厳しい側）。
+DEFAULT_JOG_SPEED_LIMIT = "v_jog_panel"
+
+
 @dataclass(frozen=True)
 class ScreenInput:
     """`/ui/active_screen` の1端末ぶんのスナップショット。"""
@@ -168,15 +172,17 @@ def mode_speed_limit(mode_attrs: Mapping[str, object], jog_active: bool) -> str:
     渡すこと（`th_state.state_core.StateCore.attributes(mode)` が返す形と同じ）。
 
     attributes.yaml 冒頭コメント（※※※）: 「speed_limit は停止だが、jog_active の間だけ
-    v_jog_panel」という行が AT_PANEL に 1 つある。ここではモード名を比較せず
-    （CLAUDE.md N-1 と同種の理由。将来 speed_limit=stop かつ jog 許可のモードが増えても
-    同じ規則で動くように）、`speed_limit == "stop"` かつ `jog` が `denied` でない
-    （= このモードはそもそも jog できる）かつ `jog_active` の 3 条件で判定する。
-    現状の attributes.yaml でこの3条件をすべて満たすのは AT_PANEL だけ。
+    jog_speed_limit の速度」という行が AT_PANEL と AT_HOME にある。ここではモード名を
+    比較せず（CLAUDE.md N-1 と同種の理由。将来 speed_limit=stop かつ jog 許可のモードが
+    増えても同じ規則で動くように）、`speed_limit == "stop"` かつ `jog` が `denied` でない
+    （= このモードはそもそも jog できる）かつ `jog_active` の 3 条件で判定し、返す名前は
+    行の `jog_speed_limit` を読む。省略時は `v_jog_panel`（厳しい側に倒す）。
+    現状の attributes.yaml でこの3条件をすべて満たすのは AT_PANEL（v_jog_panel）と
+    AT_HOME（v_slow。Spec-modes.md §6、2026-10-13）。
     """
     limit = mode_attrs["speed_limit"]
     if limit == "stop" and jog_active and mode_attrs.get("jog") != "denied":
-        return "v_jog_panel"
+        return mode_attrs.get("jog_speed_limit", DEFAULT_JOG_SPEED_LIMIT)
     return limit
 
 
