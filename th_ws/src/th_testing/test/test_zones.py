@@ -180,6 +180,51 @@ def test_mode_speed_limit_at_panel_jog_active_returns_v_jog_panel():
     assert mode_speed_limit(attrs, jog_active=True) == "v_jog_panel"
 
 
+def test_mode_speed_limit_reads_jog_speed_limit_attribute():
+    # 2026-10-13: ジョグ中の上限名は行の jog_speed_limit を読む（モード名は見ない）。
+    attrs = {"speed_limit": "stop", "jog": "allowed", "jog_speed_limit": "v_slow"}
+    assert mode_speed_limit(attrs, jog_active=True) == "v_slow"
+    assert mode_speed_limit(attrs, jog_active=False) == "stop"
+    # jog_speed_limit を省略した行は最も厳しい v_jog_panel（緩い側に倒さない）。
+    assert mode_speed_limit({"speed_limit": "stop", "jog": "allowed"}, jog_active=True) \
+        == "v_jog_panel"
+
+
+def _real_attributes():
+    import os
+    import yaml
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "th_state", "config",
+                        "attributes.yaml")
+    with open(path, encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def test_real_attributes_at_home_jog_is_v_slow_at_panel_is_v_jog_panel():
+    # 実物の attributes.yaml の行で（Spec-modes.md §6。AT_HOME だけ v_slow）。
+    attrs = _real_attributes()
+    assert mode_speed_limit(attrs["AT_HOME"], jog_active=True) == "v_slow"
+    assert mode_speed_limit(attrs["AT_PANEL"], jog_active=True) == "v_jog_panel"
+    # ジョグしていなければどちらも停止のまま。
+    assert mode_speed_limit(attrs["AT_HOME"], jog_active=False) == "stop"
+    assert mode_speed_limit(attrs["AT_PANEL"], jog_active=False) == "stop"
+
+
+def test_real_attributes_jog_speed_limit_is_a_known_limit_name():
+    # 書いた名前が LIMIT_STRICTNESS に無いと combine_speed_limits が StopIteration になる。
+    for mode, row in _real_attributes().items():
+        if "jog_speed_limit" in row:
+            assert row["jog_speed_limit"] in LIMIT_STRICTNESS, mode
+
+
+def test_at_home_jog_combined_with_screen_v_slow_is_v_slow():
+    # S-21（画面由来 v_slow）× AT_HOME のジョグ（モード由来 v_slow）→ v_slow。
+    attrs = _real_attributes()
+    mode_limit = mode_speed_limit(attrs["AT_HOME"], jog_active=True)
+    assert combine_speed_limits("v_slow", mode_limit) == "v_slow"
+    # 画面途絶（stop）はジョグ中でも勝つ。
+    assert combine_speed_limits("stop", mode_limit) == "stop"
+
+
 def test_mode_speed_limit_jog_denied_mode_stays_stop_even_if_jog_active():
     # IDLE 等 jog: denied のモードでは、万一 jog_active が立っていても stop のまま
     # （v_jog_panel は AT_PANEL のような「jog 許可」モード限定の特例）。

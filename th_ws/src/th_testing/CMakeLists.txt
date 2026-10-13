@@ -852,6 +852,13 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_working_guard_node
     test/test_working_guard_node.py
     TIMEOUT 240)
+
+  # ジョグ中の速度上限: AT_HOME は v_slow・AT_PANEL は v_jog_panel（Spec-modes.md §6。
+  # 2026-10-13）。本物の state_manager と obstacle_limiter を並べ、SystemState.speed_limit と
+  # LimiterStatus.applied_limit_mps の両方で縛る。rclpy 要＝ホスト除外。
+  ament_add_pytest_test(test_athome_jog_speed_node
+    test/test_athome_jog_speed_node.py
+    TIMEOUT 240)
 endif()
 
 ament_package()

@@ -254,7 +254,7 @@ source_class = (manual_fresh && state_fresh &&
 applied_limit_mps = min( 画面由来の上限, モード由来の上限, v_reverse（後退時） )
 ```
 
-**迷ったら低いほうを採る**（L7 と同じ向き）。`AT_PANEL` のジョグだけは `v_jog_panel` を明示的に選ぶ。
+**迷ったら低いほうを採る**（L7 と同じ向き）。`AT_PANEL` のジョグだけは `v_jog_panel` を明示的に選ぶ（`AT_HOME` のジョグは `v_slow`。2026-10-13。属性 `jog_speed_limit`）。
 
 ### 3.4 `DEBT-4` を塞ぐ（後段配置の前提条件）
 

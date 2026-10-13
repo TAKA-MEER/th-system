@@ -903,6 +903,7 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | `resume_state` | 状態名 | `C-05` の `$resume_state` |
 | `needs_tracker` | `required` / `optional` / `unused` / `keep` | `Spec-modes.md` §9 |
 | `speed_limit` | パラメータ名 or `stop` | モード由来の上限（画面由来との **min** を採る） |
+| `jog_speed_limit` | パラメータ名（省略時 `v_jog_panel`） | `speed_limit` が `stop` で `jog` 可のモードの、**`jog_active` の間だけ**の上限。`AT_HOME` だけ `v_slow`（2026-10-13） |
 | `auto_brake_default` | `on` / `off` / `on_locked` | `on_locked` は無効化不可 |
 | `jog` | `allowed` / `denied` / `is_drive` | `is_drive` は `MANUAL` / `TEACH_MANUAL` |
 | `has_record` | bool | 「保存」ボタンを出すか |
@@ -937,7 +938,7 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 のガード。試験場内 4 モードへの拡張は [onsite](DetailedDesign-onsite.md) §3.7.3.1 ／ 正本 `Spec-open.md` **F-41**）。
 **表の `false` は既定値**（`map_update` OFF）であり、固定値ではない。
 ※※ `PREP` の `needs_tracker` は **`REGISTER` 状態のときだけ `required`**、他は `optional`。
-※※※ `AT_PANEL` は停止だが、**`jog_active` の間だけ `v_jog_panel`**（`F-24`）。
+※※※ `AT_PANEL` は停止だが、**`jog_active` の間だけ `v_jog_panel`**（`F-24`）。`AT_HOME`（表に行が無い。`AT_PANEL` と同型）は**`jog_active` の間だけ `v_slow`**（`jog_speed_limit` 属性。2026-10-13）。
 
 **`resume_state` は `PAUSE` を持つ全モードで必須。**`yes_no` のモードは `PAUSE` を書く
 （`C-05`（いいえ／確認）は全モードの `PAUSE` に効くので、`ack_only` のモードだけ定義すると
