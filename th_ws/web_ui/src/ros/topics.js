@@ -14,6 +14,11 @@ export const TOPICS = {
   // display, W-1), but it wasn't wired up -- see DetailedDesign-wp1.md
   // WP-UI-01 §11 "W-1 generalization".
   SAFETY_FAULT: '/safety/fault',
+  // フォルトの履歴（Spec-safety.md §3.5.5）。RELIABLE＋TRANSIENT_LOCAL・depth 1 で
+  // 最新の 1 通（直近 50 件）。**TOPICS に置くこと**（SERVICES に置いたせいで
+  // TOPICS.FAULT_HISTORY が undefined のまま購読が張られず、実機で履歴が 1 件も
+  // 届かなかった。2026-10-13）。
+  FAULT_HISTORY: '/system/fault_history',
   // WP-UI-03 (DetailedDesign-wp3.md §3.1): the two topics useJogLease
   // publishes. /ui/jog_lease carries this client's id (not a /system/trigger
   // call -- a synchronous rosbridge round-trip 5x/s would stall on WiFi
@@ -114,9 +119,6 @@ export const SERVICES = {
   // どちらも names.json の endpoints にあるので辞書ゲートを通る。
   PARAMS_GET: '/params/get',
   PARAMS_SET: '/params/set',
-  // フォルトの履歴（Spec-safety.md §3.5.5）。RELIABLE＋TRANSIENT_LOCAL・depth 1 で
-  // 最新の 1 通（直近 50 件）。
-  FAULT_HISTORY: '/system/fault_history',
 }
 
 export const MSG_TYPES = {
