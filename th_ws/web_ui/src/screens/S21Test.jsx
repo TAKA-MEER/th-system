@@ -572,6 +572,7 @@ export default function S21Test({ onExit }) {
             <span className="grow">{S21_BLOCKED_MSG}</span>
             <button
               type="button"
+              className="btn primary"
               data-testid="s21-blocked-reroute"
               onClick={() => sendTrigger('ui.reroute')}
             >
@@ -579,7 +580,7 @@ export default function S21Test({ onExit }) {
             </button>
             <button
               type="button"
-              className="danger"
+              className="btn danger"
               data-testid="s21-blocked-abort"
               onClick={() => sendTrigger('ui.abort')}
             >
