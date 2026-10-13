@@ -526,6 +526,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_runaway_freshness_node
     test/test_runaway_freshness_node.py
     TIMEOUT 180)
+  # 物理非常停止の間（手押し）は DRIVE_RUNAWAY を判定しない（Spec-safety §3.5.3 末尾）。
+  # 押下中は出ない・離したら 0 から数え直し・立っているフォルトは解除しない・UI 非常停止では止まらない
+  ament_add_pytest_test(test_runaway_carry_node
+    test/test_runaway_carry_node.py
+    TIMEOUT 180)
   # S-14「経路からのずれ」の Docker launch テスト（台帳 W-02 の一部。
   # 横にずらした odom で /route/status のずれが増え、load_route で 0 に戻る。
   # rclpy 要＝ホスト除外。TIMEOUT 180）
