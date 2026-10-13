@@ -143,13 +143,29 @@ function AppShellInner({ screenName, screenId, children }) {
   // 保険として、画面を開いた/再読込した時点で既に PAUSE ＋ run_state 無しモード ＋
   // ジョグ中でもない場合も救済する（jog.hold 以外に PAUSE へ入る経路が無いモードでは、
   // その組合せは fault 由来としか説明できないため）。
+  //
+  // 2026-10-13 追補: 「確認」(ui.resume_ack) は走行を再開せずモードだけ戻す（Spec-webui
+  // §4.1）ので、MANUAL では確認後も state は PAUSE のまま、pause_reason だけが
+  // 'fault' → '' に戻る。ラッチを「PAUSE を抜けるまで」にしていると窓が閉じず、
+  // 「確認」を何度押しても開き直った（実機 MANUAL で LiDAR 抜き差し）。そこで機体が
+  // pause_reason を 'fault' から別の値へ戻した瞬間（遷移）にラッチを下ろす。
+  // 「遷移」だけを見るのは、フォルト直後に pause_reason がまだ '' の状態が一瞬
+  // 見えても誤って下ろさないため。pause_reason を持たない古い機体（undefined）は
+  // 遷移が起きないので従来どおり PAUSE を抜けるまで保持する。
   const [faultPauseSeen, setFaultPauseSeen] = useState(false)
+  const prevPauseReasonRef = useRef(undefined)
+  const pauseReason = state?.pause_reason
   useEffect(() => {
+    const prevReason = prevPauseReasonRef.current
+    prevPauseReasonRef.current = pauseReason
     if (stateName !== 'PAUSE') { setFaultPauseSeen(false); return }
     const noRunFallback = attributes?.[mode]?.run_state == null
     const stuckWithNoEscape = noRunFallback && !state?.jog_active
-    if (!!fault?.active || stuckWithNoEscape) setFaultPauseSeen(true)
-  }, [stateName, fault?.active, mode, state?.jog_active])
+    if (!!fault?.active || stuckWithNoEscape) { setFaultPauseSeen(true); return }
+    if (prevReason === 'fault' && pauseReason != null && pauseReason !== 'fault') {
+      setFaultPauseSeen(false)
+    }
+  }, [stateName, fault?.active, mode, state?.jog_active, pauseReason])
 
   // W-1 が出ている間に最後に見たフォルト種別。解消後の再開確認に添える記録を、
   // その種別に絞る（前の episode の記録を出さない）。履歴の到着が解消より遅くても
