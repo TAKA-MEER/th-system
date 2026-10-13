@@ -323,6 +323,13 @@ class VenueNavigator(Node):
         self.create_timer(1.0 / 20.0, self._align_timer,
                           callback_group=self._align_cbg)
 
+        # 走行中の経路の先の周期確認（Spec-onsite §6.3）
+        self._proactive_blocked_count = 0
+        self._proactive_cbg = MutuallyExclusiveCallbackGroup()
+        self.create_timer(self._PROACTIVE_PERIOD_S,
+                          self._proactive_block_check,
+                          callback_group=self._proactive_cbg)
+
         # blocked 再探索タイマ（BLOCKED に入ったときに開始）
         self.create_timer(self._params.blocked_recheck_period_s,
                           self._blocked_recheck,
@@ -1189,43 +1196,85 @@ class VenueNavigator(Node):
             self._costmap_warned = True
             self.get_logger().warn(text)
 
-    def _path_ahead_is_clear(self) -> bool:
-        """保持した経路の先（機体から 1.5 m）が、いまの障害物マップで空いているか。
-        マップが無い・古い・座標系違い・機体位置不明は確認できない＝空いていない。"""
+    def _path_ahead_status(self, running: bool = False) -> str:
+        """保持した経路の先（機体から 1.5 m）が、いまの障害物マップで空いているかを
+        'clear' / 'blocked' / 'unknown' で返す。
+        unknown = マップが無い・古い・座標系違い・機体位置不明・消去後の再記録待ち。
+        running=False（BLOCKED 中の再送前・再開時）は unknown を『空いていない』
+        として扱う（_path_ahead_is_clear）。running=True（走行中の周期確認）は
+        unknown では止めない（Spec-onsite §6.3。マップの途切れで走行が止まるため。
+        前進は障害物リミッタが止める）。"""
         now = self._now()
         cm = self._costmap
+        wait = ('経路の先は空いていないものとして待つ' if not running
+                else '走行中のため止めない（障害物リミッタが前進を止める）')
         if cm is None or self._costmap_rx_at is None:
-            self._warn_once('障害物マップ未受信 → 経路の先は空いていないものとして待つ')
-            return False
+            self._warn_once(f'障害物マップ未受信 → {wait}')
+            return 'unknown'
         if now - self._costmap_rx_at > COSTMAP_STALE_S:
             self._warn_once(
-                f'障害物マップが {now - self._costmap_rx_at:.1f} s 更新されない '
-                f'→ 経路の先は空いていないものとして待つ')
-            return False
+                f'障害物マップが {now - self._costmap_rx_at:.1f} s 更新されない → {wait}')
+            return 'unknown'
         if cm.header.frame_id != self._map_frame:
             self._warn_once(
                 f'障害物マップの座標系が {cm.header.frame_id!r}（{self._map_frame!r} でない）'
-                f' → 空いていないものとして待つ')
-            return False
+                f' → {wait}')
+            return 'unknown'
         self._refresh_robot_pose()
         robot_xy = self._robot[:2] if self._robot is not None else None
         if robot_xy is None or self._path is None:
-            return False
+            return 'unknown'
         # 消去直後は何も無く見える。障害物が再び記録される（消去の約 2 秒後）まで
         # 確認しない。消去後に受けたマップが無ければ待つ（警告ではない）。
         if self._clear_done_at > 0.0 and (
                 now < self._clear_done_at + self._CLEAR_SETTLE_S
                 or self._costmap_rx_at < self._clear_done_at + 1.0):
-            return False
+            return 'unknown'
         self._costmap_warned = False
         grid = _GridView(cm)
         clear = path_ahead_clear(
             [(p.pose.position.x, p.pose.position.y) for p in self._path.poses],
             robot_xy, grid, PATH_AHEAD_CHECK_M)
-        if not clear:
+        if not clear and not running:
             self.get_logger().info(
                 f'blocked: 経路の先 {PATH_AHEAD_CHECK_M} m に障害物 → 送らずに待つ')
-        return clear
+        return 'clear' if clear else 'blocked'
+
+    def _path_ahead_is_clear(self) -> bool:
+        """BLOCKED 中の再送前・再開時の確認。確認できない（unknown）は空いていない。"""
+        return self._path_ahead_status() == 'clear'
+
+    # 走行中（NAV）の周期確認（Spec-onsite §6.3「走行中に障害物が経路の先に入ったとき」）。
+    # 周期 0.5 s。デバウンスは連続 2 回（約 1 s）: 障害物マップは約 1 Hz 更新で、
+    # 一瞬の幽霊マークで止めたくない。一方 v_slow ≒ 0.3 m/s では 1 s で約 0.3 m しか
+    # 進まず、1.5 m 先の確認なので遅れても障害物には届かない。
+    _PROACTIVE_PERIOD_S = 0.5
+    _PROACTIVE_CONFIRMS = 2
+
+    def _proactive_block_check(self):
+        """NAV 中、経路の先が塞がれたら Nav2 の打ち切りを待たず止まって BLOCKED へ。
+        Nav2 は障害物の前で前進を止めても旋回指令を出し続け、障害物リミッタは旋回を
+        通すため機体がその場旋回する（実機 2026-10-13）。ALIGN（向き合わせ）は
+        _is_nav_state が False なので対象外。"""
+        if (not self._is_nav_state() or self._blocked or self._unblocking
+                or self._follow_goal_handle is None or self._path is None
+                or self._arrival_pending or self._final_aligning
+                or self._handle_seq in self._cancel_seqs):
+            self._proactive_blocked_count = 0
+            return
+        status = self._path_ahead_status(running=True)
+        if status != 'blocked':
+            self._proactive_blocked_count = 0
+            return
+        self._proactive_blocked_count += 1
+        if self._proactive_blocked_count < self._PROACTIVE_CONFIRMS:
+            return
+        self._proactive_blocked_count = 0
+        self.get_logger().warn(
+            f'走行中に経路の先 {PATH_AHEAD_CHECK_M} m が塞がれた → 走行を取り消して BLOCKED')
+        # 自分の取り消しは _cancel_seqs で印を付け、結果で evt.blocked を二重に出さない。
+        self._cancel_follow_path()
+        self._go_blocked(json.dumps({'reason': 'path_ahead_blocked'}))
 
     def _resend_cached(self):
         """保持した経路の残りを FollowPath に送り直す（_recheck_compute の
