@@ -18,6 +18,7 @@
 [Unit]
 Description=RPLIDAR S1 /scan publisher (TH system, frame_id=laser_link, USB 抜き差しから自動復帰)
 After=network.target time-sync.target
+Wants=time-sync.target
 
 [Service]
 Type=simple
