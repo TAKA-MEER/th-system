@@ -120,6 +120,37 @@ for (const size of SIZES) {
     })
   }
 
+  // 2026-10-13: 結果の保持パネルに「判定の根拠」（最大 6 行）が並んでも溢れない。
+  for (const [label, item, result, detail, basis] of [
+    ['IMU', 'IMU', 'WARN', 'needs_calibration', [
+      { key: 'imu_bias', value: 0.0004, threshold: 0.2, unit: 'rad/s', cmp: 'le', ok: true },
+      { key: 'calib_sys', value: 3, threshold: 3, unit: '', cmp: 'ge', ok: true },
+      { key: 'calib_gyro', value: 3, threshold: 3, unit: '', cmp: 'ge', ok: true },
+      { key: 'calib_accel', value: 2, threshold: 3, unit: '', cmp: 'ge', ok: false },
+      { key: 'calib_mag', value: 0, threshold: 3, unit: '', cmp: 'ge', ok: false },
+      { key: 'imu_max_wz', value: 0.002, threshold: 10, unit: 'rad/s', cmp: 'le', ok: true }]],
+    ['LiDAR', 'LIDAR', 'NG', 'coverage_gap', [
+      { key: 'coverage_gap_deg', value: 25, threshold: 20, unit: 'deg', cmp: 'lt', ok: false },
+      { key: 'scan_period_s', value: 0.1, threshold: 2, unit: 's', cmp: 'le', ok: true },
+      { key: 'blind_offset_deg', value: 1, threshold: 5, unit: 'deg', cmp: 'le', ok: true }]],
+  ]) {
+    test(`S-30 結果の保持(${label}の根拠付き) は ${size.name} でスクロール無しに収まる`, async ({ page }) => {
+      await page.setViewportSize({ width: size.width, height: size.height })
+      await page.addInitScript(() => {
+        window.__thTestState = { mode: 'OPCHECK', state: 'LIST' }
+        window.__thTestScreen = 'S30'
+      })
+      await page.goto('/')
+      await page.locator('#body').waitFor()
+      await page.evaluate((v) => {
+        window.__thSetTestOpcheckStatus({ item: v.item, result: v.result, detail: v.detail,
+          next_screen: v.item === 'IMU' ? 'imu_calib' : 'lidar_calib', basis_json: JSON.stringify(v.basis) })
+      }, { item, result, detail, basis })
+      await expect(page.getByTestId('s30-basis')).toBeVisible()
+      expect(await overflowing(page), `S-30 結果 ${label} ${size.name}`).toEqual([])
+    })
+  }
+
   test(`S-50 設定の全タブ・全区画は ${size.name} でスクロール無しに収まる`, async ({ page }) => {
     await page.setViewportSize({ width: size.width, height: size.height })
     await page.addInitScript(() => {

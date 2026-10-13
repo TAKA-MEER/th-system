@@ -893,6 +893,14 @@ table.lst td.r{text-align:right}
 
 /* 判定結果カード（最終）。 */
 .s30-verdict{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+/* 判定の根拠。横長でも最大 6 行が収まるよう行間を詰める（スクロール無し）。
+   基準を外れた行（.bad）は太字にし、測定値の pill を判定のトーンで塗る。 */
+.s30-basis{margin-bottom:8px}
+.s30-basis h4{margin:0 0 4px}
+.s30-basis-table{width:100%;border-collapse:collapse;font-size:calc(var(--fs) * .82)}
+.s30-basis-table th{color:var(--mut);font-weight:400;text-align:left;padding:2px 6px}
+.s30-basis-table td{padding:2px 6px;border-top:1px solid var(--bd)}
+.s30-basis-table tr.bad td{font-weight:700}
 
 /* ---------- WheelSpeedView（parts/WheelSpeedView.jsx）----------
    Ported from the pre-refactor App.css (commit aa5a5b5) as-is; only the

@@ -687,6 +687,45 @@ export const S30_GOTO_CALIB = '校正へ'
 // 判定の保持表示（Spec-webui §3.12「結果」）。「戻る」を押すまで消さない。
 export const S30_RESULT_TITLE = '判定結果'
 export const S30_RESULT_BACK = '戻る'
+// 判定の根拠（Spec-webui §3.12「判定の根拠」/ 2026-10-13 決定）。機体が basis_json に
+// 載せるキー -> 日本語。結果には「測った値 ／ 基準」を並べ、基準を満たさなかった項目を強調する。
+export const S30_BASIS_TITLE = '判定の根拠'
+export const S30_BASIS_VALUE = '測定値'
+export const S30_BASIS_THRESHOLD = '基準'
+export const S30_BASIS_UNMEASURED = '測れず'
+export const S30_BASIS_LABELS = {
+  coverage_gap_deg: '無効帯の最大幅',
+  scan_period_s: '受信周期',
+  blind_offset_deg: '死角のズレ',
+  scan_alive: 'スキャンの受信',
+  imu_alive: 'IMU の受信',
+  imu_bias: '静止時のバイアス',
+  imu_max_wz: '最大角速度',
+  calib_sys: '校正 sys',
+  calib_gyro: '校正 gyro',
+  calib_accel: '校正 accel',
+  calib_mag: '校正 mag',
+}
+const S30_BASIS_UNITS = { deg: '°', s: ' 秒', 'rad/s': ' rad/s', '': '' }
+const S30_BASIS_DECIMALS = { deg: 1, s: 2, 'rad/s': 3, '': 0 }
+function s30BasisNum(v, unit) {
+  const d = S30_BASIS_DECIMALS[unit] ?? 2
+  // rad/s は 0.000 のように桁を揃える。それ以外は末尾の 0 を落とす（20.0 -> 20）。
+  return unit === 'rad/s' ? v.toFixed(d) : String(Number(v.toFixed(d)))
+}
+export function s30BasisValueText(b) {
+  if (b.value == null) return S30_BASIS_UNMEASURED
+  return `${s30BasisNum(b.value, b.unit)}${S30_BASIS_UNITS[b.unit] ?? ` ${b.unit}`}`
+}
+export function s30BasisThresholdText(b) {
+  if (b.threshold == null) return ''
+  const n = `${s30BasisNum(b.threshold, b.unit)}${S30_BASIS_UNITS[b.unit] ?? ` ${b.unit}`}`
+  // 例: 「20° 未満」「2 秒以内」「3 以上」（単位が秒・rad/s のときは詰める）
+  const sp = b.unit === 's' || b.unit === 'rad/s' ? '' : ' '
+  if (b.cmp === 'lt') return `${n}${sp}未満`
+  if (b.cmp === 'ge') return `${n}${sp}以上`
+  return `${n}${sp}以内`
+}
 export const S30_GOTO_REPAIR_NOTE = '故障診断へ移動します'
 export const S30_RECHECK = 'もう一度確認する'
 
