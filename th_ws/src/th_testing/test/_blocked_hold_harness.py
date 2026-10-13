@@ -43,6 +43,7 @@ from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav2_msgs.action import ComputePathToPose, FollowPath
 from nav2_msgs.srv import ClearEntireCostmap
 from nav_msgs.msg import OccupancyGrid, Path
+from rcl_interfaces.msg import Log
 from tf2_msgs.msg import TFMessage
 from th_system_msgs.msg import FaultStatus, StateEffect, StateEvent, SystemState
 from th_system_msgs.srv import GoToPanel, UiTrigger
@@ -143,7 +144,7 @@ def _tl_qos() -> QoSProfile:
 _BLOCKED_PERIOD_S_DEFAULT = 0.5
 
 
-def make_description(period_s: float):
+def make_description(period_s: float, extra_params: dict | None = None):
     """本番ノードを起動する launch。`blocked_recheck_period_s` だけ上書きする。"""
     state_mgr = launch_ros.actions.Node(
         package='th_state', executable='state_manager.py',
@@ -155,7 +156,8 @@ def make_description(period_s: float):
     navigator = launch_ros.actions.Node(
         package='th_onsite', executable='venue_navigator.py',
         name='venue_navigator',
-        parameters=[{'blocked_recheck_period_s': period_s}], output='screen')
+        parameters=[{'blocked_recheck_period_s': period_s,
+                     **(extra_params or {})}], output='screen')
     return launch.LaunchDescription([
         state_mgr, registrar, navigator,
         launch_testing.actions.ReadyToTest(),
@@ -209,6 +211,12 @@ class BlockedHoldBase(unittest.TestCase):
         # accept 完了時に stale な handle が残り、次の試験の NAV 入口を抑止
         # してしまうため。遅延は #3 の再開窓だけに限定する。
         self.follow_accept_delay_s = 0.0
+        # 衝突による打ち切りの再現（Spec-onsite §6.3）。立てると、ABORT の直前に
+        # 実機と同じ形（ノード名 controller_server・ERROR）で RPP の衝突のログを
+        # /rosout に流す。follow_times は FollowPath を受けた時刻（monotonic）。
+        self.follow_collision = False
+        self.follow_times: list[float] = []
+        self.robot_x = 0.0
 
         cbg = ReentrantCallbackGroup()
         self.node.create_subscription(
@@ -222,6 +230,7 @@ class BlockedHoldBase(unittest.TestCase):
             callback_group=cbg)
 
         self.pub_event = self.node.create_publisher(StateEvent, '/system/event', 10)
+        self.pub_rosout = self.node.create_publisher(Log, '/rosout', 10)
         self.pub_fault = self.node.create_publisher(FaultStatus, '/safety/fault', 10)
         # `/onsite/summon_goal` は venue 側が TRANSIENT_LOCAL で購読している。
         # 既定 QoS（VOLATILE）では非互換で届かず、NAV 入口でゴール無し
@@ -295,6 +304,7 @@ class BlockedHoldBase(unittest.TestCase):
         t.header.stamp = self.node.get_clock().now().to_msg()
         t.header.frame_id = 'map'
         t.child_frame_id = 'base_link'
+        t.transform.translation.x = float(self.robot_x)
         t.transform.rotation.w = 1.0
         self.pub_tf.publish(TFMessage(transforms=[t]))
 
@@ -390,6 +400,7 @@ class BlockedHoldBase(unittest.TestCase):
                 [(float(p.pose.position.x), float(p.pose.position.y))
                  for p in goal_handle.request.path.poses])
             self.follow_open += 1
+            self.follow_times.append(time.monotonic())
         try:
             return self._exec_follow_body(goal_handle)
         finally:
@@ -416,6 +427,13 @@ class BlockedHoldBase(unittest.TestCase):
         # venue_navigator は ABORTED → evt.blocked。
         if _wait_cancel(time.monotonic() + self.follow_abort_delay_s):
             return FollowPath.Result()
+        if self.follow_collision:
+            msg = Log()
+            msg.stamp = self.node.get_clock().now().to_msg()
+            msg.level = 40
+            msg.name = 'controller_server'
+            msg.msg = 'RegulatedPurePursuitController detected collision ahead!'
+            self.pub_rosout.publish(msg)
         goal_handle.abort()
         return FollowPath.Result()
 

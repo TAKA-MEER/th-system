@@ -1703,6 +1703,24 @@
   spec_ref: "DetailedDesign-names.md §7.2"
   note: "venue_navigator.py の既定値（変更なし）。暫定値"
 
+- name: collision_retry_max_s
+  unit: s
+  class: b
+  status: given
+  value: 10.0
+  consumers: [venue_navigator]
+  spec_ref: "Spec-onsite.md §6.3"
+  note: "Nav2 が衝突で連続して打ち切るときの走り直し間隔の上限（2026-10-13 実機。2→4→8→10 秒）。暫定値"
+
+- name: collision_retry_factor
+  unit: null
+  class: b
+  status: given
+  value: 2.0
+  consumers: [venue_navigator]
+  spec_ref: "Spec-onsite.md §6.3"
+  note: "衝突で連続して打ち切られるたびに走り直し間隔に掛ける倍率（基準は blocked_recheck_period_s）。暫定値"
+
 - name: arrival_xy_tol_m
   unit: m
   class: b

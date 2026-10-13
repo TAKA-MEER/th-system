@@ -6,6 +6,8 @@ venue_navigator:
     arrival_xy_tol_m: 0.12
     blocked_recheck_period_s: 2.0
     brake_accel_mps2: 1.18
+    collision_retry_factor: 2.0
+    collision_retry_max_s: 10.0
     obstacle_stop_distance_m:
       v_calib: 0.33953389830508474
       v_check: 0.3110593220338983
