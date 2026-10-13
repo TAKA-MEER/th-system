@@ -196,6 +196,41 @@ docker restart th_robot                               # /dev/shm の掃除だけ
 
 ---
 
+## ラズパイ: rplidar の自動復帰の導入（USB 抜き差し対策）
+
+実機 2026-10-13: LiDAR の USB を抜いて挿し直すと `/scan` が戻らず `LIDAR_LOST` が 982 秒続いた
+（`rplidar_node` が抜く前のデバイスを握ったまま、エラーも終了もしないため `Restart=always` が働かない）。
+`th_ws/scripts/rpi_rplidar_run.sh` が by-id のリンクを 1 秒ごとに見張り、変わったら `rplidar_node` を
+止めて終了する → systemd が立て直す。**挿し直しから約 10 秒以内に `/scan` が戻る**（Spec-safety §3.5.6）。
+**導入は人が行う**（ラズパイは非対話 ssh の `sudo` が使えない）。
+
+1. スクリプトとユニットをラズパイへ送る（PC 側）:
+   ```bash
+   scp th_ws/scripts/rpi_rplidar_run.sh th_ws/scripts/rplidar.service mirs2602@192.168.5.1:~/
+   ```
+2. ラズパイにログインして（`ssh mirs2602@192.168.5.1`）、現行ユニットを控えてから入れ替える:
+   ```bash
+   chmod +x ~/rpi_rplidar_run.sh
+   systemctl cat rplidar > ~/rplidar.service.bak      # 戻す用。Environment 行が新ユニットと同じか見比べる
+   sudo cp ~/rplidar.service /etc/systemd/system/rplidar.service
+   sudo systemctl daemon-reload && sudo systemctl restart rplidar.service
+   ```
+3. 確認: ラズパイで `journalctl -u rplidar.service -f` を見ながら LiDAR の USB を抜いて挿す。
+   `デバイスが変わった` → `起動:` のログが出て、**約 10 秒以内に** PC 側で `ros2 topic hz /scan` が戻る
+   （画面の `LIDAR_LOST` が解消する）。by-id のパスが違う個体は `rpi_rplidar_run.sh` の
+   `DEV_DEFAULT`（または unit に `Environment=RPLIDAR_DEVICE=...`）を直す。
+4. 戻し方: `sudo cp ~/rplidar.service.bak /etc/systemd/system/rplidar.service`（`systemctl cat` の先頭の
+   `# /etc/...` 行は消してから）→ `sudo systemctl daemon-reload && sudo systemctl restart rplidar.service`。
+   元の `ExecStart` は `rplidar.service`（リポジトリ）のコメントにも残してある。
+
+注意: `rpi_set_scan_mode.sh`（scan_mode の切り替え）は `ExecStart=` 行を置き換える作りで、この新ユニットに
+使うとスクリプト経由でなくなる。scan_mode を変えるときは `rpi_rplidar_run.sh` の既定コマンドを直す。
+
+ESP32 の `pi_serial_relay` は同じ問題を持たない見込み（`serial.SerialException` で終了して systemd に
+立て直させる作り。実機での抜き差しは未確認）。
+
+---
+
 ## ラズパイ: pi_serial_relay の導入
 
 **2026-09-05 に実機へ導入済み**（ESP32 をラズパイへ挿し替え → ファーム書き込み →
