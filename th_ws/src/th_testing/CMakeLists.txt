@@ -795,6 +795,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_nav2_progress_checker_node
     test/test_nav2_progress_checker_node.py
     TIMEOUT 240)
+  # 経路計画の地図は外接円(0.389 m)で膨らませる（2026-10-13 実機。本物の
+  # planner_server＋global_costmap を実機と同じ nav2_params.yaml で起動。rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_nav2_global_circumscribed_node
+    test/test_nav2_global_circumscribed_node.py
+    TIMEOUT 240)
   ament_add_pytest_test(test_teach_map_reset_node
     test/test_teach_map_reset_node.py
     TIMEOUT 120)
