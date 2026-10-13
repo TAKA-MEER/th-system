@@ -68,7 +68,7 @@ def generate_test_description():
             'imu_bias_max_rad_s': 0.2,
             'imu_wz_implausible_rad_s': 10.0,
             'opcheck_blind_tolerance_deg': 5.0,
-            'opcheck_scan_coverage_gap_deg': 2.0,
+            'opcheck_scan_coverage_gap_deg': 20.0,
             # h 用の死角マスク（実角度）。b〜g のフラットスキャンには帯が無い
             # ので影響しない（推定が空 → 比較不能 → OK のまま）
             'blind_angle_ranges': [10.0, 20.0],

@@ -17,7 +17,7 @@ opcheck_auto:
     opcheck_deadman_timeout_s: 0.5
     opcheck_estop_stale_ms: 3000
     opcheck_imu_window_s: 2.0
-    opcheck_scan_coverage_gap_deg: 2.0
+    opcheck_scan_coverage_gap_deg: 20.0
     opcheck_spin_w_rad_s: 0.3
     scan_stale_ms: 300
     v_check: 0.05

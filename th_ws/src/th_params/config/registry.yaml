@@ -1825,10 +1825,10 @@
   unit: deg
   class: b
   status: given
-  value: 2.0
+  value: 20.0
   consumers: [opcheck_runner, opcheck_auto, params_audit]
-  spec_ref: "DetailedDesign-names.md §7.6"
-  note: "OPCHECK の無効ビーム連続帯の許容幅。全周がこれだけ欠損しても scan_stale になっていなければ NG にはしない（方針値）"
+  spec_ref: "Spec-checks.md §2.4"
+  note: "OPCHECK の無効ビーム連続帯の許容幅。この幅以上の連続した無効（∞・反射なし）ビームがあれば NG（未満は OK）。2026-10-13 ユーザー決定で 2.0 から 20.0 へ。実機の生スキャンは正常でも 8° 前後（約 -32°）の無効帯が常にあり（広い会場の遠方・反射しない面）、2.0 では毎回 coverage_gap で NG になった。8° に余裕を持たせた値（方針値）"
 
 # =========================================================================
 # SG-B21: 始業点検・校正の直書きタイムアウトの registry 化（1b-10）

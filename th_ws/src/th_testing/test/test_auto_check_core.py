@@ -33,7 +33,7 @@ def make_params(**overrides):
         opcheck_deadman_timeout_s=0.5,
         opcheck_spin_w_rad_s=0.3,
         opcheck_blind_tolerance_deg=5.0,
-        opcheck_scan_coverage_gap_deg=2.0,
+        opcheck_scan_coverage_gap_deg=20.0,
         v_check=0.05,
         scan_stale_ms=300.0,
     )
