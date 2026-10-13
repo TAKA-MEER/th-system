@@ -205,7 +205,7 @@ class TestAtHomeJogSpeedNode(unittest.TestCase):
         while time.time() < end:
             self._spin(0.1)
             s = self.status
-            if s is not None and s.action != 'STOP' and abs(s.applied_limit_mps - expected) < 1e-3:
+            if s is not None and (expected == 0.0 or s.action != 'STOP') and abs(s.applied_limit_mps - expected) < 1e-3:
                 self._spin(0.5)
                 return abs(self.status.applied_limit_mps - expected) < 1e-3
         return False
@@ -228,7 +228,8 @@ class TestAtHomeJogSpeedNode(unittest.TestCase):
         snap = self.hist[-1]
         assert (snap.mode, snap.state) == ('AT_HOME', 'IDLE_H')
         assert snap.speed_limit == 'stop', snap.speed_limit
-        assert self._applied(0.0)
+        assert self._applied(0.0), '上限が stop(0) にならない'
+        assert self.status.out_linear == 0.0, self.status.out_linear
 
     def test_c_at_panel_jog_is_v_jog_panel(self):
         self._go_at_panel()
