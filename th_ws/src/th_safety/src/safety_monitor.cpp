@@ -508,7 +508,14 @@ private:
                     prev_mux_report_dead_ = held;
                 }
             }
-            if (targetEnabled("runaway")) {
+            if (targetEnabled("runaway") && hw_estop_active_) {
+                // Spec-safety.md §3.5.3「物理非常停止が押されている間（手押し）は判定しない」。
+                // 押されている間は駆動が切られていて機体は自走できず、動くのは人が押した分だけ。
+                // 鮮度ゲート（下）より優先して保持時間を 0 に戻し続ける（離した直後に誤発火させない）。
+                // updateFaultState() は呼ばない: すでに立っている DRIVE_RUNAWAY は変えない（解除もしない）。
+                // UI 非常停止（ui_latch_）は対象外で、従来どおり判定する。
+                runaway_hold_.reset();
+            } else if (targetEnabled("runaway")) {
                 // W-06 の②（Spec-safety.md §3.5.3）: 実測が新鮮なときだけ判定する。
                 // 古いあいだは凍結する — runaway_hold_.update() を呼ばない（進めも
                 // 戻しもしない）し、updateFaultState() も呼ばない（フォルト状態を
