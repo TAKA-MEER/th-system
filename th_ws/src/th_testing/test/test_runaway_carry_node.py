@@ -186,6 +186,42 @@ class TestRunawayCarryNode(unittest.TestCase):
         self._speed = PUSH_SPEED
         assert self._wait_fired(timeout=3.0), 'UI 非常停止中なのに判定が止まった'
 
+    def test_e_hold_charged_before_press_is_reset(self):
+        """押す前に溜めた保持時間は、押している間に 0 へ戻る（reset の効きを縛る）。
+
+        乖離を保持時間の 75% ぶん流す（まだ出ない）→ 物理非常停止を押して保持時間の
+        3 倍流し続ける → 離す。離した直後〜保持時間の半分は出ず、保持時間ぶん続いて
+        初めて出る。押している間に reset しない実装だと、離した直後（残り 25% = 0.25 秒）
+        で出てしまう。
+        """
+        hold = RUNAWAY_HOLD_MS / 1000.0
+        # 前の試験の状態を片付ける（UI 非常停止の解除・乖離を止めて DRIVE_RUNAWAY を解除）
+        self._ui = False
+        self._hw = False
+        self._speed = 0.0
+        for _ in range(3):
+            self.pub_ui.publish(Bool(data=False))
+            self._spin(0.1)
+        self._spin(1.0)
+        assert not self._in_active_faults(), '前準備: DRIVE_RUNAWAY が解除されない'
+        self._faults.clear()
+        # 押す前に保持時間の 75% ぶん乖離を溜める
+        self._speed = PUSH_SPEED
+        self._spin(hold * 0.75)
+        assert self._fired() == [], '前準備: 保持時間に達する前に出た'
+        # 押している間（保持時間の 3 倍）も乖離を流し続ける
+        self._hw = True
+        self._spin(hold * 3)
+        assert self._fired() == [], '押している間に出た'
+        # 離す
+        self._hw = False
+        t0 = time.time()
+        self._spin(hold * 0.5)
+        assert self._fired() == [], (
+            f'離した {time.time() - t0:.2f}s 後に出た（押す前に溜めた保持時間が戻っていない）')
+        assert self._wait_fired(timeout=2.0), '離したあと乖離が続いても出ない'
+        assert time.time() - t0 >= hold * 0.8, '保持時間ぶん続く前に出た'
+
 
 if __name__ == '__main__':
     unittest.main()
