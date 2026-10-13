@@ -214,3 +214,15 @@ def rotate_map_previous(base: str,
             os.replace(current, previous)
             rotated.append(previous)
     return rotated
+
+
+def venue_session_mode(mapping_active: bool, venue_loaded: bool) -> str:
+    """/map_session/status（slot:VENUE）の mode を決める。
+
+    MAPPING = 地図作成中 / LOCALIZING = 会場地図を読み込めていて作成していない /
+    UNLOADED = それ以外（起動直後・破棄後・再起動後など、会場地図が載っていない）。
+    WebUI（S-21）は LOCALIZING だけを「会場地図を開いた」とみなす。
+    """
+    if mapping_active:
+        return 'MAPPING'
+    return 'LOCALIZING' if venue_loaded else 'UNLOADED'

@@ -137,6 +137,7 @@ from th_config_manager.slam_control_logic import (
     map_instance_ids_match,
     map_session_base_dir, map_session_filename, map_session_name,
     open_session_error, rotate_map_previous, slam_restart_complete,
+    venue_session_mode,
 )
 
 
@@ -205,6 +206,10 @@ class SlamControl(Node):
         # startup_mapping（教示・再生の連続補正用）では立てない（試験場内地図を
         # 作っているのではないため）。
         self._venue_dirty = False
+        # 会場地図（slot:VENUE）を読み込めているか（Spec-webui §3.11 S-21。「開いた」かどうかは
+        # 機体が持つ）。True は VENUE の読み直しが成功したときだけ。起動直後・破棄・まっさらな
+        # 作り直し・地図作成の開始・slam_toolbox の再起動・経路地図の読み直しで False に戻す。
+        self._venue_loaded = False
         # WS-9L: /map_session/open の保存先ディレクトリ。経路 JSON と同じ場所
         # (routes_dir) でよい。serialize_map は <name>.posegraph / <name>.data を
         # 作るが、/route/catalog は .json しか拾わないため一覧は汚れない。
@@ -455,6 +460,7 @@ class SlamControl(Node):
         # 読み込んだ地図の instance_id を継承する側で別途扱う。
         self._instance_id = self._new_instance_id()
         self._venue_dirty = False   # 1b-6 SG-B6: まっさらな地図。未保存の中身は無い
+        self._venue_loaded = False   # 再起動でグラフは空。読み直し直すまで未読込
         self._publish_venue_status()
         if not self._lock.acquire(blocking=False):
             self._slam_ready = was_ready   # 次周期でやり直す
@@ -539,6 +545,7 @@ class SlamControl(Node):
             err = self._apply_mapping(not self._mapping_active)
             if err is None and self._mapping_active:
                 self._venue_dirty = True   # 1b-6 SG-B6: 画面から地図作成を始めた＝未保存
+                self._venue_loaded = False   # 作成中は読み込んだ地図ではない
         return self._finish(response, err,
                             f'地図作成を{"開始" if self._mapping_active else "停止"}しました')
 
@@ -550,6 +557,7 @@ class SlamControl(Node):
             err = self._apply_mapping(request.data)
             if err is None and self._mapping_active:
                 self._venue_dirty = True   # 1b-6 SG-B6: 画面から地図作成を始めた＝未保存
+                self._venue_loaded = False   # 作成中は読み込んだ地図ではない
         return self._finish(response, err,
                             f'地図作成を{"開始" if self._mapping_active else "停止"}しました')
 
@@ -647,7 +655,7 @@ class SlamControl(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.slot = 'VENUE'
         msg.session_id = 'venue'
-        msg.mode = 'MAPPING' if self._mapping_active else 'LOCALIZING'
+        msg.mode = venue_session_mode(self._mapping_active, self._venue_loaded)
         msg.dirty = self._venue_dirty
         msg.instance_id = self._instance_id
         self._pub_venue_status.publish(msg)
@@ -727,6 +735,7 @@ class SlamControl(Node):
                 result = self._handle_map_reload(response, base, request)
                 if result.success:
                     self._venue_dirty = False   # 1b-6 SG-B6: 保存済みを読み直した
+                    self._venue_loaded = True
                     if map_iid:
                         self._instance_id = map_iid
                     self._publish_venue_status()
@@ -974,6 +983,8 @@ class SlamControl(Node):
         # kill の前に立てる。kill 直後に _check_slam_restart が「クラッシュした」と
         # 誤認するのを防ぐ（この関数は self._lock を持って呼ばれている）。
         self._reload_in_progress = True
+        # 作り直すので、いま載っている会場地図は失われる（成功時に呼び出し側が立て直す）。
+        self._venue_loaded = False
         # O-e3: kill の前に true（_reload_in_progress と同じ区間）。
         self._sync_estimator_restarting()
         try:
@@ -1050,6 +1061,7 @@ class SlamControl(Node):
             self._open_route_base = ''   # 前の経路の地図への書き足し保存を向けない
             self._instance_id = self._new_instance_id()
             self._venue_dirty = False
+            self._venue_loaded = False
             self._publish_venue_status()
         finally:
             self._reload_in_progress = False
@@ -1083,6 +1095,7 @@ class SlamControl(Node):
             # _check_slam_restart がこの値を見て停止状態を入れ直す。
             self._set_active(False)
             self._venue_dirty = False   # 1b-6 SG-B6: 捨てた＝未保存は残らない
+            self._venue_loaded = False
             # _handle_map_reload と違い、ここは respawn を待たない。再起動の検知と
             # モード再適用は _check_slam_restart() に任せる（従来どおり即返す）。
             self._kill_slam_toolbox()
