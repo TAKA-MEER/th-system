@@ -490,6 +490,9 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_dirty_node
     test/test_venue_dirty_node.py
     TIMEOUT 120)
+  ament_add_pytest_test(test_venue_loaded_node
+    test/test_venue_loaded_node.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_params_audit_node
     test/test_params_audit_node.py
     TIMEOUT 120)

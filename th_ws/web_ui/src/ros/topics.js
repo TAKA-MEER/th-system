@@ -19,6 +19,10 @@ export const TOPICS = {
   // TOPICS.FAULT_HISTORY が undefined のまま購読が張られず、実機で履歴が 1 件も
   // 届かなかった。2026-10-13）。
   FAULT_HISTORY: '/system/fault_history',
+  // 地図の読み込み状態（slam_control。slot:VENUE の mode が MAPPING / LOCALIZING /
+  // UNLOADED）。RELIABLE＋TRANSIENT_LOCAL・depth 1。**TOPICS に置くこと**（購読が
+  // undefined にならないよう topics-defined.test.js で縛る）。S-21 の「会場地図を開いた」の正本。
+  MAP_SESSION_STATUS: '/map_session/status',
   // WP-UI-03 (DetailedDesign-wp3.md §3.1): the two topics useJogLease
   // publishes. /ui/jog_lease carries this client's id (not a /system/trigger
   // call -- a synchronous rosbridge round-trip 5x/s would stall on WiFi
@@ -128,6 +132,7 @@ export const MSG_TYPES = {
   BOOL: 'std_msgs/Bool',
   FAULT_STATUS: 'th_system_msgs/FaultStatus',
   FAULT_HISTORY: 'th_system_msgs/FaultHistory',
+  MAP_SESSION_STATUS: 'th_system_msgs/MapSessionStatus',
   // WP-UI-03: geometry_msgs/Twist (roslib shorthand "geometry_msgs/Twist")
   // and std_msgs/String are both built into roslib, no custom message.
   TWIST: 'geometry_msgs/Twist',

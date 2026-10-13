@@ -65,6 +65,7 @@ class TestVenueDirty(unittest.TestCase):
             SetBool, '/slam_toolbox/set_localization_mode', self._ok)
         self.pub_state = self.node.create_publisher(SystemState, '/system/state', _LATCH)
         self.dirty = None
+        self.mode = None
         self.node.create_subscription(
             MapSessionStatus, '/map_session/status', self._on_status, _LATCH)
         self.cli = self.node.create_client(SetBool, '/slam_control/set_mapping')
@@ -79,6 +80,7 @@ class TestVenueDirty(unittest.TestCase):
     def _on_status(self, msg):
         if msg.slot == 'VENUE':
             self.dirty = bool(msg.dirty)
+            self.mode = str(msg.mode)
 
     def tearDown(self):
         self.node.destroy_node()
@@ -117,12 +119,15 @@ class TestVenueDirty(unittest.TestCase):
 
     def test_a_fresh_map_is_not_dirty(self):
         self.assertTrue(self._wait_dirty(False), f'dirty={self.dirty}')
+        # 何も開いていない起動直後は UNLOADED（LOCALIZING は「会場地図を開いた」の意味）
+        self.assertEqual(self.mode, 'UNLOADED')
 
     def test_b_starting_mapping_makes_it_dirty_and_stays(self):
         self.assertTrue(self._wait_dirty(False))
         res = self._set_mapping(True)
         self.assertTrue(res.success, res.message)
         self.assertTrue(self._wait_dirty(True), f'dirty={self.dirty}')
+        self.assertEqual(self.mode, 'MAPPING')
         # 止めても保存していないあいだは未保存のまま。
         res = self._set_mapping(False)
         self.assertTrue(res.success, res.message)

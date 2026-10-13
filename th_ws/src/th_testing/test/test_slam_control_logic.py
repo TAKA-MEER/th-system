@@ -938,3 +938,13 @@ def test_open_session_error_reset_is_route_only():
     """reset は ROUTE だけ（VENUE の地図は教示の開始で捨てない）。"""
     assert open_session_error('ROUTE', 'reset', 'teach') is None
     assert open_session_error('VENUE', 'reset', 'venue') is not None
+
+
+def test_venue_session_mode_three_values():
+    """/map_session/status の mode: 作成中 MAPPING / 読込済み LOCALIZING / それ以外 UNLOADED。"""
+    sys.path.insert(0, _CONF_PKG + '/..')
+    from th_config_manager.slam_control_logic import venue_session_mode
+    assert venue_session_mode(True, False) == 'MAPPING'
+    assert venue_session_mode(True, True) == 'MAPPING'
+    assert venue_session_mode(False, True) == 'LOCALIZING'
+    assert venue_session_mode(False, False) == 'UNLOADED'

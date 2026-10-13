@@ -484,6 +484,8 @@ export const S21_PREP_TITLE = '準備 ／ (a) ピンを選ぶ'
 export const S21_NOW_AT_HOME = 'いま待機場所にいる'
 // brief-onsite-fix E: 保存した会場地図（slot:VENUE）を当日に開き直すボタン。
 export const S21_OPEN_VENUE_MAP = '保存した会場地図を開く'
+// 機体が会場地図を読み込み済みと伝えているとき（画面を作り直した後など。押さなくてよい）。
+export const S21_VENUE_ALREADY_OPEN = '会場地図は開いています（開き直す必要はありません）'
 export const S21_OPEN_VENUE_DONE = '会場地図を開きました'
 // 失敗時に message が空で返ることがある（空の黄色い箱だけが出るのを防ぐ）。
 export const S21_OPEN_VENUE_FAIL = '会場地図を開けませんでした'
