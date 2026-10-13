@@ -813,6 +813,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_nav_blocked_hold_stale_node
     test/test_venue_nav_blocked_hold_stale_node.py
     TIMEOUT 200)
+  # 走行中に経路の先が塞がれたら止まって BLOCKED（Spec-onsite §6.3。launch_testing）
+  ament_add_pytest_test(test_venue_nav_proactive_block_node
+    test/test_venue_nav_proactive_block_node.py
+    TIMEOUT 400)
   # 再開のときも走り出す前に経路の先を確認する（Spec-onsite §6.3。launch_testing）
   ament_add_pytest_test(test_venue_nav_resume_check_node
     test/test_venue_nav_resume_check_node.py
