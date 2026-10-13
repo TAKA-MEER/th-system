@@ -889,6 +889,121 @@ class TestOpcheckRunnerNode(unittest.TestCase):
             [(s.item, s.result, s.detail) for s in self._status]
         self._publish_effect('record_result', {'item': 'MOTOR', 'result': 'NG'})
 
+    # ════════════════════════════════════════════════════════
+    # t〜w. 判定の根拠（basis_json）とログ行（2026-10-13）
+    # ════════════════════════════════════════════════════════
+    # 実機の生スキャン: 720 ビーム・angle_min=-3.124 rad・刻み 0.5 度。正常でも
+    # 約 -32 度に無効（inf）が 8 度連続する。QoS は実機の /scan と同じ BEST_EFFORT。
+    def _publish_real_scan(self, gap_deg: float):
+        msg = LaserScan()
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.header.frame_id = 'laser_link'
+        msg.angle_min = -3.124
+        msg.angle_increment = math.radians(0.5)
+        msg.angle_max = msg.angle_min + 719 * msg.angle_increment
+        msg.range_min = 0.15
+        msg.range_max = 12.0
+        msg.ranges = [4.0] * 720
+        start = 295  # 約 -32 度
+        for i in range(start, start + int(round(gap_deg / 0.5))):
+            msg.ranges[i] = float('inf')
+        self.pub_scan.publish(msg)
+
+    def _drive_lidar(self, gap_deg: float, timeout: float = 4.0):
+        """LIDAR 項目を開始して実機形のスキャンを流し、最終判定の CheckStatus を返す。"""
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('LIDAR')
+        assert res.started, res.message
+        self._status.clear()
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self._publish_real_scan(gap_deg)
+            self._spin(0.1)
+            finals = [st for st in self._status
+                      if st.item == 'LIDAR' and st.result in ('OK', 'NG', 'WARN')]
+            if finals:
+                return finals[-1]
+        raise AssertionError(
+            f'LIDAR の最終判定が出ない: {[(s.item, s.result) for s in self._status]}')
+
+    @staticmethod
+    def _basis(st):
+        return {b['key']: b for b in json.loads(st.basis_json)}
+
+    def test_t_lidar_real_scan_8deg_is_ok_with_basis(self, proc_output):
+        """正常でも 8 度の無効帯がある実機形のスキャンで OK になり、根拠とログ行が出る。"""
+        st = self._drive_lidar(8.0)
+        assert (st.result, st.detail) == ('OK', ''), (st.result, st.detail)
+        by = self._basis(st)
+        assert by['coverage_gap_deg']['value'] == pytest.approx(8.0, abs=0.05)
+        assert by['coverage_gap_deg']['threshold'] == 20.0
+        assert by['coverage_gap_deg']['ok'] is True
+        assert by['scan_period_s']['value'] is not None  # 2 枚目で周期を測ってから確定
+        assert by['scan_period_s']['value'] < by['scan_period_s']['threshold']
+        proc_output.assertWaitFor(
+            expected_output='LIDAR 判定: OK', timeout=3, stream='stderr')
+        proc_output.assertWaitFor(
+            expected_output='"key":"coverage_gap_deg","value":8.0', timeout=3, stream='stderr')
+        self._publish_effect('record_result', {'item': 'LIDAR', 'result': 'OK'})
+
+    def test_u_lidar_real_scan_25deg_is_ng_and_only_gap_highlighted(self, proc_output):
+        st = self._drive_lidar(25.0)
+        assert (st.result, st.detail) == ('NG', 'coverage_gap'), (st.result, st.detail)
+        by = self._basis(st)
+        assert by['coverage_gap_deg']['value'] == pytest.approx(25.0, abs=0.05)
+        assert [k for k, b in by.items() if not b['ok']] == ['coverage_gap_deg']
+        proc_output.assertWaitFor(
+            expected_output='LIDAR 判定: NG (coverage_gap)', timeout=3, stream='stderr')
+        proc_output.assertWaitFor(
+            expected_output='"key":"coverage_gap_deg","value":25.0', timeout=3, stream='stderr')
+        self._publish_effect('record_result', {'item': 'LIDAR', 'result': 'NG'})
+
+    def test_v_imu_needs_calibration_keeps_calib_state_in_basis(self, proc_output):
+        """校正状態(判定時点の値)が結果に残る。画面から数秒で消える問題の機体側の手当て。"""
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('IMU')
+        assert res.started, res.message
+        self._status.clear()
+        # sys3 gyro3 accel2 mag0 = 0b11_11_10_00
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            self.pub_imu_calib.publish(UInt8(data=0b11111000))
+            msg = Imu()
+            msg.header.stamp = self.node.get_clock().now().to_msg()
+            msg.angular_velocity.z = 0.002
+            self.pub_imu.publish(msg)
+            self._spin(0.05)
+            if any(s.item == 'IMU' and s.result == 'WARN' for s in self._status):
+                break
+        finals = [s for s in self._status if s.item == 'IMU' and s.result == 'WARN']
+        assert finals, [(s.item, s.result, s.detail) for s in self._status]
+        st = finals[-1]
+        assert st.detail == 'needs_calibration'
+        by = self._basis(st)
+        assert by['calib_sys']['value'] == 3 and by['calib_sys']['ok'] is True
+        assert by['calib_accel']['value'] == 2 and by['calib_accel']['ok'] is False
+        assert by['calib_mag']['value'] == 0 and by['calib_mag']['ok'] is False
+        assert by['imu_max_wz']['value'] == pytest.approx(0.002, abs=1e-4)
+        proc_output.assertWaitFor(
+            expected_output='IMU 判定: WARN (needs_calibration)', timeout=3, stream='stderr')
+        proc_output.assertWaitFor(
+            expected_output='"key":"calib_mag","value":0', timeout=3, stream='stderr')
+        self._publish_effect('record_result', {'item': 'IMU', 'result': 'WARN'})
+
+    def test_w_progress_status_has_empty_basis(self):
+        """判定中(UNKNOWN)の CheckStatus は basis_json が空(古い画面と同じ見え方)。"""
+        # IMU は静止観測窓(2 秒)のあいだ UNKNOWN を流し続ける。LIDAR は前の試験の
+        # /scan 受信が残っていると即座に途絶判定になり UNKNOWN を経ないので使わない。
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('IMU')
+        assert res.started, res.message
+        self._status.clear()
+        self._spin(0.5)
+        unknown = [s for s in self._status if s.item == 'IMU' and s.result == 'UNKNOWN']
+        assert unknown, 'UNKNOWN の進捗が出ていない'
+        assert all(s.basis_json == '' for s in unknown)
+        self._publish_effect('record_result', {'item': 'IMU', 'result': 'NG'})
+
 
 if __name__ == '__main__':
     unittest.main()

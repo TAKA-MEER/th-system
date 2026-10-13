@@ -616,6 +616,7 @@ class OpcheckRunner(Node):
         self._scan_alive = True
         self._scan_last_ms = self._now_ms()
         stamp = msg.header.stamp
+        first_scan = self._scan_prev_stamp is None
         if self._scan_prev_stamp is not None:
             dt = (stamp.sec - self._scan_prev_stamp.sec) + \
                  (stamp.nanosec - self._scan_prev_stamp.nanosec) / 1.0e9
@@ -626,7 +627,10 @@ class OpcheckRunner(Node):
         self._scan_angle_min = msg.angle_min
         if msg.angle_increment > 0.0:
             self._scan_angle_inc = msg.angle_increment
-        if self._item == "LIDAR":
+        # 最初の 1 枚では周期が測れない。ここで判定すると「受信周期」の根拠が
+        # 空のまま最終判定が確定してしまう（以後は同じ判定なら出し直さない）ので、
+        # 2 枚目を待つ。1 枚しか来なければ _lidar_tick が途絶として判定する。
+        if self._item == "LIDAR" and not first_scan:
             self._update_lidar_verdict()
 
     def _lidar_tick(self):
