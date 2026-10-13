@@ -42,6 +42,7 @@ import {
 } from '../i18n/screens.js'
 import { autoBrakeLabelKey } from './autoBrake.js'
 import JogConsole from '../parts/JogConsole.jsx'
+import { isInZoneScreen } from '../screens/screenZone.js'
 import ArmedButton from '../parts/ArmedButton.jsx'
 import GuideBanner from './GuideBanner.jsx'
 import FaultHistoryList from '../parts/FaultHistoryList.jsx'
@@ -81,6 +82,7 @@ export default function Windows({
   lastRejectReason, jogOpen, onJogClose, guideKey, onGuideClose,
   saveAsk, onSaveYes, onSaveNo, autoBrake,
   faultRecords = [], w1FaultType = '', historyOpen = false, onHistoryClose,
+  screenId,
 }) {
   const faultActive = !!fault?.active
   // Mutually exclusive: mode can't be both 'ESTOP' and something else at once.
@@ -351,7 +353,7 @@ export default function Windows({
           </span>
           <span className="warn-tx" data-testid="w6-rear-blind">{W6_REAR_BLIND}</span>
         </div>
-        <JogConsole ros={ros} disabled={!jogOpen} keyboard />
+        <JogConsole ros={ros} disabled={!jogOpen} keyboard inZone={isInZoneScreen(screenId)} />
       </div>
     </>
   )

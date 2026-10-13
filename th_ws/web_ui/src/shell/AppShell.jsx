@@ -292,6 +292,7 @@ function AppShellInner({ screenName, screenId, children }) {
       </ConfirmWindowContext.Provider>
       <Windows
         ros={ros}
+        screenId={screenId}
         w1Active={w1Active}
         mode={mode}
         stateName={stateName}
