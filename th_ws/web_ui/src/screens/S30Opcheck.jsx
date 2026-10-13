@@ -52,6 +52,7 @@ import HoldButton from '../parts/HoldButton.jsx'
 import WheelSpeedView from '../parts/WheelSpeedView.jsx'
 import { setCalibGuide, clearCalibGuide } from './calibGuide.js'
 import { checkReasonLabel } from '../i18n/checks.js'
+import { parseBasis } from '../ros/checkBasis.js'
 import { MOTOR_DIRS, parseMotorDone } from '../ros/motorDirs.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
 import { OP_LABELS } from '../i18n/states.js'
@@ -64,6 +65,8 @@ import {
   S30_STATUS_DETAIL_TITLE, S30_STATUS_WAITING,
   S30_IMU_CALIB_TITLE, S30_IMU_CALIB_LABELS, S30_LIDAR_VIEW_TITLE, S30_LIDAR_NO_SCAN,
   S30_LIDAR_MASK_UNKNOWN,
+  S30_BASIS_TITLE, S30_BASIS_VALUE, S30_BASIS_THRESHOLD, S30_BASIS_LABELS,
+  s30BasisValueText, s30BasisThresholdText,
 } from '../i18n/screens.js'
 import { WIN_RESUME_YES, WIN_RESUME_NO } from '../i18n/states.js'
 
@@ -83,10 +86,36 @@ function useStickyVerdict(status, item) {
   const [verdict, setVerdict] = useState(null)
   useEffect(() => {
     if (status?.item === item && status.result && status.result !== 'UNKNOWN') {
-      setVerdict({ result: status.result, detail: status.detail, next_screen: status.next_screen })
+      setVerdict({ result: status.result, detail: status.detail, next_screen: status.next_screen, basis: parseBasis(status.basis_json) })
     }
   }, [status, item])
   return verdict
+}
+
+// 判定の根拠（測った値と基準）。基準を満たさなかった項目（ok:false）は判定と同じトーンの
+// pill で強調する。根拠の無い判定（古い機体・MOTOR など）は何も出さない。
+function BasisList({ basis, tone }) {
+  if (!basis || basis.length === 0) return null
+  return (
+    <div className="s30-basis" data-testid="s30-basis">
+      <h4>{S30_BASIS_TITLE}</h4>
+      <table className="s30-basis-table">
+        <thead>
+          <tr><th /><th>{S30_BASIS_VALUE}</th><th>{S30_BASIS_THRESHOLD}</th></tr>
+        </thead>
+        <tbody>
+          {basis.map((b) => (
+            <tr key={b.key} className={b.ok ? '' : 'bad'} data-testid={`s30-basis-${b.key}`}
+              data-ok={b.ok ? 'true' : 'false'}>
+              <td>{S30_BASIS_LABELS[b.key] ?? b.key}</td>
+              <td>{b.ok ? s30BasisValueText(b) : <span className={`pill ${tone || 'ng'}`}>{s30BasisValueText(b)}</span>}</td>
+              <td>{s30BasisThresholdText(b)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 function VerdictCard({ item, verdict, disabledAll, onGotoCalib }) {
@@ -97,6 +126,7 @@ function VerdictCard({ item, verdict, disabledAll, onGotoCalib }) {
         <span className={`pill ${S30_RESULT_TONE[verdict.result] ?? ''}`}>{resultLabel(verdict.result)}</span>
         {verdict.detail && <span className="note">{checkReasonLabel(item, verdict.detail)}</span>}
       </div>
+      <BasisList basis={verdict.basis} tone={S30_RESULT_TONE[verdict.result]} />
       {showCalib && (
         <button type="button" className="btn wide" disabled={disabledAll}
           data-testid="s30-goto-calib" onClick={() => onGotoCalib(item, verdict)}>
@@ -311,7 +341,7 @@ export default function S30Opcheck() {
   useEffect(() => {
     if (status === initialStatusRef.current) return // 開いた時点で既にある値は今回の判定ではない
     if (status?.item && status.result && status.result !== 'UNKNOWN') {
-      setHeld({ item: status.item, result: status.result, detail: status.detail, next_screen: status.next_screen })
+      setHeld({ item: status.item, result: status.result, detail: status.detail, next_screen: status.next_screen, basis: parseBasis(status.basis_json) })
     }
   }, [status])
 

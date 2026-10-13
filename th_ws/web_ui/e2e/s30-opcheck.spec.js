@@ -329,10 +329,15 @@ test('LIDAR: マスクを取得できないときは扇を出さず、取得で�
 // 実機と同じ順序: 判定（/opcheck/status の最終）が先に届き、その後 state が
 // RUNNING_CHECK -> LIST へ変わる（state_manager は effect を先、state を後に publish）。
 // 判定の後に opcheck_runner は同じ項目の UNKNOWN を 100ms ごとに流し続ける。
-async function finishRun(page, item, result, detail, nextScreen = '') {
+async function finishRun(page, item, result, detail, nextScreen = '', basis = null) {
   await page.evaluate(() => window.__thSetTestState({ state: 'RUNNING_CHECK' }))
   await page.evaluate((v) => window.__thSetTestOpcheckStatus({ item: v.item, result: 'UNKNOWN', detail: '', next_screen: '' }), { item })
-  await page.evaluate((v) => window.__thSetTestOpcheckStatus({ item: v.item, result: v.result, detail: v.detail, next_screen: v.nextScreen }), { item, result, detail, nextScreen })
+  // basis は機体が最終判定にだけ載せる basis_json（JSON 文字列）。null は古い機体（フィールド無し）。
+  await page.evaluate((v) => {
+    const msg = { item: v.item, result: v.result, detail: v.detail, next_screen: v.nextScreen }
+    if (v.basis != null) msg.basis_json = JSON.stringify(v.basis)
+    window.__thSetTestOpcheckStatus(msg)
+  }, { item, result, detail, nextScreen, basis })
   await page.evaluate((v) => window.__thSetTestOpcheckStatus({ item: v.item, result: 'UNKNOWN', detail: '', next_screen: '' }), { item })
   await page.evaluate(() => window.__thSetTestState({ state: 'LIST' }))
 }
@@ -379,4 +384,78 @@ test('結果の保持: 別の項目を押すと消える', async ({ page }) => {
   await expect(page.getByTestId('s30-held-result')).toBeVisible()
   await page.getByTestId('s30-item-IMU').click()
   await expect(page.getByTestId('s30-held-result')).toHaveCount(0)
+})
+
+// --- 判定の根拠（Spec-webui §3.12「判定の根拠」/ 2026-10-13 決定）---
+// 機体（opcheck_runner）が最終判定の CheckStatus.basis_json に載せる形をそのまま流す。
+const LIDAR_NG_BASIS = [
+  { key: 'coverage_gap_deg', value: 25, threshold: 20, unit: 'deg', cmp: 'lt', ok: false },
+  { key: 'scan_period_s', value: 0.1, threshold: 2, unit: 's', cmp: 'le', ok: true },
+  { key: 'blind_offset_deg', value: null, threshold: 5, unit: 'deg', cmp: 'le', ok: true },
+]
+const IMU_WARN_BASIS = [
+  { key: 'imu_bias', value: 0.0004, threshold: 0.2, unit: 'rad/s', cmp: 'le', ok: true },
+  { key: 'calib_sys', value: 3, threshold: 3, unit: '', cmp: 'ge', ok: true },
+  { key: 'calib_gyro', value: 3, threshold: 3, unit: '', cmp: 'ge', ok: true },
+  { key: 'calib_accel', value: 2, threshold: 3, unit: '', cmp: 'ge', ok: false },
+  { key: 'calib_mag', value: 0, threshold: 3, unit: '', cmp: 'ge', ok: false },
+  { key: 'imu_max_wz', value: 0.002, threshold: 10, unit: 'rad/s', cmp: 'le', ok: true },
+]
+
+test('判定の根拠: LiDAR NG は測った値と基準が並び、基準を外れた項目だけ強調され、「戻る」まで残る', async ({ page }) => {
+  await gotoS30(page, { state: { state: 'LIST' } })
+  await finishRun(page, 'LIDAR', 'NG', 'coverage_gap', 'lidar_calib', LIDAR_NG_BASIS)
+  const panel = page.getByTestId('s30-held-result')
+  await expect(panel).toBeVisible()
+  const gap = panel.getByTestId('s30-basis-coverage_gap_deg')
+  await expect(gap).toContainText('無効帯の最大幅')
+  await expect(gap).toContainText('25°')
+  await expect(gap).toContainText('20° 未満')
+  await expect(panel.getByTestId('s30-basis-scan_period_s')).toContainText('0.1 秒')
+  await expect(panel.getByTestId('s30-basis-scan_period_s')).toContainText('2 秒以内')
+  await expect(panel.getByTestId('s30-basis-blind_offset_deg')).toContainText('測れず')
+  // 強調は基準を外れた項目だけ（判定と同じ NG のトーンの pill）
+  await expect(gap).toHaveAttribute('data-ok', 'false')
+  await expect(gap.locator('.pill.ng')).toHaveCount(1)
+  await expect(panel.locator('tr[data-ok="false"]')).toHaveCount(1)
+  await expect(panel.locator('[data-testid="s30-basis"] .pill')).toHaveCount(1)
+  // 判定の後に UNKNOWN が流れ続けても、時間が経っても残る
+  await page.waitForTimeout(500)
+  await expect(gap).toBeVisible()
+  await page.getByTestId('s30-held-back').click()
+  await expect(panel).toHaveCount(0)
+})
+
+test('判定の根拠: IMU WARN は校正状態(判定時点の値)が残り、足りない校正だけ強調される', async ({ page }) => {
+  await gotoS30(page, { state: { state: 'LIST' } })
+  await finishRun(page, 'IMU', 'WARN', 'needs_calibration', 'imu_calib', IMU_WARN_BASIS)
+  const panel = page.getByTestId('s30-held-result')
+  await expect(panel.getByTestId('s30-basis-calib_sys')).toContainText('3')
+  await expect(panel.getByTestId('s30-basis-calib_mag')).toContainText('校正 mag')
+  await expect(panel.getByTestId('s30-basis-calib_mag')).toContainText('3 以上')
+  await expect(panel.getByTestId('s30-basis-imu_bias')).toContainText('0.000 rad/s')
+  const bad = panel.locator('tr[data-ok="false"]')
+  await expect(bad).toHaveCount(2) // accel と mag だけ
+  await expect(panel.getByTestId('s30-basis-calib_accel').locator('.pill.warn')).toHaveCount(1)
+  await expect(panel.getByTestId('s30-basis-calib_sys').locator('.pill')).toHaveCount(0)
+  await expect(panel.getByTestId('s30-goto-calib')).toBeVisible()
+})
+
+test('判定の根拠: 基準を満たしていれば強調は出ない', async ({ page }) => {
+  await gotoS30(page, { state: { state: 'LIST' } })
+  await finishRun(page, 'LIDAR', 'OK', '', '', [
+    { key: 'coverage_gap_deg', value: 7.5, threshold: 20, unit: 'deg', cmp: 'lt', ok: true },
+  ])
+  const panel = page.getByTestId('s30-held-result')
+  await expect(panel.getByTestId('s30-basis-coverage_gap_deg')).toContainText('7.5°')
+  await expect(panel.locator('tr[data-ok="false"]')).toHaveCount(0)
+})
+
+test('判定の根拠: 根拠の無い機体(basis_json なし)は従来どおり判定と理由だけ出る', async ({ page }) => {
+  await gotoS30(page, { state: { state: 'LIST' } })
+  await finishRun(page, 'LIDAR', 'NG', 'blind_mismatch', 'lidar_calib')
+  const panel = page.getByTestId('s30-held-result')
+  await expect(panel).toBeVisible()
+  await expect(panel.getByTestId('s30-basis')).toHaveCount(0)
+  await expect(panel.locator('.pill')).toHaveText('NG')
 })
