@@ -1,0 +1,34 @@
+# rplidar.service の新しい版（USB 抜き差しから自動で復帰する。Spec-safety §3.5.6）。
+# /etc/systemd/system/rplidar.service としてラズパイに配置する。
+#
+# 変更点は ExecStart だけ: rplidar_node を直接起動する代わりに、見張り付きの
+# rpi_rplidar_run.sh 経由で起動する。スクリプトが by-id のリンクの変化（消える・指す先が
+# 変わる・作り直される）を 1 秒ごとに見て、変わったら rplidar_node を止めて非ゼロで
+# 終了する → 下の Restart=always が 5 秒後に立て直す（挿し直しから約 10 秒以内に /scan が戻る）。
+# 理由: 従来の rplidar_node は抜く前のデバイスを握ったまま終了もしなかった（実機 2026-10-13）。
+#
+# 元の ExecStart（戻すときはこの行に差し替える。docs/setup.md §6-1 と同じ）:
+#   ExecStart=/bin/bash -lc "source /opt/ros/humble/setup.bash && source /home/mirs2602/ros2_ws/install/setup.bash && exec ros2 run rplidar_ros rplidar_node --ros-args -p serial_port:=/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_0b443775f827c8419a0592b44475a0a2-if00-port0 -p serial_baudrate:=256000 -p frame_id:=laser_link -p angle_compensate:=true -p scan_mode:=Standard"
+#
+# 導入手順は docs/network.md「ラズパイ: rplidar の自動復帰の導入」参照。
+# 先に rpi_rplidar_run.sh を /home/mirs2602/ へ置き、実行権限を付けること。
+#
+# 注意: Environment= の FASTRTPS_DEFAULT_PROFILES_FILE は実機の現行ユニットに合わせた値。
+# 導入前に `systemctl cat rplidar` で現行ユニットと見比べ、違う行があれば現行に合わせる。
+[Unit]
+Description=RPLIDAR S1 /scan publisher (TH system, frame_id=laser_link, USB 抜き差しから自動復帰)
+After=network.target time-sync.target
+
+[Service]
+Type=simple
+User=mirs2602
+Environment=ROS_DOMAIN_ID=10
+Environment=FASTRTPS_DEFAULT_PROFILES_FILE=/home/mirs2602/fastdds_peers.xml
+# 子（ros2 run の子まで）はスクリプトがプロセスグループで止める。念のため systemd 側も
+# cgroup 全体を止める（既定）。
+ExecStart=/bin/bash /home/mirs2602/rpi_rplidar_run.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
