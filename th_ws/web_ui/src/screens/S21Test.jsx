@@ -29,6 +29,8 @@ import { usePersonStatus } from '../ros/usePersonStatus.js'
 import { useScan } from '../ros/useScan.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { useHomeDeclared } from '../ros/useHomeDeclared.js'
+import { useMapSessionStatus } from '../ros/useMapSessionStatus.js'
+import { resolveMapOpened } from '../ros/mapSessionState.js'
 import { useWaitClearStatus } from '../ros/useWaitClearStatus.js'
 import { useOnsiteMapView } from '../ros/useOnsiteMapView.js'
 import { useOnsiteCostmap } from '../ros/useCostmap.js'
@@ -64,7 +66,7 @@ import {
   S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
   S21_NEXT_DECLARE_HOME, S21_NEXT_OPEN_VENUE, S21_NEXT_PICK_DEST,
   S21_NEXT_SUMMON, S21_NEXT_WORK,
-  S21_NEXT_DEST_TITLE, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_HINT, S21_OPEN_VENUE_MAP,
+  S21_NEXT_DEST_TITLE, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_HINT, S21_VENUE_ALREADY_OPEN, S21_OPEN_VENUE_MAP,
   S21_PICK_PANEL_HINT, S21_PIN_MOVE, S21_PINS_EMPTY,
   S21_OPEN_VENUE_FAIL, S21_PREP_TITLE, S21_SELECT_HINT, S21_STEP_DEST, S21_STEP_HOME, S21_STEP_MOVE,
   S21_STEP_OPEN, S21_STEP_WORK, S21_SUBTAB_ATPANEL, S21_SUBTAB_DEST,
@@ -146,6 +148,7 @@ export default function S21Test({ onExit }) {
   const costmapData = useOnsiteCostmap(ros)
   const plannedPath = usePlannedPath(ros)
   const homeDeclared = useHomeDeclared(ros)
+  const mapSession = useMapSessionStatus(ros)
   const wait = useWaitClearStatus(ros)
   const { twoPoint, selectPin, declareHome, openVenueMap } = useOnsiteService()
   const jogPanel = useJogPanel()
@@ -351,11 +354,12 @@ export default function S21Test({ onExit }) {
     ? (ONSITE_BADGE_TEXT[reasons.destSummonHere] ?? reasons.destSummonHere) : null
 
   // ── 手順バー（UX-1）と「次にやること」ボタン ──
-  // 段 1「会場地図を開く」だけは /map_session/open の応答 success を画面ローカル
-  // state（venueMsg.ok）で保持する（ROS 側に状態が無いため。UX-3 の報告対象）。
+  // 段 1「会場地図を開く」は機体の /map_session/status（slot:VENUE が LOCALIZING）から
+  // 導く（Spec-webui §3.11。画面の作り直し・再読み込み・手押し復帰でも消えない）。
+  // 画面ローカルの応答（venueMsg.ok）は、機体の値が届く前だけ使う。
   // brief-onsite-ux2 F-6: この mapOpened を地図タブの表示ゲートにも使う
   // （「会場地図を開く」まで地図を出さない）。
-  const mapOpened = venueMsg?.ok === true
+  const mapOpened = resolveMapOpened(mapSession, venueMsg?.ok)
   const { steps, currentIndex } = testSteps({
     homeDeclared,
     mapOpened,
@@ -646,7 +650,10 @@ export default function S21Test({ onExit }) {
                     <span>{S21_HOME_DECLARE}</span>
                   </button>
                 </div>
-                {venueMsg && (
+                {mapOpened && !venueMsg?.ok && (
+                  <div className="note mb" data-testid="s21-venue-already-open">{S21_VENUE_ALREADY_OPEN}</div>
+                )}
+                {venueMsg && (!venueMsg.ok || mapOpened) && (
                   <div className={`note mb${venueMsg.ok ? '' : ' err'}`} data-testid="s21-open-venue-msg">
                     {venueMsg.text || (venueMsg.ok ? S21_OPEN_VENUE_DONE : S21_OPEN_VENUE_FAIL)}
                   </div>

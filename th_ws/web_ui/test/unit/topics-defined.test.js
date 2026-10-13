@@ -30,3 +30,17 @@ test('useFaultHistory が使う購読は、名前・型が定義済みで張ら�
   assert.equal(made[0].messageType, 'th_system_msgs/FaultHistory')
   assert.equal(made[0].queue_length, 1)
 })
+
+test('地図の読み込み状態は TOPICS／MSG_TYPES にあり、購読は名前・型が定義済みで張られる', async () => {
+  const { subscribeMapSession } = await import('../../src/ros/mapSessionState.js')
+  assert.equal(TOPICS.MAP_SESSION_STATUS, '/map_session/status')
+  assert.equal(SERVICES.MAP_SESSION_STATUS, undefined)
+  assert.equal(MSG_TYPES.MAP_SESSION_STATUS, 'th_system_msgs/MapSessionStatus')
+  const made = []
+  class FakeTopic { constructor(o) { made.push(o) } subscribe() {} unsubscribe() {} }
+  subscribeMapSession({ Topic: FakeTopic }, {}, TOPICS.MAP_SESSION_STATUS, MSG_TYPES.MAP_SESSION_STATUS, () => {})
+  assert.equal(made.length, 1)
+  assert.equal(made[0].name, '/map_session/status')
+  assert.equal(made[0].messageType, 'th_system_msgs/MapSessionStatus')
+  assert.equal(made[0].queue_length, 1)
+})
