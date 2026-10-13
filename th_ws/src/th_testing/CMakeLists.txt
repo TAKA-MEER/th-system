@@ -821,6 +821,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_nav_blocked_hold_stale_node
     test/test_venue_nav_blocked_hold_stale_node.py
     TIMEOUT 200)
+  # 衝突で連続して打ち切られたら走り直しの間隔を延ばし、TF 停滞に数えない
+  # （Spec-onsite §6.3。launch_testing）
+  ament_add_pytest_test(test_venue_nav_collision_backoff_node
+    test/test_venue_nav_collision_backoff_node.py
+    TIMEOUT 300)
   # 走行中に経路の先が塞がれたら止まって BLOCKED（Spec-onsite §6.3。launch_testing）
   ament_add_pytest_test(test_venue_nav_proactive_block_node
     test/test_venue_nav_proactive_block_node.py
