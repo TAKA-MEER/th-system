@@ -15,6 +15,7 @@ install(PROGRAMS
   scripts/connectivity_checker.py
   scripts/localization_health.py
   scripts/fault_recorder.py
+  scripts/speaker_announcer.py
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})

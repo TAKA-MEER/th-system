@@ -79,6 +79,12 @@ export const TOPICS = {
   // 1b-6 (SG-B2): 機体側から WebUI 宛ての案内 (StateEffect。state_manager が
   // publish。names.json の endpoints にある)。
   SYSTEM_EFFECT: '/system/effect',
+  // Spec-safety §11: 機体スピーカーの報知判定（speaker_announcer が
+  // std_msgs/String の JSON で 2Hz・transient_local 配信）とラズパイの再生状態
+  // （1Hz・transient_local）。**TOPICS に置くこと**（SERVICES に置くと購読が
+  // undefined になる。2026-10-13 の実機の再発防止。names.json の endpoints にある）。
+  SPEAKER_CUE: '/speaker/cue',
+  SPEAKER_STATUS: '/speaker/status',
 }
 
 export const SERVICES = {

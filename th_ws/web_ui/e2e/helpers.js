@@ -388,3 +388,24 @@ export async function gotoScreenWithParams(page, screen, state, stubs) {
 export async function paramsSetCalls(page) {
   return page.evaluate(() => window.__thParamsSetCalls ?? [])
 }
+
+// Spec-safety §11: S-50 の機体スピーカー区画を /speaker/cue・/speaker/status の
+// 種付きで開く。useSpeaker.js は window.__thTestSpeaker を初期値にし、
+// window.__thSetTestSpeaker で表示を更新、送信は window.__thSpeakerParamCalls に
+// 記録する（useDevMode.js と同じ流儀）。
+export async function gotoScreenWithSpeaker(page, screen, state, speaker) {
+  await page.addInitScript(({ s, scr, sp }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    window.__thTestSpeaker = sp
+  }, { s: state, scr: screen, sp: speaker })
+  await page.goto('/')
+}
+
+export async function setTestSpeaker(page, value) {
+  await page.evaluate((v) => window.__thSetTestSpeaker(v), value)
+}
+
+export async function speakerParamCalls(page) {
+  return page.evaluate(() => window.__thSpeakerParamCalls ?? [])
+}

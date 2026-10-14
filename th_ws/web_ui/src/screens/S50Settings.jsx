@@ -26,6 +26,7 @@ import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import { blindRangesText } from './calibCore.js'
 import { useDevMode } from '../ros/useDevMode.js'
 import { useFaultHistory } from '../ros/useFaultHistory.js'
+import { useSpeaker } from '../ros/useSpeaker.js'
 import FaultHistoryList from '../parts/FaultHistoryList.jsx'
 import {
   DEV_ITEMS, devIgnoreParam, effectiveItems,
@@ -41,6 +42,10 @@ import {
   S50_SEC_FOLLOW_TAB, S50_SEC_LIDAR_TAB, S50_SEC_SLAM_TAB, S50_SEC_PRESET_TAB,
   S50_SEC_PRESET, S50_PRESET_NOTE, S50_PRESET_SAVE,
   S50_PRESET_REASON_LABEL, S50_PRESET_REASON_NEED, S50_PRESET_NEXT_PREFIX,
+  S50_SEC_SPEAKER_TAB, S50_SEC_SPEAKER, S50_SPEAKER_NOTE,
+  S50_SPEAKER_ON, S50_SPEAKER_OFF, S50_SPEAKER_VOLUME, S50_SPEAKER_TEST,
+  S50_SPEAKER_TEST_SENT, S50_SPEAKER_SEND_FAILED, S50_SPEAKER_NO_REPLY,
+  S50_SPEAKER_PLAYING,
   S50_BLIND_GOTO_CALIB, S50_BLIND_NOTE,
   S50_FONT_TITLE, S50_FONT_NORMAL, S50_FONT_LARGE, S50_FONT_XLARGE,
   S50_DEV_TITLE, S50_DEV_ENABLE, S50_DEV_DISABLE, S50_DEV_NOTE,
@@ -157,6 +162,7 @@ const SECTION_TABS = [
   ['lidar', S50_SEC_LIDAR_TAB],
   ['slam', S50_SEC_SLAM_TAB],
   ['preset', S50_SEC_PRESET_TAB],
+  ['speaker', S50_SEC_SPEAKER_TAB],
 ]
 
 function Section({ title, note, saveKey, status, editable, loading, onSave, children }) {
@@ -339,8 +345,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
     applyFontScale(name)
   }
 
-  // ── 開発モードタブ (WP-DEV-01B) ──
-  // 表示の正本は /system/dev_mode（useDevMode）。localStorage は押した瞬間の
+  // ── 開発モードタブ (WP-DEV-01B) ──  // 表示の正本は /system/dev_mode（useDevMode）。localStorage は押した瞬間の
   // 見た目だけに残す（?dev=1 は据え置き）。トグルはどのモードでも押せる
   // （INIT を抜けるために要るので、一般タブのような停止中の縛りは無い）。
   const { dev: devState, setDevParam } = useDevMode(ros)
@@ -365,6 +370,28 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
     setDevItemsLocal((prev) => ({ ...prev, [item]: next }))
     setDevStatus('')
     setDevParam(devIgnoreParam(item), next).catch(() => setDevStatus(S50_DEV_SEND_FAILED))
+  }
+
+  // ── 機体のスピーカー区画 (Spec-safety §11) ──
+  // 実行中に変えられる（停止中の縛りは無い。開発モードタブと同じ）。
+  // 変えた値は機体に残り再起動後も維持する（ノード側の settings.json）。
+  const { cue: speakerCue, status: speakerStatus, setEnabled, setVolume, testChime } = useSpeaker(ros)
+  const [speakerErr, setSpeakerErr] = useState('')
+  const [speakerTestSent, setSpeakerTestSent] = useState(false)
+  const toggleSpeaker = () => {
+    setSpeakerErr('')
+    setEnabled(!(speakerCue?.enabled ?? false)).catch(() => setSpeakerErr(S50_SPEAKER_SEND_FAILED))
+  }
+  const changeSpeakerVolume = (value) => {
+    setSpeakerErr('')
+    setVolume(value).catch(() => setSpeakerErr(S50_SPEAKER_SEND_FAILED))
+  }
+  const sendSpeakerTest = () => {
+    setSpeakerErr('')
+    setSpeakerTestSent(false)
+    testChime()
+      .then(() => setSpeakerTestSent(true))
+      .catch(() => setSpeakerErr(S50_SPEAKER_SEND_FAILED))
   }
 
   const FONT_OPTIONS = [
@@ -525,6 +552,57 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
                 data-testid="s50-preset-reason"
               />
             </label>
+          </div>
+          )}
+
+          {section === 'speaker' && (
+          <div className="card">
+            <div className="row" style={{ marginBottom: 8 }}>
+              <h3 className="grow" style={{ margin: 0 }}>{S50_SEC_SPEAKER}</h3>
+              <button
+                type="button"
+                className={`btn sm ${(speakerCue?.enabled ?? false) ? 'on' : ''}`}
+                onClick={toggleSpeaker}
+                data-testid="s50-speaker-toggle"
+              >
+                {(speakerCue?.enabled ?? false) ? S50_SPEAKER_ON : S50_SPEAKER_OFF}
+              </button>
+            </div>
+            <p className="note">{S50_SPEAKER_NOTE}</p>
+            <label className="s50-field">
+              <span className="s50-field-label">
+                {S50_SPEAKER_VOLUME} ({speakerCue?.volume ?? '—'})
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={speakerCue?.volume ?? 60}
+                onChange={(e) => changeSpeakerVolume(Number(e.target.value))}
+                data-testid="s50-speaker-volume"
+              />
+            </label>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="btn sm"
+                onClick={sendSpeakerTest}
+                data-testid="s50-speaker-test"
+              >
+                {S50_SPEAKER_TEST}
+              </button>
+            </div>
+            {speakerTestSent && <p className="note" data-testid="s50-speaker-test-sent">{S50_SPEAKER_TEST_SENT}</p>}
+            {speakerErr && <p className="note" data-testid="s50-speaker-err">{speakerErr}</p>}
+            <p data-testid="s50-speaker-state">
+              {speakerCue == null
+                ? S50_LOAD_FAILED
+                : (!speakerCue.rpi_ok
+                  ? S50_SPEAKER_NO_REPLY
+                  : `${S50_SPEAKER_PLAYING}: ${speakerStatus?.cue ?? speakerCue.cue}`
+                    + (speakerStatus?.error ? ` (${speakerStatus.error})` : ''))}
+            </p>
           </div>
           )}
         </div>

@@ -73,6 +73,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | `connectivity_checker` | `th_state` | `scripts/connectivity_checker.py` | 起動時の疎通確認 |
 | **`localization_health`** | **`th_state`** | **`scripts/localization_health.py`** | **自己位置推定の健全性（WP-SAFE-05。`map→odom` の鮮度＋推定ノードの有無）** |
 | **`fault_recorder`** | **`th_state`** | **`scripts/fault_recorder.py`** | **フォルト履歴の記録（Spec-safety.md §3.5.5）。`/safety/active_faults` と `/system/state` を購読し `/system/fault_history` とファイルへ書くだけ。純コアは `th_state/fault_history_core.py`。挙動に影響しない** |
+| **`speaker_announcer`** | **`th_state`** | **`scripts/speaker_announcer.py`** | **機体スピーカーの報知判定（Spec-safety.md §11）。`/system/state` と `/safety/limiter_status` を見て `/speaker/cue`（`std_msgs/String` の JSON）へ 2 Hz。純コアは `th_state/speaker_announce_core.py`。報知は安全装置ではない** |
 | `follow_runner` | `th_transit` | `scripts/follow_runner.py` | `FOLLOW` / `TEACH_FOLLOW` / `PREP` の走行 |
 | `line_runner` | `th_transit` | `scripts/line_runner.py` | `LINE`（後回し） |
 | `leash_runner` | `th_transit` | `scripts/leash_runner.py` | `LEASH`（後回し） |
@@ -435,6 +436,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `/safety/fault_lock` | `std_msgs/Bool` | reliable | 10 Hz |
 | `/safety/limiter_status` | `LimiterStatus` | best_effort, depth 1 | **20 Hz**（heartbeat 兼用） |
 | **`/safety/localization_health`** | **`LocalizationHealth`** | **reliable, depth 1** | **2 Hz（発行者は `localization_health`。WP-SAFE-05。比較周期 `jump_window_ms` に連動。止まったこと自体が異常の合図）** |
+| **`/speaker/cue`** | **`std_msgs/String`（JSON。`cue`（`none`/`drive`/`blocked`/`warning`）／`enabled`／`volume`（0〜100）／`test`（試し鳴らし要求）／`rpi_ok`（再生側の応答）。ラズパイには `th_system_msgs` が無いので `String` の JSON）** | **transient_local, depth 1, reliable** | **2 Hz（発行者は `speaker_announcer`。Spec-safety §11。購読者はラズパイの再生と WebUI）** |
+| **`/speaker/status`** | **`std_msgs/String`（JSON。`cue`（再生中）／`volume`／`error`）** | **transient_local, depth 1, reliable** | **1 Hz（発行者はラズパイの再生。購読者は `speaker_announcer`（応答の有無）と WebUI）** |
 | `/safety/link_quality` | `LinkQuality` | best_effort | 1 Hz |
 | **`/safety/firmware_flags`** | `std_msgs/UInt8` | **transient_local, depth 1** | 変化時＋接続時（[hardware](DetailedDesign-hardware.md) §3.1） |
 | **`/esp32/cmd_alive`** | `std_msgs/Bool` | reliable, depth 10 | ESP32 の `ESTOP_HW` フレームごと（10 Hz）。**ESP32 自身が「速度指令を受け取れている」と報告した値**（flags bit1。bit2 が立つファームのときだけ出す）。発行者は `esp32_bridge`、購読者は `connectivity_checker`（疎通確認の「速度指令の折り返し」。2026-10-04） |
@@ -658,6 +661,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `collision_retry_max_s` | s | (b)。衝突で連続して打ち切られるときの走り直し間隔の上限（Spec-onsite §6.3） |
 | `collision_retry_factor` | — | (b)。同、打ち切りごとに間隔へ掛ける倍率 |
 | `arrival_xy_tol_m` | m | (b)。盤前到着の位置許容（W-13） |
+| **`speaker_enabled`** | — | given。機体スピーカーの入切（Spec-safety §11。`speaker_announcer`） |
+| **`speaker_volume`** | — | given。機体スピーカーの音量（0〜100。既定 60 は暫定。実機で決める。Spec-safety §11。`speaker_announcer`） |
 | `tick_hz` | Hz | (b)。退避待ちゲートの tick レート（W-13） |
 | `match_tol_m` | m | (b)。人物追跡の照合許容距離（W-13） |
 | `target_confidence_min` | — | (b)。人物追跡の対象確信度下限（`state_manager` / `person_tracker_bridge` で同名・同値。W-13） |
