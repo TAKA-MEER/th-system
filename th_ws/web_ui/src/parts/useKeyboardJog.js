@@ -15,8 +15,10 @@
 //     (left turn), d/ArrowRight -> wn=-1 (right turn).
 //   - Simultaneous presses add and clamp to [-1, 1] per axis.
 //   - held = at least one drive key is down; all released -> held=false, cmd={0,0}.
-//   - Never steals keys from an input: when document.activeElement is an
-//     INPUT/TEXTAREA/SELECT (or contentEditable) the event is ignored.
+//   - Never steals keys from text entry: when document.activeElement is a
+//     TEXTAREA/SELECT, contentEditable, or an INPUT whose type takes
+//     characters, the event is ignored. range/checkbox/radio/button etc.
+//     never steal (R-52: the speed slider keeps focus after a tap).
 //   - preventDefault() only for the arrow keys, to stop page scroll.
 //
 // `held` and `cmd` live in ONE state object so a keydown or keyup is a single
@@ -34,9 +36,21 @@ const DRIVE_KEYS = new Set([...Object.keys(VN), ...Object.keys(WN)])
 
 const clamp = (v) => Math.max(-1, Math.min(1, v))
 
-const isTypingTarget = (el) =>
-  el != null &&
-  (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable)
+// Only text-entry controls steal keys. INPUTs without a character type
+// (range/checkbox/radio/button/...) keep keyboard jog working while focused.
+// el.type is "text" when the attribute is missing or unknown, so a bare
+// <input> still counts as typing.
+const TYPING_INPUT_TYPES = new Set([
+  'text', 'number', 'search', 'password', 'email', 'tel', 'url',
+])
+
+const isTypingTarget = (el) => {
+  if (el == null) return false
+  if (el.isContentEditable) return true
+  if (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true
+  if (el.tagName === 'INPUT') return TYPING_INPUT_TYPES.has((el.type || 'text').toLowerCase())
+  return false
+}
 
 const STOP = { held: false, vn: 0, wn: 0 }
 

@@ -3,8 +3,9 @@
 // useJogLease -- a dead keydown handler would leave /cmd_vel_manual_raw silent
 // (mutation 1). Runs on DRIVE_S11 (the drive tab with the stick console, via
 // main.jsx's __thTestScreen); with no input focused, 'w' must publish a forward
-// command and releasing it must send a single zero and then stop. With an
-// <input> focused the same key must be ignored (never steal from text fields).
+// command and releasing it must send a single zero and then stop. Only text
+// entry steals keys: a focused speed slider (input[type=range]) must still
+// drive, while a focused input[type=text] must be ignored.
 import { test, expect } from '@playwright/test'
 import { gotoScreen, jogPublishes } from './helpers.js'
 
@@ -48,11 +49,12 @@ test('releasing the key sends a single zero and stops publishing', async ({ page
   expect(settled.length, 'timers stopped after release').toBe(cmds.length)
 })
 
-test('does not steal keys while an input is focused', async ({ page }) => {
+test('slider focus does not steal keys: w still drives', async ({ page }) => {
   await gotoScreen(page, 'DRIVE_S11', { mode: 'MANUAL' })
   await page.locator('#body .stick svg').waitFor()
 
-  // Focus the speed slider (an <input>); typing keys must not drive.
+  // Focus the speed slider (an <input type="range">); R-52: it keeps focus
+  // after a tap, and keyboard jog must keep working.
   const slider = page.locator('#body .stickBox .slider input')
   await slider.focus()
   await page.keyboard.down('w')
@@ -61,5 +63,48 @@ test('does not steal keys while an input is focused', async ({ page }) => {
   await settle(page, 100)
 
   const cmds = await jogPublishes(page, '/cmd_vel_manual_raw')
-  expect(cmds.length, 'no drive command while typing in an input').toBe(0)
+  expect(cmds.length, 'keyboard hold should publish even with slider focused').toBeGreaterThan(1)
+  const moving = cmds.filter((c) => c.cmd.vx > 0 && c.cmd.wz === 0)
+  expect(moving.length, 'some ticks should be pure forward').toBeGreaterThan(0)
+})
+
+test('slider focus + ArrowUp drives without moving the slider', async ({ page }) => {
+  await gotoScreen(page, 'DRIVE_S11', { mode: 'MANUAL' })
+  await page.locator('#body .stick svg').waitFor()
+
+  const slider = page.locator('#body .stickBox .slider input')
+  await slider.focus()
+  const before = await slider.inputValue()
+  await page.keyboard.down('ArrowUp')
+  await settle(page, 250)
+  await page.keyboard.up('ArrowUp')
+  await settle(page, 100)
+
+  // window keydown preventDefaults arrows before the typing check, so the
+  // focused range must not step.
+  expect(await slider.inputValue(), 'arrow key must not move the slider').toBe(before)
+  const cmds = await jogPublishes(page, '/cmd_vel_manual_raw')
+  const moving = cmds.filter((c) => c.cmd.vx > 0 && c.cmd.wz === 0)
+  expect(moving.length, 'ArrowUp should drive forward').toBeGreaterThan(0)
+})
+
+test('does not steal keys while a text input is focused', async ({ page }) => {
+  await gotoScreen(page, 'DRIVE_S11', { mode: 'MANUAL' })
+  await page.locator('#body .stick svg').waitFor()
+
+  // The screen has no text field; add one temporarily and focus it.
+  await page.evaluate(() => {
+    const el = document.createElement('input')
+    el.type = 'text'
+    el.id = '__thTextProbe'
+    document.getElementById('body').appendChild(el)
+    el.focus()
+  })
+  await page.keyboard.down('w')
+  await settle(page, 250)
+  await page.keyboard.up('w')
+  await settle(page, 100)
+
+  const cmds = await jogPublishes(page, '/cmd_vel_manual_raw')
+  expect(cmds.length, 'no drive command while typing in a text input').toBe(0)
 })
