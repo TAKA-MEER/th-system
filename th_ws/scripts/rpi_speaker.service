@@ -10,6 +10,8 @@
 # 導入前に `systemctl cat rplidar` で現行ユニットと見比べ、違う行があれば現行に合わせる。
 # 音の出し方は既定で PulseAudio（paplay）。ALSA で鳴らすときは ExecStart の
 # `--backend pulse` を `--backend alsa` に変える。
+# 素の python3 では rclpy が import できないため、rplidar.service と同じく
+# bash -lc で /opt/ros/humble/setup.bash を source してから exec する。
 [Unit]
 Description=TH speaker announcer player (Raspberry Pi onboard speaker)
 After=network.target time-sync.target
@@ -20,7 +22,11 @@ Type=simple
 User=mirs2602
 Environment=ROS_DOMAIN_ID=10
 Environment=FASTRTPS_DEFAULT_PROFILES_FILE=/home/mirs2602/fastdds_peers.xml
-ExecStart=/usr/bin/python3 /home/mirs2602/rpi_speaker_play.py --wav-dir /home/mirs2602/speaker_wavs
+# PulseAudio はデスクトップ自動ログインのセッション（uid 1000）で動いている。
+# システムサービスから paplay で届くよう、セッションのソケットを指す。
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
+ExecStart=/bin/bash -lc "source /opt/ros/humble/setup.bash && exec /usr/bin/python3 /home/mirs2602/rpi_speaker_play.py --wav-dir /home/mirs2602/speaker_wavs"
 Restart=always
 RestartSec=5
 

@@ -258,9 +258,11 @@ PC 側の `speaker_announcer`（bringup で起動）が `/speaker/cue`（2 Hz）
    「スピーカー」）で「試しに鳴らす」を押して音が出る。走らせると「再生中: drive」になる。
 4. 戻し方・止め方: `sudo systemctl disable --now rpi_speaker.service`（走行は止まらない。
    報知は安全装置ではないため）。`paplay` で鳴らないときの切り分け:
-   - `pactl info` でサーバに繋がるか（ユーザーセッションの PulseAudio が要る）。
-     繋がらなければユニットの `ExecStart` の `--backend pulse` を `--backend alsa` に変える
+   - PulseAudio はデスクトップ自動ログインのセッション（uid 1000）が前提。
+     自動ログインが無効・セッションが無いと `paplay` は届かない。
+     そのときはユニットの `ExecStart` の `--backend pulse` を `--backend alsa` に変える
      （`aplay`＋`amixer -c 0 set Headphones N%` で鳴らす）。
+     `pactl info` でサーバに繋がるかも見られる（ユーザーセッションの PulseAudio が要る）。
    - それでも鳴らなければ 3.5 mm 端子の挿し・`alsamixer` のミュート（`MM`）を見る。
 
 ---
