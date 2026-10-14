@@ -255,7 +255,11 @@ def main(args=None):
     finally:
         player.stop()
         node.destroy_node()
-        rclpy.shutdown()
+        # SIGINT では rclpy 側のハンドラが先に shutdown している。
+        # 二重に呼ぶと RCLError（rcl_shutdown already called）になるので、
+        # context が生きているときだけ shutdown する。
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
