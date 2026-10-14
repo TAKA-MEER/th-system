@@ -29,20 +29,20 @@ DRIVE_STATES = frozenset({
     ("REPLAY", "RUN"),
     ("CALIB", "S2"),
     ("CALIB", "S4"),
+    # §2.1 の自律系の走行（2026-10-14 の spec 改定で追加）。
+    ("FOLLOW", "RUN"),
+    ("TEACH_FOLLOW", "REC"),
+    ("LINE", "RUN"),
+    ("LEASH", "RUN"),
 })
 
 # run_state（attributes.yaml）を持つが §11 の表に無く鳴らさないもの。
-# spec が正本なのでここでは鳴らさない。§11 の表に足されたらここから移す。
+# 手動走行・教示（手動）は自律系ではないので鳴らさない。
 # test_speaker_announce_core が attributes.yaml と突き合わせて縛る。
 NON_DRIVE_RUN_STATES = frozenset({
-    # 自律だが §11 の表に無い（表に足すかは spec の改定で決める）。
-    ("FOLLOW", "RUN"),
-    ("LINE", "RUN"),
-    ("LEASH", "RUN"),
-    ("TEACH_FOLLOW", "REC"),
-    ("TEACH_MANUAL", "REC"),
     # 手動走行（自律ではない。接近警告だけ鳴る）。
     ("MANUAL", "RUN"),
+    ("TEACH_MANUAL", "REC"),
     # 地図作成中の連れ回し（走行ではない。is_driving も PREP は RETURN だけ）。
     ("PREP", "MAPPING"),
 })

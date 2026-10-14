@@ -63,7 +63,9 @@ def test_drive_align_and_return_match_is_driving_extras():
 def test_spec_table_drive_cases():
     for combo in [('PANEL_NAV', 'NAV'), ('HOME_NAV', 'NAV'), ('SUMMON', 'NAV'),
                   ('PREP', 'RETURN'), ('REPLAY', 'RUN'),
-                  ('CALIB', 'S2'), ('CALIB', 'S4')]:
+                  ('CALIB', 'S2'), ('CALIB', 'S4'),
+                  ('FOLLOW', 'RUN'), ('TEACH_FOLLOW', 'REC'),
+                  ('LINE', 'RUN'), ('LEASH', 'RUN')]:
         assert decide_cue(*combo, False) == CUE_DRIVE, combo
 
 
@@ -77,7 +79,8 @@ def test_stopped_states_are_silent():
                   ('IDLE', 'NONE'), ('INIT', 'CHECK'), ('OPCHECK', 'LIST'),
                   ('ESTOP', 'NONE'), ('CARRY', 'NONE'),
                   ('MANUAL', 'RUN'), ('MANUAL', 'PAUSE'),
-                  ('FOLLOW', 'RUN'), ('FOLLOW', 'PAUSE')]:
+                  ('TEACH_MANUAL', 'REC'),
+                  ('FOLLOW', 'PAUSE')]:
         assert decide_cue(combo[0], combo[1], False) == CUE_NONE, combo
 
 
