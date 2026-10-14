@@ -136,7 +136,7 @@ ping -c3 192.168.5.1
 
 > **シリアルポートを開くと DTR/RTS 自動リセット回路で ESP32 が再起動する。**
 > `pi_serial_relay.py` は `open()` 前に DTR/RTS を明示的に落として開くことで
-> これを避けている（systemd unit の `ExecStartPre=stty ... -hupcl` も参照）。
+> これを避けている（ラッパー `rpi_serial_relay_run.sh` の `stty -hupcl` も参照）。
 > 手元でシリアルモニタ（`pio device monitor` 等）を別途開くと、そのツール自身が
 > DTR/RTS を上げて再起動を誘発しうるので、走行中・`pi_serial_relay` 稼働中は
 > 開かないこと。
