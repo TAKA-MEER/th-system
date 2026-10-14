@@ -151,6 +151,11 @@ RESUME_STATE_UNAVAILABLE_MODES: Set[str] = {"PREP"}
 # _validate_combos が $prev_mode を展開するとき、ガードごとに許す押下前モード。
 # 未知のガード（C-11 の hw_released_and_no_critical 等）は展開せず検査を省く
 # （$prev_state と組のときはラッチ済みの実在組合せに戻るだけなので常に安全）。
+# _validate_combos が $prev_mode を展開するとき、ガードごとに許す押下前モード。
+# 未知のガード（C-11 の hw_released_and_no_critical 等）は展開せず検査を省く
+# （$prev_state と組のときはラッチ済みの実在組合せに戻るだけなので常に安全）。
+# C-11 fan-out（SM-3.1.1-14）の carry_* ガードも同じ表に載せる。
+# carry_resume_prev は IDLE も復帰可能（C-09c-generic と違い IDLE を除かない）。
 ESTOP_PREV_MODES: Dict[str, Set[str]] = {
     "estop_prev_is_init": {"INIT"},
     "estop_prev_is_summon": {"SUMMON"},
@@ -165,6 +170,18 @@ ESTOP_PREV_MODES: Dict[str, Set[str]] = {
     "estop_prev_is_replay_localize": {"REPLAY"},
     "estop_prev_is_blocked": set(ESTOP_RESUME_BLOCKED_MODES),
     "estop_resume_prev": set(MODES) - {"INIT", "IDLE", "ESTOP", "CARRY"},
+    "carry_prev_is_summon": {"SUMMON"},
+    "carry_prev_is_at_panel": {"AT_PANEL"},
+    "carry_prev_is_at_home": {"AT_HOME"},
+    "carry_prev_is_opcheck": {"OPCHECK"},
+    "carry_prev_is_calib": {"CALIB"},
+    "carry_prev_is_prep_return": {"PREP"},
+    "carry_prev_is_prep": {"PREP"},
+    "carry_prev_was_running": set(ESTOP_RESUME_RUN.keys()),
+    "carry_prev_is_follow_confirm": {"FOLLOW"},
+    "carry_prev_is_replay_localize": {"REPLAY"},
+    "carry_prev_is_blocked": set(ESTOP_RESUME_BLOCKED_MODES),
+    "carry_resume_prev": set(MODES) - {"ESTOP", "CARRY"},
 }
 
 # DetailedDesign-state.md §3-5 — ui.goto の kind → モード写像。
