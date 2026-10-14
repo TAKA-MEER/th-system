@@ -386,6 +386,17 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # Spec-safety §11: 機体スピーカーの報知判定。/system/state と
+    # /safety/limiter_status を見て /speaker/cue（std_msgs/String の JSON。
+    # ラズパイの再生側が読む）を 2 Hz で出す。報知は安全装置ではない。
+    nodes.append(Node(
+        package='th_state',
+        executable='speaker_announcer.py',
+        name='speaker_announcer',
+        parameters=[os.path.join(GENERATED_DIR, 'speaker_announcer.yaml')],
+        output='screen',
+    ))
+
     # ── 7. twist_mux ──────────────────────────────────────
     # 静的 th_safety/config/twist_mux.yaml は読まない。generated/twist_mux.yaml が
     # 階層構造(locks/topics)を完全に持つ唯一の情報源 (G-3, 二重管理の防止)。

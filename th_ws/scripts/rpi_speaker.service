@@ -1,0 +1,28 @@
+# rpi_speaker.service の雛形（Spec-safety §11）。
+# /etc/systemd/system/rpi_speaker.service としてラズパイに配置する。
+# th_ws/scripts/rplidar.service と同じ形（ROS_DOMAIN_ID=10・
+# FASTRTPS_DEFAULT_PROFILES_FILE=/home/mirs2602/fastdds_peers.xml）。
+#
+# 導入手順は docs/network.md「ラズパイ: スピーカー再生の導入」参照。
+# 先に rpi_speaker_play.py・rpi_speaker_logic.py・wav 3 つを /home/mirs2602/ へ置くこと。
+#
+# 注意: Environment= の FASTRTPS_DEFAULT_PROFILES_FILE は実機の現行ユニットに合わせた値。
+# 導入前に `systemctl cat rplidar` で現行ユニットと見比べ、違う行があれば現行に合わせる。
+# 音の出し方は既定で PulseAudio（paplay）。ALSA で鳴らすときは ExecStart の
+# `--backend pulse` を `--backend alsa` に変える。
+[Unit]
+Description=TH speaker announcer player (Raspberry Pi onboard speaker)
+After=network.target time-sync.target
+Wants=time-sync.target
+
+[Service]
+Type=simple
+User=mirs2602
+Environment=ROS_DOMAIN_ID=10
+Environment=FASTRTPS_DEFAULT_PROFILES_FILE=/home/mirs2602/fastdds_peers.xml
+ExecStart=/usr/bin/python3 /home/mirs2602/rpi_speaker_play.py --wav-dir /home/mirs2602/speaker_wavs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

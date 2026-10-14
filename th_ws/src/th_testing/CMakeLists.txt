@@ -518,6 +518,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_fault_recorder_node
     test/test_fault_recorder_node.py
     TIMEOUT 300)
+  # 機体スピーカーの報知判定（Spec-safety §11）。本物の speaker_announcer を
+  # 起動し、/system/state と limiter_status を流して cue の変化・volume の
+  # 反映と永続化・試し鳴らしを縛る（rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_speaker_announcer_node
+    test/test_speaker_announcer_node.py
+    TIMEOUT 300)
   # LOCALIZATION_LOST の Docker launch テスト（WP-SAFE-05 §完了条件1〜3。
   # 継続で発火・単発で発火せず・途絶で発火。CRITICAL の確認を含む）
   ament_add_pytest_test(test_localization_lost

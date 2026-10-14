@@ -89,6 +89,9 @@ REGISTRY_NODES: tuple[str, ...] = (
     "localization_health",
     # Spec-safety §3.5.5: フォルト履歴の記録（記録だけ。新規行のみで placeholder なし）
     "fault_recorder",
+    # Spec-safety §11: 機体スピーカーの報知判定。新規行のみで blocking
+    # placeholder を含まないため A8 は armed にならない（試験で縛る）。
+    "speaker_announcer",
     # W-03: route_recorder / replay_runner / map_downsampler は registry.yaml の
     # 教示・再生・間引き行を生成 yaml に載せる。新規行のみで blocking
     # placeholder を含まないため A8 は armed にならない（試験で縛る）。
