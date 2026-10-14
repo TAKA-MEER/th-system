@@ -231,6 +231,40 @@ ESP32 の `pi_serial_relay` は同じ問題を持たない見込み（`serial.Se
 
 ---
 
+## ラズパイ: スピーカー再生の導入
+
+機体（ラズパイ）の 3.5 mm 端子のスピーカーで周囲に報知する（Spec-safety §11）。
+PC 側の `speaker_announcer`（bringup で起動）が `/speaker/cue`（2 Hz）で「いま鳴らすもの」
+を出し、ラズパイの `rpi_speaker_play.py` が wav をループ再生する。**導入は人が行う**
+（ラズパイは非対話 ssh の `sudo` が使えない）。
+
+1. 再生スクリプト・音源・ユニットをラズパイへ送る（PC 側）:
+   ```bash
+   scp th_ws/scripts/rpi_speaker_play.py th_ws/scripts/rpi_speaker_logic.py \
+       th_ws/scripts/rpi_speaker.service mirs2602@192.168.5.1:~/
+   ssh mirs2602@192.168.5.1 'mkdir -p ~/speaker_wavs'
+   scp th_ws/audio/speaker/*.wav mirs2602@192.168.5.1:~/speaker_wavs/
+   ```
+2. ラズパイにログインして（`ssh mirs2602@192.168.5.1`）、現行ユニットを控えてから入れ替える:
+   ```bash
+   chmod +x ~/rpi_speaker_play.py
+   paplay ~/speaker_wavs/drive.wav    # 音が出ること（出なければ下の切り分け）
+   sudo cp ~/rpi_speaker.service /etc/systemd/system/rpi_speaker.service
+   sudo systemctl daemon-reload && sudo systemctl enable --now rpi_speaker.service
+   ```
+   `FASTRTPS_DEFAULT_PROFILES_FILE` は実機の現行ユニット（`systemctl cat rplidar`）と
+   見比べて、違う行があれば現行に合わせる（`rpi_speaker.service` の雛形の注意書き）。
+3. 確認: PC 側で `ros2 topic hz /speaker/status` が 1 Hz 出る。画面（S-50 → 一般 →
+   「スピーカー」）で「試しに鳴らす」を押して音が出る。走らせると「再生中: drive」になる。
+4. 戻し方・止め方: `sudo systemctl disable --now rpi_speaker.service`（走行は止まらない。
+   報知は安全装置ではないため）。`paplay` で鳴らないときの切り分け:
+   - `pactl info` でサーバに繋がるか（ユーザーセッションの PulseAudio が要る）。
+     繋がらなければユニットの `ExecStart` の `--backend pulse` を `--backend alsa` に変える
+     （`aplay`＋`amixer -c 0 set Headphones N%` で鳴らす）。
+   - それでも鳴らなければ 3.5 mm 端子の挿し・`alsamixer` のミュート（`MM`）を見る。
+
+---
+
 ## ラズパイ: pi_serial_relay の導入
 
 **2026-09-05 に実機へ導入済み**（ESP32 をラズパイへ挿し替え → ファーム書き込み →

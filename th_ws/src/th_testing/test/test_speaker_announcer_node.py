@@ -21,7 +21,7 @@ import launch_ros.actions
 import launch_testing
 import launch_testing.actions
 
-from rcl_interfaces.msg import Parameter, ParameterValue
+from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
 from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
@@ -113,7 +113,7 @@ class TestSpeakerAnnouncer(unittest.TestCase):
     def _set_param(self, name, ptype, value):
         req = SetParameters.Request()
         p = Parameter(name=name, value=ParameterValue(type=ptype))
-        if ptype == Parameter.Type.BOOL:
+        if ptype == ParameterType.PARAMETER_BOOL:
             p.value.bool_value = value
         else:
             p.value.integer_value = value
@@ -151,7 +151,7 @@ class TestSpeakerAnnouncer(unittest.TestCase):
 
     def test_40_volume_change_applies_and_persists(self):
         self._send_state('REPLAY', 'RUN', False)
-        self._set_param('speaker_volume', Parameter.Type.INTEGER, 80)
+        self._set_param('speaker_volume', ParameterType.PARAMETER_INTEGER, 80)
         end = time.time() + 10
         while time.time() < end:
             rclpy.spin_once(self.node, timeout_sec=0.1)
@@ -162,10 +162,10 @@ class TestSpeakerAnnouncer(unittest.TestCase):
         with open(os.path.join(_DIR, 'settings.json'), encoding='utf-8') as f:
             saved = json.load(f)
         assert saved == {'enabled': True, 'volume': 80}, saved
-        self._set_param('speaker_volume', Parameter.Type.INTEGER, 60)
+        self._set_param('speaker_volume', ParameterType.PARAMETER_INTEGER, 60)
 
     def test_50_test_chime_sends_once_and_resets(self):
-        self._set_param('test_chime', Parameter.Type.BOOL, True)
+        self._set_param('test_chime', ParameterType.PARAMETER_BOOL, True)
         end = time.time() + 10
         seen = False
         while time.time() < end:
@@ -183,10 +183,10 @@ class TestSpeakerAnnouncer(unittest.TestCase):
             'test_chime が false に戻らない'
 
     def test_60_invalid_volume_is_rejected(self):
-        self._set_param('speaker_volume', Parameter.Type.INTEGER, 80)
+        self._set_param('speaker_volume', ParameterType.PARAMETER_INTEGER, 80)
         req = SetParameters.Request()
         p = Parameter(name='speaker_volume',
-                      value=ParameterValue(type=Parameter.Type.INTEGER, integer_value=200))
+                      value=ParameterValue(type=ParameterType.PARAMETER_INTEGER, integer_value=200))
         req.parameters = [p]
         fut = self.cli_set.call_async(req)
         end = time.time() + 10
@@ -194,4 +194,4 @@ class TestSpeakerAnnouncer(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.1)
         assert fut.done() and fut.result().results[0].successful is False, \
             '範囲外の volume が受理されてはいけない'
-        self._set_param('speaker_volume', Parameter.Type.INTEGER, 60)
+        self._set_param('speaker_volume', ParameterType.PARAMETER_INTEGER, 60)

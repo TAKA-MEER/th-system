@@ -126,7 +126,16 @@ class SpeakerAnnouncer(Node):
                 self._test_pending = bool(
                     next(p.value for p in params if p.name == 'test_chime'))
             if {'speaker_enabled', 'speaker_volume'} & names:
-                self._save_settings()
+                # on_set コールバックは値の適用前に走るため、get_parameter では
+                # 古い値しか読めない。params の新値と現値から保存する値を決める。
+                enabled = self._enabled()
+                volume = self._volume()
+                for p in params:
+                    if p.name == 'speaker_enabled':
+                        enabled = bool(p.value)
+                    elif p.name == 'speaker_volume':
+                        volume = int(p.value)
+                self._save_settings(enabled, volume)
         return result
 
     # -- 永続化 ----------------------------------------------------------
@@ -146,11 +155,11 @@ class SpeakerAnnouncer(Node):
         if req:
             self.set_parameters(req)
 
-    def _save_settings(self) -> None:
+    def _save_settings(self, enabled: bool, volume: int) -> None:
         try:
             os.makedirs(os.path.dirname(self._settings_path), exist_ok=True)
             with open(self._settings_path, 'w', encoding='utf-8') as f:
-                json.dump({'enabled': self._enabled(), 'volume': self._volume()}, f)
+                json.dump({'enabled': enabled, 'volume': volume}, f)
         except OSError as e:
             if not self._write_warned:
                 self._write_warned = True
@@ -197,6 +206,8 @@ def main(args=None):
     node = SpeakerAnnouncer()
     try:
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     finally:
         node.destroy_node()
         rclpy.shutdown()
