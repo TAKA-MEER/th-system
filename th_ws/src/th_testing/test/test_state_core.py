@@ -177,12 +177,13 @@ def test_estop_in_carry_rejected(state_core_bundle):
 
 
 # ============================================================
-# WP-CARRY-01 §7: C-07 → C-10 → C-11 の一巡（物理E-Stop押下でCARRYへ、
-# 解除で表示、「再開」で押下前のモード・状態へ戻る）。
+# SM-3.1.1-14（2026-10-14。T-2 ③）: C-10 → C-11-* の一巡。
+# CARRY の「再開」は ESTOP の「戻る」と同じ §6「異常解決後の復帰」列へ。
+# 走行中なら同モードの PAUSE（再開しただけでは動かない）。
 # ============================================================
 @pytest.mark.rule("C-07")
 @pytest.mark.rule("C-10")
-@pytest.mark.rule("C-11")
+@pytest.mark.rule("C-11-running")
 def test_carry_roundtrip(state_core_bundle):
     core, _, _, _ = state_core_bundle
 
@@ -206,21 +207,24 @@ def test_carry_roundtrip(state_core_bundle):
     assert d2.rule_id == "C-10"
     assert "show_resume" in [e.name for e in d2.effects]
 
-    # C-11: 解除済み・重大フォルトなしで「再開」→ 押下前のモード（$prev_mode/$prev_state）へ戻る。
+    # C-11-running: 解除済み・重大フォルトなしで「再開」→ 走行中だったので
+    # 同モードの PAUSE（RUN にそのまま戻って走り出さない）。
     ctx_released = _mk_ctx(prev_mode="FOLLOW", prev_state="RUN", hw_estop=False, fault_severity="")
     d3 = core.step("CARRY", "NONE", "ui.carry_resume", ctx_released)
     assert d3.accepted is True
-    assert d3.to_mode == "FOLLOW" and d3.to_state == "RUN"
-    assert d3.rule_id == "C-11"
-    assert "close_window" in [e.name for e in d3.effects]
+    assert d3.to_mode == "FOLLOW" and d3.to_state == "PAUSE"
+    assert d3.rule_id == "C-11-running"
+    assert "clear_prev" in [e.name for e in d3.effects]
+    closed = [e.args.get("id") for e in d3.effects if e.name == "close_window"]
+    assert "W-2" in closed
 
 
 # ============================================================
-# WP-CARRY-01 §7 FMEA②: hw_released_and_no_critical を hw_released だけにすると、
-# 重大フォルトが継続したまま走行モードへ戻ってしまう（Spec-safety.md §3.5 違反）。
+# SM-3.1.1-14 FMEA②: hw_released_and_no_critical 相当の土台。
 # 物理は解除済みでも、重大フォルトが残っている間は ui.carry_resume が通らないこと。
 # ============================================================
-@pytest.mark.rule("C-11")
+@pytest.mark.rule("C-11-generic")
+@pytest.mark.rule("C-11-running")
 def test_carry_resume_blocked_by_critical(state_core_bundle):
     core, _, _, _ = state_core_bundle
 
@@ -229,6 +233,220 @@ def test_carry_resume_blocked_by_critical(state_core_bundle):
     d = core.step("CARRY", "NONE", "ui.carry_resume", ctx)
     assert d.accepted is False
     assert d.reject_reason_key == "not_allowed"
+
+    # 物理ボタンが押されたままも拒否する。
+    ctx = _mk_ctx(prev_mode="FOLLOW", prev_state="SELECT", hw_estop=True,
+                  fault_severity="")
+    d = core.step("CARRY", "NONE", "ui.carry_resume", ctx)
+    assert d.accepted is False
+    assert d.reject_reason_key == "not_allowed"
+
+
+def _carry_ctx(prev_mode, prev_state, **over):
+    """C-11 fan-out 用。物理解除済み・重大フォルト無しの Context を作る。"""
+    kw = dict(prev_mode=prev_mode, prev_state=prev_state,
+              fault_active=False, fault_severity="", fault_type="",
+              hw_estop=False, ui_estop=False)
+    kw.update(over)
+    return _mk_ctx(**kw)
+
+
+@pytest.mark.rule("C-11-running")
+def test_carry_resume_running_goes_to_pause(state_core_bundle):
+    """走行中の 9 モードは同モードの PAUSE へ（勝手に走り出さない）。"""
+    core, _, _, _ = state_core_bundle
+    for prev_mode, run_state in [
+            ("FOLLOW", "RUN"), ("MANUAL", "RUN"),
+            ("TEACH_FOLLOW", "REC"), ("TEACH_MANUAL", "REC"),
+            ("REPLAY", "RUN"), ("LINE", "RUN"), ("LEASH", "RUN"),
+            ("PANEL_NAV", "NAV"), ("HOME_NAV", "NAV")]:
+        d = core.step("CARRY", "NONE", "ui.carry_resume",
+                      _carry_ctx(prev_mode, run_state))
+        assert d.accepted is True, f"{prev_mode}/{run_state} が拒否された"
+        assert (d.to_mode, d.to_state) == (prev_mode, "PAUSE"), \
+            f"{prev_mode}/{run_state} の戻り先が PAUSE ではない: {d.to_mode}/{d.to_state}"
+        assert d.rule_id == "C-11-running", f"{prev_mode}: {d.rule_id}"
+        assert "clear_prev" in [e.name for e in d.effects]
+        closed = [e.args.get("id") for e in d.effects if e.name == "close_window"]
+        assert closed == ["W-2"], f"W-2 以外を閉じている: {closed}"
+
+
+@pytest.mark.rule("C-11-generic")
+def test_carry_resume_stopped_returns_to_prev_state(state_core_bundle):
+    """止まっている状態は押下前の状態へ。押下前が IDLE なら IDLE
+    （C-09c-generic と違い IDLE を復帰不能としない。SM-3.1.1-14）。"""
+    core, _, _, _ = state_core_bundle
+    for prev_mode, prev_state in [
+            ("IDLE", "NONE"),
+            ("FOLLOW", "SELECT"),
+            ("TEACH_FOLLOW", "ROUTE_SEL"), ("TEACH_FOLLOW", "PAUSE"),
+            ("TEACH_FOLLOW", "SAVED"),
+            ("TEACH_MANUAL", "ROUTE_SEL"), ("TEACH_MANUAL", "PAUSE"),
+            ("TEACH_MANUAL", "SAVED"),
+            ("REPLAY", "ROUTE_SEL"), ("REPLAY", "READY"), ("REPLAY", "PAUSE"),
+            ("REPLAY", "SAVED"),
+            ("LINE", "SETUP"), ("LINE", "PLANNED"), ("LINE", "PAUSE"),
+            ("LINE", "ARRIVED"),
+            ("LEASH", "DEV_CHECK"), ("LEASH", "READY"), ("LEASH", "HOLD"),
+            ("LEASH", "PAUSE"),
+            ("PANEL_NAV", "PAUSE"), ("PANEL_NAV", "ALIGN"),
+            ("HOME_NAV", "PAUSE")]:
+        d = core.step("CARRY", "NONE", "ui.carry_resume",
+                      _carry_ctx(prev_mode, prev_state))
+        assert d.accepted is True, f"{prev_mode}/{prev_state} が拒否された"
+        assert (d.to_mode, d.to_state) == (prev_mode, prev_state), \
+            f"戻り先が押下前の状態ではない: {d.to_mode}/{d.to_state}"
+        assert d.rule_id == "C-11-generic", f"{prev_mode}/{prev_state}: {d.rule_id}"
+
+
+@pytest.mark.rule("C-11-generic")
+def test_carry_resume_teach_route_sel_emits_no_start_record(state_core_bundle):
+    """TEACH_MANUAL/ROUTE_SEL から戻って REC に入る経路が無い。
+    ROUTE_SEL へ戻り、start_record は出さない（選び直したときに出る）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("CARRY", "NONE", "ui.carry_resume",
+                  _carry_ctx("TEACH_MANUAL", "ROUTE_SEL"))
+    assert (d.to_mode, d.to_state) == ("TEACH_MANUAL", "ROUTE_SEL")
+    assert "start_record" not in [e.name for e in d.effects]
+    assert "resume_record" not in [e.name for e in d.effects]
+
+
+@pytest.mark.rule("C-11-confirm")
+def test_carry_resume_follow_confirm_refaces_target(state_core_bundle):
+    """FOLLOW/CONFIRM へ戻り、向き直し（face_target）を再実行する（確認を飛ばさない）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("CARRY", "NONE", "ui.carry_resume",
+                  _carry_ctx("FOLLOW", "CONFIRM"))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("FOLLOW", "CONFIRM")
+    assert d.rule_id == "C-11-confirm"
+    assert "face_target" in [e.name for e in d.effects]
+
+
+@pytest.mark.rule("C-11-localize")
+def test_carry_resume_replay_localize_reloads_route(state_core_bundle):
+    """REPLAY/LOCALIZE へ戻り、経路読み込み（load_route）を再実行する。
+    route_id / reverse は ui.carry_resume の arg から解決する
+    （state_manager がラッチ済みの選択で補完する。本番の経路）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("CARRY", "NONE", "ui.carry_resume",
+                  _carry_ctx("REPLAY", "LOCALIZE",
+                             arg={"id": "R1", "reverse": False}))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("REPLAY", "LOCALIZE")
+    assert d.rule_id == "C-11-localize"
+    by_name = {e.name: e.args for e in d.effects}
+    assert by_name.get("load_route") == {"route_id": "R1", "reverse": False}, \
+        f"load_route の引数が違う: {by_name}"
+
+
+@pytest.mark.rule("C-11-blocked")
+def test_carry_resume_blocked_reopens_window(state_core_bundle):
+    """BLOCKED へ戻り、W-5 を開き直す（塞がれ中の表示を復元する）。"""
+    core, _, _, _ = state_core_bundle
+    for prev_mode in ("PANEL_NAV", "HOME_NAV"):
+        d = core.step("CARRY", "NONE", "ui.carry_resume",
+                      _carry_ctx(prev_mode, "BLOCKED"))
+        assert d.accepted is True
+        assert (d.to_mode, d.to_state) == (prev_mode, "BLOCKED")
+        assert d.rule_id == "C-11-blocked", f"{prev_mode}: {d.rule_id}"
+        opened = [e.args.get("id") for e in d.effects if e.name == "open_window"]
+        assert "W-5" in opened, f"W-5 を開き直していない: {[e.name for e in d.effects]}"
+
+
+@pytest.mark.rule("C-11-summon")
+def test_carry_resume_summon_returns_to_point(state_core_bundle):
+    """SUMMON はどの状態からでも POINT（退避待ちからやり直す）。"""
+    core, _, _, _ = state_core_bundle
+    for prev_state in ("POINT", "WAIT_CLEAR", "NAV", "BLOCKED", "PAUSE", "ALIGN"):
+        d = core.step("CARRY", "NONE", "ui.carry_resume",
+                      _carry_ctx("SUMMON", prev_state))
+        assert d.accepted is True, f"SUMMON/{prev_state} が拒否された"
+        assert (d.to_mode, d.to_state) == ("SUMMON", "POINT"), \
+            f"SUMMON/{prev_state} の戻り先が POINT ではない: {d.to_mode}/{d.to_state}"
+        assert d.rule_id == "C-11-summon", f"SUMMON/{prev_state}: {d.rule_id}"
+    names = [e.name for e in d.effects]
+    assert "enable_jog_ui" in names, \
+        "WAIT_CLEAR で無効化した手動 UI を戻していない"
+
+
+@pytest.mark.rule("C-11-at-panel")
+@pytest.mark.rule("C-11-at-home")
+def test_carry_resume_at_panel_home(state_core_bundle):
+    """AT_PANEL→IDLE_P／AT_HOME→IDLE_H（§6 の右列。確認をやり直す）。"""
+    core, _, _, _ = state_core_bundle
+    for prev_mode, prev_state, dst in [("AT_PANEL", "WORKING", "IDLE_P"),
+                                       ("AT_PANEL", "PAUSE", "IDLE_P"),
+                                       ("AT_PANEL", "IDLE_P", "IDLE_P"),
+                                       ("AT_HOME", "PAUSE", "IDLE_H"),
+                                       ("AT_HOME", "IDLE_H", "IDLE_H")]:
+        d = core.step("CARRY", "NONE", "ui.carry_resume",
+                      _carry_ctx(prev_mode, prev_state))
+        assert d.accepted is True, f"{prev_mode}/{prev_state} が拒否された"
+        assert (d.to_mode, d.to_state) == (prev_mode, dst), \
+            f"戻り先が違う: {d.to_mode}/{d.to_state}"
+
+
+@pytest.mark.rule("C-11-opcheck")
+@pytest.mark.rule("C-11-calib")
+def test_carry_resume_opcheck_calib_returns_to_list(state_core_bundle):
+    """OPCHECK／CALIB は LIST。実行中の項目は通常のフォルト時と同じ effect で畳む。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("CARRY", "NONE", "ui.carry_resume",
+                  _carry_ctx("OPCHECK", "RUNNING_CHECK"))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("OPCHECK", "LIST")
+    assert d.rule_id == "C-11-opcheck"
+    assert "abort_check" in [e.name for e in d.effects]
+
+    d = core.step("CARRY", "NONE", "ui.carry_resume",
+                  _carry_ctx("CALIB", "S2"))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("CALIB", "LIST")
+    assert d.rule_id == "C-11-calib"
+    assert "discard_calib" in [e.name for e in d.effects]
+
+
+@pytest.mark.rule("C-11-prep-return")
+@pytest.mark.rule("C-11-prep")
+def test_carry_resume_prep_returns_to_prev_state(state_core_bundle):
+    """PREP は押下前の状態へ。RETURN だった場合は PREP/PAUSE。"""
+    core, _, _, _ = state_core_bundle
+    for prev_state, dst in [("MAPPING", "MAPPING"), ("REGISTER", "REGISTER"),
+                            ("RETURN", "PAUSE"), ("EDIT", "EDIT"),
+                            ("SAVED", "SAVED")]:
+        d = core.step("CARRY", "NONE", "ui.carry_resume",
+                      _carry_ctx("PREP", prev_state))
+        assert d.accepted is True, f"PREP/{prev_state} が拒否された"
+        assert (d.to_mode, d.to_state) == ("PREP", dst), \
+            f"PREP/{prev_state} の戻り先が違う: {d.to_mode}/{d.to_state}"
+    d = core.step("CARRY", "NONE", "ui.carry_resume",
+                  _carry_ctx("PREP", "RETURN"))
+    assert d.rule_id == "C-11-prep-return"
+
+
+@pytest.mark.rule("C-11-running")
+@pytest.mark.rule("C-11-generic")
+def test_carry_resume_accepted_with_recoverable_fault(state_core_bundle):
+    """回復フォルト継続中でも受理する（C-11 の受理条件を変えない。
+    _estop_base_ok 相当にするとここが赤になる）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("CARRY", "NONE", "ui.carry_resume",
+                  _carry_ctx("PANEL_NAV", "NAV",
+                             fault_active=True, fault_severity="",
+                             fault_type="LIDAR_LOST"))
+    assert d.accepted is True, \
+        f"回復フォルト継続中に拒否された: {d.reject_reason_key}"
+    assert (d.to_mode, d.to_state) == ("PANEL_NAV", "PAUSE")
+    assert d.rule_id == "C-11-running"
+
+    d = core.step("CARRY", "NONE", "ui.carry_resume",
+                  _carry_ctx("FOLLOW", "SELECT",
+                             fault_active=True, fault_severity="",
+                             fault_type="LIDAR_LOST"))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("FOLLOW", "SELECT")
+    assert d.rule_id == "C-11-generic"
 
 
 # ============================================================
