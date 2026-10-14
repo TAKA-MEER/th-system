@@ -35,6 +35,7 @@ from rpi_speaker_logic import (CUE_DRIVE, CUE_WAVS, make_status,  # noqa: E402
                                parse_cue, resolve_playback)
 
 import rclpy  # noqa: E402
+from rclpy.executors import ExternalShutdownException  # noqa: E402
 from rclpy.node import Node  # noqa: E402
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,  # noqa: E402
                        QoSReliabilityPolicy)
@@ -235,7 +236,8 @@ def main(args=None):
                     help='PulseAudio のシンク名（省略時は既定。実機は '
                          'alsa_output.platform-bcm2835_audio.stereo-fallback）')
     ap.add_argument('--card', default='0', help='ALSA のカード番号')
-    ap.add_argument('--control', default='Headphones', help='ALSA のコントロール名')
+    ap.add_argument('--control', default='Headphone',
+                    help='ALSA のコントロール名（実機の amixer -c 0 scontents の名前）')
     ap.add_argument('--wav-dir', required=True)
     ns, ros_args = ap.parse_known_args(args)
     rclpy.init(args=ros_args)
@@ -250,7 +252,9 @@ def main(args=None):
     signal.signal(signal.SIGTERM, _sig)
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
+        # SIGINT では spin が ExternalShutdownException を投げることがある
+        # （実機で確認。rclpy 側は既に shutdown 済みなので下の ok() が弾く）。
         pass
     finally:
         player.stop()

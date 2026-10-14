@@ -29,6 +29,10 @@ def _install_stubs(spin_behavior):
             # 実機の SIGINT: rclpy 側が先に shutdown してから KeyboardInterrupt
             rclpy._ok = False
             raise KeyboardInterrupt
+        if spin_behavior == 'external_shutdown':
+            # 実機の SIGINT: spin が ExternalShutdownException を投げることもある
+            rclpy._ok = False
+            raise exec_mod.ExternalShutdownException('external shutdown')
         return None
 
     def _shutdown():
@@ -92,6 +96,13 @@ def _install_stubs(spin_behavior):
     sys.modules['rclpy.qos'] = qos_mod
     sys.modules['std_msgs'] = std_mod
     sys.modules['std_msgs.msg'] = msg_mod
+    exec_mod = types.ModuleType('rclpy.executors')
+
+    class ExternalShutdownException(Exception):
+        pass
+
+    exec_mod.ExternalShutdownException = ExternalShutdownException
+    sys.modules['rclpy.executors'] = exec_mod
     for m in list(sys.modules):
         if m == 'rpi_speaker_play' or m.startswith('rpi_speaker_play.'):
             del sys.modules[m]
@@ -115,3 +126,22 @@ def test_sigint_does_not_shutdown_twice():
 def test_normal_exit_shuts_down_once():
     calls = _run_main('return')
     assert calls['shutdown'] == 1
+
+
+def test_external_shutdown_exception_exits_cleanly():
+    # 実機の SIGINT（spin が ExternalShutdownException）。Traceback を出さず、
+    # 二重 shutdown もしない。
+    calls = _run_main('external_shutdown')
+    assert calls['shutdown'] == 0
+
+
+def test_alsa_control_default_matches_hardware():
+    # 実機の amixer -c 0 scontents の名前は Headphone（s 無し）。
+    import inspect
+    _install_stubs('return')
+    for m in list(sys.modules):
+        if m == 'rpi_speaker_play' or m.startswith('rpi_speaker_play.'):
+            del sys.modules[m]
+    import rpi_speaker_play
+    src = inspect.getsource(rpi_speaker_play.main)
+    assert "default='Headphone'" in src and "default='Headphones'" not in src
