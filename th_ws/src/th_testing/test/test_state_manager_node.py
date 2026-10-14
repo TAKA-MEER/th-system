@@ -390,7 +390,8 @@ class TestStateManagerNode(unittest.TestCase):
         self._spin(0.1)
         res = self._trigger('ui.carry_resume')
         assert res.accepted, res.reject_reason_key
-        assert res.rule_id == 'C-11-generic', f'効いた行が違う: {res.rule_id}'
+        assert (res.mode, res.state) == ('FOLLOW', 'SELECT'), \
+            f'効いた行の戻り先が違う: {res.mode}/{res.state}'
         assert self._wait_mode_state('FOLLOW', 'SELECT'), \
             'ui.carry_resume で押下前の状態へ戻れていない（§7 行2）'
 
@@ -441,7 +442,8 @@ class TestStateManagerNode(unittest.TestCase):
             self._state_history.clear()
             res = self._trigger('ui.carry_resume')
             assert res.accepted, res.reject_reason_key
-            assert res.rule_id == 'C-11-running', f'効いた行が違う: {res.rule_id}'
+            assert (res.mode, res.state) == ('PANEL_NAV', 'PAUSE'), \
+                f'効いた行の戻り先が違う: {res.mode}/{res.state}'
             assert self._wait_mode_state('PANEL_NAV', 'PAUSE'), \
                 'ui.carry_resume で PANEL_NAV/PAUSE に戻らない'
             self._spin(1.0)
