@@ -129,7 +129,7 @@ ping -c3 192.168.5.1
 1. ラズパイで ESP32 が見えているか: `ls -l /dev/serial/by-id/`
    （**RPLIDAR も同じ機構の USB-UART。`/dev/ttyUSB0` のような列挙順依存の指定は
    ある日 LiDAR と入れ替わる。** 必ず `by-id` のシリアル番号込みパスで指定する）
-2. `pi_serial_relay` の `--serial-port` がそのパスと一致しているか
+2. `journalctl -u rpi-serial-relay` の `ESP32 のポート = ...` がそのパスか（ESP32 交換直後は、LiDAR 以外の USB-UART がちょうど 1 つ見えているか）
 3. `journalctl -u rpi-serial-relay -f` で `esp32_bridge へ接続しました` は出ているのに
    フィードバックが来ない場合、ESP32 側が起動していない/焼き込み前の可能性
    （`docs/esp32.md` の書き込み確認バナー参照）
@@ -302,24 +302,28 @@ ESP32 の `pi_serial_relay` は同じ問題を持たない見込み（`serial.Se
    古いままになり、症状は「通信が全滅」という分かりにくい形で出る）。
 
    `mirs2602` が `dialout` グループに入っているか確認する（入っていないと
-   `pi_serial_relay.py` の `open()` も unit の `ExecStartPre=stty` も
+   `pi_serial_relay.py` の `open()` もラッパーの `stty` も
    permission denied で失敗し、症状は「サービスが起動しない」としか出ない）:
    ```bash
    ssh mirs2602@192.168.5.1 'groups | grep -q dialout && echo OK || \
      (sudo usermod -aG dialout mirs2602 && echo "追加した。再ログインが必要")'
    ```
-3. systemd unit を配置する（`th_ws/scripts/rpi-serial-relay.service` をコピーし、
-   `<SERIAL_BY_ID_PATH>` を手順1のパスに書き換えてから転送・有効化）:
+3. ラッパーと systemd unit を配置する。**ESP32 の by-id パスは unit に書かない**
+   （`rpi_serial_relay_run.sh` が `/dev/serial/by-id/` のうち LiDAR 以外の USB-UART を
+   ESP32 として自動で選ぶ。ESP32 を交換しても編集は要らない。LiDAR を交換したときだけ、
+   `rplidar.service` と一緒にラッパー内の LiDAR ID を直す）:
    ```bash
-   scp th_ws/scripts/rpi-serial-relay.service mirs2602@192.168.5.1:/tmp/
+   scp th_ws/scripts/rpi_serial_relay_run.sh th_ws/scripts/rpi-serial-relay.service mirs2602@192.168.5.1:/tmp/
    ssh mirs2602@192.168.5.1 '
-     sudo sed -i "s#<SERIAL_BY_ID_PATH>#実際のパス#g" /tmp/rpi-serial-relay.service
+     cp /tmp/rpi_serial_relay_run.sh ~/ && chmod +x ~/rpi_serial_relay_run.sh
      sudo cp /tmp/rpi-serial-relay.service /etc/systemd/system/
      sudo systemctl daemon-reload
      sudo systemctl enable --now rpi-serial-relay
      systemctl status rpi-serial-relay --no-pager
    '
    ```
+   起動ログに `rpi_serial_relay_run: ESP32 のポート = ...` が出る。候補が 0 個なら 60 秒待って
+   終了、2 個以上なら取り違え防止のため起動せず候補を列挙して終了する（`Restart=always` で再試行）。
 4. **導入直後に必ず確認すること（advisor 指摘・2026-09-05）**: `pi_serial_relay`
    の起動・再起動のたびに ESP32 が誤って再リセットされていないか。ESP32 の
    起動バナーは電源投入直後の一度しか出ないはずなので、`journalctl -u
@@ -338,10 +342,10 @@ ESP32 の `pi_serial_relay` は同じ問題を持たない見込み（`serial.Se
 | 症状 | 原因 | 対処 |
 | --- | --- | --- |
 | `wheel_feedback` が毎周期バーストする（標準偏差 0.04〜0.08s） | `pi_serial_relay` の `ser.read` が固定50msポーリングになっており、ESP32 の100ms送信周期とビート（うなり）を起こしていた。pyserial の `read(size)` は「timeout の間 size バイト溜まるまで待つ」実装なので、`size > 1` に有限 timeout を付けると必ず timeout の粒度で足止めされる | `read(1, timeout=None)` で1バイト待ち → `in_waiting` 分をまとめて読む2段構えに変更（[`ad3960d`](https://github.com/TAKA-MEER/th-system/commit/ad3960d)）。**教示再生のふらつきの直接原因だった** |
-| サービスが起動しない | unit の `<SERIAL_BY_ID_PATH>` を置換し忘れ | `systemctl cat rpi-serial-relay` で実際の `ExecStart` を確認する |
+| サービスが起動しない | （旧構成）unit に固定した by-id が ESP32 交換で消えた（2026-10-14）。現行はラッパーが自動選択するので起きない | `journalctl -u rpi-serial-relay` でラッパーの「候補が 0／複数」メッセージを見る。`ls -l /dev/serial/by-id/` で LiDAR 以外が 1 つか確認 |
 | `pip3: command not found` | ラズパイに `pip3` が無く、`ip route` に default gateway も無い（インターネット非接続） | 上記の wheel 手配り方式（手順2） |
 
-ESP32 の誤リセット（`ExecStartPre` の `stty -hupcl` と `open()` 前の DTR/RTS 落としが
+ESP32 の誤リセット（ラッパーの `stty -hupcl` と `open()` 前の DTR/RTS 落としが
 効いているか）は、サービス再起動時に `/safety/fault_lock` が `false` のまま
 ・`wheel_feedback` が途切れないことで確認した（2026-09-05）。
 
