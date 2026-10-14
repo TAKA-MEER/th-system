@@ -480,15 +480,227 @@
   - name: show_resume
     args: {}
   spec_ref: SM-3.1.1-13
-- id: C-11
+# C-11-* : SM-3.1.1-14 の fan-out（2026-10-14。T-2 ③）。
+# CARRY の「再開」は ESTOP の「戻る」（C-09c-*）と同じ §6「異常解決後の復帰」列へ。
+# 押下前が走行中なら同モードの PAUSE（再開しただけでは動かない）。
+# ガードの土台は C-11 と同じ「物理ボタンが解除済みで、重大フォルトが無い」
+# （carry_*_ok。_estop_base_ok と違い回復フォルト継続中も受理する）。
+# 閉じる窓は W-2。clear_prev の扱いは C-09c-* に合わせる。
+# layer 0 内は記載順に走査するため、具体的な行を汎用行より前に置く。
+# C-11-summon: SUMMON は POINT からやり直す（退避待ちを飛ばさない）。
+# WAIT_CLEAR で無効化した手動 UI を戻す（enable_jog_ui は T-SUM-03〜05 と同じ）。
+- id: C-11-summon
   layer: 0
   mode: CARRY
   state: NONE
   event: ui.carry_resume
-  guard: hw_released_and_no_critical
+  guard: carry_prev_is_summon
+  to_mode: SUMMON
+  to_state: POINT
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
+  - name: enable_jog_ui
+    args: {}
+  spec_ref: SM-3.1.1-14
+# C-11-at-panel / -at-home: §6 の右列どおり IDLE_P / IDLE_H（確認をやり直す）。
+- id: C-11-at-panel
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_prev_is_at_panel
+  to_mode: AT_PANEL
+  to_state: IDLE_P
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
+  spec_ref: SM-3.1.1-14
+- id: C-11-at-home
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_prev_is_at_home
+  to_mode: AT_HOME
+  to_state: IDLE_H
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
+  spec_ref: SM-3.1.1-14
+# C-11-opcheck / -calib: §6 の右列どおり LIST。実行中の項目は通常のフォルト時と
+# 同じ effect（abort_check / discard_calib。T-OPC-08 / T-CAL-08 と同じ）で畳む。
+- id: C-11-opcheck
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_prev_is_opcheck
+  to_mode: OPCHECK
+  to_state: LIST
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
+  - name: abort_check
+    args: {}
+  spec_ref: SM-3.1.1-14
+- id: C-11-calib
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_prev_is_calib
+  to_mode: CALIB
+  to_state: LIST
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
+  - name: discard_calib
+    args:
+      item: $arg.item
+  spec_ref: SM-3.1.1-14
+# C-11-prep-return / -prep: PREP は押下前の状態へ（§6）。RETURN だった場合は
+# PREP/PAUSE。REGISTER へ戻るとき begin_two_point を再実行しない:
+# pin_registrar は /system/state を見ないので受付状態（_accepting）が CARRY を
+# またいで残り、そのまま 2 点指示を続けられる（C-09c-prep と同じ）。
+- id: C-11-prep-return
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_prev_is_prep_return
+  to_mode: PREP
+  to_state: PAUSE
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
+  spec_ref: SM-3.1.1-14
+- id: C-11-prep
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_prev_is_prep
+  to_mode: PREP
+  to_state: $prev_state
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
+  spec_ref: SM-3.1.1-14
+# C-11-running: 押下前が走行中（自律走行・記録中・手動走行中）なら同モードの PAUSE
+# （勝手に走り出さない）。SUMMON/PREP は上の行が先に拾う。
+- id: C-11-running
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_prev_was_running
+  to_mode: $prev_mode
+  to_state: PAUSE
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
+  spec_ref: SM-3.1.1-14
+# C-11-confirm: FOLLOW/CONFIRM へ戻り、向き直し（face_target。T-FOLLOW-03 と同じ）
+# を再実行する（確認を飛ばさない）。
+- id: C-11-confirm
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_prev_is_follow_confirm
+  to_mode: FOLLOW
+  to_state: CONFIRM
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
+  - name: face_target
+    args: {}
+  spec_ref: SM-3.1.1-14
+# C-11-localize: REPLAY/LOCALIZE へ戻り、経路読み込み（load_route。T-REPLAY-01 と
+# 同じ）を再実行する。route_id / reverse は state_manager が T-REPLAY-01/-11 受理時に
+# ラッチし、ui.carry_resume の arg に補完する（送り手の値を優先。ui.resume_yes と同じ）。
+- id: C-11-localize
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_prev_is_replay_localize
+  to_mode: REPLAY
+  to_state: LOCALIZE
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
+  - name: load_route
+    args:
+      route_id: $arg.id
+      reverse: $arg.reverse
+  spec_ref: SM-3.1.1-14
+# C-11-blocked: BLOCKED へ戻り、W-5（T-PNAV-04 / T-HNAV-04 と同じ）を開き直す。
+- id: C-11-blocked
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_prev_is_blocked
+  to_mode: $prev_mode
+  to_state: BLOCKED
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
+  - name: open_window
+    args:
+      id: W-5
+  spec_ref: SM-3.1.1-14
+# C-11-generic: 上のいずれにも当たらない止まっている状態は、押下前の状態へ
+# そのまま戻す。押下前が IDLE なら IDLE（C-09c-generic と違い IDLE を復帰不能と
+# しない。SM-3.1.1-14）。prev が空・ESTOP/CARRY のときだけ拒否する
+# （T-INIT-03 が CARRY 入場を止めるため INIT は通常来ない。来ても $prev_* で
+# INIT/CHECK に戻るだけなので安全）。
+- id: C-11-generic
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_resume_prev
   to_mode: $prev_mode
   to_state: $prev_state
   effects:
+  - name: clear_prev
+    args: {}
   - name: close_window
     args:
       id: W-2

@@ -259,7 +259,18 @@ class StateCore:
 | `C-09d` | `ESTOP` | `NONE` | `ui.resume_no` | **`fault_cleared_and_ui_released`**（SG-A5。`C-09f` と同じ） | `IDLE` | `NONE` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09f`** | `ESTOP` | `NONE` | `ui.resume_ack` | **`fault_cleared_and_ui_released`** | `IDLE` | `NONE` | `clear_prev`, `close_window{id:W-1}` |
 | `C-10` | `CARRY` | `NONE` | `hw.estop.release` | — | `=` | `=` | `show_resume` |
-| `C-11` | `CARRY` | `NONE` | `ui.carry_resume` | **`hw_released_and_no_critical`** | `$prev_mode` | `$prev_state` | `close_window{id:W-2}` |
+| **`C-11-summon`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_summon`** | `SUMMON` | `POINT` | `clear_prev`, `close_window{id:W-2}`, `enable_jog_ui` |
+| **`C-11-at-panel`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_at_panel`** | `AT_PANEL` | `IDLE_P` | `clear_prev`, `close_window{id:W-2}` |
+| **`C-11-at-home`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_at_home`** | `AT_HOME` | `IDLE_H` | `clear_prev`, `close_window{id:W-2}` |
+| **`C-11-opcheck`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_opcheck`** | `OPCHECK` | `LIST` | `clear_prev`, `close_window{id:W-2}`, `abort_check` |
+| **`C-11-calib`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_calib`** | `CALIB` | `LIST` | `clear_prev`, `close_window{id:W-2}`, `discard_calib{item}` |
+| **`C-11-prep-return`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_prep_return`** | `PREP` | `PAUSE` | `clear_prev`, `close_window{id:W-2}` |
+| **`C-11-prep`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_prep`** | `PREP` | `$prev_state` | `clear_prev`, `close_window{id:W-2}` |
+| **`C-11-running`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_was_running`**（押下前が走行中） | `$prev_mode` | `PAUSE` | `clear_prev`, `close_window{id:W-2}` |
+| **`C-11-confirm`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_follow_confirm`** | `FOLLOW` | `CONFIRM` | `clear_prev`, `close_window{id:W-2}`, `face_target` |
+| **`C-11-localize`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_replay_localize`** | `REPLAY` | `LOCALIZE` | `clear_prev`, `close_window{id:W-2}`, `load_route{id,reverse}` |
+| **`C-11-blocked`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_blocked`** | `$prev_mode` | `BLOCKED` | `clear_prev`, `close_window{id:W-2}`, `open_window{id:W-5}` |
+| **`C-11-generic`** | `CARRY` | `NONE` | `ui.carry_resume` | `carry_resume_prev`（`IDLE` も復帰可能） | `$prev_mode` | `$prev_state` | `clear_prev`, `close_window{id:W-2}` |
 | `C-12` | `CARRY` | `NONE` | `ui.finish` | `hw_released` | `IDLE` | `NONE` | `clear_prev` |
 | `C-13` | `IDLE` ／ `MANUAL` | `*` | `ui.enter_mode` | `mode_entry_allowed` | `$arg.mode` | `$initial` | — |
 | `C-14` | `*` | `*` | `ui.screen` | — | `=` | `=` | `set_screen{screen_id}` |
@@ -273,6 +284,12 @@ class StateCore:
 （SG-A2・SG-A3）。戻り先は §6 の「異常解決後の復帰」列に従う。
 `C-09b-init` が無いと起動中の非常停止で疎通確認を飛ばして `IDLE` に入れた（SG-A5）。
 `C-09d` が無条件だと重大フォルト継続中・押下中に `IDLE` へ抜けられた（SG-A5）。
+
+**`C-11` の 12 行分割は 2026-10-14（T-2 ③）。**`C-11` 単行では押下前の状態そのものへ
+戻していたため、走行中に押して再開すると即座に走り出した。`C-09c-*` と同じ
+§6「異常解決後の復帰」列へ戻す（走行中なら `PAUSE`）。ガードの土台は `C-11` と同じ
+2 項（`carry_*_ok`。回復フォルト継続中も受理し、受理条件を変えない）。
+閉じる窓は `W-2`。`C-11-generic` は `IDLE` も復帰可能（`C-09c-generic` と違う）。
 
 | 行 | 塞ぐ穴 |
 | --- | --- |
@@ -309,6 +326,7 @@ class StateCore:
 | `no_critical_fault` | `fault_severity != "CRITICAL"` | `fault_severity` |
 | `hw_released` | `not hw_estop` | `hw_estop` |
 | **`hw_released_and_no_critical`** | `not hw_estop and fault_severity != "CRITICAL"` | `hw_estop`, `fault_severity` |
+| **`carry_resume_prev` / `carry_prev_is_*`（12 件）** | `carry_*_ok`（上と同値）＋押下前モード・状態の振り分け（`C-09c` の `estop_*` と同型） | `hw_estop`, `fault_severity` |
 | **`leash_slack`** | `not leash_taut` | `leash_taut` |
 | **`can_finish`** | `mode not in {"ESTOP"}` かつ（`mode != "CARRY"` または `not hw_estop`） | `hw_estop`, **`mode`** |
 | `mode_entry_allowed` | `mode_entry.yaml` が許し、かつ前提条件（§`DetailedDesign-transit.md` §0.4）を満たす | `route_ids`, `flags`, `leash_present`, `camera_present` |
@@ -722,7 +740,7 @@ UI がエラー表示すべきか判断できなくなる。
 
 | 実測値 | |
 | --- | --- |
-| 詳細設計の行数 | **共通 34 ＋ モード内 125 ＝ 159**（2026-10-05 1b-2 時点。`C-09b-init` と `C-09c` 12 分割で共通が +12） |
+| 詳細設計の行数 | **共通 45 ＋ モード内 125 ＝ 170**（2026-10-14 時点。`C-11` 12 分割で共通が +11） |
 | 正本の ID 数 | §3.1.1 **17** ＋ §3.1.2 **102** ＝ **119** |
 | 覆えていない正本 ID | **0** |
 | 正本に無い `spec_ref` | **0** |
@@ -740,7 +758,7 @@ UI がエラー表示すべきか判断できなくなる。
 | `C-05` | `SM-3.1.1-05` | `C-09d` | `SM-3.1.1-11` |
 | `C-06a` | `SM-3.1.1-06` | `C-09f` | `SM-3.1.1-12` |
 | `C-06b` | `SM-3.1.1-07` | `C-10` | `SM-3.1.1-13` |
-| `C-06r` | `SM-3.1.1-08` | `C-11` | `SM-3.1.1-14` |
+| `C-06r` | `SM-3.1.1-08` | `C-11-*`（12 行） | `SM-3.1.1-14`（2026-10-14。下の注記） |
 | `C-07` | `SM-3.1.1-09` | **`C-12`** | **`SM-3.1.1-10`**（同じ「終了」の行。`CARRY` からの分岐） |
 | `C-08` | `SM-3.1.1-10` | `C-13` | `SM-3.1.1-15` |
 | | | `C-14` | `SM-3.1.1-17` |
@@ -752,6 +770,11 @@ UI がエラー表示すべきか判断できなくなる。
 割り振る 7 組目の fan-out。1b-2）。**`SM-3.1.1-11` の fan-out は 16 行**
 （`C-09` / `C-09b-init` / `C-09b` / `C-09c-*` 12 行 / `C-09d`）。
 `test_transition_table.py` の `SPEC_FANOUT` が機械的に縛る。
+
+**`C-11-*` の 12 行**（`summon` / `at-panel` / `at-home` / `opcheck` / `calib` /
+`prep-return` / `prep` / `running` / `confirm` / `localize` / `blocked` / `generic`）は
+すべて `SM-3.1.1-14`（`C-09c-*` と同じ形の fan-out。2026-10-14）。**`SM-3.1.1-14` の
+fan-out は 12 行**（`SPEC_FANOUT` が機械的に縛る）。
 
 #### 4.4.2 モード内（§4.2 → `Spec-modes.md` §3.1.2）
 
@@ -862,7 +885,7 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | 状況 | 挙動 |
 | --- | --- |
 | 動作系 → `ESTOP` | `prev_mode` / `prev_state` に記録。**入口（UI ボタン／`fault.critical`）を問わず**、フォルトが消え物理ボタンが解放されていれば `ui.resume_yes` で押下前のモードの §6「異常解決後の復帰」列へ（`C-09c-*`。走行中なら `PAUSE`、止まっている状態なら押下前の状態へ入口から。1b-2。旧記述「`$prev_mode` の `PAUSE` へ」は廃止）。`ui.resume_no` ／ `ui.resume_ack` なら `IDLE` へ出て `prev_*` を捨てる（`C-09d` ／ `C-09f`。WS-9O 2026-09-04。`Spec-safety.md` §3.5.2）。押下前が `INIT` なら解除で `INIT/CHECK` へ戻る（`C-09b-init`。1b-2） |
-| 動作系 → `CARRY` | 同じく記録。**`ui.carry_resume` で `prev_*` へ戻る** |
+| 動作系 → `CARRY` | 同じく記録。**`ui.carry_resume` で押下前のモードの §6「異常解決後の復帰」列へ**（`C-11-*`。走行中なら `PAUSE` で止まって待ち、再開しただけでは動かない。止まっている状態なら押下前の状態へ入口から。2026-10-14。旧記述「`prev_*` へ戻る」は廃止） |
 | **`CARRY` 中に `ui.estop.press`** | **受け付けない**（`F-26`）。`reject_reason_key = "estop_disabled_in_carry"` を返し、W-2 に「駆動は既に切れています」と出す |
 | **`CARRY` 中に `fault.critical`** | `ESTOP` へ移る。**`prev_*` は上書きしない**（`CARRY` を復帰先にしない） |
 | **`ESTOP` 中に `hw.estop.press`** | `CARRY` へ移る。**`prev_*` は上書きしない** |
@@ -976,7 +999,7 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 | `OPCHECK` | `CALIB` ／ `IDLE` |
 | `CALIB` | `OPCHECK` ／ `IDLE` |
 | `ESTOP` | `IDLE` **のみ** |
-| `CARRY` | 押下前のモード（`C-11`）／ `IDLE`（`C-12`） |
+| `CARRY` | 押下前のモードの復帰先（`C-11-*`）／ `IDLE`（`C-12`） |
 
 **表に無い組合せは拒否**（`reject_reason_key: mode_entry_denied`）。
 **走行方式どうしの直接遷移は無い**（`CL-T-1`）。

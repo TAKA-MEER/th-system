@@ -750,7 +750,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `ui.reroute` | W-5 | 「再検索する」 |
 | `ui.localize_global` | S-14 | 「完全グローバルで探す」 |
 | `ui.screen` | 全画面 | 画面遷移の宣言（ゾーン導出用。遷移は起こさない） |
-| **`ui.carry_resume`** | W-2 | **「再開」**（押下前のモードへ戻る） |
+| **`ui.carry_resume`** | W-2 | **「再開」**（押下前のモードの §6 復帰先へ戻る。走行中なら一時停止） |
 | **`ui.estop.press` / `ui.estop.release`** | ヘッダ | **`safety_monitor` 経由**で `th_state` に届く（UI から直接ではない） |
 
 ### 8.2 `evt.*`（挙動ノードの事象）

@@ -131,7 +131,9 @@ export const WIN_SAVE_NO_IDLE = '破棄する'
 export const WIN_SAVE_NO_ARMED = '本当に破棄する'
 export const WIN_CARRY_HINT = '解除方法：機体後部の赤いボタンを右へひねってください。ロックが外れて飛び出します。'
 export const WIN_CARRY_RELEASED = '解除されました'
-export const WIN_CARRY_RESUME = '押下前のモードで再開する'
+// SM-3.1.1-14（2026-10-14）: 再開先は押下前のモードの §6 復帰先（走行中なら
+// 一時停止）。再開しただけでは機体は動き出さないことをボタンに明示する。
+export const WIN_CARRY_RESUME = '再開する（すぐには動き出しません）'
 export const WIN_CARRY_DISMISS = '再開しない（待機に戻る）'
 
 // C-2 (DetailedDesign-wp1.md WP-CARRY-01 §4.3, §7 / DetailedDesign-state.md

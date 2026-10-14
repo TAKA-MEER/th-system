@@ -490,7 +490,9 @@ class StateManager(Node):
         # `$arg.id` / `$arg.reverse` で解決する。ui.resume_yes の送り手は経路を
         # 知らないので、ラッチ済みの選択で補う（付いていれば送り手の値を優先。
         # 上の calib_item と同じ作法）。
-        if event == "ui.resume_yes" and self._replay_route:
+        # SM-3.1.1-14（2026-10-14）: C-11-localize も同じ解決なので
+        # ui.carry_resume にも同じ補完を入れる。
+        if event in ("ui.resume_yes", "ui.carry_resume") and self._replay_route:
             merged = dict(self._replay_route)
             merged.update(arg or {})
             arg = merged

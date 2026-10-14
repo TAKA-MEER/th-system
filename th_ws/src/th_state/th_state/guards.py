@@ -196,6 +196,75 @@ def _estop_prev_is_blocked(mode, state, ctx) -> bool:
             and ctx.prev_state == "BLOCKED")
 
 
+# SM-3.1.1-14（2026-10-14。T-2 ③）— C-11 fan-out 共通の土台。
+# C-11 と同じ「物理ボタンが解除済みで、重大フォルトが無い」の 2 項。
+# _estop_base_ok と違い fault_active を見ないため、回復フォルト継続中も受理する
+# （受理条件を変えない。C-11 の hw_released_and_no_critical と同じ意味）。
+def _carry_base_ok(ctx) -> bool:
+    return not ctx.hw_estop and ctx.fault_severity != "CRITICAL"
+
+
+# C-11 fan-out の押下前モード・状態の振り分け（C-09c fan-out と同型。
+# 土台だけ _estop_base_ok から _carry_base_ok に差し替えたもの）。
+# 押下前が IDLE なら IDLE に戻す（C-09c-generic と違い復帰不能としない。
+# SM-3.1.1-14）。INIT は T-INIT-03 が CARRY 入場自体を止めるため通常来ない。
+_CARRY_PREV_NONRESUMABLE = {"", "ESTOP", "CARRY"}
+
+
+def _carry_resume_prev(mode, state, ctx) -> bool:
+    return _carry_base_ok(ctx) and ctx.prev_mode not in _CARRY_PREV_NONRESUMABLE
+
+
+def _carry_prev_is_summon(mode, state, ctx) -> bool:
+    return _carry_base_ok(ctx) and ctx.prev_mode == "SUMMON"
+
+
+def _carry_prev_is_at_panel(mode, state, ctx) -> bool:
+    return _carry_base_ok(ctx) and ctx.prev_mode == "AT_PANEL"
+
+
+def _carry_prev_is_at_home(mode, state, ctx) -> bool:
+    return _carry_base_ok(ctx) and ctx.prev_mode == "AT_HOME"
+
+
+def _carry_prev_is_opcheck(mode, state, ctx) -> bool:
+    return _carry_base_ok(ctx) and ctx.prev_mode == "OPCHECK"
+
+
+def _carry_prev_is_calib(mode, state, ctx) -> bool:
+    return _carry_base_ok(ctx) and ctx.prev_mode == "CALIB"
+
+
+def _carry_prev_is_prep_return(mode, state, ctx) -> bool:
+    return (_carry_base_ok(ctx) and ctx.prev_mode == "PREP"
+            and ctx.prev_state == "RETURN")
+
+
+def _carry_prev_is_prep(mode, state, ctx) -> bool:
+    return (_carry_base_ok(ctx) and ctx.prev_mode == "PREP"
+            and ctx.prev_state != "RETURN")
+
+
+def _carry_prev_was_running(mode, state, ctx) -> bool:
+    return (_carry_base_ok(ctx)
+            and ESTOP_RESUME_RUN.get(ctx.prev_mode) == ctx.prev_state)
+
+
+def _carry_prev_is_follow_confirm(mode, state, ctx) -> bool:
+    return (_carry_base_ok(ctx) and ctx.prev_mode == "FOLLOW"
+            and ctx.prev_state == "CONFIRM")
+
+
+def _carry_prev_is_replay_localize(mode, state, ctx) -> bool:
+    return (_carry_base_ok(ctx) and ctx.prev_mode == "REPLAY"
+            and ctx.prev_state == "LOCALIZE")
+
+
+def _carry_prev_is_blocked(mode, state, ctx) -> bool:
+    return (_carry_base_ok(ctx) and ctx.prev_mode in ESTOP_RESUME_BLOCKED_MODES
+            and ctx.prev_state == "BLOCKED")
+
+
 # 1b-1（SG-A12）— sys.presence_lost（在席喪失）用。走行中だけ PAUSE に落とす。
 # 走行中の判定は state_core.is_driving（attributes.yaml の run_state 駆動）に
 # 集約し、ここでは attributes を束縛した版を build_guards() が差す
@@ -361,7 +430,7 @@ def _ng_and_not_calibrable(mode, state, ctx) -> bool:
 
 # 44 件 + presence_stops_mode（1b-1 SG-A12）。§4.1.1 のとおり
 # （1b-2 SG-A3/SG-A5/SG-B22 で 14 件、1b-1 SG-A12 で 1 件、
-# 1b-11 SG-B13 で 2 件追加）。
+# 1b-11 SG-B13 で 2 件、SM-3.1.1-14 の C-11 fan-out で 12 件追加）。
 GUARDS: Dict[str, Callable] = {
     "jog_allowed": _jog_allowed,
     "fault_stops_mode": _fault_stops_mode,
@@ -409,12 +478,24 @@ GUARDS: Dict[str, Callable] = {
     "estop_prev_is_follow_confirm": _estop_prev_is_follow_confirm,
     "estop_prev_is_replay_localize": _estop_prev_is_replay_localize,
     "estop_prev_is_blocked": _estop_prev_is_blocked,
+    "carry_resume_prev": _carry_resume_prev,
+    "carry_prev_is_summon": _carry_prev_is_summon,
+    "carry_prev_is_at_panel": _carry_prev_is_at_panel,
+    "carry_prev_is_at_home": _carry_prev_is_at_home,
+    "carry_prev_is_opcheck": _carry_prev_is_opcheck,
+    "carry_prev_is_calib": _carry_prev_is_calib,
+    "carry_prev_is_prep_return": _carry_prev_is_prep_return,
+    "carry_prev_is_prep": _carry_prev_is_prep,
+    "carry_prev_was_running": _carry_prev_was_running,
+    "carry_prev_is_follow_confirm": _carry_prev_is_follow_confirm,
+    "carry_prev_is_replay_localize": _carry_prev_is_replay_localize,
+    "carry_prev_is_blocked": _carry_prev_is_blocked,
     "resume_run_available": _resume_run_available,
     "resume_state_available": _resume_state_available,
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 49, len(GUARDS)
+assert len(GUARDS) == 61, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:

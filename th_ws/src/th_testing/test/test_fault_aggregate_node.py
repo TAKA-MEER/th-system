@@ -483,8 +483,9 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         発生時は自型が基本だが、新しいフォルトが残存の最重より軽いときだけ
         代表（重大）を出し直す（2026-10-05 受け入れ検査）。こうしないと
         state_manager の _fault_severity が RECOVERABLE に落ち、
-        C-11（CARRY→復帰。guard hw_released_and_no_critical）が重大継続中に
-        通ってしまう。最後に全解消→「手押し復帰」で FOLLOW に戻る対照付き。
+        C-11-*(CARRY→復帰。土台は hw_released_and_no_critical と同じ 2 項）が
+        重大継続中に通ってしまう。最後に全解消→「手押し復帰」で押下前の
+        復帰先（止まっていた状態なので prev そのまま）に戻る対照付き。
         """
         drv = self.drv
         res = self._trigger('ui.enter_mode', {'mode': 'FOLLOW'})
@@ -571,7 +572,7 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         drv.pump(0.5, (drv.pub_wf_once,))
         res = self._trigger('ui.carry_resume')
         assert res.accepted is False, \
-            '重大フォルト継続中に ui.carry_resume が通った（C-11・hw_released_and_no_critical）'
+            '重大フォルト継続中に ui.carry_resume が通った（C-11-*）'
         # 「戻る」（C-09c。estop_resume_prev が重大を見る）も同様に通らない。
         res = self._trigger('ui.resume_yes')
         assert res.accepted is False, \
@@ -581,8 +582,9 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         assert snap.mode in ('CARRY', 'ESTOP') and snap.mode != ret_mode, \
             f'重大継続中に走行系モードへ戻った: {snap.mode}/{snap.state}'
 
-        # 対照：全解消 → 復帰できる。CARRY なら C-11（手押し復帰）で元の
-        # モード/状態へ、ESTOP なら C-09c（resume_yes）で元のモードの PAUSE へ。
+        # 対照：全解消 → 復帰できる。CARRY なら C-11-*(手押し復帰)で押下前の
+        # 復帰先（止まっていた状態なので prev そのまま）へ、ESTOP なら
+        # C-09c（resume_yes）で元のモードの PAUSE へ。
         assert drv.wait_for_cleared(8.0, keep_alive=drv.all_alive()), \
             '全解消の active=false が出なかった'
         drv.pump(0.5, drv.all_alive())
