@@ -380,14 +380,19 @@ class TestStateManagerNode(unittest.TestCase):
         assert snap.prev_mode == 'FOLLOW', \
             'ESTOP 中の hw.estop.press で prev_* が上書きされてはいけない（§7 行5）'
 
-        # 2') CARRY → ui.carry_resume で prev_* へ戻る（§7 行2）。
+        # 2') CARRY → ui.carry_resume で押下前の復帰先へ（§7 行2・SM-3.1.1-14）。
+        #     押下前 FOLLOW/SELECT（止まっている状態）なので SELECT へそのまま
+        #     戻る（C-11-generic）。走行中なら PAUSE になることは
+        #     test_carry_resume_from_nav_stays_paused が縛る。
         self.pub_fault.publish(FaultStatus(active=False, fault_type='', severity=''))
         self._spin(0.1)
         self.pub_hw.publish(Bool(data=False))
         self._spin(0.1)
         res = self._trigger('ui.carry_resume')
         assert res.accepted, res.reject_reason_key
-        assert self._wait_mode('FOLLOW'), 'ui.carry_resume で prev_mode へ戻れていない（§7 行2）'
+        assert res.rule_id == 'C-11-generic', f'効いた行が違う: {res.rule_id}'
+        assert self._wait_mode_state('FOLLOW', 'SELECT'), \
+            'ui.carry_resume で押下前の状態へ戻れていない（§7 行2）'
 
         # 6) CARRY 中の ui.finish → IDLE。prev_* を捨てる（§7 行6。実装上 CARRY 側のみ）。
         self.pub_hw.publish(Bool(data=True))
@@ -400,6 +405,51 @@ class TestStateManagerNode(unittest.TestCase):
         snap = self._latest()
         assert snap.prev_mode == '' and snap.prev_state == '', \
             'CARRY 中の ui.finish 後は prev_* を捨てるはず（§7 行6）'
+
+    # ════════════════════════════════════════════════════════
+    # SM-3.1.1-14（2026-10-14・T-2 ③。本番の経路）
+    # ════════════════════════════════════════════════════════
+    def test_carry_resume_from_nav_stays_paused(self):
+        """PANEL_NAV/NAV で物理押下 → CARRY → 解除 → ui.carry_resume →
+        /system/state が PANEL_NAV/PAUSE になり、NAV にならない。
+        再開しただけでは走り出さない。"""
+        from geometry_msgs.msg import Pose
+        from th_system_msgs.msg import Pin, PinList
+        pub_pins = self.node.create_publisher(PinList, '/onsite/pins', _STATE_QOS)
+        try:
+            pub_pins.publish(PinList(
+                pins=[Pin(id='p1', kind='PANEL', pose=Pose())]))
+            self._spin(0.5)
+
+            res = self._trigger('ui.goto', {'kind': 'PANEL'})
+            assert res.accepted, res.reject_reason_key
+            assert self._wait_mode_state('PANEL_NAV', 'NAV'), \
+                'PANEL_NAV/NAV に入らない'
+
+            # 走行中に物理押下 → CARRY（prev=PANEL_NAV/NAV をラッチ）。
+            self.pub_hw.publish(Bool(data=True))
+            assert self._wait_mode_state('CARRY', 'NONE'), \
+                '物理押下で CARRY に入らない'
+            snap = self._latest()
+            assert (snap.prev_mode, snap.prev_state) == ('PANEL_NAV', 'NAV'), \
+                f'CARRY 入場時の latch が違う: {snap.prev_mode}/{snap.prev_state}'
+
+            # 解除 → CARRY のまま → 再開 → PAUSE。NAV には戻らない。
+            self.pub_hw.publish(Bool(data=False))
+            self._spin(0.3)
+            assert self._latest().mode == 'CARRY', 'HW 解除で CARRY を離れた'
+            self._state_history.clear()
+            res = self._trigger('ui.carry_resume')
+            assert res.accepted, res.reject_reason_key
+            assert res.rule_id == 'C-11-running', f'効いた行が違う: {res.rule_id}'
+            assert self._wait_mode_state('PANEL_NAV', 'PAUSE'), \
+                'ui.carry_resume で PANEL_NAV/PAUSE に戻らない'
+            self._spin(1.0)
+            seen = [(m.mode, m.state) for m in self._state_history]
+            assert ('PANEL_NAV', 'NAV') not in seen, \
+                '再開しただけで NAV に戻って走り出した（T-2 ③の再発）'
+        finally:
+            self.node.destroy_publisher(pub_pins)
 
     # ════════════════════════════════════════════════════════
     # SM-3.1.1-11 / 12 — ESTOP からの復帰先。
