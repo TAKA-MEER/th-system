@@ -42,7 +42,24 @@ RUN apt-get update && apt-get install -y \
     usbutils \
     iputils-ping \
     iproute2 \
+    gdb \
     && rm -rf /var/lib/apt/lists/*
+
+# ── tf2 は 0.25.24 以上に揃える（2026-10-14 実機で確定）──────────────
+# ros-humble-tf2-ros 0.25.23 には waitForTransform と testTransformableRequests の
+# ABBA デッドロックがあり（0.25.24 で修正。geometry2 #982 の backport）、
+# Nav2 controller_server の TF 受信が止まって map→odom が古いまま固定される
+# （「Transform data too old」でその場旋回）。ベースイメージに入っている
+# ros-humble-tf2 などは上の apt-get install では上がらず版が混ざるので、
+# ros-humble-tf2* をまとめて上げ、届いていなければビルドを止める。
+RUN apt-get update && \
+    apt-get install -y --only-upgrade $(dpkg-query -W -f='${Package}\n' 'ros-humble-tf2*') && \
+    rm -rf /var/lib/apt/lists/* && \
+    for p in ros-humble-tf2 ros-humble-tf2-ros; do \
+        v=$(dpkg-query -W -f='${Version}' "$p"); \
+        dpkg --compare-versions "$v" ge 0.25.24 || \
+            { echo "ERROR: $p $v < 0.25.24（tf2 のデッドロックがある版）" >&2; exit 1; }; \
+    done
 
 # ── Python パッケージ ────────────────────────────────────────────────
 RUN pip3 install numpy scipy transforms3d websockets ruamel.yaml
