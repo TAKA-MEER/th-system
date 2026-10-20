@@ -56,10 +56,12 @@ body.pv-portrait #stage,body.pv-landscape #stage{padding:18px}
    #release / #overlay）に指定する。#demo は #app の外なので :root の 16px のまま。
    420px→16 / 1120px→16 / 1400px→19 / 1920px→22。縦長・横長の見え方は変えない。 */
 #app > *{ --fs:clamp(16px, calc(1.1cqi + 3.6px), 22px); font-size:var(--fs); }
-body.pv-portrait #app{width:420px;height:840px;max-height:calc(100dvh - 36px);
-  border-radius:14px;box-shadow:0 0 0 8px #1b1f28,0 18px 50px #000;}
-body.pv-landscape #app{width:1120px;height:720px;max-width:calc(100vw - 36px);max-height:calc(100dvh - 36px);
-  border-radius:14px;box-shadow:0 0 0 8px #1b1f28,0 18px 50px #000;}
+/* 縦長・横長は論理キャンバス（縦長 960×1280／横長 1280×720）を等倍で縮めて枠に収める（Spec-webui.md §7）。
+   大きさと倍率は fitStage() が決める。#stageBox は縮めたあとの見かけの大きさを持つ */
+body.pv-full #stageBox{width:100%;height:100%}
+#stageBox{position:relative;overflow:hidden}
+body.pv-portrait #stageBox,body.pv-landscape #stageBox{border-radius:14px;box-shadow:0 0 0 8px #1b1f28,0 18px 50px #000}
+body.pv-portrait #app,body.pv-landscape #app{position:absolute;left:0;top:0;transform-origin:0 0}
 
 /* ================= ヘッダ（最上位・何にも覆われない） ================= */
 #hdr{
@@ -95,6 +97,9 @@ body.pv-landscape #app{width:1120px;height:720px;max-width:calc(100vw - 36px);ma
 }
 #faultDot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:0 0 auto}
 #faultTx{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 解消した直近の異常。押すとフォルト履歴を開く（Spec-webui.md §1） */
+#recentFault{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-size:calc(var(--fs) * .78);color:var(--mut);border:1px solid var(--bd-hi);border-radius:999px;padding:2px 9px}
 #faultBadge{
   flex:0 0 auto;font-size:calc(var(--fs) * .74);font-weight:700;padding:3px 9px;border-radius:999px;
   background:#4a1010;border:1px solid #8a2a2a;color:var(--ng-tx);display:none;cursor:pointer;
@@ -111,6 +116,8 @@ body.pv-landscape #app{width:1120px;height:720px;max-width:calc(100vw - 36px);ma
 }
 #estopBtn:active{background:var(--estop-hi)}
 #estopBtn.engaged{background:var(--carry);border-left-color:#4a2a70}
+/* 手押し中は押しても効かない。消さず・無効にもせず、効かない見た目だけにする */
+#estopBtn.disabled-in-carry{background:#4a3a3a;color:#d8c8c8;box-shadow:none}
 /* 縦長ではヘッダ2段目の45%以上を占めさせる */
 #hdr .row2{--estop-w:46%}
 #estopBtn{flex-basis:var(--estop-w,auto)}
@@ -163,14 +170,13 @@ body.pv-landscape #app{width:1120px;height:720px;max-width:calc(100vw - 36px);ma
 }
 /* 設定はカードが縦に並ぶだけなので、横長では 2 列にしてスクロールを無くす */
 @container app (min-width:1000px){
-  #s50 .tabpane.on{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
-  #s50 .tabpane.on > .card{margin-bottom:0}
+  #s50 > .tabpane.on:not(#set1){display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
+  #s50 > .tabpane.on > .card{margin-bottom:0}
 }
-/* メインメニューはハブなので、横長ではスクロールさせずに全部見せる */
+/* メインメニュー・接続確認はハブなので、横長では 2 列に割ってスクロールさせずに全部見せる */
+.split-col{min-width:0}
 @container app (min-width:1000px){
-  #s01.active{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;align-items:start}
-  #s01 .card{margin-bottom:0}
-  #s01 .card:first-child{grid-row:span 3}
+  #s01.active,#s00.active{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;align-items:start}
 }
 /* 広い画面では右列を 2 列に割ってスクロールを減らす（Spec-webui.md §1.4） */
 @container app (min-width:1300px){
@@ -184,8 +190,8 @@ body.pv-landscape #app{width:1120px;height:720px;max-width:calc(100vw - 36px);ma
 }
 
 /* ---------- 汎用パーツ ---------- */
-.card{background:var(--panel);border:1px solid var(--bd);border-radius:var(--r);padding:10px;margin-bottom:10px}
-.card > h3{font-size:calc(var(--fs) * .76);letter-spacing:.1em;color:var(--mut);font-weight:700;margin-bottom:8px}
+.card{background:var(--panel);border:1px solid var(--bd);border-radius:var(--r);padding:10px;margin-bottom:8px}
+.card > h3,.card > .row > h3{font-size:calc(var(--fs) * .76);letter-spacing:.1em;color:var(--mut);font-weight:700;margin-bottom:8px}
 .well{background:var(--inset);border:1px solid var(--bd);border-radius:var(--r);padding:10px}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .grow{flex:1 1 auto}
@@ -256,7 +262,7 @@ table.lst td.r{text-align:right}
 
 /* 図は画面高に対して頭打ちにする。幅なりに縦へ伸びると操作カードを画面外へ押し出す。
    SVG は既定の preserveAspectRatio で中央に収まるので、高さを絞っても歪まない。 */
-.radarWrap svg{max-height:min(46cqh,340px)}
+.radarWrap svg{max-height:min(40cqh,340px)}
 .mapWrap  svg{max-height:min(42cqh,300px)}
 .stick    svg{max-height:min(32cqh,260px)}
 
@@ -379,7 +385,7 @@ table.lst td.r{text-align:right}
 /* ================= モックアップ操作パネル（実機には無い） ================= */
 /* ヘッダ(1000)・解除バー(950)より下。安全に関わる操作系を絶対に覆わない */
 #demo{
-  position:fixed;right:10px;bottom:10px;z-index:940;transition:bottom .15s;
+  position:fixed;right:10px;bottom:10px;z-index:940;
   background:#0c1220;border:1px solid #2c4a74;border-radius:10px;
   box-shadow:0 10px 34px #000b;font-size:calc(var(--fs) * .8);max-width:330px;
 }
@@ -393,7 +399,7 @@ table.lst td.r{text-align:right}
 #demo .btn{padding:6px 9px;font-size:calc(var(--fs) * .78);font-weight:600}
 #demoToggle{margin-left:auto;background:#1b2c47;border:1px solid #2c4a74;border-radius:5px;padding:2px 9px}
 /* 非常停止の解除バーが出ている間は、パネルを上へ逃がす */
-#demo.shift{bottom:76px}
+#demo.shift{bottom:130px}
 
 /* ---------- 操作カード（全画面で同じ位置に同じボタンを置く） ----------
    Spec-webui.md §3.3: 停止=左上 / 確認=中上 / 走行=右上 / 保存=左下 / 手動=右下。
@@ -405,13 +411,65 @@ table.lst td.r{text-align:right}
 .op-run   {grid-column:3;grid-row:1}
 .op-save  {grid-column:1;grid-row:2}
 .op-manual{grid-column:3;grid-row:2}
-.opsgrid .btn{padding:calc(var(--fs) * .62) 8px}
+.opsgrid .btn{padding:calc(var(--fs) * .5) 8px}
 /* 行に 1 つしか無いときは、その行いっぱいに広げて「作りかけ」に見せない。
    ただし「手動」は右下から動かさない（触れている間だけのジョグなので位置を覚えさせる）。 */
 .opsgrid:not(:has(.op-check)):not(:has(.op-run)) .op-stop{grid-column:1 / -1}
 .opsgrid:not(:has(.op-manual)) .op-save{grid-column:1 / -1}
+/* 手順バー（試験準備・試験・校正ウィザード）。主表示（左列）の上に置く */
+.stepbar-cell{min-width:0;padding-bottom:10px}
+.stepbar{list-style:none;display:flex;align-items:center;gap:4px;margin-bottom:6px;flex-wrap:wrap}
+.stepbar-step{display:flex;align-items:center;gap:5px;font-size:calc(var(--fs) * .8);color:var(--mut)}
+.stepbar-num{width:1.6em;height:1.6em;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  border:1px solid var(--bd-hi);font-weight:700;font-size:calc(var(--fs) * .74)}
+.stepbar-step.done{color:var(--ok-tx)} .stepbar-step.done .stepbar-num{background:#14331a;border-color:#2c6b33}
+.stepbar-step.cur{color:#fff;font-weight:700} .stepbar-step.cur .stepbar-num{background:var(--ctrl-on);border-color:var(--brand)}
+.stepbar-link{flex:0 1 18px;height:2px;background:var(--bd-hi)}
+/* 「次にやること」。手順バーのいまの手順をそのまま押せる大きなボタン（操作カードの上） */
+.next-action{display:block;width:100%;margin-bottom:8px;padding:8px 12px;border-radius:8px;font-weight:700;
+  background:#1d2c42;border:1px dashed var(--brand);color:#cfe3fa}
+/* 止まっている理由の帯（本文の上） */
+.stop-banner{display:none;order:1;flex:0 0 auto;padding:8px 12px;background:#2a1c0a;border-bottom:1px solid #6a4a18;
+  color:var(--warn-tx);font-size:calc(var(--fs) * .85)}
+.stop-banner.show{display:block}
+/* 教示タブは 2 列に割る（左＝経路の選択、右＝記録の状況と地図）。縦に積むと溢れる */
+.pane-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}
+.pane-col{min-width:0}
+/* 開発モードタブ: 項目の表を右列に縦長で置き、他のカードを左列に積む */
+@container app (min-width:1000px){
+  #set3.on > .card:nth-child(2){grid-column:2;grid-row:1 / span 3}
+}
+/* 一覧が長くなったら一覧の中だけスクロールさせ、画面全体はスクロールさせない（§1.4） */
+.lst-scroll{max-height:min(14cqh,10em);overflow-y:auto}
+.well svg{max-height:min(16cqh,200px)}
+/* 入力欄 */
+.txt{padding:7px 9px;background:var(--inset);border:1px solid var(--bd-hi);border-radius:6px;color:var(--tx);font:inherit}
+.txt.num{width:6em;text-align:right}
+.txt.wide{width:100%}
+.btn.sm.reg{padding:5px 8px}
+/* 開発モードの「無視する／無視しない」は折り返さない（行が背高になって溢れる） */
+#set3 td.r .btn{white-space:nowrap}
+#set3 table.lst td{padding:5px 8px}
+/* 始業点検の一覧。行そのものがボタン */
+.ocrows{display:grid;gap:6px}
+.ocrow{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--bd-hi);border-radius:6px;background:var(--ctrl);text-align:left}
+.ocrow.sel{border-color:var(--brand);background:#1f2634}
+/* 判定の根拠。基準を満たさなかった行を強調する */
+table.lst.basis tr.ng td{background:#2a1c0a}
+/* フォルト履歴 */
+.fh-rows{list-style:none;display:grid;gap:6px}
+.fh-row{border:1px solid var(--bd);border-radius:6px;padding:7px 9px;font-size:calc(var(--fs) * .84)}
+.fh-row.ongoing{border-color:#7a2a2a}
+.fh-l1,.fh-l2{display:flex;gap:10px;flex-wrap:wrap}
+.fh-l2{color:var(--mut);font-size:calc(var(--fs) * .78);margin-top:2px}
+/* キーボード操作の凡例（スティックの下） */
+.kbdHint{margin-top:6px;font-size:calc(var(--fs) * .74);color:var(--mut)}
+.kbdKeys{font-family:ui-monospace,monospace;margin-right:4px}
+/* W-6 の自動ブレーキ・後方死角の行 */
+#jogWin .jw-s{display:flex;gap:8px;align-items:center;margin:0 0 8px;flex-wrap:wrap}
+.warn-tx{color:var(--warn-tx)}
 /* 状態表示は操作カードの一部。小さくしない */
-.state{margin-top:9px;font-size:calc(var(--fs) * .95);font-weight:700}
+.state{margin-top:7px;font-size:calc(var(--fs) * .95);font-weight:700}
 /* 右列の詳細はタブで畳む。縦長でスクロールしないようにするため */
 .subtabs > .tabpane > .card:last-child{margin-bottom:0}
 /* 狭いときは余白を詰め、図の高さを頭打ちにする。
@@ -429,7 +487,7 @@ table.lst td.r{text-align:right}
 </head>
 <body class="pv-full">
 
-<div id="stage"><div id="app">
+<div id="stage"><div id="stageBox"><div id="app">
 
 <!-- ============ ヘッダ：常に最上位・何にも覆われない ============ -->
 <header id="hdr">
@@ -446,12 +504,18 @@ table.lst td.r{text-align:right}
     <div id="faultBox">
       <span id="faultDot"></span>
       <span id="faultTx">正常</span>
+      <!-- 解消した直近の異常を残す。押すとフォルト履歴（Spec-webui.md §1・Spec-safety.md §3.5.5） -->
+      <button id="recentFault" onclick="openWin('winFaultHistory')">直近の異常：LiDAR 途絶 12:34:56</button>
       <span class="spacer grow"></span>
-      <button id="faultBadge" onclick="reshowFault()">異常 1 件 ▲</button>
+      <button id="faultBadge" onclick="reshowFault()">再表示 ▲</button>
     </div>
     <button id="estopBtn" onclick="onEstopBtn()">非常停止</button>
   </div>
 </header>
+
+<!-- 止まっている理由（速度上限が 0 に落ちたのに、フォルトでも一時停止でもないとき）。
+     黙って止まらないよう本文の上に帯で出す。W-1 が出ている間は二重に出さない -->
+<div class="stop-banner" id="stopBanner">前方に障害物があるため停止しています。</div>
 
 <!-- ============ 本文：唯一スクロールする領域 ============ -->
 <main id="body">
@@ -504,82 +568,138 @@ table.lst td.r{text-align:right}
       </svg>
     </div>
     <div class="spd">
-      <button class="btn sm" onclick="spd(this)">高速</button>
+      <!-- 場内の画面（S-20・S-21）では「高速」を出さない（Spec-webui.md §6。paintHeader が隠す） -->
+      <button class="btn sm spd-high" onclick="spd(this)">高速</button>
       <button class="btn sm on" onclick="spd(this)">中速</button>
       <button class="btn sm" onclick="spd(this)">低速</button>
     </div>
   </div>
+  <div class="kbdHint"><span class="kbdKeys">W/A/S/D または矢印キー</span><span class="kbdDesc">で走行</span></div>
+</template>
+
+<template id="tplFaultHistory">
+  <div class="sm mut mb">直近 50 件を新しい順に表示します（見るだけです）。</div>
+  <ol class="fh-rows">
+    <li class="fh-row ongoing"><div class="fh-l1"><span class="mono">12:41:07</span><b>人物追跡 途絶</b><span>継続中（0:42）</span></div>
+      <div class="fh-l2"><span>呼び寄せ / 退避待ち</span><span>回復</span><span>一時停止</span></div></li>
+    <li class="fh-row"><div class="fh-l1"><span class="mono">12:34:56</span><b>LiDAR 途絶</b><span>0.1 秒</span></div>
+      <div class="fh-l2"><span>配電盤へ移動 / 移動中</span><span>回復</span><span>一時停止</span></div></li>
+    <li class="fh-row"><div class="fh-l1"><span class="mono">09:02:11</span><b>駆動の暴走</b><span>3.4 秒</span></div>
+      <div class="fh-l2"><span>手動走行 / 走行中</span><span class="tone-ng">重大</span><span>非常停止</span></div></li>
+  </ol>
 </template>
 
 <!-- ---------- S-00 接続確認 ---------- -->
 <section class="screen" id="s00">
+  <div class="split-col">
   <div class="card">
     <h3>疎通確認</h3>
+    <!-- 必須 3 者は機器ごとに行を分け、受信間隔などの実測を添える（connectivity_checker の項目別状態）。
+         開発モードで外している項目も実際の状態を出し、「（開発モードで無視中）」と添える。 -->
     <table class="lst">
-      <tr><th>機器</th><th>扱い</th><th>状態</th><th class="r">詳細</th></tr>
-      <tr><td>ESP32</td><td><span class="pill">必須</span></td><td class="tone-ok">✓ 疎通</td><td class="r mono xs">車輪FB 0.05s前</td></tr>
-      <tr><td>RaspberryPi4 (LiDAR)</td><td><span class="pill">必須</span></td><td class="tone-ok">✓ 疎通</td><td class="r mono xs">10.0 Hz / 全周有効</td></tr>
-      <tr><td>PC</td><td><span class="pill">必須</span></td><td class="tone-ok">✓ 起動</td><td class="r mono xs">全ノード起動</td></tr>
-      <tr><td>Wi-Fi AP</td><td><span class="pill">監視</span></td><td class="tone-ok">✓ リンク</td><td class="r mono xs">-52 dBm</td></tr>
-      <tr><td>カメラ（区画線用）</td><td><span class="pill">任意</span></td><td class="tone-ng">× 未接続</td><td class="r xs mut">ライン誘導走行が選べません</td></tr>
-      <tr><td>リードデバイス</td><td><span class="pill">任意</span></td><td class="tone-ng">× 未接続</td><td class="r xs mut">電子リード走行が選べません</td></tr>
-      <tr><td>タブレット</td><td><span class="pill">任意</span></td><td class="tone-ok">✓ 1 台</td><td class="r xs mut">使用中</td></tr>
+      <tr><th>機器</th><th>扱い</th><th class="r">状態</th></tr>
+      <tr><td>ESP32（ホイールフィードバック）<div class="xs mut mono">最後の受信 48 ms 前</div></td><td><span class="pill">必須</span></td><td class="r tone-ok">✓ 疎通</td></tr>
+      <tr><td>ESP32（速度指令の折り返し）<div class="xs mut mono">最後の受信 52 ms 前</div></td><td><span class="pill">必須</span></td><td class="r tone-ok">✓ 疎通</td></tr>
+      <tr><td>RaspberryPi4（LiDAR）<div class="xs mut mono">最後の受信 96 ms 前・点数 1440</div></td><td><span class="pill">必須</span></td><td class="r tone-ok">✓ 疎通</td></tr>
+      <tr><td>PC（ノード起動）<div class="xs mut">必須ノードが揃っている</div></td><td><span class="pill">必須</span></td><td class="r tone-ok">✓ 疎通</td></tr>
+      <tr><td>Wi-Fi AP<div class="xs mut">単一障害点</div></td><td><span class="pill">監視</span></td><td class="r tone-ok">✓ 通信できている</td></tr>
+      <!-- 未実装（Spec-webui.md §3.1）: カメラ・リードデバイスは信号源がまだ無い -->
+      <tr><td>カメラ（区画線用）<div class="xs mut">ライン誘導走行が選べません</div></td><td><span class="pill">任意</span></td><td class="r tone-ng">× 未接続</td></tr>
+      <tr><td>リードデバイス<div class="xs mut">電子リード走行が選べません</div></td><td><span class="pill">任意</span></td><td class="r tone-ng">× 未接続</td></tr>
+      <tr><td>タブレット（この画面）</td><td><span class="pill">監視</span></td><td class="r tone-ok">✓ 接続している</td></tr>
     </table>
   </div>
+  </div>
+  <div class="split-col">
   <div class="card">
     <h3>総合</h3>
-    <div class="row" id="s00ok"><span class="pill ok">必須 3 者すべて疎通</span><span class="pill warn">カメラ・リードは未接続</span></div>
-    <div class="note" id="s00ng" style="display:none">ESP32 と疎通できません。制御系を再起動しています（2 回目）。</div>
+    <div class="row" id="s00ok"><span class="pill ok">運用に入れます</span></div>
+    <div id="s00ng" style="display:none">
+      <div class="row"><span class="pill ng">必須機器が繋がっていません</span></div>
+      <div class="row mt"><span class="pill warn">制御系を再起動しています（2 回目）</span></div>
+    </div>
+    <!-- 必須 3 者が揃うまでは出さない（押せないボタンを置かない）。代わりに開発モードの設定への導線を出す -->
     <button class="btn primary wide mt" id="s00go" onclick="go('s01')">メインメニュー画面へ</button>
+    <button class="btn wide mt" id="s00dev" style="display:none" onclick="openDevSettings()">開発モードの設定</button>
+  </div>
+  <!-- 起動時の自動点検（Spec-ops.md §2.6）。NG でも警告だけで運用に入れる -->
+  <div class="card">
+    <h3>始業点検の自動判定</h3>
+    <div class="row mb"><span class="pill warn">自動判定: 要確認</span></div>
+    <table class="lst">
+      <tr><td>非常停止ボタン</td><td class="r tone-ok">正常</td></tr>
+      <tr><td>IMU</td><td class="r tone-ok">正常</td></tr>
+      <tr><td>LiDAR</td><td class="r tone-warn">要確認（死角マスクのずれ）</td></tr>
+    </table>
+  </div>
   </div>
 </section>
 
 <!-- ---------- S-01 メインメニュー ---------- -->
 <section class="screen" id="s01">
+  <div class="split-col">
+  <!-- ネットワーク接続確認の要約（Spec-webui.md §3.2・Spec-ops.md §2.6）。
+       S-00 と同じ警告を出すだけで、ボタンの活性は変えない。 -->
   <div class="card">
-    <h3>移動（保管場所⇔試験場）</h3>
+    <h3>ネットワーク接続確認</h3>
+    <div class="row mb sm">
+      <span class="pill ok">ESP32 ✓</span><span class="pill ok">LiDAR ✓</span><span class="pill ok">PC ✓</span>
+      <span class="pill ok">AP ✓</span><span class="pill ng">カメラ ×</span><span class="pill ng">リード ×</span>
+    </div>
+    <div class="row mb"><span class="pill ng">始業点検の自動判定に要確認があります</span></div>
+    <button class="btn wide" onclick="go('s00')">詳細を見る</button>
+  </div>
+  <div class="card">
+    <h3>移動</h3>
+    <!-- 教示は保管場所起点。判定は人の責任なので常に出す（Spec-transit.md §0.6・§3.5） -->
+    <div class="note mb">教示は保管場所から開始してください（復路では教示できません）</div>
+    <!-- 前提を満たさないものは薄く出し、押すと理由をウィンドウで出す（Spec-webui.md §3.2） -->
     <div class="btnrow n2">
-      <button class="btn" onclick="go('s10')">1. 追従走行</button>
-      <button class="btn" onclick="go('s11')">2. 手動走行</button>
-      <button class="btn" onclick="go('s12')">3. 教示（追従）</button>
-      <button class="btn" onclick="go('s13')">4. 教示（手動）</button>
-      <button class="btn" onclick="go('s14')">5. 教示再生走行</button>
-      <button class="btn dis" id="btnLine" onclick="whyDisabled('ライン誘導走行','カメラが接続されていません')">6. ライン誘導走行</button>
-      <button class="btn dis" id="btnLeash" onclick="whyDisabled('電子リード走行','リードデバイスが接続されていません')">7. 電子リード走行</button>
+      <button class="btn" onclick="go('s10')">追従走行</button>
+      <button class="btn" onclick="go('s11')">手動走行</button>
+      <button class="btn" onclick="go('s12')">教示（追従）</button>
+      <button class="btn" onclick="go('s13')">教示（手動）</button>
+      <button class="btn" onclick="go('s14')">教示再生</button>
+      <button class="btn dis" onclick="whyDisabled('カメラが接続されていません')">ライン誘導</button>
+      <button class="btn dis" onclick="whyDisabled('リードデバイスが接続されていません')">電子リード</button>
     </div>
   </div>
+  </div>
+  <div class="split-col">
   <div class="card">
     <h3>試験場</h3>
     <div class="btnrow n2">
-      <button class="btn" onclick="go('s20')">試験準備（前日）</button>
+      <button class="btn" onclick="go('s20')">試験準備</button>
       <button class="btn" onclick="go('s21')">試験（当日）</button>
     </div>
   </div>
   <div class="card">
     <h3>保守・設定</h3>
-    <div class="btnrow n3">
+    <div class="btnrow n2">
       <button class="btn" onclick="go('s30')">始業点検</button>
       <button class="btn" onclick="go('s40')">校正</button>
-      <button class="btn" onclick="go('s50')">設定</button>
     </div>
+    <button class="btn wide mt" onclick="go('s50')">設定</button>
   </div>
+  <!-- 未実装（Spec-webui.md §3.2）: バッテリー残量。低下時は警告色 -->
   <div class="card">
-    <h3>接続とバッテリー</h3>
-    <div class="row sm mb">
-      <span class="pill ok">ESP32 ✓</span><span class="pill ok">LiDAR ✓</span><span class="pill ok">PC ✓</span>
-      <span class="pill ok">AP ✓</span><span class="pill ng">カメラ ×</span><span class="pill ng">リード ×</span>
-      <button class="btn sm" onclick="go('s00')">詳細</button>
-    </div>
+    <h3>バッテリー</h3>
     <div class="row"><span class="sm mut">駆動用バッテリー</span><div class="bar grow ok"><i style="width:72%"></i></div><span class="mono b">72%</span></div>
   </div>
   <!-- 運用の終了（Spec-webui.md §3.2.1 / Spec-ops.md §4）
        運用そのものを終える唯一の出口。「終了」＝方式を抜ける と紛れないよう語を変えてある。 -->
   <div class="card">
     <h3>運用の終了</h3>
-    <div class="row mb"><span class="grow sm">未保存のデータ</span>
-      <span class="pill ng" id="unsavedPill">2 件</span></div>
-    <button class="btn danger wide" id="shutdownBtn" onclick="shutdown()">制御系を停止する</button>
-    <div class="hint" id="shutdownHint">未保存のデータが残っています。押すと一覧を表示します。</div>
+    <div id="shutdownCard">
+      <div class="row mb"><span class="grow sm">未保存のデータ</span>
+        <span class="pill ng" id="unsavedPill">2 件</span></div>
+      <button class="btn danger wide" id="shutdownBtn" onclick="shutdown()">制御系を停止する</button>
+      <div class="hint mt" id="shutdownHint">押すと一覧を表示します</div>
+    </div>
+    <!-- 停止の進捗と完了（手順 5）。接続が切れたのを確かめてから「電源を切って構いません」を出す -->
+    <div class="note" id="shutdownDone" style="display:none"><div class="b" id="shutdownDoneT">停止しています…</div>
+      <div id="shutdownDoneB"></div></div>
+  </div>
   </div>
 </section>
 
@@ -598,7 +718,6 @@ table.lst td.r{text-align:right}
   </div>
   <div>
     <div class="card ops">
-      <h3>操作</h3>
       <div class="opsgrid">
         <button class="btn op-stop" onclick="act(this,'s10','pause')">停止</button>
         <button class="btn op-check" onclick="act(this,'s10','confirm')">確認</button>
@@ -625,11 +744,16 @@ table.lst td.r{text-align:right}
     <div class="tabpane on" id="t11a">
       <div class="card">
         <h3>障害物</h3>
+        <!-- 自動ブレーキ OFF の間は減速しないので、近づいたら（ON なら減速が始まる距離で）警告を出す（Spec-webui.md §3.5） -->
         <div class="note">前方 0.6 m に障害物（警告）</div>
+        <div class="note mt brakeOffWarn" style="display:none">障害物に近づいています（自動ブレーキ OFF のため減速しません）</div>
         <div class="row mt">
           <span class="grow sm">自動ブレーキ</span>
-          <button class="btn sm" onclick="toggleBrake(this)">OFF</button>
+          <span class="pill brakePill">OFF</span>
+          <!-- ON→OFF は W-4 で確認する。OFF→ON は確認しない（2026-10-07） -->
+          <button class="btn sm" onclick="toggleBrake(this)">ON にする</button>
         </div>
+        <div class="note mt brakeOffHint">OFF のあいだは障害物に近づいても減速しません。画面の警告を見て操作してください</div>
       </div>
       <div class="card">
         <h3>後退</h3>
@@ -639,7 +763,6 @@ table.lst td.r{text-align:right}
   </div>
   <div>
     <div class="card ops">
-      <h3>操作</h3>
       <div class="opsgrid">
         <button class="btn on op-stop" onclick="act(this,'s11','pause')">停止</button>
       </div>
@@ -667,13 +790,25 @@ table.lst td.r{text-align:right}
       <div class="mount" data-tpl="radar"></div>
     </div>
     <div class="tabpane" id="t12b">
+     <div class="pane-grid">
+      <div class="pane-col">
       <div class="card">
         <h3>経路</h3>
-        <div class="btnrow n2">
-          <button class="btn on" onclick="pick2(this)">新規経路</button>
-          <button class="btn" onclick="pick2(this)">既存経路の再設定</button>
-        </div>
+        <!-- 「記録開始」ボタンは無い。選んだ瞬間に記録が始まる（Spec-transit.md §3.2 手順 4） -->
+        <div class="note mb">新規か既存かを選ぶと、すぐに記録が始まります。保存するまで終点は確定しません。</div>
+        <div class="b sm mb">新規経路</div>
+        <div class="row mb"><span class="sm mut">経路名</span>
+          <input class="grow txt" type="text" value="保管場所→試験場" aria-label="経路名"></div>
+        <button class="btn wide" onclick="mark(this,'記録を始めました')">この名前で記録を始める</button>
+        <!-- 既存の録り直し・同名の新規は上書き（旧版は 1 世代残る）なので二段階アーム式（§6） -->
+        <div class="b sm mt mb">既存経路の再設定</div>
+        <div class="lst-scroll"><table class="lst">
+          <tr><td>保管場所→試験場 A</td><td class="r"><button class="btn sm danger" onclick="arm(this,'録り直す','本当に上書きする')">録り直す</button></td></tr>
+          <tr><td>保管場所→試験場 B</td><td class="r"><button class="btn sm danger" onclick="arm(this,'録り直す','本当に上書きする')">録り直す</button></td></tr>
+        </table></div>
       </div>
+      </div>
+      <div class="pane-col">
       <div class="card">
         <h3>対象の提示</h3>
         <div class="hint">記録開始前に対象を 1 度提示してください。</div>
@@ -682,10 +817,10 @@ table.lst td.r{text-align:right}
       <div class="card">
         <h3>記録の状況</h3>
         <dl class="kv">
-          <dt>走行距離</dt><dd class="mono">42.6 m</dd>
-          <dt>経過時間</dt><dd class="mono">01:18</dd>
-          <dt>記録点数</dt><dd class="mono">213</dd>
-          <dt>開始時の向き</dt><dd class="mono">92.4°</dd>
+          <dt>記録距離</dt><dd class="mono">42.60 m</dd>
+          <dt>点数</dt><dd class="mono">213</dd>
+          <dt>経過時間</dt><dd class="mono">78 秒</dd>
+          <dt>開始時の向き</dt><dd class="mono">92°</dd>
         </dl>
         <div class="mapWrap mt">
           <svg viewBox="0 0 340 200" aria-label="作成中の地図と経路">
@@ -698,11 +833,12 @@ table.lst td.r{text-align:right}
           </svg>
         </div>
       </div>
+      </div>
+     </div>
     </div>
   </div>
   <div>
     <div class="card ops">
-      <h3>操作</h3>
       <div class="opsgrid">
         <button class="btn op-stop" onclick="act(this,'s12','pause')">停止</button>
         <button class="btn op-check" onclick="act(this,'s12','confirm')">確認</button>
@@ -733,11 +869,16 @@ table.lst td.r{text-align:right}
     <div class="tabpane on" id="t13a">
       <div class="card">
         <h3>障害物</h3>
+        <!-- 自動ブレーキ OFF の間は減速しないので、近づいたら（ON なら減速が始まる距離で）警告を出す（Spec-webui.md §3.5） -->
         <div class="note">前方 0.6 m に障害物（警告）</div>
+        <div class="note mt brakeOffWarn" style="display:none">障害物に近づいています（自動ブレーキ OFF のため減速しません）</div>
         <div class="row mt">
           <span class="grow sm">自動ブレーキ</span>
-          <button class="btn sm" onclick="toggleBrake(this)">OFF</button>
+          <span class="pill brakePill">OFF</span>
+          <!-- ON→OFF は W-4 で確認する。OFF→ON は確認しない（2026-10-07） -->
+          <button class="btn sm" onclick="toggleBrake(this)">ON にする</button>
         </div>
+        <div class="note mt brakeOffHint">OFF のあいだは障害物に近づいても減速しません。画面の警告を見て操作してください</div>
       </div>
       <div class="card">
         <h3>後退</h3>
@@ -745,20 +886,32 @@ table.lst td.r{text-align:right}
       </div>
     </div>
     <div class="tabpane" id="t13b">
+     <div class="pane-grid">
+      <div class="pane-col">
       <div class="card">
         <h3>経路</h3>
-        <div class="btnrow n2">
-          <button class="btn on" onclick="pick2(this)">新規経路</button>
-          <button class="btn" onclick="pick2(this)">既存経路の再設定</button>
-        </div>
+        <!-- 「記録開始」ボタンは無い。選んだ瞬間に記録が始まる（Spec-transit.md §3.2 手順 4） -->
+        <div class="note mb">新規か既存かを選ぶと、すぐに記録が始まります。保存するまで終点は確定しません。</div>
+        <div class="b sm mb">新規経路</div>
+        <div class="row mb"><span class="sm mut">経路名</span>
+          <input class="grow txt" type="text" value="保管場所→試験場" aria-label="経路名"></div>
+        <button class="btn wide" onclick="mark(this,'記録を始めました')">この名前で記録を始める</button>
+        <!-- 既存の録り直し・同名の新規は上書き（旧版は 1 世代残る）なので二段階アーム式（§6） -->
+        <div class="b sm mt mb">既存経路の再設定</div>
+        <div class="lst-scroll"><table class="lst">
+          <tr><td>保管場所→試験場 A</td><td class="r"><button class="btn sm danger" onclick="arm(this,'録り直す','本当に上書きする')">録り直す</button></td></tr>
+          <tr><td>保管場所→試験場 B</td><td class="r"><button class="btn sm danger" onclick="arm(this,'録り直す','本当に上書きする')">録り直す</button></td></tr>
+        </table></div>
       </div>
+      </div>
+      <div class="pane-col">
       <div class="card">
         <h3>記録の状況</h3>
         <dl class="kv">
-          <dt>走行距離</dt><dd class="mono">18.2 m</dd>
-          <dt>経過時間</dt><dd class="mono">00:44</dd>
-          <dt>記録点数</dt><dd class="mono">91</dd>
-          <dt>開始時の向き</dt><dd class="mono">271.0°</dd>
+          <dt>記録距離</dt><dd class="mono">18.20 m</dd>
+          <dt>点数</dt><dd class="mono">91</dd>
+          <dt>経過時間</dt><dd class="mono">44 秒</dd>
+          <dt>開始時の向き</dt><dd class="mono">271°</dd>
         </dl>
         <div class="mapWrap mt">
           <svg viewBox="0 0 340 200" aria-label="作成中の地図と経路">
@@ -771,17 +924,19 @@ table.lst td.r{text-align:right}
           </svg>
         </div>
       </div>
+      </div>
+     </div>
     </div>
   </div>
   <div>
     <div class="card ops">
-      <h3>操作</h3>
       <div class="opsgrid">
         <button class="btn on op-stop" onclick="act(this,'s13','pause')">停止</button>
         <button class="btn save op-save" onclick="saveRoute('s13')">保存</button>
       </div>
       <div class="state" id="st13">一時停止中（記録は保持・終点は未確定）</div>
-      <div class="hint mt">到着したら「保存」で終点を確定します。</div>
+      <!-- 一時停止から記録を再開する契機はスティック操作。保存のあとは再開しない（2026-10-04） -->
+      <div class="hint mt" id="hint13">スティックを操作すると続きから記録します</div>
     </div>
     <div class="card">
       <h3>手動操作で記録する</h3>
@@ -823,7 +978,6 @@ table.lst td.r{text-align:right}
   </div>
   <div>
     <div class="card ops">
-      <h3>操作</h3>
       <div class="opsgrid">
         <button class="btn on op-stop" onclick="act(this,'s14','pause')">停止</button>
         <button class="btn op-run" onclick="act(this,'s14','run')">再生</button>
@@ -831,24 +985,58 @@ table.lst td.r{text-align:right}
         <button class="btn op-manual" onclick="openJog('s14')">手動</button>
       </div>
       <div class="state" id="st14">一時停止中</div>
+      <!-- 一時停止の理由を区別する（Spec-webui.md §3.7）。終端まで走り切ったときだけ終了を促す -->
+      <div class="hint mt" id="pause14">「再生」を押すと止まったところから続きを走ります。</div>
       <div class="row mt"><span class="grow sm">地図の更新</span>
         <button class="btn sm" onclick="toggleMapUpd(this,'save14')">OFF</button></div>
+      <div class="sm mut mt">ON にすると走りながら地図に書き足します。「保存」で確定します</div>
     </div>
+    <div class="subtabs">
+    <div class="tabs">
+      <button class="tab on" onclick="tab(this,'r14a')">経路</button>
+      <button class="tab" onclick="tab(this,'r14b')">初期姿勢</button>
+      <button class="tab" onclick="tab(this,'r14c')">走行</button>
+    </div>
+    <div class="tabpane on" id="r14a">
     <div class="card">
-      <h3>経路の指定</h3>
+      <h3>経路を選択</h3>
       <table class="lst mb">
-        <tr class="sel"><td>保管場所 → 試験場 A</td><td class="r mono xs">08/12 09:41</td></tr>
-        <tr><td>保管場所 → 試験場 B</td><td class="r mono xs">08/09 14:02</td></tr>
+        <tr class="sel"><td>保管場所→試験場 A</td><td class="r mono xs">距離: 42.60 / 点数: 213</td></tr>
+        <tr><td>保管場所→試験場 B</td><td class="r mono xs">距離: 38.15 / 点数: 190</td></tr>
       </table>
       <div class="btnrow n2">
         <button class="btn on" onclick="pick2(this)">順再生</button>
         <button class="btn" onclick="pick2(this)">逆再生</button>
       </div>
+      <button class="btn primary wide mt" onclick="mark(this,'初期姿勢を推定しています…')">この経路で進む</button>
+    </div>
+    </div>
+    <div class="tabpane" id="r14b">
+    <div class="card">
+      <h3>初期姿勢</h3>
+      <div class="note mb">推定できました。地図と位置を確認して『再生』を押してください</div>
+      <!-- 確度は数値を出さず 2 値＋目安文（数値の意味を試験員に説明できないため） -->
+      <div class="row mb"><span class="sm mut">確度</span><span class="pill ok">高い</span></div>
+      <div class="sm mut mb">低いとき: 似た場所が複数あり、取り違えの可能性があります</div>
+      <button class="btn sm wide" onclick="openWin('winConfirmGlobal')">完全グローバルで探す</button>
+    </div>
+    </div>
+    <div class="tabpane" id="r14c">
+    <div class="card">
+      <h3>再生速度</h3>
+      <!-- 走行中も切り替えられる（Spec-transit.md §4.2） -->
+      <div class="btnrow n3">
+        <button class="btn" onclick="pick2(this)">低速</button>
+        <button class="btn on" onclick="pick2(this)">中速</button>
+        <button class="btn" onclick="pick2(this)">高速</button>
+      </div>
     </div>
     <div class="card">
-      <h3>初期姿勢の推定</h3>
-      <div class="row"><div class="bar grow ok"><i style="width:88%"></i></div><span class="mono b">確度 88%</span></div>
-      <button class="btn sm wide mt" onclick="openWin('winConfirmGlobal')">完全グローバルで探し直す</button>
+      <h3>経路からのずれ</h3>
+      <!-- 停止しても最大値は残し、次の再生を始めたら 0 から数え直す（Spec-transit.md §4.4） -->
+      <div class="mono b">いま 0.08 m・最大 0.21 m</div>
+    </div>
+    </div>
     </div>
   </div>
 </section>
@@ -884,7 +1072,6 @@ table.lst td.r{text-align:right}
   </div>
   <div>
     <div class="card ops">
-      <h3>操作</h3>
       <div class="opsgrid">
         <button class="btn on op-stop" onclick="act(this,'s15','pause')">停止</button>
         <button class="btn op-run" onclick="act(this,'s15','run')">走行</button>
@@ -939,7 +1126,6 @@ table.lst td.r{text-align:right}
   </div>
   <div>
     <div class="card ops">
-      <h3>操作</h3>
       <div class="opsgrid">
         <button class="btn on op-stop" onclick="act(this,'s16','pause')">停止</button>
         <button class="btn op-run" onclick="act(this,'s16','run')">走行</button>
@@ -956,7 +1142,21 @@ table.lst td.r{text-align:right}
 
 <!-- ---------- S-20 試験準備 ---------- -->
 <section class="screen two-col" id="s20">
+  <!-- 手順バー（主表示の上）。いまの手順と済んだ手順が分かる -->
   <div>
+  <div class="stepbar-cell">
+      <ol class="stepbar" id="steps20">
+        <li class="stepbar-step done"><span class="stepbar-num">✓</span><span class="stepbar-label">地図を作る</span></li>
+        <li class="stepbar-link"></li>
+        <li class="stepbar-step done"><span class="stepbar-num">✓</span><span class="stepbar-label">対象を選ぶ</span></li>
+        <li class="stepbar-link"></li>
+        <li class="stepbar-step done"><span class="stepbar-num">✓</span><span class="stepbar-label">待機場所を登録</span></li>
+        <li class="stepbar-link"></li>
+        <li class="stepbar-step cur"><span class="stepbar-num">4</span><span class="stepbar-label">配電盤を登録</span></li>
+        <li class="stepbar-link"></li>
+        <li class="stepbar-step"><span class="stepbar-num">5</span><span class="stepbar-label">保存</span></li>
+      </ol>
+    </div>
     <div class="top-actions sticky">
       <button class="btn sm" onclick="finish20()">終了</button>
       <div class="tabs grow" style="margin:0;border:none">
@@ -966,7 +1166,17 @@ table.lst td.r{text-align:right}
       <span class="pill ng" id="unsaved20">未保存</span>
     </div>
     <div class="tabpane on" id="t20a">
-      <div class="mapWrap">
+      <!-- 「地図作成開始」を押すまで地図を出さない。前回の地図・ピンが残っていれば、まとめて消す導線も出す -->
+      <div class="card" id="gate20" style="display:none">
+        <h3>試験場内地図</h3>
+        <div class="note">地図作成を開始してください</div>
+        <button class="btn wide mt" onclick="startMapping20()">地図作成開始</button>
+        <div class="well mt">
+          <div class="sm mut mb">前回の試験場内地図・ピンが残っています。そのまま使う場合はこのまま「地図作成開始」を押してください。</div>
+          <button class="btn wide danger" onclick="arm(this,'新しい試験日として開始（前回の地図・ピンを消去）','もう一度押すと消去します')">新しい試験日として開始（前回の地図・ピンを消去）</button>
+        </div>
+      </div>
+      <div class="mapWrap" id="map20">
         <div class="mapBanner" id="map20b"></div>
         <svg viewBox="0 0 340 250" aria-label="試験場内地図とピン">
           <rect width="340" height="250" fill="#20242c"/>
@@ -975,29 +1185,40 @@ table.lst td.r{text-align:right}
             <path d="M30 30 h280 v190 h-280 z"/></g>
           <g fill="#6a7383"><rect x="60" y="46" width="52" height="16" rx="3"/>
             <rect x="150" y="46" width="52" height="16" rx="3"/><rect x="240" y="46" width="52" height="16" rx="3"/></g>
+          <!-- 現在の LiDAR スキャン（赤い点） -->
+          <g fill="#ef5350" opacity=".85"><circle cx="34" cy="120" r="1.8"/><circle cx="34" cy="140" r="1.8"/><circle cx="34" cy="160" r="1.8"/>
+            <circle cx="60" cy="216" r="1.8"/><circle cx="90" cy="216" r="1.8"/><circle cx="120" cy="216" r="1.8"/><circle cx="150" cy="216" r="1.8"/></g>
           <g class="pin sel" onclick="selPin(this)" transform="translate(86,88)">
             <circle r="10" fill="#e91e63" stroke="#f8bbd0" stroke-width="2"/>
-            <text y="26" text-anchor="middle" fill="#f8bbd0" font-size="10">盤 A-1</text></g>
+            <text y="26" text-anchor="middle" fill="#f8bbd0" font-size="10">配電盤 A-1</text></g>
           <g class="pin" onclick="selPin(this)" transform="translate(176,88)">
             <circle r="10" fill="#e91e63" stroke="#f8bbd0" stroke-width="2"/>
-            <text y="26" text-anchor="middle" fill="#f8bbd0" font-size="10">盤 A-2</text></g>
-          <g class="pin" onclick="selPin(this)" transform="translate(266,88)">
-            <circle r="10" fill="#e91e63" stroke="#f8bbd0" stroke-width="2"/>
-            <text y="26" text-anchor="middle" fill="#f8bbd0" font-size="10">盤 A-3</text></g>
-          <g transform="translate(70,190)">
+            <text y="26" text-anchor="middle" fill="#f8bbd0" font-size="10">配電盤 A-2</text></g>
+          <g class="pin" onclick="selPin(this)" transform="translate(70,190)">
             <circle r="11" fill="#2196f3" stroke="#90caf9" stroke-width="2"/>
             <text y="27" text-anchor="middle" fill="#90caf9" font-size="10">待機場所</text></g>
+          <!-- 現在位置と、地図に重ねた追従対象 -->
+          <path d="M235 160 l-9 16 h18 z" fill="#b3d5f7" transform="rotate(-60 235 168)"/>
+          <text x="235" y="192" text-anchor="middle" fill="#b3d5f7" font-size="10">現在位置</text>
+          <circle cx="262" cy="128" r="7" fill="#4caf50"/>
+          <text x="262" y="116" text-anchor="middle" fill="#8fd694" font-size="10">対象</text>
         </svg>
       </div>
     </div>
     <div class="tabpane" id="t20b">
+      <!-- 人検出は既定で止めておき、ここで動かす（Spec-modes.md §9）。止まっている間はレーダーの代わりに開始ボタン -->
+      <div class="card trackerCtl">
+        <div class="row"><span class="grow">人検出 動作中</span>
+          <button class="btn sm" onclick="trackerOff()">人検出を停止</button></div>
+      </div>
       <div class="mount" data-tpl="radar"></div>
       <div class="hint mt">登録する試験員を選んでください。2 点指示はこの対象の位置で登録します。</div>
     </div>
   </div>
   <div>
+    <!-- 「次にやること」。手順バーのいまの手順をそのまま押せる -->
+    <button class="next-action" id="next20" onclick="p2start('配電盤')">人の位置で配電盤を登録</button>
     <div class="card ops">
-      <h3>操作</h3>
       <div class="opsgrid">
         <button class="btn op-stop" onclick="act(this,'s20','pause')">停止</button>
         <button class="btn save op-save" onclick="save20()">保存</button>
@@ -1013,18 +1234,42 @@ table.lst td.r{text-align:right}
     </div>
     <div class="tabpane on" id="r20a">
     <div class="card">
-      <h3>登録</h3>
-      <div class="btnrow n2 mb">
-        <button class="btn on" onclick="pick2(this)">2 点指示</button>
-        <button class="btn" onclick="pick2(this)">LiDAR 平面認識</button>
+      <!-- 未実装（Spec-webui.md §3.10）: 登録方式の切替。LiDAR 平面認識は 1 ボタン -->
+      <div class="row mb"><span class="sm mut grow">登録方式</span>
+        <button class="btn sm on" onclick="pick2(this)">2 点指示</button>
+        <button class="btn sm" onclick="pick2(this)">LiDAR 平面認識</button>
       </div>
-      <div class="well">
+      <!-- 2 点指示（人が立つ位置）・機体の姿勢・地図タップの 3 通り。ラベルで区別する（2026-10-12） -->
+      <div class="btnrow n2 mb">
+        <button class="btn sm reg" onclick="p2start('待機場所')">人の位置で待機場所を登録</button>
+        <button class="btn sm reg" onclick="p2start('配電盤')">人の位置で配電盤を登録</button>
+        <button class="btn sm reg" onclick="mark(this,'待機場所を機体のいまの姿勢で登録しました')">いまの姿勢で待機場所を登録</button>
+        <button class="btn sm reg" onclick="mark(this,'配電盤を機体のいまの姿勢で登録しました')">いまの姿勢で配電盤を登録</button>
+        <button class="btn sm reg" onclick="mapTap20()">地図タップで待機場所を登録</button>
+        <button class="btn sm reg" onclick="mapTap20()">地図タップで配電盤を登録</button>
+      </div>
+      <div class="well" id="p2well">
         <div class="row mb"><span class="b sm">Step <span id="p2step">1</span>/2</span>
-          <span class="grow sm mut" id="p2msg">立ってほしい位置に立って押してください</span></div>
+          <span class="grow sm mut" id="p2msg">登録したい場所に立って押してください</span></div>
         <button class="btn primary wide" id="p2btn" onclick="p2press()">この位置を登録</button>
       </div>
-      <div class="btnrow n2 mt">
-        <button class="btn sm" onclick="pick2(this)">待機場所を登録</button><button class="btn sm" onclick="pick2(this)">配電盤を登録</button>
+      <!-- 地図タップ登録の確定前。数値で補正できる（Spec-onsite.md §3.7） -->
+      <div class="well mt" id="tap20" style="display:none">
+        <div class="note mb mono">x=3.42m y=-1.08m 向き92°</div>
+        <div class="row mb sm">
+          <label>x[m] <input class="txt num" type="number" step="0.01" value="3.42"></label>
+          <label>y[m] <input class="txt num" type="number" step="0.01" value="-1.08"></label>
+          <label>向き[°] <input class="txt num" type="number" step="1" value="92"></label>
+        </div>
+        <div class="row"><button class="btn primary" onclick="$('tap20').style.display='none';$('p2well').style.display=''">この位置で確定</button>
+          <button class="btn" onclick="$('tap20').style.display='none';$('p2well').style.display=''">キャンセル</button></div>
+      </div>
+      <!-- 壁に近すぎるピンの警告（3 択） -->
+      <div class="well mt" id="wall20" style="display:none">
+        <div class="note mb">このピンは壁から 0.32 m しか離れていません（推奨 0.50 m 以上）。この位置だと配電盤へ経路が引けず、機体が止まる可能性があります。</div>
+        <div class="row"><button class="btn" onclick="$('wall20').style.display='none';$('p2well').style.display='';$('next20').style.display=''">このまま登録</button>
+          <button class="btn primary" onclick="$('wall20').style.display='none';$('p2well').style.display='';$('next20').style.display=''">壁から離して登録</button>
+          <button class="btn" onclick="$('wall20').style.display='none';$('p2well').style.display='';$('next20').style.display=''">やめる</button></div>
       </div>
     </div>
     </div>
@@ -1032,20 +1277,23 @@ table.lst td.r{text-align:right}
     <div class="card">
       <h3>ピン</h3>
       <table class="lst">
-        <tr class="sel"><td>盤 A-1</td><td class="r mono xs">向き 92°</td><td class="r"><button class="btn sm">編集</button></td></tr>
-        <tr><td>盤 A-2</td><td class="r mono xs">向き 91°</td><td class="r"><button class="btn sm">編集</button></td></tr>
-        <tr><td>盤 A-3</td><td class="r mono xs">向き 93°</td><td class="r"><button class="btn sm">編集</button></td></tr>
-        <tr><td>待機場所</td><td class="r mono xs">向き 274°</td><td class="r"><button class="btn sm">編集</button></td></tr>
+        <tr class="sel"><td>配電盤 A-1</td><td class="r mono xs">向き 92°</td><td class="r"><button class="btn sm" onclick="editPin('配電盤 A-1')">編集</button></td></tr>
+        <tr><td>配電盤 A-2</td><td class="r mono xs">向き 91°</td><td class="r"><button class="btn sm" onclick="editPin('配電盤 A-2')">編集</button></td></tr>
+        <tr><td>待機場所</td><td class="r mono xs">向き 274°</td><td class="r"><button class="btn sm" onclick="editPin('待機場所')">編集</button></td></tr>
       </table>
+    </div>
+    <div class="card">
+      <!-- 待機場所のピンが無い間は押せない -->
+      <button class="btn wide" onclick="openWin('winReturnHome')">1 ボタンで待機場所に戻す</button>
     </div>
     </div>
     <div class="tabpane" id="r20c">
+    <!-- 未実装（Spec-webui.md §3.10）: 人の映り込みを範囲選択して消す。元に戻せる -->
     <div class="card">
       <h3>地図の修正</h3>
       <div class="btnrow n2 mb">
         <button class="btn sm" onclick="mark(this,'消しました')">人の映り込みを消す</button><button class="btn sm" onclick="mark(this,'戻しました')">元に戻す</button>
       </div>
-      <button class="btn sm wide" onclick="openWin('winReturnHome')">1 ボタンで待機場所に戻す</button>
     </div>
     </div>
     </div>
@@ -1055,6 +1303,19 @@ table.lst td.r{text-align:right}
 <!-- ---------- S-21 試験 ---------- -->
 <section class="screen two-col" id="s21">
   <div>
+  <div class="stepbar-cell">
+      <ol class="stepbar" id="steps21">
+        <li class="stepbar-step done"><span class="stepbar-num">✓</span><span class="stepbar-label">会場地図を開く</span></li>
+        <li class="stepbar-link"></li>
+        <li class="stepbar-step cur"><span class="stepbar-num">2</span><span class="stepbar-label">待機場所を宣言</span></li>
+        <li class="stepbar-link"></li>
+        <li class="stepbar-step"><span class="stepbar-num">3</span><span class="stepbar-label">行き先を選ぶ</span></li>
+        <li class="stepbar-link"></li>
+        <li class="stepbar-step"><span class="stepbar-num">4</span><span class="stepbar-label">移動</span></li>
+        <li class="stepbar-link"></li>
+        <li class="stepbar-step"><span class="stepbar-num">5</span><span class="stepbar-label">作業/呼び寄せ</span></li>
+      </ol>
+    </div>
     <div class="top-actions sticky">
       <button class="btn sm" onclick="finish()">終了</button>
       <div class="tabs grow" style="margin:0;border:none">
@@ -1064,6 +1325,14 @@ table.lst td.r{text-align:right}
       <span class="pill" id="modeSub21">行き先を選んでください</span>
     </div>
     <div class="tabpane on" id="t21a">
+      <!-- 「会場地図を開いた」かどうかは機体が持つ。画面を作り直しても、読み込み済みなら地図を出す（Spec-webui.md §3.11） -->
+      <div class="card" id="gate21" style="display:none">
+        <h3>試験場内地図</h3>
+        <div class="note">保存した会場地図を開いてください</div>
+        <button class="btn wide mt" onclick="openVenue21()">保存した会場地図を開く</button>
+        <div class="sm mut mt">機体を待機場所（待機場所ピンの位置）に置いてから押してください</div>
+      </div>
+      <div id="map21">
       <div class="mapWrap">
         <div class="mapBanner" id="map21b"></div>
         <svg viewBox="0 0 340 250" aria-label="試験場内地図">
@@ -1072,35 +1341,47 @@ table.lst td.r{text-align:right}
           <g stroke="#e8ecf2" stroke-width="4" stroke-linecap="round" fill="none" opacity=".85"><path d="M30 30 h280 v190 h-280 z"/></g>
           <g fill="#6a7383"><rect x="60" y="46" width="52" height="16" rx="3"/>
             <rect x="150" y="46" width="52" height="16" rx="3"/><rect x="240" y="46" width="52" height="16" rx="3"/></g>
+          <!-- 現在の LiDAR スキャンを重ねる。前日の地図と当日の実際のずれを目で見せる（Spec-onsite.md §4.0.1） -->
+          <g fill="#ef5350" opacity=".85"><circle cx="64" cy="66" r="1.8"/><circle cx="90" cy="66" r="1.8"/><circle cx="160" cy="67" r="1.8"/>
+            <circle cx="190" cy="67" r="1.8"/><circle cx="33" cy="110" r="1.8"/><circle cx="33" cy="140" r="1.8"/><circle cx="120" cy="150" r="1.8"/><circle cx="124" cy="154" r="1.8"/></g>
           <path d="M70 190 V140 H176 V102" stroke="#ffb74d" stroke-width="4" fill="none" stroke-linecap="round" stroke-dasharray="7 6"/>
           <g class="pin" onclick="selPin(this)" transform="translate(86,88)"><circle r="10" fill="#e91e63" stroke="#f8bbd0" stroke-width="2"/>
-            <text y="26" text-anchor="middle" fill="#f8bbd0" font-size="10">盤 A-1</text></g>
+            <text y="26" text-anchor="middle" fill="#f8bbd0" font-size="10">配電盤 A-1</text></g>
           <g class="pin sel" onclick="selPin(this)" transform="translate(176,88)"><circle r="10" fill="#e91e63" stroke="#f8bbd0" stroke-width="2"/>
-            <text y="26" text-anchor="middle" fill="#f8bbd0" font-size="10">盤 A-2</text></g>
+            <text y="26" text-anchor="middle" fill="#f8bbd0" font-size="10">配電盤 A-2</text></g>
           <g class="pin" onclick="selPin(this)" transform="translate(266,88)"><circle r="10" fill="#e91e63" stroke="#f8bbd0" stroke-width="2"/>
-            <text y="26" text-anchor="middle" fill="#f8bbd0" font-size="10">盤 A-3</text></g>
+            <text y="26" text-anchor="middle" fill="#f8bbd0" font-size="10">配電盤 A-3</text></g>
           <g transform="translate(70,190)"><circle r="11" fill="#2196f3" stroke="#90caf9" stroke-width="2"/>
             <text y="27" text-anchor="middle" fill="#90caf9" font-size="10">待機場所</text></g>
           <path d="M140 145 l-9 16 h18 z" fill="#b3d5f7" transform="rotate(-90 140 153)"/>
         </svg>
       </div>
+      <!-- 地図更新は「地図」タブ内のトグル。既定 OFF。ON のときだけ操作カードに「保存」が出る（F-41）。ピンは動かさない -->
+      <div class="row mt"><span class="grow sm">地図の更新</span>
+        <span class="pill ng" id="patch21" style="display:none">地図に未保存の変更があります</span>
+        <button class="btn sm" onclick="toggleMapUpd(this,'save21')">OFF</button></div>
+      </div>
     </div>
     <div class="tabpane" id="t21b">
+      <div class="card trackerCtl">
+        <div class="row"><span class="grow">人検出 動作中</span>
+          <!-- 呼び寄せ中は人検出が要るので止められない -->
+          <button class="btn sm" onclick="trackerOff()">人検出を停止</button></div>
+      </div>
       <div class="mount" data-tpl="radar"></div>
-      <div class="hint mt">呼び寄せる試験員を選んでください。</div>
+      <!-- 対象を選べるのは呼び寄せの行き先待受中（SUMMON/POINT）だけ。それ以外は押しても効かないことを出す -->
+      <div class="hint mt">呼び寄せる試験員を選んでください。「呼び寄せ」の行き先待受中だけ対象を選べます</div>
     </div>
   </div>
   <div>
+    <button class="next-action" onclick="declareHome(false)">待機場所を宣言</button>
     <div class="card ops">
-      <h3>操作</h3>
       <div class="opsgrid">
         <button class="btn op-stop" onclick="act(this,'s21','pause')">停止</button>
         <button class="btn save op-save" id="save21" style="display:none" onclick="saveMap21()">保存</button>
         <button class="btn op-manual" onclick="openJog('s21')">手動</button>
       </div>
       <div class="state" id="st21">行き先を選んでください</div>
-      <div class="row mt"><span class="grow sm">地図の更新</span>
-        <button class="btn sm" onclick="toggleMapUpd(this,'save21')">OFF</button></div>
     </div>
     <div class="subtabs">
     <div class="tabs">
@@ -1114,18 +1395,20 @@ table.lst td.r{text-align:right}
       <div class="row mb"><span class="grow sm">いま待機場所にいる</span>
         <span class="pill ng" id="homePill">未宣言</span>
         <button class="btn sm" id="homeBtn" onclick="declareHome(false)">宣言する</button></div>
-      <table class="lst">
-        <tr><td>盤 A-1</td><td class="r"><button class="btn sm" onclick="goPanel('盤 A-1')">移動</button></td></tr>
-        <tr class="sel"><td>盤 A-2</td><td class="r"><button class="btn sm" onclick="goPanel('盤 A-2')">移動</button></td></tr>
-        <tr><td>盤 A-3</td><td class="r"><button class="btn sm" onclick="goPanel('盤 A-3')">移動</button></td></tr>
-      </table>
+      <div class="note mb" id="homeOffset" style="display:none">ずれ 0.12m・3°</div>
+      <div class="lst-scroll"><table class="lst">
+        <tr><td>配電盤 A-1</td><td class="r"><button class="btn sm" onclick="goPanel('配電盤 A-1')">移動</button></td></tr>
+        <tr class="sel"><td>配電盤 A-2</td><td class="r"><button class="btn sm" onclick="goPanel('配電盤 A-2')">移動</button></td></tr>
+        <tr><td>配電盤 A-3</td><td class="r"><button class="btn sm" onclick="goPanel('配電盤 A-3')">移動</button></td></tr>
+      </table></div>
     </div>
     <div class="card">
       <h3>次の行き先</h3>
+      <!-- 押せない理由はボタンの下にバッジで出す -->
       <div class="btnrow n3">
-        <button class="btn" onclick="nextDest('待機場所')">待機場所</button>
-        <button class="btn" onclick="nextDest('次の配電盤')">次の配電盤</button>
-        <button class="btn" onclick="nextDest('その場で呼ぶ')">その場で呼ぶ</button>
+        <div><button class="btn wide" onclick="nextDest('待機場所')">待機場所</button></div>
+        <div><button class="btn wide" onclick="nextDest('次の配電盤')">次の配電盤</button></div>
+        <div><button class="btn wide" onclick="nextDest('その場で呼ぶ')">その場で呼ぶ</button></div>
       </div>
     </div>
     </div>
@@ -1135,15 +1418,17 @@ table.lst td.r{text-align:right}
       <button class="btn primary wide" onclick="startSummon()">呼び寄せ（2 点指示）</button>
       <div class="well mt" id="clearBox" style="display:none">
         <div class="b sm mb">退避待ち — 退いてください</div>
-        <div class="row"><div class="bar grow warn"><i id="clearBar" style="width:15%"></i></div>
+        <div class="row mb"><div class="bar grow warn"><i id="clearBar" style="width:15%"></i></div>
           <span class="mono b" id="clearTx">0.4 m</span></div>
-        <button class="btn sm mt" onclick="cancelSummon()">中止</button>
+        <div class="row"><span class="grow sm mut">対象の場所が空き次第、自動で続行します</span>
+          <button class="btn sm" onclick="cancelSummon()">中止</button></div>
       </div>
     </div>
     </div>
     <div class="tabpane" id="r21c">
     <div class="card">
       <h3>配電盤前</h3>
+      <!-- 配電盤前（AT_PANEL）にいるときだけ押せる -->
       <div class="row"><span class="grow sm">作業中</span>
         <button class="btn" id="workBtn" onclick="toggleWork()">OFF</button></div>
     </div>
@@ -1155,72 +1440,98 @@ table.lst td.r{text-align:right}
 <!-- ---------- S-30 始業点検 ---------- -->
 <section class="screen two-col" id="s30">
   <div>
-    <div class="top-actions sticky"><button class="btn sm" onclick="finish()">終了</button>
-      <span class="grow"></span>
-      <span class="pill warn">総合：要確認 1 件</span></div>
+    <div class="top-actions sticky"><button class="btn sm" onclick="finish()">終了</button></div>
     <div class="card">
-      <h3>確認する項目（4 つ）</h3>
-      <table class="lst">
-        <tr class="sel"><td>1. 物理非常停止ボタン</td><td class="r tone-ok">✓</td><td class="r"><button class="btn sm" onclick="oc(this,'oc1')">開始</button></td></tr>
-        <tr><td>2. モーター・エンコーダ</td><td class="r tone-ok">✓</td><td class="r"><button class="btn sm" onclick="oc(this,'oc2')">開始</button></td></tr>
-        <tr><td>3. IMU</td><td class="r tone-ok">✓</td><td class="r"><button class="btn sm" onclick="oc(this,'oc3')">開始</button></td></tr>
-        <tr><td>4. LiDAR</td><td class="r tone-warn">!</td><td class="r"><button class="btn sm" onclick="oc(this,'oc4')">開始</button></td></tr>
-      </table>
+      <h3>始業点検</h3>
+      <!-- 行そのものを押すと、その項目の確認が始まる。実行中に別の行を押すと切り替わる -->
+      <div class="ocrows">
+        <button class="ocrow" onclick="oc(this,'oc1')"><span class="grow">非常停止ボタン</span><span class="pill ok">正常</span></button>
+        <button class="ocrow" onclick="oc(this,'oc2')"><span class="grow">モーター・エンコーダ</span><span class="pill ok">正常</span></button>
+        <button class="ocrow" onclick="oc(this,'oc3')"><span class="grow">IMU</span><span class="pill ok">正常</span></button>
+        <div class="row"><button class="ocrow grow sel" onclick="oc(this,'oc4')"><span class="grow">LiDAR</span><span class="pill warn">要確認</span></button>
+          <button class="btn sm" onclick="go('s40')">校正へ</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>総合</h3>
+      <span class="pill warn">総合: 要確認 1 件</span>
     </div>
   </div>
   <div>
-    <div class="card tabpane on" id="oc1">
-      <h3>1. 物理非常停止ボタン</h3>
+    <!-- 実行中だけ出す。どちらも結果を記録しない -->
+    <div class="top-actions" id="ocAbort" style="display:none">
+      <button class="btn sm danger" onclick="ocAbort()">中断（一覧へ戻る）</button>
+      <span class="xs mut">結果は記録しません。左の一覧から別の項目を選ぶと切り替わります</span>
+    </div>
+    <div class="card tabpane" id="oc0"><div class="note">項目を選んでください</div></div>
+    <div class="card tabpane" id="oc1">
+      <h3>非常停止ボタン</h3>
       <table class="lst">
-        <tr><td>Step 1 押してください</td><td class="r tone-ok">✓ 押下を検出</td></tr>
-        <tr><td>Step 2 実物と画面は一致していますか</td><td class="r"><button class="btn sm" onclick="mark(this)">はい</button></td></tr>
-        <tr><td>Step 3 解除してください</td><td class="r tone-ok">✓ 解除を検出</td></tr>
-        <tr><td>Step 4 実物と画面は一致していますか</td><td class="r"><button class="btn sm" onclick="mark(this)">はい</button></td></tr>
+        <tr><td>Step 1 非常停止ボタンを押してください</td><td class="r tone-ok">✓ 押されています</td></tr>
+        <tr><td>Step 2 押されていることが画面に出ています。実物と一致していますか</td><td class="r"><button class="btn sm" onclick="mark(this)">はい</button> <button class="btn sm" onclick="go('s31')">いいえ</button></td></tr>
+        <tr><td>Step 3 非常停止ボタンを解除してください</td><td class="r tone-ok">✓ 解除されています</td></tr>
+        <tr><td>Step 4 解除されたことが画面に出ています。一致していますか</td><td class="r"><button class="btn sm" onclick="mark(this)">はい</button> <button class="btn sm" onclick="go('s31')">いいえ</button></td></tr>
       </table>
-      <button class="btn danger wide mt" onclick="go('s31')">NG だった → 故障診断へ</button>
     </div>
     <div class="card tabpane" id="oc2">
-      <h3>2. モーター・エンコーダ</h3>
+      <h3>モーター・エンコーダ</h3>
+      <div class="note mb">押している間だけ低速で動きます。離すと止まります。</div>
+      <div class="row mb sm"><span class="pill ok">前進 済</span><span class="pill ok">後退 済</span><span class="pill">左超信地旋回 未</span><span class="pill">右超信地旋回 未</span></div>
       <div class="btnrow n4">
         <button class="btn hold">前進</button><button class="btn hold">後退</button>
-        <button class="btn hold">右旋回</button><button class="btn hold">左旋回</button>
+        <button class="btn hold">左超信地旋回</button><button class="btn hold">右超信地旋回</button>
       </div>
       <table class="lst mt">
-        <tr><th>輪</th><th>指令</th><th>実測</th><th class="r">判定</th></tr>
-        <tr><td>左</td><td class="mono">-0.10 m/s</td><td class="mono">-0.09 m/s</td><td class="r tone-ok">✓</td></tr>
-        <tr><td>右</td><td class="mono">0.10 m/s</td><td class="mono">0.10 m/s</td><td class="r tone-ok">✓</td></tr>
+        <tr><th>輪</th><th>指令</th><th>実測</th></tr>
+        <tr><td>左</td><td class="mono">-0.10 m/s</td><td class="mono">-0.09 m/s</td></tr>
+        <tr><td>右</td><td class="mono">0.10 m/s</td><td class="mono">0.10 m/s</td></tr>
       </table>
-      <button class="btn danger wide mt" onclick="go('s31')">NG だった → 故障診断へ</button>
+      <!-- 判定は自動。NG なら故障診断（S-31）へ誘導する -->
     </div>
     <div class="card tabpane" id="oc3">
-      <h3>3. IMU</h3>
-      <dl class="kv mb"><dt>データ受信</dt><dd class="mono tone-ok">0.1 秒前 ✓</dd>
-        <dt>静止時 vyaw</dt><dd class="mono tone-ok">0.001 rad/s ✓</dd></dl>
-      <div class="sm" style="display:grid;gap:6px">
-        <div class="row"><span style="width:56px">system</span><div class="bar grow ok"><i style="width:100%"></i></div><span class="mono">3/3</span></div>
-        <div class="row"><span style="width:56px">gyro</span><div class="bar grow ok"><i style="width:100%"></i></div><span class="mono">3/3</span></div>
-        <div class="row"><span style="width:56px">accel</span><div class="bar grow warn"><i style="width:66%"></i></div><span class="mono tone-warn">2/3 劣化</span></div>
-        <div class="row"><span style="width:56px">mag</span><div class="bar grow ok"><i style="width:100%"></i></div><span class="mono">3/3</span></div>
-      </div>
-      <button class="btn primary wide mt" onclick="go('s40')">校正へ</button>
+      <h3>IMU</h3>
+      <div class="row mb"><span class="pill ok">正常</span></div>
+      <div class="b sm mb">判定の根拠</div>
+      <table class="lst basis">
+        <tr><th></th><th>測定値</th><th>基準</th></tr>
+        <tr><td>静止時のバイアス</td><td class="mono">0.001 rad/s</td><td class="mono">0.200 rad/s以内</td></tr>
+        <tr><td>最大角速度</td><td class="mono">0.002 rad/s</td><td class="mono">10.000 rad/s以内</td></tr>
+        <tr><td>校正 sys</td><td class="mono">3</td><td>3 以上</td></tr>
+        <tr><td>校正 gyro</td><td class="mono">3</td><td>3 以上</td></tr>
+        <tr><td>校正 accel</td><td class="mono">3</td><td>3 以上</td></tr>
+        <tr><td>校正 mag</td><td class="mono">3</td><td>3 以上</td></tr>
+      </table>
+      <div class="b sm mt mb">校正状態（3 が校正済み）</div>
+      <div class="row"><span class="pill ok">sys 3/3</span><span class="pill ok">gyro 3/3</span><span class="pill ok">accel 3/3</span><span class="pill ok">mag 3/3</span></div>
     </div>
-    <div class="card tabpane" id="oc4">
-      <h3>4. LiDAR</h3>
-      <div class="row mb"><span class="pill ok">受信周期 正常</span><span class="pill ok">全周有効値 正常</span><span class="pill warn">死角マスクのズレ</span></div>
+    <!-- 判定が確定したら、「戻る」を押すまで結果を表示し続ける（2026-10-12）。
+         結果には測定値と基準を並べ、基準を満たさなかった項目を強調する（2026-10-13） -->
+    <div class="card tabpane on" id="oc4">
+      <h3>判定結果</h3>
+      <div class="sm mut mb">LiDAR</div>
+      <div class="row mb"><span class="pill warn">要確認</span><span class="note grow">死角マスクの設定と実際の死角がずれています</span></div>
+      <div class="b sm mb">判定の根拠</div>
+      <table class="lst basis">
+        <tr><th></th><th>測定値</th><th>基準</th></tr>
+        <tr><td>無効帯の最大幅</td><td class="mono">7.5°</td><td class="mono">20° 未満</td></tr>
+        <tr><td>受信周期</td><td class="mono">0.1 秒</td><td class="mono">2 秒以内</td></tr>
+        <tr class="ng"><td>死角のズレ</td><td><span class="pill warn">8°</span></td><td class="mono">5° 以内</td></tr>
+      </table>
+      <div class="b sm mt mb">生スキャン（灰色の扇＝死角マスク、赤い点＝マスクの内側）</div>
       <div class="well" style="text-align:center">
         <svg viewBox="0 0 300 170" style="width:100%;height:auto" aria-label="ライブスキャンと死角マスク">
           <circle cx="150" cy="120" r="96" fill="none" stroke="#333a48"/>
-          <path d="M150 120 L104 44 A88 88 0 0 1 150 32 Z" fill="#4a3a12" stroke="#8a6a1c"/>
-          <path d="M150 120 L118 40 A88 88 0 0 1 160 32 Z" fill="#7a3a3a" opacity=".55"/>
+          <path d="M150 120 L104 44 A88 88 0 0 1 150 32 Z" fill="#5c6470" opacity=".55"/>
           <g fill="#ef5350">
-            <circle cx="70" cy="70" r="2.5"/><circle cx="100" cy="52" r="2.5"/><circle cx="200" cy="52" r="2.5"/>
+            <circle cx="70" cy="70" r="2.5"/><circle cx="160" cy="40" r="2.5"/><circle cx="200" cy="52" r="2.5"/>
             <circle cx="232" cy="76" r="2.5"/><circle cx="250" cy="110" r="2.5"/><circle cx="56" cy="112" r="2.5"/>
             <circle cx="86" cy="160" r="2.5"/><circle cx="214" cy="160" r="2.5"/></g>
-          <text x="150" y="14" text-anchor="middle" fill="#ffcc80" font-size="10">■登録値　■実際の写り込み</text>
         </svg>
-        <div class="mono sm mt">カーソル位置 38°　距離 0.52 m</div>
       </div>
-      <button class="btn primary wide mt" onclick="go('s40')">校正へ</button>
+      <div class="btnrow n2 mt">
+        <button class="btn primary" onclick="go('s40')">校正へ</button>
+        <button class="btn" onclick="ocBack()">戻る</button>
+      </div>
     </div>
   </div>
 </section>
@@ -1228,52 +1539,73 @@ table.lst td.r{text-align:right}
 <!-- ---------- S-31 故障診断 ---------- -->
 <section class="screen" id="s31">
   <div class="top-actions sticky"><button class="btn sm" onclick="go('s30')">始業点検へ戻る</button></div>
+  <div class="card"><div class="note">始業点検で NG が検出されました。修理が必要です。</div></div>
   <div class="card">
     <h3>症状</h3>
-    <div class="note">モーター・エンコーダ確認で <b>左輪の指令と実測の符号が逆</b>でした。</div>
+    <div class="row"><span class="pill ng">モーター・エンコーダ</span>
+      <span class="grow">左輪の指令と実測の符号が逆です（配線・極性を確認してください）（前進）</span></div>
   </div>
   <div class="card">
-    <h3>チェック手順</h3>
+    <h3>モーター・エンコーダ: チェック手順</h3>
     <table class="lst">
-      <tr><td>1. 左右のモーター配線が入れ替わっていないか</td><td class="r"><button class="btn sm" onclick="mark(this)">確認した</button></td></tr>
-      <tr><td>2. エンコーダの A/B 相の極性</td><td class="r"><button class="btn sm" onclick="mark(this)">確認した</button></td></tr>
-      <tr><td>3. ドライバの出力・電源電圧</td><td class="r"><button class="btn sm" onclick="mark(this)">確認した</button></td></tr>
-      <tr><td>4. コネクタの緩み・断線</td><td class="r"><button class="btn sm" onclick="mark(this)">確認した</button></td></tr>
+      <tr><td>1. 左右の配線が入れ替わっていないか確認する</td></tr>
+      <tr><td>2. 左輪のエンコーダの極性（A 相・B 相の入れ替わり）を確認する</td></tr>
     </table>
+    <div class="hint mt">この画面は診断結果を示すだけです。修理は人が行い、直ったら「始業点検へ戻る」で始業点検をやり直してください。</div>
   </div>
 </section>
 
 <!-- ---------- S-40 校正 ---------- -->
 <section class="screen two-col" id="s40">
+  <!-- ウィザードの手順バー（Step 1 案内 → 2 実行・実測 → 3 確認 → 4 検証） -->
   <div>
-    <div class="top-actions sticky"><button class="btn sm" onclick="finish()">終了</button>
+  <div class="stepbar-cell">
+      <ol class="stepbar" id="steps40">
+        <li class="stepbar-step done"><span class="stepbar-num">✓</span><span class="stepbar-label">案内</span></li>
+        <li class="stepbar-link"></li>
+        <li class="stepbar-step cur"><span class="stepbar-num">2</span><span class="stepbar-label">実行・実測</span></li>
+        <li class="stepbar-link"></li>
+        <li class="stepbar-step"><span class="stepbar-num">3</span><span class="stepbar-label">確認</span></li>
+        <li class="stepbar-link"></li>
+        <li class="stepbar-step"><span class="stepbar-num">4</span><span class="stepbar-label">検証</span></li>
+      </ol>
+    </div>
+    <!-- 「中断」は左上に固定（ウィザード中だけ押せる）。「終了」は一覧のときだけ押せる -->
+    <div class="top-actions sticky">
+      <button class="btn sm danger" onclick="openWin('winAbortCalib')">中断</button>
+      <button class="btn sm dis" onclick="whyDisabled('校正の途中です。「中断」で一覧へ戻ってから終了してください')">終了</button>
       <div class="tabs grow" style="margin:0;border:none">
         <button class="tab on" onclick="tab(this,'t40a')">項目</button>
         <button class="tab" onclick="tab(this,'t40b')">履歴</button>
       </div>
-      <button class="btn sm danger" onclick="openWin('winAbortCalib')">中断</button></div>
+    </div>
     <div class="tabpane on" id="t40a">
     <div class="card">
       <h3>校正する項目（4 つ）</h3>
+      <!-- 始業点検の「校正へ」から来たときだけ 1 回出す案内。自動では開始しない -->
+      <div class="hint mb">始業点検のLiDARが要確認でした。「LiDAR 死角」の「開始」を押して校正してください。</div>
+      <!-- 前回校正日を出す。自動の「要校正」印は付けない（Spec-checks.md §3.7） -->
       <table class="lst">
-        <tr><td>1. 直進（車輪半径）</td><td class="r tone-warn">要再校正</td><td class="r"><button class="btn sm" onclick="cal(this,'r40a')">開始</button></td></tr>
-        <tr class="sel"><td>2. 旋回（実効車輪間距離）</td><td class="r tone-ok">OK</td><td class="r"><button class="btn sm" onclick="cal(this,'r40b')">開始</button></td></tr>
-        <tr><td>3. IMU（BNO055）</td><td class="r tone-warn">劣化</td><td class="r"><button class="btn sm" onclick="cal(this,'r40c')">開始</button></td></tr>
-        <tr><td>4. LiDAR 死角マスク</td><td class="r tone-warn">ズレ</td><td class="r"><button class="btn sm" onclick="cal(this,'r40d')">開始</button></td></tr>
+        <tr><td>直進校正（車輪半径）<div class="xs mut">前回: 10/14 09:12</div></td><td class="r"><button class="btn sm" onclick="cal(this,'r40a')">開始</button></td></tr>
+        <tr class="sel"><td>旋回校正（車輪間距離）<div class="xs mut">前回: 10/14 09:20</div></td><td class="r"><button class="btn sm" onclick="cal(this,'r40b')">開始</button></td></tr>
+        <tr><td>IMU 校正<div class="xs mut">前回: 未校正</div></td><td class="r"><button class="btn sm" onclick="cal(this,'r40c')">開始</button></td></tr>
+        <tr><td>LiDAR 死角<div class="xs mut">前回: 10/02 15:41</div></td><td class="r"><button class="btn sm" onclick="cal(this,'r40d')">開始</button></td></tr>
       </table>
-      <dl class="kv mt"><dt>状態</dt><dd class="tone-warn">要再校正（前回 07/20）</dd>
-        <dt>現在値</dt><dd class="mono">半径 0.0391 m</dd>
-        <dt>補足</dt><dd>ドリフト増加を検知</dd></dl>
-      <div class="note mt">直進校正は ESP32 のコンパイル時定数のため、適用に再書き込みが要ります。</div>
+      <!-- 車輪半径と車輪間距離は互いに影響するので、直進 → 旋回の順（直進が古ければ旋回の行に出す） -->
+      <div class="note mt">直進校正の日時が旋回校正より古いときは、先に直進校正をやり直してください。</div>
     </div>
     </div>
     <div class="tabpane" id="t40b">
     <div class="card">
       <h3>履歴（3 世代）</h3>
+      <div class="b sm mb">直進校正（車輪半径）</div>
+      <table class="lst mb">
+        <tr><td>1 世代前: 0.0391 m<div class="xs mut mono">10/14 09:12</div></td><td class="r"><button class="btn sm danger" onclick="arm(this,'この値に戻す','本当に戻す？')">この値に戻す</button></td></tr>
+        <tr><td>2 世代前: 0.0389 m<div class="xs mut mono">09/20 09:15</div></td><td class="r"><button class="btn sm danger" onclick="arm(this,'この値に戻す','本当に戻す？')">この値に戻す</button></td></tr>
+      </table>
+      <div class="b sm mb">旋回校正（車輪間距離）</div>
       <table class="lst">
-        <tr><td class="mono xs">08/14 10:02</td><td class="mono">0.0391</td><td class="r"><button class="btn sm">戻す</button></td></tr>
-        <tr><td class="mono xs">07/20 09:15</td><td class="mono">0.0389</td><td class="r"><button class="btn sm">戻す</button></td></tr>
-        <tr><td class="mono xs">06/30 13:44</td><td class="mono">0.0390</td><td class="r"><button class="btn sm">戻す</button></td></tr>
+        <tr><td>1 世代前: 0.3921 m<div class="xs mut mono">10/14 09:20</div></td><td class="r"><button class="btn sm danger" onclick="arm(this,'この値に戻す','本当に戻す？')">この値に戻す</button></td></tr>
       </table>
     </div>
     </div>
@@ -1288,72 +1620,89 @@ table.lst td.r{text-align:right}
     </div>
     <div class="tabpane" id="r40a">
     <div class="card">
-      <h3>直進校正 ウィザード</h3>
-      <div class="row mb"><span class="b">Step 2/4</span><span class="grow mut sm">実測</span></div>
-      <div class="bar mb"><i style="width:50%"></i></div>
+      <h3>直進校正（車輪半径）</h3>
+      <div class="row mb"><span class="b">Step 2/4</span><span class="grow mut sm">実行・実測</span></div>
       <div class="well">
-        <div class="sm mb">実際に進んだ距離を計測して入力してください。</div>
-        <dl class="kv mb"><dt>目標距離</dt><dd class="mono">5.000 m</dd>
-          <dt>オドメトリ計測</dt><dd class="mono">4.930 m</dd></dl>
-        <div class="row"><input class="grow" type="text" value="5.020" style="padding:9px;background:var(--inset);border:1px solid var(--bd-hi);border-radius:6px;color:var(--tx)" aria-label="実測距離">
-          <span class="mut">m</span></div>
+        <div class="row"><label class="grow"><span class="sm mut">実際に進んだ距離 (m)</span>
+          <input class="txt wide" type="number" step="any" value="5.020" aria-label="実際に進んだ距離"></label>
+          <button class="btn" onclick="mark(this,'確認 ✓')">確認</button></div>
+        <div class="b sm mt mb">補正のプレビュー</div>
+        <dl class="kv"><dt>現在</dt><dd class="mono">車輪半径 0.0391 m</dd>
+          <dt>補正後</dt><dd class="mono tone-ok">車輪半径 0.0393 m</dd></dl>
       </div>
-      <div class="note mt">補正後の車輪半径は ESP32 の再書き込みが必要です。</div>
-      <div class="btnrow n2 mt">
-        <button class="btn" onclick="mark(this,'—')">戻る</button>
-        <button class="btn primary" onclick="mark(this,'次へ ✓')">次へ</button>
-      </div>
+      <!-- 補正値は求まった瞬間に反映される。再書き込みは要らない（Spec-checks.md §3.4） -->
+      <button class="btn primary wide mt" onclick="mark(this,'補正を適用して検証走行中…')">次へ（適用して検証走行）</button>
     </div>
     </div>
     <div class="tabpane on" id="r40b">
     <div class="card">
-      <h3>旋回校正 ウィザード</h3>
-      <div class="row mb"><span class="b">Step <span id="cwStep">2</span>/4</span><span class="grow mut sm" id="cwName">実測</span></div>
-      <div class="bar mb"><i id="cwBar" style="width:50%"></i></div>
+      <h3>旋回校正（車輪間距離）</h3>
+      <div class="row mb"><span class="b">Step <span id="cwStep">2</span>/4</span><span class="grow mut sm" id="cwName">実行・実測</span></div>
       <div class="well" id="cw1" style="display:none">
-        <div class="sm">機体の周囲 1 m を空けてください。自律で 360° 旋回します。</div>
+        <div class="sm">周囲 2 m 以上を空け、分度器か壁の目印を用意してください。ロボットが 360° を自律でその場旋回します。止めたいときは「中断」か非常停止を押してください。</div>
+        <button class="btn primary wide mt" onclick="cw(1)">走り出す</button>
       </div>
       <div class="well" id="cw2">
-        <div class="sm mb">実際に回転した角度を計測して入力してください。</div>
-        <dl class="kv mb"><dt>目標角度</dt><dd class="mono">360.0°</dd>
-          <dt>オドメトリ計測</dt><dd class="mono">358.2°</dd></dl>
-        <div class="row"><input class="grow" type="text" value="359.4" style="padding:9px;background:var(--inset);border:1px solid var(--bd-hi);border-radius:6px;color:var(--tx)" aria-label="実測角度">
-          <span class="mut">°</span></div>
+        <div class="row"><label class="grow"><span class="sm mut">実際に回った角度 (°)</span>
+          <input class="txt wide" type="number" step="any" value="359.4" aria-label="実際に回った角度"></label>
+          <button class="btn" onclick="cw(1)">確認</button></div>
       </div>
       <div class="well" id="cw3" style="display:none">
-        <dl class="kv"><dt>現在値</dt><dd class="mono">wheel_base 0.390000 m</dd>
-          <dt>補正後</dt><dd class="mono tone-ok">wheel_base 0.392145 m (+0.5%)</dd></dl>
+        <div class="b sm mb">補正のプレビュー</div>
+        <dl class="kv"><dt>現在</dt><dd class="mono">車輪間距離 0.390000 m</dd>
+          <dt>補正後</dt><dd class="mono tone-ok">車輪間距離 0.392145 m</dd></dl>
+        <button class="btn primary wide mt" onclick="cw(1)">次へ（適用して検証走行）</button>
       </div>
       <div class="well" id="cw4" style="display:none">
-        <div class="sm mb">同じ動作をもう一度行い、誤差を確認します。</div>
-        <button class="btn sm" onclick="mark(this,'実行しました')">検証を実行</button>
-        <div class="sm mut mt">結果：待機中…</div>
-      </div>
-      <div class="btnrow n2 mt">
-        <button class="btn" onclick="cw(-1)">戻る</button>
-        <button class="btn primary" onclick="cw(1)">次へ</button>
+        <div class="row"><label class="grow"><span class="sm mut">検証旋回で実際に回った角度 (°)</span>
+          <input class="txt wide" type="number" step="any" value="360.2" aria-label="検証旋回で実際に回った角度"></label>
+          <button class="btn" onclick="mark(this,'補正値を確定しました。')">検証結果を送る</button></div>
+        <!-- 許容範囲を超えたら補正は適用前に戻し、もう一度走れる -->
+        <div class="note mt">検証で許容範囲を超えたため、補正は適用前に戻しました。<button class="btn sm" onclick="cw(-2)">もう一度走る</button></div>
+        <button class="btn wide mt" onclick="go('s30')">始業点検へ戻る</button>
       </div>
     </div>
     </div>
     <div class="tabpane" id="r40c">
     <div class="card">
       <h3>IMU 校正</h3>
-      <div class="sm mb">機体を 8 の字を描くように動かしてください。</div>
+      <div class="sm mb">機体を手で持ち上げずに、床の上で 8 の字に動かしてください（機体は自走しません）。4 つとも「完全」になるまで続けます。</div>
       <div class="sm" style="display:grid;gap:6px">
-        <div class="row"><span style="width:56px">system</span><div class="bar grow"><i style="width:66%"></i></div><span class="mono">2/3</span></div>
-        <div class="row"><span style="width:56px">gyro</span><div class="bar grow ok"><i style="width:100%"></i></div><span class="mono">3/3</span></div>
-        <div class="row"><span style="width:56px">accel</span><div class="bar grow"><i style="width:66%"></i></div><span class="mono">2/3</span></div>
-        <div class="row"><span style="width:56px">mag</span><div class="bar grow"><i style="width:0%"></i></div><span class="mono">0/3</span></div>
+        <div class="row"><span style="width:4.5em">システム</span><div class="bar grow"><i style="width:66%"></i></div><span class="mono">2/3</span></div>
+        <div class="row"><span style="width:4.5em">ジャイロ</span><div class="bar grow ok"><i style="width:100%"></i></div><span class="mono">3/3</span></div>
+        <div class="row"><span style="width:4.5em">加速度</span><div class="bar grow"><i style="width:66%"></i></div><span class="mono">2/3</span></div>
+        <div class="row"><span style="width:4.5em">地磁気</span><div class="bar grow"><i style="width:0%"></i></div><span class="mono">0/3</span></div>
       </div>
+      <button class="btn primary wide mt dis">確定する</button>
     </div>
     </div>
     <div class="tabpane" id="r40d">
     <div class="card">
-      <h3>LiDAR 死角マスク校正</h3>
-      <div class="sm mb">死角として写り込んでいる角度帯をなぞってください。</div>
-      <div class="row"><span class="pill">選択中 36°〜44°</span><button class="btn sm">追加</button></div>
-      <div class="sm mut mt">登録済み 40° / 130° / 220° / 310°</div>
-      <div class="btnrow n2 mt"><button class="btn sm">編集</button><button class="btn sm danger arm" onclick="arm(this,'削除')">削除</button></div>
+      <!-- ライブスキャン上をなぞって角度帯を選ぶ（Spec-checks.md §3.5） -->
+      <div class="xs mb">スキャン上をなぞって、写り込んでいる角度帯を選びます（上が前方）。灰色は登録済み、青が選択中、赤い点は選ぶと消える点です。</div>
+      <div class="well" style="text-align:center;padding:4px">
+        <svg viewBox="0 0 300 170" style="width:100%;height:auto" aria-label="ライブスキャン上で死角を選ぶ">
+          <circle cx="150" cy="120" r="96" fill="none" stroke="#333a48"/>
+          <path d="M150 120 L104 44 A88 88 0 0 1 150 32 Z" fill="#5c6470" opacity=".55"/>
+          <path d="M150 120 L150 32 A88 88 0 0 1 176 36 Z" fill="#2196f3" opacity=".45"/>
+          <g fill="#ef5350"><circle cx="160" cy="40" r="2.5"/><circle cx="166" cy="44" r="2.5"/></g>
+          <g fill="#8b93a1"><circle cx="70" cy="70" r="2.5"/><circle cx="232" cy="76" r="2.5"/><circle cx="250" cy="110" r="2.5"/><circle cx="56" cy="112" r="2.5"/></g>
+        </svg>
+      </div>
+      <div class="b sm mt mb">選んだ範囲</div>
+      <div class="lst-scroll"><table class="lst">
+        <tr><td class="mono">+45.9° 〜 +61.5°</td><td class="r"><button class="btn sm" onclick="mark(this,'—')">削除</button></td></tr>
+        <tr><td class="mono">-59.5° 〜 -38.9°</td><td class="r"><button class="btn sm" onclick="mark(this,'—')">削除</button></td></tr>
+        <tr><td class="mono">+130.3° 〜 +143.5°</td><td class="r"><button class="btn sm" onclick="mark(this,'—')">削除</button></td></tr>
+        <tr><td class="mono">-132.8° 〜 -117.5°</td><td class="r"><button class="btn sm" onclick="mark(this,'—')">削除</button></td></tr>
+      </table></div>
+      <div class="row mt"><span class="sm mut mono grow">総幅 64.9° / 上限 90°（1 区間 30°・8 区間まで）</span>
+        <button class="btn sm">全部外す</button><button class="btn sm">登録済みに戻す</button></div>
+      <div class="sm tone-warn mt">消える点: 12 点 ／ 総幅 64.9°</div>
+      <div class="btnrow n2 mt">
+        <button class="btn">確認（プレビュー）</button>
+        <button class="btn primary">次へ（適用して検証）</button>
+      </div>
     </div>
     </div>
     </div>
@@ -1363,55 +1712,115 @@ table.lst td.r{text-align:right}
 <!-- ---------- S-50 設定 ---------- -->
 <section class="screen" id="s50">
   <div class="top-actions sticky">
-    <button class="btn sm" onclick="finish()">戻る</button>
+    <button class="btn sm" onclick="leaveSettings()">戻る</button>
     <div class="tabs grow" style="margin:0;border:none">
       <button class="tab on" onclick="tab(this,'set1')">一般</button>
       <button class="tab" onclick="tab(this,'set2')">表示</button>
       <button class="tab" onclick="tab(this,'set3')">開発モード</button>
+      <button class="tab" onclick="tab(this,'set4')">フォルト履歴</button>
     </div>
   </div>
   <div class="tabpane on" id="set1">
-    <div class="card"><h3>速度プリセット（モード上限に対する割合）</h3>
-      <table class="lst">
-        <tr><td>高速</td><td class="r mono">100%</td></tr>
-        <tr><td>中速</td><td class="r mono">60%</td></tr>
-        <tr><td>低速</td><td class="r mono">30%</td></tr>
-      </table></div>
-    <div class="card"><h3>人物追跡</h3>
-      <div class="row"><span class="grow sm">人物追跡を動かす</span>
-        <span class="pill ok" id="trkPill">ON</span>
-        <button class="btn sm on" id="trkBtn" onclick="toggleTracker()">OFF にする</button></div>
-      <div class="hint mt">OFF にすると追従走行・教示（追従）・呼び寄せ・盤登録が選べなくなります。
-        これらのモードの実行中は OFF にできません。</div>
+    <!-- 一般タブの中は区画ごとに切り替える（1 区画ずつ見せてスクロールさせない） -->
+    <div class="tabs">
+      <button class="tab on" onclick="tab(this,'g1')">速度プリセット</button>
+      <button class="tab" onclick="tab(this,'g2')">自動ブレーキ</button>
+      <button class="tab" onclick="tab(this,'g3')">音声・スピーカー</button>
+      <button class="tab" onclick="tab(this,'g4')">自己位置推定</button>
+      <button class="tab" onclick="tab(this,'g5')">LiDAR 死角</button>
     </div>
+    <div class="tabpane on" id="g1">
+    <div class="card"><div class="row mb"><h3 class="grow" style="margin:0">速度プリセットの割合</h3>
+        <button class="btn save sm" onclick="mark(this,'保存しました')">保存（再起動後に反映）</button></div>
+      <!-- 低速 ≦ 中速 ≦ 高速 を保つ。割合の基準はそのモードの上限（Spec-params.md §2） -->
+      <div class="sm mut mb">「保存」は走行中の値に触れません。次の起動から有効になります（再起動後に反映）。保存済みでまだ効いていない値は「次回から」で示します。</div>
+      <div class="note mb">次回から 中速: 0.55 → 0.6</div>
+      <table class="lst">
+        <tr><td>低速</td><td class="r"><input class="txt num" type="number" step="0.01" value="0.27"> <span class="sm mut">割合</span></td></tr>
+        <tr><td>中速</td><td class="r"><input class="txt num" type="number" step="0.01" value="0.60"> <span class="sm mut">割合</span></td></tr>
+        <tr><td>高速</td><td class="r"><input class="txt num" type="number" step="0.01" value="1.00"> <span class="sm mut">割合</span></td></tr>
+      </table>
+      <div class="row mt"><span class="sm mut">変えた理由（必須）</span><input class="txt grow" type="text" value="場内の中速を少し上げる" aria-label="変えた理由"></div>
+    </div>
+    </div>
+    <div class="tabpane" id="g2">
+    <!-- 未実装（Spec-webui.md §3.15）: 自動ブレーキの既定。変えた既定は再起動後も維持する -->
     <div class="card"><h3>自動ブレーキの既定</h3>
       <table class="lst">
         <tr><td>自律系</td><td class="r"><span class="pill ok">常時 ON（変更不可）</span></td></tr>
         <tr><td>手動系・場外</td><td class="r"><button class="btn sm" onclick="toggleOnOff(this,'ON','OFF')">OFF</button></td></tr>
         <tr><td>手動系・試験場内</td><td class="r"><button class="btn sm on" onclick="toggleOnOff(this,'ON','OFF')">ON</button></td></tr>
       </table></div>
+    </div>
+    <div class="tabpane" id="g3">
+    <!-- 未実装（Spec-webui.md §3.15）: タブレットの音声（試験員向け）は ON／OFF のみ -->
+    <div class="card"><h3>タブレットの音声</h3>
+      <div class="row"><span class="grow sm">音声アナウンス</span>
+        <button class="btn sm on" onclick="toggleOnOff(this,'ON','OFF')">ON</button></div></div>
+    <!-- 機体のスピーカー（周囲への報知。Spec-safety.md §11）。ON／OFF と音量。実行中に変えられ、再起動後も維持する -->
+    <div class="card"><div class="row mb"><h3 class="grow" style="margin:0">機体のスピーカー（周囲への報知）</h3>
+        <button class="btn sm on" onclick="toggleOnOff(this,'スピーカー ON','スピーカー OFF')">スピーカー ON</button></div>
+      <div class="sm mut mb">自律で走っている間・塞がれ待ち・接近警告のときに機体から音が出ます。変えた値は機体に残り、再起動後も維持します。</div>
+      <div class="row"><span class="sm">音量 (60)</span><input class="grow" type="range" min="0" max="100" value="60" aria-label="音量"></div>
+      <div class="row mt"><button class="btn sm" onclick="mark(this,'鳴らしました')">試しに鳴らす</button>
+        <span class="sm mut">再生中: なし</span></div>
+    </div>
+    </div>
+    <div class="tabpane" id="g4">
+    <!-- 再生の自己位置推定。最適値は現場で変わるので調整できる（Spec-webui.md §3.15・Spec-transit.md §4.5） -->
+    <div class="card"><div class="row mb"><h3 class="grow" style="margin:0">再生の自己位置推定</h3>
+        <button class="btn save sm" onclick="mark(this,'保存しました')">保存</button></div>
+      <div class="sm mut mb">変更は保存してから、次に「この経路で進む」を押したときに有効になります（その場では読み直さないため）。補正頻度を上げる＝間隔を小さく、廊下でのずれに強くする＝探索窓を広げる。</div>
+      <table class="lst">
+        <tr><td>補正間隔（距離）</td><td class="r"><input class="txt num" type="number" step="0.05" value="0.20"> <span class="sm mut">m</span></td></tr>
+        <tr><td>補正間隔（角度）</td><td class="r"><input class="txt num" type="number" step="0.05" value="0.25"> <span class="sm mut">rad</span></td></tr>
+        <tr><td>スキャン探索窓（全幅）</td><td class="r"><input class="txt num" type="number" step="0.05" value="0.80"> <span class="sm mut">m</span></td></tr>
+        <tr><td>探索の刻み</td><td class="r"><input class="txt num" type="number" step="0.005" value="0.010"> <span class="sm mut">m</span></td></tr>
+        <tr><td>マッチ受理の下限</td><td class="r"><input class="txt num" type="number" step="0.01" value="0.10"></td></tr>
+      </table></div>
+    </div>
+    <div class="tabpane" id="g5">
+    <!-- 死角マスクはここでは編集しない。表示と校正（S-40）への導線だけ（2026-10-02） -->
+    <div class="card"><div class="row mb"><h3 class="grow" style="margin:0">LiDAR 死角マスク</h3>
+        <button class="btn sm" onclick="go('s40')">校正で変更する</button></div>
+      <div class="sm mut mb">今の死角マスクの表示だけです。変えるときは校正（S-40 の「LiDAR 死角」）で行います（上限の検査・安全判定への同時反映・履歴が付きます）。</div>
+      <div class="mono sm">+45.9°〜+61.5° ／ -59.5°〜-38.9° ／ +130.3°〜+143.5° ／ -132.8°〜-117.5°</div>
+    </div>
+    </div>
   </div>
   <div class="tabpane" id="set2">
+    <div class="card"><h3>文字サイズ</h3>
+      <div class="btnrow n3">
+        <button class="btn on" onclick="pick2(this)">標準</button>
+        <button class="btn" onclick="pick2(this)">大</button>
+        <button class="btn" onclick="pick2(this)">特大</button>
+      </div></div>
+    <!-- 未実装（Spec-webui.md §3.15）: 縦横の固定・地図の表示項目 -->
     <div class="card"><h3>表示</h3>
       <table class="lst">
         <tr><td>画面の向き</td><td class="r"><button class="btn sm" onclick="cycle(this,['自動','縦固定','横固定'])">自動</button></td></tr>
-        <tr><td>文字サイズ</td><td class="r"><button class="btn sm" onclick="cycle(this,['標準','大','特大'])">標準</button></td></tr>
-        <tr><td>地図に経路を表示</td><td class="r"><button class="btn sm on" onclick="toggleOnOff(this,'ON','OFF')">ON</button></td></tr>
-        <tr><td>音声アナウンス</td><td class="r"><button class="btn sm on" onclick="toggleOnOff(this,'ON','OFF')">ON</button></td></tr>
+        <tr><td>地図にコストマップを表示</td><td class="r"><button class="btn sm on" onclick="toggleOnOff(this,'ON','OFF')">ON</button></td></tr>
       </table></div>
   </div>
   <div class="tabpane" id="set3">
     <div class="card"><h3>開発モード</h3>
-      <div class="note mb">暴走する危険を承知の上で開くモードです。</div>
+      <div class="note mb">暴走する危険を承知の上で開くモードです。ON にしただけでは通常運用と同じです。外したい項目を下で選んでください。</div>
       <button class="btn wide" id="devBtn" onclick="toggleDev()">開発モードを有効にする</button>
     </div>
-    <div class="card"><h3>無視する警告を選ぶ</h3>
+    <!-- 項目ごとに選ぶ（一括トグルにしない）。既定はすべて OFF。状態の正本は機体側（Spec-safety.md §10） -->
+    <div class="card"><h3>無視する警告（項目ごと）</h3>
       <table class="lst">
-        <tr><td>機器が接続されていない</td><td class="r"><button class="btn sm" onclick="toggleOnOff(this,'無視する','無視しない')">無視しない</button></td></tr>
-        <tr><td>バッテリー電圧が低い</td><td class="r"><button class="btn sm" onclick="toggleOnOff(this,'無視する','無視しない')">無視しない</button></td></tr>
-        <tr><td>始業点検の総合ステータス NG</td><td class="r"><button class="btn sm" onclick="toggleOnOff(this,'無視する','無視しない')">無視しない</button></td></tr>
+        <tr><td>機器未接続・通信不通<div class="xs mut">起動時の機器確認を進める</div></td><td class="r"><button class="btn sm" onclick="toggleOnOff(this,'無視する','無視しない')">無視しない</button></td></tr>
+        <tr><td>LiDAR 途絶のフォルト<div class="xs mut">LiDAR 途絶を出さない（出ていれば解除する）</div></td><td class="r"><button class="btn sm" onclick="toggleOnOff(this,'無視する','無視しない')">無視しない</button></td></tr>
+        <tr><td>LiDAR 無しの手動停止<div class="xs mut">LiDAR が無くても手動走行と始業点検のモーター確認ができる。障害物は見えず自動では止まらない。自律走行は止まったまま</div></td><td class="r"><button class="btn sm" onclick="toggleOnOff(this,'無視する','無視しない')">無視しない</button></td></tr>
+        <tr><td>バッテリー電圧低下</td><td class="r"><button class="btn sm" onclick="toggleOnOff(this,'無視する','無視しない')">無視しない</button></td></tr>
+        <tr><td>始業点検の総合 NG<div class="xs mut">起動時の自動点検の警告を出さなくなります（判定自体は止めません）</div></td><td class="r"><button class="btn sm" onclick="toggleOnOff(this,'無視する','無視しない')">無視しない</button></td></tr>
+        <tr><td>自動ブレーキを OFF にできる<div class="xs mut">自律系・場内でも OFF に切り替えられる（選んだだけでは OFF にならない）</div></td><td class="r"><button class="btn sm" onclick="toggleOnOff(this,'無視する','無視しない')">無視しない</button></td></tr>
       </table>
-      <div class="hint mt"><b>無視できないもの：</b>物理非常停止ボタン／ESP32 ウォッチドッグ／UI 非常停止／自律系の障害物停止</div></div>
+      <div class="hint mt">外れるのは選んだ項目だけです。項目の無いもの（非常停止ボタン・ESP32 のウォッチドッグ・UI 非常停止など）は通常どおり効きます</div></div>
+    <div class="card"><h3>いま無視しているもの</h3>
+      <div class="sm">なし（通常運用）</div></div>
+    <!-- 未実装（Spec-webui.md §5）: ログの選択記録 -->
     <div class="card"><h3>記録するログを選ぶ</h3>
       <table class="lst">
         <tr><td>モード遷移</td><td class="r"><button class="btn sm on" onclick="toggleOnOff(this,'記録する','記録しない')">記録する</button></td></tr>
@@ -1419,6 +1828,11 @@ table.lst td.r{text-align:right}
         <tr><td>人物追跡の候補</td><td class="r"><button class="btn sm" onclick="toggleOnOff(this,'記録する','記録しない')">記録しない</button></td></tr>
         <tr><td>通信の断続</td><td class="r"><button class="btn sm on" onclick="toggleOnOff(this,'記録する','記録しない')">記録する</button></td></tr>
       </table></div>
+  </div>
+  <!-- 直近 50 件を新しい順に。見るだけで操作は無い（Spec-safety.md §3.5.5） -->
+  <div class="tabpane" id="set4">
+    <div class="card"><h3>フォルト履歴</h3>
+      <div class="mount" data-tpl="faultHistory"></div></div>
   </div>
 </section>
 </main>
@@ -1435,59 +1849,59 @@ table.lst td.r{text-align:right}
 
   <!-- W-1 異常ウィンドウ -->
   <div class="win fault" id="winFault">
-    <header><span id="wfIcon">⚠</span><span id="wfTitle">異常：LiDAR との通信が途絶しました</span></header>
-    <div class="bodyw" id="wfBody">
-      停止しました。LiDAR（RaspberryPi4）からのスキャンが届いていません。<br>
-      <span class="sm mut">Wi-Fi の状態と RaspberryPi4 の電源を確認してください。</span>
-    </div>
+    <header><span id="wfIcon">⚠</span><span id="wfTitle">異常が発生しました</span></header>
+    <div class="bodyw" id="wfBody">—</div>
     <footer id="wfFoot">
       <button class="btn" onclick="hideFaultWin()">非表示</button>
     </footer>
   </div>
 
-  <!-- W-1 非常停止ウィンドウ（画面は変えずウィンドウが乗る） -->
+  <!-- W-1 非常停止ウィンドウ（画面は変えずウィンドウが乗る）。
+       解除すると同じウィンドウが「元のモードに戻る／メインメニューへ」の 2 択に変わる（SM-3.1.1-11） -->
   <div class="win fault" id="winEstop">
-    <header>⚠ 非常停止中</header>
-    <div class="bodyw">
+    <header id="weTitle">⚠ 非常停止中</header>
+    <div class="bodyw" id="weBody">
       非常停止ボタンが押されました。速度指令をゼロにしています。<br>
-      <div class="hint mt">解除は<b>画面下端の解除バー</b>から。解除すると待機に戻ります。</div>
+      <div class="hint mt">解除は画面下端の解除バーから。解除すると元のモードの再開を選べます。</div>
     </div>
-    <footer><button class="btn" onclick="closeWin('winEstop')">非表示</button></footer>
+    <footer id="weFoot"><button class="btn" onclick="closeWin('winEstop')">非表示</button></footer>
   </div>
 
   <!-- W-2 手押しウィンドウ -->
   <div class="win carry" id="winCarry">
     <header>■ 手押しモード</header>
     <div class="bodyw">
-      物理非常停止ボタンが押されています。<b>人が機体を押して運んでいる</b>とみなします。<br>
-      <div class="hint mt"><b>解除方法：</b>機体後部の赤いボタンを<b>右へひねって</b>ください。ロックが外れて飛び出します。</div>
+      物理非常停止ボタンが押されています。人が機体を押して運んでいるとみなします。
+      <div class="hint mt">解除方法：機体後部の赤いボタンを右へひねってください。ロックが外れて飛び出します。</div>
+      <!-- 手押し中は UI 非常停止を受け付けない。押しても何も起きないことを先に示す -->
+      <div class="hint mt">駆動は既に切れています。</div>
       <div class="mt" id="carryResume" style="display:none">
         <div class="row"><span class="pill ok">解除されました</span></div>
-        <button class="btn primary wide mt" onclick="resumeFromCarry()">押下前のモードで再開する</button>
+        <!-- 再開先は押下前のモードの復帰先（走行中なら一時停止）。再開しただけでは動き出さない（SM-3.1.1-14） -->
+        <button class="btn primary wide mt" onclick="resumeFromCarry()">再開する（すぐには動き出しません）</button>
         <button class="btn wide mt" onclick="dismissCarry()">再開しない（待機に戻る）</button>
       </div>
     </div>
   </div>
 
   <!-- W-4 確認ウィンドウ群 -->
+  <!-- 教示の記録を保存するか。記録が途切れたとき・未保存のまま「終了」を押したときに開く。
+       破棄は二段階アーム式。破棄しても同名の既存経路は残る -->
   <div class="win confirm" id="winSave">
-    <header>教示を終了します</header>
-    <div class="bodyw">記録した経路が<b>まだ保存されていません</b>。保存しますか？<br>
-</div>
+    <header>記録を保存しますか</header>
+    <div class="bodyw">「保管場所→試験場」の記録が保存されていません。保存すると経路と地図が確定します。破棄すると今回の記録は捨てられ、同名の既存の経路はそのまま残ります。</div>
     <footer>
-      <button class="btn" onclick="closeWin('winSave')">やめる</button>
-      <button class="btn danger" onclick="closeWin('winSave');finish()">保存せず終了</button>
-      <button class="btn primary" onclick="closeWin('winSave');saveRoute(S.screen);finish()">保存して終了</button>
+      <button class="btn danger" onclick="armThen(this,'破棄する','本当に破棄する',()=>{closeWin('winSave');finish()})">破棄する</button>
+      <button class="btn primary" onclick="closeWin('winSave');saveRoute(S.screen);finish()">保存する</button>
     </footer>
   </div>
 
   <div class="win confirm" id="winSave20">
-    <header>試験準備を終了します</header>
-    <div class="bodyw">作成した地図が<b>まだ保存されていません</b>。保存しますか？<br>
-</div>
+    <header>試験場内地図を保存しますか</header>
+    <div class="bodyw">作成した地図がまだ保存されていません。保存しますか？</div>
     <footer>
       <button class="btn" onclick="closeWin('winSave20')">やめる</button>
-      <button class="btn danger" onclick="closeWin('winSave20');finish()">保存せず終了</button>
+      <button class="btn danger" onclick="armThen(this,'保存せず終了','本当に破棄する',()=>{closeWin('winSave20');finish()})">保存せず終了</button>
       <button class="btn primary" onclick="closeWin('winSave20');save20();finish()">保存して終了</button>
     </footer>
   </div>
@@ -1499,15 +1913,19 @@ table.lst td.r{text-align:right}
     <div class="bodyw">
       <div class="sm mb">停止する前に、未保存のデータの扱いを決めてください。</div>
       <table class="lst" id="unsavedList">
-        <tr><th>未保存のデータ</th><th class="r">扱い</th></tr>
-        <tr id="uv-map"><td>試験場内地図（前日作成）</td><td class="r">
+        <tr id="uv-map"><td>試験場内地図</td><td class="r">
           <button class="btn sm" onclick="keepUnsaved('uv-map')">保存</button>
           <button class="btn sm danger" onclick="armDiscard(this,'uv-map')">破棄</button></td></tr>
-        <tr id="uv-route"><td>教示経路「保管場所→試験場」</td><td class="r">
+        <tr id="uv-route"><td>教示経路</td><td class="r">
           <button class="btn sm" onclick="keepUnsaved('uv-route')">保存</button>
           <button class="btn sm danger" onclick="armDiscard(this,'uv-route')">破棄</button></td></tr>
+        <!-- 未実装（Spec-webui.md §3.2.1）: 校正の補正値・地図の書き足しは、まだこの画面から扱えない -->
+        <tr id="uv-calib"><td>校正の補正値</td><td class="r">
+          <button class="btn sm" onclick="keepUnsaved('uv-calib')">保存</button>
+          <button class="btn sm danger" onclick="armDiscard(this,'uv-calib')">破棄</button></td></tr>
       </table>
       <div class="note" id="unsavedNone" style="display:none">未保存のデータはありません。</div>
+      <div class="sm mut mt" id="shutdownBlocked">未保存の扱いを決めてください（残り 3 件）</div>
     </div>
     <footer>
       <button class="btn" onclick="closeWin('winShutdown')">やめる</button>
@@ -1515,24 +1933,31 @@ table.lst td.r{text-align:right}
     </footer>
   </div>
 
+  <!-- 押せない理由（押されて初めて出す。Spec-webui.md §0.1） -->
   <div class="win confirm" id="winDisabled">
-    <header id="wdTitle">この方式は使えません</header>
+    <header>この操作はできません</header>
     <div class="bodyw" id="wdBody">—</div>
     <footer><button class="btn primary" onclick="closeWin('winDisabled')">確認</button></footer>
   </div>
 
+  <!-- 自動ブレーキ ON→OFF の確認（Spec-webui.md §3.5。2026-10-07） -->
+  <div class="win confirm" id="winBrakeOff">
+    <header>自動ブレーキを OFF にしますか</header>
+    <div class="bodyw">障害物に近づいても自動で減速・停止しません。画面の警告を見て自分で止めてください。</div>
+    <footer><button class="btn" onclick="closeWin('winBrakeOff')">やめる</button>
+      <button class="btn danger" onclick="closeWin('winBrakeOff');setBrake(false)">OFF にする</button></footer>
+  </div>
+
   <div class="win confirm" id="winConfirmGlobal">
-    <header>完全グローバルローカライゼーション</header>
-    <div class="bodyw">地図全体から初期姿勢を探し直します。時間がかかります。<br>
-</div>
+    <header>完全グローバルで探す</header>
+    <div class="bodyw">地図全体から初期姿勢を探し直します。地図を読み込んでいます。短い経路で数秒、長い地図で30〜45秒かかります。</div>
     <footer><button class="btn" onclick="closeWin('winConfirmGlobal')">いいえ</button>
       <button class="btn primary" onclick="closeWin('winConfirmGlobal')">はい</button></footer>
   </div>
 
   <div class="win confirm" id="winReturnHome">
     <header>待機場所に戻します</header>
-    <div class="bodyw">作りかけの地図で自己位置推定して戻ります（保存はこの後です）。<br>
-</div>
+    <div class="bodyw">作りかけの地図で自己位置推定して戻ります（保存はこの後です）。</div>
     <footer><button class="btn" onclick="closeWin('winReturnHome')">いいえ</button>
       <button class="btn primary" onclick="closeWin('winReturnHome')">戻す</button></footer>
   </div>
@@ -1545,36 +1970,39 @@ table.lst td.r{text-align:right}
   </div>
 
   <div class="win confirm" id="winWorkBlocked">
-    <header>選べません</header>
+    <header>この操作はできません</header>
     <div class="bodyw">「作業中」が ON のため、待機場所・別の配電盤・呼び寄せのいずれも選べません。<br>
       <span class="sm mut">作業が終わったら「作業中」を OFF にしてください。</span></div>
     <footer><button class="btn primary" onclick="closeWin('winWorkBlocked')">確認</button></footer>
   </div>
 
-  <!-- W-5 経路ブロック -->
+  <!-- W-5 経路ブロック。先が空けば同じ経路の残りで自動で再開する。
+       タイムアウトしない。出続けるので「閉じる」は置かない（SM-3.1.2-058/-060） -->
   <div class="win blocked" id="winBlocked">
     <header>■ 経路が塞がれています</header>
-    <div class="bodyw">最初に決めたルートが通れるようになるのを待っています。<br>
-      <span class="sm mut">障害物をどけるか、ルートを再検索してください。</span></div>
-    <footer><button class="btn" onclick="closeWin('winBlocked')">待つ</button>
-      <button class="btn primary" onclick="closeWin('winBlocked')">ルートを再検索する</button></footer>
+    <div class="bodyw">行き先までの経路が見つかりません（止まって再試行中）。<br>
+      <span class="sm mut">行く手に障害物が無いか確認してください。先が空けば自動で続きを走ります。</span></div>
+    <footer><button class="btn danger" onclick="closeWin('winBlocked')">中断して待機場所へ</button>
+      <button class="btn primary" onclick="closeWin('winBlocked')">再検索する</button></footer>
   </div>
 
   <!-- W-4 ピンの編集（Spec-onsite.md §2.3） -->
   <div class="win confirm" id="winPin">
-    <header id="wpTitle">盤 A-1</header>
+    <header id="wpTitle">配電盤 A-1</header>
     <div class="bodyw">
       <div class="row mb"><span class="sm mut" style="width:5em">名前</span>
-        <input class="grow" type="text" value="盤 A-1" aria-label="ピンの名前"
-          style="padding:9px;background:var(--inset);border:1px solid var(--bd-hi);border-radius:6px;color:var(--tx)"></div>
-      <dl class="kv"><dt>向き</dt><dd class="mono">92.4°</dd></dl>
-      <button class="btn wide mt" onclick="closeWin('winPin')">2 点指示で登録し直す</button>
+        <input class="grow txt" type="text" value="配電盤 A-1" aria-label="ピンの名前"></div>
+      <dl class="kv"><dt>向き</dt><dd class="mono">92°</dd></dl>
+      <!-- 同じ id・同じ名前のまま、位置と向きを登録し直す -->
+      <button class="btn wide mt" onclick="closeWin('winPin');mapTap20()">地図タップで位置と向きを登録し直す</button>
+      <button class="btn wide mt" onclick="closeWin('winPin')">いまの機体位置で更新</button>
+      <button class="btn wide mt" onclick="closeWin('winPin');p2start('配電盤')">2 点指示で登録し直す</button>
     </div>
     <footer>
-      <button class="btn danger arm" onclick="arm(this,'削除')">削除</button>
+      <button class="btn danger" onclick="arm(this,'削除','本当に削除する')">削除</button>
       <span class="grow"></span>
       <button class="btn" onclick="closeWin('winPin')">やめる</button>
-      <button class="btn primary" onclick="closeWin('winPin')">名前を保存</button>
+      <button class="btn primary" onclick="closeWin('winPin')">改名</button>
     </footer>
   </div>
 
@@ -1583,8 +2011,15 @@ table.lst td.r{text-align:right}
     <header>■ 待機場所とずれています</header>
     <div class="bodyw">登録済みの待機場所から <b class="mono">0.8 m / 14°</b> ずれています。<br>
       <span class="sm mut">機体を置き直すか、待機場所を登録し直してください。</span></div>
-    <footer><button class="btn" onclick="closeWin('winHomeMismatch')">置き直す</button>
-      <button class="btn primary" onclick="closeWin('winHomeMismatch');declareHome(true)">このまま宣言する</button></footer>
+    <footer><button class="btn" onclick="closeWin('winHomeMismatch')">あとで</button>
+      <button class="btn primary" onclick="closeWin('winHomeMismatch');declareHome(true)">強制的に宣言</button></footer>
+  </div>
+
+  <!-- フォルト履歴（ヘッダの「直近の異常」から開く。S-50 のタブと同じ一覧） -->
+  <div class="win confirm" id="winFaultHistory">
+    <header>フォルト履歴</header>
+    <div class="bodyw"><div class="mount" data-tpl="faultHistory"></div></div>
+    <footer><button class="btn primary" onclick="closeWin('winFaultHistory')">閉じる</button></footer>
   </div>
 </div>
 
@@ -1600,16 +2035,18 @@ table.lst td.r{text-align:right}
     <button class="btn sm" onclick="closeJog()">閉じる</button>
   </div>
   <div class="jw-m" id="jwMode">モードは変わりません</div>
+  <!-- ジョグ中は自動ブレーキの状態と後方の死角を必ず出す（Spec-modes.md §8・Spec-safety.md §2.3） -->
+  <div class="jw-s"><span class="sm">自動ブレーキ</span><span class="pill ok">ON</span><span class="warn-tx sm">後方は死角があります</span></div>
   <div class="mount" data-tpl="stick" data-jog="ジョグ介入中"></div>
 </div>
 
 <!-- ============ 案内ウィンドウ W-3（帯として本文の下に差し込む） ============ -->
 <div id="winGuide">
-  <div class="g-tx" id="guideTx">人物追跡の対象を見失いました。もう一度対象を選んでください。</div>
+  <div class="g-tx" id="guideTx">対象を見失いました。立ってほしい位置に立ってください</div>
   <button class="btn sm" onclick="closeGuide()">閉じる</button>
 </div>
 
-</div></div>
+</div></div></div>
 
 <!-- ============ モックアップ操作パネル（実機には存在しません） ============ -->
 <div id="demo">
@@ -1621,28 +2058,40 @@ table.lst td.r{text-align:right}
       <button class="btn sm" onclick="go('s21')">試験</button>
       <button class="btn sm" onclick="go('s40')">校正</button>
     </div></div>
-    <div class="dgrp"><span>表示（縦長・横長の確認）</span><div class="drow">
+    <div class="dgrp"><span>表示（縦長 3:4・横長 16:9 の論理キャンバス。Spec-webui.md §7）</span><div class="drow">
       <button class="btn sm on" onclick="pv(this,'full')">全画面</button>
       <button class="btn sm" onclick="pv(this,'portrait')">縦長</button>
       <button class="btn sm" onclick="pv(this,'landscape')">横長</button>
     </div></div>
     <div class="dgrp"><span>異常ウィンドウ（W-1）</span><div class="drow">
       <button class="btn sm" onclick="raiseFault('LIDAR_LOST')">LiDAR 途絶</button>
-      <button class="btn sm" onclick="raiseFault('PERSON_TRACKER_LOST')">追跡ロスト</button>
+      <button class="btn sm" onclick="raiseFault('PERSON_TRACKER_LOST')">追跡途絶</button>
       <button class="btn sm" onclick="raiseFault('MANUAL_ONLY')">再開不可の異常</button>
       <button class="btn sm primary" onclick="resolveFault()">異常を解決する</button>
     </div></div>
-    <div class="dgrp"><span>その他のウィンドウ</span><div class="drow">
+    <div class="dgrp"><span>その他のウィンドウ・表示</span><div class="drow">
       <button class="btn sm" onclick="openWin('winBlocked')">経路ブロック</button>
-      <button class="btn sm" onclick="showGuide('人物追跡の対象を見失いました。もう一度対象を選んでください。')">案内</button>
+      <button class="btn sm" onclick="showGuide('対象を見失いました。立ってほしい位置に立ってください')">案内</button>
+      <button class="btn sm" onclick="stopBanner()">止まっている理由</button>
+      <button class="btn sm" onclick="wallWarn20()">ピンが壁に近い</button>
+      <button class="btn sm" onclick="pauseEnd14()">再生の終端</button>
+    </div></div>
+    <div class="dgrp"><span>校正ウィザード（旋回）</span><div class="drow">
+      <button class="btn sm" onclick="go('s40');cw(-1)">前の Step</button>
+      <button class="btn sm" onclick="go('s40');cw(1)">次の Step</button>
     </div></div>
     <div class="dgrp"><span>物理非常停止ボタン</span><div class="drow">
       <button class="btn sm" onclick="hwEstop(true)">押す</button>
       <button class="btn sm" onclick="hwEstop(false)">解除する</button>
     </div></div>
     <div class="dgrp"><span>人物追跡</span><div class="drow">
+      <button class="btn sm" onclick="tracker('off')">止まっている</button>
       <button class="btn sm" onclick="tracker('boot')">起動中（候補 0）</button>
       <button class="btn sm" onclick="tracker('found')">候補あり</button>
+    </div></div>
+    <div class="dgrp"><span>地図</span><div class="drow">
+      <button class="btn sm" onclick="mapGates(true)">地図を開く前</button>
+      <button class="btn sm" onclick="mapGates(false)">地図を開いた後</button>
     </div></div>
     <div class="dgrp"><span>接続確認</span><div class="drow">
       <button class="btn sm" onclick="conn(false)">必須機器が不通</button>
@@ -1675,6 +2124,7 @@ const MODES = {
   AT_PANEL:    {ja:'配電盤前',      c:'#9c27b0'},
   SUMMON:      {ja:'呼び寄せ',      c:'#e91e63'},
   HOME_NAV:    {ja:'待機場所へ移動',c:'#3f51b5'},
+  AT_HOME:     {ja:'試験（当日）',  c:'#5c6bc0'},
   OPCHECK:     {ja:'始業点検',      c:'#607d8b'},
   CALIB:       {ja:'校正',          c:'#795548'}
 };
@@ -1692,10 +2142,10 @@ const SCREENS = {
   s14:{name:'教示再生走行',          mode:'REPLAY',       zone:'OUT', limit:'v_max'},
   s15:{name:'ライン誘導走行',        mode:'LINE',         zone:'OUT', limit:'v_max'},
   s16:{name:'電子リード走行',        mode:'LEASH',        zone:'OUT', limit:'v_leash'},
-  /* s21 は開いた直後 IDLE。行き先を選んだ時点で PANEL_NAV / SUMMON / HOME_NAV に入る
-     （Spec-modes.md §4.2）。zone は画面ごとに持つ＝ゾーンはモードでなく画面が決める（同 §7）。 */
+  /* s21 は開いた直後 AT_HOME（2026-09-08 追加）。行き先を選んだ時点で PANEL_NAV / SUMMON / HOME_NAV に入る
+     （Spec-modes.md §2.3・§4.2）。zone は画面ごとに持つ＝ゾーンはモードでなく画面が決める（同 §7）。 */
   s20:{name:'試験準備',              mode:'PREP',         zone:'IN',  limit:'v_slow'},
-  s21:{name:'試験',                  mode:'IDLE',         zone:'IN',  limit:'v_slow'},
+  s21:{name:'試験',                  mode:'AT_HOME',      zone:'IN',  limit:'v_slow'},
   s30:{name:'始業点検',              mode:'OPCHECK',      zone:'NA',  limit:'v_check'},
   s31:{name:'故障診断',              mode:'OPCHECK',      zone:'NA',  limit:'停止'},
   s40:{name:'校正',                  mode:'CALIB',        zone:'NA',  limit:'v_calib'},
@@ -1703,7 +2153,8 @@ const SCREENS = {
 };
 
 const S = {screen:'s00', mode:'INIT', prevMode:null, estop:false, hw:false,
-           fault:null, faultHidden:false, faultBeforeEstop:null, dev:false, resumable:true};
+           fault:null, faultHidden:false, faultBeforeEstop:null, dev:false, resumable:true,
+           settingsFrom:'s01', saved13:false};
 
 const $ = id => document.getElementById(id);
 
@@ -1719,6 +2170,18 @@ function go(id){
   S.screen = id;
   S.mode = SCREENS[id].mode;
   paintHeader();
+  applyZonePreset();
+}
+/* 場内の画面（S-20・S-21）では速度プリセットの「高速」を出さない。
+   高速が選ばれたまま場内に入ったら中速に落とす（Spec-webui.md §6。2026-10-13） */
+function applyZonePreset(){
+  const inZone = SCREENS[S.screen].zone === 'IN';
+  document.querySelectorAll('.spd').forEach(g=>{
+    const hi = g.querySelector('.spd-high');
+    if(!hi) return;
+    hi.style.display = inZone ? 'none' : '';
+    if(inZone && hi.classList.contains('on')){ hi.classList.remove('on'); hi.nextElementSibling.classList.add('on'); }
+  });
 }
 function finish(){ go('s01'); }
 
@@ -1746,32 +2209,54 @@ function engageEstop(){
   S.prevMode = (S.mode === 'ESTOP' || S.mode === 'CARRY') ? S.prevMode : S.mode;
   S.estop = true; S.mode = 'ESTOP';
   stopTimers(); closeJog(true);
+  /* 文字は「非常停止」のまま変えない（Spec-webui.md §1.2「省略せず『非常停止』」）。色だけ変える */
   $('estopBtn').classList.add('engaged');
-  $('estopBtn').textContent = '停止中';
   $('release').classList.add('show');
   $('demo').classList.add('shift');
-  $('releaseTx').textContent = '非常停止中です。解除すると待機（メインメニュー画面）に戻ります。';
   S.faultBeforeEstop = S.fault;           // 非常停止前から出ていたフォルトは消さない
-  setFault('ESTOP','非常停止（UI ボタン）');
+  setFault('ESTOP','非常停止中');
+  $('weTitle').textContent = '⚠ 非常停止中';
+  $('weBody').innerHTML = '非常停止ボタンが押されました。速度指令をゼロにしています。' +
+    '<div class="hint mt">解除は画面下端の解除バーから。解除すると元のモードの再開を選べます。</div>';
+  $('weFoot').innerHTML = '<button class="btn" onclick="closeWin(\'winEstop\')">非表示</button>';
+  $('winEstop').classList.remove('resolved');
   openWin('winEstop');                    // 画面は変えず、ウィンドウを乗せる
+  stopBanner(false);
   paintHeader();
 }
+/* 解除（SM-3.1.1-11）: 押下前が復帰できるモードなら、同じウィンドウが
+   「元のモードに戻る／メインメニューへ」の 2 択に変わる。ESTOP のまま選ばせる。
+   押下前が復帰できないモード（INIT/IDLE など）なら選択肢を出さず待機へ。 */
+const ESTOP_NONRESUMABLE = ['INIT','IDLE','ESTOP','CARRY'];
 function releaseEstop(){
-  S.estop = false; S.mode = 'IDLE';
   $('estopBtn').classList.remove('engaged');
-  $('estopBtn').textContent = '非常停止';
   $('release').classList.remove('show');
   $('demo').classList.remove('shift');
-  closeWin('winEstop');
   if(S.faultBeforeEstop){                 // 実フォルトが残っていれば表示を戻す
-    const f = FAULTS[S.faultBeforeEstop];
-    setFault('FAULT', f.t.replace('異常：',''));
+    setFault('FAULT', FAULTS[S.faultBeforeEstop].l);
   }else{
     clearFault();
   }
   S.faultBeforeEstop = null;
-  go('s01');                              // ESTOP → IDLE のみ
+  if(ESTOP_NONRESUMABLE.indexOf(S.prevMode || 'IDLE') >= 0){
+    /* 押下前が INIT なら IDLE ではなく疎通確認からやり直す（SM-3.1.1-11・SG-A5） */
+    S.estop = false; closeWin('winEstop'); go(S.prevMode === 'INIT' ? 's00' : 's01');
+    return;
+  }
+  const w = $('winEstop'); w.classList.add('resolved');
+  $('weTitle').textContent = '✓ 非常停止を解除しました';
+  $('weBody').innerHTML = '<b>' + MODES[S.prevMode].ja + '</b>に戻ると、停止した状態から再開できます。' +
+    '<div class="sm mut mt">走り出すには、戻ったあとでもう一度「走行」（教示再生は「再生」）を押します。</div>';
+  $('weFoot').innerHTML =
+    '<button class="btn" onclick="estopToMenu()">メインメニューへ</button>' +
+    '<button class="btn primary" onclick="estopResumePrev()">元のモードに戻る</button>';
+  openWin('winEstop');
 }
+function estopResumePrev(){
+  S.estop = false; S.mode = S.prevMode; closeWin('winEstop'); paintHeader();
+  setState(S.screen, 'pause'); syncOps(S.screen, 'pause');
+}
+function estopToMenu(){ S.estop = false; closeWin('winEstop'); go('s01'); }
 /* 物理ボタン → 手押しモード */
 function hwEstop(on){
   if(on){
@@ -1780,6 +2265,8 @@ function hwEstop(on){
     closeJog(true);
     S.prevMode = S.mode; S.hw = true; S.mode = 'CARRY';
     setFault('CARRY','手押しモード（物理非常停止ボタン押下中）');
+    /* 手押し中は UI 非常停止を受け付けない。ボタンは消さず、押しても効かない見た目にする */
+    $('estopBtn').classList.add('disabled-in-carry');
     $('carryResume').style.display = 'none';
     openWin('winCarry'); paintHeader();
   }else{
@@ -1787,76 +2274,88 @@ function hwEstop(on){
     $('carryResume').style.display = '';   // 解除 → 再開ボタンを出す
   }
 }
+/* 再開先は押下前のモードの復帰先（走行中なら一時停止）。再開しただけでは動き出さない（SM-3.1.1-14） */
 function resumeFromCarry(){
   S.hw = false; S.mode = S.prevMode || 'IDLE';
+  $('estopBtn').classList.remove('disabled-in-carry');
   clearFault(); closeWin('winCarry'); paintHeader();
+  setState(S.screen, 'pause'); syncOps(S.screen, 'pause');
 }
 /* 再開しない → 待機（メインメニュー画面）へ。S.hw を落とさないと操作不能になる */
 function dismissCarry(){
-  S.hw = false; clearFault(); closeWin('winCarry'); go('s01');
+  S.hw = false; $('estopBtn').classList.remove('disabled-in-carry');
+  clearFault(); closeWin('winCarry'); go('s01');
 }
 
 /* ---------------- フォルト表示 ---------------- */
+/* ヘッダの枠には原因と対処を 1 行で出す（Spec-webui.md §8）。
+   解消した直近の異常は「直近の異常：種別 時刻」として残し、押すと履歴（§1） */
 function setFault(kind, text){
   $('faultDot').style.background = kind==='CARRY' ? 'var(--carry)' : 'var(--ng)';
   $('faultTx').textContent = text;
   $('faultTx').className = kind==='CARRY' ? 'tone-warn' : 'tone-ng';
+  $('recentFault').style.display = 'none';
 }
 function clearFault(){
   $('faultDot').style.background = 'var(--ok)';
   $('faultTx').textContent = '正常'; $('faultTx').className = '';
   $('faultBadge').style.display = 'none';
+  $('recentFault').style.display = S.lastFault ? '' : 'none';
+  if(S.lastFault) $('recentFault').textContent = '直近の異常：' + S.lastFault + ' 12:34:56';
   S.fault = null; S.faultHidden = false;
 }
+/* l: 原因と対処（i18n/faults.js の文言）。s: 短い種別名。resumable: 走行を自動再開できるか（Spec-modes.md §6） */
 const FAULTS = {
-  LIDAR_LOST:{t:'異常：LiDAR との通信が途絶しました',
-    b:'停止しました。LiDAR（RaspberryPi4）からのスキャンが届いていません。<br><span class="sm mut">Wi-Fi の状態と RaspberryPi4 の電源を確認してください。</span>',
-    resumable:true},
-  PERSON_TRACKER_LOST:{t:'異常：人物追跡の対象を見失いました',
-    b:'選択を解除して停止しました。<br><span class="sm mut">もう一度対象を選んでください。</span>',
-    resumable:true},
-  MANUAL_ONLY:{t:'異常：復帰先が手動操作になります',
-    b:'この異常からは自動で再開できません。<br><span class="sm mut">手動操作で復帰してください。</span>',
-    resumable:false}
+  LIDAR_LOST:{s:'LiDAR 途絶',
+    l:'LiDARからの点群が途絶えています。LiDARの電源とケーブル接続を確認してください', resumable:true},
+  PERSON_TRACKER_LOST:{s:'人物追跡 途絶',
+    l:'対象の人物追跡が途絶えています。試験員がLiDARの見える範囲にいるか確認してください', resumable:true},
+  MANUAL_ONLY:{s:'自己位置の喪失',
+    l:'自己位置を見失いました。メインメニューから位置を合わせ直してください', resumable:false}
 };
 function raiseFault(kind){
   closeJog(true);
   const f = FAULTS[kind];
   S.fault = kind; S.faultHidden = false; S.resumable = f.resumable;
   S.prevMode = (S.mode==='ESTOP'||S.mode==='CARRY') ? S.prevMode : S.mode;
-  setFault('FAULT', f.t.replace('異常：',''));
+  setFault('FAULT', f.l);
+  stopBanner(false);
   const w = $('winFault');
   w.classList.remove('resolved'); w.classList.add('fault');
   $('wfIcon').textContent = '⚠';
-  $('wfTitle').textContent = f.t;
-  $('wfBody').innerHTML = f.b;
+  $('wfTitle').textContent = '異常が発生しました';
+  $('wfBody').innerHTML = f.l + '<div class="hint mt">解決すると、この画面が再開の選択肢に変わります。</div>';
   $('wfFoot').innerHTML = '<button class="btn" onclick="hideFaultWin()">非表示</button>';
   openWin('winFault');
 }
 function hideFaultWin(){
   S.faultHidden = true; closeWin('winFault');
-  $('faultBadge').style.display = 'inline-block'; $('faultBadge').textContent = '異常 1 件 ▲';
+  $('faultBadge').style.display = 'inline-block'; $('faultBadge').textContent = '再表示 ▲';
 }
 function reshowFault(){
   S.faultHidden = false; $('faultBadge').style.display = 'none'; openWin('winFault');
 }
 function resolveFault(){
   if(!S.fault) return;
-  /* 解決したら同じウィンドウが「再開しますか」に変わる（別ウィンドウを出し直さない） */
+  /* 解決したら同じウィンドウが「再開しますか」に変わる（別ウィンドウを出し直さない）。
+     一瞬で解消しても何が起きたかを読めるよう、種別・継続時間・開始時刻を添える（2026-10-12） */
+  const f = FAULTS[S.fault];
+  S.lastFault = f.s;
   const w = $('winFault');
   w.classList.remove('fault'); w.classList.add('resolved');
   $('wfIcon').textContent = '✓';
   $('wfTitle').textContent = '異常が解決しました';
   const back = MODES[S.prevMode||'IDLE'].ja;
+  const info = '<p class="hint mt">解消した異常：' + f.s + '（0.1 秒・12:34:56） ほか 2 回</p>';
   if(S.resumable){
     /* U-8: どちらを選んでも待機には戻さない。違うのは走り出すかどうかだけ */
-    $('wfBody').innerHTML = '原因が解消されました。<b>' + back + '</b>の走行を再開しますか？';
+    $('wfBody').innerHTML = '原因が解消されました。<b>' + back + '</b>の走行を再開しますか？' + info;
     $('wfFoot').innerHTML =
-      '<button class="btn" onclick="resumeAfterFault(false)">いいえ（一時停止のまま）</button>' +
-      '<button class="btn primary" onclick="resumeAfterFault(true)">はい（走行を再開）</button>';
+      '<button class="btn" onclick="resumeAfterFault(false)">いいえ</button>' +
+      '<button class="btn primary" onclick="resumeAfterFault(true)">はい</button>';
   }else{
     $('wfBody').innerHTML = '原因は解消されましたが、<b>走行の自動再開はできません</b>。<br>' +
-      '<span class="sm mut"><b>' + back + '</b>の一時停止に戻します。</span>';
+      '<span class="sm mut"><b>' + back + '</b>の一時停止に戻します。</span>' + info;
     $('wfFoot').innerHTML =
       '<button class="btn primary" onclick="resumeAfterFault(false)">確認</button>';
   }
@@ -1904,10 +2403,15 @@ function closeGuide(){
   Object.values(GUIDE_BANNER).forEach(id=>{ if($(id)) $(id).style.display='none'; });
   layoutDock();
 }
-function whyDisabled(name, why){
-  $('wdTitle').textContent = name + 'は使えません';
-  $('wdBody').innerHTML = why + '<br><span class="sm mut">接続すると選べるようになります。開発モードではこの警告を無視できます。</span>';
+/* 押せない理由は押されて初めて出す（Spec-webui.md §0.1） */
+function whyDisabled(why){
+  $('wdBody').textContent = why;
   openWin('winDisabled');
+}
+/* 止まっている理由の帯（速度上限が 0 なのに W-1 が出ていないとき） */
+function stopBanner(on){
+  const b = $('stopBanner');
+  b.classList.toggle('show', on === undefined ? !b.classList.contains('show') : on);
 }
 
 /* ---------------- タブ ---------------- */
@@ -1927,23 +2431,33 @@ function toggleOnOff(b, on, off){
   const isOn = b.classList.toggle('on');
   b.textContent = isOn ? on : off;
 }
+/* 自動ブレーキ。ON→OFF は W-4 で確認する。OFF→ON はそのまま（Spec-webui.md §3.5） */
+let brakeOn = false;
 function toggleBrake(b){
-  const isOn = b.classList.toggle('on');
-  b.textContent = isOn ? 'ON' : 'OFF（場外の既定）';
+  if(brakeOn){ openWin('winBrakeOff'); return; }
+  setBrake(true);
+}
+function setBrake(on){
+  brakeOn = on;
+  document.querySelectorAll('.brakePill').forEach(p=>{ p.textContent = on ? 'ON' : 'OFF'; p.className = 'pill brakePill' + (on ? ' ok' : ''); });
+  document.querySelectorAll('.brakePill + .btn').forEach(x=>{ x.textContent = on ? 'OFF にする' : 'ON にする'; });
+  document.querySelectorAll('.brakeOffHint').forEach(x=>{ x.style.display = on ? 'none' : ''; });
+  document.querySelectorAll('.brakeOffWarn').forEach(x=>{ x.style.display = on ? 'none' : ''; });
 }
 /* モックアップ用：押したことが分かるだけの簡易フィードバック */
 function mark(b, done){ b.textContent = done || '✓ 済'; b.classList.add('on'); b.disabled = true; }
 function cycle(b, list){ b.textContent = list[(list.indexOf(b.textContent)+1) % list.length]; }
 
-/* 二段階アーム式 */
-function arm(b, label){
-  if(b.dataset.armed){
-    delete b.dataset.armed; b.textContent = label + 'しました';
-    setTimeout(()=>{ b.textContent = label; b.classList.add('danger'); }, 1500);
-    b.classList.remove('danger');
-    return;
-  }
-  b.dataset.armed = '1'; b.textContent = '本当に' + label + '？';
+/* 二段階アーム式（Spec-webui.md §6）。一度押すと確認の文言に変わり、もう一度押して実行 */
+function arm(b, label, armedLabel){
+  armThen(b, label, armedLabel || ('本当に' + label + '？'), ()=>{
+    b.textContent = '済';
+    setTimeout(()=>{ b.textContent = label; }, 1500);
+  });
+}
+function armThen(b, label, armedLabel, fn){
+  if(b.dataset.armed){ delete b.dataset.armed; b.textContent = label; fn(); return; }
+  b.dataset.armed = '1'; b.textContent = armedLabel;
   setTimeout(()=>{ if(b.dataset.armed){ delete b.dataset.armed; b.textContent = label; } }, 3000);
 }
 
@@ -1970,24 +2484,25 @@ function syncShutdown(){
   const left = unsavedLeft();
   $('unsavedNone').style.display = left ? 'none' : '';
   $('doShutdownBtn').classList.toggle('dis', left > 0);
+  $('shutdownBlocked').textContent = left ? '未保存の扱いを決めてください（残り ' + left + ' 件）' : '';
   const pill = $('unsavedPill');
   pill.textContent = left ? left + ' 件' : 'なし';
   pill.className = left ? 'pill ng' : 'pill ok';
-  $('shutdownHint').textContent = left
-    ? '未保存のデータが残っています。押すと一覧を表示します。'
-    : '停止したあと、画面で完了を確認してから機体の電源を切ってください。';
 }
 /* カードのボタンは常に押せる。未保存があるかどうかはウィンドウの中で示す
    （押せないボタンより、押したら理由が出るほうが分かりやすい）。 */
 function shutdown(){ openWin('winShutdown'); }
+/* 停止の応答が来ただけでは「電源を切って構いません」を出さない。接続が切れたのを確かめてから（手順 5） */
 function doShutdown(){
   if($('doShutdownBtn').classList.contains('dis')){
-    whyDisabled('制御系の停止', '未保存のデータが残っています');
+    whyDisabled('未保存の扱いを決めてください（残り ' + unsavedLeft() + ' 件）');
     return;
   }
   closeWin('winShutdown');
-  showGuide('制御系を停止しています…');
-  setTimeout(()=>showGuide('制御系の停止が完了しました。機体の電源を切ってください。'), 1200);
+  $('shutdownCard').style.display = 'none';
+  $('shutdownDone').style.display = '';
+  $('shutdownDoneT').textContent = '停止しています…'; $('shutdownDoneB').textContent = '';
+  setTimeout(()=>{ $('shutdownDoneT').textContent = '停止が完了しました'; $('shutdownDoneB').textContent = '電源を切って構いません。'; }, 1200);
 }
 
 /* ---------------- 走行方式の操作列（全画面共通） ----------------
@@ -2000,10 +2515,10 @@ const ACT_TX = {
   s12:{pause:'一時停止中（記録は保持・終点は未確定）', confirm:'確認中（向くだけ）',
        run:'記録中（走行）', manual:'手動介入中（記録は継続）'},
   s13:{pause:'一時停止中（記録は保持・終点は未確定）', run:'記録中（走行）'},
-  s14:{pause:'一時停止中', run:'再生中', manual:'手動介入中'},
+  s14:{pause:'一時停止中', run:'走行中', manual:'手動介入中'},
   s15:{pause:'一時停止中', run:'走行中', manual:'手動介入中'},
   s16:{pause:'一時停止中', run:'走行中', manual:'手動介入中'},
-  s20:{pause:'一時停止中（地図・ピンは保持）', manual:'手動介入中'},
+  s20:{pause:'地図作成中', manual:'手動介入中'},
   s21:{pause:'一時停止中', manual:'手動介入中'}
 };
 const OP_CLASS = {pause:'op-stop', confirm:'op-check', run:'op-run', manual:'op-manual'};
@@ -2041,7 +2556,9 @@ function saveRoute(screen){
   const p = $('rec' + n);
   if(p){ p.textContent = '■ 保存済み'; p.className = 'pill ok'; }
   const el = $('st' + n);
-  if(el) el.textContent = '保存しました（終点を確定）';
+  if(el) el.textContent = '保存済み';
+  /* 保存のあとは記録を再開しない（2026-10-04）。スティックを触っても受け付けない */
+  if(screen === 's13'){ S.saved13 = true; $('hint13').textContent = '保存しました。続けて記録するには終了して教示し直してください'; }
 }
 /* 教示の「終了」：未保存なら保存可否を問う */
 function finishTeach(screen){
@@ -2071,21 +2588,38 @@ function pickCand(g){
   lbl.setAttribute('font-weight','700'); lbl.textContent = '対象';
   g.appendChild(lbl);
 }
+/* 人物追跡の表示（Spec-webui.md §3.5）。
+   off: 止まっている（試験準備・試験当日。人検出は既定で止めておく）→ 開始ボタン、レーダーは出さない
+   boot: 起動中で候補 0 → 中心に「起動中」 ／ found: 候補あり → 隅に小さく「追跡中」 */
 function tracker(state){
-  const boot = (state === 'boot');
+  const off = (state === 'off'), boot = (state === 'boot');
   document.querySelectorAll('.radarWrap').forEach(w=>{
+    /* 「止まっている」は試験準備・試験当日だけ。追従系は入ると自動で起動する */
+    const onsite = !!w.closest('#s20, #s21');
+    w.style.display = (off && onsite) ? 'none' : '';
     w.querySelector('.boot').style.display = boot ? 'flex' : 'none';
     w.querySelector('.radarCorner').style.display = boot ? 'none' : 'block';
     w.querySelector('.cands').style.display = boot ? 'none' : '';
   });
-  /* いま開いている画面にレーダーが無いときだけ追従走行へ移す */
-  if(!document.querySelector('#' + S.screen + ' .radarWrap')) go('s10');
+  document.querySelectorAll('.trackerCtl').forEach(c=>{
+    c.innerHTML = off
+      ? '<div class="note">人検出が止まっています</div><button class="btn primary wide mt" onclick="tracker(\'boot\')">人検出を開始</button>'
+      : '<div class="row"><span class="grow">' + (boot ? '起動中…' : '人検出 動作中') + '</span>' +
+        '<button class="btn sm" onclick="trackerOff()">人検出を停止</button></div>';
+  });
+  /* いま開いている画面にレーダーが無いときは、見える画面へ移す（止まっている表示は試験準備へ） */
+  if(!document.querySelector('#' + S.screen + ' .radarWrap')) go(off ? 's20' : 's10');
+}
+/* 呼び寄せ中・登録中は人検出が要るので止められない（押せない理由を出す） */
+function trackerOff(){
+  if(S.mode === 'SUMMON'){ whyDisabled('人検出を止められません（この操作に人検出が必要です）'); return; }
+  tracker('off');
 }
 
 /* ---------------- 共通部品の差し込みとジョグ介入 ---------------- */
 function mountTemplates(){
   document.querySelectorAll('.mount').forEach(m=>{
-    const tpl = $(m.dataset.tpl === 'radar' ? 'tplRadar' : 'tplStick');
+    const tpl = $({radar:'tplRadar', stick:'tplStick', faultHistory:'tplFaultHistory'}[m.dataset.tpl]);
     const node = tpl.content.cloneNode(true);
     const jog = node.querySelector('.jogBadge');
     if(jog && m.dataset.jog) jog.textContent = m.dataset.jog;
@@ -2104,6 +2638,7 @@ function bindSticks(){
       el.classList.add('act');
       if(el.setPointerCapture && e.pointerId != null) el.setPointerCapture(e.pointerId);
       const scr = el.dataset.screen;
+      if(scr === 's13' && S.saved13){ el.classList.remove('act'); whyDisabled('保存済みのため記録を続けられません'); return; }
       if(scr) act(null, scr, STICK_ON[scr] || 'manual');
     };
     const off = ()=>{
@@ -2125,23 +2660,70 @@ function toggleMapUpd(b, saveId){
   const on = b.classList.toggle('on');
   b.textContent = on ? 'ON' : 'OFF';
   $(saveId || 'save14').style.display = on ? '' : 'none';
+  if(saveId === 'save21') $('patch21').style.display = on ? '' : 'none';
 }
 function saveMap14(){ closeJog(true); $('st14').textContent = '地図の書き足しを保存しました'; }
 /* S-21 は状態を変えない（PAUSE / IDLE_P のまま）。SAVED を作らない */
-function saveMap21(){ closeJog(true); $('st21').textContent = '地図の書き足しを保存しました'; }
+function saveMap21(){ closeJog(true); $('st21').textContent = '地図の書き足しを保存しました'; $('patch21').style.display = 'none'; }
+/* S-14: 記録の終端まで走り切ったときだけ終了を促す（それ以外の一時停止は続きを走れる） */
+function pauseEnd14(){
+  go('s14'); act(null, 's14', 'pause');
+  $('pause14').textContent = '一時停止（記録の終端に達しました。終了を押してください）';
+}
 
 /* ---------------- 2 点指示 ---------------- */
+/* 1 回目は立ち位置、2 回目は「向いてほしい方向へ一歩進んだ場所」。
+   同じ文言にすると 2 回目も同じ場所で押してしまう（実機 2026-09-09） */
 let p2 = 1;
+function p2start(kind){
+  if(S.screen !== 's20') go('s20');
+  document.querySelector('#s20 .subtabs .tab').click();
+  $('p2well').style.display = ''; $('tap20').style.display = 'none'; $('wall20').style.display = 'none';
+  $('next20').style.display = 'none';   /* 登録の途中は「次にやること」を出さない */
+  p2 = 1; $('p2step').textContent = '1';
+  $('p2msg').textContent = kind + '：登録したい場所に立って押してください';
+  $('p2btn').textContent = 'この位置を登録'; $('p2btn').disabled = false;
+}
 function p2press(){
   if(p2===1){
     p2 = 2; $('p2step').textContent='2';
-    $('p2msg').textContent='盤へ一歩寄った点で押してください（向きだけ）';
-    $('p2btn').textContent='向きを確定する';
+    $('p2msg').textContent='機体に向いてほしい方向へ一歩進んで押してください';
   }else{
-    p2 = 1; $('p2step').textContent='1';
-    $('p2msg').textContent='登録しました（向き 92.4°）';
-    $('p2btn').textContent='この位置を登録';
+    p2 = 1; $('p2step').textContent='2';
+    $('p2msg').textContent='向き 92°';
+    $('p2btn').disabled = true;
+    $('next20').style.display = '';
   }
+}
+/* 地図タップ登録（方式 C）。地図タブへ切り替え、確定前に数値で補正できる */
+function mapTap20(){
+  if(S.screen !== 's20') go('s20');
+  document.querySelector('#s20 .top-actions .tab').click();
+  document.querySelector('#s20 .subtabs .tab').click();
+  $('p2well').style.display = 'none'; $('wall20').style.display = 'none';
+  $('tap20').style.display = '';
+}
+/* 壁に近いピンの警告が出ている間は 2 点指示のウィザードを出さない */
+function wallWarn20(){
+  go('s20'); document.querySelector('#s20 .subtabs .tab').click();
+  $('p2well').style.display = 'none'; $('tap20').style.display = 'none';
+  $('next20').style.display = 'none';
+  $('wall20').style.display = '';
+}
+function editPin(name){
+  $('wpTitle').textContent = name;
+  document.querySelector('#winPin input').value = name;
+  openWin('winPin');
+}
+/* 「地図作成開始」を押すまで地図を出さない／「会場地図を開く」まで地図を出さない（S-20・S-21） */
+function mapGates(before){
+  $('gate20').style.display = before ? '' : 'none'; $('map20').style.display = before ? 'none' : '';
+  $('gate21').style.display = before ? '' : 'none'; $('map21').style.display = before ? 'none' : '';
+}
+function startMapping20(){ $('gate20').style.display = 'none'; $('map20').style.display = ''; }
+function openVenue21(){
+  $('gate21').style.display = 'none'; $('map21').style.display = '';
+  showGuide('会場地図を開きました');
 }
 /* ピンをタップ → 選択。すでに選ばれているピアをもう一度押すと編集ウィンドウ
    （名前変更・削除・2 点指示のやり直し。Spec-onsite.md §2.3） */
@@ -2177,6 +2759,7 @@ function openJog(screen){
   const st = document.querySelector('#jogWin .stick');
   if(st) st.dataset.screen = screen;
   $('jwMode').textContent = 'モードは「' + MODES[S.mode].ja + '」のまま変わりません';
+  $('jogWin').querySelector('.jw-s .pill').textContent = brakeOn || SCREENS[screen].zone === 'IN' ? 'ON' : 'OFF';
   layoutDock();
   $('jogWin').classList.add('show');
   /* act() は使わない。開いただけでは機体は動いていないので未保存フラグを立てない */
@@ -2211,7 +2794,17 @@ function declareHome(force){
   if(!force && !homeDeclared){ openWin('winHomeMismatch'); return; }  /* 照合でずれを検知した想定 */
   homeDeclared = true;
   const p = $('homePill'); p.textContent = '宣言済み'; p.className = 'pill ok';
-  $('homeBtn').textContent = '宣言し直す';
+  $('homeBtn').disabled = true;
+  $('homeOffset').style.display = '';
+  stepTo('steps21', 2);
+  document.querySelector('#s21 .next-action').textContent = '行き先を選ぶ';
+}
+/* 手順バーを n 番目（0 始まり）まで進める */
+function stepTo(id, n){
+  [...$(id).querySelectorAll('.stepbar-step')].forEach((li,i)=>{
+    li.className = 'stepbar-step' + (i < n ? ' done' : (i === n ? ' cur' : ''));
+    li.querySelector('.stepbar-num').textContent = i < n ? '✓' : (i + 1);
+  });
 }
 
 /* ---------------- 校正：項目を選んでウィザードを開く ---------------- */
@@ -2224,42 +2817,27 @@ function cal(btn, paneId){
   if(i >= 0) bar.querySelectorAll('.tab')[i].click();
 }
 
-/* ---------------- 人物追跡の ON/OFF（Spec-modes.md §5.1） ---------------- */
-let trackerOn = true;
-const TRK_MODES = ['FOLLOW','TEACH_FOLLOW','SUMMON','PREP'];
-function toggleTracker(){
-  if(trackerOn && TRK_MODES.indexOf(S.mode) >= 0){
-    whyDisabled('人物追跡の停止', 'いまのモードは人物追跡を使っています。');
-    return;
-  }
-  trackerOn = !trackerOn;
-  const p = $('trkPill'), b = $('trkBtn');
-  p.textContent = trackerOn ? 'ON' : 'OFF';
-  p.className = trackerOn ? 'pill ok' : 'pill ng';
-  b.textContent = trackerOn ? 'OFF にする' : 'ON にする';
-  b.classList.toggle('on', trackerOn);
-  /* OFF の間は人物追跡を要する方式を選べなくする（Spec-modes.md §5.1-3） */
-  ['s10','s12'].forEach((id,i)=>{
-    const btn = document.querySelectorAll('#s01 .btnrow .btn')[i===0?0:2];
-    btn.classList.toggle('dis', !trackerOn);
-    btn.setAttribute('onclick', trackerOn ? "go('"+id+"')"
-      : "whyDisabled('"+(i===0?'追従走行':'教示（追従）')+"','人物追跡が停止しています')");
-  });
-}
-
 /* ---------------- 疎通確認の表示（モックアップ用） ---------------- */
+/* 必須 3 者が揃うまで「メインメニュー画面へ」は出さず、代わりに開発モードの設定への導線を出す（§5） */
 function conn(ok){
   $('s00ok').style.display = ok ? '' : 'none';
   $('s00ng').style.display = ok ? 'none' : 'block';
-  $('s00go').classList.toggle('dis', !ok);
-  $('s00go').setAttribute('onclick', ok ? "go('s01')"
-    : "whyDisabled('メインメニュー画面','必須機器が揃うまで進めません')");
+  $('s00go').style.display = ok ? '' : 'none';
+  $('s00dev').style.display = ok ? 'none' : '';
   if(S.screen !== 's00') go('s00');
 }
+/* S-00 で止まったとき、開発モードのタブを開いて項目を外す。「戻る」で S-00 に戻る */
+function openDevSettings(){
+  S.settingsFrom = 's00';
+  go('s50');
+  document.querySelectorAll('#s50 > .top-actions .tab')[2].click();
+}
+function leaveSettings(){ const back = S.settingsFrom; S.settingsFrom = 's01'; go(back); }
 function save20(){
   closeJog(true);
   const u=$('unsaved20'); u.textContent='保存済み'; u.className='pill ok';
-  $('st20').textContent='保存しました';
+  $('st20').textContent='保存済み';
+  stepTo('steps20', 5);
 }
 /* 「終了」＝方式を抜ける。未保存なら保存可否を問う（Spec-open.md U-7） */
 function finish20(){
@@ -2285,18 +2863,20 @@ function toggleWork(){
 function nextDest(name){
   if(work){ openWin('winWorkBlocked'); return; }
   S.mode = name==='待機場所' ? 'HOME_NAV' : (name==='その場で呼ぶ' ? 'SUMMON' : 'PANEL_NAV');
+  stepTo('steps21', 3);
   sub21(name + 'へ');
   paintHeader();
   if(name==='その場で呼ぶ') startSummon();
 }
 function goPanel(name){
   if(work){ openWin('winWorkBlocked'); return; }
-  S.mode='PANEL_NAV'; sub21(name + 'へ移動中'); paintHeader();
+  S.mode='PANEL_NAV'; sub21(name + 'へ移動中'); paintHeader(); stepTo('steps21', 3);
 }
 function startSummon(){
   if(work){ openWin('winWorkBlocked'); return; }
   S.mode='SUMMON'; paintHeader();
   sub21('呼び寄せ・退避待ち');
+  document.querySelectorAll('#s21 .subtabs .tab')[1].click();
   $('clearBox').style.display='';
   let d = 0.4;
   clearInterval(summonTimer);
@@ -2317,16 +2897,24 @@ function cancelSummon(){
   $('clearBox').style.display='none';
   $('clearBar').style.width='15%'; $('clearTx').textContent='0.4 m';
   sub21('中止しました');
-  showGuide('退避待ちがタイムアウトしたため中止しました。もう一度 2 点指示からやり直してください。');
+  showGuide('退避待ちが時間切れになりました');
 }
 
 /* ---------------- 始業点検 ---------------- */
+/* 一覧の行を押すとその項目の確認が始まる。実行中だけ「中断」を出す。
+   判定が確定したら「戻る」を押すまで結果を表示し続ける（Spec-webui.md §3.12） */
 function oc(btn, paneId){
-  const tb = btn.closest('table');
-  tb.querySelectorAll('tr').forEach(r=>r.classList.remove('sel'));
-  btn.closest('tr').classList.add('sel');
+  document.querySelectorAll('#s30 .ocrow').forEach(r=>r.classList.remove('sel'));
+  btn.classList.add('sel');
   document.querySelectorAll('#s30 .tabpane').forEach(p=>p.classList.remove('on'));
   $(paneId).classList.add('on');
+  $('ocAbort').style.display = paneId === 'oc4' ? 'none' : '';
+}
+function ocAbort(){ ocBack(); }
+function ocBack(){
+  document.querySelectorAll('#s30 .ocrow').forEach(r=>r.classList.remove('sel'));
+  document.querySelectorAll('#s30 .tabpane').forEach(p=>p.classList.remove('on'));
+  $('oc0').classList.add('on'); $('ocAbort').style.display = 'none';
 }
 /* ホールドボタン（押している間だけ動く） */
 document.querySelectorAll('.btn.hold').forEach(b=>{
@@ -2340,12 +2928,12 @@ document.querySelectorAll('.btn.hold').forEach(b=>{
 
 /* ---------------- 校正ウィザード ---------------- */
 let cwN = 2;
-const CW = {1:'案内', 2:'実測', 3:'確認', 4:'検証'};
+const CW = {1:'案内', 2:'実行・実測', 3:'確認', 4:'検証'};
 function cw(d){
   cwN = Math.min(4, Math.max(1, cwN + d));
   $('cwStep').textContent = cwN;
   $('cwName').textContent = CW[cwN];
-  $('cwBar').style.width = (cwN/4*100) + '%';
+  stepTo('steps40', cwN - 1);
   [1,2,3,4].forEach(n=>{ $('cw'+n).style.display = (n===cwN) ? '' : 'none'; });
 }
 
@@ -2367,22 +2955,40 @@ function toggleDev(){
     S.dev ? 'linear-gradient(180deg,#3a1030,#22101f)' : 'linear-gradient(180deg,#16283f,#101a29)';
   document.getElementById('hdr').style.borderBottomColor = S.dev ? '#e05fa0' : 'var(--brand)';
   const b = $('devBtn');
-  if(b) b.textContent = S.dev ? '開発モードを無効にする' : '開発モードを有効にする';
+  if(b){ b.textContent = S.dev ? '開発モードを無効にする' : '開発モードを有効にする'; b.classList.toggle('on', S.dev); }
   paintHeader();
 }
 
 /* ---------------- プレビュー切替（モックアップ専用） ---------------- */
+/* 縦長・横長は決め打ちの論理サイズ（縦長 960×1280／横長 1280×720）で描き、
+   枠いっぱいまで等倍で拡大縮小する（Spec-webui.md §1.4・§7。実装の shell/FixedStage.jsx と同じ考え方）。
+   レイアウトは論理幅で決まるので、縦長でも走行・試験系は 2 カラムになる。 */
+const PV_SIZE = {portrait:[960,1280], landscape:[1280,720]};
 function pv(btn, mode){
   btn.parentElement.querySelectorAll('.btn').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
   document.body.className = 'pv-' + mode;
+  fitStage();
 }
+function fitStage(){
+  const app = $('app'), m = document.body.className.replace('pv-','');
+  if(!PV_SIZE[m]){ app.style.transform = ''; app.style.width = ''; app.style.height = ''; $('stageBox').style.width = ''; $('stageBox').style.height = ''; return; }
+  const [w,h] = PV_SIZE[m];
+  const k = Math.min((innerWidth - 36) / w, (innerHeight - 36) / h);
+  app.style.width = w + 'px'; app.style.height = h + 'px';
+  app.style.transform = 'scale(' + k + ')';
+  $('stageBox').style.width = (w * k) + 'px'; $('stageBox').style.height = (h * k) + 'px';
+}
+addEventListener('resize', fitStage);
 
 /* ---------------- 初期化 ---------------- */
 mountTemplates();
 bindSticks();
 syncShutdown();
+setBrake(false);
 $('s00').classList.add('active');
+$('oc0').classList.remove('on');
+$('recentFault').style.display = 'none';
 paintHeader();
 </script>
 </body>
