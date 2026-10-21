@@ -35,11 +35,13 @@ ESP32（駆動用）はラズパイに USB-UART で直結し、無線区間に�
   ├── eth0                     10.42.0.2（有線の退路 th-wired。br0 には入れない）
   └── USB-UART ── ESP32 (駆動用)                 (WiFi 不使用。シリアル直結のみ)
 
-PC (Ubuntu, ROS2 コンテナ)   192.168.5.50   固定IP (内蔵 Intel カード wlo1 → th-rpi-5g)
+PC (Ubuntu, ROS2 コンテナ)   192.168.5.50   固定IP
+  屋内: AIC8800 ドングル wlx6c1ff789d5d4 → th-rpi-5g（ロボット専用。挿せば自動でつながる）
+  屋外: 内蔵 Intel wlo1 → th-rpi-ap（2.4GHz。ap_band_switch.sh outdoor）
   esp32_bridge が :8766 を待ち受け(pi_serial_relay がここへ接続) / rosbridge :9090
 
-PC のインターネットは別系統:
-  AIC8800 ドングル wlx6c1ff789d5d4  DHCP  SSID: NCT-WL-ST  ← 既定経路 (default route)
+PC のインターネットは別系統（屋内のみ）:
+  内蔵 Intel wlo1  DHCP  保存済みの Wi-Fi（NCT-WL-ST など）に自動接続  ← 既定経路
 ```
 
 RPLIDAR S1 → ラズパイの `rplidar_ros` → `/scan` (`ROS_DOMAIN_ID=10`)。
@@ -59,22 +61,31 @@ RPLIDAR S1 → ラズパイの `rplidar_ros` → `/scan` (`ROS_DOMAIN_ID=10`)。
   | 新: PC↔内蔵 2.4GHz（hostapd） | 約 35 Mbps | 約 44 Mbps | RTT 平均 3.6ms。UnitV2 の映像の上限はここ（UnitV2 自身の無線はこれより遅いかもしれない） |
   | 新: PC↔Elecom 5GHz（40MHz） | **約 95 Mbps** | **約 59 Mbps** | リンク 135Mbit/s |
   | 新: 同上・PC のインターネットに負荷 | 約 77 Mbps | 約 34 Mbps | インターネット側が 5GHz ch36 のとき |
+  | **新: PC の AIC8800↔Elecom 5GHz**（いまの屋内構成） | 約 48〜63 Mbps | **約 76 Mbps** | 5 分 ロス 0%・平均 1.2ms・最大 71ms。内蔵 wlo1 は ch36 でインターネット中 |
+  | 参考: PC の AIC8800↔内蔵 2.4GHz | 約 9〜10 Mbps | 約 12〜14 Mbps | 2 分 ロス 0.5%・平均 38ms・最大 185ms。**使わない** |
 
-- PC の中で 5GHz の無線が 2 枚並ぶ（ロボット ch48・インターネット ch36）ので、インターネットに
-  負荷をかけると下りが落ちる。それでも旧構成より速い。気になるならインターネット側を 2.4GHz に移す。
+- PC の中で 5GHz の無線が 2 枚並ぶ（ロボット ch44+48・インターネット ch36）ので、インターネットに
+  負荷をかけると下りが落ちることがある。それでも旧構成より速い。
 
 ### PC 側の NetworkManager プロファイル（設定済み）
 
-| デバイス | ドライバ | 接続名 | 接続先 | IP | 自動接続 |
-| --- | --- | --- | --- | --- | --- |
-| `wlo1`（内蔵 Intel） | iwlwifi | `th-rpi-5g-wlo1` | `th-rpi-5g` | **固定 192.168.5.50/24**・`never-default`・powersave 無効 | **有効**（`autoconnect-retries 0`＝つながるまで待ち続ける） |
-| `wlo1`（内蔵 Intel） | iwlwifi | `th-rpi-ap-wlo1` | `th-rpi-ap`（2.4GHz） | 同上 | **無効**（5GHz 側が壊れたときの予備。手で `nmcli connection up` する） |
-| `wlx6c1ff789d5d4`（AIC8800） | aic8800 | `NCT-WL-ST 1` | `NCT-WL-ST` | DHCP・**既定経路** | 有効 |
+**屋内ではロボット回線＝AIC8800、インターネット＝内蔵 wlo1**（2026-10-21）。AIC8800 は 2.4GHz が苦手だが
+5GHz では内蔵より遅延が小さかったので、ロボットを使うときに挿すロボット専用のドングルにした。
+内蔵 wlo1 は保存済みの Wi-Fi に自由につながってよい（ロボット AP が消えても回線を奪い合わない）。
 
-- **2.4GHz 側の予備を自動接続にしない理由**: ラズパイの再起動直後は 2.4GHz の AP が先に上がり、
-  5GHz は遅れて上がる。自動接続にしておくと PC が 2.4GHz を拾ったまま 5GHz に戻らない（2026-10-21 に発生）。
-- 旧 `th-rpi-ap` プロファイル（AIC8800 に束縛）は `autoconnect no` にした。自動でロボット AP に
-  つながり、`wlo1` と同じ 192.168.5.50 を名乗って `wlo1` の IP を奪っていた（2026-10-21）。
+| デバイス | 接続名 | 接続先 | IP | 自動接続 |
+| --- | --- | --- | --- | --- |
+| `wlx6c1ff789d5d4`（AIC8800・aic8800 の DKMS） | `th-rpi-5g-aic` | `th-rpi-5g` | **固定 192.168.5.50/24**・`never-default`・powersave 無効 | **有効**（優先度 20・`autoconnect-retries 0`。挿して約 4 秒、AP が戻って約 3 秒でつながる） |
+| `wlo1`（内蔵 Intel） | `th-rpi-ap-wlo1` | `th-rpi-ap`（2.4GHz） | 同上 | 無効（屋外モードで `ap_band_switch.sh` が有効にする） |
+| `wlo1`（内蔵 Intel） | `th-rpi-5g-wlo1` | `th-rpi-5g` | 同上 | 無効（AIC8800 が無いときの予備。手で `nmcli connection up`） |
+| `wlo1`（内蔵 Intel） | `NCT-WL-ST` ほか保存済みの Wi-Fi | — | DHCP・**既定経路** | 有効 |
+
+- **ロボット AP に 2 枚同時につながないこと**（どちらも 192.168.5.50 なので IP が重なる）。切り替えは
+  `ap_band_switch.sh` に任せる。AIC8800 に紐づいたインターネット用のプロファイル（`NCT-WL-ST 1`・
+  `SPW_X11_mkhtm 1`）と旧 `th-rpi-ap`（AIC8800 に束縛）は `autoconnect no` にした（AIC8800 がロボット AP
+  以外を拾わないように。旧 `th-rpi-ap` は wlo1 と同じ .50 を名乗って IP を奪ったことがある）。
+- `nmcli device connect wlo1` は `autoconnect no` のロボット用プロファイルを選び直すことがある（IP が重なった）。
+  wlo1 をインターネットに戻すときは `nmcli device set wlo1 autoconnect yes` で NM に選ばせる。
 
 - **固定 IP にしている理由**: ラズパイの `pi_serial_relay`（`--ws-host`）が
   `192.168.5.50` 決め打ちだから。DHCP にすると `pi_serial_relay` が繋ぎに
@@ -86,15 +97,15 @@ RPLIDAR S1 → ラズパイの `rplidar_ros` → `/scan` (`ROS_DOMAIN_ID=10`)。
 
 ```bash
 nmcli -f NAME,DEVICE,STATE connection show --active   # どちらが上がっているか
-ip -4 addr show wlo1                                  # 192.168.5.50/24 になっているか
+ip -br addr | grep 192.168.5.50                       # 192.168.5.50 を持つのが 1 枚だけか
 ip route | head -3                                    # default がインターネット用ドングル側か
-nmcli -f SSID,CHAN,RATE,ACTIVE dev wifi list ifname wlo1 | grep -E 'はい|yes'   # th-rpi-5g・ch44 か 48 か
+nmcli -t -f DEVICE,CONNECTION dev | grep -E '^wl'     # 屋内: AIC8800 が th-rpi-5g-aic
 ```
 
 ### ロボット回線に使ってはいけないアダプタ
 
-**AIC8800 系 USB ドングル（`wlx6c1ff789d5d4`）をロボット回線に使わないこと。**
-2026-10-21 からインターネット専用として PC に挿している（遅くても安全には関わらない）。
+**AIC8800 系 USB ドングル（`wlx6c1ff789d5d4`）を 2.4GHz のロボット回線に使わないこと。**
+（5GHz では問題ない。2026-10-21 に測り直して屋内のロボット専用にした。上の表）
 2026-09-02 の対照実験（同じ AP・同じ ch1・同じ部屋・同じ時刻）:
 
 | 条件 | 上り | 下り | ロス | avg RTT | max RTT |
@@ -123,11 +134,11 @@ nmcli -f SSID,CHAN,RATE,ACTIVE dev wifi list ifname wlo1 | grep -E 'はい|yes' 
 ### PC が AP に繋がらない / `ping 192.168.5.1` が通らない
 
 ```bash
-nmcli connection up th-rpi-5g-wlo1
+nmcli connection up th-rpi-5g-aic      # 屋内（AIC8800 を挿す）。無ければ th-rpi-5g-wlo1
 ping -c3 192.168.5.1
 ```
 
-- `th-rpi-5g` が見えない（`nmcli dev wifi list ifname wlo1`）: ラズパイの 5GHz 側が落ちている。
+- `th-rpi-5g` が見えない（`nmcli dev wifi list ifname wlx6c1ff789d5d4`）: ラズパイの 5GHz 側が落ちている。
   有線（`ssh mirs2602@10.42.0.2`）で入り、`systemctl status hostapd@wlx3897a478b19d`・
   `lsmod | grep 8821au`・`iw reg get`（`country JP` か）を見る。急ぐなら予備の
   `nmcli connection up th-rpi-ap-wlo1`（2.4GHz。映像の帯域は旧構成と同じに戻る）。
@@ -139,10 +150,10 @@ ping -c3 192.168.5.1
   するなど）。機内共存干渉でロボット回線が劣化する。
 - UnitV2・昇降機 ESP32 が繋がらない: 2.4GHz 側。`systemctl status hostapd@wlan0` と
   `sudo iw dev wlan0 station dump`。
-- **ラズパイが再起動などでロボット AP が消えると、PC の `wlo1` が保存済みの別の Wi-Fi（学校の
-  `NCT-WL-ST` など。`wlo1` に紐づいた自動接続のプロファイルが多数ある）へ移り、AP が戻っても
-  戻ってこない**（2026-10-21 に 2 回発生）。`nmcli -t -f DEVICE,CONNECTION dev | grep wlo1` で確かめ、
-  `nmcli connection up th-rpi-5g-wlo1`（屋外モードなら `th-rpi-ap-wlo1`）で戻す。
+- **wlo1 をロボット回線にしているとき（屋外モード・AIC8800 が無いとき）にロボット AP が消えると、
+  wlo1 が保存済みの別の Wi-Fi（学校の `NCT-WL-ST` など）へ移り、AP が戻っても戻ってこない**
+  （2026-10-21 に 2 回発生）。`nmcli -t -f DEVICE,CONNECTION dev | grep wlo1` で確かめて手で戻す。
+  屋内で AIC8800 を使っていればこの問題は起きない（AIC8800 にはロボット用しか自動接続が無い）。
 - 2 バンド構成そのものを疑うときは、ラズパイで `sudo bash rpi_dualband_ap_revert.sh` で旧構成
   （NM の `th-rpi-ap` 単独）に戻せる。PC は `th-rpi-ap-wlo1` を `autoconnect yes` に戻す。
 
@@ -447,8 +458,8 @@ ESP32 の誤リセット（ラッパーの `stty -hupcl` と `open()` 前の DTR
    管理から外し、NM のブリッジ `th-br0`（192.168.5.1/24・shared）に束ねる。SSID・パスワード・ch は
    旧 `th-rpi-ap` と同じ。DHCP は昇降機 ESP32（.142）・UnitV2（.129）・PC（.50）を MAC で固定している（`/etc/NetworkManager/dnsmasq-shared.d/th-reserve.conf`）。
    旧 NM の `th-rpi-ap` は `autoconnect no` で残す（戻すときに使う）。
-5. PC に `th-rpi-5g-wlo1` を作り、`th-rpi-ap-wlo1` を `autoconnect no` にする（上の「PC 側の
-   NetworkManager プロファイル」）。
+5. PC に `th-rpi-5g-aic`（AIC8800）と予備の `th-rpi-5g-wlo1` を作り、`th-rpi-ap-wlo1` を
+   `autoconnect no` にする（上の「PC 側の NetworkManager プロファイル」）。
 6. 確かめること: PC（5GHz）から昇降機 ESP32（`ping 192.168.5.142`）が通る（2 つの AP が 1 つの
    ネットワークになっている証拠）／`iw dev wlx3897a478b19d info` が `channel 48 … width: 40 MHz`／
    `iw reg get` が `country JP`／コンテナで `ros2 topic hz /scan` が 10Hz／ラズパイを再起動しても
@@ -469,7 +480,9 @@ bash ap_band_switch.sh status
 ```
 
 - ラズパイ側は `~/rpi_ap_band.sh`（`hostapd@wlx3897a478b19d` の enable/disable）。モードはラズパイを
-  再起動しても残る。PC 側は `th-rpi-5g-wlo1` と `th-rpi-ap-wlo1` の自動接続を入れ替える。
+  再起動しても残る。PC 側は、屋外では AIC8800 を外して wlo1 を `th-rpi-ap-wlo1` へ、屋内では
+  wlo1 をインターネットに戻して AIC8800 を `th-rpi-5g-aic` へつなぐ（AIC8800 が無ければ wlo1 を 5GHz へ）。
+  屋外モードの間は PC のインターネットが無い。
 - 切り替え中は PC↔ラズパイの無線が数秒〜1 分切れる。**bringup 中にやらない。**
 - Elecom を 2.4GHz の別チャネルの AP にする案は使えない。**WDC-433SU2M2 は 5GHz 専用**で、ドライバは
   2.4GHz 対応と表示し hostapd も `AP-ENABLED` を出すのに、電波が出ない（2026-10-21 に ch11 で確認）。

@@ -10,7 +10,7 @@
 # 手順として残す。docs/setup.md §9）。
 # ラズパイ側の導入（pi_serial_relay の systemd 登録）は sudo の
 # パスワード入力が要り非対話ではできないため、案内だけにする。
-# PC のロボット回線（th-rpi-ap-wlo1）の設定も自動では書き換えず、
+# PC のロボット回線（屋内は th-rpi-5g-aic）の設定も自動では書き換えず、
 # 存在の確認と案内だけにする。詳しくは docs/network.md。
 #
 # 冪等（2 回実行しても壊れない）。
@@ -41,7 +41,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   3. WebUI: npm ci → npm run build（本番ビルド）
   4. 実行時データの置き場 th_ws/data/ が無ければ作る
   5. PlatformIO の有無を確認する（ESP32 の書き込みに要る。書き込みは docs/esp32.md）
-  6. PC のロボット回線（th-rpi-ap-wlo1）の存在を確認する（無ければ docs/network.md を案内。自動では書き換えない）
+  6. PC のロボット回線（th-rpi-5g-aic・th-rpi-ap-wlo1）の存在を確認する（無ければ docs/network.md を案内。自動では書き換えない）
   7. ラズパイ側の導入は行わず docs/network.md の該当節を案内する
   次のステップ: ./start.sh を実行する
 DRY
@@ -91,12 +91,14 @@ fi
 # ── 6. PC のロボット回線 ────────────────────────────────────
 # nmcli の自動書き換えはしない。存在の確認と案内だけ。
 echo "[6/6] PC のロボット回線を確認..."
-if nmcli connection show th-rpi-ap-wlo1 &>/dev/null; then
-    echo "      th-rpi-ap-wlo1 あり（固定 192.168.5.50・省電力 OFF であること）"
-else
-    echo "      th-rpi-ap-wlo1 が見つかりません。自動では設定しません。"
-    echo "      docs/network.md を参照して設定してください。"
-fi
+for c in th-rpi-5g-aic th-rpi-ap-wlo1; do
+    if nmcli connection show "$c" &>/dev/null; then
+        echo "      $c あり（固定 192.168.5.50・省電力 OFF であること）"
+    else
+        echo "      $c が見つかりません。自動では設定しません。"
+        echo "      docs/network.md「PC 側の NetworkManager プロファイル」を参照して設定してください。"
+    fi
+done
 
 echo ""
 echo "=== セットアップ完了 ==="
