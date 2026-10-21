@@ -5,7 +5,7 @@
 #   sudo bash rpi_setup_dualband_ap.sh
 #
 # 内蔵 (wlan0, 2.4GHz ch1, SSID th-rpi-ap): UnitV2・昇降機 ESP32 用。旧 NM の AP と同じ設定
-# Elecom (wlx3897a478b19d, 5GHz ch48 40MHz, SSID th-rpi-5g): PC 専用
+# Elecom (wlx3897a478b19d, 5GHz ch48 40MHz, SSID th-rpi-5g): PC 専用。屋外では rpi_ap_band.sh outdoor
 # どちらも br0 (192.168.5.1/24, NM の shared = DHCP) の下にあるので IP は今までどおり。
 #
 # 前提（手順と理由は docs/network.md「ラズパイ: 2 バンド AP の導入」）:
@@ -37,29 +37,9 @@ wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 wpa_passphrase=$PSK
 CONF
-cat > /etc/hostapd/$DONGLE.conf <<CONF
-# Elecom WDC-433SU2M2 (rtl8821au): PC 専用 5GHz。W52 の ch48 (44+48 の HT40-)
-interface=$DONGLE
-bridge=br0
-driver=nl80211
-ssid=th-rpi-5g
-country_code=JP
-ieee80211d=1
-hw_mode=a
-channel=48
-ieee80211n=1
-ht_capab=[HT40-][SHORT-GI-20][SHORT-GI-40]
-ieee80211ac=1
-vht_oper_chwidth=0
-wmm_enabled=1
-auth_algs=1
-wpa=2
-wpa_key_mgmt=WPA-PSK
-rsn_pairwise=CCMP
-ieee80211w=0
-wpa_passphrase=$PSK
-CONF
-chmod 600 /etc/hostapd/wlan0.conf /etc/hostapd/$DONGLE.conf
+chmod 600 /etc/hostapd/wlan0.conf
+# PC 用 (Elecom) は屋内用 5GHz で書く。屋外用への切り替えも同じスクリプト
+bash "$(dirname "$0")/rpi_ap_band.sh" indoor --no-restart
 
 install -d /etc/systemd/system/hostapd@.service.d
 cat > /etc/systemd/system/hostapd@.service.d/th.conf <<'CONF'

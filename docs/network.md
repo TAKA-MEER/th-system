@@ -31,7 +31,7 @@ ESP32（駆動用）はラズパイに USB-UART で直結し、無線区間に�
 ```txt
 ラズパイ (AP + LiDAR 配信 + pi_serial_relay)   br0 = 192.168.5.1/24（DHCP もここ）
   ├── wlan0 (内蔵 brcmfmac)    SSID: th-rpi-ap  2.4GHz ch1・20MHz   … UnitV2・昇降機 ESP32
-  ├── wlx3897a478b19d (Elecom) SSID: th-rpi-5g  5GHz ch48・40MHz    … PC だけ
+  ├── wlx3897a478b19d (Elecom) SSID: th-rpi-5g  5GHz ch44+48・40MHz … PC だけ（屋内専用）
   ├── eth0                     10.42.0.2（有線の退路 th-wired。br0 には入れない）
   └── USB-UART ── ESP32 (駆動用)                 (WiFi 不使用。シリアル直結のみ)
 
@@ -88,7 +88,7 @@ RPLIDAR S1 → ラズパイの `rplidar_ros` → `/scan` (`ROS_DOMAIN_ID=10`)。
 nmcli -f NAME,DEVICE,STATE connection show --active   # どちらが上がっているか
 ip -4 addr show wlo1                                  # 192.168.5.50/24 になっているか
 ip route | head -3                                    # default がインターネット用ドングル側か
-nmcli -f SSID,CHAN,RATE,ACTIVE dev wifi list ifname wlo1 | grep -E 'はい|yes'   # th-rpi-5g・ch48 か
+nmcli -f SSID,CHAN,RATE,ACTIVE dev wifi list ifname wlo1 | grep -E 'はい|yes'   # th-rpi-5g・ch44 か 48 か
 ```
 
 ### ロボット回線に使ってはいけないアダプタ
@@ -139,6 +139,10 @@ ping -c3 192.168.5.1
   するなど）。機内共存干渉でロボット回線が劣化する。
 - UnitV2・昇降機 ESP32 が繋がらない: 2.4GHz 側。`systemctl status hostapd@wlan0` と
   `sudo iw dev wlan0 station dump`。
+- **ラズパイが再起動などでロボット AP が消えると、PC の `wlo1` が保存済みの別の Wi-Fi（学校の
+  `NCT-WL-ST` など。`wlo1` に紐づいた自動接続のプロファイルが多数ある）へ移り、AP が戻っても
+  戻ってこない**（2026-10-21 に 2 回発生）。`nmcli -t -f DEVICE,CONNECTION dev | grep wlo1` で確かめ、
+  `nmcli connection up th-rpi-5g-wlo1`（屋外モードなら `th-rpi-ap-wlo1`）で戻す。
 - 2 バンド構成そのものを疑うときは、ラズパイで `sudo bash rpi_dualband_ap_revert.sh` で旧構成
   （NM の `th-rpi-ap` 単独）に戻せる。PC は `th-rpi-ap-wlo1` を `autoconnect yes` に戻す。
 
@@ -450,13 +454,33 @@ ESP32 の誤リセット（ラッパーの `stty -hupcl` と `open()` 前の DTR
    `iw reg get` が `country JP`／コンテナで `ros2 topic hz /scan` が 10Hz／ラズパイを再起動しても
    全部戻る。戻すときは `sudo bash rpi_dualband_ap_revert.sh`。
 
+### 屋外で使うとき（電波法）
+
+**5GHz の W52（ch36〜48）は、登録局でない限り屋外で使えない**（免許不要の無線 LAN として使えるのは屋内だけ。
+W53 も屋内専用。W56 は屋外可だが DFS が必須で、走行中にレーダーを検知すると通信が止まるので使わない）。
+屋外では **5GHz の AP を止め、PC も内蔵 2.4GHz の `th-rpi-ap`（ch1）につなぐ**。映像と PC が同じ
+チャネルを分け合うので、映像の帯域は 2 バンド化の前と同じに戻る。2.4GHz は屋外でも使える。
+
+```bash
+cd th_ws/scripts
+bash ap_band_switch.sh outdoor   # PC で実行。ラズパイの sudo パスワードを聞かれる
+bash ap_band_switch.sh indoor    # 屋内に戻す
+bash ap_band_switch.sh status
+```
+
+- ラズパイ側は `~/rpi_ap_band.sh`（`hostapd@wlx3897a478b19d` の enable/disable）。モードはラズパイを
+  再起動しても残る。PC 側は `th-rpi-5g-wlo1` と `th-rpi-ap-wlo1` の自動接続を入れ替える。
+- 切り替え中は PC↔ラズパイの無線が数秒〜1 分切れる。**bringup 中にやらない。**
+- Elecom を 2.4GHz の別チャネルの AP にする案は使えない。**WDC-433SU2M2 は 5GHz 専用**で、ドライバは
+  2.4GHz 対応と表示し hostapd も `AP-ENABLED` を出すのに、電波が出ない（2026-10-21 に ch11 で確認）。
+
 ### 導入時に実際に踏んだこと（2026-10-21）
 
 | 症状 | 原因 | 対処 |
 | --- | --- | --- |
 | 5GHz の AP が `Failed to start AP functionality` | 規制ドメインが `00`（world）。5GHz で自分から電波を出せない | `cfg80211.conf` で JP（すぐ試すなら `sudo iw reg set JP`） |
 | 5GHz の ping が平均 70〜100ms | 8821au ドライバ独自の省電力 | `rtw_power_mgnt=0 rtw_ips_mode=0` |
-| NM の AP だと 20MHz にしかならない | NM 1.36 の AP は幅を指定できない | hostapd の `ht_capab=[HT40-]`（ch48 は 44+48 の上側） |
+| NM の AP だと 20MHz にしかならない | NM 1.36 の AP は幅を指定できない | hostapd の `ht_capab=[HT40-]`（ch48 指定で 44+48 の 40MHz。ドライバを読み直すと主チャネルの表示が 44 になることがあるが同じ帯域） |
 | 2.4GHz 側に誰も繋がれない（`denied association (code=38)`） | hostapd に `ieee80211w=0` を明示すると brcmfmac のファームウェアが拒否する | 内蔵側の設定からその行を消す（Elecom 側は書いてあっても繋がる） |
 | ラズパイ再起動後、PC が 2.4GHz を拾って 5GHz に戻らない | 5GHz の AP の起動が遅い。予備の 2.4GHz が自動接続だった | 予備を `autoconnect no`、5GHz 側を `autoconnect-retries 0` |
 | 再起動後に `rplidar.service` が起動しない | `time-sync.target` 待ち。ラズパイの時刻源は PC（`NTP=192.168.5.50`、PC の chrony）で、PC に届くまで待ち続ける | PC が AP につながれば同期して起動する。`timedatectl` の `System clock synchronized` を見る |

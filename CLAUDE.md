@@ -158,6 +158,8 @@ ros2 topic echo /system/dev_mode --once                           # いまの状
 
   - **UnitV2 と昇降機 ESP32 は 2.4GHz 専用**なので内蔵無線は 2.4GHz のまま。PC を 5GHz に分けたのは、AP が 1 つだと UnitV2 の映像が同じチャネルを 2 回通って帯域が半分になるため。PC↔ラズパイは約 28 → 上り 95／下り 59 Mbps、2.4GHz 側（hostapd）は上り 35／下り 44 Mbps（2026-10-21・机上）。
   - **ラズパイの規制ドメインが `00` だと 5GHz の AP が起動しない**（`/etc/modprobe.d/cfg80211.conf` で JP）。**hostapd の内蔵側に `ieee80211w=0` を書くと brcmfmac が接続を status 38 で拒否する。**8821au は `rtw_power_mgnt=0` にしないと RTT が平均 70〜100ms になる。**ラズパイのカーネルを変えたら 8821au をビルドし直す**（`~/src/rtl8821au-5.12.5.2`）。
+  - **5GHz の W52 は電波法で屋外不可**（登録局を除く）。屋外では `th_ws/scripts/ap_band_switch.sh outdoor`（PC で実行）で 5GHz の AP を止め、PC も 2.4GHz の `th-rpi-ap` へ。WDC-433SU2M2 は 5GHz 専用（2.4GHz の AP にすると `AP-ENABLED` なのに電波が出ない）。
+  - **ロボット AP が消えると PC の `wlo1` は保存済みの学校 Wi-Fi 等へ移り、AP が戻っても戻らない。**ラズパイを再起動したら `wlo1` の接続先を確かめる。
   - **USB 無線ドングルはラズパイの電源を切ってから抜き差しする**（動作中に挿したら USB が固まりラズパイごと応答しなくなった）。
   - ラズパイの時刻源は PC の chrony（`NTP=192.168.5.50`）。PC が AP に繋がるまで `time-sync.target` 待ちで `rplidar.service` が起動しない。
   - PC が 2.4GHz 無線を 2 枚同時に使う状態は機内共存干渉を招くので避ける。PC の中で 5GHz が 2 枚（ロボット ch48・インターネット ch36）だと、インターネットに負荷をかけたとき下りが 59 → 34 Mbps に落ちる。
