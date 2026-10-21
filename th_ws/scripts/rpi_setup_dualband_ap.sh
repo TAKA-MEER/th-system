@@ -81,6 +81,7 @@ cat > /etc/NetworkManager/dnsmasq-shared.d/th-reserve.conf <<'CONF'
 # TH: br0 移行でリースファイルが変わっても IP を変えない
 dhcp-host=e0:5a:1b:15:c3:1c,192.168.5.142
 dhcp-host=c8:cb:9e:d8:a5:9a,192.168.5.50
+dhcp-host=00:e0:99:7c:99:e7,192.168.5.129
 CONF
 
 nmcli con modify th-rpi-ap connection.autoconnect no

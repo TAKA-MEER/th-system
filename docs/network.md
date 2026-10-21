@@ -441,7 +441,7 @@ ESP32 の誤リセット（ラッパーの `stty -hupcl` と `open()` 前の DTR
 4. ラズパイで `sudo bash rpi_setup_dualband_ap.sh`（[`th_ws/scripts/`](../th_ws/scripts/rpi_setup_dualband_ap.sh)）。
    hostapd を AP ごとに `hostapd@wlan0`・`hostapd@wlx3897a478b19d` で起動し、2 つの無線を NM の
    管理から外し、NM のブリッジ `th-br0`（192.168.5.1/24・shared）に束ねる。SSID・パスワード・ch は
-   旧 `th-rpi-ap` と同じ。DHCP は昇降機 ESP32（.142）と PC（.50）を MAC で固定している。
+   旧 `th-rpi-ap` と同じ。DHCP は昇降機 ESP32（.142）・UnitV2（.129）・PC（.50）を MAC で固定している（`/etc/NetworkManager/dnsmasq-shared.d/th-reserve.conf`）。
    旧 NM の `th-rpi-ap` は `autoconnect no` で残す（戻すときに使う）。
 5. PC に `th-rpi-5g-wlo1` を作り、`th-rpi-ap-wlo1` を `autoconnect no` にする（上の「PC 側の
    NetworkManager プロファイル」）。
