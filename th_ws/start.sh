@@ -159,7 +159,7 @@ fi
 # ── 1. ネットワークの確認 ───────────────────────────────────
 info "ラズパイ (${RPI_IP}) に ping を送る..."
 if ! ping -c 3 -W 2 "$RPI_IP" >/dev/null 2>&1; then
-    err "ラズパイ (${RPI_IP}) に届かない。PC がロボット AP (th-rpi-ap-wlo1) に繋がっているか確かめること。"
+    err "ラズパイ (${RPI_IP}) に届かない。PC がロボット AP (5GHz の th-rpi-5g-wlo1) に繋がっているか確かめること。"
     err "復旧手順は docs/network.md「復旧手順」を参照。"
     exit 1
 fi

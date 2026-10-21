@@ -20,19 +20,26 @@
 ## 構成の全体像
 
 **ラズパイを WiFi AP にし、PC をそのクライアントとして接続する**構成。
-ESP32 はラズパイに USB-UART で直結し、無線区間には出てこない。
+ESP32（駆動用）はラズパイに USB-UART で直結し、無線区間には出てこない。
+
+> **2026-10-21 から AP は 2 バンド。**ラズパイの内蔵無線（2.4GHz）と、ラズパイに挿した
+> Elecom WDC-433SU2M2（5GHz）の 2 つの AP を `br0` で 1 つのネットワーク（192.168.5.0/24）に
+> 束ねている。**PC は 5GHz 側、UnitV2（カメラ）と昇降機の ESP32 は 2.4GHz 側**につなぐ。
+> IP は以前と同じなので、`pi_serial_relay` も UnitV2・昇降機 ESP32 も設定を変えていない。
+> 導入手順は「ラズパイ: 2 バンド AP の導入」。
 
 ```txt
-ラズパイ (WiFi AP + LiDAR 配信 + pi_serial_relay)  192.168.5.1  SSID: th-rpi-ap (2.4GHz ch1)
-  │  USB-UART (/dev/serial/by-id/...)
-  ├── ESP32 (駆動用)                                (WiFi 不使用。シリアル直結のみ)
-  │
-  └── PC (Ubuntu, ROS2 コンテナ)   192.168.5.50   固定IP (内蔵 Intel カード wlo1)
-        esp32_bridge が :8766 を待ち受け(pi_serial_relay がここへ接続) / rosbridge :9090
+ラズパイ (AP + LiDAR 配信 + pi_serial_relay)   br0 = 192.168.5.1/24（DHCP もここ）
+  ├── wlan0 (内蔵 brcmfmac)    SSID: th-rpi-ap  2.4GHz ch1・20MHz   … UnitV2・昇降機 ESP32
+  ├── wlx3897a478b19d (Elecom) SSID: th-rpi-5g  5GHz ch48・40MHz    … PC だけ
+  ├── eth0                     10.42.0.2（有線の退路 th-wired。br0 には入れない）
+  └── USB-UART ── ESP32 (駆動用)                 (WiFi 不使用。シリアル直結のみ)
+
+PC (Ubuntu, ROS2 コンテナ)   192.168.5.50   固定IP (内蔵 Intel カード wlo1 → th-rpi-5g)
+  esp32_bridge が :8766 を待ち受け(pi_serial_relay がここへ接続) / rosbridge :9090
 
 PC のインターネットは別系統:
-  Elecom WDC-433SU2M2 (5GHz専用)  DHCP          SSID: NCT-WL-ST (5GHz ch36)
-        ← 既定経路 (default route) はこちら
+  AIC8800 ドングル wlx6c1ff789d5d4  DHCP  SSID: NCT-WL-ST  ← 既定経路 (default route)
 ```
 
 RPLIDAR S1 → ラズパイの `rplidar_ros` → `/scan` (`ROS_DOMAIN_ID=10`)。
@@ -40,21 +47,33 @@ RPLIDAR S1 → ラズパイの `rplidar_ros` → `/scan` (`ROS_DOMAIN_ID=10`)。
 
 ### なぜこの構成なのか
 
-- PC↔ラズパイの WiFi 区間は、以前から `/scan` を実測ロス 0%・RTT 2.2ms で安定
-  運用している経路（下記「使ってはいけないアダプタ」参照）。ESP32 のデータも
-  この**既に信頼性が確認済みの経路**に相乗りさせることで、ESP32 自身の WiFi
-  スタックという不安定要因そのものを消す。
-- インターネットを 5GHz の別アダプタに逃がすことで、**PC が 2.4GHz を 2 枚同時に
-  使う状態（機内共存干渉）を避けている。**
-- `WDC-433SU2M2` は 5GHz 専用（実測: 見える AP 24 件すべて 5GHz、2.4GHz は 0 件）。
-  **ロボット回線には使えない。インターネット専用。**
+- **UnitV2 の映像は、AP が 1 つだと同じチャネルを 2 回通る**（UnitV2→ラズパイ、ラズパイ→PC）。
+  2.4GHz・20MHz・1 ストリームの上限は約 28Mbps なので、映像に使えるのは実効でその半分だった。
+  PC を 5GHz に分けると、映像は 2.4GHz と 5GHz を 1 回ずつ通るだけになる。
+- UnitV2 と昇降機の ESP32 は 2.4GHz にしか対応していないので、内蔵無線は 2.4GHz のまま残す。
+- 2026-10-21 の実測（同じ位置。bringup 停止中）:
 
-### PC 側の NetworkManager プロファイル（設定済み・autoconnect 有効）
+  | 区間 | 上り | 下り | 備考 |
+  | --- | --- | --- | --- |
+  | 旧: PC↔内蔵 2.4GHz | 約 28 Mbps | 約 28 Mbps | RTT 1.5ms |
+  | 新: PC↔Elecom 5GHz（40MHz） | **約 95 Mbps** | **約 59 Mbps** | リンク 135Mbit/s |
+  | 新: 同上・PC のインターネットに負荷 | 約 77 Mbps | 約 34 Mbps | インターネット側が 5GHz ch36 のとき |
 
-| デバイス | ドライバ | 接続名 | 接続先 | IP |
-| --- | --- | --- | --- | --- |
-| `wlo1`（内蔵 Intel） | iwlwifi | `th-rpi-ap-wlo1` | `th-rpi-ap` | **固定 192.168.5.50/24**・`never-default`・powersave 無効 |
-| `wlx3897a478b19d`（Elecom） | rtl8821au | `net5g` | `NCT-WL-ST` | DHCP・**既定経路** |
+- PC の中で 5GHz の無線が 2 枚並ぶ（ロボット ch48・インターネット ch36）ので、インターネットに
+  負荷をかけると下りが落ちる。それでも旧構成より速い。気になるならインターネット側を 2.4GHz に移す。
+
+### PC 側の NetworkManager プロファイル（設定済み）
+
+| デバイス | ドライバ | 接続名 | 接続先 | IP | 自動接続 |
+| --- | --- | --- | --- | --- | --- |
+| `wlo1`（内蔵 Intel） | iwlwifi | `th-rpi-5g-wlo1` | `th-rpi-5g` | **固定 192.168.5.50/24**・`never-default`・powersave 無効 | **有効**（`autoconnect-retries 0`＝つながるまで待ち続ける） |
+| `wlo1`（内蔵 Intel） | iwlwifi | `th-rpi-ap-wlo1` | `th-rpi-ap`（2.4GHz） | 同上 | **無効**（5GHz 側が壊れたときの予備。手で `nmcli connection up` する） |
+| `wlx6c1ff789d5d4`（AIC8800） | aic8800 | `NCT-WL-ST 1` | `NCT-WL-ST` | DHCP・**既定経路** | 有効 |
+
+- **2.4GHz 側の予備を自動接続にしない理由**: ラズパイの再起動直後は 2.4GHz の AP が先に上がり、
+  5GHz は遅れて上がる。自動接続にしておくと PC が 2.4GHz を拾ったまま 5GHz に戻らない（2026-10-21 に発生）。
+- 旧 `th-rpi-ap` プロファイル（AIC8800 に束縛）は `autoconnect no` にした。自動でロボット AP に
+  つながり、`wlo1` と同じ 192.168.5.50 を名乗って `wlo1` の IP を奪っていた（2026-10-21）。
 
 - **固定 IP にしている理由**: ラズパイの `pi_serial_relay`（`--ws-host`）が
   `192.168.5.50` 決め打ちだから。DHCP にすると `pi_serial_relay` が繋ぎに
@@ -67,12 +86,14 @@ RPLIDAR S1 → ラズパイの `rplidar_ros` → `/scan` (`ROS_DOMAIN_ID=10`)。
 ```bash
 nmcli -f NAME,DEVICE,STATE connection show --active   # どちらが上がっているか
 ip -4 addr show wlo1                                  # 192.168.5.50/24 になっているか
-ip route | head -3                                    # default が net5g 側か
+ip route | head -3                                    # default がインターネット用ドングル側か
+nmcli -f SSID,CHAN,RATE,ACTIVE dev wifi list ifname wlo1 | grep -E 'はい|yes'   # th-rpi-5g・ch48 か
 ```
 
-### 使ってはいけないアダプタ
+### ロボット回線に使ってはいけないアダプタ
 
-**AIC8800 系 USB ドングル（`wlx6c1ff789d5d4`）は撤去済み。戻さないこと。**
+**AIC8800 系 USB ドングル（`wlx6c1ff789d5d4`）をロボット回線に使わないこと。**
+2026-10-21 からインターネット専用として PC に挿している（遅くても安全には関わらない）。
 2026-09-02 の対照実験（同じ AP・同じ ch1・同じ部屋・同じ時刻）:
 
 | 条件 | 上り | 下り | ロス | avg RTT | max RTT |
@@ -82,7 +103,6 @@ ip route | head -3                                    # default が net5g 側か
 
 内蔵カードは**混雑した ch1 のまま** ロス 0% / RTT 2.2ms を出す。
 → **ch1 の混雑は律速ではない。チャネル移設（ch6 等）は無意味。**
-旧 `th-rpi-ap` プロファイルは撤去したドングルに束縛されたまま残っている（無害・発動しない）。
 
 ### 通信の性質（実機検証で確立した前提）
 
@@ -102,16 +122,24 @@ ip route | head -3                                    # default が net5g 側か
 ### PC が AP に繋がらない / `ping 192.168.5.1` が通らない
 
 ```bash
-nmcli connection up th-rpi-ap-wlo1
+nmcli connection up th-rpi-5g-wlo1
 ping -c3 192.168.5.1
 ```
 
+- `th-rpi-5g` が見えない（`nmcli dev wifi list ifname wlo1`）: ラズパイの 5GHz 側が落ちている。
+  有線（`ssh mirs2602@10.42.0.2`）で入り、`systemctl status hostapd@wlx3897a478b19d`・
+  `lsmod | grep 8821au`・`iw reg get`（`country JP` か）を見る。急ぐなら予備の
+  `nmcli connection up th-rpi-ap-wlo1`（2.4GHz。映像の帯域は旧構成と同じに戻る）。
 - デバイスが見えない: `nmcli device status` で `wlo1` が `unavailable` なら
   `nmcli radio wifi on` / `rfkill list`。
 - IP が 192.168.5.50 でない: プロファイルが別のもの（旧 `th-rpi-ap` 等）で上がっている。
   `nmcli -f NAME,DEVICE connection show --active` で確認して張り直す。
 - **PC が 2.4GHz を 2 枚同時に使う状態にしないこと**（内蔵をモバイルホットスポットに
   するなど）。機内共存干渉でロボット回線が劣化する。
+- UnitV2・昇降機 ESP32 が繋がらない: 2.4GHz 側。`systemctl status hostapd@wlan0` と
+  `sudo iw dev wlan0 station dump`。
+- 2 バンド構成そのものを疑うときは、ラズパイで `sudo bash rpi_dualband_ap_revert.sh` で旧構成
+  （NM の `th-rpi-ap` 単独）に戻せる。PC は `th-rpi-ap-wlo1` を `autoconnect yes` に戻す。
 
 ### `pi_serial_relay` が WS に繋がらない（`esp32_bridge` に「接続:」ログが出ない）
 
@@ -384,6 +412,54 @@ PC 側の `speaker_announcer`（bringup で起動）が `/speaker/cue`（2 Hz）
 ESP32 の誤リセット（ラッパーの `stty -hupcl` と `open()` 前の DTR/RTS 落としが
 効いているか）は、サービス再起動時に `/safety/fault_lock` が `false` のまま
 ・`wheel_feedback` が途切れないことで確認した（2026-09-05）。
+
+---
+
+## ラズパイ: 2 バンド AP の導入
+
+2026-10-21 に導入した。構成と理由は冒頭の「構成の全体像」。**作業の前に有線の退路
+（PC の USB-LAN ↔ ラズパイ eth0、`ssh mirs2602@10.42.0.2`）をつなぐこと。**無線の設定を
+誤ると機体に触れなくなる。ラズパイはインターネットに出られないので、要るものは PC で
+取ってきて `scp` する。
+
+1. **USB 無線ドングルの抜き差しはラズパイの電源を切ってから。**動いている最中に挿したら
+   USB が固まり、ラズパイごと応答しなくなった（2026-10-21、PLANEX で発生）。
+2. **8821au ドライバをビルドする**（Elecom WDC-433SU2M2 は Linux 標準のドライバに無い）。
+   PC にある DKMS のソース `/usr/src/rtl8821au-5.12.5.2` を `tar` でラズパイの `~/src/` へ送り、
+   `make -j4`（約 8 分。ヘッダ `linux-headers-$(uname -r)` と build-essential はラズパイに入っている）。
+   ```bash
+   sudo install -D -m 644 8821au.ko /lib/modules/$(uname -r)/updates/8821au.ko && sudo depmod -a
+   # /etc/modprobe.d/8821au.conf
+   options 8821au rtw_country_code=JP rtw_led_ctrl=1 rtw_power_mgnt=0 rtw_ips_mode=0
+   # /etc/modprobe.d/cfg80211.conf
+   options cfg80211 ieee80211_regdom=JP
+   ```
+   **カーネルが変わったらビルドし直す**（`/lib/modules/<版>/updates/` に置いたものは別の版では読まれない）。
+3. **`iw` と `hostapd` を入れる**。PC で ports.ubuntu.com の jammy arm64 版を取って `sudo dpkg -i`
+   （2026-10-21 は `iw_5.16-1build1`・`hostapd_2.10-6ubuntu2.4`。依存はラズパイに揃っていた）。
+4. ラズパイで `sudo bash rpi_setup_dualband_ap.sh`（[`th_ws/scripts/`](../th_ws/scripts/rpi_setup_dualband_ap.sh)）。
+   hostapd を AP ごとに `hostapd@wlan0`・`hostapd@wlx3897a478b19d` で起動し、2 つの無線を NM の
+   管理から外し、NM のブリッジ `th-br0`（192.168.5.1/24・shared）に束ねる。SSID・パスワード・ch は
+   旧 `th-rpi-ap` と同じ。DHCP は昇降機 ESP32（.142）と PC（.50）を MAC で固定している。
+   旧 NM の `th-rpi-ap` は `autoconnect no` で残す（戻すときに使う）。
+5. PC に `th-rpi-5g-wlo1` を作り、`th-rpi-ap-wlo1` を `autoconnect no` にする（上の「PC 側の
+   NetworkManager プロファイル」）。
+6. 確かめること: PC（5GHz）から昇降機 ESP32（`ping 192.168.5.142`）が通る（2 つの AP が 1 つの
+   ネットワークになっている証拠）／`iw dev wlx3897a478b19d info` が `channel 48 … width: 40 MHz`／
+   `iw reg get` が `country JP`／コンテナで `ros2 topic hz /scan` が 10Hz／ラズパイを再起動しても
+   全部戻る。戻すときは `sudo bash rpi_dualband_ap_revert.sh`。
+
+### 導入時に実際に踏んだこと（2026-10-21）
+
+| 症状 | 原因 | 対処 |
+| --- | --- | --- |
+| 5GHz の AP が `Failed to start AP functionality` | 規制ドメインが `00`（world）。5GHz で自分から電波を出せない | `cfg80211.conf` で JP（すぐ試すなら `sudo iw reg set JP`） |
+| 5GHz の ping が平均 70〜100ms | 8821au ドライバ独自の省電力 | `rtw_power_mgnt=0 rtw_ips_mode=0` |
+| NM の AP だと 20MHz にしかならない | NM 1.36 の AP は幅を指定できない | hostapd の `ht_capab=[HT40-]`（ch48 は 44+48 の上側） |
+| 2.4GHz 側に誰も繋がれない（`denied association (code=38)`） | hostapd に `ieee80211w=0` を明示すると brcmfmac のファームウェアが拒否する | 内蔵側の設定からその行を消す（Elecom 側は書いてあっても繋がる） |
+| ラズパイ再起動後、PC が 2.4GHz を拾って 5GHz に戻らない | 5GHz の AP の起動が遅い。予備の 2.4GHz が自動接続だった | 予備を `autoconnect no`、5GHz 側を `autoconnect-retries 0` |
+| 再起動後に `rplidar.service` が起動しない | `time-sync.target` 待ち。ラズパイの時刻源は PC（`NTP=192.168.5.50`、PC の chrony）で、PC に届くまで待ち続ける | PC が AP につながれば同期して起動する。`timedatectl` の `System clock synchronized` を見る |
+| PLANEX GW-USValue-EZ（RTL8188CUS）を 2.4GHz の AP にした | 約 15〜20Mbps しか出ず、カーネルに UBSAN（`rtl8192cu/trx.c:502`）が出た | 不採用。映像の上限が旧構成と変わらない |
 
 ---
 

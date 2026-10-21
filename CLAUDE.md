@@ -147,42 +147,21 @@ ros2 topic echo /system/dev_mode --once                           # いまの状
 - **`/scan_filtered` が実機で完全に無音になる複合バグ（2026-09-01 修正）。** 症状: 点群表示も slam_toolbox の地図生成も動かない。`ros2 topic hz /scan` は 10Hz 出るのに `lidar_filter` の `_cb` が一度も発火しない。原因は 2 つ:
   1. **`bringup.launch.py` が `lidar_filter`（network 時）に渡していた `FASTRTPS_DEFAULT_PROFILES_FILE`（`config/fastdds_profile.xml`）のユニキャスト初期ピアが `192.168.4.2` 固定だった。** ネットワークが `192.168.5.x` へ移行して**存在しないサブネット**になり、これが逆に discovery を壊した。→ additional_env を外し、マルチキャスト discovery（現行 AP では正常）に戻した。別 AP で不安定なら `fastdds_profile.xml` の `<address>` を現ラズパイ IP に直して再度渡す。
   2. `lidar_filter` の `/scan` 購読が既定 QoS（RELIABLE）だった。センサストリームは必ず `qos_profile_sensor_data`（BEST_EFFORT）で購読する（`safety_monitor` / `obstacle_limiter` / `connectivity_checker` は元から BEST_EFFORT）。
-- **実機のネットワークは「ESP32 が AP」から「ラズパイが AP」へ変わっている**（`docs/network.md` / `setup.md` / `esp32.md` は 2026-09-02 に現行構成へ書き直し済み。192.168.4.x や `th-esp32-ap` が出てくる記述を見かけたら古い）。2026-09-02 に実機で確定した構成:
+- **実機のネットワークは「ラズパイが AP」。2026-10-21 から 2 バンド**（詳細・導入手順・復旧は `docs/network.md`。192.168.4.x や `th-esp32-ap` が出てくる記述は古い）。ラズパイの内蔵無線（2.4GHz）と、ラズパイに挿した Elecom WDC-433SU2M2（5GHz・外部ドライバ 8821au）を hostapd で別々に立て、`br0` で 1 つのネットワークに束ねている:
 
   | 機器 | IP | 役割 |
   |---|---|---|
-  | ラズパイ | `192.168.5.1` | **AP 本体**（SSID `th-rpi-ap`）＋ `/scan` 配信元 |
-  | PC | `192.168.5.50` | USB WiFi ドングル `wlx6c1ff789d5d4`（AIC8800）。`esp32_bridge` が :8766 で待ち受け |
+  | ラズパイ `br0` | `192.168.5.1` | `wlan0`＝SSID `th-rpi-ap`（2.4GHz ch1。UnitV2 カメラ・昇降機 ESP32 用）／`wlx3897a478b19d`＝SSID `th-rpi-5g`（5GHz ch48・40MHz。PC 専用）。`/scan` 配信元・`pi_serial_relay`（駆動用 ESP32 はシリアル直結で無線を使わない） |
+  | ラズパイ `eth0` | `10.42.0.2` | 有線の退路（`th-wired`）。**AP の設定を触る前に必ずつなぐ**（PC 側は USB-LAN の 10.42.0.1） |
+  | PC 内蔵 Intel `wlo1` | `192.168.5.50` 固定 | `th-rpi-5g-wlo1`（`never-default`・powersave 無効・`autoconnect-retries 0`）。`pi_serial_relay` が決め打ちで接続しに来るので DHCP にしない。予備の `th-rpi-ap-wlo1`（2.4GHz）は **autoconnect no**（自動にするとラズパイ再起動時に 2.4GHz を拾って 5GHz に戻らない） |
+  | PC の AIC8800 `wlx6c1ff789d5d4` | DHCP | インターネット専用・既定経路。**ロボット回線に使わない**（2026-09-02 にロス 18%・最大 970ms。内蔵は同条件でロス 0%・2.2ms。チャネル混雑は律速ではなかった） |
 
-  **2026-09-01 に CLAUDE.md へ書いた「ラズパイは DHCP で `192.168.5.125`」は誤り。それは（当時の）ESP32。**
-  **2026-09-05 追記: ESP32 は無線を廃止しラズパイへシリアル直結した（`docs/network.md`参照）。
-  上記表の「ESP32 が `192.168.5.125` の STA 子機」という行はもう実体が無い（歴史的記録として削除した）。
-  代わりにラズパイ上の `pi_serial_relay` が PC:8766 へ接続しに来る。**
-- **無線が遅い・切れるの真因は PC の USB WiFi ドングル（AIC8800 / `wlx6c1ff789d5d4`）。チャネル混雑ではない。** 2026-09-02 に対照実験で確定した。同じ AP・同じ ch1・同じ部屋・同じ時刻:
-
-  | 条件 | 上り | 下り | ロス | avg RTT | max RTT |
-  |---|---|---|---|---|---|
-  | ドングル単独 | 3.35 Mbps | 6.71 Mbps | 18% | 151 ms | 970 ms |
-  | **内蔵 Intel (`wlo1`/iwlwifi) 単独** | **28.6 Mbps** | **31.9 Mbps** | **0%** | **2.2 ms** | **11 ms** |
-
-  内蔵カードは**混雑した ch1 のまま**ロス 0% / RTT 2.2ms を出す。→ **ch1 の混雑は律速ではない。チャネル移設（ch6 等）は無意味。**
-
-  **【解決済み 2026-09-02】** AIC8800 を撤去し、次の構成にした（NetworkManager に保存済み・autoconnect 有効）:
-
-  | デバイス | 接続先 | IP |
-  |---|---|---|
-  | 内蔵 Intel `wlo1` (iwlwifi) | `th-rpi-ap-wlo1`（ロボット AP・2.4GHz ch1） | **固定 192.168.5.50/24**（`never-default`。ラズパイの `pi_serial_relay` が決め打ちで接続しに来るため DHCP にしない） |
-  | Elecom WDC-433SU2M2 `wlx3897a478b19d` (rtl8821au) | `net5g`（`NCT-WL-ST` 5GHz ch36） | DHCP・**既定経路はこちら** |
-
-  インターネットを 5GHz に逃がしたので**機内の 2.4GHz 共存干渉も消えた**。効果（3 分ソーク）: ESP32 の WS 切断 194 秒ごと → **0 回**、`ESP32_DISCONNECTED` 105 回/7分 → **3 回**（起動時のみ）、`/scan_filtered` 5.4Hz・最大ギャップ 2.94s → **10.07Hz・最大 0.12s・標準偏差 0.006s**。
-  - 旧 `th-rpi-ap` プロファイルは撤去した AIC8800 に束縛されたまま残っている（無害・発動しない）。
-  - **WDC-433SU2M2 は 5GHz 専用**（実測: 見える AP 24 件すべて 5GHz、2.4GHz は 0 件）。ESP32 が 2.4GHz 専用なので**ロボット回線には使えない**。インターネット専用。
-  - ドングルのドライバは統計を信用できない（`rx_drop`/`rx_err`/`tx_err` が全て 0 のまま、`Signal -51dBm` なのに `Link Quality=0/100`）。**このドングルの自己申告値で判断しないこと。**
-  - 切り分けの定石: `ping` の「ロス」は RTT が数秒に伸びると測定終了時に飛行中のパケットが計上されるため過大に出る。**TCP スループット（`dd | ssh 'cat >/dev/null'`）で測るのが確実。**
-  - ラズパイ→ESP32（PC を通らない経路）は**ロス 0%**。PC が絡む経路にだけロスが出るのが切り分けの決め手だった。
-  - Ubuntu は `/etc/NetworkManager/conf.d/*powersave*` で `wifi.powersave = 3`（省電力ON）が既定。ロボット用接続だけ `nmcli connection modify th-rpi-ap 802-11-wireless.powersave 2` で無効化済み。
-  - **ESP32 は 2.4GHz 専用**なので AP の 5GHz 化はできない（ESP32 が繋がらなくなる）。
-  - PC が 2.4GHz 無線を 2 枚同時に使う状態（内蔵=モバイルホットスポット ch11／ドングル=ロボット ch1）は機内共存干渉を招くので避ける。
+  - **UnitV2 と昇降機 ESP32 は 2.4GHz 専用**なので内蔵無線は 2.4GHz のまま。PC を 5GHz に分けたのは、AP が 1 つだと UnitV2 の映像が同じチャネルを 2 回通って帯域が半分になるため。PC↔ラズパイは約 28 → 上り 95／下り 59 Mbps（2026-10-21）。
+  - **ラズパイの規制ドメインが `00` だと 5GHz の AP が起動しない**（`/etc/modprobe.d/cfg80211.conf` で JP）。**hostapd の内蔵側に `ieee80211w=0` を書くと brcmfmac が接続を status 38 で拒否する。**8821au は `rtw_power_mgnt=0` にしないと RTT が平均 70〜100ms になる。**ラズパイのカーネルを変えたら 8821au をビルドし直す**（`~/src/rtl8821au-5.12.5.2`）。
+  - **USB 無線ドングルはラズパイの電源を切ってから抜き差しする**（動作中に挿したら USB が固まりラズパイごと応答しなくなった）。
+  - ラズパイの時刻源は PC の chrony（`NTP=192.168.5.50`）。PC が AP に繋がるまで `time-sync.target` 待ちで `rplidar.service` が起動しない。
+  - PC が 2.4GHz 無線を 2 枚同時に使う状態は機内共存干渉を招くので避ける。PC の中で 5GHz が 2 枚（ロボット ch48・インターネット ch36）だと、インターネットに負荷をかけたとき下りが 59 → 34 Mbps に落ちる。
+  - 切り分けの定石: `ping` の「ロス」は RTT が数秒に伸びると過大に出る。**TCP スループット（`dd | ssh 'cat >/dev/null'`）で測る。**USB ドングルのドライバの自己申告値（`Link Quality` 等）は信用しない。
 - **`pkill -TERM -f "ros2 launch ..."` は launch 親しか殺さず、子ノードは生き残る。** 「止めたはずなのにポートが埋まっている」「修正したのに古い挙動のまま」はこれ。実際に古い `esp32_bridge` が残って新 bringup の 8766 / rosbridge の 9090 を奪い、検証を 1 周無駄にした。`ps -eo pid,args` で ROS 関連を拾って **PID 指定で TERM** すること（`kill -9` は DDS discovery を壊すので使わない）。
 - **このリポジトリは `core.fileMode = false`。`chmod +x` しても git の index に反映されない。** 新しく実行するスクリプト（`install(PROGRAMS ...)` に載せるもの）を追加したら `git update-index --chmod=+x <path>` を明示的に叩くこと。忘れると **git 上は 100644 のまま**で、`colcon build` は成功しテストも通るのに、実機の launch だけが `executable '<name>' not found on the libexec directory` で落ちる。`--symlink-install` では install 先がソースへのシンボリックリンクになるため、CMake の `install(PROGRAMS)` が付けるはずの実行権限が効かず、ソース側の権限がそのまま runtime に出るのが理由。**エラー文言が「見つからない」なので権限だと気づけない**（2026-09-03 に `map_downsampler.py` で実際に踏んだ）。`test_installed_scripts_executable.py` が再発を止める。
 - **`pkill -f <パターン>` は docker 外（ホスト）でも自分のシェルを殺す。** `pkill -f vite` で exit 144 になり、後続の `rm` が実行されなかった。ホストでも PID 指定で止めること。

@@ -394,6 +394,10 @@ sudo bash rpi_setup_ap.sh --revert                        # AP を止める
 ip addr show wlan0 | grep 'inet '                         # 192.168.5.1 になっていること
 ```
 
+> **2026-10-21 から実機は 2 バンド構成**（内蔵 2.4GHz＋USB ドングル 5GHz を `br0` に束ねる）。
+> 上の手順で 2.4GHz の AP を作ったあと、[network.md](network.md)「ラズパイ: 2 バンド AP の導入」で
+> `rpi_setup_dualband_ap.sh` を実行する。
+
 > **⚠ 事前に有線の退路を作っておくこと**(無線設定を誤ると機体に触れなくなる)。
 > 手順はスクリプト冒頭のコメントに書いてある。
 >
