@@ -156,7 +156,7 @@ ros2 topic echo /system/dev_mode --once                           # いまの状
   | PC 内蔵 Intel `wlo1` | `192.168.5.50` 固定 | `th-rpi-5g-wlo1`（`never-default`・powersave 無効・`autoconnect-retries 0`）。`pi_serial_relay` が決め打ちで接続しに来るので DHCP にしない。予備の `th-rpi-ap-wlo1`（2.4GHz）は **autoconnect no**（自動にするとラズパイ再起動時に 2.4GHz を拾って 5GHz に戻らない） |
   | PC の AIC8800 `wlx6c1ff789d5d4` | DHCP | インターネット専用・既定経路。**ロボット回線に使わない**（2026-09-02 にロス 18%・最大 970ms。内蔵は同条件でロス 0%・2.2ms。チャネル混雑は律速ではなかった） |
 
-  - **UnitV2 と昇降機 ESP32 は 2.4GHz 専用**なので内蔵無線は 2.4GHz のまま。PC を 5GHz に分けたのは、AP が 1 つだと UnitV2 の映像が同じチャネルを 2 回通って帯域が半分になるため。PC↔ラズパイは約 28 → 上り 95／下り 59 Mbps（2026-10-21）。
+  - **UnitV2 と昇降機 ESP32 は 2.4GHz 専用**なので内蔵無線は 2.4GHz のまま。PC を 5GHz に分けたのは、AP が 1 つだと UnitV2 の映像が同じチャネルを 2 回通って帯域が半分になるため。PC↔ラズパイは約 28 → 上り 95／下り 59 Mbps、2.4GHz 側（hostapd）は上り 35／下り 44 Mbps（2026-10-21・机上）。
   - **ラズパイの規制ドメインが `00` だと 5GHz の AP が起動しない**（`/etc/modprobe.d/cfg80211.conf` で JP）。**hostapd の内蔵側に `ieee80211w=0` を書くと brcmfmac が接続を status 38 で拒否する。**8821au は `rtw_power_mgnt=0` にしないと RTT が平均 70〜100ms になる。**ラズパイのカーネルを変えたら 8821au をビルドし直す**（`~/src/rtl8821au-5.12.5.2`）。
   - **USB 無線ドングルはラズパイの電源を切ってから抜き差しする**（動作中に挿したら USB が固まりラズパイごと応答しなくなった）。
   - ラズパイの時刻源は PC の chrony（`NTP=192.168.5.50`）。PC が AP に繋がるまで `time-sync.target` 待ちで `rplidar.service` が起動しない。

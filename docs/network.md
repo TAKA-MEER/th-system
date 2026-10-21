@@ -56,6 +56,7 @@ RPLIDAR S1 → ラズパイの `rplidar_ros` → `/scan` (`ROS_DOMAIN_ID=10`)。
   | 区間 | 上り | 下り | 備考 |
   | --- | --- | --- | --- |
   | 旧: PC↔内蔵 2.4GHz | 約 28 Mbps | 約 28 Mbps | RTT 1.5ms |
+  | 新: PC↔内蔵 2.4GHz（hostapd） | 約 35 Mbps | 約 44 Mbps | RTT 平均 3.6ms。UnitV2 の映像の上限はここ（UnitV2 自身の無線はこれより遅いかもしれない） |
   | 新: PC↔Elecom 5GHz（40MHz） | **約 95 Mbps** | **約 59 Mbps** | リンク 135Mbit/s |
   | 新: 同上・PC のインターネットに負荷 | 約 77 Mbps | 約 34 Mbps | インターネット側が 5GHz ch36 のとき |
 
