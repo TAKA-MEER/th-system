@@ -186,3 +186,148 @@ def path_ahead_clear(path_xy, robot_xy, grid,
         if travelled >= ahead_m - 1e-9:
             break
     return True
+
+
+# ── 引いた経路を機体の形で検査する（Spec-onsite §6.1.1。2026-10-22）─────────
+# Nav2 の経路計画は機体を点（内接円 0.275 m 相当）として扱うので、0.55 m 角の機体が
+# 通れない狭い隙間にも経路を引く。走り出す前に、経路の各点に機体の四角形をその点の
+# 進行方向に置いて、経路計画の地図（/global_costmap/costmap）の通れない区画に当たらないか
+# 確かめる。詳細は DetailedDesign-onsite.md「経路の機体形状検査」。
+
+# 機体の半幅 [m]。nav2_params.yaml の global_costmap の footprint（±0.275）と同じ値。
+FOOTPRINT_HALF_M = 0.275
+
+# 当たりとみなす値の下限（OccupancyGrid の値）。致死(100)だけを当たりにする。
+# 内接(99)は「中心が壁から内接円（0.275 m）以内」の印で、四角形そのものを置いて見る
+# この検査で 99 まで含めると内接円ぶん二重に太る。未知(-1)は当たりにしない
+# （経路計画が未知を許す設定と揃える。会場地図の外周の未知で通れる通路を拒否しない）。
+FOOTPRINT_BLOCKED_MIN = 100
+
+# 経路に沿って機体を置く間隔 [m]。機体の幅(0.55)より十分小さく、置いた四角形どうしが
+# 大きく重なるので、細い障害物のすり抜けは無い。0.05 刻みの全点より約 3 倍速い。
+FOOTPRINT_STRIDE_M = 0.15
+
+# 進行方向を決めるとき、前後それぞれこの距離の点を結ぶ [m]（経路の 8 近傍のギザギザで
+# 向きが揺れて、斜めの通路を誤って拒否しないように均す）。
+FOOTPRINT_HEADING_WINDOW_M = 0.10
+
+# 出発点と行き先は機体がその場で回るので、向きを変えて当たらない向きが 1 つでもあれば
+# 通す。その場回転で試す向きの数（360 度を等分）。
+FOOTPRINT_SPIN_HEADINGS = 16
+
+
+def footprint_collision_at(grid, x: float, y: float, yaw: float,
+                           half: float = FOOTPRINT_HALF_M):
+    """map 座標 (x, y)・向き yaw に一辺 2*half の正方形を置いたときの当たり（純関数）。
+
+    戻り値: 当たらなければ None、当たれば最初に見つけた通れないセルの
+    (セル中心 x, セル中心 y, 値)。セルは解像度ぶんの正方形として扱い、機体の正方形と
+    重なれば（辺が触れるだけは除く）当たり。セル中心だけで見ると壁の厚みの半セルぶん
+    （0.025 m）甘くなり、壁面の間隔が機体幅 0.55 m に足りない隙間を通してしまう。
+    中心 (x, y) が地図の外なら確認できないので当たり（値 -1）。地図の外にはみ出す
+    部分は見ない。grid: width/height/resolution/origin_x/origin_y/data を持つもの。
+    """
+    res = float(grid.resolution)
+    ox, oy = float(grid.origin_x), float(grid.origin_y)
+    w, h = int(grid.width), int(grid.height)
+    cx = int(math.floor((x - ox) / res))
+    cy = int(math.floor((y - oy) / res))
+    if cx < 0 or cy < 0 or cx >= w or cy >= h:
+        return (x, y, -1)
+    c, s = math.cos(yaw), math.sin(yaw)
+    ext = half * (abs(c) + abs(s))
+    ix0 = max(0, int(math.floor((x - ext - ox) / res)))
+    ix1 = min(w - 1, int(math.floor((x + ext - ox) / res)))
+    iy0 = max(0, int(math.floor((y - ext - oy) / res)))
+    iy1 = min(h - 1, int(math.floor((y + ext - oy) / res)))
+    data = grid.data
+    lim = half + 0.5 * res * (abs(c) + abs(s)) - 1e-9   # 機体の辺 ± セルの射影の半分
+    for iy in range(iy0, iy1 + 1):
+        row = iy * w
+        dy = oy + (iy + 0.5) * res - y
+        for ix in range(ix0, ix1 + 1):
+            v = int(data[row + ix])
+            if v < FOOTPRINT_BLOCKED_MIN:
+                continue
+            dx = ox + (ix + 0.5) * res - x
+            if abs(dx * c + dy * s) <= lim and abs(-dx * s + dy * c) <= lim:
+                return (ox + (ix + 0.5) * res, oy + (iy + 0.5) * res, v)
+    return None
+
+
+def _spin_clear(grid, x: float, y: float, half: float) -> bool:
+    """その場で向きを変えて、当たらない向きが 1 つでもあるか。"""
+    for k in range(FOOTPRINT_SPIN_HEADINGS):
+        yaw = -math.pi + 2.0 * math.pi * k / FOOTPRINT_SPIN_HEADINGS
+        if footprint_collision_at(grid, x, y, yaw, half) is None:
+            return True
+    return False
+
+
+def _arclength_sampler(pts, stride: float):
+    """経路の弧長 s から位置を返す関数と、stride 刻みの弧長列（終点を含む）、総長。"""
+    cum = [0.0]
+    for i in range(1, len(pts)):
+        cum.append(cum[-1] + math.hypot(pts[i][0] - pts[i - 1][0],
+                                         pts[i][1] - pts[i - 1][1]))
+    total = cum[-1]
+
+    def at(s: float):
+        s = max(0.0, min(total, s))
+        lo, hi = 0, len(pts) - 1
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if cum[mid] <= s:
+                lo = mid
+            else:
+                hi = mid
+        seg = cum[hi] - cum[lo]
+        t = 0.0 if seg <= 0.0 else (s - cum[lo]) / seg
+        return (pts[lo][0] + (pts[hi][0] - pts[lo][0]) * t,
+                pts[lo][1] + (pts[hi][1] - pts[lo][1]) * t)
+
+    s_list = [k * stride for k in range(int(total // stride) + 1)]
+    if total - s_list[-1] > 1e-6:
+        s_list.append(total)
+    return s_list, total, at
+
+
+def path_footprint_collision(path_xy, grid, goal_yaw=None,
+                             half: float = FOOTPRINT_HALF_M,
+                             stride: float = FOOTPRINT_STRIDE_M):
+    """計画した経路を機体の形で検査する（純関数）。
+
+    path_xy: 経路の (x, y) の列（map 系）。goal_yaw: 行き先の最終向き [rad]（無ければ見ない）。
+    戻り値: 全点で当たらなければ None。当たれば最初の当たりの dict
+      {'index': 間引いた点の番号, 'x', 'y', 'yaw': 置いた向き, 'cell': (x, y, 値)}。
+    ・各点の向きは前後 FOOTPRINT_HEADING_WINDOW_M の点を結ぶ向き（進行方向）。
+    ・最初の点（出発点）と最後の点（行き先）は機体がその場で回るので、進行方向で
+      当たっても、向きを変えて当たらない向きが 1 つでもあれば通す。
+    ・最後の点は、行き先の最終向き goal_yaw でも当たらないこと（これは必ず見る）。
+    ・grid が None／経路が空なら確認できないので None（呼び側が扱いを決める）。
+    """
+    if grid is None or not path_xy:
+        return None
+    pts = [(float(p[0]), float(p[1])) for p in path_xy]
+    s_list, total, at = _arclength_sampler(pts, max(stride, 1e-3))
+    last = len(s_list) - 1
+    win = FOOTPRINT_HEADING_WINDOW_M
+    for i, s in enumerate(s_list):
+        x, y = at(s)
+        if total > 1e-6:
+            ax, ay = at(s - win)
+            bx, by = at(s + win)
+            yaw = math.atan2(by - ay, bx - ax)
+        else:
+            yaw = 0.0 if goal_yaw is None else float(goal_yaw)
+        hit = footprint_collision_at(grid, x, y, yaw, half)
+        if hit is not None and i in (0, last) and _spin_clear(grid, x, y, half):
+            hit = None
+        if hit is not None:
+            return {'index': i, 'x': x, 'y': y, 'yaw': yaw, 'cell': hit}
+        if i == last and goal_yaw is not None:
+            hit = footprint_collision_at(grid, x, y, float(goal_yaw), half)
+            if hit is not None:
+                return {'index': i, 'x': x, 'y': y, 'yaw': float(goal_yaw),
+                        'cell': hit}
+    return None

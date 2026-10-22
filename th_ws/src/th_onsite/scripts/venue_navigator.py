@@ -24,6 +24,7 @@
 # 純コア (venue_nav_core) に旋回誤差・旋回指令・到着判定を寄せる。
 import json
 import math
+import time
 from collections import deque
 
 import rclpy
@@ -47,7 +48,7 @@ from th_system_msgs.srv import GoToPanel
 
 from th_onsite.venue_nav_core import (
     COSTMAP_STALE_S, PATH_AHEAD_CHECK_M, VenueNavParams, align_cmd_wz, arrived,
-    find_home_goal, path_ahead_clear, select_pin_allowed,
+    find_home_goal, path_ahead_clear, path_footprint_collision, select_pin_allowed,
     select_pin_reject_message, success_is_plausible,
     should_unblock_for_arrival,
 )
@@ -154,6 +155,10 @@ class VenueNavigator(Node):
         # factor 倍して max で頭打ち（2→4→8→10 秒）。registry の値。
         self.declare_parameter('collision_retry_factor', 2.0)
         self.declare_parameter('collision_retry_max_s', 10.0)
+        # Spec-onsite §6.1.1(2026-10-22): 引いた経路を機体の形（0.55 m 角）で検査する。
+        # 既定 True。False は試験専用（経路の検査と無関係な既存の launch_testing が、
+        # 障害物を経路の上に置いたまま走り出しを見るため）。実機では触らない。
+        self.declare_parameter('path_footprint_check', True)
 
         self._params = VenueNavParams(
             align_tolerance_rad=float(self.get_parameter('align_tolerance_rad').value),
@@ -171,6 +176,8 @@ class VenueNavigator(Node):
             self.get_parameter('nav_stall_move_tol_m').value)
         self._tf_stall_progress_window_s = float(
             self.get_parameter('nav_stall_progress_window_s').value)
+        self._footprint_check = bool(
+            self.get_parameter('path_footprint_check').value)
         self._collision_retry_factor = max(
             1.0, float(self.get_parameter('collision_retry_factor').value))
         self._collision_retry_max_s = float(
@@ -907,6 +914,10 @@ class VenueNavigator(Node):
         # 残す。走り出すのは再開時の残り再送（_resume_or_start / resume effect）。
         if self._state == 'PAUSE':
             self._unblocking = False
+            # 機体の形で通れない経路は残さない（再開で計画し直し、そこで検査して
+            # BLOCKED にする。PAUSE のまま evt.blocked は出さない）。
+            if self._footprint_hit(path) is not None:
+                self._path = None
             return
         # 2026-10-22: 到着済み（ALIGN）に届いた計算結果も捨てる。非常停止・手押しから
         # ALIGN の PAUSE に戻して「走行」で再開すると、キャッシュ経路が無く計画し直す
@@ -926,6 +937,23 @@ class VenueNavigator(Node):
             self._path = None
             self._unblocking = False
             self._recheck_in_flight = False
+            return
+        # Spec-onsite §6.1.1(2026-10-22): 引いた経路を機体の形で検査し、通れない区画に
+        # 当たるなら走らず BLOCKED（W-5 で再検索・中断を選べる）。経路を引き直した
+        # すべて（開始・再検索 ui.reroute・塞がれた後の再探索）がここを通る。
+        hit = self._footprint_hit(path)
+        if hit is not None:
+            cx, cy, val = hit['cell']
+            self.get_logger().warn(
+                f'経路の機体形状検査: 点 {hit["index"]} ({hit["x"]:.2f}, {hit["y"]:.2f}) '
+                f'向き {math.degrees(hit["yaw"]):.0f} 度に 0.55 m 角を置くと通れない区画'
+                f'（({cx:.2f}, {cy:.2f}) 値 {val}）に当たる → 走らず BLOCKED')
+            self._path = None
+            self._unblocking = False
+            self._go_blocked(json.dumps({
+                'reason': 'footprint_collision',
+                'x': round(hit['x'], 3), 'y': round(hit['y'], 3),
+                'value': int(val)}))
             return
         # blocked 中の再探索成功 → まず unblocked を出してから再開する
         # （経路未確定＝初回計画失敗時の再試行の経路。SG-A15 の残り再送は
@@ -1329,6 +1357,33 @@ class VenueNavigator(Node):
             self.get_logger().info(
                 f'blocked: 経路の先 {PATH_AHEAD_CHECK_M} m に障害物 → 送らずに待つ')
         return 'clear' if clear else 'blocked'
+
+    def _footprint_hit(self, path):
+        """計画した経路を機体の形（0.55 m 角）で検査する。当たれば最初の当たりの dict、
+        当たらない・確認できないなら None。確認できない（障害物マップが未受信・座標系違い）
+        ときは止めない: マップが無ければ Nav2 の経路計画も動いておらず、走り出しても
+        障害物リミッタが前進を止める。警告は 1 回だけ。"""
+        if not self._footprint_check:
+            return None
+        cm = self._costmap
+        if cm is None:
+            self._warn_once('経路の機体形状検査: 障害物マップ未受信 → 検査せず通す')
+            return None
+        if cm.header.frame_id != self._map_frame:
+            self._warn_once(
+                f'経路の機体形状検査: 障害物マップの座標系が {cm.header.frame_id!r}'
+                f'（{self._map_frame!r} でない） → 検査せず通す')
+            return None
+        goal = self._compute_goal
+        goal_yaw = float(goal['yaw']) if goal is not None else None
+        t0 = time.monotonic()
+        hit = path_footprint_collision(
+            [(p.pose.position.x, p.pose.position.y) for p in path.poses],
+            _GridView(cm), goal_yaw)
+        dt = time.monotonic() - t0
+        if dt > 0.1:
+            self.get_logger().warn(f'経路の機体形状検査に {dt * 1000:.0f} ms かかった')
+        return hit
 
     def _path_ahead_is_clear(self) -> bool:
         """BLOCKED 中の再送前・再開時の確認。確認できない（unknown）は空いていない。"""

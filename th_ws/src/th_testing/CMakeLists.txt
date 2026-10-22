@@ -882,6 +882,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_nav_resume_check_node
     test/test_venue_nav_resume_check_node.py
     TIMEOUT 400)
+  # 引いた経路を機体の形（0.55 m 角）で検査し、通れない隙間なら走らず BLOCKED（Spec-onsite §6.1.1。launch_testing）
+  ament_add_pytest_test(test_venue_nav_footprint_check_node
+    test/test_venue_nav_footprint_check_node.py
+    TIMEOUT 400)
   # 移動中・一時停止中は行き先を選べない（SM-3.1.2-118。select_pin を拒否し保留ゴールを変えない。launch_testing）
   ament_add_pytest_test(test_venue_nav_goto_while_nav_node
     test/test_venue_nav_goto_while_nav_node.py

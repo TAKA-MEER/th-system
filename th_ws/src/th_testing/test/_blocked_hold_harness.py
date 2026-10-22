@@ -156,7 +156,11 @@ def make_description(period_s: float, extra_params: dict | None = None):
     navigator = launch_ros.actions.Node(
         package='th_onsite', executable='venue_navigator.py',
         name='venue_navigator',
+        # 経路の機体形状検査（Spec-onsite §6.1.1）は既定で切る。既存の試験は障害物を
+        # 経路の上に置いたまま走り出しを見るため。検査を見る試験だけ
+        # `{'path_footprint_check': True}` を渡す（test_venue_nav_footprint_check_node.py）。
         parameters=[{'blocked_recheck_period_s': period_s,
+                     'path_footprint_check': False,
                      **(extra_params or {})}], output='screen')
     return launch.LaunchDescription([
         state_mgr, registrar, navigator,
@@ -247,6 +251,10 @@ class BlockedHoldBase(unittest.TestCase):
         # 「塞がれた経路は、先が空くまで再送しない」ので、再送を期待する試験には要る。
         # 既定は空き。`set_obstacle` で経路上に障害物帯を置く。
         self.costmap_obstacle = None   # (x0, x1, 値) 例 (1.0, 1.2, 100)
+        # 追加の矩形 (x0, x1, y0, y1, 値) の列（経路の機体形状検査の試験用）。
+        self.costmap_rects: list[tuple[float, float, float, float, int]] = []
+        # ComputePathToPose が返す経路の上書き（(x, y) の列）。None なら原点→ゴールの直線。
+        self.compute_path = None
         self.costmap_auto = True       # False なら 1 Hz の自動配信を止める
         self.clear_call_times: list[float] = []  # コストマップ消去が呼ばれた時刻
         self._pub_costmap = self.node.create_publisher(
@@ -344,6 +352,15 @@ class BlockedHoldBase(unittest.TestCase):
                     x = -5.0 + (ix + 0.5) * 0.05
                     if x0 <= x < x1:
                         data[iy * 200 + ix] = val
+        for (x0, x1, y0, y1, val) in list(self.costmap_rects):
+            for iy in range(200):
+                y = -5.0 + (iy + 0.5) * 0.05
+                if not (y0 <= y <= y1):
+                    continue
+                for ix in range(200):
+                    x = -5.0 + (ix + 0.5) * 0.05
+                    if x0 <= x < x1:
+                        data[iy * 200 + ix] = val
         m.data = data
         self._pub_costmap.publish(m)
 
@@ -376,11 +393,12 @@ class BlockedHoldBase(unittest.TestCase):
         path = Path()
         path.header.frame_id = 'map'
         path.header.stamp = self.node.get_clock().now().to_msg()
-        for i in range(5):
+        pts = self.compute_path or [(gx * i / 4.0, gy * i / 4.0) for i in range(5)]
+        for (px, py) in pts:
             p = PoseStamped()
             p.header.frame_id = 'map'
-            p.pose.position.x = gx * i / 4.0
-            p.pose.position.y = gy * i / 4.0
+            p.pose.position.x = float(px)
+            p.pose.position.y = float(py)
             path.poses.append(p)
         goal_handle.succeed()
         return ComputePathToPose.Result(path=path)
