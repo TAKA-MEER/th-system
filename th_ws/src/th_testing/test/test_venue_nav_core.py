@@ -231,3 +231,166 @@ class TestSelectPinAllowed:
     def test_message_distinguishes_pause(self):
         assert '一時停止' in select_pin_reject_message('PANEL_NAV', 'PAUSE')
         assert '移動中' in select_pin_reject_message('PANEL_NAV', 'NAV')
+
+
+# ── 引いた経路を機体の形で検査する（Spec-onsite §6.1.1。2026-10-22）──────────
+import time  # noqa: E402
+
+from th_onsite.venue_nav_core import (  # noqa: E402
+    FOOTPRINT_BLOCKED_MIN, FOOTPRINT_HALF_M, footprint_collision_at,
+    path_footprint_collision,
+)
+
+
+class _FGrid(_Grid):
+    """述語で区画を塗れる障害物マップ（既定は 0.05 m・200x200・原点 (-5, -5)）。"""
+
+    def fill(self, pred, val):
+        for iy in range(self.height):
+            y = self.origin_y + (iy + 0.5) * self.resolution
+            for ix in range(self.width):
+                x = self.origin_x + (ix + 0.5) * self.resolution
+                if pred(x, y):
+                    self.data[iy * self.width + ix] = val
+
+
+def _corridor(gap, val=100, x0=1.0, x1=2.0):
+    """x0..x1 の間だけ、y=0 を中心に壁面の間隔が gap の通路。"""
+    g = _FGrid()
+    half = gap / 2.0
+    g.fill(lambda x, y: x0 <= x < x1 and abs(y) > half, val)
+    return g
+
+
+def _straight(x0=-2.0, x1=4.0, step=0.05):
+    n = int(round((x1 - x0) / step))
+    return [(x0 + k * step, 0.0) for k in range(n + 1)]
+
+
+class TestPathFootprintCollision:
+    def test_wide_corridor_passes(self):
+        assert path_footprint_collision(_straight(), _corridor(1.3)) is None
+
+    def test_one_metre_corridor_passes(self):
+        # 実機で自動走行に成功した幅（Spec-onsite §6.1.1）
+        assert path_footprint_collision(_straight(), _corridor(1.0)) is None
+
+    def test_exact_fit_passes(self):
+        # 壁面の間隔 0.60 m（セル境界）は機体 0.55 m が入る
+        assert path_footprint_collision(_straight(), _corridor(0.60)) is None
+
+    def test_narrow_gap_rejected(self):
+        # 壁面の間隔 0.50 m は機体が入らない
+        hit = path_footprint_collision(_straight(), _corridor(0.50))
+        assert hit is not None
+        assert 0.7 <= hit['x'] <= 2.3
+        assert hit['cell'][2] == 100
+
+    def test_cell_extent_is_counted(self):
+        # 壁のセル中心の間隔は 0.55 m（機体幅と同じ）だが、壁面の間隔は 0.50 m。
+        # セル中心だけで見ると通してしまう。セルの正方形で見ること。
+        g = _FGrid()
+        g.fill(lambda x, y: 1.0 <= x < 2.0 and abs(y) > 0.24, 100)
+        assert path_footprint_collision(_straight(), g) is not None
+
+    def test_inscribed_value_is_not_a_hit(self):
+        # 内接(99)は壁そのものではない。致死(100)だけを当たりにする
+        assert FOOTPRINT_BLOCKED_MIN == 100
+        assert path_footprint_collision(_straight(), _corridor(0.50, val=99)) is None
+
+    def test_unknown_is_not_a_hit(self):
+        assert path_footprint_collision(_straight(), _corridor(0.50, val=-1)) is None
+
+    def test_free_map_passes(self):
+        assert path_footprint_collision(_straight(), _FGrid()) is None
+
+    def test_diagonal_corridor(self):
+        path = [(-2.0 + 0.05 * k, -2.0 + 0.05 * k) for k in range(81)]
+
+        def corridor(width):
+            g = _FGrid()
+            g.fill(lambda x, y: abs(y - x) / math.sqrt(2.0) > width / 2.0
+                   and -1.0 < x < 1.0, 100)
+            return g
+
+        assert path_footprint_collision(path, corridor(1.3)) is None
+        assert path_footprint_collision(path, corridor(0.5)) is not None
+
+    def test_zigzag_path_heading_is_smoothed(self):
+        # 8 近傍の階段状の経路（0.05 m 刻み）でも、向きが揺れて広い通路を拒否しない
+        path = []
+        x = y = -2.0
+        for k in range(80):
+            x += 0.05
+            path.append((x, y))
+            y += 0.05
+            path.append((x, y))
+        g = _FGrid()
+        g.fill(lambda px, py: abs(py - px) / math.sqrt(2.0) > 0.9, 100)
+        assert path_footprint_collision(path, g) is None
+
+    def test_goal_yaw_hits_wall(self):
+        # 終点(2,0)。進行方向(0)では壁面 x=2.35 に届かないが、45 度の向きは角が当たる
+        g = _FGrid()
+        g.fill(lambda x, y: x >= 2.35 and abs(y) < 1.0, 100)
+        path = _straight(-1.0, 2.0)
+        assert path_footprint_collision(path, g, goal_yaw=0.0) is None
+        hit = path_footprint_collision(path, g, goal_yaw=math.pi / 4)
+        assert hit is not None
+        assert abs(hit['x'] - 2.0) < 1e-6
+        approx(hit['yaw'], math.pi / 4)
+
+    def test_start_may_spin_to_a_clear_heading(self):
+        # 出発点は右の壁(x=0.35)に 135 度の向きで角が当たるが、その場で回れば当たらない。
+        # 進行方向(左上)へ動けば壁から離れる。
+        g = _FGrid()
+        g.fill(lambda x, y: x >= 0.35 and abs(y) < 1.0, 100)
+        path = [(-0.05 * k, 0.05 * k) for k in range(41)]
+        assert footprint_collision_at(g, 0.0, 0.0, 3 * math.pi / 4) is not None
+        assert path_footprint_collision(path, g) is None
+
+    def test_start_boxed_in_is_rejected(self):
+        # どの向きでも当たる袋小路の出発点
+        g = _FGrid()
+        g.fill(lambda x, y: abs(x) > 0.3 or abs(y) > 0.3, 100)
+        path = [(0.05 * k, 0.0) for k in range(21)]
+        assert path_footprint_collision(path, g) is not None
+
+    def test_path_off_map_is_rejected(self):
+        hit = path_footprint_collision([(0.0, 0.0), (9.0, 0.0)], _FGrid())
+        assert hit is not None and hit['cell'][2] == -1
+
+    def test_none_grid_or_empty_path_is_none(self):
+        assert path_footprint_collision(_straight(), None) is None
+        assert path_footprint_collision([], _FGrid()) is None
+
+    def test_single_point_path(self):
+        g = _FGrid()
+        assert path_footprint_collision([(0.0, 0.0)], g, goal_yaw=0.3) is None
+        g.fill(lambda x, y: abs(x) < 0.1 and abs(y) < 0.1, 100)
+        assert path_footprint_collision([(0.0, 0.0)], g, goal_yaw=0.3) is not None
+
+    def test_collision_at_reports_the_cell(self):
+        g = _FGrid()
+        g.fill(lambda x, y: abs(x - 0.2) < 0.03 and abs(y) < 0.03, 100)
+        cx, cy, v = footprint_collision_at(g, 0.0, 0.0, 0.0)
+        assert v == 100 and abs(cx - 0.2) < 0.06
+        assert footprint_collision_at(g, 0.0, 0.0, 0.0, half=0.15) is None
+
+    def test_footprint_half_matches_nav2_params(self):
+        # nav2_params.yaml の global_costmap footprint（±0.275）と同じこと
+        here = os.path.dirname(__file__)
+        path = os.path.join(here, '..', '..', 'th_bringup', 'config',
+                            'nav2_params.yaml')
+        text = open(path, encoding='utf-8').read()
+        assert '[[0.275, 0.275], [-0.275, 0.275]' in text
+        assert FOOTPRINT_HALF_M == 0.275
+
+    def test_long_path_is_fast(self):
+        g = _corridor(1.3, x0=-4.0, x1=4.0)
+        path = _straight(-4.5, 4.5)
+        t0 = time.perf_counter()
+        for _ in range(5):
+            assert path_footprint_collision(path, g) is None
+        per_call = (time.perf_counter() - t0) / 5
+        assert per_call < 0.25, f'{per_call * 1000:.0f} ms'
