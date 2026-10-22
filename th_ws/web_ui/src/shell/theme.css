@@ -803,8 +803,10 @@ table.lst td.r{text-align:right}
    どちらも操作は減らさず、縦だけを詰める。狭いときは折り返して重ならないようにする。 */
 .screen#s21 .s21-prep-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .screen#s21 .s21-prep-row .grow{flex:1 1 auto;min-width:0}
-.screen#s21 .s21-state-row{display:flex;align-items:center;gap:8px;margin-top:9px}
+.screen#s21 .s21-state-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px}
 .screen#s21 .s21-state-row .state{margin-top:0;min-width:0}
+.screen#s21 .s21-state-row .s21-map-update-note{flex:1 1 100%;margin:0}
+.screen#s21 .s21-state-row button.pill{font-family:inherit;line-height:inherit;color:inherit;margin:0;cursor:pointer}
 
 /* 横長の S-21: 右列の縦を詰めて「行き先」タブを（ピン未登録の既定状態で）スクロール
    無しに収める（2026-10-10。空のとき 65px 溢れていた）。

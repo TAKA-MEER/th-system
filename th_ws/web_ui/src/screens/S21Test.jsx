@@ -197,6 +197,7 @@ export default function S21Test({ onExit }) {
 
   // 左列タブ（地図 / 対象選択）と右列サブタブ（行き先 / 呼び寄せ / 配電盤前）。
   const [tab, setTab] = useState('map')
+  const [mapNoteOpen, setMapNoteOpen] = useState(false)
   const [subtab, setSubtab] = useState('dest')
   const [selectedPinId, setSelectedPinId] = useState(null)
   // 「次の配電盤」でピン一覧を促す。ピン行の「移動」で解除する。
@@ -572,9 +573,23 @@ export default function S21Test({ onExit }) {
             W-10 により構造的に常時 OFF なので、行を占める操作としては出さない。 */}
         <div className="row s21-state-row">
           <span className="state grow" data-testid="s21-state">{stateText}</span>
-          <span className="pill" data-testid="s21-map-update-pill" title={S21_MAP_UPDATE_NOTE}>
+          {/* タブレットにはホバーが無く title だけでは理由が出ないので、押すと理由の注記を
+              開閉する（2026-10-22 実機 R-63）。画面の縦に余裕が無いので常時は出さない。 */}
+          <button
+            type="button"
+            className="pill"
+            data-testid="s21-map-update-pill"
+            title={S21_MAP_UPDATE_NOTE}
+            aria-expanded={mapNoteOpen}
+            onClick={() => setMapNoteOpen((v) => !v)}
+          >
             {S21_MAP_UPDATE} {S21_MAP_UPDATE_OFF}
-          </span>
+          </button>
+          {mapNoteOpen && (
+            <div className="note s21-map-update-note" data-testid="s21-map-update-note">
+              {S21_MAP_UPDATE_NOTE}
+            </div>
+          )}
         </div>
 
         {/* WS-9AB: BLOCKED（経路が見つからず止まっている）の帯。再検索と、
