@@ -358,6 +358,52 @@ for (const [mode, state, text] of [
   })
 }
 
+// SM-3.1.2-119（2026-10-23 実機）: 会場地図を持たない間は行き先と「走行」を押せない。
+// 理由は行き先タブの見出しに 1 回だけ（各ボタンの下には出さない）。
+const unloaded = (page) => page.evaluate(() => window.__thSetTestMapSession(
+  { slot: 'VENUE', session_id: 'venue', mode: 'UNLOADED', dirty: false, instance_id: 'x' }))
+const loaded = (page) => page.evaluate(() => window.__thSetTestMapSession(
+  { slot: 'VENUE', session_id: 'venue', mode: 'LOCALIZING', dirty: false, instance_id: 'x' }))
+for (const [mode, state] of [
+  ['AT_HOME', 'IDLE_H'], ['AT_PANEL', 'IDLE_P'], ['PANEL_NAV', 'PAUSE'], ['HOME_NAV', 'PAUSE'], ['SUMMON', 'PAUSE'],
+]) {
+  test(`会場地図なし: ${mode}/${state} は行き先を押せず、理由は見出しに 1 回だけ`, async ({ page }) => {
+    await goto21(page, { mode, state }, { selectPin: { success: true, message: '' } })
+    await unloaded(page)
+    await page.locator('[data-testid="s21-subtab-dest"]').click()
+    await expect(page.locator('[data-testid="s21-pin-move-p1"]')).toBeDisabled()
+    await expect(page.locator('[data-testid="s21-pin-move-reason"]')).toContainText('会場地図がありません')
+    await expect(page.locator('[data-testid="s21-dest-home"]')).toBeDisabled()
+    await expect(page.locator('[data-testid="s21-dest-next-panel"]')).toBeDisabled()
+    await expect(page.locator('[data-testid="s21-dest-summon-here"]')).toBeDisabled()
+    await expect(page.getByText('会場地図がありません')).toHaveCount(1)
+    expect((await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/select_pin')).toHaveLength(0)
+    // 読み込み済みに戻れば（移動系以外は）押せる
+    await loaded(page)
+    await expect(page.locator('[data-testid="s21-pin-move-reason"]')).toHaveCount(
+      ['PANEL_NAV', 'HOME_NAV', 'SUMMON'].includes(mode) ? 1 : 0)
+  })
+}
+
+for (const mode of ['PANEL_NAV', 'HOME_NAV', 'SUMMON']) {
+  test(`会場地図なし: ${mode}/PAUSE の「走行」は押せない（読み込み済みなら押せて ui.run）`, async ({ page }) => {
+    await goto21(page, { mode, state: 'PAUSE' })
+    await page.locator('[data-testid="s21-subtab-dest"]').click()
+    const run = page.locator('#s21 .op-run')
+    await expect(run).toBeEnabled()
+    await unloaded(page)
+    await expect(run).toBeDisabled()
+    // 行き先タブを見ている間は理由を二重に出さない
+    await expect(page.getByText('会場地図がありません')).toHaveCount(1)
+    await page.locator('[data-testid="s21-subtab-summon"]').click()
+    await expect(page.locator('[data-testid="reason-run"]')).toContainText('会場地図がありません')
+    await loaded(page)
+    await expect(run).toBeEnabled()
+    await run.click()
+    expect((await triggers(page)).filter((c) => c.trigger === 'ui.run')).toHaveLength(1)
+  })
+}
+
 test('次の行き先: 待機場所→ui.goto{HOME}、その場で呼ぶ→ui.goto{SUMMON}、次の配電盤→ピン一覧を促す', async ({ page }) => {
   await goto21(page)
 

@@ -25,6 +25,8 @@ export default function OperationCard({
   runLabel,
   disabled = false,
   manualDenyReason = null,
+  runDisabled = false,
+  runDenyReason = null,
   onTrigger,
   onManualClick,
 }) {
@@ -73,17 +75,28 @@ export default function OperationCard({
             {OP_LABELS.check}
           </button>
         )}
-        {slots.run && (
-          <button
-            type="button"
-            className={`btn op-run ${OP_BUTTON_KINDS.advance} ${tone('run')}`}
-            disabled={disabled}
-            onClick={() => fire('ui.run')}
-          >
-            <IconArrow />
-            <span>{runLabel ?? OP_LABELS.run}</span>
-          </button>
-        )}
+        {slots.run && (() => {
+          // SM-3.1.2-119: 会場地図が無い間は「走行」を押せない（runDisabled）。
+          // 理由は呼び出し側が別の場所に出していなければ runDenyReason で直下に出す。
+          const btn = (
+            <button
+              type="button"
+              className={`btn op-run ${OP_BUTTON_KINDS.advance} ${tone('run')}`}
+              disabled={disabled || runDisabled}
+              onClick={() => fire('ui.run')}
+            >
+              <IconArrow />
+              <span>{runLabel ?? OP_LABELS.run}</span>
+            </button>
+          )
+          if (!runDenyReason) return btn
+          return (
+            <div className="manual-cell">
+              {btn}
+              <span className="reason-badge" data-testid="reason-run">{runDenyReason}</span>
+            </div>
+          )
+        })()}
         {slots.save && (
           <button
             type="button"

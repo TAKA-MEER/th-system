@@ -44,6 +44,8 @@ export function jogAllowedForMode(mode, attributes) {
  *   PAUSE なら 'goto_paused'、それ以外は 'goto_moving' を返す
  *   （SM-3.1.2-118。transitions.yaml T-NAV-goto-reject と同じ集合）。
  *   行き先を選べるのは AT_HOME の IDLE_H / PAUSE、AT_PANEL の IDLE_P、IDLE だけ。
+ *   venueUnloaded（会場地図を持たない。SM-3.1.2-119）が真で mode が AT_HOME / AT_PANEL /
+ *   PANEL_NAV / SUMMON / HOME_NAV なら、上のどれより先に 4 つ全部へ 'venue_not_loaded'。
  * @param {{mode?: string|null, stateName?: string|null, attributes?: Object,
  *         pins?: Array, working?: boolean}} _
  * @returns {Object} ボタン id → 意味キー。無ければ空。
@@ -51,6 +53,16 @@ export function jogAllowedForMode(mode, attributes) {
 // 行き先を選べないモード（SM-3.1.2-118。PAUSE を含む全状態）。
 // 機体側の拒否は th_state の T-NAV-goto-reject と venue_navigator の select_pin 拒否。
 export const GOTO_BLOCKED_MODES = ['PANEL_NAV', 'SUMMON', 'HOME_NAV']
+
+// 会場地図を持たないと行き先と「走行」を塞ぐモード（SM-3.1.2-119。transitions.yaml
+// T-VUL-goto / T-VUL-run と同じ集合。AT_HOME・AT_PANEL は行き先、移動系は「走行」と行き先）。
+export const VENUE_GATED_MODES = ['AT_HOME', 'AT_PANEL', 'PANEL_NAV', 'SUMMON', 'HOME_NAV']
+
+// 「走行」（ui.run）を塞ぐか。会場地図が無く、PAUSE から再開する移動系モードのとき。
+export function runBlockedByVenue(mode, stateName, venueUnloaded) {
+  return venueUnloaded === true && GOTO_BLOCKED_MODES.includes(mode)
+    && (stateName === 'PAUSE' || stateName === 'BLOCKED')
+}
 
 // 「中断」（ui.abort → AT_HOME/IDLE_H）を出す状態（Spec-webui §3.11 S-21）。
 // 経路が塞がれた BLOCKED と、一時停止中の PAUSE。走行中（NAV・ALIGN）は出さない
@@ -62,7 +74,7 @@ export function abortAvailable(mode, stateName) {
 }
 
 export function onsiteReasons({
-  mode, stateName, attributes, pins = [], working = false,
+  mode, stateName, attributes, pins = [], working = false, venueUnloaded = false,
 } = {}) {
   const reasons = {}
   if (!jogAllowedForMode(mode, attributes)) {
@@ -70,7 +82,14 @@ export function onsiteReasons({
   } else if (mode === 'SUMMON' && stateName === 'WAIT_CLEAR') {
     reasons.manual = 'wait_clear_active'
   }
-  if (GOTO_BLOCKED_MODES.includes(mode)) {
+  if (venueUnloaded === true && VENUE_GATED_MODES.includes(mode)) {
+    // SM-3.1.2-119: 会場地図が無い。移動中・作業中・ピンの有無より先に、この理由を出す
+    // （直す方法が「地図を開き直す」しか無いので）。
+    reasons.destHome = 'venue_not_loaded'
+    reasons.destNextPanel = 'venue_not_loaded'
+    reasons.destSummonHere = 'venue_not_loaded'
+    reasons.destMove = 'venue_not_loaded'
+  } else if (GOTO_BLOCKED_MODES.includes(mode)) {
     const key = stateName === 'PAUSE' ? 'goto_paused' : 'goto_moving'
     reasons.destHome = key
     reasons.destNextPanel = key

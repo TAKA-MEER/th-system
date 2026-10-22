@@ -71,3 +71,10 @@ test('移動中の行き先拒否 goto_while_nav が日本語に解決する', (
   assert.ok(REJECT_REASONS.goto_while_nav)
   assert.equal(reasonLabel('goto_while_nav'), REJECT_REASONS.goto_while_nav)
 })
+
+// SM-3.1.2-119: 会場地図が無いときの拒否（transitions.yaml T-VUL-*）の reject_reason_key。
+test('会場地図が無い拒否 venue_not_loaded が日本語に解決する', () => {
+  assert.ok(REJECT_REASONS.venue_not_loaded)
+  assert.equal(reasonLabel('venue_not_loaded'), REJECT_REASONS.venue_not_loaded)
+  assert.match(REJECT_REASONS.venue_not_loaded, /会場地図がありません/)
+})

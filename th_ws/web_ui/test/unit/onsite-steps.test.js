@@ -4,7 +4,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  GOTO_BLOCKED_MODES, NAV_MODES, abortAvailable, jogAllowedForMode, onsiteReasons, prepSteps, testSteps,
+  GOTO_BLOCKED_MODES, NAV_MODES, VENUE_GATED_MODES, abortAvailable, jogAllowedForMode, onsiteReasons,
+  prepSteps, runBlockedByVenue, testSteps,
 } from '../../src/screens/onsiteSteps.js'
 import { OP_BUTTON_KINDS } from '../../src/parts/opKinds.js'
 
@@ -391,4 +392,46 @@ test('abortAvailable: 「中断」は PANEL_NAV/HOME_NAV/SUMMON の BLOCKED と 
       assert.equal(abortAvailable(mode, st), false, `${mode}/${st}`)
     }
   }
+})
+
+// ── SM-3.1.2-119: 会場地図を持たない間は行き先と「走行」を塞ぐ ───────────────
+test('SM-3.1.2-119: VENUE_GATED_MODES は transitions.yaml T-VUL-* と同じ 5 モード', () => {
+  assert.deepEqual([...VENUE_GATED_MODES].sort(), ['AT_HOME', 'AT_PANEL', 'HOME_NAV', 'PANEL_NAV', 'SUMMON'])
+})
+
+test('SM-3.1.2-119: 会場地図が無ければ 5 モードで 4 つ全部 venue_not_loaded（移動中・作業中・ピン無しより優先）', () => {
+  const all = { destHome: 'venue_not_loaded', destNextPanel: 'venue_not_loaded', destSummonHere: 'venue_not_loaded', destMove: 'venue_not_loaded' }
+  for (const [mode, st] of [['AT_HOME', 'IDLE_H'], ['AT_HOME', 'PAUSE'], ['AT_PANEL', 'IDLE_P'], ['AT_PANEL', 'WORKING'],
+    ['PANEL_NAV', 'PAUSE'], ['PANEL_NAV', 'NAV'], ['HOME_NAV', 'PAUSE'], ['SUMMON', 'PAUSE']]) {
+    for (const pins of [PINS_BOTH, []]) {
+      const r = onsiteReasons({
+        mode, stateName: st, attributes: attributesLike, pins, working: st === 'WORKING', venueUnloaded: true,
+      })
+      assert.deepEqual({ ...r, manual: undefined }, { ...all, manual: undefined }, `${mode}/${st}`)
+    }
+  }
+})
+
+test('SM-3.1.2-119: 会場地図があれば（または未受信 false なら）従来どおり。対象外モードも巻き込まない', () => {
+  for (const [mode, st] of [['AT_HOME', 'IDLE_H'], ['AT_PANEL', 'IDLE_P']]) {
+    assert.deepEqual(onsiteReasons({ mode, stateName: st, attributes: attributesLike, pins: PINS_BOTH, venueUnloaded: false }), {}, mode)
+    assert.deepEqual(onsiteReasons({ mode, stateName: st, attributes: attributesLike, pins: PINS_BOTH }), {}, mode)
+  }
+  for (const mode of ['IDLE', 'PREP', 'MANUAL', 'REPLAY']) {
+    const r = onsiteReasons({ mode, stateName: 'X', attributes: attributesLike, pins: PINS_BOTH, venueUnloaded: true })
+    assert.equal(r.destMove, undefined, mode)
+    assert.equal(r.destHome, undefined, mode)
+  }
+})
+
+test('SM-3.1.2-119: 「走行」を塞ぐのは会場地図が無い移動系の PAUSE／BLOCKED だけ', () => {
+  for (const mode of ['PANEL_NAV', 'HOME_NAV', 'SUMMON']) {
+    assert.equal(runBlockedByVenue(mode, 'PAUSE', true), true, mode)
+    assert.equal(runBlockedByVenue(mode, 'BLOCKED', true), true, mode)
+    assert.equal(runBlockedByVenue(mode, 'PAUSE', false), false, mode)
+    assert.equal(runBlockedByVenue(mode, 'NAV', true), false, mode)
+  }
+  assert.equal(runBlockedByVenue('AT_HOME', 'PAUSE', true), false)
+  assert.equal(runBlockedByVenue('REPLAY', 'PAUSE', true), false)
+  assert.equal(runBlockedByVenue('PANEL_NAV', 'PAUSE', undefined), false)
 })
