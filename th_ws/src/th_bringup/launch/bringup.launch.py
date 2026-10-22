@@ -879,6 +879,27 @@ def generate_launch_description():
         executable='map_and_localization_slam_toolbox_node',
         name='slam_toolbox',
         parameters=[slam_yaml, {'use_sim_time': False}],
+        # Spec-onsite §4.0.2: slam_toolbox は localization にしても直近のスキャンを
+        # 一時的に足した地図を配信し続ける。購読者（Nav2・map_downsampler・
+        # pin_registrar・WebUI）は付け替えず、出力だけ /map_live へ逃がして
+        # 下の map_freezer が /map を配信する。
+        remappings=[('/map', '/map_live')],
+        output='screen',
+        respawn=True,
+        respawn_delay=2.0,
+        condition=IfCondition(PythonExpression(
+            ["'", map_yaml, "' == '' and ('", enable_route_slam,
+             "'.lower() in ('true', '1') or int('", stage, "') >= 3)"])),
+    ))
+
+    # ── 16a. map_freezer（/map_live → /map。地図更新 OFF の間は写しを出し続ける）──
+    # slam_toolbox と同じ条件で起動する（slam_toolbox が居なければ /map_live も無い。
+    # map_yaml 指定の map_server 経路は /map を直接出すので対象外）。
+    # 契機は slam_control の /map_session/freeze_anchor。判定は map_freezer_core.py。
+    nodes.append(Node(
+        package='th_config_manager',
+        executable='map_freezer.py',
+        name='map_freezer',
         output='screen',
         respawn=True,
         respawn_delay=2.0,

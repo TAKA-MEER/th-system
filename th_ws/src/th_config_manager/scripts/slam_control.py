@@ -129,6 +129,7 @@ from slam_toolbox.srv import (DeserializePoseGraph, SaveMap,
 from th_system_msgs.msg import MapSessionStatus, PinList, StateEffect, SystemState
 from th_system_msgs.srv import OpenMapSession
 
+from th_config_manager.map_freezer_core import make_anchor
 from th_config_manager.service_call import call_and_wait
 from th_config_manager.stop_only_guard import (
     STATE_STALE_SEC, stop_only_allows, teach_reset_allows, venue_open_allows)
@@ -310,6 +311,19 @@ class SlamControl(Node):
         # 起動時に一度 false を publish する（変化のたびに即 publish し、
         # 周期任せにしない。TRANSIENT_LOCAL なので後から来た購読者にも届く）。
         self._pub_restarting.publish(Bool(data=False))
+        # Spec-onsite §4.0.2: 地図更新 OFF の間 /map を凍結する map_freezer へ、
+        # 「どの地図を写しに取るか」の契機（opening/opened/saving/saved/…）を知らせる。
+        # 履歴を取りこぼさないよう depth 20。boot は slam_control の起動ごとの乱数で、
+        # 再起動後に seq が 1 へ戻っても受け側が古い番号と取り違えない。
+        anchor_qos = QoSProfile(
+            depth=20,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
+        self._anchor_boot = uuid.uuid4().hex[:8]
+        self._anchor_seq = 0
+        self._pub_anchor = self.create_publisher(
+            String, '/map_session/freeze_anchor', anchor_qos)
+        self._publish_anchor('unloaded')   # 起動直後は何も開いていない
 
         self.create_service(
             Trigger, '/slam_control/toggle_mapping', self._cb_toggle,
@@ -461,6 +475,7 @@ class SlamControl(Node):
         self._instance_id = self._new_instance_id()
         self._venue_dirty = False   # 1b-6 SG-B6: まっさらな地図。未保存の中身は無い
         self._venue_loaded = False   # 再起動でグラフは空。読み直し直すまで未読込
+        self._publish_anchor('unloaded')
         self._publish_venue_status()
         if not self._lock.acquire(blocking=False):
             self._slam_ready = was_ready   # 次周期でやり直す
@@ -546,6 +561,7 @@ class SlamControl(Node):
             if err is None and self._mapping_active:
                 self._venue_dirty = True   # 1b-6 SG-B6: 画面から地図作成を始めた＝未保存
                 self._venue_loaded = False   # 作成中は読み込んだ地図ではない
+                self._publish_anchor('unloaded')
         return self._finish(response, err,
                             f'地図作成を{"開始" if self._mapping_active else "停止"}しました')
 
@@ -558,6 +574,7 @@ class SlamControl(Node):
             if err is None and self._mapping_active:
                 self._venue_dirty = True   # 1b-6 SG-B6: 画面から地図作成を始めた＝未保存
                 self._venue_loaded = False   # 作成中は読み込んだ地図ではない
+                self._publish_anchor('unloaded')
         return self._finish(response, err,
                             f'地図作成を{"開始" if self._mapping_active else "停止"}しました')
 
@@ -649,6 +666,12 @@ class SlamControl(Node):
                 f.write(instance_id)
         except OSError as e:
             self.get_logger().warn(f'instance_id の書き出しに失敗: {e}')
+
+    def _publish_anchor(self, event: str) -> None:
+        """map_freezer への契機の通知（map_freezer_core.ANCHOR_EVENTS）。"""
+        self._anchor_seq += 1
+        self._pub_anchor.publish(String(
+            data=make_anchor(self._anchor_boot, self._anchor_seq, event)))
 
     def _publish_venue_status(self) -> None:
         msg = MapSessionStatus()
@@ -850,6 +873,7 @@ class SlamControl(Node):
             if rotated:
                 self.get_logger().info(
                     f'旧版の地図を退避した: {rotated}')
+        self._publish_anchor('saving')
         err = self._save_occupancy_grid(base)
         if err:
             self.get_logger().warn(
@@ -857,11 +881,14 @@ class SlamControl(Node):
                 f'始点決め打ちになる: {err}')
         err = self._serialize(base)
         if err:
+            self._publish_anchor('save_failed')
             return self._finish(response, err, '')
         err = self._set_localization(True)
         if err:
+            self._publish_anchor('save_failed')
             return self._finish(response, f'地図の凍結に失敗: {err}', '')
         self._set_active(False)
+        self._publish_anchor('saved')
         return self._finish(
             response, None, f'地図を保存しました（地図を凍結しました）: {base}.posegraph')
 
@@ -875,6 +902,7 @@ class SlamControl(Node):
         rotated = rotate_map_previous(base)
         if rotated:
             self.get_logger().info(f'旧版の地図を退避した: {rotated}')
+        self._publish_anchor('saving')
         err = self._save_occupancy_grid(base)
         if err:
             self.get_logger().warn(
@@ -882,11 +910,14 @@ class SlamControl(Node):
                 f'始点決め打ちになる: {err}')
         err = self._serialize(base)
         if err:
+            self._publish_anchor('save_failed')
             return err
         err = self._set_localization(True)
         if err:
+            self._publish_anchor('save_failed')
             return f'地図の凍結に失敗: {err}'
         self._set_active(False)
+        self._publish_anchor('saved')
         return None
 
     def _save_occupancy_grid(self, base: str) -> "str | None":
@@ -985,6 +1016,7 @@ class SlamControl(Node):
         self._reload_in_progress = True
         # 作り直すので、いま載っている会場地図は失われる（成功時に呼び出し側が立て直す）。
         self._venue_loaded = False
+        reload_ok = False
         # O-e3: kill の前に true（_reload_in_progress と同じ区間）。
         self._sync_estimator_restarting()
         try:
@@ -1004,6 +1036,9 @@ class SlamControl(Node):
             if err:
                 return self._finish(response, f'localization モード切替失敗: {err}', '')
 
+            # map_freezer: ここから deserialize が終わるまでに届く地図が、開いた地図の
+            # 写しになる。respawn 済みでグラフは空なので、これより前の地図は含まれない。
+            self._publish_anchor('opening')
             req = DeserializePoseGraph.Request()
             req.filename = base   # WS-9M: slam_toolbox が `.posegraph` を付けるため拡張子なし
             has_init = bool(getattr(request, 'has_initial_pose', False)) if request else False
@@ -1023,7 +1058,12 @@ class SlamControl(Node):
             # サービス復帰は確認済み。次周期の _check_slam_restart に
             # 「再起動を検知」させて余計なモード再適用を走らせない。
             self._slam_ready = True
+            reload_ok = True
+            self._publish_anchor('opened')
         finally:
+            if not reload_ok:
+                # kill 済みなので前の地図は無く、読み直しも済んでいない
+                self._publish_anchor('unloaded')
             self._reload_in_progress = False
             # O-e3: finally で必ず下ろす（例外・タイムアウトでも true のままにしない）。
             self._sync_estimator_restarting()
@@ -1064,6 +1104,8 @@ class SlamControl(Node):
             self._venue_loaded = False
             self._publish_venue_status()
         finally:
+            # 途中で失敗しても、kill した時点で前の地図は無い
+            self._publish_anchor('unloaded')
             self._reload_in_progress = False
             self._sync_estimator_restarting()
         return self._finish(
@@ -1096,6 +1138,7 @@ class SlamControl(Node):
             self._set_active(False)
             self._venue_dirty = False   # 1b-6 SG-B6: 捨てた＝未保存は残らない
             self._venue_loaded = False
+            self._publish_anchor('unloaded')
             # _handle_map_reload と違い、ここは respawn を待たない。再起動の検知と
             # モード再適用は _check_slam_restart() に任せる（従来どおり即返す）。
             self._kill_slam_toolbox()

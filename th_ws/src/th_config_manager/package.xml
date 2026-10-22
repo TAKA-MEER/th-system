@@ -12,6 +12,7 @@
   <depend>ament_index_python</depend>
   <depend>th_system_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>std_srvs</depend>
   <depend>slam_toolbox</depend>
   <export><build_type>ament_cmake</build_type></export>
