@@ -87,7 +87,7 @@ class TestVenueNavFootprintCheck(BlockedHoldBase):
     # ── (a) ───────────────────────────────────────────────
     def test_a_narrow_gap_goes_blocked_and_stays(self):
         self._start(_corridor(0.50))
-        self._assert_blocked_not_sent(4.0)
+        self._assert_blocked_not_sent(6.0)
         # 待っている間も再検索のたびに検査している（経路を取り直している）
         self.assertGreaterEqual(self._n_compute(), 2,
                                 'BLOCKED の再探索で経路を取り直していない。')
@@ -123,20 +123,21 @@ class TestVenueNavFootprintCheck(BlockedHoldBase):
     def test_d_reroute_is_checked_too(self):
         self._start(_corridor(0.50))
         self._assert_blocked_not_sent(1.0)
+        self.assertEqual(self._mode_state(), ('PANEL_NAV', 'BLOCKED'))
         c0 = self._n_compute()
-        self._call_trigger('ui.reroute')
+        self._call_trigger('ui.reroute')   # BLOCKED にいるので受理される
         self.assertTrue(
             self._wait_count(self._n_compute, c0 + 1, timeout=5.0),
             'BLOCKED 中の「再検索」で経路を取り直さない。')
         self._sleep(1.5)
         self.assertEqual(self._n_follow(), 0,
                          '再検索で引き直した狭い隙間の経路が送られた。')
-        # 広げて再検索 → 送られる（陽性対照）
+        self.assertEqual(self._mode_state(), ('PANEL_NAV', 'BLOCKED'))
+        # 広げると、BLOCKED の再探索が自動で走り出す（陽性対照。この時点で NAV に
+        # 戻るので、ここで ui.reroute を送ってはいけない＝NAV では not_allowed）
         self.costmap_rects = _corridor(1.3)
         self.set_obstacle(None)
-        self._sleep(1.5)
-        self._call_trigger('ui.reroute')
         self.assertTrue(
             self._wait_count(self._n_follow, 1, timeout=15.0),
-            '隙間を広げて再検索しても走り出さない（陽性対照）。')
+            '隙間を広げても走り出さない（陽性対照）。')
         self._reset_to_home()
