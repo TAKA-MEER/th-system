@@ -463,6 +463,9 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `/route/preview` | `nav_msgs/Path`（`odom` フレーム） | reliable, depth 1, 2 Hz（記録中／再生中の経路点列。WebUI の経路プレビュー描画用。`demo-teach-replay` で新設） |
 | **`/route/catalog`** | `RouteList` | **transient_local**, depth 1（サービス `/route/list` と同内容） |
 | `/map_session/status` | `MapSessionStatus` | transient_local, depth 1 |
+| **`/map_live`** | **`nav_msgs/OccupancyGrid`** | **transient_local, depth 1, reliable（`slam_toolbox` の出力。bringup が `/map` から remap する。購読するのは `map_freezer` だけ。Spec-onsite §4.0.2）** |
+| **`/map`** | **`nav_msgs/OccupancyGrid`** | **transient_local, depth 1, reliable（発行者は `map_freezer`。地図更新 ON・PREP・教示・地図を開く前は `/map_live` をそのまま通し、地図を開いて地図更新 OFF の間は取っておいた写しを出し続ける（再配信 5 秒）。購読者 `map_downsampler`・`onsite_map_downsampler`・`pin_registrar`・Nav2 global_costmap の static layer・WebUI は付け替えない）** |
+| **`/map_session/freeze_anchor`** | **`std_msgs/String`（JSON `{boot, seq, event}`。`event` は `opening`/`opened`/`saving`/`saved`/`save_failed`/`unloaded`）** | **transient_local, depth 20, reliable（発行者は `slam_control`。`opening`＝deserialize の直前、`opened`＝成功直後、`saving`＝保存の直前、`saved`＝保存と凍結の成功直後、`unloaded`＝地図作成開始・リセット・破棄・再起動検知・読み直し失敗。`map_freezer` が写しを取る契機に使う。`/map_session/status` は VENUE スロットだけなので経路地図を含められず、別に設けた）** |
 | **`/slam_control/estimator_restarting`** | **`std_msgs/Bool`** | **transient_local, depth 1, reliable（変化時＋起動時。発行者は `slam_control`。計画的な推定器の再起動中だけ `true`。O-e3）** |
 | **`/replay_runner/localizing`** | **`std_msgs/Bool`** | **transient_local, depth 1, reliable（変化時＋探索開始時。発行者は `replay_runner`。全域ローカライズの探索（初期／widen／global）の最中だけ `true`。`localization_health` が受けて A・C・B′ を保留し `reason=global_localizing` で出す。上限は `localization_restart_max_ms` を流用。W-01 P5）** |
 | `/onsite/pins` | `PinList` | transient_local, depth 1 |

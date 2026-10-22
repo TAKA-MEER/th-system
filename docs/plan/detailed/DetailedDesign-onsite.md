@@ -245,6 +245,29 @@ def two_point_pose(p1: tuple[float, float], p2: tuple[float, float]) -> Pose2D:
 | 保存 | `map_session` の `dirty` が立ち、S-21 に「地図に未保存の変更があります」。保存は **`ui.save`**（`SystemState.unsaved` に `venue_map` が入る）。**遷移行は `T-PNAV-09` / `T-SUM-14` / `T-HNAV-08` / `T-ATP-07`**（§3.7.3.1） |
 | **ピンの扱い** | **ピンは動かさない。**地図だけを更新する。**ピンがずれていると感じたら C（取り直し）へ行く**のが唯一の正しい経路 |
 
+#### 3.7.3.0 地図更新 OFF の間の凍結（`map_freezer`。Spec-onsite §4.0.2）
+
+slam_toolbox（`map_and_localization_slam_toolbox_node`）は localization にしても直近のスキャンを
+一時的にグラフへ足して `/map` を配信し続ける。購読者は付け替えず、出力だけを逃がす。
+
+```txt
+slam_toolbox ─(/map を /map_live へ remap)→ map_freezer ─→ /map ─→ map_downsampler / onsite_map_downsampler /
+                                              ▲   ▲                pin_registrar / global_costmap(static) / WebUI
+        /system/state (mode・prev_mode・map_update)  /map_session/freeze_anchor（slam_control）
+```
+
+| 項目 | 内容 |
+| --- | --- |
+| ノード | `th_config_manager/scripts/map_freezer.py`（判定と写しの状態機械は `map_freezer_core.py`＝ROS 非依存）。`bringup.launch.py` で slam_toolbox と**同じ条件**（`map_yaml==''` かつ `enable_route_slam` または `stage>=3`）で起動。respawn あり |
+| パラメータ | `republish_period_s`（既定 5.0。凍結中に写しを再配信する周期。0 で再配信しない）。launch の直書き（registry に載せる値ではない） |
+| 通す（凍結しない） | 地図を開いていない（`unloaded`）／地図更新 ON／有効モード（ESTOP・CARRY は `prev_mode`）が `PREP`・`TEACH_FOLLOW`・`TEACH_MANUAL` |
+| 凍結する | 地図を開いて localization にしている（`opened` または `saved` のあと）かつ地図更新 OFF かつ上に当たらない |
+| 写しが無いのに凍結が要る | 生の地図を通し、警告ログ（`PASS_NO_COPY`）。止めるより現状どおり通す方を選んだ |
+| 写しを取る契機 | `opening`〜`opened` の間に届いた最後の `/map_live`（無ければ `opened` のあと最初の 1 枚）。`opening` で直前の地図を捨てるので、開く前の PREP の地図は掴まない。`saving` 時点の最新の `/map_live` を `saved` で写しにする（保存せず OFF に戻すと写しは変わらない）。`unloaded` で写しを捨てる |
+| slam_toolbox だけが再起動 | `slam_control` が `unloaded` を出す（`_check_slam_restart`）。契機なしに届いた `/map_live` では写しを上書きしない |
+| 関連トピック | `/map_live`・`/map`・`/map_session/freeze_anchor`（[names](DetailedDesign-names.md) §6.4）。`/map_metadata`・`dynamic_map` は remap の対象外で、機体内に購読者は無い |
+| 試験 | `test_map_freezer_core.py`（ホスト）・`test_map_freezer_node.py`・`test_map_freeze_anchor_node.py`（ROS2 要） |
+
 #### 3.7.3.1 追加が必要な遷移行（**4 行。無いと段 B が成立しない**）
 
 **`map_update` を ON にしても、書き足した地図を確定する遷移が無かった。**
