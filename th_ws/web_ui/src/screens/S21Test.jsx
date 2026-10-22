@@ -50,13 +50,15 @@ import {
 } from '../parts/icons.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import attributes from '../generated/attributes.json'
-import { NAV_MODES, testSteps, onsiteReasons, abortAvailable } from './onsiteSteps.js'
+import {
+  NAV_MODES, testSteps, onsiteReasons, abortAvailable, runBlockedByVenue,
+} from './onsiteSteps.js'
 import { baseToWorld } from '../mapGeometry.js'
 import { REJECT_REASONS, reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
   BADGE_JOG_DENIED, BADGE_NO_HOME_PIN, BADGE_NO_PANEL_PIN,
-  BADGE_GOTO_PAUSED, BADGE_GOTO_MOVING,
+  BADGE_GOTO_PAUSED, BADGE_GOTO_MOVING, BADGE_VENUE_NOT_LOADED,
   S20_MAP_ARIA, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TARGET, S20_MAP_TITLE,
   S20_TAB_MAP, S20_TAB_TARGET,
   S20_WIZ_MSG_STEP1, S20_WIZ_MSG_STEP2, S20_WIZ_REGISTER, S20_WIZ_STEP, S20_PIN_YAW,
@@ -92,6 +94,7 @@ const ONSITE_BADGE_TEXT = {
   no_home_pin: BADGE_NO_HOME_PIN,
   goto_paused: BADGE_GOTO_PAUSED,
   goto_moving: BADGE_GOTO_MOVING,
+  venue_not_loaded: BADGE_VENUE_NOT_LOADED,
   working_in_progress: REJECT_REASONS.working_in_progress,
   wait_clear_active: REJECT_REASONS.wait_clear_active,
 }
@@ -354,9 +357,12 @@ export default function S21Test({ onExit }) {
   const pendingYaw = showWizard && wizYaw != null
 
   // UX-2-b/UX-2-d/UX-6-b: この画面から「押せない」ことが画面だけでも分かる理由のバッジ。
+  // SM-3.1.2-119: 機体が「会場地図を持たない」と言っているときだけ（未受信は塞がない）。
+  const venueUnloaded = mapSession?.slot === 'VENUE' && mapSession?.mode === 'UNLOADED'
   const reasons = onsiteReasons({
-    mode, stateName, attributes, pins, working,
+    mode, stateName, attributes, pins, working, venueUnloaded,
   })
+  const runBlocked = runBlockedByVenue(mode, stateName, venueUnloaded)
   const manualDenyReason = reasons.manual ? (ONSITE_BADGE_TEXT[reasons.manual] ?? reasons.manual) : null
   const destHomeReason = reasons.destHome ? (ONSITE_BADGE_TEXT[reasons.destHome] ?? reasons.destHome) : null
   const destNextPanelReason = reasons.destNextPanel
@@ -566,6 +572,9 @@ export default function S21Test({ onExit }) {
           }}
           disabled={disabledAll}
           manualDenyReason={manualDenyReason}
+          runDisabled={runBlocked}
+          // 理由は行き先タブの見出しに 1 回出す。別タブを見ているときだけここに出す。
+          runDenyReason={runBlocked && subtab !== 'dest' ? BADGE_VENUE_NOT_LOADED : null}
           onTrigger={(trigger) => sendTrigger(trigger)}
           onManualClick={() => jogPanel.open()}
         />

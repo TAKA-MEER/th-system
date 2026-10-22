@@ -9,7 +9,8 @@ sys.path.insert(0, os.path.join(
 
 from th_onsite.venue_nav_core import (  # noqa: E402
     GOTO_BLOCKED_MODES, VenueNavParams, align_cmd_wz, arrived, find_home_goal,
-    select_pin_allowed, select_pin_reject_message,
+    VENUE_NOT_LOADED_MESSAGE, select_pin_allowed, select_pin_reject_message,
+    venue_blocks_autonomy,
     should_unblock_for_arrival, yaw_error)
 
 
@@ -394,3 +395,19 @@ class TestPathFootprintCollision:
             assert path_footprint_collision(path, g) is None
         per_call = (time.perf_counter() - t0) / 5
         assert per_call < 0.25, f'{per_call * 1000:.0f} ms'
+
+
+class TestVenueBlocksAutonomy:
+    """SM-3.1.2-119。UNLOADED と届いているときだけ塞ぐ。"""
+
+    def test_only_unloaded_blocks(self):
+        assert venue_blocks_autonomy('UNLOADED') is True
+
+    def test_loaded_mapping_and_unreceived_do_not_block(self):
+        # LOCALIZING＝会場地図あり／MAPPING＝前日 PREP の地図作成中／''＝未受信（起動直後）
+        for mode in ('LOCALIZING', 'MAPPING', '', 'whatever'):
+            assert venue_blocks_autonomy(mode) is False, mode
+
+    def test_message_tells_what_to_do(self):
+        assert '会場地図' in VENUE_NOT_LOADED_MESSAGE
+        assert '開き直' in VENUE_NOT_LOADED_MESSAGE

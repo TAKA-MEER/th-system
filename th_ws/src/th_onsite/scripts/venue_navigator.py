@@ -43,14 +43,15 @@ from nav2_msgs.action import ComputePathToPose, FollowPath
 from nav2_msgs.srv import ClearEntireCostmap
 from nav_msgs.msg import OccupancyGrid, Path
 from rcl_interfaces.msg import Log
-from th_system_msgs.msg import PinList, StateEffect, StateEvent, SystemState
+from th_system_msgs.msg import (MapSessionStatus, PinList, StateEffect, StateEvent,
+                                SystemState)
 from th_system_msgs.srv import GoToPanel
 
 from th_onsite.venue_nav_core import (
     COSTMAP_STALE_S, PATH_AHEAD_CHECK_M, VenueNavParams, align_cmd_wz, arrived,
-    find_home_goal, path_ahead_clear, path_footprint_collision, select_pin_allowed,
-    select_pin_reject_message, success_is_plausible,
-    should_unblock_for_arrival,
+    VENUE_NOT_LOADED_MESSAGE, find_home_goal, path_ahead_clear,
+    path_footprint_collision, select_pin_allowed, select_pin_reject_message,
+    success_is_plausible, should_unblock_for_arrival, venue_blocks_autonomy,
 )
 
 
@@ -190,6 +191,7 @@ class VenueNavigator(Node):
         self._pins = []            # /onsite/pins の保持
         self._pending_goal = None  # select_pin で保留した PIN goal (dict)
         self._summon_goal = None   # /onsite/summon_goal の最新 (PoseStamped)
+        self._venue_mode = ""      # /map_session/status(VENUE) の mode。未受信は ""
         self._robot_updated_at = None  # _robot を最後に TF から更新できた時刻（self._now()）
         self._robot = None         # (x, y, yaw) 最新（TF map->base_link。到着判定/ALIGN は map 系で行う）
         self._path = None          # compute_path_to_pose のキャッシュ (nav_msgs/Path)
@@ -291,6 +293,10 @@ class VenueNavigator(Node):
                                  state_qos, callback_group=self._state_cbg)
         self.create_subscription(StateEffect, '/system/effect', self._on_effect,
                                  effect_qos, callback_group=sub_cbg)
+        # SM-3.1.2-119: 会場地図を持つか（slam_control が latched で出す）。
+        self.create_subscription(MapSessionStatus, '/map_session/status',
+                                 self._on_map_session, state_qos,
+                                 callback_group=sub_cbg)
         self.create_subscription(PinList, '/onsite/pins', self._on_pins,
                                  state_qos, callback_group=sub_cbg)
         self.create_subscription(PoseStamped, '/onsite/summon_goal', self._on_summon,
@@ -613,6 +619,21 @@ class VenueNavigator(Node):
             return
         self._compute_and_follow(goal)
 
+    # ── /map_session/status 受信 ──────────────────────────
+    def _on_map_session(self, msg: MapSessionStatus):
+        if str(msg.slot) == 'VENUE':
+            self._venue_mode = str(msg.mode)
+
+    def _venue_gate(self, what: str) -> bool:
+        """SM-3.1.2-119。会場地図を持たないなら True（呼び出し側は走り出さず戻る）。
+        FSM（th_state の T-VUL-*）が主。こちらは FSM を通らない入口（状態の取りこぼし・
+        再開 effect・BLOCKED からの自動再送）に備えた二重の防壁。"""
+        if not venue_blocks_autonomy(self._venue_mode):
+            return False
+        self.get_logger().warn(
+            f'{what}: 会場地図が無い（UNLOADED）ため走り出さない。SM-3.1.2-119')
+        return True
+
     # ── /onsite/pins 受信 ─────────────────────────────────
     def _on_pins(self, msg: PinList):
         self._pins = list(msg.pins)
@@ -838,6 +859,14 @@ class VenueNavigator(Node):
                 f'select_pin: {request.panel_id} を拒否（{self._mode}/{self._state} は'
                 f'行き先を選べない。SM-3.1.2-118）。保留ゴールは変えない')
             return response
+        # SM-3.1.2-119: 会場地図を持たないときも拒否。保留ゴールを書き換えない。
+        if venue_blocks_autonomy(self._venue_mode):
+            response.success = False
+            response.message = VENUE_NOT_LOADED_MESSAGE
+            self.get_logger().warn(
+                f'select_pin: {request.panel_id} を拒否（会場地図が無い。'
+                f'SM-3.1.2-119）。保留ゴールは変えない')
+            return response
         for pin in self._pins:
             if getattr(pin, 'id', '') == request.panel_id:
                 p = pin.pose.position
@@ -858,6 +887,8 @@ class VenueNavigator(Node):
 
     # ── NAV 起動 ──────────────────────────────────────────
     def _start_nav(self):
+        if self._venue_gate('start_nav'):
+            return
         goal = self._current_goal()
         if goal is None:
             self.get_logger().warn('NAV: 行き先が未設定。evt.blocked を出して待つ')
@@ -875,6 +906,9 @@ class VenueNavigator(Node):
         self._clear_costmaps_then(lambda: self._compute_and_follow(goal))
 
     def _compute_and_follow(self, goal):
+        if self._venue_gate('compute_and_follow'):
+            self._nav_chain_active = False
+            return
         # 非ブロッキング判定。旧版は wait_for_server(timeout=5) をコールバック内で
         # 同期呼びして executor を詰まらせていた（2026-09-10 実機。CPU 張り付き）。
         if not self._compute_client.server_is_ready():
@@ -966,6 +1000,9 @@ class VenueNavigator(Node):
         self._send_follow_path(path)
 
     def _send_follow_path(self, path: Path):
+        if self._venue_gate('send_follow_path'):
+            self._nav_chain_active = False
+            return
         if not self._follow_client.server_is_ready():
             self.get_logger().warn('follow_path サーバ未 ready evt.blocked')
             self._go_blocked(json.dumps({'reason': 'no_follow_server'}))
@@ -1191,6 +1228,8 @@ class VenueNavigator(Node):
 
     # ── blocked 再探索タイマ ──────────────────────────────
     def _blocked_recheck(self):
+        if self._blocked and venue_blocks_autonomy(self._venue_mode):
+            return   # SM-3.1.2-119: 会場地図が無い間は再探索・自動再送しない
         # 取りこぼしに備えた stale-escape（連鎖の done コールバックが 1 つ落ちても
         # 永久ロックしない）。
         now = self._now()

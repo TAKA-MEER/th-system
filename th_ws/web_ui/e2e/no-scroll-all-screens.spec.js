@@ -63,6 +63,11 @@ const CASES = [
   ['S-21 待機', 'S21', { mode: 'AT_HOME', tracker_enabled: true }, ONSITE],
   ['S-21 移動', 'S21', { mode: 'PANEL_NAV', state: 'MOVING', tracker_enabled: true }, ONSITE],
   ['S-21 移動 一時停止', 'S21', { mode: 'PANEL_NAV', state: 'PAUSE', tracker_enabled: true }, ONSITE],
+  // SM-3.1.2-119: 会場地図が無い間の理由（見出しの横に 1 回）。長い文でもはみ出さない。
+  ['S-21 会場地図なし 待機', 'S21', { mode: 'AT_HOME', tracker_enabled: true },
+    { ...ONSITE, __thTestMapSession: { slot: 'VENUE', mode: 'UNLOADED', dirty: false, instance_id: 'x' } }],
+  ['S-21 会場地図なし 一時停止', 'S21', { mode: 'PANEL_NAV', state: 'PAUSE', tracker_enabled: true },
+    { ...ONSITE, __thTestMapSession: { slot: 'VENUE', mode: 'UNLOADED', dirty: false, instance_id: 'x' } }],
   ['S-21 ピン無し', 'S21', { mode: 'AT_HOME', tracker_enabled: true }, {}],
   ['S-30 一覧', 'S30', { mode: 'OPCHECK', state: 'LIST' }, {}],
   ['S-30 モーター', 'S30', { mode: 'OPCHECK', state: 'RUNNING_CHECK' },

@@ -260,6 +260,8 @@ class StateManager(Node):
         self._target_selected = False
         self._target_confident = False
         self._pin_kinds: tuple = ()
+        # SM-3.1.2-119: /map_session/status（VENUE）の mode。未受信は ""（塞がない）。
+        self._venue_mode = ""
         # WP-MAINT-01: OPCHECK で現在実行中の項目名（T-OPC-01 が受理されたときに
         # ui.check_item の引数から設定し、OPCHECK を抜けるか LIST に戻ったら空に戻す。
         # ctx.check_result は前回値を引きずらないよう _build_context() が
@@ -471,6 +473,7 @@ class StateManager(Node):
             route_ids=tuple(self._route_ids),
             route_loaded=self._route_loaded,
             pin_kinds=self._pin_kinds,
+            venue_unloaded=(self._venue_mode == "UNLOADED"),
             leash_present=self._leash_present,
             leash_taut=False,
             line_visible=False,
@@ -766,6 +769,9 @@ class StateManager(Node):
     def _on_map_session(self, msg):
         # 1b-6 SG-B6: slot 別の dirty を覚える（_refresh_unsaved が読む）。
         self._map_dirty[str(msg.slot)] = bool(msg.dirty)
+        # SM-3.1.2-119: 会場地図を持たないか（VENUE の mode）。未受信の間は ""。
+        if str(msg.slot) == "VENUE":
+            self._venue_mode = str(msg.mode)
 
     def _refresh_unsaved(self):
         """1b-6 SG-B6: _unsaved をいま分かる範囲で決め直す（Spec-ops.md §4.1）。

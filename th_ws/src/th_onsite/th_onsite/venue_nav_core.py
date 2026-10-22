@@ -43,6 +43,20 @@ def select_pin_reject_message(mode: str, state: str) -> str:
     return '移動中は行き先を選べません。着いてから、または「中断」してから選んでください'
 
 
+# SM-3.1.2-119: 会場地図を持たない間は自律移動を始めない・再開しない。
+# /map_session/status（slot VENUE）の mode が 'UNLOADED' と届いているときだけ塞ぐ。
+# 未受信（''）・LOCALIZING・MAPPING（前日 PREP の地図作成中）は塞がない。
+# th_state の guards.venue_unloaded と同じ判定。
+VENUE_NOT_LOADED_MESSAGE = (
+    '推定が立ち上がり直したため会場地図がありません。'
+    '待機場所へ手で戻して地図を開き直してください')
+
+
+def venue_blocks_autonomy(venue_mode: str) -> bool:
+    """会場地図を持たないことが届いていて、自律移動を止めるべきか。"""
+    return venue_mode == 'UNLOADED'
+
+
 def yaw_error(current_yaw: float, target_yaw: float) -> float:
     """current→target のヨー差 [rad]。(-pi, pi] へ正規化する。"""
     err = target_yaw - current_yaw
