@@ -216,3 +216,107 @@ test('速度プリセット区画は効き値と次回反映の差を出し、�
   expect(calls[0].reason).toBe('現場で低速を詰める')
   expect(calls[0].values).toEqual({ speed_preset_mid: 0.65 })
 })
+
+// SG-C14: 速度プリセットは低速≦中速≦高速でなければ保存不可。違反は理由を表示し、
+// 保存ボタンは押せなくなる（サーバ側 /params/set も同じ規則で拒否する二重ガード）。
+test('速度プリセットの順序違反は保存不可で理由を表示する', async ({ page }) => {
+  await gotoScreenWithParams(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
+    get: {
+      effective: { speed_preset_low: 0.27, speed_preset_mid: 0.55, speed_preset_high: 1.0 },
+      pending: {},
+      origins: {},
+      restart_required: false,
+    },
+    set: { success: true, message: 'OK' },
+  })
+  await page.getByTestId('s01-open-settings').click()
+  await expect(page.locator('#s50')).toBeVisible()
+  await page.getByTestId('s50-sec-preset').click()
+
+  // 対照: 順序どおりなら保存ボタンは押せる。
+  await expect(page.getByTestId('s50-save-preset')).toBeEnabled()
+  await expect(page.getByTestId('s50-preset-order')).toHaveCount(0)
+
+  // 中速を低速より下げると違反。
+  await page.getByLabel(/中速/).fill('0.1')
+  await page.getByLabel(/中速/).press('Tab')
+  await expect(page.getByTestId('s50-preset-order')).toContainText('中速以下')
+  await expect(page.getByTestId('s50-save-preset')).toBeDisabled()
+  expect(await paramsSetCalls(page)).toHaveLength(0)
+})
+
+// SG-C14: 自動ブレーキの既定（場外の手動・場内）は /params/set で保存し、
+// 次の起動から効く。理由なしでは送らない（PT-4）。
+test('自動ブレーキ既定区画は /params/set で保存する', async ({ page }) => {
+  await gotoScreenWithParams(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
+    // get は object 形式（addInitScript の引数は関数を運べない）。
+    // プリセット区画と既定区画の両方が同じ get を呼ぶので、5 件まとめて返す
+    // （各区画は自分の名前だけ読む）。
+    get: {
+      effective: {
+        speed_preset_low: 0.27, speed_preset_mid: 0.55, speed_preset_high: 1.0,
+        auto_brake_default_outdoor: 'off', auto_brake_default_indoor: 'on',
+      },
+      pending: {},
+      origins: {},
+      restart_required: false,
+    },
+    set: { success: true, message: 'OK' },
+  })
+  await page.getByTestId('s01-open-settings').click()
+  await expect(page.locator('#s50')).toBeVisible()
+  await page.getByTestId('s50-sec-brake').click()
+
+  await expect(page.getByTestId('s50-brake-outdoor')).toHaveValue('off')
+  await expect(page.getByTestId('s50-brake-indoor')).toHaveValue('on')
+
+  // 理由なしでは送らない。
+  await page.getByTestId('s50-save-brake').click()
+  await expect(page.getByTestId('s50-status-brake')).toContainText('理由')
+  expect(await paramsSetCalls(page)).toHaveLength(0)
+
+  // 場外の既定を ON に変えて保存すると /params/set が呼ばれる。
+  await page.getByTestId('s50-brake-outdoor').selectOption('on')
+  await page.getByTestId('s50-brake-reason').fill('場内で試す')
+  await page.getByTestId('s50-save-brake').click()
+  const calls = await paramsSetCalls(page)
+  expect(calls).toHaveLength(1)
+  expect(calls[0].setBy).toBe('web_ui')
+  expect(calls[0].reason).toBe('場内で試す')
+  expect(calls[0].values).toEqual({ auto_brake_default_outdoor: 'on' })
+})
+
+// SG-C14: 表示タブ（音声 ON/OFF・縦横の固定・コストマップ表示）はブラウザに
+// 記憶され、すぐ反映される。機体を動かさないので停止中の縛りは無い（文字サイズと同じ）。
+test('表示タブで音声・縦横・コストマップを変えると記憶される', async ({ page }) => {
+  await openS50General(page)
+  await page.getByTestId('s50-tab-display').click()
+
+  // 音声: 既定 ON → OFF にすると localStorage に残り、リロード後も OFF。
+  await expect(page.getByTestId('s50-voice-on')).toHaveClass(/on/)
+  await page.getByTestId('s50-voice-off').click()
+  expect(await page.evaluate(() => window.localStorage.getItem('th.voiceMaster'))).toBe('0')
+  await page.reload()
+  await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
+  await page.getByTestId('s01-open-settings').click()
+  await page.getByTestId('s50-tab-display').click()
+  await expect(page.getByTestId('s50-voice-off')).toHaveClass(/on/)
+  // 戻しておく（他テストへの漏れ防止）。
+  await page.getByTestId('s50-voice-on').click()
+  expect(await page.evaluate(() => window.localStorage.getItem('th.voiceMaster'))).toBe('1')
+
+  // 縦横: 横固定にするとステージが横長になる（headless は横長ビューポート）。
+  await page.getByTestId('s50-orientation-landscape').click()
+  await expect(page.locator('[data-testid="stage"]')).toHaveAttribute('data-orientation', 'landscape')
+  // 縦固定にすると縦長になる。
+  await page.getByTestId('s50-orientation-portrait').click()
+  await expect(page.locator('[data-testid="stage"]')).toHaveAttribute('data-orientation', 'portrait')
+  expect(await page.evaluate(() => window.localStorage.getItem('th.stageOrientation'))).toBe('portrait')
+  await page.getByTestId('s50-orientation-auto').click()
+
+  // コストマップ: 非表示にすると記憶される。
+  await page.getByTestId('s50-costmap-hide').click()
+  expect(await page.evaluate(() => window.localStorage.getItem('th.costmapVisible'))).toBe('0')
+  await page.getByTestId('s50-costmap-show').click()
+  expect(await page.evaluate(() => window.localStorage.getItem('th.costmapVisible'))).toBe('1')
+})

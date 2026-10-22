@@ -169,3 +169,40 @@ def test_dev_item_effective_requires_explicit_true_and_fresh():
                               DEV_ITEM_AUTO_BRAKE) is False
     assert dev_item_effective('{broken', 0, 0, DEV_ITEM_AUTO_BRAKE) is False
     assert dev_item_effective('[]', 0, 0, DEV_ITEM_AUTO_BRAKE) is False
+
+
+# SG-C14: S-50 で変える既定（場外手動・場内）。state_manager が registry 由来の
+# 値を渡す。既定（off/on）のままでは上の試験どおり（場外 OFF・場内 ON）。
+@pytest.mark.parametrize('mode', MANUAL_LIKE)
+def test_s50_outdoor_default_on_enables_outdoor(mode):
+    assert effective_auto_brake(
+        ATTRS[mode], 'OUT', False, None, outdoor_default=True) is True
+    # IN は場外の既定に左右されない。
+    assert effective_auto_brake(
+        ATTRS[mode], 'IN', False, None, outdoor_default=True) is True
+
+
+@pytest.mark.parametrize('mode', MANUAL_LIKE)
+def test_s50_indoor_default_off_disables_indoor(mode):
+    assert effective_auto_brake(
+        ATTRS[mode], 'IN', False, None, indoor_default=False) is False
+    # OUT は場内の既定に左右されない。
+    assert effective_auto_brake(
+        ATTRS[mode], 'OUT', False, None, indoor_default=False) is False
+
+
+@pytest.mark.parametrize('mode', MANUAL_LIKE)
+def test_s50_defaults_do_not_weaken_na_or_locked(mode):
+    # ゾーン NA は S-50 の値に関わらず ON（安全側）。
+    assert effective_auto_brake(
+        ATTRS[mode], 'NA', False, None,
+        outdoor_default=True, indoor_default=False) is True
+    # 自律系（on_locked・ジョグ無し）は既定のまま ON。
+    locked = [m for m in LOCKED if m != mode] or LOCKED
+    for lm in locked[:3]:
+        assert effective_auto_brake(
+            ATTRS[lm], 'IN', False, None,
+            outdoor_default=True, indoor_default=False) is True
+        assert effective_auto_brake(
+            ATTRS[lm], 'OUT', False, None,
+            outdoor_default=True, indoor_default=False) is True

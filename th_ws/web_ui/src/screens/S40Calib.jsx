@@ -43,7 +43,7 @@ import * as T from '../i18n/calib.js'
 import {
   CALIB_ITEM_ORDER, CALIB_STARTABLE, isWizardItem, stepNumber, activeItem, viewKind,
   canProceed, parseMeasured, rotationWarnings, imuProgress, runPercent, historyRows,
-  lastCalibrated, previewText, blindLimits, blindReasonKey,
+  lastCalibrated, lastVerification, previewText, blindLimits, blindReasonKey,
 } from './calibCore.js'
 
 function rejectText(res) {
@@ -419,6 +419,7 @@ export default function S40Calib() {
               {CALIB_ITEM_ORDER.map((it) => {
                 const startable = CALIB_STARTABLE.includes(it)
                 const last = lastCalibrated(detail, it)
+                const verify = lastVerification(detail, it)
                 return (
                   <div key={it} className={`s40-row ${item === it ? 'running' : ''}${showGuide && guide.target === it ? ' guided' : ''}`}
                     data-testid={`s40-item-${it}`}>
@@ -427,6 +428,11 @@ export default function S40Calib() {
                       <span className="note">
                         {`${T.S40_LAST_CALIBRATED}: ${last || T.S40_NEVER_CALIBRATED}`}
                       </span>
+                      {last && (
+                        <span className="note" data-testid={`s40-verify-${it}`}>
+                          {`${T.S40_LAST_VERIFY}: ${verify || T.S40_NO_VERIFY}`}
+                        </span>
+                      )}
                       {it === 'ROTATION' && (
                         <span className="s40-warn" data-testid="s40-rotation-first">{T.S40_ROTATION_FIRST}</span>
                       )}
@@ -455,6 +461,9 @@ export default function S40Calib() {
                         <div className="s40-row-main">
                           <span>{T.s40Generation(r.generation)}: {r.text}</span>
                           <span className="note">{r.calibratedAt}</span>
+                          {r.verify && (
+                            <span className="note">{`${T.S40_HISTORY_VERIFY}: ${r.verify}`}</span>
+                          )}
                         </div>
                         <ArmedButton
                           idleLabel={T.S40_HISTORY_ROLLBACK}

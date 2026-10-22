@@ -6,6 +6,7 @@ import {
   blindReasonKey, scanPointsByMask, BLIND_LIMITS_DEFAULT,
   parseCalibDetail, stepNumber, activeItem, viewKind, canProceed, parseMeasured,
   rotationWarnings, imuProgress, runPercent, formatValues, historyRows, lastCalibrated,
+  lastVerification, verifyErrorText,
   previewText, isWizardItem, CALIB_STARTABLE,
 } from '../../src/screens/calibCore.js'
 import { s40ReasonLabel, S40_WARNINGS } from '../../src/i18n/calib.js'
@@ -101,12 +102,44 @@ test('履歴・最終校正日・補正値の表示', () => {
   assert.equal(lastCalibrated(detail, 'LINEAR'), '2026-10-01T10:00:00')
   assert.equal(lastCalibrated(detail, 'IMU'), '')
   assert.deepEqual(historyRows(detail, 'LINEAR'), [
-    { generation: 1, text: 'wheel_radius_scale=0.981235', calibratedAt: 'a' }])
+    { generation: 1, text: 'wheel_radius_scale=0.981235', calibratedAt: 'a', verify: '' }])
   assert.deepEqual(historyRows(detail, 'ROTATION'), [])
   assert.equal(formatValues(null), '')
   assert.equal(previewText('{"wheel_base":0.4}'), 'wheel_base=0.4')
   assert.equal(previewText('{broken'), '')
   assert.equal(previewText(''), '')
+})
+
+test('検証誤差の表示: 一覧の前回値と履歴の行に並ぶ（自動の要校正判定はしない）', () => {
+  // LINEAR は相対誤差（calib_core.verify_linear と同じ式）、ROTATION は絶対誤差。
+  assert.equal(verifyErrorText('LINEAR', { commanded: 2.0, measured_verify: 2.01 }), '0.50%')
+  assert.equal(verifyErrorText('ROTATION', { commanded: 360, measured_verify: 359.7 }), '0.30°')
+  assert.equal(verifyErrorText('IMU', { calib_status: 0b11111111 }), '3/3/3/3')
+  assert.equal(verifyErrorText('BLIND', { result: 'OK', tolerance_deg: 5, detail: '' }), 'OK')
+  assert.equal(verifyErrorText('BLIND', { result: 'OK', detail: 'leak:3' }), 'leak:3')
+  // 無い・壊れているときは空（呼び出し側が「記録なし」を出す）。
+  for (const bad of [null, undefined, 'x', {}, { commanded: 0, measured_verify: 1 },
+    { commanded: 2 }, { result: 'NG', detail: '' }]) {
+    assert.equal(verifyErrorText('LINEAR', bad), '', JSON.stringify(bad))
+  }
+  assert.equal(verifyErrorText('IMU', {}), '')
+  assert.equal(verifyErrorText('UNKNOWN', { commanded: 1, measured_verify: 1 }), '')
+
+  const detail = {
+    last_verification: {
+      LINEAR: { commanded: 2.0, measured_verify: 1.99 },
+      ROTATION: {},
+    },
+    history: {
+      LINEAR: [{ generation: 1, values: {}, calibrated_at: 'a',
+        verification: { commanded: 2.0, measured_verify: 1.99 } }],
+    },
+  }
+  assert.equal(lastVerification(detail, 'LINEAR'), '0.50%')
+  assert.equal(lastVerification(detail, 'ROTATION'), '')
+  assert.equal(lastVerification(detail, 'IMU'), '')
+  assert.deepEqual(historyRows(detail, 'LINEAR'), [
+    { generation: 1, text: '', calibratedAt: 'a', verify: '0.50%' }])
 })
 
 test('項目の分類: 直進・旋回・死角はウィザード、IMU は違う。4 項目すべて開始できる', () => {

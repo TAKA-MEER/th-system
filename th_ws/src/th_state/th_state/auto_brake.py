@@ -69,32 +69,47 @@ def override_allowed(mode_attrs: Mapping[str, object], jog_active: bool,
 
 
 def zone_default(mode_attrs: Mapping[str, object], zone: str,
-                 jog_active: bool) -> bool:
+                 jog_active: bool,
+                 outdoor_default: bool = False,
+                 indoor_default: bool = True) -> bool:
     """試験員の要求が無いときの既定値。
 
-    場内（IN）と NA は ON。場外（OUT）は手動系なら attributes.yaml の既定
-    （MANUAL / TEACH_MANUAL は off）、自律系モードのジョグ中は off（ジョグはゾーン既定に従う）。
-    自律系（on_locked）でジョグ中でないときは常に ON。zone が未知の値でも ON に倒す。
+    場内（IN）は `indoor_default`（既定 ON。S-50 で変えた値は再起動後も維持）。
+    場外（OUT）の手動系・ジョグ介入中は `outdoor_default`（既定 OFF。S-50 で
+    変えた値は再起動後も維持。`attributes.yaml` の MANUAL / TEACH_MANUAL
+    `auto_brake_default: 'off'` は初期値の出どころで、実効は S-50 の値が優先する。
+    現行の attributes に素の 'on' の行は無く、既定値のままでは従来どおり OFF）。
+    自律系（on_locked）でジョグ中でないときは S-50 の値に関わらず常に ON
+    （Spec-safety §2.1「自律系の無効化は不可」。S-50 の既定が自律系を緩めない）。
+    zone が NA を含む未知の値でも ON に倒す（安全側。S-50 の値に関わらず）。
     """
+    if zone == "IN":
+        if not override_allowed(mode_attrs, jog_active):
+            return True
+        return bool(indoor_default)
     if zone != "OUT":
         return True
     # 既定は開発モードの項目に左右されない（選んだだけでは OFF にならない）。
     if not override_allowed(mode_attrs, jog_active):
         return True
-    return mode_attrs.get("auto_brake_default") == DEFAULT_ON
+    return bool(outdoor_default)
 
 
 def effective_auto_brake(mode_attrs: Mapping[str, object], zone: str,
                          jog_active: bool,
                          override: Optional[bool],
-                         dev_auto_brake: bool = False) -> bool:
+                         dev_auto_brake: bool = False,
+                         outdoor_default: bool = False,
+                         indoor_default: bool = True) -> bool:
     """/system/state.auto_brake の値。
 
     override は試験員の要求（None なら無し）。切り替えを許さない状況（自律系・ゾーン NA）では
     要求を無視する。ゾーン NA（画面途絶・使用中 0 台を含む）は常に ON（安全側）。
+    `outdoor_default` / `indoor_default` は S-50 で変える既定（state_manager が
+    registry 由来の値を渡す。既定は Spec-safety §2.1 と同じ off / on）。
     """
     if zone not in ("IN", "OUT"):
         return True
     if override is not None and override_allowed(mode_attrs, jog_active, dev_auto_brake):
         return bool(override)
-    return zone_default(mode_attrs, zone, jog_active)
+    return zone_default(mode_attrs, zone, jog_active, outdoor_default, indoor_default)

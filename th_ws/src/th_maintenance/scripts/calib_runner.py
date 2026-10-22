@@ -71,7 +71,7 @@ except ImportError:
 
 from th_maintenance import blind_core, calib_core
 from th_maintenance.check_core import BLIND_MIN_RUN_DEG, BLIND_NEAR_M
-from th_maintenance.calib_store import CalibStore
+from th_maintenance.calib_store import CalibStore, status_view
 
 # registry.yaml と一致させるパラメータの既定値（consumers に calib_runner を持つ行のうち値あり）。
 # SG-B21: LOCAL_PARS だった指定距離・指定角度・タイムアウトも registry 行になった
@@ -1082,15 +1082,9 @@ class CalibRunner(Node):
             c = self._imu_calib
             detail["imu"] = {"sys": (c >> 6) & 3, "gyro": (c >> 4) & 3,
                              "accel": (c >> 2) & 3, "mag": c & 3}
-        last = {}
-        history = {}
-        for it in ITEM_VALID:
-            entry = self._store.current_entry(it)
-            last[it] = (entry or {}).get("calibrated_at", "")
-            history[it] = [{"generation": i + 1, "values": h.get("values"),
-                            "calibrated_at": h.get("calibrated_at", "")}
-                           for i, h in enumerate(self._store.history(it))]
+        last, last_verification, history = status_view(self._store, ITEM_VALID)
         detail["last_calibrated"] = last
+        detail["last_verification"] = last_verification
         detail["history"] = history
         warnings = []
         if item == "ROTATION":

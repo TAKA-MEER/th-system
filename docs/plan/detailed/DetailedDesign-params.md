@@ -412,7 +412,7 @@ digest = sha1( sorted( f"{name}={status}:{value}" for all params ) )[:12]
 | `tracker_lost_grace_ms` | 追従・呼び寄せの停止判断 | `C-05` |
 | `replay_drift_m_per_100m` | 1 経路の長さの上限 | `O-c4` |
 | `calib_linear_tolerance_ratio` / `calib_rotation_tolerance_deg` / `calib_blind_tolerance_deg` | 校正の合否 | `O-c5` / `F-13` |
-| `calib_interval_days` | 定期校正の催促 | `O-c5` |
+| ~~`calib_interval_days`~~ | ~~定期校正の催促~~ | **廃止**（2026-10-09。間隔・悪化の基準は使用者が決める。[Spec-checks.md](Spec-checks.md) §3.7） |
 | `battery_endurance_min` | 目標 G5 | `O-c7` |
 
 ### 6.3 外部から与えられる（`class: a`・**未取得の間は `placeholder`**）
@@ -435,7 +435,7 @@ digest = sha1( sorted( f"{name}={status}:{value}" for all params ) )[:12]
 | --- | --- | --- |
 | `v_max` | `v_max_from_ceiling` | `drivetrain_ceiling_mps`, `v_max_headroom_ratio` |
 | `v_slow` | `speed_from_braking_distance` | `venue_clearance_m`, `brake_accel_mps2`, `brake_delay_s` |
-| `v_reverse` | 同上 | `blind_clearance_m`, … |
+| `v_reverse` | 同上 | `venue_clearance_m`, `brake_accel_mps2`, `brake_delay_s`（現構成は死角なし。2026-10-09） |
 | `v_jog_panel` | 同上 | `panel_clearance_m`, … |
 | `obstacle_stop_distance_m` | `braking_distance_plus_margin` | `brake_accel_mps2`, `safety_margin_m`（`value_by` あり） |
 | `obstacle_floor_distance_m` | `floor_distance` | `body_half_length_m`, `floor_margin_m`（`value_by` **なし**） |

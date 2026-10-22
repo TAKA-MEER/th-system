@@ -76,7 +76,7 @@
   value: TBD_MEASURE
   consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
-  note: "v_reverse の逆算元（LiDAR 死角。O-a2 が決まるまで placeholder）"
+  note: "LiDAR 死角の余裕（O-a2 が決まるまで placeholder）。現構成は死角なしのため v_reverse の逆算には使わない（2026-10-09。v_reverse は venue_clearance_m 由来）"
 
 - name: panel_clearance_m
   unit: m
@@ -104,11 +104,11 @@
   class: b
   status: derived
   value: null
-  derived_from: [blind_clearance_m, brake_accel_mps2, brake_delay_s]
+  derived_from: [venue_clearance_m, brake_accel_mps2, brake_delay_s]
   formula: speed_from_braking_distance
   consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
-  note: "後退（全モード共通の上限）"
+  note: "後退（全モード共通の上限）。LiDAR に死角が無い現構成では v_slow と同じ venue_clearance_m からの逆算（2026-10-09）。venue_clearance_m と brake_accel_mps2 のどちらかが placeholder なら placeholder（S5）。死角のある構成では blind_clearance_m を加味して再設計"
 
 - name: v_jog_panel
   unit: m/s
@@ -214,6 +214,24 @@
   consumers: [web_ui]
   spec_ref: "DetailedDesign-names.md §7.1"
   note: "UI プリセット。手動ジョグの上限（v_jog_max）に対する割合。高速は上限そのまま（1.0×0.55=0.55 m/s。W-07 で割合に戻した）"
+
+- name: auto_brake_default_outdoor
+  unit: null
+  class: b
+  status: given
+  value: 'off'
+  consumers: [state_manager]
+  spec_ref: "DetailedDesign-names.md §7.1 / Spec-safety.md §2.1"
+  note: "S-50 で変える自動ブレーキの既定（場外の手動系。'on'/'off'）。state_manager が MANUAL / TEACH_MANUAL の attributes 既定に優先して使う。既定 'off'（Spec-safety §2.1）。ゾーン NA は値に関わらず ON（安全側）"
+
+- name: auto_brake_default_indoor
+  unit: null
+  class: b
+  status: given
+  value: 'on'
+  consumers: [state_manager]
+  spec_ref: "DetailedDesign-names.md §7.1 / Spec-safety.md §2.1"
+  note: "S-50 で変える自動ブレーキの既定（場内。'on'/'off'）。state_manager のゾーン既定に使う。既定 'on'（Spec-safety §2.1）。ゾーン NA は値に関わらず ON（安全側）"
 
 # =========================================================================
 # 7.2 距離（names §7.2・§7.5 / params §6.1〜§6.4）
@@ -1245,17 +1263,6 @@
   consumers: [leash_runner]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-wp0.md WP-PARAM-01 §5"
   note: "段階 8 まで測りようがない"
-
-- name: calib_interval_days
-  unit: days
-  class: c
-  status: placeholder
-  value: TBD_MEASURE
-  blocking: true
-  blocking_from_stage: 7
-  consumers: [calib_runner, web_ui]
-  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-params.md §6.2（O-c5） / DetailedDesign-wp0.md WP-PARAM-01 §5"
-  note: "定期校正の催促"
 
 # =========================================================================
 # W-03: 教示・再生・間引きの挙動値（names §7.3）

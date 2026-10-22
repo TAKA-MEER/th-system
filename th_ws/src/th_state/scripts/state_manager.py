@@ -155,6 +155,11 @@ class StateManager(Node):
         self.declare_parameter('link_wait_timeout_ms', Parameter.Type.INTEGER)
         self.declare_parameter('ui_active_window_s', Parameter.Type.INTEGER)
         self.declare_parameter('screen_stale_ms', Parameter.Type.INTEGER)
+        # SG-C14: S-50 で変える自動ブレーキの既定（registry 由来。生成 yaml が
+        # 上書きする）。既定は Spec-safety §2.1 と同じ off / on。/params/set で
+        # 変えた値は overrides.yaml に残り、再起動後も維持される（次の起動から効く）。
+        self.declare_parameter('auto_brake_default_outdoor', 'off')
+        self.declare_parameter('auto_brake_default_indoor', 'on')
         # W-13 解除: target_confidence_min は registry.yaml 駆動
         # （person_tracker_bridge と同名・同値で共有行）。生成 yaml が上書きする。
         self.declare_parameter('target_confidence_min', 0.5)
@@ -426,8 +431,14 @@ class StateManager(Node):
         if (self._auto_brake_override is not None
                 and not override_allowed(attrs, self._jog_active, dev)):
             self._auto_brake_override = None
+        # 不正な文字列は spec の既定（場外 OFF・場内 ON）に倒す（安全側）。
+        outdoor = str(self.get_parameter(
+            'auto_brake_default_outdoor').value).lower() == 'on'
+        indoor = str(self.get_parameter(
+            'auto_brake_default_indoor').value).lower() != 'off'
         value = effective_auto_brake(attrs, zone, self._jog_active,
-                                     self._auto_brake_override, dev)
+                                     self._auto_brake_override, dev,
+                                     outdoor, indoor)
         self._flags["auto_brake"] = value
         return value
 

@@ -600,6 +600,7 @@ export const S50_SEC_PRESET = '速度プリセットの割合'
 export const S50_PRESET_NOTE =
   '「保存」は走行中の値に触れません。次の起動から有効になります'
   + '（再起動後に反映）。保存済みでまだ効いていない値は「次回から」で示します。'
+  + '低速≦中速≦高速でなければ保存できません（高速の上限は 100%）。'
 export const S50_PRESET_SAVE = '保存（再起動後に反映）'
 export const S50_PRESET_REASON_LABEL = '変えた理由（必須）'
 export const S50_PRESET_REASON_NEED = '変えた理由を入れてください'
@@ -618,11 +619,43 @@ export const S50_SPEAKER_TEST_SENT = '鳴らしました'
 export const S50_SPEAKER_SEND_FAILED = '送信できませんでした'
 export const S50_SPEAKER_NO_REPLY = 'スピーカー応答なし（走行は止まりません）'
 export const S50_SPEAKER_PLAYING = '再生中'
+// SG-C14: 自動ブレーキの既定（場外の手動・場内）。S-50 で変えた既定は
+// 再起動後も維持する（/params/set 経由。次の起動から効く）。
+export const S50_SEC_BRAKE_TAB = '自動ブレーキ'
+export const S50_SEC_BRAKE = '自動ブレーキの既定'
+export const S50_BRAKE_NOTE =
+  '場外の手動は既定 OFF（警告のみ）、場内は既定 ON（Spec-safety §2.1）。'
+  + '「保存」は走行中の値に触れません。次の起動から有効になります。'
+  + '自律系の無効化不可・ゾーン不明時の ON は変わりません（安全側）。'
+export const S50_BRAKE_OUTDOOR = '場外の手動'
+export const S50_BRAKE_INDOOR = '場内'
+export const S50_BRAKE_OFF = 'OFF'
+export const S50_BRAKE_ON = 'ON'
+// SG-C14: 速度プリセット 3 段階の順序（低速≦中速≦高速、高の天井は 100%）。
+// 違反は保存不可。キーは ros/presetOrder.js の presetOrderError と揃える。
+export const S50_PRESET_ORDER_REASONS = {
+  below_min: '割合は 0.05 以上にしてください',
+  over_ceiling: '高速は 100%（1.0）以下にしてください',
+  low_gt_mid: '低速は中速以下にしてください',
+  mid_gt_high: '中速は高速以下にしてください',
+}
 // 表示タブ: 文字サイズ
 export const S50_FONT_TITLE = '文字サイズ'
 export const S50_FONT_NORMAL = '標準'
 export const S50_FONT_LARGE = '大'
 export const S50_FONT_XLARGE = '特大'
+// SG-C14: 表示タブ（音声 ON/OFF のみ・縦横の固定 3 択・コストマップ表示/非表示）。
+// いずれもブラウザに記憶され、すぐ反映される（機体を動かさない表示だけの設定）。
+export const S50_VOICE_TITLE = '音声'
+export const S50_VOICE_ON = 'ON'
+export const S50_VOICE_OFF = 'OFF'
+export const S50_ORIENTATION_TITLE = '縦横の固定'
+export const S50_ORIENTATION_AUTO = '自動'
+export const S50_ORIENTATION_PORTRAIT = '縦固定'
+export const S50_ORIENTATION_LANDSCAPE = '横固定'
+export const S50_COSTMAP_TITLE = '地図の表示項目'
+export const S50_COSTMAP_SHOW = 'コストマップ表示'
+export const S50_COSTMAP_HIDE = 'コストマップ非表示'
 // 開発モードタブ
 export const S50_DEV_TITLE = '開発モード'
 export const S50_DEV_ENABLE = '開発モードを有効にする'

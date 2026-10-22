@@ -12,6 +12,7 @@
 // { info, data } で返す。null なら未受信。TEST_MODE のシードは
 // window.__thTestCostmap（mutate 用に window.__thSetTestCostmap も足す）。
 import { useEffect, useRef, useState } from 'react'
+import { readCostmapVisible } from '../parts/costmapVisibility.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 
@@ -21,6 +22,9 @@ const COSTMAP_THROTTLE_MS = 2000
 
 export function useOnsiteCostmap(ros) {
   const topicRef = useRef(null)
+  // SG-C14: S-50 のコストマップ表示／非表示。非表示の間は購読しない
+  // （ロボット→ブラウザの転送自体を止める）。切り替えは地図画面を開き直すと反映される。
+  const [visible] = useState(readCostmapVisible)
   const [costmapData, setCostmapData] = useState(
     TEST_MODE ? (window.__thTestCostmap ?? null) : null)
 
@@ -32,6 +36,7 @@ export function useOnsiteCostmap(ros) {
 
   useEffect(() => {
     if (TEST_MODE || !ros) { topicRef.current = null; return undefined }
+    if (!visible) { topicRef.current = null; return undefined }
     const ROSLIB = window.ROSLIB
     if (!ROSLIB) return undefined
     topicRef.current = new ROSLIB.Topic({
@@ -50,7 +55,7 @@ export function useOnsiteCostmap(ros) {
       topicRef.current?.unsubscribe()
       topicRef.current = null
     }
-  }, [ros])
+  }, [ros, visible])
 
-  return costmapData
+  return visible ? costmapData : null
 }

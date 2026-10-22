@@ -37,6 +37,10 @@ function createVoiceQueue() {
   const conditions = new Map()                       // id → { timerId, count }
   const layers     = { [LAYER.SAFETY]: true, [LAYER.DEMO]: false }
   let lastDropped  = null                            // { id, reason }
+  // SG-C14: S-50 の音声 ON/OFF（マスタ）。レイヤより上で全部を黙らせる。
+  // 既定 ON。永続化は parts/voiceMaster.js（localStorage）が担い、
+  // ここは「今黙っているか」の真実だけ持つ。
+  let masterOn = true
 
   const subscribers = new Set()
   let snapshot = buildSnapshot()
@@ -95,6 +99,10 @@ function createVoiceQueue() {
     const base = getAnnouncement(id)
     if (!base) {
       console.warn('[voice] 未知のアナウンス id:', id)
+      return false
+    }
+    if (!masterOn) {
+      drop(id, 'マスタ無効')
       return false
     }
     const entry = overrides?.clips ? { ...base, clips: overrides.clips } : base
@@ -206,6 +214,30 @@ function createVoiceQueue() {
     emit()
   }
 
+  // ── マスタ（S-50 の音声 ON/OFF）────────────────────────────
+  // OFF は「今鳴っている・待っている・繰り返す」全部を止める（条件フラグ自体は
+  // 残す。ON に戻したら、立っている条件のうち有効レイヤのものを鳴らし直す）。
+  function setMasterEnabled(on) {
+    const next = !!on
+    if (masterOn === next) return
+    masterOn = next
+    if (!next) {
+      cancelCurrent()
+      queue.length = 0
+      for (const id of conditions.keys()) clearTimerFor(id)
+      emit()
+      return
+    }
+    for (const [id, state] of conditions) {
+      const entry = getAnnouncement(id)
+      if (!entry || !layers[entry.layer]) continue
+      state.count = 0
+      announce(id)
+      state.timerId = startRepeatTimer(entry)
+    }
+    emit()
+  }
+
   // 既定で継続条件も解除する。「全部止める」と読める名前で再発話タイマーだけ
   // 生き残るのは事故のもと。playback だけ止めたい場合のみ false を渡す。
   function stopAll({ clearConditions = true } = {}) {
@@ -222,6 +254,8 @@ function createVoiceQueue() {
     announce,
     setCondition,
     setLayerEnabled,
+    setMasterEnabled,
+    isMasterEnabled: () => masterOn,
     stopAll,
     isConditionActive: (id) => conditions.has(id),
     subscribe(fn) {

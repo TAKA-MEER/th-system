@@ -53,7 +53,7 @@ from th_system_msgs.msg import ParamsStatus, SystemState
 from th_system_msgs.srv import GetParams, SetParams
 
 from th_config_manager.stop_only_guard import STATE_STALE_SEC, stop_only_allows
-from th_params import export, schema
+from th_params import export, preset_order, schema
 
 OVERRIDES_PATH = "/root/th_data/params/overrides.yaml"
 CALIB_PATH = "/root/th_data/calib/current.yaml"
@@ -374,6 +374,19 @@ class ParamsAudit(Node):
         for row in patched_rows:
             if row["name"] in values:
                 row["value"] = values[row["name"]]
+
+        # SG-C14: 速度プリセット 3 段階は低速≦中速≦高速（高の天井は 100%）。
+        # 部分更新でも崩せないよう、当てる値と保存済みを合わせた実効値で見る。
+        patched_by_name = {r["name"]: r for r in patched_rows}
+        if all(n in patched_by_name for n in preset_order.PRESET_ORDER_NAMES):
+            order_reason = preset_order.check_preset_order(
+                {n: patched_by_name[n]["value"]
+                 for n in preset_order.PRESET_ORDER_NAMES})
+            # 3 段のいずれかが非数値のとき check は None（型の検査は schema が担う）。
+            if order_reason is not None:
+                response.success = False
+                response.message = order_reason
+                return response
 
         schema_errors = schema.validate_registry(patched_rows)
         if schema_errors:

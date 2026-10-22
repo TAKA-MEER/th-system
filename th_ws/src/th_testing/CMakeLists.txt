@@ -357,6 +357,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_params_export
     test/test_params_export.py
     TIMEOUT 60)
+  # SG-C14: S-50 速度プリセット 3 段階の順序（低速≦中速≦高速。ROS2 不要）
+  ament_add_pytest_test(test_params_preset_order
+    test/test_params_preset_order.py
+    TIMEOUT 60)
   # SG-A14 (1b-10): 駆動系の天井と v_max の導出・生成物の一致（ROS2 不要）。
   # §1 が A13 ブロック中のため 2 件は赤のまま（報告参照）。登録自体は正規の手順。
   ament_add_pytest_test(test_drivetrain_ceiling
@@ -569,6 +573,12 @@ if(BUILD_TESTING)
   # 切替要求・入り直しで既定へ戻る・自律系で拒否・画面途絶で ON を縛る。rclpy 要＝ホスト除外。
   ament_add_pytest_test(test_auto_brake_state_node
     test/test_auto_brake_state_node.py
+    TIMEOUT 180)
+  # SG-C14: S-50 で変える自動ブレーキの既定が state_manager の実効値に効くこと。
+  # 逆にした既定（場外 on・場内 off）を渡して場外 ON・場内 OFF になることと、
+  # ロック（自律系・待機・ゾーン NA は ON のまま）をノード本体で縛る。
+  ament_add_pytest_test(test_auto_brake_defaults_node
+    test/test_auto_brake_defaults_node.py
     TIMEOUT 180)
   # 手動系の自動ブレーキ ON/OFF を obstacle_limiter 本体で縛る（1b-15 SG-B10。ON は減速・
   # OFF は減速せず接近警告・state 途絶で ON・estop／fault_lock／AUTO／NA は OFF でも止める）。

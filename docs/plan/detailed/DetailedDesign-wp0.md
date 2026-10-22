@@ -476,7 +476,7 @@ def timeout_upper_bound_ms(v_max, intrusion_budget_m) -> float
 | `link_gap_p99_ms`（ESP32/LiDAR/UI） | **1** |
 | `tracker_lost_grace_ms` / `person_position_sigma_m` | 4 |
 | `replay_drift_m_per_100m` | 5 |
-| `calib_*_tolerance` / `calib_interval_days` | 7 |
+| `calib_*_tolerance` | 7 |
 | `battery_endurance_min` / `leash_stop_latency_ms` | 8 |
 
 ### 6. 安全要件

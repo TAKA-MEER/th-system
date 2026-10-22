@@ -177,7 +177,7 @@ def limiter_resolved() -> dict[str, tuple[str, Any]]:
 
     `fault_params` と違ってここでは placeholder を即座に fail させない。
     `v_reverse`（後退時の上限）は現時点で registry.yaml 上 **placeholder** のまま
-    （`blind_clearance_m` が `derived_from` だが、その `blind_clearance_m` 自体が
+    （`venue_clearance_m` が `derived_from` だが、その `venue_clearance_m` 自体が
     `status: placeholder`。コメント「O-a2 が決まるまで placeholder」）。もしここで
     即座に fail させると、`v_reverse` を使わない他のテスト（1・11・control）まで
     巻き添えで落ちてしまう。実際に必要なテスト（2）だけが `limiter_param('v_reverse')`
