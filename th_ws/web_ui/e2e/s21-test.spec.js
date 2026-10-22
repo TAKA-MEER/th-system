@@ -209,6 +209,29 @@ test('WS-9AB: PANEL_NAV/BLOCKED で「再検索」→ui.reroute、「中断」�
   await expect(page.locator('[data-testid="s21-blocked"]')).toBeHidden()
 })
 
+// 一時停止中（PAUSE）にも「中断」を出す。走行中（NAV・ALIGN）は出さない。
+for (const mode of ['PANEL_NAV', 'HOME_NAV', 'SUMMON']) {
+  test(`${mode}/PAUSE で「中断」が見えて押すと ui.abort`, async ({ page }) => {
+    await goto21(page, { mode, state: 'PAUSE' })
+    await expect(page.locator('[data-testid="s21-paused"]')).toBeVisible()
+    const ab = page.locator('[data-testid="s21-paused-abort"]')
+    await expect(ab).toHaveText('中断')
+    await expect(ab).toHaveClass(/\bdanger\b/)
+    await ab.click()
+    expect((await triggers(page)).some((c) => c.trigger === 'ui.abort'),
+      '中断が ui.abort を送っていない').toBe(true)
+  })
+}
+
+for (const state of ['NAV', 'ALIGN']) {
+  test(`PANEL_NAV/${state} では「中断」を出さない`, async ({ page }) => {
+    await goto21(page, { mode: 'PANEL_NAV', state })
+    await expect(page.locator('[data-testid="s21-paused"]')).toBeHidden()
+    await expect(page.locator('[data-testid="s21-blocked"]')).toBeHidden()
+    await expect(page.getByRole('button', { name: '中断', exact: true })).toHaveCount(0)
+  })
+}
+
 test('BLOCKED 帯の「再検索」「中断」はボタンの見た目(.btn)・44px 以上で描画される', async ({ page }) => {
   await goto21(page, { mode: 'PANEL_NAV', state: 'BLOCKED' })
   const re = page.getByRole('button', { name: '再検索' })

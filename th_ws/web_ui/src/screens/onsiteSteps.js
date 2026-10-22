@@ -52,6 +52,15 @@ export function jogAllowedForMode(mode, attributes) {
 // 機体側の拒否は th_state の T-NAV-goto-reject と venue_navigator の select_pin 拒否。
 export const GOTO_BLOCKED_MODES = ['PANEL_NAV', 'SUMMON', 'HOME_NAV']
 
+// 「中断」（ui.abort → AT_HOME/IDLE_H）を出す状態（Spec-webui §3.11 S-21）。
+// 経路が塞がれた BLOCKED と、一時停止中の PAUSE。走行中（NAV・ALIGN）は出さない
+// （「停止」してから「中断」）。SUMMON の WAIT_CLEAR の ui.abort は退避待ちのやり直しで
+// 意味が違うので、ここでは出さない。
+export const ABORT_STATES = ['BLOCKED', 'PAUSE']
+export function abortAvailable(mode, stateName) {
+  return GOTO_BLOCKED_MODES.includes(mode) && ABORT_STATES.includes(stateName)
+}
+
 export function onsiteReasons({
   mode, stateName, attributes, pins = [], working = false,
 } = {}) {
