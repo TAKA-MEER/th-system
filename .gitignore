@@ -66,3 +66,9 @@ th_ws/data/venue/
 th_ws/data/runaway/
 # 「運用の終了」の停止要求の印（state_manager が書き start.sh が消す。実行時の一時ファイル）
 th_ws/data/.control_stop
+
+# 実行時にノードが書く機体ごとの記録（calib_runner の校正結果・fault_recorder の
+# フォルト履歴・speaker_announcer の音量設定）。routes/ venue/ と同じ扱い
+th_ws/data/calib/
+th_ws/data/fault_log/
+th_ws/data/speaker/
