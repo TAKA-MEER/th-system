@@ -453,6 +453,48 @@ class TestStateManagerNode(unittest.TestCase):
         finally:
             self.node.destroy_publisher(pub_pins)
 
+    def test_estop_resume_from_blocked_goes_to_pause(self):
+        """2026-10-22（SM-3.1.1-11。T-1 実機）。PANEL_NAV/BLOCKED で非常停止 → 解除 →
+        ui.resume_yes → /system/state は PANEL_NAV/PAUSE。BLOCKED に戻すと自動再開
+        （evt.unblocked → NAV）で操作なしに走り出した。戻り先が BLOCKED／NAV を
+        一度も経由しないことまで見る。"""
+        from geometry_msgs.msg import Pose
+        from th_system_msgs.msg import Pin, PinList
+        pub_pins = self.node.create_publisher(PinList, '/onsite/pins', _STATE_QOS)
+        try:
+            pub_pins.publish(PinList(
+                pins=[Pin(id='p1', kind='PANEL', pose=Pose())]))
+            self._spin(0.5)
+            res = self._trigger('ui.goto', {'kind': 'PANEL'})
+            assert res.accepted, res.reject_reason_key
+            assert self._wait_mode_state('PANEL_NAV', 'NAV'), 'PANEL_NAV/NAV に入らない'
+            self.pub_event.publish(StateEvent(
+                event='evt.blocked', source_node='test', arg_json=''))
+            assert self._wait_mode_state('PANEL_NAV', 'BLOCKED'), \
+                'evt.blocked で BLOCKED に入らない'
+
+            self.pub_ui_estop.publish(Bool(data=True))
+            assert self._wait_mode('ESTOP')
+            snap = self._latest()
+            assert (snap.prev_mode, snap.prev_state) == ('PANEL_NAV', 'BLOCKED'), \
+                f'latch が違う: {snap.prev_mode}/{snap.prev_state}'
+            self.pub_ui_estop.publish(Bool(data=False))
+            self._spin(0.3)
+            assert self._latest().mode == 'ESTOP'
+
+            self._state_history.clear()
+            res = self._trigger('ui.resume_yes')
+            assert res.accepted, res.reject_reason_key
+            assert (res.mode, res.state) == ('PANEL_NAV', 'PAUSE'), \
+                f'戻り先が PAUSE でない: {res.mode}/{res.state}'
+            assert self._wait_mode_state('PANEL_NAV', 'PAUSE')
+            self._spin(1.0)
+            seen = [(m.mode, m.state) for m in self._state_history]
+            assert ('PANEL_NAV', 'BLOCKED') not in seen and ('PANEL_NAV', 'NAV') not in seen, \
+                f'戻っただけで BLOCKED／NAV に進んだ（T-1 の再発）: {seen}'
+        finally:
+            self.node.destroy_publisher(pub_pins)
+
     # ════════════════════════════════════════════════════════
     # SM-3.1.1-11 / 12 — ESTOP からの復帰先。
     # 2026-09-01: UI ボタン由来の ESTOP（重大フォールト無し）は解除後に

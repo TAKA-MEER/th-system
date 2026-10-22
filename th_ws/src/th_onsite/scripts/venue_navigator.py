@@ -897,6 +897,15 @@ class VenueNavigator(Node):
         if self._state == 'PAUSE':
             self._unblocking = False
             return
+        # 2026-10-22: 到着済み（ALIGN）に届いた計算結果も捨てる。非常停止・手押しから
+        # ALIGN の PAUSE に戻して「走行」で再開すると、キャッシュ経路が無く計画し直す
+        # （_start_nav）。ゴール至近なら 20Hz の到着判定が先に evt.arrived → ALIGN へ
+        # 進むため、あとから届いた結果で FollowPath を送って向き合わせと競合させない。
+        if self._state == 'ALIGN':
+            self._path = None
+            self._unblocking = False
+            self._nav_chain_active = False
+            return
         # モード離脱後に届いた計算結果は捨てる（送らない・キャッシュも残さない）。
         # _reset_for_exit が _path=None にした後なので、残すと離脱先のモードで
         # 走り出すうえ、次の episode の NAV 入口が古い経路を送ってしまう。

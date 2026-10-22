@@ -135,8 +135,20 @@ def is_driving(mode: str, state: str, attrs: Dict[str, dict],
     return False
 
 
-# C-09c-blocked が戻す BLOCKED を持つモード（Spec-modes.md §3）。
-ESTOP_RESUME_BLOCKED_MODES: Set[str] = {"PANEL_NAV", "HOME_NAV"}
+# 2026-10-22（SM-3.1.1-11・-14）— 押下前が BLOCKED／ALIGN のときも、走行中と同じく
+# 同モードの PAUSE へ戻す（戻っただけで動き出さない。T-1 実機で BLOCKED に戻した途端、
+# 自動再開で走り出した）。走行中（ESTOP_RESUME_RUN）に足して PAUSE 行きにする組。
+# SUMMON は C-09c-summon／C-11-summon が先に拾う（POINT からやり直す）ので載せない。
+# PREP/RETURN も別の行（C-09c-prep-return 等）が先に拾う。
+ESTOP_RESUME_PAUSE_EXTRA: Set[Tuple[str, str]] = {
+    ("PANEL_NAV", "BLOCKED"), ("HOME_NAV", "BLOCKED"), ("PANEL_NAV", "ALIGN"),
+}
+
+
+def prev_resumes_to_pause(prev_mode: str, prev_state: str) -> bool:
+    """押下前の (モード, 状態) が走行中、または BLOCKED／ALIGN なら True。"""
+    return (ESTOP_RESUME_RUN.get(prev_mode) == prev_state
+            or (prev_mode, prev_state) in ESTOP_RESUME_PAUSE_EXTRA)
 
 # C-04（$resume_run）が None になるモード。attributes.yaml の run_state が
 # null のモードのうち、PAUSE に入りうるもの（SG-B22）。ガード resume_run_available が
@@ -165,10 +177,10 @@ ESTOP_PREV_MODES: Dict[str, Set[str]] = {
     "estop_prev_is_calib": {"CALIB"},
     "estop_prev_is_prep_return": {"PREP"},
     "estop_prev_is_prep": {"PREP"},
-    "estop_prev_was_running": set(ESTOP_RESUME_RUN.keys()),
+    "estop_prev_was_running": set(ESTOP_RESUME_RUN.keys())
+    | {m for m, _ in ESTOP_RESUME_PAUSE_EXTRA},
     "estop_prev_is_follow_confirm": {"FOLLOW"},
     "estop_prev_is_replay_localize": {"REPLAY"},
-    "estop_prev_is_blocked": set(ESTOP_RESUME_BLOCKED_MODES),
     "estop_resume_prev": set(MODES) - {"INIT", "IDLE", "ESTOP", "CARRY"},
     "carry_prev_is_summon": {"SUMMON"},
     "carry_prev_is_at_panel": {"AT_PANEL"},
@@ -177,10 +189,10 @@ ESTOP_PREV_MODES: Dict[str, Set[str]] = {
     "carry_prev_is_calib": {"CALIB"},
     "carry_prev_is_prep_return": {"PREP"},
     "carry_prev_is_prep": {"PREP"},
-    "carry_prev_was_running": set(ESTOP_RESUME_RUN.keys()),
+    "carry_prev_was_running": set(ESTOP_RESUME_RUN.keys())
+    | {m for m, _ in ESTOP_RESUME_PAUSE_EXTRA},
     "carry_prev_is_follow_confirm": {"FOLLOW"},
     "carry_prev_is_replay_localize": {"REPLAY"},
-    "carry_prev_is_blocked": set(ESTOP_RESUME_BLOCKED_MODES),
     "carry_resume_prev": set(MODES) - {"ESTOP", "CARRY"},
 }
 

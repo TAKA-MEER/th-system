@@ -251,10 +251,9 @@ class StateCore:
 | **`C-09c-calib`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_calib`** | `CALIB` | `LIST` | `clear_prev`, `close_window{id:W-1}`, `discard_calib{item}` |
 | **`C-09c-prep-return`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_prep_return`**（`PREP/RETURN` → `PREP/PAUSE`。1b-1 SG-A7） | `PREP` | `PAUSE` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-prep`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_prep`** | `PREP` | `$prev_state` | `clear_prev`, `close_window{id:W-1}` |
-| **`C-09c-running`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_was_running`**（押下前が走行中） | `$prev_mode` | `PAUSE` | `clear_prev`, `close_window{id:W-1}` |
+| **`C-09c-running`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_was_running`**（押下前が走行中、または BLOCKED／ALIGN。2026-10-22） | `$prev_mode` | `PAUSE` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-confirm`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_follow_confirm`** | `FOLLOW` | `CONFIRM` | `clear_prev`, `close_window{id:W-1}`, `face_target` |
 | **`C-09c-localize`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_replay_localize`** | `REPLAY` | `LOCALIZE` | `clear_prev`, `close_window{id:W-1}`, `load_route{id,reverse}` |
-| **`C-09c-blocked`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_blocked`** | `$prev_mode` | `BLOCKED` | `clear_prev`, `close_window{id:W-1}`, `open_window{id:W-5}` |
 | **`C-09c-generic`** | `ESTOP` | `NONE` | `ui.resume_yes` | `estop_resume_prev` | `$prev_mode` | `$prev_state` | `clear_prev`, `close_window{id:W-1}` |
 | `C-09d` | `ESTOP` | `NONE` | `ui.resume_no` | **`fault_cleared_and_ui_released`**（SG-A5。`C-09f` と同じ） | `IDLE` | `NONE` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09f`** | `ESTOP` | `NONE` | `ui.resume_ack` | **`fault_cleared_and_ui_released`** | `IDLE` | `NONE` | `clear_prev`, `close_window{id:W-1}` |
@@ -266,10 +265,9 @@ class StateCore:
 | **`C-11-calib`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_calib`** | `CALIB` | `LIST` | `clear_prev`, `close_window{id:W-2}`, `discard_calib{item}` |
 | **`C-11-prep-return`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_prep_return`** | `PREP` | `PAUSE` | `clear_prev`, `close_window{id:W-2}` |
 | **`C-11-prep`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_prep`** | `PREP` | `$prev_state` | `clear_prev`, `close_window{id:W-2}` |
-| **`C-11-running`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_was_running`**（押下前が走行中） | `$prev_mode` | `PAUSE` | `clear_prev`, `close_window{id:W-2}` |
+| **`C-11-running`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_was_running`**（押下前が走行中、または BLOCKED／ALIGN。2026-10-22） | `$prev_mode` | `PAUSE` | `clear_prev`, `close_window{id:W-2}` |
 | **`C-11-confirm`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_follow_confirm`** | `FOLLOW` | `CONFIRM` | `clear_prev`, `close_window{id:W-2}`, `face_target` |
 | **`C-11-localize`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_replay_localize`** | `REPLAY` | `LOCALIZE` | `clear_prev`, `close_window{id:W-2}`, `load_route{id,reverse}` |
-| **`C-11-blocked`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_blocked`** | `$prev_mode` | `BLOCKED` | `clear_prev`, `close_window{id:W-2}`, `open_window{id:W-5}` |
 | **`C-11-generic`** | `CARRY` | `NONE` | `ui.carry_resume` | `carry_resume_prev`（`IDLE` も復帰可能） | `$prev_mode` | `$prev_state` | `clear_prev`, `close_window{id:W-2}` |
 | `C-12` | `CARRY` | `NONE` | `ui.finish` | `hw_released` | `IDLE` | `NONE` | `clear_prev` |
 | `C-13` | `IDLE` ／ `MANUAL` | `*` | `ui.enter_mode` | `mode_entry_allowed` | `$arg.mode` | `$initial` | — |
@@ -353,7 +351,6 @@ class StateCore:
 | **`estop_prev_was_running`** | 上の3項 `and prev_state == ESTOP_RESUME_RUN[prev_mode]`（走行中の 9 モード。`attributes.yaml` の `run_state` の転記。一致は test で縛る） | 同上 |
 | **`estop_prev_is_follow_confirm`** | 上の3項 `and (FOLLOW, CONFIRM)`（`face_target` を再実行） | 同上 |
 | **`estop_prev_is_replay_localize`** | 上の3項 `and (REPLAY, LOCALIZE)`（`load_route` を再実行。引数はノードがラッチ） | 同上 |
-| **`estop_prev_is_blocked`** | 上の3項 `and prev_mode ∈ {PANEL_NAV,HOME_NAV} and prev_state == "BLOCKED"`（W-5 を開き直す） | 同上 |
 | **`resume_run_available`** | `not fault_active and mode ∉ {AT_PANEL,AT_HOME,OPCHECK,CALIB}`（SG-B22。`C-04` の `None` 対策） | `fault_active`, **`mode`** |
 | **`resume_state_available`** | `not fault_active and mode != "PREP"`（SG-B22。`C-05` の `None` 対策） | `fault_active`, **`mode`** |
 | **`presence_stops_mode`** | `is_driving(mode, state, attributes, flags["jog_active"])`（走行中だけ真。`C-16`。1b-1 SG-A12） | **`mode`**, **`state`**, `flags` |
@@ -764,15 +761,15 @@ UI がエラー表示すべきか判断できなくなる。
 | | | `C-14` | `SM-3.1.1-17` |
 | | | `C-15`（`C-15-summon` を含む） | `SM-3.1.1-16` |
 
-**`C-09c-*` の 12 行**（`summon` / `at-panel` / `at-home` / `opcheck` / `calib` /
-`prep-return` / `prep` / `running` / `confirm` / `localize` / `blocked` / `generic`）は
+**`C-09c-*` の 11 行（2026-10-22 に blocked を廃止）**（`summon` / `at-panel` / `at-home` / `opcheck` / `calib` /
+`prep-return` / `prep` / `running` / `confirm` / `localize` / `generic`）は
 すべて `SM-3.1.1-11`（§4.4.3 の 6 組に加え、正本の 1 行を押下前のモード・状態で
-割り振る 7 組目の fan-out。1b-2）。**`SM-3.1.1-11` の fan-out は 16 行**
-（`C-09` / `C-09b-init` / `C-09b` / `C-09c-*` 12 行 / `C-09d`）。
+割り振る 7 組目の fan-out。1b-2）。**`SM-3.1.1-11` の fan-out は 15 行**
+（`C-09` / `C-09b-init` / `C-09b` / `C-09c-*` 11 行 / `C-09d`）。
 `test_transition_table.py` の `SPEC_FANOUT` が機械的に縛る。
 
-**`C-11-*` の 12 行**（`summon` / `at-panel` / `at-home` / `opcheck` / `calib` /
-`prep-return` / `prep` / `running` / `confirm` / `localize` / `blocked` / `generic`）は
+**`C-11-*` の 11 行（2026-10-22 に blocked を廃止）**（`summon` / `at-panel` / `at-home` / `opcheck` / `calib` /
+`prep-return` / `prep` / `running` / `confirm` / `localize` / `generic`）は
 すべて `SM-3.1.1-14`（`C-09c-*` と同じ形の fan-out。2026-10-14）。**`SM-3.1.1-14` の
 fan-out は 12 行**（`SPEC_FANOUT` が機械的に縛る）。
 

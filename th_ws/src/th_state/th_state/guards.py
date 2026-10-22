@@ -10,7 +10,7 @@ state_core.py からの import はモード名・状態名の集合（文字列�
 """
 from typing import Callable, Dict
 
-from th_state.state_core import (ESTOP_RESUME_BLOCKED_MODES, ESTOP_RESUME_RUN,
+from th_state.state_core import (ESTOP_RESUME_RUN, prev_resumes_to_pause,
                                    RESUME_RUN_UNAVAILABLE_MODES,
                                    RESUME_STATE_UNAVAILABLE_MODES,
                                    TEACH_MODES,
@@ -173,12 +173,13 @@ def _estop_prev_is_prep(mode, state, ctx) -> bool:
 
 
 def _estop_prev_was_running(mode, state, ctx) -> bool:
-    """押下前が走行中（自律走行・記録中）なら同モードの PAUSE へ（SM-3.1.1-11）。
+    """押下前が走行中（自律走行・記録中）、または BLOCKED／ALIGN（2026-10-22）なら
+    同モードの PAUSE へ（SM-3.1.1-11）。
     走行中かどうかは ESTOP_RESUME_RUN（attributes.yaml の run_state の転記）で引く。
     「走行中」の判定を属性で持つ方式ではなく状態名の一覧で持つ方式にした理由は
     state_core.ESTOP_RESUME_RUN のコメントを参照（ガードは attributes を読めない）。"""
     return (_estop_base_ok(ctx)
-            and ESTOP_RESUME_RUN.get(ctx.prev_mode) == ctx.prev_state)
+            and prev_resumes_to_pause(ctx.prev_mode, ctx.prev_state))
 
 
 def _estop_prev_is_follow_confirm(mode, state, ctx) -> bool:
@@ -189,11 +190,6 @@ def _estop_prev_is_follow_confirm(mode, state, ctx) -> bool:
 def _estop_prev_is_replay_localize(mode, state, ctx) -> bool:
     return (_estop_base_ok(ctx) and ctx.prev_mode == "REPLAY"
             and ctx.prev_state == "LOCALIZE")
-
-
-def _estop_prev_is_blocked(mode, state, ctx) -> bool:
-    return (_estop_base_ok(ctx) and ctx.prev_mode in ESTOP_RESUME_BLOCKED_MODES
-            and ctx.prev_state == "BLOCKED")
 
 
 # SM-3.1.1-14（2026-10-14。T-2 ③）— C-11 fan-out 共通の土台。
@@ -247,7 +243,7 @@ def _carry_prev_is_prep(mode, state, ctx) -> bool:
 
 def _carry_prev_was_running(mode, state, ctx) -> bool:
     return (_carry_base_ok(ctx)
-            and ESTOP_RESUME_RUN.get(ctx.prev_mode) == ctx.prev_state)
+            and prev_resumes_to_pause(ctx.prev_mode, ctx.prev_state))
 
 
 def _carry_prev_is_follow_confirm(mode, state, ctx) -> bool:
@@ -258,11 +254,6 @@ def _carry_prev_is_follow_confirm(mode, state, ctx) -> bool:
 def _carry_prev_is_replay_localize(mode, state, ctx) -> bool:
     return (_carry_base_ok(ctx) and ctx.prev_mode == "REPLAY"
             and ctx.prev_state == "LOCALIZE")
-
-
-def _carry_prev_is_blocked(mode, state, ctx) -> bool:
-    return (_carry_base_ok(ctx) and ctx.prev_mode in ESTOP_RESUME_BLOCKED_MODES
-            and ctx.prev_state == "BLOCKED")
 
 
 # 1b-1（SG-A12）— sys.presence_lost（在席喪失）用。走行中だけ PAUSE に落とす。
@@ -477,7 +468,6 @@ GUARDS: Dict[str, Callable] = {
     "estop_prev_was_running": _estop_prev_was_running,
     "estop_prev_is_follow_confirm": _estop_prev_is_follow_confirm,
     "estop_prev_is_replay_localize": _estop_prev_is_replay_localize,
-    "estop_prev_is_blocked": _estop_prev_is_blocked,
     "carry_resume_prev": _carry_resume_prev,
     "carry_prev_is_summon": _carry_prev_is_summon,
     "carry_prev_is_at_panel": _carry_prev_is_at_panel,
@@ -489,13 +479,12 @@ GUARDS: Dict[str, Callable] = {
     "carry_prev_was_running": _carry_prev_was_running,
     "carry_prev_is_follow_confirm": _carry_prev_is_follow_confirm,
     "carry_prev_is_replay_localize": _carry_prev_is_replay_localize,
-    "carry_prev_is_blocked": _carry_prev_is_blocked,
     "resume_run_available": _resume_run_available,
     "resume_state_available": _resume_state_available,
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 61, len(GUARDS)
+assert len(GUARDS) == 59, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:
