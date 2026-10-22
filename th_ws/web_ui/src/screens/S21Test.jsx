@@ -766,9 +766,6 @@ export default function S21Test({ onExit }) {
                     {panelPick && (
                       <div className="note mt" data-testid="s21-panel-pick-hint">{S21_PICK_PANEL_HINT}</div>
                     )}
-                    {destMoveReason && (
-                      <div className="note mt" data-testid="s21-pin-move-reason">{destMoveReason}</div>
-                    )}
                     {goErr && (
                       <div className="note mt" data-testid="s21-go-err">{goErr}</div>
                     )}
@@ -777,7 +774,12 @@ export default function S21Test({ onExit }) {
               </div>
 
               <div className="card">
-                <h3>{S21_NEXT_DEST_TITLE}</h3>
+                <h3>
+                  {S21_NEXT_DEST_TITLE}
+                  {destMoveReason && (
+                    <span className="reason-badge reason-inline" data-testid="s21-pin-move-reason">{destMoveReason}</span>
+                  )}
+                </h3>
                 <div className="btnrow n3">
                   <div>
                     <button
@@ -790,7 +792,7 @@ export default function S21Test({ onExit }) {
                       <IconArrow />
                       <span>{S21_DEST_HOME}</span>
                     </button>
-                    {destHomeReason && (
+                    {destHomeReason && !destMoveReason && (
                       <span className="reason-badge" data-testid="reason-s21-dest-home">
                         {destHomeReason}
                       </span>
@@ -807,7 +809,7 @@ export default function S21Test({ onExit }) {
                       <IconArrow />
                       <span>{S21_DEST_NEXT_PANEL}</span>
                     </button>
-                    {destNextPanelReason && (
+                    {destNextPanelReason && !destMoveReason && (
                       <span className="reason-badge" data-testid="reason-s21-dest-next-panel">
                         {destNextPanelReason}
                       </span>
@@ -824,7 +826,7 @@ export default function S21Test({ onExit }) {
                       <IconArrow />
                       <span>{S21_DEST_SUMMON_HERE}</span>
                     </button>
-                    {destSummonHereReason && (
+                    {destSummonHereReason && !destMoveReason && (
                       <span className="reason-badge" data-testid="reason-s21-dest-summon-here">
                         {destSummonHereReason}
                       </span>
