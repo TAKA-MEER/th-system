@@ -53,6 +53,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_slam_control_logic
     test/test_slam_control_logic.py
     TIMEOUT 30)
+  # Spec-onsite §4.0.2: 地図更新 OFF の間 /map を凍結する判定と状態機械
+  # （map_freezer_core）と配線の静的確認。ROS2 不要
+  ament_add_pytest_test(test_map_freezer_core
+    test/test_map_freezer_core.py
+    TIMEOUT 30)
   # 1b-5: 停止中だけのガードの純関数（stop_only_guard.py）の真理値表。
   # SD-9 の許可条件・拒否条件・鮮度境界と、3 ノードの配線の静的固定。ROS2 不要
   ament_add_pytest_test(test_stop_only_guard
@@ -499,6 +504,16 @@ if(BUILD_TESTING)
     TIMEOUT 120)
   ament_add_pytest_test(test_venue_loaded_node
     test/test_venue_loaded_node.py
+    TIMEOUT 120)
+  # Spec-onsite §4.0.2: 本物の map_freezer を起動し /map_live・/system/state・
+  # freeze_anchor を流して購読者の見る /map を確かめる（launch_testing。ROS2 要）
+  ament_add_pytest_test(test_map_freezer_node
+    test/test_map_freezer_node.py
+    TIMEOUT 240)
+  # slam_control が map_freezer へ契機（opening/opened/saving/saved/unloaded）を
+  # 実際に発行する（インプロセス。ROS2 要）
+  ament_add_pytest_test(test_map_freeze_anchor_node
+    test/test_map_freeze_anchor_node.py
     TIMEOUT 120)
   ament_add_pytest_test(test_params_audit_node
     test/test_params_audit_node.py
