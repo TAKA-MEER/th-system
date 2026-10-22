@@ -36,6 +36,12 @@ def generate_test_description():
         package='th_state',
         executable='state_manager.py',
         name='state_manager',
+        parameters=[{
+            'jog_lease_ms': 300,
+            'link_wait_timeout_ms': 60_000,
+            'ui_active_window_s': 5,
+            'screen_stale_ms': 60_000,
+        }],
         output='screen',
     )
     return launch.LaunchDescription([
