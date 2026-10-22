@@ -62,6 +62,7 @@ const CASES = [
   ['S-20 地図', 'S20', { mode: 'PREP', state: 'MAPPING', tracker_enabled: true }, ONSITE],
   ['S-21 待機', 'S21', { mode: 'AT_HOME', tracker_enabled: true }, ONSITE],
   ['S-21 移動', 'S21', { mode: 'PANEL_NAV', state: 'MOVING', tracker_enabled: true }, ONSITE],
+  ['S-21 移動 一時停止', 'S21', { mode: 'PANEL_NAV', state: 'PAUSE', tracker_enabled: true }, ONSITE],
   ['S-21 ピン無し', 'S21', { mode: 'AT_HOME', tracker_enabled: true }, {}],
   ['S-30 一覧', 'S30', { mode: 'OPCHECK', state: 'LIST' }, {}],
   ['S-30 モーター', 'S30', { mode: 'OPCHECK', state: 'RUNNING_CHECK' },

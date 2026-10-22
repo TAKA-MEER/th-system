@@ -554,7 +554,7 @@ export const BADGE_JOG_DENIED = 'このモードでは手動操作できませ�
 export const BADGE_NO_PANEL_PIN = '配電盤ピンが登録されていません'
 export const BADGE_NO_HOME_PIN = '待機場所ピンが登録されていません'
 // SM-3.1.2-118: 移動の一時停止中・移動中は行き先を選べない（「次の行き先」とピン行の「移動」）。
-export const BADGE_GOTO_PAUSED = '一時停止中です。「走行」で続きを走るか、「中断」してから行き先を選んでください'
+export const BADGE_GOTO_PAUSED = '一時停止中は選べません（「走行」で続き、または「中断」して選び直し）'
 export const BADGE_GOTO_MOVING = '移動中は行き先を選べません。着いてから選んでください'
 
 // ---------------------------------------------------------------- S-50 設定（WS-9X） ----

@@ -734,7 +734,7 @@ export default function S21Test({ onExit }) {
                   <div className="note" data-testid="s21-pins-empty">{S21_PINS_EMPTY}</div>
                 ) : (
                   <>
-                    <div className="lst-scroll pin-list">
+                    <div className={`lst-scroll pin-list${destMoveReason ? ' pin-list-short' : ''}`}>
                       <table className="lst">
                         <tbody>
                           {pins.map((pin) => (
