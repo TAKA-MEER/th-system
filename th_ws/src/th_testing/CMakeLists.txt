@@ -314,6 +314,9 @@ if(BUILD_TESTING)
     TIMEOUT 30)
 
   # 「作業中」の判定と遷移表の拒否行（1b-9 SG-A9。th_state の純ロジック。ROS2 不要）
+  # 移動中・一時停止中は行き先を選べない（SM-3.1.2-118。遷移表の拒否行）
+  ament_add_pytest_test(test_goto_while_nav
+    test/test_goto_while_nav.py)
   ament_add_pytest_test(test_working_guard
     test/test_working_guard.py
     TIMEOUT 30)
@@ -849,6 +852,10 @@ if(BUILD_TESTING)
   # 再開のときも走り出す前に経路の先を確認する（Spec-onsite §6.3。launch_testing）
   ament_add_pytest_test(test_venue_nav_resume_check_node
     test/test_venue_nav_resume_check_node.py
+    TIMEOUT 400)
+  # 移動中・一時停止中は行き先を選べない（SM-3.1.2-118。select_pin を拒否し保留ゴールを変えない。launch_testing）
+  ament_add_pytest_test(test_venue_nav_goto_while_nav_node
+    test/test_venue_nav_goto_while_nav_node.py
     TIMEOUT 400)
 
   # 待機場所宣言の配線（DetailedDesign-onsite.md §9 #10。Gazebo なしの

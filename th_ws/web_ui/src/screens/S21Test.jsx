@@ -7,6 +7,7 @@
 //               AT_PANEL / IDLE）
 //   T-ATP-01/02: AT_PANEL --ui.working<--> IDLE_P ⇄ WORKING
 //   T-ATP-05:   AT_PANEL(IDLE_P/WORKING) --ui.goto--> $arg.kind
+//   T-NAV-goto-reject: PANEL_NAV / SUMMON / HOME_NAV の全状態（PAUSE 含む）で ui.goto は拒否（SM-3.1.2-118）
 //   T-SUM-01:   SUMMON --evt.two_point_done--> WAIT_CLEAR（2 点指示は
 //               /onsite/two_point を purpose='SUMMON' index 1→2 で呼ぶ）
 //   T-SUM-05:   SUMMON(WAIT_CLEAR) --ui.abort--> POINT
@@ -55,6 +56,7 @@ import { REJECT_REASONS, reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reaso
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
 import {
   BADGE_JOG_DENIED, BADGE_NO_HOME_PIN, BADGE_NO_PANEL_PIN,
+  BADGE_GOTO_PAUSED, BADGE_GOTO_MOVING,
   S20_MAP_ARIA, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TARGET, S20_MAP_TITLE,
   S20_TAB_MAP, S20_TAB_TARGET,
   S20_WIZ_MSG_STEP1, S20_WIZ_MSG_STEP2, S20_WIZ_REGISTER, S20_WIZ_STEP, S20_PIN_YAW,
@@ -88,6 +90,8 @@ const ONSITE_BADGE_TEXT = {
   jog_denied: BADGE_JOG_DENIED,
   no_panel_pin: BADGE_NO_PANEL_PIN,
   no_home_pin: BADGE_NO_HOME_PIN,
+  goto_paused: BADGE_GOTO_PAUSED,
+  goto_moving: BADGE_GOTO_MOVING,
   working_in_progress: REJECT_REASONS.working_in_progress,
   wait_clear_active: REJECT_REASONS.wait_clear_active,
 }
@@ -267,6 +271,12 @@ export default function S21Test({ onExit }) {
   // フォールバック自体が不要。
   async function handleMove(pin) {
     setGoErr(null)
+    // SM-3.1.2-118: 移動中・一時停止中は select_pin も呼ばない（機体側も拒否するが、
+    // 呼ばなければ保留中の行き先に触れない）。ボタンは disabled だが二重に守る。
+    if (destMoveReason) {
+      setGoErr(destMoveReason)
+      return
+    }
     const res = await selectPin({ panel_id: pin.id })
     if (res?.success) {
       setPanelPick(false)
@@ -352,6 +362,8 @@ export default function S21Test({ onExit }) {
     ? (ONSITE_BADGE_TEXT[reasons.destNextPanel] ?? reasons.destNextPanel) : null
   const destSummonHereReason = reasons.destSummonHere
     ? (ONSITE_BADGE_TEXT[reasons.destSummonHere] ?? reasons.destSummonHere) : null
+  const destMoveReason = reasons.destMove
+    ? (ONSITE_BADGE_TEXT[reasons.destMove] ?? reasons.destMove) : null
 
   // ── 手順バー（UX-1）と「次にやること」ボタン ──
   // 段 1「会場地図を開く」は機体の /map_session/status（slot:VENUE が LOCALIZING）から
@@ -566,7 +578,8 @@ export default function S21Test({ onExit }) {
         </div>
 
         {/* WS-9AB: BLOCKED（経路が見つからず止まっている）の帯。再検索と、
-            非常停止せず待機場所へ戻る中断（T-PNAV-10 / T-SUM-17 / T-HNAV-09）。 */}
+            非常停止せず方式をやめて止まる「中断」（→ AT_HOME/IDLE_H。待機場所へは走らない。
+            T-PNAV-10 / T-SUM-17 / T-HNAV-09）。 */}
         {isNavMode && stateName === 'BLOCKED' && (
           <div className="row s21-blocked" data-testid="s21-blocked">
             <span className="grow">{S21_BLOCKED_MSG}</span>
@@ -709,7 +722,7 @@ export default function S21Test({ onExit }) {
                                   type="button"
                                   className="btn sm"
                                   data-testid={`s21-pin-move-${pin.id}`}
-                                  disabled={disabledAll}
+                                  disabled={disabledAll || !!destMoveReason}
                                   onClick={(e) => { e.stopPropagation(); handleMove(pin) }}
                                 >
                                   {S21_PIN_MOVE}
@@ -722,6 +735,9 @@ export default function S21Test({ onExit }) {
                     </div>
                     {panelPick && (
                       <div className="note mt" data-testid="s21-panel-pick-hint">{S21_PICK_PANEL_HINT}</div>
+                    )}
+                    {destMoveReason && (
+                      <div className="note mt" data-testid="s21-pin-move-reason">{destMoveReason}</div>
                     )}
                     {goErr && (
                       <div className="note mt" data-testid="s21-go-err">{goErr}</div>
@@ -803,7 +819,7 @@ export default function S21Test({ onExit }) {
                   type="button"
                   className="btn primary wide"
                   data-testid="s21-summon-start"
-                  disabled={disabledAll || !trackerEnabled}
+                  disabled={disabledAll || !trackerEnabled || !!destSummonHereReason}
                   onClick={startSummon}
                 >
                   <IconArrow />

@@ -64,3 +64,10 @@ test('保存確定の拒否理由 teach_saved_finalized が日本語に解決す
   assert.equal(reasonLabel('teach_saved_finalized'), REJECT_REASONS.teach_saved_finalized)
   assert.notEqual(reasonLabel('teach_saved_finalized'), 'teach_saved_finalized')
 })
+
+// SM-3.1.2-118: 移動中・一時停止中の行き先拒否（transitions.yaml T-NAV-goto-reject）の
+// reject_reason_key。消えると理由が生キーで出る。
+test('移動中の行き先拒否 goto_while_nav が日本語に解決する', () => {
+  assert.ok(REJECT_REASONS.goto_while_nav)
+  assert.equal(reasonLabel('goto_while_nav'), REJECT_REASONS.goto_while_nav)
+})

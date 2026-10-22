@@ -212,7 +212,7 @@ test('WS-9AB: PANEL_NAV/BLOCKED で「再検索」→ui.reroute、「中断」�
 test('BLOCKED 帯の「再検索」「中断」はボタンの見た目(.btn)・44px 以上で描画される', async ({ page }) => {
   await goto21(page, { mode: 'PANEL_NAV', state: 'BLOCKED' })
   const re = page.getByRole('button', { name: '再検索' })
-  const ab = page.getByRole('button', { name: '中断して待機場所へ' })
+  const ab = page.getByRole('button', { name: '中断', exact: true })
   await expect(re).toHaveClass(/\bbtn\b/)
   await expect(ab).toHaveClass(/\bbtn\b/)
   await expect(ab).toHaveClass(/\bdanger\b/)
@@ -308,6 +308,27 @@ test('ピンの「移動」: 名前が空文字のピンでも panel_id は id �
   const calls = await onsiteServiceCalls(page)
   expect(calls[0].request).toMatchObject({ panel_id: 'panel_1' })
 })
+
+// SM-3.1.2-118（2026-10-22 実機 T-10）: 移動の一時停止中・移動中は行き先を押せない。
+// 押せてしまうと select_pin だけ通って保留中の行き先が書き換わる。
+for (const [mode, state, text] of [
+  ['PANEL_NAV', 'PAUSE', '一時停止中です'],
+  ['HOME_NAV', 'PAUSE', '一時停止中です'],
+  ['SUMMON', 'PAUSE', '一時停止中です'],
+  ['PANEL_NAV', 'NAV', '移動中は行き先を選べません'],
+]) {
+  test(`行き先は押せない: ${mode}/${state}（ピン行の移動・次の行き先・その場で呼ぶ）`, async ({ page }) => {
+    await goto21(page, { mode, state }, { selectPin: { success: true, message: '' } })
+    await page.locator('[data-testid="s21-subtab-dest"]').click()
+    await expect(page.locator('[data-testid="s21-pin-move-p1"]')).toBeDisabled()
+    await expect(page.locator('[data-testid="s21-pin-move-reason"]')).toContainText(text)
+    await expect(page.locator('[data-testid="s21-dest-home"]')).toBeDisabled()
+    await expect(page.locator('[data-testid="s21-dest-next-panel"]')).toBeDisabled()
+    await expect(page.locator('[data-testid="s21-dest-summon-here"]')).toBeDisabled()
+    expect((await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/select_pin'),
+      '押せないはずなのに select_pin が呼ばれている').toHaveLength(0)
+  })
+}
 
 test('次の行き先: 待機場所→ui.goto{HOME}、その場で呼ぶ→ui.goto{SUMMON}、次の配電盤→ピン一覧を促す', async ({ page }) => {
   await goto21(page)

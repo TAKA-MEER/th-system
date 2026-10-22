@@ -10,6 +10,8 @@ export const REJECT_REASONS = {
   tracker_lost: '対象を見失っています',
   no_target_selected: '対象が選ばれていません',
   working_in_progress: '作業中は行き先を選べません',
+  // SM-3.1.2-118: 盤前移動・呼び寄せ・待機場所へ戻る途中（一時停止中を含む）は行き先を選べない。
+  goto_while_nav: '移動中・一時停止中は行き先を選べません。「走行」で続きを走るか、「中断」してから選んでください',
   estop_disabled_in_carry: '手押し中は非常停止を操作できません',
   estop_engaged: '非常停止が作動中です',
   hw_estop_still_pressed: '物理非常停止ボタンが押されたままです',
