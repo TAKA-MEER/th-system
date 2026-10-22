@@ -1,0 +1,4 @@
+speaker_announcer:
+  ros__parameters:
+    speaker_enabled: true
+    speaker_volume: 60
