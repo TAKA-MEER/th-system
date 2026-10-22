@@ -365,7 +365,7 @@ const unloaded = (page) => page.evaluate(() => window.__thSetTestMapSession(
 const loaded = (page) => page.evaluate(() => window.__thSetTestMapSession(
   { slot: 'VENUE', session_id: 'venue', mode: 'LOCALIZING', dirty: false, instance_id: 'x' }))
 for (const [mode, state] of [
-  ['AT_HOME', 'IDLE_H'], ['AT_PANEL', 'IDLE_P'], ['PANEL_NAV', 'PAUSE'], ['HOME_NAV', 'PAUSE'], ['SUMMON', 'PAUSE'],
+  ['IDLE', 'NONE'], ['AT_HOME', 'IDLE_H'], ['AT_PANEL', 'IDLE_P'], ['PANEL_NAV', 'PAUSE'], ['HOME_NAV', 'PAUSE'], ['SUMMON', 'PAUSE'],
 ]) {
   test(`会場地図なし: ${mode}/${state} は行き先を押せず、理由は見出しに 1 回だけ`, async ({ page }) => {
     await goto21(page, { mode, state }, { selectPin: { success: true, message: '' } })

@@ -44,7 +44,7 @@ export function jogAllowedForMode(mode, attributes) {
  *   PAUSE なら 'goto_paused'、それ以外は 'goto_moving' を返す
  *   （SM-3.1.2-118。transitions.yaml T-NAV-goto-reject と同じ集合）。
  *   行き先を選べるのは AT_HOME の IDLE_H / PAUSE、AT_PANEL の IDLE_P、IDLE だけ。
- *   venueUnloaded（会場地図を持たない。SM-3.1.2-119）が真で mode が AT_HOME / AT_PANEL /
+ *   venueUnloaded（会場地図を持たない。SM-3.1.2-119）が真で mode が IDLE / AT_HOME / AT_PANEL /
  *   PANEL_NAV / SUMMON / HOME_NAV なら、上のどれより先に 4 つ全部へ 'venue_not_loaded'。
  * @param {{mode?: string|null, stateName?: string|null, attributes?: Object,
  *         pins?: Array, working?: boolean}} _
@@ -55,8 +55,9 @@ export function jogAllowedForMode(mode, attributes) {
 export const GOTO_BLOCKED_MODES = ['PANEL_NAV', 'SUMMON', 'HOME_NAV']
 
 // 会場地図を持たないと行き先と「走行」を塞ぐモード（SM-3.1.2-119。transitions.yaml
-// T-VUL-goto / T-VUL-run と同じ集合。AT_HOME・AT_PANEL は行き先、移動系は「走行」と行き先）。
-export const VENUE_GATED_MODES = ['AT_HOME', 'AT_PANEL', 'PANEL_NAV', 'SUMMON', 'HOME_NAV']
+// T-VUL-goto / T-VUL-idle-goto / T-VUL-run と同じ集合。IDLE・AT_HOME・AT_PANEL は行き先、
+// 移動系は「走行」と行き先）。
+export const VENUE_GATED_MODES = ['IDLE', 'AT_HOME', 'AT_PANEL', 'PANEL_NAV', 'SUMMON', 'HOME_NAV']
 
 // 「走行」（ui.run）を塞ぐか。会場地図が無く、PAUSE から再開する移動系モードのとき。
 export function runBlockedByVenue(mode, stateName, venueUnloaded) {

@@ -395,13 +395,13 @@ test('abortAvailable: 「中断」は PANEL_NAV/HOME_NAV/SUMMON の BLOCKED と 
 })
 
 // ── SM-3.1.2-119: 会場地図を持たない間は行き先と「走行」を塞ぐ ───────────────
-test('SM-3.1.2-119: VENUE_GATED_MODES は transitions.yaml T-VUL-* と同じ 5 モード', () => {
-  assert.deepEqual([...VENUE_GATED_MODES].sort(), ['AT_HOME', 'AT_PANEL', 'HOME_NAV', 'PANEL_NAV', 'SUMMON'])
+test('SM-3.1.2-119: VENUE_GATED_MODES は transitions.yaml T-VUL-* と同じ 6 モード', () => {
+  assert.deepEqual([...VENUE_GATED_MODES].sort(), ['AT_HOME', 'AT_PANEL', 'HOME_NAV', 'IDLE', 'PANEL_NAV', 'SUMMON'])
 })
 
-test('SM-3.1.2-119: 会場地図が無ければ 5 モードで 4 つ全部 venue_not_loaded（移動中・作業中・ピン無しより優先）', () => {
+test('SM-3.1.2-119: 会場地図が無ければ 6 モードで 4 つ全部 venue_not_loaded（移動中・作業中・ピン無しより優先）', () => {
   const all = { destHome: 'venue_not_loaded', destNextPanel: 'venue_not_loaded', destSummonHere: 'venue_not_loaded', destMove: 'venue_not_loaded' }
-  for (const [mode, st] of [['AT_HOME', 'IDLE_H'], ['AT_HOME', 'PAUSE'], ['AT_PANEL', 'IDLE_P'], ['AT_PANEL', 'WORKING'],
+  for (const [mode, st] of [['AT_HOME', 'IDLE_H'], ['AT_HOME', 'PAUSE'], ['AT_PANEL', 'IDLE_P'], ['AT_PANEL', 'WORKING'], ['IDLE', 'NONE'],
     ['PANEL_NAV', 'PAUSE'], ['PANEL_NAV', 'NAV'], ['HOME_NAV', 'PAUSE'], ['SUMMON', 'PAUSE']]) {
     for (const pins of [PINS_BOTH, []]) {
       const r = onsiteReasons({
@@ -417,7 +417,7 @@ test('SM-3.1.2-119: 会場地図があれば（または未受信 false なら�
     assert.deepEqual(onsiteReasons({ mode, stateName: st, attributes: attributesLike, pins: PINS_BOTH, venueUnloaded: false }), {}, mode)
     assert.deepEqual(onsiteReasons({ mode, stateName: st, attributes: attributesLike, pins: PINS_BOTH }), {}, mode)
   }
-  for (const mode of ['IDLE', 'PREP', 'MANUAL', 'REPLAY']) {
+  for (const mode of ['PREP', 'MANUAL', 'REPLAY']) {
     const r = onsiteReasons({ mode, stateName: 'X', attributes: attributesLike, pins: PINS_BOTH, venueUnloaded: true })
     assert.equal(r.destMove, undefined, mode)
     assert.equal(r.destHome, undefined, mode)

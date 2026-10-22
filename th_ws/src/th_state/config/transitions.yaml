@@ -1811,6 +1811,19 @@
   reject: true
   reject_reason_key: venue_not_loaded
   override_common: true
+- id: T-VUL-idle-goto
+  layer: 10
+  mode: IDLE
+  state: NONE
+  event: ui.goto
+  guard: venue_unloaded_nav_goto
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-119
+  reject: true
+  reject_reason_key: venue_not_loaded
+  override_common: true
 - id: T-VUL-run
   layer: 10
   mode:

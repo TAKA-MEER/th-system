@@ -10,7 +10,7 @@ state_core.py からの import はモード名・状態名の集合（文字列�
 """
 from typing import Callable, Dict
 
-from th_state.state_core import (ESTOP_RESUME_RUN, prev_resumes_to_pause,
+from th_state.state_core import (ESTOP_RESUME_RUN, GOTO_KIND_MAP, prev_resumes_to_pause,
                                    RESUME_RUN_UNAVAILABLE_MODES,
                                    RESUME_STATE_UNAVAILABLE_MODES,
                                    TEACH_MODES,
@@ -332,6 +332,14 @@ def _venue_unloaded(mode, state, ctx) -> bool:
     return ctx.venue_unloaded
 
 
+def _venue_unloaded_nav_goto(mode, state, ctx) -> bool:
+    """SM-3.1.2-119。IDLE からの ui.goto のうち、会場地図が要る行き先（盤前移動・待機場所・
+    呼び寄せ）だけを、会場地図が無いとき拒否する。他の kind は塞がない。"""
+    kind = ctx.arg.get("kind")
+    return ctx.venue_unloaded and GOTO_KIND_MAP.get(kind, kind) in (
+        "PANEL_NAV", "HOME_NAV", "SUMMON")
+
+
 def _goto_summon(mode, state, ctx) -> bool:
     """WS-9AF(2026-09-11): ui.goto{kind:SUMMON} だけを狙って先に評価させ、
     begin_two_point{kind:SUMMON} を挟むための専用ガード（C-09/C-09b と同じ
@@ -447,6 +455,7 @@ GUARDS: Dict[str, Callable] = {
     "working": _working,
     "goto_summon": _goto_summon,
     "venue_unloaded": _venue_unloaded,
+    "venue_unloaded_nav_goto": _venue_unloaded_nav_goto,
     "candidate_exists": _candidate_exists,
     "target_selected": _target_selected,
     "target_confident": _target_confident,
@@ -492,7 +501,7 @@ GUARDS: Dict[str, Callable] = {
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 60, len(GUARDS)
+assert len(GUARDS) == 61, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:

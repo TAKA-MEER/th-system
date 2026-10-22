@@ -76,10 +76,34 @@ def test_abort_and_stop_still_work_without_venue_map(mode, state_core_bundle):
     assert d.accepted is True and d.to_state == "PAUSE"
 
 
-def test_venue_unloaded_does_not_touch_other_modes(state_core_bundle):
-    """対象外のモード（IDLE の行き先・前日 PREP）は巻き込まない。"""
+@pytest.mark.parametrize("kind", ["PANEL", "HOME", "SUMMON"])
+def test_idle_goto_rejected_without_venue_map(kind, state_core_bundle):
+    """非常停止の窓の「メインメニューへ」→ IDLE から行き先、も塞ぐ（SM-3.1.2-119）。"""
     core = state_core_bundle[0]
-    d = core.step("IDLE", "NONE", "ui.goto", _unloaded("PANEL"))
-    assert d.accepted is True
+    d = core.step("IDLE", "NONE", "ui.goto", _unloaded(kind))
+    assert d.accepted is False
+    assert d.reject_reason_key == "venue_not_loaded"
+    assert (d.to_mode, d.to_state) == ("IDLE", "NONE")
+    assert d.effects == ()
+
+
+@pytest.mark.parametrize("kind,mode", [("PANEL", "PANEL_NAV"), ("HOME", "HOME_NAV"),
+                                       ("SUMMON", "SUMMON")])
+def test_idle_goto_accepted_with_venue_map(kind, mode, state_core_bundle):
+    core = state_core_bundle[0]
+    d = core.step("IDLE", "NONE", "ui.goto", _ctx(kind))
+    assert d.accepted is True and d.to_mode == mode
+
+
+def test_idle_goto_other_kinds_not_blocked(state_core_bundle):
+    """会場地図が要らない kind（盤前移動・待機場所・呼び寄せ以外）は塞がない。"""
+    core = state_core_bundle[0]
+    d = core.step("IDLE", "NONE", "ui.goto", _unloaded("FOLLOW"))
+    assert d.reject_reason_key != "venue_not_loaded"
+
+
+def test_venue_unloaded_does_not_touch_other_modes(state_core_bundle):
+    """対象外のモード（前日 PREP）は巻き込まない。"""
+    core = state_core_bundle[0]
     d = core.step("PREP", "RETURN", "ui.stop", _unloaded())
     assert d.accepted is True

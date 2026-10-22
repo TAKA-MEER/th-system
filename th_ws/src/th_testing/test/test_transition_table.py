@@ -65,7 +65,7 @@ SPEC_FANOUT = {
     "SM-3.1.2-028": 2, "SM-3.1.2-099": 2, "SM-3.1.2-100": 2,
     "SM-3.1.2-101": 2, "SM-3.1.2-102": 2,
     # SM-3.1.2-119: 会場地図を持たない間の拒否。行き先（T-VUL-goto）と再開（T-VUL-run）の 2 行。
-    "SM-3.1.2-119": 2,
+    "SM-3.1.2-119": 3,
 }
 
 
@@ -156,6 +156,7 @@ _STATIC_GUARD_OVERRIDES = {
     "route_exists": {"route_ids": ("R1",), "arg": {"id": "R1"}},
     "route_loaded": {"route_loaded": True},
     "venue_unloaded": {"venue_unloaded": True},
+    "venue_unloaded_nav_goto": {"venue_unloaded": True, "arg": {"kind": "PANEL"}},
     "home_pin_exists": {"pin_kinds": ("HOME",)},
     "map_update": {"flags": {"map_update": True}, "map_update_available": True},
     # 1b-11 SG-B14: map_update_off は flags 空（OFF）の素の ctx で真。
