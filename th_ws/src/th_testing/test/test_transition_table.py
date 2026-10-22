@@ -33,13 +33,13 @@ _SPEC_ID_RE = re.compile(r"SM-3\.1\.[12]-\d+[a-z]?")
 # Spec-modes.md §3.1.1 SM-3.1.1-11 の 1 行が「解除／戻る／メニューへ」を包含する）。
 # 2026-10-05 の 1b-2（SG-A3・SG-A5）で C-09b-init を足し、C-09c を 12 行に分割。
 # 内訳: C-09 / C-09b-init / C-09b / C-09c-summon / -at-panel / -at-home / -opcheck /
-# -calib / -prep-return / -prep / -running / -confirm / -localize / -blocked / -generic /
-# C-09d = 16。
+# -calib / -prep-return / -prep / -running / -confirm / -localize / -generic /
+# C-09d = 16。2026-10-22 に -blocked を廃し（BLOCKED／ALIGN は -running の PAUSE へ）15。
 # 2026-10-14（T-2 ③）で C-11 も同じ 12 行に分割（C-11-summon / 〜 / -generic）。
-# SM-3.1.1-14 = 12。
+# SM-3.1.1-14 = 12。2026-10-22 に C-11-blocked を廃して 11。
 SPEC_FANOUT = {
     "SM-3.1.1-03": 2, "SM-3.1.1-04": 2, "SM-3.1.1-05": 2,
-    "SM-3.1.1-10": 4, "SM-3.1.1-11": 16, "SM-3.1.1-14": 12, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
+    "SM-3.1.1-10": 4, "SM-3.1.1-11": 15, "SM-3.1.1-14": 11, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
     "SM-3.1.2-043": 2,     "SM-3.1.2-069": 3, "SM-3.1.2-094": 4,
     # 1b-7 SG-B11: SM-3.1.2-017 は T-TEACH-05（ui.run 拒否）と T-TEACH-05J
     # （ui.jog.hold 拒否。C-01 が SAVED を抜ける穴塞ぎ）の 2 行。
@@ -201,9 +201,6 @@ _STATIC_GUARD_OVERRIDES = {
     "estop_prev_is_replay_localize": {"fault_active": False, "fault_severity": "",
                                       "hw_estop": False, "prev_mode": "REPLAY",
                                       "prev_state": "LOCALIZE"},
-    "estop_prev_is_blocked": {"fault_active": False, "fault_severity": "",
-                              "hw_estop": False, "prev_mode": "PANEL_NAV",
-                              "prev_state": "BLOCKED"},
     # SM-3.1.1-14（2026-10-14）: C-11 fan-out の新ガード。土台は
     # hw_released_and_no_critical と同じ 2 項（回復フォルト継続中も受理する）。
     "carry_resume_prev": {"hw_estop": False, "fault_severity": "",
@@ -230,8 +227,6 @@ _STATIC_GUARD_OVERRIDES = {
     "carry_prev_is_replay_localize": {"hw_estop": False, "fault_severity": "",
                                       "prev_mode": "REPLAY",
                                       "prev_state": "LOCALIZE"},
-    "carry_prev_is_blocked": {"hw_estop": False, "fault_severity": "",
-                              "prev_mode": "PANEL_NAV", "prev_state": "BLOCKED"},
     "resume_run_available": {"fault_active": False},
     "resume_state_available": {"fault_active": False},
     # 1b-1 SG-A12: presence_stops_mode は attributes 束縛の動的ガード

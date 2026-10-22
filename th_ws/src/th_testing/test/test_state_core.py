@@ -289,7 +289,7 @@ def test_carry_resume_stopped_returns_to_prev_state(state_core_bundle):
             ("LINE", "ARRIVED"),
             ("LEASH", "DEV_CHECK"), ("LEASH", "READY"), ("LEASH", "HOLD"),
             ("LEASH", "PAUSE"),
-            ("PANEL_NAV", "PAUSE"), ("PANEL_NAV", "ALIGN"),
+            ("PANEL_NAV", "PAUSE"),
             ("HOME_NAV", "PAUSE")]:
         d = core.step("CARRY", "NONE", "ui.carry_resume",
                       _carry_ctx(prev_mode, prev_state))
@@ -340,18 +340,25 @@ def test_carry_resume_replay_localize_reloads_route(state_core_bundle):
         f"load_route の引数が違う: {by_name}"
 
 
-@pytest.mark.rule("C-11-blocked")
-def test_carry_resume_blocked_reopens_window(state_core_bundle):
-    """BLOCKED へ戻り、W-5 を開き直す（塞がれ中の表示を復元する）。"""
+@pytest.mark.rule("C-11-running")
+def test_carry_resume_blocked_align_goes_to_pause(state_core_bundle):
+    """2026-10-22（SM-3.1.1-14）: 押下前が BLOCKED／ALIGN なら同モードの PAUSE へ。
+    BLOCKED に戻すと自動再開（evt.unblocked）で操作なしに走り出す（T-1 実機）。
+    SUMMON は C-11-summon が先に拾い POINT のまま。"""
     core, _, _, _ = state_core_bundle
-    for prev_mode in ("PANEL_NAV", "HOME_NAV"):
+    for prev_mode, prev_state in (("PANEL_NAV", "BLOCKED"), ("HOME_NAV", "BLOCKED"),
+                                  ("PANEL_NAV", "ALIGN")):
         d = core.step("CARRY", "NONE", "ui.carry_resume",
-                      _carry_ctx(prev_mode, "BLOCKED"))
+                      _carry_ctx(prev_mode, prev_state))
         assert d.accepted is True
-        assert (d.to_mode, d.to_state) == (prev_mode, "BLOCKED")
-        assert d.rule_id == "C-11-blocked", f"{prev_mode}: {d.rule_id}"
-        opened = [e.args.get("id") for e in d.effects if e.name == "open_window"]
-        assert "W-5" in opened, f"W-5 を開き直していない: {[e.name for e in d.effects]}"
+        assert (d.to_mode, d.to_state) == (prev_mode, "PAUSE"), (prev_mode, prev_state)
+        assert d.rule_id == "C-11-running", f"{prev_mode}/{prev_state}: {d.rule_id}"
+        assert "open_window" not in [e.name for e in d.effects]
+    for prev_state in ("BLOCKED", "ALIGN"):
+        d = core.step("CARRY", "NONE", "ui.carry_resume",
+                      _carry_ctx("SUMMON", prev_state))
+        assert (d.to_mode, d.to_state) == ("SUMMON", "POINT"), prev_state
+        assert d.rule_id == "C-11-summon"
 
 
 @pytest.mark.rule("C-11-summon")
@@ -767,7 +774,7 @@ def test_estop_resume_stopped_returns_to_prev_state(state_core_bundle):
             ("LINE", "ARRIVED"),
             ("LEASH", "DEV_CHECK"), ("LEASH", "READY"), ("LEASH", "HOLD"),
             ("LEASH", "PAUSE"),
-            ("PANEL_NAV", "PAUSE"), ("PANEL_NAV", "ALIGN"),
+            ("PANEL_NAV", "PAUSE"),
             ("HOME_NAV", "PAUSE")]:
         # AT_HOME/PAUSE は C-09c-at-home（IDLE_H）が先に拾うためここに含めない。
         d = core.step("ESTOP", "NONE", "ui.resume_yes",
@@ -819,18 +826,25 @@ def test_estop_resume_replay_localize_reloads_route(state_core_bundle):
         f"load_route の引数が違う: {by_name}"
 
 
-@pytest.mark.rule("C-09c-blocked")
-def test_estop_resume_blocked_reopens_window(state_core_bundle):
-    """BLOCKED へ戻り、W-5 を開き直す（塞がれ中の表示を復元する）。"""
+@pytest.mark.rule("C-09c-running")
+def test_estop_resume_blocked_align_goes_to_pause(state_core_bundle):
+    """2026-10-22（SM-3.1.1-11）: 押下前が BLOCKED／ALIGN なら同モードの PAUSE へ。
+    BLOCKED に戻すと自動再開（evt.unblocked）で操作なしに走り出す（T-1 実機）。
+    SUMMON は C-09c-summon が先に拾い POINT のまま。"""
     core, _, _, _ = state_core_bundle
-    for prev_mode in ("PANEL_NAV", "HOME_NAV"):
+    for prev_mode, prev_state in (("PANEL_NAV", "BLOCKED"), ("HOME_NAV", "BLOCKED"),
+                                  ("PANEL_NAV", "ALIGN")):
         d = core.step("ESTOP", "NONE", "ui.resume_yes",
-                      _resume_ctx(prev_mode, "BLOCKED"))
+                      _resume_ctx(prev_mode, prev_state))
         assert d.accepted is True
-        assert (d.to_mode, d.to_state) == (prev_mode, "BLOCKED")
-        assert d.rule_id == "C-09c-blocked", f"{prev_mode}: {d.rule_id}"
-        opened = [e.args.get("id") for e in d.effects if e.name == "open_window"]
-        assert "W-5" in opened, f"W-5 を開き直していない: {[e.name for e in d.effects]}"
+        assert (d.to_mode, d.to_state) == (prev_mode, "PAUSE"), (prev_mode, prev_state)
+        assert d.rule_id == "C-09c-running", f"{prev_mode}/{prev_state}: {d.rule_id}"
+        assert "open_window" not in [e.name for e in d.effects]
+    for prev_state in ("BLOCKED", "ALIGN"):
+        d = core.step("ESTOP", "NONE", "ui.resume_yes",
+                      _resume_ctx("SUMMON", prev_state))
+        assert (d.to_mode, d.to_state) == ("SUMMON", "POINT"), prev_state
+        assert d.rule_id == "C-09c-summon"
 
 
 @pytest.mark.rule("C-09c-summon")

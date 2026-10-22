@@ -341,8 +341,10 @@
     args:
       id: W-1
   spec_ref: SM-3.1.1-11
-# C-09c-running: 押下前が走行中（自律走行・記録中）なら同モードの PAUSE
-# （勝手に走り出さない）。SUMMON/PREP は上の行が先に拾う。
+# C-09c-running: 押下前が走行中（自律走行・記録中）、または盤前・ホーム移動の
+# BLOCKED／盤前の ALIGN（2026-10-22）なら同モードの PAUSE（勝手に走り出さない。
+# PAUSE からは「走行」で再開し、venue_navigator が経路の先を確かめる）。
+# SUMMON/PREP は上の行が先に拾う。
 - id: C-09c-running
   layer: 0
   mode: ESTOP
@@ -398,25 +400,6 @@
     args:
       route_id: $arg.id
       reverse: $arg.reverse
-  spec_ref: SM-3.1.1-11
-# C-09c-blocked: BLOCKED へ戻り、W-5（T-PNAV-04 / T-HNAV-04 と同じ）を開き直す。
-- id: C-09c-blocked
-  layer: 0
-  mode: ESTOP
-  state: NONE
-  event: ui.resume_yes
-  guard: estop_prev_is_blocked
-  to_mode: $prev_mode
-  to_state: BLOCKED
-  effects:
-  - name: clear_prev
-    args: {}
-  - name: close_window
-    args:
-      id: W-1
-  - name: open_window
-    args:
-      id: W-5
   spec_ref: SM-3.1.1-11
 # C-09c-generic: 上のいずれにも当たらない止まっている状態は、押下前の状態へ
 # そのまま戻す（PAUSE を持たないモードに PAUSE を作らない。SG-A3）。
@@ -608,8 +591,9 @@
     args:
       id: W-2
   spec_ref: SM-3.1.1-14
-# C-11-running: 押下前が走行中（自律走行・記録中・手動走行中）なら同モードの PAUSE
-# （勝手に走り出さない）。SUMMON/PREP は上の行が先に拾う。
+# C-11-running: 押下前が走行中（自律走行・記録中・手動走行中）、または BLOCKED／
+# ALIGN（2026-10-22）なら同モードの PAUSE（勝手に走り出さない）。
+# SUMMON/PREP は上の行が先に拾う。
 - id: C-11-running
   layer: 0
   mode: CARRY
@@ -665,25 +649,6 @@
     args:
       route_id: $arg.id
       reverse: $arg.reverse
-  spec_ref: SM-3.1.1-14
-# C-11-blocked: BLOCKED へ戻り、W-5（T-PNAV-04 / T-HNAV-04 と同じ）を開き直す。
-- id: C-11-blocked
-  layer: 0
-  mode: CARRY
-  state: NONE
-  event: ui.carry_resume
-  guard: carry_prev_is_blocked
-  to_mode: $prev_mode
-  to_state: BLOCKED
-  effects:
-  - name: clear_prev
-    args: {}
-  - name: close_window
-    args:
-      id: W-2
-  - name: open_window
-    args:
-      id: W-5
   spec_ref: SM-3.1.1-14
 # C-11-generic: 上のいずれにも当たらない止まっている状態は、押下前の状態へ
 # そのまま戻す。押下前が IDLE なら IDLE（C-09c-generic と違い IDLE を復帰不能と
