@@ -168,6 +168,7 @@ case RobotMode::IDLE:
 | `th_planning/scripts/replay_runner.py` | `load_route` / `rotate_to_start_yaw` / `resume_path` を受け、pure-pursuit で `/cmd_vel_behavior`（priority 20）へ出力。到着で `evt.arrived` を返す |
 | `th_planning/th_planning/route_replay_core.py` | 再生の純粋コア（pure-pursuit・逆再生・現在地合わせ）。ROS2 非依存 |
 | `th_config_manager/scripts/slam_control.py` | 地図セッション（`/map_session/open`）。教示「保存」で地図を凍結し、再生の経路選択のたび `slam_toolbox` を作り直してから `deserialize_map` を **1 回だけ** 行う |
+| `th_config_manager/scripts/map_freezer.py` | `slam_toolbox` の出力（`/map_live`。bringup が `/map` から remap）を受けて `/map` を配信する。地図を開いて地図更新 OFF の間は開いた（または最後に保存した）地図の写しを出し続け、走って見えた物が表示・経路計画に混ざらないようにする（localization 中も slam_toolbox は直近スキャンを一時的に地図へ足すため）。ON・PREP・教示・地図を開く前は素通し。判定は `map_freezer_core.py`、写しを取る契機は `slam_control` が `/map_session/freeze_anchor` で出す。詳細は DetailedDesign-onsite §3.7.3.0 |
 | `th_planning/scripts/map_downsampler.py` | WebUI へ送る地図の間引き（帯域対策） |
 
 ### 再生の pure-pursuit と速度スケール
