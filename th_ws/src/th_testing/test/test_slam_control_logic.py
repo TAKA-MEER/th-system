@@ -948,3 +948,22 @@ def test_venue_session_mode_three_values():
     assert venue_session_mode(True, True) == 'MAPPING'
     assert venue_session_mode(False, True) == 'LOCALIZING'
     assert venue_session_mode(False, False) == 'UNLOADED'
+
+
+def test_map_patch_target_all_combinations():
+    """commit_map_patch の保存先: 会場 / 経路 / 無し / 曖昧（両方立つ）は拒否。"""
+    sys.path.insert(0, _CONF_PKG + "/..")
+    from th_config_manager.slam_control_logic import map_patch_target
+    assert map_patch_target("", False) is None
+    assert map_patch_target("/r/a", False) == ("ROUTE", "/r/a")
+    assert map_patch_target("", True) == ("VENUE", "")
+    assert map_patch_target("/r/a", True) is None
+
+
+def test_commit_map_patch_effect_uses_map_patch_target():
+    """effect 側が保存先を map_patch_target で決め、会場と経路の書き足しを呼び分ける（配線）。"""
+    src = open(SLAM_CONTROL, encoding="utf-8").read()
+    seg = src[src.index("elif msg.name == 'commit_map_patch'"):]
+    seg = seg[:seg.index("self.get_logger().debug")]
+    assert "map_patch_target(self._open_route_base, self._venue_loaded)" in seg
+    assert "_commit_venue_patch" in seg and "_commit_route_patch" in seg

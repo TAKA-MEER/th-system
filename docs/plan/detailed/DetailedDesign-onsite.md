@@ -294,6 +294,16 @@ slam_toolbox ─(/map を /map_live へ remap)→ map_freezer ─→ /map ─→
 > `Spec-webui.md` §3.11 ／ `Spec-transit.md` §0.1。
 > **正本の 4 行が先にあり、上の 4 行はその実装である**（§11 のテスト 2r も通る）。
 
+**`commit_map_patch` の保存先は「最後に開いた地図」**（`slam_control` の `map_patch_target`）:
+
+| 最後に開いた／保存した地図 | 書き先 | 旧版 | 補足 |
+| --- | --- | --- | --- |
+| 会場地図（`/map_session/open` の `VENUE` reload 成功） | `venue/map` | 残さない（1 枚のみ。Spec-params §6） | localization のまま serialize。`instance_id` は変えず `.instance_id` に今の世代を書き直す（ピンの `map_instance_id` と一致し続ける）。`saving`/`saved`/`save_failed` を `freeze_anchor` に出す |
+| 経路地図（`ROUTE` の save／reload 成功） | その経路地図 | 1 世代残す | 従来どおり |
+| どちらも無い／両方立っている | 書かない（拒否） | — | 取り違えて上書きするより拒否 |
+
+`VENUE` の reload 成功で経路の保存先（`_open_route_base`）を消し、`ROUTE` の save／reload で `_venue_loaded` を下ろす。
+
 > **「地図を書き足したのだからピンも自動で補正する」をやってはいけない。**
 > 補正の根拠が無い（どのピンがどれだけずれたかは推定できない）。
 > **座標を勝手に動かすと、盤の前に着いたつもりで別の場所に着く**——③ をむしろ悪化させる。

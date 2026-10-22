@@ -135,7 +135,7 @@ from th_config_manager.stop_only_guard import (
     STATE_STALE_SEC, stop_only_allows, teach_reset_allows, venue_open_allows)
 from th_config_manager.slam_control_logic import (
     deserialize_match_type, effective_reload_pose, estimator_restarting,
-    map_instance_ids_match,
+    map_instance_ids_match, map_patch_target,
     map_session_base_dir, map_session_filename, map_session_name,
     open_session_error, rotate_map_previous, slam_restart_complete,
     venue_session_mode,
@@ -235,6 +235,8 @@ class SlamControl(Node):
         # commit_map_patch（教示再生・試験場内の「保存」）は effect に経路 id を
         # 持たないため、直近に save/reload したセッションへ書き足しを確定する。
         # 成功したときだけ更新する（失敗したセッションへ誤って上書きしない）。
+        # 保存先は「最後に開いた地図」: VENUE の読み直しに成功したらここを消し、
+        # ROUTE を開いたら _venue_loaded を下ろす（両方が立たない。map_patch_target）。
         self._open_route_base = ''
         # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
         # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
@@ -732,6 +734,8 @@ class SlamControl(Node):
                 saved = self._handle_map_save(response, base, keep_previous=True)
                 if saved.success:
                     self._open_route_base = base
+                    self._venue_loaded = False   # 最後に開いた／保存した地図は経路
+                    self._publish_venue_status()
                 return saved
             # WS-9Y: VENUE は呼び出し側（試験画面）が初期姿勢を渡してこないため、
             # 登録済み HOME ピンの姿勢へフォールバックする（無ければ従来どおり
@@ -759,6 +763,9 @@ class SlamControl(Node):
                 if result.success:
                     self._venue_dirty = False   # 1b-6 SG-B6: 保存済みを読み直した
                     self._venue_loaded = True
+                    # 最後に開いた地図は会場地図。前に開いた経路地図へ書き足し保存を
+                    # 向けない（向けると会場地図のグラフで経路地図のファイルを上書きする）
+                    self._open_route_base = ''
                     if map_iid:
                         self._instance_id = map_iid
                     self._publish_venue_status()
@@ -827,28 +834,34 @@ class SlamControl(Node):
                 self.get_logger().info('commit_venue_map OK: venue/map をシリアライズ')
         elif msg.name == 'commit_map_patch':
             # 1b-11 SG-B14: 地図更新 ON のときの「保存」（T-REPLAY-08 ほか
-            # SM-3.1.2-099〜-102）。直近に開いた ROUTE セッションへ書き足しを
-            # 確定する（旧版 1 世代を残す。1b-7 SG-B12 と同じ規則）。
+            # SM-3.1.2-099〜-102）。最後に開いた地図へ書き足しを確定する:
+            # 会場地図を開いている（S-21）なら venue/map へ（旧版は残さない）、
+            # 経路地図（S-14）なら経路地図へ（旧版 1 世代を残す。1b-7 SG-B12 と同じ規則）。
             # 走行中の保存は commit_venue_map と同じ停止中ガードで縛る。
             rejected = self._stop_only_reject_reason()
             if rejected is not None:
                 self._report(f'NG: commit_map_patch を拒否 ({rejected})')
                 self.get_logger().warn(f'commit_map_patch を拒否: {rejected}')
                 return
-            if not self._open_route_base:
-                self._report('NG: commit_map_patch（開いている経路地図が無い）')
-                self.get_logger().warn(
-                    'commit_map_patch: 開いている ROUTE セッションが無いため保存しない')
-                return
             with self._lock:
-                err = self._commit_route_patch(self._open_route_base)
-            if err:
+                target = map_patch_target(self._open_route_base, self._venue_loaded)
+                if target is None:
+                    err, where = '開いている地図が無い', ''
+                elif target[0] == 'VENUE':
+                    err, where = self._commit_venue_patch(), 'venue/map'
+                else:
+                    err, where = (self._commit_route_patch(target[1]), target[1])
+            if target is None:
+                self._report('NG: commit_map_patch（開いている地図が無い）')
+                self.get_logger().warn(
+                    'commit_map_patch: 開いている地図（会場／経路）が無いため保存しない')
+            elif err:
                 self._report(f'NG: commit_map_patch 失敗 ({err})')
                 self.get_logger().warn(f'commit_map_patch 失敗: {err}')
             else:
                 self._report('OK: commit_map_patch（書き足しを確定）')
                 self.get_logger().info(
-                    f'commit_map_patch OK: {self._open_route_base} へ書き足しを確定')
+                    f'commit_map_patch OK: {where} へ書き足しを確定')
         else:
             self.get_logger().debug(
                 f'effect {msg.name} は未処理 (dest={msg.dest})')
@@ -891,6 +904,24 @@ class SlamControl(Node):
         self._publish_anchor('saved')
         return self._finish(
             response, None, f'地図を保存しました（地図を凍結しました）: {base}.posegraph')
+
+    def _commit_venue_patch(self) -> "str | None":
+        """会場地図（venue/map）への書き足しの確定（S-21 の「保存」）。
+
+        会場地図を開いている間は localization モードのまま（ROUTE の
+        _commit_route_patch と同じく切り替えない）。旧版は残さない（VENUE は 1 枚のみ。
+        Spec-params §6）。instance_id は変えず、今の世代をそのまま書き直す
+        （ピンの map_instance_id と一致し続ける。ピンは動かさない。F-41）。
+        凍結の起点を保存した地図にするため saving / saved / save_failed を出す（§4.0.2）。
+        **呼び出し側が self._lock を保持していること。**
+        """
+        self._publish_anchor('saving')
+        err = self._commit_venue_map()
+        if err:
+            self._publish_anchor('save_failed')
+            return err
+        self._publish_anchor('saved')
+        return None
 
     def _commit_route_patch(self, base: str) -> "str | None":
         """書き足しの確定（effect 経路の commit_map_patch 用）。

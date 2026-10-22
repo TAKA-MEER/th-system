@@ -515,6 +515,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_map_freeze_anchor_node
     test/test_map_freeze_anchor_node.py
     TIMEOUT 120)
+  # commit_map_patch（地図更新 ON の「保存」）の保存先: 会場地図を開いていれば
+  # venue/map、経路地図なら経路地図（インプロセス。ROS2 要）
+  ament_add_pytest_test(test_venue_map_patch_node
+    test/test_venue_map_patch_node.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_params_audit_node
     test/test_params_audit_node.py
     TIMEOUT 120)
