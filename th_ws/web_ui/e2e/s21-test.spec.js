@@ -101,6 +101,11 @@ test('S-21 表示とタイトル（IDLE のまま直接開く）', async ({ page
   // 小さな印（pill）に変えた。保存は出ない（map_update=false）。
   await expect(page.locator('[data-testid="s21-map-update-pill"]')).toHaveText('地図の更新 OFF')
   await expect(page.locator('#s21 .op-save')).toBeHidden()
+  // R-63: 理由は title だけだとタブレットで見えない。印を押すと画面に出る。
+  await expect(page.locator('[data-testid="s21-map-update-note"]')).toHaveCount(0)
+  await page.locator('[data-testid="s21-map-update-pill"]').click()
+  await expect(page.locator('[data-testid="s21-map-update-note"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s21-map-update-note"]')).toContainText('地図の書き足しは現在使えません')
 })
 
 // WS-9Y: 「会場地図を開く」の前提（機体を待機場所に置いてから押す）を画面に出す。
