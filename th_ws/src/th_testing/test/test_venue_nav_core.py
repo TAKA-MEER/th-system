@@ -8,7 +8,8 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(__file__), '..', '..', 'th_onsite'))
 
 from th_onsite.venue_nav_core import (  # noqa: E402
-    VenueNavParams, align_cmd_wz, arrived, find_home_goal,
+    GOTO_BLOCKED_MODES, VenueNavParams, align_cmd_wz, arrived, find_home_goal,
+    select_pin_allowed, select_pin_reject_message,
     should_unblock_for_arrival, yaw_error)
 
 
@@ -201,3 +202,32 @@ class TestPathAheadClear:
         assert not path_ahead_clear(_PATH, (0.0, 0.0), None)
         assert not path_ahead_clear(_PATH, None, _Grid())
         assert not path_ahead_clear([], (0.0, 0.0), _Grid())
+
+
+class TestSelectPinAllowed:
+    """SM-3.1.2-118: 移動中・一時停止中は行き先（保留ゴール）を選べない。"""
+
+    def test_blocked_modes_match_transition_table(self):
+        assert GOTO_BLOCKED_MODES == {'PANEL_NAV', 'SUMMON', 'HOME_NAV'}
+        # 機体側の二重の守り（state_manager の遷移表）と同じ集合であること。
+        import yaml
+        path = os.path.join(os.path.dirname(__file__), '..', '..', 'th_state',
+                            'config', 'transitions.yaml')
+        with open(path, encoding='utf-8') as f:
+            rows = yaml.safe_load(f)
+        rows = rows['transitions'] if isinstance(rows, dict) else rows
+        row = next(r for r in rows if r['id'] == 'T-NAV-goto-reject')
+        assert set(row['mode']) == set(GOTO_BLOCKED_MODES)
+        assert row['state'] == '*' and row['event'] == 'ui.goto' and row['reject']
+
+    def test_moving_modes_rejected(self):
+        for m in ('PANEL_NAV', 'SUMMON', 'HOME_NAV'):
+            assert not select_pin_allowed(m)
+
+    def test_choosable_modes_accepted(self):
+        for m in ('IDLE', 'AT_HOME', 'AT_PANEL', 'PREP', ''):
+            assert select_pin_allowed(m), m
+
+    def test_message_distinguishes_pause(self):
+        assert '一時停止' in select_pin_reject_message('PANEL_NAV', 'PAUSE')
+        assert '移動中' in select_pin_reject_message('PANEL_NAV', 'NAV')

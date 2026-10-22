@@ -23,6 +23,26 @@ class VenueNavParams:
     arrival_xy_tol_m: float = 0.12
 
 
+# SM-3.1.2-118: 盤前移動・呼び寄せ・待機場所へ戻る途中は、PAUSE を含むどの状態でも
+# 行き先を選べない。th_state の transitions.yaml T-NAV-goto-reject と同じ集合。
+# 選べる状態（AT_HOME の IDLE_H/PAUSE・AT_PANEL・IDLE など）の列挙ではなく、
+# 選べない側を列挙する（/system/state 未受信の空モードで拒否して起動直後の
+# 呼び出しを巻き込まないため）。
+GOTO_BLOCKED_MODES = frozenset({'PANEL_NAV', 'SUMMON', 'HOME_NAV'})
+
+
+def select_pin_allowed(mode: str) -> bool:
+    """/onsite/select_pin（行き先の保留）を受け付けてよいモードか。"""
+    return mode not in GOTO_BLOCKED_MODES
+
+
+def select_pin_reject_message(mode: str, state: str) -> str:
+    """select_pin を拒否するときの利用者向け理由（日本語）。"""
+    if state == 'PAUSE':
+        return '一時停止中は行き先を選べません。「走行」で続きを走るか、「中断」してから選んでください'
+    return '移動中は行き先を選べません。着いてから、または「中断」してから選んでください'
+
+
 def yaw_error(current_yaw: float, target_yaw: float) -> float:
     """current→target のヨー差 [rad]。(-pi, pi] へ正規化する。"""
     err = target_yaw - current_yaw

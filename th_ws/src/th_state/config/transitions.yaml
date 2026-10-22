@@ -1806,6 +1806,25 @@
     args:
       id: W-5
   spec_ref: SM-3.1.2-110
+# SM-3.1.2-118（2026-10-22 実機 T-10）: 盤前移動・呼び寄せ・待機場所へ戻る途中は、
+# PAUSE を含むどの状態でも行き先を選べない。拒否するだけで状態を変えず、
+# 行き先の保留も書き換えない（venue_navigator._on_select_pin 側も同じ集合で拒否）。
+# 一時停止中は「走行」で続きを走るか、「中断」(T-PNAV-10 等) してから選び直す。
+- id: T-NAV-goto-reject
+  layer: 10
+  mode:
+  - PANEL_NAV
+  - SUMMON
+  - HOME_NAV
+  state: '*'
+  event: ui.goto
+  guard: null
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-118
+  reject: true
+  reject_reason_key: goto_while_nav
 - id: T-ATP-01
   layer: 10
   mode: AT_PANEL
@@ -2133,7 +2152,7 @@
     args:
       index: $arg.index
   spec_ref: SM-3.1.2-106
-# 中断して待機場所へ（2026-09-10）。WAIT_CLEAR は既存の ui.abort→POINT（T-SUM-05）を
+# 中断（2026-09-10。旧称「中断して待機場所へ」。待機場所へは走らない）。WAIT_CLEAR は既存の ui.abort→POINT（T-SUM-05）を
 # 優先するので、それ以外の状態から。
 - id: T-SUM-17
   layer: 10

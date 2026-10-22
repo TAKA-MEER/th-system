@@ -47,7 +47,8 @@ from th_system_msgs.srv import GoToPanel
 
 from th_onsite.venue_nav_core import (
     COSTMAP_STALE_S, PATH_AHEAD_CHECK_M, VenueNavParams, align_cmd_wz, arrived,
-    find_home_goal, path_ahead_clear, success_is_plausible,
+    find_home_goal, path_ahead_clear, select_pin_allowed,
+    select_pin_reject_message, success_is_plausible,
     should_unblock_for_arrival,
 )
 
@@ -820,6 +821,16 @@ class VenueNavigator(Node):
 
     # ── /onsite/select_pin ────────────────────────────────
     def _on_select_pin(self, request, response):
+        # SM-3.1.2-118: 移動中・一時停止中（PANEL_NAV / SUMMON / HOME_NAV）は行き先を
+        # 選べない。拒否して _pending_goal に触れない（ui.goto は FSM が拒否するので、
+        # ここで書き換えると保留だけ変わり、再開の経路作り直しで別の行き先へ走り出す）。
+        if not select_pin_allowed(self._mode):
+            response.success = False
+            response.message = select_pin_reject_message(self._mode, self._state)
+            self.get_logger().warn(
+                f'select_pin: {request.panel_id} を拒否（{self._mode}/{self._state} は'
+                f'行き先を選べない。SM-3.1.2-118）。保留ゴールは変えない')
+            return response
         for pin in self._pins:
             if getattr(pin, 'id', '') == request.panel_id:
                 p = pin.pose.position
