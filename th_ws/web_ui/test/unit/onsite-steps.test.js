@@ -4,7 +4,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  NAV_MODES, jogAllowedForMode, onsiteReasons, prepSteps, testSteps,
+  GOTO_BLOCKED_MODES, NAV_MODES, jogAllowedForMode, onsiteReasons, prepSteps, testSteps,
 } from '../../src/screens/onsiteSteps.js'
 import { OP_BUTTON_KINDS } from '../../src/parts/opKinds.js'
 
@@ -84,6 +84,10 @@ test('UX-2-d: 未知モードや attributes 無しは「押せる側」に倒す
 // pins に PANEL/HOME を両方持たせて destHome/destNextPanel を消し、manual の
 // 判定だけを見る（両方のピンが無い場合の挙動は UX-6-b のテーブルで別に見る）。
 const PINS_BOTH = [{ kind: 'PANEL' }, { kind: 'HOME' }]
+// SM-3.1.2-118: SUMMON は全状態で行き先を選べない（PAUSE 以外は goto_moving）。
+const GOTO_MOVING = {
+  destHome: 'goto_moving', destNextPanel: 'goto_moving', destSummonHere: 'goto_moving', destMove: 'goto_moving',
+}
 
 test('UX-2-d: onsiteReasons は手動不可モードにだけ jog_denied を返す', () => {
   assert.deepEqual(onsiteReasons({ mode: 'IDLE', attributes: attributesLike, pins: PINS_BOTH }), { manual: 'jog_denied' })
@@ -153,13 +157,13 @@ test('UX-6-b: 手動は jog_denied を優先し、SUMMON/WAIT_CLEAR で wait_cle
     onsiteReasons({
       mode: 'SUMMON', stateName: 'WAIT_CLEAR', attributes: attributesLike, pins: PINS_BOTH,
     }),
-    { manual: 'wait_clear_active' },
+    { manual: 'wait_clear_active', ...GOTO_MOVING },
   )
   assert.deepEqual(
     onsiteReasons({
       mode: 'SUMMON', stateName: 'POINT', attributes: attributesLike, pins: PINS_BOTH,
     }),
-    {},
+    GOTO_MOVING,
   )
 })
 
@@ -337,4 +341,40 @@ test('testSteps: SUMMON 中は段5（作業/呼び寄せ）だけ完了、段4�
   })
   assert.deepEqual(steps.map((s) => s.done), [true, true, true, false, true])
   assert.equal(currentIndex, 3)
+})
+// ── SM-3.1.2-118: 移動中・一時停止中は行き先を選べない ─────────────────────
+// transitions.yaml T-NAV-goto-reject（PANEL_NAV / SUMMON / HOME_NAV の全状態）と同じ集合。
+test('SM-3.1.2-118: GOTO_BLOCKED_MODES は PANEL_NAV / SUMMON / HOME_NAV', () => {
+  assert.deepEqual([...GOTO_BLOCKED_MODES].sort(), ['HOME_NAV', 'PANEL_NAV', 'SUMMON'])
+})
+
+test('SM-3.1.2-118: 移動系モードの PAUSE は 4 つ全部 goto_paused（ピンの有無・working より優先）', () => {
+  for (const mode of ['PANEL_NAV', 'SUMMON', 'HOME_NAV']) {
+    for (const pins of [PINS_BOTH, []]) {
+      assert.deepEqual(
+        onsiteReasons({ mode, stateName: 'PAUSE', attributes: attributesLike, pins }),
+        { destHome: 'goto_paused', destNextPanel: 'goto_paused', destSummonHere: 'goto_paused', destMove: 'goto_paused' },
+        `${mode}`,
+      )
+    }
+  }
+})
+
+test('SM-3.1.2-118: 移動系モードの PAUSE 以外（NAV / BLOCKED / ALIGN / POINT / WAIT_CLEAR）は goto_moving', () => {
+  for (const [mode, st] of [['PANEL_NAV', 'NAV'], ['PANEL_NAV', 'BLOCKED'], ['PANEL_NAV', 'ALIGN'],
+    ['HOME_NAV', 'NAV'], ['SUMMON', 'POINT'], ['SUMMON', 'WAIT_CLEAR']]) {
+    const r = onsiteReasons({ mode, stateName: st, attributes: attributesLike, pins: PINS_BOTH })
+    assert.equal(r.destMove, 'goto_moving', `${mode}/${st}`)
+    assert.equal(r.destHome, 'goto_moving', `${mode}/${st}`)
+    assert.equal(r.destNextPanel, 'goto_moving', `${mode}/${st}`)
+    assert.equal(r.destSummonHere, 'goto_moving', `${mode}/${st}`)
+  }
+})
+
+test('SM-3.1.2-118: 行き先を選べる状態（AT_HOME の IDLE_H/PAUSE・AT_PANEL の IDLE_P・IDLE）には destMove が付かない', () => {
+  for (const [mode, st] of [['AT_HOME', 'IDLE_H'], ['AT_HOME', 'PAUSE'], ['AT_PANEL', 'IDLE_P'], ['IDLE', 'NONE']]) {
+    const r = onsiteReasons({ mode, stateName: st, attributes: attributesLike, pins: PINS_BOTH })
+    assert.equal(r.destMove, undefined, `${mode}/${st}`)
+    assert.equal(r.destHome, undefined, `${mode}/${st}`)
+  }
 })

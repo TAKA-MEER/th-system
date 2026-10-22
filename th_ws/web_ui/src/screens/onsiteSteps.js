@@ -39,10 +39,19 @@ export function jogAllowedForMode(mode, attributes) {
  *   destNextPanel に 'no_panel_pin'（_goto_allowed: kind==='PANEL' は
  *   'PANEL' in ctx.pin_kinds を要求）、HOME ピンが無ければ destHome に
  *   'no_home_pin'（venue_nav_core.find_home_goal が HOME ピンを探す）。
+ *   ただし mode が PANEL_NAV / SUMMON / HOME_NAV のときは working や
+ *   ピンの有無より先に、4 つ全部（destMove＝ピン行の「移動」を含む）に
+ *   PAUSE なら 'goto_paused'、それ以外は 'goto_moving' を返す
+ *   （SM-3.1.2-118。transitions.yaml T-NAV-goto-reject と同じ集合）。
+ *   行き先を選べるのは AT_HOME の IDLE_H / PAUSE、AT_PANEL の IDLE_P、IDLE だけ。
  * @param {{mode?: string|null, stateName?: string|null, attributes?: Object,
  *         pins?: Array, working?: boolean}} _
  * @returns {Object} ボタン id → 意味キー。無ければ空。
  */
+// 行き先を選べないモード（SM-3.1.2-118。PAUSE を含む全状態）。
+// 機体側の拒否は th_state の T-NAV-goto-reject と venue_navigator の select_pin 拒否。
+export const GOTO_BLOCKED_MODES = ['PANEL_NAV', 'SUMMON', 'HOME_NAV']
+
 export function onsiteReasons({
   mode, stateName, attributes, pins = [], working = false,
 } = {}) {
@@ -52,7 +61,13 @@ export function onsiteReasons({
   } else if (mode === 'SUMMON' && stateName === 'WAIT_CLEAR') {
     reasons.manual = 'wait_clear_active'
   }
-  if (working) {
+  if (GOTO_BLOCKED_MODES.includes(mode)) {
+    const key = stateName === 'PAUSE' ? 'goto_paused' : 'goto_moving'
+    reasons.destHome = key
+    reasons.destNextPanel = key
+    reasons.destSummonHere = key
+    reasons.destMove = key
+  } else if (working) {
     reasons.destHome = 'working_in_progress'
     reasons.destNextPanel = 'working_in_progress'
     reasons.destSummonHere = 'working_in_progress'

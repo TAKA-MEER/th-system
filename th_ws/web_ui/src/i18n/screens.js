@@ -541,7 +541,7 @@ export const S21_NEXT_SUMMON = '呼び寄せ'
 // WS-9AB (2026-09-10): BLOCKED（経路が見つからず止まっている）帯の案内と操作。
 export const S21_BLOCKED_MSG = '行き先までの経路が見つかりません（止まって再試行中）'
 export const S21_BLOCKED_REROUTE = '再検索'
-export const S21_BLOCKED_ABORT = '中断して待機場所へ'
+export const S21_BLOCKED_ABORT = '中断'
 // WS-9AD (2026-09-11): SUMMON/POINT（呼び寄せ待受中）以外では対象選択が
 // 効かない（T-SUM-15）。タップしても反応が無いだけだと分からないので、
 // レーダーの代わりにこの案内を出す。
@@ -552,6 +552,9 @@ export const S21_TARGET_NOT_SELECTABLE = '「呼び寄せ」の行き先待受�
 export const BADGE_JOG_DENIED = 'このモードでは手動操作できません'
 export const BADGE_NO_PANEL_PIN = '配電盤ピンが登録されていません'
 export const BADGE_NO_HOME_PIN = '待機場所ピンが登録されていません'
+// SM-3.1.2-118: 移動の一時停止中・移動中は行き先を選べない（「次の行き先」とピン行の「移動」）。
+export const BADGE_GOTO_PAUSED = '一時停止中です。「走行」で続きを走るか、「中断」してから行き先を選んでください'
+export const BADGE_GOTO_MOVING = '移動中は行き先を選べません。着いてから選んでください'
 
 // ---------------------------------------------------------------- S-50 設定（WS-9X） ----
 // screens/S50Settings.jsx の表示文字列。Spec-webui.md §3.15 のタブ構成。
