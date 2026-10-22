@@ -1790,6 +1790,48 @@
   spec_ref: SM-3.1.2-118
   reject: true
   reject_reason_key: goto_while_nav
+# SM-3.1.2-119（2026-10-23 実機）: 会場地図を持たない（/map_session/status の VENUE が
+# UNLOADED。自己位置推定が立ち上がり直した・破棄した等）間は、自律移動を始めない・
+# 再開しない。行き先を選ぶ（ui.goto）と、停止中からの再開（ui.run／W-1 の「はい」／
+# 経路の取り直し）を拒否して状態は変えない。手動走行・非常停止・中断は塞がない。
+# 未受信（ctx.venue_unloaded=False）は塞がない。override_common で layer 0 の C-04
+# （ui.resume_yes）より先に拾う。venue_navigator 側も同じ条件で走り出さない。
+- id: T-VUL-goto
+  layer: 10
+  mode:
+  - AT_HOME
+  - AT_PANEL
+  state: '*'
+  event: ui.goto
+  guard: venue_unloaded
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-119
+  reject: true
+  reject_reason_key: venue_not_loaded
+  override_common: true
+- id: T-VUL-run
+  layer: 10
+  mode:
+  - PANEL_NAV
+  - SUMMON
+  - HOME_NAV
+  state:
+  - PAUSE
+  - BLOCKED
+  event:
+  - ui.run
+  - ui.resume_yes
+  - ui.reroute
+  guard: venue_unloaded
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-119
+  reject: true
+  reject_reason_key: venue_not_loaded
+  override_common: true
 - id: T-ATP-01
   layer: 10
   mode: AT_PANEL

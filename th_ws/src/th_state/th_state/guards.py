@@ -325,6 +325,13 @@ def _goto_allowed(mode, state, ctx) -> bool:
     return True
 
 
+def _venue_unloaded(mode, state, ctx) -> bool:
+    """SM-3.1.2-119。会場地図を持たない間は自律移動を始めない・再開しない。
+    真になるのは /map_session/status の VENUE が UNLOADED と届いているときだけ
+    （未受信・作成中 MAPPING・読み込み済み LOCALIZING は偽）。"""
+    return ctx.venue_unloaded
+
+
 def _goto_summon(mode, state, ctx) -> bool:
     """WS-9AF(2026-09-11): ui.goto{kind:SUMMON} だけを狙って先に評価させ、
     begin_two_point{kind:SUMMON} を挟むための専用ガード（C-09/C-09b と同じ
@@ -439,6 +446,7 @@ GUARDS: Dict[str, Callable] = {
     "goto_allowed": _goto_allowed,
     "working": _working,
     "goto_summon": _goto_summon,
+    "venue_unloaded": _venue_unloaded,
     "candidate_exists": _candidate_exists,
     "target_selected": _target_selected,
     "target_confident": _target_confident,
@@ -484,7 +492,7 @@ GUARDS: Dict[str, Callable] = {
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 59, len(GUARDS)
+assert len(GUARDS) == 60, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:

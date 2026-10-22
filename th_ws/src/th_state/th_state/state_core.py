@@ -309,6 +309,9 @@ class Context:
     # PAUSE からの ui.run は「経路は積んである」前提で resume_path を出すだけ
     # なので、これを guard して空振りの再生を防ぐ（2026-09-02）。
     route_loaded: bool = False
+    # 会場地図を持たない（/map_session/status の VENUE が UNLOADED）か。SM-3.1.2-119。
+    # 未受信・LOCALIZING・MAPPING は False（塞がない。起動直後を巻き込まない）。
+    venue_unloaded: bool = False
     arg: Dict[str, Any] = field(default_factory=dict)
 
 

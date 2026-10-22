@@ -331,6 +331,9 @@ if(BUILD_TESTING)
   # 移動中・一時停止中は行き先を選べない（SM-3.1.2-118。遷移表の拒否行）
   ament_add_pytest_test(test_goto_while_nav
     test/test_goto_while_nav.py)
+  # 会場地図を持たない間は行き先と再開を拒否（SM-3.1.2-119。遷移表の拒否行 T-VUL-*）
+  ament_add_pytest_test(test_venue_unloaded
+    test/test_venue_unloaded.py)
   ament_add_pytest_test(test_working_guard
     test/test_working_guard.py
     TIMEOUT 30)
@@ -889,6 +892,10 @@ if(BUILD_TESTING)
   # 移動中・一時停止中は行き先を選べない（SM-3.1.2-118。select_pin を拒否し保留ゴールを変えない。launch_testing）
   ament_add_pytest_test(test_venue_nav_goto_while_nav_node
     test/test_venue_nav_goto_while_nav_node.py
+    TIMEOUT 400)
+  # 会場地図を持たない間は走り出さない・行き先を選べない（SM-3.1.2-119・Spec-onsite §4.0.3。launch_testing）
+  ament_add_pytest_test(test_venue_nav_venue_unloaded_node
+    test/test_venue_nav_venue_unloaded_node.py
     TIMEOUT 400)
 
   # 待機場所宣言の配線（DetailedDesign-onsite.md §9 #10。Gazebo なしの
