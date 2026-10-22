@@ -17,6 +17,7 @@ export const REJECT_REASONS = {
   hw_estop_still_pressed: '物理非常停止ボタンが押されたままです',
   route_not_found: '指定した経路が見つかりません',
   no_route_recorded: '教示済みの経路がありません',
+  map_update_unavailable: '地図の書き足しは現在使えません（自己位置推定が地図を書き換えないため）',
   map_update_off: '地図更新がOFFのため保存できません',
   device_not_connected: '必要な機器が接続されていません',
   link_not_ready: '必須機器の疎通が取れていません',

@@ -41,48 +41,22 @@ test('S-01: 教示は保管場所から開始する案内が出る', async ({ pa
   await expect(page.locator('body')).toContainText('保管場所から開始してください')
 })
 
-test('S-14: 地図の更新は既定 OFF で「保存」が無く、押すと map_update を送り、ON で「保存」が出る', async ({ page }) => {
+test('S-14: 地図の更新は OFF 固定で押せず、理由が出て、「保存」も出ない', async ({ page }) => {
   await gotoScreenWithRoutePreview(page, 'S14',
     { mode: 'REPLAY', state: 'PAUSE' },
     { routes: ROUTES, preview: PREVIEW, status: {} })
   await page.locator('#s14').waitFor()
   const toggle = page.getByTestId('s14-map-update-toggle')
   await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  await expect(toggle).toBeDisabled()
+  await expect(page.locator('#s14')).toContainText('地図の書き足しは現在使えません')
   await expect(page.locator('.opsgrid .op-save')).toHaveCount(0)
 
-  await toggle.click()
+  await toggle.click({ force: true })
   const flags = await page.evaluate(() => window.__thSetFlagCalls ?? [])
-  expect(flags.some((c) => c.flag === 'map_update' && c.value === true),
-    'トグルが /system/set_flag map_update を送っていない').toBe(true)
-
-  // 機体が受理して state.map_update が真になった想定
-  await setTestState(page, { map_update: true })
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true')
-  const save = page.locator('.opsgrid .op-save')
-  await expect(save).toHaveCount(1)
-  await save.click()
-  const sent = (await page.evaluate(() => window.__thTriggerCalls ?? [])).map((c) => c.trigger)
-  expect(sent, '保存ボタンが ui.save を送っていない').toContain('ui.save')
-
-  await setTestState(page, { map_update: false })
-  await expect(page.locator('.opsgrid .op-save')).toHaveCount(0)
-})
-
-test('S-14: 地図更新が機体に拒否されたら理由が出て、表示は変わらない', async ({ page }) => {
-  // addInitScript の引数に関数は渡せないためスクリプト内に直接書く（goto の前）。
-  await page.addInitScript(() => {
-    window.__thTestSetFlag = {
-      map_update: () => ({ accepted: false, reject_reason_key: 'not_allowed' }),
-    }
-  })
-  await gotoScreenWithRoutePreview(page, 'S14',
-    { mode: 'REPLAY', state: 'PAUSE' },
-    { routes: ROUTES, preview: PREVIEW, status: {} })
-  await page.locator('#s14').waitFor()
-
-  await page.getByTestId('s14-map-update-toggle').click()
-  await expect(page.getByTestId('s14-map-update-error')).toContainText('今の状態ではこの操作はできません')
-  await expect(page.getByTestId('s14-map-update-toggle')).toHaveAttribute('aria-pressed', 'false')
+  expect(flags.some((c) => c.flag === 'map_update'),
+    '押せないはずのトグルが map_update を送った').toBe(false)
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
 })
 
 test('S-14: 経路の始点・終点の印を描く', async ({ page }) => {

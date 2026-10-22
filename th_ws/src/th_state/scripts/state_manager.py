@@ -44,6 +44,8 @@ from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, IDLE_MODE, O
                                    REPLAY_MODE, StateCore, TEACH_MODES, is_driving)
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
+from th_state.map_update_policy import (MAP_UPDATE_ON_DENIED_REASON,
+                                         map_update_on_denied)
 from th_state.tracker_policy import (TRACKER_OFF_DENIED_REASON,
                                       tracker_autostop, tracker_off_denied)
 from th_state.auto_brake import (AUTO_BRAKE_LOCKED_REASON, DEV_ITEM_AUTO_BRAKE,
@@ -827,6 +829,11 @@ class StateManager(Node):
         if req.flag not in _SETTABLE_FLAGS:
             res.accepted = False
             res.reject_reason_key = "not_allowed"
+            return res
+        # 地図更新 ON は当面使えない（2026-10-22。OFF への変更は受ける）。
+        if map_update_on_denied(req.flag, req.value):
+            res.accepted = False
+            res.reject_reason_key = MAP_UPDATE_ON_DENIED_REASON
             return res
         # brief-tracker-default-off §3.1: 要 person の状態（SUMMON 全状態・PREP/REGISTER）
         # では OFF できない（Spec-modes.md §5.1-2）。判定は tracker_policy.py に集約。
