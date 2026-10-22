@@ -226,3 +226,21 @@ def venue_session_mode(mapping_active: bool, venue_loaded: bool) -> str:
     if mapping_active:
         return 'MAPPING'
     return 'LOCALIZING' if venue_loaded else 'UNLOADED'
+
+
+def map_patch_target(open_route_base: str, venue_loaded: bool) -> "tuple[str, str] | None":
+    """commit_map_patch（地図更新 ON の「保存」）の書き込み先を決める。
+
+    ('VENUE', '') = 開いている会場地図（venue/map）へ / ('ROUTE', base) = 最後に開いた
+    経路地図へ / None = 保存先が無い、または曖昧（拒否する）。
+    slam_control は VENUE を開いたら経路の保存先を消し、ROUTE を開いたら会場地図を
+    「開いていない」にして、両方が立たないようにしている。両方立っていたら
+    どちらへ書くべきか分からないので、取り違えて上書きするより拒否する。
+    """
+    if open_route_base and venue_loaded:
+        return None
+    if venue_loaded:
+        return ('VENUE', '')
+    if open_route_base:
+        return ('ROUTE', open_route_base)
+    return None
