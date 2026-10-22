@@ -4,7 +4,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  GOTO_BLOCKED_MODES, NAV_MODES, jogAllowedForMode, onsiteReasons, prepSteps, testSteps,
+  GOTO_BLOCKED_MODES, NAV_MODES, abortAvailable, jogAllowedForMode, onsiteReasons, prepSteps, testSteps,
 } from '../../src/screens/onsiteSteps.js'
 import { OP_BUTTON_KINDS } from '../../src/parts/opKinds.js'
 
@@ -376,5 +376,19 @@ test('SM-3.1.2-118: 行き先を選べる状態（AT_HOME の IDLE_H/PAUSE・AT_
     const r = onsiteReasons({ mode, stateName: st, attributes: attributesLike, pins: PINS_BOTH })
     assert.equal(r.destMove, undefined, `${mode}/${st}`)
     assert.equal(r.destHome, undefined, `${mode}/${st}`)
+  }
+})
+
+test('abortAvailable: 「中断」は PANEL_NAV/HOME_NAV/SUMMON の BLOCKED と PAUSE だけ', () => {
+  const states = ['NAV', 'BLOCKED', 'PAUSE', 'ALIGN', 'POINT', 'WAIT_CLEAR', 'IDLE_H', 'IDLE_P', null]
+  for (const mode of ['PANEL_NAV', 'HOME_NAV', 'SUMMON']) {
+    for (const st of states) {
+      assert.equal(abortAvailable(mode, st), st === 'BLOCKED' || st === 'PAUSE', `${mode}/${st}`)
+    }
+  }
+  for (const mode of ['AT_HOME', 'AT_PANEL', 'IDLE', 'MANUAL', null]) {
+    for (const st of ['BLOCKED', 'PAUSE', 'NAV']) {
+      assert.equal(abortAvailable(mode, st), false, `${mode}/${st}`)
+    }
   }
 })

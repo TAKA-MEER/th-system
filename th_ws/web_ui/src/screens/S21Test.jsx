@@ -50,7 +50,7 @@ import {
 } from '../parts/icons.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import attributes from '../generated/attributes.json'
-import { NAV_MODES, testSteps, onsiteReasons } from './onsiteSteps.js'
+import { NAV_MODES, testSteps, onsiteReasons, abortAvailable } from './onsiteSteps.js'
 import { baseToWorld } from '../mapGeometry.js'
 import { REJECT_REASONS, reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import { OP_LABELS, stateLabel } from '../i18n/states.js'
@@ -64,7 +64,7 @@ import {
   S21_HOME_DECLARED, S21_HOME_DECLARE, S21_HOME_FORCE_DECLARE,
   S21_HOME_OFFSET,
   S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_GATE_MSG, S21_MAP_LOADING,
-  S21_BLOCKED_ABORT, S21_BLOCKED_MSG, S21_BLOCKED_REROUTE,
+  S21_BLOCKED_ABORT, S21_PAUSED_MSG, S21_BLOCKED_MSG, S21_BLOCKED_REROUTE,
   S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
   S21_NEXT_DECLARE_HOME, S21_NEXT_OPEN_VENUE, S21_NEXT_PICK_DEST,
   S21_NEXT_SUMMON, S21_NEXT_WORK,
@@ -595,6 +595,21 @@ export default function S21Test({ onExit }) {
               type="button"
               className="btn danger"
               data-testid="s21-blocked-abort"
+              onClick={() => sendTrigger('ui.abort')}
+            >
+              {S21_BLOCKED_ABORT}
+            </button>
+          </div>
+        )}
+
+        {/* 一時停止中（PAUSE）にも「中断」を出す。BADGE_GOTO_PAUSED が指す操作。 */}
+        {abortAvailable(mode, stateName) && stateName === 'PAUSE' && (
+          <div className="row s21-blocked" data-testid="s21-paused">
+            <span className="grow">{S21_PAUSED_MSG}</span>
+            <button
+              type="button"
+              className="btn danger"
+              data-testid="s21-paused-abort"
               onClick={() => sendTrigger('ui.abort')}
             >
               {S21_BLOCKED_ABORT}
