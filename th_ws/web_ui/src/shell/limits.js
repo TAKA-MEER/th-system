@@ -97,19 +97,24 @@ export function headerTone(mode, devMode, stale = false) {
   return 'normal'
 }
 
-// opButtonTone(slot, blue) -> 'current' | 'confirm' | 'outline'
+// opButtonTone(slot, blue) -> 'current' | 'confirm' | 'next-stop' | 'next-run' | 'face'
 //
 // Spec-webui.md §3.3.1（U-17）の色の表:
-//   青（塗り）  = いまの状態 … 停止／確認／走行のうち、いま該当している 1 つだけ
-//   緑（塗り）  = 押すと確定する動作 … 保存
-//   枠のみ      = 押せるが、いまの状態ではない … それ以外（手動もここ）
+//   青（塗り）          = いまの状態 … 停止／確認／走行のうち、いま該当している 1 つだけ（'current'）
+//   緑（塗り）          = 押すと確定する動作 … 保存（'confirm'）
+//   赤（塗り）          = 次に押す「停止」 … 青が走行か確認のときの停止（'next-stop'）
+//   白い太枠＋面        = 次に押す「走行」 … 青が停止のときの走行（'next-run'）
+//   面＋枠              = 押せるが、いまの状態でも次に押すものでもない（'face'。手動もここ）
+// 押せるボタンを背景透明の枠のみで描かない（無効ボタンの薄い表示と見分けるため）。
 // slot は 'stop'|'check'|'run'|'save'|'manual'、blue は stateToBlueButton() の結果。
 // 色の決め方はここ 1 か所。OperationCard.jsx は返り値をクラスにするだけ
 // （画面ごとに決めさせない）。
 export function opButtonTone(slot, blue) {
   if (slot === 'save') return 'confirm'
   if ((slot === 'stop' || slot === 'check' || slot === 'run') && blue === slot) return 'current'
-  return 'outline'
+  if (slot === 'stop' && (blue === 'run' || blue === 'check')) return 'next-stop'
+  if (slot === 'run' && blue === 'stop') return 'next-run'
+  return 'face'
 }
 
 // operationCardLayout(mode, attributes) -> { stop, check, run, save, manual }

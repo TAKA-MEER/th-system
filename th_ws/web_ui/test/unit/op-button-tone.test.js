@@ -2,7 +2,9 @@
 // 試験の表にする。
 //   青（塗り）= いまの状態（停止／確認／走行のうち、いま該当している 1 つだけ）
 //   緑（塗り）= 押すと確定する動作（保存）
-//   枠のみ    = 押せるが、いまの状態ではない（それ以外）
+//   赤（塗り）= 次に押す停止（青が走行／確認のとき）
+//   白い太枠  = 次に押す走行（青が停止のとき）
+//   面＋枠    = 押せるがそれ以外
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { opButtonTone, stateToBlueButton } from '../../src/shell/limits.js'
@@ -11,13 +13,13 @@ const BLUES = ['stop', 'check', 'run', null]
 // [slot, blue] -> tone。U-17 の表。
 const TABLE = [
   // 停止／確認／走行は、いま該当している 1 つだけが青、残りは枠のみ
-  ['stop', 'stop', 'current'], ['stop', 'check', 'outline'], ['stop', 'run', 'outline'], ['stop', null, 'outline'],
-  ['check', 'stop', 'outline'], ['check', 'check', 'current'], ['check', 'run', 'outline'], ['check', null, 'outline'],
-  ['run', 'stop', 'outline'], ['run', 'check', 'outline'], ['run', 'run', 'current'], ['run', null, 'outline'],
+  ['stop', 'stop', 'current'], ['stop', 'check', 'next-stop'], ['stop', 'run', 'next-stop'], ['stop', null, 'face'],
+  ['check', 'stop', 'face'], ['check', 'check', 'current'], ['check', 'run', 'face'], ['check', null, 'face'],
+  ['run', 'stop', 'next-run'], ['run', 'check', 'face'], ['run', 'run', 'current'], ['run', null, 'face'],
   // 保存は状態によらず緑（塗り）
   ['save', 'stop', 'confirm'], ['save', 'check', 'confirm'], ['save', 'run', 'confirm'], ['save', null, 'confirm'],
   // 手動は常に枠のみ（強調のために青を使わない）
-  ['manual', 'stop', 'outline'], ['manual', 'check', 'outline'], ['manual', 'run', 'outline'], ['manual', null, 'outline'],
+  ['manual', 'stop', 'face'], ['manual', 'check', 'face'], ['manual', 'run', 'face'], ['manual', null, 'face'],
 ]
 
 for (const [slot, blue, tone] of TABLE) {
@@ -39,6 +41,29 @@ test('U-17: 確認が青のとき走行は青でない（青が 2 つ並ばな�
   const blue = stateToBlueButton('FOLLOW', 'CONFIRM', attrs)
   assert.equal(blue, 'check')
   assert.equal(opButtonTone('check', blue), 'current')
-  assert.equal(opButtonTone('run', blue), 'outline')
-  assert.equal(opButtonTone('stop', blue), 'outline')
+  assert.equal(opButtonTone('run', blue), 'face')
+  assert.equal(opButtonTone('stop', blue), 'next-stop')
+})
+
+test('次に押す停止（赤）・次に押す走行（白い太枠）は、どの状態でも 1 つずつしか出ない', () => {
+  for (const blue of BLUES) {
+    for (const t of ['next-stop', 'next-run']) {
+      const n = ['stop', 'check', 'run', 'save', 'manual']
+        .filter((slot) => opButtonTone(slot, blue) === t).length
+      assert.ok(n <= 1, `blue=${blue} で ${t} が ${n} 個`)
+    }
+  }
+  // 赤と白枠が同時に出ることもない
+  for (const blue of BLUES) {
+    const tones = ['stop', 'check', 'run', 'save', 'manual'].map((s) => opButtonTone(s, blue))
+    assert.ok(!(tones.includes('next-stop') && tones.includes('next-run')), `blue=${blue}`)
+  }
+})
+
+test('透明な枠のみ（outline）はもう返さない', () => {
+  for (const blue of BLUES) {
+    for (const slot of ['stop', 'check', 'run', 'save', 'manual']) {
+      assert.notEqual(opButtonTone(slot, blue), 'outline')
+    }
+  }
 })

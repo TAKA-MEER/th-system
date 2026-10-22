@@ -14,6 +14,9 @@ const BG = async (loc) => loc.evaluate((el) => getComputedStyle(el).backgroundCo
 const BG_TRANSPARENT = 'rgba(0, 0, 0, 0)'
 const BG_CURRENT = 'rgb(44, 74, 116)' // --ctrl-on（青の塗り）
 const BG_CONFIRM = 'rgb(23, 54, 29)' // 緑の塗り（保存）
+const BG_NEXT_STOP = 'rgb(161, 30, 30)' // 赤の塗り（次に押す停止）
+const BG_FACE = 'rgb(37, 40, 48)' // --ctrl（面＋枠。透明ではない）
+const BG_NEXT_RUN = 'rgb(52, 56, 73)' // --ctrl-hi（次に押す走行。白い太枠）
 
 // ── SG-C10: 非常停止を解除バー ────────────────────────────────────────────
 
@@ -103,27 +106,27 @@ async function openHarness(page, st) {
 }
 const op = (page, cls) => page.locator(`[data-testid="opcard-harness"] .opsgrid .${cls}`)
 
-test('SG-C2: 走行中は走行だけが青塗り、停止・確認・手動は枠のみ、保存は緑塗り', async ({ page }) => {
+test('SG-C2: 走行中は走行だけが青塗り、停止は赤塗り、確認・手動は面＋枠、保存は緑塗り', async ({ page }) => {
   await openHarness(page, { mode: 'REPLAY', state: attributes.REPLAY.run_state })
   expect(await BG(op(page, 'op-run'))).toBe(BG_CURRENT)
-  expect(await BG(op(page, 'op-stop'))).toBe(BG_TRANSPARENT)
-  expect(await BG(op(page, 'op-check'))).toBe(BG_TRANSPARENT)
-  expect(await BG(op(page, 'op-manual'))).toBe(BG_TRANSPARENT)
+  expect(await BG(op(page, 'op-stop'))).toBe(BG_NEXT_STOP)
+  expect(await BG(op(page, 'op-check'))).toBe(BG_FACE)
+  expect(await BG(op(page, 'op-manual'))).toBe(BG_FACE)
   expect(await BG(op(page, 'op-save'))).toBe(BG_CONFIRM)
 })
 
 test('SG-C2: 停止中は停止だけが青塗り（走行は青くない）', async ({ page }) => {
   await openHarness(page, { mode: 'REPLAY', state: attributes.REPLAY.resume_state })
   expect(await BG(op(page, 'op-stop'))).toBe(BG_CURRENT)
-  expect(await BG(op(page, 'op-run'))).toBe(BG_TRANSPARENT)
+  expect(await BG(op(page, 'op-run'))).toBe(BG_NEXT_RUN)
   expect(await BG(op(page, 'op-save'))).toBe(BG_CONFIRM)
 })
 
 test('SG-C2: 確認中は確認だけが青塗り（青が 2 つ並ばない）', async ({ page }) => {
   await openHarness(page, { mode: 'REPLAY', state: attributes.REPLAY.initial_state })
   expect(await BG(op(page, 'op-check'))).toBe(BG_CURRENT)
-  expect(await BG(op(page, 'op-run'))).toBe(BG_TRANSPARENT)
-  expect(await BG(op(page, 'op-stop'))).toBe(BG_TRANSPARENT)
+  expect(await BG(op(page, 'op-run'))).toBe(BG_FACE)
+  expect(await BG(op(page, 'op-stop'))).toBe(BG_NEXT_STOP)
   await expect(page.locator('[data-testid="opcard-harness"] .opsgrid .btn.on')).toHaveCount(1)
 })
 

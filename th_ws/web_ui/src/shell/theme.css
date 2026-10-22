@@ -703,16 +703,25 @@ table.lst td.r{text-align:right}
 }
 
 /* ---------- 操作カードの色（Spec-webui.md §3.3.1 / U-17。SG-C2） ----------
-   青（塗り）= いまの状態（停止／確認／走行のうち 1 つだけ）／緑（塗り）= 押すと確定する
-   動作（保存）／枠のみ = 押せるが、いまの状態ではない（それ以外）。
+   青（塗り）= いまの状態（1 つだけ）／緑（塗り）= 保存／赤（塗り）= 次に押す停止／
+   白い太枠＋面 = 次に押す走行／面＋枠 = 押せるがそれ以外。背景透明の枠のみは使わない。
    どのクラスが付くかは shell/limits.js の opButtonTone() が決める（表は unit で固定）。
    上の UX-2 の .btn-* は形（丸太枠・アイコン）のためだけに残し、色はここで上書きする。
    青は状態表示専用なので、強調のために使わない。 */
-.opsgrid .btn.tone-outline{background:transparent;border:2px solid var(--bd-hi);color:var(--tx)}
-.opsgrid .btn.tone-outline:active{background:var(--ctrl)}
+.opsgrid .btn.tone-face{background:var(--ctrl);border:2px solid var(--bd-hi);color:var(--tx)}
+.opsgrid .btn.tone-face:active{background:var(--ctrl-hi)}
+/* 次に押す「停止」= 赤（塗り）。青が走行／確認のときだけ付く */
+.opsgrid .btn.tone-next-stop{background:#a11e1e;border-color:#ff6b68;color:#fff}
+.opsgrid .btn.tone-next-stop:active{background:#c42828}
+/* 次に押す「走行」= 白い太枠＋面。青が停止のときだけ付く */
+.opsgrid .btn.tone-next-run{background:var(--ctrl-hi);border:4px solid var(--tx);color:#fff;font-weight:800}
+.opsgrid .btn.tone-next-run:active{background:var(--ctrl)}
 .opsgrid .btn.tone-current{background:var(--ctrl-on);border:2px solid var(--brand);color:#fff}
 .opsgrid .btn.tone-confirm{background:#17361d;border:2px solid #2f7a38;color:#a9e0ad;font-weight:700}
 .opsgrid .btn.tone-confirm:active{background:#1f4a27}
+/* 押せないボタンは面を消して破線枠にする（押せるボタンと形で見分ける。opacity だけに頼らない）。
+   青（いまの状態）は無効でも状態表示なので青のまま */
+.opsgrid .btn.btn[disabled]:not(.tone-current){background:transparent;border-style:dashed;border-color:var(--bd-hi);color:var(--mut);font-weight:600}
 /* 停止の丸太枠（形で区別する。色だけにしない）は残す */
 .opsgrid .btn.op-stop{border-width:4px;border-radius:999px;font-weight:800}
 
