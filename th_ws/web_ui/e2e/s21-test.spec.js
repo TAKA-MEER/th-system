@@ -340,9 +340,9 @@ test('ピンの「移動」: 名前が空文字のピンでも panel_id は id �
 // SM-3.1.2-118（2026-10-22 実機 T-10）: 移動の一時停止中・移動中は行き先を押せない。
 // 押せてしまうと select_pin だけ通って保留中の行き先が書き換わる。
 for (const [mode, state, text] of [
-  ['PANEL_NAV', 'PAUSE', '一時停止中です'],
-  ['HOME_NAV', 'PAUSE', '一時停止中です'],
-  ['SUMMON', 'PAUSE', '一時停止中です'],
+  ['PANEL_NAV', 'PAUSE', '一時停止中は選べません'],
+  ['HOME_NAV', 'PAUSE', '一時停止中は選べません'],
+  ['SUMMON', 'PAUSE', '一時停止中は選べません'],
   ['PANEL_NAV', 'NAV', '移動中は行き先を選べません'],
 ]) {
   test(`行き先は押せない: ${mode}/${state}（ピン行の移動・次の行き先・その場で呼ぶ）`, async ({ page }) => {

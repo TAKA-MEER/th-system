@@ -701,6 +701,8 @@ table.lst td.r{text-align:right}
   color:var(--ng-tx);background:#3a1414;border:1px solid #7a2a2a;border-radius:6px;
   padding:3px 6px;text-align:center;
 }
+/* 見出しの横に 1 行で置く理由（高さを増やさない。S-21 行き先タブ） */
+.reason-badge.reason-inline{display:inline-block;margin-left:10px;vertical-align:middle}
 
 /* ---------- 操作カードの色（Spec-webui.md §3.3.1 / U-17。SG-C2） ----------
    青（塗り）= いまの状態（1 つだけ）／緑（塗り）= 保存／赤（塗り）= 次に押す停止／
@@ -833,6 +835,8 @@ table.lst td.r{text-align:right}
   .screen#s21 .subtabs .btn{padding-top:calc(var(--fs) * .5);padding-bottom:calc(var(--fs) * .5)}
   .screen#s21 .subtabs .btn.sm{padding-top:5px;padding-bottom:5px}
   .screen#s21 .subtabs .mb{margin-bottom:5px}
+  /* 行き先を選べない間（帯が加わる一時停止中を含む）は、行き先タブが溢れないようピン一覧の上限を詰める */
+  .screen#s21 .subtabs .pin-list.pin-list-short{max-height:clamp(36px, 6cqh, 200px)}
 }
 
 /* ピン一覧（S-20 ピンタブ・S-21 行き先）は 2 列。1 行 1 ピンの縦積みだと
