@@ -313,6 +313,15 @@ if(BUILD_TESTING)
     test/test_tracker_policy.py
     TIMEOUT 30)
 
+  # 地図更新 ON の拒否判定（2026-10-22。ON は当面使えない。純ロジック・ROS2 不要）
+  ament_add_pytest_test(test_map_update_policy
+    test/test_map_update_policy.py
+    TIMEOUT 30)
+  # 地図更新 ON を state_manager が set_flag で拒否することを本体で縛る（rclpy 要＝ホスト除外）
+  ament_add_pytest_test(test_map_update_denied_node
+    test/test_map_update_denied_node.py
+    TIMEOUT 120)
+
   # 「作業中」の判定と遷移表の拒否行（1b-9 SG-A9。th_state の純ロジック。ROS2 不要）
   # 移動中・一時停止中は行き先を選べない（SM-3.1.2-118。遷移表の拒否行）
   ament_add_pytest_test(test_goto_while_nav

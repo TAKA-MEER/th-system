@@ -11,8 +11,8 @@ map_update_available）を壊したら赤くなるように、本番の経路で
      （状態は動かない）／1 本載せると通る
   b. evt.leash_present 前 → 電子リードは device_not_connected で拒否／
      evt.leash_present 後は通り、/system/state の leash_present が真
-  c. REPLAY/PAUSE で地図更新 ON・has_map 真の /route/status → 保存が通る
-     （commit_map_patch effect が出る）。has_map 偽 → map_update_off で拒否
+  c. REPLAY/PAUSE で地図更新 OFF → 保存は map_update_off で拒否（地図の有無によらず）。
+     ON は機体が拒否するので保存が通る経路は当面ない（2026-10-22）
 """
 import json
 import time
@@ -212,26 +212,14 @@ class TestTransitEntryGuardsNode(unittest.TestCase):
         self._wait_mode('IDLE')
         self._event('evt.leash_absent')
 
-    def test_c_save_only_with_map_update_and_map(self):
+    def test_c_save_rejected_while_map_update_off(self):
+        # 地図更新 ON は当面使えない（2026-10-22）ので、保存は ON 側の経路に入れない。
+        # 地図あり・なしのどちらでも、トグル OFF の間は map_update_off で拒否される。
+        # ON の拒否そのものは test_map_update_denied_node.py が縛る。
         self._go_replay_pause()
-        # 地図なし → 保存は map_update_off
-        assert self._set_flag('map_update', True).accepted
-        self._publish_status(has_map=False)
-        res = self._trigger('ui.save')
-        assert not res.accepted, '地図の無い経路で保存が通った'
-        assert res.reject_reason_key == 'map_update_off', res.reject_reason_key
-        # 地図あり＋トグル OFF → 拒否
-        self._publish_status(has_map=True)
         assert self._set_flag('map_update', False).accepted
-        res = self._trigger('ui.save')
-        assert not res.accepted
-        assert res.reject_reason_key == 'map_update_off', res.reject_reason_key
-        # 地図あり＋トグル ON → 通り、commit_map_patch が配送される
-        assert self._set_flag('map_update', True).accepted
-        self._effects.clear()
-        res = self._trigger('ui.save')
-        assert res.accepted, res.reject_reason_key
-        assert self._wait_mode('REPLAY', 'SAVED')
-        self._spin(0.3)
-        assert 'commit_map_patch' in [e.name for e in self._effects], (
-            [e.name for e in self._effects])
+        for has_map in (False, True):
+            self._publish_status(has_map=has_map)
+            res = self._trigger('ui.save')
+            assert not res.accepted, f'地図更新 OFF なのに保存が通った (has_map={has_map})'
+            assert res.reject_reason_key == 'map_update_off', res.reject_reason_key

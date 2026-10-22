@@ -313,8 +313,8 @@ export default function S14Replay({ onFinish }) {
             </div>
           )}
 
-          {/* 1b-11 SG-B14: 地図の更新（Spec-webui.md §3.7）。既定 OFF。
-              ON のときだけ操作カードに「保存」が出る。 */}
+          {/* 地図の更新（Spec-webui.md S-14）。当面 OFF 固定で押せない（2026-10-22。
+              書き足しが効かないため）。機体側も ON を拒否する。 */}
           <div className="card">
             <h3>{S14_MAP_UPDATE_TITLE}</h3>
             <div className="row mt">
@@ -323,7 +323,7 @@ export default function S14Replay({ onFinish }) {
                 className="btn sm"
                 data-testid="s14-map-update-toggle"
                 aria-pressed={mapUpdate}
-                disabled={disabledAll}
+                disabled
                 onClick={handleMapUpdateToggle}
               >
                 {mapUpdate ? S14_MAP_UPDATE_ON : S14_MAP_UPDATE_OFF}

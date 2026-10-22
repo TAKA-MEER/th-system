@@ -346,7 +346,7 @@ export const S14_GLOBAL_BUTTON = '完全グローバルで探す'
 export const S14_MAP_UPDATE_TITLE = '地図の更新'
 export const S14_MAP_UPDATE_ON = 'ON（書き足し中）'
 export const S14_MAP_UPDATE_OFF = 'OFF'
-export const S14_MAP_UPDATE_NOTE = 'ON にすると走りながら地図に書き足します。「保存」で確定します'
+export const S14_MAP_UPDATE_NOTE = '地図の書き足しは現在使えません（自己位置推定が地図を書き換えないため）'
 
 // ---------------------------------------------------------------- 経路プレビュー（WS-3） ----
 // src/screens/RoutePreview.jsx の表示文字列。
@@ -524,7 +524,7 @@ export const S21_WORK_ON = 'ON'
 export const S21_WORK_OFF = 'OFF'
 export const S21_MAP_UPDATE = '地図の更新'
 export const S21_MAP_UPDATE_OFF = 'OFF'
-export const S21_MAP_UPDATE_NOTE = '地図更新 OFF の間は「保存」を出しません'
+export const S21_MAP_UPDATE_NOTE = '地図の書き足しは現在使えません（自己位置推定が地図を書き換えないため）'
 // brief-onsite-ux UX-1: S-21 の手順バー（screens/onsiteSteps.js の id に対応）と
 // 「次にやること」ボタン（parts/StepBar.jsx / S21Test.jsx の next-action）。
 export const S21_STEP_OPEN = '会場地図を開く'
