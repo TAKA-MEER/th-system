@@ -44,6 +44,8 @@ _GTEST_CALL_RE = re.compile(r'ament_add_gtest\s*\(\s*(\S+)\s+([^\s)]+)')
 # 直接実行する（各ファイルの docstring にホスト専用の旨を書くこと）。
 HOST_ONLY_PYTESTS = frozenset({
     'test_start_setup_scripts.py',
+    # Uses host g++ and .briefs/tmp, neither of which is part of the ROS test container.
+    'test_esp32_pid_ramp_windup.py',
 })
 
 
