@@ -5,14 +5,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[4]
-TMP = ROOT / ".briefs" / "tmp"
 
 
-def test_esp32_pid_ramp_windup_simulation():
-    TMP.mkdir(parents=True, exist_ok=True)
-    arduino = TMP / "Arduino.h"
-    source = TMP / "pid_ramp_windup_harness.cpp"
-    binary = TMP / "pid_ramp_windup_harness"
+def test_esp32_pid_ramp_windup_simulation(tmp_path: Path):
+    arduino = tmp_path / "Arduino.h"
+    source = tmp_path / "pid_ramp_windup_harness.cpp"
+    binary = tmp_path / "pid_ramp_windup_harness"
     arduino.write_text(
         """#pragma once
 #include <algorithm>
@@ -79,7 +77,7 @@ int main() {
             "g++",
             "-std=c++11",
             "-I",
-            str(TMP),
+            str(tmp_path),
             "-I",
             str(ROOT / "th_ws" / "esp32" / "src"),
             str(source),
