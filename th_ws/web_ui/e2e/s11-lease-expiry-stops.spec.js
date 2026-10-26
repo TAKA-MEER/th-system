@@ -23,7 +23,8 @@ test('releasing the stick keeps lease publication alive during braking', async (
   const cmds = await jogPublishes(page, '/cmd_vel_manual_raw')
   const zeros = cmds.filter((c) => c.cmd && c.cmd.vx === 0 && c.cmd.wz === 0)
   expect(zeros.length).toBeGreaterThan(1)
-  await page.waitForTimeout(1900)
+  // The configured S-curve release tail is 2.6 seconds.
+  await page.waitForTimeout(2500)
   const settledLeaseCount = (await jogPublishes(page, '/ui/jog_lease')).length
   await page.waitForTimeout(250)
   expect((await jogPublishes(page, '/ui/jog_lease')).length).toBe(settledLeaseCount)

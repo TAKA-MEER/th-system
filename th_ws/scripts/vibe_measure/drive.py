@@ -89,9 +89,9 @@ def ok():
 
 
 def stop_and_exit(msg, code):
-    # 0 を 2 秒送り続ける。途中で送信が切れると obstacle_limiter が途絶扱いで即 0 にして段差が出る
-    # （通常の減速 0.4 m/s² で最高速 0.55 m/s から止まりきるのに約 1.4 秒。WebUI の尾と同じ考え方）
-    for _ in range(20):
+    # 0 を 3 秒送り続ける。S 字の通常減速（a=0.4、J=0.5）で最高速
+    # 0.55 m/s から止まる約2.2秒に余裕を持たせ、途絶による段差を避ける。
+    for _ in range(30):
         send(0.0)
         rclpy.spin_once(node, timeout_sec=0.1)
     print(msg, flush=True)

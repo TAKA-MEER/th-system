@@ -35,9 +35,9 @@ const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== unde
 // (jog_lease_ms is 1200ms, so 200ms is comfortably above it), velocity 10 Hz.
 const LEASE_MS = 200
 const CMD_MS = 100
-// v_jog_max 0.55 m/s / normal_accel_mps2 0.4 m/s² ~= 1.4 s to stop from
-// maximum speed. Keep 0.4 s margin; revisit this if either parameter changes.
-const RELEASE_TAIL_MS = 1800
+// With a_max=0.4 m/s² and jerk=0.5 m/s³, stopping from 0.55 m/s takes
+// about v/a + a/J = 2.2 s. Keep 0.4 s margin for the release tail.
+const RELEASE_TAIL_MS = 2600
 
 // ジョグの加速度制限（2026-09-02 に復活させた）。
 // 旧 App.jsx が JOG_LIN_ACCEL=1.0 / JOG_ANG_ACCEL=4.0 を持っており、
