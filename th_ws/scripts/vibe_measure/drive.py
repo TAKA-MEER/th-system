@@ -6,7 +6,7 @@ jog_gate → twist_mux → obstacle_limiter を通るので、機体側の上限
   drive.py spin RATIO ANGLE_DEG [--ramp S] [--stop hard|soft] [--stop-ramp S]
 
 距離・角度は /odom で測る。次のどれかで即 0 を出して終わる:
-  /system/state が MANUAL・RUN でない／非常停止 / /odom が 0.5 秒来ない / 上限（1.3 m・200°・20 秒）を超えた
+  /system/state が MANUAL・RUN でない／非常停止 / /odom が 0.5 秒来ない / 上限（2.0 m・200°・20 秒）を超えた
 """
 import argparse
 import math
@@ -19,7 +19,7 @@ from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from th_system_msgs.msg import SystemState
 
-MAX_DIST = 1.3
+MAX_DIST = 2.0
 MAX_ANGLE = 200.0
 MAX_TIME = 20.0
 RATE = 10.0
@@ -31,6 +31,8 @@ ap.add_argument('amount', type=float, help='straight は m、spin は deg')
 ap.add_argument('--ramp', type=float, default=1.0, help='加速にかける秒')
 ap.add_argument('--stop', choices=['hard', 'soft'], default='hard')
 ap.add_argument('--stop-ramp', type=float, default=1.5, help='soft のとき減速にかける秒')
+ap.add_argument('--shape', choices=['linear', 'scurve'], default='linear',
+                help='加速・減速の形。scurve は加速度も滑らかに上げ下げする（余弦の S 字）')
 ap.add_argument('--check', action='store_true', help='指令を出さず、状態と /odom が読めるかだけ見る')
 a = ap.parse_args()
 if not 0 < abs(a.ratio) <= 1.0:
@@ -78,7 +80,9 @@ def ok():
 
 
 def stop_and_exit(msg, code):
-    for _ in range(10):
+    # 0 を 2 秒送り続ける。途中で送信が切れると obstacle_limiter が途絶扱いで即 0 にして段差が出る
+    # （通常の減速 0.4 m/s² で最高速 0.55 m/s から止まりきるのに約 1.4 秒。WebUI の尾と同じ考え方）
+    for _ in range(20):
         send(0.0)
         rclpy.spin_once(node, timeout_sec=0.1)
     print(msg, flush=True)
@@ -131,7 +135,10 @@ while True:
 
     el = now - start
     if phase == 'go':
-        r = peak * min(1.0, el / a.ramp) if a.ramp > 0 else peak
+        x = min(1.0, el / a.ramp) if a.ramp > 0 else 1.0
+        if a.shape == 'scurve':
+            x = (1 - math.cos(math.pi * x)) / 2   # 加速度が 0 から上がって 0 へ戻る
+        r = peak * x
         # soft は減速分の距離を見込んで早めに減速へ入る（平均速度は半分）。
         # 指令から実速度が落ち始めるまでの遅れ（実測 0.3〜0.4 秒）も足す
         v_now = abs(st['odom'][3] if a.kind == 'straight' else st['odom'][4])
@@ -143,7 +150,10 @@ while True:
         else:
             send(sign * r)
             continue
-    r = stop_from * max(0.0, 1.0 - (now - stop_t0) / a.stop_ramp)
+    x = max(0.0, 1.0 - (now - stop_t0) / a.stop_ramp)
+    if a.shape == 'scurve':
+        x = (1 - math.cos(math.pi * x)) / 2
+    r = stop_from * x
     if r <= 0.0:
         stop_and_exit(f'完了: {done:.2f}（ゆっくり停止）', 0)
     send(sign * r)

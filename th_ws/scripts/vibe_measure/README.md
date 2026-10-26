@@ -109,5 +109,5 @@ cd th_ws/scripts/vibe_measure
 | `fastdds_udp.xml` | 機体側の記録用。th_robot と `/dev/shm` を共有できないので UDP だけで受ける（無いと 0 件になる） |
 | `analyze.py` | 解析 |
 | `synth.py` | `selftest` 用の合成データ |
-| `drive.py` | 決まった走行（直進・その場旋回、急／ゆっくり停止）を WebUI と同じジョグ指令で出す。距離・角度は `/odom` で測り、1.3 m・200°・20 秒を超えるか MANUAL・RUN でなくなったら止まる。`--check` で指令を出さずに確認だけ |
+| `drive.py` | 決まった走行（直進・その場旋回、急／ゆっくり停止）を WebUI と同じジョグ指令で出す。距離・角度は `/odom` で測り、2.0 m・200°・20 秒を超えるか MANUAL・RUN でなくなったら止まる。止めるときは 0 を 2 秒送り続ける（途中で切ると機体側が途絶扱いで即 0 にして段差が出る）。`--shape scurve` で加速度も滑らかに上げ下げする S 字の加減速。`--check` で指令を出さずに確認だけ |
 | `seg.sh` | 1 区間を記録つきで走らせる（記録開始 → 4 秒静止 → `drive.py` → 5 秒静止 → 記録終了）。例 `./seg.sh s1_stop_hard straight 1.0 1.2 --stop hard`。ルータは起動済みのこと |
