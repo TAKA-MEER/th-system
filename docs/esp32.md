@@ -25,8 +25,15 @@ scp .pio/build/esp32dev/firmware.bin mirs2602@192.168.5.1:~/th_firmware.bin
 
 # ラズパイ側 (baud は 115200 — 460800 は失敗する)
 PYTHONPATH=~/esptool_env/site-packages python3 -m esptool \
-  --port /dev/ttyUSB1 --baud 115200 --chip esp32 write-flash 0x10000 ~/th_firmware.bin
+  --port /dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_80763483d099ef11b77f117161ce3355-if00-port0 \
+  --baud 115200 --chip esp32 write-flash 0x10000 ~/th_firmware.bin
 ```
+
+> **⚠ ポートは `ttyUSB0`／`ttyUSB1` の番号で指定しない。**ラズパイには ESP32（CP2102**N**）と
+> LiDAR（CP2102）の 2 つの USB シリアルがあり、番号は起動順で入れ替わる（2026-10-26 時点では
+> ESP32 が `ttyUSB0`、LiDAR が `ttyUSB1` で、以前この節に書いてあった `ttyUSB1` は LiDAR だった）。
+> `ls -l /dev/serial/by-id/` で CP2102N の方を選ぶ。`pi_serial_relay` が開いているポートと同じもの
+> （`systemctl status rpi-serial-relay` の起動引数 `--serial-port`）。ESP32 を交換するとシリアル ID が変わる。
 
 > **⚠ 書き込み中、ラズパイが `pi_serial_relay` でポートを掴んでいると esptool が
 > 失敗する。** `sudo systemctl stop rpi-serial-relay` してから書き込み、終わったら
