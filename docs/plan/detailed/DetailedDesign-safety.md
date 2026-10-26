@@ -761,7 +761,7 @@ PC 側の `rate_limit()`（`follow_core.py`）は**追従にしか効かない**
 | 層 | 実装 | 効く範囲 | ランプされる入力 |
 | --- | --- | --- | --- |
 | **ESP32 ファーム** | `TARGET_RAMP_ACCEL_MPS2`（目標速度側）＋`PID_OUT_RAMP_RATE`（PID出力/PWM側、2026-09-11 追加。ただし setpoint=0 の停止指令には効かず常に即時0、2026-09-14 修正） | **すべての速度源**（ジョグ・Nav2・挙動ノード） | `/cmd_vel` として届いた非ゼロ値のみ |
-| **`obstacle_limiter`**（2026-09-11 追加） | `normal_accel_mps2` で `/cmd_vel_muxed` の**生値（linear_x）**をランプしてから、安全上限を**ランプ後**の値にクランプする。`normal_angular_accel_rps2`（angular_z 側）は 2026-09-11 に実機で撤去（後述） | 同上（`obstacle_limiter` はすべての速度源の最終集約点） | `/cmd_vel_muxed` の linear_x のみ。安全上限自体はランプしない |
+| **`obstacle_limiter`**（2026-09-11 追加） | `normal_accel_mps2` と `normal_jerk_mps3` で `/cmd_vel_muxed` の**生値（linear_x）**を S 字ランプしてから、安全上限を**ランプ後**の値にクランプする。`normal_jerk_mps3<=0` は従来の直線ランプ。`normal_angular_accel_rps2`（angular_z 側）は 2026-09-11 に実機で撤去（後述） | 同上（`obstacle_limiter` はすべての速度源の最終集約点） | `/cmd_vel_muxed` の linear_x のみ。安全上限自体はランプしない |
 | PC 側の挙動ノード | `rate_limit()` | その方式の中だけ。**滑らかさのためであって安全のためではない** |
 
 | 項目 | 決定 |
@@ -771,8 +771,7 @@ PC 側の `rate_limit()`（`follow_core.py`）は**追従にしか効かない**
 | 制動距離との関係 | `brake_accel_mps2`（実測）はファーム側ランプを含んだ**実際の止まり方**である。ファーム側ランプを変えたら**測り直す**。`obstacle_limiter` 側の通常時ランプは障害物ブレーキの制動距離には影響しない（次項の非対称設計） |
 
 > **`obstacle_limiter` は「通常時の加減速」と「安全上限」を明確に分けて扱う。**
-> `/cmd_vel_muxed` の生値を先にランプし（`ramped = ramp_toward(prev, muxed_input,
-> rate*dt)`）、障害物ブレーキ（`v_allow`）・画面/モード上限・死角キャップ・
+> `/cmd_vel_muxed` の生値を加速度・加加速度の上限内で先にランプし、加速度を目標付近で先に戻す（`normal_accel_mps2`、`normal_jerk_mps3`）。障害物ブレーキ（`v_allow`）・画面/モード上限・死角キャップ・
 > estop・fault_lock・stale はすべて**ランプ後の値に対して従来どおり即座に
 > クランプする**（`out = clamp(ramped, ceiling)`、`ceiling` 自体はランプしない）。
 > ランプの起点 `prev` は**クランプ前の値ではなくクランプ後の実出力値**で更新する
@@ -796,8 +795,8 @@ PC 側の `rate_limit()`（`follow_core.py`）は**追従にしか効かない**
 した実機で停止時の揺れを測定（2026-10-26）し、0.75 m/s² では停止後の揺れが約
 2.5 秒続き、約 0.37 m/s² の滑らかな減速では約 0.8 秒で収まることを確認した。
 通常の加減速値を **0.4 m/s²** に更新する（[Spec-safety.md](../spec/Spec-safety.md) §3）。
-手動ジョグでは WebUI が解放後も約 1.8 秒間、ゼロへ向かう速度指令とリースを継続し、
-通常ランプによる減速を完了させてから送信を止める。0.4 や `v_jog_max=0.55 m/s` が変わる場合は
+手動ジョグでは WebUI が解放後も約 2.6 秒間、ゼロへ向かう速度指令とリースを継続し、
+S 字ランプによる減速（最高速から約 2.2 秒）を完了させてから送信を止める。通常加速度・加加速度や `v_jog_max=0.55 m/s` が変わる場合は
 この尾の長さも見直す。障害物・非常停止・fault_lock・通信途絶の停止経路には適用しない。
 
 角速度側（`normal_angular_accel_rps2`）は当初 `normal_accel_mps2` と同じ理由
