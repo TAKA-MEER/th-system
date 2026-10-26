@@ -28,7 +28,7 @@ test('holding w publishes a forward command via the keyboard', async ({ page }) 
   expect(moving.length, 'some ticks should be pure forward').toBeGreaterThan(0)
 })
 
-test('releasing the key sends a single zero and stops publishing', async ({ page }) => {
+test('releasing the key sends zeros and lease refreshes through the braking tail', async ({ page }) => {
   await gotoScreen(page, 'DRIVE_S11', { mode: 'MANUAL' })
   await page.locator('#body .stick svg').waitFor()
 
@@ -38,15 +38,13 @@ test('releasing the key sends a single zero and stops publishing', async ({ page
   await settle(page, 250)
 
   const cmds = await jogPublishes(page, '/cmd_vel_manual_raw')
-  const zeros = cmds.filter((c) => c.cmd.vx === 0 && c.cmd.wz === 0)
-  expect(zeros.length, 'release must send zero exactly once').toBe(1)
-  const last = cmds[cmds.length - 1]
-  expect(last.cmd.vx).toBe(0)
-  expect(last.cmd.wz).toBe(0)
+  expect(cmds.length, 'command timer continues during the braking tail').toBeGreaterThan(3)
+  expect((await jogPublishes(page, '/ui/jog_lease')).length).toBeGreaterThan(1)
 
-  await settle(page, 250)
+  await settle(page, 1900)
   const settled = await jogPublishes(page, '/cmd_vel_manual_raw')
-  expect(settled.length, 'timers stopped after release').toBe(cmds.length)
+  await settle(page, 250)
+  expect((await jogPublishes(page, '/cmd_vel_manual_raw')).length, 'timers stop after release tail').toBe(settled.length)
 })
 
 test('slider focus does not steal keys: w still drives', async ({ page }) => {

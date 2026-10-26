@@ -9,7 +9,7 @@
 //
 // ここが守る性質:
 //   1. スティックを一気に倒しても最初の指令が目標値に飛ばない（ランプする）
-//   2. 手を離したときのゼロは**ランプを通さない**（通すと離しても進み続ける）
+//   2. 手を離した後もゼロへ向かう指令を送り、尾の時間で止める
 import { test, expect } from '@playwright/test'
 import { gotoScreen, downOnStick, jogPublishes } from './helpers.js'
 
@@ -44,7 +44,7 @@ test('スティックを一気に倒しても指令はランプする（急発�
   await page.mouse.up()
 })
 
-test('手を離したときのゼロはランプを通さず即座に 0 になる', async ({ page }) => {
+test('手を離した後はゼロへ向かう指令を尾の間送り続ける', async ({ page }) => {
   await gotoScreen(page, 'S11', { mode: 'MANUAL', state: 'PAUSE' })
   const stick = page.locator('#body .stick svg')
   await stick.waitFor()
@@ -57,9 +57,12 @@ test('手を離したときのゼロはランプを通さず即座に 0 にな�
     '離す前に十分加速していない（テストの前提が崩れている）').toBeGreaterThan(0.1)
 
   await page.mouse.up()
+  await page.waitForTimeout(300)
 
   const cmds = (await jogPublishes(page, '/cmd_vel_manual_raw')).filter((c) => c.cmd)
-  const last = cmds[cmds.length - 1]
-  expect(last.cmd.vx, '解放時のゼロがランプを通ってしまっている').toBe(0)
-  expect(last.cmd.wz).toBe(0)
+  const tail = cmds.slice(beforeRelease.length)
+  expect(tail.length, '解放後も定期送信が続いている').toBeGreaterThan(1)
+  const previous = beforeRelease[beforeRelease.length - 1].cmd.vx
+  expect(Math.abs(tail[tail.length - 1].cmd.vx)).toBeLessThan(Math.abs(previous))
+  expect((await jogPublishes(page, '/ui/jog_lease')).length).toBeGreaterThan(1)
 })
