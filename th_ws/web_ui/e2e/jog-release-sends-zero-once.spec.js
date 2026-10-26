@@ -13,20 +13,43 @@ test('release sends zeros through the braking tail and then stops publishing', a
   await downOnStick(page, stick, { offsetX: 0.45, offsetY: 0 })
   await page.waitForTimeout(200) // a few non-zero ticks
   await page.mouse.up()
-  await page.waitForTimeout(250) // let any spurious tick land
+  const releasedAt = await page.evaluate(() => performance.now())
+  const commandsAtRelease = await jogPublishes(page, '/cmd_vel_manual_raw')
+  const leasesAtRelease = await jogPublishes(page, '/ui/jog_lease')
 
-  const cmds = await jogPublishes(page, '/cmd_vel_manual_raw')
-  expect(cmds.length).toBeGreaterThan(1)
+  // The tail must still be active beyond the physical worst-case stop time
+  // (0.55 m/s / 0.4 m/s² = 1.375 s). At this point velocity publications
+  // must already be zero, and both topics must have continued refreshing.
+  await page.waitForTimeout(1650)
+  const commandsAt1650 = await jogPublishes(page, '/cmd_vel_manual_raw')
+  const leasesAt1650 = await jogPublishes(page, '/ui/jog_lease')
+  expect(commandsAt1650.length, 'stick tail must publish past 1.4 seconds')
+    .toBeGreaterThan(commandsAtRelease.length)
+  expect(leasesAt1650.length, 'stick lease must refresh past 1.4 seconds')
+    .toBeGreaterThan(leasesAtRelease.length)
+  const commandsAfter1400ms = commandsAt1650.filter((entry) => entry.time >= releasedAt + 1400)
+  const leasesAfter1400ms = leasesAt1650.filter((entry) => entry.time >= releasedAt + 1400)
+  expect(commandsAfter1400ms.length, 'stick commands must continue after 1.4 seconds').toBeGreaterThan(0)
+  expect(leasesAfter1400ms.length, 'stick leases must continue after 1.4 seconds').toBeGreaterThan(0)
+  expect(commandsAfter1400ms.every(
+    (entry) => Math.abs(entry.cmd.vx) < 1e-9 && Math.abs(entry.cmd.wz) < 1e-9,
+  ), 'stick tail must publish zero commands after braking').toBe(true)
 
-  const zeros = cmds.filter((c) => c.cmd.vx === 0 && c.cmd.wz === 0)
-  expect(zeros.length, 'zero must be sent throughout the braking tail').toBeGreaterThan(1)
-  expect((await jogPublishes(page, '/ui/jog_lease')).length).toBeGreaterThan(1)
-
-  // And nothing else arrives afterwards (the 10 Hz timer is stopped).
-  await page.waitForTimeout(1900)
-  const settled = await jogPublishes(page, '/cmd_vel_manual_raw')
+  // By 2.2 seconds both periodic publishers must have stopped.
+  await page.waitForTimeout(550)
+  const commandsAt2200 = await jogPublishes(page, '/cmd_vel_manual_raw')
+  const leasesAt2200 = await jogPublishes(page, '/ui/jog_lease')
   await page.waitForTimeout(250)
-  expect((await jogPublishes(page, '/cmd_vel_manual_raw')).length).toBe(settled.length)
+  const commandsAfter2200 = await jogPublishes(page, '/cmd_vel_manual_raw')
+  const leasesAfter2200 = await jogPublishes(page, '/ui/jog_lease')
+  expect(commandsAfter2200.filter((entry) => entry.time >= releasedAt + 2200).length,
+    'stick command timer must stop by 2.2 seconds').toBe(0)
+  expect(leasesAfter2200.filter((entry) => entry.time >= releasedAt + 2200).length,
+    'stick lease timer must stop by 2.2 seconds').toBe(0)
+  expect(commandsAfter2200.length,
+    'stick command timer must stop by 2.2 seconds').toBe(commandsAt2200.length)
+  expect(leasesAfter2200.length,
+    'stick lease timer must stop by 2.2 seconds').toBe(leasesAt2200.length)
 })
 
 test('touching again during the tail resumes the same command rate', async ({ page }) => {

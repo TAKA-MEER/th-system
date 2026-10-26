@@ -27,6 +27,7 @@ import { useEffect, useRef } from 'react'
 import { rampToward } from '../parts/stickGeometry.js'
 import { TOPICS, MSG_TYPES } from './topics'
 import { getClientId } from './clientId'
+import { jogLeaseTarget } from './jogLeaseTarget.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 
@@ -73,7 +74,7 @@ export function useJogLease(ros, held, cmd, enabled = true) {
   if (record.current === null) record.current = (entry) => {
     if (!TEST_MODE) return
     window.__thJogPublishes = window.__thJogPublishes ?? []
-    window.__thJogPublishes.push(entry)
+    window.__thJogPublishes.push({ ...entry, time: performance.now() })
   }
 
   // Hold ROSLIB.Topic handles across re-renders (same pattern as
@@ -123,9 +124,10 @@ export function useJogLease(ros, held, cmd, enabled = true) {
     let outVx
     let outWz
     if (vx === undefined) {
-      outVx = rampToward(sentRef.current.vx, cmdRef.current.vx,
+      const target = jogLeaseTarget(operatorHeldRef.current, cmdRef.current)
+      outVx = rampToward(sentRef.current.vx, target.vx,
                          JOG_LIN_ACCEL * (CMD_MS / 1000))
-      outWz = rampToward(sentRef.current.wz, cmdRef.current.wz,
+      outWz = rampToward(sentRef.current.wz, target.wz,
                          JOG_ANG_ACCEL * (CMD_MS / 1000))
     } else {
       outVx = vx
