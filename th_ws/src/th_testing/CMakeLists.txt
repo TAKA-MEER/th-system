@@ -620,6 +620,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_auto_brake_limiter_node
     test/test_auto_brake_limiter_node.py
     TIMEOUT 180)
+  # normal_jerk_mps3 の読み込みと update() の接続を、本物の obstacle_limiter で検証する。
+  ament_add_pytest_test(test_limiter_scurve_node
+    test/test_limiter_scurve_node.py
+    TIMEOUT 180)
   # 開発モードの項目 auto_brake（Spec-safety.md §10。2026-10-08 改定）。自律系・場内でも
   # OFF にできる。state_manager の受け付け・失効（3 秒）と obstacle_limiter の従い方・失効を
   # ノード本体で縛る（選んだだけでは OFF にならない・NA／state 途絶／estop は変えない）。

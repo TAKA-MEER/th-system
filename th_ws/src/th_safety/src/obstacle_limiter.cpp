@@ -106,6 +106,7 @@ public:
         // 通常時ランプ（DetailedDesign-safety.md §7.1、2026-09-11 追加）。
         // 0.0 = 無制限（従来動作。生成 yaml が未配線の間の安全側フォールバック）。
         declare_parameter("normal_accel_mps2", 0.0);
+        declare_parameter("normal_jerk_mps3", 0.0);
         declare_parameter("normal_angular_accel_rps2", 0.0);
 
         declare_parameter("manual_joy_timeout", 1.0);  // 単位: 秒（registry.yaml のパラメータ名のまま）
@@ -208,6 +209,7 @@ public:
         params_.w_max = get_parameter("w_max").as_double();
         params_.w_align_max = get_parameter("w_align_max").as_double();
         params_.normal_accel_mps2 = get_parameter("normal_accel_mps2").as_double();
+        params_.normal_jerk_mps3 = get_parameter("normal_jerk_mps3").as_double();
         params_.normal_angular_accel_rps2 = get_parameter("normal_angular_accel_rps2").as_double();
         params_.manual_joy_timeout_sec = get_parameter("manual_joy_timeout").as_double();
         params_.state_stale_sec = get_parameter("state_stale_ms").as_int() / 1000.0;

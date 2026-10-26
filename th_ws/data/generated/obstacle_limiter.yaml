@@ -22,6 +22,7 @@ obstacle_limiter:
     muxed_stale_ms: 200
     normal_accel_mps2: 0.4
     normal_angular_accel_rps2: 0.0
+    normal_jerk_mps3: 0.5
     obstacle_cone_half_width_rad: 0.5
     obstacle_cone_half_width_reverse_rad: 0.6
     obstacle_floor_distance_m: 0.42500000000000004

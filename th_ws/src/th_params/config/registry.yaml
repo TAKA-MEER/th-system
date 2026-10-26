@@ -259,6 +259,15 @@
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-safety.md §7.1"
   note: "obstacle_limiter が /cmd_vel_muxed の生値（linear_x）に掛ける通常時ランプ。障害物ブレーキ（brake_accel_mps2）・estop・fault_lock・stale 由来のゼロ出力はこのランプを経由せず即座に効く（DetailedDesign-safety.md §7.1）。2026-10-26 の昇降機搭載時の揺れ測定で、手動ジョグ解放後に即時ゼロへ切り替わると停止後も約2.5秒揺れることを確認。通常の加減速を0.4 m/s²に下げ、WebUIは解放後も減速の尾の間だけ0へ向かう速度指令とリースを継続する（Spec-safety.md §3）。"
 
+- name: normal_jerk_mps3
+  unit: m/s3
+  class: b
+  status: given
+  value: 0.5
+  consumers: [obstacle_limiter, params_audit]
+  spec_ref: "Spec-params.md §1 / DetailedDesign-safety.md §7.1"
+  note: "obstacle_limiter の linear_x 通常ランプに掛ける加加速度上限。0 以下で従来の直線ランプ。2026-10-26 の実機測定で 0→0.55m/s の S 字入力は発進ピッチの振れ幅を約3割減らした。"
+
 - name: normal_angular_accel_rps2
   unit: rad/s2
   class: b
