@@ -55,7 +55,7 @@
 
 | # | 原則 | 補足 |
 | --- | --- | --- |
-| 1 | **実装は opencode に投げる。窓口は herdr か orca**（いま開いている方を使う） | 体数は固定しない。必要なだけ増やす（下記 §2.1） |
+| 1 | **実装は codex に投げ、利用枠の上限が来たら opencode に切り替える。窓口は herdr か orca**（いま開いている方を使う） | 体数は固定しない。必要なだけ増やす（下記 §2.1） |
 | 2 | **順番は「段階」ではなく「用途」で決める** | 実際の運用で先に要るものから埋める（§6）。~~前の段階が安全装置を用意してから次へ~~ という旧原則は、デモで段階 4・7 を飛ばして 5・6 に到達した時点で破れている |
 | 3 | **検証は必ず実装管理担当（人＋Claude）が自分で行う** | **実装エージェントの「テストが緑」報告は信用しない。**下記 §2.2 |
 | 4 | **実機はモータの電源だけ切って PC に繋ぐ**（ESP32 はラズパイに USB 接続） | 疎通確認・モード遷移・UI 操作・フォルト検知の時間測定まで**通電なしで**できる |
@@ -63,9 +63,21 @@
 
 **通電（モータを回す）が要るのは走行を伴う確認だけ**——制動距離の測定、物理非常停止の動作確認、直進・旋回の校正。
 
-### 2.1 実装エージェントの動かし方（herdr ／ orca ＋ opencode）
+### 2.1 実装エージェントの動かし方（herdr ／ orca ＋ codex ／ opencode）
 
 **1 作業パケット ＝ 1 ブリーフ ＝ 1 エージェント**。並行数は作業の独立性で決める。
+
+**どのエージェントに投げるか**（2026-10-26 ユーザー決定）: **まず codex。利用枠の上限が来たら opencode。**
+
+| 項目 | codex | opencode |
+| --- | --- | --- |
+| 起動（orca） | `--agent codex` | `--agent opencode` |
+| 指示ファイル | リポジトリ直下の `AGENTS.md`（「`CLAUDE.md` を読め」とだけ書いてある） | `CLAUDE.md` |
+| 利用枠 | ChatGPT の **無料プラン・30 日単位の枠**（2026-10-26 時点で使用 0%、次のリセット 2026-11-25 18:38）。**使い切ると約 1 か月戻らない** | 無料枠。上限に達すると idle のまま進まなくなる |
+| 枠の確かめ方 | codex の画面で `/status`、または `~/.codex/sessions/` の最新ログの `rate_limits.primary.used_percent` | — |
+| 試用状況 | 読み取り専用の `codex exec` で動作確認だけ済み（2026-10-26）。**orca からパケットを投げるのは未試用**。初回に確かめて下の表へ癖を書き足す | 実績あり |
+
+以下の手順は opencode で確かめたもの。codex でも同じ形で動く想定だが、初回の試用で違いが出たら書き直す。
 
 **どちらの中で動いているかは環境変数で見分ける**（2026-10-01。herdr から orca への乗り換えを検討中で、両方を使う）。
 
@@ -104,7 +116,7 @@ herdr agent get <name>                            # agent_status を 10 秒間�
 #### orca の場合（2026-10-01 に故障注入 7 で試用・`89b8f09`）
 
 ```bash
-orca worktree create --name <n> --no-parent --setup skip --agent opencode --json   # worktree 作成と opencode 起動を 1 回で
+orca worktree create --name <n> --no-parent --setup skip --agent codex --json      # worktree 作成と codex 起動を 1 回で（枠切れなら --agent opencode）
 git -C <worktreeのpath> branch -m <n> <種別>/<主題>     # orca はブランチ名を <n> にするので付け替える
 mkdir -p <worktreeのpath>/.briefs/tmp                    # .briefs は gitignore なので新しい worktree には無い。ブリーフもここに置く
 orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 60000 --json   # satisfied:true を確かめてから送る
