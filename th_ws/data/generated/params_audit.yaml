@@ -16,7 +16,7 @@ params_audit:
     motor_follow_min_ratio: 0.5
     nav_tolerance_deg: 5.0
     nav_tolerance_m: 0.1
-    normal_accel_mps2: 0.75
+    normal_accel_mps2: 0.4
     normal_angular_accel_rps2: 0.0
     opcheck_blind_tolerance_deg: 5.0
     opcheck_deadman_timeout_s: 0.5

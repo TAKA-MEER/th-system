@@ -1,13 +1,9 @@
-// DetailedDesign-wp3.md WP-TRANSIT-01 §7 (T1-2) / DetailedDesign-transit.md
-// §2.2: lease expiry -> RUN -> PAUSE stops the drive. The transition itself is
-// th_state's T-MANUAL-02; the UI's own half is that stopping the stick stops
-// the /ui/jog_lease flow (so the lease expires and jog_gate / th_state cut to
-// PAUSE) and emits a single zero on /cmd_vel_manual_raw so the motor gets an
-// explicit stop rather than relying on silence alone.
+// A released stick keeps /ui/jog_lease alive while the normal acceleration
+// ramp brakes the vehicle; lease expiry then transitions RUN -> PAUSE.
 import { test, expect } from '@playwright/test'
 import { gotoScreen, downOnStick, jogPublishes } from './helpers.js'
 
-test('releasing the stick stops lease publication and sends one zero', async ({ page }) => {
+test('releasing the stick keeps lease publication alive during braking', async ({ page }) => {
   await gotoScreen(page, 'S11', { mode: 'MANUAL', state: 'PAUSE' })
   const stick = page.locator('#body .stick svg')
   await stick.waitFor()
@@ -19,15 +15,16 @@ test('releasing the stick stops lease publication and sends one zero', async ({ 
 
   await page.mouse.up()
 
-  // Leases stop flowing: the count must not grow after release (T1-2's
-  // precondition — no lease refresh -> th_state expires to PAUSE server-side).
-  const after = (await jogPublishes(page, '/ui/jog_lease')).length
-  expect(after).toBe(before)
+  // Lease expiry occurs after the drive has had time to ramp down.
+  await page.waitForTimeout(250)
+  const duringTail = (await jogPublishes(page, '/ui/jog_lease')).length
+  expect(duringTail).toBeGreaterThan(before)
 
-  // A single explicit zero lands on /cmd_vel_manual_raw (WP-UI-03 §3.1:
-  // "離したとき … ゼロを 1 回送る").
   const cmds = await jogPublishes(page, '/cmd_vel_manual_raw')
   const zeros = cmds.filter((c) => c.cmd && c.cmd.vx === 0 && c.cmd.wz === 0)
-  // One zero now (the release one); nothing beyond it refreshed.
-  expect(zeros.length).toBeGreaterThanOrEqual(1)
+  expect(zeros.length).toBeGreaterThan(1)
+  await page.waitForTimeout(1900)
+  const settledLeaseCount = (await jogPublishes(page, '/ui/jog_lease')).length
+  await page.waitForTimeout(250)
+  expect((await jogPublishes(page, '/ui/jog_lease')).length).toBe(settledLeaseCount)
 })

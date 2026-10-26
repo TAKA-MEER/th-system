@@ -16,10 +16,9 @@
 // timeout cut the drive. Keeping them separate means a stall on one path
 // fails into a stop instead of a held command.
 //
-// On release (held true -> false) it sends a single zero and stops both
-// timers. It never sends a `ui.jog.release` trigger -- there is no such
-// trigger; the lease simply stops flowing and jog_gate's lease expiry does
-// the rest (DetailedDesign-wp3.md §3.1 / webui §5).
+// On an ordinary release it keeps both timers alive for the braking tail,
+// refreshing the lease and sending zero until obstacle_limiter has had time
+// to ramp the last command down. Safety cancellations still stop immediately.
 //
 // Mirrors ros/useActiveScreenPublisher.js's TEST_MODE: under Playwright
 // there is no rosbridge, so nothing is published for real; instead every
@@ -28,6 +27,7 @@ import { useEffect, useRef } from 'react'
 import { rampToward } from '../parts/stickGeometry.js'
 import { TOPICS, MSG_TYPES } from './topics'
 import { getClientId } from './clientId'
+import { jogLeaseTarget } from './jogLeaseTarget.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 
@@ -35,6 +35,9 @@ const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== unde
 // (jog_lease_ms is 1200ms, so 200ms is comfortably above it), velocity 10 Hz.
 const LEASE_MS = 200
 const CMD_MS = 100
+// v_jog_max 0.55 m/s / normal_accel_mps2 0.4 m/s² ~= 1.4 s to stop from
+// maximum speed. Keep 0.4 s margin; revisit this if either parameter changes.
+const RELEASE_TAIL_MS = 1800
 
 // ジョグの加速度制限（2026-09-02 に復活させた）。
 // 旧 App.jsx が JOG_LIN_ACCEL=1.0 / JOG_ANG_ACCEL=4.0 を持っており、
@@ -57,6 +60,8 @@ export function useJogLease(ros, held, cmd, enabled = true) {
   // only latches on an accepted transition, so the release branch below can
   // tell "just released" apart from "still released".
   const heldRef = useRef(false)
+  const operatorHeldRef = useRef(false)
+  const tailTimerRef = useRef(null)
   // Latest cmd read from inside the interval, so a re-render between ticks
   // never emits a stale value (U3-4: don't close over a stale value).
   const cmdRef = useRef({ vx: 0, wz: 0 })
@@ -69,7 +74,7 @@ export function useJogLease(ros, held, cmd, enabled = true) {
   if (record.current === null) record.current = (entry) => {
     if (!TEST_MODE) return
     window.__thJogPublishes = window.__thJogPublishes ?? []
-    window.__thJogPublishes.push(entry)
+    window.__thJogPublishes.push({ ...entry, time: performance.now() })
   }
 
   // Hold ROSLIB.Topic handles across re-renders (same pattern as
@@ -96,6 +101,8 @@ export function useJogLease(ros, held, cmd, enabled = true) {
     if (cmdTimerRef.current) clearInterval(cmdTimerRef.current)
     leaseTimerRef.current = null
     cmdTimerRef.current = null
+    if (tailTimerRef.current) clearTimeout(tailTimerRef.current)
+    tailTimerRef.current = null
   }
 
   const publishLease = () => {
@@ -110,16 +117,17 @@ export function useJogLease(ros, held, cmd, enabled = true) {
   const sentRef = useRef({ vx: 0, wz: 0 })
 
   // 引数なし = 定期送信。目標へ加速度制限つきで近づける。
-  // 引数あり = 解放・非表示・アンマウント時のゼロなど「今すぐこの値」を意味する
-  // 呼び出しなので、**ランプを通さない**。ここを滑らかにすると手を離しても
-  // 機体が進み続けることになり、安全上の後退になる。
+  // 引数あり = 非表示・無効化・アンマウント時の「今すぐこの値」を意味する
+  // 呼び出しなので、**ランプを通さない**。通常解放の減速は別途、尾の間に
+  // 定期送信を続けて機体側の通常ランプに任せる。
   const publishCmd = (vx, wz) => {
     let outVx
     let outWz
     if (vx === undefined) {
-      outVx = rampToward(sentRef.current.vx, cmdRef.current.vx,
+      const target = jogLeaseTarget(operatorHeldRef.current, cmdRef.current)
+      outVx = rampToward(sentRef.current.vx, target.vx,
                          JOG_LIN_ACCEL * (CMD_MS / 1000))
-      outWz = rampToward(sentRef.current.wz, cmdRef.current.wz,
+      outWz = rampToward(sentRef.current.wz, target.wz,
                          JOG_ANG_ACCEL * (CMD_MS / 1000))
     } else {
       outVx = vx
@@ -135,7 +143,7 @@ export function useJogLease(ros, held, cmd, enabled = true) {
     }
   }
 
-  // Tab goes to background: someone (or something) else now owns the screen.
+  // Stop immediately when the page becomes hidden; this is not an ordinary release.
   // We must not keep driving while hidden, so treat it exactly like a release
   // -- stop the timers and send one zero (DetailedDesign-wp3.md §6.2 / webui
   // §5 handle the jog_gate side as a normal release). On return to visible
@@ -146,13 +154,15 @@ export function useJogLease(ros, held, cmd, enabled = true) {
       if (typeof document === 'undefined') return
       if (document.visibilityState !== 'visible' && heldRef.current) {
         heldRef.current = false
+        operatorHeldRef.current = false
         stopTimers()
+        sentRef.current = { vx: 0, wz: 0 }
         publishCmd(0, 0)
       }
     }
   }
   useEffect(() => {
-    if (!TEST_MODE && typeof document !== 'undefined') {
+    if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', applyVisibility.current)
       return () => document.removeEventListener('visibilitychange', applyVisibility.current)
     }
@@ -167,14 +177,29 @@ export function useJogLease(ros, held, cmd, enabled = true) {
   useEffect(() => () => {
     if (heldRef.current) {
       heldRef.current = false
+      operatorHeldRef.current = false
       stopTimers()
+      sentRef.current = { vx: 0, wz: 0 }
       publishCmd(0, 0)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
-    if (held && enabledRef.current) {
+    if (!enabledRef.current) {
+      if (heldRef.current) {
+        heldRef.current = false
+        operatorHeldRef.current = false
+        stopTimers()
+        sentRef.current = { vx: 0, wz: 0 }
+        publishCmd(0, 0)
+      }
+      return
+    }
+    if (held) {
+      operatorHeldRef.current = true
+      if (tailTimerRef.current) clearTimeout(tailTimerRef.current)
+      tailTimerRef.current = null
       if (heldRef.current === false) {
         // fresh hold: kick both timers immediately, then on interval
         heldRef.current = true
@@ -185,11 +210,17 @@ export function useJogLease(ros, held, cmd, enabled = true) {
       }
       return
     }
-    if (heldRef.current) {
-      // was held, now released (or gated off / hidden) -> stop + single zero
-      heldRef.current = false
-      stopTimers()
-      publishCmd(0, 0)
+    if (heldRef.current && operatorHeldRef.current) {
+      // Ordinary release: keep the existing intervals and lease alive while
+      // obstacle_limiter ramps its last command to zero.
+      operatorHeldRef.current = false
+      cmdRef.current = { vx: 0, wz: 0 }
+      publishCmd()
+      tailTimerRef.current = setTimeout(() => {
+        heldRef.current = false
+        stopTimers()
+        sentRef.current = { vx: 0, wz: 0 }
+      }, RELEASE_TAIL_MS)
     }
   }, [held, cmd, enabled])
 }

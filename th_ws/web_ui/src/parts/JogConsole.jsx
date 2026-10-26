@@ -49,7 +49,9 @@ export default function JogConsole({ ros, disabled = false, keyboard = false, in
   // low forward preset doesn't also slow cornering (stickGeometry.js).
   const scaled = scaleJogCmd(effectiveRaw, speedPct)
 
-  useJogLease(ros, effectiveHeld && !disabled, scaled)
+  // Keep operator release distinct from a safety/UI disable: only the former
+  // gets a braking tail; disabling must stop the publisher immediately.
+  useJogLease(ros, effectiveHeld, scaled, !disabled)
 
   const handleChange = (cmd) => {
     setHeld(true)
