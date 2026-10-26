@@ -98,6 +98,54 @@ double ramp_toward(double value, double target, double max_abs_rate, double dt) 
   return value;
 }
 
+double scurve_toward(double value, double target, double* accel,
+                     double max_abs_accel, double max_abs_jerk, double dt) {
+  if (max_abs_accel <= 0.0 || max_abs_jerk <= 0.0) {
+    *accel = 0.0;
+    return ramp_toward(value, target, max_abs_accel, dt);
+  }
+  if (!std::isfinite(dt) || dt <= 0.0) {
+    return value;
+  }
+  const double error = target - value;
+  if (std::abs(error) <= 1e-12) {
+    *accel -= std::clamp(*accel, -max_abs_jerk * dt, max_abs_jerk * dt);
+    return target;
+  }
+
+  // If acceleration points toward the target, start ramping it to zero when
+  // the remaining velocity change equals the area under that jerk ramp:
+  // a²/(2J). This sheds acceleration before reaching the target. Otherwise
+  // request full acceleration toward the target. Acceleration itself moves
+  // only by J*dt each cycle.
+  // Substep to reduce the discrete switching error while preserving the same
+  // externally supplied dt and the strict jerk bound.
+  const int steps = std::max(1, static_cast<int>(std::ceil(dt / 0.0025)));
+  const double h = dt / steps;
+  double v = value;
+  for (int i = 0; i < steps; ++i) {
+    const double e = target - v;
+    if (std::abs(e) <= 1e-10 && std::abs(*accel) <= max_abs_jerk * h) {
+      *accel = 0.0;
+      return target;
+    }
+    const double d = std::copysign(1.0, e == 0.0 ? error : e);
+    const double a_along = d * *accel;
+    const double stop_dv = a_along > 0.0
+        ? (a_along * a_along) / (2.0 * max_abs_jerk) : 0.0;
+    const double a_desired = std::abs(e) <= stop_dv ? 0.0 : d * max_abs_accel;
+    const double a0 = *accel;
+    *accel += std::clamp(a_desired - *accel, -max_abs_jerk * h, max_abs_jerk * h);
+    *accel = std::clamp(*accel, -max_abs_accel, max_abs_accel);
+    const double next = v + 0.5 * (a0 + *accel) * h;
+    if ((target - v) * (target - next) <= 0.0) {
+      return target;
+    }
+    v = next;
+  }
+  return v;
+}
+
 bool blind_direction_overlap(double direction_rad, double half_width_rad,
                               const std::vector<std::pair<double, double>>& blind_angle_ranges_deg) {
   const double a_start = normalize_angle(direction_rad - half_width_rad);
@@ -187,12 +235,10 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   ObstacleLimiterOutput out;
 
   // 通常時ランプ（DetailedDesign-safety.md §7.1）の dt。now_sec の連続差分から
-  // 取る（欠測ティックがあっても実経過時間で正しく計算される）。1回目の呼び出し
-  // （prev_now_valid_ == false）は dt を非有限にして ramp_toward() を無制限
-  // （即座に target）にする——ランプの起点が定まっていない状態で小さい dt を
-  // 使うと、最初の入力が反映されずゼロに張り付く不具合になるため。
+  // 取る（欠測ティックがあっても実経過時間で計算する）。初回はノードの固定周期
+  // 20 Hz の 1 周期を使い、速度・加速度ともゼロから始める。
   const double dt = prev_now_valid_ ? (in.now_sec - prev_now_sec_)
-                                     : std::numeric_limits<double>::infinity();
+      : (p.normal_jerk_mps3 > 0.0 ? 0.05 : std::numeric_limits<double>::infinity());
   prev_now_sec_ = in.now_sec;
   prev_now_valid_ = true;
 
@@ -204,6 +250,7 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
     out.source_class = SourceClass::AUTO;
     out.applied_limit_mps = 0.0;
     prev_ramped_linear_ = 0.0;
+    prev_linear_accel_ = 0.0;
     prev_ramped_angular_ = 0.0;
     return out;
   }
@@ -219,6 +266,7 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
     out.source_class = SourceClass::AUTO;
     out.applied_limit_mps = 0.0;
     prev_ramped_linear_ = 0.0;
+    prev_linear_accel_ = 0.0;
     prev_ramped_angular_ = 0.0;
     return out;
   }
@@ -232,6 +280,7 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
     out.source_class = SourceClass::AUTO;
     out.applied_limit_mps = 0.0;
     prev_ramped_linear_ = 0.0;
+    prev_linear_accel_ = 0.0;
     prev_ramped_angular_ = 0.0;
     return out;
   }
@@ -253,6 +302,7 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
     out.source_class = compute_source_class(in, p);
     out.applied_limit_mps = 0.0;
     prev_ramped_linear_ = 0.0;
+    prev_linear_accel_ = 0.0;
     prev_ramped_angular_ = 0.0;
     return out;
   }
@@ -345,8 +395,8 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   // ブレーキ・画面/モード上限・死角キャップを含む）はランプ後の値に対して
   // 従来どおり即座にクランプする。安全上限自体はランプしない——ここが
   // 「危険な指令まで鈍らせない」ことを保証する境界線。
-  const double ramped_linear =
-      ramp_toward(prev_ramped_linear_, in.muxed.value.linear_x, p.normal_accel_mps2, dt);
+  const double ramped_linear = scurve_toward(prev_ramped_linear_, in.muxed.value.linear_x,
+      &prev_linear_accel_, p.normal_accel_mps2, p.normal_jerk_mps3, dt);
   const double ramped_angular =
       ramp_toward(prev_ramped_angular_, in.muxed.value.angular_z, p.normal_angular_accel_rps2, dt);
 
@@ -355,6 +405,12 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   // 次回ランプの起点は「クランプ前」ではなく「実際の出力」で更新する。
   // クランプ前の値で更新すると、障害物接近でいったん絞られた直後に障害物が
   // 去った瞬間、出力が急にジャンプしてしまう（DetailedDesign-safety.md §7.1）。
+  // A safety ceiling can instantly lower the command. Rebase velocity there
+  // and clear acceleration so a later ceiling increase cannot inherit stale
+  // acceleration inconsistent with the actual output.
+  if (out.out.linear_x != ramped_linear) {
+    prev_linear_accel_ = 0.0;
+  }
   prev_ramped_linear_ = out.out.linear_x;
   prev_ramped_angular_ = out.out.angular_z;
   // 診断用の距離: 未観測（cone.covered == false）は「不明」の明示値 -1.0

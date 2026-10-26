@@ -331,6 +331,19 @@ def test_overrides_reach_generated_yaml_with_real_registry():
         assert "no_such_param_xyz" in prov["rejected"]
 
 
+def test_normal_jerk_reaches_generated_obstacle_limiter_yaml():
+    """The registry value reaches the real obstacle_limiter parameter file."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = os.path.join(tmp, "generated")
+        pg.run_generation(stage=4, sim=False, nodes=list(pg.REGISTRY_NODES),
+                          out_dir=out_dir, registry_path=REGISTRY_YAML,
+                          env=_subprocess_env(),
+                          overrides_path=os.path.join(tmp, "no-overrides.yaml"))
+        with open(os.path.join(out_dir, "obstacle_limiter.yaml"), encoding="utf-8") as f:
+            params = yaml.safe_load(f)["obstacle_limiter"]["ros__parameters"]
+        assert params["normal_jerk_mps3"] == 0.5
+
+
 def test_overrides_missing_file_behaves_as_before():
     """overrides.yaml が無い初回起動では重ねず、provenance は空。"""
     import json

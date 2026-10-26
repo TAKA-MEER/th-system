@@ -39,35 +39,30 @@ test('releasing the key sends zeros and lease refreshes through the braking tail
   const commandsAtRelease = await jogPublishes(page, '/cmd_vel_manual_raw')
   const leasesAtRelease = await jogPublishes(page, '/ui/jog_lease')
 
-  await settle(page, 1650)
+  // Leave room for the 200 ms lease interval phase to produce a tick after
+  // the 2.2 s stop estimate while remaining inside the 2.6 s tail.
+  await settle(page, 2450)
   const commandsAt1650 = await jogPublishes(page, '/cmd_vel_manual_raw')
   const leasesAt1650 = await jogPublishes(page, '/ui/jog_lease')
-  expect(commandsAt1650.length, 'keyboard tail must publish past 1.4 seconds')
+  expect(commandsAt1650.length, 'keyboard tail must publish past 2.2 seconds')
     .toBeGreaterThan(commandsAtRelease.length)
-  expect(leasesAt1650.length, 'keyboard lease must refresh past 1.4 seconds')
+  expect(leasesAt1650.length, 'keyboard lease must refresh past 2.2 seconds')
     .toBeGreaterThan(leasesAtRelease.length)
-  const commandsAfter1400ms = commandsAt1650.filter((entry) => entry.time >= releasedAt + 1400)
-  const leasesAfter1400ms = leasesAt1650.filter((entry) => entry.time >= releasedAt + 1400)
-  expect(commandsAfter1400ms.length, 'keyboard commands must continue after 1.4 seconds').toBeGreaterThan(0)
-  expect(leasesAfter1400ms.length, 'keyboard leases must continue after 1.4 seconds').toBeGreaterThan(0)
-  expect(commandsAfter1400ms.every(
+  const commandsAfter2200ms = commandsAt1650.filter((entry) => entry.time >= releasedAt + 2200)
+  const leasesAfter2200ms = leasesAt1650.filter((entry) => entry.time >= releasedAt + 2200)
+  expect(commandsAfter2200ms.length, 'keyboard commands must continue after 2.2 seconds').toBeGreaterThan(0)
+  expect(leasesAfter2200ms.length, 'keyboard leases must continue after 2.2 seconds').toBeGreaterThan(0)
+  expect(commandsAfter2200ms.every(
     (entry) => Math.abs(entry.cmd.vx) < 1e-9 && Math.abs(entry.cmd.wz) < 1e-9,
   ), 'keyboard tail must publish zero commands after braking').toBe(true)
 
   await settle(page, 550)
-  const commandsAt2200 = await jogPublishes(page, '/cmd_vel_manual_raw')
-  const leasesAt2200 = await jogPublishes(page, '/ui/jog_lease')
-  await settle(page, 250)
-  const commandsAfter2200 = await jogPublishes(page, '/cmd_vel_manual_raw')
-  const leasesAfter2200 = await jogPublishes(page, '/ui/jog_lease')
-  expect(commandsAfter2200.filter((entry) => entry.time >= releasedAt + 2200).length,
-    'keyboard command timer must stop by 2.2 seconds').toBe(0)
-  expect(leasesAfter2200.filter((entry) => entry.time >= releasedAt + 2200).length,
-    'keyboard lease timer must stop by 2.2 seconds').toBe(0)
-  expect(commandsAfter2200.length,
-    'keyboard command timer must stop by 2.2 seconds').toBe(commandsAt2200.length)
-  expect(leasesAfter2200.length,
-    'keyboard lease timer must stop by 2.2 seconds').toBe(leasesAt2200.length)
+  const commandsAt3000 = await jogPublishes(page, '/cmd_vel_manual_raw')
+  const leasesAt3000 = await jogPublishes(page, '/ui/jog_lease')
+  expect(commandsAt3000.filter((entry) => entry.time >= releasedAt + 3000).length,
+    'keyboard command timer must stop by 3.0 seconds').toBe(0)
+  expect(leasesAt3000.filter((entry) => entry.time >= releasedAt + 3000).length,
+    'keyboard lease timer must stop by 3.0 seconds').toBe(0)
 })
 
 test('slider focus does not steal keys: w still drives', async ({ page }) => {

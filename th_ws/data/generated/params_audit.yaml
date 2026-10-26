@@ -18,6 +18,7 @@ params_audit:
     nav_tolerance_m: 0.1
     normal_accel_mps2: 0.4
     normal_angular_accel_rps2: 0.0
+    normal_jerk_mps3: 0.5
     opcheck_blind_tolerance_deg: 5.0
     opcheck_deadman_timeout_s: 0.5
     opcheck_estop_release_timeout_ms: 30000

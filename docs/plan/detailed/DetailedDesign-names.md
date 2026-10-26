@@ -549,7 +549,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`obstacle_min_points`** | count | (b)。障害物とみなすのに必要な点数。円錐内の n 番目に小さい距離を最近傍とする（WS-9P。ノイズ 1 点で止まらないため。Spec-safety.md §3.5.1・§3.5.2）|
 | **`blind_angle_ranges`** | deg の平坦配列 | **(c)**。死角セクタ。**as-built は平坦配列 `[a0,a1, a2,a3, ...]`**（`lidar_filter._build_blind_ranges()` / `th_safety::flat_to_range_pairs()` が 2 個ずつ組にする。wp2 §5 の `list[[a0,a1]]` は設計時案）。2026-09-09 に上部構造（四隅の支柱）搭載後に実測し 4 セクタで `measured`（`registry.yaml` / `scripts/measure_blind_sectors.py`）。同日中に、支柱をかすめるグレージング角のビームが 90% persist 判定の境界で切り詰められ地図に点群が漏れる不具合を実機で発見し、各セクタを再実測して拡張（`MARGIN` 1.0→5.0deg・`NEAR_M` 既定 0.5→0.6m） |
 | **`blind_calibrated`** | — | (b)。死角マスクが校正済みかどうかの明示フラグ。空配列と未校正を区別するために置く（`DetailedDesign-safety.md` §4.4） |
-| **`normal_accel_mps2`** ／ **`normal_angular_accel_rps2`** | m/s² / rad/s² | (b)。**`obstacle_limiter` が `/cmd_vel_muxed` の生値に掛ける通常時ランプ**（`DetailedDesign-safety.md` §7.1、2026-09-11 追加）。障害物ブレーキ（`brake_accel_mps2`）・estop・fault_lock・stale 由来のゼロ出力は経由しない（非ランプで即座に効く）。ESP32 ファーム側のランプ（`TARGET_RAMP_ACCEL_MPS2`）と役割が異なる二層目。**`normal_accel_mps2=0.4` が通常の加減速値（2026-10-26、線形のみ）。手動ジョグ解放時はWebUIが減速の尾の間リースとゼロへ向かう速度指令を継続する**（揺れ測定を受け Spec-safety.md §3 を反映）。`normal_angular_accel_rps2` は超信地旋回の立ち上がりが遅くなる副作用が実機で発覚し `0.0`（無制限）に撤去（2026-09-11） |
+| **`normal_accel_mps2`** ／ **`normal_jerk_mps3`** ／ **`normal_angular_accel_rps2`** | m/s² / m/s³ / rad/s² | (b)。**`obstacle_limiter` が `/cmd_vel_muxed` の生値に掛ける通常時ランプ**（`DetailedDesign-safety.md` §7.1）。`normal_accel_mps2=0.4`、`normal_jerk_mps3=0.5` で前後速度は加速度・加加速度を制限した S 字にする。加加速度 0 以下なら直線ランプ。障害物ブレーキ・estop・fault_lock・stale 由来の停止はランプを経由せず即時。ESP32 ファーム側のランプとは別層。ジョグ解放後はWebUIが減速の尾の間リースとゼロ指令を継続する。角速度側は超信地旋回が遅くなるため `normal_angular_accel_rps2=0.0`（無制限）に撤去済み |
 
 ### 7.5 マージン 3 種の使い分け
 

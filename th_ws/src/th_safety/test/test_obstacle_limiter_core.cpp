@@ -698,6 +698,113 @@ TEST(ObstacleLimiterCoreRamp, ZeroRateMeansUnlimited) {
   EXPECT_DOUBLE_EQ(o2.out.linear_x, 0.9) << "レート0は毎回 target に即座に到達するはず";
 }
 
+TEST(ObstacleLimiterCoreSCurve, BoundsAccelerationAndJerkAndCapturesTarget) {
+  constexpr double dt = 0.01;
+  constexpr double accel_limit = 0.4;
+  constexpr double jerk_limit = 0.5;
+  double velocity = 0.0;
+  double accel = 0.0;
+  double max_accel = 0.0;
+  double max_jerk = 0.0;
+  for (int i = 0; i < 1000 && (velocity < 0.55 || std::abs(accel) > 1e-12); ++i) {
+    const double old_accel = accel;
+    velocity = scurve_toward(velocity, 0.55, &accel, accel_limit, jerk_limit, dt);
+    max_accel = std::max(max_accel, std::abs(accel));
+    max_jerk = std::max(max_jerk, std::abs(accel - old_accel) / dt);
+    EXPECT_LE(velocity, 0.55 + 1e-12);
+  }
+  EXPECT_NEAR(velocity, 0.55, 1e-12);
+  EXPECT_NEAR(accel, 0.0, 1e-12);
+  EXPECT_LE(max_accel, accel_limit + 1e-9);
+  EXPECT_LE(max_jerk, jerk_limit + 1e-8);
+
+  int ticks_to_stop = 0;
+  double max_stop_jerk = 0.0;
+  double stop_distance = 0.0;
+  while ((velocity > 0.0 || std::abs(accel) > 1e-12) && ticks_to_stop < 1000) {
+    const double old_accel = accel;
+    const double old_velocity = velocity;
+    velocity = scurve_toward(velocity, 0.0, &accel, accel_limit, jerk_limit, dt);
+    stop_distance += 0.5 * (old_velocity + velocity) * dt;
+    max_stop_jerk = std::max(max_stop_jerk, std::abs(accel - old_accel) / dt);
+    EXPECT_GE(velocity, -1e-12);
+    ++ticks_to_stop;
+  }
+  EXPECT_DOUBLE_EQ(velocity, 0.0);
+  EXPECT_NEAR(accel, 0.0, 1e-12);
+  EXPECT_LE(max_stop_jerk, jerk_limit + 1e-8);
+  EXPECT_NEAR(ticks_to_stop * dt, 2.2, 0.15);
+  EXPECT_NEAR(stop_distance, 0.6, 0.02);
+}
+
+TEST(ObstacleLimiterCoreSCurve, TracksChangingAndReversingTargetsWithoutDiverging) {
+  double velocity = 0.0;
+  double accel = 0.0;
+  for (int i = 0; i < 500; ++i) {
+    const double target = i < 100 ? 0.55 : (i < 200 ? 0.2 : -0.25);
+    velocity = scurve_toward(velocity, target, &accel, 0.4, 0.5, 0.01);
+    EXPECT_TRUE(std::isfinite(velocity));
+    EXPECT_TRUE(std::isfinite(accel));
+    EXPECT_LE(std::abs(accel), 0.4 + 1e-9);
+  }
+  EXPECT_NEAR(velocity, -0.25, 1e-9);
+}
+
+TEST(ObstacleLimiterCoreSCurve, ZeroJerkExactlyUsesLegacyLinearRamp) {
+  double accel = 0.7;
+  EXPECT_DOUBLE_EQ(scurve_toward(0.1, 0.8, &accel, 0.4, 0.0, 0.1), 0.14);
+  EXPECT_NEAR(accel, 0.0, 1e-12);
+}
+
+TEST(ObstacleLimiterCoreSCurve, LockResetsVelocityAndAccelerationState) {
+  ObstacleLimiterParams p = make_ramp_params(0.4);
+  p.normal_jerk_mps3 = 0.5;
+  ObstacleLimiterCore core;
+  double now = 1000.0;
+  for (int i = 0; i < 10; ++i) {
+    now += 0.05;
+    core.update(make_ramp_base(now, 0.55), p);
+  }
+  ObstacleLimiterInputs locked = make_ramp_base(now + 0.05, 0.55);
+  locked.estop.value = true;
+  const auto stopped = core.update(locked, p);
+  EXPECT_DOUBLE_EQ(stopped.out.linear_x, 0.0);
+  now += 0.1;
+  const auto restarted = core.update(make_ramp_base(now, 0.55), p);
+  EXPECT_LT(restarted.out.linear_x, 0.002);
+}
+
+TEST(ObstacleLimiterCoreSCurve, StaleInputResetsVelocityAndAccelerationState) {
+  ObstacleLimiterParams p = make_ramp_params(0.4);
+  p.normal_jerk_mps3 = 0.5;
+  ObstacleLimiterCore core;
+  double now = 1000.0;
+  for (int i = 0; i < 10; ++i) {
+    now += 0.05;
+    core.update(make_ramp_base(now, 0.55), p);
+  }
+  auto stale = make_ramp_base(now + 0.05, 0.55);
+  stale.muxed.received = false;
+  EXPECT_DOUBLE_EQ(core.update(stale, p).out.linear_x, 0.0);
+  now += 0.1;
+  EXPECT_LT(core.update(make_ramp_base(now, 0.55), p).out.linear_x, 0.002);
+}
+
+TEST(ObstacleLimiterCoreSCurve, CeilingClampRebasesVelocityAndAcceleration) {
+  ObstacleLimiterParams p = make_ramp_params(0.4);
+  p.normal_jerk_mps3 = 0.5;
+  ObstacleLimiterCore core;
+  double now = 1000.0;
+  core.update(make_ramp_base(now, 0.55), p);
+  now += 0.05;
+  auto capped = make_ramp_base(now, 0.55);
+  capped.screen_limit_mps = 0.1;
+  EXPECT_LE(core.update(capped, p).out.linear_x, 0.1);
+  now += 0.05;
+  const double raised = core.update(make_ramp_base(now, 0.55), p).out.linear_x;
+  EXPECT_LT(raised, 0.102);
+}
+
 // 障害物ブレーキ（v_allow）はランプの影響を受けず、次の周期で即座に効く。
 TEST(ObstacleLimiterCoreRamp, ObstacleBrakeIsNeverDelayedByRamp) {
   ObstacleLimiterParams p = make_ramp_params(0.1);  // かなり緩いランプ

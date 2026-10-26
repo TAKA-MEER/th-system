@@ -147,6 +147,7 @@ struct ObstacleLimiterParams {
   // 後方互換のための既定値）。障害物ブレーキ・estop・fault_lock・stale は
   // このランプを経由しない（tier 0〜2 の早期 return はランプ計算より前）。
   double normal_accel_mps2 = 0.0;
+  double normal_jerk_mps3 = 0.0;
   double normal_angular_accel_rps2 = 0.0;
 
   bool blind_calibrated = true;
@@ -194,6 +195,11 @@ double clamp_toward_zero(double val, double max_abs);
 // 起点が定まっていない1回目の呼び出し用）。
 double ramp_toward(double value, double target, double max_abs_rate, double dt);
 
+// Jerk- and acceleration-limited velocity step. accel is signed in world-forward
+// coordinates and is updated in place. A zero jerk selects the legacy linear ramp.
+double scurve_toward(double value, double target, double* accel,
+                     double max_abs_accel, double max_abs_jerk, double dt);
+
 // L5。direction_rad ± half_width_rad の扇が blind_angle_ranges_deg のいずれかと
 // 重なっているか（角度だけの幾何判定。実スキャンは見ない）。
 bool blind_direction_overlap(double direction_rad, double half_width_rad,
@@ -232,6 +238,7 @@ class ObstacleLimiterCore {
   void reset() {
     stop_latched_ = false;
     prev_ramped_linear_ = 0.0;
+    prev_linear_accel_ = 0.0;
     prev_ramped_angular_ = 0.0;
     prev_now_sec_ = 0.0;
     prev_now_valid_ = false;
@@ -246,6 +253,7 @@ class ObstacleLimiterCore {
   // 値で更新すると、障害物接近でいったん絞られた直後に障害物が去った瞬間、
   // 出力が急にジャンプしてしまうため（update() 内のコメント参照）。
   double prev_ramped_linear_ = 0.0;
+  double prev_linear_accel_ = 0.0;
   double prev_ramped_angular_ = 0.0;
   double prev_now_sec_ = 0.0;
   bool prev_now_valid_ = false;  // false の間は dt 無制限（ランプなし。初回呼び出し用）
