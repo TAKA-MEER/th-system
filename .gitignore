@@ -72,3 +72,5 @@ th_ws/data/.control_stop
 th_ws/data/calib/
 th_ws/data/fault_log/
 th_ws/data/speaker/
+# 揺れ計測の記録（th_ws/scripts/vibe_measure）。rosbag・CSV・図
+th_ws/data/vibe/
