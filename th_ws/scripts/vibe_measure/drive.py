@@ -16,6 +16,7 @@ import time
 import rclpy
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, qos_profile_sensor_data
 from geometry_msgs.msg import Twist
+from std_msgs.msg import String
 from nav_msgs.msg import Odometry
 from th_system_msgs.msg import SystemState
 
@@ -45,6 +46,9 @@ if a.kind == 'spin' and not 0 < abs(a.amount) <= MAX_ANGLE:
 rclpy.init()
 node = rclpy.create_node('vibe_drive')
 pub = node.create_publisher(Twist, '/cmd_vel_manual_raw', QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE))
+# WebUI と同じく、指令を出している間はジョグのリースも送る（MANUAL の PAUSE → RUN もこれで入る）
+lease_pub = node.create_publisher(String, '/ui/jog_lease', QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE))
+_lease_t = [0.0]
 st = {'odom': None, 'odom_t': 0.0, 'state': None}
 
 
@@ -62,6 +66,9 @@ node.create_subscription(SystemState, '/system/state', lambda m: st.__setitem__(
 
 
 def send(r):
+    if time.monotonic() - _lease_t[0] >= 0.2:   # WebUI と同じ 5 Hz
+        lease_pub.publish(String(data='vibe_drive'))
+        _lease_t[0] = time.monotonic()
     t = Twist()
     if a.kind == 'straight':
         t.linear.x = r
@@ -74,6 +81,8 @@ def ok():
     s = st['state']
     if s is None or s.mode != 'MANUAL' or s.state != 'RUN' or s.estop_ui or s.estop_hw:
         return f'状態が {getattr(s, "mode", "?")}/{getattr(s, "state", "?")}（非常停止含む）'
+    if s.speed_limit == 'stop':
+        return f'速度の上限が stop（zone={s.zone}。WebUI の画面が開かれていないと 0 に絞られる）'
     if time.monotonic() - st['odom_t'] > 0.5:
         return '/odom が途絶'
     return None
@@ -100,6 +109,13 @@ if a.check:
     print(f"確認: 状態 {getattr(st['state'], 'mode', None)}/{getattr(st['state'], 'state', None)}・判定 {ok() or '走れる'}・"
           f"odom {'なし' if o is None else f'x={o[0]:.2f} y={o[1]:.2f} yaw={math.degrees(o[2]):.0f}°'}")
     sys.exit(0)
+# MANUAL の PAUSE なら、WebUI でスティックに触れたときと同じくリースと 0 を送って RUN に入れる（最大 3 秒）
+s0 = st['state']
+if s0 is not None and s0.mode == 'MANUAL' and s0.state == 'PAUSE' and not (s0.estop_ui or s0.estop_hw):
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < 3.0 and ok() is not None:
+        send(0.0)
+        rclpy.spin_once(node, timeout_sec=0.1)
 if ok() is not None:
     stop_and_exit(f'走らない: {ok()}', 2)
 
