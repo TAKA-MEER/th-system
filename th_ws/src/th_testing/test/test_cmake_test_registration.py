@@ -44,6 +44,8 @@ _GTEST_CALL_RE = re.compile(r'ament_add_gtest\s*\(\s*(\S+)\s+([^\s)]+)')
 # 直接実行する（各ファイルの docstring にホスト専用の旨を書くこと）。
 HOST_ONLY_PYTESTS = frozenset({
     'test_start_setup_scripts.py',
+    # Compiles the actual ESP32 PID header with host g++; run through host pytest.
+    'test_esp32_pid_ramp_windup.py',
 })
 
 

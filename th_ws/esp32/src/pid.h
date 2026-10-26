@@ -7,6 +7,15 @@
 
 class PID {
 public:
+    // 2026-10-26 の揺れ測定で、ランプ中に溜まった積分による最高速到達後の
+    // 行き過ぎを確認。通常ランプ 0.4 m/s^2 では 100 ms あたり 0.04 m/s 変化する。
+    // 変化率 0.1 m/s^2 以下を「定速」とみなし、それより速い目標変化中は
+    // 積分を止める。境界に余裕を持たせつつ、定速時の微小揺れを許容する。
+    static bool targetIsSettled(float targetDelta, float dt) {
+        constexpr float kSettledRateMps2 = 0.1f;
+        return dt > 0.0f && fabsf(targetDelta) <= kSettledRateMps2 * dt;
+    }
+
     PID(float kp, float ki, float kd, float outMin, float outMax, float iTermMax,
         float kff = 0.0f, float outRampRate = 0.0f)
         : kp_(kp), ki_(ki), kd_(kd), kff_(kff),
@@ -28,7 +37,7 @@ public:
 
     // setpoint: 目標値, measured: 計測値, dt: 経過時間 [s]
     // 戻り値: 操作量 (outMin 〜 outMax)
-    float compute(float setpoint, float measured, float dt) {
+    float compute(float setpoint, float measured, float dt, bool allowIntegration = true) {
         if (dt <= 0.0f) return 0.0f;
         const float maxStep = outRampRate_ * dt;
 
@@ -81,7 +90,9 @@ public:
         float ffTerm = kff_ * setpoint;
 
         // 積分項 + アンチワインドアップ: 出力が飽和する場合は積分項を更新しない
-        float iTermCandidate = constrain(iTerm_ + ki_ * error * dt, -iTermMax_, iTermMax_);
+        float iTermCandidate = allowIntegration
+            ? constrain(iTerm_ + ki_ * error * dt, -iTermMax_, iTermMax_)
+            : iTerm_;
         float rawOutput = ffTerm + kp_ * error + iTermCandidate + dTerm;
         float output = constrain(rawOutput, loMin, loMax);
         if (output == rawOutput) {
@@ -97,6 +108,8 @@ public:
         firstCall_ = true;
         prevOutput_ = 0.0f;
     }
+
+    float integralTerm() const { return iTerm_; }
 
     void setGains(float kp, float ki, float kd) {
         kp_ = kp; ki_ = ki; kd_ = kd;
