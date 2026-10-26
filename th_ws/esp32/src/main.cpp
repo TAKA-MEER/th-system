@@ -155,8 +155,12 @@ static void cbCtrlTimer() {
     } else {
         // ── 目標速度を加速度制限してランプ ──────────────────────
         float rampStep = TARGET_RAMP_ACCEL_MPS2 * dt;
+        float previousRampLeft = rampLeft;
+        float previousRampRight = rampRight;
         rampLeft  = rampToward(rampLeft,  targetLeft,  rampStep);
         rampRight = rampToward(rampRight, targetRight, rampStep);
+        bool integrateLeft = PID::targetIsSettled(rampLeft - previousRampLeft, dt);
+        bool integrateRight = PID::targetIsSettled(rampRight - previousRampRight, dt);
 
         // ── 直進ドリフト補正 (config.h 参照) ────────────────────
         // + で右輪を増速(左へ補正)、- で左輪を増速(右へ補正)。
@@ -165,8 +169,8 @@ static void cbCtrlTimer() {
         float rampLeftCorrected  = rampLeft  - driftCorrection / 2.0f;
 
         // ── PID 速度制御 → PWM 正規化 (-1.0 〜 1.0) ────────────
-        outR = pidRight.compute(rampRightCorrected, velR, dt) / 255.0f;
-        outL = pidLeft.compute(rampLeftCorrected,  velL, dt) / 255.0f;
+        outR = pidRight.compute(rampRightCorrected, velR, dt, integrateRight) / 255.0f;
+        outL = pidLeft.compute(rampLeftCorrected,  velL, dt, integrateLeft) / 255.0f;
 
         Motor::setRight(outR);
         Motor::setLeft(outL);
