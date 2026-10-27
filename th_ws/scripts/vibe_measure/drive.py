@@ -91,9 +91,14 @@ def ok():
 def stop_and_exit(msg, code):
     # 0 を 3 秒送り続ける。S 字の通常減速（a=0.4、J=0.5）で最高速
     # 0.55 m/s から止まる約2.2秒に余裕を持たせ、途絶による段差を避ける。
-    for _ in range(30):
+    # 回数ではなく時間で数える。spin_once は odom などが届くとすぐ戻るので、
+    # 回数で数えると約 1 秒で送るのをやめ、減速の途中でリミッタが途絶として即 0 にする。
+    t_end = time.monotonic() + 3.0
+    while time.monotonic() < t_end:
         send(0.0)
-        rclpy.spin_once(node, timeout_sec=0.1)
+        t_next = time.monotonic() + 0.1
+        while time.monotonic() < t_next:
+            rclpy.spin_once(node, timeout_sec=max(0.0, t_next - time.monotonic()))
     print(msg, flush=True)
     node.destroy_node()
     rclpy.shutdown()
