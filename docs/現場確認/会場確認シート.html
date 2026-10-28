@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>実証実験 会場確認シート</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body {
+    font-family: "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
+    color: #111; font-size: 8.8pt; line-height: 1.45;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .page {
+    width: 210mm; height: 297mm; padding: 9mm 12mm 9mm;
+    page-break-after: always; break-after: page;
+    display: flex; flex-direction: column; overflow: hidden; position: relative;
+  }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+
+  /* ページ見出し（綴じが外れても順番と記入者が分かるように毎ページ） */
+  .hdr {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 1.2pt solid #111; padding-bottom: 1.2mm; margin-bottom: 2.5mm;
+    font-size: 7.8pt; flex: none;
+  }
+  .hdr .doc { font-weight: 700; font-size: 8.5pt; }
+  .hdr .meta span.b { min-width: 24mm; }
+  .hdr .pno { font-weight: 700; font-size: 9pt; margin-left: 4mm; }
+
+  h1 { font-size: 17pt; margin: 0.5mm 0 2mm; letter-spacing: 0.05em; }
+  .sub { font-size: 9pt; font-weight: 400; letter-spacing: 0; color: #333; margin-left: 3mm; }
+  h2 {
+    font-size: 11pt; margin: 2.2mm 0 1.4mm; padding: 0.8mm 2mm;
+    background: #e6e6e6; border-left: 3pt solid #111; flex: none;
+  }
+  h2 .hint { font-weight: 400; margin-left: 2mm; }
+  h3 { font-size: 9.2pt; margin: 2mm 0 1mm; }
+
+  .tag {
+    display: inline-block; border: 0.8pt solid #111; border-radius: 1mm;
+    font-size: 7.8pt; line-height: 1.3; padding: 0 1.2mm; margin-right: 1.2mm;
+    vertical-align: 0.4mm; font-weight: 700;
+  }
+  .tag.ask { background: #111; color: #fff; }
+
+  table { width: 100%; border-collapse: collapse; }
+  tr, td, th { break-inside: avoid; page-break-inside: avoid; }
+  td, th { border: 0.6pt solid #555; padding: 1.1mm 1.5mm; vertical-align: top; }
+  th { background: #ececec; font-weight: 700; font-size: 7.8pt; text-align: left; }
+  th.c, td.c { text-align: center; }
+  td.num { width: 7mm; text-align: center; font-weight: 700; }
+  td.q { width: 52mm; font-weight: 700; }
+  td.q .hint { display: block; font-weight: 400; margin-top: 0.4mm; }
+
+  .b { display: inline-block; border-bottom: 0.6pt solid #111; min-width: 18mm; height: 4.4mm; vertical-align: -1.2mm; }
+  .b.s { min-width: 11mm; } .b.m { min-width: 28mm; } .b.l { min-width: 45mm; } .b.xl { min-width: 75mm; }
+  .line { border-bottom: 0.6pt solid #111; height: 6.5mm; }
+  .line.dot { border-bottom: 0.6pt dotted #555; }
+  .hint { font-size: 7.2pt; color: #444; }
+  .opt { white-space: nowrap; margin-right: 2.2mm; }
+  .row { margin: 0.6mm 0; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+  .box { border: 0.8pt solid #111; padding: 1.8mm 2.2mm; }
+  .box.ref { background: #f3f3f3; }
+  .judge { font-size: 7.2pt; border: 0.6pt solid #555; padding: 0.2mm 1mm; margin-left: 1mm; white-space: nowrap; }
+  .grow { flex: 1 1 auto; }
+  ul.chk { list-style: none; margin: 0; padding: 0; }
+  ul.chk li { margin: 0.5mm 0; }
+  ol.steps { margin: 0.5mm 0 0 4.5mm; padding: 0; }
+  ol.steps li { margin: 0.3mm 0; }
+
+  /* 区間表・写真表など、記入用の行の高さ */
+  .tall td { height: 12.6mm; }
+  .mid td { height: 8.2mm; }
+  .qa td { height: 15.8mm; }
+
+  /* 配電盤カード */
+  .cards { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 2.4mm; flex: 1 1 auto; }
+  .card { border: 0.9pt solid #111; padding: 1.4mm 2mm; display: flex; flex-direction: column; justify-content: space-between; break-inside: avoid; }
+  .card .ttl { font-weight: 700; border-bottom: 0.6pt solid #111; padding-bottom: 0.6mm; margin-bottom: 0.6mm; display: flex; justify-content: space-between; }
+  .card .row { margin: 0.25mm 0; font-size: 8.2pt; }
+
+  /* 見取り図 */
+  .grid {
+    flex: none; height: 244mm; border: 0.9pt solid #111;
+    position: relative; overflow: hidden;
+  }
+  .grid svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .grid .corner {
+    position: absolute; top: 2mm; right: 2mm; background: #fff; border: 0.8pt solid #111;
+    padding: 1.2mm 2mm; font-size: 8pt; width: 46mm;
+  }
+  .legend { flex: none; margin-top: 2mm; font-size: 7.8pt; }
+  .legend table td { padding: 0.7mm 1.3mm; }
+
+  /* 公開範囲 */
+  th.pub, td.pub { width: 15.5mm; padding: 1mm 1.2mm; font-size: 7.6pt; line-height: 1.45; }
+  th.pub { text-align: center; font-size: 7.2pt; }
+  td.pub::before { content: "□公 □内\A□関 □否"; white-space: pre; }
+  td.pub.na { text-align: center; color: #888; }
+  td.pub.na::before { content: "—"; }
+  th.ai, td.ai { width: 9mm; padding: 1mm 1mm; font-size: 7.6pt; line-height: 1.45; }
+  th.ai { text-align: center; font-size: 7.2pt; }
+  td.ai::before { content: "□可\A□否"; white-space: pre; }
+  td.ai.na { text-align: center; color: #888; }
+  td.ai.na::before { content: "—"; }
+  .pubi::before { content: "公開範囲　□公 □内 □関 □否　　生成AI　□可 □否"; white-space: nowrap; }
+  .publegend td { width: 16.6%; }
+  .publegend b { font-size: 9pt; }
+</style>
+</head>
+<body>
+
+<!-- ============================== p.1 ============================== -->
+<section class="page">
+  <div class="hdr">
+    <div class="doc">実証実験 会場確認シート</div>
+    <div class="meta">確認日 <span class="b"></span>　記入者 <span class="b"></span><span class="pno">p. 1 / 9</span></div>
+  </div>
+
+  <h1>実証実験 会場確認シート <span class="sub">配電盤上部確認ロボット（移動システム）の現地確認</span></h1>
+
+  <div class="box" style="margin-bottom:1mm">
+    <b>記号</b>　<span class="tag">測</span>自分たちで測る・見る　<span class="tag ask">聞</span>先方に聞く
+    　<span class="hint">判定の目安：</span><span class="judge">○ 問題なし</span><span class="judge">△ 余裕が小さい</span><span class="judge">✕ 自律走行は無理</span>
+  </div>
+
+  <h2>公開範囲と生成AIへの入力<span class="hint">各項目の右端の 2 列に印をつける。先方と一緒に決める</span></h2>
+  <table class="publegend">
+    <tr><th colspan="4" class="c">公開範囲（4 区分）</th><th colspan="2" class="c">生成AI（ChatGPT・Claude など）への入力</th></tr>
+    <tr>
+      <td><b>□公</b> 公開可<br><span class="hint">発表・報告書・Web に出してよい</span></td>
+      <td><b>□内</b> 組織内まで<br><span class="hint">学内・社内の報告まで</span></td>
+      <td><b>□関</b> 関係者のみ<br><span class="hint">チームと先方の間だけ</span></td>
+      <td><b>□否</b> 持ち出し不可<br><span class="hint">その場で見るだけ。持ち帰らない</span></td>
+      <td><b>□可</b> 入力してよい</td>
+      <td><b>□否</b> 入力しない</td>
+    </tr>
+    <tr><td colspan="6"><span class="hint">条件つき（社名・人名を伏せる、写真をぼかす など）のときは、その項目の回答欄に条件を書く。生成AIは記録の整理や開発に使うため確認する。</span><br>
+      印のない項目は 公開範囲 <span class="opt">□ 内</span><span class="opt">□ 関</span><span class="opt">□ 否</span>・生成AI <span class="opt">□ 可</span><span class="opt">□ 否</span>として扱う</td></tr>
+  </table>
+
+  <h2>基本情報</h2>
+  <table>
+    <tr><th style="width:34mm">項目</th><th>記入</th><th class="pub">公開範囲</th><th class="ai">生成AI</th></tr>
+    <tr><th>確認日・時間・天候</th><td><span class="b s"></span>年<span class="b s"></span>月<span class="b s"></span>日（<span class="b s"></span>）　<span class="b s"></span>:<span class="b s"></span> 〜 <span class="b s"></span>:<span class="b s"></span><br><span class="opt">□ 晴</span><span class="opt">□ 曇</span><span class="opt">□ 雨</span>　気温 約<span class="b s"></span>℃　<span class="hint">（屋外を通る経路があるときに効く）</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>会場名・所在地</th><td><div class="line dot"></div></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>確認者（こちら）</th><td><div class="line dot"></div></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>先方の立会者</th><td>氏名・所属 <span class="b l"></span><br>連絡先 <span class="b l"></span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>確認時の人の往来</th><td><span class="opt">□ 少ない</span><span class="opt">□ 普通</span><span class="opt">□ 多い</span>　<span class="hint">本番の時間帯と同じか：</span><span class="opt">□ 同じ</span><span class="opt">□ 違う（本番は<span class="b m"></span>）</span></td><td class="pub"></td><td class="ai"></td></tr>
+  </table>
+
+  <div class="two" style="margin-top:1mm;grid-template-columns:0.82fr 1.18fr">
+    <div>
+      <h2>持ち物</h2>
+      <ul class="chk">
+        <li>□ メジャー（5 m 以上）</li>
+        <li>□ レーザー距離計（長い経路・広い部屋用）</li>
+        <li>□ ストップウォッチ（スマホ可）</li>
+        <li>□ スマホ／PC：Wi-Fi のチャネルを調べるアプリ</li>
+        <li>□ カメラ（スマホ可）・予備バッテリー</li>
+        <li>□ 騒音計アプリ・傾斜計（水平器）アプリ</li>
+        <li>□ 養生テープ（貼る許可を得てから使う）</li>
+        <li>□ クリップボード・筆記具・このシート</li>
+        <li>□ 事前の質問票の控え</li>
+      </ul>
+      <h2 style="margin-top:2.5mm">当日の進め方</h2>
+      <ol class="steps">
+        <li>挨拶・公開範囲と生成AIの扱いを伝える（p.2）</li>
+        <li>先方への聞き取り（p.2〜3）</li>
+        <li>保管場所から試験場まで歩いて測る（p.4〜5・図 p.8）</li>
+        <li>試験場・配電盤を測る（p.5〜6・図 p.9）</li>
+        <li>無線を 3 か所で調べる（p.7）</li>
+        <li>帰る前に写真リスト（p.7）・空欄・公開範囲と生成AIの印を見直す</li>
+      </ol>
+    </div>
+    <div>
+      <h2>機体の数値（判定の目安）</h2>
+      <table>
+        <tr><th style="width:23mm">機体の大きさ</th><td><b>0.55 m × 0.55 m</b>（正方形）<br><span class="hint">その場で回ると角が振れる：直径 約 0.8 m ＋ 余裕</span></td></tr>
+        <tr><th>機体の高さ</th><td>縮めた状態 <span class="b s"></span> cm<br>昇降機を伸ばした最大 <span class="b s"></span> cm <span class="hint">出発前に測って書く</span></td></tr>
+        <tr><th>LiDAR の高さ</th><td>床から <span class="b s"></span> cm <span class="hint">（出発前に記入。この高さの物だけが見える）</span></td></tr>
+        <tr><th>自律で通れる幅</th><td>○ 1.3 m 以上（推奨）<br>△ 1.0〜1.3 m（社内で 1.0 m を通過。余裕は小さい）<br>✕ 1.0 m 未満 → 手動・教示再生で通す</td></tr>
+        <tr><th>速さ</th><td>試験場内 0.30 m/s ／ 手動の上限 0.55 m/s<br><span class="hint">0.55 m/s から止まるまで 約 2.2 秒・約 0.6 m</span></td></tr>
+        <tr><th>盤前で発進する条件</th><td>試験員が行き先から <b>約 1 m</b> 離れていること</td></tr>
+        <tr><th>無線</th><td>機体の映像カメラ・昇降機は <b>2.4 GHz のみ</b>。PC は屋内なら 5 GHz。<br><b>5 GHz（W52）は屋外で使えない</b> → 屋外区間は 2.4 GHz に切り替える</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== p.2 ============================== -->
+<section class="page">
+  <div class="hdr">
+    <div class="doc">実証実験 会場確認シート</div>
+    <div class="meta">確認日 <span class="b"></span>　記入者 <span class="b"></span><span class="pno">p. 2 / 9</span></div>
+  </div>
+
+  <h2>最初に先方へ伝えること・お願いすること</h2>
+  <div class="two">
+    <ul class="chk">
+      <li>□ 今日の目的：ロボットが走る経路・試験場・配電盤の環境を確かめる</li>
+      <li>□ 床にテープを貼る・物に触れるときは、その都度許可をもらう</li>
+      <li>□ 写真・動画は撮ってよい範囲を先に確かめる（下の 11）</li>
+      <li>□ 実験当日の設置物はすべて撤去し、原状に戻す</li>
+    </ul>
+    <ul class="chk">
+      <li>□ <b>各項目の公開範囲と生成AIへの入力可否を一緒に決めてもらう</b>（区分は p.1）</li>
+      <li>□ 本日の所要時間の見込み 約<span class="b s"></span>分</li>
+      <li>□ もらう物：<span class="opt">□ 図面</span><span class="opt">□ 当日の連絡先</span><span class="opt">□ 入館の手続き</span></li>
+      <li>□ 次回の連絡方法・回答の期限 <span class="b m"></span></li>
+      <li>□ 事前の質問票：<span class="opt">□ 回答済み（持参）</span><span class="opt">□ 未回答 → 本日聞き取る</span></li>
+    </ul>
+  </div>
+
+  <h2><span class="tag ask">聞</span>A. 実施の条件・許可</h2>
+  <table class="qa">
+    <tr><th class="c" style="width:7mm">No</th><th style="width:52mm">聞くこと</th><th>回答</th><th class="pub">公開範囲</th><th class="ai">生成AI</th></tr>
+    <tr><td class="num">1</td><td class="q">走行してよい範囲（通路・部屋）<span class="hint">見取り図 p.8・p.9 に書き込む</span></td>
+      <td><span class="opt">□ 図面をもらえる</span><span class="opt">□ もらえない（手書き）</span><div class="line dot"></div></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">2</td><td class="q">「保管場所」「試験場」「待機場所」に使う場所<span class="hint">図に 保・試・H と書く</span></td>
+      <td><div class="line dot"></div><div class="line dot"></div></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">3</td><td class="q">実施できる日程・時間帯</td>
+      <td><div class="line dot"></div>使えない日・時間帯 <span class="b l"></span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">4</td><td class="q">前日準備（地図作り・盤の登録）で前日に入れるか</td>
+      <td><span class="opt">□ 入れる（<span class="b s"></span>時〜<span class="b s"></span>時）</span><span class="opt">□ 当日の朝だけ</span><span class="opt">□ 入れない</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">5</td><td class="q">機体・機材を前日から置いておけるか／搬入</td>
+      <td><span class="opt">□ 置ける（施錠 □あり □なし）</span><span class="opt">□ 置けない</span><br>搬入口・車を停める場所 <span class="b l"></span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">6</td><td class="q">当日の立会い</td>
+      <td><span class="opt">□ 必要</span><span class="opt">□ 不要</span>　当日の連絡先 <span class="b l"></span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">7</td><td class="q">実験中に関係者以外・台車・フォークリフトが通るか</td>
+      <td><span class="opt">□ 通る</span><span class="opt">□ 通らない</span><span class="opt">□ 時間帯による（<span class="b m"></span>）</span><br>通行止め・人払いを頼めるか <span class="opt">□ できる</span><span class="opt">□ できない</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">8</td><td class="q">人が付き添わない走行（無人走行）の許可<span class="hint">記録した経路をなぞる走行・床の線をたどる走行で使う</span></td>
+      <td><span class="opt">□ 許可できる</span><span class="opt">□ 人が先導・同行すれば可</span><span class="opt">□ 不可</span><br>条件 <span class="b xl"></span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">9</td><td class="q">床へのテープ・目印・コーンの一時設置<span class="hint">当日中に撤去・原状復帰</span></td>
+      <td>床にテープ <span class="opt">□ 可</span><span class="opt">□ 条件付</span><span class="opt">□ 不可</span><br>目印・コーン <span class="opt">□ 可</span><span class="opt">□ 条件付</span><span class="opt">□ 不可</span>　条件 <span class="b l"></span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">10</td><td class="q">周囲への音の報知<span class="hint">機体は走行中にチャイムを鳴らせる</span></td>
+      <td>チャイム <span class="opt">□ 鳴らしてよい</span><span class="opt">□ 音量に条件</span><span class="opt">□ 鳴らさない</span><br>ブザー・回転灯 <span class="opt">□ 必要</span><span class="opt">□ 不要</span><span class="opt">□ 指定あり（<span class="b m"></span>）</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">11</td><td class="q">写真・動画の撮影／地図データの扱い<span class="hint">機体が作る地図には施設の形が写る</span></td>
+      <td>撮影 <span class="opt">□ 可</span><span class="opt">□ 範囲限定（<span class="b m"></span>）</span><span class="opt">□ 不可</span><br>地図・写真の持ち帰り <span class="opt">□ 可</span><span class="opt">□ 条件付</span><span class="opt">□ 不可</span></td><td class="pub"></td><td class="ai"></td></tr>
+  </table>
+</section>
+
+<!-- ============================== p.3 ============================== -->
+<section class="page">
+  <div class="hdr">
+    <div class="doc">実証実験 会場確認シート</div>
+    <div class="meta">確認日 <span class="b"></span>　記入者 <span class="b"></span><span class="pno">p. 3 / 9</span></div>
+  </div>
+
+  <h2><span class="tag ask">聞</span>A. 実施の条件・許可（続き）</h2>
+  <table class="qa">
+    <tr><th class="c" style="width:7mm">No</th><th style="width:52mm">聞くこと</th><th>回答</th><th class="pub">公開範囲</th><th class="ai">生成AI</th></tr>
+    <tr><td class="num">12</td><td class="q">無線機器の持ち込み・使用<span class="hint">機体用の無線 AP（2.4 GHz と 5 GHz）を使う</span></td>
+      <td><span class="opt">□ 制限なし</span><span class="opt">□ 制限あり（<span class="b l"></span>）</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">13</td><td class="q">電源（待機・充電）</td>
+      <td>一般のコンセント <span class="opt">□ 使える</span><span class="opt">□ 条件付</span><span class="opt">□ 使えない</span><br>延長コード <span class="opt">□ 可</span><span class="opt">□ 不可</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">14</td><td class="q">安全上のきまり</td>
+      <td>保護具（ヘルメット・安全靴など）<span class="opt">□ 要</span><span class="opt">□ 不要</span><br>立入禁止の場所・物を置いてはいけない場所（避難経路・消火器前など）→ 図に ✕</td><td class="pub"></td><td class="ai"></td></tr>
+  </table>
+
+  <h2><span class="tag ask">聞</span>A. 試験の進め方と、いまの手間</h2>
+  <table class="qa">
+    <tr><th class="c" style="width:7mm">No</th><th style="width:52mm">聞くこと</th><th>回答</th><th class="pub">公開範囲</th><th class="ai">生成AI</th></tr>
+    <tr><td class="num">15</td><td class="q">1 日に確認する盤の数</td>
+      <td>約<span class="b s"></span>面　同じ盤に戻って見直すことは <span class="opt">□ ない</span><span class="opt">□ ある（1 日 約<span class="b s"></span>回）</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">16</td><td class="q">盤の置き場所は毎回同じか</td>
+      <td><span class="opt">□ 同じ</span><span class="opt">□ 試験ごとに変わる</span><span class="opt">□ 一部変わる</span><div class="line dot"></div></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">17</td><td class="q">前日と当日で物の配置が変わるか<span class="hint">前日に作った地図を当日そのまま使えるか</span></td>
+      <td><span class="opt">□ 変わらない</span><span class="opt">□ 一部変わる</span><span class="opt">□ 大きく変わる</span><br>変わる物 <span class="b l"></span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">18</td><td class="q">実験で使う盤<span class="hint">本物の盤か、見立てる物か</span></td>
+      <td><span class="opt">□ 本物の盤がある</span><span class="opt">□ 見立てる物がある（<span class="b m"></span>）</span><br><span class="opt">□ 無い → 模擬盤を持ち込む</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">19</td><td class="q">確認したい「盤の上部」とは<span class="hint">高さ・何を見るか</span></td>
+      <td><div class="line dot"></div><div class="line dot"></div></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">20</td><td class="q">カメラの位置合わせの許容差を先方が把握しているか<span class="hint">分からなければ空欄でよい</span></td>
+      <td>位置 ± <span class="b s"></span> cm　向き ± <span class="b s"></span> °　盤面までの距離 <span class="b s"></span> cm　<span class="opt">□ 不明</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">21</td><td class="q">いまの前日準備の手間</td>
+      <td>人数 <span class="b s"></span>人 × 約<span class="b s"></span>時間<br>内容 <span class="b xl"></span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">22</td><td class="q">いまの機材の運び方<span class="hint">保管場所 → 試験場</span></td>
+      <td><span class="opt">□ 手で持つ</span><span class="opt">□ 台車</span><span class="opt">□ その他（<span class="b m"></span>）</span><br>片道 約<span class="b s"></span>分・<span class="b s"></span>人　大変な点 <span class="b m"></span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="num">23</td><td class="q">見学者</td>
+      <td><span class="opt">□ いない</span><span class="opt">□ いる（約<span class="b s"></span>人・場所 <span class="b m"></span>）</span><br>見学者向けの画面（大型ディスプレイ）を置けるか <span class="opt">□ 置ける</span><span class="opt">□ 置けない</span></td><td class="pub"></td><td class="ai"></td></tr>
+  </table>
+
+  <h3>その他のご要望・ご懸念<span class="hint" style="font-weight:400;margin-left:2mm">公開できない内容は行末に「否」、生成AIに入れない内容は「AI否」と書く</span></h3>
+  <div class="grow" style="display:flex;flex-direction:column;justify-content:space-evenly">
+    <div class="line dot"></div><div class="line dot"></div><div class="line dot"></div>
+  </div>
+</section>
+
+<!-- ============================== p.4 ============================== -->
+<section class="page">
+  <div class="hdr">
+    <div class="doc">実証実験 会場確認シート</div>
+    <div class="meta">確認日 <span class="b"></span>　記入者 <span class="b"></span><span class="pno">p. 4 / 9</span></div>
+  </div>
+
+  <h2><span class="tag">測</span>B. 経路（保管場所 → 試験場）<span class="hint">曲がり角・扉・床が変わる所で区間を切る。図は p.8</span></h2>
+  <table class="tall" style="table-layout:fixed">
+    <tr>
+      <th class="c" style="width:6mm">No</th>
+      <th style="width:24mm">区間<br><span class="hint">どこ → どこ</span></th>
+      <th style="width:10mm">長さ<br>m</th>
+      <th style="width:16mm">最も狭い幅<br>cm</th>
+      <th style="width:9mm">曲がり角</th>
+      <th style="width:23mm">床<br><span class="hint">材質・光沢・溝・目地</span></th>
+      <th style="width:24mm">扉・段差・坂<br><span class="hint">幅 cm・高さ cm・勾配 °</span></th>
+      <th style="width:19mm">ガラス・鏡・金網・黒い面</th>
+      <th style="width:10mm">単調な直線</th>
+      <th style="width:11mm">写真<br>No.</th>
+      <th class="pub">公開範囲</th><th class="ai">生成AI</th>
+    </tr>
+    <tr><td class="c">1</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="c">□</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">2</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="c">□</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">3</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="c">□</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">4</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="c">□</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">5</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="c">□</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">6</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="c">□</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">7</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="c">□</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">8</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="c">□</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">9</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="c">□</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">10</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="c">□</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+  </table>
+  <div class="hint" style="margin:0.6mm 0 1mm">最も狭い幅の目安：○ 130 cm 以上　△ 100〜130 cm　✕ 100 cm 未満。「単調な直線」＝壁が平らで目印の少ない長い廊下（記録した経路をなぞる走行で位置がずれやすい）。</div>
+
+  <table>
+    <tr><th style="width:34mm">項目</th><th>記入</th><th class="pub">公開範囲</th><th class="ai">生成AI</th></tr>
+    <tr><th>保管場所（出発点）</th><td>空き <span class="b s"></span> × <span class="b s"></span> cm　机 <span class="opt">□ ある</span><span class="opt">□ ない</span>　コンセント <span class="opt">□ ある（<span class="b s"></span>口）</span><span class="opt">□ ない</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>出発位置を毎回そろえられるか</th><td><span class="opt">□ 床に印（テープの許可 p.2 の 9）</span><span class="opt">□ 壁・柱に沿わせる</span><span class="opt">□ 難しい</span><br><span class="hint">記録した経路をなぞる走行は、記録したときとほぼ同じ位置・向きから出発する</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>総距離</th><td>実測 <span class="b s"></span> m　<span class="opt">□ メジャー</span><span class="opt">□ 距離計</span><span class="opt">□ 歩数×歩幅</span><span class="opt">□ 図面</span><br><span class="hint">見学時の目測では 200 m 以内</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>所要時間</th><td>普通に歩いて <span class="b s"></span>分<span class="b s"></span>秒<br>機材を押して・運んで <span class="b s"></span>分<span class="b s"></span>秒（<span class="b s"></span>人）</td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>屋外を通るか</th><td><span class="opt">□ 通らない</span><span class="opt">□ 通る（区間 No.<span class="b s"></span>・約<span class="b s"></span> m）</span><br><span class="hint">→ 屋外は 5 GHz を止めて 2.4 GHz で走る</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>エレベータ</th><td><span class="opt">□ 使わない</span><span class="opt">□ 使う</span>　操作 <span class="opt">□ 自分</span><span class="opt">□ 先方</span><br>かご 幅<span class="b s"></span>×奥行<span class="b s"></span> cm・扉幅<span class="b s"></span> cm・積載<span class="b s"></span> kg</td><td class="pub"></td><td class="ai"></td></tr>
+  </table>
+</section>
+
+<!-- ============================== p.5 ============================== -->
+<section class="page">
+  <div class="hdr">
+    <div class="doc">実証実験 会場確認シート</div>
+    <div class="meta">確認日 <span class="b"></span>　記入者 <span class="b"></span><span class="pno">p. 5 / 9</span></div>
+  </div>
+
+  <h2><span class="tag">測</span>B. 経路（続き）</h2>
+  <table>
+    <tr><th style="width:34mm">項目</th><th>記入</th><th class="pub">公開範囲</th><th class="ai">生成AI</th></tr>
+    <tr><th>頭上で最も低い所</th><td>床から <span class="b s"></span> cm（区間 No.<span class="b s"></span>・<span class="b m"></span>）<br><span class="hint">梁・配管・扉の上枠・吊り表示。p.1 の機体の高さと比べる</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>最大の段差・坂</th><td>段差 <span class="b s"></span> cm（No.<span class="b s"></span>）<span class="opt">□ 敷居・レール</span><span class="opt">□ ケーブルカバー</span><br>坂 <span class="b s"></span> °（No.<span class="b s"></span>）</td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>扉</th><td>自動扉 <span class="opt">□ なし</span><span class="opt">□ あり（機体で開くか <span class="b s"></span>）</span><br>手動扉を開けたまま止められるか <span class="opt">□ 可</span><span class="opt">□ 不可</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>床の線（区画線）</th><td><span class="opt">□ なし</span><span class="opt">□ あり</span> 色<span class="b s"></span> 幅<span class="b s"></span> cm　途切れ <span class="opt">□ なし</span><span class="opt">□ あり</span>　分岐<span class="b s"></span>か所<br>物・人で隠れる <span class="opt">□ ない</span><span class="opt">□ ある</span>　かすれ・汚れ <span class="opt">□ ない</span><span class="opt">□ ある</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>目印になる物</th><td>柱の番号・表示 <span class="opt">□ あり</span><span class="opt">□ なし</span><br>照明 <span class="opt">□ 等間隔の蛍光灯</span><span class="opt">□ LED パネル</span><span class="opt">□ その他</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>通行・置き物</th><td>10 分間に 人<span class="b s"></span>回・台車<span class="b s"></span>回・フォークリフト<span class="b s"></span>回<br>通路脇の置き物 <span class="opt">□ ない</span><span class="opt">□ 位置は一定</span><span class="opt">□ 日によって変わる</span><br>床の水濡れ・油 <span class="opt">□ ない</span><span class="opt">□ ある</span></td><td class="pub"></td><td class="ai"></td></tr>
+  </table>
+
+  <h2><span class="tag">測</span>C. 試験場<span class="hint">図は p.9</span></h2>
+  <table>
+    <tr><th style="width:34mm">項目</th><th>記入</th><th class="pub">公開範囲</th><th class="ai">生成AI</th></tr>
+    <tr><th>広さ・天井</th><td>約<span class="b s"></span> m × <span class="b s"></span> m　天井 約<span class="b s"></span> m<br>場内の通路で最も狭い幅 <span class="b s"></span> cm <span class="judge">○≥130 △≥100 ✕</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>待機場所の候補<br><span class="hint">図に H</span></th><td>空き <span class="b s"></span> × <span class="b s"></span> cm　<span class="hint">機体がその場で回るには直径 約 0.8 m ＋ 余裕</span><br>場所の説明 <span class="b l"></span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>納品前の製品<br><span class="hint">触れてはいけない物。図に斜線</span></th><td>機体の通り道から最も近い製品まで <b><span class="b s"></span> cm</b>（場所 <span class="b m"></span>）<br><span class="hint">場内の速度の上限を決める値。通り道の候補ごとに最も近い所を測る</span><br>製品は <span class="opt">□ いつも同じ所</span><span class="opt">□ 日によって変わる</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>コンセント<br><span class="hint">図に「電」</span></th><td><span class="b s"></span>口　待機場所の候補から約<span class="b s"></span> m　延長コード <span class="opt">□ 要</span><span class="opt">□ 不要</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>PC・タブレットの置き場</th><td>机 <span class="opt">□ ある</span><span class="opt">□ ない（持ち込む）</span><br>試験員が場内を見渡せる位置 <span class="b l"></span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>床</th><td><span class="opt">□ コンクリート</span><span class="opt">□ 塗床</span><span class="opt">□ タイル・シート</span><span class="opt">□ グレーチング</span><span class="opt">□ その他</span><br><span class="opt">□ つや消し</span><span class="opt">□ 光沢</span>　溝・ケーブル・段差 <span class="opt">□ ない</span><span class="opt">□ ある（<span class="b m"></span>）</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>センサの邪魔になる物<br><span class="hint">図に「ガ」</span></th><td>ガラス・鏡・金網・ネット・カーテン・黒い物・よく光る金属面<br><span class="opt">□ ない</span><span class="opt">□ ある（<span class="b l"></span>）</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>窓からの直射日光</th><td><span class="opt">□ 入らない</span><span class="opt">□ 入る（時間帯 <span class="b m"></span>・場所 <span class="b m"></span>）</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>人の動き</th><td>前日（地図作り）に場内を歩く人 <span class="opt">□ ほぼいない</span><span class="opt">□ 数人</span><span class="opt">□ 多い</span><br>当日の場内の人数 約<span class="b s"></span>人　<span class="hint">人が写り込んだ地図は消して直せるが手間が増える</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>騒音</th><td>約<span class="b s"></span> dB（アプリ）　<span class="opt">□ 静か</span><span class="opt">□ やや騒がしい</span><span class="opt">□ 会話が難しい</span><br><span class="hint">機体のチャイム・タブレットの音声が聞こえるか</span></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><th>前日 → 当日で動く物</th><td><div class="line dot"></div></td><td class="pub"></td><td class="ai"></td></tr>
+  </table>
+</section>
+
+<!-- ============================== p.6 ============================== -->
+<section class="page">
+  <div class="hdr">
+    <div class="doc">実証実験 会場確認シート</div>
+    <div class="meta">確認日 <span class="b"></span>　記入者 <span class="b"></span><span class="pno">p. 6 / 9</span></div>
+  </div>
+
+  <h2><span class="tag">測</span>D. 配電盤（1 面ずつ）<span class="hint">盤前には機体 0.55 m と、試験員が約 1 m 下がれる空きが要る</span></h2>
+  <table style="margin-bottom:2mm">
+    <tr><td>カメラ側が望む停止位置：盤面から機体の前面まで <span class="b s"></span> cm　<span class="opt">□ 不明</span><br>
+      盤の上の障害物（ケーブルラック・配管・天井）まで 床から <span class="b s"></span> cm</td><td class="pub"></td><td class="ai"></td></tr>
+  </table>
+  <div class="cards">
+    <div class="card"><div class="ttl"><span>盤 No.<span class="b s"></span> 名前 <span class="b m"></span></span><span>写真 <span class="b s"></span></span></div>
+      <div class="row"><span class="opt">□ 本物</span><span class="opt">□ 見立て</span>　盤の高さ <span class="b s"></span> cm・上部 <span class="b s"></span> cm</div>
+      <div class="row">盤前の空き 奥行<span class="b s"></span>×幅<span class="b s"></span> cm　隣の盤まで<span class="b s"></span> cm</div>
+      <div class="row">扉 <span class="opt">□ なし</span><span class="opt">□ 片開き（左・右）</span><span class="opt">□ 両開き</span> 出幅<span class="b s"></span> cm</div>
+      <div class="row">足元 <span class="opt">□ 何もない</span><span class="opt">□ 台座 高さ<span class="b s"></span> cm</span><span class="opt">□ その他</span></div>
+      <div class="row">壁と面一 <span class="opt">□ はい</span><span class="opt">□ いいえ</span>　盤面 <span class="opt">□ 平ら</span><span class="opt">□ 凹凸・取っ手</span></div>
+      <div class="row" style="border-top:0.6pt dotted #555;padding-top:0.6mm;font-size:7.8pt"><b class="pubi"></b></div>
+    </div>
+    <div class="card"><div class="ttl"><span>盤 No.<span class="b s"></span> 名前 <span class="b m"></span></span><span>写真 <span class="b s"></span></span></div>
+      <div class="row"><span class="opt">□ 本物</span><span class="opt">□ 見立て</span>　盤の高さ <span class="b s"></span> cm・上部 <span class="b s"></span> cm</div>
+      <div class="row">盤前の空き 奥行<span class="b s"></span>×幅<span class="b s"></span> cm　隣の盤まで<span class="b s"></span> cm</div>
+      <div class="row">扉 <span class="opt">□ なし</span><span class="opt">□ 片開き（左・右）</span><span class="opt">□ 両開き</span> 出幅<span class="b s"></span> cm</div>
+      <div class="row">足元 <span class="opt">□ 何もない</span><span class="opt">□ 台座 高さ<span class="b s"></span> cm</span><span class="opt">□ その他</span></div>
+      <div class="row">壁と面一 <span class="opt">□ はい</span><span class="opt">□ いいえ</span>　盤面 <span class="opt">□ 平ら</span><span class="opt">□ 凹凸・取っ手</span></div>
+      <div class="row" style="border-top:0.6pt dotted #555;padding-top:0.6mm;font-size:7.8pt"><b class="pubi"></b></div>
+    </div>
+    <div class="card"><div class="ttl"><span>盤 No.<span class="b s"></span> 名前 <span class="b m"></span></span><span>写真 <span class="b s"></span></span></div>
+      <div class="row"><span class="opt">□ 本物</span><span class="opt">□ 見立て</span>　盤の高さ <span class="b s"></span> cm・上部 <span class="b s"></span> cm</div>
+      <div class="row">盤前の空き 奥行<span class="b s"></span>×幅<span class="b s"></span> cm　隣の盤まで<span class="b s"></span> cm</div>
+      <div class="row">扉 <span class="opt">□ なし</span><span class="opt">□ 片開き（左・右）</span><span class="opt">□ 両開き</span> 出幅<span class="b s"></span> cm</div>
+      <div class="row">足元 <span class="opt">□ 何もない</span><span class="opt">□ 台座 高さ<span class="b s"></span> cm</span><span class="opt">□ その他</span></div>
+      <div class="row">壁と面一 <span class="opt">□ はい</span><span class="opt">□ いいえ</span>　盤面 <span class="opt">□ 平ら</span><span class="opt">□ 凹凸・取っ手</span></div>
+      <div class="row" style="border-top:0.6pt dotted #555;padding-top:0.6mm;font-size:7.8pt"><b class="pubi"></b></div>
+    </div>
+    <div class="card"><div class="ttl"><span>盤 No.<span class="b s"></span> 名前 <span class="b m"></span></span><span>写真 <span class="b s"></span></span></div>
+      <div class="row"><span class="opt">□ 本物</span><span class="opt">□ 見立て</span>　盤の高さ <span class="b s"></span> cm・上部 <span class="b s"></span> cm</div>
+      <div class="row">盤前の空き 奥行<span class="b s"></span>×幅<span class="b s"></span> cm　隣の盤まで<span class="b s"></span> cm</div>
+      <div class="row">扉 <span class="opt">□ なし</span><span class="opt">□ 片開き（左・右）</span><span class="opt">□ 両開き</span> 出幅<span class="b s"></span> cm</div>
+      <div class="row">足元 <span class="opt">□ 何もない</span><span class="opt">□ 台座 高さ<span class="b s"></span> cm</span><span class="opt">□ その他</span></div>
+      <div class="row">壁と面一 <span class="opt">□ はい</span><span class="opt">□ いいえ</span>　盤面 <span class="opt">□ 平ら</span><span class="opt">□ 凹凸・取っ手</span></div>
+      <div class="row" style="border-top:0.6pt dotted #555;padding-top:0.6mm;font-size:7.8pt"><b class="pubi"></b></div>
+    </div>
+    <div class="card"><div class="ttl"><span>盤 No.<span class="b s"></span> 名前 <span class="b m"></span></span><span>写真 <span class="b s"></span></span></div>
+      <div class="row"><span class="opt">□ 本物</span><span class="opt">□ 見立て</span>　盤の高さ <span class="b s"></span> cm・上部 <span class="b s"></span> cm</div>
+      <div class="row">盤前の空き 奥行<span class="b s"></span>×幅<span class="b s"></span> cm　隣の盤まで<span class="b s"></span> cm</div>
+      <div class="row">扉 <span class="opt">□ なし</span><span class="opt">□ 片開き（左・右）</span><span class="opt">□ 両開き</span> 出幅<span class="b s"></span> cm</div>
+      <div class="row">足元 <span class="opt">□ 何もない</span><span class="opt">□ 台座 高さ<span class="b s"></span> cm</span><span class="opt">□ その他</span></div>
+      <div class="row">壁と面一 <span class="opt">□ はい</span><span class="opt">□ いいえ</span>　盤面 <span class="opt">□ 平ら</span><span class="opt">□ 凹凸・取っ手</span></div>
+      <div class="row" style="border-top:0.6pt dotted #555;padding-top:0.6mm;font-size:7.8pt"><b class="pubi"></b></div>
+    </div>
+    <div class="card"><div class="ttl"><span>盤 No.<span class="b s"></span> 名前 <span class="b m"></span></span><span>写真 <span class="b s"></span></span></div>
+      <div class="row"><span class="opt">□ 本物</span><span class="opt">□ 見立て</span>　盤の高さ <span class="b s"></span> cm・上部 <span class="b s"></span> cm</div>
+      <div class="row">盤前の空き 奥行<span class="b s"></span>×幅<span class="b s"></span> cm　隣の盤まで<span class="b s"></span> cm</div>
+      <div class="row">扉 <span class="opt">□ なし</span><span class="opt">□ 片開き（左・右）</span><span class="opt">□ 両開き</span> 出幅<span class="b s"></span> cm</div>
+      <div class="row">足元 <span class="opt">□ 何もない</span><span class="opt">□ 台座 高さ<span class="b s"></span> cm</span><span class="opt">□ その他</span></div>
+      <div class="row">壁と面一 <span class="opt">□ はい</span><span class="opt">□ いいえ</span>　盤面 <span class="opt">□ 平ら</span><span class="opt">□ 凹凸・取っ手</span></div>
+      <div class="row" style="border-top:0.6pt dotted #555;padding-top:0.6mm;font-size:7.8pt"><b class="pubi"></b></div>
+    </div>
+    <div class="card"><div class="ttl"><span>盤 No.<span class="b s"></span> 名前 <span class="b m"></span></span><span>写真 <span class="b s"></span></span></div>
+      <div class="row"><span class="opt">□ 本物</span><span class="opt">□ 見立て</span>　盤の高さ <span class="b s"></span> cm・上部 <span class="b s"></span> cm</div>
+      <div class="row">盤前の空き 奥行<span class="b s"></span>×幅<span class="b s"></span> cm　隣の盤まで<span class="b s"></span> cm</div>
+      <div class="row">扉 <span class="opt">□ なし</span><span class="opt">□ 片開き（左・右）</span><span class="opt">□ 両開き</span> 出幅<span class="b s"></span> cm</div>
+      <div class="row">足元 <span class="opt">□ 何もない</span><span class="opt">□ 台座 高さ<span class="b s"></span> cm</span><span class="opt">□ その他</span></div>
+      <div class="row">壁と面一 <span class="opt">□ はい</span><span class="opt">□ いいえ</span>　盤面 <span class="opt">□ 平ら</span><span class="opt">□ 凹凸・取っ手</span></div>
+      <div class="row" style="border-top:0.6pt dotted #555;padding-top:0.6mm;font-size:7.8pt"><b class="pubi"></b></div>
+    </div>
+    <div class="card"><div class="ttl"><span>盤 No.<span class="b s"></span> 名前 <span class="b m"></span></span><span>写真 <span class="b s"></span></span></div>
+      <div class="row"><span class="opt">□ 本物</span><span class="opt">□ 見立て</span>　盤の高さ <span class="b s"></span> cm・上部 <span class="b s"></span> cm</div>
+      <div class="row">盤前の空き 奥行<span class="b s"></span>×幅<span class="b s"></span> cm　隣の盤まで<span class="b s"></span> cm</div>
+      <div class="row">扉 <span class="opt">□ なし</span><span class="opt">□ 片開き（左・右）</span><span class="opt">□ 両開き</span> 出幅<span class="b s"></span> cm</div>
+      <div class="row">足元 <span class="opt">□ 何もない</span><span class="opt">□ 台座 高さ<span class="b s"></span> cm</span><span class="opt">□ その他</span></div>
+      <div class="row">壁と面一 <span class="opt">□ はい</span><span class="opt">□ いいえ</span>　盤面 <span class="opt">□ 平ら</span><span class="opt">□ 凹凸・取っ手</span></div>
+      <div class="row" style="border-top:0.6pt dotted #555;padding-top:0.6mm;font-size:7.8pt"><b class="pubi"></b></div>
+    </div>
+  </div>
+  <div class="hint" style="margin-top:1.2mm;flex:none">「上部」＝カメラで確認したい所の床からの高さ。台座があると LiDAR の高さで盤面が平らに見えないことがある。9 面以上はこのページをもう 1 枚使う。</div>
+</section>
+
+<!-- ============================== p.7 ============================== -->
+<section class="page">
+  <div class="hdr">
+    <div class="doc">実証実験 会場確認シート</div>
+    <div class="meta">確認日 <span class="b"></span>　記入者 <span class="b"></span><span class="pno">p. 7 / 9</span></div>
+  </div>
+
+  <h2><span class="tag">測</span>E. 無線（3 か所で調べる）<span class="hint">アプリで見えた Wi-Fi の数を数える</span></h2>
+  <table class="mid">
+    <tr>
+      <th style="width:24mm" rowspan="2">測った場所</th>
+      <th class="c" colspan="4">2.4 GHz の数</th>
+      <th class="c" colspan="2">5 GHz の数</th>
+      <th style="width:18mm" rowspan="2">最も強い電波<br>dBm</th>
+      <th rowspan="2">メモ</th>
+      <th class="pub" rowspan="2">公開範囲</th><th class="ai" rowspan="2">生成AI</th>
+    </tr>
+    <tr>
+      <th class="c" style="width:13mm">ch 1 付近</th><th class="c" style="width:13mm">ch 6 付近</th><th class="c" style="width:13mm">ch 11 付近</th><th class="c" style="width:11mm">合計</th>
+      <th class="c" style="width:14mm">ch 36〜48</th><th class="c" style="width:12mm">その他</th>
+    </tr>
+    <tr><td>保管場所</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td>経路の途中</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td>試験場</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="pub"></td><td class="ai"></td></tr>
+  </table>
+  <div class="row" style="margin-top:1mm">施設の Wi-Fi <span class="opt">□ ない</span><span class="opt">□ ある</span>（帯域 <span class="opt">□ 2.4 GHz</span><span class="opt">□ 5 GHz</span><span class="opt">□ 不明</span>）</div>
+  <div class="row">電子レンジ・業務用無線など <span class="opt">□ ない</span><span class="opt">□ ある（<span class="b m"></span>）</span></div>
+  <div class="hint">機体の無線は 2.4 GHz の ch 1（映像カメラ・昇降機）と 5 GHz の ch 48（PC）。この 2 つが混んでいるかを特に見る。</div>
+
+  <h2><span class="tag">測</span>F. 写真・動画<span class="hint">写った物ごとに公開範囲と生成AIへの入力可否を決める</span></h2>
+  <table>
+    <tr><th style="width:7mm" class="c">済</th><th>撮るもの</th><th style="width:16mm">写真 No.</th><th class="pub">公開範囲</th><th class="ai">生成AI</th><th style="width:7mm" class="c">済</th><th>撮るもの</th><th style="width:16mm">写真 No.</th><th class="pub">公開範囲</th><th class="ai">生成AI</th></tr>
+    <tr><td class="c">□</td><td>経路を歩いた動画（保管場所 → 試験場）</td><td></td><td class="pub"></td><td class="ai"></td><td class="c">□</td><td>試験場の全景（四隅から）</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">□</td><td>各区間を前後の向きから</td><td></td><td class="pub"></td><td class="ai"></td><td class="c">□</td><td>待機場所の候補</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">□</td><td>最も狭い所（メジャーを当てて）</td><td></td><td class="pub"></td><td class="ai"></td><td class="c">□</td><td>盤ごとに 正面・斜め・足元</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">□</td><td>扉・段差・坂（メジャーを当てて）</td><td></td><td class="pub"></td><td class="ai"></td><td class="c">□</td><td>盤前の空き・扉を開いた状態</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">□</td><td>床の近接（光沢・目地・溝）</td><td></td><td class="pub"></td><td class="ai"></td><td class="c">□</td><td>製品の置き場</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">□</td><td>ガラス・鏡・金網・黒い面</td><td></td><td class="pub"></td><td class="ai"></td><td class="c">□</td><td>コンセント・机の位置</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">□</td><td>床の線（区画線）・分岐</td><td></td><td class="pub"></td><td class="ai"></td><td class="c">□</td><td>搬入口・保管場所</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+    <tr><td class="c">□</td><td>頭上の低い所</td><td></td><td class="pub"></td><td class="ai"></td><td class="c">□</td><td>Wi-Fi アプリの画面（3 か所）</td><td></td><td class="pub"></td><td class="ai"></td></tr>
+  </table>
+  <div class="hint" style="margin-top:0.6mm">撮影の可否は p.2 の 11 を先に確かめる。</div>
+
+  <h2>G. その場で気づいたこと・持ち帰る宿題<span class="hint">公開できない内容は行末に「否」、生成AIに入れない内容は「AI否」と書く</span></h2>
+  <div class="grow" style="display:flex;flex-direction:column;justify-content:space-evenly">
+    <div class="line dot"></div><div class="line dot"></div><div class="line dot"></div><div class="line dot"></div>
+    <div class="line dot"></div><div class="line dot"></div>
+  </div>
+</section>
+
+<!-- ============================== p.8 ============================== -->
+<section class="page">
+  <div class="hdr">
+    <div class="doc">実証実験 会場確認シート</div>
+    <div class="meta">確認日 <span class="b"></span>　記入者 <span class="b"></span><span class="pno">p. 8 / 9</span></div>
+  </div>
+  <h2>見取り図 1：経路（保管場所 → 試験場）<span class="hint">区間 No.（p.4）と写真 No.（向きを矢印で）を書き込む</span></h2>
+  <div class="grid">
+    <svg aria-hidden="true" viewBox="0 0 186 244" preserveAspectRatio="none"><style>.m{stroke:#9a9a9a;stroke-width:0.12}.M{stroke:#4a4a4a;stroke-width:0.25}</style><line x1="0" y1="0" x2="0" y2="244" class="M"/><line x1="5" y1="0" x2="5" y2="244" class="m"/><line x1="10" y1="0" x2="10" y2="244" class="m"/><line x1="15" y1="0" x2="15" y2="244" class="m"/><line x1="20" y1="0" x2="20" y2="244" class="m"/><line x1="25" y1="0" x2="25" y2="244" class="M"/><line x1="30" y1="0" x2="30" y2="244" class="m"/><line x1="35" y1="0" x2="35" y2="244" class="m"/><line x1="40" y1="0" x2="40" y2="244" class="m"/><line x1="45" y1="0" x2="45" y2="244" class="m"/><line x1="50" y1="0" x2="50" y2="244" class="M"/><line x1="55" y1="0" x2="55" y2="244" class="m"/><line x1="60" y1="0" x2="60" y2="244" class="m"/><line x1="65" y1="0" x2="65" y2="244" class="m"/><line x1="70" y1="0" x2="70" y2="244" class="m"/><line x1="75" y1="0" x2="75" y2="244" class="M"/><line x1="80" y1="0" x2="80" y2="244" class="m"/><line x1="85" y1="0" x2="85" y2="244" class="m"/><line x1="90" y1="0" x2="90" y2="244" class="m"/><line x1="95" y1="0" x2="95" y2="244" class="m"/><line x1="100" y1="0" x2="100" y2="244" class="M"/><line x1="105" y1="0" x2="105" y2="244" class="m"/><line x1="110" y1="0" x2="110" y2="244" class="m"/><line x1="115" y1="0" x2="115" y2="244" class="m"/><line x1="120" y1="0" x2="120" y2="244" class="m"/><line x1="125" y1="0" x2="125" y2="244" class="M"/><line x1="130" y1="0" x2="130" y2="244" class="m"/><line x1="135" y1="0" x2="135" y2="244" class="m"/><line x1="140" y1="0" x2="140" y2="244" class="m"/><line x1="145" y1="0" x2="145" y2="244" class="m"/><line x1="150" y1="0" x2="150" y2="244" class="M"/><line x1="155" y1="0" x2="155" y2="244" class="m"/><line x1="160" y1="0" x2="160" y2="244" class="m"/><line x1="165" y1="0" x2="165" y2="244" class="m"/><line x1="170" y1="0" x2="170" y2="244" class="m"/><line x1="175" y1="0" x2="175" y2="244" class="M"/><line x1="180" y1="0" x2="180" y2="244" class="m"/><line x1="185" y1="0" x2="185" y2="244" class="m"/><line x1="0" y1="0" x2="186" y2="0" class="M"/><line x1="0" y1="5" x2="186" y2="5" class="m"/><line x1="0" y1="10" x2="186" y2="10" class="m"/><line x1="0" y1="15" x2="186" y2="15" class="m"/><line x1="0" y1="20" x2="186" y2="20" class="m"/><line x1="0" y1="25" x2="186" y2="25" class="M"/><line x1="0" y1="30" x2="186" y2="30" class="m"/><line x1="0" y1="35" x2="186" y2="35" class="m"/><line x1="0" y1="40" x2="186" y2="40" class="m"/><line x1="0" y1="45" x2="186" y2="45" class="m"/><line x1="0" y1="50" x2="186" y2="50" class="M"/><line x1="0" y1="55" x2="186" y2="55" class="m"/><line x1="0" y1="60" x2="186" y2="60" class="m"/><line x1="0" y1="65" x2="186" y2="65" class="m"/><line x1="0" y1="70" x2="186" y2="70" class="m"/><line x1="0" y1="75" x2="186" y2="75" class="M"/><line x1="0" y1="80" x2="186" y2="80" class="m"/><line x1="0" y1="85" x2="186" y2="85" class="m"/><line x1="0" y1="90" x2="186" y2="90" class="m"/><line x1="0" y1="95" x2="186" y2="95" class="m"/><line x1="0" y1="100" x2="186" y2="100" class="M"/><line x1="0" y1="105" x2="186" y2="105" class="m"/><line x1="0" y1="110" x2="186" y2="110" class="m"/><line x1="0" y1="115" x2="186" y2="115" class="m"/><line x1="0" y1="120" x2="186" y2="120" class="m"/><line x1="0" y1="125" x2="186" y2="125" class="M"/><line x1="0" y1="130" x2="186" y2="130" class="m"/><line x1="0" y1="135" x2="186" y2="135" class="m"/><line x1="0" y1="140" x2="186" y2="140" class="m"/><line x1="0" y1="145" x2="186" y2="145" class="m"/><line x1="0" y1="150" x2="186" y2="150" class="M"/><line x1="0" y1="155" x2="186" y2="155" class="m"/><line x1="0" y1="160" x2="186" y2="160" class="m"/><line x1="0" y1="165" x2="186" y2="165" class="m"/><line x1="0" y1="170" x2="186" y2="170" class="m"/><line x1="0" y1="175" x2="186" y2="175" class="M"/><line x1="0" y1="180" x2="186" y2="180" class="m"/><line x1="0" y1="185" x2="186" y2="185" class="m"/><line x1="0" y1="190" x2="186" y2="190" class="m"/><line x1="0" y1="195" x2="186" y2="195" class="m"/><line x1="0" y1="200" x2="186" y2="200" class="M"/><line x1="0" y1="205" x2="186" y2="205" class="m"/><line x1="0" y1="210" x2="186" y2="210" class="m"/><line x1="0" y1="215" x2="186" y2="215" class="m"/><line x1="0" y1="220" x2="186" y2="220" class="m"/><line x1="0" y1="225" x2="186" y2="225" class="M"/><line x1="0" y1="230" x2="186" y2="230" class="m"/><line x1="0" y1="235" x2="186" y2="235" class="m"/><line x1="0" y1="240" x2="186" y2="240" class="m"/></svg>
+    <div class="corner">縮尺　1 マス ＝ <span class="b s"></span> m<br>北の向き（矢印を書く）<div style="height:13mm;border:0.6pt dashed #777;margin-top:1mm"></div><div style="margin-top:1.2mm;border-top:0.6pt dotted #555;padding-top:0.8mm">この図の公開範囲<br>□公 □内 □関 □否<br>生成AI　□可 □否</div></div>
+  </div>
+  <div class="legend">
+    <table>
+      <tr><td><b>保</b> 保管場所</td><td><b>試</b> 試験場</td><td><b>→</b> 順路</td><td><b>①②…</b> 区間 No.</td><td><b>扉</b> 扉（開く向き）</td><td><b>段</b> 段差</td><td><b>坂</b> 坂</td></tr>
+      <tr><td><b>狭</b> 最も狭い所（幅）</td><td><b>ガ</b> ガラス・鏡など</td><td><b>エ</b> エレベータ</td><td><b>外</b> 屋外区間</td><td><b>✕</b> 立入禁止</td><td><b>Ｐ</b>＋矢印 写真</td><td><b>線</b> 床の線</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============================== p.9 ============================== -->
+<section class="page">
+  <div class="hdr">
+    <div class="doc">実証実験 会場確認シート</div>
+    <div class="meta">確認日 <span class="b"></span>　記入者 <span class="b"></span><span class="pno">p. 9 / 9</span></div>
+  </div>
+  <h2>見取り図 2：試験場・配電盤の配置<span class="hint">盤 No.（p.6）・盤の向き・扉の開く向き・寸法を書き込む</span></h2>
+  <div class="grid">
+    <svg aria-hidden="true" viewBox="0 0 186 244" preserveAspectRatio="none"><style>.m{stroke:#9a9a9a;stroke-width:0.12}.M{stroke:#4a4a4a;stroke-width:0.25}</style><line x1="0" y1="0" x2="0" y2="244" class="M"/><line x1="5" y1="0" x2="5" y2="244" class="m"/><line x1="10" y1="0" x2="10" y2="244" class="m"/><line x1="15" y1="0" x2="15" y2="244" class="m"/><line x1="20" y1="0" x2="20" y2="244" class="m"/><line x1="25" y1="0" x2="25" y2="244" class="M"/><line x1="30" y1="0" x2="30" y2="244" class="m"/><line x1="35" y1="0" x2="35" y2="244" class="m"/><line x1="40" y1="0" x2="40" y2="244" class="m"/><line x1="45" y1="0" x2="45" y2="244" class="m"/><line x1="50" y1="0" x2="50" y2="244" class="M"/><line x1="55" y1="0" x2="55" y2="244" class="m"/><line x1="60" y1="0" x2="60" y2="244" class="m"/><line x1="65" y1="0" x2="65" y2="244" class="m"/><line x1="70" y1="0" x2="70" y2="244" class="m"/><line x1="75" y1="0" x2="75" y2="244" class="M"/><line x1="80" y1="0" x2="80" y2="244" class="m"/><line x1="85" y1="0" x2="85" y2="244" class="m"/><line x1="90" y1="0" x2="90" y2="244" class="m"/><line x1="95" y1="0" x2="95" y2="244" class="m"/><line x1="100" y1="0" x2="100" y2="244" class="M"/><line x1="105" y1="0" x2="105" y2="244" class="m"/><line x1="110" y1="0" x2="110" y2="244" class="m"/><line x1="115" y1="0" x2="115" y2="244" class="m"/><line x1="120" y1="0" x2="120" y2="244" class="m"/><line x1="125" y1="0" x2="125" y2="244" class="M"/><line x1="130" y1="0" x2="130" y2="244" class="m"/><line x1="135" y1="0" x2="135" y2="244" class="m"/><line x1="140" y1="0" x2="140" y2="244" class="m"/><line x1="145" y1="0" x2="145" y2="244" class="m"/><line x1="150" y1="0" x2="150" y2="244" class="M"/><line x1="155" y1="0" x2="155" y2="244" class="m"/><line x1="160" y1="0" x2="160" y2="244" class="m"/><line x1="165" y1="0" x2="165" y2="244" class="m"/><line x1="170" y1="0" x2="170" y2="244" class="m"/><line x1="175" y1="0" x2="175" y2="244" class="M"/><line x1="180" y1="0" x2="180" y2="244" class="m"/><line x1="185" y1="0" x2="185" y2="244" class="m"/><line x1="0" y1="0" x2="186" y2="0" class="M"/><line x1="0" y1="5" x2="186" y2="5" class="m"/><line x1="0" y1="10" x2="186" y2="10" class="m"/><line x1="0" y1="15" x2="186" y2="15" class="m"/><line x1="0" y1="20" x2="186" y2="20" class="m"/><line x1="0" y1="25" x2="186" y2="25" class="M"/><line x1="0" y1="30" x2="186" y2="30" class="m"/><line x1="0" y1="35" x2="186" y2="35" class="m"/><line x1="0" y1="40" x2="186" y2="40" class="m"/><line x1="0" y1="45" x2="186" y2="45" class="m"/><line x1="0" y1="50" x2="186" y2="50" class="M"/><line x1="0" y1="55" x2="186" y2="55" class="m"/><line x1="0" y1="60" x2="186" y2="60" class="m"/><line x1="0" y1="65" x2="186" y2="65" class="m"/><line x1="0" y1="70" x2="186" y2="70" class="m"/><line x1="0" y1="75" x2="186" y2="75" class="M"/><line x1="0" y1="80" x2="186" y2="80" class="m"/><line x1="0" y1="85" x2="186" y2="85" class="m"/><line x1="0" y1="90" x2="186" y2="90" class="m"/><line x1="0" y1="95" x2="186" y2="95" class="m"/><line x1="0" y1="100" x2="186" y2="100" class="M"/><line x1="0" y1="105" x2="186" y2="105" class="m"/><line x1="0" y1="110" x2="186" y2="110" class="m"/><line x1="0" y1="115" x2="186" y2="115" class="m"/><line x1="0" y1="120" x2="186" y2="120" class="m"/><line x1="0" y1="125" x2="186" y2="125" class="M"/><line x1="0" y1="130" x2="186" y2="130" class="m"/><line x1="0" y1="135" x2="186" y2="135" class="m"/><line x1="0" y1="140" x2="186" y2="140" class="m"/><line x1="0" y1="145" x2="186" y2="145" class="m"/><line x1="0" y1="150" x2="186" y2="150" class="M"/><line x1="0" y1="155" x2="186" y2="155" class="m"/><line x1="0" y1="160" x2="186" y2="160" class="m"/><line x1="0" y1="165" x2="186" y2="165" class="m"/><line x1="0" y1="170" x2="186" y2="170" class="m"/><line x1="0" y1="175" x2="186" y2="175" class="M"/><line x1="0" y1="180" x2="186" y2="180" class="m"/><line x1="0" y1="185" x2="186" y2="185" class="m"/><line x1="0" y1="190" x2="186" y2="190" class="m"/><line x1="0" y1="195" x2="186" y2="195" class="m"/><line x1="0" y1="200" x2="186" y2="200" class="M"/><line x1="0" y1="205" x2="186" y2="205" class="m"/><line x1="0" y1="210" x2="186" y2="210" class="m"/><line x1="0" y1="215" x2="186" y2="215" class="m"/><line x1="0" y1="220" x2="186" y2="220" class="m"/><line x1="0" y1="225" x2="186" y2="225" class="M"/><line x1="0" y1="230" x2="186" y2="230" class="m"/><line x1="0" y1="235" x2="186" y2="235" class="m"/><line x1="0" y1="240" x2="186" y2="240" class="m"/></svg>
+    <div class="corner">縮尺　1 マス ＝ <span class="b s"></span> m<br>北の向き（矢印を書く）<div style="height:13mm;border:0.6pt dashed #777;margin-top:1mm"></div><div style="margin-top:1.2mm;border-top:0.6pt dotted #555;padding-top:0.8mm">この図の公開範囲<br>□公 □内 □関 □否<br>生成AI　□可 □否</div></div>
+  </div>
+  <div class="legend">
+    <table>
+      <tr><td><b>H</b> 待機場所の候補</td><td><b>盤1, 盤2…</b> 配電盤（正面に矢印）</td><td><b>斜線</b> 納品前の製品</td><td><b>電</b> コンセント</td><td><b>机</b> PC・タブレット置き場</td></tr>
+      <tr><td><b>入</b> 試験場の入口</td><td><b>ガ</b> ガラス・鏡など</td><td><b>窓</b> 直射日光が入る窓</td><td><b>✕</b> 立入禁止・物を置けない所</td><td><b>Ｐ</b>＋矢印 写真</td></tr>
+    </table>
+  </div>
+</section>
+
+</body>
+</html>

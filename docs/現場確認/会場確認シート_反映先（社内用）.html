@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>会場確認シート 反映先（社内用）</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body {
+    font-family: "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
+    color: #111; font-size: 8.8pt; line-height: 1.45;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .page {
+    width: 210mm; height: 297mm; padding: 9mm 12mm 9mm;
+    page-break-after: always; break-after: page;
+    display: flex; flex-direction: column; overflow: hidden; position: relative;
+  }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+
+  /* ページ見出し（綴じが外れても順番と記入者が分かるように毎ページ） */
+  .hdr {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 1.2pt solid #111; padding-bottom: 1.2mm; margin-bottom: 2.5mm;
+    font-size: 7.8pt; flex: none;
+  }
+  .hdr .doc { font-weight: 700; font-size: 8.5pt; }
+  .hdr .meta span.b { min-width: 24mm; }
+  .hdr .pno { font-weight: 700; font-size: 9pt; margin-left: 4mm; }
+
+  h1 { font-size: 17pt; margin: 1mm 0 0.5mm; letter-spacing: 0.05em; }
+  .sub { font-size: 9pt; color: #333; margin-bottom: 2.5mm; }
+  h2 {
+    font-size: 11pt; margin: 2.2mm 0 1.4mm; padding: 0.8mm 2mm;
+    background: #e6e6e6; border-left: 3pt solid #111; flex: none;
+  }
+  h2 .hint { font-weight: 400; margin-left: 2mm; }
+  h3 { font-size: 9.2pt; margin: 2mm 0 1mm; }
+
+  .tag {
+    display: inline-block; border: 0.8pt solid #111; border-radius: 1mm;
+    font-size: 7.8pt; line-height: 1.3; padding: 0 1.2mm; margin-right: 1.2mm;
+    vertical-align: 0.4mm; font-weight: 700;
+  }
+  .tag.ask { background: #111; color: #fff; }
+
+  table { width: 100%; border-collapse: collapse; }
+  tr, td, th { break-inside: avoid; page-break-inside: avoid; }
+  td, th { border: 0.6pt solid #555; padding: 1.1mm 1.5mm; vertical-align: top; }
+  th { background: #ececec; font-weight: 700; font-size: 7.8pt; text-align: left; }
+  th.c, td.c { text-align: center; }
+  td.num { width: 7mm; text-align: center; font-weight: 700; }
+  td.q { width: 52mm; font-weight: 700; }
+  td.q .hint { display: block; font-weight: 400; margin-top: 0.4mm; }
+
+  .b { display: inline-block; border-bottom: 0.6pt solid #111; min-width: 18mm; height: 4.4mm; vertical-align: -1.2mm; }
+  .b.s { min-width: 11mm; } .b.m { min-width: 28mm; } .b.l { min-width: 45mm; } .b.xl { min-width: 75mm; }
+  .line { border-bottom: 0.6pt solid #111; height: 6.5mm; }
+  .line.dot { border-bottom: 0.6pt dotted #555; }
+  .hint { font-size: 7.2pt; color: #444; }
+  .opt { white-space: nowrap; margin-right: 2.2mm; }
+  .row { margin: 0.6mm 0; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+  .box { border: 0.8pt solid #111; padding: 1.8mm 2.2mm; }
+  .box.ref { background: #f3f3f3; }
+  .judge { font-size: 7.2pt; border: 0.6pt solid #555; padding: 0.2mm 1mm; margin-left: 1mm; white-space: nowrap; }
+  .grow { flex: 1 1 auto; }
+  ul.chk { list-style: none; margin: 0; padding: 0; }
+  ul.chk li { margin: 0.5mm 0; }
+  ol.steps { margin: 0.5mm 0 0 4.5mm; padding: 0; }
+  ol.steps li { margin: 0.3mm 0; }
+
+  /* 区間表・写真表など、記入用の行の高さ */
+  .tall td { height: 12.6mm; }
+  .mid td { height: 8.2mm; }
+  .qa td { height: 16.8mm; }
+
+  /* 配電盤カード */
+  .cards { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 2.4mm; flex: 1 1 auto; }
+  .card { border: 0.9pt solid #111; padding: 1.4mm 2mm; display: flex; flex-direction: column; justify-content: space-between; break-inside: avoid; }
+  .card .ttl { font-weight: 700; border-bottom: 0.6pt solid #111; padding-bottom: 0.6mm; margin-bottom: 0.6mm; display: flex; justify-content: space-between; }
+  .card .row { margin: 0.25mm 0; font-size: 8.2pt; }
+
+  /* 見取り図 */
+  .grid {
+    flex: none; height: 244mm; border: 0.9pt solid #111;
+    position: relative; overflow: hidden;
+  }
+  .grid svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .grid .corner {
+    position: absolute; top: 2mm; right: 2mm; background: #fff; border: 0.8pt solid #111;
+    padding: 1.2mm 2mm; font-size: 8pt; width: 44mm;
+  }
+  .legend { flex: none; margin-top: 2mm; font-size: 7.8pt; }
+  .legend table td { padding: 0.7mm 1.3mm; }
+</style>
+</head>
+<body>
+<!-- ============================== 社内用 ============================== -->
+<section class="page">
+  <div class="hdr">
+    <div class="doc">実証実験 会場確認シート — 別紙（社内用・先方に渡さない）</div>
+    <div class="meta">持ち帰ってから使う</div>
+  </div>
+  <h2>持ち帰ったら：記入した値の反映先</h2>
+  <table>
+    <tr><th style="width:44mm">記入した欄</th><th>決まること</th><th style="width:48mm">反映先</th></tr>
+    <tr><td>B 総距離・歩いた時間・押した時間<br>A-22 いまの機材の運び方</td><td>「人が押して運ぶより手間が増えていない」の比較の基準。200 m の目測を実測に置き換える</td><td>Spec-open O-a7<br>transit-premises §0.4</td></tr>
+    <tr><td>B 通路幅・扉・段差・坂・床<br>C 場内の通路幅</td><td>自律で通れる区間と手動・教示再生で通す区間。許容逸脱の上限・制動距離</td><td>Spec-open O-a4<br>Spec-onsite §6.1.1</td></tr>
+    <tr><td>C 製品までの最も近い距離</td><td><code>venue_clearance_m</code> → <code>v_slow</code>・<code>v_reverse</code> を逆算できる（いまは C++ 既定の仮値）</td><td>registry.yaml<br>台帳 W-05・W-18</td></tr>
+    <tr><td>D カメラ側が望む停止位置・盤前の空き</td><td><code>panel_clearance_m</code> → <code>v_jog_panel</code></td><td>registry.yaml・台帳 W-18</td></tr>
+    <tr><td>A-15 盤の数・D 盤の寸法・A-18 本物か</td><td>ピンを選ぶ方式の価値、LiDAR で盤面を平面として捉えられるか、模擬盤の要否</td><td>Spec-open O-a2</td></tr>
+    <tr><td>A-20 カメラの許容差</td><td>到着後に盤面へ正対する段を作るか（目標 G2 の合否基準）</td><td>Spec-open O-a1</td></tr>
+    <tr><td>A-21 いまの前日準備</td><td>目標 G3 の比較の基準</td><td>Spec-open O-a3</td></tr>
+    <tr><td>A-8 無人走行の許可</td><td>教示再生・ライン誘導を先導つきで測るか、無人で測れるか</td><td>Spec-open O-a5<br>Spec-transit §7.2</td></tr>
+    <tr><td>A-17 前日→当日の配置の変化</td><td>前日の地図を当日「そのまま／書き足す／作り直す」のどれを既定にするか</td><td>Spec-open O-d5</td></tr>
+    <tr><td>A-13・C コンセント</td><td>1 日持つか・充電の運用（目標 G5）</td><td>Spec-open O-c7</td></tr>
+    <tr><td>B 屋外区間・E 無線</td><td>屋外モード（5 GHz を止める）の要否、ch 1・ch 48 を変えるか</td><td>docs/network.md</td></tr>
+    <tr><td>B 床の線（区画線）</td><td>ライン誘導走行が成り立つか</td><td>Spec-transit §5</td></tr>
+    <tr><td>B 単調な長い直線・曲がり角</td><td>教示再生の 1 経路の長さ・ずれの補正が要るか</td><td>Spec-transit §4.5・O-c4</td></tr>
+    <tr><td>B 保管場所・出発位置をそろえられるか</td><td>教示再生を毎回同じ出発位置から始められるか（全域の位置推定は実機未確認）</td><td>Spec-transit §4・台帳 W-01</td></tr>
+    <tr><td>B 頭上で最も低い所</td><td>昇降機を縮めた状態で通れるか</td><td>（別担当と共有）</td></tr>
+    <tr><td>A-10 音・A-11 撮影と地図</td><td>機体スピーカーの既定音量、試験記録・発表での写真と地図の扱い</td><td>Spec-safety §11<br>試験記録</td></tr>
+  </table>
+  <h2 style="margin-top:4mm">公開範囲・生成AIの印の扱い</h2>
+  <table>
+    <tr><th style="width:44mm">印</th><th>持ち帰ってからの扱い</th></tr>
+    <tr><td>公開範囲「公」</td><td>発表・報告書・公開 HTML に載せてよい。条件（社名を伏せる・写真をぼかす など）が回答欄にあれば必ず守る</td></tr>
+    <tr><td>公開範囲「内」「関」</td><td>外部の発表・公開資料・公開リポジトリに載せない。「関」はチームと先方以外に見せない</td></tr>
+    <tr><td>公開範囲「否」</td><td>写真・数値を持ち帰らない。シートにも書かない（書いてしまったら消す）</td></tr>
+    <tr><td>生成AI「否」</td><td>ChatGPT・Claude などへのチャットに貼らない。<b>AI エージェント（Claude Code・codex・opencode）が読むリポジトリ（docs/ など）にも書かない</b>。写真も同じ</td></tr>
+    <tr><td>転記するとき</td><td>試験記録・計画書へ値を写すときは、公開範囲と生成AIの印も一緒に写す</td></tr>
+  </table>
+  <div class="hint" style="margin-top:1.5mm">会場で決まった実機の確認項目は <code>docs/試験項目.md</code> へ。方針が変わるものは先に <code>docs/plan/spec/</code> を直す。</div>
+</section>
+
+</body>
+</html>
