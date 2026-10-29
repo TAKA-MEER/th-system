@@ -177,6 +177,7 @@ def test_main_wires_dbus_last_seen_into_collection_and_sets_nmcli_locale(monkeyp
     assert "fresh-only" in output
     assert "2.4 GHz  1 件" in output
     assert "th-rpi-ap ch1" in output
+    assert any("th-rpi-ap" in line and line.endswith("機体") for line in output.splitlines())
     assert all(env and env.get("LC_ALL") == "C" for command, env in calls if command[0] == "nmcli")
 
 
@@ -274,8 +275,15 @@ def test_find_top_all_hide_names_and_band_filter(monkeypatch):
     all_text = format_summary("now", "wlo1", 1, 1, 1, rows, top=None)
     assert all(name in all_text for name in ("Alpha", "beta", "gamma"))
     with_vehicle = rows + aggregate_scans([[row("th-rpi-ap", "dd:ee", 1, 2412)]])
+    with_both_vehicle_aps = with_vehicle + aggregate_scans([[row("th-rpi-5g", "ff:00", 48, 5240)]])
+    machine_search = format_summary("now", "wlo1", 1, 1, 1, with_both_vehicle_aps, find="th-rpi", top=None)
+    machine_lines = [line for line in machine_search.splitlines() if "th-rpi" in line and line.endswith("機体")]
+    assert len(machine_lines) == 2
+    assert all(line.endswith("機体") for line in machine_lines)
+    assert "2.4 GHz  2 件" in machine_search
     hidden = format_summary("now", "wlo1", 1, 1, 1, with_vehicle, hide_names=True, top=None)
     assert all(token not in hidden for token in ("Alpha", "beta", "gamma", "th-rpi-ap", "AA", "BB", "CC", "DD:EE"))
+    assert any(line.endswith("機体") and "（非表示）" in line for line in hidden.splitlines())
     only_five = format_summary("now", "wlo1", 1, 1, 1, rows, band="5", top=None)
     assert "まとめ（" in only_five and "5 GHz" in only_five and "2.4 GHz  2 件" not in only_five
 

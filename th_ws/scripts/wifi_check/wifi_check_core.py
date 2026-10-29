@@ -297,7 +297,7 @@ def format_summary(timestamp: str, ifname: str, scans_done: int, scans_total: in
     lines.append("  ※ ch1〜3 → 1 付近、4〜8 → 6 付近、9〜14 → 11 付近。dBm は強度 % からの換算")
     if band in (None, "2.4", "5"):
         lines.extend(["", format_channel_load(rows, band)])
-    listed = [r for r in rows if not r.get("vehicle_ap")]
+    listed = list(rows)
     if find:
         listed = [r for r in listed if find.casefold() in r.get("ssid", "").casefold()]
     if band:
@@ -308,5 +308,6 @@ def format_summary(timestamp: str, ifname: str, scans_done: int, scans_total: in
     for r in listed:
         ssid = "（非表示）" if hide_names else (r.get("ssid") or "（非公開）")
         bssid = "（非表示）" if hide_names else r["bssid"]
-        lines.append(f"  {r['band']}  ch {r['channel']}  {dbm_label(r['strength_pct'])}  {ssid}  {bssid}  {r['seen_scans']}/{r['scan_count']} 回")
+        vehicle_mark = "  機体" if r.get("vehicle_ap") else ""
+        lines.append(f"  {r['band']}  ch {r['channel']}  {dbm_label(r['strength_pct'])}  {ssid}  {bssid}  {r['seen_scans']}/{r['scan_count']} 回{vehicle_mark}")
     return "\n".join(lines)
