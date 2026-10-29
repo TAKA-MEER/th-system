@@ -295,15 +295,33 @@ def test_candidate_strongest_includes_overlapping_24ghz_channels():
     assert item["strongest"]["dbm"] == -70
     assert item["candidate_strongest"]["dbm"] == -50
     output = format_channel_load(rows, "2.4")
-    assert "ch   1" in output and "約 −70 dBm" in output
-    assert "2.4 GHz  ch 1" in output and "約 −50 dBm" in output
+    channel_one = next(line for line in output.splitlines() if line.startswith("  ch   1"))
+    candidate_one = next(line for line in output.splitlines() if line.startswith("  2.4 GHz  ch 1 "))
+    assert "約 −70 dBm" in channel_one
+    assert "約 −50 dBm" in candidate_one
+    assert "約 −70 dBm" not in candidate_one
+
+
+def test_five_ghz_candidates_use_only_their_40mhz_block():
+    from wifi_check_core import format_channel_load
+    rows = aggregate_scans([[row("ch36", "a", 36, 5180, 83),
+                             row("ch40", "b", 40, 5200, 67),
+                             row("ch44", "c", 44, 5220, 33)]])
+    output = format_channel_load(rows, "5")
+    candidate_3640 = next(line for line in output.splitlines() if line.startswith("  5 GHz    36+40"))
+    candidate_4448 = next(line for line in output.splitlines() if line.startswith("  5 GHz    44+48"))
+    assert "約 −50 dBm" in candidate_3640
+    assert "約 −60 dBm" not in candidate_3640
+    assert "約 −80 dBm" in candidate_4448
+    assert "約 −50 dBm" not in candidate_4448
 
 
 def test_display_width_counts_fullwidth_characters_as_two_columns():
     from wifi_check_core import display_width
     assert display_width("日本語") == 6
     assert display_width("ASCII") == 5
-    assert display_width("█—") == sum(2 if __import__("unicodedata").east_asian_width(c) in {"W", "F"} else 1 for c in "█—")
+    assert display_width("件数") == 4
+    assert display_width("ch 1") == 4
 
 
 def test_vehicle_marks_follow_visible_channels_and_default_when_missing():
