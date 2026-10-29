@@ -18,8 +18,10 @@ root で実行すると `wpa_cli scan_results` の受信信号レベルを読み
 実測できないときに処理を失敗させるには `--exact` を付けます。sudo の実機確認は次で行えます。
 
 ```bash
-sudo python3 th_ws/scripts/wifi_check/wifi_check.py --exact --scans 1 --hide-names
+sudo python3 -B th_ws/scripts/wifi_check/wifi_check.py --exact --scans 1 --hide-names
 ```
+
+sudo で動かすときは `-B` を付けます。付けないと root 所有の `__pycache__/` がリポジトリ内に残ります。sudo はパスワード（指紋）を求めるので、Claude Code の `!` からは動かせません。別の端末で実行します。2026-10-29 にこの PC（`wlo1`）で、実測の表示（値に「約」が付かない）を確認しました。
 
 複数回の測定で実測値と換算値が混ざった場合、AP ごとに実測値を優先し、同じ種類の値同士では dBm が強い回を残します。
 
