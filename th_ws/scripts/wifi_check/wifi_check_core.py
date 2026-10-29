@@ -237,18 +237,20 @@ def format_channel_load(rows: list[dict], band: str | None = None) -> str:
     if band in (None, "2.4"):
         for item in loads["2.4 GHz"]:
             strongest = dbm_label(item["strongest"]["strength_pct"]) if item["strongest"] else "なし"
-            bar = "█" * (0 if maximum == 0 else round(14 * len(item["same"]) / maximum))
+            count = len(item["same"])
+            bar = "█" * (max(1, round(14 * count / maximum)) if count else 0)
             mark = " ← 機体" + ("（既定）" if loads["vehicle_default"]["2.4 GHz"] else "") if item["is_vehicle"] else ""
-            lines.append(f"  ch {item['channel']:>2}  {bar:<14} {len(item['same']):>3}   最強 {strongest}{mark}")
+            lines.append(f"  ch {item['channel']:>3}  {bar:<14} {count:>3}   最強 {strongest}{mark}")
     if band in (None, "5"):
         lines.append("チャネル別（5 GHz）")
     maximum = max((len(item["channel_stations"]) for item in loads["5 GHz"]), default=0)
     if band in (None, "5"):
         for item in loads["5 GHz"]:
             strongest = dbm_label(item["strongest"]["strength_pct"]) if item["strongest"] else "なし"
-            bar = "█" * (0 if maximum == 0 else round(14 * len(item["channel_stations"]) / maximum))
+            count = len(item["channel_stations"])
+            bar = "█" * (max(1, round(14 * count / maximum)) if count else 0)
             mark = " ← 機体" + ("（既定）" if loads["vehicle_default"]["5 GHz"] else "") if item["is_vehicle"] else ""
-            lines.append(f"  ch {item['channel']:>2}  {bar:<14} {len(item['channel_stations']):>3}   最強 {strongest}{mark}")
+            lines.append(f"  ch {item['channel']:>3}  {bar:<14} {count:>3}   最強 {strongest}{mark}")
     if band in (None, "2.4"):
         lines.append("使うチャネルの候補")
         for item in loads["2.4 GHz"]:

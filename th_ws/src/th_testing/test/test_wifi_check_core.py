@@ -237,11 +237,11 @@ def test_output_contains_channel_tables_summary_and_counts():
     assert "2.4 GHz  7 件" in text
     assert "5 GHz    6 件" in text and "その他 1（ch52〜64 0・ch100〜144 0・それ以外 1）" in text
     assert "6 GHz    1 件" in text
-    assert "ch 13" in text and "ch 14" in text
+    assert "  ch  13 " in text and "  ch  14 " not in text
     assert "ch 36" in text and "ch 149" in text
-    assert "ch  1  █████            1   最強 約 −58 dBm" in text
-    assert "ch  6  █████████        2   最強 約 −58 dBm" in text
-    assert "ch 36  ██████████████   2   最強 約 −55 dBm" in text
+    assert "ch   1  █████            1   最強 約 −58 dBm" in text
+    assert "ch   6  █████████        2   最強 約 −58 dBm" in text
+    assert "ch  36  ██████████████   2   最強 約 −55 dBm" in text
     assert "ch 149  ███████          1   最強 約 −46 dBm" in text
     assert "ch1" in text
 
@@ -250,6 +250,23 @@ def test_five_ghz_other_subcategories():
     rows = aggregate_scans([[row("a", "a", 52, 5260), row("b", "b", 100, 5500), row("c", "c", 149, 5745)]])
     summary = summarize(rows)
     assert (summary["five_52_64"], summary["five_100_144"], summary["five_other_channels"]) == (1, 1, 1)
+
+
+def test_channel_bars_have_one_block_for_small_nonzero_count():
+    from wifi_check_core import format_channel_load
+    crowded = [row(f"ap-{index}", f"{index:02X}", 1, 2412) for index in range(30)]
+    crowded.append(row("one-ap", "FE", 2, 2417))
+    lines = format_channel_load(aggregate_scans([crowded])).splitlines()
+    ch2_line = next(line for line in lines if line.startswith("  ch   2"))
+    assert ch2_line.count("█") == 1
+
+
+def test_channel_14_appears_only_when_seen():
+    from wifi_check_core import format_channel_load
+    base = format_channel_load(aggregate_scans([[row("base", "a", 1, 2412)]]))
+    seen = format_channel_load(aggregate_scans([[row("ch14", "b", 14, 2484)]]))
+    assert "  ch  14 " not in base
+    assert "  ch  14 " in seen
 
 
 def test_vehicle_marks_follow_visible_channels_and_default_when_missing():
