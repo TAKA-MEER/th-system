@@ -34,7 +34,7 @@ python3 th_ws/scripts/venue_wifi/wifi_survey.py --summary 2026-11-05
 ## 読み取り上の限界
 
 - dBm は NetworkManager の強度 % からの換算値です。「約」として読み、100% は「約 −40 dBm 以上」と表示します。
-- NetworkManager のスキャン一覧には古い AP が残るため、各 AP の `LastSeen` が測定開始以降のものだけを数えます。
+- NetworkManager のスキャン一覧には古い AP が残るため、各スキャンの要求直前を基準に `LastSeen` が新しい AP だけをその回に数えます。
 - DFS の W53/W56 は受け身のスキャンになり、複数回測っても取りこぼす場合があります。
 - NetworkManager 1.36 では AP のチャネル幅を取得できないため、80 MHz の重なりは件数だけを参考表示します。
 - 6 GHz はシートに専用欄がないため、件数をメモに出し合計には含めません。
@@ -43,4 +43,4 @@ python3 th_ws/scripts/venue_wifi/wifi_survey.py --summary 2026-11-05
 
 測定ごとに CSV を保存します。列には SSID と BSSID が含まれます。会場名・SSID・BSSID は会場の公開範囲と生成 AI への入力可否に従い、共有やリポジトリへの保存を判断してください。保存先をリポジトリ内にすると警告します。測定画面の既定表示には SSID・BSSID を含めません。
 
-`--summary` は保存済み CSV を読み、SSID を表示せず測定ごとのシート形式の集計を出します。
+`--summary` は保存済み CSV を読み、シート E の欄順に 1 測定 1 行の表を出し、その下に各測定のチャネル別混み具合を表示します。同じ場所を複数回測った場合も時刻付きで各測定を表示します。SSID・BSSID は出しません。各スキャン回で、その回の再スキャン要求直前より古い `LastSeen` の AP は数えません。
