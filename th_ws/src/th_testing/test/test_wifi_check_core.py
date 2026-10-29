@@ -290,7 +290,8 @@ def test_channel_load_labels_and_empty_rows():
 def test_candidate_strongest_includes_overlapping_24ghz_channels():
     from wifi_check_core import channel_load, format_channel_load
     rows = aggregate_scans([[row("same", "a", 1, 2412, 50),
-                             row("overlap", "b", 3, 2422, 83)]])
+                             row("overlap", "b", 3, 2422, 83),
+                             row("ch6", "c", 6, 2437, 10)]])
     item = next(item for item in channel_load(rows)["2.4 GHz"] if item["channel"] == 1)
     assert item["strongest"]["dbm"] == -70
     assert item["candidate_strongest"]["dbm"] == -50
