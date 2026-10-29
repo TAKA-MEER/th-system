@@ -333,7 +333,7 @@ def format_channel_load(rows: list[dict], band: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def format_summary(timestamp: str, ifname: str, scans_done: int, scans_total: int, elapsed: int, rows: list[dict], band: str | None = None, find: str | None = None, top: int | None = 20, hide_names: bool = False, watch_number: int | None = None, exact_mode: bool = False) -> str:
+def format_summary(timestamp: str, ifname: str, scans_done: int, scans_total: int, elapsed: int, rows: list[dict], band: str | None = None, find: str | None = None, top: int | None = 20, hide_names: bool = False, watch_number: int | None = None, exact_mode: bool = False, exact_failed: bool = False) -> str:
     s = summarize(rows)
     strongest = max((r for r in s["counted"] if band is None or r["band"].startswith(band)),
                     key=lambda r: r["dbm"], default=None)
@@ -341,7 +341,9 @@ def format_summary(timestamp: str, ifname: str, scans_done: int, scans_total: in
     header = f"Wi-Fi 確認  {ifname}  {timestamp}  スキャン {scans_total} 回（{scans_done} 回完了）・約 {elapsed} 秒"
     if watch_number is not None:
         header = f"{header}  {watch_number} 回目・Ctrl-C で終了"
-    method = "dBm: 実測（wpa_supplicant・root）" if exact_mode else "dBm: 強度 % からの換算（sudo を付けると実測）"
+    method = ("dBm: 実測（wpa_supplicant・root）" if exact_mode else
+              "dBm: 強度 % からの換算（wpa_cli の実測に失敗）" if exact_failed else
+              "dBm: 強度 % からの換算（sudo を付けると実測）")
     lines = [header, method, "", "まとめ（機体の AP は数に入れていない。数は BSSID の数）"]
     if band in (None, "2.4"):
         lines.append(f"  2.4 GHz  {s['two_total']} 件   ch1 付近 {s['near'][0]}   ch6 付近 {s['near'][1]}   ch11 付近 {s['near'][2]}")

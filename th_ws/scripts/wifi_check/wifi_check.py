@@ -129,7 +129,8 @@ def main():
                                     collected["completed"], scan_count, elapsed, rows,
                                     band=args.band, find=args.find, top=top,
                                     hide_names=args.hide_names, watch_number=iteration if args.watch else None,
-                                    exact_mode=has_exact_measurements)
+                                    exact_mode=has_exact_measurements,
+                                    exact_failed=collected["exact_failed"])
             if args.watch:
                 print("\033[H\033[2J", end="")
             print(output)
