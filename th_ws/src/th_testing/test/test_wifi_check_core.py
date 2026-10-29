@@ -239,10 +239,10 @@ def test_output_contains_channel_tables_summary_and_counts():
     assert "6 GHz    1 件" in text
     assert "  ch  13 " in text and "  ch  14 " not in text
     assert "ch 36" in text and "ch 149" in text
-    assert "ch   1  █████            1   最強 約 −58 dBm" in text
-    assert "ch   6  █████████        2   最強 約 −58 dBm" in text
-    assert "ch  36  ██████████████   2   最強 約 −55 dBm" in text
-    assert "ch 149  ███████          1   最強 約 −46 dBm" in text
+    assert "ch   1  █████            1   約 −58 dBm" in text
+    assert "ch   6  █████████        2   約 −58 dBm" in text
+    assert "ch  36  ██████████████   2   約 −55 dBm" in text
+    assert "ch 149  ███████          1   約 −46 dBm" in text
     assert "ch1" in text
 
 
@@ -274,6 +274,36 @@ def test_candidate_heading_appears_once_for_each_relevant_band():
     for band in (None, "2.4", "5"):
         output = format_summary("now", "wlo1", 1, 1, 1, rows, band=band)
         assert output.count("使うチャネルの候補") == 1
+
+
+def test_channel_load_labels_and_empty_rows():
+    rows = aggregate_scans([[row("ch1", "a", 1, 2412, 70)]])
+    output = format_summary("now", "wlo1", 1, 1, 1, rows)
+    assert "最強" not in output
+    assert output.count("チャネル別（2.4 GHz）") == 1
+    assert output.count("チャネル別（5 GHz）") == 1
+    assert output.count("いちばん強い電波") >= 3
+    assert "  ch   2" in output and "0   —" in output
+    assert "なし" not in "\n".join(line for line in output.splitlines() if line.startswith("  ch "))
+
+
+def test_candidate_strongest_includes_overlapping_24ghz_channels():
+    from wifi_check_core import channel_load, format_channel_load
+    rows = aggregate_scans([[row("same", "a", 1, 2412, 50),
+                             row("overlap", "b", 3, 2422, 83)]])
+    item = next(item for item in channel_load(rows)["2.4 GHz"] if item["channel"] == 1)
+    assert item["strongest"]["dbm"] == -70
+    assert item["candidate_strongest"]["dbm"] == -50
+    output = format_channel_load(rows, "2.4")
+    assert "ch   1" in output and "約 −70 dBm" in output
+    assert "2.4 GHz  ch 1" in output and "約 −50 dBm" in output
+
+
+def test_display_width_counts_fullwidth_characters_as_two_columns():
+    from wifi_check_core import display_width
+    assert display_width("日本語") == 6
+    assert display_width("ASCII") == 5
+    assert display_width("█—") == sum(2 if __import__("unicodedata").east_asian_width(c) in {"W", "F"} else 1 for c in "█—")
 
 
 def test_vehicle_marks_follow_visible_channels_and_default_when_missing():
