@@ -24,6 +24,7 @@ def install_fake_cli(monkeypatch, advance_scans=True):
         "/org/freedesktop/NetworkManager/AccessPoint/2": 10,
         "/org/freedesktop/NetworkManager/AccessPoint/3": 10,
         "/org/freedesktop/NetworkManager/AccessPoint/4": 10,
+        "/org/freedesktop/NetworkManager/AccessPoint/5": 10,
     }
     listing = ("stale-only:AA\\:BB\\:CC\\:DD\\:EE\\:01:1:2412 MHz:61:54 Mbit/s:WPA2:/org/freedesktop/NetworkManager/AccessPoint/1\n"
                "fresh-only:AA\\:BB\\:CC\\:DD\\:EE\\:02:6:2437 MHz:75:54 Mbit/s:WPA2:/org/freedesktop/NetworkManager/AccessPoint/2\n"
@@ -71,6 +72,7 @@ def test_main_uses_root_exact_measurement_and_skips_stale_rows(monkeypatch, caps
     monkeypatch.setattr(wifi_check, "list_rows", lambda _:
         [row("pct-high", "aa:bb:cc:dd:ee:02", 6, 2437, 80, dbus_path="/org/freedesktop/NetworkManager/AccessPoint/2"),
          row("pct-low", "aa:bb:cc:dd:ee:04", 6, 2437, 70, dbus_path="/org/freedesktop/NetworkManager/AccessPoint/4"),
+         row("unmatched", "aa:bb:cc:dd:ee:05", 6, 2437, 70, dbus_path="/org/freedesktop/NetworkManager/AccessPoint/5"),
          row("th-rpi-ap", "aa:bb:cc:dd:ee:03", 1, 2412, 65, dbus_path="/org/freedesktop/NetworkManager/AccessPoint/3")])
     calls = []
     original_run = wifi_check.run
@@ -93,6 +95,9 @@ def test_main_uses_root_exact_measurement_and_skips_stale_rows(monkeypatch, caps
     assert "−50 dBm" in output and "−60 dBm" in output and "約 −40 dBm 以上" not in output
     assert "最も強い電波   −50 dBm（2.4 GHz ch 6）" in output
     lines = output.splitlines()
+    unmatched_line = next(line for line in lines if "unmatched" in line)
+    assert "約 −58 dBm" in unmatched_line
+    assert "−100 dBm" not in unmatched_line
     assert next(i for i, line in enumerate(lines) if "pct-low" in line) < next(
         i for i, line in enumerate(lines) if "pct-high" in line)
     channel_six = next(line for line in lines if line.startswith("  ch   6"))
@@ -143,7 +148,7 @@ def test_root_exact_failure_falls_back_or_fails_when_required(monkeypatch, capsy
     assert wifi_check.main() == 0
     output = capsys.readouterr()
     assert "警告: wpa_cli の実測に失敗" in output.out
-    assert "強度 % からの換算" in output.out
+    assert "dBm: 強度 % からの換算（wpa_cli の実測に失敗）" in output.out
     monkeypatch.setattr(sys, "argv", ["wifi_check.py", "--exact", "--scans", "1"])
     assert wifi_check.main() == 1
 
@@ -421,6 +426,30 @@ def test_five_ghz_candidates_use_only_their_40mhz_block():
     assert "約 −60 dBm" not in candidate_3640
     assert "約 −80 dBm" in candidate_4448
     assert "約 −50 dBm" not in candidate_4448
+
+
+def test_exact_dbm_selects_strongest_24ghz_overlap_candidate():
+    from wifi_check_core import format_channel_load
+    rows = aggregate_scans([[
+        {**row("pct-high", "a", 1, 2412, 80), "dbm": -60, "dbm_exact": True},
+        {**row("pct-low", "b", 3, 2422, 70), "dbm": -50, "dbm_exact": True},
+    ]])
+    output = format_channel_load(rows, "2.4")
+    candidate = next(line for line in output.splitlines() if line.startswith("  2.4 GHz  ch 1 "))
+    assert "−50 dBm" in candidate
+    assert "−60 dBm" not in candidate
+
+
+def test_exact_dbm_selects_strongest_five_ghz_block_candidate():
+    from wifi_check_core import format_channel_load
+    rows = aggregate_scans([[
+        {**row("pct-high", "a", 36, 5180, 80), "dbm": -60, "dbm_exact": True},
+        {**row("pct-low", "b", 36, 5180, 70), "dbm": -50, "dbm_exact": True},
+    ]])
+    output = format_channel_load(rows, "5")
+    candidate = next(line for line in output.splitlines() if line.startswith("  5 GHz    36+40"))
+    assert "−50 dBm" in candidate
+    assert "−60 dBm" not in candidate
 
 
 def test_display_width_counts_fullwidth_characters_as_two_columns():
