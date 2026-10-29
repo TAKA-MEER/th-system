@@ -279,7 +279,6 @@ def format_summary(timestamp: str, ifname: str, scans_done: int, scans_total: in
     strongest = max((r for r in s["counted"] if band is None or r["band"].startswith(band)),
                     key=lambda r: r["strength_pct"], default=None)
     strongest_text = f"{dbm_label(strongest['strength_pct'])}（{strongest['band']} ch {strongest['channel']}）" if strongest else "なし"
-    vehicle = "／".join(f"{r['ssid']} ch{r['channel']} {dbm_label(r['strength_pct'])}" for r in s["vehicle"]) or "見えない"
     header = f"Wi-Fi 確認  {ifname}  {timestamp}  スキャン {scans_total} 回（{scans_done} 回完了）・約 {elapsed} 秒"
     if watch_number is not None:
         header = f"{header}  {watch_number} 回目・Ctrl-C で終了"
