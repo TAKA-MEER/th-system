@@ -1,11 +1,10 @@
-import csv
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "venue_wifi"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "wifi_check"))
 
-from wifi_survey_core import (aggregate_scans, band_for_frequency, channel_for_frequency,
+from wifi_check_core import (aggregate_scans, band_for_frequency, channel_for_frequency,
                               classify, collect_scans, dbm_from_percent, filter_last_seen,
                               format_summary, parse_nmcli_rows,
                               split_nmcli_t, summarize)
@@ -17,7 +16,7 @@ def row(ssid, bssid, chan, freq, pct=70, **extra):
 
 
 def install_fake_cli(monkeypatch, advance_scans=True):
-    import wifi_survey
+    import wifi_check
     calls = []
     scan_value = [100]
     access_points = {
@@ -50,16 +49,19 @@ def install_fake_cli(monkeypatch, advance_scans=True):
             if prop == "LastScan":
                 return SimpleNamespace(returncode=0, stdout=f"x {scan_value[0]}\n", stderr="")
             if prop == "LastSeen":
-                return SimpleNamespace(returncode=0, stdout=f"i {access_points[command[4]]}\n", stderr="")
+                # The old AP's timestamp advances only after the first sample.
+                # Each round must use its own pre-rescan freshness boundary.
+                value = access_points[command[4]] + (scan_value[0] - 101)
+                return SimpleNamespace(returncode=0, stdout=f"i {value}\n", stderr="")
             raise AssertionError(f"Unexpected busctl property: {command}")
         raise AssertionError(f"Unexpected command: {command}")
 
-    monkeypatch.setattr(wifi_survey, "run", fake_run)
+    monkeypatch.setattr(wifi_check, "run", fake_run)
     ticks = [0.0]
-    monkeypatch.setattr(wifi_survey.time, "clock_gettime", lambda _: 10.75)
-    monkeypatch.setattr(wifi_survey.time, "monotonic", lambda: ticks[0])
-    monkeypatch.setattr(wifi_survey.time, "sleep", lambda seconds: ticks.__setitem__(0, ticks[0] + seconds))
-    return wifi_survey, calls
+    monkeypatch.setattr(wifi_check.time, "clock_gettime", lambda _: 10 + (scan_value[0] - 100))
+    monkeypatch.setattr(wifi_check.time, "monotonic", lambda: ticks[0])
+    monkeypatch.setattr(wifi_check.time, "sleep", lambda seconds: ticks.__setitem__(0, ticks[0] + seconds))
+    return wifi_check, calls
 
 
 def test_nmcli_escape_and_unicode_fields():
@@ -166,29 +168,22 @@ def test_collect_scans_warns_if_every_listed_ap_is_stale():
     assert "一覧の AP がすべて測り始めより古い" in result["warnings"]
 
 
-def test_main_wires_dbus_last_seen_into_collection_and_sets_nmcli_locale(tmp_path, monkeypatch, capsys):
-    wifi_survey, calls = install_fake_cli(monkeypatch)
-    monkeypatch.setattr(sys, "argv", ["wifi_survey.py", "保管場所", "--out", str(tmp_path), "--scans", "2"])
-    assert wifi_survey.main() == 0
+def test_main_wires_dbus_last_seen_into_collection_and_sets_nmcli_locale(monkeypatch, capsys):
+    wifi_check, calls = install_fake_cli(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["wifi_check.py", "--scans", "2"])
+    assert wifi_check.main() == 0
     output = capsys.readouterr().out
-    csv_paths = list(tmp_path.glob("*.csv"))
-    assert len(csv_paths) == 1
-    assert "stale-only" not in output and "stale-only" not in csv_paths[0].read_text(encoding="utf-8-sig")
-    assert "fresh-only" not in output
-    assert "2.4 GHz の数   ch1 付近 0   ch6 付近 1" in output
-    with csv_paths[0].open(encoding="utf-8-sig", newline="") as stream:
-        saved = list(csv.DictReader(stream))
-    ap_rows = {row["ssid"]: row for row in saved}
-    assert set(ap_rows) == {"fresh-only", "th-rpi-ap"}
-    assert ap_rows["th-rpi-ap"]["vehicle_ap"] == "true"
+    assert "stale-only" not in output
+    assert "fresh-only" in output
+    assert "2.4 GHz  1 件" in output
+    assert "th-rpi-ap ch1" in output
     assert all(env and env.get("LC_ALL") == "C" for command, env in calls if command[0] == "nmcli")
 
 
-def test_main_does_not_save_when_lastscan_never_advances(tmp_path, monkeypatch, capsys):
-    wifi_survey, _ = install_fake_cli(monkeypatch, advance_scans=False)
-    monkeypatch.setattr(sys, "argv", ["wifi_survey.py", "保管場所", "--out", str(tmp_path), "--scans", "1"])
-    assert wifi_survey.main() == 1
-    assert list(tmp_path.glob("*.csv")) == []
+def test_main_returns_one_when_lastscan_never_advances(monkeypatch, capsys):
+    wifi_check, _ = install_fake_cli(monkeypatch, advance_scans=False)
+    monkeypatch.setattr(sys, "argv", ["wifi_check.py", "--scans", "1"])
+    assert wifi_check.main() == 1
     assert "スキャンが 1 回も完了しませんでした" in capsys.readouterr().err
 
 
@@ -215,20 +210,20 @@ def test_repeated_scans_keep_maximum_and_count_once_per_scan():
 
 
 def test_channel_load_overlap_rules():
-    from wifi_survey_core import channel_load
+    from wifi_check_core import channel_load
     rows = aggregate_scans([[row("one", "z", 1, 2412), row("five", "a", 5, 2432, 80), row("six", "b", 6, 2437),
                              row("44", "c", 44, 5220), row("48", "d", 48, 5240),
                              row("36", "e", 36, 5180), row("40", "f", 40, 5200)]])
     loads = channel_load(rows)
     ch1 = loads["2.4 GHz"][0]
-    ch6 = loads["2.4 GHz"][1]
+    ch6 = next(item for item in loads["2.4 GHz"] if item["channel"] == 6)
     assert len(ch1["overlap"]) == 1 and ch1["overlap"][0]["channel"] == 5
     assert not any(r["channel"] == 1 for r in ch6["overlap"])
     assert len(loads["5 GHz"][0]["stations"]) == 2
     assert len(loads["5 GHz"][1]["stations"]) == 2
 
 
-def test_output_contains_sheet_columns():
+def test_output_contains_channel_tables_summary_and_counts():
     rows = aggregate_scans([[row("ch1", "a", 1, 2412, 70),
                              row("ch6a", "b", 6, 2437, 70), row("ch6b", "c", 6, 2437, 70),
                              row("ch11a", "d", 11, 2462, 70), row("ch11b", "e", 11, 2462, 70),
@@ -237,41 +232,76 @@ def test_output_contains_sheet_columns():
                              row("36a", "j", 36, 5180, 75), row("36b", "k", 36, 5180, 72),
                              row("40", "l", 40, 5200, 71), row("other", "m", 149, 5745, 90),
                              row("six", "n", 5, 5975, 60), row("th-rpi-ap", "v", 1, 2412, 90)]])
-    text = format_summary("保管場所", "2026-11-05 10:12", "wlo1", 1, 1, 22, rows)
-    for expected in ("ch1 付近 2", "ch6 付近 2", "ch11 付近 3", "合計 7",
-                     "ch36〜48 5", "その他 1", "約 −46 dBm（5 GHz ch 149）",
-                     "ch 1（いま）  同じ ch 1・重なる ch 1",
-                     "ch 6  同じ ch 2・重なる ch 1",
-                     "ch 11  同じ ch 3・重なる ch 0",
-                     "44+48（いま） 2 局", "36・40 の 3 局", "36+40 3 局"):
-        assert expected in text, expected
-    assert "6 GHz 1 件" in text
+    text = format_summary("2026-10-29 20:25", "wlo1", 1, 1, 22, rows)
+    assert "2.4 GHz  7 件" in text
+    assert "5 GHz    6 件" in text and "その他 1（ch52〜64 0・ch100〜144 0・それ以外 1）" in text
+    assert "6 GHz    1 件" in text
+    assert "ch 13" in text and "ch 14" in text
+    assert "ch 36" in text and "ch 149" in text
+    assert "ch  1  █████            1   最強 約 −58 dBm" in text
+    assert "ch  6  █████████        2   最強 約 −58 dBm" in text
+    assert "ch 36  ██████████████   2   最強 約 −55 dBm" in text
+    assert "ch 149  ███████          1   最強 約 −46 dBm" in text
+    assert "ch1" in text
 
 
-def test_csv_roundtrip_uses_production_writer_and_summary(tmp_path, capsys):
-    import wifi_survey
-    rows_a = aggregate_scans([[row("PRIVATE-SSID", "aa", 1, 2412), row("PRIVATE-SSID", "bb", 48, 5240),
-                               row("th-rpi-ap", "ee", 1, 2412, 75)]])
-    rows_b = aggregate_scans([[row("PRIVATE-SSID", "cc", 6, 2437)]])
-    path_a = tmp_path / "2026-11-05_101200_保管場所.csv"
-    path_b = tmp_path / "2026-11-05_101500_保管場所.csv"
-    wifi_survey.write_csv(path_a, "保管場所", "2026-11-05T10:12:00+09:00", "wlo1", rows_a, 1, 3)
-    wifi_survey.write_csv(path_b, "保管場所", "2026-11-05T10:15:00+09:00", "wlo1", rows_b, 1, 4)
-    assert wifi_survey.summary("2026-11-05", tmp_path) == 0
+def test_five_ghz_other_subcategories():
+    rows = aggregate_scans([[row("a", "a", 52, 5260), row("b", "b", 100, 5500), row("c", "c", 149, 5745)]])
+    summary = summarize(rows)
+    assert (summary["five_52_64"], summary["five_100_144"], summary["five_other_channels"]) == (1, 1, 1)
+
+
+def test_vehicle_marks_follow_visible_channels_and_default_when_missing():
+    from wifi_check_core import channel_load
+    visible = aggregate_scans([[row("th-rpi-ap", "v2", 6, 2437), row("th-rpi-5g", "v5", 40, 5200)]])
+    text = format_summary("now", "wlo1", 1, 1, 1, visible)
+    two = {item["channel"]: item for item in channel_load(visible)["2.4 GHz"]}
+    assert two[6]["is_vehicle"] and not two[1]["is_vehicle"]
+    assert "36+40 ← 機体" in text
+    defaults = format_summary("now", "wlo1", 1, 1, 1, [])
+    assert "ch  1" in defaults and "← 機体（既定）" in defaults
+    assert "44+48 ← 機体（既定）" in defaults
+
+
+def test_find_top_all_hide_names_and_band_filter(monkeypatch):
+    rows = aggregate_scans([[row("Alpha", "aa", 1, 2412, 90), row("beta", "bb", 6, 2437, 80),
+                             row("gamma", "cc", 36, 5180, 70)]])
+    filtered = format_summary("now", "wlo1", 1, 1, 1, rows, find="ALP", top=None)
+    assert "Alpha" in filtered and "beta" not in filtered
+    assert "2.4 GHz  2 件" in filtered
+    assert "Alpha" in format_summary("now", "wlo1", 1, 1, 1, rows, top=1)
+    assert "beta" not in format_summary("now", "wlo1", 1, 1, 1, rows, top=1)
+    all_text = format_summary("now", "wlo1", 1, 1, 1, rows, top=None)
+    assert all(name in all_text for name in ("Alpha", "beta", "gamma"))
+    with_vehicle = rows + aggregate_scans([[row("th-rpi-ap", "dd:ee", 1, 2412)]])
+    hidden = format_summary("now", "wlo1", 1, 1, 1, with_vehicle, hide_names=True, top=None)
+    assert all(token not in hidden for token in ("Alpha", "beta", "gamma", "th-rpi-ap", "AA", "BB", "CC", "DD:EE"))
+    only_five = format_summary("now", "wlo1", 1, 1, 1, rows, band="5", top=None)
+    assert "まとめ（" in only_five and "5 GHz" in only_five and "2.4 GHz  2 件" not in only_five
+
+
+def test_main_defaults_to_three_scans_and_excludes_vehicle_from_count(monkeypatch, capsys):
+    wifi_check, calls = install_fake_cli(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["wifi_check.py"])
+    assert wifi_check.main() == 0
     output = capsys.readouterr().out
-    assert "保管場所 | 2026-11-05 10:12:00 | 1 | 0 | 0 | 1 | 1 | 0" in output
-    assert "機体の AP: 見える" in output
-    assert "保管場所 | 2026-11-05 10:15:00 | 0 | 1 | 0 | 1 | 0 | 0" in output
-    assert output.count("場所 | 時刻 |") == 1
-    assert "PRIVATE-SSID" not in output
+    assert "スキャン 3 回（3 回完了）" in output
+    assert "th-rpi-ap ch1" in output
+    assert "2.4 GHz  1 件" in output
+    assert all(env and env.get("LC_ALL") == "C" for command, env in calls if command[0] == "nmcli")
 
 
-def test_summary_skips_corrupt_csv_rows(tmp_path, capsys):
-    import wifi_survey
-    rows = aggregate_scans([[row("private", "aa", 1, 2412)]])
-    path = tmp_path / "2026-11-05_101200_場所.csv"
-    wifi_survey.write_csv(path, "場所", "2026-11-05T10:12:00+09:00", "wlo1", rows, 1, 3)
-    content = path.read_text(encoding="utf-8-sig").replace(",2412,70,", ",not-a-number,70,")
-    path.write_text(content, encoding="utf-8-sig")
-    assert wifi_survey.summary("2026-11-05", tmp_path) == 1
-    assert "警告" in capsys.readouterr().err
+def test_watch_refreshes_each_round_and_keyboard_interrupt_returns_zero(monkeypatch, capsys):
+    wifi_check, _ = install_fake_cli(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["wifi_check.py", "--watch"])
+    sleeps = [0]
+    def stop_after_two(_seconds):
+        sleeps[0] += 1
+        if sleeps[0] == 4:
+            raise KeyboardInterrupt
+    monkeypatch.setattr(wifi_check.time, "sleep", stop_after_two)
+    assert wifi_check.main() == 0
+    out = capsys.readouterr().out
+    assert out.count("\033[H\033[2J") == 2
+    assert out.count("回目・Ctrl-C で終了") == 2
+    assert "stale-only" not in out

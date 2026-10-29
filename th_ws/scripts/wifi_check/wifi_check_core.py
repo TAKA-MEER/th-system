@@ -1,9 +1,10 @@
-"""Pure helpers for the venue Wi-Fi survey."""
+"""Pure helpers for the Wi-Fi checker (Python standard library only)."""
 from __future__ import annotations
 
 VEHICLE_SSIDS = {"th-rpi-ap", "th-rpi-5g"}
-CSV_FIELDS = ["location", "started", "ifname", "band", "channel", "frequency_mhz", "strength_pct", "dbm", "seen_scans", "scan_count", "scans_completed", "elapsed_seconds", "ssid", "bssid", "security", "max_bitrate", "vehicle_ap"]
-CSV_NUMERIC_FIELDS = ("channel", "frequency_mhz", "strength_pct", "dbm", "seen_scans", "scan_count", "scans_completed", "elapsed_seconds")
+# Keep these defaults aligned with docs/network.md and
+# th_ws/scripts/rpi_ap_set_channel.sh, which changes the vehicle AP channels.
+DEFAULT_VEHICLE_CHANNELS = {"2.4 GHz": 1, "5 GHz": 48}
 
 
 def split_nmcli_t(line: str) -> list[str]:
@@ -167,38 +168,6 @@ def collect_scans(n, request_scan, read_last_scan, list_aps, read_last_seen,
     return {"scans": scans, "completed": completed, "warnings": warnings}
 
 
-def csv_row(location, started, ifname, row, scans_completed, elapsed):
-    """Convert one aggregated AP to the production CSV representation."""
-    return {"location": location, "started": started, "ifname": ifname,
-            "band": row["band"], "channel": row["channel"],
-            "frequency_mhz": row["frequency_mhz"], "strength_pct": row["strength_pct"],
-            "dbm": row["dbm"], "seen_scans": row["seen_scans"],
-            "scan_count": row["scan_count"], "scans_completed": scans_completed,
-            "elapsed_seconds": elapsed, "ssid": row.get("ssid", ""),
-            "bssid": row["bssid"], "security": row.get("security", ""),
-            "max_bitrate": row.get("rate", ""),
-            "vehicle_ap": str(bool(row.get("vehicle_ap"))).lower()}
-
-
-def parse_csv_row(row):
-    """Parse and validate one CSV row; raise ValueError for corrupt values."""
-    parsed = dict(row)
-    try:
-        for key in CSV_NUMERIC_FIELDS:
-            parsed[key] = int(parsed[key])
-        flag = parsed["vehicle_ap"].lower()
-        if flag not in {"true", "false"}:
-            raise ValueError("vehicle_ap must be true or false")
-        parsed["vehicle_ap"] = flag == "true"
-        if not parsed["location"] or not parsed["started"] or not parsed["ifname"]:
-            raise ValueError("missing measurement metadata")
-        if parsed["band"] not in {"2.4 GHz", "5 GHz", "6 GHz"}:
-            raise ValueError("invalid band")
-    except (KeyError, AttributeError, TypeError) as exc:
-        raise ValueError("missing or invalid CSV field") from exc
-    return parsed
-
-
 def summarize(rows: list[dict]) -> dict:
     counted = [r for r in rows if not r.get("vehicle_ap")]
     two = [r for r in counted if r["band"] == "2.4 GHz"]
@@ -206,72 +175,138 @@ def summarize(rows: list[dict]) -> dict:
     six = [r for r in counted if r["band"] == "6 GHz"]
     near = [sum(1 for r in two if 1 <= r["channel"] <= 3), sum(1 for r in two if 4 <= r["channel"] <= 8), sum(1 for r in two if 9 <= r["channel"] <= 14)]
     strongest = max(counted, key=lambda r: r["strength_pct"], default=None)
-    return {"near": near, "two_total": len(two), "five_w52": sum(36 <= r["channel"] <= 48 for r in five), "five_other": sum(not 36 <= r["channel"] <= 48 for r in five), "six_count": len(six), "strongest": strongest, "counted": counted, "vehicle": [r for r in rows if r.get("vehicle_ap")]}
+    other = [r for r in five if not 36 <= r["channel"] <= 48]
+    return {"near": near, "two_total": len(two), "five_w52": sum(36 <= r["channel"] <= 48 for r in five),
+            "five_total": len(five), "five_other": len(other), "five_52_64": sum(52 <= r["channel"] <= 64 for r in other),
+            "five_100_144": sum(100 <= r["channel"] <= 144 for r in other),
+            "five_other_channels": sum(not (52 <= r["channel"] <= 64 or 100 <= r["channel"] <= 144) for r in other),
+            "six_count": len(six), "strongest": strongest, "counted": counted,
+            "vehicle": [r for r in rows if r.get("vehicle_ap")]}
+
+
+def vehicle_channels(rows: list[dict]) -> dict[str, int]:
+    """Use the strongest visible vehicle AP channel, or documented defaults."""
+    result = dict(DEFAULT_VEHICLE_CHANNELS)
+    for band in result:
+        visible = [r for r in rows if r.get("vehicle_ap") and r["band"] == band]
+        if visible:
+            result[band] = max(visible, key=lambda r: r["strength_pct"])["channel"]
+    return result
+
+
+def five_ghz_block(channel: int) -> str | None:
+    if channel in {36, 40}:
+        return "36+40"
+    if channel in {44, 48}:
+        return "44+48"
+    return None
 
 
 def channel_load(rows: list[dict]) -> dict:
     counted = [r for r in rows if not r.get("vehicle_ap")]
-    result = {"2.4 GHz": [], "5 GHz": []}
-    for ch in (1, 6, 11):
+    vehicle = vehicle_channels(rows)
+    result = {"2.4 GHz": [], "5 GHz": [], "vehicle": vehicle,
+              "vehicle_default": {band: not any(r.get("vehicle_ap") and r["band"] == band for r in rows) for band in vehicle}}
+    two_channels = set(range(1, 14)) | {r["channel"] for r in rows if r["band"] == "2.4 GHz" and r["channel"] == 14} | {vehicle["2.4 GHz"]}
+    for ch in sorted(two_channels):
         same = [r for r in counted if r["band"] == "2.4 GHz" and r["channel"] == ch]
         overlap = [r for r in counted if r["band"] == "2.4 GHz" and 0 < abs(r["channel"] - ch) <= 4]
-        result["2.4 GHz"].append({"channel": ch, "same": same, "overlap": overlap, "strongest": max(same + overlap, key=lambda r:r["strength_pct"], default=None)})
-    for label, block in (("44+48", {44,48}), ("36+40", {36,40})):
+        result["2.4 GHz"].append({"channel": ch, "same": same, "overlap": overlap,
+                                  "is_vehicle": ch == vehicle["2.4 GHz"],
+                                  "strongest": max(same, key=lambda r:r["strength_pct"], default=None),
+                                  "candidate_strongest": max(same + overlap, key=lambda r:r["strength_pct"], default=None)})
+    five_channels = {r["channel"] for r in rows if r["band"] == "5 GHz"} | {vehicle["5 GHz"]}
+    for ch in sorted(five_channels):
+        label = five_ghz_block(ch)
+        block = ({36, 40} if label == "36+40" else {44, 48}) if label else {ch}
         stations = [r for r in counted if r["band"] == "5 GHz" and r["channel"] in block]
-        result["5 GHz"].append({"block": label, "stations": stations, "strongest": max(stations,key=lambda r:r["strength_pct"],default=None)})
+        channel_stations = [r for r in counted if r["band"] == "5 GHz" and r["channel"] == ch]
+        result["5 GHz"].append({"channel": ch, "block": label, "is_vehicle": ch == vehicle["5 GHz"],
+                                "stations": stations, "channel_stations": channel_stations,
+                                "strongest": max(channel_stations,key=lambda r:r["strength_pct"],default=None)})
     return result
 
 
-def format_channel_load(rows: list[dict]) -> str:
+def format_channel_load(rows: list[dict], band: str | None = None) -> str:
     loads = channel_load(rows)
-    lines = ["機体のチャネルの混み具合（機体の AP は数に入れていない）"]
-    for item in loads["2.4 GHz"]:
-        strongest = dbm_label(item["strongest"]["strength_pct"]) if item["strongest"] else "なし"
-        lines.append(f"  2.4 GHz  ch {item['channel']}{'（いま）' if item['channel']==1 else ''}  同じ ch {len(item['same'])}・重なる ch {len(item['overlap'])}   最強 {strongest}")
-    for item in loads["5 GHz"]:
-        strongest = dbm_label(item["strongest"]["strength_pct"]) if item["strongest"] else "なし"
-        tail = f"   最強 {strongest}"
-        if item["block"] == "44+48":
-            overlap_80 = sum(r["band"] == "5 GHz" and r["channel"] in {36, 40} and not r.get("vehicle_ap") for r in rows)
-            tail += f"   36・40 の {overlap_80} 局は 80 MHz 幅なら重なる"
-        lines.append(f"  5 GHz    {item['block']}{'（いま）' if item['block']=='44+48' else ''} {len(item['stations'])} 局{tail}")
+    counted = [r for r in rows if not r.get("vehicle_ap")]
+    lines = []
+    if band in (None, "2.4"):
+        lines.append("チャネル別（2.4 GHz）")
+    maximum = max((len(item["same"]) for item in loads["2.4 GHz"]), default=0)
+    if band in (None, "2.4"):
+        for item in loads["2.4 GHz"]:
+            strongest = dbm_label(item["strongest"]["strength_pct"]) if item["strongest"] else "なし"
+            bar = "█" * (0 if maximum == 0 else round(14 * len(item["same"]) / maximum))
+            mark = " ← 機体" + ("（既定）" if loads["vehicle_default"]["2.4 GHz"] else "") if item["is_vehicle"] else ""
+            lines.append(f"  ch {item['channel']:>2}  {bar:<14} {len(item['same']):>3}   最強 {strongest}{mark}")
+    if band in (None, "5"):
+        lines.append("チャネル別（5 GHz）")
+    maximum = max((len(item["channel_stations"]) for item in loads["5 GHz"]), default=0)
+    if band in (None, "5"):
+        for item in loads["5 GHz"]:
+            strongest = dbm_label(item["strongest"]["strength_pct"]) if item["strongest"] else "なし"
+            bar = "█" * (0 if maximum == 0 else round(14 * len(item["channel_stations"]) / maximum))
+            mark = " ← 機体" + ("（既定）" if loads["vehicle_default"]["5 GHz"] else "") if item["is_vehicle"] else ""
+            lines.append(f"  ch {item['channel']:>2}  {bar:<14} {len(item['channel_stations']):>3}   最強 {strongest}{mark}")
+    if band in (None, "2.4"):
+        lines.append("使うチャネルの候補")
+        for item in loads["2.4 GHz"]:
+            if item["channel"] not in {1, 6, 11}:
+                continue
+            strongest = dbm_label(item["candidate_strongest"]["strength_pct"]) if item["candidate_strongest"] else "なし"
+            mark = " ← 機体" + ("（既定）" if loads["vehicle_default"]["2.4 GHz"] else "") if item["is_vehicle"] else ""
+            lines.append(f"  2.4 GHz  ch {item['channel']}{mark}  同じ ch {len(item['same'])}・重なる ch {len(item['overlap'])}  最強 {strongest}")
+    if band in (None, "5"):
+        for label, block in (("36+40", {36, 40}), ("44+48", {44, 48})):
+            stations = [r for r in counted if r["band"] == "5 GHz" and r["channel"] in block]
+            strongest_row = max(stations, key=lambda r: r["strength_pct"], default=None)
+            strongest = dbm_label(strongest_row["strength_pct"]) if strongest_row else "なし"
+            is_vehicle = loads["vehicle"]["5 GHz"] in block
+            mark = " ← 機体" + ("（既定）" if loads["vehicle_default"]["5 GHz"] else "") if is_vehicle else ""
+            tail = f"{len(stations)} 局  最強 {strongest}"
+            if label == "44+48":
+                overlap_80 = sum(r["band"] == "5 GHz" and r["channel"] in {36, 40} and not r.get("vehicle_ap") for r in rows)
+                tail += f"  36・40 の {overlap_80} 局は 80 MHz 幅なら重なる"
+            lines.append(f"  5 GHz    {label}{mark}  {tail}")
     return "\n".join(lines)
 
 
-def format_summary(location: str, timestamp: str, ifname: str, scans_done: int, scans_total: int, elapsed: int, rows: list[dict]) -> str:
+def format_summary(timestamp: str, ifname: str, scans_done: int, scans_total: int, elapsed: int, rows: list[dict], band: str | None = None, find: str | None = None, top: int | None = 20, hide_names: bool = False, watch_number: int | None = None) -> str:
     s = summarize(rows)
-    strongest = s["strongest"]
+    strongest = max((r for r in s["counted"] if band is None or r["band"].startswith(band)),
+                    key=lambda r: r["strength_pct"], default=None)
     strongest_text = f"{dbm_label(strongest['strength_pct'])}（{strongest['band']} ch {strongest['channel']}）" if strongest else "なし"
-    vehicle = ", ".join(f"{r['ssid']} ch{r['channel']} {dbm_label(r['strength_pct'])}" for r in s["vehicle"]) or "見えない"
-    lines = [f"E. 無線  場所: {location}   {timestamp}   {ifname}・スキャン {scans_total} 回（{scans_done} 回完了）・約 {elapsed} 秒",
-             f"  2.4 GHz の数   ch1 付近 {s['near'][0]}   ch6 付近 {s['near'][1]}   ch11 付近 {s['near'][2]}   合計 {s['two_total']}",
-             f"  5 GHz の数     ch36〜48 {s['five_w52']}   その他 {s['five_other']}",
-             f"  最も強い電波   {strongest_text}", f"  メモ           6 GHz {s['six_count']} 件／機体の AP: {vehicle}",
-             "  ※ 付近: ch1〜3 → 1、4〜8 → 6、9〜14 → 11。数は BSSID の数。dBm は強度 % からの換算", "",
-             format_channel_load(rows)]
+    vehicle = "／".join(f"{r['ssid']} ch{r['channel']} {dbm_label(r['strength_pct'])}" for r in s["vehicle"]) or "見えない"
+    header = f"Wi-Fi 確認  {ifname}  {timestamp}  スキャン {scans_total} 回（{scans_done} 回完了）・約 {elapsed} 秒"
+    if watch_number is not None:
+        header = f"{header}  {watch_number} 回目・Ctrl-C で終了"
+    lines = [header, "", "まとめ（機体の AP は数に入れていない。数は BSSID の数）"]
+    if band in (None, "2.4"):
+        lines.append(f"  2.4 GHz  {s['two_total']} 件   ch1 付近 {s['near'][0]}   ch6 付近 {s['near'][1]}   ch11 付近 {s['near'][2]}")
+    if band in (None, "5"):
+        lines.append(f"  5 GHz    {s['five_total']} 件   ch36〜48 {s['five_w52']}   その他 {s['five_other']}（ch52〜64 {s['five_52_64']}・ch100〜144 {s['five_100_144']}・それ以外 {s['five_other_channels']}）")
+    if band in (None, "6"):
+        lines.append(f"  6 GHz    {s['six_count']} 件")
+    lines.append(f"  最も強い電波   {strongest_text if strongest else 'なし'}")
+    if band is None or band in ("2.4", "5"):
+        vehicle_rows = [r for r in s["vehicle"] if band is None or r["band"].startswith(band)]
+        vehicle = ("／".join(f"AP ch{r['channel']} {dbm_label(r['strength_pct'])}" for r in vehicle_rows)
+                   if hide_names else "／".join(f"{r['ssid']} ch{r['channel']} {dbm_label(r['strength_pct'])}" for r in vehicle_rows)) or "見えない"
+        lines.append(f"  機体の AP      {vehicle}")
+    lines.append("  ※ ch1〜3 → 1 付近、4〜8 → 6 付近、9〜14 → 11 付近。dBm は強度 % からの換算")
+    if band in (None, "2.4", "5"):
+        lines.extend(["", format_channel_load(rows, band)])
+    listed = [r for r in rows if not r.get("vehicle_ap")]
+    if find:
+        listed = [r for r in listed if find.casefold() in r.get("ssid", "").casefold()]
+    if band:
+        listed = [r for r in listed if r["band"].startswith(band)]
+    if top is not None:
+        listed = listed[:top]
+    lines.extend(["", f"一覧（強い順・{'全部' if top is None else f'上位 {top} 件'}）"])
+    for r in listed:
+        ssid = "（非表示）" if hide_names else (r.get("ssid") or "（非公開）")
+        bssid = "（非表示）" if hide_names else r["bssid"]
+        lines.append(f"  {r['band']}  ch {r['channel']}  {dbm_label(r['strength_pct'])}  {ssid}  {bssid}  {r['seen_scans']}/{r['scan_count']} 回")
     return "\n".join(lines)
-
-
-def format_summary_table(entries):
-    """Render one spreadsheet-shaped row per measurement, then channel details."""
-    header = "場所 | 時刻 | ch1 付近 | ch6 付近 | ch11 付近 | 合計 | ch36〜48 | その他 | 最も強い電波 | メモ"
-    table = [header]
-    for meta, rows in entries:
-        counts = summarize(rows)
-        strongest = counts["strongest"]
-        strongest_text = f"{dbm_label(strongest['strength_pct'])}（{strongest['band']} ch {strongest['channel']}）" if strongest else "なし"
-        vehicle_text = "見える" if counts["vehicle"] else "見えない"
-        memo = f"6 GHz {counts['six_count']} 件／機体の AP: {vehicle_text}"
-        stamp = meta["started"]
-        table.append(f"{meta['location']} | {stamp} | {counts['near'][0]} | {counts['near'][1]} | {counts['near'][2]} | {counts['two_total']} | {counts['five_w52']} | {counts['five_other']} | {strongest_text} | {memo}")
-    details = []
-    for meta, rows in entries:
-        stamp = meta["started"]
-        details.append(f"\n{meta['location']} {stamp}")
-        details.append(format_channel_load(rows))
-    return "\n".join(table + details)
-
-
-def safe_location(location: str) -> str:
-    cleaned = "".join("_" if c in "/\\\0" or ord(c) < 32 else c for c in location).strip(" .")
-    return cleaned or "場所"
