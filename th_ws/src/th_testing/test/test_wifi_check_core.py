@@ -269,6 +269,13 @@ def test_channel_14_appears_only_when_seen():
     assert "  ch  14 " in seen
 
 
+def test_candidate_heading_appears_once_for_each_relevant_band():
+    rows = aggregate_scans([[row("two", "a", 1, 2412), row("five", "b", 36, 5180)]])
+    for band in (None, "2.4", "5"):
+        output = format_summary("now", "wlo1", 1, 1, 1, rows, band=band)
+        assert output.count("使うチャネルの候補") == 1
+
+
 def test_vehicle_marks_follow_visible_channels_and_default_when_missing():
     from wifi_check_core import channel_load
     visible = aggregate_scans([[row("th-rpi-ap", "v2", 6, 2437), row("th-rpi-5g", "v5", 40, 5200)]])
