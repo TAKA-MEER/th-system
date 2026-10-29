@@ -9,14 +9,18 @@ import subprocess
 import sys
 import time
 
-from wifi_survey_core import CSV_FIELDS, aggregate_scans, dbm_label, filter_last_seen, format_summary, parse_nmcli_rows, safe_location, summarize
+from wifi_survey_core import (CSV_FIELDS, aggregate_scans, collect_scans, csv_row,
+                              dbm_label, format_summary, format_summary_table,
+                              parse_csv_row, parse_nmcli_rows, safe_location)
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUT = Path.home() / "venue_wifi"
 
 
 def run(args):
-    return subprocess.run(args, text=True, capture_output=True)
+    env = os.environ.copy()
+    env["LC_ALL"] = "C"
+    return subprocess.run(args, text=True, capture_output=True, env=env)
 
 
 def devices():
@@ -56,33 +60,41 @@ def write_csv(path, location, started, ifname, rows, scans_completed, elapsed):
         writer = csv.DictWriter(stream, fieldnames=CSV_FIELDS, extrasaction="ignore")
         writer.writeheader()
         for row in rows:
-            writer.writerow({"location": location, "started": started, "ifname": ifname, "band": row["band"], "channel": row["channel"], "frequency_mhz": row["frequency_mhz"], "strength_pct": row["strength_pct"], "dbm": row["dbm"], "seen_scans": row["seen_scans"], "scan_count": row["scan_count"], "scans_completed": scans_completed, "elapsed_seconds": elapsed, "ssid": row.get("ssid", ""), "bssid": row["bssid"], "security": row.get("security", ""), "max_bitrate": row.get("rate", ""), "vehicle_ap": str(bool(row.get("vehicle_ap"))).lower()})
+            writer.writerow(csv_row(location, started, ifname, row, scans_completed, elapsed))
 
 
 def summary(day, outdir):
     paths = sorted(outdir.glob(f"{day}_*.csv"))
-    grouped = {}
+    entries = []
     for path in paths:
-        with path.open(encoding="utf-8-sig", newline="") as stream:
-            rows = list(csv.DictReader(stream))
-        if not rows:
-            continue
-        meta = rows[0]
-        converted = []
-        for row in rows:
-            for key in ("channel", "frequency_mhz", "strength_pct", "dbm", "seen_scans", "scan_count"):
-                row[key] = int(row[key])
-            row["vehicle_ap"] = row["vehicle_ap"].lower() == "true"
-            converted.append(row)
-        grouped.setdefault(meta["location"], []).append((meta, converted))
-    for location, entries in grouped.items():
-        for meta, rows in entries:
-            stamp = dt.datetime.fromisoformat(meta["started"]).strftime("%Y-%m-%d %H:%M")
-            print(format_summary(location, stamp, meta["ifname"], int(meta["scans_completed"]), int(meta["scan_count"]), int(meta["elapsed_seconds"]), rows))
-            print()
+        try:
+            with path.open(encoding="utf-8-sig", newline="") as stream:
+                reader = csv.DictReader(stream)
+                rows = []
+                meta = None
+                for line_number, row in enumerate(reader, start=2):
+                    try:
+                        parsed = parse_csv_row(row)
+                    except ValueError as exc:
+                        print(f"警告: CSV の {line_number} 行目を読み飛ばします ({path.name}): {exc}", file=sys.stderr)
+                        continue
+                    if meta is None:
+                        meta = parsed
+                    rows.append(parsed)
+                if rows:
+                    meta["started"] = dt.datetime.fromisoformat(meta["started"]).strftime("%Y-%m-%d %H:%M:%S")
+                    entries.append((meta, rows))
+                else:
+                    print(f"警告: 有効な測定行がありません: {path.name}", file=sys.stderr)
+        except (OSError, csv.Error, UnicodeError, ValueError) as exc:
+            print(f"警告: CSV を読み飛ばします ({path.name}): {exc}", file=sys.stderr)
     if not paths:
         print(f"{day} の測定 CSV がありません: {outdir}", file=sys.stderr)
         return 1
+    if not entries:
+        print(f"{day} の有効な測定 CSV がありません: {outdir}", file=sys.stderr)
+        return 1
+    print(format_summary_table(entries))
     return 0
 
 
@@ -123,44 +135,36 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
     start_dt = dt.datetime.now().astimezone()
     started = start_dt.isoformat(timespec="seconds")
-    start_boot = int(time.clock_gettime(time.CLOCK_BOOTTIME))
-    merged_scans, completed = [], 0
     t0 = time.monotonic()
-    for index in range(args.scans):
-        previous = run(["nmcli", "-g", "GENERAL.DBUS-PATH", "device", "show", ifname])
-        if previous.returncode or not previous.stdout.strip():
-            print(f"デバイスの D-Bus パスを取得できません: {ifname}", file=sys.stderr)
-            continue
-        devpath = previous.stdout.strip()
-        state = run(["busctl", "--system", "get-property", "org.freedesktop.NetworkManager", devpath, "org.freedesktop.NetworkManager.Device.Wireless", "LastScan"])
+    path_result = run(["nmcli", "-g", "GENERAL.DBUS-PATH", "device", "show", ifname])
+    if path_result.returncode or not path_result.stdout.strip():
+        print(f"デバイスの D-Bus パスを取得できません: {ifname}", file=sys.stderr)
+        return 1
+    devpath = path_result.stdout.strip()
+
+    def read_last_scan():
+        result = run(["busctl", "--system", "get-property", "org.freedesktop.NetworkManager", devpath, "org.freedesktop.NetworkManager.Device.Wireless", "LastScan"])
         try:
-            old_scan = int(state.stdout.split()[-1])
+            return int(result.stdout.split()[-1]) if result.returncode == 0 else -1
         except (ValueError, IndexError):
-            old_scan = -1
-        rescan = run(["nmcli", "dev", "wifi", "rescan", "ifname", ifname])
-        if rescan.returncode:
-            print(f"警告: 再スキャンを要求できませんでした: {rescan.stderr.strip()}", file=sys.stderr)
-        else:
-            deadline = time.monotonic() + 15
-            while old_scan >= 0 and time.monotonic() < deadline:
-                time.sleep(.25)
-                state = run(["busctl", "--system", "get-property", "org.freedesktop.NetworkManager", devpath, "org.freedesktop.NetworkManager.Device.Wireless", "LastScan"])
-                try:
-                    new_scan = int(state.stdout.split()[-1])
-                except (ValueError, IndexError):
-                    new_scan = old_scan
-                if new_scan > old_scan:
-                    completed += 1
-                    break
-            else:
-                print(f"警告: スキャン {index + 1} 回目は 15 秒以内に完了しませんでした", file=sys.stderr)
-        rows = list_rows(ifname)
-        fresh = filter_last_seen([{**r, "last_seen": dbus_int(r["dbus_path"], "LastSeen")} for r in rows if r.get("dbus_path")], start_boot)
-        merged_scans.append(fresh)
+            return -1
+
+    def request_scan():
+        result = run(["nmcli", "dev", "wifi", "rescan", "ifname", ifname])
+        return result.returncode == 0, result.stderr.strip()
+
+    collected = collect_scans(args.scans, request_scan, read_last_scan,
+                              lambda: list_rows(ifname),
+                              lambda row: dbus_int(row["dbus_path"], "LastSeen"),
+                              lambda: time.clock_gettime(time.CLOCK_BOOTTIME),
+                              time.monotonic, time.sleep)
+    for warning in collected["warnings"]:
+        print(f"警告: {warning}", file=sys.stderr)
+    completed = collected["completed"]
     if completed == 0:
         print("スキャンが 1 回も完了しませんでした。測定を保存しません。", file=sys.stderr)
         return 1
-    rows = aggregate_scans(merged_scans)
+    rows = aggregate_scans(collected["scans"])
     elapsed = round(time.monotonic() - t0)
     print(format_summary(args.location, start_dt.strftime("%Y-%m-%d %H:%M"), ifname, completed, args.scans, elapsed, rows))
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
