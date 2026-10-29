@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 
-from wifi_check_core import aggregate_scans, collect_scans, format_summary, parse_nmcli_rows
+from wifi_check_core import aggregate_scans, collect_scans, format_summary, parse_nmcli_rows, parse_wpa_scan_results
 
 
 def run(args, env=None):
@@ -48,6 +48,7 @@ def main():
     parser.add_argument("--ifname", help="測定する Wi-Fi デバイス（既定: wlo1、なければ最初の Wi-Fi デバイス）")
     parser.add_argument("--scans", type=int, help="まとめるスキャン回数（既定 3、--watch 時 1）")
     parser.add_argument("--watch", action="store_true", help="測り直しながら画面を更新")
+    parser.add_argument("--exact", action="store_true", help="sudo で実測 dBm を使う。実測できない場合は失敗")
     parser.add_argument("--band", choices=("2.4", "5", "6"), help="表示する帯域")
     parser.add_argument("--find", metavar="文字列", help="一覧を SSID の部分一致で絞る")
     listing = parser.add_mutually_exclusive_group()
@@ -55,6 +56,10 @@ def main():
     listing.add_argument("--all", action="store_true", help="一覧をすべて表示")
     parser.add_argument("--hide-names", action="store_true", help="SSID と BSSID を隠す")
     args = parser.parse_args()
+    is_root = os.geteuid() == 0
+    if args.exact and not is_root:
+        print("実測 dBm には sudo を付けて実行してください。", file=sys.stderr)
+        return 1
     if args.scans is not None and args.scans < 1:
         parser.error("--scans は 1 以上を指定してください")
     if args.top is not None and args.top < 1:
@@ -95,6 +100,12 @@ def main():
         result = run(["nmcli", "dev", "wifi", "rescan", "ifname", ifname], env={"LC_ALL": "C"})
         return result.returncode == 0, result.stderr.strip()
 
+    def read_exact_dbm():
+        result = run(["wpa_cli", "-i", ifname, "scan_results"], env={"LC_ALL": "C"})
+        if result.returncode:
+            raise RuntimeError(result.stderr.strip() or f"wpa_cli が終了コード {result.returncode} を返しました")
+        return parse_wpa_scan_results(result.stdout)
+
     iteration = 0
     try:
         while True:
@@ -105,13 +116,21 @@ def main():
                                       lambda: list_rows(ifname),
                                       lambda row: dbus_int(row["dbus_path"], "LastSeen"),
                                       lambda: time.clock_gettime(time.CLOCK_BOOTTIME),
-                                      time.monotonic, time.sleep)
+                                      time.monotonic, time.sleep,
+                                      read_exact_dbm=read_exact_dbm if is_root else None)
+            if args.exact and collected["exact_failed"]:
+                for warning in collected["warnings"]:
+                    print(f"警告: {warning}", file=sys.stderr)
+                return 1
             rows = aggregate_scans(collected["scans"])
+            has_exact_measurements = any(row.get("dbm_exact") for row in rows)
             elapsed = round(time.monotonic() - t0)
             output = format_summary(started.strftime("%Y-%m-%d %H:%M"), ifname,
                                     collected["completed"], scan_count, elapsed, rows,
                                     band=args.band, find=args.find, top=top,
-                                    hide_names=args.hide_names, watch_number=iteration if args.watch else None)
+                                    hide_names=args.hide_names, watch_number=iteration if args.watch else None,
+                                    exact_mode=has_exact_measurements,
+                                    exact_failed=collected["exact_failed"])
             if args.watch:
                 print("\033[H\033[2J", end="")
             print(output)

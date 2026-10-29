@@ -508,6 +508,7 @@ bash ap_band_switch.sh status
 [`th_ws/scripts/wifi_check/README.md`](../th_ws/scripts/wifi_check/README.md) の道具で、周囲の AP とチャネルごとの見え方を確認できます。
 会場の下見にも、機体との通信が不安定なときの切り分けにも使えます。
 NetworkManager の一覧を表示するもので、チャネル変更や通信速度の測定はしません。測定結果は保存しません。
+sudo で実行すると `wpa_cli scan_results` から実測 dBm を取得できます（詳細と確認コマンドは上記 README を参照）。
 
 | 知りたいこと | 参照 |
 | --- | --- |
