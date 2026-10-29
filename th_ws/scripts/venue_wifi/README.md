@@ -35,6 +35,7 @@ python3 th_ws/scripts/venue_wifi/wifi_survey.py --summary 2026-11-05
 
 - dBm は NetworkManager の強度 % からの換算値です。「約」として読み、100% は「約 −40 dBm 以上」と表示します。
 - NetworkManager のスキャン一覧には古い AP が残るため、各スキャンの要求直前を基準に `LastSeen` が新しい AP だけをその回に数えます。
+- 一覧に AP があるのに、全ての `LastSeen` が古くて除外された場合は警告を表示します。
 - DFS の W53/W56 は受け身のスキャンになり、複数回測っても取りこぼす場合があります。
 - NetworkManager 1.36 では AP のチャネル幅を取得できないため、80 MHz の重なりは件数だけを参考表示します。
 - 6 GHz はシートに専用欄がないため、件数をメモに出し合計には含めません。
