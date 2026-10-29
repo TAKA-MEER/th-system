@@ -73,11 +73,11 @@
 | --- | --- | --- |
 | 起動（orca） | `--agent codex` | `--agent opencode` |
 | 指示ファイル | リポジトリ直下の `AGENTS.md`（「`CLAUDE.md` を読め」とだけ書いてある） | `CLAUDE.md` |
-| 利用枠 | ChatGPT の **無料プラン・30 日単位の枠**（2026-10-26 時点で使用 0%、次のリセット 2026-11-25 18:38）。**使い切ると約 1 か月戻らない** | 無料枠。上限に達すると idle のまま進まなくなる |
+| 利用枠 | ChatGPT の **無料プラン・30 日単位の枠**（2026-10-29 時点で使用 57%、次のリセット 2026-11-25 18:38）。**使い切ると約 1 か月戻らない** | 無料枠。上限に達すると idle のまま進まなくなる |
 | 枠の確かめ方 | codex の画面で `/status`、または `~/.codex/sessions/` の最新ログの `rate_limits.primary.used_percent` | — |
-| 試用状況 | 読み取り専用の `codex exec` で動作確認だけ済み（2026-10-26）。**orca からパケットを投げるのは未試用**。初回に確かめて下の表へ癖を書き足す | 実績あり |
+| 試用状況 | **orca から 1 件通した**（2026-10-29・会場の Wi-Fi 道具・`b416718`。実装 1 回＋差し戻し 2 回、各 2〜4 分で枠を 8% 使った）。コミットまでは自分でやる。癖は下の orca の表 | 実績あり |
 
-以下の手順は opencode で確かめたもの。codex でも同じ形で動く想定だが、初回の試用で違いが出たら書き直す。
+以下の手順は opencode で確かめ、orca ＋ codex でも 2026-10-29 に通した（違いは orca の表に書いた）。
 
 **どちらの中で動いているかは環境変数で見分ける**（2026-10-01。herdr から orca への乗り換えを検討中で、両方を使う）。
 
@@ -117,11 +117,11 @@ herdr agent get <name>                            # agent_status を 10 秒間�
 
 ```bash
 orca worktree create --name <n> --no-parent --setup skip --agent codex --json      # worktree 作成と codex 起動を 1 回で（枠切れなら --agent opencode）
-git -C <worktreeのpath> branch -m <n> <種別>/<主題>     # orca はブランチ名を <n> にするので付け替える
+git -C <worktreeのpath> branch -m <git ユーザー名>/<n> <種別>/<主題>     # orca はブランチ名を <git ユーザー名>/<n> にする（2026-10-29 時点）ので付け替える
 mkdir -p <worktreeのpath>/.briefs/tmp                    # .briefs は gitignore なので新しい worktree には無い。ブリーフもここに置く
 orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 60000 --json   # satisfied:true を確かめてから送る
 orca terminal send --terminal <handle> --text "指示書は .briefs/brief-<ID>.md。…" --enter --json
-orca terminal read --terminal <handle> --limit 60        # 監視。画面に `esc interrupt` があれば作業中
+orca terminal read --terminal <handle> --limit 60        # 監視。画面に `esc interrupt`（codex は `esc to interrupt`）があれば作業中
 orca worktree rm --worktree id:<repoId>::<path> --force --json   # 片付け。フォルダ・ターミナル・ローカルブランチまで消える
 ```
 
@@ -130,7 +130,9 @@ orca worktree rm --worktree id:<repoId>::<path> --force --json   # 片付け。�
 | `worktree create` | **`--setup skip` を必ず付ける** | repo 設定のセットアップ hook が `pnpm install`（既定で実行）で、リポジトリ直下に `package.json` が無く失敗する |
 | worktree の置き場 | `~/orca/workspaces/th-system/<n>`（リポジトリの外） | `docker-compose.yml` は相対パスなので、worktree 内の `th_ws/` からそのまま使える |
 | 投入の確認 | `terminal send` の結果ではなく**画面を読んで**確かめる | opencode は `provider: unsupported` で、ターンが始まったことを orca が証明できない |
-| 監視 | `terminal read` を 30 秒間隔で読むスクリプトを Monitor で回す（`esc interrupt` が 2 回続けて無ければ停止） | ターン終了の通知が無い |
+| 監視 | `terminal read` を 30 秒間隔で読むスクリプトを Monitor で回す（`esc (to )?interrupt` が 2 回続けて無ければ停止） | ターン終了の通知が無い。**codex の表示は `esc to interrupt` で、`esc interrupt` では拾えない** |
+| codex の起動直後 | 「Update available」の選択画面で止まることがある。`--text $'\x1b'` で飛ばす（更新はしない） | グローバルの npm パッケージを黙って入れ替えない |
+| codex の権限 | `permissions: YOLO mode` で動き、承認プロンプトは出ない（ホストの `nmcli`・D-Bus もそのまま使えた）。監視で `permission` を拾うと起動画面のこの行に毎回反応するので拾わない | 範囲はブリーフで縛るしかない |
 | 承認プロンプト | `orca terminal send --text "" --enter` で既定の「Allow once」が通る（2026-10-05 確認）。中断は `--text $'\x1b'` を 2 回 | 矢印キーは送れないので「Allow always」は選べない。worktree 外の読み取り（パスの書き間違い・`/tmp`）で出ることが多い |
 | 片付けの前 | Docker が残した root 所有ファイルを `chown` で戻しておく | `git worktree` と同じ（`CLAUDE.md`「環境の癖」） |
 
@@ -141,7 +143,9 @@ orca worktree rm --worktree id:<repoId>::<path> --force --json   # 片付け。�
 **実装は信用してよい。テストは絶対に信用しない。**（実際に、通るだけで何も検出しないテストが繰り返し出てきた）
 
 1. ホスト `pytest` / `npm run test:unit` / `npx playwright test` を**自分で回す**
-2. **変異チェックを 1〜2 件は自分で再実行する** — 実装ファイルを `sed` で壊し、該当テストが赤くなるか
+2. **変異チェックを 1〜2 件は自分で再実行する** — 実装ファイルを `sed` で壊し、該当テストが赤くなるか。
+   **Python は毎回 `__pycache__` を消し、`python3 -B -m pytest -p no:cacheprovider` で回す**（同じ秒の中で同じ長さに書き換えて戻すと古い `.pyc` が使われ、赤・緑が入れ替わる。2026-10-29 に一括の変異で実際に揺れた）。
+   エージェント自身の変異は純関数側だけのことが多い。**呼び出し側（CLI の配線・ノード本体）を壊す変異を自分で足す**（2026-10-29 の codex でも配線の変異が 2 回すり抜けた）
 3. `git show <commit>` で差分がブリーフの範囲内かを目視する
 4. ROS2 が要るものは Docker で `colcon build` ＋ 起動スモークまで自分で
    （ホストだけで走る試験の範囲は `CLAUDE.md`「環境の癖」を見る）
