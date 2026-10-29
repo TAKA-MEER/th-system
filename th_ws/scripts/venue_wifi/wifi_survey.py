@@ -17,14 +17,15 @@ ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUT = Path.home() / "venue_wifi"
 
 
-def run(args):
-    env = os.environ.copy()
-    env["LC_ALL"] = "C"
-    return subprocess.run(args, text=True, capture_output=True, env=env)
+def run(args, env=None):
+    command_env = os.environ.copy()
+    if env:
+        command_env.update(env)
+    return subprocess.run(args, text=True, capture_output=True, env=command_env)
 
 
 def devices():
-    result = run(["nmcli", "-t", "-f", "DEVICE,TYPE", "device"])
+    result = run(["nmcli", "-t", "-f", "DEVICE,TYPE", "device"], env={"LC_ALL": "C"})
     if result.returncode:
         return []
     return [d for d, typ in (line.split(":", 1) for line in result.stdout.splitlines() if ":" in line) if typ == "wifi"]
@@ -41,7 +42,7 @@ def dbus_int(path, prop):
 
 
 def list_rows(ifname):
-    result = run(["nmcli", "-t", "-f", "SSID,BSSID,CHAN,FREQ,SIGNAL,RATE,SECURITY,DBUS-PATH", "dev", "wifi", "list", "ifname", ifname])
+    result = run(["nmcli", "-t", "-f", "SSID,BSSID,CHAN,FREQ,SIGNAL,RATE,SECURITY,DBUS-PATH", "dev", "wifi", "list", "ifname", ifname], env={"LC_ALL": "C"})
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "nmcli の一覧取得に失敗しました")
     return parse_nmcli_rows(result.stdout)
@@ -125,7 +126,7 @@ def main():
         ifname = args.ifname
     else:
         ifname = "wlo1" if "wlo1" in devs else devs[0]
-    radio = run(["nmcli", "radio", "wifi"])
+    radio = run(["nmcli", "radio", "wifi"], env={"LC_ALL": "C"})
     if radio.returncode or radio.stdout.strip().lower() != "enabled":
         print("Wi-Fi が OFF です。nmcli radio wifi on を実行してください。", file=sys.stderr)
         return 1
@@ -136,7 +137,7 @@ def main():
     start_dt = dt.datetime.now().astimezone()
     started = start_dt.isoformat(timespec="seconds")
     t0 = time.monotonic()
-    path_result = run(["nmcli", "-g", "GENERAL.DBUS-PATH", "device", "show", ifname])
+    path_result = run(["nmcli", "-g", "GENERAL.DBUS-PATH", "device", "show", ifname], env={"LC_ALL": "C"})
     if path_result.returncode or not path_result.stdout.strip():
         print(f"デバイスの D-Bus パスを取得できません: {ifname}", file=sys.stderr)
         return 1
@@ -150,7 +151,7 @@ def main():
             return -1
 
     def request_scan():
-        result = run(["nmcli", "dev", "wifi", "rescan", "ifname", ifname])
+        result = run(["nmcli", "dev", "wifi", "rescan", "ifname", ifname], env={"LC_ALL": "C"})
         return result.returncode == 0, result.stderr.strip()
 
     collected = collect_scans(args.scans, request_scan, read_last_scan,

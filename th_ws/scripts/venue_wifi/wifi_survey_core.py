@@ -128,6 +128,8 @@ def collect_scans(n, request_scan, read_last_scan, list_aps, read_last_seen,
     request still samples the current AP list but cannot count as completed.
     """
     scans, completed, warnings = [], 0, []
+    saw_aps = False
+    retained_aps = 0
     for number in range(1, n + 1):
         before = read_last_scan()
         scan_started = int(boottime())
@@ -152,11 +154,16 @@ def collect_scans(n, request_scan, read_last_scan, list_aps, read_last_seen,
                 warnings.append(f"スキャン {number} 回目は {timeout} 秒以内に完了しませんでした")
 
         fresh = []
-        for row in list_aps():
+        listed = list_aps()
+        saw_aps = saw_aps or bool(listed)
+        for row in listed:
             enriched = {**row, "last_seen": read_last_seen(row)}
             if filter_last_seen([enriched], scan_started):
                 fresh.append(enriched)
+                retained_aps += 1
         scans.append(fresh)
+    if saw_aps and retained_aps == 0:
+        warnings.append("一覧の AP がすべて測り始めより古い")
     return {"scans": scans, "completed": completed, "warnings": warnings}
 
 
