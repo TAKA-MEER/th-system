@@ -503,11 +503,11 @@ bash ap_band_switch.sh status
 
 ## 参考
 
-### 会場の電波を調べる（会場確認シート E）
+### 周りの Wi-Fi・チャネルの混み具合を調べる
 
-会場の下見では、PC で近隣 AP の BSSID 数と強度を測り、シート E に転記できます。
-3 か所で測る手順、集計の規則、データの扱いは [`th_ws/scripts/venue_wifi/README.md`](../th_ws/scripts/venue_wifi/README.md) を参照してください。
-このツールは NetworkManager の一覧から数を集計し、チャネルを自動変更したり通信速度を測ったりしません。
+[`th_ws/scripts/wifi_check/README.md`](../th_ws/scripts/wifi_check/README.md) の道具で、周囲の AP とチャネルごとの見え方を確認できます。
+会場の下見にも、機体との通信が不安定なときの切り分けにも使えます。
+NetworkManager の一覧を表示するもので、チャネル変更や通信速度の測定はしません。測定結果は保存しません。
 
 | 知りたいこと | 参照 |
 | --- | --- |
