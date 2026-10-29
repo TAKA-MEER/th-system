@@ -1,6 +1,8 @@
 """Pure helpers for the Wi-Fi checker (Python standard library only)."""
 from __future__ import annotations
 
+import unicodedata
+
 VEHICLE_SSIDS = {"th-rpi-ap", "th-rpi-5g"}
 # Keep these defaults aligned with docs/network.md and
 # th_ws/scripts/rpi_ap_set_channel.sh, which changes the vehicle AP channels.
@@ -77,6 +79,15 @@ def dbm_from_percent(pct: int) -> int:
 
 def dbm_label(pct: int) -> str:
     return "約 −40 dBm 以上" if pct >= 100 else f"約 −{abs(dbm_from_percent(pct))} dBm"
+
+
+def display_width(text: str) -> int:
+    """Return terminal columns, treating full-width and wide chars as two."""
+    return sum(2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1 for char in text)
+
+
+def pad_display(text: str, width: int) -> str:
+    return text + " " * max(0, width - display_width(text))
 
 
 def classify(row: dict) -> dict | None:
@@ -233,45 +244,56 @@ def format_channel_load(rows: list[dict], band: str | None = None) -> str:
     lines = []
     if band in (None, "2.4"):
         lines.append("チャネル別（2.4 GHz）")
+        lines.append(pad_display("  ch", 25) + pad_display("件数", 6) + "いちばん強い電波")
     maximum = max((len(item["same"]) for item in loads["2.4 GHz"]), default=0)
     if band in (None, "2.4"):
         for item in loads["2.4 GHz"]:
-            strongest = dbm_label(item["strongest"]["strength_pct"]) if item["strongest"] else "なし"
+            strongest = dbm_label(item["strongest"]["strength_pct"]) if item["strongest"] else "—"
             count = len(item["same"])
             bar = "█" * (max(1, round(14 * count / maximum)) if count else 0)
             mark = " ← 機体" + ("（既定）" if loads["vehicle_default"]["2.4 GHz"] else "") if item["is_vehicle"] else ""
-            lines.append(f"  ch {item['channel']:>3}  {bar:<14} {count:>3}   最強 {strongest}{mark}")
+            lines.append(f"  ch {item['channel']:>3}  {bar:<14} {count:>3}   {strongest}{mark}")
     if band in (None, "5"):
         lines.append("チャネル別（5 GHz）")
+        lines.append(pad_display("  ch", 25) + pad_display("件数", 6) + "いちばん強い電波")
     maximum = max((len(item["channel_stations"]) for item in loads["5 GHz"]), default=0)
     if band in (None, "5"):
         for item in loads["5 GHz"]:
-            strongest = dbm_label(item["strongest"]["strength_pct"]) if item["strongest"] else "なし"
+            strongest = dbm_label(item["strongest"]["strength_pct"]) if item["strongest"] else "—"
             count = len(item["channel_stations"])
             bar = "█" * (max(1, round(14 * count / maximum)) if count else 0)
             mark = " ← 機体" + ("（既定）" if loads["vehicle_default"]["5 GHz"] else "") if item["is_vehicle"] else ""
-            lines.append(f"  ch {item['channel']:>3}  {bar:<14} {count:>3}   最強 {strongest}{mark}")
+            lines.append(f"  ch {item['channel']:>3}  {bar:<14} {count:>3}   {strongest}{mark}")
     if band in (None, "2.4", "5"):
         lines.append("使うチャネルの候補")
+        lines.append("  2.4 GHz: 同じ ch と重なる ch の AP ／ 5 GHz: その 40 MHz の AP")
+    candidate_rows = []
     if band in (None, "2.4"):
         for item in loads["2.4 GHz"]:
             if item["channel"] not in {1, 6, 11}:
                 continue
-            strongest = dbm_label(item["candidate_strongest"]["strength_pct"]) if item["candidate_strongest"] else "なし"
+            strongest = dbm_label(item["candidate_strongest"]["strength_pct"]) if item["candidate_strongest"] else "—"
             mark = " ← 機体" + ("（既定）" if loads["vehicle_default"]["2.4 GHz"] else "") if item["is_vehicle"] else ""
-            lines.append(f"  2.4 GHz  ch {item['channel']}{mark}  同じ ch {len(item['same'])}・重なる ch {len(item['overlap'])}  最強 {strongest}")
+            prefix = f"  2.4 GHz  ch {item['channel']}{mark}  同じ ch {len(item['same'])}・重なる ch {len(item['overlap'])}"
+            candidate_rows.append((prefix, strongest, ""))
     if band in (None, "5"):
         for label, block in (("36+40", {36, 40}), ("44+48", {44, 48})):
             stations = [r for r in counted if r["band"] == "5 GHz" and r["channel"] in block]
             strongest_row = max(stations, key=lambda r: r["strength_pct"], default=None)
-            strongest = dbm_label(strongest_row["strength_pct"]) if strongest_row else "なし"
+            strongest = dbm_label(strongest_row["strength_pct"]) if strongest_row else "—"
             is_vehicle = loads["vehicle"]["5 GHz"] in block
             mark = " ← 機体" + ("（既定）" if loads["vehicle_default"]["5 GHz"] else "") if is_vehicle else ""
-            tail = f"{len(stations)} 局  最強 {strongest}"
+            prefix = f"  5 GHz    {label}{mark}  {len(stations)} 局"
+            suffix = ""
             if label == "44+48":
                 overlap_80 = sum(r["band"] == "5 GHz" and r["channel"] in {36, 40} and not r.get("vehicle_ap") for r in rows)
-                tail += f"  36・40 の {overlap_80} 局は 80 MHz 幅なら重なる"
-            lines.append(f"  5 GHz    {label}{mark}  {tail}")
+                suffix = f"  36・40 の {overlap_80} 局は 80 MHz 幅なら重なる"
+            candidate_rows.append((prefix, strongest, suffix))
+    if candidate_rows:
+        prefix_width = max(display_width(prefix) for prefix, _, _ in candidate_rows)
+        lines.append(pad_display("  候補・件数 / 内訳", prefix_width + 2) + "いちばん強い電波")
+        for prefix, strongest, suffix in candidate_rows:
+            lines.append(pad_display(prefix, prefix_width + 2) + strongest + suffix)
     return "\n".join(lines)
 
 
