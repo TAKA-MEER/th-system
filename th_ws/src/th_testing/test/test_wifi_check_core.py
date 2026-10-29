@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "wifi_c
 
 from wifi_check_core import (aggregate_scans, band_for_frequency, channel_for_frequency,
                               classify, collect_scans, dbm_from_percent, filter_last_seen,
-                              format_summary, parse_nmcli_rows,
+                              format_summary, parse_nmcli_rows, parse_wpa_scan_results,
                               split_nmcli_t, summarize)
 
 
@@ -23,6 +23,7 @@ def install_fake_cli(monkeypatch, advance_scans=True):
         "/org/freedesktop/NetworkManager/AccessPoint/1": 9,
         "/org/freedesktop/NetworkManager/AccessPoint/2": 10,
         "/org/freedesktop/NetworkManager/AccessPoint/3": 10,
+        "/org/freedesktop/NetworkManager/AccessPoint/4": 10,
     }
     listing = ("stale-only:AA\\:BB\\:CC\\:DD\\:EE\\:01:1:2412 MHz:61:54 Mbit/s:WPA2:/org/freedesktop/NetworkManager/AccessPoint/1\n"
                "fresh-only:AA\\:BB\\:CC\\:DD\\:EE\\:02:6:2437 MHz:75:54 Mbit/s:WPA2:/org/freedesktop/NetworkManager/AccessPoint/2\n"
@@ -57,11 +58,94 @@ def install_fake_cli(monkeypatch, advance_scans=True):
         raise AssertionError(f"Unexpected command: {command}")
 
     monkeypatch.setattr(wifi_check, "run", fake_run)
+    monkeypatch.setattr(wifi_check.os, "geteuid", lambda: 1000)
     ticks = [0.0]
     monkeypatch.setattr(wifi_check.time, "clock_gettime", lambda _: 10 + (scan_value[0] - 100))
     monkeypatch.setattr(wifi_check.time, "monotonic", lambda: ticks[0])
     monkeypatch.setattr(wifi_check.time, "sleep", lambda seconds: ticks.__setitem__(0, ticks[0] + seconds))
     return wifi_check, calls
+
+
+def test_main_uses_root_exact_measurement_and_skips_stale_rows(monkeypatch, capsys):
+    wifi_check, _ = install_fake_cli(monkeypatch)
+    monkeypatch.setattr(wifi_check, "list_rows", lambda _:
+        [row("pct-high", "aa:bb:cc:dd:ee:02", 6, 2437, 80, dbus_path="/org/freedesktop/NetworkManager/AccessPoint/2"),
+         row("pct-low", "aa:bb:cc:dd:ee:04", 6, 2437, 70, dbus_path="/org/freedesktop/NetworkManager/AccessPoint/4"),
+         row("th-rpi-ap", "aa:bb:cc:dd:ee:03", 1, 2412, 65, dbus_path="/org/freedesktop/NetworkManager/AccessPoint/3")])
+    calls = []
+    original_run = wifi_check.run
+    def fake_run(command, env=None):
+        if command[0] == "wpa_cli":
+            calls.append((command, env))
+            return SimpleNamespace(returncode=0, stdout=("bssid / frequency / signal level / flags / ssid\n"
+                "aa:bb:cc:dd:ee:02\t2437\t-60\t[WPA2]\tpct-high\n"
+                "aa:bb:cc:dd:ee:04\t2437\t-50\t[WPA2]\tpct-low\n"
+                "aa:bb:cc:dd:ee:03\t2412\t-50\t[WPA2]\tvehicle\n"), stderr="")
+        return original_run(command, env)
+    monkeypatch.setattr(wifi_check, "run", fake_run)
+    monkeypatch.setattr(wifi_check.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["wifi_check.py", "--scans", "1"])
+    assert wifi_check.main() == 0
+    output = capsys.readouterr().out
+    assert len(calls) == 1 and calls[0][0] == ["wpa_cli", "-i", "wlo1", "scan_results"]
+    assert calls[0][1]["LC_ALL"] == "C"
+    assert "dBm: 実測（wpa_supplicant・root）" in output
+    assert "−50 dBm" in output and "−60 dBm" in output and "約 −40 dBm 以上" not in output
+    assert "最も強い電波   −50 dBm（2.4 GHz ch 6）" in output
+    lines = output.splitlines()
+    assert next(i for i, line in enumerate(lines) if "pct-low" in line) < next(
+        i for i, line in enumerate(lines) if "pct-high" in line)
+    channel_six = next(line for line in lines if line.startswith("  ch   6"))
+    assert "−50 dBm" in channel_six
+    assert "stale-only" not in output
+
+
+def test_exact_requires_root_before_scanning(monkeypatch, capsys):
+    wifi_check, calls = install_fake_cli(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["wifi_check.py", "--exact"])
+    assert wifi_check.main() == 1
+    assert "sudo" in capsys.readouterr().err
+    assert calls == []
+
+
+def test_watch_reads_exact_results_each_round(monkeypatch, capsys):
+    wifi_check, _ = install_fake_cli(monkeypatch)
+    calls = []
+    original_run = wifi_check.run
+    def fake_run(command, env=None):
+        if command[0] == "wpa_cli":
+            calls.append(command)
+            return SimpleNamespace(returncode=0, stdout="bssid / frequency / signal level / flags / ssid\naa:bb:cc:dd:ee:02\t2437\t-50\t[WPA2]\tfresh\n", stderr="")
+        return original_run(command, env)
+    monkeypatch.setattr(wifi_check, "run", fake_run)
+    monkeypatch.setattr(wifi_check.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["wifi_check.py", "--watch"])
+    sleeps = [0]
+    def stop(_):
+        sleeps[0] += 1
+        if sleeps[0] == 4:
+            raise KeyboardInterrupt
+    monkeypatch.setattr(wifi_check.time, "sleep", stop)
+    assert wifi_check.main() == 0
+    assert len(calls) == 2
+
+
+def test_root_exact_failure_falls_back_or_fails_when_required(monkeypatch, capsys):
+    wifi_check, _ = install_fake_cli(monkeypatch)
+    original_run = wifi_check.run
+    def fake_run(command, env=None):
+        if command[0] == "wpa_cli":
+            return SimpleNamespace(returncode=1, stdout="", stderr="control socket unavailable")
+        return original_run(command, env)
+    monkeypatch.setattr(wifi_check, "run", fake_run)
+    monkeypatch.setattr(wifi_check.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(sys, "argv", ["wifi_check.py", "--scans", "1"])
+    assert wifi_check.main() == 0
+    output = capsys.readouterr()
+    assert "警告: wpa_cli の実測に失敗" in output.out
+    assert "強度 % からの換算" in output.out
+    monkeypatch.setattr(sys, "argv", ["wifi_check.py", "--exact", "--scans", "1"])
+    assert wifi_check.main() == 1
 
 
 def test_nmcli_escape_and_unicode_fields():
@@ -70,6 +154,28 @@ def test_nmcli_escape_and_unicode_fields():
     rows = parse_nmcli_rows(r"日本語:00\:11\:22\:33\:44\:55:6:2437 MHz:72:54 Mbit/s:WPA2:/ap" + "\n")
     assert rows[0]["ssid"] == "日本語"
     assert parse_nmcli_rows(r":00\:11\:22\:33\:44\:55:1:2412:50:54 Mbit/s:--:/ap")[0]["ssid"] == ""
+
+
+def test_wpa_scan_results_parser_handles_escaped_ssid_and_invalid_rows():
+    parsed = parse_wpa_scan_results("bssid / frequency / signal level / flags / ssid\n"
+        "90:b8:32:98:df:68\t5180\t-50\t[WPA2-EAP-CCMP][ESS]\tNCT-WL-ST\n"
+        "90:b8:32:99:5d:a8\t5180\t-83\t[WPA2-EAP-CCMP][ESS]\tNCT-WL-ST\n"
+        "74:03:bd:a1:4d:27\t5580\t-79\t[WPA2-PSK-CCMP][ESS]\t\\x00\\x00\n"
+        "bad\t5180\tnope\tflags\tssid\n\n")
+    assert parsed == {"90:B8:32:98:DF:68": -50, "90:B8:32:99:5D:A8": -83, "74:03:BD:A1:4D:27": -79}
+
+
+def test_exact_dbm_controls_aggregate_order_and_mixed_scan_preference():
+    rows = aggregate_scans([
+        [{**row("pct-high", "aa", 1, 2412, 80), "dbm": -60, "dbm_exact": True},
+         {**row("pct-low", "bb", 1, 2412, 70), "dbm": -50, "dbm_exact": True}],
+        [{**row("pct-low", "bb", 1, 2412, 98), "dbm": -41, "dbm_exact": False}]
+    ])
+    assert rows[0]["bssid"] == "BB"
+    assert rows[0]["dbm"] == -50 and rows[0]["dbm_exact"] is True
+    assert summarize(rows)["strongest"]["dbm"] == -50
+    text = format_summary("now", "wlo1", 2, 2, 1, rows, top=None, exact_mode=True)
+    assert "−50 dBm" in text and "約 −41 dBm" not in text
 
 
 def test_band_uses_frequency_and_boundaries():
