@@ -1,5 +1,7 @@
+import csv
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "venue_wifi"))
 
@@ -12,6 +14,52 @@ from wifi_survey_core import (aggregate_scans, band_for_frequency, channel_for_f
 def row(ssid, bssid, chan, freq, pct=70, **extra):
     return {"ssid": ssid, "bssid": bssid, "channel": chan, "frequency_mhz": freq,
             "strength_pct": pct, "security": "WPA2", **extra}
+
+
+def install_fake_cli(monkeypatch, advance_scans=True):
+    import wifi_survey
+    calls = []
+    scan_value = [100]
+    access_points = {
+        "/org/freedesktop/NetworkManager/AccessPoint/1": 9,
+        "/org/freedesktop/NetworkManager/AccessPoint/2": 10,
+        "/org/freedesktop/NetworkManager/AccessPoint/3": 10,
+    }
+    listing = ("stale-only:AA\\:BB\\:CC\\:DD\\:EE\\:01:1:2412 MHz:61:54 Mbit/s:WPA2:/org/freedesktop/NetworkManager/AccessPoint/1\n"
+               "fresh-only:AA\\:BB\\:CC\\:DD\\:EE\\:02:6:2437 MHz:75:54 Mbit/s:WPA2:/org/freedesktop/NetworkManager/AccessPoint/2\n"
+               "th-rpi-ap:AA\\:BB\\:CC\\:DD\\:EE\\:03:1:2412 MHz:65:54 Mbit/s:WPA2:/org/freedesktop/NetworkManager/AccessPoint/3\n")
+
+    def fake_run(command, env=None):
+        calls.append((command, env))
+        if command[0] == "nmcli":
+            if command[1:3] == ["-t", "-f"] and command[3] == "DEVICE,TYPE":
+                return SimpleNamespace(returncode=0, stdout="wlo1:wifi\n", stderr="")
+            if command[1:3] == ["radio", "wifi"]:
+                return SimpleNamespace(returncode=0, stdout="enabled\n", stderr="")
+            if command[1:3] == ["-g", "GENERAL.DBUS-PATH"]:
+                return SimpleNamespace(returncode=0, stdout="/org/freedesktop/NetworkManager/Devices/2\n", stderr="")
+            if command[1:3] == ["dev", "wifi"] and command[3] == "rescan":
+                if advance_scans:
+                    scan_value[0] += 1
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if command[1:3] == ["-t", "-f"] and command[3].startswith("SSID,"):
+                return SimpleNamespace(returncode=0, stdout=listing, stderr="")
+            raise AssertionError(f"Unexpected nmcli command: {command}")
+        if command[0] == "busctl":
+            prop = command[-1]
+            if prop == "LastScan":
+                return SimpleNamespace(returncode=0, stdout=f"x {scan_value[0]}\n", stderr="")
+            if prop == "LastSeen":
+                return SimpleNamespace(returncode=0, stdout=f"i {access_points[command[4]]}\n", stderr="")
+            raise AssertionError(f"Unexpected busctl property: {command}")
+        raise AssertionError(f"Unexpected command: {command}")
+
+    monkeypatch.setattr(wifi_survey, "run", fake_run)
+    ticks = [0.0]
+    monkeypatch.setattr(wifi_survey.time, "clock_gettime", lambda _: 10.75)
+    monkeypatch.setattr(wifi_survey.time, "monotonic", lambda: ticks[0])
+    monkeypatch.setattr(wifi_survey.time, "sleep", lambda seconds: ticks.__setitem__(0, ticks[0] + seconds))
+    return wifi_survey, calls
 
 
 def test_nmcli_escape_and_unicode_fields():
@@ -109,6 +157,41 @@ def test_collect_scans_reports_zero_completions_but_still_reads_failed_request()
     assert "denied" in result["warnings"][0]
 
 
+def test_collect_scans_warns_if_every_listed_ap_is_stale():
+    result = collect_scans(1, lambda: (False, "denied"), lambda: 50,
+                           lambda: [dict(row("old", "old", 1, 2412), last_seen=49)],
+                           lambda ap: ap["last_seen"], lambda: 50,
+                           lambda: 0, lambda _: None)
+    assert result["scans"] == [[]]
+    assert "一覧の AP がすべて測り始めより古い" in result["warnings"]
+
+
+def test_main_wires_dbus_last_seen_into_collection_and_sets_nmcli_locale(tmp_path, monkeypatch, capsys):
+    wifi_survey, calls = install_fake_cli(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["wifi_survey.py", "保管場所", "--out", str(tmp_path), "--scans", "2"])
+    assert wifi_survey.main() == 0
+    output = capsys.readouterr().out
+    csv_paths = list(tmp_path.glob("*.csv"))
+    assert len(csv_paths) == 1
+    assert "stale-only" not in output and "stale-only" not in csv_paths[0].read_text(encoding="utf-8-sig")
+    assert "fresh-only" not in output
+    assert "2.4 GHz の数   ch1 付近 0   ch6 付近 1" in output
+    with csv_paths[0].open(encoding="utf-8-sig", newline="") as stream:
+        saved = list(csv.DictReader(stream))
+    ap_rows = {row["ssid"]: row for row in saved}
+    assert set(ap_rows) == {"fresh-only", "th-rpi-ap"}
+    assert ap_rows["th-rpi-ap"]["vehicle_ap"] == "true"
+    assert all(env and env.get("LC_ALL") == "C" for command, env in calls if command[0] == "nmcli")
+
+
+def test_main_does_not_save_when_lastscan_never_advances(tmp_path, monkeypatch, capsys):
+    wifi_survey, _ = install_fake_cli(monkeypatch, advance_scans=False)
+    monkeypatch.setattr(sys, "argv", ["wifi_survey.py", "保管場所", "--out", str(tmp_path), "--scans", "1"])
+    assert wifi_survey.main() == 1
+    assert list(tmp_path.glob("*.csv")) == []
+    assert "スキャンが 1 回も完了しませんでした" in capsys.readouterr().err
+
+
 def test_bucket_edges_and_dbm_conversion():
     rows = aggregate_scans([[row("a", "a", 3, 2422), row("b", "b", 4, 2427),
                              row("c", "c", 8, 2447), row("d", "d", 9, 2452),
@@ -167,7 +250,8 @@ def test_output_contains_sheet_columns():
 
 def test_csv_roundtrip_uses_production_writer_and_summary(tmp_path, capsys):
     import wifi_survey
-    rows_a = aggregate_scans([[row("PRIVATE-SSID", "aa", 1, 2412), row("PRIVATE-SSID", "bb", 48, 5240)]])
+    rows_a = aggregate_scans([[row("PRIVATE-SSID", "aa", 1, 2412), row("PRIVATE-SSID", "bb", 48, 5240),
+                               row("th-rpi-ap", "ee", 1, 2412, 75)]])
     rows_b = aggregate_scans([[row("PRIVATE-SSID", "cc", 6, 2437)]])
     path_a = tmp_path / "2026-11-05_101200_保管場所.csv"
     path_b = tmp_path / "2026-11-05_101500_保管場所.csv"
@@ -176,6 +260,7 @@ def test_csv_roundtrip_uses_production_writer_and_summary(tmp_path, capsys):
     assert wifi_survey.summary("2026-11-05", tmp_path) == 0
     output = capsys.readouterr().out
     assert "保管場所 | 2026-11-05 10:12:00 | 1 | 0 | 0 | 1 | 1 | 0" in output
+    assert "機体の AP: 見える" in output
     assert "保管場所 | 2026-11-05 10:15:00 | 0 | 1 | 0 | 1 | 0 | 0" in output
     assert output.count("場所 | 時刻 |") == 1
     assert "PRIVATE-SSID" not in output
