@@ -392,7 +392,7 @@ ID は**参照点であって順序ではない**（§3.1.2 冒頭。欠番を�
 | **`SM-3.1.2-124`** | `AUTO_MEASURE` | `ALIGN` | 向きが合った | `WAIT` | **到着を測定機能へ返す**（向きまで合って到着。[Spec-onsite.md](Spec-onsite.md) §2.1.1 と同じ定義） |
 | **`SM-3.1.2-125`** | `AUTO_MEASURE` | `NAV` | **手前の経路（1.5 m）が通れない／まだ地図が無い** | `BLOCKED` | **止まる。その場で旋回しない。**測定機能へ知らせ、経路の再計算を待つ（[Spec-measure.md](Spec-measure.md) §4.2）。タイムアウトしない |
 | **`SM-3.1.2-126`** | `AUTO_MEASURE` | `BLOCKED` | 手前の経路が空いた | `NAV` | 残りの経路で走り直す。**別のルートは探さない**（探すのは -122） |
-| **`SM-3.1.2-127`** | `AUTO_MEASURE` | `WAIT` | **測定機能の「旋回」（角度）／「並進」（左右と距離）** | `ADJUST` | 速度上限は `v_jog_panel`（§6）。機体の角を盤に当てない条件は未定（[Spec-open.md](Spec-open.md) `O-a9`） |
+| **`SM-3.1.2-127`** | `AUTO_MEASURE` | `WAIT` | **測定機能の「旋回」（角度）／「並進」（左右と距離）** | `ADJUST` | 速度上限は `v_jog_panel`（§6）。**旋回は、受ける前に機体の角が描く円（外接半径 0.389 m）の中の障害物を確かめ、あれば受けずに理由を返す（`WAIT` のまま）**（[Spec-measure.md](Spec-measure.md) §5。F-47）。並進で盤に当てない条件は未定（[Spec-open.md](Spec-open.md) `O-a9`） |
 | **`SM-3.1.2-128`** | `AUTO_MEASURE` | `ADJUST` | 指示の動きが終わった | `WAIT` | 完了を測定機能へ返す |
 | **`SM-3.1.2-129`** | `AUTO_MEASURE` | `NAV` ／ `ALIGN` ／ `BLOCKED` ／ `ADJUST` | **測定機能の「停止」** | `PAUSE` | 目的地は保持する。**`ADJUST` から止めたときは、その旋回・並進の指示を捨てる**（-130 で `WAIT` へ戻り、指示し直してもらう） |
 | **`SM-3.1.2-130`** | `AUTO_MEASURE` | `PAUSE` | **測定機能の「発進」** | **止める前の状態**（`NAV` ／ `ALIGN` ／ `BLOCKED`）。止める前が `WAIT`・`ADJUST` なら `WAIT` | `NAV` へ戻るときは**走り出す前に手前の経路を確かめ、通れなければ `BLOCKED`**（再開を押したことは障害物へ向かって走り出す理由にならない。[Spec-onsite.md](Spec-onsite.md) §6.3 と同じ） |
