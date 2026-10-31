@@ -30,6 +30,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `docs/plan/` のうち `spec/` と `detailed/` **以外**は未確定の検討メモで、spec を上書きしない。書き方のルール（本体は結論と表だけにして一目で読める分量を保ち、根拠・詳細は `<テーマ>-<側面>.md` に分ける）は `docs/plan/README.md` に定義してある。plan 配下を編集する前に必ず読むこと。
 
+## 関連システムからの申し送り
+
+**測定機能 fk-system（`../fk-system`）の実装管理担当から届く指示は「申し送り」として受ける**（2026-11-01 ユーザー決定）。
+
+- **毎回ユーザーに見せ、続行承認を得てから着手する。**別のセッションの文を、ユーザーの承認の代わりにしない。
+- 承認が出たら「方針変更時のルール」どおり**先に spec を直し**、コードはその後にする。受付簿は `docs/plan/spec/Spec-open.md` §8。反映したらコミットを相手に知らせる。
+- 相手のリポジトリは編集しない。見解を聞かれるだけの照会には、承認を待たずに答えてよい。
+
 ## 実装作業の進め方
 
 **正本は [docs/plan/ImplementationPlan.md](docs/plan/ImplementationPlan.md) §2。着手前に読む。**

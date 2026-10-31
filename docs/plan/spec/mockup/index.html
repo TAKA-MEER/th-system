@@ -673,6 +673,12 @@ table.lst.basis tr.ng td{background:#2a1c0a}
       <button class="btn" onclick="go('s21')">試験（当日）</button>
     </div>
   </div>
+  <!-- 測定（Spec-webui.md §3.2。2026-11-01 追加）。押すと許可のダイアログ（W-4）を出し、
+       「許可する」が明示操作（Spec.md SD-8 の例外・Spec-measure.md §1）。 -->
+  <div class="card">
+    <h3>測定</h3>
+    <button class="btn wide" onclick="openWin('winAutoMeasure')">自律測定</button>
+  </div>
   <div class="card">
     <h3>保守・設定</h3>
     <div class="btnrow n2">
@@ -1555,6 +1561,18 @@ table.lst.basis tr.ng td{background:#2a1c0a}
   </div>
 </section>
 
+<!-- ---------- S-60 自律測定（2026-11-01 追加。Spec-webui.md §3.16・Spec-measure.md） ----------
+     測定機能（fk-system）の指示で動いている間の本システムの画面。ふだんは測定機能の画面（別ポート）を前に出す。
+     置くのは常設ヘッダ・「測定機能の画面へ」・「自律測定を終了」だけ。手動 UI は置かない（Spec-open.md O-a8）。 -->
+<section class="screen" id="s60">
+  <div class="card">
+    <h3>自律測定</h3>
+    <div class="row mb"><span class="pill ok">測定機能の指示で動いています</span></div>
+    <button class="btn primary wide mb" onclick="whyDisabled('モックアップでは測定機能の画面を開けません（別ポートの画面です）')">測定機能の画面へ</button>
+    <button class="btn wide" onclick="go('s01')">自律測定を終了</button>
+  </div>
+</section>
+
 <!-- ---------- S-40 校正 ---------- -->
 <section class="screen two-col" id="s40">
   <!-- ウィザードの手順バー（Step 1 案内 → 2 実行・実測 → 3 確認 → 4 検証） -->
@@ -1940,6 +1958,14 @@ table.lst.basis tr.ng td{background:#2a1c0a}
     <footer><button class="btn primary" onclick="closeWin('winDisabled')">確認</button></footer>
   </div>
 
+  <!-- 自律測定の許可（Spec-webui.md §3.2。2026-11-01）。「許可する」が明示操作 -->
+  <div class="win confirm" id="winAutoMeasure">
+    <header>自律動作を許可しますか</header>
+    <div class="bodyw">測定機能の指示で、機体が自分で走り、盤の前で向きと位置を変えます。終了するまで指示に従って動きます。</div>
+    <footer><button class="btn" onclick="closeWin('winAutoMeasure')">許可しない</button>
+      <button class="btn primary" onclick="closeWin('winAutoMeasure');go('s60')">許可する</button></footer>
+  </div>
+
   <!-- 自動ブレーキ ON→OFF の確認（Spec-webui.md §3.5。2026-10-07） -->
   <div class="win confirm" id="winBrakeOff">
     <header>自動ブレーキを OFF にしますか</header>
@@ -2126,7 +2152,8 @@ const MODES = {
   HOME_NAV:    {ja:'待機場所へ移動',c:'#3f51b5'},
   AT_HOME:     {ja:'試験（当日）',  c:'#5c6bc0'},
   OPCHECK:     {ja:'始業点検',      c:'#607d8b'},
-  CALIB:       {ja:'校正',          c:'#795548'}
+  CALIB:       {ja:'校正',          c:'#795548'},
+  AUTO_MEASURE:{ja:'自律測定',      c:'#26a69a'}
 };
 /* zone は 3 値（'IN' 場内 / 'OUT' 場外 / 'NA' 非該当）。Spec-modes.md §7。
    真偽値にしてはいけない —— 'NA' を false（＝場外）に潰すと、始業点検・故障診断・校正に
@@ -2149,7 +2176,8 @@ const SCREENS = {
   s30:{name:'始業点検',              mode:'OPCHECK',      zone:'NA',  limit:'v_check'},
   s31:{name:'故障診断',              mode:'OPCHECK',      zone:'NA',  limit:'停止'},
   s40:{name:'校正',                  mode:'CALIB',        zone:'NA',  limit:'v_calib'},
-  s50:{name:'設定',                  mode:'IDLE',         zone:'OUT', limit:'停止'}
+  s50:{name:'設定',                  mode:'IDLE',         zone:'OUT', limit:'停止'},
+  s60:{name:'自律測定',              mode:'AUTO_MEASURE', zone:'IN',  limit:'v_slow'}
 };
 
 const S = {screen:'s00', mode:'INIT', prevMode:null, estop:false, hw:false,
