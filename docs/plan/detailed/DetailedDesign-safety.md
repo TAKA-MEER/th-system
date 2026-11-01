@@ -972,7 +972,7 @@ colcon test --packages-select th_testing --event-handlers console_direct+ \
 
 ## 13. 逆引き
 
-| 完全設計書 | ここでの反映 |
+| 仕様書 | ここでの反映 |
 | --- | --- |
 | `Spec-safety.md` §1（4 層） | §1 |
 | §2.1（方式ごとの障害物） / `C-11` / `U-2` | §3.3 |

@@ -1,13 +1,13 @@
 # 音声フィードバックと観客向け表示
 
-**位置づけ**: 完成形の定義は [完全設計書](plan/spec/README.md)・[詳細設計書](plan/detailed/README.md) に従う
+**位置づけ**: 完成形の定義は [仕様書](plan/spec/README.md)・[詳細設計書](plan/detailed/README.md) に従う
 （[spec/README.md](plan/spec/README.md) §1）。ただし**音声アナウンスと観客向け表示は、両設計書が仕様を定義していない。**
 [DetailedDesign-reuse.md](plan/detailed/DetailedDesign-reuse.md) §2.12 が `voice/` 一式・`audience/` 一式とも
 **「維持」**とだけ決めており、中身の設計はどちらにも無い。**この 2 つについては本書が正**であり、
 旧 VISION.md から切り出して置いている。
 
 > **移行時の注意**: 本書の**発火トリガ（§2.7 の表）は旧モード体系（9 モード・`FOLLOWING_MAPLESS` 等）を
-> 前提に書かれている。**完全設計書の 18 モード体系（[Spec-modes.md](plan/spec/Spec-modes.md)）と
+> 前提に書かれている。**仕様書の 18 モード体系（[Spec-modes.md](plan/spec/Spec-modes.md)）と
 > 7 走行方式（[Spec-transit.md](plan/spec/Spec-transit.md)）へ移行する際に、**トリガの写像を引き直す必要がある。**
 > 一方、再生場所・レイヤ構成・話者・発話設計ルール・生成方式（§2.1〜§2.6）はモード体系に依存しないため、
 > そのまま持ち越せる。

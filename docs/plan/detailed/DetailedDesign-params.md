@@ -48,7 +48,7 @@ th_ws/src/th_params/
 | `derived_from` / `formula` | `class: b` なら ○ | `derive.py` の関数名 |
 | `measured_at` / `source` | `status: measured` なら ○ | いつ・何で測ったか |
 | `consumers` | ○ | このパラメータを読むノード。**空なら CI で落とす**（死んだパラメータの検出） |
-| `spec_ref` | ○ | 完全設計書の該当節 |
+| `spec_ref` | ○ | 仕様書の該当節 |
 | `blocking` | — | `true` なら placeholder のまま**起動を拒否する**。§1.3 の規則により自動で決まる |
 | `value_by` | — | 派生値がベクトルになる場合の軸（§1.4） |
 
@@ -119,7 +119,7 @@ th_ws/src/th_params/
 | --- | --- | --- |
 | `measured` | 実測して入れた。`measured_at` と `source` が必須 | なし |
 | `derived` | 他の値から計算した | なし |
-| `given` | 外部から与えられた（(a)）。仕様書・先方回答が根拠 | なし |
+| `given` | 外部から与えられた（(a)）。先方の仕様書・先方回答が根拠 | なし |
 | **`placeholder`** | **まだ根拠が無い暫定値** | **バッジを出す** |
 
 ---
@@ -532,7 +532,7 @@ python3 -m pytest src/th_testing/test/test_registry_completeness.py \
 
 ## 11. 逆引き
 
-| 完全設計書 | ここでの反映 |
+| 仕様書 | ここでの反映 |
 | --- | --- |
 | `Spec-params.md` §0（3 分類） / `SD-7` | §1.1・§2 |
 | §1（いま置ける値） | §6.1 |

@@ -489,7 +489,7 @@ python3 -m pytest src/th_testing/test/test_calib_core.py \
 
 ## 8. 逆引き
 
-| 完全設計書 | ここでの反映 |
+| 仕様書 | ここでの反映 |
 | --- | --- |
 | `Spec-checks.md` §1（共通の安全規則） / `Z-1` / `F-15` | §1 |
 | §2.1（4 項目） / `C-09` / `N-14` / `C-r1` | §2.1 |

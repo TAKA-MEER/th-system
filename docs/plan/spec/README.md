@@ -1,7 +1,9 @@
-﻿# docs/plan/spec — 完全設計書
+﻿# docs/plan/spec — 仕様書
 
 `docs/plan/source/NewDesign.md` と `docs/plan/restate/NewDesign-restated.md` を**両方とも正**として統合し、
 散在した記述をまとめて矛盾を解消した設計書。
+
+2026-11-01 に「完全設計書」から「仕様書」に改称した（関連システムの文書と名前を揃えた。Spec-open.md §8）。
 
 **本体は [Spec.md](Spec.md)。** そこから各詳細ファイルへ辿れる。
 

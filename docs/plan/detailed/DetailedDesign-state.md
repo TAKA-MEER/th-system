@@ -1160,7 +1160,7 @@ python3 -m pytest src/th_testing/test/test_transition_table.py -v
 
 ## 13. 逆引き
 
-| 完全設計書 | ここでの反映 |
+| 仕様書 | ここでの反映 |
 | --- | --- |
 | `Spec-modes.md` §1（モードと状態の二層） | §2 |
 | §3・§3.1（**状態モデルの正本**） | §4 |

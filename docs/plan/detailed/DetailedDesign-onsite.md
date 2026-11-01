@@ -2,7 +2,7 @@
 
 [DetailedDesign.md](DetailedDesign.md) の詳細。**`PREP` / `PANEL_NAV` / `AT_PANEL` / `SUMMON` / `HOME_NAV`。**
 
-先方の要望「立ち会い試験で配電盤上部を安全に確認したい」「前日準備が大変」に
+先方の要望「お立会試験で配電盤上部を安全に確認したい」「前日準備が大変」に
 **直接あたるのがこの区間**である。ここでは**速度は評価軸にならない**（1 回の移動は数 m）。
 効くのは**盤前に何 cm・何度で着けるか**と、**1 盤あたり何操作かかるか**（盤の数だけ掛かる）。
 
@@ -592,7 +592,7 @@ ros2 launch th_bringup gazebo.launch.py scenario:=panel_shuttle
 
 ## 11. 逆引き
 
-| 完全設計書 | ここでの反映 |
+| 仕様書 | ここでの反映 |
 | --- | --- |
 | `Spec-onsite.md` §0（骨子） | §4 |
 | §1（扱うデータ） / `CL-M-9` | §3.3・[DetailedDesign-params.md](DetailedDesign-params.md) §10 |
