@@ -1434,9 +1434,14 @@ table.lst.basis tr.ng td{background:#2a1c0a}
     <div class="tabpane" id="r21c">
     <div class="card">
       <h3>配電盤前</h3>
-      <!-- 配電盤前（AT_PANEL）にいるときだけ押せる -->
-      <div class="row"><span class="grow sm">作業中</span>
-        <button class="btn" id="workBtn" onclick="toggleWork()">OFF</button></div>
+      <!-- 配電盤前（AT_PANEL）にいるときだけ押せる。2026-11-01 に仮の「作業中」ボタンを置き換え（Spec-onsite.md §7.2）。
+           「測定機能へ」は測定機能の画面を開き、同時に停止命令（WORKING）になる。解くのは測定機能の「測定を終えた」か「停止を解く」。 -->
+      <div class="btnrow n2">
+        <button class="btn primary" id="workBtn" onclick="startMeasure()">測定機能へ</button>
+        <button class="btn" onclick="whyDisabled('モックアップではカメラ機能の画面を開けません（別の画面です）')">カメラ</button>
+      </div>
+      <div class="row mt" id="workRow" style="display:none"><span class="grow sm"><span class="pill ng">停止命令中（測定中）</span></span>
+        <button class="btn sm" onclick="openWin('winWorkRelease')">停止を解く</button></div>
     </div>
     </div>
     </div>
@@ -1569,6 +1574,8 @@ table.lst.basis tr.ng td{background:#2a1c0a}
     <h3>自律測定</h3>
     <div class="row mb"><span class="pill ok">測定機能の指示で動いています</span></div>
     <button class="btn primary wide mb" onclick="whyDisabled('モックアップでは測定機能の画面を開けません（別ポートの画面です）')">測定機能の画面へ</button>
+    <!-- 人の手動操作が割り込んだら一時停止し、「走行」（測定機能の画面）を待つ（2026-11-01。Spec-measure.md §7） -->
+    <button class="btn wide mb" onclick="openJog('s60')">手動</button>
     <button class="btn wide" onclick="go('s01')">自律測定を終了</button>
   </div>
 </section>
@@ -1997,9 +2004,17 @@ table.lst.basis tr.ng td{background:#2a1c0a}
 
   <div class="win confirm" id="winWorkBlocked">
     <header>この操作はできません</header>
-    <div class="bodyw">「作業中」が ON のため、待機場所・別の配電盤・呼び寄せのいずれも選べません。<br>
-      <span class="sm mut">作業が終わったら「作業中」を OFF にしてください。</span></div>
+    <div class="bodyw">測定中（停止命令中）のため、待機場所・別の配電盤・呼び寄せのいずれも選べません。<br>
+      <span class="sm mut">測定機能で測定を終えると解けます。</span></div>
     <footer><button class="btn primary" onclick="closeWin('winWorkBlocked')">確認</button></footer>
+  </div>
+
+  <!-- 停止命令を人が解く（測定機能が落ちたときの出口。Spec-modes.md SM-3.1.2-134） -->
+  <div class="win confirm" id="winWorkRelease">
+    <header>測定機構が引いてあることを確かめましたか</header>
+    <div class="bodyw">停止命令を解くと、行き先を選んだり手動で動かしたりできるようになります。</div>
+    <footer><button class="btn" onclick="closeWin('winWorkRelease')">やめる</button>
+      <button class="btn danger" onclick="closeWin('winWorkRelease');endMeasure()">解く</button></footer>
   </div>
 
   <!-- W-5 経路ブロック。先が空けば同じ経路の残りで自動で再開する。
@@ -2784,6 +2799,11 @@ function openJog(screen){
     whyDisabled('手動操作', '退避待ちの間は動かせません。中止してからやり直してください');
     return;
   }
+  /* 測定中（「測定機能へ」の停止命令。AT_PANEL / WORKING）もジョグを受け付けない（2026-11-01。Spec-modes.md §3.1.1） */
+  if(S.mode === 'AT_PANEL' && work){
+    whyDisabled('測定中（停止命令中）は動かせません。測定機能で測定を終えるか、「停止を解く」を押してください');
+    return;
+  }
   const st = document.querySelector('#jogWin .stick');
   if(st) st.dataset.screen = screen;
   $('jwMode').textContent = 'モードは「' + MODES[S.mode].ja + '」のまま変わりません';
@@ -2877,17 +2897,23 @@ function finish20(){
 let work = false, summonTimer = null;
 /* 行き先の表示は操作バーのピルと操作カードの状態欄の両方に出す */
 function sub21(v){ $('modeSub21').textContent = v; $('st21').textContent = v; }
-function toggleWork(){
-  work = !work;
-  const b = $('workBtn');
-  b.textContent = work ? 'ON（作業中）' : 'OFF';
-  b.classList.toggle('on', work);
-  /* OFF にしても配電盤前にいることは変わらない（AT_PANEL の IDLE_P ⇄ WORKING）。
-     次の行き先を選んだ時点で PANEL_NAV / SUMMON / HOME_NAV に移る。Spec-modes.md §3 */
+/* 「測定機能へ」= 停止命令（AT_PANEL の IDLE_P → WORKING。Spec-modes.md SM-3.1.2-062）。
+   解くのは測定機能の「測定を終えた」（-063）か、人の「停止を解く」（-134）。
+   解いても配電盤前にいることは変わらない。次の行き先を選んだ時点で PANEL_NAV / SUMMON / HOME_NAV に移る。 */
+function setWork(on){
+  work = on;
+  $('workBtn').classList.toggle('dis', on);
+  $('workRow').style.display = on ? '' : 'none';
   S.mode = 'AT_PANEL';
-  sub21(work ? '配電盤前・作業中' : '配電盤前');
+  sub21(on ? '配電盤前・測定中（停止命令）' : '配電盤前');
   paintHeader();
 }
+function startMeasure(){
+  if(work) return;
+  setWork(true);
+  showGuide('停止命令を出しました。測定機能の画面で測定してください（モックアップでは測定機能の画面は開きません）。');
+}
+function endMeasure(){ setWork(false); }
 function nextDest(name){
   if(work){ openWin('winWorkBlocked'); return; }
   S.mode = name==='待機場所' ? 'HOME_NAV' : (name==='その場で呼ぶ' ? 'SUMMON' : 'PANEL_NAV');
