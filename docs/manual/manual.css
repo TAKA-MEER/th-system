@@ -1,0 +1,143 @@
+/* 図解マニュアルの体裁。A4 縦の固定サイズのページ（.sheet）を並べる。
+   画面でも印刷（PDF）でも同じページ割りになるよう、ページの大きさは mm で決め打ちにする。
+   外部のフォントは読まない（機体の AP 配下にはインターネットが無い）。 */
+
+:root{
+  --ink:#1b2230; --sub:#596273; --line:#d5d9e0; --soft:#f3f5f8;
+  --navy:#1c2c46; --blue:#2b6cc4; --amber:#e08a00; --amber-bg:#fff5e4;
+  --red:#c62828; --red-bg:#fdecec; --green:#2e7d32;
+  --mk:#ffb300;            /* 注釈の色。暗い画面の上でも目立つ橙 */
+  --mk-d:5.2mm;            /* 番号丸の直径 */
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:#e6e8ec}
+body{
+  font-family:"BIZ UDPGothic","BIZ UDゴシック","Yu Gothic UI","Yu Gothic","Meiryo","Hiragino Kaku Gothic ProN",sans-serif;
+  font-size:9.4pt; line-height:1.55; color:var(--ink);
+  -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  counter-reset:sheet;
+}
+@page{size:A4 portrait;margin:0}
+
+/* ---------------- ページ ---------------- */
+.sheet{
+  width:210mm; height:297mm; padding:11mm 12mm 13mm; margin:8mm auto;
+  background:#fff; box-shadow:0 1mm 4mm rgba(0,0,0,.18);
+  position:relative; overflow:hidden; display:flex; flex-direction:column; gap:2.6mm;
+  break-after:page; page-break-after:always; counter-increment:sheet;
+}
+@media print{
+  html{background:none}
+  .sheet{margin:0; box-shadow:none}
+}
+.sheet > .run{
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-size:7.4pt; color:var(--sub); border-bottom:.3mm solid var(--line); padding-bottom:1.2mm; flex:0 0 auto;
+}
+.sheet > .run b{color:var(--ink)}
+.sheet::after{
+  content:counter(sheet); position:absolute; right:12mm; bottom:5.5mm;
+  font-size:7.4pt; color:var(--sub);
+}
+.sheet > .push{margin-top:auto}
+
+/* ---------------- 見出し ---------------- */
+h1{font-size:24pt; line-height:1.3; letter-spacing:.02em}
+h2{font-size:14.5pt; line-height:1.35; display:flex; align-items:center; gap:2.5mm; flex-wrap:wrap}
+h3{font-size:10.6pt; margin-top:.6mm; border-left:1.2mm solid var(--navy); padding-left:2mm; line-height:1.35}
+.chapter-title{font-size:9pt; color:var(--blue); font-weight:700; letter-spacing:.06em}
+.lead{color:var(--sub)}
+p + p{margin-top:1.2mm}
+
+.chip{display:inline-block; font-size:8.4pt; font-weight:700; padding:.5mm 2mm; border-radius:1mm;
+  background:var(--navy); color:#fff; letter-spacing:.03em; white-space:nowrap}
+.chip.mode{background:#e8eef8; color:var(--navy); border:.3mm solid #b9c8e0}
+.chip.na{background:#fff; color:var(--red); border:.35mm solid var(--red)}
+.chip.sm{font-size:7.4pt; padding:.2mm 1.4mm}
+kbd,.ui{font-family:inherit; font-weight:700; background:var(--soft); border:.3mm solid var(--line);
+  border-radius:.8mm; padding:0 1mm; white-space:nowrap}
+
+/* ---------------- 図と注釈 ---------------- */
+figure.shot{position:relative; margin:0 auto; flex:0 0 auto; max-width:100%}
+figure.shot.full{width:100%}
+figure.shot > .frame{position:relative}
+figure.shot > .frame > img{display:block; width:100%; height:auto; border-radius:1.2mm; box-shadow:0 0 0 .25mm #9aa3b2}
+figure.shot > figcaption{font-size:7.8pt; color:var(--sub); text-align:center; margin-top:.8mm}
+.mk{position:absolute; border:.55mm solid var(--mk); border-radius:1mm;
+  box-shadow:0 0 0 .3mm rgba(0,0,0,.7), inset 0 0 0 .3mm rgba(0,0,0,.45); pointer-events:none}
+.mn{position:absolute; width:var(--mk-d); height:var(--mk-d); margin:calc(var(--mk-d) / -2) 0 0 calc(var(--mk-d) / -2);
+  border-radius:50%; background:var(--mk); color:#111; border:.4mm solid #111;
+  display:flex; align-items:center; justify-content:center; font:700 8.2pt/1 Arial,"BIZ UDPGothic",sans-serif}
+.fig-error{position:absolute; inset:0; background:rgba(198,40,40,.85); color:#fff; font-weight:700;
+  display:flex; align-items:center; justify-content:center; text-align:center; padding:4mm}
+
+/* 図を並べる */
+.cols{display:grid; grid-template-columns:1fr 1fr; gap:4mm; align-items:start}
+.cols.c3{grid-template-columns:1fr 1fr 1fr; gap:3mm}
+.cols.r6040{grid-template-columns:1.5fr 1fr}
+.cols.r4060{grid-template-columns:1fr 1.5fr}
+.cols > div{min-width:0}
+.cols figure.shot{width:100%}
+.stack{display:flex; flex-direction:column; gap:2mm}
+
+/* ---------------- 凡例 ---------------- */
+/* 2 段組みは段の中を上から下へ読む（1→6 が左、7→ が右） */
+ol.legend{list-style:none; column-count:2; column-gap:6mm; font-size:8.7pt; line-height:1.45}
+ol.legend.one{column-count:1}
+ol.legend > li{position:relative; padding-left:6.4mm; min-height:4.8mm; break-inside:avoid; margin-bottom:1.1mm}
+ol.legend > li:last-child{margin-bottom:0}
+ol.legend > li::before{
+  content:attr(data-n); position:absolute; left:0; top:.1mm; width:4.6mm; height:4.6mm; border-radius:50%;
+  background:var(--mk); border:.35mm solid #111; color:#111;
+  display:flex; align-items:center; justify-content:center; font:700 7.4pt/1 Arial,sans-serif;
+}
+ol.legend > li > b:first-child{margin-right:1mm}
+
+/* ---------------- 手順・注意 ---------------- */
+ol.steps{list-style:none; counter-reset:st; display:flex; flex-direction:column; gap:1.2mm}
+ol.steps > li{counter-increment:st; position:relative; padding-left:7.5mm}
+ol.steps > li::before{
+  content:counter(st); position:absolute; left:0; top:.2mm; width:5mm; height:5mm; border-radius:1mm;
+  background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:center; font:700 8pt/1 Arial,sans-serif;
+}
+ul.dots{padding-left:4.5mm}
+ul.dots > li + li{margin-top:.5mm}
+
+.box{border-radius:1.4mm; padding:2mm 3mm; font-size:8.8pt}
+.box > b:first-child{display:block; margin-bottom:.5mm}
+.box.warn{background:var(--amber-bg); border-left:1.3mm solid var(--amber)}
+.box.danger{background:var(--red-bg); border-left:1.3mm solid var(--red)}
+.box.tip{background:#eef4fc; border-left:1.3mm solid var(--blue)}
+.box.mock{background:#f4f1fb; border-left:1.3mm solid #7e57c2}
+
+table.t{border-collapse:collapse; width:100%; font-size:8.5pt; line-height:1.45}
+table.t th,table.t td{border:.25mm solid var(--line); padding:1mm 1.8mm; text-align:left; vertical-align:top}
+table.t th{background:var(--soft); font-weight:700; white-space:nowrap}
+
+.ref{font-size:7.8pt; color:var(--sub); border-top:.3mm dashed var(--line); padding-top:1.2mm}
+.ref code{font-family:inherit}
+.sw{display:inline-block; width:3.4mm; height:3.4mm; border-radius:.7mm; vertical-align:-.5mm; margin-right:1mm; border:.3mm solid #0003}
+
+/* ---------------- 表紙・目次 ---------------- */
+.cover{justify-content:flex-start}
+.cover .band{background:var(--navy); color:#fff; margin:-11mm -12mm 0; padding:24mm 14mm 12mm}
+.cover .band .sub{font-size:12pt; color:#b8c9e6; margin-top:2mm}
+.cover .band .meta{font-size:8.6pt; color:#8fa6cc; margin-top:8mm}
+.toc{list-style:none; display:flex; flex-direction:column; gap:.6mm; font-size:9.4pt}
+.toc li{display:flex; align-items:baseline; gap:2mm}
+.toc li.ch{font-weight:700; margin-top:2mm; font-size:10.4pt}
+.toc li .dots{flex:1 1 auto; border-bottom:.3mm dotted #9aa3b2; transform:translateY(-1mm)}
+.toc li a{color:inherit; text-decoration:none}
+.toc li .pg{min-width:6mm; text-align:right; font-variant-numeric:tabular-nums}
+.toc li.sub{padding-left:5mm; font-size:8.9pt}
+
+/* 目次の画面の流れ */
+.flow{display:grid; grid-template-columns:auto auto auto auto 1fr; align-items:center; gap:2mm; font-size:8.6pt}
+.flow .node{border:.4mm solid var(--navy); border-radius:1.4mm; padding:1.5mm 2.5mm; text-align:center; line-height:1.35; color:var(--sub)}
+.flow .node b{color:var(--ink)}
+.flow .node.hub{background:var(--navy); color:#c8d6ee}
+.flow .node.hub b{color:#fff}
+.flow .arr{font-size:12pt; color:var(--navy)}
+.flow .groups{display:flex; flex-direction:column; gap:1.5mm}
+.flow .grp{border:.3mm solid var(--line); border-radius:1.4mm; padding:1.2mm 2.5mm; display:flex; flex-wrap:wrap; gap:.4mm 3.5mm; background:var(--soft)}
+.flow .grp b{flex:0 0 100%; font-size:8pt; color:var(--blue)}

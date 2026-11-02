@@ -1,0 +1,1375 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>使い方（図解）</title>
+<!--
+  図解マニュアル本体。A4 縦の .sheet を 1 ページとして並べる（PDF にしても同じページ割り）。
+  画面の図は img/<id>.png、注釈の位置は img/shots.js（どちらも tools/capture.py が作る）。
+  図の番号と凡例の番号は annotate.js が突き合わせる。作り直し・検査の手順は README.md。
+  文言の正は docs/使い方.md。ここは「画面のどこを見て、どこを押すか」を図で示すだけにする。
+-->
+<link rel="stylesheet" href="manual.css">
+<script src="img/shots.js"></script>
+</head>
+<body>
+
+<!-- ======================= 表紙 ======================= -->
+<section class="sheet cover">
+  <div class="band">
+    <div class="chapter-title" style="color:#8fb3ec">MIRS2602-高見舎プロジェクト</div>
+    <h1>使い方（図解）</h1>
+    <div class="sub">タブレット画面（WebUI）の見方と操作</div>
+    <div class="meta">2026-11-02 版 ／ 画面はモックアップ（仕様の見本）から撮影</div>
+  </div>
+
+  <div class="box mock">
+    <b>この冊子の画面について</b>
+    画面の図は、仕様の見本として作ったモックアップ（<code>docs/plan/spec/mockup/index.html</code>）を
+    <b>横長（1280×720）</b>で表示して撮ったものです。<b>実機の画面とは、文言・配置・色が細部で異なることがあります。</b>
+    実機の画面での撮り直しは今後行います。
+  </div>
+
+  <div class="box tip">
+    <b>この冊子と <code>docs/使い方.md</code> の関係</b>
+    操作手順と機体の振る舞いの正本は <code>docs/使い方.md</code> です。この冊子は「画面のどこを見て、どこを押すか」を
+    図で示すものです。<b>食い違っていたら <code>使い方.md</code> が正しい</b>と考えてください。
+    「今回の試験で何を確かめるか」は <code>docs/試験項目.md</code> にあります。
+  </div>
+
+  <h3>図の読み方</h3>
+  <div class="cols r4060">
+    <div>
+      <figure class="shot" data-shot="hdr-normal" data-marks="5" data-alt="読み方の例"></figure>
+    </div>
+    <div>
+      <p>図の上の<b style="background:#ffb300;padding:0 1mm;border-radius:.6mm">橙の枠と番号</b>が、図の下の凡例の同じ番号に対応します。</p>
+      <ol class="legend one" data-shot="hdr-normal" style="margin-top:1.5mm">
+        <li data-n="5"><b>非常停止</b>どの画面でも右上にあります（凡例はこのように書きます）。</li>
+      </ol>
+      <p style="margin-top:1.5mm">ボタンの名前は <span class="ui">終了</span> のように囲んで書きます。
+        <span class="chip na sm">実機では未実装</span> の札が付いた画面は、仕様だけがあって実機ではまだ使えません（付録）。</p>
+    </div>
+  </div>
+
+  <div class="box danger">
+    <b>止めるときは</b>
+    どの画面でも、機体を止めるときは<b>物理の非常停止ボタン</b>か、画面右上の <span class="ui">非常停止</span> を押します。
+    物理の非常停止ボタンは、画面の状態に関係なく常に効きます。
+    人はロボットから離れず、いつでも止められる位置にいてください。
+  </div>
+</section>
+
+<!-- ======================= 目次 ======================= -->
+<section class="sheet">
+  <div class="run"><span><b>目次</b></span><span>使い方（図解）</span></div>
+  <h2>目次</h2>
+  <ol class="toc">
+    <li class="ch"><a href="#c1">1. 画面の見方</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c1-1">画面の構成</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c1-2">ヘッダの表示</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c1-3">操作カードのボタン</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="ch"><a href="#c2">2. 起動と運用の終了</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c2-1">起動する（S-00 接続確認）</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c2-2">機器がつながらないとき</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c2-3">メインメニュー（S-01）</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c2-4">運用の終了</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="ch"><a href="#c3">3. 試験場の外を走る</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c3-1">手動走行（S-11）</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c3-2">自動ブレーキ</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c3-3">教示（手動）（S-13）— 経路を選ぶ・記録する・保存する</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c3-6">教示再生（S-14）— 経路を選ぶ・位置を合わせる・走らせる</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="ch"><a href="#c4">4. 試験場で使う</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c4-1">試験準備（S-20）— 前日に地図とピンを作る</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c4-6">試験（当日）（S-21）— 配電盤へ移動・呼び寄せ・測定</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="ch"><a href="#c5">5. 保守と設定</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c5-1">始業点検（S-30）・故障診断（S-31）</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c5-4">校正（S-40）</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c5-7">設定（S-50）</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="ch"><a href="#c6">6. 止まったとき・異常のとき</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c6-1">非常停止ボタンを押したとき</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c6-2">手押し（物理の非常停止ボタン）</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c6-3">異常のウィンドウ</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c6-5">直近の異常とフォルト履歴</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="sub"><a href="#c6-6">止まっている理由・案内の帯</a><span class="dots"></span><span class="pg"></span></li>
+    <li class="ch"><a href="#ca">付録　実機では未実装の画面</a><span class="dots"></span><span class="pg"></span></li>
+  </ol>
+  <h3>画面の流れ</h3>
+  <div class="flow">
+    <div class="node">S-00<br><b>接続確認</b></div><div class="arr">→</div>
+    <div class="node hub">S-01<br><b>メインメニュー</b></div><div class="arr">→</div>
+    <div class="groups">
+      <div class="grp"><b>移動（試験場の外）</b><span>S-11 手動走行</span><span>S-13 教示（手動）</span><span>S-14 教示再生</span></div>
+      <div class="grp"><b>試験場</b><span>S-20 試験準備（前日）</span><span>S-21 試験（当日）</span></div>
+      <div class="grp"><b>保守・設定</b><span>S-30 始業点検 →（NG）S-31 故障診断</span><span>S-40 校正</span><span>S-50 設定</span></div>
+    </div>
+  </div>
+  <p style="font-size:8.6pt;color:var(--sub)">どの画面でも <span class="ui">終了</span> でメインメニューへ戻ります。非常停止・異常のウィンドウは、どの画面の上にも重なって出ます（6 章）。</p>
+  <div class="box tip push">
+    <b>画面番号について</b>
+    S-00・S-11 などは仕様書（<code>docs/plan/spec/Spec-webui.md</code>）の画面番号です。画面の上には出ません。
+    画面は機体のモードに合わせて自動で切り替わり、画面を直接選ぶ操作はありません。
+  </div>
+</section>
+
+<!-- ======================= 1 画面の見方 ======================= -->
+<section class="sheet" id="c1">
+  <div class="run"><span><b>1. 画面の見方</b></span><span>使い方（図解）</span></div>
+  <div class="chapter-title">1. 画面の見方</div>
+  <h2 id="c1-1">画面の構成 <span class="chip">例：S-11 手動走行</span></h2>
+  <p class="lead">どの画面も、上に<b>ヘッダ</b>（画面名・モード・異常・非常停止）、左に<b>主な表示</b>、右に<b>操作カードと手動操作</b>が並びます。</p>
+  <figure class="shot full" data-shot="layout" data-alt="手動走行の画面"></figure>
+  <ol class="legend" data-shot="layout">
+    <li data-n="1"><b>画面名</b>いま開いている画面。ヘッダで一番大きい文字。</li>
+    <li data-n="2"><b>モード</b>機体がいまどのモードにいるか。画面名と違うことがある。</li>
+    <li data-n="3"><b>フォルト表示</b>正常なら緑の点と「正常」。異常のときは原因と対処を 1 行で出す。</li>
+    <li data-n="4"><b>非常停止</b>どの画面でも右上。押すと速度指令を 0 にする（6 章）。</li>
+    <li data-n="5"><b>終了</b>どの画面でも左上（タブの左）。そのモードを抜けてメインメニューへ戻る。</li>
+    <li data-n="6"><b>タブ</b>左側の表示を切り替える。</li>
+    <li data-n="7"><b>操作カード</b>停止・走行・保存など、その画面の主な操作。並ぶボタンは画面ごとに違う。</li>
+    <li data-n="8"><b>状態</b>一時停止中・走行中・記録中など、いまの状態。</li>
+    <li data-n="9"><b>スティック</b>触れている間だけ動く。倒した向きと量で前進・後退・旋回。</li>
+    <li data-n="10"><b>速度スライダ</b>0〜100%。100% で手動の上限いっぱい。</li>
+    <li data-n="11"><b>速度プリセット</b>低速 27%・中速 55%・高速 100%（前進の上限 0.55 m/s に対する割合）。</li>
+  </ol>
+  <h3>どの画面でも共通の決まり</h3>
+  <ul class="dots">
+    <li><b>押しても何も起こらないことがある。</b>いまの状態で受け付けられないボタンは、何も表示されずに無視されることがあります。
+      故障ではなく「まだその操作をしてよい状態ではない」と考えて、状態の表示を確かめてください。</li>
+    <li><b>スティックやキーを離すと、通常の加減速で減速して止まります。</b>最高速からは約 0.6 m・約 2.2 秒かかります。
+      すぐ止めたいときは非常停止を押します。</li>
+    <li>真横に倒す<b>その場旋回</b>は速度プリセットの影響を受けません（上限 1.0 rad/s）。PC で開いたときは <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> か矢印キーでも走れます。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3「画面と操作」・§3-1「ボタンの場所」・§3-2「手動走行」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>1. 画面の見方</b></span><span>使い方（図解）</span></div>
+  <h2 id="c1-2">ヘッダの表示</h2>
+  <p class="lead">ヘッダは常に一番上に出て、ウィンドウにも隠れません。いまのモードと異常の有無はここで見ます。</p>
+  <figure class="shot full" data-shot="hdr-normal" data-alt="試験の画面のヘッダ"></figure>
+  <ol class="legend" data-shot="hdr-normal">
+    <li data-n="1"><b>画面名</b>（図は試験の画面）</li>
+    <li data-n="2"><b>場内の札</b>試験場内の画面（試験準備・試験・自律測定）だけに出る。速度は低速まで、自動ブレーキは ON。</li>
+    <li data-n="3"><b>モード</b>同じ画面でも、移動中・呼び寄せ中などで変わる。</li>
+    <li data-n="4"><b>フォルト表示</b>正常なら緑の点と「正常」。</li>
+    <li data-n="5"><b>非常停止</b>押すと止まる。</li>
+  </ol>
+  <h3>状態によるヘッダの変化</h3>
+  <div class="stack">
+    <figure class="shot full" data-shot="hdr-fault"><figcaption>異常があるとき：赤い点と、原因・対処の文が出る（例：LiDAR の途絶）</figcaption></figure>
+    <figure class="shot full" data-shot="hdr-estop"><figcaption>非常停止中：モードが「非常停止」になり、非常停止ボタンの色が変わる</figcaption></figure>
+    <figure class="shot full" data-shot="hdr-carry"><figcaption>手押し中（物理の非常停止ボタンを押している）：モードが「手押し」、点が紫。画面の非常停止は灰色で押しても効かない</figcaption></figure>
+    <figure class="shot full" data-shot="hdr-dev"><figcaption>開発モード中：ヘッダがえんじ色になり、札が出る</figcaption></figure>
+  </div>
+  <ol class="legend one" data-shot="hdr-dev">
+    <li data-n="1"><b>開発モードの札</b>この札が出ている間は通常の運用状態ではない。試験では使わない。意図せず出ていたら設定で無効にする（5 章）。</li>
+  </ol>
+  <div class="box mock"><b>実機との違い</b>実機ではヘッダ全体の色も変わります：非常停止中は赤、手押し中は紫、開発モード中はえんじ色（重なったときは非常停止が優先）。モックアップで色が変わるのは開発モードだけです。</div>
+  <div class="ref push">詳しくは：使い方.md §3-1「ボタンの場所」・§3-5「非常停止中の窓が出たら」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>1. 画面の見方</b></span><span>使い方（図解）</span></div>
+  <h2 id="c1-3">操作カードのボタン</h2>
+  <p class="lead">走行・教示・試験の画面では、右上の操作カードに主な操作が集まっています。並ぶボタンは画面ごとに違います。</p>
+  <div class="cols c3">
+    <div>
+      <figure class="shot" data-shot="ops-pause"><figcaption>教示再生・止まっているとき</figcaption></figure>
+      <ol class="legend one" data-shot="ops-pause" style="margin-top:1.5mm">
+        <li data-n="1"><b>停止</b>青い塗り＝いまの状態</li>
+        <li data-n="2"><b>状態</b>「一時停止中」</li>
+      </ol>
+    </div>
+    <div>
+      <figure class="shot" data-shot="ops-run"><figcaption>教示再生・走っているとき</figcaption></figure>
+      <ol class="legend one" data-shot="ops-run" style="margin-top:1.5mm">
+        <li data-n="1"><b>再生</b>青い塗りが移る</li>
+        <li data-n="2"><b>状態</b>「走行中」</li>
+      </ol>
+    </div>
+    <div>
+      <figure class="shot" data-shot="ops-teach"><figcaption>教示（手動）</figcaption></figure>
+      <ol class="legend one" data-shot="ops-teach" style="margin-top:1.5mm">
+        <li data-n="1"><b>保存</b>緑の塗り＝押すと確定する動作</li>
+      </ol>
+    </div>
+  </div>
+  <h3>ボタンの意味</h3>
+  <table class="t">
+    <tr><th>ボタン</th><th>意味</th></tr>
+    <tr><td><span class="ui">停止</span></td><td>走行・記録を止める（一時停止。続きから再開できる）</td></tr>
+    <tr><td><span class="ui">走行</span>／<span class="ui">再生</span></td><td>走り出す。教示再生の画面では「再生」</td></tr>
+    <tr><td><span class="ui">保存</span></td><td>記録した経路や地図を確定して保存する（教示・試験準備の画面）</td></tr>
+    <tr><td><span class="ui">手動</span></td><td>手動操作パネルを開く。モードは変えずに、触れている間だけスティックで動かす（3 章）</td></tr>
+    <tr><td><span class="ui">終了</span></td><td>操作カードではなく画面の左上。そのモードを抜けてメインメニューへ</td></tr>
+  </table>
+  <p>「確認」は操作カードには出ません。非常停止・異常のウィンドウの中にだけ出ます（6 章）。
+    手動操作パネルは、操作カードの停止・走行・再生・保存を押すと閉じます。</p>
+  <h3>ボタンの色（実機）</h3>
+  <table class="t">
+    <tr><th style="width:28%">見た目</th><th>意味</th></tr>
+    <tr><td><span class="sw" style="background:#2c4a74"></span>青（塗り）</td><td><b>いまの状態</b>。停止／確認／走行のうち該当する 1 つだけ。青は同時に 2 つ出ない</td></tr>
+    <tr><td><span class="sw" style="background:#2e6b34"></span>緑（塗り）</td><td>押すと確定する動作（保存）</td></tr>
+    <tr><td><span class="sw" style="background:#c62828"></span>赤（塗り）</td><td><b>次に押す「停止」</b>。青が走行か確認のときの停止</td></tr>
+    <tr><td><span class="sw" style="background:#fff;border:.6mm solid #333"></span>白い太枠</td><td><b>次に押す「走行」</b>。青が停止のときの走行（再生でも同じ）</td></tr>
+    <tr><td><span class="sw" style="background:#252830"></span>面＋枠</td><td>押せるが、いまの状態でも次に押すものでもない（手動もここ）</td></tr>
+    <tr><td><span class="sw" style="background:#fff;border:.4mm dashed #aaa"></span>薄い・破線の枠</td><td>押せない</td></tr>
+  </table>
+  <div class="box mock"><b>実機との違い</b>モックアップが再現しているのは「青＝いまの状態」と「緑＝保存」だけです。実機では、次に押すボタンが赤（停止）または白い太枠（走行）で示されます。</div>
+  <div class="ref push">詳しくは：使い方.md §3-1「ボタンの場所」</div>
+</section>
+
+<!-- ======================= 2 起動と運用の終了 ======================= -->
+<section class="sheet" id="c2">
+  <div class="run"><span><b>2. 起動と運用の終了</b></span><span>使い方（図解）</span></div>
+  <div class="chapter-title">2. 起動と運用の終了</div>
+  <h2 id="c2-1">起動する <span class="chip">S-00 接続確認</span></h2>
+  <ol class="steps">
+    <li>ロボットとラズパイの電源を入れ、PC をロボットの AP につなぐ（屋内は PC に USB 無線ドングルを挿すと、数秒で 5GHz の <code>th-rpi-5g</code> に自動でつながる）。</li>
+    <li>PC で <code>cd th_ws &amp;&amp; ./start.sh</code>。<b>このターミナルは開いたままにする</b>（閉じるとロボットが止まる）。</li>
+    <li>タブレットで <b><code>http://192.168.5.50:5173</code></b> を開く（PC で見るだけなら <code>http://localhost:5173</code>）。</li>
+    <li>下の接続確認の画面で、総合が「運用に入れます」になったら <span class="ui">メインメニュー画面へ</span>。</li>
+  </ol>
+  <figure class="shot full" data-shot="s00-ok" data-alt="接続確認の画面"></figure>
+  <ol class="legend" data-shot="s00-ok">
+    <li data-n="1"><b>疎通確認</b>機器ごとに独立に判定する（✓ 疎通／× 未接続）。行の下に最後に受信してからの時間など。</li>
+    <li data-n="2"><b>必須の機器</b>「必須」の行（ESP32・ラズパイの LiDAR・PC）が全部 ✓ になるまで先へ進めない。</li>
+    <li data-n="3"><b>任意の機器</b>カメラ・リードデバイス。つながっていなくても進めるが、それを使う走行方式は選べない。</li>
+    <li data-n="4"><b>総合</b>必須がそろうと「運用に入れます」。</li>
+    <li data-n="5"><b>メインメニュー画面へ</b>必須がそろうまで出ない。</li>
+    <li data-n="6"><b>始業点検の自動判定</b>起動のたびに行う簡易判定（非常停止ボタン・IMU・LiDAR）。要確認でも運用には入れる（警告だけ）。</li>
+  </ol>
+  <div class="box tip"><b>起動直後について</b>起動直後に出るフォルトは、1〜2 分で消えるのが正常です。
+    既定の <code>stage:=4</code> では、起動直後に一時的に非常停止のウィンドウが出ることがあります。S-00 で全機器が「疎通」になってから、ウィンドウの「解除」を 1 回押します。</div>
+  <div class="ref push">詳しくは：使い方.md §1「起動する」・§2「起動後の健全性確認」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>2. 起動と運用の終了</b></span><span>使い方（図解）</span></div>
+  <h2 id="c2-2">機器がつながらないとき <span class="chip">S-00 接続確認</span></h2>
+  <figure class="shot full" data-shot="s00-ng" data-alt="必須機器がつながっていないときの接続確認"></figure>
+  <ol class="legend" data-shot="s00-ng">
+    <li data-n="1"><b>総合の表示</b>「必須機器が繋がっていません」。制御系を自動で立て直している間は「制御系を再起動しています（n 回目）」も出る。</li>
+    <li data-n="2"><b>開発モードの設定</b>必須がそろわない間は「メインメニュー画面へ」の代わりに出る。開発者が検証に使うもので、<b>試験では使わない</b>。</li>
+  </ol>
+  <h3>表示ごとの対処</h3>
+  <table class="t">
+    <tr><th style="width:42%">表示</th><th>対処</th></tr>
+    <tr><td>必須機器が繋がっていません</td><td>表のどの行が × かを見る。ラズパイ・AP は <code>docs/network.md</code> の「復旧手順」</td></tr>
+    <tr><td>制御系を再起動しています（n 回目）</td><td><b>待つ。</b>上限（既定 3 回）までに直ればそのまま使える。止まったら機体の電源を入れ直し、AP とケーブルを確かめてから <code>./start.sh</code> をやり直す</td></tr>
+    <tr><td>起動時に非常停止ボタンが押されたままです。戻してください</td><td>物理の非常停止ボタンを戻す。帯が消えて自動で運用に進める</td></tr>
+    <tr><td>ESP32（速度指令の折り返し）の行に「ファームの書き込みが必要」</td><td>ESP32 のファームが古い。<code>docs/esp32.md</code> の手順で書き込み直す</td></tr>
+  </table>
+  <div class="box warn"><b>開発モードについて</b>開発モードで項目を外すと、機器がそろっていなくても先へ進めてしまいます。
+    開発モードで通した結果を、通常の運用の結果と取り違えないでください。ヘッダに「開発モード」の札が出ている間は通常の状態ではありません。</div>
+  <div class="ref push">詳しくは：使い方.md §2「起動後の健全性確認」・§3-6「設定」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>2. 起動と運用の終了</b></span><span>使い方（図解）</span></div>
+  <h2 id="c2-3">メインメニュー <span class="chip">S-01</span> <span class="chip mode">モード：待機</span></h2>
+  <p class="lead">ここから走行方式・試験場・保守を選びます。走行方式を抜けると（<span class="ui">終了</span>）ここへ戻ります。</p>
+  <figure class="shot full" data-shot="s01" data-alt="メインメニュー"></figure>
+  <ol class="legend" data-shot="s01">
+    <li data-n="1"><b>ネットワーク接続確認</b>つながっていない機器と、始業点検の自動判定の警告。<span class="ui">詳細を見る</span> で S-00 の表へ。</li>
+    <li data-n="2"><b>移動</b>試験場の外を走る方式。教示は保管場所から始める（復路では教示できない）。</li>
+    <li data-n="3"><b>押せないボタン</b>薄く表示される。押すと理由のウィンドウが出る（下の図）。</li>
+    <li data-n="4"><b>試験場</b>前日の <span class="ui">試験準備</span> と当日の <span class="ui">試験（当日）</span>（4 章）。</li>
+    <li data-n="5"><b>測定</b><span class="ui">自律測定</span>（実機では未実装。付録）。</li>
+    <li data-n="6"><b>保守・設定</b><span class="ui">始業点検</span>・<span class="ui">校正</span>・<span class="ui">設定</span>（5 章）。</li>
+    <li data-n="7"><b>バッテリー</b>駆動用バッテリーの残量（実機ではまだ出ない）。</li>
+    <li data-n="8"><b>運用の終了</b>1 日の運用を終えるときに押す（次のページ）。</li>
+  </ol>
+  <div class="cols r4060">
+    <div><figure class="shot" data-shot="s01-disabled"><figcaption>押せないボタンを押したとき</figcaption></figure></div>
+    <div class="stack">
+      <div class="box tip"><b>押せないときは理由を読む</b>前提がそろっていない方式は薄く表示されます。押すと理由が出ます。
+        たとえば <span class="ui">教示再生</span> は、教示済みの経路が 1 本も無いと「教示済みの経路がありません」と出て進めません（先に教示する）。</div>
+      <div class="box mock"><b>実機との違い</b>実機で画面があるのは、手動走行・教示（手動）・教示再生・試験準備・試験（当日）・始業点検・校正・設定です。
+        追従走行・教示（追従）・ライン誘導・電子リード・自律測定の画面は未実装です（付録）。</div>
+    </div>
+  </div>
+  <div class="ref push">詳しくは：使い方.md §3「画面と操作」・§3-4「教示再生」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>2. 起動と運用の終了</b></span><span>使い方（図解）</span></div>
+  <h2 id="c2-4">運用の終了 <span class="chip">S-01 → 制御系を停止する</span></h2>
+  <p class="lead">1 日の運用を終えるときだけ使います。<span class="ui">終了</span>（方式を抜ける）とは別の操作です。</p>
+  <ol class="steps">
+    <li>走行をやめて、メインメニューに戻る。</li>
+    <li>「運用の終了」カードの <span class="ui">制御系を停止する</span> を押す。未保存のデータがあれば件数が出ている。</li>
+    <li>一覧の項目ごとに <span class="ui">保存</span> か <span class="ui">破棄</span> を選ぶ（破棄は 2 度押しで確定）。</li>
+    <li>未保存が無くなると <span class="ui">停止する</span> が押せる。押すと制御系が止まる。</li>
+    <li><b>「停止が完了しました。電源を切って構いません」が出てから</b>機体の電源を切る。PC は <kbd>Ctrl</kbd>-<kbd>C</kbd> で <code>start.sh</code> を終える。</li>
+  </ol>
+  <div class="cols">
+    <div>
+      <figure class="shot" data-shot="shutdown-list"><figcaption>未保存のデータが残っているとき</figcaption></figure>
+      <ol class="legend one" data-shot="shutdown-list" style="margin-top:1.5mm">
+        <li data-n="1"><b>未保存のデータ</b>試験場内地図・教示経路など</li>
+        <li data-n="2"><b>保存</b>本当に保存して一覧から消す</li>
+        <li data-n="3"><b>破棄</b>押すと「本当に破棄？」に変わる。もう一度押して確定</li>
+        <li data-n="4"><b>残りの件数</b>残っている間は停止できない</li>
+        <li data-n="5"><b>停止する</b>未保存が残っている間は押せない</li>
+      </ol>
+    </div>
+    <div class="stack">
+      <figure class="shot" data-shot="shutdown-ready"><figcaption>すべて処理したとき</figcaption></figure>
+      <ol class="legend one" data-shot="shutdown-ready">
+        <li data-n="1"><b>未保存のデータはありません</b></li>
+        <li data-n="2"><b>停止する</b>押せるようになる</li>
+      </ol>
+      <figure class="shot" data-shot="shutdown-done"><figcaption>停止の完了（メインメニューのカード）</figcaption></figure>
+      <ol class="legend one" data-shot="shutdown-done">
+        <li data-n="1"><b>停止が完了しました</b>これが出てから電源を切る</li>
+      </ol>
+    </div>
+  </div>
+  <div class="box mock"><b>実機との違い</b>実機の一覧に出るのは、いまのところ「試験場内地図」と「教示経路」だけです。校正の補正値・地図の書き足しは、まだ機体側で未保存を検出できません。</div>
+  <div class="ref push">詳しくは：使い方.md §3-10「運用の終了」</div>
+</section>
+
+<!-- ======================= 3 試験場の外を走る ======================= -->
+<section class="sheet" id="c3">
+  <div class="run"><span><b>3. 試験場の外を走る</b></span><span>使い方（図解）</span></div>
+  <div class="chapter-title">3. 試験場の外を走る</div>
+  <h2 id="c3-1">手動走行 <span class="chip">S-11</span> <span class="chip mode">モード：手動走行</span></h2>
+  <p class="lead">メインメニュー → <span class="ui">手動走行</span>。右のスティックで動かします。手を離すと減速して止まります。</p>
+  <figure class="shot full" data-shot="s11" data-alt="手動走行の画面"></figure>
+  <ol class="legend" data-shot="s11">
+    <li data-n="1"><b>障害物</b>前方の障害物の警告。</li>
+    <li data-n="2"><b>接近の警告</b>自動ブレーキ OFF のとき、ON なら減速が始まる距離まで近づくと出る。速度は自動では落ちないので自分で止める。</li>
+    <li data-n="3"><b>自動ブレーキ</b>いまの状態（ON／OFF）。</li>
+    <li data-n="4"><b>切替ボタン</b><span class="ui">ON にする</span>／<span class="ui">OFF にする</span>（次のページ）。</li>
+    <li data-n="5"><b>後退</b>後方は LiDAR の死角なので、後退の速度は制限される。</li>
+    <li data-n="6"><b>停止</b>走行をやめて一時停止。</li>
+    <li data-n="7"><b>スティック</b>触れている間だけ動く。</li>
+    <li data-n="8"><b>速度スライダ</b>0〜100%。</li>
+    <li data-n="9"><b>速度プリセット</b>低速・中速・高速。</li>
+    <li data-n="10"><b>キー操作</b>PC では <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> か矢印キーでも走れる。</li>
+  </ol>
+  <h3>走らせ方</h3>
+  <ul class="dots">
+    <li><b>自動で止まるのは、進行方向 ±29 度の範囲に物があるときだけ</b>です。真横の壁では止まりません。止まるのは機体の前面から約 15 cm まで近づいたときです。曲がり角では正面の壁に寄せすぎないよう、少し早めに回ります。</li>
+    <li>スティックを一気に倒しても、急発進・急停止はしません（加減速に制限があります）。障害物のブレーキと非常停止はこの制限を通らず、すぐ効きます。</li>
+    <li>真横に倒すその場旋回は、速度プリセットを低速にしてもキビキビ回ります（上限 1.0 rad/s）。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3-2「手動走行」・§3-3「走らせ方のコツ」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>3. 試験場の外を走る</b></span><span>使い方（図解）</span></div>
+  <h2 id="c3-2">自動ブレーキ <span class="chip">S-11・S-13</span></h2>
+  <p class="lead">障害物に近づいたとき、自動で減速・停止する働きです。手動走行・教示（手動）の「障害物」カードで切り替えます。</p>
+  <div class="cols">
+    <div>
+      <figure class="shot" data-shot="s11-brake-on"><figcaption>自動ブレーキが ON のとき</figcaption></figure>
+      <ol class="legend one" data-shot="s11-brake-on" style="margin-top:1.5mm">
+        <li data-n="1"><b>自動ブレーキ ON</b>ボタンは <span class="ui">OFF にする</span> に変わる</li>
+      </ol>
+    </div>
+    <div>
+      <figure class="shot" data-shot="s11-brake-confirm"><figcaption>ON → OFF のときだけ出る確認</figcaption></figure>
+      <ol class="legend one" data-shot="s11-brake-confirm" style="margin-top:1.5mm">
+        <li data-n="1"><b>やめる</b>ON のまま</li>
+        <li data-n="2"><b>OFF にする</b>確定する</li>
+      </ol>
+    </div>
+  </div>
+  <table class="t">
+    <tr><th style="width:24%">項目</th><th>内容</th></tr>
+    <tr><td>既定値</td><td><b>試験場外の手動走行は OFF</b>（減速せず、画面の警告だけ）、<b>試験場内の画面では ON</b>。手動走行に入るたびに既定へ戻る（前回の選択は引き継がない）</td></tr>
+    <tr><td>切り替え方</td><td><span class="ui">OFF にする</span>／<span class="ui">ON にする</span>。<b>ON → OFF のときだけ</b>確認が出る。OFF → ON は確認なし。表示は、機体が受け付けてから切り替わる</td></tr>
+    <tr><td>OFF のあいだ</td><td>障害物に近づいても<b>減速しない</b>。ON なら減速が始まる距離で「障害物に近づいています（自動ブレーキ OFF のため減速しません）」と出る。<b>警告を見たら自分で止める</b></td></tr>
+    <tr><td>OFF でも変わらないもの</td><td>非常停止、異常による停止、速度上限、後退速度の制限、LiDAR や機体との通信が途絶えたときの停止。機体からの状態が途絶えると ON に戻って止まる</td></tr>
+    <tr><td>切り替えられる場面</td><td>手動走行・教示（手動）と、手動操作パネルで介入している間だけ。追従・再生などの自律走行では無効にできない</td></tr>
+    <tr><td>画面を離れたとき</td><td>画面を閉じる・別のアプリに切り替えるなど、操作している画面が無いと機体が判断している間は ON（戻ると選んだ設定に戻る）</td></tr>
+  </table>
+  <div class="box warn"><b>OFF にするときは</b>OFF のあいだは、障害物に近づいても機体は速度を落としません。周囲に人や物が無いことを確かめ、いつでも止められる位置で操作してください。音は出ません。</div>
+  <div class="ref push">詳しくは：使い方.md §3-2「自動ブレーキ」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>3. 試験場の外を走る</b></span><span>使い方（図解）</span></div>
+  <h2 id="c3-3">教示（手動）① 経路を選んで記録を始める <span class="chip">S-13</span></h2>
+  <p class="lead">スティックで走らせた通り道を経路として記録します。メインメニュー → <span class="ui">教示（手動）</span> → <span class="ui">教示</span> タブ。</p>
+  <figure class="shot full" data-shot="s13-teach" data-alt="教示（手動）の教示タブ"></figure>
+  <ol class="legend" data-shot="s13-teach">
+    <li data-n="1"><b>教示タブ</b>経路の選択と記録の状況。走らせるときは「走行」タブ。</li>
+    <li data-n="2"><b>記録の印</b>「● 記録中」。保存すると「■ 保存済み」。</li>
+    <li data-n="3"><b>経路名</b>日本語でも半角英数でもよい。空欄なら日時から付く。<code>/</code> と <code>\</code> は <code>_</code> に置き換わる。</li>
+    <li data-n="4"><b>この名前で記録を始める</b>押すとすぐ記録が始まる（「記録開始」ボタンは無い）。</li>
+    <li data-n="5"><b>既存経路の再設定</b><span class="ui">録り直す</span>。上書きになるので 2 回押しで確定（旧版は <code>.prev</code> に残る）。</li>
+    <li data-n="6"><b>記録の状況</b>記録距離・点数・経過時間・開始時の向きと、作っている地図。</li>
+  </ol>
+  <h3>手順</h3>
+  <ol class="steps">
+    <li>機体を保管場所（教示の開始位置）に置く。床に始点の印（ビニールテープの十字）を貼っておく。</li>
+    <li>メインメニュー → <span class="ui">教示（手動）</span> → <span class="ui">教示</span> タブで、新規なら経路名を入れて <span class="ui">この名前で記録を始める</span>。既存を録り直すなら <span class="ui">録り直す</span> を 2 回。</li>
+    <li>地図が出て点数が増え始めたら、<span class="ui">走行</span> タブに戻ってスティックで走らせる（次のページ）。</li>
+  </ol>
+  <div class="box warn"><b>教示に入ると、機体は地図をまっさらに作り直します</b>数秒〜十数秒かかり、画面の地図もいったん消えます。故障ではありません。「記録中」になっても、地図が出て点数が増え始めるまで少し待ちます。</div>
+  <table class="t">
+    <tr><th style="width:20%">記録の状況</th><th>意味</th></tr>
+    <tr><td>記録距離</td><td>走った距離</td></tr>
+    <tr><td>点数</td><td>記録した点の数。10 cm におよそ 1 点なので、100 m なら 1000 点前後</td></tr>
+    <tr><td>地図</td><td>走るにつれて伸びていく。<b>伸びないなら SLAM が効いていない</b>（使い方.md §2 の #2・#3 を確かめる）</td></tr>
+  </table>
+  <div class="ref push">詳しくは：使い方.md §3-3「教示（手動）」・§4「SLAM と地図」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>3. 試験場の外を走る</b></span><span>使い方（図解）</span></div>
+  <h2>教示（手動）② 走らせて記録する <span class="chip">S-13</span></h2>
+  <p class="lead"><span class="ui">走行</span> タブでスティックを操作すると、その通り道が記録されます。</p>
+  <figure class="shot full" data-shot="s13-recording" data-alt="記録中の教示（手動）"></figure>
+  <ol class="legend" data-shot="s13-recording">
+    <li data-n="1"><b>記録中の印</b></li>
+    <li data-n="2"><b>自動ブレーキ</b>手動走行と同じ切り替えがある（前のページ）。</li>
+    <li data-n="3"><b>状態</b>「記録中（走行）」。手を離すと「一時停止中（記録は保持・終点は未確定）」。</li>
+    <li data-n="4"><b>保存</b>走り終えたら押す（次のページ）。</li>
+    <li data-n="5"><b>スティック</b>操作している間は「操作中」が出る。</li>
+  </ol>
+  <h3>走らせ方のコツ</h3>
+  <ul class="dots">
+    <li><b>曲がり角では止まらず、一定の速度で回る。</b>長い直線の廊下は LiDAR には「どこも同じ景色」に見えて位置がずれやすく、曲がり角と分岐が手がかりになります。</li>
+    <li><b>壁に寄りすぎない。</b>壁しか見えないと地図が作れません。</li>
+    <li>記録中は <b>10 秒ごとに途中経過が自動で保存</b>されます。<span class="ui">保存</span> を押す前に落ちても、それまでの記録は <code>&lt;経路名&gt;.wip</code> に残ります。</li>
+  </ul>
+  <div class="box tip"><b>記録中に非常停止・手押しが入っても、記録は消えません</b>解除して「元のモードに戻る」（手押しなら「再開する」）で一時停止に戻り、スティックを操作すると続きから記録します。
+    機体を手で押して動かした・自己位置を見失ったなどで記録の連続が切れたときは、メインメニューに戻って保存の確認が出ます。</div>
+  <div class="ref push">詳しくは：使い方.md §3-3「教示（手動）」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>3. 試験場の外を走る</b></span><span>使い方（図解）</span></div>
+  <h2>教示（手動）③ 保存して終わる <span class="chip">S-13</span></h2>
+  <ol class="steps">
+    <li>走り終えたら操作カードの <span class="ui">保存</span>。経路と一緒に地図も保存するので、<b>「保存済み」と出るまで数秒待つ</b>。</li>
+    <li>左上の <span class="ui">終了</span> でメインメニューへ戻る。</li>
+  </ol>
+  <div class="cols">
+    <div>
+      <figure class="shot" data-shot="s13-paused"><figcaption>保存する前（一時停止中）</figcaption></figure>
+      <ol class="legend one" data-shot="s13-paused" style="margin-top:1.5mm">
+        <li data-n="1"><b>状態</b>記録は持ったまま、終点はまだ決まっていない</li>
+        <li data-n="2"><b>案内</b>スティックを操作すると続きから記録する</li>
+      </ol>
+    </div>
+    <div>
+      <figure class="shot" data-shot="s13-saved"><figcaption>保存したあと</figcaption></figure>
+      <ol class="legend one" data-shot="s13-saved" style="margin-top:1.5mm">
+        <li data-n="1"><b>状態</b>「保存済み」。経路が確定した</li>
+        <li data-n="2"><b>案内</b>続けて記録するには、終了して教示し直す</li>
+      </ol>
+    </div>
+  </div>
+  <div class="box warn"><b>保存したあとは、記録を続けられません</b>保存した時点で経路は確定します。保存後にスティックに触れても記録は再開せず、「保存済みのため記録を続けられません」と出ます。続きを録りたいときは、終了して新しい経路として教示し直します。</div>
+  <h3>保存せずに「終了」を押したとき</h3>
+  <div class="cols r6040">
+    <div><figure class="shot" data-shot="s13-save-confirm"><figcaption>未保存の記録があるときの確認</figcaption></figure></div>
+    <div>
+      <ol class="legend one" data-shot="s13-save-confirm">
+        <li data-n="1"><b>破棄する</b>今回の記録を捨てる。2 回押しで確定。同じ名前の既存の経路はそのまま残る</li>
+        <li data-n="2"><b>保存する</b><span class="ui">保存</span> を押したのと同じ</li>
+      </ol>
+    </div>
+  </div>
+  <div class="ref push">詳しくは：使い方.md §3-3「教示（手動）」・§4-4「地図の保存と読み直し」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>3. 試験場の外を走る</b></span><span>使い方（図解）</span></div>
+  <h2 id="c3-6">教示再生① 経路を選ぶ <span class="chip">S-14</span> <span class="chip mode">モード：教示再生</span></h2>
+  <p class="lead">記録した経路を自動で走ります。<b>先に機体を置いてから経路を選びます。</b></p>
+  <figure class="shot full" data-shot="s14-route" data-alt="教示再生の経路タブ"></figure>
+  <ol class="legend" data-shot="s14-route">
+    <li data-n="1"><b>地図</b>経路の線、始点と終点の印、機体の位置。</li>
+    <li data-n="2"><b>操作カード</b>停止・再生・手動。</li>
+    <li data-n="3"><b>地図の更新</b>いまは使えない（OFF のまま）。</li>
+    <li data-n="4"><b>右のタブ</b>経路・初期姿勢・走行。</li>
+    <li data-n="5"><b>経路の一覧</b>教示した経路と距離・点数。</li>
+    <li data-n="6"><b>順再生／逆再生</b>逆再生（終点 → 始点）は試験用で、画面ではまだ選べない。</li>
+    <li data-n="7"><b>この経路で進む</b>保存した地図を読み直し、機体の位置を探し始める。</li>
+  </ol>
+  <h3>手順</h3>
+  <ol class="steps">
+    <li><b>機体を教示の始点の印に、記録したときの向きで置く。</b>経路の途中から走らせたいときは、経路の上（2 m 以内）に置いてもよい。</li>
+    <li>メインメニュー → <span class="ui">教示再生</span>。</li>
+    <li>一覧から経路を選び、<span class="ui">この経路で進む</span>。</li>
+    <li>位置合わせが終わるのを待ってから <span class="ui">再生</span>（次のページ）。</li>
+  </ol>
+  <div class="box warn"><b>機体を置いてから経路を選ぶ</b>経路を選ぶと、そのときの LiDAR の見え方から地図上の位置を探して合わせます。先に経路を選んでから機体を動かすと、位置がずれたままになります。
+    読み込みには、短い経路で数秒、長い地図で 30〜45 秒かかります。</div>
+  <div class="box mock"><b>実機との違い</b>実機では「地図の更新」は押せず、理由「地図の書き足しは現在使えません」が出ます。そのため操作カードに「保存」は出ません。逆再生のボタンも押せません（使い方.md §3-4c のコマンドで選ぶ）。</div>
+  <div class="ref push">詳しくは：使い方.md §3-4「教示再生」・§3-4c「逆再生」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>3. 試験場の外を走る</b></span><span>使い方（図解）</span></div>
+  <h2>教示再生② 位置合わせ（初期姿勢）を確かめる <span class="chip">S-14</span></h2>
+  <p class="lead"><span class="ui">この経路で進む</span> を押すと、機体が地図の上で自分の位置を探します。終わったら <span class="ui">初期姿勢</span> タブで結果を確かめます。</p>
+  <div class="cols">
+    <div>
+      <figure class="shot" data-shot="s14-pose"><figcaption>初期姿勢タブ</figcaption></figure>
+      <ol class="legend one" data-shot="s14-pose" style="margin-top:1.5mm">
+        <li data-n="1"><b>推定の状態</b>「初期姿勢を推定しています…」→「推定できました。地図と位置を確認して『再生』を押してください」</li>
+        <li data-n="2"><b>確度</b>下の表</li>
+        <li data-n="3"><b>完全グローバルで探す</b>地図全体から探し直す</li>
+      </ol>
+    </div>
+    <div>
+      <figure class="shot" data-shot="s14-global"><figcaption>「完全グローバルで探す」の確認</figcaption></figure>
+    </div>
+  </div>
+  <table class="t">
+    <tr><th style="width:30%">確度の表示</th><th style="width:34%">意味</th><th>どうするか</th></tr>
+    <tr><td>探しています</td><td>探索中。始点から半径 5 m を探し、一致が弱ければ 10 m に広げる</td><td>待つ</td></tr>
+    <tr><td>高い</td><td>位置が決まった</td><td>地図上の位置を目で確かめて <span class="ui">再生</span></td></tr>
+    <tr><td>低い。似た場所が複数あり、取り違えの可能性があります</td><td>決まったが、似た場所と取り違えているかもしれない</td><td><b>地図上の位置が実際と合っているかを特によく見る</b>。違っていれば経路を選び直す</td></tr>
+    <tr><td>見つかりません。完全グローバルで探すか、経路を選び直してください</td><td>見つからない／決められない／経路から 2 m 以上離れている（機体は動かない）</td><td>機体を経路の上（始点の印が確実）へ置き直して選び直すか、<span class="ui">完全グローバルで探す</span></td></tr>
+  </table>
+  <ul class="dots">
+    <li><b>「推定できました」より前に <span class="ui">再生</span> を押しても、黙って無視されます。</b>表示が変わるまで待ちます。</li>
+    <li><b>経路の途中に置いて始めると、始点へ戻らずその場所から続きを走ります。</b>最も近い経路の点で記録した向きへその場で回ってから走り出します。</li>
+    <li>始点から 10 m 以上離れた途中に置いたときは自動の探索が届かないので、<span class="ui">完全グローバルで探す</span> を押します。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3-4「初期姿勢の確度と、途中からの再開」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>3. 試験場の外を走る</b></span><span>使い方（図解）</span></div>
+  <h2>教示再生③ 走らせる <span class="chip">S-14</span></h2>
+  <figure class="shot full" data-shot="s14-run" data-alt="再生中の教示再生"></figure>
+  <ol class="legend" data-shot="s14-run">
+    <li data-n="1"><b>再生</b>押すと走り出す。<b>まずその場で旋回して</b>記録した向きに合わせてから進む（故障ではない）。</li>
+    <li data-n="2"><b>状態</b>「走行中」。</li>
+    <li data-n="3"><b>停止</b>一時停止する。<span class="ui">再生</span> で止まったところから続きを走る。</li>
+    <li data-n="4"><b>手動</b>手動操作パネルを開く（次のページ）。</li>
+    <li data-n="5"><b>再生速度</b>低速／中速／高速。走行中に変えてもよい。既定は中速（約 0.33 m/s）。初回は低速〜中速で確かめる。</li>
+    <li data-n="6"><b>経路からのずれ</b>いま経路から横にどれだけ外れているかと、この再生での最大値。</li>
+  </ol>
+  <h3>走っている間</h3>
+  <ul class="dots">
+    <li><b>人はロボットから離れず、いつでも止められる位置にいます。</b>止めるときは <span class="ui">停止</span>。物理の非常停止ボタンは常に効きます。</li>
+    <li>前に障害物が出ると自動で減速・停止します（前方に 3 点以上の反射があるとき）。</li>
+    <li><b>タブレットを閉じる・回線が切れると一時停止します。</b>戻ってアプリを開き直すと「再開しますか」が出て、<span class="ui">はい</span> を押すまで機体は走りません。</li>
+    <li>画面を触らなくても止まりません（アプリが前面にあって接続が生きていれば、人がいるとみなします）。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3-4「教示再生」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>3. 試験場の外を走る</b></span><span>使い方（図解）</span></div>
+  <h2>教示再生④ 手動で介入する・走り終える <span class="chip">S-14</span></h2>
+  <p class="lead">再生中でも、<span class="ui">手動</span> で開くパネルのスティックに触れると、再生は一時停止して手動の操作が優先されます。とっさに避けさせたいときに使います。</p>
+  <figure class="shot full" data-shot="s14-jog" data-alt="手動操作パネルを開いた教示再生"></figure>
+  <ol class="legend" data-shot="s14-jog">
+    <li data-n="1"><b>モードは変わらない</b>「モードは『教示再生』のまま変わりません」。</li>
+    <li data-n="2"><b>自動ブレーキと後方の死角</b>パネルを開いている間は常に出る。</li>
+    <li data-n="3"><b>スティック</b>触れている間だけ動く。離すと止まる。</li>
+    <li data-n="4"><b>閉じる</b>パネルを閉じる。操作カードの停止・再生を押しても閉じる。</li>
+    <li data-n="5"><b>手動</b>押すとパネルが開く。</li>
+  </ol>
+  <p>再生を続けるには、手を離してから <span class="ui">再生</span> を押し直します。</p>
+  <h3>「途中で止まっただけ」と「走り切った」の見分け方</h3>
+  <div class="cols">
+    <div>
+      <figure class="shot" data-shot="s14-paused"><figcaption>途中で止まったとき</figcaption></figure>
+      <ol class="legend one" data-shot="s14-paused" style="margin-top:1.5mm">
+        <li data-n="1">「再生」を押すと止まったところから続きを走ります。<br><b>→ <span class="ui">再生</span> で続きから走れる</b></li>
+      </ol>
+    </div>
+    <div>
+      <figure class="shot" data-shot="s14-end"><figcaption>最後まで走り切ったとき</figcaption></figure>
+      <ol class="legend one" data-shot="s14-end" style="margin-top:1.5mm">
+        <li data-n="1">一時停止（記録の終端に達しました。終了を押してください）<br><b>→ <span class="ui">終了</span> でメインメニューへ</b></li>
+      </ol>
+    </div>
+  </div>
+  <div class="ref push">詳しくは：使い方.md §3-4「教示再生」</div>
+</section>
+
+<!-- ======================= 4 試験場で使う ======================= -->
+<section class="sheet" id="c4">
+  <div class="run"><span><b>4. 試験場で使う</b></span><span>使い方（図解）</span></div>
+  <div class="chapter-title">4. 試験場で使う</div>
+  <h2 id="c4-1">試験準備（前日） <span class="chip">S-20</span> <span class="chip mode">モード：試験準備</span></h2>
+  <p class="lead">試験の前日に、試験場の地図を作り、待機場所と配電盤の位置（ピン）を登録して保存します。当日の「試験」画面はこの地図とピンを使います。</p>
+  <figure class="shot full" data-shot="s20" data-alt="試験準備の画面"></figure>
+  <ol class="legend" data-shot="s20">
+    <li data-n="1"><b>手順の帯</b>地図を作る → 対象を選ぶ → 待機場所を登録 → 配電盤を登録 → 保存。済んだ手順に ✓。</li>
+    <li data-n="2"><b>終了</b>未保存なら保存の確認が出る。</li>
+    <li data-n="3"><b>タブ</b>地図／対象選択。</li>
+    <li data-n="4"><b>未保存の印</b>保存すると「保存済み」。</li>
+    <li data-n="5"><b>地図</b>登録したピン（赤＝配電盤、青＝待機場所）、機体の位置、追跡中の試験員。</li>
+    <li data-n="6"><b>次にやること</b>手順の帯のいまの手順を、そのまま押せる。</li>
+    <li data-n="7"><b>操作カード</b>停止・保存・手動。地図は <span class="ui">手動</span> のスティックで機体を動かして作る。</li>
+    <li data-n="8"><b>右のタブ</b>登録・ピン・地図の修正。</li>
+  </ol>
+  <h3>前日の流れ</h3>
+  <ol class="steps">
+    <li><span class="ui">地図作成開始</span> を押して地図を出す（前回のピンが要らなければ先に「新しい試験日として開始」）。</li>
+    <li><span class="ui">対象選択</span> タブで <span class="ui">人検出を開始</span> を押し、登録に使う試験員を選ぶ。</li>
+    <li>待機場所を登録し、続けて配電盤を 1 つずつ登録する。手動操作で機体を動かしながら地図を広げる。</li>
+    <li>操作カードの <span class="ui">保存</span> で、会場の地図とピンを保存する。</li>
+  </ol>
+  <div class="box warn"><b>操作カードの「停止」は、地図作成中はいま何もしません</b>機体は手動操作（スティック）で動かします。押しても状態は変わらず、対象の選択・登録・保存はいつでもできます。ただし「1 ボタンで待機場所に戻す」で自動で走っている間は、<span class="ui">停止</span> で一時停止できます。</div>
+  <div class="ref push">詳しくは：使い方.md §3-4b「試験場内デモ」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>4. 試験場で使う</b></span><span>使い方（図解）</span></div>
+  <h2>試験準備① 地図を開き、対象を選ぶ <span class="chip">S-20</span></h2>
+  <div class="cols">
+    <div class="stack">
+      <figure class="shot" data-shot="s20-gate"><figcaption>地図タブ（押すまで地図を出さない）</figcaption></figure>
+      <ol class="legend one" data-shot="s20-gate">
+        <li data-n="1"><b>地図作成開始</b>押すと地図が出て、手順 1「地図を作る」が済みになる</li>
+        <li data-n="2"><b>新しい試験日として開始</b>前回の地図とピンを全部消して作り直す。2 回押しで確定。<b>元に戻せない</b></li>
+      </ol>
+      <figure class="shot" data-shot="s20-tracker-off"><figcaption>対象選択タブ（人検出が止まっているとき）</figcaption></figure>
+      <ol class="legend one" data-shot="s20-tracker-off">
+        <li data-n="1"><b>人検出を開始</b>人検出は既定で止まっている。押してから最初の検出まで数秒（「起動中…」）</li>
+      </ol>
+    </div>
+    <div class="stack">
+      <figure class="shot" data-shot="s20-select"><figcaption>対象選択タブ（人検出が動いているとき）</figcaption></figure>
+      <ol class="legend one" data-shot="s20-select">
+        <li data-n="1"><b>人検出の状態</b><span class="ui">人検出を停止</span> で止められる</li>
+        <li data-n="2"><b>レーダー</b>機体のまわりの人の候補。押して選ぶ</li>
+        <li data-n="3"><b>選んだ対象</b>緑。「人の位置で登録」はこの人の位置を使う</li>
+      </ol>
+    </div>
+  </div>
+  <ul class="dots">
+    <li><b>前回のピンをそのまま使う</b>（会場の配置がほぼ同じ）なら、「新しい試験日として開始」は押さずに進みます。押すと地図作成をやり直すので、「地図を初期化しています…」が消えるまで待ちます（長いと 1 分弱）。</li>
+    <li>地図作成は起動したときから動いています。<span class="ui">地図作成開始</span> は、たいていは表示を出すだけです。</li>
+    <li><b>人検出が止まっている間は、「人の位置で登録」のボタンが押せません</b>（「人検出が止まっています」と出る）。押せないときはまずここを確かめます。「いまの姿勢で登録」は人検出を使わないので押せます。</li>
+    <li>メインメニューなど、機体を動かさない画面に戻ると、人検出は自動で止まります。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3-4b「試験場内デモ」の手順 0〜2</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>4. 試験場で使う</b></span><span>使い方（図解）</span></div>
+  <h2>試験準備② ピンを登録する <span class="chip">S-20</span></h2>
+  <p class="lead">右の <span class="ui">登録</span> タブで、待機場所と配電盤の位置と向きを登録します。登録のしかたは 3 通りです。</p>
+  <div class="cols r6040">
+    <div>
+      <figure class="shot" data-shot="s20-register"><figcaption>登録タブ（2 点指示の 1 回目）</figcaption></figure>
+    </div>
+    <div>
+      <ol class="legend one" data-shot="s20-register">
+        <li data-n="1"><b>登録方式</b>2 点指示（LiDAR 平面認識は実機では未実装）</li>
+        <li data-n="2"><b>人の位置で登録</b>試験員が立った位置で登録（2 点指示）</li>
+        <li data-n="3"><b>いまの姿勢で登録</b>機体の今の位置と向きで登録</li>
+        <li data-n="4"><b>地図タップで登録</b>地図を押して位置、ドラッグして向き</li>
+        <li data-n="5"><b>2 点指示の手順</b>Step 1/2：登録したい場所に立って <span class="ui">この位置を登録</span></li>
+      </ol>
+    </div>
+  </div>
+  <div class="cols">
+    <div>
+      <figure class="shot" data-shot="s20-p2-step2"><figcaption>2 点指示の 2 回目</figcaption></figure>
+      <ol class="legend one" data-shot="s20-p2-step2" style="margin-top:1.5mm">
+        <li data-n="1"><b>Step 2/2</b>機体に向いてほしい方向へ一歩進んで押す</li>
+      </ol>
+    </div>
+    <div>
+      <figure class="shot" data-shot="s20-maptap"><figcaption>地図タップで登録（確定の前）</figcaption></figure>
+      <ol class="legend one" data-shot="s20-maptap" style="margin-top:1.5mm">
+        <li data-n="1"><b>位置と向き</b>ドラッグ中もその場で出る</li>
+        <li data-n="2"><b>数値で直す</b>x・y [m]・向き [°]</li>
+        <li data-n="3"><b>この位置で確定</b></li>
+      </ol>
+    </div>
+  </div>
+  <table class="t">
+    <tr><th style="width:24%">登録のしかた</th><th>やり方</th></tr>
+    <tr><td>人の位置で登録<br>（2 点指示）</td><td>対象選択で試験員を選んだあと、① 登録したい場所に立って押す → ② 機体に向いてほしい方向へ一歩進んで押す。<b>① と ② を同じ場所で押すと受け付けない</b>（一歩分の間隔が要る）</td></tr>
+    <tr><td>いまの姿勢で登録</td><td>機体を登録したい場所・向きへ手動操作で動かしてから押す。人物追跡に頼らないので、追跡が不安定なときはこちらが確実</td></tr>
+    <tr><td>地図タップで登録</td><td>地図の上で登録したい位置を押し、そのまま向けたい方向へドラッグして離す。確認の欄で x・y・向きを数値で直してから <span class="ui">この位置で確定</span></td></tr>
+  </table>
+  <div class="ref push">詳しくは：使い方.md §3-4b「試験場内デモ」の手順 2</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>4. 試験場で使う</b></span><span>使い方（図解）</span></div>
+  <h2>試験準備③ 壁に近いピン・ピンの登録し直し <span class="chip">S-20</span></h2>
+  <h3>壁に近すぎると警告が出る</h3>
+  <div class="cols r6040">
+    <div><figure class="shot" data-shot="s20-wall"><figcaption>壁に近いピンの警告</figcaption></figure></div>
+    <div>
+      <ol class="legend one" data-shot="s20-wall">
+        <li data-n="1"><b>このまま登録</b>そのまま登録する。当日、経路が引けずに止まることがある</li>
+        <li data-n="2"><b>壁から離して登録</b>機体が向く方向と逆へ自動で数十 cm ずらして登録する</li>
+        <li data-n="3"><b>やめる</b></li>
+      </ol>
+    </div>
+  </div>
+  <p>登録しようとした位置が地図の壁から推奨距離（既定 0.45 m）より近いと出ます。当日「配電盤へ向かおうとしても止まる」のを防ぐための事前の確認です。</p>
+  <h3>登録したピンを見る・登録し直す</h3>
+  <div class="cols">
+    <div>
+      <figure class="shot" data-shot="s20-pins"><figcaption>ピンタブ</figcaption></figure>
+      <ol class="legend one" data-shot="s20-pins" style="margin-top:1.5mm">
+        <li data-n="1"><b>ピンの一覧</b>名前と向き</li>
+        <li data-n="2"><b>編集</b>右の窓が開く</li>
+        <li data-n="3"><b>1 ボタンで待機場所に戻す</b>作りかけの地図で自動で待機場所まで走って戻る（待機場所のピンが無いと押せない）</li>
+      </ol>
+    </div>
+    <div>
+      <figure class="shot" data-shot="s20-pin-edit"><figcaption>ピンの編集</figcaption></figure>
+      <ol class="legend one" data-shot="s20-pin-edit" style="margin-top:1.5mm">
+        <li data-n="1"><b>地図タップで登録し直す</b></li>
+        <li data-n="2"><b>いまの機体位置で更新</b>機体を置いた位置・向きで上書き</li>
+        <li data-n="3"><b>削除</b>押すと「本当に削除する」に変わり、もう一度押して消える</li>
+      </ol>
+    </div>
+  </div>
+  <p>登録し直しても、<b>ピンの id と名前は変わらず</b>、位置と向きだけが変わります（別のピンが増えることはない）。</p>
+  <div class="ref push">詳しくは：使い方.md §3-4b「試験場内デモ」の手順 2</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>4. 試験場で使う</b></span><span>使い方（図解）</span></div>
+  <h2>試験準備④ 保存して終わる <span class="chip">S-20</span></h2>
+  <ol class="steps">
+    <li>待機場所と配電盤をすべて登録したら、操作カードの <span class="ui">保存</span>。手順の帯の「保存」に ✓ が付き、未保存の印が「保存済み」になる。</li>
+    <li>左上の <span class="ui">終了</span>。</li>
+  </ol>
+  <div class="cols r6040">
+    <div><figure class="shot" data-shot="s20-save-confirm"><figcaption>保存せずに「終了」を押したとき</figcaption></figure></div>
+    <div>
+      <ol class="legend one" data-shot="s20-save-confirm">
+        <li data-n="1"><b>やめる</b>試験準備に戻る</li>
+        <li data-n="2"><b>保存せず終了</b>2 回押しで確定。作った地図は捨てる</li>
+        <li data-n="3"><b>保存して終了</b></li>
+      </ol>
+    </div>
+  </div>
+  <h3>「1 ボタンで待機場所に戻す」で戻るとき</h3>
+  <ul class="dots">
+    <li>作りかけの地図で自分の位置を合わせ、<b>自動で待機場所まで走って戻ります。</b>着いたあと、登録したときの向きにも自動で合わせます（当日の地図の読み直しでずれないため）。</li>
+    <li>経路が見つからないときは 2 秒ごとに探し直します。それでも着けないときは、手動操作で待機場所の近くまで寄せると、近づいた時点で到着とみなします。</li>
+    <li>止めたとき（<span class="ui">停止</span>・手動操作・非常停止から戻る・異常・端末が離れた）は「自動帰還を一時停止しています」と出ます。<span class="ui">はい</span> で再開、<span class="ui">いいえ</span> でやめて地図作成に戻ります。押すまで機体は動きません。</li>
+  </ul>
+  <div class="box warn"><b>当日の準備として</b>待機場所のピンは必ず登録して保存します。当日は「機体が待機場所にいる」として会場の地図を読み直すので、待機場所のピンが無い・保存していないと、当日の位置合わせがずれます。</div>
+  <div class="ref push">詳しくは：使い方.md §3-4b「試験場内デモ」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>4. 試験場で使う</b></span><span>使い方（図解）</span></div>
+  <h2 id="c4-6">試験（当日） <span class="chip">S-21</span> <span class="chip mode">モード：試験（当日）</span></h2>
+  <p class="lead">前日に保存した会場の地図を開き、配電盤へ移動・試験員の呼び寄せ・測定を行います。</p>
+  <figure class="shot full" data-shot="s21" data-alt="試験（当日）の画面"></figure>
+  <ol class="legend" data-shot="s21">
+    <li data-n="1"><b>場内の札</b>試験場内。速度は低速まで、自動ブレーキは ON。</li>
+    <li data-n="2"><b>手順の帯</b>会場地図を開く → 待機場所を宣言 → 行き先を選ぶ → 移動 → 作業/呼び寄せ。</li>
+    <li data-n="3"><b>いまの状態</b>「行き先を選んでください」「配電盤 A-2へ移動中」など。</li>
+    <li data-n="4"><b>地図</b>前日の地図・ピン・これから走る経路（破線）・いまの LiDAR の点（赤）。前日とのずれを目で見られる。</li>
+    <li data-n="5"><b>地図の更新</b>いまは使えない（OFF のまま）。</li>
+    <li data-n="6"><b>次にやること</b>手順の帯のいまの手順を、そのまま押せる。</li>
+    <li data-n="7"><b>操作カード</b>停止・手動。待機場所でも手動操作で置き直し・向き直しができる。</li>
+    <li data-n="8"><b>宣言する</b>機体が待機場所にいることを宣言する。</li>
+    <li data-n="9"><b>ピンの一覧</b><span class="ui">移動</span> でそのピンへ向かう。</li>
+    <li data-n="10"><b>次の行き先</b>待機場所／次の配電盤／その場で呼ぶ。</li>
+  </ol>
+  <h3>当日の流れ</h3>
+  <ol class="steps">
+    <li><b>機体を待機場所（前日に登録した待機場所のピンの位置）に置く。</b>地図を開くより先に行う。</li>
+    <li><span class="ui">保存した会場地図を開く</span> → <span class="ui">宣言する</span>（次のページ）。</li>
+    <li>行き先を選んで移動する。配電盤の前で測定し、終わったら次の行き先へ。</li>
+  </ol>
+  <div class="ref push">詳しくは：使い方.md §3-4b「試験場内デモ」の当日の進め方</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>4. 試験場で使う</b></span><span>使い方（図解）</span></div>
+  <h2>試験① 会場地図を開き、待機場所を宣言する <span class="chip">S-21</span></h2>
+  <ol class="steps">
+    <li><b>機体を待機場所に置く。</b>会場の地図を読み直すとき、機体が待機場所のピンの位置にいるものとして位置を合わせるため。</li>
+    <li><span class="ui">保存した会場地図を開く</span>。「会場地図を読み込んでいます…」（長いと 1 分ほど）→「会場地図を開きました」。</li>
+    <li><span class="ui">宣言する</span>。位置の確認で、ずれが小さければ「宣言済み」とずれの量が出る。大きいと警告が出る。</li>
+  </ol>
+  <div class="cols">
+    <div class="stack">
+      <figure class="shot" data-shot="s21-gate"><figcaption>地図タブ（開く前）</figcaption></figure>
+      <ol class="legend one" data-shot="s21-gate">
+        <li data-n="1"><b>保存した会場地図を開く</b>当日の手順は必ずこれから。押すまで地図は出ない</li>
+      </ol>
+      <figure class="shot" data-shot="s21-declared"><figcaption>宣言したあと（行き先タブ）</figcaption></figure>
+      <ol class="legend one" data-shot="s21-declared">
+        <li data-n="1"><b>宣言済み</b></li>
+        <li data-n="2"><b>ずれの量</b>例「ずれ 0.12m・3°」</li>
+      </ol>
+    </div>
+    <div class="stack">
+      <figure class="shot" data-shot="s21-mismatch"><figcaption>ずれが大きいとき</figcaption></figure>
+      <ol class="legend one" data-shot="s21-mismatch">
+        <li data-n="1"><b>あとで</b>機体を置き直して、手順 2 からやり直す</li>
+        <li data-n="2"><b>強制的に宣言</b>ずれたまま宣言する</li>
+      </ol>
+      <div class="box warn"><b>置き場所がずれたまま地図を開かない</b>地図と実際の位置がずれたまま走り出すと、配電盤へ向かおうとしても経路が見つからず、機体が一歩も動きません。会場の配置が前日から変わっているなら、前日の試験準備をやり直します。</div>
+    </div>
+  </div>
+  <ul class="dots">
+    <li>会場地図を開いたかどうかは機体が覚えています。画面を開き直しても、機体が地図を持ったままなら地図が出て「会場地図は開いています」と出ます。起動直後・地図を捨てたあとは開き直します。</li>
+    <li>「（注意: ピンの登録時と保存済み地図が一致していない可能性があります…）」が付いたら、宣言のずれの警告をふだんより注意して見ます。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3-4b「試験場内デモ」の当日の手順 1〜3</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>4. 試験場で使う</b></span><span>使い方（図解）</span></div>
+  <h2>試験② 行き先を選んで移動する <span class="chip">S-21</span></h2>
+  <p class="lead">ピンの <span class="ui">移動</span>、または「次の行き先」の <span class="ui">待機場所</span>・<span class="ui">次の配電盤</span> を押すと、機体が自分で移動します。</p>
+  <figure class="shot full" data-shot="s21-moving" data-alt="配電盤へ移動中の試験画面"></figure>
+  <ol class="legend" data-shot="s21-moving">
+    <li data-n="1"><b>モード</b>「配電盤へ移動」「待機場所へ移動」など。</li>
+    <li data-n="2"><b>手順の帯</b>「移動」が今の手順になる。</li>
+    <li data-n="3"><b>状態</b>行き先と「移動中」。</li>
+  </ol>
+  <ul class="dots">
+    <li><b>移動中と一時停止中は、行き先を選べません。</b>一時停止中は <span class="ui">走行</span> で同じ経路の続きを走るか、中断してから選び直します。</li>
+    <li>待機場所に着いたときは、向きも自動で合わせてから完了します。配電盤の前に着いたとみなすのは、目標から 0.12 m 以内に入ったときです。</li>
+  </ul>
+  <h3>経路が塞がれたとき</h3>
+  <div class="cols r4060">
+    <div><figure class="shot" data-shot="s21-blocked"><figcaption>経路が塞がれているとき</figcaption></figure>
+      <ol class="legend one" data-shot="s21-blocked" style="margin-top:1.5mm">
+        <li data-n="1"><b>中断</b>その場で止まり、行き先を選ぶ状態へ戻る</li>
+        <li data-n="2"><b>再検索する</b>障害物の地図を掃除してもう一度経路を計算する</li>
+      </ol>
+    </div>
+    <div>
+      <ul class="dots">
+        <li><b>経路の先（1.5 m まで）に障害物があるうちは、止まったまま待ち、走り直しません。</b>時間切れにもならず、どけると 2〜4 秒ほどで自動で走り出します。止まっている間、その場で旋回もしません。</li>
+        <li>障害物をどけた直後などは <span class="ui">再検索する</span> で動き出します。</li>
+        <li>機体（0.55 m 角）が通れない狭い隙間しか無いときも、走らずに止まって知らせます。</li>
+        <li>どうしても着けないときは <span class="ui">中断</span>。<b>待機場所へは走りません。</b>その場で止まって行き先を選ぶ状態へ戻るので、選び直すか手動で動かします。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="ref push">詳しくは：使い方.md §3-4b「試験場内デモ」の当日の手順 4〜5</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>4. 試験場で使う</b></span><span>使い方（図解）</span></div>
+  <h2>試験③ 試験員を呼び寄せる <span class="chip">S-21</span> <span class="chip mode">モード：呼び寄せ</span></h2>
+  <p class="lead">試験員が立っている場所へ機体を呼びます。人検出が要るので、先に <span class="ui">対象選択</span> タブで <span class="ui">人検出を開始</span> を押しておきます。</p>
+  <figure class="shot full" data-shot="s21-summon" data-alt="呼び寄せの退避待ち"></figure>
+  <ol class="legend" data-shot="s21-summon">
+    <li data-n="1"><b>モード</b>「呼び寄せ」。</li>
+    <li data-n="2"><b>呼び寄せタブ</b><span class="ui">呼び寄せ（2 点指示）</span> で始める。</li>
+    <li data-n="3"><b>退避待ち</b>呼んだ場所から人が退くのを待つ。空き次第、自動で続ける。バーは時間切れまでの残り。</li>
+    <li data-n="4"><b>中止</b>呼び寄せをやめる。</li>
+    <li data-n="5"><b>対象選択タブ</b>呼び寄せる試験員を選ぶ（呼び寄せの行き先を待っている間だけ選べる）。</li>
+  </ol>
+  <h3>手順</h3>
+  <ol class="steps">
+    <li><span class="ui">対象選択</span> タブで <span class="ui">人検出を開始</span> を押し、呼び寄せる試験員を選ぶ。</li>
+    <li>「次の行き先」の <span class="ui">その場で呼ぶ</span>（または呼び寄せタブの <span class="ui">呼び寄せ（2 点指示）</span>）。</li>
+    <li>試験員が、機体に来てほしい位置を 2 点指示で示す。</li>
+    <li>試験員がその場所から退くと、機体がそこへ移動する。</li>
+  </ol>
+  <ul class="dots">
+    <li><b>退避待ちの間は手動操作できません</b>（人がいる場所へ動かさないため）。中止してからやり直します。</li>
+    <li>人検出が止まっている間は呼び寄せのボタンが押せず、「人検出が止まっています」と出ます。呼び寄せの間は人検出を止められません。</li>
+    <li>対象を見失っている間は、距離が「—」になります。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3-4b「試験場内デモ」の当日の手順 4</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>4. 試験場で使う</b></span><span>使い方（図解）</span></div>
+  <h2>試験④ 配電盤の前で測定する <span class="chip">S-21</span> <span class="chip mode">モード：配電盤前</span></h2>
+  <div class="cols r6040">
+    <div><figure class="shot" data-shot="s21-panel"><figcaption>配電盤前タブ（配電盤の前に着いたとき）</figcaption></figure></div>
+    <div>
+      <ol class="legend one" data-shot="s21-panel">
+        <li data-n="1"><b>測定機能へ</b>測定機能の画面を開き、機体は「停止命令」（測定中）になる</li>
+        <li data-n="2"><b>カメラ</b>カメラ機能の画面を開く</li>
+      </ol>
+    </div>
+  </div>
+  <figure class="shot full" data-shot="s21-working" data-alt="測定中の試験画面"></figure>
+  <ol class="legend" data-shot="s21-working">
+    <li data-n="1"><b>案内の帯</b>停止命令を出したことの案内。</li>
+    <li data-n="2"><b>停止命令中（測定中）</b>この間は機体を動かせない。</li>
+    <li data-n="3"><b>停止を解く</b>測定機能が止まってしまったときの出口。測定機構が引いてあることを確かめてから押す。</li>
+    <li data-n="4"><b>状態</b>「配電盤前・測定中（停止命令）」。</li>
+  </ol>
+  <div class="cols r4060">
+    <div><figure class="shot" data-shot="s21-work-blocked"><figcaption>測定中に行き先を押したとき</figcaption></figure></div>
+    <div>
+      <ul class="dots">
+        <li><b>測定中は、行き先（待機場所・別の配電盤・呼び寄せ）も手動操作も選べません。</b>画面のボタンだけでなく、機体側も受け付けません。</li>
+        <li>測定機能で測定を終えると解けます。そのあと次の行き先を選びます。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="box mock"><b>実機との違い</b>モックアップは 2026-11-01 の仕様変更（「測定機能へ」）を反映しています。実機の画面は、配電盤の前で <span class="ui">作業中</span> を押す形のままです（押している間は行き先を選べない。もう一度押して解除）。</div>
+  <div class="ref push">詳しくは：使い方.md §3-4b「試験場内デモ」の当日の手順 4</div>
+</section>
+
+<!-- ======================= 5 保守と設定 ======================= -->
+<section class="sheet" id="c5">
+  <div class="run"><span><b>5. 保守と設定</b></span><span>使い方（図解）</span></div>
+  <div class="chapter-title">5. 保守と設定</div>
+  <h2 id="c5-1">始業点検 <span class="chip">S-30</span> <span class="chip mode">モード：始業点検</span></h2>
+  <p class="lead">メインメニュー →「保守・設定」→ <span class="ui">始業点検</span>。<b>待機か手動走行からしか入れません</b>（走行中は押せない）。導入時と定期に行う本式の点検です。</p>
+  <figure class="shot full" data-shot="s30" data-alt="始業点検の画面"></figure>
+  <ol class="legend" data-shot="s30">
+    <li data-n="1"><b>点検の一覧</b>非常停止ボタン／モーター・エンコーダ／IMU／LiDAR。行を押すとその項目の確認が始まる。</li>
+    <li data-n="2"><b>結果</b>未確認／正常／要確認／NG。</li>
+    <li data-n="3"><b>校正へ</b>要確認・NG のときに出ることがある。校正の画面へ進む。</li>
+    <li data-n="4"><b>総合</b>「総合: すべて正常」「総合: 要確認 1 件」など。</li>
+    <li data-n="5"><b>判定の根拠</b>判定に使った測定値と基準。満たさなかった行が強調される。</li>
+    <li data-n="6"><b>生スキャン</b>LiDAR の項目。灰色の扇＝登録した死角、赤い点＝その内側の点。実機の支柱と扇がずれていないか見る。</li>
+    <li data-n="7"><b>校正へ／戻る</b>判定の結果は <span class="ui">戻る</span> を押すまで残る。</li>
+  </ol>
+  <h3>起動時の自動判定との違い</h3>
+  <p>S-00・S-01 に出る自動判定は、起動のたびに機体が自動で行う簡易版です（非常停止ボタンの今の状態・IMU・LiDAR。走らせる確認はしない）。
+    ここの 4 項目は、人が押す・離す・動かす本式の点検です。どちらも NG でも運用には入れます（警告だけ）。</p>
+  <div class="ref push">詳しくは：使い方.md §3-8「始業点検」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>5. 保守と設定</b></span><span>使い方（図解）</span></div>
+  <h2>始業点検 項目 1：非常停止ボタン <span class="chip">S-30</span></h2>
+  <figure class="shot full" data-shot="s30-estop" data-alt="非常停止ボタンの確認"></figure>
+  <ol class="legend" data-shot="s30-estop">
+    <li data-n="1"><b>中断（一覧へ戻る）</b>確認の途中で一覧へ戻る。途中の結果は記録しない（未確認のまま）。左の一覧で別の項目を押すとそちらへ切り替わる。</li>
+    <li data-n="2"><b>確認の手順</b>画面の案内どおりに 4 段階で進める。</li>
+  </ol>
+  <h3>手順</h3>
+  <ol class="steps">
+    <li>「非常停止ボタンを押してください」→ 実物のボタンを押す。</li>
+    <li>「実物と一致していますか」→ 画面の表示（押されている）が実物と合っていれば <span class="ui">はい</span>、合っていなければ <span class="ui">いいえ</span>。</li>
+    <li>「非常停止ボタンを解除してください」→ 実物を解除する。</li>
+    <li>「一致していますか」→ 同じように <span class="ui">はい</span>／<span class="ui">いいえ</span>。</li>
+  </ol>
+  <ul class="dots">
+    <li><b>押す・離すの両方を試すのは、配線の断線と短絡を見分けるためです。</b>両方を検出した時点で判定が先に出て、一覧へ自動で戻ることがあります（「はい」を押しそびれても問題ない）。</li>
+    <li><b>押したまま 30 秒離さないと NG</b>（固着・短絡の疑い）になり、故障診断へ進みます。押さずに待っていても NG にはなりません。</li>
+    <li>LiDAR・非常停止ボタンの項目は、データが 3 秒届かないと NG（データ無し）になります。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3-8「項目1: 非常停止ボタン」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>5. 保守と設定</b></span><span>使い方（図解）</span></div>
+  <h2>始業点検 項目 2〜4・故障診断 <span class="chip">S-30・S-31</span></h2>
+  <h3>項目 2：モーター・エンコーダ</h3>
+  <div class="cols r6040">
+    <div><figure class="shot" data-shot="s30-motor"><figcaption>モーター・エンコーダの確認</figcaption></figure></div>
+    <div class="stack">
+      <ol class="legend one" data-shot="s30-motor">
+        <li data-n="1"><b>方向ごとの済／未</b></li>
+        <li data-n="2"><b>方向のボタン</b>前進・後退・左右の超信地旋回。<b>押している間だけ低速で動き、離すと止まる</b></li>
+        <li data-n="3"><b>指令と実測</b>左右の車輪が指令どおりに回っているか見る</li>
+      </ol>
+      <ul class="dots">
+        <li><b>4 方向すべてを行ってはじめて OK</b>。どれか 1 方向で合わなければ、その場で NG（故障診断へ）。</li>
+        <li>指を離す・画面が裏に回る・タブレットを閉じる、どの場合でも機体は止まります（0.5 秒の自動停止も入っている）。</li>
+        <li>LiDAR が届いていないと、押しても動きません。</li>
+      </ul>
+    </div>
+  </div>
+  <h3>項目 3：IMU／項目 4：LiDAR</h3>
+  <p>自動で確認します。開くと判定（正常／要確認／NG）と理由、判定の根拠がそのまま出ます。要確認・NG のとき <span class="ui">校正へ</span> が出ることがあります。</p>
+  <h3>故障診断 <span class="chip sm">S-31</span></h3>
+  <div class="cols r6040">
+    <div><figure class="shot" data-shot="s31" data-alt="故障診断の画面"></figure></div>
+    <div class="stack">
+      <ol class="legend one" data-shot="s31">
+        <li data-n="1"><b>始業点検へ戻る</b>直ったあと点検をやり直す</li>
+        <li data-n="2"><b>症状</b>NG になった項目と理由</li>
+        <li data-n="3"><b>チェック手順</b>配線・極性・電源などの確認の手順</li>
+      </ol>
+      <p>非常停止ボタン・モーターの項目が NG のとき、自動でこの画面に切り替わります。診断の結果を示すだけで、修理は人が行います。</p>
+    </div>
+  </div>
+  <div class="ref push">詳しくは：使い方.md §3-8「項目2〜4」「故障診断」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>5. 保守と設定</b></span><span>使い方（図解）</span></div>
+  <h2 id="c5-4">校正 <span class="chip">S-40</span> <span class="chip mode">モード：校正</span></h2>
+  <p class="lead">メインメニュー →「保守・設定」→ <span class="ui">校正</span>（始業点検の <span class="ui">校正へ</span>、設定の <span class="ui">校正で変更する</span> からも入れる）。待機か手動走行からしか入れません。</p>
+  <div class="box danger"><b>校正では機体が自分で走り・回ります</b>押している間だけ動くのではありません。止めたいときは左上の <span class="ui">中断</span> か非常停止を押します。周囲 2 m 以上を空け、すぐ止められる位置に立ちます。メジャー（直進）か分度器（旋回）を用意します。</div>
+  <figure class="shot full" data-shot="s40" data-alt="校正の画面"></figure>
+  <ol class="legend" data-shot="s40">
+    <li data-n="1"><b>手順の帯</b>案内 → 実行・実測 → 確認 → 検証。</li>
+    <li data-n="2"><b>中断</b>校正の途中でやめる。補正は確定せず、元に戻る。</li>
+    <li data-n="3"><b>終了</b>一覧のときだけ押せる。途中で押すと理由が出る。</li>
+    <li data-n="4"><b>タブ</b>項目（一覧）／履歴。</li>
+    <li data-n="5"><b>校正する項目</b>直進・旋回・IMU・LiDAR 死角。前回の校正日と <span class="ui">開始</span>。「要校正」の印は出さない（いつやり直すかは使う人が決める）。</li>
+    <li data-n="6"><b>項目のタブ</b>いま校正している項目。</li>
+    <li data-n="7"><b>いまの手順</b>「Step 2/4 実行・実測」など（次のページ）。</li>
+  </ol>
+  <div class="box warn"><b>直進 → 旋回の順に行う</b>車輪の半径と車輪の間の距離は互いに影響します。直進が未実施か旋回より古いときは、先に直進校正をやり直すよう案内が出ます。</div>
+  <div class="ref push">詳しくは：使い方.md §3-9「校正」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>5. 保守と設定</b></span><span>使い方（図解）</span></div>
+  <h2>校正 直進・旋回の 4 ステップ <span class="chip">S-40</span></h2>
+  <p class="lead">図は旋回校正（その場旋回）。直進校正も同じ流れで、角度の代わりに進んだ距離（m）を測ります。</p>
+  <div class="cols">
+    <div>
+      <figure class="shot" data-shot="s40-step1"><figcaption>Step 1 案内</figcaption></figure>
+      <ol class="legend one" data-shot="s40-step1" style="margin-top:1.5mm">
+        <li data-n="1"><b>走り出す</b>周りを空けてから押す</li>
+      </ol>
+    </div>
+    <div>
+      <figure class="shot" data-shot="s40-step2"><figcaption>Step 2 実行・実測</figcaption></figure>
+      <ol class="legend one" data-shot="s40-step2" style="margin-top:1.5mm">
+        <li data-n="1"><b>実測値</b>実際に回った角度（直進は進んだ距離）</li>
+        <li data-n="2"><b>確認</b>補正のプレビューへ</li>
+      </ol>
+    </div>
+    <div>
+      <figure class="shot" data-shot="s40-step3"><figcaption>Step 3 確認</figcaption></figure>
+      <ol class="legend one" data-shot="s40-step3" style="margin-top:1.5mm">
+        <li data-n="1"><b>補正のプレビュー</b>現在の値 → 補正後の値</li>
+        <li data-n="2"><b>次へ（適用して検証走行）</b>プレビューが出てはじめて押せる</li>
+      </ol>
+    </div>
+    <div>
+      <figure class="shot" data-shot="s40-step4"><figcaption>Step 4 検証</figcaption></figure>
+      <ol class="legend one" data-shot="s40-step4" style="margin-top:1.5mm">
+        <li data-n="1"><b>検証の実測値</b>もう一度測って <span class="ui">検証結果を送る</span></li>
+        <li data-n="2"><b>許容範囲を超えたとき</b>補正は元に戻る。<span class="ui">もう一度走る</span></li>
+        <li data-n="3"><b>始業点検へ戻る</b>直ったか確かめる</li>
+      </ol>
+    </div>
+  </div>
+  <h3>手順（使い方.md の流れ）</h3>
+  <ol class="steps">
+    <li><b>案内</b>：走る距離（直進は 1 m）・回る角度（旋回は 180°）を読み、<span class="ui">走り出す</span>。</li>
+    <li><b>実行・実測</b>：機体が自分で走る・回る。止まったら次へ進む。</li>
+    <li><b>確認</b>：実際に進んだ距離・回った角度をメジャー・分度器で測って入力し <span class="ui">確認</span>。補正の前後の値が出たら <span class="ui">次へ（適用して検証走行）</span>。「補正が大きすぎます」と出たら測り直す（直進は ±10% まで）。</li>
+    <li><b>検証</b>：補正を当ててもう一度同じだけ走る・回る。また実測値を入れて <span class="ui">検証結果を送る</span>。許容範囲内なら確定して一覧に戻る。</li>
+  </ol>
+  <div class="box mock"><b>実機との違い</b>モックアップでは実測値の入力欄が Step 2 に出ていますが、実機では機体が止まって Step 3 に進んでから入力します。旋回の角度もモックアップの案内（360°）と違い、実機は 180° です。また実機では、許容範囲の値が未確定のままだと検証は必ず NG になります（理由に「許容範囲が未確定」）。</div>
+  <div class="ref push">詳しくは：使い方.md §3-9「直進・旋回（4 ステップ）」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>5. 保守と設定</b></span><span>使い方（図解）</span></div>
+  <h2>校正 LiDAR 死角・IMU・履歴 <span class="chip">S-40</span></h2>
+  <h3>LiDAR 死角（機体は動かない）</h3>
+  <div class="cols r6040">
+    <div><figure class="shot" data-shot="s40-blind"><figcaption>LiDAR 死角の選択</figcaption></figure></div>
+    <div class="stack">
+      <ol class="legend one" data-shot="s40-blind">
+        <li data-n="1"><b>ライブスキャン</b>上が前方。支柱など写り込んでいる帯を指でなぞって選ぶ。灰色＝登録済み、青＝選択中</li>
+        <li data-n="2"><b>選んだ範囲</b>区間ごとに <span class="ui">削除</span></li>
+        <li data-n="3"><b>総幅と上限</b><span class="ui">全部外す</span>・<span class="ui">登録済みに戻す</span></li>
+        <li data-n="4"><b>消える点</b>スキャン上の赤い点が、選ぶと消える点</li>
+        <li data-n="5"><b>確認（プレビュー）／次へ（適用して検証）</b></li>
+      </ol>
+      <div class="box warn"><b>広げすぎない</b>死角は「その角度の点を障害物として見ない」設定です。広げすぎると本物の障害物が見えなくなります。<b>1 区間 30°・総幅 90°・8 区間まで</b>を超えると先へ進めません。</div>
+    </div>
+  </div>
+  <p>検証では、地図用・安全判定用・始業点検用の 3 か所へ同時に当てて確かめます。選んだ範囲の外に写り込みが 5° を超えて残っていると不合格になり、元に戻って選び直しになります。</p>
+  <div class="cols">
+    <div>
+      <h3>IMU</h3>
+      <figure class="shot" data-shot="s40-imu" style="margin-top:1.5mm"><figcaption>IMU の校正</figcaption></figure>
+      <ol class="legend one" data-shot="s40-imu" style="margin-top:1.5mm">
+        <li data-n="1"><b>校正の状態</b>システム・ジャイロ・加速度・地磁気。人が機体を床の上で 8 の字に動かす（機体は自走しない）</li>
+        <li data-n="2"><b>確定する</b>4 つとも 3/3 になったら押せる</li>
+      </ol>
+    </div>
+    <div>
+      <h3>履歴</h3>
+      <figure class="shot" data-shot="s40-history" style="margin-top:1.5mm"><figcaption>履歴タブ（項目ごとに 3 世代）</figcaption></figure>
+      <ol class="legend one" data-shot="s40-history" style="margin-top:1.5mm">
+        <li data-n="1"><b>この値に戻す</b>押すと「本当に戻す？」に変わり、10 秒以内にもう一度押すと戻る。一覧の状態のときだけ押せる</li>
+      </ol>
+    </div>
+  </div>
+  <div class="ref push">詳しくは：使い方.md §3-9「LiDAR 死角」「IMU」「履歴」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>5. 保守と設定</b></span><span>使い方（図解）</span></div>
+  <h2 id="c5-7">設定 <span class="chip">S-50</span></h2>
+  <p class="lead">待機中に、メインメニューの「保守・設定」→ <span class="ui">設定</span>。上の <span class="ui">戻る</span> でメインメニューに戻ります。</p>
+  <figure class="shot full" data-shot="s50" data-alt="設定の一般タブ"></figure>
+  <ol class="legend" data-shot="s50">
+    <li data-n="1"><b>戻る</b>メインメニューへ。</li>
+    <li data-n="2"><b>タブ</b>一般・表示・開発モード・フォルト履歴。</li>
+    <li data-n="3"><b>一般の区画</b>1 区画ずつ切り替えて表示する。</li>
+    <li data-n="4"><b>保存（再起動後に反映）</b>速度プリセットは次の起動から効く。</li>
+    <li data-n="5"><b>次回からの値</b>保存したがまだ効いていない値。</li>
+    <li data-n="6"><b>速度の割合</b>低速 0.27・中速 0.55・高速 1.0 が既定。低速 ≦ 中速 ≦ 高速 でないと保存できない。</li>
+    <li data-n="7"><b>変えた理由</b>入力が必須。</li>
+  </ol>
+  <div class="box warn"><b>変えられるのは止まっているときだけ</b>待機中（試験準備の地図作業中を含む）で、手動操作をしていないときだけ変更できます。走行中は入力が灰色になります。<b>機体のスピーカーだけは走行中でも変えられます。</b></div>
+  <div class="ref push">詳しくは：使い方.md §3-6「設定」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>5. 保守と設定</b></span><span>使い方（図解）</span></div>
+  <h2>設定 一般タブのほかの区画① <span class="chip">S-50</span></h2>
+  <h3>自動ブレーキ</h3>
+  <figure class="shot full" data-shot="s50-brake"><figcaption>自動ブレーキの既定</figcaption></figure>
+  <p>場外の手動（既定 OFF）と場内（既定 ON）の既定を変えられます。変えた既定は再起動後も残り、次の起動から効きます。変えた理由の入力が必須です。自律系はいつも ON で、変えられません。</p>
+  <h3>音声・スピーカー</h3>
+  <figure class="shot full" data-shot="s50-speaker"><figcaption>音声・スピーカー</figcaption></figure>
+  <ol class="legend" data-shot="s50-speaker">
+    <li data-n="1"><b>機体のスピーカー</b>周りの人へ、機体の動きを音で知らせる。ON／OFF。</li>
+    <li data-n="2"><b>音量</b></li>
+    <li data-n="3"><b>試しに鳴らす</b>変えた値はすぐ効き、機体に残る（再起動後も）。</li>
+  </ol>
+  <ul class="dots">
+    <li>機体のスピーカーは、自律で走っている間・経路が塞がれて待っている間・障害物に近づいたときに鳴ります。<b>走行中でも変えられます。</b></li>
+    <li>上の「タブレットの音声」は、タブレットから出るアナウンス（ON／OFF だけ）。機体のスピーカーとは別です。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3-6「設定」・§3-6b「機体のスピーカーが鳴る場面」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>5. 保守と設定</b></span><span>使い方（図解）</span></div>
+  <h2>設定 一般タブのほかの区画②・表示タブ <span class="chip">S-50</span></h2>
+  <h3>再生の自己位置推定</h3>
+  <figure class="shot full" data-shot="s50-loc"><figcaption>再生の自己位置推定</figcaption></figure>
+  <p>教示再生で、廊下などで地図とずれるときの補正の間隔と探索の範囲です。<span class="ui">保存</span> したあと、次に <span class="ui">この経路で進む</span> を押したときに効きます（その場では読み直さない）。</p>
+  <h3>LiDAR 死角</h3>
+  <figure class="shot full" data-shot="s50-blind"><figcaption>LiDAR 死角マスク（表示だけ）</figcaption></figure>
+  <ol class="legend one" data-shot="s50-blind">
+    <li data-n="1"><b>校正で変更する</b>死角はここでは変えられない。校正（S-40）の「LiDAR 死角」へ進む。</li>
+  </ol>
+  <h3>表示タブ</h3>
+  <figure class="shot full" data-shot="s50-display"><figcaption>表示タブ</figcaption></figure>
+  <p>文字の大きさ（標準／大／特大）、画面の向き（自動／縦固定／横固定）、地図にコストマップを出すか。すぐ反映され、このタブレットのブラウザに記憶されます。機体を動かさないので、いつでも変えられます。</p>
+  <div class="box mock"><b>実機との違い</b>実機の一般タブには「軌跡追従」の区画もありますが、いまの教示再生の動きには効きません（使い方.md §3-6）。再生の走り方は S-14 の「再生速度」で変えます。</div>
+  <div class="ref push">詳しくは：使い方.md §3-6「設定」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>5. 保守と設定</b></span><span>使い方（図解）</span></div>
+  <h2>設定 開発モード <span class="chip">S-50</span></h2>
+  <figure class="shot full" data-shot="s50-dev" data-alt="設定の開発モードタブ"></figure>
+  <ol class="legend" data-shot="s50-dev">
+    <li data-n="1"><b>開発モードを有効にする</b>有効にしただけでは通常の運用と同じ。</li>
+    <li data-n="2"><b>無視する警告</b>外す項目を 1 つずつ選ぶ。項目の無いもの（物理の非常停止ボタン・ESP32 のウォッチドッグ・画面の非常停止など）は通常どおり効く。</li>
+    <li data-n="3"><b>いま無視しているもの</b>機体が実際に外している項目。</li>
+  </ol>
+  <div class="box danger"><b>開発モードは試験では使いません</b>開発者が検証に使うものです。有効にすると、機器がそろっていなくても起動の確認を通せてしまいます。ヘッダに「開発モード」の札が出ている間は通常の運用状態ではありません。意図せず有効になっていたら無効にしてください。</div>
+  <p>機器がそろわず接続確認（S-00）で止まったときは、S-00 の <span class="ui">開発モードの設定</span> からこのタブに入れます（2 章）。開発モードで通した結果は、通常の運用の結果と取り違えないようにします。</p>
+  <div class="ref push">詳しくは：使い方.md §3-6「設定」</div>
+</section>
+
+<!-- ======================= 6 止まったとき・異常のとき ======================= -->
+<section class="sheet" id="c6">
+  <div class="run"><span><b>6. 止まったとき・異常のとき</b></span><span>使い方（図解）</span></div>
+  <div class="chapter-title">6. 止まったとき・異常のとき</div>
+  <h2 id="c6-1">画面の非常停止ボタンを押したとき</h2>
+  <p class="lead">右上の <span class="ui">非常停止</span> を押すと、速度指令が 0 になります。画面は変わらず、上にウィンドウが乗ります。</p>
+  <figure class="shot full" data-shot="estop" data-alt="非常停止中の画面"></figure>
+  <ol class="legend" data-shot="estop">
+    <li data-n="1"><b>非常停止</b>押したあとは色が変わる。</li>
+    <li data-n="2"><b>フォルト表示</b>「非常停止中」。</li>
+    <li data-n="3"><b>非常停止のウィンドウ</b><span class="ui">非表示</span> で隠せる（非常停止は続く）。</li>
+    <li data-n="4"><b>解除バー</b>画面の非常停止を押したときだけ下端に出る。<span class="ui">非常停止を解除</span>。</li>
+  </ol>
+  <div class="cols r6040">
+    <div><figure class="shot" data-shot="estop-released"><figcaption>解除したあと（ウィンドウが選択肢に変わる）</figcaption></figure></div>
+    <div>
+      <ol class="legend one" data-shot="estop-released">
+        <li data-n="1"><b>メインメニューへ</b>待機に戻る。最初からやり直す</li>
+        <li data-n="2"><b>元のモードに戻る</b>止まる直前のモードの<b>一時停止</b>に戻る</li>
+      </ol>
+    </div>
+  </div>
+  <ul class="dots">
+    <li><b>「元のモードに戻る」を押しても、機体は動き出しません。</b>走らせるには改めて <span class="ui">走行</span>（教示再生は <span class="ui">再生</span>）を押します。</li>
+    <li>位置合わせ・確認・選択の途中で止まった場合は、その入口からやり直します（呼び寄せは 2 点指示から、始業点検・校正は一覧から）。</li>
+    <li><b>安全監視（重大な異常）で入った非常停止には、解除バーは出ません。</b>ウィンドウに異常の名前と対処が出て、原因が消えるとウィンドウの <span class="ui">確認</span>（または <span class="ui">元のモードに戻る</span>）で戻れます。原因が消えていない間はボタンが出ません。</li>
+    <li>走行中に勝手に出たときは、<b>何が出たかを記録して報告</b>します。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3-5「非常停止中の窓が出たら」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>6. 止まったとき・異常のとき</b></span><span>使い方（図解）</span></div>
+  <h2 id="c6-2">手押し（物理の非常停止ボタンを押したとき）</h2>
+  <p class="lead">機体の物理の非常停止ボタンを押すと駆動が切れ、「手押し」になります。人が機体を押して運べます。</p>
+  <figure class="shot full" data-shot="carry" data-alt="手押し中の画面"></figure>
+  <ol class="legend" data-shot="carry">
+    <li data-n="1"><b>画面の非常停止</b>灰色。手押しの間は押しても効かない。</li>
+    <li data-n="2"><b>フォルト表示</b>「手押しモード（物理非常停止ボタン押下中）」。</li>
+    <li data-n="3"><b>手押しのウィンドウ</b>解除のしかた（機体後部の赤いボタンを右へひねる）が出る。</li>
+  </ol>
+  <div class="cols r6040">
+    <div><figure class="shot" data-shot="carry-released"><figcaption>ボタンを戻したとき</figcaption></figure></div>
+    <div>
+      <ol class="legend one" data-shot="carry-released">
+        <li data-n="1"><b>解除されました</b></li>
+        <li data-n="2"><b>再開する（すぐには動き出しません）</b>止まる直前のモードの一時停止に戻る</li>
+        <li data-n="3"><b>再開しない（待機に戻る）</b>最初からやり直す</li>
+      </ol>
+    </div>
+  </div>
+  <ul class="dots">
+    <li><b>「再開する」を押しても機体は動き出しません。</b>走らせるには改めて <span class="ui">走行</span>（または該当の操作）を押します。手で押して位置が変わっているので、その後の走行は経路を計画し直します。</li>
+    <li>手押しの間に、暴走と判定されて非常停止に落ちることはありません（ボタンを戻したあとは通常どおり判定します）。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3-5「手押しからの戻り方」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>6. 止まったとき・異常のとき</b></span><span>使い方（図解）</span></div>
+  <h2 id="c6-3">異常のウィンドウ</h2>
+  <p class="lead">走行中に異常（例：LiDAR の点群が途絶えた）が起きると、機体は止まり、異常のウィンドウが出ます。</p>
+  <figure class="shot full" data-shot="fault" data-alt="異常のウィンドウ"></figure>
+  <ol class="legend" data-shot="fault">
+    <li data-n="1"><b>フォルト表示</b>原因と対処を 1 行で。</li>
+    <li data-n="2"><b>異常のウィンドウ</b>原因と対処。解決すると、このウィンドウが再開の選択肢に変わる。</li>
+    <li data-n="3"><b>非表示</b>ウィンドウを隠す（異常は続いている）。</li>
+  </ol>
+  <figure class="shot full" data-shot="fault-hidden"><figcaption>ウィンドウを隠したとき（ヘッダ）</figcaption></figure>
+  <ol class="legend one" data-shot="fault-hidden">
+    <li data-n="1"><b>再表示 ▲</b>押すと異常のウィンドウをもう一度出す。</li>
+  </ol>
+  <ul class="dots">
+    <li>一瞬だけ出て自然に消える異常では、ウィンドウは出ません（単発の誤検知を無視するため）。</li>
+    <li>走行中にタブレットを閉じた・回線が切れたときも、このウィンドウに「操作端末が離れたため一時停止しました」と出ます。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3-5・§3-4「走行中にタブレットを閉じる／切れると一時停止になる」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>6. 止まったとき・異常のとき</b></span><span>使い方（図解）</span></div>
+  <h2>異常が解決したら</h2>
+  <p class="lead">原因が消えると、同じウィンドウが「異常が解決しました」に変わり、戻り方を選べます。</p>
+  <div class="cols">
+    <div>
+      <figure class="shot" data-shot="fault-resolved"><figcaption>走行を再開できる異常のとき</figcaption></figure>
+      <ol class="legend one" data-shot="fault-resolved" style="margin-top:1.5mm">
+        <li data-n="1"><b>解消した異常</b>種別・続いた時間・始まった時刻。0.1 秒で解消しても、ボタンを押すまで残る。同じ種別が続いたときは「ほか 2 回」</li>
+        <li data-n="2"><b>いいえ</b>元のモードの一時停止に戻る</li>
+        <li data-n="3"><b>はい</b>元のモードで走行を再開する</li>
+      </ol>
+    </div>
+    <div>
+      <figure class="shot" data-shot="fault-manual-only"><figcaption>自動では再開できない異常のとき</figcaption></figure>
+      <ol class="legend one" data-shot="fault-manual-only" style="margin-top:1.5mm">
+        <li data-n="1"><b>確認</b>元のモードの一時停止に戻る（例：自己位置を見失った）</li>
+      </ol>
+    </div>
+  </div>
+  <table class="t">
+    <tr><th style="width:22%">ボタン</th><th>戻り先</th></tr>
+    <tr><td><span class="ui">はい</span></td><td>元のモードで走行を再開する。盤前などへの移動では、走り出す前に経路の先 1.5 m が空いているか確かめ、塞がれていれば止まって待つ</td></tr>
+    <tr><td><span class="ui">いいえ</span>／<span class="ui">確認</span></td><td>元のモードの一時停止に戻る。走らせるには改めて <span class="ui">走行</span>（<span class="ui">再生</span>）を押す</td></tr>
+  </table>
+  <ul class="dots">
+    <li>どちらを選んでも、待機（メインメニュー）には戻りません。違うのは、すぐ走り出すかどうかだけです。</li>
+    <li>手動走行などで <span class="ui">確認</span> を押すと、ウィンドウは閉じて一時停止のまま残ります。</li>
+  </ul>
+  <div class="ref push">詳しくは：使い方.md §3-5「非常停止中の窓が出たら」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>6. 止まったとき・異常のとき</b></span><span>使い方（図解）</span></div>
+  <h2 id="c6-5">直近の異常とフォルト履歴</h2>
+  <p class="lead">異常が解消すると、ヘッダに「直近の異常」が残ります。何が起きたかをあとから読めます。</p>
+  <figure class="shot full" data-shot="fault-recent" data-alt="直近の異常が残ったヘッダ"></figure>
+  <ol class="legend" data-shot="fault-recent">
+    <li data-n="1"><b>直近の異常</b>種別と時刻。押すとフォルト履歴のウィンドウが開く。</li>
+    <li data-n="2"><b>案内の帯</b>教示再生・試験準備・試験の画面では地図の上端に出る。</li>
+    <li data-n="3"><b>状態</b>「いいえ」を選んだので一時停止中。</li>
+  </ol>
+  <div class="cols r6040">
+    <div><figure class="shot" data-shot="fault-history"><figcaption>フォルト履歴のウィンドウ</figcaption></figure></div>
+    <div class="stack">
+      <ol class="legend one" data-shot="fault-history">
+        <li data-n="1"><b>続いている異常</b>「継続中」と経過時間</li>
+      </ol>
+      <p>直近 50 件を新しい順に並べます。時刻・種別・続いた時間・起きたときのモードと状態・重大か回復か・止まったか。見るだけで、操作はありません。<span class="ui">閉じる</span> で戻ります。</p>
+      <p>同じ一覧は、設定（S-50）の <span class="ui">フォルト履歴</span> タブでも見られます。何度か異常が出たときに、どの異常だったかをここで読みます。</p>
+    </div>
+  </div>
+  <div class="ref push">詳しくは：使い方.md §3-5「ヘッダの『直近の異常』と履歴の一覧」</div>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>6. 止まったとき・異常のとき</b></span><span>使い方（図解）</span></div>
+  <h2 id="c6-6">止まっている理由・案内の帯</h2>
+  <h3>止まっている理由の帯</h3>
+  <figure class="shot full" data-shot="s21-stopbanner" data-alt="止まっている理由の帯" style="width:88%"></figure>
+  <ol class="legend one" data-shot="s21-stopbanner">
+    <li data-n="1"><b>止まっている理由</b>異常のウィンドウが出ていないのに速度が 0 に絞られているとき、その理由を出す（例：前方の障害物）。</li>
+  </ol>
+  <h3>案内の帯</h3>
+  <figure class="shot full" data-shot="guide" data-alt="画面下端の案内の帯" style="width:88%"></figure>
+  <ol class="legend one" data-shot="guide">
+    <li data-n="1"><b>案内</b>次にしてほしいこと（例：「対象を見失いました。立ってほしい位置に立ってください」）。ふつうは画面の下端、教示再生・試験準備・試験の画面では地図の上端に出る。</li>
+    <li data-n="2"><b>閉じる</b></li>
+  </ol>
+  <div class="ref push">詳しくは：使い方.md §3-4b（案内の帯の位置）</div>
+</section>
+
+<!-- ======================= 付録 ======================= -->
+<section class="sheet" id="ca">
+  <div class="run"><span><b>付録　実機では未実装の画面</b></span><span>使い方（図解）</span></div>
+  <div class="chapter-title">付録　実機では未実装の画面</div>
+  <p class="lead">ここに載せる画面は仕様（<code>docs/plan/spec/</code>）にだけあり、実機ではまだ使えません。どんな画面になる予定かの参考です。</p>
+  <h2>追従走行 <span class="chip">S-10</span> <span class="chip na">実機では未実装</span></h2>
+  <figure class="shot full" data-shot="s10" data-alt="追従走行の画面" style="width:86%"></figure>
+  <ol class="legend" data-shot="s10">
+    <li data-n="1"><b>レーダー</b>機体のまわりの人。追従する試験員を選ぶ。</li>
+    <li data-n="2"><b>操作カード</b>停止・確認（向くだけ）・走行。</li>
+    <li data-n="3"><b>手動操作</b>触れている間だけ介入する。</li>
+  </ol>
+  <h2>教示（追従） <span class="chip">S-12</span> <span class="chip na">実機では未実装</span></h2>
+  <figure class="shot full" data-shot="s12" data-alt="教示（追従）の画面" style="width:86%"></figure>
+  <ol class="legend" data-shot="s12">
+    <li data-n="1"><b>記録の印</b>試験員について走りながら経路を記録する。</li>
+    <li data-n="2"><b>操作カード</b>停止・確認・走行・保存。</li>
+  </ol>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>付録　実機では未実装の画面</b></span><span>使い方（図解）</span></div>
+  <h2>ライン誘導走行 <span class="chip">S-15</span> <span class="chip na">実機では未実装</span></h2>
+  <figure class="shot full" data-shot="s15" data-alt="ライン誘導走行の画面" style="width:86%"><figcaption>床の区画線をカメラで認識して走る。カメラ（区画線用）がつながっていないと選べない</figcaption></figure>
+  <h2>電子リード走行 <span class="chip">S-16</span> <span class="chip na">実機では未実装</span></h2>
+  <figure class="shot full" data-shot="s16" data-alt="電子リード走行の画面" style="width:86%"></figure>
+  <ol class="legend one" data-shot="s16">
+    <li data-n="1"><b>リードの状態</b>リードデバイスが引かれている間だけ走る。張力が無いと止まる。リードデバイスがつながっていないと選べない。</li>
+  </ol>
+</section>
+
+<section class="sheet">
+  <div class="run"><span><b>付録　実機では未実装の画面</b></span><span>使い方（図解）</span></div>
+  <h2>自律測定 <span class="chip">S-60</span> <span class="chip na">実機では未実装</span></h2>
+  <p class="lead">測定機能（fk-system）の指示で、機体が自分で走って盤の前で向きと位置を変えるモードです（2026-11-01 に仕様へ追加）。メインメニューの <span class="ui">自律測定</span> から入ります。</p>
+  <div class="cols r4060">
+    <div><figure class="shot" data-shot="s60-permit"><figcaption>入るときの許可</figcaption></figure></div>
+    <div><p><span class="ui">許可する</span> を押したときだけ自律測定に入ります。<span class="ui">許可しない</span> ならメインメニューのまま。</p></div>
+  </div>
+  <figure class="shot full" data-shot="s60" data-alt="自律測定の画面"></figure>
+  <ol class="legend" data-shot="s60">
+    <li data-n="1"><b>場内の札</b></li>
+    <li data-n="2"><b>測定機能の画面へ</b>ふだんは測定機能の画面を前に出して使う。</li>
+    <li data-n="3"><b>手動</b>人が手動で割り込むと一時停止し、測定機能の画面の「走行」を待つ。</li>
+    <li data-n="4"><b>自律測定を終了</b></li>
+  </ol>
+  <div class="ref push">仕様：docs/plan/spec/Spec-measure.md・Spec-webui.md §3.16</div>
+</section>
+
+<script src="annotate.js"></script>
+</body>
+</html>
