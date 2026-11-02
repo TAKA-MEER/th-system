@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PC を 192.168.4.0/24 向けの NTP サーバーにする（要 sudo・PC 上で実行）
+# PC を 192.168.5.0/24（ロボット AP）と 10.42.0.0/24（有線の退路）向けの NTP サーバーにする（要 sudo・PC 上で実行）
 #
 #   sudo bash pc_setup_ntp_server.sh
 #
@@ -10,7 +10,8 @@
 #   ラズパイ側は /etc/systemd/timesyncd.conf で NTP=192.168.4.50 を向いているが、
 #   Packet count: 0 ＝ 問い合わせても返事が無い状態だった。
 #   PC は systemd-timesyncd（クライアント専用）しか入っておらず 123/udp を
-#   待ち受けていない。docs/setup.md の「PC の Windows Time を NTP サーバー化」は
+#   待ち受けていない。（当時は 192.168.4.x。2026-09 に 192.168.5.x へ移った）
+#   docs/setup.md の「PC の Windows Time を NTP サーバー化」は
 #   PC が Ubuntu になった時点で成立しなくなっていた。
 set -euo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "sudo で実行する" >&2; exit 1; }
@@ -20,9 +21,10 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq chrony
 
 CONF=/etc/chrony/chrony.conf
 DROPIN=/etc/chrony/conf.d/th-robot.conf
-BLOCK='# TH システム: ラズパイ (192.168.4.2) へ時刻を配る。
+BLOCK='# TH システム: ラズパイ (192.168.5.1 / 有線 10.42.0.2) へ時刻を配る。
 # local stratum 10 = 上流に繋がっていなくても配る（現場は隔離 AP のため必須）。
-allow 192.168.4.0/24
+allow 192.168.5.0/24
+allow 10.42.0.0/24
 local stratum 10'
 
 if grep -qE '^\s*confdir\s+/etc/chrony/conf\.d' "$CONF" 2>/dev/null; then
