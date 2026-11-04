@@ -44,6 +44,7 @@
 | [DetailedDesign-params.md](DetailedDesign-params.md) | パラメータの実体化 | 全員（数値を書く前に） |
 | [DetailedDesign-transit.md](DetailedDesign-transit.md) | 走行方式 | 走行の担当 |
 | [DetailedDesign-onsite.md](DetailedDesign-onsite.md) | 試験場内 | 試験場内の担当 |
+| [DetailedDesign-measure.md](DetailedDesign-measure.md) | **測定機能（fk-system）とのやり取り**（通り道・名前・型。2026-11-04。案） | 自律測定・お立会試験の測定の担当／fk-system |
 | [DetailedDesign-maintenance.md](DetailedDesign-maintenance.md) | 始業点検・校正・故障診断 | 保守の担当 |
 | [DetailedDesign-webui.md](DetailedDesign-webui.md) | 15 画面 | UI の担当 |
 | [DetailedDesign-hardware.md](DetailedDesign-hardware.md) | **機器構成・ESP32 フレーム・手配** | **部品を買う前／ファームを触る前に必読** |

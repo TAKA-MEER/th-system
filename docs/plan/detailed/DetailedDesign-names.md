@@ -50,6 +50,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | **`th_route`** | `ament_cmake` + python | 教示の記録・再生・**地図セッション** | 新規（`slam_control.py` を吸収） |
 | **`th_onsite`** | `ament_cmake` + python | 試験場内（`PREP` / `PANEL_NAV` / `AT_PANEL` / `SUMMON` / `HOME_NAV`） | 新規（`panel_navigator` / `summon_navigator` を置換） |
 | **`th_maintenance`** | `ament_cmake` + python | 始業点検・校正・故障診断 | 新規（`th_calibration` を吸収） |
+| **`th_measure`** | `ament_cmake` + python | **測定機能（fk-system）とのやり取りと自律測定の挙動**（[measure](DetailedDesign-measure.md)。2026-11-04。案） | 新規（計画書 8-g） |
 | `th_perception` | `ament_cmake` + python | `lidar_filter` / `person_tracker_bridge` | 既存・ほぼ維持 |
 | `th_esp32_bridge` | `ament_cmake` + python | ESP32 リンク | 既存・改修 |
 | `th_bringup` | `ament_cmake` | launch / config / maps / worlds | 既存・改修 |
@@ -324,6 +325,9 @@ def derive_limits(screens, now_ms, p):
 | **`CheckStatus.msg`** | `Header header` / `string item` / `string result`（`OK`/`WARN`/`NG`/`UNKNOWN`） / `string detail` / `string next_screen` / `string basis_json`（判定の根拠。JSON 配列 `{key,value,threshold,unit,cmp,ok}`。最終判定のときだけ。ラベルは WebUI の i18n） | 始業点検 4 項目 |
 | **`CalibStatus.msg`** | `Header header` / `string item` / `string step` / `string result` / `string preview_before` / `string preview_after` / `string detail` | 校正ウィザード |
 | **`PinWarning.msg`** | `bool active` / `string kind` / `float32 nearest_m` / `float32 min_m` / `float32 retreat_x` / `float32 retreat_y` / `float32 retreat_yaw` | `pin_registrar` → WebUI（latched）。登録座標が壁（global costmap の 253 帯）に近すぎるときの警告。`WS-9AB`（2026-09-10）で新設 |
+| **`MeasureStatus.msg`** | `Header header` / `string interface_version` / `string mode` / `string state` / `bool working` / `bool link_ok` / `bool pose_valid` / `string map_instance_id` / `float64 x` / `float64 y` / `float64 yaw`（map フレーム） / `string pending_command_id` / `string pending_command` / `string pause_reason` / `bool blocked` / `float32 v_limit_mps` / `float32 w_limit_radps` | **本システム → 測定機能。**[measure](DetailedDesign-measure.md) §3.3。2026-11-04（案） |
+| **`MeasureResult.msg`** | `Header header` / `string command_id` / `string command` / `string result`（`ARRIVED`/`DONE`/`CANCELLED`/`FAILED`） / `string reason` | **受けた指示に必ず 1 回だけ出す**（[measure](DetailedDesign-measure.md) §3.2）。2026-11-04（案） |
+| **`MeasureHeartbeat.msg`** | `Header header` / `string interface_version` / `string sender` / `uint32 seq` | **測定機能 → 本システム**の生存確認（[measure](DetailedDesign-measure.md) §3.4）。2026-11-04（案） |
 | `WheelFeedback.msg` | 既存のまま | 実測と指令の両方に使う |
 
 **廃止する msg**: `RobotMode.msg`（§2.1）／`PersonStatus.msg`（`PersonTargets` へ統合）／
@@ -362,6 +366,8 @@ def derive_limits(screens, now_ms, p):
 | `/shutdown/prepare` | `std_srvs/Trigger` → 未保存一覧 | `th_state` |
 | `/shutdown/execute` | `std_srvs/Trigger` | `th_state` |
 | **`/safety/clear_estop_ui`** | `std_srvs/Trigger` | **`safety_monitor`**。**UI に依存しない解除経路**（[safety](DetailedDesign-safety.md) §6.3.1 ／ `N-4`）。`/safety/estop_hw` が `false` かつ重大フォルトが無いときだけ受理し、**必ずログに残す**。**通常運用では使わない**——WebUI の解除ボタンが正規の経路である |
+| **`/measure/command`** | `MeasureCommand`: `string command_id` / `string command`（`meas.*`） / `string map_instance_id` / `float64 x,y,yaw` / `float64 angle_rad` / `string side` / `float64 distance_m` / `float32 v_max_mps,w_max_radps,a_max_mps2,alpha_max_radps2` → `bool accepted` / `string reject_reason` / `string mode` / `string state` | **`th_state`**。**測定機能の指示はここからしか受けない**（§8.5。[measure](DetailedDesign-measure.md) §3.1）。2026-11-04（案） |
+| **`/measure/check_arm_clearance`** | `CheckArmClearance`: `geometry_msgs/Polygon region` / `string[] sides`（`LEFT`/`RIGHT`/`CURRENT`） → `bool accepted` / `string reject_reason` / `string[] sides` / `string[] results`（`CLEAR`/`BLOCKED`/`UNKNOWN`） / `string[] unknown_reasons` / `builtin_interfaces/Time checked_at` | `th_measure`（[measure](DetailedDesign-measure.md) §3.5）。2026-11-04（案） |
 
 **廃止・改名するサービス**:
 
@@ -476,6 +482,9 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `/calib/status` | `CalibStatus` | reliable, depth 5 |
 | `/leash/status` ／ `/line/status` | 各 status | reliable, depth 1 |
 | **`/ui/jog_lease`** | `std_msgs/String`（`client_id`） | **best_effort**, depth 1, 5 Hz 以上 |
+| **`/measure/status`** | `MeasureStatus` | **reliable, transient_local, depth 1。10 Hz ＋ 変化時。モードに関係なく出す**（[measure](DetailedDesign-measure.md) §3.3） |
+| **`/measure/result`** | `MeasureResult` | reliable, depth 20。結果が出るたび（[measure](DetailedDesign-measure.md) §3.2） |
+| **`/measure/heartbeat`** | `MeasureHeartbeat` | reliable, depth 1。**5 Hz（発行者は測定機能の機能側）**（[measure](DetailedDesign-measure.md) §3.4） |
 
 > **`/route/list` はサービス名。**トピック側は **`/route/catalog`** に改名した（名前の衝突を解いた）。
 
@@ -570,6 +579,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`person_startup_grace_ms`** | ms | (c) placeholder。**`tracker_enabled` の false→true エッジから `person` 判定を保留する猶予**（`safety_monitor`。DetailedDesign-safety.md §5.5.2） |
 | **`person_report_only`** | — | given bool。true の間は `PERSON_TRACKER_LOST` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。同 §5.5.5） |
 | **`mux_liveness_grace_ms`** | ms | (b)。`MUX_DEAD` の生存確認（`twist_mux` が `/cmd_vel_muxed` の publisher から居なくなってこの時間で死とみなす。`safety_monitor`。`DetailedDesign-safety.md` §5.6） |
+| **`measure_link_timeout_ms`** | ms | (b)。`/measure/heartbeat` の途絶とみなすまでの時間（[measure](DetailedDesign-measure.md) §3.4。Spec-params §2 の「測定機能との通信が途絶えたとみなすまでの時間」）。2026-11-04（案） |
+| **`arm_clearance_scan_max_age_ms`** | ms | (b)。腕が振れる範囲の確認で、これより古いスキャンなら `UNKNOWN`（[measure](DetailedDesign-measure.md) §3.5）。2026-11-04（案） |
 | **`mux_report_only`** | — | given bool。true の間は `MUX_DEAD` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。同 §5.6） |
 | **`muxed_stale_ms`** | ms | (b)。**リミッタ**が `/cmd_vel_muxed` の途絶を判定する |
 | **`cmd_vel_stale_ms`** | ms | (b)。**`esp32_bridge`** が `/cmd_vel` の途絶を判定する（`< esp32_watchdog_ms`） |
@@ -719,6 +730,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `evt.*` | トピック `/system/event` | 挙動ノードのみ |
 | `fault.*` ／ `hw.*` | `th_state` が `/safety/fault` `/safety/estop*` を直接購読して内部生成 | `safety_monitor` のみ |
 | **`sys.*`** | **`th_state` の内部タイマ。**外から入れられない | `th_state` 自身 |
+| **`meas.*`** | **サービス `/measure/command` だけ**（§8.5） | **測定機能（fk-system）の機能側のみ**（2026-11-04。案） |
 
 `sys.*` は 2 つだけ。
 
@@ -808,6 +820,25 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | UI | スティックに触れている間、`ui.jog.hold` を **5 Hz 以上**で送り続ける |
 | `th_state` | 最後の受信から `jog_lease_ms` を超えたら `jog_active = false` |
 | 制約 | **`jog_lease_ms ≥ /cmd_vel_manual` の twist_mux timeout（1.0 s）。**逆にすると「多重化はまだ手動を流しているのに FSM は解除済み」になる |
+
+### 8.5 `meas.*`（測定機能の指示）
+
+**`/measure/command` からしか受けない。**`/system/trigger` に来た `meas.*` と、`/measure/command` に来た `ui.*` は拒否する（[measure](DetailedDesign-measure.md) §5）。
+受けるのは `AUTO_MEASURE` と `AT_PANEL` の `WORKING`・`ADJUST` だけ。
+**`meas.` は `export_names.py` が拾う接頭辞に入れていない**ので `names.json` には出ない（WebUI は送らないため。意図どおり）。
+
+| 指示 | Spec の名前 | 遷移 |
+| --- | --- | --- |
+| `meas.goal` | 目的地 | `SM-3.1.2-121` |
+| `meas.reroute` | 経路の再計算 | `-122` |
+| `meas.start` | 発進 | `-130` |
+| `meas.stop` | 停止 | `-129` |
+| `meas.abort` | 中止 | `-131` |
+| `meas.finish` | 終了 | `-135` |
+| `meas.turn` | 旋回 | `-127`・`-136` |
+| `meas.translate` | 並進 | `-127` |
+| `meas.set_limits` | 速度・加速度の上限 | — （状態は変えない） |
+| `meas.done` | 測定を終えた | `-063` |
 
 ---
 
