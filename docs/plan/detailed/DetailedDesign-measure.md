@@ -6,7 +6,7 @@
 入力は [Spec-measure.md](../spec/Spec-measure.md) §1〜§7 と [Spec-onsite.md](../spec/Spec-onsite.md) §7.2、遷移は
 [Spec-modes.md](../spec/Spec-modes.md) `SM-3.1.1-18`・`SM-3.1.2-062`〜`-063`・`-120`〜`-141`。
 **本システムが書き、測定機能が確かめる**（2026-11-04。fk-system の申し送り 16。[Spec-open.md](../spec/Spec-open.md) §8）。
-**状態: 案（測定機能の確認待ち）。まだ実装していない**（計画書 §6 の 8-g）。
+**状態: 測定機能が確かめた**（2026-11-04。fk のユーザー承認。fk は写さずにこの文書へリンクする）。**まだ実装していない**（計画書 §6 の 8-g）。
 
 ---
 
@@ -40,7 +40,7 @@
 | 項目 | 決まり |
 | --- | --- |
 | 型 | **本システムの `th_ws/src/th_system_msgs` を、本システムのリポジトリから取り込んでビルドする**（写して書き換えない） |
-| 版 | `interface_version`（文字列。**初版は `"1"`**）。型・名前・意味を変えたら上げる |
+| 版 | `interface_version`（文字列。**初版は `"1"`**）。型・名前・意味を変えたら上げる。**実装して使い始めるまでの案の直しでは上げない**（申し送り 18 の直しも `"1"` のまま） |
 | 照合 | ROS 2 Humble には型の照合が無い。古い型でビルドすると、**黙って化けるか、まったく届かない。**そこで本システムは `/measure/heartbeat` の版を見て、**食い違えば生存とみなさず、指示を `version_mismatch` で拒否する** |
 
 ### 1.3 測定機能の画面（rosbridge）
@@ -110,6 +110,7 @@ string  state
 | `map_mismatch` | `map_instance_id` が今の地図と違う |
 | `version_mismatch` | `interface_version` が食い違う（§1.2） |
 | `link_lost` | 生存確認が途絶えている |
+| `localization_lost` | 自己位置を見失ったあと、自律測定を抜けて入り直すまで（-142） |
 | `bad_argument` | 欄が足りない・値の範囲外・`command_id` が空 |
 
 **`ui.*` を `/measure/command` に送っても拒否する**（§5）。
@@ -132,8 +133,9 @@ string reason      # CANCELLED の理由キー。ほかは空
 | 人が抜けた（「自律測定を終了」「終了」・`SM-3.1.1-18`） | `CANCELLED` | `mode_exit` |
 | `ADJUST`（旋回・並進）の最中の非常停止・手押し（`ESTOP`・`CARRY`） | `CANCELLED`（戻っても回り直さない。-130・-140） | `estop` ／ `carry` |
 | `ADJUST` の最中の回復フォルト・通信途絶（-03・-133・-139） | `CANCELLED`（同上） | `fault` ／ `link_lost` |
+| **自律測定で自己位置を見失った（`LOCALIZATION_LOST`。-142）** | **`CANCELLED`（目的地も旋回・並進も）** | **`localization_lost`** |
 
-**目的地を持ったまま止まる場合は、結果を出さない。**自律測定の `NAV`・`ALIGN`・`BLOCKED` の最中に、回復フォルト・人のジョグ・通信途絶で `PAUSE` に落ちたときと、**非常停止・手押し（自己位置を見失った `LOCALIZATION_LOST` を含む）で `ESTOP`・`CARRY` に入ったとき**がこれに当たる。戻る先は `PAUSE` で（[Spec-modes.md](../spec/Spec-modes.md) §6 の `AUTO_MEASURE`）、測定機能の発進（`meas.start`。-130）でもとの `command_id` のまま続くため。目的地を捨てたとき（中止・終了・人が抜けた）に `CANCELLED` を出す。
+**目的地を持ったまま止まる場合は、結果を出さない。**自律測定の `NAV`・`ALIGN`・`BLOCKED` の最中に、回復フォルト・人のジョグ・通信途絶で `PAUSE` に落ちたときと、**非常停止・手押しで `ESTOP`・`CARRY` に入ったとき**がこれに当たる（自己位置を見失った `LOCALIZATION_LOST` は除く。上の表）。戻る先は `PAUSE` で（[Spec-modes.md](../spec/Spec-modes.md) §6 の `AUTO_MEASURE`）、測定機能の発進（`meas.start`。-130）でもとの `command_id` のまま続くため。目的地を捨てたとき（中止・終了・人が抜けた）に `CANCELLED` を出す。
 
 ### 3.3 `MeasureStatus.msg`（状態と自己位置）
 
@@ -153,6 +155,7 @@ string  pending_command_id   # 進行中の指示（無ければ空）
 string  pending_command
 string  pause_reason         # SystemState.pause_reason と同じ
 bool    blocked              # 塞がれて止まっている（BLOCKED）
+bool    reentry_required     # 自己位置を見失ったあと、自律測定を抜けて入り直すまで true（-142）
 float32 v_limit_mps          # いま効いている速度の上限（本システムと測定機能の指定の小さい方）
 float32 w_limit_radps
 ```
@@ -162,6 +165,7 @@ float32 w_limit_radps
 | 自己位置 | **自律測定は、そのとき作っている地図の座標。お立会試験は会場地図の座標**（[Spec-measure.md](../spec/Spec-measure.md) §3） |
 | 地図の世代 | **自律測定は入るたびに地図を作り直す。**測定機能は目的地に `map_instance_id` を付け、本システムは今の地図と違えば `map_mismatch` で拒否する（前の地図の座標で走り出さない） |
 | 旋回の出し直し | 旋回が途中で止まったら、測定機能はこの `yaw` から残りの角度を出す（申し送り 14） |
+| 入り直しの要否 | `reentry_required` が true の間、目的地・旋回・並進・発進は `localization_lost` で拒否される。**測定機能が取り消しの結果を取りこぼしても、これで分かる**（申し送り 18） |
 
 ### 3.4 `MeasureHeartbeat.msg`（生存確認）
 
@@ -196,6 +200,7 @@ builtin_interfaces/Time checked_at
 | --- | --- |
 | 左右 | `LEFT` は `region` を機体の中心まわりに **+90°**、`RIGHT` は **−90°** 回した位置を、**回る前の今の位置から**確かめる。`CURRENT` は回さない |
 | 機体の内側 | **`region` のうち機体の形（0.55 m 角）の内側は見ない。**腕の取り付け部のそばには死角マスクのかかったパイプがあり、除かないと毎回 `UNKNOWN` になる |
+| 範囲の形（測定機能の決定。暫定） | 回ったあとの機体基準で**前に伸びる長方形: x 0〜1.0 m・y −0.275〜+0.275 m**（腕を起こす・格納するとき、腕の先が機体の中心から約 1 m。幅は腕の取り付けが決まるまで機体の幅いっぱい。余裕 0）。**値は測定機能のパラメータ。**機体の内側を見ないので、確かめるのは前面（x 0.275 m）から先 |
 | 見るもの | 角が描く円の確認と同じ入力（障害物マップかスキャン）。[Spec-measure.md](../spec/Spec-measure.md) §5.2 |
 | `UNKNOWN` | 最後のスキャンが **`arm_clearance_scan_max_age_ms`** より古い（`scan_stale`）か、範囲が LiDAR の死角にかかる（`blind_sector`）。**測定機能は塞がっているのと同じに扱う** |
 | 受ける状態 | `AUTO_MEASURE`/`WAIT` と `AT_PANEL`/`WORKING` だけ（-141）。**状態は変えない** |
@@ -209,11 +214,11 @@ builtin_interfaces/Time checked_at
 
 | 名前 | 向き | 決まり |
 | --- | --- | --- |
-| `/ui/active_screen`（`ActiveScreen`） | 画面 → 本システム | **在席と画面の申告。**`screen_id` は、自律測定の間は **`S-60`**、お立会試験の停止命令の間は **`S-21`**（どちらもゾーン `IN`）。**`client_id` は `fk-` で始める。**`interacting`・`last_input`・2 Hz は本システムの画面と同じ（[names](DetailedDesign-names.md) §5.1）。新しい画面 ID は作らない（ゾーンの表を 3 か所直さずに済む） |
+| `/ui/active_screen`（`ActiveScreen`） | 画面 → 本システム | **在席と画面の申告。**`screen_id` は、自律測定の間は **`S-60`**、お立会試験の停止命令の間は **`S-21`**（どちらもゾーン `IN`）。**`client_id` は `fk-` で始める。**`interacting`・`last_input`・2 Hz は本システムの画面と同じ（[names](DetailedDesign-names.md) §5.1）。測定機能は `/measure/status` の `mode` と `working` を見て `screen_id` を切り替える（fk の決定）。新しい画面 ID は作らない（ゾーンの表を 3 か所直さずに済む） |
 | `/safety/estop_ui`（`std_msgs/Bool`） | 画面 → 本システム | ヘッダーの非常停止。**押している間 2 Hz で `true` を送り続け、解除は `false` を 1 回**（[safety](DetailedDesign-safety.md) §6.3。押下側にラッチ） |
 | `/system/trigger`（`UiTrigger`） | 画面 → 本システム | **ヘッダーと異常ウィンドウへの人の応答だけ**（`ui.resume_ack` など。[names](DetailedDesign-names.md) §8.1） |
-| `/measure/command`（`MeasureCommand`） | 画面 → 本システム | 測定機能の画面の**「走行」**（人のジョグで止まったあとの発進。`meas.start`）など、人の操作を測定機能の指示として送るとき。**画面から rosbridge で直接呼んでも、測定機能の機能側を通してもよい（測定機能が決める）。**どちらでも送るのは `meas.*` だけ |
-| `/system/state`・`/safety/active_faults`・`/safety/fault`・`/measure/status` | 本システム → 画面 | ヘッダーと異常ウィンドウの中身。**本システムの画面と同じトピックを購読し、理由キーの表（`th_ws/web_ui/src/i18n/`）を共有する**（足りなければ集約トピックを足す。§7） |
+| `/measure/command`（`MeasureCommand`） | 画面 → 本システム | 測定機能の画面の**「走行」**（人のジョグで止まったあとの発進。`meas.start`）など、人の操作を測定機能の指示として送るとき。**測定機能の決定: 機能側を通して送り、画面から直接は呼ばない**（発進の前に昇降機が下端にあることを機能側で確かめるため。機能側が落ちても、本システムは生存確認の途絶で `PAUSE` に落ちる）。送るのは `meas.*` だけ |
+| `/system/state`・`/safety/active_faults`・`/safety/fault`・`/measure/status` | 本システム → 画面 | ヘッダーと異常ウィンドウの中身。**本システムの画面と同じトピックを購読し、理由キーの表（`th_ws/web_ui/src/i18n/`）を共有する。**表は型と同じく本システムのリポジトリから取り込み、写さない（fk の決定）。足りなければ相談（§7） |
 
 ---
 
@@ -243,8 +248,9 @@ builtin_interfaces/Time checked_at
 
 | 項目 | 状態 |
 | --- | --- |
-| 腕が振れる範囲の多角形の形と大きさ | **測定機能が決める**（範囲の決め方は測定機能と突き合わせる） |
-| ヘッダーと異常ウィンドウの中身の渡し方 | まず生のトピックの購読で始める（§4）。測定機能の実装を見て、足りなければ集約トピックを足す（**要相談**） |
+| 腕が振れる範囲の多角形の形と大きさ | **決定（暫定）**: §3.5。値は測定機能のパラメータ |
+| ヘッダーと異常ウィンドウの中身の渡し方 | **決定**: 生のトピックの購読と理由キーの表の取り込みで始める（§4）。実装して足りなければ相談 |
 | `measure_link_timeout_ms`・`arm_clearance_scan_max_age_ms` の値 | (b)。実装時に決める |
 | **依存: 自律測定の間は `/map` を凍結しない** | `map_freezer` が `/map_live` をそのまま通す場面に `AUTO_MEASURE` を足す（[names](DetailedDesign-names.md) §6.4 の `/map` の行。[Spec-measure.md](../spec/Spec-measure.md) §4.1）。8-g |
+| 参考（測定機能の決定。本システムは変えない） | 自律測定で腕が出ている間の人のジョグは人の責任（既知のリスク）。お立会試験では、昇降機を測定前の高さへ戻してから `meas.done` を返す |
 | 測定機能の最初の版の使い方（参考。fk `Spec-auto.md`） | 盤前の並進を使わない／速度・加速度の上限は当面指定しない／一時停止からの再開はいつも人の「走行」。**本システムの実装の順番の手がかりにする** |
