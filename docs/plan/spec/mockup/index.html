@@ -1576,7 +1576,7 @@ table.lst.basis tr.ng td{background:#2a1c0a}
     <button class="btn primary wide mb" onclick="whyDisabled('モックアップでは測定機能の画面を開けません（別ポートの画面です）')">測定機能の画面へ</button>
     <!-- 人の手動操作が割り込んだら一時停止し、「走行」（測定機能の画面）を待つ（2026-11-01。Spec-measure.md §7） -->
     <button class="btn wide mb" onclick="openJog('s60')">手動</button>
-    <button class="btn wide" onclick="go('s01')">自律測定を終了</button>
+    <button class="btn wide" onclick="openWin('winArmExit')">自律測定を終了</button>
   </div>
 </section>
 
@@ -2015,6 +2015,14 @@ table.lst.basis tr.ng td{background:#2a1c0a}
     <div class="bodyw">停止命令を解くと、行き先を選んだり手動で動かしたりできるようになります。</div>
     <footer><button class="btn" onclick="closeWin('winWorkRelease')">やめる</button>
       <button class="btn danger" onclick="closeWin('winWorkRelease');endMeasure()">解く</button></footer>
+  </div>
+
+  <!-- 自律測定・停止命令の間から人がメインメニューへ抜けるときの確認（Spec-modes.md SM-3.1.1-18） -->
+  <div class="win confirm" id="winArmExit">
+    <header>測定機構の腕が格納位置にあることを確かめましたか</header>
+    <div class="bodyw">メインメニューへ戻ると、手動で機体を動かせるようになります。</div>
+    <footer><button class="btn" onclick="closeWin('winArmExit')">やめる</button>
+      <button class="btn danger" onclick="closeWin('winArmExit');go('s01')">メインメニューへ</button></footer>
   </div>
 
   <!-- W-5 経路ブロック。先が空けば同じ経路の残りで自動で再開する。
