@@ -99,7 +99,7 @@ string  state
 | `meas.finish` | 終了 | — | `AUTO_MEASURE`/任意（-135） | すぐ `DONE`。進行中の指示は `CANCELLED` |
 | `meas.turn` | 旋回 | `angle_rad` | `AUTO_MEASURE`/`WAIT`（-127）・`AT_PANEL`/`WORKING`（-136） | `DONE`（-128・-137） |
 | `meas.translate` | 並進 | `side`・`distance_m` | `AUTO_MEASURE`/`WAIT`（-127） | `DONE`（-128）。**測定機能の最初の版は使わない** |
-| `meas.set_limits` | 速度・加速度の上限 | `v_max_mps` ほか | `AUTO_MEASURE`/任意・`AT_PANEL`/`WORKING`・`ADJUST` | すぐ `DONE`。**本システムの上限との小さい方だけが効く。**そのモードを抜けたら捨てる |
+| `meas.set_limits` | 速度・加速度の上限 | `v_max_mps` ほか | `AUTO_MEASURE`/任意・`AT_PANEL`/`WORKING`・`ADJUST` | すぐ `DONE`。**本システムの上限との小さい方だけが効く。**自律測定はモードを抜けたら、お立会試験は**停止命令が解けたら**（`WORKING`・`ADJUST` を出たら）捨てる（人のジョグに効き続けないため） |
 | `meas.done` | 測定を終えた | — | `AT_PANEL`/`WORKING`（-063） | すぐ `DONE`（停止命令が解ける） |
 
 | `reject_reason` | 意味 |
@@ -120,8 +120,8 @@ string  state
 std_msgs/Header header
 string command_id
 string command
-string result      # ARRIVED / DONE / CANCELLED / FAILED
-string reason      # CANCELLED・FAILED の理由キー。ほかは空
+string result      # ARRIVED / DONE / CANCELLED（FAILED は予約。いまは出さない）
+string reason      # CANCELLED の理由キー。ほかは空
 ```
 
 **`accepted=true` で受けた指示には、`/measure/result` を必ず 1 回だけ出す。**次の場合もすべて出す（どれかが漏れると、測定機能は永遠に待つ）。
@@ -132,10 +132,8 @@ string reason      # CANCELLED・FAILED の理由キー。ほかは空
 | 人が抜けた（「自律測定を終了」「終了」・`SM-3.1.1-18`） | `CANCELLED` | `mode_exit` |
 | `ADJUST`（旋回・並進）の最中の非常停止・手押し（`ESTOP`・`CARRY`） | `CANCELLED`（戻っても回り直さない。-130・-140） | `estop` ／ `carry` |
 | `ADJUST` の最中の回復フォルト・通信途絶（-03・-133・-139） | `CANCELLED`（同上） | `fault` ／ `link_lost` |
-| 自己位置を見失った（`LOCALIZATION_LOST`） | `FAILED` | `localization_lost` |
 
-**目的地を持ったまま一時停止する場合**（自律測定の回復フォルト・人のジョグ・通信途絶で `PAUSE`）は、**結果を出さない。**
-目的地は保持されていて、測定機能の発進（`meas.start`）でもとの `command_id` のまま続くため。捨てたときに `CANCELLED` を出す。
+**目的地を持ったまま止まる場合は、結果を出さない。**自律測定の `NAV`・`ALIGN`・`BLOCKED` の最中に、回復フォルト・人のジョグ・通信途絶で `PAUSE` に落ちたときと、**非常停止・手押し（自己位置を見失った `LOCALIZATION_LOST` を含む）で `ESTOP`・`CARRY` に入ったとき**がこれに当たる。戻る先は `PAUSE` で（[Spec-modes.md](../spec/Spec-modes.md) §6 の `AUTO_MEASURE`）、測定機能の発進（`meas.start`。-130）でもとの `command_id` のまま続くため。目的地を捨てたとき（中止・終了・人が抜けた）に `CANCELLED` を出す。
 
 ### 3.3 `MeasureStatus.msg`（状態と自己位置）
 
@@ -214,6 +212,7 @@ builtin_interfaces/Time checked_at
 | `/ui/active_screen`（`ActiveScreen`） | 画面 → 本システム | **在席と画面の申告。**`screen_id` は、自律測定の間は **`S-60`**、お立会試験の停止命令の間は **`S-21`**（どちらもゾーン `IN`）。**`client_id` は `fk-` で始める。**`interacting`・`last_input`・2 Hz は本システムの画面と同じ（[names](DetailedDesign-names.md) §5.1）。新しい画面 ID は作らない（ゾーンの表を 3 か所直さずに済む） |
 | `/safety/estop_ui`（`std_msgs/Bool`） | 画面 → 本システム | ヘッダーの非常停止。**押している間 2 Hz で `true` を送り続け、解除は `false` を 1 回**（[safety](DetailedDesign-safety.md) §6.3。押下側にラッチ） |
 | `/system/trigger`（`UiTrigger`） | 画面 → 本システム | **ヘッダーと異常ウィンドウへの人の応答だけ**（`ui.resume_ack` など。[names](DetailedDesign-names.md) §8.1） |
+| `/measure/command`（`MeasureCommand`） | 画面 → 本システム | 測定機能の画面の**「走行」**（人のジョグで止まったあとの発進。`meas.start`）など、人の操作を測定機能の指示として送るとき。**画面から rosbridge で直接呼んでも、測定機能の機能側を通してもよい（測定機能が決める）。**どちらでも送るのは `meas.*` だけ |
 | `/system/state`・`/safety/active_faults`・`/safety/fault`・`/measure/status` | 本システム → 画面 | ヘッダーと異常ウィンドウの中身。**本システムの画面と同じトピックを購読し、理由キーの表（`th_ws/web_ui/src/i18n/`）を共有する**（足りなければ集約トピックを足す。§7） |
 
 ---
