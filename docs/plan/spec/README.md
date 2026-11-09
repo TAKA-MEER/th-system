@@ -67,6 +67,7 @@
 | [Spec-transit.md](Spec-transit.md) | 7 走行方式の完全仕様と比較 | — |
 | [Spec-onsite.md](Spec-onsite.md) | 試験場内（前日の地図作成・登録／当日の盤前移動・呼び寄せ）・配電盤前 | — |
 | [Spec-measure.md](Spec-measure.md) | **自律測定**（測定機能 fk-system の指示で動く `AUTO_MEASURE`。2026-11-01 追加） | — |
+| [Spec-autoprep.md](Spec-autoprep.md) | **自動前日準備**（機体が回って地図と盤のピンの候補を作る。2026-11-10 起票・骨子のみ） | — |
 | [Spec-safety.md](Spec-safety.md) | 安全チェーン・障害物・非常停止・異常ウィンドウ・通信断 | — |
 | [Spec-ops.md](Spec-ops.md) | 導入・起動・疎通確認・終了手順 | — |
 | [Spec-checks.md](Spec-checks.md) | 始業点検 4 項目・校正 4 項目 | — |
