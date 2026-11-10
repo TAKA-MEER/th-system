@@ -411,15 +411,18 @@ class TestStateManagerAggregateResume(unittest.TestCase):
         return False
 
     def _reset_to_idle(self):
-        self.drv.pump(0.5, self.drv.all_alive())
+        # 入力は止めない。止めると回復フォルトが再発し、入口の拒否
+        # （SM-3.1.1-19）に当たって IDLE から出られなくなる。
+        keep = self.drv.all_alive()
+        self.drv.pump(0.5, keep)
         self.drv.pub_hw.publish(Bool(data=True))
-        self._spin(0.2)
+        self.drv.pump(0.2, keep)
         self.drv.pub_hw.publish(Bool(data=False))
-        self._spin(0.2)
+        self.drv.pump(0.2, keep)
         self.drv.pub_ui_estop.publish(Bool(data=False))
-        self._spin(0.2)
+        self.drv.pump(0.2, keep)
         self._trigger('ui.finish')
-        assert self._wait_mode_state('IDLE', 'NONE', timeout=5.0), \
+        assert self._wait_mode_state_keep('IDLE', 'NONE', keep, timeout=5.0), \
             'IDLE に戻せなかった（前のテストの残留）'
 
     def test_resume_yes_blocked_while_second_fault_remains(self):

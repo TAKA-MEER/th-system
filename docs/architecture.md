@@ -89,7 +89,7 @@ safety_monitor ─→ /safety/fault_lock (lock 254) ─────────�
 > （新 FSM の遷移表は `docs/plan/detailed/DetailedDesign-state.md` と
 > `th_ws/src/th_state/config/*.yaml` が正）。
 
-**運用入口のフォルト拒否（SM-3.1.1-19）**: `state_manager` は `/safety/active_faults` の現在集合を購読し、`IDLE` / `MANUAL` からのモード選択と `IDLE` / `AT_HOME` からの行き先選択を判定する。`RECOVERABLE` のうち `PERSON_TRACKER_LOST` を除くフォルト（LiDAR・ESP32・使用中端末などの通信断）が残っていれば遷移を拒否し、`recoverable_fault_active` を返して W-1 を開く。W-1 の effect には残存フォルト名を含める。開発モードの `lidar_fault` が実効なら `LIDAR_LOST` は数えない。物理非常停止を押したまま起動した場合は、`state_manager` がその間 `link_wait_timeout_ms` を数えず、解除後から疎通確認の時間を取り直すため、案内を保ったまま再起動ループを避ける。
+**運用入口のフォルト拒否（SM-3.1.1-19）**: `state_manager` は `/safety/active_faults` の現在集合を購読し、`IDLE` / `MANUAL` からのモード選択と `IDLE` / `AT_HOME` からの行き先選択を判定する。走行を止める回復フォルト（`LIDAR_LOST`・`ESP32_DISCONNECTED`。必須通信系統の断はこの 2 種で表れる）が残っていれば遷移を拒否し、`recoverable_fault_active` を返して W-1 を開く。W-1 の effect には残存フォルト名を含める。`PERSON_TRACKER_LOST` と、開発モードの `lidar_fault` が実効のときの `LIDAR_LOST` は数えない。物理非常停止を押したまま起動した場合は、`state_manager` がその間 `link_wait_timeout_ms` を数えず、解除後から疎通確認の時間を取り直すため、案内を保ったまま再起動ループを避ける。
 
 ### 遷移ルールの実装（旧 FSM）
 

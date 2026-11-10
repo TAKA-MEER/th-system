@@ -113,6 +113,12 @@ _SETTABLE_FLAGS = ("map_update", "tracker_enabled", "auto_brake")
 # インターフェース契約そのものの値なので、ここでは定数として扱う。
 _STATE_PUBLISH_PERIOD_S = 0.1  # 10 Hz
 
+# SM-3.1.1-19: 運用入口（モード選択・行き先選択）を塞ぐ回復フォルトの種別。
+# Spec-modes.md §3.1.1-19 の「走行を止める回復フォルト（LIDAR_LOST・
+# ESP32_DISCONNECTED・必須通信系統の断）」。人物追跡は数えない。必須通信系統の断は
+# いまのところこの 2 種で表れる（新しい通信断を足したらここにも足す）。
+_ENTRY_BLOCKING_RECOVERABLE_FAULTS = frozenset({"LIDAR_LOST", "ESP32_DISCONNECTED"})
+
 
 def _fault_event_name(active: bool, severity: str) -> str:
     """names.md §8.3: /safety/fault の active/severity から内部事象名を決める。"""
@@ -818,6 +824,12 @@ class StateManager(Node):
         self._fault_active = msg.active
         self._fault_severity = msg.severity
         self._fault_type = msg.fault_type
+        if not msg.active:
+            # SG-A8: active=false は safety_monitor 側で残りが 0 になった合図。
+            # /safety/active_faults の空配列と同じ publish 由来だが、別トピック
+            # なので到着順は保証されない。入口の拒否（SM-3.1.1-19）が全解消後も
+            # 残らないよう、ここでも落とす。
+            self._active_fault_types = ()
         event = _fault_event_name(msg.active, msg.severity)
         self._process(event, {}, "")
         self._publish_state()
@@ -829,23 +841,22 @@ class StateManager(Node):
             for ft, severity in zip(msg.types, msg.severities))
 
     def _recoverable_fault_types(self):
-        """走行を止める回復フォルト。人物追跡と実効 lidar_fault は除く。"""
-        now = self._now_ms()
-        dev_effective = {}
-        if self._dev_raw is not None and self._dev_recv_ms is not None:
-            try:
-                raw = json.loads(self._dev_raw)
-                if (now - self._dev_recv_ms <= 3000
-                        and isinstance(raw, dict) and raw.get("dev_mode") is True
-                        and isinstance(raw.get("effective"), dict)):
-                    dev_effective = raw["effective"]
-            except (TypeError, ValueError):
-                pass
+        """SM-3.1.1-19: 運用入口を塞ぐ「走行を止める回復フォルト」の現在値。
+
+        Spec-modes.md §3.1.1-19 の対象は LIDAR_LOST・ESP32_DISCONNECTED・必須通信系統の
+        断だけで、人物追跡（PERSON_TRACKER_LOST）と、開発モードで外した項目は数えない。
+        必須通信系統（ESP32／RaspberryPi4／PC）の断は今のところこの 2 種で表れるので、
+        種別を明示して数える（UI_DISCONNECTED は UI 非常停止ラッチ中の心拍切れで、
+        走行を止める理由ではない。Spec-safety.md §3.5・§6.2）。
+        新しい通信断の種別を足すときはこの集合にも足す。
+        """
+        lidar_ignored = dev_item_effective(
+            self._dev_raw, self._now_ms(), self._dev_recv_ms, 'lidar_fault')
         return tuple(sorted({
             fault_type for fault_type, severity in self._active_fault_types
             if severity == "RECOVERABLE"
-            and fault_type != "PERSON_TRACKER_LOST"
-            and not (fault_type == "LIDAR_LOST" and dev_effective.get("lidar_fault") is True)
+            and fault_type in _ENTRY_BLOCKING_RECOVERABLE_FAULTS
+            and not (fault_type == "LIDAR_LOST" and lidar_ignored)
         }))
 
     def _on_estop_hw(self, msg):

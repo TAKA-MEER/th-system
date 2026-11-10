@@ -56,7 +56,9 @@ SPEC_FANOUT = {
     # 1b-11 SG-B13: SM-3.1.1-15 は C-13（遷移）に加え、前提の拒否行
     # C-13-replay-no-route（no_route_recorded）・C-13-leash-no-device
     # （device_not_connected）の 3 行。
-    "SM-3.1.1-15": 4,
+    "SM-3.1.1-15": 3,
+    # SM-3.1.1-19（2026-11-10）: 運用入口の拒否。モード選択（IDLE/MANUAL）・
+    # IDLE の行き先選択・AT_HOME の行き先選択の 3 行。
     "SM-3.1.1-19": 3,
     # 1b-11 SG-B19: SM-3.1.2-020 は T-REPLAY-01（経路選択）に加え、読み込み失敗の
     # 受け口 T-REPLAY-12（地図無し）・T-REPLAY-13（読込不可）の 3 行。
@@ -234,6 +236,8 @@ _STATIC_GUARD_OVERRIDES = {
                                       "prev_state": "LOCALIZE"},
     "resume_run_available": {"fault_active": False},
     "resume_state_available": {"fault_active": False},
+    # SM-3.1.1-19（2026-11-10）: 運用入口を塞ぐ回復フォルトが残っている。
+    "recoverable_fault_active": {"recoverable_fault_types": ("ESP32_DISCONNECTED",)},
     # 1b-1 SG-A12: presence_stops_mode は attributes 束縛の動的ガード
     # （build_guards が state_core.is_driving で束縛）。静的な ctx 上書きでは
     # 真にできないため、ここには載せない（下の表明で mode_entry_allowed と
