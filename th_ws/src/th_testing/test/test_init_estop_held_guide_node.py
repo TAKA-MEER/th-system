@@ -185,3 +185,10 @@ class TestInitEstopHeldGuideNode(unittest.TestCase):
         self._hw = False
         assert self._wait_state('IDLE', 'NONE', timeout=8.0), \
             '物理ボタンを戻しても IDLE へ進まない'
+        # 押したまま疎通期限を越えて待ったので、解除後も古い期限で再起動しないこと
+        # （期限は「押されていない」と分かってから数え直す）。
+        self._spin(3.0)
+        assert not any(e.name == 'restart_control_stack' for e in self.effects), \
+            '解除直後に古い疎通期限で制御系の再起動 effect が出た'
+        assert (self.states[-1].mode, self.states[-1].state) == ('IDLE', 'NONE'), \
+            f'解除後に IDLE から動いた: {self.states[-1].mode}/{self.states[-1].state}'
