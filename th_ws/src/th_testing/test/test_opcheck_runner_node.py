@@ -1010,8 +1010,8 @@ class TestOpcheckRunnerNode(unittest.TestCase):
             expected_output='"key":"coverage_gap_deg","value":25.0', timeout=3, stream='stderr')
         self._publish_effect('record_result', {'item': 'LIDAR', 'result': 'NG'})
 
-    def test_v_imu_needs_calibration_keeps_calib_state_in_basis(self, proc_output):
-        """校正状態(判定時点の値)が結果に残る。画面から数秒で消える問題の機体側の手当て。"""
+    def test_v_imu_other_axes_are_display_only(self, proc_output):
+        """実機は mag 2・sys 0 でも、ジャイロ校正済みなら OK。値は根拠に残す。"""
         self._set_mode('OPCHECK', 'LIST')
         res = self._run_item('IMU')
         assert res.started, res.message
@@ -1025,22 +1025,23 @@ class TestOpcheckRunnerNode(unittest.TestCase):
             msg.angular_velocity.z = 0.002
             self.pub_imu.publish(msg)
             self._spin(0.05)
-            if any(s.item == 'IMU' and s.result == 'WARN' for s in self._status):
+            if any(s.item == 'IMU' and s.result == 'OK' for s in self._status):
                 break
-        finals = [s for s in self._status if s.item == 'IMU' and s.result == 'WARN']
+        finals = [s for s in self._status if s.item == 'IMU' and s.result == 'OK']
         assert finals, [(s.item, s.result, s.detail) for s in self._status]
         st = finals[-1]
-        assert st.detail == 'needs_calibration'
+        assert st.detail == ''
         by = self._basis(st)
+        assert by['calib_gyro']['value'] == 3 and by['calib_gyro']['ok'] is True
         assert by['calib_sys']['value'] == 3 and by['calib_sys']['ok'] is True
-        assert by['calib_accel']['value'] == 2 and by['calib_accel']['ok'] is False
-        assert by['calib_mag']['value'] == 0 and by['calib_mag']['ok'] is False
+        assert by['calib_accel']['value'] == 2 and by['calib_accel']['ok'] is True
+        assert by['calib_mag']['value'] == 0 and by['calib_mag']['ok'] is True
         assert by['imu_max_wz']['value'] == pytest.approx(0.002, abs=1e-4)
         proc_output.assertWaitFor(
-            expected_output='IMU 判定: WARN (needs_calibration)', timeout=3, stream='stderr')
+            expected_output='IMU 判定: OK', timeout=3, stream='stderr')
         proc_output.assertWaitFor(
             expected_output='"key":"calib_mag","value":0', timeout=3, stream='stderr')
-        self._publish_effect('record_result', {'item': 'IMU', 'result': 'WARN'})
+        self._publish_effect('record_result', {'item': 'IMU', 'result': 'OK'})
 
     def test_w_progress_status_has_empty_basis(self):
         """判定中(UNKNOWN)の CheckStatus は basis_json が空(古い画面と同じ見え方)。"""

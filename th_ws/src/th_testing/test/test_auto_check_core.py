@@ -80,10 +80,15 @@ class TestImuAuto:
         assert v.result == "NG"
 
     def test_needs_calibration_is_warn(self):
-        # sys/gyro/accel/mag のいずれかが 3 未満 → WARN（故障扱いにしない）
+        # ジャイロが 3 未満 → WARN（故障扱いにしない）
         v = judge_imu_auto(0x00, 0.01, 0.05, True, make_params())
         assert v.result == "WARN"
         assert v.reason == "needs_calibration"
+
+    def test_other_axes_are_display_only(self):
+        # sys/accel/mag が 3 未満でもジャイロが校正済みなら OK（T-11）
+        v = judge_imu_auto(0x00 | (3 << 4), 0.01, 0.05, True, make_params())
+        assert v.result == "OK"
 
     def test_implausible_wz_is_ng(self):
         # dps のまま等の単位取り違え → NG

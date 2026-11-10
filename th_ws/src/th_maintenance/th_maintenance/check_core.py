@@ -249,9 +249,13 @@ def judge_imu(calib_status: int, gyro_bias_rad_s: float, alive: bool,
               p: CheckParams) -> CheckVerdict:
     """IMU データの生死・バイアス・校正状態（maintenance.md §2.4・`def judge_imu`）。
 
-    「校正済みで今は正常」なのか「劣化していて校正が必要」なのかを分けるため、
-    未校正（= needs_calibration）は WARN にする（画面が人に校正を促す。故障扱い
-    にはしない）。
+    合否に使うのは **ジャイロの校正状態と静止時バイアスだけ**（Spec-checks.md
+    §2.4・2026-11-10 T-11）。BNO055 の sys/accel/mag はこの機体では 3 にならず
+    （実機は mag 2・sys 0）、全軸を要求すると毎回「要確認」になっていた。
+    sys/accel/mag は画面で状態を見せるため basis に載せるが、`ok` は常に True
+    （表示だけ。web_ui は `ok: false` の行だけ赤くするため）。
+
+    未校正（gyro < 3）は WARN（画面が人に校正を促す。故障扱いにはしない）。
     """
     sys_, gyro, accel, mag = unpack_calib(calib_status)
     basis = []
@@ -260,14 +264,14 @@ def judge_imu(calib_status: int, gyro_bias_rad_s: float, alive: bool,
     basis.append(basis_item("imu_bias", gyro_bias_rad_s, p.imu_bias_max_rad_s,
                             "rad/s", "le",
                             ok=abs(gyro_bias_rad_s) <= p.imu_bias_max_rad_s))
-    for key, val in (("calib_sys", sys_), ("calib_gyro", gyro),
-                     ("calib_accel", accel), ("calib_mag", mag)):
-        basis.append(basis_item(key, val, 3, "", "ge"))
+    basis.append(basis_item("calib_gyro", gyro, 3, "", "ge"))
+    for key, val in (("calib_sys", sys_), ("calib_accel", accel), ("calib_mag", mag)):
+        basis.append(basis_item(key, val, 3, "", "ge", ok=True))
     if not alive:
         return NG("no_data", basis)
     if abs(gyro_bias_rad_s) > p.imu_bias_max_rad_s:
         return NG("bias_too_large", basis)
-    if min(sys_, gyro, accel, mag) < 3:
+    if gyro < 3:
         return WARN("needs_calibration", basis)
     return OK(basis)
 

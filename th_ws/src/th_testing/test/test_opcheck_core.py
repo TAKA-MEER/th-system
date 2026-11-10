@@ -284,16 +284,18 @@ class TestJudgeImu:
         p = make_params(imu_bias_max_rad_s=0.2)
         assert judge_imu(0xFF, 0.2, True, p) == OK()
 
-    def test_needs_calibration_is_warn(self):
+    def test_gyro_uncalibrated_is_warn(self):
         p = make_params()
-        v = judge_imu(0b11_01_11_11, 0.02, True, p)  # accel のみ未校正
+        v = judge_imu(0b11_01_11_11, 0.02, True, p)  # gyro のみ未校正
         assert v.result == "WARN" and v.reason == "needs_calibration"
 
-    def test_accel_uncalibrated_still_warns(self):
-        # 磁気コンパス未使用でも、慣性系として使う accel の未校正は WARN 対象
+    def test_other_axes_do_not_affect_verdict(self):
+        # sys/accel/mag は表示だけ（Spec-checks.md §2.4・2026-11-10 T-11）。
+        # 実機は mag 2・sys 0 で 3 にならないため、これで WARN にしない。
         p = make_params()
-        v = judge_imu(0b00_11_01_10, 0.02, True, p)
-        assert v.reason == "needs_calibration"
+        v = judge_imu(0b00_11_01_10, 0.02, True, p)  # sys0 gyro3 accel1 mag2
+        assert v == OK()
+        assert all(b["ok"] for b in v.basis)
 
     def test_bias_priority_over_calib(self):
         # 校正済みでもバイアス大は NG（人に直してもらう故障）
@@ -729,15 +731,16 @@ class TestJudgmentBasis:
         v = judge_lidar(False, None, [], 0.25, [], make_params(), angle_min_deg=0.0)
         assert [(b["key"], b["ok"]) for b in v.basis] == [("scan_alive", False)]
 
-    def test_imu_needs_calibration_keeps_calib_state_in_basis(self):
-        # 実機の WARN(needs_calibration) bias≈0.000 maxwz≈0.002
+    def test_imu_real_machine_other_axes_are_display_only(self):
+        # 実機（2026-11-10 T-11）: sys3 gyro3 accel2 mag0 / bias≈0.000
         p = make_params()
-        v = judge_imu(0b11_11_10_00, 0.0004, True, p)  # sys3 gyro3 accel2 mag0
-        assert (v.result, v.reason) == ("WARN", "needs_calibration")
+        v = judge_imu(0b11_11_10_00, 0.0004, True, p)
+        assert v == OK()
         by = _basis_by_key(v)
+        assert by["calib_gyro"]["value"] == 3 and by["calib_gyro"]["ok"] is True
         assert by["calib_sys"]["value"] == 3 and by["calib_sys"]["ok"] is True
-        assert by["calib_accel"]["value"] == 2 and by["calib_accel"]["ok"] is False
-        assert by["calib_mag"]["value"] == 0 and by["calib_mag"]["ok"] is False
+        assert by["calib_accel"]["value"] == 2 and by["calib_accel"]["ok"] is True
+        assert by["calib_mag"]["value"] == 0 and by["calib_mag"]["ok"] is True
         assert by["imu_bias"]["ok"] is True and by["imu_bias"]["threshold"] == 0.2
 
     def test_imu_bias_too_large_marks_bias(self):
