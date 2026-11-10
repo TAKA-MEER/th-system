@@ -510,7 +510,7 @@ class CalibRunner(Node):
         ideal = calib_core.rotation_ideal_seconds(
             self._commanded(item), w, _TAPER_ANGLE_RAD, _MIN_ANGULAR_RADS)
         msg = f"ROTATION の走行時間 {elapsed:.1f} 秒（指令どおりなら {ideal:.1f} 秒）"
-        if ideal > 0.0 and elapsed > 1.5 * ideal:
+        if ideal > 0.0 and elapsed > 1.3 * ideal:
             self.get_logger().warn(
                 msg + " → 角速度が絞られた疑い（前方 0.425 m 未満の障害物で obstacle_limiter が"
                 "旋回を w_align_max に制限する。周囲を空けて測り直す）")

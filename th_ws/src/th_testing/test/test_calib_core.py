@@ -162,8 +162,8 @@ class TestRotationIdealSeconds:
     def test_capped_rate_is_far_slower_than_ideal(self):
         import math
         ideal = cc.rotation_ideal_seconds(180.0, 0.77, math.radians(15.0), 0.15)
-        assert 4.0 < ideal < 5.0          # 実機の 6.8〜12.5 秒は 1.5 倍超 → 警告対象
-        assert 6.8 > 1.5 * ideal
+        assert 4.0 < ideal < 5.0          # 実機の 6.8〜12.5 秒は 1.3 倍超 → 警告対象
+        assert 6.8 > 1.3 * ideal
 
     def test_zero_inputs(self):
         assert cc.rotation_ideal_seconds(0.0, 0.5, 0.26, 0.15) == 0.0
