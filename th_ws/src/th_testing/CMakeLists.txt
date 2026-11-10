@@ -458,6 +458,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_init_estop_held_guide_node
     test/test_init_estop_held_guide_node.py
     TIMEOUT 120)
+  # SM-3.1.1-19: state_manager の実 ActiveFaults 購読から入口拒否・W-1 配線を縛る。
+  ament_add_pytest_test(test_recoverable_fault_entry_guard_node
+    test/test_recoverable_fault_entry_guard_node.py
+    TIMEOUT 120)
   # 1b-2（SG-A5 の境界）: ESTOP に入る前に gate が真でも、INIT に戻ったあと
   # link_ok が再送されて IDLE まで進む（別 launch。同一 launch では起動直後の
   # 前提が崩れるため分ける）

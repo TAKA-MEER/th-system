@@ -80,7 +80,7 @@ safety_monitor ─→ /safety/fault_lock (lock 254) ─────────�
 > | | `th_state`（`state_manager.py`） | `th_mode_manager`（`mode_manager.cpp`） |
 > | --- | --- | --- |
 > | 位置づけ | **現行**。教示再生デモはこちらで動く | 旧 9 モード体系。まだ起動している |
-> | モード | 18 個（`INIT` / `IDLE` / `ESTOP` / `CARRY` / `FOLLOW` / `MANUAL` / **`TEACH_FOLLOW`** / **`TEACH_MANUAL`** / **`REPLAY`** / `LINE` / `LEASH` / `PREP` / `PANEL_NAV` / `AT_PANEL` / `SUMMON` / `HOME_NAV` / `OPCHECK` / `CALIB`） | 9 個（`INIT`〜`FOLLOWING_MAPLESS`） |
+> | モード | 19 個（`INIT` / `IDLE` / `ESTOP` / `CARRY` / `FOLLOW` / `MANUAL` / **`TEACH_FOLLOW`** / **`TEACH_MANUAL`** / **`REPLAY`** / `LINE` / `LEASH` / `PREP` / `PANEL_NAV` / `AT_PANEL` / `SUMMON` / `HOME_NAV` / `AT_HOME` / `OPCHECK` / `CALIB`） | 9 個（`INIT`〜`FOLLOWING_MAPLESS`） |
 > | 遷移の定義 | **YAML**（`transitions.yaml` / `attributes.yaml` / `mode_entry.yaml`）を純粋コア `th_state/state_core.py` が読む。`step()` は副作用なし | C++ の `isTransitionAllowed()` にハードコード |
 > | テスト | `test_transition_table.py`（137 件）ほか。ROS2 不要 | `test_mode_transitions.py`（ROS2 必要） |
 >
@@ -88,6 +88,8 @@ safety_monitor ─→ /safety/fault_lock (lock 254) ─────────�
 > 以下の `mode_manager` の記述は旧 FSM のもので、教示再生の遷移は説明していません
 > （新 FSM の遷移表は `docs/plan/detailed/DetailedDesign-state.md` と
 > `th_ws/src/th_state/config/*.yaml` が正）。
+
+**運用入口のフォルト拒否（SM-3.1.1-19）**: `state_manager` は `/safety/active_faults` の現在集合を購読し、`IDLE` / `MANUAL` からのモード選択と `IDLE` / `AT_HOME` からの行き先選択を判定する。走行を止める回復フォルト（`LIDAR_LOST`・`ESP32_DISCONNECTED`。必須通信系統の断はこの 2 種で表れる）が残っていれば遷移を拒否し、`recoverable_fault_active` を返して W-1 を開く。W-1 の effect には残存フォルト名を含める。`PERSON_TRACKER_LOST` と、開発モードの `lidar_fault` が実効のときの `LIDAR_LOST` は数えない。物理非常停止を押したまま起動した場合は、`state_manager` がその間 `link_wait_timeout_ms` を数えず、解除後から疎通確認の時間を取り直すため、案内を保ったまま再起動ループを避ける。
 
 ### 遷移ルールの実装（旧 FSM）
 

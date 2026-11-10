@@ -53,8 +53,8 @@ def _generated_yaml(node: str) -> str:
 def generate_test_description():
     state_manager = launch_ros.actions.Node(
         package='th_state', executable='state_manager.py', name='state_manager',
-        parameters=[{'jog_lease_ms': 300, 'link_wait_timeout_ms': 60_000,
-                     'ui_active_window_s': 5, 'screen_stale_ms': 60_000}],
+        parameters=[_generated_yaml('state_manager'),
+                    {'link_wait_timeout_ms': 1500}],
         output='screen')
     connectivity_checker = launch_ros.actions.Node(
         package='th_state', executable='connectivity_checker.py',
@@ -155,7 +155,7 @@ class TestInitEstopHeldGuideNode(unittest.TestCase):
         while not self.states and time.time() < end:
             self._spin(0.1)
 
-        # (a)(b) 5 秒たっても INIT/CHECK のまま、状態は「押されている」を載せている。
+        # (a)(b) 本番より短い 1.5 秒の疎通期限を越えても INIT/CHECK のまま。
         self._spin(5.0)
         assert self.states, '/system/state を受信していない'
         cur = self.states[-1]
@@ -164,6 +164,8 @@ class TestInitEstopHeldGuideNode(unittest.TestCase):
         assert cur.estop_hw is True, 'state.estop_hw が真になっていない（案内の根拠が無い）'
         assert not any(s.mode in ('IDLE', 'ESTOP', 'CARRY') for s in self.states), \
             f'途中で IDLE/ESTOP/CARRY に入った: {[(s.mode, s.state) for s in self.states]}'
+        assert not any(e.name == 'restart_control_stack' for e in self.effects), \
+            '物理非常停止の押下中に sys.link_timeout の再起動 effect が出た'
 
         # (b') 後から画面を開いた購読者でも読める: 新しい購読者に最新の状態が届く。
         late = []
@@ -183,3 +185,10 @@ class TestInitEstopHeldGuideNode(unittest.TestCase):
         self._hw = False
         assert self._wait_state('IDLE', 'NONE', timeout=8.0), \
             '物理ボタンを戻しても IDLE へ進まない'
+        # 押したまま疎通期限を越えて待ったので、解除後も古い期限で再起動しないこと
+        # （期限は「押されていない」と分かってから数え直す）。
+        self._spin(3.0)
+        assert not any(e.name == 'restart_control_stack' for e in self.effects), \
+            '解除直後に古い疎通期限で制御系の再起動 effect が出た'
+        assert (self.states[-1].mode, self.states[-1].state) == ('IDLE', 'NONE'), \
+            f'解除後に IDLE から動いた: {self.states[-1].mode}/{self.states[-1].state}'
