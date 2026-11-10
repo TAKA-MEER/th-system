@@ -22,13 +22,22 @@ import math
 from dataclasses import dataclass, field, replace
 from typing import Sequence
 
-from th_maintenance.blind_core import shift_bands
+from th_maintenance.blind_core import (persistent_near_ranges, residual_offset_deg,
+                                       shift_bands)
 
 # 近距離帯（死角として写る支柱等）の判定距離。measure_blind_sectors.py の NEAR_M と同値。
 BLIND_NEAR_M = 0.6
 # 死角帯として扱う最小幅（measure_blind_sectors.py の MARGIN に相当する
 # ノイズ除去用の下限）。
 BLIND_MIN_RUN_DEG = 5.0
+# 複数フレームをまとめるとき、この回数以上写ったビームを「恒常的な写り込み」とみなす。
+# 近距離では無効になるビームがあり、1 フレームに数本しか写らないため（2026-11-10 T-14）。
+BLIND_NEAR_MIN_FRAMES = 2
+# まとめた近距離帯の、無効ビームによる小さな穴を埋める幅。これを超える隙間は別の帯。
+BLIND_BRIDGE_DEG = 1.5
+# 死角マスク判定に集める /scan のフレーム数。校正 BLIND の検証
+# （`calib_blind_verify_frames`）と同じ 15（2026-11-10 T-14）。
+LIDAR_BLIND_FRAMES = 15
 
 
 @dataclass(frozen=True)
@@ -133,12 +142,6 @@ class CheckParams:
     opcheck_scan_coverage_gap_deg: float  # 無効ビーム連続帯の許容幅
     v_check: float                     # モーター確認の直進速度
     scan_stale_ms: float               # /scan の死活・周期（obstacle_limiter と同じ行）
-
-
-def _circle_dist_deg(a: float, b: float) -> float:
-    """角度差の最小値（0..180 度）。円周上の距離。"""
-    d = abs((a - b) % 360.0)
-    return min(d, 360.0 - d)
 
 
 def unpack_calib(calib_status: int) -> tuple[int, int, int, int]:
@@ -333,14 +336,39 @@ def scan_coverage_gap_deg(ranges: Sequence[float], angle_increment_deg: float) -
     return min(worst * angle_increment_deg, 360.0)
 
 
+def _bridge_near_gaps(near: Sequence[bool], angle_increment_deg: float,
+                      bridge_deg: float) -> list[bool]:
+    """近距離ビームの小さな穴（無効値になったビーム）を埋める。
+
+    円周上で隣り合う近距離ビームの間の欠けが `bridge_deg` 以下なら、
+    その間を近距離扱いにする（＝無効ビーム 1〜数本の穴を閉じる）。
+    """
+    n = len(near)
+    if n == 0 or angle_increment_deg <= 0.0 or bridge_deg <= 0.0:
+        return list(near)
+    near_idx = [i for i, v in enumerate(near) if v]
+    if not near_idx or len(near_idx) == n:
+        return list(near)
+    out = list(near)
+    for k, a in enumerate(near_idx):
+        b = near_idx[(k + 1) % len(near_idx)]
+        missing = (b - a - 1) % n
+        if 0 < missing and missing * angle_increment_deg <= bridge_deg + 1e-9:
+            for d in range(1, missing + 1):
+                out[(a + d) % n] = True
+    return out
+
+
 def estimate_blind_sectors(ranges: Sequence[float], angle_increment_deg: float,
                            near_m: float = BLIND_NEAR_M,
-                           min_run_deg: float = BLIND_MIN_RUN_DEG) -> list[tuple[float, float]]:
+                           min_run_deg: float = BLIND_MIN_RUN_DEG,
+                           bridge_deg: float = 0.0) -> list[tuple[float, float]]:
     """恒常的に近距離（0 < r < near_m）を返す連続角度帯を推定する。
 
     `scripts/measure_blind_sectors.py`（NEAR_M / MARGIN）と同じ思想のスナップ
     ショット近似。`/scan` 1 フレームから近距離連続帯を列挙し、幅が
-    `min_run_deg` 未満の帯はノイズとして捨てる。
+    `min_run_deg` 未満の帯はノイズとして捨てる。`bridge_deg` を指定すると、
+    その幅以下の穴（近距離で無効になったビーム）を埋めてから幅を見る。
 
     戻り値: `(start_deg, end_deg)` のリスト。0..360 をまたぐ帯は 2 つに分割して
     返す。死角なしは `[]`、全周死角は `[(0.0, 360.0)]`。
@@ -353,6 +381,7 @@ def estimate_blind_sectors(ranges: Sequence[float], angle_increment_deg: float,
         return []
     if all(near):
         return [(0.0, 360.0)]
+    near = _bridge_near_gaps(near, angle_increment_deg, bridge_deg)
     k = next(i for i, v in enumerate(near) if not v)  # False の場所から回転
     rot = near[k:] + near[:k]
     sectors: list[tuple[float, float]] = []
@@ -425,33 +454,34 @@ def merge_seam_split(
 
 def blind_offset_deg(estimated: Sequence[tuple[float, float]],
                      configured_flat: Sequence[float]) -> float | None:
-    """推定した死角帯と設定済み `blind_angle_ranges` のズレ（最大、度）。
+    """推定した写り込み帯のうち、設定済み `blind_angle_ranges` の外に残る幅（最大、度）。
 
-    両者の境界角（start / end の全点）それぞれについて、「相手側の最近傍境界
-    との円周距離」の最大値を返す。どちらか一方でも空なら比較不能 → None を返す
-    （未校正のマスクを NG にしない。`blind_calibrated` が別にいる）。
+    2026-11-10 T-14: 以前は「境界点ごとに相手側の最近傍境界までの距離の最大」を
+    見ていたため、写らなかった死角の境界が遠い別の境界まで測られて 80〜171° の
+    誤 NG になった。いまは**写り込みがマスクの外へはみ出している角度**だけを見る
+    （校正 BLIND の検証 `blind_core.verify_blind` と同じ考え方）。設定の外に
+    近距離帯が無ければ 0。どちらかが空（設定なし・写り込みを観測できず）なら
+    None（比較不能。NG にはしない）。
     """
-    estimated_bounds = {float(b) % 360.0 for sweep in estimated for b in sweep}
-    configured_bounds = {float(b) % 360.0
-                         for sweep in pairs_from_flat(configured_flat) for b in sweep}
-    if not estimated_bounds or not configured_bounds:
+    configured = pairs_from_flat(configured_flat)
+    if not estimated or not configured:
         return None
-    worst = 0.0
-    for b in estimated_bounds:
-        worst = max(worst, min(_circle_dist_deg(b, c) for c in configured_bounds))
-    for c in configured_bounds:
-        worst = max(worst, min(_circle_dist_deg(c, b) for b in estimated_bounds))
-    return worst
+    return residual_offset_deg(estimated, configured)
 
 
-def judge_lidar(alive: bool, period_s: float | None, ranges: Sequence[float],
+def judge_lidar(alive: bool, period_s: float | None, frames: Sequence[Sequence[float]],
                 angle_increment_deg: float, configured_ranges: Sequence[float],
                 p: CheckParams, *, angle_min_deg: float) -> CheckVerdict:
     """LiDAR の死活・周期・カバレッジ・死角マスクのズレ（maintenance.md §2.5）。
 
     順に: データが届いているか → 周期が `scan_stale_ms` 以内か → 全周に欠損が
-    無いか → 推定した死角帯が設定 `blind_angle_ranges` と `opcheck_blind_tolerance`
-    以上ズレていないか。
+    無いか → 推定した写り込み帯が設定 `blind_angle_ranges` の外へ
+    `opcheck_blind_tolerance_deg` 以上はみ出していないか。
+
+    `frames` は判定に使う `/scan` の `ranges` 列（複数フレーム）。写り込みは
+    1 フレームでは数本しか写らないことがあるため、`BLIND_NEAR_MIN_FRAMES` 回
+    以上写ったビームをまとめて推定する（2026-11-10 T-14。写らなかった死角だけ
+    では NG にしない）。カバレッジと周期は最新フレームで見る。
 
     `angle_min_deg`（必須キーワード。`LaserScan.angle_min` の度数。既定値を
     付けると呼び忘れが黙って通るため付けない）: `estimate_blind_sectors` は
@@ -462,8 +492,13 @@ def judge_lidar(alive: bool, period_s: float | None, ranges: Sequence[float],
     """
     if not alive:
         return NG("no_data", [basis_item("scan_alive", 0, 1, "", "ge")])
+    ranges = frames[-1] if frames else []
     gap = scan_coverage_gap_deg(ranges, angle_increment_deg)
-    estimated = estimate_blind_sectors(ranges, angle_increment_deg)
+    persistent = persistent_near_ranges(
+        frames, BLIND_NEAR_M, min_frames=BLIND_NEAR_MIN_FRAMES)
+    estimated = estimate_blind_sectors(
+        persistent, angle_increment_deg, near_m=BLIND_NEAR_M,
+        min_run_deg=BLIND_MIN_RUN_DEG, bridge_deg=BLIND_BRIDGE_DEG)
     estimated = merge_seam_split(shift_bands(estimated, angle_min_deg), angle_min_deg)
     offset = blind_offset_deg(estimated, configured_ranges)
     # 根拠は途中で NG が決まっても 3 件とも載せる（どの項目が基準を外れたかを

@@ -150,27 +150,32 @@ def in_ranges(angle_deg: float, pairs: Sequence[Pair]) -> bool:
 
 
 def persistent_near_ranges(frames: Sequence[Sequence[float]],
-                           near_m: float) -> List[float]:
-    """複数フレームの全てで近距離（0 < r < near_m）だったビームだけ値（最大）を残し、他は inf。
+                           near_m: float,
+                           min_frames: Optional[int] = None) -> List[float]:
+    """複数フレームのうち `min_frames` 回以上、近距離（0 < r < near_m）だったビームだけ値（最大）を残し、他は inf。
 
     1 フレームの推定は人が横切っただけでも死角に見える。「恒常的」に写り込むものだけを
-    `estimate_blind_sectors` に渡すための前処理。長さの違うフレームは捨てる。
+    `estimate_blind_sectors` に渡すための前処理。`min_frames` を省くと全フレーム
+    （校正 BLIND の検証と同じ厳しさ）。始業点検は近距離で無効になるビームがあり
+    1 フレームに数本しか写らないため、2 回以上写ったビームを拾う。長さの違うフレームは捨てる。
     """
     if not frames:
         return []
     n = len(frames[0])
     use = [f for f in frames if len(f) == n]
+    if not use:
+        return []
+    need = len(use) if min_frames is None else max(1, int(min_frames))
     out: List[float] = []
     for i in range(n):
         worst = 0.0
-        ok = True
+        count = 0
         for f in use:
             r = f[i]
-            if not (math.isfinite(r) and 0.0 < r < near_m):
-                ok = False
-                break
-            worst = max(worst, r)
-        out.append(worst if ok else math.inf)
+            if math.isfinite(r) and 0.0 < r < near_m:
+                count += 1
+                worst = max(worst, r)
+        out.append(worst if count >= need else math.inf)
     return out
 
 

@@ -154,6 +154,26 @@ def test_persistent_ignores_transient_obstacle():
     assert all(not (s < 280 and e > 250) for s, e in est)      # -100..-60 は 260..300
 
 
+def test_persistent_min_frames_allows_missing_beams():
+    """始業点検: 近距離で無効になるビームがあっても 2 回以上写れば拾う（T-14）。"""
+    a = [math.inf, 0.3, math.inf]
+    b = [math.inf, math.inf, 0.4]
+    c = [0.2, 0.3, math.inf]
+    # 既定（全フレーム）は 3 本とも落ちる
+    assert bc.persistent_near_ranges([a, b, c], near_m=0.6) == [math.inf] * 3
+    # 2 回以上写った 1 番だけ残る（0 番と 2 番は 1 回ずつ）
+    p = bc.persistent_near_ranges([a, b, c], near_m=0.6, min_frames=2)
+    assert p == [math.inf, 0.3, math.inf]
+
+
+def test_persistent_min_frames_does_not_lower_transient_gate():
+    """1 フレームだけの写り込み（人が横切った）は min_frames=2 でも拾わない。"""
+    base = [math.inf] * 3
+    passer = [0.2, 0.2, 0.2]
+    frames = [base, base, passer, base]
+    assert bc.persistent_near_ranges(frames, near_m=0.6, min_frames=2) == [math.inf] * 3
+
+
 # ── プレビュー（lidar_filter と同じ添字）─────────────
 def test_count_masked_matches_lidar_filter_indexing():
     ranges = [2.0] * 360
