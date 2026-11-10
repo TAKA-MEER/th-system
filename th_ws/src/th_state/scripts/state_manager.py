@@ -32,7 +32,7 @@ from builtin_interfaces.msg import Time as TimeMsg
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
-from th_system_msgs.msg import (ActiveScreen, CalibStatus, FaultStatus, MapSessionStatus,
+from th_system_msgs.msg import (ActiveFaults, ActiveScreen, CalibStatus, FaultStatus, MapSessionStatus,
                                  PersonTargets, PinList,
                                  RouteList, RouteStatus, StateEffect, StateEvent,
                                  SystemState)
@@ -40,7 +40,7 @@ from th_system_msgs.srv import SetFlag, UiTrigger
 
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
-from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, IDLE_MODE, OPCHECK_MODE, Context,
+from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, IDLE_MODE, OPCHECK_MODE, Context, Effect,
                                    REPLAY_MODE, StateCore, TEACH_MODES, is_driving)
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
@@ -215,6 +215,7 @@ class StateManager(Node):
         self._fault_active = False
         self._fault_severity = ""
         self._fault_type = ""
+        self._active_fault_types = ()
         self._hw_estop = False
         self._ui_estop = False
         # 現在の ESTOP が UI ボタン起因かどうか（重大フォルト起因と区別。SM-3.1.1-11）。
@@ -379,6 +380,12 @@ class StateManager(Node):
 
         fault_qos = QoSProfile(depth=5, reliability=QoSReliabilityPolicy.RELIABLE)
         self.create_subscription(FaultStatus, '/safety/fault', self._on_fault, fault_qos)
+        active_fault_qos = QoSProfile(
+            depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(ActiveFaults, '/safety/active_faults',
+                                 self._on_active_faults, active_fault_qos)
 
         bool_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
         self.create_subscription(Bool, '/safety/estop_hw', self._on_estop_hw, bool_qos)
@@ -486,6 +493,7 @@ class StateManager(Node):
             # 真（T-REPLAY-08 の map_update ガードの材料。条件の選び方は報告参照）。
             map_update_available=bool(self._route_loaded and self._route_has_map),
             now_ms=self._now_ms(),
+            recoverable_fault_types=self._recoverable_fault_types(),
             estop_from_ui=self._estop_from_ui,
             arg=arg or {},
         )
@@ -515,6 +523,14 @@ class StateManager(Node):
 
         ctx = self._build_context(event, arg)
         decision = self.core.step(self.mode, self.state, event, ctx)
+        if (not decision.accepted
+                and decision.reject_reason_key == "recoverable_fault_active"):
+            # SM-3.1.1-19: 拒否理由といま残っているフォルト名を W-1 で見せる。
+            decision = _dc_replace(decision, effects=(Effect(
+                name="open_window",
+                args={"id": "W-1", "reason_key": decision.reject_reason_key,
+                      "fault_types": list(ctx.recoverable_fault_types)},
+            ),))
 
         # prev_sub のラッチ（§7 の latch_prev とは別物。PAUSE に新規で入るときだけ記録する。
         # 走行状態から PAUSE に入る直前の内部状態を 1 段だけ保持する一般化ルール。
@@ -806,6 +822,32 @@ class StateManager(Node):
         self._process(event, {}, "")
         self._publish_state()
 
+    def _on_active_faults(self, msg):
+        """複数フォルトの同時継続を保つ active_faults の現在値をラッチする。"""
+        self._active_fault_types = tuple(
+            (str(ft), str(severity))
+            for ft, severity in zip(msg.types, msg.severities))
+
+    def _recoverable_fault_types(self):
+        """走行を止める回復フォルト。人物追跡と実効 lidar_fault は除く。"""
+        now = self._now_ms()
+        dev_effective = {}
+        if self._dev_raw is not None and self._dev_recv_ms is not None:
+            try:
+                raw = json.loads(self._dev_raw)
+                if (now - self._dev_recv_ms <= 3000
+                        and isinstance(raw, dict) and raw.get("dev_mode") is True
+                        and isinstance(raw.get("effective"), dict)):
+                    dev_effective = raw["effective"]
+            except (TypeError, ValueError):
+                pass
+        return tuple(sorted({
+            fault_type for fault_type, severity in self._active_fault_types
+            if severity == "RECOVERABLE"
+            and fault_type != "PERSON_TRACKER_LOST"
+            and not (fault_type == "LIDAR_LOST" and dev_effective.get("lidar_fault") is True)
+        }))
+
     def _on_estop_hw(self, msg):
         if bool(msg.data) == self._hw_estop:
             return
@@ -927,10 +969,14 @@ class StateManager(Node):
         now = self._now_ms()
 
         if not self._link_timeout_fired:
-            timeout_ms = self.get_parameter('link_wait_timeout_ms').value
-            if now - self._boot_ms >= timeout_ms:
-                self._link_timeout_fired = True
-                self._process("sys.link_timeout", {}, "")
+            if self._hw_estop:
+                # 押下中はタイムアウトを数えず、解除時点から疎通確認の猶予を取り直す。
+                self._boot_ms = now
+            else:
+                timeout_ms = self.get_parameter('link_wait_timeout_ms').value
+                if now - self._boot_ms >= timeout_ms:
+                    self._link_timeout_fired = True
+                    self._process("sys.link_timeout", {}, "")
 
         if self._jog_active:
             lease_ms = self.get_parameter('jog_lease_ms').value

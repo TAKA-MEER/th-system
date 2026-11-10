@@ -340,6 +340,11 @@ def _venue_unloaded_nav_goto(mode, state, ctx) -> bool:
         "PANEL_NAV", "HOME_NAV", "SUMMON")
 
 
+def _recoverable_fault_active(mode, state, ctx) -> bool:
+    """SM-3.1.1-19: 運用入口で走行を止める回復フォルトが残っている。"""
+    return bool(ctx.recoverable_fault_types)
+
+
 def _goto_summon(mode, state, ctx) -> bool:
     """WS-9AF(2026-09-11): ui.goto{kind:SUMMON} だけを狙って先に評価させ、
     begin_two_point{kind:SUMMON} を挟むための専用ガード（C-09/C-09b と同じ
@@ -456,6 +461,7 @@ GUARDS: Dict[str, Callable] = {
     "goto_summon": _goto_summon,
     "venue_unloaded": _venue_unloaded,
     "venue_unloaded_nav_goto": _venue_unloaded_nav_goto,
+    "recoverable_fault_active": _recoverable_fault_active,
     "candidate_exists": _candidate_exists,
     "target_selected": _target_selected,
     "target_confident": _target_confident,
@@ -501,7 +507,7 @@ GUARDS: Dict[str, Callable] = {
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 61, len(GUARDS)
+assert len(GUARDS) == 62, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:

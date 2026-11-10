@@ -56,7 +56,8 @@ SPEC_FANOUT = {
     # 1b-11 SG-B13: SM-3.1.1-15 は C-13（遷移）に加え、前提の拒否行
     # C-13-replay-no-route（no_route_recorded）・C-13-leash-no-device
     # （device_not_connected）の 3 行。
-    "SM-3.1.1-15": 3,
+    "SM-3.1.1-15": 4,
+    "SM-3.1.1-19": 3,
     # 1b-11 SG-B19: SM-3.1.2-020 は T-REPLAY-01（経路選択）に加え、読み込み失敗の
     # 受け口 T-REPLAY-12（地図無し）・T-REPLAY-13（読込不可）の 3 行。
     "SM-3.1.2-020": 3,
