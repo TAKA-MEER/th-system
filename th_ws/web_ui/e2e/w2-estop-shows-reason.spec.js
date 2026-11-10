@@ -22,7 +22,7 @@
 // stays pressed is already covered by w2-cannot-close.spec.js. This file
 // only adds what C-2 needs on top of those.
 import { test, expect } from '@playwright/test'
-import { gotoWithState, setTestState, setTestFault } from './helpers.js'
+import { gotoWithState, setTestState, setTestFault, setTestActiveFaults } from './helpers.js'
 
 test('W-2 says the drive is already cut, before the UI estop is ever pressed', async ({ page }) => {
   await gotoWithState(page, { mode: 'CARRY', estop_hw: true })
@@ -42,6 +42,22 @@ test('W-2 says ESP32 is disconnected, so the button state is unknown and cannot 
 
   // フォルトが解消したら文言は消える。
   await setTestFault(page, { active: false, fault_type: 'ESP32_DISCONNECTED', severity: 'RECOVERABLE' })
+  await expect(note).toHaveCount(0)
+})
+
+test('LIDAR_LOST が後から来ても、active_faults に ESP32_DISCONNECTED があれば W-2 に出す (2026-11-10)', async ({ page }) => {
+  // 実機: ラズパイの電源断で LIDAR_LOST と ESP32_DISCONNECTED が同時に立ち、
+  // /safety/fault の最新が LIDAR_LOST だと W-2 の文言が出なかった。
+  await gotoWithState(page, { mode: 'CARRY', estop_hw: true })
+  const note = page.locator('.win.carry.show').getByTestId('w2-esp32-lost')
+  await expect(note).toHaveCount(0)
+
+  await setTestActiveFaults(page, ['ESP32_DISCONNECTED'])
+  await setTestFault(page, { active: true, fault_type: 'LIDAR_LOST', severity: 'RECOVERABLE' })
+  await expect(note).toHaveText('ESP32 との通信が切れているため、非常停止ボタンの状態が分かりません。ボタンを戻しても解除できません')
+
+  // ESP32 が集合から消えたら（LIDAR_LOST だけ残る）文言も消える。
+  await setTestActiveFaults(page, ['LIDAR_LOST'])
   await expect(note).toHaveCount(0)
 })
 
