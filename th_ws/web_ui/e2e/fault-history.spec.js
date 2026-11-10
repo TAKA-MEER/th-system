@@ -83,6 +83,41 @@ test('(g2) 前のフォルトの記録は、別種別のフォルトの再開確
   await expect(page.getByTestId('w1-resolved-fault')).toHaveCount(0)
 })
 
+test('(h) presence_lost の W-1 には、開く前の記録を添えない（2026-11-10）', async ({ page }) => {
+  // 実機: 端末を離れて MANUAL/PAUSE（presence_lost）→ W-1。20 分以上前の
+  // ESP32 切断が「解消した異常」に出た。その一時停止以降の記録だけを添える。
+  const PAUSE_LOST = {
+    mode: 'MANUAL', state: 'PAUSE', pause_reason: 'presence_lost',
+    since: { sec: T0 + 10, nanosec: 0 },
+  }
+  await gotoWithState(page, PAUSE_LOST)
+  const old = R({ fault_type: 'ESP32_DISCONNECTED', started_at: T0 - 1200, duration_s: 0.1 })
+  await setHistory(page, history(old))
+  const win = page.locator('.win.fault.show')
+  await expect(win).toBeVisible()
+  await expect(win.getByTestId('w1-resolved-fault')).toHaveCount(0)
+
+  // その一時停止の後に起きて解消した異常は出る。
+  await setTestFault(page, lidar(true))
+  await setTestFault(page, lidar(false))
+  await setHistory(page, history(R({ started_at: T0 + 20, duration_s: 0.1 }), old))
+  await expect(win.getByTestId('w1-resolved-fault')).toContainText('LiDAR 途絶')
+})
+
+test('(i) フォルト起因でも、その一時停止より前の同種別の記録は出さない', async ({ page }) => {
+  // 一時停止（W-1 を開いた時点）は since。20 分前の同じ種別の解消記録は添えない。
+  await gotoWithState(page, { ...PAUSED, since: { sec: T0, nanosec: 0 } })
+  await setHistory(page, history(R({ started_at: T0 - 1200, duration_s: 0.1 })))
+  await setTestFault(page, lidar(true))
+  await setTestFault(page, lidar(false))
+  await setHistory(page, history(
+    R({ started_at: T0, duration_s: 0.1 }),
+    R({ started_at: T0 - 1200, duration_s: 0.1 })))
+  const win = page.locator('.win.fault.show')
+  await expect(win.getByTestId('w1-resolved-fault')).toHaveText('解消した異常：LiDAR 途絶（0.1 秒・12:34:56）')
+  await expect(win.getByTestId('w1-resolved-more')).toHaveCount(0)
+})
+
 test('(c)(d) ヘッダに「直近の異常」が出て、押すと一覧の窓が開く', async ({ page }) => {
   await gotoWithState(page, { mode: 'IDLE', state: 'IDLE' })
   await expect(page.getByTestId('recent-fault')).toHaveCount(0)

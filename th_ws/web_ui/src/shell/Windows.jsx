@@ -46,7 +46,7 @@ import { isInZoneScreen } from '../screens/screenZone.js'
 import ArmedButton from '../parts/ArmedButton.jsx'
 import GuideBanner from './GuideBanner.jsx'
 import FaultHistoryList from '../parts/FaultHistoryList.jsx'
-import { latestResolved, resolvedSummary } from '../ros/faultHistoryState.js'
+import { latestResolved, recordsSince, resolvedSummary } from '../ros/faultHistoryState.js'
 import {
   WIN_HIDE_LABEL, WIN_RESUME_ACK, WIN_RESUME_YES, WIN_RESUME_NO,
   WIN_ESTOP_RESUME_PREV, WIN_ESTOP_TO_MENU,
@@ -81,7 +81,7 @@ export default function Windows({
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose, guideKey, onGuideClose,
   saveAsk, onSaveYes, onSaveNo, autoBrake,
-  faultRecords = [], w1FaultType = '', historyOpen = false, onHistoryClose,
+  faultRecords = [], w1FaultType = '', w1SinceSec = 0, historyOpen = false, onHistoryClose,
   screenId,
 }) {
   const faultActive = !!fault?.active
@@ -161,14 +161,16 @@ export default function Windows({
 
   const fire = (trigger) => onTrigger?.(trigger)
 
-  // 解消後の再開確認に添える「解消した異常」（Spec-webui.md §4.1）。直近に解消した
-  // 記録（W-1 で見たフォルト種別があればその種別の中で）。再開を押して W-1 が
-  // 閉じるまで残る。履歴の到着が遅れても、届いた時点で現れる。
+  // 解消後の再開確認に添える「解消した異常」（Spec-webui.md §4.1）。その一時停止
+  // （W-1 を開いた時点 = SystemState.since）以降に始まって解消した記録だけを対象に、
+  // 直近の 1 件（W-1 で見たフォルト種別があればその種別の中で）を出す。再開を押して
+  // W-1 が閉じるまで残る。履歴の到着が遅れても、届いた時点で現れる。
+  const w1Records = recordsSince(faultRecords, w1SinceSec)
   const resolvedRec = w1Resolved
     ? latestResolved(w1FaultType
-      ? faultRecords.filter((r) => r.fault_type === w1FaultType) : faultRecords)
+      ? w1Records.filter((r) => r.fault_type === w1FaultType) : w1Records)
     : null
-  const resolvedInfo = resolvedRec ? resolvedSummary(faultRecords, resolvedRec) : null
+  const resolvedInfo = resolvedRec ? resolvedSummary(w1Records, resolvedRec) : null
 
   return (
     <>
