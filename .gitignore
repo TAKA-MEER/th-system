@@ -77,3 +77,5 @@ th_ws/data/vibe/
 
 # 図解マニュアルの PDF（docs/manual/tools/make_pdf.py が作る。配るときに作り直す）
 docs/manual/*.pdf
+# 実装管理担当の Docker 試験スクリプト（ビルド・試験のログ）の出力
+th_ws/data/vt-*
