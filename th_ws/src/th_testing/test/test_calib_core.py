@@ -133,3 +133,15 @@ def test_imu_all_calibrated_requires_all_four_at_3():
     assert not cc.imu_all_calibrated(0xFE)          # mag=2
     assert not cc.imu_all_calibrated(0xBF)          # sys=2
     assert not cc.imu_all_calibrated(0x00)
+
+
+def test_calibrated_at_now_has_jst_offset():
+    """コンテナが UTC でも「前回」が 9 時間ずれない（2026-11-10 T-11）。"""
+    from datetime import datetime, timezone
+    s = cc.calibrated_at_now()
+    t = datetime.fromisoformat(s)
+    assert t.utcoffset() is not None
+    assert t.utcoffset().total_seconds() == 9 * 3600
+    # 明示の UTC 時刻も日本時間へ直して記録する
+    utc = datetime(2026, 11, 10, 8, 35, 55, tzinfo=timezone.utc)
+    assert cc.calibrated_at_now(utc) == "2026-11-10T17:35:55+09:00"

@@ -18,7 +18,22 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+# 校正日時は機体の運用時刻（日本時間）で記録する。コンテナが UTC のため
+# `time.strftime` だと画面の「前回」が 9 時間ずれた（2026-11-10 T-11）。
+CALIB_TZ = timezone(timedelta(hours=9))
+
+
+def calibrated_at_now(now: Optional[datetime] = None) -> str:
+    """校正確定時刻を ISO 8601（`+09:00` 付き）で返す。
+
+    既存の current.yaml にあるタイムゾーン無しの値は、そのままの文字列で
+    読める（この関数は書き込み側だけ）。
+    """
+    t = now if now is not None else datetime.now(CALIB_TZ)
+    return t.astimezone(CALIB_TZ).isoformat(timespec="seconds")
 
 # 項目名（`/calib/start` の item）。BLIND の純粋関数は `blind_core.py`。
 ITEMS = ("LINEAR", "ROTATION", "IMU", "BLIND")

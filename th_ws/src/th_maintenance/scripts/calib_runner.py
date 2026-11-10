@@ -866,7 +866,7 @@ class CalibRunner(Node):
                 "measured_verify": self._verify_measured,
                 "detail": self._reason,
             }
-        calibrated_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+        calibrated_at = calib_core.calibrated_at_now()
         self._store.commit(item, values, calibrated_at, verification,
                            operator=self._operator or str(self.get_parameter("calib_operator").value),
                            params_digest=self._params_digest())
