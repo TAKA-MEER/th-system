@@ -55,7 +55,7 @@ import {
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
   WIN_PRESENCE_TITLE, WIN_PRESENCE_BODY, WIN_PREP_PAUSE_TITLE, WIN_PREP_PAUSE_BODY,
   WIN_CARRY_TITLE, WIN_CARRY_BODY, WIN_CARRY_HINT, WIN_CARRY_RELEASED,
-  WIN_CARRY_RESUME, WIN_CARRY_DISMISS, WIN_CARRY_ESTOP_DISABLED,
+  WIN_CARRY_RESUME, WIN_CARRY_DISMISS, WIN_CARRY_ESTOP_DISABLED, WIN_CARRY_ESP32_LOST,
   FH_RESOLVED_PREFIX, FH_RESOLVED_MORE, FH_WIN_TITLE, FH_WIN_CLOSE,
 } from '../i18n/states.js'
 
@@ -257,6 +257,12 @@ export default function Windows({
                   CARRY (it must not be hidden), but it can't do anything
                   while the drive is already cut -- say so plainly. */}
               <p className="hint mt">{WIN_CARRY_ESTOP_DISABLED}</p>
+              {/* 2026-11-10: 手押し中に ESP32 が切れると、物理ボタンの状態が
+                  分からず、戻しても解除できない。原因を W-2 の中で言う。
+                  フォルトが解消したら消える（Spec-webui.md §4 W-2）。 */}
+              {faultActive && fault?.fault_type === 'ESP32_DISCONNECTED' && (
+                <p className="hint mt" data-testid="w2-esp32-lost">{WIN_CARRY_ESP32_LOST}</p>
+              )}
               {lastRejectReason === ESTOP_DISABLED_IN_CARRY && (
                 <p className="hint mt">{reasonLabel(lastRejectReason)}</p>
               )}
