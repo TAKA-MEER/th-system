@@ -93,6 +93,22 @@ export function latestRecord(records) {
   return records && records.length > 0 ? records[0] : null
 }
 
+// W-1 を開いた時点（PAUSE/ESTOP に入った `since`）より前に始まった記録を落とす。
+// 2026-11-10: 端末が離れたことによる一時停止（presence_lost）の W-1 に、
+// 20 分以上前の ESP32 切断が「解消した異常」として出た。添えるのはその一時停止
+// 以降に起きて解消した異常だけ（Spec-webui.md §4.1）。
+// `since` は機体の時計（SystemState.since）。フォルトの started_at と同じ時計なので
+// そのまま比べられる。遷移と記録の生成には数十 ms のずれがあり得るので 1 秒許容する。
+// since が 0（未受信・古い機体）なら従来どおり絞らない。
+export const W1_SINCE_TOLERANCE_S = 1
+
+export function recordsSince(records, sinceSec) {
+  if (!records) return []
+  if (!Number.isFinite(sinceSec) || sinceSec <= 0) return records
+  const since = sinceSec - W1_SINCE_TOLERANCE_S
+  return records.filter((r) => r.started_at >= since)
+}
+
 // 直近に解消した記録（最新の ongoing=false の 1 件）。解消時刻
 // （started_at + duration_s）が最も新しいもの。無ければ null。
 export function latestResolved(records) {

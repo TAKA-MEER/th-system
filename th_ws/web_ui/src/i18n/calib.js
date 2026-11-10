@@ -70,7 +70,7 @@ export const S40_RETRY_FAILED_RUN = '走行できませんでした。'
 export const S40_START_REJECTED = '再走行を開始できませんでした'
 
 // ── IMU ──────────────────────────────────────────────────
-export const S40_IMU_GUIDE = '機体を手で持ち上げずに、床の上で 8 の字に動かしてください（機体は自走しません）。4 つとも「完全」になるまで続けます。'
+export const S40_IMU_GUIDE = 'IMU を機体から外して手に持ち、いろいろな向きに傾けて数秒ずつ静止させてください（加速度）。地磁気は 8 の字に動かします。4 つとも「完全」になるまで続けます。'
 export const S40_IMU_PARTS = { sys: 'システム', gyro: 'ジャイロ', accel: '加速度', mag: '地磁気' }
 export const S40_IMU_DONE = 'IMU の校正が完了しました。'
 export const S40_IMU_COMMIT = '確定する'
