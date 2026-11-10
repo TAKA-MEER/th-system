@@ -12,6 +12,26 @@ def test_twist_mux_generated(registry_rows):
     assert "manual_joy_timeout" in outputs["twist_mux"]
 
 
+def test_20261110_braking_values_keep_autonomous_floor_ordering(registry_rows):
+    """2026-11-10 の実機値・余裕を反映し、実測可能な速度軸で A2a を保つ。"""
+    resolved = export.resolve_registry(registry_rows)
+    values = {name: value for name, (_status, value) in resolved.items()}
+
+    assert values["brake_accel_mps2"] == pytest.approx(1.0)
+    assert values["safety_margin_m"] == pytest.approx(0.45)
+    assert values["floor_margin_m"] == pytest.approx(0.30)
+    assert values["obstacle_floor_distance_m"] == pytest.approx(0.575)
+
+    errors, _warnings = export.run_assertions(
+        registry_rows, resolved, stage=0, nodes=None)
+    assert not any("A2a" in error for error in errors), errors
+
+    # 現在 placeholder の自律速度軸は S5 により個別に判定対象外になる。
+    # v_max は確定しているため、停止距離と floor の大小も直接確認する。
+    v_max_stop = values["obstacle_stop_distance_m"]["v_max"]
+    assert v_max_stop > values["obstacle_floor_distance_m"]
+
+
 def test_digest_stable(registry_rows):
     """同じ registry から同じ params_digest が得られる。"""
     resolved1 = export.resolve_registry(registry_rows)

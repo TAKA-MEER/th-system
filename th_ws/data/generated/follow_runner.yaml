@@ -2,14 +2,14 @@ follow_runner:
   ros__parameters:
     blocked_hold_ms: 500
     blocked_lookahead_m: 1.0
-    brake_accel_mps2: 1.18
-    follow_stop_distance_m: 0.6503050847457628
+    brake_accel_mps2: 1.0
+    follow_stop_distance_m: 0.674912
     obstacle_stop_distance_m:
-      v_calib: 0.33953389830508474
-      v_check: 0.3110593220338983
+      v_calib: 0.49125
+      v_check: 0.46125
       v_jog_panel: null
-      v_leash: 0.5059322033898306
-      v_max: 0.5503050847457627
+      v_leash: 0.675
+      v_max: 0.724912
       v_reverse: null
       v_slow: null
     unblocked_hold_ms: 500

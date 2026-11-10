@@ -46,7 +46,7 @@ import { isInZoneScreen } from '../screens/screenZone.js'
 import ArmedButton from '../parts/ArmedButton.jsx'
 import GuideBanner from './GuideBanner.jsx'
 import FaultHistoryList from '../parts/FaultHistoryList.jsx'
-import { latestResolved, resolvedSummary } from '../ros/faultHistoryState.js'
+import { latestResolved, recordsSince, resolvedSummary } from '../ros/faultHistoryState.js'
 import {
   WIN_HIDE_LABEL, WIN_RESUME_ACK, WIN_RESUME_YES, WIN_RESUME_NO,
   WIN_ESTOP_RESUME_PREV, WIN_ESTOP_TO_MENU,
@@ -55,7 +55,7 @@ import {
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
   WIN_PRESENCE_TITLE, WIN_PRESENCE_BODY, WIN_PREP_PAUSE_TITLE, WIN_PREP_PAUSE_BODY,
   WIN_CARRY_TITLE, WIN_CARRY_BODY, WIN_CARRY_HINT, WIN_CARRY_RELEASED,
-  WIN_CARRY_RESUME, WIN_CARRY_DISMISS, WIN_CARRY_ESTOP_DISABLED,
+  WIN_CARRY_RESUME, WIN_CARRY_DISMISS, WIN_CARRY_ESTOP_DISABLED, WIN_CARRY_ESP32_LOST,
   FH_RESOLVED_PREFIX, FH_RESOLVED_MORE, FH_WIN_TITLE, FH_WIN_CLOSE,
 } from '../i18n/states.js'
 
@@ -77,11 +77,11 @@ const ESTOP_DISABLED_IN_CARRY = 'estop_disabled_in_carry'
 // control the same flag. It now doubles as "W-1 dismissed", covering both
 // the ESTOP and fault-caused-PAUSE cases below.
 export default function Windows({
-  ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, pauseReason, attributes,
+  ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, activeFaultTypes = [], pauseReason, attributes,
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose, guideKey, onGuideClose,
   saveAsk, onSaveYes, onSaveNo, autoBrake,
-  faultRecords = [], w1FaultType = '', historyOpen = false, onHistoryClose,
+  faultRecords = [], w1FaultType = '', w1SinceSec = 0, historyOpen = false, onHistoryClose,
   screenId,
 }) {
   const faultActive = !!fault?.active
@@ -161,14 +161,16 @@ export default function Windows({
 
   const fire = (trigger) => onTrigger?.(trigger)
 
-  // 解消後の再開確認に添える「解消した異常」（Spec-webui.md §4.1）。直近に解消した
-  // 記録（W-1 で見たフォルト種別があればその種別の中で）。再開を押して W-1 が
-  // 閉じるまで残る。履歴の到着が遅れても、届いた時点で現れる。
+  // 解消後の再開確認に添える「解消した異常」（Spec-webui.md §4.1）。その一時停止
+  // （W-1 を開いた時点 = SystemState.since）以降に始まって解消した記録だけを対象に、
+  // 直近の 1 件（W-1 で見たフォルト種別があればその種別の中で）を出す。再開を押して
+  // W-1 が閉じるまで残る。履歴の到着が遅れても、届いた時点で現れる。
+  const w1Records = recordsSince(faultRecords, w1SinceSec)
   const resolvedRec = w1Resolved
     ? latestResolved(w1FaultType
-      ? faultRecords.filter((r) => r.fault_type === w1FaultType) : faultRecords)
+      ? w1Records.filter((r) => r.fault_type === w1FaultType) : w1Records)
     : null
-  const resolvedInfo = resolvedRec ? resolvedSummary(faultRecords, resolvedRec) : null
+  const resolvedInfo = resolvedRec ? resolvedSummary(w1Records, resolvedRec) : null
 
   return (
     <>
@@ -255,6 +257,16 @@ export default function Windows({
                   CARRY (it must not be hidden), but it can't do anything
                   while the drive is already cut -- say so plainly. */}
               <p className="hint mt">{WIN_CARRY_ESTOP_DISABLED}</p>
+              {/* 2026-11-10: 手押し中に ESP32 が切れると、物理ボタンの状態が
+                  分からず、戻しても解除できない。原因を W-2 の中で言う。
+                  /safety/fault は最新 1 件しか持たず、LIDAR_LOST と同時に立つと
+                  ESP32 を見落とすので、集合の /safety/active_faults を正本にする
+                  （古い機体向けに最新の fault_type も見る）。フォルトが解消したら
+                  消える（Spec-webui.md §4 W-2）。 */}
+              {(activeFaultTypes.includes('ESP32_DISCONNECTED')
+                || (faultActive && fault?.fault_type === 'ESP32_DISCONNECTED')) && (
+                <p className="hint mt" data-testid="w2-esp32-lost">{WIN_CARRY_ESP32_LOST}</p>
+              )}
               {lastRejectReason === ESTOP_DISABLED_IN_CARRY && (
                 <p className="hint mt">{reasonLabel(lastRejectReason)}</p>
               )}

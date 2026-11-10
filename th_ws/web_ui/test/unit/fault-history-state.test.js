@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import {
   parseFaultHistory, formatClock, formatDuration, recordDurationSec, latestRecord,
   latestResolved, repeatCount, resolvedSummary, recentFaultText, subscribeFaultHistory,
+  recordsSince, W1_SINCE_TOLERANCE_S,
 } from '../../src/ros/faultHistoryState.js'
 
 const rec = (o = {}) => ({
@@ -58,8 +59,22 @@ test('直近に解消した記録: ongoing=false の最新。継続中は選ば�
   assert.equal(latestRecord([]), null)
 })
 
-test('「ほか N 回」: 直前 60 秒以内の同種別だけ数える', () => {
-  const recs = [
+test('W-1 を開いた時点より前に始まった記録は添えない（2026-11-10）', () => {
+  const old = rec({ fault_type: 'ESP32_DISCONNECTED', started_at: 100, duration_s: 0.1 })
+  const fresh = rec({ started_at: 1000, duration_s: 0.1 })
+  // 20 分前の記録は出ない、その一時停止以降に解消した記録は出る。
+  const kept = recordsSince([fresh, old], 500)
+  assert.deepEqual(kept.map((r) => r.started_at), [1000])
+  assert.equal(latestResolved(kept).started_at, 1000)
+  // 遷移と記録生成の数十 ms のずれは 1 秒だけ許容する。
+  assert.deepEqual(recordsSince([old], 100 + W1_SINCE_TOLERANCE_S / 2).map((r) => r.started_at), [100])
+  assert.deepEqual(recordsSince([old], 100 + W1_SINCE_TOLERANCE_S * 2), [])
+  // since 未受信（0）・記録なしでは従来どおり。
+  assert.deepEqual(recordsSince([fresh, old], 0), [fresh, old])
+  assert.deepEqual(recordsSince(null, 500), [])
+})
+
+test('「ほか N 回」: 直前 60 秒以内の同種別だけ数える', () => {  const recs = [
     rec({ started_at: 1000 }),
     rec({ started_at: 990 }),
     rec({ started_at: 950 }),

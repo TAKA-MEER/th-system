@@ -6,6 +6,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { TOPICS, SERVICES, MSG_TYPES } from '../../src/ros/topics.js'
 import { subscribeFaultHistory } from '../../src/ros/faultHistoryState.js'
+import { parseActiveFaults, subscribeActiveFaults } from '../../src/ros/activeFaultsState.js'
 
 test('TOPICS の値はすべて "/" で始まる文字列', () => {
   for (const [k, v] of Object.entries(TOPICS)) {
@@ -43,4 +44,26 @@ test('地図の読み込み状態は TOPICS／MSG_TYPES にあり、購読は名
   assert.equal(made[0].name, '/map_session/status')
   assert.equal(made[0].messageType, 'th_system_msgs/MapSessionStatus')
   assert.equal(made[0].queue_length, 1)
+})
+
+test('立っているフォルトの集合は TOPICS／MSG_TYPES にあり、購読は名前・型が定義済みで張られる', () => {
+  assert.equal(TOPICS.ACTIVE_FAULTS, '/safety/active_faults')
+  assert.equal(SERVICES.ACTIVE_FAULTS, undefined)
+  assert.equal(MSG_TYPES.ACTIVE_FAULTS, 'th_system_msgs/ActiveFaults')
+  const made = []
+  class FakeTopic { constructor(o) { made.push(o) } subscribe() {} unsubscribe() {} }
+  subscribeActiveFaults({ Topic: FakeTopic }, {}, TOPICS.ACTIVE_FAULTS, MSG_TYPES.ACTIVE_FAULTS, () => {})
+  assert.equal(made.length, 1)
+  assert.equal(made[0].name, '/safety/active_faults')
+  assert.equal(made[0].messageType, 'th_system_msgs/ActiveFaults')
+  assert.equal(made[0].queue_length, 1)
+})
+
+test('active_faults の types を読み、壊れたメッセージは null にする', () => {
+  assert.deepEqual(parseActiveFaults({ types: ['LIDAR_LOST', 'ESP32_DISCONNECTED'] }),
+    ['LIDAR_LOST', 'ESP32_DISCONNECTED'])
+  assert.deepEqual(parseActiveFaults({ types: [] }), [])
+  assert.equal(parseActiveFaults({}), null)
+  assert.equal(parseActiveFaults(null), null)
+  assert.deepEqual(parseActiveFaults({ types: ['OK', 3, null] }), ['OK'])
 })
