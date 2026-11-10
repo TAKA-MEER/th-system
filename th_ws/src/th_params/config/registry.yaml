@@ -7,10 +7,9 @@
 # value: TBD_MEASURE ＋ blocking: true ＋ blocking_from_stage を持つ（S1）。
 # class: a で status: placeholder の行（O-a2/O-a4 未決）も value: TBD_MEASURE（S2）。
 #
-# 実測値そのものは WP-MEAS-01 / WP-MEAS-04 が後から入れる。ここではまだ入れない
-# （brake_accel_mps2 が TBD_MEASURE のままなのは正しい状態）。
+# 実測値は各行の status / source / note に根拠を記す。
 #
-# 数値の根拠について: brake_accel_mps2 などの class:c は測定するまで分からない値。
+# 数値の根拠について: class:c は測定するまで分からない値。
 # venue_clearance_m 等の class:a は O-a2/O-a4 が決まるまで方針未定。
 # それ以外の class:b(given) / given の値は、実機データシートや現行コードから明示的な
 # 数値が読み取れる場合はその値を使い（出典を note に明記）、明示的な数値が文書中に
@@ -241,14 +240,14 @@
   unit: m/s2
   class: c
   status: measured
-  value: 1.18
-  measured_at: "2026-08-21"
-  source: "実測（WP-MEAS-01）。前進 0.89 m/s から 3 本。巻尺 4.20/4.25/4.26 m で較正した積分値。制動距離 0.314〜0.336 m、実効減速度 1.18/1.19/1.26 m/s2 の最悪値。TARGET_RAMP_ACCEL_MPS2=1.5（config.h:69）に対し実測は約 2 割低い。記録: th_ws/data/brake_032431.csv, th_ws/data/brake_032737.csv"
+  value: 1.0
+  measured_at: "2026-11-10"
+  source: "実機試験 T-13（R-66・R-69）。昇降機搭載状態での自動ブレーキ減速度 1.0〜1.4 m/s2 の最悪値。"
   blocking: true
   blocking_from_stage: 0
   consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.2 / DetailedDesign-wp0.md WP-PARAM-01 §5"
-  note: "最も多くを従属させる 1 つ（O-c1）。**これはランプ停止（/cmd_vel=0）の値**であり、非常停止の空走とは別物（空走は 2.74 m/s2＝約 14 倍短い。N-12）。**測ったのは前進 1 条件のみ。**後退は左右対称のクローラ駆動なので同等と推定したが未測定、場内速度域（v_slow）は未測定（2026-08-21 の判断）。積載時・傾斜での再測定も未計画"
+  note: "自動ブレーキの停止距離導出に使う最悪減速度。2026-11-10 の昇降機搭載実機試験で 1.0〜1.4 m/s2 を観測し、最悪値 1.0 を採用（Spec-safety.md §2.2）。通常ランプ停止・非常停止の空走値とは区別する。"
 
 - name: normal_accel_mps2
   unit: m/s2
@@ -290,7 +289,7 @@
   unit: m
   class: b
   status: given
-  value: 0.3
+  value: 0.45
   consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.2・§7.5"
   note: "挙動ノードの obstacle_stop_distance_m に足す余裕。floor_margin_m より大きい（§7.5）"
@@ -299,7 +298,7 @@
   unit: m
   class: b
   status: given
-  value: 0.15
+  value: 0.30
   consumers: [params_audit]
   spec_ref: "DetailedDesign-names.md §7.2・§7.5"
   note: "リミッタの obstacle_floor_distance_m に足す余裕。safety_margin_m より小さい（A2 の成否を単独で決める）"
