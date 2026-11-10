@@ -287,7 +287,6 @@ public:
             [this](const th_system_msgs::msg::SystemState::SharedPtr msg) {
                 last_state_time_ = now();
                 state_alive_     = true;
-                state_received_  = true;
                 last_mode_  = msg->mode;
                 last_state_ = msg->state;
                 if (msg->tracker_enabled && !tracker_enabled_) {
@@ -545,10 +544,10 @@ private:
             }
             if (targetEnabled("state")) {
                 const bool state_stale = computeTimeoutFault(
-                    last_state_time_, state_stale_, t, state_received_);
+                    last_state_time_, state_stale_, t, state_alive_);
                 // 起動直後の未受信は startup_deadline_sec まで待つ。未受信中に
                 // 空の mode/state を不整合扱いすると、猶予の意味がなくなる。
-                const bool inconsistent = state_received_
+                const bool inconsistent = state_alive_
                     ? th_safety::detect_state_inconsistent(
                           state_stale, last_mode_, last_state_, th_safety::default_mode_states())
                     : state_stale;
@@ -831,7 +830,6 @@ private:
     bool muxed_alive_    = false;
     bool cmd_alive_      = false;
     bool state_alive_    = false;
-    bool state_received_ = false;
 
     bool muxed_last_nonzero_ = false;
     bool cmd_last_nonzero_   = false;
