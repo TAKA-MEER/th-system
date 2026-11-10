@@ -143,6 +143,10 @@ export const WIN_CARRY_DISMISS = '再開しない（待機に戻る）'
 // (estop_disabled_in_carry, i18n/reasons.js) layers on top of this once
 // SystemState.last_reject_reason actually reports the C-06r rejection.
 export const WIN_CARRY_ESTOP_DISABLED = '駆動は既に切れています。'
+// 2026-11-10: 手押しの間に ESP32 との通信が切れると、ボタンの状態が読めず、
+// 戻しても解除できない。原因が W-2 の裏のフォルト表示にしか出ず分からなかった
+// （Spec-webui.md §4 ウィンドウ表の W-2）。フォルトが消えたら文言も消える。
+export const WIN_CARRY_ESP32_LOST = 'ESP32 との通信が切れているため、非常停止ボタンの状態が分かりません。ボタンを戻しても解除できません'
 
 // Operation card button labels (DetailedDesign-webui.md §4.1). `run`'s
 // label varies per screen ("follow start" / "run" / "replay" / ...); this

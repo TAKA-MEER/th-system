@@ -20,6 +20,7 @@
 // more lenient, which hid this until `npm run build` was actually run).
 import { createContext, createElement, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { TOPICS, MSG_TYPES } from './topics'
+import { parseActiveFaults, subscribeActiveFaults } from './activeFaultsState.js'
 
 // /system/state publishes at 10Hz "+ on change" (DetailedDesign-wp1.md WP-UI-01
 // §3.1). This is a display-only fail-safe threshold, not a safety boundary —
@@ -63,6 +64,10 @@ export function SystemStateProvider({ url = `ws://${window.location.hostname}:90
   const [paramsStatus, setParamsStatus] = useState(null)
   const [fault, setFault] = useState(
     TEST_MODE ? { ...TEST_FAULT_DEFAULTS, ...window.__thTestFault } : TEST_FAULT_DEFAULTS)
+  // /safety/active_faults の types。W-2 の ESP32 切断表示は、最新 1 件の
+  // /safety/fault ではなくこの集合を見る（同時に立つフォルトを取りこぼさない）。
+  const [activeFaultTypes, setActiveFaultTypes] = useState(
+    TEST_MODE ? parseActiveFaults(window.__thTestActiveFaults) ?? [] : [])
   const [stale, setStale] = useState(!TEST_MODE)
   const staleTimerRef = useRef(null)
 
@@ -75,6 +80,10 @@ export function SystemStateProvider({ url = `ws://${window.location.hostname}:90
     window.__thSetTestFault = (patch) => {
       setFault((prev) => ({ ...(prev ?? TEST_FAULT_DEFAULTS), ...patch }))
     }
+    window.__thSetTestActiveFaults = (msg) => {
+      const next = parseActiveFaults(msg)
+      if (next) setActiveFaultTypes(next)
+    }
     // 1b-6 SG-B6: 停止完了（接続断）のふり。S-01 は /shutdown/execute の成功
     // だけでは「電源を切って構いません」を出さず、stale（実際に止まったこと）を
     // 待つ。e2e がその待ちを閉じるための試験専用の縫い目（本番の挙動は不変）。
@@ -82,6 +91,7 @@ export function SystemStateProvider({ url = `ws://${window.location.hostname}:90
     return () => {
       delete window.__thSetTestState
       delete window.__thSetTestFault
+      delete window.__thSetTestActiveFaults
       delete window.__thSetTestStale
     }
   }, [])
@@ -119,11 +129,19 @@ export function SystemStateProvider({ url = `ws://${window.location.hostname}:90
     })
     subFault.subscribe((msg) => setFault(msg))
 
+    const subActiveFaults = subscribeActiveFaults(
+      ROSLIB, ros, TOPICS.ACTIVE_FAULTS, MSG_TYPES.ACTIVE_FAULTS,
+      (msg) => {
+        const next = parseActiveFaults(msg)
+        if (next) setActiveFaultTypes(next)
+      })
+
     return () => {
       clearTimeout(staleTimerRef.current)
       subState.unsubscribe()
       subParams.unsubscribe()
       subFault.unsubscribe()
+      subActiveFaults.unsubscribe()
       ros.close()
     }
   }, [url])
@@ -134,10 +152,11 @@ export function SystemStateProvider({ url = `ws://${window.location.hostname}:90
     state,
     paramsStatus,
     fault,
+    activeFaultTypes,
     // Fail-safe default (§6.2): no state yet, or the link is stale/down ->
     // callers must treat mode/state as unknown, not as "whatever we saw last".
     stale: stale || !connected,
-  }), [connected, state, paramsStatus, fault, stale])
+  }), [connected, state, paramsStatus, fault, activeFaultTypes, stale])
 
   return createElement(SystemStateContext.Provider, { value }, children)
 }

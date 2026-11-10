@@ -458,6 +458,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_init_estop_held_guide_node
     test/test_init_estop_held_guide_node.py
     TIMEOUT 120)
+  # SM-3.1.1-19: state_manager の実 ActiveFaults 購読から入口拒否・W-1 配線を縛る。
+  ament_add_pytest_test(test_recoverable_fault_entry_guard_node
+    test/test_recoverable_fault_entry_guard_node.py
+    TIMEOUT 120)
   # 1b-2（SG-A5 の境界）: ESTOP に入る前に gate が真でも、INIT に戻ったあと
   # link_ok が再送されて IDLE まで進む（別 launch。同一 launch では起動直後の
   # 前提が崩れるため分ける）
@@ -542,6 +546,10 @@ if(BUILD_TESTING)
     TIMEOUT 120)
   ament_add_pytest_test(test_safety_monitor
     test/test_safety_monitor.py
+    TIMEOUT 90)
+  # 起動時の /system/state 未受信猶予と、受信後の途絶検知（safety_monitor 本体）。
+  ament_add_pytest_test(test_state_startup_deadline_node
+    test/test_state_startup_deadline_node.py
     TIMEOUT 90)
   # SG-A8 フォルト集約の Docker launch テスト（1b-4。
   # 2 重フォルトで 1 つ解消しても active=true（残りの代表）・全解消で active=false、

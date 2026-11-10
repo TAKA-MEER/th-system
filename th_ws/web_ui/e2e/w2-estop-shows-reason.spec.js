@@ -22,11 +22,43 @@
 // stays pressed is already covered by w2-cannot-close.spec.js. This file
 // only adds what C-2 needs on top of those.
 import { test, expect } from '@playwright/test'
-import { gotoWithState, setTestState } from './helpers.js'
+import { gotoWithState, setTestState, setTestFault, setTestActiveFaults } from './helpers.js'
 
 test('W-2 says the drive is already cut, before the UI estop is ever pressed', async ({ page }) => {
   await gotoWithState(page, { mode: 'CARRY', estop_hw: true })
   await expect(page.locator('.win.carry.show')).toContainText('駆動は既に切れています')
+})
+
+test('W-2 says ESP32 is disconnected, so the button state is unknown and cannot be released (2026-11-10)', async ({ page }) => {
+  // 実機: 物理非常停止を押したまま ESP32 が切れ、ボタンを戻しても解除できなかった。
+  // 原因が W-2 の裏のフォルト表示にしか出なかった。
+  await gotoWithState(page, { mode: 'CARRY', estop_hw: true })
+  const carryWin = page.locator('.win.carry.show')
+  const note = carryWin.getByTestId('w2-esp32-lost')
+  await expect(note).toHaveCount(0)
+
+  await setTestFault(page, { active: true, fault_type: 'ESP32_DISCONNECTED', severity: 'RECOVERABLE' })
+  await expect(note).toHaveText('ESP32 との通信が切れているため、非常停止ボタンの状態が分かりません。ボタンを戻しても解除できません')
+
+  // フォルトが解消したら文言は消える。
+  await setTestFault(page, { active: false, fault_type: 'ESP32_DISCONNECTED', severity: 'RECOVERABLE' })
+  await expect(note).toHaveCount(0)
+})
+
+test('LIDAR_LOST が後から来ても、active_faults に ESP32_DISCONNECTED があれば W-2 に出す (2026-11-10)', async ({ page }) => {
+  // 実機: ラズパイの電源断で LIDAR_LOST と ESP32_DISCONNECTED が同時に立ち、
+  // /safety/fault の最新が LIDAR_LOST だと W-2 の文言が出なかった。
+  await gotoWithState(page, { mode: 'CARRY', estop_hw: true })
+  const note = page.locator('.win.carry.show').getByTestId('w2-esp32-lost')
+  await expect(note).toHaveCount(0)
+
+  await setTestActiveFaults(page, ['ESP32_DISCONNECTED'])
+  await setTestFault(page, { active: true, fault_type: 'LIDAR_LOST', severity: 'RECOVERABLE' })
+  await expect(note).toHaveText('ESP32 との通信が切れているため、非常停止ボタンの状態が分かりません。ボタンを戻しても解除できません')
+
+  // ESP32 が集合から消えたら（LIDAR_LOST だけ残る）文言も消える。
+  await setTestActiveFaults(page, ['LIDAR_LOST'])
+  await expect(note).toHaveCount(0)
 })
 
 test('pressing the UI estop in CARRY surfaces estop_disabled_in_carry via SystemState.last_reject_reason', async ({ page }) => {

@@ -543,9 +543,14 @@ private:
                 // frozen（nullopt）のときは何もしない（上のコメント参照）。
             }
             if (targetEnabled("state")) {
-                bool state_stale = (t - last_state_time_) > rclcpp::Duration(state_stale_);
-                bool inconsistent = th_safety::detect_state_inconsistent(
-                    state_stale, last_mode_, last_state_, th_safety::default_mode_states());
+                const bool state_stale = computeTimeoutFault(
+                    last_state_time_, state_stale_, t, state_alive_);
+                // 起動直後の未受信は startup_deadline_sec まで待つ。未受信中に
+                // 空の mode/state を不整合扱いすると、猶予の意味がなくなる。
+                const bool inconsistent = state_alive_
+                    ? th_safety::detect_state_inconsistent(
+                          state_stale, last_mode_, last_state_, th_safety::default_mode_states())
+                    : state_stale;
                 // WS-9O: 単発の誤検知よけ
                 updateFaultState("STATE_INCONSISTENT",
                                   state_inconsist_hold_.update(inconsistent, check_period_sec_));

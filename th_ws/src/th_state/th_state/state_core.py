@@ -302,6 +302,7 @@ class Context:
     calib_preview_sane: bool
     map_update_available: bool
     now_ms: int
+    recoverable_fault_types: Tuple[str, ...] = ()
     # UI 非常停止ボタンで入った ESTOP かどうか（重大フォルト起因と区別する。
     # 2026-09-01。SM-3.1.1-11。呼び出し側がラッチして渡す）。
     estop_from_ui: bool = False

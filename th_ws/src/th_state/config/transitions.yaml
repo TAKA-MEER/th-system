@@ -689,6 +689,20 @@
 # ので C-13 の mode_entry_denied が出る）。LINE のカメラは信号源（/camera/status
 # の発行者）がリポジトリに無いため対象外（報告参照。deny 既定にすると LINE に
 # 入れなくなる後退になる）。
+- id: C-13-recoverable-fault-active
+  layer: 0
+  mode:
+  - IDLE
+  - MANUAL
+  state: '*'
+  event: ui.enter_mode
+  guard: recoverable_fault_active
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.1-19
+  reject: true
+  reject_reason_key: recoverable_fault_active
 - id: C-13-replay-no-route
   layer: 0
   mode: IDLE
@@ -742,6 +756,18 @@
 # （C-09/C-09b と同じ「同一イベント・ガード違いを記載順で振り分ける」流儀）。
 # 無いと SUMMON の 2 点指示が pin_registrar の _accepting を一度も開けず、
 # /onsite/two_point が no_pending で拒否され続ける（実機で発覚）。
+- id: C-15-recoverable-fault-active
+  layer: 0
+  mode: IDLE
+  state: NONE
+  event: ui.goto
+  guard: recoverable_fault_active
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.1-19
+  reject: true
+  reject_reason_key: recoverable_fault_active
 - id: C-15-summon
   layer: 0
   mode: IDLE
@@ -1811,6 +1837,20 @@
   reject: true
   reject_reason_key: venue_not_loaded
   override_common: true
+- id: T-AHOME-recoverable-fault-active
+  layer: 10
+  mode: AT_HOME
+  state:
+  - IDLE_H
+  - PAUSE
+  event: ui.goto
+  guard: recoverable_fault_active
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.1-19
+  reject: true
+  reject_reason_key: recoverable_fault_active
 - id: T-VUL-idle-goto
   layer: 10
   mode: IDLE

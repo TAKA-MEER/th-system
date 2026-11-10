@@ -19,6 +19,12 @@ export async function setTestFault(page, patch) {
   await page.evaluate((p) => window.__thSetTestFault(p), patch)
 }
 
+// /safety/active_faults の 1 通が届いたふり。types は辞書順の配列
+// （useSystemState.js の window.__thSetTestActiveFaults が受ける形に合わせる）。
+export async function setTestActiveFaults(page, types) {
+  await page.evaluate((t) => window.__thSetTestActiveFaults({ types: t }), types)
+}
+
 // WP-UI-02: opens a specific screen directly (src/main.jsx's
 // window.__thTestScreen hook), instead of the WP-UI-01 OperationCard
 // harness gotoWithState() defaults to. Existing specs (estop-clickable etc.)

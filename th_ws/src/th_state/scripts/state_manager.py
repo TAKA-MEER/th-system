@@ -32,7 +32,7 @@ from builtin_interfaces.msg import Time as TimeMsg
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
-from th_system_msgs.msg import (ActiveScreen, CalibStatus, FaultStatus, MapSessionStatus,
+from th_system_msgs.msg import (ActiveFaults, ActiveScreen, CalibStatus, FaultStatus, MapSessionStatus,
                                  PersonTargets, PinList,
                                  RouteList, RouteStatus, StateEffect, StateEvent,
                                  SystemState)
@@ -40,7 +40,7 @@ from th_system_msgs.srv import SetFlag, UiTrigger
 
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
-from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, IDLE_MODE, OPCHECK_MODE, Context,
+from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, IDLE_MODE, OPCHECK_MODE, Context, Effect,
                                    REPLAY_MODE, StateCore, TEACH_MODES, is_driving)
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
@@ -112,6 +112,12 @@ _SETTABLE_FLAGS = ("map_update", "tracker_enabled", "auto_brake")
 # state.md §3.1 の固定レート。registry.yaml の tunable パラメータ（R2 対象）ではなく
 # インターフェース契約そのものの値なので、ここでは定数として扱う。
 _STATE_PUBLISH_PERIOD_S = 0.1  # 10 Hz
+
+# SM-3.1.1-19: 運用入口（モード選択・行き先選択）を塞ぐ回復フォルトの種別。
+# Spec-modes.md §3.1.1-19 の「走行を止める回復フォルト（LIDAR_LOST・
+# ESP32_DISCONNECTED・必須通信系統の断）」。人物追跡は数えない。必須通信系統の断は
+# いまのところこの 2 種で表れる（新しい通信断を足したらここにも足す）。
+_ENTRY_BLOCKING_RECOVERABLE_FAULTS = frozenset({"LIDAR_LOST", "ESP32_DISCONNECTED"})
 
 
 def _fault_event_name(active: bool, severity: str) -> str:
@@ -215,6 +221,7 @@ class StateManager(Node):
         self._fault_active = False
         self._fault_severity = ""
         self._fault_type = ""
+        self._active_fault_types = ()
         self._hw_estop = False
         self._ui_estop = False
         # 現在の ESTOP が UI ボタン起因かどうか（重大フォルト起因と区別。SM-3.1.1-11）。
@@ -379,6 +386,12 @@ class StateManager(Node):
 
         fault_qos = QoSProfile(depth=5, reliability=QoSReliabilityPolicy.RELIABLE)
         self.create_subscription(FaultStatus, '/safety/fault', self._on_fault, fault_qos)
+        active_fault_qos = QoSProfile(
+            depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(ActiveFaults, '/safety/active_faults',
+                                 self._on_active_faults, active_fault_qos)
 
         bool_qos = QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE)
         self.create_subscription(Bool, '/safety/estop_hw', self._on_estop_hw, bool_qos)
@@ -486,6 +499,7 @@ class StateManager(Node):
             # 真（T-REPLAY-08 の map_update ガードの材料。条件の選び方は報告参照）。
             map_update_available=bool(self._route_loaded and self._route_has_map),
             now_ms=self._now_ms(),
+            recoverable_fault_types=self._recoverable_fault_types(),
             estop_from_ui=self._estop_from_ui,
             arg=arg or {},
         )
@@ -515,6 +529,14 @@ class StateManager(Node):
 
         ctx = self._build_context(event, arg)
         decision = self.core.step(self.mode, self.state, event, ctx)
+        if (not decision.accepted
+                and decision.reject_reason_key == "recoverable_fault_active"):
+            # SM-3.1.1-19: 拒否理由といま残っているフォルト名を W-1 で見せる。
+            decision = _dc_replace(decision, effects=(Effect(
+                name="open_window",
+                args={"id": "W-1", "reason_key": decision.reject_reason_key,
+                      "fault_types": list(ctx.recoverable_fault_types)},
+            ),))
 
         # prev_sub のラッチ（§7 の latch_prev とは別物。PAUSE に新規で入るときだけ記録する。
         # 走行状態から PAUSE に入る直前の内部状態を 1 段だけ保持する一般化ルール。
@@ -802,9 +824,40 @@ class StateManager(Node):
         self._fault_active = msg.active
         self._fault_severity = msg.severity
         self._fault_type = msg.fault_type
+        if not msg.active:
+            # SG-A8: active=false は safety_monitor 側で残りが 0 になった合図。
+            # /safety/active_faults の空配列と同じ publish 由来だが、別トピック
+            # なので到着順は保証されない。入口の拒否（SM-3.1.1-19）が全解消後も
+            # 残らないよう、ここでも落とす。
+            self._active_fault_types = ()
         event = _fault_event_name(msg.active, msg.severity)
         self._process(event, {}, "")
         self._publish_state()
+
+    def _on_active_faults(self, msg):
+        """複数フォルトの同時継続を保つ active_faults の現在値をラッチする。"""
+        self._active_fault_types = tuple(
+            (str(ft), str(severity))
+            for ft, severity in zip(msg.types, msg.severities))
+
+    def _recoverable_fault_types(self):
+        """SM-3.1.1-19: 運用入口を塞ぐ「走行を止める回復フォルト」の現在値。
+
+        Spec-modes.md §3.1.1-19 の対象は LIDAR_LOST・ESP32_DISCONNECTED・必須通信系統の
+        断だけで、人物追跡（PERSON_TRACKER_LOST）と、開発モードで外した項目は数えない。
+        必須通信系統（ESP32／RaspberryPi4／PC）の断は今のところこの 2 種で表れるので、
+        種別を明示して数える（UI_DISCONNECTED は UI 非常停止ラッチ中の心拍切れで、
+        走行を止める理由ではない。Spec-safety.md §3.5・§6.2）。
+        新しい通信断の種別を足すときはこの集合にも足す。
+        """
+        lidar_ignored = dev_item_effective(
+            self._dev_raw, self._now_ms(), self._dev_recv_ms, 'lidar_fault')
+        return tuple(sorted({
+            fault_type for fault_type, severity in self._active_fault_types
+            if severity == "RECOVERABLE"
+            and fault_type in _ENTRY_BLOCKING_RECOVERABLE_FAULTS
+            and not (fault_type == "LIDAR_LOST" and lidar_ignored)
+        }))
 
     def _on_estop_hw(self, msg):
         if bool(msg.data) == self._hw_estop:
@@ -927,10 +980,14 @@ class StateManager(Node):
         now = self._now_ms()
 
         if not self._link_timeout_fired:
-            timeout_ms = self.get_parameter('link_wait_timeout_ms').value
-            if now - self._boot_ms >= timeout_ms:
-                self._link_timeout_fired = True
-                self._process("sys.link_timeout", {}, "")
+            if self._hw_estop:
+                # 押下中はタイムアウトを数えず、解除時点から疎通確認の猶予を取り直す。
+                self._boot_ms = now
+            else:
+                timeout_ms = self.get_parameter('link_wait_timeout_ms').value
+                if now - self._boot_ms >= timeout_ms:
+                    self._link_timeout_fired = True
+                    self._process("sys.link_timeout", {}, "")
 
         if self._jog_active:
             lease_ms = self.get_parameter('jog_lease_ms').value

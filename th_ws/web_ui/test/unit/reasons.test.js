@@ -65,6 +65,12 @@ test('保存確定の拒否理由 teach_saved_finalized が日本語に解決す
   assert.notEqual(reasonLabel('teach_saved_finalized'), 'teach_saved_finalized')
 })
 
+// SM-3.1.1-19: 走行を止める回復フォルトが残る間のモード・行き先拒否（P1）。
+test('回復フォルトが残る間の拒否 recoverable_fault_active が日本語に解決する', () => {
+  assert.equal(REJECT_REASONS.recoverable_fault_active, '異常が解消していません')
+  assert.equal(reasonLabel('recoverable_fault_active'), '異常が解消していません')
+})
+
 // SM-3.1.2-118: 移動中・一時停止中の行き先拒否（transitions.yaml T-NAV-goto-reject）の
 // reject_reason_key。消えると理由が生キーで出る。
 test('移動中の行き先拒否 goto_while_nav が日本語に解決する', () => {

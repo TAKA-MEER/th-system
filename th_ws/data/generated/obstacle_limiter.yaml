@@ -15,8 +15,8 @@ obstacle_limiter:
     blind_max_total_deg: 90.0
     body_half_length_m: 0.275
     body_width_m: 0.55
-    brake_accel_mps2: 1.18
-    hysteresis_band_m: 0.08500000000000002
+    brake_accel_mps2: 1.0
+    hysteresis_band_m: 0.11499999999999999
     lock_stale_ms: 500
     manual_joy_timeout: 1.0
     muxed_stale_ms: 200
@@ -25,7 +25,7 @@ obstacle_limiter:
     normal_jerk_mps3: 0.5
     obstacle_cone_half_width_rad: 0.5
     obstacle_cone_half_width_reverse_rad: 0.6
-    obstacle_floor_distance_m: 0.42500000000000004
+    obstacle_floor_distance_m: 0.575
     obstacle_min_points: 3
     scan_stale_ms: 300
     state_stale_ms: 1500
