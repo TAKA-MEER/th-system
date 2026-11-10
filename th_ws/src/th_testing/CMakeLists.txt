@@ -543,6 +543,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_safety_monitor
     test/test_safety_monitor.py
     TIMEOUT 90)
+  # 起動時の /system/state 未受信猶予と、受信後の途絶検知（safety_monitor 本体）。
+  ament_add_pytest_test(test_state_startup_deadline_node
+    test/test_state_startup_deadline_node.py
+    TIMEOUT 90)
   # SG-A8 フォルト集約の Docker launch テスト（1b-4。
   # 2 重フォルトで 1 つ解消しても active=true（残りの代表）・全解消で active=false、
   # state_manager 経由で「はい」が残フォルト中は拒否されること。rclpy 要＝ホスト除外）

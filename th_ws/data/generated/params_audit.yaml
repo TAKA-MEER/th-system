@@ -6,7 +6,7 @@ params_audit:
     brake_delay_s: 0.2
     clear_margin_m: 0.3
     drivetrain_ceiling_mps: 0.71
-    floor_margin_m: 0.15
+    floor_margin_m: 0.3
     hysteresis_ratio: 0.2
     imu_bias_max_rad_s: 0.2
     imu_wz_implausible_rad_s: 10.0
@@ -29,7 +29,7 @@ params_audit:
     opcheck_scan_coverage_gap_deg: 20.0
     opcheck_spin_w_rad_s: 0.3
     person_margin_m: 0.4
-    safety_margin_m: 0.3
+    safety_margin_m: 0.45
     state_stale_ms: 1500
     two_point_spacing_m: 1.0
     v_calib: 0.15
