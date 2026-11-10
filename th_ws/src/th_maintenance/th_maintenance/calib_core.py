@@ -160,3 +160,23 @@ def verify_rotation(commanded_deg: float, measured_deg: float,
 def imu_all_calibrated(calib_status: int) -> bool:
     """BNO055 の sys/gyro/accel/mag が全て 3（完全）か。`/esp32/imu_calib_status` の値そのもの。"""
     return all(((calib_status >> shift) & 0x03) == 3 for shift in (0, 2, 4, 6))
+
+
+def rotation_ideal_seconds(target_deg: float, w_rads: float, taper_rad: float,
+                           min_w_rads: float) -> float:
+    """指令どおりの角速度で回れたときの所要時間（秒）。
+
+    終端 taper_rad は w が残り角度に比例して min_w_rads まで落ちる（calib_runner の式）。
+    実測の所要時間がこれを大きく超えたら、途中で角速度が絞られた（obstacle_limiter の
+    w_align_max など）と読める。実機 2026-11-10 の旋回は 4.4 秒のはずが 6.8〜12.5 秒だった。
+    """
+    target = math.radians(target_deg)
+    if target <= 0.0 or w_rads <= 0.0:
+        return 0.0
+    taper = min(taper_rad, target)
+    cruise = (target - taper) / w_rads
+    # テーパー部: w(r) = max(min_w, w*r/taper) を r=taper→0 で積分（dt = dr / w(r)）
+    r_knee = taper * min_w_rads / w_rads if taper > 0 else 0.0
+    t_prop = (taper / w_rads) * math.log(taper / r_knee) if r_knee > 0 else 0.0
+    t_min = r_knee / min_w_rads
+    return cruise + t_prop + t_min
