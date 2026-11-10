@@ -77,7 +77,7 @@ const ESTOP_DISABLED_IN_CARRY = 'estop_disabled_in_carry'
 // control the same flag. It now doubles as "W-1 dismissed", covering both
 // the ESTOP and fault-caused-PAUSE cases below.
 export default function Windows({
-  ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, pauseReason, attributes,
+  ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, activeFaultTypes = [], pauseReason, attributes,
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose, guideKey, onGuideClose,
   saveAsk, onSaveYes, onSaveNo, autoBrake,
@@ -259,8 +259,12 @@ export default function Windows({
               <p className="hint mt">{WIN_CARRY_ESTOP_DISABLED}</p>
               {/* 2026-11-10: 手押し中に ESP32 が切れると、物理ボタンの状態が
                   分からず、戻しても解除できない。原因を W-2 の中で言う。
-                  フォルトが解消したら消える（Spec-webui.md §4 W-2）。 */}
-              {faultActive && fault?.fault_type === 'ESP32_DISCONNECTED' && (
+                  /safety/fault は最新 1 件しか持たず、LIDAR_LOST と同時に立つと
+                  ESP32 を見落とすので、集合の /safety/active_faults を正本にする
+                  （古い機体向けに最新の fault_type も見る）。フォルトが解消したら
+                  消える（Spec-webui.md §4 W-2）。 */}
+              {(activeFaultTypes.includes('ESP32_DISCONNECTED')
+                || (faultActive && fault?.fault_type === 'ESP32_DISCONNECTED')) && (
                 <p className="hint mt" data-testid="w2-esp32-lost">{WIN_CARRY_ESP32_LOST}</p>
               )}
               {lastRejectReason === ESTOP_DISABLED_IN_CARRY && (

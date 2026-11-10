@@ -40,7 +40,7 @@ function EstopReleaseBar({ show, onRelease }) {
 }
 
 function AppShellInner({ screenName, screenId, children }) {
-  const { ros, state, fault, stale } = useSystemState()
+  const { ros, state, fault, activeFaultTypes, stale } = useSystemState()
   const sendTrigger = useTrigger()
   // N-15: /ui/active_screen (DetailedDesign-wp1.md WP-UI-01 §3.1). Only
   // publishes once a screen has actually announced its screen_id -- see
@@ -307,6 +307,7 @@ function AppShellInner({ screenName, screenId, children }) {
         estopHw={estopHw}
         estopFromUi={!!state?.estop_from_ui}
         fault={fault}
+        activeFaultTypes={activeFaultTypes}
         pauseReason={state?.pause_reason ?? ''}
         attributes={attributes}
         onTrigger={sendTrigger}

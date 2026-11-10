@@ -14,6 +14,10 @@ export const TOPICS = {
   // display, W-1), but it wasn't wired up -- see DetailedDesign-wp1.md
   // WP-UI-01 §11 "W-1 generalization".
   SAFETY_FAULT: '/safety/fault',
+  // いま立っているフォルト種別の集合（Spec-safety.md §3.5.5）。RELIABLE＋
+  // TRANSIENT_LOCAL・depth 1。/safety/fault は最新 1 件しか持たないため、
+  // LIDAR_LOST と ESP32_DISCONNECTED が同時に立つと後者を取りこぼす（2026-11-10）。
+  ACTIVE_FAULTS: '/safety/active_faults',
   // フォルトの履歴（Spec-safety.md §3.5.5）。RELIABLE＋TRANSIENT_LOCAL・depth 1 で
   // 最新の 1 通（直近 50 件）。**TOPICS に置くこと**（SERVICES に置いたせいで
   // TOPICS.FAULT_HISTORY が undefined のまま購読が張られず、実機で履歴が 1 件も
@@ -137,6 +141,7 @@ export const MSG_TYPES = {
   ACTIVE_SCREEN: 'th_system_msgs/ActiveScreen',
   BOOL: 'std_msgs/Bool',
   FAULT_STATUS: 'th_system_msgs/FaultStatus',
+  ACTIVE_FAULTS: 'th_system_msgs/ActiveFaults',
   FAULT_HISTORY: 'th_system_msgs/FaultHistory',
   MAP_SESSION_STATUS: 'th_system_msgs/MapSessionStatus',
   // WP-UI-03: geometry_msgs/Twist (roslib shorthand "geometry_msgs/Twist")
