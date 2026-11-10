@@ -430,7 +430,7 @@ bash scripts/run_tests.sh --all --sim  # 単体 ＋ 結合 ＋ シミュレー�
 | ~~A-2~~ | ~~起動直後の `STATE_INCONSISTENT`・自動ブレーキの余裕（`brake_accel_mps2` 1.0・`floor_margin_m` 0.30・`safety_margin_m` 0.45）~~ | **配線済み・実機未確認**（`a409809`。R-72） |
 | ~~A-3~~ | ~~LiDAR 点検の誤判定・IMU 点検の基準・校正時刻の UTC・旋回の遅れ警告~~ | **配線済み・実機未確認**（`3ab25db`。R-74） |
 | ~~A-4~~ | ~~W-1 の古い「解消した異常」・W-2 の ESP32 切断・拒否理由・IMU 校正の案内~~ | **配線済み・実機未確認**（`0ac8ba8`。R-71） |
-| A-5 | **旋回の校正を一定の遅い角速度で回し、終わりぎわはモーターの不感帯を下回らない**（[Spec-checks.md](spec/Spec-checks.md) 校正 2 旋回。`a13fe78`）。**モーターの不感帯の実測**が先に要る（[Spec-params.md](spec/Spec-params.md)。(c) 未測定） | 未着手（2026-11-10 は codex・opencode とも利用枠切れ。原因の調査は `3ab25db` に記録） |
+| A-5 | **その場で向きを変える動作の速さ**: 向き合わせ（`ALIGN`）と校正の旋回は、回すときは 0.40 rad/s 以上（不感帯の上）で回し、許容に入ったら止める。校正の旋回は 0.45 rad/s 一定で、絞られた回は無効にする。`w_align_max` 0.3 → 0.45（[Spec-onsite.md](spec/Spec-onsite.md) §6.2.1・[Spec-checks.md](spec/Spec-checks.md)・[Spec-safety.md](spec/Spec-safety.md) §2.2）。不感帯は 2026-11-10 に実測済み（0.25〜0.30 rad/s。`meas09_deadband.py`） | 未着手（仕様は済み。実装担当の利用枠が戻ってから） |
 | A-6 | **ラズパイの電源の強化**（走行中に電圧低下 30 回・予期しない再起動 1 回。LiDAR・ESP32 が同時に止まる） | ユーザーが方法を検討中。直したら `vcgencmd get_throttled` が `0x0` かを見る |
 | A-7 | 制動測定のスクリプト（`meas07_drive` の 0 指令が S 字ランプを通り障害物ブレーキを測れない・`meas07_analyze` が事象を取り違える） | 未着手（低） |
 | A-8 | 起動直後に `LIMITER_DEAD` が 0.3 秒出たことが 1 回（A-2 では直していない。初回受信後の 250 ms 超のすき間の疑い） | 未着手。R-72 で回数を見る |
