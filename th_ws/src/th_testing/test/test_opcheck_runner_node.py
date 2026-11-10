@@ -144,7 +144,8 @@ def generate_test_description():
             'motor_follow_min_ratio': MOTOR_FOLLOW_MIN_RATIO,
             # j 用の死角マスク（実角度）。a〜i は LIDAR 項目を使わないので
             # 影響しない
-            'blind_angle_ranges': [10.0, 20.0],
+            'blind_angle_ranges': [10.0, 20.0, 100.0, 110.0,
+                                   190.0, 200.0, 280.0, 290.0],
         }],
         output='screen',
     )
@@ -612,9 +613,49 @@ class TestOpcheckRunnerNode(unittest.TestCase):
         msg.range_min = 0.05
         msg.range_max = 12.0
         msg.ranges = [5.0] * 360
-        for i in range(190, 200):
-            msg.ranges[i] = 0.3
+        for band in self._BANDS:
+            i0 = int(round(band[0] + 180.0)) % 360
+            for d in range(int(round(band[1] - band[0]))):
+                msg.ranges[(i0 + d) % 360] = 0.3
         self.pub_scan.publish(msg)
+
+    _BANDS = ((10.0, 20.0), (100.0, 110.0), (190.0, 200.0), (280.0, 290.0))
+
+    def _publish_sparse_scan(self, offset_deg=0.0):
+        """2026-11-10 T-14 の実機形: 各帯に 1 フレーム 3 本だけ近距離を置く。"""
+        k = getattr(self, '_sparse_k', 0)
+        self._sparse_k = k + 1
+        msg = LaserScan()
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.header.frame_id = 'laser_link'
+        msg.angle_min = -math.pi
+        msg.angle_max = math.pi
+        msg.angle_increment = 2.0 * math.pi / 360.0
+        msg.range_min = 0.05
+        msg.range_max = 12.0
+        msg.ranges = [5.0] * 360
+        for b0, b1 in self._BANDS:
+            i0 = int(round(b0 + offset_deg + 180.0))
+            for j in range(3):
+                msg.ranges[(i0 + (k * 3 + j) % 10) % 360] = 0.3
+        self.pub_scan.publish(msg)
+
+    def _drive_sparse_lidar(self, offset_deg, timeout=6.0):
+        self._set_mode('OPCHECK', 'LIST')
+        res = self._run_item('LIDAR')
+        assert res.started, res.message
+        self._events.clear()
+        self._status.clear()
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self._publish_sparse_scan(offset_deg)
+            self._spin(0.1)
+            hits = [e for e in self._events
+                    if e.event == 'evt.check_result'
+                    and json.loads(e.arg_json).get('item') == 'LIDAR']
+            if hits:
+                return json.loads(hits[-1].arg_json)
+        raise AssertionError('LIDAR 項目の evt.check_result が出なかった')
 
     # ════════════════════════════════════════════════════════
     # j. LIDAR: angle_min=-π でも実角度で比べる（本番の経路）
@@ -644,6 +685,17 @@ class TestOpcheckRunnerNode(unittest.TestCase):
         args = json.loads(hits[-1].arg_json)
         assert args.get('result') == 'OK', \
             f'実角度どおりの帯なのに LIDAR が OK にならなかった: {args}'
+
+    def test_j2_sparse_bands_ok(self):
+        """4 帯に 1 フレーム 3 本ずつ（実機 2026-11-10 と同じ疎さ）でも OK。"""
+        args = self._drive_sparse_lidar(0.0)
+        assert args.get('result') == 'OK', args
+
+    def test_j3_sparse_shifted_10deg_is_ng(self):
+        """マスクを 10° 外へずらすと NG。ノードが 1 フレームしか集めない変異では
+        各帯が幅 5° 未満で消えて OK になり、この試験が赤くなる（T-14）。"""
+        args = self._drive_sparse_lidar(10.0)
+        assert args.get('result') == 'NG', args
 
     # ════════════════════════════════════════════════════════
     # m. ESTOP: 離→押→離で OK。押した時点では確定しない（SG-B4）
@@ -958,8 +1010,8 @@ class TestOpcheckRunnerNode(unittest.TestCase):
             expected_output='"key":"coverage_gap_deg","value":25.0', timeout=3, stream='stderr')
         self._publish_effect('record_result', {'item': 'LIDAR', 'result': 'NG'})
 
-    def test_v_imu_needs_calibration_keeps_calib_state_in_basis(self, proc_output):
-        """校正状態(判定時点の値)が結果に残る。画面から数秒で消える問題の機体側の手当て。"""
+    def test_v_imu_other_axes_are_display_only(self, proc_output):
+        """実機は mag 2・sys 0 でも、ジャイロ校正済みなら OK。値は根拠に残す。"""
         self._set_mode('OPCHECK', 'LIST')
         res = self._run_item('IMU')
         assert res.started, res.message
@@ -973,22 +1025,23 @@ class TestOpcheckRunnerNode(unittest.TestCase):
             msg.angular_velocity.z = 0.002
             self.pub_imu.publish(msg)
             self._spin(0.05)
-            if any(s.item == 'IMU' and s.result == 'WARN' for s in self._status):
+            if any(s.item == 'IMU' and s.result == 'OK' for s in self._status):
                 break
-        finals = [s for s in self._status if s.item == 'IMU' and s.result == 'WARN']
+        finals = [s for s in self._status if s.item == 'IMU' and s.result == 'OK']
         assert finals, [(s.item, s.result, s.detail) for s in self._status]
         st = finals[-1]
-        assert st.detail == 'needs_calibration'
+        assert st.detail == ''
         by = self._basis(st)
+        assert by['calib_gyro']['value'] == 3 and by['calib_gyro']['ok'] is True
         assert by['calib_sys']['value'] == 3 and by['calib_sys']['ok'] is True
-        assert by['calib_accel']['value'] == 2 and by['calib_accel']['ok'] is False
-        assert by['calib_mag']['value'] == 0 and by['calib_mag']['ok'] is False
+        assert by['calib_accel']['value'] == 2 and by['calib_accel']['ok'] is True
+        assert by['calib_mag']['value'] == 0 and by['calib_mag']['ok'] is True
         assert by['imu_max_wz']['value'] == pytest.approx(0.002, abs=1e-4)
         proc_output.assertWaitFor(
-            expected_output='IMU 判定: WARN (needs_calibration)', timeout=3, stream='stderr')
+            expected_output='IMU 判定: OK', timeout=3, stream='stderr')
         proc_output.assertWaitFor(
             expected_output='"key":"calib_mag","value":0', timeout=3, stream='stderr')
-        self._publish_effect('record_result', {'item': 'IMU', 'result': 'WARN'})
+        self._publish_effect('record_result', {'item': 'IMU', 'result': 'OK'})
 
     def test_w_progress_status_has_empty_basis(self):
         """判定中(UNKNOWN)の CheckStatus は basis_json が空(古い画面と同じ見え方)。"""

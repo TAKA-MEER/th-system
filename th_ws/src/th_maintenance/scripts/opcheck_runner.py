@@ -43,7 +43,8 @@ except ImportError:
     Node = object
     RS_OK = False
 
-from th_maintenance.check_core import (CheckParams, NG, OK, basis_to_json, judge_estop,
+from th_maintenance.check_core import (LIDAR_BLIND_FRAMES, CheckParams, NG, OK,
+                                       basis_to_json, judge_estop,
                                        judge_gyro_unit,
                                        judge_imu, judge_lidar,
                                        judge_motor_samples, verdict_to_fsm_result,
@@ -181,6 +182,7 @@ class OpcheckRunner(Node):
         self._scan_prev_stamp = None
         self._scan_period = None
         self._scan_ranges = []
+        self._lidar_frames: list = []    # 死角マスク判定に使う /scan の ranges 列
         self._scan_angle_inc = math.radians(1.0)
         self._scan_angle_min = 0.0  # rad。初回受信まで alive が偽なので値は使われない
         self._last_lidar_verdict = (None, None)
@@ -320,6 +322,7 @@ class OpcheckRunner(Node):
         elif item == "LIDAR":
             self._scan_prev_stamp = None
             self._scan_period = None
+            self._lidar_frames = []
             self._last_lidar_verdict = (None, None)
 
     def _close_item(self):
@@ -630,8 +633,12 @@ class OpcheckRunner(Node):
         # 最初の 1 枚では周期が測れない。ここで判定すると「受信周期」の根拠が
         # 空のまま最終判定が確定してしまう（以後は同じ判定なら出し直さない）ので、
         # 2 枚目を待つ。1 枚しか来なければ _lidar_tick が途絶として判定する。
-        if self._item == "LIDAR" and not first_scan:
-            self._update_lidar_verdict()
+        # 死角マスクは 1 枚では柱が数本しか写らないので LIDAR_BLIND_FRAMES 枚
+        # 集めてから判定する（2026-11-10 T-14）。
+        if self._item == "LIDAR" and not first_scan and not self._final_sent:
+            self._lidar_frames.append(list(msg.ranges))
+            if len(self._lidar_frames) >= LIDAR_BLIND_FRAMES:
+                self._update_lidar_verdict()
 
     def _lidar_tick(self):
         if self._item != "LIDAR":
@@ -653,10 +660,12 @@ class OpcheckRunner(Node):
         return [float(v) for v in (value or [])]
 
     def _update_lidar_verdict(self):
+        if self._final_sent:
+            return
         verdict = judge_lidar(
             alive=self._scan_alive,
             period_s=self._scan_period,
-            ranges=self._scan_ranges,
+            frames=self._lidar_frames,
             angle_increment_deg=math.degrees(self._scan_angle_inc),
             configured_ranges=self._configured_blind(),
             p=self._p,

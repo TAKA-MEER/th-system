@@ -95,18 +95,19 @@ def judge_imu_auto(calib_status: int, gyro_bias_rad_s: float,
 
 
 def judge_lidar_auto(alive: bool, period_s: float | None,
-                     ranges: Sequence[float], angle_increment_deg: float,
+                     frames: Sequence[Sequence[float]], angle_increment_deg: float,
                      configured_ranges: Sequence[float],
                      p: CheckParams, *, angle_min_deg: float) -> AutoItemVerdict:
     """LiDAR の自動判定（check_core.judge_lidar の写し）。
 
-    死活・周期・全周の有効性・死角マスクのズレを順に見る。`angle_min_deg`
-    は `LaserScan.angle_min` の度数（必須キーワード。そのまま渡す）。
+    死活・周期・全周の有効性・死角マスクのズレを順に見る。`frames` は直近の
+    `/scan` の `ranges` 列（複数フレーム）。`angle_min_deg` は
+    `LaserScan.angle_min` の度数（必須キーワード。そのまま渡す）。
     """
     verdict = judge_lidar(
         alive=alive,
         period_s=period_s,
-        ranges=ranges,
+        frames=frames,
         angle_increment_deg=angle_increment_deg,
         configured_ranges=configured_ranges,
         p=p,

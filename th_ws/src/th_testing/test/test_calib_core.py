@@ -133,3 +133,37 @@ def test_imu_all_calibrated_requires_all_four_at_3():
     assert not cc.imu_all_calibrated(0xFE)          # mag=2
     assert not cc.imu_all_calibrated(0xBF)          # sys=2
     assert not cc.imu_all_calibrated(0x00)
+
+
+def test_calibrated_at_now_has_jst_offset():
+    """コンテナが UTC でも「前回」が 9 時間ずれない（2026-11-10 T-11）。"""
+    from datetime import datetime, timezone
+    s = cc.calibrated_at_now()
+    t = datetime.fromisoformat(s)
+    assert t.utcoffset() is not None
+    assert t.utcoffset().total_seconds() == 9 * 3600
+    # 明示の UTC 時刻も日本時間へ直して記録する
+    utc = datetime(2026, 11, 10, 8, 35, 55, tzinfo=timezone.utc)
+    assert cc.calibrated_at_now(utc) == "2026-11-10T17:35:55+09:00"
+
+
+class TestRotationIdealSeconds:
+    def test_matches_numeric_integration(self):
+        import math
+        w, taper, mn = 0.77, math.radians(15.0), 0.15
+        target = math.radians(180.0)
+        r, t, dt = target, 0.0, 1e-4
+        while r > 0:
+            ww = max(mn, w * r / taper) if r < taper else w
+            r -= ww * dt
+            t += dt
+        assert abs(cc.rotation_ideal_seconds(180.0, w, taper, mn) - t) < 0.02
+
+    def test_capped_rate_is_far_slower_than_ideal(self):
+        import math
+        ideal = cc.rotation_ideal_seconds(180.0, 0.77, math.radians(15.0), 0.15)
+        assert 4.0 < ideal < 5.0          # 実機の 6.8〜12.5 秒は 1.3 倍超 → 警告対象
+        assert 6.8 > 1.3 * ideal
+
+    def test_zero_inputs(self):
+        assert cc.rotation_ideal_seconds(0.0, 0.5, 0.26, 0.15) == 0.0

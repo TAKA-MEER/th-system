@@ -500,8 +500,26 @@ class CalibRunner(Node):
             self._cmd_active = False
             self.get_logger().info("/cmd_vel_behavior を 0 にした")
 
+    def _log_run_duration(self, item: str):
+        elapsed = self._now_s() - self._run_t0
+        if item != "ROTATION":
+            self.get_logger().info(f"{item} の走行時間 {elapsed:.1f} 秒")
+            return
+        base = (self._pending or self._current_value("ROTATION")).get("wheel_base", 0.39)
+        w = min(_MAX_ANGULAR_RADS, self._p("v_calib") / (base / 2.0))
+        ideal = calib_core.rotation_ideal_seconds(
+            self._commanded(item), w, _TAPER_ANGLE_RAD, _MIN_ANGULAR_RADS)
+        msg = f"ROTATION の走行時間 {elapsed:.1f} 秒（指令どおりなら {ideal:.1f} 秒）"
+        if ideal > 0.0 and elapsed > 1.3 * ideal:
+            self.get_logger().warn(
+                msg + " → 角速度が絞られた疑い（前方が obstacle_floor_distance_m より近いと obstacle_limiter が"
+                "旋回を w_align_max に制限する。周囲を空けて測り直す）")
+        else:
+            self.get_logger().info(msg)
+
     def _run_finished(self):
         item = self._item
+        self._log_run_duration(item)
         if self._phase == RUNNING:
             self._phase = WAIT_MEASURED
             self.get_logger().info(f"{item} の測定走行が完了 → 実測値の入力待ち")
@@ -866,7 +884,7 @@ class CalibRunner(Node):
                 "measured_verify": self._verify_measured,
                 "detail": self._reason,
             }
-        calibrated_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+        calibrated_at = calib_core.calibrated_at_now()
         self._store.commit(item, values, calibrated_at, verification,
                            operator=self._operator or str(self.get_parameter("calib_operator").value),
                            params_digest=self._params_digest())

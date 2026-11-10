@@ -80,10 +80,15 @@ class TestImuAuto:
         assert v.result == "NG"
 
     def test_needs_calibration_is_warn(self):
-        # sys/gyro/accel/mag のいずれかが 3 未満 → WARN（故障扱いにしない）
+        # ジャイロが 3 未満 → WARN（故障扱いにしない）
         v = judge_imu_auto(0x00, 0.01, 0.05, True, make_params())
         assert v.result == "WARN"
         assert v.reason == "needs_calibration"
+
+    def test_other_axes_are_display_only(self):
+        # sys/accel/mag が 3 未満でもジャイロが校正済みなら OK（T-11）
+        v = judge_imu_auto(0x00 | (3 << 4), 0.01, 0.05, True, make_params())
+        assert v.result == "OK"
 
     def test_implausible_wz_is_ng(self):
         # dps のまま等の単位取り違え → NG
@@ -94,9 +99,14 @@ class TestImuAuto:
 
 # ── LIDAR（check_core の写し） ──
 
+
+def _frames(ranges, n=3):
+    return [list(ranges) for _ in range(n)]
+
+
 class TestLidarAuto:
     def test_healthy_is_ok(self):
-        v = judge_lidar_auto(True, 0.1, flat_scan(), 1.0, [], make_params(),
+        v = judge_lidar_auto(True, 0.1, _frames(flat_scan()), 1.0, [], make_params(),
                              angle_min_deg=0.0)
         assert v.result == "OK"
 
@@ -106,7 +116,7 @@ class TestLidarAuto:
         assert v.reason == "no_data"
 
     def test_stale_period_is_ng(self):
-        v = judge_lidar_auto(True, 1.0, flat_scan(), 1.0, [], make_params(),
+        v = judge_lidar_auto(True, 1.0, _frames(flat_scan()), 1.0, [], make_params(),
                              angle_min_deg=0.0)
         assert v.result == "NG"
         assert v.reason == "scan_stale"
@@ -116,7 +126,7 @@ class TestLidarAuto:
         ranges = [5.0] * 360
         for i in range(10, 20):
             ranges[i] = 0.3
-        v = judge_lidar_auto(True, 0.1, ranges, 1.0, [100.0, 110.0], make_params(),
+        v = judge_lidar_auto(True, 0.1, _frames(ranges), 1.0, [100.0, 110.0], make_params(),
                              angle_min_deg=0.0)
         assert v.result == "NG"
         assert v.reason == "blind_mismatch"
@@ -137,13 +147,13 @@ class TestLidarAutoAngleMin:
 
     def test_match_at_minus_pi_is_ok(self):
         ranges = self._real_band_scan([(10.0, 20.0)])
-        v = judge_lidar_auto(True, 0.1, ranges, 1.0, [10.0, 20.0],
+        v = judge_lidar_auto(True, 0.1, _frames(ranges), 1.0, [10.0, 20.0],
                              make_params(), angle_min_deg=-180.0)
         assert v.result == "OK"
 
     def test_shifted_10deg_at_minus_pi_is_ng(self):
         ranges = self._real_band_scan([(10.0, 20.0)])
-        v = judge_lidar_auto(True, 0.1, ranges, 1.0, [20.0, 30.0],
+        v = judge_lidar_auto(True, 0.1, _frames(ranges), 1.0, [20.0, 30.0],
                              make_params(), angle_min_deg=-180.0)
         assert v.result == "NG"
         assert v.reason == "blind_mismatch"
@@ -151,7 +161,7 @@ class TestLidarAutoAngleMin:
     def test_band_across_seam_is_merged(self):
         ranges = self._real_band_scan([(-185.0, -175.0)])
         p = make_params(opcheck_blind_tolerance_deg=2.0)
-        v = judge_lidar_auto(True, 0.1, ranges, 1.0, [-185.0, -175.0],
+        v = judge_lidar_auto(True, 0.1, _frames(ranges), 1.0, [-185.0, -175.0],
                              p, angle_min_deg=-180.0)
         assert v.result == "OK"
 

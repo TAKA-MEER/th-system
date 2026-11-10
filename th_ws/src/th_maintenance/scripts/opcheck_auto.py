@@ -46,7 +46,7 @@ from th_maintenance.auto_check_core import (
     judge_imu_auto,
     judge_lidar_auto,
 )
-from th_maintenance.check_core import CheckParams
+from th_maintenance.check_core import LIDAR_BLIND_FRAMES, CheckParams
 
 # opcheck_runner.py の PARS と同値（test_maintenance_registry_driven.py が
 # registry と照合する正本は向こう。こちらは同じ生成 yaml を読むための写し）。
@@ -116,6 +116,7 @@ class OpcheckAuto(Node):
         self._scan_prev_stamp = None
         self._scan_period = None
         self._scan_ranges: list = []
+        self._scan_frames: list = []   # 死角マスク判定に使う直近の ranges 列
         self._scan_angle_inc = math.radians(1.0)
         self._scan_angle_min = 0.0  # rad。初回受信まで scan_alive が偽なので値は使われない
         # /system/dev_mode（JSON 文字列）と受信時刻
@@ -178,6 +179,9 @@ class OpcheckAuto(Node):
                 self._scan_period = dt
         self._scan_prev_stamp = stamp
         self._scan_ranges = list(msg.ranges)
+        self._scan_frames.append(list(msg.ranges))
+        if len(self._scan_frames) > LIDAR_BLIND_FRAMES:
+            self._scan_frames.pop(0)
         self._scan_angle_min = msg.angle_min
         if msg.angle_increment > 0.0:
             self._scan_angle_inc = msg.angle_increment
@@ -217,7 +221,7 @@ class OpcheckAuto(Node):
             lidar = judge_lidar_auto(
                 alive=scan_alive,
                 period_s=self._scan_period,
-                ranges=self._scan_ranges,
+                frames=self._scan_frames,
                 angle_increment_deg=math.degrees(self._scan_angle_inc),
                 configured_ranges=self._configured_blind(),
                 p=self._p,
