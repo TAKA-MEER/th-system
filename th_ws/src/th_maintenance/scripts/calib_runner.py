@@ -88,6 +88,8 @@ PARS: dict = {
     # 値は従来の直書きと同じ。_ms は使う側で /1000.0 して秒に戻す）
     "calib_linear_distance_m": 1.0,
     "calib_rotation_deg": 180.0,
+    "calib_rotation_w_rps": 0.45,
+    "turn_in_place_w_min_rps": 0.40,
     "calib_run_timeout_ms": 60000,
     # BLIND の検証: 恒常的な写り込みを推定するために集める /scan のフレーム数と、待つ上限。
     "calib_blind_verify_frames": 15,
@@ -127,8 +129,21 @@ _STATUS_PERIOD_S = 0.5
 _TAPER_DIST_M = 0.10     # 終端でこの距離から減速
 _TAPER_ANGLE_RAD = math.radians(15.0)
 _MIN_LINEAR_MPS = 0.04
-_MIN_ANGULAR_RADS = 0.15
-_MAX_ANGULAR_RADS = 1.0
+# 旋回の角速度は registry の calib_rotation_w_rps（0.45）一定。終わりぎわの
+# テーパーも turn_in_place_w_min_rps（0.40。不感帯の上）を下回らない
+# （Spec-checks.md 校正「2 旋回」。2026-11-10）。
+
+# 「絞られた回は無効」の判定（Spec-checks.md 校正「2 旋回」）。obstacle_limiter は
+# 前方が d_floor より近いと angular を min(w_max, w_align_max) に絞るが、
+# LimiterStatus に angular の欄は無い。limiter の出力 /cmd_vel を購読して
+# 自分の指令と比べる（購読だけなので「/cmd_vel の publisher は limiter だけ」の
+# 不変ルールには触れない）。normal_angular_accel_rps2 は 0（ランプ無効）なので、
+# 絞られていなければ同じ値が出る。厳密な等号では比べない。
+_THROTTLE_GRACE_S = 0.5        # 走り出しの猶予
+_THROTTLE_CONFIRM_S = 0.5      # 低い状態が続いたら無効
+_THROTTLE_TOL_RPS = 0.02       # これ以内の差は同じとみなす
+_CMD_VEL_STALE_S = 0.5         # /cmd_vel が届いていない間は判定しない
+_THROTTLE_REASON = "rotation_throttled"
 
 
 def _json_str(text: str) -> str:
@@ -200,6 +215,12 @@ class CalibRunner(Node):
         self._run_yaw_prev = None
         self._run_progress = 0.0
 
+        # 旋回が安全装置に絞られたかの判定（/cmd_vel は obstacle_limiter の出力。
+        # 購読だけ。値は「自分の指令と比べる」ためだけに使う）。
+        self._cmd_vel_wz = None
+        self._cmd_vel_last_s = None
+        self._throttle_since = None
+
         # IMU
         self._imu_calib = 0
 
@@ -231,6 +252,8 @@ class CalibRunner(Node):
         self.create_subscription(StateEffect, "/system/effect", self._on_effect, effect_qos)
         self.create_subscription(Bool, "/safety/estop_hw", self._on_estop_hw, 10)
         self.create_subscription(Odometry, "/odom", self._on_odom, 10)
+        # limiter の出力（絞られたかを自分の指令と比べるためだけに購読）。
+        self.create_subscription(Twist, "/cmd_vel", self._on_cmd_vel, 10)
         self.create_subscription(UInt8, "/esp32/imu_calib_status", self._on_imu_calib, 10)
         self.create_subscription(LaserScan, "/scan", self._on_scan, qos_profile_sensor_data)
         self.create_subscription(LaserScan, "/scan_filtered", self._on_scan_filtered,
@@ -410,6 +433,7 @@ class CalibRunner(Node):
         self._run_yaw_acc = 0.0
         self._run_progress = 0.0
         self._run_t0 = self._now_s()
+        self._throttle_since = None
         self._phase = VERIFY_RUNNING if verify else RUNNING
         self.get_logger().info(f"自律走行を開始: {item}（verify={verify}）")
         self._publish_status()
@@ -429,6 +453,35 @@ class CalibRunner(Node):
         return (self._odom is not None and self._odom_last_s is not None
                 and self._now_s() - self._odom_last_s
                 <= self._p("calib_odom_stale_ms") / 1000.0)
+
+    def _on_cmd_vel(self, msg: Twist):
+        self._cmd_vel_wz = float(msg.angular.z)
+        self._cmd_vel_last_s = self._now_s()
+
+    def _rotation_throttled(self, commanded_wz: float) -> bool:
+        """旋回が安全装置に絞られていないか（Spec-checks.md 校正「2 旋回」）。
+
+        limiter の出力 /cmd_vel が自分の指令より低い状態が一定時間続いたら True。
+        走り出しの猶予の間・/cmd_vel が届いていない間は判定しない
+        （無効にもしない）。所要時間の比較では判定しない（車輪が目標の 9 割に
+        届くまで 5〜7 秒かかるので、時間は毎回超え得る）。
+        """
+        now = self._now_s()
+        if now - self._run_t0 < _THROTTLE_GRACE_S:
+            self._throttle_since = None
+            return False
+        if (self._cmd_vel_last_s is None
+                or now - self._cmd_vel_last_s > _CMD_VEL_STALE_S):
+            self._throttle_since = None
+            return False
+        if abs(self._cmd_vel_wz - commanded_wz) > _THROTTLE_TOL_RPS:
+            if self._throttle_since is None:
+                self._throttle_since = now
+            elif now - self._throttle_since >= _THROTTLE_CONFIRM_S:
+                return True
+            return False
+        self._throttle_since = None
+        return False
 
     def _ctrl_tick(self):
         # /system/state が来なくなったら、CALIB のつもりのまま走り続けない。
@@ -481,15 +534,21 @@ class CalibRunner(Node):
             if remaining <= 0.0:
                 done = True
             else:
-                # 検証走行中は適用済みの値（bridge に入っている方）で角速度を計算する。
-                base = (self._pending or self._current_value("ROTATION")).get("wheel_base", 0.39)
-                w = min(_MAX_ANGULAR_RADS, self._p("v_calib") / (base / 2.0))
+                # wheel_base の校正値で速さを変えない（Spec-checks.md 校正「2 旋回」。
+                # 2026-11-10 ユーザー決定: 毎回 0.45 rad/s 一定）。終わりぎわの
+                # テーパーも、その場旋回の下限（0.40。不感帯の上）を下回らない。
+                w = self._p("calib_rotation_w_rps")
                 if remaining < _TAPER_ANGLE_RAD:
-                    w = max(_MIN_ANGULAR_RADS, w * remaining / _TAPER_ANGLE_RAD)
+                    w = max(self._p("turn_in_place_w_min_rps"),
+                            w * remaining / _TAPER_ANGLE_RAD)
                 twist.angular.z = w
         if done:
             self._halt()
             self._run_finished()
+            return
+        if (self._item == "ROTATION"
+                and self._rotation_throttled(twist.angular.z)):
+            self._run_failed(_THROTTLE_REASON)
             return
         self._pub_cmd.publish(twist)
         self._cmd_active = True
@@ -505,15 +564,18 @@ class CalibRunner(Node):
         if item != "ROTATION":
             self.get_logger().info(f"{item} の走行時間 {elapsed:.1f} 秒")
             return
-        base = (self._pending or self._current_value("ROTATION")).get("wheel_base", 0.39)
-        w = min(_MAX_ANGULAR_RADS, self._p("v_calib") / (base / 2.0))
+        w = self._p("calib_rotation_w_rps")
         ideal = calib_core.rotation_ideal_seconds(
-            self._commanded(item), w, _TAPER_ANGLE_RAD, _MIN_ANGULAR_RADS)
+            self._commanded(item), w, _TAPER_ANGLE_RAD,
+            self._p("turn_in_place_w_min_rps"))
         msg = f"ROTATION の走行時間 {elapsed:.1f} 秒（指令どおりなら {ideal:.1f} 秒）"
+        # 所要時間は無効の判定には使わない（車輪が目標の 9 割に届くまで 5〜7 秒
+        # かかるので、時間の比較は毎回超え得る）。警告はログに残すだけ。
         if ideal > 0.0 and elapsed > 1.3 * ideal:
             self.get_logger().warn(
-                msg + " → 角速度が絞られた疑い（前方が obstacle_floor_distance_m より近いと obstacle_limiter が"
-                "旋回を w_align_max に制限する。周囲を空けて測り直す）")
+                msg + " → 角速度が絞られた疑い（前方が obstacle_floor_distance_m より近いと"
+                " obstacle_limiter が旋回を w_align_max に制限する。"
+                f"/cmd_vel の比較で {_THROTTLE_REASON} にならなければ、周囲を空けて測り直す）")
         else:
             self.get_logger().info(msg)
 

@@ -174,9 +174,17 @@ def rotation_ideal_seconds(target_deg: float, w_rads: float, taper_rad: float,
     if target <= 0.0 or w_rads <= 0.0:
         return 0.0
     taper = min(taper_rad, target)
+    if taper <= 0.0 or min_w_rads <= 0.0:
+        return target / w_rads
+    # 下限が巡航の速さ以上だと r_knee >= taper になり log(taper/r_knee) が 0 以下
+    # （負の時間）になる。指令 max(min_w, w*r/taper) はテーパー部ずっと min_w
+    # （巡航以上）なので、テーパー部は taper/min_w で積分する。
+    if min_w_rads >= w_rads:
+        return (target - taper) / w_rads + taper / min_w_rads
+    min_w = min_w_rads
     cruise = (target - taper) / w_rads
     # テーパー部: w(r) = max(min_w, w*r/taper) を r=taper→0 で積分（dt = dr / w(r)）
-    r_knee = taper * min_w_rads / w_rads if taper > 0 else 0.0
+    r_knee = taper * min_w / w_rads
     t_prop = (taper / w_rads) * math.log(taper / r_knee) if r_knee > 0 else 0.0
-    t_min = r_knee / min_w_rads
+    t_min = r_knee / min_w
     return cruise + t_prop + t_min

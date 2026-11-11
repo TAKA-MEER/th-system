@@ -42,7 +42,7 @@ import launch_testing.actions
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from std_msgs.msg import UInt8
-from th_system_msgs.msg import StateEffect, StateEvent, SystemState
+from th_system_msgs.msg import CalibStatus, StateEffect, StateEvent, SystemState
 from th_system_msgs.srv import ApplyCalib, RollbackCalib, StartCalib, SubmitCalib
 
 CALIB_DIR = tempfile.mkdtemp(prefix='calib_runner_node_')
@@ -62,6 +62,7 @@ def generate_test_description():
             'calib_dir': CALIB_DIR,
             'params_digest_path': os.path.join(CALIB_DIR, 'none.json'),
             'calib_linear_distance_m': DIST_M,
+            'calib_rotation_deg': 90.0,
             'v_calib': V_CALIB,
             'calib_linear_tolerance_ratio': 0.05,
             'calib_run_timeout_ms': 30000,
@@ -91,13 +92,16 @@ class TestCalibRunnerNode(unittest.TestCase):
         self.cmds = []
         self.cmd_vel_direct = []
         self.events = []
+        self.statuses = []
         self.node.create_subscription(Twist, '/cmd_vel_behavior', self.cmds.append, 10)
         self.node.create_subscription(Twist, '/cmd_vel', self.cmd_vel_direct.append, 10)
         self.node.create_subscription(StateEvent, '/system/event', self.events.append, 10)
+        self.node.create_subscription(CalibStatus, '/calib/status', self.statuses.append, 10)
         self.pub_state = self.node.create_publisher(SystemState, '/system/state', _STATE_QOS)
         self.pub_effect = self.node.create_publisher(StateEffect, '/system/effect', 10)
         self.pub_odom = self.node.create_publisher(Odometry, '/odom', 10)
         self.pub_imu = self.node.create_publisher(UInt8, '/esp32/imu_calib_status', 10)
+        self.pub_cmd_vel = self.node.create_publisher(Twist, '/cmd_vel', 10)
         self.cli_start = self.node.create_client(StartCalib, '/calib/start')
         self.cli_submit = self.node.create_client(SubmitCalib, '/calib/submit')
         self.cli_apply = self.node.create_client(ApplyCalib, '/calib/apply')
@@ -105,6 +109,8 @@ class TestCalibRunnerNode(unittest.TestCase):
         assert self.cli_start.wait_for_service(timeout_sec=10.0), 'calib_runner 未起動'
 
         self.odom_x = 0.0
+        self.odom_yaw = 0.0
+        self.echo_cmd_vel = None
         self._cmd_t = 0.0
         self._last = Twist()
         self.node.create_subscription(Twist, '/cmd_vel_behavior', self._remember, 10)
@@ -116,6 +122,7 @@ class TestCalibRunnerNode(unittest.TestCase):
         self._spin(0.3)
         self.cmds.clear()
         self.events.clear()
+        self.statuses.clear()
 
     def tearDown(self):
         self._set_state('IDLE', 'NONE')
@@ -150,11 +157,20 @@ class TestCalibRunnerNode(unittest.TestCase):
                 last = now
                 cmd = self._last if now - self._cmd_t < 0.3 else Twist()
                 self.odom_x += cmd.linear.x * dt
+                self.odom_yaw += cmd.angular.z * dt
+                if self.echo_cmd_vel is not None:
+                    # obstacle_limiter の代役。/cmd_vel は limiter のみが出す約束なので、
+                    # 試験では echo（素通し）か、わざと低い値に絞ったものをここから出す。
+                    out = Twist()
+                    out.angular.z = (cmd.angular.z if self.echo_cmd_vel == 'echo'
+                                     else float(self.echo_cmd_vel))
+                    self.pub_cmd_vel.publish(out)
                 if self.send_odom:
                     odom = Odometry()
                     odom.header.stamp = self.node.get_clock().now().to_msg()
                     odom.pose.pose.position.x = self.odom_x
-                    odom.pose.pose.orientation.w = 1.0
+                    odom.pose.pose.orientation.z = math.sin(self.odom_yaw / 2.0)
+                    odom.pose.pose.orientation.w = math.cos(self.odom_yaw / 2.0)
                     self.pub_odom.publish(odom)
 
     def _wait(self, cond, timeout=6.0, what=''):
@@ -356,6 +372,56 @@ class TestCalibRunnerNode(unittest.TestCase):
         assert not self.cmd_vel_direct, '/cmd_vel へ直接 publish した（不変ルール違反）'
         v = max(abs(c.linear.x) for c in self.cmds)
         assert v <= V_CALIB + 1e-6, f'v_calib を超える速度を出した: {v}'
+
+    # ── j〜l: 旋回の速さ（A-5。0.45 一定・絞られたら無効）──────────
+    def _reasons(self):
+        out = []
+        for st in self.statuses:
+            try:
+                reason = json.loads(st.detail).get('reason')
+            except (ValueError, TypeError):
+                continue
+            if reason:
+                out.append(reason)
+        return out
+
+    def _start_rotation(self, echo):
+        self.echo_cmd_vel = echo
+        self.statuses.clear()
+        self.events.clear()
+        n = len(self.cmds)
+        self._start_running('ROTATION')
+        self._wait(lambda: any(abs(c.angular.z) > 1e-9 for c in self.cmds[n:]),
+                   what='旋回を始める')
+        return n
+
+    def test_j_rotation_uses_fixed_speed_and_completes(self):
+        n = self._start_rotation('echo')          # limiter が素通し
+        self._wait(lambda: any(e.event == 'evt.calib_step_done' for e in self.events),
+                   timeout=20.0, what='旋回の完了（echo）')
+        assert 'rotation_throttled' not in self._reasons(), \
+            '素通しなのに絞られた扱いになった'
+        wz = [abs(c.angular.z) for c in self.cmds[n:] if abs(c.angular.z) > 1e-9]
+        assert wz, '旋回の指令が無い'
+        assert max(wz) <= 0.45 + 1e-9, f'0.45 を超えた: {max(wz)}'
+        assert min(wz) >= 0.40 - 1e-9, f'終端で下限 0.40 を下回った: {min(wz)}'
+
+    def test_k_throttled_rotation_is_invalid(self):
+        self._start_rotation(0.30)                # 0.45 の指令に 0.30 しか出ない
+        self._wait(lambda: any(r == 'rotation_throttled' for r in self._reasons()),
+                   timeout=8.0, what='絞りの検知（rotation_throttled）')
+        assert not any(e.event == 'evt.calib_step_done' for e in self.events), \
+            '絞られたのに完了扱いになった'
+        self._spin(0.3)
+        assert abs(self.cmds[-1].angular.z) < 1e-9, '無効にしたのに回し続けた'
+
+    def test_l_throttle_inside_grace_is_ignored(self):
+        self._start_rotation(0.30)
+        self._spin(0.25)                          # 猶予 0.5 秒の内側だけ低い
+        self.echo_cmd_vel = 'echo'
+        self._wait(lambda: any(e.event == 'evt.calib_step_done' for e in self.events),
+                   timeout=20.0, what='猶予中の低い値では無効にしない')
+        assert 'rotation_throttled' not in self._reasons()
 
 
 if __name__ == '__main__':
