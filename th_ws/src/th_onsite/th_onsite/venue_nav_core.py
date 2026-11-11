@@ -19,6 +19,9 @@ class VenueNavParams:
     align_tolerance_rad: float = 0.09     # ~5deg。evt.align_done を出す閾値
     align_kp: float = 1.2                 # 旋回 P ゲイン
     align_w_max_rps: float = 0.6          # 旋回上限（指令生成側の上限）
+    # その場旋回の速さの下限（Spec-onsite.md §6.2.1。2026-11-10）。
+    # モーターの不感帯（0.25〜0.30）より上。registry の turn_in_place_w_min_rps。
+    turn_in_place_w_min_rps: float = 0.40
     blocked_recheck_period_s: float = 2.0
     arrival_xy_tol_m: float = 0.12
 
@@ -66,13 +69,20 @@ def yaw_error(current_yaw: float, target_yaw: float) -> float:
 
 def align_cmd_wz(current_yaw: float, target_yaw: float,
                  params: VenueNavParams) -> Tuple[float, bool]:
-    """旋回指令 (angular_z, done)。|err| < tol なら (0.0, True)。"""
+    """旋回指令 (angular_z, done)。|err| < tol なら (0.0, True)。
+
+    回すときはモーターの不感帯より上の速さにする（Spec-onsite.md §6.2.1。
+    2026-11-10）。比例制御のまま最後に指令を細らせると不感帯に入って回らない。
+    大きさは [turn_in_place_w_min_rps, align_w_max_rps] に収める。
+    下限 > 上限の設定が来たときは、黙って逆転させず上限まで下げる
+    （上限は安全側の値なので、そちらを優先する）。
+    """
     err = yaw_error(current_yaw, target_yaw)
     if abs(err) < params.align_tolerance_rad:
         return 0.0, True
-    wz = params.align_kp * err
-    wz = max(-params.align_w_max_rps, min(params.align_w_max_rps, wz))
-    return wz, False
+    w_min = min(params.turn_in_place_w_min_rps, params.align_w_max_rps)
+    magnitude = min(params.align_w_max_rps, max(w_min, abs(params.align_kp * err)))
+    return math.copysign(magnitude, err), False
 
 
 def arrived(robot_x: float, robot_y: float, goal_x: float, goal_y: float,

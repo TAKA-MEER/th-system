@@ -127,6 +127,9 @@ class VenueNavigator(Node):
         self.declare_parameter('align_tolerance_rad', 0.09)
         self.declare_parameter('align_kp', 1.2)
         self.declare_parameter('align_w_max_rps', 0.6)
+        # Spec-onsite §6.2.1（2026-11-10）: 回すときはモーターの不感帯より上の速さで回す。
+        # registry の turn_in_place_w_min_rps。calib_runner と同じ値を使う。
+        self.declare_parameter('turn_in_place_w_min_rps', 0.40)
         self.declare_parameter('blocked_recheck_period_s', 2.0)
         # WS-9AJ(2026-09-11): nav2_params.yaml の xy_goal_tolerance（0.25→0.12）
         # と整合を取る。これは follow_path の result を取りこぼした場合の
@@ -165,10 +168,18 @@ class VenueNavigator(Node):
             align_tolerance_rad=float(self.get_parameter('align_tolerance_rad').value),
             align_kp=float(self.get_parameter('align_kp').value),
             align_w_max_rps=float(self.get_parameter('align_w_max_rps').value),
+            turn_in_place_w_min_rps=float(
+                self.get_parameter('turn_in_place_w_min_rps').value),
             blocked_recheck_period_s=float(
                 self.get_parameter('blocked_recheck_period_s').value),
             arrival_xy_tol_m=float(self.get_parameter('arrival_xy_tol_m').value),
         )
+        if self._params.turn_in_place_w_min_rps > self._params.align_w_max_rps:
+            self.get_logger().warn(
+                'turn_in_place_w_min_rps'
+                f'（{self._params.turn_in_place_w_min_rps}）が'
+                f' align_w_max_rps（{self._params.align_w_max_rps}）より大きい。'
+                '下限を上限まで下げて向き合わせする（黙って逆転させない）')
         self._map_frame = self.get_parameter('map_frame').value
         self._base_frame = self.get_parameter('base_frame').value
         self._tf_stall_aborts = int(

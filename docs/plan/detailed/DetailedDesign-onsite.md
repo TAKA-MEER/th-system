@@ -464,8 +464,9 @@ def align_command(current_yaw, target_yaw, p) -> tuple[float, float]:
     err = wrap_to_pi(target_yaw - current_yaw)
     if abs(err) <= p.align_tolerance_rad:
         return (0.0, 0.0)                      # 完了 → evt.align_done
-    w = clamp(p.align_kp * err, -p.align_w_max, p.align_w_max)
-    return (0.0, w)                            # 超信地旋回。並進しない
+    w_min = min(p.turn_in_place_w_min_rps, p.align_w_max)   # 下限 > 上限なら上限まで
+    magnitude = min(p.align_w_max, max(w_min, abs(p.align_kp * err)))
+    return (0.0, copysign(magnitude, err))     # 超信地旋回。並進しない
 ```
 
 | 項目 | 仕様 |
@@ -473,7 +474,7 @@ def align_command(current_yaw, target_yaw, p) -> tuple[float, float]:
 | 動き | **超信地旋回のみ。**`linear.x = 0` |
 | 目標 | (a) 登録済みピンの向き ／ (b) 2 点指示で与えた向き |
 | 完了 | `evt.align_done` → `AT_PANEL` / `IDLE_P` |
-| 速度 | `v_slow` に対応する角速度上限。`obstacle_limiter` の **L3** により角速度は殺されない |
+| 速度 | **回すときは `turn_in_place_w_min_rps`（0.40 rad/s）以上。**上限は `align_w_max_rps`。比例制御のまま指令を細らせるとモーターの不感帯（0.25〜0.30）で回らない（Spec-onsite §6.2.1。2026-11-10）。`obstacle_limiter` の **L3** の上限（`w_align_max` 0.45）はこの下限より上に保つ（Spec-safety §2.2） |
 
 ---
 

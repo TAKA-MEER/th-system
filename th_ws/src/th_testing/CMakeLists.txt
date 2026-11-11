@@ -698,6 +698,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_nav_arrival_tol_node
     test/test_venue_nav_arrival_tol_node.py
     TIMEOUT 180)
+  # A-5（2026-11-10）: 向き合わせは回すとき下限以上・許容内で 0（Spec-onsite §6.2.1。
+  # 生成 yaml を先に渡し、下限だけ dict で上書きして「本当に読んでいる」ことも見る）
+  ament_add_pytest_test(test_venue_nav_align_min_w_node
+    test/test_venue_nav_align_min_w_node.py
+    TIMEOUT 240)
   # 1b-11 SG-B16: pin_registrar のピン再登録（同じ id・同じ名前のまま位置と向きだけ。launch_testing）
   ament_add_pytest_test(test_pin_reregister_node
     test/test_pin_reregister_node.py
