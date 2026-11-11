@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """制動・空走の生データ記録（WP-MEAS-01 / N-12）
 
-停止の 2 経路を、同じ記録で見分けられる形に残す。
+停止の経路を、同じ記録で見分けられる形に残す。
 
-  ランプ停止 : /cmd_vel が 0 になる → ESP32 が TARGET_RAMP_ACCEL_MPS2 (1.5) で減速
+  ソフト非常停止 : /safety/estop_ui が 0→1（meas07_drive --mode soft-estop が出す）
+               → /safety/estop → limiter が即 0 → ESP32 が TARGET_RAMP_ACCEL_MPS2 (1.5) で減速
+               （起点は estop_ui の 0→1。集約後の /safety/estop も 'estop' として残す）
+  ランプ停止 : /cmd_vel が S 字ランプで 0 になる（通常の停止。brake_accel_mps2 ではない）
   空走       : 物理非常停止で駆動電源が切れる → Motor::stopAll() = PWM 0 = 空走
                （main.cpp:156-164 / motor.cpp:40-43。DIR+PWM 駆動なので能動制動は無い）
 
@@ -31,11 +34,16 @@ class BrakeRecorder(Node):
 
         self._v_cmd = 0.0
         self._estop_hw = 0
+        self._estop_ui = 0
+        self._estop = 0
 
         self.create_subscription(
             WheelFeedback, '/esp32/wheel_feedback', self._on_wheel, 10)
         self.create_subscription(Twist, '/cmd_vel', self._on_cmd, 10)
         self.create_subscription(Bool, '/safety/estop_hw', self._on_estop, 10)
+        # ソフト非常停止の要求（起点）と、safety_monitor が集約した /safety/estop
+        self.create_subscription(Bool, '/safety/estop_ui', self._on_estop_ui, 10)
+        self.create_subscription(Bool, '/safety/estop', self._on_estop_agg, 10)
         # EKF が動いていれば使う。動いていなくても wheel_feedback だけで成立する
         self.create_subscription(
             Odometry, '/odometry/filtered', self._on_odom, qos_profile_sensor_data)
@@ -61,6 +69,18 @@ class BrakeRecorder(Node):
         if v != self._estop_hw:
             self._estop_hw = v
             self._w('estop_hw', v)
+
+    def _on_estop_ui(self, msg):
+        v = 1 if msg.data else 0
+        if v != self._estop_ui:      # 5Hz の再送は記録しない。0→1 と 1→0 の端だけ
+            self._estop_ui = v
+            self._w('estop_ui', v)
+
+    def _on_estop_agg(self, msg):
+        v = 1 if msg.data else 0
+        if v != self._estop:
+            self._estop = v
+            self._w('estop', v)
 
     def _on_odom(self, msg):
         p = msg.pose.pose.position
