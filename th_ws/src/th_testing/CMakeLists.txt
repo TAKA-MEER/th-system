@@ -422,6 +422,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_maintenance_param_types
     test/test_maintenance_param_types.py
     TIMEOUT 120)
+  # 制動測定の解析（scripts/meas07_analyze.py。停止事象の起点と種別。ROS2 不要）
+  ament_add_pytest_test(test_meas07_analyze
+    test/test_meas07_analyze.py
+    TIMEOUT 120)
   # SG-B21（1b-10）: consumers に挙がっていたのに読み手がいない行の除去と、
   # 点検・校正の直書きタイムアウトの registry 化（値・型・生成物の 3 点一致と、
   # 外した consumers の否定試験。ROS2 不要）
