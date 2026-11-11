@@ -336,6 +336,9 @@ class TestVenueNavAlignMinW(unittest.TestCase):
         venue_navigator が /cmd_vel_behavior に出すのは ALIGN 中だけなので、
         呼び出し時点で cmds を空にすれば、以降はこの向き合わせの指令だけになる。
         """
+        ms = self._mode_state()
+        if ms is None or ms == ('INIT', 'CHECK'):
+            self._reset_to_home()
         with self._lock:
             self.cmds.clear()
         self._set_robot_near(pin_id)
