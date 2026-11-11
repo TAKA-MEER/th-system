@@ -42,6 +42,10 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/CheckStatus.msg"
   "msg/CalibStatus.msg"
   "msg/PinWarning.msg"
+  # ── メッセージ（測定機能 fk-system とのやり取り。DetailedDesign-measure.md §3） ──
+  "msg/MeasureResult.msg"
+  "msg/MeasureStatus.msg"
+  "msg/MeasureHeartbeat.msg"
   # ── サービス（旧。WP-CLEAN-01 まで維持） ────────
   "srv/SetMode.srv"
   "srv/GoToPanel.srv"
@@ -70,6 +74,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/RollbackCalib.srv"
   "srv/GetParams.srv"
   "srv/SetParams.srv"
+  # ── サービス（測定機能 fk-system とのやり取り。DetailedDesign-measure.md §3） ──
+  "srv/MeasureCommand.srv"
+  "srv/CheckArmClearance.srv"
   DEPENDENCIES std_msgs geometry_msgs rcl_interfaces builtin_interfaces
 )
 

@@ -1,0 +1,11 @@
+# CheckArmClearance.srv — 測定機能（fk-system）とのやり取り。interface_version "1"。
+# 正本は docs/plan/detailed/DetailedDesign-measure.md §3。型・名前・意味を変えたら版を上げるか fk に知らせる（§1.2）。
+geometry_msgs/Polygon region   # 回ったあとの base_link 基準。x 前・y 左 [m]。z は見ない
+string[] sides                 # LEFT / RIGHT / CURRENT のいくつか
+---
+bool     accepted
+string   reject_reason         # state_not_accepting / bad_argument
+string[] sides                 # 問い合わせと同じ順
+string[] results               # CLEAR / BLOCKED / UNKNOWN
+string[] unknown_reasons       # UNKNOWN のときだけ: scan_stale / blind_sector
+builtin_interfaces/Time checked_at

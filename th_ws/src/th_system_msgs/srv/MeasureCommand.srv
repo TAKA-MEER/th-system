@@ -1,0 +1,20 @@
+# MeasureCommand.srv — 測定機能（fk-system）とのやり取り。interface_version "1"。
+# 正本は docs/plan/detailed/DetailedDesign-measure.md §3。型・名前・意味を変えたら版を上げるか fk に知らせる（§1.2）。
+string  command_id        # 測定機能が振る。結果（§3.2）との突き合わせに使う。空は拒否
+string  command           # 下の表の meas.*
+string  map_instance_id   # meas.goal だけ。/measure/status の map_instance_id と同じでなければ拒否
+float64 x                 # meas.goal: map フレーム [m]
+float64 y
+float64 yaw               # meas.goal: map フレーム [rad]
+float64 angle_rad         # meas.turn: 正＝左回り（反時計回り）[rad]
+string  side              # meas.translate: LEFT / RIGHT
+float64 distance_m        # meas.translate [m]
+float32 v_max_mps         # meas.set_limits: 0 は指定しない（本システムの上限のまま）
+float32 w_max_radps
+float32 a_max_mps2
+float32 alpha_max_radps2
+---
+bool    accepted
+string  reject_reason     # 理由キー（下の表）。受けたときは空
+string  mode              # 応答した時点のモードと状態
+string  state
