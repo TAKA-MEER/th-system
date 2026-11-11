@@ -167,3 +167,25 @@ class TestRotationIdealSeconds:
 
     def test_zero_inputs(self):
         assert cc.rotation_ideal_seconds(0.0, 0.5, 0.26, 0.15) == 0.0
+
+    def test_field_values_positive_and_about_7s(self):
+        # A-5（2026-11-10）の実値: 巡航 0.45・終端の下限 0.40（不感帯の上）。
+        import math
+        t = cc.rotation_ideal_seconds(180.0, 0.45, math.radians(15.0), 0.40)
+        assert 6.5 < t < 7.5
+
+    def test_min_at_or_above_cruise_stays_finite_and_positive(self):
+        # 下限 >= 巡航ではテーパーが「減速」にならない。log(taper/r_knee) が 0 以下に
+        # なって負の時間を返さないこと。指令 max(min_w, w*r/taper) の積分と一致する。
+        import math
+        w, taper = 0.45, math.radians(15.0)
+        target = math.radians(180.0)
+        for mn in (0.45, 0.60):
+            t = cc.rotation_ideal_seconds(180.0, w, taper, mn)
+            assert math.isfinite(t) and t > 0.0
+            r, ref, dt = target, 0.0, 1e-4
+            while r > 0:
+                ww = max(mn, w * r / taper) if r < taper else w
+                r -= ww * dt
+                ref += dt
+            assert abs(t - ref) < 0.05

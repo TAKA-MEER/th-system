@@ -518,7 +518,9 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `w_max` | rad/s | (b) | 角速度上限 |
 | **`v_jog_max`** | m/s | (b) | **手動ジョグの前進上限**。`jog_gate` が `/cmd_vel_manual_raw` の比率に掛ける（W-07） |
 | **`w_jog_max`** | rad/s | (b) | **手動ジョグの旋回上限**。`jog_gate` が `/cmd_vel_manual_raw` の比率に掛ける（W-07） |
-| **`w_align_max`** | rad/s | (b) | **`d_floor` を割っている間の角速度上限**（safety L3） |
+| **`w_align_max`** | rad/s | (b) | **`d_floor` を割っている間の角速度上限**（safety L3。2026-11-10 に 0.45） |
+| **`turn_in_place_w_min_rps`** | rad/s | (b) | **その場旋回の速さの下限**（向き合わせ・校正。2026-11-10。`venue_navigator`／`calib_runner` が同じ値を使う） |
+| **`calib_rotation_w_rps`** | rad/s | (b) | **校正 `ROTATION` の旋回の速さ（一定）**。終わりぎわも `turn_in_place_w_min_rps` を下回らない |
 | `speed_preset_low` ／ `_mid` ／ `_high` | 比率 | given | UI プリセット。**上限に対する割合**。`consumers: [web_ui]` |
 | `auto_brake_default_outdoor` ／ `auto_brake_default_indoor` | on/off | given | S-50 で変える自動ブレーキの既定（場外の手動系／場内）。`consumers: [state_manager]`。Spec-safety §2.1 |
 | `drivetrain_ceiling_mps` | m/s | (b) | 出力上限 ÷ フィードフォワード係数 |

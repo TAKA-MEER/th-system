@@ -53,6 +53,31 @@ class TestAlignCmdWz:
         approx(wz, -0.6)
         assert done is False
 
+    def test_just_outside_tol_keeps_min_speed(self):
+        # 誤差 0.10 は許容 0.09 の少し外。比例だけなら 1.2*0.10=0.12 で
+        # 不感帯（0.25〜0.30 以下）に入る → 下限 0.40 まで引き上げる。
+        wz, done = align_cmd_wz(
+            0, 0.10, VenueNavParams(align_tolerance_rad=0.09))
+        assert done is False
+        assert abs(wz) >= 0.40 - 1e-9, f'下限より遅い: {wz}'
+        assert wz > 0.0, '符号が err と違う'
+
+    def test_just_outside_tol_negative_keeps_sign(self):
+        wz, done = align_cmd_wz(
+            0, -0.10, VenueNavParams(align_tolerance_rad=0.09))
+        assert done is False
+        assert abs(wz) >= 0.40 - 1e-9
+        assert wz < 0.0, '符号が err と違う'
+
+    def test_lower_above_upper_uses_upper(self):
+        # 下限 > 上限の設定は黙って逆転させず、上限まで下げる。
+        p = VenueNavParams(align_tolerance_rad=0.09,
+                           turn_in_place_w_min_rps=0.50,
+                           align_w_max_rps=0.35)
+        wz, done = align_cmd_wz(0, 0.10, p)
+        assert done is False
+        approx(wz, 0.35)
+
 
 class TestArrived:
     def test_arrived_true(self):

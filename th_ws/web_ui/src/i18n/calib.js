@@ -99,6 +99,7 @@ const REASONS = {
   no_odom: '自己位置（オドメトリ）が届いていないため走れません',
   odom_stale: '自己位置（オドメトリ）が途絶えたため止めました',
   run_timeout: '走行が時間内に終わらなかったため止めました',
+  rotation_throttled: '旋回が安全装置に絞られたため、この測定は使いません（周囲を空けて測り直してください）',
   offset_exceeds_tolerance: '選んだ範囲の外に写り込みが残っています（許容 5° を超えました）。選び直してください',
   mask_not_effective: '選んだ範囲の点が /scan_filtered から消えていません（lidar_filter に届いていない疑い）',
   verify_timeout: 'スキャンが届かず検証できませんでした',

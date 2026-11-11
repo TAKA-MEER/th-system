@@ -102,7 +102,7 @@ public:
         declare_parameter("obstacle_min_points", 3);
         declare_parameter("obstacle_cone_half_width_reverse_rad", 0.6);
         declare_parameter("w_max", 0.6);
-        declare_parameter("w_align_max", 0.3);
+        declare_parameter("w_align_max", 0.45);
         // 通常時ランプ（DetailedDesign-safety.md §7.1、2026-09-11 追加）。
         // 0.0 = 無制限（従来動作。生成 yaml が未配線の間の安全側フォールバック）。
         declare_parameter("normal_accel_mps2", 0.0);

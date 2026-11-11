@@ -101,6 +101,25 @@ def test_consumers_nonempty(registry_rows):
     assert errors == [], f"consumers が空の行がある: {errors}"
 
 
+def test_turn_speed_invariants(registry_rows):
+    """その場旋回の速さの下限に対する不変条件（2026-11-10。A-5）。
+
+    - 前方が近いときの旋回の上限（w_align_max）> その場旋回の下限
+    - 校正の旋回の速さ（calib_rotation_w_rps）≥ その場旋回の下限
+
+    どちらかが崩れると、盤前の向き合わせや校正の旋回がモーターの不感帯に入って
+    回らない（Spec-safety.md §2.2・Spec-onsite.md §6.2.1）。値を入れ替えると赤になる。
+    """
+    reg = {row["name"]: row for row in registry_rows}
+    min_w = reg["turn_in_place_w_min_rps"]["value"]
+    assert reg["w_align_max"]["value"] > min_w, (
+        f"w_align_max（{reg['w_align_max']['value']}）がその場旋回の下限"
+        f"（{min_w}）以下。盤前の向き合わせが不感帯に入る")
+    assert reg["calib_rotation_w_rps"]["value"] >= min_w, (
+        f"calib_rotation_w_rps（{reg['calib_rotation_w_rps']['value']}）が"
+        f"その場旋回の下限（{min_w}）より低い。校正の旋回が不感帯に入る")
+
+
 def test_registry_has_at_least_one_tbd_measure(registry_rows):
     """未測定の全件が 1 コマンドで出ること（P-2）の前提: registry に sentinel（schema.TBD）が実在する。"""
     from th_params import schema
