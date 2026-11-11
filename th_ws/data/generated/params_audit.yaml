@@ -38,6 +38,6 @@ params_audit:
     v_leash: 0.5
     v_max: 0.568
     v_max_headroom_ratio: 0.8
-    w_align_max: 0.3
+    w_align_max: 0.45
     w_jog_max: 1.0
     w_max: 1.2

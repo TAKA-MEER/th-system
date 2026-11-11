@@ -18,7 +18,9 @@ calib_runner:
     calib_linear_distance_m: 1.0
     calib_odom_stale_ms: 500
     calib_rotation_deg: 180.0
+    calib_rotation_w_rps: 0.45
     calib_run_timeout_ms: 60000
     calib_state_stale_ms: 2000
+    turn_in_place_w_min_rps: 0.4
     v_calib: 0.15
     wheel_radius_scale_max_dev: 0.1

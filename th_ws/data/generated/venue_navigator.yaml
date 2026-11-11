@@ -16,5 +16,6 @@ venue_navigator:
       v_max: 0.724912
       v_reverse: null
       v_slow: null
+    turn_in_place_w_min_rps: 0.4
     v_max: 0.568
     w_max: 1.2

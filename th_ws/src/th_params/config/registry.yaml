@@ -158,16 +158,34 @@
   value: 1.2
   consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1"
-  note: "角速度上限。逆算式が無いため given。暫定値（P1 fail-slow）。2026-09-04（WS-9T）実機で手動ジョグのその場旋回が遅い（0.6=34°/s、90°に約2.6s）との報告を受け 0.6→1.2 に引き上げ。w_align_max（d_floor 割れ時の追加絞り）は 0.3 のまま据え置き"
+  note: "角速度上限。逆算式が無いため given。暫定値（P1 fail-slow）。2026-09-04（WS-9T）実機で手動ジョグのその場旋回が遅い（0.6=34°/s、90°に約2.6s）との報告を受け 0.6→1.2 に引き上げ。w_align_max（d_floor 割れ時の追加絞り）は別項目（2026-11-10 に 0.45 へ）"
 
 - name: w_align_max
   unit: rad/s
   class: b
   status: given
-  value: 0.3
+  value: 0.45
   consumers: [obstacle_limiter, params_audit]
-  spec_ref: "DetailedDesign-names.md §7.1"
-  note: "d_floor を割っている間の角速度上限（safety L3）。w_max より小さい暫定値"
+  spec_ref: "DetailedDesign-names.md §7.1 / Spec-safety.md §2.2"
+  note: "d_floor を割っている間の角速度上限（safety L3）。2026-11-10 変更（0.3→0.45）。その場旋回の速さの下限 turn_in_place_w_min_rps（0.40）より上に保つ（Spec-safety.md §2.2。下限より低いと盤前の向き合わせ・校正の旋回が不感帯に入って回らない）"
+
+- name: turn_in_place_w_min_rps
+  unit: rad/s
+  class: b
+  status: given
+  value: 0.40
+  consumers: [venue_navigator, calib_runner]
+  spec_ref: "Spec-params.md「その場旋回の速さの下限」/ Spec-onsite.md §6.2.1"
+  note: "その場旋回の速さの下限。2026-11-10 ユーザー決定。向き合わせ・校正の旋回で回すときはこれ以上にする（モーターの不感帯 0.25〜0.30 の上。実測で 0.40 以上ならすぐ回る）。venue_navigator と calib_runner が同じ値を使う（2 か所に別々に持たせない）"
+
+- name: calib_rotation_w_rps
+  unit: rad/s
+  class: b
+  status: given
+  value: 0.45
+  consumers: [calib_runner]
+  spec_ref: "Spec-checks.md 校正「2 旋回」/ Spec-params.md「校正の旋回の速さ」"
+  note: "校正 ROTATION の旋回の速さ。2026-11-10 ユーザー決定。測定・検証とも毎回この速さで一定に回す（wheel_base の校正値で速さを変えない）。終わりぎわも turn_in_place_w_min_rps（0.40）を下回らない"
 
 - name: v_jog_max
   unit: m/s
