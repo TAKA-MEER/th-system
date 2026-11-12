@@ -6,6 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useActiveScreenPublisher } from '../ros/useActiveScreenPublisher.js'
+import { getClientId } from '../ros/clientId.js'
 import { useLimiterStatus } from '../ros/useLimiterStatus.js'
 import { TOPICS, MSG_TYPES } from '../ros/topics.js'
 import attributes from '../generated/attributes.json'
@@ -46,6 +47,17 @@ function AppShellInner({ screenName, screenId, children }) {
   // publishes once a screen has actually announced its screen_id -- see
   // main.jsx's Screens().
   useActiveScreenPublisher(ros, screenId)
+  // A-13: いま開いた画面を機体へ宣言する（ui.screen -> C-14 set_screen）。
+  // /ui/active_screen も screen_id を 2Hz で出すが、こちらは画面が決まった
+  // 時点で在席の区分（ゾーン）を即座に宣言する。requester は client_id:
+  // th_state は requester を端末 ID として _screens に入れるため、固定の
+  // 'web_ui' にすると別端末の在席が残って停止判定を鈍らせる。
+  const clientIdRef = useRef(null)
+  if (clientIdRef.current === null) clientIdRef.current = getClientId()
+  useEffect(() => {
+    if (!screenId) return
+    sendTrigger('ui.screen', { screen_id: screenId }, clientIdRef.current).catch(() => {})
+  }, [sendTrigger, screenId])
   const limiterStatus = useLimiterStatus(ros)
 
   // WS-9X: ?dev=1 か localStorage['th.devMode']。S-50 開発モードタブの
