@@ -31,7 +31,36 @@ test('接続確認前でも settingsOpen なら S-50（S-00 からの開発モ�
 
 test('接続確認前で settingsOpen=false なら S-00', () => {
   assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'INIT', settingsOpen: false }), 'S00')
-  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'IDLE', settingsOpen: false }), 'S00')
+})
+
+// A-13 (2026-11-12): 開き直すと passedConnect は false に戻る。機体が INIT 以外
+// なら S-00（ゾーン NA・速度上限 0）に戻さず、そのモードの画面を開く。
+test('A-13: passedConnect=false でも mode が INIT 以外ならそのモードの画面', () => {
+  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'PANEL_NAV' }), 'S21')
+  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'MANUAL' }), 'S11')
+  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'IDLE' }), 'S01')
+})
+
+test('A-13: mode が INIT または未受信なら S-00 のまま', () => {
+  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'INIT' }), 'S00')
+  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: null }), 'S00')
+  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: undefined }), 'S00')
+})
+
+test('A-13: 明示的に開いた S-00 は mode が INIT 以外でも S-00', () => {
+  assert.equal(
+    resolveScreen({ ...base, passedConnect: false, mode: 'PANEL_NAV', connectOpen: true }), 'S00')
+  assert.equal(
+    resolveScreen({ ...base, passedConnect: true, mode: 'IDLE', connectOpen: true }), 'S00')
+})
+
+test('A-13: S-00 から開いた設定（connectOpen + settingsOpen）は S-50', () => {
+  assert.equal(
+    resolveScreen({ ...base, passedConnect: false, mode: 'INIT', connectOpen: true, settingsOpen: true }),
+    'S50')
+  assert.equal(
+    resolveScreen({ ...base, passedConnect: true, mode: 'IDLE', connectOpen: true, settingsOpen: true }),
+    'S50')
 })
 
 test('DRIVE_S11（e2e 合成画面）は settingsOpen より優先', () => {

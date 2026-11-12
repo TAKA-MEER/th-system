@@ -59,12 +59,20 @@ export const MODE_TO_SCREEN = {
 // mode=OPCHECK と state=REPAIR の組で S-31（Spec-webui.md §3.13: 「S-31
 // 故障診断 -- OPCHECK（状態 REPAIR）」）。他のモードは state を見ない
 // （2026-09-02 の原則どおり、画面は mode だけから決まるのが既定）。
-export function resolveScreen({ testScreen, passedConnect, mode, settingsOpen, subState }) {
+export function resolveScreen({
+  testScreen, passedConnect, mode, settingsOpen, subState, connectOpen = false,
+}) {
   // DRIVE_S11 は本番に存在しない e2e 専用の合成画面。モード導出を迂回する。
   if (testScreen === 'DRIVE_S11') return 'DRIVE_S11'
-  // 2026-09-23: S-00 で止まったとき（機器が無く INIT を抜けられない）に開発モードの
-  // 設定へ入れるよう、疎通確認前でも設定は開ける。戻れば S-00 に戻る。
-  if (!passedConnect) return settingsOpen ? 'S50' : 'S00'
+  // A-13 (2026-11-12): 端末を開き直すと passedConnect は false に戻るが、機体は
+  // 走行中のモードのまま。そこで S-00（ゾーン NA・速度上限 0）を出すと、
+  // 「再開」しても状態だけ戻って機体は動かない（T-16）。mode が INIT 以外なら
+  // S-00 を通過済みとして扱い、そのモードの画面を開く。mode がまだ届いていない
+  // 間（起動直後）は S-00 のまま。connectOpen は S-01 の「詳細を見る」や
+  // e2e の __thTestScreen='S00' のように、利用者が明示的に S-00 を開いた場合だけ
+  // mode より優先する。
+  const modeReady = mode != null && mode !== 'INIT'
+  if (connectOpen || !(passedConnect || modeReady)) return settingsOpen ? 'S50' : 'S00'
   if (mode === 'OPCHECK' && subState === 'REPAIR') return 'S31'
   const base = MODE_TO_SCREEN[mode] ?? 'S01'
   if (base !== 'S01') return base           // 動作系モードが最優先（S-50 と同じ）

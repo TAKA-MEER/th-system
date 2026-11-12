@@ -40,6 +40,10 @@ const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== unde
 // OperationCardHarness を表示する -- one-primary-button.spec.js が探す
 // [data-testid="opcard-harness"] を壊さないため。
 const TEST_SCREEN = typeof window !== 'undefined' ? window.__thTestScreen : undefined
+// e2e 専用: __thTestScreen='S00' は「S-00 を出したまま」の初期値だが、
+// A-13 の「開き直し」を再現するときは S-00 を出さず passedConnect=false の
+// まま mode から画面を導出させたい（e2e/helpers.js の gotoReopen()）。
+const TEST_REOPEN = typeof window !== 'undefined' && window.__thTestReopen === true
 
 // e2e 用の DRIVE テスト画面: 常設走行タブ (driveTab) と、W-6 を開く「手動」
 // ボタンだけを並べる。runTestDrive() は __thTestScreen === 'DRIVE_S11' を
@@ -80,6 +84,10 @@ function Screens() {
   // S-00 は「疎通確認」という UI 上の前段で、FSM のモードではない。
   // 通過したかどうかだけがローカル状態。
   const [passedConnect, setPassedConnect] = useState(() => initialPassedConnect(TEST_SCREEN))
+  // A-13: 「S-00 を明示的に開いているか」。機体が INIT 以外なら開き直しでは
+  // S-00 を出さないが、S-01 の「詳細を見る」や S-00 からの開発モード設定の
+  // ように利用者が開いたときは出す（e2e の __thTestScreen='S00' も同じ）。
+  const [connectOpen, setConnectOpen] = useState(() => TEST_SCREEN === 'S00' && !TEST_REOPEN)
   // WS-9X: S-50 設定を開いているか（S-01 のサブ画面。ローカル state）。
   const [settingsOpen, setSettingsOpen] = useState(false)
   // モードが実画面（S-11/S-13/S-14）に対応したら設定は畳む（走行に入った・
@@ -92,7 +100,7 @@ function Screens() {
   const screen = TEST_SCREEN === 'S21'
     ? 'S21'
     : resolveScreen({
-      testScreen: TEST_SCREEN, passedConnect, mode, settingsOpen,
+      testScreen: TEST_SCREEN, passedConnect, connectOpen, mode, settingsOpen,
       subState: state?.state ?? null,
     })
 
@@ -103,8 +111,11 @@ function Screens() {
     return (
       <AppShell screenName={SCREEN_NAMES.S00} screenId={SCREEN_IDS.S00}>
         <S00Connect
-          onAdvance={() => setPassedConnect(true)}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onAdvance={() => { setConnectOpen(false); setPassedConnect(true) }}
+          // S-00 から開発モード設定へ入ったら S-00 を開いたままにする（仕様 §5）:
+          // link を外して IDLE へ進んでも「戻る」で S-00 に戻り、
+          // 「メインメニュー画面へ」で S-01 へ進む。
+          onOpenSettings={() => { setConnectOpen(true); setSettingsOpen(true) }}
         />
       </AppShell>
     )
@@ -193,7 +204,7 @@ function Screens() {
           onOpenConnect は要約カードの「詳細を見る」→ S-00 相当へ戻る。 */}
       <S01Main
         onOpenSettings={() => setSettingsOpen(true)}
-        onOpenConnect={() => setPassedConnect(false)}
+        onOpenConnect={() => setConnectOpen(true)}
       />
     </AppShell>
   )
