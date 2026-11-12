@@ -42,6 +42,8 @@ def slam(monkeypatch):
     calls = []
     monkeypatch.setattr(node, '_set_localization',
                         lambda enabled: calls.append(enabled) or None)
+    # /system/state を受けない試験なので、停止中ガードは通す（ここで縛るのは再起動の扱い）
+    monkeypatch.setattr(node, '_stop_only_reject_reason', lambda: None)
     node._slam_ready = True
     node._svc = svc
     node._calls = calls
