@@ -1398,3 +1398,25 @@ def test_prep_save_failed_event_stays_and_guides_with_reason(state_core_bundle, 
     assert len(guide) == 1
     assert guide[0].args["key"] == "venue_save_failed"
     assert guide[0].args["detail"] == "ポーズグラフが更新されませんでした"
+
+
+# ============================================================
+# A-11 ③ / SM-3.1.2-144: PREP の「待機場所へ」は戻る先の地図が無いと拒否する
+# ============================================================
+@pytest.mark.rule("T-PREP-06x")
+def test_prep_return_home_rejected_without_map(state_core_bundle):
+    core = state_core_bundle[0]
+    d = core.step("PREP", "MAPPING", "ui.return_home",
+                  _mk_ctx(pin_kinds=("HOME",), venue_unloaded=True))
+    assert d.accepted is False
+    assert d.reject_reason_key == "prep_map_not_started"
+
+
+@pytest.mark.rule("T-PREP-06")
+def test_prep_return_home_allowed_with_map(state_core_bundle):
+    """地図作成中・読み込み済み・未受信（venue_unloaded=False）では今までどおり RETURN へ。"""
+    core = state_core_bundle[0]
+    d = core.step("PREP", "MAPPING", "ui.return_home",
+                  _mk_ctx(pin_kinds=("HOME",), venue_unloaded=False))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("PREP", "RETURN")

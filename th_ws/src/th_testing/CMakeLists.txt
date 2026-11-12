@@ -733,6 +733,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_save_result_node
     test/test_venue_save_result_node.py
     TIMEOUT 120)
+  # A-11 ③: PREP の「待機場所へ」は地図が無いと拒否（state_manager の launch_testing）
+  ament_add_pytest_test(test_prep_return_home_map_node
+    test/test_prep_return_home_map_node.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_slam_control_restart_apply
     test/test_slam_control_restart_apply.py
     TIMEOUT 60)

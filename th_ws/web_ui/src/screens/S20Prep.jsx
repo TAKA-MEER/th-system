@@ -151,6 +151,7 @@ export default function S20Prep() {
   const resetPins = useStdTrigger('/onsite/reset_pins')
   const [resetBusy, setResetBusy] = useState(false)
   const [resetErr, setResetErr] = useState(null)
+  const [returnErr, setReturnErr] = useState(null)
 
   const disabledAll = stale || state?.mode == null
   // 1b-5 (SG-A10): 地図の開始・破棄は停止中だけ（Spec.md SD-9）。サーバ側が
@@ -423,7 +424,12 @@ export default function S20Prep() {
 
   // 1 ボタンで待機場所に戻す（guard: home_pin_exists。無いときは非活性）。
   async function handleReturnHome() {
-    await sendTrigger('ui.return_home')
+    setReturnErr(null)
+    const res = await sendTrigger('ui.return_home')
+    // SM-3.1.2-144: 戻る先の地図が無いと機体が拒否する。理由を出す。
+    if (res && res.accepted === false) {
+      setReturnErr(reasonLabel(res.reject_reason_key) ?? UNKNOWN_REASON_LABEL)
+    }
   }
 
   function handleFinish() {
@@ -1020,6 +1026,11 @@ export default function S20Prep() {
                 >
                   {S20_RETURN_HOME}
                 </button>
+                {returnErr && (
+                  <div className="sm mt" role="alert" data-testid="s20-return-home-err">
+                    {returnErr}
+                  </div>
+                )}
               </div>
             </div>
           )}

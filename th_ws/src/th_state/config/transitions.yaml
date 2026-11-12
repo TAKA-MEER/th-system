@@ -1496,6 +1496,21 @@
     args:
       key: register_target_lost
   spec_ref: SM-3.1.2-045
+# A-11 ③（SM-3.1.2-144）: 戻る先の地図が無い（会場地図を持たず地図作成も始まっていない
+# ＝ /map_session/status の VENUE が UNLOADED）ときは RETURN へ進めず拒否する。
+# venue_navigator の _venue_gate と同じ基準（ctx.venue_unloaded）。T-PREP-06 より前に置く。
+- id: T-PREP-06x
+  layer: 10
+  mode: PREP
+  state: MAPPING
+  event: ui.return_home
+  guard: venue_unloaded
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-144
+  reject: true
+  reject_reason_key: prep_map_not_started
 - id: T-PREP-06
   layer: 10
   mode: PREP

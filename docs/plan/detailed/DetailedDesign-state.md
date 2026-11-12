@@ -551,6 +551,7 @@ class StateCore:
 | `T-PREP-03` | `REGISTER` | `evt.plane_done` | — | `MAPPING` | `place_pin` |
 | `T-PREP-04` | `REGISTER` | `evt.register_rejected` | — | `MAPPING` | `guide{key:...}` |
 | `T-PREP-05` | `REGISTER` | `evt.target_lost` | — | `MAPPING` | `reject_register`, `guide{key:...}` |
+| **`T-PREP-06x`** | `MAPPING` | `ui.return_home` | `venue_unloaded`（`/map_session/status` の VENUE が `UNLOADED`。`venue_navigator` の `_venue_gate` と同じ基準） | 拒否（`MAPPING` のまま。`reject_reason_key: prep_map_not_started`。`T-PREP-06` より前に置く。`SM-3.1.2-144`。2026-11-12 A-11 ③） | — |
 | `T-PREP-06` | `MAPPING` | `ui.return_home` | `home_pin_exists` | `RETURN` | — |
 | `T-PREP-07` | `RETURN` | `evt.arrived` | — | `EDIT` | — |
 | `T-PREP-08` | `MAPPING` ／ `EDIT` | `ui.map_edit` | — | `EDIT` | — |
