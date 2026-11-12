@@ -1082,6 +1082,64 @@ TEST(ObstacleLimiterCoreStoppedWarning, MovingKeepsForwardConeWarning) {
   }
 }
 
+// 実機ではスティックを離すと /cmd_vel_muxed が途絶える（ZERO_STALE）。その間も警告・距離は出す。
+namespace {
+ObstacleLimiterInputs make_released_in(double obstacle_m, double dir_rad, bool auto_brake) {
+  ObstacleLimiterInputs in = make_stopped_in(obstacle_m, dir_rad, auto_brake);
+  in.muxed.stamp_sec = in.now_sec - 5.0;   // 指令が途絶えた（muxed_stale_sec 0.2 を超過）
+  in.manual.stamp_sec = in.now_sec - 5.0;  // 手動入力も無音（ジョイ新鮮ではない）
+  return in;
+}
+}  // namespace
+
+TEST(ObstacleLimiterCoreStoppedWarning, MuxedStaleStillWarnsAndKeepsZeroOutput) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_released_in(0.5, kPi / 2.0, false), p);
+  EXPECT_EQ(o.action, LimiterAction::ZERO_STALE);
+  EXPECT_DOUBLE_EQ(o.out.linear_x, 0.0);
+  EXPECT_DOUBLE_EQ(o.out.angular_z, 0.0);
+  EXPECT_DOUBLE_EQ(o.applied_limit_mps, 0.0) << "途絶の出力は変えない";
+  EXPECT_TRUE(o.approach_warning);
+  EXPECT_NEAR(o.approach_distance_m, 0.5, 1e-9);
+  EXPECT_FALSE(o.moving) << "途絶の間は警告音を鳴らさない";
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, MuxedStaleNoWarningWhenOnFarBlindOrStateStale) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  {
+    ObstacleLimiterCore core;  // ON
+    EXPECT_FALSE(core.update(make_released_in(0.5, kPi / 2.0, true), p).approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;  // 遠い
+    EXPECT_FALSE(core.update(make_released_in(3.0, kPi / 2.0, false), p).approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;  // /system/state 途絶
+    auto in = make_released_in(0.5, kPi / 2.0, false);
+    in.state.stamp_sec = in.now_sec - 5.0;
+    EXPECT_FALSE(core.update(in, p).approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;  // 自律系（MANUAL でもジョグ中でもない）
+    auto in = make_released_in(0.5, kPi / 2.0, false);
+    in.state.mode = "FOLLOW";
+    EXPECT_FALSE(core.update(in, p).approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;  // ゾーン NA は常に ON 相当
+    auto in = make_released_in(0.5, kPi / 2.0, false);
+    in.state.zone = Zone::NA;
+    EXPECT_FALSE(core.update(in, p).approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;  // 死角だけ
+    p.blind_angle_ranges_deg = {{80.0, 100.0}};
+    EXPECT_FALSE(core.update(make_released_in(0.5, kPi / 2.0, false), p).approach_warning);
+  }
+}
+
 TEST(ObstacleLimiterCoreStoppedWarning, SpinInPlaceCountsAsMoving) {
   const ObstacleLimiterParams p = make_ramp_params(0.0);
   ObstacleLimiterCore core;

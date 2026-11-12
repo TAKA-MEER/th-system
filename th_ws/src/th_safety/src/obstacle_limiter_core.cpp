@@ -327,6 +327,32 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
     out.nearest_obstacle_m = std::numeric_limits<double>::infinity();
     out.source_class = SourceClass::AUTO;
     out.applied_limit_mps = 0.0;
+    // 2026-11-12: スティックを離すと指令（/cmd_vel_muxed）は途絶える。これが実機の
+    // 「止まっている」ふつうの姿なので、途絶の間も画面の接近警告・距離は出す
+    // （出力 0・ZERO_STALE・ランプのリセットは変えない。moving は偽＝警告音は鳴らさない）。
+    // 手動系かどうかは /system/state のモード・ゾーン・auto_brake から決める
+    // （途絶を AUTO 扱いにすると警告がいつまでも出ない）。state 途絶・scan 途絶は出さない。
+    out.moving = false;
+    {
+      const bool st_fresh =
+          in.state.received && (in.now_sec - in.state.stamp_sec) <= p.state_stale_sec;
+      const bool sc_fresh =
+          in.scan.received && (in.now_sec - in.scan.stamp_sec) <= p.scan_stale_sec;
+      const bool manual_like =
+          in.state.jog_active || in.state.mode == "MANUAL" || in.state.mode == "TEACH_MANUAL";
+      if (st_fresh && sc_fresh && manual_like && p.blind_calibrated) {
+        const bool policy = policy_stops(SourceClass::MANUAL, in.state.zone, in.state.auto_brake,
+                                         in.dev_auto_brake_off);
+        const double limit = std::max(0.0, std::min(in.screen_limit_mps, in.mode_limit_mps));
+        const ConeObservation around =
+            observe_surround(in.scan, p.blind_angle_ranges_deg, p.obstacle_min_points);
+        const double d = around.covered ? around.nearest_m
+                                        : std::numeric_limits<double>::infinity();
+        out.approach_distance_m = d;
+        out.approach_warning =
+            !policy && v_allow(d, p.obstacle_floor_distance_m, p.brake_accel_mps2) < limit;
+      }
+    }
     prev_ramped_linear_ = 0.0;
     prev_linear_accel_ = 0.0;
     prev_ramped_angular_ = 0.0;
