@@ -241,6 +241,10 @@ class SlamControl(Node):
         # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
         # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
         self._slam_ready = None
+        # A-11①: 再起動を検知したが、まだ状態の再適用（_apply_mapping）が済んで
+        # いない。ロックが取れない周期は次周期で試す。_slam_ready を戻して
+        # 「再起動」を数え直すと、1 回の再起動で再適用が何度も走る。
+        self._restart_pending = False
         # WS-9S: 再生の地図読み直しは意図的に slam_toolbox を respawn する。その間
         # _check_slam_restart にモード再適用を走らせない（reload 側が最後まで面倒を見る）。
         self._reload_in_progress = False
@@ -430,6 +434,17 @@ class SlamControl(Node):
         response.message = rejected
         return response
 
+    def _reject_if_restarting(self, response):
+        """再起動の復帰を待つ間は地図作成の開始・停止を受けない。
+
+        受けると再起動の再適用とぶつかり、トグルが重なって逆向きに入る（A-11）。
+        """
+        if self._restart_pending or not self._cli_localization.service_is_ready():
+            response.success = False
+            response.message = 'slam_toolbox の再起動中です。少し待ってからやり直してください'
+            return response
+        return None
+
     def _set_active(self, active: bool):
         self._mapping_active = active
         self._pub_active.publish(Bool(data=self._mapping_active))
@@ -459,30 +474,33 @@ class SlamControl(Node):
         ready = self._cli_localization.service_is_ready()
         was_ready = self._slam_ready
         self._slam_ready = ready
-        if was_ready is None or ready == was_ready:
+        if was_ready is not None and ready != was_ready:
+            if not ready:
+                self.get_logger().error(
+                    'slam_toolbox が応答しなくなりました (クラッシュの可能性)。'
+                    ' 自己位置補正が止まります。respawn による再起動を待ちます')
+                self._report('NG: slam_toolbox が停止しました (再起動待ち)')
+                self._restart_pending = False   # 再び落ちた。復帰を数え直す
+                return
+            # 復帰を 1 回だけ数える。再適用が済むまで _restart_pending で持ち越す
+            # （_slam_ready を戻して数え直すと、1 回の再起動が何度も「再起動」になる）。
+            self.get_logger().warn('slam_toolbox の再起動を検知しました。状態を再適用します')
+            # WS-9AL: reload 経由でない再起動（クラッシュ復帰・地図破棄）はまっさらな
+            # 地図作成を始めるので、生存世代を切り替える。reload 経由（_reload_in_progress
+            # で上のガードに掛かる）はここに来ない ─ _handle_map_reload の成功後に
+            # 読み込んだ地図の instance_id を継承する側で別途扱う。
+            self._instance_id = self._new_instance_id()
+            self._venue_dirty = False   # 1b-6 SG-B6: まっさらな地図。未保存の中身は無い
+            self._venue_loaded = False   # 再起動でグラフは空。読み直し直すまで未読込
+            self._publish_anchor('unloaded')
+            self._publish_venue_status()
+            self._restart_pending = True
+        if not self._restart_pending or not ready:
             return
-
-        if not ready:
-            self.get_logger().error(
-                'slam_toolbox が応答しなくなりました (クラッシュの可能性)。'
-                ' 自己位置補正が止まります。respawn による再起動を待ちます')
-            self._report('NG: slam_toolbox が停止しました (再起動待ち)')
-            return
-
-        self.get_logger().warn('slam_toolbox の再起動を検知しました。状態を再適用します')
-        # WS-9AL: reload 経由でない再起動（クラッシュ復帰・地図破棄）はまっさらな
-        # 地図作成を始めるので、生存世代を切り替える。reload 経由（_reload_in_progress
-        # で上のガードに掛かる）はここに来ない ─ _handle_map_reload の成功後に
-        # 読み込んだ地図の instance_id を継承する側で別途扱う。
-        self._instance_id = self._new_instance_id()
-        self._venue_dirty = False   # 1b-6 SG-B6: まっさらな地図。未保存の中身は無い
-        self._venue_loaded = False   # 再起動でグラフは空。読み直し直すまで未読込
-        self._publish_anchor('unloaded')
-        self._publish_venue_status()
         if not self._lock.acquire(blocking=False):
-            self._slam_ready = was_ready   # 次周期でやり直す
-            return
+            return   # 次周期で再適用だけやり直す（再起動は数え直さない）
         try:
+            self._restart_pending = False
             desired = self._mapping_active
             err = self._apply_mapping(desired)
             if err:
@@ -558,6 +576,9 @@ class SlamControl(Node):
         rejected = self._reject_if_mode_disallows(response)
         if rejected:
             return rejected
+        rejected = self._reject_if_restarting(response)
+        if rejected:
+            return rejected
         with self._lock:
             err = self._apply_mapping(not self._mapping_active)
             if err is None and self._mapping_active:
@@ -569,6 +590,9 @@ class SlamControl(Node):
 
     def _cb_set_mapping(self, request, response):
         rejected = self._reject_if_mode_disallows(response)
+        if rejected:
+            return rejected
+        rejected = self._reject_if_restarting(response)
         if rejected:
             return rejected
         with self._lock:

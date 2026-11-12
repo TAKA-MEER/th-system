@@ -728,6 +728,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_slam_control_restart
     test/test_slam_control_restart.py
     TIMEOUT 60)
+  # A-11 ①: 1 回の再起動で再適用は 1 回（インプロセス・rclpy 要）
+  ament_add_pytest_test(test_slam_control_restart_apply
+    test/test_slam_control_restart_apply.py
+    TIMEOUT 60)
   ament_add_pytest_test(test_twist_mux
     test/test_twist_mux_priority.py
     TIMEOUT 60)
