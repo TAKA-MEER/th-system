@@ -109,7 +109,7 @@ function AppShellInner({ screenName, screenId, children }) {
 
   // 1b-6 (SG-B2): /system/effect の guide を W-3 の帯に出す。since は
   // 今のモード／状態に入った時刻 (自動クローズの比較用)。
-  const { guideKey, closeGuide } = useGuideBanner(ros, mode, stampToMs(state?.since), estopHw)
+  const { guideKey, guideDetail, closeGuide } = useGuideBanner(ros, mode, stampToMs(state?.since), estopHw)
 
   // 1b-7 (SG-B3): /system/effect の ask_save／ask_save_if_unsaved を W-4 の
   // 保存確認に出す。「はい」→ ui.save（保存）、「いいえ」→ ui.discard（破棄）。
@@ -319,6 +319,7 @@ function AppShellInner({ screenName, screenId, children }) {
         jogOpen={jogOpen}
         onJogClose={() => setJogOpen(false)}
         guideKey={guideKey}
+        guideDetail={guideDetail}
         onGuideClose={closeGuide}
         saveAsk={saveAsk}
         onSaveYes={handleSaveYes}

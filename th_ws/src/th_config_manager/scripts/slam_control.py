@@ -108,6 +108,7 @@ RESPAWN_WAIT_SEC           = 45.0   # WS-9S: reload のたび slam_toolbox を S
                                      # コメント参照）になる実績があるため長めに取る
 STATUS_PUBLISH_PERIOD_SEC   = 0.5
 
+import json
 import os
 import signal
 import threading
@@ -126,7 +127,7 @@ from std_srvs.srv import SetBool, Trigger
 from slam_toolbox.srv import (DeserializePoseGraph, SaveMap,
                               SerializePoseGraph)
 
-from th_system_msgs.msg import MapSessionStatus, PinList, StateEffect, SystemState
+from th_system_msgs.msg import MapSessionStatus, PinList, StateEffect, StateEvent, SystemState
 from th_system_msgs.srv import OpenMapSession
 
 from th_config_manager.map_freezer_core import make_anchor
@@ -269,6 +270,10 @@ class SlamControl(Node):
         self.create_subscription(
             StateEffect, '/system/effect', self._on_effect, effect_qos,
             callback_group=cbg)
+        # SM-3.1.2-052: commit_venue_map の成否を FSM へ返す（成功だけ SAVED へ進む）。
+        self._pub_event = self.create_publisher(
+            StateEvent, '/system/event',
+            QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE))
 
         # WS-9Y: pin_registrar の /onsite/pins（latched）を購読し、HOME ピンの
         # 姿勢を VENUE reload の初期姿勢フォールバックに使う。
@@ -837,6 +842,15 @@ class SlamControl(Node):
             self._publish_venue_status()
         return err
 
+    def _emit_event(self, event: str, reason: str = ''):
+        """FSM へ evt.* を返す（SM-3.1.2-052。成功だけ SAVED、失敗は理由つき）。"""
+        ev = StateEvent()
+        ev.header.stamp = self.get_clock().now().to_msg()
+        ev.event = event
+        ev.source_node = 'slam_control'
+        ev.arg_json = json.dumps({'reason': reason}, ensure_ascii=False) if reason else '{}'
+        self._pub_event.publish(ev)
+
     def _on_effect(self, msg: StateEffect):
         if msg.dest != 'map_session':
             return
@@ -847,15 +861,18 @@ class SlamControl(Node):
             if rejected is not None:
                 self._report(f'NG: commit_venue_map を拒否 ({rejected})')
                 self.get_logger().warn(f'commit_venue_map を拒否: {rejected}')
+                self._emit_event('evt.venue_map_save_failed', rejected)
                 return
             with self._lock:
                 err = self._commit_venue_map()
             if err:
                 self._report(f'NG: commit_venue_map 失敗 ({err})')
                 self.get_logger().warn(f'commit_venue_map 失敗: {err}')
+                self._emit_event('evt.venue_map_save_failed', err)
             else:
                 self._report('OK: commit_venue_map (venue/map をシリアライズ)')
                 self.get_logger().info('commit_venue_map OK: venue/map をシリアライズ')
+                self._emit_event('evt.venue_map_saved')
         elif msg.name == 'commit_map_patch':
             # 1b-11 SG-B14: 地図更新 ON のときの「保存」（T-REPLAY-08 ほか
             # SM-3.1.2-099〜-102）。最後に開いた地図へ書き足しを確定する:

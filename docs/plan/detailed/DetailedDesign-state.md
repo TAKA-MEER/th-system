@@ -175,7 +175,7 @@ class StateCore:
 | `clear_selection` | — | `person_tracker` | srv `~/reset_tracking` |
 | `face_target` | — | `follow_runner` | 状態を見て自動（サービス不要） |
 | `open_window` / `close_window` | `{id: "W-1".."W-6"}` | WebUI | `/system/state` の表示で伝える |
-| `guide` | `{key}` | WebUI | 同上（W-3） |
+| `guide` | `{key, detail?}` | WebUI | 同上（W-3）。`detail` は理由の文（任意。A-11 `T-PREP-20` が `$arg.reason` で渡す） |
 | `ask_save_if_unsaved` / `ask_save` | `{route_id?}`（`_teach_route` ラッチから補完。1b-7） | WebUI | W-4 |
 | `enable_main_menu` | — | WebUI | |
 | `show_resume` | — | WebUI | W-2 |
@@ -558,7 +558,9 @@ class StateCore:
 | `T-PREP-10` | `MAPPING` ／ `REGISTER` ／ `EDIT` ／ `SAVED` ／ `PAUSE` | `ui.stop` | — | `=`（不変） | — |
 | **`T-PREP-18`** | `RETURN` | `ui.stop` | — | `PAUSE` | —（`T-PREP-10` より前に置き `RETURN` を先に拾う。`SM-3.1.2-050a`。2026-10-07） |
 | `T-PREP-11` | `MAPPING` ／ `REGISTER` ／ `RETURN` | `ui.run` | — | `=`（不変） | — |
-| `T-PREP-12` | `*` | `ui.save` | — | `SAVED` | `commit_venue_map` |
+| `T-PREP-12` | `*` | `ui.save` | — | `=`（不変。**2026-11-12 A-11: 保存を頼むだけで `SAVED` へは進まない**） | `commit_venue_map` |
+| **`T-PREP-19`** | `*` | `evt.venue_map_saved`（`slam_control` が保存の成功で出す） | — | `SAVED` | — |
+| **`T-PREP-20`** | `*` | `evt.venue_map_save_failed`（失敗・拒否で出す。`arg.reason`） | — | `=`（不変） | `guide{key:venue_save_failed, detail:$arg.reason}` |
 | `T-PREP-13` | `SAVED` | `ui.run` | — | `MAPPING` | — |
 | **`T-PREP-16`** | `PAUSE` | `ui.resume_yes` | `fault_cleared` | `RETURN` | `close_window{id:W-1}`（**`override_common`**。汎用 `C-04` は `$resume_run`＝`MAPPING` に行ってしまうため先に拾う。1b-1 SG-A7） |
 | **`T-PREP-17`** | `PAUSE` | `ui.resume_no` ／ `ui.resume_ack` | `fault_cleared` | `MAPPING` | `close_window{id:W-1}`（**`override_common`**。`C-05` は `resume_state_available` が `PREP` を弾くため。1b-1 SG-A7） |

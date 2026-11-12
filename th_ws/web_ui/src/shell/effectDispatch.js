@@ -50,9 +50,14 @@ export function dispatchEffect(msg) {
   const name = msg?.name
   switch (name) {
     case 'guide': {
-      const key = parseArgs(msg?.args_json).key
+      const { key, detail } = parseArgs(msg?.args_json)
       if (typeof key === 'string' && key && guideLabel(key)) {
-        return { kind: 'guide', key, stampMs: stampToMs(msg?.header?.stamp) }
+        return {
+          kind: 'guide',
+          key,
+          detail: typeof detail === 'string' && detail ? detail : null,
+          stampMs: stampToMs(msg?.header?.stamp),
+        }
       }
       warnOnce(`guide:${String(key)}`)
       return { kind: 'ignore' }

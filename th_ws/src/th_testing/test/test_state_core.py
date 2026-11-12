@@ -1361,3 +1361,40 @@ def test_idle_discard_discards_route(state_core_bundle):
     assert d.rule_id == "T-IDLE-02"
     assert (d.to_mode, d.to_state) == ("IDLE", "NONE")
     assert [e.name for e in d.effects] == ["discard_route"]
+
+
+# ============================================================
+# A-11 / SM-3.1.2-052: PREP の「保存」は成功の通知でだけ SAVED へ進む
+# ============================================================
+@pytest.mark.rule("T-PREP-12")
+@pytest.mark.parametrize("state", ["MAPPING", "REGISTER", "EDIT"])
+def test_prep_save_request_does_not_move_to_saved(state_core_bundle, state):
+    """ui.save は保存を頼むだけ。ここで SAVED へ進むと、失敗しても保存済みに見える。"""
+    core = state_core_bundle[0]
+    d = core.step("PREP", state, "ui.save", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("PREP", state)
+    assert [e.name for e in d.effects] == ["commit_venue_map"]
+
+
+@pytest.mark.rule("T-PREP-19")
+@pytest.mark.parametrize("state", ["MAPPING", "REGISTER", "EDIT"])
+def test_prep_save_success_event_moves_to_saved(state_core_bundle, state):
+    core = state_core_bundle[0]
+    d = core.step("PREP", state, "evt.venue_map_saved", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("PREP", "SAVED")
+
+
+@pytest.mark.rule("T-PREP-20")
+@pytest.mark.parametrize("state", ["MAPPING", "REGISTER", "EDIT"])
+def test_prep_save_failed_event_stays_and_guides_with_reason(state_core_bundle, state):
+    core = state_core_bundle[0]
+    d = core.step("PREP", state, "evt.venue_map_save_failed",
+                  _mk_ctx(arg={"reason": "ポーズグラフが更新されませんでした"}))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("PREP", state)
+    guide = [e for e in d.effects if e.name == "guide"]
+    assert len(guide) == 1
+    assert guide[0].args["key"] == "venue_save_failed"
+    assert guide[0].args["detail"] == "ポーズグラフが更新されませんでした"

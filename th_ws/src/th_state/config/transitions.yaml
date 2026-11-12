@@ -1591,10 +1591,37 @@
   event: ui.save
   guard: null
   to_mode: '='
-  to_state: SAVED
+  to_state: '='
   effects:
   - name: commit_venue_map
     args: {}
+  spec_ref: SM-3.1.2-052
+# A-11（2026-11-12）: 保存が成功したときだけ SAVED へ進む。ui.save は保存を
+# 頼むだけで状態を動かさず、slam_control が成否を evt.venue_map_saved／
+# evt.venue_map_save_failed で返す。失敗は元の状態のまま、理由つきの案内。
+- id: T-PREP-19
+  layer: 10
+  mode: PREP
+  state: '*'
+  event: evt.venue_map_saved
+  guard: null
+  to_mode: '='
+  to_state: SAVED
+  effects: []
+  spec_ref: SM-3.1.2-052
+- id: T-PREP-20
+  layer: 10
+  mode: PREP
+  state: '*'
+  event: evt.venue_map_save_failed
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: guide
+    args:
+      key: venue_save_failed
+      detail: $arg.reason
   spec_ref: SM-3.1.2-052
 - id: T-PREP-13
   layer: 10
