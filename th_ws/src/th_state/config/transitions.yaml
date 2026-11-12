@@ -237,6 +237,10 @@
       id: W-1
   - name: enable_jog_ui
     args: {}
+  # A-12①: POINT に入る経路はすべて 2 点指示の受付を開き直す（SM-3.1.2-069）。
+  - name: begin_two_point
+    args:
+      kind: SUMMON
   spec_ref: SM-3.1.1-11
 # C-09c-at-panel / -at-home: §6 の右列どおり IDLE_P / IDLE_H（確認をやり直す）。
 - id: C-09c-at-panel
@@ -488,6 +492,10 @@
       id: W-2
   - name: enable_jog_ui
     args: {}
+  # A-12①: POINT に入る経路はすべて 2 点指示の受付を開き直す（SM-3.1.2-069）。
+  - name: begin_two_point
+    args:
+      kind: SUMMON
   spec_ref: SM-3.1.1-14
 # C-11-at-panel / -at-home: §6 の右列どおり IDLE_P / IDLE_H（確認をやり直す）。
 - id: C-11-at-panel
@@ -2040,6 +2048,10 @@
   - name: guide
     args:
       key: summon_clear_timeout
+  # A-12①: POINT に入る経路はすべて 2 点指示の受付を開き直す（SM-3.1.2-069）。
+  - name: begin_two_point
+    args:
+      kind: SUMMON
   spec_ref: SM-3.1.2-069
 - id: T-SUM-04
   layer: 10
@@ -2055,6 +2067,10 @@
   - name: guide
     args:
       key: summon_target_lost
+  # A-12①: POINT に入る経路はすべて 2 点指示の受付を開き直す（SM-3.1.2-069）。
+  - name: begin_two_point
+    args:
+      kind: SUMMON
   spec_ref: SM-3.1.2-069
 - id: T-SUM-05
   layer: 10
@@ -2067,7 +2083,45 @@
   effects:
   - name: enable_jog_ui
     args: {}
+  # A-12①: POINT に入る経路はすべて 2 点指示の受付を開き直す（SM-3.1.2-069）。
+  - name: begin_two_point
+    args:
+      kind: SUMMON
   spec_ref: SM-3.1.2-069
+# SM-3.1.2-143（2026-11-12 追加。A-12②）: POINT には行き先が無いので、
+# ジョグに触れても PAUSE へ入れない（ジョグ自体は効く）。C-01 が
+# $pause_unless_prep で PAUSE に落とすのを override_common で打ち消す。
+# 2 点指示の受付は開いたまま保つ（begin_two_point は出さない。
+# POINT に入った時点で開いている）。
+- id: T-SUM-18
+  layer: 10
+  mode: SUMMON
+  state: POINT
+  event: ui.jog.hold
+  guard: jog_allowed
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: set_jog
+    args:
+      'on': true
+  spec_ref: SM-3.1.2-143
+  override_common: true
+# リース満了でも POINT のまま（ジョグだけ止める）。C-02 は PAUSE 限定なので
+# ここでは拾われない。
+- id: T-SUM-19
+  layer: 10
+  mode: SUMMON
+  state: POINT
+  event: sys.jog_lease_expired
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: set_jog
+    args:
+      'on': false
+  spec_ref: SM-3.1.2-143
 - id: T-SUM-06
   layer: 10
   mode: SUMMON

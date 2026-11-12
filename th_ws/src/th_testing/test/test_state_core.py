@@ -375,6 +375,9 @@ def test_carry_resume_summon_returns_to_point(state_core_bundle):
     names = [e.name for e in d.effects]
     assert "enable_jog_ui" in names, \
         "WAIT_CLEAR で無効化した手動 UI を戻していない"
+    two_point = [e.args for e in d.effects if e.name == "begin_two_point"]
+    assert two_point == [{"kind": "SUMMON"}], \
+        "POINT へ戻すのに 2 点指示の受付を開き直していない（A-12①）"
 
 
 @pytest.mark.rule("C-11-at-panel")
@@ -862,6 +865,9 @@ def test_estop_resume_summon_returns_to_point(state_core_bundle):
     names = [e.name for e in d.effects]
     assert "enable_jog_ui" in names, \
         "WAIT_CLEAR で無効化した手動 UI を戻していない"
+    two_point = [e.args for e in d.effects if e.name == "begin_two_point"]
+    assert two_point == [{"kind": "SUMMON"}], \
+        "POINT へ戻すのに 2 点指示の受付を開き直していない（A-12①）"
 
 
 @pytest.mark.rule("C-09c-at-panel")
@@ -1099,6 +1105,44 @@ def test_prep_non_return_states_hold_on_jog_and_fault(state_core_bundle):
         assert d.accepted is False, f"PREP/{state} で C-03 が通ってしまった"
         assert (d.to_mode, d.to_state) == ("PREP", state), \
             f"PREP/{state} が回復フォルトで動いた: {d.to_mode}/{d.to_state}"
+
+
+@pytest.mark.rule("T-SUM-03")
+@pytest.mark.rule("T-SUM-04")
+@pytest.mark.rule("T-SUM-05")
+def test_summon_wait_clear_back_to_point_reopens_two_point(state_core_bundle):
+    """退避待ちから POINT へ戻る 3 経路（時間切れ・対象喪失・中止）は、
+    2 点指示の受付を開き直す（A-12①。開かないと位置を決め直せない）。"""
+    core, _, _, _ = state_core_bundle
+    for event in ("evt.clear_timeout", "evt.target_lost", "ui.abort"):
+        d = core.step("SUMMON", "WAIT_CLEAR", event, _mk_ctx())
+        assert d.accepted is True, event
+        assert (d.to_mode, d.to_state) == ("SUMMON", "POINT"), event
+        two_point = [e.args for e in d.effects if e.name == "begin_two_point"]
+        assert two_point == [{"kind": "SUMMON"}], f"{event}: {two_point}"
+
+
+@pytest.mark.rule("T-SUM-18")
+@pytest.mark.rule("T-SUM-19")
+def test_summon_point_jog_and_lease_expiry_stay_in_point(state_core_bundle):
+    """POINT は行き先が無いので、ジョグに触れても PAUSE へ落ちない（A-12②）。
+    ジョグ自体は効き、リース満了ではジョグだけ止める。WAIT_CLEAR は従来どおり
+    ジョグ不可（jog_allowed が false）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("SUMMON", "POINT", "ui.jog.hold", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("SUMMON", "POINT")
+    assert d.rule_id == "T-SUM-18", d.rule_id
+    assert any(e.name == "set_jog" and e.args.get("on") is True for e in d.effects)
+
+    d = core.step("SUMMON", "POINT", "sys.jog_lease_expired", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("SUMMON", "POINT")
+    assert d.rule_id == "T-SUM-19", d.rule_id
+    assert any(e.name == "set_jog" and e.args.get("on") is False for e in d.effects)
+
+    d = core.step("SUMMON", "WAIT_CLEAR", "ui.jog.hold", _mk_ctx())
+    assert d.accepted is False, "退避待ち中にジョグが通ってしまった"
 
 
 @pytest.mark.rule("T-PREP-18")

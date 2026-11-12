@@ -244,7 +244,7 @@ class StateCore:
 | `C-09` | `ESTOP` | `NONE` | `ui.estop.release` | `estop_resume_prev` | `=` | `=` | `show_resume` |
 | **`C-09b-init`** | `ESTOP` | `NONE` | `ui.estop.release` | **`estop_prev_is_init`**（押下前 `INIT`。SG-A5。`C-09b` より前に置く） | `INIT` | `CHECK` | `clear_prev` |
 | `C-09b` | `ESTOP` | `NONE` | `ui.estop.release` | `no_critical_fault` | `IDLE` | `NONE` | `clear_prev` |
-| **`C-09c-summon`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_summon`** | `SUMMON` | `POINT` | `clear_prev`, `close_window{id:W-1}`, `enable_jog_ui` |
+| **`C-09c-summon`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_summon`** | `SUMMON` | `POINT` | `clear_prev`, `close_window{id:W-1}`, `enable_jog_ui`, `begin_two_point{kind:SUMMON}` |
 | **`C-09c-at-panel`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_at_panel`** | `AT_PANEL` | `IDLE_P` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-at-home`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_at_home`** | `AT_HOME` | `IDLE_H` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-opcheck`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_opcheck`** | `OPCHECK` | `LIST` | `clear_prev`, `close_window{id:W-1}`, `abort_check` |
@@ -258,7 +258,7 @@ class StateCore:
 | `C-09d` | `ESTOP` | `NONE` | `ui.resume_no` | **`fault_cleared_and_ui_released`**（SG-A5。`C-09f` と同じ） | `IDLE` | `NONE` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09f`** | `ESTOP` | `NONE` | `ui.resume_ack` | **`fault_cleared_and_ui_released`** | `IDLE` | `NONE` | `clear_prev`, `close_window{id:W-1}` |
 | `C-10` | `CARRY` | `NONE` | `hw.estop.release` | — | `=` | `=` | `show_resume` |
-| **`C-11-summon`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_summon`** | `SUMMON` | `POINT` | `clear_prev`, `close_window{id:W-2}`, `enable_jog_ui` |
+| **`C-11-summon`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_summon`** | `SUMMON` | `POINT` | `clear_prev`, `close_window{id:W-2}`, `enable_jog_ui`, `begin_two_point{kind:SUMMON}` |
 | **`C-11-at-panel`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_at_panel`** | `AT_PANEL` | `IDLE_P` | `clear_prev`, `close_window{id:W-2}` |
 | **`C-11-at-home`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_at_home`** | `AT_HOME` | `IDLE_H` | `clear_prev`, `close_window{id:W-2}` |
 | **`C-11-opcheck`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_opcheck`** | `OPCHECK` | `LIST` | `clear_prev`, `close_window{id:W-2}`, `abort_check` |
@@ -619,9 +619,9 @@ UI がエラー表示すべきか判断できなくなる。
 | --- | --- | --- | --- | --- | --- | --- |
 | `T-SUM-01` | `POINT` | `evt.two_point_done` | — | `=` | `WAIT_CLEAR` | `disable_jog_ui` |
 | `T-SUM-02` | `WAIT_CLEAR` | `evt.clear_ok` | — | `=` | `NAV` | `enable_jog_ui` |
-| `T-SUM-03` | `WAIT_CLEAR` | `evt.clear_timeout` | — | `=` | `POINT` | `enable_jog_ui`, `guide{key:...}` |
-| `T-SUM-04` | `WAIT_CLEAR` | `evt.target_lost` | — | `=` | `POINT` | `enable_jog_ui`, `guide{key:...}` |
-| `T-SUM-05` | `WAIT_CLEAR` | `ui.abort` | — | `=` | `POINT` | `enable_jog_ui` |
+| `T-SUM-03` | `WAIT_CLEAR` | `evt.clear_timeout` | — | `=` | `POINT` | `enable_jog_ui`, `guide{key:...}`, `begin_two_point{kind:SUMMON}` |
+| `T-SUM-04` | `WAIT_CLEAR` | `evt.target_lost` | — | `=` | `POINT` | `enable_jog_ui`, `guide{key:...}`, `begin_two_point{kind:SUMMON}` |
+| `T-SUM-05` | `WAIT_CLEAR` | `ui.abort` | — | `=` | `POINT` | `enable_jog_ui`, `begin_two_point{kind:SUMMON}` |
 | `T-SUM-06` | `NAV` | `ui.stop` | — | `=` | `PAUSE` | `cancel_follow_path` |
 | `T-SUM-07` | `PAUSE` | `ui.run` | — | `=` | `NAV` | `resume_follow_path`（**退避待ちはやり直さない**） |
 | `T-SUM-08` | `NAV` | `evt.blocked` | — | `=` | `BLOCKED` | `open_window(W-5)` |
@@ -631,6 +631,16 @@ UI がエラー表示すべきか判断できなくなる。
 | `T-SUM-11` | `NAV` | `evt.arrived` | — | `=` | `ALIGN` | — |
 | `T-SUM-12` | `ALIGN` | `evt.align_done` | — | `AT_PANEL` | `IDLE_P` | — |
 | **`T-SUM-14`** | `PAUSE` | `ui.save` | `map_update` | `=` | `=` | `commit_map_patch` |
+| **`T-SUM-18`** | `POINT` | `ui.jog.hold` | `jog_allowed` | `=` | `=` | `set_jog(true)`（`override_common`。`C-01` の PAUSE 落ちを打ち消す） |
+| **`T-SUM-19`** | `POINT` | `sys.jog_lease_expired` | — | `=` | `=` | `set_jog(false)` |
+
+**`T-SUM-18/19` は 2026-11-12 追加（A-12②、`SM-3.1.2-143`）。**`POINT` には
+行き先が無いので、ジョグに触れても `PAUSE` へ入れない（ジョグ自体は効く。
+`guards._jog_allowed` は `SUMMON` の `WAIT_CLEAR` だけを除く）。`T-SUM-18` は
+`C-01`（layer 0 の `$pause_unless_prep`）が `ui.jog.hold` で PAUSE に落とすため
+`override_common: true` で打ち消す。`T-SUM-19` は `C-02` が `PAUSE` 限定なので不要。
+2 点指示の受付（`begin_two_point`）は `POINT` に入る行（`T-SUM-03/04/05`・
+`C-09c-summon`・`C-11-summon`）が開く。`POINT` に居る間は開いたままにする。
 
 #### `HOME_NAV`
 

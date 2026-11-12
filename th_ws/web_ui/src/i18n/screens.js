@@ -543,6 +543,9 @@ export const S21_BLOCKED_MSG = '行き先までの経路が見つかりません
 export const S21_BLOCKED_REROUTE = '再検索'
 export const S21_BLOCKED_ABORT = '中断'
 export const S21_PAUSED_MSG = '一時停止中'
+// SM-3.1.2-143（2026-11-12 A-12）: 呼び寄せの位置指定（SUMMON/POINT）でも
+// 「中断」で行き先選択へ戻れる。2 点指示の案内と一緒に出す。
+export const S21_POINT_MSG = '呼び寄せの位置を決めています（「中断」で行き先選択へ戻ります）'
 // WS-9AD (2026-09-11): SUMMON/POINT（呼び寄せ待受中）以外では対象選択が
 // 効かない（T-SUM-15）。タップしても反応が無いだけだと分からないので、
 // レーダーの代わりにこの案内を出す。
