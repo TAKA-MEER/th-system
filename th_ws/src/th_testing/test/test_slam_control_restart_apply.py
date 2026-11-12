@@ -89,11 +89,31 @@ def test_apply_uses_mode_set_while_waiting(slam):
 
 
 def test_toggle_rejected_while_restart_pending(slam):
-    """再起動の復帰待ちの間はトグルを受けない（重なって逆向きに入るのを防ぐ）。"""
+    """再起動の復帰を再適用が済むまで待つ間はトグルを受けない（重なって逆向きに入るのを防ぐ）。"""
     slam._svc['ready'] = False
     _cycle(slam)
+    slam._svc['ready'] = True
+    assert slam._lock.acquire(blocking=False)   # 再適用がまだ済まない
+    try:
+        _cycle(slam)
+        assert slam._restart_pending is True
+    finally:
+        slam._lock.release()
     resp = SimpleNamespace(success=None, message='')
     out = slam._cb_toggle(SimpleNamespace(), resp)
     assert out.success is False
     assert '再起動' in out.message
     assert slam._calls == []
+    _cycle(slam)                            # 再適用が済めば受ける
+    assert slam._restart_pending is False
+    out = slam._cb_toggle(SimpleNamespace(), SimpleNamespace(success=None, message=''))
+    assert out.success is True
+
+
+def test_set_mapping_true_is_idempotent(slam):
+    """開始の要求が重なっても地図作成中で終わる（トグルと違い反転しない）。"""
+    for _ in range(3):
+        out = slam._cb_set_mapping(SimpleNamespace(data=True),
+                                   SimpleNamespace(success=None, message=''))
+        assert out.success is True
+    assert slam._mapping_active is True

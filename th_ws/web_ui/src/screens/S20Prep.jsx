@@ -40,6 +40,7 @@ import { usePlannedPath } from '../ros/usePlannedPath.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useMappingActive } from '../ros/useMappingActive.js'
 import { useStdTrigger } from '../ros/useStdTrigger.js'
+import { useStdSetBool } from '../ros/useStdSetBool.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import TrackerControl from '../parts/TrackerControl.jsx'
@@ -139,7 +140,10 @@ export default function S20Prep() {
   // mappingActive が null（初回メッセージ未受信）の間は、この判定ができず
   // 誤って停止させる恐れがあるためボタンを非活性にする。
   const mappingActive = useMappingActive(ros)
-  const toggleMapping = useStdTrigger('/slam_control/toggle_mapping')
+  // A-11: 開始は冪等な set_mapping{data:true}。toggle_mapping は押下が重なると
+  // 開始のあとに停止へ反転する（2026-11-11 R-31）。
+  const setMapping = useStdSetBool('/slam_control/set_mapping')
+  const startingRef = useRef(false)
   const [mapUnlocked, setMapUnlocked] = useState(false)
   // WS-9Y: 前回セッションの地図・ピンをまとめて消す「新しい試験日として開始」。
   // discard_map（slam_toolbox 再起動）→ reset_pins（pins.yaml を空にする）の順。
@@ -272,9 +276,15 @@ export default function S20Prep() {
   // 呼ばず表示だけ解禁する（呼ぶと動いている地図作成を止めてしまう）。
   async function handleStartMapping() {
     if (!mapOpAllowed) return   // 停止中以外は送らない（サーバ側も拒否する）
+    if (startingRef.current) return   // 応答待ちの間の重ねて押下は送らない
     if (mappingActive === false) {
-      const res = await toggleMapping()
-      if (res?.success === false) return   // 失敗時は解禁しない（留まる）
+      startingRef.current = true
+      try {
+        const res = await setMapping(true)
+        if (res?.success === false) return   // 失敗時は解禁しない（留まる）
+      } finally {
+        startingRef.current = false
+      }
     }
     setMapUnlocked(true)
   }

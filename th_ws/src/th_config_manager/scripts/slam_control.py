@@ -440,11 +440,11 @@ class SlamControl(Node):
         return response
 
     def _reject_if_restarting(self, response):
-        """再起動の復帰を待つ間は地図作成の開始・停止を受けない。
+        """再起動の復帰を、再適用が済むまで待つ間は地図作成の開始・停止を受けない。
 
         受けると再起動の再適用とぶつかり、トグルが重なって逆向きに入る（A-11）。
         """
-        if self._restart_pending or not self._cli_localization.service_is_ready():
+        if self._restart_pending:
             response.success = False
             response.message = 'slam_toolbox の再起動中です。少し待ってからやり直してください'
             return response

@@ -242,6 +242,11 @@ export async function stdTriggerCalls(page) {
   return page.evaluate(() => window.__thStdTriggerCalls ?? [])
 }
 
+// A-11: ros/useStdSetBool.js の test hook が記録した呼び出し（shape { service, data }）。
+export async function stdSetBoolCalls(page) {
+  return page.evaluate(() => window.__thStdSetBoolCalls ?? [])
+}
+
 // brief-onsite-ux2 F-6: S-20 の地図タブは「地図作成開始」を押すまで OnsiteMap を
 // マウントしない。段1が既に完了扱いだった旧仕様に依存する既存 e2e（手順バーの
 // current が段2から始まる、等）はこのヘルパーでゲートを開けてから続ける。
