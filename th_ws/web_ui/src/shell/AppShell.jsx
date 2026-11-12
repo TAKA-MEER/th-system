@@ -127,7 +127,8 @@ function AppShellInner({ screenName, screenId, children }) {
 
   // 1b-7 (SG-B3): /system/effect の ask_save／ask_save_if_unsaved を W-4 の
   // 保存確認に出す。「はい」→ ui.save（保存）、「いいえ」→ ui.discard（破棄）。
-  const { saveAsk, closeSaveAsk } = useSaveConfirm(ros)
+  const { saveAsk, saveBusy, saveError, closeSaveAsk, saveYes: handleSaveYes, saveNo: handleSaveNo } =
+    useSaveConfirm(ros, state?.unsaved, sendTrigger)
 
   // W-6 bottom edge floats above the estop release bar: --dock-h feeds
   // #jogWin's `bottom: calc(var(--dock-h, 0px) + 10px)` (theme.css, ported
@@ -208,20 +209,16 @@ function AppShellInner({ screenName, screenId, children }) {
 
   // 1b-7 (SG-B3): W-1／W-2 が勝つ。IDLE を離れたら（別の方式に入った）W-4 は
   // 閉じる（答えの送り先 T-IDLE-01/-02 は IDLE でしか受けない）。
+  // A-16: ask の effect は「終了」の遷移で /system/state より先に届くので、ask を立てた
+  // 時点のモードはまだ元の（PREP など）ことがある。そこで閉じると W-4 が一瞬も出ない。
+  // 一度 IDLE を見てから IDLE を離れたときだけ閉じる（W-1／CARRY は即閉じる）。
+  const saveAskSawIdleRef = useRef(false)
   useEffect(() => {
-    if (!saveAsk) return
-    if (w1Active || mode === 'CARRY' || mode !== 'IDLE') closeSaveAsk()
+    if (!saveAsk) { saveAskSawIdleRef.current = false; return }
+    if (mode === 'IDLE') saveAskSawIdleRef.current = true
+    if (w1Active || mode === 'CARRY' || (mode !== 'IDLE' && saveAskSawIdleRef.current)) closeSaveAsk()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [w1Active, mode, saveAsk])
-  const handleSaveYes = useCallback(() => {
-    closeSaveAsk()
-    sendTrigger('ui.save').catch(() => {})
-  }, [closeSaveAsk, sendTrigger])
-  const handleSaveNo = useCallback(() => {
-    closeSaveAsk()
-    sendTrigger('ui.discard').catch(() => {})
-  }, [closeSaveAsk, sendTrigger])
-
   // A higher-priority window (W-1/W-2) always wins; a confirm window a
   // screen opened before the fault/estop landed must not linger underneath
   // it (DetailedDesign-webui.md §2.1 stacking order applies to W-4 too).
@@ -338,6 +335,8 @@ function AppShellInner({ screenName, screenId, children }) {
         saveAsk={saveAsk}
         onSaveYes={handleSaveYes}
         onSaveNo={handleSaveNo}
+        saveBusy={saveBusy}
+        saveError={saveError}
         autoBrake={state?.auto_brake}
         autoBrakeCanToggle={canToggleWithDev(
           canToggleAutoBrake(state, attributes, stale), state, stale, devAutoBrakeEffective(topicDevMode))}

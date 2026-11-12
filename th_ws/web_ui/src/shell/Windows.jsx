@@ -51,7 +51,7 @@ import { latestResolved, recordsSince, resolvedSummary } from '../ros/faultHisto
 import {
   WIN_HIDE_LABEL, WIN_RESUME_ACK, WIN_RESUME_YES, WIN_RESUME_NO,
   WIN_ESTOP_RESUME_PREV, WIN_ESTOP_TO_MENU,
-  WIN_SAVE_TITLE, WIN_SAVE_BODY, WIN_SAVE_YES, WIN_SAVE_NO_IDLE, WIN_SAVE_NO_ARMED,
+  WIN_SAVE_TITLE, WIN_SAVE_BODY, WIN_SAVE_YES, WIN_SAVE_TITLE_MAP, WIN_SAVE_TITLE_BOTH, WIN_SAVE_BODY_MAP, WIN_SAVE_NO_IDLE, WIN_SAVE_NO_ARMED,
   WIN_ESTOP_SYSTEM_TITLE, WIN_ESTOP_SYSTEM_BODY, WIN_ESTOP_SYSTEM_HINT, WIN_ESTOP_SYSTEM_HINT_RESUMABLE,
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
   WIN_PRESENCE_TITLE, WIN_PRESENCE_BODY, WIN_PREP_PAUSE_TITLE, WIN_PREP_PAUSE_BODY,
@@ -81,7 +81,7 @@ export default function Windows({
   ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, activeFaultTypes = [], pauseReason, attributes,
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose, guideKey, guideDetail, onGuideClose,
-  saveAsk, onSaveYes, onSaveNo, autoBrake, autoBrakeCanToggle = false, confirmWindow,
+  saveAsk, onSaveYes, onSaveNo, saveBusy = false, saveError = null, autoBrake, autoBrakeCanToggle = false, confirmWindow,
   faultRecords = [], w1FaultType = '', w1SinceSec = 0, historyOpen = false, onHistoryClose,
   screenId,
 }) {
@@ -299,12 +299,21 @@ export default function Windows({
             変わっているため）。 */}
         {saveOpen && (
           <div className="win confirm show" data-testid="w4-save-ask">
-            <header>{WIN_SAVE_TITLE}</header>
+            <header>
+              {saveAsk.venueMap
+                ? (saveAsk.route ? WIN_SAVE_TITLE_BOTH : WIN_SAVE_TITLE_MAP)
+                : WIN_SAVE_TITLE}
+            </header>
             <div className="bodyw">
-              <p>{WIN_SAVE_BODY(saveAsk.routeId)}</p>
+              <p data-testid="w4-save-body">
+                {saveAsk.venueMap
+                  ? WIN_SAVE_BODY_MAP({ routeId: saveAsk.routeId, route: saveAsk.route })
+                  : WIN_SAVE_BODY(saveAsk.routeId)}
+              </p>
+              {saveError && <p className="note" role="alert" data-testid="w4-save-error">{saveError}</p>}
             </div>
             <footer>
-              <button type="button" className="btn primary" data-testid="w4-save-yes" onClick={onSaveYes}>
+              <button type="button" className="btn primary" data-testid="w4-save-yes" disabled={saveBusy} onClick={onSaveYes}>
                 {WIN_SAVE_YES}
               </button>
               <ArmedButton
