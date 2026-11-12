@@ -163,10 +163,19 @@ struct ObstacleLimiterOutput {
   double nearest_obstacle_m = 0.0;  // 不明（scan stale 等）なら -1.0、空き確認済みなら +infinity
   SourceClass source_class = SourceClass::AUTO;
   double applied_limit_mps = 0.0;   // 障害物クランプ「前」の速度上限（screen/mode/reverse/blind の合成）
-  // 1b-15 SG-B10: 自動ブレーキが OFF の手動系で、ON なら障害物で減速が始まる距離に
-  // 入っている（速度は落とさない。画面の接近警告の元信号）。ON のとき・AUTO・
+  // 1b-15 SG-B10 / 2026-11-12: 自動ブレーキが OFF の手動系で、ON なら障害物で
+  // 減速が始まる距離に入っている（速度は落とさない。画面の接近警告の元信号）。
+  // 機体が止まっているとき（指令がほぼ 0）は、進む向きではなく死角を除く
+  // 周囲すべてで最も近い障害物を見る（Spec-safety.md §2.1）。ON のとき・AUTO・
   // /system/state 途絶・scan 途絶・未観測では常に false。
   bool approach_warning = false;
+  // 接近警告の元になった障害物までの距離。動いているときは進む向き、
+  // 止まっているときは死角を除く周囲の最近傍（画面は nearest_obstacle_m では
+  // なくこちらを出す。止まっているときの nearest_obstacle_m は進む向きのまま）。
+  double approach_distance_m = std::numeric_limits<double>::infinity();
+  // 機体の指令がほぼ 0 でない（＝動いている）。スピーカーの接近警告音は
+  // この間だけ鳴らす（LimiterStatus.approach_warning_moving）（止まっているときの警告は画面だけ。Spec-safety.md §11）。
+  bool moving = true;
 };
 
 // ── 純粋関数群（テストから直接呼べるように公開する） ────────────────

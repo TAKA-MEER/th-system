@@ -243,6 +243,7 @@ export const DRIVE_LEAVE = '離れる'
 export const S11_TAB_DRIVE = '走行'
 export const S11_OBSTACLE_TITLE = '障害物'
 export const S11_OBSTACLE_WARN = (d) => `前方 ${d} m に障害物（警告）`
+export const S11_OBSTACLE_WARN_AROUND = (d) => `周囲 ${d} m に障害物（警告）`
 export const S11_OBSTACLE_STOP = (d) => `前方 ${d} m に障害物（停止）`
 export const S11_OBSTACLE_PASS = '障害物なし'
 // 未受信のときの表示（"障害物なし" と出さない。安全側 DetailedDesign-wp3.md §6.2）

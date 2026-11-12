@@ -997,6 +997,101 @@ TEST(ObstacleLimiterCoreAutoBrake, OffKeepsSpeedLimit) {
   EXPECT_DOUBLE_EQ(o.out.linear_x, 0.3) << "速度上限は OFF でも変わらない";
 }
 
+// ── 止まっているときの接近警告（Spec-safety.md §2.1。2026-11-12） ──────
+// 指令がほぼ 0 のときは進む向きではなく、死角を除く周囲すべての最近傍で警告・距離を出す。
+// 減速の判定（linear_ceiling）は変えない。
+
+namespace {
+ObstacleLimiterInputs make_stopped_in(double obstacle_m, double obstacle_dir_rad, bool auto_brake) {
+  ObstacleLimiterInputs in = make_manual_in(1000.0, 30.0, auto_brake);
+  in.muxed.value.linear_x = 0.0;
+  plant_obstacle(&in.scan.ranges, in.scan.geometry, obstacle_dir_rad, obstacle_m, 30.0);
+  return in;
+}
+}  // namespace
+
+TEST(ObstacleLimiterCoreStoppedWarning, SideObstacleWarnsWithDistance) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  for (double dir : {kPi / 2.0, -kPi / 2.0, kPi, 2.5}) {  // 横・後ろ・後ろ寄り
+    ObstacleLimiterCore core;
+    const auto o = core.update(make_stopped_in(0.5, dir, false), p);
+    EXPECT_TRUE(o.approach_warning) << "dir=" << dir;
+    EXPECT_FALSE(o.moving);
+    EXPECT_NEAR(o.approach_distance_m, 0.5, 1e-9) << "dir=" << dir;
+    EXPECT_GT(o.nearest_obstacle_m, 20.0) << "進む向き（前方）の距離は変えない";
+  }
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, FarSideObstacleNoWarning) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_stopped_in(3.0, kPi / 2.0, false), p);
+  EXPECT_FALSE(o.approach_warning);
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, BlindSectorObstacleDoesNotWarn) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  p.blind_angle_ranges_deg = {{80.0, 100.0}};  // 真横（+90 度）が死角
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_stopped_in(0.5, kPi / 2.0, false), p);
+  EXPECT_FALSE(o.approach_warning) << "死角だけにある物では警告しない";
+  // 死角の外なら出る（死角の判定が広すぎないこと）。
+  ObstacleLimiterCore core2;
+  const auto o2 = core2.update(make_stopped_in(0.5, -kPi / 2.0, false), p);
+  EXPECT_TRUE(o2.approach_warning);
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, OnDoesNotWarn) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_stopped_in(0.5, kPi / 2.0, true), p);
+  EXPECT_FALSE(o.approach_warning) << "ON のときは警告ではなく減速で伝える";
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, CeilingUnchangedBySideObstacle) {
+  // 止まっているときの横の障害物で、その後の前進の上限が下がらない（発進できなくなる恐れ）。
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  ObstacleLimiterInputs in = make_stopped_in(0.45, kPi / 2.0, true);
+  auto o = core.update(in, p);
+  EXPECT_DOUBLE_EQ(o.out.linear_x, 0.0);
+  in.now_sec += 0.05;
+  in.muxed.value.linear_x = 1.0;
+  plant_obstacle(&in.scan.ranges, in.scan.geometry, kPi / 2.0, 0.45, 30.0);
+  o = core.update(in, p);
+  EXPECT_GT(o.out.linear_x, 0.9) << "前方が空いていれば横の物で減速しない";
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, MovingKeepsForwardConeWarning) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  {
+    // 動いているときは進む向きだけ。横の障害物では警告しない。
+    ObstacleLimiterCore core;
+    ObstacleLimiterInputs in = make_manual_in(1000.0, 30.0, false);
+    plant_obstacle(&in.scan.ranges, in.scan.geometry, kPi / 2.0, 0.5, 30.0);
+    const auto o = core.update(in, p);
+    EXPECT_TRUE(o.moving);
+    EXPECT_FALSE(o.approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;
+    const auto o = core.update(make_manual_in(1000.0, 0.5, false), p);
+    EXPECT_TRUE(o.moving);
+    EXPECT_TRUE(o.approach_warning);
+    EXPECT_NEAR(o.approach_distance_m, 0.5, 1e-9);
+  }
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, SpinInPlaceCountsAsMoving) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  ObstacleLimiterInputs in = make_stopped_in(0.5, kPi / 2.0, false);
+  in.muxed.value.angular_z = 0.3;
+  const auto o = core.update(in, p);
+  EXPECT_TRUE(o.moving);
+  EXPECT_FALSE(o.approach_warning) << "動いている扱いは進む向きだけ";
+}
+
 // ── 開発モードの項目 auto_brake（Spec-safety.md §10。2026-10-08 改定） ──────
 // dev_auto_brake_off が真のときだけ、AUTO も auto_brake に従う。
 // NA・/system/state 途絶・estop・fault_lock は変えない。
