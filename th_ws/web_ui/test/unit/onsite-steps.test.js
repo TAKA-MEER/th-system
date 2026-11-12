@@ -380,15 +380,16 @@ test('SM-3.1.2-118: 行き先を選べる状態（AT_HOME の IDLE_H/PAUSE・AT_
   }
 })
 
-test('abortAvailable: 「中断」は PANEL_NAV/HOME_NAV/SUMMON の BLOCKED と PAUSE だけ', () => {
+test('abortAvailable: 「中断」は PANEL_NAV/HOME_NAV/SUMMON の BLOCKED と PAUSE、SUMMON の POINT', () => {
   const states = ['NAV', 'BLOCKED', 'PAUSE', 'ALIGN', 'POINT', 'WAIT_CLEAR', 'IDLE_H', 'IDLE_P', null]
   for (const mode of ['PANEL_NAV', 'HOME_NAV', 'SUMMON']) {
     for (const st of states) {
-      assert.equal(abortAvailable(mode, st), st === 'BLOCKED' || st === 'PAUSE', `${mode}/${st}`)
+      const expected = st === 'BLOCKED' || st === 'PAUSE' || (mode === 'SUMMON' && st === 'POINT')
+      assert.equal(abortAvailable(mode, st), expected, `${mode}/${st}`)
     }
   }
   for (const mode of ['AT_HOME', 'AT_PANEL', 'IDLE', 'MANUAL', null]) {
-    for (const st of ['BLOCKED', 'PAUSE', 'NAV']) {
+    for (const st of ['BLOCKED', 'PAUSE', 'NAV', 'POINT']) {
       assert.equal(abortAvailable(mode, st), false, `${mode}/${st}`)
     }
   }

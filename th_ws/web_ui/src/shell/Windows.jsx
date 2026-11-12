@@ -79,7 +79,7 @@ const ESTOP_DISABLED_IN_CARRY = 'estop_disabled_in_carry'
 export default function Windows({
   ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, activeFaultTypes = [], pauseReason, attributes,
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
-  lastRejectReason, jogOpen, onJogClose, guideKey, onGuideClose,
+  lastRejectReason, jogOpen, onJogClose, guideKey, guideDetail, onGuideClose,
   saveAsk, onSaveYes, onSaveNo, autoBrake,
   faultRecords = [], w1FaultType = '', w1SinceSec = 0, historyOpen = false, onHistoryClose,
   screenId,
@@ -321,7 +321,7 @@ export default function Windows({
       {/* W-3 guide banner (1b-6, SG-B2): shell/useGuideBanner.js が立てた
           guide だけ出す。中身は GuideBanner.jsx。 */}
       <div id="winGuide" className={guideKey ? 'show' : ''}>
-        {guideKey && <GuideBanner guideKey={guideKey} onClose={onGuideClose} />}
+        {guideKey && <GuideBanner guideKey={guideKey} guideDetail={guideDetail} onClose={onGuideClose} />}
       </div>
 
       {/* W-6 manual-operation panel (DetailedDesign-webui.md §6/§6.3).

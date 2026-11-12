@@ -728,6 +728,18 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_slam_control_restart
     test/test_slam_control_restart.py
     TIMEOUT 60)
+  # A-11 ①: 1 回の再起動で再適用は 1 回（インプロセス・rclpy 要）
+  # A-11 ②: PREP の保存は成功の通知でだけ SAVED（state_manager＋slam_control の launch_testing）
+  ament_add_pytest_test(test_venue_save_result_node
+    test/test_venue_save_result_node.py
+    TIMEOUT 120)
+  # A-11 ③: PREP の「待機場所へ」は地図が無いと拒否（state_manager の launch_testing）
+  ament_add_pytest_test(test_prep_return_home_map_node
+    test/test_prep_return_home_map_node.py
+    TIMEOUT 120)
+  ament_add_pytest_test(test_slam_control_restart_apply
+    test/test_slam_control_restart_apply.py
+    TIMEOUT 60)
   ament_add_pytest_test(test_twist_mux
     test/test_twist_mux_priority.py
     TIMEOUT 60)
@@ -901,6 +913,10 @@ if(BUILD_TESTING)
   # 走行中に経路の先が塞がれたら止まって BLOCKED（Spec-onsite §6.3。launch_testing）
   ament_add_pytest_test(test_venue_nav_proactive_block_node
     test/test_venue_nav_proactive_block_node.py
+    TIMEOUT 400)
+  # 呼び寄せの POINT のやり直しと古い行き先の破棄（A-12。launch_testing）
+  ament_add_pytest_test(test_venue_nav_summon_retry_node
+    test/test_venue_nav_summon_retry_node.py
     TIMEOUT 400)
   # 再開のときも走り出す前に経路の先を確認する（Spec-onsite §6.3。launch_testing）
   ament_add_pytest_test(test_venue_nav_resume_check_node

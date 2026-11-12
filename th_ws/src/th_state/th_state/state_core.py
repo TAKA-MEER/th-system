@@ -227,7 +227,7 @@ EFFECT_ARG_SPECS: Dict[str, Dict[str, str]] = {
     "face_target": {},
     "open_window": {"id": _STR},
     "close_window": {"id": _STR},
-    "guide": {"key": _STR},
+    "guide": {"key": _STR, "detail": _STR},
     "ask_save_if_unsaved": {"route_id": _STR},
     "ask_save": {"route_id": _STR},
     "enable_main_menu": {},

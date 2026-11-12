@@ -17,12 +17,24 @@ test('guide で帯の状態が立つ (stamp 付き・無し)', () => {
   resetEffectWarningsForTest()
   assert.deepEqual(
     dispatchEffect(guideMsg('summon_clear_timeout')),
-    { kind: 'guide', key: 'summon_clear_timeout', stampMs: null },
+    { kind: 'guide', key: 'summon_clear_timeout', detail: null, stampMs: null },
   )
   assert.deepEqual(
     dispatchEffect(guideMsg('summon_clear_timeout', 'WebUI', 100)),
-    { kind: 'guide', key: 'summon_clear_timeout', stampMs: 100000 },
+    { kind: 'guide', key: 'summon_clear_timeout', detail: null, stampMs: 100000 },
   )
+})
+
+test('guide の detail（理由）が帯の状態に載る (A-11 保存の失敗)', () => {
+  resetEffectWarningsForTest()
+  const msg = {
+    name: 'guide', dest: 'WebUI',
+    args_json: JSON.stringify({ key: 'venue_save_failed', detail: 'ポーズグラフが更新されませんでした' }),
+  }
+  assert.deepEqual(dispatchEffect(msg), {
+    kind: 'guide', key: 'venue_save_failed',
+    detail: 'ポーズグラフが更新されませんでした', stampMs: null,
+  })
 })
 
 test('dest が WebUI でないものは無視 (restart_control_stack は connectivity_checker 宛)', () => {
