@@ -230,6 +230,16 @@ export const W6_AUTO_BRAKE_LABEL = '自動ブレーキ'
 export const W6_AUTO_BRAKE_ON = 'ON'
 export const W6_AUTO_BRAKE_OFF = 'OFF'
 export const W6_AUTO_BRAKE_UNKNOWN = '不明'
+// A-15: W-6 と自律系の画面の切替。文言は S-11 の切替と同じ意味（確認 W-4 も同じ）。
+export const AB_TO_OFF = 'OFF にする'
+export const AB_TO_ON = 'ON にする'
+export const AB_HINT_OFF = 'OFF のあいだは障害物に近づいても減速しません。画面の警告を見て操作してください'
+export const AB_JOG_ONLY_HINT = 'スティックに触れている間だけ切り替えられます'
+export const AB_CONFIRM_TITLE = '自動ブレーキを OFF にしますか'
+export const AB_CONFIRM_BODY = '障害物に近づいても自動で減速・停止しません。画面の警告を見て自分で止めてください。'
+export const AB_CONFIRM_YES = 'OFF にする'
+export const AB_CONFIRM_NO = 'やめる'
+export const AB_DEV_CARD_TITLE = '自動ブレーキ（開発モード）'
 
 // 手動操作タブの「手動」ボタン (driveTab kind='manual' から W-6 を開く)。
 export const DRIVE_MANUAL = '手動'
@@ -687,9 +697,9 @@ export const S50_DEV_ITEM_BATTERY = 'バッテリー電圧低下'
 export const S50_DEV_ITEM_OPCHECK = '始業点検の総合 NG'
 export const S50_DEV_ITEM_OPCHECK_DESC =
   '選ぶと起動時の自動点検の警告を出さなくなります（判定自体は止めません）'
-export const S50_DEV_ITEM_AUTO_BRAKE = '手動系の自動ブレーキ既定'
+export const S50_DEV_ITEM_AUTO_BRAKE = '自律系・場内の自動ブレーキ OFF'
 export const S50_DEV_NO_GATE =
-  '※ バッテリー・自動ブレーキは選んでも今は何も起きません（止める側の仕組みが未実装のため。選択だけ記録されます）'
+  '※ バッテリーは選んでも今は何も起きません（止める側の仕組みが未実装のため。選択だけ記録されます）'
 // いま何を無視しているか（WP-DEV-01B §3）
 export const S50_DEV_EFFECTIVE_TITLE = 'いま無視しているもの'
 export const S50_DEV_NONE = 'なし（通常運用）'

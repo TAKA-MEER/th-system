@@ -32,6 +32,7 @@ import { useOdomPose } from '../ros/useOdomPose.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useRouteMap } from '../ros/useRouteMap.js'
 import { useReplaySpeedPublisher } from '../ros/useReplaySpeedPublisher.js'
+import AutoBrakeDevCard from '../parts/AutoBrakeDevCard.jsx'
 import RoutePreview from './RoutePreview.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import ReplaySpeedControl from '../parts/ReplaySpeedControl.jsx'
@@ -362,6 +363,8 @@ export default function S14Replay({ onFinish }) {
           <h3>{S11_REAR_TITLE}</h3>
           <div className="note">{S11_REAR_NOTE}</div>
         </div>
+        {/* A-15: 開発モードで項目 auto_brake を選んでいるときだけ出る。 */}
+        <AutoBrakeDevCard prefix="s14" />
         <div className="state">{stateLabel(stateName)}</div>
       </div>
     </div>

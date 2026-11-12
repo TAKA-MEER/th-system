@@ -41,6 +41,7 @@ import {
   W6_AUTO_BRAKE_ON, W6_AUTO_BRAKE_OFF, W6_AUTO_BRAKE_UNKNOWN,
 } from '../i18n/screens.js'
 import { autoBrakeLabelKey } from './autoBrake.js'
+import AutoBrakeToggle from '../parts/AutoBrakeToggle.jsx'
 import JogConsole from '../parts/JogConsole.jsx'
 import { isInZoneScreen } from '../screens/screenZone.js'
 import ArmedButton from '../parts/ArmedButton.jsx'
@@ -50,7 +51,7 @@ import { latestResolved, recordsSince, resolvedSummary } from '../ros/faultHisto
 import {
   WIN_HIDE_LABEL, WIN_RESUME_ACK, WIN_RESUME_YES, WIN_RESUME_NO,
   WIN_ESTOP_RESUME_PREV, WIN_ESTOP_TO_MENU,
-  WIN_SAVE_TITLE, WIN_SAVE_BODY, WIN_SAVE_YES, WIN_SAVE_NO_IDLE, WIN_SAVE_NO_ARMED,
+  WIN_SAVE_TITLE, WIN_SAVE_BODY, WIN_SAVE_YES, WIN_SAVE_TITLE_MAP, WIN_SAVE_TITLE_BOTH, WIN_SAVE_BODY_MAP, WIN_SAVE_NO_IDLE, WIN_SAVE_NO_ARMED,
   WIN_ESTOP_SYSTEM_TITLE, WIN_ESTOP_SYSTEM_BODY, WIN_ESTOP_SYSTEM_HINT, WIN_ESTOP_SYSTEM_HINT_RESUMABLE,
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
   WIN_PRESENCE_TITLE, WIN_PRESENCE_BODY, WIN_PREP_PAUSE_TITLE, WIN_PREP_PAUSE_BODY,
@@ -80,7 +81,7 @@ export default function Windows({
   ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, activeFaultTypes = [], pauseReason, attributes,
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose, guideKey, guideDetail, onGuideClose,
-  saveAsk, onSaveYes, onSaveNo, autoBrake,
+  saveAsk, onSaveYes, onSaveNo, saveBusy = false, saveError = null, autoBrake, autoBrakeCanToggle = false, confirmWindow,
   faultRecords = [], w1FaultType = '', w1SinceSec = 0, historyOpen = false, onHistoryClose,
   screenId,
 }) {
@@ -298,12 +299,21 @@ export default function Windows({
             変わっているため）。 */}
         {saveOpen && (
           <div className="win confirm show" data-testid="w4-save-ask">
-            <header>{WIN_SAVE_TITLE}</header>
+            <header>
+              {saveAsk.venueMap
+                ? (saveAsk.route ? WIN_SAVE_TITLE_BOTH : WIN_SAVE_TITLE_MAP)
+                : WIN_SAVE_TITLE}
+            </header>
             <div className="bodyw">
-              <p>{WIN_SAVE_BODY(saveAsk.routeId)}</p>
+              <p data-testid="w4-save-body">
+                {saveAsk.venueMap
+                  ? WIN_SAVE_BODY_MAP({ routeId: saveAsk.routeId, route: saveAsk.route })
+                  : WIN_SAVE_BODY(saveAsk.routeId)}
+              </p>
+              {saveError && <p className="note" role="alert" data-testid="w4-save-error">{saveError}</p>}
             </div>
             <footer>
-              <button type="button" className="btn primary" data-testid="w4-save-yes" onClick={onSaveYes}>
+              <button type="button" className="btn primary" data-testid="w4-save-yes" disabled={saveBusy} onClick={onSaveYes}>
                 {WIN_SAVE_YES}
               </button>
               <ArmedButton
@@ -364,6 +374,18 @@ export default function Windows({
             }[autoBrakeLabelKey(autoBrake)]}
           </span>
           <span className="warn-tx" data-testid="w6-rear-blind">{W6_REAR_BLIND}</span>
+        </div>
+        {/* A-15: 表示を切替にする（Spec-webui §3.5 ジョグ介入）。押せるのは手動系・
+            ジョグ中・開発モードの項目が実効のときだけ（機体が最終判断。拒否の理由は出す）。
+            ON→OFF は W-4 で確認する。 */}
+        <div className="jw-s" data-testid="w6-auto-brake-ctl">
+          <AutoBrakeToggle
+            brake={autoBrake ?? null}
+            canToggle={autoBrakeCanToggle && jogOpen}
+            prefix="w6"
+            confirmWindow={confirmWindow}
+            jogOnlyHint
+          />
         </div>
         <JogConsole ros={ros} disabled={!jogOpen} keyboard inZone={isInZoneScreen(screenId)} />
       </div>

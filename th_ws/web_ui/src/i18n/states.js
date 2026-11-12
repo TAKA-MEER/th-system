@@ -126,6 +126,18 @@ export function WIN_SAVE_BODY(routeId) {
   return `${what}が保存されていません。保存すると経路と地図が確定します。` +
     '破棄すると今回の記録は捨てられ、同名の既存の経路はそのまま残ります。'
 }
+// A-16（SM-3.1.1-10）: 「終了」の未保存に試験場内地図（試験準備で作った地図とピン）を含む。
+export const WIN_SAVE_TITLE_MAP = '試験場内の地図を保存しますか'
+export const WIN_SAVE_TITLE_BOTH = '保存していないものがあります'
+export const SAVE_ASK_FAILED = '保存（破棄）できませんでした。もう一度試してください'
+export function WIN_SAVE_BODY_MAP({ routeId, route }) {
+  const map = '試験場内の地図（ピンを含む）が保存されていません。' +
+    '保存しないと、次に使うときは地図とピンを作り直すことになります。' +
+    '破棄すると今回作った地図とピンは捨てられます。'
+  if (!route) return map
+  const what = routeId ? `「${routeId}」の教示の記録` : '教示の記録'
+  return `${map}あわせて${what}も保存されていません（保存で一緒に保存、破棄で一緒に捨てます）。`
+}
 export const WIN_SAVE_YES = '保存する'
 export const WIN_SAVE_NO_IDLE = '破棄する'
 export const WIN_SAVE_NO_ARMED = '本当に破棄する'
