@@ -23,6 +23,8 @@ import { readFontScale, applyFontScale } from '../parts/fontScale.js'
 import { readVoiceMaster, applyVoiceMaster } from '../parts/voiceMaster.js'
 import { readDevMode, DEV_MODE_EVENT } from '../parts/devMode.js'
 import { useDevMode } from '../ros/useDevMode.js'
+import { canToggleAutoBrake } from './autoBrake.js'
+import { canToggleWithDev, devAutoBrakeEffective } from './autoBrakeToggle.js'
 import { useFaultHistory } from '../ros/useFaultHistory.js'
 import { latestRecord, recentFaultText } from '../ros/faultHistoryState.js'
 import './theme.css'
@@ -337,6 +339,9 @@ function AppShellInner({ screenName, screenId, children }) {
         onSaveYes={handleSaveYes}
         onSaveNo={handleSaveNo}
         autoBrake={state?.auto_brake}
+        autoBrakeCanToggle={canToggleWithDev(
+          canToggleAutoBrake(state, attributes, stale), state, stale, devAutoBrakeEffective(topicDevMode))}
+        confirmWindow={confirmWindowApi}
         faultRecords={faultRecords}
         w1FaultType={w1FaultTypeRef.current}
         w1SinceSec={w1SinceSec}

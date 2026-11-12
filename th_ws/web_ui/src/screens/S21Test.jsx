@@ -40,6 +40,7 @@ import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import { trackerStopAllowed } from '../modes/trackerControlPolicy.js'
 import { venueOpenAllowed } from '../modes/stopOnlyGuard.js'
+import AutoBrakeDevCard from '../parts/AutoBrakeDevCard.jsx'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import TrackerControl from '../parts/TrackerControl.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
@@ -600,6 +601,9 @@ export default function S21Test({ onExit }) {
             </div>
           )}
         </div>
+
+        {/* A-15: 開発モードで項目 auto_brake を選んでいるときだけ出る（出なければ何も描かない）。 */}
+        <AutoBrakeDevCard prefix="s21" />
 
         {/* WS-9AB: BLOCKED（経路が見つからず止まっている）の帯。再検索と、
             非常停止せず方式をやめて止まる「中断」（→ AT_HOME/IDLE_H。待機場所へは走らない。
