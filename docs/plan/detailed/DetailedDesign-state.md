@@ -865,6 +865,27 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 
 逆にすると「多重化はまだ手動を流しているのに FSM は `jog_active=false`」という窓ができる。
 
+#### 5.2.1 自動ブレーキの切替を許す条件と W-6 の心拍（A-15。2026-11-12）
+
+`/system/set_flag auto_brake` を受けるのは、次のいずれか（`th_state/auto_brake.py` の `override_allowed`）。
+
+| 許す条件 | 内容 |
+| --- | --- |
+| 手動系のモード | `auto_brake_default` が `on_locked` でない |
+| ジョグ中 | `jog_active`（リースが続く間） |
+| 開発モードの項目 | `/system/dev_mode` の `effective.auto_brake`（3 秒で失効） |
+| **W-6 を開いている**（A-15） | **`/ui/manual_panel`（`std_msgs/String`、`client_id`）の受信が `jog_lease_ms` 以内。** WebUI は W-6 を開いている間 5 Hz で送り、閉じたら空文字を 1 回送る（空文字は即「閉じた」扱い） |
+
+**`/ui/manual_panel` はジョグのリースと別物。**リース（`/ui/jog_lease`）は `ui.jog.hold` になり自律系を
+`PAUSE` に落とすので、W-6 を開いただけでは送らない。`/ui/manual_panel` は FSM に入れず、`state_manager` が
+自動ブレーキの許可の判定にだけ使う。
+
+**要求を捨てて ON に戻す条件**（`_refresh_auto_brake`。10 Hz）: ①許す条件がどれも成り立たなくなった
+（心拍の途絶・閉じた・開発モードの項目が外れた・ジョグが切れた）、②**モードが変わった**（既存）、
+③**W-6 の許可だけで受けた要求は、状態（`state`）が変わった**。③の例外: ジョグ中は状態の変化を許す
+（ジョグを始めたために自律系が `PAUSE` に落ちる変化。そのあいだ基準の状態を追従させる）。
+ゾーン NA（画面途絶）は従来どおり要求があっても ON。
+
 ---
 
 ## 6. ゾーンの導出

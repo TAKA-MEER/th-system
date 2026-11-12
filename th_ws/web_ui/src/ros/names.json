@@ -98,7 +98,8 @@
     "/system/trigger",
     "/tf",
     "/ui/active_screen",
-    "/ui/jog_lease"
+    "/ui/jog_lease",
+    "/ui/manual_panel"
   ],
   "modes": [
     "AT_PANEL",
@@ -467,7 +468,8 @@
     "/system/state",
     "/tf",
     "/ui/active_screen",
-    "/ui/jog_lease"
+    "/ui/jog_lease",
+    "/ui/manual_panel"
   ],
   "triggers": [
     "evt.align_done",

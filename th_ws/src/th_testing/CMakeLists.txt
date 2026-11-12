@@ -652,6 +652,9 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_auto_brake_dev_state_node
     test/test_auto_brake_dev_state_node.py
     TIMEOUT 180)
+  ament_add_pytest_test(test_auto_brake_panel_node
+    test/test_auto_brake_panel_node.py
+    TIMEOUT 180)
   ament_add_pytest_test(test_auto_brake_dev_limiter_node
     test/test_auto_brake_dev_limiter_node.py
     TIMEOUT 180)

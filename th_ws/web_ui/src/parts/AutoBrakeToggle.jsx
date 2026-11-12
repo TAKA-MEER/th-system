@@ -11,16 +11,15 @@ import { ConfirmWindowContext } from '../shell/confirmWindow.js'
 import { autoBrakeNeedsConfirm } from '../shell/autoBrake.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import {
-  AB_TO_OFF, AB_TO_ON, AB_HINT_OFF, AB_JOG_ONLY_HINT,
+  AB_TO_OFF, AB_TO_ON, AB_HINT_OFF,
   AB_CONFIRM_TITLE, AB_CONFIRM_BODY, AB_CONFIRM_YES, AB_CONFIRM_NO,
 } from '../i18n/screens.js'
 
 // brake: /system/state.auto_brake（true/false/null）。canToggle: 押せるか。
 // prefix: data-testid の接頭辞。confirmWindow: shell/confirmWindow.js の値
 // （W-6 は AppShell の Provider の外にあるので props で受ける。省略時は context）。
-// jogOnlyHint: 押せない理由が「ジョグ中だけ」のときの案内を出す（W-6）。
 export default function AutoBrakeToggle({
-  brake, canToggle, prefix, confirmWindow: confirmProp, jogOnlyHint = false,
+  brake, canToggle, prefix, confirmWindow: confirmProp,
 }) {
   const ctx = useContext(ConfirmWindowContext)
   const confirmWindow = confirmProp ?? ctx
@@ -71,9 +70,6 @@ export default function AutoBrakeToggle({
       </button>
       {brake === false && (
         <div className="note" data-testid={`${prefix}-auto-brake-off-hint`}>{AB_HINT_OFF}</div>
-      )}
-      {jogOnlyHint && !canToggle && (
-        <div className="note" data-testid={`${prefix}-auto-brake-jog-hint`}>{AB_JOG_ONLY_HINT}</div>
       )}
       {error && <div className="note" data-testid={`${prefix}-auto-brake-error`}>{error}</div>}
       {confirmOff && confirmWindow?.isOpen && confirmWindow.mountNode && createPortal(
