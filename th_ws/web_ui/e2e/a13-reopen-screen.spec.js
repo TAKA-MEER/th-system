@@ -4,7 +4,7 @@
 // 送信はソースの文字列ではなく、実際に画面をマウントして
 // window.__thTriggerCalls に積まれた内容で確かめる。
 import { test, expect } from '@playwright/test'
-import { gotoReopen } from './helpers.js'
+import { gotoReopen, setTestState } from './helpers.js'
 
 const uiScreenCalls = (page) => page.evaluate(
   () => (window.__thTriggerCalls ?? []).filter((c) => c.trigger === 'ui.screen'))
@@ -48,4 +48,19 @@ test('A-13: mode が INIT のときは従来どおり S-00 を開く', async ({ 
 
   await expect(page.locator('#s00')).toBeVisible()
   await expect(page.locator('#s21')).toHaveCount(0)
+})
+
+// 起動手順は変えない: 最初が INIT なら、後から IDLE になっても
+// 「メインメニュー画面へ」を押すまで S-00 のまま。
+test('A-13: INIT で開いたあと IDLE に変わっても、押すまで S-00 のまま', async ({ page }) => {
+  await gotoReopen(page, { mode: 'INIT', state: 'CHECK' })
+  await expect(page.locator('#s00')).toBeVisible()
+  await expect(page.getByTestId('s00-advance')).toHaveCount(0)
+
+  await setTestState(page, { mode: 'IDLE', state: 'NONE' })
+  await expect(page.locator('#s00')).toBeVisible()
+  await expect(page.locator('#s01')).toHaveCount(0)
+
+  await page.getByTestId('s00-advance').click()
+  await expect(page.locator('#s01')).toBeVisible()
 })

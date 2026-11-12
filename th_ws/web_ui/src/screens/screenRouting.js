@@ -55,24 +55,33 @@ export const MODE_TO_SCREEN = {
 // 2026-09-08: S-21 は AT_HOME モードから導出するようになったので、
 // 以前の onsiteTestOpen（S-01 のサブ画面として開くローカルフラグ）は廃止した。
 // 画面は FSM から導出する、という 2026-09-02 の原則にこれで揃う。
+// A-13 (2026-11-12): 画面を開いてから最初に受け取った mode で「開き直しか
+// 起動直後か」を 1 度だけ決める（以降は固定）。最初が INIT なら起動直後なので、
+// 後から IDLE になっても従来どおり「メインメニュー画面へ」を押すまで S-00。
+export function latchFirstMode(prev, mode) {
+  return prev ?? mode ?? null
+}
+
+export function isReopenFirstMode(firstMode) {
+  return firstMode != null && firstMode !== 'INIT'
+}
+
 // subState (WP-UI-08): SystemState.state. Only OPCHECK looks at it --
 // mode=OPCHECK と state=REPAIR の組で S-31（Spec-webui.md §3.13: 「S-31
 // 故障診断 -- OPCHECK（状態 REPAIR）」）。他のモードは state を見ない
 // （2026-09-02 の原則どおり、画面は mode だけから決まるのが既定）。
 export function resolveScreen({
   testScreen, passedConnect, mode, settingsOpen, subState, connectOpen = false,
+  reopenPassed = false,
 }) {
   // DRIVE_S11 は本番に存在しない e2e 専用の合成画面。モード導出を迂回する。
   if (testScreen === 'DRIVE_S11') return 'DRIVE_S11'
-  // A-13 (2026-11-12): 端末を開き直すと passedConnect は false に戻るが、機体は
-  // 走行中のモードのまま。そこで S-00（ゾーン NA・速度上限 0）を出すと、
-  // 「再開」しても状態だけ戻って機体は動かない（T-16）。mode が INIT 以外なら
-  // S-00 を通過済みとして扱い、そのモードの画面を開く。mode がまだ届いていない
-  // 間（起動直後）は S-00 のまま。connectOpen は S-01 の「詳細を見る」や
-  // e2e の __thTestScreen='S00' のように、利用者が明示的に S-00 を開いた場合だけ
+  // A-13: 開き直した端末（reopenPassed）は S-00 を通過済みとして、いまのモードの
+  // 画面を出す。起動直後は passedConnect/reopenPassed とも false のままなので、
+  // mode が INIT→IDLE になっても S-00（押すまで進まない）。connectOpen は S-01 の
+  // 「詳細を見る」や e2e の __thTestScreen='S00' のように明示的に開いた場合だけ
   // mode より優先する。
-  const modeReady = mode != null && mode !== 'INIT'
-  if (connectOpen || !(passedConnect || modeReady)) return settingsOpen ? 'S50' : 'S00'
+  if (connectOpen || !(passedConnect || reopenPassed)) return settingsOpen ? 'S50' : 'S00'
   if (mode === 'OPCHECK' && subState === 'REPAIR') return 'S31'
   const base = MODE_TO_SCREEN[mode] ?? 'S01'
   if (base !== 'S01') return base           // 動作系モードが最優先（S-50 と同じ）

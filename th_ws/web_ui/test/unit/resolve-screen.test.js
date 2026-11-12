@@ -3,7 +3,9 @@
 // 動作系モード中は settingsOpen を無視する（走行中に設定画面がかぶらない）。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveScreen, MODE_TO_SCREEN } from '../../src/screens/screenRouting.js'
+import {
+  resolveScreen, MODE_TO_SCREEN, latchFirstMode, isReopenFirstMode,
+} from '../../src/screens/screenRouting.js'
 
 const base = { testScreen: undefined, passedConnect: true, mode: 'IDLE', settingsOpen: false }
 
@@ -33,18 +35,39 @@ test('接続確認前で settingsOpen=false なら S-00', () => {
   assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'INIT', settingsOpen: false }), 'S00')
 })
 
-// A-13 (2026-11-12): 開き直すと passedConnect は false に戻る。機体が INIT 以外
-// なら S-00（ゾーン NA・速度上限 0）に戻さず、そのモードの画面を開く。
-test('A-13: passedConnect=false でも mode が INIT 以外ならそのモードの画面', () => {
-  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'PANEL_NAV' }), 'S21')
-  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'MANUAL' }), 'S11')
-  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'IDLE' }), 'S01')
+// A-13 (2026-11-12): 開き直すと passedConnect は false に戻る。最初に受け取った
+// mode が INIT 以外なら S-00（ゾーン NA・速度上限 0）に戻さず、そのモードの画面。
+test('A-13: 開き直し（reopenPassed）なら mode の画面', () => {
+  assert.equal(
+    resolveScreen({ ...base, passedConnect: false, reopenPassed: true, mode: 'PANEL_NAV' }), 'S21')
+  assert.equal(
+    resolveScreen({ ...base, passedConnect: false, reopenPassed: true, mode: 'MANUAL' }), 'S11')
+  assert.equal(
+    resolveScreen({ ...base, passedConnect: false, reopenPassed: true, mode: 'IDLE' }), 'S01')
 })
 
-test('A-13: mode が INIT または未受信なら S-00 のまま', () => {
-  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: 'INIT' }), 'S00')
-  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: null }), 'S00')
-  assert.equal(resolveScreen({ ...base, passedConnect: false, mode: undefined }), 'S00')
+// 起動時: 最初が INIT なら、後から IDLE になってもボタンを押すまで S-00。
+// reopenPassed は最初の mode で固定されるので、ここでは false のまま。
+test('A-13: 起動時（最初が INIT）は IDLE になっても S-00 のまま', () => {
+  assert.equal(
+    resolveScreen({ ...base, passedConnect: false, reopenPassed: false, mode: 'IDLE' }), 'S00')
+  assert.equal(
+    resolveScreen({ ...base, passedConnect: false, reopenPassed: false, mode: 'INIT' }), 'S00')
+})
+
+test('A-13: 最初の mode で開き直しかを 1 度だけ決める', () => {
+  const first = latchFirstMode(null, 'INIT')
+  assert.equal(first, 'INIT')
+  assert.equal(latchFirstMode(first, 'IDLE'), 'INIT')
+  assert.equal(isReopenFirstMode(first), false)
+
+  const reopened = latchFirstMode(null, 'PANEL_NAV')
+  assert.equal(reopened, 'PANEL_NAV')
+  assert.equal(latchFirstMode(reopened, 'MANUAL'), 'PANEL_NAV')
+  assert.equal(isReopenFirstMode(reopened), true)
+
+  assert.equal(latchFirstMode(null, null), null)
+  assert.equal(isReopenFirstMode(null), false)
 })
 
 test('A-13: 明示的に開いた S-00 は mode が INIT 以外でも S-00', () => {

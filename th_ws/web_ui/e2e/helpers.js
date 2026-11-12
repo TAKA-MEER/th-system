@@ -43,9 +43,9 @@ export async function gotoScreen(page, screen, state = {}) {
 // useAutoCheckStatus.js は window.__thTestAutoCheck を初期値にし、
 // window.__thSetTestAutoCheck で表示を更新する（useDevMode.js と同じ流儀）。
 // A-13: 端末を開き直した状態を再現する。__thTestScreen='S00' は通常
-// 「S-00 を通過していない」初期値だが、__thTestReopen を立てると S-00 を
-// 出さず、passedConnect=false のまま mode から画面を導出させる（実機で
-// 走行中にブラウザを閉じて開き直したときと同じ）。
+// 「S-00 を明示的に開いた」初期値だが、__thTestReopen を立てると開いていない
+// 状態にし、最初に受け取った mode から画面を導出させる（実機で走行中に
+// ブラウザを閉じて開き直したときと同じ）。mode が INIT なら S-00 のまま。
 export async function gotoReopen(page, state = {}) {
   await page.addInitScript((s) => {
     window.__thTestState = s
