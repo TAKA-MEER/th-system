@@ -548,6 +548,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_params_overrides_node
     test/test_params_overrides_node.py
     TIMEOUT 120)
+  # A-14: bringup.launch.py の記述から取り出した params_audit が実際に起動し
+  # /params/get に応答する（launch_testing。ROS2 要）
+  ament_add_pytest_test(test_params_audit_launched_node
+    test/test_params_audit_launched_node.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_safety_monitor
     test/test_safety_monitor.py
     TIMEOUT 90)
