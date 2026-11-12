@@ -482,6 +482,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `/calib/status` | `CalibStatus` | reliable, depth 5 |
 | `/leash/status` ／ `/line/status` | 各 status | reliable, depth 1 |
 | **`/ui/jog_lease`** | `std_msgs/String`（`client_id`） | **best_effort**, depth 1, 5 Hz 以上 |
+| **`/ui/manual_panel`** | `std_msgs/String`（`client_id`。閉じるときは空文字を 1 回） | **best_effort**, depth 1, **W-6 を開いている間 5 Hz**（A-15。**ジョグのリースとは別**: リースは自律の一時停止を起こすので、開いただけでは送らない。受信は `state_manager` が自動ブレーキの切替の許可にだけ使う） |
 | **`/measure/status`** | `MeasureStatus` | **reliable, transient_local, depth 1。10 Hz ＋ 変化時。モードに関係なく出す**（[measure](DetailedDesign-measure.md) §3.3） |
 | **`/measure/result`** | `MeasureResult` | reliable, depth 20。結果が出るたび（[measure](DetailedDesign-measure.md) §3.2） |
 | **`/measure/heartbeat`** | `MeasureHeartbeat` | reliable, depth 1。**5 Hz（発行者は測定機能の機能側）**（[measure](DetailedDesign-measure.md) §3.4） |

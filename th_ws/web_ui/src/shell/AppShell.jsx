@@ -23,8 +23,7 @@ import { readFontScale, applyFontScale } from '../parts/fontScale.js'
 import { readVoiceMaster, applyVoiceMaster } from '../parts/voiceMaster.js'
 import { readDevMode, DEV_MODE_EVENT } from '../parts/devMode.js'
 import { useDevMode } from '../ros/useDevMode.js'
-import { canToggleAutoBrake } from './autoBrake.js'
-import { canToggleWithDev, devAutoBrakeEffective } from './autoBrakeToggle.js'
+import { useManualPanelHeartbeat } from '../ros/useManualPanelHeartbeat.js'
 import { useFaultHistory } from '../ros/useFaultHistory.js'
 import { latestRecord, recentFaultText } from '../ros/faultHistoryState.js'
 import './theme.css'
@@ -100,6 +99,8 @@ function AppShellInner({ screenName, screenId, children }) {
   // panel body lives in Windows.jsx; screens reach this via
   // shell/jogPanel.js's context (a screen's "手動" button calls open()).
   const [jogOpen, setJogOpen] = useState(false)
+  // A-15: W-6 を開いている間の心拍（スティックに触れていなくても自動ブレーキを切り替えられる）。
+  useManualPanelHeartbeat(ros, jogOpen)
   const jogPanelApi = useMemo(() => ({
     isOpen: jogOpen,
     open: () => setJogOpen(true),
@@ -338,8 +339,7 @@ function AppShellInner({ screenName, screenId, children }) {
         saveBusy={saveBusy}
         saveError={saveError}
         autoBrake={state?.auto_brake}
-        autoBrakeCanToggle={canToggleWithDev(
-          canToggleAutoBrake(state, attributes, stale), state, stale, devAutoBrakeEffective(topicDevMode))}
+        autoBrakeCanToggle={!stale && state?.mode != null}
         confirmWindow={confirmWindowApi}
         faultRecords={faultRecords}
         w1FaultType={w1FaultTypeRef.current}
