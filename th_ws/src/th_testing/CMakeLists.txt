@@ -550,6 +550,11 @@ if(BUILD_TESTING)
     TIMEOUT 120)
   # A-14: bringup.launch.py の記述から取り出した params_audit が実際に起動し
   # /params/get に応答する（launch_testing。ROS2 要）
+  # A-14 追補: 壊れた calib/overrides でも params_audit が起動を続け、壊れた overrides を
+  # 上書きしない（launch_testing。ROS2 要）
+  ament_add_pytest_test(test_params_audit_broken_files_node
+    test/test_params_audit_broken_files_node.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_params_audit_launched_node
     test/test_params_audit_launched_node.py
     TIMEOUT 120)
