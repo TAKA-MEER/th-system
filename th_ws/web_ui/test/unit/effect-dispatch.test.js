@@ -3,7 +3,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  dispatchEffect, shouldGuideClose, shouldOpenSaveAsk, isUnsavedRecording, initEstopHeldGuideKey,
+  dispatchEffect, shouldGuideClose, shouldOpenSaveAsk, isUnsavedRecording, saveAskItems, initEstopHeldGuideKey,
   resetEffectWarningsForTest, stampToMs,
 } from '../../src/shell/effectDispatch.js'
 
@@ -233,4 +233,27 @@ test('起動時の物理非常停止の案内: INIT かつ押下のときだけ�
   assert.equal(initEstopHeldGuideKey({ mode: 'IDLE', estopHw: true }), null)
   assert.equal(initEstopHeldGuideKey({ mode: 'CARRY', estopHw: true }), null)
   assert.equal(initEstopHeldGuideKey({ mode: null, estopHw: true }), null)
+})
+
+// A-16（SM-3.1.1-10）: 「終了」の未保存には試験場内地図を含む。
+test('A-16: ask_save_if_unsaved は /system/state.unsaved に venue_map があれば開く', () => {
+  const none = { points: 0, saved: false }
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' }, none, ['venue_map']), true)
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' }, null, ['venue_map']), true)
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' }, none, []), false)
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' }, none, undefined), false)
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' }, none, ['route']), false)
+  // 記録の途切れ（ask_save）は地図の話ではない
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save' }, none, ['venue_map']), false)
+  assert.equal(shouldOpenSaveAsk({ kind: 'guide' }, none, ['venue_map']), false)
+})
+
+test('A-16: saveAskItems は何が未保存かを分けて返す', () => {
+  const rec = { points: 5, saved: false }
+  assert.deepEqual(saveAskItems({ kind: 'ask_save_if_unsaved' }, rec, ['venue_map']),
+    { route: true, venueMap: true })
+  assert.deepEqual(saveAskItems({ kind: 'ask_save_if_unsaved' }, rec, []),
+    { route: true, venueMap: false })
+  assert.deepEqual(saveAskItems({ kind: 'ask_save_if_unsaved' }, null, ['venue_map']),
+    { route: false, venueMap: true })
 })

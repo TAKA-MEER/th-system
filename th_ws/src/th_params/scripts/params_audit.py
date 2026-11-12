@@ -95,6 +95,7 @@ class ParamsAudit(Node):
         self._state_name: str = ""
         self._jog_active: bool = False
         self._state_at: float | None = None
+        self._overrides_error: str | None = None
 
         self._setup_io()
         self._publish_status()
@@ -185,6 +186,13 @@ class ParamsAudit(Node):
                 calib = yaml.safe_load(f) or {}
         except FileNotFoundError:
             return
+        except (OSError, yaml.YAMLError) as e:
+            # A-14: 壊れた校正ファイルでノードを落とさない（生成側と同じく警告して読み飛ばす）。
+            self.get_logger().warn(f"{self._calib_path()} が読めない。校正値なしで続ける: {e}")
+            return
+        if not isinstance(calib, dict):
+            self.get_logger().warn(f"{self._calib_path()} が辞書でない。校正値なしで続ける")
+            return
         rows_by_name = {r["name"]: r for r in rows}
         for name, entry in (calib or {}).items():
             row = rows_by_name.get(name)
@@ -197,11 +205,27 @@ class ParamsAudit(Node):
             row["source"] = entry.get("source", "calib/current.yaml") if is_dict else "calib/current.yaml"
 
     def _load_overrides(self) -> dict:
+        """overrides.yaml を読む。読めない・形が違うときは警告して空を返し、
+        `self._overrides_error` に理由を残す（A-14）。読めたら None に戻す。
+
+        壊れたファイルを空として扱うだけなので、そのまま書き戻すと中身を失う。
+        書き込む側（/params/set）は `_overrides_error` を見て拒否する。"""
+        self._overrides_error = None
         try:
             with open(self._overrides_path(), encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
+                data = yaml.safe_load(f)
         except FileNotFoundError:
             return {}
+        except (OSError, yaml.YAMLError) as e:
+            self._overrides_error = f"{self._overrides_path()} が読めない（{e}）"
+        else:
+            if data is None:
+                return {}
+            if isinstance(data, dict):
+                return data
+            self._overrides_error = f"{self._overrides_path()} が辞書でない"
+        self.get_logger().warn(f"{self._overrides_error}。上書きなしとして続ける")
+        return {}
 
     def _apply_overrides(self, rows: list[dict], overrides: dict) -> None:
         """§5.3 PT-2: given の行だけが対象。他は無視する（/params/set 側でも拒否済みのはずだが
@@ -352,7 +376,14 @@ class ParamsAudit(Node):
             return response
 
         rows = self._load_registry_rows()
-        self._apply_overrides(rows, self._load_overrides())  # 既存の重ね書きの上に足す
+        existing = self._load_overrides()  # 既存の重ね書きの上に足す
+        if self._overrides_error:
+            # A-14: 壊れた overrides.yaml を空として上書きすると中身を失う。保存を拒否する。
+            response.success = False
+            response.message = (f"保存済みの上書きファイルが読めないため変更できません"
+                                f"（{self._overrides_error}）。ファイルを確認してください")
+            return response
+        self._apply_overrides(rows, existing)
         rows_by_name = {r["name"]: r for r in rows}
 
         # PT-2: status: given の行だけが対象（derived / measured は拒否）
@@ -435,6 +466,8 @@ class ParamsAudit(Node):
         overrides_path = self._overrides_path()
         os.makedirs(os.path.dirname(overrides_path), exist_ok=True)
         current = self._load_overrides()
+        if self._overrides_error:
+            raise RuntimeError(f"overrides.yaml を読めないので書き込まない: {self._overrides_error}")
         now = datetime.now(timezone.utc).isoformat()
         for name, value in values.items():
             current[name] = {

@@ -517,6 +517,20 @@ def generate_launch_description():
         output='screen',
     ))
 
+    # ── 8c3. params_audit (WP-PARAM-02。S-50 のパラメータ参照・保存の窓口) ──
+    # /params/get・/params/set・/params/save・/system/params_status を提供する。
+    # これが無いと S-50 の速度プリセット・自動ブレーキの既定が「現在値を取得できません」
+    # になり保存もできない（2026-11-12 実機 T-19 R-28。A-14。ノード単体の launch_testing は
+    # 緑だったが bringup に書かれていなかった）。生成は params_generation が済ませる
+    # （このノードは生成しない）。generated/params_audit.yaml は REGISTRY_NODES で生成される。
+    nodes.append(Node(
+        package='th_params',
+        executable='params_audit.py',
+        name='params_audit',
+        parameters=[os.path.join(GENERATED_DIR, 'params_audit.yaml')],
+        output='screen',
+    ))
+
     # ── 8d. calib_runner (WP-MAINT-02) ────────────────────
     # 校正の実行部。/system/state を見て CALIB のときだけ動く（自律で走る・回る。
     # 出力は /cmd_vel_behavior のみ）。generated/calib_runner.yaml は registry.yaml の

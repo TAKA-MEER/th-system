@@ -16,6 +16,11 @@ constexpr double kTwoPi = 2.0 * kPi;
 constexpr double kDegToRad = kPi / 180.0;
 constexpr double kRadToDeg = 180.0 / kPi;
 
+// 「機体が止まっている」とみなす指令の大きさ（Spec-safety.md §2.1、2026-11-12）。
+// 手動のスティックは離すと 0 になる。線速度・角速度のどちらかが残っていれば
+// 動いている扱いにする（その場旋回中は止まっていない）。
+constexpr double kCommandStoppedEps = 1e-3;
+
 // [0, 2*pi) に正規化する（arcs_overlap の相対角比較専用。normalize_angle
 // （scan_geometry.hpp・[-pi,pi) 版）とは値域が違うだけで意味は同じ）。
 double norm_0_2pi(double x) {
@@ -38,6 +43,49 @@ bool arcs_overlap(double a_start, double a_len, double b_start, double b_len) {
   const double d_ab = norm_0_2pi(b_start - a_start);
   const double d_ba = norm_0_2pi(a_start - b_start);
   return d_ab <= a_len || d_ba <= b_len;
+}
+
+// 全周（死角を除く）で min_points 番目に近い距離。止まっているときの接近警告専用
+// （Spec-safety.md §2.1）。観測できない（未受信・形が合わない）なら covered=false。
+ConeObservation observe_surround(const ScanSnapshot& scan,
+                                 const std::vector<std::pair<double, double>>& blind_deg,
+                                 std::size_t min_points) {
+  if (!scan.received || scan.geometry.num_ranges == 0 ||
+      scan.ranges.size() != scan.geometry.num_ranges) {
+    return ConeObservation{};
+  }
+  std::vector<std::pair<double, double>> blind;  // (start_rad[0,2pi), len_rad)
+  for (const auto& r : blind_deg) {
+    const double start = normalize_angle(r.first * kDegToRad);
+    const double len = norm_0_2pi(normalize_angle(r.second * kDegToRad) - start);
+    if (len > 0.0) {
+      blind.emplace_back(start, len);
+    }
+  }
+  std::vector<double> valid;
+  for (std::size_t i = 0; i < scan.ranges.size(); ++i) {
+    const double r = scan.ranges[i];
+    if (!std::isfinite(r) || r < 0.0) {
+      continue;
+    }
+    const double ang = scan.geometry.angle_min + static_cast<double>(i) * scan.geometry.angle_increment;
+    bool in_blind = false;
+    for (const auto& b : blind) {
+      if (norm_0_2pi(ang - b.first) <= b.second) {
+        in_blind = true;
+        break;
+      }
+    }
+    if (!in_blind) {
+      valid.push_back(r);
+    }
+  }
+  if (valid.empty()) {
+    return ConeObservation{/*covered=*/true, std::numeric_limits<double>::infinity()};
+  }
+  const std::size_t k = std::min(std::max<std::size_t>(min_points, 1), valid.size());
+  std::nth_element(valid.begin(), valid.begin() + static_cast<std::ptrdiff_t>(k - 1), valid.end());
+  return ConeObservation{/*covered=*/true, valid[k - 1]};
 }
 
 }  // namespace
@@ -279,6 +327,32 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
     out.nearest_obstacle_m = std::numeric_limits<double>::infinity();
     out.source_class = SourceClass::AUTO;
     out.applied_limit_mps = 0.0;
+    // 2026-11-12: スティックを離すと指令（/cmd_vel_muxed）は途絶える。これが実機の
+    // 「止まっている」ふつうの姿なので、途絶の間も画面の接近警告・距離は出す
+    // （出力 0・ZERO_STALE・ランプのリセットは変えない。moving は偽＝警告音は鳴らさない）。
+    // 手動系かどうかは /system/state のモード・ゾーン・auto_brake から決める
+    // （途絶を AUTO 扱いにすると警告がいつまでも出ない）。state 途絶・scan 途絶は出さない。
+    out.moving = false;
+    {
+      const bool st_fresh =
+          in.state.received && (in.now_sec - in.state.stamp_sec) <= p.state_stale_sec;
+      const bool sc_fresh =
+          in.scan.received && (in.now_sec - in.scan.stamp_sec) <= p.scan_stale_sec;
+      const bool manual_like =
+          in.state.jog_active || in.state.mode == "MANUAL" || in.state.mode == "TEACH_MANUAL";
+      if (st_fresh && sc_fresh && manual_like && p.blind_calibrated) {
+        const bool policy = policy_stops(SourceClass::MANUAL, in.state.zone, in.state.auto_brake,
+                                         in.dev_auto_brake_off);
+        const double limit = std::max(0.0, std::min(in.screen_limit_mps, in.mode_limit_mps));
+        const ConeObservation around =
+            observe_surround(in.scan, p.blind_angle_ranges_deg, p.obstacle_min_points);
+        const double d = around.covered ? around.nearest_m
+                                        : std::numeric_limits<double>::infinity();
+        out.approach_distance_m = d;
+        out.approach_warning =
+            !policy && v_allow(d, p.obstacle_floor_distance_m, p.brake_accel_mps2) < limit;
+      }
+    }
     prev_ramped_linear_ = 0.0;
     prev_linear_accel_ = 0.0;
     prev_ramped_angular_ = 0.0;
@@ -377,7 +451,21 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   // 1b-15 SG-B10: 自動ブレーキ OFF の手動系は減速しない代わりに、ON なら減速が始まる距離
   // （v_allow が速度上限を下回る距離）に入ったことを知らせる。policy_active のとき（ON・AUTO・
   // NA・state 途絶）は常に false。減速はしない（上の if に入らない）ので速度は変わらない。
-  out.approach_warning = !policy_active && v_allow_now < applied_limit;
+  // 2026-11-12: 止まっているとき（指令がほぼ 0）は進む向きではなく、死角を除く周囲すべての
+  // 最近傍で警告・距離を出す（減速の判定 linear_ceiling は変えない）。
+  const bool moving = std::fabs(in.muxed.value.linear_x) >= kCommandStoppedEps ||
+                      std::fabs(in.muxed.value.angular_z) >= kCommandStoppedEps;
+  double approach_dist = nearest_m;
+  double v_allow_warn = v_allow_now;
+  if (!moving && !dev_scan_bypass) {
+    const ConeObservation around =
+        observe_surround(in.scan, p.blind_angle_ranges_deg, p.obstacle_min_points);
+    approach_dist = around.covered ? around.nearest_m : std::numeric_limits<double>::infinity();
+    v_allow_warn = v_allow(approach_dist, p.obstacle_floor_distance_m, p.brake_accel_mps2);
+  }
+  out.approach_warning = !policy_active && v_allow_warn < applied_limit;
+  out.approach_distance_m = approach_dist;
+  out.moving = moving;
   linear_ceiling = std::max(0.0, linear_ceiling);
 
   // 角速度の一般上限は w_max（常に効く）。L3: 前方障害物では linear.x だけを

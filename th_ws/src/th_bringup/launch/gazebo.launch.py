@@ -498,6 +498,14 @@ def generate_launch_description():
             name='config_manager',
             output='screen',
         ),
+        # params_audit (S-50 のパラメータ参照・保存。bringup.launch.py と同じ。A-14)
+        Node(
+            package='th_params',
+            executable='params_audit.py',
+            name='params_audit',
+            parameters=[os.path.join(GENERATED_DIR, 'params_audit.yaml')],
+            output='screen',
+        ),
         # slam_control (WebUI: 地図作成 開始/停止の仲介)
         Node(
             package='th_config_manager',

@@ -34,3 +34,17 @@ export function autoBrakeLabelKey(autoBrake) {
   if (autoBrake === false) return 'off'
   return 'unknown'
 }
+
+// 接近警告の距離（m）。機体が出した approach_distance_m（止まっているときは死角を除く
+// 周囲の最近傍、動いているときは進む向き。2026-11-12）。無い（古い機体）ときは
+// 進む向きの nearest_obstacle_m にする。
+export function approachDistance(limiterStatus) {
+  const d = limiterStatus?.approach_distance_m
+  return typeof d === 'number' && Number.isFinite(d) ? d : limiterStatus?.nearest_obstacle_m
+}
+
+// 止まっているときの警告か（周囲の障害物。文言を「前方」でなく「周囲」にする）。
+// approach_warning_moving が false のときだけ。未定義（古い機体）は動いている扱い。
+export function approachIsAround(limiterStatus) {
+  return limiterStatus?.approach_warning === true && limiterStatus?.approach_warning_moving === false
+}

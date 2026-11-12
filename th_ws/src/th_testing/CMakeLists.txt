@@ -548,6 +548,16 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_params_overrides_node
     test/test_params_overrides_node.py
     TIMEOUT 120)
+  # A-14: bringup.launch.py の記述から取り出した params_audit が実際に起動し
+  # /params/get に応答する（launch_testing。ROS2 要）
+  # A-14 追補: 壊れた calib/overrides でも params_audit が起動を続け、壊れた overrides を
+  # 上書きしない（launch_testing。ROS2 要）
+  ament_add_pytest_test(test_params_audit_broken_files_node
+    test/test_params_audit_broken_files_node.py
+    TIMEOUT 120)
+  ament_add_pytest_test(test_params_audit_launched_node
+    test/test_params_audit_launched_node.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_safety_monitor
     test/test_safety_monitor.py
     TIMEOUT 90)
@@ -641,6 +651,9 @@ if(BUILD_TESTING)
   # ノード本体で縛る（選んだだけでは OFF にならない・NA／state 途絶／estop は変えない）。
   ament_add_pytest_test(test_auto_brake_dev_state_node
     test/test_auto_brake_dev_state_node.py
+    TIMEOUT 180)
+  ament_add_pytest_test(test_auto_brake_panel_node
+    test/test_auto_brake_panel_node.py
     TIMEOUT 180)
   ament_add_pytest_test(test_auto_brake_dev_limiter_node
     test/test_auto_brake_dev_limiter_node.py

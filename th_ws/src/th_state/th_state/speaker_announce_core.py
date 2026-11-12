@@ -52,6 +52,15 @@ NON_DRIVE_RUN_STATES = frozenset({
 BLOCKED_STATE = "BLOCKED"
 
 
+def warning_audible(approach_warning: bool, approach_warning_moving: bool) -> bool:
+    """警告音を鳴らす元の信号。機体が動いている間の接近警告だけ（Spec-safety §11）。
+
+    止まっているときの接近警告（周囲の障害物。approach_warning だけ立つ）は画面だけで、
+    音は鳴らさない。
+    """
+    return bool(approach_warning and approach_warning_moving)
+
+
 def decide_cue(mode, state, approach_warning: bool) -> str:
     """「いま鳴らすもの」を返す。優先は warning > blocked > drive（§11）。
 

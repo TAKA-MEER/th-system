@@ -56,16 +56,20 @@ def dev_item_effective(raw, now_ms, recv_ms, item: str,
 
 
 def override_allowed(mode_attrs: Mapping[str, object], jog_active: bool,
-                     dev_auto_brake: bool = False) -> bool:
+                     dev_auto_brake: bool = False,
+                     panel_open: bool = False) -> bool:
     """試験員が切り替えてよいか。
 
     手動系のモード（auto_brake_default が on_locked でない）か、ジョグ介入中
     （ジョグ中は元のモードが自律系でも手動系として扱う。Spec-modes.md §3.1.1）のとき真。
     それ以外（自律系の走行・待機など）は無効化不可。
     `dev_auto_brake`（開発モードの項目 auto_brake が実効）が真なら、自律系でも切り替えてよい。
+    `panel_open`（W-6 を開いている知らせが新しい）が真なら、スティックに触れていなくても
+    切り替えてよい（A-15。2026-11-12 ユーザー決定。Spec-webui §3.5）。知らせの鮮度・
+    閉じた・モードや状態が変わったときの戻しは呼び出し側（state_manager）が決める。
     """
     return (mode_attrs.get("auto_brake_default") != LOCKED or bool(jog_active)
-            or bool(dev_auto_brake))
+            or bool(dev_auto_brake) or bool(panel_open))
 
 
 def zone_default(mode_attrs: Mapping[str, object], zone: str,
@@ -99,6 +103,7 @@ def effective_auto_brake(mode_attrs: Mapping[str, object], zone: str,
                          jog_active: bool,
                          override: Optional[bool],
                          dev_auto_brake: bool = False,
+                         panel_open: bool = False,
                          outdoor_default: bool = False,
                          indoor_default: bool = True) -> bool:
     """/system/state.auto_brake の値。
@@ -110,6 +115,7 @@ def effective_auto_brake(mode_attrs: Mapping[str, object], zone: str,
     """
     if zone not in ("IN", "OUT"):
         return True
-    if override is not None and override_allowed(mode_attrs, jog_active, dev_auto_brake):
+    if override is not None and override_allowed(mode_attrs, jog_active, dev_auto_brake,
+                                                 panel_open):
         return bool(override)
     return zone_default(mode_attrs, zone, jog_active, outdoor_default, indoor_default)

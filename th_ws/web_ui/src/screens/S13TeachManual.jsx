@@ -29,7 +29,7 @@ import { useRoutePose } from '../ros/useRoutePose.js'
 import { useRouteMap } from '../ros/useRouteMap.js'
 import { useSetFlag, AUTO_BRAKE_FLAG } from '../ros/useSetFlag.js'
 import { useConfirmWindow } from '../shell/confirmWindow.js'
-import { canToggleAutoBrake, autoBrakeNeedsConfirm, showApproachWarning } from '../shell/autoBrake.js'
+import { canToggleAutoBrake, autoBrakeNeedsConfirm, showApproachWarning, approachDistance, approachIsAround } from '../shell/autoBrake.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import RoutePreview from './RoutePreview.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
@@ -38,7 +38,7 @@ import DriveTab from './driveTab.jsx'
 import { obstacleWarning } from '../shell/limits.js'
 import attributes from '../generated/attributes.json'
 import {
-  S11_TAB_DRIVE, S11_OBSTACLE_TITLE, S11_OBSTACLE_WARN, S11_OBSTACLE_STOP,
+  S11_TAB_DRIVE, S11_OBSTACLE_TITLE, S11_OBSTACLE_WARN, S11_OBSTACLE_WARN_AROUND, S11_OBSTACLE_STOP,
   S11_OBSTACLE_PASS, S11_OBSTACLE_UNKNOWN, S11_AUTO_BRAKE_LABEL,
   S11_AUTO_BRAKE_OFF, S11_AUTO_BRAKE_ON, S11_REAR_TITLE, S11_REAR_NOTE,
   S11_MANUAL_TITLE, S11_AUTO_BRAKE_TO_OFF, S11_AUTO_BRAKE_TO_ON,
@@ -249,7 +249,7 @@ export default function S13TeachManual({ onFinish }) {
             <div className="card">
               <h3>{S11_OBSTACLE_TITLE}</h3>
               <div className="note">
-                {approach ? S11_OBSTACLE_WARN(limiter.nearest_obstacle_m) : obstacleText(warn)}
+                {approach ? (approachIsAround(limiter) ? S11_OBSTACLE_WARN_AROUND : S11_OBSTACLE_WARN)(approachDistance(limiter)) : obstacleText(warn)}
               </div>
               {approach && (
                 <div className="note warn mt" role="alert" data-testid="s13-approach-warning">

@@ -206,3 +206,13 @@ def test_s50_defaults_do_not_weaken_na_or_locked(mode):
         assert effective_auto_brake(
             ATTRS[lm], 'OUT', False, None,
             outdoor_default=True, indoor_default=False) is True
+
+
+def test_a15_panel_open_allows_override_without_jog():
+    """A-15: W-6 を開いている知らせ（panel_open）は、ジョグ中でなくても切替を許す。"""
+    from th_state.auto_brake import effective_auto_brake, override_allowed
+    locked = {"auto_brake_default": "on_locked"}
+    assert override_allowed(locked, False, False, False) is False
+    assert override_allowed(locked, False, False, True) is True
+    assert effective_auto_brake(locked, "IN", False, False, False, False) is True
+    assert effective_auto_brake(locked, "IN", False, False, False, True) is False
