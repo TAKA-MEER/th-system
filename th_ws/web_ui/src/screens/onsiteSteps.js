@@ -67,10 +67,12 @@ export function runBlockedByVenue(mode, stateName, venueUnloaded) {
 
 // 「中断」（ui.abort → AT_HOME/IDLE_H）を出す状態（Spec-webui §3.11 S-21）。
 // 経路が塞がれた BLOCKED と、一時停止中の PAUSE。走行中（NAV・ALIGN）は出さない
-// （「停止」してから「中断」）。SUMMON の WAIT_CLEAR の ui.abort は退避待ちのやり直しで
-// 意味が違うので、ここでは出さない。
+// （「停止」してから「中断」）。SUMMON の POINT にも出す（SM-3.1.2-143。2026-11-12
+// A-12。2 点指示は受け付けるのに抜けるボタンが無かった）。WAIT_CLEAR の ui.abort は
+// 退避待ちのやり直しで意味が違うので、ここでは出さない。
 export const ABORT_STATES = ['BLOCKED', 'PAUSE']
 export function abortAvailable(mode, stateName) {
+  if (mode === 'SUMMON' && stateName === 'POINT') return true
   return GOTO_BLOCKED_MODES.includes(mode) && ABORT_STATES.includes(stateName)
 }
 

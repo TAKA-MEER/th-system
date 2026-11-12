@@ -105,7 +105,9 @@ test('「校正で変更する」は ui.enter_mode{CALIB} を送り、拒否さ�
 
   // スタブ無し = 拒否扱い（useTrigger の TEST_MODE 既定）。
   await page.getByTestId('s50-goto-calib').click()
-  const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
+  // A-13: 画面を開いたときの ui.screen は除き、ボタンが送ったものだけを見る。
+  const calls = (await page.evaluate(() => window.__thTriggerCalls ?? []))
+    .filter((c) => c.trigger !== 'ui.screen')
   expect(calls).toHaveLength(1)
   expect(calls[0]).toEqual({
     trigger: 'ui.enter_mode', argJson: { mode: 'CALIB' }, requester: 'web_ui',
@@ -119,7 +121,8 @@ test('「校正で変更する」が受理されたら理由は出ない', async
   await page.getByTestId('s50-sec-lidar').click()
 
   await page.getByTestId('s50-goto-calib').click()
-  const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
+  const calls = (await page.evaluate(() => window.__thTriggerCalls ?? []))
+    .filter((c) => c.trigger !== 'ui.screen')
   expect(calls).toHaveLength(1)
   expect(calls[0].argJson).toEqual({ mode: 'CALIB' })
   await expect(page.getByTestId('s50-calib-err')).toHaveCount(0)

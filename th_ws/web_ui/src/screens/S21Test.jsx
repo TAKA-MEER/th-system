@@ -66,7 +66,7 @@ import {
   S21_HOME_DECLARED, S21_HOME_DECLARE, S21_HOME_FORCE_DECLARE,
   S21_HOME_OFFSET,
   S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_GATE_MSG, S21_MAP_LOADING,
-  S21_BLOCKED_ABORT, S21_PAUSED_MSG, S21_BLOCKED_MSG, S21_BLOCKED_REROUTE,
+  S21_BLOCKED_ABORT, S21_PAUSED_MSG, S21_POINT_MSG, S21_BLOCKED_MSG, S21_BLOCKED_REROUTE,
   S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
   S21_NEXT_DECLARE_HOME, S21_NEXT_OPEN_VENUE, S21_NEXT_PICK_DEST,
   S21_NEXT_SUMMON, S21_NEXT_WORK,
@@ -634,6 +634,22 @@ export default function S21Test({ onExit }) {
               type="button"
               className="btn danger"
               data-testid="s21-paused-abort"
+              onClick={() => sendTrigger('ui.abort')}
+            >
+              {S21_BLOCKED_ABORT}
+            </button>
+          </div>
+        )}
+
+        {/* SM-3.1.2-143（A-12）: 呼び寄せの位置指定（POINT）からも「中断」で抜けられる
+            （T-SUM-17 は受け付けるが、画面にボタンが無かった）。 */}
+        {abortAvailable(mode, stateName) && stateName === 'POINT' && (
+          <div className="row s21-blocked" data-testid="s21-point">
+            <span className="grow">{S21_POINT_MSG}</span>
+            <button
+              type="button"
+              className="btn danger"
+              data-testid="s21-point-abort"
               onClick={() => sendTrigger('ui.abort')}
             >
               {S21_BLOCKED_ABORT}

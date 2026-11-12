@@ -108,6 +108,7 @@ RESPAWN_WAIT_SEC           = 45.0   # WS-9S: reload のたび slam_toolbox を S
                                      # コメント参照）になる実績があるため長めに取る
 STATUS_PUBLISH_PERIOD_SEC   = 0.5
 
+import json
 import os
 import signal
 import threading
@@ -126,7 +127,7 @@ from std_srvs.srv import SetBool, Trigger
 from slam_toolbox.srv import (DeserializePoseGraph, SaveMap,
                               SerializePoseGraph)
 
-from th_system_msgs.msg import MapSessionStatus, PinList, StateEffect, SystemState
+from th_system_msgs.msg import MapSessionStatus, PinList, StateEffect, StateEvent, SystemState
 from th_system_msgs.srv import OpenMapSession
 
 from th_config_manager.map_freezer_core import make_anchor
@@ -241,6 +242,10 @@ class SlamControl(Node):
         # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
         # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
         self._slam_ready = None
+        # A-11①: 再起動を検知したが、まだ状態の再適用（_apply_mapping）が済んで
+        # いない。ロックが取れない周期は次周期で試す。_slam_ready を戻して
+        # 「再起動」を数え直すと、1 回の再起動で再適用が何度も走る。
+        self._restart_pending = False
         # WS-9S: 再生の地図読み直しは意図的に slam_toolbox を respawn する。その間
         # _check_slam_restart にモード再適用を走らせない（reload 側が最後まで面倒を見る）。
         self._reload_in_progress = False
@@ -265,6 +270,10 @@ class SlamControl(Node):
         self.create_subscription(
             StateEffect, '/system/effect', self._on_effect, effect_qos,
             callback_group=cbg)
+        # SM-3.1.2-052: commit_venue_map の成否を FSM へ返す（成功だけ SAVED へ進む）。
+        self._pub_event = self.create_publisher(
+            StateEvent, '/system/event',
+            QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE))
 
         # WS-9Y: pin_registrar の /onsite/pins（latched）を購読し、HOME ピンの
         # 姿勢を VENUE reload の初期姿勢フォールバックに使う。
@@ -430,6 +439,17 @@ class SlamControl(Node):
         response.message = rejected
         return response
 
+    def _reject_if_restarting(self, response):
+        """再起動の復帰を、再適用が済むまで待つ間は地図作成の開始・停止を受けない。
+
+        受けると再起動の再適用とぶつかり、トグルが重なって逆向きに入る（A-11）。
+        """
+        if self._restart_pending:
+            response.success = False
+            response.message = 'slam_toolbox の再起動中です。少し待ってからやり直してください'
+            return response
+        return None
+
     def _set_active(self, active: bool):
         self._mapping_active = active
         self._pub_active.publish(Bool(data=self._mapping_active))
@@ -459,30 +479,33 @@ class SlamControl(Node):
         ready = self._cli_localization.service_is_ready()
         was_ready = self._slam_ready
         self._slam_ready = ready
-        if was_ready is None or ready == was_ready:
+        if was_ready is not None and ready != was_ready:
+            if not ready:
+                self.get_logger().error(
+                    'slam_toolbox が応答しなくなりました (クラッシュの可能性)。'
+                    ' 自己位置補正が止まります。respawn による再起動を待ちます')
+                self._report('NG: slam_toolbox が停止しました (再起動待ち)')
+                self._restart_pending = False   # 再び落ちた。復帰を数え直す
+                return
+            # 復帰を 1 回だけ数える。再適用が済むまで _restart_pending で持ち越す
+            # （_slam_ready を戻して数え直すと、1 回の再起動が何度も「再起動」になる）。
+            self.get_logger().warn('slam_toolbox の再起動を検知しました。状態を再適用します')
+            # WS-9AL: reload 経由でない再起動（クラッシュ復帰・地図破棄）はまっさらな
+            # 地図作成を始めるので、生存世代を切り替える。reload 経由（_reload_in_progress
+            # で上のガードに掛かる）はここに来ない ─ _handle_map_reload の成功後に
+            # 読み込んだ地図の instance_id を継承する側で別途扱う。
+            self._instance_id = self._new_instance_id()
+            self._venue_dirty = False   # 1b-6 SG-B6: まっさらな地図。未保存の中身は無い
+            self._venue_loaded = False   # 再起動でグラフは空。読み直し直すまで未読込
+            self._publish_anchor('unloaded')
+            self._publish_venue_status()
+            self._restart_pending = True
+        if not self._restart_pending or not ready:
             return
-
-        if not ready:
-            self.get_logger().error(
-                'slam_toolbox が応答しなくなりました (クラッシュの可能性)。'
-                ' 自己位置補正が止まります。respawn による再起動を待ちます')
-            self._report('NG: slam_toolbox が停止しました (再起動待ち)')
-            return
-
-        self.get_logger().warn('slam_toolbox の再起動を検知しました。状態を再適用します')
-        # WS-9AL: reload 経由でない再起動（クラッシュ復帰・地図破棄）はまっさらな
-        # 地図作成を始めるので、生存世代を切り替える。reload 経由（_reload_in_progress
-        # で上のガードに掛かる）はここに来ない ─ _handle_map_reload の成功後に
-        # 読み込んだ地図の instance_id を継承する側で別途扱う。
-        self._instance_id = self._new_instance_id()
-        self._venue_dirty = False   # 1b-6 SG-B6: まっさらな地図。未保存の中身は無い
-        self._venue_loaded = False   # 再起動でグラフは空。読み直し直すまで未読込
-        self._publish_anchor('unloaded')
-        self._publish_venue_status()
         if not self._lock.acquire(blocking=False):
-            self._slam_ready = was_ready   # 次周期でやり直す
-            return
+            return   # 次周期で再適用だけやり直す（再起動は数え直さない）
         try:
+            self._restart_pending = False
             desired = self._mapping_active
             err = self._apply_mapping(desired)
             if err:
@@ -558,6 +581,9 @@ class SlamControl(Node):
         rejected = self._reject_if_mode_disallows(response)
         if rejected:
             return rejected
+        rejected = self._reject_if_restarting(response)
+        if rejected:
+            return rejected
         with self._lock:
             err = self._apply_mapping(not self._mapping_active)
             if err is None and self._mapping_active:
@@ -569,6 +595,9 @@ class SlamControl(Node):
 
     def _cb_set_mapping(self, request, response):
         rejected = self._reject_if_mode_disallows(response)
+        if rejected:
+            return rejected
+        rejected = self._reject_if_restarting(response)
         if rejected:
             return rejected
         with self._lock:
@@ -813,6 +842,15 @@ class SlamControl(Node):
             self._publish_venue_status()
         return err
 
+    def _emit_event(self, event: str, reason: str = ''):
+        """FSM へ evt.* を返す（SM-3.1.2-052。成功だけ SAVED、失敗は理由つき）。"""
+        ev = StateEvent()
+        ev.header.stamp = self.get_clock().now().to_msg()
+        ev.event = event
+        ev.source_node = 'slam_control'
+        ev.arg_json = json.dumps({'reason': reason}, ensure_ascii=False) if reason else '{}'
+        self._pub_event.publish(ev)
+
     def _on_effect(self, msg: StateEffect):
         if msg.dest != 'map_session':
             return
@@ -823,15 +861,18 @@ class SlamControl(Node):
             if rejected is not None:
                 self._report(f'NG: commit_venue_map を拒否 ({rejected})')
                 self.get_logger().warn(f'commit_venue_map を拒否: {rejected}')
+                self._emit_event('evt.venue_map_save_failed', rejected)
                 return
             with self._lock:
                 err = self._commit_venue_map()
             if err:
                 self._report(f'NG: commit_venue_map 失敗 ({err})')
                 self.get_logger().warn(f'commit_venue_map 失敗: {err}')
+                self._emit_event('evt.venue_map_save_failed', err)
             else:
                 self._report('OK: commit_venue_map (venue/map をシリアライズ)')
                 self.get_logger().info('commit_venue_map OK: venue/map をシリアライズ')
+                self._emit_event('evt.venue_map_saved')
         elif msg.name == 'commit_map_patch':
             # 1b-11 SG-B14: 地図更新 ON のときの「保存」（T-REPLAY-08 ほか
             # SM-3.1.2-099〜-102）。最後に開いた地図へ書き足しを確定する:
