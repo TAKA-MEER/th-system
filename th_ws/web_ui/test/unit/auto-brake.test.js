@@ -3,7 +3,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  canToggleAutoBrake, autoBrakeNeedsConfirm, showApproachWarning,
+  canToggleAutoBrake, autoBrakeNeedsConfirm, showApproachWarning, approachDistance, approachIsAround,
 } from '../../src/shell/autoBrake.js'
 import attributes from '../../src/generated/attributes.json' with { type: 'json' }
 
@@ -40,4 +40,19 @@ test('approach warning shows only when brake is OFF and the limiter says so', ()
   assert.equal(showApproachWarning({ approach_warning: true }, null), false)
   assert.equal(showApproachWarning(null, false), false)
   assert.equal(showApproachWarning({}, false), false)
+})
+
+// 2026-11-12: 止まっているときは周囲の最近傍。距離は approach_distance_m、無ければ nearest_obstacle_m。
+test('approachDistance: 機体の approach_distance_m を優先し、無ければ nearest_obstacle_m', () => {
+  assert.equal(approachDistance({ approach_distance_m: 0.5, nearest_obstacle_m: 9 }), 0.5)
+  assert.equal(approachDistance({ nearest_obstacle_m: 0.7 }), 0.7)
+  assert.equal(approachDistance({ approach_distance_m: Infinity, nearest_obstacle_m: 0.7 }), 0.7)
+  assert.equal(approachDistance(null), undefined)
+})
+
+test('approachIsAround: 警告中で動いていないときだけ「周囲」', () => {
+  assert.equal(approachIsAround({ approach_warning: true, approach_warning_moving: false }), true)
+  assert.equal(approachIsAround({ approach_warning: true, approach_warning_moving: true }), false)
+  assert.equal(approachIsAround({ approach_warning: true }), false)
+  assert.equal(approachIsAround({ approach_warning: false, approach_warning_moving: false }), false)
 })
