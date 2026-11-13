@@ -663,7 +663,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `localize_margin_min` | ratio | (c)。全域ローカライズのマージン `m` の不成立下限。未満で LOCALIZE に留まる。同上 |
 | `search_radius_m` | m | (b)。`load_route` 直後の初期探索の窓半径（経路始点中心）。`m_sep_m`（2.0 m）より狭いと `m` が効かないため広く取る（W-01 P5 で registry 化。出発点。P6 で詰める） |
 | `widen_radius_m` | m | (b)。widen 再探索の窓半径（直前の最良候補中心）。初期探索より広い窓（W-01 P5 で registry 化。出発点。P6 で詰める） |
-| `resume_max_dist_m` | m | (c)。確定姿勢からこの距離以内の前向き点が無ければ途中復帰しない上限（LOCALIZE に留まる。W-01 P4。W-01 P5 で registry 化。環境依存で逆算できないため placeholder。P6 で実測） |
+| `resume_max_dist_m` | m | (c)。確定姿勢からこの距離以内に経路の点が無ければ途中復帰しない上限（機体の向きは問わない。LOCALIZE に留まる。W-01 P4。W-01 P5 で registry 化。環境依存で逆算できないため placeholder。P6 で実測） |
+| `resume_tie_m` | m | (b)。最近点との距離の差がこの値以内の点が複数あるときだけ、進行方向と機体の向きの差で途中復帰の点を選ぶ（行きと帰りが重なる経路の前後関係を解く。A-24。出発点 0.3。P6 で詰める） |
 | `factor` | — | (b)。地図間引きの縮小率（`map_downsampler`。W-03） |
 | `publish_period_ms` | ms | (b)。地図間引きの配信間隔（W-03） |
 | `occupied_threshold` | — | (b)。地図間引きの占有判定閾値（W-03） |

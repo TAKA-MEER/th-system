@@ -1,6 +1,7 @@
 """test_w01p5_localize_registry.py — W-01 P5 の registry 配線の試験（ホスト・ROS2 不要）。
 
-P1〜P4 で `LOCALIZE_DEFAULTS` に仮置きしていた 6 値を registry.yaml へ移した
+P1〜P4 で `LOCALIZE_DEFAULTS` に仮置きしていた 6 値と、A-24 で足した
+`resume_tie_m` を registry.yaml へ移した
 ことの固定。W-03 / SG-B21 と同じ流儀（registry ↔ ノード既定値 ↔ 生成 yaml の
 3 点一致）だが、確度 3 件と resume は実スキャン待ちの placeholder のため切り分ける:
 
@@ -9,7 +10,7 @@ P1〜P4 で `LOCALIZE_DEFAULTS` に仮置きしていた 6 値を registry.yaml 
   `LOCALIZE_DEFAULTS` と同値（値は変えない）・stage 5 以降は A8 が armed
 
 rclpy の型の罠（`test_maintenance_param_types.py` 相当）もここで縛る:
-replay_runner は 6 件すべて `float(...)` で宣言し、registry の given 値も
+replay_runner は 7 件すべて `float(...)` で宣言し、registry の given 値も
 float であること（INTEGER↔DOUBLE を変換せず起動時に落ちる）。
 """
 from __future__ import annotations
@@ -46,6 +47,7 @@ _EXPECTED = {
     "search_radius_m": ("b", "given"),
     "widen_radius_m": ("b", "given"),
     "resume_max_dist_m": ("c", "placeholder"),
+    "resume_tie_m": ("b", "given"),
 }
 
 # P1〜P4 の仮置き値。変えたら P6 の実測として別作業にする。
@@ -57,6 +59,7 @@ _FALLBACK_VALUES = {
     "search_radius_m": 5.0,
     "widen_radius_m": 10.0,
     "resume_max_dist_m": 2.0,
+    "resume_tie_m": 0.3,
 }
 
 
@@ -128,10 +131,10 @@ def generated_stage4():
 
 
 # ============================================================================
-# 1. registry.yaml の 6 行（分類・状態・値・consumers）
+# 1. registry.yaml の 7 行（分類・状態・値・consumers）
 # ============================================================================
 
-def test_registry_has_six_w01p5_rows():
+def test_registry_has_w01p5_rows():
     reg = _registry_rows()
     for name, (cls, status) in _EXPECTED.items():
         assert name in reg, f"registry.yaml に {name} が無い（W-01 P5）"
@@ -155,13 +158,15 @@ def test_placeholders_are_tbd_and_stage5():
             f"{name}: blocking_from_stage が 5 でない")
 
 
-def test_given_radii_carry_values():
-    """探索窓 2 件は given の値を持つ（値は変えない）。"""
+def test_given_values_carry_numbers():
+    """given の 3 件は値を持つ（値は変えない）。"""
     reg = _registry_rows()
     assert reg["search_radius_m"]["value"] == 5.0
     assert reg["widen_radius_m"]["value"] == 10.0
+    assert reg["resume_tie_m"]["value"] == 0.3
     assert isinstance(reg["search_radius_m"]["value"], float)
     assert isinstance(reg["widen_radius_m"]["value"], float)
+    assert isinstance(reg["resume_tie_m"]["value"], float)
 
 
 # ============================================================================
@@ -197,11 +202,13 @@ def test_generation_armed_at_stage5():
 # 3. 生成 yaml への載り／載らなさ（値・型）
 # ============================================================================
 
-def test_generated_yaml_carries_given_radii(generated_stage4):
+def test_generated_yaml_carries_given_values(generated_stage4):
     assert generated_stage4["search_radius_m"] == 5.0
     assert generated_stage4["widen_radius_m"] == 10.0
+    assert generated_stage4["resume_tie_m"] == 0.3
     assert isinstance(generated_stage4["search_radius_m"], float)
     assert isinstance(generated_stage4["widen_radius_m"], float)
+    assert isinstance(generated_stage4["resume_tie_m"], float)
 
 
 def test_generated_yaml_omits_placeholders(generated_stage4):
@@ -225,8 +232,8 @@ def test_localize_defaults_unchanged():
             f"LOCALIZE_DEFAULTS[{name!r}] が {value!r} でない（{defaults[name]!r}）")
 
 
-def test_node_declares_all_six_as_double():
-    """replay_runner が 6 件すべて float()（＝DOUBLE）で宣言していること。
+def test_node_declares_all_as_double():
+    """replay_runner が 7 件すべて float()（＝DOUBLE）で宣言していること。
     宣言を忘れる・int で宣言する変異ではここが赤くなる（rclpy は
     INTEGER↔DOUBLE を変換せず、生成 yaml と型が違うと起動時に落ちる）。"""
     declared = _node_declared_floats()

@@ -1566,7 +1566,16 @@
   blocking_from_stage: 5
   consumers: [replay_runner]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-transit-localize-options.md §3"
-  note: "確定姿勢からこの距離以内の前向き点が無ければ途中復帰しない上限（LOCALIZE に留まる）。環境依存で逆算できないため出発点 2.0 はコードの既定値（LOCALIZE_DEFAULTS）に残し、registry は実スキャン（P6）の測定まで placeholder。値は変えない"
+  note: "確定姿勢からこの距離以内に経路の点が無ければ途中復帰しない上限（機体の向きは問わない。LOCALIZE に留まる）。環境依存で逆算できないため出発点 2.0 はコードの既定値（LOCALIZE_DEFAULTS）に残し、registry は実スキャン（P6）の測定まで placeholder。値は変えない"
+
+- name: resume_tie_m
+  unit: m
+  class: b
+  status: given
+  value: 0.3
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-transit-localize-options.md §3"
+  note: "A-24: 最近点との距離の差がこの値以内の点が複数あるときだけ、進行方向と機体の向きの差で途中復帰の点を選ぶ（行きと帰りが重なる経路の前後関係を解く）。0.3 は出発点で P6 の実スキャンで詰める（search_radius_m と同じ扱い）"
 
 - name: factor
   unit: null

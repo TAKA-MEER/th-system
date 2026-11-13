@@ -138,50 +138,92 @@ def align_path_to_current(
 # ──────────────────────────────────────────────────────────────────
 # 途中復帰（W-01 P4。numpy 不要なのでここに置く）
 # ──────────────────────────────────────────────────────────────────
+def _point_direction(points: Sequence[Pose2D], i: int) -> Tuple[float, float]:
+    """点 i の進行方向ベクトル。区間 i→i+1、最終点だけ区間 i-1→i、
+    1 点だけならその点の yaw。"""
+    px, py, pyaw = points[i]
+    n = len(points)
+    if n == 1:
+        return math.cos(pyaw), math.sin(pyaw)
+    if i + 1 < n:
+        nx, ny, _ = points[i + 1]
+        return nx - px, ny - py
+    qx, qy, _ = points[i - 1]
+    return px - qx, py - qy
+
+
+def _distance_sq(points: Sequence[Pose2D], pose: Pose2D, i: int) -> float:
+    px, py, _ = points[i]
+    rx, ry = pose[0], pose[1]
+    return (px - rx) ** 2 + (py - ry) ** 2
+
+
+def nearest_point_distance(points: Sequence[Pose2D], pose: Pose2D) -> float:
+    """確定姿勢から経路の一番近い点までの距離 [m]。空なら inf。"""
+    if not points:
+        return math.inf
+    return math.sqrt(min(_distance_sq(points, pose, i) for i in range(len(points))))
+
+
 def select_resume_index(
     points: Sequence[Pose2D],
     pose: Pose2D,
     max_dist_m: float = 2.0,
+    resume_tie_m: float = 0.3,
 ) -> int:
     """確定姿勢から再開する経路点の添字を返す。見つからなければ -1。
 
-    規則（DetailedDesign-transit-localize-options §3）:
-      - 確定姿勢に最も近い点のうち、進行方向との内積が正（前向き）のもの。
-      - 最も近い前向き点までの距離が max_dist_m を超えたら途中復帰しない (-1)。
-      - 同点（完全な同値）は先勝ち＝index の小さい方（安全側・手前。終点側へ飛ばない）。
+    規則（DetailedDesign-transit-localize-options §3。2026-11-13 A-24 改定）:
+      - **機体の向きを問わず**、確定姿勢に最も近い点を選ぶ。
+      - 最近点との距離の差が resume_tie_m 以内の点が複数あるときだけ、
+        進行方向と機体の向きの差が最も小さい点を選ぶ（行きと帰りが重なる
+        経路の前後関係を解く）。向きの差も同じなら近い方、距離も完全に
+        同じなら index の小さい方。
+      - 完全に同じ距離の点が複数あるとき（自己交差など）は、向きを見る前に
+        index の小さい方を取る（安全側・手前。終点側へ飛ばない）。
+      - 一番近い点まで max_dist_m を超えたら途中復帰しない (-1)。
 
-    既定値 2.0 は出発点（P6 で実測で詰める）。正本の既定は
-    localize_core.LOCALIZE_DEFAULTS["resume_max_dist_m"] で、呼び出し側
-    （replay_runner）が ROS パラメータ化して渡す。ここに直書きするのは、
-    このモジュールが numpy 依存の localize_core を import できないため
-    （host の試験が全滅する。P1 の注記）。
+    機体の向きを候補の条件にしない理由（T-4）: 逆再生の点列は終点から始点へ
+    向かうため、終点の向きのまま置いた機体とは全点が逆向きになり、旧規則では
+    候補が 0 になっていた。向きは「どの点から再開するか」を決めるためだけに
+    使い、再開後は既存の rotate_toward でその点の yaw へ旋回する。
 
-    点 i の進行方向は区間 i→i+1、最終点だけ区間 i-1→i、1 点だけなら
-    その点の yaw。反転後の点列にも同じ規則を適用する（呼び出し側が反転済みの
-    点列を渡すこと。W-19 と直交）。
+    既定値 2.0 / 0.3 は出発点（P6 で実測で詰める）。正本の既定は
+    localize_core.LOCALIZE_DEFAULTS で、呼び出し側（replay_runner）が
+    ROS パラメータ化して渡す。ここに直書きするのは、このモジュールが
+    numpy 依存の localize_core を import できないため（host の試験が全滅する。
+    P1 の注記）。
+
+    反転後の点列にも同じ規則を適用する（呼び出し側が反転済みの点列を渡すこと。
+    W-19 と直交）。
     """
     n = len(points)
     if n == 0:
         return -1
-    rx, ry, ryaw = pose
-    cos_r, sin_r = math.cos(ryaw), math.sin(ryaw)
+    d2s = [_distance_sq(points, pose, i) for i in range(n)]
+    dmin2 = min(d2s)
+    if dmin2 > max_dist_m * max_dist_m:
+        return -1
+    # 完全な距離の同値は手前優先（終点側へ飛ばない）。
+    exact = [i for i, d2 in enumerate(d2s) if d2 == dmin2]
+    if len(exact) > 1:
+        return exact[0]
+    dmin = math.sqrt(dmin2)
+    ryaw = pose[2]
     best_i = -1
-    best_d2 = max_dist_m * max_dist_m
-    for i, (px, py, pyaw) in enumerate(points):
-        # 同値は上書きしない（狭義 < のみ）＝手前の index 優先。終点側へ飛ばない。
-        if n == 1:
-            hx, hy = math.cos(pyaw), math.sin(pyaw)
-        elif i + 1 < n:
-            nx, ny, _ = points[i + 1]
-            hx, hy = nx - px, ny - py
-        else:
-            qx, qy, _ = points[i - 1]
-            hx, hy = px - qx, py - qy
-        if hx * cos_r + hy * sin_r <= 0.0:
+    best_dc = math.inf
+    best_d2 = math.inf
+    for i in range(n):
+        d2 = d2s[i]
+        if math.sqrt(d2) - dmin > resume_tie_m:
             continue
-        d2 = (px - rx) ** 2 + (py - ry) ** 2
-        if d2 < best_d2 or (best_i == -1 and d2 <= best_d2):
+        hx, hy = _point_direction(points, i)
+        dc = abs(normalize_angle(math.atan2(hy, hx) - ryaw))
+        # 向きの差が同じなら近い方、それも同じなら index の小さい方。
+        if dc < best_dc - 1e-12 or (
+                abs(dc - best_dc) <= 1e-12 and d2 < best_d2):
             best_i = i
+            best_dc = dc
             best_d2 = d2
     return best_i
 

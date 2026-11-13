@@ -68,8 +68,8 @@ from th_planning.route_record_core import (
     route_from_dict)
 from th_planning.route_replay_core import (
     ReplayParams, advance_index, align_path_to_current, cross_track_error,
-    pure_pursuit, ramp_toward, reverse_points, rotate_toward,
-    scale_replay_params, select_resume_index,
+    nearest_point_distance, pure_pursuit, ramp_toward, reverse_points,
+    rotate_toward, scale_replay_params, select_resume_index,
 )
 from th_planning.localize_core import (
     LOCALIZE_DEFAULTS, judge_localize, load_pgm_map, search as localize_search,
@@ -182,10 +182,16 @@ class ReplayRunner(Node):
             'localize_margin_low', float(LOCALIZE_DEFAULTS['localize_margin_low']))
         self.declare_parameter(
             'localize_margin_min', float(LOCALIZE_DEFAULTS['localize_margin_min']))
-        # W-01 P4: 確定姿勢からこの距離以内の前向き点が無ければ途中復帰しない
-        # （LOCALIZE に留まる）。P5 で registry へ（placeholder の間は既定値）。
+        # W-01 P4: 確定姿勢からこの距離以内に経路の点が無ければ途中復帰しない
+        # （LOCALIZE に留まる。向きは問わない。A-24）。P5 で registry へ
+        # （placeholder の間は既定値）。
         self.declare_parameter(
             'resume_max_dist_m', float(LOCALIZE_DEFAULTS['resume_max_dist_m']))
+        # A-24: 最近点との距離の差がこの値以内の点が複数あるときだけ、向きで
+        # 前後関係を解く（行きと帰りが重なる経路）。registry が given のため
+        # 生成物に載る。
+        self.declare_parameter(
+            'resume_tie_m', float(LOCALIZE_DEFAULTS['resume_tie_m']))
         # W-01 P5: 探索窓の半径 2 件。registry が given のため生成物に載る。
         self.declare_parameter(
             'search_radius_m', float(LOCALIZE_DEFAULTS['search_radius_m']))
@@ -216,6 +222,8 @@ class ReplayRunner(Node):
             self.get_parameter('localize_margin_min').value)
         self._resume_max_dist_m = float(
             self.get_parameter('resume_max_dist_m').value)
+        self._resume_tie_m = float(
+            self.get_parameter('resume_tie_m').value)
         self._search_radius_m = float(
             self.get_parameter('search_radius_m').value)
         self._widen_radius_m = float(
@@ -841,21 +849,26 @@ class ReplayRunner(Node):
                 self._localize_score = s
                 self._localize_margin = m
                 return
-            # W-01 P4: 確定姿勢に最も近い前向き点を再開 index とし、その点の
-            # yaw へ回す（_control_timer の rotate_toward が _start_yaw を読む）。
-            # 遠すぎたら failed で LOCALIZE に留まる（index 0 から走り出すと
-            # 離れた始点へ向かうため）。self._points は反転済みなら反転後の
-            # 点列なので、逆再生も同じ規則でよい（W-19 と直交）。
+            # W-01 P4 / A-24: 確定姿勢に最も近い点を再開 index とし（機体の
+            # 向きは問わない）、その点の yaw へ回す（_control_timer の
+            # rotate_toward が _start_yaw を読む）。距離の差が resume_tie_m
+            # 以内の点が複数あるときだけ向きで前後関係を解く。
+            # 遠すぎたら走り出さない（index 0 から走り出すと離れた始点へ
+            # 向かうため）。self._points は反転済みなら反転後の点列なので、
+            # 逆再生も同じ規則でよい（W-19 と直交）。
             resume = select_resume_index(
-                self._points, base_pose, self._resume_max_dist_m)
+                self._points, base_pose, self._resume_max_dist_m,
+                self._resume_tie_m)
             if resume < 0:
-                self._localize_quality = 'failed'
+                nearest = nearest_point_distance(self._points, base_pose)
+                # 推定の失敗（failed）と区別する。画面は「経路から離れて
+                # います」と出し、完全グローバルでの再探索は押せるままにする。
+                self._localize_quality = 'off_route' if self._points else 'failed'
                 self._localize_score = s
                 self._localize_margin = m
                 self.get_logger().warn(
-                    f'localize 探索: 確定したが経路から遠いため LOCALIZE に留まる '
-                    f'(base=({base_pose[0]:.2f}, {base_pose[1]:.2f}) '
-                    f'max_dist={self._resume_max_dist_m:.1f}m)')
+                    f'localize 探索: 確定したが経路から離れている'
+                    f'（最も近い点まで {nearest:.2f} m）')
                 return
             self._from_index = resume
             if self._points:

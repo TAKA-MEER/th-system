@@ -379,11 +379,11 @@ def test_resume_at_start_is_zero():
     assert select_resume_index(pts, (0.1, 0.0, 0.0)) == 0
 
 
-def test_resume_backward_heading_skips_ahead_point():
-    # 同じ位置でも西向きなら、前向き条件で東向き区間の点は外れる。
-    # 最終点は前区間（東向き）基準なので外れ、全点外 → -1（留まる）。
+def test_resume_ignores_backward_heading():
+    # A-24: 機体の向きは問わない。東向きの直線の上で西を向いていても、
+    # 一番近い点（index 5）を選び、その点の向きへ旋回してから走る。
     pts = [(float(i), 0.0, 0.0) for i in range(0, 11)]
-    assert select_resume_index(pts, (5.0, 0.0, math.pi)) == -1
+    assert select_resume_index(pts, (5.0, 0.0, math.pi)) == 5
 
 
 def test_resume_l_shape_uses_segment_direction():
@@ -431,6 +431,32 @@ def test_resume_on_reversed_points():
     rev = reverse_points(fwd)
     # 反転後は西向きの点列。機体は x=7 付近で西向き → 反転後の index 3（=元の 7）。
     assert select_resume_index(rev, (7.1, 0.1, math.pi)) == 3
+
+
+def test_resume_reverse_endpoint_with_forward_heading():
+    # 2026-11-13 T-4: 逆再生の終点（＝反転前の終点）に、終点での向きのまま置く。
+    # 反転後の点列は西を向くので、機体の東向きとは全点が逆向きになる。
+    # 旧規則（前向きの点だけ）では -1 だった。新規則は index 0 を選ぶ。
+    fwd = [(float(i), 0.0, 0.0) for i in range(0, 11)]
+    rev = reverse_points(fwd)
+    assert select_resume_index(rev, (10.0, 0.0, 0.0)) == 0
+    # 終点から少しずれていても（2 m 以内）index 0 付近。
+    assert select_resume_index(rev, (9.8, 0.1, 0.0)) == 0
+
+
+def test_resume_tie_resolved_by_heading():
+    # 行き y=0（東向き）と帰り y=0.25（西向き）が重なる。機体は行きの点に
+    # わずかに近いが西を向いている。距離の差 0.07 m は resume_tie_m (0.3) 以内
+    # なので、向きが合う帰り側（index 6）を選ぶ。
+    out = [(float(i), 0.0, 0.0) for i in range(0, 6)]
+    back = [(float(5 - i), 0.25, math.pi) for i in range(0, 6)]
+    pts = out + back
+    assert select_resume_index(pts, (4.9, 0.08, math.pi)) == 6
+    # 逆に東を向いていれば行き側（index 5）。
+    assert select_resume_index(pts, (4.9, 0.08, 0.0)) == 5
+    # tie_m を狭めれば、距離で一番近い行き側のまま。
+    assert select_resume_index(
+        pts, (4.9, 0.08, math.pi), resume_tie_m=0.05) == 5
 
 
 # ── replay_runner.py の配線（ast 静的検査。ROS 不要）──────────────────
