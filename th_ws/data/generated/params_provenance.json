@@ -1,4 +1,19 @@
 {
-  "origins": {},
+  "origins": {
+    "auto_brake_default_outdoor": {
+      "origin": "override",
+      "reason": "試験　場外OFF->ON",
+      "set_at": "2026-11-13T10:14:10.408225+00:00",
+      "set_by": "web_ui",
+      "value": "on"
+    },
+    "speed_preset_low": {
+      "origin": "override",
+      "reason": "試験　低速0.27->0.55",
+      "set_at": "2026-11-13T10:12:37.719781+00:00",
+      "set_by": "web_ui",
+      "value": 0.55
+    }
+  },
   "rejected": {}
 }
