@@ -344,6 +344,10 @@ export const S14_QUALITY_LOW = '低い'
 export const S14_QUALITY_LOW_HINT = '似た場所が複数あり、取り違えの可能性があります'
 export const S14_QUALITY_FAILED = '見つかりません'
 export const S14_QUALITY_FAILED_HINT = '完全グローバルで探すか、経路を選び直してください'
+// A-24: 自己位置は決まったが経路から離れすぎていて途中復帰できない。
+// 推定の失敗（見つかりません）と区別する。「完全グローバルで探す」は押せる。
+export const S14_QUALITY_OFF_ROUTE = '経路から離れています'
+export const S14_QUALITY_OFF_ROUTE_HINT = '経路の近く（2 m 以内）に置き直してください'
 export const S14_QUALITY_SEARCHING = '探しています'
 // 1b-11 SG-B19: 探索・読み直しの待ち時間（Spec-transit.md §4.2.2）。
 // 原因を断定しない文言にする（§4.2.3）。

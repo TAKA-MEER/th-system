@@ -305,6 +305,7 @@
     "restart_max_count",
     "restart_wait_ms",
     "resume_max_dist_m",
+    "resume_tie_m",
     "route_gap_timeout_ms",
     "route_jump_m",
     "route_sample_interval_m",

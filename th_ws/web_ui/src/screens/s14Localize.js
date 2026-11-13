@@ -6,6 +6,8 @@
 //   'high'       成立 → 「高い」
 //   'low_margin' 成立したが似た場所あり → 「低い」＋警告（READY の再生は押せるまま）
 //   'failed'     不成立（LOCALIZE に留まる）→ 「見つかりません」＋案内
+//   'off_route'  推定は成立したが経路から離れすぎ（A-24）→ 「経路から離れています」
+//                ＋経路の近くへ置き直す案内（推定の失敗と区別する）
 //   'searching'  探索中 → 「探しています」（60 秒「長引いている」注記は出さない）
 //   'unknown'／''／undefined 旧経路・未受信 → 確度欄を出さない
 //
@@ -18,11 +20,13 @@ import {
   S14_QUALITY_LOW_HINT,
   S14_QUALITY_FAILED,
   S14_QUALITY_FAILED_HINT,
+  S14_QUALITY_OFF_ROUTE,
+  S14_QUALITY_OFF_ROUTE_HINT,
   S14_QUALITY_SEARCHING,
 } from '../i18n/screens.js'
 
 // quality → { visible, level }。level は 'high' / 'low' / 'failed' /
-// 'searching' のいずれか。visible が false なら確度欄を出さない。
+// 'off_route' / 'searching' のいずれか。visible が false なら確度欄を出さない。
 export function localizeQualityView(quality) {
   switch (quality) {
     case 'high':
@@ -31,6 +35,8 @@ export function localizeQualityView(quality) {
       return { visible: true, level: 'low' }
     case 'failed':
       return { visible: true, level: 'failed' }
+    case 'off_route':
+      return { visible: true, level: 'off_route' }
     case 'searching':
       return { visible: true, level: 'searching' }
     default:
@@ -47,6 +53,8 @@ export function localizeQualityText(level) {
       return `${S14_QUALITY_TITLE}：${S14_QUALITY_LOW}。${S14_QUALITY_LOW_HINT}`
     case 'failed':
       return `${S14_QUALITY_TITLE}：${S14_QUALITY_FAILED}。${S14_QUALITY_FAILED_HINT}`
+    case 'off_route':
+      return `${S14_QUALITY_TITLE}：${S14_QUALITY_OFF_ROUTE}。${S14_QUALITY_OFF_ROUTE_HINT}`
     case 'searching':
       return `${S14_QUALITY_TITLE}：${S14_QUALITY_SEARCHING}`
     default:
