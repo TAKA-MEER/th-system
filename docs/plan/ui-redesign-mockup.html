@@ -91,6 +91,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .tg .off{color:var(--dim)}
 .tg .sep{flex:none;width:2px;background:var(--bd-hi)}
 .tg .inert{color:var(--mut);cursor:pointer}
+.tg .press{background:var(--ctrl);cursor:pointer}
 
 /* 右列（試験場内） */
 .ctl{width:440px;flex:none;display:flex;flex-direction:column;gap:8px}
@@ -131,7 +132,6 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .tiles{flex:1;display:grid;gap:12px;grid-template-columns:repeat(3,1fr);grid-auto-rows:1fr;min-height:0}
 .tiles.c4{grid-template-columns:repeat(4,1fr)}
 .tiles.c2{grid-template-columns:repeat(2,1fr)}
-.portrait .tiles{grid-template-columns:repeat(2,1fr)}
 .tile{background:var(--panel);border:1px solid var(--bd-hi);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:pointer;position:relative;padding:10px;text-align:center}
 .tile svg{width:64px;height:64px}
 .tile .nm{font-size:24px;font-weight:800}
@@ -139,6 +139,15 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .tile .why{font-size:13px;color:var(--warn-tx);min-height:18px}
 .tile.dis{opacity:.38;cursor:not-allowed;border-style:dashed}
 .tile.empty{visibility:hidden}
+.tile.l svg{width:92px;height:92px}
+.tile.l .nm{font-size:32px}
+.tile.s{flex-direction:row;gap:14px}
+.tile.s svg{width:36px;height:36px}
+.tile.s .nm{font-size:20px}
+.tg.sm{min-height:42px;border-radius:10px;width:250px}
+.tg.sm > div{font-size:15px;flex-direction:row;gap:6px}
+.tg.sm > div small{display:none}
+.opbar .cap{font-size:14px;color:var(--mut);margin-left:14px;font-weight:700}
 .tile.g{border-left-width:6px}
 .side{width:340px;flex:none;display:flex;flex-direction:column;gap:12px}
 .portrait .side{width:auto;display:grid;grid-template-columns:1fr 1fr}
@@ -200,9 +209,10 @@ const ic = (k, extra='') => `<svg viewBox="0 0 24 24" fill="none" stroke="curren
 /* ---------------- 状態 ---------------- */
 const S = {
   scr:'menu', ori:'L',
-  menu:{lvl:'top', trackerOff:false, noRoute:false, cue:true},
-  day:{sub:'home', how:'select', dest:null, sel:null, robot:'home', blink:true, flowStep:0},
-  prep:{sub:'mapping', method:'person', reserved:'dim', reg:null, regStep:0, trackerOff:false, pins:6},
+  tracker:true,   // 人検出（試験準備・試験で共有。左上の操作バーのトグル）
+  menu:{lvl:'top', trackerOff:false, noRoute:false},
+  day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0},
+  prep:{sub:'mapping', method:'person', reserved:'dim', reg:null, regStep:0, pins:6},
 }
 const SUBS = {
   menu:[['top','一番上'],['field','試験場 ▸'],['drive','走行 ▸'],['maint','点検と校正 ▸']],
@@ -225,19 +235,27 @@ function btn(act, label, {icon, cls='', dis=false, id}={}){
   return `<button class="b ${cls} ${dis?'dis':''}" data-btn data-act="${dis?'':act}" ${id?`data-id="${id}"`:''}>${icon?ic(icon):''}<span>${label}</span></button>`
 }
 // 対のトグル。stop/run: 'cur' | 'en' | 'dis' | 'inert'（予約で押しても何も起きない）
-function tog(stop, run, {runLabel='走行', blink=false, note=''}={}){
+function tog(stop, run, {runLabel='走行', runHint='押すと走り出す', blink=true, note=''}={}){
   const side = (k, st) => {
     const lab = k==='stop' ? '停止' : runLabel
     const icn = k==='stop' ? ic('stopSq','style="width:16px;height:16px"') : ic('play','style="width:16px;height:16px"')
-    if (st==='cur') return `<div class="cur">${icn}<span>${lab}中</span><small>いまの状態</small></div>`
+    if (st==='cur') return `<div class="cur">${icn}<span>${k==='stop'?'停止中':'走行中'}</span><small>いまの状態</small></div>`
     if (st==='en') return k==='stop'
       ? `<div class="nstop" data-act="stop">${icn}<span>${lab}する</span><small>押すと止まる</small></div>`
-      : `<div class="nrun ${blink?'blink':''}" data-act="run">${icn}<span>${lab}する</span><small>押すと続きを走る</small></div>`
+      : `<div class="nrun ${blink?'blink':''}" data-act="run">${icn}<span>${lab}する</span><small>${runHint}</small></div>`
     if (st==='inert') return `<div class="inert" data-act="inert">${icn}<span>${lab}</span><small>${note}</small></div>`
     return `<div class="off">${icn}<span>${lab}</span><small>${note}</small></div>`
   }
   const pressable = [stop,run].some(s=>s==='en'||s==='inert')
   return `<div class="tg" data-btn ${pressable?'':'data-dis'}>${side('stop',stop)}<span class="sep"></span>${side('run',run)}</div>`
+}
+// 人検出の開始／停止（2026-11-13: 案の画面に動かす手段が無かった。いまの実装は対象選択タブの中）。対のトグル（R4）。
+// 呼び寄せ中・登録中は止められない（機体が拒否する。trackerControlPolicy.js）。
+function trackerBar(canStop=true){
+  const on=S.tracker
+  return `<span class="cap">人検出</span><div class="tg sm" data-btn>
+    ${on?(canStop?`<div class="press" data-act="trkOff">■ 止める</div>`:`<div class="off">■ 止める</div>`):`<div class="cur">■ 停止中</div>`}<span class="sep"></span>
+    ${on?`<div class="cur">● 動作中</div>`:`<div class="press" data-act="trkOn">● 動かす</div>`}</div>`
 }
 function header(title, zone){
   return `<div class="hdr"><div class="r1"><div class="brand"><small>MIRS2602-</small>高見舎プロジェクト</div><div class="title">${title}</div></div>
@@ -255,7 +273,7 @@ const PINS = [
 ]
 const pinById = id => PINS.find(p=>p.id===id)
 function rand(seed){ let s=seed; return ()=>((s=(s*9301+49297)%233280)/233280) }
-function mapSVG({robot, path, sel, selLabel, partial=false, pins=PINS, scan=true}){
+function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, scan=true}){
   const r = rand(7); let pts=''
   if (scan) for (let i=0;i<140;i++){ const t=r()
     const [x,y] = t<.25?[40+r()*920,40]:t<.5?[40+r()*920,580]:t<.75?[40,40+r()*540]:[960,40+r()*540]
@@ -273,7 +291,8 @@ function mapSVG({robot, path, sel, selLabel, partial=false, pins=PINS, scan=true
       ${p.kind==='home'
         ? `<path d="M${p.x-16} ${p.y+2}L${p.x} ${p.y-14}L${p.x+16} ${p.y+2}V${p.y+16}H${p.x-16}Z" fill="${isSel?'#8fd694':'#4caf50'}" stroke="#0f1117" stroke-width="2"/>`
         : `<rect x="${p.x-14}" y="${p.y-14}" width="28" height="28" rx="4" fill="${isSel?'#7fb4ee':'#3f8ae0'}" stroke="#0f1117" stroke-width="2"/>`}
-      ${isSel?`<circle cx="${p.x}" cy="${p.y}" r="26" fill="none" stroke="#fff" stroke-width="3"/>`:''}
+      ${dest===p.id?`<circle cx="${p.x}" cy="${p.y}" r="30" fill="none" stroke="#ffd54f" stroke-width="5"/>`:''}
+      ${isSel?`<circle cx="${p.x}" cy="${p.y}" r="24" fill="none" stroke="#fff" stroke-width="3"/>`:''}
       <text x="${p.x}" y="${p.y+40}" text-anchor="middle" font-size="22" font-weight="700" fill="#e6e8ec" stroke="#0f1117" stroke-width="5" paint-order="stroke">${p.name}</text></g>`
   }
   let bubble=''
@@ -289,7 +308,8 @@ function mapSVG({robot, path, sel, selLabel, partial=false, pins=PINS, scan=true
     <g ${partial?'clip-path="url(#exp)"':''}>${walls}</g>${partial?'<path d="M40 40H700L760 180L640 330L480 380L330 600H40Z" fill="none" stroke="#3a3f4c" stroke-dasharray="6 6"/>':''}
     ${pts}${pl}${pinG}${rb}${bubble}</svg>`
 }
-function radarSVG(big){
+function radarSVG(big, off=false){
+  if (off) return `<div class="radar ${big?'big':''}" style="display:flex;align-items:center;justify-content:center;text-align:center;color:var(--mut);font-size:15px;padding:16px">人検出が止まっています<br>左上の「人検出」で動かします</div>`
   const cands=[[60,-90,true],[-110,-40,false],[130,60,false],[-70,110,false]]
   let c=''
   cands.forEach(([x,y,s],i)=>{ c+=`<g><circle cx="${150+x}" cy="${150+y}" r="${s?15:11}" fill="${s?'#4caf50':'#8b93a1'}"/>${s?`<circle cx="${150+x}" cy="${150+y}" r="24" fill="none" stroke="#8fd694" stroke-width="3"/>`:''}<text x="${150+x}" y="${150+y+5}" text-anchor="middle" font-size="13" font-weight="800" fill="#0f1117">${i+1}</text></g>` })
@@ -299,38 +319,60 @@ function radarSVG(big){
 }
 
 /* ---------------- メインメニュー（M2） ---------------- */
+// タイルの大きさ（2026-11-13 ユーザー指摘）: 使う頻度・重要度で大きさを変える。
+// size: 'l' 大 ／ '' 中 ／ 's' 小（横並び）。ga = grid-area（横長・縦長）。順位は仮。
+const LAYOUT = {
+  top:{ L:{cols:'1.35fr 1fr 1fr', rows:'1fr 1fr .42fr'}, P:{cols:'1fr 1fr', rows:'1.25fr 1fr .42fr'} },
+  field:{ L:{cols:'1.3fr 1fr', rows:'1fr'}, P:{cols:'1fr', rows:'1.3fr 1fr'} },
+  drive:{ L:{cols:'repeat(6,1fr)', rows:'1.3fr 1fr'}, P:{cols:'1fr 1fr', rows:'1.25fr 1fr 1fr'} },
+  maint:{ L:{cols:'1.4fr 1fr', rows:'1fr'}, P:{cols:'1fr', rows:'1.3fr 1fr'} },
+}
+const TOP_TILES = [
+  {act:'go:field', icon:'field', name:'試験場', sub:true, g:'field', size:'l', L:'1/1/4/2', P:'1/1/2/3'},
+  {act:'go:drive', icon:'drive', name:'走行', sub:true, g:'drive', size:'', L:'1/2/3/3', P:'2/1/3/2'},
+  {act:'go:maint', icon:'maint', name:'点検と校正', sub:true, g:'maint', size:'', L:'1/3/3/4', P:'2/2/3/3'},
+  {act:'toast:自律測定: 「自律動作を許可しますか」の確認（W-4）が出る', icon:'measure', name:'自律測定', size:'s', L:'3/2/4/3', P:'3/1/4/2'},
+  {act:'toast:設定（S-50）へ', icon:'gear', name:'設定', size:'s', L:'3/3/4/4', P:'3/2/4/3'},
+]
+// ライン誘導・電子リードは開発中止（2026-11-13 ユーザー）で削除。
 const GROUPS = {
-  field:{name:'試験場', icon:'field', color:'var(--g-field)', items:[['prep','試験準備','prep'],['day','試験（当日）','day']]},
-  drive:{name:'走行', icon:'drive', color:'var(--g-drive)', items:[['follow','追従走行','follow'],['manual','手動走行','manual'],['teachF','教示（追従）','teachF'],['teachM','教示（手動）','teachM'],['replay','教示再生','replay'],['line','ライン誘導','line'],['leash','電子リード','leash']]},
-  maint:{name:'点検と校正', icon:'maint', color:'var(--g-maint)', items:[['check','始業点検','check'],['calib','校正','calib']]},
+  field:{name:'試験場', icon:'field', color:'var(--g-field)', items:[
+    {k:'day', name:'試験（当日）', icon:'day', size:'l', L:'1/1/2/2', P:'1/1/2/2'},
+    {k:'prep', name:'試験準備', icon:'prep', size:'', L:'1/2/2/3', P:'2/1/3/2'}]},
+  drive:{name:'走行', icon:'drive', color:'var(--g-drive)', items:[
+    {k:'follow', name:'追従走行', icon:'follow', size:'l', L:'1/1/2/4', P:'1/1/2/2'},
+    {k:'manual', name:'手動走行', icon:'manual', size:'l', L:'1/4/2/7', P:'1/2/2/3'},
+    {k:'replay', name:'教示再生', icon:'replay', size:'', L:'2/1/3/3', P:'2/1/3/2'},
+    {k:'teachF', name:'教示（追従）', icon:'teachF', size:'', L:'2/3/3/5', P:'2/2/3/3'},
+    {k:'teachM', name:'教示（手動）', icon:'teachM', size:'', L:'2/5/3/7', P:'3/1/4/2'}]},
+  maint:{name:'点検と校正', icon:'maint', color:'var(--g-maint)', items:[
+    {k:'check', name:'始業点検', icon:'check', size:'l', L:'1/1/2/2', P:'1/1/2/2'},
+    {k:'calib', name:'校正', icon:'calib', size:'', L:'1/2/2/3', P:'2/1/3/2'}]},
+}
+function tileHTML({act, icon, name, sub, color, size, area, why, dis}){
+  return `<div class="tile g ${size} ${dis?'dis':''}" data-btn ${dis?'data-dis':''} data-act="${dis?'':act}" style="grid-area:${area};border-left-color:${color||'var(--bd-hi)'}">
+    <span style="color:${color||'var(--tx)'}">${ic(icon)}</span><div><div class="nm">${name}${sub?'<span class="ar">▸</span>':''}</div>${size==='s'?'':`<div class="why">${why||''}</div>`}</div></div>`
 }
 function menuView(){
-  const m=S.menu, lvl=m.lvl
+  const m=S.menu, lvl=m.lvl, o=S.ori
   const why = k => {
     if (m.trackerOff && (k==='follow'||k==='teachF')) return '人検出が止まっています'
     if (m.noRoute && k==='replay') return '経路がありません'
     return ''
   }
-  let left
+  const lay = LAYOUT[lvl][o]
+  let left, tiles
   if (lvl==='top'){
-    const driveWhy = m.trackerOff ? '追従は人検出が止まっています' : ''
-    const tiles = [
-      ['go:field', 'field', '試験場', true, '', 'var(--g-field)'],
-      ['go:drive', 'drive', '走行', true, driveWhy, 'var(--g-drive)'],
-      ['go:maint', 'maint', '点検と校正', true, '', 'var(--g-maint)'],
-      ['toast:自律測定: 「自律動作を許可しますか」の確認（W-4）が出る', 'measure', '自律測定', false, '', ''],
-      ['toast:設定（S-50）へ', 'gear', '設定', false, '', ''],
-    ]
-    left = `<div class="tiles">${tiles.map(([a,i,n,sub,w,col])=>`<div class="tile ${m.cue&&col?'g':''}" data-btn data-act="${a}" style="${m.cue&&col?`border-left-color:${col}`:''}">
-      <span style="color:${m.cue&&col?col:'var(--tx)'}">${ic(i)}</span><div class="nm">${n}${sub?'<span class="ar">▸</span>':''}</div><div class="why">${w}</div></div>`).join('')}<div class="tile empty"></div></div>`
+    tiles = TOP_TILES.map(t=>tileHTML({...t, color: t.g ? GROUPS[t.g].color : '', area:t[o],
+      why: t.g==='drive' && m.trackerOff ? '追従は人検出が止まっています' : ''})).join('')
+    left = `<div class="tiles" style="grid-template-columns:${lay.cols};grid-template-rows:${lay.rows}">${tiles}</div>`
   } else {
     const g=GROUPS[lvl]
-    const cols = g.items.length>4 ? 'c4' : 'c2'
-    const items = g.items.map(([k,n,i])=>{ const w=why(k)
-      const act = k==='prep' ? 'open:prep' : k==='day' ? 'open:day' : `toast:${n}へ（「終了」でこの「${g.name}」の階層に戻る）`
-      return `<div class="tile ${w?'dis':''}" data-btn ${w?'data-dis':''} data-act="${w?'':act}"><span style="color:${m.cue?g.color:'var(--tx)'}">${ic(i)}</span><div class="nm">${n}</div><div class="why">${w}</div></div>` }).join('')
-    left = `${m.cue?`<div class="banner" style="background:linear-gradient(90deg, color-mix(in srgb, ${g.color} 35%, transparent), transparent);color:#fff"><span style="color:${g.color}">${ic(g.icon)}</span>${g.name}<span style="color:var(--mut);font-size:16px;font-weight:400;margin-left:8px">メインメニュー ▸ ${g.name}</span></div>`:''}
-      <div class="tiles ${cols}">${items}</div>`
+    tiles = g.items.map(it=>{ const w=why(it.k)
+      const act = it.k==='prep' ? 'open:prep' : it.k==='day' ? 'open:day' : `toast:${it.name}へ（「終了」でこの「${g.name}」の階層に戻る）`
+      return tileHTML({act, icon:it.icon, name:it.name, color:g.color, size:it.size, area:it[o], why:w, dis:!!w}) }).join('')
+    left = `<div class="banner" style="background:linear-gradient(90deg, color-mix(in srgb, ${g.color} 35%, transparent), transparent);color:#fff"><span style="color:${g.color}">${ic(g.icon)}</span>${g.name}<span style="color:var(--mut);font-size:16px;font-weight:400;margin-left:8px">メインメニュー ▸ ${g.name}</span></div>
+      <div class="tiles" style="grid-template-columns:${lay.cols};grid-template-rows:${lay.rows}">${tiles}</div>`
   }
   const opbar = lvl==='top'
     ? `<div class="opbar"></div>`
@@ -347,55 +389,54 @@ function menuView(){
 /* ---------------- 試験（当日）F2 ---------------- */
 function dayView(){
   const d=S.day, s=d.sub
-  const ROBOT = {home:[130,450,-90], mid:[300,300,-90], panel:[300,170,-90], off:[620,330,180]}
+  const ROBOT = {home:[130,450,-90], mid:[300,300,-90], panel:[300,170,-90], off:[300,330,-90]}
   const destPin = d.dest && pinById(d.dest)
-  const atHomeLike = s==='home'
   const choose = (s==='home'||s==='panel')
-  // 9 個のボタンの押せる・押せない（位置は固定）
+  // 9 個のボタンの押せる・押せない（位置は固定。R2）
   const E = {stop:'cur', run:'dis', manual:true, abort:false, home:false, next:false, summon:false, measure:false, cam:false}
   let whyDest='', whyPanel='盤の前に着いたら押せます', runNote=''
   if (s==='unloaded'){ whyDest='会場地図を開いてから選べます'; runNote='行き先がありません' }
   else if (s==='undeclared'){ whyDest='待機場所にいることを宣言してから選べます'; runNote='行き先がありません' }
-  else if (choose){ E.home = s!=='home' || d.robot==='off'; E.next=true; E.summon=true
-    if (d.how==='select' && d.dest){ E.run='en' } else runNote = d.how==='select' ? '行き先を選ぶと押せます' : '行き先を押すと出発します'
+  else if (choose){ E.home = !(s==='home' && d.robot==='home'); E.next=true; E.summon=S.tracker
+    runNote='行き先を押すと出発します'
     if (s==='panel'){ E.measure=true; E.cam=true; whyPanel='' }
-    if (s==='home' && !E.home) whyDest='' }
-  else if (s==='moving'){ E.stop='en'; E.run='cur'; whyDest='移動中は選べません（「停止」してから「中断」で選び直し）' }
-  else if (s==='paused'){ E.run='en'; E.abort=true; whyDest='一時停止中は選べません（「走行」で続き／「中断」で選び直し）' }
+    if (!S.tracker) whyDest='人検出を動かすと呼び寄せできます（左上）' }
+  else if (s==='moving'){ E.stop='en'; E.run='cur'; E.abort=true; whyDest='移動中は選べません（「中断」で止めて選び直し）' }
+  else if (s==='paused'){ E.run='en'; E.abort=true; whyDest='一時停止中は選べません（「再開」で続き／「中断」で選び直し）' }
   else if (s==='summon'){ E.abort=true; whyDest='呼び寄せの位置を指定しています（やめるときは「中断」）'; runNote='位置を指定すると出発します' }
 
+  const where = d.robot==='home' ? '待機場所' : d.robot==='panel' ? '盤 A-1' : '途中'
   const st = {
     unloaded:['会場地図が開かれていません','地図の中央のボタンから開きます'],
     undeclared:['待機場所にいることを宣言してください','機体が待機場所にあることを確かめてから押します'],
-    home:[ d.robot==='off'?'待機中 — 行き先を選んでください':'待機中 — 待機場所', d.dest&&d.how==='select' ? `行き先: ${destPin.name} —「走行する」で出発` : '行き先は地図のピンか下のボタンで選びます'],
-    moving:[`移動中 → ${destPin?.name??''}`, '残り 4.2 m'],
-    paused:[`一時停止中 → ${destPin?.name??''}`, '「走行する」で続きを走ります'],
-    panel:[`盤の前 — 盤 A-1`, d.dest&&d.how==='select' ? `次の行き先: ${destPin.name} —「走行する」で出発` : '測定・撮影ができます'],
+    home:[ d.robot==='home'?'待機中 — 待機場所':'止まっています — 行き先を選んでください', '地図のピン →「行き先にする」、または下のボタンで出発します'],
+    moving:[`移動中 → ${destPin?.name??''}`, '残り 4.2 m — 間違えたら「中断」'],
+    paused:[`一時停止中 → ${destPin?.name??''}`, '「再開する」で続きを走ります'],
+    panel:[`盤の前 — 盤 A-1`, '測定・撮影ができます'],
     summon:['呼び寄せ — 位置の指定', `${d.flowStep===2?'② 機体に向いてほしい方向':'① 機体に来てほしい位置'}に立って「記録」`],
   }[s]
 
-  // 主表示
   let mainInner = ''
   const robot = ROBOT[d.robot]
   const path = (s==='moving'||s==='paused') ? [[130,450],[130,300],[300,300],[300,140]] : null
-  const selLabel = d.how==='select' ? '行き先にする' : 'ここへ移動'
   if (s==='unloaded'){
     mainInner = `<div class="center" style="background:var(--inset)"><div class="card"><p>機体を待機場所に置いてから押します</p>${btn('openMap','会場地図を開く',{icon:'field',cls:'adv'})}</div></div>`
   } else {
-    mainInner = mapSVG({robot, path, sel: choose ? d.sel : null, selLabel})
+    mainInner = mapSVG({robot, path, sel: choose ? d.sel : null, selLabel:'行き先にする', dest: (s==='moving'||s==='paused') ? d.dest : null})
     if (s==='undeclared') mainInner += `<div class="center"><div class="card"><p>機体が待機場所（緑の家の印）にありますか</p>${btn('declare','待機場所にいます',{icon:'home',cls:'adv'})}</div></div>`
-    if (s==='summon') mainInner += radarSVG(false) + `<div class="flow"><span class="stp">呼び寄せ ${d.flowStep||1}/2</span><span class="msg">${d.flowStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'機体に来てほしい位置に立って「記録」'}</span>${btn('rec','記録',{cls:'adv'})}</div>`
+    if (s==='summon') mainInner += radarSVG(false, !S.tracker) + `<div class="flow"><span class="stp">呼び寄せ ${d.flowStep||1}/2</span><span class="msg">${d.flowStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'機体に来てほしい位置に立って「記録」'}</span>${btn('rec','記録',{cls:'adv',dis:!S.tracker})}</div>`
   }
-
+  const runLabel = s==='paused' ? '再開' : '走行'
+  const runHint = '押すと続きを走る'
   const ctl = `<div class="ctl">
     <div class="state full"><div class="s1">${st[0]}</div><div class="s2">${st[1]}</div></div>
-    <div class="sec full"><h3>操作</h3>${tog(E.stop, E.run, {blink:d.blink, note:runNote})}
+    <div class="sec full"><h3>操作</h3>${tog(E.stop, E.run, {runLabel, runHint, note:runNote})}
       <div class="row" style="margin-top:8px">${btn('jog','手動',{icon:'jog',dis:!E.manual})}${btn('abort','中断',{icon:'abort',dis:!E.abort})}</div></div>
     <div class="sec"><h3>行き先</h3><div class="row">${btn('goHome','待機場所',{icon:'home',dis:!E.home})}${btn('goNext','次の配電盤',{icon:'panel',dis:!E.next})}</div>
       <div class="row" style="margin-top:8px">${btn('summon','呼び寄せ',{icon:'person',dis:!E.summon})}</div><div class="why">${whyDest}</div></div>
     <div class="sec"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{icon:'measure',dis:!E.measure})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{icon:'cam',dis:!E.cam})}</div><div class="why">${whyPanel}</div></div>
   </div>`
-  return header('試験', true) + `<div class="body"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit'})}</div>
+  return header('試験', true) + `<div class="body"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit'})}${trackerBar(s!=='summon')}</div>
     <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
 }
 
@@ -408,7 +449,7 @@ function prepView(){
   let stop='cur', run=reserved, runNote='追従走行（今後の予約）'
   if (s==='return'){ stop='en'; run='cur'; runNote='' }
   const canReg = mapping
-  const personDis = p.trackerOff
+  const needTrk = p.method==='person' && !S.tracker
   const st = {
     entry:['前回の地図とピンが残っています', `ピン ${p.pins} 件（待機場所 1・配電盤 5）`],
     mapping:['地図作成中 — 未保存の変更あり', `ピン ${p.pins} 件。方式を選んでから登録先を押します`],
@@ -419,13 +460,13 @@ function prepView(){
   if (s==='entry') mainInner += `<div class="center"><div class="card"><p>前回の試験場内地図とピン（${p.pins} 件）が残っています</p>
       ${btn('resume','続きから再開',{icon:'play',cls:'adv'})}
       ${btn('fresh','新しい試験日として開始（前回を消す）',{icon:'close'})}<p style="font-size:13px">「新しい試験日」は押したあともう一度確かめてから消します</p></div></div>`
-  if (mapping && p.method==='person' && !personDis) mainInner += radarSVG(false)
+  if (mapping && p.method==='person') mainInner += radarSVG(false, !S.tracker)
   if (mapping && p.method==='tap') mainInner += `<div class="flow"><span class="stp">地図をタップして</span><span class="msg">登録先を押したあと、地図の上で位置を押し、向きの方向へなぞります</span></div>`
-  if (s==='reg') mainInner += radarSVG(false) + `<div class="flow"><span class="stp">待機場所 ${p.regStep}/2</span><span class="msg">${p.regStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'待機場所に立って「記録」'}</span>${btn('regRec','記録',{cls:'adv'})}${btn('regCancel','やめる')}</div>`
+  if (s==='reg') mainInner += radarSVG(false, !S.tracker) + `<div class="flow"><span class="stp">待機場所 ${p.regStep}/2</span><span class="msg">${p.regStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'待機場所に立って「記録」'}</span>${btn('regRec','記録',{cls:'adv',dis:!S.tracker})}${btn('regCancel','やめる')}</div>`
 
-  const regWhy = s==='entry' ? '地図作成を始めてから登録できます' : s==='reg' ? '登録中です（やめるときは地図の上の「やめる」）' : s==='return' ? '待機場所へ戻る途中は登録できません' : (p.method==='person'&&personDis ? '人検出が止まっているため「人の位置で」は使えません' : '')
-  const mseg = `<div class="mseg ${canReg?'':'dis'}" data-btn ${canReg?'':'data-dis'}>${METHODS.map(([k,n])=>`<div class="${p.method===k?'on':''} ${k==='person'&&personDis?'dis':''}" data-act="${canReg&&!(k==='person'&&personDis)?'method':''}" data-id="${k}">${n}</div>`).join('')}</div>`
-  const regDis = !canReg || (p.method==='person'&&personDis)
+  const regWhy = s==='entry' ? '地図作成を始めてから登録できます' : s==='reg' ? '登録中です（やめるときは地図の上の「やめる」）' : s==='return' ? '待機場所へ戻る途中は登録できません' : (needTrk ? '人検出を動かすと「人の位置で」登録できます（左上）' : '')
+  const mseg = `<div class="mseg ${canReg?'':'dis'}" data-btn ${canReg?'':'data-dis'}>${METHODS.map(([k,n])=>`<div class="${p.method===k?'on':''}" data-act="${canReg?'method':''}" data-id="${k}">${n}</div>`).join('')}</div>`
+  const regDis = !canReg || needTrk
   const ctl = `<div class="ctl">
     <div class="state full"><div class="s1">${st[0]}</div><div class="s2">${st[1]}</div></div>
     <div class="sec full"><h3>操作</h3>${tog(stop, run, {note: runNote})}
@@ -435,33 +476,37 @@ function prepView(){
     <div class="sec full"><h3>戻す</h3>${btn('goHome','待機場所に戻る',{icon:'home',dis:!mapping})}</div>
   </div>`
   const unsaved = s!=='entry' ? '<span class="pill">未保存</span>' : ''
-  return header('試験準備', true) + `<div class="body"><div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${unsaved}</div>
+  return header('試験準備', true) + `<div class="body"><div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${unsaved}${trackerBar(s!=='reg')}</div>
     <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
 }
 
 /* ---------------- 操作 ---------------- */
 let toastT
 function toast(msg){ const t=document.querySelector('#dev .toast'); if(!t) return; t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2600) }
-const NEXT_PANEL = {HOME:'A-1','A-1':'A-2','A-2':'B-1','B-1':'B-2','B-2':'C-1','C-1':'HOME'}
 function act(a, id){
   if (!a) return
   if (a.startsWith('toast:')) return toast(a.slice(6))
   if (a.startsWith('go:')){ S.menu.lvl=a.slice(3); return render() }
   if (a.startsWith('open:')){ S.scr=a.slice(5); if (S.scr==='prep') setSub('entry'); else setSub('unloaded'); return render() }
+  if (a==='trkOn'){ S.tracker=true; return render() }
+  if (a==='trkOff'){ S.tracker=false; return render() }
   const d=S.day, p=S.prep
   if (S.scr==='day'){
-    const depart = dest => { d.dest=dest; d.sel=null; if (d.how==='go'){ d.sub='moving'; d.robot='mid' } render() }
+    const depart = dest => { d.dest=dest; d.sel=null; d.sub='moving'; d.robot='mid' }
     switch(a){
       case 'openMap': d.sub='undeclared'; break
       case 'declare': d.sub='home'; d.robot='home'; break
       case 'pin': if (d.sub==='home'||d.sub==='panel'){ d.sel = d.sel===id?null:id } break
-      case 'pinGo': return depart(d.sel)
-      case 'goHome': return depart('HOME')
-      case 'goNext': return depart(d.sub==='panel' ? 'A-2' : 'A-1')
-      case 'run': if (d.sub==='paused'||d.dest){ d.sub='moving'; d.robot='mid'; d.sel=null } break
+      case 'pinGo': depart(d.sel); break
+      case 'goHome': depart('HOME'); break
+      case 'goNext': depart(d.sub==='panel' ? 'A-2' : 'A-1'); break
+      case 'run': if (d.sub==='paused'){ d.sub='moving'; d.robot='mid' } break
       case 'stop': d.sub='paused'; break
-      case 'abort': d.robot = d.sub==='summon' ? d.robot : 'off'; d.sub='home'; d.dest=null; d.flowStep=0; break
-      case 'summon': d.sub='summon'; d.flowStep=1; d.sel=null; break
+      case 'abort':
+        if (d.sub==='moving'||d.sub==='paused'){ d.robot='off'; d.sub='home'; toast('止めて、行き先の選び直しへ戻った') }
+        else if (d.sub==='summon'){ d.sub='home' }
+        d.dest=null; d.flowStep=0; break
+      case 'summon': d.sub='summon'; d.flowStep=1; d.sel=null; d.dest=null; break
       case 'rec': if (d.flowStep<2){ d.flowStep=2 } else { d.dest='HOME'; d.sub='moving'; d.robot='mid'; d.flowStep=0; toast('呼び寄せの位置へ移動します') } break
       case 'jog': toast('手動操作パネル（W-6）が開く。触れたら一時停止'); if (d.sub==='moving'){ d.sub='paused' } break
     }
@@ -493,49 +538,49 @@ function act(a, id){
 const NOTES = {
   menu:{
     changed:[
-      '一番上は 5 タイル（いま 14 ボタン）。走行の 7 つは「走行 ▸」の下へ（D3）',
-      '「接続確認」と「運用の終了」は右に固定。どの階層でも同じ場所に見える',
-      '下の階層では上に階層名の帯、左上に「戻る」。走行方式を「終了」したら入った階層へ戻る',
-      '押せない理由はタイルの中に 1 行。下の階層が押せないときは一番上のタイルにも出す',
+      '一番上は 5 タイル（いま 14 ボタン）。走行の方式は「走行 ▸」の下へ（D3）',
+      '<b>タイルの大きさを使う頻度・重要度で変えた</b>（D8）。一番上: 試験場が最大、走行・点検と校正が中、自律測定・設定が小。下の階層: 試験（当日）・追従走行・手動走行・始業点検を大きく（<b>順位は仮</b>）',
+      '区画ごとの色（試験場＝緑青・走行＝青・点検と校正＝茶）を一番上のタイルの線・アイコンと、下の階層の帯にそろえた（D8）',
+      'ライン誘導・電子リードは開発中止のため消した（D7）',
+      '「接続確認」と「運用の終了」は右に固定。どの階層でも同じ場所',
+      'アイコンは語の補助。初見では語で選び、慣れたらアイコンで選べる',
     ],
     opts:[
-      {q:'階層の見分け（帯・色の線）', k:['menu','cue'], v:[[true,'あり'],[false,'なし']], why:'似た配置で中身が違う（R2 (b)）をどこまで見分けられるか'},
       {q:'人検出が止まっている', k:['menu','trackerOff'], v:[[false,'動いている'],[true,'止まっている']], why:'一番上の「走行」と下の階層の追従系に理由が出る'},
       {q:'経路の本数', k:['menu','noRoute'], v:[[false,'あり'],[true,'0 本']], why:'教示再生が理由付きで押せなくなる'},
     ],
-    look:['一番上と下の階層を行き来して、どこにいるか迷わないか','アイコンだけで目的のタイルが見つかるか（語を読む前に）'],
+    look:['大きさの順位（どれを大きくするか）が使い方に合っているか','一番上と下の階層を行き来して、どこにいるか迷わないか'],
   },
   day:{
     changed:[
-      'タブを無くした（いま 5）。行き先は地図のピンを押して決める（D4）',
+      'タブを無くした（いま 5）。行き先は地図のピンを押す →<b>「行き先にする」を押すとそのまま出発</b>（「走行」は押さない）。「待機場所」「次の配電盤」も押したら出発（D4・D10）',
+      '吹き出しは、ピン以外を押すと消える（取り消し）（D10）',
+      '<b>「中断」は走行中も効く</b>。行き先を間違えて押したら、すぐ止めて選び直しへ戻れる（D12）',
+      '「走行」は一時停止中は「再開する」と書き、点滅させて次に押すものを示す（D11・D13）。待機中は押せない（行き先を押せば出発するため）',
+      '人検出のトグルを左上に置いた（試験準備と同じ場所）。止まっていると呼び寄せが押せず理由が出る。呼び寄せ中は止められない（D9）',
       '右列のボタンは<b>どの状態でも同じ 9 個・同じ位置</b>。変わるのは押せるかどうかだけ（R2）',
       '停止と走行は 1 つのトグル。いまの側が青、押す側は「〜する」（R4）',
-      '「中断」は位置固定。呼び寄せの位置指定からもここで抜ける（A-12 の穴）',
       'ピンの行の「移動」×6・3 か所の「会場地図を開く」・常に押せない「地図の更新」を消した',
-      '会場地図を開く・待機場所の宣言は地図の中央に出す（右列は動かさない）',
     ],
-    opts:[
-      {q:'行き先の決め方', k:['day','how'], v:[['select','選んで「走行」'],['go','押したらすぐ出発']], why:'「選ぶ→走行」なら走行が待機中にも意味を持ち、押し間違いで走り出さない。いまの実装は押したらすぐ出発'},
-      {q:'一時停止中の「走行」', k:['day','blink'], v:[[true,'点滅'],[false,'点滅なし']], why:'A-9 の 6（11-11 ユーザー案）'},
-    ],
-    look:['状態を切り替えて、右列のボタンが一切動かないこと','ピンを押す → 吹き出し → 出発、が分かるか（ピンの大きさ）','一日の始めの 2 手を地図の中央に出すのは R2 に当たらないか'],
+    opts:[],
+    look:['状態を切り替えて、右列のボタンが一切動かないこと','ピン → 吹き出し →「行き先にする」で出発 → 間違えたら「中断」、の流れ','一日の始めの 2 手を地図の中央に出すのは R2 に当たらないか'],
   },
   prep:{
     changed:[
+      '<b>人検出のトグルを左上に置いた</b>（D9。いまは対象選択タブの中）。試験（当日）と同じ場所。登録中は止められない',
       '登録は「① 方式 → ② 登録先」。いまの 6 ボタンが方式 3 の切り替え＋2 ボタンに（D5）',
-      '「人の位置で」を選ぶと地図にレーダーを重ねる（対象が見えないまま登録させない）',
+      '「人の位置で」を選ぶと地図にレーダーを重ねる。人検出が止まっていれば、そのことと動かし方を出す',
       '停止・走行は予約のまま残してトグルに（D6）',
       '入口は「続きから再開／新しい試験日」の 2 択。解禁は機体の状態から導く（A-9 の 5）',
       'タブを無くした（いま 4）。「待機場所に戻る」をタブの奥から出した',
-      '右上の「次にやること」ボタン（同じ場所で語が変わる）は R2 (a) に反するので置かない',
     ],
     opts:[
       {q:'予約の「走行」の見せ方', k:['prep','reserved'], v:[['dim','薄く（押せない）'],['inert','押せるが何も起きない']], why:'未決 3。いまは何も起きないのに白枠で目立つ'},
-      {q:'人検出が止まっている', k:['prep','trackerOff'], v:[[false,'動いている'],[true,'止まっている']], why:'「人の位置で」が薄くなり理由が出る'},
     ],
-    look:['方式を先に選ぶ流れで、登録先を押し間違えないか','「待機場所に戻る」が地図作成中に常に見えていて邪魔でないか'],
+    look:['人検出を止めて「人の位置で」を選び、動かすまでの流れ','方式を先に選ぶ流れで、登録先を押し間違えないか'],
   },
 }
+
 function countButtons(){
   const all=[...document.querySelectorAll('#dev [data-btn]')]
   const dis=all.filter(e=>e.classList.contains('dis')||e.hasAttribute('data-dis'))
@@ -548,7 +593,7 @@ function renderNotes(){
   document.getElementById('notes').innerHTML = `
     <h2>この状態のボタン</h2><div class="count"><b>${c}</b> 個（うち押せない ${dc}）${pinNote}<div class="ref">「操作のトグル」「方式の切り替え」は 1 個と数える。ヘッダの非常停止は除く</div></div>
     <h2>変えたところ</h2><ul>${n.changed.map(x=>`<li>${x}</li>`).join('')}</ul>
-    <h2>比べて決めてほしいこと</h2>${n.opts.map((o,i)=>`<div class="opt"><div class="q">${o.q}</div><span class="seg">${o.v.map(([v,l])=>`<button class="${cur(o.k)===v?'on':''}" data-opt="${i}" data-v='${JSON.stringify(v)}'>${l}</button>`).join('')}</span><div class="ref">${o.why}</div></div>`).join('')}
+    <h2>比べて決めてほしいこと</h2>${n.opts.length?'':'<p class="ref">この画面はなし（2026-11-13 に決めた）</p>'}${n.opts.map((o,i)=>`<div class="opt"><div class="q">${o.q}</div><span class="seg">${o.v.map(([v,l])=>`<button class="${cur(o.k)===v?'on':''}" data-opt="${i}" data-v='${JSON.stringify(v)}'>${l}</button>`).join('')}</span><div class="ref">${o.why}</div></div>`).join('')}
     <h2>見てほしいところ</h2><ul>${n.look.map(x=>`<li>${x}</li>`).join('')}</ul>
     <p class="ref" style="margin-top:14px">画面の中のボタンは押せます（動きは仮）。案の本文は docs/plan/ui-redesign-options.md。</p>`
 }
@@ -574,6 +619,12 @@ function fit(){
   dev.style.transform=`scale(${sc})`; box.style.width=W*sc+'px'; box.style.height=H*sc+'px'
 }
 document.addEventListener('click', e=>{
+  // 試験（当日）: 吹き出しは、ピンと吹き出しのボタン以外を押すと消える（取り消し。D10）
+  if (S.scr==='day' && S.day.sel && e.target.closest('#dev') && !e.target.closest('[data-act="pin"],[data-act="pinGo"]')){
+    S.day.sel=null
+    const t0=e.target.closest('[data-act]')
+    if (!t0 || !t0.dataset.act || t0.closest('.dis,[data-dis]')) return render()
+  }
   const t=e.target.closest('[data-scr],[data-sub],[data-ori],[data-opt],[data-act]')
   if (!t) return
   if (t.dataset.scr){ S.scr=t.dataset.scr; return render() }
