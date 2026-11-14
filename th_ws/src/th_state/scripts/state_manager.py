@@ -213,6 +213,12 @@ class StateManager(Node):
         # 1b-15 SG-B10: 試験員の自動ブレーキ切替要求（None = 要求なし＝ゾーン既定に従う）。
         # 正本は機体側（ここ）。モードが変わるたびに None へ戻して既定を適用し直す。
         self._auto_brake_override = None
+        # A-15: W-6（手動操作パネル）を開いている知らせ（/ui/manual_panel）の受信時刻。
+        # ジョグのリースとは別（リースは自律の一時停止を起こすので、開いただけでは使わない）。
+        # 鮮度は _panel_open() が jog_lease_ms で決める。パネルだけの許可で受けた要求は
+        # 状態（state）が変わったら捨てる（ジョグを始めたための変化は除く）。
+        self._panel_last_ms = None
+        self._override_state = None
         # 開発モードの項目 auto_brake（SG-B10 の残り。Spec-safety.md §10）。
         # /system/dev_mode の生 JSON と受信時刻（ms）。実効かどうかは使う瞬間に
         # _dev_auto_brake() が鮮度込みで決める（3 秒来なければ外れる）。
@@ -383,6 +389,8 @@ class StateManager(Node):
 
         jog_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.BEST_EFFORT)
         self.create_subscription(String, '/ui/jog_lease', self._on_jog_lease, jog_qos)
+        # A-15: W-6 を開いている間の心拍（client_id。閉じるときは空文字を 1 回送る）。
+        self.create_subscription(String, '/ui/manual_panel', self._on_manual_panel, jog_qos)
 
         fault_qos = QoSProfile(depth=5, reliability=QoSReliabilityPolicy.RELIABLE)
         self.create_subscription(FaultStatus, '/safety/fault', self._on_fault, fault_qos)
@@ -445,16 +453,25 @@ class StateManager(Node):
         dev = self._dev_auto_brake()
         # 開発モードの項目が外れた（OFF・項目を外した・3 秒以上来ない）ら、自律系での
         # OFF 要求は捨てて ON に戻す（10 Hz のタイマーが毎回通る）。
-        if (self._auto_brake_override is not None
-                and not override_allowed(attrs, self._jog_active, dev)):
-            self._auto_brake_override = None
+        panel = self._panel_open()
+        if self._auto_brake_override is not None:
+            # パネルだけで許されている要求（手動系・ジョグ中・開発モードのどれでもない）は、
+            # 状態が変わったら捨てる（A-15）。ジョグ中は変化を許す（ジョグを始めたための
+            # 自律の一時停止など）ので、その間は基準の状態を追従させる。
+            panel_only = not override_allowed(attrs, self._jog_active, dev, False)
+            if not override_allowed(attrs, self._jog_active, dev, panel):
+                self._auto_brake_override = None
+            elif panel_only and self.state != self._override_state:
+                self._auto_brake_override = None
+            elif not panel_only:
+                self._override_state = self.state
         # 不正な文字列は spec の既定（場外 OFF・場内 ON）に倒す（安全側）。
         outdoor = str(self.get_parameter(
             'auto_brake_default_outdoor').value).lower() == 'on'
         indoor = str(self.get_parameter(
             'auto_brake_default_indoor').value).lower() != 'off'
         value = effective_auto_brake(attrs, zone, self._jog_active,
-                                     self._auto_brake_override, dev,
+                                     self._auto_brake_override, dev, panel,
                                      outdoor, indoor)
         self._flags["auto_brake"] = value
         return value
@@ -738,6 +755,15 @@ class StateManager(Node):
     # ------------------------------------------------------------
     # 入口: /ui/jog_lease（ui.jog.hold のリース。§8.4）
     # ------------------------------------------------------------
+    def _on_manual_panel(self, msg):
+        self._panel_last_ms = self._now_ms() if msg.data else None
+
+    def _panel_open(self) -> bool:
+        """W-6 を開いている知らせが新しいか（jog_lease_ms 以内）。"""
+        if self._panel_last_ms is None:
+            return False
+        return (self._now_ms() - self._panel_last_ms) < self.get_parameter('jog_lease_ms').value
+
     def _on_jog_lease(self, msg):
         self._process("ui.jog.hold", {}, msg.data)
         self._publish_state()
@@ -906,12 +932,16 @@ class StateManager(Node):
             # 自律系は無効化できない（Spec-safety.md §2.1）。例外は開発モードの項目
             # auto_brake が実効のとき（§10）。要求は「試験員の選択」として
             # 保持し、実効値は _refresh_auto_brake() が決める（ゾーン NA は ON のまま）。
-            if not override_allowed(self.core.attributes(self.mode), self._jog_active,
-                                    self._dev_auto_brake()):
+            attrs = self.core.attributes(self.mode)
+            dev = self._dev_auto_brake()
+            panel = self._panel_open()
+            if not override_allowed(attrs, self._jog_active, dev, panel):
                 res.accepted = False
                 res.reject_reason_key = AUTO_BRAKE_LOCKED_REASON
                 return res
             self._auto_brake_override = bool(req.value)
+            # パネルだけで許された要求の「状態が変わったら捨てる」の基準（_refresh_auto_brake）。
+            self._override_state = self.state
             res.accepted = True
             res.reject_reason_key = ""
             self._publish_state()

@@ -230,6 +230,15 @@ export const W6_AUTO_BRAKE_LABEL = '自動ブレーキ'
 export const W6_AUTO_BRAKE_ON = 'ON'
 export const W6_AUTO_BRAKE_OFF = 'OFF'
 export const W6_AUTO_BRAKE_UNKNOWN = '不明'
+// A-15: W-6 と自律系の画面の切替。文言は S-11 の切替と同じ意味（確認 W-4 も同じ）。
+export const AB_TO_OFF = 'OFF にする'
+export const AB_TO_ON = 'ON にする'
+export const AB_HINT_OFF = 'OFF のあいだは障害物に近づいても減速しません。画面の警告を見て操作してください'
+export const AB_CONFIRM_TITLE = '自動ブレーキを OFF にしますか'
+export const AB_CONFIRM_BODY = '障害物に近づいても自動で減速・停止しません。画面の警告を見て自分で止めてください。'
+export const AB_CONFIRM_YES = 'OFF にする'
+export const AB_CONFIRM_NO = 'やめる'
+export const AB_DEV_CARD_TITLE = '自動ブレーキ（開発モード）'
 
 // 手動操作タブの「手動」ボタン (driveTab kind='manual' から W-6 を開く)。
 export const DRIVE_MANUAL = '手動'
@@ -243,6 +252,7 @@ export const DRIVE_LEAVE = '離れる'
 export const S11_TAB_DRIVE = '走行'
 export const S11_OBSTACLE_TITLE = '障害物'
 export const S11_OBSTACLE_WARN = (d) => `前方 ${d} m に障害物（警告）`
+export const S11_OBSTACLE_WARN_AROUND = (d) => `周囲 ${d} m に障害物（警告）`
 export const S11_OBSTACLE_STOP = (d) => `前方 ${d} m に障害物（停止）`
 export const S11_OBSTACLE_PASS = '障害物なし'
 // 未受信のときの表示（"障害物なし" と出さない。安全側 DetailedDesign-wp3.md §6.2）
@@ -543,6 +553,9 @@ export const S21_BLOCKED_MSG = '行き先までの経路が見つかりません
 export const S21_BLOCKED_REROUTE = '再検索'
 export const S21_BLOCKED_ABORT = '中断'
 export const S21_PAUSED_MSG = '一時停止中'
+// SM-3.1.2-143（2026-11-12 A-12）: 呼び寄せの位置指定（SUMMON/POINT）でも
+// 「中断」で行き先選択へ戻れる。2 点指示の案内と一緒に出す。
+export const S21_POINT_MSG = '呼び寄せの位置を決めています（「中断」で行き先選択へ戻ります）'
 // WS-9AD (2026-09-11): SUMMON/POINT（呼び寄せ待受中）以外では対象選択が
 // 効かない（T-SUM-15）。タップしても反応が無いだけだと分からないので、
 // レーダーの代わりにこの案内を出す。
@@ -683,9 +696,9 @@ export const S50_DEV_ITEM_BATTERY = 'バッテリー電圧低下'
 export const S50_DEV_ITEM_OPCHECK = '始業点検の総合 NG'
 export const S50_DEV_ITEM_OPCHECK_DESC =
   '選ぶと起動時の自動点検の警告を出さなくなります（判定自体は止めません）'
-export const S50_DEV_ITEM_AUTO_BRAKE = '手動系の自動ブレーキ既定'
+export const S50_DEV_ITEM_AUTO_BRAKE = '自律系・場内の自動ブレーキ OFF'
 export const S50_DEV_NO_GATE =
-  '※ バッテリー・自動ブレーキは選んでも今は何も起きません（止める側の仕組みが未実装のため。選択だけ記録されます）'
+  '※ バッテリーは選んでも今は何も起きません（止める側の仕組みが未実装のため。選択だけ記録されます）'
 // いま何を無視しているか（WP-DEV-01B §3）
 export const S50_DEV_EFFECTIVE_TITLE = 'いま無視しているもの'
 export const S50_DEV_NONE = 'なし（通常運用）'

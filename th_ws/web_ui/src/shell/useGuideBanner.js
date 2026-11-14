@@ -21,6 +21,7 @@ export function useGuideBanner(ros, mode, sinceMs, estopHw) {
     if (decided.kind === 'guide') {
       setGuide({
         key: decided.key,
+        detail: decided.detail ?? null,
         modeAtOpen: mode,
         stampMs: decided.stampMs,
         seenPressed: estopHw,
@@ -52,5 +53,7 @@ export function useGuideBanner(ros, mode, sinceMs, estopHw) {
     setGuide(null)
     if (heldKey) setHeldDismissed(true)
   }
-  return { guideKey, closeGuide }
+  // detail は effect 由来の案内にだけ付く（状態から導く案内には無い）。
+  const guideDetail = effectKey ? (guide?.detail ?? null) : null
+  return { guideKey, guideDetail, closeGuide }
 }

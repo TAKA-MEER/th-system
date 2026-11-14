@@ -450,6 +450,11 @@ class VenueNavigator(Node):
             return
         entered = key
         self._prev_key = key
+        # A-12②: POINT に入った（新規・復帰とも）／SUMMON を抜けたら、前に
+        # 決めた行き先を捨てる。残すと POINT でジョグ → PAUSE → 「走行」のときに
+        # 古いゴールへ走り出す（SM-3.1.2-069/143。2026-11-11 T-16）。
+        if self._mode != 'SUMMON' or self._state == 'POINT':
+            self._summon_goal = None
         self.get_logger().info(f'/system/state: {entered}')
 
         # FSM が BLOCKED を publish している間は必ず内部でも blocked（一方向 re-arm。

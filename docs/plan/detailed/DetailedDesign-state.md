@@ -175,7 +175,7 @@ class StateCore:
 | `clear_selection` | — | `person_tracker` | srv `~/reset_tracking` |
 | `face_target` | — | `follow_runner` | 状態を見て自動（サービス不要） |
 | `open_window` / `close_window` | `{id: "W-1".."W-6"}` | WebUI | `/system/state` の表示で伝える |
-| `guide` | `{key}` | WebUI | 同上（W-3） |
+| `guide` | `{key, detail?}` | WebUI | 同上（W-3）。`detail` は理由の文（任意。A-11 `T-PREP-20` が `$arg.reason` で渡す） |
 | `ask_save_if_unsaved` / `ask_save` | `{route_id?}`（`_teach_route` ラッチから補完。1b-7） | WebUI | W-4 |
 | `enable_main_menu` | — | WebUI | |
 | `show_resume` | — | WebUI | W-2 |
@@ -244,7 +244,7 @@ class StateCore:
 | `C-09` | `ESTOP` | `NONE` | `ui.estop.release` | `estop_resume_prev` | `=` | `=` | `show_resume` |
 | **`C-09b-init`** | `ESTOP` | `NONE` | `ui.estop.release` | **`estop_prev_is_init`**（押下前 `INIT`。SG-A5。`C-09b` より前に置く） | `INIT` | `CHECK` | `clear_prev` |
 | `C-09b` | `ESTOP` | `NONE` | `ui.estop.release` | `no_critical_fault` | `IDLE` | `NONE` | `clear_prev` |
-| **`C-09c-summon`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_summon`** | `SUMMON` | `POINT` | `clear_prev`, `close_window{id:W-1}`, `enable_jog_ui` |
+| **`C-09c-summon`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_summon`** | `SUMMON` | `POINT` | `clear_prev`, `close_window{id:W-1}`, `enable_jog_ui`, `begin_two_point{kind:SUMMON}` |
 | **`C-09c-at-panel`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_at_panel`** | `AT_PANEL` | `IDLE_P` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-at-home`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_at_home`** | `AT_HOME` | `IDLE_H` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-opcheck`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_opcheck`** | `OPCHECK` | `LIST` | `clear_prev`, `close_window{id:W-1}`, `abort_check` |
@@ -258,7 +258,7 @@ class StateCore:
 | `C-09d` | `ESTOP` | `NONE` | `ui.resume_no` | **`fault_cleared_and_ui_released`**（SG-A5。`C-09f` と同じ） | `IDLE` | `NONE` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09f`** | `ESTOP` | `NONE` | `ui.resume_ack` | **`fault_cleared_and_ui_released`** | `IDLE` | `NONE` | `clear_prev`, `close_window{id:W-1}` |
 | `C-10` | `CARRY` | `NONE` | `hw.estop.release` | — | `=` | `=` | `show_resume` |
-| **`C-11-summon`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_summon`** | `SUMMON` | `POINT` | `clear_prev`, `close_window{id:W-2}`, `enable_jog_ui` |
+| **`C-11-summon`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_summon`** | `SUMMON` | `POINT` | `clear_prev`, `close_window{id:W-2}`, `enable_jog_ui`, `begin_two_point{kind:SUMMON}` |
 | **`C-11-at-panel`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_at_panel`** | `AT_PANEL` | `IDLE_P` | `clear_prev`, `close_window{id:W-2}` |
 | **`C-11-at-home`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_at_home`** | `AT_HOME` | `IDLE_H` | `clear_prev`, `close_window{id:W-2}` |
 | **`C-11-opcheck`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_opcheck`** | `OPCHECK` | `LIST` | `clear_prev`, `close_window{id:W-2}`, `abort_check` |
@@ -551,6 +551,7 @@ class StateCore:
 | `T-PREP-03` | `REGISTER` | `evt.plane_done` | — | `MAPPING` | `place_pin` |
 | `T-PREP-04` | `REGISTER` | `evt.register_rejected` | — | `MAPPING` | `guide{key:...}` |
 | `T-PREP-05` | `REGISTER` | `evt.target_lost` | — | `MAPPING` | `reject_register`, `guide{key:...}` |
+| **`T-PREP-06x`** | `MAPPING` | `ui.return_home` | `venue_unloaded`（`/map_session/status` の VENUE が `UNLOADED`。`venue_navigator` の `_venue_gate` と同じ基準） | 拒否（`MAPPING` のまま。`reject_reason_key: prep_map_not_started`。`T-PREP-06` より前に置く。`SM-3.1.2-144`。2026-11-12 A-11 ③） | — |
 | `T-PREP-06` | `MAPPING` | `ui.return_home` | `home_pin_exists` | `RETURN` | — |
 | `T-PREP-07` | `RETURN` | `evt.arrived` | — | `EDIT` | — |
 | `T-PREP-08` | `MAPPING` ／ `EDIT` | `ui.map_edit` | — | `EDIT` | — |
@@ -558,7 +559,9 @@ class StateCore:
 | `T-PREP-10` | `MAPPING` ／ `REGISTER` ／ `EDIT` ／ `SAVED` ／ `PAUSE` | `ui.stop` | — | `=`（不変） | — |
 | **`T-PREP-18`** | `RETURN` | `ui.stop` | — | `PAUSE` | —（`T-PREP-10` より前に置き `RETURN` を先に拾う。`SM-3.1.2-050a`。2026-10-07） |
 | `T-PREP-11` | `MAPPING` ／ `REGISTER` ／ `RETURN` | `ui.run` | — | `=`（不変） | — |
-| `T-PREP-12` | `*` | `ui.save` | — | `SAVED` | `commit_venue_map` |
+| `T-PREP-12` | `*` | `ui.save` | — | `=`（不変。**2026-11-12 A-11: 保存を頼むだけで `SAVED` へは進まない**） | `commit_venue_map` |
+| **`T-PREP-19`** | `*` | `evt.venue_map_saved`（`slam_control` が保存の成功で出す） | — | `SAVED` | — |
+| **`T-PREP-20`** | `*` | `evt.venue_map_save_failed`（失敗・拒否で出す。`arg.reason`） | — | `=`（不変） | `guide{key:venue_save_failed, detail:$arg.reason}` |
 | `T-PREP-13` | `SAVED` | `ui.run` | — | `MAPPING` | — |
 | **`T-PREP-16`** | `PAUSE` | `ui.resume_yes` | `fault_cleared` | `RETURN` | `close_window{id:W-1}`（**`override_common`**。汎用 `C-04` は `$resume_run`＝`MAPPING` に行ってしまうため先に拾う。1b-1 SG-A7） |
 | **`T-PREP-17`** | `PAUSE` | `ui.resume_no` ／ `ui.resume_ack` | `fault_cleared` | `MAPPING` | `close_window{id:W-1}`（**`override_common`**。`C-05` は `resume_state_available` が `PREP` を弾くため。1b-1 SG-A7） |
@@ -619,9 +622,9 @@ UI がエラー表示すべきか判断できなくなる。
 | --- | --- | --- | --- | --- | --- | --- |
 | `T-SUM-01` | `POINT` | `evt.two_point_done` | — | `=` | `WAIT_CLEAR` | `disable_jog_ui` |
 | `T-SUM-02` | `WAIT_CLEAR` | `evt.clear_ok` | — | `=` | `NAV` | `enable_jog_ui` |
-| `T-SUM-03` | `WAIT_CLEAR` | `evt.clear_timeout` | — | `=` | `POINT` | `enable_jog_ui`, `guide{key:...}` |
-| `T-SUM-04` | `WAIT_CLEAR` | `evt.target_lost` | — | `=` | `POINT` | `enable_jog_ui`, `guide{key:...}` |
-| `T-SUM-05` | `WAIT_CLEAR` | `ui.abort` | — | `=` | `POINT` | `enable_jog_ui` |
+| `T-SUM-03` | `WAIT_CLEAR` | `evt.clear_timeout` | — | `=` | `POINT` | `enable_jog_ui`, `guide{key:...}`, `begin_two_point{kind:SUMMON}` |
+| `T-SUM-04` | `WAIT_CLEAR` | `evt.target_lost` | — | `=` | `POINT` | `enable_jog_ui`, `guide{key:...}`, `begin_two_point{kind:SUMMON}` |
+| `T-SUM-05` | `WAIT_CLEAR` | `ui.abort` | — | `=` | `POINT` | `enable_jog_ui`, `begin_two_point{kind:SUMMON}` |
 | `T-SUM-06` | `NAV` | `ui.stop` | — | `=` | `PAUSE` | `cancel_follow_path` |
 | `T-SUM-07` | `PAUSE` | `ui.run` | — | `=` | `NAV` | `resume_follow_path`（**退避待ちはやり直さない**） |
 | `T-SUM-08` | `NAV` | `evt.blocked` | — | `=` | `BLOCKED` | `open_window(W-5)` |
@@ -631,6 +634,16 @@ UI がエラー表示すべきか判断できなくなる。
 | `T-SUM-11` | `NAV` | `evt.arrived` | — | `=` | `ALIGN` | — |
 | `T-SUM-12` | `ALIGN` | `evt.align_done` | — | `AT_PANEL` | `IDLE_P` | — |
 | **`T-SUM-14`** | `PAUSE` | `ui.save` | `map_update` | `=` | `=` | `commit_map_patch` |
+| **`T-SUM-18`** | `POINT` | `ui.jog.hold` | `jog_allowed` | `=` | `=` | `set_jog(true)`（`override_common`。`C-01` の PAUSE 落ちを打ち消す） |
+| **`T-SUM-19`** | `POINT` | `sys.jog_lease_expired` | — | `=` | `=` | `set_jog(false)` |
+
+**`T-SUM-18/19` は 2026-11-12 追加（A-12②、`SM-3.1.2-143`）。**`POINT` には
+行き先が無いので、ジョグに触れても `PAUSE` へ入れない（ジョグ自体は効く。
+`guards._jog_allowed` は `SUMMON` の `WAIT_CLEAR` だけを除く）。`T-SUM-18` は
+`C-01`（layer 0 の `$pause_unless_prep`）が `ui.jog.hold` で PAUSE に落とすため
+`override_common: true` で打ち消す。`T-SUM-19` は `C-02` が `PAUSE` 限定なので不要。
+2 点指示の受付（`begin_two_point`）は `POINT` に入る行（`T-SUM-03/04/05`・
+`C-09c-summon`・`C-11-summon`）が開く。`POINT` に居る間は開いたままにする。
 
 #### `HOME_NAV`
 
@@ -851,6 +864,27 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 ```
 
 逆にすると「多重化はまだ手動を流しているのに FSM は `jog_active=false`」という窓ができる。
+
+#### 5.2.1 自動ブレーキの切替を許す条件と W-6 の心拍（A-15。2026-11-12）
+
+`/system/set_flag auto_brake` を受けるのは、次のいずれか（`th_state/auto_brake.py` の `override_allowed`）。
+
+| 許す条件 | 内容 |
+| --- | --- |
+| 手動系のモード | `auto_brake_default` が `on_locked` でない |
+| ジョグ中 | `jog_active`（リースが続く間） |
+| 開発モードの項目 | `/system/dev_mode` の `effective.auto_brake`（3 秒で失効） |
+| **W-6 を開いている**（A-15） | **`/ui/manual_panel`（`std_msgs/String`、`client_id`）の受信が `jog_lease_ms` 以内。** WebUI は W-6 を開いている間 5 Hz で送り、閉じたら空文字を 1 回送る（空文字は即「閉じた」扱い） |
+
+**`/ui/manual_panel` はジョグのリースと別物。**リース（`/ui/jog_lease`）は `ui.jog.hold` になり自律系を
+`PAUSE` に落とすので、W-6 を開いただけでは送らない。`/ui/manual_panel` は FSM に入れず、`state_manager` が
+自動ブレーキの許可の判定にだけ使う。
+
+**要求を捨てて ON に戻す条件**（`_refresh_auto_brake`。10 Hz）: ①許す条件がどれも成り立たなくなった
+（心拍の途絶・閉じた・開発モードの項目が外れた・ジョグが切れた）、②**モードが変わった**（既存）、
+③**W-6 の許可だけで受けた要求は、状態（`state`）が変わった**。③の例外: ジョグ中は状態の変化を許す
+（ジョグを始めたために自律系が `PAUSE` に落ちる変化。そのあいだ基準の状態を追従させる）。
+ゾーン NA（画面途絶）は従来どおり要求があっても ON。
 
 ---
 

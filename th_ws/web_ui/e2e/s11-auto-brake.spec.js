@@ -96,6 +96,19 @@ test('approach warning appears while OFF when the limiter reports it', async ({ 
   await expect(page.locator('#s11')).toContainText('0.5')
 })
 
+test('stopped: warning shows the surrounding distance as "周囲"', async ({ page }) => {
+  // 止まっているとき（approach_warning_moving false）は進む向きの nearest_obstacle_m（空き）ではなく
+  // 周囲の最近傍 approach_distance_m を「周囲」で出す（Spec-safety §2.1）。
+  await gotoScreenWithLimiter(page, 'S11',
+    { mode: 'MANUAL', state: 'RUN', zone: 'OUT', auto_brake: false },
+    { ...LIMITER_PASS, nearest_obstacle_m: 30, approach_distance_m: 0.6,
+      approach_warning: true, approach_warning_moving: false })
+  await page.locator('#s11').waitFor()
+  await expect(page.getByTestId('s11-approach-warning')).toBeVisible()
+  await expect(page.locator('#s11')).toContainText('周囲 0.6 m に障害物')
+  await expect(page.locator('#s11')).not.toContainText('前方 30')
+})
+
 test('no approach warning while OFF when the limiter does not report it', async ({ page }) => {
   await gotoScreenWithLimiter(page, 'S11',
     { mode: 'MANUAL', state: 'RUN', zone: 'OUT', auto_brake: false }, LIMITER_PASS)

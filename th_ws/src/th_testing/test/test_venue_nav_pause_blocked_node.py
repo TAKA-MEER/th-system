@@ -653,10 +653,13 @@ class TestVenueNavPauseBlocked(unittest.TestCase):
         ms = self._mode_state()
         if ms is None or ms == ('INIT', 'CHECK'):
             self._reset_to_home()
-        self._publish_summon_goal()
         self._call_trigger('ui.goto', '{"kind":"SUMMON"}')
         if not self._wait_mode_state('SUMMON', 'POINT', timeout=10.0):
             self.fail(f'SUMMON/POINT に入らない ({self._mode_state()})')
+        # A-12②: 本番の順序に合わせ、POINT に入ってからゴールを出す
+        # （pin_registrar は two_point_done の後に `/onsite/summon_goal` を出す）。
+        # venue は POINT 入場時に古いゴールを捨てるので、先に出すと消える。
+        self._publish_summon_goal()
         self._publish_setup_event('evt.two_point_done')
         if not self._wait_mode_state('SUMMON', 'WAIT_CLEAR', timeout=5.0):
             self.fail(f'SUMMON/WAIT_CLEAR に入らない ({self._mode_state()})')

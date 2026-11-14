@@ -50,9 +50,14 @@ export function dispatchEffect(msg) {
   const name = msg?.name
   switch (name) {
     case 'guide': {
-      const key = parseArgs(msg?.args_json).key
+      const { key, detail } = parseArgs(msg?.args_json)
       if (typeof key === 'string' && key && guideLabel(key)) {
-        return { kind: 'guide', key, stampMs: stampToMs(msg?.header?.stamp) }
+        return {
+          kind: 'guide',
+          key,
+          detail: typeof detail === 'string' && detail ? detail : null,
+          stampMs: stampToMs(msg?.header?.stamp),
+        }
       }
       warnOnce(`guide:${String(key)}`)
       return { kind: 'ignore' }
@@ -149,11 +154,31 @@ export function shouldGuideClose(guide, { mode, sinceMs, estopHw }) {
 //   次の教示が上書きする）。
 // - ask_save_if_unsaved（「終了」→ IDLE）: どのモードの終了でも飛ぶので、
 //   未保存の教示記録があるときだけ開く（無ければ開かないのが「あれば問う」）。
-export function shouldOpenSaveAsk(decided, status) {
+//   A-16（SM-3.1.1-10）: 「終了」の未保存には**試験場内地図**も含む（試験準備で作った
+//   地図とピンを保存しないまま抜けて作り直しになることが繰り返し起きた）。機体が
+//   /system/state.unsaved に 'venue_map' を載せているときも開く。ask_save（記録の
+//   連続性切れ）は教示の記録だけを見る（地図の話ではない）。
+export const VENUE_MAP_UNSAVED_KEY = 'venue_map'
+
+export function venueMapUnsaved(unsaved) {
+  return Array.isArray(unsaved) && unsaved.includes(VENUE_MAP_UNSAVED_KEY)
+}
+
+// 何が未保存か。{ route, venueMap }。どちらも偽なら W-4 は開かない。
+export function saveAskItems(decided, status, unsaved) {
+  const none = { route: false, venueMap: false }
   if (!decided || (decided.kind !== 'ask_save' && decided.kind !== 'ask_save_if_unsaved')) {
-    return false
+    return none
   }
-  return isUnsavedRecording(status)
+  return {
+    route: isUnsavedRecording(status),
+    venueMap: decided.kind === 'ask_save_if_unsaved' && venueMapUnsaved(unsaved),
+  }
+}
+
+export function shouldOpenSaveAsk(decided, status, unsaved = []) {
+  const items = saveAskItems(decided, status, unsaved)
+  return items.route || items.venueMap
 }
 
 export function isUnsavedRecording(status) {

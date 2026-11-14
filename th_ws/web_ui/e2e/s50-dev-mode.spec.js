@@ -136,6 +136,9 @@ test('効かない旨と「選んだ項目だけが外れる」注記が出て�
   await openDevTab(page)
 
   await expect(page.getByTestId('s50-dev-no-gate')).toBeVisible()
+  // A-15: 自動ブレーキは「何も起きない項目」ではない（自律系・場内でも切替が出る）。
+  await expect(page.getByTestId('s50-dev-no-gate')).not.toContainText('自動ブレーキ')
+  await expect(page.getByTestId('s50-dev-ignore-auto_brake')).toContainText('自律系・場内の自動ブレーキ OFF')
   await expect(page.getByTestId('s50-dev-scope')).toContainText('選んだ項目だけ')
   // 2026-09-23 改定で「無視できない一覧」は廃止した。
   await expect(page.getByTestId('s50-dev-unignorable')).toHaveCount(0)

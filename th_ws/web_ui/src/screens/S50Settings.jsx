@@ -125,8 +125,8 @@ const REGISTRY_CAPS = { follow_planner_mapless: { v_max: PARAM_LIMITS.v_max } }
 // （表示は config_manager の調整対象でなくても読める）。
 
 // 開発モードの項目メタ（WP-DEV-01B §2）。キーは devModeState.DEV_ITEMS と揃える。
-// battery・auto_brake 以外は効く。opcheck は起動時の自動点検の警告を消す
-// （判定自体は止めない）。battery・auto_brake は as-built に止める側の
+// battery 以外は効く。opcheck は起動時の自動点検の警告を消す
+// （判定自体は止めない）。battery は as-built に止める側の
 // 仕組みが無く、選んでも何も起きない（DEV_NO_GATE_ITEMS。カード末尾の注記で明示する）。
 const DEV_ITEM_META = [
   { item: 'link', label: S50_DEV_ITEM_LINK, desc: S50_DEV_ITEM_LINK_DESC },

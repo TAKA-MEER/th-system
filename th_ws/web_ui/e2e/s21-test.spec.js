@@ -286,7 +286,10 @@ test('待機場所の宣言: 失敗で force 再宣言を促し、成功で宣�
   expect(calls).toHaveLength(2)
   expect(calls[1].service).toBe('/onsite/declare_home')
   expect(calls[1].request).toMatchObject({ force: true })
-  expect((await triggers(page)).length, '宣言時に ui.goto などの誤 trigger を送っていない').toBe(0)
+  expect(
+    (await triggers(page)).filter((c) => c.trigger !== 'ui.screen'),
+    '宣言時に ui.goto などの誤 trigger を送っていない',
+  ).toHaveLength(0)
 
   // home_declared を受信した前提（宣言済み）に変えるとピルが切り替わる。
   await setTestHomeDeclared(page, true)

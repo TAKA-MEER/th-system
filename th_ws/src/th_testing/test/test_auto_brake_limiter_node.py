@@ -16,6 +16,9 @@ test_auto_brake_limiter_node.py
   f. OFF でも自律系（FOLLOW）は減速する・警告は出ない（無効化不可）
   g. OFF でもゾーン NA は減速する・警告は出ない
   h. OFF で障害物が遠いと警告は出ない
+  n・o. 指令が途絶えた（スティックを離したあと）でも警告・距離が出る
+  i〜m. 止まっているとき（指令 0。Spec-safety §2.1・2026-11-12）: 横・後ろの障害物で警告と距離が出る／
+     死角だけなら出ない／ON なら出ない／動いている間だけ approach_warning_moving が立つ
 
 注意（CLAUDE.md の既知の癖）: 試験は TestCase のメソッドにする。
 メソッドは名前順に走り、前の試験の状態を引き継ぐので、各メソッドは冒頭で自分の前提を作る。
@@ -70,6 +73,7 @@ def generate_test_description():
             'brake_accel_mps2': BRAKE_ACCEL,
             'obstacle_min_points': 1,
             'v_max': V_MAX,
+            'blind_angle_ranges': [75.0, 105.0],   # 真横（+90 度）が死角
         }],
         output='screen',
     )
@@ -107,6 +111,9 @@ class TestAutoBrakeLimiterNode(unittest.TestCase):
         cls.zone = 'OUT'
         cls.auto_brake = True
         cls.obstacle_m = NEAR_M
+        cls.obstacle_deg = 0.0   # 障害物の向き（0=正面）
+        cls.cmd_x = CMD_LINEAR_X
+        cls.publish_cmd = True   # False: 指令を一切送らない（スティックを離したあと）
         cls.estop = False
         cls.fault_lock = False
         cls.publish_state = True
@@ -123,9 +130,10 @@ class TestAutoBrakeLimiterNode(unittest.TestCase):
     @classmethod
     def _publish(cls):
         cmd = Twist()
-        cmd.linear.x = CMD_LINEAR_X
-        cls.pub_muxed.publish(cmd)
-        cls.pub_manual.publish(cmd)
+        cmd.linear.x = cls.cmd_x
+        if cls.publish_cmd:
+            cls.pub_muxed.publish(cmd)
+            cls.pub_manual.publish(cmd)
 
         scan = LaserScan()
         scan.header.stamp = cls.node.get_clock().now().to_msg()
@@ -136,9 +144,10 @@ class TestAutoBrakeLimiterNode(unittest.TestCase):
         scan.range_min = 0.05
         scan.range_max = 40.0
         ranges = [FAR_M] * N_BEAMS
-        # 正面（角度 0 ± 10 度）に障害物。
-        center = int(round((0.0 - scan.angle_min) / scan.angle_increment))
-        for i in range(center - 10, center + 11):
+        # obstacle_deg（既定は正面）の ± 3 度に障害物。
+        center = int(round((math.radians(cls.obstacle_deg) - scan.angle_min)
+                           / scan.angle_increment))
+        for i in range(center - 3, center + 4):
             ranges[i % N_BEAMS] = cls.obstacle_m
         scan.ranges = ranges
         cls.pub_scan.publish(scan)
@@ -232,6 +241,64 @@ class TestAutoBrakeLimiterNode(unittest.TestCase):
         self._settle(lambda s: abs(s.out_linear - CMD_LINEAR_X) < 1e-3
                      and not s.approach_warning,
                      '遠いのに警告が出た')
+
+    # ── 止まっているとき（指令 0）の接近警告 ─────────────────
+    def test_i_stopped_side_obstacle_warns_with_distance(self):
+        type(self).auto_brake = False
+        type(self).cmd_x = 0.0
+        type(self).obstacle_deg = -90.0
+        self._settle(lambda s: s.approach_warning
+                     and abs(s.approach_distance_m - NEAR_M) < 1e-3
+                     and not s.approach_warning_moving
+                     and s.nearest_obstacle_m > 20.0,
+                     '止まっているのに横の障害物で警告・距離が出ない')
+
+    def test_j_stopped_rear_obstacle_warns(self):
+        type(self).auto_brake = False
+        type(self).cmd_x = 0.0
+        type(self).obstacle_deg = 180.0
+        self._settle(lambda s: s.approach_warning
+                     and abs(s.approach_distance_m - NEAR_M) < 1e-3
+                     and not s.approach_warning_moving,
+                     '止まっているのに後ろの障害物で警告が出ない')
+
+    def test_k_stopped_blind_sector_only_no_warning(self):
+        type(self).auto_brake = False
+        type(self).cmd_x = 0.0
+        type(self).obstacle_deg = 90.0    # 死角（75〜105 度）の中だけ
+        self._settle(lambda s: s.source_class == 'MANUAL' and not s.approach_warning,
+                     '死角だけの障害物で警告が出た')
+
+    def test_l_stopped_on_no_warning(self):
+        type(self).auto_brake = True
+        type(self).cmd_x = 0.0
+        type(self).obstacle_deg = -90.0
+        self._settle(lambda s: s.source_class == 'MANUAL' and not s.approach_warning,
+                     'ON のとき止まっていて警告が出た')
+
+    def test_n_released_stick_silent_command_still_warns(self):
+        """実機の「止まっている」: スティックを離すと指令が途絶える（ZERO_STALE）。
+        その間も警告と距離は出る。出力は 0 のまま、警告音用の moving は立たない。"""
+        type(self).auto_brake = False
+        type(self).obstacle_deg = -90.0
+        type(self).publish_cmd = False
+        self._settle(lambda s: s.action == 'ZERO_STALE' and s.out_linear == 0.0
+                     and s.approach_warning and not s.approach_warning_moving
+                     and abs(s.approach_distance_m - NEAR_M) < 1e-3,
+                     '指令が途絶えると警告・距離が消えた')
+
+    def test_o_silent_command_on_no_warning(self):
+        type(self).auto_brake = True
+        type(self).publish_cmd = False
+        type(self).obstacle_deg = -90.0
+        self._settle(lambda s: s.action == 'ZERO_STALE' and not s.approach_warning,
+                     'ON で指令途絶のとき警告が出た')
+
+    def test_m_moving_warning_flag_for_sound(self):
+        type(self).auto_brake = False
+        self._settle(lambda s: s.approach_warning and s.approach_warning_moving
+                     and abs(s.approach_distance_m - NEAR_M) < 1e-3,
+                     '動いているのに音用の警告が立たない')
 
 
 if __name__ == '__main__':

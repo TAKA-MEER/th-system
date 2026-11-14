@@ -6,6 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useActiveScreenPublisher } from '../ros/useActiveScreenPublisher.js'
+import { getClientId } from '../ros/clientId.js'
 import { useLimiterStatus } from '../ros/useLimiterStatus.js'
 import { TOPICS, MSG_TYPES } from '../ros/topics.js'
 import attributes from '../generated/attributes.json'
@@ -22,6 +23,7 @@ import { readFontScale, applyFontScale } from '../parts/fontScale.js'
 import { readVoiceMaster, applyVoiceMaster } from '../parts/voiceMaster.js'
 import { readDevMode, DEV_MODE_EVENT } from '../parts/devMode.js'
 import { useDevMode } from '../ros/useDevMode.js'
+import { useManualPanelHeartbeat } from '../ros/useManualPanelHeartbeat.js'
 import { useFaultHistory } from '../ros/useFaultHistory.js'
 import { latestRecord, recentFaultText } from '../ros/faultHistoryState.js'
 import './theme.css'
@@ -46,6 +48,17 @@ function AppShellInner({ screenName, screenId, children }) {
   // publishes once a screen has actually announced its screen_id -- see
   // main.jsx's Screens().
   useActiveScreenPublisher(ros, screenId)
+  // A-13: いま開いた画面を機体へ宣言する（ui.screen -> C-14 set_screen）。
+  // /ui/active_screen も screen_id を 2Hz で出すが、こちらは画面が決まった
+  // 時点で在席の区分（ゾーン）を即座に宣言する。requester は client_id:
+  // th_state は requester を端末 ID として _screens に入れるため、固定の
+  // 'web_ui' にすると別端末の在席が残って停止判定を鈍らせる。
+  const clientIdRef = useRef(null)
+  if (clientIdRef.current === null) clientIdRef.current = getClientId()
+  useEffect(() => {
+    if (!screenId) return
+    sendTrigger('ui.screen', { screen_id: screenId }, clientIdRef.current).catch(() => {})
+  }, [sendTrigger, screenId])
   const limiterStatus = useLimiterStatus(ros)
 
   // WS-9X: ?dev=1 か localStorage['th.devMode']。S-50 開発モードタブの
@@ -86,6 +99,8 @@ function AppShellInner({ screenName, screenId, children }) {
   // panel body lives in Windows.jsx; screens reach this via
   // shell/jogPanel.js's context (a screen's "手動" button calls open()).
   const [jogOpen, setJogOpen] = useState(false)
+  // A-15: W-6 を開いている間の心拍（スティックに触れていなくても自動ブレーキを切り替えられる）。
+  useManualPanelHeartbeat(ros, jogOpen)
   const jogPanelApi = useMemo(() => ({
     isOpen: jogOpen,
     open: () => setJogOpen(true),
@@ -109,11 +124,12 @@ function AppShellInner({ screenName, screenId, children }) {
 
   // 1b-6 (SG-B2): /system/effect の guide を W-3 の帯に出す。since は
   // 今のモード／状態に入った時刻 (自動クローズの比較用)。
-  const { guideKey, closeGuide } = useGuideBanner(ros, mode, stampToMs(state?.since), estopHw)
+  const { guideKey, guideDetail, closeGuide } = useGuideBanner(ros, mode, stampToMs(state?.since), estopHw)
 
   // 1b-7 (SG-B3): /system/effect の ask_save／ask_save_if_unsaved を W-4 の
   // 保存確認に出す。「はい」→ ui.save（保存）、「いいえ」→ ui.discard（破棄）。
-  const { saveAsk, closeSaveAsk } = useSaveConfirm(ros)
+  const { saveAsk, saveBusy, saveError, closeSaveAsk, saveYes: handleSaveYes, saveNo: handleSaveNo } =
+    useSaveConfirm(ros, state?.unsaved, sendTrigger)
 
   // W-6 bottom edge floats above the estop release bar: --dock-h feeds
   // #jogWin's `bottom: calc(var(--dock-h, 0px) + 10px)` (theme.css, ported
@@ -194,20 +210,16 @@ function AppShellInner({ screenName, screenId, children }) {
 
   // 1b-7 (SG-B3): W-1／W-2 が勝つ。IDLE を離れたら（別の方式に入った）W-4 は
   // 閉じる（答えの送り先 T-IDLE-01/-02 は IDLE でしか受けない）。
+  // A-16: ask の effect は「終了」の遷移で /system/state より先に届くので、ask を立てた
+  // 時点のモードはまだ元の（PREP など）ことがある。そこで閉じると W-4 が一瞬も出ない。
+  // 一度 IDLE を見てから IDLE を離れたときだけ閉じる（W-1／CARRY は即閉じる）。
+  const saveAskSawIdleRef = useRef(false)
   useEffect(() => {
-    if (!saveAsk) return
-    if (w1Active || mode === 'CARRY' || mode !== 'IDLE') closeSaveAsk()
+    if (!saveAsk) { saveAskSawIdleRef.current = false; return }
+    if (mode === 'IDLE') saveAskSawIdleRef.current = true
+    if (w1Active || mode === 'CARRY' || (mode !== 'IDLE' && saveAskSawIdleRef.current)) closeSaveAsk()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [w1Active, mode, saveAsk])
-  const handleSaveYes = useCallback(() => {
-    closeSaveAsk()
-    sendTrigger('ui.save').catch(() => {})
-  }, [closeSaveAsk, sendTrigger])
-  const handleSaveNo = useCallback(() => {
-    closeSaveAsk()
-    sendTrigger('ui.discard').catch(() => {})
-  }, [closeSaveAsk, sendTrigger])
-
   // A higher-priority window (W-1/W-2) always wins; a confirm window a
   // screen opened before the fault/estop landed must not linger underneath
   // it (DetailedDesign-webui.md §2.1 stacking order applies to W-4 too).
@@ -319,11 +331,16 @@ function AppShellInner({ screenName, screenId, children }) {
         jogOpen={jogOpen}
         onJogClose={() => setJogOpen(false)}
         guideKey={guideKey}
+        guideDetail={guideDetail}
         onGuideClose={closeGuide}
         saveAsk={saveAsk}
         onSaveYes={handleSaveYes}
         onSaveNo={handleSaveNo}
+        saveBusy={saveBusy}
+        saveError={saveError}
         autoBrake={state?.auto_brake}
+        autoBrakeCanToggle={!stale && state?.mode != null}
+        confirmWindow={confirmWindowApi}
         faultRecords={faultRecords}
         w1FaultType={w1FaultTypeRef.current}
         w1SinceSec={w1SinceSec}

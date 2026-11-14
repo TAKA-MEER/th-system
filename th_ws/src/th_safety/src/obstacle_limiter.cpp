@@ -525,6 +525,8 @@ private:
         status.source_class = sourceClassToString(out.source_class);
         status.applied_limit_mps = static_cast<float>(out.applied_limit_mps);
         status.approach_warning = out.approach_warning;
+        status.approach_distance_m = static_cast<float>(out.approach_distance_m);
+        status.approach_warning_moving = out.approach_warning && out.moving;
         pub_limiter_status_->publish(status);
     }
 

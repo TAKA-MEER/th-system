@@ -6,7 +6,7 @@
 import { test, expect } from '@playwright/test'
 import {
   gotoScreen, gotoScreenWithOnsite, onsiteServiceCalls,
-  setTestState, setTestPersonTargets, setTestOnsitePins, unlockOnsiteMap, stdTriggerCalls,
+  setTestState, setTestPersonTargets, setTestOnsitePins, unlockOnsiteMap, stdTriggerCalls, stdSetBoolCalls,
   stubServices,
 } from './helpers.js'
 import { onsiteMapTransform } from '../src/mapGeometry.js'
@@ -531,10 +531,12 @@ test('F-6: mappingActive===true なら toggle_mapping を呼ばずに表示だ�
   await expect(page.locator('[data-testid="s20-map"]')).toBeVisible()
   const calls = await stdTriggerCalls(page)
   expect(calls.some((c) => c.service === '/slam_control/toggle_mapping'),
-    'mappingActive===true なのに toggle_mapping を呼んだ（動いている地図作成を止めてしまう）').toBe(false)
+    'toggle_mapping は使わない（押下が重なると反転する。A-11）').toBe(false)
+  expect(await stdSetBoolCalls(page),
+    'mappingActive===true なのに set_mapping を呼んだ').toEqual([])
 })
 
-// mappingActive===false なら toggle_mapping を呼んでから表示を解禁する。
+// mappingActive===false なら set_mapping(true) を呼んでから表示を解禁する。
 test('F-6: mappingActive===false なら toggle_mapping を呼んでから表示を解禁', async ({ page }) => {
   await gotoScreenWithOnsite(
     page, 'S20', PREP,
@@ -544,7 +546,10 @@ test('F-6: mappingActive===false なら toggle_mapping を呼んでから表示�
   await page.locator('[data-testid="s20-map-gate-start"]').click()
   await expect(page.locator('[data-testid="s20-map"]')).toBeVisible()
   const calls = await stdTriggerCalls(page)
-  expect(calls.some((c) => c.service === '/slam_control/toggle_mapping')).toBe(true)
+  expect(calls.some((c) => c.service === '/slam_control/toggle_mapping'),
+    'toggle_mapping は使わない（A-11）').toBe(false)
+  // A-11: 冪等な set_mapping{data:true} で開始する（トグルは重なると停止へ反転する）。
+  expect(await stdSetBoolCalls(page)).toEqual([{ service: '/slam_control/set_mapping', data: true }])
 })
 
 // WS-9Y: 前回セッションのピンが残っているときだけ「新しい試験日として開始」を出す。
