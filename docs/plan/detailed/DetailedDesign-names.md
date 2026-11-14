@@ -839,7 +839,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `meas.abort` | 中止 | `-131` |
 | `meas.finish` | 終了 | `-135` |
 | `meas.turn` | 旋回 | `-127`・`-136` |
-| `meas.translate` | 並進 | `-127` |
+| `meas.translate` | 並進（左右は `-127` だけ。前後は `-136` でも受ける。2026-11-14） | `-127`・`-136` |
 | `meas.set_limits` | 速度・加速度の上限 | — （状態は変えない） |
 | `meas.done` | 測定を終えた | `-063` |
 

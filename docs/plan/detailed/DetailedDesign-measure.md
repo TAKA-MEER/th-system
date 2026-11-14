@@ -6,7 +6,7 @@
 入力は [Spec-measure.md](../spec/Spec-measure.md) §1〜§7 と [Spec-onsite.md](../spec/Spec-onsite.md) §7.2、遷移は
 [Spec-modes.md](../spec/Spec-modes.md) `SM-3.1.1-18`・`SM-3.1.2-062`〜`-063`・`-120`〜`-141`。
 **本システムが書き、測定機能が確かめる**（2026-11-04。fk-system の申し送り 16。[Spec-open.md](../spec/Spec-open.md) §8）。
-**状態: 測定機能が確かめた**（2026-11-04。fk のユーザー承認。fk は写さずにこの文書へリンクする）。**§3 の型 5 つだけ `th_system_msgs` に入れた**（2026-11-11。申し送り 20。作業ブランチ `feat/era3-measure` にあり、確認期の試験が終わってから main へマージする）。受け手は未実装（計画書 §6 の 8-g）。
+**状態: 測定機能が確かめた**（2026-11-04。fk のユーザー承認。fk は写さずにこの文書へリンクする）。**2026-11-14 に前後の並進を足した**（申し送り 21。`side` の値と断る理由を 1 つずつ足しただけで、欄は変えていない。fk の確かめ待ち）。**§3 の型 5 つだけ `th_system_msgs` に入れた**（2026-11-11。申し送り 20。作業ブランチ `feat/era3-measure` にあり、確認期の試験が終わってから main へマージする）。受け手は未実装（計画書 §6 の 8-g）。
 
 ---
 
@@ -76,7 +76,7 @@ float64 x                 # meas.goal: map フレーム [m]
 float64 y
 float64 yaw               # meas.goal: map フレーム [rad]
 float64 angle_rad         # meas.turn: 正＝左回り（反時計回り）[rad]
-string  side              # meas.translate: LEFT / RIGHT
+string  side              # meas.translate: LEFT / RIGHT / FORWARD / BACKWARD
 float64 distance_m        # meas.translate [m]
 float32 v_max_mps         # meas.set_limits: 0 は指定しない（本システムの上限のまま）
 float32 w_max_radps
@@ -98,7 +98,8 @@ string  state
 | `meas.abort` | 中止 | — | `AUTO_MEASURE`/`NAV`・`ALIGN`・`BLOCKED`・`ADJUST`・`PAUSE`（-131） | すぐ `DONE`。進行中の指示は `CANCELLED` |
 | `meas.finish` | 終了 | — | `AUTO_MEASURE`/任意（-135） | すぐ `DONE`。進行中の指示は `CANCELLED` |
 | `meas.turn` | 旋回 | `angle_rad` | `AUTO_MEASURE`/`WAIT`（-127）・`AT_PANEL`/`WORKING`（-136） | `DONE`（-128・-137） |
-| `meas.translate` | 並進 | `side`・`distance_m` | `AUTO_MEASURE`/`WAIT`（-127） | `DONE`（-128）。**測定機能の最初の版は使わない** |
+| `meas.translate` | 並進（左右） | `side`（`LEFT`／`RIGHT`）・`distance_m` | `AUTO_MEASURE`/`WAIT`（-127） | `DONE`（-128）。**測定機能の最初の版は使わない** |
+| `meas.translate` | **並進（前後）**（2026-11-14。申し送り 21） | `side`（`FORWARD`／`BACKWARD`）・`distance_m`（正の値。向きを変えずにまっすぐ） | `AUTO_MEASURE`/`WAIT`（-127）・**`AT_PANEL`/`WORKING`（-136）** | `DONE`（-128・-137）。`AT_PANEL` で `LEFT`／`RIGHT` を送ると `state_not_accepting` |
 | `meas.set_limits` | 速度・加速度の上限 | `v_max_mps` ほか | `AUTO_MEASURE`/任意・`AT_PANEL`/`WORKING`・`ADJUST` | すぐ `DONE`。**本システムの上限との小さい方だけが効く。**自律測定はモードを抜けたら、お立会試験は**停止命令が解けたら**（`WORKING`・`ADJUST` を出たら）捨てる（人のジョグに効き続けないため） |
 | `meas.done` | 測定を終えた | — | `AT_PANEL`/`WORKING`（-063） | すぐ `DONE`（停止命令が解ける） |
 
@@ -107,6 +108,7 @@ string  state
 | `state_not_accepting` | いまのモード・状態では受けない（-132・-138 ほか） |
 | `turning` | 旋回中は受けない（-138） |
 | `corner_obstacle` | 角が描く円の中に障害物がある（-121・-127・-130・-136。[Spec-measure.md](../spec/Spec-measure.md) §4.4） |
+| `path_obstacle` | **前後の並進で、進む先（指示の距離だけ進むまでに機体の形 0.55 m 角が通る範囲）に障害物がある**（-127・-136。[Spec-measure.md](../spec/Spec-measure.md) §5.3。2026-11-14） |
 | `map_mismatch` | `map_instance_id` が今の地図と違う |
 | `version_mismatch` | `interface_version` が食い違う（§1.2） |
 | `link_lost` | 生存確認が途絶えている |
@@ -200,7 +202,7 @@ builtin_interfaces/Time checked_at
 | --- | --- |
 | 左右 | `LEFT` は `region` を機体の中心まわりに **+90°**、`RIGHT` は **−90°** 回した位置を、**回る前の今の位置から**確かめる。`CURRENT` は回さない |
 | 機体の内側 | **`region` のうち機体の形（0.55 m 角）の内側は見ない。**腕の取り付け部のそばには死角マスクのかかったパイプがあり、除かないと毎回 `UNKNOWN` になる |
-| 範囲の形（測定機能の決定。暫定） | 回ったあとの機体基準で**前に伸びる長方形: x 0〜1.0 m・y −0.275〜+0.275 m**（腕を起こす・格納するとき、腕の先が機体の中心から約 1 m。幅は腕の取り付けが決まるまで機体の幅いっぱい。余裕 0）。**値は測定機能のパラメータ。**機体の内側を見ないので、確かめるのは前面（x 0.275 m）から先 |
+| 範囲の形（測定機能の決定。暫定） | 回ったあとの機体基準で**前に伸びる長方形: x 0〜1.0 m・y −0.275〜+0.275 m**（腕を起こす・格納するとき、腕の先が機体の中心から約 1 m。幅は腕の取り付けが決まるまで機体の幅いっぱい。余裕 0）。**2026-11-14 の知らせ（申し送り 21）: 腕が伸縮しなくなり、長さは約 1.76 m に伸びる見込み（暫定）。**範囲は測定機能が渡すので、本システムの受け口は変わらない。**値は測定機能のパラメータ。**機体の内側を見ないので、確かめるのは前面（x 0.275 m）から先 |
 | 見るもの | 角が描く円の確認と同じ入力（障害物マップかスキャン）。[Spec-measure.md](../spec/Spec-measure.md) §5.2 |
 | `UNKNOWN` | 最後のスキャンが **`arm_clearance_scan_max_age_ms`** より古い（`scan_stale`）か、範囲が LiDAR の死角にかかる（`blind_sector`）。**測定機能は塞がっているのと同じに扱う** |
 | 受ける状態 | `AUTO_MEASURE`/`WAIT` と `AT_PANEL`/`WORKING` だけ（-141）。**状態は変えない** |
@@ -253,4 +255,4 @@ builtin_interfaces/Time checked_at
 | `measure_link_timeout_ms`・`arm_clearance_scan_max_age_ms` の値 | (b)。実装時に決める |
 | **依存: 自律測定の間は `/map` を凍結しない** | `map_freezer` が `/map_live` をそのまま通す場面に `AUTO_MEASURE` を足す（[names](DetailedDesign-names.md) §6.4 の `/map` の行。[Spec-measure.md](../spec/Spec-measure.md) §4.1）。8-g |
 | 参考（測定機能の決定。本システムは変えない） | 自律測定で腕が出ている間の人のジョグは人の責任（既知のリスク）。お立会試験では、昇降機を測定前の高さへ戻してから `meas.done` を返す |
-| 測定機能の最初の版の使い方（参考。fk `Spec-auto.md`） | 盤前の並進を使わない／速度・加速度の上限は当面指定しない／一時停止からの再開はいつも人の「走行」。**本システムの実装の順番の手がかりにする** |
+| 測定機能の最初の版の使い方（参考。fk `Spec-auto.md`） | 盤前の**左右の**並進を使わない（**前後の並進は使う**。2026-11-14。点ごとに「その場旋回 → 前後の並進」）／速度・加速度の上限は当面指定しない／一時停止からの再開はいつも人の「走行」。**本システムの実装の順番の手がかりにする** |
