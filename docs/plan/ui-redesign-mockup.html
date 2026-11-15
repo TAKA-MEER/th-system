@@ -92,6 +92,21 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .tg .sep{flex:none;width:2px;background:var(--bd-hi)}
 .tg .inert{color:var(--mut);cursor:pointer}
 .tg .press{background:var(--ctrl);cursor:pointer}
+.tg.big{min-height:76px}
+.tg.big > div{font-size:23px}
+.tg.big > div small{font-size:12px}
+.b.two span{line-height:1.15;text-align:left}
+.b.two span small{display:block;font-size:14px;font-weight:700;color:var(--brand-lt);min-height:16px}
+.b.f16{font-size:16px;padding:0 10px}
+.sec.noh h3{display:none}
+#dev [data-help]{-webkit-touch-callout:none;user-select:none}
+.help{position:absolute;width:340px;background:#20283a;border:2px solid var(--brand-lt);border-radius:12px;padding:12px 14px;z-index:9;box-shadow:0 8px 28px #000a}
+.help .ht{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:800;margin-bottom:6px}
+.help .ht span{flex:1}
+.help .hx{flex:none;width:40px;height:40px;border-radius:8px;background:var(--ctrl);border:1px solid var(--bd-hi);display:none;align-items:center;justify-content:center}
+.help .hx svg{width:20px;height:20px}
+.help.sticky .hx{display:flex}
+.help p{font-size:15px;line-height:1.6;color:#d6dbe4}
 
 /* 右列（試験場内） */
 .ctl{width:440px;flex:none;display:flex;flex-direction:column;gap:8px}
@@ -211,7 +226,9 @@ const S = {
   scr:'menu', ori:'L',
   tracker:true,   // 人検出（試験準備・試験で共有。左上の操作バーのトグル）
   menu:{lvl:'top', trackerOff:false, noRoute:false},
-  day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0},
+  day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0,
+       abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
+  help:{on:true},   // ヘルプ表示（2026-11-15 ユーザー案。設定で切り替え）
   prep:{sub:'mapping', method:'person', reserved:'dim', reg:null, regStep:0, pins:6},
 }
 const SUBS = {
@@ -231,11 +248,11 @@ function setSub(v){
 }
 
 /* ---------------- 部品 ---------------- */
-function btn(act, label, {icon, cls='', dis=false, id}={}){
-  return `<button class="b ${cls} ${dis?'dis':''}" data-btn data-act="${dis?'':act}" ${id?`data-id="${id}"`:''}>${icon?ic(icon):''}<span>${label}</span></button>`
+function btn(act, label, {icon, cls='', dis=false, id, why='', help=''}={}){
+  return `<button class="b ${cls} ${dis?'dis':''}" data-btn data-act="${dis?'':act}" ${id?`data-id="${id}"`:''} ${dis&&why?`data-why="${why}"`:''} ${help?`data-help="${help}"`:''}>${icon?ic(icon):''}<span>${label}</span></button>`
 }
 // 対のトグル。stop/run: 'cur' | 'en' | 'dis' | 'inert'（予約で押しても何も起きない）
-function tog(stop, run, {runLabel='走行', runHint='押すと走り出す', blink=true, note=''}={}){
+function tog(stop, run, {runLabel='走行', runHint='押すと走り出す', blink=true, note='', big=false, help=''}={}){
   const side = (k, st) => {
     const lab = k==='stop' ? '停止' : runLabel
     const icn = k==='stop' ? ic('stopSq','style="width:16px;height:16px"') : ic('play','style="width:16px;height:16px"')
@@ -244,16 +261,16 @@ function tog(stop, run, {runLabel='走行', runHint='押すと走り出す', bli
       ? `<div class="nstop" data-act="stop">${icn}<span>${lab}する</span><small>押すと止まる</small></div>`
       : `<div class="nrun ${blink?'blink':''}" data-act="run">${icn}<span>${lab}する</span><small>${runHint}</small></div>`
     if (st==='inert') return `<div class="inert" data-act="inert">${icn}<span>${lab}</span><small>${note}</small></div>`
-    return `<div class="off">${icn}<span>${lab}</span><small>${note}</small></div>`
+    return `<div class="off" data-act="" data-why="${note}">${icn}<span>${lab}</span><small>${note}</small></div>`
   }
   const pressable = [stop,run].some(s=>s==='en'||s==='inert')
-  return `<div class="tg" data-btn ${pressable?'':'data-dis'}>${side('stop',stop)}<span class="sep"></span>${side('run',run)}</div>`
+  return `<div class="tg ${big?'big':''}" data-btn ${pressable?'':'data-dis'} ${help?`data-help="${help}" data-nolong`:''}>${side('stop',stop)}<span class="sep"></span>${side('run',run)}</div>`
 }
 // 人検出の開始／停止（2026-11-13: 案の画面に動かす手段が無かった。いまの実装は対象選択タブの中）。対のトグル（R4）。
 // 呼び寄せ中・登録中は止められない（機体が拒否する。trackerControlPolicy.js）。
 function trackerBar(canStop=true){
   const on=S.tracker
-  return `<span class="cap">人検出</span><div class="tg sm" data-btn>
+  return `<span class="cap">人検出</span><div class="tg sm" data-btn data-help="tracker">
     ${on?(canStop?`<div class="press" data-act="trkOff">■ 止める</div>`:`<div class="off">■ 止める</div>`):`<div class="cur">■ 停止中</div>`}<span class="sep"></span>
     ${on?`<div class="cur">● 動作中</div>`:`<div class="press" data-act="trkOn">● 動かす</div>`}</div>`
 }
@@ -394,6 +411,7 @@ function dayView(){
   const choose = (s==='home'||s==='panel')
   // 9 個のボタンの押せる・押せない（位置は固定。R2）
   const E = {stop:'cur', run:'dis', manual:true, abort:false, home:false, next:false, summon:false, measure:false, cam:false}
+  const AB = d.abortLabel
   let whyDest='', whyPanel='盤の前に着いたら押せます', runNote=''
   if (s==='unloaded'){ whyDest='会場地図を開いてから選べます'; runNote='行き先がありません' }
   else if (s==='undeclared'){ whyDest='待機場所にいることを宣言してから選べます'; runNote='行き先がありません' }
@@ -401,19 +419,19 @@ function dayView(){
     runNote='行き先を押すと出発します'
     if (s==='panel'){ E.measure=true; E.cam=true; whyPanel='' }
     if (!S.tracker) whyDest='人検出を動かすと呼び寄せできます（左上）' }
-  else if (s==='moving'){ E.stop='en'; E.run='cur'; E.abort=true; whyDest='移動中は選べません（「中断」で止めて選び直し）' }
-  else if (s==='paused'){ E.run='en'; E.abort=true; whyDest='一時停止中は選べません（「再開」で続き／「中断」で選び直し）' }
-  else if (s==='summon'){ E.abort=true; whyDest='呼び寄せの位置を指定しています（やめるときは「中断」）'; runNote='位置を指定すると出発します' }
+  else if (s==='moving'){ E.stop='en'; E.run='cur'; E.abort=true; whyDest=`移動中は選べません（「${AB}」で止めて選び直し）` }
+  else if (s==='paused'){ E.run='en'; E.abort=true; whyDest=`一時停止中は選べません（「再開」か「${AB}」）` }
+  else if (s==='summon'){ E.abort=true; whyDest=`呼び寄せの位置を指定しています（やめるときは「${AB}」）`; runNote='位置を指定すると出発します' }
 
   const where = d.robot==='home' ? '待機場所' : d.robot==='panel' ? '盤 A-1' : '途中'
   const st = {
     unloaded:['会場地図が開かれていません','地図の中央のボタンから開きます'],
     undeclared:['待機場所にいることを宣言してください','機体が待機場所にあることを確かめてから押します'],
-    home:[ d.robot==='home'?'待機中 — 待機場所':'止まっています — 行き先を選んでください', '地図のピン →「行き先にする」、または下のボタンで出発します'],
-    moving:[`移動中 → ${destPin?.name??''}`, '残り 4.2 m — 間違えたら「中断」'],
+    home:[ d.robot==='home'?'待機中　待機場所':'止まっています　行き先を選んでください', '地図のピン →「行き先にする」、または下のボタンで出発します'],
+    moving:[`移動中 → ${destPin?.name??''}`, `残り 4.2 m　間違えたら「${AB}」`],
     paused:[`一時停止中 → ${destPin?.name??''}`, '「再開する」で続きを走ります'],
-    panel:[`盤の前 — 盤 A-1`, '測定・撮影ができます'],
-    summon:['呼び寄せ — 位置の指定', `${d.flowStep===2?'② 機体に向いてほしい方向':'① 機体に来てほしい位置'}に立って「記録」`],
+    panel:[`盤の前　盤 A-1`, '測定・撮影ができます'],
+    summon:['呼び寄せ　位置の指定', `${d.flowStep===2?'② 機体に向いてほしい方向':'① 機体に来てほしい位置'}に立って「記録」`],
   }[s]
 
   let mainInner = ''
@@ -428,15 +446,22 @@ function dayView(){
   }
   const runLabel = s==='paused' ? '再開' : '走行'
   const runHint = '押すと続きを走る'
+  // 薄いボタンを押したときに出す理由（D16）
+  const whyHome = choose && d.robot==='home' ? 'いま待機場所にいます' : whyDest
+  const whySummon = choose && !S.tracker ? '人検出を動かすと呼び寄せできます（左上）' : whyDest
+  const whyAbort = '取り消す行き先がありません（移動中・一時停止中・呼び寄せの位置指定中に押せます）'
+  // 「次の配電盤」に行き先の名前（D14）。名前が無い状態でも 2 行ぶんの高さを保つ（R2）
+  const nextId = s==='panel' ? 'A-2' : 'A-1'
+  const nextLabel = `次の配電盤<small>${choose ? pinById(nextId).name+' へ' : '&nbsp;'}</small>`
   const ctl = `<div class="ctl">
     <div class="state full"><div class="s1">${st[0]}</div><div class="s2">${st[1]}</div></div>
-    <div class="sec full"><h3>操作</h3>${tog(E.stop, E.run, {runLabel, runHint, note:runNote})}
-      <div class="row" style="margin-top:8px">${btn('jog','手動',{icon:'jog',dis:!E.manual})}${btn('abort','中断',{icon:'abort',dis:!E.abort})}</div></div>
-    <div class="sec"><h3>行き先</h3><div class="row">${btn('goHome','待機場所',{icon:'home',dis:!E.home})}${btn('goNext','次の配電盤',{icon:'panel',dis:!E.next})}</div>
-      <div class="row" style="margin-top:8px">${btn('summon','呼び寄せ',{icon:'person',dis:!E.summon})}</div><div class="why">${whyDest}</div></div>
-    <div class="sec"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{icon:'measure',dis:!E.measure})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{icon:'cam',dis:!E.cam})}</div><div class="why">${whyPanel}</div></div>
+    <div class="sec full noh"><h3>操作</h3>${tog(E.stop, E.run, {runLabel, runHint, note:runNote, big:true, help:'toggle'})}
+      <div class="row" style="margin-top:8px">${btn('jog','手動',{icon:'jog',dis:!E.manual,help:'jog'})}${btn('abort',AB,{icon:'abort',dis:!E.abort,why:whyAbort,cls:AB.length>4?'f16':'',help:'abort'})}</div></div>
+    <div class="sec"><h3>行き先</h3><div class="row">${btn('goHome','待機場所<small>&nbsp;</small>',{icon:'home',dis:!E.home,why:whyHome,cls:'two',help:'home'})}${btn('goNext',nextLabel,{icon:'panel',dis:!E.next,why:whyDest,cls:'two',help:'next'})}</div>
+      <div class="row" style="margin-top:8px">${btn('summon','呼び寄せ',{icon:'person',dis:!E.summon,why:whySummon,help:'summon'})}</div><div class="why">${whyDest}</div></div>
+    <div class="sec"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{icon:'measure',dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{icon:'cam',dis:!E.cam,why:whyPanel,help:'cam'})}</div><div class="why">${whyPanel}</div></div>
   </div>`
-  return header('試験', true) + `<div class="body"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit'})}${trackerBar(s!=='summon')}</div>
+  return header('試験', true) + `<div class="body"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit',help:'exit'})}${trackerBar(s!=='summon')}</div>
     <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
 }
 
@@ -452,7 +477,7 @@ function prepView(){
   const needTrk = p.method==='person' && !S.tracker
   const st = {
     entry:['前回の地図とピンが残っています', `ピン ${p.pins} 件（待機場所 1・配電盤 5）`],
-    mapping:['地図作成中 — 未保存の変更あり', `ピン ${p.pins} 件。方式を選んでから登録先を押します`],
+    mapping:['地図作成中　未保存の変更あり', `ピン ${p.pins} 件。方式を選んでから登録先を押します`],
     reg:['待機場所を登録中（人の位置で）', p.regStep===2?'② 機体に向いてほしい方向へ 1 歩動いて「記録」':'① 待機場所に立って「記録」'],
     return:['待機場所へ戻る途中', '「停止する」で止まります'],
   }[s]
@@ -471,7 +496,7 @@ function prepView(){
     <div class="state full"><div class="s1">${st[0]}</div><div class="s2">${st[1]}</div></div>
     <div class="sec full"><h3>操作</h3>${tog(stop, run, {note: runNote})}
       <div class="row" style="margin-top:8px">${btn('toast:地図とピンを保存した','保存',{icon:'save',cls:'save',dis:!(mapping)})}${btn('jog','手動',{icon:'jog'})}</div></div>
-    <div class="sec full"><h3>登録 — ① 方式 → ② 登録先</h3>${mseg}
+    <div class="sec full"><h3>登録　① 方式 → ② 登録先</h3>${mseg}
       <div class="row">${btn('regHome','待機場所を登録',{icon:'home',dis:regDis})}${btn('regPanel','配電盤を登録',{icon:'panel',dis:regDis})}</div><div class="why">${regWhy}</div></div>
     <div class="sec full"><h3>戻す</h3>${btn('goHome','待機場所に戻る',{icon:'home',dis:!mapping})}</div>
   </div>`
@@ -561,9 +586,14 @@ const NOTES = {
       '右列のボタンは<b>どの状態でも同じ 9 個・同じ位置</b>。変わるのは押せるかどうかだけ（R2）',
       '停止と走行は 1 つのトグル。いまの側が青、押す側は「〜する」（R4）',
       'ピンの行の「移動」×6・3 か所の「会場地図を開く」・常に押せない「地図の更新」を消した',
+      '<b>2026-11-15 に決定</b>: 「次の配電盤」に行き先の名前を出す（D14）／薄いボタンを押すと、そのボタンの理由が出る（D16）／停止│走行のトグルを 76 px に大きくし「操作」の見出しを外した（D17）',
+      '近いピンの押し分けは作らない（地図を拡大できるため。2026-11-15）',
     ],
-    opts:[],
-    look:['状態を切り替えて、右列のボタンが一切動かないこと','ピン → 吹き出し →「行き先にする」で出発 → 間違えたら「中断」、の流れ','一日の始めの 2 手を地図の中央に出すのは R2 に当たらないか'],
+    opts:[
+      {q:'ヘルプ表示（設定で切り替える想定）', k:['help','on'], v:[[false,'しない'],[true,'する']], why:'<b>2026-11-15 に決定</b>（D19）。マウスはボタンに 0.7 秒重ねると出て、外すと消える。タップは長押しで出て、「×」か枠の外を押すと閉じる。停止│走行・ジョグ・非常停止は長押しの対象外。<b>ヘッダと赤い「停止する」は、ヘルプが出ていても 1 回で効く</b>。ヘッダには絶対に重ねず、停止│走行はなるべく避けて出す。この案の画面では試験（当日）だけ'},
+      {q:'「中断」の語（別の語の案を残す）', k:['day','abortLabel'], v:[['中断','中断'],['行き先を取り消す','行き先を取り消す'],['選び直す','選び直す']], why:'<b>「中断」のままに決定</b>（D15。語が長いと認識しにくい）。ほかの人には違って見えるかもしれないので、別の語は案として残す'},
+    ],
+    look:['ヘルプ表示: 長押し・重ねる操作が、ふだんの操作の邪魔にならないか','状態を切り替えて、右列のボタンが一切動かないこと','ピン → 吹き出し →「行き先にする」で出発 → 間違えたら「中断」、の流れ','一日の始めの 2 手を地図の中央に出すのは R2 に当たらないか'],
   },
   prep:{
     changed:[
@@ -618,7 +648,82 @@ function fit(){
   const sc=Math.min((wrap.clientWidth-24)/W,(wrap.clientHeight-24)/H,1.4)
   dev.style.transform=`scale(${sc})`; box.style.width=W*sc+'px'; box.style.height=H*sc+'px'
 }
+/* ---------------- ヘルプ表示（2026-11-15 ユーザー案・未決） ----------------
+   マウス: 重ねて 0.7 秒で出る。外すと消える。
+   タップ: 長押し 0.6 秒で出る（その指を離してもボタンは押されない）。「×」か枠の外を押すと閉じる。
+   停止│走行（data-nolong）は長押しの対象にしない。非常停止にはヘルプを付けない。 */
+const HELP = {
+  toggle:['停止 ／ 走行','「停止する」は移動をその場で止めます。行き先は残り、「再開する」で続きを走ります。青い側がいまの状態です。'],
+  jog:['手動','手動操作パネルを開きます。スティックに触れている間だけ動きます。移動中に触れると一時停止します。'],
+  abort:['中断','移動をやめて、行き先を選び直します。待機場所へは戻りません。'],
+  home:['待機場所','待機場所へ移動します。押すとそのまま出発します。'],
+  next:['次の配電盤','登録した順で次の配電盤へ移動します。押すとそのまま出発します。'],
+  summon:['呼び寄せ','選んでいる人のいる位置へ機体を呼びます。位置と向きを記録すると出発します。'],
+  measure:['測定機能へ','測定機能の画面を開きます。測定中は機体が動きません。'],
+  cam:['カメラ','カメラの画面を開きます。機体の状態は変わりません。'],
+  exit:['終了','試験を終えてメインメニューへ戻ります。'],
+  tracker:['人検出','人の検出を動かす／止めるを切り替えます。呼び寄せに使います。'],
+}
+let helpT=null, helpSwallow=false
+function closeHelp(){ document.querySelector('#dev .help')?.remove() }
+function showHelp(el, sticky){
+  closeHelp()
+  const h=HELP[el.dataset.help]; if (!h) return
+  const dev=document.getElementById('dev'), dr=dev.getBoundingClientRect(), r=el.getBoundingClientRect()
+  const W=parseFloat(dev.style.width), H=parseFloat(dev.style.height), sc=dr.width/W
+  const x=(r.left-dr.left)/sc, y=(r.top-dr.top)/sc, w=r.width/sc, hh=r.height/sc
+  const box=document.createElement('div'); box.className='help'+(sticky?' sticky':'')
+  box.innerHTML=`<div class="ht"><span>${h[0]}</span><button class="hx" data-helpclose>${ic('close')}</button></div><p>${h[1]}</p>`
+  dev.appendChild(box)
+  const ph=box.offsetHeight
+  // 出す場所（2026-11-15 決定）: ヘッダ（非常停止）には絶対に重ねない。停止│走行はなるべく避ける。
+  // 候補を左・上・下・右の順に試し、停止│走行に重ならない最初のものを使う。どれも重なるなら最初の候補。
+  const TOP=118, clampX=v=>Math.min(Math.max(v,8),W-348), clampY=v=>Math.min(Math.max(v,TOP),H-ph-8)
+  const cands=[[x-348,clampY(y+hh/2-ph/2)],[clampX(x+w/2-170),y-ph-8],[clampX(x+w/2-170),y+hh+8],[x+w+8,clampY(y+hh/2-ph/2)]]
+    .filter(([l,t])=>l>=8 && l<=W-348 && t>=TOP && t<=H-ph-8)
+  const tg=dev.querySelector('.ctl .tg'); let avoid=null
+  if (tg){ const t=tg.getBoundingClientRect(); avoid=[(t.left-dr.left)/sc,(t.top-dr.top)/sc,(t.right-dr.left)/sc,(t.bottom-dr.top)/sc] }
+  const hits=([l,t])=>avoid && l<avoid[2] && l+340>avoid[0] && t<avoid[3] && t+ph>avoid[1]
+  const [l,t]=cands.find(c=>!hits(c)) || cands[0] || [clampX(x),clampY(y+hh+8)]
+  box.style.left=l+'px'; box.style.top=t+'px'
+}
+document.addEventListener('pointerover', e=>{
+  if (!S.help.on || e.pointerType!=='mouse') return
+  const el=e.target.closest('#dev [data-help]'); if (!el || document.querySelector('#dev .help.sticky')) return
+  clearTimeout(helpT); helpT=setTimeout(()=>showHelp(el,false),700)
+})
+document.addEventListener('pointerout', e=>{
+  if (e.pointerType!=='mouse') return
+  const el=e.target.closest('#dev [data-help]'); if (!el || el.contains(e.relatedTarget)) return
+  clearTimeout(helpT); if (!document.querySelector('#dev .help.sticky')) closeHelp()
+})
+document.addEventListener('pointerdown', e=>{
+  if (!S.help.on || e.pointerType==='mouse') return
+  const el=e.target.closest('#dev [data-help]'); if (!el || el.hasAttribute('data-nolong')) return
+  clearTimeout(helpT); helpT=setTimeout(()=>{ helpSwallow=true; showHelp(el,true) },600)
+})
+for (const ev of ['pointerup','pointercancel','pointermove']) document.addEventListener(ev, e=>{
+  if (e.pointerType==='mouse') return
+  if (ev==='pointermove' && Math.abs(e.movementX)+Math.abs(e.movementY)<6) return
+  clearTimeout(helpT)
+})
+document.addEventListener('contextmenu', e=>{ if (e.target.closest('#dev')) e.preventDefault() })
+
 document.addEventListener('click', e=>{
+  clearTimeout(helpT)
+  // 長押しでヘルプを出した指を離しても、ボタンは押されない
+  if (helpSwallow){ helpSwallow=false; return }
+  // 出したままのヘルプは「×」か枠の外を押すと閉じる（その 1 回はボタンを押したことにしない）。
+  // ただしヘッダ（非常停止を含む）と赤い「停止する」は対象外で、ヘルプが出ていても 1 回で効く（2026-11-15 決定）
+  const hb=document.querySelector('#dev .help')
+  if (hb){ const st=hb.classList.contains('sticky')
+    if (e.target.closest('[data-helpclose]') || !e.target.closest('.help')){ closeHelp(); if (st && !e.target.closest('.hdr,.nstop')) return } else return }
+  // 薄いボタンを押したら、そのボタンの理由を出す（D16。区切りは空白。「—」は「一」と紛れる）
+  const dz=e.target.closest('#dev [data-why]')
+  if (dz && dz.dataset.why && S.scr==='day' && dz.matches('.dis,.off')){
+    if (S.day.sel){ S.day.sel=null; render() }
+    return toast('押せません　'+dz.dataset.why)
+  }
   // 試験（当日）: 吹き出しは、ピンと吹き出しのボタン以外を押すと消える（取り消し。D10）
   if (S.scr==='day' && S.day.sel && e.target.closest('#dev') && !e.target.closest('[data-act="pin"],[data-act="pinGo"]')){
     S.day.sel=null
