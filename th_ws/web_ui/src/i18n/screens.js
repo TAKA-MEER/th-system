@@ -357,6 +357,8 @@ export const S14_QUALITY_SEARCHING = '探しています'
 // 1b-11 SG-B19: 探索・読み直しの待ち時間（Spec-transit.md §4.2.2）。
 // 原因を断定しない文言にする（§4.2.3）。
 export const S14_QUALITY_SEARCHING_HINT = '地図を読み込んでいます。短い経路で数秒、長い地図で30〜45秒かかります'
+// A-22: 経路を選んでから地図を読み込み終わるまで、地図の上に出す（Spec-webui.md §3.7）。
+export const S14_MAP_LOADING = '地図を読み込んでいます'
 // 「完全グローバルで探す」ボタン（Spec-webui.md §3.7）。押すと ui.localize_global。
 // FSM は REPLAY/LOCALIZE でだけ受け付ける（transitions.yaml T-REPLAY-03）。
 export const S14_GLOBAL_BUTTON = '完全グローバルで探す'
