@@ -252,7 +252,6 @@ export const DRIVE_LEAVE = '離れる'
 export const S11_TAB_DRIVE = '走行'
 export const S11_OBSTACLE_TITLE = '障害物'
 export const S11_OBSTACLE_WARN = (d) => `前方 ${d} m に障害物（警告）`
-export const S11_OBSTACLE_WARN_AROUND = (d) => `周囲 ${d} m に障害物（警告）`
 export const S11_OBSTACLE_STOP = (d) => `前方 ${d} m に障害物（停止）`
 export const S11_OBSTACLE_PASS = '障害物なし'
 // 未受信のときの表示（"障害物なし" と出さない。安全側 DetailedDesign-wp3.md §6.2）
@@ -269,6 +268,9 @@ export const S11_AUTO_BRAKE_CONFIRM_BODY = '障害物に近づいても自動で
 export const S11_AUTO_BRAKE_CONFIRM_YES = 'OFF にする'
 export const S11_AUTO_BRAKE_CONFIRM_NO = 'やめる'
 export const S11_APPROACH_WARNING = '障害物に近づいています（自動ブレーキ OFF のため減速しません）'
+// 接近警告の距離は機体の外形（一番近い面）から（A-17）。d は m。
+export const S11_APPROACH_WARN = (d) => `機体から前方 ${Math.round(d * 100)} cm に障害物（警告）`
+export const S11_APPROACH_WARN_AROUND = (d) => `機体の周囲から ${Math.round(d * 100)} cm に障害物（警告）`
 export const S11_REAR_TITLE = '後退'
 export const S11_REAR_NOTE = '後方は LiDAR の死角。後退速度を制限中'
 export const S11_MANUAL_TITLE = '手動操作'

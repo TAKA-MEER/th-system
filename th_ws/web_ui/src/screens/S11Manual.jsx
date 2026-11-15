@@ -33,12 +33,13 @@ import DriveTab from './driveTab.jsx'
 import { obstacleWarning } from '../shell/limits.js'
 import attributes from '../generated/attributes.json'
 import {
-  S11_TAB_DRIVE, S11_OBSTACLE_TITLE, S11_OBSTACLE_WARN, S11_OBSTACLE_WARN_AROUND, S11_OBSTACLE_STOP,
+  S11_TAB_DRIVE, S11_OBSTACLE_TITLE, S11_OBSTACLE_WARN, S11_OBSTACLE_STOP,
   S11_OBSTACLE_PASS, S11_OBSTACLE_UNKNOWN, S11_AUTO_BRAKE_LABEL,
   S11_AUTO_BRAKE_OFF, S11_AUTO_BRAKE_ON, S11_REAR_TITLE, S11_REAR_NOTE,
   S11_MANUAL_TITLE, S11_AUTO_BRAKE_TO_OFF, S11_AUTO_BRAKE_TO_ON,
   S11_AUTO_BRAKE_HINT_OFF, S11_AUTO_BRAKE_CONFIRM_TITLE, S11_AUTO_BRAKE_CONFIRM_BODY,
   S11_AUTO_BRAKE_CONFIRM_YES, S11_AUTO_BRAKE_CONFIRM_NO, S11_APPROACH_WARNING,
+  S11_APPROACH_WARN, S11_APPROACH_WARN_AROUND,
 } from '../i18n/screens.js'
 import { stateLabel } from '../i18n/states.js'
 import { OP_LABELS } from '../i18n/states.js'
@@ -144,7 +145,7 @@ export default function S11Manual({ onFinish }) {
             {/* OFF 中は減速しないので action は PASS のまま。機体が approach_warning を
                 立てたら「障害物なし」と出さず、距離つきの警告にする。 */}
             <div className="note">
-              {approach ? (approachIsAround(limiter) ? S11_OBSTACLE_WARN_AROUND : S11_OBSTACLE_WARN)(approachDistance(limiter)) : obstacleText(warn)}
+              {approach ? (approachIsAround(limiter) ? S11_APPROACH_WARN_AROUND : S11_APPROACH_WARN)(approachDistance(limiter)) : obstacleText(warn)}
             </div>
             {approach && (
               <div className="note warn mt" role="alert" data-testid="s11-approach-warning">

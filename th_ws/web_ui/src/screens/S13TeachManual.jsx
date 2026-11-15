@@ -39,12 +39,13 @@ import DriveTab from './driveTab.jsx'
 import { obstacleWarning } from '../shell/limits.js'
 import attributes from '../generated/attributes.json'
 import {
-  S11_TAB_DRIVE, S11_OBSTACLE_TITLE, S11_OBSTACLE_WARN, S11_OBSTACLE_WARN_AROUND, S11_OBSTACLE_STOP,
+  S11_TAB_DRIVE, S11_OBSTACLE_TITLE, S11_OBSTACLE_WARN, S11_OBSTACLE_STOP,
   S11_OBSTACLE_PASS, S11_OBSTACLE_UNKNOWN, S11_AUTO_BRAKE_LABEL,
   S11_AUTO_BRAKE_OFF, S11_AUTO_BRAKE_ON, S11_REAR_TITLE, S11_REAR_NOTE,
   S11_MANUAL_TITLE, S11_AUTO_BRAKE_TO_OFF, S11_AUTO_BRAKE_TO_ON,
   S11_AUTO_BRAKE_HINT_OFF, S11_AUTO_BRAKE_CONFIRM_TITLE, S11_AUTO_BRAKE_CONFIRM_BODY,
   S11_AUTO_BRAKE_CONFIRM_YES, S11_AUTO_BRAKE_CONFIRM_NO, S11_APPROACH_WARNING,
+  S11_APPROACH_WARN, S11_APPROACH_WARN_AROUND,
   S13_TAB_TEACH, S13_TEACH_TITLE, S13_ROUTE_NAME_LABEL, S13_ROUTE_NAME_PLACEHOLDER,
   S13_RECORDING, S13_PAUSED, S13_PAUSE_HINT, S13_SAVED, S13_SAVE_FAILED, S13_MAP_SAVE_WARNING, S13_RECORDED_LABEL, S13_POINTS_LABEL,
   S13_ELAPSED_LABEL, S13_START_YAW_LABEL, S13_SEC, S13_M, S13_DEG,
@@ -254,7 +255,7 @@ export default function S13TeachManual({ onFinish }) {
             <div className="card">
               <h3>{S11_OBSTACLE_TITLE}</h3>
               <div className="note">
-                {approach ? (approachIsAround(limiter) ? S11_OBSTACLE_WARN_AROUND : S11_OBSTACLE_WARN)(approachDistance(limiter)) : obstacleText(warn)}
+                {approach ? (approachIsAround(limiter) ? S11_APPROACH_WARN_AROUND : S11_APPROACH_WARN)(approachDistance(limiter)) : obstacleText(warn)}
               </div>
               {approach && (
                 <div className="note warn mt" role="alert" data-testid="s13-approach-warning">
