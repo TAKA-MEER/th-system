@@ -7,7 +7,7 @@ float64 x                 # meas.goal: map フレーム [m]
 float64 y
 float64 yaw               # meas.goal: map フレーム [rad]
 float64 angle_rad         # meas.turn: 正＝左回り（反時計回り）[rad]
-string  side              # meas.translate: LEFT / RIGHT / FORWARD / BACKWARD
+string  side              # meas.translate: FORWARD / BACKWARD（LEFT / RIGHT は 2026-11-15 に廃止。bad_argument）
 float64 distance_m        # meas.translate [m]
 float32 v_max_mps         # meas.set_limits: 0 は指定しない（本システムの上限のまま）
 float32 w_max_radps

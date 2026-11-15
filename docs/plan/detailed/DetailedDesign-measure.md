@@ -6,7 +6,7 @@
 入力は [Spec-measure.md](../spec/Spec-measure.md) §1〜§7 と [Spec-onsite.md](../spec/Spec-onsite.md) §7.2、遷移は
 [Spec-modes.md](../spec/Spec-modes.md) `SM-3.1.1-18`・`SM-3.1.2-062`〜`-063`・`-120`〜`-141`。
 **本システムが書き、測定機能が確かめる**（2026-11-04。fk-system の申し送り 16。[Spec-open.md](../spec/Spec-open.md) §8）。
-**状態: 測定機能が確かめた**（2026-11-04。fk のユーザー承認。fk は写さずにこの文書へリンクする）。**2026-11-14 に前後の並進を足した**（申し送り 21。`side` の値と断る理由を 1 つずつ足しただけで、欄は変えていない。**fk が確かめた**。2026-11-14。fk `a3caec3`）。**§3 の型 5 つだけ `th_system_msgs` に入れた**（2026-11-11。申し送り 20。作業ブランチ `feat/era3-measure` にあり、確認期の試験が終わってから main へマージする）。受け手は未実装（計画書 §6 の 8-g）。
+**状態: 測定機能が確かめた**（2026-11-04。fk のユーザー承認。fk は写さずにこの文書へリンクする）。**2026-11-14 に前後の並進を足した**（申し送り 21。`side` の値と断る理由を 1 つずつ足しただけで、欄は変えていない。**fk が確かめた**。2026-11-14。fk `a3caec3`）。**2026-11-15 に `side` の `LEFT`／`RIGHT` を廃止**（F-60。欄は変えず、`interface_version` は "1" のまま）。**§3 の型 5 つだけ `th_system_msgs` に入れた**（2026-11-11。申し送り 20。作業ブランチ `feat/era3-measure` にあり、確認期の試験が終わってから main へマージする）。受け手は未実装（計画書 §6 の 8-g）。
 
 ---
 
@@ -76,7 +76,7 @@ float64 x                 # meas.goal: map フレーム [m]
 float64 y
 float64 yaw               # meas.goal: map フレーム [rad]
 float64 angle_rad         # meas.turn: 正＝左回り（反時計回り）[rad]
-string  side              # meas.translate: LEFT / RIGHT / FORWARD / BACKWARD
+string  side              # meas.translate: FORWARD / BACKWARD（LEFT / RIGHT は 2026-11-15 に廃止。bad_argument）
 float64 distance_m        # meas.translate [m]
 float32 v_max_mps         # meas.set_limits: 0 は指定しない（本システムの上限のまま）
 float32 w_max_radps
@@ -98,8 +98,7 @@ string  state
 | `meas.abort` | 中止 | — | `AUTO_MEASURE`/`NAV`・`ALIGN`・`BLOCKED`・`ADJUST`・`PAUSE`（-131） | すぐ `DONE`。進行中の指示は `CANCELLED` |
 | `meas.finish` | 終了 | — | `AUTO_MEASURE`/任意（-135） | すぐ `DONE`。進行中の指示は `CANCELLED` |
 | `meas.turn` | 旋回 | `angle_rad` | `AUTO_MEASURE`/`WAIT`（-127）・`AT_PANEL`/`WORKING`（-136） | `DONE`（-128・-137） |
-| `meas.translate` | 並進（左右） | `side`（`LEFT`／`RIGHT`）・`distance_m` | `AUTO_MEASURE`/`WAIT`（-127） | `DONE`（-128）。**測定機能の最初の版は使わない** |
-| `meas.translate` | **並進（前後）**（2026-11-14。申し送り 21） | `side`（`FORWARD`／`BACKWARD`）・`distance_m`（正の値。向きを変えずにまっすぐ） | `AUTO_MEASURE`/`WAIT`（-127）・**`AT_PANEL`/`WORKING`（-136）** | `DONE`（-128・-137）。`AT_PANEL` で `LEFT`／`RIGHT` を送ると `state_not_accepting` |
+| `meas.translate` | **並進（前後）**（2026-11-14。申し送り 21） | `side`（`FORWARD`／`BACKWARD`）・`distance_m`（正の値。向きを変えずにまっすぐ） | `AUTO_MEASURE`/`WAIT`（-127）・**`AT_PANEL`/`WORKING`（-136）** | `DONE`（-128・-137）。**`LEFT`／`RIGHT` はどのモードでも `bad_argument`**（左右の並進は 2026-11-15 に廃止。F-60） |
 | `meas.set_limits` | 速度・加速度の上限 | `v_max_mps` ほか | `AUTO_MEASURE`/任意・`AT_PANEL`/`WORKING`・`ADJUST` | すぐ `DONE`。**本システムの上限との小さい方だけが効く。**自律測定はモードを抜けたら、お立会試験は**停止命令が解けたら**（`WORKING`・`ADJUST` を出たら）捨てる（人のジョグに効き続けないため） |
 | `meas.done` | 測定を終えた | — | `AT_PANEL`/`WORKING`（-063） | すぐ `DONE`（停止命令が解ける） |
 
@@ -113,7 +112,7 @@ string  state
 | `version_mismatch` | `interface_version` が食い違う（§1.2） |
 | `link_lost` | 生存確認が途絶えている |
 | `localization_lost` | 自己位置を見失ったあと、自律測定を抜けて入り直すまで（-142） |
-| `bad_argument` | 欄が足りない・値の範囲外・`command_id` が空 |
+| `bad_argument` | 欄が足りない・値の範囲外・`command_id` が空・`meas.translate` の `side` が `FORWARD`／`BACKWARD` 以外 |
 
 **`ui.*` を `/measure/command` に送っても拒否する**（§5）。
 
@@ -242,7 +241,8 @@ builtin_interfaces/Time checked_at
 | --- | --- |
 | `/measure/command` の提供・`meas.*` の受理・`/measure/result` の発行 | **`th_state`**（`/system/trigger` と同じく状態機械が受ける。遷移と結果の取りこぼしを 1 か所で防ぐ） |
 | 生存確認の監視・`/measure/status`・`/measure/check_arm_clearance` | 新しいパッケージ **`th_measure`** のノード（名前は 8-g で [names](DetailedDesign-names.md) に足す） |
-| 自律測定の走行（地図を作りながら・手前 1.5 m の検査）と、旋回（`ADJUST`） | `th_measure` の挙動ノード。速度指令は `/cmd_vel_behavior`・`/cmd_vel_nav`（[names](DetailedDesign-names.md) §6.1 の不変ルールのまま） |
+| 自律測定の目的地への走行（地図を作りながら・手前 1.5 m の検査） | `th_measure` の挙動ノード。Nav2 を使い、速度指令は `/cmd_vel_nav`（[names](DetailedDesign-names.md) §6.1 の不変ルールのまま） |
+| 盤前の旋回・前後の並進（`ADJUST`。自律測定とお立会試験の停止命令の間） | **Nav2 を使わない直接制御**（2026-11-15。申し送り 22。F-60）。`th_measure` の挙動ノードが自己位置を見ながら超信地旋回・直進し、**速度指令は `/cmd_vel_behavior` だけ**（`venue_navigator` の `ALIGN` と同じ作り。[onsite](DetailedDesign-onsite.md) §6）。twist_mux → `obstacle_limiter` を通るので障害物の停止・速度の制限・非常停止はそのまま効く。直進の帰還に使う位置（オドメトリか地図上の自己位置か）は 8-g で決める |
 
 ---
 
@@ -255,4 +255,4 @@ builtin_interfaces/Time checked_at
 | `measure_link_timeout_ms`・`arm_clearance_scan_max_age_ms` の値 | (b)。実装時に決める |
 | **依存: 自律測定の間は `/map` を凍結しない** | `map_freezer` が `/map_live` をそのまま通す場面に `AUTO_MEASURE` を足す（[names](DetailedDesign-names.md) §6.4 の `/map` の行。[Spec-measure.md](../spec/Spec-measure.md) §4.1）。8-g |
 | 参考（測定機能の決定。本システムは変えない） | 自律測定で腕が出ている間の人のジョグは人の責任（既知のリスク）。お立会試験では、昇降機を測定前の高さへ戻してから `meas.done` を返す |
-| 測定機能の最初の版の使い方（参考。fk `Spec-auto.md`） | 盤前の**左右の**並進を使わない（**前後の並進は使う**。2026-11-14。点ごとに「その場旋回 → 前後の並進」）／速度・加速度の上限は当面指定しない／一時停止からの再開はいつも人の「走行」。**本システムの実装の順番の手がかりにする** |
+| 測定機能の最初の版の使い方（参考。fk `Spec-auto.md`） | 盤前の並進は前後だけ（2026-11-14。点ごとに「その場旋回 → 前後の並進」。左右は旋回と前後の組み合わせで動く。2026-11-15）／速度・加速度の上限は当面指定しない／一時停止からの再開はいつも人の「走行」。**本システムの実装の順番の手がかりにする** |
