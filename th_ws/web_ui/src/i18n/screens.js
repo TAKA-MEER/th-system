@@ -296,6 +296,11 @@ export const S13_PAUSED = '一時停止中'
 export const S13_PAUSE_HINT = 'スティックを操作すると続きから記録します'
 export const S13_SAVED = '保存しました'
 export const S13_SAVE_FAILED = '保存されていません'
+// A-21: 経路（posegraph/JSON）は保存できたが地図の画像（pgm/yaml）を残せなかった。
+// 黙って「保存しました」にせず、再生で何が使えなくなるかを出す
+// （Spec-transit.md §3.5。RouteStatus.map_save_failed）。
+export const S13_MAP_SAVE_WARNING =
+  '地図の画像を保存できませんでした。この経路は途中からの再開と完全グローバルの位置探しが使えません（始点に置けば再生はできます）'
 export const S13_RECORDED_LABEL = '記録距離'
 export const S13_POINTS_LABEL = '点数'
 export const S13_ELAPSED_LABEL = '経過時間'
@@ -355,6 +360,11 @@ export const S14_QUALITY_SEARCHING_HINT = '地図を読み込んでいます。�
 // 「完全グローバルで探す」ボタン（Spec-webui.md §3.7）。押すと ui.localize_global。
 // FSM は REPLAY/LOCALIZE でだけ受け付ける（transitions.yaml T-REPLAY-03）。
 export const S14_GLOBAL_BUTTON = '完全グローバルで探す'
+// A-21: 地図の画像（pgm/yaml）を持たない経路（localize_quality='unknown'）の案内。
+// 始点決め打ちでしか再生できず、「完全グローバルで探す」は押しても効かないので
+// 無効にし、理由をこの文で示す（Spec-transit.md §4.2）。
+export const S14_NO_MAP_GUIDE =
+  'この経路は地図の画像が無いため、始点の印に置いて再生してください。途中からの再開と完全グローバルは使えません'
 // 1b-11 SG-B14: 地図の更新トグル（Spec-webui.md §3.7）。既定 OFF。
 // ON のときだけ操作カードに「保存」が出る（Spec-transit.md §0.1）。
 export const S14_MAP_UPDATE_TITLE = '地図の更新'

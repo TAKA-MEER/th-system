@@ -32,6 +32,7 @@ import { useConfirmWindow } from '../shell/confirmWindow.js'
 import { canToggleAutoBrake, autoBrakeNeedsConfirm, showApproachWarning, approachDistance, approachIsAround } from '../shell/autoBrake.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import RoutePreview from './RoutePreview.jsx'
+import { mapSaveWarningVisible } from './routeMapWarning.js'
 import OperationCard from '../shell/OperationCard.jsx'
 import ArmedButton from '../parts/ArmedButton.jsx'
 import DriveTab from './driveTab.jsx'
@@ -45,7 +46,7 @@ import {
   S11_AUTO_BRAKE_HINT_OFF, S11_AUTO_BRAKE_CONFIRM_TITLE, S11_AUTO_BRAKE_CONFIRM_BODY,
   S11_AUTO_BRAKE_CONFIRM_YES, S11_AUTO_BRAKE_CONFIRM_NO, S11_APPROACH_WARNING,
   S13_TAB_TEACH, S13_TEACH_TITLE, S13_ROUTE_NAME_LABEL, S13_ROUTE_NAME_PLACEHOLDER,
-  S13_RECORDING, S13_PAUSED, S13_PAUSE_HINT, S13_SAVED, S13_SAVE_FAILED, S13_RECORDED_LABEL, S13_POINTS_LABEL,
+  S13_RECORDING, S13_PAUSED, S13_PAUSE_HINT, S13_SAVED, S13_SAVE_FAILED, S13_MAP_SAVE_WARNING, S13_RECORDED_LABEL, S13_POINTS_LABEL,
   S13_ELAPSED_LABEL, S13_START_YAW_LABEL, S13_SEC, S13_M, S13_DEG,
   S13_REC_DIRECTION, S13_ROUTE_NEW_TITLE, S13_ROUTE_EXISTING_TITLE,
   S13_NEW_START, S13_RESELECT, S13_RESELECT_ARMED,
@@ -201,6 +202,10 @@ export default function S13TeachManual({ onFinish }) {
   // （RouteStatus.saved === true）ときだけ出す。FSM の state が SAVED でも
   // 保存に失敗していれば saved は false のままなので、出してはいけない。
   const saved = st?.saved === true
+  // A-21: 経路は保存できても地図の画像（pgm/yaml）を残せなかったら、
+  // 黙って「保存しました」にせず、再生で何が使えなくなるかを出す
+  // （Spec-transit.md §3.5）。
+  const mapSaveWarning = mapSaveWarningVisible(st)
 
   // 1b-7 SG-B11: SAVED で「走行」・スティックを拒否した理由。state_manager が
   // 全イベントの判定で last_reject_reason をラッチする（jog を含む）ので、
@@ -401,6 +406,11 @@ export default function S13TeachManual({ onFinish }) {
                   <div className="note" data-testid="s13-saved">{S13_SAVED}</div>
                 ) : (
                   <div className="note" data-testid="s13-save-failed">{S13_SAVE_FAILED}</div>
+                )}
+                {mapSaveWarning && (
+                  <div className="note warn mt" role="alert" data-testid="s13-map-save-failed">
+                    {S13_MAP_SAVE_WARNING}
+                  </div>
                 )}
               </div>
             )}

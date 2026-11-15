@@ -84,9 +84,19 @@ test('high は「高い」と出る（READY。数値は出さない）', async (
   await expect(quality).not.toContainText('低い')
 })
 
-test('unknown・未受信（旧経路）は確度欄を出さない', async ({ page }) => {
+test('unknown（地図の画像が無い経路）は確度欄を出さず、案内を出して完全グローバルを無効にする', async ({ page }) => {
   await openS14(page, 'LOCALIZE', { localize_quality: 'unknown' })
   await expect(page.getByTestId('s14-localize-quality')).toHaveCount(0)
-  // ボタンは出す（旧経路でも最初から完全グローバルを選べる。Spec-transit §4.1 手順 4）。
-  await expect(page.getByTestId('s14-localize-global')).toBeVisible()
+  // A-21: 始点決め打ちでしか合わせられないので、案内を出してボタンを押せなくする
+  // （押しても効かない。Spec-transit.md §4.2）。
+  await expect(page.getByTestId('s14-no-map')).toContainText('始点の印に置いて再生してください')
+  const btn = page.getByTestId('s14-localize-global')
+  await expect(btn).toBeVisible()
+  await expect(btn).toBeDisabled()
+})
+
+test('unknown は READY でも案内を出す', async ({ page }) => {
+  await openS14(page, 'READY', { localize_quality: 'unknown' })
+  await expect(page.getByTestId('s14-no-map')).toContainText('完全グローバル')
+  await expect(page.getByTestId('s14-localize-global')).toHaveCount(0)
 })

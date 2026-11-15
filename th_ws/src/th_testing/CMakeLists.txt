@@ -540,6 +540,16 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_map_patch_node
     test/test_venue_map_patch_node.py
     TIMEOUT 120)
+  # A-21: 占有格子（pgm/yaml）の書き出しのやり直しと、最後まで失敗したときの
+  # 警告（応答は成功のまま message に載せる。インプロセス。ROS2 要）
+  ament_add_pytest_test(test_slam_control_grid_retry_node
+    test/test_slam_control_grid_retry_node.py
+    TIMEOUT 120)
+  # A-21: 経路の保存で地図の画像を残せなかったことを RouteStatus.map_save_failed
+  # に載せる（route_recorder。インプロセス。ROS2 要）
+  ament_add_pytest_test(test_route_map_save_warning_node
+    test/test_route_map_save_warning_node.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_params_audit_node
     test/test_params_audit_node.py
     TIMEOUT 120)

@@ -43,13 +43,14 @@ import {
   S11_MANUAL_TITLE, S11_REAR_TITLE, S11_REAR_NOTE,
   S14_TAB_REPLAY, S14_SELECT_TITLE, S14_EMPTY, S14_FWD, S14_REV, S14_PROCEED,
   S14_POSE_TITLE, S14_POSE_LOCALIZE, S14_POSE_LOCALIZE_TIMEOUT, S14_POSE_READY, S14_POSE_RUN, S14_POSE_PAUSE, S14_POSE_PAUSE_RESUMABLE,
-  S14_GLOBAL_BUTTON,
+  S14_GLOBAL_BUTTON, S14_NO_MAP_GUIDE,
   S14_LENGTH, S14_POINTS, S14_SPEED_TITLE,
   S14_XTRACK_TITLE, S14_XTRACK_EMPTY, S14_XTRACK_VALUE,
   S14_MAP_UPDATE_TITLE, S14_MAP_UPDATE_ON, S14_MAP_UPDATE_OFF, S14_MAP_UPDATE_NOTE,
   S14_QUALITY_SEARCHING_HINT,
 } from '../i18n/screens.js'
 import { localizeQualityView, localizeQualityText } from './s14Localize.js'
+import { noMapRoute } from './routeMapWarning.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import { stateLabel } from '../i18n/states.js'
 import { OP_LABELS } from '../i18n/states.js'
@@ -101,6 +102,12 @@ export default function S14Replay({ onFinish }) {
   const qualityView = localizeQualityView(routeStatus?.localize_quality)
   const qualityText = localizeQualityText(qualityView.level)
   const showQuality = qualityView.visible
+    && (stateName === 'LOCALIZE' || stateName === 'READY')
+  // A-21: 地図の画像（pgm/yaml）を持たない経路。始点決め打ちでしか合わせられず、
+  // 「完全グローバルで探す」は押しても効かない。案内を出してボタンを無効にする
+  // （Spec-transit.md §4.2）。
+  const noMap = noMapRoute(routeStatus)
+  const showNoMapGuide = noMap
     && (stateName === 'LOCALIZE' || stateName === 'READY')
   // searching（探索＋地図の読み直し）は 60 秒を超えうるので、既存の
   // 「長引いている」注記は出さない（P3 ブリーフ §やること 1）。
@@ -286,12 +293,17 @@ export default function S14Replay({ onFinish }) {
             {showSearchingHint && (
               <div className="note" data-testid="s14-localize-wait">{S14_QUALITY_SEARCHING_HINT}</div>
             )}
+            {showNoMapGuide && (
+              <div className="note warn mt" role="alert" data-testid="s14-no-map">
+                {S14_NO_MAP_GUIDE}
+              </div>
+            )}
             {stateName === 'LOCALIZE' && (
               <button
                 type="button"
                 className="btn sm mt"
                 data-testid="s14-localize-global"
-                disabled={disabledAll || qualityView.level === 'searching'}
+                disabled={disabledAll || qualityView.level === 'searching' || noMap}
                 onClick={handleGlobalLocalize}
               >
                 {S14_GLOBAL_BUTTON}
