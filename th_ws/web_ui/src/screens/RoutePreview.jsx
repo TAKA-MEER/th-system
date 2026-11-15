@@ -38,7 +38,7 @@ const POSE_SMOOTH_ALPHA = 0.25
 const SPAN_FITTED_M = 8
 const spanFor = (sz) => (sz.w === W && sz.h === H ? ROUTE_PREVIEW_HALF_SPAN_M : SPAN_FITTED_M)
 
-export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
+export default function RoutePreview({ preview, pose, targetIndex, mapData, loadingText = null }) {
   const { ros } = useSystemState()
   const canvasRef = useRef(null)
   const offscreenRef = useRef(null)
@@ -294,8 +294,14 @@ export default function RoutePreview({ preview, pose, targetIndex, mapData }) {
         height={size.h}
         className="route-preview"
       />
-      {!fit && (
+      {!fit && !loadingText && (
         <p className="routePreviewOverlay" data-testid="route-preview-empty">{ROUTE_PREVIEW_EMPTY}</p>
+      )}
+      {/* A-22: 経路を選んでから地図を読み込み終わるまで、地図の上に出す。 */}
+      {loadingText && (
+        <p className="routePreviewOverlay routePreviewLoading" data-testid="route-preview-loading">
+          {loadingText}
+        </p>
       )}
     </div>
   )

@@ -47,9 +47,11 @@ import {
   S14_LENGTH, S14_POINTS, S14_SPEED_TITLE,
   S14_XTRACK_TITLE, S14_XTRACK_EMPTY, S14_XTRACK_VALUE,
   S14_MAP_UPDATE_TITLE, S14_MAP_UPDATE_ON, S14_MAP_UPDATE_OFF, S14_MAP_UPDATE_NOTE,
-  S14_QUALITY_SEARCHING_HINT,
+  S14_QUALITY_SEARCHING_HINT, S14_MAP_LOADING,
 } from '../i18n/screens.js'
-import { localizeQualityView, localizeQualityText } from './s14Localize.js'
+import {
+  localizeQualityView, localizeQualityText, replayRunGate, mapLoadingVisible,
+} from './s14Localize.js'
 import { noMapRoute } from './routeMapWarning.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import { stateLabel } from '../i18n/states.js'
