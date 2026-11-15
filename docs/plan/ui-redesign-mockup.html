@@ -261,12 +261,12 @@ function tog(stop, run, {runLabel='走行', runHint='押すと走り出す', bli
   const side = (k, st) => {
     const lab = k==='stop' ? '停止' : runLabel
     const icn = k==='stop' ? ic('stopSq','style="width:16px;height:16px"') : ic('play','style="width:16px;height:16px"')
-    if (st==='cur') return `<div class="cur">${icn}<span>${k==='stop'?'停止中':'走行中'}</span><small>いまの状態</small></div>`
+    if (st==='cur') return `<div class="cur">${icn}<span>${k==='stop'?'停止中':'走行中'}</span></div>`
     if (st==='en') return k==='stop'
-      ? `<div class="nstop" data-act="stop">${icn}<span>${lab}する</span><small>押すと止まる</small></div>`
-      : `<div class="nrun ${blink?'blink':''}" data-act="run">${icn}<span>${lab}する</span><small>${runHint}</small></div>`
-    if (st==='inert') return `<div class="inert" data-act="inert">${icn}<span>${lab}</span><small>${note}</small></div>`
-    return `<div class="off" data-act="" data-why="${note}">${icn}<span>${lab}</span><small>${note}</small></div>`
+      ? `<div class="nstop" data-act="stop">${icn}<span>${lab}する</span></div>`
+      : `<div class="nrun ${blink?'blink':''}" data-act="run">${icn}<span>${lab}する</span></div>`
+    if (st==='inert') return `<div class="inert" data-act="inert">${icn}<span>${lab}</span></div>`
+    return `<div class="off" data-act="" data-why="${note}">${icn}<span>${lab}</span></div>`
   }
   const pressable = [stop,run].some(s=>s==='en'||s==='inert')
   return `<div class="tg ${big?'big':''}" data-btn ${pressable?'':'data-dis'} ${help?`data-help="${help}" data-nolong`:''}>${side('stop',stop)}<span class="sep"></span>${side('run',run)}</div>`
@@ -330,7 +330,7 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
       <g data-act="pinGo" data-btn style="cursor:pointer"><rect x="${bx+14}" y="${by+48}" width="232" height="44" rx="8" fill="#2c4a74" stroke="#3f8ae0" stroke-width="2"/>
       <text x="${bx+130}" y="${by+78}" text-anchor="middle" font-size="21" font-weight="700" fill="#fff">${selLabel}</text></g></g>`
   }
-  const rb = robot ? `<g transform="translate(${robot[0]} ${robot[1]}) rotate(${robot[2]})"><circle r="24" fill="#3f8ae0" opacity=".25"/><path d="M-14 -14L18 0L-14 14Z" fill="#7fb4ee" stroke="#fff" stroke-width="2"/></g>` : ''
+  const rb = robot ? `<g transform="translate(${robot[0]} ${robot[1]}) rotate(${robot[2]})"><rect x="-17" y="-17" width="34" height="34" rx="2" fill="#3f8ae0" fill-opacity=".3" stroke="#7fb4ee" stroke-width="1.5"/><path d="M-9 -10L13 0L-9 10Z" fill="#7fb4ee" stroke="#fff" stroke-width="2"/></g>` : ''
   const pl = path ? `<polyline points="${path.map(p=>p.join(',')).join(' ')}" fill="none" stroke="#ffd54f" stroke-width="5" stroke-dasharray="14 9"/>` : ''
   return `<svg class="map" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">${clip}
     <g ${partial?'clip-path="url(#exp)"':''}>${walls}</g>${partial?'<path d="M40 40H700L760 180L640 330L480 380L330 600H40Z" fill="none" stroke="#3a3f4c" stroke-dasharray="6 6"/>':''}
@@ -378,8 +378,8 @@ const GROUPS = {
     {k:'calib', name:'校正', icon:'calib', size:'', L:'1/2/2/3', P:'2/1/3/2'}]},
 }
 function tileHTML({act, icon, name, sub, color, size, area, why, dis}){
-  return `<div class="tile g ${size} ${dis?'dis':''}" data-btn ${dis?'data-dis':''} data-act="${dis?'':act}" style="grid-area:${area};border-left-color:${color||'var(--bd-hi)'}">
-    <span style="color:${color||'var(--tx)'}">${ic(icon)}</span><div><div class="nm">${name}${sub?'<span class="ar">▸</span>':''}</div>${size==='s'?'':`<div class="why">${why||''}</div>`}</div></div>`
+  return `<div class="tile g ${size} ${dis?'dis':''}" data-btn ${dis?'data-dis':''} data-act="${dis?'':act}" ${dis&&why?`data-why="${why}"`:''} style="grid-area:${area};border-left-color:${color||'var(--bd-hi)'}">
+    <span style="color:${color||'var(--tx)'}">${ic(icon)}</span><div><div class="nm">${name}${sub?'<span class="ar">▸</span>':''}</div></div></div>`
 }
 function menuView(){
   const m=S.menu, lvl=m.lvl, o=S.ori
@@ -436,13 +436,13 @@ function dayView(){
 
   const where = d.robot==='home' ? '待機場所' : d.robot==='panel' ? '盤 A-1' : '途中'
   const st = {
-    unloaded:['会場地図が開かれていません','地図の中央のボタンから開きます'],
-    undeclared:['待機場所にいることを宣言してください','機体が待機場所にあることを確かめてから押します'],
-    home:[ d.robot==='home'?'待機中　待機場所':'止まっています　行き先を選んでください', '地図のピン →「行き先にする」、または下のボタンで出発します'],
-    moving:[`移動中 → ${destPin?.name??''}`, `残り 4.2 m　間違えたら「${AB}」`],
-    paused:[`一時停止中 → ${destPin?.name??''}`, '「再開する」で続きを走ります'],
-    panel:[`盤の前　盤 A-1`, '測定・撮影ができます'],
-    summon:['呼び寄せ　位置の指定', `${d.flowStep===2?'② 機体に向いてほしい方向':'① 機体に来てほしい位置'}に立って「記録」`],
+    unloaded:['会場地図が開かれていません',''],
+    undeclared:['待機場所にいることを宣言してください',''],
+    home:[ d.robot==='home'?'待機中　待機場所':'止まっています　行き先を選んでください', ''],
+    moving:[`移動中 → ${destPin?.name??''}`, '残り 4.2 m'],
+    paused:[`一時停止中 → ${destPin?.name??''}`, '残り 4.2 m'],
+    panel:[`盤の前　盤 A-1`, ''],
+    summon:['呼び寄せ　位置の指定', ''],
   }[s]
 
   let mainInner = ''
@@ -469,8 +469,8 @@ function dayView(){
     <div class="sec full noh"><h3>操作</h3>${tog(E.stop, E.run, {runLabel, runHint, note:runNote, big:true, help:'toggle'})}
       <div class="row" style="margin-top:8px">${btn('jog','手動',{icon:'jog',dis:!E.manual,help:'jog'})}${btn('abort',AB,{icon:'abort',dis:!E.abort,why:whyAbort,cls:AB.length>4?'f16':'',help:'abort'})}</div></div>
     <div class="sec"><h3>行き先</h3><div class="row">${btn('goHome','待機場所<small>&nbsp;</small>',{icon:'home',dis:!E.home,why:whyHome,cls:'two',help:'home'})}${btn('goNext',nextLabel,{icon:'panel',dis:!E.next,why:whyDest,cls:'two',help:'next'})}</div>
-      <div class="row" style="margin-top:8px">${btn('summon','呼び寄せ',{icon:'person',dis:!E.summon,why:whySummon,help:'summon'})}</div><div class="why">${whyDest}</div></div>
-    <div class="sec"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{icon:'measure',dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{icon:'cam',dis:!E.cam,why:whyPanel,help:'cam'})}</div><div class="why">${whyPanel}</div></div>
+      <div class="row" style="margin-top:8px">${btn('summon','呼び寄せ',{icon:'person',dis:!E.summon,why:whySummon,help:'summon'})}</div></div>
+    <div class="sec"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{icon:'measure',dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{icon:'cam',dis:!E.cam,why:whyPanel,help:'cam'})}</div></div>
   </div>`
   return header('試験', true, DAY_STATE[s]||'') + `<div class="body"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit',help:'exit'})}${trackerBar(s!=='summon')}</div>
     <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
@@ -488,16 +488,15 @@ function prepView(){
   const needTrk = p.method==='person' && !S.tracker
   const st = {
     entry:['前回の地図とピンが残っています', `ピン ${p.pins} 件（待機場所 1・配電盤 5）`],
-    mapping:['地図作成中　未保存の変更あり', `ピン ${p.pins} 件。方式を選んでから登録先を押します`],
-    reg:['待機場所を登録中（人の位置で）', p.regStep===2?'② 機体に向いてほしい方向へ 1 歩動いて「記録」':'① 待機場所に立って「記録」'],
-    return:['待機場所へ戻る途中', '「停止する」で止まります'],
+    mapping:['地図作成中　未保存の変更あり', `ピン ${p.pins} 件`],
+    reg:['待機場所を登録中（人の位置で）', ''],
+    return:['待機場所へ戻る途中', ''],
   }[s]
   let mainInner = mapSVG({robot:s==='return'?[300,330,135]:[420,300,180], path:s==='return'?[[300,330],[130,330],[130,450]]:null, partial:true, scan:true})
   if (s==='entry') mainInner += `<div class="center"><div class="card"><p>前回の試験場内地図とピン（${p.pins} 件）が残っています</p>
       ${btn('resume','続きから再開',{icon:'play',cls:'adv'})}
-      ${btn('fresh','新しい試験日として開始（前回を消す）',{icon:'close'})}<p style="font-size:13px">「新しい試験日」は押したあともう一度確かめてから消します</p></div></div>`
+      ${btn('fresh','新しい試験日として開始（前回を消す）',{icon:'close'})}</div></div>`
   if (mapping && p.method==='person') mainInner += radarSVG(false, !S.tracker)
-  if (mapping && p.method==='tap') mainInner += `<div class="flow"><span class="stp">地図をタップして</span><span class="msg">登録先を押したあと、地図の上で位置を押し、向きの方向へなぞります</span></div>`
   if (s==='reg') mainInner += radarSVG(false, !S.tracker) + `<div class="flow"><span class="stp">待機場所 ${p.regStep}/2</span><span class="msg">${p.regStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'待機場所に立って「記録」'}</span>${btn('regRec','記録',{cls:'adv',dis:!S.tracker})}${btn('regCancel','やめる')}</div>`
 
   const regWhy = s==='entry' ? '地図作成を始めてから登録できます' : s==='reg' ? '登録中です（やめるときは地図の上の「やめる」）' : s==='return' ? '待機場所へ戻る途中は登録できません' : (needTrk ? '人検出を動かすと「人の位置で」登録できます（左上）' : '')
@@ -507,8 +506,8 @@ function prepView(){
     <div class="state full"><div class="s1">${st[0]}</div><div class="s2">${st[1]}</div></div>
     <div class="sec full"><h3>操作</h3>${tog(stop, run, {note: runNote})}
       <div class="row" style="margin-top:8px">${btn('toast:地図とピンを保存した','保存',{icon:'save',cls:'save',dis:!(mapping)})}${btn('jog','手動',{icon:'jog'})}</div></div>
-    <div class="sec full"><h3>登録　① 方式 → ② 登録先</h3>${mseg}
-      <div class="row">${btn('regHome','待機場所を登録',{icon:'home',dis:regDis})}${btn('regPanel','配電盤を登録',{icon:'panel',dis:regDis})}</div><div class="why">${regWhy}</div></div>
+    <div class="sec full"><h3>登録</h3>${mseg}
+      <div class="row">${btn('regHome','待機場所を登録',{icon:'home',dis:regDis,why:regWhy})}${btn('regPanel','配電盤を登録',{icon:'panel',dis:regDis,why:regWhy})}</div></div>
     <div class="sec full"><h3>戻す</h3>${btn('goHome','待機場所に戻る',{icon:'home',dis:!mapping})}</div>
   </div>`
   const unsaved = s!=='entry' ? '<span class="pill">未保存</span>' : ''
@@ -731,8 +730,8 @@ document.addEventListener('click', e=>{
     if (e.target.closest('[data-helpclose]') || !e.target.closest('.help')){ closeHelp(); if (st && !e.target.closest('.hdr,.nstop')) return } else return }
   // 薄いボタンを押したら、そのボタンの理由を出す（D16。区切りは空白。「—」は「一」と紛れる）
   const dz=e.target.closest('#dev [data-why]')
-  if (dz && dz.dataset.why && S.scr==='day' && dz.matches('.dis,.off')){
-    if (S.day.sel){ S.day.sel=null; render() }
+  if (dz && dz.dataset.why && dz.matches('.dis,.off')){
+    if (S.scr==='day' && S.day.sel){ S.day.sel=null; render() }
     return toast('押せません　'+dz.dataset.why)
   }
   // 試験（当日）: 吹き出しは、ピンと吹き出しのボタン以外を押すと消える（取り消し。D10）
