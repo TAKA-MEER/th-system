@@ -126,6 +126,14 @@ export default function S14Replay({ onFinish }) {
   // 1b-11 SG-B14: 地図の更新（Spec-webui.md §3.7）。既定 OFF。
   // ON のときだけ操作カードに「保存」が出る。
   const mapUpdate = !!state?.map_update
+  // A-23 ②: 位置が決まるまで（LOCALIZE）は「再生」を押せなくし、理由をそばに出す。
+  // READY で押せる（unknown の経路も始点決め打ちで READY に進む）、PAUSE の
+  // 再開も止めない（Spec-webui.md §3.7）。
+  const runGate = replayRunGate(stateName, routeStatus?.localize_quality)
+  // A-22: 地図の読み込み中は地図の上に出す。判定は既存の信号だけ
+  // （localize_quality と /route/map_view の到着。新しいトピックは足さない）。
+  const mapLoading = mapLoadingVisible(
+    stateName, routeStatus?.localize_quality, routeMap != null)
 
   // LOCALIZE が長く続いたら（＝地図の読み直し失敗の可能性）手がかりを出す。
   useEffect(() => {
@@ -190,6 +198,7 @@ export default function S14Replay({ onFinish }) {
       pose={routePose ?? odomPose}
       mapData={routeMap}
       targetIndex={routeStatus?.target_index ?? -1}
+      loadingText={mapLoading ? S14_MAP_LOADING : null}
     />
   )
   const speedCard = (
@@ -368,6 +377,8 @@ export default function S14Replay({ onFinish }) {
           slots={{ stop: true, check: false, run: true, save: mapUpdate, manual: false }}
           runLabel={S14_TAB_REPLAY}
           disabled={disabledAll}
+          runDisabled={!runGate.enabled}
+          runDenyReason={runGate.reason}
           onTrigger={(trigger) => sendTrigger(trigger)}
         />
         <div className="card">

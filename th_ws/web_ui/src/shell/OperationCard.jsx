@@ -27,7 +27,6 @@ export default function OperationCard({
   manualDenyReason = null,
   runDisabled = false,
   runDenyReason = null,
-  runEmphasis = false,
   onTrigger,
   onManualClick,
 }) {
@@ -79,14 +78,11 @@ export default function OperationCard({
         {slots.run && (() => {
           // SM-3.1.2-119: 会場地図が無い間は「走行」を押せない（runDisabled）。
           // 理由は呼び出し側が別の場所に出していなければ runDenyReason で直下に出す。
-          // A-22: runEmphasis は「押せるようになった」合図（点滅・色枠）を付けるだけで、
-          // 押せるかどうかは変えない（S-14 だけが使う）。
           const btn = (
             <button
               type="button"
-              className={`btn op-run ${OP_BUTTON_KINDS.advance} ${tone('run')}${runEmphasis ? ' op-run-ready' : ''}`}
+              className={`btn op-run ${OP_BUTTON_KINDS.advance} ${tone('run')}`}
               disabled={disabled || runDisabled}
-              data-run-ready={runEmphasis ? 'true' : undefined}
               onClick={() => fire('ui.run')}
             >
               <IconArrow />
