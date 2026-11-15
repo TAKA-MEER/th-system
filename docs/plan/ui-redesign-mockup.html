@@ -284,7 +284,7 @@ function trackerBar(canStop=true){
 function header(title, zone, state){
   const cls = /一時停止/.test(state) ? ' pause' : /移動中/.test(state) ? ' run' : ''
   return `<div class="hdr"><div class="r1"><div class="logo">TH</div><div class="brand"><small>MIRS2602-</small>高見舎プロジェクト</div><div class="title">${title}</div>
-  <div class="gap"></div>${zone?'<span class="zone">速度制限</span>':''}<span class="mst${cls}">${state}</span></div>
+  <div class="gap"></div>${zone?'<span class="zone">速度制限</span>':''}${state?`<span class="mst${cls}">${state}</span>`:''}</div>
   <div class="r2"><div class="st"><i></i>正常</div><div class="estop">非常停止</div></div></div>`
 }
 const DAY_STATE = {unloaded:'準備中', undeclared:'準備中', home:'待機中', panel:'配電盤前', moving:'移動中', paused:'一時停止中', summon:'位置指示中'}
@@ -411,7 +411,7 @@ function menuView(){
     <div class="sec"><h3>バッテリー</h3><div style="font-size:22px;font-weight:800">82 %</div></div>
     <div class="sec full"><h3>運用の終了</h3><div class="kv">未保存のデータ<span class="cnt">4 件</span></div>
       <button class="b halt" data-btn data-act="toast:未保存の一覧（W-4）が開く">制御系を停止する</button></div></div>`
-  return header('メインメニュー', false, '待機中') + `<div class="body">${opbar}<div class="content"><div class="mcol">${left}</div>${side}</div></div>`
+  return header('メインメニュー', false, '') + `<div class="body">${opbar}<div class="content"><div class="mcol">${left}</div>${side}</div></div>`
 }
 
 /* ---------------- 試験（当日）F2 ---------------- */
