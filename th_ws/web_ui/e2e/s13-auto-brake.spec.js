@@ -89,14 +89,15 @@ test('a request rejected by the vehicle shows the reason and the display stays',
 test('approach warning appears while OFF when the limiter reports it', async ({ page }) => {
   await gotoScreenWithLimiter(page, 'S13',
     { mode: 'TEACH_MANUAL', state: 'REC', zone: 'OUT', auto_brake: false },
-    { ...LIMITER_PASS, nearest_obstacle_m: 0.5, approach_warning: true })
+    { ...LIMITER_PASS, nearest_obstacle_m: 30, approach_clearance_m: 0.5,
+      approach_warning: true })
   await page.locator('#s13').waitFor()
   await page.getByRole('tab', { name: '走行' }).click()
   await expect(page.getByTestId('s13-approach-warning')).toBeVisible()
   await expect(page.getByTestId('s13-auto-brake-off-hint')).toBeVisible()
   // OFF 中は action が PASS のままでも「障害物なし」と出さない。
   await expect(page.locator('#s13')).not.toContainText('障害物なし')
-  await expect(page.locator('#s13')).toContainText('0.5')
+  await expect(page.locator('#s13')).toContainText('機体から前方 50 cm に障害物')
 })
 
 test('no approach warning while ON even if the signal were set', async ({ page }) => {
