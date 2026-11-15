@@ -344,7 +344,7 @@
   class: b
   status: given
   value: 0.55
-  consumers: [params_audit]
+  consumers: [params_audit, obstacle_limiter]
   spec_ref: "DetailedDesign-names.md §7.2"
   note: "機体外形（全長）。2026-08-18 に巻尺で実測（最外形）。記録ファイルは NTFS 破損で消失したため、この registry の記載が唯一の出典"
 

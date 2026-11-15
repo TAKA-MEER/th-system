@@ -96,6 +96,16 @@ struct SystemStateSnapshot {
   bool auto_brake = false;
 };
 
+// laser_link の姿勢（base_link 基準）。ノードが起動時に取った
+// base_link<-laser_link の TF をそのまま渡す。画面に出す外形からの距離
+// （A-17）を求めるためだけに使う。判定（v_allow・警告の条件）は laser_link
+// 基準の距離のまま変えない（Spec-safety.md §2.1）。
+struct LaserPose2D {
+  double x_m = 0.0;
+  double y_m = 0.0;
+  double yaw_rad = 0.0;
+};
+
 // ── obstacle_limiter_core.hpp が呼び出し側に要求する入力 ──────────────
 struct ObstacleLimiterInputs {
   double now_sec = 0.0;
@@ -106,6 +116,7 @@ struct ObstacleLimiterInputs {
   SystemStateSnapshot state;  // /system/state
   Stamped<bool> estop;        // /safety/estop
   Stamped<bool> fault_lock;   // /safety/fault_lock
+  LaserPose2D laser_pose;     // base_link<-laser_link（外形からの距離の計算にだけ使う）
 
   double screen_limit_mps = 0.0;  // 画面由来の上限（呼び出し側で解決済み。ヘッダ冒頭コメント参照）
   double mode_limit_mps = 0.0;    // モード由来の上限（同上）
@@ -150,6 +161,13 @@ struct ObstacleLimiterParams {
   double normal_jerk_mps3 = 0.0;
   double normal_angular_accel_rps2 = 0.0;
 
+  // 機体の外形（registry.yaml の body_length_m / body_width_m。base_link を
+  // 中心とする長方形とみなす）。画面に出す「機体から何 m」の計算だけに使う
+  // （判定の距離は laser_link 基準のまま。Spec-safety.md §2.1・A-17）。
+  // 0.0 のまま（生成 yaml 未配線）なら外形を引かない＝従来の LiDAR 中心からの距離。
+  double body_length_m = 0.0;
+  double body_width_m = 0.0;
+
   bool blind_calibrated = true;
   // [(a0_deg, a1_deg), ...]。lidar_filter / scan_geometry と同じ規約
   // （laser_link 基準・反時計回り正。度で持ち、使う直前にラジアンへ変換する）。
@@ -173,6 +191,11 @@ struct ObstacleLimiterOutput {
   // 止まっているときは死角を除く周囲の最近傍（画面は nearest_obstacle_m では
   // なくこちらを出す。止まっているときの nearest_obstacle_m は進む向きのまま）。
   double approach_distance_m = std::numeric_limits<double>::infinity();
+  // 画面に出す障害物までの距離（m）。機体の外形（base_link を中心とする
+  // body_length_m × body_width_m の長方形の一番近い面）から測る（A-17）。
+  // approach_distance_m と同じ点の集まりのうち、外形からの距離が最小のもの。
+  // 障害物が無い／scan を観測できていないときは +infinity。
+  double approach_clearance_m = std::numeric_limits<double>::infinity();
   // 機体の指令がほぼ 0 でない（＝動いている）。スピーカーの接近警告音は
   // この間だけ鳴らす（LimiterStatus.approach_warning_moving）（止まっているときの警告は画面だけ。Spec-safety.md §11）。
   bool moving = true;
@@ -196,6 +219,12 @@ double v_allow(double nearest_m, double obstacle_floor_distance_m, double brake_
 
 // |val| を [0, max_abs] にクランプする。符号は保存する（L1・L4 の実装基盤）。
 double clamp_toward_zero(double val, double max_abs);
+
+// 点 (px_m, py_m)（base_link 基準）から、base_link の原点を中心とする
+// body_length_m × body_width_m の長方形までの最短距離（m）。長方形の中なら 0。
+// 画面に出す「機体から何 m」専用の純関数（A-17）。
+double point_to_body_clearance(double px_m, double py_m,
+                               double body_length_m, double body_width_m);
 
 // value を target に向かって最大 max_abs_rate*dt だけ動かす（符号は問わない、
 // 減速方向にも同じ式でよい。main.cpp の rampToward() と同型）。
@@ -228,6 +257,9 @@ bool blind_direction_overlap(double direction_rad, double half_width_rad,
 struct ConeObservation {
   bool covered = false;
   double nearest_m = std::numeric_limits<double>::infinity();
+  // 同じ点の集まりのうち、機体の外形から最も近いものまでの距離（m）。
+  // 外形が 0（未配線）なら laser_link 中心からの距離と同じ。A-17。
+  double clearance_m = std::numeric_limits<double>::infinity();
 };
 
 // direction_rad ± half_width_rad 内にある有限レンジの最小値を求める。
@@ -235,7 +267,9 @@ struct ConeObservation {
 // 小さい距離を返す。有効点がそれに満たないときは最小値へ退避する（LiDAR 異常時に
 // 「空き」へ倒さないため）。既定 1 は従来どおりの「最小値そのもの」。
 ConeObservation observe_cone(const ScanSnapshot& scan, double direction_rad,
-                             double half_width_rad, std::size_t min_points = 1);
+                             double half_width_rad, std::size_t min_points = 1,
+                             const LaserPose2D& laser_pose = LaserPose2D{},
+                             double body_length_m = 0.0, double body_width_m = 0.0);
 
 // ── ヒステリシス・角度判定を含む本体（状態を持つのでクラス） ───────────
 class ObstacleLimiterCore {

@@ -49,7 +49,9 @@ bool arcs_overlap(double a_start, double a_len, double b_start, double b_len) {
 // （Spec-safety.md §2.1）。観測できない（未受信・形が合わない）なら covered=false。
 ConeObservation observe_surround(const ScanSnapshot& scan,
                                  const std::vector<std::pair<double, double>>& blind_deg,
-                                 std::size_t min_points) {
+                                 std::size_t min_points,
+                                 const LaserPose2D& laser_pose,
+                                 double body_length_m, double body_width_m) {
   if (!scan.received || scan.geometry.num_ranges == 0 ||
       scan.ranges.size() != scan.geometry.num_ranges) {
     return ConeObservation{};
@@ -62,7 +64,10 @@ ConeObservation observe_surround(const ScanSnapshot& scan,
       blind.emplace_back(start, len);
     }
   }
+  const double cos_yaw = std::cos(laser_pose.yaw_rad);
+  const double sin_yaw = std::sin(laser_pose.yaw_rad);
   std::vector<double> valid;
+  double clearance = std::numeric_limits<double>::infinity();
   for (std::size_t i = 0; i < scan.ranges.size(); ++i) {
     const double r = scan.ranges[i];
     if (!std::isfinite(r) || r < 0.0) {
@@ -78,14 +83,26 @@ ConeObservation observe_surround(const ScanSnapshot& scan,
     }
     if (!in_blind) {
       valid.push_back(r);
+      const double px = r * std::cos(ang);
+      const double py = r * std::sin(ang);
+      clearance = std::min(clearance,
+          point_to_body_clearance(laser_pose.x_m + cos_yaw * px - sin_yaw * py,
+                                  laser_pose.y_m + sin_yaw * px + cos_yaw * py,
+                                  body_length_m, body_width_m));
     }
   }
   if (valid.empty()) {
-    return ConeObservation{/*covered=*/true, std::numeric_limits<double>::infinity()};
+    ConeObservation o;
+    o.covered = true;
+    return o;
   }
   const std::size_t k = std::min(std::max<std::size_t>(min_points, 1), valid.size());
   std::nth_element(valid.begin(), valid.begin() + static_cast<std::ptrdiff_t>(k - 1), valid.end());
-  return ConeObservation{/*covered=*/true, valid[k - 1]};
+  ConeObservation o;
+  o.covered = true;
+  o.nearest_m = valid[k - 1];
+  o.clearance_m = clearance;
+  return o;
 }
 
 }  // namespace
@@ -210,7 +227,9 @@ bool blind_direction_overlap(double direction_rad, double half_width_rad,
 }
 
 ConeObservation observe_cone(const ScanSnapshot& scan, double direction_rad,
-                             double half_width_rad, std::size_t min_points) {
+                             double half_width_rad, std::size_t min_points,
+                             const LaserPose2D& laser_pose,
+                             double body_length_m, double body_width_m) {
   if (!scan.received || scan.geometry.num_ranges == 0 ||
       scan.ranges.size() != scan.geometry.num_ranges) {
     return ConeObservation{};  // covered=false（未観測。デフォルト値のまま）
@@ -247,13 +266,24 @@ ConeObservation observe_cone(const ScanSnapshot& scan, double direction_rad,
   // 変えたのは「何点あれば障害物とみなすか」だけで、円錐の角度・停止距離・
   // スキャン途絶判定・死角マスクはいずれも変えていない。
   const std::size_t n = scan.geometry.num_ranges;
+  const double cos_yaw = std::cos(laser_pose.yaw_rad);
+  const double sin_yaw = std::sin(laser_pose.yaw_rad);
   std::vector<double> valid;
+  double clearance = std::numeric_limits<double>::infinity();
   auto consider = [&](std::size_t idx) {
     const double r = scan.ranges[idx];
     if (!std::isfinite(r) || r < 0.0) {
       return;
     }
     valid.push_back(r);
+    const double ang = scan.geometry.angle_min +
+        static_cast<double>(idx) * scan.geometry.angle_increment;
+    const double px = r * std::cos(ang);
+    const double py = r * std::sin(ang);
+    clearance = std::min(clearance,
+        point_to_body_clearance(laser_pose.x_m + cos_yaw * px - sin_yaw * py,
+                                laser_pose.y_m + sin_yaw * px + cos_yaw * py,
+                                body_length_m, body_width_m));
   };
 
   if (*i0 <= *i1) {
@@ -270,12 +300,26 @@ ConeObservation observe_cone(const ScanSnapshot& scan, double direction_rad,
     }
   }
   if (valid.empty()) {
-    return ConeObservation{/*covered=*/true, std::numeric_limits<double>::infinity()};
+    ConeObservation o;
+    o.covered = true;
+    return o;
   }
   const std::size_t k = std::min(std::max<std::size_t>(min_points, 1), valid.size());
   std::nth_element(valid.begin(), valid.begin() + static_cast<std::ptrdiff_t>(k - 1),
                     valid.end());
-  return ConeObservation{/*covered=*/true, valid[k - 1]};
+  ConeObservation o;
+  o.covered = true;
+  o.nearest_m = valid[k - 1];
+  o.clearance_m = clearance;
+  return o;
+}
+
+double point_to_body_clearance(double px_m, double py_m,
+                               double body_length_m, double body_width_m) {
+  // base_link の原点＝長方形の中心（URDF の base_link visual が原点中心の box）。
+  const double dx = std::max(0.0, std::fabs(px_m) - 0.5 * body_length_m);
+  const double dy = std::max(0.0, std::fabs(py_m) - 0.5 * body_width_m);
+  return std::sqrt(dx * dx + dy * dy);
 }
 
 ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& in,
@@ -345,10 +389,13 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
                                          in.dev_auto_brake_off);
         const double limit = std::max(0.0, std::min(in.screen_limit_mps, in.mode_limit_mps));
         const ConeObservation around =
-            observe_surround(in.scan, p.blind_angle_ranges_deg, p.obstacle_min_points);
+            observe_surround(in.scan, p.blind_angle_ranges_deg, p.obstacle_min_points,
+                             in.laser_pose, p.body_length_m, p.body_width_m);
         const double d = around.covered ? around.nearest_m
                                         : std::numeric_limits<double>::infinity();
         out.approach_distance_m = d;
+        out.approach_clearance_m = around.covered
+            ? around.clearance_m : std::numeric_limits<double>::infinity();
         out.approach_warning =
             !policy && v_allow(d, p.obstacle_floor_distance_m, p.brake_accel_mps2) < limit;
       }
@@ -415,7 +462,8 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   // モード由来の上限、後退は上の v_reverse（通常と同じ）、死角も通常どおり。
   const ConeObservation cone = dev_scan_bypass
       ? ConeObservation{}
-      : observe_cone(in.scan, direction_rad, half_width, p.obstacle_min_points);
+      : observe_cone(in.scan, direction_rad, half_width, p.obstacle_min_points,
+                     in.laser_pose, p.body_length_m, p.body_width_m);
   if (blind_direction_overlap(direction_rad, half_width, p.blind_angle_ranges_deg) ||
       (!cone.covered && !dev_scan_bypass)) {
     applied_limit = std::min(applied_limit, p.v_reverse);
@@ -456,15 +504,21 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   const bool moving = std::fabs(in.muxed.value.linear_x) >= kCommandStoppedEps ||
                       std::fabs(in.muxed.value.angular_z) >= kCommandStoppedEps;
   double approach_dist = nearest_m;
+  double approach_clear = cone.covered
+      ? cone.clearance_m : std::numeric_limits<double>::infinity();
   double v_allow_warn = v_allow_now;
   if (!moving && !dev_scan_bypass) {
     const ConeObservation around =
-        observe_surround(in.scan, p.blind_angle_ranges_deg, p.obstacle_min_points);
+        observe_surround(in.scan, p.blind_angle_ranges_deg, p.obstacle_min_points,
+                         in.laser_pose, p.body_length_m, p.body_width_m);
     approach_dist = around.covered ? around.nearest_m : std::numeric_limits<double>::infinity();
+    approach_clear = around.covered
+        ? around.clearance_m : std::numeric_limits<double>::infinity();
     v_allow_warn = v_allow(approach_dist, p.obstacle_floor_distance_m, p.brake_accel_mps2);
   }
   out.approach_warning = !policy_active && v_allow_warn < applied_limit;
   out.approach_distance_m = approach_dist;
+  out.approach_clearance_m = approach_clear;
   out.moving = moving;
   linear_ceiling = std::max(0.0, linear_ceiling);
 
