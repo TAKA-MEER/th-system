@@ -55,13 +55,18 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 #devBox{flex:none}
 .hdr{height:110px;display:flex;flex-direction:column;border-bottom:2px solid var(--brand)}
 .hdr .r1{height:50px;display:flex;align-items:center;padding:0 14px;background:linear-gradient(#182a45,#121c2c)}
-.hdr .brand{font-size:14px;line-height:1.2;color:#fff;font-weight:700}
+.hdr .logo{flex:none;width:30px;height:30px;border-radius:6px;background:var(--brand);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-right:8px}
+.hdr .brand{flex:none;font-size:14px;line-height:1.2;color:#fff;font-weight:700}
 .hdr .brand small{display:block;color:var(--brand-lt);font-size:11px;font-weight:400}
-.hdr .title{margin-left:auto;font-size:26px;font-weight:800;letter-spacing:.05em}
+.hdr .title{flex:0 1 auto;min-width:0;margin-left:16px;font-size:26px;font-weight:800;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hdr .gap{flex:1}
+.hdr .zone{flex:none;font-size:13px;padding:3px 10px;border-radius:999px;border:1px solid var(--warn);color:var(--warn-tx);white-space:nowrap}
+.hdr .mst{flex:none;margin-left:8px;font-size:18px;font-weight:800;padding:3px 12px;border-radius:8px;background:#22314a;color:#fff;white-space:nowrap}
+.hdr .mst.run{background:var(--brand)}
+.hdr .mst.pause{background:var(--warn);color:#111}
 .hdr .r2{flex:1;display:flex;align-items:stretch;background:#121722}
 .hdr .st{display:flex;align-items:center;gap:8px;padding:0 14px;font-size:16px}
 .hdr .st i{width:10px;height:10px;border-radius:50%;background:var(--ok)}
-.hdr .zone{align-self:center;font-size:13px;padding:3px 10px;border-radius:999px;border:1px solid var(--warn);color:var(--warn-tx)}
 .hdr .estop{margin-left:auto;width:320px;background:var(--estop);color:#fff;font-size:26px;font-weight:800;letter-spacing:.1em;display:flex;align-items:center;justify-content:center}
 .body{position:absolute;left:0;right:0;top:110px;bottom:0;display:flex;flex-direction:column}
 .opbar{height:58px;flex:none;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--bd)}
@@ -274,10 +279,16 @@ function trackerBar(canStop=true){
     ${on?(canStop?`<div class="press" data-act="trkOff">■ 止める</div>`:`<div class="off">■ 止める</div>`):`<div class="cur">■ 停止中</div>`}<span class="sep"></span>
     ${on?`<div class="cur">● 動作中</div>`:`<div class="press" data-act="trkOn">● 動かす</div>`}</div>`
 }
-function header(title, zone){
-  return `<div class="hdr"><div class="r1"><div class="brand"><small>MIRS2602-</small>高見舎プロジェクト</div><div class="title">${title}</div></div>
-  <div class="r2"><div class="st"><i></i>正常</div>${zone?'<span class="zone">試験場内・低速</span>':''}<div class="estop">非常停止</div></div></div>`
+// ヘッダ（2026-11-15 決定 D21〜D24）: ロゴ・プロジェクト名の真後ろに画面名称（位置をほぼ固定）。
+// 右端の札はモードではなく状態。ゾーンは場内のときだけ「速度制限」。
+function header(title, zone, state){
+  const cls = /一時停止/.test(state) ? ' pause' : /移動中/.test(state) ? ' run' : ''
+  return `<div class="hdr"><div class="r1"><div class="logo">TH</div><div class="brand"><small>MIRS2602-</small>高見舎プロジェクト</div><div class="title">${title}</div>
+  <div class="gap"></div>${zone?'<span class="zone">速度制限</span>':''}<span class="mst${cls}">${state}</span></div>
+  <div class="r2"><div class="st"><i></i>正常</div><div class="estop">非常停止</div></div></div>`
 }
+const DAY_STATE = {unloaded:'準備中', undeclared:'準備中', home:'待機中', panel:'配電盤前', moving:'移動中', paused:'一時停止中', summon:'位置指示中'}
+const PREP_STATE = {entry:'準備中', mapping:'地図作成中', reg:'登録中', return:'待機場所へ移動中'}
 
 /* ---------------- 地図 ---------------- */
 const PINS = [
@@ -400,7 +411,7 @@ function menuView(){
     <div class="sec"><h3>バッテリー</h3><div style="font-size:22px;font-weight:800">82 %</div></div>
     <div class="sec full"><h3>運用の終了</h3><div class="kv">未保存のデータ<span class="cnt">4 件</span></div>
       <button class="b halt" data-btn data-act="toast:未保存の一覧（W-4）が開く">制御系を停止する</button></div></div>`
-  return header('メインメニュー', false) + `<div class="body">${opbar}<div class="content"><div class="mcol">${left}</div>${side}</div></div>`
+  return header('メインメニュー', false, '待機中') + `<div class="body">${opbar}<div class="content"><div class="mcol">${left}</div>${side}</div></div>`
 }
 
 /* ---------------- 試験（当日）F2 ---------------- */
@@ -461,7 +472,7 @@ function dayView(){
       <div class="row" style="margin-top:8px">${btn('summon','呼び寄せ',{icon:'person',dis:!E.summon,why:whySummon,help:'summon'})}</div><div class="why">${whyDest}</div></div>
     <div class="sec"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{icon:'measure',dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{icon:'cam',dis:!E.cam,why:whyPanel,help:'cam'})}</div><div class="why">${whyPanel}</div></div>
   </div>`
-  return header('試験', true) + `<div class="body"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit',help:'exit'})}${trackerBar(s!=='summon')}</div>
+  return header('試験', true, DAY_STATE[s]||'') + `<div class="body"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit',help:'exit'})}${trackerBar(s!=='summon')}</div>
     <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
 }
 
@@ -501,7 +512,7 @@ function prepView(){
     <div class="sec full"><h3>戻す</h3>${btn('goHome','待機場所に戻る',{icon:'home',dis:!mapping})}</div>
   </div>`
   const unsaved = s!=='entry' ? '<span class="pill">未保存</span>' : ''
-  return header('試験準備', true) + `<div class="body"><div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${unsaved}${trackerBar(s!=='reg')}</div>
+  return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body"><div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${unsaved}${trackerBar(s!=='reg')}</div>
     <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
 }
 
