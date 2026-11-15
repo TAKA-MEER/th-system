@@ -13,6 +13,8 @@ import {
   S14_QUALITY_LOW_HINT,
   S14_QUALITY_FAILED,
   S14_QUALITY_FAILED_HINT,
+  S14_QUALITY_OFF_ROUTE,
+  S14_QUALITY_OFF_ROUTE_HINT,
   S14_QUALITY_SEARCHING,
   S14_GLOBAL_BUTTON,
 } from '../../src/i18n/screens.js'
@@ -39,6 +41,16 @@ test('failed は「見つかりません」＋選び直しの案内', () => {
   assert.ok(text.includes('経路を選び直し'))
 })
 
+test('off_route は「経路から離れています」＋置き直しの案内', () => {
+  assert.deepEqual(localizeQualityView('off_route'), { visible: true, level: 'off_route' })
+  const text = localizeQualityText('off_route')
+  assert.ok(text.includes(S14_QUALITY_OFF_ROUTE))
+  assert.ok(text.includes(S14_QUALITY_OFF_ROUTE_HINT))
+  assert.ok(text.includes('2 m 以内'))
+  // 推定の失敗（見つかりません）とは区別する。
+  assert.ok(!text.includes(S14_QUALITY_FAILED))
+})
+
 test('searching は「探しています」', () => {
   assert.deepEqual(localizeQualityView('searching'), { visible: true, level: 'searching' })
   assert.ok(localizeQualityText('searching').includes(S14_QUALITY_SEARCHING))
@@ -56,7 +68,8 @@ test('unknown・空・未受信（旧経路）は確度欄を出さない', () =
 test('文言定数が空でない（ボタンを含む）', () => {
   for (const s of [
     S14_QUALITY_TITLE, S14_QUALITY_HIGH, S14_QUALITY_LOW, S14_QUALITY_LOW_HINT,
-    S14_QUALITY_FAILED, S14_QUALITY_FAILED_HINT, S14_QUALITY_SEARCHING,
+    S14_QUALITY_FAILED, S14_QUALITY_FAILED_HINT, S14_QUALITY_OFF_ROUTE,
+    S14_QUALITY_OFF_ROUTE_HINT, S14_QUALITY_SEARCHING,
     S14_GLOBAL_BUTTON,
   ]) {
     assert.equal(typeof s, 'string')

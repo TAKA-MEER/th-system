@@ -15,8 +15,11 @@ rotate／RUN／遠すぎたら留まる——を見る。本番の経路で縛�
      その後 RUN で再開点から追従し、終端まで進んで evt.arrived が出る。
   b. 始点付近の姿勢で確定 → 今までどおり index 0 付近・始点の向きへ回る。
   c. 経路から遠い姿勢で確定（スキャンは合う） → evt.localize_done が出ない・
-     localize_quality=='failed'（LOCALIZE に留まる）。
+     localize_quality=='off_route'（LOCALIZE に留まる）。
   d. 逆再生でも 1 本: 反転後の点列で確定 → 再開点の向き（南）へ回る（w<0）。
+  f. 逆再生の終点に終点の向き（北）のまま置く（T-4 の再現） → 再開点は
+     反転後の index 0。旧規則（進行方向と機体の向きが同じ点だけ）では
+     done が出ない。
 
 地図は 6x5 m の部屋＋間仕切り（test_replay_localize_node.py と同配置）。
 経路は L 字: (0.5,1.0)→(2.5,1.0)→(2.5,4.0)。始点の向きは東 (0.0)、
@@ -417,8 +420,9 @@ class TestReplayFromIndexNode(unittest.TestCase):
             f'{[round(c.angular.z, 3) for c in rots[:8]]}')
 
     def test_c_far_pose_stays_in_localize(self):
-        """経路から遠い姿勢で確定 → done が出ない・quality が failed。
+        """経路から遠い姿勢で確定 → done が出ない・quality が off_route。
 
+        「推定の失敗」と区別して画面に出すため failed ではない（A-24）。
         離れすぎの判定を外す変異では done が出てここが赤くなる。
         """
         self._scan_pose = _FAR
@@ -426,8 +430,8 @@ class TestReplayFromIndexNode(unittest.TestCase):
         self._spin(0.3)
         self._send_load_route(reverse=False)
         st = self._wait_status(
-            lambda s: s.localize_quality == 'failed',
-            timeout=60.0, what="quality failed（遠すぎ）")
+            lambda s: s.localize_quality == 'off_route',
+            timeout=60.0, what="quality off_route（遠すぎ）")
         assert st.localize_score >= 0.0
         dones = [e for e in self._events if e.event == 'evt.localize_done']
         assert not dones, (
@@ -456,6 +460,35 @@ class TestReplayFromIndexNode(unittest.TestCase):
         assert len(neg) >= len(rots) // 2, (
             f'再開点の向き（南）へ回っていない（w<0 が {len(neg)}/{len(rots)} 件）: '
             f'{[round(c.angular.z, 3) for c in rots[:8]]}')
+
+    def test_f_reverse_endpoint_with_endpoint_heading(self):
+        """逆再生の終点に、終点での向きのまま置く（2026-11-13 T-4 の再現）。
+
+        反転後の点列は終点から始点へ向かう（南向き）ので、終点での向き
+        （北）のままの機体とは全点が逆向きになる。旧規則（進行方向との内積が
+        正の点だけを候補にする）では候補 0 で done が出ず走り出さなかった。
+        ここでは index 0 が選ばれ、南向きへ回る（w>0）ことを見る。
+        """
+        truth = (2.5, 3.9, math.pi / 2 + 0.2)
+        self._scan_pose = truth
+        self._tf_pose = truth
+        self._spin(0.3)
+        self._send_load_route(reverse=True)
+        self._wait_event(
+            lambda e: e.event == 'evt.localize_done', timeout=60.0,
+            what='evt.localize_done（逆再生の終点・終点の向き）')
+        self._send_effect('rotate_to_start_yaw')
+        self._fsm_state = 'RUN'
+        self._cmds.clear()
+        self._spin(1.5)
+        rots = [c for c in self._cmds]
+        assert rots, '/cmd_vel_behavior が来ない（再開点 0 からの旋回が動いていない）'
+        pos = [c for c in rots if c.angular.z > 0.01]
+        assert len(pos) >= len(rots) // 2, (
+            f'再開点の向き（南）へ回っていない（w>0 が {len(pos)}/{len(rots)} 件）: '
+            f'{[round(c.angular.z, 3) for c in rots[:8]]}')
+        assert all(abs(c.linear.x) < 0.05 for c in rots), (
+            '旋回中に前進している（超信地旋回でない）')
 
     def test_e_hook_route_uses_resume_index(self):
         """コの字の復路（D）の途中で確定 → 追従の目標が再開 index 以降になる。

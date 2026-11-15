@@ -8,9 +8,10 @@ replay_runner を**生成 yaml を先に渡して**実際に起動し、registry
 test_replay_localize_node.py。パラメータの読み戻しは
 test_runaway_freshness_node.py の起動方法に倣う）:
 
-  a. 生成 yaml の 6 値がノードのパラメータとして読める
+  a. 生成 yaml の 7 値がノードのパラメータとして読める
   b. 途中復帰の上限（resume_max_dist_m）が振る舞いに効く
-     （上限 0.0 では確定しても LOCALIZE に留まり done が出ない。
+     （上限 0.0 では確定しても LOCALIZE に留まり、離れすぎを表す
+     localize_quality='off_route' になり done が出ない。
      ノードが値を読まず既定値 2.0 を使う変異では done が出て赤くなる）
 
 本番の registry.yaml は placeholder の行を含むため、試験用の一時
@@ -61,7 +62,7 @@ import params_generation as pg  # noqa: E402
 REGISTRY_YAML = os.path.join(_PARAMS_SRC, "config", "registry.yaml")
 
 # 試験用の値（本番の既定値と区別できる数値。届いたかどうかを見るため）。
-# resume 0.0 は「確定しても必ず遠すぎ」→ failed に留まる。
+# resume 0.0 は「確定しても必ず遠すぎ」→ off_route に留まる。
 # match_low だけは既定値（0.8）より**緩く**置く（0.5）。厳しく置く
 # （例: 0.97）と、合成スキャンの離散化で s が閾値に届かず low→searching の
 # まま resume 判定に到達しない。到達の証明（test_a の読み戻し）は値が
@@ -73,6 +74,7 @@ _TEST_VALUES = {
     "search_radius_m": 4.0,
     "widen_radius_m": 9.0,
     "resume_max_dist_m": 0.0,
+    "resume_tie_m": 0.15,
 }
 _TEST_NAMES = sorted(_TEST_VALUES)
 
@@ -155,7 +157,7 @@ _MATCH_RANGES = _raycast(*_TRUTH)
 
 
 def _make_test_registry_and_generate():
-    """試験用 registry 写し（6 値を区別できる数値に）から生成する。
+    """試験用 registry 写し（7 値を区別できる数値に）から生成する。
 
     本番の registry.yaml は変えない。placeholder の 4 行は試験用の写しで
     given に読み替える（値の上書きの試験であって schema の試験ではない。
@@ -201,7 +203,7 @@ def generate_test_description():
         package='th_planning',
         executable='replay_runner.py',
         name='replay_runner',
-        # registry 駆動の 6 値は生成 yaml からのみ渡す（dict で上書きしない）。
+        # registry 駆動の 7 値は生成 yaml からのみ渡す（dict で上書きしない）。
         # routes_dir 等は registry の対象外の配線設定のため dict で渡す
         # （replay_runner.py のコメント参照）。
         parameters=[_GENERATED_YAML, {
@@ -369,7 +371,7 @@ class TestReplayLocalizeRegistryNode(unittest.TestCase):
 
     # ════════════════════════════════════════════════════════
     def test_a_params_arrive_via_generated_yaml(self):
-        """生成 yaml の 6 値がノードのパラメータとして読める。
+        """生成 yaml の 7 値がノードのパラメータとして読める。
         registry→生成→ノードの本番経路。dict 上書きは使わない。"""
         got = self._read_node_params()
         for name in _TEST_NAMES:
@@ -393,11 +395,11 @@ class TestReplayLocalizeRegistryNode(unittest.TestCase):
         self._send_load_route()
         try:
             st = self._wait_status(
-                lambda s: s.localize_quality == 'failed',
-                timeout=30.0, what="quality failed")
+                lambda s: s.localize_quality == 'off_route',
+                timeout=30.0, what="quality off_route")
         except AssertionError:
             raise AssertionError(
-                f'failed に留まらない。受信 quality: [{self._quality_summary()}] '
+                f'off_route に留まらない。受信 quality: [{self._quality_summary()}] '
                 f'（受信 {len(self._statuses)} 件）')
         assert st.localize_score >= 0.8, (
             f'探索自体が不成立（score={st.localize_score:.3f}）。一致スキャンで '
@@ -405,7 +407,7 @@ class TestReplayLocalizeRegistryNode(unittest.TestCase):
             f'[{self._quality_summary()}]')
         assert st.localize_margin >= 0.01, (
             f'margin が試験用の margin_min 0.01 を下回った '
-            f'(margin={st.localize_margin:.3f})。failed の原因が resume でなく '
+            f'(margin={st.localize_margin:.3f})。off_route の原因が resume でなく '
             f'margin の可能性。受信 quality: [{self._quality_summary()}]')
         dones = [e for e in self._events if e.event == 'evt.localize_done']
         assert not dones, (

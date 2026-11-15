@@ -106,9 +106,11 @@ export default function S14Replay({ onFinish }) {
   // 「長引いている」注記は出さない（P3 ブリーフ §やること 1）。
   // 1b-11 SG-B19: failed（原因別の案内が出ている）ときも出さない。
   // 汎用のタイムアウト文言（「始点マークに置き直す」）は原因と違うことがある。
+  // A-24: off_route も専用の案内（経路の近くへ）を出すので出さない。
   const showStuckNote = localizeStuck
     && qualityView.level !== 'searching'
     && qualityView.level !== 'failed'
+    && qualityView.level !== 'off_route'
   // 1b-11 SG-B19: 探索・読み直しの待ち時間（Spec-transit.md §4.2.2）。
   const showSearchingHint = qualityView.level === 'searching'
     && (stateName === 'LOCALIZE' || stateName === 'READY')
