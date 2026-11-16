@@ -113,6 +113,15 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .help.sticky .hx{display:flex}
 .help p{font-size:15px;line-height:1.6;color:#d6dbe4}
 
+/* 見た目の比較（2026-11-16。外部の指摘の検討。位置と大きさは変えない） */
+.lean .sec{background:transparent;border-color:transparent}
+.lean .b{font-weight:600}
+.lean .b.dis{border-style:solid;background:var(--ctrl);opacity:.36}
+.lean .tg > div > svg{display:none}
+.lean .ctl .row .b:not([data-help="home"]) > svg{display:none}
+.lean .ctl .b[data-help="home"] > svg{color:#4caf50}
+.lean .ctl .b[data-help="next"]::before{content:"";flex:none;width:16px;height:16px;border-radius:3px;background:#3f8ae0;border:1.5px solid #fff}
+
 /* 右列（試験場内） */
 .ctl{width:440px;flex:none;display:flex;flex-direction:column;gap:8px}
 .portrait .ctl{width:auto;display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -231,6 +240,7 @@ const S = {
   scr:'menu', ori:'L',
   tracker:true,   // 人検出（試験準備・試験で共有。左上の操作バーのトグル）
   menu:{lvl:'top', trackerOff:false, noRoute:false},
+  look:{v:'now'},
   day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0,
        abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
   help:{on:true},   // ヘルプ表示（2026-11-15 ユーザー案。設定で切り替え）
@@ -600,6 +610,7 @@ const NOTES = {
       '近いピンの押し分けは作らない（地図を拡大できるため。2026-11-15）',
     ],
     opts:[
+      {q:'見た目（枠・アイコン・押せないボタン）', k:['look','v'], v:[['now','いまの案'],['lean','枠とアイコンを減らす']], why:'2026-11-16 の外部の指摘の検討。区画の枠を消す／押せないボタンの点線をやめる／トグルの小さい記号を消す／アイコンは地図の印と対応する「待機場所」「次の配電盤」だけ残す。位置と大きさは変えない'},
       {q:'ヘルプ表示（設定で切り替える想定）', k:['help','on'], v:[[false,'しない'],[true,'する']], why:'<b>2026-11-15 に決定</b>（D19）。マウスはボタンに 0.7 秒重ねると出て、外すと消える。タップは長押しで出て、「×」か枠の外を押すと閉じる。停止│走行・ジョグ・非常停止は長押しの対象外。<b>ヘッダと赤い「停止する」は、ヘルプが出ていても 1 回で効く</b>。ヘッダには絶対に重ねず、停止│走行はなるべく避けて出す。この案の画面では試験（当日）だけ'},
       {q:'「中断」の語（別の語の案を残す）', k:['day','abortLabel'], v:[['中断','中断'],['行き先を取り消す','行き先を取り消す'],['選び直す','選び直す']], why:'<b>「中断」のままに決定</b>（D15。語が長いと認識しにくい）。ほかの人には違って見えるかもしれないので、別の語は案として残す'},
     ],
@@ -615,6 +626,7 @@ const NOTES = {
       'タブを無くした（いま 4）。「待機場所に戻る」をタブの奥から出した',
     ],
     opts:[
+      {q:'見た目（枠・アイコン・押せないボタン）', k:['look','v'], v:[['now','いまの案'],['lean','枠とアイコンを減らす']], why:'2026-11-16 の外部の指摘の検討。区画の枠を消す／押せないボタンの点線をやめる／トグルの小さい記号を消す／アイコンは地図の印と対応する「待機場所」「次の配電盤」だけ残す。位置と大きさは変えない'},
       {q:'予約の「走行」の見せ方', k:['prep','reserved'], v:[['dim','薄く（押せない）'],['inert','押せるが何も起きない']], why:'未決 3。いまは何も起きないのに白枠で目立つ'},
     ],
     look:['人検出を止めて「人の位置で」を選び、動かすまでの流れ','方式を先に選ぶ流れで、登録先を押し間違えないか'],
@@ -647,7 +659,7 @@ function render(){
   const dev=document.getElementById('dev')
   const [W,H] = S.ori==='L' ? [1280,720] : [960,1280]
   dev.style.width=W+'px'; dev.style.height=H+'px'
-  dev.className = S.ori==='P' ? 'portrait' : ''
+  dev.className = (S.ori==='P' ? 'portrait' : '') + (S.look.v==='lean' ? ' lean' : '')
   dev.innerHTML = (S.scr==='menu'?menuView():S.scr==='day'?dayView():prepView()) + '<div class="toast"></div>'
   if (S.ori==='P') dev.querySelectorAll('.content').forEach(c=>{ const mv=c.querySelector('.mainv'); if (mv) mv.style.minHeight='560px' })
   fit(); renderNotes()
