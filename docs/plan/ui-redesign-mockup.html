@@ -67,7 +67,8 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .hdr .r2{flex:1;display:flex;align-items:stretch;background:#121722}
 .hdr .st{display:flex;align-items:center;gap:8px;padding:0 14px;font-size:16px}
 .hdr .st i{width:10px;height:10px;border-radius:50%;background:var(--ok)}
-.hdr .estop{margin-left:auto;width:320px;background:var(--estop);color:#fff;font-size:26px;font-weight:800;letter-spacing:.1em;display:flex;align-items:center;justify-content:center}
+.hdr .estop{margin-left:auto;width:320px;box-sizing:border-box;margin:3px 6px 6px auto;border-radius:10px;border:2px solid #ff8a80;background:linear-gradient(#e53935,#b71c1c);color:#fff;font-size:26px;font-weight:800;letter-spacing:.1em;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 0 #6d1010,0 6px 10px #0009,inset 0 1px 0 #ffffff55;text-shadow:0 1px 2px #0008;cursor:pointer}
+.hdr .estop:active{transform:translateY(3px);box-shadow:0 1px 0 #6d1010,inset 0 1px 0 #ffffff55}
 .body{position:absolute;left:0;right:0;top:110px;bottom:0;display:flex;flex-direction:column}
 .opbar{height:58px;flex:none;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--bd)}
 .opbar .crumb{font-size:20px;font-weight:800;display:flex;align-items:center;gap:10px}
@@ -113,14 +114,20 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .help.sticky .hx{display:flex}
 .help p{font-size:15px;line-height:1.6;color:#d6dbe4}
 
-/* 見た目の比較（2026-11-16。外部の指摘の検討。位置と大きさは変えない） */
-.lean .sec{background:transparent;border-color:transparent}
-.lean .b{font-weight:600}
-.lean .b.dis{border-style:solid;background:var(--ctrl);opacity:.36}
-.lean .tg > div > svg{display:none}
-.lean .ctl .row .b:not([data-help="home"]) > svg{display:none}
-.lean .ctl .b[data-help="home"] > svg{color:#4caf50}
-.lean .ctl .b[data-help="next"]::before{content:"";flex:none;width:16px;height:16px;border-radius:3px;background:#3f8ae0;border:1.5px solid #fff}
+/* 2026-11-16 決定（D28）: 区画の枠なし・アイコンはメインメニューだけ・押せないボタンは点線にしない */
+.sec{background:transparent !important;border-color:transparent !important}
+.b{font-weight:600}
+.b.dis{border-style:solid !important;background:var(--ctrl) !important;opacity:.36}
+
+/* ボタンの形の比較（2026-11-16。位置と大きさは変えない） */
+.shape-sq{--r:3px}
+.shape-sq .tg,.shape-sq .mseg,.shape-sq .tile,.shape-sq .hdr .estop{border-radius:3px}
+.shape-pill .b{border-radius:999px}
+.shape-pill .tg,.shape-pill .mseg{border-radius:999px}
+.shape-role .b{border-radius:3px}
+.shape-role .tg,.shape-role .mseg{border-radius:4px}
+.shape-role .b.go,.shape-role .b.adv{border-radius:999px}
+.shape-role .b.exit{border-radius:3px 14px 14px 3px}
 
 /* 右列（試験場内） */
 .ctl{width:440px;flex:none;display:flex;flex-direction:column;gap:8px}
@@ -132,8 +139,8 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .sec .row > *{flex:1}
 .sec .why{height:18px;margin-top:6px;font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .state{padding:4px 2px}
-.state .s1{font-size:22px;font-weight:800}
-.state .s2{font-size:14px;color:var(--mut);margin-top:2px;min-height:20px}
+.state .s1{font-size:22px;font-weight:800;height:32px;line-height:32px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.state .s2{font-size:14px;color:var(--mut);margin-top:2px;height:20px;line-height:20px;white-space:nowrap;overflow:hidden}
 .mseg{display:flex;border:1px solid var(--bd-hi);border-radius:10px;overflow:hidden;margin-bottom:8px}
 .mseg > div{flex:1;text-align:center;padding:10px 4px;font-size:15px;font-weight:700;color:var(--mut);border-right:1px solid var(--bd-hi);cursor:pointer}
 .mseg > div:last-child{border-right:none}
@@ -240,7 +247,7 @@ const S = {
   scr:'menu', ori:'L',
   tracker:true,   // 人検出（試験準備・試験で共有。左上の操作バーのトグル）
   menu:{lvl:'top', trackerOff:false, noRoute:false},
-  look:{v:'now'},
+  font:{v:'sys'}, shape:{v:'round'},
   day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0,
        abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
   help:{on:true},   // ヘルプ表示（2026-11-15 ユーザー案。設定で切り替え）
@@ -264,13 +271,14 @@ function setSub(v){
 
 /* ---------------- 部品 ---------------- */
 function btn(act, label, {icon, cls='', dis=false, id, why='', help=''}={}){
+  if (S.scr!=='menu') icon=null   // アイコンはメインメニューだけ（D28）
   return `<button class="b ${cls} ${dis?'dis':''}" data-btn data-act="${dis?'':act}" ${id?`data-id="${id}"`:''} ${dis&&why?`data-why="${why}"`:''} ${help?`data-help="${help}"`:''}>${icon?ic(icon):''}<span>${label}</span></button>`
 }
 // 対のトグル。stop/run: 'cur' | 'en' | 'dis' | 'inert'（予約で押しても何も起きない）
 function tog(stop, run, {runLabel='走行', runHint='押すと走り出す', blink=true, note='', big=false, help=''}={}){
   const side = (k, st) => {
     const lab = k==='stop' ? '停止' : runLabel
-    const icn = k==='stop' ? ic('stopSq','style="width:16px;height:16px"') : ic('play','style="width:16px;height:16px"')
+    const icn = ''
     if (st==='cur') return `<div class="cur">${icn}<span>${k==='stop'?'停止中':'走行中'}</span></div>`
     if (st==='en') return k==='stop'
       ? `<div class="nstop" data-act="stop">${icn}<span>${lab}する</span></div>`
@@ -478,8 +486,8 @@ function dayView(){
     <div class="state full"><div class="s1">${st[0]}</div><div class="s2">${st[1]}</div></div>
     <div class="sec full noh"><h3>操作</h3>${tog(E.stop, E.run, {runLabel, runHint, note:runNote, big:true, help:'toggle'})}
       <div class="row" style="margin-top:8px">${btn('jog','手動',{icon:'jog',dis:!E.manual,help:'jog'})}${btn('abort',AB,{icon:'abort',dis:!E.abort,why:whyAbort,cls:AB.length>4?'f16':'',help:'abort'})}</div></div>
-    <div class="sec"><h3>行き先</h3><div class="row">${btn('goHome','待機場所<small>&nbsp;</small>',{icon:'home',dis:!E.home,why:whyHome,cls:'two',help:'home'})}${btn('goNext',nextLabel,{icon:'panel',dis:!E.next,why:whyDest,cls:'two',help:'next'})}</div>
-      <div class="row" style="margin-top:8px">${btn('summon','呼び寄せ',{icon:'person',dis:!E.summon,why:whySummon,help:'summon'})}</div></div>
+    <div class="sec"><h3>行き先</h3><div class="row">${btn('goHome','待機場所<small>&nbsp;</small>',{icon:'home',dis:!E.home,why:whyHome,cls:'two go',help:'home'})}${btn('goNext',nextLabel,{icon:'panel',dis:!E.next,why:whyDest,cls:'two go',help:'next'})}</div>
+      <div class="row" style="margin-top:8px">${btn('summon','呼び寄せ',{icon:'person',dis:!E.summon,why:whySummon,cls:'go',help:'summon'})}</div></div>
     <div class="sec"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{icon:'measure',dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{icon:'cam',dis:!E.cam,why:whyPanel,help:'cam'})}</div></div>
   </div>`
   return header('試験', true, DAY_STATE[s]||'') + `<div class="body"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit',help:'exit'})}${trackerBar(s!=='summon')}</div>
@@ -518,7 +526,7 @@ function prepView(){
       <div class="row" style="margin-top:8px">${btn('toast:地図とピンを保存した','保存',{icon:'save',cls:'save',dis:!(mapping)})}${btn('jog','手動',{icon:'jog'})}</div></div>
     <div class="sec full"><h3>登録</h3>${mseg}
       <div class="row">${btn('regHome','待機場所を登録',{icon:'home',dis:regDis,why:regWhy})}${btn('regPanel','配電盤を登録',{icon:'panel',dis:regDis,why:regWhy})}</div></div>
-    <div class="sec full"><h3>戻す</h3>${btn('goHome','待機場所に戻る',{icon:'home',dis:!mapping})}</div>
+    <div class="sec full"><h3>戻す</h3>${btn('goHome','待機場所に戻る',{icon:'home',cls:'go',dis:!mapping})}</div>
   </div>`
   const unsaved = s!=='entry' ? '<span class="pill">未保存</span>' : ''
   return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body"><div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${unsaved}${trackerBar(s!=='reg')}</div>
@@ -610,7 +618,6 @@ const NOTES = {
       '近いピンの押し分けは作らない（地図を拡大できるため。2026-11-15）',
     ],
     opts:[
-      {q:'見た目（枠・アイコン・押せないボタン）', k:['look','v'], v:[['now','いまの案'],['lean','枠とアイコンを減らす']], why:'2026-11-16 の外部の指摘の検討。区画の枠を消す／押せないボタンの点線をやめる／トグルの小さい記号を消す／アイコンは地図の印と対応する「待機場所」「次の配電盤」だけ残す。位置と大きさは変えない'},
       {q:'ヘルプ表示（設定で切り替える想定）', k:['help','on'], v:[[false,'しない'],[true,'する']], why:'<b>2026-11-15 に決定</b>（D19）。マウスはボタンに 0.7 秒重ねると出て、外すと消える。タップは長押しで出て、「×」か枠の外を押すと閉じる。停止│走行・ジョグ・非常停止は長押しの対象外。<b>ヘッダと赤い「停止する」は、ヘルプが出ていても 1 回で効く</b>。ヘッダには絶対に重ねず、停止│走行はなるべく避けて出す。この案の画面では試験（当日）だけ'},
       {q:'「中断」の語（別の語の案を残す）', k:['day','abortLabel'], v:[['中断','中断'],['行き先を取り消す','行き先を取り消す'],['選び直す','選び直す']], why:'<b>「中断」のままに決定</b>（D15。語が長いと認識しにくい）。ほかの人には違って見えるかもしれないので、別の語は案として残す'},
     ],
@@ -626,7 +633,6 @@ const NOTES = {
       'タブを無くした（いま 4）。「待機場所に戻る」をタブの奥から出した',
     ],
     opts:[
-      {q:'見た目（枠・アイコン・押せないボタン）', k:['look','v'], v:[['now','いまの案'],['lean','枠とアイコンを減らす']], why:'2026-11-16 の外部の指摘の検討。区画の枠を消す／押せないボタンの点線をやめる／トグルの小さい記号を消す／アイコンは地図の印と対応する「待機場所」「次の配電盤」だけ残す。位置と大きさは変えない'},
       {q:'予約の「走行」の見せ方', k:['prep','reserved'], v:[['dim','薄く（押せない）'],['inert','押せるが何も起きない']], why:'未決 3。いまは何も起きないのに白枠で目立つ'},
     ],
     look:['人検出を止めて「人の位置で」を選び、動かすまでの流れ','方式を先に選ぶ流れで、登録先を押し間違えないか'],
@@ -645,12 +651,36 @@ function renderNotes(){
   document.getElementById('notes').innerHTML = `
     <h2>この状態のボタン</h2><div class="count"><b>${c}</b> 個（うち押せない ${dc}）${pinNote}<div class="ref">「操作のトグル」「方式の切り替え」は 1 個と数える。ヘッダの非常停止は除く</div></div>
     <h2>変えたところ</h2><ul>${n.changed.map(x=>`<li>${x}</li>`).join('')}</ul>
-    <h2>比べて決めてほしいこと</h2>${n.opts.length?'':'<p class="ref">この画面はなし（2026-11-13 に決めた）</p>'}${n.opts.map((o,i)=>`<div class="opt"><div class="q">${o.q}</div><span class="seg">${o.v.map(([v,l])=>`<button class="${cur(o.k)===v?'on':''}" data-opt="${i}" data-v='${JSON.stringify(v)}'>${l}</button>`).join('')}</span><div class="ref">${o.why}</div></div>`).join('')}
+    <h2>比べて決めてほしいこと</h2>${optsOf().map((o,i)=>`<div class="opt"><div class="q">${o.q}</div><span class="seg">${o.v.map(([v,l])=>`<button class="${cur(o.k)===v?'on':''}" data-opt="${i}" data-v='${JSON.stringify(v)}'>${l}</button>`).join('')}</span><div class="ref">${o.why}</div></div>`).join('')}
     <h2>見てほしいところ</h2><ul>${n.look.map(x=>`<li>${x}</li>`).join('')}</ul>
     <p class="ref" style="margin-top:14px">画面の中のボタンは押せます（動きは仮）。案の本文は docs/plan/ui-redesign-options.md。</p>`
 }
 
 /* ---------------- 描画 ---------------- */
+// フォントの比較（2026-11-16）。「端末の標準」以外は、選んだときだけ Google Fonts から読み込む（比較のための例外。
+// 機体のネットワークはインターネットに出られないので、実装ではフォントのファイルを同梱する）。
+const FONTS = {
+  sys:  ['端末の標準', null, null],
+  noto: ['Noto Sans JP', 'Noto+Sans+JP:wght@400;600;700;800', "'Noto Sans JP'"],
+  biz:  ['BIZ UDPゴシック', 'BIZ+UDPGothic:wght@400;700', "'BIZ UDPGothic'"],
+  plex: ['IBM Plex Sans JP', 'IBM+Plex+Sans+JP:wght@400;600;700', "'IBM Plex Sans JP'"],
+  mplus:['M PLUS 1p', 'M+PLUS+1p:wght@400;700;800', "'M PLUS 1p'"],
+  zen:  ['Zen 角ゴシック New', 'Zen+Kaku+Gothic+New:wght@400;700;900', "'Zen Kaku Gothic New'"],
+}
+function applyFont(dev){
+  const [, q, fam] = FONTS[S.font.v]
+  if (q && !document.getElementById('gf-'+S.font.v)){
+    const l=document.createElement('link'); l.id='gf-'+S.font.v; l.rel='stylesheet'
+    l.href='https://fonts.googleapis.com/css2?family='+q+'&display=swap'; document.head.appendChild(l)
+    document.fonts && document.fonts.ready.then(()=>{})
+  }
+  dev.style.fontFamily = fam ? fam+',sans-serif' : ''
+}
+const COMMON_OPTS = [
+  {q:'フォント', k:['font','v'], v:Object.entries(FONTS).map(([k,v])=>[k,v[0]]), why:'「端末の標準」以外は、選ぶとインターネットから読み込む（比較のため）。実装ではファイルを同梱する。BIZ UDPゴシックは太さが 2 段階だけ'},
+  {q:'ボタンの形', k:['shape','v'], v:[['round','角丸（いまの案）'],['sq','角ばった'],['pill','丸い'],['role','役割で変える']], why:'「役割で変える」: 行き先へ出発するボタンは丸、道具のボタンは角、「終了」は片側だけ丸。位置と大きさは変えない'},
+]
+const optsOf = () => [...NOTES[S.scr].opts, ...COMMON_OPTS]
 function segHTML(items, cur, attr){ return items.map(([v,l])=>`<button class="${cur===v?'on':''}" ${attr}="${v}">${l}</button>`).join('') }
 function render(){
   document.getElementById('scrSeg').innerHTML = segHTML(SCRS, S.scr, 'data-scr')
@@ -659,7 +689,8 @@ function render(){
   const dev=document.getElementById('dev')
   const [W,H] = S.ori==='L' ? [1280,720] : [960,1280]
   dev.style.width=W+'px'; dev.style.height=H+'px'
-  dev.className = (S.ori==='P' ? 'portrait' : '') + (S.look.v==='lean' ? ' lean' : '')
+  dev.className = (S.ori==='P' ? 'portrait' : '') + ' shape-' + S.shape.v
+  applyFont(dev)
   dev.innerHTML = (S.scr==='menu'?menuView():S.scr==='day'?dayView():prepView()) + '<div class="toast"></div>'
   if (S.ori==='P') dev.querySelectorAll('.content').forEach(c=>{ const mv=c.querySelector('.mainv'); if (mv) mv.style.minHeight='560px' })
   fit(); renderNotes()
@@ -757,7 +788,7 @@ document.addEventListener('click', e=>{
   if (t.dataset.scr){ S.scr=t.dataset.scr; return render() }
   if (t.dataset.sub){ setSub(t.dataset.sub); return render() }
   if (t.dataset.ori){ S.ori=t.dataset.ori; return render() }
-  if (t.dataset.opt!==undefined){ const o=NOTES[S.scr].opts[+t.dataset.opt]; S[o.k[0]][o.k[1]]=JSON.parse(t.dataset.v); return render() }
+  if (t.dataset.opt!==undefined){ const o=optsOf()[+t.dataset.opt]; S[o.k[0]][o.k[1]]=JSON.parse(t.dataset.v); return render() }
   if (t.closest('.dis,[data-dis]') && !t.dataset.act) return
   act(t.dataset.act, t.dataset.id)
 })
