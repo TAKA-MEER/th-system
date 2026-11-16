@@ -129,6 +129,9 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .shape-role .b.go,.shape-role .b.adv{border-radius:999px}
 .shape-role .b.exit{border-radius:3px 14px 14px 3px}
 
+.mapctl{position:absolute;left:10px;bottom:10px;display:flex;gap:8px;z-index:3}
+.mapctl .b{min-height:44px;font-size:16px;background:#232733e6}
+
 /* 右列（試験場内） */
 .ctl{width:440px;flex:none;display:flex;flex-direction:column;gap:8px}
 .portrait .ctl{width:auto;display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -247,7 +250,7 @@ const S = {
   scr:'menu', ori:'L',
   tracker:true,   // 人検出（試験準備・試験で共有。左上の操作バーのトグル）
   menu:{lvl:'top', trackerOff:false, noRoute:false},
-  font:{v:'sys'}, shape:{v:'round'},
+  font:{v:'sys'}, shape:{v:'round'}, map:{rot:0, view:'2d'}, trk:{w:'io'},
   day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0,
        abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
   help:{on:true},   // ヘルプ表示（2026-11-15 ユーザー案。設定で切り替え）
@@ -292,10 +295,11 @@ function tog(stop, run, {runLabel='走行', runHint='押すと走り出す', bli
 // 人検出の開始／停止（2026-11-13: 案の画面に動かす手段が無かった。いまの実装は対象選択タブの中）。対のトグル（R4）。
 // 呼び寄せ中・登録中は止められない（機体が拒否する。trackerControlPolicy.js）。
 function trackerBar(canStop=true){
-  const on=S.tracker
+  const on=S.tracker, io=S.trk.w==='io'
+  const [offDo, offCur, onDo, onCur] = io ? ['切','切','入','入'] : ['■ 止める','■ 停止中','● 動かす','● 動作中']
   return `<span class="cap">人検出</span><div class="tg sm" data-btn data-help="tracker">
-    ${on?(canStop?`<div class="press" data-act="trkOff">■ 止める</div>`:`<div class="off">■ 止める</div>`):`<div class="cur">■ 停止中</div>`}<span class="sep"></span>
-    ${on?`<div class="cur">● 動作中</div>`:`<div class="press" data-act="trkOn">● 動かす</div>`}</div>`
+    ${on?(canStop?`<div class="press" data-act="trkOff">${offDo}</div>`:`<div class="off">${offDo}</div>`):`<div class="cur">${offCur}</div>`}<span class="sep"></span>
+    ${on?`<div class="cur">${onCur}</div>`:`<div class="press" data-act="trkOn">${onDo}</div>`}</div>`
 }
 // ヘッダ（2026-11-15 決定 D21〜D24）: ロゴ・プロジェクト名の真後ろに画面名称（位置をほぼ固定）。
 // 右端の札はモードではなく状態。ゾーンは場内のときだけ「速度制限」。
@@ -319,47 +323,86 @@ const PINS = [
 ]
 const pinById = id => PINS.find(p=>p.id===id)
 function rand(seed){ let s=seed; return ()=>((s=(s*9301+49297)%233280)/233280) }
+// 地図の描画。地図の向き（S.map.rot。試験準備で変える・D30）と見え方（平面／擬似 3D。試し）を 1 つの投影で扱う。
+// 印の名前と吹き出しは回さず、常に正立させる。機体の四角形・経路・壁は地図と一緒に回る。
+const OBST = [[380,200,300,60],[160,250,70,140],[700,470,160,50,true]]   // 末尾 true: 試験準備ではまだ見えていない側
+const EXPLORED = [[40,40],[700,40],[760,180],[640,330],[480,380],[330,600],[40,600]]
+function mapProj(){
+  const th=S.map.rot*Math.PI/180, c=Math.cos(th), sn=Math.sin(th), k = S.map.view==='3d' ? 0.56 : 1
+  const raw=(x,y)=>{ const dx=x-500, dy=y-310; return [dx*c-dy*sn, (dx*sn+dy*c)*k] }
+  const cs=[[40,40],[960,40],[960,580],[40,580]].map(q=>raw(...q))
+  const xs=cs.map(q=>q[0]), ys=cs.map(q=>q[1])
+  const w=Math.max(...xs)-Math.min(...xs), h=Math.max(...ys)-Math.min(...ys)
+  const top = S.map.view==='3d' ? 50 : 0
+  const sc=Math.min(920/w, (540-top)/h, 1.3)
+  const P=(x,y)=>{ const [u,v]=raw(x,y); return [500+u*sc, 310+top/2+v*sc] }
+  return {P, sc, d3:S.map.view==='3d'}
+}
 function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, scan=true}){
+  const {P, sc, d3} = mapProj()
+  const pt = q => q.map(v=>v.toFixed(1)).join(',')
+  const poly = (qs, attr) => `<polygon points="${qs.map(pt).join(' ')}" ${attr}/>`
+  const rectC = (x,y,w,h) => [[x,y],[x+w,y],[x+w,y+h],[x,y+h]]
+  // 箱（擬似 3D のときだけ高さを持つ）
+  const box = (cs, h, top, side, stroke, sw=3) => {
+    const g=cs.map(q=>P(...q))
+    if (!d3 || !h) return poly(g, `fill="${top}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"`)
+    const t=g.map(([x,y])=>[x,y-h*sc]); let faces=[]
+    for (let i=0;i<g.length;i++){ const j=(i+1)%g.length; faces.push([(g[i][1]+g[j][1])/2, poly([g[i],g[j],t[j],t[i]], `fill="${side}" stroke="${stroke}" stroke-width="1.5" stroke-linejoin="round"`)]) }
+    return faces.sort((a,b)=>a[0]-b[0]).map(f=>f[1]).join('') + poly(t, `fill="${top}" stroke="${stroke}" stroke-width="2" stroke-linejoin="round"`)
+  }
+  const depth = cs => Math.max(...cs.map(q=>P(...q)[1]))
   const r = rand(7); let pts=''
   if (scan) for (let i=0;i<140;i++){ const t=r()
     const [x,y] = t<.25?[40+r()*920,40]:t<.5?[40+r()*920,580]:t<.75?[40,40+r()*540]:[960,40+r()*540]
-    pts += `<circle cx="${x+(r()-.5)*8}" cy="${y+(r()-.5)*8}" r="2.2" fill="#e05252" opacity=".55"/>` }
-  const walls = `<rect x="40" y="40" width="920" height="540" fill="#1b1f27" stroke="#7d8696" stroke-width="5"/>
-    <rect x="380" y="200" width="300" height="60" fill="#0f1117" stroke="#7d8696" stroke-width="4"/>
-    <rect x="160" y="250" width="70" height="140" fill="#0f1117" stroke="#7d8696" stroke-width="4"/>
-    <rect x="700" y="470" width="160" height="50" fill="#0f1117" stroke="#7d8696" stroke-width="4"/>`
-  const clip = partial ? `<clipPath id="exp"><path d="M40 40H700L760 180L640 330L480 380L330 600H40Z"/></clipPath>` : ''
-  let pinG=''
+    const [px,py]=P(x+(r()-.5)*8, y+(r()-.5)*8)
+    pts += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.2" fill="#e05252" opacity=".55"/>` }
+  const room = rectC(40,40,920,540)
+  const clip = partial ? `<clipPath id="exp">${poly(EXPLORED.map(q=>P(...q)),'')}</clipPath>` : ''
+  const floor = `<g ${partial?'clip-path="url(#exp)"':''}>${poly(room.map(q=>P(...q)), `fill="#1b1f27" stroke="#7d8696" stroke-width="5" stroke-linejoin="round"`)}</g>`
+    + (partial ? poly(EXPLORED.map(q=>P(...q)), 'fill="none" stroke="#3a3f4c" stroke-dasharray="6 6"') : '')
+  // 奥から手前へ重ねるもの
+  const items=[]
+  if (d3 && !partial) for (const cs of [rectC(40,36,920,8),rectC(40,576,920,8),rectC(36,40,8,540),rectC(956,40,8,540)])
+    items.push([depth(cs)-1, `<g opacity=".8">${box(cs, 24, '#8a93a3', '#4a5160', '#9aa3b3')}</g>`])
+  for (const [x,y,w,h,far] of OBST){ if (partial && far) continue
+    const cs=rectC(x,y,w,h); items.push([depth(cs), box(cs, 48, d3?'#3d4658':'#0f1117', '#262c39', '#8f98a8', 4)]) }
+  if (robot){ const [rx,ry,ra]=robot, a=ra*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a)
+    const L=(x,y)=>[rx+x*ca-y*sa, ry+x*sa+y*ca]
+    const fp=[[-17,-17],[17,-17],[17,17],[-17,17]].map(q=>L(...q)), hz=d3?18*sc:0
+    const tri=[[-9,-10],[13,0],[-9,10]].map(q=>L(...q)).map(q=>P(...q)).map(([x,y])=>[x,y-hz])
+    items.push([depth(fp)+1, box(fp, 18, 'rgba(63,138,224,.45)', 'rgba(63,138,224,.3)', '#7fb4ee', 1.5) + poly(tri, 'fill="#7fb4ee" stroke="#fff" stroke-width="2" stroke-linejoin="round"')]) }
+  const lift = d3 ? 34 : 0, mk={}; let labels=''
   for (const p of pins){
-    const isSel = sel===p.id
-    pinG += `<g data-act="pin" data-id="${p.id}" style="cursor:pointer">
-      <circle cx="${p.x}" cy="${p.y}" r="34" fill="transparent"/>
+    const isSel = sel===p.id, [gx,gy]=P(p.x,p.y), x=gx, y=gy-lift; mk[p.id]=[x,y]
+    items.push([gy+2, `<g data-act="pin" data-id="${p.id}" style="cursor:pointer">
+      ${d3?`<ellipse cx="${gx}" cy="${gy}" rx="9" ry="5" fill="#000" opacity=".45"/><path d="M${gx} ${gy}V${y}" stroke="#e6e8ec" stroke-width="3"/>`:''}
+      <circle cx="${x}" cy="${y}" r="34" fill="transparent"/>
       ${p.kind==='home'
-        ? `<path d="M${p.x-16} ${p.y+2}L${p.x} ${p.y-14}L${p.x+16} ${p.y+2}V${p.y+16}H${p.x-16}Z" fill="${isSel?'#8fd694':'#4caf50'}" stroke="#0f1117" stroke-width="2"/>`
-        : `<rect x="${p.x-14}" y="${p.y-14}" width="28" height="28" rx="4" fill="${isSel?'#7fb4ee':'#3f8ae0'}" stroke="#0f1117" stroke-width="2"/>`}
-      ${dest===p.id?`<circle cx="${p.x}" cy="${p.y}" r="30" fill="none" stroke="#ffd54f" stroke-width="5"/>`:''}
-      ${isSel?`<circle cx="${p.x}" cy="${p.y}" r="24" fill="none" stroke="#fff" stroke-width="3"/>`:''}
-      <text x="${p.x}" y="${p.y+40}" text-anchor="middle" font-size="22" font-weight="700" fill="#e6e8ec" stroke="#0f1117" stroke-width="5" paint-order="stroke">${p.name}</text></g>`
+        ? `<path d="M${x-16} ${y+2}L${x} ${y-14}L${x+16} ${y+2}V${y+16}H${x-16}Z" fill="${isSel?'#8fd694':'#4caf50'}" stroke="#0f1117" stroke-width="2"/>`
+        : `<rect x="${x-14}" y="${y-14}" width="28" height="28" rx="4" fill="${isSel?'#7fb4ee':'#3f8ae0'}" stroke="#0f1117" stroke-width="2"/>`}
+      ${dest===p.id?`<circle cx="${x}" cy="${y}" r="30" fill="none" stroke="#ffd54f" stroke-width="5"/>`:''}
+      ${isSel?`<circle cx="${x}" cy="${y}" r="24" fill="none" stroke="#fff" stroke-width="3"/>`:''}
+      </g>`])
+    labels += `<text x="${gx}" y="${gy+(d3?24:40)}" text-anchor="middle" font-size="22" font-weight="700" fill="#e6e8ec" stroke="#0f1117" stroke-width="5" paint-order="stroke" pointer-events="none">${p.name}</text>`
   }
   let bubble=''
-  if (sel){ const p=pinById(sel); const bx=Math.min(Math.max(p.x-130,50),690), by=p.y>300?p.y-170:p.y+60
+  if (sel){ const p=pinById(sel), [mx,my]=mk[sel]; const bx=Math.min(Math.max(mx-130,50),690), by=my>300?my-170:my+60
     bubble = `<g><rect x="${bx}" y="${by}" width="260" height="104" rx="12" fill="#232733" stroke="#7fb4ee" stroke-width="2"/>
       <text x="${bx+16}" y="${by+34}" font-size="24" font-weight="800" fill="#fff">${p.name}</text>
       <g data-act="pinGo" data-btn style="cursor:pointer"><rect x="${bx+14}" y="${by+48}" width="232" height="44" rx="8" fill="#2c4a74" stroke="#3f8ae0" stroke-width="2"/>
       <text x="${bx+130}" y="${by+78}" text-anchor="middle" font-size="21" font-weight="700" fill="#fff">${selLabel}</text></g></g>`
   }
-  const rb = robot ? `<g transform="translate(${robot[0]} ${robot[1]}) rotate(${robot[2]})"><rect x="-17" y="-17" width="34" height="34" rx="2" fill="#3f8ae0" fill-opacity=".3" stroke="#7fb4ee" stroke-width="1.5"/><path d="M-9 -10L13 0L-9 10Z" fill="#7fb4ee" stroke="#fff" stroke-width="2"/></g>` : ''
-  const pl = path ? `<polyline points="${path.map(p=>p.join(',')).join(' ')}" fill="none" stroke="#ffd54f" stroke-width="5" stroke-dasharray="14 9"/>` : ''
-  return `<svg class="map" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">${clip}
-    <g ${partial?'clip-path="url(#exp)"':''}>${walls}</g>${partial?'<path d="M40 40H700L760 180L640 330L480 380L330 600H40Z" fill="none" stroke="#3a3f4c" stroke-dasharray="6 6"/>':''}
-    ${pts}${pl}${pinG}${rb}${bubble}</svg>`
+  const pl = path ? `<polyline points="${path.map(q=>pt(P(...q))).join(' ')}" fill="none" stroke="#ffd54f" stroke-width="5" stroke-dasharray="14 9"/>` : ''
+  return `<svg class="map" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">${clip}${floor}
+    ${pts}${pl}${items.sort((a,b)=>a[0]-b[0]).map(i=>i[1]).join('')}${labels}${bubble}</svg>`
 }
 function radarSVG(big, off=false){
   if (off) return `<div class="radar ${big?'big':''}" style="display:flex;align-items:center;justify-content:center;text-align:center;color:var(--mut);font-size:15px;padding:16px">人検出が止まっています<br>左上の「人検出」で動かします</div>`
   const cands=[[60,-90,true],[-110,-40,false],[130,60,false],[-70,110,false]]
   let c=''
   cands.forEach(([x,y,s],i)=>{ c+=`<g><circle cx="${150+x}" cy="${150+y}" r="${s?15:11}" fill="${s?'#4caf50':'#8b93a1'}"/>${s?`<circle cx="${150+x}" cy="${150+y}" r="24" fill="none" stroke="#8fd694" stroke-width="3"/>`:''}<text x="${150+x}" y="${150+y+5}" text-anchor="middle" font-size="13" font-weight="800" fill="#0f1117">${i+1}</text></g>` })
-  return `<div class="radar ${big?'big':''}"><span class="cap">対象: 1 番（信頼度 87%）— 別の人を押すと切り替え</span>
+  return `<div class="radar ${big?'big':''}"><span class="cap">対象: 1 番（信頼度 87%）</span>
     <svg viewBox="0 0 300 300" style="width:100%;height:100%"><circle cx="150" cy="150" r="60" fill="none" stroke="#2a2d35"/><circle cx="150" cy="150" r="120" fill="none" stroke="#2a2d35"/>
     <path d="M150 20V280M20 150H280" stroke="#2a2d35"/><path d="M140 160L150 135L160 160Z" fill="#7fb4ee"/>${c}</svg></div>`
 }
@@ -511,6 +554,7 @@ function prepView(){
     return:['待機場所へ戻る途中', ''],
   }[s]
   let mainInner = mapSVG({robot:s==='return'?[300,330,135]:[420,300,180], path:s==='return'?[[300,330],[130,330],[130,450]]:null, partial:true, scan:true})
+  mainInner += `<div class="mapctl">${btn('rotL','左へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}${btn('rotR','右へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}</div>`
   if (s==='entry') mainInner += `<div class="center"><div class="card"><p>前回の試験場内地図とピン（${p.pins} 件）が残っています</p>
       ${btn('resume','続きから再開',{icon:'play',cls:'adv'})}
       ${btn('fresh','新しい試験日として開始（前回を消す）',{icon:'close'})}</div></div>`
@@ -529,7 +573,7 @@ function prepView(){
     <div class="sec full"><h3>戻す</h3>${btn('goHome','待機場所に戻る',{icon:'home',cls:'go',dis:!mapping})}</div>
   </div>`
   const unsaved = s!=='entry' ? '<span class="pill">未保存</span>' : ''
-  return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body"><div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${unsaved}${trackerBar(s!=='reg')}</div>
+  return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body"><div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${trackerBar(s!=='reg')}${unsaved}</div>
     <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
 }
 
@@ -567,6 +611,8 @@ function act(a, id){
   }
   if (S.scr==='prep'){
     switch(a){
+      case 'rotL': S.map.rot=(S.map.rot+345)%360; break
+      case 'rotR': S.map.rot=(S.map.rot+15)%360; break
       case 'resume': p.sub='mapping'; break
       case 'fresh': p.sub='mapping'; p.pins=0; toast('前回の地図とピンを消して、地図作成を始めた'); break
       case 'method': p.method=id; break
@@ -676,11 +722,15 @@ function applyFont(dev){
   }
   dev.style.fontFamily = fam ? fam+',sans-serif' : ''
 }
+const MAP_OPTS = [
+  {q:'地図の見え方（試し）', k:['map','view'], v:[['2d','平面'],['3d','擬似 3D']], why:'2026-11-16 の試し。平面の地図を斜め上から見た形にし、壁と障害物と機体に高さを付ける。壁の本当の高さは地図に無いので、高さは一律の仮。印の名前は正立のまま'},
+  {q:'人検出のトグルの語', k:['trk','w'], v:[['io','切 ／ 入'],['stop','止める ／ 動作中']], why:'機体の「停止／走行」と語が重なるという指摘（V10）。形は同じ'},
+]
 const COMMON_OPTS = [
   {q:'フォント', k:['font','v'], v:Object.entries(FONTS).map(([k,v])=>[k,v[0]]), why:'「端末の標準」以外は、選ぶとインターネットから読み込む（比較のため）。実装ではファイルを同梱する。BIZ UDPゴシックは太さが 2 段階だけ'},
   {q:'ボタンの形', k:['shape','v'], v:[['round','角丸（いまの案）'],['sq','角ばった'],['pill','丸い'],['role','役割で変える']], why:'「役割で変える」: 行き先へ出発するボタンは丸、道具のボタンは角、「終了」は片側だけ丸。位置と大きさは変えない'},
 ]
-const optsOf = () => [...NOTES[S.scr].opts, ...COMMON_OPTS]
+const optsOf = () => [...NOTES[S.scr].opts, ...(S.scr==='menu'?[]:MAP_OPTS), ...COMMON_OPTS]
 function segHTML(items, cur, attr){ return items.map(([v,l])=>`<button class="${cur===v?'on':''}" ${attr}="${v}">${l}</button>`).join('') }
 function render(){
   document.getElementById('scrSeg').innerHTML = segHTML(SCRS, S.scr, 'data-scr')
