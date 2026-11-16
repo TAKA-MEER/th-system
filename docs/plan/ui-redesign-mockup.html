@@ -250,7 +250,7 @@ const S = {
   scr:'menu', ori:'L',
   tracker:true,   // 人検出（試験準備・試験で共有。左上の操作バーのトグル）
   menu:{lvl:'top', trackerOff:false, noRoute:false},
-  font:{v:'sys'}, shape:{v:'round'}, map:{rot:0, view:'2d'}, trk:{w:'io'},
+  font:{v:'sys'}, shape:{v:'role'}, map:{rot:0, view:'2d'}, trk:{w:'io'},
   day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0,
        abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
   help:{on:true},   // ヘルプ表示（2026-11-15 ユーザー案。設定で切り替え）
@@ -313,70 +313,93 @@ const DAY_STATE = {unloaded:'準備中', undeclared:'準備中', home:'待機中
 const PREP_STATE = {entry:'準備中', mapping:'地図作成中', reg:'登録中', return:'待機場所へ移動中'}
 
 /* ---------------- 地図 ---------------- */
+// 実機が作った地図（経路地図「試験ブロックC2」。2026-11-13。0.05 m／マス）を埋め込んだもの。生成: 作業用スクリプト
+const MAPDATA = {w:287, h:199, res:0.05, bb:[0, 0, 287, 199], png:'data:image/png;base64,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', runs:[0,71,4,0,109,4,0,115,1,0,117,21,0,140,1,0,169,3,1,69,1,1,72,4,1,105,1,1,111,1,1,113,28,1,147,5,1,153,22,1,186,1,2,103,1,2,106,1,2,110,2,2,113,4,2,136,1,2,152,5,2,158,7,2,173,4,2,183,1,2,186,1,3,73,1,3,108,7,3,140,1,3,144,1,3,148,7,3,160,1,3,176,1,3,183,1,3,186,1,4,72,2,4,108,1,4,111,1,4,116,1,4,127,1,4,146,4,4,152,1,4,160,2,4,167,1,4,173,2,4,176,2,4,184,3,5,110,2,5,115,1,5,142,1,5,146,5,5,153,1,5,185,2,6,78,1,6,107,2,6,112,1,6,141,2,6,146,3,6,158,1,6,163,1,6,175,2,6,186,1,7,76,2,7,107,1,7,111,2,7,115,1,7,146,1,7,148,1,7,186,1,7,224,2,8,80,1,8,107,1,8,110,10,8,141,2,8,145,4,8,165,2,9,81,5,9,89,1,9,106,2,9,114,4,9,121,1,9,142,4,9,148,1,9,152,1,9,165,1,9,179,2,10,84,4,10,106,1,10,116,1,10,119,2,10,140,5,10,147,2,10,152,1,10,163,1,10,179,5,10,185,4,11,88,1,11,106,2,11,113,1,11,146,2,11,151,2,11,160,3,11,164,1,11,180,1,11,183,2,11,186,1,12,81,2,12,88,2,12,107,3,12,116,1,12,120,2,12,140,3,12,151,3,12,159,1,12,163,2,12,178,2,12,183,7,12,243,1,13,81,1,13,105,4,13,121,1,13,124,2,13,146,2,13,174,3,13,186,1,13,188,3,13,196,1,14,77,1,14,105,2,14,122,3,14,160,1,14,162,2,14,165,1,14,174,5,14,186,2,14,189,1,14,193,1,14,195,2,14,232,2,15,77,2,15,106,1,15,146,2,15,160,2,15,163,2,15,176,2,15,190,1,15,192,1,15,203,1,15,231,1,15,234,1,16,105,2,16,159,1,16,163,1,16,175,1,16,190,4,16,197,1,16,199,1,17,105,2,17,146,2,17,159,1,17,165,2,17,188,2,17,195,1,17,197,3,17,203,1,18,79,1,18,82,2,18,146,2,18,159,1,18,176,1,18,188,2,18,196,6,18,203,2,19,96,1,19,99,8,19,125,1,19,146,2,19,158,2,19,166,2,19,182,1,19,194,1,19,198,7,19,218,1,20,71,1,20,79,2,20,85,1,20,94,13,20,116,1,20,125,1,20,146,2,20,158,1,20,176,1,20,182,1,20,203,4,20,217,2,21,70,1,21,85,1,21,97,1,21,118,1,21,125,1,21,138,2,21,163,2,21,204,6,21,213,1,22,68,1,22,71,1,22,81,1,22,117,3,22,158,1,22,162,1,22,174,1,22,182,1,22,191,1,22,205,1,22,208,1,22,210,3,22,217,1,22,219,1,23,67,1,23,81,1,23,117,1,23,119,1,23,157,1,23,165,2,23,191,1,23,210,1,23,213,2,23,219,1,23,224,1,24,68,1,24,81,2,24,117,4,24,158,3,24,163,1,24,166,1,24,180,1,24,192,1,24,203,1,24,205,1,24,211,2,24,221,1,25,67,1,25,76,1,25,81,1,25,118,3,25,127,2,25,158,1,25,166,2,25,190,1,25,203,3,25,221,1,26,67,2,26,76,1,26,81,1,26,119,2,26,128,1,26,158,1,26,160,3,26,164,2,26,167,1,26,201,1,26,203,2,26,206,1,26,210,1,26,212,1,26,221,1,27,68,1,27,75,1,27,116,2,27,120,2,27,143,2,27,157,12,27,203,2,27,207,1,27,211,1,28,67,1,28,70,2,28,75,2,28,79,1,28,82,1,28,119,2,28,158,3,28,162,1,28,166,2,28,178,1,28,186,1,28,203,2,28,207,1,28,216,1,28,226,1,29,3,1,29,68,2,29,71,6,29,79,1,29,82,1,29,120,1,29,158,2,29,187,1,29,204,2,29,211,1,29,216,1,30,66,1,30,69,1,30,71,2,30,75,1,30,79,3,30,120,1,30,176,1,30,184,2,30,213,2,30,216,1,31,6,1,31,66,1,31,69,4,31,116,1,31,122,3,31,175,2,31,184,1,31,204,1,31,213,1,31,223,1,32,65,3,32,69,3,32,112,1,32,115,2,32,121,3,32,204,1,32,209,1,32,211,1,32,223,3,33,6,1,33,12,1,33,66,2,33,70,1,33,202,2,33,210,1,33,212,1,33,223,1,34,11,2,34,66,1,34,70,1,34,117,2,34,199,3,34,210,2,34,218,1,34,220,1,34,224,1,35,10,1,35,65,2,35,77,1,35,116,1,35,201,1,35,206,1,35,210,3,35,221,1,35,225,1,36,5,1,36,12,1,36,15,2,36,65,2,36,70,1,36,75,2,36,122,2,36,202,1,36,204,1,36,209,2,36,212,3,36,225,1,37,3,2,37,14,2,37,22,1,37,65,2,37,71,1,37,77,2,37,95,1,37,205,1,37,207,3,37,215,2,37,225,1,38,1,1,38,3,1,38,12,1,38,14,2,38,22,1,38,66,2,38,77,1,38,127,1,38,203,1,38,208,1,38,224,1,38,285,1,39,11,4,39,66,2,39,74,1,39,126,1,39,208,1,40,2,1,40,10,3,40,14,1,40,17,1,40,66,4,40,81,1,40,201,1,41,12,1,41,14,1,41,66,3,41,70,1,41,81,2,41,205,1,42,4,1,42,13,1,42,16,1,42,66,3,42,82,2,42,111,1,42,124,1,42,285,1,43,4,1,43,7,1,43,9,1,43,14,2,43,68,1,43,75,2,43,124,1,43,126,1,43,133,1,43,183,1,43,199,2,43,285,2,44,4,1,44,14,2,44,67,2,44,70,1,44,77,1,44,124,1,44,132,3,44,285,1,45,7,1,45,9,1,45,15,3,45,67,2,45,77,2,45,185,1,45,198,1,45,285,1,46,9,2,46,15,2,46,67,2,46,71,1,46,77,2,46,125,1,46,131,1,46,185,1,46,197,1,46,199,1,46,224,1,46,285,2,47,4,2,47,8,2,47,17,1,47,67,2,47,70,1,47,75,1,47,77,2,47,124,2,47,135,1,47,198,1,47,224,2,47,285,1,48,5,2,48,9,1,48,38,1,48,67,2,48,72,7,48,87,2,48,115,2,48,123,3,48,175,4,48,180,1,48,198,1,48,224,1,49,4,2,49,25,1,49,66,3,49,71,7,49,87,1,49,123,2,49,135,2,49,175,3,49,195,1,49,213,1,49,216,1,49,221,1,50,4,1,50,6,1,50,13,1,50,22,1,50,67,8,50,124,1,50,135,2,50,175,2,50,196,1,50,222,1,50,225,1,50,229,1,51,4,1,51,37,1,51,66,9,51,124,2,51,135,2,51,175,3,51,224,1,51,229,1,51,277,1,52,36,2,52,47,1,52,67,2,52,124,1,52,135,2,52,175,3,52,191,4,52,205,1,52,225,1,52,229,2,52,274,1,52,276,1,52,279,1,53,4,1,53,32,1,53,36,3,53,40,1,53,47,1,53,124,2,53,135,2,53,175,3,53,189,5,53,229,2,53,274,1,53,276,2,53,279,2,54,4,1,54,6,1,54,32,1,54,36,1,54,38,1,54,48,1,54,124,2,54,135,2,54,175,3,54,190,3,54,200,2,54,230,1,54,278,1,54,280,1,55,38,1,55,47,2,55,124,1,55,134,3,55,175,3,55,189,2,55,198,3,55,229,2,55,279,2,56,7,1,56,15,1,56,34,1,56,37,1,56,43,1,56,45,1,56,47,2,56,124,2,56,135,2,56,176,2,56,181,8,56,199,2,56,229,2,56,266,1,56,279,1,57,15,1,57,33,1,57,37,2,57,43,1,57,47,2,57,124,13,57,176,13,57,195,3,57,230,6,57,237,2,57,241,1,57,266,1,57,279,1,58,46,3,58,125,4,58,176,8,58,195,2,58,224,1,58,230,1,58,232,1,58,235,1,58,237,2,58,241,1,58,278,2,59,37,1,59,46,3,59,195,2,59,224,1,59,264,1,59,278,2,60,39,1,60,47,2,60,195,2,60,233,1,60,264,1,60,279,1,60,284,1,61,0,1,61,2,1,61,35,1,61,39,2,61,47,2,61,195,2,61,279,2,61,284,1,62,0,1,62,2,1,62,27,1,62,32,2,62,35,1,62,38,2,62,41,2,62,47,2,62,195,2,62,228,3,62,279,2,62,284,1,63,0,3,63,27,1,63,32,2,63,38,2,63,41,2,63,195,5,63,201,6,63,226,3,63,230,1,63,232,1,63,234,1,63,279,3,63,284,1,64,1,2,64,195,9,64,205,3,64,226,2,64,278,2,64,284,1,65,0,2,65,196,9,65,206,1,65,227,2,65,230,1,65,279,1,65,284,1,66,1,1,66,7,1,66,12,2,66,227,3,66,279,1,66,284,2,67,1,1,67,7,1,67,9,1,67,12,1,67,227,2,67,234,1,67,279,1,67,284,2,68,6,1,68,9,1,68,11,2,68,228,4,68,278,2,68,282,1,68,284,2,69,1,1,69,6,1,69,11,2,69,278,2,69,284,2,70,6,1,70,11,2,70,277,1,70,279,1,70,283,3,71,9,1,71,11,2,71,279,1,71,284,1,72,10,3,72,14,1,72,19,1,72,60,3,72,279,1,72,284,2,73,14,1,73,18,2,73,32,1,73,61,3,73,70,2,73,279,1,73,284,2,74,14,1,74,19,1,74,70,2,74,74,1,74,77,2,74,278,2,74,284,2,75,71,1,75,74,1,75,77,3,75,82,2,75,279,1,75,284,1,76,77,1,76,82,2,76,92,5,76,279,1,76,284,2,77,82,5,77,93,10,77,279,1,77,284,2,78,82,2,78,96,1,78,98,12,78,279,1,78,284,2,79,83,2,79,104,1,79,106,1,79,108,2,79,279,1,79,284,2,80,98,1,80,100,1,80,103,4,80,279,2,80,284,2,81,94,1,81,100,1,81,102,10,81,279,1,81,285,1,82,106,1,82,108,2,82,279,1,82,284,2,83,96,1,83,137,3,83,283,3,84,96,1,84,279,1,84,283,3,85,95,2,85,123,1,85,134,2,85,141,2,85,152,2,85,225,1,85,285,1,86,95,1,86,105,2,86,123,2,86,134,3,86,141,2,86,152,2,86,225,1,86,279,1,86,282,1,86,284,2,87,95,1,87,100,1,87,103,3,87,135,1,87,156,1,87,226,2,87,231,1,87,279,1,87,282,4,88,95,2,88,103,2,88,114,2,88,156,1,88,207,1,88,226,2,88,229,1,88,234,2,88,239,1,88,255,1,88,258,1,88,262,1,88,268,2,88,279,1,88,282,1,88,284,1,89,94,2,89,102,2,89,207,2,89,226,2,89,234,1,89,255,1,89,257,2,89,264,1,89,268,2,89,271,1,89,273,1,89,277,1,89,279,1,89,282,1,89,284,2,90,94,3,90,101,1,90,161,1,90,225,4,90,231,2,90,234,2,90,245,2,90,255,1,90,268,2,90,284,1,91,94,7,91,154,2,91,160,2,91,225,3,91,230,2,91,234,1,91,237,1,91,246,1,91,248,1,91,254,2,92,95,1,92,97,6,92,212,2,92,255,1,93,97,1,93,111,1,93,212,2,93,215,1,93,237,3,93,255,1,94,93,1,94,99,4,94,104,2,94,111,4,94,159,1,94,237,5,94,255,1,95,94,1,95,97,2,95,100,9,95,114,1,95,156,1,95,158,4,95,189,2,95,238,2,96,93,1,96,95,1,96,107,1,96,114,1,96,156,6,96,188,1,96,190,1,96,237,4,97,93,1,97,107,1,97,114,1,97,129,1,97,156,4,97,187,3,97,237,3,98,92,1,98,106,1,98,108,1,98,113,1,98,155,2,98,187,1,98,189,1,98,237,2,98,240,1,99,106,2,99,113,2,99,155,2,99,200,1,99,237,1,100,106,2,100,113,2,100,132,1,100,135,1,100,150,2,100,154,3,100,199,3,100,237,1,100,239,2,100,246,1,100,249,1,101,106,1,101,113,1,101,132,2,101,135,2,101,150,1,101,154,3,101,200,1,101,233,1,101,243,1,101,246,1,101,248,1,102,106,1,102,113,2,102,130,1,102,136,1,102,153,4,102,202,1,102,230,1,102,245,1,102,250,2,103,105,2,103,131,3,103,153,3,103,200,1,103,202,1,103,204,1,103,206,1,103,212,2,103,229,1,103,250,1,104,133,1,104,152,4,104,200,2,104,203,1,104,212,2,104,229,2,104,234,1,104,236,2,104,242,1,105,105,2,105,130,1,105,135,1,105,153,1,105,206,1,105,214,2,105,229,3,105,236,1,105,240,1,105,259,1,106,106,1,106,130,1,106,132,3,106,185,5,106,207,1,106,215,1,106,219,1,106,229,3,106,234,1,106,239,5,106,259,1,107,106,1,107,131,3,107,155,3,107,185,5,107,230,3,107,236,4,107,241,1,107,243,2,108,93,1,108,105,1,108,156,2,108,185,6,108,232,1,108,234,1,108,236,3,108,241,1,108,244,1,108,249,1,108,268,1,109,99,1,109,157,2,109,185,1,109,234,3,109,259,1,109,270,1,110,134,2,110,142,1,110,152,2,110,157,2,110,185,1,110,234,3,110,257,1,110,259,2,110,268,2,110,271,1,111,100,5,111,123,2,111,135,2,111,141,2,111,152,2,111,157,2,111,185,1,111,192,1,111,234,2,111,268,1,111,271,1,112,96,1,112,101,1,112,103,1,112,106,2,112,124,1,112,133,2,112,141,2,112,152,1,112,154,1,112,157,3,112,185,1,112,193,7,112,226,1,112,230,1,112,264,1,112,267,1,112,271,1,112,285,1,113,93,1,113,103,1,113,106,1,113,123,1,113,133,1,113,152,1,113,154,1,113,157,2,113,186,1,113,193,8,113,216,1,113,230,1,113,267,1,114,144,1,114,152,1,114,157,1,114,189,1,114,201,1,114,240,1,114,285,1,115,96,2,115,122,1,115,190,1,115,284,1,116,125,1,116,189,2,116,246,1,116,276,2,116,281,1,116,283,1,117,94,1,117,190,1,117,222,1,117,245,5,117,277,1,117,280,1,118,98,1,118,130,1,118,133,1,118,144,2,118,190,3,118,224,1,118,226,1,118,241,1,118,245,5,119,94,2,119,98,1,119,144,1,119,146,1,119,188,5,119,235,2,119,240,2,119,244,3,119,248,1,120,95,1,120,120,1,120,188,2,120,226,1,120,237,4,120,243,1,120,246,1,120,248,1,121,94,1,121,228,2,121,237,4,121,243,5,121,249,1,122,93,1,122,99,1,122,130,1,122,189,2,122,234,4,122,239,2,122,243,3,122,247,3,123,93,1,123,190,1,123,230,3,123,234,3,123,241,1,124,93,1,124,189,2,124,230,1,124,234,1,124,243,2,125,94,1,125,189,3,125,230,1,125,242,1,126,94,1,126,104,2,126,189,1,126,230,1,126,240,2,126,244,2,127,104,1,127,189,2,127,230,1,127,240,1,128,94,1,128,179,2,128,189,2,128,227,1,128,242,1,129,93,1,129,99,4,129,179,2,129,189,2,129,226,3,129,241,1,130,92,3,130,96,1,130,124,1,130,179,2,130,190,2,130,225,3,130,229,1,130,231,1,130,242,1,130,244,1,131,92,2,131,96,1,131,189,2,131,223,5,131,229,3,131,242,2,132,92,3,132,111,1,132,140,1,132,190,1,132,224,2,133,93,3,133,109,4,133,180,1,133,189,2,133,244,2,134,92,3,134,96,1,134,110,2,134,189,2,134,232,1,134,240,2,134,246,1,135,93,1,135,95,1,135,101,1,135,111,2,135,189,2,135,234,1,135,245,1,136,92,1,136,95,3,136,99,4,136,111,3,136,131,1,136,187,1,136,189,2,136,245,1,137,95,6,137,102,4,137,107,1,137,112,1,137,116,1,137,119,2,137,186,5,137,245,2,138,97,1,138,102,3,138,112,1,138,116,6,138,181,1,138,186,2,138,245,2,139,103,3,139,116,2,139,120,3,139,182,1,139,186,2,139,245,2,140,104,1,140,110,3,140,121,2,140,182,1,140,186,2,140,245,2,141,104,2,141,111,2,141,122,1,141,182,1,141,186,2,141,232,1,141,246,1,142,104,2,142,113,1,142,115,1,142,186,1,142,225,2,142,229,3,143,114,1,143,186,1,143,224,1,143,228,1,143,242,1,144,103,2,144,106,1,144,183,1,144,186,1,144,230,1,144,232,1,145,105,2,145,110,6,145,122,1,145,127,1,145,183,1,145,186,2,145,230,2,145,237,1,146,106,1,146,110,4,146,120,1,146,122,1,146,126,2,146,186,2,146,236,1,146,238,1,147,119,26,147,163,2,147,184,3,147,232,2,147,239,1,147,241,1,148,128,38,148,184,3,149,145,12,149,159,1,149,161,5,149,185,2,151,164,1,151,184,1,158,188,1,182,194,2,196,165,1,196,168,2,196,171,5,196,192,1,197,157,42,197,200,2,197,203,2,197,206,1,197,209,1,197,216,1,198,197,1,198,205,1,198,208,1]}
+const CS=3.2, MX0=500-MAPDATA.w*CS/2, MY0=310-MAPDATA.h*CS/2      // 地図のマス → 描画の座標（1 マス 3.2）
+const C = (cx,cy,...r) => [MX0+cx*CS, MY0+cy*CS, ...r]
 const PINS = [
-  {id:'HOME', name:'待機場所', kind:'home', x:130, y:500},
-  {id:'A-1', name:'盤 A-1', kind:'panel', x:300, y:110},
-  {id:'A-2', name:'盤 A-2', kind:'panel', x:540, y:110},
-  {id:'B-1', name:'盤 B-1', kind:'panel', x:800, y:130},
-  {id:'B-2', name:'盤 B-2', kind:'panel', x:840, y:390},
-  {id:'C-1', name:'盤 C-1', kind:'panel', x:540, y:440},
-]
+  {id:'HOME', name:'待機場所', kind:'home', c:[175,176]},
+  {id:'A-1', name:'盤 A-1', kind:'panel', c:[96,49]},
+  {id:'A-2', name:'盤 A-2', kind:'panel', c:[152,42]},
+  {id:'B-1', name:'盤 B-1', kind:'panel', c:[252,74]},
+  {id:'B-2', name:'盤 B-2', kind:'panel', c:[205,80]},
+  {id:'C-1', name:'盤 C-1', kind:'panel', c:[160,131]},
+].map(p=>({...p, x:C(...p.c)[0], y:C(...p.c)[1]}))
 const pinById = id => PINS.find(p=>p.id===id)
 function rand(seed){ let s=seed; return ()=>((s=(s*9301+49297)%233280)/233280) }
 // 地図の描画。地図の向き（S.map.rot。試験準備で変える・D30）と見え方（平面／擬似 3D。試し）を 1 つの投影で扱う。
 // 印の名前と吹き出しは回さず、常に正立させる。機体の四角形・経路・壁は地図と一緒に回る。
-const OBST = [[380,200,300,60],[160,250,70,140],[700,470,160,50,true]]   // 末尾 true: 試験準備ではまだ見えていない側
-const EXPLORED = [[40,40],[700,40],[760,180],[640,330],[480,380],[330,600],[40,600]]
+const EXPLORED = [[0,0],[212,0],[216,60],[196,110],[202,199],[0,199]].map(q=>C(...q))   // 試験準備: ここまで地図ができている
+const TILT = 0.80          // 擬似 3D の縦のつぶし（1 = 真上。2026-11-16: 0.56 → 0.80 に控えめにした）
+const WALL_M = 0.5         // 擬似 3D の壁の高さ（仮。地図は高さを持たない）
+function inPoly(x,y,poly){ let c=false; for (let i=0,j=poly.length-1;i<poly.length;j=i++){ const [xi,yi]=poly[i],[xj,yj]=poly[j]
+  if ((yi>y)!==(yj>y) && x<(xj-xi)*(y-yi)/(yj-yi)+xi) c=!c } return c }
 function mapProj(){
-  const th=S.map.rot*Math.PI/180, c=Math.cos(th), sn=Math.sin(th), k = S.map.view==='3d' ? 0.56 : 1
+  const th=S.map.rot*Math.PI/180, c=Math.cos(th), sn=Math.sin(th), d3=S.map.view==='3d', k = d3 ? TILT : 1
   const raw=(x,y)=>{ const dx=x-500, dy=y-310; return [dx*c-dy*sn, (dx*sn+dy*c)*k] }
-  const cs=[[40,40],[960,40],[960,580],[40,580]].map(q=>raw(...q))
+  const [bx0,by0,bx1,by1]=MAPDATA.bb      // 地図ができている範囲で枠に合わせる
+  const cs=[C(bx0,by0),C(bx1,by0),C(bx1,by1),C(bx0,by1)].map(q=>raw(...q))
   const xs=cs.map(q=>q[0]), ys=cs.map(q=>q[1])
   const w=Math.max(...xs)-Math.min(...xs), h=Math.max(...ys)-Math.min(...ys)
-  const top = S.map.view==='3d' ? 50 : 0
-  const sc=Math.min(920/w, (540-top)/h, 1.3)
-  const P=(x,y)=>{ const [u,v]=raw(x,y); return [500+u*sc, 310+top/2+v*sc] }
-  return {P, sc, d3:S.map.view==='3d'}
+  const top = d3 ? 24 : 0
+  const sc=Math.min(980/w, (600-top)/h, 1.3)
+  const ox=(Math.max(...xs)+Math.min(...xs))/2, oy=(Math.max(...ys)+Math.min(...ys))/2
+  const P=(x,y)=>{ const [u,v]=raw(x,y); return [500+(u-ox)*sc, 310+top/2+(v-oy)*sc] }
+  const o=P(0,0)
+  const mtx=`matrix(${sc*c} ${sc*k*sn} ${-sc*sn} ${sc*k*c} ${o[0]} ${o[1]})`
+  const hpx = m => d3 ? m/MAPDATA.res*CS*sc*Math.sqrt(1-k*k) : 0     // 高さ m → 画面の縦のずれ
+  return {P, sc, d3, mtx, hpx}
+}
+// 壁（占有のマス）を箱に起こす。向き・見え方・範囲ごとに 1 回だけ作る
+const wallCache = {}
+function wallBoxes(partial){
+  const key=[S.map.rot, partial].join('|'); if (wallCache[key]) return wallCache[key]
+  const {P, hpx} = mapProj(), H=hpx(WALL_M), R=MAPDATA.runs, bs=[]
+  for (let i=0;i<R.length;i+=3){ const y=R[i], x0=R[i+1], n=R[i+2]
+    const g=[C(x0,y),C(x0+n,y),C(x0+n,y+1),C(x0,y+1)]
+    if (partial && !inPoly((g[0][0]+g[2][0])/2,(g[0][1]+g[2][1])/2,EXPLORED)) continue
+    const q=g.map(v=>P(...v)); bs.push([Math.max(...q.map(v=>v[1])), q]) }
+  bs.sort((a,b)=>a[0]-b[0])
+  const f=v=>v[0].toFixed(1)+' '+v[1].toFixed(1), up=v=>[v[0],v[1]-H]
+  const NB=70, per=Math.ceil(bs.length/NB); let out=''
+  for (let b=0;b<bs.length;b+=per){ let sd='', tp=''
+    for (const [,q] of bs.slice(b,b+per)){
+      for (let i=0;i<4;i++){ const j=(i+1)%4; sd+=`M${f(q[i])}L${f(q[j])}L${f(up(q[j]))}L${f(up(q[i]))}Z` }
+      tp+=`M${q.map(v=>f(up(v))).join('L')}Z` }
+    out+=`<path d="${sd}" fill="#3b4353"/><path d="${tp}" fill="#a3acbc"/>` }
+  return wallCache[key]=`<g pointer-events="none">${out}</g>`
 }
 function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, scan=true}){
-  const {P, sc, d3} = mapProj()
+  const {P, sc, d3, mtx, hpx} = mapProj()
   const pt = q => q.map(v=>v.toFixed(1)).join(',')
   const poly = (qs, attr) => `<polygon points="${qs.map(pt).join(' ')}" ${attr}/>`
-  const rectC = (x,y,w,h) => [[x,y],[x+w,y],[x+w,y+h],[x,y+h]]
-  // 箱（擬似 3D のときだけ高さを持つ）
-  const box = (cs, h, top, side, stroke, sw=3) => {
-    const g=cs.map(q=>P(...q))
-    if (!d3 || !h) return poly(g, `fill="${top}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"`)
-    const t=g.map(([x,y])=>[x,y-h*sc]); let faces=[]
-    for (let i=0;i<g.length;i++){ const j=(i+1)%g.length; faces.push([(g[i][1]+g[j][1])/2, poly([g[i],g[j],t[j],t[i]], `fill="${side}" stroke="${stroke}" stroke-width="1.5" stroke-linejoin="round"`)]) }
-    return faces.sort((a,b)=>a[0]-b[0]).map(f=>f[1]).join('') + poly(t, `fill="${top}" stroke="${stroke}" stroke-width="2" stroke-linejoin="round"`)
-  }
   const depth = cs => Math.max(...cs.map(q=>P(...q)[1]))
-  const r = rand(7); let pts=''
-  if (scan) for (let i=0;i<140;i++){ const t=r()
-    const [x,y] = t<.25?[40+r()*920,40]:t<.5?[40+r()*920,580]:t<.75?[40,40+r()*540]:[960,40+r()*540]
-    const [px,py]=P(x+(r()-.5)*8, y+(r()-.5)*8)
-    pts += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.2" fill="#e05252" opacity=".55"/>` }
-  const room = rectC(40,40,920,540)
   const clip = partial ? `<clipPath id="exp">${poly(EXPLORED.map(q=>P(...q)),'')}</clipPath>` : ''
-  const floor = `<g ${partial?'clip-path="url(#exp)"':''}>${poly(room.map(q=>P(...q)), `fill="#1b1f27" stroke="#7d8696" stroke-width="5" stroke-linejoin="round"`)}</g>`
+  const floor = `<g ${partial?'clip-path="url(#exp)"':''}><image href="${MAPDATA.png}" x="${MX0}" y="${MY0}" width="${MAPDATA.w*CS}" height="${MAPDATA.h*CS}" transform="${mtx}" preserveAspectRatio="none" style="image-rendering:pixelated"/></g>`
     + (partial ? poly(EXPLORED.map(q=>P(...q)), 'fill="none" stroke="#3a3f4c" stroke-dasharray="6 6"') : '')
-  // 奥から手前へ重ねるもの
+  const walls = d3 ? wallBoxes(partial) : ''
+  // いま LiDAR に見えている点（機体のまわりの壁）
+  let pts=''
+  if (scan && robot){ const R=MAPDATA.runs, H=hpx(WALL_M)
+    for (let i=0;i<R.length;i+=3){ const g=C(R[i+1]+R[i+2]/2, R[i]+.5), dx=g[0]-robot[0], dy=g[1]-robot[1]
+      if (dx*dx+dy*dy>170*170 || (i/3)%2) continue
+      const [px,py]=P(g[0],g[1]); pts+=`<circle cx="${px.toFixed(1)}" cy="${(py-H).toFixed(1)}" r="2.4" fill="#e05252" opacity=".8"/>` } }
+  // 奥から手前へ重ねるもの（機体・印）
   const items=[]
-  if (d3 && !partial) for (const cs of [rectC(40,36,920,8),rectC(40,576,920,8),rectC(36,40,8,540),rectC(956,40,8,540)])
-    items.push([depth(cs)-1, `<g opacity=".8">${box(cs, 24, '#8a93a3', '#4a5160', '#9aa3b3')}</g>`])
-  for (const [x,y,w,h,far] of OBST){ if (partial && far) continue
-    const cs=rectC(x,y,w,h); items.push([depth(cs), box(cs, 48, d3?'#3d4658':'#0f1117', '#262c39', '#8f98a8', 4)]) }
   if (robot){ const [rx,ry,ra]=robot, a=ra*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a)
     const L=(x,y)=>[rx+x*ca-y*sa, ry+x*sa+y*ca]
-    const fp=[[-17,-17],[17,-17],[17,17],[-17,17]].map(q=>L(...q)), hz=d3?18*sc:0
+    const fp=[[-17.6,-17.6],[17.6,-17.6],[17.6,17.6],[-17.6,17.6]].map(q=>L(...q)), g=fp.map(q=>P(...q)), hz=hpx(0.35)
     const tri=[[-9,-10],[13,0],[-9,10]].map(q=>L(...q)).map(q=>P(...q)).map(([x,y])=>[x,y-hz])
-    items.push([depth(fp)+1, box(fp, 18, 'rgba(63,138,224,.45)', 'rgba(63,138,224,.3)', '#7fb4ee', 1.5) + poly(tri, 'fill="#7fb4ee" stroke="#fff" stroke-width="2" stroke-linejoin="round"')]) }
-  const lift = d3 ? 34 : 0, mk={}; let labels=''
+    let body = poly(g, 'fill="rgba(63,138,224,.3)" stroke="#7fb4ee" stroke-width="1.5" stroke-linejoin="round"')
+    if (d3){ const t=g.map(([x,y])=>[x,y-hz]); let faces=[]
+      for (let i=0;i<4;i++){ const j=(i+1)%4; faces.push([(g[i][1]+g[j][1])/2, poly([g[i],g[j],t[j],t[i]], 'fill="#2c5a93" stroke="#7fb4ee" stroke-width="1"')]) }
+      body = faces.sort((a,b)=>a[0]-b[0]).map(f=>f[1]).join('') + poly(t, 'fill="#3f8ae0" stroke="#7fb4ee" stroke-width="1.5" stroke-linejoin="round"') }
+    items.push([depth(fp)+1, body + poly(tri, 'fill="#7fb4ee" stroke="#fff" stroke-width="2" stroke-linejoin="round"')]) }
+  const lift = d3 ? 30 : 0, mk={}; let labels=''
   for (const p of pins){
     const isSel = sel===p.id, [gx,gy]=P(p.x,p.y), x=gx, y=gy-lift; mk[p.id]=[x,y]
     items.push([gy+2, `<g data-act="pin" data-id="${p.id}" style="cursor:pointer">
-      ${d3?`<ellipse cx="${gx}" cy="${gy}" rx="9" ry="5" fill="#000" opacity=".45"/><path d="M${gx} ${gy}V${y}" stroke="#e6e8ec" stroke-width="3"/>`:''}
+      ${d3?`<ellipse cx="${gx}" cy="${gy}" rx="9" ry="6" fill="#000" opacity=".45"/><path d="M${gx} ${gy}V${y}" stroke="#e6e8ec" stroke-width="3"/>`:''}
       <circle cx="${x}" cy="${y}" r="34" fill="transparent"/>
       ${p.kind==='home'
         ? `<path d="M${x-16} ${y+2}L${x} ${y-14}L${x+16} ${y+2}V${y+16}H${x-16}Z" fill="${isSel?'#8fd694':'#4caf50'}" stroke="#0f1117" stroke-width="2"/>`
@@ -395,7 +418,7 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
   }
   const pl = path ? `<polyline points="${path.map(q=>pt(P(...q))).join(' ')}" fill="none" stroke="#ffd54f" stroke-width="5" stroke-dasharray="14 9"/>` : ''
   return `<svg class="map" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">${clip}${floor}
-    ${pts}${pl}${items.sort((a,b)=>a[0]-b[0]).map(i=>i[1]).join('')}${labels}${bubble}</svg>`
+    ${pl}${walls}${pts}${items.sort((a,b)=>a[0]-b[0]).map(i=>i[1]).join('')}${labels}${bubble}</svg>`
 }
 function radarSVG(big, off=false){
   if (off) return `<div class="radar ${big?'big':''}" style="display:flex;align-items:center;justify-content:center;text-align:center;color:var(--mut);font-size:15px;padding:16px">人検出が止まっています<br>左上の「人検出」で動かします</div>`
@@ -478,7 +501,7 @@ function menuView(){
 /* ---------------- 試験（当日）F2 ---------------- */
 function dayView(){
   const d=S.day, s=d.sub
-  const ROBOT = {home:[130,450,-90], mid:[300,300,-90], panel:[300,170,-90], off:[300,330,-90]}
+  const ROBOT = {home:C(175,164,-90), mid:C(172,100,-90), panel:C(102,58,-150), off:C(172,112,-90)}
   const destPin = d.dest && pinById(d.dest)
   const choose = (s==='home'||s==='panel')
   // 9 個のボタンの押せる・押せない（位置は固定。R2）
@@ -508,7 +531,7 @@ function dayView(){
 
   let mainInner = ''
   const robot = ROBOT[d.robot]
-  const path = (s==='moving'||s==='paused') ? [[130,450],[130,300],[300,300],[300,140]] : null
+  const path = (s==='moving'||s==='paused') ? [C(175,176),C(172,120),C(172,76),C(130,70),C(102,58),C(96,49)] : null
   if (s==='unloaded'){
     mainInner = `<div class="center" style="background:var(--inset)"><div class="card"><p>機体を待機場所に置いてから押します</p>${btn('openMap','会場地図を開く',{icon:'field',cls:'adv'})}</div></div>`
   } else {
@@ -553,7 +576,7 @@ function prepView(){
     reg:['待機場所を登録中（人の位置で）', ''],
     return:['待機場所へ戻る途中', ''],
   }[s]
-  let mainInner = mapSVG({robot:s==='return'?[300,330,135]:[420,300,180], path:s==='return'?[[300,330],[130,330],[130,450]]:null, partial:true, scan:true})
+  let mainInner = mapSVG({robot:s==='return'?C(172,100,90):C(150,66,180), path:s==='return'?[C(172,100),C(172,150),C(175,176)]:null, partial:true, scan:true})
   mainInner += `<div class="mapctl">${btn('rotL','左へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}${btn('rotR','右へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}</div>`
   if (s==='entry') mainInner += `<div class="center"><div class="card"><p>前回の試験場内地図とピン（${p.pins} 件）が残っています</p>
       ${btn('resume','続きから再開',{icon:'play',cls:'adv'})}
@@ -723,12 +746,12 @@ function applyFont(dev){
   dev.style.fontFamily = fam ? fam+',sans-serif' : ''
 }
 const MAP_OPTS = [
-  {q:'地図の見え方（試し）', k:['map','view'], v:[['2d','平面'],['3d','擬似 3D']], why:'2026-11-16 の試し。平面の地図を斜め上から見た形にし、壁と障害物と機体に高さを付ける。壁の本当の高さは地図に無いので、高さは一律の仮。印の名前は正立のまま'},
+  {q:'地図の見え方（試し）', k:['map','view'], v:[['2d','平面'],['3d','擬似 3D']], why:'2026-11-16 の試し。地図は実機が作った経路地図（試験ブロックC2）。斜め上から見た形にし、壁のマスと機体に高さを付ける。壁の本当の高さは地図に無いので、高さは一律の仮（0.5 m）。印の名前は正立のまま'},
   {q:'人検出のトグルの語', k:['trk','w'], v:[['io','切 ／ 入'],['stop','止める ／ 動作中']], why:'機体の「停止／走行」と語が重なるという指摘（V10）。形は同じ'},
 ]
 const COMMON_OPTS = [
   {q:'フォント', k:['font','v'], v:Object.entries(FONTS).map(([k,v])=>[k,v[0]]), why:'「端末の標準」以外は、選ぶとインターネットから読み込む（比較のため）。実装ではファイルを同梱する。BIZ UDPゴシックは太さが 2 段階だけ'},
-  {q:'ボタンの形', k:['shape','v'], v:[['round','角丸（いまの案）'],['sq','角ばった'],['pill','丸い'],['role','役割で変える']], why:'「役割で変える」: 行き先へ出発するボタンは丸、道具のボタンは角、「終了」は片側だけ丸。位置と大きさは変えない'},
+  {q:'ボタンの形', k:['shape','v'], v:[['role','役割で変える（決定）'],['round','角丸'],['sq','角ばった'],['pill','丸い']], why:'「役割で変える」: 行き先へ出発するボタンは丸、道具のボタンは角、「終了」は片側だけ丸。位置と大きさは変えない'},
 ]
 const optsOf = () => [...NOTES[S.scr].opts, ...(S.scr==='menu'?[]:MAP_OPTS), ...COMMON_OPTS]
 function segHTML(items, cur, attr){ return items.map(([v,l])=>`<button class="${cur===v?'on':''}" ${attr}="${v}">${l}</button>`).join('') }
