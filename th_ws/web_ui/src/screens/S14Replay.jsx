@@ -43,13 +43,16 @@ import {
   S11_MANUAL_TITLE, S11_REAR_TITLE, S11_REAR_NOTE,
   S14_TAB_REPLAY, S14_SELECT_TITLE, S14_EMPTY, S14_FWD, S14_REV, S14_PROCEED,
   S14_POSE_TITLE, S14_POSE_LOCALIZE, S14_POSE_LOCALIZE_TIMEOUT, S14_POSE_READY, S14_POSE_RUN, S14_POSE_PAUSE, S14_POSE_PAUSE_RESUMABLE,
-  S14_GLOBAL_BUTTON,
+  S14_GLOBAL_BUTTON, S14_NO_MAP_GUIDE,
   S14_LENGTH, S14_POINTS, S14_SPEED_TITLE,
   S14_XTRACK_TITLE, S14_XTRACK_EMPTY, S14_XTRACK_VALUE,
   S14_MAP_UPDATE_TITLE, S14_MAP_UPDATE_ON, S14_MAP_UPDATE_OFF, S14_MAP_UPDATE_NOTE,
-  S14_QUALITY_SEARCHING_HINT,
+  S14_QUALITY_SEARCHING_HINT, S14_MAP_LOADING,
 } from '../i18n/screens.js'
-import { localizeQualityView, localizeQualityText } from './s14Localize.js'
+import {
+  localizeQualityView, localizeQualityText, replayRunGate, mapLoadingVisible,
+} from './s14Localize.js'
+import { noMapRoute } from './routeMapWarning.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import { stateLabel } from '../i18n/states.js'
 import { OP_LABELS } from '../i18n/states.js'
@@ -102,19 +105,35 @@ export default function S14Replay({ onFinish }) {
   const qualityText = localizeQualityText(qualityView.level)
   const showQuality = qualityView.visible
     && (stateName === 'LOCALIZE' || stateName === 'READY')
+  // A-21: 地図の画像（pgm/yaml）を持たない経路。始点決め打ちでしか合わせられず、
+  // 「完全グローバルで探す」は押しても効かない。案内を出してボタンを無効にする
+  // （Spec-transit.md §4.2）。
+  const noMap = noMapRoute(routeStatus)
+  const showNoMapGuide = noMap
+    && (stateName === 'LOCALIZE' || stateName === 'READY')
   // searching（探索＋地図の読み直し）は 60 秒を超えうるので、既存の
   // 「長引いている」注記は出さない（P3 ブリーフ §やること 1）。
   // 1b-11 SG-B19: failed（原因別の案内が出ている）ときも出さない。
   // 汎用のタイムアウト文言（「始点マークに置き直す」）は原因と違うことがある。
+  // A-24: off_route も専用の案内（経路の近くへ）を出すので出さない。
   const showStuckNote = localizeStuck
     && qualityView.level !== 'searching'
     && qualityView.level !== 'failed'
+    && qualityView.level !== 'off_route'
   // 1b-11 SG-B19: 探索・読み直しの待ち時間（Spec-transit.md §4.2.2）。
   const showSearchingHint = qualityView.level === 'searching'
     && (stateName === 'LOCALIZE' || stateName === 'READY')
   // 1b-11 SG-B14: 地図の更新（Spec-webui.md §3.7）。既定 OFF。
   // ON のときだけ操作カードに「保存」が出る。
   const mapUpdate = !!state?.map_update
+  // A-23 ②: 位置が決まるまで（LOCALIZE）は「再生」を押せなくし、理由をそばに出す。
+  // READY で押せる（unknown の経路も始点決め打ちで READY に進む）、PAUSE の
+  // 再開も止めない（Spec-webui.md §3.7）。
+  const runGate = replayRunGate(stateName, routeStatus?.localize_quality)
+  // A-22: 地図の読み込み中は地図の上に出す。判定は既存の信号だけ
+  // （localize_quality と /route/map_view の到着。新しいトピックは足さない）。
+  const mapLoading = mapLoadingVisible(
+    stateName, routeStatus?.localize_quality, routeMap != null)
 
   // LOCALIZE が長く続いたら（＝地図の読み直し失敗の可能性）手がかりを出す。
   useEffect(() => {
@@ -179,6 +198,7 @@ export default function S14Replay({ onFinish }) {
       pose={routePose ?? odomPose}
       mapData={routeMap}
       targetIndex={routeStatus?.target_index ?? -1}
+      loadingText={mapLoading ? S14_MAP_LOADING : null}
     />
   )
   const speedCard = (
@@ -284,12 +304,17 @@ export default function S14Replay({ onFinish }) {
             {showSearchingHint && (
               <div className="note" data-testid="s14-localize-wait">{S14_QUALITY_SEARCHING_HINT}</div>
             )}
+            {showNoMapGuide && (
+              <div className="note warn mt" role="alert" data-testid="s14-no-map">
+                {S14_NO_MAP_GUIDE}
+              </div>
+            )}
             {stateName === 'LOCALIZE' && (
               <button
                 type="button"
                 className="btn sm mt"
                 data-testid="s14-localize-global"
-                disabled={disabledAll || qualityView.level === 'searching'}
+                disabled={disabledAll || qualityView.level === 'searching' || noMap}
                 onClick={handleGlobalLocalize}
               >
                 {S14_GLOBAL_BUTTON}
@@ -352,6 +377,8 @@ export default function S14Replay({ onFinish }) {
           slots={{ stop: true, check: false, run: true, save: mapUpdate, manual: false }}
           runLabel={S14_TAB_REPLAY}
           disabled={disabledAll}
+          runDisabled={!runGate.enabled}
+          runDenyReason={runGate.reason}
           onTrigger={(trigger) => sendTrigger(trigger)}
         />
         <div className="card">

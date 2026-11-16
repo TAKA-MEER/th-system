@@ -1150,6 +1150,70 @@ TEST(ObstacleLimiterCoreStoppedWarning, SpinInPlaceCountsAsMoving) {
   EXPECT_FALSE(o.approach_warning) << "動いている扱いは進む向きだけ";
 }
 
+// ── 画面に出す外形からの距離（Spec-safety.md §2.1・A-17。2026-11-13） ──────
+// 判定用の approach_distance_m（LiDAR 中心から）は変えず、同じ点の集まりで
+// 機体の外形（base_link 中心の長方形）から最も近いものを approach_clearance_m に出す。
+
+TEST(ObstacleLimiterCoreClearance, PointToBodyRectangleDistance) {
+  const double L = 0.55;
+  const double W = 0.55;
+  const double half = 0.275;
+  // 前・横・斜め・中（長方形の中は 0）。
+  EXPECT_NEAR(point_to_body_clearance(1.0, 0.0, L, W), 1.0 - half, 1e-12);
+  EXPECT_NEAR(point_to_body_clearance(0.0, -1.0, L, W), 1.0 - half, 1e-12);
+  EXPECT_NEAR(point_to_body_clearance(-1.0, 0.0, L, W), 1.0 - half, 1e-12);
+  EXPECT_NEAR(point_to_body_clearance(1.0, 1.0, L, W),
+              std::sqrt(2.0) * (1.0 - half), 1e-12);
+  EXPECT_DOUBLE_EQ(point_to_body_clearance(0.1, 0.1, L, W), 0.0);
+  EXPECT_DOUBLE_EQ(point_to_body_clearance(-0.2, 0.0, L, W), 0.0);
+  // 外形が 0（未配線）なら原点からの距離（従来と同じ）。
+  EXPECT_NEAR(point_to_body_clearance(0.7, 0.0, 0.0, 0.0), 0.7, 1e-12);
+}
+
+TEST(ObstacleLimiterCoreClearance, MovingUsesBodyFrontNotLidarCenter) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  p.body_length_m = 0.55;
+  p.body_width_m = 0.55;
+  ObstacleLimiterCore core;
+  // 前方 0.6 m（LiDAR 中心）の障害物。判定は 0.6 のまま、表示は 0.6-0.275。
+  const auto o = core.update(make_manual_in(1000.0, 0.6, false), p);
+  EXPECT_NEAR(o.approach_distance_m, 0.6, 1e-9) << "判定に使う距離は変えない";
+  // 障害物は 7 本のビームに載るので、最小は正面から最大 1.5° ずれる
+  // （0.6 m で約 0.2 mm。板の厚み程度。物理的に正しい）。
+  EXPECT_NEAR(o.approach_clearance_m, 0.6 - 0.275, 1e-3);
+}
+
+TEST(ObstacleLimiterCoreClearance, LaserOffsetIsAppliedBeforeMeasuring) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  p.body_length_m = 0.55;
+  p.body_width_m = 0.55;
+  ObstacleLimiterCore core;
+  ObstacleLimiterInputs in = make_manual_in(1000.0, 0.6, false);
+  in.laser_pose.x_m = 0.2;  // LiDAR が機体中心より 0.2 m 前
+  const auto o = core.update(in, p);
+  EXPECT_NEAR(o.approach_clearance_m, 0.6 + 0.2 - 0.275, 1e-3);
+}
+
+TEST(ObstacleLimiterCoreClearance, StoppedSurroundAlsoUsesBodyOutline) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  p.body_length_m = 0.55;
+  p.body_width_m = 0.55;
+  ObstacleLimiterCore core;
+  // 真横 0.5 m（機体幅の半分 0.275 を引く）。
+  const auto o = core.update(make_stopped_in(0.5, kPi / 2.0, false), p);
+  EXPECT_NEAR(o.approach_distance_m, 0.5, 1e-9);
+  EXPECT_NEAR(o.approach_clearance_m, 0.5 - 0.275, 1e-3);
+}
+
+TEST(ObstacleLimiterCoreClearance, PointInsideBodyIsZero) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  p.body_length_m = 0.55;
+  p.body_width_m = 0.55;
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_manual_in(1000.0, 0.1, false), p);
+  EXPECT_DOUBLE_EQ(o.approach_clearance_m, 0.0);
+}
+
 // ── 開発モードの項目 auto_brake（Spec-safety.md §10。2026-10-08 改定） ──────
 // dev_auto_brake_off が真のときだけ、AUTO も auto_brake に従う。
 // NA・/system/state 途絶・estop・fault_lock は変えない。

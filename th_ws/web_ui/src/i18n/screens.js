@@ -252,7 +252,6 @@ export const DRIVE_LEAVE = '離れる'
 export const S11_TAB_DRIVE = '走行'
 export const S11_OBSTACLE_TITLE = '障害物'
 export const S11_OBSTACLE_WARN = (d) => `前方 ${d} m に障害物（警告）`
-export const S11_OBSTACLE_WARN_AROUND = (d) => `周囲 ${d} m に障害物（警告）`
 export const S11_OBSTACLE_STOP = (d) => `前方 ${d} m に障害物（停止）`
 export const S11_OBSTACLE_PASS = '障害物なし'
 // 未受信のときの表示（"障害物なし" と出さない。安全側 DetailedDesign-wp3.md §6.2）
@@ -269,6 +268,9 @@ export const S11_AUTO_BRAKE_CONFIRM_BODY = '障害物に近づいても自動で
 export const S11_AUTO_BRAKE_CONFIRM_YES = 'OFF にする'
 export const S11_AUTO_BRAKE_CONFIRM_NO = 'やめる'
 export const S11_APPROACH_WARNING = '障害物に近づいています（自動ブレーキ OFF のため減速しません）'
+// 接近警告の距離は機体の外形（一番近い面）から（A-17）。d は m。
+export const S11_APPROACH_WARN = (d) => `機体から前方 ${Math.round(d * 100)} cm に障害物（警告）`
+export const S11_APPROACH_WARN_AROUND = (d) => `機体の周囲から ${Math.round(d * 100)} cm に障害物（警告）`
 export const S11_REAR_TITLE = '後退'
 export const S11_REAR_NOTE = '後方は LiDAR の死角。後退速度を制限中'
 export const S11_MANUAL_TITLE = '手動操作'
@@ -296,6 +298,11 @@ export const S13_PAUSED = '一時停止中'
 export const S13_PAUSE_HINT = 'スティックを操作すると続きから記録します'
 export const S13_SAVED = '保存しました'
 export const S13_SAVE_FAILED = '保存されていません'
+// A-21: 経路（posegraph/JSON）は保存できたが地図の画像（pgm/yaml）を残せなかった。
+// 黙って「保存しました」にせず、再生で何が使えなくなるかを出す
+// （Spec-transit.md §3.5。RouteStatus.map_save_failed）。
+export const S13_MAP_SAVE_WARNING =
+  '地図の画像を保存できませんでした。この経路は途中からの再開と完全グローバルの位置探しが使えません（始点に置けば再生はできます）'
 export const S13_RECORDED_LABEL = '記録距離'
 export const S13_POINTS_LABEL = '点数'
 export const S13_ELAPSED_LABEL = '経過時間'
@@ -344,13 +351,24 @@ export const S14_QUALITY_LOW = '低い'
 export const S14_QUALITY_LOW_HINT = '似た場所が複数あり、取り違えの可能性があります'
 export const S14_QUALITY_FAILED = '見つかりません'
 export const S14_QUALITY_FAILED_HINT = '完全グローバルで探すか、経路を選び直してください'
+// A-24: 自己位置は決まったが経路から離れすぎていて途中復帰できない。
+// 推定の失敗（見つかりません）と区別する。「完全グローバルで探す」は押せる。
+export const S14_QUALITY_OFF_ROUTE = '経路から離れています'
+export const S14_QUALITY_OFF_ROUTE_HINT = '経路の近く（2 m 以内）に置き直してください'
 export const S14_QUALITY_SEARCHING = '探しています'
 // 1b-11 SG-B19: 探索・読み直しの待ち時間（Spec-transit.md §4.2.2）。
 // 原因を断定しない文言にする（§4.2.3）。
 export const S14_QUALITY_SEARCHING_HINT = '地図を読み込んでいます。短い経路で数秒、長い地図で30〜45秒かかります'
+// A-22: 経路を選んでから地図を読み込み終わるまで、地図の上に出す（Spec-webui.md §3.7）。
+export const S14_MAP_LOADING = '地図を読み込んでいます'
 // 「完全グローバルで探す」ボタン（Spec-webui.md §3.7）。押すと ui.localize_global。
 // FSM は REPLAY/LOCALIZE でだけ受け付ける（transitions.yaml T-REPLAY-03）。
 export const S14_GLOBAL_BUTTON = '完全グローバルで探す'
+// A-21: 地図の画像（pgm/yaml）を持たない経路（localize_quality='unknown'）の案内。
+// 始点決め打ちでしか再生できず、「完全グローバルで探す」は押しても効かないので
+// 無効にし、理由をこの文で示す（Spec-transit.md §4.2）。
+export const S14_NO_MAP_GUIDE =
+  'この経路は地図の画像が無いため、始点の印に置いて再生してください。途中からの再開と完全グローバルは使えません'
 // 1b-11 SG-B14: 地図の更新トグル（Spec-webui.md §3.7）。既定 OFF。
 // ON のときだけ操作カードに「保存」が出る（Spec-transit.md §0.1）。
 export const S14_MAP_UPDATE_TITLE = '地図の更新'

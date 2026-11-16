@@ -87,25 +87,26 @@ test('a request rejected by the vehicle shows the reason and the display stays',
 test('approach warning appears while OFF when the limiter reports it', async ({ page }) => {
   await gotoScreenWithLimiter(page, 'S11',
     { mode: 'MANUAL', state: 'RUN', zone: 'OUT', auto_brake: false },
-    { ...LIMITER_PASS, nearest_obstacle_m: 0.5, approach_warning: true })
+    { ...LIMITER_PASS, nearest_obstacle_m: 30, approach_clearance_m: 0.5,
+      approach_warning: true })
   await page.locator('#s11').waitFor()
   await expect(page.getByTestId('s11-approach-warning')).toBeVisible()
   await expect(page.getByTestId('s11-auto-brake-off-hint')).toBeVisible()
   // OFF 中は action が PASS のままでも「障害物なし」と出さない。
   await expect(page.locator('#s11')).not.toContainText('障害物なし')
-  await expect(page.locator('#s11')).toContainText('0.5')
+  await expect(page.locator('#s11')).toContainText('機体から前方 50 cm に障害物')
 })
 
 test('stopped: warning shows the surrounding distance as "周囲"', async ({ page }) => {
   // 止まっているとき（approach_warning_moving false）は進む向きの nearest_obstacle_m（空き）ではなく
-  // 周囲の最近傍 approach_distance_m を「周囲」で出す（Spec-safety §2.1）。
+  // 周囲の最近傍を「周囲」で出す（Spec-safety §2.1）。距離は機体の外形から（A-17）。
   await gotoScreenWithLimiter(page, 'S11',
     { mode: 'MANUAL', state: 'RUN', zone: 'OUT', auto_brake: false },
     { ...LIMITER_PASS, nearest_obstacle_m: 30, approach_distance_m: 0.6,
-      approach_warning: true, approach_warning_moving: false })
+      approach_clearance_m: 0.35, approach_warning: true, approach_warning_moving: false })
   await page.locator('#s11').waitFor()
   await expect(page.getByTestId('s11-approach-warning')).toBeVisible()
-  await expect(page.locator('#s11')).toContainText('周囲 0.6 m に障害物')
+  await expect(page.locator('#s11')).toContainText('機体の周囲から 35 cm に障害物')
   await expect(page.locator('#s11')).not.toContainText('前方 30')
 })
 

@@ -263,6 +263,9 @@ table{border-collapse:collapse;width:100%}
 @container app (max-width:999px){ .route-preview{max-height:min(32cqh,240px)} }
 .routePreviewOverlay{position:absolute;inset:0;display:grid;place-items:center;
   margin:0;pointer-events:none;color:var(--mut)}
+/* A-22: 読み込み中は地図の上に重ねる。地図が透けて見えても読めるよう下地を敷く。 */
+.routePreviewLoading{background:rgba(15,17,23,.72);border-radius:inherit;
+  color:var(--tx);font-weight:700}
 /* WS-4 / demo-teach-replay: 走行スティック下のキーボード操作の凡例。
    押下中（kbd.held）は keys を強調表示する（任意実装）。 */
 .kbdHint{display:flex;gap:6px;justify-content:center;align-items:center;

@@ -157,6 +157,10 @@ class RouteRecorder(Node):
         # 成功したときだけ true。「保存しました」は FSM の SAVED でなくこれを見る
         # （S13TeachManual.jsx）。新しい記録が始まったら false に戻す。
         self._saved = False
+        # A-21: 保存したのに地図の画像（pgm/yaml）が揃わなかったか。
+        # 揃わないと再生で始点決め打ち（localize_quality='unknown'）になり、
+        # 途中からの再開と完全グローバルが使えない。S-13 が警告を出す。
+        self._map_save_failed = False
         self._pose: tuple[float, float, float] | None = None
         self._frame_id: str = 'odom'   # 記録中の経路フレーム（start_record で確定）
         self._mode: str = ""
@@ -342,6 +346,7 @@ class RouteRecorder(Node):
             self._odom_resync = False
             # WS-9K-E2: 新しい記録はまだ保存していないので saved を false に戻す。
             self._saved = False
+            self._map_save_failed = False   # A-21: 前の保存の警告を引きずらない
             # WS-8B: 記録開始時に map TF があれば経路全体を map フレームで記録する。
             # 無ければ従来どおり /odom。フレームは記録中ずっと固定（混ぜない）。
             mp = self._map_pose()
@@ -504,9 +509,9 @@ class RouteRecorder(Node):
         # WS-9L: 経路が map フレームで記録されたときだけ、地図を凍結保存する
         # （route_id をセッション ID にして /map_session/open save）。経路の保存
         # が成功した直後に呼ぶ。失敗しても経路の保存は成功扱いのまま（_saved は
-        # 真）で、warn にだけ残す。
+        # 真）で、warn に残し、A-21 で map_save_failed を立てて画面に警告を出す。
         if self._frame_id == self._map_frame:
-            self._save_map_for_route(self._route_id)
+            self._map_save_failed = not self._save_map_for_route(self._route_id)
         # WS-9K-E2: ファイルに書けた（finalize_route_file が例外なしで返った）
         # ときだけ true。「保存しました」はこれを見る。FSM の SAVED は見ない。
         self._saved = True
@@ -514,13 +519,17 @@ class RouteRecorder(Node):
         self._publish_status_snapshot()
         return dest, route
 
-    def _save_map_for_route(self, route_id: str):
-        """教示の地図を /map_session/open で凍結保存する（失敗は warn のみ）。"""
+    def _save_map_for_route(self, route_id: str) -> bool:
+        """教示の地図を /map_session/open で凍結保存する。
+
+        戻り値は「保存後に地図の画像（pgm/yaml）が揃ったか」（A-21）。揃わなければ
+        warn を出し、呼び出し側が RouteStatus.map_save_failed を立てる。
+        """
         if not self._map_session_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn(
                 f'地図を保存できなかったので再生できない可能性がある: '
                 f'/map_session/open に接続できません (id={route_id})')
-            return
+            return self._has_saved_map(route_id)
         # 送る側で正規化する（route_record_core._safe_id と同じ規則）。経路 JSON の
         # 保存名（finalized_path が内部で _safe_id する）と地図ファイル名を一致させる
         # ため。受ける側（slam_control_logic）は未正規化 id を拒否するだけ。
@@ -534,12 +543,27 @@ class RouteRecorder(Node):
             self.get_logger().warn(
                 f'地図を保存できなかったので再生できない可能性がある: {e} '
                 f'(id={route_id})')
-            return
+            return self._has_saved_map(route_id)
         if err:
             self.get_logger().warn(
                 f'地図を保存できなかったので再生できない可能性がある: {err} '
                 f'(id={route_id})')
-            return
+        # 応答が成功でも、slam_control が占有格子の書き出しに失敗していれば
+        # pgm/yaml は無い（A-21）。再生側（replay_runner._route_pgm_base）と
+        # 同じ判定で、実際に使えるかどうかを見る。
+        saved = self._has_saved_map(route_id)
+        if saved:
+            self.get_logger().info(f'地図を保存しました: {route_id}')
+        return saved
+
+    def _has_saved_map(self, route_id: str) -> bool:
+        """経路 id に対応する地図の画像（pgm＋yaml）が揃っているか。
+
+        判定は replay_runner._route_pgm_base と同じ（揃っていなければ再生は
+        localize_quality='unknown' の始点決め打ちになる）。
+        """
+        base = os.path.join(self._routes_dir, _safe_id(route_id))
+        return os.path.exists(base + '.pgm') and os.path.exists(base + '.yaml')
 
     def _close_recording(self):
         """記録を閉じて自動保存の状態もまっさらに戻す。
@@ -690,6 +714,9 @@ class RouteRecorder(Node):
         msg.has_map = False
         # WS-9K-E2: 「ファイルに書けたか」を載せる（FSM の SAVED ではない）。
         msg.saved = self._saved
+        # A-21: 保存したのに地図の画像（pgm/yaml）が揃わなかったか。
+        # S-13 が「保存しました」に警告を添える。
+        msg.map_save_failed = self._map_save_failed
         if self._recorder is None:
             msg.state = self._state or 'NONE'
             msg.recorded_m = 0.0
