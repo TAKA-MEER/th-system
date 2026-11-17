@@ -67,8 +67,9 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .hdr .r2{flex:1;display:flex;align-items:stretch;background:#121722}
 .hdr .st{display:flex;align-items:center;gap:8px;padding:0 14px;font-size:16px}
 .hdr .st i{width:10px;height:10px;border-radius:50%;background:var(--ok)}
-.hdr .estop{margin-left:auto;width:320px;box-sizing:border-box;margin:3px 6px 6px auto;border-radius:10px;border:2px solid #ff8a80;background:linear-gradient(#e53935,#b71c1c);color:#fff;font-size:26px;font-weight:800;letter-spacing:.1em;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 0 #6d1010,0 6px 10px #0009,inset 0 1px 0 #ffffff55;text-shadow:0 1px 2px #0008;cursor:pointer}
-.hdr .estop:active{transform:translateY(3px);box-shadow:0 1px 0 #6d1010,inset 0 1px 0 #ffffff55}
+/* 非常停止（D39。2026-11-17）: 画面の中身とは別に、最初に描いていちばん上に重ねる。ほかの表示が壊れても残り、押せる */
+.estop-top{position:absolute;z-index:100;right:6px;top:53px;height:51px;width:320px;box-sizing:border-box;border-radius:10px;border:2px solid #ff8a80;background:linear-gradient(#e53935,#b71c1c);color:#fff;font-size:26px;font-weight:800;letter-spacing:.1em;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 0 #6d1010,0 6px 10px #0009,inset 0 1px 0 #ffffff55;text-shadow:0 1px 2px #0008;cursor:pointer}
+.estop-top:active{transform:translateY(3px);box-shadow:0 1px 0 #6d1010,inset 0 1px 0 #ffffff55}
 .body{position:absolute;left:0;right:0;top:110px;bottom:0;display:flex;flex-direction:column}
 .opbar{height:58px;flex:none;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--bd)}
 .opbar .crumb{font-size:20px;font-weight:800;display:flex;align-items:center;gap:10px}
@@ -121,7 +122,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 
 /* ボタンの形の比較（2026-11-16。位置と大きさは変えない） */
 .shape-sq{--r:3px}
-.shape-sq .tg,.shape-sq .mseg,.shape-sq .tile,.shape-sq .hdr .estop{border-radius:3px}
+.shape-sq .tg,.shape-sq .mseg,.shape-sq .tile,.shape-sq .estop-top{border-radius:3px}
 .shape-pill .b{border-radius:999px}
 .shape-pill .tg,.shape-pill .mseg{border-radius:999px}
 .shape-role .b{border-radius:3px}
@@ -228,8 +229,8 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .sz-new .hdr .brand small{font-size:13px}
 .sz-new .hdr .zone{font-size:15px}
 .sz-new .hdr .r2{align-items:center}
-.sz-new .hdr .estop{height:76px;width:max(330px,26%);margin:0 6px 0 auto;font-size:28px}
-.sz-new.portrait .hdr .estop{width:47%}
+.sz-new .estop-top{top:52px;height:76px;width:max(330px,26%);font-size:28px}
+.sz-new.portrait .estop-top{width:47%}
 .sz-new .body{top:134px}
 .sz-new .opbar{height:68px}
 .sz-new .b,.sz-new .b.exit{min-height:56px}
@@ -237,7 +238,6 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .sz-new .sec{padding:2px 2px}
 .sz-new .sec h3{font-size:15px;margin-bottom:6px}
 .sz-new .ctl{width:400px;gap:10px}
-.sz-new.q .ctl{width:360px}
 .sz-new.portrait .ctl{width:auto}
 .sz-new .tg{min-height:60px}
 .sz-new .tg.big{min-height:68px}
@@ -256,6 +256,13 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .bub{position:absolute;width:280px;background:#232733;border:2px solid var(--act-lt,#7fb4ee);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;z-index:4;box-shadow:0 6px 20px #000a}
 .bub .nm{font-size:22px;font-weight:800}
 .bub .b{width:100%;min-height:60px;font-size:20px}
+
+/* §6.5 自律走行中の枠（案）: 画面の縁を「進む」の青で囲む。非常停止（z 100）より下、押す操作は邪魔しない */
+.autoframe{position:absolute;inset:0;z-index:50;pointer-events:none;box-shadow:inset 0 0 0 6px var(--act-lt,#7fb4ee)}
+.autoframe.pulse{animation:afp 2.4s ease-in-out infinite}
+@keyframes afp{0%,100%{opacity:1}50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.autoframe.pulse{animation:none}}
+.broken{position:absolute;left:0;right:0;top:140px;padding:24px;font-size:20px;color:var(--warn-tx)}
 
 /* §6.3 色: 1 色 1 意味。青＝機体が進むこと（出発・再開のボタン・機体・経路・行き先）／赤＝止める操作だけ／
    橙＝人が見るべき注意だけ／緑＝正常だけ／選んでいるもの＝明るい反転 */
@@ -324,7 +331,8 @@ const S = {
   scr:'menu', ori:'L',
   tracker:true,   // 人検出（試験準備・試験で共有。左上の操作バーのトグル）
   menu:{lvl:'top', trackerOff:false, noRoute:false},
-  wt:{v:'new'}, sz:{v:'new'}, pal:{v:'new', pause:'warn'},   // 2026-11-17 の修正案（options §6）。'old' で 11-16 の版
+  wt:{v:'new'}, sz:{v:'new'}, pal:{v:'new', pause:'neutral'},   // 2026-11-17 に決定（D33〜D37）。'old' で 11-16 の版
+  af:{v:'pulse'}, dbg:{v:'none'},   // 自律走行中の枠（§6.5・案）／表示の不具合の試し（D39）
   font:{v:'sys'}, shape:{v:'role'}, map:{rot:0, view:'2d', wall:'wall', col:'now'}, trk:{w:'io'},
   day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0,
        abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
@@ -400,7 +408,7 @@ function header(title, zone, state){
   const cls = /一時停止/.test(state) ? ' pause' : /移動中/.test(state) ? ' run' : ''
   return `<div class="hdr"><div class="r1"><div class="logo">TH</div><div class="brand"><small>MIRS2602-</small>高見舎プロジェクト</div><div class="title">${title}</div>
   <div class="gap"></div>${zone?'<span class="zone">速度制限</span>':''}${state?`<span class="mst${cls}">${state}</span>`:''}</div>
-  <div class="r2"><div class="st"><i></i>正常</div><div class="estop">非常停止</div></div></div>`
+  <div class="r2"><div class="st"><i></i>正常</div></div></div>`   // 非常停止はここに描かない（render の estopHTML。D39）
 }
 const DAY_STATE = {unloaded:'準備中', undeclared:'準備中', home:'待機中', panel:'配電盤前', moving:'移動中', paused:'一時停止中', summon:'位置指示中'}
 const PREP_STATE = {entry:'準備中', mapping:'地図作成中', reg:'登録中', return:'待機場所へ移動中'}
@@ -505,7 +513,7 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
     items.push([depth(fp)+1, body + poly(tri, 'fill="#7fb4ee" stroke="#fff" stroke-width="2" stroke-linejoin="round"')]) }
   const lift = d3 ? 30 : 0, mk={}; let labels=''
   // ピンの大きさ（viewBox の単位）。2026-11-17 案 §6.2: 地図は枠に合わせて 0.6〜0.9 倍で描かれ、タブレットでさらに 0.8 倍になる。
-  // 当たり判定の直径 96（横長 1280 で約 77・横長 4:3 で約 60 論理 px）・印 36・名前 24 にする
+  // 当たり判定の直径 96（横長で約 77・縦長で約 89 論理 px。縦長はタブレットで 0.8 倍）・印 36・名前 24 にする
   const Z = S.sz.v==='new' ? {r:18, hit:48, lab:24, ly:48, hr:20} : {r:14, hit:34, lab:22, ly:40, hr:16}
   for (const p of pins){
     const isSel = sel===p.id, [gx,gy]=P(p.x,p.y), x=gx, y=gy-lift; mk[p.id]=[x,y]
@@ -580,7 +588,7 @@ function tileHTML({act, icon, name, sub, color, size, area, why, dis}){
     <span style="color:${color||'var(--tx)'}">${ic(icon)}</span><div><div class="nm">${name}${sub?'<span class="ar">▸</span>':''}</div></div></div>`
 }
 function menuView(){
-  const m=S.menu, lvl=m.lvl, o=S.ori==='P'?'P':'L'   // 横長 4:3（Q）は横長の並べ方
+  const m=S.menu, lvl=m.lvl, o=S.ori
   const why = k => {
     if (m.trackerOff && (k==='follow'||k==='teachF')) return '人検出が止まっています'
     if (m.noRoute && k==='replay') return '経路がありません'
@@ -807,7 +815,7 @@ const NOTES = {
   },
   day:{
     changed:[
-      '<b>2026-11-17 の評価を受けた修正案</b>（options §6。下の切り替えで 11-16 の版と比べられる）: ① 停止│走行は押せる側だけを塗り、語を動詞に固定。状態はヘッダの札に任せ、右列の先頭は「どこへ・残り」 ② 「次の配電盤」を行き先の先頭に幅いっぱいで置き、押せるときは青 ③ タブレットで 0.8 倍に縮んでも押せる・読める大きさ ④ 1 色 1 意味の配色',
+      '<b>2026-11-17 に決定</b>（D33〜D39。下の切り替えで 11-16 の版と比べられる）: ① 停止│走行は押せる側だけを塗り、語を動詞に固定。状態はヘッダの札に任せ、右列の先頭は「どこへ・残り」 ② 「次の配電盤」を行き先の先頭に幅いっぱいで置き、押せるときは青 ③ タブレットで 0.8 倍に縮んでも押せる・読める大きさ ④ 1 色 1 意味の配色。一時停止中の札は明るい中立 ⑤ 非常停止は画面の中身と切り離して最初に描き、いちばん上に重ねる',
       'タブを無くした（いま 5）。行き先は地図のピンを押す →<b>「行き先にする」を押すとそのまま出発</b>（「走行」は押さない）。「待機場所」「次の配電盤」も押したら出発（D4・D10）',
       '吹き出しは、ピン以外を押すと消える（取り消し）（D10）',
       '<b>「中断」は走行中も効く</b>。行き先を間違えて押したら、すぐ止めて選び直しへ戻れる（D12）',
@@ -823,8 +831,8 @@ const NOTES = {
       {q:'ヘルプ表示（設定で切り替える想定）', k:['help','on'], v:[[false,'しない'],[true,'する']], why:'<b>2026-11-15 に決定</b>（D19）。マウスはボタンに 0.7 秒重ねると出て、外すと消える。タップは長押しで出て、「×」か枠の外を押すと閉じる。停止│走行・ジョグ・非常停止は長押しの対象外。<b>ヘッダと赤い「停止する」は、ヘルプが出ていても 1 回で効く</b>。ヘッダには絶対に重ねず、停止│走行はなるべく避けて出す。この案の画面では試験（当日）だけ'},
       {q:'「中断」の語（別の語の案を残す）', k:['day','abortLabel'], v:[['中断','中断'],['行き先を取り消す','行き先を取り消す'],['選び直す','選び直す']], why:'<b>「中断」のままに決定</b>（D15。語が長いと認識しにくい）。ほかの人には違って見えるかもしれないので、別の語は案として残す'},
     ],
-    look:['<b>案（§6）</b>: 待機・移動中・一時停止を切り替えて、ちらっと見て「次に押すもの」が分かるか。11-16 の版と比べて',
-      '<b>案（§6）</b>: 「横長 4:3」でタブレットの姿を見る。押す的・文字が小さすぎないか',
+    look:['待機・移動中・一時停止を切り替えて、ちらっと見て「次に押すもの」が分かるか',
+      '<b>自律走行中の枠（§6.5・案）</b>: 「移動中」で、画面の縁の点滅がうるさくないか・ひと目で分かるか',
       'ヘルプ表示: 長押し・重ねる操作が、ふだんの操作の邪魔にならないか','状態を切り替えて、右列のボタンが一切動かないこと','ピン → 吹き出し →「行き先にする」で出発 → 間違えたら「中断」、の流れ','一日の始めの 2 手を地図の中央に出すのは R2 に当たらないか'],
   },
   prep:{
@@ -887,31 +895,41 @@ const MAP_OPTS = [
   {q:'地図の色', k:['map','col'], v:[['now','いまの色'],['a','紺の床・橙の壁・明るい壁上'],['b','明るい床・灰の壁・水色の壁上']], why:'床・壁の横・壁の上を大きく違う色にして、立体を読み取りやすくする試し。平面の表示にも効く（床と壁の色）'},
   {q:'人検出のトグルの語', k:['trk','w'], v:[['io','切 ／ 入'],['stop','止める ／ 動作中']], why:'機体の「停止／走行」と語が重なるという指摘（V10）。形は同じ'},
 ]
+const AUTO_OPT = {q:'§6.5 自律走行中の枠（案）', k:['af','v'], v:[['pulse','ゆっくり点滅'],['solid','点けたまま'],['none','出さない']], why:'機体が自分で走っている間（試験（当日）の移動中・試験準備の待機場所へ戻る途中）、画面の縁を「進む」の青で囲む。ひと目で自律走行中と分かるように（ユーザー案 2026-11-17）。一時停止・手動では出さない。「移動中」の状態で見る'}
 const COMMON_OPTS = [
+  {q:'表示の不具合の試し（D39）', k:['dbg','v'], v:[['none','なし'],['broken','画面の中身が描けない']], why:'画面の中身を描く処理が失敗しても、非常停止は最初に描いてあるので残り、押せる（試験準備・試験（当日）で試せる）'},
   {q:'フォント', k:['font','v'], v:Object.entries(FONTS).map(([k,v])=>[k,v[0]]), why:'「端末の標準」以外は、選ぶとインターネットから読み込む（比較のため）。実装ではファイルを同梱する。BIZ UDPゴシックは太さが 2 段階だけ'},
   {q:'ボタンの形', k:['shape','v'], v:[['role','役割で変える（決定）'],['round','角丸'],['sq','角ばった'],['pill','丸い']], why:'「役割で変える」: 行き先へ出発するボタンは丸、道具のボタンは角、「終了」は片側だけ丸。位置と大きさは変えない'},
 ]
 // 2026-11-17 の評価を受けた修正案（options §6）。既定は案、「11-16 の版」で元に戻して比べる
 const REV_OPTS = [
-  {q:'§6.1 重さの付け方（案）', k:['wt','v'], v:[['new','押せる側を塗る（案）'],['old','いまの側を塗る（11-16 の版）']], why:'案: 停止│走行は「いま押せる側」だけを塗る（止める＝赤・再開＝青）。語は「停止する」「走行する／再開する」で固定。状態はヘッダの札が言う。右列の先頭は「どこへ・残り」。「次の配電盤」を幅いっぱいで先頭に。人検出は ON のときだけ点ける。D2・R4・D17・D31 を見直す案', menu:false},
-  {q:'§6.2 大きさの基準（案）', k:['sz','v'], v:[['new','タブレット実寸で決める（案）'],['old','11-16 の版']], why:'iPad では論理キャンバスが 0.8 倍に縮む。縮んでも押す的 44 px・文字 12 px を割らないよう、論理 px で押す的 56 以上・小さい文字 15 以上にした。非常停止は高さ 76 で画面でいちばん高いボタン（Spec-webui.md §1.2）。停止│走行は 68 に下げた。「行き先にする」は高さ 60'},
-  {q:'§6.3 配色（案）', k:['pal','v'], v:[['new','1 色 1 意味（案）'],['old','11-16 の版']], why:'青＝機体が進むこと（出発・再開・機体・経路・行き先）／赤＝止める操作だけ／橙＝人が見るべき注意だけ／緑＝正常だけ／選んでいるもの＝明るい反転。配電盤のピンは中立の明るい灰、「走行」の区画は紫、「速度制限」「保存」「制御系を停止する」は中立'},
+  {q:'§6.1 重さの付け方（決定 D33〜D35）', k:['wt','v'], v:[['new','押せる側を塗る（決定）'],['old','いまの側を塗る（11-16 の版）']], why:'案: 停止│走行は「いま押せる側」だけを塗る（止める＝赤・再開＝青）。語は「停止する」「走行する／再開する」で固定。状態はヘッダの札が言う。右列の先頭は「どこへ・残り」。「次の配電盤」を幅いっぱいで先頭に。人検出は ON のときだけ点ける。D2・R4・D17・D31 を見直す案', menu:false},
+  {q:'§6.2 大きさの基準（決定 D36）', k:['sz','v'], v:[['new','タブレット実寸で決める（決定）'],['old','11-16 の版']], why:'縦長はタブレット（D38）で、論理キャンバスが 0.8 倍に縮む。縮んでも押す的 44 px・文字 12 px を割らないよう、論理 px で押す的 56 以上・小さい文字 15 以上にした。非常停止は高さ 76 で画面でいちばん高いボタン（Spec-webui.md §1.2）。停止│走行は 68 に下げた。「行き先にする」は高さ 60'},
+  {q:'§6.3 配色（決定 D37）', k:['pal','v'], v:[['new','1 色 1 意味（決定）'],['old','11-16 の版']], why:'青＝機体が進むこと（出発・再開・機体・経路・行き先）／赤＝止める操作だけ／橙＝人が見るべき注意だけ／緑＝正常だけ／選んでいるもの＝明るい反転。配電盤のピンは中立の明るい灰、「走行」の区画は紫、「速度制限」「保存」「制御系を停止する」は中立'},
 ]
-const PAUSE_OPT = {q:'§6.3 一時停止中の札の色（未決）', k:['pal','pause'], v:[['warn','橙（注意）'],['neutral','明るい中立']], why:'一時停止は異常ではないが、人の判断を待っている。橙を「注意」に含めるかを見て決める（配色が案のときだけ効く）'}
-const optsOf = () => [...NOTES[S.scr].opts, ...REV_OPTS.filter(o=>S.scr!=='menu'||o.menu!==false), ...(S.scr==='day'?[PAUSE_OPT]:[]), ...(S.scr==='menu'?[]:MAP_OPTS), ...COMMON_OPTS]
+const optsOf = () => [...NOTES[S.scr].opts, ...REV_OPTS.filter(o=>S.scr!=='menu'||o.menu!==false), ...(S.scr==='menu'?[]:[AUTO_OPT]), ...(S.scr==='menu'?[]:MAP_OPTS), ...COMMON_OPTS]
 function segHTML(items, cur, attr){ return items.map(([v,l])=>`<button class="${cur===v?'on':''}" ${attr}="${v}">${l}</button>`).join('') }
 function render(){
   document.getElementById('scrSeg').innerHTML = segHTML(SCRS, S.scr, 'data-scr')
   document.getElementById('subSeg').innerHTML = segHTML(SUBS[S.scr], subOf(), 'data-sub')
-  // 横長 4:3（1024×768）は 2026-11-17 の案（§6.2）。いまの spec の論理キャンバスは横長 16:9・縦長 3:4（Spec-webui.md §7）
-  document.getElementById('oriSeg').innerHTML = segHTML([['L','横長 1280×720'],['Q','横長 4:3 1024×768（案）'],['P','縦長 960×1280']], S.ori, 'data-ori')
+  // 横長は PC の 16:9、縦長はタブレットとみなす（D38。2026-11-17）
+  document.getElementById('oriSeg').innerHTML = segHTML([['L','横長 1280×720（PC）'],['P','縦長 960×1280（タブレット）']], S.ori, 'data-ori')
   const dev=document.getElementById('dev')
-  const [W,H] = {L:[1280,720], Q:[1024,768], P:[960,1280]}[S.ori]
+  const [W,H] = {L:[1280,720], P:[960,1280]}[S.ori]
   dev.style.width=W+'px'; dev.style.height=H+'px'
-  dev.className = (S.ori==='P' ? 'portrait' : S.ori==='Q' ? 'q' : '') + ' shape-' + S.shape.v + ' sz-' + S.sz.v + ' pal-' + S.pal.v
+  dev.className = (S.ori==='P' ? 'portrait' : '') + ' shape-' + S.shape.v + ' sz-' + S.sz.v + ' pal-' + S.pal.v
     + ' wt-' + S.wt.v + (S.pal.pause==='neutral' ? ' pause-neutral' : '')
   applyFont(dev)
-  dev.innerHTML = (S.scr==='menu'?menuView():S.scr==='day'?dayView():prepView()) + '<div class="toast"></div>'
+  // D39: 非常停止を最初に描く。画面の中身はその後で、描けなくても非常停止は残る
+  dev.innerHTML = '<div class="estop-top" data-estop>非常停止</div><div class="toast"></div>'
+  let view
+  try { if (S.dbg.v==='broken' && S.scr!=='menu') throw new Error('（試し）画面の中身を描けなかった')
+        view = S.scr==='menu'?menuView():S.scr==='day'?dayView():prepView() }
+  catch(err){ view = `<div class="broken">表示の不具合: ${err.message}</div>` }
+  dev.insertAdjacentHTML('afterbegin', view)
+  // 自律走行中の枠（options §6.5・案）。機体が自分で走っている間だけ出す。手動・一時停止では出さない
+  const auto = (S.scr==='day' && S.day.sub==='moving') || (S.scr==='prep' && S.prep.sub==='return')
+  if (auto && S.af.v!=='none') dev.insertAdjacentHTML('beforeend', `<div class="autoframe ${S.af.v}"></div>`)
   if (S.ori==='P' && S.sz.v==='old') dev.querySelectorAll('.content').forEach(c=>{ const mv=c.querySelector('.mainv'); if (mv) mv.style.minHeight='560px' })
   fit(); placeBubble(dev); renderNotes()
 }
@@ -1001,7 +1019,7 @@ document.addEventListener('click', e=>{
   // ただしヘッダ（非常停止を含む）と赤い「停止する」は対象外で、ヘルプが出ていても 1 回で効く（2026-11-15 決定）
   const hb=document.querySelector('#dev .help')
   if (hb){ const st=hb.classList.contains('sticky')
-    if (e.target.closest('[data-helpclose]') || !e.target.closest('.help')){ closeHelp(); if (st && !e.target.closest('.hdr,.nstop')) return } else return }
+    if (e.target.closest('[data-helpclose]') || !e.target.closest('.help')){ closeHelp(); if (st && !e.target.closest('.hdr,.estop-top,.nstop,.go-stop')) return } else return }
   // 薄いボタンを押したら、そのボタンの理由を出す（D16。区切りは空白。「—」は「一」と紛れる）
   const dz=e.target.closest('#dev [data-why]')
   if (dz && dz.dataset.why && dz.matches('.dis,.off')){
