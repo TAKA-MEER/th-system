@@ -35,7 +35,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .seg button{padding:6px 12px;font-size:13px;color:var(--mut);border-right:1px solid var(--bd-hi)}
 .seg button:last-child{border-right:none}
 .seg button.on{background:var(--ctrl-on);color:#fff;font-weight:700}
-.lbl{font-size:12px;color:var(--dim);margin-right:4px}
+.lbl{font-size:12px;color:var(--mut);margin-right:4px}
 #main{flex:1;display:flex;min-height:0}
 #stageWrap{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;padding:12px;overflow:hidden}
 #notes{width:360px;flex:none;border-left:1px solid var(--bd);background:#0b0d12;overflow:auto;padding:14px 16px;font-size:13px;line-height:1.65}
@@ -47,7 +47,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 #notes .count b{font-size:18px}
 #notes .opt{margin:6px 0 10px}
 #notes .opt .q{color:var(--tx);font-weight:700;margin-bottom:4px}
-#notes .ref{color:var(--dim);font-size:12px}
+#notes .ref{color:var(--mut);font-size:12px}
 @media (max-width:1000px){#main{flex-direction:column}#notes{width:auto;border-left:none;border-top:1px solid var(--bd);max-height:40vh}}
 
 /* ---------- 機体の画面（論理サイズで描き、縮小して見せる） ---------- */
@@ -198,6 +198,80 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .kv i{width:10px;height:10px;border-radius:50%;background:var(--ok);flex:none}
 .cnt{margin-left:auto;font-size:13px;padding:2px 10px;border-radius:999px;border:1px solid var(--ng);color:var(--ng-tx)}
 .b.halt{background:#4a1717;border-color:#8e2b2b;color:var(--ng-tx);width:100%;margin-top:10px}
+
+/* ============================================================
+   2026-11-17 評価（critique）を受けた修正案（ui-redesign-options.md §6）
+   どれも案。切り替えで 11-16 の版（下の上書きが効かない状態）と比べられる。
+   ============================================================ */
+
+/* §6.1 重さ: 塗るのは「いま押せる側」だけ。語は動詞で固定 */
+.tg2 > div{font-weight:800}
+.tg2 .idle{color:var(--dim);background:var(--inset)}
+.tg2 .go-stop{background:#b3261e;color:#fff;cursor:pointer}
+.tg2 .go-run{background:var(--act,var(--ctrl-on));color:#fff;cursor:pointer;box-shadow:inset 0 0 0 3px #fff}
+.tg2 .go-run.blink{animation:blink2 1.1s ease-in-out infinite}
+@keyframes blink2{50%{box-shadow:inset 0 0 0 3px rgba(255,255,255,.12);filter:brightness(1.25)}}
+.tg.sm .curoff{background:var(--ctrl-hi);color:var(--tx)}
+.where{display:flex;align-items:baseline;gap:12px;height:40px;padding:0 2px;white-space:nowrap;overflow:hidden}
+.where span{flex:1;min-width:0;font-size:24px;font-weight:800;overflow:hidden;text-overflow:ellipsis}
+.where b{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums}
+.b.next{width:100%;min-height:64px}
+.b.next span small{font-size:16px}
+.b.next.adv span small{color:#dbe7fb}
+.b.next:not(.adv) span small{color:var(--mut)}
+
+/* §6.2 大きさ: タブレット（iPad）では論理キャンバスが 0.8 倍に縮む。縮んでも押す的 44 px・文字 12 px を割らないよう、
+   論理 px で 押す的 56 以上・文字 15 以上にする。非常停止（76）は画面でいちばん高いボタンに保つ */
+.sz-new .hdr{height:134px}
+.sz-new .hdr .r1{height:48px}
+.sz-new .hdr .logo{font-size:13px}
+.sz-new .hdr .brand small{font-size:13px}
+.sz-new .hdr .zone{font-size:15px}
+.sz-new .hdr .r2{align-items:center}
+.sz-new .hdr .estop{height:76px;width:max(330px,26%);margin:0 6px 0 auto;font-size:28px}
+.sz-new.portrait .hdr .estop{width:47%}
+.sz-new .body{top:134px}
+.sz-new .opbar{height:68px}
+.sz-new .b,.sz-new .b.exit{min-height:56px}
+.sz-new .b.exit{font-size:17px}
+.sz-new .sec{padding:2px 2px}
+.sz-new .sec h3{font-size:15px;margin-bottom:6px}
+.sz-new .ctl{width:400px;gap:10px}
+.sz-new.q .ctl{width:360px}
+.sz-new.portrait .ctl{width:auto}
+.sz-new .tg{min-height:60px}
+.sz-new .tg.big{min-height:68px}
+.sz-new .tg.sm{min-height:60px;width:260px}
+.sz-new .tg.sm > div{font-size:17px}
+.sz-new .opbar .cap{font-size:16px}
+.sz-new .mseg > div{min-height:56px;padding:0 4px;display:flex;align-items:center;justify-content:center;font-size:16px;line-height:1.2}
+.sz-new .mapctl .b{min-height:56px}
+.sz-new .tile .why{font-size:15px}
+.sz-new .kv{font-size:16px}
+.sz-new .cnt,.sz-new .opbar .pill{font-size:15px}
+.sz-new .radar .cap,.sz-new .flow .stp{font-size:15px}
+.sz-new .flow .msg{font-size:17px}
+.sz-new .center .card .b{min-height:64px}
+.sz-new .center .card p{font-size:17px}
+.bub{position:absolute;width:280px;background:#232733;border:2px solid var(--act-lt,#7fb4ee);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;z-index:4;box-shadow:0 6px 20px #000a}
+.bub .nm{font-size:22px;font-weight:800}
+.bub .b{width:100%;min-height:60px;font-size:20px}
+
+/* §6.3 色: 1 色 1 意味。青＝機体が進むこと（出発・再開のボタン・機体・経路・行き先）／赤＝止める操作だけ／
+   橙＝人が見るべき注意だけ／緑＝正常だけ／選んでいるもの＝明るい反転 */
+.pal-new{--act:#2f6bc6;--act-lt:#8ab4f0;--sel-bg:#e6e8ec;--sel-tx:#0f1117;--g-drive:#9575cd;
+  --pin-panel:#c3ccd8;--pin-sel:#ffffff;--pin-home:#c3ccd8;--pin-homesel:#ffffff;--dest:#8ab4f0;--route:#8ab4f0}
+.pal-new .hdr .logo{background:#2a5fa8}
+.pal-new .hdr .zone{border-color:var(--bd-hi);color:var(--mut)}
+.pal-new .hdr .mst.run{background:var(--act)}
+.pal-new.pause-neutral .hdr .mst.pause{background:var(--sel-bg);color:var(--sel-tx)}
+.pal-new .b.adv{background:var(--act);border-color:var(--act);color:#fff}
+.pal-new .b.save,.pal-new .b.halt{background:var(--ctrl);border-color:var(--bd-hi);color:var(--tx)}
+.pal-new .cnt,.pal-new .opbar .pill{border-color:var(--warn);color:var(--warn-tx)}
+.pal-new .mseg > div.on{background:var(--sel-bg);color:var(--sel-tx)}
+.pal-new .tg .cur{background:var(--sel-bg);color:var(--sel-tx)}
+.pal-new .tg2 .go-run{background:var(--act)}
+.pal-new .tile.g{border-left-width:1px;background:linear-gradient(160deg,color-mix(in srgb,var(--gc) 18%,var(--panel)),var(--panel) 62%)}
 </style>
 </head>
 <body>
@@ -250,6 +324,7 @@ const S = {
   scr:'menu', ori:'L',
   tracker:true,   // 人検出（試験準備・試験で共有。左上の操作バーのトグル）
   menu:{lvl:'top', trackerOff:false, noRoute:false},
+  wt:{v:'new'}, sz:{v:'new'}, pal:{v:'new', pause:'warn'},   // 2026-11-17 の修正案（options §6）。'old' で 11-16 の版
   font:{v:'sys'}, shape:{v:'role'}, map:{rot:0, view:'2d', wall:'wall', col:'now'}, trk:{w:'io'},
   day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0,
        abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
@@ -289,16 +364,34 @@ function tog(stop, run, {runLabel='走行', runHint='押すと走り出す', bli
     if (st==='inert') return `<div class="inert" data-act="inert">${icn}<span>${lab}</span></div>`
     return `<div class="off" data-act="" data-why="${note}">${icn}<span>${lab}</span></div>`
   }
+  if (S.wt.v==='new') return tog2(stop, run, {runLabel, note, big, help})
   const pressable = [stop,run].some(s=>s==='en'||s==='inert')
   return `<div class="tg ${big?'big':''}" data-btn ${pressable?'':'data-dis'} ${help?`data-help="${help}" data-nolong`:''}>${side('stop',stop)}<span class="sep"></span>${side('run',run)}</div>`
+}
+// 2026-11-17 案（options §6.1）: 塗るのは「いま押せる側」だけ（止める＝赤・走る／再開＝青）。語は動詞で固定。
+// いまの状態はヘッダの札（D21）が言うので、トグルは状態を言わない。押せない側は沈める。
+function tog2(stop, run, {runLabel='走行', note='', big=false, help=''}={}){
+  const side = (k, st) => {
+    const lab = (k==='stop' ? '停止' : runLabel) + 'する'
+    if (st==='en') return k==='stop'
+      ? `<div class="go-stop" data-act="stop"><span>${lab}</span></div>`
+      : `<div class="go-run blink" data-act="run"><span>${lab}</span></div>`
+    if (st==='inert') return `<div class="inert" data-act="inert"><span>${k==='stop'?'停止':runLabel}</span></div>`
+    const why = st==='cur' ? (k==='stop' ? '止まっています' : '走っています') : note
+    return `<div class="idle off" data-act="" data-why="${why}"><span>${lab}</span></div>`
+  }
+  const pressable = [stop,run].some(s=>s==='en'||s==='inert')
+  return `<div class="tg tg2 ${big?'big':''}" data-btn ${pressable?'':'data-dis'} ${help?`data-help="${help}" data-nolong`:''}>${side('stop',stop)}<span class="sep"></span>${side('run',run)}</div>`
 }
 // 人検出の開始／停止（2026-11-13: 案の画面に動かす手段が無かった。いまの実装は対象選択タブの中）。対のトグル（R4）。
 // 呼び寄せ中・登録中は止められない（機体が拒否する。trackerControlPolicy.js）。
 function trackerBar(canStop=true){
   const on=S.tracker, io=S.trk.w==='io'
   const [offDo, offCur, onDo, onCur] = io ? ['切','切','入','入'] : ['■ 止める','■ 停止中','● 動かす','● 動作中']
+  // 2026-11-17 案（§6.1）: これは操作の対ではなく ON／OFF の切り替えなので、ON のときだけ明るく点ける。OFF は点けない
+  const offCurCls = S.wt.v==='new' ? 'curoff' : 'cur'
   return `<span class="cap">人検出</span><div class="tg sm" data-btn data-help="tracker">
-    ${on?(canStop?`<div class="press" data-act="trkOff">${offDo}</div>`:`<div class="off">${offDo}</div>`):`<div class="cur">${offCur}</div>`}<span class="sep"></span>
+    ${on?(canStop?`<div class="press" data-act="trkOff">${offDo}</div>`:`<div class="off">${offDo}</div>`):`<div class="${offCurCls}">${offCur}</div>`}<span class="sep"></span>
     ${on?`<div class="cur">${onCur}</div>`:`<div class="press" data-act="trkOn">${onDo}</div>`}</div>`
 }
 // ヘッダ（2026-11-15 決定 D21〜D24）: ロゴ・プロジェクト名の真後ろに画面名称（位置をほぼ固定）。
@@ -405,34 +498,41 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
     const fp=[[-17.6,-17.6],[17.6,-17.6],[17.6,17.6],[-17.6,17.6]].map(q=>L(...q)), g=fp.map(q=>P(...q)), hz=hpx(0.35)
     const tri=[[-9,-10],[13,0],[-9,10]].map(q=>L(...q)).map(q=>P(...q)).map(([x,y])=>[x,y-hz])
     let body = poly(g, 'fill="rgba(63,138,224,.3)" stroke="#7fb4ee" stroke-width="1.5" stroke-linejoin="round"')
+    // （機体・経路・行き先の輪は「機体が進むこと」の青。2026-11-17 案 §6.3 でもこの色のまま）
     if (d3){ const t=g.map(([x,y])=>[x,y-hz]); let faces=[]
       for (let i=0;i<4;i++){ const j=(i+1)%4; faces.push([(g[i][1]+g[j][1])/2, poly([g[i],g[j],t[j],t[i]], 'fill="#2c5a93" stroke="#7fb4ee" stroke-width="1"')]) }
       body = faces.sort((a,b)=>a[0]-b[0]).map(f=>f[1]).join('') + poly(t, 'fill="#3f8ae0" stroke="#7fb4ee" stroke-width="1.5" stroke-linejoin="round"') }
     items.push([depth(fp)+1, body + poly(tri, 'fill="#7fb4ee" stroke="#fff" stroke-width="2" stroke-linejoin="round"')]) }
   const lift = d3 ? 30 : 0, mk={}; let labels=''
+  // ピンの大きさ（viewBox の単位）。2026-11-17 案 §6.2: 地図は枠に合わせて 0.6〜0.9 倍で描かれ、タブレットでさらに 0.8 倍になる。
+  // 当たり判定の直径 96（横長 1280 で約 77・横長 4:3 で約 60 論理 px）・印 36・名前 24 にする
+  const Z = S.sz.v==='new' ? {r:18, hit:48, lab:24, ly:48, hr:20} : {r:14, hit:34, lab:22, ly:40, hr:16}
   for (const p of pins){
     const isSel = sel===p.id, [gx,gy]=P(p.x,p.y), x=gx, y=gy-lift; mk[p.id]=[x,y]
     items.push([gy+2, `<g data-act="pin" data-id="${p.id}" style="cursor:pointer">
       ${d3?`<ellipse cx="${gx}" cy="${gy}" rx="9" ry="6" fill="#000" opacity=".45"/><path d="M${gx} ${gy}V${y}" stroke="#0f1117" stroke-width="6"/><path d="M${gx} ${gy}V${y}" stroke="#e6e8ec" stroke-width="3"/>`:''}
-      <circle cx="${x}" cy="${y}" r="34" fill="transparent"/>
+      <circle cx="${x}" cy="${y}" r="${Z.hit}" fill="transparent"/>
       ${p.kind==='home'
-        ? `<path d="M${x-16} ${y+2}L${x} ${y-14}L${x+16} ${y+2}V${y+16}H${x-16}Z" fill="${isSel?'#8fd694':'#4caf50'}" stroke="#0f1117" stroke-width="2"/>`
-        : `<rect x="${x-14}" y="${y-14}" width="28" height="28" rx="4" fill="${isSel?'#7fb4ee':'#3f8ae0'}" stroke="#0f1117" stroke-width="2"/>`}
-      ${dest===p.id?`<circle cx="${x}" cy="${y}" r="30" fill="none" stroke="#ffd54f" stroke-width="5"/>`:''}
-      ${isSel?`<circle cx="${x}" cy="${y}" r="24" fill="none" stroke="#fff" stroke-width="3"/>`:''}
+        ? `<path d="M${x-Z.hr} ${y+2}L${x} ${y-Z.hr+2}L${x+Z.hr} ${y+2}V${y+Z.hr}H${x-Z.hr}Z" style="fill:${isSel?'var(--pin-homesel,#8fd694)':'var(--pin-home,#4caf50)'}" stroke="#0f1117" stroke-width="2"/>`
+        : `<rect x="${x-Z.r}" y="${y-Z.r}" width="${2*Z.r}" height="${2*Z.r}" rx="4" style="fill:${isSel?'var(--pin-sel,#7fb4ee)':'var(--pin-panel,#3f8ae0)'}" stroke="#0f1117" stroke-width="2"/>`}
+      ${dest===p.id?`<circle cx="${x}" cy="${y}" r="${Z.r+16}" fill="none" style="stroke:var(--dest,#ffd54f)" stroke-width="5"/>`:''}
+      ${isSel?`<circle cx="${x}" cy="${y}" r="${Z.r+10}" fill="none" stroke="#fff" stroke-width="3"/>`:''}
       </g>`])
-    labels += `<text x="${gx}" y="${gy+(d3?24:40)}" text-anchor="middle" font-size="22" font-weight="700" fill="#e6e8ec" stroke="#0f1117" stroke-width="5" paint-order="stroke" pointer-events="none">${p.name}</text>`
+    labels += `<text x="${gx}" y="${gy+(d3?24:Z.ly)}" text-anchor="middle" font-size="${Z.lab}" font-weight="700" fill="#e6e8ec" stroke="#0f1117" stroke-width="5" paint-order="stroke" pointer-events="none">${p.name}</text>`
   }
-  let bubble=''
-  if (sel){ const p=pinById(sel), [mx,my]=mk[sel]; const bx=Math.min(Math.max(mx-130,50),690), by=my>300?my-170:my+60
+  let bubble='', bubHTML=''
+  // 2026-11-17 案 §6.2: 吹き出しを HTML にし、「行き先にする」を論理 px で高さ 60 にする（SVG の中だと地図と一緒に縮む）
+  if (sel && S.sz.v==='new'){ const p=pinById(sel), [mx,my]=mk[sel]
+    bubHTML = `<div class="bub" data-x="${mx}" data-y="${my}" data-r="${Z.hit}"><div class="nm">${p.name}</div>${btn('pinGo', selLabel, {cls:'go adv'})}</div>` }
+  else if (sel){ const p=pinById(sel), [mx,my]=mk[sel]; const bx=Math.min(Math.max(mx-130,50),690), by=my>300?my-170:my+60
     bubble = `<g><rect x="${bx}" y="${by}" width="260" height="104" rx="12" fill="#232733" stroke="#7fb4ee" stroke-width="2"/>
       <text x="${bx+16}" y="${by+34}" font-size="24" font-weight="800" fill="#fff">${p.name}</text>
       <g data-act="pinGo" data-btn style="cursor:pointer"><rect x="${bx+14}" y="${by+48}" width="232" height="44" rx="8" fill="#2c4a74" stroke="#3f8ae0" stroke-width="2"/>
       <text x="${bx+130}" y="${by+78}" text-anchor="middle" font-size="21" font-weight="700" fill="#fff">${selLabel}</text></g></g>`
   }
-  const pl = path ? `<polyline points="${path.map(q=>pt(P(...q))).join(' ')}" fill="none" stroke="#0f1117" stroke-opacity=".7" stroke-width="9"/><polyline points="${path.map(q=>pt(P(...q))).join(' ')}" fill="none" stroke="#ffd54f" stroke-width="5" stroke-dasharray="14 9"/>` : ''
+  const pl = path ? `<polyline points="${path.map(q=>pt(P(...q))).join(' ')}" fill="none" stroke="#0f1117" stroke-opacity=".7" stroke-width="9"/><polyline points="${path.map(q=>pt(P(...q))).join(' ')}" fill="none" style="stroke:var(--route,#ffd54f)" stroke-width="5" stroke-dasharray="14 9"/>` : ''
   return `<svg class="map" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">${clip}${floor}
-    ${pl}${walls}${pts}${items.sort((a,b)=>a[0]-b[0]).map(i=>i[1]).join('')}${labels}${bubble}</svg>`
+    ${pl}${walls}${pts}${items.sort((a,b)=>a[0]-b[0]).map(i=>i[1]).join('')}${labels}${bubble}</svg>${bubHTML}`
 }
 function radarSVG(big, off=false){
   if (off) return `<div class="radar ${big?'big':''}" style="display:flex;align-items:center;justify-content:center;text-align:center;color:var(--mut);font-size:15px;padding:16px">人検出が止まっています<br>左上の「人検出」で動かします</div>`
@@ -476,11 +576,11 @@ const GROUPS = {
     {k:'calib', name:'校正', icon:'calib', size:'', L:'1/2/2/3', P:'2/1/3/2'}]},
 }
 function tileHTML({act, icon, name, sub, color, size, area, why, dis}){
-  return `<div class="tile g ${size} ${dis?'dis':''}" data-btn ${dis?'data-dis':''} data-act="${dis?'':act}" ${dis&&why?`data-why="${why}"`:''} style="grid-area:${area};border-left-color:${color||'var(--bd-hi)'}">
+  return `<div class="tile g ${size} ${dis?'dis':''}" data-btn ${dis?'data-dis':''} data-act="${dis?'':act}" ${dis&&why?`data-why="${why}"`:''} style="grid-area:${area};border-left-color:${color||'var(--bd-hi)'};--gc:${color||'var(--panel)'}">
     <span style="color:${color||'var(--tx)'}">${ic(icon)}</span><div><div class="nm">${name}${sub?'<span class="ar">▸</span>':''}</div></div></div>`
 }
 function menuView(){
-  const m=S.menu, lvl=m.lvl, o=S.ori
+  const m=S.menu, lvl=m.lvl, o=S.ori==='P'?'P':'L'   // 横長 4:3（Q）は横長の並べ方
   const why = k => {
     if (m.trackerOff && (k==='follow'||k==='teachF')) return '人検出が止まっています'
     if (m.noRoute && k==='replay') return '経路がありません'
@@ -550,7 +650,7 @@ function dayView(){
     mainInner = `<div class="center" style="background:var(--inset)"><div class="card"><p>機体を待機場所に置いてから押します</p>${btn('openMap','会場地図を開く',{icon:'field',cls:'adv'})}</div></div>`
   } else {
     mainInner = mapSVG({robot, path, sel: choose ? d.sel : null, selLabel:'行き先にする', dest: (s==='moving'||s==='paused') ? d.dest : null})
-    if (s==='undeclared') mainInner += `<div class="center"><div class="card"><p>機体が待機場所（緑の家の印）にありますか</p>${btn('declare','待機場所にいます',{icon:'home',cls:'adv'})}</div></div>`
+    if (s==='undeclared') mainInner += `<div class="center"><div class="card"><p>機体が待機場所（家の印）にありますか</p>${btn('declare','待機場所にいます',{icon:'home',cls:'adv'})}</div></div>`
     if (s==='summon') mainInner += radarSVG(false, !S.tracker) + `<div class="flow"><span class="stp">呼び寄せ ${d.flowStep||1}/2</span><span class="msg">${d.flowStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'機体に来てほしい位置に立って「記録」'}</span>${btn('rec','記録',{cls:'adv',dis:!S.tracker})}</div>`
   }
   const runLabel = s==='paused' ? '再開' : '走行'
@@ -570,8 +670,21 @@ function dayView(){
       <div class="row" style="margin-top:8px">${btn('summon','呼び寄せ',{icon:'person',dis:!E.summon,why:whySummon,cls:'go',help:'summon'})}</div></div>
     <div class="sec"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{icon:'measure',dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{icon:'cam',dis:!E.cam,why:whyPanel,help:'cam'})}</div></div>
   </div>`
+  // 2026-11-17 案（options §6.1）: 右列の先頭は状態ではなく「どこへ・あとどれだけ」（状態はヘッダの札 D21）。
+  // 「次の配電盤」を行き先の先頭に幅いっぱいで置き、押せるときは出発の青で塗る。ボタンの数と位置は全状態で同じ（R2）
+  const WH = { unloaded:['',''], undeclared:['',''], home:[d.robot==='home'?'待機場所':'途中で停止',''],
+    moving:[`${destPin?.name??''} へ`,'残り 4.2 m'], paused:[`${destPin?.name??''} へ`,'残り 4.2 m'],
+    panel:['盤 A-1 の前',''], summon:['呼び寄せの位置',''] }[s]
+  const ctlNew = `<div class="ctl">
+    <div class="where full"><span>${WH[0]||'&nbsp;'}</span><b>${WH[1]}</b></div>
+    <div class="sec"><h3>操作</h3>${tog(E.stop, E.run, {runLabel, note:runNote, big:true, help:'toggle'})}
+      <div class="row" style="margin-top:8px">${btn('jog','手動',{dis:!E.manual,help:'jog'})}${btn('abort',AB,{dis:!E.abort,why:whyAbort,cls:AB.length>4?'f16':'',help:'abort'})}</div></div>
+    <div class="sec"><h3>行き先</h3>${btn('goNext', `次の配電盤<small>${choose ? pinById(nextId).name+' へ' : '&nbsp;'}</small>`, {dis:!E.next, why:whyDest, cls:'two go next'+(E.next?' adv':''), help:'next'})}
+      <div class="row" style="margin-top:8px">${btn('goHome','待機場所',{dis:!E.home,why:whyHome,cls:'go',help:'home'})}${btn('summon','呼び寄せ',{dis:!E.summon,why:whySummon,cls:'go',help:'summon'})}</div></div>
+    <div class="sec full"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{dis:!E.cam,why:whyPanel,help:'cam'})}</div></div>
+  </div>`
   return header('試験', true, DAY_STATE[s]||'') + `<div class="body"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit',help:'exit'})}${trackerBar(s!=='summon')}</div>
-    <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
+    <div class="content"><div class="mainv">${mainInner}</div>${S.wt.v==='new' ? ctlNew : ctl}</div></div>`
 }
 
 /* ---------------- 試験準備 ---------------- */
@@ -601,8 +714,12 @@ function prepView(){
   const regWhy = s==='entry' ? '地図作成を始めてから登録できます' : s==='reg' ? '登録中です（やめるときは地図の上の「やめる」）' : s==='return' ? '待機場所へ戻る途中は登録できません' : (needTrk ? '人検出を動かすと「人の位置で」登録できます（左上）' : '')
   const mseg = `<div class="mseg ${canReg?'':'dis'}" data-btn ${canReg?'':'data-dis'}>${METHODS.map(([k,n])=>`<div class="${p.method===k?'on':''}" data-act="${canReg?'method':''}" data-id="${k}">${n}</div>`).join('')}</div>`
   const regDis = !canReg || needTrk
+  // 2026-11-17 案（§6.1）: 先頭の行は状態（ヘッダの札と「未保存」が言う）ではなく、ピンの件数と登録中の行き先だけ
+  const top = S.wt.v==='new'
+    ? `<div class="where full"><span>${({entry:'',mapping:'',reg:'待機場所を登録',return:'待機場所へ'})[s]||'&nbsp;'}</span><b>ピン ${p.pins} 件</b></div>`
+    : `<div class="state full"><div class="s1">${st[0]}</div><div class="s2">${st[1]}</div></div>`
   const ctl = `<div class="ctl">
-    <div class="state full"><div class="s1">${st[0]}</div><div class="s2">${st[1]}</div></div>
+    ${top}
     <div class="sec full"><h3>操作</h3>${tog(stop, run, {note: runNote})}
       <div class="row" style="margin-top:8px">${btn('toast:地図とピンを保存した','保存',{icon:'save',cls:'save',dis:!(mapping)})}${btn('jog','手動',{icon:'jog'})}</div></div>
     <div class="sec full"><h3>登録</h3>${mseg}
@@ -674,6 +791,7 @@ function act(a, id){
 const NOTES = {
   menu:{
     changed:[
+      '<b>2026-11-17 の評価を受けた修正案</b>（options §6）: 区画の色は太い左の線をやめ、アイコンとタイルの地の色合いで出す。「走行」の区画は紫（青は「出発・進む」に使うため）。「制御系を停止する」は赤をやめて中立、未保存の件数は橙。大きさはタブレット実寸の基準',
       '一番上は 5 タイル（いま 14 ボタン）。走行の方式は「走行 ▸」の下へ（D3）',
       '<b>タイルの大きさを使う頻度・重要度で変えた</b>（D8）。一番上: 試験場が最大、走行・点検と校正が中、自律測定・設定が小。下の階層: 試験（当日）・追従走行・手動走行・始業点検を大きく（<b>順位は仮</b>）',
       '区画ごとの色（試験場＝緑青・走行＝青・点検と校正＝茶）を一番上のタイルの線・アイコンと、下の階層の帯にそろえた（D8）',
@@ -689,6 +807,7 @@ const NOTES = {
   },
   day:{
     changed:[
+      '<b>2026-11-17 の評価を受けた修正案</b>（options §6。下の切り替えで 11-16 の版と比べられる）: ① 停止│走行は押せる側だけを塗り、語を動詞に固定。状態はヘッダの札に任せ、右列の先頭は「どこへ・残り」 ② 「次の配電盤」を行き先の先頭に幅いっぱいで置き、押せるときは青 ③ タブレットで 0.8 倍に縮んでも押せる・読める大きさ ④ 1 色 1 意味の配色',
       'タブを無くした（いま 5）。行き先は地図のピンを押す →<b>「行き先にする」を押すとそのまま出発</b>（「走行」は押さない）。「待機場所」「次の配電盤」も押したら出発（D4・D10）',
       '吹き出しは、ピン以外を押すと消える（取り消し）（D10）',
       '<b>「中断」は走行中も効く</b>。行き先を間違えて押したら、すぐ止めて選び直しへ戻れる（D12）',
@@ -704,10 +823,13 @@ const NOTES = {
       {q:'ヘルプ表示（設定で切り替える想定）', k:['help','on'], v:[[false,'しない'],[true,'する']], why:'<b>2026-11-15 に決定</b>（D19）。マウスはボタンに 0.7 秒重ねると出て、外すと消える。タップは長押しで出て、「×」か枠の外を押すと閉じる。停止│走行・ジョグ・非常停止は長押しの対象外。<b>ヘッダと赤い「停止する」は、ヘルプが出ていても 1 回で効く</b>。ヘッダには絶対に重ねず、停止│走行はなるべく避けて出す。この案の画面では試験（当日）だけ'},
       {q:'「中断」の語（別の語の案を残す）', k:['day','abortLabel'], v:[['中断','中断'],['行き先を取り消す','行き先を取り消す'],['選び直す','選び直す']], why:'<b>「中断」のままに決定</b>（D15。語が長いと認識しにくい）。ほかの人には違って見えるかもしれないので、別の語は案として残す'},
     ],
-    look:['ヘルプ表示: 長押し・重ねる操作が、ふだんの操作の邪魔にならないか','状態を切り替えて、右列のボタンが一切動かないこと','ピン → 吹き出し →「行き先にする」で出発 → 間違えたら「中断」、の流れ','一日の始めの 2 手を地図の中央に出すのは R2 に当たらないか'],
+    look:['<b>案（§6）</b>: 待機・移動中・一時停止を切り替えて、ちらっと見て「次に押すもの」が分かるか。11-16 の版と比べて',
+      '<b>案（§6）</b>: 「横長 4:3」でタブレットの姿を見る。押す的・文字が小さすぎないか',
+      'ヘルプ表示: 長押し・重ねる操作が、ふだんの操作の邪魔にならないか','状態を切り替えて、右列のボタンが一切動かないこと','ピン → 吹き出し →「行き先にする」で出発 → 間違えたら「中断」、の流れ','一日の始めの 2 手を地図の中央に出すのは R2 に当たらないか'],
   },
   prep:{
     changed:[
+      '<b>2026-11-17 の評価を受けた修正案</b>（options §6）: 予約の停止│走行は試験（当日）より低く（56）、押せる側だけを塗る。先頭の行はピンの件数だけ（状態はヘッダの札と「未保存」）。大きさと配色は試験（当日）と同じ',
       '<b>人検出のトグルを左上に置いた</b>（D9。いまは対象選択タブの中）。試験（当日）と同じ場所。登録中は止められない',
       '登録は「① 方式 → ② 登録先」。いまの 6 ボタンが方式 3 の切り替え＋2 ボタンに（D5）',
       '「人の位置で」を選ぶと地図にレーダーを重ねる。人検出が止まっていれば、そのことと動かし方を出す',
@@ -769,20 +891,39 @@ const COMMON_OPTS = [
   {q:'フォント', k:['font','v'], v:Object.entries(FONTS).map(([k,v])=>[k,v[0]]), why:'「端末の標準」以外は、選ぶとインターネットから読み込む（比較のため）。実装ではファイルを同梱する。BIZ UDPゴシックは太さが 2 段階だけ'},
   {q:'ボタンの形', k:['shape','v'], v:[['role','役割で変える（決定）'],['round','角丸'],['sq','角ばった'],['pill','丸い']], why:'「役割で変える」: 行き先へ出発するボタンは丸、道具のボタンは角、「終了」は片側だけ丸。位置と大きさは変えない'},
 ]
-const optsOf = () => [...NOTES[S.scr].opts, ...(S.scr==='menu'?[]:MAP_OPTS), ...COMMON_OPTS]
+// 2026-11-17 の評価を受けた修正案（options §6）。既定は案、「11-16 の版」で元に戻して比べる
+const REV_OPTS = [
+  {q:'§6.1 重さの付け方（案）', k:['wt','v'], v:[['new','押せる側を塗る（案）'],['old','いまの側を塗る（11-16 の版）']], why:'案: 停止│走行は「いま押せる側」だけを塗る（止める＝赤・再開＝青）。語は「停止する」「走行する／再開する」で固定。状態はヘッダの札が言う。右列の先頭は「どこへ・残り」。「次の配電盤」を幅いっぱいで先頭に。人検出は ON のときだけ点ける。D2・R4・D17・D31 を見直す案', menu:false},
+  {q:'§6.2 大きさの基準（案）', k:['sz','v'], v:[['new','タブレット実寸で決める（案）'],['old','11-16 の版']], why:'iPad では論理キャンバスが 0.8 倍に縮む。縮んでも押す的 44 px・文字 12 px を割らないよう、論理 px で押す的 56 以上・小さい文字 15 以上にした。非常停止は高さ 76 で画面でいちばん高いボタン（Spec-webui.md §1.2）。停止│走行は 68 に下げた。「行き先にする」は高さ 60'},
+  {q:'§6.3 配色（案）', k:['pal','v'], v:[['new','1 色 1 意味（案）'],['old','11-16 の版']], why:'青＝機体が進むこと（出発・再開・機体・経路・行き先）／赤＝止める操作だけ／橙＝人が見るべき注意だけ／緑＝正常だけ／選んでいるもの＝明るい反転。配電盤のピンは中立の明るい灰、「走行」の区画は紫、「速度制限」「保存」「制御系を停止する」は中立'},
+]
+const PAUSE_OPT = {q:'§6.3 一時停止中の札の色（未決）', k:['pal','pause'], v:[['warn','橙（注意）'],['neutral','明るい中立']], why:'一時停止は異常ではないが、人の判断を待っている。橙を「注意」に含めるかを見て決める（配色が案のときだけ効く）'}
+const optsOf = () => [...NOTES[S.scr].opts, ...REV_OPTS.filter(o=>S.scr!=='menu'||o.menu!==false), ...(S.scr==='day'?[PAUSE_OPT]:[]), ...(S.scr==='menu'?[]:MAP_OPTS), ...COMMON_OPTS]
 function segHTML(items, cur, attr){ return items.map(([v,l])=>`<button class="${cur===v?'on':''}" ${attr}="${v}">${l}</button>`).join('') }
 function render(){
   document.getElementById('scrSeg').innerHTML = segHTML(SCRS, S.scr, 'data-scr')
   document.getElementById('subSeg').innerHTML = segHTML(SUBS[S.scr], subOf(), 'data-sub')
-  document.getElementById('oriSeg').innerHTML = segHTML([['L','横長 1280×720'],['P','縦長 960×1280']], S.ori, 'data-ori')
+  // 横長 4:3（1024×768）は 2026-11-17 の案（§6.2）。いまの spec の論理キャンバスは横長 16:9・縦長 3:4（Spec-webui.md §7）
+  document.getElementById('oriSeg').innerHTML = segHTML([['L','横長 1280×720'],['Q','横長 4:3 1024×768（案）'],['P','縦長 960×1280']], S.ori, 'data-ori')
   const dev=document.getElementById('dev')
-  const [W,H] = S.ori==='L' ? [1280,720] : [960,1280]
+  const [W,H] = {L:[1280,720], Q:[1024,768], P:[960,1280]}[S.ori]
   dev.style.width=W+'px'; dev.style.height=H+'px'
-  dev.className = (S.ori==='P' ? 'portrait' : '') + ' shape-' + S.shape.v
+  dev.className = (S.ori==='P' ? 'portrait' : S.ori==='Q' ? 'q' : '') + ' shape-' + S.shape.v + ' sz-' + S.sz.v + ' pal-' + S.pal.v
+    + ' wt-' + S.wt.v + (S.pal.pause==='neutral' ? ' pause-neutral' : '')
   applyFont(dev)
   dev.innerHTML = (S.scr==='menu'?menuView():S.scr==='day'?dayView():prepView()) + '<div class="toast"></div>'
-  if (S.ori==='P') dev.querySelectorAll('.content').forEach(c=>{ const mv=c.querySelector('.mainv'); if (mv) mv.style.minHeight='560px' })
-  fit(); renderNotes()
+  if (S.ori==='P' && S.sz.v==='old') dev.querySelectorAll('.content').forEach(c=>{ const mv=c.querySelector('.mainv'); if (mv) mv.style.minHeight='560px' })
+  fit(); placeBubble(dev); renderNotes()
+}
+// 吹き出し（HTML）をピンの上に置く。地図の SVG は viewBox 1000×620 を枠に「meet」で収めている
+function placeBubble(dev){
+  const b=dev.querySelector('.bub'); if (!b) return
+  const mv=b.parentElement, cw=mv.clientWidth, ch=mv.clientHeight, s=Math.min(cw/1000, ch/620)
+  const x=(cw-1000*s)/2 + (+b.dataset.x)*s, y=(ch-620*s)/2 + (+b.dataset.y)*s, r=(+b.dataset.r)*s
+  const bw=b.offsetWidth, bh=b.offsetHeight
+  const above = y - r - 8 - bh, below = y + r + 8
+  b.style.left = Math.min(Math.max(x - bw/2, 8), cw - bw - 8) + 'px'
+  b.style.top = (above >= 8 ? above : Math.min(below, ch - bh - 8)) + 'px'
 }
 function fit(){
   const wrap=document.getElementById('stageWrap'), dev=document.getElementById('dev'), box=document.getElementById('devBox')
@@ -795,7 +936,7 @@ function fit(){
    タップ: 長押し 0.6 秒で出る（その指を離してもボタンは押されない）。「×」か枠の外を押すと閉じる。
    停止│走行（data-nolong）は長押しの対象にしない。非常停止にはヘルプを付けない。 */
 const HELP = {
-  toggle:['停止 ／ 走行','「停止する」は移動をその場で止めます。行き先は残り、「再開する」で続きを走ります。青い側がいまの状態です。'],
+  toggle:['停止 ／ 走行','「停止する」は移動をその場で止めます。行き先は残り、「再開する」で続きを走ります。'],
   jog:['手動','手動操作パネルを開きます。スティックに触れている間だけ動きます。移動中に触れると一時停止します。'],
   abort:['中断','移動をやめて、行き先を選び直します。待機場所へは戻りません。'],
   home:['待機場所','待機場所へ移動します。押すとそのまま出発します。'],
@@ -815,12 +956,13 @@ function showHelp(el, sticky){
   const W=parseFloat(dev.style.width), H=parseFloat(dev.style.height), sc=dr.width/W
   const x=(r.left-dr.left)/sc, y=(r.top-dr.top)/sc, w=r.width/sc, hh=r.height/sc
   const box=document.createElement('div'); box.className='help'+(sticky?' sticky':'')
-  box.innerHTML=`<div class="ht"><span>${h[0]}</span><button class="hx" data-helpclose>${ic('close')}</button></div><p>${h[1]}</p>`
+  const tail = el.dataset.help==='toggle' ? (S.wt.v==='new' ? '色の付いた側が、いま押せる側です。' : '青い側がいまの状態です。') : ''
+  box.innerHTML=`<div class="ht"><span>${h[0]}</span><button class="hx" data-helpclose>${ic('close')}</button></div><p>${h[1]}${tail}</p>`
   dev.appendChild(box)
   const ph=box.offsetHeight
   // 出す場所（2026-11-15 決定）: ヘッダ（非常停止）には絶対に重ねない。停止│走行はなるべく避ける。
   // 候補を左・上・下・右の順に試し、停止│走行に重ならない最初のものを使う。どれも重なるなら最初の候補。
-  const TOP=118, clampX=v=>Math.min(Math.max(v,8),W-348), clampY=v=>Math.min(Math.max(v,TOP),H-ph-8)
+  const TOP=(dev.querySelector('.hdr')?.offsetHeight||110)+8, clampX=v=>Math.min(Math.max(v,8),W-348), clampY=v=>Math.min(Math.max(v,TOP),H-ph-8)
   const cands=[[x-348,clampY(y+hh/2-ph/2)],[clampX(x+w/2-170),y-ph-8],[clampX(x+w/2-170),y+hh+8],[x+w+8,clampY(y+hh/2-ph/2)]]
     .filter(([l,t])=>l>=8 && l<=W-348 && t>=TOP && t<=H-ph-8)
   const tg=dev.querySelector('.ctl .tg'); let avoid=null
@@ -867,7 +1009,7 @@ document.addEventListener('click', e=>{
     return toast('押せません　'+dz.dataset.why)
   }
   // 試験（当日）: 吹き出しは、ピンと吹き出しのボタン以外を押すと消える（取り消し。D10）
-  if (S.scr==='day' && S.day.sel && e.target.closest('#dev') && !e.target.closest('[data-act="pin"],[data-act="pinGo"]')){
+  if (S.scr==='day' && S.day.sel && e.target.closest('#dev') && !e.target.closest('[data-act="pin"],[data-act="pinGo"],.bub')){
     S.day.sel=null
     const t0=e.target.closest('[data-act]')
     if (!t0 || !t0.dataset.act || t0.closest('.dis,[data-dis]')) return render()
