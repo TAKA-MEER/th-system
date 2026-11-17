@@ -258,8 +258,9 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .sz-new .flow .msg{font-size:17px}
 .sz-new .center .card .b{min-height:64px}
 .sz-new .center .card p{font-size:17px}
-.sz-new .mainv.withradar svg.map{right:324px;width:auto}
-.sz-new .mainv.withflow svg.map{bottom:96px;height:auto}
+.sz-new .radar:not(.big){width:250px;height:250px}
+.sz-new .mainv.withradar svg.map{width:calc(100% - 274px)}
+.sz-new .mainv.withflow svg.map{height:calc(100% - 96px)}
 .sz-new .mapctl{top:10px;bottom:auto}
 .sz-new .b.caution{border-color:var(--warn);color:var(--warn-tx)}
 .bub{position:absolute;width:280px;background:#232733;border:2px solid var(--act-lt,#7fb4ee);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;z-index:4;box-shadow:0 6px 20px #000a}
@@ -273,6 +274,37 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 @keyframes afp{0%,100%{opacity:1}50%{opacity:.25}}
 @media (prefers-reduced-motion:reduce){.autoframe.pulse{animation:none}}
 .broken{position:absolute;left:0;right:0;top:140px;padding:24px;font-size:20px;color:var(--warn-tx)}
+
+/* §6.8 画面の地: 明るい（案）。1 色 1 意味（D37）はそのまま、地と文字の明暗だけを入れ替える */
+.theme-light,.theme-light.pal-new{--bg:#f4f6f9;--panel:#ffffff;--inset:#eef1f5;--ctrl:#e6eaf0;--ctrl-hi:#d5dbe4;--ctrl-on:#2f6bc6;
+  --bd:#d7dde5;--bd-hi:#b9c2ce;--tx:#161b22;--mut:#4f5866;--dim:#8d95a1;--brand-lt:#2a5fa8;
+  --ok-tx:#1f7a2e;--warn:#e08a00;--warn-tx:#8a5300;--ng-tx:#b3261e;--act-lt:#2f6bc6;
+  --sel-bg:#1f2733;--sel-tx:#ffffff;--pin-panel:#5b6675;--pin-home:#5b6675;--pin-sel:#1f2733;--pin-homesel:#1f2733;
+  --dest:#2f6bc6;--route:#2f6bc6;--robot:#2f6bc6;--robot-fp:rgba(47,107,198,.18);--lab:#161b22;--lab-bd:#ffffff;color:var(--tx)}
+.theme-light .hdr{border-bottom-color:var(--bd-hi)}
+.theme-light .hdr .r1{background:#ffffff}
+.theme-light .hdr .r2{background:#eef1f5}
+.theme-light .hdr .brand{color:var(--tx)}
+.theme-light .hdr .mst{background:#e6eaf0;color:var(--tx)}
+.theme-light .hdr .mst.run{color:#fff}
+.theme-light.pause-neutral .hdr .mst.pause{background:#ffffff;color:var(--tx);box-shadow:inset 0 0 0 1px var(--bd-hi)}
+.theme-light .estop-top{border-color:#8e1b1b}
+.theme-light .tg{border-color:var(--bd-hi)}
+.theme-light .tg2 .go-run{box-shadow:inset 0 0 0 3px #fff}
+/* 押せるボタンは白く浮かせ、押せないボタンは平たく沈める（明るい地では塗りの差だけだと見分けにくい） */
+.theme-light .b:not(.adv):not(.dis),.theme-light .mseg{background:#ffffff;box-shadow:0 1px 3px #0000001f}
+.theme-light .b:not(.adv):not(.dis){border-color:var(--bd-hi)}
+.theme-light.pal-new .b.dis{background:transparent !important;border-color:var(--bd) !important;color:#7d8592;box-shadow:none}
+.theme-light .tg{box-shadow:0 1px 3px #0000001f}
+.theme-light.pal-new .mapctl .b,.theme-light.pal-new .mapctl .b.dis,.theme-light .mapctl .b{background:#ffffffee !important}
+.theme-light .center{background:rgba(244,246,249,.78)}
+.theme-light .flow{background:rgba(255,255,255,.97)}
+.theme-light .radar{background:rgba(255,255,255,.97)}
+.theme-light .bub{background:#ffffff}
+.theme-light .help{background:#ffffff;border-color:var(--act-lt)}
+.theme-light .help p{color:var(--tx)}
+.theme-light .banner{color:var(--tx) !important}
+.theme-light .tile.dis,.theme-light .tile{box-shadow:0 1px 2px #0000000f}
 
 /* §6.3 色: 1 色 1 意味。青＝機体が進むこと（出発・再開のボタン・機体・経路・行き先）／赤＝止める操作だけ／
    橙＝人が見るべき注意だけ／緑＝正常だけ／選んでいるもの＝明るい反転 */
@@ -344,7 +376,7 @@ const S = {
   tracker:true,   // 人検出（試験準備・試験で共有。左上の操作バーのトグル）
   menu:{lvl:'top', trackerOff:false, noRoute:false},
   wt:{v:'new'}, sz:{v:'new'}, pal:{v:'new', pause:'neutral'},   // 2026-11-17 に決定（D33〜D37）。'old' で 11-16 の版
-  af:{v:'pulse'}, dbg:{v:'none'},   // 自律走行中の枠（§6.5・案）／表示の不具合の試し（D39）
+  af:{v:'pulse'}, dbg:{v:'none'}, theme:{v:'light'},   // 画面の地（§6.8・案。2026-11-17 の意見）   // 自律走行中の枠（§6.5・案）／表示の不具合の試し（D39）
   font:{v:'sys'}, shape:{v:'role'}, map:{rot:0, view:'2d', wall:'wall', col:'now'}, trk:{w:'io'},
   day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0,
        abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
@@ -502,7 +534,7 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
   const poly = (qs, attr) => `<polygon points="${qs.map(pt).join(' ')}" ${attr}/>`
   const depth = cs => Math.max(...cs.map(q=>P(...q)[1]))
   const clip = partial ? `<clipPath id="exp">${poly(EXPLORED.map(q=>P(...q)),'')}</clipPath>` : ''
-  const floor = `<g ${partial?'clip-path="url(#exp)"':''}><image href="${MAPDATA.pngs[S.map.col]}" x="${MX0}" y="${MY0}" width="${MAPDATA.w*CS}" height="${MAPDATA.h*CS}" transform="${mtx}" preserveAspectRatio="none" style="image-rendering:pixelated"/></g>`
+  const floor = `<g ${partial?'clip-path="url(#exp)"':''}><image href="${MAPDATA.pngs[S.theme.v==='light' && S.map.col==='now' ? 'b' : S.map.col]}" x="${MX0}" y="${MY0}" width="${MAPDATA.w*CS}" height="${MAPDATA.h*CS}" transform="${mtx}" preserveAspectRatio="none" style="image-rendering:pixelated"/></g>`
     + (partial ? poly(EXPLORED.map(q=>P(...q)), 'fill="none" stroke="#3a3f4c" stroke-dasharray="6 6"') : '')
   const walls = d3 ? wallBoxes(partial) : ''
   // いま LiDAR に見えている点（機体のまわりの壁）
@@ -517,16 +549,16 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
     const L=(x,y)=>[rx+x*ca-y*sa, ry+x*sa+y*ca]
     const fp=[[-17.6,-17.6],[17.6,-17.6],[17.6,17.6],[-17.6,17.6]].map(q=>L(...q)), g=fp.map(q=>P(...q)), hz=hpx(0.35)
     const tri=[[-9,-10],[13,0],[-9,10]].map(q=>L(...q)).map(q=>P(...q)).map(([x,y])=>[x,y-hz])
-    let body = poly(g, 'fill="rgba(63,138,224,.3)" stroke="#7fb4ee" stroke-width="1.5" stroke-linejoin="round"')
+    let body = poly(g, 'style="fill:var(--robot-fp,rgba(63,138,224,.3));stroke:var(--robot,#7fb4ee)" stroke-width="1.5" stroke-linejoin="round"')
     // （機体・経路・行き先の輪は「機体が進むこと」の青。2026-11-17 案 §6.3 でもこの色のまま）
     if (d3){ const t=g.map(([x,y])=>[x,y-hz]); let faces=[]
       for (let i=0;i<4;i++){ const j=(i+1)%4; faces.push([(g[i][1]+g[j][1])/2, poly([g[i],g[j],t[j],t[i]], 'fill="#2c5a93" stroke="#7fb4ee" stroke-width="1"')]) }
       body = faces.sort((a,b)=>a[0]-b[0]).map(f=>f[1]).join('') + poly(t, 'fill="#3f8ae0" stroke="#7fb4ee" stroke-width="1.5" stroke-linejoin="round"') }
-    items.push([depth(fp)+1, body + poly(tri, 'fill="#7fb4ee" stroke="#fff" stroke-width="2" stroke-linejoin="round"')]) }
+    items.push([depth(fp)+1, body + poly(tri, 'style="fill:var(--robot,#7fb4ee)" stroke="#fff" stroke-width="2" stroke-linejoin="round"')]) }
   const lift = d3 ? 30 : 0, mk={}; let labels=''
   // ピンの大きさ（viewBox の単位）。2026-11-17 案 §6.2: 地図は枠に合わせて 0.6〜0.9 倍で描かれ、タブレットでさらに 0.8 倍になる。
-  // 当たり判定の直径 96（横長で約 77・縦長で約 89 論理 px。縦長はタブレットで 0.8 倍）・印 36・名前 24 にする
-  const Z = S.sz.v==='new' ? {r:18, hit:48, lab:24, ly:48, hr:20} : {r:14, hit:34, lab:22, ly:40, hr:16}
+  // 当たり判定の直径 112（いちばん近い盤 B-1・B-2 でも重ならない。レーダーで地図が縮む地図作成中でも約 63 論理 px）・印 36・名前 24 にする
+  const Z = S.sz.v==='new' ? {r:18, hit:56, lab:24, ly:48, hr:20} : {r:14, hit:34, lab:22, ly:40, hr:16}
   for (const p of pins){
     const isSel = sel===p.id, [gx,gy]=P(p.x,p.y), x=gx, y=gy-lift; mk[p.id]=[x,y]
     items.push([gy+2, `<g data-act="pin" data-id="${p.id}" style="cursor:pointer">
@@ -538,7 +570,7 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
       ${dest===p.id?`<circle cx="${x}" cy="${y}" r="${Z.r+16}" fill="none" style="stroke:var(--dest,#ffd54f)" stroke-width="5"/>`:''}
       ${isSel?`<circle cx="${x}" cy="${y}" r="${Z.r+10}" fill="none" stroke="#fff" stroke-width="3"/>`:''}
       </g>`])
-    labels += `<text x="${gx}" y="${gy+(d3?24:Z.ly)}" text-anchor="middle" font-size="${Z.lab}" font-weight="700" fill="#e6e8ec" stroke="#0f1117" stroke-width="5" paint-order="stroke" pointer-events="none">${p.name}</text>`
+    labels += `<text x="${gx}" y="${gy+(d3?24:Z.ly)}" text-anchor="middle" font-size="${Z.lab}" font-weight="700" style="fill:var(--lab,#e6e8ec);stroke:var(--lab-bd,#0f1117)" stroke-width="5" paint-order="stroke" pointer-events="none">${p.name}</text>`
   }
   let bubble='', bubHTML=''
   // 2026-11-17 案 §6.2: 吹き出しを HTML にし、「行き先にする」を論理 px で高さ 60 にする（SVG の中だと地図と一緒に縮む）
@@ -845,6 +877,7 @@ const NOTES = {
   day:{
     changed:[
       '<b>2026-11-17 に決定</b>（D33〜D39。下の切り替えで 11-16 の版と比べられる）: ① 停止│走行は押せる側だけを塗り、語を動詞に固定。状態はヘッダの札に任せ、右列の先頭は「どこへ・残り」 ② 「次の配電盤」を行き先の先頭に幅いっぱいで置き、押せるときは青 ③ タブレットで 0.8 倍に縮んでも押せる・読める大きさ ④ 1 色 1 意味の配色。一時停止中の札は明るい中立 ⑤ 非常停止は画面の中身と切り離して最初に描き、いちばん上に重ねる',
+      '<b>画面の地（§6.8・案）</b>: 明るい地を既定にした（明るい部屋でちらっと見る用途に合うのでは、という意見）。下の「画面の地」で暗い地と比べられる',
       '<b>2026-11-17 の仕上げ</b>（options §6.6・§6.7）: 薄いボタンを押すと、理由をそのボタンのすぐ上に、ボタンを指して出す。押せないボタンは塗りを外して語を読めるようにした。呼び寄せでは地図をレーダーと下の帯を避けて描き、ピンが隠れない',
       'タブを無くした（いま 5）。行き先は地図のピンを押す →<b>「行き先にする」を押すとそのまま出発</b>（「走行」は押さない）。「待機場所」「次の配電盤」も押したら出発（D4・D10）',
       '吹き出しは、ピン以外を押すと消える（取り消し）（D10）',
@@ -869,6 +902,7 @@ const NOTES = {
   prep:{
     changed:[
       '<b>2026-11-17 の評価を受けた修正案</b>（options §6）: 予約の停止│走行は試験（当日）より低く（60）、押せる側だけを塗る。先頭の行はピンの件数だけ（状態はヘッダの札と「未保存」）。大きさと配色は試験（当日）と同じ',
+      '<b>画面の地（§6.8・案）</b>: 明るい地を既定にした。下の切り替えで暗い地と比べられる',
       '<b>2026-11-17 の仕上げ</b>（§6.7）: 「人の位置で」・登録中は地図をレーダーと下の帯を避けて描く（ピンが隠れない）。地図を回すボタンは地図の左上へ（登録の帯と重ならない）。入口の「前回を消す」は注意の橙の縁',
       '<b>人検出のトグルを左上に置いた</b>（D9。いまは対象選択タブの中）。試験（当日）と同じ場所。登録中は止められない',
       '登録は「① 方式 → ② 登録先」。いまの 6 ボタンが方式 3 の切り替え＋2 ボタンに（D5）',
@@ -929,6 +963,7 @@ const MAP_OPTS = [
 ]
 const AUTO_OPT = {q:'§6.5 自律走行中の枠（案）', k:['af','v'], v:[['pulse','ゆっくり点滅'],['solid','点けたまま'],['none','出さない']], why:'機体が自分で走っている間（試験（当日）の移動中・試験準備の待機場所へ戻る途中）、画面の縁を「進む」の青で囲む。ひと目で自律走行中と分かるように（ユーザー案 2026-11-17）。一時停止・手動では出さない。「移動中」の状態で見る'}
 const COMMON_OPTS = [
+  {q:'§6.8 画面の地（案）', k:['theme','v'], v:[['light','明るい（案）'],['dark','暗い（11-17 まで）']], why:'明るい部屋で、片手で持ってちらっと見る用途には明るい地のほうが合うのでは、という意見（2026-11-17）。1 色 1 意味（D37）はそのまま、地と文字の明暗だけを入れ替えた。地図は「明るい床・灰の壁」で描く'},
   {q:'表示の不具合の試し（D39）', k:['dbg','v'], v:[['none','なし'],['broken','画面の中身が描けない']], why:'画面の中身を描く処理が失敗しても、非常停止は最初に描いてあるので残り、押せる（試験準備・試験（当日）で試せる）'},
   {q:'フォント', k:['font','v'], v:Object.entries(FONTS).map(([k,v])=>[k,v[0]]), why:'「端末の標準」以外は、選ぶとインターネットから読み込む（比較のため）。実装ではファイルを同梱する。BIZ UDPゴシックは太さが 2 段階だけ'},
   {q:'ボタンの形', k:['shape','v'], v:[['role','役割で変える（決定）'],['round','角丸'],['sq','角ばった'],['pill','丸い']], why:'「役割で変える」: 行き先へ出発するボタンは丸、道具のボタンは角、「終了」は片側だけ丸。位置と大きさは変えない'},
@@ -950,7 +985,7 @@ function render(){
   const [W,H] = {L:[1280,720], P:[960,1280]}[S.ori]
   dev.style.width=W+'px'; dev.style.height=H+'px'
   dev.className = (S.ori==='P' ? 'portrait' : '') + ' shape-' + S.shape.v + ' sz-' + S.sz.v + ' pal-' + S.pal.v
-    + ' wt-' + S.wt.v + (S.pal.pause==='neutral' ? ' pause-neutral' : '')
+    + ' wt-' + S.wt.v + (S.pal.pause==='neutral' ? ' pause-neutral' : '') + ' theme-' + S.theme.v
   applyFont(dev)
   // D39: 非常停止を最初に描く。画面の中身はその後で、描けなくても非常停止は残る
   dev.innerHTML = '<div class="estop-top" data-estop>非常停止</div><div class="toast"></div>'
