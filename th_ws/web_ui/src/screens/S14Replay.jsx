@@ -8,7 +8,7 @@
 //           READY --ui.run--> RUN、RUN --ui.stop--> PAUSE、PAUSE --ui.run--> RUN
 //           RUN --(replay_runner が evt.arrived)--> PAUSE、* --ui.finish--> IDLE
 //
-// WAIVER(demo): W-19 — 逆再生はデモ範囲外（ボタンを disabled にしておく）。replay_runner の初期姿勢推定は
+// 逆再生は、順再生／逆再生のトグル（reverse 状態）で選ぶ。replay_runner の初期姿勢推定は
 // P4 の特例（W-01）で省略済みなので LOCALIZE はほぼ一瞬。
 //
 // 操作カードは stop（ui.stop）と run（ui.run、ラベル「再生」）だけ。
@@ -87,6 +87,8 @@ export default function S14Replay({ onFinish }) {
   const disabledAll = stale || state?.mode == null
 
   const [selectedId, setSelectedId] = useState(null)
+  // W-19: 再生方向。既定は順再生（reverse=false）。「順再生／逆再生」の行で切り替える。
+  const [reverse, setReverse] = useState(false)
   const [localizeStuck, setLocalizeStuck] = useState(false)
   // WS-9T: 再生速度の比率。既定は中速。走行中に変えても replay_runner が
   // 次ティックで反映する（useReplaySpeedPublisher → /replay/speed_scale）。
@@ -153,11 +155,10 @@ export default function S14Replay({ onFinish }) {
     }
   }
 
-  // この経路で進む → ui.route_select {id, reverse:false}。
-  // WAIVER(demo): W-19 — 逆再生はデモ範囲外（reverse は常に false）。
+  // この経路で進む → ui.route_select {id, reverse}（W-19: トグルで選んだ方向）。
   async function handleProceed() {
     if (selectedId == null) return
-    await sendTrigger('ui.route_select', { id: selectedId, reverse: false })
+    await sendTrigger('ui.route_select', { id: selectedId, reverse })
   }
 
   // W-01 P3: 完全グローバルで探す → ui.localize_global。
@@ -270,10 +271,27 @@ export default function S14Replay({ onFinish }) {
               </div>
             )}
             <div className="row mt">
-              <span className="grow sm">{S14_FWD}</span>
-              <span className="pill ok">{S14_FWD}</span>
-              <span className="sm">{S14_REV}</span>
-              <button type="button" className="btn sm" disabled>{S14_REV}</button>
+              <span className="grow sm">{S14_FWD}／{S14_REV}</span>
+              <button
+                type="button"
+                className={`btn sm${!reverse ? ' primary' : ''}`}
+                data-testid="s14-dir-fwd"
+                aria-pressed={!reverse}
+                disabled={disabledAll}
+                onClick={() => setReverse(false)}
+              >
+                {S14_FWD}
+              </button>
+              <button
+                type="button"
+                className={`btn sm${reverse ? ' primary' : ''}`}
+                data-testid="s14-dir-rev"
+                aria-pressed={reverse}
+                disabled={disabledAll}
+                onClick={() => setReverse(true)}
+              >
+                {S14_REV}
+              </button>
             </div>
             <button
               type="button"
