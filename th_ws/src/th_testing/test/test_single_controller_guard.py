@@ -139,3 +139,58 @@ def test_bringup_registers_guard_before_any_node():
     prelaunch_pos = src.index("make_guard_opaque_function())")
     assert guard_pos < first_node_pos
     assert prelaunch_pos < guard_pos
+
+
+# ---------------------------------------------------------------------------
+# _opaque 本体（launch から呼ばれる関数の中身）
+# ---------------------------------------------------------------------------
+
+
+class _FakeLogInfo:
+    def __init__(self, msg):
+        self.msg = msg
+
+
+def _install_fake_launch(monkeypatch):
+    """host には launch が無いので、_opaque が中の遅延 import 先を差し替える。"""
+    fake_launch = type(sys)("launch")
+    fake_actions = type(sys)("launch.actions")
+    fake_actions.LogInfo = _FakeLogInfo
+    fake_launch.actions = fake_actions
+    monkeypatch.setitem(sys.modules, "launch", fake_launch)
+    monkeypatch.setitem(sys.modules, "launch.actions", fake_actions)
+
+
+def test_opaque_propagates_startup_refusal(monkeypatch):
+    """run_startup_check が RuntimeError を上げたら _opaque もそのまま上げ、
+    launch が中止される（登録だけ縛って中身を空にしても通る変異を落とす）。"""
+    _install_fake_launch(monkeypatch)
+
+    def _raise(**kwargs):
+        raise RuntimeError("別の PC の制御系が動いています（ノード名: obstacle_limiter）。"
+                           "そちらを止めてから起動してください")
+
+    monkeypatch.setattr(scg, "run_startup_check", _raise)
+    opaque = scg.make_single_controller_opaque_function()
+    import pytest
+    with pytest.raises(RuntimeError, match="別の PC の制御系が動いています"):
+        opaque(None)
+
+
+def test_opaque_returns_warning_lines_as_loginfo(monkeypatch):
+    """run_startup_check が警告の行を返したら LogInfo のリストになる（中身が空の
+    変異でこの行も消えることを縛る）。"""
+    _install_fake_launch(monkeypatch)
+    monkeypatch.setattr(scg, "run_startup_check", lambda **kwargs: ["警告: グラフ未確認"])
+    opaque = scg.make_single_controller_opaque_function()
+    actions = opaque(None)
+    assert len(actions) == 1
+    assert isinstance(actions[0], _FakeLogInfo)
+    assert actions[0].msg == "警告: グラフ未確認"
+
+
+def test_opaque_returns_empty_when_nobody_there(monkeypatch):
+    _install_fake_launch(monkeypatch)
+    monkeypatch.setattr(scg, "run_startup_check", lambda **kwargs: [])
+    opaque = scg.make_single_controller_opaque_function()
+    assert opaque(None) == []
