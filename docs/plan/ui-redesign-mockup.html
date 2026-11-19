@@ -281,14 +281,17 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
   --ok-tx:#1f7a2e;--warn:#e08a00;--warn-tx:#8a5300;--ng-tx:#b3261e;--act-lt:#2f6bc6;
   --sel-bg:#1f2733;--sel-tx:#ffffff;--pin-panel:#5b6675;--pin-home:#5b6675;--pin-sel:#1f2733;--pin-homesel:#1f2733;
   --dest:#2f6bc6;--route:#2f6bc6;--robot:#2f6bc6;--robot-fp:rgba(47,107,198,.18);--lab:#161b22;--lab-bd:#ffffff;color:var(--tx)}
-.theme-light .hdr{border-bottom-color:var(--bd-hi)}
-.theme-light .hdr .r1{background:#ffffff}
-.theme-light .hdr .r2{background:#eef1f5}
-.theme-light .hdr .brand{color:var(--tx)}
-.theme-light .hdr .mst{background:#e6eaf0;color:var(--tx)}
+/* ヘッダは地と分けて濃い墨色の帯にする（2026-11-19 の意見）。青は「機体が動く」の色なので帯には使わない */
+.theme-light .hdr{color:#f2f5f9;border-bottom-color:#11161d}
+.theme-light .hdr .r1{background:#2b3440}
+.theme-light .hdr .r2{background:#20272f}
+.theme-light .hdr .brand{color:#ffffff}
+.theme-light .hdr .brand small{color:#b8c2cf}
+.theme-light .hdr .st{color:#f2f5f9}
+.theme-light .hdr .mst{background:#3c4756;color:#ffffff}
 .theme-light .hdr .mst.run{color:#fff}
-.theme-light.pause-neutral .hdr .mst.pause{background:#ffffff;color:var(--tx);box-shadow:inset 0 0 0 1px var(--bd-hi)}
-.theme-light .estop-top{border-color:#8e1b1b}
+.theme-light.pal-new .hdr .zone{border-color:#7a8696;color:#dfe4ea}
+.theme-light.pause-neutral .hdr .mst.pause,.theme-light.pal-new.pause-neutral .hdr .mst.pause{background:#ffffff;color:#161b22;box-shadow:none}
 .theme-light .tg{border-color:var(--bd-hi)}
 .theme-light .tg2 .go-run{box-shadow:inset 0 0 0 3px #fff}
 /* 押せるボタンは白く浮かせ、押せないボタンは平たく沈める（明るい地では塗りの差だけだと見分けにくい） */
