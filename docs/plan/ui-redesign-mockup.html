@@ -339,7 +339,11 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
   --stop:#0b0d10;--jis-y:#ffd100;--warn:#e6b800;--warn-tx:#ffd84d}
 .theme-light.pal-new.col-jis{--act:#1f7a35;--act-lt:#1f7a35;--dest:#1f7a35;--route:#1f7a35;--robot:#1f7a35;--robot-fp:rgba(31,122,53,.16);
   --stop:#161b22;--warn:#d9a800;--warn-tx:#5c4700;--sel-bg:#5b6675;--sel-tx:#ffffff}
-.col-jis .estop-top{outline:6px solid var(--jis-y,#ffd100);outline-offset:0}
+.estop-plate{display:none}
+/* 非常停止のすぐ背後の黄は、ボタンの縁ではなく「地」として見せる: ヘッダ下段の右端を角の無い黄の板にし、その上に赤を載せる */
+.col-jis .estop-plate{display:block;position:absolute;z-index:99;right:0;top:50px;height:60px;width:332px;background:var(--jis-y,#ffd100)}
+.col-jis.sz-new .estop-plate{top:48px;height:86px;width:calc(max(330px,26%) + 12px)}
+.col-jis.sz-new.portrait .estop-plate{width:calc(47% + 12px)}
 .pal-new.col-jis .tg2 .go-stop{background:var(--stop);color:#fff}
 .pal-new.col-jis:not(.theme-light) .tg2 .go-stop{box-shadow:inset 0 0 0 2px #ffffff55}
 .pal-new.col-jis .b.interrupt:not(.dis){background:var(--jis-y);border-color:#a88a00;color:#161b22}
@@ -1010,7 +1014,7 @@ function render(){
     + ' wt-' + S.wt.v + (S.pal.pause==='neutral' ? ' pause-neutral' : '') + ' theme-' + S.theme.v + ' col-' + S.col.v
   applyFont(dev)
   // D39: 非常停止を最初に描く。画面の中身はその後で、描けなくても非常停止は残る
-  dev.innerHTML = '<div class="estop-top" data-estop>非常停止</div><div class="toast"></div>'
+  dev.innerHTML = '<div class="estop-plate"></div><div class="estop-top" data-estop>非常停止</div><div class="toast"></div>'
   let view
   try { if (S.dbg.v==='broken' && S.scr!=='menu') throw new Error('（試し）画面の中身を描けなかった')
         view = S.scr==='menu'?menuView():S.scr==='day'?dayView():prepView() }
