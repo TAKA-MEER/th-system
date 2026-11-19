@@ -1211,6 +1211,16 @@
   source: "esp32/src/config.h WATCHDOG_MS"
   note: "esp32/src/config.h の写し（CLAUDE.md に明記の 600ms）。ファーム側が正。ずれたら A6/A7 が拾う"
 
+- name: esp32_ws_host
+  unit: null
+  class: b
+  status: given
+  value: "192.168.5.1"
+  consumers: [esp32_bridge]
+  spec_ref: "Spec.md §6.1 / Spec-safety.md §6.4"
+  source: "th_esp32_bridge/config/params.yaml esp32_ws_host"
+  note: "esp32_bridge（クライアント）の接続先＝ラズパイの br0。2026-11-19 に向きを逆にした（Spec-safety §6.4）。PC のアドレスは決め打ちにしない"
+
 - name: esp32_ws_port
   unit: null
   class: b
@@ -1219,7 +1229,17 @@
   consumers: [esp32_bridge]
   spec_ref: "DetailedDesign-wp0.md WP-NET-01 §3 / WP-ESP32-01 §3.3"
   source: "th_esp32_bridge/config/params.yaml esp32_ws_port ／ ラズパイの pi_serial_relay --ws-port（2026-09-05〜。旧 esp32/src/wifi_credentials.h WS_SERVER_PORT は廃止）"
-  note: "esp32_bridge の WebSocket 待受ポート。ラズパイの pi_serial_relay と一致させること。WP-PARAM-01 時点で未登録だった行（WP-ESP32-01 で追加）。SG-B21 でノード側をこの名に寄せた（旧 ws_port。decision-1）"
+  note: "ラズパイの pi_serial_relay（サーバー）の WebSocket 待ち受けポート。esp32_bridge はここへ接続しに行く（2026-11-19 に向きを逆転。Spec-safety §6.4）。WP-PARAM-01 時点で未登録だった行（WP-ESP32-01 で追加）。SG-B21 でノード側をこの名に寄せた（旧 ws_port。decision-1）"
+
+- name: esp32_relay_idle_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 1500
+  consumers: [pi_serial_relay]
+  spec_ref: "Spec-safety.md §6.4"
+  source: "th_ws/scripts/pi_serial_relay.py DEFAULT_IDLE_TIMEOUT_MS"
+  note: "ラズパイの中継が「制御 PC からの無通信」で経路を手放すまでの時間。PC 側は 20Hz で送り続けるので、1.5 秒分の無通信は PC か通信路が死んだときだけ（Spec-safety §6.4）。ラズパイ側は CLI の --idle-timeout-ms が正で、この値は既定の写し"
 
 - name: link_wait_timeout_ms
   unit: ms

@@ -3,7 +3,10 @@
 esp32_bridge.py — ROS2 ノード本体
 ====================================
 ws_protocol.py のバイナリプロトコルで ESP32 と WebSocket 通信する。
-esp32_bridge がサーバー、ESP32 がクライアントとして接続しにくる(6.1節参照)。
+esp32_bridge がクライアント、ラズパイの pi_serial_relay がサーバーとして
+待ち受け、esp32_bridge が接続しにいく（Spec.md §6.1・Spec-safety.md §6.4。
+2026-11-19 に向きを逆にした。どの PC の esp32_bridge でも接続できるが、
+同時に制御するのは先に接続した 1 台だけ＝中継が先着以外を 409 で断る）。
 
 担当:
   1. /cmd_vel (Twist) → 差動駆動変換 → WHEEL_CMD フレーム送信
@@ -25,11 +28,14 @@ from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
-from std_msgs.msg import Bool, UInt8
+from std_msgs.msg import Bool, String, UInt8
 from th_system_msgs.msg import WheelFeedback
 import tf2_ros
 
+import re
+
 import websockets
+import websockets.exceptions
 
 from th_esp32_bridge.keepalive_core import Twist2, keepalive_value
 from th_esp32_bridge.bridge_diagnostics import (
@@ -77,11 +83,13 @@ class Esp32Bridge(Node):
         # ESP32 の制御周期 (esp32/src/config.h の CTRL_PERIOD_MS と一致させること)。
         # WHEEL_FEEDBACK 1 フレームが表す走行時間そのもので、オドメトリ積分の dt になる。
         self.declare_parameter('feedback_period_ms', 100)
-        self.declare_parameter('ws_host', '0.0.0.0')
+        # 2026-11-19 (Spec-safety §6.4): esp32_bridge は**クライアント**。接続先は
+        # ラズパイ（br0 = 192.168.5.1）の pi_serial_relay サーバー。
+        # PC のアドレスを決め打ちにしない（どの PC でも使える）。
+        self.declare_parameter('esp32_ws_host', '192.168.5.1')
         # SG-B21: registry の esp32_ws_port が正。旧名 ws_port は使わない
         # （生成 esp32_bridge.yaml の esp32_ws_port が死にキーになっていた）。
-        # 既定値は静的 params.yaml と同じ 8766（ラズパイの pi_serial_relay が
-        # 決め打ちで接続しに来る）。
+        # 中継サーバーの待ち受けポート（ラズパイの pi_serial_relay --ws-port と一致）。
         self.declare_parameter('esp32_ws_port', 8766)
         # DEBT-4 対処 (WP-SAFE-02): /cmd_vel がこの時間 [ms] 途絶したら、
         # キープアライブの参照値をゼロへ書き換える (esp32_bridge.py 側で
@@ -119,7 +127,7 @@ class Esp32Bridge(Node):
         self._odom_frame = self.get_parameter('odom_frame').value
         self._base_frame = self.get_parameter('base_frame').value
         self._publish_tf = self.get_parameter('publish_tf').value
-        self._ws_host = self.get_parameter('ws_host').value
+        self._ws_host = self.get_parameter('esp32_ws_host').value
         self._ws_port = self.get_parameter('esp32_ws_port').value
         self._cmd_vel_stale_ms = self.get_parameter('cmd_vel_stale_ms').value
         self._rx_queue_drain_max_per_cycle = \
@@ -178,6 +186,16 @@ class Esp32Bridge(Node):
         self._last_firmware_flags = None
         self._pub_imu = self.create_publisher(Imu, '/esp32/imu_data', 10)
         self._pub_imu_calib = self.create_publisher(UInt8, '/esp32/imu_calib_status', 10)
+        # 「別の PC が制御中」の通知（Spec-safety §6.4）。中継が 409 で断ったとき、
+        # 制御中の PC のアドレスとともにここへ出す（ESP32 切断と区別する）。
+        # String に JSON を載せる（connectivity_checker の /system/link_status と同じ流儀。
+        # 新規 .msg は作らない）。consumers は connectivity_checker。
+        _blocked_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST)
+        self._pub_blocked = self.create_publisher(String, '/esp32/bridge_blocked', _blocked_qos)
         self._tf_broadcaster = tf2_ros.TransformBroadcaster(self)
 
         # ── Subscribers ────────────────────────────────────
@@ -292,13 +310,13 @@ class Esp32Bridge(Node):
         self._coalescer_lock = threading.Lock()
         self._coalescer_state = _COALESCER_INITIAL_STATE
 
-        self._ws_thread = threading.Thread(target=self._run_ws_server, daemon=True)
+        self._ws_thread = threading.Thread(target=self._run_ws_client, daemon=True)
         self._ws_thread.start()
 
         self.get_logger().info(
             f"esp32_bridge 起動 wheel_base={self._wheel_base:.3f} "
             f"wheel_radius_scale={self._wheel_radius_scale:.3f} "
-            f"ws={self._ws_host}:{self._ws_port}")
+            f"ws={self._ws_host}:{self._ws_port} (client)")
 
     # ── パラメータ変更をランタイムで反映 (キャリブレーション用) ────────
     def _on_set_parameters(self, params):
@@ -326,65 +344,92 @@ class Esp32Bridge(Node):
                     f"wheel_radius_scale 更新: {self._wheel_radius_scale:.6f}")
         return SetParametersResult(successful=True)
 
-    # ── WebSocket サーバー (別スレッドの asyncio イベントループ) ──────
-    def _run_ws_server(self):
+    # ── WebSocket クライアント (別スレッドの asyncio イベントループ) ──
+    # 2026-11-19 (Spec-safety §6.4): ラズパイの pi_serial_relay（サーバー）へ
+    # 接続しにいく。切れたら一定間隔で再接続し続ける。再接続の間隔は 1.0 s。
+    # 規則的な値ではなく「死んだ中継をすぐ諦めず、見つかればすぐ掴む」ため。
+    _WS_RECONNECT_DELAY_S = 1.0
+
+    def _run_ws_client(self):
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
-        try:
-            self._loop.run_until_complete(self._serve())
-        except BaseException as e:
-            # bind 失敗 (ポート使用中等) やイベントループの想定外クラッシュ。
-            # WS サーバー無しでノードだけ生き続けると「起動しているのに
-            # ESP32 が繋がらない」状態に陥るため、即座にプロセスごと落とす
-            # (launch の respawn や再起動で復帰させる方が安全)。
-            self.get_logger().fatal(
-                f"WebSocket サーバー停止: {type(e).__name__}: {e} — ノードを終了します "
-                f"(ポート使用中の場合は別の esp32_bridge が動いていないか確認)")
-            import os
-            os._exit(1)
-
-    async def _serve(self):
-        async with websockets.serve(self._handle_client, self._ws_host, self._ws_port):
-            await asyncio.Future()  # run forever
-
-    async def _handle_client(self, websocket):
-        # ESP32 は 1 台しか繋がらない前提。新しい接続が来たら、古い接続は
-        # 必ず閉じる。
-        #
-        # 2026-09-02 実機: ここで _ws_conn を上書きするだけだったため、
-        # ESP32 側が再接続しても古い接続の `async for message` が生き残り、
-        # 死んだソケットからのフレームを _rx_queue に流し込み続けていた
-        # (WiFi 経由だと FIN が届かず TCP が半開きのまま残る)。
-        # 症状: `opening handshake failed` / wheel_feedback の二重計上 /
-        # 送信先が古いソケットのままで指令が届かない。
-        with self._ws_conn_lock:
-            previous = self._ws_conn
-            self._ws_conn = websocket
-        if previous is not None and previous is not websocket:
-            self.get_logger().warn(
-                f"古い ESP32 接続 {previous.remote_address} を閉じます "
-                f"(新規接続 {websocket.remote_address} を受理)")
+        while True:
             try:
-                await previous.close()
-            except Exception as e:   # noqa: BLE001 — close 失敗で新接続を壊さない
-                self.get_logger().warn(f"古い接続の close に失敗: {e!r}")
+                self._loop.run_until_complete(self._connect_once())
+            except BaseException as e:  # noqa: BLE001 — 再接続ループへ落とす
+                self.get_logger().warn(
+                    f"中継への接続が切れました: {type(e).__name__}: {e} — "
+                    f"{self._WS_RECONNECT_DELAY_S:.1f} s 後に再接続します")
+            self._loop.run_until_complete(asyncio.sleep(self._WS_RECONNECT_DELAY_S))
+
+    async def _connect_once(self):
+        uri = f"ws://{self._ws_host}:{self._ws_port}"
+        try:
+            ws = await websockets.connect(uri, proxy=None)
+        except Exception as e:  # noqa: BLE001 — 拒否の切り分けは下で
+            owner = self._blocked_owner_from(e)
+            if owner is not None:
+                self.get_logger().warn(
+                    f"別の PC（{owner}）が制御中のため接続を断られました")
+                self._publish_blocked(True, owner)
+                # 断られている間も再接続し続ける（先の PC が手放せば掴める）。
+                await asyncio.sleep(self._WS_RECONNECT_DELAY_S)
+                return
+            raise
         # 接続のたびにリセットする: 次に届く ESTOP_HW フレームで
         # /safety/firmware_flags を必ず publish させる(接続時に改めて知らせる。
         # WP-ESP32-01 §3.1「変化時＋接続時」)。rclpy 側スレッドの
         # _handle_frame からしか _last_firmware_flags を読み書きしないため
         # (drain は同一タイマーコールバック内)、ここでの代入だけロックなしで安全。
         self._last_firmware_flags = None
-        self.get_logger().info(f"ESP32 接続: {websocket.remote_address}")
+        with self._ws_conn_lock:
+            self._ws_conn = ws
+        self._publish_blocked(False, None)
+        self.get_logger().info(f"ESP32 接続（中継 {uri}）")
         try:
-            async for message in websocket:
+            async for message in ws:
                 if not isinstance(message, (bytes, bytearray)):
                     continue
                 self._rx_queue.push(bytes(message))
         finally:
             with self._ws_conn_lock:
-                if self._ws_conn is websocket:
+                if self._ws_conn is ws:
                     self._ws_conn = None
             self.get_logger().warn("ESP32 切断")
+
+    @staticmethod
+    def _blocked_owner_from(exc: BaseException) -> "str | None":
+        """握手の拒否（409）から制御中の PC のアドレスを取り出す。
+
+        中継は X-Controlling-PC 見出しと本文の両方にアドレスを入れて 409 を返す
+        （pi_serial_relay._conflict_response）。見出しを優先し、無ければ本文中の
+        IP を拾う。409 でなければ None。
+        """
+        resp = getattr(exc, "response", None)
+        if resp is None:
+            return None
+        status = getattr(resp, "status_code", None)
+        if status is None:
+            status = getattr(resp, "status", None)
+        if status != 409:
+            return None
+        headers = getattr(resp, "headers", None) or {}
+        owner = headers.get("X-Controlling-PC") if hasattr(headers, "get") else None
+        if owner:
+            return str(owner)
+        body = getattr(resp, "body", b"") or b""
+        text = body.decode("utf-8", "ignore") if isinstance(body, (bytes, bytearray)) else str(body)
+        m = re.search(r"\d+\.\d+\.\d+\.\d+", text)
+        return m.group(0) if m else "unknown"
+
+    def _publish_blocked(self, blocked: bool, owner: "str | None") -> None:
+        import json
+        msg = String()
+        msg.data = json.dumps({"blocked": blocked, "owner": owner})
+        try:
+            self._pub_blocked.publish(msg)
+        except Exception:  # noqa: BLE001 — ROS 終了時等の例外で再接続ループを壊さない
+            pass
 
     # ── /cmd_vel → WHEEL_CMD 送信 ─────────────────────────────────
     def _cb_cmd_vel(self, msg: Twist):
