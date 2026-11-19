@@ -6,7 +6,7 @@
 //              "esp32_loopback": {...},
 //              "lidar": {..., "points", "expected_points"},
 //              "nodes": {"ok", "missing", "ignored", "excluded"}},
-//    "timeout_ms": int, "estop_hw": {"seen", "pressed"}}
+//    "timeout_ms": int, "esp32_blocked": {"blocked", "owner"}, "estop_hw": {"seen", "pressed"}}
 //
 // `ok` は本当の受信で決まる（開発モードの link で外していても偽のまま）。
 // 外していることは `ignored` で別に示す（Spec-webui.md §3.1 の機器別の行）。
@@ -49,6 +49,10 @@ export function parseLinkStatus(raw) {
   return {
     items,
     timeoutMs: num(obj.timeout_ms),
+    esp32Blocked: {
+      blocked: obj.esp32_blocked?.blocked === true,
+      owner: typeof obj.esp32_blocked?.owner === 'string' ? obj.esp32_blocked.owner : null,
+    },
     estopHw: { seen: obj.estop_hw?.seen === true, pressed: obj.estop_hw?.pressed === true },
     // 1b-6 SG-B7: 再起動の回数（start.sh が control_attempt で渡した起動回数と、
     // このノードが restart_control_stack を実行した回数）。S-00 の
@@ -67,6 +71,7 @@ export const DEFAULT_LINK_TEXT = {
   ignored: '（開発モードで無視中）', msAgo: ' ms 前', secAgo: ' 秒前',
   loopNoReport: 'ESP32 が折り返しを報告していない（ファームの書き込みが必要）',
   loopNotAlive: 'ESP32 に速度指令が届いていない',
+  blockedBy: '別の PC が制御中（',
 }
 
 function fmtAge(ms, t) {
@@ -96,6 +101,10 @@ export function linkRowView(status, key, t = DEFAULT_LINK_TEXT) {
         && it.points !== it.expectedPoints) {
       detail += `・${t.points}${it.points}／${it.expectedPoints}`
     }
+  }
+  if ((key === 'esp32_feedback' || key === 'esp32_loopback') && !it.ok
+      && status.esp32Blocked?.blocked) {
+    detail = `${t.blockedBy}${status.esp32Blocked.owner ?? t.unknown}）`
   }
   if (it.ignored) detail += t.ignored
   return it.ok

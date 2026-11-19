@@ -140,7 +140,8 @@ def link_status(now_ms: int, last_fb_ms: Optional[int], last_cmd_alive_ms: Optio
                 last_scan_ms: Optional[int], scan_points: int,
                 present_nodes: Iterable[str], p: Params,
                 estop_seen: bool, hw_estop: bool,
-                last_cmd_report_ms: Optional[int] = None) -> dict:
+                last_cmd_report_ms: Optional[int] = None,
+                blocked_owner: Optional[str] = None) -> dict:
     """S-00 の機器別の行（Spec-webui.md §3.1）に出す項目別の状態。`/system/link_status` の中身。
 
     `ok` は**本当の状態**（開発モードの `link` で外していても実際の受信で判定する）。
@@ -150,6 +151,10 @@ def link_status(now_ms: int, last_fb_ms: Optional[int], last_cmd_alive_ms: Optio
     `age_ms` は最後に受信してからの経過（未受信は None）。折り返しの `age_ms` は ESP32 が
     「受信中」と報告した最後からの経過、`reported_age_ms` は報告そのもの（真偽を問わず）の経過。
     フィードバックは来るのに `reported_age_ms` が None なら、報告しない古いファーム。
+
+    `blocked_owner` は `/esp32/bridge_blocked` の制御中 PC のアドレス（Spec-safety §6.4）。
+    断られている間も ESP32 の2項目は受信が無いので NG のまま（疎通確認は通過しない）。
+    画面はこの値で「別の PC が制御中」と ESP32 切断を区別する。
     """
     raw = evaluate(now_ms, last_fb_ms, last_cmd_alive_ms, last_scan_ms, scan_points, present_nodes,
                    Params(esp32_alive_timeout_ms=p.esp32_alive_timeout_ms,
@@ -170,6 +175,7 @@ def link_status(now_ms: int, last_fb_ms: Optional[int], last_cmd_alive_ms: Optio
                       "ignored": ignored, "excluded": bool(p.sim)},
         },
         "timeout_ms": int(p.esp32_alive_timeout_ms),
+        "esp32_blocked": {"blocked": blocked_owner is not None, "owner": blocked_owner},
         "estop_hw": {"seen": bool(estop_seen), "pressed": bool(hw_estop)},
     }
 
