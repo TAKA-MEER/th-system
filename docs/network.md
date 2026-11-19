@@ -416,9 +416,9 @@ PC 側の `speaker_announcer`（bringup で起動）が `/speaker/cue`（2 Hz）
 > 3. `journalctl -u rpi-serial-relay -f` に `WebSocket サーバーを待ち受けます` と
 >    出ること、および PC 側の `esp32_bridge` のログに `ESP32 接続（中継 ws://192.168.5.1:8766）`
 >    が出て `ros2 topic hz /esp32/wheel_feedback` が約 100 ms で並ぶことを確認する。
-> ラズパイの `websockets` は wheel 取得時に版を固定していない（最新が入る見込み）。
-> `pi_serial_relay.py` は新しい asyncio 実装と古い legacy 実装の両対応にしてある
-> （ハンドラと `process_request` の引数の違いを吸収）。動作確認は上の 3. で行う。
+> ラズパイの `websockets` は wheel 取得時に版を固定していない。`pi_serial_relay.py` は
+> 16.1.1（ラズパイ・コンテナとも確認済み）の asyncio 実装専用。版を入れ替えたら
+> 上の 3. の動作確認を必ず行うこと。
 
 3. ラッパーと systemd unit を配置する。**ESP32 の by-id パスは unit に書かない**
    （`rpi_serial_relay_run.sh` が `/dev/serial/by-id/` のうち LiDAR 以外の USB-UART を

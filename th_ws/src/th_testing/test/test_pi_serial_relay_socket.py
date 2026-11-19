@@ -5,6 +5,12 @@
 本物の websockets クライアントで接続する。シリアルの代わりに PTY 対を使う
 （ESP32 側のエンベロープ符号化も本物の serial_framer で確かめる）。
 
+レビュー指摘（2026-11-19）の回帰も縛る:
+  (1) 1 台目が無通信で手放され 2 台目が取った後、1 台目の後片付けが済んでも
+      3 台目が断られる（古い接続の release が新しい所有を消さない）。
+  (2) 手放した 1 台目が後から送ったフレームがシリアルに書かれない。
+  (3) シリアルの読み取りが例外を出したら serve が終わる（プロセス終了）。
+
 ROS2 は要らないが websockets / pyserial が要る。
 ホストの素の python3 には無いので、CLAUDE.md「環境の癖」の除外一覧に載せ、
 Docker（th_ws/Dockerfile が websockets を入れる）で回す。
@@ -23,7 +29,7 @@ import pytest
 pytest.importorskip("websockets")
 pytest.importorskip("serial")
 
-_SCRIPTS = os.path.abspath(os.path.join(os.path.dirname(__file__),  "..", "..", "..", "scripts"))
+_SCRIPTS = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts"))
 sys.path.insert(0, _SCRIPTS)
 
 import serial_framer  # noqa: E402
@@ -105,22 +111,65 @@ class _Relay:
         with self._lock:
             return list(self._rx_on_serial)
 
+    def serial_frames(self) -> list[bytes]:
+        with self._lock:
+            return list(self._rx_on_serial)
+
     def send_from_esp32(self, frame: bytes):
         os.write(self.master, serial_framer.encode_frame(frame))
 
+    def kill_serial(self):
+        """PTY の master を閉じてシリアルの読み取りに例外を出させる。"""
+        try:
+            os.close(self.master)
+        except OSError:
+            pass
+
     def stop(self):
         self._stop.set()
-        self.proc.terminate()
-        try:
-            self.proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            self.proc.kill()
-        os.close(self.master)
-        os.close(self.slave)
+        if self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+        for fd in (self.master, self.slave):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
 
 async def _recv_one(ws, timeout: float = 5.0):
     return await asyncio.wait_for(ws.recv(), timeout=timeout)
+
+
+async def _assert_refused(uri: str, owner: str = "127.0.0.1"):
+    """2 本目の接続が 409 で断られること（所有者のアドレスが応答に入っている）。"""
+    import websockets
+    with pytest.raises(Exception) as ei:
+        await websockets.connect(uri)
+    resp = getattr(ei.value, "response", None)
+    assert resp is not None, f"握手の応答が無い: {ei.value!r}"
+    status = getattr(resp, "status_code", None) or getattr(resp, "status", None)
+    assert status == 409, f"状態 {status} (期待 409)"
+    headers = getattr(resp, "headers", {}) or {}
+    body = getattr(resp, "body", b"") or b""
+    assert owner in str(headers) or owner in body.decode("utf-8", "ignore"), (
+        f"所有者のアドレスが応答に無い headers={headers!r} body={body!r}")
+
+
+async def _wait_connected(uri: str, timeout: float = 6.0):
+    import websockets
+    deadline = time.time() + timeout
+    last = None
+    while time.time() < deadline:
+        try:
+            return await websockets.connect(uri)
+        except Exception as e:  # noqa: BLE001 — 空くまでリトライ
+            last = e
+            await asyncio.sleep(0.2)
+    raise AssertionError(f"接続できなかった: {last!r}")
 
 
 def test_second_connection_is_refused_with_owner_and_released_on_idle():
@@ -131,31 +180,13 @@ def test_second_connection_is_refused_with_owner_and_released_on_idle():
     try:
         async def main():
             uri = f"ws://127.0.0.1:{relay.port}"
-            # 1 本目が接続してフレームを送る（制御 PC になる）
             async with websockets.connect(uri) as ws1:
                 await ws1.send(b"cmd-1")
-                # シリアルへエンベロープ付きで届くこと（向きが本物であることの証明）
                 frames = relay.wait_serial_frames(1)
                 assert frames and frames[0] == b"cmd-1", frames
 
-                # 2 本目は 409 で断られる。制御中の PC のアドレスが
-                # 見出しか本文のどちらかに入っていること
-                with pytest.raises(Exception) as ei:
-                    await websockets.connect(uri)
-                resp = getattr(ei.value, "response", None)
-                assert resp is not None, f"握手の応答が無い: {ei.value!r}"
-                status = getattr(resp, "status_code", None) or getattr(resp, "status", None)
-                assert status == 409, f"状態 {status} (期待 409)"
-                headers = getattr(resp, "headers", {}) or {}
-                body = getattr(resp, "body", b"") or b""
-                text_body = getattr(resp, "text_body", None) or getattr(resp, "text", None)
-                owner_in_header = "127.0.0.1" in str(headers)
-                owner_in_body = ("127.0.0.1" in body.decode("utf-8", "ignore")
-                                 or (text_body is not None and "127.0.0.1" in str(text_body)))
-                assert owner_in_header or owner_in_body, (
-                    f"所有者のアドレスが応答に無い headers={headers!r} body={body!r}")
+                await _assert_refused(uri)
 
-                # ESP32 側からフレームを送ると ws1 に届く（受信方向も本物）
                 relay.send_from_esp32(b"fb-1")
                 got = await _recv_one(ws1)
                 assert got == b"fb-1", got
@@ -167,32 +198,89 @@ def test_second_connection_is_refused_with_owner_and_released_on_idle():
                 while time.time() < deadline_idle:
                     try:
                         await asyncio.wait_for(ws1.recv(), timeout=0.3)
-                    except (asyncio.TimeoutError, Exception):
-                        # TimeoutError はまだ生きている。ConnectionClosed は空いた。
-                        import websockets.exceptions as _e  # noqa: F401
-                        # サーバーが close したかは次の受信で判る。少し待つ
+                    except Exception:  # noqa: BLE001 — TimeoutError はまだ生きている
                         pass
-                    # サーバーが close したら recv が ConnectionClosed を投げる
-                    # （上の except では TimeoutError と識別できないため別経路で見る）
                     if ws1.close_code is not None:
                         closed_by_server = True
                         break
                     await asyncio.sleep(0.1)
                 assert closed_by_server, "無通信でもサーバーが接続を閉じなかった"
-                deadline = time.time() + (IDLE_MS / 1000.0 + 4.0)
-                last_err = None
-                while time.time() < deadline:
-                    try:
-                        async with websockets.connect(uri) as ws2:
-                            await ws2.send(b"cmd-2")
-                            frames2 = relay.wait_serial_frames(2)
-                            assert frames2[-1] == b"cmd-2", frames2
-                            return
-                    except Exception as e:  # noqa: BLE001 — 空くまでリトライ
-                        last_err = e
-                        await asyncio.sleep(0.2)
-                raise AssertionError(f"無通信のあと 2 本目が入れなかった: {last_err!r}")
+
+                async with await _wait_connected(uri) as ws2:
+                    await ws2.send(b"cmd-2")
+                    frames2 = relay.wait_serial_frames(2)
+                    assert frames2[-1] == b"cmd-2", frames2
 
         asyncio.run(main())
+    finally:
+        relay.stop()
+
+
+def test_stale_owner_cannot_evict_new_owner_and_cannot_write():
+    """(1) 2 台目が取った後、1 台目の後片付けが済んでも 3 台目が断られる。
+    (2) 手放した 1 台目が後から送ったフレームがシリアルに書かれない。"""
+    import websockets
+
+    relay = _Relay()
+    try:
+        async def main():
+            uri = f"ws://127.0.0.1:{relay.port}"
+            ws1 = await websockets.connect(uri)
+            await ws1.send(b"cmd-1")
+            assert relay.wait_serial_frames(1)[0] == b"cmd-1"
+
+            # ws1 の送信を止める（半開き）。idle で手放され、2 台目が取る。
+            ws2 = await _wait_idle_takeover(uri)
+            await ws2.send(b"cmd-2")
+            assert relay.wait_serial_frames(2)[-1] == b"cmd-2"
+
+            # (2) 手放した 1 台目が後から送ってもシリアルに書かれない
+            # （ws2 は所有を保つため送り続ける）
+            base = len(relay.serial_frames())
+            try:
+                await ws1.send(b"late-frame-from-stale-owner")
+            except Exception:  # noqa: BLE001 — サーバーが既に閉じていてもよい
+                pass
+            for _ in range(4):
+                await ws2.send(b"keepalive")
+                await asyncio.sleep(0.3)
+            later = relay.serial_frames()[base:]
+            assert b"late-frame-from-stale-owner" not in later, later
+
+            # (1) 1 台目の後片付け（close 完了）が済んだ後も 3 台目は断られる
+            await ws2.send(b"keepalive")
+            await _assert_refused(uri)
+            await ws2.close()
+            await ws1.close()
+
+        asyncio.run(main())
+    finally:
+        relay.stop()
+
+
+async def _wait_idle_takeover(uri: str):
+    """ws1 を送らずに放置し、idle で空くのを待って接続する（半開きの再現）。"""
+    import websockets
+    deadline = time.time() + IDLE_MS / 1000.0 + 5.0
+    while time.time() < deadline:
+        try:
+            return await websockets.connect(uri)
+        except Exception:  # noqa: BLE001 — 空くまでリトライ
+            await asyncio.sleep(0.2)
+    raise AssertionError("idle で空かなかった")
+
+
+def test_serial_death_ends_the_process():
+    """(3) シリアルの読み取りが例外を出したら serve が終わり、プロセスが終了する
+    （systemd が立て直す。Spec-safety §3.5.6）。"""
+    relay = _Relay()
+    try:
+        assert relay.proc.poll() is None
+        relay.kill_serial()
+        deadline = time.time() + 10.0
+        while relay.proc.poll() is None and time.time() < deadline:
+            time.sleep(0.1)
+        assert relay.proc.poll() is not None, "シリアルが死んでもプロセスが終わらなかった"
+        assert relay.proc.returncode != 0, relay.proc.returncode
     finally:
         relay.stop()

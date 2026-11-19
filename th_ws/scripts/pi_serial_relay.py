@@ -61,6 +61,11 @@ LOG = logging.getLogger("pi_serial_relay")
 # --idle-timeout-ms が正。ユニットの ExecStart は既定のまま）。
 DEFAULT_IDLE_TIMEOUT_MS = 1500
 
+# 手放し時の close 完了待ちの上限（秒）。半開きの TCP では close 応答が来ないため、
+# websockets 既定の 10 秒を待つとその間 2 台目が入れない。手放しと書き込み遮断は
+# 先に行い（下の _idle_watchdog）、close はこの上限で打ち切る。
+CLOSE_TIMEOUT_S = 1.0
+
 
 def open_serial(port: str, baud: int) -> serial.Serial:
     """DTR/RTSを上げずにポートを開く(ESP32の自動リセット回路対策)。"""
@@ -74,7 +79,7 @@ def open_serial(port: str, baud: int) -> serial.Serial:
     # を起こし、教示再生時のふらつきの原因になった。2026-09-05)。
     # None にして「1バイト来るまで無期限に待つ」→「その後は溜まっている分だけ
     # 即座に読む」の2段構えにすることで、カーネルのselect起床にほぼ一致した
-    # 低遅延・低ジッタな受信になる(serial_to_ws参照)。
+    # 低遅延・低ジッタな受信になる(_serial_pump参照)。
     ser.timeout = None
     ser.dsrdtr = False
     ser.rtscts = False
@@ -98,49 +103,75 @@ def _blocking_read_batch(ser: serial.Serial) -> bytes:
     return first + rest
 
 
-async def serial_to_ws(ser: serial.Serial, ws, decoder: "serial_framer.SerialFrameDecoder",
-                        loop: asyncio.AbstractEventLoop) -> None:
-    """シリアルから読めたバイトをデコードし、フレーム単位でPCへ転送する。"""
+async def _serial_pump(ser: serial.Serial, decoder: "serial_framer.SerialFrameDecoder",
+                       current_conn, loop: asyncio.AbstractEventLoop) -> None:
+    """シリアルの常駐読み取り（サーバーの寿命で 1 本だけ）。
+
+    接続ごとに読み取りタスクを立てると、run_in_executor のブロッキング読みは
+    取り消せないため、古い接続の読み取りスレッドが残って新しい所有者と
+    ポートを奪い合い、フレームが壊れる。常駐 1 本で読み、そのとき所有している
+    接続へだけ送る（所有者がいなければ捨てる）。
+
+    ポート断（SerialException 等）はここから投げ、serve_once の外へ抜けて
+    プロセスを終わらせる（systemd が立て直す。Spec-safety §3.5.6）。
+    """
     while True:
         data = await loop.run_in_executor(None, _blocking_read_batch, ser)
-        if data:
-            for frame in decoder.feed(data):
+        if not data:
+            continue
+        for frame in decoder.feed(data):
+            ws = current_conn()
+            if ws is None:
+                continue  # 所有者なし（接続前・手放し後）。捨てる
+            try:
                 await ws.send(frame)
+            except Exception:  # noqa: BLE001 — 切断済み等。次の周期で再取得する
+                pass
 
 
 async def ws_to_serial(ws, ser: serial.Serial, gate: relay_gate.FirstComeGate,
-                        loop: asyncio.AbstractEventLoop) -> None:
+                       token: object, loop: asyncio.AbstractEventLoop) -> None:
     """PCから届いたフレーム(WHEEL_CMD等)をエンベロープに包んでシリアルへ書く。
 
-    届くたびにゲートへ記録する（無通信の手放し判定の入力）。
+    いま所有している接続から届いたものだけ通す。手放した後の古い接続
+    （close 待ちの間に Wi-Fi が戻った等）からのフレームは書かない
+    （Spec-safety §6.4「先着だけが制御する」）。
     WSが正常にcloseされて `async for` が抜けたときも例外を投げて呼び出し元の
-    gatherを終わらせる。そうしないと(ESP32が繋がっていない等で)serial_to_ws
-    側が何も送信せず、gatherが永久に片肺のまま止まる。
+    gatherを終わらせる。
     """
     async for message in ws:
         if not isinstance(message, (bytes, bytearray)):
             continue
-        gate.note_frame(time.monotonic())
+        if not gate.is_owner(token):
+            continue  # 所有権を失った接続からの書き込みは受け付けない
+        gate.note_frame(token, time.monotonic())
         envelope = serial_framer.encode_frame(bytes(message))
         await loop.run_in_executor(None, ser.write, envelope)
     raise RuntimeError("WS接続が閉じられました(ws_to_serial側で検知)")
 
 
-async def _idle_watchdog(ws, gate: relay_gate.FirstComeGate, timeout_s: float) -> None:
-    """無通信が timeout_s を超えたら接続を閉じる（ゲートが空く）。
+async def _idle_watchdog(ws, gate: relay_gate.FirstComeGate, token: object,
+                         timeout_s: float) -> None:
+    """無通信が timeout_s を超えたら手放して接続を閉じる。
 
     半開きの TCP（Wi-Fi で FIN が届かない。esp32_bridge.py の 2026-09-02 の注記）
     では ws_to_serial の `async for` が永久に復帰しないため、TCP の切断検知に
     頼らず「受信時刻」でこちらから閉じる。
+
+    手放しと書き込み遮断（ゲートの release。古い接続からの書き込みは
+    ws_to_serial が止める）を先に行い、close の完了は CLOSE_TIMEOUT_S で
+    打ち切る。半開きでは close 応答が来ないため、完了を待つと 2 台目が
+    10 秒（既定）待たされる。
     """
     while True:
         await asyncio.sleep(0.1)
-        if gate.check_release_if_idle(time.monotonic(), timeout_s):
+        if gate.is_owner(token) and gate.check_release_if_idle(time.monotonic(), timeout_s):
             LOG.warning("制御 PC から %.1fs フレームが届かないため経路を手放します",
                         timeout_s)
             try:
-                await ws.close()
-            except Exception:  # noqa: BLE001 — close 失敗は次の周で再試行
+                await asyncio.wait_for(ws.close(code=1001, reason="idle timeout"),
+                                       timeout=CLOSE_TIMEOUT_S)
+            except Exception:  # noqa: BLE001 — 打ち切り。ソケットはサーバー側で閉じる
                 pass
             return
 
@@ -156,54 +187,54 @@ def _peer_address(ws) -> str:
 def _conflict_response(owner: str):
     """先着の制御 PC が居るときの 409 応答（握手の HTTP エラー）。
 
-    websockets の版で Response の組み立て方が違う:
-      - 新しい asyncio 実装 (>=13): Response(status_code, reason_phrase, headers, body)
-      - 古い legacy 実装 (<=12):  Response(status, reason, headers, text_body=...)
-    ラズパイの版は未固定（wheel の取得時に未指定のため最新が入る見込みだが、
-    入れ替わっても動くよう両対応にし、どちらが効いたかはテストで確かめる）。
+    websockets 16.1.1（ラズパイ・コンテナとも確認済み）の
+    Response(status_code, reason_phrase, headers, body) で組み立てる。
     本文と X-Controlling-PC 見出しの両方に制御中の PC のアドレスを入れる。
     """
+    from websockets.datastructures import Headers
     from websockets.http11 import Response
 
-    body_text = f"another PC ({owner}) is already controlling this robot"
-    try:
-        from websockets.datastructures import Headers
-        headers = Headers([("X-Controlling-PC", owner),
-                           ("Content-Type", "text/plain; charset=utf-8")])
-    except Exception:  # noqa: BLE001
-        headers = {"X-Controlling-PC": owner,
-                   "Content-Type": "text/plain; charset=utf-8"}
-    try:
-        return Response(409, "Conflict", headers, body_text.encode("utf-8"))
-    except TypeError:
-        return Response(409, "Conflict", headers, text_body=body_text)
+    body = f"another PC ({owner}) is already controlling this robot"
+    headers = Headers([("X-Controlling-PC", owner),
+                       ("Content-Type", "text/plain; charset=utf-8")])
+    return Response(409, "Conflict", headers, body.encode("utf-8"))
 
 
 async def serve_once(ser: serial.Serial, bind_host: str, port: int,
                      timeout_s: float) -> None:
-    """サーバーを 1 回起動する（通常は起動しっぱなし）。
+    """サーバーを起動し、シリアルの常駐読み取りと一緒に回し続ける。
 
-    ラズパイの古い websockets でも動くよう、ハンドラは (ws, *args) で受け、
-    process_request は引数を可変で受ける（版で渡される引数が違う）。
+    websockets 16.1.1 の asyncio 実装専用（ラズパイ・コンテナとも確認済み）。
+    ハンドラは (connection) の 1 引数、process_request は (connection, request)。
     """
     gate = relay_gate.FirstComeGate()
     decoder = serial_framer.SerialFrameDecoder()
     loop = asyncio.get_running_loop()
+    current: dict = {"ws": None, "token": None}
 
-    def _process_request(*args) -> object | None:
-        owner = gate.owner
+    def _current_conn():
+        token = current.get("token")
+        if token is not None and gate.is_owner(token):
+            return current.get("ws")
+        return None
+
+    def _process_request(connection, request):
+        owner = gate.owner_addr
         if owner is not None:
             LOG.info("制御中の PC (%s) が居るため接続を断ります", owner)
             return _conflict_response(owner)
         return None
 
-    async def _handler(ws, *args) -> None:
+    async def _handler(ws) -> None:
+        token = object()
         owner = _peer_address(ws)
-        if not gate.try_acquire(owner, time.monotonic()):
+        if not gate.try_acquire(token, owner, time.monotonic()):
             # process_request をすり抜けた競合（稀）。静かに閉じる。
-            LOG.warn("競合のため接続を断ります: %s", owner)
+            LOG.warning("競合のため接続を断ります: %s", owner)
             await ws.close(code=1008, reason="another PC is controlling")
             return
+        current["ws"] = ws
+        current["token"] = token
         # WS が切れていた間もシリアルポート自体は開いたまま(DTR/RTSを動かさない
         # ため)なので、カーネルのtty受信バッファに数秒分のフレームが溜まって
         # いることがある。再接続直後にそれをそのまま流すと、古いWHEEL_FEEDBACK
@@ -211,9 +242,8 @@ async def serve_once(ser: serial.Serial, bind_host: str, port: int,
         ser.reset_input_buffer()
         LOG.info("制御 PC が接続しました: %s", owner)
         tasks = [
-            asyncio.ensure_future(serial_to_ws(ser, ws, decoder, loop)),
-            asyncio.ensure_future(ws_to_serial(ws, ser, gate, loop)),
-            asyncio.ensure_future(_idle_watchdog(ws, gate, timeout_s)),
+            asyncio.ensure_future(ws_to_serial(ws, ser, gate, token, loop)),
+            asyncio.ensure_future(_idle_watchdog(ws, gate, token, timeout_s)),
         ]
         try:
             done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -225,16 +255,25 @@ async def serve_once(ser: serial.Serial, bind_host: str, port: int,
         finally:
             for task in tasks:
                 task.cancel()
-            gate.release()
+            # 「自分が所有者のときだけ」手放す。無通信で手放された後の後片付けが
+            # 新しい所有を消さない（relay_gate.release の条件）。
+            gate.release(token)
+            if current.get("token") is token:
+                current["ws"] = None
+                current["token"] = None
             LOG.info("制御 PC の接続が終わりました: %s", owner)
 
     LOG.info("WebSocket サーバーを待ち受けます: %s:%d（先着 1 台）", bind_host, port)
     async with websockets.serve(_handler, bind_host, port,
-                                 process_request=_process_request):
-        # 正常に抜けることは無い（サーバーは起動しっぱなし）。シリアル断は
-        # serial_to_ws の executor 内で起き、その例外はこの serve の外側で
-        # 捕まえて終了する（systemd が再起動する）。
-        await asyncio.Future()
+                                 process_request=_process_request,
+                                 close_timeout=CLOSE_TIMEOUT_S):
+        pump = asyncio.ensure_future(_serial_pump(ser, decoder, _current_conn, loop))
+        try:
+            # 常駐読み取りが例外（ポート断等）で終わったら serve を抜けて
+            # プロセスを終わらせる（main が SerialException を捕まえて exit）。
+            await pump
+        finally:
+            pump.cancel()
 
 
 def main() -> None:
@@ -265,7 +304,7 @@ def main() -> None:
     except serial.SerialException as e:
         # ser.read()/ser.write() が投げるのは「ポート自体が死んだ」場合
         # (ESP32抜線・USB切断等)。ポートの再オープンはこのプロセスの責務にせず、
-        # systemdの Restart=always に委ねて素直に終了する。
+        # systemdの Restart=always に委ねて素直に終了する（Spec-safety §3.5.6）。
         LOG.error("シリアルポートが切れました: %r。終了します(systemdが再起動)", e)
         sys.exit(1)
     finally:

@@ -54,6 +54,16 @@ class _RejectingRelay:
     def start(self):
         self._thread.start()
 
+    def stop(self):
+        """拒否サーバーを止める。以後の接続は「中継に届かない」になる。"""
+        import asyncio
+        if self._loop is not None and getattr(self, "_server", None) is not None:
+            try:
+                fut = asyncio.run_coroutine_threadsafe(self._server.close(), self._loop)
+                fut.result(timeout=2.0)
+            except Exception:
+                pass
+
     def _run(self):
         import asyncio
         import websockets
@@ -76,7 +86,8 @@ class _RejectingRelay:
         async def _serve():
             async with websockets.serve(lambda ws, *a: asyncio.Future(),
                                          '127.0.0.1', self._port,
-                                         process_request=_process_request):
+                                         process_request=_process_request) as server:
+                self._server = server
                 await asyncio.Future()
 
         try:
@@ -115,6 +126,19 @@ class TestEsp32BridgeBlocked(unittest.TestCase):
                         return
             self.fail(f'/esp32/bridge_blocked へ blocked=true/owner={_OWNER} が '
                       f'20 秒以内に届かなかった。受信: {got!r}')
+
+            # 拒否サーバーを止める（中継に届かない状態）。古い「別の PC が
+            # 制御中」が残らず、blocked=false が出ること（レビュー指摘 H）。
+            relay.stop()
+            got.clear()
+            deadline = time.time() + 20.0
+            while time.time() < deadline:
+                rclpy.spin_once(node, timeout_sec=0.1)
+                for raw in got:
+                    obj = json.loads(raw)
+                    if obj.get("blocked") is False:
+                        return
+            self.fail(f'中継に届かない状態で blocked=false が出なかった。受信: {got!r}')
         finally:
             node.destroy_subscription(sub)
             node.destroy_node()

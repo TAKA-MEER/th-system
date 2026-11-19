@@ -364,8 +364,13 @@ class Esp32Bridge(Node):
 
     async def _connect_once(self):
         uri = f"ws://{self._ws_host}:{self._ws_port}"
+        # ping_interval/ping_timeout を短くする。websockets 既定は 20 s / 20 s で、
+        # 中継との通信が音もなく死んだとき（半開き TCP）の検知が最大約 40 秒遅れる。
+        # フレームは 20 Hz で届くはずなので、1 s 間隔・2 s 応答で足りる
+        # （最大で約 3 s で検知し、再接続へ入る）。
         try:
-            ws = await websockets.connect(uri, proxy=None)
+            ws = await websockets.connect(uri, proxy=None,
+                                           ping_interval=1.0, ping_timeout=2.0)
         except Exception as e:  # noqa: BLE001 — 拒否の切り分けは下で
             owner = self._blocked_owner_from(e)
             if owner is not None:
@@ -375,6 +380,9 @@ class Esp32Bridge(Node):
                 # 断られている間も再接続し続ける（先の PC が手放せば掴める）。
                 await asyncio.sleep(self._WS_RECONNECT_DELAY_S)
                 return
+            # 409 以外（中継に届かない等）のときは古い「別の PC が制御中」を
+            # 残さない。blocked を戻してから外側の再接続ループへ落とす。
+            self._publish_blocked(False, None)
             raise
         # 接続のたびにリセットする: 次に届く ESTOP_HW フレームで
         # /safety/firmware_flags を必ず publish させる(接続時に改めて知らせる。
