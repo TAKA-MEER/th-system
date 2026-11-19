@@ -332,11 +332,14 @@ def test_stale_owner_cannot_evict_new_owner_and_cannot_write():
             later = relay.serial_frames()[base:]
             assert b"late-frame-from-stale-owner" not in later, later
 
-            # (1) 1 台目の後片付け（close 完了）が済んだ後も 3 台目は断られる
-            await ws2.send(b"keepalive")
+            # (1) 1 台目が後から切断しても（後片付けが 2 台目の所有を消してはならない）
+            # 3 台目は断られる。ws1 を切った後、ハンドラの finally が走るのを待つ。
+            await ws1.close()
+            for _ in range(3):
+                await ws2.send(b"keepalive")
+                await asyncio.sleep(0.3)
             await _assert_refused(uri)
             await ws2.close()
-            await ws1.close()
 
         asyncio.run(main())
     finally:
@@ -368,4 +371,126 @@ def test_serial_death_ends_the_process():
         assert relay.proc.poll() is not None, "シリアルが死んでもプロセスが終わらなかった"
         assert relay.proc.returncode != 0, relay.proc.returncode
     finally:
+        relay.stop()
+
+
+def test_ws_to_serial_writes_only_for_owner():
+    """(C) ws_to_serial は所有者の接続からのフレームだけシリアルへ書く。
+
+    手放した後の古い接続（close 待ち等）からのフレームは書かない。
+    実際の ws_to_serial を偽の ws / 偽のシリアルで駆動し、書き込みの有無を見る
+    （文字列検査ではない）。
+    """
+    sys.path.insert(0, _SCRIPTS)
+    import relay_gate  # noqa: E402
+    # pi_serial_relay は serial を import する。Docker には pyserial が無いので
+    # 偽モジュール（PTY なしでも ws_to_serial の試験には十分）を差し込む。
+    import importlib.util
+    import types
+    _fake = types.ModuleType("serial")
+    exec(compile(_FAKE_SERIAL_SOURCE, "serial.py", "exec"), _fake.__dict__)
+    sys.modules.setdefault("serial", _fake)
+    import pi_serial_relay  # noqa: E402
+
+    class _FakeWs:
+        def __init__(self, messages):
+            self._messages = messages
+
+        def __aiter__(self):
+            async def gen():
+                for m in self._messages:
+                    yield m
+            return gen()
+
+    class _FakeSer:
+        def __init__(self):
+            self.written = []
+
+        def write(self, data):
+            self.written.append(bytes(data))
+            return len(data)
+
+    async def run_case(owner_token, writer_token):
+        gate = relay_gate.FirstComeGate()
+        gate.try_acquire(owner_token, "192.168.5.50", now_s=0.0)
+        ser = _FakeSer()
+        ws = _FakeWs([b"f"])
+        loop = asyncio.get_running_loop()
+        try:
+            await pi_serial_relay.ws_to_serial(ws, ser, gate, writer_token, loop)
+        except RuntimeError:
+            pass  # 正常終了（async for が抜けて例外で抜ける設計）
+        return ser.written
+
+    owner, stale = object(), object()
+    # 所有者本人は書ける
+    assert asyncio.run(run_case(owner, owner)) != []
+    # 手放した古い接続は書けない
+    assert asyncio.run(run_case(owner, stale)) == []
+
+
+def _raw_ws_connect(port: int):
+    """握手だけして close フレームに応答しない「半開き」クライアント（生ソケット）。
+
+    websockets のクライアントは close フレームに自動で応答してしまうため、
+    サーバーの close が即座に終わり、古いハンドラの finally が新しい所有の
+    前に終わってしまう。生ソケットで応答を止めることで、古いハンドラが
+    新しい所有の後に終わる窓（レビュー指摘 A の再現）を確実に作る。
+    """
+    import base64
+
+    sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+    key = base64.b64encode(os.urandom(16)).decode()
+    req = (f"GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+           "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+           f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n")
+    sock.sendall(req.encode())
+    resp = b""
+    while b"\r\n\r\n" not in resp:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        resp += chunk
+    assert b"101" in resp.splitlines()[0], resp[:200]
+    return sock
+
+
+def test_old_handler_finally_cannot_evict_new_owner():
+    """古い接続のハンドラが新しい所有の後に終わっても、新しい所有を消さない。
+
+    半開きクライアント（close に応答しない）が無通信で手放され、2 台目が取った後、
+    1 台目のハンドラの finally が走る。3 台目は断られること。
+    """
+    import websockets
+
+    relay = _Relay()
+    raw = None
+    try:
+        async def main():
+            uri = f"ws://127.0.0.1:{relay.port}"
+            raw_sock = _raw_ws_connect(relay.port)
+            # raw が所有者になる（ハンドラの acquire）。送らないので idle で手放される。
+            ws2 = await _wait_idle_takeover(uri)
+            # 2 台目が所有を保つ間、古いハンドラの finally（close タイムアウト後）が走る
+            deadline = time.time() + 4.0
+            while time.time() < deadline:
+                await ws2.send(b"keepalive")
+                await asyncio.sleep(0.3)
+                # 古いハンドラが終わったかは外から見えないので、十分待ってから断る
+                if time.time() > deadline - 2.5:
+                    break
+            for _ in range(3):
+                await ws2.send(b"keepalive")
+                await asyncio.sleep(0.3)
+            await _assert_refused(uri)
+            await ws2.close()
+            return raw_sock
+
+        raw = asyncio.run(main())
+    finally:
+        if raw is not None:
+            try:
+                raw.close()
+            except OSError:
+                pass
         relay.stop()
