@@ -2,7 +2,8 @@
 test_esp32_bridge_node.py
 ============================
 WP-SAFE-02 の統合テスト。esp32_bridge ノードを実際に起動し、ESP32 の代わりに
-WS クライアント (esp32_bridge がサーバー側であることに注意) を接続して、
+WS サーバー (2026-11-19 から esp32_bridge はクライアント。Spec-safety §6.4)
+を立てて接続を受けて、
 /cmd_vel が途絶したときに WHEEL_CMD フレームの参照値がゼロへ書き換わること
 (DEBT-4 の解除) と、その間も 20Hz の送信自体は止まらないこと (K-1) を検証する。
 
@@ -39,7 +40,7 @@ def generate_test_description():
         executable='esp32_bridge.py',
         name='esp32_bridge',
         parameters=[{
-            'ws_host': '127.0.0.1',
+            'esp32_ws_host': '127.0.0.1',
             'esp32_ws_port': _WS_PORT,
             'cmd_vel_stale_ms': _STALE_MS,
             # フィードバック死活監視のタイムアウト警告でログが汚れないよう緩める
@@ -56,22 +57,25 @@ def generate_test_description():
 
 
 class _WsMockEsp32:
-    """esp32_bridge の WS サーバーへ ESP32 の代わりに接続し、受信した
-    WHEEL_CMD フレームを記録するモッククライアント。
+    """ESP32 の代わりに WebSocket サーバーとして待ち受け、esp32_bridge
+    （クライアント）に接続してもらうモック。
 
-    接続は別スレッドの asyncio イベントループで非同期に確立する
-    (esp32_bridge 自身の実装と同じ構造)。呼び出し側は wait_connected() で
-    接続完了を明示的に待ってから publish を始めること — 待たずに
-    publish を始めると、接続がまだ確立していない間のフレームを
-    取りこぼして偽陰性になる (レース条件)。
+    2026-11-19 (Spec-safety §6.4): 接続の向きが逆になった。偽の ESP32 側は
+    サーバー（偽の中継。pi_serial_relay の役割）、PC 側 esp32_bridge が
+    クライアントとして接続しに来る。受信した WHEEL_CMD フレームを記録する。
     """
 
-    def __init__(self, uri: str):
-        self._uri = uri
+    def __init__(self, uri_or_port):
+        if isinstance(uri_or_port, int):
+            self._port = uri_or_port
+        else:
+            import urllib.parse
+            self._port = urllib.parse.urlparse(str(uri_or_port)).port
         self.frames: "list[tuple[float, float, float]]" = []  # (recv_time, left, right)
         self._lock = threading.Lock()
         self._loop = None
         self._ws = None
+        self._server = None
         self._connected = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
@@ -82,59 +86,57 @@ class _WsMockEsp32:
         """接続確立を待つバリア。タイムアウトすれば理由が分かる形で失敗させる。"""
         if not self._connected.wait(timeout):
             raise AssertionError(
-                f'ESP32 モッククライアントが {timeout}s 以内に esp32_bridge の '
-                f'WS サーバー ({self._uri}) へ接続できなかった')
+                f'esp32_bridge が {timeout}s 以内にモックサーバー (port {self._port}) へ'
+                '接続しなかった')
 
     def stop(self):
         """接続を明示的に閉じる。次のテストの接続とすれ違わせないため
-        tearDown で必ず呼ぶ (呼ばずに放置すると、ノード終了時に
-        ConnectionClosedError が別スレッドで飛んでログが汚れる)。"""
+        tearDown で必ず呼ぶ。"""
         if self._loop is not None and self._ws is not None:
             import asyncio
 
             async def _close():
-                await self._ws.close()
+                try:
+                    await self._ws.close()
+                except Exception:
+                    pass
             try:
                 fut = asyncio.run_coroutine_threadsafe(_close(), self._loop)
                 fut.result(timeout=2.0)
             except Exception:
-                pass  # 既に切断済み等 — テスト後始末なので握りつぶしてよい
+                pass
 
     def _run(self):
         import asyncio
+        import websockets
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         try:
-            self._loop.run_until_complete(self._connect_and_recv())
+            self._loop.run_until_complete(self._serve())
         except Exception:
-            pass  # バックグラウンドスレッドの後始末。テストの合否は wait_connected() 等で判定する
+            pass  # バックグラウンドスレッドの後始末
 
-    async def _connect_and_recv(self):
-        import asyncio
+    async def _serve(self):
         import websockets
 
-        deadline = asyncio.get_event_loop().time() + 15.0
-        while asyncio.get_event_loop().time() < deadline:
+        async def _handler(ws, *args):
+            self._ws = ws
+            self._connected.set()
             try:
-                async with websockets.connect(self._uri) as ws:
-                    self._ws = ws
-                    self._connected.set()
-                    try:
-                        async for message in ws:
-                            if not isinstance(message, (bytes, bytearray)):
-                                continue
-                            data = bytes(message)
-                            if peek_type(data) == WHEEL_CMD:
-                                left, right = unpack_wheel_cmd(data)
-                                with self._lock:
-                                    self.frames.append((time.time(), left, right))
-                    except websockets.exceptions.ConnectionClosed:
-                        # stop() での明示的な close、またはノード終了時の
-                        # 突然の切断。テスト後始末の一部として想定内。
-                        pass
-                return
-            except (OSError, ConnectionRefusedError):
-                await asyncio.sleep(0.3)
+                async for message in ws:
+                    if not isinstance(message, (bytes, bytearray)):
+                        continue
+                    data = bytes(message)
+                    if peek_type(data) == WHEEL_CMD:
+                        left, right = unpack_wheel_cmd(data)
+                        with self._lock:
+                            self.frames.append((time.time(), left, right))
+            except Exception:
+                pass  # stop() での明示的な close 等。想定内。
+
+        async with websockets.serve(_handler, '127.0.0.1', self._port) as server:
+            self._server = server
+            await asyncio.Future()
 
     def send(self, data: bytes):
         """ESP32 → PC 方向のフレームを送る（ESTOP_HW など）。"""
@@ -206,7 +208,7 @@ class TestEsp32BridgeCmdVelStaleTimeout(unittest.TestCase):
                 return
             self._spin(0.05)
         self.fail(f'{min_count} 件のフレームを {timeout}s 以内に受信できなかった'
-                   ' (esp32_bridge の WS サーバーに接続できていない可能性)')
+                   ' (esp32_bridge の モックサーバーへ接続できていない可能性)')
 
     # ════════════════════════════════════════════════════════
     # ESP32 自身の「速度指令を受信中」報告（ESTOP_HW flags bit1/bit2。2026-10-04）。

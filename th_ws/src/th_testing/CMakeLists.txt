@@ -780,6 +780,17 @@ if(BUILD_TESTING)
   ament_add_pytest_test(esp32_bridge_node
     test/test_esp32_bridge_node.py
     TIMEOUT 90)
+  # Spec-safety §6.4: 409 拒否で /esp32/bridge_blocked を出すこと（本物のノード）
+  ament_add_pytest_test(esp32_bridge_blocked_node
+    test/test_esp32_bridge_blocked_node.py
+    TIMEOUT 90)
+  # 中継の先着 1 台ゲートの純粋コア（ROS・websockets 不要）
+  ament_add_pytest_test(relay_gate
+    test/test_relay_gate.py)
+  # 中継の実サーバーを実ソケットで確かめる（websockets／pyserial 要。Docker で回す）
+  ament_add_pytest_test(pi_serial_relay_socket
+    test/test_pi_serial_relay_socket.py
+    TIMEOUT 60)
   # esp32_bridge の wheel_radius_scale 両方向適用 + A10 の強制 (WP-ESP32-02)
   # ノード統合テスト。偽 ESP32 で指令 /k・実測 ×k・起動時拒否・実行時拒否を確認
   ament_add_pytest_test(esp32_scale
