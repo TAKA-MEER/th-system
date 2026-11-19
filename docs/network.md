@@ -206,6 +206,19 @@ ping -c3 192.168.5.1
 4. マルチキャスト疎通: コンテナ側 `ros2 multicast receive` / ラズパイ側 `ros2 multicast send`
 5. **時刻ズレ**: `/scan` は届いているのに SLAM が捨てる場合はこれ
    （`Message Filter dropping message` が症状）
+6. **bringup のたびに「たまに」届かない（USB を挿し直すと直る）**: ラズパイの UDP 受信バッファあふれ
+   （2026-11-19 に特定）。bringup が約 40 ノードを一度に起動すると相手探し（SEDP）が殺到し、
+   既定 212 KB の受信バッファから**受信の約 8 割を捨てていた**（`/proc/net/snmp` の `RcvbufErrors`。
+   1 回の bringup で +68,616 件、`rplidar_node` の 9912 番だけで +41,615 件）。`/scan` の購読者の
+   知らせが運よく残れば届き、残らなければ届かない。LiDAR の USB は無関係で、挿し直しで直るのは配信が
+   作り直されて混雑の後に相手探しをやり直すため。**対策（導入済み）**: `/etc/sysctl.d/90-th-udp-buffers.conf`
+   （正本 `th_ws/scripts/rpi_sysctl_90-th-udp-buffers.conf`。`rmem_max` 8 MB・`rmem_default` 4 MB）と、
+   `~/fastdds_peers.xml` の `receiveBufferSize` 4 MB（正本 `th_ws/scripts/rpi_fastdds_peers.xml`。
+   `rplidar`・`rpi_speaker` の両サービスが読む）。確かめ方:
+   ```bash
+   ssh mirs2602@192.168.5.1 'grep -A1 "^Udp:" /proc/net/snmp'   # bringup の前後で RcvbufErrors が増えないこと
+   ssh mirs2602@192.168.5.1 'ss -uampn | grep -A1 rplidar_node' # skmem の rb が 8388608、d（捨てた数）が増えないこと
+   ```
 
 ### `/scan` は 10Hz 出ているのに `/scan_filtered` が無音
 
