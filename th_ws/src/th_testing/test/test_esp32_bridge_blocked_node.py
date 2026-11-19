@@ -84,6 +84,7 @@ class _RejectingRelay:
                 return Response(409, "Conflict", headers, text_body=body)
 
         async def _serve():
+            import asyncio
             async with websockets.serve(lambda ws, *a: asyncio.Future(),
                                          '127.0.0.1', self._port,
                                          process_request=_process_request) as server:

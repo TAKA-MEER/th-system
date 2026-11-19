@@ -11,9 +11,11 @@
   (2) 手放した 1 台目が後から送ったフレームがシリアルに書かれない。
   (3) シリアルの読み取りが例外を出したら serve が終わる（プロセス終了）。
 
-ROS2 は要らないが websockets / pyserial が要る。
-ホストの素の python3 には無いので、CLAUDE.md「環境の癖」の除外一覧に載せ、
-Docker（th_ws/Dockerfile が websockets を入れる）で回す。
+ROS2 は要らない。websockets は要る（Docker のイメージに入っている 16.1.1。
+無ければ import で落とす。importorskip で黙って飛ばさない）。
+pyserial は使わない: pi_serial_relay が使う Serial / SerialException の部分は
+試験内の偽 serial モジュール（同梱の _FAKE_SERIAL_SOURCE。PTY の fd で実動作する）
+に差し替える。ラズパイの実物は不要で、Docker でもホストでも走る。
 """
 import asyncio
 import os
@@ -26,8 +28,7 @@ import time
 
 import pytest
 
-pytest.importorskip("websockets")
-pytest.importorskip("serial")
+import websockets  # noqa: F401  (無ければ import で落とす。黙って飛ばさない)
 
 _SCRIPTS = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts"))
 sys.path.insert(0, _SCRIPTS)
@@ -38,6 +39,88 @@ _SRC = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _FRAMER = os.path.join(_SRC, "th_esp32_bridge", "th_esp32_bridge", "serial_framer.py")
 
 IDLE_MS = 800  # 試験を速くするため既定より短くする
+
+# pi_serial_relay が使う pyserial の部分（Serial / SerialException）の偽物。
+# PTY の fd をそのまま使うので、シリアルの実データは本物として流れる。
+# ラズパイの実物は不要。Docker のイメージには pyserial が無いため、
+# 本物の互換実装を試験が用意する（中継と同じディレクトリに置く）。
+_FAKE_SERIAL_SOURCE = '''
+"""偽 serial（試験用）。PTY の fd で実動作する。"""
+import fcntl
+import os
+import struct
+import termios
+
+
+class SerialException(Exception):
+    pass
+
+
+class Serial:
+    def __init__(self):
+        self.port = None
+        self.baudrate = 9600
+        self.timeout = None
+        self.dsrdtr = False
+        self.rtscts = False
+        self.dtr = False
+        self.rts = False
+        self._fd = None
+
+    def open(self):
+        if self.port is None:
+            raise SerialException("port is not set")
+        self._fd = os.open(self.port, os.O_RDWR | os.O_NOCTTY)
+        try:
+            raw = termios.tcgetattr(self._fd)
+            raw[0] = 0  # iflag
+            raw[1] = 0  # oflag
+            raw[3] = 0  # lflag
+            raw[2] = termios.CS8 | termios.CREAD | termios.CLOCAL  # cflag
+            termios.tcsetattr(self._fd, termios.TCSANOW, raw)
+        except Exception:
+            pass
+
+    @property
+    def in_waiting(self):
+        if self._fd is None:
+            return 0
+        buf = fcntl.ioctl(self._fd, 0x541B, struct.pack("i", 0))  # FIONREAD
+        return struct.unpack("i", buf)[0]
+
+    def read(self, size=1):
+        if self._fd is None:
+            raise SerialException("port not open")
+        try:
+            data = os.read(self._fd, size)
+        except OSError as e:
+            raise SerialException(str(e)) from e
+        if not data:
+            raise SerialException("device reports readiness to read but returned no data")
+        return data
+
+    def write(self, data):
+        if self._fd is None:
+            raise SerialException("port not open")
+        try:
+            return os.write(self._fd, bytes(data))
+        except OSError as e:
+            raise SerialException(str(e)) from e
+
+    def reset_input_buffer(self):
+        if self._fd is not None:
+            try:
+                fcntl.ioctl(self._fd, termios.TIOCFLUSH, termios.TCIFLUSH)
+            except Exception:
+                pass
+
+    def close(self):
+        if self._fd is not None:
+            try:
+                os.close(self._fd)
+            finally:
+                self._fd = None
+'''
 
 
 def _free_port() -> int:
@@ -61,6 +144,8 @@ class _Relay:
         for name in ("pi_serial_relay.py", "relay_gate.py"):
             shutil.copy(os.path.join(_SCRIPTS, name), self._stage)
         shutil.copy(_FRAMER, self._stage)
+        with open(os.path.join(self._stage, "serial.py"), "w") as f:
+            f.write(_FAKE_SERIAL_SOURCE)
         self.proc = subprocess.Popen(
             [sys.executable, os.path.join(self._stage, "pi_serial_relay.py"),
              "--serial-port", self.slave_name,

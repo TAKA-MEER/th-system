@@ -149,8 +149,15 @@ class _WsScaleMockEsp32:
                 '接続しなかった')
 
     def stop(self):
-        """接続を明示的に閉じる。次のテストの接続とすれ違わせないため
-        tearDown で必ず呼ぶ。"""
+        """接続を明示的に閉じ、サーバーも止める（ポートを解放する）。
+        次のテストの setUp が同じポートに立て直せるようにするため。"""
+        if self._loop is not None and getattr(self, "_shutdown", None) is not None:
+            import asyncio
+            try:
+                fut = asyncio.run_coroutine_threadsafe(self._shutdown.set(), self._loop)
+                fut.result(timeout=2.0)
+            except Exception:
+                pass
         if self._loop is not None and self._ws is not None:
             import asyncio
 
@@ -176,6 +183,7 @@ class _WsScaleMockEsp32:
             pass  # バックグラウンドスレッドの後始末
 
     async def _serve(self):
+        import asyncio
         import websockets
 
         async def _handler(ws, *args):
@@ -195,7 +203,23 @@ class _WsScaleMockEsp32:
 
         async with websockets.serve(_handler, '127.0.0.1', self._port) as server:
             self._server = server
-            await asyncio.Future()
+            self._shutdown = asyncio.Event()
+            await self._shutdown.wait()
+
+    def send_feedback(self, left: float, right: float, dt: float = 0.1):
+        """受信した指令値をそのまま実測として送り返す (往復検証用)。"""
+        if self._loop is None or self._ws is None:
+            raise AssertionError('ESP32 モックが未接続のため実測を送れません')
+        frame = pack_wheel_feedback(left, right, dt)
+
+        async def _send():
+            try:
+                await self._ws.send(frame)
+            except Exception:
+                pass  # 切断済み等 — 合否は呼び出し側の受信待ちで判定する
+
+        fut = asyncio.run_coroutine_threadsafe(_send(), self._loop)
+        fut.result(timeout=2.0)
 
     def send(self, data: bytes):
         """ESP32 → PC 方向のフレームを送る（ESTOP_HW など）。"""
