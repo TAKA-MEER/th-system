@@ -281,17 +281,17 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
   --ok-tx:#1f7a2e;--warn:#e08a00;--warn-tx:#8a5300;--ng-tx:#b3261e;--act-lt:#2f6bc6;
   --sel-bg:#1f2733;--sel-tx:#ffffff;--pin-panel:#5b6675;--pin-home:#5b6675;--pin-sel:#1f2733;--pin-homesel:#1f2733;
   --dest:#2f6bc6;--route:#2f6bc6;--robot:#2f6bc6;--robot-fp:rgba(47,107,198,.18);--lab:#161b22;--lab-bd:#ffffff;color:var(--tx)}
-/* ヘッダは地と分けて濃い墨色の帯にする（2026-11-19 の意見）。青は「機体が動く」の色なので帯には使わない */
-.theme-light .hdr{color:#f2f5f9;border-bottom-color:#11161d}
-.theme-light .hdr .r1{background:#2b3440}
-.theme-light .hdr .r2{background:#20272f}
-.theme-light .hdr .brand{color:#ffffff}
-.theme-light .hdr .brand small{color:#b8c2cf}
-.theme-light .hdr .st{color:#f2f5f9}
-.theme-light .hdr .mst{background:#3c4756;color:#ffffff}
-.theme-light .hdr .mst.run{color:#fff}
-.theme-light.pal-new .hdr .zone{border-color:#7a8696;color:#dfe4ea}
-.theme-light.pause-neutral .hdr .mst.pause,.theme-light.pal-new.pause-neutral .hdr .mst.pause{background:#ffffff;color:#161b22;box-shadow:none}
+/* ヘッダは地より一段濃い明るい灰の帯にする（2026-11-19 の意見。濃い墨色は重すぎた）。色の意味を持たない中立の灰 */
+.theme-light .hdr{color:var(--tx);border-bottom:2px solid #9aa5b3}
+.theme-light .hdr .r1{background:#e2e7ee}
+.theme-light .hdr .r2{background:#d3dae3}
+.theme-light .hdr .brand{color:var(--tx)}
+.theme-light .hdr .brand small{color:#4f5866}
+.theme-light .hdr .st{color:var(--tx)}
+.theme-light .hdr .mst{background:#ffffff;color:var(--tx);box-shadow:inset 0 0 0 1px #8d97a5}
+.theme-light .hdr .mst.run{color:#fff;box-shadow:none}
+.theme-light.pal-new .hdr .zone{border-color:#8d97a5;color:#3a4350;background:#ffffff}
+.theme-light.pause-neutral .hdr .mst.pause,.theme-light.pal-new.pause-neutral .hdr .mst.pause{background:#ffffff;color:#161b22;box-shadow:inset 0 0 0 1px #8d97a5}
 .theme-light .tg{border-color:var(--bd-hi)}
 .theme-light .tg2 .go-run{box-shadow:inset 0 0 0 3px #fff}
 /* 押せるボタンは白く浮かせ、押せないボタンは平たく沈める（明るい地では塗りの差だけだと見分けにくい） */
@@ -326,6 +326,21 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .pal-new .tg .cur{background:var(--sel-bg);color:var(--sel-tx)}
 .pal-new .tg2 .go-run{background:var(--act)}
 .pal-new .tile.g{border-left-width:1px;background:linear-gradient(160deg,color-mix(in srgb,var(--gc) 18%,var(--panel)),var(--panel) 62%)}
+
+/* §6.9 色を JIS B 9960-1:2019（IEC 60204-1）に合わせる（案。2026-11-19）
+   10.2.1 アクチュエータ: 非常停止＝赤、そのすぐ背後は黄（赤と黄の組は非常停止だけ）／起動＝白・灰・黒・緑（赤は不可）／
+     停止＝黒が一番よい（赤は非常停止の近くでは使わない）／入切の交互切換え・押している間だけ動く＝白・灰・黒／黄＝異常、自動サイクルの中断
+   10.3.2 表示: 赤＝非常／黄＝異常／青＝試験員の行動が必要／緑＝正常／白＝中立
+   10.3.3 点滅: 注意・即時行動の要求・変化が進行中 */
+.pal-new.col-jis{--act:#1f7a35;--act-lt:#5cc477;--dest:#5cc477;--route:#5cc477;--robot:#5cc477;--robot-fp:rgba(92,196,119,.22);
+  --stop:#0b0d10;--jis-y:#ffd100;--warn:#e6b800;--warn-tx:#ffd84d}
+.theme-light.pal-new.col-jis{--act:#1f7a35;--act-lt:#1f7a35;--dest:#1f7a35;--route:#1f7a35;--robot:#1f7a35;--robot-fp:rgba(31,122,53,.16);
+  --stop:#161b22;--warn:#d9a800;--warn-tx:#5c4700;--sel-bg:#5b6675;--sel-tx:#ffffff}
+.col-jis .estop-top{outline:6px solid var(--jis-y,#ffd100);outline-offset:0}
+.pal-new.col-jis .tg2 .go-stop{background:var(--stop);color:#fff}
+.pal-new.col-jis:not(.theme-light) .tg2 .go-stop{box-shadow:inset 0 0 0 2px #ffffff55}
+.pal-new.col-jis .b.interrupt:not(.dis){background:var(--jis-y);border-color:#a88a00;color:#161b22}
+.theme-light.col-jis .help{border-color:#8d97a5}
 </style>
 </head>
 <body>
@@ -379,7 +394,7 @@ const S = {
   tracker:true,   // 人検出（試験準備・試験で共有。左上の操作バーのトグル）
   menu:{lvl:'top', trackerOff:false, noRoute:false},
   wt:{v:'new'}, sz:{v:'new'}, pal:{v:'new', pause:'neutral'},   // 2026-11-17 に決定（D33〜D37）。'old' で 11-16 の版
-  af:{v:'pulse'}, dbg:{v:'none'}, theme:{v:'light'},   // 画面の地（§6.8・案。2026-11-17 の意見）   // 自律走行中の枠（§6.5・案）／表示の不具合の試し（D39）
+  af:{v:'pulse'}, dbg:{v:'none'}, theme:{v:'light'}, col:{v:'jis'},   // 画面の地（§6.8・案。2026-11-17 の意見）   // 自律走行中の枠（§6.5・案）／表示の不具合の試し（D39）
   font:{v:'sys'}, shape:{v:'role'}, map:{rot:0, view:'2d', wall:'wall', col:'now'}, trk:{w:'io'},
   day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0,
        abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
@@ -722,7 +737,7 @@ function dayView(){
   const ctl = `<div class="ctl">
     <div class="state full"><div class="s1">${st[0]}</div><div class="s2">${st[1]}</div></div>
     <div class="sec full noh"><h3>操作</h3>${tog(E.stop, E.run, {runLabel, runHint, note:runNote, big:true, help:'toggle'})}
-      <div class="row" style="margin-top:8px">${btn('jog','手動',{icon:'jog',dis:!E.manual,help:'jog'})}${btn('abort',AB,{icon:'abort',dis:!E.abort,why:whyAbort,cls:AB.length>4?'f16':'',help:'abort'})}</div></div>
+      <div class="row" style="margin-top:8px">${btn('jog','手動',{icon:'jog',dis:!E.manual,help:'jog'})}${btn('abort',AB,{icon:'abort',dis:!E.abort,why:whyAbort,cls:'interrupt'+(AB.length>4?' f16':''),help:'abort'})}</div></div>
     <div class="sec"><h3>行き先</h3><div class="row">${btn('goHome','待機場所<small>&nbsp;</small>',{icon:'home',dis:!E.home,why:whyHome,cls:'two go',help:'home'})}${btn('goNext',nextLabel,{icon:'panel',dis:!E.next,why:whyDest,cls:'two go',help:'next'})}</div>
       <div class="row" style="margin-top:8px">${btn('summon','呼び寄せ',{icon:'person',dis:!E.summon,why:whySummon,cls:'go',help:'summon'})}</div></div>
     <div class="sec"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{icon:'measure',dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{icon:'cam',dis:!E.cam,why:whyPanel,help:'cam'})}</div></div>
@@ -735,7 +750,7 @@ function dayView(){
   const ctlNew = `<div class="ctl">
     <div class="where full"><span>${WH[0]||'&nbsp;'}</span><b>${WH[1]}</b></div>
     <div class="sec"><h3>操作</h3>${tog(E.stop, E.run, {runLabel, note:runNote, big:true, help:'toggle'})}
-      <div class="row" style="margin-top:8px">${btn('jog','手動',{dis:!E.manual,help:'jog'})}${btn('abort',AB,{dis:!E.abort,why:whyAbort,cls:AB.length>4?'f16':'',help:'abort'})}</div></div>
+      <div class="row" style="margin-top:8px">${btn('jog','手動',{dis:!E.manual,help:'jog'})}${btn('abort',AB,{dis:!E.abort,why:whyAbort,cls:'interrupt'+(AB.length>4?' f16':''),help:'abort'})}</div></div>
     <div class="sec"><h3>行き先</h3>${btn('goNext', `次の配電盤<small>${choose ? pinById(nextId).name+' へ' : '&nbsp;'}</small>`, {dis:!E.next, why:whyDest, cls:'two go next'+(E.next?' adv':''), help:'next'})}
       <div class="row" style="margin-top:8px">${btn('goHome','待機場所',{dis:!E.home,why:whyHome,cls:'go',help:'home'})}${btn('summon','呼び寄せ',{dis:!E.summon,why:whySummon,cls:'go',help:'summon'})}</div></div>
     <div class="sec full"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{dis:!E.cam,why:whyPanel,help:'cam'})}</div></div>
@@ -966,6 +981,7 @@ const MAP_OPTS = [
 ]
 const AUTO_OPT = {q:'§6.5 自律走行中の枠（案）', k:['af','v'], v:[['pulse','ゆっくり点滅'],['solid','点けたまま'],['none','出さない']], why:'機体が自分で走っている間（試験（当日）の移動中・試験準備の待機場所へ戻る途中）、画面の縁を「進む」の青で囲む。ひと目で自律走行中と分かるように（ユーザー案 2026-11-17）。一時停止・手動では出さない。「移動中」の状態で見る'}
 const COMMON_OPTS = [
+  {q:'§6.9 色の規格（案）', k:['col','v'], v:[['jis','JIS B 9960-1 に合わせる（案）'],['d37','D37 のまま']], why:'JIS B 9960-1:2019（IEC 60204-1）10.2.1・10.3 に合わせる。非常停止＝赤に黄の地（この組は非常停止だけ）／停止する＝黒（赤は非常停止の近くで使わない）／走行する・再開する・出発＝緑（起動の色）／中断＝黄（自動の走行を中断する色）／移動中の札と自律走行中の枠＝緑（正常に動いている。枠の点滅は「変化が進行中」）／一時停止中の札＝白（中立）／入切の切り替え＝白・灰・黒。「1 色 1 意味」は規格の割り当てで続ける'},
   {q:'§6.8 画面の地（案）', k:['theme','v'], v:[['light','明るい（案）'],['dark','暗い（11-17 まで）']], why:'明るい部屋で、片手で持ってちらっと見る用途には明るい地のほうが合うのでは、という意見（2026-11-17）。1 色 1 意味（D37）はそのまま、地と文字の明暗だけを入れ替えた。地図は「明るい床・灰の壁」で描く'},
   {q:'表示の不具合の試し（D39）', k:['dbg','v'], v:[['none','なし'],['broken','画面の中身が描けない']], why:'画面の中身を描く処理が失敗しても、非常停止は最初に描いてあるので残り、押せる（試験準備・試験（当日）で試せる）'},
   {q:'フォント', k:['font','v'], v:Object.entries(FONTS).map(([k,v])=>[k,v[0]]), why:'「端末の標準」以外は、選ぶとインターネットから読み込む（比較のため）。実装ではファイルを同梱する。BIZ UDPゴシックは太さが 2 段階だけ'},
@@ -988,7 +1004,7 @@ function render(){
   const [W,H] = {L:[1280,720], P:[960,1280]}[S.ori]
   dev.style.width=W+'px'; dev.style.height=H+'px'
   dev.className = (S.ori==='P' ? 'portrait' : '') + ' shape-' + S.shape.v + ' sz-' + S.sz.v + ' pal-' + S.pal.v
-    + ' wt-' + S.wt.v + (S.pal.pause==='neutral' ? ' pause-neutral' : '') + ' theme-' + S.theme.v
+    + ' wt-' + S.wt.v + (S.pal.pause==='neutral' ? ' pause-neutral' : '') + ' theme-' + S.theme.v + ' col-' + S.col.v
   applyFont(dev)
   // D39: 非常停止を最初に描く。画面の中身はその後で、描けなくても非常停止は残る
   dev.innerHTML = '<div class="estop-top" data-estop>非常停止</div><div class="toast"></div>'
