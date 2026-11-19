@@ -19,14 +19,16 @@
 #   RPLIDAR_DEVICE     LiDAR の by-id パス（既定は rpi_rplidar_run.sh と同じ）
 #   RELAY_BYID_DIR     by-id ディレクトリ（既定 /dev/serial/by-id）
 #   RELAY_WAIT_MAX     候補が現れるまでの待ち上限（秒・既定 60）
-#   RELAY_PY / RELAY_SCRIPT / RELAY_ARGS  起動するもの（既定は pi_serial_relay.py と --ws-host/--ws-port）
+#   RELAY_PY / RELAY_SCRIPT / RELAY_ARGS  起動するもの（既定は pi_serial_relay.py と --ws-port）
 LIDAR_DEFAULT="/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_0b443775f827c8419a0592b44475a0a2-if00-port0"
 LIDAR="${RPLIDAR_DEVICE:-$LIDAR_DEFAULT}"
 DIR="${RELAY_BYID_DIR:-/dev/serial/by-id}"
 WAIT_MAX="${RELAY_WAIT_MAX:-60}"
 PY="${RELAY_PY:-/usr/bin/python3}"
 SCRIPT="${RELAY_SCRIPT:-/home/mirs2602/pi_serial_relay.py}"
-ARGS="${RELAY_ARGS:---ws-host 192.168.5.50 --ws-port 8766}"
+# 2026-11-19 (Spec-safety §6.4): 中継は WebSocket サーバーとして待ち受ける。
+# 接続しに来るのはどの PC の esp32_bridge でもよい（bind は全 I/F が既定）。
+ARGS="${RELAY_ARGS:---ws-port 8766}"
 
 find_candidates() {
   local p

@@ -13,12 +13,12 @@ esp32_bridge:
     feedback_period_ms:  100   # ESP32 の制御周期 (esp32/src/config.h の CTRL_PERIOD_MS)。
                                # WHEEL_FEEDBACK 1 フレームが表す走行時間 = オドメトリ積分の dt。
                                # config.h を変更したらここも必ず合わせること。
-    ws_host: "0.0.0.0"      # WebSocket サーバー bind アドレス (ラズパイの pi_serial_relay が接続しにくる側)
+    # 2026-11-19 (Spec-safety §6.4): esp32_bridge はクライアント。接続先は
+    # ラズパイの pi_serial_relay（サーバー）の bind アドレス（br0 = 192.168.5.1）。
+    # PC のアドレスは決め打ちにしない（どの PC でも使える）。
+    esp32_ws_host: "192.168.5.1"  # WebSocket 接続先（ラズパイ中継）
     # ラズパイの pi_serial_relay (--ws-port) と一致させる (2026-09-05〜。
-    # 旧 ESP32 側 wifi_credentials.h の WS_SERVER_PORT は廃止)。
-    # 8766 で直接待ち受ける (実機検証 2026-07-11: WSL mirrored networking でも
-    # 外部デバイスから直接届くため、netsh portproxy は不要。むしろ Windows 側に
-    # 8766 の portproxy が残っていると横取りされるので削除すること)。
+    # 旧 ESP32 側 wifi_credentials.h の WS_SERVER_PORT は廃止。向きは 2026-11-19 に逆転)。
     # パラメータ名は registry.yaml の esp32_ws_port（SG-B21 で ws_port から改名。
     # 生成 esp32_bridge.yaml が後段に重なりこちらを上書きする）。
-    esp32_ws_port: 8766   # WebSocket サーバー ポート
+    esp32_ws_port: 8766   # 中継サーバーの待ち受けポート

@@ -446,6 +446,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`/speaker/status`** | **`std_msgs/String`（JSON。`cue`（再生中）／`volume`／`error`）** | **transient_local, depth 1, reliable** | **1 Hz（発行者はラズパイの再生。購読者は `speaker_announcer`（応答の有無）と WebUI）** |
 | `/safety/link_quality` | `LinkQuality` | best_effort | 1 Hz |
 | **`/safety/firmware_flags`** | `std_msgs/UInt8` | **transient_local, depth 1** | 変化時＋接続時（[hardware](DetailedDesign-hardware.md) §3.1） |
+| **`/esp32/bridge_blocked`** | **`std_msgs/String`（JSON。`{"blocked": bool, "owner": string|null}`）** | **transient_local, depth 1, reliable** | **変化時。発行者は `esp32_bridge`。**中継（ラズパイ）が「別の PC が制御中」で 409 拒否したとき、制御中の PC のアドレスとともに「別の PC が制御中」を出す（Spec-safety.md §6.4。2026-11-19）。接続が通ったら `blocked: false` を出す。ESP32 切断と区別する |
 | **`/esp32/cmd_alive`** | `std_msgs/Bool` | reliable, depth 10 | ESP32 の `ESTOP_HW` フレームごと（10 Hz）。**ESP32 自身が「速度指令を受け取れている」と報告した値**（flags bit1。bit2 が立つファームのときだけ出す）。発行者は `esp32_bridge`、購読者は `connectivity_checker`（疎通確認の「速度指令の折り返し」。2026-10-04） |
 | **`/esp32/battery`** | `sensor_msgs/BatteryState` | reliable, depth 1 | **1 Hz**（[hardware](DetailedDesign-hardware.md) §3.3） |
 
@@ -623,7 +624,9 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`scan_expected_points`** | — | given。起動時の疎通判定（`WP-STATE-03`） |
 | **`required_nodes`** | string[] | given。同上 |
 | **`esp32_watchdog_ms`** | ms | given。`esp32/src/config.h` の写し |
-| **`esp32_ws_port`** | — | given。`esp32_bridge` が待ち受ける WebSocket ポート。**実値は機体側の `esp32/src/wifi_credentials.h`（`.gitignore` 対象）にあり、`params.yaml` と `wifi_credentials.h.example` と 3 つで揃える**（`WP-NET-01` §10-②） |
+| **`esp32_ws_host`** | — | given。`esp32_bridge`（クライアント）の接続先＝ラズパイの `br0`。2026-11-19 に向きを逆にした（`Spec.md` §6.1・`Spec-safety.md` §6.4） |
+| **`esp32_ws_port`** | — | given。ラズパイの `pi_serial_relay`（サーバー）の WebSocket 待ち受けポート。`esp32_bridge` はここへ接続しに行く。**旧記述の「実値は機体側の `esp32/src/wifi_credentials.h`」は廃止**（2026-09-05 に ESP32 の無線を廃止し、ポートは PC 側 `params.yaml` と中継の `--ws-port` の 2 つで揃える） |
+| **`esp32_relay_idle_timeout_ms`** | ms | given。ラズパイの中継が制御 PC からの無通信で経路を手放すまでの時間（`Spec-safety.md` §6.4。2026-11-19） |
 | **`link_wait_timeout_ms`** | ms | (b)。`sys.link_timeout` の契機 |
 | `restart_max_count` ／ `restart_wait_ms` | — / ms | (c)。**`O-d4`。マニュアル側で決める**ので registry.yaml に placeholder として置く（`WP-STATE-03`） |
 | `blocked_hold_ms` ／ `unblocked_hold_ms` | ms | (b) |

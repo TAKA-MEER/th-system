@@ -200,3 +200,21 @@ def test_restart_allowed_unset_max_requires_start_sh():
     assert restart_allowed(0, None, supervised=True)
     assert restart_allowed(5, None, supervised=True)   # 上限は start.sh が数える
     assert not restart_allowed(0, None, supervised=False)
+
+
+def test_link_status_blocked_owner_is_carried():
+    """別の PC が制御中（Spec-safety §6.4）: 所有者のアドレスが link_status に載る。"""
+    st = _status(blocked_owner="192.168.5.51")
+    assert st["esp32_blocked"] == {"blocked": True, "owner": "192.168.5.51"}
+
+
+def test_link_status_not_blocked_by_default():
+    st = _status()
+    assert st["esp32_blocked"] == {"blocked": False, "owner": None}
+
+
+def test_link_status_blocked_keeps_esp32_ng():
+    """断られている間は ESP32 の項目が NG のまま（疎通確認は通過しない）。"""
+    st = _status(blocked_owner="192.168.5.51", last_fb_ms=None, last_cmd_alive_ms=None)
+    it = st["items"]
+    assert it["esp32_feedback"]["ok"] is False and it["esp32_loopback"]["ok"] is False

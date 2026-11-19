@@ -132,8 +132,8 @@ pytest のプラグインとして読まれ、テストが全滅する（CLAUDE.
 屋外で 5GHz（W52）は電波法で使えない。切り替えは `th_ws/scripts/ap_band_switch.sh indoor|outdoor`
 （[network.md](network.md)「屋外で使うとき」）。
 
-**ロボット回線は固定 IP `192.168.5.50/24`。**ラズパイの `pi_serial_relay` がこの IP に
-決め打ちで接続しに来るので、DHCP にしてはいけない。
+**ロボット回線は固定 IP `192.168.5.50/24`。**ラズパイはこの IP を時刻源（`NTP=192.168.5.50`。
+現状残っている）にしているため。DHCP にしてはいけない。
 
 ### 2-1. AIC8800 のドライバ
 
@@ -475,7 +475,7 @@ Docker Desktop の残骸が干渉するときは `rm -f ~/.docker/config.json &&
 Set-NetConnectionProfile -InterfaceAlias "<アダプタ名>" -NetworkCategory Private
 netsh wlan set profileparameter name=th-rpi-ap connectionmode=auto
 
-# 固定 IP 192.168.5.50（ラズパイの pi_serial_relay がこの IP に接続しに来るため必須）
+# 固定 IP 192.168.5.50（ラズパイの時刻源 NTP=192.168.5.50 のため必須）
 Get-NetIPAddress -InterfaceAlias "<アダプタ名>" -AddressFamily IPv4 | Remove-NetIPAddress -Confirm:$false
 New-NetIPAddress -InterfaceAlias "<アダプタ名>" -IPAddress 192.168.5.50 -PrefixLength 24
 ```
@@ -507,8 +507,8 @@ netsh interface portproxy delete v4tov4 listenport=8766 listenaddress=192.168.5.
 # ラズパイからの DDS（/scan 等）と NTP（UDP 123）
 New-NetFirewallRule -DisplayName "TH-System Pi (inbound UDP)" -Direction Inbound -Action Allow -Protocol UDP -RemoteAddress 192.168.5.1 -Profile Any
 New-NetFirewallRule -DisplayName "TH-System Pi (inbound TCP)" -Direction Inbound -Action Allow -Protocol TCP -RemoteAddress 192.168.5.1 -Profile Any
-# pi_serial_relay → esp32_bridge の WebSocket
-New-NetFirewallRule -DisplayName "TH-System esp32_bridge WS" -Direction Inbound -Protocol TCP -LocalPort 8766 -Action Allow -Profile Any
+# esp32_bridge → ラズパイの WebSocket（送信側なので受信許可は要らない。
+# 旧「esp32_bridge WS」の受信許可ルールが残っていたら削除してよい）
 ```
 
 ### A-5. 時刻同期（W32Time を NTP サーバーにする）

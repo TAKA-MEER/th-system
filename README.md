@@ -9,7 +9,7 @@ ESP32はラズパイへUSB-UARTで直結し、WiFiは使わない(2026-09-05〜)
   │  USB-UART
   ├── ESP32 (駆動用)             (WiFi不使用。シリアル直結のみ)
   │
-  └── PC 内蔵Intel wlo1         192.168.5.50   固定IP。esp32_bridge が :8766 で待ち受け
+  └── PC 内蔵Intel wlo1         192.168.5.50   固定IP（ラズパイの時刻源）。esp32_bridge がラズパイの :8766 へ接続
         RPLIDAR S1 → rplidar_ros → /scan (ROS_DOMAIN_ID=10, frame_id=laser_link)
 
 PC のインターネットは別系統: Elecom WDC-433SU2M2 (5GHz専用) → NCT-WL-ST
@@ -50,7 +50,7 @@ PC のインターネットは別系統: Elecom WDC-433SU2M2 (5GHz専用) → NC
 ```bash
 # ① ロボット(ESP32・ラズパイにUSB接続)・ラズパイの電源 ON。PC をロボット AP に繋いで疎通確認
 #      ラズパイ 192.168.5.1   … AP 本体 + /scan 配信元 + pi_serial_relay (systemd で自動起動)
-#      PC       192.168.5.50  … esp32_bridge が :8766 で待ち受け (内蔵 Intel wlo1・固定IP)
+#      PC       192.168.5.50  … esp32_bridge がラズパイ :8766 へ接続 (内蔵 Intel wlo1・固定IP)
 #      ESP32    (WiFi不使用)  … ラズパイへUSB-UART直結。pi_serial_relay 経由でPCと通信
 nmcli connection up th-rpi-ap-wlo1     # autoconnect 済みなら不要
 ping -c3 192.168.5.1                   # ラズパイ (AP 兼 LiDAR 兼 ESP32中継)

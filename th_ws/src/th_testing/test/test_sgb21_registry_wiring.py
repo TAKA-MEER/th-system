@@ -44,6 +44,8 @@ _POSITIVE = [
      os.path.join(_REPO_SRC, "th_perception", "scripts", "person_tracker_bridge.py")),
     ("esp32_ws_port", "esp32_bridge",
      os.path.join(_REPO_SRC, "th_esp32_bridge", "scripts", "esp32_bridge.py")),
+    ("esp32_ws_host", "esp32_bridge",
+     os.path.join(_REPO_SRC, "th_esp32_bridge", "scripts", "esp32_bridge.py")),
     ("opcheck_estop_stale_ms", "opcheck_runner",
      os.path.join(_REPO_SRC, "th_maintenance", "scripts", "opcheck_runner.py")),
     ("opcheck_estop_stale_ms", "opcheck_auto",

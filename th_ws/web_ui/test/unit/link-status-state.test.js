@@ -109,3 +109,22 @@ test('parse: restart が無い（古い機体側）ときは null', () => {
   assert.equal(s.restart.attempt, null)
   assert.equal(s.restart.calls, null)
 })
+
+test('別の PC が制御中（bridge_blocked）: ESP32 の行に所有者のアドレスを出す', () => {
+  const s = parseLinkStatus({ items: {
+    esp32_feedback: { ok: false, age_ms: null },
+    esp32_loopback: { ok: false, age_ms: null, reported_age_ms: null },
+  }, esp32_blocked: { blocked: true, owner: '192.168.5.50' } })
+  assert.equal(s.esp32Blocked.blocked, true)
+  assert.equal(s.esp32Blocked.owner, '192.168.5.50')
+  // ESP32 切断と区別できる表示であること（「未接続」だけでは足りない）
+  assert.match(linkRowView(s, 'esp32_feedback').detail, /別の PC が制御中（192\.168\.5\.50）/)
+  assert.match(linkRowView(s, 'esp32_loopback').detail, /別の PC が制御中/)
+  assert.equal(linkRowView(s, 'esp32_feedback').tone, 'tone-ng')
+})
+
+test('bridge_blocked が無い（古い機体側）ときは blocked=false', () => {
+  const s = parseLinkStatus(SAMPLE)
+  assert.equal(s.esp32Blocked.blocked, false)
+  assert.equal(s.esp32Blocked.owner, null)
+})
