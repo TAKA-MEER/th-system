@@ -281,17 +281,20 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
   --ok-tx:#1f7a2e;--warn:#e08a00;--warn-tx:#8a5300;--ng-tx:#b3261e;--act-lt:#2f6bc6;
   --sel-bg:#1f2733;--sel-tx:#ffffff;--pin-panel:#5b6675;--pin-home:#5b6675;--pin-sel:#1f2733;--pin-homesel:#1f2733;
   --dest:#2f6bc6;--route:#2f6bc6;--robot:#2f6bc6;--robot-fp:rgba(47,107,198,.18);--lab:#161b22;--lab-bd:#ffffff;color:var(--tx)}
-/* ヘッダは地より一段濃い明るい灰の帯にする（2026-11-19 の意見。濃い墨色は重すぎた）。色の意味を持たない中立の灰 */
-.theme-light .hdr{color:var(--tx);border-bottom:2px solid #9aa5b3}
-.theme-light .hdr .r1{background:#e2e7ee}
-.theme-light .hdr .r2{background:#d3dae3}
-.theme-light .hdr .brand{color:var(--tx)}
-.theme-light .hdr .brand small{color:#4f5866}
-.theme-light .hdr .st{color:var(--tx)}
-.theme-light .hdr .mst{background:#ffffff;color:var(--tx);box-shadow:inset 0 0 0 1px #8d97a5}
-.theme-light .hdr .mst.run{color:#fff;box-shadow:none}
-.theme-light.pal-new .hdr .zone{border-color:#8d97a5;color:#3a4350;background:#ffffff}
-.theme-light.pause-neutral .hdr .mst.pause,.theme-light.pal-new.pause-neutral .hdr .mst.pause{background:#ffffff;color:#161b22;box-shadow:inset 0 0 0 1px #8d97a5}
+/* ヘッダは青の帯（2026-11-19 ユーザー決定: 青は我々を象徴する色で UI のメインカラー。意味を持たせない）。
+   青は操作・状態の色には使わないので、帯が青でも札やボタンの意味と重ならない */
+.theme-light .hdr{color:#ffffff;border-bottom:2px solid #163d75}
+.theme-light .hdr .r1{background:#1f4f96}
+.theme-light .hdr .r2{background:#2a5fa8}
+.theme-light .hdr .logo,.theme-light.pal-new .hdr .logo{background:#ffffff;color:#1f4f96}
+.theme-light .hdr .brand{color:#ffffff}
+.theme-light .hdr .brand small{color:#cfdcf0}
+.theme-light .hdr .st{color:#ffffff}
+.theme-light .hdr .st i{box-shadow:0 0 0 2px #ffffff}
+.theme-light .hdr .mst{background:#ffffff;color:var(--tx);box-shadow:none}
+.theme-light .hdr .mst.run{color:#fff;box-shadow:inset 0 0 0 2px #ffffff}
+.theme-light.pal-new .hdr .zone{border-color:#cfdcf0;color:#ffffff;background:transparent}
+.theme-light.pause-neutral .hdr .mst.pause,.theme-light.pal-new.pause-neutral .hdr .mst.pause{background:#ffffff;color:#161b22;box-shadow:none}
 .theme-light .tg{border-color:var(--bd-hi)}
 .theme-light .tg2 .go-run{box-shadow:inset 0 0 0 3px #fff}
 /* 押せるボタンは白く浮かせ、押せないボタンは平たく沈める（明るい地では塗りの差だけだと見分けにくい） */
@@ -981,7 +984,7 @@ const MAP_OPTS = [
 ]
 const AUTO_OPT = {q:'§6.5 自律走行中の枠（案）', k:['af','v'], v:[['pulse','ゆっくり点滅'],['solid','点けたまま'],['none','出さない']], why:'機体が自分で走っている間（試験（当日）の移動中・試験準備の待機場所へ戻る途中）、画面の縁を「進む」の青で囲む。ひと目で自律走行中と分かるように（ユーザー案 2026-11-17）。一時停止・手動では出さない。「移動中」の状態で見る'}
 const COMMON_OPTS = [
-  {q:'§6.9 色の規格（案）', k:['col','v'], v:[['jis','JIS B 9960-1 に合わせる（案）'],['d37','D37 のまま']], why:'JIS B 9960-1:2019（IEC 60204-1）10.2.1・10.3 に合わせる。非常停止＝赤に黄の地（この組は非常停止だけ）／停止する＝黒（赤は非常停止の近くで使わない）／走行する・再開する・出発＝緑（起動の色）／中断＝黄（自動の走行を中断する色）／移動中の札と自律走行中の枠＝緑（正常に動いている。枠の点滅は「変化が進行中」）／一時停止中の札＝白（中立）／入切の切り替え＝白・灰・黒。「1 色 1 意味」は規格の割り当てで続ける'},
+  {q:'§6.9 色の規格（案）', k:['col','v'], v:[['jis','JIS B 9960-1 に合わせる（案）'],['d37','D37 のまま']], why:'JIS B 9960-1:2019（IEC 60204-1）10.2.1・10.3 に合わせる。非常停止＝赤に黄の地（この組は非常停止だけ）／停止する＝黒（赤は非常停止の近くで使わない）／走行する・再開する・出発＝緑（起動の色）／中断＝黄（自動の走行を中断する色）／移動中の札と自律走行中の枠＝緑（正常に動いている。枠の点滅は「変化が進行中」）／一時停止中の札＝白（中立）／入切の切り替え＝白・灰・黒。「1 色 1 意味」は規格の割り当てで続ける。青は意味を持たないメインカラーで、ヘッダの帯に使う（ユーザー決定 2026-11-19）。メインメニューは走行しないので、タイルの色は規格に従わない（同）'},
   {q:'§6.8 画面の地（案）', k:['theme','v'], v:[['light','明るい（案）'],['dark','暗い（11-17 まで）']], why:'明るい部屋で、片手で持ってちらっと見る用途には明るい地のほうが合うのでは、という意見（2026-11-17）。1 色 1 意味（D37）はそのまま、地と文字の明暗だけを入れ替えた。地図は「明るい床・灰の壁」で描く'},
   {q:'表示の不具合の試し（D39）', k:['dbg','v'], v:[['none','なし'],['broken','画面の中身が描けない']], why:'画面の中身を描く処理が失敗しても、非常停止は最初に描いてあるので残り、押せる（試験準備・試験（当日）で試せる）'},
   {q:'フォント', k:['font','v'], v:Object.entries(FONTS).map(([k,v])=>[k,v[0]]), why:'「端末の標準」以外は、選ぶとインターネットから読み込む（比較のため）。実装ではファイルを同梱する。BIZ UDPゴシックは太さが 2 段階だけ'},
