@@ -112,8 +112,14 @@ def run_startup_check(
     try:
         node = rclpy.create_node("single_controller_guard")
         try:
+            def _node_names() -> list[str]:
+                # discovery の受信を進める（spin しないと他 PC のノードが
+                # グラフのキャッシュに載らない）。
+                rclpy.spin_once(node, timeout_sec=0.0)
+                return node.get_node_names()
+
             found, warning = check_single_controller(
-                watch_sec=watch_sec, node_names_fn=node.get_node_names)
+                watch_sec=watch_sec, node_names_fn=_node_names)
         finally:
             node.destroy_node()
     finally:
