@@ -345,7 +345,10 @@ def generate_launch_description():
                               'person',
                               # SG-A11（2026-10-08）: mux を監視対象に足す。twist_mux の生存確認を
                               # 含む。mux_report_only=true（既定）のため記録だけで実機の挙動は変わらない。
-                              'mux']
+                              'mux',
+                              # Spec-safety §6.4: 別の PC の制御系と同居の検知。
+                              # controller_conflict_report_only=true（既定）のため記録だけ。
+                              'controller']
     # dev_mode と同じ流儀（WP-DEV-01A）: If/Unless で排他的に定義を分ける。
     nodes.append(Node(
         package='th_safety',

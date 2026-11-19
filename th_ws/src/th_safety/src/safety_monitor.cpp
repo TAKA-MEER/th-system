@@ -23,6 +23,10 @@
 //                （mux_report_only=true の間は FaultStatus／fault_lock を出さず記録だけ。
 //                  人物追跡の person_report_only と同じ形）
 //   runaway      /cmd_vel と /esp32/wheel_feedback の乖離    → DRIVE_RUNAWAY (CRITICAL)
+//   controller   ROS グラフに別の制御系がいる（/cmd_vel の publisher 2 つ以上、
+//                または制御系ノードが同名で 2 つ以上）→ CONTROLLER_CONFLICT (CRITICAL)
+//                （controller_conflict_report_only=true の間は FaultStatus／
+//                  fault_lock を出さず記録だけ。MUX_DEAD の mux_report_only と同じ形）
 //   state        /system/state タイムアウト・不整合          → STATE_INCONSISTENT (CRITICAL)
 //   firmware     /safety/firmware_flags の bypass_active ビット → ESTOP_BYPASS_ACTIVE (CRITICAL)
 //
@@ -106,6 +110,16 @@ public:
         // ログ＋カウンタのみ（person_report_only と同じ形）。誤検知がないことを
         // 実機で確かめてから false にする。既定値は registry.yaml が正。
         declare_parameter("mux_report_only", true);
+        // Spec-safety §6.4: 別の PC の制御系が同時に動いている検知。
+        // controller_conflict_hold_ms: DDS が落ちたノードの残骸を数秒見せ続ける
+        // ことがある（kill -9 やクラッシュ直後。CLAUDE.md「環境の癖」）ので、保持時間は
+        // その残骸の見え方（数秒）より長く、既定 5000 ms。根拠は registry.yaml の note。
+        // 既定値は registry.yaml（controller_conflict_hold_ms）が正。
+        declare_parameter("controller_conflict_hold_ms", 5000);
+        // true の間は CONTROLLER_CONFLICT が成立しても FaultStatus／fault_lock を
+        // 出さずログ＋カウンタのみ（mux_report_only と同じ形）。実機で誤検知が無いことを
+        // 見てから false にする。既定値は registry.yaml が正。
+        declare_parameter("controller_conflict_report_only", true);
         declare_parameter("state_stale_ms",       1500);
         declare_parameter("runaway_ratio",        1.5);
         // Spec-safety.md §3.5.4（W-06 の⑤）: 発進・停止直後の追従遅れ
@@ -149,6 +163,10 @@ public:
         mux_liveness_grace_ = std::chrono::milliseconds(
             get_parameter("mux_liveness_grace_ms").as_int());
         mux_report_only_ = get_parameter("mux_report_only").as_bool();
+        controller_conflict_hold_ = th_safety::HoldTimer(
+            get_parameter("controller_conflict_hold_ms").as_int() / 1000.0);
+        controller_conflict_report_only_ =
+            get_parameter("controller_conflict_report_only").as_bool();
         state_stale_    = std::chrono::milliseconds(get_parameter("state_stale_ms").as_int());
         runaway_ratio_  = get_parameter("runaway_ratio").as_double();
         runaway_zero_threshold_ = get_parameter("runaway_zero_threshold").as_double();
@@ -559,6 +577,39 @@ private:
                 updateFaultState("ESTOP_BYPASS_ACTIVE",
                                   firmware_flags_received_ && firmware_bypass_active_);
             }
+            if (targetEnabled("controller")) {
+                // Spec-safety §6.4: 同じネットワークで別の PC の制御系が現れたら
+                // 重大フォルトとして止める（§3.5）。最初は記録だけ
+                // （mux_report_only と同じ形。実機で誤検知が無いことを見てから有効にする）。
+                const bool cond = controllerConflict();
+                if (!controller_conflict_report_only_) {
+                    updateFaultState("CONTROLLER_CONFLICT",
+                                      controller_conflict_hold_.update(cond, check_period_sec_));
+                } else {
+                    updateFaultState("CONTROLLER_CONFLICT", false);
+                    const bool held = controller_conflict_hold_.update(cond, check_period_sec_);
+                    if (held && !prev_controller_conflict_report_) {
+                        ++controller_conflict_report_only_episodes_;
+                        RCLCPP_WARN(
+                            get_logger(),
+                            "[CONTROLLER_CONFLICT 記録だけ %zu 件目] 別の PC の制御系が "
+                            "同時に動いている疑い（/cmd_vel の publisher 2 つ以上、または"
+                            "制御系ノードが同名で 2 つ以上）。report_only のためフォルトは出さない",
+                            controller_conflict_report_only_episodes_);
+                    } else if (held) {
+                        RCLCPP_WARN_THROTTLE(
+                            get_logger(), *get_clock(), 30000,
+                            "[CONTROLLER_CONFLICT 記録だけ] 同居が継続中 (これまでの検出 %zu 件)"
+                            "。report_only のためフォルトは出さない",
+                            controller_conflict_report_only_episodes_);
+                    } else if (prev_controller_conflict_report_) {
+                        RCLCPP_INFO(get_logger(),
+                                    "[CONTROLLER_CONFLICT 記録だけ] 同居が解消 (これまでの検出 %zu 件)",
+                                    controller_conflict_report_only_episodes_);
+                    }
+                    prev_controller_conflict_report_ = held;
+                }
+            }
         }
 
         // F-1: 沈黙禁止。状態変化の有無にかかわらず毎周期発行する。
@@ -589,6 +640,30 @@ private:
             mux_node_seen_, (t - last_mux_node_time_).seconds(),
             std::chrono::duration<double>(mux_liveness_grace_).count(),
             since_start, startup_deadline_sec_);
+    }
+
+    // Spec-safety §6.4: 別の PC の制御系が同時に動いているか。
+    // グラフの問い合わせが失敗したときは「居ない」ことにする（不明を他者ありと
+    // 決めない。起動時の拒否 single_controller_guard と同じ決まり）。
+    bool controllerConflict() {
+        try {
+            const int cmd_pubs =
+                static_cast<int>(get_publishers_info_by_topic("/cmd_vel").size());
+            const auto names = get_node_names();
+            int max_same_name = 0;
+            for (const auto& ctrl : th_safety::controller_node_names()) {
+                int n = 0;
+                for (const auto& name : names) {
+                    if (name == ctrl) ++n;
+                }
+                max_same_name = std::max(max_same_name, n);
+            }
+            return th_safety::detect_controller_conflict(cmd_pubs, max_same_name);
+        } catch (const std::exception& e) {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 10000,
+                                 "別の制御系の確認に失敗 (%s)。今回は判定しない", e.what());
+            return false;
+        }
     }
 
     // 開発モードの項目 lidar_fault が実効か。切り替わりをログに残す。
@@ -882,6 +957,10 @@ private:
     th_safety::HoldTimer localization_dead_hold_{0.0};
     th_safety::HoldTimer mux_dead_hold_{0.0};
     th_safety::HoldTimer mux_report_hold_{0.0};   // mux_report_only の間だけ使う（記録の保持時間）
+    th_safety::HoldTimer controller_conflict_hold_{0.0};
+    bool controller_conflict_report_only_ = true;
+    bool prev_controller_conflict_report_ = false;
+    std::size_t controller_conflict_report_only_episodes_ = 0;
     th_safety::HoldTimer state_inconsist_hold_{0.0};
     double estop_ui_lease_sec_ = 1.5;
     double check_period_sec_ = 0.1;
