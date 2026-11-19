@@ -344,6 +344,11 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .col-jis .estop-plate{display:block;position:absolute;z-index:99;right:0;top:50px;height:60px;width:332px;background:var(--jis-y,#ffd100)}
 .col-jis.sz-new .estop-plate{top:48px;height:86px;width:calc(max(330px,26%) + 12px)}
 .col-jis.sz-new.portrait .estop-plate{width:calc(47% + 12px)}
+/* 板の中心に置く: 下に落とす立体の影は板の上で中心がずれて見えるので外し、ボタン（76）を板（86）の上下中央（上下 5・左右 6）に置く */
+.col-jis .estop-top{box-shadow:inset 0 1px 0 #ffffff55,inset 0 -3px 0 #00000033}
+.col-jis .estop-top:active{transform:none;filter:brightness(.85)}
+.col-jis.sz-new .estop-top{top:53px}
+.col-jis:not(.sz-new) .estop-top{top:54.5px}
 .pal-new.col-jis .tg2 .go-stop{background:var(--stop);color:#fff}
 .pal-new.col-jis:not(.theme-light) .tg2 .go-stop{box-shadow:inset 0 0 0 2px #ffffff55}
 .pal-new.col-jis .b.interrupt:not(.dis){background:var(--jis-y);border-color:#a88a00;color:#161b22}
