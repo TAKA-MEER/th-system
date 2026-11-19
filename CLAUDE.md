@@ -45,7 +45,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **「実装して」と言われたら自分でコードを書かない。**ブリーフを実装エージェントに渡して投げる
   （手順・落とし穴は ImplementationPlan §2.1）。体数は固定しない。
-  **まず codex に投げ、利用枠の上限が来たら opencode に切り替える**（2026-10-26 ユーザー決定）。
+  **codex → DeepAI Code → opencode の順に投げ、上の利用枠が切れたら次へ**（2026-10-26 決定、2026-11-19 に DeepAI を間に追加）。DeepAI Code は orca ではなく MCP（`deepai-code-dispatch` スキル）から投げる。
   codex は無料プランの 30 日枠で、使い切ると約 1 か月戻らない。codex は `CLAUDE.md` ではなく `AGENTS.md` を読む（中身は「CLAUDE.md を読め」だけ）。
   **窓口は herdr と orca の 2 つ**（2026-10-01 から乗り換えを検討中）。**いま開いている方を環境変数で見分けて使う**:
   `TERM_PROGRAM=Orca`／`ORCA_TERMINAL_HANDLE` があれば orca（`orca worktree create --setup skip --agent codex`。枠切れなら `--agent opencode`）、
