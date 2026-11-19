@@ -406,7 +406,7 @@ PC 側の `speaker_announcer`（bringup で起動）が `/speaker/cue`（2 Hz）
    ssh mirs2602@192.168.5.1 'groups | grep -q dialout && echo OK || \
      (sudo usermod -aG dialout mirs2602 && echo "追加した。再ログインが必要")'
    ```
-> **向いて逆になった更新（2026-11-19）の導入手順（ユーザーが対話で sudo する）。**
+> **接続の向きを逆にした更新（2026-11-19）の導入手順（ユーザーが対話で sudo する）。**
 > エージェントはラズパイへ導入しない。やることは次の3つだけ:
 > 1. 新しい 3 ファイル（`pi_serial_relay.py`・`relay_gate.py`・`serial_framer.py`）と
 >    ラッパー `rpi_serial_relay_run.sh` を上の scp で `~` へ送る。
