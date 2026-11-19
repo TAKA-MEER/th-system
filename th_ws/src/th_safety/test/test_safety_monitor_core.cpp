@@ -18,6 +18,8 @@
 // ============================================================
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include "th_safety/safety_monitor_core.hpp"
 
 using namespace th_safety;
@@ -439,4 +441,38 @@ TEST(SafetyMonitorCore, MuxAbsentNeverSeenWaitsForStartupDeadline) {
   EXPECT_FALSE(detect_mux_absent(false, 15.0, 1.0, 15.0, 15.0));
   // deadline を超えても一度も見えなければ、twist_mux が起動していない → 死。
   EXPECT_TRUE(detect_mux_absent(false, 15.1, 1.0, 15.1, 15.0));
+}
+
+// ── CONTROLLER_CONFLICT（Spec-safety §6.4。2026-11-19） ───────────────────
+// 別の PC の制御系が同時に動いている検知。保持時間は呼び出し側の HoldTimer。
+
+TEST(SafetyMonitorCore, ControllerConflictRateByMultipleCmdVelPublishers) {
+  // /cmd_vel の publisher は obstacle_limiter だけ（WP-SAFE-03 の不変ルール）。
+  // 2 つ以上は別の PC の制御系が混ざっている。0・1 は正常。
+  EXPECT_FALSE(detect_controller_conflict(0, 1));
+  EXPECT_FALSE(detect_controller_conflict(1, 1));
+  EXPECT_TRUE(detect_controller_conflict(2, 1));
+  EXPECT_TRUE(detect_controller_conflict(3, 1));
+}
+
+TEST(SafetyMonitorCore, ControllerConflictByDuplicatedNodeName) {
+  // 制御系ノードが同名で 2 つ以上いるのは別 PC の同じノード。
+  // publisher が 1 つでも成立する（2 台目の obstacle_limiter がまだ /cmd_vel に
+  // マッチしていない合間でも拾う）。
+  EXPECT_TRUE(detect_controller_conflict(1, 2));
+  EXPECT_FALSE(detect_controller_conflict(1, 1));
+  EXPECT_FALSE(detect_controller_conflict(0, 0));
+}
+
+TEST(SafetyMonitorCore, ControllerNodeNamesAreTheFourControllerNodes) {
+  const auto& names = controller_node_names();
+  EXPECT_EQ(names.size(), 4u);
+  for (const char* want : {"obstacle_limiter", "safety_monitor", "state_manager",
+                           "esp32_bridge"}) {
+    EXPECT_TRUE(std::find(names.begin(), names.end(), want) != names.end()) << want;
+  }
+}
+
+TEST(SafetyMonitorCore, ControllerConflictIsCritical) {
+  EXPECT_EQ(classify_severity("CONTROLLER_CONFLICT"), Severity::CRITICAL);
 }

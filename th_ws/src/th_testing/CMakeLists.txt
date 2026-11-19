@@ -998,6 +998,19 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_athome_jog_speed_node
     test/test_athome_jog_speed_node.py
     TIMEOUT 240)
+
+  # 別の PC の制御系の同時起動の検知（Spec-safety §6.4）。本物の safety_monitor を
+  # 起動し、/cmd_vel に 2 つ目の publisher を出したときの振る舞い（止める側と
+  # 記録だけ）を縛る。rclpy 要＝ホスト除外。
+  ament_add_pytest_test(test_controller_conflict_node
+    test/test_controller_conflict_node.py
+    TIMEOUT 240)
+
+  # 起動時の拒否の実グラフ試験（Spec-safety §6.4）。別プロセスで偽の
+  # obstacle_limiter を立てて拒否の関数を本当に呼ぶ。rclpy 要＝ホスト除外。
+  ament_add_pytest_test(test_single_controller_guard_node
+    test/test_single_controller_guard_node.py
+    TIMEOUT 180)
 endif()
 
 ament_package()

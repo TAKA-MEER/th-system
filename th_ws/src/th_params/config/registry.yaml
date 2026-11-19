@@ -931,6 +931,26 @@
   note: "true の間は MUX_DEAD が成立しても FaultStatus／fault_lock を出さず内部ログ＋カウンタのみ（person_report_only と同じ形）。
     誤検知の無いことを実機で確かめてから false にして重大フォルトとして止める"
 
+- name: controller_conflict_hold_ms
+  unit: ms
+  class: b
+  status: given
+  value: 5000
+  consumers: [safety_monitor]
+  spec_ref: "Spec-safety.md §6.4"
+  note: "CONTROLLER_CONFLICT（別の PC の制御系と同居）の保持時間。/cmd_vel の publisher が 2 つ以上、または制御系ノード（obstacle_limiter / safety_monitor / state_manager / esp32_bridge）が同名で 2 つ以上いる状態がこの時間続いたら成立する。
+    DDS が落ちたノードの残骸を数秒見せ続けることがある（kill -9・クラッシュ直後。CLAUDE.md「環境の癖」）ため、保持時間はその残骸の見え方（数秒）より長くする。実機で誤検知が無いことを確かめてから見直す"
+
+- name: controller_conflict_report_only
+  unit: null
+  class: b
+  status: given
+  value: true
+  consumers: [safety_monitor]
+  spec_ref: "Spec-safety.md §6.4"
+  note: "true の間は CONTROLLER_CONFLICT が成立しても FaultStatus／fault_lock を出さず内部ログ＋カウンタのみ（mux_report_only と同じ形。プロジェクトの方針: 実機で確かめる前の安全検知は記録だけで入れ、誤検知が無いことを見てから有効にする）。
+    誤検知の無いことを実機で確かめてから false にして重大フォルトとして止める"
+
 - name: localization_stale_ms
   unit: ms
   class: b

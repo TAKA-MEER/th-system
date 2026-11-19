@@ -586,6 +586,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`measure_link_timeout_ms`** | ms | (b)。`/measure/heartbeat` の途絶とみなすまでの時間（[measure](DetailedDesign-measure.md) §3.4。Spec-params §2 の「測定機能との通信が途絶えたとみなすまでの時間」）。2026-11-04（案） |
 | **`arm_clearance_scan_max_age_ms`** | ms | (b)。腕が振れる範囲の確認で、これより古いスキャンなら `UNKNOWN`（[measure](DetailedDesign-measure.md) §3.5）。2026-11-04（案） |
 | **`mux_report_only`** | — | given bool。true の間は `MUX_DEAD` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。同 §5.6） |
+| **`controller_conflict_hold_ms`** | ms | (b)。`CONTROLLER_CONFLICT` の保持時間（`/cmd_vel` の publisher が 2 つ以上、または制御系ノードが同名で 2 つ以上いる状態がこの時間続いたら成立。DDS が落ちたノードの残骸を数秒見せ続けることがあるため、その見え方より長くする。`safety_monitor`。Spec-safety §6.4） |
+| **`controller_conflict_report_only`** | — | given bool。true の間は `CONTROLLER_CONFLICT` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。`mux_report_only` と同じ形） |
 | **`muxed_stale_ms`** | ms | (b)。**リミッタ**が `/cmd_vel_muxed` の途絶を判定する |
 | **`cmd_vel_stale_ms`** | ms | (b)。**`esp32_bridge`** が `/cmd_vel` の途絶を判定する（`< esp32_watchdog_ms`） |
 | **`scan_stale_ms`** | ms | (b)。**リミッタ**が `/scan` の途絶を判定する。超えたら `action = STOP` |

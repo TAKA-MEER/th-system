@@ -37,7 +37,8 @@ enum class Severity { RECOVERABLE, CRITICAL };
 // RECOVERABLE: LIDAR_LOST / ESP32_DISCONNECTED / PERSON_TRACKER_LOST / UI_DISCONNECTED
 // CRITICAL:    LIMITER_DEAD / MUX_DEAD / DRIVE_RUNAWAY / STATE_INCONSISTENT /
 //              LOCALIZATION_LOST（検出は WP-SAFE-05。ここでは分類表にのみ登場）/
-//              ESTOP_BYPASS_ACTIVE（DEBT-1 バイパス検出。safety.md §11.1）
+//              ESTOP_BYPASS_ACTIVE（DEBT-1 バイパス検出。safety.md §11.1）/
+//              CONTROLLER_CONFLICT（別の PC の制御系と同居。safety.md §6.4）
 // 未知の fault_type は RECOVERABLE 側にフォールバックする
 // （fault_type はこのノード自身が閉じた集合で生成する文字列であり、外部入力ではない）。
 Severity classify_severity(const std::string& fault_type);
@@ -240,6 +241,24 @@ inline bool detect_mux_absent(bool ever_seen, double absent_sec, double grace_se
   return is_timeout_fault(ever_seen, absent_sec, grace_sec, since_start_sec,
                           startup_deadline_sec);
 }
+
+// ── Spec-safety §6.4 CONTROLLER_CONFLICT（別の PC の制御系と同居） ──────
+//
+// このスタックの制御系のノード名（obstacle_limiter / safety_monitor /
+// state_manager / esp32_bridge）。起動時の拒否（th_bringup の
+// single_controller_guard.py の CONTROL_NODE_NAMES）と同じ一覧の写し。
+const std::vector<std::string>& controller_node_names();
+
+// 動作中の検知（safety_monitor が ROS グラフを見て数える）:
+//   cmd_vel_publisher_count: `/cmd_vel` の publisher 数。
+//     obstacle_limiter だけが `/cmd_vel` を publish してよい（WP-SAFE-03 の
+//     不変ルール）ので、2 つ以上は別の PC の制御系が混ざっている。
+//   max_same_name_count: 制御系ノード名ごとの出現数で最大のもの。
+//     同名で 2 つ以上いるのは別 PC の同じノード（ノード名は通常一意）。
+// どちらかで成立。保持時間は呼び出し側の HoldTimer（controller_conflict_hold_ms）
+// が別途課す: DDS が落ちたノードの残骸を数秒見せ続けることがあるため、
+// 保持時間はその残骸の見え方より長くする（既定 5000 ms。registry.yaml が正）。
+bool detect_controller_conflict(int cmd_vel_publisher_count, int max_same_name_count);
 
 }  // namespace th_safety
 
