@@ -548,9 +548,12 @@ export const S21_HOME_OFFSET = (m, deg) => `ずれ ${m.toFixed(2)}m・${deg.toFi
 export const S21_WAIT_CANCEL = '中止'
 export const S21_WAIT_CLEARING = '対象の場所が空き次第、自動で続行します'
 export const S21_ATPANEL_TITLE = '配電盤前'
-export const S21_WORKING = '作業中'
-export const S21_WORK_ON = 'ON'
-export const S21_WORK_OFF = 'OFF'
+// S-21 の「カメラ」ボタン（Spec-onsite.md §7.2。2026-11-20）。開く先は
+// S-50 の「一般」タブで変えられるパラメータ camera_ui_url で、WebUI は
+// 実行時に /params/get で効き値を読む（ビルド時生成物は読まない）。
+export const S21_CAMERA = 'カメラ'
+export const S21_CAMERA_NO_URL = 'カメラの場所が設定されていません（S-50 の「一般」で設定します）'
+export const S21_CAMERA_BAD_URL = 'カメラの場所は http:// または https:// で始めてください（S-50 の「一般」で直します）'
 export const S21_MAP_UPDATE = '地図の更新'
 export const S21_MAP_UPDATE_OFF = 'OFF'
 export const S21_MAP_UPDATE_NOTE = '地図の書き足しは現在使えません（自己位置推定が地図を書き換えないため）'
@@ -560,12 +563,12 @@ export const S21_STEP_OPEN = '会場地図を開く'
 export const S21_STEP_HOME = '待機場所を宣言'
 export const S21_STEP_DEST = '行き先を選ぶ'
 export const S21_STEP_MOVE = '移動'
-export const S21_STEP_WORK = '作業/呼び寄せ'
+export const S21_STEP_WORK = 'カメラ/呼び寄せ'
 export const S21_NEXT_OPEN_VENUE = '会場地図を開く'
 export const S21_NEXT_DECLARE_HOME = '待機場所を宣言'
 export const S21_NEXT_PICK_DEST = '行き先を選ぶ'
 export const S21_NEXT_STOP = '停止'
-export const S21_NEXT_WORK = '作業中'
+export const S21_NEXT_CAMERA = 'カメラ'
 export const S21_NEXT_SUMMON = '呼び寄せ'
 // WS-9AB (2026-09-10): BLOCKED（経路が見つからず止まっている）帯の案内と操作。
 export const S21_BLOCKED_MSG = '行き先までの経路が見つかりません（止まって再試行中）'
@@ -670,6 +673,16 @@ export const S50_BRAKE_OUTDOOR = '場外の手動'
 export const S50_BRAKE_INDOOR = '場内'
 export const S50_BRAKE_OFF = 'OFF'
 export const S50_BRAKE_ON = 'ON'
+// S-21 の「カメラ」ボタンの開く先（2026-11-20。/params/set 経由。次の起動から効く）。
+export const S50_SEC_CAMERA_TAB = 'カメラ'
+export const S50_SEC_CAMERA = 'カメラ機能の画面の場所'
+export const S50_CAMERA_NOTE =
+  '試験画面（S-21）の「カメラ」ボタンが別タブで開く先です。'
+  + 'カメラの IP はラズパイの AP が配るので、現場で変わったらここで直します。'
+  + '「保存」は走行中の値に触れません。次の起動から有効になります。'
+  + 'http:// か https:// で始まるものだけ保存できます。'
+export const S50_CAMERA_URL_LABEL = 'アドレス（http:// または https:// で始めます）'
+export const S50_CAMERA_BAD_URL = 'http:// または https:// で始まるアドレスにしてください'
 // SG-C14: 速度プリセット 3 段階の順序（低速≦中速≦高速、高の天井は 100%）。
 // 違反は保存不可。キーは ros/presetOrder.js の presetOrderError と揃える。
 export const S50_PRESET_ORDER_REASONS = {
