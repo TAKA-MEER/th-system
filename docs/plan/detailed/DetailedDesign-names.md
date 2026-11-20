@@ -525,6 +525,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`calib_rotation_w_rps`** | rad/s | (b) | **校正 `ROTATION` の旋回の速さ（一定）**。終わりぎわも `turn_in_place_w_min_rps` を下回らない |
 | `speed_preset_low` ／ `_mid` ／ `_high` | 比率 | given | UI プリセット。**上限に対する割合**。`consumers: [web_ui]` |
 | `auto_brake_default_outdoor` ／ `auto_brake_default_indoor` | on/off | given | S-50 で変える自動ブレーキの既定（場外の手動系／場内）。`consumers: [state_manager]`。Spec-safety §2.1 |
+| `camera_ui_url` | URL（文字列） | given | S-21 の「カメラ」ボタンが別タブで開く先（カメラ機能 hve-system の画面）。`consumers: [web_ui]`。S-50 で変えられる（http/https のみ）。Spec-onsite §7.2 / Spec-webui §3.15 |
 | `drivetrain_ceiling_mps` | m/s | (b) | 出力上限 ÷ フィードフォワード係数 |
 | **`v_max_headroom_ratio`** | — | given | `v_max` を天井の何割にするか（補正の余地を残す） |
 | **`venue_clearance_m`** ／ **`blind_clearance_m`** ／ **`panel_clearance_m`** | m | (a)／方針値 | `v_slow`・`v_reverse` ／ `v_jog_panel` の逆算元（`blind_clearance_m` は現構成では未使用。2026-10-09） |

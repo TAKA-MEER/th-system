@@ -250,6 +250,15 @@
   spec_ref: "DetailedDesign-names.md §7.1 / Spec-safety.md §2.1"
   note: "S-50 で変える自動ブレーキの既定（場内。'on'/'off'）。state_manager のゾーン既定に使う。既定 'on'（Spec-safety §2.1）。ゾーン NA は値に関わらず ON（安全側）"
 
+- name: camera_ui_url
+  unit: null
+  class: b
+  status: given
+  value: "http://192.168.5.129/"
+  consumers: [web_ui]
+  spec_ref: "DetailedDesign-names.md §7.1 / Spec-onsite.md §7.2 / Spec-webui.md §3.15"
+  note: "S-21 の「カメラ」ボタンが別タブで開く先（カメラ機能 hve-system の画面のアドレス）。カメラの IP はラズパイの AP が DHCP で配るので固定されておらず、S-50 の「一般」タブで変えられる（http:// か https:// で始まるものだけ）。WebUI は実行時に /params/get で効き値を読む"
+
 # =========================================================================
 # 7.2 距離（names §7.2・§7.5 / params §6.1〜§6.4）
 # =========================================================================

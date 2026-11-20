@@ -186,6 +186,7 @@
     "body_width_m",
     "brake_accel_mps2",
     "brake_delay_s",
+    "camera_ui_url",
     "calib_blind_verify_frames",
     "calib_blind_verify_timeout_ms",
     "calib_linear_distance_m",
