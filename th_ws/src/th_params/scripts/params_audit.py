@@ -400,6 +400,15 @@ class ParamsAudit(Node):
                     "（given の行のみ調整可能。derived は元の値を変えること）")
                 return response
 
+        # S-21 の「カメラ」ボタン: 開く先は http(s) で始まるアドレスだけを受け付ける
+        # （Spec-webui.md §3.15。S-50 の画面も同じ規則で弾く）。
+        if "camera_ui_url" in values:
+            url_reason = export.check_camera_ui_url(values["camera_ui_url"])
+            if url_reason is not None:
+                response.success = False
+                response.message = url_reason
+                return response
+
         # PT-1: 当てる前にコピーの上で全アサーションを検査する（★部分適用しない）
         patched_rows = copy.deepcopy(rows)
         for row in patched_rows:

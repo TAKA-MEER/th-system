@@ -321,6 +321,23 @@ def _override_entry_meta(entry: Any) -> dict[str, Any]:
     return {"set_at": "", "set_by": "", "reason": ""}
 
 
+# S-21 の「カメラ」ボタン（Spec-onsite.md §7.2 / Spec-webui.md §3.15。2026-11-20）。
+# 開く先は IP が DHCP で決まるため実行時に S-50 で変えられるが、
+# window.open に渡すものは http(s) で始まるアドレスだけにする
+# （それ以外は別タブに当然に流す画面が意味を持たない）。
+def check_camera_ui_url(value: Any) -> str | None:
+    """`camera_ui_url` の値が開けるアドレスか（純関数）。
+
+    戻り値は違反の理由（日本語、画面にそのまま出せる）。通れば None。
+    空・非文字列・http(s) 以外はすべて違反。
+    """
+    if not isinstance(value, str) or not value.strip():
+        return "camera_ui_url は http:// または https:// で始まるアドレスにしてください"
+    if not value.startswith(("http://", "https://")):
+        return "camera_ui_url は http:// または https:// で始まるアドレスにしてください"
+    return None
+
+
 def apply_overrides_to_rows(rows: list[dict], overrides: Mapping[str, Any] | None
                             ) -> tuple[list[dict], dict[str, str], dict[str, dict[str, Any]]]:
     """overrides を registry 行へ1件ずつ試し当てし、検査に通るものだけ適用する（純粋関数）。
@@ -356,6 +373,13 @@ def apply_overrides_to_rows(rows: list[dict], overrides: Mapping[str, Any] | Non
             if crow["name"] == name:
                 crow["value"] = _override_entry_value(entry)
                 break
+        # S-21 の「カメラ」ボタン: 開けないアドレスの上書きは既定値のまま残す
+        # （/params/set 側でも同じ検査で弾く。params_audit._cb_set）。
+        if name == "camera_ui_url":
+            url_reason = check_camera_ui_url(_override_entry_value(entry))
+            if url_reason is not None:
+                rejected[name] = url_reason
+                continue
         schema_errors = schema.validate_registry(candidate)
         if schema_errors:
             rejected[name] = "; ".join(schema_errors)

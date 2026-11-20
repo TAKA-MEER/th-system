@@ -761,3 +761,44 @@ def test_split_effective_pending_falls_back_for_legacy_provenance(tmp_path):
         rows, overrides, legacy)
     assert export.public_values(effective)["test_ratio_a"] == 0.6
     assert pending == {}
+
+
+# ============================================================================
+# S-21 の「カメラ」ボタン: camera_ui_url（2026-11-20。Spec-onsite §7.2）
+# ============================================================================
+
+def _camera_rows():
+    return [
+        {"name": "camera_ui_url", "unit": None, "class": "b", "status": "given",
+         "value": "http://192.168.5.129/", "consumers": ["web_ui"],
+         "spec_ref": "s21-camera", "note": "S-21 の開く先"},
+    ]
+
+
+def test_check_camera_ui_url_accepts_http_and_https():
+    assert export.check_camera_ui_url("http://192.168.5.129/") is None
+    assert export.check_camera_ui_url("https://192.168.5.10:8000/") is None
+
+
+def test_check_camera_ui_url_rejects_non_http_and_empty():
+    for bad in ("ftp://x/", "192.168.5.129/", "", "  ", None, 42):
+        assert "http" in (export.check_camera_ui_url(bad) or ""), bad
+
+
+def test_apply_overrides_rejects_bad_camera_url_keeps_default():
+    rows = _camera_rows()
+    overrides = {"camera_ui_url": {"value": "ftp://x/", "set_at": "t",
+                                   "set_by": "tester", "reason": "bad"}}
+    patched, rejected, meta = export.apply_overrides_to_rows(rows, overrides)
+    assert "camera_ui_url" in rejected
+    assert "http" in rejected["camera_ui_url"]
+    assert {r["name"]: r for r in patched}["camera_ui_url"]["value"] == "http://192.168.5.129/"
+
+
+def test_apply_overrides_applies_good_camera_url():
+    rows = _camera_rows()
+    overrides = {"camera_ui_url": {"value": "https://192.168.5.10/cam", "set_at": "t",
+                                   "set_by": "tester", "reason": "dhcp"}}
+    patched, rejected, meta = export.apply_overrides_to_rows(rows, overrides)
+    assert rejected == {}
+    assert {r["name"]: r for r in patched}["camera_ui_url"]["value"] == "https://192.168.5.10/cam"
