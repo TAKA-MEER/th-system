@@ -467,6 +467,17 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .mainv svg.tapmk{position:absolute;inset:0;width:100%;height:100%}
 .mainv.withradar svg.tapmk{width:calc(100% - 274px)}
 .mainv.withflow svg.tapmk{height:calc(100% - 96px)}
+
+/* 2026-11-22 帯（地図の下・登録の帯の上）。地図を塞がない。高さは 1 段で固定（出ている間だけ地図が縮む） */
+.lay-A .content.has-band{grid-template-rows:auto 1fr auto auto;grid-template-areas:"map ops" "map jog" "band jog" "reg jog"}
+.lay-A.portrait .content.has-band{grid-template-rows:1fr auto auto auto;grid-template-areas:"map map" "band band" "reg reg" "ops jog"}
+.lay .b-band{grid-area:band}
+.bandc{display:flex;align-items:center;gap:10px;min-height:64px;padding:4px 12px;border:1px solid var(--bd-hi);border-radius:8px;background:var(--panel)}
+.bandc.ab,.flow.ab{border:3px solid var(--jis-y,#ffd100)}
+.bandc .stp{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:800;white-space:nowrap}
+.bandc .stp svg{width:22px;height:22px}
+.bandc .msg{flex:1;min-width:0;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bandc .b{flex:none;font-size:16px;padding:0 12px}
 </style>
 </head>
 <body>
@@ -533,7 +544,7 @@ const S = {
   target:0,   // 人検出の対象（レーダーの候補の番号。null＝選んでいない。見失っても自動で選び直さない）
   order:['A-1','A-2','B-2','B-1','C-1'],   // 配電盤の順番（「次の配電盤」の順。D60）   // 異常（全画面に共通。D53）
   help:{on:true},   // ヘルプ表示（2026-11-15 ユーザー案。設定で切り替え）
-  prep:{lay:'A', sel:null, edit:null, del:[], modal:null, nearWall:false, tap:null, sub:'mapping', method:'person', reserved:'dim', reg:null, regStep:0, pins:6},
+  prep:{lay:'A', sel:null, edit:null, del:[], warn:null, nearWall:false, tap:null, ordering:null, sub:'mapping', method:'person', reserved:'dim', reg:null, regStep:0, pins:6},
 }
 const SUBS = {
   menu:[['top','一番上'],['field','試験場 ▸'],['drive','走行 ▸'],['maint','点検と校正 ▸']],
@@ -617,14 +628,23 @@ const MAPDATA = {w:287, h:199, res:0.05, bb:[0,0,287,199], pngs:{now:'data:image
 const CS=3.2, MX0=500-MAPDATA.w*CS/2, MY0=310-MAPDATA.h*CS/2      // 地図のマス → 描画の座標（1 マス 3.2）
 const C = (cx,cy,...r) => [MX0+cx*CS, MY0+cy*CS, ...r]
 const PINS = [
-  {id:'HOME', name:'待機場所', kind:'home', c:[175,176]},
-  {id:'A-1', name:'盤 A-1', kind:'panel', c:[96,49]},
-  {id:'A-2', name:'盤 A-2', kind:'panel', c:[152,42]},
-  {id:'B-1', name:'盤 B-1', kind:'panel', c:[252,74]},
-  {id:'B-2', name:'盤 B-2', kind:'panel', c:[205,80]},
-  {id:'C-1', name:'盤 C-1', kind:'panel', c:[160,131]},
+  // yaw: 機体が向く方向（地図の上で。0＝右・90＝下）。配電盤は盤の方を向く
+  {id:'HOME', name:'待機場所', kind:'home', c:[175,176], yaw:-90},
+  {id:'A-1', name:'盤 A-1', kind:'panel', c:[96,49], yaw:-90},
+  {id:'A-2', name:'盤 A-2', kind:'panel', c:[152,42], yaw:-90},
+  {id:'B-1', name:'盤 B-1', kind:'panel', c:[252,74], yaw:0},
+  {id:'B-2', name:'盤 B-2', kind:'panel', c:[205,80], yaw:0},
+  {id:'C-1', name:'盤 C-1', kind:'panel', c:[160,131], yaw:180},
 ].map(p=>({...p, x:C(...p.c)[0], y:C(...p.c)[1]}))
 const pinById = id => PINS.find(p=>p.id===id)
+// ピンの印（2026-11-22: 向きが分かる形）。配電盤＝四角に向きの三角、待機場所＝向きの方へ尖った家形。deg は画面の上の向き
+function pinShape(kind, x, y, deg, {fill, stroke='#0f1117', r=18, dash=''}={}){
+  const d = dash ? `stroke-dasharray="${dash}"` : ''
+  const body = kind==='home'
+    ? `<path d="M${x+r+6} ${y}L${x+2} ${y-r}H${x-r}V${y+r}H${x+2}Z" style="fill:${fill}" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" ${d}/>`
+    : `<rect x="${x-r}" y="${y-r}" width="${2*r}" height="${2*r}" rx="4" style="fill:${fill}" stroke="${stroke}" stroke-width="2" ${d}/><path d="M${x+r+1} ${y-10}L${x+r+14} ${y}L${x+r+1} ${y+10}Z" style="fill:${fill}" stroke="${stroke}" stroke-width="2" stroke-linejoin="round" ${d}/>`
+  return `<g transform="rotate(${deg} ${x} ${y})">${body}</g>`
+}
 function rand(seed){ let s=seed; return ()=>((s=(s*9301+49297)%233280)/233280) }
 // 地図の描画。地図の向き（S.map.rot。試験準備で変える・D30）と見え方（平面／擬似 3D。試し）を 1 つの投影で扱う。
 // 印の名前と吹き出しは回さず、常に正立させる。機体の四角形・経路・壁は地図と一緒に回る。
@@ -682,7 +702,8 @@ function wallBoxes(partial){
        + `<path d="${sl[0]}" fill="${col.sideL}"/><path d="${sr[0]}" fill="${col.sideR}"/><path d="${tp[0]}" fill="${col.top}"/>` }
   return wallCache[key]=`<g pointer-events="none">${out}</g>`
 }
-function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, scan=true, bubBody=null, order=false}){
+function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, scan=true, bubBody=null, order=false, orderList=null}){
+  const OL = orderList || S.order
   const {P, sc, d3, mtx, hpx} = mapProj()
   const pt = q => q.map(v=>v.toFixed(1)).join(',')
   const poly = (qs, attr) => `<polygon points="${qs.map(pt).join(' ')}" ${attr}/>`
@@ -718,12 +739,10 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
     items.push([gy+2, `<g data-act="pin" data-id="${p.id}" style="cursor:pointer">
       ${d3?`<ellipse cx="${gx}" cy="${gy}" rx="9" ry="6" fill="#000" opacity=".45"/><path d="M${gx} ${gy}V${y}" stroke="#0f1117" stroke-width="6"/><path d="M${gx} ${gy}V${y}" stroke="#e6e8ec" stroke-width="3"/>`:''}
       <circle cx="${x}" cy="${y}" r="${Z.hit}" fill="transparent"/>
-      ${p.kind==='home'
-        ? `<path d="M${x-Z.hr} ${y+2}L${x} ${y-Z.hr+2}L${x+Z.hr} ${y+2}V${y+Z.hr}H${x-Z.hr}Z" style="fill:${isSel?'var(--pin-homesel,#8fd694)':'var(--pin-home,#4caf50)'}" stroke="#0f1117" stroke-width="2"/>`
-        : `<rect x="${x-Z.r}" y="${y-Z.r}" width="${2*Z.r}" height="${2*Z.r}" rx="4" style="fill:${isSel?'var(--pin-sel,#7fb4ee)':'var(--pin-panel,#3f8ae0)'}" stroke="#0f1117" stroke-width="2"/>`}
+      ${pinShape(p.kind, x, y, d3 ? 0 : (p.yaw??0)+S.map.rot, {r:Z.r, fill: p.kind==='home' ? (isSel?'var(--pin-homesel,#8fd694)':'var(--pin-home,#4caf50)') : (isSel?'var(--pin-sel,#7fb4ee)':'var(--pin-panel,#3f8ae0)')})}
       ${dest===p.id?`<circle cx="${x}" cy="${y}" r="${Z.r+16}" fill="none" style="stroke:var(--dest,#ffd54f)" stroke-width="5"/>`:''}
       ${isSel?`<circle cx="${x}" cy="${y}" r="${Z.r+10}" fill="none" stroke="#fff" stroke-width="3"/>`:''}
-      ${order && p.kind==='panel' && S.order.includes(p.id) ? `<circle cx="${x+Z.r+2}" cy="${y-Z.r-2}" r="17" fill="#161b22" stroke="#fff" stroke-width="2"/><text x="${x+Z.r+2}" y="${y-Z.r+6}" text-anchor="middle" font-size="22" font-weight="800" fill="#fff">${S.order.indexOf(p.id)+1}</text>` : ''}
+      ${order && p.kind==='panel' && OL.includes(p.id) ? `<circle cx="${x+Z.r+2}" cy="${y-Z.r-2}" r="17" fill="#161b22" stroke="#fff" stroke-width="2"/><text x="${x+Z.r+2}" y="${y-Z.r+6}" text-anchor="middle" font-size="22" font-weight="800" fill="#fff">${OL.indexOf(p.id)+1}</text>` : ''}
       </g>`])
     labels += `<text x="${gx}" y="${gy+(d3?24:Z.ly)}" text-anchor="middle" font-size="${Z.lab}" font-weight="700" style="fill:var(--lab,#e6e8ec);stroke:var(--lab-bd,#0f1117)" stroke-width="5" paint-order="stroke" pointer-events="none">${p.name}</text>`
   }
@@ -999,28 +1018,45 @@ function prepView(){
   const editBody = !p.sel ? null
     : p.edit==='rename' ? `<input class="pin-name" value="${pinById(p.sel).name}" aria-label="ピンの名前"><div class="row">${btn('pinRenameOk','決める',{cls:'adv'})}${btn('pinEditCancel','やめる')}</div>`
     : `${pinById(p.sel).kind==='panel' ? `<div class="ordrow"><span>順番 <b>${S.order.indexOf(p.sel)+1}</b> / ${S.order.length}</span>${btn('ordUp','前へ',{dis:S.order.indexOf(p.sel)===0,why:'いちばん前です'})}${btn('ordDown','後へ',{dis:S.order.indexOf(p.sel)===S.order.length-1,why:'いちばん後ろです'})}</div>` : ''}${btn('pinRename','名前を変える')}${btn('pinRereg', `${MNAME[p.method]}登録し直す`)}${btn('pinDel', p.edit==='delArm' ? 'もう一度押すと削除' : '削除', {cls:'caution'+(p.edit==='delArm'?' armed':'')})}`
-  let mainInner = mapSVG({robot:s==='return'?C(172,100,90):C(150,66,180), path:s==='return'?[C(172,100),C(172,150),C(175,176)]:null, partial:true, scan:true, pins:pinsNow, sel:p.sel, bubBody:editBody, order:true})
-  mainInner += `<div class="mapctl">${btn('rotL','左へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}${btn('rotR','右へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}</div>`
+  let mainInner = mapSVG({robot:s==='return'?C(172,100,90):C(150,66,180), path:s==='return'?[C(172,100),C(172,150),C(175,176)]:null, partial:true, scan:true, pins:pinsNow, sel:p.ordering?null:p.sel, bubBody:editBody, order:true, orderList:p.ordering})
+  // 地図の道具の段（地図の左上）。地図に対する操作はここへ足す（拡張の仕方: options §3.5）
+  mainInner += `<div class="mapctl">${btn('rotL','左へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}${btn('rotR','右へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}${btn('ordStart','順番を決める',{dis:!mapping||!!p.ordering,why:'地図作成中に決められます'})}</div>`
   if (s==='entry') mainInner += `<div class="center"><div class="card"><p>前回の試験場内地図とピン（${p.pins} 件）が残っています</p>
       ${btn('resume','続きから再開',{icon:'play',cls:'adv'})}
       ${btn('fresh','新しい試験日として開始（前回を消す）',{icon:'close',cls:'caution'})}</div></div>`
   const lay = p.lay
   if (mapping && p.method==='person' && (lay==='cur'||lay==='A')) mainInner += radarSVG(false, !S.tracker)
   if (lay==='cur') mainInner += stickHTML()   // D54: 常設（いまの案）
-  if (p.tap){ const t=p.tap, kn = t.kind==='HOME' ? '待機場所' : '配電盤'
-    let mk=''
-    if (t.pt){ const [x,y]=t.pt; mk += `<circle cx="${x}" cy="${y}" r="16" fill="var(--act,#2f6bc6)" stroke="#fff" stroke-width="3"/>`
-      if (t.dir){ const [u,v]=t.dir, a=Math.atan2(v-y,u-x), ex=x+60*Math.cos(a), ey=y+60*Math.sin(a)
-        mk += `<path d="M${x} ${y}L${ex} ${ey}" stroke="var(--act,#2f6bc6)" stroke-width="6"/><path d="M${ex} ${ey}l${-18*Math.cos(a-0.5)} ${-18*Math.sin(a-0.5)}M${ex} ${ey}l${-18*Math.cos(a+0.5)} ${-18*Math.sin(a+0.5)}" stroke="var(--act,#2f6bc6)" stroke-width="6" stroke-linecap="round"/>` } }
-    mainInner += `<svg class="map tapmk" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet" style="pointer-events:none">${mk}</svg>`
-    const deg = t.dir ? Math.round((-Math.atan2(t.dir[1]-t.pt[1], t.dir[0]-t.pt[0])*180/Math.PI+360)%360) : 0
-    const msg = !t.pt ? `${kn}の位置を地図で押す` : !t.dir ? '機体に向いてほしい方へ押す' : `x 3.42 m　y 1.18 m　向き ${deg}°`
-    mainInner += `<div class="flow"><span class="stp">${kn} ${t.pt?(t.dir?'確認':'2/2'):'1/2'}</span><span class="msg">${msg}</span>${t.dir?btn('tapOk','この位置で確定',{cls:'adv'}):''}${btn('tapCancel','やめる')}</div>` }
-  if (s==='reg') mainInner += ((lay==='cur'||lay==='A') ? radarSVG(false, !S.tracker) : '') + `<div class="flow"><span class="stp">待機場所 ${p.regStep}/2</span><span class="msg">${p.regStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'待機場所に立って「記録」'}</span>${btn('regRec','記録',{cls:'adv',dis:!S.tracker||S.target==null,why:'対象を選んでから（レーダーの候補を押す）'})}${btn('regCancel','やめる')}</div>`
 
-  const regWhy = s==='entry' ? '地図作成を始めてから登録できます' : s==='reg' ? '登録中です（やめるときは地図の上の「やめる」）' : s==='return' ? '待機場所へ戻る途中は登録できません' : (needTrk ? '人検出を動かすと「人の位置で」登録できます（左上）' : needTgt ? '対象を選んでから（レーダーの候補を押す）' : '')
+  // ---- 帯（地図の下・登録の帯の上。地図を塞がない）。出すのは 1 つだけ: 壁に近い ＞ 順番 ＞ 地図タップ ＞ 人の位置で登録 ----
+  let mk='', band='', bandCls=''
+  const arrow=(x,y,a,len,col)=>{ const ex=x+len*Math.cos(a), ey=y+len*Math.sin(a)
+    return `<path d="M${x} ${y}L${ex} ${ey}" stroke="${col}" stroke-width="6"/><path d="M${ex} ${ey}l${-18*Math.cos(a-0.5)} ${-18*Math.sin(a-0.5)}M${ex} ${ey}l${-18*Math.cos(a+0.5)} ${-18*Math.sin(a+0.5)}" stroke="${col}" stroke-width="6" stroke-linecap="round"/>` }
+  if (p.warn){ const w=p.warn, [x,y]=w.pos, deg=w.ang*180/Math.PI, ax=x-56*Math.cos(w.ang), ay=y-56*Math.sin(w.ang)
+    // 壁から離して登録したときのピンを点線で重ねる
+    mk += pinShape(w.kind, x, y, deg, {fill:'var(--act,#2f6bc6)', stroke:'#fff'})
+       + pinShape(w.kind, ax, ay, deg, {fill:'rgba(255,255,255,.75)', stroke:'var(--act,#2f6bc6)', dash:'5 4'})
+       + `<text x="${ax}" y="${ay+44}" text-anchor="middle" font-size="20" font-weight="800" style="fill:var(--act,#2f6bc6);stroke:#fff" stroke-width="5" paint-order="stroke">離した位置</text>`
+       + `<text x="${x}" y="${y-30}" text-anchor="middle" font-size="20" font-weight="800" style="fill:#161b22;stroke:#fff" stroke-width="5" paint-order="stroke">このまま</text>`
+    bandCls='ab'
+    band = `<span class="stp">${ic('warn')}壁に近い</span><span class="msg">${w.kn}　壁まで 0.32 m</span>${btn('wallMove','壁から離して登録',{cls:'adv'})}${btn('wallKeep','このまま登録')}${btn('wallCancel','やめる')}` }
+  else if (p.ordering){ const n=p.ordering.length, all=S.order.length
+    band = `<span class="stp">順番 ${n} / ${all}</span><span class="msg">${n<all ? `${n+1} 番目の配電盤を押す` : 'すべて決めました'}</span>${btn('ordOk','決める',{cls:'adv',dis:n===0,why:'配電盤を 1 つ以上押してから'})}${btn('ordRedo','やり直す',{dis:n===0,why:'まだ押していません'})}${btn('ordCancel','やめる')}` }
+  else if (p.tap){ const t=p.tap, kn = t.kind==='HOME' ? '待機場所' : '配電盤'
+    if (t.pt){ const [x,y]=t.pt; mk += `<circle cx="${x}" cy="${y}" r="14" fill="var(--act,#2f6bc6)" stroke="#fff" stroke-width="3"/>`
+      if (t.dir){ const a=Math.atan2(t.dir[1]-y, t.dir[0]-x); mk += arrow(x,y,a,Math.min(90,Math.hypot(t.dir[0]-x,t.dir[1]-y)),'var(--act,#2f6bc6)') } }
+    const deg = t.dir ? Math.round((Math.atan2(t.dir[1]-t.pt[1], t.dir[0]-t.pt[0])*180/Math.PI+360)%360) : null
+    const msg = !t.pt ? `${kn}の位置を押し、そのまま向けたい方へドラッグ` : `x 3.42 m　y 1.18 m　向き ${deg==null?'－':deg+'°'}`
+    band = `<span class="stp">${t.re ? t.re+' を登録し直す' : kn}</span><span class="msg">${msg}</span>${btn('tapOk','この位置で確定',{cls:'adv',dis:!t.done,why:'地図を押してドラッグしてから'})}${btn('tapCancel','やめる')}` }
+  else if (s==='reg'){
+    band = `<span class="stp">待機場所 ${p.regStep}/2</span><span class="msg">${p.regStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'待機場所に立って「記録」'}</span>${btn('regRec','記録',{cls:'adv',dis:!S.tracker||S.target==null,why:'対象を選んでから（レーダーの候補を押す）'})}${btn('regCancel','やめる')}` }
+  if (s==='reg' && (lay==='cur'||lay==='A')) mainInner += radarSVG(false, !S.tracker)
+  if (mk) mainInner += `<svg class="map tapmk" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet" style="pointer-events:none">${mk}</svg>`
+  // A 以外（比べるために残した配置）は、いままでどおり地図の上に重ねる
+  if (band && lay!=='A') mainInner += `<div class="flow ${bandCls}">${band}</div>`
+  const regWhy = s==='entry' ? '地図作成を始めてから登録できます' : s==='reg' ? '登録中です（やめるときは帯の「やめる」）' : s==='return' ? '待機場所へ戻る途中は登録できません' : (needTrk ? '人検出を動かすと「人の位置で」登録できます（左上）' : needTgt ? '対象を選んでから（レーダーの候補を押す）' : '')
   const mseg = `<div class="mseg ${canReg?'':'dis'}" data-btn ${canReg?'':'data-dis'}>${METHODS.map(([k,n])=>`<div class="${p.method===k?'on':''}" data-act="${canReg?'method':''}" data-id="${k}">${n}</div>`).join('')}</div>`
-  const regDis = !canReg || needTrk || needTgt
+  const regDis = !canReg || needTrk || needTgt || !!p.tap || !!p.warn || !!p.ordering
   // 2026-11-17 案（§6.1）: 先頭の行は状態（ヘッダの札と「未保存」が言う）ではなく、ピンの件数と登録中の行き先だけ
   const top = S.wt.v==='new'
     ? `<div class="where full"><span>${({entry:'',mapping:'',reg:'待機場所を登録',return:'待機場所へ'})[s]||'&nbsp;'}</span><b>ピン ${p.pins} 件</b></div>`
@@ -1035,10 +1071,7 @@ function prepView(){
   </div>`
   const unsaved = s!=='entry' ? '<span class="pill">未保存</span>' : ''
   const opbar = `<div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${trackerBar(s!=='reg')}${unsaved}</div>`
-  const pwin = p.modal ? `<div class="scrim"></div><div class="win ab"><div class="wt">${ic('warn')}壁に近い</div>
-    <div class="wl mut">${p.modal.kn}　壁まで 0.32 m（0.45 m 以上を勧める）</div>
-    <div class="wb">${btn('wallMove','壁から離して登録',{cls:'adv'})}${btn('wallKeep','このまま登録')}${btn('wallCancel','やめる')}</div></div>` : ''
-  if (lay==='cur') return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${pwin}${opbar}
+  if (lay==='cur') return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${opbar}
     <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
   // 配置案 A〜C。部品は同じで、並べ方だけ違う
   const saveB = btn('toast:地図とピンを保存した','保存',{cls:'save',dis:!mapping})
@@ -1048,6 +1081,7 @@ function prepView(){
   const pins = `<div class="where"><span>${({reg:'待機場所を登録',return:'待機場所へ'})[s]||'&nbsp;'}</span><b>ピン ${p.pins} 件</b></div>`
   let blocks = ''
   if (lay==='A') blocks =
+    (band ? `<div class="blk b-band"><div class="bandc ${bandCls}">${band}</div></div>` : '') +
     `<div class="blk b-ops">${pins}${toggle}<div class="row">${saveB}${homeB}</div></div>
      <div class="blk b-jog"><h3>手動</h3>${jogConsoleHTML()}</div>
      <div class="blk b-reg"><div class="regbar">${mseg}${regH}${regP}</div></div>`
@@ -1055,8 +1089,8 @@ function prepView(){
     blocks =
     `<div class="blk b-jog"><h3>走らせる</h3>${toggle}${jogConsoleHTML()}${homeB}</div>
      <div class="blk b-reg"><h3>登録する　ピン ${p.pins} 件</h3>${radarSVG(false, !S.tracker)}${msegV}<div class="row">${regH}${regP}</div>${saveB}</div>` }
-  return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${pwin}${opbar}
-    <div class="content"><div class="mainv">${mainInner}</div>${blocks}</div></div>`
+  return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${opbar}
+    <div class="content ${band && lay==='A' ? 'has-band' : ''}"><div class="mainv">${mainInner}</div>${blocks}</div></div>`
 }
 
 /* ---------------- 操作 ---------------- */
@@ -1119,14 +1153,21 @@ function act(a, id){
   if (S.scr==='prep'){
     const s0=p.sub
     // 登録したピンが壁に近ければ警告の窓（M3）。案の画面では切り替え「登録するピンが壁に近い」で出す
-    const registered = kn => { if (p.nearWall) p.modal={kn}; else { p.pins++; toast(`${kn}を登録した`) } }
+    // 登録したピンが壁に近ければ帯で警告し、地図に「離した位置」を重ねる。pos・ang は地図の座標（画面の上）
+    const robotPos = () => { const {P}=mapProj(), q=C(150,66); return {pos:P(q[0],q[1]), ang:(180+S.map.rot)*Math.PI/180} }
+    const registered = (kn, at=robotPos()) => { if (p.nearWall) p.warn={kn, kind: kn==='待機場所'?'home':'panel', ...at}; else { p.pins++; toast(`${kn}を登録した`) } }
     switch(a){
       case 'rotL': S.map.rot=(S.map.rot+345)%360; break
       case 'rotR': S.map.rot=(S.map.rot+15)%360; break
       case 'resume': p.sub='mapping'; break
       case 'fresh': p.sub='mapping'; p.pins=0; toast('前回の地図とピンを消して、地図作成を始めた'); break
       case 'method': p.method=id; break
-      case 'pin': if (s0==='mapping'){ p.sel = p.sel===id ? null : id; p.edit=null } else toast('ピンの編集は地図作成中にできます'); break
+      case 'ordStart': p.ordering=[]; p.sel=null; p.edit=null; break
+      case 'ordOk': S.order=[...p.ordering, ...S.order.filter(q=>!p.ordering.includes(q))]; p.ordering=null; toast('順番を決めた'); break
+      case 'ordRedo': p.ordering=[]; break
+      case 'ordCancel': p.ordering=null; break
+      case 'pin': if (p.ordering){ if (pinById(id).kind==='panel' && !p.ordering.includes(id)) p.ordering.push(id); break }
+        if (s0==='mapping'){ p.sel = p.sel===id ? null : id; p.edit=null } else toast('ピンの編集は地図作成中にできます'); break
       case 'pinRename': p.edit='rename'; break
       case 'pinRenameOk': { const v=document.querySelector('#dev .pin-name')?.value.trim(); if (v) pinById(p.sel).name=v; p.sel=null; p.edit=null; break }
       case 'pinEditCancel': p.edit=null; break
@@ -1143,11 +1184,11 @@ function act(a, id){
         else { p.tap={kind: a==='regHome'?'HOME':'PANEL', pt:null, dir:null}; p.sel=null }
         break }
       case 'regRec': if (p.regStep<2) p.regStep=2; else { p.sub='mapping'; registered('待機場所') } break
-      case 'tapOk': { const kn = p.tap.kind==='HOME' ? '待機場所' : '配電盤'; p.tap=null; registered(kn); break }
+      case 'tapOk': { const t=p.tap, kn = t.kind==='HOME' ? '待機場所' : '配電盤'; p.tap=null; registered(kn, {pos:t.pt, ang:Math.atan2(t.dir[1]-t.pt[1], t.dir[0]-t.pt[0])}); break }
       case 'tapCancel': p.tap=null; break
-      case 'wallMove': p.modal=null; toast('壁から離した位置で登録した'); p.pins++; break
-      case 'wallKeep': p.modal=null; toast('このまま登録した'); p.pins++; break
-      case 'wallCancel': p.modal=null; toast('登録をやめた'); break
+      case 'wallMove': p.warn=null; toast('壁から離した位置で登録した'); p.pins++; break
+      case 'wallKeep': p.warn=null; toast('このまま登録した'); p.pins++; break
+      case 'wallCancel': p.warn=null; toast('登録をやめた'); break
       case 'ordUp': case 'ordDown': { const o=S.order, i=o.indexOf(p.sel), j=i+(a==='ordUp'?-1:1); [o[i],o[j]]=[o[j],o[i]]; break }
       case 'regCancel': p.sub='mapping'; break
       case 'goHome': p.sub='return'; break
@@ -1212,6 +1253,7 @@ const NOTES = {
   },
   prep:{
     changed:[
+      '<b>2026-11-22（2）</b>: 地図タップは押してドラッグ（離した所が向き）。登録中・地図タップ・壁に近い・順番決めの帯を地図の下（登録の帯の上）へ出し、地図を塞がない。壁に近いときは「離した位置」のピンを点線で重ねる。ピンの印を向きが分かる形に。「順番を決める」（地図の左上）で配電盤を押した順に番号を振る',
       '<b>2026-11-22 案の画面に無かった機能を足した</b>（options §3.4）: レーダーの候補を押して対象を選ぶ（もう一度押すと外す。選んでいないと「人の位置で」が押せない）／地図をタップして登録（位置 → 向き → 確定）／壁に近いピンの警告の窓／配電盤の順番（地図のピンに番号。ピンを押して「前へ」「後へ」）',
       '<b>2026-11-22</b>: 配置は A に決定（D55）。<b>ピンを押すと編集</b>（名前を変える・選んでいる方式で登録し直す・削除。削除はもう一度押して確定）。吹き出しの外を押すと閉じる。地図作成中だけ',
       '<b>2026-11-22 ユーザー決定（D54）</b>: 地図は手動で作るので、仮想スティックを常設した（地図の右下。レーダーの下）。「手動」ボタンは外した（スティックと 2 つあると、どちらを先に触るか迷う。Spec-webui.md §3.3 U-16）',
@@ -1226,7 +1268,7 @@ const NOTES = {
       'タブを無くした（いま 4）。「待機場所に戻る」をタブの奥から出した',
     ],
     opts:[
-      {q:'登録するピンが壁に近い（試し）', k:['prep','nearWall'], v:[[false,'近くない'],[true,'近い']], why:'「近い」にして登録すると、壁に近い警告の窓が出る（M3）'},
+      {q:'登録するピンが壁に近い（試し）', k:['prep','nearWall'], v:[[false,'近くない'],[true,'近い']], why:'「近い」にして登録すると、壁に近い警告の帯と「離した位置」のピンが出る（M3）'},
       {q:'試験準備の配置（案。2026-11-22）', k:['prep','lay'], v:[['A','A 追従走行と同じ並び（決定 D55）'],['B','B 左で走らせる'],['C','C 右で走らせる'],['cur','D54 の初めの形']], why:'<b>A に決定（D55。2026-11-22）</b>。ほかは比べるために残す。A: 右列＝操作カード＋手動（S-10 と同じ）、登録は地図の下の帯。B: 左＝走らせる・中央＝地図・右＝登録する（左手でスティック）。C: 地図を左に寄せ、右に 登録する｜走らせる（右手でスティック）。手動は実装の部品と同じ組み（速度のスライダ＋スティック＋中速・低速）'},
       {q:'予約の「走行」の見せ方', k:['prep','reserved'], v:[['dim','薄く（押せない）'],['inert','押せるが何も起きない']], why:'未決 3。いまは何も起きないのに白枠で目立つ'},
     ],
@@ -1399,6 +1441,26 @@ for (const ev of ['pointerup','pointercancel','pointermove']) document.addEventL
 })
 document.addEventListener('contextmenu', e=>{ if (e.target.closest('#dev')) e.preventDefault() })
 
+// 試験準備: 地図をタップして登録（M4。Spec-onsite.md §3.3）: 押した所が位置、押したまま向けたい方へドラッグし、離した所が向き
+let tapDrag=false, tapRaf=0
+function mapPt(e){ const sv=document.querySelector('#dev .mainv svg.map'); if (!sv) return null
+  const pt=sv.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const q=pt.matrixTransform(sv.getScreenCTM().inverse()); return [q.x,q.y] }
+document.addEventListener('pointerdown', e=>{
+  const t=S.scr==='prep' && S.prep.tap; if (!t) return
+  if (!e.target.closest('#dev .mainv') || e.target.closest('.mapctl,.radar,.bub,[data-act]')) return
+  const q=mapPt(e); if (!q) return
+  t.pt=q; t.dir=null; t.done=false; tapDrag=true; e.preventDefault(); render()
+})
+document.addEventListener('pointermove', e=>{
+  if (!tapDrag) return; const q=mapPt(e); if (!q) return
+  S.prep.tap.dir=q; if (!tapRaf) tapRaf=requestAnimationFrame(()=>{ tapRaf=0; render() })
+})
+document.addEventListener('pointerup', e=>{
+  if (!tapDrag) return; tapDrag=false; const t=S.prep.tap
+  t.done = !!t.dir && Math.hypot(t.dir[0]-t.pt[0], t.dir[1]-t.pt[1]) > 12   // 動かさずに離したら向きが無いので確定できない
+  if (!t.done) t.dir=null
+  render()
+})
 document.addEventListener('click', e=>{
   clearTimeout(helpT)
   // 長押しでヘルプを出した指を離しても、ボタンは押されない
@@ -1414,15 +1476,8 @@ document.addEventListener('click', e=>{
     if (S.scr==='day' && S.day.sel){ S.day.sel=null; render() }
     return S.sz.v==='new' ? whyAt(dz, '押せません　'+dz.dataset.why) : toast('押せません　'+dz.dataset.why)
   }
-  // 試験準備: 地図をタップして登録（M4）。1 回目＝位置、2 回目＝向き
-  if (S.scr==='prep' && S.prep.tap && !S.prep.tap.dir && e.target.closest('#dev .mainv') && !e.target.closest('.flow,.mapctl,.radar,[data-act]')){
-    const sv=document.querySelector('#dev .mainv svg.map'), pt=sv.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY
-    const q=pt.matrixTransform(sv.getScreenCTM().inverse()), t=S.prep.tap
-    if (!t.pt) t.pt=[q.x,q.y]; else t.dir=[q.x,q.y]
-    return render()
-  }
   // 試験準備: ピンの編集の吹き出しも、ピンと吹き出し以外を押すと閉じる
-  if (S.scr==='prep' && S.prep.sel && e.target.closest('#dev') && !e.target.closest('[data-act="pin"],.bub')){
+  if (S.scr==='prep' && S.prep.sel && !S.prep.ordering && e.target.closest('#dev') && !e.target.closest('[data-act="pin"],.bub')){
     S.prep.sel=null; S.prep.edit=null
     const t0=e.target.closest('[data-act]')
     if (!t0 || !t0.dataset.act || t0.closest('.dis,[data-dis]')) return render()
