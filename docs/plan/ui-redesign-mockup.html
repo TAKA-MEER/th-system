@@ -281,7 +281,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .theme-light,.theme-light.pal-new{--bg:#f4f6f9;--panel:#ffffff;--inset:#eef1f5;--ctrl:#e6eaf0;--ctrl-hi:#d5dbe4;--ctrl-on:#2f6bc6;
   --bd:#d7dde5;--bd-hi:#b9c2ce;--tx:#161b22;--mut:#4f5866;--dim:#8d95a1;--brand-lt:#2a5fa8;
   --ok-tx:#1f7a2e;--warn:#e08a00;--warn-tx:#8a5300;--ng-tx:#b3261e;--act-lt:#2f6bc6;
-  --sel-bg:#1f2733;--sel-tx:#ffffff;--pin-panel:#5b6675;--pin-home:#5b6675;--pin-sel:#1f2733;--pin-homesel:#1f2733;
+  --sel-bg:#1f2733;--sel-tx:#ffffff;--pin-panel:#5b6675;--pin-home:#5b6675;--pin-sel:#1f2733;--pin-homesel:#1f2733;--pin-tx:#ffffff;
   --dest:#2f6bc6;--route:#2f6bc6;--robot:#2f6bc6;--robot-fp:rgba(47,107,198,.18);--lab:#161b22;--lab-bd:#ffffff;color:var(--tx)}
 /* ヘッダは青の帯（2026-11-19 ユーザー決定: 青は我々を象徴する色で UI のメインカラー。意味を持たせない）。
    青は操作・状態の色には使わないので、帯が青でも札やボタンの意味と重ならない */
@@ -468,11 +468,11 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .mainv.withradar svg.tapmk{width:calc(100% - 274px)}
 .mainv.withflow svg.tapmk{height:calc(100% - 96px)}
 
-/* 2026-11-22 帯（地図の下・登録の帯の上）。地図を塞がない。高さは 1 段で固定（出ている間だけ地図が縮む） */
-.lay-A .content.has-band{grid-template-rows:auto 1fr auto auto;grid-template-areas:"map ops" "map jog" "band jog" "reg jog"}
-.lay-A.portrait .content.has-band{grid-template-rows:1fr auto auto auto;grid-template-areas:"map map" "band band" "reg reg" "ops jog"}
-.lay .b-band{grid-area:band}
-.bandc{display:flex;align-items:center;gap:10px;min-height:64px;padding:4px 12px;border:1px solid var(--bd-hi);border-radius:8px;background:var(--panel)}
+/* 2026-11-22 帯（地図の下）。登録の帯に重ねて出す（D66） */
+/* 帯は登録の帯の上に重ねる（D66）。地図の大きさは変えない。登録の帯の段は 64 px で固定 */
+.lay-A .b-reg{position:relative;min-height:64px;justify-content:center}
+.bandc.over{position:absolute;inset:0;z-index:2}
+.bandc{display:flex;align-items:center;gap:10px;min-height:64px;padding:4px 8px;border:1px solid var(--bd-hi);border-radius:8px;background:var(--panel)}
 .bandc.ab,.flow.ab{border:3px solid var(--jis-y,#ffd100)}
 .bandc .stp{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:800;white-space:nowrap}
 .bandc .stp svg{width:22px;height:22px}
@@ -742,7 +742,7 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
       ${pinShape(p.kind, x, y, d3 ? 0 : (p.yaw??0)+S.map.rot, {r:Z.r, fill: p.kind==='home' ? (isSel?'var(--pin-homesel,#8fd694)':'var(--pin-home,#4caf50)') : (isSel?'var(--pin-sel,#7fb4ee)':'var(--pin-panel,#3f8ae0)')})}
       ${dest===p.id?`<circle cx="${x}" cy="${y}" r="${Z.r+16}" fill="none" style="stroke:var(--dest,#ffd54f)" stroke-width="5"/>`:''}
       ${isSel?`<circle cx="${x}" cy="${y}" r="${Z.r+10}" fill="none" stroke="#fff" stroke-width="3"/>`:''}
-      ${order && p.kind==='panel' && OL.includes(p.id) ? `<circle cx="${x+Z.r+2}" cy="${y-Z.r-2}" r="17" fill="#161b22" stroke="#fff" stroke-width="2"/><text x="${x+Z.r+2}" y="${y-Z.r+6}" text-anchor="middle" font-size="22" font-weight="800" fill="#fff">${OL.indexOf(p.id)+1}</text>` : ''}
+      ${order && p.kind==='panel' && OL.includes(p.id) ? `<text x="${x}" y="${y+8}" text-anchor="middle" font-size="23" font-weight="800" style="fill:var(--pin-tx,#0f1117)" pointer-events="none">${OL.indexOf(p.id)+1}</text>` : ''}
       </g>`])
     labels += `<text x="${gx}" y="${gy+(d3?24:Z.ly)}" text-anchor="middle" font-size="${Z.lab}" font-weight="700" style="fill:var(--lab,#e6e8ec);stroke:var(--lab-bd,#0f1117)" stroke-width="5" paint-order="stroke" pointer-events="none">${p.name}</text>`
   }
@@ -1081,16 +1081,15 @@ function prepView(){
   const pins = `<div class="where"><span>${({reg:'待機場所を登録',return:'待機場所へ'})[s]||'&nbsp;'}</span><b>ピン ${p.pins} 件</b></div>`
   let blocks = ''
   if (lay==='A') blocks =
-    (band ? `<div class="blk b-band"><div class="bandc ${bandCls}">${band}</div></div>` : '') +
     `<div class="blk b-ops">${pins}${toggle}<div class="row">${saveB}${homeB}</div></div>
      <div class="blk b-jog"><h3>手動</h3>${jogConsoleHTML()}</div>
-     <div class="blk b-reg"><div class="regbar">${mseg}${regH}${regP}</div></div>`
+     <div class="blk b-reg"><div class="regbar">${mseg}${regH}${regP}</div>${band ? `<div class="bandc over ${bandCls}">${band}</div>` : ''}</div>`
   else { const msegV = mseg
     blocks =
     `<div class="blk b-jog"><h3>走らせる</h3>${toggle}${jogConsoleHTML()}${homeB}</div>
      <div class="blk b-reg"><h3>登録する　ピン ${p.pins} 件</h3>${radarSVG(false, !S.tracker)}${msegV}<div class="row">${regH}${regP}</div>${saveB}</div>` }
   return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${opbar}
-    <div class="content ${band && lay==='A' ? 'has-band' : ''}"><div class="mainv">${mainInner}</div>${blocks}</div></div>`
+    <div class="content"><div class="mainv">${mainInner}</div>${blocks}</div></div>`
 }
 
 /* ---------------- 操作 ---------------- */
@@ -1253,7 +1252,8 @@ const NOTES = {
   },
   prep:{
     changed:[
-      '<b>2026-11-22（2）</b>: 地図タップは押してドラッグ（離した所が向き）。登録中・地図タップ・壁に近い・順番決めの帯を地図の下（登録の帯の上）へ出し、地図を塞がない。壁に近いときは「離した位置」のピンを点線で重ねる。ピンの印を向きが分かる形に。「順番を決める」（地図の左上）で配電盤を押した順に番号を振る',
+      '<b>2026-11-22（3）</b>: 帯は登録の帯に重ねて出し、地図の大きさを変えない（D66）。順番の番号は配電盤の印の中に出す（D67）',
+      '<b>2026-11-22（2）</b>: 地図タップは押してドラッグ（離した所が向き）。登録中・地図タップ・壁に近い・順番決めの帯を地図の下へ出し、地図を塞がない。壁に近いときは「離した位置」のピンを点線で重ねる。ピンの印を向きが分かる形に。「順番を決める」（地図の左上）で配電盤を押した順に番号を振る',
       '<b>2026-11-22 案の画面に無かった機能を足した</b>（options §3.4）: レーダーの候補を押して対象を選ぶ（もう一度押すと外す。選んでいないと「人の位置で」が押せない）／地図をタップして登録（位置 → 向き → 確定）／壁に近いピンの警告の窓／配電盤の順番（地図のピンに番号。ピンを押して「前へ」「後へ」）',
       '<b>2026-11-22</b>: 配置は A に決定（D55）。<b>ピンを押すと編集</b>（名前を変える・選んでいる方式で登録し直す・削除。削除はもう一度押して確定）。吹き出しの外を押すと閉じる。地図作成中だけ',
       '<b>2026-11-22 ユーザー決定（D54）</b>: 地図は手動で作るので、仮想スティックを常設した（地図の右下。レーダーの下）。「手動」ボタンは外した（スティックと 2 つあると、どちらを先に触るか迷う。Spec-webui.md §3.3 U-16）',
