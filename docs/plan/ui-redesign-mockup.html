@@ -398,6 +398,17 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .relbar svg{width:26px;height:26px}
 .hdr .r2 .al{align-self:stretch}
 @media (prefers-reduced-motion:no-preference){.win .b.adv.blink{animation:blink2 2.4s ease-in-out infinite}}
+
+/* 2026-11-22 ユーザー決定（D54）: 試験準備は地図を手動で作るので、仮想スティックを常設する（「手動」ボタンで開閉しない）。
+   地図の右の帯（レーダーと同じ幅）の下に固定。レーダーの有無・登録中の帯に左右されず、いつも同じ場所 */
+.mainv.withstick svg.map{width:calc(100% - 274px)}
+.mainv.withstick .flow{right:274px}
+.stick{position:absolute;right:12px;bottom:12px;width:250px;height:216px;z-index:3;display:flex;align-items:center;justify-content:center;
+  background:var(--panel);border:1px solid var(--bd-hi);border-radius:8px;touch-action:none;cursor:pointer}
+.stick svg{width:196px;height:196px}
+.stick .cap{position:absolute;left:10px;top:8px;font-size:15px;color:var(--mut);font-weight:700}
+.stick:active .knob{transform:translateY(-22px)}
+.stick .knob{transition:transform .08s}
 </style>
 </head>
 <body>
@@ -870,6 +881,15 @@ function applyAb(dev){
   if (a.k!=='none') dev.querySelector('.body')?.insertAdjacentHTML('beforeend', abWindow())
 }
 
+// 仮想スティック（Spec-webui.md §6 の共通部品。8 方向。触れている間だけ動く）
+function stickHTML(){
+  const ch=(a)=>`<path d="M100 22l9 10h-18z" fill="var(--mut)" transform="rotate(${a} 100 100)"/>`
+  return `<div class="stick" data-act="stick" data-help="stick"><span class="cap">手動</span><svg viewBox="0 0 200 200">
+    <circle cx="100" cy="100" r="88" fill="var(--inset)" stroke="var(--bd-hi)" stroke-width="2"/>
+    ${[0,45,90,135,180,225,270,315].map(ch).join('')}
+    <circle class="knob" cx="100" cy="100" r="34" fill="var(--ctrl-hi)" stroke="var(--mut)" stroke-width="2"/></svg></div>`
+}
+
 /* ---------------- 試験準備 ---------------- */
 const METHODS = [['person','人の位置で'],['pose','いまの姿勢で'],['tap','地図をタップして']]
 function prepView(){
@@ -892,6 +912,7 @@ function prepView(){
       ${btn('resume','続きから再開',{icon:'play',cls:'adv'})}
       ${btn('fresh','新しい試験日として開始（前回を消す）',{icon:'close',cls:'caution'})}</div></div>`
   if (mapping && p.method==='person') mainInner += radarSVG(false, !S.tracker)
+  mainInner += stickHTML()   // D54: 常設
   if (s==='reg') mainInner += radarSVG(false, !S.tracker) + `<div class="flow"><span class="stp">待機場所 ${p.regStep}/2</span><span class="msg">${p.regStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'待機場所に立って「記録」'}</span>${btn('regRec','記録',{cls:'adv',dis:!S.tracker})}${btn('regCancel','やめる')}</div>`
 
   const regWhy = s==='entry' ? '地図作成を始めてから登録できます' : s==='reg' ? '登録中です（やめるときは地図の上の「やめる」）' : s==='return' ? '待機場所へ戻る途中は登録できません' : (needTrk ? '人検出を動かすと「人の位置で」登録できます（左上）' : '')
@@ -904,7 +925,7 @@ function prepView(){
   const ctl = `<div class="ctl">
     ${top}
     <div class="sec full"><h3>操作</h3>${tog(stop, run, {note: runNote})}
-      <div class="row" style="margin-top:8px">${btn('toast:地図とピンを保存した','保存',{icon:'save',cls:'save',dis:!(mapping)})}${btn('jog','手動',{icon:'jog'})}</div></div>
+      <div class="row" style="margin-top:8px">${btn('toast:地図とピンを保存した','保存',{icon:'save',cls:'save',dis:!(mapping)})}</div></div>
     <div class="sec full"><h3>登録</h3>${mseg}
       <div class="row">${btn('regHome','待機場所を登録',{icon:'home',dis:regDis,why:regWhy})}${btn('regPanel','配電盤を登録',{icon:'panel',dis:regDis,why:regWhy})}</div></div>
     <div class="sec full"><h3>戻す</h3>${btn('goHome','待機場所に戻る',{icon:'home',cls:'go',dis:!mapping})}</div>
@@ -983,6 +1004,7 @@ function act(a, id){
       case 'stop': p.sub='mapping'; toast('止まった（帰還を取りやめ）'); break
       case 'inert': toast('押しても何も起きない（追従走行の予約）'); break
       case 'jog': toast('手動操作パネル（W-6）が開く'); break
+      case 'stick': toast(p.sub==='return' ? '触れている間だけ動く。待機場所へ戻る途中は一時停止になる' : '触れている間だけ動く（離すと止まる）'); break
     }
     return render()
   }
@@ -1039,6 +1061,7 @@ const NOTES = {
   },
   prep:{
     changed:[
+      '<b>2026-11-22 ユーザー決定（D54）</b>: 地図は手動で作るので、仮想スティックを常設した（地図の右下。レーダーの下）。「手動」ボタンは外した（スティックと 2 つあると、どちらを先に触るか迷う。Spec-webui.md §3.3 U-16）',
       '<b>2026-11-17 の評価を受けた修正案</b>（options §6）: 予約の停止│走行は試験（当日）より低く（60）、押せる側だけを塗る。先頭の行はピンの件数だけ（状態はヘッダの札と「未保存」）。大きさと配色は試験（当日）と同じ',
       '<b>画面の地（§6.8・案）</b>: 明るい地を既定にした。下の切り替えで暗い地と比べられる',
       '<b>2026-11-17 の仕上げ</b>（§6.7）: 「人の位置で」・登録中は地図をレーダーと下の帯を避けて描く（ピンが隠れない）。地図を回すボタンは地図の左上へ（登録の帯と重ならない）。入口の「前回を消す」は注意の橙の縁',
@@ -1139,7 +1162,7 @@ function render(){
   const auto = (S.scr==='day' && S.day.sub==='moving') || (S.scr==='prep' && S.prep.sub==='return')
   if (auto && S.af.v!=='none' && S.ab.k==='none') dev.insertAdjacentHTML('beforeend', `<div class="autoframe ${S.af.v}"></div>`)
   if (S.ori==='P' && S.sz.v==='old') dev.querySelectorAll('.content').forEach(c=>{ const mv=c.querySelector('.mainv'); if (mv) mv.style.minHeight='560px' })
-  dev.querySelectorAll('.mainv').forEach(m=>{ m.classList.toggle('withradar', !!m.querySelector('.radar')); m.classList.toggle('withflow', !!m.querySelector('.flow')) })
+  dev.querySelectorAll('.mainv').forEach(m=>{ m.classList.toggle('withradar', !!m.querySelector('.radar')); m.classList.toggle('withflow', !!m.querySelector('.flow')); m.classList.toggle('withstick', !!m.querySelector('.stick')) })
   fit(); placeBubble(dev); renderNotes()
 }
 // 吹き出し（HTML）をピンの上に置く。地図の SVG は viewBox 1000×620 を枠に「meet」で収めている
@@ -1164,6 +1187,7 @@ function fit(){
    停止│走行（data-nolong）は長押しの対象にしない。非常停止にはヘルプを付けない。 */
 const HELP = {
   toggle:['停止 ／ 走行','「停止する」は移動をその場で止めます。行き先は残り、「再開する」で続きを走ります。'],
+  stick:['手動','触れている間だけ機体が動きます。倒した向きへ進み、離すと止まります。待機場所へ戻る途中に触れると一時停止します。'],
   jog:['手動','手動操作パネルを開きます。スティックに触れている間だけ動きます。移動中に触れると一時停止します。'],
   abort:['中断','移動をやめて、行き先を選び直します。待機場所へは戻りません。'],
   home:['待機場所','待機場所へ移動します。押すとそのまま出発します。'],
