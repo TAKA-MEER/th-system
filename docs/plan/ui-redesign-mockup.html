@@ -355,6 +355,48 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .pal-new.col-jis:not(.theme-light) .tg2 .go-stop{box-shadow:inset 0 0 0 2px #ffffff55}
 .pal-new.col-jis .b.interrupt:not(.dis){background:var(--jis-y);border-color:#a88a00;color:#161b22}
 .theme-light.col-jis .help{border-color:#8d97a5}
+
+/* ============================================================
+   2026-11-21 目標 G1（読まずに分かる）・G2（AI っぽさを無くす）
+   ui-redesign-ai-tells.md §2.2 の B1〜B3 と B6（異常時の画面）
+   ============================================================ */
+/* B3: 数値は桁の揃う数字（Spec-webui.md §8） */
+#dev{font-variant-numeric:tabular-nums}
+/* B2: 角は 3 段だけ（4 px＝操作／8 px＝入れ物・浮く窓／丸＝出発と札）。片側だけ丸い「終了」は D32 のまま */
+.shape-role .b,.shape-role .tg,.shape-role .mseg,.shape-role .hdr .mst,.shape-role .mapctl .b{border-radius:4px}
+.shape-role .b.go,.shape-role .b.adv{border-radius:999px}
+.shape-role .b.exit{border-radius:4px 999px 999px 4px}
+.shape-role .tile,.shape-role .mainv,.shape-role .sec,.shape-role .center .card,.shape-role .flow,.shape-role .radar,
+.shape-role .bub,.shape-role .help,.shape-role .why-pop,.shape-role .banner,.shape-role .win,.shape-role .estop-top{border-radius:8px}
+/* B1: 装飾のグラデーションを外す（非常停止の立体だけは「押しボタンに見せる」ため残す。D29） */
+.hdr .r1{background:#182a45}
+.pal-new .tile.g{background:color-mix(in srgb,var(--gc) 10%,var(--panel))}
+
+/* B6: 異常時の画面（Spec-webui.md §4 W-1・W-2・§1.5 解除バー）。窓は地図の上に置き、右列（停止・中断）を覆わない */
+.hdr .r2 .al{display:flex;align-items:center;gap:10px;padding:0 16px;font-size:18px;font-weight:800;white-space:nowrap}
+.hdr .r2 .al svg{width:24px;height:24px;flex:none}
+.hdr .r2 .al.ab{background:var(--jis-y,#ffd100);color:#161b22}          /* 異常＝黄（JIS 10.3.2） */
+.hdr .r2 .al.em{background:#b71c1c;color:#fff}                           /* 非常停止中＝赤 */
+.hdr .r2 .al.past{color:var(--mut);font-weight:600;font-size:16px}       /* 直近の異常（3 分ほどで消える。D23・D45） */
+.win{position:absolute;left:12px;right:12px;top:12px;z-index:6;background:var(--panel);border:2px solid var(--bd-hi);padding:16px 18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 6px 18px #0003}
+.win.ab{border-color:var(--jis-y,#ffd100);border-width:3px}
+.win .wt{display:flex;align-items:center;gap:12px;font-size:26px;font-weight:800}
+.win .wt svg{width:34px;height:34px;flex:none}
+.win .wl{font-size:18px;line-height:1.5}
+.win .wl.mut{color:var(--mut);font-size:16px}
+.win .wb{display:flex;gap:10px}
+.win .wb .b{flex:1;min-height:64px;font-size:20px}
+.win .wb .b.sm{flex:none;min-width:120px}
+.win .pict{display:flex;align-items:center;gap:18px}
+.win .pict svg{width:96px;height:96px;flex:none;color:var(--tx)}
+.dim-all .ctl{opacity:.5}
+/* 解除バーは右列を押し下げない（R2: 配置を状態で変えない）。地図の下端に重ねる。縦長は下端いっぱい（そこは非常停止中に押せないボタン） */
+.relbar{position:absolute;z-index:7;left:26px;right:438px;bottom:24px;height:72px;box-shadow:0 4px 14px #0003;display:flex;align-items:center;justify-content:center;gap:12px;background:#ffffff;color:#161b22;border:3px solid #161b22;font-size:24px;font-weight:800;cursor:pointer;border-radius:0}
+.relbar svg{width:30px;height:30px}
+.sz-new .relbar{right:438px}
+.portrait .relbar{left:14px;right:14px;bottom:12px}
+.hdr .r2 .al{align-self:stretch}
+@media (prefers-reduced-motion:no-preference){.win .b.adv.blink{animation:blink2 2.4s ease-in-out infinite}}
 </style>
 </head>
 <body>
@@ -399,6 +441,10 @@ const P = {
   save:'<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
   stopSq:'<rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none"/>',
   play:'<path d="M7 5l12 7-12 7z" fill="currentColor" stroke="none"/>',
+  warn:'<path d="M12 3l10 18H2z"/><path d="M12 10v5"/><circle cx="12" cy="18" r=".6" fill="currentColor"/>',
+  lidar:'<circle cx="12" cy="14" r="3"/><path d="M5.5 7.5a9 9 0 0 1 13 0M8 10a5.5 5.5 0 0 1 8 0"/><path d="M12 17v4"/>',
+  estopBtn:'<rect x="4" y="14" width="16" height="7" rx="1"/><path d="M6 14c0-4 2.7-6 6-6s6 2 6 6"/><path d="M16.5 4.5a6 6 0 0 1 3 4"/><path d="M20 5.5l-.5 3-3-.3"/>',
+  release:'<path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 3.5v3.5h3.5"/>',
 }
 const ic = (k, extra='') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${P[k]}</svg>`
 
@@ -417,7 +463,7 @@ const S = {
 }
 const SUBS = {
   menu:[['top','一番上'],['field','試験場 ▸'],['drive','走行 ▸'],['maint','点検と校正 ▸']],
-  day:[['unloaded','地図未読込'],['undeclared','宣言前'],['home','待機'],['moving','移動中'],['paused','一時停止'],['panel','盤の前'],['summon','呼び寄せ']],
+  day:[['unloaded','地図未読込'],['undeclared','宣言前'],['home','待機'],['moving','移動中'],['paused','一時停止'],['panel','盤の前'],['summon','呼び寄せ'],['fault','異常'],['resolved','異常の解消'],['estop','非常停止中'],['carry','手押し']],
   prep:[['entry','入口'],['mapping','地図作成中'],['reg','人の位置で登録'],['return','待機場所へ戻る途中']],
 }
 const SCRS = [['menu','メインメニュー（M2）'],['day','試験（当日）F2'],['prep','試験準備']]
@@ -425,8 +471,9 @@ const subOf = () => S.scr==='menu' ? S.menu.lvl : S[S.scr].sub
 function setSub(v){
   if (S.scr==='menu') S.menu.lvl=v
   else if (S.scr==='day'){ const d=S.day; d.sub=v; d.sel=null; d.flowStep=0
-    d.robot = v==='panel' ? 'panel' : (v==='moving'||v==='paused') ? 'mid' : 'home'
-    if ((v==='moving'||v==='paused') && !d.dest) d.dest='A-1'
+    const ab = ['fault','resolved','estop','carry'].includes(v)
+    d.robot = v==='panel' ? 'panel' : (v==='moving'||v==='paused'||ab) ? 'mid' : 'home'
+    if ((v==='moving'||v==='paused'||ab) && !d.dest) d.dest='A-1'
     if (v==='home'||v==='panel'||v==='unloaded'||v==='undeclared') d.dest=null }
   else { const p=S.prep; p.sub=v; if (v==='reg'){ p.reg='HOME'; p.method='person'; p.regStep=1 } else { p.reg=null; p.regStep=0 } }
 }
@@ -480,13 +527,14 @@ function trackerBar(canStop=true){
 }
 // ヘッダ（2026-11-15 決定 D21〜D24）: ロゴ・プロジェクト名の真後ろに画面名称（位置をほぼ固定）。
 // 右端の札はモードではなく状態。ゾーンは場内のときだけ「速度制限」。
-function header(title, zone, state){
+function header(title, zone, state, alert){
   const cls = /一時停止/.test(state) ? ' pause' : /移動中/.test(state) ? ' run' : ''
   return `<div class="hdr"><div class="r1"><div class="logo">TH</div><div class="brand"><small>MIRS2602-</small>高見舎プロジェクト</div><div class="title">${title}</div>
   <div class="gap"></div>${zone?'<span class="zone">速度制限</span>':''}${state?`<span class="mst${cls}">${state}</span>`:''}</div>
-  <div class="r2"></div></div>`   // 正常は出さない。異常のときだけここに出す（D45）   // 非常停止はここに描かない（render の estopHTML。D39）
+  <div class="r2">${alert||''}</div></div>`   // 正常は出さない。異常のときだけここに出す（D45）   // 非常停止はここに描かない（render の estopHTML。D39）
 }
-const DAY_STATE = {unloaded:'準備中', undeclared:'準備中', home:'待機中', panel:'配電盤前', moving:'移動中', paused:'一時停止中', summon:'位置指示中'}
+const DAY_STATE = {unloaded:'準備中', undeclared:'準備中', home:'待機中', panel:'配電盤前', moving:'移動中', paused:'一時停止中', summon:'位置指示中',
+  fault:'一時停止中', resolved:'一時停止中', estop:'非常停止中', carry:'手押し'}
 const PREP_STATE = {entry:'準備中', mapping:'地図作成中', reg:'登録中', return:'待機場所へ移動中'}
 
 /* ---------------- 地図 ---------------- */
@@ -681,7 +729,7 @@ function menuView(){
     tiles = g.items.map(it=>{ const w=why(it.k)
       const act = it.k==='prep' ? 'open:prep' : it.k==='day' ? 'open:day' : `toast:${it.name}へ（「終了」でこの「${g.name}」の階層に戻る）`
       return tileHTML({act, icon:it.icon, name:it.name, color:g.color, size:it.size, area:it[o], why:w, dis:!!w}) }).join('')
-    left = `<div class="banner" style="background:linear-gradient(90deg, color-mix(in srgb, ${g.color} 35%, transparent), transparent);color:#fff"><span style="color:${g.color}">${ic(g.icon)}</span>${g.name}${S.wt.v==='new'?'':`<span style="color:var(--mut);font-size:16px;font-weight:400;margin-left:8px">メインメニュー ▸ ${g.name}</span>`}</div>
+    left = `<div class="banner" style="background:color-mix(in srgb, ${g.color} 16%, transparent);color:#fff"><span style="color:${g.color}">${ic(g.icon)}</span>${g.name}${S.wt.v==='new'?'':`<span style="color:var(--mut);font-size:16px;font-weight:400;margin-left:8px">メインメニュー ▸ ${g.name}</span>`}</div>
       <div class="tiles" style="grid-template-columns:${lay.cols};grid-template-rows:${lay.rows}">${tiles}</div>`
   }
   // §6.7: 接続確認は操作バーの右に置き、一番上でも帯が空にならないようにする（どの階層でも同じ場所）
@@ -716,6 +764,10 @@ function dayView(){
     if (!S.tracker) whyDest='人検出を動かすと呼び寄せできます（左上）' }
   else if (s==='moving'){ E.stop='en'; E.run='cur'; E.abort=true; whyDest=`移動中は選べません（「${AB}」で止めて選び直し）` }
   else if (s==='paused'){ E.run='en'; E.abort=true; whyDest=`一時停止中は選べません（「再開」か「${AB}」）` }
+  else if (s==='fault'){ E.abort=true; runNote='LiDAR 途絶が続いています'; whyDest='異常が続いている間は選べません' }
+  else if (s==='resolved'){ E.run='en'; E.abort=true; whyDest=`一時停止中は選べません（「再開」か「${AB}」）` }
+  else if (s==='estop'||s==='carry'){ E.manual=false; runNote = s==='estop' ? '非常停止を解除してから' : '機体の非常停止ボタンを戻してから'
+    whyDest = runNote }
   else if (s==='summon'){ E.abort=true; whyDest=`呼び寄せの位置を指定しています（やめるときは「${AB}」）`; runNote='位置を指定すると出発します' }
 
   const where = d.robot==='home' ? '待機場所' : d.robot==='panel' ? '盤 A-1' : '途中'
@@ -727,19 +779,21 @@ function dayView(){
     paused:[`一時停止中 → ${destPin?.name??''}`, '残り 4.2 m'],
     panel:[`盤の前　盤 A-1`, ''],
     summon:['呼び寄せ　位置の指定', ''],
+    fault:['', ''], resolved:['', ''], estop:['', ''], carry:['', ''],
   }[s]
 
   let mainInner = ''
   const robot = ROBOT[d.robot]
-  const path = (s==='moving'||s==='paused') ? [C(175,176),C(172,120),C(172,76),C(130,70),C(102,58),C(96,49)] : null
+  const path = (s==='moving'||s==='paused'||['fault','resolved','estop','carry'].includes(s)) ? [C(175,176),C(172,120),C(172,76),C(130,70),C(102,58),C(96,49)] : null
   if (s==='unloaded'){
     mainInner = `<div class="center" style="background:var(--inset)"><div class="card"><p>機体を待機場所に置いてから押します</p>${btn('openMap','会場地図を開く',{icon:'field',cls:'adv'})}</div></div>`
   } else {
-    mainInner = mapSVG({robot, path, sel: choose ? d.sel : null, selLabel:'行き先にする', dest: (s==='moving'||s==='paused') ? d.dest : null})
+    mainInner = mapSVG({robot, path, sel: choose ? d.sel : null, selLabel:'行き先にする', dest: (s==='moving'||s==='paused'||['fault','resolved','estop','carry'].includes(s)) ? d.dest : null})
+    mainInner += abnormalWin(s)
     if (s==='undeclared') mainInner += `<div class="center"><div class="card"><p>機体が待機場所（家の印）にありますか</p>${btn('declare','待機場所にいます',{icon:'home',cls:'adv'})}</div></div>`
     if (s==='summon') mainInner += radarSVG(false, !S.tracker) + `<div class="flow"><span class="stp">呼び寄せ ${d.flowStep||1}/2</span><span class="msg">${d.flowStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'機体に来てほしい位置に立って「記録」'}</span>${btn('rec','記録',{cls:'adv',dis:!S.tracker})}</div>`
   }
-  const runLabel = s==='paused' ? '再開' : '走行'
+  const runLabel = (s==='paused'||s==='resolved') ? '再開' : '走行'
   const runHint = '押すと続きを走る'
   // 薄いボタンを押したときに出す理由（D16）
   const whyHome = choose && d.robot==='home' ? 'いま待機場所にいます' : whyDest
@@ -760,7 +814,8 @@ function dayView(){
   // 「次の配電盤」を行き先の先頭に幅いっぱいで置き、押せるときは出発の青で塗る。ボタンの数と位置は全状態で同じ（R2）
   const WH = { unloaded:['',''], undeclared:['',''], home:[d.robot==='home'?'待機場所':'途中で停止',''],
     moving:[`${destPin?.name??''} へ`,'残り 4.2 m'], paused:[`${destPin?.name??''} へ`,'残り 4.2 m'],
-    panel:['盤 A-1 の前',''], summon:['呼び寄せの位置',''] }[s]
+    panel:['盤 A-1 の前',''], summon:['呼び寄せの位置',''],
+    fault:[`${destPin?.name??''} へ`,'残り 4.2 m'], resolved:[`${destPin?.name??''} へ`,'残り 4.2 m'], estop:[`${destPin?.name??''} へ`,'残り 4.2 m'], carry:[`${destPin?.name??''} へ`,'残り 4.2 m'] }[s]
   const ctlNew = `<div class="ctl">
     <div class="where full"><span>${WH[0]||'&nbsp;'}</span><b>${WH[1]}</b></div>
     <div class="sec"><h3>操作</h3>${tog(E.stop, E.run, {runLabel, note:runNote, big:true, help:'toggle'})}
@@ -769,8 +824,29 @@ function dayView(){
       <div class="row" style="margin-top:8px">${btn('goHome','待機場所',{dis:!E.home,why:whyHome,cls:'go',help:'home'})}${btn('summon','呼び寄せ',{dis:!E.summon,why:whySummon,cls:'go',help:'summon'})}</div></div>
     <div class="sec full"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{dis:!E.cam,why:whyPanel,help:'cam'})}</div></div>
   </div>`
-  return header('試験', true, DAY_STATE[s]||'') + `<div class="body"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit',help:'exit'})}${trackerBar(s!=='summon')}</div>
-    <div class="content"><div class="mainv">${mainInner}</div>${S.wt.v==='new' ? ctlNew : ctl}</div></div>`
+  return header('試験', true, DAY_STATE[s]||'', dayAlert(s)) + `<div class="body ${s==='estop'||s==='carry'?'dim-all':''}"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit',help:'exit'})}${trackerBar(s!=='summon')}</div>
+    <div class="content"><div class="mainv">${mainInner}</div>${S.wt.v==='new' ? ctlNew : ctl}</div>${s==='estop'?`<div class="relbar" data-btn data-act="release">${ic('release')}非常停止を解除する</div>`:''}</div>`
+}
+// ヘッダの下段: 異常のときだけ出す（D45）。異常＝黄、非常停止中＝赤、解消した直近の異常＝灰の文字（3 分ほどで消える）
+function dayAlert(s){
+  if (s==='fault') return `<div class="al ab">${ic('warn')}LiDAR 途絶</div>`
+  if (s==='resolved') return `<div class="al past">直近の異常　LiDAR 途絶　12:34:56</div>`
+  if (s==='estop') return `<div class="al em">画面の非常停止</div>`   // 札（非常停止中）と同じ語を並べず、どこで押されたかを言う
+  if (s==='carry') return `<div class="al ab">${ic('warn')}機体の非常停止ボタン</div>`
+  return ''
+}
+// 異常の窓（W-1）・手押しの窓（W-2）。地図の上に置き、右列の停止・中断を覆わない。
+// 題は「異常が発生しました」ではなく何が起きたか（G1）。文は人にハードウェアの操作をしてもらうときだけ（R8）
+function abnormalWin(s){
+  if (s==='fault') return `<div class="win ab"><div class="wt">${ic('lidar')}LiDAR 途絶</div>
+    <div class="wl">LiDAR の電源とケーブルを確かめる</div>
+    <div class="wb"><span style="flex:1"></span>${btn('toast:窓を隠す（ヘッダの「LiDAR 途絶」を押すと戻る）','隠す',{cls:'sm'})}</div></div>`
+  if (s==='resolved') return `<div class="win"><div class="wt">異常が解消しました</div>
+    <div class="wl mut">LiDAR 途絶　0.1 秒　12:34:56</div>
+    <div class="wb">${btn('run','再開する',{cls:'adv go blink'})}${btn('toast:止まったまま（一時停止のまま。行き先は残る）','止まったまま')}</div></div>`
+  if (s==='carry') return `<div class="win ab"><div class="wt">手押し</div>
+    <div class="pict">${ic('estopBtn')}<div class="wl">機体後部の赤いボタンを右へひねって戻す</div></div></div>`
+  return ''
 }
 
 /* ---------------- 試験準備 ---------------- */
@@ -851,7 +927,8 @@ function act(a, id){
       case 'pinGo': depart(d.sel); break
       case 'goHome': depart('HOME'); break
       case 'goNext': depart(d.sub==='panel' ? 'A-2' : 'A-1'); break
-      case 'run': if (d.sub==='paused'){ d.sub='moving'; d.robot='mid' } break
+      case 'run': if (d.sub==='paused'||d.sub==='resolved'){ d.sub='moving'; d.robot='mid' } break
+      case 'release': d.sub='resolved'; break
       case 'stop': d.sub='paused'; break
       case 'abort':
         if (d.sub==='moving'||d.sub==='paused'){ d.robot='off'; d.sub='home'; toast('止めて、行き先の選び直しへ戻った') }
@@ -908,6 +985,8 @@ const NOTES = {
   },
   day:{
     changed:[
+      '<b>2026-11-21 異常時の画面（案）</b>: ヘッダの下段は異常のときだけ出す（D45。異常＝黄・非常停止中＝赤・解消した直近の異常＝灰）。異常の窓は地図の上に置き、右列の停止・中断を覆わない。窓の題は「異常が発生しました」ではなく何が起きたか。解消後の選択肢は「はい／いいえ」ではなく「再開する／止まったまま」。非常停止の解除は下端の白黒の帯（形も色も非常停止と変える。Spec-webui.md §1.5）',
+      '<b>2026-11-21 AI っぽさの手直し</b>（ai-tells §2.2 B1〜B3）: タイルと帯のグラデーションを外した／角を 4 px・8 px・丸の 3 段にした／数字の桁を揃えた',
       '<b>2026-11-17 に決定</b>（D33〜D39。下の切り替えで 11-16 の版と比べられる）: ① 停止│走行は押せる側だけを塗り、語を動詞に固定。状態はヘッダの札に任せ、右列の先頭は「どこへ・残り」 ② 「次の配電盤」を行き先の先頭に幅いっぱいで置き、押せるときは青 ③ タブレットで 0.8 倍に縮んでも押せる・読める大きさ ④ 1 色 1 意味の配色。一時停止中の札は明るい中立 ⑤ 非常停止は画面の中身と切り離して最初に描き、いちばん上に重ねる',
       '<b>画面の地（§6.8・案）</b>: 明るい地を既定にした（明るい部屋でちらっと見る用途に合うのでは、という意見）。下の「画面の地」で暗い地と比べられる',
       '<b>2026-11-17 の仕上げ</b>（options §6.6・§6.7）: 薄いボタンを押すと、理由をそのボタンのすぐ上に、ボタンを指して出す。押せないボタンは塗りを外して語を読めるようにした。呼び寄せでは地図をレーダーと下の帯を避けて描き、ピンが隠れない',
@@ -926,7 +1005,8 @@ const NOTES = {
       {q:'ヘルプ表示（設定で切り替える想定）', k:['help','on'], v:[[false,'しない'],[true,'する']], why:'<b>2026-11-15 に決定</b>（D19）。マウスはボタンに 0.7 秒重ねると出て、外すと消える。タップは長押しで出て、「×」か枠の外を押すと閉じる。停止│走行・ジョグ・非常停止は長押しの対象外。<b>ヘッダと赤い「停止する」は、ヘルプが出ていても 1 回で効く</b>。ヘッダには絶対に重ねず、停止│走行はなるべく避けて出す。この案の画面では試験（当日）だけ'},
       {q:'「中断」の語（別の語の案を残す）', k:['day','abortLabel'], v:[['中断','中断'],['行き先を取り消す','行き先を取り消す'],['選び直す','選び直す']], why:'<b>「中断」のままに決定</b>（D15。語が長いと認識しにくい）。ほかの人には違って見えるかもしれないので、別の語は案として残す'},
     ],
-    look:['待機・移動中・一時停止を切り替えて、ちらっと見て「次に押すもの」が分かるか',
+    look:['<b>異常時の画面（2026-11-21・案）</b>: 「異常」「異常の解消」「非常停止中」「手押し」で、文を読まずに次に何をすればよいか分かるか',
+      '待機・移動中・一時停止を切り替えて、ちらっと見て「次に押すもの」が分かるか',
       '<b>自律走行中の枠（§6.5・案）</b>: 「移動中」で、ヘッダの下の縁の点滅（注意の点滅。D43）がうるさくないか・ひと目で分かるか',
       '一時停止中に薄い「次の配電盤」を押して、理由がボタンのそばに出るか',
       'ヘルプ表示: 長押し・重ねる操作が、ふだんの操作の邪魔にならないか','状態を切り替えて、右列のボタンが一切動かないこと','ピン → 吹き出し →「行き先にする」で出発 → 間違えたら「中断」、の流れ','一日の始めの 2 手を地図の中央に出すのは R2 に当たらないか'],
