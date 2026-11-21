@@ -453,6 +453,11 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .lay .b-reg .mseg.vert > div{border-right:none;border-bottom:1px solid var(--bd-hi)}
 .lay .b-reg .mseg.vert > div:last-child{border-bottom:none}
 .lay .b-reg .mseg.vert > div{min-height:48px}
+
+/* ピンの編集の吹き出し（試験準備） */
+.bub .pin-name{width:100%;min-height:56px;font:inherit;font-size:20px;padding:0 12px;border:2px solid var(--bd-hi);border-radius:4px;background:var(--panel);color:var(--tx)}
+.bub .row{display:flex;gap:8px}.bub .row .b{flex:1;font-size:18px}
+.bub .b.caution.armed{background:var(--jis-y,#ffd100) !important;color:#161b22 !important}
 </style>
 </head>
 <body>
@@ -517,7 +522,7 @@ const S = {
        abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
   ab:{k:'none', cause:null, recent:null},   // 異常（全画面に共通。D53）
   help:{on:true},   // ヘルプ表示（2026-11-15 ユーザー案。設定で切り替え）
-  prep:{lay:'A', sub:'mapping', method:'person', reserved:'dim', reg:null, regStep:0, pins:6},
+  prep:{lay:'A', sel:null, edit:null, del:[], sub:'mapping', method:'person', reserved:'dim', reg:null, regStep:0, pins:6},
 }
 const SUBS = {
   menu:[['top','一番上'],['field','試験場 ▸'],['drive','走行 ▸'],['maint','点検と校正 ▸']],
@@ -532,7 +537,7 @@ function setSub(v){
     d.robot = v==='panel' ? 'panel' : (v==='moving'||v==='paused') ? 'mid' : 'home'
     if ((v==='moving'||v==='paused') && !d.dest) d.dest='A-1'
     if (v==='home'||v==='panel'||v==='unloaded'||v==='undeclared') d.dest=null }
-  else { const p=S.prep; p.sub=v; if (v==='reg'){ p.reg='HOME'; p.method='person'; p.regStep=1 } else { p.reg=null; p.regStep=0 } }
+  else { const p=S.prep; p.sub=v; p.sel=null; p.edit=null; if (v==='reg'){ p.reg='HOME'; p.method='person'; p.regStep=1 } else { p.reg=null; p.regStep=0 } }
 }
 
 /* ---------------- 部品 ---------------- */
@@ -664,7 +669,7 @@ function wallBoxes(partial){
        + `<path d="${sl[0]}" fill="${col.sideL}"/><path d="${sr[0]}" fill="${col.sideR}"/><path d="${tp[0]}" fill="${col.top}"/>` }
   return wallCache[key]=`<g pointer-events="none">${out}</g>`
 }
-function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, scan=true}){
+function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, scan=true, bubBody=null}){
   const {P, sc, d3, mtx, hpx} = mapProj()
   const pt = q => q.map(v=>v.toFixed(1)).join(',')
   const poly = (qs, attr) => `<polygon points="${qs.map(pt).join(' ')}" ${attr}/>`
@@ -711,7 +716,7 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
   let bubble='', bubHTML=''
   // 2026-11-17 案 §6.2: 吹き出しを HTML にし、「行き先にする」を論理 px で高さ 60 にする（SVG の中だと地図と一緒に縮む）
   if (sel && S.sz.v==='new'){ const p=pinById(sel), [mx,my]=mk[sel]
-    bubHTML = `<div class="bub" data-x="${mx}" data-y="${my}" data-r="${Z.hit}"><div class="nm">${p.name}</div>${btn('pinGo', selLabel, {cls:'go adv'})}</div>` }
+    bubHTML = `<div class="bub" data-x="${mx}" data-y="${my}" data-r="${Z.hit}"><div class="nm">${p.name}</div>${bubBody ?? btn('pinGo', selLabel, {cls:'go adv'})}</div>` }
   else if (sel){ const p=pinById(sel), [mx,my]=mk[sel]; const bx=Math.min(Math.max(mx-130,50),690), by=my>300?my-170:my+60
     bubble = `<g><rect x="${bx}" y="${by}" width="260" height="104" rx="12" fill="#232733" stroke="#7fb4ee" stroke-width="2"/>
       <text x="${bx+16}" y="${by+34}" font-size="24" font-weight="800" fill="#fff">${p.name}</text>
@@ -958,7 +963,13 @@ function prepView(){
     reg:['待機場所を登録中（人の位置で）', ''],
     return:['待機場所へ戻る途中', ''],
   }[s]
-  let mainInner = mapSVG({robot:s==='return'?C(172,100,90):C(150,66,180), path:s==='return'?[C(172,100),C(172,150),C(175,176)]:null, partial:true, scan:true})
+  // ピンを押すと編集（2026-11-22 ユーザー指摘。Spec-onsite.md §2.3: 名前の変更・削除・位置と向きの登録し直し）。地図作成中だけ
+  const pinsNow = PINS.filter(q=>!p.del.includes(q.id))
+  const MNAME = {person:'人の位置で', pose:'いまの姿勢で', tap:'地図をタップして'}
+  const editBody = !p.sel ? null
+    : p.edit==='rename' ? `<input class="pin-name" value="${pinById(p.sel).name}" aria-label="ピンの名前"><div class="row">${btn('pinRenameOk','決める',{cls:'adv'})}${btn('pinEditCancel','やめる')}</div>`
+    : `${btn('pinRename','名前を変える')}${btn('pinRereg', `${MNAME[p.method]}登録し直す`)}${btn('pinDel', p.edit==='delArm' ? 'もう一度押すと削除' : '削除', {cls:'caution'+(p.edit==='delArm'?' armed':'')})}`
+  let mainInner = mapSVG({robot:s==='return'?C(172,100,90):C(150,66,180), path:s==='return'?[C(172,100),C(172,150),C(175,176)]:null, partial:true, scan:true, pins:pinsNow, sel:p.sel, bubBody:editBody})
   mainInner += `<div class="mapctl">${btn('rotL','左へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}${btn('rotR','右へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}</div>`
   if (s==='entry') mainInner += `<div class="center"><div class="card"><p>前回の試験場内地図とピン（${p.pins} 件）が残っています</p>
       ${btn('resume','続きから再開',{icon:'play',cls:'adv'})}
@@ -1057,12 +1068,23 @@ function act(a, id){
     return render()
   }
   if (S.scr==='prep'){
+    const s0=p.sub
     switch(a){
       case 'rotL': S.map.rot=(S.map.rot+345)%360; break
       case 'rotR': S.map.rot=(S.map.rot+15)%360; break
       case 'resume': p.sub='mapping'; break
       case 'fresh': p.sub='mapping'; p.pins=0; toast('前回の地図とピンを消して、地図作成を始めた'); break
       case 'method': p.method=id; break
+      case 'pin': if (s0==='mapping'){ p.sel = p.sel===id ? null : id; p.edit=null } else toast('ピンの編集は地図作成中にできます'); break
+      case 'pinRename': p.edit='rename'; break
+      case 'pinRenameOk': { const v=document.querySelector('#dev .pin-name')?.value.trim(); if (v) pinById(p.sel).name=v; p.sel=null; p.edit=null; break }
+      case 'pinEditCancel': p.edit=null; break
+      case 'pinDel': if (p.edit==='delArm'){ p.del.push(p.sel); p.pins--; toast('ピンを削除した'); p.sel=null; p.edit=null } else p.edit='delArm'; break
+      case 'pinRereg': { const nm=pinById(p.sel).name; p.sel=null; p.edit=null
+        if (p.method==='person'){ p.sub='reg'; p.regStep=1; toast(`${nm} を人の位置で登録し直す`) }
+        else if (p.method==='pose') toast(`${nm} をいまの機体の位置と向きで登録し直した`)
+        else toast(`地図の上で ${nm} の位置と向きを決める`)
+        break }
       case 'regHome': case 'regPanel': {
         const kind = a==='regHome' ? '待機場所' : '配電盤'
         if (p.method==='person'){ p.sub='reg'; p.regStep=1 }
@@ -1132,6 +1154,7 @@ const NOTES = {
   },
   prep:{
     changed:[
+      '<b>2026-11-22</b>: 配置は A に決定（D55）。<b>ピンを押すと編集</b>（名前を変える・選んでいる方式で登録し直す・削除。削除はもう一度押して確定）。吹き出しの外を押すと閉じる。地図作成中だけ',
       '<b>2026-11-22 ユーザー決定（D54）</b>: 地図は手動で作るので、仮想スティックを常設した（地図の右下。レーダーの下）。「手動」ボタンは外した（スティックと 2 つあると、どちらを先に触るか迷う。Spec-webui.md §3.3 U-16）',
       '<b>2026-11-17 の評価を受けた修正案</b>（options §6）: 予約の停止│走行は試験（当日）より低く（60）、押せる側だけを塗る。先頭の行はピンの件数だけ（状態はヘッダの札と「未保存」）。大きさと配色は試験（当日）と同じ',
       '<b>画面の地（§6.8・案）</b>: 明るい地を既定にした。下の切り替えで暗い地と比べられる',
@@ -1144,7 +1167,7 @@ const NOTES = {
       'タブを無くした（いま 4）。「待機場所に戻る」をタブの奥から出した',
     ],
     opts:[
-      {q:'試験準備の配置（案。2026-11-22）', k:['prep','lay'], v:[['A','A 追従走行と同じ並び'],['B','B 左で走らせる'],['C','C 右で走らせる'],['cur','いま（D54）']], why:'A: 右列＝操作カード＋手動（S-10 と同じ）、登録は地図の下の帯。B: 左＝走らせる・中央＝地図・右＝登録する（左手でスティック）。C: 地図を左に寄せ、右に 登録する｜走らせる（右手でスティック）。手動は実装の部品と同じ組み（速度のスライダ＋スティック＋中速・低速）'},
+      {q:'試験準備の配置（案。2026-11-22）', k:['prep','lay'], v:[['A','A 追従走行と同じ並び（決定 D55）'],['B','B 左で走らせる'],['C','C 右で走らせる'],['cur','D54 の初めの形']], why:'<b>A に決定（D55。2026-11-22）</b>。ほかは比べるために残す。A: 右列＝操作カード＋手動（S-10 と同じ）、登録は地図の下の帯。B: 左＝走らせる・中央＝地図・右＝登録する（左手でスティック）。C: 地図を左に寄せ、右に 登録する｜走らせる（右手でスティック）。手動は実装の部品と同じ組み（速度のスライダ＋スティック＋中速・低速）'},
       {q:'予約の「走行」の見せ方', k:['prep','reserved'], v:[['dim','薄く（押せない）'],['inert','押せるが何も起きない']], why:'未決 3。いまは何も起きないのに白枠で目立つ'},
     ],
     look:['人検出を止めて「人の位置で」を選び、動かすまでの流れ','方式を先に選ぶ流れで、登録先を押し間違えないか'],
@@ -1330,6 +1353,12 @@ document.addEventListener('click', e=>{
   if (dz && dz.dataset.why && dz.matches('.dis,.off')){
     if (S.scr==='day' && S.day.sel){ S.day.sel=null; render() }
     return S.sz.v==='new' ? whyAt(dz, '押せません　'+dz.dataset.why) : toast('押せません　'+dz.dataset.why)
+  }
+  // 試験準備: ピンの編集の吹き出しも、ピンと吹き出し以外を押すと閉じる
+  if (S.scr==='prep' && S.prep.sel && e.target.closest('#dev') && !e.target.closest('[data-act="pin"],.bub')){
+    S.prep.sel=null; S.prep.edit=null
+    const t0=e.target.closest('[data-act]')
+    if (!t0 || !t0.dataset.act || t0.closest('.dis,[data-dis]')) return render()
   }
   // 試験（当日）: 吹き出しは、ピンと吹き出しのボタン以外を押すと消える（取り消し。D10）
   if (S.scr==='day' && S.day.sel && e.target.closest('#dev') && !e.target.closest('[data-act="pin"],[data-act="pinGo"],.bub')){
