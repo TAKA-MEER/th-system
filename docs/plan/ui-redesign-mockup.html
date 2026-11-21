@@ -458,6 +458,15 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .bub .pin-name{width:100%;min-height:56px;font:inherit;font-size:20px;padding:0 12px;border:2px solid var(--bd-hi);border-radius:4px;background:var(--panel);color:var(--tx)}
 .bub .row{display:flex;gap:8px}.bub .row .b{flex:1;font-size:18px}
 .bub .b.caution.armed{background:var(--jis-y,#ffd100) !important;color:#161b22 !important}
+
+/* 2026-11-22 案の画面に無かった機能（options §3.4） */
+.win .big{font-size:40px;font-weight:800;font-variant-numeric:tabular-nums}
+.bub .ordrow{display:flex;align-items:center;gap:8px;font-size:17px}
+.bub .ordrow span{flex:1;white-space:nowrap}
+.bub .ordrow .b{width:auto !important;flex:none;min-width:76px;font-size:17px}
+.mainv svg.tapmk{position:absolute;inset:0;width:100%;height:100%}
+.mainv.withradar svg.tapmk{width:calc(100% - 274px)}
+.mainv.withflow svg.tapmk{height:calc(100% - 96px)}
 </style>
 </head>
 <body>
@@ -520,13 +529,15 @@ const S = {
   font:{v:'sys'}, shape:{v:'role'}, map:{rot:0, view:'2d', wall:'wall', col:'now'}, trk:{w:'io'},
   day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0,
        abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
-  ab:{k:'none', cause:null, recent:null},   // 異常（全画面に共通。D53）
+  ab:{k:'none', cause:null, recent:null},
+  target:0,   // 人検出の対象（レーダーの候補の番号。null＝選んでいない。見失っても自動で選び直さない）
+  order:['A-1','A-2','B-2','B-1','C-1'],   // 配電盤の順番（「次の配電盤」の順。D60）   // 異常（全画面に共通。D53）
   help:{on:true},   // ヘルプ表示（2026-11-15 ユーザー案。設定で切り替え）
-  prep:{lay:'A', sel:null, edit:null, del:[], sub:'mapping', method:'person', reserved:'dim', reg:null, regStep:0, pins:6},
+  prep:{lay:'A', sel:null, edit:null, del:[], modal:null, nearWall:false, tap:null, sub:'mapping', method:'person', reserved:'dim', reg:null, regStep:0, pins:6},
 }
 const SUBS = {
   menu:[['top','一番上'],['field','試験場 ▸'],['drive','走行 ▸'],['maint','点検と校正 ▸']],
-  day:[['unloaded','地図未読込'],['undeclared','宣言前'],['home','待機'],['moving','移動中'],['paused','一時停止'],['panel','盤の前'],['summon','呼び寄せ']],
+  day:[['unloaded','地図未読込'],['home','待機'],['moving','移動中'],['paused','一時停止'],['blocked','経路が塞がれた'],['panel','盤の前'],['working','測定中'],['summon','呼び寄せ'],['waitclear','退避待ち']],
   prep:[['entry','入口'],['mapping','地図作成中'],['reg','人の位置で登録'],['return','待機場所へ戻る途中']],
 }
 const SCRS = [['menu','メインメニュー（M2）'],['day','試験（当日）F2'],['prep','試験準備']]
@@ -534,9 +545,11 @@ const subOf = () => S.scr==='menu' ? S.menu.lvl : S[S.scr].sub
 function setSub(v){
   if (S.scr==='menu') S.menu.lvl=v
   else if (S.scr==='day'){ const d=S.day; d.sub=v; d.sel=null; d.flowStep=0
-    d.robot = v==='panel' ? 'panel' : (v==='moving'||v==='paused') ? 'mid' : 'home'
-    if ((v==='moving'||v==='paused') && !d.dest) d.dest='A-1'
-    if (v==='home'||v==='panel'||v==='unloaded'||v==='undeclared') d.dest=null }
+    d.robot = v==='panel' ? 'panel' : (v==='moving'||v==='paused'||v==='blocked') ? 'mid' : 'home'
+    if ((v==='moving'||v==='paused'||v==='blocked') && !d.dest) d.dest=S.order[0]
+    if (v==='working') d.robot='panel'
+    d.modal=null
+    if (v==='home'||v==='panel'||v==='unloaded'||v==='working'||v==='summon'||v==='waitclear') d.dest=null }
   else { const p=S.prep; p.sub=v; p.sel=null; p.edit=null; if (v==='reg'){ p.reg='HOME'; p.method='person'; p.regStep=1 } else { p.reg=null; p.regStep=0 } }
 }
 
@@ -595,7 +608,7 @@ function header(title, zone, state, alert){
   <div class="gap"></div>${zone?'<span class="zone">速度制限</span>':''}${state?`<span class="mst${cls}">${state}</span>`:''}</div>
   <div class="r2">${alert||''}</div></div>`   // 正常は出さない。異常のときだけここに出す（D45）   // 非常停止はここに描かない（render の estopHTML。D39）
 }
-const DAY_STATE = {unloaded:'準備中', undeclared:'準備中', home:'待機中', panel:'配電盤前', moving:'移動中', paused:'一時停止中', summon:'位置指示中'}
+const DAY_STATE = {unloaded:'準備中', home:'待機中', panel:'配電盤前', moving:'移動中', paused:'一時停止中', summon:'位置指示中', blocked:'経路待ち', working:'測定中', waitclear:'退避待ち'}
 const PREP_STATE = {entry:'準備中', mapping:'地図作成中', reg:'登録中', return:'待機場所へ移動中'}
 
 /* ---------------- 地図 ---------------- */
@@ -669,7 +682,7 @@ function wallBoxes(partial){
        + `<path d="${sl[0]}" fill="${col.sideL}"/><path d="${sr[0]}" fill="${col.sideR}"/><path d="${tp[0]}" fill="${col.top}"/>` }
   return wallCache[key]=`<g pointer-events="none">${out}</g>`
 }
-function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, scan=true, bubBody=null}){
+function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, scan=true, bubBody=null, order=false}){
   const {P, sc, d3, mtx, hpx} = mapProj()
   const pt = q => q.map(v=>v.toFixed(1)).join(',')
   const poly = (qs, attr) => `<polygon points="${qs.map(pt).join(' ')}" ${attr}/>`
@@ -710,6 +723,7 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
         : `<rect x="${x-Z.r}" y="${y-Z.r}" width="${2*Z.r}" height="${2*Z.r}" rx="4" style="fill:${isSel?'var(--pin-sel,#7fb4ee)':'var(--pin-panel,#3f8ae0)'}" stroke="#0f1117" stroke-width="2"/>`}
       ${dest===p.id?`<circle cx="${x}" cy="${y}" r="${Z.r+16}" fill="none" style="stroke:var(--dest,#ffd54f)" stroke-width="5"/>`:''}
       ${isSel?`<circle cx="${x}" cy="${y}" r="${Z.r+10}" fill="none" stroke="#fff" stroke-width="3"/>`:''}
+      ${order && p.kind==='panel' && S.order.includes(p.id) ? `<circle cx="${x+Z.r+2}" cy="${y-Z.r-2}" r="17" fill="#161b22" stroke="#fff" stroke-width="2"/><text x="${x+Z.r+2}" y="${y-Z.r+6}" text-anchor="middle" font-size="22" font-weight="800" fill="#fff">${S.order.indexOf(p.id)+1}</text>` : ''}
       </g>`])
     labels += `<text x="${gx}" y="${gy+(d3?24:Z.ly)}" text-anchor="middle" font-size="${Z.lab}" font-weight="700" style="fill:var(--lab,#e6e8ec);stroke:var(--lab-bd,#0f1117)" stroke-width="5" paint-order="stroke" pointer-events="none">${p.name}</text>`
   }
@@ -731,8 +745,9 @@ function radarSVG(big, off=false){
   if (off) return `<div class="radar ${big?'big':''}" style="display:flex;align-items:center;justify-content:center;text-align:center;color:var(--mut);font-size:15px;padding:16px">人検出が止まっています<br>左上の「人検出」で動かします</div>`
   const cands=[[60,-90,true],[-110,-40,false],[130,60,false],[-70,110,false]]
   let c=''
-  cands.forEach(([x,y,s],i)=>{ c+=`<g><circle cx="${150+x}" cy="${150+y}" r="${s?15:11}" fill="${s?'#4caf50':'#8b93a1'}"/>${s?`<circle cx="${150+x}" cy="${150+y}" r="24" fill="none" stroke="#8fd694" stroke-width="3"/>`:''}<text x="${150+x}" y="${150+y+5}" text-anchor="middle" font-size="13" font-weight="800" fill="#0f1117">${i+1}</text></g>` })
-  return `<div class="radar ${big?'big':''}"><span class="cap">対象: 1 番（信頼度 87%）</span>
+  cands.forEach(([x,y],i)=>{ const s = S.target===i
+    c+=`<g data-act="cand" data-id="${i}" style="cursor:pointer"><circle cx="${150+x}" cy="${150+y}" r="30" fill="transparent"/><circle cx="${150+x}" cy="${150+y}" r="${s?15:11}" fill="${s?'#4caf50':'#8b93a1'}"/>${s?`<circle cx="${150+x}" cy="${150+y}" r="24" fill="none" stroke="#8fd694" stroke-width="3"/>`:''}<text x="${150+x}" y="${150+y+5}" text-anchor="middle" font-size="13" font-weight="800" fill="#0f1117">${i+1}</text></g>` })
+  return `<div class="radar ${big?'big':''}"><span class="cap">${S.target==null ? '<b style="color:var(--warn-tx)">対象を選んでいません</b>' : `対象: ${S.target+1} 番（信頼度 87%）`}</span>
     <svg viewBox="0 0 300 300" style="width:100%;height:100%"><circle cx="150" cy="150" r="60" fill="none" stroke="#2a2d35"/><circle cx="150" cy="150" r="120" fill="none" stroke="#2a2d35"/>
     <path d="M150 20V280M20 150H280" stroke="#2a2d35"/><path d="M140 160L150 135L160 160Z" fill="#7fb4ee"/>${c}</svg></div>`
 }
@@ -819,35 +834,34 @@ function dayView(){
   const AB = d.abortLabel
   let whyDest='', whyPanel='盤の前に着いたら押せます', runNote=''
   if (s==='unloaded'){ whyDest='会場地図を開いてから選べます'; runNote='行き先がありません' }
-  else if (s==='undeclared'){ whyDest='待機場所にいることを宣言してから選べます'; runNote='行き先がありません' }
   else if (choose){ E.home = !(s==='home' && d.robot==='home'); E.next=true; E.summon=S.tracker
     runNote='行き先を押すと出発します'
     if (s==='panel'){ E.measure=true; E.cam=true; whyPanel='' }
     if (!S.tracker) whyDest='人検出を動かすと呼び寄せできます（左上）' }
   else if (s==='moving'){ E.stop='en'; E.run='cur'; E.abort=true; whyDest=`移動中は選べません（「${AB}」で止めて選び直し）` }
   else if (s==='paused'){ E.run='en'; E.abort=true; whyDest=`一時停止中は選べません（「再開」か「${AB}」）` }
+  else if (s==='blocked'||s==='working'||s==='waitclear'){ runNote='窓で選びます'; whyDest=runNote }
   else if (s==='summon'){ E.abort=true; whyDest=`呼び寄せの位置を指定しています（やめるときは「${AB}」）`; runNote='位置を指定すると出発します' }
 
   const where = d.robot==='home' ? '待機場所' : d.robot==='panel' ? '盤 A-1' : '途中'
   const st = {
     unloaded:['会場地図が開かれていません',''],
-    undeclared:['待機場所にいることを宣言してください',''],
     home:[ d.robot==='home'?'待機中　待機場所':'止まっています　行き先を選んでください', ''],
     moving:[`移動中 → ${destPin?.name??''}`, '残り 4.2 m'],
     paused:[`一時停止中 → ${destPin?.name??''}`, '残り 4.2 m'],
     panel:[`盤の前　盤 A-1`, ''],
     summon:['呼び寄せ　位置の指定', ''],
+    blocked:['経路待ち',''], working:['測定中',''], waitclear:['退避待ち',''],
   }[s]
 
   let mainInner = ''
   const robot = ROBOT[d.robot]
-  const path = (s==='moving'||s==='paused') ? [C(175,176),C(172,120),C(172,76),C(130,70),C(102,58),C(96,49)] : null
+  const path = (s==='moving'||s==='paused'||s==='blocked') ? [C(175,176),C(172,120),C(172,76),C(130,70),C(102,58),C(96,49)] : null
   if (s==='unloaded'){
     mainInner = `<div class="center" style="background:var(--inset)"><div class="card"><p>機体を待機場所に置いてから押します</p>${btn('openMap','会場地図を開く',{icon:'field',cls:'adv'})}</div></div>`
   } else {
-    mainInner = mapSVG({robot, path, sel: choose ? d.sel : null, selLabel:'行き先にする', dest: (s==='moving'||s==='paused') ? d.dest : null})
-    if (s==='undeclared') mainInner += `<div class="center"><div class="card"><p>機体が待機場所（家の印）にありますか</p>${btn('declare','待機場所にいます',{icon:'home',cls:'adv'})}</div></div>`
-    if (s==='summon') mainInner += radarSVG(false, !S.tracker) + `<div class="flow"><span class="stp">呼び寄せ ${d.flowStep||1}/2</span><span class="msg">${d.flowStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'機体に来てほしい位置に立って「記録」'}</span>${btn('rec','記録',{cls:'adv',dis:!S.tracker})}</div>`
+    mainInner = mapSVG({robot, path, sel: choose ? d.sel : null, selLabel:'行き先にする', dest: (s==='moving'||s==='paused'||s==='blocked') ? d.dest : null, order:true})
+    if (s==='summon') mainInner += radarSVG(false, !S.tracker) + `<div class="flow"><span class="stp">呼び寄せ ${d.flowStep||1}/2</span><span class="msg">${d.flowStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'機体に来てほしい位置に立って「記録」'}</span>${btn('rec','記録',{cls:'adv',dis:!S.tracker||S.target==null,why:'対象を選んでから（レーダーの候補を押す）'})}</div>`
   }
   const runLabel = s==='paused' ? '再開' : '走行'
   const runHint = '押すと続きを走る'
@@ -856,7 +870,7 @@ function dayView(){
   const whySummon = choose && !S.tracker ? '人検出を動かすと呼び寄せできます（左上）' : whyDest
   const whyAbort = '取り消す行き先がありません（移動中・一時停止中・呼び寄せの位置指定中に押せます）'
   // 「次の配電盤」に行き先の名前（D14）。名前が無い状態でも 2 行ぶんの高さを保つ（R2）
-  const nextId = s==='panel' ? 'A-2' : 'A-1'
+  const nextId = s==='panel' ? S.order[1] : S.order[0]
   const nextLabel = `次の配電盤<small>${choose ? pinById(nextId).name+' へ' : '&nbsp;'}</small>`
   const ctl = `<div class="ctl">
     <div class="state full"><div class="s1">${st[0]}</div><div class="s2">${st[1]}</div></div>
@@ -868,7 +882,7 @@ function dayView(){
   </div>`
   // 2026-11-17 案（options §6.1）: 右列の先頭は状態ではなく「どこへ・あとどれだけ」（状態はヘッダの札 D21）。
   // 「次の配電盤」を行き先の先頭に幅いっぱいで置き、押せるときは出発の青で塗る。ボタンの数と位置は全状態で同じ（R2）
-  const WH = { unloaded:['',''], undeclared:['',''], home:[d.robot==='home'?'待機場所':'途中で停止',''],
+  const WH = { unloaded:['',''], blocked:[`${destPin?.name??''} へ`,'残り 4.2 m'], working:['盤 A-1 の前',''], waitclear:['呼び寄せの位置',''], home:[d.robot==='home'?'待機場所':'途中で停止',''],
     moving:[`${destPin?.name??''} へ`,'残り 4.2 m'], paused:[`${destPin?.name??''} へ`,'残り 4.2 m'],
     panel:['盤 A-1 の前',''], summon:['呼び寄せの位置',''] }[s]
   const ctlNew = `<div class="ctl">
@@ -877,11 +891,26 @@ function dayView(){
       <div class="row" style="margin-top:8px">${btn('jog','手動',{dis:!E.manual,help:'jog'})}${btn('abort',AB,{dis:!E.abort,why:whyAbort,cls:'interrupt'+(AB.length>4?' f16':''),help:'abort'})}</div></div>
     <div class="sec"><h3>行き先</h3>${btn('goNext', `次の配電盤<small>${choose ? pinById(nextId).name+' へ' : '&nbsp;'}</small>`, {dis:!E.next, why:whyDest, cls:'two go next'+(E.next?' adv':''), help:'next'})}
       <div class="row" style="margin-top:8px">${btn('goHome','待機場所',{dis:!E.home,why:whyHome,cls:'go',help:'home'})}${btn('summon','呼び寄せ',{dis:!E.summon,why:whySummon,cls:'go',help:'summon'})}</div></div>
-    <div class="sec full"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{dis:!E.cam,why:whyPanel,help:'cam'})}</div></div>
+    <div class="sec full"><h3>盤の前</h3><div class="row">${btn('measure','測定機能へ',{dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{dis:!E.cam,why:whyPanel,help:'cam'})}</div></div>
   </div>`
-  return header('試験', true, DAY_STATE[s]||'') + `<div class="body"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit',help:'exit'})}${trackerBar(s!=='summon')}</div>
+  return header('試験', true, DAY_STATE[s]||'') + `<div class="body">${dayWindow(s)}<div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit',help:'exit'})}${trackerBar(s!=='summon')}</div>
     <div class="content"><div class="mainv">${mainInner}</div>${S.wt.v==='new' ? ctlNew : ctl}</div></div>`
 }
+// ============ 試験（当日）の窓（2026-11-22。案の画面に無かった機能 M7・M8・M10） ============
+// 本文の中央・ヘッダ以外を暗くする出し方は異常の窓と同じ（D53）。枠は中立の色（異常ではない）
+function dayWindow(s){
+  const d=S.day, sc='<div class="scrim"></div>'
+  if (d.modal==='stow') return sc+`<div class="win"><div class="wt">腕を格納しましたか</div>
+    <div class="wl">停止を解くと機体が動けるようになります</div><div class="wb">${btn('stowOk','格納した',{cls:'adv'})}${btn('stowNo','やめる')}</div></div>`
+  if (s==='blocked') return sc+`<div class="win"><div class="wt">経路が塞がれています</div>
+    <div class="wl mut">${pinById(d.dest)?.name??''} へ　空けば自動で続きを走ります</div><div class="wb">${btn('reroute','再検索')}${btn('abort','中断',{cls:'interrupt'})}</div></div>`
+  if (s==='working') return sc+`<div class="win"><div class="wt">測定中</div>
+    <div class="wl mut">測定機能が終えると自動で解けます</div><div class="wb">${btn('unstop','停止を解く')}</div></div>`
+  if (s==='waitclear') return sc+`<div class="win"><div class="wt">退いてください</div>
+    <div class="big">あと 0.8 m</div><div class="wl mut">空いたら自動で走り出します</div><div class="wb">${btn('waitStop','中止')}</div></div>`
+  return ''
+}
+
 // ============ 異常（全画面に共通。2026-11-21〜22 ユーザー決定 D45〜D53） ============
 // ・ヘッダの下段は異常のときだけ出す（D45）。異常＝黄、非常停止中＝赤、解消した直近の異常＝灰の文字（3 分ほどで消える）
 // ・窓は画面の中央に置き、ヘッダ以外を暗くする。異常の間は必ず一時停止し、中断・再開もさせず、ハードの解消を待つ（D47）
@@ -957,6 +986,7 @@ function prepView(){
   if (s==='return'){ stop='en'; run='cur'; runNote='' }
   const canReg = mapping
   const needTrk = p.method==='person' && !S.tracker
+  const needTgt = p.method==='person' && S.tracker && S.target==null
   const st = {
     entry:['前回の地図とピンが残っています', `ピン ${p.pins} 件（待機場所 1・配電盤 5）`],
     mapping:['地図作成中　未保存の変更あり', `ピン ${p.pins} 件`],
@@ -968,8 +998,8 @@ function prepView(){
   const MNAME = {person:'人の位置で', pose:'いまの姿勢で', tap:'地図をタップして'}
   const editBody = !p.sel ? null
     : p.edit==='rename' ? `<input class="pin-name" value="${pinById(p.sel).name}" aria-label="ピンの名前"><div class="row">${btn('pinRenameOk','決める',{cls:'adv'})}${btn('pinEditCancel','やめる')}</div>`
-    : `${btn('pinRename','名前を変える')}${btn('pinRereg', `${MNAME[p.method]}登録し直す`)}${btn('pinDel', p.edit==='delArm' ? 'もう一度押すと削除' : '削除', {cls:'caution'+(p.edit==='delArm'?' armed':'')})}`
-  let mainInner = mapSVG({robot:s==='return'?C(172,100,90):C(150,66,180), path:s==='return'?[C(172,100),C(172,150),C(175,176)]:null, partial:true, scan:true, pins:pinsNow, sel:p.sel, bubBody:editBody})
+    : `${pinById(p.sel).kind==='panel' ? `<div class="ordrow"><span>順番 <b>${S.order.indexOf(p.sel)+1}</b> / ${S.order.length}</span>${btn('ordUp','前へ',{dis:S.order.indexOf(p.sel)===0,why:'いちばん前です'})}${btn('ordDown','後へ',{dis:S.order.indexOf(p.sel)===S.order.length-1,why:'いちばん後ろです'})}</div>` : ''}${btn('pinRename','名前を変える')}${btn('pinRereg', `${MNAME[p.method]}登録し直す`)}${btn('pinDel', p.edit==='delArm' ? 'もう一度押すと削除' : '削除', {cls:'caution'+(p.edit==='delArm'?' armed':'')})}`
+  let mainInner = mapSVG({robot:s==='return'?C(172,100,90):C(150,66,180), path:s==='return'?[C(172,100),C(172,150),C(175,176)]:null, partial:true, scan:true, pins:pinsNow, sel:p.sel, bubBody:editBody, order:true})
   mainInner += `<div class="mapctl">${btn('rotL','左へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}${btn('rotR','右へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}</div>`
   if (s==='entry') mainInner += `<div class="center"><div class="card"><p>前回の試験場内地図とピン（${p.pins} 件）が残っています</p>
       ${btn('resume','続きから再開',{icon:'play',cls:'adv'})}
@@ -977,11 +1007,20 @@ function prepView(){
   const lay = p.lay
   if (mapping && p.method==='person' && (lay==='cur'||lay==='A')) mainInner += radarSVG(false, !S.tracker)
   if (lay==='cur') mainInner += stickHTML()   // D54: 常設（いまの案）
-  if (s==='reg') mainInner += ((lay==='cur'||lay==='A') ? radarSVG(false, !S.tracker) : '') + `<div class="flow"><span class="stp">待機場所 ${p.regStep}/2</span><span class="msg">${p.regStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'待機場所に立って「記録」'}</span>${btn('regRec','記録',{cls:'adv',dis:!S.tracker})}${btn('regCancel','やめる')}</div>`
+  if (p.tap){ const t=p.tap, kn = t.kind==='HOME' ? '待機場所' : '配電盤'
+    let mk=''
+    if (t.pt){ const [x,y]=t.pt; mk += `<circle cx="${x}" cy="${y}" r="16" fill="var(--act,#2f6bc6)" stroke="#fff" stroke-width="3"/>`
+      if (t.dir){ const [u,v]=t.dir, a=Math.atan2(v-y,u-x), ex=x+60*Math.cos(a), ey=y+60*Math.sin(a)
+        mk += `<path d="M${x} ${y}L${ex} ${ey}" stroke="var(--act,#2f6bc6)" stroke-width="6"/><path d="M${ex} ${ey}l${-18*Math.cos(a-0.5)} ${-18*Math.sin(a-0.5)}M${ex} ${ey}l${-18*Math.cos(a+0.5)} ${-18*Math.sin(a+0.5)}" stroke="var(--act,#2f6bc6)" stroke-width="6" stroke-linecap="round"/>` } }
+    mainInner += `<svg class="map tapmk" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet" style="pointer-events:none">${mk}</svg>`
+    const deg = t.dir ? Math.round((-Math.atan2(t.dir[1]-t.pt[1], t.dir[0]-t.pt[0])*180/Math.PI+360)%360) : 0
+    const msg = !t.pt ? `${kn}の位置を地図で押す` : !t.dir ? '機体に向いてほしい方へ押す' : `x 3.42 m　y 1.18 m　向き ${deg}°`
+    mainInner += `<div class="flow"><span class="stp">${kn} ${t.pt?(t.dir?'確認':'2/2'):'1/2'}</span><span class="msg">${msg}</span>${t.dir?btn('tapOk','この位置で確定',{cls:'adv'}):''}${btn('tapCancel','やめる')}</div>` }
+  if (s==='reg') mainInner += ((lay==='cur'||lay==='A') ? radarSVG(false, !S.tracker) : '') + `<div class="flow"><span class="stp">待機場所 ${p.regStep}/2</span><span class="msg">${p.regStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'待機場所に立って「記録」'}</span>${btn('regRec','記録',{cls:'adv',dis:!S.tracker||S.target==null,why:'対象を選んでから（レーダーの候補を押す）'})}${btn('regCancel','やめる')}</div>`
 
-  const regWhy = s==='entry' ? '地図作成を始めてから登録できます' : s==='reg' ? '登録中です（やめるときは地図の上の「やめる」）' : s==='return' ? '待機場所へ戻る途中は登録できません' : (needTrk ? '人検出を動かすと「人の位置で」登録できます（左上）' : '')
+  const regWhy = s==='entry' ? '地図作成を始めてから登録できます' : s==='reg' ? '登録中です（やめるときは地図の上の「やめる」）' : s==='return' ? '待機場所へ戻る途中は登録できません' : (needTrk ? '人検出を動かすと「人の位置で」登録できます（左上）' : needTgt ? '対象を選んでから（レーダーの候補を押す）' : '')
   const mseg = `<div class="mseg ${canReg?'':'dis'}" data-btn ${canReg?'':'data-dis'}>${METHODS.map(([k,n])=>`<div class="${p.method===k?'on':''}" data-act="${canReg?'method':''}" data-id="${k}">${n}</div>`).join('')}</div>`
-  const regDis = !canReg || needTrk
+  const regDis = !canReg || needTrk || needTgt
   // 2026-11-17 案（§6.1）: 先頭の行は状態（ヘッダの札と「未保存」が言う）ではなく、ピンの件数と登録中の行き先だけ
   const top = S.wt.v==='new'
     ? `<div class="where full"><span>${({entry:'',mapping:'',reg:'待機場所を登録',return:'待機場所へ'})[s]||'&nbsp;'}</span><b>ピン ${p.pins} 件</b></div>`
@@ -996,7 +1035,10 @@ function prepView(){
   </div>`
   const unsaved = s!=='entry' ? '<span class="pill">未保存</span>' : ''
   const opbar = `<div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${trackerBar(s!=='reg')}${unsaved}</div>`
-  if (lay==='cur') return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${opbar}
+  const pwin = p.modal ? `<div class="scrim"></div><div class="win ab"><div class="wt">${ic('warn')}壁に近い</div>
+    <div class="wl mut">${p.modal.kn}　壁まで 0.32 m（0.45 m 以上を勧める）</div>
+    <div class="wb">${btn('wallMove','壁から離して登録',{cls:'adv'})}${btn('wallKeep','このまま登録')}${btn('wallCancel','やめる')}</div></div>` : ''
+  if (lay==='cur') return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${pwin}${opbar}
     <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
   // 配置案 A〜C。部品は同じで、並べ方だけ違う
   const saveB = btn('toast:地図とピンを保存した','保存',{cls:'save',dis:!mapping})
@@ -1013,7 +1055,7 @@ function prepView(){
     blocks =
     `<div class="blk b-jog"><h3>走らせる</h3>${toggle}${jogConsoleHTML()}${homeB}</div>
      <div class="blk b-reg"><h3>登録する　ピン ${p.pins} 件</h3>${radarSVG(false, !S.tracker)}${msegV}<div class="row">${regH}${regP}</div>${saveB}</div>` }
-  return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${opbar}
+  return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${pwin}${opbar}
     <div class="content"><div class="mainv">${mainInner}</div>${blocks}</div></div>`
 }
 
@@ -1036,6 +1078,8 @@ function whyAt(el, msg){
 function toast(msg){ const t=document.querySelector('#dev .toast'); if(!t) return; t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2600) }
 function act(a, id){
   if (!a) return
+  // 対象を選ぶ（M2）: レーダーの候補を押す。もう一度押すと外す
+  if (a==='cand'){ S.target = S.target===+id ? null : +id; return render() }
   // 異常（全画面）
   if (a==='estopPress'){ if (S.ab.k!=='carry') setAb('estop'); return render() }
   if (a==='release'||a==='carryRel'){ setAb('resolved'); return render() }   // 案の画面では、機体のボタンの絵を押すと「戻した」とみなす
@@ -1049,26 +1093,33 @@ function act(a, id){
   if (S.scr==='day'){
     const depart = dest => { d.dest=dest; d.sel=null; d.sub='moving'; d.robot='mid' }
     switch(a){
-      case 'openMap': d.sub='undeclared'; break
-      case 'declare': d.sub='home'; d.robot='home'; break
+      case 'openMap': d.sub='home'; d.robot='home'; break   // 待機場所の宣言は廃止（D58）
       case 'pin': if (d.sub==='home'||d.sub==='panel'){ d.sel = d.sel===id?null:id } break
       case 'pinGo': depart(d.sel); break
       case 'goHome': depart('HOME'); break
-      case 'goNext': depart(d.sub==='panel' ? 'A-2' : 'A-1'); break
+      case 'goNext': depart(d.sub==='panel' ? S.order[1] : S.order[0]); break
       case 'run': if (d.sub==='paused'){ d.sub='moving'; d.robot='mid'; S.ab.recent=null } break
       case 'stop': d.sub='paused'; break
       case 'abort':
-        if (d.sub==='moving'||d.sub==='paused'){ d.robot='off'; d.sub='home'; toast('止めて、行き先の選び直しへ戻った') }
+        if (d.sub==='moving'||d.sub==='paused'||d.sub==='blocked'){ d.robot='off'; d.sub='home'; toast('止めて、行き先の選び直しへ戻った') }
         else if (d.sub==='summon'){ d.sub='home' }
         d.dest=null; d.flowStep=0; break
+      case 'measure': d.sub='working'; toast('測定機能の画面を開き、停止命令（測定中）に入る'); break
+      case 'unstop': d.modal='stow'; break
+      case 'stowOk': d.sub='panel'; d.modal=null; toast('停止を解いた（盤の前で待つ）'); break
+      case 'stowNo': d.modal=null; break
+      case 'reroute': d.sub='moving'; toast('経路を引き直して走り出す'); break
+      case 'waitStop': d.sub='home'; toast('呼び寄せをやめた（その場で止まる）'); break
       case 'summon': d.sub='summon'; d.flowStep=1; d.sel=null; d.dest=null; break
-      case 'rec': if (d.flowStep<2){ d.flowStep=2 } else { d.dest='HOME'; d.sub='moving'; d.robot='mid'; d.flowStep=0; toast('呼び寄せの位置へ移動します') } break
+      case 'rec': if (d.flowStep<2){ d.flowStep=2 } else { d.sub='waitclear'; d.flowStep=0; toast('呼び寄せの位置に人がいるので、退くのを待つ') } break
       case 'jog': toast('手動操作パネル（W-6）が開く。触れたら一時停止'); if (d.sub==='moving'){ d.sub='paused' } break
     }
     return render()
   }
   if (S.scr==='prep'){
     const s0=p.sub
+    // 登録したピンが壁に近ければ警告の窓（M3）。案の画面では切り替え「登録するピンが壁に近い」で出す
+    const registered = kn => { if (p.nearWall) p.modal={kn}; else { p.pins++; toast(`${kn}を登録した`) } }
     switch(a){
       case 'rotL': S.map.rot=(S.map.rot+345)%360; break
       case 'rotR': S.map.rot=(S.map.rot+15)%360; break
@@ -1079,19 +1130,25 @@ function act(a, id){
       case 'pinRename': p.edit='rename'; break
       case 'pinRenameOk': { const v=document.querySelector('#dev .pin-name')?.value.trim(); if (v) pinById(p.sel).name=v; p.sel=null; p.edit=null; break }
       case 'pinEditCancel': p.edit=null; break
-      case 'pinDel': if (p.edit==='delArm'){ p.del.push(p.sel); p.pins--; toast('ピンを削除した'); p.sel=null; p.edit=null } else p.edit='delArm'; break
+      case 'pinDel': if (p.edit==='delArm'){ p.del.push(p.sel); S.order=S.order.filter(q=>q!==p.sel); p.pins--; toast('ピンを削除した'); p.sel=null; p.edit=null } else p.edit='delArm'; break
       case 'pinRereg': { const nm=pinById(p.sel).name; p.sel=null; p.edit=null
         if (p.method==='person'){ p.sub='reg'; p.regStep=1; toast(`${nm} を人の位置で登録し直す`) }
         else if (p.method==='pose') toast(`${nm} をいまの機体の位置と向きで登録し直した`)
-        else toast(`地図の上で ${nm} の位置と向きを決める`)
+        else p.tap={kind:'PANEL', pt:null, dir:null, re:nm}
         break }
       case 'regHome': case 'regPanel': {
         const kind = a==='regHome' ? '待機場所' : '配電盤'
         if (p.method==='person'){ p.sub='reg'; p.regStep=1 }
-        else if (p.method==='pose'){ p.pins++; toast(`いまの機体の位置で${kind}を登録した`) }
-        else toast(`地図の上で${kind}の位置を押してください`)
+        else if (p.method==='pose'){ registered(kind) }
+        else { p.tap={kind: a==='regHome'?'HOME':'PANEL', pt:null, dir:null}; p.sel=null }
         break }
-      case 'regRec': if (p.regStep<2) p.regStep=2; else { p.sub='mapping'; p.pins++; toast('待機場所を登録した') } break
+      case 'regRec': if (p.regStep<2) p.regStep=2; else { p.sub='mapping'; registered('待機場所') } break
+      case 'tapOk': { const kn = p.tap.kind==='HOME' ? '待機場所' : '配電盤'; p.tap=null; registered(kn); break }
+      case 'tapCancel': p.tap=null; break
+      case 'wallMove': p.modal=null; toast('壁から離した位置で登録した'); p.pins++; break
+      case 'wallKeep': p.modal=null; toast('このまま登録した'); p.pins++; break
+      case 'wallCancel': p.modal=null; toast('登録をやめた'); break
+      case 'ordUp': case 'ordDown': { const o=S.order, i=o.indexOf(p.sel), j=i+(a==='ordUp'?-1:1); [o[i],o[j]]=[o[j],o[i]]; break }
       case 'regCancel': p.sub='mapping'; break
       case 'goHome': p.sub='return'; break
       case 'stop': p.sub='mapping'; toast('止まった（帰還を取りやめ）'); break
@@ -1124,6 +1181,7 @@ const NOTES = {
   },
   day:{
     changed:[
+      '<b>2026-11-22</b>: 待機場所の宣言を廃止（D58。会場地図を開くと待機になる）。案の画面に無かった機能を窓で足した（options §3.4）: 経路が塞がれた（再検索・中断）／測定中の停止を解く（腕の格納を確かめる）／呼び寄せの退避待ち（中止）。地図の配電盤に順番の番号を出す。呼び寄せはレーダーの候補を押して対象を選ぶ',
       '<b>2026-11-22 ユーザー決定（D49〜D53）</b>: 異常は上の「異常（全画面）」で、どの画面にも同じ出し方で出す（画面の配置に左右されない）。窓の題は何が起きたか。画面の非常停止も窓を出して暗くする（ヘッダの「非常停止」を押しても出る）。解除の帯は白・小さめで本文の下端の中央',
       '<b>2026-11-21 ユーザー決定（D46〜D48）</b>: 異常の窓は画面の中央、ヘッダ以外を暗くする。異常の間は中断・再開もさせず、ハードの異常の解消を待つ（隠すボタンも無い）。解消・解除の窓は知らせるだけ（「確認」で閉じ、再開は右列の「再開する」）。機体の非常停止ボタン（運用では手押し）も画面では非常停止。非常停止中（機体のボタン）は絵を押すと「戻した」とみなす',
       '<b>2026-11-21 異常時の画面（案。上の決定で一部改めた）</b>: ヘッダの下段は異常のときだけ出す（D45。異常＝黄・非常停止中＝赤・解消した直近の異常＝灰）。異常の窓は地図の上に置き、右列の停止・中断を覆わない。窓の題は「異常が発生しました」ではなく何が起きたか。解消後の選択肢は「はい／いいえ」ではなく「再開する／止まったまま」。非常停止の解除は下端の白黒の帯（形も色も非常停止と変える。Spec-webui.md §1.5）',
@@ -1154,6 +1212,7 @@ const NOTES = {
   },
   prep:{
     changed:[
+      '<b>2026-11-22 案の画面に無かった機能を足した</b>（options §3.4）: レーダーの候補を押して対象を選ぶ（もう一度押すと外す。選んでいないと「人の位置で」が押せない）／地図をタップして登録（位置 → 向き → 確定）／壁に近いピンの警告の窓／配電盤の順番（地図のピンに番号。ピンを押して「前へ」「後へ」）',
       '<b>2026-11-22</b>: 配置は A に決定（D55）。<b>ピンを押すと編集</b>（名前を変える・選んでいる方式で登録し直す・削除。削除はもう一度押して確定）。吹き出しの外を押すと閉じる。地図作成中だけ',
       '<b>2026-11-22 ユーザー決定（D54）</b>: 地図は手動で作るので、仮想スティックを常設した（地図の右下。レーダーの下）。「手動」ボタンは外した（スティックと 2 つあると、どちらを先に触るか迷う。Spec-webui.md §3.3 U-16）',
       '<b>2026-11-17 の評価を受けた修正案</b>（options §6）: 予約の停止│走行は試験（当日）より低く（60）、押せる側だけを塗る。先頭の行はピンの件数だけ（状態はヘッダの札と「未保存」）。大きさと配色は試験（当日）と同じ',
@@ -1167,6 +1226,7 @@ const NOTES = {
       'タブを無くした（いま 4）。「待機場所に戻る」をタブの奥から出した',
     ],
     opts:[
+      {q:'登録するピンが壁に近い（試し）', k:['prep','nearWall'], v:[[false,'近くない'],[true,'近い']], why:'「近い」にして登録すると、壁に近い警告の窓が出る（M3）'},
       {q:'試験準備の配置（案。2026-11-22）', k:['prep','lay'], v:[['A','A 追従走行と同じ並び（決定 D55）'],['B','B 左で走らせる'],['C','C 右で走らせる'],['cur','D54 の初めの形']], why:'<b>A に決定（D55。2026-11-22）</b>。ほかは比べるために残す。A: 右列＝操作カード＋手動（S-10 と同じ）、登録は地図の下の帯。B: 左＝走らせる・中央＝地図・右＝登録する（左手でスティック）。C: 地図を左に寄せ、右に 登録する｜走らせる（右手でスティック）。手動は実装の部品と同じ組み（速度のスライダ＋スティック＋中速・低速）'},
       {q:'予約の「走行」の見せ方', k:['prep','reserved'], v:[['dim','薄く（押せない）'],['inert','押せるが何も起きない']], why:'未決 3。いまは何も起きないのに白枠で目立つ'},
     ],
@@ -1353,6 +1413,13 @@ document.addEventListener('click', e=>{
   if (dz && dz.dataset.why && dz.matches('.dis,.off')){
     if (S.scr==='day' && S.day.sel){ S.day.sel=null; render() }
     return S.sz.v==='new' ? whyAt(dz, '押せません　'+dz.dataset.why) : toast('押せません　'+dz.dataset.why)
+  }
+  // 試験準備: 地図をタップして登録（M4）。1 回目＝位置、2 回目＝向き
+  if (S.scr==='prep' && S.prep.tap && !S.prep.tap.dir && e.target.closest('#dev .mainv') && !e.target.closest('.flow,.mapctl,.radar,[data-act]')){
+    const sv=document.querySelector('#dev .mainv svg.map'), pt=sv.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY
+    const q=pt.matrixTransform(sv.getScreenCTM().inverse()), t=S.prep.tap
+    if (!t.pt) t.pt=[q.x,q.y]; else t.dir=[q.x,q.y]
+    return render()
   }
   // 試験準備: ピンの編集の吹き出しも、ピンと吹き出し以外を押すと閉じる
   if (S.scr==='prep' && S.prep.sel && e.target.closest('#dev') && !e.target.closest('[data-act="pin"],.bub')){
