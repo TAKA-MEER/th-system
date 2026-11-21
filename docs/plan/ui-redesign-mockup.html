@@ -409,6 +409,50 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .stick .cap{position:absolute;left:10px;top:8px;font-size:15px;color:var(--mut);font-weight:700}
 .stick:active .knob{transform:translateY(-22px)}
 .stick .knob{transition:transform .08s}
+
+/* ============================================================
+   2026-11-22 試験準備の配置案（スティックを常設した D54 の後付け感を受けて）。切り替え「試験準備の配置（案）」
+   手動操作は実装の部品（JogConsole: 速度のスライダ＋スティック＋速度の段）と同じ組み。場内なので「高速」は出さない
+   ============================================================ */
+.jogc{display:flex;gap:10px;align-items:stretch;min-height:0;flex:1}
+.jogc .sl{flex:none;width:30px;border-radius:999px;background:var(--inset);border:1px solid var(--bd-hi);position:relative}
+.jogc .sl i{position:absolute;left:3px;right:3px;bottom:3px;height:55%;border-radius:999px;background:var(--ctrl-hi)}
+.jogc .stk{flex:1;min-width:160px;display:flex;align-items:center;justify-content:center;background:var(--inset);border:1px solid var(--bd-hi);border-radius:8px;cursor:pointer;touch-action:none}
+.jogc .stk svg{width:100%;height:100%;max-height:260px;max-width:260px}
+.jogc .stk:active .knob{transform:translateY(-22px)}
+.jogc .stk .knob{transition:transform .08s}
+.jogc .spp{flex:none;width:84px;display:flex;flex-direction:column;gap:8px}
+.jogc .spp .b{flex:1;min-height:56px;padding:0}
+.jogc .spp .b.on{background:var(--sel-bg) !important;color:var(--sel-tx) !important}
+.lay .content{display:grid;gap:12px}
+.lay .blk{display:flex;flex-direction:column;gap:10px;min-height:0;min-width:0}
+.lay .blk h3{font-size:15px;color:var(--mut);font-weight:700;letter-spacing:.05em}
+.lay .blk .row{display:flex;gap:8px}
+.lay .blk .row > *{flex:1}
+.lay .mainv{grid-area:map}
+.lay .b-ops{grid-area:ops}.lay .b-jog{grid-area:jog}.lay .b-reg{grid-area:reg}
+.lay .b-reg .radar{position:relative !important;inset:auto !important;width:100% !important;height:220px !important;flex:none}
+.lay .b-reg .mseg{flex:none;margin:0}
+.lay .b-reg .b{font-size:17px;padding:0 8px}
+.lay .regbar{display:flex;gap:8px;align-items:stretch}
+.lay .regbar .mseg{flex:1.4;margin:0}
+.lay .regbar .b{flex:1}
+/* 案 A: 追従走行（S-10）と同じ並び。右列＝操作カード＋手動。登録は地図の下の帯 */
+.lay-A .content{grid-template-columns:1fr 400px;grid-template-rows:auto 1fr auto;grid-template-areas:"map ops" "map jog" "reg jog"}
+.lay-A.portrait .content{grid-template-columns:1fr 1fr;grid-template-rows:1fr auto auto;grid-template-areas:"map map" "reg reg" "ops jog"}
+.lay-A.portrait .b-jog{height:290px}
+/* 案 B: 役割で左右に分ける。左＝走らせる（左手）／中央＝地図／右＝登録する */
+.lay-B .content{grid-template-columns:400px 1fr 320px;grid-template-areas:"jog map reg"}
+.lay-B.portrait .content{grid-template-columns:1fr 1fr;grid-template-rows:1fr auto;grid-template-areas:"map map" "jog reg"}
+/* 案 C: 地図を左に寄せ、右に 2 列（登録する｜走らせる）。スティックが右端（右手） */
+.lay-C .content{grid-template-columns:1fr 320px 400px;grid-template-areas:"map reg jog"}
+.lay-C.portrait .content{grid-template-columns:1fr 1fr;grid-template-rows:1fr auto;grid-template-areas:"map map" "reg jog"}
+.lay-B .b-jog .jogc,.lay-C .b-jog .jogc{max-height:300px}
+.lay-B.portrait .b-reg .radar,.lay-C.portrait .b-reg .radar{max-height:210px}
+.lay .b-reg .mseg.vert{flex-direction:column}
+.lay .b-reg .mseg.vert > div{border-right:none;border-bottom:1px solid var(--bd-hi)}
+.lay .b-reg .mseg.vert > div:last-child{border-bottom:none}
+.lay .b-reg .mseg.vert > div{min-height:48px}
 </style>
 </head>
 <body>
@@ -473,7 +517,7 @@ const S = {
        abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
   ab:{k:'none', cause:null, recent:null},   // 異常（全画面に共通。D53）
   help:{on:true},   // ヘルプ表示（2026-11-15 ユーザー案。設定で切り替え）
-  prep:{sub:'mapping', method:'person', reserved:'dim', reg:null, regStep:0, pins:6},
+  prep:{lay:'A', sub:'mapping', method:'person', reserved:'dim', reg:null, regStep:0, pins:6},
 }
 const SUBS = {
   menu:[['top','一番上'],['field','試験場 ▸'],['drive','走行 ▸'],['maint','点検と校正 ▸']],
@@ -881,6 +925,14 @@ function applyAb(dev){
   if (a.k!=='none') dev.querySelector('.body')?.insertAdjacentHTML('beforeend', abWindow())
 }
 
+// 手動操作の一式（実装の JogConsole と同じ組み: 速度のスライダ＋スティック＋速度の段。場内なので「高速」は出さない）
+function jogConsoleHTML(){
+  const ch=(a)=>`<path d="M100 22l9 10h-18z" fill="var(--mut)" transform="rotate(${a} 100 100)"/>`
+  return `<div class="jogc"><div class="sl"><i></i></div>
+    <div class="stk" data-act="stick" data-help="stick"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="92" fill="none" stroke="var(--bd-hi)" stroke-width="2"/>
+      ${[0,45,90,135,180,225,270,315].map(ch).join('')}<circle class="knob" cx="100" cy="100" r="34" fill="var(--ctrl-hi)" stroke="var(--mut)" stroke-width="2"/></svg></div>
+    <div class="spp">${btn('toast:中速（場内の上限）','中速',{cls:'on'})}${btn('toast:低速','低速')}</div></div>`
+}
 // 仮想スティック（Spec-webui.md §6 の共通部品。8 方向。触れている間だけ動く）
 function stickHTML(){
   const ch=(a)=>`<path d="M100 22l9 10h-18z" fill="var(--mut)" transform="rotate(${a} 100 100)"/>`
@@ -911,9 +963,10 @@ function prepView(){
   if (s==='entry') mainInner += `<div class="center"><div class="card"><p>前回の試験場内地図とピン（${p.pins} 件）が残っています</p>
       ${btn('resume','続きから再開',{icon:'play',cls:'adv'})}
       ${btn('fresh','新しい試験日として開始（前回を消す）',{icon:'close',cls:'caution'})}</div></div>`
-  if (mapping && p.method==='person') mainInner += radarSVG(false, !S.tracker)
-  mainInner += stickHTML()   // D54: 常設
-  if (s==='reg') mainInner += radarSVG(false, !S.tracker) + `<div class="flow"><span class="stp">待機場所 ${p.regStep}/2</span><span class="msg">${p.regStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'待機場所に立って「記録」'}</span>${btn('regRec','記録',{cls:'adv',dis:!S.tracker})}${btn('regCancel','やめる')}</div>`
+  const lay = p.lay
+  if (mapping && p.method==='person' && (lay==='cur'||lay==='A')) mainInner += radarSVG(false, !S.tracker)
+  if (lay==='cur') mainInner += stickHTML()   // D54: 常設（いまの案）
+  if (s==='reg') mainInner += ((lay==='cur'||lay==='A') ? radarSVG(false, !S.tracker) : '') + `<div class="flow"><span class="stp">待機場所 ${p.regStep}/2</span><span class="msg">${p.regStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'待機場所に立って「記録」'}</span>${btn('regRec','記録',{cls:'adv',dis:!S.tracker})}${btn('regCancel','やめる')}</div>`
 
   const regWhy = s==='entry' ? '地図作成を始めてから登録できます' : s==='reg' ? '登録中です（やめるときは地図の上の「やめる」）' : s==='return' ? '待機場所へ戻る途中は登録できません' : (needTrk ? '人検出を動かすと「人の位置で」登録できます（左上）' : '')
   const mseg = `<div class="mseg ${canReg?'':'dis'}" data-btn ${canReg?'':'data-dis'}>${METHODS.map(([k,n])=>`<div class="${p.method===k?'on':''}" data-act="${canReg?'method':''}" data-id="${k}">${n}</div>`).join('')}</div>`
@@ -931,8 +984,26 @@ function prepView(){
     <div class="sec full"><h3>戻す</h3>${btn('goHome','待機場所に戻る',{icon:'home',cls:'go',dis:!mapping})}</div>
   </div>`
   const unsaved = s!=='entry' ? '<span class="pill">未保存</span>' : ''
-  return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body"><div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${trackerBar(s!=='reg')}${unsaved}</div>
+  const opbar = `<div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${trackerBar(s!=='reg')}${unsaved}</div>`
+  if (lay==='cur') return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${opbar}
     <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
+  // 配置案 A〜C。部品は同じで、並べ方だけ違う
+  const saveB = btn('toast:地図とピンを保存した','保存',{cls:'save',dis:!mapping})
+  const homeB = btn('goHome','待機場所に戻る',{cls:'go',dis:!mapping})
+  const regH = btn('regHome','待機場所を登録',{dis:regDis,why:regWhy}), regP = btn('regPanel','配電盤を登録',{dis:regDis,why:regWhy})
+  const toggle = tog(stop, run, {note: runNote})
+  const pins = `<div class="where"><span>${({reg:'待機場所を登録',return:'待機場所へ'})[s]||'&nbsp;'}</span><b>ピン ${p.pins} 件</b></div>`
+  let blocks = ''
+  if (lay==='A') blocks =
+    `<div class="blk b-ops">${pins}${toggle}<div class="row">${saveB}${homeB}</div></div>
+     <div class="blk b-jog"><h3>手動</h3>${jogConsoleHTML()}</div>
+     <div class="blk b-reg"><div class="regbar">${mseg}${regH}${regP}</div></div>`
+  else { const msegV = mseg
+    blocks =
+    `<div class="blk b-jog"><h3>走らせる</h3>${toggle}${jogConsoleHTML()}${homeB}</div>
+     <div class="blk b-reg"><h3>登録する　ピン ${p.pins} 件</h3>${radarSVG(false, !S.tracker)}${msegV}<div class="row">${regH}${regP}</div>${saveB}</div>` }
+  return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${opbar}
+    <div class="content"><div class="mainv">${mainInner}</div>${blocks}</div></div>`
 }
 
 /* ---------------- 操作 ---------------- */
@@ -1073,6 +1144,7 @@ const NOTES = {
       'タブを無くした（いま 4）。「待機場所に戻る」をタブの奥から出した',
     ],
     opts:[
+      {q:'試験準備の配置（案。2026-11-22）', k:['prep','lay'], v:[['A','A 追従走行と同じ並び'],['B','B 左で走らせる'],['C','C 右で走らせる'],['cur','いま（D54）']], why:'A: 右列＝操作カード＋手動（S-10 と同じ）、登録は地図の下の帯。B: 左＝走らせる・中央＝地図・右＝登録する（左手でスティック）。C: 地図を左に寄せ、右に 登録する｜走らせる（右手でスティック）。手動は実装の部品と同じ組み（速度のスライダ＋スティック＋中速・低速）'},
       {q:'予約の「走行」の見せ方', k:['prep','reserved'], v:[['dim','薄く（押せない）'],['inert','押せるが何も起きない']], why:'未決 3。いまは何も起きないのに白枠で目立つ'},
     ],
     look:['人検出を止めて「人の位置で」を選び、動かすまでの流れ','方式を先に選ぶ流れで、登録先を押し間違えないか'],
@@ -1148,7 +1220,7 @@ function render(){
   const [W,H] = {L:[1280,720], P:[960,1280]}[S.ori]
   dev.style.width=W+'px'; dev.style.height=H+'px'
   dev.className = (S.ori==='P' ? 'portrait' : '') + ' shape-' + S.shape.v + ' sz-' + S.sz.v + ' pal-' + S.pal.v
-    + ' wt-' + S.wt.v + (S.pal.pause==='neutral' ? ' pause-neutral' : '') + ' theme-' + S.theme.v + ' col-' + S.col.v
+    + ' wt-' + S.wt.v + (S.pal.pause==='neutral' ? ' pause-neutral' : '') + ' theme-' + S.theme.v + ' col-' + S.col.v + (S.scr==='prep' && S.prep.lay!=='cur' ? ' lay lay-'+S.prep.lay : '')
   applyFont(dev)
   // D39: 非常停止を最初に描く。画面の中身はその後で、描けなくても非常停止は残る
   dev.innerHTML = '<div class="estop-plate"></div><div class="estop-top" data-estop data-act="estopPress">非常停止</div><div class="toast"></div>'
