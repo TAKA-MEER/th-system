@@ -378,8 +378,12 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .hdr .r2 .al.ab{background:var(--jis-y,#ffd100);color:#161b22}          /* 異常＝黄（JIS 10.3.2） */
 .hdr .r2 .al.em{background:#b71c1c;color:#fff}                           /* 非常停止中＝赤 */
 .hdr .r2 .al.past{color:var(--mut);font-weight:600;font-size:16px}       /* 直近の異常（3 分ほどで消える。D23・D45） */
-.win{position:absolute;left:12px;right:12px;top:12px;z-index:6;background:var(--panel);border:2px solid var(--bd-hi);padding:16px 18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 6px 18px #0003}
+/* 2026-11-21 ユーザー決定: 異常の窓は画面の中央に置き、ヘッダ以外を暗くする（異常の間は操作させず、ハードの異常の解消を待たせる） */
+.scrim{position:absolute;inset:0;z-index:6;background:rgba(10,14,22,.55)}
+.win{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(620px,calc(100% - 48px));z-index:7;background:var(--panel);border:2px solid var(--bd-hi);padding:16px 18px;display:flex;flex-direction:column;gap:12px;box-shadow:0 6px 18px #0003}
 .win.ab{border-color:var(--jis-y,#ffd100);border-width:3px}
+.win.em{border-color:#b71c1c;border-width:3px}
+.win .pict svg[data-act]{cursor:pointer}
 .win .wt{display:flex;align-items:center;gap:12px;font-size:26px;font-weight:800}
 .win .wt svg{width:34px;height:34px;flex:none}
 .win .wl{font-size:18px;line-height:1.5}
@@ -463,7 +467,7 @@ const S = {
 }
 const SUBS = {
   menu:[['top','一番上'],['field','試験場 ▸'],['drive','走行 ▸'],['maint','点検と校正 ▸']],
-  day:[['unloaded','地図未読込'],['undeclared','宣言前'],['home','待機'],['moving','移動中'],['paused','一時停止'],['panel','盤の前'],['summon','呼び寄せ'],['fault','異常'],['resolved','異常の解消'],['estop','非常停止中'],['carry','手押し']],
+  day:[['unloaded','地図未読込'],['undeclared','宣言前'],['home','待機'],['moving','移動中'],['paused','一時停止'],['panel','盤の前'],['summon','呼び寄せ'],['fault','異常'],['resolved','異常の解消'],['estop','非常停止中（画面）'],['carry','非常停止中（機体のボタン）']],
   prep:[['entry','入口'],['mapping','地図作成中'],['reg','人の位置で登録'],['return','待機場所へ戻る途中']],
 }
 const SCRS = [['menu','メインメニュー（M2）'],['day','試験（当日）F2'],['prep','試験準備']]
@@ -474,6 +478,7 @@ function setSub(v){
     const ab = ['fault','resolved','estop','carry'].includes(v)
     d.robot = v==='panel' ? 'panel' : (v==='moving'||v==='paused'||ab) ? 'mid' : 'home'
     if ((v==='moving'||v==='paused'||ab) && !d.dest) d.dest='A-1'
+    d.cause = v==='resolved' ? 'fault' : null; d.recent = null
     if (v==='home'||v==='panel'||v==='unloaded'||v==='undeclared') d.dest=null }
   else { const p=S.prep; p.sub=v; if (v==='reg'){ p.reg='HOME'; p.method='person'; p.regStep=1 } else { p.reg=null; p.regStep=0 } }
 }
@@ -534,7 +539,7 @@ function header(title, zone, state, alert){
   <div class="r2">${alert||''}</div></div>`   // 正常は出さない。異常のときだけここに出す（D45）   // 非常停止はここに描かない（render の estopHTML。D39）
 }
 const DAY_STATE = {unloaded:'準備中', undeclared:'準備中', home:'待機中', panel:'配電盤前', moving:'移動中', paused:'一時停止中', summon:'位置指示中',
-  fault:'一時停止中', resolved:'一時停止中', estop:'非常停止中', carry:'手押し'}
+  fault:'一時停止中', resolved:'一時停止中', estop:'非常停止中', carry:'非常停止中'}   // 運用では手押しだが、画面は非常停止として出す（2026-11-21）
 const PREP_STATE = {entry:'準備中', mapping:'地図作成中', reg:'登録中', return:'待機場所へ移動中'}
 
 /* ---------------- 地図 ---------------- */
@@ -764,8 +769,7 @@ function dayView(){
     if (!S.tracker) whyDest='人検出を動かすと呼び寄せできます（左上）' }
   else if (s==='moving'){ E.stop='en'; E.run='cur'; E.abort=true; whyDest=`移動中は選べません（「${AB}」で止めて選び直し）` }
   else if (s==='paused'){ E.run='en'; E.abort=true; whyDest=`一時停止中は選べません（「再開」か「${AB}」）` }
-  else if (s==='fault'){ E.abort=true; runNote='LiDAR 途絶が続いています'; whyDest='異常が続いている間は選べません' }
-  else if (s==='resolved'){ E.run='en'; E.abort=true; whyDest=`一時停止中は選べません（「再開」か「${AB}」）` }
+  else if (s==='fault'||s==='resolved'){ E.manual=false; runNote='異常の解消を待っています'; whyDest=runNote }   // 窓が出ている間は何も押させない
   else if (s==='estop'||s==='carry'){ E.manual=false; runNote = s==='estop' ? '非常停止を解除してから' : '機体の非常停止ボタンを戻してから'
     whyDest = runNote }
   else if (s==='summon'){ E.abort=true; whyDest=`呼び寄せの位置を指定しています（やめるときは「${AB}」）`; runNote='位置を指定すると出発します' }
@@ -789,7 +793,6 @@ function dayView(){
     mainInner = `<div class="center" style="background:var(--inset)"><div class="card"><p>機体を待機場所に置いてから押します</p>${btn('openMap','会場地図を開く',{icon:'field',cls:'adv'})}</div></div>`
   } else {
     mainInner = mapSVG({robot, path, sel: choose ? d.sel : null, selLabel:'行き先にする', dest: (s==='moving'||s==='paused'||['fault','resolved','estop','carry'].includes(s)) ? d.dest : null})
-    mainInner += abnormalWin(s)
     if (s==='undeclared') mainInner += `<div class="center"><div class="card"><p>機体が待機場所（家の印）にありますか</p>${btn('declare','待機場所にいます',{icon:'home',cls:'adv'})}</div></div>`
     if (s==='summon') mainInner += radarSVG(false, !S.tracker) + `<div class="flow"><span class="stp">呼び寄せ ${d.flowStep||1}/2</span><span class="msg">${d.flowStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'機体に来てほしい位置に立って「記録」'}</span>${btn('rec','記録',{cls:'adv',dis:!S.tracker})}</div>`
   }
@@ -825,27 +828,34 @@ function dayView(){
     <div class="sec full"><h3>盤の前</h3><div class="row">${btn('toast:測定機能の画面を開き、停止命令（測定中）に入る','測定機能へ',{dis:!E.measure,why:whyPanel,help:'measure'})}${btn('toast:カメラ機能の画面を開く（状態は変えない）','カメラ',{dis:!E.cam,why:whyPanel,help:'cam'})}</div></div>
   </div>`
   return header('試験', true, DAY_STATE[s]||'', dayAlert(s)) + `<div class="body ${s==='estop'||s==='carry'?'dim-all':''}"><div class="opbar">${btn('toast:メインメニュー（試験場の階層）へ戻る','終了',{icon:'close',cls:'exit',help:'exit'})}${trackerBar(s!=='summon')}</div>
-    <div class="content"><div class="mainv">${mainInner}</div>${S.wt.v==='new' ? ctlNew : ctl}</div>${s==='estop'?`<div class="relbar" data-btn data-act="release">${ic('release')}非常停止を解除する</div>`:''}</div>`
+    <div class="content"><div class="mainv">${mainInner}</div>${S.wt.v==='new' ? ctlNew : ctl}</div>${abnormalWin(s)}${s==='estop'?`<div class="relbar" data-btn data-act="release">${ic('release')}非常停止を解除する</div>`:''}</div>`
 }
 // ヘッダの下段: 異常のときだけ出す（D45）。異常＝黄、非常停止中＝赤、解消した直近の異常＝灰の文字（3 分ほどで消える）
+const CAUSE = {fault:['LiDAR 途絶','0.1 秒'], estop:['画面の非常停止','44 秒'], carry:['機体の非常停止ボタン','3 分 12 秒']}
 function dayAlert(s){
+  const d=S.day
   if (s==='fault') return `<div class="al ab">${ic('warn')}LiDAR 途絶</div>`
-  if (s==='resolved') return `<div class="al past">直近の異常　LiDAR 途絶　12:34:56</div>`
   if (s==='estop') return `<div class="al em">画面の非常停止</div>`   // 札（非常停止中）と同じ語を並べず、どこで押されたかを言う
-  if (s==='carry') return `<div class="al ab">${ic('warn')}機体の非常停止ボタン</div>`
+  if (s==='carry') return `<div class="al em">機体の非常停止ボタン</div>`
+  if ((s==='resolved'||s==='paused') && d.recent) return `<div class="al past">直近の異常　${CAUSE[d.recent][0]}　12:34:56</div>`
   return ''
 }
 // 異常の窓（W-1）・手押しの窓（W-2）。地図の上に置き、右列の停止・中断を覆わない。
 // 題は「異常が発生しました」ではなく何が起きたか（G1）。文は人にハードウェアの操作をしてもらうときだけ（R8）
+// 2026-11-21 ユーザー決定: 窓は画面の中央・ヘッダ以外を暗くする。異常の間は必ず一時停止で、中断・再開もさせず、ハードの異常の解消を待たせる。
+// 隠すボタンは持たない。解消・解除の窓は「あったこと」を知らせるだけで、走行の再開は持たせない（「確認」で閉じ、再開は右列の「再開する」）。
+// 機体の非常停止ボタン（運用では手押し）も、画面では非常停止として出す。
 function abnormalWin(s){
-  if (s==='fault') return `<div class="win ab"><div class="wt">${ic('lidar')}LiDAR 途絶</div>
-    <div class="wl">LiDAR の電源とケーブルを確かめる</div>
-    <div class="wb"><span style="flex:1"></span>${btn('toast:窓を隠す（ヘッダの「LiDAR 途絶」を押すと戻る）','隠す',{cls:'sm'})}</div></div>`
-  if (s==='resolved') return `<div class="win"><div class="wt">異常が解消しました</div>
-    <div class="wl mut">LiDAR 途絶　0.1 秒　12:34:56</div>
-    <div class="wb">${btn('run','再開する',{cls:'adv go blink'})}${btn('toast:止まったまま（一時停止のまま。行き先は残る）','止まったまま')}</div></div>`
-  if (s==='carry') return `<div class="win ab"><div class="wt">手押し</div>
-    <div class="pict">${ic('estopBtn')}<div class="wl">機体後部の赤いボタンを右へひねって戻す</div></div></div>`
+  const d=S.day, sc='<div class="scrim"></div>'
+  if (s==='fault') return sc+`<div class="win ab"><div class="wt">${ic('lidar')}LiDAR 途絶</div>
+    <div class="wl">LiDAR の電源とケーブルを確かめる</div></div>`
+  if (s==='carry') return sc+`<div class="win em"><div class="wt">非常停止</div>
+    <div class="pict">${ic('estopBtn','data-act="carryRel" data-btn')}<div class="wl">機体後部の赤いボタンを右へひねって戻す</div></div></div>`
+  if (s==='resolved'){ const [nm,dur]=CAUSE[d.cause||'fault']
+    const t = d.cause==='fault'||!d.cause ? '異常が解消しました' : '非常停止を解除しました'
+    return sc+`<div class="win"><div class="wt">${t}</div>
+    <div class="wl mut">${nm}　${dur}　12:34:56</div>
+    <div class="wb">${btn('ack','確認')}</div></div>` }
   return ''
 }
 
@@ -927,8 +937,10 @@ function act(a, id){
       case 'pinGo': depart(d.sel); break
       case 'goHome': depart('HOME'); break
       case 'goNext': depart(d.sub==='panel' ? 'A-2' : 'A-1'); break
-      case 'run': if (d.sub==='paused'||d.sub==='resolved'){ d.sub='moving'; d.robot='mid' } break
-      case 'release': d.sub='resolved'; break
+      case 'run': if (d.sub==='paused'){ d.sub='moving'; d.robot='mid'; d.recent=null } break
+      case 'release': d.sub='resolved'; d.cause='estop'; break
+      case 'carryRel': d.sub='resolved'; d.cause='carry'; break   // 案の画面では絵を押すと「ボタンを戻した」とみなす
+      case 'ack': d.recent=d.cause||'fault'; d.sub='paused'; break
       case 'stop': d.sub='paused'; break
       case 'abort':
         if (d.sub==='moving'||d.sub==='paused'){ d.robot='off'; d.sub='home'; toast('止めて、行き先の選び直しへ戻った') }
@@ -985,7 +997,8 @@ const NOTES = {
   },
   day:{
     changed:[
-      '<b>2026-11-21 異常時の画面（案）</b>: ヘッダの下段は異常のときだけ出す（D45。異常＝黄・非常停止中＝赤・解消した直近の異常＝灰）。異常の窓は地図の上に置き、右列の停止・中断を覆わない。窓の題は「異常が発生しました」ではなく何が起きたか。解消後の選択肢は「はい／いいえ」ではなく「再開する／止まったまま」。非常停止の解除は下端の白黒の帯（形も色も非常停止と変える。Spec-webui.md §1.5）',
+      '<b>2026-11-21 ユーザー決定（D46〜D48）</b>: 異常の窓は画面の中央、ヘッダ以外を暗くする。異常の間は中断・再開もさせず、ハードの異常の解消を待つ（隠すボタンも無い）。解消・解除の窓は知らせるだけ（「確認」で閉じ、再開は右列の「再開する」）。機体の非常停止ボタン（運用では手押し）も画面では非常停止。非常停止中（機体のボタン）は絵を押すと「戻した」とみなす',
+      '<b>2026-11-21 異常時の画面（案。上の決定で一部改めた）</b>: ヘッダの下段は異常のときだけ出す（D45。異常＝黄・非常停止中＝赤・解消した直近の異常＝灰）。異常の窓は地図の上に置き、右列の停止・中断を覆わない。窓の題は「異常が発生しました」ではなく何が起きたか。解消後の選択肢は「はい／いいえ」ではなく「再開する／止まったまま」。非常停止の解除は下端の白黒の帯（形も色も非常停止と変える。Spec-webui.md §1.5）',
       '<b>2026-11-21 AI っぽさの手直し</b>（ai-tells §2.2 B1〜B3）: タイルと帯のグラデーションを外した／角を 4 px・8 px・丸の 3 段にした／数字の桁を揃えた',
       '<b>2026-11-17 に決定</b>（D33〜D39。下の切り替えで 11-16 の版と比べられる）: ① 停止│走行は押せる側だけを塗り、語を動詞に固定。状態はヘッダの札に任せ、右列の先頭は「どこへ・残り」 ② 「次の配電盤」を行き先の先頭に幅いっぱいで置き、押せるときは青 ③ タブレットで 0.8 倍に縮んでも押せる・読める大きさ ④ 1 色 1 意味の配色。一時停止中の札は明るい中立 ⑤ 非常停止は画面の中身と切り離して最初に描き、いちばん上に重ねる',
       '<b>画面の地（§6.8・案）</b>: 明るい地を既定にした（明るい部屋でちらっと見る用途に合うのでは、という意見）。下の「画面の地」で暗い地と比べられる',
