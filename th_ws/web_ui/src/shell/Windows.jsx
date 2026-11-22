@@ -32,7 +32,6 @@
 // of where in the JSX tree they're mounted, so they can all live in this
 // one Fragment.
 import { useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { resumeChoices } from './limits.js'
 import { needsArmConfirmForExit } from '../modes/armConfirm.js'
 import { faultLabel } from '../i18n/faults.js'
@@ -121,6 +120,10 @@ export default function Windows({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [w1IsEstop, stateName, faultActive, pauseReason, setEstopDismissed])
 
+  // 8-g P5a-ui（SM-3.1.1-18）: W-1／W-2 の IDLE 抜け道の前に挟む腕の格納の確認
+  // （W-4）。ここを onto の後段で = 必要確実に hasModal より前で宣言。
+  const [armPending, setArmPending] = useState(null) // null | { trigger }
+
   const w1Open = w1Active && !estopDismissed
   const carryOpen = mode === 'CARRY'
   // W-4（保存確認。1b-7 SG-B3）はシェル所有。W-1／W-2 と同じ modal 扱い。
@@ -163,12 +166,13 @@ export default function Windows({
   // released.
   const carryHwReleased = mode === 'CARRY' && !estopHw
 
+  const fire = (trigger) => onTrigger?.(trigger)
+
   // 8-g P5a-ui（SM-3.1.1-18）: W-1 の「メインメニューへ」(ui.resume_no)・「確認」
   // (ui.resume_ack) と W-2 の「メインメニューへ」(ui.finish) の前に、腕の格納の
   // 確認（W-4）を挟む。やめる なら送らない。判定は modes/armConfirm.js の 1 か所。
   // 元のモードへ戻るボタン（ui.resume_yes / ui.carry_resume)は IDLE へ抜けないので
   // 確認を挟まない。
-  const [armPending, setArmPending] = useState(null) // null | { trigger }
   const fireGated = (trigger) => {
     if (needsArmConfirmForExit({ trigger, currentMode: mode, prevMode })) {
       setArmPending({ trigger })
