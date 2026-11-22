@@ -23,6 +23,8 @@ export const MODE_NAMES = {
   AT_HOME: '試験（当日）',
   OPCHECK: '始業点検',
   CALIB: '校正',
+  // Spec-webui.md §8.1・§3.16（2026-11-01 追加）。
+  AUTO_MEASURE: '自律測定',
 }
 
 // §6.2 fail-safe: when /system/state is stale, the mode display must not be

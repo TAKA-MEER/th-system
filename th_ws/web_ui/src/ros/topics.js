@@ -91,6 +91,10 @@ export const TOPICS = {
   // undefined になる。2026-10-13 の実機の再発防止。names.json の endpoints にある）。
   SPEAKER_CUE: '/speaker/cue',
   SPEAKER_STATUS: '/speaker/status',
+  // 8-g P5a-ui: 自律測定（AUTO_MEASURE）の画面（S-60）と S-01 の「自律測定」が
+  // 読む測定機能の生存（/measure/status。MeasureStatus は names.json の msgs）。
+  // transient_local、depth 1（DetailedDesign-measure.md §2）。
+  MEASURE_STATUS: '/measure/status',
 }
 
 export const SERVICES = {
@@ -179,6 +183,9 @@ export const MSG_TYPES = {
   CALIB_STATUS: 'th_system_msgs/CalibStatus',
   // 1b-6 (SG-B2): /system/effect の型 (names.json の msgs にある)。
   STATE_EFFECT: 'th_system_msgs/StateEffect',
+  // 8-g P5a-ui: /measure/status（MeasureStatus）。S-60 の状態表示と S-01 の
+  // 「自律測定」の入口の link_ok 判定に使う。
+  MEASURE_STATUS: 'th_system_msgs/MeasureStatus',
 }
 
 export const SRV_TYPES = {

@@ -31,14 +31,16 @@ import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { SERVICES } from '../ros/topics.js'
 import { useConfirmWindow } from '../shell/confirmWindow.js'
 import ArmedButton from '../parts/ArmedButton.jsx'
-import { menuItems, MENU_GROUPS, needsFinishEscape } from './mainMenuItems.js'
+import { menuItems, MENU_GROUPS, needsFinishEscape, AUTO_MEASURE_MODE } from './mainMenuItems.js'
+import { useMeasureStatus } from '../ros/useMeasureStatus.js'
 import attributes from '../generated/attributes.json'
 import modeEntry from '../generated/mode_entry.json'
 import { modeLabel } from '../i18n/modes.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import {
-  GROUP_MOVE_TITLE, GROUP_FIELD_TITLE, GROUP_MAINT_TITLE, S01_SETTINGS,
+  GROUP_MOVE_TITLE, GROUP_FIELD_TITLE, GROUP_MEASURE_TITLE, GROUP_MAINT_TITLE, S01_SETTINGS,
   S01_FINISH_ESCAPE, S01_TEACH_NOTE,
+  S01_MEASURE, S01_PERMIT_TITLE, S01_PERMIT_NO, S01_PERMIT_YES, S01_MEASURE_NO_LINK,
   S01_NET_TITLE, S01_NET_OK, S01_NET_CHECKING, S01_NET_WARN,
   S01_NET_SUPPRESSED, S01_NET_OPEN, S01_NET_LINK_DOWN, S00_ITEMS,
   WIN_REASON_TITLE, WIN_REASON_OK,
@@ -50,7 +52,7 @@ import {
   SHUTDOWN_LOAD_ERROR, SHUTDOWN_ITEM_FAILED, SHUTDOWN_NO_ACTION, unsavedCountLabel, unsavedLabel,
 } from '../i18n/screens.js'
 
-const GROUP_TITLES = { move: GROUP_MOVE_TITLE, field: GROUP_FIELD_TITLE, maint: GROUP_MAINT_TITLE }
+const GROUP_TITLES = { move: GROUP_MOVE_TITLE, field: GROUP_FIELD_TITLE, measure: GROUP_MEASURE_TITLE, maint: GROUP_MAINT_TITLE }
 
 function parseUnsaved(message) {
   try {
@@ -75,8 +77,14 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
   const onsite = useOnsiteService()
   const confirmWindow = useConfirmWindow()
 
-  // null | { kind: 'reason', reasonKey } | { kind: 'shutdown' }
+  // null | { kind: 'reason', reasonKey } | { kind: 'shutdown' } | { kind: 'permit' }
   const [activeWindow, setActiveWindow] = useState(null)
+  // 自律測定の入口の理由（W-4 を出さない場面の通知。表示の正本は
+  // i18n/reasons.js の measure_link_lost／measure_version_mismatch）。
+  // null のときは押したことが無い（理由は出しない）。機体側の拒否は
+  // ここにキーを入れて表示する（W-4 は出さない）。
+  const [measureReasonKey, setMeasureReasonKey] = useState(null)
+  const { measure } = useMeasureStatus(ros)
 
   const [shutdownPhase, setShutdownPhase] = useState('idle') // idle|loading|ready|executing|stopping|done
   const [unsavedItems, setUnsavedItems] = useState([])
@@ -113,8 +121,45 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
     confirmWindow.close()
   }
 
+  // 8-g P5a-ui: 「自律測定」の入口。通信できなければ W-4 を出さず理由を出す
+  // （/measure/status の link_ok。未受信は通信できない扱い）。許可したら
+  // ui.goto{kind:AUTO_MEASURE} を送る（ui.enter_mode ではない。C-15-auto-measure）。
+  async function handleMeasureClick(item) {
+    setMeasureReasonKey(null)
+    if (!item.enabled) {
+      setActiveWindow({ kind: 'reason', reasonKey: item.reasonKey })
+      confirmWindow.open()
+      return
+    }
+    if (!measure || measure.link_ok !== true) {
+      setMeasureReasonKey('measure_link_lost')
+      return
+    }
+    setActiveWindow({ kind: 'permit' })
+    confirmWindow.open()
+  }
+
+  // W-4 の「許可する」： 1 回だけ ui.goto を送り、拒否されたら理由を出す。
+  async function confirmMeasure() {
+    closeWindow()
+    try {
+      const res = await sendTrigger('ui.goto', { kind: AUTO_MEASURE_MODE })
+      if (!res?.accepted) {
+        setMeasureReasonKey(res?.reject_reason_key ?? null)
+        return
+      }
+      if (onEnter) onEnter(AUTO_MEASURE_MODE)
+    } catch {
+      setMeasureReasonKey(null)
+    }
+  }
+
   async function handleMenuClick(item) {
     if (disabledAll) return
+    if (item.mode === AUTO_MEASURE_MODE) {
+      handleMeasureClick(item)
+      return
+    }
     if (!item.enabled) {
       setActiveWindow({ kind: 'reason', reasonKey: item.reasonKey })
       confirmWindow.open()
@@ -251,6 +296,13 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
           )
         })}
       </div>
+      {/* 8-g P5a-ui: 自律測定の入口で「W-4 を出さず理由を出す」場面の表示。
+          文言は i18n/reasons.js の measure_link_lost／measure_version_mismatch。*/}
+      {group.key === 'measure' && measureReasonKey && (
+        <div className="note" role="alert" data-testid="s01-measure-reason">
+          {reasonLabel(measureReasonKey) ?? UNKNOWN_REASON_LABEL}
+        </div>
+      )}
       {/* WS-9X: 「設定」は FSM のモードではないので menuItems() も
           .btnrow（モード選択ボタンのグリッド）にも入れない。S-50 を開く
           だけ（onOpenSettings）。stale / INIT でも設定は読めるように
@@ -377,6 +429,20 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
           </div>
           <footer>
             <button type="button" className="btn primary" onClick={closeWindow}>{WIN_REASON_OK}</button>
+          </footer>
+        </>,
+        confirmWindow.mountNode,
+      )}
+
+      {activeWindow?.kind === 'permit' && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(
+        <>
+          <header>{S01_PERMIT_TITLE}</header>
+          <div className="bodyw">
+            <p>{S01_MEASURE}</p>
+          </div>
+          <footer>
+            <button type="button" className="btn" onClick={closeWindow} data-testid="s01-permit-no">{S01_PERMIT_NO}</button>
+            <button type="button" className="btn primary" onClick={confirmMeasure} data-testid="s01-permit-yes">{S01_PERMIT_YES}</button>
           </footer>
         </>,
         confirmWindow.mountNode,

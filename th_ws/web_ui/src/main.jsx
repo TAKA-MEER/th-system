@@ -13,6 +13,7 @@ import S14Replay from './screens/S14Replay.jsx'
 import S20Prep from './screens/S20Prep.jsx'
 import S21Test from './screens/S21Test.jsx'
 import S30Opcheck from './screens/S30Opcheck.jsx'
+import S60Measure from './screens/S60Measure.jsx'
 import S31Repair from './screens/S31Repair.jsx'
 import S40Calib from './screens/S40Calib.jsx'
 import S50Settings from './screens/S50Settings.jsx'
@@ -169,6 +170,13 @@ function Screens() {
     return (
       <AppShell screenName={SCREEN_NAMES.S21} screenId={SCREEN_IDS.S21}>
         <S21Test />
+      </AppShell>
+    )
+  }
+  if (screen === 'S60') {
+    return (
+      <AppShell screenName={SCREEN_NAMES.S60} screenId={SCREEN_IDS.S60}>
+        <S60Measure />
       </AppShell>
     )
   }

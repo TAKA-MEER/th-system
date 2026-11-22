@@ -1297,6 +1297,15 @@
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §3.4・§6.1"
   note: "最後に版一致（interface_version \"1\"）の /measure/heartbeat を受けてからこの時間が過ぎたら途絶とみなす（5 Hz の 5 回分。2026-11-23 決定）"
 
+- name: measure_ui_port
+  unit: null
+  class: b
+  status: given
+  value: 8091
+  consumers: [web_ui]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-measure.md §6.2"
+  note: "S-60 の「測定機能の画面へ」が同じタブで移る先のポート（ホストは画面を開いているもの）。初期値 8091（fk fk_web_port）。S-50 では変えない"
+
 - name: restart_max_count
   unit: null
   class: c

@@ -29,6 +29,8 @@ export const SCREEN_NAMES = {
   S31: '故障診断',
   // WP-MAINT-03: S-40 校正（CALIB）。Spec-webui.md §3.14。
   S40: '校正',
+  // 8-g P5a-ui: S-60 自律測定（AUTO_MEASURE）。Spec-webui.md §3.16。
+  S60: '自律測定',
 }
 
 // ---------------------------------------------------------------- S-00 ----
@@ -118,6 +120,8 @@ export const S00_AUTO_ITEM_ORDER = ['ESTOP', 'IMU', 'LIDAR']
 // ---------------------------------------------------------------- S-01 ----
 export const GROUP_MOVE_TITLE = '移動'
 export const GROUP_FIELD_TITLE = '試験場'
+// 8-g P5a-ui: S-01 の「測定」群（Spec-webui.md §3.2）。
+export const GROUP_MEASURE_TITLE = '測定'
 // WS-9X: 「設定」ボタン（S-50 を開く）をこのカードに同居させたので「保守・設定」。
 export const GROUP_MAINT_TITLE = '保守・設定'
 
@@ -601,11 +605,33 @@ export const S01_SETTINGS = '設定'            // S-01「保守・設定」カ�
 // brief-UI-S21-entry: S-01「試験場」の「試験」ボタン（mockup 555 行の文言どおり。
 // S-21 は FSM のモードではないので PREP のようなモード遷移ボタンではない）。
 export const S01_ONSITE_TEST = '試験（当日）'
+// 8-g P5a-ui: S-01 の「自律測定」の群のボタン表示。modeLabel（自律測定）と
+// 一致するが、ボタンの文字は画面の台帳（i18n/screens.js）で保つ。
+export const S01_MEASURE = '自律測定'
+// S-01「自律測定」の理由表示（W-4 を出さない場面の文言は i18n/reasons.js）。
+// ここは許容ダイアログ（W-4）の見出し・ボタンと、理由を添える行の文言。
+export const S01_PERMIT_TITLE = '自律動作を許可しますか'
+export const S01_PERMIT_NO = '許可しない'
+export const S01_PERMIT_YES = '許可する'
+export const S01_MEASURE_NO_LINK = '測定機能と通信できないため自律測定に入れません'
 // brief-onsite-fix A: 画面の無いモードで S-01 が出ているとき、ui.finish で IDLE に戻す導線。
 export const S01_FINISH_ESCAPE = '終了して待機に戻る'
 // 1b-11 SG-B13: 教示 2 種は保管場所起点（Spec-transit.md §0.6・§3.5）。
 // 判定は人の責任なので S-01 に常時出す（DetailedDesign-transit.md §0.4）。
 export const S01_TEACH_NOTE = '教示は保管場所から開始してください（復路では教示できません）'
+// ------------------------------------------------------------- S-60 自律測定 ----
+// Spec-webui.md §3.16 / DetailedDesign-measure.md §6.2 の P5a-ui の決まり。
+// 置くのは「測定機能の画面へ」「自律測定を終了」「手動」と状態の表示だけ
+// （行き先選び・設定・「走行」は置かない。走行は測定機能の画面の meas.start）。
+export const S60_OPEN_MEASURE = '測定機能の画面へ'
+export const S60_FINISH = '自律測定を終了'
+export const S60_MANUAL = '手動'
+export const S60_STATE_WAIT = '指示待ち'
+// 自律測定を終了する前の腕の格納の確認（W-4。SM-3.1.1-18）。
+export const S60_ARM_TOGGLE_TITLE = '腕の格納の確認'
+export const S60_ARM_QUESTION = '測定機構の腕が格納位置にあることを確かめましたか'
+export const S60_ARM_CANCEL = 'やめる'
+export const S60_ARM_OK = 'メインメニューへ'
 export const S50_BACK = '戻る'
 export const S50_TAB_GENERAL = '一般'
 export const S50_TAB_DISPLAY = '表示'
