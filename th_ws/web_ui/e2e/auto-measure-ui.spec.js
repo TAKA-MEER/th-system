@@ -231,3 +231,22 @@ test('h: AUTO_MEASURE/PAUSE の W-1「確認」は腕の確認を出さず ui.re
   const sent = (await triggers(page)).filter((c) => c.trigger === 'ui.resume_ack')
   expect(sent).toHaveLength(1)
 })
+
+// ── (i) AUTO_MEASURE は run_state=NAV なので meas.stop の PAUSE では W-1 を出さない ──
+test('i: AUTO_MEASURE/PAUSE（フォルト無し・pause_reason 空）で W-1 が出ない。run_state が無いモードと ESTOP では従来どおり W-1 が出る', async ({ page }) => {
+  await gotoScreenWithMeasure(page, 'S60',
+    { mode: 'AUTO_MEASURE', state: 'PAUSE', tracker_enabled: true, auto_brake: true, pause_reason: '' },
+    { link_ok: true, mode: 'AUTO_MEASURE', state: 'PAUSE' })
+  await expect(page.locator('.win.fault.show')).toHaveCount(0)
+
+  // 対照: run_state が null の AT_PANEL の PAUSE では W-1 が出る。
+  await gotoScreenWithMeasure(page, 'S21',
+    { mode: 'AT_PANEL', state: 'PAUSE', tracker_enabled: true, auto_brake: true, pause_reason: '' },
+    { link_ok: true, mode: 'AT_PANEL', state: 'PAUSE' })
+  await expect(page.locator('.win.fault.show')).toBeVisible()
+
+  await gotoScreenWithMeasure(page, 'S01',
+    { mode: 'ESTOP', state: 'NONE', tracker_enabled: true, auto_brake: true },
+    { link_ok: true, mode: 'ESTOP', state: 'NONE' })
+  await expect(page.locator('.win.fault.show')).toBeVisible()
+})

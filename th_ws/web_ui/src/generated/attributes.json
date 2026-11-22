@@ -32,7 +32,7 @@
     "needs_tracker": "unused",
     "resume": "ack_only",
     "resume_state": "PAUSE",
-    "run_state": null,
+    "run_state": "NAV",
     "speed_limit": "v_slow"
   },
   "CALIB": {
