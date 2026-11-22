@@ -160,7 +160,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .center .card p{color:var(--mut);font-size:15px}
 .center .card .b{min-height:64px;font-size:20px}
 .flow{position:absolute;left:12px;right:12px;bottom:12px;background:rgba(26,29,36,.96);border:1px solid var(--bd-hi);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:14px}
-.flow .stp{font-size:13px;color:var(--brand-lt);font-weight:700;white-space:nowrap}
+.flow .stp{font-size:13px;color:var(--tx);font-weight:700;white-space:nowrap}
 .flow .msg{flex:1;font-size:16px}
 .radar{position:absolute;top:12px;right:12px;width:300px;height:300px;background:rgba(18,20,27,.95);border:1px solid var(--bd-hi);border-radius:12px}
 .radar.big{position:absolute;inset:12px 12px 96px 12px;width:auto;height:auto}
@@ -511,7 +511,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .mk{display:inline-flex;align-items:center;justify-content:center;flex:none;width:34px;height:34px;border-radius:50%;font-size:20px;font-weight:900;line-height:1}
 .mk.ok{background:var(--ok);color:#fff}
 .mk.warn{border:3px solid var(--warn);color:var(--warn-tx);background:transparent}
-.mk.ng{background:var(--jis-y,#ffd100);color:#161b22;border-radius:6px}
+.mk.ng{background:var(--jis-y,#ffd100);color:#161b22;border-radius:4px}
 .mk.none{border:2px solid var(--bd-hi);color:var(--dim)}
 .mk.sm{width:24px;height:24px;font-size:14px}
 
@@ -867,7 +867,7 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
   if (scan && robot){ const R=MAPDATA.runs, H=hpx(S.map.wall==='wall'?WALL_M:0.5)
     for (let i=0;i<R.length;i+=3){ const g=C(R[i+1]+R[i+2]/2, R[i]+.5), dx=g[0]-robot[0], dy=g[1]-robot[1]
       if (dx*dx+dy*dy>170*170 || (i/3)%2) continue
-      const [px,py]=P(g[0],g[1]); pts+=`<circle cx="${px.toFixed(1)}" cy="${(py-H).toFixed(1)}" r="2.4" fill="#e05252" opacity=".8"/>` } }
+      const [px,py]=P(g[0],g[1]); pts+=`<circle cx="${px.toFixed(1)}" cy="${(py-H).toFixed(1)}" r="2.6" style="fill:var(--scan,#6b7480)" opacity=".9"/>` } }
   // 奥から手前へ重ねるもの（機体・印）
   const items=[]
   if (robot){ const [rx,ry,ra]=robot, a=ra*Math.PI/180, ca=Math.cos(a), sa=Math.sin(a)
@@ -915,10 +915,10 @@ function radarSVG(big, off=false){
   const cands=[[60,-90,true],[-110,-40,false],[130,60,false],[-70,110,false]]
   let c=''
   cands.forEach(([x,y],i)=>{ const s = S.target===i
-    c+=`<g data-act="cand" data-id="${i}" style="cursor:pointer"><circle cx="${150+x}" cy="${150+y}" r="30" fill="transparent"/><circle cx="${150+x}" cy="${150+y}" r="${s?15:11}" fill="${s?'#4caf50':'#8b93a1'}"/>${s?`<circle cx="${150+x}" cy="${150+y}" r="24" fill="none" stroke="#8fd694" stroke-width="3"/>`:''}<text x="${150+x}" y="${150+y+5}" text-anchor="middle" font-size="13" font-weight="800" fill="#0f1117">${i+1}</text></g>` })
+    c+=`<g data-act="cand" data-id="${i}" style="cursor:pointer"><circle cx="${150+x}" cy="${150+y}" r="30" fill="transparent"/><circle cx="${150+x}" cy="${150+y}" r="${s?15:11}" style="fill:${s?'var(--sel-bg,#e6e8ec)':'#8b93a1'}"/>${s?`<circle cx="${150+x}" cy="${150+y}" r="24" fill="none" style="stroke:var(--sel-bg,#e6e8ec)" stroke-width="3"/>`:''}<text x="${150+x}" y="${150+y+5}" text-anchor="middle" font-size="13" font-weight="800" style="fill:${s?'var(--sel-tx,#0f1117)':'#0f1117'}">${i+1}</text></g>` })
   return `<div class="radar ${big?'big':''}"><span class="cap">${S.target==null ? '<b style="color:var(--warn-tx)">対象を選んでいません</b>' : `対象: ${S.target+1} 番（信頼度 87%）`}</span>
     <svg viewBox="0 0 300 300" style="width:100%;height:100%"><circle cx="150" cy="150" r="60" fill="none" stroke="#2a2d35"/><circle cx="150" cy="150" r="120" fill="none" stroke="#2a2d35"/>
-    <path d="M150 20V280M20 150H280" stroke="#2a2d35"/><path d="M140 160L150 135L160 160Z" fill="#7fb4ee"/>${c}</svg></div>`
+    <path d="M150 20V280M20 150H280" stroke="#2a2d35"/><path d="M140 160L150 135L160 160Z" style="fill:var(--robot,#7fb4ee)"/>${c}</svg></div>`
 }
 
 /* ---------------- メインメニュー（M2） ---------------- */
@@ -1691,6 +1691,8 @@ function surroundSVG({near=false, blind='fig', moving=false}={}){
 function connectView(){
   const s=S.connect.sub
   const N = {pc:[140,250,'PC',1], ap:[450,250,'Wi-Fi AP（ラズパイ）',1], tab:[450,70,'タブレット',1], lidar:[760,110,'LiDAR',1], esp:[760,250,'ESP32',1], cam:[760,400,'カメラ',0]}
+  // 印は実データに結ぶ（AI っぽさの点検 F5）: 受信の間隔・応答の時間を名前の下に出す
+  const DATA = {pc:'', ap:'応答 3 ms', tab:'応答 12 ms', lidar:'0.1 秒ごと', esp:'0.1 秒ごと', cam:'0.5 秒ごと'}
   const st = k => s==='restart' ? 'none' : (s==='lidar'&&k==='lidar') || (s==='camera'&&k==='cam') ? 'ng' : 'ok'
   const edge=(a,b)=>{ const [x1,y1]=N[a], [x2,y2]=N[b], dead = st(b)!=='ok'
     return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${dead?'var(--bd-hi)':'var(--ok)'}" stroke-width="${dead?3:5}" ${dead?'stroke-dasharray="10 10"':''}/>` }
@@ -1699,18 +1701,20 @@ function connectView(){
     return `<g><rect x="${x-w/2}" y="${y-h/2}" width="${w}" height="${h}" rx="8" style="fill:var(--panel);stroke:${m==='ng'?'var(--warn)':'var(--bd-hi)'}" stroke-width="${m==='ng'?4:2}"/>
       <${m==='ng'?'rect':'circle'} ${m==='ng'?`x="${x-w/2+10}" y="${y-15}" width="30" height="30" rx="5"`:`cx="${x-w/2+26}" cy="${y}" r="${req?16:12}"`} style="fill:${fill}"/>
       <text x="${x-w/2+26-(m==='ng'?1:0)}" y="${y+7}" text-anchor="middle" font-size="${req?20:16}" font-weight="900" style="fill:${m==='ok'?'#fff':'#161b22'}">${sym}</text>
-      <text x="${x-w/2+50}" y="${y+7}" font-size="${req?20:17}" font-weight="${req?800:600}" style="fill:var(--tx)">${nm}</text></g>` }
+      <text x="${x-w/2+50}" y="${y+(DATA[k]?-1:7)}" font-size="${req?20:17}" font-weight="${req?800:600}" style="fill:var(--tx)">${nm}</text>
+      ${DATA[k]?`<text x="${x-w/2+50}" y="${y+21}" font-size="15" style="fill:var(--mut)">${m==='ng'?'途絶 12 秒':m==='none'?'—':DATA[k]}</text>`:''}</g>` }
   const svg = `<svg viewBox="0 0 920 470" preserveAspectRatio="xMidYMid meet">${edge('pc','ap')}${edge('ap','tab')}${edge('ap','lidar')}${edge('ap','esp')}${edge('ap','cam')}
     ${Object.keys(N).map(node).join('')}</svg>`
+  const fixTime = s==='restart' ? '' : '<span style="margin-left:auto;color:var(--mut);font-size:16px">確かめた時刻 08:40:12</span>'
   const fix = s==='lidar' ? `${mk('ng')}LiDAR の電源とケーブルを確かめる` : s==='camera' ? `${mk('ng',true)}カメラの電源を確かめる（なくても運用に入れます）` : ''
   const ready = s==='ok'||s==='camera'
   const auto = [['非常停止ボタン','ok'],['モーター','ok'],['IMU','ok'],['LiDAR', s==='lidar'?'none':'ok']]
   const state = s==='restart' ? '再起動中　2 回目' : ready ? '' : '確認中'
   return header('接続確認', false, state) + `<div class="body"><div class="opbar"></div>
-    <div class="content g-conn"><div class="diag">${svg}<div class="fix">${fix}</div></div>
+    <div class="content g-conn"><div class="diag">${svg}<div class="fix">${fix}${fixTime}</div></div>
     <div class="side2">${btn('toMenu','メインメニューへ',{cls:'big',dis:!ready,why:s==='restart'?'制御系を立ち上げ直しています':'LiDAR がつながるまで進めません'})}
-      <div><h3>始業点検の自動判定</h3><div class="ac">${auto.map(([n,m])=>`<div>${mk(m,true)}${n}</div>`).join('')}</div></div>
-      <div style="margin-top:auto">${btn('toast:開発モードの設定（S-50 の開発モード）','開発モードの設定',{cls:'exit'})}</div></div></div>${modalHTML()}</div>`
+      <div><h3>始業点検の自動判定　08:39</h3><div class="ac">${auto.map(([n,m])=>`<div>${mk(m,true)}${n}</div>`).join('')}</div></div>
+      <div style="margin-top:auto">${btn('toast:開発モードの設定（S-50 の開発モード）','開発モードの設定')}</div></div></div>${modalHTML()}</div>`
 }
 
 /* ---------- S-10／S-12 追従系（型: 走らせる） ---------- */
@@ -1790,7 +1794,7 @@ function replayView(){
   const where = Q[s] ? `<span class="mkline">${mk(Q[s][0])}${Q[s][1]}</span>`
     : (s==='run'||s==='paused') ? `<span>ずれ</span><b>いま 0.08 m　最大 0.21 m</b>`
     : s==='end' ? `<span>${route.name}</span><b>終点</b>` : s==='loading' ? `<span>${route.name}</span>` : ''
-  const why = {select:'経路を選んでから', loading:'地図を読み込んでいます', search:'位置を探しています', notfound:'位置が見つかりません', far:'経路から離れています。経路の近く（2 m 以内）に置き直す', end:'終点です。「終了」で抜けます'}[s] || ''
+  const why = {select:'経路を選んでから', loading:'地図を読み込んでいます', search:'位置を探しています', notfound:'位置が見つかりません。経路の近くに置き直すか「完全グローバルで探す」', far:'経路から離れています。経路の近く（2 m 以内）に置き直す', end:'終点です。「終了」で抜けます'}[s] || ''
   let stop='cur', run='dis'
   if (s==='ready'||s==='paused') run='en'; if (s==='run'){ stop='en'; run='cur' }
   const toggle = tog(stop, run, {runLabel: s==='paused'?'再開':'再生', note:why, big:true, help:'toggle'})
