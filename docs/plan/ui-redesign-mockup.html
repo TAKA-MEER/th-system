@@ -605,6 +605,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .rtl .rt small{font-size:15px;color:var(--mut);font-weight:400}
 .rtl .rt.on{background:var(--sel-bg);color:var(--sel-tx)}
 .rtl .rt.on small{color:inherit}
+.rtl .rt.armed{background:var(--jis-y,#ffd100);color:#161b22;border-color:#a88a00}
 .tagx{font-size:14px;padding:2px 8px;border:1px solid var(--warn);color:var(--warn-tx);border-radius:999px;font-weight:700}
 .maplab{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);font-size:24px;font-weight:800;padding:14px 22px;background:var(--panel);border:1px solid var(--bd-hi);border-radius:8px;z-index:2}
 .nearlab{position:absolute;left:50%;top:14px;transform:translateX(-50%);font-size:22px;font-weight:800;padding:8px 16px;border:3px solid var(--warn);color:var(--warn-tx);background:var(--panel);border-radius:8px;z-index:2;white-space:nowrap}
@@ -1020,7 +1021,7 @@ function dayView(){
   const robot = ROBOT[d.robot]
   const path = (s==='moving'||s==='paused'||s==='blocked') ? [C(175,176),C(172,120),C(172,76),C(130,70),C(102,58),C(96,49)] : null
   if (s==='unloaded'){
-    mainInner = `<div class="center" style="background:var(--inset)"><div class="card"><p>機体を待機場所に置いてから押します</p>${btn('openMap','会場地図を開く',{icon:'field',cls:'adv'})}</div></div>`
+    mainInner = `<div class="center" style="background:var(--inset)"><div class="card"><p>機体を待機場所に置いてから押します</p>${btn('openMap','会場地図を開く',{icon:'field',cls:'fwd'})}</div></div>`
   } else {
     mainInner = mapSVG({robot, path, sel: choose ? d.sel : null, selLabel:'行き先にする', dest: (s==='moving'||s==='paused'||s==='blocked') ? d.dest : null, order:true})
     if (s==='summon') mainInner += radarSVG(false, !S.tracker) + `<div class="flow"><span class="stp">呼び寄せ ${d.flowStep||1}/2</span><span class="msg">${d.flowStep===2?'機体に向いてほしい方向へ 1 歩動いて「記録」':'機体に来てほしい位置に立って「記録」'}</span>${btn('rec','記録',{cls:'adv',dis:!S.tracker||S.target==null,why:'対象を選んでから（レーダーの候補を押す）'})}</div>`
@@ -1166,7 +1167,7 @@ function prepView(){
   // 地図の道具の段（地図の左上）。地図に対する操作はここへ足す（拡張の仕方: options §3.5）
   mainInner += `<div class="mapctl">${btn('rotL','左へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}${btn('rotR','右へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}${btn('ordStart','順番を決める',{dis:!mapping||!!p.ordering,why:'地図作成中に決められます'})}</div>`
   if (s==='entry') mainInner += `<div class="center"><div class="card"><p>前回の試験場内地図とピン（${p.pins} 件）が残っています</p>
-      ${btn('resume','続きから再開',{icon:'play',cls:'adv'})}
+      ${btn('resume','続きから再開',{icon:'play',cls:'fwd'})}
       ${btn('fresh','新しい試験日として開始（前回を消す）',{icon:'close',cls:'caution'})}</div></div>`
   const lay = p.lay
   if (mapping && p.method==='person' && (lay==='cur'||lay==='A')) mainInner += radarSVG(false, !S.tracker)
@@ -1580,7 +1581,7 @@ Object.assign(SUBS, {
 const EXT_SCR = ['connect','follow','manual','replay','check','calib','settings','auto']
 const subsOf = scr => typeof SUBS[scr]==='function' ? SUBS[scr]() : SUBS[scr]
 function extSetSub(v){
-  S.w6=false; S.modal=null
+  S.w6=false; S.modal=null; S.reArm=null; S.dropArm=false
   if (S.scr==='menu'){ if (v==='shutdown'||v==='autoask'){ S.menu.lvl='top'; S.menu.win=v; S.menu.sd={map:'pending',route:'pending',arm:null,phase:'list'} } else { S.menu.win=null; S.menu.lvl=v } return true }
   if (!EXT_SCR.includes(S.scr)) return false
   const o=S[S.scr]; o.sub=v
@@ -1708,14 +1709,16 @@ function followView(){
   if (T && s!=='entry') main += `<div class="minimap" data-act="toast:押すと地図とレーダーの大きさを入れ替える（案）"><span class="cap">地図と経路</span>${mapSVG({robot:C(150,90,-90), path:[C(175,176),C(172,120),C(150,90)], pins:[], scan:false})}</div>`
   if (s==='entry') main += `<div class="center"><div class="card wide"><div class="rtl">
       <div class="rt" data-act="startRec"><span>新しい経路</span><small>名前　経路 4</small></div>
-      <div class="rt" data-act="startRec"><span>録り直す　廊下の往復</span><small>12.3 m</small></div>
-      <div class="rt" data-act="startRec"><span>録り直す　試験ブロックC2</span><small>5.1 m</small></div></div></div></div>`
+      ${reRec('R','廊下の往復','12.3 m')}${reRec('C2','試験ブロックC2','5.1 m')}</div></div></div>`
   const st = {entry:'', pick:'対象選択中', ready:'', run:T?'記録中':'追従中', paused:'一時停止中'}[s]
   const stCls = T && s==='run' ? ' rec-'+S.rec.col : s==='run' ? ' run' : undefined
   return drvView({title: T?'教示（追従）':'追従走行', state:st, stCls, opbar:exitBtn(), main, where, toggle, ops,
     jog:`<h3>手動</h3>${jogKit(true)}`})
 }
 
+// 録り直す（既存の経路の上書き）は二段階: 1 回目で黄にして「もう一度押すと上書き」、2 回目で記録を始める
+function reRec(id, name, len){ const armed = S.reArm===id
+  return `<div class="rt${armed?' armed':''}" data-act="reRec" data-id="${id}"><span>${armed?'もう一度押すと上書き　':'録り直す　'}${name}</span><small>${len}</small></div>` }
 /* ---------- S-11／S-13 手動系（型: 走らせる） ---------- */
 function manualView(){
   const m=S.manual, T=m.teach
@@ -1730,7 +1733,7 @@ function manualView(){
   else main = surroundSVG({near:s==='near', blind:m.blind, moving})
   if (s==='entry') main += `<div class="center"><div class="card wide"><div class="rtl">
       <div class="rt" data-act="startRec"><span>新しい経路</span><small>名前　経路 4</small></div>
-      <div class="rt" data-act="startRec"><span>録り直す　廊下の往復</span><small>12.3 m</small></div></div></div></div>`
+      ${reRec('R','廊下の往復','12.3 m')}</div></div></div>`
   const st = {entry:'', idle:T?'記録中':'', drive:T?'記録中':'走行中', near:T?'記録中':'走行中', paused:'一時停止中', saved:'保存済み'}[s]
   const stCls = T && (s==='idle'||moving) ? ' rec-'+S.rec.col : moving ? ' run' : undefined
   return drvView({title: T?'教示（手動）':'手動走行', state:st, stCls,
@@ -1910,7 +1913,7 @@ function autoView(){
 /* ---------- メインメニューの窓（運用の終了・自律測定の許可） ---------- */
 function menuWin(){
   const w=S.menu.win; if (!w) return ''
-  if (w==='autoask') return `<div class="scrim"></div><div class="win"><div class="wt">自律動作を許可しますか</div><div class="wb">${btn('autoNo','許可しない')}${btn('autoYes','許可する',{cls:'adv'})}</div></div>`
+  if (w==='autoask') return `<div class="scrim"></div><div class="win"><div class="wt">自律動作を許可しますか</div><div class="wb">${btn('autoNo','許可しない')}${btn('autoYes','許可する',{cls:'fwd'})}</div></div>`
   const d=S.menu.sd
   if (d.phase==='stopping') return `<div class="scrim"></div><div class="win"><div class="wt">制御系を止めています</div><div class="prog"><i style="width:55%"></i></div></div>`
   if (d.phase==='done') return `<div class="scrim"></div><div class="win"><div class="wt">${mk('ok')}止まりました</div><div class="wl">機体の電源を切れます</div></div>`
@@ -1957,9 +1960,12 @@ function extAct(a, id){
     case 'exit': {
       const t = S.scr==='follow'||S.scr==='manual' ? S[S.scr] : null
       if (t && t.teach && t.sub!=='entry' && t.sub!=='saved' && t.sub!=='pick'){
-        S.modal={t:'記録を保存しますか', l:'経路 4　8.6 m', b:btn('mClose','やめる')+btn('exitDrop','破棄して終了')+btn('exitSave','保存して終了')}; return true }
+        S.modal={t:'記録を保存しますか', l:'経路 4　8.6 m', b:btn('mClose','やめる')+btn('exitDrop','破棄して終了')+btn('exitSave','保存して終了')}; S.dropArm=false; return true }
       toMenu('drive'); return true }
-    case 'exitDrop': case 'exitSave': toast(a==='exitSave'?'保存した':'破棄した'); toMenu('drive'); return true
+    case 'exitDrop': if (!S.dropArm){ S.dropArm=true; S.modal.b=btn('mClose','やめる')+btn('exitDrop','もう一度押すと破棄',{cls:'caution armed'})+btn('exitSave','保存して終了'); return true }
+      S.dropArm=false; toast('破棄した'); toMenu('drive'); return true
+    case 'exitSave': toast('保存した'); toMenu('drive'); return true
+    case 'reRec': if (S.reArm===id){ S.reArm=null; S[S.scr].sub = S.scr==='follow' ? 'pick' : 'idle'; if (S.scr==='follow') S.target=null; toast('前の版を 1 世代残して録り直す') } else S.reArm=id; return true
   }
   if (S.scr==='day') return true
   if (S.scr==='connect'){ if (a==='toMenu'){ toMenu('top') } return true }
