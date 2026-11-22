@@ -81,13 +81,14 @@ class TestSpeakerAnnouncer(unittest.TestCase):
         rclpy.shutdown()
 
     @classmethod
-    def _send_state(cls, mode, state, warning):
+    def _send_state(cls, mode, state, warning, moving=None):
         msg = SystemState()
         msg.mode = mode
         msg.state = state
         cls.p_state.publish(msg)
         lim = LimiterStatus()
         lim.approach_warning = warning
+        lim.approach_warning_moving = warning if moving is None else moving
         cls.p_limiter.publish(lim)
 
     @classmethod
@@ -136,6 +137,15 @@ class TestSpeakerAnnouncer(unittest.TestCase):
         self._send_state('SUMMON', 'BLOCKED', False)
         assert self._wait_cue('blocked')['cue'] == 'blocked'
         self._send_state('SUMMON', 'BLOCKED', True)
+        assert self._wait_cue('warning')['cue'] == 'warning'
+        self._send_state('REPLAY', 'PAUSE', False)
+        assert self._wait_cue('none')['cue'] == 'none'
+
+    def test_25_stopped_warning_is_silent(self):
+        """止まっているときの接近警告（moving=False）は音にしない。動けば鳴る。"""
+        self._send_state('SUMMON', 'BLOCKED', True, moving=False)
+        assert self._wait_cue('blocked')['cue'] == 'blocked'
+        self._send_state('SUMMON', 'BLOCKED', True, moving=True)
         assert self._wait_cue('warning')['cue'] == 'warning'
         self._send_state('REPLAY', 'PAUSE', False)
         assert self._wait_cue('none')['cue'] == 'none'

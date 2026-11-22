@@ -237,6 +237,10 @@
       id: W-1
   - name: enable_jog_ui
     args: {}
+  # A-12①: POINT に入る経路はすべて 2 点指示の受付を開き直す（SM-3.1.2-069）。
+  - name: begin_two_point
+    args:
+      kind: SUMMON
   spec_ref: SM-3.1.1-11
 # C-09c-at-panel / -at-home: §6 の右列どおり IDLE_P / IDLE_H（確認をやり直す）。
 - id: C-09c-at-panel
@@ -488,6 +492,10 @@
       id: W-2
   - name: enable_jog_ui
     args: {}
+  # A-12①: POINT に入る経路はすべて 2 点指示の受付を開き直す（SM-3.1.2-069）。
+  - name: begin_two_point
+    args:
+      kind: SUMMON
   spec_ref: SM-3.1.1-14
 # C-11-at-panel / -at-home: §6 の右列どおり IDLE_P / IDLE_H（確認をやり直す）。
 - id: C-11-at-panel
@@ -1488,6 +1496,21 @@
     args:
       key: register_target_lost
   spec_ref: SM-3.1.2-045
+# A-11 ③（SM-3.1.2-144）: 戻る先の地図が無い（会場地図を持たず地図作成も始まっていない
+# ＝ /map_session/status の VENUE が UNLOADED）ときは RETURN へ進めず拒否する。
+# venue_navigator の _venue_gate と同じ基準（ctx.venue_unloaded）。T-PREP-06 より前に置く。
+- id: T-PREP-06x
+  layer: 10
+  mode: PREP
+  state: MAPPING
+  event: ui.return_home
+  guard: venue_unloaded
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-144
+  reject: true
+  reject_reason_key: prep_map_not_started
 - id: T-PREP-06
   layer: 10
   mode: PREP
@@ -1583,10 +1606,37 @@
   event: ui.save
   guard: null
   to_mode: '='
-  to_state: SAVED
+  to_state: '='
   effects:
   - name: commit_venue_map
     args: {}
+  spec_ref: SM-3.1.2-052
+# A-11（2026-11-12）: 保存が成功したときだけ SAVED へ進む。ui.save は保存を
+# 頼むだけで状態を動かさず、slam_control が成否を evt.venue_map_saved／
+# evt.venue_map_save_failed で返す。失敗は元の状態のまま、理由つきの案内。
+- id: T-PREP-19
+  layer: 10
+  mode: PREP
+  state: '*'
+  event: evt.venue_map_saved
+  guard: null
+  to_mode: '='
+  to_state: SAVED
+  effects: []
+  spec_ref: SM-3.1.2-052
+- id: T-PREP-20
+  layer: 10
+  mode: PREP
+  state: '*'
+  event: evt.venue_map_save_failed
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: guide
+    args:
+      key: venue_save_failed
+      detail: $arg.reason
   spec_ref: SM-3.1.2-052
 - id: T-PREP-13
   layer: 10
@@ -2040,6 +2090,10 @@
   - name: guide
     args:
       key: summon_clear_timeout
+  # A-12①: POINT に入る経路はすべて 2 点指示の受付を開き直す（SM-3.1.2-069）。
+  - name: begin_two_point
+    args:
+      kind: SUMMON
   spec_ref: SM-3.1.2-069
 - id: T-SUM-04
   layer: 10
@@ -2055,6 +2109,10 @@
   - name: guide
     args:
       key: summon_target_lost
+  # A-12①: POINT に入る経路はすべて 2 点指示の受付を開き直す（SM-3.1.2-069）。
+  - name: begin_two_point
+    args:
+      kind: SUMMON
   spec_ref: SM-3.1.2-069
 - id: T-SUM-05
   layer: 10
@@ -2067,7 +2125,45 @@
   effects:
   - name: enable_jog_ui
     args: {}
+  # A-12①: POINT に入る経路はすべて 2 点指示の受付を開き直す（SM-3.1.2-069）。
+  - name: begin_two_point
+    args:
+      kind: SUMMON
   spec_ref: SM-3.1.2-069
+# SM-3.1.2-143（2026-11-12 追加。A-12②）: POINT には行き先が無いので、
+# ジョグに触れても PAUSE へ入れない（ジョグ自体は効く）。C-01 が
+# $pause_unless_prep で PAUSE に落とすのを override_common で打ち消す。
+# 2 点指示の受付は開いたまま保つ（begin_two_point は出さない。
+# POINT に入った時点で開いている）。
+- id: T-SUM-18
+  layer: 10
+  mode: SUMMON
+  state: POINT
+  event: ui.jog.hold
+  guard: jog_allowed
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: set_jog
+    args:
+      'on': true
+  spec_ref: SM-3.1.2-143
+  override_common: true
+# リース満了でも POINT のまま（ジョグだけ止める）。C-02 は PAUSE 限定なので
+# ここでは拾われない。
+- id: T-SUM-19
+  layer: 10
+  mode: SUMMON
+  state: POINT
+  event: sys.jog_lease_expired
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects:
+  - name: set_jog
+    args:
+      'on': false
+  spec_ref: SM-3.1.2-143
 - id: T-SUM-06
   layer: 10
   mode: SUMMON

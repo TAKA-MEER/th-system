@@ -105,6 +105,8 @@ class ConnectivityChecker(Node):
         self.declare_parameter('dev_log_cmdvel', False)
 
         self._last_fb_ms = None
+        # /esp32/bridge_blocked の最新（Spec-safety §6.4。2026-11-19）。
+        self._blocked_owner = None
         # 「速度指令の折り返し」: ESP32 自身が受信中と報告した最後の時刻（/esp32/cmd_alive が真）と、
         # 報告そのもの（真偽を問わず）を最後に受けた時刻。後者が None なら報告しないファーム。
         self._last_cmd_alive_ms = None
@@ -152,6 +154,14 @@ class ConnectivityChecker(Node):
             WheelFeedback, '/esp32/wheel_feedback', self._on_wheel_feedback, wf_qos)
         self.create_subscription(
             Bool, '/esp32/cmd_alive', self._on_cmd_alive, 10)
+        # /esp32/bridge_blocked: String JSON。transient_local で最新を保持する
+        # 発行側に合わせる（後から起動しても最新を読める）。
+        _blocked_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST)
+        self.create_subscription(String, '/esp32/bridge_blocked', self._on_blocked, _blocked_qos)
 
         scan_qos = QoSProfile(depth=5, reliability=QoSReliabilityPolicy.BEST_EFFORT)
         self.create_subscription(LaserScan, '/scan', self._on_scan, scan_qos)
@@ -207,6 +217,13 @@ class ConnectivityChecker(Node):
 
     def _on_wheel_feedback(self, msg):
         self._last_fb_ms = self._now_ms()
+
+    def _on_blocked(self, msg):
+        try:
+            obj = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        self._blocked_owner = obj.get("owner") if obj.get("blocked") else None
 
     def _on_cmd_alive(self, msg):
         # 2026-10-04 まで /esp32/wheel_cmd_speed を見ていたが、それは esp32_bridge が
@@ -470,7 +487,8 @@ class ConnectivityChecker(Node):
             p=p,
             estop_seen=self._estop_seen,
             hw_estop=self._hw_estop,
-            last_cmd_report_ms=self._last_cmd_report_ms)
+            last_cmd_report_ms=self._last_cmd_report_ms,
+            blocked_owner=self._blocked_owner)
         # 1b-6 SG-B7: 再起動の回数とこのノードが実行した回数（S-00 の
         # 「制御系を再起動しています（n 回目）」と試験の観測点）。
         # 回数の正本は start.sh（control_attempt）。restart_calls は

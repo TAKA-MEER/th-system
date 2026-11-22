@@ -118,6 +118,11 @@ case RobotMode::IDLE:
 
 （2026-07-24: 実機の WiFi(ESP32 AP)経由では `/scan`・`wheel_feedback`・`/person/status` と同様に heartbeat も 0.5〜1.2 秒程度の受信ギャップが時折発生することが判明したため、1.0 秒から 2.5 秒に緩和した。`safety_monitor.yaml` の同種タイムアウトと揃えている）
 
+### パラメータ参照・保存（params_audit）— th_params（WP-PARAM-02・A-14）
+
+`th_params` の `params_audit.py` が `/params/get`・`/params/set`・`/params/save`・`/system/params_status` を提供する（S-50 の速度プリセット・自動ブレーキの既定の窓口）。
+`bringup.launch.py`・`gazebo.launch.py` の両方で常時起動する（A-14 以前は launch に書かれておらず S-50 が値を取得できなかった。`test_params_audit_launched_node.py` が bringup の記述から起動・応答を縛る）。
+
 ### 始業点検（OPCHECK）— th_maintenance / opcheck_runner（WP-MAINT-01）
 
 新 FSM の `OPCHECK` モード（`LIST` → `RUNNING_CHECK` → `LIST`/`REPAIR`）を実際に動かす実行部。
@@ -1175,8 +1180,8 @@ ros2 topic echo /rosout | grep esp32_bridge
 # pi_serial_relay 側のログ (ラズパイで)
 ssh mirs2602@192.168.5.1 'journalctl -u rpi-serial-relay -f'
 
-# PC の固定IP (192.168.5.50) が pi_serial_relay の --ws-host/--ws-port と
-# 一致しているか、PC 側ファイアウォールが esp32_ws_port をブロックしていないか確認
+# esp32_bridge の接続先 (esp32_ws_host/esp32_ws_port) がラズパイの
+# pi_serial_relay の --ws-port と一致しているか、到達できるかを確認
 
 # ウォッチドッグタイムアウトを確認 (無変更)
 # config.h: WATCHDOG_MS が通信周期より十分大きいか確認

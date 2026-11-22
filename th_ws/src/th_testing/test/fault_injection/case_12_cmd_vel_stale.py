@@ -234,7 +234,7 @@ def generate_test_description():
         executable='esp32_bridge.py',
         name='esp32_bridge',
         parameters=[{
-            'ws_host': '127.0.0.1',
+            'esp32_ws_host': '127.0.0.1',
             'esp32_ws_port': _WS_PORT,
             # T-1: 合格条件と同じ値を実装側へ渡す（テストが自己整合する）。
             'cmd_vel_stale_ms': _STALE_MS,
@@ -252,28 +252,25 @@ def generate_test_description():
 
 
 class _WsMockEsp32:
-    """esp32_bridge の WS サーバーへ ESP32 の代わりに接続し、受信した
-    WHEEL_CMD フレームを記録するモッククライアント。
+    """ESP32 の代わりに WebSocket サーバーとして待ち受け、esp32_bridge
+    （クライアント）に接続してもらうモック。
 
-    `test_esp32_bridge_node.py` の同名クラスからのコピー（結合を増やさない
-    ため import にしない）。唯一の差分は記録時刻を `time.time()` から
-    `time.monotonic()` へ変えたこと——case_12 は `t_zero - t_last_cmd` の
-    実測レイテンシを測るため、`t_last_cmd`（`time.monotonic()`）と同じ
-    時計軸で受信時刻を記録する必要がある。
-
-    接続は別スレッドの asyncio イベントループで非同期に確立する
-    (esp32_bridge 自身の実装と同じ構造)。呼び出し側は wait_connected() で
-    接続完了を明示的に待ってから publish を始めること — 待たずに
-    publish を始めると、接続がまだ確立していない間のフレームを
-    取りこぼして偽陰性になる (レース条件)。
+    2026-11-19 (Spec-safety §6.4): 接続の向きが逆になった。偽の ESP32 側は
+    サーバー（偽の中継。pi_serial_relay の役割）、PC 側 esp32_bridge が
+    クライアントとして接続しに来る。受信した WHEEL_CMD フレームを記録する。
     """
 
-    def __init__(self, uri: str):
-        self._uri = uri
+    def __init__(self, uri_or_port):
+        if isinstance(uri_or_port, int):
+            self._port = uri_or_port
+        else:
+            import urllib.parse
+            self._port = urllib.parse.urlparse(str(uri_or_port)).port
         self.frames: "list[tuple[float, float, float]]" = []  # (recv_time, left, right)
         self._lock = threading.Lock()
         self._loop = None
         self._ws = None
+        self._server = None
         self._connected = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
@@ -284,59 +281,72 @@ class _WsMockEsp32:
         """接続確立を待つバリア。タイムアウトすれば理由が分かる形で失敗させる。"""
         if not self._connected.wait(timeout):
             raise AssertionError(
-                f'ESP32 モッククライアントが {timeout}s 以内に esp32_bridge の '
-                f'WS サーバー ({self._uri}) へ接続できなかった')
+                f'esp32_bridge が {timeout}s 以内にモックサーバー (port {self._port}) へ'
+                '接続しなかった')
 
     def stop(self):
-        """接続を明示的に閉じる。次のテストの接続とすれ違わせないため
-        tearDown で必ず呼ぶ (呼ばずに放置すると、ノード終了時に
-        ConnectionClosedError が別スレッドで飛んでログが汚れる)。"""
+        """接続を明示的に閉じ、サーバーも止める（ポートを解放する）。
+        次のテストの setUp が同じポートに立て直せるようにするため。"""
+        if self._loop is not None and getattr(self, "_shutdown", None) is not None:
+            import asyncio
+            try:
+                fut = asyncio.run_coroutine_threadsafe(self._shutdown.set(), self._loop)
+                fut.result(timeout=2.0)
+            except Exception:
+                pass
         if self._loop is not None and self._ws is not None:
             import asyncio
 
             async def _close():
-                await self._ws.close()
+                try:
+                    await self._ws.close()
+                except Exception:
+                    pass
             try:
                 fut = asyncio.run_coroutine_threadsafe(_close(), self._loop)
                 fut.result(timeout=2.0)
             except Exception:
-                pass  # 既に切断済み等 — テスト後始末なので握りつぶしてよい
+                pass
 
     def _run(self):
         import asyncio
+        import websockets
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         try:
-            self._loop.run_until_complete(self._connect_and_recv())
+            self._loop.run_until_complete(self._serve())
         except Exception:
-            pass  # バックグラウンドスレッドの後始末。テストの合否は wait_connected() 等で判定する
+            pass  # バックグラウンドスレッドの後始末
 
-    async def _connect_and_recv(self):
+    async def _serve(self):
         import asyncio
         import websockets
 
-        deadline = asyncio.get_event_loop().time() + 15.0
-        while asyncio.get_event_loop().time() < deadline:
+        async def _handler(ws, *args):
+            self._ws = ws
+            self._connected.set()
             try:
-                async with websockets.connect(self._uri) as ws:
-                    self._ws = ws
-                    self._connected.set()
-                    try:
-                        async for message in ws:
-                            if not isinstance(message, (bytes, bytearray)):
-                                continue
-                            data = bytes(message)
-                            if peek_type(data) == WHEEL_CMD:
-                                left, right = unpack_wheel_cmd(data)
-                                with self._lock:
-                                    self.frames.append((time.monotonic(), left, right))
-                    except websockets.exceptions.ConnectionClosed:
-                        # stop() での明示的な close、またはノード終了時の
-                        # 突然の切断。テスト後始末の一部として想定内。
-                        pass
-                return
-            except (OSError, ConnectionRefusedError):
-                await asyncio.sleep(0.3)
+                async for message in ws:
+                    if not isinstance(message, (bytes, bytearray)):
+                        continue
+                    data = bytes(message)
+                    if peek_type(data) == WHEEL_CMD:
+                        left, right = unpack_wheel_cmd(data)
+                        with self._lock:
+                            self.frames.append((time.time(), left, right))
+            except Exception:
+                pass  # stop() での明示的な close 等。想定内。
+
+        async with websockets.serve(_handler, '127.0.0.1', self._port) as server:
+            self._server = server
+            self._shutdown = asyncio.Event()
+            await self._shutdown.wait()
+
+    def send(self, data: bytes):
+        """ESP32 → PC 方向のフレームを送る（ESTOP_HW など）。"""
+        import asyncio
+        fut = asyncio.run_coroutine_threadsafe(self._ws.send(data), self._loop)
+        fut.result(timeout=2.0)
 
     def snapshot(self):
         with self._lock:

@@ -14,6 +14,8 @@ export const GUIDES = {
   line_lost: '誘導線を見失いました',
   summon_clear_timeout: '退避待ちが時間切れになりました',
   summon_target_lost: '呼び寄せ中に対象を見失いました',
+  // A-11（SM-3.1.2-052）: 保存が失敗したとき。理由（detail）は帯に続けて出す。
+  venue_save_failed: '地図を保存できませんでした。保存済みになっていません',
   // 1b-11 SG-B19: 地図・経路が読めないときの原因別の案内（Spec-transit.md §4.2.3）。
   route_no_map: 'この経路には使える地図がありません。別の経路を選ぶか、教示し直してください',
   route_unreadable: '経路ファイルが読み込めません。別の経路を選ぶか、教示し直してください',

@@ -250,6 +250,15 @@
   spec_ref: "DetailedDesign-names.md §7.1 / Spec-safety.md §2.1"
   note: "S-50 で変える自動ブレーキの既定（場内。'on'/'off'）。state_manager のゾーン既定に使う。既定 'on'（Spec-safety §2.1）。ゾーン NA は値に関わらず ON（安全側）"
 
+- name: camera_ui_url
+  unit: null
+  class: b
+  status: given
+  value: "http://192.168.5.129/"
+  consumers: [web_ui]
+  spec_ref: "DetailedDesign-names.md §7.1 / Spec-onsite.md §7.2 / Spec-webui.md §3.15"
+  note: "S-21 の「カメラ」ボタンが別タブで開く先（カメラ機能 hve-system の画面のアドレス）。カメラの IP はラズパイの AP が DHCP で配るので固定されておらず、S-50 の「一般」タブで変えられる（http:// か https:// で始まるものだけ）。WebUI は実行時に /params/get で効き値を読む"
+
 # =========================================================================
 # 7.2 距離（names §7.2・§7.5 / params §6.1〜§6.4）
 # =========================================================================
@@ -344,7 +353,7 @@
   class: b
   status: given
   value: 0.55
-  consumers: [params_audit]
+  consumers: [params_audit, obstacle_limiter]
   spec_ref: "DetailedDesign-names.md §7.2"
   note: "機体外形（全長）。2026-08-18 に巻尺で実測（最外形）。記録ファイルは NTFS 破損で消失したため、この registry の記載が唯一の出典"
 
@@ -931,6 +940,26 @@
   note: "true の間は MUX_DEAD が成立しても FaultStatus／fault_lock を出さず内部ログ＋カウンタのみ（person_report_only と同じ形）。
     誤検知の無いことを実機で確かめてから false にして重大フォルトとして止める"
 
+- name: controller_conflict_hold_ms
+  unit: ms
+  class: b
+  status: given
+  value: 5000
+  consumers: [safety_monitor]
+  spec_ref: "Spec-safety.md §6.4"
+  note: "CONTROLLER_CONFLICT（別の PC の制御系と同居）の保持時間。/cmd_vel の publisher が 2 つ以上、または制御系ノード（obstacle_limiter / safety_monitor / state_manager / esp32_bridge）が同名で 2 つ以上いる状態がこの時間続いたら成立する。
+    DDS が落ちたノードの残骸を数秒見せ続けることがある（kill -9・クラッシュ直後。CLAUDE.md「環境の癖」）ため、保持時間はその残骸の見え方（数秒）より長くする。実機で誤検知が無いことを確かめてから見直す"
+
+- name: controller_conflict_report_only
+  unit: null
+  class: b
+  status: given
+  value: true
+  consumers: [safety_monitor]
+  spec_ref: "Spec-safety.md §6.4"
+  note: "true の間は CONTROLLER_CONFLICT が成立しても FaultStatus／fault_lock を出さず内部ログ＋カウンタのみ（mux_report_only と同じ形。プロジェクトの方針: 実機で確かめる前の安全検知は記録だけで入れ、誤検知が無いことを見てから有効にする）。
+    誤検知の無いことを実機で確かめてから false にして重大フォルトとして止める"
+
 - name: localization_stale_ms
   unit: ms
   class: b
@@ -1211,6 +1240,16 @@
   source: "esp32/src/config.h WATCHDOG_MS"
   note: "esp32/src/config.h の写し（CLAUDE.md に明記の 600ms）。ファーム側が正。ずれたら A6/A7 が拾う"
 
+- name: esp32_ws_host
+  unit: null
+  class: b
+  status: given
+  value: "192.168.5.1"
+  consumers: [esp32_bridge]
+  spec_ref: "Spec.md §6.1 / Spec-safety.md §6.4"
+  source: "th_esp32_bridge/config/params.yaml esp32_ws_host"
+  note: "esp32_bridge（クライアント）の接続先＝ラズパイの br0。2026-11-19 に向きを逆にした（Spec-safety §6.4）。PC のアドレスは決め打ちにしない"
+
 - name: esp32_ws_port
   unit: null
   class: b
@@ -1219,16 +1258,26 @@
   consumers: [esp32_bridge]
   spec_ref: "DetailedDesign-wp0.md WP-NET-01 §3 / WP-ESP32-01 §3.3"
   source: "th_esp32_bridge/config/params.yaml esp32_ws_port ／ ラズパイの pi_serial_relay --ws-port（2026-09-05〜。旧 esp32/src/wifi_credentials.h WS_SERVER_PORT は廃止）"
-  note: "esp32_bridge の WebSocket 待受ポート。ラズパイの pi_serial_relay と一致させること。WP-PARAM-01 時点で未登録だった行（WP-ESP32-01 で追加）。SG-B21 でノード側をこの名に寄せた（旧 ws_port。decision-1）"
+  note: "ラズパイの pi_serial_relay（サーバー）の WebSocket 待ち受けポート。esp32_bridge はここへ接続しに行く（2026-11-19 に向きを逆転。Spec-safety §6.4）。WP-PARAM-01 時点で未登録だった行（WP-ESP32-01 で追加）。SG-B21 でノード側をこの名に寄せた（旧 ws_port。decision-1）"
+
+- name: esp32_relay_idle_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 1500
+  consumers: [pi_serial_relay]
+  spec_ref: "Spec-safety.md §6.4"
+  source: "th_ws/scripts/pi_serial_relay.py DEFAULT_IDLE_TIMEOUT_MS"
+  note: "ラズパイの中継が「制御 PC からの無通信」で経路を手放すまでの時間。PC 側は 20Hz で送り続けるので、1.5 秒分の無通信は PC か通信路が死んだときだけ（Spec-safety §6.4）。ラズパイ側は CLI の --idle-timeout-ms が正で、この値は既定の写し"
 
 - name: link_wait_timeout_ms
   unit: ms
   class: b
   status: given
-  value: 10000
+  value: 30000
   consumers: [state_manager]
   spec_ref: "DetailedDesign-names.md §7.3"
-  note: "sys.link_timeout の契機。暫定値"
+  note: "sys.link_timeout の契機。暫定値。2026-11-19 に 10000 → 30000（ユーザー決定）: bringup の起動直後は約 40 ノードの相手探し（SEDP）がラズパイに殺到し、1 回で約 7 万件・9 割近くを取りこぼす（docs/network.md「/scan がコンテナに届かない」6.）。普段は 10 秒以内に追いつくが、遅れると 10 秒で制御系が立て直され、立て直しが殺到を繰り返して LiDAR がいつまでもつながらなかった（2026-11-19 17:58〜17:59 に約 20 秒おきに 3 回）"
 
 - name: restart_max_count
   unit: null
@@ -1566,7 +1615,16 @@
   blocking_from_stage: 5
   consumers: [replay_runner]
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-transit-localize-options.md §3"
-  note: "確定姿勢からこの距離以内の前向き点が無ければ途中復帰しない上限（LOCALIZE に留まる）。環境依存で逆算できないため出発点 2.0 はコードの既定値（LOCALIZE_DEFAULTS）に残し、registry は実スキャン（P6）の測定まで placeholder。値は変えない"
+  note: "確定姿勢からこの距離以内に経路の点が無ければ途中復帰しない上限（機体の向きは問わない。LOCALIZE に留まる）。環境依存で逆算できないため出発点 2.0 はコードの既定値（LOCALIZE_DEFAULTS）に残し、registry は実スキャン（P6）の測定まで placeholder。値は変えない"
+
+- name: resume_tie_m
+  unit: m
+  class: b
+  status: given
+  value: 0.3
+  consumers: [replay_runner]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-transit-localize-options.md §3"
+  note: "A-24: 最近点との距離の差がこの値以内の点が複数あるときだけ、進行方向と機体の向きの差で途中復帰の点を選ぶ（行きと帰りが重なる経路の前後関係を解く）。0.3 は出発点で P6 の実スキャンで詰める（search_radius_m と同じ扱い）"
 
 - name: factor
   unit: null

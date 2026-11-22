@@ -35,6 +35,8 @@ export const TOPICS = {
   // publisher and it only ever reaches the motor through jog_gate ->
   // twist_mux -> obstacle_limiter).
   JOG_LEASE: '/ui/jog_lease',
+  // A-15: W-6 を開いている間の心拍（client_id。ジョグのリースとは別。useManualPanelHeartbeat.js）。
+  MANUAL_PANEL: '/ui/manual_panel',
   CMD_VEL_MANUAL_RAW: '/cmd_vel_manual_raw',
   // WP-TRANSIT-01 §3.1: obstacle_limiter の出力（action / nearest_obstacle_m /
   // applied_limit_mps）。publisher は 20Hz best_effort なので SubscribeOptions

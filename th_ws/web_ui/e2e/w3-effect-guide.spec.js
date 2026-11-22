@@ -56,6 +56,16 @@ test('estop_held_at_boot は物理非常停止が離されると消える', asyn
   await expect(page.getByTestId('w3-guide')).toHaveCount(0)
 })
 
+test('保存失敗の guide は理由（detail）を帯に続けて出す (A-11)', async ({ page }) => {
+  const msg = {
+    name: 'guide', dest: 'WebUI',
+    args_json: JSON.stringify({ key: 'venue_save_failed', detail: 'ポーズグラフが更新されませんでした' }),
+  }
+  await gotoScreenWithEffect(page, 'S20', { mode: 'PREP', state: 'MAPPING' }, msg)
+  await expect(page.getByTestId('w3-guide')).toContainText('保存できませんでした')
+  await expect(page.getByTestId('w3-guide')).toContainText('ポーズグラフが更新されませんでした')
+})
+
 test('後から届いた guide で帯が掛け替わる', async ({ page }) => {
   await gotoScreenWithEffect(page, 'S01', { mode: 'SUMMON', state: 'WAIT_CLEAR' }, guide('summon_clear_timeout'))
   await expect(page.getByTestId('w3-guide')).toContainText('退避待ちが時間切れ')

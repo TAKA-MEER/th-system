@@ -190,10 +190,12 @@ if [ "$RUN_NETWORK" = true ]; then
   fi
 
   if command -v ss >/dev/null 2>&1; then
-    if ss -tln 2>/dev/null | grep -q ":8766 "; then
-      pass "esp32_bridge WS ポート 8766 LISTEN 中"
+    # 2026-11-19 (Spec-safety §6.4): 8766 の待ち受けはラズパイの中継。PC 側は
+    # 接続しに行く側なので、確立済みの接続があるかを確かめる。
+    if ss -tn 2>/dev/null | grep -q "192.168.5.1:8766"; then
+      pass "esp32_bridge が中継 (ラズパイ :8766) へ接続中"
     else
-      fail "8766 番ポート未 LISTEN" "docs/network.md の『ESP32 が WS に繋がらない』3. を参照 (esp32_bridge 未起動 or 多重起動で bind 失敗)"
+      fail "中継 (ラズパイ :8766) への接続が無い" "docs/network.md の『esp32_bridge が WS に繋がらない』を参照 (esp32_bridge 未起動・別の PC が制御中・中継未起動)"
     fi
   else
     warn "ss コマンドが無く 8766 番ポート確認をスキップ" "コンテナに iproute2 が入っているか確認"

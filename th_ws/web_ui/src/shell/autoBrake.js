@@ -34,3 +34,20 @@ export function autoBrakeLabelKey(autoBrake) {
   if (autoBrake === false) return 'off'
   return 'unknown'
 }
+
+// 接近警告の距離（m）。機体が出した approach_clearance_m を優先する（機体の外形＝
+// 一番近い面から。2026-11-13 A-17）。無い（古い機体）ときは LiDAR 中心からの
+// approach_distance_m、それも無ければ nearest_obstacle_m にする。
+export function approachDistance(limiterStatus) {
+  for (const d of [limiterStatus?.approach_clearance_m, limiterStatus?.approach_distance_m,
+    limiterStatus?.nearest_obstacle_m]) {
+    if (typeof d === 'number' && Number.isFinite(d)) return d
+  }
+  return undefined
+}
+
+// 止まっているときの警告か（周囲の障害物。文言を「前方」でなく「周囲」にする）。
+// approach_warning_moving が false のときだけ。未定義（古い機体）は動いている扱い。
+export function approachIsAround(limiterStatus) {
+  return limiterStatus?.approach_warning === true && limiterStatus?.approach_warning_moving === false
+}

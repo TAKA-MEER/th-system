@@ -13,8 +13,10 @@ export const DEV_ITEMS = ['link', 'lidar_fault', 'scan_stop', 'battery', 'opchec
 
 // as-built に運用開始を止めるゲートが無く、選んでも何も起きない項目。
 // opcheck は起動時の自動点検の警告を消すようになったため含めない。
+// auto_brake は自律系・場内でも切替を出す項目（A-15）で、選んだだけでは何も変わらないが
+// 「何も起きない項目」ではないので含めない。
 // 画面にその旨を出す (brief-DEV-01B §2)。
-export const DEV_NO_GATE_ITEMS = ['battery', 'auto_brake']
+export const DEV_NO_GATE_ITEMS = ['battery']
 
 // 接続先ノード (開発モードの正本。safety_monitor / obstacle_limiter は
 // /system/dev_mode を購読して従う。names.md §1.3)。

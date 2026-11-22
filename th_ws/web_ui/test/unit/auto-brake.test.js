@@ -3,7 +3,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  canToggleAutoBrake, autoBrakeNeedsConfirm, showApproachWarning,
+  canToggleAutoBrake, autoBrakeNeedsConfirm, showApproachWarning, approachDistance, approachIsAround,
 } from '../../src/shell/autoBrake.js'
 import attributes from '../../src/generated/attributes.json' with { type: 'json' }
 
@@ -40,4 +40,24 @@ test('approach warning shows only when brake is OFF and the limiter says so', ()
   assert.equal(showApproachWarning({ approach_warning: true }, null), false)
   assert.equal(showApproachWarning(null, false), false)
   assert.equal(showApproachWarning({}, false), false)
+})
+
+// 2026-11-13 A-17: 画面に出す距離は機体の外形からの approach_clearance_m を優先する。
+// 古い機体向けに approach_distance_m、nearest_obstacle_m の順で退避する。
+test('approachDistance: 外形からの approach_clearance_m を優先し、無ければ順に退避する', () => {
+  assert.equal(approachDistance({
+    approach_clearance_m: 0.4, approach_distance_m: 0.5, nearest_obstacle_m: 9,
+  }), 0.4)
+  assert.equal(approachDistance({ approach_distance_m: 0.5, nearest_obstacle_m: 9 }), 0.5)
+  assert.equal(approachDistance({ nearest_obstacle_m: 0.7 }), 0.7)
+  assert.equal(approachDistance({ approach_clearance_m: Infinity, approach_distance_m: 0.5 }), 0.5)
+  assert.equal(approachDistance({ approach_distance_m: Infinity, nearest_obstacle_m: 0.7 }), 0.7)
+  assert.equal(approachDistance(null), undefined)
+})
+
+test('approachIsAround: 警告中で動いていないときだけ「周囲」', () => {
+  assert.equal(approachIsAround({ approach_warning: true, approach_warning_moving: false }), true)
+  assert.equal(approachIsAround({ approach_warning: true, approach_warning_moving: true }), false)
+  assert.equal(approachIsAround({ approach_warning: true }), false)
+  assert.equal(approachIsAround({ approach_warning: false, approach_warning_moving: false }), false)
 })

@@ -16,6 +16,7 @@
     "/config_manager/save_tunable_params",
     "/config_manager/set_tunable_params",
     "/esp32/battery",
+    "/esp32/bridge_blocked",
     "/esp32/cmd_alive",
     "/esp32/imu_calib_status",
     "/esp32/imu_data",
@@ -98,7 +99,8 @@
     "/system/trigger",
     "/tf",
     "/ui/active_screen",
-    "/ui/jog_lease"
+    "/ui/jog_lease",
+    "/ui/manual_panel"
   ],
   "modes": [
     "AT_PANEL",
@@ -184,6 +186,7 @@
     "body_width_m",
     "brake_accel_mps2",
     "brake_delay_s",
+    "camera_ui_url",
     "calib_blind_verify_frames",
     "calib_blind_verify_timeout_ms",
     "calib_linear_distance_m",
@@ -207,8 +210,10 @@
     "drivetrain_ceiling_mps",
     "enabled_targets",
     "esp32_alive_timeout_ms",
+    "esp32_relay_idle_timeout_ms",
     "esp32_timeout_ms",
     "esp32_watchdog_ms",
+    "esp32_ws_host",
     "esp32_ws_port",
     "estop_ui_lease_ms",
     "estop_ui_repeat_hz",
@@ -304,6 +309,7 @@
     "restart_max_count",
     "restart_wait_ms",
     "resume_max_dist_m",
+    "resume_tie_m",
     "route_gap_timeout_ms",
     "route_jump_m",
     "route_sample_interval_m",
@@ -416,6 +422,7 @@
     "/cmd_vel_muxed",
     "/cmd_vel_nav",
     "/esp32/battery",
+    "/esp32/bridge_blocked",
     "/esp32/cmd_alive",
     "/esp32/imu_calib_status",
     "/esp32/imu_data",
@@ -467,7 +474,8 @@
     "/system/state",
     "/tf",
     "/ui/active_screen",
-    "/ui/jog_lease"
+    "/ui/jog_lease",
+    "/ui/manual_panel"
   ],
   "triggers": [
     "evt.align_done",

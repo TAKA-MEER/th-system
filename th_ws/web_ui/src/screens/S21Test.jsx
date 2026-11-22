@@ -5,7 +5,7 @@
 //   C-15:      IDLE --ui.goto{kind:PANEL|HOME|SUMMON}--> *（goto_allowed）
 //   T-PNAV/T-HNAV: PANEL_NAV / HOME_NAV（--ui.stop/run--> PAUSE/NAV、着地で
 //               AT_PANEL / IDLE）
-//   T-ATP-01/02: AT_PANEL --ui.working<--> IDLE_P ⇄ WORKING
+//   T-ATP-01/02（ui.working）: 機体側には残るが S-21 からは送らない（2026-11-20）。
 //   T-ATP-05:   AT_PANEL(IDLE_P/WORKING) --ui.goto--> $arg.kind
 //   T-NAV-goto-reject: PANEL_NAV / SUMMON / HOME_NAV の全状態（PAUSE 含む）で ui.goto は拒否（SM-3.1.2-118）
 //   T-SUM-01:   SUMMON --evt.two_point_done--> WAIT_CLEAR（2 点指示は
@@ -23,6 +23,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
+import { useParamsOverrides } from '../ros/useParamsOverrides.js'
 import { useSetFlag, TRACKER_FLAG } from '../ros/useSetFlag.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
 import { usePersonTargets } from '../ros/usePersonTargets.js'
@@ -40,6 +41,7 @@ import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import { trackerStopAllowed } from '../modes/trackerControlPolicy.js'
 import { venueOpenAllowed } from '../modes/stopOnlyGuard.js'
+import AutoBrakeDevCard from '../parts/AutoBrakeDevCard.jsx'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import TrackerControl from '../parts/TrackerControl.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
@@ -66,10 +68,10 @@ import {
   S21_HOME_DECLARED, S21_HOME_DECLARE, S21_HOME_FORCE_DECLARE,
   S21_HOME_OFFSET,
   S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_GATE_MSG, S21_MAP_LOADING,
-  S21_BLOCKED_ABORT, S21_PAUSED_MSG, S21_BLOCKED_MSG, S21_BLOCKED_REROUTE,
+  S21_BLOCKED_ABORT, S21_PAUSED_MSG, S21_POINT_MSG, S21_BLOCKED_MSG, S21_BLOCKED_REROUTE,
   S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
   S21_NEXT_DECLARE_HOME, S21_NEXT_OPEN_VENUE, S21_NEXT_PICK_DEST,
-  S21_NEXT_SUMMON, S21_NEXT_WORK,
+  S21_NEXT_SUMMON, S21_NEXT_CAMERA,
   S21_NEXT_DEST_TITLE, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_HINT, S21_VENUE_ALREADY_OPEN, S21_OPEN_VENUE_MAP,
   S21_PICK_PANEL_HINT, S21_PIN_MOVE, S21_PINS_EMPTY,
   S21_OPEN_VENUE_FAIL, S21_PREP_TITLE, S21_SELECT_HINT, S21_STEP_DEST, S21_STEP_HOME, S21_STEP_MOVE,
@@ -77,7 +79,7 @@ import {
   S21_SUBTAB_SUMMON, S21_SUMMON_START, S21_SUMMON_TITLE,
   S21_TARGET_NOT_SELECTABLE,
   S21_WAIT_CANCEL, S21_WAIT_CLEARING, S21_WAIT_DIST, S21_WAIT_TITLE,
-  S21_WORKING, S21_WORK_ON, S21_WORK_OFF,
+  S21_CAMERA, S21_CAMERA_NO_URL, S21_CAMERA_BAD_URL,
   // brief-tracker-default-off §3.4: 呼び寄せサブタブの「人検出が止まって
   // います」表示。
   TRACKER_OFF,
@@ -317,9 +319,35 @@ export default function S21Test({ onExit }) {
     sendTrigger('ui.abort')
   }
 
-  // 配電盤前での作業中トグル（T-ATP-01/02: IDLE_P ⇄ WORKING）。
-  function toggleWorking() {
-    sendTrigger('ui.working')
+  // S-21 の「カメラ」ボタン（Spec-onsite.md §7.2）の開く先。カメラの IP は
+  // DHCP で決まるため実行時に /params/get で効き値（effective）を読む
+  // （ビルド時生成物の値は読まない。S-50 の保存が次の起動に反映される）。
+  const { getParams } = useParamsOverrides(ros)
+  const [cameraUrl, setCameraUrl] = useState(null)
+  useEffect(() => {
+    let alive = true
+    getParams(['camera_ui_url'])
+      .then((payload) => {
+        if (alive) setCameraUrl(payload?.effective?.camera_ui_url ?? null)
+      })
+      .catch(() => { if (alive) setCameraUrl(null) })
+    return () => { alive = false }
+  }, [getParams])
+  // 開けるアドレス（http/https）でなければ押せない。理由をボタンに添える。
+  const cameraUrlValid =
+    typeof cameraUrl === 'string' && cameraUrl.startsWith('http://') ||
+    typeof cameraUrl === 'string' && cameraUrl.startsWith('https://')
+  const cameraUrlReason = cameraUrlValid
+    ? null
+    : (typeof cameraUrl === 'string' && cameraUrl.trim() !== '' ? S21_CAMERA_BAD_URL : S21_CAMERA_NO_URL)
+  const cameraOpenable = mode === 'AT_PANEL' && !disabledAll && cameraUrlValid
+
+  // 配電盤前でカメラ機能（hve-system）の画面を別のタブで開く。機体へは
+  // 何も送らない（状態を変えない）。同じタブで遷移しない（WebUI を閉じると
+  // rosbridge と「使用中」の数えが切れるため）。
+  function openCamera() {
+    if (!cameraOpenable) return
+    window.open(cameraUrl, '_blank', 'noopener')
   }
 
   // 待機場所の宣言（home_declarer）。失敗時は force 再宣言を促す（§2.3）。
@@ -401,9 +429,10 @@ export default function S21Test({ onExit }) {
     0: { kind: 'advance', label: S21_NEXT_OPEN_VENUE, run: () => handleOpenVenueMap() },
     1: { kind: 'register', label: S21_NEXT_DECLARE_HOME, run: () => { setSubtab('dest'); handleDeclareHome(false) } },
     2: { kind: 'advance', label: S21_NEXT_PICK_DEST, run: () => { setSubtab('dest'); setPanelPick(true) } },
-    // 段 5: 作業中（WORKING⇄IDLE_P のトグル）か、呼び寄せ（SUMMON ならサブタブへ誘導）。
-    4: (working || mode === 'AT_PANEL')
-      ? { kind: 'advance', label: S21_NEXT_WORK, run: toggleWorking }
+    // 段 5: 配電盤前なら「カメラ」（別タブで開く。機体へは送らない）、
+    // それ以外は呼び寄せ（SUMMON ならサブタブへ誘導）。
+    4: mode === 'AT_PANEL'
+      ? { kind: 'advance', label: S21_NEXT_CAMERA, run: openCamera }
       : { kind: 'advance', label: S21_NEXT_SUMMON, run: () => setSubtab('summon') },
   }
   const nextAction = (showWizard || showWait) ? null : (nextActions[currentIndex] ?? null)
@@ -545,7 +574,8 @@ export default function S21Test({ onExit }) {
             type="button"
             className={`next-action ${OP_BUTTON_KINDS[nextAction.kind] ?? ''}`.trim()}
             data-testid="s21-next-action"
-            disabled={disabledAll || venueBusy || (currentIndex === 0 && !mapOpAllowed)}
+            disabled={disabledAll || venueBusy || (currentIndex === 0 && !mapOpAllowed)
+              || (currentIndex === 4 && mode === 'AT_PANEL' && !cameraOpenable)}
             onClick={nextAction.run}
           >
             {NEXT_ACTION_ICONS[nextAction.kind]}
@@ -601,6 +631,9 @@ export default function S21Test({ onExit }) {
           )}
         </div>
 
+        {/* A-15: 開発モードで項目 auto_brake を選んでいるときだけ出る（出なければ何も描かない）。 */}
+        <AutoBrakeDevCard prefix="s21" />
+
         {/* WS-9AB: BLOCKED（経路が見つからず止まっている）の帯。再検索と、
             非常停止せず方式をやめて止まる「中断」（→ AT_HOME/IDLE_H。待機場所へは走らない。
             T-PNAV-10 / T-SUM-17 / T-HNAV-09）。 */}
@@ -634,6 +667,22 @@ export default function S21Test({ onExit }) {
               type="button"
               className="btn danger"
               data-testid="s21-paused-abort"
+              onClick={() => sendTrigger('ui.abort')}
+            >
+              {S21_BLOCKED_ABORT}
+            </button>
+          </div>
+        )}
+
+        {/* SM-3.1.2-143（A-12）: 呼び寄せの位置指定（POINT）からも「中断」で抜けられる
+            （T-SUM-17 は受け付けるが、画面にボタンが無かった）。 */}
+        {abortAvailable(mode, stateName) && stateName === 'POINT' && (
+          <div className="row s21-blocked" data-testid="s21-point">
+            <span className="grow">{S21_POINT_MSG}</span>
+            <button
+              type="button"
+              className="btn danger"
+              data-testid="s21-point-abort"
               onClick={() => sendTrigger('ui.abort')}
             >
               {S21_BLOCKED_ABORT}
@@ -922,17 +971,20 @@ export default function S21Test({ onExit }) {
               <div className="card">
                 <h3>{S21_ATPANEL_TITLE}</h3>
                 <div className="row">
-                  <span className="grow sm">{S21_WORKING}</span>
+                  <span className="grow sm">{S21_CAMERA}</span>
                   <button
                     type="button"
                     className="btn"
-                    data-testid="s21-work-toggle"
-                    disabled={disabledAll || mode !== 'AT_PANEL'}
-                    onClick={toggleWorking}
+                    data-testid="s21-camera-open"
+                    disabled={!cameraOpenable}
+                    onClick={openCamera}
                   >
-                    {working ? S21_WORK_ON : S21_WORK_OFF}
+                    {S21_CAMERA}
                   </button>
                 </div>
+                {!cameraOpenable && cameraUrlReason && (
+                  <span className="reason-badge" data-testid="s21-camera-reason">{cameraUrlReason}</span>
+                )}
               </div>
             </div>
           )}

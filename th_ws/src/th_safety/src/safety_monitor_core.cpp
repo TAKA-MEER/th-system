@@ -16,6 +16,7 @@ Severity classify_severity(const std::string& fault_type) {
       "STATE_INCONSISTENT",
       "LOCALIZATION_LOST",
       "ESTOP_BYPASS_ACTIVE",
+      "CONTROLLER_CONFLICT",
   };
   return kCritical.count(fault_type) != 0 ? Severity::CRITICAL : Severity::RECOVERABLE;
 }
@@ -125,6 +126,17 @@ ClearEstopUiDecision decide_clear_estop_ui(bool estop_hw, bool has_critical_faul
 
 bool is_target_enabled(const std::string& target, const std::vector<std::string>& enabled_targets) {
   return std::find(enabled_targets.begin(), enabled_targets.end(), target) != enabled_targets.end();
+}
+
+const std::vector<std::string>& controller_node_names() {
+  // th_bringup/launch/single_controller_guard.py の CONTROL_NODE_NAMES と同期。
+  static const std::vector<std::string> kNames = {
+      "obstacle_limiter", "safety_monitor", "state_manager", "esp32_bridge"};
+  return kNames;
+}
+
+bool detect_controller_conflict(int cmd_vel_publisher_count, int max_same_name_count) {
+  return cmd_vel_publisher_count >= 2 || max_same_name_count >= 2;
 }
 
 }  // namespace th_safety

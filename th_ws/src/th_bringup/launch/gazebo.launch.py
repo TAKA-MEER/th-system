@@ -59,7 +59,9 @@ SAFETY_ENABLED_TARGETS_SIM = ['lidar', 'limiter',
                               # report_only=true のため sim の挙動は変わらない。
                               'person',
                               # SG-A11: 記録だけ（mux_report_only=true）。bringup と揃える。
-                              'mux']
+                              'mux',
+                              # Spec-safety §6.4: bringup と揃える（記録だけ）。
+                              'controller']
 # sim 用 safety_monitor の静的パラメータ。safety_monitor の構築は「slam_on の
 # 解決が必要」なため _scenario_setup（OpaqueFunction・モジュールレベル関数）の
 # sim 分岐内で行う。そのため generate_launch_description のローカル変数では
@@ -498,6 +500,14 @@ def generate_launch_description():
             name='config_manager',
             output='screen',
         ),
+        # params_audit (S-50 のパラメータ参照・保存。bringup.launch.py と同じ。A-14)
+        Node(
+            package='th_params',
+            executable='params_audit.py',
+            name='params_audit',
+            parameters=[os.path.join(GENERATED_DIR, 'params_audit.yaml')],
+            output='screen',
+        ),
         # slam_control (WebUI: 地図作成 開始/停止の仲介)
         Node(
             package='th_config_manager',
@@ -609,7 +619,9 @@ def generate_launch_description():
                                    # §5.5（P-02）: bringup.launch.py の実機側と揃える。
                                    'person',
                                    # SG-A11: bringup.launch.py と同じ（記録だけ）。
-                                   'mux']
+                                   'mux',
+                                   # Spec-safety §6.4: bringup.launch.py と同じ（記録だけ）。
+                                   'controller']
 
     # safety_monitor: 実機設定
     # 静的ファイルを土台にし、registry.yaml 由来の生成ファイルを後段に重ねる (G-4)。

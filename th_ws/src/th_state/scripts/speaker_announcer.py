@@ -39,7 +39,7 @@ from std_msgs.msg import String
 
 from th_system_msgs.msg import LimiterStatus, SystemState
 
-from th_state.speaker_announce_core import CUE_NONE, decide_cue
+from th_state.speaker_announce_core import CUE_NONE, decide_cue, warning_audible
 
 # 周期配信の間隔（brief の例 2 Hz）。再生側は 1 秒の途絶で止める。
 PUBLISH_PERIOD_S = 0.5
@@ -171,7 +171,9 @@ class SpeakerAnnouncer(Node):
         self._state = msg.state
 
     def _on_limiter(self, msg: LimiterStatus) -> None:
-        self._approach_warning = bool(msg.approach_warning)
+        # 警告音は機体が動いている間だけ（Spec-safety §11。止まっているときは画面だけ）
+        self._approach_warning = warning_audible(
+            msg.approach_warning, msg.approach_warning_moving)
 
     def _on_status(self, msg: String) -> None:
         self._last_status_wall = time.time()

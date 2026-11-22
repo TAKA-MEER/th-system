@@ -100,6 +100,23 @@ DESERIALIZE_TIMEOUT_SEC     = 30.0  # deserialize_map は 6.9MB のポーズグ�
                                      # (2026-09-03 実測 .posegraph 6.9MB + .data
                                      # 29KB)。SERVICE_TIMEOUT_SEC(5s) では足りない
                                      # 可能性があるため長めに取る
+MAP_SAVE_ATTEMPTS          = 3      # A-21: 占有格子（pgm/yaml）の書き出しを
+                                     # やり直す回数。2026-11-13 実機 T-21 で、
+                                     # 通信が一瞬切れた瞬間の保存で map_saver が
+                                     # /map を 2 秒で受け取れず失敗した。合計は
+                                     # route_recorder の応答待ち（30 秒）と
+                                     # SERVICE_TIMEOUT_SEC を超えない範囲にする
+MAP_SAVE_RETRY_INTERVAL_SEC = 0.6    # やり直しの間隔（秒）
+MAP_SAVE_CALL_TIMEOUT_SEC   = 4.0    # 1 回の save_map の応答待ち（秒）。
+                                     # SERVICE_TIMEOUT_SEC(5s) で 3 回やると
+                                     # 1+5 の 3 回＋間隔＋serialize(5s)＋
+                                     # set_localization(5s) が route_recorder の
+                                     # 応答待ち（30 秒）に迫るため、占有格子だけ
+                                     # 短くする（map_saver は失敗時も約 2 秒で
+                                     # 返る。2026-11-13 実機 T-21）
+MAP_SAVE_WARNING_TEXT       = (      # A-21: 地図の画像を残せなかったときの警告。
+    '地図の画像を保存できませんでした。この経路は途中からの再開と完全グローバル'
+    'の位置探しが使えません（始点に置けば再生はできます）')
 RESPAWN_WAIT_SEC           = 45.0   # WS-9S: reload のたび slam_toolbox を SIGTERM →
                                      # launch の respawn=True で作り直す。旧プロセス
                                      # 消失 → 新プロセスのサービス復帰までの待ち上限。
@@ -108,6 +125,7 @@ RESPAWN_WAIT_SEC           = 45.0   # WS-9S: reload のたび slam_toolbox を S
                                      # コメント参照）になる実績があるため長めに取る
 STATUS_PUBLISH_PERIOD_SEC   = 0.5
 
+import json
 import os
 import signal
 import threading
@@ -126,7 +144,7 @@ from std_srvs.srv import SetBool, Trigger
 from slam_toolbox.srv import (DeserializePoseGraph, SaveMap,
                               SerializePoseGraph)
 
-from th_system_msgs.msg import MapSessionStatus, PinList, StateEffect, SystemState
+from th_system_msgs.msg import MapSessionStatus, PinList, StateEffect, StateEvent, SystemState
 from th_system_msgs.srv import OpenMapSession
 
 from th_config_manager.map_freezer_core import make_anchor
@@ -241,6 +259,10 @@ class SlamControl(Node):
         # slam_toolbox のサービスが見えているか。None = まだ一度も判定していない。
         # 消失→再出現を respawn による再起動とみなす (_check_slam_restart)
         self._slam_ready = None
+        # A-11①: 再起動を検知したが、まだ状態の再適用（_apply_mapping）が済んで
+        # いない。ロックが取れない周期は次周期で試す。_slam_ready を戻して
+        # 「再起動」を数え直すと、1 回の再起動で再適用が何度も走る。
+        self._restart_pending = False
         # WS-9S: 再生の地図読み直しは意図的に slam_toolbox を respawn する。その間
         # _check_slam_restart にモード再適用を走らせない（reload 側が最後まで面倒を見る）。
         self._reload_in_progress = False
@@ -265,6 +287,10 @@ class SlamControl(Node):
         self.create_subscription(
             StateEffect, '/system/effect', self._on_effect, effect_qos,
             callback_group=cbg)
+        # SM-3.1.2-052: commit_venue_map の成否を FSM へ返す（成功だけ SAVED へ進む）。
+        self._pub_event = self.create_publisher(
+            StateEvent, '/system/event',
+            QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE))
 
         # WS-9Y: pin_registrar の /onsite/pins（latched）を購読し、HOME ピンの
         # 姿勢を VENUE reload の初期姿勢フォールバックに使う。
@@ -430,6 +456,17 @@ class SlamControl(Node):
         response.message = rejected
         return response
 
+    def _reject_if_restarting(self, response):
+        """再起動の復帰を、再適用が済むまで待つ間は地図作成の開始・停止を受けない。
+
+        受けると再起動の再適用とぶつかり、トグルが重なって逆向きに入る（A-11）。
+        """
+        if self._restart_pending:
+            response.success = False
+            response.message = 'slam_toolbox の再起動中です。少し待ってからやり直してください'
+            return response
+        return None
+
     def _set_active(self, active: bool):
         self._mapping_active = active
         self._pub_active.publish(Bool(data=self._mapping_active))
@@ -459,30 +496,33 @@ class SlamControl(Node):
         ready = self._cli_localization.service_is_ready()
         was_ready = self._slam_ready
         self._slam_ready = ready
-        if was_ready is None or ready == was_ready:
+        if was_ready is not None and ready != was_ready:
+            if not ready:
+                self.get_logger().error(
+                    'slam_toolbox が応答しなくなりました (クラッシュの可能性)。'
+                    ' 自己位置補正が止まります。respawn による再起動を待ちます')
+                self._report('NG: slam_toolbox が停止しました (再起動待ち)')
+                self._restart_pending = False   # 再び落ちた。復帰を数え直す
+                return
+            # 復帰を 1 回だけ数える。再適用が済むまで _restart_pending で持ち越す
+            # （_slam_ready を戻して数え直すと、1 回の再起動が何度も「再起動」になる）。
+            self.get_logger().warn('slam_toolbox の再起動を検知しました。状態を再適用します')
+            # WS-9AL: reload 経由でない再起動（クラッシュ復帰・地図破棄）はまっさらな
+            # 地図作成を始めるので、生存世代を切り替える。reload 経由（_reload_in_progress
+            # で上のガードに掛かる）はここに来ない ─ _handle_map_reload の成功後に
+            # 読み込んだ地図の instance_id を継承する側で別途扱う。
+            self._instance_id = self._new_instance_id()
+            self._venue_dirty = False   # 1b-6 SG-B6: まっさらな地図。未保存の中身は無い
+            self._venue_loaded = False   # 再起動でグラフは空。読み直し直すまで未読込
+            self._publish_anchor('unloaded')
+            self._publish_venue_status()
+            self._restart_pending = True
+        if not self._restart_pending or not ready:
             return
-
-        if not ready:
-            self.get_logger().error(
-                'slam_toolbox が応答しなくなりました (クラッシュの可能性)。'
-                ' 自己位置補正が止まります。respawn による再起動を待ちます')
-            self._report('NG: slam_toolbox が停止しました (再起動待ち)')
-            return
-
-        self.get_logger().warn('slam_toolbox の再起動を検知しました。状態を再適用します')
-        # WS-9AL: reload 経由でない再起動（クラッシュ復帰・地図破棄）はまっさらな
-        # 地図作成を始めるので、生存世代を切り替える。reload 経由（_reload_in_progress
-        # で上のガードに掛かる）はここに来ない ─ _handle_map_reload の成功後に
-        # 読み込んだ地図の instance_id を継承する側で別途扱う。
-        self._instance_id = self._new_instance_id()
-        self._venue_dirty = False   # 1b-6 SG-B6: まっさらな地図。未保存の中身は無い
-        self._venue_loaded = False   # 再起動でグラフは空。読み直し直すまで未読込
-        self._publish_anchor('unloaded')
-        self._publish_venue_status()
         if not self._lock.acquire(blocking=False):
-            self._slam_ready = was_ready   # 次周期でやり直す
-            return
+            return   # 次周期で再適用だけやり直す（再起動は数え直さない）
         try:
+            self._restart_pending = False
             desired = self._mapping_active
             err = self._apply_mapping(desired)
             if err:
@@ -558,6 +598,9 @@ class SlamControl(Node):
         rejected = self._reject_if_mode_disallows(response)
         if rejected:
             return rejected
+        rejected = self._reject_if_restarting(response)
+        if rejected:
+            return rejected
         with self._lock:
             err = self._apply_mapping(not self._mapping_active)
             if err is None and self._mapping_active:
@@ -569,6 +612,9 @@ class SlamControl(Node):
 
     def _cb_set_mapping(self, request, response):
         rejected = self._reject_if_mode_disallows(response)
+        if rejected:
+            return rejected
+        rejected = self._reject_if_restarting(response)
         if rejected:
             return rejected
         with self._lock:
@@ -813,6 +859,15 @@ class SlamControl(Node):
             self._publish_venue_status()
         return err
 
+    def _emit_event(self, event: str, reason: str = ''):
+        """FSM へ evt.* を返す（SM-3.1.2-052。成功だけ SAVED、失敗は理由つき）。"""
+        ev = StateEvent()
+        ev.header.stamp = self.get_clock().now().to_msg()
+        ev.event = event
+        ev.source_node = 'slam_control'
+        ev.arg_json = json.dumps({'reason': reason}, ensure_ascii=False) if reason else '{}'
+        self._pub_event.publish(ev)
+
     def _on_effect(self, msg: StateEffect):
         if msg.dest != 'map_session':
             return
@@ -823,15 +878,18 @@ class SlamControl(Node):
             if rejected is not None:
                 self._report(f'NG: commit_venue_map を拒否 ({rejected})')
                 self.get_logger().warn(f'commit_venue_map を拒否: {rejected}')
+                self._emit_event('evt.venue_map_save_failed', rejected)
                 return
             with self._lock:
                 err = self._commit_venue_map()
             if err:
                 self._report(f'NG: commit_venue_map 失敗 ({err})')
                 self.get_logger().warn(f'commit_venue_map 失敗: {err}')
+                self._emit_event('evt.venue_map_save_failed', err)
             else:
                 self._report('OK: commit_venue_map (venue/map をシリアライズ)')
                 self.get_logger().info('commit_venue_map OK: venue/map をシリアライズ')
+                self._emit_event('evt.venue_map_saved')
         elif msg.name == 'commit_map_patch':
             # 1b-11 SG-B14: 地図更新 ON のときの「保存」（T-REPLAY-08 ほか
             # SM-3.1.2-099〜-102）。最後に開いた地図へ書き足しを確定する:
@@ -872,9 +930,11 @@ class SlamControl(Node):
         localization モードでは serialize が書き出さないので保存は必ず
         mapping モードで行う（2026-09-03 実機確認）。
         W-01 P2: 粗探索に使う占有格子（pgm＋yaml）も同じ base 名で併存させる
-        （_cb_save_map の SaveMap 呼び出しと同じ流儀）。SaveMap が失敗しても
-        posegraph の保存は成功扱いのまま（警告ログのみ。再生は始点決め打ちの
-        'unknown' 経路として動く）。
+        （_cb_save_map の SaveMap 呼び出しと同じ流儀）。A-21: SaveMap を
+        MAP_SAVE_ATTEMPTS 回までやり直し、それでも失敗したら posegraph の保存は
+        成功のまま、成功のメッセージに MAP_SAVE_WARNING_TEXT を添えて返す
+        （画面は RouteStatus.map_save_failed で警告を出す。route_recorder が
+        実際に pgm/yaml が揃ったかを見て立てる）。
         keep_previous が真のときは、先に rotate_map_previous で既存の保存を
         旧版 1 世代へ退避する（1b-7 SG-B12。経路 JSON の .prev と対になる。
         VENUE からは呼ばない＝1 枚のみ保持）。
@@ -887,11 +947,12 @@ class SlamControl(Node):
                 self.get_logger().info(
                     f'旧版の地図を退避した: {rotated}')
         self._publish_anchor('saving')
+        warn = None
         err = self._save_occupancy_grid(base)
         if err:
+            warn = MAP_SAVE_WARNING_TEXT
             self.get_logger().warn(
-                f'占有格子（pgm/yaml）の保存に失敗。全域ローカライズは'
-                f'始点決め打ちになる: {err}')
+                f'{warn}（全域ローカライズは始点決め打ちになる）: {err}')
         err = self._serialize(base)
         if err:
             self._publish_anchor('save_failed')
@@ -902,8 +963,10 @@ class SlamControl(Node):
             return self._finish(response, f'地図の凍結に失敗: {err}', '')
         self._set_active(False)
         self._publish_anchor('saved')
-        return self._finish(
-            response, None, f'地図を保存しました（地図を凍結しました）: {base}.posegraph')
+        ok = f'地図を保存しました（地図を凍結しました）: {base}.posegraph'
+        if warn:
+            ok = f'{ok}（注意: {warn}）'
+        return self._finish(response, None, ok)
 
     def _commit_venue_patch(self) -> "str | None":
         """会場地図（venue/map）への書き足しの確定（S-21 の「保存」）。
@@ -936,9 +999,12 @@ class SlamControl(Node):
         self._publish_anchor('saving')
         err = self._save_occupancy_grid(base)
         if err:
+            # サービス応答の無い effect 経路（S-14 の地図更新の「保存」）。
+            # 画面へ返す口が無いので、成功のまま警告ログに残す（A-21。
+            # 応答のある ROUTE の保存は _handle_map_save が文言も返す）。
             self.get_logger().warn(
-                f'占有格子（pgm/yaml）の保存に失敗。全域ローカライズは'
-                f'始点決め打ちになる: {err}')
+                f'{MAP_SAVE_WARNING_TEXT}（全域ローカライズは始点決め打ちに'
+                f'なる）: {err}')
         err = self._serialize(base)
         if err:
             self._publish_anchor('save_failed')
@@ -954,8 +1020,28 @@ class SlamControl(Node):
     def _save_occupancy_grid(self, base: str) -> "str | None":
         """SaveMap で <base>.pgm / <base>.yaml を書き出す（W-01 P2）。
 
-        _cb_save_map の占有格子部分と同じ呼び出し。呼び出し失敗・応答の
-        失敗コードのいずれもエラー文字列で返す（呼び出し側が警告に落とす）。
+        A-21: 一過性の失敗（通信が一瞬切れた瞬間の map_saver の取りこぼし等）を
+        拾うため、MAP_SAVE_ATTEMPTS 回まで間を置いてやり直す。全部失敗したら
+        最後のエラー文字列を返す（呼び出し側が警告に落とす）。
+        """
+        err = None
+        for attempt in range(MAP_SAVE_ATTEMPTS):
+            if attempt:
+                time.sleep(MAP_SAVE_RETRY_INTERVAL_SEC)
+            err = self._save_occupancy_grid_once(base)
+            if err is None:
+                return None
+            self.get_logger().warn(
+                f'占有格子（pgm/yaml）の保存に失敗'
+                f'（{attempt + 1}/{MAP_SAVE_ATTEMPTS}）: {err}')
+        return err
+
+    def _save_occupancy_grid_once(self, base: str) -> "str | None":
+        """占有格子の書き出しを 1 回試す（_save_occupancy_grid の中身）。
+
+        _cb_save_map の占有格子部分と同じ呼び出し（応答待ちだけはやり直しの
+        合計を抑えるため MAP_SAVE_CALL_TIMEOUT_SEC）。呼び出し失敗・応答の
+        失敗コードのいずれもエラー文字列で返す。
         """
         if not self._cli_save.wait_for_service(timeout_sec=1.0):
             return 'slam_toolbox に接続できません'
@@ -963,7 +1049,7 @@ class SlamControl(Node):
         req = SaveMap.Request()
         req.name = String(data=base)
         result, err = call_and_wait(
-            self, self._cli_save, req, SERVICE_TIMEOUT_SEC)
+            self, self._cli_save, req, MAP_SAVE_CALL_TIMEOUT_SEC)
         if err:
             return f'save_map 呼び出し失敗: {err}'
         if result.result != SaveMap.Response.RESULT_SUCCESS:

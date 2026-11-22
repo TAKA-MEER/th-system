@@ -9,7 +9,7 @@ ESP32はラズパイへUSB-UARTで直結し、WiFiは使わない(2026-09-05〜)
   │  USB-UART
   ├── ESP32 (駆動用)             (WiFi不使用。シリアル直結のみ)
   │
-  └── PC 内蔵Intel wlo1         192.168.5.50   固定IP。esp32_bridge が :8766 で待ち受け
+  └── PC 内蔵Intel wlo1         192.168.5.50   固定IP（ラズパイの時刻源）。esp32_bridge がラズパイの :8766 へ接続
         RPLIDAR S1 → rplidar_ros → /scan (ROS_DOMAIN_ID=10, frame_id=laser_link)
 
 PC のインターネットは別系統: Elecom WDC-433SU2M2 (5GHz専用) → NCT-WL-ST
@@ -50,7 +50,7 @@ PC のインターネットは別系統: Elecom WDC-433SU2M2 (5GHz専用) → NC
 ```bash
 # ① ロボット(ESP32・ラズパイにUSB接続)・ラズパイの電源 ON。PC をロボット AP に繋いで疎通確認
 #      ラズパイ 192.168.5.1   … AP 本体 + /scan 配信元 + pi_serial_relay (systemd で自動起動)
-#      PC       192.168.5.50  … esp32_bridge が :8766 で待ち受け (内蔵 Intel wlo1・固定IP)
+#      PC       192.168.5.50  … esp32_bridge がラズパイ :8766 へ接続 (内蔵 Intel wlo1・固定IP)
 #      ESP32    (WiFi不使用)  … ラズパイへUSB-UART直結。pi_serial_relay 経由でPCと通信
 nmcli connection up th-rpi-ap-wlo1     # autoconnect 済みなら不要
 ping -c3 192.168.5.1                   # ラズパイ (AP 兼 LiDAR 兼 ESP32中継)
@@ -105,7 +105,8 @@ ros2 service call /mode_manager/set_mode th_system_msgs/srv/SetMode \
 | やりたいこと                                             | ドキュメント                                          |
 | ---------------------------------------------------------- | ------------------------------------------------------- |
 | **実機を動かす（手動走行・教示・再生）**                 | **[docs/使い方.md](docs/使い方.md)**                  |
-| **今回の実機試験で何を確かめるか**                       | **[docs/試験項目.md](docs/試験項目.md)**              |
+| **次の実機試験で何を確かめるか**（貯め置き）            | **[docs/試験項目.md](docs/試験項目.md)**              |
+| 安全性の検証結果（確認期の実機試験。安全性の証明の材料）   | [docs/安全性の検証結果.md](docs/安全性の検証結果.md)  |
 | システムの完成形・実装状況を知る                         | [docs/plan/spec/README.md](docs/plan/spec/README.md)  |
 | 新しい PC/ラズパイ/ESP32 で環境を作る                    | [docs/setup.md](docs/setup.md)                        |
 | ネットワークの仕組み・通信トラブルの復旧                 | [docs/network.md](docs/network.md)                    |

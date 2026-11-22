@@ -3,7 +3,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  dispatchEffect, shouldGuideClose, shouldOpenSaveAsk, isUnsavedRecording, initEstopHeldGuideKey,
+  dispatchEffect, shouldGuideClose, shouldOpenSaveAsk, isUnsavedRecording, saveAskItems, initEstopHeldGuideKey,
   resetEffectWarningsForTest, stampToMs,
 } from '../../src/shell/effectDispatch.js'
 
@@ -17,12 +17,24 @@ test('guide で帯の状態が立つ (stamp 付き・無し)', () => {
   resetEffectWarningsForTest()
   assert.deepEqual(
     dispatchEffect(guideMsg('summon_clear_timeout')),
-    { kind: 'guide', key: 'summon_clear_timeout', stampMs: null },
+    { kind: 'guide', key: 'summon_clear_timeout', detail: null, stampMs: null },
   )
   assert.deepEqual(
     dispatchEffect(guideMsg('summon_clear_timeout', 'WebUI', 100)),
-    { kind: 'guide', key: 'summon_clear_timeout', stampMs: 100000 },
+    { kind: 'guide', key: 'summon_clear_timeout', detail: null, stampMs: 100000 },
   )
+})
+
+test('guide の detail（理由）が帯の状態に載る (A-11 保存の失敗)', () => {
+  resetEffectWarningsForTest()
+  const msg = {
+    name: 'guide', dest: 'WebUI',
+    args_json: JSON.stringify({ key: 'venue_save_failed', detail: 'ポーズグラフが更新されませんでした' }),
+  }
+  assert.deepEqual(dispatchEffect(msg), {
+    kind: 'guide', key: 'venue_save_failed',
+    detail: 'ポーズグラフが更新されませんでした', stampMs: null,
+  })
 })
 
 test('dest が WebUI でないものは無視 (restart_control_stack は connectivity_checker 宛)', () => {
@@ -221,4 +233,27 @@ test('起動時の物理非常停止の案内: INIT かつ押下のときだけ�
   assert.equal(initEstopHeldGuideKey({ mode: 'IDLE', estopHw: true }), null)
   assert.equal(initEstopHeldGuideKey({ mode: 'CARRY', estopHw: true }), null)
   assert.equal(initEstopHeldGuideKey({ mode: null, estopHw: true }), null)
+})
+
+// A-16（SM-3.1.1-10）: 「終了」の未保存には試験場内地図を含む。
+test('A-16: ask_save_if_unsaved は /system/state.unsaved に venue_map があれば開く', () => {
+  const none = { points: 0, saved: false }
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' }, none, ['venue_map']), true)
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' }, null, ['venue_map']), true)
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' }, none, []), false)
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' }, none, undefined), false)
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save_if_unsaved' }, none, ['route']), false)
+  // 記録の途切れ（ask_save）は地図の話ではない
+  assert.equal(shouldOpenSaveAsk({ kind: 'ask_save' }, none, ['venue_map']), false)
+  assert.equal(shouldOpenSaveAsk({ kind: 'guide' }, none, ['venue_map']), false)
+})
+
+test('A-16: saveAskItems は何が未保存かを分けて返す', () => {
+  const rec = { points: 5, saved: false }
+  assert.deepEqual(saveAskItems({ kind: 'ask_save_if_unsaved' }, rec, ['venue_map']),
+    { route: true, venueMap: true })
+  assert.deepEqual(saveAskItems({ kind: 'ask_save_if_unsaved' }, rec, []),
+    { route: true, venueMap: false })
+  assert.deepEqual(saveAskItems({ kind: 'ask_save_if_unsaved' }, null, ['venue_map']),
+    { route: false, venueMap: true })
 })

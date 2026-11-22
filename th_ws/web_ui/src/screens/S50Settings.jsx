@@ -56,6 +56,7 @@ import {
   S50_PRESET_ORDER_REASONS,
   S50_SEC_BRAKE_TAB, S50_SEC_BRAKE, S50_BRAKE_NOTE, S50_BRAKE_OUTDOOR, S50_BRAKE_INDOOR,
   S50_BRAKE_OFF, S50_BRAKE_ON,
+  S50_SEC_CAMERA_TAB, S50_SEC_CAMERA, S50_CAMERA_NOTE, S50_CAMERA_URL_LABEL, S50_CAMERA_BAD_URL,
   S50_BLIND_GOTO_CALIB, S50_BLIND_NOTE,
   S50_FONT_TITLE, S50_FONT_NORMAL, S50_FONT_LARGE, S50_FONT_XLARGE,
   S50_VOICE_TITLE, S50_VOICE_ON, S50_VOICE_OFF,
@@ -114,6 +115,14 @@ const BRAKE_OPTIONS = [
   { value: 'on', label: S50_BRAKE_ON },
 ]
 
+// S-21 の「カメラ」ボタンの開く先（Spec-onsite.md §7.2）。文字列で1つだけ。
+// /params/get で効き値を読み、/params/set で出どころ付きで保存する
+// （走行中の値は変えない。次の起動から効く。機体側も http(s) 以外を弾く）。
+const CAMERA_NAMES = ['camera_ui_url']
+// 画面側の検査（機体側 params_audit と同じ規則。保存前に理由を出せる）。
+const isValidCameraUrl = (value) =>
+  typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'))
+
 // SG-B9: 廃止予定ノードの項目のうち上限が registry と食い違うものは、
 // registry の値を超えて保存できないようにする（対象: mapless の v_max。
 // 上限値自体は scripts/gen_param_limits.py が registry.yaml から作る）。
@@ -125,8 +134,8 @@ const REGISTRY_CAPS = { follow_planner_mapless: { v_max: PARAM_LIMITS.v_max } }
 // （表示は config_manager の調整対象でなくても読める）。
 
 // 開発モードの項目メタ（WP-DEV-01B §2）。キーは devModeState.DEV_ITEMS と揃える。
-// battery・auto_brake 以外は効く。opcheck は起動時の自動点検の警告を消す
-// （判定自体は止めない）。battery・auto_brake は as-built に止める側の
+// battery 以外は効く。opcheck は起動時の自動点検の警告を消す
+// （判定自体は止めない）。battery は as-built に止める側の
 // 仕組みが無く、選んでも何も起きない（DEV_NO_GATE_ITEMS。カード末尾の注記で明示する）。
 const DEV_ITEM_META = [
   { item: 'link', label: S50_DEV_ITEM_LINK, desc: S50_DEV_ITEM_LINK_DESC },
@@ -190,6 +199,7 @@ const SECTION_TABS = [
   ['slam', S50_SEC_SLAM_TAB],
   ['preset', S50_SEC_PRESET_TAB],
   ['brake', S50_SEC_BRAKE_TAB],
+  ['camera', S50_SEC_CAMERA_TAB],
   ['speaker', S50_SEC_SPEAKER_TAB],
 ]
 
@@ -256,6 +266,10 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   const [brakeEff, setBrakeEff] = useState({})
   const [brakeDraft, setBrakeDraft] = useState({})
   const [brakeReason, setBrakeReason] = useState('')
+  // ── S-21 の「カメラ」ボタンの開く先区画（同じ /params 経路）──
+  const [cameraEff, setCameraEff] = useState({})
+  const [cameraDraft, setCameraDraft] = useState({})
+  const [cameraReason, setCameraReason] = useState('')
 
   const reload = useCallback(() => {
     setLoading(true)
@@ -307,6 +321,13 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
       setBrakeDraft({ ...(payload?.effective ?? {}), ...(payload?.pending ?? {}) })
     }).catch(() => {
       setStatus((s) => ({ ...s, brake: S50_LOAD_FAILED }))
+    })
+    // カメラの開く先も同じ経路で読む（次に効く値を編集の出発点にする）。
+    getParams(CAMERA_NAMES).then((payload) => {
+      setCameraEff(payload?.effective ?? {})
+      setCameraDraft({ ...(payload?.effective ?? {}), ...(payload?.pending ?? {}) })
+    }).catch(() => {
+      setStatus((s) => ({ ...s, camera: S50_LOAD_FAILED }))
     })
   }, [getTunableParams, getParams])
 
@@ -415,6 +436,45 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
       })
       .catch((e) => setStatus((s) => ({
         ...s, brake: `${S50_SAVE_FAILED}: ${e.message ?? e}`,
+      })))
+  }
+
+  // S-21 の「カメラ」ボタンの開く先の保存（/params/set。出どころ必須＝PT-4）。
+  // 即時の set_parameters はしない（走行中の値は変えない。次の起動から効く）。
+  // http(s) 以外は画面でも弾く（機体側 params_audit も同じ規則で弾く）。
+  const cameraUrlBad = !isValidCameraUrl(cameraDraft.camera_ui_url)
+  const applyCamera = (value) => {
+    setCameraDraft((prev) => ({ ...prev, camera_ui_url: value }))
+  }
+  const saveCamera = () => {
+    if (cameraUrlBad) {
+      setStatus((s) => ({ ...s, camera: S50_CAMERA_BAD_URL }))
+      return
+    }
+    if (!cameraReason) {
+      setStatus((s) => ({ ...s, camera: S50_PRESET_REASON_NEED }))
+      return
+    }
+    setStatus((s) => ({ ...s, camera: S50_SAVING }))
+    const values = {}
+    for (const name of CAMERA_NAMES) {
+      if (cameraDraft[name] !== cameraEff[name]) values[name] = cameraDraft[name]
+    }
+    if (Object.keys(values).length === 0) {
+      setStatus((s) => ({ ...s, camera: S50_SAVED }))
+      return
+    }
+    setParams(values, 'web_ui', cameraReason)
+      .then((res) => {
+        if (res?.success) {
+          setStatus((s) => ({ ...s, camera: S50_SAVED }))
+          reload()
+        } else {
+          setStatus((s) => ({ ...s, camera: `${S50_SAVE_FAILED}: ${res?.message ?? ''}` }))
+        }
+      })
+      .catch((e) => setStatus((s) => ({
+        ...s, camera: `${S50_SAVE_FAILED}: ${e.message ?? e}`,
       })))
   }
 
@@ -748,6 +808,45 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
                 disabled={!editable || loading}
                 onChange={(e) => setBrakeReason(e.target.value)}
                 data-testid="s50-brake-reason"
+              />
+            </label>
+          </div>
+          )}
+
+          {section === 'camera' && (
+          <div className="card">
+            <div className="row" style={{ marginBottom: 8 }}>
+              <h3 className="grow" style={{ margin: 0 }}>{S50_SEC_CAMERA}</h3>
+              <button
+                type="button"
+                className="btn save sm"
+                disabled={!editable || loading || cameraUrlBad}
+                onClick={saveCamera}
+                data-testid="s50-save-camera"
+              >
+                {S50_PRESET_SAVE}
+              </button>
+            </div>
+            {status.camera && <p className="note" data-testid="s50-status-camera">{status.camera}</p>}
+            <p className="note">{S50_CAMERA_NOTE}</p>
+            <label className="s50-field">
+              <span className="s50-field-label">{S50_CAMERA_URL_LABEL}</span>
+              <input
+                type="text"
+                value={cameraDraft.camera_ui_url ?? ''}
+                disabled={!editable || loading || !('camera_ui_url' in cameraDraft)}
+                onChange={(e) => applyCamera(e.target.value)}
+                data-testid="s50-camera-url"
+              />
+            </label>
+            <label className="s50-field">
+              <span className="s50-field-label">{S50_PRESET_REASON_LABEL}</span>
+              <input
+                type="text"
+                value={cameraReason}
+                disabled={!editable || loading}
+                onChange={(e) => setCameraReason(e.target.value)}
+                data-testid="s50-camera-reason"
               />
             </label>
           </div>

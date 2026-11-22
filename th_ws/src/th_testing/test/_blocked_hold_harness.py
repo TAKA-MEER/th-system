@@ -45,7 +45,8 @@ from nav2_msgs.srv import ClearEntireCostmap
 from nav_msgs.msg import OccupancyGrid, Path
 from rcl_interfaces.msg import Log
 from tf2_msgs.msg import TFMessage
-from th_system_msgs.msg import FaultStatus, StateEffect, StateEvent, SystemState
+from th_system_msgs.msg import (FaultStatus, PersonStatus, StateEffect,
+                                StateEvent, SystemState)
 from th_system_msgs.srv import GoToPanel, UiTrigger
 
 
@@ -241,6 +242,10 @@ class BlockedHoldBase(unittest.TestCase):
         # → evt.blocked になる。
         self.pub_summon = self.node.create_publisher(
             PoseStamped, '/onsite/summon_goal', _tl_qos())
+        # pin_registrar の 2 点指示（/onsite/two_point）は対象の /person/status を
+        # 前提にする（A-12 の試験で使う）。
+        self.pub_person = self.node.create_publisher(
+            PersonStatus, '/person/status', 10)
         self.pub_tf = self.node.create_publisher(TFMessage, '/tf_static', _tl_qos())
         self._publish_tf()
         self._tf_timer = self.node.create_timer(1.0, self._publish_tf,
@@ -591,6 +596,18 @@ class BlockedHoldBase(unittest.TestCase):
         ev.arg_json = '{}'
         self.pub_event.publish(ev)
 
+    def _publish_person(self, x: float = 1.0, y: float = 0.0):
+        """2 点指示の対象（base_link 相対）。pin_registrar が map 座標へ合成する。"""
+        p = PersonStatus()
+        p.header.stamp = self.node.get_clock().now().to_msg()
+        p.header.frame_id = 'base_link'
+        p.position.x = float(x)
+        p.position.y = float(y)
+        p.confidence = 0.9
+        p.is_lost = False
+        self.pub_person.publish(p)
+        self._sleep(0.2)
+
     def _publish_summon_goal(self, x: float = 3.0, y: float = 0.0):
         pose = PoseStamped()
         pose.header.frame_id = 'map'
@@ -679,10 +696,13 @@ class BlockedHoldBase(unittest.TestCase):
         ms = self._mode_state()
         if ms is None or ms == ('INIT', 'CHECK'):
             self._reset_to_home()
-        self._publish_summon_goal()
         self._call_trigger('ui.goto', '{"kind":"SUMMON"}')
         if not self._wait_mode_state('SUMMON', 'POINT', timeout=10.0):
             self.fail(f'SUMMON/POINT に入らない ({self._mode_state()})')
+        # A-12②: 本番の順序に合わせ、POINT に入ってからゴールを出す
+        # （pin_registrar は two_point_done の後に `/onsite/summon_goal` を出す）。
+        # venue は POINT 入場時に古いゴールを捨てるので、先に出すと消える。
+        self._publish_summon_goal()
         self._publish_setup_event('evt.two_point_done')
         if not self._wait_mode_state('SUMMON', 'WAIT_CLEAR', timeout=5.0):
             self.fail(f'SUMMON/WAIT_CLEAR に入らない ({self._mode_state()})')

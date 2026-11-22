@@ -997,6 +997,223 @@ TEST(ObstacleLimiterCoreAutoBrake, OffKeepsSpeedLimit) {
   EXPECT_DOUBLE_EQ(o.out.linear_x, 0.3) << "速度上限は OFF でも変わらない";
 }
 
+// ── 止まっているときの接近警告（Spec-safety.md §2.1。2026-11-12） ──────
+// 指令がほぼ 0 のときは進む向きではなく、死角を除く周囲すべての最近傍で警告・距離を出す。
+// 減速の判定（linear_ceiling）は変えない。
+
+namespace {
+ObstacleLimiterInputs make_stopped_in(double obstacle_m, double obstacle_dir_rad, bool auto_brake) {
+  ObstacleLimiterInputs in = make_manual_in(1000.0, 30.0, auto_brake);
+  in.muxed.value.linear_x = 0.0;
+  plant_obstacle(&in.scan.ranges, in.scan.geometry, obstacle_dir_rad, obstacle_m, 30.0);
+  return in;
+}
+}  // namespace
+
+TEST(ObstacleLimiterCoreStoppedWarning, SideObstacleWarnsWithDistance) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  for (double dir : {kPi / 2.0, -kPi / 2.0, kPi, 2.5}) {  // 横・後ろ・後ろ寄り
+    ObstacleLimiterCore core;
+    const auto o = core.update(make_stopped_in(0.5, dir, false), p);
+    EXPECT_TRUE(o.approach_warning) << "dir=" << dir;
+    EXPECT_FALSE(o.moving);
+    EXPECT_NEAR(o.approach_distance_m, 0.5, 1e-9) << "dir=" << dir;
+    EXPECT_GT(o.nearest_obstacle_m, 20.0) << "進む向き（前方）の距離は変えない";
+  }
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, FarSideObstacleNoWarning) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_stopped_in(3.0, kPi / 2.0, false), p);
+  EXPECT_FALSE(o.approach_warning);
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, BlindSectorObstacleDoesNotWarn) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  p.blind_angle_ranges_deg = {{80.0, 100.0}};  // 真横（+90 度）が死角
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_stopped_in(0.5, kPi / 2.0, false), p);
+  EXPECT_FALSE(o.approach_warning) << "死角だけにある物では警告しない";
+  // 死角の外なら出る（死角の判定が広すぎないこと）。
+  ObstacleLimiterCore core2;
+  const auto o2 = core2.update(make_stopped_in(0.5, -kPi / 2.0, false), p);
+  EXPECT_TRUE(o2.approach_warning);
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, OnDoesNotWarn) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_stopped_in(0.5, kPi / 2.0, true), p);
+  EXPECT_FALSE(o.approach_warning) << "ON のときは警告ではなく減速で伝える";
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, CeilingUnchangedBySideObstacle) {
+  // 止まっているときの横の障害物で、その後の前進の上限が下がらない（発進できなくなる恐れ）。
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  ObstacleLimiterInputs in = make_stopped_in(0.45, kPi / 2.0, true);
+  auto o = core.update(in, p);
+  EXPECT_DOUBLE_EQ(o.out.linear_x, 0.0);
+  in.now_sec += 0.05;
+  in.muxed.value.linear_x = 1.0;
+  plant_obstacle(&in.scan.ranges, in.scan.geometry, kPi / 2.0, 0.45, 30.0);
+  o = core.update(in, p);
+  EXPECT_GT(o.out.linear_x, 0.9) << "前方が空いていれば横の物で減速しない";
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, MovingKeepsForwardConeWarning) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  {
+    // 動いているときは進む向きだけ。横の障害物では警告しない。
+    ObstacleLimiterCore core;
+    ObstacleLimiterInputs in = make_manual_in(1000.0, 30.0, false);
+    plant_obstacle(&in.scan.ranges, in.scan.geometry, kPi / 2.0, 0.5, 30.0);
+    const auto o = core.update(in, p);
+    EXPECT_TRUE(o.moving);
+    EXPECT_FALSE(o.approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;
+    const auto o = core.update(make_manual_in(1000.0, 0.5, false), p);
+    EXPECT_TRUE(o.moving);
+    EXPECT_TRUE(o.approach_warning);
+    EXPECT_NEAR(o.approach_distance_m, 0.5, 1e-9);
+  }
+}
+
+// 実機ではスティックを離すと /cmd_vel_muxed が途絶える（ZERO_STALE）。その間も警告・距離は出す。
+namespace {
+ObstacleLimiterInputs make_released_in(double obstacle_m, double dir_rad, bool auto_brake) {
+  ObstacleLimiterInputs in = make_stopped_in(obstacle_m, dir_rad, auto_brake);
+  in.muxed.stamp_sec = in.now_sec - 5.0;   // 指令が途絶えた（muxed_stale_sec 0.2 を超過）
+  in.manual.stamp_sec = in.now_sec - 5.0;  // 手動入力も無音（ジョイ新鮮ではない）
+  return in;
+}
+}  // namespace
+
+TEST(ObstacleLimiterCoreStoppedWarning, MuxedStaleStillWarnsAndKeepsZeroOutput) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_released_in(0.5, kPi / 2.0, false), p);
+  EXPECT_EQ(o.action, LimiterAction::ZERO_STALE);
+  EXPECT_DOUBLE_EQ(o.out.linear_x, 0.0);
+  EXPECT_DOUBLE_EQ(o.out.angular_z, 0.0);
+  EXPECT_DOUBLE_EQ(o.applied_limit_mps, 0.0) << "途絶の出力は変えない";
+  EXPECT_TRUE(o.approach_warning);
+  EXPECT_NEAR(o.approach_distance_m, 0.5, 1e-9);
+  EXPECT_FALSE(o.moving) << "途絶の間は警告音を鳴らさない";
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, MuxedStaleNoWarningWhenOnFarBlindOrStateStale) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  {
+    ObstacleLimiterCore core;  // ON
+    EXPECT_FALSE(core.update(make_released_in(0.5, kPi / 2.0, true), p).approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;  // 遠い
+    EXPECT_FALSE(core.update(make_released_in(3.0, kPi / 2.0, false), p).approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;  // /system/state 途絶
+    auto in = make_released_in(0.5, kPi / 2.0, false);
+    in.state.stamp_sec = in.now_sec - 5.0;
+    EXPECT_FALSE(core.update(in, p).approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;  // 自律系（MANUAL でもジョグ中でもない）
+    auto in = make_released_in(0.5, kPi / 2.0, false);
+    in.state.mode = "FOLLOW";
+    EXPECT_FALSE(core.update(in, p).approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;  // ゾーン NA は常に ON 相当
+    auto in = make_released_in(0.5, kPi / 2.0, false);
+    in.state.zone = Zone::NA;
+    EXPECT_FALSE(core.update(in, p).approach_warning);
+  }
+  {
+    ObstacleLimiterCore core;  // 死角だけ
+    p.blind_angle_ranges_deg = {{80.0, 100.0}};
+    EXPECT_FALSE(core.update(make_released_in(0.5, kPi / 2.0, false), p).approach_warning);
+  }
+}
+
+TEST(ObstacleLimiterCoreStoppedWarning, SpinInPlaceCountsAsMoving) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  ObstacleLimiterInputs in = make_stopped_in(0.5, kPi / 2.0, false);
+  in.muxed.value.angular_z = 0.3;
+  const auto o = core.update(in, p);
+  EXPECT_TRUE(o.moving);
+  EXPECT_FALSE(o.approach_warning) << "動いている扱いは進む向きだけ";
+}
+
+// ── 画面に出す外形からの距離（Spec-safety.md §2.1・A-17。2026-11-13） ──────
+// 判定用の approach_distance_m（LiDAR 中心から）は変えず、同じ点の集まりで
+// 機体の外形（base_link 中心の長方形）から最も近いものを approach_clearance_m に出す。
+
+TEST(ObstacleLimiterCoreClearance, PointToBodyRectangleDistance) {
+  const double L = 0.55;
+  const double W = 0.55;
+  const double half = 0.275;
+  // 前・横・斜め・中（長方形の中は 0）。
+  EXPECT_NEAR(point_to_body_clearance(1.0, 0.0, L, W), 1.0 - half, 1e-12);
+  EXPECT_NEAR(point_to_body_clearance(0.0, -1.0, L, W), 1.0 - half, 1e-12);
+  EXPECT_NEAR(point_to_body_clearance(-1.0, 0.0, L, W), 1.0 - half, 1e-12);
+  EXPECT_NEAR(point_to_body_clearance(1.0, 1.0, L, W),
+              std::sqrt(2.0) * (1.0 - half), 1e-12);
+  EXPECT_DOUBLE_EQ(point_to_body_clearance(0.1, 0.1, L, W), 0.0);
+  EXPECT_DOUBLE_EQ(point_to_body_clearance(-0.2, 0.0, L, W), 0.0);
+  // 外形が 0（未配線）なら原点からの距離（従来と同じ）。
+  EXPECT_NEAR(point_to_body_clearance(0.7, 0.0, 0.0, 0.0), 0.7, 1e-12);
+}
+
+TEST(ObstacleLimiterCoreClearance, MovingUsesBodyFrontNotLidarCenter) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  p.body_length_m = 0.55;
+  p.body_width_m = 0.55;
+  ObstacleLimiterCore core;
+  // 前方 0.6 m（LiDAR 中心）の障害物。判定は 0.6 のまま、表示は 0.6-0.275。
+  const auto o = core.update(make_manual_in(1000.0, 0.6, false), p);
+  EXPECT_NEAR(o.approach_distance_m, 0.6, 1e-9) << "判定に使う距離は変えない";
+  // 障害物は 7 本のビームに載るので、最小は正面から最大 1.5° ずれる
+  // （0.6 m で約 0.2 mm。板の厚み程度。物理的に正しい）。
+  EXPECT_NEAR(o.approach_clearance_m, 0.6 - 0.275, 1e-3);
+}
+
+TEST(ObstacleLimiterCoreClearance, LaserOffsetIsAppliedBeforeMeasuring) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  p.body_length_m = 0.55;
+  p.body_width_m = 0.55;
+  ObstacleLimiterCore core;
+  ObstacleLimiterInputs in = make_manual_in(1000.0, 0.6, false);
+  in.laser_pose.x_m = 0.2;  // LiDAR が機体中心より 0.2 m 前
+  const auto o = core.update(in, p);
+  EXPECT_NEAR(o.approach_clearance_m, 0.6 + 0.2 - 0.275, 1e-3);
+}
+
+TEST(ObstacleLimiterCoreClearance, StoppedSurroundAlsoUsesBodyOutline) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  p.body_length_m = 0.55;
+  p.body_width_m = 0.55;
+  ObstacleLimiterCore core;
+  // 真横 0.5 m（機体幅の半分 0.275 を引く）。
+  const auto o = core.update(make_stopped_in(0.5, kPi / 2.0, false), p);
+  EXPECT_NEAR(o.approach_distance_m, 0.5, 1e-9);
+  EXPECT_NEAR(o.approach_clearance_m, 0.5 - 0.275, 1e-3);
+}
+
+TEST(ObstacleLimiterCoreClearance, PointInsideBodyIsZero) {
+  ObstacleLimiterParams p = make_ramp_params(0.0);
+  p.body_length_m = 0.55;
+  p.body_width_m = 0.55;
+  ObstacleLimiterCore core;
+  const auto o = core.update(make_manual_in(1000.0, 0.1, false), p);
+  EXPECT_DOUBLE_EQ(o.approach_clearance_m, 0.0);
+}
+
 // ── 開発モードの項目 auto_brake（Spec-safety.md §10。2026-10-08 改定） ──────
 // dev_auto_brake_off が真のときだけ、AUTO も auto_brake に従う。
 // NA・/system/state 途絶・estop・fault_lock は変えない。

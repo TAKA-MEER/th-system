@@ -141,9 +141,11 @@ class TestVenueNavProactiveBlock(BlockedHoldBase):
         pose.pose.position.x = 0.05
         pose.pose.orientation.z = 0.7071
         pose.pose.orientation.w = 0.7071
-        self.pub_summon.publish(pose)
         self._call_trigger('ui.goto', '{"kind":"SUMMON"}')
         self.assertTrue(self._wait_mode_state('SUMMON', 'POINT', timeout=10.0))
+        # A-12②: venue は POINT 入場時に古いゴールを捨てるので、入ってから出す
+        # （本番は two_point_done の後に pin_registrar が出す）。
+        self.pub_summon.publish(pose)
         self._publish_setup_event('evt.two_point_done')
         self.assertTrue(self._wait_mode_state('SUMMON', 'WAIT_CLEAR', timeout=5.0))
         self._publish_setup_event('evt.clear_ok')

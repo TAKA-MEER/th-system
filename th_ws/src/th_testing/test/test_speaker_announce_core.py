@@ -13,7 +13,7 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'th_state'))
 
 from th_state import state_core  # noqa: E402
-from th_state.speaker_announce_core import (BLOCKED_STATE, CUE_BLOCKED,  # noqa: E402
+from th_state.speaker_announce_core import (warning_audible, BLOCKED_STATE, CUE_BLOCKED,  # noqa: E402
                                             CUE_DRIVE, CUE_NONE,
                                             CUE_WARNING, DRIVE_STATES,
                                             NON_DRIVE_RUN_STATES,
@@ -97,3 +97,11 @@ def test_unknown_or_missing_is_silent():
     assert decide_cue(None, 'RUN', False) == CUE_NONE
     assert decide_cue('REPLAY', 'NO_SUCH_STATE', False) == CUE_NONE
     assert decide_cue('NO_SUCH_MODE', 'RUN', False) == CUE_NONE
+
+
+def test_warning_sound_only_while_moving():
+    """止まっているときの接近警告（画面だけ）では鳴らさない（Spec-safety §11）。"""
+    assert warning_audible(True, True) is True
+    assert warning_audible(True, False) is False
+    assert warning_audible(False, True) is False
+    assert warning_audible(False, False) is False

@@ -375,6 +375,9 @@ def test_carry_resume_summon_returns_to_point(state_core_bundle):
     names = [e.name for e in d.effects]
     assert "enable_jog_ui" in names, \
         "WAIT_CLEAR で無効化した手動 UI を戻していない"
+    two_point = [e.args for e in d.effects if e.name == "begin_two_point"]
+    assert two_point == [{"kind": "SUMMON"}], \
+        "POINT へ戻すのに 2 点指示の受付を開き直していない（A-12①）"
 
 
 @pytest.mark.rule("C-11-at-panel")
@@ -862,6 +865,9 @@ def test_estop_resume_summon_returns_to_point(state_core_bundle):
     names = [e.name for e in d.effects]
     assert "enable_jog_ui" in names, \
         "WAIT_CLEAR で無効化した手動 UI を戻していない"
+    two_point = [e.args for e in d.effects if e.name == "begin_two_point"]
+    assert two_point == [{"kind": "SUMMON"}], \
+        "POINT へ戻すのに 2 点指示の受付を開き直していない（A-12①）"
 
 
 @pytest.mark.rule("C-09c-at-panel")
@@ -1101,6 +1107,44 @@ def test_prep_non_return_states_hold_on_jog_and_fault(state_core_bundle):
             f"PREP/{state} が回復フォルトで動いた: {d.to_mode}/{d.to_state}"
 
 
+@pytest.mark.rule("T-SUM-03")
+@pytest.mark.rule("T-SUM-04")
+@pytest.mark.rule("T-SUM-05")
+def test_summon_wait_clear_back_to_point_reopens_two_point(state_core_bundle):
+    """退避待ちから POINT へ戻る 3 経路（時間切れ・対象喪失・中止）は、
+    2 点指示の受付を開き直す（A-12①。開かないと位置を決め直せない）。"""
+    core, _, _, _ = state_core_bundle
+    for event in ("evt.clear_timeout", "evt.target_lost", "ui.abort"):
+        d = core.step("SUMMON", "WAIT_CLEAR", event, _mk_ctx())
+        assert d.accepted is True, event
+        assert (d.to_mode, d.to_state) == ("SUMMON", "POINT"), event
+        two_point = [e.args for e in d.effects if e.name == "begin_two_point"]
+        assert two_point == [{"kind": "SUMMON"}], f"{event}: {two_point}"
+
+
+@pytest.mark.rule("T-SUM-18")
+@pytest.mark.rule("T-SUM-19")
+def test_summon_point_jog_and_lease_expiry_stay_in_point(state_core_bundle):
+    """POINT は行き先が無いので、ジョグに触れても PAUSE へ落ちない（A-12②）。
+    ジョグ自体は効き、リース満了ではジョグだけ止める。WAIT_CLEAR は従来どおり
+    ジョグ不可（jog_allowed が false）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("SUMMON", "POINT", "ui.jog.hold", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("SUMMON", "POINT")
+    assert d.rule_id == "T-SUM-18", d.rule_id
+    assert any(e.name == "set_jog" and e.args.get("on") is True for e in d.effects)
+
+    d = core.step("SUMMON", "POINT", "sys.jog_lease_expired", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("SUMMON", "POINT")
+    assert d.rule_id == "T-SUM-19", d.rule_id
+    assert any(e.name == "set_jog" and e.args.get("on") is False for e in d.effects)
+
+    d = core.step("SUMMON", "WAIT_CLEAR", "ui.jog.hold", _mk_ctx())
+    assert d.accepted is False, "退避待ち中にジョグが通ってしまった"
+
+
 @pytest.mark.rule("T-PREP-18")
 @pytest.mark.rule("T-PREP-10")
 def test_prep_return_stop_falls_to_pause_others_inert(state_core_bundle):
@@ -1317,3 +1361,62 @@ def test_idle_discard_discards_route(state_core_bundle):
     assert d.rule_id == "T-IDLE-02"
     assert (d.to_mode, d.to_state) == ("IDLE", "NONE")
     assert [e.name for e in d.effects] == ["discard_route"]
+
+
+# ============================================================
+# A-11 / SM-3.1.2-052: PREP の「保存」は成功の通知でだけ SAVED へ進む
+# ============================================================
+@pytest.mark.rule("T-PREP-12")
+@pytest.mark.parametrize("state", ["MAPPING", "REGISTER", "EDIT"])
+def test_prep_save_request_does_not_move_to_saved(state_core_bundle, state):
+    """ui.save は保存を頼むだけ。ここで SAVED へ進むと、失敗しても保存済みに見える。"""
+    core = state_core_bundle[0]
+    d = core.step("PREP", state, "ui.save", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("PREP", state)
+    assert [e.name for e in d.effects] == ["commit_venue_map"]
+
+
+@pytest.mark.rule("T-PREP-19")
+@pytest.mark.parametrize("state", ["MAPPING", "REGISTER", "EDIT"])
+def test_prep_save_success_event_moves_to_saved(state_core_bundle, state):
+    core = state_core_bundle[0]
+    d = core.step("PREP", state, "evt.venue_map_saved", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("PREP", "SAVED")
+
+
+@pytest.mark.rule("T-PREP-20")
+@pytest.mark.parametrize("state", ["MAPPING", "REGISTER", "EDIT"])
+def test_prep_save_failed_event_stays_and_guides_with_reason(state_core_bundle, state):
+    core = state_core_bundle[0]
+    d = core.step("PREP", state, "evt.venue_map_save_failed",
+                  _mk_ctx(arg={"reason": "ポーズグラフが更新されませんでした"}))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("PREP", state)
+    guide = [e for e in d.effects if e.name == "guide"]
+    assert len(guide) == 1
+    assert guide[0].args["key"] == "venue_save_failed"
+    assert guide[0].args["detail"] == "ポーズグラフが更新されませんでした"
+
+
+# ============================================================
+# A-11 ③ / SM-3.1.2-144: PREP の「待機場所へ」は戻る先の地図が無いと拒否する
+# ============================================================
+@pytest.mark.rule("T-PREP-06x")
+def test_prep_return_home_rejected_without_map(state_core_bundle):
+    core = state_core_bundle[0]
+    d = core.step("PREP", "MAPPING", "ui.return_home",
+                  _mk_ctx(pin_kinds=("HOME",), venue_unloaded=True))
+    assert d.accepted is False
+    assert d.reject_reason_key == "prep_map_not_started"
+
+
+@pytest.mark.rule("T-PREP-06")
+def test_prep_return_home_allowed_with_map(state_core_bundle):
+    """地図作成中・読み込み済み・未受信（venue_unloaded=False）では今までどおり RETURN へ。"""
+    core = state_core_bundle[0]
+    d = core.step("PREP", "MAPPING", "ui.return_home",
+                  _mk_ctx(pin_kinds=("HOME",), venue_unloaded=False))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("PREP", "RETURN")

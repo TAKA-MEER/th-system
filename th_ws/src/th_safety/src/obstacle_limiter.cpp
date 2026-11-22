@@ -115,6 +115,13 @@ public:
         declare_parameter("scan_stale_ms", 300);
         declare_parameter("lock_stale_ms", 500);
 
+        // 機体の外形（registry.yaml の body_length_m / body_width_m）。画面に出す
+        // 「機体から何 m」の計算だけに使う（判定の距離は変えない。A-17・
+        // Spec-safety.md §2.1）。生成 yaml が未配線なら 0.0 のままで、外形を
+        // 引かない（従来の LiDAR 中心からの距離）。
+        declare_parameter("body_length_m", 0.0);
+        declare_parameter("body_width_m", 0.0);
+
         declare_parameter("blind_calibrated", true);
         // blind_angle_ranges: 空配列の**扱いは 2026-08-27 に訂正した**。
         //
@@ -216,6 +223,8 @@ public:
         params_.muxed_stale_sec = get_parameter("muxed_stale_ms").as_int() / 1000.0;
         params_.scan_stale_sec  = get_parameter("scan_stale_ms").as_int() / 1000.0;
         params_.lock_stale_sec  = get_parameter("lock_stale_ms").as_int() / 1000.0;
+        params_.body_length_m = get_parameter("body_length_m").as_double();
+        params_.body_width_m = get_parameter("body_width_m").as_double();
         params_.blind_calibrated = get_parameter("blind_calibrated").as_bool();
         params_.blind_angle_ranges_deg = th_safety::flat_to_range_pairs(
             get_parameter("blind_angle_ranges").as_double_array());
@@ -360,12 +369,13 @@ public:
         }
         const double yaw = tf2::getYaw(laser_to_base_.transform.rotation);
         if (std::fabs(yaw) > 1e-6) {
-            // 既知の制約: obstacle_limiter_core は前方/後退の判定コーン方向を
-            // laser_link 基準の 0 / pi に固定しており、base_link<-laser_link の
-            // 回転成分を補正する入力を持たない（現在の URDF は
-            // th_description/urdf/th_robot.urdf.xacro の laser_joint が rpy=0
-            // ＝並進のみなので、今は影響が無い）。回転付きの搭載に変わった
-            // ときはコア側の拡張が必要になる（このノードの改修だけでは足りない）。
+            // 既知の制約: 前方/後退の判定コーン方向は laser_link 基準の 0 / pi に
+            // 固定しており、判定に base_link<-laser_link の回転成分は使わない
+            // （現在の URDF は th_description/urdf/th_robot.urdf.xacro の
+            // laser_joint が rpy=0 ＝並進のみなので、今は影響が無い）。画面に出す
+            // 外形からの距離（A-17）はこの回転も含めて base_link へ写してから
+            // 求めるので、回転付きの搭載でもそちらは正しく出る。判定コーンの
+            // 回転補正は別途コア側の拡張が要る。
             RCLCPP_WARN(get_logger(),
                 "laser_link は base_link に対し yaw=%.4f rad 回転している構成を検知したが、"
                 "現在の obstacle_limiter_core は回転補正を行わない（既知の制約）", yaw);
@@ -463,6 +473,11 @@ private:
         in.state = state_;
         in.estop = estop_;
         in.fault_lock = fault_lock_;
+        // 起動時に保持した base_link<-laser_link（A-17）。画面に出す外形からの
+        // 距離の計算だけに使う。判定コーンの向きは laser_link 基準のまま。
+        in.laser_pose.x_m = laser_to_base_.transform.translation.x;
+        in.laser_pose.y_m = laser_to_base_.transform.translation.y;
+        in.laser_pose.yaw_rad = tf2::getYaw(laser_to_base_.transform.rotation);
         in.dev_ignore_scan_stop = th_safety::dev_item_effective(
             dev_mode_, th_safety::kDevItemScanStop, in.now_sec);
         in.dev_auto_brake_off = th_safety::dev_item_effective(
@@ -525,6 +540,9 @@ private:
         status.source_class = sourceClassToString(out.source_class);
         status.applied_limit_mps = static_cast<float>(out.applied_limit_mps);
         status.approach_warning = out.approach_warning;
+        status.approach_distance_m = static_cast<float>(out.approach_distance_m);
+        status.approach_clearance_m = static_cast<float>(out.approach_clearance_m);
+        status.approach_warning_moving = out.approach_warning && out.moving;
         pub_limiter_status_->publish(status);
     }
 

@@ -19,7 +19,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # ── 設定（冒頭に集約。環境変数で上書きできる） ──────────────
 RPI_IP="${RPI_IP:-192.168.5.1}"                 # ラズパイ（AP 兼 /scan 配信元）
 RPI_SSH_USER="${RPI_SSH_USER:-mirs2602}"        # ラズパイのユーザー名
-ROBOT_UI_IP="${ROBOT_UI_IP:-192.168.5.50}"      # ロボット回線の PC 側 IP（タブレット用 URL）
+ROBOT_UI_IP="${ROBOT_UI_IP:-192.168.5.50}"      # ロボット回線の PC 側 IP（タブレット用 URL。「その PC のアドレス」。
+# 2026-11-19 からどの PC でも制御できる（Spec-safety §6.4）ので、別の PC で使うときは
+# その PC のロボット回線 IP に合わせる。既定 .50 は今の開発機の値
 WEBUI_PORT="${WEBUI_PORT:-5173}"                # WebUI の配信ポート
 STARTSH_RESTART_MAX="${STARTSH_RESTART_MAX:-3}" # bringup の起動は最大何回まで（初回を含む）
 STARTSH_RESTART_WAIT="${STARTSH_RESTART_WAIT:-5}" # 立て直しの前に待つ秒数

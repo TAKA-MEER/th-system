@@ -318,7 +318,7 @@ test('testSteps: 移動系モードならピン未選択でも段3完了', () =>
   }
 })
 
-test('testSteps: AT_PANEL で段4完了、current は段5（作業/呼び寄せ）', () => {
+test('testSteps: AT_PANEL で段4完了、current は段5（カメラ/呼び寄せ）', () => {
   const { steps, currentIndex } = testSteps({
     homeDeclared: true, mapOpened: true, selectedPinId: null, mode: 'AT_PANEL', stateName: 'IDLE_P',
   })
@@ -326,15 +326,17 @@ test('testSteps: AT_PANEL で段4完了、current は段5（作業/呼び寄せ�
   assert.equal(currentIndex, 4)
 })
 
-test('testSteps: WORKING なら全部完了（current は最後の段）', () => {
+test('testSteps: WORKING（画面以外の経路）でも段5は完了扱いにしない（カメラ/呼び寄せが current のまま）', () => {
+  // 2026-11-20: S-21 から ui.working を送らなくなったため、WORKING は手順の完了を
+  // 意味しない。段5（カメラ/呼び寄せ）は SUMMON に届くまで current のまま残る。
   const { steps, currentIndex } = testSteps({
     homeDeclared: true, mapOpened: true, selectedPinId: null, mode: 'AT_PANEL', stateName: 'WORKING',
   })
-  assert.deepEqual(steps.map((s) => s.done), [true, true, true, true, true])
+  assert.deepEqual(steps.map((s) => s.done), [true, true, true, true, false])
   assert.equal(currentIndex, 4)
 })
 
-test('testSteps: SUMMON 中は段5（作業/呼び寄せ）だけ完了、段4（移動）は未完了のまま', () => {
+test('testSteps: SUMMON 中は段5（カメラ/呼び寄せ）だけ完了、段4（移動）は未完了のまま', () => {
   // 呼び寄せは配電盤前への移動（段4）を経ないため、段4は AT_PANEL に届いて初めて
   // 完了扱い。現在段＝段4（移動＝「停止」操作）として描かれる。
   const { steps, currentIndex } = testSteps({
@@ -380,15 +382,16 @@ test('SM-3.1.2-118: 行き先を選べる状態（AT_HOME の IDLE_H/PAUSE・AT_
   }
 })
 
-test('abortAvailable: 「中断」は PANEL_NAV/HOME_NAV/SUMMON の BLOCKED と PAUSE だけ', () => {
+test('abortAvailable: 「中断」は PANEL_NAV/HOME_NAV/SUMMON の BLOCKED と PAUSE、SUMMON の POINT', () => {
   const states = ['NAV', 'BLOCKED', 'PAUSE', 'ALIGN', 'POINT', 'WAIT_CLEAR', 'IDLE_H', 'IDLE_P', null]
   for (const mode of ['PANEL_NAV', 'HOME_NAV', 'SUMMON']) {
     for (const st of states) {
-      assert.equal(abortAvailable(mode, st), st === 'BLOCKED' || st === 'PAUSE', `${mode}/${st}`)
+      const expected = st === 'BLOCKED' || st === 'PAUSE' || (mode === 'SUMMON' && st === 'POINT')
+      assert.equal(abortAvailable(mode, st), expected, `${mode}/${st}`)
     }
   }
   for (const mode of ['AT_HOME', 'AT_PANEL', 'IDLE', 'MANUAL', null]) {
-    for (const st of ['BLOCKED', 'PAUSE', 'NAV']) {
+    for (const st of ['BLOCKED', 'PAUSE', 'NAV', 'POINT']) {
       assert.equal(abortAvailable(mode, st), false, `${mode}/${st}`)
     }
   }

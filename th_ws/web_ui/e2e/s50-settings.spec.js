@@ -105,7 +105,9 @@ test('「校正で変更する」は ui.enter_mode{CALIB} を送り、拒否さ�
 
   // スタブ無し = 拒否扱い（useTrigger の TEST_MODE 既定）。
   await page.getByTestId('s50-goto-calib').click()
-  const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
+  // A-13: 画面を開いたときの ui.screen は除き、ボタンが送ったものだけを見る。
+  const calls = (await page.evaluate(() => window.__thTriggerCalls ?? []))
+    .filter((c) => c.trigger !== 'ui.screen')
   expect(calls).toHaveLength(1)
   expect(calls[0]).toEqual({
     trigger: 'ui.enter_mode', argJson: { mode: 'CALIB' }, requester: 'web_ui',
@@ -119,7 +121,8 @@ test('「校正で変更する」が受理されたら理由は出ない', async
   await page.getByTestId('s50-sec-lidar').click()
 
   await page.getByTestId('s50-goto-calib').click()
-  const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
+  const calls = (await page.evaluate(() => window.__thTriggerCalls ?? []))
+    .filter((c) => c.trigger !== 'ui.screen')
   expect(calls).toHaveLength(1)
   expect(calls[0].argJson).toEqual({ mode: 'CALIB' })
   await expect(page.getByTestId('s50-calib-err')).toHaveCount(0)
@@ -284,6 +287,41 @@ test('自動ブレーキ既定区画は /params/set で保存する', async ({ p
   expect(calls[0].setBy).toBe('web_ui')
   expect(calls[0].reason).toBe('場内で試す')
   expect(calls[0].values).toEqual({ auto_brake_default_outdoor: 'on' })
+})
+
+// S-21 の「カメラ」ボタンの開く先（2026-11-20）は /params/set で保存し、
+// 次の起動から効く。http(s) 以外は画面でも保存できない（機体側も弾く）。
+test('カメラの開く先区画は http(s) だけ /params/set で保存できる', async ({ page }) => {
+  await gotoScreenWithParams(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
+    get: {
+      effective: { camera_ui_url: 'http://192.168.5.129/' },
+      pending: {},
+      origins: {},
+      restart_required: false,
+    },
+    set: { success: true, message: 'OK' },
+  })
+  await page.getByTestId('s01-open-settings').click()
+  await expect(page.locator('#s50')).toBeVisible()
+  await page.getByTestId('s50-sec-camera').click()
+
+  await expect(page.getByTestId('s50-camera-url')).toHaveValue('http://192.168.5.129/')
+
+  // http(s) 以外を入れると保存ボタンが押せない（送らない）。
+  await page.getByTestId('s50-camera-url').fill('ftp://192.168.5.129/')
+  await expect(page.getByTestId('s50-save-camera')).toBeDisabled()
+  expect(await paramsSetCalls(page)).toHaveLength(0)
+
+  // http に直して理由を入れて保存すると /params/set が呼ばれる。
+  await page.getByTestId('s50-camera-url').fill('http://192.168.5.10/cam')
+  await page.getByTestId('s50-camera-reason').fill('DHCP が変わった')
+  await expect(page.getByTestId('s50-save-camera')).toBeEnabled()
+  await page.getByTestId('s50-save-camera').click()
+  const calls = await paramsSetCalls(page)
+  expect(calls).toHaveLength(1)
+  expect(calls[0].setBy).toBe('web_ui')
+  expect(calls[0].reason).toBe('DHCP が変わった')
+  expect(calls[0].values).toEqual({ camera_ui_url: 'http://192.168.5.10/cam' })
 })
 
 // SG-C14: 表示タブ（音声 ON/OFF・縦横の固定・コストマップ表示）はブラウザに

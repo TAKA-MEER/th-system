@@ -34,3 +34,7 @@ bool      has_map           # 再生側のみ。読み込んだ経路に保存�
                             # state_manager が map_update_available の材料にする。
                             # 記録側は出さない（常に false）。
                             # 末尾に追加（既存フィールドの順序は変えない）。
+bool      map_save_failed   # 記録側のみ。保存したときに地図の画像（pgm/yaml）が
+                            # 揃わなかったら true（＝再生で localize_quality が
+                            # 'unknown' になる経路）。S-13 の「保存しました」に
+                            # 警告を添える。A-21 で追加。

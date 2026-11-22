@@ -42,6 +42,19 @@ export async function gotoScreen(page, screen, state = {}) {
 // 起動時の自動点検（Spec-ops.md §2.6）: S-00 / S-01 を自動判定の種付きで開く。
 // useAutoCheckStatus.js は window.__thTestAutoCheck を初期値にし、
 // window.__thSetTestAutoCheck で表示を更新する（useDevMode.js と同じ流儀）。
+// A-13: 端末を開き直した状態を再現する。__thTestScreen='S00' は通常
+// 「S-00 を明示的に開いた」初期値だが、__thTestReopen を立てると開いていない
+// 状態にし、最初に受け取った mode から画面を導出させる（実機で走行中に
+// ブラウザを閉じて開き直したときと同じ）。mode が INIT なら S-00 のまま。
+export async function gotoReopen(page, state = {}) {
+  await page.addInitScript((s) => {
+    window.__thTestState = s
+    window.__thTestScreen = 'S00'
+    window.__thTestReopen = true
+  }, state)
+  await page.goto('/')
+}
+
 export async function gotoScreenWithAutoCheck(page, screen, state, auto) {
   await page.addInitScript(({ s, scr, a }) => {
     window.__thTestState = s
@@ -185,10 +198,10 @@ export async function gotoScreenWithOnsite(
   {
     pins, targets, twoPoint, editPin, pose, declareHome, selectPin, homeDeclared, waitClear,
     routeMap, openVenueMap, mappingActive, personStatus, costmap, plannedPath, scan,
-    pinWarning, resolvePin,
+    pinWarning, resolvePin, paramsStubs,
   },
 ) {
-  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm, ma, pst, cm, pp, sc, pw, rsp }) => {
+  await page.addInitScript(({ s, scr, p, t, tp, ep, ps, dh, sp, hd, wc, rm, ovm, ma, pst, cm, pp, sc, pw, rsp, pstub }) => {
     window.__thTestState = s
     window.__thTestScreen = scr
     if (p) window.__thTestOnsitePins = p
@@ -220,12 +233,14 @@ export async function gotoScreenWithOnsite(
     // WS-9AB: 壁近接警告（ros/usePinWarning.js）と 3 択の resolve スタブ。
     if (pw) window.__thTestPinWarning = pw
     if (rsp) window.__thTestResolvePin = rsp
+    // S-50 / S-21 の /params/get・/params/set スタブ（useParamsOverrides.js）。
+    if (pstub) window.__thParamsStubs = pstub
   },
   {
     s: state, scr: screen, p: pins, t: targets, tp: twoPoint, ep: editPin, ps: pose,
     dh: declareHome, sp: selectPin, hd: homeDeclared, wc: waitClear, rm: routeMap, ovm: openVenueMap,
     ma: mappingActive, pst: personStatus, cm: costmap, pp: plannedPath, sc: scan,
-    pw: pinWarning, rsp: resolvePin,
+    pw: pinWarning, rsp: resolvePin, pstub: paramsStubs,
   })
   await page.goto('/')
 }
@@ -240,6 +255,11 @@ export async function onsiteServiceCalls(page) {
 // ros/useStdTrigger.js's test hook (shape { service }).
 export async function stdTriggerCalls(page) {
   return page.evaluate(() => window.__thStdTriggerCalls ?? [])
+}
+
+// A-11: ros/useStdSetBool.js の test hook が記録した呼び出し（shape { service, data }）。
+export async function stdSetBoolCalls(page) {
+  return page.evaluate(() => window.__thStdSetBoolCalls ?? [])
 }
 
 // brief-onsite-ux2 F-6: S-20 の地図タブは「地図作成開始」を押すまで OnsiteMap を

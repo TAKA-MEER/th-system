@@ -14,6 +14,7 @@ obstacle_limiter:
     blind_max_sectors: 8
     blind_max_total_deg: 90.0
     body_half_length_m: 0.275
+    body_length_m: 0.55
     body_width_m: 0.55
     brake_accel_mps2: 1.0
     hysteresis_band_m: 0.11499999999999999

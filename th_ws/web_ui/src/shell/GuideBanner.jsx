@@ -6,12 +6,12 @@
 import { guideLabel } from '../i18n/guides.js'
 import { W6_CLOSE } from '../i18n/screens.js'
 
-export default function GuideBanner({ guideKey, onClose }) {
+export default function GuideBanner({ guideKey, guideDetail, onClose }) {
   const text = guideLabel(guideKey)
   if (!text) return null
   return (
     <>
-      <span className="g-tx" data-testid="w3-guide" role="status">{text}</span>
+      <span className="g-tx" data-testid="w3-guide" role="status">{text}{guideDetail ? `（${guideDetail}）` : ''}</span>
       <button type="button" className="btn sm" data-testid="w3-guide-close" onClick={onClose}>
         {W6_CLOSE}
       </button>

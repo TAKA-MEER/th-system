@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import AppShell from './shell/AppShell.jsx'
 import FixedStage from './shell/FixedStage.jsx'
@@ -22,6 +22,7 @@ import { SCREEN_NAMES, DRIVE_MANUAL, DRIVE_LEAVE } from './i18n/screens.js'
 // 画面ルーティングの純ロジックは screens/screenRouting.js（ユニットテスト対象）。
 import {
   SCREEN_IDS, MODE_TO_SCREEN, resolveScreen, initialPassedConnect,
+  latchFirstMode, isReopenFirstMode,
 } from './screens/screenRouting.js'
 
 // ?view=audience で観客向け表示 (docs/voice-and-audience.md §1)。
@@ -40,6 +41,11 @@ const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== unde
 // OperationCardHarness を表示する -- one-primary-button.spec.js が探す
 // [data-testid="opcard-harness"] を壊さないため。
 const TEST_SCREEN = typeof window !== 'undefined' ? window.__thTestScreen : undefined
+// e2e 専用: __thTestScreen='S00' は「S-00 を明示的に開いた」初期値になる。
+// A-13 の「開き直し」を再現するときは明示的に開いていない状態にしたいので、
+// __thTestReopen で connectOpen の初期値を false にする（e2e/helpers.js の
+// gotoReopen()）。開き直しかどうかは最初に受け取った mode で決まる。
+const TEST_REOPEN = typeof window !== 'undefined' && window.__thTestReopen === true
 
 // e2e 用の DRIVE テスト画面: 常設走行タブ (driveTab) と、W-6 を開く「手動」
 // ボタンだけを並べる。runTestDrive() は __thTestScreen === 'DRIVE_S11' を
@@ -77,9 +83,19 @@ function DriveTestScreen() {
 function Screens() {
   const { state } = useSystemState()
   const mode = state?.mode ?? null
+  // A-13: 画面を開いて最初に受け取った mode を 1 度だけ記録する。最初が INIT
+  // 以外なら「走行中に開き直した」とみなし S-00 を通過済みにする。最初が INIT
+  // なら起動直後なので、後から IDLE になってもボタンを押すまで S-00 のまま。
+  const firstModeRef = useRef(null)
+  firstModeRef.current = latchFirstMode(firstModeRef.current, mode)
+  const reopenPassed = isReopenFirstMode(firstModeRef.current)
   // S-00 は「疎通確認」という UI 上の前段で、FSM のモードではない。
   // 通過したかどうかだけがローカル状態。
   const [passedConnect, setPassedConnect] = useState(() => initialPassedConnect(TEST_SCREEN))
+  // A-13: 「S-00 を明示的に開いているか」。S-01 の「詳細を見る」や S-00 からの
+  // 開発モード設定のように利用者が開いたときは出す（e2e の __thTestScreen='S00'
+  // も同じ）。開き直しを再現する e2e は __thTestReopen でこちらを false にする。
+  const [connectOpen, setConnectOpen] = useState(() => TEST_SCREEN === 'S00' && !TEST_REOPEN)
   // WS-9X: S-50 設定を開いているか（S-01 のサブ画面。ローカル state）。
   const [settingsOpen, setSettingsOpen] = useState(false)
   // モードが実画面（S-11/S-13/S-14）に対応したら設定は畳む（走行に入った・
@@ -92,7 +108,7 @@ function Screens() {
   const screen = TEST_SCREEN === 'S21'
     ? 'S21'
     : resolveScreen({
-      testScreen: TEST_SCREEN, passedConnect, mode, settingsOpen,
+      testScreen: TEST_SCREEN, passedConnect, connectOpen, reopenPassed, mode, settingsOpen,
       subState: state?.state ?? null,
     })
 
@@ -103,8 +119,11 @@ function Screens() {
     return (
       <AppShell screenName={SCREEN_NAMES.S00} screenId={SCREEN_IDS.S00}>
         <S00Connect
-          onAdvance={() => setPassedConnect(true)}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onAdvance={() => { setConnectOpen(false); setPassedConnect(true) }}
+          // S-00 から開発モード設定へ入ったら S-00 を開いたままにする（仕様 §5）:
+          // link を外して IDLE へ進んでも「戻る」で S-00 に戻り、
+          // 「メインメニュー画面へ」で S-01 へ進む。
+          onOpenSettings={() => { setConnectOpen(true); setSettingsOpen(true) }}
         />
       </AppShell>
     )
@@ -193,7 +212,7 @@ function Screens() {
           onOpenConnect は要約カードの「詳細を見る」→ S-00 相当へ戻る。 */}
       <S01Main
         onOpenSettings={() => setSettingsOpen(true)}
-        onOpenConnect={() => setPassedConnect(false)}
+        onOpenConnect={() => setConnectOpen(true)}
       />
     </AppShell>
   )

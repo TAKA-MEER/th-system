@@ -286,7 +286,10 @@ test('待機場所の宣言: 失敗で force 再宣言を促し、成功で宣�
   expect(calls).toHaveLength(2)
   expect(calls[1].service).toBe('/onsite/declare_home')
   expect(calls[1].request).toMatchObject({ force: true })
-  expect((await triggers(page)).length, '宣言時に ui.goto などの誤 trigger を送っていない').toBe(0)
+  expect(
+    (await triggers(page)).filter((c) => c.trigger !== 'ui.screen'),
+    '宣言時に ui.goto などの誤 trigger を送っていない',
+  ).toHaveLength(0)
 
   // home_declared を受信した前提（宣言済み）に変えるとピルが切り替わる。
   await setTestHomeDeclared(page, true)
@@ -469,22 +472,86 @@ test('退避待ち: WAIT_CLEAR で進捗ボックスが出て、中止は ui.abo
   expect(abort, '中止が ui.abort を送っていない').toHaveLength(1)
 })
 
-test('配電盤前: 作業中トグルは T-ATP-01/02 の ui.working を送る', async ({ page }) => {
-  await goto21(page, { mode: 'AT_PANEL', state: 'IDLE_P' })
+// S-21 の「カメラ」ボタン（Spec-onsite.md §7.2。2026-11-20）。開く先は
+// /params/get の effective.camera_ui_url。window.open の呼び出しを記録する。
+const CAMERA_STUBS = {
+  get: { effective: { camera_ui_url: 'http://192.168.5.129/' }, pending: {} },
+  set: { success: true, message: 'OK' },
+}
+
+async function stubWindowOpen(page) {
+  await page.addInitScript(() => {
+    window.__thOpened = []
+    window.open = (url, target, features) => {
+      window.__thOpened.push({ url, target, features })
+      return null
+    }
+  })
+}
+
+async function opened(page) {
+  return page.evaluate(() => window.__thOpened ?? [])
+}
+
+test('配電盤前: 「カメラ」は /params/get の開く先を別タブで開き、機体へ何も送らない', async ({ page }) => {
+  await stubWindowOpen(page)
+  await goto21(page, { mode: 'AT_PANEL', state: 'IDLE_P' }, { paramsStubs: CAMERA_STUBS })
   await page.locator('[data-testid="s21-subtab-atp"]').click()
 
-  // IDLE_P → OFF。押すと ui.working（IDLE_P → WORKING）。
-  await expect(page.locator('[data-testid="s21-work-toggle"]')).toHaveText('OFF')
-  await page.locator('[data-testid="s21-work-toggle"]').click()
-  let w = (await triggers(page)).filter((c) => c.trigger === 'ui.working')
-  expect(w).toHaveLength(1)
+  const btn = page.locator('[data-testid="s21-camera-open"]')
+  await expect(btn).toBeEnabled()
+  await btn.click()
 
-  // WORKING → ON。
-  await setTestState(page, { state: 'WORKING' })
-  await expect(page.locator('[data-testid="s21-work-toggle"]')).toHaveText('ON')
-  await page.locator('[data-testid="s21-work-toggle"]').click()
-  w = (await triggers(page)).filter((c) => c.trigger === 'ui.working')
-  expect(w, '作業中の切り替えが ui.working を送っていない').toHaveLength(2)
+  const urls = await opened(page)
+  expect(urls).toHaveLength(1)
+  expect(urls[0]).toEqual({ url: 'http://192.168.5.129/', target: '_blank', features: 'noopener' })
+  // 機体へは何も送らない（状態を変えない）。ui.screen は画面通知（状態変更でない）。
+  const w = (await triggers(page)).filter((c) => c.trigger === 'ui.working')
+  expect(w, '「カメラ」が ui.working を送っている').toHaveLength(0)
+})
+
+test('配電盤前: 「カメラ」は AT_PANEL 以外では押せない', async ({ page }) => {
+  await stubWindowOpen(page)
+  await goto21(page, IDLE, { paramsStubs: CAMERA_STUBS })
+  await page.locator('[data-testid="s21-subtab-atp"]').click()
+  await expect(page.locator('[data-testid="s21-camera-open"]')).toBeDisabled()
+  await expect(await opened(page)).toHaveLength(0)
+})
+
+test('配電盤前: 「カメラ」の開く先が http(s) 以外なら押せなく理由を出す', async ({ page }) => {
+  await stubWindowOpen(page)
+  await goto21(page, { mode: 'AT_PANEL', state: 'IDLE_P' }, {
+    paramsStubs: { get: { effective: { camera_ui_url: 'ftp://192.168.5.129/' }, pending: {} } },
+  })
+  await page.locator('[data-testid="s21-subtab-atp"]').click()
+  await expect(page.locator('[data-testid="s21-camera-open"]')).toBeDisabled()
+  await expect(page.locator('[data-testid="s21-camera-reason"]')).toContainText('http://')
+  const w = (await triggers(page)).filter((c) => c.trigger === 'ui.working')
+  expect(w).toHaveLength(0)
+})
+
+test('S-21 の「次にやること」にも ui.working を送らない（AT_PANEL では「カメラ」）', async ({ page }) => {
+  await stubWindowOpen(page)
+  await goto21(page, IDLE, {
+    homeDeclared: true,
+    openVenueMap: { success: true, message: '' },
+    paramsStubs: CAMERA_STUBS,
+  })
+  // 段1（会場地図を開く）を済ませてから段5へ進む（mapOpened はこの応答で決まる）。
+  // 会場地図操作は停止中だけ可なので、AT_PANEL へは後から切り替える。
+  const firstBtn = page.locator('[data-testid="s21-next-action"]')
+  await expect(firstBtn).toHaveText('会場地図を開く')
+  await firstBtn.click()
+  await setTestState(page, { mode: 'AT_PANEL', state: 'IDLE_P' })
+  // 段3（行き先を選ぶ）を済ませる＝ピン行を 1 つ選択する。
+  await page.locator('[data-testid="s21-pin-row"]').first().click()
+  // 段5「カメラ/呼び寄せ」が current。次操作は「カメラ」。
+  const btn = page.locator('[data-testid="s21-next-action"]')
+  await expect(btn).toHaveText('カメラ')
+  await btn.click()
+  expect(await opened(page)).toHaveLength(1)
+  const w = (await triggers(page)).filter((c) => c.trigger === 'ui.working')
+  expect(w, '次にやることが ui.working を送っている').toHaveLength(0)
 })
 
 test('対象選択レーダー: SUMMON のときだけ ui.select_target を送る', async ({ page }) => {

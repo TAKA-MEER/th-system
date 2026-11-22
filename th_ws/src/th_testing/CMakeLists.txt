@@ -540,6 +540,16 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_map_patch_node
     test/test_venue_map_patch_node.py
     TIMEOUT 120)
+  # A-21: 占有格子（pgm/yaml）の書き出しのやり直しと、最後まで失敗したときの
+  # 警告（応答は成功のまま message に載せる。インプロセス。ROS2 要）
+  ament_add_pytest_test(test_slam_control_grid_retry_node
+    test/test_slam_control_grid_retry_node.py
+    TIMEOUT 120)
+  # A-21: 経路の保存で地図の画像を残せなかったことを RouteStatus.map_save_failed
+  # に載せる（route_recorder。インプロセス。ROS2 要）
+  ament_add_pytest_test(test_route_map_save_warning_node
+    test/test_route_map_save_warning_node.py
+    TIMEOUT 120)
   ament_add_pytest_test(test_params_audit_node
     test/test_params_audit_node.py
     TIMEOUT 120)
@@ -547,6 +557,16 @@ if(BUILD_TESTING)
   # （launch_testing。ROS2 要）
   ament_add_pytest_test(test_params_overrides_node
     test/test_params_overrides_node.py
+    TIMEOUT 120)
+  # A-14: bringup.launch.py の記述から取り出した params_audit が実際に起動し
+  # /params/get に応答する（launch_testing。ROS2 要）
+  # A-14 追補: 壊れた calib/overrides でも params_audit が起動を続け、壊れた overrides を
+  # 上書きしない（launch_testing。ROS2 要）
+  ament_add_pytest_test(test_params_audit_broken_files_node
+    test/test_params_audit_broken_files_node.py
+    TIMEOUT 120)
+  ament_add_pytest_test(test_params_audit_launched_node
+    test/test_params_audit_launched_node.py
     TIMEOUT 120)
   ament_add_pytest_test(test_safety_monitor
     test/test_safety_monitor.py
@@ -642,6 +662,9 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_auto_brake_dev_state_node
     test/test_auto_brake_dev_state_node.py
     TIMEOUT 180)
+  ament_add_pytest_test(test_auto_brake_panel_node
+    test/test_auto_brake_panel_node.py
+    TIMEOUT 180)
   ament_add_pytest_test(test_auto_brake_dev_limiter_node
     test/test_auto_brake_dev_limiter_node.py
     TIMEOUT 180)
@@ -728,6 +751,18 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_slam_control_restart
     test/test_slam_control_restart.py
     TIMEOUT 60)
+  # A-11 ①: 1 回の再起動で再適用は 1 回（インプロセス・rclpy 要）
+  # A-11 ②: PREP の保存は成功の通知でだけ SAVED（state_manager＋slam_control の launch_testing）
+  ament_add_pytest_test(test_venue_save_result_node
+    test/test_venue_save_result_node.py
+    TIMEOUT 120)
+  # A-11 ③: PREP の「待機場所へ」は地図が無いと拒否（state_manager の launch_testing）
+  ament_add_pytest_test(test_prep_return_home_map_node
+    test/test_prep_return_home_map_node.py
+    TIMEOUT 120)
+  ament_add_pytest_test(test_slam_control_restart_apply
+    test/test_slam_control_restart_apply.py
+    TIMEOUT 60)
   ament_add_pytest_test(test_twist_mux
     test/test_twist_mux_priority.py
     TIMEOUT 60)
@@ -745,6 +780,17 @@ if(BUILD_TESTING)
   ament_add_pytest_test(esp32_bridge_node
     test/test_esp32_bridge_node.py
     TIMEOUT 90)
+  # Spec-safety §6.4: 409 拒否で /esp32/bridge_blocked を出すこと（本物のノード）
+  ament_add_pytest_test(esp32_bridge_blocked_node
+    test/test_esp32_bridge_blocked_node.py
+    TIMEOUT 90)
+  # 中継の先着 1 台ゲートの純粋コア（ROS・websockets 不要）
+  ament_add_pytest_test(relay_gate
+    test/test_relay_gate.py)
+  # 中継の実サーバーを実ソケットで確かめる（websockets／pyserial 要。Docker で回す）
+  ament_add_pytest_test(pi_serial_relay_socket
+    test/test_pi_serial_relay_socket.py
+    TIMEOUT 60)
   # esp32_bridge の wheel_radius_scale 両方向適用 + A10 の強制 (WP-ESP32-02)
   # ノード統合テスト。偽 ESP32 で指令 /k・実測 ×k・起動時拒否・実行時拒否を確認
   ament_add_pytest_test(esp32_scale
@@ -902,6 +948,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_nav_proactive_block_node
     test/test_venue_nav_proactive_block_node.py
     TIMEOUT 400)
+  # 呼び寄せの POINT のやり直しと古い行き先の破棄（A-12。launch_testing）
+  ament_add_pytest_test(test_venue_nav_summon_retry_node
+    test/test_venue_nav_summon_retry_node.py
+    TIMEOUT 400)
   # 再開のときも走り出す前に経路の先を確認する（Spec-onsite §6.3。launch_testing）
   ament_add_pytest_test(test_venue_nav_resume_check_node
     test/test_venue_nav_resume_check_node.py
@@ -948,6 +998,19 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_athome_jog_speed_node
     test/test_athome_jog_speed_node.py
     TIMEOUT 240)
+
+  # 別の PC の制御系の同時起動の検知（Spec-safety §6.4）。本物の safety_monitor を
+  # 起動し、/cmd_vel に 2 つ目の publisher を出したときの振る舞い（止める側と
+  # 記録だけ）を縛る。rclpy 要＝ホスト除外。
+  ament_add_pytest_test(test_controller_conflict_node
+    test/test_controller_conflict_node.py
+    TIMEOUT 240)
+
+  # 起動時の拒否の実グラフ試験（Spec-safety §6.4）。別プロセスで偽の
+  # obstacle_limiter を立てて拒否の関数を本当に呼ぶ。rclpy 要＝ホスト除外。
+  ament_add_pytest_test(test_single_controller_guard_node
+    test/test_single_controller_guard_node.py
+    TIMEOUT 180)
 endif()
 
 ament_package()
