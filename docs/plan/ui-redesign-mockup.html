@@ -597,6 +597,9 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .portrait .w6{left:26px;right:26px;top:94px;bottom:auto;width:auto;height:430px}
 .tg.sm.brk{width:200px}
 .b.lockb{min-width:200px;gap:10px}
+/* D74: 自動ブレーキが切れている間の警告。注意を促す点滅（1 Hz で点く・消える。D43）。端末が動きを減らす設定なら点けたまま */
+.hdr .r2 .al.brkoff{background:var(--jis-y,#ffd100);color:#161b22;animation:afp 1s steps(1,end) infinite}
+@media (prefers-reduced-motion:reduce){.hdr .r2 .al.brkoff{animation:none}}
 .b.lockb.armed{background:var(--jis-y,#ffd100) !important;color:#161b22 !important;border-color:#a88a00 !important}
 
 /* 入口のカード（P7）の一覧 */
@@ -1218,7 +1221,7 @@ function prepView(){
     <div class="sec full"><h3>戻す</h3>${btn('goHome','待機場所に戻る',{icon:'home',cls:'go',dis:!mapping})}</div>
   </div>`
   const unsaved = s!=='entry' ? '<span class="pill">未保存</span>' : ''
-  const opbar = `<div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${trackerBar(s!=='reg')}${prepBrake()}${unsaved}</div>`
+  const opbar = `<div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${trackerBar(s!=='reg')}${brakeCtl('prep')}${unsaved}</div>`
   if (lay==='cur') return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${opbar}
     <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
   // 配置案 A〜C。部品は同じで、並べ方だけ違う
@@ -1508,6 +1511,7 @@ function render(){
   if (S.scr==='menu') dev.querySelector('.body')?.insertAdjacentHTML('beforeend', menuWin())
   if (S.scr==='day') dev.querySelector('.body')?.insertAdjacentHTML('beforeend', w6HTML()+modalHTML())
   applyAb(dev)
+  if (brakeOffNow()) dev.querySelector('.hdr .r2')?.insertAdjacentHTML('beforeend', `<div class="al brkoff">${ic('warn')}自動ブレーキなし</div>`)
   // 自律走行中の枠（options §6.5・案）。機体が自分で走っている間だけ出す。手動・一時停止では出さない
   const autoOut = (S.scr==='follow' && S.follow.sub==='run') || (S.scr==='replay' && S.replay.sub==='run') || (S.scr==='auto' && S.auto.sub==='turn')
   const auto = (S.scr==='day' && S.day.sub==='moving') || (S.scr==='prep' && S.prep.sub==='return') || (S.af.scope==='all' && autoOut)
@@ -1557,14 +1561,16 @@ const HELP = {
 Object.assign(S, {
   connect:{sub:'lidar'},
   follow:{sub:'pick', teach:false, conf:'a', saved:false},
-  manual:{sub:'idle', teach:false, blind:'fig', brake:false},
+  manual:{sub:'idle', teach:false, blind:'fig'},
   replay:{sub:'select', route:'C2', dir:'fwd', speed:'mid', devab:false},
   check:{sub:'list', sel:'motor', pushed:false, released:false, motorDone:{}, rep:{}},
   calib:{sub:'list', quit:'やめる', quitAt:'foot', commit:false},
   settings:{sub:'run', voice:true, spk:true, vol:60, ori:'auto', font:'normal', cost:true, dev:false, devItems:{link:true}},
   auto:{sub:'wait', stop:false},
   rec:{col:'neutral'},   // D70: 「記録中」は D37 に合わせる（中立の札＋丸の印）
-  pb:{on:true, lock:true, arm:false},   // D68: 試験準備の自動ブレーキ
+  // 自動ブレーキ（D68・D73）: どの画面の切り替えも ON の間はロック。外すには 2 回押す（ON→OFF の確認を兼ねる）。
+  // 場外の手動（S-11・S-13）の既定は OFF（Spec-safety.md §2.1）。ほかは ON
+  bk:{prep:{on:true,lock:true,arm:false}, manual:{on:false,lock:true,arm:false}, w6:{on:true,lock:true,arm:false}, replay:{on:true,lock:true,arm:false}},
   w6:false, modal:null,
 })
 S.af.scope='field'
@@ -1586,7 +1592,8 @@ const EXT_SCR = ['connect','follow','manual','replay','check','calib','settings'
 const subsOf = scr => typeof SUBS[scr]==='function' ? SUBS[scr]() : SUBS[scr]
 function extSetSub(v){
   S.w6=false; S.modal=null; S.reArm=null; S.dropArm=false
-  S.pb={on:true, lock:true, arm:false}   // 状態が変わったら ON に戻してロック（D68）
+  for (const k of ['prep','w6','replay']) S.bk[k]={on:true, lock:true, arm:false}   // 状態が変わったら ON に戻してロック（D68）
+  S.bk.manual.lock=true; S.bk.manual.arm=false
   if (S.scr==='menu'){ if (v==='shutdown'||v==='autoask'){ S.menu.lvl='top'; S.menu.win=v; S.menu.sd={map:'pending',route:'pending',arm:null,phase:'list'} } else { S.menu.win=null; S.menu.lvl=v } return true }
   if (!EXT_SCR.includes(S.scr)) return false
   const o=S[S.scr]; o.sub=v
@@ -1612,6 +1619,21 @@ function brakeTog(on, where){
     ${on?`<div class="press" data-act="brakeOff" data-id="${where}">切</div>`:`<div class="curoff">切</div>`}<span class="sep"></span>
     ${on?`<div class="cur">入</div>`:`<div class="press" data-act="brakeOn" data-id="${where}">入</div>`}</div>`
 }
+// D68・D73: ON の間はロック（鍵の「入」）。1 回目で黄の「もう一度押すと外す」、2 回目で外れて「切│入」。外して「切」で OFF（確認の窓は出さない）。
+// 「入」に戻すとロックがかかる。OFF の間は「入」をすぐ押せる（安全側へ戻すのに手間をかけない）
+const LOCK_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
+function brakeCtl(where){ const b=S.bk[where]
+  const body = b.on && b.lock
+    ? `<button class="b lockb ${b.arm?'caution armed':''}" data-btn data-act="bkUnlock" data-id="${where}" data-help="brakelock">${LOCK_SVG}<span>${b.arm?'もう一度押すと外す':'入'}</span></button>`
+    : brakeTog(b.on, where)
+  return `<span class="cap">自動ブレーキ</span>${body}` }
+// D74: 自動ブレーキが切れている間は、ヘッダの下段に「自動ブレーキなし」を点滅させる（注意＝点滅。D43）
+function brakeOffNow(){
+  if (S.scr==='prep') return !S.bk.prep.on
+  if (S.scr==='manual') return !S.bk.manual.on
+  if (S.w6 && !S.bk.w6.on) return true
+  return S.scr==='replay' && S.replay.devab && !S.bk.replay.on
+}
 function jogKit(high){
   const ch=(a)=>`<path d="M100 22l9 10h-18z" fill="var(--mut)" transform="rotate(${a} 100 100)"/>`
   return `<div class="jogc"><div class="sl"><i></i></div>
@@ -1623,7 +1645,7 @@ function w6HTML(){
   if (!S.w6) return ''
   const inField = S.scr==='day'||S.scr==='prep'||S.scr==='auto'
   return `<div class="w6"><div class="w6h"><b>手動</b>${btn('w6close','閉じる')}</div>
-    <div class="w6b"><span class="cap">自動ブレーキ</span>${brakeTog(S.w6brake!==false,'w6')}</div>${jogKit(!inField)}</div>`
+    <div class="w6b">${brakeCtl('w6')}</div>${jogKit(!inField)}</div>`
 }
 function modalHTML(){
   const m=S.modal; if (!m) return ''
@@ -1728,12 +1750,6 @@ function followView(){
 // 録り直す（既存の経路の上書き）は二段階: 1 回目で黄にして「もう一度押すと上書き」、2 回目で記録を始める
 function reRec(id, name, len){ const armed = S.reArm===id
   return `<div class="rt${armed?' armed':''}" data-act="reRec" data-id="${id}"><span>${armed?'もう一度押すと上書き　':'録り直す　'}${name}</span><small>${len}</small></div>` }
-// D68（2026-11-23）: 試験準備の自動ブレーキは常に出す。誤タップを防ぐためロックをかけ、外すには 2 回押す（1 回目で黄の「もう一度押すと外す」）。
-// 外したら「切」で OFF（ロックの確認が ON→OFF の確認を兼ねる。案）。「入」に戻すか、状態が変わると ON に戻ってロックがかかる
-const LOCK_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
-function prepBrake(){ const b=S.pb
-  if (b.lock) return `<span class="cap">自動ブレーキ</span><button class="b lockb ${b.arm?'caution armed':''}" data-btn data-act="pbUnlock" data-help="brakelock">${LOCK_SVG}<span>${b.arm?'もう一度押すと外す':'入'}</span></button>`
-  return `<span class="cap">自動ブレーキ</span>${brakeTog(b.on,'prep')}` }
 /* ---------- S-11／S-13 手動系（型: 走らせる） ---------- */
 function manualView(){
   const m=S.manual, T=m.teach
@@ -1752,7 +1768,7 @@ function manualView(){
   const st = {entry:'', idle:T?'記録中':'', drive:T?'記録中':'走行中', near:T?'記録中':'走行中', paused:'一時停止中', saved:'保存済み'}[s]
   const stCls = T && (s==='idle'||moving) ? ' rec-'+S.rec.col : moving ? ' run' : undefined
   return drvView({title: T?'教示（手動）':'手動走行', state:st, stCls,
-    opbar: exitBtn() + `<span class="cap">自動ブレーキ</span>${brakeTog(m.brake,'manual')}`,
+    opbar: exitBtn() + brakeCtl('manual'),
     main, where, toggle:stop, ops, jog:`<h3>手動</h3>${jogKit(true)}`})
 }
 
@@ -1784,7 +1800,7 @@ function replayView(){
     <div class="row">${btn('reselect','経路を選び直す',{dis:!(s==='paused'),why:'一時停止中に選び直せます',help:'reselect'})}</div>`
   const st = {select:'', loading:'読み込み中', search:'位置合わせ中', notfound:'位置合わせ中', far:'位置合わせ中', ready:'', run:'再生中', paused:'一時停止中', end:'終点'}[s]
   return drvView({title:'教示再生', state:st, stCls: s==='run'?' run':undefined,
-    opbar: exitBtn() + (r.devab ? `<span class="cap">自動ブレーキ</span>${brakeTog(S.replayBrake!==false,'replay')}` : ''),
+    opbar: exitBtn() + (r.devab ? brakeCtl('replay') : ''),
     main, where, toggle, ops, jog: btn('jog','手動',{help:'jog'})})
 }
 
@@ -1959,24 +1975,21 @@ function extAct(a, id){
       case 'sdStop': d.phase='stopping'; setTimeout(()=>{ if (S.menu.sd===d){ d.phase='done'; render() } },1500); return true
     }
     return false }
-  if (S.scr==='prep' && (a==='pbUnlock' || ((a==='brakeOn'||a==='brakeOff') && id==='prep'))){ const b=S.pb
-    if (a==='pbUnlock'){ if (b.arm){ b.arm=false; b.lock=false } else { b.arm=true; clearTimeout(S.pbT); S.pbT=setTimeout(()=>{ if (b.arm){ b.arm=false; render() } },3000) } }
+  if (a==='bkUnlock'||a==='brakeOn'||a==='brakeOff'){ const b=S.bk[id]
+    if (a==='bkUnlock'){ if (b.arm){ b.arm=false; b.lock=false } else { b.arm=true; clearTimeout(S.bkT); S.bkT=setTimeout(()=>{ if (b.arm){ b.arm=false; render() } },3000) } }
     else if (a==='brakeOff') b.on=false
     else { b.on=true; b.lock=true }
     return true }
   // 試験（当日）の「手動」も手動の窓（W-6）を開く（A-18: 上＝自動ブレーキ・下＝手動の一式の縦並び）
-  if (S.scr==='day' && a==='jog'){ S.w6=true; S.w6brake=true; if (S.day.sub==='moving') S.day.sub='paused'; return true }
-  if (S.scr==='day' && ['w6close','mClose','brakeOn','brakeOff','brakeOffOk'].includes(a)){ if (a!=='w6close'&&a!=='mClose'){ /* 下の共通処理へ */ } else { if (a==='w6close') S.w6=false; else S.modal=null; return true } }
+  if (S.scr==='day' && a==='jog'){ S.w6=true; S.bk.w6={on:true,lock:true,arm:false}; if (S.day.sub==='moving') S.day.sub='paused'; return true }
+  if (S.scr==='day' && (a==='w6close'||a==='mClose')){ if (a==='w6close'){ S.w6=false; S.bk.w6={on:true,lock:true,arm:false} } else S.modal=null; return true }   // 閉じたら ON に戻す
   else if (!EXT_SCR.includes(S.scr)) return false
   const toMenu = lvl => { S.scr='menu'; S.menu.lvl=lvl; S.menu.win=null; S.w6=false; S.modal=null }
   // 共通: 手動の窓・確認の窓・自動ブレーキ
   switch(a){
-    case 'jog': S.w6=true; S.w6brake=true; return true
-    case 'w6close': S.w6=false; return true
+    case 'jog': S.w6=true; S.bk.w6={on:true,lock:true,arm:false}; return true
+    case 'w6close': S.w6=false; S.bk.w6={on:true,lock:true,arm:false}; return true   // 閉じたら ON に戻す
     case 'mClose': S.modal=null; return true
-    case 'brakeOn': if (id==='manual') S.manual.brake=true; else if (id==='w6') S.w6brake=true; else S.replayBrake=true; return true
-    case 'brakeOff': S.modal={t:'自動ブレーキを切りますか', l:'障害物に近づいても減速しません', b:btn('mClose','やめる')+btn('brakeOffOk','切る',{id})}; return true
-    case 'brakeOffOk': if (id==='manual') S.manual.brake=false; else if (id==='w6') S.w6brake=false; else S.replayBrake=false; S.modal=null; return true
     case 'exit': {
       const t = S.scr==='follow'||S.scr==='manual' ? S[S.scr] : null
       if (t && t.teach && t.sub!=='entry' && t.sub!=='saved' && t.sub!=='pick'){
@@ -2087,7 +2100,7 @@ Object.assign(NOTES, {
     look:['「確認」（向くだけ）の置き方 a〜c を比べる（未決 5）','「記録中」は中立の札＋丸の印（D70）'],
     opts:[{q:'画面', k:['follow','teach'], v:[[false,'S-10 追従走行'],[true,'S-12 教示（追従）']], why:'S-12 は S-10 に「保存」と記録の量を足しただけ（Spec-webui.md §3.4）'},
       {q:'「確認」の置き方（未決 5）', k:['follow','conf'], v:[['a','a 3 面のトグル'],['b','b 別のボタン'],['c','c 置かない']], why:'spec の操作カードは 停止／確認／走行。D33 のトグルは 2 面。c は機体の仕様を改める（G3）'}]},
-  manual:{changed:['主表示を<b>機体のまわりの図</b>にした（LiDAR の点・機体の外形・減速が始まる距離の点線の輪）。近い点は橙で、向きと距離を出す。いまの文字だけの「障害物」区画を置き換える（G1）','右列 ② は「停止する」だけ（走り出すのはスティック）。トグルと同じ位置・高さ','自動ブレーキは左上の切り替え（ON のときだけ点ける）。切るときは確認の窓','S-13 は地図と経路を主表示にし、右列 ① に記録の量・③ に保存'],
+  manual:{changed:['主表示を<b>機体のまわりの図</b>にした（LiDAR の点・機体の外形・減速が始まる距離の点線の輪）。近い点は橙で、向きと距離を出す。いまの文字だけの「障害物」区画を置き換える（G1）','右列 ② は「停止する」だけ（走り出すのはスティック）。トグルと同じ位置・高さ','自動ブレーキは左上の切り替え。ON の間はロック（2 回押して外す。D68・D73）。切れている間はヘッダの下段に「自動ブレーキなし」が点滅（D74）。場外の既定は OFF なので、開いた直後から点滅する（未決: 既定を ON にするか）','S-13 は地図と経路を主表示にし、右列 ① に記録の量・③ に保存'],
     look:['死角は 4 本の柱だけを図に細い灰の扇形で描く。「後方は死角があります」の文は出さない（D69）','「記録中」は中立の札＋丸の印（D70）','スティックを右列の残り全部に広げた大きさ'],
     opts:[{q:'画面', k:['manual','teach'], v:[[false,'S-11 手動走行'],[true,'S-13 教示（手動）']], why:''},
       ]},
@@ -2120,7 +2133,7 @@ Object.assign(HELP, {
   tocalib:['校正へ','この項目の校正を始めます。'],
   gomeasure:['測定機能の画面へ','測定機能の画面を開きます。機体の動きは変わりません。'],
   back:['戻る','メインメニューへ戻ります。'],
-  brakelock:['自動ブレーキ（ロック中）','誤って切らないようロックしています。2 回押すとロックが外れ、「切」で減速しなくなります。状態が変わると「入」に戻り、ロックがかかります。'],
+  brakelock:['自動ブレーキ（ロック中）','誤って切らないようロックしています。2 回押すとロックが外れ、「切」で減速しなくなります。切れている間は上に「自動ブレーキなし」が点滅します。'],
   exit:['終了','この画面を抜けてメインメニューへ戻ります。未保存の記録があれば、保存するかを聞きます。'],
 })
 
