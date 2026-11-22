@@ -596,6 +596,8 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .w6 .jogc{flex:1;min-height:0}
 .portrait .w6{left:26px;right:26px;top:94px;bottom:auto;width:auto;height:430px}
 .tg.sm.brk{width:200px}
+.b.lockb{min-width:200px;gap:10px}
+.b.lockb.armed{background:var(--jis-y,#ffd100) !important;color:#161b22 !important;border-color:#a88a00 !important}
 
 /* 入口のカード（P7）の一覧 */
 .center .card.wide{min-width:560px;max-width:92%}
@@ -605,6 +607,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .rtl .rt small{font-size:15px;color:var(--mut);font-weight:400}
 .rtl .rt.on{background:var(--sel-bg);color:var(--sel-tx)}
 .rtl .rt.on small{color:inherit}
+/* */
 .rtl .rt.armed{background:var(--jis-y,#ffd100);color:#161b22;border-color:#a88a00}
 .tagx{font-size:14px;padding:2px 8px;border:1px solid var(--warn);color:var(--warn-tx);border-radius:999px;font-weight:700}
 .maplab{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);font-size:24px;font-weight:800;padding:14px 22px;background:var(--panel);border:1px solid var(--bd-hi);border-radius:8px;z-index:2}
@@ -1215,7 +1218,7 @@ function prepView(){
     <div class="sec full"><h3>戻す</h3>${btn('goHome','待機場所に戻る',{icon:'home',cls:'go',dis:!mapping})}</div>
   </div>`
   const unsaved = s!=='entry' ? '<span class="pill">未保存</span>' : ''
-  const opbar = `<div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${trackerBar(s!=='reg')}${unsaved}</div>`
+  const opbar = `<div class="opbar">${btn('toast:未保存があれば保存するか確かめてからメインメニューへ','終了',{icon:'close',cls:'exit'})}${trackerBar(s!=='reg')}${prepBrake()}${unsaved}</div>`
   if (lay==='cur') return header('試験準備', true, PREP_STATE[s]||'') + `<div class="body">${opbar}
     <div class="content"><div class="mainv">${mainInner}</div>${ctl}</div></div>`
   // 配置案 A〜C。部品は同じで、並べ方だけ違う
@@ -1556,11 +1559,12 @@ Object.assign(S, {
   follow:{sub:'pick', teach:false, conf:'a', saved:false},
   manual:{sub:'idle', teach:false, blind:'fig', brake:false},
   replay:{sub:'select', route:'C2', dir:'fwd', speed:'mid', devab:false},
-  check:{sub:'list', estopWin:'hide', sel:'motor', pushed:false, released:false, motorDone:{}, rep:{}},
+  check:{sub:'list', sel:'motor', pushed:false, released:false, motorDone:{}, rep:{}},
   calib:{sub:'list', quit:'やめる', quitAt:'foot', commit:false},
   settings:{sub:'run', voice:true, spk:true, vol:60, ori:'auto', font:'normal', cost:true, dev:false, devItems:{link:true}},
   auto:{sub:'wait', stop:false},
-  rec:{col:'red'},
+  rec:{col:'neutral'},   // D70: 「記録中」は D37 に合わせる（中立の札＋丸の印）
+  pb:{on:true, lock:true, arm:false},   // D68: 試験準備の自動ブレーキ
   w6:false, modal:null,
 })
 S.af.scope='field'
@@ -1582,6 +1586,7 @@ const EXT_SCR = ['connect','follow','manual','replay','check','calib','settings'
 const subsOf = scr => typeof SUBS[scr]==='function' ? SUBS[scr]() : SUBS[scr]
 function extSetSub(v){
   S.w6=false; S.modal=null; S.reArm=null; S.dropArm=false
+  S.pb={on:true, lock:true, arm:false}   // 状態が変わったら ON に戻してロック（D68）
   if (S.scr==='menu'){ if (v==='shutdown'||v==='autoask'){ S.menu.lvl='top'; S.menu.win=v; S.menu.sd={map:'pending',route:'pending',arm:null,phase:'list'} } else { S.menu.win=null; S.menu.lvl=v } return true }
   if (!EXT_SCR.includes(S.scr)) return false
   const o=S[S.scr]; o.sub=v
@@ -1649,7 +1654,11 @@ function surroundSVG({near=false, blind='fig', moving=false}={}){
   for (let i=0;i<14;i++) dot(ox+(i%7)*0.05, oy+Math.floor(i/7)*0.05, near?'var(--warn)':'var(--mut)')
   const ring = `<circle cx="${cx}" cy="${cy}" r="${0.62*M}" fill="none" stroke="var(--bd-hi)" stroke-width="2" stroke-dasharray="8 8"/>`
   const fp = 0.55*M
-  const wedge = blind==='fig' ? `<path d="M${cx} ${cy} L${cx-2.6*M*Math.sin(.42)} ${cy+2.6*M*Math.cos(.42)} A${2.6*M} ${2.6*M} 0 0 0 ${cx+2.6*M*Math.sin(.42)} ${cy+2.6*M*Math.cos(.42)} Z" fill="var(--dim)" opacity=".22"/>` : ''
+  // D69（2026-11-23）: 後方に死角は無い。死角は機体の 4 本の柱だけ（斜め 4 方向の細い扇形）
+  const pil = d => { const a1=(d-4)*Math.PI/180, a2=(d+4)*Math.PI/180, R=2.6*M, r0=0.55*M*0.71
+    const P=(r,a)=>`${(cx+r*Math.sin(a)).toFixed(1)} ${(cy-r*Math.cos(a)).toFixed(1)}`
+    return `<path d="M${P(r0,a1)} L${P(R,a1)} A${R} ${R} 0 0 1 ${P(R,a2)} L${P(r0,a2)} Z" fill="var(--dim)" opacity=".2"/>` }
+  const wedge = blind==='fig' ? [45,135,225,315].map(pil).join('') : ''
   const lab = near ? `<text x="${cx+ox*M+20}" y="${cy-oy*M-22}" font-size="26" font-weight="800" style="fill:var(--warn-tx)">前方 12 cm</text>` : ''
   return `<svg class="map" viewBox="0 0 600 620" preserveAspectRatio="xMidYMid meet">${wedge}${ring}${pts}
     <rect x="${cx-fp/2}" y="${cy-fp/2}" width="${fp}" height="${fp}" rx="4" style="fill:var(--robot-fp,rgba(63,138,224,.25));stroke:var(--robot,#7fb4ee)" stroke-width="2"/>
@@ -1719,6 +1728,12 @@ function followView(){
 // 録り直す（既存の経路の上書き）は二段階: 1 回目で黄にして「もう一度押すと上書き」、2 回目で記録を始める
 function reRec(id, name, len){ const armed = S.reArm===id
   return `<div class="rt${armed?' armed':''}" data-act="reRec" data-id="${id}"><span>${armed?'もう一度押すと上書き　':'録り直す　'}${name}</span><small>${len}</small></div>` }
+// D68（2026-11-23）: 試験準備の自動ブレーキは常に出す。誤タップを防ぐためロックをかけ、外すには 2 回押す（1 回目で黄の「もう一度押すと外す」）。
+// 外したら「切」で OFF（ロックの確認が ON→OFF の確認を兼ねる。案）。「入」に戻すか、状態が変わると ON に戻ってロックがかかる
+const LOCK_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
+function prepBrake(){ const b=S.pb
+  if (b.lock) return `<span class="cap">自動ブレーキ</span><button class="b lockb ${b.arm?'caution armed':''}" data-btn data-act="pbUnlock" data-help="brakelock">${LOCK_SVG}<span>${b.arm?'もう一度押すと外す':'入'}</span></button>`
+  return `<span class="cap">自動ブレーキ</span>${brakeTog(b.on,'prep')}` }
 /* ---------- S-11／S-13 手動系（型: 走らせる） ---------- */
 function manualView(){
   const m=S.manual, T=m.teach
@@ -1944,6 +1959,11 @@ function extAct(a, id){
       case 'sdStop': d.phase='stopping'; setTimeout(()=>{ if (S.menu.sd===d){ d.phase='done'; render() } },1500); return true
     }
     return false }
+  if (S.scr==='prep' && (a==='pbUnlock' || ((a==='brakeOn'||a==='brakeOff') && id==='prep'))){ const b=S.pb
+    if (a==='pbUnlock'){ if (b.arm){ b.arm=false; b.lock=false } else { b.arm=true; clearTimeout(S.pbT); S.pbT=setTimeout(()=>{ if (b.arm){ b.arm=false; render() } },3000) } }
+    else if (a==='brakeOff') b.on=false
+    else { b.on=true; b.lock=true }
+    return true }
   // 試験（当日）の「手動」も手動の窓（W-6）を開く（A-18: 上＝自動ブレーキ・下＝手動の一式の縦並び）
   if (S.scr==='day' && a==='jog'){ S.w6=true; S.w6brake=true; if (S.day.sub==='moving') S.day.sub='paused'; return true }
   if (S.scr==='day' && ['w6close','mClose','brakeOn','brakeOff','brakeOffOk'].includes(a)){ if (a!=='w6close'&&a!=='mClose'){ /* 下の共通処理へ */ } else { if (a==='w6close') S.w6=false; else S.modal=null; return true } }
@@ -2010,7 +2030,7 @@ function extAct(a, id){
         if (c.sub==='imu') setTimeout(()=>{ if (c.sub==='imu'){ c.sub='list'; c.sel='imu'; render() } },1600); break
       case 'chkQuit': c.sub='list'; toast('やめた（結果は記録しない）'); break
       case 'estopPushChk': if (c.sub!=='estop') break
-        if (c.estopWin==='win'){ setAb('carry') } c.pushed=true; break
+        c.pushed=true; break   // D71: この項目の間は非常停止の窓を出さない
       case 'estopRelChk': if (c.sub==='estop' && c.pushed){ c.released=true; if (S.ab.k==='carry') setAb('resolved'); setTimeout(()=>{ if (c.sub==='estop'){ c.sub='list'; render() } },900) } break
       case 'motorHold': toast('押している間だけ動く'); break
       case 'toCalib': S.scr='calib'; setSub('blind'); break
@@ -2059,25 +2079,24 @@ function extAct(a, id){
 
 /* ---------- 説明欄 ---------- */
 const AUTO_SCOPE = {q:'自律走行中の枠を出す画面（未決 8）', k:['af','scope'], v:[['field','試験場だけ（いまの案）'],['all','自律で走る画面すべて']], why:'§6.5 の枠を、追従走行・教示再生・自律測定の旋回にも出すか。「すべて」で S-10 の追従中・S-14 の再生中・S-60 の旋回中にも出る'}
-const REC_OPT = {q:'「記録中」の札の色（未決 1・A-20 ①）', k:['rec','col'], v:[['red','赤（spec）'],['neutral','中立の札＋丸の印（D37）']], why:'spec は「赤い記録中インジケータ」。D37 は赤＝止める操作だけで、JIS 案でも赤は非常停止の色。決め打ちしない'}
 NOTES.menu.changed.push('<b>2026-11-23 全画面への展開</b>: 下の階層のタイルから各画面へ入れる。「運用の終了」（未保存の一覧・保存／破棄（二段階）・止める）と「自律測定」の許可の窓を足した（状態の「運用の終了（窓）」「自律測定の許可（窓）」）')
 Object.assign(NOTES, {
   connect:{changed:['<b>型: 見る・変える</b>。表を<b>つながりの図</b>にした。つながらない機器から先の線が灰の点線になり、どこで切れたかを位置で読む（G1）','必須の機器は大きい印、任意（カメラ）は小さい印。だめでも運用に入れる','総合の文「運用に入れます」を消した。「メインメニューへ」が押せることで分かる（押せないときは理由）','再起動の表示をヘッダの札へ（D21）'],
     look:['「LiDAR が来ない」で、何を直せばよいかが図と 1 行で分かるか','図にすると機器の並びが変わるたびに描き直しが要る（未決 9）'], opts:[]},
   follow:{changed:['<b>いまの実装に画面が無い</b>（S-10・S-12 の jsx が無い）。走らせる型で初めて作る','主表示はレーダー。候補を押して選ぶ（S-20・S-21 と同じ）','右列 ① は対象までの距離（S-12 は記録の量）、② は停止│走行、③ は S-12 だけ保存、④ は手動（常設）','S-12 は入口のカードで経路を選び、選ぶと記録が始まる（SM-3.1.2-012）。地図はレーダーの左下に小さく'],
-    look:['「確認」（向くだけ）の置き方 a〜c を比べる（未決 5）','「記録中」の札の色（未決 1）'],
+    look:['「確認」（向くだけ）の置き方 a〜c を比べる（未決 5）','「記録中」は中立の札＋丸の印（D70）'],
     opts:[{q:'画面', k:['follow','teach'], v:[[false,'S-10 追従走行'],[true,'S-12 教示（追従）']], why:'S-12 は S-10 に「保存」と記録の量を足しただけ（Spec-webui.md §3.4）'},
-      {q:'「確認」の置き方（未決 5）', k:['follow','conf'], v:[['a','a 3 面のトグル'],['b','b 別のボタン'],['c','c 置かない']], why:'spec の操作カードは 停止／確認／走行。D33 のトグルは 2 面。c は機体の仕様を改める（G3）'}, REC_OPT]},
+      {q:'「確認」の置き方（未決 5）', k:['follow','conf'], v:[['a','a 3 面のトグル'],['b','b 別のボタン'],['c','c 置かない']], why:'spec の操作カードは 停止／確認／走行。D33 のトグルは 2 面。c は機体の仕様を改める（G3）'}]},
   manual:{changed:['主表示を<b>機体のまわりの図</b>にした（LiDAR の点・機体の外形・減速が始まる距離の点線の輪）。近い点は橙で、向きと距離を出す。いまの文字だけの「障害物」区画を置き換える（G1）','右列 ② は「停止する」だけ（走り出すのはスティック）。トグルと同じ位置・高さ','自動ブレーキは左上の切り替え（ON のときだけ点ける）。切るときは確認の窓','S-13 は地図と経路を主表示にし、右列 ① に記録の量・③ に保存'],
-    look:['後方の死角を図の灰の扇形で出すか（未決 3。記録が食い違っている）','スティックを右列の残り全部に広げた大きさ'],
+    look:['死角は 4 本の柱だけを図に細い灰の扇形で描く。「後方は死角があります」の文は出さない（D69）','「記録中」は中立の札＋丸の印（D70）','スティックを右列の残り全部に広げた大きさ'],
     opts:[{q:'画面', k:['manual','teach'], v:[[false,'S-11 手動走行'],[true,'S-13 教示（手動）']], why:''},
-      {q:'後方の死角（未決 3）', k:['manual','blind'], v:[['fig','図に灰で描く（文は出さない）'],['none','出さない（A-9）']], why:'A-9 は「後方に死角は無い」、安全性の検証結果と R-87 は「死角があり常時出す」。どちらが正かを確かめる'}, REC_OPT]},
+      ]},
   replay:{changed:['入口は主表示の中央のカード（P7）: 経路の一覧＋順│逆（R-91）＋「この経路で進む」。地図の画像の無い経路には印と 1 行（A-21）','読み込み中は地図の上に「地図を読み込んでいます」（A-22）','右列 ① は確度の印（探しています／見つかりません／経路から離れています／決まった）→ 再生中は経路からのずれ','位置が決まるまで「再生する」は薄く、押すと理由（A-23 ②）。決まったら<b>ゆっくり明滅</b>（A-22・D43）','地図の更新 ON／OFF は使えない間は出さない（M11 と同じ）。タブを無くした','手動は W-6（窓の中は 上＝自動ブレーキ・下＝手動の一式。A-18）'],
     look:['「経路を選ぶ」→「この経路で進む」→ 読み込み → 位置を探す → 決まる、の流れで、次に押すものが目で追えるか','「経路を選び直す」を一時停止中だけにした（SM-3.1.2-103。G3 の B7）'],
     opts:[{q:'開発モードの auto_brake', k:['replay','devab'], v:[[false,'選んでいない'],[true,'選んでいる']], why:'選んでいるときだけ左上に自動ブレーキの切り替え（Spec-webui.md §3.5）。A-18 の「ほかの表示を押しのける」を左上に置いて解く'}]},
   check:{changed:['<b>型: 手順を進める</b>。左＝4 項目と結果の印（✓・×・—。形で区別し赤は使わない。P1）、右＝手順の図','下端: 左「やめる」（確かめている間だけ）／右「確かめる」（位置は固定）','だめのときの「校正へ」「故障診断へ」は結果の表の下（右下のボタンの語を変えない。R2 (a)）','結果は測った値と基準を並べ、外れた値だけ黄の地（P5）','S-31 故障診断も同じ型: 確かめることを並べて押すと ✓（画面の中だけの控え）'],
-    look:['非常停止の項目で、機体の非常停止ボタンの絵を押す →「押す」に ✓ → もう一つの絵で「戻す」','モーターの矢印は押している間だけ動く（ヘルプの長押しの対象外。P4）'],
-    opts:[{q:'点検中に機体の非常停止ボタンを押したとき（未決 4）', k:['check','estopWin'], v:[['hide','手順の中に出す（案）'],['win','非常停止の窓を出す（D50 のまま）']], why:'機体はこの間、手押しの状態に落ちない（SM-3.1.2-089）。窓を出すと手順が隠れる。D50 の例外になる'}]},
+    look:['非常停止の項目で、機体の非常停止ボタンの絵を押す →「押す」に ✓ → もう一つの絵で「戻す」。この項目の間は非常停止の窓を出さない（D71。D50 の例外）','モーターの矢印は押している間だけ動く（ヘルプの長押しの対象外。P4）'],
+    opts:[]},
   calib:{changed:['<b>タブ 5 枚を無くした</b>。左＝4 項目（前回の日付と誤差）、右＝手順。履歴は項目の右上の「履歴」','進みは<b>段の印</b>（P2）。「Step 3/4」の文字を消す','右下の進むボタンの語を項目と段で決める（直進＝走らせる／IMU＝始める（A-9）／確認＝確定する／検証＝完了）','IMU は外して傾ける図（A-9）','完了のあと「始業点検へ」'],
     look:['「中断」の語と置き場所（未決 6）を切り替えて比べる'],
     opts:[{q:'取りやめの語（未決 6）', k:['calib','quit'], v:[['やめる','やめる（案）'],['中断','中断（spec）']], why:'S-21 の「中断」（行き先の取り消し）と同じ語が別の意味になる（R2 (b)）'},
@@ -2101,6 +2120,7 @@ Object.assign(HELP, {
   tocalib:['校正へ','この項目の校正を始めます。'],
   gomeasure:['測定機能の画面へ','測定機能の画面を開きます。機体の動きは変わりません。'],
   back:['戻る','メインメニューへ戻ります。'],
+  brakelock:['自動ブレーキ（ロック中）','誤って切らないようロックしています。2 回押すとロックが外れ、「切」で減速しなくなります。状態が変わると「入」に戻り、ロックがかかります。'],
   exit:['終了','この画面を抜けてメインメニューへ戻ります。未保存の記録があれば、保存するかを聞きます。'],
 })
 
