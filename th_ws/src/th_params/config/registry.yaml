@@ -46,7 +46,7 @@
   value: null
   derived_from: [drivetrain_ceiling_mps, v_max_headroom_ratio]
   formula: v_max_from_ceiling
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner, params_audit]
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1・§6.4"
   note: "ゾーン OUT の上限。A1 の 2 本制約を満たせなければ 1 回だけ引き下げられる（P-5）"
   # speed_limit_strictness_rank（N-15・A13）: この行の値が「speed_limit 名の厳しさ順」
@@ -93,7 +93,7 @@
   value: null
   derived_from: [venue_clearance_m, brake_accel_mps2, brake_delay_s]
   formula: speed_from_braking_distance
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, params_audit]
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "ゾーン IN の上限。venue_clearance_m と brake_accel_mps2 のどちらかが placeholder なら placeholder（S5）"
   speed_limit_strictness_rank: 4  # N-15・A13。v_max(43行目のコメント) 参照
@@ -116,7 +116,7 @@
   value: null
   derived_from: [panel_clearance_m, brake_accel_mps2, brake_delay_s]
   formula: speed_from_braking_distance
-  consumers: [obstacle_limiter, params_audit]
+  consumers: [obstacle_limiter, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "AT_PANEL のジョグ。A2a は課さない（極低速軸。params.md §4.1）"
   speed_limit_strictness_rank: 3  # N-15・A13。v_max(43行目のコメント) 参照
@@ -126,7 +126,7 @@
   class: b
   status: given
   value: 0.5
-  consumers: [leash_runner, obstacle_limiter, params_audit]
+  consumers: [leash_runner, obstacle_limiter, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "LEASH（一定速）。逆算対象が無いため given（方針値）。2026-10-05 ユーザー決定の暫定 0.5 m/s（旧 1.0 は駆動系の天井 0.71 m/s を超えていた。A13 違反で発覚）。LEASH 実装時に実測で見直す（Spec-params.md §2 は改定済み。main の 3297feb）。obstacle_limiter は SystemState.speed_limit=\"v_leash\" を数値へ解決するために必要（attributes.yaml の LEASH が speed_limit: v_leash）"
   speed_limit_strictness_rank: 5  # N-15・A13。v_max(43行目のコメント) 参照
@@ -136,7 +136,7 @@
   class: b
   status: given
   value: 0.05
-  consumers: [opcheck_runner, opcheck_auto, obstacle_limiter, params_audit]
+  consumers: [opcheck_runner, opcheck_auto, obstacle_limiter, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "OPCHECK のモーター確認。押している間だけ動く極低速（方針値）。obstacle_limiter は SystemState.speed_limit=\"v_check\" を数値へ解決するために必要（attributes.yaml の OPCHECK が speed_limit: v_check）"
   speed_limit_strictness_rank: 1  # N-15・A13。v_max(43行目のコメント) 参照
@@ -146,7 +146,7 @@
   class: b
   status: given
   value: 0.15
-  consumers: [calib_runner, obstacle_limiter, params_audit]
+  consumers: [calib_runner, obstacle_limiter, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "CALIB の自律走行・旋回。校正の再現性が出る速度（方針値）。obstacle_limiter は SystemState.speed_limit=\"v_calib\" を数値へ解決するために必要（attributes.yaml の CALIB が speed_limit: v_calib）"
   speed_limit_strictness_rank: 2  # N-15・A13。v_max(43行目のコメント) 参照
@@ -1278,6 +1278,15 @@
   consumers: [state_manager]
   spec_ref: "DetailedDesign-names.md §7.3"
   note: "sys.link_timeout の契機。暫定値。2026-11-19 に 10000 → 30000（ユーザー決定）: bringup の起動直後は約 40 ノードの相手探し（SEDP）がラズパイに殺到し、1 回で約 7 万件・9 割近くを取りこぼす（docs/network.md「/scan がコンテナに届かない」6.）。普段は 10 秒以内に追いつくが、遅れると 10 秒で制御系が立て直され、立て直しが殺到を繰り返して LiDAR がいつまでもつながらなかった（2026-11-19 17:58〜17:59 に約 20 秒おきに 3 回）"
+
+- name: measure_link_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 1000
+  consumers: [measure_link]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §3.4・§6.1"
+  note: "最後に版一致（interface_version \"1\"）の /measure/heartbeat を受けてからこの時間が過ぎたら途絶とみなす（5 Hz の 5 回分。2026-11-23 決定）"
 
 - name: restart_max_count
   unit: null
