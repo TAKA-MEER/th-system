@@ -470,6 +470,16 @@ def generate_launch_description():
         parameters=[os.path.join(GENERATED_DIR, 'state_manager.yaml')],
         output='screen',
     ))
+    # 8-g P1（DetailedDesign-measure.md §6.1）: measure_link。測定機能の生存確認
+    # と /measure/status の発行。state_manager の近くに置く（生存の受け手は
+    # state_manager）。dev_mode の分岐は不要。
+    nodes.append(Node(
+        package='th_measure',
+        executable='measure_link.py',
+        name='measure_link',
+        parameters=[os.path.join(GENERATED_DIR, 'measure_link.yaml')],
+        output='screen',
+    ))
     # WP-DEV-01A: dev_mode は launch 引数の文字列 ('true'/'false') のため、
     # bool パラメータへは IfCondition / UnlessCondition で排他的に定義を分けて
     # 渡す（PythonExpression では起動時に文字列化され型不一致で落ちる）。
