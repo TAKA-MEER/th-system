@@ -235,16 +235,27 @@ builtin_interfaces/Time checked_at
 
 ---
 
-## 6. 本システムの中の受け手（案。8-g で決める）
+## 6. 本システムの中の受け手（2026-11-23 決定。8-g）
 
-| 役割 | 案 |
+| 役割 | 受け手 |
 | --- | --- |
-| `/measure/command` の提供・`meas.*` の受理・`/measure/result` の発行 | **`th_state`**（`/system/trigger` と同じく状態機械が受ける。遷移と結果の取りこぼしを 1 か所で防ぐ） |
-| 生存確認の監視・`/measure/status`・`/measure/check_arm_clearance` | 新しいパッケージ **`th_measure`** のノード（名前は 8-g で [names](DetailedDesign-names.md) に足す） |
+| `/measure/command` の提供・`meas.*` の受理・`/measure/result` の発行 | **`th_state` の `state_manager`**（`/system/trigger` と同じく状態機械が受ける。遷移と結果の取りこぼしを 1 か所で防ぐ）。**結果を 1 回だけ出す台帳**は純コア `th_state/measure_ledger.py` |
+| 生存確認の監視・`/measure/status` | **`th_measure` の `measure_link`**（§6.1） |
+| `/measure/check_arm_clearance` | `th_measure` のノード（P4 で決める） |
 | 自律測定の目的地への走行（地図を作りながら・手前 1.5 m の検査） | `th_measure` の挙動ノード。Nav2 を使い、速度指令は `/cmd_vel_nav`（[names](DetailedDesign-names.md) §6.1 の不変ルールのまま） |
-| 盤前の旋回・前後の並進（`ADJUST`。自律測定とお立会試験の停止命令の間） | **Nav2 を使わない直接制御**（2026-11-15。申し送り 22。F-60）。`th_measure` の挙動ノードが自己位置を見ながら超信地旋回・直進し、**速度指令は `/cmd_vel_behavior` だけ**（`venue_navigator` の `ALIGN` と同じ作り。[onsite](DetailedDesign-onsite.md) §6）。twist_mux → `obstacle_limiter` を通るので障害物の停止・速度の制限・非常停止はそのまま効く。直進の帰還に使う位置（オドメトリか地図上の自己位置か）は 8-g で決める |
+| 盤前の旋回・前後の並進（`ADJUST`。自律測定とお立会試験の停止命令の間） | **Nav2 を使わない直接制御**（2026-11-15。申し送り 22。F-60）。`th_measure` の挙動ノードが自己位置を見ながら超信地旋回・直進し、**速度指令は `/cmd_vel_behavior` だけ**（`venue_navigator` の `ALIGN` と同じ作り。[onsite](DetailedDesign-onsite.md) §6）。twist_mux → `obstacle_limiter` を通るので障害物の停止・速度の制限・非常停止はそのまま効く。直進の帰還に使う位置は P3 で決める |
 
----
+### 6.1 `measure_link` と `state_manager` の分担
+
+| 項目 | 決まり |
+| --- | --- |
+| 生存の判定 | `measure_link` が `/measure/heartbeat` を受け、**`interface_version` が `"1"` と一致するものだけ**を受信に数える。最後に数えた受信から **`measure_link_timeout_ms`（(b)。初期値 1000。5 Hz の 5 回分）** で途絶 |
+| `state_manager` への渡し方 | **`/system/event` の `evt.measure_link_ok` ／ `evt.measure_link_lost`**（`arg_json` に `{"reason": "timeout"｜"version_mismatch"｜"never"}`）。**変わったときと、1 Hz で今の値を出し直す**（取りこぼしても 1 秒で揃う）。`state_manager` は最後の値をラッチし、**3 秒どちらも来なければ途絶とみなす**（`measure_link` が落ちたとき） |
+| 拒否の理由 | 途絶の理由が `version_mismatch` なら `version_mismatch`、ほかは `link_lost` |
+| `state_manager` から `measure_link` へ | 内部トピック **`/measure/command_state`**（`std_msgs/String` の JSON `{"pending_command_id","pending_command","reentry_required","v_cap_mps","w_cap_radps"}`。reliable・transient_local・depth 1。変わったとき）。`/measure/status` の対応する欄の材料。`v_cap`・`w_cap` は `meas.set_limits` の指定（無ければ 0）で、P1 では常に 0 |
+| `/measure/status` の材料 | `/system/state`（`mode`・`state`・`working`・`pause_reason`・`speed_limit`）、TF `map→base_link`（`pose_valid` は 0.5 s 以内に取れたとき）、`/map_session/status` の `instance_id`、自分の生存判定、`/measure/command_state` |
+| 速度の上限の欄 | `speed_limit`（registry の名前か `stop`）を数値に引き、`v_cap` が正ならその小さい方。`stop` は 0 |
+| `/measure/command` の判定の順 | ① `command` が `meas.` で始まらない（`ui.*` を含む）・`command_id` が空・未知の `meas.*`・`meas.translate` の `side` が `FORWARD`／`BACKWARD` 以外 → `bad_argument` ② 版の食い違い → `version_mismatch` ③ 途絶 → `link_lost` ④ 遷移表に行が無い・ガードで落ちる → `state_not_accepting`（ガードが理由キーを持つならそれ） |
 
 ## 7. 未決と依存
 
@@ -252,7 +263,7 @@ builtin_interfaces/Time checked_at
 | --- | --- |
 | 腕が振れる範囲の多角形の形と大きさ | **決定（暫定）**: §3.5。値は測定機能のパラメータ |
 | ヘッダーと異常ウィンドウの中身の渡し方 | **決定**: 生のトピックの購読と理由キーの表の取り込みで始める（§4）。実装して足りなければ相談 |
-| `measure_link_timeout_ms`・`arm_clearance_scan_max_age_ms` の値 | (b)。実装時に決める |
+| `measure_link_timeout_ms`・`arm_clearance_scan_max_age_ms` の値 | `measure_link_timeout_ms` は初期値 1000（2026-11-23。§6.1）。`arm_clearance_scan_max_age_ms` は P4 で決める |
 | **依存: 自律測定の間は `/map` を凍結しない** | `map_freezer` が `/map_live` をそのまま通す場面に `AUTO_MEASURE` を足す（[names](DetailedDesign-names.md) §6.4 の `/map` の行。[Spec-measure.md](../spec/Spec-measure.md) §4.1）。8-g |
 | 参考（測定機能の決定。本システムは変えない） | 自律測定で腕が出ている間の人のジョグは人の責任（既知のリスク）。お立会試験では、昇降機を測定前の高さへ戻してから `meas.done` を返す |
 | 測定機能の最初の版の使い方（参考。fk `Spec-auto.md`） | 盤前の並進は前後だけ（2026-11-14。点ごとに「その場旋回 → 前後の並進」。左右は旋回と前後の組み合わせで動く。2026-11-15）／速度・加速度の上限は当面指定しない／一時停止からの再開はいつも人の「走行」。**本システムの実装の順番の手がかりにする** |
