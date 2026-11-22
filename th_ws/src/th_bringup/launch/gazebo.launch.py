@@ -259,6 +259,8 @@ def _scenario_setup(context, *args, **kwargs):
             'world':   world_v,
             'verbose': 'false',
             'pause':   'false',
+            # fk 申し送り 23（2026-11-22）: gui:=false で gzclient を出さない
+            'gui':     LaunchConfiguration('gui'),
         }.items(),
     ))
 
@@ -359,6 +361,9 @@ def generate_launch_description():
             description='true=IMU を EKF に追加'),
         DeclareLaunchArgument('rviz',       default_value='true',
             description='true=RViz2 を起動'),
+        DeclareLaunchArgument('gui',        default_value='true',
+            description='true=Gazebo の画面 (gzclient) を出す。'
+                        'false=gzserver だけ起動 (GPU の無い PC 向け)'),
         DeclareLaunchArgument('log_level',  default_value='info'),
         DeclareLaunchArgument('world',      default_value='',
             description='Gazebo ワールドファイル '
