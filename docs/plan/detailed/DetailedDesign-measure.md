@@ -257,6 +257,24 @@ builtin_interfaces/Time checked_at
 | 速度の上限の欄 | `speed_limit`（registry の名前か `stop`）を数値に引き、`v_cap` が正ならその小さい方。`stop` は 0 |
 | `/measure/command` の判定の順 | ① `command` が `meas.` で始まらない（`ui.*` を含む）・`command_id` が空・未知の `meas.*`・`meas.translate` の `side` が `FORWARD`／`BACKWARD` 以外 → `bad_argument` ② 版の食い違い → `version_mismatch` ③ 途絶 → `link_lost` ④ 遷移表に行が無い・ガードで落ちる → `state_not_accepting`（ガードが理由キーを持つならそれ） |
 
+### 6.2 自律測定（`AUTO_MEASURE`）の作り（2026-11-23 決定。計画書 8-g の P5）
+
+**P5a（状態機械・地図・凍結）→ P5a-ui（画面）→ P5b（目的地への走行）**の順に入れる。P5a のあいだ、目的地（`meas.goal`）・旋回・並進・腕の範囲の確認は `state_not_accepting` のまま。
+
+| 項目 | 決まり |
+| --- | --- |
+| 入口（-120） | 既存の `ui.goto`（`kind: AUTO_MEASURE`）。許可のダイアログ（W-4）は**画面側**で出し、「許可する」で `ui.goto` を送る（未保存の W-4 と同じ流儀。状態機械はダイアログを持たない）。ガードは `mode_entry.yaml` の許可表に `AUTO_MEASURE` を足し、**測定機能の生存（`/measure/command` の③と同じ判定）が無ければ拒否**（理由キー `measure_link_lost`／`measure_version_mismatch`） |
+| 抜ける（-10・-18・-135） | 「自律測定を終了」は既存の「終了」の口（`IDLE` へ）。**腕の格納の確認（W-4）は画面側**で先に出す（状態機械は持たない）。`meas.finish` は `/measure/command` から同じ遷移へ |
+| 地図（-120・§4.1） | 入ったときの effect **`start_measure_map`**（dest `map_session`）。`slam_control` は会場地図・経路地図のファイルに触れず、**`slam_toolbox` をまっさらな地図作成にする**（`/map_session/status` の `instance_id` が新しくなる。`dirty` は立てない＝未保存に数えず保存の確認を出さない）。抜けたあと試験場内で動くなら会場地図を開き直す（`SM-3.1.2-119` が拒否する） |
+| 凍結（§4.1） | `map_freezer` の通すモードに `AUTO_MEASURE` を足す（`ESTOP`・`CARRY` の押下前が `AUTO_MEASURE` のときも通す。既存の `effective_mode` の流儀） |
+| 指示の遷移 | P5a: `meas.stop`（-129。`WAIT` では受けない）・`meas.start`（-130。`PAUSE` から止める前の状態へ。P5a では止める前は `WAIT` だけなので `WAIT`）・`meas.abort`（-131）・`meas.finish`（-135）・`meas.set_limits`（状態は変えない）。P5b: `meas.goal`・`meas.reroute` と `NAV`／`ALIGN`／`BLOCKED` |
+| 通信の途絶（-133） | `state_manager` が `evt.measure_link_lost` を**変化したときだけ**遷移表へ流す（1 Hz の出し直しは流さない）。`NAV`・`ALIGN`・`BLOCKED`・`ADJUST` から `PAUSE`（`pause_reason` は `measure_link`）。`WAIT`・`PAUSE` は変えない |
+| 回復フォルト・ジョグ（-03・-01） | 既存の共通行のまま `PAUSE`。**戻るのは `meas.start` だけ**（`ui.resume_yes` では走らない。`attributes.yaml` の `resume` で表す） |
+| 自己位置を見失った（-142） | `LOCALIZATION_LOST` で `ESTOP`（既存）。そのとき進行中の指示を `CANCELLED`（`localization_lost`）にし、**`reentry_required` を立てる**。モードを抜けたら下ろす。立っている間、`meas.goal`・`turn`・`translate`・`start` は `localization_lost` で拒否 |
+| 結果の台帳 | **受理の判定（遷移表）→ 台帳への記録 → 遷移の実行**の順にする（P1 は遷移を先に進めていた）。モードを抜けたら残りを `CANCELLED`（`mode_exit`／`finished`）。`ESTOP`・`CARRY`・`PAUSE` へ落ちても目的地は捨てない（§3.2） |
+| ゾーン・速度 | 画面 `S-60` はゾーン `IN`。`attributes.yaml`: 速度 `v_slow`、ジョグ可（`v_jog_panel`）、自動ブレーキ ON（固定） |
+| 在席 | 測定機能の画面（`client_id` が `fk-`、`screen_id` `S-60`）は本システムの画面と同じに数える（既存の `/ui/active_screen` の仕組みのまま。足すものが無いことを試験で確かめる） |
+
 ## 7. 未決と依存
 
 | 項目 | 状態 |

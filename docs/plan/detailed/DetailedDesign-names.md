@@ -169,6 +169,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | | `HOME_NAV` | 待機場所へ移動 | S-21 | **場内** | 不要 |
 | 保守 | `OPCHECK` | 始業点検 | S-30 / S-31 | **非該当** | 不要 |
 | | `CALIB` | 校正 | S-40 | **非該当** | 不要 |
+| 測定 | **`AUTO_MEASURE`** | 自律測定 | S-60 | **場内** | 不要（2026-11-23。状態 `WAIT`／`NAV`／`ALIGN`／`BLOCKED`／`ADJUST`／`PAUSE`。[measure](DetailedDesign-measure.md) §6.2） |
 
 **「ゾーン」列は参考。**正は §4 の画面表（`Spec-modes.md` §7 ／ `F-19`）。
 
