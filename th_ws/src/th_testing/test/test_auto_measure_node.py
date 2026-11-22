@@ -18,6 +18,10 @@ docs/plan/spec/Spec-measure.md、詳細は DetailedDesign-measure.md §6.2。
   g. 生存確認を止めても WAIT のまま（-133 は走行中だけ）
   h. evt.measure_link_lost は値が変わったときだけ遷移表へ流れる
      （WAIT で流れたら last_reject_reason が変わる。変わっていない出し直しは変えない）
+  i. AUTO_MEASURE → LOCALIZATION_LOST → ESTOP → IDLE では片付けが走る
+     （reentry_required false・v_cap 0）
+  j. ESTOP から ui.resume_yes で AUTO_MEASURE へ戻ったときは片付けない
+     （reentry_required true のまま）
 
 注意（launch_testing の挙動）: ノードはファイル単位で共有されるため、
 メソッド同士の状態に頼らない（各メソッドが _ensure_auto_measure で自分の状態を作る）。
@@ -39,8 +43,9 @@ import launch_testing.actions
 
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
-from th_system_msgs.msg import (MeasureHeartbeat, MeasureResult, MeasureStatus,
-                                StateEvent, SystemState)
+from std_msgs.msg import String
+from th_system_msgs.msg import (FaultStatus, MeasureHeartbeat, MeasureResult,
+                                MeasureStatus, StateEvent, SystemState)
 from th_system_msgs.srv import MeasureCommand, UiTrigger
 
 # params_generation の取り込み（test_measure_link_node.py と同じ流儀）。
@@ -121,6 +126,10 @@ class TestAutoMeasureNode(unittest.TestCase):
         self.node.create_subscription(
             MeasureResult, '/measure/result', self._results.append, 20)
 
+        self._cmd_states = []
+        self.node.create_subscription(
+            String, '/measure/command_state', self._cmd_states.append, _LATCHED_QOS)
+        self.pub_fault = self.node.create_publisher(FaultStatus, '/safety/fault', 10)
         self.pub_hb = self.node.create_publisher(
             MeasureHeartbeat, '/measure/heartbeat', 10)
         self._hb_version = None    # None = 送らない
@@ -147,6 +156,28 @@ class TestAutoMeasureNode(unittest.TestCase):
         self.node.destroy_node()
 
     # ── ヘルパー ──────────────────────────────────────────────
+    def _publish_fault(self, active, severity, fault_type='LOCALIZATION_LOST'):
+        msg = FaultStatus()
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.active = bool(active)
+        msg.fault_type = fault_type
+        msg.description = 'test'
+        msg.severity = severity
+        self.pub_fault.publish(msg)
+
+    def _latest_cmd_state(self):
+        self._spin(0.2)
+        assert self._cmd_states, '/measure/command_state を1件も受信していない'
+        return json.loads(self._cmd_states[-1].data)
+
+    def _wait_cmd_state(self, pred, timeout=8.0, desc=''):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            self._spin(0.2)
+            if self._cmd_states and pred(json.loads(self._cmd_states[-1].data)):
+                return True
+        return False
+
     def _drive_to_idle(self):
         """起動直後の INIT/CHECK から IDLE へ出す（connectivity_checker の代役）。
 
@@ -439,3 +470,55 @@ class TestAutoMeasureNode(unittest.TestCase):
         st = self._latest_state()
         assert st.last_reject_reason == "", st.last_reject_reason
         pub.destroy()
+
+    def test_i_cleanup_via_estop_to_idle(self):
+        """i. AUTO_MEASURE → LOCALIZATION_LOST → ESTOP → IDLE では片付けが走る。
+
+        AUTO_MEASURE → ESTOP → IDLE（C-09d）で /measure/command_state の
+        reentry_required が false、v_cap_mps が 0 になる（-142「抜けて入り直すまで」）。"""
+        self._ensure_auto_measure_wait()
+        res = self._call_measure("meas.set_limits", v_max=0.1)
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_cmd_state(
+            lambda c: abs(c.get('v_cap_mps', -1) - 0.1) < 1e-6) is True, \
+            self._latest_cmd_state()
+
+        self._publish_fault(True, 'CRITICAL')
+        assert self._wait_mode_state("ESTOP", "NONE") is True
+        assert self._wait_cmd_state(
+            lambda c: c.get('reentry_required') is True) is True, \
+            self._latest_cmd_state()
+
+        self._publish_fault(False, 'RECOVERABLE')
+        res = self._call_trigger('ui.resume_no')
+        assert res.accepted is True, res.reject_reason_key
+        assert self._wait_mode_state("IDLE", "NONE") is True
+        assert self._wait_cmd_state(
+            lambda c: c.get('reentry_required') is False
+            and c.get('v_cap_mps') == 0.0
+            and c.get('w_cap_radps') == 0.0) is True, \
+            self._latest_cmd_state()
+
+    def test_j_return_to_auto_measure_keeps_reentry(self):
+        """j. ESTOP から ui.resume_yes で AUTO_MEASURE に戻ったときは片付けない。
+
+        C-09c-generic の復帰では reentry_required が true のまま、v_cap も残る。"""
+        self._ensure_auto_measure_wait()
+        res = self._call_measure("meas.set_limits", v_max=0.1)
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_cmd_state(
+            lambda c: abs(c.get('v_cap_mps', -1) - 0.1) < 1e-6) is True
+
+        self._publish_fault(True, 'CRITICAL')
+        assert self._wait_mode_state("ESTOP", "NONE") is True
+        assert self._wait_cmd_state(
+            lambda c: c.get('reentry_required') is True) is True
+
+        self._publish_fault(False, 'RECOVERABLE')
+        res = self._call_trigger('ui.resume_yes')
+        assert res.accepted is True, res.reject_reason_key
+        assert self._wait_mode_state("AUTO_MEASURE", "WAIT") is True
+        self._spin(1.0)
+        c = self._latest_cmd_state()
+        assert c.get('reentry_required') is True, c
+        assert abs(c.get('v_cap_mps', -1) - 0.1) < 1e-6, c

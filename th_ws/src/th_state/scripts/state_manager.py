@@ -297,6 +297,12 @@ class StateManager(Node):
         # 立っている間は meas.start が localization_lost で拒否される。
         # AUTO_MEASURE を抜けたら下ろす（ESTOP／CARRY を挟む恒常性一時の遷移では下ろさない）。
         self._measure_reentry_required = False
+        # 「自律測定の続きにいる」こと。AUTO_MEASURE に入ったら立て、
+        # AUTO_MEASURE／ESTOP／CARRY のどれでもなくなった遷移でのみ片付け
+        # （下の _process 内）を走らせて下ろす。ESTOP／CARRY を挟んだ復帰
+        # （C-09c-generic など）では片付けないために old_mode == AUTO_MEASURE
+        # だけでは拾えない（AUTO_MEASURE → ESTOP → IDLE では走らない）。
+        self._measure_in_session = False
         # 8-g P5a（§6.2 結果の台帳）: /measure/command の処理中に台帳へ記録した
         # command_id。_process の「モードを抜けたら残りを CANCELLED」が、自分を
         # 除外して数えるために使う。
@@ -629,12 +635,18 @@ class StateManager(Node):
         self.mode = decision.to_mode
         self.state = decision.to_state
 
-        # 8-g P5a（§3.2・§6.2 結果の台帳）: 自律測定を抜けたら、残っている
+        # 「自律測定の続きにいる」を立てる（AUTO_MEASURE に入った遷移）。
+        if self.mode == AUTO_MEASURE_MODE:
+            self._measure_in_session = True
+        # 8-g P5a（§3.2・§6.2 結果の台帳）: 自律測定の続きから抜けたら、残っている
         # 指示を CANCELLED で終え、速度上限と入り直し要否を下ろす。
         # ESTOP／CARRY は恒常性一時の遷移（押下前のモードへ戻る）なので抜けない
-        # （-142 は「抜けて入り直すまで」下がらない）。
-        if (old_mode == AUTO_MEASURE_MODE and self.mode != AUTO_MEASURE_MODE
-                and self.mode not in (ESTOP_MODE, CARRY_MODE)):
+        # （-142 は「抜けて入り直すまで」下がらない）。ESTOP／CARRY を挟んで
+        # IDLE などへ出ても、続き flag が残っているのでここで片付ける。
+        # ESTOP／CARRY から AUTO_MEASURE へ戻る道では flag が残り、
+        # new mode が AUTO_MEASURE なので片付けない。
+        if (self._measure_in_session
+                and self.mode not in (AUTO_MEASURE_MODE, ESTOP_MODE, CARRY_MODE)):
             reason = "finished" if event == "meas.finish" else "mode_exit"
             for record in self._measure_ledger.cancel_all(
                     reason, exclude=self._measure_current_command_id):
@@ -642,6 +654,7 @@ class StateManager(Node):
             self._measure_v_cap_mps = 0.0
             self._measure_w_cap_radps = 0.0
             self._measure_reentry_required = False
+            self._measure_in_session = False
 
         # 1b-15 SG-B10: モードに入ったら自動ブレーキは既定（ゾーン既定）に戻す。
         if self.mode != old_mode:
