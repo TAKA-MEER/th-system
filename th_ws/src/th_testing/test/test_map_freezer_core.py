@@ -302,6 +302,14 @@ def test_c_slam_control_publishes_anchors_in_order():
         ev = _events(_func(tree, name))
         assert ev.index('saving') < ev.index('serialize') < ev.index('saved'), name
         assert 'save_failed' in ev, name
-    for name in ('_handle_map_reset', '_cb_discard_map', '_check_slam_restart',
+    for name in ('_cb_discard_map', '_check_slam_restart',
                  '_cb_toggle', '_cb_set_mapping'):
         assert 'unloaded' in _events(_func(tree, name)), name
+    # _handle_map_reset は 8-g P5a で共通化した _start_fresh_measure_mapping へ委譲する
+    # （effect start_measure_map と共有。地図を捨てたあとの契機 unloaded はそちらが出す）。
+    assert 'unloaded' in _events(_func(tree, '_start_fresh_measure_mapping'))
+    reset = _func(tree, '_handle_map_reset')
+    assert any(isinstance(c, ast.Call)
+               and isinstance(c.func, ast.Attribute)
+               and c.func.attr == '_start_fresh_measure_mapping'
+               for c in ast.walk(reset))
