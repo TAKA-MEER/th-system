@@ -14,13 +14,13 @@ from typing import Callable, Dict, List, Optional, Tuple, Set, Any
 
 
 # ============================================================
-# DetailedDesign-names.md §2-2 — モード一覧（18）
+# DetailedDesign-names.md §2-2 — モード一覧（19）
 # ============================================================
 MODES: Set[str] = {
     "INIT", "IDLE", "ESTOP", "CARRY",
     "FOLLOW", "MANUAL", "TEACH_FOLLOW", "TEACH_MANUAL", "REPLAY", "LINE", "LEASH",
     "PREP", "PANEL_NAV", "AT_PANEL", "SUMMON", "HOME_NAV", "AT_HOME",
-    "OPCHECK", "CALIB",
+    "OPCHECK", "CALIB", "AUTO_MEASURE",
 }
 
 # DetailedDesign-names.md §3 — モードごとの状態集合（`NONE` は「状態を持たない」の予約語）。
@@ -46,6 +46,10 @@ MODE_STATES: Dict[str, Set[str]] = {
     "AT_HOME": {"IDLE_H", "PAUSE"},
     "OPCHECK": {"LIST", "RUNNING_CHECK", "REPAIR"},
     "CALIB": {"LIST", "S1", "S2", "S3", "S4"},
+    # 8-g P5a（2026-11-23。DetailedDesign-measure.md §6.2）。状態は入口ができる
+    # パケットで足す（P5a は WAIT・PAUSE、P5b で NAV・ALIGN・BLOCKED、P3 で ADJUST。
+    # 入口の無い状態は validate() の到達可能性が咎める）。
+    "AUTO_MEASURE": {"WAIT", "PAUSE"},
 }
 
 assert set(MODE_STATES.keys()) == MODES
@@ -61,6 +65,15 @@ IDLE_MODE: str = "IDLE"
 # state_manager.py が UI 非常停止起因の ESTOP ラッチ判定で使う参照点（N-1 と同じ理由で
 # ノード側にモード名リテラルを書かない。2026-09-01。SM-3.1.1-11）。
 ESTOP_MODE: str = "ESTOP"
+
+# state_manager.py が「自律測定を抜けた」判定で使う参照点（N-1 と同じ理由で
+# ノード側にモード名リテラルを書かない。8-g P5a）。
+AUTO_MEASURE_MODE: str = "AUTO_MEASURE"
+
+# state_manager.py が ESTOP と同じく「前モードの恒常性一時的遷移」として
+# 扱う CARRY の参照点（同上。8-g P5a。LOCALIZATION_LOST の reentry_required が
+# ESTOP / CARRY を挟んだ復帰で消えないようにするため）。
+CARRY_MODE: str = "CARRY"
 
 # state_manager.py が Context.check_item のラッチ（開始・破棄）で使う参照点（N-1 と
 # 同じ理由でノード側にモード名リテラルを書かない。WP-MAINT-01。2026-09-25）。
@@ -153,7 +166,9 @@ def prev_resumes_to_pause(prev_mode: str, prev_state: str) -> bool:
 # C-04（$resume_run）が None になるモード。attributes.yaml の run_state が
 # null のモードのうち、PAUSE に入りうるもの（SG-B22）。ガード resume_run_available が
 # これを弾く（guards.py がこの集合を参照する）。
-RESUME_RUN_UNAVAILABLE_MODES: Set[str] = {"AT_PANEL", "AT_HOME", "OPCHECK", "CALIB"}
+# AUTO_MEASURE（8-g P5a）は run_state が null（P5a は走行状態を持たない）と共に、
+# 戻るのが meas.start だけ（ui.resume_yes では走らない。Spec-modes.md §6）ため含める。
+RESUME_RUN_UNAVAILABLE_MODES: Set[str] = {"AT_PANEL", "AT_HOME", "OPCHECK", "CALIB", "AUTO_MEASURE"}
 
 # C-05（$resume_state）が None になるモード。resume_state が null のうち、
 # PAUSE に入りうるものは PREP だけ（INIT/IDLE/ESTOP/CARRY は PAUSE を持たない。
@@ -201,6 +216,7 @@ GOTO_KIND_MAP: Dict[str, str] = {
     "PANEL": "PANEL_NAV",
     "HOME": "HOME_NAV",
     "SUMMON": "SUMMON",
+    "AUTO_MEASURE": "AUTO_MEASURE",  # 8-g P5a（SM-3.1.2-120）
 }
 
 # DetailedDesign-state.md §3-2 — 実行時解決トークン（$arg.<key> はプレフィックスで判定）。
@@ -265,6 +281,8 @@ EFFECT_ARG_SPECS: Dict[str, Dict[str, str]] = {
     "commit_calib": {"item": _STR},
     "revert_calib": {"item": _STR},
     "discard_calib": {"item": _STR},
+    # 8-g P5a（SM-3.1.2-120。DetailedDesign-measure.md §6.2）。引数なし。
+    "start_measure_map": {},
 }
 
 
@@ -313,6 +331,14 @@ class Context:
     # 会場地図を持たない（/map_session/status の VENUE が UNLOADED）か。SM-3.1.2-119。
     # 未受信・LOCALIZING・MAPPING は False（塞がない。起動直後を巻き込まない）。
     venue_unloaded: bool = False
+    # 8-g P5a: 測定機能の生存（measure_link のラッチ実効値。DetailedDesign-measure.md
+    # §6.2 の入口ガード用）。state_manager が _measure_link_check() の値を詰める。
+    # 既定は「ok」（既存のライザーは元々この情報を渡していなかったため）。
+    measure_link_ok: bool = True
+    measure_link_reason: str = ""
+    # 8-g P5a: 自己位置を見失ったあとの入り直し要否（-142）。state_manager が
+    # ラッチする（/measure/command_state の reentry_required と同じ値）。
+    measure_reentry_required: bool = False
     arg: Dict[str, Any] = field(default_factory=dict)
 
 

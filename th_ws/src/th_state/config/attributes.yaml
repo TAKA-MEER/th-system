@@ -220,3 +220,19 @@ CALIB:
   auto_brake_default: on_locked
   jog: denied
   has_record: false
+AUTO_MEASURE:
+  # 8-g P5a（Spec-modes.md §6 の表の転写。2026-11-23）。
+  # resume は ack_only（「確認」1択 → PAUSE。戻っただけでは動かない）で、
+  # run_state は null（P5a は走行状態を持たない）。戻れるのは meas.start だけ
+  # （C-04 は resume_run_available が弾く。RESUME_RUN_UNAVAILABLE_MODES）。
+  # speed_limit v_slow、ジョグ可（v_jog_panel）、自動ブレーキ ON 固定。
+  initial_state: WAIT
+  run_state: null
+  resume: ack_only
+  resume_state: PAUSE
+  needs_tracker: unused
+  speed_limit: v_slow
+  jog_speed_limit: v_jog_panel
+  auto_brake_default: on_locked
+  jog: allowed
+  has_record: false

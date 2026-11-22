@@ -34,7 +34,8 @@ import json
 
 # 通す（凍結しない）モード。PREP は地図を作っている最中、教示は記録中で、
 # どちらも書き足しが正しい（Spec-onsite §4.0.2「対象外」）。
-PASS_MODES = frozenset({'PREP', 'TEACH_FOLLOW', 'TEACH_MANUAL'})
+# AUTO_MEASURE（8-g P5a）は地図を作りながら走るので凍結しない（Spec-measure §4.1）。
+PASS_MODES = frozenset({'PREP', 'TEACH_FOLLOW', 'TEACH_MANUAL', 'AUTO_MEASURE'})
 # 直前のモードを覚えているモード（ESTOP / CARRY からの復帰先は prev_mode）。
 LATCH_MODES = frozenset({'ESTOP', 'CARRY'})
 

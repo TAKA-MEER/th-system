@@ -209,7 +209,7 @@ class TestStateManagerNode(unittest.TestCase):
         src = open(path, encoding='utf-8').read()
         modes = {"INIT", "IDLE", "ESTOP", "CARRY", "FOLLOW", "MANUAL", "TEACH_FOLLOW",
                   "TEACH_MANUAL", "REPLAY", "LINE", "LEASH", "PREP", "PANEL_NAV", "AT_PANEL",
-                  "SUMMON", "HOME_NAV", "OPCHECK", "CALIB"}
+                  "SUMMON", "HOME_NAV", "AT_HOME", "OPCHECK", "CALIB", "AUTO_MEASURE"}
         bad = [n.value for n in ast.walk(ast.parse(src))
                if isinstance(n, ast.Constant) and n.value in modes]
         assert not bad, f"モード名がノードに直書きされている: {bad}"

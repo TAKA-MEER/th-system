@@ -123,10 +123,15 @@ class MeasureLedger:
         return ResultRecord(command_id=command_id, command=command,
                             result=result, reason=reason)
 
-    def cancel_all(self, reason: str) -> list:
-        """進行中の指示をすべて `CANCELLED` で終える（§3.2 の表）。"""
+    def cancel_all(self, reason: str, exclude=None) -> list:
+        """進行中の指示をすべて `CANCELLED` で終える（§3.2 の表）。
+
+        `exclude` は除外する command_id（8-g P5a。meas.finish の自分は DONE で
+        終わるので、モードを抜ける遷移で「残りを CANCELLED」と数えるときに使う）。"""
         out = []
         for command_id, command in list(self._pending.items()):
+            if exclude is not None and command_id == exclude:
+                continue
             self._pending.pop(command_id)
             self._completed.add(command_id)
             out.append(ResultRecord(command_id=command_id, command=command,

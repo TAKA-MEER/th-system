@@ -40,7 +40,8 @@ from th_system_msgs.srv import MeasureCommand, SetFlag, UiTrigger
 
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
-from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, IDLE_MODE, OPCHECK_MODE, Context, Effect,
+from th_state.state_core import (AUTO_MEASURE_MODE, BOOT_MODE, CALIB_MODE, CARRY_MODE, ESTOP_MODE, IDLE_MODE,
+                                   OPCHECK_MODE, Context, Effect,
                                    REPLAY_MODE, StateCore, TEACH_MODES, is_driving)
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
@@ -53,8 +54,10 @@ from th_state.auto_brake import (AUTO_BRAKE_LOCKED_REASON, DEV_ITEM_AUTO_BRAKE,
                                   override_allowed)
 # 8-g P1（2026-11-23）: /measure/command の受理と /measure/result の台帳。
 # 判定の純粋な部分（① bad_argument）と結果を 1 回だけ出す台帳は純コア側。
+# 8-g P5a: CANCELLED の理由（§3.2 の表）と、遷移・台帳の順（§6.2）もここから。
 from th_state.measure_ledger import (IMMEDIATE_MEASURE_COMMANDS, MeasureLedger,
-                                     RESULT_DONE, validate_measure_command)
+                                     RESULT_CANCELLED, RESULT_DONE,
+                                     validate_measure_command)
 from th_state.zones import (ScreenInput, active_screens, combine_speed_limits,
                              derive_limits, mode_speed_limit)
 
@@ -286,9 +289,18 @@ class StateManager(Node):
         self._measure_ledger = MeasureLedger()
         # 8-g P1: meas.set_limits の指定（/measure/command_state の v_cap/w_cap）。
         # P1 では遷移表に meas.* の行が無く受理されないので常に 0。
+        # 8-g P5a: モードを抜けたら 0 に戻す（§3.1）。
         self._measure_v_cap_mps = 0.0
         self._measure_w_cap_radps = 0.0
         self._last_command_state_json = None
+        # 8-g P5a（SM-3.1.2-142）: 自己位置を見失ったあとの入り直し要否。
+        # 立っている間は meas.start が localization_lost で拒否される。
+        # AUTO_MEASURE を抜けたら下ろす（ESTOP／CARRY を挟む恒常性一時の遷移では下ろさない）。
+        self._measure_reentry_required = False
+        # 8-g P5a（§6.2 結果の台帳）: /measure/command の処理中に台帳へ記録した
+        # command_id。_process の「モードを抜けたら残りを CANCELLED」が、自分を
+        # 除外して数えるために使う。
+        self._measure_current_command_id = None
         # WP-ONSITE-F2: /person/targets と /onsite/pins 由来。次の event 受信時に
         # _build_context() が読む（_route_ids / _route_loaded と同じ設計）。
         self._candidate_count = 0
@@ -518,6 +530,8 @@ class StateManager(Node):
         # からだけ取る（前回値を引きずらない。ほかの event の arg には result キーが
         # 無いので event 名で絞る）。
         check_result = str((arg or {}).get('result') or '') if event == 'evt.check_result' else ''
+        # 8-g P5a: 自律測定の入口ガード（-120）と入り直し拒否（-130・-142）の材料。
+        link_ok, link_reason = self._measure_link_check()
         return Context(
             prev_mode=self.prev_mode,
             prev_state=self.prev_state,
@@ -536,6 +550,9 @@ class StateManager(Node):
             route_loaded=self._route_loaded,
             pin_kinds=self._pin_kinds,
             venue_unloaded=(self._venue_mode == "UNLOADED"),
+            measure_link_ok=link_ok,
+            measure_link_reason=link_reason,
+            measure_reentry_required=self._measure_reentry_required,
             leash_present=self._leash_present,
             leash_taut=False,
             line_visible=False,
@@ -611,6 +628,20 @@ class StateManager(Node):
         old_mode = self.mode
         self.mode = decision.to_mode
         self.state = decision.to_state
+
+        # 8-g P5a（§3.2・§6.2 結果の台帳）: 自律測定を抜けたら、残っている
+        # 指示を CANCELLED で終え、速度上限と入り直し要否を下ろす。
+        # ESTOP／CARRY は恒常性一時の遷移（押下前のモードへ戻る）なので抜けない
+        # （-142 は「抜けて入り直すまで」下がらない）。
+        if (old_mode == AUTO_MEASURE_MODE and self.mode != AUTO_MEASURE_MODE
+                and self.mode not in (ESTOP_MODE, CARRY_MODE)):
+            reason = "finished" if event == "meas.finish" else "mode_exit"
+            for record in self._measure_ledger.cancel_all(
+                    reason, exclude=self._measure_current_command_id):
+                self._publish_result(record)
+            self._measure_v_cap_mps = 0.0
+            self._measure_w_cap_radps = 0.0
+            self._measure_reentry_required = False
 
         # 1b-15 SG-B10: モードに入ったら自動ブレーキは既定（ゾーン既定）に戻す。
         if self.mode != old_mode:
@@ -798,7 +829,7 @@ class StateManager(Node):
         payload = json.dumps({
             "pending_command_id": self._measure_ledger.pending_command_id,
             "pending_command": self._measure_ledger.pending_command,
-            "reentry_required": False,
+            "reentry_required": self._measure_reentry_required,
             "v_cap_mps": self._measure_v_cap_mps,
             "w_cap_radps": self._measure_w_cap_radps,
         })
@@ -842,14 +873,22 @@ class StateManager(Node):
             res.mode = self.mode
             res.state = self.state
             return res
-        # 受理（P5 で遷移表に meas.* の行が入ってから到達する）。
-        self._process(req.command, {}, "")
+        # 8-g P5a（§6.2 結果の台帳）: 受理の判定 → 台帳への記録 → 遷移の実行。
+        # command_id が重複（進行中・完了済み）したら遷移せず bad_argument。
         if not self._measure_ledger.accept(req.command_id, req.command):
             res.accepted = False
             res.reject_reason = "bad_argument"
             res.mode = self.mode
             res.state = self.state
             return res
+        # 遷移を実行する（P5 で遷移表に meas.* の行が入ってから到達する）。
+        # 8-g P5a: モードを抜ける遷移で「残りを CANCELLED」を数えるとき、
+        # 自分（meas.finish は DONE で終わる）を除外するために command_id を渡す。
+        self._measure_current_command_id = req.command_id
+        try:
+            self._process(req.command, {}, "")
+        finally:
+            self._measure_current_command_id = None
         if req.command == "meas.set_limits":
             self._measure_v_cap_mps = float(req.v_max_mps or 0.0)
             self._measure_w_cap_radps = float(req.w_max_radps or 0.0)
@@ -882,13 +921,23 @@ class StateManager(Node):
             self._leash_present = True
         elif msg.event == "evt.leash_absent":
             self._leash_present = False
-        # 8-g P1（§6.1）: measure_link の生存をラッチする（理由も）。FSM の
-        # 遷移事象ではないので _process には流さない（遷移表に無い事象を
-        # 流すと last_reject_reason が汚れる）。
+        # 8-g P1（§6.1）: measure_link の生存をラッチする（理由も）。
+        # 8-g P5a（-133・§6.2）: evt.measure_link_lost はラッチの値が変わったときだけ
+        # 遷移表へ流す（1 Hz の出し直しは流さない。値は ok と reason の組）。
+        # 変わっていない evt.measure_link_ok は流さない（遷移表に無い事象を
+        # 流すと last_reject_reason が汚れる）。WAIT のような行が無い状態で
+        # 流れたときは not_allowed で残る＝「流れた」ことの観測点になる。
         elif msg.event in ("evt.measure_link_ok", "evt.measure_link_lost"):
-            self._measure_link_ok = (msg.event == "evt.measure_link_ok")
-            self._measure_link_reason = str(arg.get("reason") or "")
+            new_ok = (msg.event == "evt.measure_link_ok")
+            new_reason = str(arg.get("reason") or "")
+            changed = (new_ok != self._measure_link_ok
+                       or new_reason != self._measure_link_reason)
+            self._measure_link_ok = new_ok
+            self._measure_link_reason = new_reason
             self._measure_link_recv_ms = self._now_ms()
+            if changed and msg.event == "evt.measure_link_lost":
+                self._process(msg.event, arg, msg.source_node)
+                self._publish_state()
             return
         self._process(msg.event, arg, msg.source_node)
         self._publish_state()
@@ -988,6 +1037,7 @@ class StateManager(Node):
     # /safety/* の購読 → fault.* / hw.* / ui.estop.* の内部生成
     # ------------------------------------------------------------
     def _on_fault(self, msg):
+        was_auto_measure = self.mode == AUTO_MEASURE_MODE
         self._fault_active = msg.active
         self._fault_severity = msg.severity
         self._fault_type = msg.fault_type
@@ -999,6 +1049,15 @@ class StateManager(Node):
             self._active_fault_types = ()
         event = _fault_event_name(msg.active, msg.severity)
         self._process(event, {}, "")
+        # 8-g P5a（-142・§3.2）: 自律測定で LOCALIZATION_LOST を受けたら、
+        # 進行中の指示を CANCELLED（localization_lost）で終え、入り直し要否を立てる。
+        # （遷移自体は既存の行で ESTOP へ落とす。ेस्टOP を挟んだ復帰では下ろさない。）
+        if (was_auto_measure and event == "fault.critical"
+                and str(msg.fault_type) == "LOCALIZATION_LOST"):
+            for record in self._measure_ledger.cancel_all(
+                    "localization_lost", exclude=None):
+                self._publish_result(record)
+            self._measure_reentry_required = True
         self._publish_state()
 
     def _on_active_faults(self, msg):

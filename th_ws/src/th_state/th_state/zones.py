@@ -45,6 +45,7 @@ SCREEN_ZONE: Dict[str, str] = {
     "S-31": "NA",
     "S-40": "NA",
     "S-50": "OUT",
+    "S-60": "IN",  # 8-g P5a（自律測定。Spec-modes.md §6）
 }
 
 SCREEN_SPEED_LIMIT: Dict[str, str] = {
@@ -63,6 +64,7 @@ SCREEN_SPEED_LIMIT: Dict[str, str] = {
     "S-31": "stop",
     "S-40": "v_calib",
     "S-50": "stop",
+    "S-60": "v_slow",  # 8-g P5a（Spec-modes.md §6）
 }
 
 assert set(SCREEN_ZONE.keys()) == set(SCREEN_SPEED_LIMIT.keys())

@@ -27,8 +27,9 @@ from th_config_manager.map_freezer_core import (  # noqa: E402
 
 MODES = ['INIT', 'IDLE', 'ESTOP', 'CARRY', 'FOLLOW', 'MANUAL', 'TEACH_FOLLOW',
          'TEACH_MANUAL', 'REPLAY', 'LINE', 'LEASH', 'PREP', 'PANEL_NAV',
-         'AT_PANEL', 'SUMMON', 'HOME_NAV', 'AT_HOME', 'OPCHECK', 'CALIB']
-PASS_MODES = {'PREP', 'TEACH_FOLLOW', 'TEACH_MANUAL'}
+         'AT_PANEL', 'SUMMON', 'HOME_NAV', 'AT_HOME', 'OPCHECK', 'CALIB',
+         'AUTO_MEASURE']
+PASS_MODES = {'PREP', 'TEACH_FOLLOW', 'TEACH_MANUAL', 'AUTO_MEASURE'}
 
 
 # ── a. decide ──
@@ -49,6 +50,7 @@ def test_a_decide_all_combinations(loaded, has_copy, mode, update):
 def test_a_latched_modes_use_prev_mode(mode):
     assert effective_mode(mode, 'PREP') == 'PREP'
     assert decide(True, True, mode, 'PREP', False) == PASS
+    assert decide(True, True, mode, 'AUTO_MEASURE', False) == PASS
     assert decide(True, True, mode, 'PANEL_NAV', False) == FREEZE
     # prev_mode が空なら ESTOP 自身で判定する（凍結側）
     assert decide(True, True, mode, '', False) == FREEZE
@@ -203,7 +205,7 @@ def test_b_unloaded_passes_live():
 
 
 def test_b_prep_and_teach_pass_even_when_loaded():
-    for mode in ('PREP', 'TEACH_FOLLOW', 'TEACH_MANUAL'):
+    for mode in ('PREP', 'TEACH_FOLLOW', 'TEACH_MANUAL', 'AUTO_MEASURE'):
         s = _opened_seq()
         s.state(mode, False)
         s.live('raw')
