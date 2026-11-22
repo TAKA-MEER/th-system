@@ -31,6 +31,23 @@ test('S-13 FSM が SAVED でも saved=false なら「保存されていません
   await expect(page.getByTestId('s13-saved')).toHaveCount(0)
 })
 
+// A-21: 経路は保存できたが地図の画像（pgm/yaml）を残せなかったとき。
+// 黙って「保存しました」にせず、再生で何が使えなくなるかを出す。
+test('S-13 saved=true でも map_save_failed=true なら地図の画像の警告を出す', async ({ page }) => {
+  await openS13Teach(page, { state: 'SAVED', saved: true, map_save_failed: true })
+  await expect(page.getByTestId('s13-saved')).toBeVisible()
+  const warning = page.getByTestId('s13-map-save-failed')
+  await expect(warning).toBeVisible()
+  await expect(warning).toContainText('地図の画像を保存できませんでした')
+  await expect(warning).toContainText('始点に置けば再生はできます')
+})
+
+test('S-13 画像も揃っていれば警告を出さない', async ({ page }) => {
+  await openS13Teach(page, { state: 'SAVED', saved: true, map_save_failed: false })
+  await expect(page.getByTestId('s13-saved')).toBeVisible()
+  await expect(page.getByTestId('s13-map-save-failed')).toHaveCount(0)
+})
+
 test('S-13 saved が未定義（impl 未反映）のときは「保存しました」を出さない', async ({ page }) => {
   // impl の RouteStatus.saved がまだ入っていない時点では saved は undefined。
   await openS13Teach(page, { state: 'SAVED' })

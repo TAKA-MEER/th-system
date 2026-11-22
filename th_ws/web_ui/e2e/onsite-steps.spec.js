@@ -199,12 +199,25 @@ test('S-21: 「行き先を選ぶ」で行き先サブタブ＋ピン選択を�
 // だった。段4では「次にやること」自体を出さず、操作カードの停止だけにする
 // （UX-6-c が「保存」で既にやっている「同じ操作を二重に出さない」原則を停止にも
 // 適用）。
-test('S-21: 移動中は「次にやること」を出さない（操作カードの停止のみ）、作業中は「作業中」で ui.working', async ({ page }) => {
+test('S-21: 移動中は「次にやること」を出さない（操作カードの停止のみ）、配電盤前は「カメラ」で別タブを開く', async ({ page }) => {
+  // 「カメラ」は /params/get の effective.camera_ui_url を別タブで開く。
+  await page.addInitScript(() => {
+    window.__thOpened = []
+    window.open = (url, target, features) => {
+      window.__thOpened.push({ url, target, features })
+      return null
+    }
+  })
+  const CAMERA_STUBS = {
+    get: { effective: { camera_ui_url: 'http://192.168.5.129/' }, pending: {} },
+    set: { success: true, message: 'OK' },
+  }
   // 段1（会場地図を開く）は IDLE で開いてから PANEL_NAV/NAV へ切り替える
   // （停止中以外は地図操作ボタンが押せない。1b-5）。
   await goto21(page, IDLE, {
     openVenueMap: { success: true, message: '' },
     homeDeclared: true,
+    paramsStubs: CAMERA_STUBS,
   })
   const btn = page.locator('[data-testid="s21-next-action"]')
   await expect(btn).toHaveText('会場地図を開く')
@@ -219,13 +232,16 @@ test('S-21: 移動中は「次にやること」を出さない（操作カー�
   await page.locator('#s21 .op-stop').click()
   expect((await triggers(page)).some((c) => c.trigger === 'ui.stop'), '停止が ui.stop を送っていない').toBe(true)
 
-  // AT_PANEL に着くと段4完了 → current=段5「作業中」。
+  // AT_PANEL に着くと段4完了 → current=段5「カメラ/呼び寄せ」。
   await setTestState(page, { mode: 'AT_PANEL', state: 'IDLE_P' })
   await expect(page.locator('[data-testid="step-5"]')).toHaveAttribute('aria-current', 'step')
-  await expect(btn).toHaveText('作業中')
+  await expect(btn).toHaveText('カメラ')
   await btn.click()
+  const opened = await page.evaluate(() => window.__thOpened ?? [])
+  expect(opened, 'カメラが別タブで開かれていない').toHaveLength(1)
+  expect(opened[0].target).toBe('_blank')
   const w = (await triggers(page)).filter((c) => c.trigger === 'ui.working')
-  expect(w, '作業中トグルが ui.working を送っていない').toHaveLength(1)
+  expect(w, '次にやることが ui.working を送っている').toHaveLength(0)
 })
 
 // 1b-5 (SG-A6): 移動中は「会場地図を開く」が押せない（画面の事前無効化。

@@ -3,7 +3,7 @@
 // 送ること。catalog は e2e に th_state が無いので helpers の
 // gotoScreenWithRouteCatalog で window.__thTestRouteCatalog に seed する。
 import { test, expect } from '@playwright/test'
-import { gotoScreenWithRouteCatalog } from './helpers.js'
+import { gotoScreenWithRouteCatalog, setTestStale } from './helpers.js'
 
 const ROUTES = [
   { id: 'route_r1', name: '経路A', length_m: 3.14, point_count: 12, start_yaw: 0.1, recorded_at: 0 },
@@ -28,6 +28,51 @@ test('S-14 lists routes and selecting + proceed sends ui.route_select', async ({
   const arg = sel.argJson
   expect(arg.id, '選択した経路 id が送られていない').toBe('route_r2')
   expect(arg.reverse, '順再生 (reverse:false) が送られていない').toBe(false)
+})
+
+test('S-14 reverse toggle: selecting reverse and proceed sends reverse:true', async ({ page }) => {
+  await gotoScreenWithRouteCatalog(page, 'S14', { mode: 'REPLAY', state: 'ROUTE_SEL' }, ROUTES)
+  await page.locator('#s14').waitFor()
+
+  // 既定は順再生が選ばれていること。
+  await expect(page.getByTestId('s14-dir-fwd')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('s14-dir-rev')).toHaveAttribute('aria-pressed', 'false')
+
+  await page.getByTestId('s14-select-route_r2').click()
+  await page.getByTestId('s14-dir-rev').click()
+  await expect(page.getByTestId('s14-dir-rev')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('s14-proceed').click()
+
+  const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
+  const sel = calls.find((c) => c.trigger === 'ui.route_select')
+  expect(sel, 'この経路で進むが ui.route_select を送っていない').toBeTruthy()
+  expect(sel.argJson.id).toBe('route_r2')
+  expect(sel.argJson.reverse, '逆再生 (reverse:true) が送られていない').toBe(true)
+})
+
+test('S-14 reverse toggle: reverse then forward sends reverse:false', async ({ page }) => {
+  await gotoScreenWithRouteCatalog(page, 'S14', { mode: 'REPLAY', state: 'ROUTE_SEL' }, ROUTES)
+  await page.locator('#s14').waitFor()
+
+  await page.getByTestId('s14-select-route_r1').click()
+  await page.getByTestId('s14-dir-rev').click()
+  await page.getByTestId('s14-dir-fwd').click()
+  await expect(page.getByTestId('s14-dir-fwd')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('s14-proceed').click()
+
+  const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
+  const sel = calls.find((c) => c.trigger === 'ui.route_select')
+  expect(sel, 'この経路で進むが ui.route_select を送っていない').toBeTruthy()
+  expect(sel.argJson.id).toBe('route_r1')
+  expect(sel.argJson.reverse, '押し戻した順再生 (reverse:false) が送られていない').toBe(false)
+})
+
+test('S-14 reverse toggle buttons are disabled while stale', async ({ page }) => {
+  await gotoScreenWithRouteCatalog(page, 'S14', { mode: 'REPLAY', state: 'ROUTE_SEL' }, ROUTES)
+  await page.locator('#s14').waitFor()
+  await setTestStale(page, true)
+  await expect(page.getByTestId('s14-dir-fwd')).toBeDisabled()
+  await expect(page.getByTestId('s14-dir-rev')).toBeDisabled()
 })
 
 test('S-14 shows empty message and disables proceed when no routes', async ({ page }) => {

@@ -24,6 +24,7 @@ test_auto_brake_limiter_node.py
 メソッドは名前順に走り、前の試験の状態を引き継ぐので、各メソッドは冒頭で自分の前提を作る。
 """
 import math
+import os
 import time
 import unittest
 
@@ -52,6 +53,22 @@ FAR_M = 30.0
 V_ALLOW_NEAR = math.sqrt(2.0 * BRAKE_ACCEL * (NEAR_M - FLOOR_M))   # 約 0.632
 PUB_HZ = 20.0
 N_BEAMS = 360
+BODY_HALF_M = 0.275   # registry の body_length_m / body_width_m（0.55）の半分
+
+
+def _generated_yaml(node):
+    """本番と同じ生成 yaml を先に渡す（CLAUDE.md「rclcpp/rclpy の型」の落とし穴）。
+    body_length_m / body_width_m がここから来ることを、試験でも本番の経路で確かめる。"""
+    ws_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+    for d in (os.environ.get('TH_GENERATED_DIR', ''), '/root/th_data/generated',
+              os.path.join(ws_root, 'data', 'generated')):
+        path = os.path.join(d, f'{node}.yaml') if d else ''
+        if path and os.path.exists(path):
+            return path
+    return None
+
+
+_GENERATED = _generated_yaml('obstacle_limiter')
 
 
 @pytest.mark.launch_test
@@ -67,14 +84,14 @@ def generate_test_description():
         package='th_safety',
         executable='obstacle_limiter',
         name='obstacle_limiter',
-        parameters=[{
+        parameters=[p for p in [_GENERATED, {
             'obstacle_floor_distance_m': FLOOR_M,
             'hysteresis_band_m': 0.1,
             'brake_accel_mps2': BRAKE_ACCEL,
             'obstacle_min_points': 1,
             'v_max': V_MAX,
             'blind_angle_ranges': [75.0, 105.0],   # 真横（+90 度）が死角
-        }],
+        }] if p is not None],
         output='screen',
     )
     return launch.LaunchDescription([
@@ -198,6 +215,11 @@ class TestAutoBrakeLimiterNode(unittest.TestCase):
                      and abs(s.out_linear - CMD_LINEAR_X) < 1e-3
                      and s.approach_warning,
                      'OFF で減速した／警告が出ない')
+        # 画面に出す距離は機体の外形（前面）から。判定用の距離は変えない（A-17）。
+        assert abs(self.status.approach_distance_m - NEAR_M) < 1e-3, (
+            f'判定用の距離が変わった: {self.status.approach_distance_m}')
+        assert abs(self.status.approach_clearance_m - (NEAR_M - BODY_HALF_M)) < 1e-3, (
+            f'外形からの距離が違う: {self.status.approach_clearance_m}')
 
     def test_c_off_with_stale_state_falls_back(self):
         type(self).auto_brake = False
@@ -249,9 +271,10 @@ class TestAutoBrakeLimiterNode(unittest.TestCase):
         type(self).obstacle_deg = -90.0
         self._settle(lambda s: s.approach_warning
                      and abs(s.approach_distance_m - NEAR_M) < 1e-3
+                     and abs(s.approach_clearance_m - (NEAR_M - BODY_HALF_M)) < 1e-3
                      and not s.approach_warning_moving
                      and s.nearest_obstacle_m > 20.0,
-                     '止まっているのに横の障害物で警告・距離が出ない')
+                     '止まっているのに横の障害物で警告・外形からの距離が出ない')
 
     def test_j_stopped_rear_obstacle_warns(self):
         type(self).auto_brake = False
@@ -284,7 +307,8 @@ class TestAutoBrakeLimiterNode(unittest.TestCase):
         type(self).publish_cmd = False
         self._settle(lambda s: s.action == 'ZERO_STALE' and s.out_linear == 0.0
                      and s.approach_warning and not s.approach_warning_moving
-                     and abs(s.approach_distance_m - NEAR_M) < 1e-3,
+                     and abs(s.approach_distance_m - NEAR_M) < 1e-3
+                     and abs(s.approach_clearance_m - (NEAR_M - BODY_HALF_M)) < 1e-3,
                      '指令が途絶えると警告・距離が消えた')
 
     def test_o_silent_command_on_no_warning(self):

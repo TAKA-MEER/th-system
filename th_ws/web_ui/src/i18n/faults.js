@@ -20,6 +20,7 @@ export const FAULT_LABELS = {
   STATE_INCONSISTENT: 'システムの状態が食い違っています。システムを再起動してください',
   LOCALIZATION_LOST: '自己位置を見失いました。メインメニューから位置を合わせ直してください',
   ESTOP_BYPASS_ACTIVE: '非常停止の回避設定が有効になっています。ESP32のファームウェア設定を確認してください',
+  CONTROLLER_CONFLICT: '別の PC の制御系が同時に動いています。そちらの bringup を止めてから再起動してください',
 }
 
 export const FAULT_UNKNOWN_LABEL = '異常が発生しています（種別不明）'
@@ -43,6 +44,7 @@ export const FAULT_SHORT_LABELS = {
   STATE_INCONSISTENT: '状態の食い違い',
   LOCALIZATION_LOST: '自己位置の喪失',
   ESTOP_BYPASS_ACTIVE: '非常停止の回避設定',
+  CONTROLLER_CONFLICT: '制御系の競合',
 }
 
 export const FAULT_SHORT_UNKNOWN = '種別不明'

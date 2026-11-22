@@ -42,10 +42,15 @@ test('approach warning shows only when brake is OFF and the limiter says so', ()
   assert.equal(showApproachWarning({}, false), false)
 })
 
-// 2026-11-12: 止まっているときは周囲の最近傍。距離は approach_distance_m、無ければ nearest_obstacle_m。
-test('approachDistance: 機体の approach_distance_m を優先し、無ければ nearest_obstacle_m', () => {
+// 2026-11-13 A-17: 画面に出す距離は機体の外形からの approach_clearance_m を優先する。
+// 古い機体向けに approach_distance_m、nearest_obstacle_m の順で退避する。
+test('approachDistance: 外形からの approach_clearance_m を優先し、無ければ順に退避する', () => {
+  assert.equal(approachDistance({
+    approach_clearance_m: 0.4, approach_distance_m: 0.5, nearest_obstacle_m: 9,
+  }), 0.4)
   assert.equal(approachDistance({ approach_distance_m: 0.5, nearest_obstacle_m: 9 }), 0.5)
   assert.equal(approachDistance({ nearest_obstacle_m: 0.7 }), 0.7)
+  assert.equal(approachDistance({ approach_clearance_m: Infinity, approach_distance_m: 0.5 }), 0.5)
   assert.equal(approachDistance({ approach_distance_m: Infinity, nearest_obstacle_m: 0.7 }), 0.7)
   assert.equal(approachDistance(null), undefined)
 })

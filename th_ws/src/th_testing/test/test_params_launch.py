@@ -57,9 +57,10 @@ def test_generated_before_nodes():
     Node(...) を1つも起動する前に構築・登録されていることをソーステキストで検査する。"""
 
     # --- bringup.launch.py: nodes = [] の後、最初の nodes.append(...) は
-    #     前回起動の後始末 (prelaunch_guard) 、2番目が params_generation_action で
+    #     前回起動の後始末 (prelaunch_guard) 、2番目が別の PC の制御系の拒否
+    #     (single_controller_guard。Spec-safety §6.4)、3番目が params_generation_action で
     #     なければならない（Python リストは append 順を保つので、これが
-    #     LaunchDescription(args + nodes) の実際の並び順になる。両方とも
+    #     LaunchDescription(args + nodes) の実際の並び順になる。3つとも
     #     Node(...) より前 = G-1 の対象）。
     tree = ast.parse(_read(BRINGUP_PY), filename=BRINGUP_PY)
     func = _find_function(tree, "generate_launch_description")
@@ -78,10 +79,13 @@ def test_generated_before_nodes():
     assert _is_opaque_call(appends[0], "make_guard_opaque_function"), (
         "bringup.launch.py: nodes への最初の append が prelaunch_guard の "
         f"OpaqueFunction でない (実際: {ast.dump(appends[0])})")
-    second_arg = appends[1]
-    assert isinstance(second_arg, ast.Name) and second_arg.id == "params_generation_action", (
-        "bringup.launch.py: nodes への2番目の append が params_generation_action でない "
-        f"(実際: {ast.dump(second_arg)})")
+    assert _is_opaque_call(appends[1], "make_single_controller_opaque_function"), (
+        "bringup.launch.py: nodes への2番目の append が single_controller_guard の "
+        f"OpaqueFunction でない (実際: {ast.dump(appends[1])})")
+    third_arg = appends[2]
+    assert isinstance(third_arg, ast.Name) and third_arg.id == "params_generation_action", (
+        "bringup.launch.py: nodes への3番目の append が params_generation_action でない "
+        f"(実際: {ast.dump(third_arg)})")
 
     # --- gazebo.launch.py: 最終的な LaunchDescription(...) の引数リストの中で、
     #     params_generation_action が scenario_action や common_nodes より前にあること。

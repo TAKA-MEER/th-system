@@ -32,6 +32,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from params_generation import GENERATED_DIR, make_opaque_function  # noqa: E402
 from prelaunch_guard import make_guard_opaque_function  # noqa: E402
+from single_controller_guard import make_single_controller_opaque_function  # noqa: E402
 
 BRINGUP_DIR  = get_package_share_directory('th_bringup')
 DESC_DIR     = get_package_share_directory('th_description')
@@ -163,6 +164,13 @@ def generate_launch_description():
     # （実機で発生・prelaunch_guard.py のモジュールdocstring参照）。ノードを1つも
     # 起動する前に、自分以外の生き残りを自動で止める。
     nodes.append(OpaqueFunction(function=make_guard_opaque_function()))
+
+    # ── -1b. 別の PC の制御系が同時に動いていたら起動を中止 (2026-11-19) ──
+    # 前回起動の後始末の直後（ノードを 1 つも起動する前）に、同じドメインに
+    # このスタックの制御系のノードが既にいないかを数秒見る
+    # （Spec-safety.md §6.4「制御系は同時に 1 つ」）。single_controller_guard.py が
+    # 例外を上げる＝launch ごと中止する。dev_mode の項目は作らない（開発モードでも外さない）。
+    nodes.append(OpaqueFunction(function=make_single_controller_opaque_function()))
 
     # ── 0. パラメータ生成 (WP-PARAM-02) ──────────────────────
     # registry.yaml → /root/th_data/generated/*.yaml を、ノードを1つも起動する前に
@@ -337,7 +345,10 @@ def generate_launch_description():
                               'person',
                               # SG-A11（2026-10-08）: mux を監視対象に足す。twist_mux の生存確認を
                               # 含む。mux_report_only=true（既定）のため記録だけで実機の挙動は変わらない。
-                              'mux']
+                              'mux',
+                              # Spec-safety §6.4: 別の PC の制御系と同居の検知。
+                              # controller_conflict_report_only=true（既定）のため記録だけ。
+                              'controller']
     # dev_mode と同じ流儀（WP-DEV-01A）: If/Unless で排他的に定義を分ける。
     nodes.append(Node(
         package='th_safety',

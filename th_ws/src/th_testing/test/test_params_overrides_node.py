@@ -95,6 +95,17 @@ _TEST_REGISTRY_ROWS = [
         "spec_ref": "test_params_overrides_node.py",
         "note": "SG-C14 順序ガード用",
     },
+    # S-21 の「カメラ」ボタンの開く先（2026-11-20。本物と同名）。
+    {
+        "name": "camera_ui_url",
+        "unit": None,
+        "class": "b",
+        "status": "given",
+        "value": "http://192.168.5.129/",
+        "consumers": ["params_audit"],
+        "spec_ref": "test_params_overrides_node.py",
+        "note": "S-21 カメラの開く先",
+    },
     {
         "name": "test_derived_value",
         "unit": "m",
@@ -334,6 +345,29 @@ class TestParamsOverridesNode(unittest.TestCase):
         payload = self._call_get(["speed_preset_mid"])
         assert payload["effective"]["speed_preset_mid"] == 0.65, \
             "生成の回し直し（次回起動相当）で値が効いていない"
+
+    def test_g_camera_url_non_http_is_rejected_and_http_applies(self):
+        """S-21「カメラ」: 開く先は http(s) 以外を /params/set が理由付きで拒否し、
+        http の保存は受理され、生成の回し直し（次回起動）で効き値になる
+        （S-50 の画面も同じ規則で弾く。Spec-webui §3.15）。"""
+        self._publish_mode('IDLE')
+        result = self._call_set({"camera_ui_url": "ftp://192.168.5.129/"})
+        assert result.success is False, \
+            "http(s) 以外が受理されている"
+        assert "http" in result.message, \
+            f"拒否理由が http(s) に触れていない: {result.message}"
+
+        result = self._call_set({"camera_ui_url": "https://192.168.5.10/cam"})
+        assert result.success is True, f"/params/set が拒否された: {result.message}"
+
+        payload = self._call_get(["camera_ui_url"])
+        assert payload["pending"]["camera_ui_url"] == "https://192.168.5.10/cam"
+
+        self._regenerate()
+
+        payload = self._call_get(["camera_ui_url"])
+        assert payload["effective"]["camera_ui_url"] == "https://192.168.5.10/cam", \
+            "生成の回し直し（次回起動相当）で開く先が効いていない"
 
 
 if __name__ == '__main__':

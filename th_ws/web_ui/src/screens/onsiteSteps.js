@@ -161,7 +161,7 @@ export function testSteps({ homeDeclared, mapOpened, selectedPinId, mode, stateN
     { id: 'home', labelKey: 'S21_STEP_HOME', done: homeDeclared === true },
     { id: 'dest', labelKey: 'S21_STEP_DEST', done: selectedPinId != null || navMode },
     { id: 'move', labelKey: 'S21_STEP_MOVE', done: mode === 'AT_PANEL' },
-    { id: 'work', labelKey: 'S21_STEP_WORK', done: stateName === 'WORKING' || mode === 'SUMMON' },
+    { id: 'work', labelKey: 'S21_STEP_WORK', done: mode === 'SUMMON' },
   ]
   return { steps, currentIndex: currentIndexOf(steps.map((s) => s.done)) }
 }

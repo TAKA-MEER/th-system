@@ -9,8 +9,12 @@
 > **2026-09-05 追記: ESP32 は無線を一切使わなくなった。** 第4回3階教示再生走行
 > 試験で ESP32 の WiFi 通信エラーが頻発し教示中に衝突を繰り返したため、
 > ESP32↔PC 間の無線 WebSocket を廃止し、**ESP32 はラズパイへ USB-UART で直結**、
-> ラズパイ上の `pi_serial_relay` が代わりに WiFi 経由で PC の `esp32_bridge` へ
-> 接続する構成に変更した（[Spec.md](plan/spec/Spec.md) §6.1「ESP32 は無線を使わない」）。これまでの WiFi 対策の積み重ね（本ファイルの以下の
+> ラズパイ上の `pi_serial_relay` が代わりに WiFi 経由で PC の `esp32_bridge` と
+> 接続する構成に変更した（[Spec.md](plan/spec/Spec.md) §6.1「ESP32 は無線を使わない」）。
+> **2026-11-19 に接続の向きをさらに逆にした。**ラズパイの `pi_serial_relay` が
+> **WebSocket サーバーとして待ち受け**、PC の `esp32_bridge` がクライアントとして
+> 接続しにいく（[Spec-safety.md](plan/spec/Spec-safety.md) §6.4）。これでどの PC からでも
+> 制御できるが、同時に制御するのは**先に接続した 1 台だけ**（他は 409 で断られる）。これまでの WiFi 対策の積み重ね（本ファイルの以下の
 > 記述）にもかかわらず ESP32 の切断はほぼランダムに発生しており、過去の
 > 「改善した」という判断は検証run間のブレを誤認していた可能性が高いと判断した。
 > **以下の「PC↔ラズパイ」に関する記述は今も有効**（`/scan` に加えてこの区間で
@@ -38,7 +42,7 @@ ESP32（駆動用）はラズパイに USB-UART で直結し、無線区間に�
 PC (Ubuntu, ROS2 コンテナ)   192.168.5.50   固定IP
   屋内: AIC8800 ドングル wlx6c1ff789d5d4 → th-rpi-5g（ロボット専用。挿せば自動でつながる）
   屋外: 内蔵 Intel wlo1 → th-rpi-ap（2.4GHz。ap_band_switch.sh outdoor）
-  esp32_bridge が :8766 を待ち受け(pi_serial_relay がここへ接続) / rosbridge :9090
+  esp32_bridge がラズパイの :8766 へ接続しに行く / rosbridge :9090
 
 PC のインターネットは別系統（屋内のみ）:
   内蔵 Intel wlo1  DHCP  保存済みの Wi-Fi（NCT-WL-ST など）に自動接続  ← 既定経路
@@ -87,9 +91,10 @@ RPLIDAR S1 → ラズパイの `rplidar_ros` → `/scan` (`ROS_DOMAIN_ID=10`)。
 - `nmcli device connect wlo1` は `autoconnect no` のロボット用プロファイルを選び直すことがある（IP が重なった）。
   wlo1 をインターネットに戻すときは `nmcli device set wlo1 autoconnect yes` で NM に選ばせる。
 
-- **固定 IP にしている理由**: ラズパイの `pi_serial_relay`（`--ws-host`）が
-  `192.168.5.50` 決め打ちだから。DHCP にすると `pi_serial_relay` が繋ぎに
-  来られなくなる。
+- **固定 IP にしている理由**: ラズパイの時計は PC（`NTP=192.168.5.50`）を時刻源にしているため
+  （**現状残っている**。時刻源の変更は別に扱う）。2026-11-19 までは「ラズパイの
+  `pi_serial_relay` が `192.168.5.50` 決め打ちで接続しに行く」理由もあったが、向きを逆にしたため
+  中継側の理由は消えた（中継は待ち受けで、IP を決め打ちにしない）。
 - `never-default` を付けているのは、ロボット AP（インターネットなし）が既定経路を
   奪わないようにするため。
 - Ubuntu は `/etc/NetworkManager/conf.d/*powersave*` で `wifi.powersave = 3`（省電力ON）が
@@ -120,9 +125,9 @@ nmcli -t -f DEVICE,CONNECTION dev | grep -E '^wl'     # 屋内: AIC8800 が th-r
 
 | 事項 | 内容 |
 | --- | --- |
-| WS 接続 | `pi_serial_relay`（ラズパイ）が `esp32_bridge`（PC）へ接続しに行くクライアント。ESP32 自身は WS を持たない。切断時は `pi_serial_relay` 側が再接続ループする（`th_ws/scripts/pi_serial_relay.py`） |
+| WS 接続 | `esp32_bridge`（PC）が `pi_serial_relay`（ラズパイのサーバー :8766）へ接続しに行くクライアント。ESP32 自身は WS を持たない。切断時は `esp32_bridge` 側が再接続ループする（`th_ws/scripts/pi_serial_relay.py`） |
 | シリアル区間の完全性 | ESP32↔ラズパイ間は `serial_framer.py`（sync+len+CRC8 のエンベロープ）で境界と破損検知を行う。ブート時 ASCII バナー等が混ざっても resync して後続フレームを拾う |
-| 多重接続 | `esp32_bridge` は新しい WS 接続を受けたら**古い接続を明示的に閉じる**。「接続が 2 本ある」状態にはならない |
+| 多重接続 | **先着 1 台。**中継は制御中の接続がある間、新しい接続を 409 で断る（制御中の PC のアドレスを `X-Controlling-PC` 見出しと本文に入れる）。制御 PC から無通信が 1.5 秒を超えたら手放す（半開き TCP でも空く）。断られた PC は `/esp32/bridge_blocked` で「別の PC が制御中」と表示される（Spec-safety §6.4） |
 | PC↔ラズパイの実測 | 3 分ソークでロス **0%**、`/scan_filtered` **10.07Hz・最大ギャップ 0.12s・標準偏差 0.006s**（2026-09-02。ESP32 のデータもこの経路に相乗りする） |
 | DDS ディスカバリ | 現行 AP では**マルチキャストで正常に動く**。ユニキャストピア設定は使わない（後述の落とし穴を参照） |
 | `/scan` の QoS | センサストリームなので**必ず `qos_profile_sensor_data`（BEST_EFFORT）で購読する。** RELIABLE で購読すると 1 件も届かない |
@@ -157,15 +162,21 @@ ping -c3 192.168.5.1
 - 2 バンド構成そのものを疑うときは、ラズパイで `sudo bash rpi_dualband_ap_revert.sh` で旧構成
   （NM の `th-rpi-ap` 単独）に戻せる。PC は `th-rpi-ap-wlo1` を `autoconnect yes` に戻す。
 
-### `pi_serial_relay` が WS に繋がらない（`esp32_bridge` に「接続:」ログが出ない）
+### `esp32_bridge` が WS に繋がらない（中継に「接続」ログが出ない）
+
+中継は待ち受け（サーバー）側になったので、見る位置が変わった。
 
 1. ラズパイ側で `pi_serial_relay` が動いているか: `systemctl status rpi-serial-relay`
-2. ラズパイが PC に到達できるか: `ping -c3 192.168.5.50`
-3. **PC 側で 8766 を誰が持っているか**: `ss -tlnp | grep 8766`
-   （**古い `esp32_bridge` が生き残っていてポートを奪っている**のが実際にあった。次項参照）
-4. 実際に繋ぎに来ている相手を見る: `ss -tnp | grep 8766`
-   → ここに出る IP がラズパイ（192.168.5.1）。**`/system/trigger` に繋ぎに来る IP と混同しないこと**
-5. `pi_serial_relay` のログ (`journalctl -u rpi-serial-relay -f`) で `--ws-host`/`--ws-port` が
+   （`ss -tlnp | grep 8766` でラズパイが LISTEN しているかも確かめる）
+2. PC からラズパイへ到達できるか: `ping -c3 192.168.5.1`
+3. PC 側で `esp32_bridge` が動いているか（**古い `esp32_bridge` が生き残っている**と
+   接続先を奪い合う。次項の実例参照）
+4. PC 側で実際に繋ぎにいっている相手を見る: `ss -tnp | grep 8766`
+   → ここに出る IP がラズパイ（192.168.5.1）のはず
+5. 「別の PC が制御中」で断られているか: `ros2 topic echo /esp32/bridge_blocked --once`
+   に `blocked: true` と制御中の PC のアドレスが出る。その PC の `esp32_bridge` が
+   接続を切る（または無通信 1.5 秒で中継が手放す）まで待つ
+6. `pi_serial_relay` のログ (`journalctl -u rpi-serial-relay -f`) で `--ws-port` が
    正しいか確認する
 
 ### ESP32 と `pi_serial_relay` の間が繋がらない（`wheel_feedback` が全く来ない）
@@ -174,7 +185,7 @@ ping -c3 192.168.5.1
    （**RPLIDAR も同じ機構の USB-UART。`/dev/ttyUSB0` のような列挙順依存の指定は
    ある日 LiDAR と入れ替わる。** 必ず `by-id` のシリアル番号込みパスで指定する）
 2. `journalctl -u rpi-serial-relay` の `ESP32 のポート = ...` がそのパスか（ESP32 交換直後は、LiDAR 以外の USB-UART がちょうど 1 つ見えているか）
-3. `journalctl -u rpi-serial-relay -f` で `esp32_bridge へ接続しました` は出ているのに
+3. `journalctl -u rpi-serial-relay -f` で `制御 PC が接続しました` は出ているのに
    フィードバックが来ない場合、ESP32 側が起動していない/焼き込み前の可能性
    （`docs/esp32.md` の書き込み確認バナー参照）
 
@@ -195,6 +206,19 @@ ping -c3 192.168.5.1
 4. マルチキャスト疎通: コンテナ側 `ros2 multicast receive` / ラズパイ側 `ros2 multicast send`
 5. **時刻ズレ**: `/scan` は届いているのに SLAM が捨てる場合はこれ
    （`Message Filter dropping message` が症状）
+6. **bringup のたびに「たまに」届かない（USB を挿し直すと直る）**: ラズパイの UDP 受信バッファあふれ
+   （2026-11-19 に特定）。bringup が約 40 ノードを一度に起動すると相手探し（SEDP）が殺到し、
+   既定 212 KB の受信バッファから**受信の約 8 割を捨てていた**（`/proc/net/snmp` の `RcvbufErrors`。
+   1 回の bringup で +68,616 件、`rplidar_node` の 9912 番だけで +41,615 件）。`/scan` の購読者の
+   知らせが運よく残れば届き、残らなければ届かない。LiDAR の USB は無関係で、挿し直しで直るのは配信が
+   作り直されて混雑の後に相手探しをやり直すため。**対策（導入済み）**: `/etc/sysctl.d/90-th-udp-buffers.conf`
+   （正本 `th_ws/scripts/rpi_sysctl_90-th-udp-buffers.conf`。`rmem_max` 8 MB・`rmem_default` 4 MB）と、
+   `~/fastdds_peers.xml` の `receiveBufferSize` 4 MB（正本 `th_ws/scripts/rpi_fastdds_peers.xml`。
+   `rplidar`・`rpi_speaker` の両サービスが読む）。確かめ方:
+   ```bash
+   ssh mirs2602@192.168.5.1 'grep -A1 "^Udp:" /proc/net/snmp'   # bringup の前後で RcvbufErrors が増えないこと
+   ssh mirs2602@192.168.5.1 'ss -uampn | grep -A1 rplidar_node' # skmem の rb が 8388608、d（捨てた数）が増えないこと
+   ```
 
 ### `/scan` は 10Hz 出ているのに `/scan_filtered` が無音
 
@@ -229,7 +253,8 @@ docker restart th_robot                               # /dev/shm の掃除だけ
 
 - **`pkill -TERM -f "ros2 launch ..."` は launch 親しか殺さず、子ノードは生き残る。**
   「止めたはずなのにポートが埋まっている」「修正したのに古い挙動のまま」はこれ。
-  古い `esp32_bridge` が残って 8766 を、rosbridge が 9090 を奪った実例がある。
+  古い `esp32_bridge` が残って rosbridge が 9090 を奪った実例がある
+  （8766 はラズパイ側の中継が持つので、PC 側の競合ではない）。
   `ps -eo pid,args` で ROS 関連を拾って **PID 指定で TERM** すること。
 - **`pkill -f <パターン>` は自分のシェルを殺す。** `docker exec th_robot bash -lc '... pkill -f X ...'`
   ではパターンが `-lc` の引数文字列全体にマッチする。ホスト側でも同じ
@@ -368,9 +393,10 @@ PC 側の `speaker_announcer`（bringup で起動）が `/speaker/cue`（2 Hz）
      PYTHONPATH=~/pi_relay_env/site-packages python3 -c "import serial, websockets; print(\"OK\", serial.VERSION, websockets.__version__)"
    '
 
-   # 中継スクリプト本体
+   # 中継スクリプト本体（2026-11-19 から relay_gate.py＝先着 1 台の判定も一緒に送る）
    scp th_ws/src/th_esp32_bridge/th_esp32_bridge/serial_framer.py \
        th_ws/scripts/pi_serial_relay.py \
+       th_ws/scripts/relay_gate.py \
        mirs2602@192.168.5.1:~/
    ```
    `websockets` は 13 以降で `import websockets` だけでは `websockets.exceptions`
@@ -380,6 +406,11 @@ PC 側の `speaker_announcer`（bringup で起動）が `/speaker/cue`（2 Hz）
    `serial_framer.py` はラズパイへの**ベタコピー**（`th_ws/src/th_esp32_bridge/`
    側の正本を変更したら、その都度この scp をやり直すこと。忘れると片方だけ
    古いままになり、症状は「通信が全滅」という分かりにくい形で出る）。
+   `relay_gate.py` も同じベタコピー（`th_ws/scripts/` の正本を変更したら scp し直す）。
+   2026-11-19 から中継は **WebSocket サーバー**（待ち受け）になった。`--ws-host` は
+   接続先ではなく bind アドレス（既定 `0.0.0.0`）として使う。ラッパー
+   `rpi_serial_relay_run.sh` の既定引数は `--ws-port 8766` だけなので、通常は
+   追加の設定は要らない。
 
    `mirs2602` が `dialout` グループに入っているか確認する（入っていないと
    `pi_serial_relay.py` の `open()` もラッパーの `stty` も
@@ -388,6 +419,20 @@ PC 側の `speaker_announcer`（bringup で起動）が `/speaker/cue`（2 Hz）
    ssh mirs2602@192.168.5.1 'groups | grep -q dialout && echo OK || \
      (sudo usermod -aG dialout mirs2602 && echo "追加した。再ログインが必要")'
    ```
+> **接続の向きを逆にした更新（2026-11-19）の導入手順（sudo が要る）。2026-11-19 17:37 に導入済み**（旧版の控えはラズパイの `~/relay_backup_20261119/`。戻すときはそこから 3 ファイルを `~` へ戻して `sudo systemctl restart rpi-serial-relay`。PC 側も旧版のコードに戻すこと）。
+> エージェントはラズパイへ導入しない。やることは次の3つだけ:
+> 1. 新しい 3 ファイル（`pi_serial_relay.py`・`relay_gate.py`・`serial_framer.py`）と
+>    ラッパー `rpi_serial_relay_run.sh` を上の scp で `~` へ送る。
+> 2. `sudo cp /tmp/rpi-serial-relay.service /etc/systemd/system/` が済んでいれば
+>    unit の編集は要らない（`ExecStart` はラッパー経由のまま）。`sudo systemctl daemon-reload`
+>    のあと `sudo systemctl restart rpi-serial-relay`。
+> 3. `journalctl -u rpi-serial-relay -f` に `WebSocket サーバーを待ち受けます` と
+>    出ること、および PC 側の `esp32_bridge` のログに `ESP32 接続（中継 ws://192.168.5.1:8766）`
+>    が出て `ros2 topic hz /esp32/wheel_feedback` が約 100 ms で並ぶことを確認する。
+> ラズパイの `websockets` は wheel 取得時に版を固定していない。`pi_serial_relay.py` は
+> 16.1.1（ラズパイ・コンテナとも確認済み）の asyncio 実装専用。版を入れ替えたら
+> 上の 3. の動作確認を必ず行うこと。
+
 3. ラッパーと systemd unit を配置する。**ESP32 の by-id パスは unit に書かない**
    （`rpi_serial_relay_run.sh` が `/dev/serial/by-id/` のうち LiDAR 以外の USB-UART を
    ESP32 として自動で選ぶ。ESP32 を交換しても編集は要らない。LiDAR を交換したときだけ、

@@ -310,7 +310,7 @@ def derive_limits(screens, now_ms, p):
 | **`ActiveFaults.msg`** | `Header header` / `string[] types`（いま立っているフォルト種別。辞書順で安定） / `string[] severities`（`types` と同じ順。`RECOVERABLE`／`CRITICAL`） | **`safety_monitor` が `active_faults_` の変化のたびに出す（Spec-safety §3.5.5 の記録用）。`/safety/fault` は代表 1 件しか運ばず複数同時が見えないため別に出す。判定には使わない** |
 | **`FaultRecord.msg`** | `string fault_type` / `float64 started_at`（epoch 秒） / `float64 duration_s`（継続中は -1.0） / `bool ongoing` / `string mode` / `string state`（発生時） / `string severity` / `string outcome`（`PAUSE`／`ESTOP`／`NONE`） | **フォルト履歴の 1 件** |
 | **`FaultHistory.msg`** | `Header header` / `FaultRecord[] records`（新しい順・最大 50 件） | **`fault_recorder` が出す履歴。表示は WebUI（Spec-webui §3.15）** |
-| **`LimiterStatus.msg`** | `Header header` / `bool alive` / `string action`（`PASS`/`CLAMP`/`STOP`/`ZERO_STALE`/**`BLOCKED_UNCALIBRATED`**） / `float32 in_linear` / `float32 out_linear` / `float32 nearest_obstacle_m` / `string source_class`（`MANUAL`/`AUTO`） / `float32 applied_limit_mps` / `bool approach_warning`（自動ブレーキ OFF の手動系が、ON なら減速が始まる距離に入った。速度は落とさない。1b-15 SG-B10。止まっているときは死角を除く周囲で判定） / `float32 approach_distance_m`（警告の元の距離。動いている間は進む向き・止まっている間は周囲の最近傍） / `bool approach_warning_moving`（approach_warning のうち機体が動いている間だけ立つもの。スピーカーの警告音用） | 監視と画面表示の両方に使う |
+| **`LimiterStatus.msg`** | `Header header` / `bool alive` / `string action`（`PASS`/`CLAMP`/`STOP`/`ZERO_STALE`/**`BLOCKED_UNCALIBRATED`**） / `float32 in_linear` / `float32 out_linear` / `float32 nearest_obstacle_m` / `string source_class`（`MANUAL`/`AUTO`） / `float32 applied_limit_mps` / `bool approach_warning`（自動ブレーキ OFF の手動系が、ON なら減速が始まる距離に入った。速度は落とさない。1b-15 SG-B10。止まっているときは死角を除く周囲で判定） / `float32 approach_distance_m`（警告の元の距離。LiDAR の中心から。動いている間は進む向き・止まっている間は周囲の最近傍。判定に使う） / `bool approach_warning_moving`（approach_warning のうち機体が動いている間だけ立つもの。スピーカーの警告音用） / `float32 approach_clearance_m`（**画面に出す**距離。機体の外形（一番近い面）から。同じ点の集まりで最小。2026-11-13 A-17） | 監視と画面表示の両方に使う |
 | **`LocalizationHealth.msg`** | `Header header` / `bool ok` / `string reason`（`""` 正常／`stale` A: `map→odom` が凍結／`node_down` C: 推定ノード不在／`jump` B′: `map→odom` が比較周期に許容超で動いた／`restarting` O-e3: 計画的な推定器の再起動中（A・C・B′ を保留）／`restart_timeout` O-e3: 再起動が上限（`localization_restart_max_ms`）を超過／`low_confidence` B 用の予約。出さない） / `float32 transform_age_sec` / `bool node_present` | **`safety_monitor` の `localization` 監視の入力（WP-SAFE-05）。`reason` の文字列定義はこの .msg のコメントが正。優先順位は `node_down` ＞ `stale` ＞ `jump`（localization_health_core.py の docstring に理由を記載）** |
 | **`WaitClearStatus.msg`** | `Header header` / `float32 distance_m` / `float32 remaining_sec` / `bool satisfied` / `string verdict`（`OK`/`WAITING`/`NOT_CLEAR`） | 退避待ちの表示 |
 | **`RouteList.msg`** | `Header header` / `RouteInfo[] routes` | transient_local。トピック `/route/catalog` |
@@ -320,7 +320,7 @@ def derive_limits(screens, now_ms, p):
 | **`Pin.msg`** | `string id` / `string name` / `string kind`（`HOME`/`PANEL`） / `geometry_msgs/Pose pose` / `builtin_interfaces/Time registered_at` | 待機場所ピンと配電盤ピン |
 | **`PinList.msg`** | `Header header` / `Pin[] pins` / `string map_instance_id`（`MapSessionStatus.instance_id` と同じ意味。ピン登録時点の地図の生存世代。`WS-9AL` で追加） | transient_local |
 | **`RouteInfo.msg`** | `string id` / `string name` / `uint32 generation` / `float32 length_m` / `uint32 point_count` / `float32 start_yaw` / `builtin_interfaces/Time recorded_at` | 教示経路のメタ |
-| **`RouteStatus.msg`** | `Header header` / `string state` / `RouteInfo current` / `float32 recorded_m` / `float32 elapsed_sec` / `uint32 points` / `int32 target_index`（再生中の pure-pursuit 目標点の添字。記録中・未走行は -1。`demo-teach-replay` で追加） / `float32 start_yaw`（記録側のみ。記録開始時の向き [rad]。記録を開いていないときは 0。S-13 表示用。1b-7 S-13 で追加） / `bool saved`（記録側のみ。`finalize_route_file` 成功時だけ true。FSM の `SAVED` とは無関係。WS-9K-E2 で追加） / `bool arrived`（再生側のみ。経路の終端まで走り切ったときだけ true。`PAUSE` の原因が終端到達かフォルト/ジョグ/停止ボタンかを UI が区別するのに使う。WS-9P で追加） / `float32 cross_track_m`（再生側のみ。現在位置の経路からの横ずれ [m]。S-14 表示用） / `float32 cross_track_max_m`（再生側のみ。この再生での横ずれの最大値 [m]。停止しても残し `load_route` で 0 に戻す） / `string localize_quality`（再生側のみ。全域ローカライズの確度。`''` 未評価／`searching` 探索中／`high` 成立／`low_margin` 成立したが `m` 低／`failed` 不成立／`unknown` pgm 無しの旧経路。W-01 P2） / `float32 localize_score`（再生側のみ。最後の探索の `s`。W-01 P2） / `float32 localize_margin`（再生側のみ。最後の探索の `m`。W-01 P2） / `bool has_map`（再生側のみ。読み込んだ経路に保存地図があるか。1b-11 SG-B14） | S-12/S-13/S-14 の表示源 |
+| **`RouteStatus.msg`** | `Header header` / `string state` / `RouteInfo current` / `float32 recorded_m` / `float32 elapsed_sec` / `uint32 points` / `int32 target_index`（再生中の pure-pursuit 目標点の添字。記録中・未走行は -1。`demo-teach-replay` で追加） / `float32 start_yaw`（記録側のみ。記録開始時の向き [rad]。記録を開いていないときは 0。S-13 表示用。1b-7 S-13 で追加） / `bool saved`（記録側のみ。`finalize_route_file` 成功時だけ true。FSM の `SAVED` とは無関係。WS-9K-E2 で追加） / `bool arrived`（再生側のみ。経路の終端まで走り切ったときだけ true。`PAUSE` の原因が終端到達かフォルト/ジョグ/停止ボタンかを UI が区別するのに使う。WS-9P で追加） / `float32 cross_track_m`（再生側のみ。現在位置の経路からの横ずれ [m]。S-14 表示用） / `float32 cross_track_max_m`（再生側のみ。この再生での横ずれの最大値 [m]。停止しても残し `load_route` で 0 に戻す） / `string localize_quality`（再生側のみ。全域ローカライズの確度。`''` 未評価／`searching` 探索中／`high` 成立／`low_margin` 成立したが `m` 低／`failed` 不成立／`unknown` pgm 無しの旧経路。W-01 P2） / `float32 localize_score`（再生側のみ。最後の探索の `s`。W-01 P2） / `float32 localize_margin`（再生側のみ。最後の探索の `m`。W-01 P2） / `bool has_map`（再生側のみ。読み込んだ経路に保存地図があるか。1b-11 SG-B14） / `bool map_save_failed`（記録側のみ。保存時に地図の画像＝pgm/yaml が揃わなかったら true。S-13 の「保存しました」に警告を添える。A-21 で追加） | S-12/S-13/S-14 の表示源 |
 | **`MapSessionStatus.msg`** | `Header header` / `string slot`（`VENUE`/`ROUTE`） / `string session_id` / `string mode`（`UNLOADED`/`MAPPING`/`LOCALIZING`） / `bool dirty` / `string instance_id`（地図の生存世代を表す乱数トークン。まっさらな地図作成を始めるたび新規発行、読み直しに成功したら読み込んだ地図のものを継承。`WS-9AL` で追加） | §6.4 |
 | **`CheckStatus.msg`** | `Header header` / `string item` / `string result`（`OK`/`WARN`/`NG`/`UNKNOWN`） / `string detail` / `string next_screen` / `string basis_json`（判定の根拠。JSON 配列 `{key,value,threshold,unit,cmp,ok}`。最終判定のときだけ。ラベルは WebUI の i18n） | 始業点検 4 項目 |
 | **`CalibStatus.msg`** | `Header header` / `string item` / `string step` / `string result` / `string preview_before` / `string preview_after` / `string detail` | 校正ウィザード |
@@ -446,6 +446,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`/speaker/status`** | **`std_msgs/String`（JSON。`cue`（再生中）／`volume`／`error`）** | **transient_local, depth 1, reliable** | **1 Hz（発行者はラズパイの再生。購読者は `speaker_announcer`（応答の有無）と WebUI）** |
 | `/safety/link_quality` | `LinkQuality` | best_effort | 1 Hz |
 | **`/safety/firmware_flags`** | `std_msgs/UInt8` | **transient_local, depth 1** | 変化時＋接続時（[hardware](DetailedDesign-hardware.md) §3.1） |
+| **`/esp32/bridge_blocked`** | **`std_msgs/String`（JSON。`{"blocked": bool, "owner": string|null}`）** | **transient_local, depth 1, reliable** | **変化時。発行者は `esp32_bridge`。**中継（ラズパイ）が「別の PC が制御中」で 409 拒否したとき、制御中の PC のアドレスとともに「別の PC が制御中」を出す（Spec-safety.md §6.4。2026-11-19）。接続が通ったら `blocked: false` を出す。ESP32 切断と区別する |
 | **`/esp32/cmd_alive`** | `std_msgs/Bool` | reliable, depth 10 | ESP32 の `ESTOP_HW` フレームごと（10 Hz）。**ESP32 自身が「速度指令を受け取れている」と報告した値**（flags bit1。bit2 が立つファームのときだけ出す）。発行者は `esp32_bridge`、購読者は `connectivity_checker`（疎通確認の「速度指令の折り返し」。2026-10-04） |
 | **`/esp32/battery`** | `sensor_msgs/BatteryState` | reliable, depth 1 | **1 Hz**（[hardware](DetailedDesign-hardware.md) §3.3） |
 
@@ -524,6 +525,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`calib_rotation_w_rps`** | rad/s | (b) | **校正 `ROTATION` の旋回の速さ（一定）**。終わりぎわも `turn_in_place_w_min_rps` を下回らない |
 | `speed_preset_low` ／ `_mid` ／ `_high` | 比率 | given | UI プリセット。**上限に対する割合**。`consumers: [web_ui]` |
 | `auto_brake_default_outdoor` ／ `auto_brake_default_indoor` | on/off | given | S-50 で変える自動ブレーキの既定（場外の手動系／場内）。`consumers: [state_manager]`。Spec-safety §2.1 |
+| `camera_ui_url` | URL（文字列） | given | S-21 の「カメラ」ボタンが別タブで開く先（カメラ機能 hve-system の画面）。`consumers: [web_ui]`。S-50 で変えられる（http/https のみ）。Spec-onsite §7.2 / Spec-webui §3.15 |
 | `drivetrain_ceiling_mps` | m/s | (b) | 出力上限 ÷ フィードフォワード係数 |
 | **`v_max_headroom_ratio`** | — | given | `v_max` を天井の何割にするか（補正の余地を残す） |
 | **`venue_clearance_m`** ／ **`blind_clearance_m`** ／ **`panel_clearance_m`** | m | (a)／方針値 | `v_slow`・`v_reverse` ／ `v_jog_panel` の逆算元（`blind_clearance_m` は現構成では未使用。2026-10-09） |
@@ -585,6 +587,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`measure_link_timeout_ms`** | ms | (b)。`/measure/heartbeat` の途絶とみなすまでの時間（[measure](DetailedDesign-measure.md) §3.4。Spec-params §2 の「測定機能との通信が途絶えたとみなすまでの時間」）。2026-11-04（案） |
 | **`arm_clearance_scan_max_age_ms`** | ms | (b)。腕が振れる範囲の確認で、これより古いスキャンなら `UNKNOWN`（[measure](DetailedDesign-measure.md) §3.5）。2026-11-04（案） |
 | **`mux_report_only`** | — | given bool。true の間は `MUX_DEAD` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。同 §5.6） |
+| **`controller_conflict_hold_ms`** | ms | (b)。`CONTROLLER_CONFLICT` の保持時間（`/cmd_vel` の publisher が 2 つ以上、または制御系ノードが同名で 2 つ以上いる状態がこの時間続いたら成立。DDS が落ちたノードの残骸を数秒見せ続けることがあるため、その見え方より長くする。`safety_monitor`。Spec-safety §6.4） |
+| **`controller_conflict_report_only`** | — | given bool。true の間は `CONTROLLER_CONFLICT` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。`mux_report_only` と同じ形） |
 | **`muxed_stale_ms`** | ms | (b)。**リミッタ**が `/cmd_vel_muxed` の途絶を判定する |
 | **`cmd_vel_stale_ms`** | ms | (b)。**`esp32_bridge`** が `/cmd_vel` の途絶を判定する（`< esp32_watchdog_ms`） |
 | **`scan_stale_ms`** | ms | (b)。**リミッタ**が `/scan` の途絶を判定する。超えたら `action = STOP` |
@@ -623,7 +627,9 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`scan_expected_points`** | — | given。起動時の疎通判定（`WP-STATE-03`） |
 | **`required_nodes`** | string[] | given。同上 |
 | **`esp32_watchdog_ms`** | ms | given。`esp32/src/config.h` の写し |
-| **`esp32_ws_port`** | — | given。`esp32_bridge` が待ち受ける WebSocket ポート。**実値は機体側の `esp32/src/wifi_credentials.h`（`.gitignore` 対象）にあり、`params.yaml` と `wifi_credentials.h.example` と 3 つで揃える**（`WP-NET-01` §10-②） |
+| **`esp32_ws_host`** | — | given。`esp32_bridge`（クライアント）の接続先＝ラズパイの `br0`。2026-11-19 に向きを逆にした（`Spec.md` §6.1・`Spec-safety.md` §6.4） |
+| **`esp32_ws_port`** | — | given。ラズパイの `pi_serial_relay`（サーバー）の WebSocket 待ち受けポート。`esp32_bridge` はここへ接続しに行く。**旧記述の「実値は機体側の `esp32/src/wifi_credentials.h`」は廃止**（2026-09-05 に ESP32 の無線を廃止し、ポートは PC 側 `params.yaml` と中継の `--ws-port` の 2 つで揃える） |
+| **`esp32_relay_idle_timeout_ms`** | ms | given。ラズパイの中継が制御 PC からの無通信で経路を手放すまでの時間（`Spec-safety.md` §6.4。2026-11-19） |
 | **`link_wait_timeout_ms`** | ms | (b)。`sys.link_timeout` の契機 |
 | `restart_max_count` ／ `restart_wait_ms` | — / ms | (c)。**`O-d4`。マニュアル側で決める**ので registry.yaml に placeholder として置く（`WP-STATE-03`） |
 | `blocked_hold_ms` ／ `unblocked_hold_ms` | ms | (b) |
@@ -663,7 +669,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `localize_margin_min` | ratio | (c)。全域ローカライズのマージン `m` の不成立下限。未満で LOCALIZE に留まる。同上 |
 | `search_radius_m` | m | (b)。`load_route` 直後の初期探索の窓半径（経路始点中心）。`m_sep_m`（2.0 m）より狭いと `m` が効かないため広く取る（W-01 P5 で registry 化。出発点。P6 で詰める） |
 | `widen_radius_m` | m | (b)。widen 再探索の窓半径（直前の最良候補中心）。初期探索より広い窓（W-01 P5 で registry 化。出発点。P6 で詰める） |
-| `resume_max_dist_m` | m | (c)。確定姿勢からこの距離以内の前向き点が無ければ途中復帰しない上限（LOCALIZE に留まる。W-01 P4。W-01 P5 で registry 化。環境依存で逆算できないため placeholder。P6 で実測） |
+| `resume_max_dist_m` | m | (c)。確定姿勢からこの距離以内に経路の点が無ければ途中復帰しない上限（機体の向きは問わない。LOCALIZE に留まる。W-01 P4。W-01 P5 で registry 化。環境依存で逆算できないため placeholder。P6 で実測） |
+| `resume_tie_m` | m | (b)。最近点との距離の差がこの値以内の点が複数あるときだけ、進行方向と機体の向きの差で途中復帰の点を選ぶ（行きと帰りが重なる経路の前後関係を解く。A-24。出発点 0.3。P6 で詰める） |
 | `factor` | — | (b)。地図間引きの縮小率（`map_downsampler`。W-03） |
 | `publish_period_ms` | ms | (b)。地図間引きの配信間隔（W-03） |
 | `occupied_threshold` | — | (b)。地図間引きの占有判定閾値（W-03） |
