@@ -242,7 +242,8 @@ builtin_interfaces/Time checked_at
 | `/measure/command` の提供・`meas.*` の受理・`/measure/result` の発行 | **`th_state` の `state_manager`**（`/system/trigger` と同じく状態機械が受ける。遷移と結果の取りこぼしを 1 か所で防ぐ）。**結果を 1 回だけ出す台帳**は純コア `th_state/measure_ledger.py` |
 | 生存確認の監視・`/measure/status` | **`th_measure` の `measure_link`**（§6.1） |
 | `/measure/check_arm_clearance` | `th_measure` のノード（P4 で決める） |
-| 自律測定の目的地への走行（地図を作りながら・手前 1.5 m の検査） | `th_measure` の挙動ノード。Nav2 を使い、速度指令は `/cmd_vel_nav`（[names](DetailedDesign-names.md) §6.1 の不変ルールのまま） |
+| 自律測定の目的地への走行（地図を作りながら・手前 1.5 m の検査） | **`th_onsite` の `venue_navigator` を広げて使う**（2026-11-23 変更。試験場内の走行と同じ決まり（§6.3 の塞がれたら待つ・§6.1.1 の機体の形・向き合わせ）と、実機で直した Nav2 の誤報・TF 停滞・衝突の打ち切りへの対策をそのまま使うため。新しいノードは作らない）。Nav2 を使い、速度指令は `/cmd_vel_nav`（[names](DetailedDesign-names.md) §6.1 の不変ルールのまま） |
+| 角が描く円の中の障害物（発進前の確認。§4.4） | **`th_measure` の `measure_clearance`**（2026-11-23。P5b）。P4 の `/measure/check_arm_clearance` も同じノードに置く |
 | 盤前の旋回・前後の並進（`ADJUST`。自律測定とお立会試験の停止命令の間） | **Nav2 を使わない直接制御**（2026-11-15。申し送り 22。F-60）。`th_measure` の挙動ノードが自己位置を見ながら超信地旋回・直進し、**速度指令は `/cmd_vel_behavior` だけ**（`venue_navigator` の `ALIGN` と同じ作り。[onsite](DetailedDesign-onsite.md) §6）。twist_mux → `obstacle_limiter` を通るので障害物の停止・速度の制限・非常停止はそのまま効く。直進の帰還に使う位置は P3 で決める |
 
 ### 6.1 `measure_link` と `state_manager` の分担
@@ -274,6 +275,25 @@ builtin_interfaces/Time checked_at
 | 結果の台帳 | **受理の判定（遷移表）→ 台帳への記録 → 遷移の実行**の順にする（P1 は遷移を先に進めていた）。モードを抜けたら残りを `CANCELLED`（`mode_exit`／`finished`）。`ESTOP`・`CARRY`・`PAUSE` へ落ちても目的地は捨てない（§3.2） |
 | ゾーン・速度 | 画面 `S-60` はゾーン `IN`。`attributes.yaml`: 速度 `v_slow`、ジョグ可（`v_jog_panel`）、自動ブレーキ ON（固定） |
 | 在席 | 測定機能の画面（`client_id` が `fk-`、`screen_id` `S-60`）は本システムの画面と同じに数える（既存の `/ui/active_screen` の仕組みのまま。足すものが無いことを試験で確かめる） |
+
+**P5b（目的地への走行）の決まり**（2026-11-23）。
+
+| 項目 | 決まり |
+| --- | --- |
+| 状態 | `NAV`・`ALIGN`・`BLOCKED` を足す（`safety_monitor` の状態の一覧も）。`attributes.yaml` の `run_state` を `NAV` にする（在席を失ったら `PAUSE`・非常停止から戻る先が `PAUSE` になる）。`ALIGN`・`BLOCKED` も非常停止・手押しから戻る先を `PAUSE` にする（`ESTOP_RESUME_PAUSE_EXTRA`。2026-10-22 の事故と同じ理由）。`ui.resume_yes` では走らないのは P5a のまま |
+| 指示の引数 | `state_manager` は `/measure/command` の欄（`x`・`y`・`yaw`・`map_instance_id` ほか）と `command_id` を遷移表の `arg` に渡す |
+| 目的地（-121） | `WAIT` の `meas.goal` だけ受ける。判定の順: `reentry_required` → `localization_lost`、`map_instance_id` が `/map_session/status` の `instance_id` と違う → `map_mismatch`、角が描く円の中に障害物 → `corner_obstacle`。受けたら `NAV` へ、effect **`measure_goal`**（dest `venue_navigator`。`command_id`・`x`・`y`・`yaw`）。`NAV`・`ALIGN`・`BLOCKED`・`PAUSE` では `state_not_accepting`（-132） |
+| 角が描く円の確認 | `measure_clearance` が `/scan_filtered` と局所コストマップの占有セルから、`base_link` 中心の半径 0.389 m の円の中に障害物があるかを **5 Hz** で `/measure/corner_status`（`std_msgs/String` の JSON `{"clear": bool, "reason": "..."}`）に出す。スキャンが `arm_clearance_scan_max_age_ms` より古い・TF が取れないときは `clear=false`。`state_manager` は最後の値をラッチし、**1 秒届かなければ `clear=false`**。ガードは同期で判定する（サービスを呼ばない） |
+| 走行 | `venue_navigator` は `AUTO_MEASURE` の `NAV` を走行の対象に入れ、目的地は effect `measure_goal` から取る（ピンは使わない）。**会場地図の有無の検査（`SM-3.1.2-119`）は `AUTO_MEASURE` では見ない**（`start_measure_map` で会場地図は外れている）。着いたら `evt.arrived` → `ALIGN` → `evt.align_done` → `WAIT` は試験場内と同じ |
+| 手前 1.5 m の検査（-125） | 試験場内と同じ検査（機体の形 0.55 m 角・0.5 秒周期・走り出す前と走行中）に、**`AUTO_MEASURE` だけ「地図ができている」**を足す: 1.5 m の範囲の `/map` のセルが不明（-1）なら通れない扱いで `BLOCKED`。その先の不明な所は Nav2 の `allow_unknown` のまま推測の経路で通す。`BLOCKED` は時間切れにならず、空けば `NAV` へ戻る（-126） |
+| 経路の再計算（-122） | `NAV`・`BLOCKED` の `meas.reroute` を受け、試験場内の「再検索」と同じ引き直しをする。すぐ `DONE`、目的地はもとの `command_id` のまま |
+| 停止（-129） | `NAV`・`ALIGN`・`BLOCKED` の `meas.stop` → `PAUSE`。目的地は持ったまま（結果を出さない）。止める前の状態を `state_manager` が覚える（人のジョグ・回復フォルト・通信途絶で `PAUSE` に落ちたときも同じ） |
+| 発進（-130） | `PAUSE` の `meas.start`: 止める前が `NAV`・`BLOCKED` なら `NAV`（走り出す前に手前の検査をし、通れなければ `BLOCKED`）、`ALIGN` なら `ALIGN`、それ以外は `WAIT`。`NAV`・`ALIGN` へ戻るときは角が描く円を確かめ、障害物があれば `corner_obstacle`（`PAUSE` のまま）。`reentry_required` 中は `localization_lost` |
+| 中止（-131） | `NAV`・`ALIGN`・`BLOCKED`・`PAUSE` の `meas.abort` → `WAIT`。走行を止め、目的地は `CANCELLED`（`aborted`） |
+| 途絶（-133） | `NAV`・`ALIGN`・`BLOCKED` → `PAUSE`（`pause_reason` `measure_link`）。目的地は持ったまま |
+| 到着（-124） | `ALIGN` → `WAIT` の遷移で、目的地の `command_id` に `ARRIVED` を**ちょうど 1 回** |
+| 非常停止・手押し | `NAV`・`ALIGN`・`BLOCKED` から入って戻ると `PAUSE`（走り出さない）。目的地は持ったまま。`LOCALIZATION_LOST` だけは P5a のとおり `CANCELLED`（`localization_lost`） |
+| 速度・加速度の上限（`meas.set_limits`） | **効かせる仕組み（`obstacle_limiter` が上限を下げる）ができるまで受けない**（`state_not_accepting`）。P5a で入れた受ける行は外し、`/measure/status` の `v_limit_mps` も `v_cap` を混ぜない（効いていない上限を報告しない）。効かせるのは別のパケット（P5c） |
 
 **P5a-ui（画面）の決まり**（2026-11-23）。正は [Spec-webui.md](../spec/Spec-webui.md) §3.2・§3.16 と [Spec-modes.md](../spec/Spec-modes.md) `SM-3.1.1-18`。
 
