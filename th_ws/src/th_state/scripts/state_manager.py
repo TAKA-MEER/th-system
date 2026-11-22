@@ -153,6 +153,8 @@ _PAUSE_REASON_BY_EVENT = {
     "fault.recoverable": "fault",
     "ui.jog.hold": "jog",
     "sys.presence_lost": "presence_lost",
+    # 8-g P5b（-133）: 測定機能との通信途絶で PAUSE に落ちた理由。
+    "evt.measure_link_lost": "measure_link",
 }
 
 
