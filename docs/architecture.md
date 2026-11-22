@@ -91,6 +91,21 @@ safety_monitor ─→ /safety/fault_lock (lock 254) ─────────�
 
 **運用入口のフォルト拒否（SM-3.1.1-19）**: `state_manager` は `/safety/active_faults` の現在集合を購読し、`IDLE` / `MANUAL` からのモード選択と `IDLE` / `AT_HOME` からの行き先選択を判定する。走行を止める回復フォルト（`LIDAR_LOST`・`ESP32_DISCONNECTED`。必須通信系統の断はこの 2 種で表れる）が残っていれば遷移を拒否し、`recoverable_fault_active` を返して W-1 を開く。W-1 の effect には残存フォルト名を含める。`PERSON_TRACKER_LOST` と、開発モードの `lidar_fault` が実効のときの `LIDAR_LOST` は数えない。物理非常停止を押したまま起動した場合は、`state_manager` がその間 `link_wait_timeout_ms` を数えず、解除後から疎通確認の時間を取り直すため、案内を保ったまま再起動ループを避ける。
 
+### 測定機能（fk-system）との接続の芯（8-g P1）
+
+`th_measure` の `measure_link` ノードが測定機能の生存確認と `/measure/status`
+（reliable・transient_local・10 Hz）の発行を受け持つ。`/measure/heartbeat` のうち
+`interface_version == "1"` のものだけを数え（純コア `th_measure/link_core.py`。
+ROS 非依存）、`/system/event` へ `evt.measure_link_ok` ／ `evt.measure_link_lost`
+（変化時と 1 Hz の出し直し）を出す。受け手は `state_manager`（最後の値を
+ラッチし、3 秒どちらも来なければ途絶とみなす）。`state_manager` はサービス
+`/measure/command`（`meas.*` のみ。判定順: `bad_argument` → `version_mismatch` →
+`link_lost` → `state_not_accepting`）と `/measure/result` の発行（純コア
+`th_state/measure_ledger.py` が 1 指示につき必ず 1 回だけ出す）、および内部トピック
+`/measure/command_state` を受け持つ。P1 では遷移表（`transitions.yaml`）に
+`meas.*` の行が無いため、すべての `meas.*` は `state_not_accepting` で拒否される。
+正本は `docs/plan/detailed/DetailedDesign-measure.md` §3・§6.1。
+
 ### 遷移ルールの実装（旧 FSM）
 
 `mode_manager` は `isTransitionAllowed()` 関数で遷移の許可・拒否を判定します。新しいモードを追加する場合はこの関数に遷移元/遷移先のペアを追加するだけで対応できます。

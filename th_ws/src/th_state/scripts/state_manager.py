@@ -33,10 +33,10 @@ from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
 from th_system_msgs.msg import (ActiveFaults, ActiveScreen, CalibStatus, FaultStatus, MapSessionStatus,
-                                 PersonTargets, PinList,
+                                 MeasureResult, PersonTargets, PinList,
                                  RouteList, RouteStatus, StateEffect, StateEvent,
                                  SystemState)
-from th_system_msgs.srv import SetFlag, UiTrigger
+from th_system_msgs.srv import MeasureCommand, SetFlag, UiTrigger
 
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
@@ -51,6 +51,10 @@ from th_state.tracker_policy import (TRACKER_OFF_DENIED_REASON,
 from th_state.auto_brake import (AUTO_BRAKE_LOCKED_REASON, DEV_ITEM_AUTO_BRAKE,
                                   dev_item_effective, effective_auto_brake,
                                   override_allowed)
+# 8-g P1（2026-11-23）: /measure/command の受理と /measure/result の台帳。
+# 判定の純粋な部分（① bad_argument）と結果を 1 回だけ出す台帳は純コア側。
+from th_state.measure_ledger import (IMMEDIATE_MEASURE_COMMANDS, MeasureLedger,
+                                     RESULT_DONE, validate_measure_command)
 from th_state.zones import (ScreenInput, active_screens, combine_speed_limits,
                              derive_limits, mode_speed_limit)
 
@@ -112,6 +116,10 @@ _SETTABLE_FLAGS = ("map_update", "tracker_enabled", "auto_brake")
 # state.md §3.1 の固定レート。registry.yaml の tunable パラメータ（R2 対象）ではなく
 # インターフェース契約そのものの値なので、ここでは定数として扱う。
 _STATE_PUBLISH_PERIOD_S = 0.1  # 10 Hz
+
+# 8-g P1（DetailedDesign-measure.md §6.1）: evt.measure_link_ok/lost のラッチの
+# 鮮度。どちらもこの時間来なければ「measure_link が落ちた」として途絶とみなす。
+_MEASURE_LINK_STALE_MS = 3000
 
 # SM-3.1.1-19: 運用入口（モード選択・行き先選択）を塞ぐ回復フォルトの種別。
 # Spec-modes.md §3.1.1-19 の「走行を止める回復フォルト（LIDAR_LOST・
@@ -267,6 +275,20 @@ class StateManager(Node):
         # 1b-11 SG-B14: 読み込んだ経路に地図があるか（/route/status の has_map。
         # T-REPLAY-08 の map_update ガードへ渡す map_update_available の材料）。
         self._route_has_map = False
+        # 8-g P1（DetailedDesign-measure.md §6.1）: measure_link の生存ラッチ。
+        # evt.measure_link_ok/lost で更新する（理由も）。未受信・3 秒以上来ない
+        # は途絶（measure_link が落ちたとき）。受信時刻は _measure_link_check()
+        # が使う瞬間に測る（タイマで落とさない）。
+        self._measure_link_ok = False
+        self._measure_link_reason = "never"
+        self._measure_link_recv_ms = None
+        # 8-g P1: /measure/result の台帳（1 指示につき必ず 1 回だけ出す）。
+        self._measure_ledger = MeasureLedger()
+        # 8-g P1: meas.set_limits の指定（/measure/command_state の v_cap/w_cap）。
+        # P1 では遷移表に meas.* の行が無く受理されないので常に 0。
+        self._measure_v_cap_mps = 0.0
+        self._measure_w_cap_radps = 0.0
+        self._last_command_state_json = None
         # WP-ONSITE-F2: /person/targets と /onsite/pins 由来。次の event 受信時に
         # _build_context() が読む（_route_ids / _route_loaded と同じ設計）。
         self._candidate_count = 0
@@ -414,8 +436,18 @@ class StateManager(Node):
 
         self.create_service(UiTrigger, '/system/trigger', self._on_trigger)
         self.create_service(SetFlag, '/system/set_flag', self._on_set_flag)
+        self.create_service(MeasureCommand, '/measure/command', self._on_measure_command)
         self.create_service(Trigger, '/shutdown/prepare', self._on_shutdown_prepare)
         self.create_service(Trigger, '/shutdown/execute', self._on_shutdown_execute)
+
+        # 8-g P1（§3.2・§6.1）: /measure/result（reliable, depth 20）と
+        # /measure/command_state（内部。reliable・transient_local・depth 1）。
+        result_qos = QoSProfile(depth=20, reliability=QoSReliabilityPolicy.RELIABLE,
+                                history=QoSHistoryPolicy.KEEP_LAST)
+        self._pub_measure_result = self.create_publisher(
+            MeasureResult, '/measure/result', result_qos)
+        self._pub_command_state = self.create_publisher(
+            String, '/measure/command_state', state_qos)
 
         self.create_timer(_STATE_PUBLISH_PERIOD_S, self._on_timer)
 
@@ -734,6 +766,107 @@ class StateManager(Node):
         return res
 
     # ------------------------------------------------------------
+    # 入口: /measure/command（meas.* のみ。§5・§6.1）
+    # ------------------------------------------------------------
+    def _measure_link_check(self):
+        """measure_link の生存の実効値。(ok, reject_reason)。
+
+        3 秒どちらも来なければ途絶（measure_link が落ちたとき）。途絶の
+        理由が version_mismatch なら version_mismatch、ほかは link_lost。
+        """
+        if self._measure_link_recv_ms is None:
+            return False, "link_lost"
+        if self._now_ms() - self._measure_link_recv_ms >= _MEASURE_LINK_STALE_MS:
+            return False, "link_lost"
+        if self._measure_link_ok:
+            return True, ""
+        if self._measure_link_reason == "version_mismatch":
+            return False, "version_mismatch"
+        return False, "link_lost"
+
+    def _publish_result(self, record):
+        msg = MeasureResult()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.command_id = record.command_id
+        msg.command = record.command
+        msg.result = record.result
+        msg.reason = record.reason
+        self._pub_measure_result.publish(msg)
+
+    def _publish_command_state(self):
+        """/measure/command_state（変わったときだけ出す。§6.1）。"""
+        payload = json.dumps({
+            "pending_command_id": self._measure_ledger.pending_command_id,
+            "pending_command": self._measure_ledger.pending_command,
+            "reentry_required": False,
+            "v_cap_mps": self._measure_v_cap_mps,
+            "w_cap_radps": self._measure_w_cap_radps,
+        })
+        if payload == self._last_command_state_json:
+            return
+        self._last_command_state_json = payload
+        msg = String()
+        msg.data = payload
+        self._pub_command_state.publish(msg)
+
+    def _on_measure_command(self, req, res):
+        # 判定の順は §6.1 の表のとおり。
+        # ① bad_argument（ui.* を含む非 meas.*・command_id 空・未知の meas.*・
+        #    meas.translate の side が FORWARD／BACKWARD 以外）
+        reason = validate_measure_command(req.command_id, req.command, req.side)
+        if reason:
+            res.accepted = False
+            res.reject_reason = reason
+            res.mode = self.mode
+            res.state = self.state
+            return res
+        # ② 版の食い違い ③ 途絶
+        link_ok, link_reason = self._measure_link_check()
+        if not link_ok:
+            res.accepted = False
+            res.reject_reason = link_reason
+            res.mode = self.mode
+            res.state = self.state
+            return res
+        # ④ 遷移表に行が無い・ガードで落ちる → state_not_accepting
+        #    （ガードが理由キーを持つならそれ）。P1 では遷移表に meas.* の
+        #    行が無いので、すべての meas.* がここで拒否される（仕様どおり）。
+        ctx = self._build_context(req.command, {})
+        decision = self.core.step(self.mode, self.state, req.command, ctx)
+        if not decision.accepted:
+            res.accepted = False
+            res.reject_reason = (
+                decision.reject_reason_key
+                if decision.reject_reason_key not in ("", "not_allowed")
+                else "state_not_accepting")
+            res.mode = self.mode
+            res.state = self.state
+            return res
+        # 受理（P5 で遷移表に meas.* の行が入ってから到達する）。
+        self._process(req.command, {}, "")
+        if not self._measure_ledger.accept(req.command_id, req.command):
+            res.accepted = False
+            res.reject_reason = "bad_argument"
+            res.mode = self.mode
+            res.state = self.state
+            return res
+        if req.command == "meas.set_limits":
+            self._measure_v_cap_mps = float(req.v_max_mps or 0.0)
+            self._measure_w_cap_radps = float(req.w_max_radps or 0.0)
+        if req.command in IMMEDIATE_MEASURE_COMMANDS:
+            record = self._measure_ledger.complete(
+                req.command_id, RESULT_DONE, "")
+            if record is not None:
+                self._publish_result(record)
+        self._publish_command_state()
+        self._publish_state()
+        res.accepted = True
+        res.reject_reason = ""
+        res.mode = self.mode
+        res.state = self.state
+        return res
+
+    # ------------------------------------------------------------
     # 入口: /system/event（evt.* のみ）
     # ------------------------------------------------------------
     def _on_event(self, msg):
@@ -749,6 +882,14 @@ class StateManager(Node):
             self._leash_present = True
         elif msg.event == "evt.leash_absent":
             self._leash_present = False
+        # 8-g P1（§6.1）: measure_link の生存をラッチする（理由も）。FSM の
+        # 遷移事象ではないので _process には流さない（遷移表に無い事象を
+        # 流すと last_reject_reason が汚れる）。
+        elif msg.event in ("evt.measure_link_ok", "evt.measure_link_lost"):
+            self._measure_link_ok = (msg.event == "evt.measure_link_ok")
+            self._measure_link_reason = str(arg.get("reason") or "")
+            self._measure_link_recv_ms = self._now_ms()
+            return
         self._process(msg.event, arg, msg.source_node)
         self._publish_state()
 
@@ -1086,6 +1227,7 @@ class StateManager(Node):
         msg.last_event = self._last_event
         msg.last_reject_reason = self._last_reject_reason
         self._pub_state.publish(msg)
+        self._publish_command_state()
 
     @staticmethod
     def _parse_arg_json(arg_json: str) -> dict:

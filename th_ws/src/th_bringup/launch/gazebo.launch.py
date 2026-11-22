@@ -536,6 +536,15 @@ def generate_launch_description():
             parameters=[os.path.join(GENERATED_DIR, 'state_manager.yaml')],
             output='screen',
         ),
+        # 8-g P1（DetailedDesign-measure.md §6.1）: measure_link。測定機能の
+        # 生存確認と /measure/status。state_manager の近くに置く。
+        Node(
+            package='th_measure',
+            executable='measure_link.py',
+            name='measure_link',
+            parameters=[os.path.join(GENERATED_DIR, 'measure_link.yaml')],
+            output='screen',
+        ),
         # connectivity_checker（WP-TEST-01 で追加。state_manager が INIT から
         # IDLE へ進むための evt.link_ok は connectivity_checker だけが出す）。
         # sim パラメータは connectivity_core.py が Gazebo シナリオ向けに
