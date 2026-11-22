@@ -2807,13 +2807,17 @@
   to_state: $initial
   effects: []
   spec_ref: SM-3.1.2-098
-# 8-g P5a（自律測定。DetailedDesign-measure.md §6.2）。
-# P5a の状態は WAIT・PAUSE だけ（NAV・ALIGN・BLOCKED は P5b、ADJUST は P3 で
-# その入口の行と一緒に足す）。出る行も、その状態を足すパケットで足す。
-# meas.goal・turn・translate と腕の範囲の確認は行が無いので拒否される
-# （state_not_accepting）。AT_PANEL の WORKING の meas 行も P2。
+# 8-g P5a/P5b（自律測定。DetailedDesign-measure.md §6.2）。
+# P5a の状態は WAIT・PAUSE だけだったが、P5b で NAV・ALIGN・BLOCKED を足した
+# （ADJUST は P3 でその入口の行と一緒に足す）。出る行も、その状態を足す
+# パケットで足す。meas.turn・translate と腕の範囲の確認は行が無いので
+# 拒否される（state_not_accepting）。AT_PANEL の WORKING の meas 行も P2。
+# meas.set_limits は効かせる仕組み（P5c）まで受けない（行が無いので
+# state_not_accepting。P5a の T-MEAS-04 は外した）。
 # T-MEAS-01X は -142 の拒否行（meas.start の前に評価される。LOCALIZATION_LOST のあと
 # 自律測定を抜けて入り直すまで localization_lost で拒否）。
+# 記載順で振り分ける（§3-1 流儀）: 拒否行（reentry → map → corner）を先に置き、
+# そのあとに受理行を置く。
 - id: T-MEAS-01X
   layer: 10
   mode: AUTO_MEASURE
@@ -2826,6 +2830,38 @@
   spec_ref: SM-3.1.2-130
   reject: true
   reject_reason_key: localization_lost
+- id: T-MEAS-01C
+  layer: 10
+  mode: AUTO_MEASURE
+  state: PAUSE
+  event: meas.start
+  guard: measure_start_corner_blocked
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-130
+  reject: true
+  reject_reason_key: corner_obstacle
+- id: T-MEAS-01N
+  layer: 10
+  mode: AUTO_MEASURE
+  state: PAUSE
+  event: meas.start
+  guard: measure_prev_is_nav_or_blocked
+  to_mode: '='
+  to_state: NAV
+  effects: []
+  spec_ref: SM-3.1.2-130
+- id: T-MEAS-01A
+  layer: 10
+  mode: AUTO_MEASURE
+  state: PAUSE
+  event: meas.start
+  guard: measure_prev_is_align
+  to_mode: '='
+  to_state: ALIGN
+  effects: []
+  spec_ref: SM-3.1.2-130
 - id: T-MEAS-01
   layer: 10
   mode: AUTO_MEASURE
@@ -2846,6 +2882,155 @@
   to_state: WAIT
   effects: []
   spec_ref: SM-3.1.2-131
+- id: T-MEAS-02B
+  layer: 10
+  mode: AUTO_MEASURE
+  state:
+  - NAV
+  - ALIGN
+  - BLOCKED
+  event: meas.abort
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects:
+  - name: cancel_follow_path
+    args: {}
+  spec_ref: SM-3.1.2-131
+- id: T-MEAS-05
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.goal
+  guard: measure_reentry_required
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-121
+  reject: true
+  reject_reason_key: localization_lost
+- id: T-MEAS-06
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.goal
+  guard: measure_map_mismatch
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-121
+  reject: true
+  reject_reason_key: map_mismatch
+- id: T-MEAS-07
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.goal
+  guard: measure_corner_blocked
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-121
+  reject: true
+  reject_reason_key: corner_obstacle
+- id: T-MEAS-08
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.goal
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: measure_goal
+    args:
+      command_id: $arg.command_id
+      x: $arg.x
+      y: $arg.y
+      yaw: $arg.yaw
+  spec_ref: SM-3.1.2-121
+- id: T-MEAS-09
+  layer: 10
+  mode: AUTO_MEASURE
+  state:
+  - NAV
+  - BLOCKED
+  event: meas.reroute
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: replan
+    args: {}
+  spec_ref: SM-3.1.2-122
+- id: T-MEAS-10
+  layer: 10
+  mode: AUTO_MEASURE
+  state: NAV
+  event: evt.arrived
+  guard: null
+  to_mode: '='
+  to_state: ALIGN
+  effects: []
+  spec_ref: SM-3.1.2-123
+- id: T-MEAS-11
+  layer: 10
+  mode: AUTO_MEASURE
+  state: ALIGN
+  event: evt.align_done
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects: []
+  spec_ref: SM-3.1.2-124
+- id: T-MEAS-12
+  layer: 10
+  mode: AUTO_MEASURE
+  state: NAV
+  event: evt.blocked
+  guard: null
+  to_mode: '='
+  to_state: BLOCKED
+  effects: []
+  spec_ref: SM-3.1.2-125
+- id: T-MEAS-13
+  layer: 10
+  mode: AUTO_MEASURE
+  state: BLOCKED
+  event: evt.unblocked
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects: []
+  spec_ref: SM-3.1.2-126
+- id: T-MEAS-14
+  layer: 10
+  mode: AUTO_MEASURE
+  state:
+  - NAV
+  - ALIGN
+  - BLOCKED
+  event: meas.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: cancel_follow_path
+    args: {}
+  spec_ref: SM-3.1.2-129
+- id: T-MEAS-15
+  layer: 10
+  mode: AUTO_MEASURE
+  state:
+  - NAV
+  - ALIGN
+  - BLOCKED
+  event: evt.measure_link_lost
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects: []
+  spec_ref: SM-3.1.2-133
 - id: T-MEAS-03
   layer: 10
   mode: AUTO_MEASURE
@@ -2856,16 +3041,5 @@
   to_state: NONE
   effects: []
   spec_ref: SM-3.1.2-135
-- id: T-MEAS-04
-  layer: 10
-  mode: AUTO_MEASURE
-  state: '*'
-  event: meas.set_limits
-  guard: null
-  to_mode: '='
-  to_state: '='
-  effects: []
-  # meas.set_limits は正本 §3.1.2 に専用の SM 番号が無い（Spec-measure.md §3
-  # 「速度・加速度の上限」）。AUTO_MEASURE の行として -135 段落に載せる
-  # （test_transition_table の fan-out 宣言に対応）。
-  spec_ref: SM-3.1.2-135
+# meas.set_limits の受理行（旧 T-MEAS-04）は P5b で外した: 効かせる仕組み
+# （P5c）まで受けない（DetailedDesign-measure.md §6.2 P5b の決まり）。

@@ -618,6 +618,18 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_auto_measure_node
     test/test_auto_measure_node.py
     TIMEOUT 300)
+  # 8-g P5b（DetailedDesign-measure.md §6.2）: 本物の state_manager と measure_link・
+  # venue_navigator（Nav2 は代役）を生成 yaml 先渡しで起動し、目的地への走行
+  # （goal→NAV→ALIGN→WAIT と ARRIVED 1 回・拒否の順・停止/発進・非常停止は PAUSE・
+  # 途絶・中止・/map 不明は BLOCKED・set_limits は受けない）を縛る。
+  ament_add_pytest_test(test_auto_measure_nav_node
+    test/test_auto_measure_nav_node.py
+    TIMEOUT 600)
+  # 8-g P5b: 本物の measure_clearance を生成 yaml 先渡しで起動し、/measure/corner_status
+  # の 5 つの理由（tf_unavailable・clear・obstacle_scan・scan_stale・obstacle_costmap）を縛る。
+  ament_add_pytest_test(test_measure_clearance_node
+    test/test_measure_clearance_node.py
+    TIMEOUT 300)
   # 物理非常停止の間（手押し）は DRIVE_RUNAWAY を判定しない（Spec-safety §3.5.3 末尾）。
   # 押下中は出ない・離したら 0 から数え直し・立っているフォルトは解除しない・UI 非常停止では止まらない
   ament_add_pytest_test(test_runaway_carry_node

@@ -173,24 +173,27 @@ def _cell_blocked(grid, x: float, y: float) -> bool:
     return int(grid.data[iy * grid.width + ix]) >= COSTMAP_BLOCKED_MIN
 
 
-def path_ahead_clear(path_xy, robot_xy, grid,
-                     ahead_m: float = PATH_AHEAD_CHECK_M) -> bool:
-    """経路の先 ahead_m [m] が空いているか（純関数）。
+def _cell_value(grid, x: float, y: float):
+    """map 座標 (x, y) のセルの値。範囲外は None（確認できない）。"""
+    res = float(grid.resolution)
+    ix = int(math.floor((x - float(grid.origin_x)) / res))
+    iy = int(math.floor((y - float(grid.origin_y)) / res))
+    if ix < 0 or iy < 0 or ix >= grid.width or iy >= grid.height:
+        return None
+    return int(grid.data[iy * grid.width + ix])
 
-    path_xy: 経路の (x, y) の列（map 系）。robot_xy: 機体位置 (x, y)。
-    機体に最も近い経路上の点から経路に沿って ahead_m まで、点の間も
-    解像度の半分刻みで補間して、通れないセルが 1 つでもあれば False。
-    経路が空・機体位置不明・マップ無しは確認できないので False。
-    """
+
+def _samples_along_ahead(path_xy, robot_xy, grid, ahead_m: float):
+    """機体に最も近い経路上の点から経路に沿って ahead_m までの補間点の列。
+    経路が空・機体位置不明・マップ無しは空の列。"""
     if grid is None or robot_xy is None or not path_xy:
-        return False
+        return []
     pts = [(float(p[0]), float(p[1])) for p in path_xy]
     rx, ry = float(robot_xy[0]), float(robot_xy[1])
     start = min(range(len(pts)),
                 key=lambda i: (pts[i][0] - rx) ** 2 + (pts[i][1] - ry) ** 2)
     step = max(float(grid.resolution) * 0.5, 1e-3)
-    if _cell_blocked(grid, *pts[start]):
-        return False
+    out = [pts[start]]
     travelled = 0.0
     for i in range(start, len(pts) - 1):
         ax, ay = pts[i]
@@ -204,12 +207,46 @@ def path_ahead_clear(path_xy, robot_xy, grid,
         for k in range(1, n + 1):
             d = end * k / n
             t = d / seg
-            if _cell_blocked(grid, ax + (bx - ax) * t, ay + (by - ay) * t):
-                return False
+            out.append((ax + (bx - ax) * t, ay + (by - ay) * t))
         travelled += end
         if travelled >= ahead_m - 1e-9:
             break
-    return True
+    return out
+
+
+def path_ahead_clear(path_xy, robot_xy, grid,
+                     ahead_m: float = PATH_AHEAD_CHECK_M) -> bool:
+    """経路の先 ahead_m [m] が空いているか（純関数）。
+
+    path_xy: 経路の (x, y) の列（map 系）。robot_xy: 機体位置 (x, y)。
+    機体に最も近い経路上の点から経路に沿って ahead_m まで、点の間も
+    解像度の半分刻みで補間して、通れないセルが 1 つでもあれば False。
+    未知（-1）は通れる扱い（試験場内の従来どおり）。
+    経路が空・機体位置不明・マップ無しは確認できないので False。
+    """
+    samples = _samples_along_ahead(path_xy, robot_xy, grid, ahead_m)
+    if not samples:
+        return False
+    return all(not _cell_blocked(grid, x, y) for x, y in samples)
+
+
+def path_ahead_has_unknown(path_xy, robot_xy, grid,
+                           ahead_m: float = PATH_AHEAD_CHECK_M) -> bool:
+    """経路の先 ahead_m [m] に未知のセル（-1）があるか（純関数。8-g P5b）。
+
+    自律測定（AUTO_MEASURE）の手前 1.5 m の検査で使う: 「地図ができている」ことを
+    確かめるため、未知なら通れない扱いで BLOCKED にする（Spec-measure.md §4.2）。
+    範囲外は地図が無い＝未知として True。経路が空・機体位置不明・マップ無しは
+    判定できないので False（呼び側が「確認できない」として塞ぐ）。
+    """
+    samples = _samples_along_ahead(path_xy, robot_xy, grid, ahead_m)
+    if not samples:
+        return False
+    for x, y in samples:
+        v = _cell_value(grid, x, y)
+        if v is None or v < 0:
+            return True
+    return False
 
 
 # ── 引いた経路を機体の形で検査する（Spec-onsite §6.1.1。2026-10-22）─────────

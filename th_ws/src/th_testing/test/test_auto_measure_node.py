@@ -10,8 +10,8 @@ docs/plan/spec/Spec-measure.md、詳細は DetailedDesign-measure.md §6.2。
 
   a. 生存確認なしで ui.goto AUTO_MEASURE → 拒否 measure_link_lost
   b. 版 "1" の生存確認ありで入れる → /system/state と /measure/status が AUTO_MEASURE/WAIT
-  c. meas.goal は state_not_accepting、meas.set_limits（v 0.1）→ DONE が
-     /measure/result にちょうど 1 回、/measure/status.v_limit_mps が 0.1 以下
+  c. meas.goal は corner_obstacle（角の確認が届いていない。P5b の拒否の順。
+     結果なし）、meas.set_limits は state_not_accepting（P5c まで受けない）
   d. 同じ command_id をもう一度 → bad_argument、/measure/result は増えない
   e. meas.finish → IDLE、/measure/result に DONE
   f. 入り直して ui.jog.hold で PAUSE → ui.resume_yes では戻らない → meas.start で WAIT
@@ -320,34 +320,39 @@ class TestAutoMeasureNode(unittest.TestCase):
             (status.mode, status.state)
 
     def test_c_goal_rejected_set_limits_done(self):
-        """c. meas.goal は state_not_accepting。meas.set_limits → DONE 1 回。"""
+        """c. meas.goal は corner_obstacle（角の確認が届いていない）。
+        meas.set_limits は state_not_accepting（P5c まで受けない）。"""
         self._ensure_auto_measure_wait()
         cid = self._next_cid()
+        # P5b（SM-3.1.2-121）: WAIT で meas.goal は拒否の順に判定される。
+        # map は未受信同士で一致するが、この試験は角の確認を出さないので
+        # corner_obstacle（受理されない。結果なし）。
         res = self._call_measure("meas.goal", command_id=cid)
         assert res.accepted is False
-        assert res.reject_reason == "state_not_accepting", res.reject_reason
+        assert res.reject_reason == "corner_obstacle", res.reject_reason
         self._spin(0.3)
         assert not [r for r in self._results if r.command_id == cid], \
             '拒否された指示に結果が出ている'
 
+        # P5b: meas.set_limits は効かせる仕組み（P5c）まで受けない
+        # （state_not_accepting。結果が出ず、v_cap も 0 のまま残る）。
         cid = self._next_cid()
-        before = len([r for r in self._results if r.command_id == cid])
         res = self._call_measure("meas.set_limits", command_id=cid, v_max=0.1)
-        assert res.accepted is True, res.reject_reason
+        assert res.accepted is False
+        assert res.reject_reason == "state_not_accepting", res.reject_reason
         self._spin(0.5)
-        done = [r for r in self._results if r.command_id == cid]
-        assert len(done) - before == 1, done
-        assert done[0].result == "DONE"
-        # v_limit は v_cap(0.1) 以下のうち小さい方（本システムの上限も効く）
+        assert not [r for r in self._results if r.command_id == cid], \
+            '拒否された指示に結果が出ている'
         deadline = time.time() + 4.0
         ok = False
         while time.time() < deadline:
             self._spin(0.2)
-            if self._statuses and self._statuses[-1].v_limit_mps <= 0.1:
-                ok = True
-                break
-        assert ok, ('/measure/status.v_limit_mps が 0.1 以下にならない: '
-                    + str(self._statuses[-1].v_limit_mps if self._statuses else None))
+            if self._cmd_states:
+                c = json.loads(self._cmd_states[-1].data)
+                if c.get('v_cap_mps') == 0.0 and c.get('w_cap_radps') == 0.0:
+                    ok = True
+                    break
+        assert ok, '/measure/command_state の v_cap/w_cap が 0 のままになっていない'
 
     def test_d_duplicate_command_id_bad_argument(self):
         """d. 同じ command_id をもう一度 → bad_argument。/measure/result は増えず遷移しない。
@@ -375,18 +380,14 @@ class TestAutoMeasureNode(unittest.TestCase):
             '重複した command_id に結果が増えている'
         st = self._latest_state()
         assert (st.mode, st.state) == ("AUTO_MEASURE", "PAUSE")
-        # meas.set_limits の重複版：結果が増えないことも縛る。
+        # meas.set_limits は受け付けられないので、重複の台帳判定には到達しない
+        # （state_not_accepting のまま。P5b の決まり）。
         cid = self._next_cid()
         res = self._call_measure("meas.set_limits", command_id=cid, v_max=0.1)
-        assert res.accepted is True, res.reject_reason
-        self._spin(0.5)
-        count_before = len(self._results)
-        res = self._call_measure("meas.set_limits", command_id=cid, v_max=0.1)
         assert res.accepted is False
-        assert res.reject_reason == "bad_argument", res.reject_reason
+        assert res.reject_reason == "state_not_accepting", res.reject_reason
         self._spin(0.5)
-        assert len(self._results) == count_before, \
-            '重複した command_id に結果が増えている'
+        assert not [r for r in self._results if r.command_id == cid]
         st = self._latest_state()
         assert (st.mode, st.state) == ("AUTO_MEASURE", "PAUSE")
 
@@ -477,11 +478,10 @@ class TestAutoMeasureNode(unittest.TestCase):
         AUTO_MEASURE → ESTOP → IDLE（C-09d）で /measure/command_state の
         reentry_required が false、v_cap_mps が 0 になる（-142「抜けて入り直すまで」）。"""
         self._ensure_auto_measure_wait()
+        # P5b: meas.set_limits は受けないので v_cap は 0 のまま（P5c まで）。
         res = self._call_measure("meas.set_limits", v_max=0.1)
-        assert res.accepted is True, res.reject_reason
-        assert self._wait_cmd_state(
-            lambda c: abs(c.get('v_cap_mps', -1) - 0.1) < 1e-6) is True, \
-            self._latest_cmd_state()
+        assert res.accepted is False
+        assert res.reject_reason == "state_not_accepting", res.reject_reason
 
         self._publish_fault(True, 'CRITICAL')
         assert self._wait_mode_state("ESTOP", "NONE") is True
@@ -504,10 +504,10 @@ class TestAutoMeasureNode(unittest.TestCase):
 
         C-09c-generic の復帰では reentry_required が true のまま、v_cap も残る。"""
         self._ensure_auto_measure_wait()
+        # P5b: meas.set_limits は受けないので v_cap は 0 のまま（P5c まで）。
         res = self._call_measure("meas.set_limits", v_max=0.1)
-        assert res.accepted is True, res.reject_reason
-        assert self._wait_cmd_state(
-            lambda c: abs(c.get('v_cap_mps', -1) - 0.1) < 1e-6) is True
+        assert res.accepted is False
+        assert res.reject_reason == "state_not_accepting", res.reject_reason
 
         self._publish_fault(True, 'CRITICAL')
         assert self._wait_mode_state("ESTOP", "NONE") is True
@@ -521,4 +521,4 @@ class TestAutoMeasureNode(unittest.TestCase):
         self._spin(1.0)
         c = self._latest_cmd_state()
         assert c.get('reentry_required') is True, c
-        assert abs(c.get('v_cap_mps', -1) - 0.1) < 1e-6, c
+        assert c.get('v_cap_mps') == 0.0, c

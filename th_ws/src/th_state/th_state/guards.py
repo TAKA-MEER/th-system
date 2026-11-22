@@ -379,6 +379,35 @@ def _measure_reentry_required(mode, state, ctx) -> bool:
     return bool(ctx.measure_reentry_required)
 
 
+def _measure_map_mismatch(mode, state, ctx) -> bool:
+    """8-g P5b（SM-3.1.2-121）: meas.goal の map_instance_id が今の地図と違う
+    （理由キー map_mismatch。前の地図の座標で走り出さない）。"""
+    return ctx.arg.get("map_instance_id") != ctx.measure_map_instance_id
+
+
+def _measure_corner_blocked(mode, state, ctx) -> bool:
+    """8-g P5b（SM-3.1.2-121）: 角が描く円の中に障害物がある、または確認できていない
+    （理由キー corner_obstacle）。"""
+    return not ctx.measure_corner_clear
+
+
+def _measure_start_corner_blocked(mode, state, ctx) -> bool:
+    """8-g P5b（SM-3.1.2-130）: meas.start で NAV・ALIGN へ戻るときだけ、角の確認を
+    し直す（理由キー corner_obstacle）。止める前がそれ以外（WAIT 等）は見ない。"""
+    return (ctx.measure_prev_state in ("NAV", "BLOCKED", "ALIGN")
+            and not ctx.measure_corner_clear)
+
+
+def _measure_prev_is_nav_or_blocked(mode, state, ctx) -> bool:
+    """8-g P5b（SM-3.1.2-130）: 止める前が NAV・BLOCKED なら meas.start は NAV へ。"""
+    return ctx.measure_prev_state in ("NAV", "BLOCKED")
+
+
+def _measure_prev_is_align(mode, state, ctx) -> bool:
+    """8-g P5b（SM-3.1.2-130）: 止める前が ALIGN なら meas.start は ALIGN へ。"""
+    return ctx.measure_prev_state == "ALIGN"
+
+
 def _candidate_exists(mode, state, ctx) -> bool:
     return ctx.candidate_count > 0
 
@@ -489,6 +518,11 @@ GUARDS: Dict[str, Callable] = {
     "measure_link_lost": _measure_link_lost,
     "measure_version_mismatch": _measure_version_mismatch,
     "measure_reentry_required": _measure_reentry_required,
+    "measure_map_mismatch": _measure_map_mismatch,
+    "measure_corner_blocked": _measure_corner_blocked,
+    "measure_start_corner_blocked": _measure_start_corner_blocked,
+    "measure_prev_is_nav_or_blocked": _measure_prev_is_nav_or_blocked,
+    "measure_prev_is_align": _measure_prev_is_align,
     "venue_unloaded": _venue_unloaded,
     "venue_unloaded_nav_goto": _venue_unloaded_nav_goto,
     "recoverable_fault_active": _recoverable_fault_active,
@@ -537,7 +571,7 @@ GUARDS: Dict[str, Callable] = {
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 66, len(GUARDS)
+assert len(GUARDS) == 71, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:

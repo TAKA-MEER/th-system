@@ -57,6 +57,15 @@ test('i18n/states: WAIT は指示待ち（Spec-webui.md §3.16 の状態表示�
   assert.equal(stateLabel('WAIT'), '指示待ち')
 })
 
+test('i18n/states: ALIGN は向き合わせ中（8-g P5b。PANEL_NAV でも使う）', () => {
+  assert.equal(STATE_NAMES.ALIGN, '向き合わせ中')
+  assert.equal(stateLabel('ALIGN'), '向き合わせ中')
+})
+
+test('attributes: AUTO_MEASURE の run_state は NAV（P5b。AppShell の noRunFallback が効かない）', () => {
+  assert.equal(attributes.AUTO_MEASURE.run_state, 'NAV')
+})
+
 test('i18n/reasons: measure_link_lost / measure_version_mismatch の文言', () => {
   assert.ok(REJECT_REASONS.measure_link_lost, 'measure_link_lost の文言が無い')
   assert.ok(REJECT_REASONS.measure_version_mismatch, 'measure_version_mismatch の文言が無い')

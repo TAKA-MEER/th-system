@@ -32,6 +32,8 @@ export const STATE_NAMES = {
   // T-PNAV-04/T-HNAV-04（evt.blocked）。stop-banner（STOP_REASON_LABELS.blocked）
   // が詳しい理由を出すので、ここは短い状態語のみ。
   BLOCKED: '経路探索中（再試行）',
+  // 8-g P5b: 自律測定と試験場内（PANEL_NAV）の向き合わせ。
+  ALIGN: '向き合わせ中',
   // WP-UI-08: OPCHECK のサブ状態（transitions.yaml T-OPC-01〜08）。
   RUNNING_CHECK: '確認中',
   REPAIR: '故障診断',
