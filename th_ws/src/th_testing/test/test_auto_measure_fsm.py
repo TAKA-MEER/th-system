@@ -85,12 +85,53 @@ def test_other_gotos_unaffected_by_link_guards(state_core_bundle):
 
 @pytest.mark.rule("T-MEAS-01")
 def test_meas_start_from_pause_to_wait(state_core_bundle):
-    """-130: PAUSE → WAIT（P5a は止める前が WAIT だけ）。"""
+    """-130: PAUSE → WAIT（止める前が WAIT・それ以外）。"""
     core, _, _, _ = state_core_bundle
     d = core.step("AUTO_MEASURE", "PAUSE", "meas.start", _mk_ctx())
     assert d.accepted is True
     assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "WAIT")
     assert d.rule_id == "T-MEAS-01"
+
+
+@pytest.mark.rule("T-MEAS-01N")
+def test_meas_start_returns_to_nav_after_nav_or_blocked(state_core_bundle):
+    """-130: 止める前が NAV・BLOCKED なら meas.start は NAV へ。"""
+    core, _, _, _ = state_core_bundle
+    for prev in ("NAV", "BLOCKED"):
+        d = core.step("AUTO_MEASURE", "PAUSE", "meas.start",
+                      _mk_ctx(measure_prev_state=prev, measure_corner_clear=True))
+        assert d.accepted is True, prev
+        assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "NAV"), prev
+        assert d.rule_id == "T-MEAS-01N", prev
+
+
+@pytest.mark.rule("T-MEAS-01A")
+def test_meas_start_returns_to_align_after_align(state_core_bundle):
+    """-130: 止める前が ALIGN なら meas.start は ALIGN へ。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("AUTO_MEASURE", "PAUSE", "meas.start",
+                  _mk_ctx(measure_prev_state="ALIGN", measure_corner_clear=True))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "ALIGN")
+    assert d.rule_id == "T-MEAS-01A"
+
+
+@pytest.mark.rule("T-MEAS-01C")
+def test_meas_start_rejected_corner_obstacle_when_resuming_drive(state_core_bundle):
+    """-130: NAV・ALIGN へ戻るとき角が確認できない／障害物ありは corner_obstacle
+    （PAUSE のまま）。止める前が WAIT なら角を見ない。"""
+    core, _, _, _ = state_core_bundle
+    for prev in ("NAV", "BLOCKED", "ALIGN"):
+        d = core.step("AUTO_MEASURE", "PAUSE", "meas.start",
+                      _mk_ctx(measure_prev_state=prev, measure_corner_clear=False))
+        assert d.accepted is False, prev
+        assert d.reject_reason_key == "corner_obstacle", prev
+        assert d.rule_id == "T-MEAS-01C", prev
+        assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "PAUSE"), prev
+    d = core.step("AUTO_MEASURE", "PAUSE", "meas.start",
+                  _mk_ctx(measure_prev_state="WAIT", measure_corner_clear=False))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "WAIT")
 
 
 @pytest.mark.rule("T-MEAS-01X")
@@ -125,24 +166,29 @@ def test_meas_finish_to_idle(state_core_bundle):
         assert (d.to_mode, d.to_state) == ("IDLE", "NONE")
 
 
-@pytest.mark.rule("T-MEAS-04")
-def test_meas_set_limits_keeps_state(state_core_bundle):
-    """meas.set_limits: 状態を変えない（WAIT・PAUSE ともに受理）。"""
+def test_meas_set_limits_not_accepted(state_core_bundle):
+    """meas.set_limits は効かせる仕組み（P5c）まで受けない（行が無いので
+    state_not_accepting。step では not_allowed）。P5b の決まり。"""
     core, _, _, _ = state_core_bundle
-    for state in ("WAIT", "PAUSE"):
+    for state in ("WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED"):
         d = core.step("AUTO_MEASURE", state, "meas.set_limits", _mk_ctx())
-        assert d.accepted is True, state
-        assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", state)
-        assert d.rule_id == "T-MEAS-04"
+        assert d.accepted is False, state
+        assert d.reject_reason_key == "not_allowed", state
+        assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", state), state
 
 
-def test_meas_commands_not_accepted_in_p5a(state_core_bundle):
-    """P5a では meas.stop・meas.goal・turn・translate に行が無い
-    （state_not_accepting になる。片方は _on_measure_command の写像で扱う）
-    → step は accepted=False、reject_reason_key=not_allowed。"""
+def test_meas_commands_not_accepted_without_rows(state_core_bundle):
+    """行が無い指示（turn・translate・done・ADJUST 以外の reroute/stop の
+    受けない状態・WAIT/PAUSE の set_limits）は state_not_accepting
+    （step では not_allowed）。"""
     core, _, _, _ = state_core_bundle
-    for event in ("meas.stop", "meas.goal", "meas.turn", "meas.translate",
-                  "meas.done", "meas.reroute"):
+    for event in ("meas.turn", "meas.translate", "meas.done"):
+        for state in ("WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED"):
+            d = core.step("AUTO_MEASURE", state, event, _mk_ctx())
+            assert d.accepted is False, (event, state)
+            assert d.reject_reason_key == "not_allowed", (event, state)
+            assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", state)
+    for event in ("meas.stop", "meas.reroute"):
         for state in ("WAIT", "PAUSE"):
             d = core.step("AUTO_MEASURE", state, event, _mk_ctx())
             assert d.accepted is False, (event, state)
@@ -189,7 +235,9 @@ def test_resume_yes_does_not_return_but_ack_stays_in_pause(state_core_bundle):
     core, _, _, attrs = state_core_bundle
     assert attrs["AUTO_MEASURE"]["resume"] == "ack_only"
     assert attrs["AUTO_MEASURE"]["resume_state"] == "PAUSE"
-    assert attrs["AUTO_MEASURE"]["run_state"] is None
+    # P5b: 走行状態は NAV（run_state）。ui.resume_yes では走らないのは
+    # RESUME_RUN_UNAVAILABLE_MODES のまま（C-04 はそのガードで弾く）。
+    assert attrs["AUTO_MEASURE"]["run_state"] == "NAV"
     d = core.step("AUTO_MEASURE", "PAUSE", "ui.resume_yes", _mk_ctx())
     assert d.accepted is False
     assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "PAUSE")
@@ -211,10 +259,189 @@ def test_attributes_match_spec_modes_table(state_core_bundle):
     assert attrs["AUTO_MEASURE"]["has_record"] is False
 
 
-def test_auto_measure_mode_states_only_wait_pause(state_core_bundle):
-    """P5a は WAIT・PAUSE だけ（NAV・ALIGN・BLOCKED は P5b、ADJUST は P3）。"""
+def test_auto_measure_mode_states_include_p5b(state_core_bundle):
+    """P5b は WAIT・PAUSE に NAV・ALIGN・BLOCKED を足す（ADJUST は P3）。"""
     from th_state.state_core import MODE_STATES
-    assert MODE_STATES["AUTO_MEASURE"] == {"WAIT", "PAUSE"}
+    assert MODE_STATES["AUTO_MEASURE"] == {
+        "WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED"}
+
+
+@pytest.mark.rule("T-MEAS-08")
+def test_meas_goal_accepted_to_nav_with_measure_goal_effect(state_core_bundle):
+    """-121: WAIT の meas.goal → NAV、effect measure_goal（command_id・x・y・yaw）。"""
+    core, _, _, _ = state_core_bundle
+    arg = {"map_instance_id": "m1", "command_id": "g1", "x": 1.5, "y": -2.0,
+           "yaw": 0.25}
+    d = core.step("AUTO_MEASURE", "WAIT", "meas.goal",
+                  _mk_ctx(arg=arg, measure_map_instance_id="m1",
+                        measure_corner_clear=True))
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "NAV")
+    assert d.rule_id == "T-MEAS-08"
+    eff = [e for e in d.effects if e.name == "measure_goal"]
+    assert len(eff) == 1
+    assert eff[0].args == {"command_id": "g1", "x": 1.5, "y": -2.0, "yaw": 0.25}
+
+
+@pytest.mark.rule("T-MEAS-05")
+def test_meas_goal_rejected_reentry_first(state_core_bundle):
+    """-121 の拒否の順: reentry → localization_lost（地図・角より先）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("AUTO_MEASURE", "WAIT", "meas.goal",
+                  _mk_ctx(arg={"map_instance_id": "wrong"},
+                        measure_reentry_required=True,
+                        measure_map_instance_id="m1", measure_corner_clear=False))
+    assert d.accepted is False
+    assert d.reject_reason_key == "localization_lost"
+    assert d.rule_id == "T-MEAS-05"
+
+
+@pytest.mark.rule("T-MEAS-06")
+def test_meas_goal_rejected_map_mismatch_before_corner(state_core_bundle):
+    """-121 の拒否の順: map_mismatch は角の確認より先。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("AUTO_MEASURE", "WAIT", "meas.goal",
+                  _mk_ctx(arg={"map_instance_id": "wrong"},
+                        measure_map_instance_id="m1", measure_corner_clear=False))
+    assert d.accepted is False
+    assert d.reject_reason_key == "map_mismatch"
+    assert d.rule_id == "T-MEAS-06"
+
+
+@pytest.mark.rule("T-MEAS-07")
+def test_meas_goal_rejected_corner_obstacle(state_core_bundle):
+    """-121: 地図が合っていても角が確認できない／障害物ありは corner_obstacle。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("AUTO_MEASURE", "WAIT", "meas.goal",
+                  _mk_ctx(arg={"map_instance_id": "m1"},
+                        measure_map_instance_id="m1", measure_corner_clear=False))
+    assert d.accepted is False
+    assert d.reject_reason_key == "corner_obstacle"
+    assert d.rule_id == "T-MEAS-07"
+    assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "WAIT")
+
+
+@pytest.mark.rule("T-MEAS-09")
+def test_meas_reroute_from_nav_and_blocked_to_nav(state_core_bundle):
+    """-122: NAV・BLOCKED の meas.reroute → NAV（replan 効果）。"""
+    core, _, _, _ = state_core_bundle
+    for state in ("NAV", "BLOCKED"):
+        d = core.step("AUTO_MEASURE", state, "meas.reroute", _mk_ctx())
+        assert d.accepted is True, state
+        assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "NAV"), state
+        assert d.rule_id == "T-MEAS-09", state
+        assert any(e.name == "replan" for e in d.effects), state
+
+
+@pytest.mark.rule("T-MEAS-10")
+def test_evt_arrived_nav_to_align(state_core_bundle):
+    """-123: NAV の evt.arrived → ALIGN。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("AUTO_MEASURE", "NAV", "evt.arrived", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "ALIGN")
+    assert d.rule_id == "T-MEAS-10"
+
+
+@pytest.mark.rule("T-MEAS-11")
+def test_evt_align_done_to_wait(state_core_bundle):
+    """-124: ALIGN の evt.align_done → WAIT（台帳の ARRIVED は state_manager の仕事）。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("AUTO_MEASURE", "ALIGN", "evt.align_done", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "WAIT")
+    assert d.rule_id == "T-MEAS-11"
+
+
+@pytest.mark.rule("T-MEAS-12")
+def test_evt_blocked_nav_to_blocked(state_core_bundle):
+    """-125: NAV の evt.blocked → BLOCKED。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("AUTO_MEASURE", "NAV", "evt.blocked", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "BLOCKED")
+    assert d.rule_id == "T-MEAS-12"
+
+
+@pytest.mark.rule("T-MEAS-13")
+def test_evt_unblocked_blocked_to_nav(state_core_bundle):
+    """-126: BLOCKED の evt.unblocked → NAV。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("AUTO_MEASURE", "BLOCKED", "evt.unblocked", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "NAV")
+    assert d.rule_id == "T-MEAS-13"
+
+
+@pytest.mark.rule("T-MEAS-14")
+def test_meas_stop_driving_states_to_pause(state_core_bundle):
+    """-129: NAV・ALIGN・BLOCKED の meas.stop → PAUSE（走行を止める）。"""
+    core, _, _, _ = state_core_bundle
+    for state in ("NAV", "ALIGN", "BLOCKED"):
+        d = core.step("AUTO_MEASURE", state, "meas.stop", _mk_ctx())
+        assert d.accepted is True, state
+        assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "PAUSE"), state
+        assert d.rule_id == "T-MEAS-14", state
+        assert any(e.name == "cancel_follow_path" for e in d.effects), state
+
+
+@pytest.mark.rule("T-MEAS-15")
+def test_link_lost_driving_states_to_pause(state_core_bundle):
+    """-133: NAV・ALIGN・BLOCKED の evt.measure_link_lost → PAUSE。"""
+    core, _, _, _ = state_core_bundle
+    for state in ("NAV", "ALIGN", "BLOCKED"):
+        d = core.step("AUTO_MEASURE", state, "evt.measure_link_lost", _mk_ctx())
+        assert d.accepted is True, state
+        assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "PAUSE"), state
+        assert d.rule_id == "T-MEAS-15", state
+    for state in ("WAIT", "PAUSE"):
+        d = core.step("AUTO_MEASURE", state, "evt.measure_link_lost", _mk_ctx())
+        assert d.accepted is False, state
+        assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", state), state
+
+
+@pytest.mark.rule("T-MEAS-02B")
+def test_meas_abort_driving_states_to_wait(state_core_bundle):
+    """-131: NAV・ALIGN・BLOCKED の meas.abort → WAIT（走行を止める）。"""
+    core, _, _, _ = state_core_bundle
+    for state in ("NAV", "ALIGN", "BLOCKED"):
+        d = core.step("AUTO_MEASURE", state, "meas.abort", _mk_ctx())
+        assert d.accepted is True, state
+        assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "WAIT"), state
+        assert d.rule_id == "T-MEAS-02B", state
+        assert any(e.name == "cancel_follow_path" for e in d.effects), state
+
+
+@pytest.mark.parametrize("estop_mode,estop_state,event", [
+    ("ESTOP", "NONE", "ui.resume_yes"),
+    ("CARRY", "NONE", "ui.carry_resume"),
+])
+def test_estop_carry_never_resume_directly_to_driving_states(
+        state_core_bundle, estop_mode, estop_state, event):
+    """SM-3.1.1-11・-14: 非常停止・手押しから NAV・ALIGN・BLOCKED へ直接戻る道が無い。
+    押下前がそれらでも、戻り先は同モードの PAUSE（C-09c-running・C-11-running が
+    C-09c-generic・C-11-generic より前に拾う）。"""
+    core, _, _, _ = state_core_bundle
+    for prev_state in ("NAV", "ALIGN", "BLOCKED"):
+        d = core.step(estop_mode, estop_state, event,
+                      _mk_ctx(prev_mode="AUTO_MEASURE", prev_state=prev_state))
+        assert d.accepted is True, (event, prev_state)
+        assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "PAUSE"), (event, prev_state)
+        assert (d.to_mode, d.to_state) != ("AUTO_MEASURE", prev_state)
+
+
+def test_meas_goal_only_accepted_in_wait(state_core_bundle):
+    """-121・-132: NAV・ALIGN・BLOCKED・PAUSE の meas.goal は行が無い
+    （state_not_accepting。step では not_allowed）。"""
+    core, _, _, _ = state_core_bundle
+    arg = {"map_instance_id": "m1", "command_id": "g1"}
+    for state in ("NAV", "ALIGN", "BLOCKED", "PAUSE"):
+        d = core.step("AUTO_MEASURE", state, "meas.goal",
+                      _mk_ctx(arg=arg, measure_map_instance_id="m1",
+                            measure_corner_clear=True))
+        assert d.accepted is False, state
+        assert d.reject_reason_key == "not_allowed", state
+        assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", state), state
 
 
 def test_zone_in_for_s60():

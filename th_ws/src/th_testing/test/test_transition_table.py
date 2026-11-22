@@ -79,11 +79,14 @@ SPEC_FANOUT = {
     # -120（入口）= 拒否 2 行（C-15-measure-link-version／-lost）+ 受理 1 行
     # （C-15-auto-measure。効果 start_measure_map）。理由キーを分けるため 3 行。
     "SM-3.1.2-120": 3,
-    # -130（発進）= 拒否 1 行（T-MEAS-01X。-142 の入り直し要否）+ 受理 1 行（T-MEAS-01）。
-    "SM-3.1.2-130": 2,
-    # -135（終了）= T-MEAS-03（meas.finish）+ T-MEAS-04（meas.set_limits。
-    # 正本 §3.1.2 に専用の番号が無いので AUTO_MEASURE の行として -135 段落に載せる）。
-    "SM-3.1.2-135": 2,
+    # -130（発進）= 拒否 2 行（T-MEAS-01X の入り直し要否・T-MEAS-01C の角の確認）
+    # + 受理 3 行（T-MEAS-01N→NAV・T-MEAS-01A→ALIGN・T-MEAS-01→WAIT）。
+    "SM-3.1.2-130": 5,
+    # -131（中止）= T-MEAS-02（PAUSE）+ T-MEAS-02B（NAV・ALIGN・BLOCKED）の 2 行。
+    "SM-3.1.2-131": 2,
+    # -121（目的地）= 拒否 3 行（入り直し要否・map_mismatch・角の確認）+ 受理 1 行
+    # （T-MEAS-08 の measure_goal）。
+    "SM-3.1.2-121": 4,
 }
 
 
@@ -262,6 +265,14 @@ _STATIC_GUARD_OVERRIDES = {
                           "measure_link_ok": False,
                           "measure_link_reason": "timeout"},
     "measure_reentry_required": {"measure_reentry_required": True},
+    # 8-g P5b: 目的地の拒否 3 行と発進の戻り先 3 行（ctx の新フィールド）。
+    "measure_map_mismatch": {"measure_map_instance_id": "m1",
+                             "arg": {"map_instance_id": "m2"}},
+    "measure_corner_blocked": {"measure_corner_clear": False},
+    "measure_start_corner_blocked": {"measure_prev_state": "NAV",
+                                     "measure_corner_clear": False},
+    "measure_prev_is_nav_or_blocked": {"measure_prev_state": "NAV"},
+    "measure_prev_is_align": {"measure_prev_state": "ALIGN"},
     # 1b-1 SG-A12: presence_stops_mode は attributes 束縛の動的ガード
     # （build_guards が state_core.is_driving で束縛）。静的な ctx 上書きでは
     # 真にできないため、ここには載せない（下の表明で mode_entry_allowed と
@@ -282,6 +293,10 @@ def _base_ctx_kwargs():
         line_visible=False, camera_present=False,
         check_item="", check_result="", calib_item="", calib_preview_sane=False,
         map_update_available=False, now_ms=0, arg={},
+        # 8-g P5b: 新しい Context フィールドの既定（角の確認は clear・地図は m1）。
+        # 拒否行の個別の上書き（guard ごとの表で False / 別の id）が優先される。
+        measure_corner_clear=True, measure_map_instance_id="m1",
+        measure_prev_state="",
     )
 
 
@@ -339,6 +354,13 @@ def _scenario_for(row):
                 kwargs[key] = merged
             else:
                 kwargs[key] = val
+    if event == "meas.goal":
+        # 受理行（ガード無し）は地図が一致し角が空いている前提で発火させる
+        # （拒否行の上書きで arg / measure_corner_clear が違えばそちらが勝つ）。
+        kwargs.setdefault("arg", {})
+        if "map_instance_id" not in kwargs["arg"]:
+            kwargs["arg"] = {**kwargs["arg"], "map_instance_id": "m1"}
+        kwargs.setdefault("measure_corner_clear", True)
     return mode, state, event, state_core.Context(**kwargs)
 
 

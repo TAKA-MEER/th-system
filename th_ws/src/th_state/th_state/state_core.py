@@ -46,10 +46,10 @@ MODE_STATES: Dict[str, Set[str]] = {
     "AT_HOME": {"IDLE_H", "PAUSE"},
     "OPCHECK": {"LIST", "RUNNING_CHECK", "REPAIR"},
     "CALIB": {"LIST", "S1", "S2", "S3", "S4"},
-    # 8-g P5a（2026-11-23。DetailedDesign-measure.md §6.2）。状態は入口ができる
+    # 8-g P5a/P5b（2026-11-23。DetailedDesign-measure.md §6.2）。状態は入口ができる
     # パケットで足す（P5a は WAIT・PAUSE、P5b で NAV・ALIGN・BLOCKED、P3 で ADJUST。
     # 入口の無い状態は validate() の到達可能性が咎める）。
-    "AUTO_MEASURE": {"WAIT", "PAUSE"},
+    "AUTO_MEASURE": {"WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED"},
 }
 
 assert set(MODE_STATES.keys()) == MODES
@@ -118,6 +118,9 @@ ESTOP_RESUME_RUN: Dict[str, str] = {
     "LEASH": "RUN",
     "PANEL_NAV": "NAV",
     "HOME_NAV": "NAV",
+    # 8-g P5b: 自律測定の NAV が run_state（attributes.yaml）。走行中からの
+    # 非常停止・手押しは同モードの PAUSE へ戻す（C-09c-running が拾う）。
+    "AUTO_MEASURE": "NAV",
 }
 
 # 1b-1（SG-A12）— 「走行中」の判定。在席喪失（sys.presence_lost）で PAUSE に
@@ -127,6 +130,8 @@ ESTOP_RESUME_RUN: Dict[str, str] = {
 # PREP の run_state（MAPPING。地図作成中の連れ回し）は走行ではないので除く。
 _DRIVING_EXTRA_STATES = frozenset({
     ("PANEL_NAV", "ALIGN"), ("SUMMON", "ALIGN"), ("PREP", "RETURN"),
+    # 8-g P5b: 自律測定の ALIGN（向き合わせでその場旋回する走行状態）。
+    ("AUTO_MEASURE", "ALIGN"),
 })
 
 
@@ -155,6 +160,9 @@ def is_driving(mode: str, state: str, attrs: Dict[str, dict],
 # PREP/RETURN も別の行（C-09c-prep-return 等）が先に拾う。
 ESTOP_RESUME_PAUSE_EXTRA: Set[Tuple[str, str]] = {
     ("PANEL_NAV", "BLOCKED"), ("HOME_NAV", "BLOCKED"), ("PANEL_NAV", "ALIGN"),
+    # 8-g P5b: 自律測定の BLOCKED（空けば自動で走り直す）・ALIGN（その場旋回する）も
+    # 「走行中」と同じく同モードの PAUSE へ戻す（SM-3.1.1-11 の 2026-10-22 変更と同じ理由）。
+    ("AUTO_MEASURE", "BLOCKED"), ("AUTO_MEASURE", "ALIGN"),
 }
 
 
@@ -283,6 +291,9 @@ EFFECT_ARG_SPECS: Dict[str, Dict[str, str]] = {
     "discard_calib": {"item": _STR},
     # 8-g P5a（SM-3.1.2-120。DetailedDesign-measure.md §6.2）。引数なし。
     "start_measure_map": {},
+    # 8-g P5b（SM-3.1.2-121。DetailedDesign-measure.md §6.2）。目的地を
+    # venue_navigator へ渡す（command_id と map フレームの x/y/yaw）。
+    "measure_goal": {"command_id": _STR, "x": "float", "y": "float", "yaw": "float"},
 }
 
 
@@ -339,6 +350,17 @@ class Context:
     # 8-g P5a: 自己位置を見失ったあとの入り直し要否（-142）。state_manager が
     # ラッチする（/measure/command_state の reentry_required と同じ値）。
     measure_reentry_required: bool = False
+    # 8-g P5b: 角が描く円の確認の実効値（/measure/corner_status のラッチ。
+    # 1 秒届かなければ False。state_manager が詰める。既定は False＝障害物あり扱い
+    # （確認できていないものを「空いている」と扱わない）。
+    measure_corner_clear: bool = False
+    # 8-g P5b: いまの地図の instance_id（/map_session/status）。state_manager が
+    # ラッチする。meas.goal の map 照合（map_mismatch）で読む。
+    measure_map_instance_id: str = ""
+    # 8-g P5b: PAUSE に入る直前にいた自律測定の状態（NAV・ALIGN・BLOCKED・WAIT）。
+    # meas.start の戻り先（-130）を選ぶ。state_manager がラッチする（ESTOP/CARRY から
+    # PAUSE へ戻るときは prev_state を使って閉じる。prev_state 自体は clear_prev で消える）。
+    measure_prev_state: str = ""
     arg: Dict[str, Any] = field(default_factory=dict)
 
 

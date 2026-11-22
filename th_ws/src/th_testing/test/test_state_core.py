@@ -1209,7 +1209,9 @@ def test_is_driving_matches_brief_table(state_core_bundle):
         run = (row or {}).get("run_state")
         if run is not None and mode != "PREP":
             expected.add((mode, run))
-    expected |= {("PANEL_NAV", "ALIGN"), ("SUMMON", "ALIGN"), ("PREP", "RETURN")}
+    expected |= {("PANEL_NAV", "ALIGN"), ("SUMMON", "ALIGN"), ("PREP", "RETURN"),
+                 # 8-g P5b: 自律測定の ALIGN（向き合わせの旋回も走行中）。
+                 ("AUTO_MEASURE", "ALIGN")}
     for mode, states in MODE_STATES.items():
         for state in states:
             assert is_driving(mode, state, attrs) == ((mode, state) in expected), \
