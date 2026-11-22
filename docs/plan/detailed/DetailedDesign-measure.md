@@ -275,6 +275,17 @@ builtin_interfaces/Time checked_at
 | ゾーン・速度 | 画面 `S-60` はゾーン `IN`。`attributes.yaml`: 速度 `v_slow`、ジョグ可（`v_jog_panel`）、自動ブレーキ ON（固定） |
 | 在席 | 測定機能の画面（`client_id` が `fk-`、`screen_id` `S-60`）は本システムの画面と同じに数える（既存の `/ui/active_screen` の仕組みのまま。足すものが無いことを試験で確かめる） |
 
+**P5a-ui（画面）の決まり**（2026-11-23）。正は [Spec-webui.md](../spec/Spec-webui.md) §3.2・§3.16 と [Spec-modes.md](../spec/Spec-modes.md) `SM-3.1.1-18`。
+
+| 項目 | 決まり |
+| --- | --- |
+| S-01「自律測定」 | 「測定」の群に置く。押すと W-4「自律動作を許可しますか」（「許可しない」／「許可する」）。「許可する」で `ui.goto`（`kind: AUTO_MEASURE`）。**通信できないときは押せるが W-4 を出さずに理由を出す**。判定は `/measure/status` の `link_ok`（未受信は通信できない扱い）。状態機械が拒否したときも理由キー（`measure_link_lost`／`measure_version_mismatch`）を出す |
+| S-60 | `AUTO_MEASURE` の間の画面。ゾーン `IN`（`/ui/active_screen` の `screen_id` は `S-60`）。置くのは「測定機能の画面へ」「自律測定を終了」「手動」と状態の表示（`WAIT`／`PAUSE`）だけ |
+| 「測定機能の画面へ」 | **同じタブで** `http://<画面を開いているホスト>:<measure_ui_port>/` へ移る（測定機能の画面の「終了」は本システムの画面へ戻る。fk `DetailedDesign-names.md` §6）。`measure_ui_port` は registry（given、8091、`consumers: [web_ui]`）。S-50 では変えない |
+| 「自律測定を終了」 | 毎回 W-4「測定機構の腕が格納位置にあることを確かめましたか」（「やめる」／「メインメニューへ」）。「メインメニューへ」で `ui.finish` |
+| 「手動」 | 既存の手動操作パネル（W-6）。触れると共通行で `PAUSE`。**画面に「走行」は置かない**（戻すのは測定機能の画面の「走行」＝`meas.start`） |
+| 腕の格納の確認（-18）を挟む他の抜け道 | `ESTOP`・`CARRY` で `prev_mode` が `AUTO_MEASURE` のとき、W-1 の「メインメニューへ」（`ui.resume_no`）・「確認」（`ui.resume_ack`）と W-2 の「メインメニューへ」（`ui.finish`）の前に同じ W-4 を出す。「やめる」なら送らない。`AT_PANEL` の `WORKING`・`ADJUST` は P2・P3 で同じ部品を使う |
+
 ## 7. 未決と依存
 
 | 項目 | 状態 |
