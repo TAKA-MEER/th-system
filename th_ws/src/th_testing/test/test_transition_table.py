@@ -75,6 +75,15 @@ SPEC_FANOUT = {
     # SM-3.1.2-143（2026-11-12 A-12②）: SUMMON/POINT はジョグで PAUSE に落とさない。
     # ジョグ開始（T-SUM-18）とリース満了（T-SUM-19）の 2 行。
     "SM-3.1.2-143": 2,
+    # 自律測定（8-g P5a。DetailedDesign-measure.md §6.2）:
+    # -120（入口）= 拒否 2 行（C-15-measure-link-version／-lost）+ 受理 1 行
+    # （C-15-auto-measure。効果 start_measure_map）。理由キーを分けるため 3 行。
+    "SM-3.1.2-120": 3,
+    # -130（発進）= 拒否 1 行（T-MEAS-01X。-142 の入り直し要否）+ 受理 1 行（T-MEAS-01）。
+    "SM-3.1.2-130": 2,
+    # -135（終了）= T-MEAS-03（meas.finish）+ T-MEAS-04（meas.set_limits。
+    # 正本 §3.1.2 に専用の番号が無いので AUTO_MEASURE の行として -135 段落に載せる）。
+    "SM-3.1.2-135": 2,
 }
 
 
@@ -244,6 +253,15 @@ _STATIC_GUARD_OVERRIDES = {
     "resume_state_available": {"fault_active": False},
     # SM-3.1.1-19（2026-11-10）: 運用入口を塞ぐ回復フォルトが残っている。
     "recoverable_fault_active": {"recoverable_fault_types": ("ESP32_DISCONNECTED",)},
+    # 8-g P5a: 自律測定の入口（goto_auto_measure）と生存の拒否 2 行・入り直しの拒否 1 行。
+    "goto_auto_measure": {"arg": {"kind": "AUTO_MEASURE"}},
+    "measure_version_mismatch": {"arg": {"kind": "AUTO_MEASURE"},
+                               "measure_link_ok": False,
+                               "measure_link_reason": "version_mismatch"},
+    "measure_link_lost": {"arg": {"kind": "AUTO_MEASURE"},
+                          "measure_link_ok": False,
+                          "measure_link_reason": "timeout"},
+    "measure_reentry_required": {"measure_reentry_required": True},
     # 1b-1 SG-A12: presence_stops_mode は attributes 束縛の動的ガード
     # （build_guards が state_core.is_driving で束縛）。静的な ctx 上書きでは
     # 真にできないため、ここには載せない（下の表明で mode_entry_allowed と

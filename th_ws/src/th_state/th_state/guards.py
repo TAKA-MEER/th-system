@@ -353,6 +353,32 @@ def _goto_summon(mode, state, ctx) -> bool:
     return ctx.arg.get("kind") == "SUMMON" and _goto_allowed(mode, state, ctx)
 
 
+def _goto_auto_measure(mode, state, ctx) -> bool:
+    """8-g P5a（SM-3.1.2-120）: ui.goto{kind:AUTO_MEASURE} だけを狙う入口行
+    （C-15-summon と同じ流儀。kind がそれ以外なら false になり C-15 へ落ちる）。"""
+    return ctx.arg.get("kind") == "AUTO_MEASURE" and _goto_allowed(mode, state, ctx)
+
+
+def _measure_link_lost(mode, state, ctx) -> bool:
+    """8-g P5a（SM-3.1.2-120）: 自律測定の入口で測定機能と通信できない
+    （版の食い違い以外。理由キー measure_link_lost）。"""
+    return (ctx.arg.get("kind") == "AUTO_MEASURE" and not ctx.measure_link_ok
+            and ctx.measure_link_reason != "version_mismatch")
+
+
+def _measure_version_mismatch(mode, state, ctx) -> bool:
+    """8-g P5a（SM-3.1.2-120）: 自律測定の入口で版が食い違う
+    （理由キー measure_version_mismatch。DetailedDesign-measure.md §6.2）。"""
+    return (ctx.arg.get("kind") == "AUTO_MEASURE" and not ctx.measure_link_ok
+            and ctx.measure_link_reason == "version_mismatch")
+
+
+def _measure_reentry_required(mode, state, ctx) -> bool:
+    """8-g P5a（SM-3.1.2-130・-142）: 自己位置を見失ったあと自律測定を
+    抜けて入り直すまでの meas.start の拒否（理由キー localization_lost）。"""
+    return bool(ctx.measure_reentry_required)
+
+
 def _candidate_exists(mode, state, ctx) -> bool:
     return ctx.candidate_count > 0
 
@@ -459,6 +485,10 @@ GUARDS: Dict[str, Callable] = {
     "goto_allowed": _goto_allowed,
     "working": _working,
     "goto_summon": _goto_summon,
+    "goto_auto_measure": _goto_auto_measure,
+    "measure_link_lost": _measure_link_lost,
+    "measure_version_mismatch": _measure_version_mismatch,
+    "measure_reentry_required": _measure_reentry_required,
     "venue_unloaded": _venue_unloaded,
     "venue_unloaded_nav_goto": _venue_unloaded_nav_goto,
     "recoverable_fault_active": _recoverable_fault_active,
@@ -507,7 +537,7 @@ GUARDS: Dict[str, Callable] = {
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 62, len(GUARDS)
+assert len(GUARDS) == 66, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:

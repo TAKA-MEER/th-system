@@ -107,6 +107,10 @@ const std::map<std::string, std::set<std::string>>& default_mode_states() {
       {"AT_HOME", {"IDLE_H", "PAUSE"}},
       {"OPCHECK", {"LIST", "RUNNING_CHECK", "REPAIR"}},
       {"CALIB", {"LIST", "S1", "S2", "S3", "S4"}},
+      // 8-g P5a（2026-11-23。状態は入口ができるパケットで足す。P5a は WAIT・PAUSE）。
+      // これが抜けていると AUTO_MEASURE に入った瞬間 STATE_INCONSISTENT(CRITICAL) →
+      // ESTOP になる（2026-09-08 の AT_HOME と同じ事故。test_mode_states_sync が縛る）。
+      {"AUTO_MEASURE", {"WAIT", "PAUSE"}},
       // 旧 FSM（th_mode_manager）は "NONE" を状態として使わないモード名の
       // 集合が異なる。旧 FSM 由来の SystemState が来ることは無い想定だが、
       // 空文字状態のモードも起動直後は存在しうるため INIT だけは明示している。

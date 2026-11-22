@@ -776,6 +776,47 @@
   spec_ref: SM-3.1.1-19
   reject: true
   reject_reason_key: recoverable_fault_active
+# 8-g P5a（SM-3.1.2-120）: 自律測定の入口は測定機能と通信できなければ拒否する
+# （理由キー measure_link_lost／measure_version_mismatch）。C-15-summon と同じ
+# 「同一イベント・ガード違いを記載順で振り分ける」流儀。C-15-recoverable-fault-active
+# より後・C-15-summon より前に置く（回復フォルトが残ればそちらが先）。
+# C-15-auto-measure は効果 start_measure_map（dest map_session）で地図を作り直す。
+- id: C-15-measure-link-version
+  layer: 0
+  mode: IDLE
+  state: NONE
+  event: ui.goto
+  guard: measure_version_mismatch
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-120
+  reject: true
+  reject_reason_key: measure_version_mismatch
+- id: C-15-measure-link-lost
+  layer: 0
+  mode: IDLE
+  state: NONE
+  event: ui.goto
+  guard: measure_link_lost
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-120
+  reject: true
+  reject_reason_key: measure_link_lost
+- id: C-15-auto-measure
+  layer: 0
+  mode: IDLE
+  state: NONE
+  event: ui.goto
+  guard: goto_auto_measure
+  to_mode: AUTO_MEASURE
+  to_state: $initial
+  effects:
+  - name: start_measure_map
+    args: {}
+  spec_ref: SM-3.1.2-120
 - id: C-15-summon
   layer: 0
   mode: IDLE
@@ -2766,3 +2807,65 @@
   to_state: $initial
   effects: []
   spec_ref: SM-3.1.2-098
+# 8-g P5a（自律測定。DetailedDesign-measure.md §6.2）。
+# P5a の状態は WAIT・PAUSE だけ（NAV・ALIGN・BLOCKED は P5b、ADJUST は P3 で
+# その入口の行と一緒に足す）。出る行も、その状態を足すパケットで足す。
+# meas.goal・turn・translate と腕の範囲の確認は行が無いので拒否される
+# （state_not_accepting）。AT_PANEL の WORKING の meas 行も P2。
+# T-MEAS-01X は -142 の拒否行（meas.start の前に評価される。LOCALIZATION_LOST のあと
+# 自律測定を抜けて入り直すまで localization_lost で拒否）。
+- id: T-MEAS-01X
+  layer: 10
+  mode: AUTO_MEASURE
+  state: PAUSE
+  event: meas.start
+  guard: measure_reentry_required
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-130
+  reject: true
+  reject_reason_key: localization_lost
+- id: T-MEAS-01
+  layer: 10
+  mode: AUTO_MEASURE
+  state: PAUSE
+  event: meas.start
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects: []
+  spec_ref: SM-3.1.2-130
+- id: T-MEAS-02
+  layer: 10
+  mode: AUTO_MEASURE
+  state: PAUSE
+  event: meas.abort
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects: []
+  spec_ref: SM-3.1.2-131
+- id: T-MEAS-03
+  layer: 10
+  mode: AUTO_MEASURE
+  state: '*'
+  event: meas.finish
+  guard: null
+  to_mode: IDLE
+  to_state: NONE
+  effects: []
+  spec_ref: SM-3.1.2-135
+- id: T-MEAS-04
+  layer: 10
+  mode: AUTO_MEASURE
+  state: '*'
+  event: meas.set_limits
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects: []
+  # meas.set_limits は正本 §3.1.2 に専用の SM 番号が無い（Spec-measure.md §3
+  # 「速度・加速度の上限」）。AUTO_MEASURE の行として -135 段落に載せる
+  # （test_transition_table の fan-out 宣言に対応）。
+  spec_ref: SM-3.1.2-135

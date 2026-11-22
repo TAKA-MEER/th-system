@@ -612,6 +612,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_measure_link_node
     test/test_measure_link_node.py
     TIMEOUT 300)
+  # 8-g P5a（DetailedDesign-measure.md §6.2）: 本物の state_manager と
+  # measure_link を生成 yaml 先渡しで起動し、AUTO_MEASURE の入口（link 可否）・
+  # meas.* 遷移・台帳の順（id 重複は遷移せず bad_argument）・途絶の扱いを縛る。
+  ament_add_pytest_test(test_auto_measure_node
+    test/test_auto_measure_node.py
+    TIMEOUT 300)
   # 物理非常停止の間（手押し）は DRIVE_RUNAWAY を判定しない（Spec-safety §3.5.3 末尾）。
   # 押下中は出ない・離したら 0 から数え直し・立っているフォルトは解除しない・UI 非常停止では止まらない
   ament_add_pytest_test(test_runaway_carry_node
@@ -766,6 +772,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_prep_return_home_map_node
     test/test_prep_return_home_map_node.py
     TIMEOUT 120)
+  # 8-g P5a: effect start_measure_map で slam_toolbox をまっさらな地図作成にする
+  # （instance_id が新しくなり dirty が立たない。インプロセス・rclpy 要）。
+  ament_add_pytest_test(test_auto_measure_map
+    test/test_auto_measure_map.py
+    TIMEOUT 180)
   ament_add_pytest_test(test_slam_control_restart_apply
     test/test_slam_control_restart_apply.py
     TIMEOUT 60)

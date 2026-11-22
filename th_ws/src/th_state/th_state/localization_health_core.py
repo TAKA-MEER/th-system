@@ -41,7 +41,9 @@ REASON_INACTIVE = "inactive"  # WP-SAFE-05修正: 自律走行しないモード
 # モードにいる間。モード単位で決める（向き合わせ・自動再試行のような「人が
 # 押さなくても動き出す」場面を取りこぼさないため）。試験準備だけは地図作成が
 # 中心なので自動帰還（RETURN）の間に限る。
-MONITORED_MODES = frozenset({"REPLAY", "PANEL_NAV", "SUMMON", "HOME_NAV"})
+# AUTO_MEASURE（8-g P5a。-142）は地図を作りながら「モード全体」を監視する
+# （Spec-measure §4.3「監視する範囲: モード全体。WAIT で止まっている間も含む」）。
+MONITORED_MODES = frozenset({"REPLAY", "PANEL_NAV", "SUMMON", "HOME_NAV", "AUTO_MEASURE"})
 PREP_MONITORED_STATES = frozenset({"RETURN"})
 
 

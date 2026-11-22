@@ -920,6 +920,18 @@ class SlamControl(Node):
                 self._report('OK: commit_map_patch（書き足しを確定）')
                 self.get_logger().info(
                     f'commit_map_patch OK: {where} へ書き足しを確定')
+        elif msg.name == 'start_measure_map':
+            # 8-g P5a（SM-3.1.2-120・DetailedDesign-measure.md §6.2）: 自律測定の入口。
+            # 会場地図・経路地図のファイルに触れず slam_toolbox をまっさらな地図作成にする
+            # （instance_id が新しくなり、dirty は立てない）
+            with self._lock:
+                err = self._start_fresh_measure_mapping()
+            if err:
+                self._report(f'NG: start_measure_map 失敗 ({err})')
+                self.get_logger().warn(f'start_measure_map 失敗: {err}')
+            else:
+                self._report('OK: start_measure_map（まっさらな地図作成で始めました）')
+                self.get_logger().info('start_measure_map OK: まっさらな地図作成で始めました')
         else:
             self.get_logger().debug(
                 f'effect {msg.name} は未処理 (dest={msg.dest})')
@@ -1189,14 +1201,14 @@ class SlamControl(Node):
             response, None,
             '地図を読み直しました（地図を凍結して自己位置推定に切り替えました）')
 
-    def _handle_map_reset(self, response):
-        """教示の開始時に slam_toolbox を作り直し、まっさらな地図作成から始める。
+    def _start_fresh_measure_mapping(self) -> "str | None":
+        """slam_toolbox を作り直し、まっさらな地図作成から始める。
 
-        起動からの蓄積や、直前の再生で読み込んだ地図の上に教示を重ねない（2026-10-09
-        実機: 起動から約 3.7 時間ぶんの地図の上に 4 m の経路を教示し、その地図で再生の
-        自己位置合わせが「low」になり続けた）。順序は _handle_map_reload と同じ
-        （kill の前に再起動中を立てる → respawn を待つ）で、deserialize だけ行わず、
-        mapping モードのまま始める。**呼び出し側が self._lock を保持していること。**
+        8-g P5a（effect start_measure_map）が使う。会場地図・経路地図のファイルには
+        触れず（読み込まず・書き出さず）、instance_id を新しくし、dirty は立てない。
+        順序は _handle_map_reload と同じ（kill の前に再起動中を立てる → respawn を待つ）で、
+        deserialize だけ行わず、mapping モードのまま始める。
+        **呼び出し側が self._lock を保持していること。** エラーの文字列（または None）。
         """
         self._reload_in_progress = True
         self._sync_estimator_restarting()
@@ -1207,12 +1219,12 @@ class SlamControl(Node):
                     'slam_toolbox のプロセスが見つかりません。respawn 待ちに入ります')
             err = self._wait_for_slam_restart(old_pids, RESPAWN_WAIT_SEC)
             if err:
-                return self._finish(response, err, '')
+                return err
             # 再起動したノードは mapping モードで立ち上がる。明示しておく
             # （前回が localization で凍結されていても必ず作成中から始める）。
             err = self._set_localization(False)
             if err:
-                return self._finish(response, f'mapping モード切替失敗: {err}', '')
+                return f'mapping モード切替失敗: {err}'
             self._set_active(True)
             self._slam_ready = True
             self._open_route_base = ''   # 前の経路の地図への書き足し保存を向けない
@@ -1220,13 +1232,19 @@ class SlamControl(Node):
             self._venue_dirty = False
             self._venue_loaded = False
             self._publish_venue_status()
+            return None
         finally:
             # 途中で失敗しても、kill した時点で前の地図は無い
             self._publish_anchor('unloaded')
             self._reload_in_progress = False
             self._sync_estimator_restarting()
+
+    # 呼び出し側（/map_session/open の reset）が _lock を保持して呼ぶ版。
+    # 挙動は従来どおり（教示の開始時に slam_toolbox を作り直す）。
+    def _handle_map_reset(self, response):
+        err = self._start_fresh_measure_mapping()
         return self._finish(
-            response, None, '地図をまっさらに戻しました（地図作成を始めました）')
+            response, err, '地図をまっさらに戻しました（地図作成を始めました）')
 
     # ── 地図の破棄 ──────────────────────────────────────────
     def _cb_discard_map(self, request, response):
