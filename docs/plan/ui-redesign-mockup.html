@@ -1569,8 +1569,8 @@ Object.assign(S, {
   auto:{sub:'wait', stop:false},
   rec:{col:'neutral'},   // D70: 「記録中」は D37 に合わせる（中立の札＋丸の印）
   // 自動ブレーキ（D68・D73）: どの画面の切り替えも ON の間はロック。外すには 2 回押す（ON→OFF の確認を兼ねる）。
-  // 場外の手動（S-11・S-13）の既定は OFF（Spec-safety.md §2.1）。ほかは ON
-  bk:{prep:{on:true,lock:true,arm:false}, manual:{on:false,lock:true,arm:false}, w6:{on:true,lock:true,arm:false}, replay:{on:true,lock:true,arm:false}},
+  // 既定はどこも ON（D75: 場外の手動も ON に改めた）
+  bk:{prep:{on:true,lock:true,arm:false}, manual:{on:true,lock:true,arm:false}, w6:{on:true,lock:true,arm:false}, replay:{on:true,lock:true,arm:false}},
   w6:false, modal:null,
 })
 S.af.scope='field'
@@ -1911,7 +1911,7 @@ function settingsView(){
   // いつ効くか（P6）は区分ごとに 1 つ。効き方の違う設定を同じ区分に混ぜない（G3 の B5）
   const when = {run:'次の起動から', loc:'次に地図を読み直したときから', notify:'すぐ', screen:'すぐ', link:'次の起動から', dev:'すぐ'}[s]
   let body=''
-  if (s==='run') body = `<div class="grp">${row('低速',stp('30 %'))}${row('中速',stp('60 %'))}${row('高速',stp('100 %'))}${row('場外の自動ブレーキ',seg('toast',[['切','切'],['入','入']],'切'))}</div>`
+  if (s==='run') body = `<div class="grp">${row('低速',stp('30 %'))}${row('中速',stp('60 %'))}${row('高速',stp('100 %'))}${row('場外の自動ブレーキ',seg('toast',[['切','切'],['入','入']],'入'))}</div>`
   if (s==='loc') body = `<div class="grp">${row('探す範囲',stp('5 m'))}${row('補正の間隔',stp('1.0 秒'))}${row('受け入れる確度',stp('0.70'))}</div>`
   if (s==='notify') body = `<div class="grp">${row('タブレットの音',seg('voice',[['on','出す'],['off','出さない']],g.voice?'on':'off'))}${row('機体のスピーカー',seg('spk',[['on','鳴らす'],['off','鳴らさない']],g.spk?'on':'off'))}
       ${row('音量',stp(g.vol+' %')+btn('toast:機体のスピーカーで試しに鳴らす','試しに鳴らす'))}</div>`
@@ -2100,7 +2100,7 @@ Object.assign(NOTES, {
     look:['「確認」（向くだけ）の置き方 a〜c を比べる（未決 5）','「記録中」は中立の札＋丸の印（D70）'],
     opts:[{q:'画面', k:['follow','teach'], v:[[false,'S-10 追従走行'],[true,'S-12 教示（追従）']], why:'S-12 は S-10 に「保存」と記録の量を足しただけ（Spec-webui.md §3.4）'},
       {q:'「確認」の置き方（未決 5）', k:['follow','conf'], v:[['a','a 3 面のトグル'],['b','b 別のボタン'],['c','c 置かない']], why:'spec の操作カードは 停止／確認／走行。D33 のトグルは 2 面。c は機体の仕様を改める（G3）'}]},
-  manual:{changed:['主表示を<b>機体のまわりの図</b>にした（LiDAR の点・機体の外形・減速が始まる距離の点線の輪）。近い点は橙で、向きと距離を出す。いまの文字だけの「障害物」区画を置き換える（G1）','右列 ② は「停止する」だけ（走り出すのはスティック）。トグルと同じ位置・高さ','自動ブレーキは左上の切り替え。ON の間はロック（2 回押して外す。D68・D73）。切れている間はヘッダの下段に「自動ブレーキなし」が点滅（D74）。場外の既定は OFF なので、開いた直後から点滅する（未決: 既定を ON にするか）','S-13 は地図と経路を主表示にし、右列 ① に記録の量・③ に保存'],
+  manual:{changed:['主表示を<b>機体のまわりの図</b>にした（LiDAR の点・機体の外形・減速が始まる距離の点線の輪）。近い点は橙で、向きと距離を出す。いまの文字だけの「障害物」区画を置き換える（G1）','右列 ② は「停止する」だけ（走り出すのはスティック）。トグルと同じ位置・高さ','自動ブレーキは左上の切り替え。ON の間はロック（2 回押して外す。D68・D73）。切れている間はヘッダの下段に「自動ブレーキなし」が点滅（D74）。既定は ON（D75）','S-13 は地図と経路を主表示にし、右列 ① に記録の量・③ に保存'],
     look:['死角は 4 本の柱だけを図に細い灰の扇形で描く。「後方は死角があります」の文は出さない（D69）','「記録中」は中立の札＋丸の印（D70）','スティックを右列の残り全部に広げた大きさ'],
     opts:[{q:'画面', k:['manual','teach'], v:[[false,'S-11 手動走行'],[true,'S-13 教示（手動）']], why:''},
       ]},
