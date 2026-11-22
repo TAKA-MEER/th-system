@@ -277,7 +277,7 @@
     <li data-n="2"><b>移動</b>試験場の外を走る方式。教示は保管場所から始める（復路では教示できない）。</li>
     <li data-n="3"><b>押せないボタン</b>薄く表示される。押すと理由のウィンドウが出る（下の図）。</li>
     <li data-n="4"><b>試験場</b>前日の <span class="ui">試験準備</span> と当日の <span class="ui">試験（当日）</span>（4 章）。</li>
-    <li data-n="5"><b>測定</b><span class="ui">自律測定</span>（実機では未実装。付録）。</li>
+    <li data-n="5"><b>測定</b><span class="ui">自律測定</span>（S-60）。</li>
     <li data-n="6"><b>保守・設定</b><span class="ui">始業点検</span>・<span class="ui">校正</span>・<span class="ui">設定</span>（5 章）。</li>
     <li data-n="7"><b>バッテリー</b>駆動用バッテリーの残量（実機ではまだ出ない）。</li>
     <li data-n="8"><b>運用の終了</b>1 日の運用を終えるときに押す（次のページ）。</li>
@@ -287,8 +287,8 @@
     <div class="stack">
       <div class="box tip"><b>押せないときは理由を読む</b>前提がそろっていない方式は薄く表示されます。押すと理由が出ます。
         たとえば <span class="ui">教示再生</span> は、教示済みの経路が 1 本も無いと「教示済みの経路がありません」と出て進めません（先に教示する）。</div>
-      <div class="box mock"><b>実機との違い</b>実機で画面があるのは、手動走行・教示（手動）・教示再生・試験準備・試験（当日）・始業点検・校正・設定です。
-        追従走行・教示（追従）・ライン誘導・電子リード・自律測定の画面は未実装です（付録）。</div>
+      <div class="box mock"><b>実機との違い</b>実機で画面があるのは、手動走行・教示（手動）・教示再生・試験準備・試験（当日）・始業点検・校正・設定・自律測定です。
+        追従走行・教示（追従）・ライン誘導・電子リードの画面は未実装です（付録）。</div>
     </div>
   </div>
   <div class="ref push">詳しくは：使い方.md §3「画面と操作」・§3-4「教示再生」</div>
@@ -1354,8 +1354,8 @@
 </section>
 
 <section class="sheet">
-  <div class="run"><span><b>付録　実機では未実装の画面</b></span><span>使い方（図解）</span></div>
-  <h2>自律測定 <span class="chip">S-60</span> <span class="chip na">実機では未実装</span></h2>
+  <div class="run"><span><b>S-60　自律測定</b></span><span>使い方（図解）</span></div>
+  <h2>自律測定 <span class="chip">S-60</span></h2>
   <p class="lead">測定機能（fk-system）の指示で、機体が自分で走って盤の前で向きと位置を変えるモードです（2026-11-01 に仕様へ追加）。メインメニューの <span class="ui">自律測定</span> から入ります。</p>
   <div class="cols r4060">
     <div><figure class="shot" data-shot="s60-permit"><figcaption>入るときの許可</figcaption></figure></div>

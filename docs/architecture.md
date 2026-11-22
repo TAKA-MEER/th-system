@@ -123,6 +123,11 @@ ROS 非依存）、`/system/event` へ `evt.measure_link_ok` ／ `evt.measure_li
 `IDLE` へ出た場合を含む）に、残りの指示を `CANCELLED` にし、上限と `reentry_required`
 を下ろす（`state_manager` の `_measure_in_session`）。正本は `DetailedDesign-measure.md` §6.2。
 
+**自律測定の画面（8-g P5a-ui）**: S-01 の「測定」の「自律測定」から入れ、
+S-60 に「測定機能の画面へ」（`measure_ui_port` を `/params/get` で読む）・
+「自律測定を終わる」（W-4 の腕の格納の確認を先に挟む）・「手動」が並ぶ。
+W-1／W-2 の IDLE 抜け道にも同じ腕の確認を挟む（`SM-3.1.1-18`）。
+
 ### 遷移ルールの実装（旧 FSM）
 
 `mode_manager` は `isTransitionAllowed()` 関数で遷移の許可・拒否を判定します。新しいモードを追加する場合はこの関数に遷移元/遷移先のペアを追加するだけで対応できます。
