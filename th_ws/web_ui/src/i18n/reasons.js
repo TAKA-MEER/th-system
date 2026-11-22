@@ -57,6 +57,9 @@ export const REJECT_REASONS = {
   no_pending: '登録を開始してから押してください',
   no_first_point: '1 回目を押してから 2 回目を押してください',
   two_point_too_close: '1 回目からほとんど動いていません。向きたい方向へ一歩進んでから押してください',
+  // 8-g P5a-ui: 自律測定の入口の拒否（Spec-modes.md SM-3.1.2-120）。
+  measure_link_lost: '測定機能と通信できません（生存確認が届いていません）',
+  measure_version_mismatch: '測定機能との確認版が一致しません',
 }
 
 export const UNKNOWN_REASON_LABEL = '拒否されました（理由不明）'

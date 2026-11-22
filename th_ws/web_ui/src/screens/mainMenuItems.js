@@ -31,15 +31,22 @@
 // main.jsx because S-21 had no mode of its own; now that the mode exists the
 // button is an ordinary ui.enter_mode like every other one, and the screen is
 // derived from /system/state instead of a UI-local flag.
+// 8-g P5a-ui: 「自律測定」は入口が ui.goto{kind:AUTO_MEASURE}（C-15-auto-measure）
+// なので、ui.enter_mode の通常経路には乗せない。表示の可否は mode_entry.json で
+// 決める（IDLE からだけ許可）。
+export const AUTO_MEASURE_MODE = 'AUTO_MEASURE'
+
 export const MENU_MODES = [
   'FOLLOW', 'MANUAL', 'TEACH_FOLLOW', 'TEACH_MANUAL', 'REPLAY', 'LINE', 'LEASH',
   'PREP', 'AT_HOME',
   'OPCHECK', 'CALIB',
+  AUTO_MEASURE_MODE,
 ]
 
 export const MENU_GROUPS = [
   { key: 'move', modes: ['FOLLOW', 'MANUAL', 'TEACH_FOLLOW', 'TEACH_MANUAL', 'REPLAY', 'LINE', 'LEASH'] },
   { key: 'field', modes: ['PREP', 'AT_HOME'] },
+  { key: 'measure', modes: [AUTO_MEASURE_MODE] },
   { key: 'maint', modes: ['OPCHECK', 'CALIB'] },
 ]
 
