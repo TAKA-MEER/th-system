@@ -606,6 +606,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_runaway_freshness_node
     test/test_runaway_freshness_node.py
     TIMEOUT 180)
+  # 8-g P1（DetailedDesign-measure.md §6.1）: 本物の measure_link と
+  # state_manager を生成 yaml 先渡しで起動し、link_lost / version_mismatch /
+  # state_not_accepting / bad_argument / 入口分離 / status の QoS を縛る。
+  ament_add_pytest_test(test_measure_link_node
+    test/test_measure_link_node.py
+    TIMEOUT 300)
   # 物理非常停止の間（手押し）は DRIVE_RUNAWAY を判定しない（Spec-safety §3.5.3 末尾）。
   # 押下中は出ない・離したら 0 から数え直し・立っているフォルトは解除しない・UI 非常停止では止まらない
   ament_add_pytest_test(test_runaway_carry_node
