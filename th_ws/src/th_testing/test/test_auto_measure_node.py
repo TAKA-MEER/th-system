@@ -10,8 +10,8 @@ docs/plan/spec/Spec-measure.md、詳細は DetailedDesign-measure.md §6.2。
 
   a. 生存確認なしで ui.goto AUTO_MEASURE → 拒否 measure_link_lost
   b. 版 "1" の生存確認ありで入れる → /system/state と /measure/status が AUTO_MEASURE/WAIT
-  c. meas.goal は state_not_accepting、meas.set_limits も state_not_accepting
-     （P5c まで受けない。結果なし・v_cap は 0 のまま）
+  c. meas.goal は corner_obstacle（角の確認が届いていない。P5b の拒否の順。
+     結果なし）、meas.set_limits は state_not_accepting（P5c まで受けない）
   d. 同じ command_id をもう一度 → bad_argument、/measure/result は増えない
   e. meas.finish → IDLE、/measure/result に DONE
   f. 入り直して ui.jog.hold で PAUSE → ui.resume_yes では戻らない → meas.start で WAIT
@@ -320,12 +320,16 @@ class TestAutoMeasureNode(unittest.TestCase):
             (status.mode, status.state)
 
     def test_c_goal_rejected_set_limits_done(self):
-        """c. meas.goal は state_not_accepting。meas.set_limits → DONE 1 回。"""
+        """c. meas.goal は corner_obstacle（角の確認が届いていない）。
+        meas.set_limits は state_not_accepting（P5c まで受けない）。"""
         self._ensure_auto_measure_wait()
         cid = self._next_cid()
+        # P5b（SM-3.1.2-121）: WAIT で meas.goal は拒否の順に判定される。
+        # map は未受信同士で一致するが、この試験は角の確認を出さないので
+        # corner_obstacle（受理されない。結果なし）。
         res = self._call_measure("meas.goal", command_id=cid)
         assert res.accepted is False
-        assert res.reject_reason == "state_not_accepting", res.reject_reason
+        assert res.reject_reason == "corner_obstacle", res.reject_reason
         self._spin(0.3)
         assert not [r for r in self._results if r.command_id == cid], \
             '拒否された指示に結果が出ている'

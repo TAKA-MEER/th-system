@@ -480,6 +480,12 @@ class VenueNavigator(Node):
         if self._state == 'BLOCKED':
             self._blocked = True
 
+        # 8-g P5b（SM-3.1.2-124/-131）: 自律測定が WAIT に戻ったら計画（経路・
+        # 目的地・到着ラッチ）を捨てる。次に NAV に入るのは新しい meas.goal の
+        # ときで、古い経路をそのまま再送してはならない。
+        if entered == ('AUTO_MEASURE', 'WAIT'):
+            self._reset_for_exit()
+
         # NAV 相当に入った瞬間、まだ何も回っていなければ起動（二重チェーン防止）。
         if self._is_nav_state():
             if (self._follow_goal_handle is None
@@ -546,7 +552,11 @@ class VenueNavigator(Node):
         elif self._follow_send_in_flight:
             self._cancel_before_accept = True
         self._path = None
-        self._measure_goal = None
+        # 8-g P5b（SM-3.1.2-129）: 自律測定の目的地は、非常停止・手押しを挟んで
+        # PAUSE に戻ったときも残す（戻ったら meas.start で再送する。止めた計画を
+        # 捨ててはならない。IDLE 等へ出たときだけ下の条件で捨てる）。
+        if self._mode not in ('ESTOP', 'CARRY'):
+            self._measure_goal = None
         self._arrived_latched = False
         self._align_latched = False
         self._final_aligning = False
@@ -583,6 +593,8 @@ class VenueNavigator(Node):
                 self._measure_goal = {
                     'x': float(args['x']), 'y': float(args['y']),
                     'yaw': float(args['yaw'])}
+                # 8-g P5b: 新しい目的地では古い経路を捨て、新しく計画させる。
+                self._path = None
                 self.get_logger().info(
                     'measure_goal: 目的地を保持 '
                     f"({self._measure_goal['x']:.3f}, "

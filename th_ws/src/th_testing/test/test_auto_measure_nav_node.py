@@ -22,6 +22,8 @@ Nav2 の縁（ComputePathToPose／FollowPath）は既存の代役で与え、`/m
   g. 手前 1.5 m の /map が不明 → BLOCKED。meas.reroute は DONE
   h. NAV の間 meas.goal は state_not_accepting、meas.set_limits はどの状態でも
      state_not_accepting
+  i. 到着のあと次の meas.goal は新しい経路を計画する（古い経路の再送が無い）
+  j. abort のあと非常停止を挟んで PAUSE に戻っても meas.start は WAIT へ（古い目的地で走らない）
 
 注意（launch_testing の挙動）: ノードはファイル単位で共有されるため、
 メソッド同士の状態に頼らない（各メソッドが _reset_to_idle で自分の前提を作る）。
@@ -192,6 +194,7 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         self.follow_succeed = False
         self.follow_goals = 0
         self.follow_cancel_count = 0
+        self.compute_goals = []  # ComputePathToPose の goal の x（順）
 
         self.pub_corner = self.node.create_publisher(
             String, '/measure/corner_status', 10)
@@ -229,7 +232,7 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         self._spin_thread = threading.Thread(target=self._executor.spin, daemon=True)
         self._spin_thread.start()
         time.sleep(2.0)
-        self._drive_to_idle()
+        self._reset_to_idle()
 
     def tearDown(self):
         self._hb_version = None
@@ -302,6 +305,8 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         req = goal_handle.request
         gx = float(req.goal.pose.position.x)
         gy = float(req.goal.pose.position.y)
+        with self._lock:
+            self.compute_goals.append(gx)
         path = Path()
         path.header.frame_id = 'map'
         path.header.stamp = self._now_msg()
@@ -494,8 +499,18 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         self._publish_tf()
         time.sleep(0.5)
         self.follow_succeed = True
-        assert self._wait_mode_state('AUTO_MEASURE', 'ALIGN', timeout=10.0) is True, \
-            '到着で ALIGN に行かない'
+        # ALIGN は向きが合っているとごく短い（観測のポーリングで取りこぼす）。
+        # 最新値ではなく履歴で「ALIGN を経由した」ことを確かめる。
+        deadline = time.monotonic() + 10.0
+        seen_align = False
+        while time.monotonic() < deadline:
+            with self._lock:
+                seen_align = any((s.mode, s.state) == ('AUTO_MEASURE', 'ALIGN')
+                                 for s in self._states)
+            if seen_align:
+                break
+            time.sleep(0.05)
+        assert seen_align, '到着で ALIGN を経由しない'
         assert self._wait_mode_state('AUTO_MEASURE', 'WAIT', timeout=10.0) is True, \
             '向き合わせで WAIT に戻らない'
         found = self._wait_result(cid, result='ARRIVED', timeout=8.0)
@@ -687,3 +702,68 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         res = self._call_measure('meas.set_limits', v_max=0.1)
         assert res.accepted is False
         assert res.reject_reason == 'state_not_accepting', res.reject_reason
+
+    def test_i_new_goal_plans_fresh_path(self):
+        """i. 目的地 A へ到着したあとの meas.goal（目的地 B）は新しい経路を計画する。
+        古い経路の再送が無いこと。"""
+        self._ensure_auto_measure_wait()
+        res = self._call_measure('meas.goal', command_id=self._next_cid(),
+                                 map_instance_id='m1', x=3.0, y=0.0, yaw=0.0)
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_mode_state('AUTO_MEASURE', 'NAV', timeout=10.0) is True
+        assert self._wait_follow_goals(1, timeout=10.0) is True
+        with self._lock:
+            assert self.compute_goals == [3.0], self.compute_goals
+            follows_before = self.follow_goals
+        self.robot_x = 3.0
+        self._publish_tf()
+        time.sleep(0.5)
+        self.follow_succeed = True
+        assert self._wait_mode_state('AUTO_MEASURE', 'WAIT', timeout=10.0) is True
+        # 目的地 B：新しい経路を計画し、その経路で走る。
+        self.robot_x = 0.0
+        self._publish_tf()
+        self.follow_succeed = False
+        res = self._call_measure('meas.goal', command_id=self._next_cid(),
+                                 map_instance_id='m1', x=-2.0, y=0.0, yaw=0.0)
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_mode_state('AUTO_MEASURE', 'NAV', timeout=10.0) is True
+        assert self._wait_follow_goals(follows_before + 1, timeout=10.0) is True
+        with self._lock:
+            assert self.compute_goals[-1] == -2.0, self.compute_goals
+            assert len(self.compute_goals) == 2, self.compute_goals
+
+    def test_j_abort_then_estop_start_goes_to_wait(self):
+        """j. NAV→stop→PAUSE→abort→WAIT のあと非常停止を挟んでも、捨てた目的地で
+        走り出さない（戻り先は WAIT で、meas.start は受け付けられない）。"""
+        self._ensure_auto_measure_wait()
+        res = self._call_measure('meas.goal', command_id=self._next_cid(),
+                                 map_instance_id='m1', x=3.0, y=0.0, yaw=0.0)
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_mode_state('AUTO_MEASURE', 'NAV', timeout=10.0) is True
+        assert self._wait_follow_goals(1, timeout=10.0) is True
+        res = self._call_measure('meas.stop')
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_mode_state('AUTO_MEASURE', 'PAUSE', timeout=8.0) is True
+        res = self._call_measure('meas.abort')
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_mode_state('AUTO_MEASURE', 'WAIT', timeout=8.0) is True
+        with self._lock:
+            follows_before = self.follow_goals
+        self.pub_estop_ui.publish(Bool(data=True))
+        assert self._wait_mode_state('ESTOP', 'NONE', timeout=8.0) is True
+        self.pub_estop_ui.publish(Bool(data=False))
+        self._spin(0.5)
+        res = self._call_trigger('ui.resume_yes')
+        assert res.accepted is True, res.reject_reason_key
+        # WAIT から非常停止に入ったので、戻り先は WAIT（PAUSE ではない）。
+        # 古い prev（NAV）が残っていれば、ここで誤って NAV へ走り出す。
+        assert self._wait_mode_state('AUTO_MEASURE', 'WAIT', timeout=10.0) is True
+        res = self._call_measure('meas.start')
+        assert res.accepted is False
+        assert res.reject_reason == 'state_not_accepting', res.reject_reason
+        time.sleep(1.5)
+        assert self._mode_state() == ('AUTO_MEASURE', 'WAIT'), self._mode_state()
+        with self._lock:
+            assert self.follow_goals == follows_before, \
+                '捨てた目的地で走り出している'

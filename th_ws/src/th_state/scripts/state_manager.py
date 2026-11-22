@@ -668,9 +668,15 @@ class StateManager(Node):
         elif (self.mode in (ESTOP_MODE, CARRY_MODE)
                 and decision.to_mode == AUTO_MEASURE_MODE
                 and decision.to_state == "PAUSE"
-                and self.prev_mode == AUTO_MEASURE_MODE
-                and self.prev_state in ("NAV", "ALIGN", "BLOCKED")):
-            self._measure_prev_state = self.prev_state
+                and self.prev_mode == AUTO_MEASURE_MODE):
+            # 止める前の状態をそのまま入れる（WAIT も含む。PAUSE なら今の値を保つ）。
+            if self.prev_state in ("NAV", "ALIGN", "BLOCKED", "WAIT"):
+                self._measure_prev_state = self.prev_state
+        # PAUSE から meas.start・meas.abort で抜けたときは、止める前の状態は
+        # もう要らない（古いまま残すと、次の meas.start が捨てた目的地へ行く）。
+        if (decision.accepted and event in ("meas.start", "meas.abort")
+                and self.state == "PAUSE"):
+            self._measure_prev_state = ""
 
         self._apply_effects(decision.effects, requester)
 
