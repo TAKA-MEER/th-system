@@ -966,6 +966,8 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 
 ### 8.2 実値（**18 行 × 9 列。これが `attributes.yaml` の中身**）
 
+`AUTO_MEASURE`（8-g P5a で 19 行目）の値と遷移の行は [measure](DetailedDesign-measure.md) §6.2 にある。この表と §4.2 には写していない。正しい値は `attributes.yaml` と `transitions.yaml`（`T-MEAS-*`・`C-15-measure-link-*`・`C-15-auto-measure`）。
+
 | モード | `initial_state` | `run_state` | `resume` | `resume_state` | `needs_tracker` | `speed_limit` | `auto_brake_default` | `jog` | `has_record` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `INIT` | `CHECK` | — | `none` | — | `optional` | `stop` | `on_locked` | `denied` | false |

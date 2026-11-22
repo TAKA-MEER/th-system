@@ -106,6 +106,23 @@ ROS 非依存）、`/system/event` へ `evt.measure_link_ok` ／ `evt.measure_li
 `meas.*` の行が無いため、すべての `meas.*` は `state_not_accepting` で拒否される。
 正本は `docs/plan/detailed/DetailedDesign-measure.md` §3・§6.1。
 
+**自律測定 `AUTO_MEASURE`（8-g P5a）**: `IDLE` から `ui.goto`（`kind: AUTO_MEASURE`）で入る。
+入口は測定機能の生存を見て、途絶なら `measure_link_lost`、版違いなら `measure_version_mismatch`
+で拒否する（`C-15-measure-link-*`）。入るときの effect `start_measure_map` で、`slam_control` が
+会場地図・経路地図に触れずに `slam_toolbox` をまっさらな地図作成にする（`instance_id` が新しくなる。
+`dirty` は立てない）。`map_freezer` はこのモードを凍結しない（`PASS_MODES`）。
+`localization_health` はモード全体を監視する。状態はいま `WAIT`・`PAUSE` だけで、
+`NAV`・`ALIGN`・`BLOCKED` は P5b、`ADJUST` は P3 で入口と一緒に足す。
+受理する指示は `meas.start`（`PAUSE`→`WAIT`）・`meas.abort`（`PAUSE`→`WAIT`）・
+`meas.finish`（→`IDLE`）・`meas.set_limits`（状態は変えず、上限を `/measure/command_state` に載せる）。
+`PAUSE` からは `ui.resume_yes` では戻らず、`meas.start` だけで戻る。`/measure/command` は
+受理の判定 → 台帳への記録 → 遷移の順に処理する。`evt.measure_link_lost` は、ラッチの値が
+変わったときだけ遷移表へ流す。自律測定中に `LOCALIZATION_LOST` を受けると、進行中の指示を
+`CANCELLED`（`localization_lost`）で終え、`reentry_required` を立てる。`ESTOP`・`CARRY` を
+挟んで自律測定へ戻る間は片付けない。それ以外のモードへ出たとき（`ESTOP` 経由で
+`IDLE` へ出た場合を含む）に、残りの指示を `CANCELLED` にし、上限と `reentry_required`
+を下ろす（`state_manager` の `_measure_in_session`）。正本は `DetailedDesign-measure.md` §6.2。
+
 ### 遷移ルールの実装（旧 FSM）
 
 `mode_manager` は `isTransitionAllowed()` 関数で遷移の許可・拒否を判定します。新しいモードを追加する場合はこの関数に遷移元/遷移先のペアを追加するだけで対応できます。
