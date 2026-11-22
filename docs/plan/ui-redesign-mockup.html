@@ -478,6 +478,148 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .bandc .stp svg{width:22px;height:22px}
 .bandc .msg{flex:1;min-width:0;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bandc .b{flex:none;font-size:16px;padding:0 12px}
+
+/* ============================================================
+   2026-11-23 全画面への展開（ui-redesign-screens.md）。画面の 3 つの型
+   走らせる＝.g-drv（主表示＋右列 ①どこへ ②停止│走行 ③その画面の操作 ④手動）
+   手順を進める＝.g-list（左＝項目の一覧／右＝手順。下端に やめる｜進む）
+   見る・変える＝.g-list（左＝区分の一覧／右＝中身。下端の右に 保存）・S-00 は .g-conn
+   ============================================================ */
+.content.g-drv{display:grid;gap:12px;grid-template-columns:1fr 400px;grid-template-rows:minmax(0,1fr)}
+.g-drv .rcol{display:flex;flex-direction:column;gap:10px;min-height:0;min-width:0}
+.g-drv .rops{display:flex;flex-direction:column;gap:10px;flex:none}
+.g-drv .rrow{display:flex;flex-direction:column;gap:8px;min-height:56px}
+.g-drv .rrow .row{display:flex;gap:8px}.g-drv .rrow .row > *{flex:1}
+.g-drv .rjog{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}
+.g-drv .rjog .jogc{flex:1}
+.g-drv .rjog h3,.g-drv .rrow h3{font-size:15px;color:var(--mut);font-weight:700;letter-spacing:.05em}
+.portrait .content.g-drv{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}
+.portrait .g-drv .rcol{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+.portrait .g-drv .rjog{height:330px}
+.g-drv .b.stopone{width:100%;min-height:68px;font-size:23px;font-weight:800}
+.g-drv .b.stopone:not(.dis){background:#b3261e;border-color:#b3261e;color:#fff}
+.col-jis .g-drv .b.stopone:not(.dis){background:var(--stop);border-color:var(--stop)}
+.b.big{min-height:72px;font-size:21px;width:100%}
+.mkline{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:800;white-space:nowrap}
+.where .mkline{flex:1}
+.where .mk{flex:none !important}
+/* 進むボタン: 機体が動くときだけ出発の色（adv）で塗る。動かない「確かめる」「確定する」「この経路で進む」は太い縁（1 色 1 意味。D37） */
+.b.fwd{border:3px solid var(--tx) !important;font-weight:800}
+.tg3{display:flex}
+
+/* 結果の印（P1）: 形で区別する。赤は使わない */
+.mk{display:inline-flex;align-items:center;justify-content:center;flex:none;width:34px;height:34px;border-radius:50%;font-size:20px;font-weight:900;line-height:1}
+.mk.ok{background:var(--ok);color:#fff}
+.mk.warn{border:3px solid var(--warn);color:var(--warn-tx);background:transparent}
+.mk.ng{background:var(--jis-y,#ffd100);color:#161b22;border-radius:6px}
+.mk.none{border:2px solid var(--bd-hi);color:var(--dim)}
+.mk.sm{width:24px;height:24px;font-size:14px}
+
+/* 手順を進める型・見る型 */
+.content.g-list{display:grid;gap:14px;grid-template-columns:380px minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+.g-list .lst{display:flex;flex-direction:column;gap:8px;min-height:0}
+.g-list .lhd{display:flex;align-items:center;gap:10px;height:40px;font-size:20px;font-weight:800}
+.g-list .lrow{display:flex;align-items:center;gap:12px;min-height:72px;padding:0 14px;border:1px solid var(--bd-hi);border-radius:8px;background:var(--panel);cursor:pointer}
+.g-list .lrow .nm{flex:1;min-width:0;font-size:20px;font-weight:700}
+.g-list .lrow .nm small{display:block;font-size:15px;font-weight:400;color:var(--mut)}
+.g-list .lrow.on{background:var(--sel-bg);color:var(--sel-tx);border-color:var(--sel-bg)}
+.g-list .lrow.on .nm small{color:inherit;opacity:.8}
+.g-list .lrow.dis{opacity:.4;cursor:not-allowed}
+.g-list .lst.sec7{gap:4px}
+.g-list .lst.sec7 .lrow{min-height:56px}
+.g-list .pane{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0;border:1px solid var(--bd);border-radius:8px;background:var(--panel);padding:14px 16px}
+.g-list .phd{display:flex;align-items:center;gap:14px;min-height:56px}
+.g-list .phd .pt{font-size:24px;font-weight:800;white-space:nowrap}
+.g-list .pbody{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:12px}
+.g-list .pfoot{display:flex;gap:10px;align-items:center;flex:none;min-height:64px}
+.g-list .pfoot .b{min-width:200px;min-height:64px;font-size:20px}
+.g-list .pfoot .grow{flex:1}
+.g-list .pfoot .when{font-size:15px;color:var(--mut);padding:4px 10px;border:1px solid var(--bd-hi);border-radius:999px;white-space:nowrap}
+.portrait .content.g-list{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+.portrait .g-list .lst{display:grid;grid-template-columns:1fr 1fr}
+.portrait .g-list .lst .lhd{grid-column:1/-1}
+.portrait .g-list .lst.sec7{grid-template-columns:1fr 1fr 1fr 1fr}
+/* 段の印（P2）: 文字の「Step 3/4」ではなく、並びで進みを読む */
+.steps{display:flex;gap:6px;flex:1;min-width:0}
+.steps .st{flex:1;min-width:0;height:44px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;border:2px solid var(--bd-hi);border-radius:4px;color:var(--dim);white-space:nowrap}
+.steps .st.done{background:var(--ctrl-hi);color:var(--tx);border-color:var(--ctrl-hi)}
+.steps .st.cur{border:4px solid var(--tx);color:var(--tx)}
+.fig{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:28px}
+.fig svg{max-height:100%;height:100%;width:auto;max-width:100%}
+.fig .cell{display:flex;flex-direction:column;align-items:center;gap:10px;height:100%;min-height:0;justify-content:center}
+.fig .cell svg{height:auto;width:200px;max-height:70%}
+.fig .cell .cap{display:flex;align-items:center;gap:8px;font-size:19px;font-weight:700}
+.oneline{font-size:19px;line-height:1.5}
+.tbl{width:100%;border-collapse:collapse;font-size:18px}
+.tbl td,.tbl th{padding:8px 10px;border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}
+.tbl th{font-size:15px;color:var(--mut);font-weight:700}
+.tbl td.num{text-align:right;font-variant-numeric:tabular-nums}
+.tbl tr.out td{background:color-mix(in srgb,var(--jis-y,#ffd100) 45%,transparent)}
+.prog{height:22px;border-radius:999px;background:var(--inset);border:1px solid var(--bd-hi);overflow:hidden}
+.prog i{display:block;height:100%;background:var(--ctrl-hi)}
+.arrows{display:grid;grid-template-columns:repeat(3,96px);grid-template-rows:repeat(3,96px);gap:10px;justify-content:center}
+.arrows .b{min-height:96px;font-size:20px;padding:0}
+.chk{display:flex;align-items:center;gap:14px;min-height:64px;padding:0 14px;border:1px solid var(--bd-hi);border-radius:8px;font-size:19px;cursor:pointer;background:var(--panel)}
+.chk .bx{width:34px;height:34px;border:3px solid var(--bd-hi);border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:900}
+.chk.on .bx{background:var(--ok);border-color:var(--ok);color:#fff}
+.chk svg{width:52px;height:52px;flex:none;color:var(--mut)}
+.inp{min-height:56px;font:inherit;font-size:22px;padding:0 12px;border:2px solid var(--bd-hi);border-radius:4px;background:var(--panel);color:var(--tx);width:200px;font-variant-numeric:tabular-nums}
+.grp{display:flex;flex-direction:column;gap:10px;padding-bottom:12px;border-bottom:1px solid var(--bd)}
+.grp:last-child{border-bottom:none}
+.grp .gh{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:800}
+.grp .gh .when{font-size:14px;font-weight:400;color:var(--mut);padding:2px 10px;border:1px solid var(--bd-hi);border-radius:999px}
+.grp .gr{display:flex;align-items:center;gap:12px;font-size:18px;min-height:56px}
+.grp .gr > span:first-child{width:190px;flex:none;color:var(--mut)}
+.grp .mseg{margin:0;min-width:260px}
+.stepper{display:flex;align-items:center;gap:8px}
+.stepper .b{width:56px;padding:0}
+.stepper b{width:90px;text-align:center;font-size:22px;font-variant-numeric:tabular-nums}
+
+/* S-00 接続確認: 機器のつながりの図 */
+.content.g-conn{display:grid;gap:14px;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:minmax(0,1fr)}
+.g-conn .diag{position:relative;border:1px solid var(--bd);border-radius:8px;background:var(--inset);display:flex;flex-direction:column;min-height:0;padding:10px}
+.g-conn .diag svg{flex:1;min-height:0;width:100%}
+.g-conn .fix{min-height:56px;display:flex;align-items:center;gap:10px;font-size:19px;padding:0 6px}
+.g-conn .side2{display:flex;flex-direction:column;gap:14px;min-height:0}
+.g-conn .ac{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.g-conn .ac div{display:flex;align-items:center;gap:10px;font-size:18px;min-height:48px}
+.g-conn h3{font-size:15px;color:var(--mut);font-weight:700}
+.portrait .content.g-conn{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}
+
+/* 手動の窓（W-6）: 上＝自動ブレーキ、下＝手動の一式の縦並び（A-18: スティックが窓の外へはみ出さない）。
+   右列（停止│走行・中断）を覆わないよう、主表示の右下に浮かせる（縦長は主表示の上） */
+.w6{position:absolute;z-index:5;right:440px;bottom:26px;width:420px;height:470px;display:flex;flex-direction:column;gap:10px;padding:12px 14px;background:var(--panel);border:2px solid var(--bd-hi);border-radius:8px;box-shadow:0 6px 20px #0004}
+.w6 .w6h{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:800}
+.w6 .w6h b{flex:1}
+.w6 .w6b{display:flex;align-items:center;gap:10px}
+.w6 .w6b .cap{font-size:16px;color:var(--mut);font-weight:700}
+.w6 .jogc{flex:1;min-height:0}
+.portrait .w6{left:26px;right:26px;top:94px;bottom:auto;width:auto;height:430px}
+.tg.sm.brk{width:200px}
+
+/* 入口のカード（P7）の一覧 */
+.center .card.wide{min-width:560px;max-width:92%}
+.rtl{display:flex;flex-direction:column;gap:8px;text-align:left}
+.rtl .rt{display:flex;align-items:center;gap:12px;min-height:60px;padding:0 14px;border:1px solid var(--bd-hi);border-radius:4px;cursor:pointer;font-size:19px;font-weight:700;background:var(--panel)}
+.rtl .rt span{flex:1}
+.rtl .rt small{font-size:15px;color:var(--mut);font-weight:400}
+.rtl .rt.on{background:var(--sel-bg);color:var(--sel-tx)}
+.rtl .rt.on small{color:inherit}
+.tagx{font-size:14px;padding:2px 8px;border:1px solid var(--warn);color:var(--warn-tx);border-radius:999px;font-weight:700}
+.maplab{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);font-size:24px;font-weight:800;padding:14px 22px;background:var(--panel);border:1px solid var(--bd-hi);border-radius:8px;z-index:2}
+.nearlab{position:absolute;left:50%;top:14px;transform:translateX(-50%);font-size:22px;font-weight:800;padding:8px 16px;border:3px solid var(--warn);color:var(--warn-tx);background:var(--panel);border-radius:8px;z-index:2;white-space:nowrap}
+.minimap{position:absolute;left:12px;bottom:12px;width:300px;height:200px;border:1px solid var(--bd-hi);border-radius:8px;background:var(--panel);overflow:hidden;z-index:2;cursor:pointer}
+.minimap svg.map{position:absolute;inset:0;width:100% !important;height:100% !important}
+.minimap .cap{position:absolute;left:8px;top:6px;font-size:14px;color:var(--mut);z-index:1}
+.radar.full{position:absolute !important;inset:12px !important;width:auto !important;height:auto !important}
+/* 「記録中」の札の色（未決。A-20 ① と D37） */
+.hdr .mst.rec-red{background:#b3261e !important;color:#fff !important}
+.hdr .mst.rec-neutral{background:#fff;color:var(--tx)}
+.hdr .mst.rec-neutral::before{content:'';display:inline-block;width:12px;height:12px;border-radius:50%;background:currentColor;margin-right:8px;vertical-align:1px}
+/* 開発モード: ヘッダの色を変える（D44） */
+.devmode .hdr .r1,.theme-light.devmode .hdr .r1{background:#7a5312}
+.shape-role .g-list .lrow,.shape-role .g-list .pane,.shape-role .w6,.shape-role .chk,.shape-role .g-conn .diag{border-radius:8px}
+.theme-light .g-list .lrow:not(.on):not(.dis),.theme-light .chk,.theme-light .rtl .rt:not(.on){box-shadow:0 1px 3px #0000001f}
 </style>
 </head>
 <body>
@@ -552,8 +694,9 @@ const SUBS = {
   prep:[['entry','入口'],['mapping','地図作成中'],['reg','人の位置で登録'],['return','待機場所へ戻る途中']],
 }
 const SCRS = [['menu','メインメニュー（M2）'],['day','試験（当日）F2'],['prep','試験準備']]
-const subOf = () => S.scr==='menu' ? S.menu.lvl : S[S.scr].sub
+const subOf = () => S.scr==='menu' ? (S.menu.win||S.menu.lvl) : S[S.scr].sub
 function setSub(v){
+  if (extSetSub(v)) return
   if (S.scr==='menu') S.menu.lvl=v
   else if (S.scr==='day'){ const d=S.day; d.sub=v; d.sel=null; d.flowStep=0
     d.robot = v==='panel' ? 'panel' : (v==='moving'||v==='paused'||v==='blocked') ? 'mid' : 'home'
@@ -613,8 +756,8 @@ function trackerBar(canStop=true){
 }
 // ヘッダ（2026-11-15 決定 D21〜D24）: ロゴ・プロジェクト名の真後ろに画面名称（位置をほぼ固定）。
 // 右端の札はモードではなく状態。ゾーンは場内のときだけ「速度制限」。
-function header(title, zone, state, alert){
-  const cls = /一時停止/.test(state) ? ' pause' : /移動中/.test(state) ? ' run' : ''
+function header(title, zone, state, alert, stCls){
+  const cls = stCls ?? (/一時停止/.test(state) ? ' pause' : /移動中/.test(state) ? ' run' : '')
   return `<div class="hdr"><div class="r1"><div class="logo">TH</div><div class="brand"><small>MIRS2602-</small>高見舎プロジェクト</div><div class="title">${title}</div>
   <div class="gap"></div>${zone?'<span class="zone">速度制限</span>':''}${state?`<span class="mst${cls}">${state}</span>`:''}</div>
   <div class="r2">${alert||''}</div></div>`   // 正常は出さない。異常のときだけここに出す（D45）   // 非常停止はここに描かない（render の estopHTML。D39）
@@ -784,8 +927,8 @@ const TOP_TILES = [
   {act:'go:field', icon:'field', name:'試験場', sub:true, g:'field', size:'l', L:'1/1/4/2', P:'1/1/2/3'},
   {act:'go:drive', icon:'drive', name:'走行', sub:true, g:'drive', size:'', L:'1/2/3/3', P:'2/1/3/2'},
   {act:'go:maint', icon:'maint', name:'点検と校正', sub:true, g:'maint', size:'', L:'1/3/3/4', P:'2/2/3/3'},
-  {act:'toast:自律測定: 「自律動作を許可しますか」の確認（W-4）が出る', icon:'measure', name:'自律測定', size:'s', L:'3/2/4/3', P:'3/1/4/2'},
-  {act:'toast:設定（S-50）へ', icon:'gear', name:'設定', size:'s', L:'3/3/4/4', P:'3/2/4/3'},
+  {act:'autoask', icon:'measure', name:'自律測定', size:'s', L:'3/2/4/3', P:'3/1/4/2'},
+  {act:'openx:settings', icon:'gear', name:'設定', size:'s', L:'3/3/4/4', P:'3/2/4/3'},
 ]
 // ライン誘導・電子リードは開発中止（2026-11-13 ユーザー）で削除。
 const GROUPS = {
@@ -822,7 +965,7 @@ function menuView(){
   } else {
     const g=GROUPS[lvl]
     tiles = g.items.map(it=>{ const w=why(it.k)
-      const act = it.k==='prep' ? 'open:prep' : it.k==='day' ? 'open:day' : `toast:${it.name}へ（「終了」でこの「${g.name}」の階層に戻る）`
+      const act = it.k==='prep' ? 'open:prep' : it.k==='day' ? 'open:day' : `openx:${it.k}`
       return tileHTML({act, icon:it.icon, name:it.name, color:g.color, size:it.size, area:it[o], why:w, dis:!!w}) }).join('')
     left = `<div class="banner" style="background:color-mix(in srgb, ${g.color} 16%, transparent);color:#fff"><span style="color:${g.color}">${ic(g.icon)}</span>${g.name}${S.wt.v==='new'?'':`<span style="color:var(--mut);font-size:16px;font-weight:400;margin-left:8px">メインメニュー ▸ ${g.name}</span>`}</div>
       <div class="tiles" style="grid-template-columns:${lay.cols};grid-template-rows:${lay.rows}">${tiles}</div>`
@@ -838,7 +981,7 @@ function menuView(){
       <div style="margin-top:10px">${btn('toast:接続確認の詳細（S-00 相当）','詳細',{cls:'exit'})}</div></div>`}
     <div class="sec"><h3>バッテリー</h3><div style="font-size:22px;font-weight:800">82 %</div></div>
     <div class="sec full"><h3>運用の終了</h3><div class="kv">未保存のデータ<span class="cnt">4 件</span></div>
-      <button class="b halt" data-btn data-act="toast:未保存の一覧（W-4）が開く">制御系を停止する</button></div></div>`
+      <button class="b halt" data-btn data-act="shutdown">制御系を停止する</button></div></div>`
   return header('メインメニュー', false, '') + `<div class="body">${opbar}<div class="content"><div class="mcol">${left}</div>${side}</div></div>`
 }
 
@@ -968,6 +1111,7 @@ function setAb(k){
   else if (k==='resolved' && !a.cause) a.cause='fault'
   a.k=k; if (k!=='none' && k!=='resolved') a.recent=null
   if (k!=='none' && S.scr==='day' && S.day.sub==='moving') S.day.sub='paused'
+  if (k!=='none' && k!=='resolved') pauseOnAb()
 }
 function applyAb(dev){
   const a=S.ab, r2=dev.querySelector('.hdr .r2'), mst=dev.querySelector('.hdr .mst')
@@ -1122,6 +1266,7 @@ function act(a, id){
   if (a.startsWith('open:')){ S.scr=a.slice(5); if (S.scr==='prep') setSub('entry'); else setSub('unloaded'); return render() }
   if (a==='trkOn'){ S.tracker=true; return render() }
   if (a==='trkOff'){ S.tracker=false; return render() }
+  if (extAct(a, id)) return render()   // 2026-11-23 全画面への展開
   const d=S.day, p=S.prep
   if (S.scr==='day'){
     const depart = dest => { d.dest=dest; d.sel=null; d.sub='moving'; d.robot='mid' }
@@ -1333,11 +1478,12 @@ const REV_OPTS = [
   {q:'§6.2 大きさの基準（決定 D36）', k:['sz','v'], v:[['new','タブレット実寸で決める（決定）'],['old','11-16 の版']], why:'縦長はタブレット（D38）で、論理キャンバスが 0.8 倍に縮む。縮んでも押す的 44 px・文字 12 px を割らないよう、論理 px で押す的 56 以上・小さい文字 15 以上にした。非常停止は高さ 76 で画面でいちばん高いボタン（Spec-webui.md §1.2）。停止│走行は 68 に下げた。「行き先にする」は高さ 60'},
   {q:'§6.3 配色（決定 D37）', k:['pal','v'], v:[['new','1 色 1 意味（決定）'],['old','11-16 の版']], why:'青＝機体が進むこと（出発・再開・機体・経路・行き先）／赤＝止める操作だけ／橙＝人が見るべき注意だけ／緑＝正常だけ／選んでいるもの＝明るい反転。配電盤のピンは中立の明るい灰、「走行」の区画は黄土（D42）、「速度制限」「保存」「制御系を停止する」は中立'},
 ]
-const optsOf = () => [...NOTES[S.scr].opts, ...REV_OPTS.filter(o=>S.scr!=='menu'||o.menu!==false), ...(S.scr==='menu'?[]:[AUTO_OPT]), ...(S.scr==='menu'?[]:MAP_OPTS), ...COMMON_OPTS]
+const optsOf = () => { const x=EXT_SCR.includes(S.scr), mapScr=['day','prep','replay','auto'].includes(S.scr), autoScr=['day','prep','follow','replay','auto'].includes(S.scr)
+  return [...NOTES[S.scr].opts, ...(x?[]:REV_OPTS.filter(o=>S.scr!=='menu'||o.menu!==false)), ...(autoScr?[AUTO_OPT,AUTO_SCOPE]:[]), ...(mapScr?MAP_OPTS:[]), ...COMMON_OPTS] }
 function segHTML(items, cur, attr){ return items.map(([v,l])=>`<button class="${cur===v?'on':''}" ${attr}="${v}">${l}</button>`).join('') }
 function render(){
   document.getElementById('scrSeg').innerHTML = segHTML(SCRS, S.scr, 'data-scr')
-  document.getElementById('subSeg').innerHTML = segHTML(SUBS[S.scr], subOf(), 'data-sub')
+  document.getElementById('subSeg').innerHTML = segHTML(subsOf(S.scr), subOf(), 'data-sub')
   // 横長は PC の 16:9、縦長はタブレットとみなす（D38。2026-11-17）
   document.getElementById('abSeg').innerHTML = segHTML(AB_KINDS, S.ab.k, 'data-ab')
   document.getElementById('oriSeg').innerHTML = segHTML([['L','横長 1280×720（PC）'],['P','縦長 960×1280（タブレット）']], S.ori, 'data-ori')
@@ -1345,18 +1491,22 @@ function render(){
   const [W,H] = {L:[1280,720], P:[960,1280]}[S.ori]
   dev.style.width=W+'px'; dev.style.height=H+'px'
   dev.className = (S.ori==='P' ? 'portrait' : '') + ' shape-' + S.shape.v + ' sz-' + S.sz.v + ' pal-' + S.pal.v
-    + ' wt-' + S.wt.v + (S.pal.pause==='neutral' ? ' pause-neutral' : '') + ' theme-' + S.theme.v + ' col-' + S.col.v + (S.scr==='prep' && S.prep.lay!=='cur' ? ' lay lay-'+S.prep.lay : '')
+    + ' wt-' + S.wt.v + (S.pal.pause==='neutral' ? ' pause-neutral' : '') + ' theme-' + S.theme.v + ' col-' + S.col.v + (S.scr==='prep' && S.prep.lay!=='cur' ? ' lay lay-'+S.prep.lay : '') + (S.settings.dev ? ' devmode' : '')
   applyFont(dev)
   // D39: 非常停止を最初に描く。画面の中身はその後で、描けなくても非常停止は残る
   dev.innerHTML = '<div class="estop-plate"></div><div class="estop-top" data-estop data-act="estopPress">非常停止</div><div class="toast"></div>'
   let view
   try { if (S.dbg.v==='broken' && S.scr!=='menu') throw new Error('（試し）画面の中身を描けなかった')
-        view = S.scr==='menu'?menuView():S.scr==='day'?dayView():prepView() }
+        view = S.scr==='menu'?menuView():S.scr==='day'?dayView():S.scr==='prep'?prepView()
+          :{connect:connectView, follow:followView, manual:manualView, replay:replayView, check:checkView, calib:calibView, settings:settingsView, auto:autoView}[S.scr]() }
   catch(err){ view = `<div class="broken">表示の不具合: ${err.message}</div>` }
   dev.insertAdjacentHTML('afterbegin', view)
+  if (S.scr==='menu') dev.querySelector('.body')?.insertAdjacentHTML('beforeend', menuWin())
+  if (S.scr==='day') dev.querySelector('.body')?.insertAdjacentHTML('beforeend', w6HTML()+modalHTML())
   applyAb(dev)
   // 自律走行中の枠（options §6.5・案）。機体が自分で走っている間だけ出す。手動・一時停止では出さない
-  const auto = (S.scr==='day' && S.day.sub==='moving') || (S.scr==='prep' && S.prep.sub==='return')
+  const autoOut = (S.scr==='follow' && S.follow.sub==='run') || (S.scr==='replay' && S.replay.sub==='run') || (S.scr==='auto' && S.auto.sub==='turn')
+  const auto = (S.scr==='day' && S.day.sub==='moving') || (S.scr==='prep' && S.prep.sub==='return') || (S.af.scope==='all' && autoOut)
   if (auto && S.af.v!=='none' && S.ab.k==='none') dev.insertAdjacentHTML('beforeend', `<div class="autoframe ${S.af.v}"></div>`)
   if (S.ori==='P' && S.sz.v==='old') dev.querySelectorAll('.content').forEach(c=>{ const mv=c.querySelector('.mainv'); if (mv) mv.style.minHeight='560px' })
   dev.querySelectorAll('.mainv').forEach(m=>{ m.classList.toggle('withradar', !!m.querySelector('.radar')); m.classList.toggle('withflow', !!m.querySelector('.flow')); m.classList.toggle('withstick', !!m.querySelector('.stick')) })
@@ -1395,6 +1545,559 @@ const HELP = {
   exit:['終了','試験を終えてメインメニューへ戻ります。'],
   tracker:['人検出','人の検出を動かす／止めるを切り替えます。呼び寄せに使います。'],
 }
+
+// ============================================================
+// 2026-11-23 全画面への展開（ui-redesign-screens.md）。どれも案（ユーザーの決定はまだ無い）
+// 画面の型: 走らせる（drvView）／手順を進める（listView）／見る・変える（listView・connView）
+// ============================================================
+Object.assign(S, {
+  connect:{sub:'lidar'},
+  follow:{sub:'pick', teach:false, conf:'a', saved:false},
+  manual:{sub:'idle', teach:false, blind:'fig', brake:false},
+  replay:{sub:'select', route:'C2', dir:'fwd', speed:'mid', devab:false},
+  check:{sub:'list', estopWin:'hide', sel:'motor', pushed:false, released:false, motorDone:{}, rep:{}},
+  calib:{sub:'list', quit:'やめる', quitAt:'foot', commit:false},
+  settings:{sub:'run', voice:true, spk:true, vol:60, ori:'auto', font:'normal', cost:true, dev:false, devItems:{link:true}},
+  auto:{sub:'wait', stop:false},
+  rec:{col:'red'},
+  w6:false, modal:null,
+})
+S.af.scope='field'
+S.menu.win=null
+SCRS.push(['connect','S-00 接続確認'],['follow','S-10／12 追従'],['manual','S-11／13 手動'],['replay','S-14 教示再生'],
+  ['check','S-30／31 始業点検'],['calib','S-40 校正'],['settings','S-50 設定'],['auto','S-60 自律測定'])
+SUBS.menu.push(['shutdown','運用の終了（窓）'],['autoask','自律測定の許可（窓）'])
+Object.assign(SUBS, {
+  connect:[['ok','そろった'],['lidar','LiDAR が来ない'],['camera','カメラだけ来ない'],['restart','再起動中']],
+  follow:()=>[...(S.follow.teach?[['entry','経路を選ぶ（入口）']]:[]),['pick','対象を選ぶ'],['ready','選んだ・止まっている'],['run',S.follow.teach?'記録中':'追従中'],['paused','一時停止']],
+  manual:()=>[...(S.manual.teach?[['entry','経路を選ぶ（入口）']]:[]),['idle','止まっている'],['drive','走らせている'],['near','障害物に近い'],['paused','一時停止'],...(S.manual.teach?[['saved','保存した']]:[])],
+  replay:[['select','経路を選ぶ'],['loading','地図の読み込み'],['search','位置を探している'],['notfound','見つからない'],['far','経路から離れている'],['ready','位置が決まった'],['run','再生中'],['paused','一時停止'],['end','終点']],
+  check:[['list','一覧'],['estop','非常停止ボタン'],['motor','モーター'],['imu','IMU（測っている）'],['lidarNg','LiDAR（だめ）'],['repair','S-31 故障診断']],
+  calib:[['list','一覧'],['s1','直進 案内'],['s2','直進 実行'],['s3','直進 確認'],['s4','直進 検証'],['imu1','IMU 案内'],['blind','LiDAR 死角'],['hist','履歴']],
+  settings:[['run','速さとブレーキ'],['loc','再生の位置合わせ'],['notify','知らせる'],['screen','画面'],['link','つなぎ先'],['log','異常の履歴'],['blind','LiDAR 死角'],['dev','開発モード']],
+  auto:[['wait','測定中'],['turn','測定機能の指示で旋回中'],['paused','一時停止']],
+})
+const EXT_SCR = ['connect','follow','manual','replay','check','calib','settings','auto']
+const subsOf = scr => typeof SUBS[scr]==='function' ? SUBS[scr]() : SUBS[scr]
+function extSetSub(v){
+  S.w6=false; S.modal=null
+  if (S.scr==='menu'){ if (v==='shutdown'||v==='autoask'){ S.menu.lvl='top'; S.menu.win=v; S.menu.sd={map:'pending',route:'pending',arm:null,phase:'list'} } else { S.menu.win=null; S.menu.lvl=v } return true }
+  if (!EXT_SCR.includes(S.scr)) return false
+  const o=S[S.scr]; o.sub=v
+  if (S.scr==='check'){ const c=o; c.pushed=false; c.released=false
+    c.sel = {list:'motor', estop:'estop', motor:'motor', imu:'imu', lidarNg:'lidar', repair:'motor'}[v] }
+  if (S.scr==='follow' && (v==='pick')) S.target=null
+  if (S.scr==='follow' && v!=='pick' && S.target==null) S.target=0
+  return true
+}
+// 異常になったら必ず一時停止（D47）を、走らせる型の画面にも当てはめる
+function pauseOnAb(){
+  if (S.scr==='follow' && S.follow.sub==='run') S.follow.sub='paused'
+  if (S.scr==='replay' && S.replay.sub==='run') S.replay.sub='paused'
+  if (S.scr==='manual' && (S.manual.sub==='drive'||S.manual.sub==='near')) S.manual.sub='paused'
+  if (S.scr==='auto' && S.auto.sub==='turn') S.auto.sub='paused'
+}
+
+/* ---------- 共通の部品 ---------- */
+const mk = (k, sm=false) => `<span class="mk ${k}${sm?' sm':''}">${{ok:'✓',warn:'!',ng:'×',none:'—'}[k]}</span>`
+// ON／OFF の切り替え（ON のときだけ明るく点ける。D35 と同じ）。自動ブレーキ
+function brakeTog(on, where){
+  return `<div class="tg sm brk" data-btn data-help="brake">
+    ${on?`<div class="press" data-act="brakeOff" data-id="${where}">切</div>`:`<div class="curoff">切</div>`}<span class="sep"></span>
+    ${on?`<div class="cur">入</div>`:`<div class="press" data-act="brakeOn" data-id="${where}">入</div>`}</div>`
+}
+function jogKit(high){
+  const ch=(a)=>`<path d="M100 22l9 10h-18z" fill="var(--mut)" transform="rotate(${a} 100 100)"/>`
+  return `<div class="jogc"><div class="sl"><i></i></div>
+    <div class="stk" data-act="stick" data-help="stick"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="92" fill="none" stroke="var(--bd-hi)" stroke-width="2"/>
+      ${[0,45,90,135,180,225,270,315].map(ch).join('')}<circle class="knob" cx="100" cy="100" r="34" fill="var(--ctrl-hi)" stroke="var(--mut)" stroke-width="2"/></svg></div>
+    <div class="spp">${high?btn('toast:高速（場外の上限）','高速'):''}${btn('toast:中速','中速',{cls:'on'})}${btn('toast:低速','低速')}</div></div>`
+}
+function w6HTML(){
+  if (!S.w6) return ''
+  const inField = S.scr==='day'||S.scr==='prep'||S.scr==='auto'
+  return `<div class="w6"><div class="w6h"><b>手動</b>${btn('w6close','閉じる')}</div>
+    <div class="w6b"><span class="cap">自動ブレーキ</span>${brakeTog(S.w6brake!==false,'w6')}</div>${jogKit(!inField)}</div>`
+}
+function modalHTML(){
+  const m=S.modal; if (!m) return ''
+  return `<div class="scrim"></div><div class="win"><div class="wt">${m.t}</div>${m.l?`<div class="wl">${m.l}</div>`:''}${m.body||''}<div class="wb">${m.b}</div></div>`
+}
+// 走らせる型（§0）: 主表示＋右列（① どこへ・あとどれだけ ② 停止│走行 ③ その画面の操作 ④ 手動）
+function drvView({title, zone=false, state='', stCls, opbar, main, where='', toggle, ops='', jog}){
+  return header(title, zone, state, '', stCls) + `<div class="body"><div class="opbar">${opbar}</div>
+    <div class="content g-drv"><div class="mainv">${main}</div>
+      <div class="rcol"><div class="rops"><div class="where" data-pos="where">${where||'<span>&nbsp;</span>'}</div><div data-pos="toggle">${toggle}</div><div class="rrow" data-pos="ops">${ops}</div></div>
+      <div class="rjog" data-pos="jog">${jog}</div></div></div>${w6HTML()}${modalHTML()}</div>`
+}
+// 手順を進める型・見る型（§0）: 左＝一覧、右＝中身、下端＝ 左 やめる ｜ 右 進む／保存
+function listView({title, state='', opbar, lhd='', rows, cls='', phd='', body, foot}){
+  return header(title, false, state) + `<div class="body"><div class="opbar">${opbar}</div>
+    <div class="content g-list"><div class="lst ${cls}">${lhd?`<div class="lhd">${lhd}</div>`:''}${rows}</div>
+      <div class="pane">${phd?`<div class="phd">${phd}</div>`:''}<div class="pbody">${body}</div><div class="pfoot" data-pos="foot">${foot}</div></div></div>${modalHTML()}</div>`
+}
+const exitBtn = (act='exit', label='終了') => btn(act, label, {icon:'close', cls:'exit', help:'exit'})
+// 機体のまわりの図（S-11 手動）: 機体を中心に LiDAR の点・機体の外形・減速が始まる距離の輪。近い点は橙
+function surroundSVG({near=false, blind='fig', moving=false}={}){
+  const M=120, cx=300, cy=320, r=rand(7)
+  let pts=''
+  const dot=(x,y,c)=>{ pts+=`<circle cx="${(cx+x*M).toFixed(1)}" cy="${(cy-y*M).toFixed(1)}" r="3.2" fill="${c}"/>` }
+  for (let y=-2.4;y<=2.3;y+=0.07){ dot(-2.2+r()*0.03, y, 'var(--mut)'); if (y<1.6||y>2.0) dot(2.1+r()*0.03, y, 'var(--mut)') }
+  for (let x=-2.2;x<=2.1;x+=0.07){ dot(x, 2.3+r()*0.03, 'var(--mut)'); if (x<-0.6||x>0.4) dot(x, -2.4+r()*0.03, 'var(--mut)') }
+  const ox=near?-0.15:-1.0, oy=near?0.40:1.30
+  for (let i=0;i<14;i++) dot(ox+(i%7)*0.05, oy+Math.floor(i/7)*0.05, near?'var(--warn)':'var(--mut)')
+  const ring = `<circle cx="${cx}" cy="${cy}" r="${0.62*M}" fill="none" stroke="var(--bd-hi)" stroke-width="2" stroke-dasharray="8 8"/>`
+  const fp = 0.55*M
+  const wedge = blind==='fig' ? `<path d="M${cx} ${cy} L${cx-2.6*M*Math.sin(.42)} ${cy+2.6*M*Math.cos(.42)} A${2.6*M} ${2.6*M} 0 0 0 ${cx+2.6*M*Math.sin(.42)} ${cy+2.6*M*Math.cos(.42)} Z" fill="var(--dim)" opacity=".22"/>` : ''
+  const lab = near ? `<text x="${cx+ox*M+20}" y="${cy-oy*M-22}" font-size="26" font-weight="800" style="fill:var(--warn-tx)">前方 12 cm</text>` : ''
+  return `<svg class="map" viewBox="0 0 600 620" preserveAspectRatio="xMidYMid meet">${wedge}${ring}${pts}
+    <rect x="${cx-fp/2}" y="${cy-fp/2}" width="${fp}" height="${fp}" rx="4" style="fill:var(--robot-fp,rgba(63,138,224,.25));stroke:var(--robot,#7fb4ee)" stroke-width="2"/>
+    <path d="M${cx-14} ${cy+12}L${cx} ${cy-22}L${cx+14} ${cy+12}Z" style="fill:var(--robot,#7fb4ee)" stroke="#fff" stroke-width="2"/>${lab}</svg>`
+}
+
+/* ---------- S-00 接続確認（型: 見る・変える） ---------- */
+function connectView(){
+  const s=S.connect.sub
+  const N = {pc:[140,250,'PC',1], ap:[450,250,'Wi-Fi AP（ラズパイ）',1], tab:[450,70,'タブレット',1], lidar:[760,110,'LiDAR',1], esp:[760,250,'ESP32',1], cam:[760,400,'カメラ',0]}
+  const st = k => s==='restart' ? 'none' : (s==='lidar'&&k==='lidar') || (s==='camera'&&k==='cam') ? 'ng' : 'ok'
+  const edge=(a,b)=>{ const [x1,y1]=N[a], [x2,y2]=N[b], dead = st(b)!=='ok'
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${dead?'var(--bd-hi)':'var(--ok)'}" stroke-width="${dead?3:5}" ${dead?'stroke-dasharray="10 10"':''}/>` }
+  const node=k=>{ const [x,y,nm,req]=N[k], m=st(k), w=k==='ap'?270:req?200:170, h=req?76:62
+    const sym = {ok:'✓',ng:'×',none:'—'}[m], fill={ok:'var(--ok)',ng:'var(--jis-y,#ffd100)',none:'var(--ctrl-hi)'}[m]
+    return `<g><rect x="${x-w/2}" y="${y-h/2}" width="${w}" height="${h}" rx="8" style="fill:var(--panel);stroke:${m==='ng'?'var(--warn)':'var(--bd-hi)'}" stroke-width="${m==='ng'?4:2}"/>
+      <${m==='ng'?'rect':'circle'} ${m==='ng'?`x="${x-w/2+10}" y="${y-15}" width="30" height="30" rx="5"`:`cx="${x-w/2+26}" cy="${y}" r="${req?16:12}"`} style="fill:${fill}"/>
+      <text x="${x-w/2+26-(m==='ng'?1:0)}" y="${y+7}" text-anchor="middle" font-size="${req?20:16}" font-weight="900" style="fill:${m==='ok'?'#fff':'#161b22'}">${sym}</text>
+      <text x="${x-w/2+50}" y="${y+7}" font-size="${req?20:17}" font-weight="${req?800:600}" style="fill:var(--tx)">${nm}</text></g>` }
+  const svg = `<svg viewBox="0 0 920 470" preserveAspectRatio="xMidYMid meet">${edge('pc','ap')}${edge('ap','tab')}${edge('ap','lidar')}${edge('ap','esp')}${edge('ap','cam')}
+    ${Object.keys(N).map(node).join('')}</svg>`
+  const fix = s==='lidar' ? `${mk('ng')}LiDAR の電源とケーブルを確かめる` : s==='camera' ? `${mk('ng',true)}カメラの電源を確かめる（なくても運用に入れます）` : ''
+  const ready = s==='ok'||s==='camera'
+  const auto = [['非常停止ボタン','ok'],['モーター','ok'],['IMU','ok'],['LiDAR', s==='lidar'?'none':'ok']]
+  const state = s==='restart' ? '再起動中　2 回目' : ready ? '' : '確認中'
+  return header('接続確認', false, state) + `<div class="body"><div class="opbar"></div>
+    <div class="content g-conn"><div class="diag">${svg}<div class="fix">${fix}</div></div>
+    <div class="side2">${btn('toMenu','メインメニューへ',{cls:'big',dis:!ready,why:s==='restart'?'制御系を立ち上げ直しています':'LiDAR がつながるまで進めません'})}
+      <div><h3>始業点検の自動判定</h3><div class="ac">${auto.map(([n,m])=>`<div>${mk(m,true)}${n}</div>`).join('')}</div></div>
+      <div style="margin-top:auto">${btn('toast:開発モードの設定（S-50 の開発モード）','開発モードの設定',{cls:'exit'})}</div></div></div>${modalHTML()}</div>`
+}
+
+/* ---------- S-10／S-12 追従系（型: 走らせる） ---------- */
+// 「確認」（向くだけで動かない）の置き方は未決（screens §1.2 の a〜c）
+function tog3(stop, look, run, runLabel){
+  const side=(k,st,lab)=> st==='en'
+    ? (k==='stop' ? `<div class="go-stop" data-act="stop"><span>${lab}</span></div>` : `<div class="${k==='run'?'go-run blink':'press'}" data-act="${k}"><span>${lab}</span></div>`)
+    : `<div class="idle off" data-act="" data-why="${st==='cur'?(k==='stop'?'止まっています':k==='look'?'向いています':'走っています'):'対象を選んでから'}"><span>${lab}</span></div>`
+  const pressable=[stop,look,run].includes('en')
+  return `<div class="tg tg2 big" data-btn ${pressable?'':'data-dis'} data-help="toggle" data-nolong>${side('stop',stop,'停止する')}<span class="sep"></span>${side('look',look,'向く')}<span class="sep"></span>${side('run',run,runLabel+'する')}</div>`
+}
+function followView(){
+  const f=S.follow, T=f.teach
+  if (f.sub==='entry' && !T) f.sub='pick'
+  if (f.sub==='pick' && S.target!=null) f.sub='ready'
+  if (f.sub==='ready' && S.target==null) f.sub='pick'
+  const s=f.sub
+  const E = {stop:'cur', look:'dis', run:'dis'}
+  if (s==='ready'){ E.look='en'; E.run='en' } else if (s==='run'){ E.stop='en'; E.run='cur'; E.look='dis' } else if (s==='paused'){ E.look='en'; E.run='en' }
+  const runLabel = s==='paused' ? '再開' : '走行'
+  const toggle = f.conf==='a' ? tog3(E.stop, E.look, E.run, runLabel) : tog(E.stop, E.run, {runLabel, note:'対象を選んでから', big:true, help:'toggle'})
+  const lookBtn = f.conf==='b' ? btn('look','向く',{dis:E.look!=='en',why:s==='run'?'走っています':'対象を選んでから',help:'look'}) : ''
+  const saveBtn = T ? btn('save','保存',{dis:!(s==='paused'),why:s==='run'?'止めてから保存します':'記録がまだありません',help:'save'}) : ''
+  const ops = (lookBtn||saveBtn) ? `<div class="row">${lookBtn}${saveBtn}</div>` : ''
+  const where = s==='entry' ? '' : T ? `<span>記録</span><b>${s==='pick'||s==='ready'?'0.0 m　0:00':'12.4 m　1:32'}</b>` : (S.target==null ? `<span style="color:var(--warn-tx)">対象を選んでいません</span>` : `<span>対象まで</span><b>1.8 m</b>`)
+  let main = radarSVG(true).replace('class="radar big"','class="radar big full"')
+  if (T && s!=='entry') main += `<div class="minimap" data-act="toast:押すと地図とレーダーの大きさを入れ替える（案）"><span class="cap">地図と経路</span>${mapSVG({robot:C(150,90,-90), path:[C(175,176),C(172,120),C(150,90)], pins:[], scan:false})}</div>`
+  if (s==='entry') main += `<div class="center"><div class="card wide"><div class="rtl">
+      <div class="rt" data-act="startRec"><span>新しい経路</span><small>名前　経路 4</small></div>
+      <div class="rt" data-act="startRec"><span>録り直す　廊下の往復</span><small>12.3 m</small></div>
+      <div class="rt" data-act="startRec"><span>録り直す　試験ブロックC2</span><small>5.1 m</small></div></div></div></div>`
+  const st = {entry:'', pick:'対象選択中', ready:'', run:T?'記録中':'追従中', paused:'一時停止中'}[s]
+  const stCls = T && s==='run' ? ' rec-'+S.rec.col : s==='run' ? ' run' : undefined
+  return drvView({title: T?'教示（追従）':'追従走行', state:st, stCls, opbar:exitBtn(), main, where, toggle, ops,
+    jog:`<h3>手動</h3>${jogKit(true)}`})
+}
+
+/* ---------- S-11／S-13 手動系（型: 走らせる） ---------- */
+function manualView(){
+  const m=S.manual, T=m.teach
+  if ((m.sub==='entry'||m.sub==='saved') && !T) m.sub='idle'
+  const s=m.sub
+  const moving = s==='drive'||s==='near'
+  const stop = btn('stop','停止する',{cls:'stopone',dis:!moving,why:'止まっています',help:'toggle'})
+  const ops = T ? `<div class="row">${btn('save','保存',{dis:moving||s==='saved'||s==='entry',why:moving?'スティックを離してから保存します':s==='saved'?'保存しました':'記録がまだありません',help:'save'})}</div>` : ''
+  const where = T && s!=='entry' ? `<span>記録</span><b>${s==='idle'?'3.2 m　0:41':'8.6 m　1:55'}</b>` : ''
+  let main
+  if (T && s!=='entry') main = mapSVG({robot:C(160,110,-60), path:[C(175,176),C(172,140),C(160,110)], partial:true, pins:[], scan:true}) + (s==='near'?`<div class="nearlab">前方 12 cm</div>`:'')
+  else main = surroundSVG({near:s==='near', blind:m.blind, moving})
+  if (s==='entry') main += `<div class="center"><div class="card wide"><div class="rtl">
+      <div class="rt" data-act="startRec"><span>新しい経路</span><small>名前　経路 4</small></div>
+      <div class="rt" data-act="startRec"><span>録り直す　廊下の往復</span><small>12.3 m</small></div></div></div></div>`
+  const st = {entry:'', idle:T?'記録中':'', drive:T?'記録中':'走行中', near:T?'記録中':'走行中', paused:'一時停止中', saved:'保存済み'}[s]
+  const stCls = T && (s==='idle'||moving) ? ' rec-'+S.rec.col : moving ? ' run' : undefined
+  return drvView({title: T?'教示（手動）':'手動走行', state:st, stCls,
+    opbar: exitBtn() + `<span class="cap">自動ブレーキ</span>${brakeTog(m.brake,'manual')}`,
+    main, where, toggle:stop, ops, jog:`<h3>手動</h3>${jogKit(true)}`})
+}
+
+/* ---------- S-14 教示再生（型: 走らせる） ---------- */
+const ROUTES = [{id:'C2', name:'試験ブロックC2', len:'5.1 m'}, {id:'R', name:'廊下の往復', len:'12.3 m'}, {id:'C', name:'試験ブロックC', len:'4.8 m', noimg:true}]
+function replayView(){
+  const r=S.replay, s=r.sub
+  const route = ROUTES.find(q=>q.id===r.route)
+  const path = [C(175,176),C(172,120),C(172,76),C(130,70),C(102,58)]
+  const robot = {select:null, loading:null, search:C(174,170,-90), notfound:C(174,170,-90), far:C(230,150,0), ready:C(175,176,-90), run:C(172,110,-90), paused:C(172,110,-90), end:C(102,58,-150)}[s]
+  const ends = [{id:'S',name:'始点',kind:'home',c:[175,176],yaw:-90},{id:'E',name:'終点',kind:'panel',c:[102,58],yaw:-150}].map(p=>({...p, x:C(...p.c)[0], y:C(...p.c)[1]}))
+  let main = mapSVG({robot, path: s==='select'?null:path, pins: s==='select'?[]:ends, scan: !!robot})
+  if (s==='select') main += `<div class="center"><div class="card wide"><div class="rtl">${ROUTES.map(q=>`<div class="rt ${q.id===r.route?'on':''}" data-act="route" data-id="${q.id}"><span>${q.name}</span>${q.noimg?'<span class="tagx">地図の画像なし</span>':''}<small>${q.len}</small></div>`).join('')}</div>
+      ${route.noimg?`<div class="oneline" style="text-align:left">始点の印に置いて再生する（途中からの再開はできない）</div>`:''}
+      <div class="mseg" style="margin:0">${[['fwd','順再生'],['rev','逆再生']].map(([k,n])=>`<div class="${r.dir===k?'on':''}" data-act="dir" data-id="${k}">${n}</div>`).join('')}</div>
+      ${btn('proceed','この経路で進む',{cls:'fwd'})}</div></div>`
+  if (s==='loading') main += `<div class="maplab">地図を読み込んでいます</div>`
+  const Q = {search:['warn','探しています'], notfound:['ng','見つかりません'], far:['ng','経路から離れています'], ready:['ok','位置が決まりました']}
+  const where = Q[s] ? `<span class="mkline">${mk(Q[s][0])}${Q[s][1]}</span>`
+    : (s==='run'||s==='paused') ? `<span>ずれ</span><b>いま 0.08 m　最大 0.21 m</b>`
+    : s==='end' ? `<span>${route.name}</span><b>終点</b>` : s==='loading' ? `<span>${route.name}</span>` : ''
+  const why = {select:'経路を選んでから', loading:'地図を読み込んでいます', search:'位置を探しています', notfound:'位置が見つかりません', far:'経路から離れています。経路の近く（2 m 以内）に置き直す', end:'終点です。「終了」で抜けます'}[s] || ''
+  let stop='cur', run='dis'
+  if (s==='ready'||s==='paused') run='en'; if (s==='run'){ stop='en'; run='cur' }
+  const toggle = tog(stop, run, {runLabel: s==='paused'?'再開':'再生', note:why, big:true, help:'toggle'})
+  const searching = s==='search'||s==='notfound'||s==='far'
+  const ops = `<div class="row">${btn('global','完全グローバルで探す',{dis:!searching,why:'位置を探している間に使えます',help:'global'})}</div>
+    <div class="mseg" style="margin:0" data-btn data-help="speed">${[['low','低速'],['mid','中速'],['high','高速']].map(([k,n])=>`<div class="${r.speed===k?'on':''}" data-act="speed" data-id="${k}">${n}</div>`).join('')}</div>
+    <div class="row">${btn('reselect','経路を選び直す',{dis:!(s==='paused'),why:'一時停止中に選び直せます',help:'reselect'})}</div>`
+  const st = {select:'', loading:'読み込み中', search:'位置合わせ中', notfound:'位置合わせ中', far:'位置合わせ中', ready:'', run:'再生中', paused:'一時停止中', end:'終点'}[s]
+  return drvView({title:'教示再生', state:st, stCls: s==='run'?' run':undefined,
+    opbar: exitBtn() + (r.devab ? `<span class="cap">自動ブレーキ</span>${brakeTog(S.replayBrake!==false,'replay')}` : ''),
+    main, where, toggle, ops, jog: btn('jog','手動',{help:'jog'})})
+}
+
+/* ---------- S-30 始業点検／S-31 故障診断（型: 手順を進める） ---------- */
+const CHECKS = [['estop','非常停止ボタン'],['motor','モーター'],['imu','IMU'],['lidar','LiDAR']]
+function checkView(){
+  const c=S.check, s=c.sub
+  const res = {estop:'ok', motor: s==='repair'?'ng':'none', imu: s==='imu'?'none':'ok', lidar: s==='lidarNg'?'ng':'none'}
+  if (s==='estop') res.estop = c.pushed&&c.released ? 'ok' : 'none'
+  const time = {estop:'08:41', motor:'', imu:'08:43', lidar: s==='lidarNg'?'08:47':''}
+  const cnt = k => Object.values(res).filter(v=>v===k).length
+  if (s==='repair'){
+    const items=[['電源','モーターの電源スイッチが入っている'],['配線','左モーターのコネクタが奥まで挿さっている'],['極性','赤と黒の線が入れ替わっていない']]
+    return listView({title:'故障診断', opbar:btn('quitRepair','戻る',{icon:'back',cls:'exit'}),
+      lhd:'だめだった点検', rows:`<div class="lrow on" data-btn><span class="nm">モーター<small>左の車輪が回らない　0 rpm</small></span>${mk('ng')}</div>`,
+      phd:`<span class="pt">確かめること</span>`,
+      body: items.map(([k,t],i)=>`<div class="chk ${c.rep[i]?'on':''}" data-act="repChk" data-id="${i}"><span class="bx">${c.rep[i]?'✓':''}</span>${t}</div>`).join(''),
+      foot:`${btn('quitRepair','やめる',{help:'quit'})}<span class="grow"></span>${btn('backCheck','始業点検へ戻る',{cls:'fwd'})}` })
+  }
+  const running = s==='estop'||s==='motor'||s==='imu'
+  const rows = CHECKS.map(([k,n])=>`<div class="lrow ${c.sel===k?'on':''}" data-btn data-act="chkSel" data-id="${k}"><span class="nm">${n}<small>${time[k]||'&nbsp;'}</small></span>${mk(res[k])}</div>`).join('')
+  let body=''
+  if (c.sel==='estop'){
+    const push = c.pushed ? 'ok':'none', rel = c.released ? 'ok':'none'
+    body = `<div class="fig"><div class="cell" data-act="estopPushChk" style="cursor:pointer">${estopPict(true)}<span class="cap">${mk(push,true)}押す</span></div>
+      <div class="cell" data-act="estopRelChk" style="cursor:pointer">${estopPict(false)}<span class="cap">${mk(rel,true)}戻す</span></div></div>`
+  } else if (c.sel==='motor'){
+    const a = (k,l)=>`<button class="b" data-btn data-act="motorHold" data-id="${k}" data-help="hold" data-nolong ${s==='motor'?'':'disabled'} style="${s==='motor'?'':'opacity:.4'}">${l}</button>`
+    body = `<div class="fig"><div class="arrows"><span></span>${a('f','前')}<span></span>${a('l','左')}<span style="display:flex;align-items:center;justify-content:center">${robotMini()}</span>${a('r','右')}<span></span>${a('b','後')}<span></span></div></div>`
+  } else if (c.sel==='imu'){
+    body = s==='imu' ? `<div class="fig" style="flex-direction:column;align-items:stretch;justify-content:center;padding:0 40px"><div class="prog"><i style="width:60%"></i></div></div>`
+      : `<div class="fig"><span class="mkline">${mk('ok')}08:43</span></div>`
+  } else if (c.sel==='lidar'){
+    body = s==='lidarNg' ? `<table class="tbl"><tr><th>測ったもの</th><th class="num">値</th><th>基準</th><th></th></tr>
+      <tr><td>無効帯</td><td class="num">7.5°</td><td>20° 未満</td><td>${mk('ok',true)}</td></tr>
+      <tr><td>周期</td><td class="num">0.1 秒</td><td>2 秒以内</td><td>${mk('ok',true)}</td></tr>
+      <tr class="out"><td>死角のずれ</td><td class="num">95.1°</td><td>5° 以内</td><td>${mk('ng',true)}</td></tr></table>
+      <div class="row" style="display:flex">${btn('toCalib','校正へ',{help:'tocalib'})}</div>`
+      : `<div class="fig">${surroundSVG({blind:'fig'}).replace('class="map"','')}</div>`
+  }
+  const quitLabel = 'やめる'
+  return listView({title:'始業点検', state: running?'確認中':'', opbar:btn('exitCheck','戻る',{icon:'back',cls:'exit',help:'back'}),
+    lhd:`${mk('ok',true)} ${cnt('ok')}　${mk('ng',true)} ${cnt('ng')}　${mk('none',true)} ${cnt('none')}`, rows,
+    phd:`<span class="pt">${CHECKS.find(q=>q[0]===c.sel)[1]}</span>`, body,
+    foot:`${btn('chkQuit',quitLabel,{dis:!running,why:'確かめている間だけ使えます',help:'quit'})}<span class="grow"></span>${btn('chkRun','確かめる',{cls:'fwd',dis:running,why:'確かめています',help:'advance'})}`})
+}
+function estopPict(pushed){
+  return `<svg viewBox="0 0 200 170"><rect x="30" y="${pushed?96:80}" width="140" height="${pushed?40:56}" rx="10" fill="#b71c1c"/><rect x="20" y="130" width="160" height="30" rx="6" fill="#ffd100" stroke="#161b22" stroke-width="2"/>
+    ${pushed?'<path d="M100 10v60M80 50l20 22 20-22" stroke="currentColor" stroke-width="8" fill="none" stroke-linecap="round"/>':'<path d="M60 40a45 45 0 0 1 80 0M140 40l4-22M140 40l-20-6" stroke="currentColor" stroke-width="8" fill="none" stroke-linecap="round"/>'}</svg>`
+}
+const robotMini = () => `<svg viewBox="0 0 60 60" width="60" height="60"><rect x="6" y="6" width="48" height="48" rx="4" style="fill:var(--robot-fp,rgba(63,138,224,.25));stroke:var(--robot,#7fb4ee)" stroke-width="2"/><path d="M20 40L30 16L40 40Z" style="fill:var(--robot,#7fb4ee)"/></svg>`
+
+/* ---------- S-40 校正（型: 手順を進める） ---------- */
+const CALIBS = [['straight','直進','11/10　誤差 0.4 %'],['rot','旋回','11/10　誤差 1.2°'],['imu','IMU','11/11'],['blind','LiDAR 死角','11/11']]
+function calibView(){
+  const k=S.calib, s=k.sub
+  const item = {list:'straight', s1:'straight', s2:'straight', s3:'straight', s4:'straight', imu1:'imu', blind:'blind', hist:'straight'}[s]
+  const step = {list:-1, s1:0, s2:1, s3:2, s4:3, imu1:0, blind:0, hist:-1}[s]
+  const running = step>=0
+  const SL = item==='imu' ? ['案内','測る','確定'] : item==='blind' ? ['選ぶ','確かめる','確定'] : ['案内','実行','確認','検証']
+  const steps = `<div class="steps">${SL.map((l,i)=>`<div class="st ${i<step?'done':i===step?'cur':''}">${l}</div>`).join('')}</div>`
+  const rows = CALIBS.map(([id,n,last])=>`<div class="lrow ${item===id?'on':''} ${running&&item!==id?'dis':''}" data-btn data-act="${running?'':'calSel'}" data-id="${id}" ${running&&item!==id?'data-why="校正の途中です"':''}><span class="nm">${n}<small>${last}</small></span></div>`).join('')
+  let body='', next='走らせる', nextDis=false, nextAct='calNext'
+  if (s==='hist'){
+    body = `<table class="tbl"><tr><th>日付</th><th class="num">補正値</th><th class="num">検証の誤差</th><th></th></tr>
+      <tr><td>11/10（いま）</td><td class="num">1.012</td><td class="num">0.4 %</td><td></td></tr>
+      <tr><td>11/03</td><td class="num">1.008</td><td class="num">0.9 %</td><td>${btn('rollback','この値に戻す',{cls:k.arm?'caution armed':''})}</td></tr>
+      <tr><td>10/27</td><td class="num">1.000</td><td class="num">2.1 %</td><td>${btn('rollback','この値に戻す')}</td></tr></table>`
+    next='閉じる'; nextAct='calHistClose'
+  } else if (item==='straight'){
+    body = {
+      '-1': `<div class="fig"><svg viewBox="0 0 520 200"><rect x="20" y="70" width="70" height="70" rx="4" style="fill:var(--robot-fp,rgba(63,138,224,.25));stroke:var(--robot,#7fb4ee)" stroke-width="3"/><path d="M40 120L80 105L40 90Z" style="fill:var(--robot,#7fb4ee)"/>
+        <path d="M100 105H470" stroke="currentColor" stroke-width="4" stroke-dasharray="14 10"/><path d="M470 80v50" stroke="currentColor" stroke-width="5"/><text x="285" y="70" text-anchor="middle" font-size="34" font-weight="800" fill="currentColor">1 m</text></svg></div>`,
+      '0': `<div class="fig"><svg viewBox="0 0 520 200"><rect x="20" y="70" width="70" height="70" rx="4" style="fill:var(--robot-fp,rgba(63,138,224,.25));stroke:var(--robot,#7fb4ee)" stroke-width="3"/><path d="M40 120L80 105L40 90Z" style="fill:var(--robot,#7fb4ee)"/>
+        <path d="M100 105H470" stroke="currentColor" stroke-width="4" stroke-dasharray="14 10"/><path d="M470 80v50" stroke="currentColor" stroke-width="5"/><text x="285" y="70" text-anchor="middle" font-size="34" font-weight="800" fill="currentColor">1 m</text></svg></div>
+        <div class="oneline">機体の前を 1.5 m 空け、床に始点の印を付ける</div>`,
+      '1': `<div class="fig" style="flex-direction:column;align-items:stretch;padding:0 40px"><div class="mkline" style="justify-content:center">0.62 m</div><div class="prog"><i style="width:62%"></i></div></div>`,
+      '2': `<div class="fig" style="flex-direction:column;gap:18px"><div style="display:flex;align-items:center;gap:14px;font-size:20px">巻尺で測った距離 <input class="inp" value="0.987" aria-label="実測"> m</div>
+        <table class="tbl" style="max-width:520px"><tr><th></th><th class="num">いま</th><th class="num">直したあと</th></tr><tr><td>車輪の半径の倍率</td><td class="num">1.012</td><td class="num">1.025</td></tr></table></div>`,
+      '3': `<div class="fig" style="flex-direction:column;gap:14px"><span class="mkline">${mk('ok')}検証の誤差 0.3 %</span>${btn('toast:始業点検（S-30）へ','始業点検へ')}</div>`,
+    }[String(step)]
+    next = ['走らせる','走らせる','確定する','完了'][Math.max(step,0)] ; if (step===-1) next='始める'
+    nextDis = step===1
+  } else if (item==='imu'){
+    const cube=(rx,ry)=>`<g transform="translate(${rx} ${ry})"><rect x="-26" y="-18" width="52" height="36" rx="4" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="-12" cy="-6" r="4" fill="currentColor"/></g>`
+    body = `<div class="fig"><svg viewBox="0 0 520 220">${cube(60,60)}<g transform="rotate(90 190 60)">${cube(190,60)}</g><g transform="rotate(180 320 60)">${cube(320,60)}</g><g transform="rotate(-90 450 60)">${cube(450,60)}</g>
+      <g transform="translate(125 160) skewX(-25)">${cube(0,0)}</g><g transform="translate(385 160) skewX(25)">${cube(0,0)}</g></svg></div>
+      <div class="oneline">IMU を機体から外し、6 つの向きで数秒ずつ止める</div>`
+    next='始める'
+  } else if (item==='blind'){
+    body = `<div class="fig">${surroundSVG({blind:'fig'}).replace('class="map"','data-help="drag" data-nolong')}</div>`
+    next='確定する'
+  }
+  const quitBtn = btn('calQuit', k.quit, {dis:!running, why:'校正の途中だけ使えます', help:'quit'})
+  const opbar = k.quitAt==='top' && running ? quitBtn : btn('exitCalib','戻る',{icon:'back',cls:'exit',help:'back'})
+  return listView({title:'校正', state: running?'校正中':'', opbar, lhd:'項目', rows,
+    phd: s==='hist' ? `<span class="pt">直進　履歴</span>` : `<span class="pt">${CALIBS.find(q=>q[0]===item)[1]}</span>${steps}${btn('calHist','履歴',{dis:running,why:'校正の途中は開けません'})}`,
+    body, foot:`${k.quitAt==='top' ? '' : quitBtn}<span class="grow"></span>${btn(nextAct,next,{cls: /走らせる/.test(next) ? 'adv' : 'fwd',dis:nextDis,why:'走っています',help:'advance'})}`})
+}
+
+/* ---------- S-50 設定（型: 見る・変える） ---------- */
+const SECS = [['run','速さとブレーキ'],['loc','再生の位置合わせ'],['notify','知らせる'],['screen','画面'],['link','つなぎ先'],['log','異常の履歴'],['blind','LiDAR 死角'],['dev','開発モード']]
+function settingsView(){
+  const g=S.settings, s=g.sub
+  const seg=(act,items,cur)=>`<div class="mseg" data-btn>${items.map(([k,n])=>`<div class="${cur===k?'on':''}" data-act="${act}" data-id="${k}">${n}</div>`).join('')}</div>`
+  const stp=(v)=>`<span class="stepper">${btn('toast:下げる','−')}<b>${v}</b>${btn('toast:上げる','＋')}</span>`
+  const row=(l,c)=>`<div class="gr"><span>${l}</span>${c}</div>`
+  // いつ効くか（P6）は区分ごとに 1 つ。効き方の違う設定を同じ区分に混ぜない（G3 の B5）
+  const when = {run:'次の起動から', loc:'次に地図を読み直したときから', notify:'すぐ', screen:'すぐ', link:'次の起動から', dev:'すぐ'}[s]
+  let body=''
+  if (s==='run') body = `<div class="grp">${row('低速',stp('30 %'))}${row('中速',stp('60 %'))}${row('高速',stp('100 %'))}${row('場外の自動ブレーキ',seg('toast',[['切','切'],['入','入']],'切'))}</div>`
+  if (s==='loc') body = `<div class="grp">${row('探す範囲',stp('5 m'))}${row('補正の間隔',stp('1.0 秒'))}${row('受け入れる確度',stp('0.70'))}</div>`
+  if (s==='notify') body = `<div class="grp">${row('タブレットの音',seg('voice',[['on','出す'],['off','出さない']],g.voice?'on':'off'))}${row('機体のスピーカー',seg('spk',[['on','鳴らす'],['off','鳴らさない']],g.spk?'on':'off'))}
+      ${row('音量',stp(g.vol+' %')+btn('toast:機体のスピーカーで試しに鳴らす','試しに鳴らす'))}</div>`
+  if (s==='screen') body = `<div class="grp">${row('縦横',seg('ori',[['auto','自動'],['p','縦'],['l','横']],g.ori))}${row('文字',seg('font2',[['normal','ふつう'],['large','大'],['xl','特大']],g.font))}
+      ${row('コストマップ',seg('cost',[['on','出す'],['off','出さない']],g.cost?'on':'off'))}${row('ヘルプ表示',seg('helpSet',[['on','出す'],['off','出さない']],S.help.on?'on':'off'))}</div>`
+  if (s==='link') body = `<div class="grp">${row('カメラの画面',`<input class="inp" style="width:380px" value="http://192.168.5.23/" aria-label="カメラのアドレス">`)}</div>`
+  if (s==='log') body = `<table class="tbl"><tr><th>時刻</th><th>異常</th><th class="num">続いた時間</th><th>その時</th><th>止まった</th></tr>
+    ${[['11/16 14:02','LiDAR 途絶','0.4 秒','試験　移動中','✓'],['11/16 13:40','ESP32 切断','続いている','手動走行','✓'],['11/16 11:12','非常停止（画面）','44 秒','試験準備',''],['11/13 19:52','ESP32 切断','20 秒','教示（手動）','✓'],['11/13 19:52','LiDAR 途絶','39 秒','教示（手動）','✓'],['11/12 10:05','人検出の途絶','3 秒','試験　呼び寄せ','']].map(r=>`<tr>${r.map((v,i)=>`<td class="${i===2?'num':''}">${v}</td>`).join('')}</tr>`).join('')}</table>`
+  if (s==='blind') body = `<div class="fig">${surroundSVG({blind:'fig'}).replace('class="map"','')}</div><div class="row" style="display:flex">${btn('toast:校正（S-40）の LiDAR 死角へ','校正で変える')}</div>`
+  if (s==='dev') body = `<div class="grp">${row('開発モード',seg('devOn',[['off','切'],['on','入']],g.dev?'on':'off'))}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${[['link','疎通確認'],['lidar_fault','LiDAR 途絶'],['scan_stop','/scan 途絶で止める'],['opcheck','起動時の自動点検'],['auto_brake','自律系の自動ブレーキ']].map(([k,n])=>`<div class="chk ${g.devItems[k]?'on':''}" data-btn data-act="devItem" data-id="${k}" style="min-height:56px"><span class="bx">${g.devItems[k]?'✓':''}</span>${n}</div>`).join('')}</div>`
+  const viewOnly = s==='log'||s==='blind'
+  return listView({title:'設定', opbar:btn('exitSettings','戻る',{icon:'back',cls:'exit',help:'back'}), cls:'sec7',
+    rows: SECS.map(([k,n])=>`<div class="lrow ${s===k?'on':''}" data-btn data-act="secSel" data-id="${k}"><span class="nm">${n}</span></div>`).join(''),
+    phd:`<span class="pt">${SECS.find(q=>q[0]===s)[1]}</span>`, body,
+    foot: viewOnly ? '' : `<span class="grow"></span><span class="when">${when}</span>${btn('setSave','保存',{help:'save'})}`})
+}
+
+/* ---------- S-60 自律測定（型: 走らせる。中身は最小） ---------- */
+function autoView(){
+  const a=S.auto, s=a.sub
+  const main = mapSVG({robot:C(102,58,-150), pins:PINS, scan:true, order:true})
+  const toggle = a.stop ? tog(s==='paused'?'cur':'en', 'dis', {runLabel:'走行', note:'測定機能の画面の「走行」で走ります', big:true, help:'toggle'}) : ''
+  return drvView({title:'自律測定', zone:true, state:{wait:'測定中', turn:'旋回中', paused:'一時停止中'}[s], stCls: s==='turn'?' run':undefined,
+    opbar: exitBtn('autoExit','終了'), main, where:`<span>盤 A-1 で測定</span>`, toggle,
+    ops: btn('toast:測定機能の画面を開く（モードは変わらない）','測定機能の画面へ',{cls:'big',help:'gomeasure'}),
+    jog: btn('jog','手動',{help:'jog'})})
+}
+
+/* ---------- メインメニューの窓（運用の終了・自律測定の許可） ---------- */
+function menuWin(){
+  const w=S.menu.win; if (!w) return ''
+  if (w==='autoask') return `<div class="scrim"></div><div class="win"><div class="wt">自律動作を許可しますか</div><div class="wb">${btn('autoNo','許可しない')}${btn('autoYes','許可する',{cls:'adv'})}</div></div>`
+  const d=S.menu.sd
+  if (d.phase==='stopping') return `<div class="scrim"></div><div class="win"><div class="wt">制御系を止めています</div><div class="prog"><i style="width:55%"></i></div></div>`
+  if (d.phase==='done') return `<div class="scrim"></div><div class="win"><div class="wt">${mk('ok')}止まりました</div><div class="wl">機体の電源を切れます</div></div>`
+  const row=(k,n)=>{ const v=d[k]
+    return `<div class="gr" style="display:flex;align-items:center;gap:10px;min-height:60px;font-size:19px"><span style="flex:1">${n}</span>${v==='pending'
+      ? btn('sdSave','保存',{id:k}) + btn('sdDrop', d.arm===k?'もう一度押すと破棄':'破棄', {id:k, cls: d.arm===k?'caution armed':''})
+      : `<span class="mkline" style="font-size:18px">${mk('ok',true)}${v==='saved'?'保存した':'破棄した'}</span>`}</div>` }
+  const left = ['map','route'].filter(k=>d[k]==='pending').length
+  return `<div class="scrim"></div><div class="win"><div class="wt">運用の終了</div>${row('map','試験場内地図')}${row('route','教示経路　経路 4')}
+    <div class="wb">${btn('sdClose','やめる')}${btn('sdStop','止める',{dis:left>0,why:`未保存が ${left} 件あります`})}</div></div>`
+}
+
+/* ---------- 操作（案の画面の中だけの動き） ---------- */
+function extAct(a, id){
+  // メインメニューから各画面へ（階層の「終了」で戻る先も持つ）
+  const OPEN = {follow:['follow',false], teachF:['follow',true], manual:['manual',false], teachM:['manual',true], replay:['replay'], check:['check'], calib:['calib'], settings:['settings']}
+  if (a.startsWith('openx:')){ const [scr,teach]=OPEN[a.slice(6)]; S.scr=scr; if (teach!==undefined) S[scr].teach=teach
+    const first = {follow: teach?'entry':'pick', manual: teach?'entry':'idle', replay:'select', check:'list', calib:'list', settings:'run'}[scr]
+    setSub(first); return true }
+  if (a==='shutdown'||a==='autoask'){ setSub(a); return true }
+  if (S.scr==='menu'){ const d=S.menu.sd
+    switch(a){
+      case 'autoNo': S.menu.win=null; return true
+      case 'autoYes': S.menu.win=null; S.scr='auto'; S.auto.sub='wait'; return true
+      case 'sdClose': S.menu.win=null; return true
+      case 'sdSave': d[id]='saved'; d.arm=null; return true
+      case 'sdDrop': if (d.arm===id){ d[id]='dropped'; d.arm=null } else d.arm=id; return true
+      case 'sdStop': d.phase='stopping'; setTimeout(()=>{ if (S.menu.sd===d){ d.phase='done'; render() } },1500); return true
+    }
+    return false }
+  // 試験（当日）の「手動」も手動の窓（W-6）を開く（A-18: 上＝自動ブレーキ・下＝手動の一式の縦並び）
+  if (S.scr==='day' && a==='jog'){ S.w6=true; S.w6brake=true; if (S.day.sub==='moving') S.day.sub='paused'; return true }
+  if (S.scr==='day' && ['w6close','mClose','brakeOn','brakeOff','brakeOffOk'].includes(a)){ if (a!=='w6close'&&a!=='mClose'){ /* 下の共通処理へ */ } else { if (a==='w6close') S.w6=false; else S.modal=null; return true } }
+  else if (!EXT_SCR.includes(S.scr)) return false
+  const toMenu = lvl => { S.scr='menu'; S.menu.lvl=lvl; S.menu.win=null; S.w6=false; S.modal=null }
+  // 共通: 手動の窓・確認の窓・自動ブレーキ
+  switch(a){
+    case 'jog': S.w6=true; S.w6brake=true; return true
+    case 'w6close': S.w6=false; return true
+    case 'mClose': S.modal=null; return true
+    case 'brakeOn': if (id==='manual') S.manual.brake=true; else if (id==='w6') S.w6brake=true; else S.replayBrake=true; return true
+    case 'brakeOff': S.modal={t:'自動ブレーキを切りますか', l:'障害物に近づいても減速しません', b:btn('mClose','やめる')+btn('brakeOffOk','切る',{id})}; return true
+    case 'brakeOffOk': if (id==='manual') S.manual.brake=false; else if (id==='w6') S.w6brake=false; else S.replayBrake=false; S.modal=null; return true
+    case 'exit': {
+      const t = S.scr==='follow'||S.scr==='manual' ? S[S.scr] : null
+      if (t && t.teach && t.sub!=='entry' && t.sub!=='saved' && t.sub!=='pick'){
+        S.modal={t:'記録を保存しますか', l:'経路 4　8.6 m', b:btn('mClose','やめる')+btn('exitDrop','破棄して終了')+btn('exitSave','保存して終了')}; return true }
+      toMenu('drive'); return true }
+    case 'exitDrop': case 'exitSave': toast(a==='exitSave'?'保存した':'破棄した'); toMenu('drive'); return true
+  }
+  if (S.scr==='day') return true
+  if (S.scr==='connect'){ if (a==='toMenu'){ toMenu('top') } return true }
+  if (S.scr==='follow'){ const f=S.follow
+    switch(a){
+      case 'startRec': f.sub='pick'; S.target=null; break
+      case 'cand': break
+      case 'run': f.sub='run'; break
+      case 'stop': f.sub='paused'; break
+      case 'look': toast('対象の方を向く（動かない）'); break
+      case 'save': toast('保存した（終点を確定）'); f.sub='paused'; break
+      case 'stick': toast('触れた瞬間にジョグ介入。追従は一時停止'); if (f.sub==='run') f.sub='paused'; break
+    }
+    if (f.sub==='pick' && S.target!=null) f.sub='ready'
+    return true }
+  if (S.scr==='manual'){ const m=S.manual
+    switch(a){
+      case 'startRec': m.sub='idle'; break
+      case 'stick': m.sub = m.sub==='saved' ? 'saved' : 'drive'; if (m.sub==='saved') toast('保存のあとは記録を続けない（動かない）'); break
+      case 'stop': m.sub='paused'; break
+      case 'save': m.sub='saved'; toast('保存した'); break
+    }
+    return true }
+  if (S.scr==='replay'){ const r=S.replay
+    switch(a){
+      case 'route': r.route=id; break
+      case 'dir': r.dir=id; break
+      case 'proceed': r.sub='loading'; setTimeout(()=>{ if (r.sub==='loading'){ r.sub= r.route==='C' ? 'ready' : 'search'; render() } },1200); break
+      case 'global': r.sub='ready'; break
+      case 'run': r.sub='run'; break
+      case 'stop': r.sub='paused'; break
+      case 'speed': r.speed=id; break
+      case 'reselect': r.sub='select'; break
+      case 'stick': r.sub = r.sub==='run' ? 'paused' : r.sub; toast('触れている間だけ動く。再生中に触れると一時停止'); break
+    }
+    return true }
+  if (S.scr==='check'){ const c=S.check
+    switch(a){
+      case 'exitCheck': toMenu('maint'); break
+      case 'chkSel': c.sel=id; c.sub='list'; break
+      case 'chkRun': c.sub = {estop:'estop', motor:'motor', imu:'imu', lidar:'lidarNg'}[c.sel]; c.pushed=false; c.released=false
+        if (c.sub==='imu') setTimeout(()=>{ if (c.sub==='imu'){ c.sub='list'; c.sel='imu'; render() } },1600); break
+      case 'chkQuit': c.sub='list'; toast('やめた（結果は記録しない）'); break
+      case 'estopPushChk': if (c.sub!=='estop') break
+        if (c.estopWin==='win'){ setAb('carry') } c.pushed=true; break
+      case 'estopRelChk': if (c.sub==='estop' && c.pushed){ c.released=true; if (S.ab.k==='carry') setAb('resolved'); setTimeout(()=>{ if (c.sub==='estop'){ c.sub='list'; render() } },900) } break
+      case 'motorHold': toast('押している間だけ動く'); break
+      case 'toCalib': S.scr='calib'; setSub('blind'); break
+      case 'repChk': c.rep[id]=!c.rep[id]; break
+      case 'quitRepair': c.sub='list'; c.sel='motor'; break
+      case 'backCheck': c.sub='list'; c.sel='motor'; break
+    }
+    return true }
+  if (S.scr==='calib'){ const k=S.calib
+    switch(a){
+      case 'exitCalib': toMenu('maint'); break
+      case 'calSel': k.sub = {straight:'list', rot:'list', imu:'imu1', blind:'blind'}[id]; if (id==='rot') toast('（案の画面では直進だけ描いた）'); break
+      case 'calNext': { const nx={list:'s1', s1:'s2', s2:'s3', s3:'s4', s4:'list', imu1:'list', blind:'list'}[k.sub]; if (k.sub==='s4'||k.sub==='blind'||k.sub==='imu1') toast('補正値を確定した'); k.sub=nx
+        if (nx==='s2') setTimeout(()=>{ if (k.sub==='s2'){ k.sub='s3'; render() } },1500); break }
+      case 'calQuit': k.sub='list'; toast('やめた（補正値は変えない）'); break
+      case 'calHist': k.sub='hist'; break
+      case 'calHistClose': k.sub='list'; k.arm=false; break
+      case 'rollback': if (k.arm){ k.arm=false; toast('11/03 の値に戻した') } else k.arm=true; break
+    }
+    return true }
+  if (S.scr==='settings'){ const g=S.settings
+    switch(a){
+      case 'exitSettings': toMenu('top'); break
+      case 'secSel': g.sub=id; break
+      case 'voice': g.voice=id==='on'; break
+      case 'spk': g.spk=id==='on'; break
+      case 'ori': g.ori=id; break
+      case 'font2': g.font=id; break
+      case 'cost': g.cost=id==='on'; break
+      case 'helpSet': S.help.on=id==='on'; break
+      case 'devOn': g.dev=id==='on'; break
+      case 'devItem': g.devItems[id]=!g.devItems[id]; break
+      case 'setSave': toast('保存した'); break
+    }
+    return true }
+  if (S.scr==='auto'){ const t=S.auto
+    switch(a){
+      case 'autoExit': S.modal={t:'腕を格納しましたか', l:'測定機構の腕が格納位置にあることを確かめる', b:btn('mClose','やめる')+btn('autoExitOk','メインメニューへ')}; break
+      case 'autoExitOk': toMenu('top'); break
+      case 'stop': t.sub='paused'; break
+      case 'stick': t.sub='paused'; toast('触れたら一時停止。測定機能の画面の「走行」を待つ'); break
+    }
+    return true }
+  return false
+}
+
+/* ---------- 説明欄 ---------- */
+const AUTO_SCOPE = {q:'自律走行中の枠を出す画面（未決 8）', k:['af','scope'], v:[['field','試験場だけ（いまの案）'],['all','自律で走る画面すべて']], why:'§6.5 の枠を、追従走行・教示再生・自律測定の旋回にも出すか。「すべて」で S-10 の追従中・S-14 の再生中・S-60 の旋回中にも出る'}
+const REC_OPT = {q:'「記録中」の札の色（未決 1・A-20 ①）', k:['rec','col'], v:[['red','赤（spec）'],['neutral','中立の札＋丸の印（D37）']], why:'spec は「赤い記録中インジケータ」。D37 は赤＝止める操作だけで、JIS 案でも赤は非常停止の色。決め打ちしない'}
+NOTES.menu.changed.push('<b>2026-11-23 全画面への展開</b>: 下の階層のタイルから各画面へ入れる。「運用の終了」（未保存の一覧・保存／破棄（二段階）・止める）と「自律測定」の許可の窓を足した（状態の「運用の終了（窓）」「自律測定の許可（窓）」）')
+Object.assign(NOTES, {
+  connect:{changed:['<b>型: 見る・変える</b>。表を<b>つながりの図</b>にした。つながらない機器から先の線が灰の点線になり、どこで切れたかを位置で読む（G1）','必須の機器は大きい印、任意（カメラ）は小さい印。だめでも運用に入れる','総合の文「運用に入れます」を消した。「メインメニューへ」が押せることで分かる（押せないときは理由）','再起動の表示をヘッダの札へ（D21）'],
+    look:['「LiDAR が来ない」で、何を直せばよいかが図と 1 行で分かるか','図にすると機器の並びが変わるたびに描き直しが要る（未決 9）'], opts:[]},
+  follow:{changed:['<b>いまの実装に画面が無い</b>（S-10・S-12 の jsx が無い）。走らせる型で初めて作る','主表示はレーダー。候補を押して選ぶ（S-20・S-21 と同じ）','右列 ① は対象までの距離（S-12 は記録の量）、② は停止│走行、③ は S-12 だけ保存、④ は手動（常設）','S-12 は入口のカードで経路を選び、選ぶと記録が始まる（SM-3.1.2-012）。地図はレーダーの左下に小さく'],
+    look:['「確認」（向くだけ）の置き方 a〜c を比べる（未決 5）','「記録中」の札の色（未決 1）'],
+    opts:[{q:'画面', k:['follow','teach'], v:[[false,'S-10 追従走行'],[true,'S-12 教示（追従）']], why:'S-12 は S-10 に「保存」と記録の量を足しただけ（Spec-webui.md §3.4）'},
+      {q:'「確認」の置き方（未決 5）', k:['follow','conf'], v:[['a','a 3 面のトグル'],['b','b 別のボタン'],['c','c 置かない']], why:'spec の操作カードは 停止／確認／走行。D33 のトグルは 2 面。c は機体の仕様を改める（G3）'}, REC_OPT]},
+  manual:{changed:['主表示を<b>機体のまわりの図</b>にした（LiDAR の点・機体の外形・減速が始まる距離の点線の輪）。近い点は橙で、向きと距離を出す。いまの文字だけの「障害物」区画を置き換える（G1）','右列 ② は「停止する」だけ（走り出すのはスティック）。トグルと同じ位置・高さ','自動ブレーキは左上の切り替え（ON のときだけ点ける）。切るときは確認の窓','S-13 は地図と経路を主表示にし、右列 ① に記録の量・③ に保存'],
+    look:['後方の死角を図の灰の扇形で出すか（未決 3。記録が食い違っている）','スティックを右列の残り全部に広げた大きさ'],
+    opts:[{q:'画面', k:['manual','teach'], v:[[false,'S-11 手動走行'],[true,'S-13 教示（手動）']], why:''},
+      {q:'後方の死角（未決 3）', k:['manual','blind'], v:[['fig','図に灰で描く（文は出さない）'],['none','出さない（A-9）']], why:'A-9 は「後方に死角は無い」、安全性の検証結果と R-87 は「死角があり常時出す」。どちらが正かを確かめる'}, REC_OPT]},
+  replay:{changed:['入口は主表示の中央のカード（P7）: 経路の一覧＋順│逆（R-91）＋「この経路で進む」。地図の画像の無い経路には印と 1 行（A-21）','読み込み中は地図の上に「地図を読み込んでいます」（A-22）','右列 ① は確度の印（探しています／見つかりません／経路から離れています／決まった）→ 再生中は経路からのずれ','位置が決まるまで「再生する」は薄く、押すと理由（A-23 ②）。決まったら<b>ゆっくり明滅</b>（A-22・D43）','地図の更新 ON／OFF は使えない間は出さない（M11 と同じ）。タブを無くした','手動は W-6（窓の中は 上＝自動ブレーキ・下＝手動の一式。A-18）'],
+    look:['「経路を選ぶ」→「この経路で進む」→ 読み込み → 位置を探す → 決まる、の流れで、次に押すものが目で追えるか','「経路を選び直す」を一時停止中だけにした（SM-3.1.2-103。G3 の B7）'],
+    opts:[{q:'開発モードの auto_brake', k:['replay','devab'], v:[[false,'選んでいない'],[true,'選んでいる']], why:'選んでいるときだけ左上に自動ブレーキの切り替え（Spec-webui.md §3.5）。A-18 の「ほかの表示を押しのける」を左上に置いて解く'}]},
+  check:{changed:['<b>型: 手順を進める</b>。左＝4 項目と結果の印（✓・×・—。形で区別し赤は使わない。P1）、右＝手順の図','下端: 左「やめる」（確かめている間だけ）／右「確かめる」（位置は固定）','だめのときの「校正へ」「故障診断へ」は結果の表の下（右下のボタンの語を変えない。R2 (a)）','結果は測った値と基準を並べ、外れた値だけ黄の地（P5）','S-31 故障診断も同じ型: 確かめることを並べて押すと ✓（画面の中だけの控え）'],
+    look:['非常停止の項目で、機体の非常停止ボタンの絵を押す →「押す」に ✓ → もう一つの絵で「戻す」','モーターの矢印は押している間だけ動く（ヘルプの長押しの対象外。P4）'],
+    opts:[{q:'点検中に機体の非常停止ボタンを押したとき（未決 4）', k:['check','estopWin'], v:[['hide','手順の中に出す（案）'],['win','非常停止の窓を出す（D50 のまま）']], why:'機体はこの間、手押しの状態に落ちない（SM-3.1.2-089）。窓を出すと手順が隠れる。D50 の例外になる'}]},
+  calib:{changed:['<b>タブ 5 枚を無くした</b>。左＝4 項目（前回の日付と誤差）、右＝手順。履歴は項目の右上の「履歴」','進みは<b>段の印</b>（P2）。「Step 3/4」の文字を消す','右下の進むボタンの語を項目と段で決める（直進＝走らせる／IMU＝始める（A-9）／確認＝確定する／検証＝完了）','IMU は外して傾ける図（A-9）','完了のあと「始業点検へ」'],
+    look:['「中断」の語と置き場所（未決 6）を切り替えて比べる'],
+    opts:[{q:'取りやめの語（未決 6）', k:['calib','quit'], v:[['やめる','やめる（案）'],['中断','中断（spec）']], why:'S-21 の「中断」（行き先の取り消し）と同じ語が別の意味になる（R2 (b)）'},
+      {q:'取りやめの置き場所（未決 6）', k:['calib','quitAt'], v:[['foot','下端の左（案）'],['top','左上（spec §3.14）']], why:'左上は全画面で「終了／戻る」の場所。spec どおりだと校正の途中だけ左上の意味が変わる'}]},
+  settings:{changed:['<b>タブ 4 枚＋一般の中の 7 枚を、1 列の区分 8 つにした</b>','保存の横に<b>いつ効くか</b>の印（すぐ／次の起動から／次に地図を読み直したときから。P6）。注記の文を消す。<b>効き方の違う設定は区分を分けた</b>（速さとブレーキ＝次の起動から／再生の位置合わせ＝次に地図を読み直したときから）','ヘルプ表示（D19）の切り替えを「画面」に置いた（ここで切ると案の画面のヘルプも止まる）','カメラの開く先（main で追加）を「つなぎ先」に','開発モードを入れるとヘッダの色が変わる（D44）'],
+    look:['区分ごとに効き方が違うこと（G3 の B5）。変えた効き目をその場で確かめられない'], opts:[]},
+  auto:{changed:['走らせる型の最小。右列 ③ に「測定機能の画面へ」を幅いっぱい（この画面でいちばん押すもの）','「自律測定を終了」を、ほかの画面の「終了」と同じ左上に（押すと「腕を格納しましたか」）','手動は W-6（触れたら一時停止）'],
+    look:['「停止する」を置くか（未決 7）'],
+    opts:[{q:'「停止する」（未決 7）', k:['auto','stop'], v:[[false,'置かない（spec §3.16）'],[true,'置く（spec §3.3）']], why:'§3.3 は停止を全画面に置くとし、§3.16 の S-60 の要素には無い'}]},
+})
+Object.assign(HELP, {
+  brake:['自動ブレーキ','障害物に近づくと自動で減速・停止します。「切」にすると減速せず、近づいたことだけを知らせます。'],
+  look:['向く','対象の方へ向きを変えます。移動はしません。'],
+  save:['保存','記録した経路を確定します。保存のあとは記録を続けません。'],
+  global:['完全グローバルで探す','地図の全体から機体の位置を探し直します。'],
+  speed:['再生速度','再生の速さを変えます。走っている間も変えられます。'],
+  reselect:['経路を選び直す','再生する経路と向きを選び直します。'],
+  quit:['やめる','いまの手順をやめて一覧へ戻ります。結果は記録しません。'],
+  advance:['進む','手順を次へ進めます。'],
+  hold:['モーター','押している間だけ、その向きへ低速で動きます。離すと止まります。'],
+  tocalib:['校正へ','この項目の校正を始めます。'],
+  gomeasure:['測定機能の画面へ','測定機能の画面を開きます。機体の動きは変わりません。'],
+  back:['戻る','メインメニューへ戻ります。'],
+  exit:['終了','この画面を抜けてメインメニューへ戻ります。未保存の記録があれば、保存するかを聞きます。'],
+})
+
 let helpT=null, helpSwallow=false
 function closeHelp(){ document.querySelector('#dev .help')?.remove() }
 function showHelp(el, sticky){
