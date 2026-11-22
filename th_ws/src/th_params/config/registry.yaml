@@ -1279,6 +1279,15 @@
   spec_ref: "DetailedDesign-names.md §7.3"
   note: "sys.link_timeout の契機。暫定値。2026-11-19 に 10000 → 30000（ユーザー決定）: bringup の起動直後は約 40 ノードの相手探し（SEDP）がラズパイに殺到し、1 回で約 7 万件・9 割近くを取りこぼす（docs/network.md「/scan がコンテナに届かない」6.）。普段は 10 秒以内に追いつくが、遅れると 10 秒で制御系が立て直され、立て直しが殺到を繰り返して LiDAR がいつまでもつながらなかった（2026-11-19 17:58〜17:59 に約 20 秒おきに 3 回）"
 
+- name: arm_clearance_scan_max_age_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [params_audit]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §3.5"
+  note: "腕が振れる範囲の確認で、最後のスキャンがこれより古ければ UNKNOWN（scan_stale）。暫定値。受け手（/measure/check_arm_clearance のノード）は 8-g P4 で足す。names.md に先に載っていて registry の照合試験が赤だったので行だけ先に置く（2026-11-23）"
+
 - name: measure_link_timeout_ms
   unit: ms
   class: b

@@ -256,7 +256,9 @@ class TestMeasureLinkNode(unittest.TestCase):
 
     def test_d_heartbeat_stop_timeout_link_lost(self):
         """d. heartbeat を止める → timeout 後に link_lost に戻る。"""
-        assert self._hb_version == "1"
+        # 試験の順に頼らない（unittest はメソッドごとに別インスタンス）。
+        self._hb_version = "1"
+        assert self._wait_status_link_ok(True) is True, 'link_ok にならない'
         self._hb_version = None
         assert self._wait_status_link_ok(False) is True, \
             'timeout 後に link_ok が落ちない'
