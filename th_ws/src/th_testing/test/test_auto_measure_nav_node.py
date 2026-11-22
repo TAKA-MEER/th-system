@@ -23,7 +23,9 @@ Nav2 の縁（ComputePathToPose／FollowPath）は既存の代役で与え、`/m
   h. NAV の間 meas.goal は state_not_accepting、meas.set_limits はどの状態でも
      state_not_accepting
   i. 到着のあと次の meas.goal は新しい経路を計画する（古い経路の再送が無い）
-  j. abort のあと非常停止を挟んで PAUSE に戻っても meas.start は WAIT へ（古い目的地で走らない）
+  j. abort のあと非常停止でも捨てた目的地で走らない
+  k. VENUE/UNLOADED でも meas.goal で NAV に入り ComputePath・FollowPath が呼ばれる
+     （試験場内の SM-3.1.2-119 の門が自律測定に効かない）
 
 注意（launch_testing の挙動）: ノードはファイル単位で共有されるため、
 メソッド同士の状態に頼らない（各メソッドが _reset_to_idle で自分の前提を作る）。
@@ -190,6 +192,9 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         self.robot_x = 0.0
         self.corner_clear = True
         self.corner_live = True
+        # 本番の自律測定では start_measure_map のあと venue_session_mode は
+        # MAPPING（地図作成）。VENUE/LOCALIZING は出ない値を既定にしない。
+        self.session_mode = 'MAPPING'
         self.map_unknown_band = None
         self.follow_succeed = False
         self.follow_goals = 0
@@ -238,6 +243,7 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         self._hb_version = None
         self.corner_live = True
         self.corner_clear = True
+        self.session_mode = 'MAPPING'
         self.map_unknown_band = None
         try:
             self._executor.shutdown()
@@ -281,7 +287,7 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         msg = MapSessionStatus()
         msg.header.stamp = self._now_msg()
         msg.slot = 'VENUE'
-        msg.mode = 'LOCALIZING'
+        msg.mode = self.session_mode
         msg.instance_id = 'm1'
         msg.dirty = False
         self.pub_session.publish(msg)
@@ -542,7 +548,19 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         assert self._mode_state() == ('AUTO_MEASURE', 'WAIT')
 
         # corner_status が止まると 1 秒で clear=false に倒れる。
+        # 最後に届いた値を true にしてから止める（鮮度判定を見ないと受理される）。
         self.corner_clear = True
+        self.corner_live = True
+        time.sleep(0.6)  # clear=true が state_manager に届く
+        # いま受理されることを確認してから、abort で WAIT に戻る。
+        cid0 = self._next_cid()
+        res = self._call_measure('meas.goal', command_id=cid0, map_instance_id='m1',
+                                 x=3.0, y=0.0, yaw=0.0)
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_mode_state('AUTO_MEASURE', 'NAV', timeout=10.0) is True
+        res = self._call_measure('meas.abort')
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_mode_state('AUTO_MEASURE', 'WAIT', timeout=8.0) is True
         self.corner_live = False
         time.sleep(1.5)
         cid3 = self._next_cid()
@@ -767,3 +785,22 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         with self._lock:
             assert self.follow_goals == follows_before, \
                 '捨てた目的地で走り出している'
+
+    def test_k_venue_unloaded_still_drives(self):
+        """k. VENUE/UNLOADED でも meas.goal で NAV に入り、ComputePath・FollowPath が
+        呼ばれる（試験場内の SM-3.1.2-119 の門が自律測定に効かない）。"""
+        self._ensure_auto_measure_wait()
+        self.session_mode = 'UNLOADED'
+        self._publish_session()
+        time.sleep(1.0)  # venue へ UNLOADED が届く
+        with self._lock:
+            computes_before = len(self.compute_goals)
+            follows_before = self.follow_goals
+        res = self._call_measure('meas.goal', command_id=self._next_cid(),
+                                 map_instance_id='m1', x=3.0, y=0.0, yaw=0.0)
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_mode_state('AUTO_MEASURE', 'NAV', timeout=10.0) is True
+        assert self._wait_follow_goals(follows_before + 1, timeout=10.0) is True
+        with self._lock:
+            assert len(self.compute_goals) > computes_before, \
+                'ComputePathToPose が呼ばれていない'
