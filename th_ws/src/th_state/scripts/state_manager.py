@@ -55,8 +55,9 @@ from th_state.auto_brake import (AUTO_BRAKE_LOCKED_REASON, DEV_ITEM_AUTO_BRAKE,
 # 8-g P1（2026-11-23）: /measure/command の受理と /measure/result の台帳。
 # 判定の純粋な部分（① bad_argument）と結果を 1 回だけ出す台帳は純コア側。
 # 8-g P5a: CANCELLED の理由（§3.2 の表）と、遷移・台帳の順（§6.2）もここから。
+# 8-g P5b: 目的地の ARRIVED（ALIGN → WAIT の遷移で 1 回だけ）。
 from th_state.measure_ledger import (IMMEDIATE_MEASURE_COMMANDS, MeasureLedger,
-                                     RESULT_CANCELLED, RESULT_DONE,
+                                     RESULT_ARRIVED, RESULT_CANCELLED, RESULT_DONE,
                                      validate_measure_command)
 from th_state.zones import (ScreenInput, active_screens, combine_speed_limits,
                              derive_limits, mode_speed_limit)
@@ -98,6 +99,7 @@ _EFFECT_DESTINATIONS = {
     "cancel_follow_path": "venue_navigator",
     "resume_follow_path": "venue_navigator",
     "replan": "venue_navigator",
+    "measure_goal": "venue_navigator",  # 8-g P5b（SM-3.1.2-121 の目的地）
     "start_monitor": "opcheck_runner",
     "offer_calib": "WebUI",
     "offer_opcheck": "WebUI",
@@ -123,6 +125,10 @@ _STATE_PUBLISH_PERIOD_S = 0.1  # 10 Hz
 # 8-g P1（DetailedDesign-measure.md §6.1）: evt.measure_link_ok/lost のラッチの
 # 鮮度。どちらもこの時間来なければ「measure_link が落ちた」として途絶とみなす。
 _MEASURE_LINK_STALE_MS = 3000
+
+# 8-g P5b（DetailedDesign-measure.md §6.2）: /measure/corner_status の鮮度。
+# この時間届かなければ「確認できない」＝ clear=false とみなす。
+_MEASURE_CORNER_STALE_MS = 1000
 
 # SM-3.1.1-19: 運用入口（モード選択・行き先選択）を塞ぐ回復フォルトの種別。
 # Spec-modes.md §3.1.1-19 の「走行を止める回復フォルト（LIDAR_LOST・
@@ -307,6 +313,16 @@ class StateManager(Node):
         # command_id。_process の「モードを抜けたら残りを CANCELLED」が、自分を
         # 除外して数えるために使う。
         self._measure_current_command_id = None
+        # 8-g P5b: 角が描く円の確認のラッチ（/measure/corner_status の値と受信時刻）。
+        # 未受信・1 秒以上届かないのは clear=false（確認できていない）。
+        self._measure_corner_clear = False
+        self._measure_corner_recv_ms = None
+        # 8-g P5b: いまの地図の instance_id（/map_session/status の instance_id）。
+        # meas.goal の map 照合（map_mismatch）で読む。未受信は ""。
+        self._measure_map_instance_id = ""
+        # 8-g P5b: PAUSE に入る直前にいた自律測定の状態（meas.start の戻り先）。
+        # AUTO_MEASURE を抜けたら消す（_process の片付けで下ろす）。
+        self._measure_prev_state = ""
         # WP-ONSITE-F2: /person/targets と /onsite/pins 由来。次の event 受信時に
         # _build_context() が読む（_route_ids / _route_loaded と同じ設計）。
         self._candidate_count = 0
@@ -408,11 +424,17 @@ class StateManager(Node):
         # 1b-6 SG-B6: slam_control の /map_session/status（RELIABLE +
         # TRANSIENT_LOCAL + depth 1。発行側と同じ QoS で購読しないと latched
         # 値を読めない）。slot 別の dirty が未保存（venue_map / map_patch）の種になる。
+        # 8-g P5b: instance_id もここでラッチする（meas.goal の map 照合）。
         map_qos = QoSProfile(depth=1, reliability=QoSReliabilityPolicy.RELIABLE,
                              durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
                              history=QoSHistoryPolicy.KEEP_LAST)
         self.create_subscription(MapSessionStatus, '/map_session/status',
                                  self._on_map_session, map_qos)
+
+        # 8-g P5b: 角が描く円の確認（measure_clearance が出す内部トピック。
+        # 5 Hz。1 秒届かなければ clear=false とみなす）。
+        self.create_subscription(String, '/measure/corner_status',
+                                 self._on_measure_corner_status, 10)
 
         # WP-MAINT-02: calib_runner の /calib/status（reliable depth 5。publisher と同じ）。
         # S3 のプレビューが sane かどうかを T-CAL-04 のガードへ渡すために読む。
@@ -559,6 +581,9 @@ class StateManager(Node):
             measure_link_ok=link_ok,
             measure_link_reason=link_reason,
             measure_reentry_required=self._measure_reentry_required,
+            measure_corner_clear=self._measure_corner_check(),
+            measure_map_instance_id=self._measure_map_instance_id,
+            measure_prev_state=self._measure_prev_state,
             leash_present=self._leash_present,
             leash_taut=False,
             line_visible=False,
@@ -627,6 +652,24 @@ class StateManager(Node):
         elif decision.to_state != "PAUSE":
             self._pause_reason = ""
 
+        # 8-g P5b（§6.2「停止」）: 自律測定が NAV・ALIGN・BLOCKED・WAIT から
+        # PAUSE に入ったとき（meas.stop・ジョグ・回復フォルト・途絶）、および
+        # 非常停止・手押しから PAUSE へ戻ったとき（prev_state。clear_prev の
+        # 効果より前に読む。prev_state 自体は ESTOP/CARRY の復帰で消える）、
+        # 止める前の状態を覚える。meas.start のガードがこれを見る。
+        # モード名リテラルは書かない（N-1）。state_core の参照点を使う。
+        if (self.mode == AUTO_MEASURE_MODE
+                and decision.to_mode == AUTO_MEASURE_MODE
+                and decision.to_state == "PAUSE"
+                and self.state != "PAUSE"):
+            self._measure_prev_state = self.state
+        elif (self.mode in (ESTOP_MODE, CARRY_MODE)
+                and decision.to_mode == AUTO_MEASURE_MODE
+                and decision.to_state == "PAUSE"
+                and self.prev_mode == AUTO_MEASURE_MODE
+                and self.prev_state in ("NAV", "ALIGN", "BLOCKED")):
+            self._measure_prev_state = self.prev_state
+
         self._apply_effects(decision.effects, requester)
 
         self._last_reject_reason = "" if decision.accepted else decision.reject_reason_key
@@ -634,6 +677,20 @@ class StateManager(Node):
         old_mode = self.mode
         self.mode = decision.to_mode
         self.state = decision.to_state
+
+        # 8-g P5b（-124）: 自律測定の ALIGN → WAIT（evt.align_done）で、目的地の
+        # command_id に ARRIVED をちょうど 1 回出す（台帳が 1 回だけを保つ）。
+        # それ以外の align_done（試験場内等）はここでは扱わない。
+        if (decision.accepted and event == "evt.align_done"
+                and old_mode == AUTO_MEASURE_MODE
+                and self.mode == AUTO_MEASURE_MODE
+                and self.state == "WAIT"
+                and self._measure_ledger.pending_command == "meas.goal"):
+            goal_id = self._measure_ledger.pending_command_id
+            record = self._measure_ledger.complete(
+                goal_id, RESULT_ARRIVED, "")
+            if record is not None:
+                self._publish_result(record)
 
         # 「自律測定の続きにいる」を立てる（AUTO_MEASURE に入った遷移）。
         if self.mode == AUTO_MEASURE_MODE:
@@ -654,6 +711,7 @@ class StateManager(Node):
             self._measure_v_cap_mps = 0.0
             self._measure_w_cap_radps = 0.0
             self._measure_reentry_required = False
+            self._measure_prev_state = ""
             self._measure_in_session = False
 
         # 1b-15 SG-B10: モードに入ったら自動ブレーキは既定（ゾーン既定）に戻す。
@@ -812,6 +870,15 @@ class StateManager(Node):
     # ------------------------------------------------------------
     # 入口: /measure/command（meas.* のみ。§5・§6.1）
     # ------------------------------------------------------------
+    def _measure_corner_check(self):
+        """角が描く円の確認の実効値。/measure/corner_status が 1 秒届かなければ
+        False（確認できていない。DetailedDesign-measure.md §6.2 P5b）。"""
+        if self._measure_corner_recv_ms is None:
+            return False
+        if self._now_ms() - self._measure_corner_recv_ms >= _MEASURE_CORNER_STALE_MS:
+            return False
+        return bool(self._measure_corner_clear)
+
     def _measure_link_check(self):
         """measure_link の生存の実効値。(ok, reject_reason)。
 
@@ -875,7 +942,16 @@ class StateManager(Node):
         # ④ 遷移表に行が無い・ガードで落ちる → state_not_accepting
         #    （ガードが理由キーを持つならそれ）。P1 では遷移表に meas.* の
         #    行が無いので、すべての meas.* がここで拒否される（仕様どおり）。
-        ctx = self._build_context(req.command, {})
+        # 8-g P5b: 指示の引数（x・y・yaw・map_instance_id ほか）と command_id を
+        # 遷移表の arg に渡す（ガードの map 照合・effect measure_goal が読む）。
+        arg = {
+            "command_id": req.command_id,
+            "map_instance_id": req.map_instance_id,
+            "x": float(req.x), "y": float(req.y), "yaw": float(req.yaw),
+            "angle_rad": float(req.angle_rad), "side": req.side,
+            "distance_m": float(req.distance_m),
+        }
+        ctx = self._build_context(req.command, arg)
         decision = self.core.step(self.mode, self.state, req.command, ctx)
         if not decision.accepted:
             res.accepted = False
@@ -899,12 +975,18 @@ class StateManager(Node):
         # 自分（meas.finish は DONE で終わる）を除外するために command_id を渡す。
         self._measure_current_command_id = req.command_id
         try:
-            self._process(req.command, {}, "")
+            self._process(req.command, arg, "")
         finally:
             self._measure_current_command_id = None
-        if req.command == "meas.set_limits":
-            self._measure_v_cap_mps = float(req.v_max_mps or 0.0)
-            self._measure_w_cap_radps = float(req.w_max_radps or 0.0)
+        # 8-g P5b（-131）: meas.abort は目的地を CANCELLED（aborted）で終える
+        # （abort 自身はすぐ DONE）。PAUSE に落ちただけでは結果を出さない
+        # （§3.2。目的地は meas.start で続く）。
+        if req.command == "meas.abort":
+            for record in self._measure_ledger.cancel_all(
+                    "aborted", exclude=req.command_id):
+                self._publish_result(record)
+        # meas.set_limits は効かせる仕組み（P5c）まで受けない（P5b の決まり）。
+        # 遷移表に行が無いのでここには到達しない（v_cap は 0 のまま残す）。
         if req.command in IMMEDIATE_MEASURE_COMMANDS:
             record = self._measure_ledger.complete(
                 req.command_id, RESULT_DONE, "")
@@ -1023,6 +1105,21 @@ class StateManager(Node):
         # SM-3.1.2-119: 会場地図を持たないか（VENUE の mode）。未受信の間は ""。
         if str(msg.slot) == "VENUE":
             self._venue_mode = str(msg.mode)
+        # 8-g P5b: いまの地図の世代（meas.goal の map 照合）。
+        self._measure_map_instance_id = str(msg.instance_id)
+
+    def _on_measure_corner_status(self, msg):
+        """/measure/corner_status（JSON {"clear": bool, "reason": str}）をラッチする。
+        壊れた JSON は「確認できない」（clear=false）として時刻だけ更新しない
+        （古い値を使い続けない）。"""
+        try:
+            obj = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        if not isinstance(obj, dict) or "clear" not in obj:
+            return
+        self._measure_corner_clear = bool(obj.get("clear"))
+        self._measure_corner_recv_ms = self._now_ms()
 
     def _refresh_unsaved(self):
         """1b-6 SG-B6: _unsaved をいま分かる範囲で決め直す（Spec-ops.md §4.1）。

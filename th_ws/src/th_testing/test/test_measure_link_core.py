@@ -2,7 +2,7 @@
 
 版の一致した heartbeat だけ数えること、途絶（timeout）と途絶理由
 （never / timeout / version_mismatch）、`/measure/status` の速度上限の
-組み立て（speed_limit 名→数値、v_cap が正なら小さい方、stop→0）を縛る。
+組み立て（speed_limit 名→数値、stop→0。v_cap を混ぜるのは P5c）を縛る。
 正本は docs/plan/detailed/DetailedDesign-measure.md §3.4・§6.1。
 """
 import os
@@ -81,11 +81,13 @@ def test_resolve_speed_limit_stop_and_unknown_are_zero():
     assert resolve_speed_limit("v_slow", table) == 0.30
 
 
-def test_effective_v_limit_v_cap_only_lowers():
+def test_effective_v_limit_ignores_v_cap_until_p5c():
+    """8-g P5b: v_cap は混ぜない（効かせるのは P5c）。指定があっても本システムの
+    上限だけが v_limit_mps に出る。"""
     table = {"v_max": 0.568}
-    assert effective_v_limit("v_max", table, 0.0) == 0.568      # 0 は指定しない
-    assert effective_v_limit("v_max", table, 0.2) == 0.2        # 小さい方
-    assert effective_v_limit("v_max", table, 0.9) == 0.568      # 上げる方向には効かない
+    assert effective_v_limit("v_max", table, 0.0) == 0.568
+    assert effective_v_limit("v_max", table, 0.2) == 0.568      # P5b では無視
+    assert effective_v_limit("v_max", table, 0.9) == 0.568
     assert effective_v_limit("stop", table, 0.2) == 0.0         # stop は 0
 
 

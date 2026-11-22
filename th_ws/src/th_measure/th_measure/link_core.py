@@ -8,7 +8,7 @@
 - 途絶理由は `never`（一度も版一致を受信していない）／`timeout`（版一致を
   受けたあと途絶）／`version_mismatch`（版一致は一度も無く、版不一致だけ来た）。
 - `/measure/status` の速度上限の欄の組み立て（`speed_limit` 名→数値、
-  `v_cap` が正なら小さい方、`stop`→0。§6.1）。
+  `stop`→0。§6.1。`v_cap` を混ぜるのは P5c）。
 
 ROS2 を import しない（`th_state/state_core.py` と同じ制約）。
 """
@@ -76,11 +76,12 @@ def resolve_speed_limit(name: str, table: dict) -> float:
 
 
 def effective_v_limit(speed_limit_name: str, table: dict, v_cap_mps: float) -> float:
-    """`v_limit_mps`（§3.3）。`v_cap` が正なら小さい方。0 は「指定しない」。"""
-    base = resolve_speed_limit(speed_limit_name, table)
-    if v_cap_mps and v_cap_mps > 0:
-        return min(base, float(v_cap_mps))
-    return base
+    """`v_limit_mps`（§3.3）。本システムの上限だけを返す。
+
+    8-g P5b: `meas.set_limits` を効かせる仕組み（P5c）まで受けないので、
+    `v_cap` を混ぜない（効いていない上限を報告しない。DetailedDesign §6.2 P5b）。
+    `v_cap_mps` 引数は P5c で効かせるまでの間、値を受け取っても無視する。"""
+    return resolve_speed_limit(speed_limit_name, table)
 
 
 def effective_w_limit(w_cap_radps: float) -> float:

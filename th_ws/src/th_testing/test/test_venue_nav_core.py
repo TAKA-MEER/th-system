@@ -153,6 +153,7 @@ def test_success_unknown_pose_is_trusted():
 # ── 塞がれた経路の先の確認（Spec-onsite §6.3）────────────────────────────
 from th_onsite.venue_nav_core import (  # noqa: E402
     COSTMAP_BLOCKED_MIN, PATH_AHEAD_CHECK_M, path_ahead_clear,
+    path_ahead_has_unknown,
 )
 
 
@@ -228,6 +229,46 @@ class TestPathAheadClear:
         assert not path_ahead_clear(_PATH, (0.0, 0.0), None)
         assert not path_ahead_clear(_PATH, None, _Grid())
         assert not path_ahead_clear([], (0.0, 0.0), _Grid())
+
+
+class TestPathAheadHasUnknown:
+    """8-g P5b: 手前 1.5 m のセルが不明（-1）なら AUTO_MEASURE では通れない。
+    試験場内のモードでは従来どおり通れる（上の TestPathAheadClear の
+    test_unknown_is_not_an_obstacle が縛る）。"""
+
+    def test_free_has_no_unknown(self):
+        assert not path_ahead_has_unknown(_PATH, (0.0, 0.0), _Grid())
+
+    def test_unknown_ahead_is_unknown(self):
+        g = _Grid()
+        g.paint(1.0, 1.1, -1)
+        assert path_ahead_has_unknown(_PATH, (0.0, 0.0), g)
+
+    def test_unknown_beyond_range_ignored(self):
+        g = _Grid()
+        g.paint(PATH_AHEAD_CHECK_M + 0.1, PATH_AHEAD_CHECK_M + 0.3, -1)
+        assert not path_ahead_has_unknown(_PATH, (0.0, 0.0), g)
+
+    def test_unknown_behind_robot_ignored(self):
+        g = _Grid()
+        g.paint(0.5, 0.6, -1)
+        assert not path_ahead_has_unknown(_PATH, (1.5, 0.0), g)
+
+    def test_occupied_is_not_unknown(self):
+        g = _Grid()
+        g.paint(1.0, 1.1, 100)
+        assert not path_ahead_has_unknown(_PATH, (0.0, 0.0), g)
+        assert not path_ahead_clear(_PATH, (0.0, 0.0), g)
+
+    def test_out_of_grid_counts_as_unknown(self):
+        g = _Grid(w=40, h=40, ox=-1.0, oy=-1.0)
+        assert path_ahead_has_unknown(_PATH, (0.0, 0.0), g)
+
+    def test_unjudgeable_inputs_are_false(self):
+        # 判定できない入力は False（呼び側が「確認できない」として塞ぐ）。
+        assert not path_ahead_has_unknown(_PATH, (0.0, 0.0), None)
+        assert not path_ahead_has_unknown(_PATH, None, _Grid())
+        assert not path_ahead_has_unknown([], (0.0, 0.0), _Grid())
 
 
 class TestSelectPinAllowed:

@@ -1284,9 +1284,9 @@
   class: b
   status: given
   value: 500
-  consumers: [params_audit]
-  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §3.5"
-  note: "腕が振れる範囲の確認で、最後のスキャンがこれより古ければ UNKNOWN（scan_stale）。暫定値。受け手（/measure/check_arm_clearance のノード）は 8-g P4 で足す。names.md に先に載っていて registry の照合試験が赤だったので行だけ先に置く（2026-11-23）"
+  consumers: [params_audit, measure_clearance]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §3.5・§6.2"
+  note: "腕が振れる範囲の確認で、最後のスキャンがこれより古ければ UNKNOWN（scan_stale）。暫定値。角が描く円の確認（measure_clearance。P5b）も同じ値で、古ければ clear=false（2026-11-23）。names.md に先に載っていて registry の照合試験が赤だったので行だけ先に置く（2026-11-23）"
 
 - name: measure_link_timeout_ms
   unit: ms

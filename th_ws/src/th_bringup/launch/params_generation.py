@@ -127,6 +127,9 @@ REGISTRY_NODES: tuple[str, ...] = (
     # A8 は armed にならない（v_slow / v_jog_panel は placeholder 導出で
     # 生成物に載らず、ノード側の既定値に倒れる）。
     "measure_link",
+    # 8-g P5b: measure_clearance は arm_clearance_scan_max_age_ms を生成 yaml に
+    # 載せる。新規行のみで blocking placeholder を含まないため A8 は armed にならない。
+    "measure_clearance",
 )
 
 # ---------------------------------------------------------------------------

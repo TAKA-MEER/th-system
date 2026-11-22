@@ -480,6 +480,15 @@ def generate_launch_description():
         parameters=[os.path.join(GENERATED_DIR, 'measure_link.yaml')],
         output='screen',
     ))
+    # 8-g P5b: measure_clearance。角が描く円の中の障害物を /measure/corner_status
+    # に出す（state_manager が 1 秒届かなければ clear=false とみなす）。
+    nodes.append(Node(
+        package='th_measure',
+        executable='measure_clearance.py',
+        name='measure_clearance',
+        parameters=[os.path.join(GENERATED_DIR, 'measure_clearance.yaml')],
+        output='screen',
+    ))
     # WP-DEV-01A: dev_mode は launch 引数の文字列 ('true'/'false') のため、
     # bool パラメータへは IfCondition / UnlessCondition で排他的に定義を分けて
     # 渡す（PythonExpression では起動時に文字列化され型不一致で落ちる）。

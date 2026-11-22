@@ -545,6 +545,14 @@ def generate_launch_description():
             parameters=[os.path.join(GENERATED_DIR, 'measure_link.yaml')],
             output='screen',
         ),
+        # 8-g P5b: measure_clearance。角が描く円の中の障害物を出し続ける。
+        Node(
+            package='th_measure',
+            executable='measure_clearance.py',
+            name='measure_clearance',
+            parameters=[os.path.join(GENERATED_DIR, 'measure_clearance.yaml')],
+            output='screen',
+        ),
         # connectivity_checker（WP-TEST-01 で追加。state_manager が INIT から
         # IDLE へ進むための evt.link_ok は connectivity_checker だけが出す）。
         # sim パラメータは connectivity_core.py が Gazebo シナリオ向けに

@@ -11,6 +11,7 @@ ament_python_install_package(th_measure)
 
 install(PROGRAMS
   scripts/measure_link.py
+  scripts/measure_clearance.py
   DESTINATION lib/${PROJECT_NAME})
 
 ament_package()
