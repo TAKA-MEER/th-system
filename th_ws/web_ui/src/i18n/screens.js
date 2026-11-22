@@ -624,7 +624,7 @@ export const S01_TEACH_NOTE = '教示は保管場所から開始してくださ�
 // 置くのは「測定機能の画面へ」「自律測定を終了」「手動」と状態の表示だけ
 // （行き先選び・設定・「走行」は置かない。走行は測定機能の画面の meas.start）。
 export const S60_OPEN_MEASURE = '測定機能の画面へ'
-export const S60_FINISH = '自律測定を終わる'
+export const S60_FINISH = '自律測定を終了'
 export const S60_MANUAL = '手動'
 export const S60_STATE_WAIT = '指示待ち'
 // 自律測定を終了する前の腕の格納の確認（W-4。SM-3.1.1-18）。

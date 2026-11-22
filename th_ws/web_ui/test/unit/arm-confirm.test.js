@@ -1,6 +1,8 @@
 // modes/armConfirm.js — 腕の格納の確認（SM-3.1.1-18）を出すかの判定。
-// ESTOP / CARRY は prev_mode で判定し（現在モードだけでは自律測定からの
-// 非常停止・手押しを拾えない）、ESTOP / CARRY 以外は現在モードで判定する。
+// ESTOP / CARRY は prev_mode で判定する（現在モードだけでは自律測定からの
+// 非常停止・手押しを拾えない）。ESTOP / CARRY 以外は常に false。AUTO_MEASURE
+// の回復フォルトで PAUSE に落ちた W-1「確認」(ui.resume_ack) は C-05 で
+// resume_state（PAUSE）に留まり、IDLE へ抜けないため対象外。
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { needsArmConfirmForExit } from '../../src/modes/armConfirm.js'
@@ -38,12 +40,18 @@ test('CARRY で prev_mode が MANUAL なら出さない', () => {
     false)
 })
 
-// ESTOP/CARRY 以外は現在モードで判定する（AUTO_MEASURE 自身の PAUSE の
-// 「確認」が該当する）。
-test('ESTOP/CARRY 以外は現在モードで判定する', () => {
+// ESTOP/CARRY 以外は常に false。AUTO_MEASURE の回復フォルトで PAUSE に
+// 落ちた W-1「確認」は IDLE へ抜けないので確認を挟まない（SM-3.1.1-18）。
+test('ESTOP/CARRY 以外は常に false（AUTO_MEASURE の PAUSE の「確認」も含む）', () => {
   assert.equal(
     needsArmConfirmForExit({ trigger: 'ui.resume_ack', currentMode: 'AUTO_MEASURE', prevMode: '' }),
-    true)
+    false)
+  assert.equal(
+    needsArmConfirmForExit({ trigger: 'ui.finish', currentMode: 'AUTO_MEASURE', prevMode: '' }),
+    false)
+  assert.equal(
+    needsArmConfirmForExit({ trigger: 'ui.resume_no', currentMode: 'MANUAL', prevMode: '' }),
+    false)
   assert.equal(
     needsArmConfirmForExit({ trigger: 'ui.resume_ack', currentMode: 'PREP', prevMode: '' }),
     false)

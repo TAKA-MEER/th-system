@@ -1,7 +1,7 @@
 // 8-g P5a-ui: S-01 自律測定の入口・S-60・腕の格納の確認（DetailedDesign-measure.md §6.2）。
 import { test, expect } from '@playwright/test'
 import {
-  gotoScreenWithMeasure, gotoScreenWithParams, setTestState, setTestMeasureStatus, stubTrigger,
+  gotoScreenWithMeasure, gotoScreenWithParams, setTestState, setTestMeasureStatus, setTestFault, stubTrigger,
 } from './helpers.js'
 
 async function triggers(page) {
@@ -206,5 +206,28 @@ test('g: CARRY prev_mode MANUAL なら W-4 を出さずすぐ送る', async ({ p
 
   await expect(page.locator('[data-testid="w4-arm-ask"]')).toHaveCount(0)
   const sent = (await triggers(page)).filter((c) => c.trigger === 'ui.finish')
+  expect(sent).toHaveLength(1)
+})
+
+// ── (h) AUTO_MEASURE の回復フォルト PAUSE の W-1「確認」は W-4 を出さず送信する ──
+// PAUSE に留まり IDLE へ抜けない（C-05 の resume_state）ため SM-3.1.1-18 の対象外。
+test('h: AUTO_MEASURE/PAUSE の W-1「確認」は腕の確認を出さず ui.resume_ack をすぐ送る', async ({ page }) => {
+  await gotoScreenWithMeasure(page, 'S01',
+    { mode: 'AUTO_MEASURE', state: 'PAUSE', tracker_enabled: true, auto_brake: true },
+    { link_ok: true, mode: 'AUTO_MEASURE', state: 'PAUSE' })
+  await setTestFault(page, { active: true, fault_type: 'LIDAR_LOST', severity: 'RECOVERABLE' })
+
+  const win = page.locator('.win.fault.show')
+  await expect(win).toBeVisible()
+  await expect(win).toContainText('確認')
+
+  // フォルトが消えて W-1 が「再開しますか」になると「確認」ボタンが出る。
+  await setTestFault(page, { active: false, severity: '', fault_type: 'LIDAR_LOST' })
+  const ack = win.getByRole('button', { name: '確認', exact: true })
+  await expect(ack).toBeVisible()
+  await ack.click()
+
+  await expect(page.locator('[data-testid="w4-arm-ask"]')).toHaveCount(0)
+  const sent = (await triggers(page)).filter((c) => c.trigger === 'ui.resume_ack')
   expect(sent).toHaveLength(1)
 })

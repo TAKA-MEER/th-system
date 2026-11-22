@@ -6,12 +6,12 @@
 //
 // - ESTOP / CARRY の間は使うのは prev_mode（押下前モード）。現在モードだけ
 //   を見ると自律測定からの非常停止・手押しを拾えない。
-// - ESTOP / CARRY 以外は現在モードで判定する。AUTO_MEASURE 自身の W-1
-//   （フォルトで PAUSE）の「確認」(ui.resume_ack) が該当する。
+// - ESTOP / CARRY 以外は常に false。AUTO_MEASURE の回復フォルトで PAUSE に
+//   落ちたときの W-1「確認」(ui.resume_ack) は resume_state（PAUSE）に留まり
+//   IDLE へ抜けないので、SM-3.1.1-18 の対象外。S-60 の「自律測定を終了」は
+//   S-60 自身が W-4 を出す。
 // - P2 / P3（AT_PANEL の WORKING / ADJUST）は後で同じ部品を使うため、
-//   AT_PANEL の拡張点も aspirational ではなく条件側に書ける形にする。
-//   （このパケットでは AUTO_MEASURE だけが条件になる。AT_PANEL の条件は
-//   P2 で足す。）
+//   AT_PANEL の拡張点はコメントで残す（このパケットでは条件に含めない）。
 
 export const ARM_CONFIRM_TRIGGERS = ['ui.resume_no', 'ui.resume_ack', 'ui.finish']
 
@@ -25,5 +25,5 @@ export function needsArmConfirmForExit({ trigger, currentMode, prevMode }) {
   if (currentMode === 'ESTOP' || currentMode === 'CARRY') {
     return prevMode === 'AUTO_MEASURE'
   }
-  return currentMode === 'AUTO_MEASURE'
+  return false
 }
