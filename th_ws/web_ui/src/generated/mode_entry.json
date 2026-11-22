@@ -11,6 +11,9 @@
     "HOME_NAV",
     "IDLE"
   ],
+  "AUTO_MEASURE": [
+    "IDLE"
+  ],
   "CALIB": [
     "OPCHECK",
     "IDLE"
@@ -40,7 +43,8 @@
     "SUMMON",
     "HOME_NAV",
     "OPCHECK",
-    "CALIB"
+    "CALIB",
+    "AUTO_MEASURE"
   ],
   "INIT": [
     "IDLE"
