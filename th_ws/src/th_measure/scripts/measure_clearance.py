@@ -21,7 +21,7 @@ import math
 import rclpy
 import tf2_ros
 from rclpy.node import Node
-from rclpy.parameter import Parameter
+from rclpy.parameter import Parameter, ParameterDescriptor
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy, qos_profile_sensor_data)
 
@@ -86,7 +86,10 @@ class MeasureClearance(Node):
         # 生成 yaml が渡す。無い環境では既定（リミッタの既定余裕と空の死角）。
         self.declare_parameter('floor_margin_m', 0.30)
         self._floor_margin_m = float(self.get_parameter('floor_margin_m').value)
-        self.declare_parameter('blind_angle_ranges', [])
+        # lidar_filter と同じ理由（DOUBLE_ARRAY の既定 [] 推論を避ける）。
+        self.declare_parameter(
+            'blind_angle_ranges', [],
+            ParameterDescriptor(dynamic_typing=True))
         _blind_deg = list(self.get_parameter('blind_angle_ranges').value or [])
         self._blind_rad = tuple(
             (math.radians(float(_blind_deg[i])), math.radians(float(_blind_deg[i + 1])))
