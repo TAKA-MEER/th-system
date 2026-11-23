@@ -695,7 +695,7 @@ class TestAdjustNode(unittest.TestCase):
                    if abs(m.angular.z) > 0.01 or abs(m.linear.x) > 0.01]
         assert nonzero, '旋回中に behavior 指令が出ていない'
         assert all(abs(m.angular.z) <= 0.01 and abs(m.linear.x) <= 0.01
-                   for m in self._behavior[nonzero[-1]:]), \
+                   for m in self._behavior[nonzero[-1] + 1:]), \
             '途絶のあとに behavior 指令が再び出ている'
         # ハートビートは setUp で再開する（次試験への持ち越しを防ぐ）。
 
