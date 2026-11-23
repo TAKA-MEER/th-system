@@ -618,6 +618,13 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_auto_measure_node
     test/test_auto_measure_node.py
     TIMEOUT 300)
+  # 8-g P2（DetailedDesign-measure.md §6.3）: 本物の state_manager と measure_link・
+  # obstacle_limiter を生成 yaml 先渡しで起動し、お立会試験の停止命令
+  # （AT_PANEL/WORKING の meas.done・ジョグ拒否・回復フォルト・非常停止・手押し・
+  # 途絶・停止を解く）を縛る。
+  ament_add_pytest_test(test_working_stop_node
+    test/test_working_stop_node.py
+    TIMEOUT 600)
   # 8-g P5b（DetailedDesign-measure.md §6.2）: 本物の state_manager と measure_link・
   # venue_navigator（Nav2 は代役）を生成 yaml 先渡しで起動し、目的地への走行
   # （goal→NAV→ALIGN→WAIT と ARRIVED 1 回・拒否の順・停止/発進・非常停止は PAUSE・

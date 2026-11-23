@@ -70,6 +70,10 @@ ESTOP_MODE: str = "ESTOP"
 # ノード側にモード名リテラルを書かない。8-g P5a）。
 AUTO_MEASURE_MODE: str = "AUTO_MEASURE"
 
+# state_manager.py が「測定の続き」（8-g P2 の停止命令を含む）の判定で使う
+# 参照点（同上。AT_PANEL/WORKING も台帳の片付けの対象になる）。
+AT_PANEL_MODE: str = "AT_PANEL"
+
 # state_manager.py が ESTOP と同じく「前モードの恒常性一時的遷移」として
 # 扱う CARRY の参照点（同上。8-g P5a。LOCALIZATION_LOST の reentry_required が
 # ESTOP / CARRY を挟んだ復帰で消えないようにするため）。
@@ -195,6 +199,7 @@ ESTOP_PREV_MODES: Dict[str, Set[str]] = {
     "estop_prev_is_init": {"INIT"},
     "estop_prev_is_summon": {"SUMMON"},
     "estop_prev_is_at_panel": {"AT_PANEL"},
+    "estop_prev_is_at_panel_working": {"AT_PANEL"},
     "estop_prev_is_at_home": {"AT_HOME"},
     "estop_prev_is_opcheck": {"OPCHECK"},
     "estop_prev_is_calib": {"CALIB"},
@@ -207,6 +212,7 @@ ESTOP_PREV_MODES: Dict[str, Set[str]] = {
     "estop_resume_prev": set(MODES) - {"INIT", "IDLE", "ESTOP", "CARRY"},
     "carry_prev_is_summon": {"SUMMON"},
     "carry_prev_is_at_panel": {"AT_PANEL"},
+    "carry_prev_is_at_panel_working": {"AT_PANEL"},
     "carry_prev_is_at_home": {"AT_HOME"},
     "carry_prev_is_opcheck": {"OPCHECK"},
     "carry_prev_is_calib": {"CALIB"},

@@ -39,7 +39,7 @@ _SPEC_ID_RE = re.compile(r"SM-3\.1\.[12]-\d+[a-z]?")
 # SM-3.1.1-14 = 12。2026-10-22 に C-11-blocked を廃して 11。
 SPEC_FANOUT = {
     "SM-3.1.1-03": 2, "SM-3.1.1-04": 2, "SM-3.1.1-05": 2,
-    "SM-3.1.1-10": 4, "SM-3.1.1-11": 15, "SM-3.1.1-14": 11, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
+    "SM-3.1.1-10": 4, "SM-3.1.1-11": 16, "SM-3.1.1-14": 12, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
     "SM-3.1.2-043": 2,     "SM-3.1.2-069": 3, "SM-3.1.2-094": 4,
     # 1b-7 SG-B11: SM-3.1.2-017 は T-TEACH-05（ui.run 拒否）と T-TEACH-05J
     # （ui.jog.hold 拒否。C-01 が SAVED を抜ける穴塞ぎ）の 2 行。
@@ -87,6 +87,12 @@ SPEC_FANOUT = {
     # -121（目的地）= 拒否 3 行（入り直し要否・map_mismatch・角の確認）+ 受理 1 行
     # （T-MEAS-08 の measure_goal）。
     "SM-3.1.2-121": 4,
+    # 8-g P2（停止命令）: -062（入口）= T-ATP-01（ui.working）+ C-01-working
+    # （ジョグの拒否行）。-139（回復フォルト・途絶）= T-ATP-08-fault +
+    # T-ATP-09-ack の 2 行。-063（meas.done）は T-ATP-02-done の 1 行だけ
+    # （T-ATP-02 の ui.working off は -134）。-140 の復帰行は -11/-14 に含む。
+    "SM-3.1.2-062": 2,
+    "SM-3.1.2-139": 2,
 }
 
 
@@ -202,6 +208,10 @@ _STATIC_GUARD_OVERRIDES = {
     "estop_prev_is_at_panel": {"fault_active": False, "fault_severity": "",
                                "hw_estop": False, "prev_mode": "AT_PANEL",
                                "prev_state": "WORKING"},
+    # 8-g P2: 押下前が AT_PANEL/WORKING のときだけ真（-140 の復帰行）。
+    "estop_prev_is_at_panel_working": {"fault_active": False, "fault_severity": "",
+                                       "hw_estop": False, "prev_mode": "AT_PANEL",
+                                       "prev_state": "WORKING"},
     "estop_prev_is_at_home": {"fault_active": False, "fault_severity": "",
                               "hw_estop": False, "prev_mode": "AT_HOME",
                               "prev_state": "IDLE_H"},
@@ -234,6 +244,8 @@ _STATIC_GUARD_OVERRIDES = {
                              "prev_mode": "SUMMON", "prev_state": "NAV"},
     "carry_prev_is_at_panel": {"hw_estop": False, "fault_severity": "",
                                "prev_mode": "AT_PANEL", "prev_state": "WORKING"},
+    "carry_prev_is_at_panel_working": {"hw_estop": False, "fault_severity": "",
+                                       "prev_mode": "AT_PANEL", "prev_state": "WORKING"},
     "carry_prev_is_at_home": {"hw_estop": False, "fault_severity": "",
                               "prev_mode": "AT_HOME", "prev_state": "IDLE_H"},
     "carry_prev_is_opcheck": {"hw_estop": False, "fault_severity": "",

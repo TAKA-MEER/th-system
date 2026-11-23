@@ -40,7 +40,7 @@ from th_system_msgs.srv import MeasureCommand, SetFlag, UiTrigger
 
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
-from th_state.state_core import (AUTO_MEASURE_MODE, BOOT_MODE, CALIB_MODE, CARRY_MODE, ESTOP_MODE, IDLE_MODE,
+from th_state.state_core import (AT_PANEL_MODE, AUTO_MEASURE_MODE, BOOT_MODE, CALIB_MODE, CARRY_MODE, ESTOP_MODE, IDLE_MODE,
                                    OPCHECK_MODE, Context, Effect,
                                    REPLAY_MODE, StateCore, TEACH_MODES, is_driving)
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
@@ -700,8 +700,11 @@ class StateManager(Node):
             if record is not None:
                 self._publish_result(record)
 
-        # 「自律測定の続きにいる」を立てる（AUTO_MEASURE に入った遷移）。
-        if self.mode == AUTO_MEASURE_MODE:
+        # 「測定の続きにいる」を立てる（AUTO_MEASURE に入った遷移。8-g P2 では
+        # AT_PANEL/WORKING（停止命令の間）も「測定の続き」として台帳の片付けの
+        # 対象にする。AUTO_MEASURE の挙動は変えない）。
+        if (self.mode == AUTO_MEASURE_MODE
+                or (self.mode == AT_PANEL_MODE and self.state == "WORKING")):
             self._measure_in_session = True
         # 8-g P5a（§3.2・§6.2 結果の台帳）: 自律測定の続きから抜けたら、残っている
         # 指示を CANCELLED で終え、速度上限と入り直し要否を下ろす。
@@ -710,9 +713,14 @@ class StateManager(Node):
         # IDLE などへ出ても、続き flag が残っているのでここで片付ける。
         # ESTOP／CARRY から AUTO_MEASURE へ戻る道では flag が残り、
         # new mode が AUTO_MEASURE なので片付けない。
-        if (self._measure_in_session
-                and self.mode not in (AUTO_MEASURE_MODE, ESTOP_MODE, CARRY_MODE)):
-            reason = "finished" if event == "meas.finish" else "mode_exit"
+        # 「測定の続き」に留まる遷移（AUTO_MEASURE・ESTOP/CARRY の恒常一時の
+        # 遷移・AT_PANEL/WORKING の内部遷移）では片付けない。
+        _in_continuation = (
+            self.mode in (AUTO_MEASURE_MODE, ESTOP_MODE, CARRY_MODE)
+            or (self.mode == AT_PANEL_MODE and self.state == "WORKING"))
+        if self._measure_in_session and not _in_continuation:
+            reason = ("finished" if event in ("meas.finish", "meas.done")
+                      else "mode_exit")
             for record in self._measure_ledger.cancel_all(
                     reason, exclude=self._measure_current_command_id):
                 self._publish_result(record)
@@ -1395,7 +1403,10 @@ class StateManager(Node):
         msg.estop_from_ui = self._estop_from_ui
         msg.tracker_enabled = self._flags["tracker_enabled"]
         msg.auto_brake = auto_brake
-        msg.working = guards_module.is_working(self.mode, self.state)  # 状態が正本（1b-9）
+        # 8-g P2: 出す値は published_working（ESTOP・CARRY の間も押下前が
+        # AT_PANEL/WORKING なら true。行き先拒否のガード is_working は変えない）。
+        msg.working = guards_module.published_working(
+            self.mode, self.state, self.prev_mode, self.prev_state)
         msg.map_update = self._flags["map_update"]
         msg.unsaved = list(self._unsaved)
         msg.pause_reason = self._pause_reason

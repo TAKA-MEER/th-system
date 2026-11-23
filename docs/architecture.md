@@ -142,6 +142,29 @@ S-60 に「測定機能の画面へ」（`measure_ui_port` を `/params/get` で
 「自律測定を終了」（W-4 の腕の格納の確認を先に挟む）・「手動」が並ぶ。
 W-1／W-2 の IDLE 抜け道にも同じ腕の確認を挟む（`SM-3.1.1-18`）。
 
+**お立会試験の停止命令 `AT_PANEL`／`WORKING`（8-g P2）**: S-21 の「測定機能へ」が
+`ui.working`（`{"on": true}`）で `IDLE_P`→`WORKING` に入る（測定機能の生存は
+ガードにしない。止まる向きなので）。`WORKING` で受ける `meas.*` は測定機能の
+「測定を終えた」`meas.done` だけ（`WORKING`→`IDLE_P`。すぐ `DONE`。ほかは
+`state_not_accepting`。`IDLE_P`・`PAUSE` では従来どおりすべて拒否）。人の
+「停止を解く」は既存の `ui.working`（`{"on": false}`）。ジョグは
+`override_common` の拒否行（`C-01-working`）で `C-01` より先に
+`working_in_progress` で落とす（`jog_active` が立たず `/cmd_vel` は 0 のまま）。
+回復フォルト（`fault.recoverable`）は `override_common` の行で `WORKING` のまま
+（effect `open_window`。`C-03` の `PAUSE` には落とさない）。W-1 の「確認」
+（`ui.resume_ack`。ガード `fault_cleared`）は状態を変えずに受ける
+（effect `close_window`）。測定機能との途絶（`evt.measure_link_lost`）は
+`WORKING` では遷移しない。非常停止・手押しの解除は、押下前が `WORKING` なら
+`AT_PANEL`／`WORKING` へ戻す（`C-09c-at-panel-working`・`C-11-at-panel-working`。
+ふつうの `AT_PANEL` は従来どおり `IDLE_P`。`IDLE` へ抜ける行は変えない）。
+`/system/state.working` の出す値は `guards.published_working` で決め、
+`ESTOP`・`CARRY` の間も押下前が `AT_PANEL`／`WORKING` なら `true` を保つ
+（行き先拒否のガード `is_working` は変えない。`/measure/status.working` は
+その写し）。結果の台帳も `AT_PANEL`／`WORKING` を「測定の続き」として扱い、
+そこから `ESTOP`・`CARRY` 以外へ出たら残りを `CANCELLED` にする
+（`meas.done` なら `finished`、ほかは `mode_exit`）。正本は
+`DetailedDesign-measure.md` §6.3。画面側（P2-ui）は別担当。
+
 ### 遷移ルールの実装（旧 FSM）
 
 `mode_manager` は `isTransitionAllowed()` 関数で遷移の許可・拒否を判定します。新しいモードを追加する場合はこの関数に遷移元/遷移先のペアを追加するだけで対応できます。

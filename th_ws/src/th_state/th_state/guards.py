@@ -148,6 +148,13 @@ def _estop_prev_is_at_panel(mode, state, ctx) -> bool:
     return _estop_base_ok(ctx) and ctx.prev_mode == "AT_PANEL"
 
 
+def _estop_prev_is_at_panel_working(mode, state, ctx) -> bool:
+    """8-g P2（SM-3.1.2-140）: 押下前が AT_PANEL/WORKING（停止命令の間）なら
+    WORKING へ戻す（C-09c-at-panel-working が C-09c-at-panel より前に拾う）。"""
+    return (_estop_base_ok(ctx) and ctx.prev_mode == "AT_PANEL"
+            and ctx.prev_state == "WORKING")
+
+
 def _estop_prev_is_at_home(mode, state, ctx) -> bool:
     return _estop_base_ok(ctx) and ctx.prev_mode == "AT_HOME"
 
@@ -217,6 +224,13 @@ def _carry_prev_is_summon(mode, state, ctx) -> bool:
 
 def _carry_prev_is_at_panel(mode, state, ctx) -> bool:
     return _carry_base_ok(ctx) and ctx.prev_mode == "AT_PANEL"
+
+
+def _carry_prev_is_at_panel_working(mode, state, ctx) -> bool:
+    """8-g P2（SM-3.1.2-140）: 押下前が AT_PANEL/WORKING（停止命令の間）なら
+    WORKING へ戻す（C-11-at-panel-working が C-11-at-panel より前に拾う）。"""
+    return (_carry_base_ok(ctx) and ctx.prev_mode == "AT_PANEL"
+            and ctx.prev_state == "WORKING")
 
 
 def _carry_prev_is_at_home(mode, state, ctx) -> bool:
@@ -315,6 +329,19 @@ def is_working(mode, state) -> bool:
 
 def _working(mode, state, ctx) -> bool:
     return is_working(mode, state)
+
+
+def published_working(mode, state, prev_mode, prev_state) -> bool:
+    """`/system/state.working` の出す値（8-g P2。SM-3.1.2-140・§4.2）。
+
+    `ESTOP`・`CARRY` の間も、押下前が `AT_PANEL`/`WORKING` なら `true` を保つ
+    （「回復フォルト・非常停止でも `working` は外れない」）。行き先拒否の
+    ガード `is_working` はモードと状態で見る今の形のまま変えない（出す値だけ
+    この関数で決める。`/measure/status.working` はこれの写し）。"""
+    if is_working(mode, state):
+        return True
+    return (mode in ("ESTOP", "CARRY") and prev_mode == "AT_PANEL"
+            and prev_state == "WORKING")
 
 
 def _goto_allowed(mode, state, ctx) -> bool:
@@ -547,6 +574,7 @@ GUARDS: Dict[str, Callable] = {
     "estop_prev_is_init": _estop_prev_is_init,
     "estop_prev_is_summon": _estop_prev_is_summon,
     "estop_prev_is_at_panel": _estop_prev_is_at_panel,
+    "estop_prev_is_at_panel_working": _estop_prev_is_at_panel_working,
     "estop_prev_is_at_home": _estop_prev_is_at_home,
     "estop_prev_is_opcheck": _estop_prev_is_opcheck,
     "estop_prev_is_calib": _estop_prev_is_calib,
@@ -558,6 +586,7 @@ GUARDS: Dict[str, Callable] = {
     "carry_resume_prev": _carry_resume_prev,
     "carry_prev_is_summon": _carry_prev_is_summon,
     "carry_prev_is_at_panel": _carry_prev_is_at_panel,
+    "carry_prev_is_at_panel_working": _carry_prev_is_at_panel_working,
     "carry_prev_is_at_home": _carry_prev_is_at_home,
     "carry_prev_is_opcheck": _carry_prev_is_opcheck,
     "carry_prev_is_calib": _carry_prev_is_calib,
@@ -571,7 +600,7 @@ GUARDS: Dict[str, Callable] = {
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 71, len(GUARDS)
+assert len(GUARDS) == 73, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:
