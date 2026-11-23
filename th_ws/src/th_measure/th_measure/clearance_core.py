@@ -84,3 +84,100 @@ def decide_clear(tf_ok: bool, scan_age_ms: float | None,
     if costmap_blocked:
         return False, REASON_OBSTACLE_COSTMAP
     return True, REASON_CLEAR
+
+# 8-g P3（DetailedDesign-measure.md §6.4）: 並進の「進む先」の空き距離。
+# 機体の形 0.55 m 角（半幅 BODY_HALF_M）が障害物に当たるまでの距離から
+# リミッタの止まった位置の余裕 floor_margin_m を引いたもの。
+BODY_HALF_M = 0.275
+
+
+def _in_blind(angle_rad: float, blind_ranges_rad) -> bool:
+    for a0, a1 in blind_ranges_rad or []:
+        if a0 <= angle_rad <= a1:
+            return True
+    return False
+
+
+def free_distance(points_xy, forward: bool, blind_ranges_rad=(),
+                  floor_margin_m: float = 0.0,
+                  max_range_m: float | None = None) -> float:
+    """まっすぐ進む（forward=True）／退くときの free 距離 [m]。
+
+    掃いた範囲 = 幅 [-0.275, 0.275] の corridor。障害物点が corridor 内で
+    一番近いものまでの「形が当たるまでの距離」- floor_margin。見える範囲の外は
+    空きとする（max_range_m で上限。返りの無い方向は端までを空き）。
+    死角にかかる向きは 0（確かめられないものを空きと扱わない）。
+    """
+    direction = 1.0 if forward else -1.0
+    # 死角判定: 進む向きの角が死角にかかるとき 0。
+    ang = 0.0 if forward else math.pi
+    if _in_blind(ang, blind_ranges_rad):
+        return 0.0
+    best = None
+    for x, y in points_xy or []:
+        x = float(x); y = float(y)
+        if abs(y) > BODY_HALF_M:
+            continue
+        t = x * direction          # 進む向きの座標（>0 が先）
+        if t <= 0:
+            continue
+        if best is None or t < best:
+            best = t
+    if best is None:
+        free = float(max_range_m) if max_range_m else 10.0
+    else:
+        free = (best - BODY_HALF_M) - float(floor_margin_m)
+    return max(0.0, free)
+
+
+def free_distance_from_grid(grid, center_x: float, center_y: float,
+                            forward: bool, dir_x: float, dir_y: float,
+                            blind_ranges_rad=(), floor_margin_m: float = 0.0,
+                            max_range_m: float | None = None) -> float:
+    """コストマップ版。grid は占有セルを持つもの、中心 (center_x, center_y) は
+    base_link 中心を grid 座標系へ変換したもの、(dir_x, dir_y) は
+    base_link の +x を grid 座標系へ変換した単位ベクトル。"""
+    ang = 0.0 if forward else math.pi
+    if _in_blind(ang, blind_ranges_rad):
+        return 0.0
+    res = float(grid.resolution)
+    if res <= 0:
+        return 0.0
+    direction = 1.0 if forward else -1.0
+    best = None
+    w, h = int(grid.width), int(grid.height)
+    data = grid.data
+    for iy in range(h):
+        cy = float(grid.origin_y) + (iy + 0.5) * res
+        for ix in range(w):
+            if int(data[iy * w + ix]) < COSTMAP_BLOCKED_MIN:
+                continue
+            cx = float(grid.origin_x) + (ix + 0.5) * res
+            dx, dy = cx - center_x, cy - center_y
+            t = dx * dir_x + dy * dir_y
+            lateral = -dx * dir_y + dy * dir_x
+            scaled = t * direction
+            if scaled <= 0 or abs(lateral) > BODY_HALF_M:
+                continue
+            if best is None or scaled < best:
+                best = scaled
+    if best is None:
+        free = float(max_range_m) if max_range_m else 10.0
+    else:
+        free = (best - BODY_HALF_M) - float(floor_margin_m)
+    return max(0.0, free)
+
+
+def combine_free(scan_free: float, map_free: float,
+                 scan_ok: bool, map_ok: bool) -> float:
+    """スキャンとコストマップの free の小さい方。届いていない側は見ない
+    （空き扱いではなく無視する。両方届かなければ 0 にはならないが、
+    state_manager 側の鮮度で途絶は 0 に倒される）。"""
+    vals = []
+    if scan_ok:
+        vals.append(scan_free)
+    if map_ok:
+        vals.append(map_free)
+    if not vals:
+        return 0.0
+    return max(0.0, min(vals))

@@ -80,3 +80,49 @@ def test_decide_clear_order():
         False, "obstacle_costmap")
     # 空いていれば clear。
     assert decide_clear(True, 10.0, 500.0, False, False) == (True, "clear")
+
+
+# ---------- 8-g P3: free_forward_m / free_backward_m ----------
+from th_measure.clearance_core import (BODY_HALF_M, combine_free,  # noqa: E402
+                                       free_distance)
+
+
+def _blind_rad(deg_pairs):
+    import math
+    return tuple((math.radians(a), math.radians(b))
+                 for a, b in zip(deg_pairs[::2], deg_pairs[1::2]))
+
+
+def test_body_half_is_quarter_meter():
+    assert abs(BODY_HALF_M - 0.275) < 1e-9
+
+
+def test_free_forward_subtracts_margin():
+    # 壁 0.9 m: 形が当たるまで 0.625 から余裕 0.3 を引く。
+    free = free_distance([(0.9, 0.0)], True, floor_margin_m=0.3)
+    assert abs(free - 0.325) < 1e-6
+    # 余裕を引かないと 0.5 も通る（変異チェック d の裏付け）。
+    assert free_distance([(0.9, 0.0)], True, floor_margin_m=0.0) > 0.5
+
+
+def test_free_backward_uses_rear_points():
+    assert abs(free_distance([(-0.9, 0.0)], False, floor_margin_m=0.3) - 0.325) < 1e-6
+    # 前の点は後ろの free に数えない。
+    assert abs(free_distance([(0.9, 0.0)], False, floor_margin_m=0.3,
+                             max_range_m=10.0) - 10.0) < 1e-6
+
+
+def test_free_zero_on_blind_stale_and_tf():
+    # 死角にかかる向き（後ろ 180° が死角）→ 0。
+    assert free_distance([(-0.9, 0.0)], False,
+                         blind_ranges_rad=_blind_rad([170, 190]),
+                         floor_margin_m=0.3) == 0.0
+    assert combine_free(0.0, 0.0, False, False) == 0.0
+
+
+def test_free_ignores_off_corridor_and_uses_min_of_sources():
+    # corridor の外の点（y=0.5）は進む先に数えない。
+    assert free_distance([(0.9, 0.5)], True, floor_margin_m=0.3,
+                         max_range_m=10.0) == 10.0
+    assert combine_free(10.0, 0.3, True, True) == 0.3
+    assert combine_free(10.0, 0.0, True, False) == 10.0
