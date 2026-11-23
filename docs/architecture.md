@@ -60,6 +60,10 @@ safety_monitor ─→ /safety/fault_lock (lock 254) ─────────�
 下流から見て「指令が来ない」状態を作らないため）。判定ロジックは ROS2 非依存の
 `th_safety/obstacle_limiter_core.hpp` にあり、ノード側は sub/pub/timer の配線だけを行います。
 起動時に `base_link ← laser_link` の TF を有界リトライで取得します。
+測定機能の速度・加速度の上限（8-g P5c・`DetailedDesign-measure.md` §6.6）は
+`/system/state` の `measure_*_cap` 4 項目を受け、速度は即座クランプ、加速度は
+通常時ランプの上限に `min` で効く（下げる方向にだけ。ロック・途絶・障害物の
+停止はランプを通らない）。
 
 各入力トピックのタイムアウト値は `th_safety/config/twist_mux.yaml` で変更します。
 
@@ -119,8 +123,8 @@ ROS 非依存）、`/system/event` へ `evt.measure_link_ok` ／ `evt.measure_li
 止める前の状態へ。`NAV`・`BLOCKED`→`NAV`、`ALIGN`→`ALIGN`、それ以外→`WAIT`。
 `NAV`・`ALIGN` へ戻るときは角の確認をし直す）・`meas.stop`（走行系→`PAUSE`。目的地は持つ）・
 `meas.abort`（走行系・`PAUSE`→`WAIT`。目的地は `CANCELLED`（`aborted`））・
-`meas.finish`（→`IDLE`）。`meas.set_limits` は効かせる仕組み（P5c）まで受けない
-（`state_not_accepting`。`/measure/command_state` の `v_cap` は 0 のまま）。
+`meas.finish`（→`IDLE`）。`meas.set_limits` は P5c で受ける（`AUTO_MEASURE` の
+全状態と `AT_PANEL`／`WORKING`・`ADJUST`。状態は変えない。8-g P5c）。
 `PAUSE` からは `ui.resume_yes` では戻らず、`meas.start` だけで戻る。`/measure/command` は
 受理の判定 → 台帳への記録 → 遷移の順に処理する。引数（`x`・`y`・`yaw`・
 `map_instance_id` ほか）と `command_id` を遷移表の `arg` に渡す。
@@ -161,6 +165,14 @@ effect `measure_adjust`（`{command_id, kind, angle_rad, side, distance_m}`）�
 自律測定の `ADJUST` からは非常停止・手押しへ入ると戻り先は `PAUSE`（走行状態と同じ）。
 停止命令の `ADJUST` では `meas.done`・停止を解く・行き先を拒否するので、閉じ込めは起きない。
 正本は `DetailedDesign-measure.md` §6.4。
+
+**速度・加速度の上限 `meas.set_limits`（8-g P5c）**: `state_manager` が
+4 項目を測定の続きの間だけ持ち（`ESTOP`・`CARRY` を挟んでも持つ）、
+`/system/state` の末尾 4 項目と `/measure/command_state` へ出す。続きでなく
+なったら 0 に戻す。`obstacle_limiter` が速度は即座クランプ、加速度は
+通常時ランプの上限に `min` で効かせ、`measure_link` が `/measure/status`
+の `v_limit_mps`・`w_limit_radps` に本システムの上限との小さい方を出す。
+正本は `DetailedDesign-measure.md` §6.6。
 
 **自律測定の画面（8-g P5a-ui）**: S-01 の「測定」の「自律測定」から入れ、
 S-60 に「測定機能の画面へ」（`measure_ui_port` を `/params/get` で読む）・
