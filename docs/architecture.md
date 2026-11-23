@@ -137,6 +137,23 @@ ROS 非依存）、`/system/event` へ `evt.measure_link_ok` ／ `evt.measure_li
 `IDLE` へ出た場合を含む）に、残りの指示を `CANCELLED` にし、`reentry_required`
 を下ろす（`state_manager` の `_measure_in_session`）。正本は `DetailedDesign-measure.md` §6.2。
 
+**盤前の旋回・前後の並進 `ADJUST`（8-g P3）**: `measure_adjuster`（`th_measure`）が
+effect `measure_adjust`（`{command_id, kind, angle_rad, side, distance_m}`）を受け、
+`/system/state` が `ADJUST` の間だけ `/cmd_vel_behavior` に出す（Nav2 を使わない直接制御。
+帰還は TF `odom→base_link`。旋回は始点からのヨーを巻き戻さずに積み上げ、並進は始点からの
+進んだ距離で向きを保つ）。`meas.turn`／`meas.translate` は `AUTO_MEASURE`／`WAIT` と
+`AT_PANEL`／`WORKING` で受け、拒否の順は `reentry_required` → `corner_obstacle` →
+並進だけ `path_obstacle`（進む先の空きは `measure_clearance` が
+`/measure/corner_status` の `free_forward_m`／`free_backward_m` に出す）。速度の上限は
+状態 `ADJUST` で両モードとも `v_jog_panel`。締め切りは `state_manager` が
+`adjust_timeout_ms` でタイマを切り `sys.adjust_timeout` を流す。終わったら
+`evt.adjust_done` で `WAIT`／`WORKING` へ戻し、台帳に `DONE` を 1 回出す。
+`ADJUST` を出たら進行中の旋回・並進は `CANCELLED`（理由は出た契機。
+`evt.adjust_done` の `command_id` が進行中と違うものは捨てる）。
+自律測定の `ADJUST` からは非常停止・手押しへ入ると戻り先は `PAUSE`（走行状態と同じ）。
+停止命令の `ADJUST` では `meas.done`・停止を解く・行き先を拒否するので、閉じ込めは起きない。
+正本は `DetailedDesign-measure.md` §6.4。
+
 **自律測定の画面（8-g P5a-ui）**: S-01 の「測定」の「自律測定」から入れ、
 S-60 に「測定機能の画面へ」（`measure_ui_port` を `/params/get` で読む）・
 「自律測定を終了」（W-4 の腕の格納の確認を先に挟む）・「手動」が並ぶ。

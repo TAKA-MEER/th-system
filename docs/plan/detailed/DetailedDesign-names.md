@@ -92,6 +92,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | `esp32_bridge` | `th_esp32_bridge` | `scripts/esp32_bridge.py` | ESP32 リンク（既存） |
 | **`measure_link`** | **`th_measure`** | **`scripts/measure_link.py`** | **測定機能の生存確認と `/measure/status`**（[measure](DetailedDesign-measure.md) §6.1。2026-11-23） |
 | **`measure_clearance`** | **`th_measure`** | **`scripts/measure_clearance.py`** | **角が描く円の中の障害物（発進前の確認）を `/measure/corner_status` に出す**（[measure](DetailedDesign-measure.md) §6.2 P5b。2026-11-23）。P4 で `/measure/check_arm_clearance` も |
+| **`measure_adjuster`** | **`th_measure`** | **`scripts/measure_adjuster.py`** | **盤前の旋回・前後の並進（`ADJUST`。Nav2 を使わない直接制御。`/cmd_vel_behavior` にだけ出す）**（[measure](DetailedDesign-measure.md) §6.4。2026-11-23） |
 
 **`person_predictor` は廃止する。**`/cmd_vel_retreat` への捜索旋回の発行者であり、
 `Spec-transit.md` §1.2「ロストしたら選択を解除して停止」と食い違う
@@ -492,7 +493,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`/measure/result`** | `MeasureResult` | reliable, depth 20。結果が出るたび（[measure](DetailedDesign-measure.md) §3.2） |
 | **`/measure/heartbeat`** | `MeasureHeartbeat` | reliable, depth 1。**5 Hz（発行者は測定機能の機能側）**（[measure](DetailedDesign-measure.md) §3.4） |
 | **`/measure/command_state`** | `std_msgs/String`（JSON） | **内部。`state_manager` → `measure_link`。**reliable, transient_local, depth 1。変わったとき（[measure](DetailedDesign-measure.md) §6.1。2026-11-23） |
-| **`/measure/corner_status`** | `std_msgs/String`（JSON `{"clear": bool, "reason": str}`） | **内部。`measure_clearance` → `state_manager`。**5 Hz。1 秒届かなければ `clear=false` とみなす（[measure](DetailedDesign-measure.md) §6.2 P5b） |
+| **`/measure/corner_status`** | `std_msgs/String`（JSON `{"clear": bool, "reason": str}`） | **内部。`measure_clearance` → `state_manager`。**5 Hz。1 秒届かなければ `clear=false` とみなす（[measure](DetailedDesign-measure.md) §6.2 P5b）。8-g P3（§6.4）では JSON に `free_forward_m`・`free_backward_m`（並進の「進む先」の空き距離。死角・古いスキャン・TF 無しは 0）を足す |
 
 > **`/route/list` はサービス名。**トピック側は **`/route/catalog`** に改名した（名前の衝突を解いた）。
 
@@ -593,6 +594,9 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`mux_liveness_grace_ms`** | ms | (b)。`MUX_DEAD` の生存確認（`twist_mux` が `/cmd_vel_muxed` の publisher から居なくなってこの時間で死とみなす。`safety_monitor`。`DetailedDesign-safety.md` §5.6） |
 | **`measure_link_timeout_ms`** | ms | (b)。`/measure/heartbeat` の途絶とみなすまでの時間（[measure](DetailedDesign-measure.md) §3.4・§6.1。Spec-params §2 の「測定機能との通信が途絶えたとみなすまでの時間」）。初期値 1000（2026-11-23） |
 | **`arm_clearance_scan_max_age_ms`** | ms | (b)。腕が振れる範囲の確認で、これより古いスキャンなら `UNKNOWN`（[measure](DetailedDesign-measure.md) §3.5）。**角が描く円の確認（`measure_clearance`。P5b）も同じ値で、古ければ `clear=false`**（2026-11-23）。2026-11-04（案） |
+| **`adjust_timeout_ms`** | ms | (b)。`ADJUST` に入ってからこれで締め切る（8-g P3。§6.4。`state_manager` がタイマで `sys.adjust_timeout` を流す）。3000 以上 | 
+| **`adjust_translate_v_mps`** | m/s | (b)。`ADJUST` の前後並進の速さ（8-g P3。§6.4。新規 registry 値）。`consumers: [measure_adjuster]` | 
+| **`adjust_translate_tolerance_m`** | m | (b)。`ADJUST` の前後並進の許容差（8-g P3。§6.4。新規 registry 値）。`consumers: [measure_adjuster]` |
 | **`mux_report_only`** | — | given bool。true の間は `MUX_DEAD` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。同 §5.6） |
 | **`controller_conflict_hold_ms`** | ms | (b)。`CONTROLLER_CONFLICT` の保持時間（`/cmd_vel` の publisher が 2 つ以上、または制御系ノードが同名で 2 つ以上いる状態がこの時間続いたら成立。DDS が落ちたノードの残骸を数秒見せ続けることがあるため、その見え方より長くする。`safety_monitor`。Spec-safety §6.4） |
 | **`controller_conflict_report_only`** | — | given bool。true の間は `CONTROLLER_CONFLICT` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。`mux_report_only` と同じ形） |
@@ -806,6 +810,9 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`evt.unblocked`** | 各 navigator |
 | `evt.register_ok` ／ `evt.register_rejected` | `pin_registrar` |
 | **`evt.measure_link_ok` ／ `evt.measure_link_lost`** | **`measure_link`**（変化時と 1 Hz の出し直し。[measure](DetailedDesign-measure.md) §6.1） |
+| **`evt.adjust_done`** | **`measure_adjuster`**（`ADJUST` の動きが終わった。`arg_json` に `command_id`。8-g P3。§6.4） |
+| **`evt.adjust_failed`** | **`measure_adjuster`**（進まないと分かったとき。`arg_json` に `command_id`・`reason`。8-g P3。§6.4） |
+| **`sys.adjust_timeout`** | **`state_manager`**（`ADJUST` が `adjust_timeout_ms` を超えたときにタイマで生成。8-g P3。§6.4） |
 | `evt.record_broken` | `route_recorder`（記録の連続性が切れた → `IDLE` へ） |
 | `evt.check_result` | `opcheck_runner`。`{"item":..., "result":...}` |
 | `evt.nav_tf_stall` | `venue_navigator`（Nav2 TF 停滞の検知・記録だけ。follow_path の打ち切りの 3 回連続＋位置不動（20 cm 未満）＋`/tf` 新で発火。`/rosout` の進捗失敗は届けば arg の `progress_count` に載るだけで条件ではない。止める・再起動しない。FSM は無視） |
