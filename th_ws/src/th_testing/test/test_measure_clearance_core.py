@@ -179,6 +179,22 @@ def test_arm_blind_only_is_unknown_and_visible_beats_blind():
     assert region_overlaps_blind(right, blind_90) is False
 
 
+def test_arm_registry_blind_does_not_cover_rect_sides():
+    # registry の blind_angle_ranges（4 セクタ）では、§3.5 の長方形のどの
+    # 向きも死角にならない（隅だけがセクタに当たっても代表向きは外）。
+    import math
+    blind = _blind_rad([-132.8, -117.5, -59.5, -38.9,
+                        45.9, 61.5, 130.3, 143.5])
+    for ang in (0.0, math.pi / 2.0, -math.pi / 2.0):
+        assert region_overlaps_blind(rotate_polygon(_RECT, ang), blind) is False
+    # 右だけを覆う値では右だけが死角になる（試験 d と同じ値）。
+    right_blind = _blind_rad([-100.0, -80.0])
+    assert region_overlaps_blind(
+        rotate_polygon(_RECT, -math.pi / 2.0), right_blind) is True
+    assert region_overlaps_blind(
+        rotate_polygon(_RECT, math.pi / 2.0), right_blind) is False
+
+
 def test_arm_stale_is_all_unknown():
     # 古いスキャン（未受信・超え）→ 全部 UNKNOWN scan_stale。
     for age in (None, 500.1, 10000.0):

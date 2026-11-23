@@ -305,16 +305,30 @@ def _sample_region(polygon):
 def region_overlaps_blind(polygon, blind_ranges_rad) -> bool:
     """範囲が LiDAR の死角にかかるか。
 
-    範囲を細かく標本化し、laser_link から見た向き（laser と base の向きは
-    同じ前提。P3 の free_*_m と同じ）が blind_angle_ranges に入る標本が
-    あるかで決める。
+    範囲を細かく標本化し（機体の内側を除く）、標本の平均位置の向きを
+    代表向きとして、laser_link から見た向き（laser と base の向きは同じ
+    前提。P3 の free_*_m と同じ）が blind_angle_ranges に入るかで決める。
+
+    標本のどれか 1 つでも死角に入るかで決めると、矩形の隅（機体の斜め前）が
+    支柱の死角セクタ（registry の 4 セクタ）に当たって、どの向きも
+    `blind_sector` になり、腕の確認が常に `UNKNOWN` になる（§3.5 が
+    機体の内側を除いて「毎回 UNKNOWN」を避けた意図に反する）。
+    範囲全体が死角の中にあるときは代表向きも死角に入るため、この
+    決め方でも拾える。
     """
     if not blind_ranges_rad:
         return False
-    for x, y in _sample_region(polygon):
-        if _in_blind(math.atan2(y, x), blind_ranges_rad):
-            return True
-    return False
+    samples = _sample_region(polygon)
+    if not samples:
+        return False
+    mx = sum(x for x, _ in samples) / len(samples)
+    my = sum(y for _, y in samples) / len(samples)
+    if math.hypot(mx, my) < 1e-9:
+        # 代表向きが取れない形（原点のまわりを囲む範囲など）は、標本の
+        # どれかが死角に入るかで決める。
+        return any(_in_blind(math.atan2(y, x), blind_ranges_rad)
+                   for x, y in samples)
+    return _in_blind(math.atan2(my, mx), blind_ranges_rad)
 
 
 def polygon_blocked_by_costmap(grid, origin_x: float, origin_y: float,
