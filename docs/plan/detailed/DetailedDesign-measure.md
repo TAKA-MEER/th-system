@@ -293,7 +293,7 @@ builtin_interfaces/Time checked_at
 | 途絶（-133） | `NAV`・`ALIGN`・`BLOCKED` → `PAUSE`（`pause_reason` `measure_link`）。目的地は持ったまま |
 | 到着（-124） | `ALIGN` → `WAIT` の遷移で、目的地の `command_id` に `ARRIVED` を**ちょうど 1 回** |
 | 非常停止・手押し | `NAV`・`ALIGN`・`BLOCKED` から入って戻ると `PAUSE`（走り出さない）。目的地は持ったまま。`LOCALIZATION_LOST` だけは P5a のとおり `CANCELLED`（`localization_lost`） |
-| 速度・加速度の上限（`meas.set_limits`） | **効かせる仕組み（`obstacle_limiter` が上限を下げる）ができるまで受けない**（`state_not_accepting`）。P5a で入れた受ける行は外し、`/measure/status` の `v_limit_mps` も `v_cap` を混ぜない（効いていない上限を報告しない）。効かせるのは別のパケット（P5c） |
+| 速度・加速度の上限（`meas.set_limits`） | **P5c（§6.6）で受けるようにした（2026-11-24）。以下は P5b の時点の決まり**: 効かせる仕組み（`obstacle_limiter` が上限を下げる）ができるまで受けない（`state_not_accepting`）。P5a で入れた受ける行は外し、`/measure/status` の `v_limit_mps` も `v_cap` を混ぜない（効いていない上限を報告しない）。効かせるのは別のパケット（P5c） |
 
 **P5a-ui（画面）の決まり**（2026-11-23）。正は [Spec-webui.md](../spec/Spec-webui.md) §3.2・§3.16 と [Spec-modes.md](../spec/Spec-modes.md) `SM-3.1.1-18`。
 
@@ -368,6 +368,20 @@ builtin_interfaces/Time checked_at
 | 1 つの向きの判定 | `region` を `base_link` の原点まわりに `LEFT` +90°・`RIGHT` −90°・`CURRENT` 0° 回し、**機体の形 0.55 m 角（\|x\|・\|y\| ≤ 0.275 m）の内側を除いた部分**を見る。順に: **① スキャンが `arm_clearance_scan_max_age_ms` より古い・届いていない・TF（`base_link`←`laser_link`）が取れない → `UNKNOWN`（`scan_stale`）**（全部の向き）→ **② 範囲の中に障害物（`/scan_filtered` の有効点か、局所コストマップの占有セル。角の円と同じ入力・同じしきい値。コストマップが届いていなければスキャンだけ）→ `BLOCKED`**（見えている物があれば、死角があっても塞がり）→ **③ 範囲が LiDAR の死角（`blind_angle_ranges`）にかかる → `UNKNOWN`（`blind_sector`）。ただし `laser_link` の中心から **`arm_clearance_blind_near_m`**（新しい registry 値。class b・given・初期値 0.65 m）以内の部分は死角の判定から除く**（四隅の支柱の影。2026-11-23 ユーザー決定。[Spec-measure.md](../spec/Spec-measure.md) §5.2 の既知のリスク。除かないと、いまの支柱ではどの向きも毎回 `UNKNOWN`。障害物の判定 ② は除かない）。**範囲の平均の向きなど代表の向きで決めない**（遠くで死角にかかる部分を見逃す） → ④ `CLEAR`。返りの無い方向（見える範囲の外）は空きとする（§6.4 の進む先と同じ） |
 | 返す形 | `sides` は問い合わせと同じ順。`results` と `unknown_reasons` は `sides` と同じ長さで、`unknown_reasons` は `UNKNOWN` 以外では空文字。`checked_at` は判定に使ったスキャンの時刻（スキャンが無ければ 0） |
 | 時点 | 問い合わせの時点の最新のスキャンで同期に判定する（溜めない・待たない）。腕を動かす直前に問い合わせ直すのは測定機能 |
+
+### 6.6 速度・加速度の上限（`meas.set_limits`）の作り（2026-11-24 決定。計画書 8-g の P5c）
+
+**機体側だけ（画面は無い）。**正は [Spec-measure.md](../spec/Spec-measure.md) §3・§5.1（下げる方向にだけ効く・障害物・非常停止・途絶による停止は鈍らせない）と §3.1 の表の `meas.set_limits` の行。P5b で「効かせる仕組みができるまで受けない」とした行（§6.2）を、この節で置き換える。
+
+| 項目 | 決まり |
+| --- | --- |
+| 受ける状態 | `AUTO_MEASURE` の全状態と `AT_PANEL`/`WORKING`・`ADJUST`（§3.1 の表）。**状態は変えない**。すぐ `DONE` |
+| 引数 | `v_max_mps`・`w_max_radps`・`a_max_mps2`・`alpha_max_radps2`。**0 は「指定しない」**（その項目は本システムの上限のまま）。負・有限でないは `bad_argument`。**1 回の指示で 4 つまとめて置き換える**（前の指示の値は残さない。0 を送ればその項目は外れる） |
+| 持つ所・捨てる時 | `state_manager` が持つ。**測定の続きの間だけ持ち**（結果の台帳の片付けと同じ判定。§6.3・§6.4。`ESTOP`・`CARRY` を挟んでも持つ）、続きでなくなったら 4 つとも 0 に戻す（自律測定を抜けた・停止命令が解けた。人のジョグに効き続けないため） |
+| 運び方 | `SystemState` の末尾に **`measure_v_cap_mps`・`measure_w_cap_radps`・`measure_a_cap_mps2`・`measure_alpha_cap_radps2`**（float32。0＝指定なし）を足す（内部の型。測定機能の型は変えない）。`/measure/command_state` の `v_cap_mps`・`w_cap_radps` も同じ値 |
+| 効かせ方（`obstacle_limiter`） | 速度: **直線の上限 = min(今の上限, `measure_v_cap_mps`)・角速度の上限 = min(`w_max`, `measure_w_cap_radps`)**（指定があるときだけ。障害物・画面・モードの上限と同じく、ランプを通さず即座に絞る）。加速度: **通常時ランプの加速度の上限 = min(`normal_accel_mps2`, `measure_a_cap_mps2`)・角加速度 = min(`normal_angular_accel_rps2`, `measure_alpha_cap_radps2`)**（ランプは指令の変化にだけかかるので、加速と指令による減速の両方に効く。`normal_*` が 0（ランプなし）のときは指定の値だけで）。**ロック・途絶・障害物の上限による停止はいまの作りのままランプを通らない**（鈍らせない。§5.1）。`/system/state` が古いときは最後に受けた指定を使い続ける（下げた上限を勝手に外さない） |
+| 報告（`/measure/status`） | `v_limit_mps` = min(本システムの上限, `v_cap`)・`w_limit_radps` = min(`w_max`, `w_cap`)（指定が無ければ本システムの上限だけ）。**いま効いている値を出す** |
+| 既知の注意 | 旋回（`ADJUST`）の角速度の指定を向き合わせの旋回の速さの下限（`turn_in_place_w_min_rps`）より小さくすると回り切れず、締め切りで取り消しになりうる（測定機能が値を決めるときに考える。fk `FK-V5`） |
 
 ## 7. 未決と依存
 
