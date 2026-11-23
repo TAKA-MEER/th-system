@@ -10,20 +10,30 @@
 //   落ちたときの W-1「確認」(ui.resume_ack) は resume_state（PAUSE）に留まり
 //   IDLE へ抜けないので、SM-3.1.1-18 の対象外。S-60 の「自律測定を終了」は
 //   S-60 自身が W-4 を出す。
-// - P2 / P3（AT_PANEL の WORKING / ADJUST）は後で同じ部品を使うため、
-//   AT_PANEL の拡張点はコメントで残す（このパケットでは条件に含めない）。
+// - 8-g P2-ui: ESTOP / CARRY では prev_mode が AUTO_MEASURE のほかに
+//   /system/state.working が true のときも出す（AT_PANEL の WORKING から
+//   非常停止・手押しに入った場合。WORKING の間は ESTOP / CARRY でも
+//   working は外れない）。AT_PANEL / WORKING からの「終了」(ui.finish) も
+//   出す（working が true のときだけ。AT_PANEL の IDLE_P 由来は出さない）。
+//   AT_PANEL / WORKING の W-1「確認」(ui.resume_ack) は WORKING に留まる
+//   ので対象外（trigger が ui.resume_ack のとき AT_PANEL では出さない）。
 
 export const ARM_CONFIRM_TRIGGERS = ['ui.resume_no', 'ui.resume_ack', 'ui.finish']
 
-// needsArmConfirmForExit({ trigger, currentMode, prevMode }) -> bool
+// needsArmConfirmForExit({ trigger, currentMode, prevMode, working }) -> bool
 //
 // trigger: 送ろうとしている ui.* （IDLE へ抜けるものだけ。ui.resume_yes /
 // ui.carry_resume は元のモードへ戻るので対象外）。
 // currentMode: /system/state の mode。prevMode: 同 prev_mode。
-export function needsArmConfirmForExit({ trigger, currentMode, prevMode }) {
+// working: 同 working（停止命令の間。ESTOP / CARRY の間も押下前が
+// AT_PANEL / WORKING なら true）。
+export function needsArmConfirmForExit({ trigger, currentMode, prevMode, working = false }) {
   if (!ARM_CONFIRM_TRIGGERS.includes(trigger)) return false
   if (currentMode === 'ESTOP' || currentMode === 'CARRY') {
-    return prevMode === 'AUTO_MEASURE'
+    return prevMode === 'AUTO_MEASURE' || working === true
+  }
+  if (currentMode === 'AT_PANEL' && trigger === 'ui.finish') {
+    return working === true
   }
   return false
 }

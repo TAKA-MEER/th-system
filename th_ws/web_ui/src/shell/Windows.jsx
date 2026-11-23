@@ -80,7 +80,7 @@ const ESTOP_DISABLED_IN_CARRY = 'estop_disabled_in_carry'
 // control the same flag. It now doubles as "W-1 dismissed", covering both
 // the ESTOP and fault-caused-PAUSE cases below.
 export default function Windows({
-  ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, activeFaultTypes = [], pauseReason, attributes,
+  ros, w1Active, mode, stateName, prevMode, working = false, estopUi, estopHw, estopFromUi, fault, activeFaultTypes = [], pauseReason, attributes,
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose, guideKey, guideDetail, onGuideClose,
   saveAsk, onSaveYes, onSaveNo, saveBusy = false, saveError = null, autoBrake, autoBrakeCanToggle = false, confirmWindow,
@@ -174,7 +174,7 @@ export default function Windows({
   // 元のモードへ戻るボタン（ui.resume_yes / ui.carry_resume)は IDLE へ抜けないので
   // 確認を挟まない。
   const fireGated = (trigger) => {
-    if (needsArmConfirmForExit({ trigger, currentMode: mode, prevMode })) {
+    if (needsArmConfirmForExit({ trigger, currentMode: mode, prevMode, working })) {
       setArmPending({ trigger })
       return
     }
