@@ -693,8 +693,8 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         assert not self._results_for(cid)
 
     def test_h_goal_and_set_limits_rejected_in_nav(self):
-        """h. NAV の間 meas.goal は state_not_accepting。meas.set_limits はどの
-        状態でも state_not_accepting（P5c まで受けない）。"""
+        """h. NAV の間 meas.goal は state_not_accepting。meas.set_limits は
+        P5c で受け、状態は変えない（NAV のまま）。"""
         self._ensure_auto_measure_wait()
         cid = self._next_cid()
         res = self._call_measure('meas.goal', command_id=cid, map_instance_id='m1',
@@ -705,10 +705,9 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         assert res.accepted is False
         assert res.reject_reason == 'state_not_accepting', res.reject_reason
         res = self._call_measure('meas.set_limits', v_max=0.1)
-        assert res.accepted is False
-        assert res.reject_reason == 'state_not_accepting', res.reject_reason
+        assert res.accepted is True, res.reject_reason
         assert self._mode_state() == ('AUTO_MEASURE', 'NAV')
-        # set_limits は WAIT でも受けない。
+        # set_limits は WAIT でも受ける（状態は変えない）。
         res = self._call_trigger('ui.finish')
         assert res.accepted is True
         assert self._wait_mode_state('IDLE', 'NONE', timeout=8.0) is True
@@ -718,8 +717,8 @@ class TestAutoMeasureNavNode(unittest.TestCase):
         assert self._wait_mode_state('AUTO_MEASURE', 'WAIT', timeout=8.0) is True
         time.sleep(1.0)
         res = self._call_measure('meas.set_limits', v_max=0.1)
-        assert res.accepted is False
-        assert res.reject_reason == 'state_not_accepting', res.reject_reason
+        assert res.accepted is True, res.reject_reason
+        assert self._mode_state() == ('AUTO_MEASURE', 'WAIT')
 
     def test_i_new_goal_plans_fresh_path(self):
         """i. 目的地 A へ到着したあとの meas.goal（目的地 B）は新しい経路を計画する。

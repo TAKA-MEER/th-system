@@ -81,12 +81,11 @@ def test_resolve_speed_limit_stop_and_unknown_are_zero():
     assert resolve_speed_limit("v_slow", table) == 0.30
 
 
-def test_effective_v_limit_ignores_v_cap_until_p5c():
-    """8-g P5b: v_cap は混ぜない（効かせるのは P5c）。指定があっても本システムの
-    上限だけが v_limit_mps に出る。"""
+def test_effective_v_limit_applies_v_cap_min_p5c():
+    """8-g P5c（§6.6）: v_limit_mps = min(本システムの上限, v_cap)。上げる方向には効かない。"""
     table = {"v_max": 0.568}
     assert effective_v_limit("v_max", table, 0.0) == 0.568
-    assert effective_v_limit("v_max", table, 0.2) == 0.568      # P5b では無視
+    assert effective_v_limit("v_max", table, 0.2) == 0.2
     assert effective_v_limit("v_max", table, 0.9) == 0.568
     assert effective_v_limit("stop", table, 0.2) == 0.0         # stop は 0
 
@@ -94,6 +93,13 @@ def test_effective_v_limit_ignores_v_cap_until_p5c():
 def test_effective_w_limit_p1_is_zero_without_cap():
     assert effective_w_limit(0.0) == 0.0
     assert effective_w_limit(0.5) == 0.5
+
+
+def test_effective_w_limit_p5c_min_with_w_max():
+    """8-g P5c（§6.6）: w_limit_radps = min(w_max, w_cap)。指定なしは w_max だけ。"""
+    assert effective_w_limit(0.0, 1.2) == 1.2
+    assert effective_w_limit(0.5, 1.2) == 0.5
+    assert effective_w_limit(2.0, 1.2) == 1.2
 
 
 def test_status_fields_assemble_measure_status():

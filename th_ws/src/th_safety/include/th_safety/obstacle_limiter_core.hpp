@@ -94,6 +94,13 @@ struct SystemStateSnapshot {
   bool jog_active = false;
   Zone zone = Zone::NA;
   bool auto_brake = false;
+  // 測定機能の速度・加速度の上限（8-g P5c・DetailedDesign-measure.md §6.6）。
+  // 0 は指定なし。ノードは最後に受けた値を保持する（古い /system/state でも
+  // 下げた上限を勝手に外さない）。下げる方向にだけ効く（本システムの上限との min）。
+  double measure_v_cap_mps = 0.0;
+  double measure_w_cap_radps = 0.0;
+  double measure_a_cap_mps2 = 0.0;
+  double measure_alpha_cap_radps2 = 0.0;
 };
 
 // laser_link の姿勢（base_link 基準）。ノードが起動時に取った

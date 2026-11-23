@@ -166,20 +166,30 @@ def test_meas_finish_to_idle(state_core_bundle):
         assert (d.to_mode, d.to_state) == ("IDLE", "NONE")
 
 
-def test_meas_set_limits_not_accepted(state_core_bundle):
-    """meas.set_limits は効かせる仕組み（P5c）まで受けない（行が無いので
-    state_not_accepting。step では not_allowed）。P5b の決まり。"""
+@pytest.mark.rule("T-MEAS-04")
+@pytest.mark.rule("T-ATP-00-set-limits")
+def test_meas_set_limits_accepted_in_auto_measure(state_core_bundle):
+    """8-g P5c（§6.6）: AUTO_MEASURE の全状態で受け、状態は変えない。"""
     core, _, _, _ = state_core_bundle
-    for state in ("WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED"):
+    for state in ("WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED", "ADJUST"):
         d = core.step("AUTO_MEASURE", state, "meas.set_limits", _mk_ctx())
-        assert d.accepted is False, state
-        assert d.reject_reason_key == "not_allowed", state
+        assert d.accepted is True, state
         assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", state), state
+    # AT_PANEL の WORKING・ADJUST でも受け、状態は変えない
+    for state in ("WORKING", "ADJUST"):
+        d = core.step("AT_PANEL", state, "meas.set_limits", _mk_ctx())
+        assert d.accepted is True, state
+        assert (d.to_mode, d.to_state) == ("AT_PANEL", state), state
+    # ほかでは拒否
+    for mode, state in (("IDLE", "NONE"), ("AT_PANEL", "IDLE_P"),
+                            ("AT_PANEL", "PAUSE"), ("MANUAL", "RUN")):
+        d = core.step(mode, state, "meas.set_limits", _mk_ctx())
+        assert d.accepted is False, (mode, state)
 
 
 def test_meas_commands_not_accepted_without_rows(state_core_bundle):
     """行が無い指示（turn・translate・done・ADJUST 以外の reroute/stop の
-    受けない状態・WAIT/PAUSE の set_limits）は state_not_accepting
+    受けない状態）は state_not_accepting
     （step では not_allowed）。"""
     core, _, _, _ = state_core_bundle
     # 8-g P3: turn・translate は WAIT で受ける（ADJUST へ）。ここでは受けない状態だけを見る。
@@ -198,13 +208,14 @@ def test_meas_commands_not_accepted_without_rows(state_core_bundle):
 
 
 def test_meas_commands_rejected_outside_auto_measure(state_core_bundle):
-    """AUTO_MEASURE 以外のモードでは meas.* をすべて拒否する。
-    （AT_PANEL の WORKING の meas 行は P2。）"""
+    """AUTO_MEASURE 以外のモードでは meas.* を拒否する（set_limits は
+    test_meas_set_limits_accepted_in_auto_measure で別途見る）。
+    （AT_PANEL の WORKING の meas 行は P2/P5c。）"""
     core, _, _, _ = state_core_bundle
     for mode, state in (("IDLE", "NONE"), ("AT_PANEL", "WORKING"),
                         ("MANUAL", "RUN"), ("PREP", "MAPPING")):
         for event in ("meas.start", "meas.abort", "meas.finish",
-                      "meas.set_limits", "meas.goal"):
+                      "meas.goal"):
             d = core.step(mode, state, event, _mk_ctx())
             assert d.accepted is False, (mode, state, event)
 
