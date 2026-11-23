@@ -189,8 +189,9 @@ def test_arm_registry_blind_does_not_cover_rect_sides():
     for ang in (0.0, math.pi / 2.0, -math.pi / 2.0):
         assert region_overlaps_blind(
             rotate_polygon(_RECT, ang), blind, 0.65) is False
-    # 右だけを覆う値では右だけが死角になる（試験 d と同じ値）。
-    right_blind = _blind_rad([-100.0, -80.0])
+    # 右の遠い隅だけを覆う値では右だけが死角になる（試験 d と同じ値。
+    # 右の代表の向き（平均 −90°）は入らない）。
+    right_blind = _blind_rad([-112.0, -105.0])
     assert region_overlaps_blind(
         rotate_polygon(_RECT, -math.pi / 2.0), right_blind, 0.65) is True
     assert region_overlaps_blind(
