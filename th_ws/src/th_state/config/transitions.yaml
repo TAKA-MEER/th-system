@@ -3176,20 +3176,9 @@
   reject: true
   reject_reason_key: adjust_in_progress
   override_common: true
-- id: T-ATP-00b-adjust-reject
-  layer: 10
-  mode: AT_PANEL
-  state: ADJUST
-  event:
-  - meas.turn
-  - meas.translate
-  guard: null
-  to_mode: null
-  to_state: null
-  effects: []
-  spec_ref: SM-3.1.2-138
-  reject: true
-  reject_reason_key: adjust_in_progress
+# ADJUST 中の meas.turn／translate は §6.4「ほか（ADJUST 中を含む）は
+# state_not_accepting」にする（adjust_in_progress は meas.done・
+# ui.working off・ui.goto だけ）。自律測定の ADJUST も同じ。
 - id: T-MEAS-20X
   layer: 10
   mode: AUTO_MEASURE

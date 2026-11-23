@@ -96,6 +96,27 @@ def test_adjust_rejects_done_and_working_off_and_goto(state_core_bundle):
         assert (d.to_mode, d.to_state) == ("AT_PANEL", "ADJUST"), event
 
 
+def test_adjust_rejects_turn_translate_as_state_not_accepting(state_core_bundle):
+    """§6.4「ほか（ADJUST 中を含む）は state_not_accepting」
+    （step 元では not_allowed。受け口で state_not_accepting に写す）。
+    adjust_in_progress は meas.done・ui.working off・ui.goto だけ。"""
+    core, _, _, _ = state_core_bundle
+    for event, arg in (("meas.turn", {"command_id": "t", "angle_rad": 1.0}),
+                       ("meas.translate", {"command_id": "t", "side": "FORWARD",
+                                           "distance_m": 0.1})):
+        d = core.step("AT_PANEL", "ADJUST", event,
+                      _mk_ctx(arg=arg, measure_corner_clear=True))
+        assert d.accepted is False, event
+        assert d.reject_reason_key == "not_allowed", event
+        assert (d.to_mode, d.to_state) == ("AT_PANEL", "ADJUST"), event
+    for mode in ("AUTO_MEASURE",):
+        d = core.step(mode, "ADJUST", "meas.turn",
+                      _mk_ctx(arg={"command_id": "t", "angle_rad": 1.0},
+                            measure_corner_clear=True))
+        assert d.accepted is False
+        assert d.reject_reason_key == "not_allowed"
+
+
 @pytest.mark.rule("T-MEAS-14")
 def test_auto_stop_from_adjust_to_pause(state_core_bundle):
     core, _, _, _ = state_core_bundle
