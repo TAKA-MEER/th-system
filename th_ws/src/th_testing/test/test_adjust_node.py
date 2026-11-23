@@ -443,7 +443,22 @@ class TestAdjustNode(unittest.TestCase):
         self._event('evt.align_done')
         assert self._wait_mode_state('AT_PANEL', 'IDLE_P')
 
+    def _wait_link_ok(self, timeout=20.0):
+        """指示を送る前に、measure_link が実際に生存を立てた（/measure/status の
+        link_ok）ことを待つ。試験ノードの作り直しと相手探しで生存確認が
+        途切れ、measure_link_timeout_ms（1000 ms）を超えると途絶が立つため、
+        戻ったことを待たずに指示を送ると link_lost で拒否される。"""
+        end = time.time() + timeout
+        while time.time() < end:
+            self._spin(0.1)
+            if self._statuses and self._statuses[-1].link_ok:
+                return
+        raise AssertionError(
+            '/measure/status の link_ok が立たない（最後=%s）' %
+            (self._statuses[-1] if self._statuses else 'なし'))
+
     def _ensure_working(self):
+        self._wait_link_ok()
         st = self._latest_state()
         if (st.mode, st.state) == ('AT_PANEL', 'WORKING'):
             self.scan_mode = 'clear'
@@ -456,6 +471,7 @@ class TestAdjustNode(unittest.TestCase):
         self._spin(0.5)
 
     def _ensure_auto_wait(self):
+        self._wait_link_ok()
         st = self._latest_state()
         if (st.mode, st.state) == ('AUTO_MEASURE', 'WAIT'):
             self.scan_mode = 'clear'

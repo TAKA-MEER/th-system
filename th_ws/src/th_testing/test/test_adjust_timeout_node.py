@@ -145,9 +145,12 @@ class TestAdjustTimeoutNode(unittest.TestCase):
     def setUp(self):
         n = self.node = rclpy.create_node('test_adjust_timeout_client')
         self._states = []
+        self._statuses = []
         self._results = []
         n.create_subscription(SystemState, '/system/state',
                               self._states.append, _LATCHED)
+        n.create_subscription(MeasureStatus, '/measure/status',
+                              self._statuses.append, _LATCHED)
         n.create_subscription(MeasureResult, '/measure/result',
                               self._results.append, 20)
         self.pub_event = n.create_publisher(StateEvent, '/system/event', 10)
@@ -307,9 +310,22 @@ class TestAdjustTimeoutNode(unittest.TestCase):
         msg.arg_json = '{}'
         self.pub_event.publish(msg)
 
+    def _wait_link_ok(self, timeout=20.0):
+        """指示を送る前に /measure/status の link_ok（measure_link の生存）を
+        待つ（test_adjust_node と同じ。試験ノードの作り直しで途絶が立つため）。"""
+        end = time.time() + timeout
+        while time.time() < end:
+            self._spin(0.1)
+            if self._statuses and self._statuses[-1].link_ok:
+                return
+        raise AssertionError(
+            '/measure/status の link_ok が立たない（最後=%s）' %
+            (self._statuses[-1] if self._statuses else 'なし'))
+
     def test_i_adjust_timeout_returns_to_working(self):
         """i. ADJUST に入るが何もしない。adjust_timeout_ms 後に WORKING へ戻り
         CANCELLED（adjust_timeout）が出る。"""
+        self._wait_link_ok()
         # AT_PANEL/WORKING に出す（test_adjust_node と同じ経路）。
         st = self._latest_state()
         if (st.mode, st.state) != ('AT_PANEL', 'WORKING'):
