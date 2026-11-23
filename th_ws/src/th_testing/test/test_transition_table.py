@@ -97,7 +97,12 @@ SPEC_FANOUT = {
     # 受理行（turn・translate の 2 行）で 5・4 行。-128・-137（ADJUST の終わり）
     # = done・timeout・failed の 3 行。
     "SM-3.1.2-127": 5,
-    "SM-3.1.2-136": 4,
+    # 8-g P5c: meas.set_limits の AT_PANEL 行を -136 に足した（turn・translate の
+    # 受理 2 行 + 拒否 2 行 + set_limits 1 行 = 5 行）。
+    "SM-3.1.2-136": 5,
+    # -135（終了）= T-MEAS-03（meas.finish）+ T-MEAS-04（meas.set_limits。
+    # 正本 §3.1.2 に専用の番号が無いので AUTO_MEASURE の行として -135 段落に載せる）。
+    "SM-3.1.2-135": 2,
     "SM-3.1.2-128": 3,
     "SM-3.1.2-137": 3,
 }

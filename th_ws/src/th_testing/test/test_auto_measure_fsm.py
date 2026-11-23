@@ -166,6 +166,8 @@ def test_meas_finish_to_idle(state_core_bundle):
         assert (d.to_mode, d.to_state) == ("IDLE", "NONE")
 
 
+@pytest.mark.rule("T-MEAS-04")
+@pytest.mark.rule("T-ATP-00-set-limits")
 def test_meas_set_limits_accepted_in_auto_measure(state_core_bundle):
     """8-g P5c（§6.6）: AUTO_MEASURE の全状態で受け、状態は変えない。"""
     core, _, _, _ = state_core_bundle

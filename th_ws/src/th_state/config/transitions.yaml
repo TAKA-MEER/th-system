@@ -3164,7 +3164,10 @@
   to_mode: '='
   to_state: '='
   effects: []
-  spec_ref: Spec-measure.md §3・§5.1
+  # meas.set_limits は正本 §3.1.2 に専用の SM 番号が無い（Spec-measure.md §3
+  # 「速度・加速度の上限」）。AUTO_MEASURE の行として -135 段落に載せる
+  # （test_transition_table の fan-out 宣言に対応）。
+  spec_ref: SM-3.1.2-135
 - id: T-ATP-00-set-limits
   layer: 10
   mode: AT_PANEL
@@ -3176,7 +3179,8 @@
   to_mode: '='
   to_state: '='
   effects: []
-  spec_ref: Spec-measure.md §3・§5.1
+  # AT_PANEL の行は -136 段落に載せる（WORKING の turn/translate と同じ）。
+  spec_ref: SM-3.1.2-136
 # 8-g P3（SM-3.1.2-127・-136）: 盤前の旋回・前後の並進（ADJUST）。
 # 受ける順は reentry_required（自律測定のみ）→ corner_obstacle → 並進だけ path_obstacle。
 # ADJUST 中の meas.done・停止を解く・行き先は adjust_in_progress で拒否（-138）。

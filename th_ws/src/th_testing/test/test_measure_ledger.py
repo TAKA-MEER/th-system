@@ -115,12 +115,13 @@ def test_validate_ok_cases():
 def test_validate_set_limits_bad_argument():
     """8-g P5c（§6.6）: 負・有限でないは bad_argument、0 は通る。"""
     import math
-    assert validate_measure_command("c1", "meas.set_limits", v_max_mps=0.0) == ""
-    assert validate_measure_command("c1", "meas.set_limits", v_max_mps=-0.1) == "bad_argument"
-    assert validate_measure_command("c1", "meas.set_limits", w_max_radps=-1.0) == "bad_argument"
-    assert validate_measure_command("c1", "meas.set_limits", a_max_mps2=float("inf")) == "bad_argument"
-    assert validate_measure_command("c1", "meas.set_limits", alpha_max_radps2=float("nan")) == "bad_argument"
-    assert validate_measure_command("c1", "meas.set_limits", v_max_mps=math.nan) == "bad_argument"
+    z = dict(v_max_mps=0.0, w_max_radps=0.0, a_max_mps2=0.0, alpha_max_radps2=0.0)
+    assert validate_measure_command("c1", "meas.set_limits", **z) == ""
+    assert validate_measure_command("c1", "meas.set_limits", **{**z, "v_max_mps": -0.1}) == "bad_argument"
+    assert validate_measure_command("c1", "meas.set_limits", **{**z, "w_max_radps": -1.0}) == "bad_argument"
+    assert validate_measure_command("c1", "meas.set_limits", **{**z, "a_max_mps2": float("inf")}) == "bad_argument"
+    assert validate_measure_command("c1", "meas.set_limits", **{**z, "alpha_max_radps2": float("nan")}) == "bad_argument"
+    assert validate_measure_command("c1", "meas.set_limits", **{**z, "v_max_mps": math.nan}) == "bad_argument"
     assert validate_measure_command(
         "c1", "meas.set_limits", v_max_mps=0.1, w_max_radps=0.2,
         a_max_mps2=0.3, alpha_max_radps2=0.4) == ""
