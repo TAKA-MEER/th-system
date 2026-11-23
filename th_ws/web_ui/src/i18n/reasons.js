@@ -60,6 +60,13 @@ export const REJECT_REASONS = {
   // 8-g P5a-ui: 自律測定の入口の拒否（Spec-modes.md SM-3.1.2-120）。
   measure_link_lost: '測定機能と通信できません（生存確認が届いていません）',
   measure_version_mismatch: '測定機能との確認版が一致しません',
+  // 8-g P3-ui: 盤前の旋回・前後の並進（ADJUST）。詳細設計 §6.4（P3-ui の表）。
+  // path_obstacle は並進の進む先に障害物がある拒否（SM-3.1.2-127・-136）。
+  path_obstacle: '進む先に障害物があります',
+  // adjust_in_progress は旋回中・並進中に停止命令を解けない拒否（SM-3.1.2-138）。
+  adjust_in_progress: '旋回中・並進中は腕が起きているため解けません',
+  // adjust_timeout は旋回・並進が時間内に終わらなかった結果の理由。
+  adjust_timeout: '旋回・並進が時間内に終わりませんでした',
 }
 
 export const UNKNOWN_REASON_LABEL = '拒否されました（理由不明）'

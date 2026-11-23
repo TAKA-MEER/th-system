@@ -15,7 +15,7 @@ import Windows from './Windows.jsx'
 import { useGuideBanner } from './useGuideBanner.js'
 import { useSaveConfirm } from './useSaveConfirm.js'
 import { stampToMs } from './effectDispatch.js'
-import { isW1Active, stopReason, showEstopRelease } from './limits.js'
+import { isW1Active, isWorkingActive, stopReason, showEstopRelease } from './limits.js'
 import { ConfirmWindowContext } from './confirmWindow.js'
 import { JogPanelContext } from './jogPanel.js'
 import { ESTOP_RELEASE_NOTE, ESTOP_RELEASE_BUTTON, stopReasonLabel } from '../i18n/states.js'
@@ -176,12 +176,14 @@ function AppShellInner({ screenName, screenId, children }) {
   // W-1 を保持する（一瞬で消えるフォルトを見落とさない）。WORKING を
   // 抜けるまで保持し、抜けたら下ろす（WORKING の「確認」は WORKING に
   // 留まるので、PAUSE の pause_reason 遷移での解除は使わない）。
+  // 8-g P3-ui: ADJUST（旋回・並進中）も停止命令の間なので含める
+  // （判定は isWorkingActive の 1 か所）。
   const [faultWorkingSeen, setFaultWorkingSeen] = useState(false)
   useEffect(() => {
-    const inWorking = mode === 'AT_PANEL' && stateName === 'WORKING'
+    const inWorking = mode === 'AT_PANEL' && isWorkingActive(state)
     if (!inWorking) { setFaultWorkingSeen(false); return }
     if (!!fault?.active) setFaultWorkingSeen(true)
-  }, [mode, stateName, fault?.active])
+  }, [mode, state, fault?.active])
   const prevPauseReasonRef = useRef(undefined)
   const pauseReason = state?.pause_reason
   useEffect(() => {
