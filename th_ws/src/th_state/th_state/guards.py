@@ -152,7 +152,7 @@ def _estop_prev_is_at_panel_working(mode, state, ctx) -> bool:
     """8-g P2（SM-3.1.2-140）: 押下前が AT_PANEL/WORKING（停止命令の間）なら
     WORKING へ戻す（C-09c-at-panel-working が C-09c-at-panel より前に拾う）。"""
     return (_estop_base_ok(ctx) and ctx.prev_mode == "AT_PANEL"
-            and ctx.prev_state == "WORKING")
+            and ctx.prev_state in ("WORKING", "ADJUST"))
 
 
 def _estop_prev_is_at_home(mode, state, ctx) -> bool:
@@ -230,7 +230,7 @@ def _carry_prev_is_at_panel_working(mode, state, ctx) -> bool:
     """8-g P2（SM-3.1.2-140）: 押下前が AT_PANEL/WORKING（停止命令の間）なら
     WORKING へ戻す（C-11-at-panel-working が C-11-at-panel より前に拾う）。"""
     return (_carry_base_ok(ctx) and ctx.prev_mode == "AT_PANEL"
-            and ctx.prev_state == "WORKING")
+            and ctx.prev_state in ("WORKING", "ADJUST"))
 
 
 def _carry_prev_is_at_home(mode, state, ctx) -> bool:
