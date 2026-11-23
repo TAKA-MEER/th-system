@@ -241,7 +241,7 @@ builtin_interfaces/Time checked_at
 | --- | --- |
 | `/measure/command` の提供・`meas.*` の受理・`/measure/result` の発行 | **`th_state` の `state_manager`**（`/system/trigger` と同じく状態機械が受ける。遷移と結果の取りこぼしを 1 か所で防ぐ）。**結果を 1 回だけ出す台帳**は純コア `th_state/measure_ledger.py` |
 | 生存確認の監視・`/measure/status` | **`th_measure` の `measure_link`**（§6.1） |
-| `/measure/check_arm_clearance` | `th_measure` のノード（P4 で決める） |
+| `/measure/check_arm_clearance` | **`th_measure` の `measure_clearance`**（2026-11-23。P4。角が描く円の確認と同じ入力を使うため同じノード。§6.5） |
 | 自律測定の目的地への走行（地図を作りながら・手前 1.5 m の検査） | **`th_onsite` の `venue_navigator` を広げて使う**（2026-11-23 変更。試験場内の走行と同じ決まり（§6.3 の塞がれたら待つ・§6.1.1 の機体の形・向き合わせ）と、実機で直した Nav2 の誤報・TF 停滞・衝突の打ち切りへの対策をそのまま使うため。新しいノードは作らない）。Nav2 を使い、速度指令は `/cmd_vel_nav`（[names](DetailedDesign-names.md) §6.1 の不変ルールのまま） |
 | 角が描く円の中の障害物（発進前の確認。§4.4） | **`th_measure` の `measure_clearance`**（2026-11-23。P5b）。P4 の `/measure/check_arm_clearance` も同じノードに置く |
 | 盤前の旋回・前後の並進（`ADJUST`。自律測定とお立会試験の停止命令の間） | **Nav2 を使わない直接制御**（2026-11-15。申し送り 22。F-60）。`th_measure` の挙動ノードが自己位置を見ながら超信地旋回・直進し、**速度指令は `/cmd_vel_behavior` だけ**（`venue_navigator` の `ALIGN` と同じ作り。[onsite](DetailedDesign-onsite.md) §6）。twist_mux → `obstacle_limiter` を通るので障害物の停止・速度の制限・非常停止はそのまま効く。直進の帰還に使う位置は P3 で決める |
@@ -357,13 +357,25 @@ builtin_interfaces/Time checked_at
 | 理由キー | `path_obstacle`（進む先に障害物）・`adjust_in_progress`・`adjust_timeout` の文言を `i18n/reasons.js` に足す（測定機能の画面も同じ表を取り込む） |
 | 腕の確認・W-1 | P2-ui の判定（`working`）がそのまま効くこと（`ADJUST` でも `working` は `true`）。`AT_PANEL`/`ADJUST` のフォルトでも W-1 を出す |
 
+### 6.5 腕が振れる範囲の確認（`/measure/check_arm_clearance`）の作り（2026-11-23 決定。計画書 8-g の P4）
+
+**機体側だけ（画面は無い）。**型と意味は §3.5 が正。正は [Spec-modes.md](../spec/Spec-modes.md) `SM-3.1.2-141` と [Spec-measure.md](../spec/Spec-measure.md) §5.2。**状態は変えない**ので `state_manager` を通さず、`measure_clearance` がサービスを直接持つ。
+
+| 項目 | 決まり |
+| --- | --- |
+| 受け手 | `measure_clearance` がサービス `/measure/check_arm_clearance` を持つ。`/system/state` を購読して状態を覚える（未受信は「受けない状態」） |
+| 拒否の順 | ① `bad_argument`: `region` の頂点が 3 未満・座標が有限でない／`sides` が空・`LEFT`／`RIGHT`／`CURRENT` 以外・重複 → ② `state_not_accepting`: `AUTO_MEASURE`/`WAIT` と `AT_PANEL`/`WORKING` 以外（`ADJUST` を含む）。拒否のとき `sides`・`results`・`unknown_reasons` は空 |
+| 1 つの向きの判定 | `region` を `base_link` の原点まわりに `LEFT` +90°・`RIGHT` −90°・`CURRENT` 0° 回し、**機体の形 0.55 m 角（\|x\|・\|y\| ≤ 0.275 m）の内側を除いた部分**を見る。順に: **① スキャンが `arm_clearance_scan_max_age_ms` より古い・届いていない・TF（`base_link`←`laser_link`）が取れない → `UNKNOWN`（`scan_stale`）**（全部の向き）→ **② 範囲の中に障害物（`/scan_filtered` の有効点か、局所コストマップの占有セル。角の円と同じ入力・同じしきい値。コストマップが届いていなければスキャンだけ）→ `BLOCKED`**（見えている物があれば、死角があっても塞がり）→ **③ 範囲が LiDAR の死角（`blind_angle_ranges`）にかかる → `UNKNOWN`（`blind_sector`）** → ④ `CLEAR`。返りの無い方向（見える範囲の外）は空きとする（§6.4 の進む先と同じ） |
+| 返す形 | `sides` は問い合わせと同じ順。`results` と `unknown_reasons` は `sides` と同じ長さで、`unknown_reasons` は `UNKNOWN` 以外では空文字。`checked_at` は判定に使ったスキャンの時刻（スキャンが無ければ 0） |
+| 時点 | 問い合わせの時点の最新のスキャンで同期に判定する（溜めない・待たない）。腕を動かす直前に問い合わせ直すのは測定機能 |
+
 ## 7. 未決と依存
 
 | 項目 | 状態 |
 | --- | --- |
 | 腕が振れる範囲の多角形の形と大きさ | **決定（暫定）**: §3.5。値は測定機能のパラメータ |
 | ヘッダーと異常ウィンドウの中身の渡し方 | **決定**: 生のトピックの購読と理由キーの表の取り込みで始める（§4）。実装して足りなければ相談 |
-| `measure_link_timeout_ms`・`arm_clearance_scan_max_age_ms` の値 | `measure_link_timeout_ms` は初期値 1000（2026-11-23。§6.1）。`arm_clearance_scan_max_age_ms` は P4 で決める |
+| `measure_link_timeout_ms`・`arm_clearance_scan_max_age_ms` の値 | `measure_link_timeout_ms` は初期値 1000（2026-11-23。§6.1）。`arm_clearance_scan_max_age_ms` は初期値 500（2026-11-23。P5b の角の円の確認と共用。§6.5） |
 | **依存: 自律測定の間は `/map` を凍結しない** | `map_freezer` が `/map_live` をそのまま通す場面に `AUTO_MEASURE` を足す（[names](DetailedDesign-names.md) §6.4 の `/map` の行。[Spec-measure.md](../spec/Spec-measure.md) §4.1）。8-g |
 | 参考（測定機能の決定。本システムは変えない） | 自律測定で腕が出ている間の人のジョグは人の責任（既知のリスク）。お立会試験では、昇降機を測定前の高さへ戻してから `meas.done` を返す |
 | 測定機能の最初の版の使い方（参考。fk `Spec-auto.md`） | 盤前の並進は前後だけ（2026-11-14。点ごとに「その場旋回 → 前後の並進」。左右は旋回と前後の組み合わせで動く。2026-11-15）／速度・加速度の上限は当面指定しない／一時停止からの再開はいつも人の「走行」。**本システムの実装の順番の手がかりにする** |
