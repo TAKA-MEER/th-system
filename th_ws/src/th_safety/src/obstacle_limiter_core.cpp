@@ -337,9 +337,11 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
                  ? std::min(p.normal_accel_mps2, in.state.measure_a_cap_mps2)
                  : in.state.measure_a_cap_mps2)
           : p.normal_accel_mps2;
+  // 既存の通常時ランプは初回無制限（既存試験の契約）。測定機能の指定が
+  // ある場合だけ初回も有界 dt でランプする（a_cap を初回に超えない）。
   const double dt = prev_now_valid_
       ? (in.now_sec - prev_now_sec_)
-      : ((p.normal_jerk_mps3 > 0.0 || eff_normal_accel_for_dt > 0.0 ||
+      : ((p.normal_jerk_mps3 > 0.0 || in.state.measure_a_cap_mps2 > 0.0 ||
           in.state.measure_alpha_cap_radps2 > 0.0)
              ? 0.05
              : std::numeric_limits<double>::infinity());
