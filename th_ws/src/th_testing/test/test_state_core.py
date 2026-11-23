@@ -382,10 +382,12 @@ def test_carry_resume_summon_returns_to_point(state_core_bundle):
 
 @pytest.mark.rule("C-11-at-panel")
 @pytest.mark.rule("C-11-at-home")
+@pytest.mark.rule("C-11-at-panel-working")
 def test_carry_resume_at_panel_home(state_core_bundle):
-    """AT_PANEL→IDLE_P／AT_HOME→IDLE_H（§6 の右列。確認をやり直す）。"""
+    """AT_PANEL→IDLE_P／AT_HOME→IDLE_H（§6 の右列。確認をやり直す）。
+    8-g P2（-140）: 押下前が WORKING なら WORKING へ戻る（停止命令のまま）。"""
     core, _, _, _ = state_core_bundle
-    for prev_mode, prev_state, dst in [("AT_PANEL", "WORKING", "IDLE_P"),
+    for prev_mode, prev_state, dst in [("AT_PANEL", "WORKING", "WORKING"),
                                        ("AT_PANEL", "PAUSE", "IDLE_P"),
                                        ("AT_PANEL", "IDLE_P", "IDLE_P"),
                                        ("AT_HOME", "PAUSE", "IDLE_H"),
@@ -872,10 +874,12 @@ def test_estop_resume_summon_returns_to_point(state_core_bundle):
 
 @pytest.mark.rule("C-09c-at-panel")
 @pytest.mark.rule("C-09c-at-home")
+@pytest.mark.rule("C-09c-at-panel-working")
 def test_estop_resume_at_panel_home(state_core_bundle):
-    """AT_PANEL→IDLE_P／AT_HOME→IDLE_H（§6 の右列。確認をやり直す）。"""
+    """AT_PANEL→IDLE_P／AT_HOME→IDLE_H（§6 の右列。確認をやり直す）。
+    8-g P2（-140）: 押下前が WORKING なら WORKING へ戻る（停止命令のまま）。"""
     core, _, _, _ = state_core_bundle
-    for prev_mode, prev_state, dst in [("AT_PANEL", "WORKING", "IDLE_P"),
+    for prev_mode, prev_state, dst in [("AT_PANEL", "WORKING", "WORKING"),
                                        ("AT_PANEL", "PAUSE", "IDLE_P"),
                                        ("AT_PANEL", "IDLE_P", "IDLE_P"),
                                        ("AT_HOME", "PAUSE", "IDLE_H"),
