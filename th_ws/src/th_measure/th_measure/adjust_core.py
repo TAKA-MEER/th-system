@@ -25,13 +25,23 @@ def accumulate_yaw(yaw: float, prev_yaw: float, accumulated: float) -> float:
 
 
 def turn_done(accumulated: float, target: float, tolerance: float) -> bool:
-    """積み上げた旋回角度が目標に許容差で届いたか（符号を問わず一致）。"""
-    return abs(target - accumulated) <= tolerance
+    """積み上げた旋回角度が目標に許容差で届いたか（符号を問わず一致）。
+
+    飛び越え（符号を過ぎる方向へ進んだ）も終わりとする。飛び越えたら
+    turn_wzr の符号が逆になり戻ってくる（往復）ため、translate のように
+    進み続けることはないが、使わない odom の跳びで目標の向こう側に
+    落ちたときも戻すより止めるのが安全なため、こちらも超えたら終わる。"""
+    if target >= 0:
+        return accumulated >= target - tolerance
+    return accumulated <= target + tolerance
 
 
 def translate_done(distance: float, target: float, tolerance: float) -> bool:
-    """進んだ距離が目標に許容差で届いたか。"""
-    return abs(target - distance) <= tolerance
+    """進んだ距離が目標に許容差で届いたか。
+
+    1 周期で許容差を飛び越えた（odom の跳び・遅れ）ときも終わる。
+    abs では二度と終わらず締め切りまで進み続けてしまうため。"""
+    return distance >= target - tolerance
 
 
 def turn_wzr(accumulated: float, target: float, kp: float,

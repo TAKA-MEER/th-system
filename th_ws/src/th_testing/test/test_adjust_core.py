@@ -55,6 +55,17 @@ def test_done_tolerances():
     assert not translate_done(0.10, 0.30, 0.02)
 
 
+def test_done_overshoot_ends():
+    # 1 周期で許容差を飛び越えたら終わる（abs では二度と終わらない）。
+    assert translate_done(0.45, 0.30, 0.02)
+    assert translate_done(1.0, 0.30, 0.02)
+    assert not translate_done(0.27, 0.30, 0.02)  # 届く手前は終わらない
+    # 旋回も飛び越えたら止める（戻すより止めるのが安全）。
+    assert turn_done(1.8, 1.5, 0.09)
+    assert not turn_done(-3.4, -3.5, 0.09)  # -3.4 は目標の手前
+    assert turn_done(-3.8, -3.5, 0.09)  # 目標を過ぎた
+
+
 def test_heading_hold():
     assert heading_hold(0.0, 0.0, 1.2, 0.6) == 0.0
     assert heading_hold(0.1, 0.0, 1.2, 0.6) < 0
