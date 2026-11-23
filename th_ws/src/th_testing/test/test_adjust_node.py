@@ -498,6 +498,9 @@ class TestAdjustNode(unittest.TestCase):
         assert self._cmd_vel
         assert max(abs(m.angular.z) for m in self._cmd_vel) <= W_MAX + 0.05, \
             max(abs(m.angular.z) for m in self._cmd_vel)
+        # /cmd_vel_behavior から出た指令がある（/cmd_vel_nav への書き換えを掴む）。
+        assert any(abs(m.angular.z) > 0.05 for m in self._behavior), \
+            len(self._behavior)
 
     def test_b_auto_turn_right_3p5(self):
         """b. AUTO WAIT で meas.turn -3.5 → 右回りに 3.5 rad（近道の逆向きでない）。"""
@@ -532,6 +535,8 @@ class TestAdjustNode(unittest.TestCase):
         assert abs(self._yaw) < 0.15, self._yaw
         assert max(abs(m.linear.x) for m in self._cmd_vel) <= V_JOG_PANEL + 0.05, \
             max(abs(m.linear.x) for m in self._cmd_vel)
+        assert any(abs(m.linear.x) > 0.02 for m in self._behavior), \
+            len(self._behavior)
 
     def test_d_path_obstacle_rejects_far_but_accepts_near(self):
         """d. 前方 0.9 m に壁 → FORWARD 0.5 は path_obstacle、0.1 は受ける。
