@@ -181,18 +181,41 @@ def test_arm_blind_only_is_unknown_and_visible_beats_blind():
 
 def test_arm_registry_blind_does_not_cover_rect_sides():
     # registry の blind_angle_ranges（4 セクタ）では、§3.5 の長方形のどの
-    # 向きも死角にならない（隅だけがセクタに当たっても代表向きは外）。
+    # 向きも死角にならない。近い部分（0.65 m 以内）の楔は判定から除く
+    # （2026-11-23 ユーザー決定。Spec-measure.md §5.2 の既知のリスク）。
     import math
     blind = _blind_rad([-132.8, -117.5, -59.5, -38.9,
                         45.9, 61.5, 130.3, 143.5])
     for ang in (0.0, math.pi / 2.0, -math.pi / 2.0):
-        assert region_overlaps_blind(rotate_polygon(_RECT, ang), blind) is False
+        assert region_overlaps_blind(
+            rotate_polygon(_RECT, ang), blind, 0.65) is False
     # 右だけを覆う値では右だけが死角になる（試験 d と同じ値）。
     right_blind = _blind_rad([-100.0, -80.0])
     assert region_overlaps_blind(
-        rotate_polygon(_RECT, -math.pi / 2.0), right_blind) is True
+        rotate_polygon(_RECT, -math.pi / 2.0), right_blind, 0.65) is True
     assert region_overlaps_blind(
-        rotate_polygon(_RECT, math.pi / 2.0), right_blind) is False
+        rotate_polygon(_RECT, math.pi / 2.0), right_blind, 0.65) is False
+
+
+def test_arm_near_zero_makes_rect_blind():
+    # arm_clearance_blind_near_m を 0 にすると、近い楔も数えて同じ範囲が
+    # blind_sector になる（近い部分を除く判定を外す変異を掴む）。
+    import math
+    blind = _blind_rad([-132.8, -117.5, -59.5, -38.9,
+                        45.9, 61.5, 130.3, 143.5])
+    for ang in (0.0, math.pi / 2.0, -math.pi / 2.0):
+        assert region_overlaps_blind(
+            rotate_polygon(_RECT, ang), blind, 0.0) is True
+
+
+def test_arm_wide_region_blind_far_from_center():
+    # 範囲の幅を広げて 0.65 m より遠くで支柱の死角にかかる形（平均の向きは
+    # 32.5° で死角に入らない）。代表の向きの案なら見逃す。
+    import math
+    blind = _blind_rad([-132.8, -117.5, -59.5, -38.9,
+                        45.9, 61.5, 130.3, 143.5])
+    wide = [(0.0, -0.275), (1.0, -0.275), (1.0, 0.9), (0.0, 0.9)]
+    assert region_overlaps_blind(wide, blind, 0.65) is True
 
 
 def test_arm_stale_is_all_unknown():

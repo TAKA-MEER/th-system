@@ -302,33 +302,27 @@ def _sample_region(polygon):
     return samples
 
 
-def region_overlaps_blind(polygon, blind_ranges_rad) -> bool:
+def region_overlaps_blind(polygon, blind_ranges_rad, near_m: float = 0.65) -> bool:
     """範囲が LiDAR の死角にかかるか。
 
-    範囲を細かく標本化し（機体の内側を除く）、標本の平均位置の向きを
-    代表向きとして、laser_link から見た向き（laser と base の向きは同じ
-    前提。P3 の free_*_m と同じ）が blind_angle_ranges に入るかで決める。
-
-    標本のどれか 1 つでも死角に入るかで決めると、矩形の隅（機体の斜め前）が
-    支柱の死角セクタ（registry の 4 セクタ）に当たって、どの向きも
-    `blind_sector` になり、腕の確認が常に `UNKNOWN` になる（§3.5 が
-    機体の内側を除いて「毎回 UNKNOWN」を避けた意図に反する）。
-    範囲全体が死角の中にあるときは代表向きも死角に入るため、この
-    決め方でも拾える。
+    範囲（機体の内側を除く）を細かく標本化し、`laser_link` の中心から
+    `near_m`（`arm_clearance_blind_near_m`）より遠い標本のうち、向きが
+    `blind_angle_ranges` に入るものが 1 つでもあれば True。近い標本の
+    死角は判定から除く（四隅の支柱の影。2026-11-23 ユーザー決定。
+    [Spec-measure.md](../spec/Spec-measure.md) §5.2 の既知のリスク。除かないと、
+    いまの支柱ではどの向きの範囲にも機体の中心から約 0.6 m 以内の死角の
+    楔がかかり、毎回 `UNKNOWN` になる）。代表の向き（平均など）では
+    決めない（遠くで死角にかかる部分を見逃す）。
     """
     if not blind_ranges_rad:
         return False
-    samples = _sample_region(polygon)
-    if not samples:
-        return False
-    mx = sum(x for x, _ in samples) / len(samples)
-    my = sum(y for _, y in samples) / len(samples)
-    if math.hypot(mx, my) < 1e-9:
-        # 代表向きが取れない形（原点のまわりを囲む範囲など）は、標本の
-        # どれかが死角に入るかで決める。
-        return any(_in_blind(math.atan2(y, x), blind_ranges_rad)
-                   for x, y in samples)
-    return _in_blind(math.atan2(my, mx), blind_ranges_rad)
+    near = float(near_m)
+    for x, y in _sample_region(polygon):
+        if math.hypot(x, y) <= near:
+            continue
+        if _in_blind(math.atan2(y, x), blind_ranges_rad):
+            return True
+    return False
 
 
 def polygon_blocked_by_costmap(grid, origin_x: float, origin_y: float,
