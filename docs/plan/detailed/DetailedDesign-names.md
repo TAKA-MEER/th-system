@@ -372,7 +372,7 @@ def derive_limits(screens, now_ms, p):
 | `/shutdown/execute` | `std_srvs/Trigger` | `th_state` |
 | **`/safety/clear_estop_ui`** | `std_srvs/Trigger` | **`safety_monitor`**。**UI に依存しない解除経路**（[safety](DetailedDesign-safety.md) §6.3.1 ／ `N-4`）。`/safety/estop_hw` が `false` かつ重大フォルトが無いときだけ受理し、**必ずログに残す**。**通常運用では使わない**——WebUI の解除ボタンが正規の経路である |
 | **`/measure/command`** | `MeasureCommand`: `string command_id` / `string command`（`meas.*`） / `string map_instance_id` / `float64 x,y,yaw` / `float64 angle_rad` / `string side` / `float64 distance_m` / `float32 v_max_mps,w_max_radps,a_max_mps2,alpha_max_radps2` → `bool accepted` / `string reject_reason` / `string mode` / `string state` | **`th_state`**。**測定機能の指示はここからしか受けない**（§8.5。[measure](DetailedDesign-measure.md) §3.1）。2026-11-04（案） |
-| **`/measure/check_arm_clearance`** | `CheckArmClearance`: `geometry_msgs/Polygon region` / `string[] sides`（`LEFT`/`RIGHT`/`CURRENT`） → `bool accepted` / `string reject_reason` / `string[] sides` / `string[] results`（`CLEAR`/`BLOCKED`/`UNKNOWN`） / `string[] unknown_reasons` / `builtin_interfaces/Time checked_at` | `th_measure`（[measure](DetailedDesign-measure.md) §3.5）。2026-11-04（案） |
+| **`/measure/check_arm_clearance`** | `CheckArmClearance`: `geometry_msgs/Polygon region` / `string[] sides`（`LEFT`/`RIGHT`/`CURRENT`） → `bool accepted` / `string reject_reason` / `string[] sides` / `string[] results`（`CLEAR`/`BLOCKED`/`UNKNOWN`） / `string[] unknown_reasons` / `builtin_interfaces/Time checked_at` | **`th_measure` の `measure_clearance`**（[measure](DetailedDesign-measure.md) §3.5）。2026-11-04（案）。2026-11-23（P4。サービスを持つ） |
 
 **廃止・改名するサービス**:
 
