@@ -213,12 +213,13 @@ class TestAdjustTimeoutNode(unittest.TestCase):
             interacting=True,
             last_input=self.node.get_clock().now().to_msg()))
         from geometry_msgs.msg import TransformStamped
+        # map→odom→base_link の連鎖で出す（base_link に親を 2 つ付けない）。
         transforms = []
-        for parent in ('odom', 'map'):
+        for parent, child in (('map', 'odom'), ('odom', 'base_link')):
             t = TransformStamped()
             t.header.stamp = self.node.get_clock().now().to_msg()
             t.header.frame_id = parent
-            t.child_frame_id = 'base_link'
+            t.child_frame_id = child
             t.transform.rotation.w = 1.0
             transforms.append(t)
         self.pub_tf.publish(TFMessage(transforms=transforms))

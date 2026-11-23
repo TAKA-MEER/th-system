@@ -308,10 +308,13 @@ class TestAdjustNode(unittest.TestCase):
         t.transform.rotation.w = qw
         t.transform.rotation.z = qz
         transforms.append(t)
+        # map→odom（固定）→base_link（動的）の連鎖で出す（map→base と
+        # odom→base を並べると base_link に親が 2 つできて TF が
+        # 「unconnected trees」になる）。
         t2 = TransformStamped()
         t2.header.stamp = stamp
         t2.header.frame_id = 'map'
-        t2.child_frame_id = 'base_link'
+        t2.child_frame_id = 'odom'
         t2.transform.rotation.w = 1.0
         transforms.append(t2)
         self.pub_tf.publish(TFMessage(transforms=transforms))

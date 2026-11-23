@@ -124,6 +124,7 @@ class MeasureAdjuster(Node):
             return
         self._active = {
             'command_id': str(args.get('command_id') or ''),
+
             'kind': kind,
             'angle_rad': float(args.get('angle_rad') or 0.0),
             'side': str(args.get('side') or ''),
