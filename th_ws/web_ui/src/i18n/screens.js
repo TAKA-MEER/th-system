@@ -632,6 +632,14 @@ export const S60_ARM_TOGGLE_TITLE = '腕の格納の確認'
 export const S60_ARM_QUESTION = '測定機構の腕が格納位置にあることを確かめましたか'
 export const S60_ARM_CANCEL = 'やめる'
 export const S60_ARM_OK = 'メインメニューへ'
+// ------------------------------------------------------------- S-21 測定機能へ ----
+// 8-g P2-ui: S-21 の「測定機能へ」（停止命令）・WORKING の表示・「停止を解く」。
+// Spec-webui.md §3.11 / DetailedDesign-measure.md §6.3。
+export const S21_MEASURE_GO = '測定機能へ'
+export const S21_OPEN_MEASURE = '測定機能の画面へ'
+export const S21_WORKING_STATE = '測定中（停止命令）'
+export const S21_WORKING_UNLOCK = '停止を解く'
+export const S21_WORKING_UNLOCK_OK = '解く'
 export const S50_BACK = '戻る'
 export const S50_TAB_GENERAL = '一般'
 export const S50_TAB_DISPLAY = '表示'

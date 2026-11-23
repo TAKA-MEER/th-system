@@ -80,7 +80,11 @@ export function onsiteReasons({
   mode, stateName, attributes, pins = [], working = false, venueUnloaded = false,
 } = {}) {
   const reasons = {}
-  if (!jogAllowedForMode(mode, attributes)) {
+  if (working) {
+    // 8-g P2-ui: 停止命令（WORKING）の間は手動も押せない（機体側は
+    // override_common で working_in_progress を返す）。
+    reasons.manual = 'working_in_progress'
+  } else if (!jogAllowedForMode(mode, attributes)) {
     reasons.manual = 'jog_denied'
   } else if (mode === 'SUMMON' && stateName === 'WAIT_CLEAR') {
     reasons.manual = 'wait_clear_active'

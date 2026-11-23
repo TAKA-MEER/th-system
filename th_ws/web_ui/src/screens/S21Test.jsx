@@ -5,7 +5,8 @@
 //   C-15:      IDLE --ui.goto{kind:PANEL|HOME|SUMMON}--> *（goto_allowed）
 //   T-PNAV/T-HNAV: PANEL_NAV / HOME_NAV（--ui.stop/run--> PAUSE/NAV、着地で
 //               AT_PANEL / IDLE）
-//   T-ATP-01/02（ui.working）: 機体側には残るが S-21 からは送らない（2026-11-20）。
+//   T-ATP-01/02（ui.working）: 8-g P2-ui で S-21 の「測定機能へ」
+//   （AT_PANEL/IDLE_P）／「停止を解く」（WORKING）が送る。
 //   T-ATP-05:   AT_PANEL(IDLE_P/WORKING) --ui.goto--> $arg.kind
 //   T-NAV-goto-reject: PANEL_NAV / SUMMON / HOME_NAV の全状態（PAUSE 含む）で ui.goto は拒否（SM-3.1.2-118）
 //   T-SUM-01:   SUMMON --evt.two_point_done--> WAIT_CLEAR（2 点指示は
@@ -21,9 +22,13 @@
 // SUMMON のときだけ ui.select_target を送る（FSM に定義されたモード限定）。
 // 終了は ui.finish を送るだけ。受理されれば FSM が IDLE になり main.jsx が S-01 に戻す。
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useParamsOverrides } from '../ros/useParamsOverrides.js'
+import { useMeasureUiPort, openMeasureUi } from '../ros/useMeasureUiPort.js'
+import { useConfirmWindow } from '../shell/confirmWindow.js'
+import { needsArmConfirmForExit } from '../modes/armConfirm.js'
 import { useSetFlag, TRACKER_FLAG } from '../ros/useSetFlag.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
 import { usePersonTargets } from '../ros/usePersonTargets.js'
@@ -80,6 +85,8 @@ import {
   S21_TARGET_NOT_SELECTABLE,
   S21_WAIT_CANCEL, S21_WAIT_CLEARING, S21_WAIT_DIST, S21_WAIT_TITLE,
   S21_CAMERA, S21_CAMERA_NO_URL, S21_CAMERA_BAD_URL,
+  S21_MEASURE_GO, S21_OPEN_MEASURE, S21_WORKING_STATE, S21_WORKING_UNLOCK, S21_WORKING_UNLOCK_OK,
+  S60_ARM_TOGGLE_TITLE, S60_ARM_QUESTION, S60_ARM_CANCEL, S60_ARM_OK,
   // brief-tracker-default-off §3.4: 呼び寄せサブタブの「人検出が止まって
   // います」表示。
   TRACKER_OFF,
@@ -247,10 +254,67 @@ export default function S21Test({ onExit }) {
   }, [showWait, wait.remaining_sec])
 
   // ── 操作 ─────────────────────────────────────────────
+  // 8-g P2-ui: 「測定機能へ」（AT_PANEL/IDLE_P）・WORKING の表示・「停止を解く」。
+  const confirmWindow = useConfirmWindow()
+  const measurePort = useMeasureUiPort(ros)
+  const [measureErr, setMeasureErr] = useState(null)
+  // 「測定機能へ」を送って受理されたあと、/system/state が WORKING になるまで
+  // 待ってから測定機能の画面へ移る（受理＝移る ではない）。状態が変わらなければ
+  // 移らない。
+  const [workingPending, setWorkingPending] = useState(false)
+  useEffect(() => {
+    if (workingPending && mode === 'AT_PANEL' && stateName === 'WORKING') {
+      setWorkingPending(false)
+      openMeasureUi(measurePort)
+    }
+  }, [workingPending, mode, stateName, measurePort])
+  async function handleMeasureGo() {
+    if (disabledAll) return
+    setMeasureErr(null)
+    let res
+    try {
+      res = await sendTrigger('ui.working', { on: true })
+    } catch {
+      setMeasureErr(UNKNOWN_REASON_LABEL)
+      return
+    }
+    if (!res?.accepted) {
+      setMeasureErr(reasonLabel(res?.reject_reason_key) ?? UNKNOWN_REASON_LABEL)
+      return
+    }
+    setWorkingPending(true)
+  }
+  // 腕の格納の確認（W-4）の保留: { action: 'finish' | 'unlock' } | null
+  const [armPending, setArmPending] = useState(null)
+  function confirmArm() {
+    const action = armPending?.action
+    setArmPending(null)
+    confirmWindow.close()
+    if (action === 'unlock') {
+      sendTrigger('ui.working', { on: false })
+    } else {
+      sendTrigger('ui.finish')
+      onExit?.()
+    }
+  }
+  function cancelArm() {
+    setArmPending(null)
+    confirmWindow.close()
+  }
   // brief-UI-S21-entry: 「終了」は ui.finish を送り、そのあと main.jsx 経由で
   // onsiteTestOpen を閉じてもらう（onExit）。閉じないと FSM が IDLE に戻った
   // あとも S-21 が出たままになる。
+  // 8-g P2-ui: AT_PANEL / WORKING からの「終了」は腕の格納の確認（W-4）を
+  // 先に挟む（SM-3.1.1-18。判定は modes/armConfirm.js の 1 か所）。
   function handleFinish() {
+    const isWorkingFlag = state?.working === true || stateName === 'WORKING'
+    if (needsArmConfirmForExit({
+      trigger: 'ui.finish', currentMode: mode, prevMode: state?.prev_mode ?? null, working: isWorkingFlag,
+    })) {
+      setArmPending({ action: 'finish' })
+      confirmWindow.open()
+      return
+    }
     sendTrigger('ui.finish')
     onExit?.()
   }
@@ -381,7 +445,7 @@ export default function S21Test({ onExit }) {
     sendTrigger('ui.select_target', { index })
   }
 
-  const stateText = isNavMode ? stateLabel(stateName) : S21_SELECT_HINT
+  const stateText = working ? S21_WORKING_STATE : (isNavMode ? stateLabel(stateName) : S21_SELECT_HINT)
   const pendingYaw = showWizard && wizYaw != null
 
   // UX-2-b/UX-2-d/UX-6-b: この画面から「押せない」ことが画面だけでも分かる理由のバッジ。
@@ -985,11 +1049,77 @@ export default function S21Test({ onExit }) {
                 {!cameraOpenable && cameraUrlReason && (
                   <span className="reason-badge" data-testid="s21-camera-reason">{cameraUrlReason}</span>
                 )}
+                {mode === 'AT_PANEL' && stateName === 'IDLE_P' && (
+                  <div className="row mt">
+                    <span className="grow sm">{S21_MEASURE_GO}</span>
+                    <button
+                      type="button"
+                      className="btn"
+                      data-testid="s21-measure-go"
+                      disabled={disabledAll}
+                      onClick={handleMeasureGo}
+                    >
+                      {S21_MEASURE_GO}
+                    </button>
+                  </div>
+                )}
+                {measureErr && (
+                  <div className="note mt" role="alert" data-testid="s21-measure-reason">{measureErr}</div>
+                )}
+                {working && (
+                  <div className="row mt">
+                    <button
+                      type="button"
+                      className="btn"
+                      data-testid="s21-open-measure"
+                      disabled={disabledAll}
+                      onClick={() => openMeasureUi(measurePort)}
+                    >
+                      {S21_OPEN_MEASURE}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn danger"
+                      data-testid="s21-working-unlock"
+                      disabled={disabledAll}
+                      onClick={() => { setArmPending({ action: 'unlock' }); confirmWindow.open() }}
+                    >
+                      {S21_WORKING_UNLOCK}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
         </div>
       </div>
+      {armPending && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(
+        <>
+          <header>{S60_ARM_TOGGLE_TITLE}</header>
+          <div className="bodyw">
+            <p data-testid="s21-arm-question">{S60_ARM_QUESTION}</p>
+          </div>
+          <footer>
+            <button
+              type="button"
+              className="btn"
+              data-testid="s21-arm-cancel"
+              onClick={cancelArm}
+            >
+              {S60_ARM_CANCEL}
+            </button>
+            <button
+              type="button"
+              className="btn primary"
+              data-testid="s21-arm-ok"
+              onClick={confirmArm}
+            >
+              {armPending.action === 'unlock' ? S21_WORKING_UNLOCK_OK : S60_ARM_OK}
+            </button>
+          </footer>
+        </>,
+        confirmWindow.mountNode,
+      )}
     </div>
   )
 }
