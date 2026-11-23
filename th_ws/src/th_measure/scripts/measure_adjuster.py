@@ -116,9 +116,10 @@ class MeasureAdjuster(Node):
             return
         if not isinstance(args, dict):
             return
-        if self._state != 'ADJUST':
-            return
         kind = str(args.get('kind') or '')
+        # effect は状態が変わる前に届く（state_manager は effects を適用してから
+        # /system/state を出す）。ここでは受け取って保持し、/system/state が
+        # ADJUST になってから動き出す（venue_navigator の measure_goal と同じ作り）。
         if kind not in ('turn', 'translate'):
             return
         self._active = {
