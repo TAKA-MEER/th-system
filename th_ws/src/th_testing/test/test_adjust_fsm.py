@@ -112,6 +112,17 @@ def test_auto_abort_from_adjust_to_wait(state_core_bundle):
     assert (d.to_mode, d.to_state) == ("AUTO_MEASURE", "WAIT")
 
 
+@pytest.mark.rule("T-ATP-10L")
+def test_panel_link_lost_from_adjust_to_working(state_core_bundle):
+    """§6.4 停止命令の ADJUST の「回復フォルト・途絶」→ WORKING（-139）。
+    測定機能との途絶は WORKING では遷移しないが ADJUST では戻す
+    （動きをやめて捨てる。台帳は state_manager が CANCELLED（link_lost））。"""
+    core, _, _, _ = state_core_bundle
+    d = core.step("AT_PANEL", "ADJUST", "evt.measure_link_lost", _mk_ctx())
+    assert d.accepted is True
+    assert (d.to_mode, d.to_state) == ("AT_PANEL", "WORKING")
+
+
 @pytest.mark.rule("T-MEAS-15")
 def test_auto_link_lost_from_adjust_to_pause(state_core_bundle):
     core, _, _, _ = state_core_bundle

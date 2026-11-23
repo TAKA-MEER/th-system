@@ -3384,3 +3384,16 @@
   to_state: WORKING
   effects: []
   spec_ref: SM-3.1.2-137
+# 停止命令の ADJUST の「回復フォルト・途絶」（-139・§6.4）は WORKING へ戻す
+# （動きをやめて捨てる）。測定機能との途絶は WORKING では遷移しないが
+# ADJUST では WORKING へ戻し、台帳は state_manager が CANCELLED（link_lost）。
+- id: T-ATP-10L
+  layer: 10
+  mode: AT_PANEL
+  state: ADJUST
+  event: evt.measure_link_lost
+  guard: null
+  to_mode: '='
+  to_state: WORKING
+  effects: []
+  spec_ref: SM-3.1.2-139

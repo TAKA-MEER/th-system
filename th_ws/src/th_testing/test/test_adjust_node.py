@@ -671,6 +671,34 @@ class TestAdjustNode(unittest.TestCase):
         self._spin(1.0)
         assert abs(self._yaw - yaw_at_pause) < 0.1, (yaw_at_pause, self._yaw)
 
+    def test_i_panel_link_lost_from_adjust_to_working(self):
+        """i. AT_PANEL/ADJUST の旋回中に measure_link の生存確認を止める →
+        WORKING・/measure/result が CANCELLED（link_lost）ちょうど1回・
+        /cmd_vel_behavior が止まる（§6.4「回復フォルト・途絶」→ WORKING）。"""
+        self._ensure_working()
+        self._reset_pose()
+        cid = self._next_cid()
+        res = self._call_measure('meas.turn', command_id=cid, angle=3.5)
+        assert res.accepted is True, res.reject_reason
+        assert (res.mode, res.state) == ('AT_PANEL', 'ADJUST')
+        # measure_link の生存確認を止める（試験側ハートビートを止める）。
+        self._hb_version = None
+        assert self._wait_mode_state('AT_PANEL', 'WORKING') is True
+        assert self._wait_result(cid, 'CANCELLED') is True
+        cancelled = [r for r in self._results if r.command_id == cid]
+        assert len(cancelled) == 1, cancelled
+        assert cancelled[0].reason == 'link_lost', cancelled[0].reason
+        # /cmd_vel_behavior が止まる: 最後の非ゼロ指令のあとに 0 が出て、
+        # そのあと非ゼロが再び出ない。
+        self._spin(1.5)
+        nonzero = [i for i, m in enumerate(self._behavior)
+                   if abs(m.angular.z) > 0.01 or abs(m.linear.x) > 0.01]
+        assert nonzero, '旋回中に behavior 指令が出ていない'
+        assert all(abs(m.angular.z) <= 0.01 and abs(m.linear.x) <= 0.01
+                   for m in self._behavior[nonzero[-1]:]), \
+            '途絶のあとに behavior 指令が再び出ている'
+        # ハートビートは setUp で再開する（次試験への持ち越しを防ぐ）。
+
 
 if __name__ == '__main__':
     unittest.main()
