@@ -28,6 +28,7 @@ import { useTrigger } from '../ros/useTrigger.js'
 import { useParamsOverrides } from '../ros/useParamsOverrides.js'
 import { useMeasureUiPort, openMeasureUi } from '../ros/useMeasureUiPort.js'
 import { useConfirmWindow } from '../shell/confirmWindow.js'
+import { isWorkingActive } from '../shell/limits.js'
 import { needsArmConfirmForExit } from '../modes/armConfirm.js'
 import { useSetFlag, TRACKER_FLAG } from '../ros/useSetFlag.js'
 import { useOnsitePins } from '../ros/useOnsitePins.js'
@@ -177,7 +178,10 @@ export default function S21Test({ onExit }) {
   const stateName = state?.state ?? null
   const isNavMode = NAV_MODES.includes(mode)
   const mapUpdate = !!state?.map_update
-  const working = stateName === 'WORKING'
+  // 8-g P3-ui: 「停止命令の間」は WORKING と ADJUST（旋回・並進中）。
+  // 判定は isWorkingActive の 1 か所（/system/state.working を優先）。
+  const working = isWorkingActive(state)
+  const adjusting = mode === 'AT_PANEL' && stateName === 'ADJUST'
   const showWizard = mode === 'SUMMON' && stateName === 'POINT'
   const showWait = mode === 'SUMMON' && stateName === 'WAIT_CLEAR'
 
@@ -307,9 +311,8 @@ export default function S21Test({ onExit }) {
   // 8-g P2-ui: AT_PANEL / WORKING からの「終了」は腕の格納の確認（W-4）を
   // 先に挟む（SM-3.1.1-18。判定は modes/armConfirm.js の 1 か所）。
   function handleFinish() {
-    const isWorkingFlag = state?.working === true || stateName === 'WORKING'
     if (needsArmConfirmForExit({
-      trigger: 'ui.finish', currentMode: mode, prevMode: state?.prev_mode ?? null, working: isWorkingFlag,
+      trigger: 'ui.finish', currentMode: mode, prevMode: state?.prev_mode ?? null, working,
     })) {
       setArmPending({ action: 'finish' })
       confirmWindow.open()
@@ -445,7 +448,11 @@ export default function S21Test({ onExit }) {
     sendTrigger('ui.select_target', { index })
   }
 
-  const stateText = working ? S21_WORKING_STATE : (isNavMode ? stateLabel(stateName) : S21_SELECT_HINT)
+  // 8-g P3-ui: ADJUST でも停止命令の表示のまま、状態の行に
+  // 「測定機能の指示で動作中」を添える（状態文言は i18n/states.js の ADJUST）。
+  const stateText = working
+    ? (adjusting ? `${S21_WORKING_STATE}（${stateLabel('ADJUST')}）` : S21_WORKING_STATE)
+    : (isNavMode ? stateLabel(stateName) : S21_SELECT_HINT)
   const pendingYaw = showWizard && wizYaw != null
 
   // UX-2-b/UX-2-d/UX-6-b: この画面から「押せない」ことが画面だけでも分かる理由のバッジ。
@@ -1081,11 +1088,18 @@ export default function S21Test({ onExit }) {
                       type="button"
                       className="btn danger"
                       data-testid="s21-working-unlock"
-                      disabled={disabledAll}
-                      onClick={() => { setArmPending({ action: 'unlock' }); confirmWindow.open() }}
+                      disabled={disabledAll || adjusting}
+                      onClick={() => { if (adjusting) return; setArmPending({ action: 'unlock' }); confirmWindow.open() }}
                     >
                       {S21_WORKING_UNLOCK}
                     </button>
+                    {adjusting && (
+                      // 8-g P3-ui: 旋回中・並進中は腕が起きているので停止命令を
+                      // 解けない（SM-3.1.2-138）。理由は adjust_in_progress。
+                      <span className="reason-badge" data-testid="reason-s21-working-unlock">
+                        {REJECT_REASONS.adjust_in_progress}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
