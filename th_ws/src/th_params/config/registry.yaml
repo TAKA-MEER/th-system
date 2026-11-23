@@ -1288,6 +1288,15 @@
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §3.5・§6.2"
   note: "腕が振れる範囲の確認で、最後のスキャンがこれより古ければ UNKNOWN（scan_stale）。暫定値。角が描く円の確認（measure_clearance。P5b）も同じ値で、古ければ clear=false（2026-11-23）。names.md に先に載っていて registry の照合試験が赤だったので行だけ先に置く（2026-11-23）"
 
+- name: arm_clearance_blind_near_m
+  unit: m
+  class: b
+  status: given
+  value: 0.65
+  consumers: [params_audit, measure_clearance]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §6.5"
+  note: "腕が振れる範囲の確認で、laser_link の中心からこれ以内の部分の死角は判定から除く（2026-11-23 ユーザー決定）。いまの四隅の支柱ではどの向きの範囲にも機体の中心から約 0.6 m 以内の死角の楔がかかり、除かないと毎回 UNKNOWN になるため。Spec-measure.md §5.2 の既知のリスク"
+
 - name: adjust_timeout_ms
   unit: ms
   class: b

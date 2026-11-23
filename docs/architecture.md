@@ -129,6 +129,14 @@ ROS 非依存）、`/system/event` へ `evt.measure_link_ok` ／ `evt.measure_li
 `measure_clearance`（`th_measure`）が `/scan_filtered` と局所コストマップから
 半径 0.389 m の円の中の障害物を 5 Hz で `/measure/corner_status` に出す
 （`state_manager` は 1 秒届かなければ `clear=false` とみなす）。
+同じノードが腕が振れる範囲の確認（`/measure/check_arm_clearance`。8-g P4）の
+サービスも持つ。`/system/state` を購読して `AUTO_MEASURE`/`WAIT` と
+`AT_PANEL`/`WORKING` だけで受け（`ADJUST` を含むほかは `state_not_accepting`。
+拒否の順は `bad_argument` → `state_not_accepting`）、`region` を向きごとに
+回して（`LEFT` +90°・`RIGHT` −90°・`CURRENT` 0°。機体の形 0.55 m 角の内側は
+除く）判定を返す。判定順はスキャンの鮮度（`scan_stale`）→ 障害物
+（`BLOCKED`）→ 死角（`blind_sector`）。状態は変えない（`state_manager` を
+通さない）。正本は `DetailedDesign-measure.md` §3.5・§6.5。
 `evt.measure_link_lost` は、ラッチの値が変わったときだけ遷移表へ流す
 （`NAV`・`ALIGN`・`BLOCKED`→`PAUSE`。`pause_reason` は `measure_link`）。
 自律測定中に `LOCALIZATION_LOST` を受けると、進行中の指示を
