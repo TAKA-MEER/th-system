@@ -331,6 +331,32 @@ builtin_interfaces/Time checked_at
 | W-1（回復フォルト） | `AT_PANEL`/`WORKING` でフォルトが出ている間も W-1 を出す（今は `PAUSE`・`ESTOP` だけ）。ボタンは「確認」（`ui.resume_ack`）。状態は `WORKING` のまま |
 | 腕の格納の確認（-18） | P5a-ui の判定関数（`modes/armConfirm.js`）を広げる: `ESTOP`・`CARRY` では **`prev_mode` が `AUTO_MEASURE`、または `/system/state.working` が `true`** のとき W-1 の「メインメニューへ」・「確認」と W-2 の「メインメニューへ」の前に出す。**`AT_PANEL`/`WORKING` からの「終了」（`ui.finish`）の前にも出す** |
 
+### 6.4 盤前の旋回・前後の並進（`ADJUST`）の作り（2026-11-23 決定。計画書 8-g の P3）
+
+**P3（機体側）と P3-ui（画面）に分けて同時に進める。**P3-ui は yaml を触らない。正は [Spec-modes.md](../spec/Spec-modes.md) `SM-3.1.2-127`・`-128`・`-132`・`-136`〜`-140` と [Spec-measure.md](../spec/Spec-measure.md) §5・§5.3。左右の並進は受けない（`bad_argument`。P1 のまま）。
+
+| 項目 | 決まり |
+| --- | --- |
+| 受ける状態 | `meas.turn`（`angle_rad`）・`meas.translate`（`side` `FORWARD`／`BACKWARD`・`distance_m` 正）を **`AUTO_MEASURE`/`WAIT`（-127）と `AT_PANEL`/`WORKING`（-136）だけ**で受け、`ADJUST` へ。ほか（`ADJUST` 中を含む）は `state_not_accepting`（-132・-138）。`angle_rad` が 0・有限でない、`distance_m` が 0 以下・有限でない は `bad_argument` |
+| 受ける前の確認（同期のガード） | **旋回・並進とも角が描く円**（P5b の `/measure/corner_status` のラッチ。1 秒届かなければ塞がり扱い）→ 理由 `corner_obstacle`。**並進は加えて進む先**: `measure_clearance` が `/measure/corner_status` の JSON に **`free_forward_m`・`free_backward_m`** を足し、`distance_m` がそれ以下でなければ拒否 → 理由 **`path_obstacle`**。値は「今の位置からまっすぐ進んで機体の形 0.55 m 角が障害物マップかスキャンの障害物に当たるまでの距離」から**リミッタの止まった位置の余裕 `floor_margin_m` を引いたもの**（引かないと、盤へ向かう並進を受けたあとリミッタが手前で止め、終わらずに打ち切りになる）。**LiDAR の死角（`blind_angle_ranges`）にかかる向き・スキャンが古い・TF が取れないときは 0**（確かめられないものを空きと扱わない。§5.2 と同じ考え）。返りの無い方向（見える範囲の外）は、見える範囲の端までを空きとする。判定の順: `reentry_required`（自律測定のみ）→ 角 → 進む先 |
+| 動かすノード | **`th_measure` の新しいノード `measure_adjuster`**。effect **`measure_adjust`**（`{command_id, kind: turn｜translate, angle_rad, side, distance_m}`）を受けて、`/system/state` が `ADJUST` の間だけ `/cmd_vel_behavior` に出す。**帰還は TF `odom→base_link`**（数十 cm・数十度の相対の動きなので、スキャン照合で跳ぶ `map` ではなく連続な `odom` を使う。**旋回は始点からのヨーの変化を巻き戻さずに積み上げて比べる**（目標を (-π, π] に丸めると、π を超える指示が逆向きの近道を回る）。正は左回り。並進は始点からの進んだ距離で、間は向きを保つ）。`ADJUST` から出たら（どの理由でも）すぐ 0 を 1 回出して黙る |
+| 速さと精度 | 旋回は試験場内の向き合わせ（`ALIGN`）の registry 値（`align_kp`・`align_w_max_rps`・`w_align_max`・向き合わせの旋回の速さの下限）と許容差 `align_tolerance_rad` を使う。並進は新しい registry 値（class b・given）: 並進の速さ・許容差。**速度の上限は `ADJUST` の間 `v_jog_panel`**（`AUTO_MEASURE` の `v_slow` でも `AT_PANEL` の停止でもない。上限の決め方に「状態 `ADJUST` はジョグ中と同じに `jog_speed_limit`」を足す）。障害物の停止・非常停止は `obstacle_limiter` がふだんどおり効かせる（後退も） |
+| 終わり（-128・-137） | `measure_adjuster` が `/system/event` に **`evt.adjust_done`**（`arg_json` に `command_id`）→ `ADJUST` から `WAIT`（自律測定）／`WORKING`（停止命令）。`state_manager` が進行中の `turn`／`translate` に **`DONE` を 1 回**。`command_id` が進行中のものと違う `evt.adjust_done` は捨てる |
+| 進まないとき | **締め切りは `state_manager` が持つ**（`ADJUST` に入ってから **`adjust_timeout_ms`**（新しい registry 値）。`sys.jog_lease_expired` と同じくタイマで `sys.adjust_timeout` を流す）→ `WAIT`／`WORKING` へ戻り、結果は **`CANCELLED`（`adjust_timeout`）**（`FAILED` は予約のまま使わない）。`measure_adjuster` が落ちても `ADJUST` に閉じ込められないため（停止命令の `ADJUST` では `meas.done`・停止を解く・行き先を拒否するので、ほかに出口が無い）。`measure_adjuster` は、進まないと分かれば早めに **`evt.adjust_failed`**（`{command_id, reason}`）を出してよい |
+| 途中でやめる | **`ADJUST` から出たら進行中の旋回・並進は `CANCELLED`**（理由は出た契機: `stopped`（`meas.stop`）・`aborted`（`meas.abort`）・`fault`・`jog`・`link_lost`・`estop`・`carry`・`localization_lost`）。目的地（`meas.goal`）と違い、**持ったまま止まらない**（勝手に動き直さない。測定機能が自己位置から指示し直す） |
+| 自律測定の `ADJUST` | `meas.stop` → `PAUSE`（-129）。`meas.abort` → `WAIT`（-131）。ジョグ・回復フォルト → 共通行で `PAUSE`。途絶 → `PAUSE`（`measure_link`。-133）。非常停止・手押し → 戻ると `PAUSE`（走行状態と同じ。`is_driving` の追加に `ADJUST`）。`PAUSE` からの `meas.start` は `WAIT`（止める前が `ADJUST` でも。指示は捨ててある） |
+| 停止命令の `ADJUST` | ジョグは拒否（P2 の行を `ADJUST` にも）。回復フォルト・途絶 → `WORKING`（-139。動きをやめて捨てる）。非常停止・手押し → 戻ると `WORKING`（-140。押下前が `ADJUST` でも `WORKING`）。`meas.done`・`ui.working` off（停止を解く）・行き先は拒否（-138。理由 **`adjust_in_progress`**）。`/system/state.working` は `ADJUST` でも `true` |
+| 結果の台帳・`working` | 「測定の続き」に `AT_PANEL`/`ADJUST` を足す（P2 の片付けをそのまま）。`published_working` も `ADJUST` を含める |
+
+**P3-ui（画面）の決まり**（2026-11-23）。
+
+| 項目 | 決まり |
+| --- | --- |
+| 状態の文言 | `ADJUST` を「測定機能の指示で動作中」（S-21・S-60・ヘッダー）。S-21 は停止命令の表示のまま |
+| 「停止を解く」 | `AT_PANEL`/`ADJUST` では押せなくし、理由 `adjust_in_progress`（「旋回中・並進中は腕が起きているため解けません」）を出す |
+| 理由キー | `path_obstacle`（進む先に障害物）・`adjust_in_progress`・`adjust_timeout` の文言を `i18n/reasons.js` に足す（測定機能の画面も同じ表を取り込む） |
+| 腕の確認・W-1 | P2-ui の判定（`working`）がそのまま効くこと（`ADJUST` でも `working` は `true`）。`AT_PANEL`/`ADJUST` のフォルトでも W-1 を出す |
+
 ## 7. 未決と依存
 
 | 項目 | 状態 |
