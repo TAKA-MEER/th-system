@@ -593,6 +593,13 @@ class TestAdjustNode(unittest.TestCase):
         res = self._call_measure('meas.turn', command_id=cid, angle=1.57)
         assert res.accepted is True, res.reject_reason
         assert (res.mode, res.state) == ('AT_PANEL', 'ADJUST')
+        # 進行中でない command_id の evt.adjust_done は捨てる（ADJUST のまま）。
+        self._event('evt.adjust_done', json.dumps({'command_id': 'stale-id'}))
+        self._spin(0.8)
+        st = self._latest_state()
+        assert (st.mode, st.state) == ('AT_PANEL', 'ADJUST'), (st.mode, st.state)
+        assert not any(r.command_id == cid and r.result == 'DONE'
+                       for r in self._results)
         # ADJUST 中に非常停止。
         self.pub_estop_ui.publish(Bool(data=True))
         assert self._wait_mode_state('ESTOP', 'NONE') is True
