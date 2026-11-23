@@ -38,7 +38,7 @@ MODE_STATES: Dict[str, Set[str]] = {
     "LEASH": {"DEV_CHECK", "READY", "RUN", "HOLD", "PAUSE"},
     "PREP": {"MAPPING", "REGISTER", "RETURN", "EDIT", "SAVED", "PAUSE"},
     "PANEL_NAV": {"NAV", "BLOCKED", "PAUSE", "ALIGN"},
-    "AT_PANEL": {"IDLE_P", "WORKING", "PAUSE"},
+    "AT_PANEL": {"IDLE_P", "WORKING", "ADJUST", "PAUSE"},
     "SUMMON": {"POINT", "WAIT_CLEAR", "NAV", "BLOCKED", "PAUSE", "ALIGN"},
     "HOME_NAV": {"NAV", "BLOCKED", "PAUSE"},
     # Spec-modes.md §2.3（2026-09-08 追加）。AT_PANEL と同型で、作業中ボタンが無いぶん
@@ -49,7 +49,7 @@ MODE_STATES: Dict[str, Set[str]] = {
     # 8-g P5a/P5b（2026-11-23。DetailedDesign-measure.md §6.2）。状態は入口ができる
     # パケットで足す（P5a は WAIT・PAUSE、P5b で NAV・ALIGN・BLOCKED、P3 で ADJUST。
     # 入口の無い状態は validate() の到達可能性が咎める）。
-    "AUTO_MEASURE": {"WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED"},
+    "AUTO_MEASURE": {"WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED", "ADJUST"},
 }
 
 assert set(MODE_STATES.keys()) == MODES
@@ -136,6 +136,7 @@ _DRIVING_EXTRA_STATES = frozenset({
     ("PANEL_NAV", "ALIGN"), ("SUMMON", "ALIGN"), ("PREP", "RETURN"),
     # 8-g P5b: 自律測定の ALIGN（向き合わせでその場旋回する走行状態）。
     ("AUTO_MEASURE", "ALIGN"),
+    ("AUTO_MEASURE", "ADJUST"),
 })
 
 
@@ -167,6 +168,7 @@ ESTOP_RESUME_PAUSE_EXTRA: Set[Tuple[str, str]] = {
     # 8-g P5b: 自律測定の BLOCKED（空けば自動で走り直す）・ALIGN（その場旋回する）も
     # 「走行中」と同じく同モードの PAUSE へ戻す（SM-3.1.1-11 の 2026-10-22 変更と同じ理由）。
     ("AUTO_MEASURE", "BLOCKED"), ("AUTO_MEASURE", "ALIGN"),
+    ("AUTO_MEASURE", "ADJUST"),
 }
 
 
@@ -300,6 +302,11 @@ EFFECT_ARG_SPECS: Dict[str, Dict[str, str]] = {
     # 8-g P5b（SM-3.1.2-121。DetailedDesign-measure.md §6.2）。目的地を
     # venue_navigator へ渡す（command_id と map フレームの x/y/yaw）。
     "measure_goal": {"command_id": _STR, "x": "float", "y": "float", "yaw": "float"},
+    # 8-g P3（SM-3.1.2-127・-136。DetailedDesign-measure.md §6.4）。盤前の旋回・並進を
+    # measure_adjuster へ渡す（command_id と kind のほか、旋回は angle_rad、並進は
+    # side・distance_m）。文字列の集合ではないので R2 の対象外。
+    "measure_adjust": {"command_id": _STR, "kind": _STR, "angle_rad": "float",
+                       "side": _STR, "distance_m": "float"},
 }
 
 
@@ -367,6 +374,12 @@ class Context:
     # meas.start の戻り先（-130）を選ぶ。state_manager がラッチする（ESTOP/CARRY から
     # PAUSE へ戻るときは prev_state を使って閉じる。prev_state 自体は clear_prev で消える）。
     measure_prev_state: str = ""
+    # 8-g P3（SM-3.1.2-127・-136。DetailedDesign-measure.md §6.4）。並進の「進む先」の
+    # 空き距離（measure_clearance が /measure/corner_status に足す free_*_m の
+    # ラッチ。TF・鮮度が無いときは 0）。state_manager が詰める。既定は 0＝障害物あり扱い
+    # （確認できていないものを「空いている」と扱わない）。
+    measure_free_forward_m: float = 0.0
+    measure_free_backward_m: float = 0.0
     arg: Dict[str, Any] = field(default_factory=dict)
 
 
