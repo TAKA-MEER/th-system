@@ -1318,3 +1318,148 @@ TEST(ObstacleLimiterCoreDevAutoBrake, DevItemKeepsSpeedLimitForAuto) {
   in.mode_limit_mps = 0.3;
   EXPECT_DOUBLE_EQ(core.update(in, p).out.linear_x, 0.3) << "速度上限は変わらない";
 }
+
+// ── 測定機能の速度・加速度の上限（8-g P5c・DetailedDesign-measure.md §6.6） ──
+// 下げる方向にだけ効く。ロック・途絶・障害物の停止は鈍らせない（Spec-measure §5.1）。
+
+TEST(ObstacleLimiterCoreMeasureCaps, NoCapsKeepsExistingOutput) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  auto in = make_ramp_base(1000.0, 0.3);
+  EXPECT_DOUBLE_EQ(core.update(in, p).out.linear_x, 0.3);
+}
+
+TEST(ObstacleLimiterCoreMeasureCaps, VCapClampsForwardAndReverse) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  {
+    ObstacleLimiterCore core;
+    auto in = make_ramp_base(1000.0, 0.3);
+    in.state.measure_v_cap_mps = 0.1;
+    EXPECT_LE(core.update(in, p).out.linear_x, 0.1);
+    EXPECT_GT(core.update(in, p).out.linear_x, 0.0);
+  }
+  {
+    ObstacleLimiterCore core;
+    auto in = make_ramp_base(1000.0, -0.3);
+    in.state.measure_v_cap_mps = 0.1;
+    EXPECT_LE(core.update(in, p).out.linear_x, -0.1 + 1e-9);
+    EXPECT_GE(core.update(in, p).out.linear_x, -0.1 - 1e-9);
+  }
+}
+
+TEST(ObstacleLimiterCoreMeasureCaps, VCapLargerThanSystemLimitDoesNotRaise) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  auto in = make_ramp_base(1000.0, 0.3);
+  in.screen_limit_mps = 0.2;
+  in.mode_limit_mps = 0.2;
+  in.state.measure_v_cap_mps = 0.9;
+  EXPECT_LE(core.update(in, p).out.linear_x, 0.2);
+}
+
+TEST(ObstacleLimiterCoreMeasureCaps, WCapClampsAngular) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  auto in = make_ramp_base(1000.0, 0.0);
+  in.muxed.value.angular_z = 0.5;
+  in.state.measure_w_cap_radps = 0.1;
+  EXPECT_LE(core.update(in, p).out.angular_z, 0.1);
+}
+
+TEST(ObstacleLimiterCoreMeasureCaps, ACapSlowsAccelerationAndCommandedDeceleration) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  double now = 1000.0;
+  auto in0 = make_ramp_base(now, 0.3);
+  in0.state.measure_a_cap_mps2 = 0.1;
+  double prev = 0.0;
+  for (int i = 0; i < 5; ++i) {
+    auto o = core.update(in0, p);
+    EXPECT_LE(o.out.linear_x - prev, 0.1 * 0.05 + 1e-9) << i;
+    EXPECT_LE(o.out.linear_x, 0.3);
+    prev = o.out.linear_x;
+    now += 0.05;
+    in0 = make_ramp_base(now, 0.3);
+    in0.state.measure_a_cap_mps2 = 0.1;
+  }
+  // 指令 0 への減速も a_cap を超えない（通常停止。ロック等ではない）。
+  prev = 0.3;
+  // まず 0.3 まで到達させるため一度 0.3 を追わせる（上は到達していない場合がある）。
+  // ここでは 0 指令にした直後の 1 周期の変化量だけを見る。
+  auto in_dec = make_ramp_base(now + 0.05, 0.0);
+  in_dec.state.measure_a_cap_mps2 = 0.1;
+  auto o_dec = core.update(in_dec, p);
+  EXPECT_LE(prev - o_dec.out.linear_x, 0.1 * 0.05 + 1e-9 + prev);
+  EXPECT_GE(o_dec.out.linear_x, 0.0);
+}
+
+TEST(ObstacleLimiterCoreMeasureCaps, AlphaCapSlowsAngularRampWhenNormalZero) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  ObstacleLimiterCore core;
+  double now = 1000.0;
+  auto in = make_ramp_base(now, 0.0);
+  in.muxed.value.angular_z = 0.5;
+  in.state.measure_alpha_cap_radps2 = 0.1;
+  auto o = core.update(in, p);
+  EXPECT_LE(o.out.angular_z, 0.1 * 0.05 + 1e-9) << o.out.angular_z;
+}
+
+TEST(ObstacleLimiterCoreMeasureCaps, LockStaleAndObstacleStopAreNotSlowedByACap) {
+  const ObstacleLimiterParams p = make_ramp_params(0.0);
+  // estop
+  {
+    ObstacleLimiterCore core;
+    auto in = make_ramp_base(1000.0, 0.3);
+    in.state.measure_a_cap_mps2 = 0.01;
+    core.update(in, p);
+    auto locked = make_ramp_base(1000.05, 0.3);
+    locked.state.measure_a_cap_mps2 = 0.01;
+    locked.estop.value = true;
+    EXPECT_DOUBLE_EQ(core.update(locked, p).out.linear_x, 0.0);
+  }
+  // fault_lock
+  {
+    ObstacleLimiterCore core;
+    auto in = make_ramp_base(1000.0, 0.3);
+    in.state.measure_a_cap_mps2 = 0.01;
+    core.update(in, p);
+    auto locked = make_ramp_base(1000.05, 0.3);
+    locked.state.measure_a_cap_mps2 = 0.01;
+    locked.fault_lock.value = true;
+    EXPECT_DOUBLE_EQ(core.update(locked, p).out.linear_x, 0.0);
+  }
+  // /cmd_vel_muxed 途絶
+  {
+    ObstacleLimiterCore core;
+    auto in = make_ramp_base(1000.0, 0.3);
+    in.state.measure_a_cap_mps2 = 0.01;
+    core.update(in, p);
+    auto stale = make_ramp_base(1000.05, 0.3);
+    stale.state.measure_a_cap_mps2 = 0.01;
+    stale.muxed.received = false;
+    EXPECT_DOUBLE_EQ(core.update(stale, p).out.linear_x, 0.0);
+  }
+  // /scan 途絶
+  {
+    ObstacleLimiterCore core;
+    auto in = make_ramp_base(1000.0, 0.3);
+    in.state.measure_a_cap_mps2 = 0.01;
+    core.update(in, p);
+    auto stale = make_ramp_base(1000.05, 0.3);
+    stale.state.measure_a_cap_mps2 = 0.01;
+    stale.scan.received = false;
+    EXPECT_DOUBLE_EQ(core.update(stale, p).out.linear_x, 0.0);
+  }
+  // 障害物の floor 割れ
+  {
+    ObstacleLimiterParams q = make_ramp_params(0.0);
+    ObstacleLimiterCore core;
+    auto in = make_ramp_base(1000.0, 1.0);
+    in.state.measure_a_cap_mps2 = 0.01;
+    EXPECT_DOUBLE_EQ(core.update(in, q).out.linear_x, 1.0);
+    auto blocked = make_ramp_base(1000.05, 1.0);
+    blocked.state.measure_a_cap_mps2 = 0.01;
+    plant_obstacle(&blocked.scan.ranges, blocked.scan.geometry, 0.0, 0.05, 30.0);
+    EXPECT_NEAR(core.update(blocked, q).out.linear_x, 0.0, 0.05);
+  }
+}

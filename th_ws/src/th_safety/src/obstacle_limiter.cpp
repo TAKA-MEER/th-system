@@ -427,6 +427,13 @@ public:
                 state_.jog_active = msg->jog_active;
                 state_.zone = zoneFromString(msg->zone);
                 state_.auto_brake = msg->auto_brake;
+                // 8-g P5c（§6.6）: 測定機能の上限は最後に受けた値を保持する
+                // （明細はコールバックが上書きするので、古い /system/state の
+                // 間も下げた上限を勝手に外さない）。
+                state_.measure_v_cap_mps = msg->measure_v_cap_mps;
+                state_.measure_w_cap_radps = msg->measure_w_cap_radps;
+                state_.measure_a_cap_mps2 = msg->measure_a_cap_mps2;
+                state_.measure_alpha_cap_radps2 = msg->measure_alpha_cap_radps2;
                 latest_speed_limit_name_ = msg->speed_limit;
             });
 

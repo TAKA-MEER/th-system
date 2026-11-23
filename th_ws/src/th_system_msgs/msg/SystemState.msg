@@ -36,3 +36,9 @@ bool leash_present          # リードデバイスの存在（1b-11 SG-B13）�
                             # state_manager が evt.leash_present/absent でラッチ。
                             # 未受信＝未接続扱い（false）。S-01 の LEASH ボタン表示用。
                             # 末尾に追加（既存フィールドの順序は変えない）
+# 測定機能の速度・加速度の上限（8-g P5c・DetailedDesign-measure.md §6.6）。
+# 0 は指定なし（本システムの上限のまま）。末尾に追加（既存フィールドの順序は変えない）
+float32 measure_v_cap_mps
+float32 measure_w_cap_radps
+float32 measure_a_cap_mps2
+float32 measure_alpha_cap_radps2

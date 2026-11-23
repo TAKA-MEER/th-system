@@ -329,8 +329,20 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   // 通常時ランプ（DetailedDesign-safety.md §7.1）の dt。now_sec の連続差分から
   // 取る（欠測ティックがあっても実経過時間で計算する）。初回はノードの固定周期
   // 20 Hz の 1 周期を使い、速度・加速度ともゼロから始める。
-  const double dt = prev_now_valid_ ? (in.now_sec - prev_now_sec_)
-      : (p.normal_jerk_mps3 > 0.0 ? 0.05 : std::numeric_limits<double>::infinity());
+  // 測定機能の加速度指定（§6.6）があれば初回も有界 dt でランプする
+  // （無制限 dt だと初回に a_cap を超える）。
+  const double eff_normal_accel_for_dt =
+      in.state.measure_a_cap_mps2 > 0.0
+          ? (p.normal_accel_mps2 > 0.0
+                 ? std::min(p.normal_accel_mps2, in.state.measure_a_cap_mps2)
+                 : in.state.measure_a_cap_mps2)
+          : p.normal_accel_mps2;
+  const double dt = prev_now_valid_
+      ? (in.now_sec - prev_now_sec_)
+      : ((p.normal_jerk_mps3 > 0.0 || eff_normal_accel_for_dt > 0.0 ||
+          in.state.measure_alpha_cap_radps2 > 0.0)
+             ? 0.05
+             : std::numeric_limits<double>::infinity());
   prev_now_sec_ = in.now_sec;
   prev_now_valid_ = true;
 
@@ -491,6 +503,11 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   const bool policy_active = policy_stops(source_class, in.state.zone, eff_auto_brake,
                                          in.dev_auto_brake_off);
   double linear_ceiling = applied_limit;
+  // 8-g P5c（§6.6）: 速度の指定はランプを通さず即座に絞る側で min する
+  // （上げる方向には効かない。前進・後退とも clamp_toward_zero の fabs で効く）。
+  if (in.state.measure_v_cap_mps > 0.0) {
+    linear_ceiling = std::min(linear_ceiling, in.state.measure_v_cap_mps);
+  }
   const double v_allow_now =
       v_allow(nearest_for_v_allow, p.obstacle_floor_distance_m, p.brake_accel_mps2);
   if (policy_active) {
@@ -528,6 +545,10 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   // （min(w_max, w_align_max)。w_align_max > w_max の設定でも min により
   // 安全側＝より小さい方に倒れる）。
   double angular_ceiling = p.w_max;
+  // 8-g P5c（§6.6）: 角速度の指定も即座に絞る側で min する。
+  if (in.state.measure_w_cap_radps > 0.0) {
+    angular_ceiling = std::min(angular_ceiling, in.state.measure_w_cap_radps);
+  }
   if (below_floor) {
     angular_ceiling = std::min(angular_ceiling, p.w_align_max);
   }
@@ -537,10 +558,23 @@ ObstacleLimiterOutput ObstacleLimiterCore::update(const ObstacleLimiterInputs& i
   // ブレーキ・画面/モード上限・死角キャップを含む）はランプ後の値に対して
   // 従来どおり即座にクランプする。安全上限自体はランプしない——ここが
   // 「危険な指令まで鈍らせない」ことを保証する境界線。
+  // 8-g P5c（§6.6）: 加速度の指定は通常時ランプの上限に min で混ぜる
+  // （normal_* が 0＝ランプなしのときは指定の値だけ）。ランプは指令の
+  // 変化にだけかかるので加速と指令による減速の両方に効く。ロック・
+  // 途絶・障害物の上限による停止は tier 0〜3 の早期 return と
+  // linear_ceiling への即座クランプでランプを通らず鈍らせない（§5.1）。
+  const double eff_normal_accel = eff_normal_accel_for_dt;
+  const double eff_normal_angular_accel =
+      in.state.measure_alpha_cap_radps2 > 0.0
+          ? (p.normal_angular_accel_rps2 > 0.0
+                 ? std::min(p.normal_angular_accel_rps2,
+                            in.state.measure_alpha_cap_radps2)
+                 : in.state.measure_alpha_cap_radps2)
+          : p.normal_angular_accel_rps2;
   const double ramped_linear = scurve_toward(prev_ramped_linear_, in.muxed.value.linear_x,
-      &prev_linear_accel_, p.normal_accel_mps2, p.normal_jerk_mps3, dt);
+      &prev_linear_accel_, eff_normal_accel, p.normal_jerk_mps3, dt);
   const double ramped_angular =
-      ramp_toward(prev_ramped_angular_, in.muxed.value.angular_z, p.normal_angular_accel_rps2, dt);
+      ramp_toward(prev_ramped_angular_, in.muxed.value.angular_z, eff_normal_angular_accel, dt);
 
   out.out.linear_x = clamp_toward_zero(ramped_linear, linear_ceiling);
   out.out.angular_z = clamp_toward_zero(ramped_angular, angular_ceiling);
