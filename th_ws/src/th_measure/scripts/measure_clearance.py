@@ -21,7 +21,8 @@ import math
 import rclpy
 import tf2_ros
 from rclpy.node import Node
-from rclpy.parameter import Parameter, ParameterDescriptor
+from rcl_interfaces.msg import ParameterDescriptor
+from rclpy.parameter import Parameter
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy, qos_profile_sensor_data)
 
