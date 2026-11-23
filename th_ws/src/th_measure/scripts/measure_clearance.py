@@ -116,6 +116,9 @@ class MeasureClearance(Node):
         self._blind_rad = tuple(
             (math.radians(float(_blind_deg[i])), math.radians(float(_blind_deg[i + 1])))
             for i in range(0, len(_blind_deg) - 1, 2))
+        # 実行時に blind_angle_ranges が変わったら読み直す（試験 d は
+        # 生成 yaml を渡した同じノードの値を書き換える）。
+        self.add_on_set_parameters_callback(self._on_params_set)
 
         self._scan = None          # 最新の LaserScan
         self._scan_rx_ms = None    # 受信時刻（ms。自分の時計）
@@ -169,6 +172,16 @@ class MeasureClearance(Node):
     def _on_state(self, msg):
         self._sys_mode = str(msg.mode or '')
         self._sys_state = str(msg.state or '')
+
+    def _on_params_set(self, params):
+        from rcl_interfaces.msg import SetParametersResult
+        for p in params:
+            if p.name == 'blind_angle_ranges':
+                deg = list(p.value or [])
+                self._blind_rad = tuple(
+                    (math.radians(float(deg[i])), math.radians(float(deg[i + 1])))
+                    for i in range(0, len(deg) - 1, 2))
+        return SetParametersResult(successful=True)
 
     def _on_costmap(self, msg):
         self._costmap = msg

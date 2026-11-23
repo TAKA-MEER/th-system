@@ -330,7 +330,7 @@ class TestArmClearanceNode(unittest.TestCase):
         req = SetParameters.Request()
         req.parameters = [
             Parameter(name='blind_angle_ranges',
-                      value=[float(v) for v in flat_deg])]
+                      value=[float(v) for v in flat_deg]).to_parameter_msg()]
         fut = self.cli_setparams.call_async(req)
         rclpy.spin_until_future_complete(self.node, fut, timeout_sec=5.0)
         assert fut.done() and fut.result().results[0].successful, \
