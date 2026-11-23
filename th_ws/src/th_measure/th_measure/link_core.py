@@ -76,20 +76,24 @@ def resolve_speed_limit(name: str, table: dict) -> float:
 
 
 def effective_v_limit(speed_limit_name: str, table: dict, v_cap_mps: float) -> float:
-    """`v_limit_mps`（§3.3）。本システムの上限だけを返す。
+    """`v_limit_mps`（§3.3・§6.6）。本システムの上限と `v_cap` の小さい方。
 
-    8-g P5b: `meas.set_limits` を効かせる仕組み（P5c）まで受けないので、
-    `v_cap` を混ぜない（効いていない上限を報告しない。DetailedDesign §6.2 P5b）。
-    `v_cap_mps` 引数は P5c で効かせるまでの間、値を受け取っても無視する。"""
-    return resolve_speed_limit(speed_limit_name, table)
+    8-g P5c: 指定がある（正）ときだけ min を採る。上げる方向には効かない。"""
+    system = resolve_speed_limit(speed_limit_name, table)
+    if v_cap_mps and v_cap_mps > 0:
+        return min(system, float(v_cap_mps))
+    return system
 
 
-def effective_w_limit(w_cap_radps: float) -> float:
-    """`w_limit_radps`（§3.3）。P1 では `v_cap`/`w_cap` は常に 0 なので 0。
+def effective_w_limit(w_cap_radps: float, w_max_radps: float = 0.0) -> float:
+    """`w_limit_radps`（§3.3・§6.6）。min(本システムの `w_max`, `w_cap`)。
 
-    自律測定の走行（P2 以降）で `meas.set_limits` の `w_max_radps` が来たら、
-    ここで本システム側の上限との小さい方を採る。P1 では指定が無い＝0。
-    """
+    指定が無い（0）ときは本システムの上限だけを返す。`w_max_radps` を
+    渡さない旧呼び出しでは、指定値をそのまま返す（後方互換）。"""
+    if w_max_radps and w_max_radps > 0:
+        if w_cap_radps and w_cap_radps > 0:
+            return min(float(w_max_radps), float(w_cap_radps))
+        return float(w_max_radps)
     if w_cap_radps and w_cap_radps > 0:
         return float(w_cap_radps)
     return 0.0
@@ -117,6 +121,7 @@ class StatusFields:
     speed_table: dict = field(default_factory=dict)
     v_cap_mps: float = 0.0
     w_cap_radps: float = 0.0
+    w_max_radps: float = 0.0
 
     def as_dict(self) -> dict:
         return {
@@ -137,5 +142,5 @@ class StatusFields:
             "reentry_required": bool(self.reentry_required),
             "v_limit_mps": effective_v_limit(
                 self.speed_limit_name, self.speed_table, self.v_cap_mps),
-            "w_limit_radps": effective_w_limit(self.w_cap_radps),
+            "w_limit_radps": effective_w_limit(self.w_cap_radps, self.w_max_radps),
         }

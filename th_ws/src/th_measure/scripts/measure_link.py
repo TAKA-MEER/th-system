@@ -70,6 +70,9 @@ class MeasureLink(Node):
         # rclpy は既定値の型で決まるため、DOUBLE 既定にすると生成 yaml の
         # 整数を受け付けず起動が落ちる。CLAUDE.md）。
         self.declare_parameter('measure_link_timeout_ms', Parameter.Type.INTEGER)
+        # 8-g P5c（§6.6）: w_limit_radps = min(w_max, w_cap)。w_max は registry
+        # の値を生成 yaml で受ける（既定を持たず、生成 yaml が無い起動は落とす）。
+        self.declare_parameter('w_max', Parameter.Type.DOUBLE)
         for name, default in _SPEED_PARAM_DEFAULTS.items():
             self.declare_parameter(name, default)
 
@@ -79,6 +82,7 @@ class MeasureLink(Node):
             name: float(self.get_parameter(name).value)
             for name in _SPEED_PARAM_DEFAULTS
         }
+        self._w_max_radps = float(self.get_parameter('w_max').value)
 
         # 材料（§6.1）: /system/state・/map_session/status・/measure/command_state
         self._sys_mode = ""
@@ -219,6 +223,7 @@ class MeasureLink(Node):
             speed_table=self._speed_table,
             v_cap_mps=self._v_cap_mps,
             w_cap_radps=self._w_cap_radps,
+            w_max_radps=self._w_max_radps,
         )
         d = fields.as_dict()
         msg = MeasureStatus()

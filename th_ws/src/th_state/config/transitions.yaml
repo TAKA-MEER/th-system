@@ -2919,8 +2919,7 @@
 # （ADJUST は P3 でその入口の行と一緒に足す）。出る行も、その状態を足す
 # パケットで足す。meas.turn・translate と腕の範囲の確認は行が無いので
 # 拒否される（state_not_accepting）。AT_PANEL の WORKING の meas 行も P2。
-# meas.set_limits は効かせる仕組み（P5c）まで受けない（行が無いので
-# state_not_accepting。P5a の T-MEAS-04 は外した）。
+# meas.set_limits は P5c（§6.6）で受ける（T-MEAS-04・T-ATP-00-set-limits）。
 # T-MEAS-01X は -142 の拒否行（meas.start の前に評価される。LOCALIZATION_LOST のあと
 # 自律測定を抜けて入り直すまで localization_lost で拒否）。
 # 記載順で振り分ける（§3-1 流儀）: 拒否行（reentry → map → corner）を先に置き、
@@ -3153,8 +3152,31 @@
   to_state: NONE
   effects: []
   spec_ref: SM-3.1.2-135
-# meas.set_limits の受理行（旧 T-MEAS-04）は P5b で外した: 効かせる仕組み
-# （P5c）まで受けない（DetailedDesign-measure.md §6.2 P5b の決まり）。
+# 8-g P5c（§6.6）: meas.set_limits の受理行。AUTO_MEASURE の全状態と
+# AT_PANEL/WORKING・ADJUST で受け、状態は変えない（すぐ DONE）。
+# ほかは行が無いので state_not_accepting。
+- id: T-MEAS-04
+  layer: 10
+  mode: AUTO_MEASURE
+  state: '*'
+  event: meas.set_limits
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects: []
+  spec_ref: Spec-measure.md §3・§5.1
+- id: T-ATP-00-set-limits
+  layer: 10
+  mode: AT_PANEL
+  state:
+  - WORKING
+  - ADJUST
+  event: meas.set_limits
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects: []
+  spec_ref: Spec-measure.md §3・§5.1
 # 8-g P3（SM-3.1.2-127・-136）: 盤前の旋回・前後の並進（ADJUST）。
 # 受ける順は reentry_required（自律測定のみ）→ corner_obstacle → 並進だけ path_obstacle。
 # ADJUST 中の meas.done・停止を解く・行き先は adjust_in_progress で拒否（-138）。

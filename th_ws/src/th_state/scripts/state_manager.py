@@ -299,10 +299,12 @@ class StateManager(Node):
         # 8-g P1: /measure/result の台帳（1 指示につき必ず 1 回だけ出す）。
         self._measure_ledger = MeasureLedger()
         # 8-g P1: meas.set_limits の指定（/measure/command_state の v_cap/w_cap）。
-        # P1 では遷移表に meas.* の行が無く受理されないので常に 0。
-        # 8-g P5a: モードを抜けたら 0 に戻す（§3.1）。
+        # 8-g P5c（§6.6）: 4 つを持つ。測定の続きの間だけ持ち、続きでなく
+        # なったら 0 に戻す（片付けは下の _process の _in_continuation 判定）。
         self._measure_v_cap_mps = 0.0
         self._measure_w_cap_radps = 0.0
+        self._measure_a_cap_mps2 = 0.0
+        self._measure_alpha_cap_radps2 = 0.0
         self._last_command_state_json = None
         # 8-g P5a（SM-3.1.2-142）: 自己位置を見失ったあとの入り直し要否。
         # 立っている間は meas.start が localization_lost で拒否される。
@@ -781,6 +783,8 @@ class StateManager(Node):
                 self._publish_result(record)
             self._measure_v_cap_mps = 0.0
             self._measure_w_cap_radps = 0.0
+            self._measure_a_cap_mps2 = 0.0
+            self._measure_alpha_cap_radps2 = 0.0
             self._measure_reentry_required = False
             self._measure_prev_state = ""
             self._measure_in_session = False
@@ -983,6 +987,8 @@ class StateManager(Node):
             "reentry_required": self._measure_reentry_required,
             "v_cap_mps": self._measure_v_cap_mps,
             "w_cap_radps": self._measure_w_cap_radps,
+            "a_cap_mps2": self._measure_a_cap_mps2,
+            "alpha_cap_radps2": self._measure_alpha_cap_radps2,
         })
         if payload == self._last_command_state_json:
             return
@@ -997,7 +1003,9 @@ class StateManager(Node):
         #    meas.translate の side が FORWARD／BACKWARD 以外）
         reason = validate_measure_command(
             req.command_id, req.command, req.side,
-            angle_rad=req.angle_rad, distance_m=req.distance_m)
+            angle_rad=req.angle_rad, distance_m=req.distance_m,
+            v_max_mps=req.v_max_mps, w_max_radps=req.w_max_radps,
+            a_max_mps2=req.a_max_mps2, alpha_max_radps2=req.alpha_max_radps2)
         if reason:
             res.accepted = False
             res.reject_reason = reason
@@ -1058,8 +1066,14 @@ class StateManager(Node):
             for record in self._measure_ledger.cancel_all(
                     "aborted", exclude=req.command_id):
                 self._publish_result(record)
-        # meas.set_limits は効かせる仕組み（P5c）まで受けない（P5b の決まり）。
-        # 遷移表に行が無いのでここには到達しない（v_cap は 0 のまま残す）。
+        # 8-g P5c（§6.6）: meas.set_limits は状態を変えず、4 つまとめて置き換える
+        # （0 は指定なし＝その項目は外れる）。_process の片付け（続きでない）に
+        # よるリセットのあとに置くので、受理した値が残る。
+        if req.command == "meas.set_limits":
+            self._measure_v_cap_mps = float(req.v_max_mps)
+            self._measure_w_cap_radps = float(req.w_max_radps)
+            self._measure_a_cap_mps2 = float(req.a_max_mps2)
+            self._measure_alpha_cap_radps2 = float(req.alpha_max_radps2)
         if req.command in IMMEDIATE_MEASURE_COMMANDS:
             record = self._measure_ledger.complete(
                 req.command_id, RESULT_DONE, "")
@@ -1488,6 +1502,11 @@ class StateManager(Node):
         msg.unsaved = list(self._unsaved)
         msg.pause_reason = self._pause_reason
         msg.leash_present = self._leash_present
+        # 8-g P5c（§6.6）: 測定機能の上限は /measure/command_state と同じ値
+        msg.measure_v_cap_mps = self._measure_v_cap_mps
+        msg.measure_w_cap_radps = self._measure_w_cap_radps
+        msg.measure_a_cap_mps2 = self._measure_a_cap_mps2
+        msg.measure_alpha_cap_radps2 = self._measure_alpha_cap_radps2
         msg.since = _ms_to_time(self._since_ms)
         msg.last_event = self._last_event
         msg.last_reject_reason = self._last_reject_reason

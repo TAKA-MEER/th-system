@@ -50,14 +50,17 @@ RESULT_CANCELLED = "CANCELLED"
 
 
 def validate_measure_command(command_id: str, command: str, side: str = "",
-                             angle_rad=None, distance_m=None) -> str:
+                             angle_rad=None, distance_m=None,
+                             v_max_mps=None, w_max_radps=None,
+                             a_max_mps2=None, alpha_max_radps2=None) -> str:
     """① の判定。問題があれば `bad_argument` を返す（§6.1 の表の順）。
 
     `command` が `meas.` で始まらない（`ui.*` を含む）・`command_id` が空・
     未知の `meas.*`・`meas.translate` の `side` が FORWARD／BACKWARD 以外。
     8-g P3（SM-3.1.2-127・-136）: `meas.turn` の `angle_rad` が 0・有限でない、
     `meas.translate` の `distance_m` が 0 以下・有限でない も `bad_argument`。
-    通れば ""。
+    8-g P5c（§6.6）: `meas.set_limits` の 4 項目は負・有限でないが
+    `bad_argument`（0 は指定なしで通る）。通れば ""。
     """
     if not command or not command.startswith("meas."):
         return "bad_argument"
@@ -81,6 +84,14 @@ def validate_measure_command(command_id: str, command: str, side: str = "",
             return "bad_argument"
         if not math.isfinite(distance) or distance <= 0:
             return "bad_argument"
+    if command == "meas.set_limits":
+        for value in (v_max_mps, w_max_radps, a_max_mps2, alpha_max_radps2):
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return "bad_argument"
+            if not math.isfinite(number) or number < 0:
+                return "bad_argument"
     return ""
 
 
