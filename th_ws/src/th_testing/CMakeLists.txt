@@ -649,6 +649,13 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_adjust_timeout_node
     test/test_adjust_timeout_node.py
     TIMEOUT 300)
+  # 8-g P4（DetailedDesign-measure.md §6.5）: 本物の state_manager・measure_link・
+  # measure_clearance を生成 yaml 先渡しで起動し、腕が振れる範囲の確認
+  # （/measure/check_arm_clearance）の向きの判定・受け手の状態・古いスキャン・
+  # 死角・bad_argument を縛る。
+  ament_add_pytest_test(test_arm_clearance_node
+    test/test_arm_clearance_node.py
+    TIMEOUT 600)
   # 物理非常停止の間（手押し）は DRIVE_RUNAWAY を判定しない（Spec-safety §3.5.3 末尾）。
   # 押下中は出ない・離したら 0 から数え直し・立っているフォルトは解除しない・UI 非常停止では止まらない
   ament_add_pytest_test(test_runaway_carry_node
