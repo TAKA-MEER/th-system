@@ -489,6 +489,15 @@ def generate_launch_description():
         parameters=[os.path.join(GENERATED_DIR, 'measure_clearance.yaml')],
         output='screen',
     ))
+    # 8-g P3: measure_adjuster。ADJUST の旋回・並進を /cmd_vel_behavior に出す
+    # （Nav2 を使わない直接制御。twist_mux → obstacle_limiter を通る）。
+    nodes.append(Node(
+        package='th_measure',
+        executable='measure_adjuster.py',
+        name='measure_adjuster',
+        parameters=[os.path.join(GENERATED_DIR, 'measure_adjuster.yaml')],
+        output='screen',
+    ))
     # WP-DEV-01A: dev_mode は launch 引数の文字列 ('true'/'false') のため、
     # bool パラメータへは IfCondition / UnlessCondition で排他的に定義を分けて
     # 渡す（PythonExpression では起動時に文字列化され型不一致で落ちる）。
