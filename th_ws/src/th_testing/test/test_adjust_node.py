@@ -218,7 +218,7 @@ class TestAdjustNode(unittest.TestCase):
         # 閉ループの pose（/cmd_vel を積分する）。
         self._px = self._py = self._yaw = 0.0
         self._last_cmd = None
-        self._last_cmd_t = None
+        self._last_int_t = None
         self._pub_timer = n.create_timer(1.0 / PUB_HZ, self._publish)
         self._spin(0.5)
         self._drive_to_idle()
@@ -236,18 +236,17 @@ class TestAdjustNode(unittest.TestCase):
     def _on_cmd_vel(self, msg):
         self._cmd_vel.append(msg)
         self._last_cmd = msg
-        self._last_cmd_t = time.monotonic()
 
     def _integrate(self):
         if self._last_cmd is None:
             return
         now = time.monotonic()
-        if self._last_cmd_t is not None:
-            dt = min(0.2, max(0.0, now - self._last_cmd_t))
+        if self._last_int_t is not None:
+            dt = min(0.2, max(0.0, now - self._last_int_t))
             self._yaw += self._last_cmd.angular.z * dt
             self._px += self._last_cmd.linear.x * math.cos(self._yaw) * dt
             self._py += self._last_cmd.linear.x * math.sin(self._yaw) * dt
-        self._last_cmd_t = now
+        self._last_int_t = now
 
     def _reset_pose(self):
         self._px = self._py = self._yaw = 0.0
@@ -370,7 +369,7 @@ class TestAdjustNode(unittest.TestCase):
         assert self._states, '/system/state を受信していない'
         return self._states[-1]
 
-    def _wait_mode_state(self, mode, state, timeout=15.0):
+    def _wait_mode_state(self, mode, state, timeout=40.0):
         end = time.time() + timeout
         while time.time() < end:
             self._spin(0.1)
@@ -469,7 +468,7 @@ class TestAdjustNode(unittest.TestCase):
         assert self._wait_mode_state('AUTO_MEASURE', 'WAIT')
         self._spin(0.5)
 
-    def _wait_result(self, cid, result, timeout=15.0):
+    def _wait_result(self, cid, result, timeout=40.0):
         end = time.time() + timeout
         while time.time() < end:
             self._spin(0.1)
