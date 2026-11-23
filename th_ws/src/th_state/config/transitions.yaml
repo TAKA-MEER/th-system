@@ -11,6 +11,22 @@
 #   - LINE/LEASH の一部行は実装を段階8へ後回しにしており、§3.3 のeffect一覧に無い効果名
 #     （例: plan_line_route）は転記していない（空リスト）。表そのものは含める。
 
+# 8-g P2（SM-3.1.2-062）: 停止命令の間（AT_PANEL/WORKING）のジョグは
+# override_common の拒否行で C-01 より先に落とす（理由 working_in_progress）。
+# jog_active が立たないので速度上限は停止のまま（/cmd_vel は 0）。
+- id: C-01-working
+  layer: 0
+  mode: AT_PANEL
+  state: WORKING
+  event: ui.jog.hold
+  guard: working
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-062
+  reject: true
+  reject_reason_key: working_in_progress
+  override_common: true
 - id: C-01
   layer: 0
   mode: '*'
@@ -241,6 +257,25 @@
   - name: begin_two_point
     args:
       kind: SUMMON
+  spec_ref: SM-3.1.1-11
+# C-09c-at-panel-working: 8-g P2（SM-3.1.2-140）。押下前が AT_PANEL/WORKING
+# （停止命令の間）なら WORKING へ戻す（停止命令のまま）。C-09c-at-panel より
+# 前に置く。clear_prev が効く前に prev_state を読む（ガードは Context の
+# prev_* を見る。effect の clear_prev はそのあとに走る）。
+- id: C-09c-at-panel-working
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_is_at_panel_working
+  to_mode: AT_PANEL
+  to_state: WORKING
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
   spec_ref: SM-3.1.1-11
 # C-09c-at-panel / -at-home: §6 の右列どおり IDLE_P / IDLE_H（確認をやり直す）。
 - id: C-09c-at-panel
@@ -496,6 +531,24 @@
   - name: begin_two_point
     args:
       kind: SUMMON
+  spec_ref: SM-3.1.1-14
+# C-11-at-panel-working: 8-g P2（SM-3.1.2-140）。押下前が AT_PANEL/WORKING
+# （停止命令の間）なら WORKING へ戻す。C-11-at-panel より前に置く
+# （C-09c-at-panel-working と同じ読み順の注意）。
+- id: C-11-at-panel-working
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_prev_is_at_panel_working
+  to_mode: AT_PANEL
+  to_state: WORKING
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
   spec_ref: SM-3.1.1-14
 # C-11-at-panel / -at-home: §6 の右列どおり IDLE_P / IDLE_H（確認をやり直す）。
 - id: C-11-at-panel
@@ -1995,7 +2048,53 @@
   to_mode: '='
   to_state: IDLE_P
   effects: []
+  spec_ref: SM-3.1.2-134
+# 8-g P2（SM-3.1.2-063）: 測定機能の「測定を終えた」（meas.done）。WORKING →
+# IDLE_P で、すぐ DONE を出す（台帳は state_manager の IMMEDIATE_MEASURE_COMMANDS）。
+# WORKING で受ける meas.* はこれだけ。ほかは行が無いので state_not_accepting。
+# AT_PANEL の IDLE_P・PAUSE では従来どおりすべて拒否。
+- id: T-ATP-02-done
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event: meas.done
+  guard: null
+  to_mode: '='
+  to_state: IDLE_P
+  effects: []
   spec_ref: SM-3.1.2-063
+# 8-g P2（SM-3.1.2-139）: WORKING の回復フォルトは override_common の行で
+# WORKING のまま（effect open_window。C-03 の PAUSE には落とさない）。
+# 測定機能との途絶（evt.measure_link_lost）は WORKING では遷移しない（行が無い）。
+- id: T-ATP-08-fault
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event: fault.recoverable
+  guard: null
+  to_mode: '='
+  to_state: WORKING
+  effects:
+  - name: open_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.2-139
+  override_common: true
+# 8-g P2（SM-3.1.2-139）: WORKING の W-1「確認」（ui.resume_ack）は状態を変えずに
+# 受け、窓を閉じる（ガード fault_cleared。フォルトが残っている間は受けない）。
+- id: T-ATP-09-ack
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event: ui.resume_ack
+  guard: fault_cleared
+  to_mode: '='
+  to_state: WORKING
+  effects:
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.2-139
 - id: T-ATP-03
   layer: 10
   mode: AT_PANEL
