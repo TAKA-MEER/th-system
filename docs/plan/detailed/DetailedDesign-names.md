@@ -771,7 +771,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `ui.route_select` | S-12 / S-13 / S-14 | 経路の選択。`{"id": "...", "reverse": bool}` |
 | `ui.resume_yes` ／ `ui.resume_no` ／ `ui.resume_ack` | 異常ウィンドウ W-1 | はい／いいえ／確認 |
 | `ui.abort` | S-21（退避待ち） / S-30（実行中の項目の中断） / S-40（校正） | **中止** |
-| `ui.working` | S-21 | 作業中ボタン。`{"on": bool}` |
+| `ui.working` | S-21 | 停止命令（`WORKING`）の立て下ろし。`{"on": bool}`。`true` は「測定機能へ」、`false` は「停止を解く」（W-4 のあと）。旧「作業中」ボタン（2026-11-01 置き換え。[measure](DetailedDesign-measure.md) §6.3） |
 | `ui.goto` | S-21 | 行き先の選択。`{"kind": "PANEL"|"HOME"|"SUMMON", "pin_id": "..."}` |
 | `ui.register` | S-20 | 「人の位置で待機場所を登録」「人の位置で配電盤を登録」 |
 | `ui.return_home` | S-20 | 「1 ボタンで待機場所に戻す」 |

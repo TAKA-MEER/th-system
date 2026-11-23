@@ -306,6 +306,31 @@ builtin_interfaces/Time checked_at
 | 「手動」 | 既存の手動操作パネル（W-6）。触れると共通行で `PAUSE`。**画面に「走行」は置かない**（戻すのは測定機能の画面の「走行」＝`meas.start`） |
 | 腕の格納の確認（-18）を挟む他の抜け道 | `ESTOP`・`CARRY` で `prev_mode` が `AUTO_MEASURE` のとき、W-1 の「メインメニューへ」（`ui.resume_no`）・「確認」（`ui.resume_ack`）と W-2 の「メインメニューへ」（`ui.finish`）の前に同じ W-4 を出す。「やめる」なら送らない。`AT_PANEL` の `WORKING`・`ADJUST` は P2・P3 で同じ部品を使う |
 
+### 6.3 お立会試験の停止命令（`AT_PANEL` の `WORKING`）の作り（2026-11-23 決定。計画書 8-g の P2）
+
+**P2（状態機械）と P2-ui（画面）に分けて同時に進める。**P2-ui は yaml を触らない（下の表の名前と形だけを約束にする）。旋回・並進（`ADJUST`。-136〜-138）は P3、腕の範囲の確認（-141）は P4、`meas.set_limits` は P5c。P2 のあいだ `WORKING` で受ける `meas.*` は `meas.done` だけで、ほかは `state_not_accepting`。正は [Spec-modes.md](../spec/Spec-modes.md) `SM-3.1.2-062`・`-063`・`-134`・`-139`・`-140`・`SM-3.1.1-18` と [Spec-onsite.md](../spec/Spec-onsite.md) §7.2。
+
+| 項目 | 決まり |
+| --- | --- |
+| 入口（-062） | 既存の `ui.working`（`{"on": true}`。`IDLE_P` → `WORKING`。T-ATP-01）を S-21 の「測定機能へ」が送る。**測定機能の生存はガードにしない**（止まる向きなので。測定機能が落ちていれば人が「停止を解く」で出る） |
+| 解く（-063・-134） | 測定機能の `meas.done`（`WORKING` → `IDLE_P`。すぐ `DONE`）と、人の「停止を解く」（既存の `ui.working` `{"on": false}`。T-ATP-02）。**腕の格納の確認（W-4「やめる」／「解く」）は画面側**（状態機械は持たない） |
+| ジョグ（-062） | `WORKING` の `ui.jog.hold` は **`override_common` の拒否行**で C-01 より先に落とす（理由キー `working_in_progress`）。`jog_active` は C-01 の `set_jog` でしか立たないので、拒否すれば速度上限は停止のまま。**`/cmd_vel` が 0 のままであることを本物の `state_manager`＋`obstacle_limiter` で縛る** |
+| 回復フォルト（-139） | `WORKING` の `fault.recoverable` は **`override_common` の行**で `WORKING` のまま（effect `open_window`。C-03 の `PAUSE` には落とさない）。W-1 の「確認」（`ui.resume_ack`）は `WORKING` で受けて状態を変えない行を足す（ガード `fault_cleared`。effect `close_window`）。測定機能との途絶（`evt.measure_link_lost`）は `WORKING` では遷移しない |
+| 非常停止・手押し（-140） | 戻る先は `WORKING`。`ESTOP` の `ui.resume_yes`（C-09c-at-panel）と `CARRY` の `ui.carry_resume`（C-11-at-panel）の前に、`prev_mode` が `AT_PANEL` かつ `prev_state` が `WORKING` のときの行を置く（→ `AT_PANEL`/`WORKING`）。それ以外の `AT_PANEL` は従来どおり `IDLE_P`。`IDLE` へ抜ける行（C-09d・C-09f・C-12）は変えない（腕の確認は画面側） |
+| `/system/state.working` | **`ESTOP`・`CARRY` の間も、押下前が `AT_PANEL`/`WORKING` なら `true`**（「回復フォルト・非常停止でも `working` は外れない」。Spec-modes §4.2）。行き先拒否のガード（`is_working`）は今の形のまま（モードと状態で見る）で、出す値だけを別の関数で決める。`/measure/status.working` はこれをそのまま写す（測定機能は `working` で `screen_id` を `S-21` に切り替える） |
+| 結果の台帳 | 「測定の続き」を状態で見る: `AUTO_MEASURE` の全体に加えて `AT_PANEL` の `WORKING`（P3 から `ADJUST` も）。そこから `ESTOP`・`CARRY` 以外へ出たら（`meas.done`・「停止を解く」・「終了」を含む）残りを `CANCELLED`（`mode_exit`。`meas.done` なら `finished`） |
+| `meas.*` の受け口 | `AT_PANEL` の `WORKING` で `meas.done` を受ける。ほか（`turn`・`translate`・`check` 系・`set_limits`・自律測定の指示）は `state_not_accepting`。`AT_PANEL` の `IDLE_P`・`PAUSE` では従来どおりすべて拒否 |
+
+**P2-ui（画面）の決まり**（2026-11-23）。正は [Spec-webui.md](../spec/Spec-webui.md) §3（S-21 の「測定機能へ」「停止を解く」）と `SM-3.1.1-18`。
+
+| 項目 | 決まり |
+| --- | --- |
+| 「測定機能へ」 | S-21 の `AT_PANEL`/`IDLE_P` のときだけ押せる（「カメラ」の隣）。押すと `ui.working` `{"on": true}`。**受理されて `/system/state` が `WORKING` になってから**、同じタブで `http://<ホスト>:<measure_ui_port>/` へ移る（S-60 の「測定機能の画面へ」と同じ部品・同じ registry 値） |
+| `WORKING` の S-21 | 状態「測定中（停止命令）」。「測定機能の画面へ」（戻るため）と「停止を解く」を出す。行き先・呼び寄せ・ジョグ（W-6）は押せなくし理由（`working_in_progress`）を出す。「カメラ」は押せる |
+| 「停止を解く」 | 押すと W-4「測定機構の腕が格納位置にあることを確かめましたか」（「やめる」／「解く」）。「解く」で `ui.working` `{"on": false}`、「やめる」は何も送らない。（P3 で `ADJUST` の間は押せなくする） |
+| W-1（回復フォルト） | `AT_PANEL`/`WORKING` でフォルトが出ている間も W-1 を出す（今は `PAUSE`・`ESTOP` だけ）。ボタンは「確認」（`ui.resume_ack`）。状態は `WORKING` のまま |
+| 腕の格納の確認（-18） | P5a-ui の判定関数（`modes/armConfirm.js`）を広げる: `ESTOP`・`CARRY` では **`prev_mode` が `AUTO_MEASURE`、または `/system/state.working` が `true`** のとき W-1 の「メインメニューへ」・「確認」と W-2 の「メインメニューへ」の前に出す。**`AT_PANEL`/`WORKING` からの「終了」（`ui.finish`）の前にも出す** |
+
 ## 7. 未決と依存
 
 | 項目 | 状態 |
