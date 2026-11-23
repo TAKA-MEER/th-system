@@ -51,13 +51,12 @@ def test_meas_done_from_working_to_idle_p(state_core_bundle):
 
 
 def test_other_meas_rejected_in_working(state_core_bundle):
-    """WORKING で受ける meas.* は meas.done だけ。ほかは行が無いので
+    """WORKING で受ける meas.* は meas.done（と P5c の set_limits）だけ。ほかは行が無いので
     step では not_allowed（ノード側で state_not_accepting になる）。"""
     core, _, _, _ = state_core_bundle
     # 8-g P3: WORKING では turn・translate を受けて ADJUST へ（-136）。ここではそれ以外を見る。
     for event in ("meas.goal", "meas.reroute",
-                  "meas.start", "meas.stop", "meas.abort", "meas.finish",
-                  "meas.set_limits"):
+                  "meas.start", "meas.stop", "meas.abort", "meas.finish"):
         d = core.step("AT_PANEL", "WORKING", event, _mk_ctx())
         assert d.accepted is False, event
         assert d.reject_reason_key == "not_allowed", event

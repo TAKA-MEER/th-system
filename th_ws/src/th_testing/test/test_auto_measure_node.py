@@ -11,7 +11,7 @@ docs/plan/spec/Spec-measure.md、詳細は DetailedDesign-measure.md §6.2。
   a. 生存確認なしで ui.goto AUTO_MEASURE → 拒否 measure_link_lost
   b. 版 "1" の生存確認ありで入れる → /system/state と /measure/status が AUTO_MEASURE/WAIT
   c. meas.goal は corner_obstacle（角の確認が届いていない。P5b の拒否の順。
-     結果なし）、meas.set_limits は state_not_accepting（P5c まで受けない）
+     結果なし）、meas.set_limits は P5c で受ける
   d. 同じ command_id をもう一度 → bad_argument、/measure/result は増えない
   e. meas.finish → IDLE、/measure/result に DONE
   f. 入り直して ui.jog.hold で PAUSE → ui.resume_yes では戻らない → meas.start で WAIT
@@ -220,12 +220,14 @@ class TestAutoMeasureNode(unittest.TestCase):
         type(self)._cid += 1
         return f"am-{type(self)._cid}"
 
-    def _call_measure(self, command, command_id=None, v_max=0.0, w_max=0.0):
+    def _call_measure(self, command, command_id=None, v_max=0.0, w_max=0.0, a_max=0.0, alpha_max=0.0):
         req = MeasureCommand.Request()
         req.command_id = self._next_cid() if command_id is None else command_id
         req.command = command
         req.v_max_mps = float(v_max)
         req.w_max_radps = float(w_max)
+        req.a_max_mps2 = float(a_max)
+        req.alpha_max_radps2 = float(alpha_max)
         future = self.cli_measure.call_async(req)
         deadline = time.time() + 5.0
         while not future.done() and time.time() < deadline:
@@ -321,7 +323,7 @@ class TestAutoMeasureNode(unittest.TestCase):
 
     def test_c_goal_rejected_set_limits_done(self):
         """c. meas.goal は corner_obstacle（角の確認が届いていない）。
-        meas.set_limits は state_not_accepting（P5c まで受けない）。"""
+        meas.set_limits は P5c で受け、すぐ DONE・状態は変えない。"""
         self._ensure_auto_measure_wait()
         cid = self._next_cid()
         # P5b（SM-3.1.2-121）: WAIT で meas.goal は拒否の順に判定される。
@@ -334,25 +336,22 @@ class TestAutoMeasureNode(unittest.TestCase):
         assert not [r for r in self._results if r.command_id == cid], \
             '拒否された指示に結果が出ている'
 
-        # P5b: meas.set_limits は効かせる仕組み（P5c）まで受けない
-        # （state_not_accepting。結果が出ず、v_cap も 0 のまま残る）。
+        # P5c: meas.set_limits は受け、すぐ DONE、状態は変えない。
         cid = self._next_cid()
         res = self._call_measure("meas.set_limits", command_id=cid, v_max=0.1)
-        assert res.accepted is False
-        assert res.reject_reason == "state_not_accepting", res.reject_reason
+        assert res.accepted is True, res.reject_reason
+        assert (res.mode, res.state) == ("AUTO_MEASURE", "WAIT"), (res.mode, res.state)
         self._spin(0.5)
-        assert not [r for r in self._results if r.command_id == cid], \
-            '拒否された指示に結果が出ている'
-        deadline = time.time() + 4.0
-        ok = False
-        while time.time() < deadline:
-            self._spin(0.2)
-            if self._cmd_states:
-                c = json.loads(self._cmd_states[-1].data)
-                if c.get('v_cap_mps') == 0.0 and c.get('w_cap_radps') == 0.0:
-                    ok = True
-                    break
-        assert ok, '/measure/command_state の v_cap/w_cap が 0 のままになっていない'
+        done = [r for r in self._results if r.command_id == cid]
+        assert len(done) == 1 and done[0].result == "DONE", done
+        assert self._wait_cmd_state(
+            lambda c: c.get('v_cap_mps') == 0.1) is True, self._latest_cmd_state()
+        st = self._latest_state()
+        assert st.measure_v_cap_mps == 0.1, st.measure_v_cap_mps
+        # 片付け（finish で続きでなくなる）
+        res = self._call_measure("meas.finish")
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_mode_state("IDLE", "NONE") is True
 
     def test_d_duplicate_command_id_bad_argument(self):
         """d. 同じ command_id をもう一度 → bad_argument。/measure/result は増えず遷移しない。
@@ -380,16 +379,16 @@ class TestAutoMeasureNode(unittest.TestCase):
             '重複した command_id に結果が増えている'
         st = self._latest_state()
         assert (st.mode, st.state) == ("AUTO_MEASURE", "PAUSE")
-        # meas.set_limits は受け付けられないので、重複の台帳判定には到達しない
-        # （state_not_accepting のまま。P5b の決まり）。
+        # P5c: PAUSE でも meas.set_limits は受け、状態は変えない。
         cid = self._next_cid()
         res = self._call_measure("meas.set_limits", command_id=cid, v_max=0.1)
-        assert res.accepted is False
-        assert res.reject_reason == "state_not_accepting", res.reject_reason
+        assert res.accepted is True, res.reject_reason
         self._spin(0.5)
-        assert not [r for r in self._results if r.command_id == cid]
+        done = [r for r in self._results if r.command_id == cid]
+        assert len(done) == 1 and done[0].result == "DONE", done
         st = self._latest_state()
         assert (st.mode, st.state) == ("AUTO_MEASURE", "PAUSE")
+        assert st.measure_v_cap_mps == 0.1
 
     def test_e_finish_to_idle_with_done(self):
         """e. meas.finish → IDLE。/measure/result に DONE。"""
@@ -478,16 +477,19 @@ class TestAutoMeasureNode(unittest.TestCase):
         AUTO_MEASURE → ESTOP → IDLE（C-09d）で /measure/command_state の
         reentry_required が false、v_cap_mps が 0 になる（-142「抜けて入り直すまで」）。"""
         self._ensure_auto_measure_wait()
-        # P5b: meas.set_limits は受けないので v_cap は 0 のまま（P5c まで）。
+        # P5c: meas.set_limits を受け、v_cap が立つ。
         res = self._call_measure("meas.set_limits", v_max=0.1)
-        assert res.accepted is False
-        assert res.reject_reason == "state_not_accepting", res.reject_reason
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_cmd_state(
+            lambda c: c.get('v_cap_mps') == 0.1) is True
 
         self._publish_fault(True, 'CRITICAL')
         assert self._wait_mode_state("ESTOP", "NONE") is True
         assert self._wait_cmd_state(
             lambda c: c.get('reentry_required') is True) is True, \
             self._latest_cmd_state()
+        # ESTOP の間は続きなので v_cap が残る
+        assert self._latest_cmd_state().get('v_cap_mps') == 0.1
 
         self._publish_fault(False, 'RECOVERABLE')
         res = self._call_trigger('ui.resume_no')
@@ -504,10 +506,11 @@ class TestAutoMeasureNode(unittest.TestCase):
 
         C-09c-generic の復帰では reentry_required が true のまま、v_cap も残る。"""
         self._ensure_auto_measure_wait()
-        # P5b: meas.set_limits は受けないので v_cap は 0 のまま（P5c まで）。
+        # P5c: meas.set_limits を受け、v_cap が立つ。
         res = self._call_measure("meas.set_limits", v_max=0.1)
-        assert res.accepted is False
-        assert res.reject_reason == "state_not_accepting", res.reject_reason
+        assert res.accepted is True, res.reject_reason
+        assert self._wait_cmd_state(
+            lambda c: c.get('v_cap_mps') == 0.1) is True
 
         self._publish_fault(True, 'CRITICAL')
         assert self._wait_mode_state("ESTOP", "NONE") is True
@@ -521,4 +524,4 @@ class TestAutoMeasureNode(unittest.TestCase):
         self._spin(1.0)
         c = self._latest_cmd_state()
         assert c.get('reentry_required') is True, c
-        assert c.get('v_cap_mps') == 0.0, c
+        assert c.get('v_cap_mps') == 0.1, c
