@@ -1456,7 +1456,9 @@ TEST(ObstacleLimiterCoreMeasureCaps, LockStaleAndObstacleStopAreNotSlowedByACap)
     ObstacleLimiterCore core;
     auto in = make_ramp_base(1000.0, 1.0);
     in.state.measure_a_cap_mps2 = 0.01;
-    EXPECT_DOUBLE_EQ(core.update(in, q).out.linear_x, 1.0);
+    // a_cap があるため初回も有界 dt（0.05）でランプする。障害物が来る前の
+    // 値は a_cap*dt 以下に収まる（1.0 には届かない）。
+    EXPECT_LE(core.update(in, q).out.linear_x, 0.01 * 0.05 + 1e-9);
     auto blocked = make_ramp_base(1000.05, 1.0);
     blocked.state.measure_a_cap_mps2 = 0.01;
     plant_obstacle(&blocked.scan.ranges, blocked.scan.geometry, 0.0, 0.05, 30.0);

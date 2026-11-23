@@ -345,9 +345,9 @@ class TestAutoMeasureNode(unittest.TestCase):
         done = [r for r in self._results if r.command_id == cid]
         assert len(done) == 1 and done[0].result == "DONE", done
         assert self._wait_cmd_state(
-            lambda c: c.get('v_cap_mps') == 0.1) is True, self._latest_cmd_state()
+            lambda c: abs(c.get('v_cap_mps', 0) - 0.1) < 1e-6) is True, self._latest_cmd_state()
         st = self._latest_state()
-        assert st.measure_v_cap_mps == 0.1, st.measure_v_cap_mps
+        assert abs(st.measure_v_cap_mps - 0.1) < 1e-6, st.measure_v_cap_mps
         # 片付け（finish で続きでなくなる）
         res = self._call_measure("meas.finish")
         assert res.accepted is True, res.reject_reason
@@ -388,7 +388,7 @@ class TestAutoMeasureNode(unittest.TestCase):
         assert len(done) == 1 and done[0].result == "DONE", done
         st = self._latest_state()
         assert (st.mode, st.state) == ("AUTO_MEASURE", "PAUSE")
-        assert st.measure_v_cap_mps == 0.1
+        assert abs(st.measure_v_cap_mps - 0.1) < 1e-6
 
     def test_e_finish_to_idle_with_done(self):
         """e. meas.finish → IDLE。/measure/result に DONE。"""
@@ -481,7 +481,7 @@ class TestAutoMeasureNode(unittest.TestCase):
         res = self._call_measure("meas.set_limits", v_max=0.1)
         assert res.accepted is True, res.reject_reason
         assert self._wait_cmd_state(
-            lambda c: c.get('v_cap_mps') == 0.1) is True
+            lambda c: abs(c.get('v_cap_mps', 0) - 0.1) < 1e-6) is True
 
         self._publish_fault(True, 'CRITICAL')
         assert self._wait_mode_state("ESTOP", "NONE") is True
@@ -489,7 +489,7 @@ class TestAutoMeasureNode(unittest.TestCase):
             lambda c: c.get('reentry_required') is True) is True, \
             self._latest_cmd_state()
         # ESTOP の間は続きなので v_cap が残る
-        assert self._latest_cmd_state().get('v_cap_mps') == 0.1
+        assert abs(self._latest_cmd_state().get('v_cap_mps', 0) - 0.1) < 1e-6
 
         self._publish_fault(False, 'RECOVERABLE')
         res = self._call_trigger('ui.resume_no')
@@ -510,7 +510,7 @@ class TestAutoMeasureNode(unittest.TestCase):
         res = self._call_measure("meas.set_limits", v_max=0.1)
         assert res.accepted is True, res.reject_reason
         assert self._wait_cmd_state(
-            lambda c: c.get('v_cap_mps') == 0.1) is True
+            lambda c: abs(c.get('v_cap_mps', 0) - 0.1) < 1e-6) is True
 
         self._publish_fault(True, 'CRITICAL')
         assert self._wait_mode_state("ESTOP", "NONE") is True
@@ -524,4 +524,4 @@ class TestAutoMeasureNode(unittest.TestCase):
         self._spin(1.0)
         c = self._latest_cmd_state()
         assert c.get('reentry_required') is True, c
-        assert c.get('v_cap_mps') == 0.1, c
+        assert abs(c.get('v_cap_mps', 0) - 0.1) < 1e-6, c

@@ -292,7 +292,7 @@ class TestMeasureLimitsNode(unittest.TestCase):
             return
         self._ensure_idle()
         self._wait_link_ok()
-        res = self._call_trigger('ui.goto', json.dumps({"kind": "AUTO_MEASURE"}))
+        res = self._call_trigger('ui.goto', {"kind": "AUTO_MEASURE"})
         assert res.accepted is True, res.reject_reason_key
         assert self._wait_mode_state('AUTO_MEASURE', 'WAIT') is True
         # 前の試験の上限を消す
@@ -352,7 +352,12 @@ class TestMeasureLimitsNode(unittest.TestCase):
     def _call_trigger(self, trigger, arg=None):
         req = UiTrigger.Request()
         req.trigger = trigger
-        req.arg_json = json.dumps(arg) if arg is not None else '{}'
+        if arg is None:
+            req.arg_json = '{}'
+        elif isinstance(arg, str):
+            req.arg_json = arg
+        else:
+            req.arg_json = json.dumps(arg)
         req.requester = 'test'
         fut = self.cli_trigger.call_async(req)
         deadline = time.time() + 5.0
@@ -405,7 +410,7 @@ class TestMeasureLimitsNode(unittest.TestCase):
         assert len(done) == 1 and done[0].result == 'DONE', done
         assert self._wait_status_v_limit(0.05) is True, self._latest_status().v_limit_mps
         st = self._latest_state()
-        assert st.measure_v_cap_mps == 0.05
+        assert abs(st.measure_v_cap_mps - 0.05) < 1e-6, st.measure_v_cap_mps
         self._cmd_vel.clear()
         self._nav_on = True
         samples = self._collect_cmd_vel(1.2)
@@ -460,7 +465,7 @@ class TestMeasureLimitsNode(unittest.TestCase):
         assert res.accepted is True, res.reject_reason_key
         assert self._wait_mode_state('AUTO_MEASURE', 'WAIT') is True
         st = self._latest_state()
-        assert st.measure_v_cap_mps == 0.05, st.measure_v_cap_mps
+        assert abs(st.measure_v_cap_mps - 0.05) < 1e-6, st.measure_v_cap_mps
         assert self._wait_status_v_limit(0.05) is True
 
     def test_d_finish_clears_caps(self):
@@ -470,10 +475,10 @@ class TestMeasureLimitsNode(unittest.TestCase):
                                  a_max=0.1, alpha_max=0.1)
         assert res.accepted is True, res.reject_reason
         st = self._latest_state()
-        assert st.measure_v_cap_mps == 0.05
-        assert st.measure_w_cap_radps == 0.1
-        assert st.measure_a_cap_mps2 == 0.1
-        assert st.measure_alpha_cap_radps2 == 0.1
+        assert abs(st.measure_v_cap_mps - 0.05) < 1e-6, st.measure_v_cap_mps
+        assert abs(st.measure_w_cap_radps - 0.1) < 1e-6
+        assert abs(st.measure_a_cap_mps2 - 0.1) < 1e-6
+        assert abs(st.measure_alpha_cap_radps2 - 0.1) < 1e-6
         res = self._call_measure('meas.finish')
         assert res.accepted is True, res.reject_reason
         assert self._wait_mode_state('IDLE', 'NONE') is True
@@ -506,7 +511,7 @@ class TestMeasureLimitsNode(unittest.TestCase):
         res = self._call_measure('meas.set_limits', v_max=0.05)
         assert res.accepted is True, res.reject_reason
         st = self._latest_state()
-        assert st.measure_v_cap_mps == 0.05
+        assert abs(st.measure_v_cap_mps - 0.05) < 1e-6, st.measure_v_cap_mps
         res = self._call_measure('meas.done')
         assert res.accepted is True, res.reject_reason
         assert self._wait_mode_state('AT_PANEL', 'IDLE_P') is True
