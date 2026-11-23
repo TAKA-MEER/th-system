@@ -108,6 +108,11 @@ class MeasureClearance(Node):
         # 生成 yaml が渡す。無い環境では既定（リミッタの既定余裕と空の死角）。
         self.declare_parameter('floor_margin_m', 0.30)
         self._floor_margin_m = float(self.get_parameter('floor_margin_m').value)
+        # 8-g P4: 腕の範囲の確認で死角の判定から除く近い部分
+        # （arm_clearance_blind_near_m）。生成 yaml が渡す。
+        self.declare_parameter('arm_clearance_blind_near_m', 0.65)
+        self._blind_near_m = float(
+            self.get_parameter('arm_clearance_blind_near_m').value)
         # lidar_filter と同じ理由（DOUBLE_ARRAY の既定 [] 推論を避ける）。
         self.declare_parameter(
             'blind_angle_ranges', [],
@@ -181,6 +186,8 @@ class MeasureClearance(Node):
                 self._blind_rad = tuple(
                     (math.radians(float(deg[i])), math.radians(float(deg[i + 1])))
                     for i in range(0, len(deg) - 1, 2))
+            elif p.name == 'arm_clearance_blind_near_m':
+                self._blind_near_m = float(p.value)
         return SetParametersResult(successful=True)
 
     def _on_costmap(self, msg):
@@ -298,7 +305,8 @@ class MeasureClearance(Node):
                 ox, oy, bx, by = basis
                 blocked = polygon_blocked_by_costmap(
                     _GridView(self._costmap), ox, oy, bx, by, polygon)
-            blind_hit = region_overlaps_blind(polygon, self._blind_rad)
+            blind_hit = region_overlaps_blind(
+                polygon, self._blind_rad, self._blind_near_m)
             result, reason = decide_side(
                 tf_ok, scan_age_ms, float(self._max_age_ms),
                 blocked, blind_hit)

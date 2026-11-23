@@ -19,8 +19,8 @@ TF は `base_link`←`laser_link` の静的 TF（+ `odom`→`base_link` を試�
      `AT_PANEL`/`IDLE_P`・`AUTO_MEASURE`/`ADJUST` では `state_not_accepting`
   c. スキャンを止めて `arm_clearance_scan_max_age_ms` を過ぎる →
      全部 `UNKNOWN` `scan_stale`
-  d. `blind_angle_ranges` を右の範囲にだけかかる値に変える →
-     `RIGHT` `UNKNOWN` `blind_sector`・`LEFT` `CLEAR`
+  d. `blind_angle_ranges` を、右の範囲にだけ 0.65 m（`arm_clearance_blind_near_m`）
+     より遠くでかかる値に変える → `RIGHT` `UNKNOWN` `blind_sector`・`LEFT` `CLEAR`
   e. 機体の内側（x 0.1・y 0）にだけ点 → `CURRENT` `CLEAR`
   f. `bad_argument`（頂点 2 つ・`sides` に `UP`）
 
@@ -532,7 +532,7 @@ class TestArmClearanceNode(unittest.TestCase):
         assert res.checked_at.sec > 0, res.checked_at
 
     def test_d_right_blind_sector(self):
-        """d. 死角を右の範囲にだけかかる値に変える →
+        """d. 死角を右の範囲にだけ 0.65 m より遠くでかかる値に変える →
         RIGHT UNKNOWN blind_sector・LEFT CLEAR。"""
         self._ensure_working()
         self.scan_mode = 'clear'
