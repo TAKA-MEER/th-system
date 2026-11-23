@@ -93,6 +93,19 @@ test('a: AT_PANEL/ADJUST では「停止を解く」が押せず理由が出る�
   expect((await triggers(page)).filter((c) => c.trigger === 'ui.working')).toHaveLength(0)
 })
 
+test('a2: /system/state.working が届いていない古い機体でも、状態名 ADJUST で停止命令の間として扱う', async ({ page }) => {
+  await goto21(page, { mode: 'AT_PANEL', state: 'ADJUST', working: true })
+  // working の欄自体が無い機体を演じる（上書きで undefined にする）。
+  await setTestState(page, { working: undefined })
+
+  await expect(page.locator('[data-testid="s21-state"]')).toHaveText('測定中（停止命令）（測定機能の指示で動作中）')
+  await expect(page.locator('[data-testid="s21-dest-home"]')).toBeDisabled()
+  await expect(page.locator('[data-testid="reason-manual"]')).toBeVisible()
+  await page.locator('[data-testid="s21-subtab-atp"]').click()
+  await expect(page.locator('[data-testid="s21-working-unlock"]')).toBeDisabled()
+  await expect(page.locator('[data-testid="reason-s21-working-unlock"]')).toContainText('旋回中・並進中は腕が起きているため解けません')
+})
+
 // ── b. AT_PANEL/ADJUST のフォルト → W-1 ──
 test('b: AT_PANEL/ADJUST でフォルトが出たら W-1 が出て、解消後に「確認」で ui.resume_ack を送る', async ({ page }) => {
   await goto21(page, { mode: 'AT_PANEL', state: 'ADJUST', working: true })
