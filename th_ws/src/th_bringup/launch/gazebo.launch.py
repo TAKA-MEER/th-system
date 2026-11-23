@@ -553,6 +553,14 @@ def generate_launch_description():
             parameters=[os.path.join(GENERATED_DIR, 'measure_clearance.yaml')],
             output='screen',
         ),
+        # 8-g P3: measure_adjuster。ADJUST の旋回・並進を /cmd_vel_behavior に出す。
+        Node(
+            package='th_measure',
+            executable='measure_adjuster.py',
+            name='measure_adjuster',
+            parameters=[os.path.join(GENERATED_DIR, 'measure_adjuster.yaml')],
+            output='screen',
+        ),
         # connectivity_checker（WP-TEST-01 で追加。state_manager が INIT から
         # IDLE へ進むための evt.link_ok は connectivity_checker だけが出す）。
         # sim パラメータは connectivity_core.py が Gazebo シナリオ向けに

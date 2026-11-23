@@ -637,6 +637,18 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_measure_clearance_node
     test/test_measure_clearance_node.py
     TIMEOUT 300)
+  # 8-g P3（DetailedDesign-measure.md §6.4）: 本物の state_manager・measure_link・
+  # measure_clearance・measure_adjuster・twist_mux・obstacle_limiter を生成 yaml
+  # 先渡しで起動し、ADJUST の旋回・並進（閉ループ）・path/corner 拒否・
+  # 非常停止/停止の台帳を縛る。lidar_filter は本物で /scan_filtered を出す。
+  ament_add_pytest_test(test_adjust_node
+    test/test_adjust_node.py
+    TIMEOUT 900)
+  # 8-g P3（§6.4 締め切り）: measure_adjuster を起動しない構成で、
+  # ADJUST が adjust_timeout_ms 後に WORKING へ戻り CANCELLED になることを縛る。
+  ament_add_pytest_test(test_adjust_timeout_node
+    test/test_adjust_timeout_node.py
+    TIMEOUT 300)
   # 物理非常停止の間（手押し）は DRIVE_RUNAWAY を判定しない（Spec-safety §3.5.3 末尾）。
   # 押下中は出ない・離したら 0 から数え直し・立っているフォルトは解除しない・UI 非常停止では止まらない
   ament_add_pytest_test(test_runaway_carry_node

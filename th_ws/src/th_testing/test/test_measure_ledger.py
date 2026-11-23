@@ -101,7 +101,9 @@ def test_validate_bad_argument_cases():
 
 def test_validate_ok_cases():
     assert validate_measure_command("c1", "meas.goal") == ""
-    assert validate_measure_command("c1", "meas.translate", "FORWARD") == ""
-    assert validate_measure_command("c1", "meas.translate", "BACKWARD") == ""
+    assert validate_measure_command("c1", "meas.translate", "FORWARD", distance_m=0.2) == ""
+    assert validate_measure_command("c1", "meas.translate", "BACKWARD", distance_m=0.2) == ""
     for cmd in sorted(KNOWN_MEASURE_COMMANDS):
-        assert validate_measure_command("c1", cmd, "FORWARD") == "", cmd
+        # 8-g P3: turn・translate は引数も要る（angle_rad・distance_m）。有効な値を渡す。
+        assert validate_measure_command(
+            "c1", cmd, "FORWARD", angle_rad=0.5, distance_m=0.2) == "", cmd

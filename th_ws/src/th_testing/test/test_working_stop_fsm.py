@@ -54,7 +54,8 @@ def test_other_meas_rejected_in_working(state_core_bundle):
     """WORKING で受ける meas.* は meas.done だけ。ほかは行が無いので
     step では not_allowed（ノード側で state_not_accepting になる）。"""
     core, _, _, _ = state_core_bundle
-    for event in ("meas.turn", "meas.translate", "meas.goal", "meas.reroute",
+    # 8-g P3: WORKING では turn・translate を受けて ADJUST へ（-136）。ここではそれ以外を見る。
+    for event in ("meas.goal", "meas.reroute",
                   "meas.start", "meas.stop", "meas.abort", "meas.finish",
                   "meas.set_limits"):
         d = core.step("AT_PANEL", "WORKING", event, _mk_ctx())

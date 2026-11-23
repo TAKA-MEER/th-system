@@ -41,7 +41,7 @@ from th_system_msgs.srv import MeasureCommand, SetFlag, UiTrigger
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
 from th_state.state_core import (AT_PANEL_MODE, AUTO_MEASURE_MODE, BOOT_MODE, CALIB_MODE, CARRY_MODE, ESTOP_MODE, IDLE_MODE,
-                                   OPCHECK_MODE, Context, Effect,
+                                   OPCHECK_MODE, Context, Decision, Effect,
                                    REPLAY_MODE, StateCore, TEACH_MODES, is_driving)
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
@@ -100,6 +100,7 @@ _EFFECT_DESTINATIONS = {
     "resume_follow_path": "venue_navigator",
     "replan": "venue_navigator",
     "measure_goal": "venue_navigator",  # 8-g P5b（SM-3.1.2-121 の目的地）
+    "measure_adjust": "measure_adjuster",  # 8-g P3（SM-3.1.2-127・-136 の旋回・並進）
     "start_monitor": "opcheck_runner",
     "offer_calib": "WebUI",
     "offer_opcheck": "WebUI",
@@ -182,6 +183,8 @@ class StateManager(Node):
         self.declare_parameter('link_wait_timeout_ms', Parameter.Type.INTEGER)
         self.declare_parameter('ui_active_window_s', Parameter.Type.INTEGER)
         self.declare_parameter('screen_stale_ms', Parameter.Type.INTEGER)
+        # 8-g P3: ADJUST の締め切り（adjust_timeout_ms。registry 由来。生成 yaml が上書きする）。
+        self.declare_parameter('adjust_timeout_ms', Parameter.Type.INTEGER)
         # SG-C14: S-50 で変える自動ブレーキの既定（registry 由来。生成 yaml が
         # 上書きする）。既定は Spec-safety §2.1 と同じ off / on。/params/set で
         # 変えた値は overrides.yaml に残り、再起動後も維持される（次の起動から効く）。
@@ -325,6 +328,12 @@ class StateManager(Node):
         # 8-g P5b: PAUSE に入る直前にいた自律測定の状態（meas.start の戻り先）。
         # AUTO_MEASURE を抜けたら消す（_process の片付けで下ろす）。
         self._measure_prev_state = ""
+        # 8-g P3: 並進の「進む先」の空き距離のラッチ（/measure/corner_status の
+        # free_*_m。未受信・古ければ 0＝障害物あり扱い）。
+        self._measure_free_forward_m = 0.0
+        self._measure_free_backward_m = 0.0
+        # 8-g P3: ADJUST に入った時刻（締め切りタイマの起点）。ADJUST を出たら None。
+        self._adjust_enter_ms = None
         # WP-ONSITE-F2: /person/targets と /onsite/pins 由来。次の event 受信時に
         # _build_context() が読む（_route_ids / _route_loaded と同じ設計）。
         self._candidate_count = 0
@@ -586,6 +595,8 @@ class StateManager(Node):
             measure_corner_clear=self._measure_corner_check(),
             measure_map_instance_id=self._measure_map_instance_id,
             measure_prev_state=self._measure_prev_state,
+            measure_free_forward_m=self._measure_free_forward_m,
+            measure_free_backward_m=self._measure_free_backward_m,
             leash_present=self._leash_present,
             leash_taut=False,
             line_visible=False,
@@ -608,6 +619,14 @@ class StateManager(Node):
         # N-2: リース時刻は accepted の採否と無関係に更新する（§5・パケット§4.2の例示コード）。
         if event == "ui.jog.hold":
             self._last_jog_ms = self._now_ms()
+
+        # 8-g P3（§6.4）: 進行中でない command_id の evt.adjust_done（非常停止の
+        # あとに遅れて届いたものなど）は捨てる（遷移しない・結果も出さない）。
+        if event == "evt.adjust_done" and arg is not None:
+            done_id = str(arg.get("command_id") or "")
+            if done_id != self._measure_ledger.pending_command_id:
+                return Decision(False, self.mode, self.state, (),
+                                "", "")
 
         # WP-MAINT-02: CALIB の遷移は effect 引数に `$arg.item` を使う（T-CAL-02〜09）。
         # ui.calib_next / ui.abort / 各 evt.* の送り手が item を付け忘れても、ラッチ済みの
@@ -670,7 +689,7 @@ class StateManager(Node):
                 and decision.to_state == "PAUSE"
                 and self.prev_mode == AUTO_MEASURE_MODE):
             # 止める前の状態をそのまま入れる（WAIT も含む。PAUSE なら今の値を保つ）。
-            if self.prev_state in ("NAV", "ALIGN", "BLOCKED", "WAIT"):
+            if self.prev_state in ("NAV", "ALIGN", "BLOCKED", "WAIT", "ADJUST"):
                 self._measure_prev_state = self.prev_state
         # PAUSE から meas.start・meas.abort で抜けたときは、止める前の状態は
         # もう要らない（古いまま残すと、次の meas.start が捨てた目的地へ行く）。
@@ -683,9 +702,45 @@ class StateManager(Node):
         self._last_reject_reason = "" if decision.accepted else decision.reject_reason_key
 
         old_mode = self.mode
+        _old_state = self.state
         self.mode = decision.to_mode
         self.state = decision.to_state
 
+        # 8-g P3（§6.4）: ADJUST の入り・出たときの台帳処理。
+        # - 入った時刻を覚える（締め切りタイマの起点）。
+        # - 出たとき、進行中の turn／translate を CANCELLED で終える
+        #   （理由は出た契機。evt.adjust_done は DONE）。
+        _was_adjust = (old_mode in (AUTO_MEASURE_MODE, AT_PANEL_MODE)
+                       and _old_state == "ADJUST")
+        _now_adjust = (self.mode in (AUTO_MEASURE_MODE, AT_PANEL_MODE)
+                       and self.state == "ADJUST")
+        if _now_adjust and not _was_adjust:
+            self._adjust_enter_ms = self._now_ms()
+        if _was_adjust and not _now_adjust:
+            self._adjust_enter_ms = None
+        if (decision.accepted and _was_adjust and not _now_adjust
+                and self._measure_ledger.pending_command in ("meas.turn", "meas.translate")):
+            _adjust_id = self._measure_ledger.pending_command_id
+            if event == "evt.adjust_done":
+                _rec = self._measure_ledger.complete(_adjust_id, RESULT_DONE, "")
+            else:
+                _reason_map = {
+                    "sys.adjust_timeout": "adjust_timeout",
+                    "meas.stop": "stopped",
+                    "meas.abort": "aborted",
+                    "fault.recoverable": "fault",
+                    "ui.jog.hold": "jog",
+                    "evt.measure_link_lost": "link_lost",
+                    "ui.estop.press": "estop",
+                    "hw.estop.press": "carry",
+                    "fault.critical": "estop",
+                    "evt.adjust_failed": str((arg or {}).get("reason") or "adjust_failed"),
+                }
+                _rec = self._measure_ledger.complete(
+                    _adjust_id, RESULT_CANCELLED,
+                    _reason_map.get(event, "mode_exit"))
+            if _rec is not None:
+                self._publish_result(_rec)
         # 8-g P5b（-124）: 自律測定の ALIGN → WAIT（evt.align_done）で、目的地の
         # command_id に ARRIVED をちょうど 1 回出す（台帳が 1 回だけを保つ）。
         # それ以外の align_done（試験場内等）はここでは扱わない。
@@ -717,7 +772,7 @@ class StateManager(Node):
         # 遷移・AT_PANEL/WORKING の内部遷移）では片付けない。
         _in_continuation = (
             self.mode in (AUTO_MEASURE_MODE, ESTOP_MODE, CARRY_MODE)
-            or (self.mode == AT_PANEL_MODE and self.state == "WORKING"))
+            or (self.mode == AT_PANEL_MODE and self.state in ("WORKING", "ADJUST")))
         if self._measure_in_session and not _in_continuation:
             reason = ("finished" if event in ("meas.finish", "meas.done")
                       else "mode_exit")
@@ -940,7 +995,9 @@ class StateManager(Node):
         # 判定の順は §6.1 の表のとおり。
         # ① bad_argument（ui.* を含む非 meas.*・command_id 空・未知の meas.*・
         #    meas.translate の side が FORWARD／BACKWARD 以外）
-        reason = validate_measure_command(req.command_id, req.command, req.side)
+        reason = validate_measure_command(
+            req.command_id, req.command, req.side,
+            angle_rad=req.angle_rad, distance_m=req.distance_m)
         if reason:
             res.accepted = False
             res.reject_reason = reason
@@ -1136,6 +1193,13 @@ class StateManager(Node):
             return
         self._measure_corner_clear = bool(obj.get("clear"))
         self._measure_corner_recv_ms = self._now_ms()
+        # 8-g P3: 並進の「進む先」の空き（古い値を使い続けない。1 秒で途絶扱い）。
+        try:
+            self._measure_free_forward_m = float(obj.get("free_forward_m") or 0.0)
+            self._measure_free_backward_m = float(obj.get("free_backward_m") or 0.0)
+        except (TypeError, ValueError):
+            self._measure_free_forward_m = 0.0
+            self._measure_free_backward_m = 0.0
 
     def _refresh_unsaved(self):
         """1b-6 SG-B6: _unsaved をいま分かる範囲で決め直す（Spec-ops.md §4.1）。
@@ -1358,6 +1422,18 @@ class StateManager(Node):
                 if self._jog_active:
                     self._eff_set_jog({'on': False}, "")
 
+        # 8-g P3（§6.4）: ADJUST の締め切り。measure_adjuster が落ちても
+        # ADJUST に閉じ込められない。
+        if (self.state == "ADJUST" and self._adjust_enter_ms is not None):
+            _timeout_ms = int(self.get_parameter('adjust_timeout_ms').value)
+            if now - self._adjust_enter_ms >= _timeout_ms:
+                self._process("sys.adjust_timeout", {}, "")
+        # 8-g P3: corner_status が古ければ free_*_m も 0 に倒す（障害物あり扱い）。
+        if (self._measure_corner_recv_ms is not None
+                and now - self._measure_corner_recv_ms >= _MEASURE_CORNER_STALE_MS):
+            self._measure_free_forward_m = 0.0
+            self._measure_free_backward_m = 0.0
+
         if self._screens:
             stale_ms = self.get_parameter('screen_stale_ms').value
             if now - self._last_screen_msg_ms >= stale_ms:
@@ -1395,7 +1471,8 @@ class StateManager(Node):
         # N-15: speed_limit は「画面由来」単体ではなく、画面由来とモード由来
         # （attributes.yaml。AT_PANEL × jog_active の v_jog_panel 特例を含む）の
         # 厳しい方（DetailedDesign-safety.md §3.3.1）。
-        mode_limit = mode_speed_limit(self.core.attributes(self.mode), self._jog_active)
+        mode_limit = mode_speed_limit(self.core.attributes(self.mode),
+                                    self._jog_active, self.state)
         msg.speed_limit = combine_speed_limits(limits.speed_limit, mode_limit)
         msg.jog_active = self._jog_active
         msg.estop_ui = self._ui_estop

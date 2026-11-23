@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 # §3.1 の表の `meas.*`（names.md §8.5 と同じ集合）。
@@ -48,11 +49,14 @@ RESULT_DONE = "DONE"
 RESULT_CANCELLED = "CANCELLED"
 
 
-def validate_measure_command(command_id: str, command: str, side: str = "") -> str:
+def validate_measure_command(command_id: str, command: str, side: str = "",
+                             angle_rad=None, distance_m=None) -> str:
     """① の判定。問題があれば `bad_argument` を返す（§6.1 の表の順）。
 
     `command` が `meas.` で始まらない（`ui.*` を含む）・`command_id` が空・
     未知の `meas.*`・`meas.translate` の `side` が FORWARD／BACKWARD 以外。
+    8-g P3（SM-3.1.2-127・-136）: `meas.turn` の `angle_rad` が 0・有限でない、
+    `meas.translate` の `distance_m` が 0 以下・有限でない も `bad_argument`。
     通れば ""。
     """
     if not command or not command.startswith("meas."):
@@ -63,6 +67,20 @@ def validate_measure_command(command_id: str, command: str, side: str = "") -> s
         return "bad_argument"
     if command == "meas.translate" and side not in TRANSLATE_SIDES:
         return "bad_argument"
+    if command == "meas.turn":
+        try:
+            angle = float(angle_rad)
+        except (TypeError, ValueError):
+            return "bad_argument"
+        if not math.isfinite(angle) or angle == 0:
+            return "bad_argument"
+    if command == "meas.translate":
+        try:
+            distance = float(distance_m)
+        except (TypeError, ValueError):
+            return "bad_argument"
+        if not math.isfinite(distance) or distance <= 0:
+            return "bad_argument"
     return ""
 
 

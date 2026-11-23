@@ -611,6 +611,10 @@ class StateCore:
 | `T-ATP-04` | `PAUSE` | `sys.jog_lease_expired` | — | `=` | **`IDLE_P`** | `set_jog(false)` |
 | `T-ATP-05` | `IDLE_P` ／ `WORKING` | `ui.goto` | `goto_allowed` | `$arg.kind`（§3.5） | `$initial` | — |
 | **`T-ATP-07`** | `IDLE_P` | `ui.save` | `map_update` | `=` | `=` | `commit_map_patch` |
+| **`T-ATP-00`／`-00a`** | `WORKING` | `meas.turn`／`meas.translate`（8-g P3） | 角・進む先 | `=` | `ADJUST` | `measure_adjust{command_id, kind, angle_rad, side, distance_m}` |
+| **`T-ATP-00X`／`-00Y`** | `WORKING` | `meas.turn`／`meas.translate`（8-g P3 拒否） | 角・進む先 | — | —（拒否） | — |
+| **`T-ATP-00-adjust-reject`** | `ADJUST` | `meas.done`／`ui.working`／`ui.goto`（8-g P3） | — | — | —（拒否 `adjust_in_progress`） | — |
+| **`T-ATP-10`／`-10t`／`-10f`** | `ADJUST` | `evt.adjust_done`／`sys.adjust_timeout`／`evt.adjust_failed`（8-g P3） | — | `=` | `WORKING` | — |
 
 **`T-ATP-06` は置かない。**「作業中に行き先を選ぼうとした」の拒否は
 **ガード `goto_allowed` の否定**で表す（`not flags["working"]`）。

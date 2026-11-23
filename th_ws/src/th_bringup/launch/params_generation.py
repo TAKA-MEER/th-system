@@ -130,6 +130,9 @@ REGISTRY_NODES: tuple[str, ...] = (
     # 8-g P5b: measure_clearance は arm_clearance_scan_max_age_ms を生成 yaml に
     # 載せる。新規行のみで blocking placeholder を含まないため A8 は armed にならない。
     "measure_clearance",
+    # 8-g P3: measure_adjuster は並進の速さ・許容差と向き合わせの registry 値を
+    # 生成 yaml に載せる。
+    "measure_adjuster",
 )
 
 # ---------------------------------------------------------------------------

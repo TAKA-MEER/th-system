@@ -182,8 +182,9 @@ def test_meas_commands_not_accepted_without_rows(state_core_bundle):
     受けない状態・WAIT/PAUSE の set_limits）は state_not_accepting
     （step では not_allowed）。"""
     core, _, _, _ = state_core_bundle
-    for event in ("meas.turn", "meas.translate", "meas.done"):
-        for state in ("WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED"):
+    # 8-g P3: turn・translate は WAIT で受ける（ADJUST へ）。ここでは受けない状態だけを見る。
+    for event in ("meas.done",):
+        for state in ("WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED", "ADJUST"):
             d = core.step("AUTO_MEASURE", state, event, _mk_ctx())
             assert d.accepted is False, (event, state)
             assert d.reject_reason_key == "not_allowed", (event, state)
@@ -260,10 +261,10 @@ def test_attributes_match_spec_modes_table(state_core_bundle):
 
 
 def test_auto_measure_mode_states_include_p5b(state_core_bundle):
-    """P5b は WAIT・PAUSE に NAV・ALIGN・BLOCKED を足す（ADJUST は P3）。"""
+    """P5b は WAIT・PAUSE に NAV・ALIGN・BLOCKED を足す。P3 で ADJUST を足す。"""
     from th_state.state_core import MODE_STATES
     assert MODE_STATES["AUTO_MEASURE"] == {
-        "WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED"}
+        "WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED", "ADJUST"}
 
 
 @pytest.mark.rule("T-MEAS-08")

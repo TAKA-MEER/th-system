@@ -21,6 +21,7 @@ import math
 import rclpy
 import tf2_ros
 from rclpy.node import Node
+from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.parameter import Parameter
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy, qos_profile_sensor_data)
@@ -30,7 +31,9 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 
 from th_measure.clearance_core import (CORNER_RADIUS_M, circle_blocked_by_costmap,
-                                       decide_clear, points_in_circle)
+                                       combine_free, decide_clear,
+                                       free_distance, free_distance_from_grid,
+                                       points_in_circle)
 
 _STATUS_PERIOD_S = 0.2  # 5 Hz（§6.2 P5b）
 
@@ -80,6 +83,18 @@ class MeasureClearance(Node):
             'arm_clearance_scan_max_age_ms', Parameter.Type.INTEGER)
         self._max_age_ms = int(
             self.get_parameter('arm_clearance_scan_max_age_ms').value)
+        # 8-g P3: 並進の「進む先」の free_*_m の材料（floor_margin_m と死角）。
+        # 生成 yaml が渡す。無い環境では既定（リミッタの既定余裕と空の死角）。
+        self.declare_parameter('floor_margin_m', 0.30)
+        self._floor_margin_m = float(self.get_parameter('floor_margin_m').value)
+        # lidar_filter と同じ理由（DOUBLE_ARRAY の既定 [] 推論を避ける）。
+        self.declare_parameter(
+            'blind_angle_ranges', [],
+            ParameterDescriptor(dynamic_typing=True))
+        _blind_deg = list(self.get_parameter('blind_angle_ranges').value or [])
+        self._blind_rad = tuple(
+            (math.radians(float(_blind_deg[i])), math.radians(float(_blind_deg[i + 1])))
+            for i in range(0, len(_blind_deg) - 1, 2))
 
         self._scan = None          # 最新の LaserScan
         self._scan_rx_ms = None    # 受信時刻（ms。自分の時計）
@@ -181,9 +196,52 @@ class MeasureClearance(Node):
         clear, reason = decide_clear(
             tf_ok, scan_age_ms, float(self._max_age_ms),
             scan_blocked, costmap_blocked)
+        # 8-g P3: 並進の「進む先」の空き距離（TF 無し・古いスキャン・死角は 0）。
+        scan_ok = bool(tf_ok and scan_age_ms is not None
+                       and scan_age_ms <= float(self._max_age_ms))
+        scan_free_f = scan_free_b = 0.0
+        if scan_ok and points is not None:
+            scan_free_f = free_distance(
+                points, True, self._blind_rad, self._floor_margin_m)
+            scan_free_b = free_distance(
+                points, False, self._blind_rad, self._floor_margin_m)
+        map_ok = bool(tf_ok and self._costmap is not None
+                      and costmap_blocked is not None)
+        map_free_f = map_free_b = 0.0
+        if map_ok:
+            map_free_f = self._costmap_free(True)
+            map_free_b = self._costmap_free(False)
         msg = String()
-        msg.data = json.dumps({"clear": bool(clear), "reason": reason})
+        msg.data = json.dumps({
+            "clear": bool(clear), "reason": reason,
+            "free_forward_m": float(combine_free(scan_free_f, map_free_f,
+                                                 scan_ok, map_ok)),
+            "free_backward_m": float(combine_free(scan_free_b, map_free_b,
+                                                  scan_ok, map_ok)),
+        })
         self._pub_status.publish(msg)
+
+    def _costmap_free(self, forward: bool) -> float:
+        """局所コストマップの占有セルからの free 距離（届いていなければ None 換算の 0）。"""
+        cm = self._costmap
+        if cm is None:
+            return 0.0
+        frame = str(cm.header.frame_id or '')
+        try:
+            tf = self._tf_buffer.lookup_transform(
+                frame, 'base_link', rclpy.time.Time())
+        except (tf2_ros.ExtrapolationException, tf2_ros.LookupException,
+                tf2_ros.ConnectivityException):
+            return 0.0
+        cx, cy, _ = _apply_tf(tf, 0.0, 0.0)
+        # base_link の +x を grid 座標系へ（回転だけ）。
+        q = tf.transform.rotation
+        x2, y2, z2, w2 = float(q.x), float(q.y), float(q.z), float(q.w)
+        dir_x = 1.0 - 2.0 * (y2 * y2 + z2 * z2)
+        dir_y = 2.0 * (x2 * y2 + z2 * w2)
+        return free_distance_from_grid(
+            _GridView(cm), cx, cy, forward, dir_x, dir_y, self._blind_rad,
+            self._floor_margin_m)
 
 
 def main(args=None):

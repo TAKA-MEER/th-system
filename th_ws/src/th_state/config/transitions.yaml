@@ -17,7 +17,9 @@
 - id: C-01-working
   layer: 0
   mode: AT_PANEL
-  state: WORKING
+  state:
+  - WORKING
+  - ADJUST
   event: ui.jog.hold
   guard: working
   to_mode: null
@@ -2069,7 +2071,9 @@
 - id: T-ATP-08-fault
   layer: 10
   mode: AT_PANEL
-  state: WORKING
+  state:
+  - WORKING
+  - ADJUST
   event: fault.recoverable
   guard: null
   to_mode: '='
@@ -2085,7 +2089,9 @@
 - id: T-ATP-09-ack
   layer: 10
   mode: AT_PANEL
-  state: WORKING
+  state:
+  - WORKING
+  - ADJUST
   event: ui.resume_ack
   guard: fault_cleared
   to_mode: '='
@@ -2128,7 +2134,9 @@
 - id: T-ATP-05-working
   layer: 10
   mode: AT_PANEL
-  state: WORKING
+  state:
+  - WORKING
+  - ADJUST
   event: ui.goto
   guard: working
   to_mode: null
@@ -2974,7 +2982,9 @@
 - id: T-MEAS-02
   layer: 10
   mode: AUTO_MEASURE
-  state: PAUSE
+  state:
+  - PAUSE
+  - ADJUST
   event: meas.abort
   guard: null
   to_mode: '='
@@ -2988,6 +2998,7 @@
   - NAV
   - ALIGN
   - BLOCKED
+  - ADJUST
   event: meas.abort
   guard: null
   to_mode: '='
@@ -3109,6 +3120,7 @@
   - NAV
   - ALIGN
   - BLOCKED
+  - ADJUST
   event: meas.stop
   guard: null
   to_mode: '='
@@ -3124,6 +3136,7 @@
   - NAV
   - ALIGN
   - BLOCKED
+  - ADJUST
   event: evt.measure_link_lost
   guard: null
   to_mode: '='
@@ -3142,3 +3155,234 @@
   spec_ref: SM-3.1.2-135
 # meas.set_limits の受理行（旧 T-MEAS-04）は P5b で外した: 効かせる仕組み
 # （P5c）まで受けない（DetailedDesign-measure.md §6.2 P5b の決まり）。
+# 8-g P3（SM-3.1.2-127・-136）: 盤前の旋回・前後の並進（ADJUST）。
+# 受ける順は reentry_required（自律測定のみ）→ corner_obstacle → 並進だけ path_obstacle。
+# ADJUST 中の meas.done・停止を解く・行き先は adjust_in_progress で拒否（-138）。
+# ADJUST からの終わり（-128・-137）は evt.adjust_done、締め切りは sys.adjust_timeout、
+# 進まないときは evt.adjust_failed（state_manager が台帳へ CANCELLED を出す）。
+- id: T-ATP-00-adjust-reject
+  layer: 10
+  mode: AT_PANEL
+  state: ADJUST
+  event:
+  - meas.done
+  - ui.working
+  - ui.goto
+  guard: null
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-138
+  reject: true
+  reject_reason_key: adjust_in_progress
+  override_common: true
+# ADJUST 中の meas.turn／translate は §6.4「ほか（ADJUST 中を含む）は
+# state_not_accepting」にする（adjust_in_progress は meas.done・
+# ui.working off・ui.goto だけ）。自律測定の ADJUST も同じ。
+- id: T-MEAS-20X
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event:
+  - meas.turn
+  - meas.translate
+  guard: measure_reentry_required
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-127
+  reject: true
+  reject_reason_key: localization_lost
+- id: T-MEAS-21X
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event:
+  - meas.turn
+  - meas.translate
+  guard: measure_corner_blocked
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-127
+  reject: true
+  reject_reason_key: corner_obstacle
+- id: T-MEAS-22X
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.translate
+  guard: measure_path_blocked
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-127
+  reject: true
+  reject_reason_key: path_obstacle
+- id: T-MEAS-20
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.turn
+  guard: null
+  to_mode: '='
+  to_state: ADJUST
+  effects:
+  - name: measure_adjust
+    args:
+      command_id: $arg.command_id
+      kind: turn
+      angle_rad: $arg.angle_rad
+      side: ''
+      distance_m: 0
+  spec_ref: SM-3.1.2-127
+- id: T-MEAS-21
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.translate
+  guard: null
+  to_mode: '='
+  to_state: ADJUST
+  effects:
+  - name: measure_adjust
+    args:
+      command_id: $arg.command_id
+      kind: translate
+      angle_rad: 0
+      side: $arg.side
+      distance_m: $arg.distance_m
+  spec_ref: SM-3.1.2-127
+- id: T-ATP-00X
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event:
+  - meas.turn
+  - meas.translate
+  guard: measure_corner_blocked
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-136
+  reject: true
+  reject_reason_key: corner_obstacle
+- id: T-ATP-00Y
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event: meas.translate
+  guard: measure_path_blocked
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-136
+  reject: true
+  reject_reason_key: path_obstacle
+- id: T-ATP-00
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event: meas.turn
+  guard: null
+  to_mode: '='
+  to_state: ADJUST
+  effects:
+  - name: measure_adjust
+    args:
+      command_id: $arg.command_id
+      kind: turn
+      angle_rad: $arg.angle_rad
+      side: ''
+      distance_m: 0
+  spec_ref: SM-3.1.2-136
+- id: T-ATP-00a
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event: meas.translate
+  guard: null
+  to_mode: '='
+  to_state: ADJUST
+  effects:
+  - name: measure_adjust
+    args:
+      command_id: $arg.command_id
+      kind: translate
+      angle_rad: 0
+      side: $arg.side
+      distance_m: $arg.distance_m
+  spec_ref: SM-3.1.2-136
+- id: T-MEAS-23
+  layer: 10
+  mode: AUTO_MEASURE
+  state: ADJUST
+  event: evt.adjust_done
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects: []
+  spec_ref: SM-3.1.2-128
+- id: T-MEAS-24
+  layer: 10
+  mode: AUTO_MEASURE
+  state: ADJUST
+  event: sys.adjust_timeout
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects: []
+  spec_ref: SM-3.1.2-128
+- id: T-MEAS-25
+  layer: 10
+  mode: AUTO_MEASURE
+  state: ADJUST
+  event: evt.adjust_failed
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects: []
+  spec_ref: SM-3.1.2-128
+- id: T-ATP-10
+  layer: 10
+  mode: AT_PANEL
+  state: ADJUST
+  event: evt.adjust_done
+  guard: null
+  to_mode: '='
+  to_state: WORKING
+  effects: []
+  spec_ref: SM-3.1.2-137
+- id: T-ATP-10t
+  layer: 10
+  mode: AT_PANEL
+  state: ADJUST
+  event: sys.adjust_timeout
+  guard: null
+  to_mode: '='
+  to_state: WORKING
+  effects: []
+  spec_ref: SM-3.1.2-137
+- id: T-ATP-10f
+  layer: 10
+  mode: AT_PANEL
+  state: ADJUST
+  event: evt.adjust_failed
+  guard: null
+  to_mode: '='
+  to_state: WORKING
+  effects: []
+  spec_ref: SM-3.1.2-137
+# 停止命令の ADJUST の「回復フォルト・途絶」（-139・§6.4）は WORKING へ戻す
+# （動きをやめて捨てる）。測定機能との途絶は WORKING では遷移しないが
+# ADJUST では WORKING へ戻し、台帳は state_manager が CANCELLED（link_lost）。
+- id: T-ATP-10L
+  layer: 10
+  mode: AT_PANEL
+  state: ADJUST
+  event: evt.measure_link_lost
+  guard: null
+  to_mode: '='
+  to_state: WORKING
+  effects: []
+  spec_ref: SM-3.1.2-139
