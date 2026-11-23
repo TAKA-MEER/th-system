@@ -59,6 +59,46 @@ test('ESTOP/CARRY 以外は常に false（AUTO_MEASURE の PAUSE の「確認」
 
 // 元のモードへ戻るボタン（ui.resume_yes / ui.carry_resume）は IDLE へ抜けないので
 // どのモードからでも確認を挟まない。
+// 8-g P2-ui: ESTOP / CARRY で working が true（AT_PANEL / WORKING 由来）なら
+// prev_mode が AT_PANEL でも確認を出す。working false の AT_PANEL 由来は出さない。
+test('ESTOP / CARRY で working true は確認を出す（prev_mode は AT_PANEL でも）', () => {
+  assert.equal(
+    needsArmConfirmForExit({ trigger: 'ui.resume_no', currentMode: 'ESTOP', prevMode: 'AT_PANEL', working: true }),
+    true)
+  assert.equal(
+    needsArmConfirmForExit({ trigger: 'ui.resume_ack', currentMode: 'ESTOP', prevMode: 'AT_PANEL', working: true }),
+    true)
+  assert.equal(
+    needsArmConfirmForExit({ trigger: 'ui.finish', currentMode: 'CARRY', prevMode: 'AT_PANEL', working: true }),
+    true)
+})
+
+test('working false の AT_PANEL 由来は出さない', () => {
+  assert.equal(
+    needsArmConfirmForExit({ trigger: 'ui.resume_no', currentMode: 'ESTOP', prevMode: 'AT_PANEL', working: false }),
+    false)
+  assert.equal(
+    needsArmConfirmForExit({ trigger: 'ui.finish', currentMode: 'CARRY', prevMode: 'AT_PANEL', working: false }),
+    false)
+  assert.equal(
+    needsArmConfirmForExit({ trigger: 'ui.finish', currentMode: 'AT_PANEL', prevMode: '', working: false }),
+    false)
+})
+
+// AT_PANEL / WORKING からの「終了」(ui.finish) は working のときだけ確認を挟む。
+// WORKING の W-1「確認」(ui.resume_ack) は WORKING に留まるので挟まない。
+test('AT_PANEL / WORKING の ui.finish は確認を出す。ui.resume_ack は出さない', () => {
+  assert.equal(
+    needsArmConfirmForExit({ trigger: 'ui.finish', currentMode: 'AT_PANEL', prevMode: '', working: true }),
+    true)
+  assert.equal(
+    needsArmConfirmForExit({ trigger: 'ui.resume_ack', currentMode: 'AT_PANEL', prevMode: '', working: true }),
+    false)
+  assert.equal(
+    needsArmConfirmForExit({ trigger: 'ui.resume_no', currentMode: 'AT_PANEL', prevMode: '', working: true }),
+    false)
+})
+
 test('ui.resume_yes / ui.carry_resume は確認を挟まない', () => {
   assert.equal(
     needsArmConfirmForExit({ trigger: 'ui.resume_yes', currentMode: 'ESTOP', prevMode: 'AUTO_MEASURE' }),

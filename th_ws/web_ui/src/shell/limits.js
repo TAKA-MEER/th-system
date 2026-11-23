@@ -53,6 +53,7 @@ export function isW1Active(mode, stateName, faultActive, pauseReason = '', jogAc
   return mode === 'ESTOP' || (stateName === 'PAUSE' && !!faultActive)
     || (stateName === 'PAUSE' && pauseReason === 'presence_lost')
     || (mode === 'PREP' && stateName === 'PAUSE' && !jogActive)
+    || (mode === 'AT_PANEL' && stateName === 'WORKING' && !!faultActive)
 }
 
 // stateToBlueButton(mode, stateName, attributes) -> 'stop' | 'run' | 'check' | null

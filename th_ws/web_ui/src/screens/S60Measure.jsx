@@ -5,11 +5,11 @@
 // 「走行」は置かない（戻すのは測定機能の画面の meas.start）。
 // 「自律測定を終了」は毎回 W-4「測定機構の腕が格納位置にあることを確かめましたか」
 // を挟み、「メインメニューへ」のときだけ ui.finish を送る（SM-3.1.1-18）。
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
-import { useParamsOverrides } from '../ros/useParamsOverrides.js'
+import { useMeasureUiPort, openMeasureUi } from '../ros/useMeasureUiPort.js'
 import { useJogPanel } from '../shell/jogPanel.js'
 import { useConfirmWindow } from '../shell/confirmWindow.js'
 import { stateLabel } from '../i18n/states.js'
@@ -30,26 +30,13 @@ export default function S60Measure() {
 
   const [confirmArm, setConfirmArm] = useState(false)
 
-  // 「測定機能の画面へ」の移り先は registry の measure_ui_port（given 8091）で、
-  // camera_ui_url と同じ経路（/params/get の effective）で読む（ビルド時生成物の
-  // 値は読まない。S-50 では変えない）。読めないときは 8091。
-  const { getParams } = useParamsOverrides(ros)
-  const [measurePort, setMeasurePort] = useState(null)
-  useEffect(() => {
-    let alive = true
-    getParams(['measure_ui_port'])
-      .then((payload) => {
-        if (alive) setMeasurePort(payload?.effective?.measure_ui_port ?? null)
-      })
-      .catch(() => { if (alive) setMeasurePort(null) })
-    return () => { alive = false }
-  }, [getParams])
+  // 「測定機能の画面へ」の移り先（measure_ui_port の読み方）は
+  // ros/useMeasureUiPort.js で S-21 と共用する。
+  const measurePort = useMeasureUiPort(ros)
 
   function openFkScreen() {
     if (disabledAll) return
-    const port = (typeof measurePort === 'number' && Number.isFinite(measurePort))
-      ? measurePort : 8091
-    window.location.assign(`http://${window.location.hostname}:${port}/`)
+    openMeasureUi(measurePort)
   }
 
   // 自律測定を終了する前は必ず腕の格納の確認（W-4）を挟む。やめる は何も送らない。
