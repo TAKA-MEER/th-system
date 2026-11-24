@@ -131,7 +131,8 @@ ROS 非依存）、`/system/event` へ `evt.measure_link_ok` ／ `evt.measure_li
 `venue_navigator` は試験場内と同じ駆動系を自律測定にも使う（目的地は `measure_goal` から。
 会場地図の検査は見ない。`AUTO_MEASURE` だけ手前 1.5 m の `/map` が不明なら `BLOCKED`）。
 `measure_clearance`（`th_measure`）が `/scan_filtered` と局所コストマップから
-半径 0.389 m の円の中の障害物を 5 Hz で `/measure/corner_status` に出す
+半径 `corner_clear_radius_m`（0.689 m。外接 0.389 m ＋ 0.3 m。8-g P7）の円の中の障害物を 5 Hz で `/measure/corner_status` に出す
+（コストマップは致死のセルだけを数える）
 （`state_manager` は 1 秒届かなければ `clear=false` とみなす）。
 同じノードが腕が振れる範囲の確認（`/measure/check_arm_clearance`。8-g P4）の
 サービスも持つ。`/system/state` を購読して `AUTO_MEASURE`/`WAIT` と

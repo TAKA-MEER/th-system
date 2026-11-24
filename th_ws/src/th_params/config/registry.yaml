@@ -1297,6 +1297,15 @@
   spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §6.5"
   note: "腕が振れる範囲の確認で、laser_link の中心からこれ以内の部分の死角は判定から除く（2026-11-23 ユーザー決定）。いまの四隅の支柱ではどの向きの範囲にも機体の中心から約 0.6 m 以内の死角の楔がかかり、除かないと毎回 UNKNOWN になるため。Spec-measure.md §5.2 の既知のリスク"
 
+- name: corner_clear_radius_m
+  unit: m
+  class: b
+  status: given
+  value: 0.689
+  consumers: [params_audit, measure_clearance]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §6.8"
+  note: "発進・旋回の前の確認（角が描く円。/measure/corner_status）の半径（2026-11-25 ユーザー決定・fk 申し送り 25）。機体の外接 0.389 m + 0.3 m。スキャンと局所コストマップの両方をこの半径で見る。コストマップは致死（値 100）だけを数える"
+
 - name: adjust_timeout_ms
   unit: ms
   class: b

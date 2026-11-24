@@ -7,7 +7,7 @@ docs/plan/spec/Spec-measure.md §4.4・§5.2。
 
   - `/scan_filtered`（センサ QoS）を `base_link` へ変換した点と、局所コスト
     マップ（`/local_costmap/costmap`。届いていなければスキャンだけ）の占有
-    セルから、`base_link` 中心・半径 0.389 m の円の中に障害物があるかを
+    セルから、`base_link` 中心・半径 `corner_clear_radius_m`（0.689 m。§6.8）の円の中に障害物があるかを
     **5 Hz** で `/measure/corner_status`（`std_msgs/String` の JSON
     `{"clear": bool, "reason": str}`）へ出す。
   - スキャンが `arm_clearance_scan_max_age_ms` より古い・TF が取れないときは
@@ -40,7 +40,7 @@ from std_msgs.msg import String
 from th_system_msgs.msg import SystemState
 from th_system_msgs.srv import CheckArmClearance
 
-from th_measure.clearance_core import (CORNER_RADIUS_M, SIDE_ROTATION_RAD,
+from th_measure.clearance_core import (CORNER_LETHAL_MIN, SIDE_ROTATION_RAD,
                                        any_point_in_region,
                                        circle_blocked_by_costmap,
                                        combine_free, decide_clear,
@@ -110,6 +110,9 @@ class MeasureClearance(Node):
         self._floor_margin_m = float(self.get_parameter('floor_margin_m').value)
         # 8-g P4: 腕の範囲の確認で死角の判定から除く近い部分
         # （arm_clearance_blind_near_m）。生成 yaml が渡す。
+        self.declare_parameter('corner_clear_radius_m', 0.689)
+        self._corner_radius_m = float(
+            self.get_parameter('corner_clear_radius_m').value)
         self.declare_parameter('arm_clearance_blind_near_m', 0.65)
         self._blind_near_m = float(
             self.get_parameter('arm_clearance_blind_near_m').value)
@@ -186,6 +189,8 @@ class MeasureClearance(Node):
                 self._blind_rad = tuple(
                     (math.radians(float(deg[i])), math.radians(float(deg[i + 1])))
                     for i in range(0, len(deg) - 1, 2))
+            elif p.name == 'corner_clear_radius_m':
+                self._corner_radius_m = float(p.value)
             elif p.name == 'arm_clearance_blind_near_m':
                 self._blind_near_m = float(p.value)
         return SetParametersResult(successful=True)
@@ -239,7 +244,8 @@ class MeasureClearance(Node):
             return None
         cx, cy, _ = _apply_tf(tf, 0.0, 0.0)
         return circle_blocked_by_costmap(
-            _GridView(cm), cx, cy, CORNER_RADIUS_M)
+            _GridView(cm), cx, cy, self._corner_radius_m,
+            blocked_min=CORNER_LETHAL_MIN)
 
     # ------------------------------------------------------------
     # P4: 腕が振れる範囲の確認（/measure/check_arm_clearance）
@@ -327,7 +333,7 @@ class MeasureClearance(Node):
         points = self._scan_points_base()
         tf_ok = points is not None
         scan_age_ms = None if self._scan_rx_ms is None else now_ms - self._scan_rx_ms
-        scan_blocked = points_in_circle(points) if points is not None else False
+        scan_blocked = points_in_circle(points, self._corner_radius_m) if points is not None else False
         costmap_blocked = self._costmap_blocked() if tf_ok else False
         if costmap_blocked is None:
             tf_ok = False
