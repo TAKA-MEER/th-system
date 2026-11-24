@@ -515,6 +515,26 @@ def generate_launch_description():
             name='slam_control',
             output='screen',
         ),
+        # 8-g P6（DetailedDesign-measure.md §6.7）: venue_navigator。
+        # 自律測定（AUTO_MEASURE）の目的地への走行（meas.goal → NAV → ALIGN →
+        # WAIT）の受け手。state_manager が meas.goal を effect
+        # `measure_goal`（dest venue_navigator）で配るため、sim にも起動する
+        # （bringup.launch.py の onsite_enabled の下と同じ生成 yaml）。
+        # 頼るものは sim に揃っている: Nav2 の FollowPath /
+        # ComputePathToPose（nav2_sim）、/map（slam_toolbox）、
+        # /map_session/status（slam_control が出す。start_measure_map の
+        # effect も slam_control が受ける）。pin_registrar・wait_clear_gate・
+        # home_declarer は自律測定の走行に要らない（AUTO_MEASURE では
+        # 会場地図の検査を見ない）。map_freezer は sim に無いが /map は
+        # slam_toolbox が直接出すため不要。
+        Node(
+            package='th_onsite',
+            executable='venue_navigator.py',
+            name='venue_navigator',
+            parameters=[os.path.join(GENERATED_DIR, 'venue_navigator.yaml')],
+            condition=IfCondition(sim),
+            output='screen',
+        ),
         # rosbridge
         Node(
             package='rosbridge_server',

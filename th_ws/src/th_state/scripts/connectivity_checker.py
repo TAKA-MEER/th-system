@@ -144,7 +144,8 @@ class ConnectivityChecker(Node):
         if self.get_parameter('sim').value:
             self.get_logger().warn(
                 'sim=true: Gazebo には esp32_bridge が居ないため、ESP32 の2項目'
-                '（esp32_feedback/esp32_loopback）と required_nodes の判定を除外する（§8）')
+                '（esp32_feedback/esp32_loopback）と required_nodes の判定を除外する（§8）。'
+                '/safety/estop_hw の受信も求めない（押下と判明した間は出さない）')
         self._log_dev_state(force=True)
 
     # ------------------------------------------------------------
@@ -438,16 +439,21 @@ class ConnectivityChecker(Node):
             self.get_logger().warn(f'必須ノードが不足している: {report.missing_nodes}')
 
         effective_link = self._dev_effective()['link']
-        # L-2 + DEV-01A: 物理 E-Stop 押下中は dev_mode でも evt.link_ok を出さない
-        #（完了条件4）。判定式は connectivity_core.should_emit_link_ok（純粋関数）。
+        # L-2 + DEV-01A + 8-g P6: 物理 E-Stop 押下中は dev_mode でも sim でも
+        # evt.link_ok を出さない。判定式は connectivity_core.should_emit_link_ok
+        # （純粋関数。sim のときは estop_seen を求めない）
         gate = should_emit_link_ok(report, self._estop_seen, self._hw_estop,
-                                   effective_link)
+                                   effective_link, sim=p.sim)
 
         # L-3: 立ち上がりで1回だけ。10 Hz(このタイマ自体は1Hzだが)で撃たない。
         if gate and not self._link_ok_gate_prev:
             if effective_link and not self._estop_seen:
                 self.get_logger().warn(
                     'dev_mode: /safety/estop_hw 未受信（ESP32 不在）のまま evt.link_ok を出す。'
+                    '押下が判明した時点で link_ok は止まる')
+            elif p.sim and not self._estop_seen:
+                self.get_logger().warn(
+                    'sim: /safety/estop_hw 未受信（esp32_bridge 不在）のまま evt.link_ok を出す。'
                     '押下が判明した時点で link_ok は止まる')
             self._publish_link_ok()
         self._link_ok_gate_prev = gate
