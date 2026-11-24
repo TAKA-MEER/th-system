@@ -7,7 +7,10 @@ fk-system が `gazebo.launch.py sim:=true gui:=false` に繋いで自律測定�
   1. `/measure/heartbeat` を 5 Hz で送り続ける（`interface_version` "1"）。
   2. `/system/state` が IDLE になるのを待つ（dev_mode 無しで link_ok が出ることの確認）。
   3. `/system/trigger` へ `ui.goto`（`{"kind":"AUTO_MEASURE"}`）を送り、
-     AUTO_MEASURE/WAIT になるのを待つ。
+     AUTO_MEASURE/WAIT になるのを待つ。その間 `/ui/active_screen` を
+     `screen_id` S-60・`client_id` fk-measure で 2 Hz 送り続ける
+     （測定機能の画面の在席。無いと `zone: NA`・`speed_limit: stop` で
+     `/cmd_vel` が 0 のままになる）。
   4. `/measure/status` の自己位置（map フレーム）から前方 1.5 m の点を
      `meas.goal`（`/measure/command`）として送る。
   5. `/measure/result` にその `command_id` の `ARRIVED` が 1 回返るのを待つ。
@@ -34,7 +37,7 @@ from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy)
 from geometry_msgs.msg import Twist
-from th_system_msgs.msg import (MeasureHeartbeat, MeasureResult,
+from th_system_msgs.msg import (ActiveScreen, MeasureHeartbeat, MeasureResult,
                                 MeasureStatus, SystemState)
 from th_system_msgs.srv import MeasureCommand, UiTrigger
 
@@ -64,6 +67,8 @@ class FakeMeasureFunction(Node):
 
         self._pub_hb = self.create_publisher(MeasureHeartbeat, '/measure/heartbeat', 10)
         self._hb_timer = self.create_timer(0.2, self._publish_hb)  # 5 Hz
+        self._pub_screen = self.create_publisher(ActiveScreen, '/ui/active_screen', 10)
+        self._screen_timer = self.create_timer(0.5, self._publish_screen)  # 2 Hz
 
         self.cli_trigger = self.create_client(UiTrigger, '/system/trigger')
         self.cli_measure = self.create_client(MeasureCommand, '/measure/command')
@@ -93,6 +98,14 @@ class FakeMeasureFunction(Node):
         msg.sender = "fk-system"
         msg.seq = self._hb_seq
         self._pub_hb.publish(msg)
+
+    def _publish_screen(self):
+        msg = ActiveScreen()
+        msg.screen_id = 'S-60'
+        msg.client_id = 'fk-measure'
+        msg.interacting = True
+        msg.last_input = self.get_clock().now().to_msg()
+        self._pub_screen.publish(msg)
 
     # ── 照会（呼び出し側は executor を裏で回している） ──────────────────────
     def latest_status(self):
