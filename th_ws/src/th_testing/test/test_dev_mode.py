@@ -163,6 +163,45 @@ def test_gate_dev_passes_without_estop_seen():
 
 
 # ============================================================================
+# 2b. gate 真理値表（should_emit_link_ok の sim 分岐。8-g P6。
+#     DetailedDesign-measure.md §6.7）
+# ============================================================================
+
+def test_gate_sim_passes_without_estop_seen():
+    """P6: sim が真のとき estop_seen を求めない（esp32_bridge は sim に居ない）。"""
+    ok = _ok_report()
+    # 項目が揃い＋未受信＋非押下 → 出す
+    assert should_emit_link_ok(ok, False, False, False, sim=True) is True
+    # 項目が揃い＋受信済み＋非押下 → 出す（従来の組み合わせも壊れない）
+    assert should_emit_link_ok(ok, True, False, False, sim=True) is True
+    # 項目が NG → 出さない（all_ok は sim でも必要）
+    assert should_emit_link_ok(_ng_report(), False, False, False, sim=True) is False
+    assert should_emit_link_ok(_ng_report(), True, False, False, sim=True) is False
+
+
+def test_gate_sim_pressed_never_passes():
+    """P6: sim でも押されていると分かっている間は出さない（開発モードと同じ境界）。"""
+    ok = _ok_report()
+    assert should_emit_link_ok(ok, True, True, False, sim=True) is False
+    assert should_emit_link_ok(ok, False, True, False, sim=True) is False
+
+
+def test_gate_non_sim_still_requires_estop_seen():
+    """P6: sim が偽のときは従来どおり estop_seen を求める（通常の判定は変えない）。"""
+    ok = _ok_report()
+    assert should_emit_link_ok(ok, False, False, False) is False
+    assert should_emit_link_ok(ok, False, False, False, sim=False) is False
+    assert should_emit_link_ok(ok, True, False, False, sim=False) is True
+
+
+def test_gate_sim_and_dev_together():
+    """sim と開発モードの両方が真でも、押下中は出さない。"""
+    ok = _ok_report()
+    assert should_emit_link_ok(ok, False, False, True, sim=True) is True
+    assert should_emit_link_ok(ok, False, True, True, sim=True) is False
+
+
+# ============================================================================
 # 3. launch 定義の AST 検査（bringup.launch.py）
 # ============================================================================
 
@@ -297,6 +336,17 @@ def test_checker_uses_pure_gate_and_publishes_dev_state():
     assert "'/system/dev_mode'" in src, "/system/dev_mode の発行が無い"
     for param in ("dev_mode", "dev_ignore_at_start"):
         assert f"'{param}'" in src, f"パラメータ '{param}' の宣言が無い"
+
+
+def test_checker_passes_sim_to_pure_gate():
+    """P6: ノードが自分の sim パラメータを should_emit_link_ok に渡すこと。
+    渡し忘れると sim でも estop_seen を求めてしまい、Gazebo で IDLE に入れない。"""
+    src = _read(CHECKER_PY)
+    assert "sim=p.sim" in src, (
+        "should_emit_link_ok の呼び出しに sim=p.sim が無い"
+        "（sim のとき estop_seen を求めない分岐が効かない）")
+    assert "sim: /safety/estop_hw 未受信" in src, (
+        "sim で未受信のまま出したことのログが無い（開発モードの警告と同じ形で残す）")
 
 
 # ============================================================================
