@@ -283,7 +283,7 @@ builtin_interfaces/Time checked_at
 | 状態 | `NAV`・`ALIGN`・`BLOCKED` を足す（`safety_monitor` の状態の一覧も）。`attributes.yaml` の `run_state` を `NAV` にする（在席を失ったら `PAUSE`・非常停止から戻る先が `PAUSE` になる）。`ALIGN`・`BLOCKED` も非常停止・手押しから戻る先を `PAUSE` にする（`ESTOP_RESUME_PAUSE_EXTRA`。2026-10-22 の事故と同じ理由）。`ui.resume_yes` では走らないのは P5a のまま |
 | 指示の引数 | `state_manager` は `/measure/command` の欄（`x`・`y`・`yaw`・`map_instance_id` ほか）と `command_id` を遷移表の `arg` に渡す |
 | 目的地（-121） | `WAIT` の `meas.goal` だけ受ける。判定の順: `reentry_required` → `localization_lost`、`map_instance_id` が `/map_session/status` の `instance_id` と違う → `map_mismatch`、角が描く円の中に障害物 → `corner_obstacle`。受けたら `NAV` へ、effect **`measure_goal`**（dest `venue_navigator`。`command_id`・`x`・`y`・`yaw`）。`NAV`・`ALIGN`・`BLOCKED`・`PAUSE` では `state_not_accepting`（-132） |
-| 角が描く円の確認 | `measure_clearance` が `/scan_filtered` と局所コストマップの占有セルから、`base_link` 中心の半径 0.389 m の円の中に障害物があるかを **5 Hz** で `/measure/corner_status`（`std_msgs/String` の JSON `{"clear": bool, "reason": "..."}`）に出す。スキャンが `arm_clearance_scan_max_age_ms` より古い・TF が取れないときは `clear=false`。`state_manager` は最後の値をラッチし、**1 秒届かなければ `clear=false`**。ガードは同期で判定する（サービスを呼ばない） |
+| 角が描く円の確認 | `measure_clearance` が `/scan_filtered` と局所コストマップの占有セルから、`base_link` 中心の半径 `corner_clear_radius_m`（0.689 m。§6.8。2026-11-25 に 0.389 m から改めた。コストマップは致死のセルだけ）の円の中に障害物があるかを **5 Hz** で `/measure/corner_status`（`std_msgs/String` の JSON `{"clear": bool, "reason": "..."}`）に出す。スキャンが `arm_clearance_scan_max_age_ms` より古い・TF が取れないときは `clear=false`。`state_manager` は最後の値をラッチし、**1 秒届かなければ `clear=false`**。ガードは同期で判定する（サービスを呼ばない） |
 | 走行 | `venue_navigator` は `AUTO_MEASURE` の `NAV` を走行の対象に入れ、目的地は effect `measure_goal` から取る（ピンは使わない）。**会場地図の有無の検査（`SM-3.1.2-119`）は `AUTO_MEASURE` では見ない**（`start_measure_map` で会場地図は外れている）。着いたら `evt.arrived` → `ALIGN` → `evt.align_done` → `WAIT` は試験場内と同じ |
 | 手前 1.5 m の検査（-125） | 試験場内と同じ検査（機体の形 0.55 m 角・0.5 秒周期・走り出す前と走行中）に、**`AUTO_MEASURE` だけ「地図ができている」**を足す: 1.5 m の範囲の `/map` のセルが不明（-1）なら通れない扱いで `BLOCKED`。その先の不明な所は Nav2 の `allow_unknown` のまま推測の経路で通す。`BLOCKED` は時間切れにならず、空けば `NAV` へ戻る（-126） |
 | 経路の再計算（-122） | `NAV`・`BLOCKED` の `meas.reroute` を受け、試験場内の「再検索」と同じ引き直しをする。すぐ `DONE`、目的地はもとの `command_id` のまま |
@@ -365,7 +365,7 @@ builtin_interfaces/Time checked_at
 | --- | --- |
 | 受け手 | `measure_clearance` がサービス `/measure/check_arm_clearance` を持つ。`/system/state` を購読して状態を覚える（未受信は「受けない状態」） |
 | 拒否の順 | ① `bad_argument`: `region` の頂点が 3 未満・座標が有限でない／`sides` が空・`LEFT`／`RIGHT`／`CURRENT` 以外・重複 → ② `state_not_accepting`: `AUTO_MEASURE`/`WAIT` と `AT_PANEL`/`WORKING` 以外（`ADJUST` を含む）。拒否のとき `sides`・`results`・`unknown_reasons` は空 |
-| 1 つの向きの判定 | `region` を `base_link` の原点まわりに `LEFT` +90°・`RIGHT` −90°・`CURRENT` 0° 回し、**機体の形 0.55 m 角（\|x\|・\|y\| ≤ 0.275 m）の内側を除いた部分**を見る。順に: **① スキャンが `arm_clearance_scan_max_age_ms` より古い・届いていない・TF（`base_link`←`laser_link`）が取れない → `UNKNOWN`（`scan_stale`）**（全部の向き）→ **② 範囲の中に障害物（`/scan_filtered` の有効点か、局所コストマップの占有セル。角の円と同じ入力・同じしきい値。コストマップが届いていなければスキャンだけ）→ `BLOCKED`**（見えている物があれば、死角があっても塞がり）→ **③ 範囲が LiDAR の死角（`blind_angle_ranges`）にかかる → `UNKNOWN`（`blind_sector`）。ただし `laser_link` の中心から **`arm_clearance_blind_near_m`**（新しい registry 値。class b・given・初期値 0.65 m）以内の部分は死角の判定から除く**（四隅の支柱の影。2026-11-23 ユーザー決定。[Spec-measure.md](../spec/Spec-measure.md) §5.2 の既知のリスク。除かないと、いまの支柱ではどの向きも毎回 `UNKNOWN`。障害物の判定 ② は除かない）。**範囲の平均の向きなど代表の向きで決めない**（遠くで死角にかかる部分を見逃す） → ④ `CLEAR`。返りの無い方向（見える範囲の外）は空きとする（§6.4 の進む先と同じ） |
+| 1 つの向きの判定 | `region` を `base_link` の原点まわりに `LEFT` +90°・`RIGHT` −90°・`CURRENT` 0° 回し、**機体の形 0.55 m 角（\|x\|・\|y\| ≤ 0.275 m）の内側を除いた部分**を見る。順に: **① スキャンが `arm_clearance_scan_max_age_ms` より古い・届いていない・TF（`base_link`←`laser_link`）が取れない → `UNKNOWN`（`scan_stale`）**（全部の向き）→ **② 範囲の中に障害物（`/scan_filtered` の有効点か、局所コストマップの占有セル（内接 99 以上）。角の円と同じ入力。しきい値は角の円（§6.8 で致死だけに改めた）と違う。コストマップが届いていなければスキャンだけ）→ `BLOCKED`**（見えている物があれば、死角があっても塞がり）→ **③ 範囲が LiDAR の死角（`blind_angle_ranges`）にかかる → `UNKNOWN`（`blind_sector`）。ただし `laser_link` の中心から **`arm_clearance_blind_near_m`**（新しい registry 値。class b・given・初期値 0.65 m）以内の部分は死角の判定から除く**（四隅の支柱の影。2026-11-23 ユーザー決定。[Spec-measure.md](../spec/Spec-measure.md) §5.2 の既知のリスク。除かないと、いまの支柱ではどの向きも毎回 `UNKNOWN`。障害物の判定 ② は除かない）。**範囲の平均の向きなど代表の向きで決めない**（遠くで死角にかかる部分を見逃す） → ④ `CLEAR`。返りの無い方向（見える範囲の外）は空きとする（§6.4 の進む先と同じ） |
 | 返す形 | `sides` は問い合わせと同じ順。`results` と `unknown_reasons` は `sides` と同じ長さで、`unknown_reasons` は `UNKNOWN` 以外では空文字。`checked_at` は判定に使ったスキャンの時刻（スキャンが無ければ 0） |
 | 時点 | 問い合わせの時点の最新のスキャンで同期に判定する（溜めない・待たない）。腕を動かす直前に問い合わせ直すのは測定機能 |
 
@@ -392,6 +392,17 @@ builtin_interfaces/Time checked_at
 | 目的地への走行の受け手 | `gazebo.launch.py` でも `venue_navigator` を起動する（`bringup.launch.py` の `onsite_enabled` の下と同じ生成 yaml）。`venue_navigator` が自律測定の走行で頼るもの（Nav2 の `FollowPath`・`ComputePathToPose`、`/map`、`/map_session/status` など）が sim で揃っているかを確かめ、足りなければ同じく起動する。足すのは自律測定の走行に要るものだけ（前日準備・試験場内の画面の機能は広げない） |
 | 起動時の疎通（`evt.link_ok`） | **開発モードを流用しない。**既存の `connectivity_checker` の `sim`（`gazebo.launch.py` が渡す。Gazebo に居ない ESP32 の 2 項目と必須ノードを判定から外す）を広げ、**`sim` のときは物理非常停止の状態を受信済みであることを求めない**（出すのは `esp32_bridge` だけで、sim には居ない）。押されていると分かっている間は、`sim` でも出さない（開発モードと同じ境界）。新しい起動引数・名前は作らない |
 | 確かめ方 | `gazebo.launch.py sim:=true gui:=false` を起動し、手を加えずに `IDLE` に入る。測定機能の代役（心拍・`/measure/command`）で `ui.goto`（`{"kind":"AUTO_MEASURE"}`）→ `meas.goal` を送り、Gazebo の機体が動いて `ARRIVED` が 1 回返る |
+
+### 6.8 発進・旋回の前の確認の円を 0.689 m にする（2026-11-25 決定。fk 申し送り 25。計画書 8-g の P7）
+
+[Spec-measure.md](../spec/Spec-measure.md) §4.4 の改定（0.389 m → 0.689 m）。`measure_clearance` の角の円の確認（`/measure/corner_status`）だけを変える。
+
+| 項目 | 決まり |
+| --- | --- |
+| 円の半径 | 新しい registry 値 **`corner_clear_radius_m`**（class b・given・0.689 m。`consumers: [params_audit, measure_clearance]`）。スキャンと局所コストマップの両方をこの半径で見る。生成 yaml から渡し、走らせたまま変えられる（`arm_clearance_blind_near_m` と同じ扱い） |
+| 局所コストマップのしきい値 | **角の円では致死（OccupancyGrid の値 100＝物そのもの）だけを数える。**内接（99）とそれ未満の膨らみは数えない。数えると `inflation_radius` の分（sim・実機とも約 0.3 m 以上）さらに手前で断り、0.689 m に余裕を二重に足すことになる（申し送り 25 の発端） |
+| 変えないもの | 腕が振れる範囲の確認（§6.5）と前後の並進の進む先（§6.4）は、いままでどおり内接（99）以上を数える。理由の名前（`obstacle_scan`・`obstacle_costmap`）、5 Hz、鮮度、`state_manager` 側のラッチと 1 秒の途絶は変えない |
+| 確かめ方 | 本物の `measure_clearance` を生成 yaml 先渡しで起動し: 中心から 0.6 m のスキャン点 → `clear=false`／0.75 m → `clear=true`／円の中に値 99 のセルだけ → `clear=true`／値 100 のセル → `clear=false`／`corner_clear_radius_m` を走らせたまま変えると判定が変わる |
 
 ## 7. 未決と依存
 

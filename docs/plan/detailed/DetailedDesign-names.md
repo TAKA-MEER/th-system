@@ -595,6 +595,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`measure_link_timeout_ms`** | ms | (b)。`/measure/heartbeat` の途絶とみなすまでの時間（[measure](DetailedDesign-measure.md) §3.4・§6.1。Spec-params §2 の「測定機能との通信が途絶えたとみなすまでの時間」）。初期値 1000（2026-11-23） |
 | **`arm_clearance_scan_max_age_ms`** | ms | (b)。腕が振れる範囲の確認で、これより古いスキャンなら `UNKNOWN`（[measure](DetailedDesign-measure.md) §3.5）。**角が描く円の確認（`measure_clearance`。P5b）も同じ値で、古ければ `clear=false`**（2026-11-23）。2026-11-04（案） |
 | **`arm_clearance_blind_near_m`** | m | (b)。腕が振れる範囲の確認で、`laser_link` の中心からこれ以内の部分の死角は判定から除く（8-g P4。§6.5。2026-11-23 ユーザー決定）。`consumers: [params_audit, measure_clearance]` |
+| **`corner_clear_radius_m`** | m | (b)。発進・旋回の前の確認（角の円。`/measure/corner_status`）の半径。機体の中心から 0.689 m（外接 0.389 m ＋ 0.3 m。8-g P7。[measure](DetailedDesign-measure.md) §6.8。2026-11-25 ユーザー決定・fk 申し送り 25）。`consumers: [params_audit, measure_clearance]` |
 | **`adjust_timeout_ms`** | ms | (b)。`ADJUST` に入ってからこれで締め切る（8-g P3。§6.4。`state_manager` がタイマで `sys.adjust_timeout` を流す）。3000 以上 | 
 | **`adjust_translate_v_mps`** | m/s | (b)。`ADJUST` の前後並進の速さ（8-g P3。§6.4。新規 registry 値）。`consumers: [measure_adjuster]` | 
 | **`adjust_translate_tolerance_m`** | m | (b)。`ADJUST` の前後並進の許容差（8-g P3。§6.4。新規 registry 値）。`consumers: [measure_adjuster]` |
