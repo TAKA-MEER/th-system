@@ -9,8 +9,12 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'th_measure'))
 
-from th_measure.clearance_core import (CORNER_RADIUS_M, circle_blocked_by_costmap,  # noqa: E402
-                                       decide_clear, points_in_circle)
+from th_measure.clearance_core import (CORNER_LETHAL_MIN, CORNER_RADIUS_M,  # noqa: E402
+                                       COSTMAP_BLOCKED_MIN,
+                                       circle_blocked_by_costmap, decide_clear,
+                                       free_distance_from_grid,
+                                       polygon_blocked_by_costmap,
+                                       points_in_circle)
 
 
 class _Grid:
@@ -29,7 +33,10 @@ class _Grid:
 
 
 def test_circle_radius_is_outer_radius_of_half_meter_square():
+    # 機体の外接（0.55 m 角の半対角）。判定半径ではない（§6.8）。
     assert abs(CORNER_RADIUS_M - 0.389) < 1e-9
+    assert CORNER_LETHAL_MIN == 100
+    assert COSTMAP_BLOCKED_MIN == 99
 
 
 def test_points_in_circle_boundary():
@@ -41,6 +48,44 @@ def test_points_in_circle_boundary():
     assert not points_in_circle([(2.0, 2.0)])
 
 
+def test_corner_radius_param_changes_scan_judgement():
+    # 8-g P7: 半径 0.689 では 0.6 m の点は塞がり、0.5 では空き。
+    assert points_in_circle([(0.6, 0.0)], 0.689)
+    assert not points_in_circle([(0.6, 0.0)], 0.5)
+    assert not points_in_circle([(0.75, 0.0)], 0.689)
+    assert points_in_circle([(0.6, 0.0)], 0.689)
+
+
+def test_corner_threshold_only_lethal():
+    # 8-g P7: 角の円は致死（100）だけ。99 だけは塞がりでない。
+    g = _Grid()
+    g.paint(0.3, 0.35, 99)
+    assert not circle_blocked_by_costmap(g, 0.0, 0.0, 0.689)
+    assert not circle_blocked_by_costmap(g, 0.0, 0.0)
+    # 100 は塞がり。
+    g100 = _Grid()
+    g100.paint(0.3, 0.35, 100)
+    assert circle_blocked_by_costmap(g100, 0.0, 0.0, 0.689)
+    # 半径外の 100 は空き。
+    g_out = _Grid()
+    g_out.paint(1.0, 1.1, 100)
+    assert not circle_blocked_by_costmap(g_out, 0.0, 0.0, 0.689)
+
+
+def test_arm_and_forward_still_count_99():
+    # 8-g P7 の変異警戒: 腕の範囲と進む先は 99 のまま。
+    g = _Grid()
+    g.paint(0.3, 0.35, 99)
+    poly = [(0.0, -0.275), (1.0, -0.275), (1.0, 0.275), (0.0, 0.275)]
+    assert polygon_blocked_by_costmap(g, 0.0, 0.0, (1.0, 0.0), (0.0, 1.0), poly)
+    assert free_distance_from_grid(g, 0.0, 0.0, True, 1.0, 0.0,
+                                   floor_margin_m=0.3) < 0.1
+    # 99 未満なら腕も進む先も通れる扱い。
+    g98 = _Grid()
+    g98.paint(0.3, 0.35, 98)
+    assert not polygon_blocked_by_costmap(g98, 0.0, 0.0, (1.0, 0.0), (0.0, 1.0), poly)
+
+
 def test_costmap_circle_blocked():
     g = _Grid()
     g.paint(0.3, 0.35, 100)
@@ -50,7 +95,8 @@ def test_costmap_circle_blocked():
     assert not circle_blocked_by_costmap(g2, 0.0, 0.0)
     g3 = _Grid()
     g3.paint(0.3, 0.35, 99)
-    assert circle_blocked_by_costmap(g3, 0.0, 0.0)
+    # 8-g P7: 99 は角の円では数えない。
+    assert not circle_blocked_by_costmap(g3, 0.0, 0.0)
     # 膨張域（99 未満）は通れる扱い（経路の先の確認と同じ値）。
     g4 = _Grid()
     g4.paint(0.3, 0.35, 98)

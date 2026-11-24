@@ -34,6 +34,8 @@ import launch_ros.actions
 import launch_testing
 import launch_testing.actions
 
+from rclpy.parameter import Parameter
+from rcl_interfaces.srv import SetParameters
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                        QoSReliabilityPolicy, qos_profile_sensor_data)
 
@@ -110,6 +112,9 @@ class TestMeasureClearanceNode(unittest.TestCase):
         self.scan_live = True
         self.scan_range_m = 1.0
         self.costmap_blocked = False
+        self.costmap_value = 100
+        self._setparam_client = self.node.create_client(
+            SetParameters, '/measure_clearance/set_parameters')
 
         self.pub_tf = self.node.create_publisher(
             TFMessage, '/tf_static', _LATCHED_QOS)
@@ -181,7 +186,7 @@ class TestMeasureClearanceNode(unittest.TestCase):
         data = [0] * (40 * 40)
         if self.costmap_blocked:
             # （0.1, 0.1) を含むセルに 100 を入れる（円内）。
-            data[22 * 40 + 22] = 100
+            data[22 * 40 + 22] = self.costmap_value
         msg.data = data
         self.pub_costmap.publish(msg)
 
@@ -254,6 +259,73 @@ class TestMeasureClearanceNode(unittest.TestCase):
         self.scan_live = True
         self.scan_range_m = 1.0
         self.costmap_blocked = True
+        self.costmap_value = 100
         self._publish_tf()
         self._publish_costmap()
         assert self._wait_reason('obstacle_costmap', False), self._latest()
+
+    # ── 8-g P7: 半径 0.689 m ──────────────────────────────────
+    def _set_param(self, name, value):
+        assert self._setparam_client.wait_for_service(timeout_sec=10.0)
+        req = SetParameters.Request(
+            parameters=[Parameter(name=name, value=float(value)).to_parameter_msg()])
+        fut = self._setparam_client.call_async(req)
+        deadline = time.time() + 10.0
+        while not fut.done() and time.time() < deadline:
+            self._spin(0.05)
+        assert fut.done() and fut.result().results[0].successful, fut.result()
+        self._spin(0.2)
+
+    def test_f_scan_0p6_blocked(self):
+        """f. 中心から 0.6 m のスキャン点 → clear=false（半径 0.689）。"""
+        self.tf_live = True
+        self.scan_live = True
+        self.scan_range_m = 0.6
+        self.costmap_blocked = False
+        self._publish_tf()
+        self._publish_costmap()
+        assert self._wait_reason('obstacle_scan', False), self._latest()
+
+    def test_g_scan_0p75_clear(self):
+        """g. 中心から 0.75 m だけ → clear=true。"""
+        self.tf_live = True
+        self.scan_live = True
+        self.scan_range_m = 0.75
+        self.costmap_blocked = False
+        self._publish_tf()
+        self._publish_costmap()
+        assert self._wait_reason('clear', True), self._latest()
+
+    def test_h_costmap_99_clear(self):
+        """h. 円の中に 99 のセルだけ → clear=true（致死だけを数える）。"""
+        self.tf_live = True
+        self.scan_live = True
+        self.scan_range_m = 1.0
+        self.costmap_blocked = True
+        self.costmap_value = 99
+        self._publish_tf()
+        self._publish_costmap()
+        assert self._wait_reason('clear', True), self._latest()
+
+    def test_i_costmap_100_blocked(self):
+        """i. 円の中に 100 のセル → clear=false（obstacle_costmap）。"""
+        self.tf_live = True
+        self.scan_live = True
+        self.scan_range_m = 1.0
+        self.costmap_blocked = True
+        self.costmap_value = 100
+        self._publish_tf()
+        self._publish_costmap()
+        assert self._wait_reason('obstacle_costmap', False), self._latest()
+
+    def test_j_dynamic_radius_change(self):
+        """j. corner_clear_radius_m を 0.5 にすると 0.6 m の点が clear になる。"""
+        self.tf_live = True
+        self.scan_live = True
+        self.scan_range_m = 0.6
+        self.costmap_blocked = False
+        self._publish_tf()
+        self._publish_costmap()
+        assert self._wait_reason('obstacle_scan', False), self._latest()
+        self._set_param('corner_clear_radius_m', 0.5)
+        assert self._wait_reason('clear', True), self._latest()
