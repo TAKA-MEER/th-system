@@ -383,6 +383,16 @@ builtin_interfaces/Time checked_at
 | 報告（`/measure/status`） | `v_limit_mps` = min(本システムの上限, `v_cap`)・`w_limit_radps` = min(`w_max`, `w_cap`)（指定が無ければ本システムの上限だけ）。**いま効いている値を出す** |
 | 既知の注意 | 旋回（`ADJUST`）の角速度の指定を向き合わせの旋回の速さの下限（`turn_in_place_w_min_rps`）より小さくすると回り切れず、締め切りで取り消しになりうる（測定機能が値を決めるときに考える。fk `FK-V5`） |
 
+### 6.7 シミュレーション（Gazebo）で自律測定を通す（2026-11-24 決定。fk 申し送り 23・24。計画書 8-g の P6）
+
+**機体側の起動の作りだけ（挙動の spec は変えない）。**測定機能が `gazebo.launch.py sim:=true` の本物の一式に繋いで自律測定を通せるようにする。
+
+| 項目 | 決まり |
+| --- | --- |
+| 目的地への走行の受け手 | `gazebo.launch.py` でも `venue_navigator` を起動する（`bringup.launch.py` の `onsite_enabled` の下と同じ生成 yaml）。`venue_navigator` が自律測定の走行で頼るもの（Nav2 の `FollowPath`・`ComputePathToPose`、`/map`、`/map_session/status` など）が sim で揃っているかを確かめ、足りなければ同じく起動する。足すのは自律測定の走行に要るものだけ（前日準備・試験場内の画面の機能は広げない） |
+| 起動時の疎通（`evt.link_ok`） | **開発モードを流用しない。**既存の `connectivity_checker` の `sim`（`gazebo.launch.py` が渡す。Gazebo に居ない ESP32 の 2 項目と必須ノードを判定から外す）を広げ、**`sim` のときは物理非常停止の状態を受信済みであることを求めない**（出すのは `esp32_bridge` だけで、sim には居ない）。押されていると分かっている間は、`sim` でも出さない（開発モードと同じ境界）。新しい起動引数・名前は作らない |
+| 確かめ方 | `gazebo.launch.py sim:=true gui:=false` を起動し、手を加えずに `IDLE` に入る。測定機能の代役（心拍・`/measure/command`）で `ui.goto`（`{"kind":"AUTO_MEASURE"}`）→ `meas.goal` を送り、Gazebo の機体が動いて `ARRIVED` が 1 回返る |
+
 ## 7. 未決と依存
 
 | 項目 | 状態 |
