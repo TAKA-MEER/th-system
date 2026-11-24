@@ -508,6 +508,16 @@ if(BUILD_TESTING)
   ament_add_pytest_test(connectivity_checker_node
     test/test_connectivity_checker_node.py
     TIMEOUT 120)
+  # 8-g P6（DetailedDesign-measure.md §6.7）: sim=true のときは
+  # /safety/estop_hw 未受信でも evt.link_ok が出る（esp32_bridge は sim に居ない）。
+  # 押下中は sim でも出さない。本物の connectivity_checker の launch_testing。
+  ament_add_pytest_test(test_sim_link_ok_node
+    test/test_sim_link_ok_node.py
+    TIMEOUT 120)
+  # 8-g P6 の裏側: sim=false（通常）では従来どおり estop_hw 受信を求める。
+  ament_add_pytest_test(test_no_sim_link_ok_node
+    test/test_no_sim_link_ok_node.py
+    TIMEOUT 120)
   # 1b-6（SG-B6・SG-B7）: sys.link_timeout → restart effect → 再起動の実呼出し
   # （kill は偽物に差し替え）と、未保存がある間の execute 拒否・解消後の印ファイル
   # （launch_testing。ROS2 要）

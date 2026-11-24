@@ -202,6 +202,17 @@ W-1／W-2 の IDLE 抜け道にも同じ腕の確認を挟む（`SM-3.1.1-18`）
 （`meas.done` なら `finished`、ほかは `mode_exit`）。正本は
 `DetailedDesign-measure.md` §6.3。画面側（P2-ui）は別担当。
 
+**シミュレーション（Gazebo）で自律測定を通す（8-g P6）**: `gazebo.launch.py`（`sim:=true`）
+でも `venue_navigator` を起動する（`bringup.launch.py` の `onsite_enabled` の下と同じ
+生成 yaml。Nav2 の `FollowPath`／`ComputePathToPose`・`/map`・`/map_session/status`
+（`slam_control`）は sim に既に揃っているため、足すのはそれだけ）。起動時の疎通は
+開発モードを流用せず、既存の `connectivity_checker` の `sim` を広げる:
+`should_emit_link_ok` が `sim` のとき `/safety/estop_hw` の受信済み（`estop_seen`）を
+求めない（publisher の `esp32_bridge` は sim に居ない）。押されていると分かっている
+（`hw_estop`）間は `sim` でも出さない。新しい起動引数・名前は作らない。
+正本は `DetailedDesign-measure.md` §6.7。確認は `dev_mode` を入れずに
+`measure_sim_fake.py`（`th_ws/scripts/`）で `ui.goto`→`meas.goal`→`ARRIVED` を見て行う。
+
 ### 遷移ルールの実装（旧 FSM）
 
 `mode_manager` は `isTransitionAllowed()` 関数で遷移の許可・拒否を判定します。新しいモードを追加する場合はこの関数に遷移元/遷移先のペアを追加するだけで対応できます。
