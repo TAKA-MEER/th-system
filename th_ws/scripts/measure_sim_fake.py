@@ -210,8 +210,13 @@ def main(args=None):
             return 1
         out['auto_measure_wait'] = True
 
-        # 3. 自己位置の前方を meas.goal にする。
-        status = node.latest_status()
+        # 3. 自己位置の前方を meas.goal にする（pose_valid を待つ）。
+        status = None
+        while time.monotonic() < deadline:
+            status = node.latest_status()
+            if status is not None and status.pose_valid:
+                break
+            time.sleep(0.1)
         if status is None or not status.pose_valid:
             out['error'] = 'pose_not_valid'
             print(json.dumps(out))
