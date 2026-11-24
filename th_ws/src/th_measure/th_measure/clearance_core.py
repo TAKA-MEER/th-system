@@ -16,8 +16,19 @@ from __future__ import annotations
 
 import math
 
-# 機体の角が描く円の半径 [m]。0.55 m 角の半対角（外接）。Spec-measure.md §4.4。
+# 機体の外接半径（0.55 m 角の半対角）[m]。Spec-measure.md §4.4。
+# ※ これは「機体の外接」の意味だけに使う値であり、角の円の確認の
+# 判定半径ではない。判定半径は registry の corner_clear_radius_m
+# （8-g P7 で 0.689 m）で、points_in_circle / circle_blocked_by_costmap には
+# 呼び側が渡す（8-g P7）。DetailedDesign-measure.md §6.8。
 CORNER_RADIUS_M = 0.389
+
+# 角の円のコストマップ判定で数えるしきい値（OccupancyGrid の値）。
+# 致死（100＝物そのもの）だけを数え、膨らみ（99）とそれ未満は数えない
+# （§6.8。inflation_radius の分を二重に足さない）。腕の範囲
+# (polygon_blocked_by_costmap) と進む先 (free_distance_from_grid) は
+# 従来どおり COSTMAP_BLOCKED_MIN (99) を使う。
+CORNER_LETHAL_MIN = 100
 
 # 通れないとみなす OccupancyGrid の値の下限（venue_nav_core の
 # COSTMAP_BLOCKED_MIN と同じ値。致死(100)だけでなく内接(99)も通れない）。
@@ -39,12 +50,14 @@ def points_in_circle(points_xy, radius: float = CORNER_RADIUS_M) -> bool:
 
 
 def circle_blocked_by_costmap(grid, center_x: float, center_y: float,
-                              radius: float = CORNER_RADIUS_M) -> bool:
-    """占有セル（値 >= COSTMAP_BLOCKED_MIN）が円の中にあるか。
+                              radius: float = CORNER_RADIUS_M,
+                              blocked_min: int = CORNER_LETHAL_MIN) -> bool:
+    """占有セル（値 >= blocked_min）が円の中にあるか。
 
     grid: width/height/resolution/origin_x/origin_y/data を持つもの
     （OccupancyGrid の map 系）。center: 円の中心（base_link 中心を grid の
     座標系へ変換したもの）。範囲外のセルは見ない（未知は障害物ではない）。
+    blocked_min は角の円では致死（100）だけ（§6.8。既定 CORNER_LETHAL_MIN）。
     """
     res = float(grid.resolution)
     if res <= 0:
@@ -60,7 +73,7 @@ def circle_blocked_by_costmap(grid, center_x: float, center_y: float,
     for iy in range(iy0, iy1 + 1):
         cy = oy + (iy + 0.5) * res
         for ix in range(ix0, ix1 + 1):
-            if int(data[iy * w + ix]) < COSTMAP_BLOCKED_MIN:
+            if int(data[iy * w + ix]) < blocked_min:
                 continue
             cx = ox + (ix + 0.5) * res
             if (cx - center_x) ** 2 + (cy - center_y) ** 2 <= r2:
