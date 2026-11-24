@@ -153,6 +153,12 @@ def main(args=None):
                     help='全体の制限時間 [s]（既定 180）')
     ap.add_argument('--goal-dist', type=float, default=1.5,
                     help='目的地の前方距離 [m]（既定 1.5）')
+    ap.add_argument('--goal-x', type=float, default=None,
+                    help='目的地の x [m]（map フレーム。指定すると前方距離より優先）')
+    ap.add_argument('--goal-y', type=float, default=None,
+                    help='目的地の y [m]（map フレーム。指定すると前方距離より優先）')
+    ap.add_argument('--goal-yaw', type=float, default=None,
+                    help='目的地の向き [rad]（未指定は現在向きのまま）')
     ap.add_argument('--cid', default='sim-goal-1')
     ns, _ = ap.parse_known_args(args)
 
@@ -212,13 +218,18 @@ def main(args=None):
             return 1
         gx = status.x + math.cos(status.yaw) * ns.goal_dist
         gy = status.y + math.sin(status.yaw) * ns.goal_dist
+        gyaw = status.yaw
+        if ns.goal_x is not None and ns.goal_y is not None:
+            gx, gy = ns.goal_x, ns.goal_y
+        if ns.goal_yaw is not None:
+            gyaw = ns.goal_yaw
         req = MeasureCommand.Request()
         req.command_id = ns.cid
         req.command = 'meas.goal'
         req.map_instance_id = status.map_instance_id
         req.x = float(gx)
         req.y = float(gy)
-        req.yaw = float(status.yaw)
+        req.yaw = float(gyaw)
         resp = node.call_measure(req)
         out['goal_accepted'] = bool(resp and resp.accepted)
         if resp is not None:
@@ -228,7 +239,7 @@ def main(args=None):
             out['error'] = 'goal_rejected'
             print(json.dumps(out))
             return 1
-        out['goal'] = {'x': float(gx), 'y': float(gy), 'yaw': float(status.yaw),
+        out['goal'] = {'x': float(gx), 'y': float(gy), 'yaw': float(gyaw),
                        'map_instance_id': status.map_instance_id}
 
         # 4. ARRIVED を待つ。
