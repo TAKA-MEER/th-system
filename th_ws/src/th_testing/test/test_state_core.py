@@ -382,10 +382,12 @@ def test_carry_resume_summon_returns_to_point(state_core_bundle):
 
 @pytest.mark.rule("C-11-at-panel")
 @pytest.mark.rule("C-11-at-home")
+@pytest.mark.rule("C-11-at-panel-working")
 def test_carry_resume_at_panel_home(state_core_bundle):
-    """AT_PANEL→IDLE_P／AT_HOME→IDLE_H（§6 の右列。確認をやり直す）。"""
+    """AT_PANEL→IDLE_P／AT_HOME→IDLE_H（§6 の右列。確認をやり直す）。
+    8-g P2（-140）: 押下前が WORKING なら WORKING へ戻る（停止命令のまま）。"""
     core, _, _, _ = state_core_bundle
-    for prev_mode, prev_state, dst in [("AT_PANEL", "WORKING", "IDLE_P"),
+    for prev_mode, prev_state, dst in [("AT_PANEL", "WORKING", "WORKING"),
                                        ("AT_PANEL", "PAUSE", "IDLE_P"),
                                        ("AT_PANEL", "IDLE_P", "IDLE_P"),
                                        ("AT_HOME", "PAUSE", "IDLE_H"),
@@ -872,10 +874,12 @@ def test_estop_resume_summon_returns_to_point(state_core_bundle):
 
 @pytest.mark.rule("C-09c-at-panel")
 @pytest.mark.rule("C-09c-at-home")
+@pytest.mark.rule("C-09c-at-panel-working")
 def test_estop_resume_at_panel_home(state_core_bundle):
-    """AT_PANEL→IDLE_P／AT_HOME→IDLE_H（§6 の右列。確認をやり直す）。"""
+    """AT_PANEL→IDLE_P／AT_HOME→IDLE_H（§6 の右列。確認をやり直す）。
+    8-g P2（-140）: 押下前が WORKING なら WORKING へ戻る（停止命令のまま）。"""
     core, _, _, _ = state_core_bundle
-    for prev_mode, prev_state, dst in [("AT_PANEL", "WORKING", "IDLE_P"),
+    for prev_mode, prev_state, dst in [("AT_PANEL", "WORKING", "WORKING"),
                                        ("AT_PANEL", "PAUSE", "IDLE_P"),
                                        ("AT_PANEL", "IDLE_P", "IDLE_P"),
                                        ("AT_HOME", "PAUSE", "IDLE_H"),
@@ -1209,7 +1213,11 @@ def test_is_driving_matches_brief_table(state_core_bundle):
         run = (row or {}).get("run_state")
         if run is not None and mode != "PREP":
             expected.add((mode, run))
-    expected |= {("PANEL_NAV", "ALIGN"), ("SUMMON", "ALIGN"), ("PREP", "RETURN")}
+    expected |= {("PANEL_NAV", "ALIGN"), ("SUMMON", "ALIGN"), ("PREP", "RETURN"),
+                 # 8-g P5b: 自律測定の ALIGN（向き合わせの旋回も走行中）。
+                 ("AUTO_MEASURE", "ALIGN"),
+                 # 8-g P3（§6.4）: 自律測定の ADJUST（旋回・並進で走行中）。
+                 ("AUTO_MEASURE", "ADJUST")}
     for mode, states in MODE_STATES.items():
         for state in states:
             assert is_driving(mode, state, attrs) == ((mode, state) in expected), \

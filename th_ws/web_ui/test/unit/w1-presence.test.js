@@ -33,6 +33,14 @@ test('PREP/PAUSE でもジョグ中は W-1 を出さない（手動操作パネ�
   assert.equal(isW1Active('PREP', 'PAUSE', false, 'jog', false), true)
 })
 
+// 8-g P2-ui: AT_PANEL / WORKING の回復フォルトでも W-1 を出す。
+test('AT_PANEL / WORKING でフォルトがあれば W-1 を出す', () => {
+  assert.equal(isW1Active('AT_PANEL', 'WORKING', true), true)
+  assert.equal(isW1Active('AT_PANEL', 'WORKING', false), false)
+  assert.equal(isW1Active('AT_PANEL', 'IDLE_P', true), false)
+  assert.equal(isW1Active('AT_HOME', 'WORKING', true), false)
+})
+
 test('PREP 以外のジョグ PAUSE と PREP の非 PAUSE は今までどおり出さない', () => {
   assert.equal(isW1Active('FOLLOW', 'PAUSE', false, 'jog'), false)
   assert.equal(isW1Active('PANEL_NAV', 'PAUSE', false, 'jog'), false)

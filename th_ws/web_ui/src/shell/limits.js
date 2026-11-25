@@ -49,10 +49,27 @@ export function resumeChoices(mode, attributes) {
 // ただしジョグ中（jogActive）は W-1 で手動操作パネルを覆わない。離したら出る。
 // attributes.yaml で表せる性質ではない（run_state はあるが走行ボタンが効かない）
 // ので、PREP を明示する。他モードのジョグ PAUSE は走行ボタンで戻れるので対象外。
+// isWorkingActive(systemState) -> bool
+//
+// 「停止命令の間」（測定機能へ）かどうか。8-g P2-ui では WORKING だけ、
+// P3-ui から ADJUST（盤前の旋回・前後の並進）も含む。行き先・呼び寄せ・
+// 手動の無効化、W-1 の判定・ラッチ、「測定機能の画面へ」の表示などは
+// すべてこの 1 か所を見る（S-21 と AppShell がこれを呼ぶ）。
+// /system/state.working がブーリアンで届けばそれを優先する（押下前の
+// AT_PANEL / WORKING 由来の ESTOP・CARRY の間も true になるため、その
+// 場合は状態名より機体の値が正）。届いていない古い機体向けに状態名で
+// 補う。引数は /system/state の形そのもの（{ state, working }）。
+export function isWorkingActive(systemState) {
+  if (!systemState) return false
+  if (typeof systemState.working === 'boolean') return systemState.working
+  return systemState.state === 'WORKING' || systemState.state === 'ADJUST'
+}
+
 export function isW1Active(mode, stateName, faultActive, pauseReason = '', jogActive = false) {
   return mode === 'ESTOP' || (stateName === 'PAUSE' && !!faultActive)
     || (stateName === 'PAUSE' && pauseReason === 'presence_lost')
     || (mode === 'PREP' && stateName === 'PAUSE' && !jogActive)
+    || (mode === 'AT_PANEL' && isWorkingActive({ state: stateName }) && !!faultActive)
 }
 
 // stateToBlueButton(mode, stateName, attributes) -> 'stop' | 'run' | 'check' | null

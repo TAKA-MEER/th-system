@@ -259,7 +259,7 @@ def _scenario_setup(context, *args, **kwargs):
             'world':   world_v,
             'verbose': 'false',
             'pause':   'false',
-            # fk 申し送り 23（2026-11-22）: gui:=false で gzclient を出さない
+            # fk 申し送り 26（2026-11-22）: gui:=false で gzclient を出さない
             'gui':     LaunchConfiguration('gui'),
         }.items(),
     ))
@@ -520,6 +520,26 @@ def generate_launch_description():
             name='slam_control',
             output='screen',
         ),
+        # 8-g P6（DetailedDesign-measure.md §6.7）: venue_navigator。
+        # 自律測定（AUTO_MEASURE）の目的地への走行（meas.goal → NAV → ALIGN →
+        # WAIT）の受け手。state_manager が meas.goal を effect
+        # `measure_goal`（dest venue_navigator）で配るため、sim にも起動する
+        # （bringup.launch.py の onsite_enabled の下と同じ生成 yaml）。
+        # 頼るものは sim に揃っている: Nav2 の FollowPath /
+        # ComputePathToPose（nav2_sim）、/map（slam_toolbox）、
+        # /map_session/status（slam_control が出す。start_measure_map の
+        # effect も slam_control が受ける）。pin_registrar・wait_clear_gate・
+        # home_declarer は自律測定の走行に要らない（AUTO_MEASURE では
+        # 会場地図の検査を見ない）。map_freezer は sim に無いが /map は
+        # slam_toolbox が直接出すため不要。
+        Node(
+            package='th_onsite',
+            executable='venue_navigator.py',
+            name='venue_navigator',
+            parameters=[os.path.join(GENERATED_DIR, 'venue_navigator.yaml')],
+            condition=IfCondition(sim),
+            output='screen',
+        ),
         # rosbridge
         Node(
             package='rosbridge_server',
@@ -539,6 +559,31 @@ def generate_launch_description():
             executable='state_manager.py',
             name='state_manager',
             parameters=[os.path.join(GENERATED_DIR, 'state_manager.yaml')],
+            output='screen',
+        ),
+        # 8-g P1（DetailedDesign-measure.md §6.1）: measure_link。測定機能の
+        # 生存確認と /measure/status。state_manager の近くに置く。
+        Node(
+            package='th_measure',
+            executable='measure_link.py',
+            name='measure_link',
+            parameters=[os.path.join(GENERATED_DIR, 'measure_link.yaml')],
+            output='screen',
+        ),
+        # 8-g P5b: measure_clearance。角が描く円の中の障害物を出し続ける。
+        Node(
+            package='th_measure',
+            executable='measure_clearance.py',
+            name='measure_clearance',
+            parameters=[os.path.join(GENERATED_DIR, 'measure_clearance.yaml')],
+            output='screen',
+        ),
+        # 8-g P3: measure_adjuster。ADJUST の旋回・並進を /cmd_vel_behavior に出す。
+        Node(
+            package='th_measure',
+            executable='measure_adjuster.py',
+            name='measure_adjuster',
+            parameters=[os.path.join(GENERATED_DIR, 'measure_adjuster.yaml')],
             output='screen',
         ),
         # connectivity_checker（WP-TEST-01 で追加。state_manager が INIT から

@@ -148,6 +148,13 @@ def _estop_prev_is_at_panel(mode, state, ctx) -> bool:
     return _estop_base_ok(ctx) and ctx.prev_mode == "AT_PANEL"
 
 
+def _estop_prev_is_at_panel_working(mode, state, ctx) -> bool:
+    """8-g P2（SM-3.1.2-140）: 押下前が AT_PANEL/WORKING（停止命令の間）なら
+    WORKING へ戻す（C-09c-at-panel-working が C-09c-at-panel より前に拾う）。"""
+    return (_estop_base_ok(ctx) and ctx.prev_mode == "AT_PANEL"
+            and ctx.prev_state in ("WORKING", "ADJUST"))
+
+
 def _estop_prev_is_at_home(mode, state, ctx) -> bool:
     return _estop_base_ok(ctx) and ctx.prev_mode == "AT_HOME"
 
@@ -217,6 +224,13 @@ def _carry_prev_is_summon(mode, state, ctx) -> bool:
 
 def _carry_prev_is_at_panel(mode, state, ctx) -> bool:
     return _carry_base_ok(ctx) and ctx.prev_mode == "AT_PANEL"
+
+
+def _carry_prev_is_at_panel_working(mode, state, ctx) -> bool:
+    """8-g P2（SM-3.1.2-140）: 押下前が AT_PANEL/WORKING（停止命令の間）なら
+    WORKING へ戻す（C-11-at-panel-working が C-11-at-panel より前に拾う）。"""
+    return (_carry_base_ok(ctx) and ctx.prev_mode == "AT_PANEL"
+            and ctx.prev_state in ("WORKING", "ADJUST"))
 
 
 def _carry_prev_is_at_home(mode, state, ctx) -> bool:
@@ -306,15 +320,29 @@ def _mode_entry_allowed(mode, state, ctx) -> bool:
 def is_working(mode, state) -> bool:
     """「作業中」の正本（1b-9 SG-A9）。**機体側の状態そのもの**で決める: `AT_PANEL` ×
     `WORKING`（Spec-modes.md SM-3.1.2-062／063。`ui.working` が立て下ろしする）。
+    8-g P3（SM-3.1.2-136〜-140）では `ADJUST`（測定機能の旋回・並進の間）も作業中として扱う。
     別のフラグを持たないので、立て忘れ・下ろし忘れ・画面と機体のずれが起きない。
     `AT_PANEL` を出れば（ESTOP を挟んだ復帰も含め）自動的に偽になる。
     # WAIVER(demo): W-12 — 「作業中」は暫定の押しボタン。正式 IF（到着通知／昇降完了／
     # 撮影完了／中断通知。O-a6）に置き換えるまで、この判定を仮のまま使う。"""
-    return mode == "AT_PANEL" and state == "WORKING"
+    return mode == "AT_PANEL" and state in ("WORKING", "ADJUST")
 
 
 def _working(mode, state, ctx) -> bool:
     return is_working(mode, state)
+
+
+def published_working(mode, state, prev_mode, prev_state) -> bool:
+    """`/system/state.working` の出す値（8-g P2。SM-3.1.2-140・§4.2）。
+
+    `ESTOP`・`CARRY` の間も、押下前が `AT_PANEL`/`WORKING` なら `true` を保つ
+    （「回復フォルト・非常停止でも `working` は外れない」）。行き先拒否の
+    ガード `is_working` はモードと状態で見る今の形のまま変えない（出す値だけ
+    この関数で決める。`/measure/status.working` はこれの写し）。"""
+    if is_working(mode, state):
+        return True
+    return (mode in ("ESTOP", "CARRY") and prev_mode == "AT_PANEL"
+            and prev_state in ("WORKING", "ADJUST"))
 
 
 def _goto_allowed(mode, state, ctx) -> bool:
@@ -351,6 +379,76 @@ def _goto_summon(mode, state, ctx) -> bool:
     「同一イベント・ガード違いを記載順で振り分ける」流儀。kind==PANEL/HOME は
     このガードで false になり、後段の汎用 goto_allowed 行にフォールバックする）。"""
     return ctx.arg.get("kind") == "SUMMON" and _goto_allowed(mode, state, ctx)
+
+
+def _goto_auto_measure(mode, state, ctx) -> bool:
+    """8-g P5a（SM-3.1.2-120）: ui.goto{kind:AUTO_MEASURE} だけを狙う入口行
+    （C-15-summon と同じ流儀。kind がそれ以外なら false になり C-15 へ落ちる）。"""
+    return ctx.arg.get("kind") == "AUTO_MEASURE" and _goto_allowed(mode, state, ctx)
+
+
+def _measure_link_lost(mode, state, ctx) -> bool:
+    """8-g P5a（SM-3.1.2-120）: 自律測定の入口で測定機能と通信できない
+    （版の食い違い以外。理由キー measure_link_lost）。"""
+    return (ctx.arg.get("kind") == "AUTO_MEASURE" and not ctx.measure_link_ok
+            and ctx.measure_link_reason != "version_mismatch")
+
+
+def _measure_version_mismatch(mode, state, ctx) -> bool:
+    """8-g P5a（SM-3.1.2-120）: 自律測定の入口で版が食い違う
+    （理由キー measure_version_mismatch。DetailedDesign-measure.md §6.2）。"""
+    return (ctx.arg.get("kind") == "AUTO_MEASURE" and not ctx.measure_link_ok
+            and ctx.measure_link_reason == "version_mismatch")
+
+
+def _measure_reentry_required(mode, state, ctx) -> bool:
+    """8-g P5a（SM-3.1.2-130・-142）: 自己位置を見失ったあと自律測定を
+    抜けて入り直すまでの meas.start の拒否（理由キー localization_lost）。"""
+    return bool(ctx.measure_reentry_required)
+
+
+def _measure_map_mismatch(mode, state, ctx) -> bool:
+    """8-g P5b（SM-3.1.2-121）: meas.goal の map_instance_id が今の地図と違う
+    （理由キー map_mismatch。前の地図の座標で走り出さない）。"""
+    return ctx.arg.get("map_instance_id") != ctx.measure_map_instance_id
+
+
+def _measure_corner_blocked(mode, state, ctx) -> bool:
+    """8-g P5b（SM-3.1.2-121）: 角が描く円の中に障害物がある、または確認できていない
+    （理由キー corner_obstacle）。"""
+    return not ctx.measure_corner_clear
+
+
+def _measure_start_corner_blocked(mode, state, ctx) -> bool:
+    """8-g P5b（SM-3.1.2-130）: meas.start で NAV・ALIGN へ戻るときだけ、角の確認を
+    し直す（理由キー corner_obstacle）。止める前がそれ以外（WAIT 等）は見ない。"""
+    return (ctx.measure_prev_state in ("NAV", "BLOCKED", "ALIGN")
+            and not ctx.measure_corner_clear)
+
+
+def _measure_prev_is_nav_or_blocked(mode, state, ctx) -> bool:
+    """8-g P5b（SM-3.1.2-130）: 止める前が NAV・BLOCKED なら meas.start は NAV へ。"""
+    return ctx.measure_prev_state in ("NAV", "BLOCKED")
+
+
+def _measure_path_blocked(mode, state, ctx) -> bool:
+    """8-g P3（SM-3.1.2-127・-136）: 並進で進む先に障害物がある（理由キー
+    path_obstacle）。距離が free_*_m を超えるときだけ真。"""
+    try:
+        distance = float(ctx.arg.get("distance_m"))
+    except (TypeError, ValueError):
+        return True
+    side = ctx.arg.get("side")
+    if side == "FORWARD":
+        return not distance <= ctx.measure_free_forward_m
+    if side == "BACKWARD":
+        return not distance <= ctx.measure_free_backward_m
+    return True
+
+
+def _measure_prev_is_align(mode, state, ctx) -> bool:
+    """8-g P5b（SM-3.1.2-130）: 止める前が ALIGN なら meas.start は ALIGN へ。"""
+    return ctx.measure_prev_state == "ALIGN"
 
 
 def _candidate_exists(mode, state, ctx) -> bool:
@@ -459,6 +557,16 @@ GUARDS: Dict[str, Callable] = {
     "goto_allowed": _goto_allowed,
     "working": _working,
     "goto_summon": _goto_summon,
+    "goto_auto_measure": _goto_auto_measure,
+    "measure_link_lost": _measure_link_lost,
+    "measure_version_mismatch": _measure_version_mismatch,
+    "measure_reentry_required": _measure_reentry_required,
+    "measure_map_mismatch": _measure_map_mismatch,
+    "measure_corner_blocked": _measure_corner_blocked,
+    "measure_path_blocked": _measure_path_blocked,
+    "measure_start_corner_blocked": _measure_start_corner_blocked,
+    "measure_prev_is_nav_or_blocked": _measure_prev_is_nav_or_blocked,
+    "measure_prev_is_align": _measure_prev_is_align,
     "venue_unloaded": _venue_unloaded,
     "venue_unloaded_nav_goto": _venue_unloaded_nav_goto,
     "recoverable_fault_active": _recoverable_fault_active,
@@ -483,6 +591,7 @@ GUARDS: Dict[str, Callable] = {
     "estop_prev_is_init": _estop_prev_is_init,
     "estop_prev_is_summon": _estop_prev_is_summon,
     "estop_prev_is_at_panel": _estop_prev_is_at_panel,
+    "estop_prev_is_at_panel_working": _estop_prev_is_at_panel_working,
     "estop_prev_is_at_home": _estop_prev_is_at_home,
     "estop_prev_is_opcheck": _estop_prev_is_opcheck,
     "estop_prev_is_calib": _estop_prev_is_calib,
@@ -494,6 +603,7 @@ GUARDS: Dict[str, Callable] = {
     "carry_resume_prev": _carry_resume_prev,
     "carry_prev_is_summon": _carry_prev_is_summon,
     "carry_prev_is_at_panel": _carry_prev_is_at_panel,
+    "carry_prev_is_at_panel_working": _carry_prev_is_at_panel_working,
     "carry_prev_is_at_home": _carry_prev_is_at_home,
     "carry_prev_is_opcheck": _carry_prev_is_opcheck,
     "carry_prev_is_calib": _carry_prev_is_calib,
@@ -507,7 +617,7 @@ GUARDS: Dict[str, Callable] = {
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 62, len(GUARDS)
+assert len(GUARDS) == 74, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:

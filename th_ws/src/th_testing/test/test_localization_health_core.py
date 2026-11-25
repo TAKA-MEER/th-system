@@ -356,11 +356,11 @@ def test_global_localizing_reason_constant():
 # ============================================================================
 
 def test_in_use_monitored_modes_whole_regardless_of_state():
-    """監視する 4 モードはモード全体（状態は見ない）。"""
-    assert MONITORED_MODES == {"REPLAY", "PANEL_NAV", "SUMMON", "HOME_NAV"}
-    for mode in ("REPLAY", "PANEL_NAV", "SUMMON", "HOME_NAV"):
+    """監視する 5 モードはモード全体（状態は見ない。8-g P5a で AUTO_MEASURE を足した）。"""
+    assert MONITORED_MODES == {"REPLAY", "PANEL_NAV", "SUMMON", "HOME_NAV", "AUTO_MEASURE"}
+    for mode in ("REPLAY", "PANEL_NAV", "SUMMON", "HOME_NAV", "AUTO_MEASURE"):
         for state in ("RUN", "NAV", "PAUSE", "ALIGN", "BLOCKED", "LOCALIZE",
-                      "READY", "NONE", None):
+                      "READY", "NONE", None, "WAIT"):
             assert is_localization_in_use(mode, state) is True, (
                 f"{mode}/{state} が監視対象にならない")
 

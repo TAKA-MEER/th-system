@@ -45,6 +45,7 @@ SCREEN_ZONE: Dict[str, str] = {
     "S-31": "NA",
     "S-40": "NA",
     "S-50": "OUT",
+    "S-60": "IN",  # 8-g P5a（自律測定。Spec-modes.md §6）
 }
 
 SCREEN_SPEED_LIMIT: Dict[str, str] = {
@@ -63,6 +64,7 @@ SCREEN_SPEED_LIMIT: Dict[str, str] = {
     "S-31": "stop",
     "S-40": "v_calib",
     "S-50": "stop",
+    "S-60": "v_slow",  # 8-g P5a（Spec-modes.md §6）
 }
 
 assert set(SCREEN_ZONE.keys()) == set(SCREEN_SPEED_LIMIT.keys())
@@ -164,7 +166,7 @@ def derive_limits(screens: Mapping[str, ScreenInput], now_ms: int,
     return Limits(zone=zone, speed_limit=speed_limit, auto_brake=auto_brake)
 
 
-def mode_speed_limit(mode_attrs: Mapping[str, object], jog_active: bool) -> str:
+def mode_speed_limit(mode_attrs: Mapping[str, object], jog_active: bool, state: str = "") -> str:
     """`attributes.yaml` の該当モード行から求める「モード由来」の速度上限（N-15）。
 
     DetailedDesign-safety.md §3.3.1 の 2 系統のうちモード側。呼び出し側は
@@ -181,6 +183,12 @@ def mode_speed_limit(mode_attrs: Mapping[str, object], jog_active: bool) -> str:
     AT_HOME（v_slow。Spec-modes.md §6、2026-10-13）。
     """
     limit = mode_attrs["speed_limit"]
+    # 8-g P3（SM-3.1.2-127・-136・§6.4）: 状態 ADJUST（測定機能の旋回・並進の間）は
+    # 両モードとも v_jog_panel。既存のジョグ分岐（speed_limit == "stop" と jog_active）
+    # は流用しない（停止命令ではジョグを拒否するので jog_active は立たず、自律測定の
+    # speed_limit は v_slow のため）。
+    if state == "ADJUST":
+        return mode_attrs.get("jog_speed_limit", DEFAULT_JOG_SPEED_LIMIT)
     if limit == "stop" and jog_active and mode_attrs.get("jog") != "denied":
         return mode_attrs.get("jog_speed_limit", DEFAULT_JOG_SPEED_LIMIT)
     return limit

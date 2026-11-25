@@ -50,8 +50,9 @@ from th_system_msgs.srv import GoToPanel
 from th_onsite.venue_nav_core import (
     COSTMAP_STALE_S, PATH_AHEAD_CHECK_M, VenueNavParams, align_cmd_wz, arrived,
     VENUE_NOT_LOADED_MESSAGE, find_home_goal, path_ahead_clear,
-    path_footprint_collision, select_pin_allowed, select_pin_reject_message,
-    success_is_plausible, should_unblock_for_arrival, venue_blocks_autonomy,
+    path_ahead_has_unknown, path_footprint_collision, select_pin_allowed,
+    select_pin_reject_message, success_is_plausible,
+    should_unblock_for_arrival, venue_blocks_autonomy,
 )
 
 
@@ -77,7 +78,10 @@ class _GridView:
 
 class VenueNavigator(Node):
     # このノードが駆動対象とするモード（NAV で走り、必要なら ALIGN）
-    _NAV_MODES = ('PANEL_NAV', 'SUMMON', 'HOME_NAV')
+    # 8-g P5b: 自律測定（AUTO_MEASURE）の NAV・ALIGN・BLOCKED も同じ駆動系
+    # （目的地は effect measure_goal から取る。会場地図の検査は見ない。
+    # 手前 1.5 m の未知セルの検査だけ AUTO_MEASURE に足す）。
+    _NAV_MODES = ('PANEL_NAV', 'SUMMON', 'HOME_NAV', 'AUTO_MEASURE')
     # TF 停滞検知の「/tf が新しい」判定の幅（age = 現在 - map->odom の stamp）。
     # 実機の slam_toolbox は未来 stamp（+0.65 s 前後）を出すので未来側を許す。
     _TF_FUTURE_TOL_S = 2.0
@@ -201,6 +205,8 @@ class VenueNavigator(Node):
         self._prev_key = None      # (mode, state) 遷移検出用
         self._pins = []            # /onsite/pins の保持
         self._pending_goal = None  # select_pin で保留した PIN goal (dict)
+        # 8-g P5b: 自律測定の目的地（effect measure_goal から。dict {x, y, yaw}）。
+        self._measure_goal = None
         self._summon_goal = None   # /onsite/summon_goal の最新 (PoseStamped)
         self._venue_mode = ""      # /map_session/status(VENUE) の mode。未受信は ""
         self._robot_updated_at = None  # _robot を最後に TF から更新できた時刻（self._now()）
@@ -260,6 +266,9 @@ class VenueNavigator(Node):
         # 警告ログを episode に 1 回に絞る印。
         self._costmap = None
         self._costmap_rx_at = None
+        # 8-g P5b: 自律測定の手前検査用の /map（OccupancyGrid）の最新と受信時刻。
+        self._map_grid = None
+        self._map_grid_rx_at = None
         self._clear_done_at = 0.0
         self._costmap_warned = False
         # Nav2 TF 停滞の検知用。打ち切り回数と最初の打ち切り時の機体位置
@@ -329,6 +338,11 @@ class VenueNavigator(Node):
                                  history=QoSHistoryPolicy.KEEP_LAST)
         self.create_subscription(OccupancyGrid, '/global_costmap/costmap',
                                  self._on_costmap, costmap_qos,
+                                 callback_group=sub_cbg)
+        # 8-g P5b: 自律測定の手前 1.5 m の検査（/map のセルが不明なら通れない）。
+        # /map は transient_local, depth 1（names §6.5）。
+        self.create_subscription(OccupancyGrid, '/map',
+                                 self._on_map_grid, costmap_qos,
                                  callback_group=sub_cbg)
 
         # ロボット姿勢は TF map->base_link で取る（経路・ピンは map 系。odom 系だと
@@ -412,6 +426,9 @@ class VenueNavigator(Node):
 
     def _current_goal(self):
         """現モードのゴール dict（pose + yaw）。無ければ None。"""
+        if self._mode == 'AUTO_MEASURE':
+            # 8-g P5b: 目的地は effect measure_goal から（ピンは使わない）。
+            return self._measure_goal
         if self._mode == 'PANEL_NAV':
             if self._pending_goal is None:
                 return None
@@ -462,6 +479,12 @@ class VenueNavigator(Node):
         # 再武装されるようにする。逆に内部 _blocked を勝手に False にはしない）。
         if self._state == 'BLOCKED':
             self._blocked = True
+
+        # 8-g P5b（SM-3.1.2-124/-131）: 自律測定が WAIT に戻ったら計画（経路・
+        # 目的地・到着ラッチ）を捨てる。次に NAV に入るのは新しい meas.goal の
+        # ときで、古い経路をそのまま再送してはならない。
+        if entered == ('AUTO_MEASURE', 'WAIT'):
+            self._reset_for_exit()
 
         # NAV 相当に入った瞬間、まだ何も回っていなければ起動（二重チェーン防止）。
         if self._is_nav_state():
@@ -529,6 +552,11 @@ class VenueNavigator(Node):
         elif self._follow_send_in_flight:
             self._cancel_before_accept = True
         self._path = None
+        # 8-g P5b（SM-3.1.2-129）: 自律測定の目的地は、非常停止・手押しを挟んで
+        # PAUSE に戻ったときも残す（戻ったら meas.start で再送する。止めた計画を
+        # 捨ててはならない。IDLE 等へ出たときだけ下の条件で捨てる）。
+        if self._mode not in ('ESTOP', 'CARRY'):
+            self._measure_goal = None
         self._arrived_latched = False
         self._align_latched = False
         self._final_aligning = False
@@ -557,6 +585,23 @@ class VenueNavigator(Node):
             self._resume_follow_path()
         elif name == 'replan':
             self._replan()
+        elif name == 'measure_goal':
+            # 8-g P5b（SM-3.1.2-121）: 目的地を保持する。走り出すのは
+            # /system/state(NAV) が届いたとき（_on_state の NAV 入口）。
+            try:
+                args = json.loads(msg.args_json or '{}')
+                self._measure_goal = {
+                    'x': float(args['x']), 'y': float(args['y']),
+                    'yaw': float(args['yaw'])}
+                # 8-g P5b: 新しい目的地では古い経路を捨て、新しく計画させる。
+                self._path = None
+                self.get_logger().info(
+                    'measure_goal: 目的地を保持 '
+                    f"({self._measure_goal['x']:.3f}, "
+                    f"{self._measure_goal['y']:.3f}, "
+                    f"yaw={self._measure_goal['yaw']:.3f})")
+            except (ValueError, KeyError, TypeError) as e:
+                self.get_logger().warn(f'measure_goal: 引数が読めない: {e}')
 
     def _cancel_follow_path(self):
         if self._follow_goal_handle is not None:
@@ -640,10 +685,18 @@ class VenueNavigator(Node):
         if str(msg.slot) == 'VENUE':
             self._venue_mode = str(msg.mode)
 
+    def _venue_gate_applies(self) -> bool:
+        """会場地図の有無の検査（SM-3.1.2-119）を適用するか。
+        8-g P5b: 自律測定（AUTO_MEASURE）は start_measure_map で会場地図が
+        外れているので検査を見ない（DetailedDesign-measure.md §6.2）。"""
+        return self._mode != 'AUTO_MEASURE'
+
     def _venue_gate(self, what: str) -> bool:
         """SM-3.1.2-119。会場地図を持たないなら True（呼び出し側は走り出さず戻る）。
         FSM（th_state の T-VUL-*）が主。こちらは FSM を通らない入口（状態の取りこぼし・
         再開 effect・BLOCKED からの自動再送）に備えた二重の防壁。"""
+        if not self._venue_gate_applies():
+            return False
         if not venue_blocks_autonomy(self._venue_mode):
             return False
         self.get_logger().warn(
@@ -1244,7 +1297,8 @@ class VenueNavigator(Node):
 
     # ── blocked 再探索タイマ ──────────────────────────────
     def _blocked_recheck(self):
-        if self._blocked and venue_blocks_autonomy(self._venue_mode):
+        if (self._blocked and self._venue_gate_applies()
+                and venue_blocks_autonomy(self._venue_mode)):
             return   # SM-3.1.2-119: 会場地図が無い間は再探索・自動再送しない
         # 取りこぼしに備えた stale-escape（連鎖の done コールバックが 1 つ落ちても
         # 永久ロックしない）。
@@ -1364,6 +1418,11 @@ class VenueNavigator(Node):
         self._costmap = msg
         self._costmap_rx_at = self._now()
 
+    def _on_map_grid(self, msg: OccupancyGrid):
+        """8-g P5b: /map の最新（自律測定の手前 1.5 m の未知セル検査用）。"""
+        self._map_grid = msg
+        self._map_grid_rx_at = self._now()
+
     def _warn_once(self, text: str):
         if not self._costmap_warned:
             self._costmap_warned = True
@@ -1405,13 +1464,42 @@ class VenueNavigator(Node):
             return 'unknown'
         self._costmap_warned = False
         grid = _GridView(cm)
-        clear = path_ahead_clear(
-            [(p.pose.position.x, p.pose.position.y) for p in self._path.poses],
-            robot_xy, grid, PATH_AHEAD_CHECK_M)
+        path_xy = [(p.pose.position.x, p.pose.position.y)
+                   for p in self._path.poses]
+        clear = path_ahead_clear(path_xy, robot_xy, grid, PATH_AHEAD_CHECK_M)
         if not clear and not running:
             self.get_logger().info(
                 f'blocked: 経路の先 {PATH_AHEAD_CHECK_M} m に障害物 → 送らずに待つ')
-        return 'clear' if clear else 'blocked'
+        if not clear:
+            return 'blocked'
+        # 8-g P5b（Spec-measure.md §4.2）: 自律測定だけ、手前 1.5 m の /map の
+        # セルが不明（-1）なら通れない扱いで BLOCKED（その先の不明な所は
+        # Nav2 の allow_unknown のまま推測で通す）。走行中（running）は
+        # /map が無い・古いだけで止めない（障害物リミッタが前進を止める）。
+        if self._mode == 'AUTO_MEASURE':
+            mg = self._map_grid
+            if mg is None or self._map_grid_rx_at is None:
+                if not running:
+                    return 'unknown'
+            elif now - self._map_grid_rx_at > COSTMAP_STALE_S:
+                if not running:
+                    self._warn_once(
+                        f'/map が {now - self._map_grid_rx_at:.1f} s 更新されない '
+                        f'→ {wait}')
+                    return 'unknown'
+            elif mg.header.frame_id != self._map_frame:
+                if not running:
+                    self._warn_once(
+                        f'/map の座標系が {mg.header.frame_id!r}'
+                        f'（{self._map_frame!r} でない） → {wait}')
+                    return 'unknown'
+            elif path_ahead_has_unknown(path_xy, robot_xy, _GridView(mg),
+                                       PATH_AHEAD_CHECK_M):
+                self.get_logger().info(
+                    f'blocked: 経路の先 {PATH_AHEAD_CHECK_M} m の /map が不明 '
+                    '→ 送らずに待つ（自律測定）')
+                return 'blocked'
+        return 'clear'
 
     def _footprint_hit(self, path):
         """計画した経路を機体の形（0.55 m 角）で検査する。当たれば最初の当たりの dict、

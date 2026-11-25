@@ -15,7 +15,7 @@ import Windows from './Windows.jsx'
 import { useGuideBanner } from './useGuideBanner.js'
 import { useSaveConfirm } from './useSaveConfirm.js'
 import { stampToMs } from './effectDispatch.js'
-import { isW1Active, stopReason, showEstopRelease } from './limits.js'
+import { isW1Active, isWorkingActive, stopReason, showEstopRelease } from './limits.js'
 import { ConfirmWindowContext } from './confirmWindow.js'
 import { JogPanelContext } from './jogPanel.js'
 import { ESTOP_RELEASE_NOTE, ESTOP_RELEASE_BUTTON, stopReasonLabel } from '../i18n/states.js'
@@ -172,6 +172,18 @@ function AppShellInner({ screenName, screenId, children }) {
   // 見えても誤って下ろさないため。pause_reason を持たない古い機体（undefined）は
   // 遷移が起きないので従来どおり PAUSE を抜けるまで保持する。
   const [faultPauseSeen, setFaultPauseSeen] = useState(false)
+  // 8-g P2-ui: AT_PANEL / WORKING の回復フォルトも PAUSE と同じラッチで
+  // W-1 を保持する（一瞬で消えるフォルトを見落とさない）。WORKING を
+  // 抜けるまで保持し、抜けたら下ろす（WORKING の「確認」は WORKING に
+  // 留まるので、PAUSE の pause_reason 遷移での解除は使わない）。
+  // 8-g P3-ui: ADJUST（旋回・並進中）も停止命令の間なので含める
+  // （判定は isWorkingActive の 1 か所）。
+  const [faultWorkingSeen, setFaultWorkingSeen] = useState(false)
+  useEffect(() => {
+    const inWorking = mode === 'AT_PANEL' && isWorkingActive(state)
+    if (!inWorking) { setFaultWorkingSeen(false); return }
+    if (!!fault?.active) setFaultWorkingSeen(true)
+  }, [mode, state, fault?.active])
   const prevPauseReasonRef = useRef(undefined)
   const pauseReason = state?.pause_reason
   useEffect(() => {
@@ -193,7 +205,7 @@ function AppShellInner({ screenName, screenId, children }) {
   const w1FaultTypeRef = useRef('')
   if (fault?.active && fault.fault_type) w1FaultTypeRef.current = fault.fault_type
 
-  const w1Active = isW1Active(mode, stateName, !!fault?.active || faultPauseSeen,
+  const w1Active = isW1Active(mode, stateName, !!fault?.active || faultPauseSeen || faultWorkingSeen,
     state?.pause_reason ?? '', !!state?.jog_active)
   // W-1 を開いた時点（PAUSE/ESTOP に入った時刻）。「解消した異常」に添えるのは
   // これ以降に起きて解消した記録だけ（Spec-webui.md §4.1。2026-11-10）。
@@ -315,6 +327,7 @@ function AppShellInner({ screenName, screenId, children }) {
         mode={mode}
         stateName={stateName}
         prevMode={state?.prev_mode ?? null}
+        working={state?.working ?? false}
         estopUi={estopUi}
         estopHw={estopHw}
         estopFromUi={!!state?.estop_from_ui}

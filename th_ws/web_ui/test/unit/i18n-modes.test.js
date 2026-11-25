@@ -1,5 +1,5 @@
 // DetailedDesign-webui.md §9-7: i18n/modes.js must match Spec-webui.md §8.1's
-// 19-row table verbatim. The expected table below is transcribed directly
+// 20-row table verbatim (2026-11-23: AUTO_MEASURE を追加). The expected table below is transcribed directly
 // from that section (docs/plan/spec/Spec-webui.md lines ~691-702) -- this is
 // the "snapshot" the design doc calls for.
 import test from 'node:test'
@@ -26,9 +26,10 @@ const EXPECTED = {
   AT_HOME: '試験（当日）',
   OPCHECK: '始業点検',
   CALIB: '校正',
+  AUTO_MEASURE: '自律測定',
 }
 
-test('i18n/modes.js has exactly the 19 rows of Spec-webui.md §8.1', () => {
+test('i18n/modes.js has exactly the 20 rows of Spec-webui.md §8.1', () => {
   assert.deepEqual(MODE_NAMES, EXPECTED)
-  assert.equal(Object.keys(MODE_NAMES).length, 19)
+  assert.equal(Object.keys(MODE_NAMES).length, 20)
 })

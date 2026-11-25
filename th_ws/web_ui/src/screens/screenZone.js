@@ -4,7 +4,7 @@
 // 持たせない（上限の権威は obstacle_limiter）ので、持つのは画面 ID の集合だけ。
 // zones.py と食い違わないことは test/unit/screen-zone.test.js が縛る。
 // Spec-webui.md「速度プリセット」: 場内の画面（S-20・S-21）では「高速」を出さない。
-export const IN_ZONE_SCREEN_IDS = ['S-20', 'S-21']
+export const IN_ZONE_SCREEN_IDS = ['S-20', 'S-21', 'S-60']
 
 export function isInZoneScreen(screenId) {
   return IN_ZONE_SCREEN_IDS.includes(screenId)

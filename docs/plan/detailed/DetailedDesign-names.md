@@ -50,7 +50,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | **`th_route`** | `ament_cmake` + python | 教示の記録・再生・**地図セッション** | 新規（`slam_control.py` を吸収） |
 | **`th_onsite`** | `ament_cmake` + python | 試験場内（`PREP` / `PANEL_NAV` / `AT_PANEL` / `SUMMON` / `HOME_NAV`） | 新規（`panel_navigator` / `summon_navigator` を置換） |
 | **`th_maintenance`** | `ament_cmake` + python | 始業点検・校正・故障診断 | 新規（`th_calibration` を吸収） |
-| **`th_measure`** | `ament_cmake` + python | **測定機能（fk-system）とのやり取りと自律測定の挙動**（[measure](DetailedDesign-measure.md)。2026-11-04。案） | 新規（計画書 8-g） |
+| **`th_measure`** | `ament_cmake` + python | **測定機能（fk-system）とのやり取りと自律測定の挙動**（[measure](DetailedDesign-measure.md)。2026-11-04。受け手は 2026-11-23 決定） | 新規（計画書 8-g） |
 | `th_perception` | `ament_cmake` + python | `lidar_filter` / `person_tracker_bridge` | 既存・ほぼ維持 |
 | `th_esp32_bridge` | `ament_cmake` + python | ESP32 リンク | 既存・改修 |
 | `th_bringup` | `ament_cmake` | launch / config / maps / worlds | 既存・改修 |
@@ -90,6 +90,9 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | `lidar_filter` | `th_perception` | `scripts/lidar_filter.py` | 死角マスク（既存） |
 | `person_tracker_bridge` | `th_perception` | `scripts/person_tracker_bridge.py` | 人物追跡の橋渡し（既存） |
 | `esp32_bridge` | `th_esp32_bridge` | `scripts/esp32_bridge.py` | ESP32 リンク（既存） |
+| **`measure_link`** | **`th_measure`** | **`scripts/measure_link.py`** | **測定機能の生存確認と `/measure/status`**（[measure](DetailedDesign-measure.md) §6.1。2026-11-23） |
+| **`measure_clearance`** | **`th_measure`** | **`scripts/measure_clearance.py`** | **角が描く円の中の障害物（発進前の確認）を `/measure/corner_status` に出す**（[measure](DetailedDesign-measure.md) §6.2 P5b。2026-11-23）。P4 で `/measure/check_arm_clearance` も |
+| **`measure_adjuster`** | **`th_measure`** | **`scripts/measure_adjuster.py`** | **盤前の旋回・前後の並進（`ADJUST`。Nav2 を使わない直接制御。`/cmd_vel_behavior` にだけ出す）**（[measure](DetailedDesign-measure.md) §6.4。2026-11-23） |
 
 **`person_predictor` は廃止する。**`/cmd_vel_retreat` への捜索旋回の発行者であり、
 `Spec-transit.md` §1.2「ロストしたら選択を解除して停止」と食い違う
@@ -168,6 +171,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | | `HOME_NAV` | 待機場所へ移動 | S-21 | **場内** | 不要 |
 | 保守 | `OPCHECK` | 始業点検 | S-30 / S-31 | **非該当** | 不要 |
 | | `CALIB` | 校正 | S-40 | **非該当** | 不要 |
+| 測定 | **`AUTO_MEASURE`** | 自律測定 | S-60 | **場内** | 不要（2026-11-23。状態 `WAIT`／`NAV`／`ALIGN`／`BLOCKED`／`ADJUST`／`PAUSE`。[measure](DetailedDesign-measure.md) §6.2） |
 
 **「ゾーン」列は参考。**正は §4 の画面表（`Spec-modes.md` §7 ／ `F-19`）。
 
@@ -225,7 +229,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 
 ---
 
-## 4. 画面（15）とゾーン
+## 4. 画面（16）とゾーン
 
 **ゾーンは 3 値である**（`Spec-modes.md` §7）。真偽値にしてはいけない
 （`OPCHECK` / `CALIB` に場外の `v_max` が適用されてしまう）。
@@ -247,6 +251,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | `S-31` | 故障診断 | **`NA`** | 停止 |
 | `S-40` | 校正 | **`NA`** | `v_calib` |
 | `S-50` | 設定 | `OUT` | 停止 |
+| `S-60` | 自律測定 | **`IN`** | `v_slow`（測定機能の指定があれば小さい方） |
 
 > **2026-08-16 解消**: `mockup/index.html` の `SCREENS[].zone` は真偽値で `NA` を
 > `false`（＝場外）に潰していたが、**3 値（`'IN'` / `'OUT'` / `'NA'`）＋画面ごとの `limit` に直した**
@@ -302,7 +307,7 @@ def derive_limits(screens, now_ms, p):
 
 | ファイル | フィールド | 備考 |
 | --- | --- | --- |
-| **`SystemState.msg`** | `Header header` / `string mode` / `string state` / `string prev_mode` / `string prev_state` / `string zone`（`IN`/`OUT`/`NA`） / `bool jog_active` / `bool estop_ui` / `bool estop_hw` / `bool estop_from_ui`（UI ボタン起因の ESTOP か。重大フォルト起因と区別。`SM-3.1.1-11`。`demo-teach-replay` で追加） / `bool tracker_enabled` / `bool auto_brake` / `bool working` / `bool map_update` / `string[] unsaved` / `builtin_interfaces/Time since` / `string last_event` / `string last_reject_reason` / `string speed_limit`（registry のパラメータ名 or `stop`） / `string pause_reason`（`""` / `fault` / `jog` / `presence_lost`。`PAUSE` に入った理由。`PAUSE` を抜けたら `""`。1b-1 SG-A12） / `bool leash_present`（リードデバイスの存在。`evt.leash_present/absent` でラッチ。1b-11 SG-B13） | **状態の唯一の発行元。**`prev_*` は `ESTOP` / `CARRY` の復帰先ラッチ。`speed_limit` は**画面由来（§4.1 の `derive_limits()`）とモード由来（`attributes.yaml`。`AT_PANEL` × `jog_active` の `v_jog_panel` 特例を含む）を `state_manager` が合成した結果**を運ぶ（**末尾に追加**。`N-13`で新設・`N-15`でモード由来との合成に拡張。`WP-MSG-01` の `M3` は既存 msg への変更を `severity` 1 件に限定しているが、`FaultStatus.msg` への `Header` 追加（`WP-SAFE-01`）と同種の例外——消費者（`obstacle_limiter`）が実在し、追加しないと `WP-SAFE-03` が成立しない） |
+| **`SystemState.msg`** | `Header header` / `string mode` / `string state` / `string prev_mode` / `string prev_state` / `string zone`（`IN`/`OUT`/`NA`） / `bool jog_active` / `bool estop_ui` / `bool estop_hw` / `bool estop_from_ui`（UI ボタン起因の ESTOP か。重大フォルト起因と区別。`SM-3.1.1-11`。`demo-teach-replay` で追加） / `bool tracker_enabled` / `bool auto_brake` / `bool working` / `bool map_update` / `string[] unsaved` / `builtin_interfaces/Time since` / `string last_event` / `string last_reject_reason` / `string speed_limit`（registry のパラメータ名 or `stop`） / `string pause_reason`（`""` / `fault` / `jog` / `presence_lost`。`PAUSE` に入った理由。`PAUSE` を抜けたら `""`。1b-1 SG-A12） / `bool leash_present`（リードデバイスの存在。`evt.leash_present/absent` でラッチ。1b-11 SG-B13） / `float32 measure_v_cap_mps` / `float32 measure_w_cap_radps` / `float32 measure_a_cap_mps2` / `float32 measure_alpha_cap_radps2`（測定機能の速度・加速度の上限。0 は指定なし。8-g P5c・末尾に追加） | **状態の唯一の発行元。**`prev_*` は `ESTOP` / `CARRY` の復帰先ラッチ。`speed_limit` は**画面由来（§4.1 の `derive_limits()`）とモード由来（`attributes.yaml`。`AT_PANEL` × `jog_active` の `v_jog_panel` 特例を含む）を `state_manager` が合成した結果**を運ぶ（**末尾に追加**。`N-13`で新設・`N-15`でモード由来との合成に拡張。`WP-MSG-01` の `M3` は既存 msg への変更を `severity` 1 件に限定しているが、`FaultStatus.msg` への `Header` 追加（`WP-SAFE-01`）と同種の例外——消費者（`obstacle_limiter`）が実在し、追加しないと `WP-SAFE-03` が成立しない） |
 | **`StateEvent.msg`** | `Header header` / `string event`（`evt.*` のみ） / `string source_node` / `string arg_json` | 挙動ノード → `th_state` |
 | **`StateEffect.msg`** | `Header header` / `string name`（effect 名） / `string dest`（宛先ノード名。不明なら `unknown`） / `string args_json` | `th_state` → 挙動ノード（`route_recorder` / `replay_runner` 等）。`state_core` の effect を外へ配送する。**`demo-teach-replay` で新設** |
 | **`ActiveScreen.msg`** | `Header header` / `string screen_id` / `string client_id` / `bool interacting` / **`builtin_interfaces/Time last_input`** | UI → `th_state`。**`header.stamp` は 2 Hz の定期発行時刻であって「最後の操作時刻」ではない。**`last_input` が無いと、画面を開いているだけの端末が永久に「使用中」になる |
@@ -367,7 +372,7 @@ def derive_limits(screens, now_ms, p):
 | `/shutdown/execute` | `std_srvs/Trigger` | `th_state` |
 | **`/safety/clear_estop_ui`** | `std_srvs/Trigger` | **`safety_monitor`**。**UI に依存しない解除経路**（[safety](DetailedDesign-safety.md) §6.3.1 ／ `N-4`）。`/safety/estop_hw` が `false` かつ重大フォルトが無いときだけ受理し、**必ずログに残す**。**通常運用では使わない**——WebUI の解除ボタンが正規の経路である |
 | **`/measure/command`** | `MeasureCommand`: `string command_id` / `string command`（`meas.*`） / `string map_instance_id` / `float64 x,y,yaw` / `float64 angle_rad` / `string side` / `float64 distance_m` / `float32 v_max_mps,w_max_radps,a_max_mps2,alpha_max_radps2` → `bool accepted` / `string reject_reason` / `string mode` / `string state` | **`th_state`**。**測定機能の指示はここからしか受けない**（§8.5。[measure](DetailedDesign-measure.md) §3.1）。2026-11-04（案） |
-| **`/measure/check_arm_clearance`** | `CheckArmClearance`: `geometry_msgs/Polygon region` / `string[] sides`（`LEFT`/`RIGHT`/`CURRENT`） → `bool accepted` / `string reject_reason` / `string[] sides` / `string[] results`（`CLEAR`/`BLOCKED`/`UNKNOWN`） / `string[] unknown_reasons` / `builtin_interfaces/Time checked_at` | `th_measure`（[measure](DetailedDesign-measure.md) §3.5）。2026-11-04（案） |
+| **`/measure/check_arm_clearance`** | `CheckArmClearance`: `geometry_msgs/Polygon region` / `string[] sides`（`LEFT`/`RIGHT`/`CURRENT`） → `bool accepted` / `string reject_reason` / `string[] sides` / `string[] results`（`CLEAR`/`BLOCKED`/`UNKNOWN`） / `string[] unknown_reasons` / `builtin_interfaces/Time checked_at` | **`th_measure` の `measure_clearance`**（[measure](DetailedDesign-measure.md) §3.5）。2026-11-04（案）。2026-11-23（P4。サービスを持つ） |
 
 **廃止・改名するサービス**:
 
@@ -487,6 +492,8 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`/measure/status`** | `MeasureStatus` | **reliable, transient_local, depth 1。10 Hz ＋ 変化時。モードに関係なく出す**（[measure](DetailedDesign-measure.md) §3.3） |
 | **`/measure/result`** | `MeasureResult` | reliable, depth 20。結果が出るたび（[measure](DetailedDesign-measure.md) §3.2） |
 | **`/measure/heartbeat`** | `MeasureHeartbeat` | reliable, depth 1。**5 Hz（発行者は測定機能の機能側）**（[measure](DetailedDesign-measure.md) §3.4） |
+| **`/measure/command_state`** | `std_msgs/String`（JSON） | **内部。`state_manager` → `measure_link`。**reliable, transient_local, depth 1。変わったとき（[measure](DetailedDesign-measure.md) §6.1。2026-11-23） |
+| **`/measure/corner_status`** | `std_msgs/String`（JSON `{"clear": bool, "reason": str}`） | **内部。`measure_clearance` → `state_manager`。**5 Hz。1 秒届かなければ `clear=false` とみなす（[measure](DetailedDesign-measure.md) §6.2 P5b）。8-g P3（§6.4）では JSON に `free_forward_m`・`free_backward_m`（並進の「進む先」の空き距離。死角・古いスキャン・TF 無しは 0）を足す |
 
 > **`/route/list` はサービス名。**トピック側は **`/route/catalog`** に改名した（名前の衝突を解いた）。
 
@@ -526,6 +533,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `speed_preset_low` ／ `_mid` ／ `_high` | 比率 | given | UI プリセット。**上限に対する割合**。`consumers: [web_ui]` |
 | `auto_brake_default_outdoor` ／ `auto_brake_default_indoor` | on/off | given | S-50 で変える自動ブレーキの既定（場外の手動系／場内）。`consumers: [state_manager]`。Spec-safety §2.1 |
 | `camera_ui_url` | URL（文字列） | given | S-21 の「カメラ」ボタンが別タブで開く先（カメラ機能 hve-system の画面）。`consumers: [web_ui]`。S-50 で変えられる（http/https のみ）。Spec-onsite §7.2 / Spec-webui §3.15 |
+| `measure_ui_port` | ポート番号 | given | S-60 の「測定機能の画面へ」が同じタブで移る先のポート（ホストは画面を開いているもの）。初期値 8091（fk `fk_web_port`）。`consumers: [web_ui]`。S-50 では変えない。[measure](DetailedDesign-measure.md) §6.2 |
 | `drivetrain_ceiling_mps` | m/s | (b) | 出力上限 ÷ フィードフォワード係数 |
 | **`v_max_headroom_ratio`** | — | given | `v_max` を天井の何割にするか（補正の余地を残す） |
 | **`venue_clearance_m`** ／ **`blind_clearance_m`** ／ **`panel_clearance_m`** | m | (a)／方針値 | `v_slow`・`v_reverse` ／ `v_jog_panel` の逆算元（`blind_clearance_m` は現構成では未使用。2026-10-09） |
@@ -584,8 +592,13 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`person_startup_grace_ms`** | ms | (c) placeholder。**`tracker_enabled` の false→true エッジから `person` 判定を保留する猶予**（`safety_monitor`。DetailedDesign-safety.md §5.5.2） |
 | **`person_report_only`** | — | given bool。true の間は `PERSON_TRACKER_LOST` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。同 §5.5.5） |
 | **`mux_liveness_grace_ms`** | ms | (b)。`MUX_DEAD` の生存確認（`twist_mux` が `/cmd_vel_muxed` の publisher から居なくなってこの時間で死とみなす。`safety_monitor`。`DetailedDesign-safety.md` §5.6） |
-| **`measure_link_timeout_ms`** | ms | (b)。`/measure/heartbeat` の途絶とみなすまでの時間（[measure](DetailedDesign-measure.md) §3.4。Spec-params §2 の「測定機能との通信が途絶えたとみなすまでの時間」）。2026-11-04（案） |
-| **`arm_clearance_scan_max_age_ms`** | ms | (b)。腕が振れる範囲の確認で、これより古いスキャンなら `UNKNOWN`（[measure](DetailedDesign-measure.md) §3.5）。2026-11-04（案） |
+| **`measure_link_timeout_ms`** | ms | (b)。`/measure/heartbeat` の途絶とみなすまでの時間（[measure](DetailedDesign-measure.md) §3.4・§6.1。Spec-params §2 の「測定機能との通信が途絶えたとみなすまでの時間」）。初期値 1000（2026-11-23） |
+| **`arm_clearance_scan_max_age_ms`** | ms | (b)。腕が振れる範囲の確認で、これより古いスキャンなら `UNKNOWN`（[measure](DetailedDesign-measure.md) §3.5）。**角が描く円の確認（`measure_clearance`。P5b）も同じ値で、古ければ `clear=false`**（2026-11-23）。2026-11-04（案） |
+| **`arm_clearance_blind_near_m`** | m | (b)。腕が振れる範囲の確認で、`laser_link` の中心からこれ以内の部分の死角は判定から除く（8-g P4。§6.5。2026-11-23 ユーザー決定）。`consumers: [params_audit, measure_clearance]` |
+| **`corner_clear_radius_m`** | m | (b)。発進・旋回の前の確認（角の円。`/measure/corner_status`）の半径。機体の中心から 0.689 m（外接 0.389 m ＋ 0.3 m。8-g P7。[measure](DetailedDesign-measure.md) §6.8。2026-11-25 ユーザー決定・fk 申し送り 25）。`consumers: [params_audit, measure_clearance]` |
+| **`adjust_timeout_ms`** | ms | (b)。`ADJUST` に入ってからこれで締め切る（8-g P3。§6.4。`state_manager` がタイマで `sys.adjust_timeout` を流す）。3000 以上 | 
+| **`adjust_translate_v_mps`** | m/s | (b)。`ADJUST` の前後並進の速さ（8-g P3。§6.4。新規 registry 値）。`consumers: [measure_adjuster]` | 
+| **`adjust_translate_tolerance_m`** | m | (b)。`ADJUST` の前後並進の許容差（8-g P3。§6.4。新規 registry 値）。`consumers: [measure_adjuster]` |
 | **`mux_report_only`** | — | given bool。true の間は `MUX_DEAD` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。同 §5.6） |
 | **`controller_conflict_hold_ms`** | ms | (b)。`CONTROLLER_CONFLICT` の保持時間（`/cmd_vel` の publisher が 2 つ以上、または制御系ノードが同名で 2 つ以上いる状態がこの時間続いたら成立。DDS が落ちたノードの残骸を数秒見せ続けることがあるため、その見え方より長くする。`safety_monitor`。Spec-safety §6.4） |
 | **`controller_conflict_report_only`** | — | given bool。true の間は `CONTROLLER_CONFLICT` が成立しても `FaultStatus`／`fault_lock` を出さず内部ログ＋カウンタのみ（`safety_monitor`。`mux_report_only` と同じ形） |
@@ -764,7 +777,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `ui.route_select` | S-12 / S-13 / S-14 | 経路の選択。`{"id": "...", "reverse": bool}` |
 | `ui.resume_yes` ／ `ui.resume_no` ／ `ui.resume_ack` | 異常ウィンドウ W-1 | はい／いいえ／確認 |
 | `ui.abort` | S-21（退避待ち） / S-30（実行中の項目の中断） / S-40（校正） | **中止** |
-| `ui.working` | S-21 | 作業中ボタン。`{"on": bool}` |
+| `ui.working` | S-21 | 停止命令（`WORKING`）の立て下ろし。`{"on": bool}`。`true` は「測定機能へ」、`false` は「停止を解く」（W-4 のあと）。旧「作業中」ボタン（2026-11-01 置き換え。[measure](DetailedDesign-measure.md) §6.3） |
 | `ui.goto` | S-21 | 行き先の選択。`{"kind": "PANEL"|"HOME"|"SUMMON", "pin_id": "..."}` |
 | `ui.register` | S-20 | 「人の位置で待機場所を登録」「人の位置で配電盤を登録」 |
 | `ui.return_home` | S-20 | 「1 ボタンで待機場所に戻す」 |
@@ -798,6 +811,10 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | **`evt.leash_present`** | `leash_runner`（デバイス接続確認 OK） |
 | **`evt.unblocked`** | 各 navigator |
 | `evt.register_ok` ／ `evt.register_rejected` | `pin_registrar` |
+| **`evt.measure_link_ok` ／ `evt.measure_link_lost`** | **`measure_link`**（変化時と 1 Hz の出し直し。[measure](DetailedDesign-measure.md) §6.1） |
+| **`evt.adjust_done`** | **`measure_adjuster`**（`ADJUST` の動きが終わった。`arg_json` に `command_id`。8-g P3。§6.4） |
+| **`evt.adjust_failed`** | **`measure_adjuster`**（進まないと分かったとき。`arg_json` に `command_id`・`reason`。8-g P3。§6.4） |
+| **`sys.adjust_timeout`** | **`state_manager`**（`ADJUST` が `adjust_timeout_ms` を超えたときにタイマで生成。8-g P3。§6.4） |
 | `evt.record_broken` | `route_recorder`（記録の連続性が切れた → `IDLE` へ） |
 | `evt.check_result` | `opcheck_runner`。`{"item":..., "result":...}` |
 | `evt.nav_tf_stall` | `venue_navigator`（Nav2 TF 停滞の検知・記録だけ。follow_path の打ち切りの 3 回連続＋位置不動（20 cm 未満）＋`/tf` 新で発火。`/rosout` の進捗失敗は届けば arg の `progress_count` に載るだけで条件ではない。止める・再起動しない。FSM は無視） |
@@ -847,7 +864,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `meas.finish` | 終了 | `-135` |
 | `meas.turn` | 旋回 | `-127`・`-136` |
 | `meas.translate` | 前後の並進（左右は 2026-11-15 に廃止） | `-127`・`-136` |
-| `meas.set_limits` | 速度・加速度の上限 | — （状態は変えない） |
+| `meas.set_limits` | 速度・加速度の上限 | — （状態は変えない。`AUTO_MEASURE` 全状態と `AT_PANEL`／`WORKING`・`ADJUST` で受け、8-g P5c） |
 | `meas.done` | 測定を終えた | `-063` |
 
 ---

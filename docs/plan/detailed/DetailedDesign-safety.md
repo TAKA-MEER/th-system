@@ -764,6 +764,9 @@ PC 側の `rate_limit()`（`follow_core.py`）は**追従にしか効かない**
 | **`obstacle_limiter`**（2026-09-11 追加） | `normal_accel_mps2` と `normal_jerk_mps3` で `/cmd_vel_muxed` の**生値（linear_x）**を S 字ランプしてから、安全上限を**ランプ後**の値にクランプする。`normal_jerk_mps3<=0` は従来の直線ランプ。`normal_angular_accel_rps2`（angular_z 側）は 2026-09-11 に実機で撤去（後述） | 同上（`obstacle_limiter` はすべての速度源の最終集約点） | `/cmd_vel_muxed` の linear_x のみ。安全上限自体はランプしない |
 | PC 側の挙動ノード | `rate_limit()` | その方式の中だけ。**滑らかさのためであって安全のためではない** |
 
+測定機能の指定（8-g P5c・`DetailedDesign-measure.md` §6.6）は、通常時ランプの上限と速度上限を下げるだけに効く。
+上げたり、ロック・途絶・障害物による停止を鈍らせたりはしない。
+
 | 項目 | 決定 |
 | --- | --- |
 | 権威 | **ファーム側と `obstacle_limiter` の両方。**両方とも `registry.yaml` の値を持ち、A6 と同じく突き合わせる |

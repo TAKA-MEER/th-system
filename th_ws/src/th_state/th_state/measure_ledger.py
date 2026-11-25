@@ -1,0 +1,168 @@
+"""measure_ledger.py — 測定機能の指示の結果台帳（純粋コア）。
+
+正本は docs/plan/detailed/DetailedDesign-measure.md §3.1・§3.2・§6.1。
+
+- 受けた `command_id` を記録し、`/measure/result` を **1 指示につき必ず
+  1 回だけ**出す（`accept`／`complete(result, reason)`／`cancel_all(reason)`。
+  二重の complete は無視して記録する）。
+- すぐ終わる指示（`DONE` を即出すもの。§3.1 の「終わりの結果」列）は
+  `IMMEDIATE_MEASURE_COMMANDS` に集約し、呼び出し側（node）が受理後に
+  `complete(..., "DONE")` を呼べるようにする。
+- `/measure/command` の判定のうち純粋な部分（① `bad_argument`。§6.1 の表）
+  もここに置く。ROS を import しない（`th_state/state_core.py` と同じ制約）。
+"""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass, field
+
+# §3.1 の表の `meas.*`（names.md §8.5 と同じ集合）。
+KNOWN_MEASURE_COMMANDS = frozenset({
+    "meas.goal",
+    "meas.reroute",
+    "meas.start",
+    "meas.stop",
+    "meas.abort",
+    "meas.finish",
+    "meas.turn",
+    "meas.translate",
+    "meas.set_limits",
+    "meas.done",
+})
+
+# §3.1 の「終わりの結果」列が「すぐ DONE」のもの。
+IMMEDIATE_MEASURE_COMMANDS = frozenset({
+    "meas.reroute",
+    "meas.start",
+    "meas.stop",
+    "meas.abort",
+    "meas.finish",
+    "meas.set_limits",
+    "meas.done",
+})
+
+# `meas.translate` の `side` の値（§3.1。LEFT / RIGHT は 2026-11-15 に廃止）。
+TRANSLATE_SIDES = frozenset({"FORWARD", "BACKWARD"})
+
+RESULT_ARRIVED = "ARRIVED"
+RESULT_DONE = "DONE"
+RESULT_CANCELLED = "CANCELLED"
+
+
+def validate_measure_command(command_id: str, command: str, side: str = "",
+                             angle_rad=None, distance_m=None,
+                             v_max_mps=None, w_max_radps=None,
+                             a_max_mps2=None, alpha_max_radps2=None) -> str:
+    """① の判定。問題があれば `bad_argument` を返す（§6.1 の表の順）。
+
+    `command` が `meas.` で始まらない（`ui.*` を含む）・`command_id` が空・
+    未知の `meas.*`・`meas.translate` の `side` が FORWARD／BACKWARD 以外。
+    8-g P3（SM-3.1.2-127・-136）: `meas.turn` の `angle_rad` が 0・有限でない、
+    `meas.translate` の `distance_m` が 0 以下・有限でない も `bad_argument`。
+    8-g P5c（§6.6）: `meas.set_limits` の 4 項目は負・有限でないが
+    `bad_argument`（0 は指定なしで通る）。通れば ""。
+    """
+    if not command or not command.startswith("meas."):
+        return "bad_argument"
+    if not command_id:
+        return "bad_argument"
+    if command not in KNOWN_MEASURE_COMMANDS:
+        return "bad_argument"
+    if command == "meas.translate" and side not in TRANSLATE_SIDES:
+        return "bad_argument"
+    if command == "meas.turn":
+        try:
+            angle = float(angle_rad)
+        except (TypeError, ValueError):
+            return "bad_argument"
+        if not math.isfinite(angle) or angle == 0:
+            return "bad_argument"
+    if command == "meas.translate":
+        try:
+            distance = float(distance_m)
+        except (TypeError, ValueError):
+            return "bad_argument"
+        if not math.isfinite(distance) or distance <= 0:
+            return "bad_argument"
+    if command == "meas.set_limits":
+        for value in (v_max_mps, w_max_radps, a_max_mps2, alpha_max_radps2):
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return "bad_argument"
+            if not math.isfinite(number) or number < 0:
+                return "bad_argument"
+    return ""
+
+
+@dataclass(frozen=True)
+class ResultRecord:
+    """`/measure/result` 1 件分（ROS 非依存の形）。"""
+
+    command_id: str
+    command: str
+    result: str
+    reason: str = ""
+
+
+@dataclass
+class MeasureLedger:
+    """受けた指示の台帳。出す結果はちょうど 1 回だけ。"""
+
+    _pending: dict = field(default_factory=dict)      # command_id -> command
+    _completed: set = field(default_factory=set)      # 結果を出した command_id
+    _ignored: list = field(default_factory=list)      # 無視した complete の記録
+
+    @property
+    def pending_command_id(self) -> str:
+        for command_id in self._pending:
+            return command_id
+        return ""
+
+    @property
+    def pending_command(self) -> str:
+        for command in self._pending.values():
+            return command
+        return ""
+
+    @property
+    def ignored(self) -> list:
+        return list(self._ignored)
+
+    def accept(self, command_id: str, command: str) -> bool:
+        """指示を受けた記録。すでに進行中・完了済みの id は受けない。"""
+        if command_id in self._pending or command_id in self._completed:
+            return False
+        self._pending[command_id] = command
+        return True
+
+    def complete(self, command_id: str, result: str, reason: str = ""):
+        """終わりの結果を出す。出すものがあれば `ResultRecord`、無ければ None。
+
+        二重の complete（完了済み・未知の id）は無視して記録する（§3.2 の
+        「必ず 1 回だけ」）。
+        """
+        command = self._pending.pop(command_id, None)
+        if command is None:
+            self._ignored.append(
+                ResultRecord(command_id=command_id, command="",
+                             result=result, reason=reason))
+            return None
+        self._completed.add(command_id)
+        return ResultRecord(command_id=command_id, command=command,
+                            result=result, reason=reason)
+
+    def cancel_all(self, reason: str, exclude=None) -> list:
+        """進行中の指示をすべて `CANCELLED` で終える（§3.2 の表）。
+
+        `exclude` は除外する command_id（8-g P5a。meas.finish の自分は DONE で
+        終わるので、モードを抜ける遷移で「残りを CANCELLED」と数えるときに使う）。"""
+        out = []
+        for command_id, command in list(self._pending.items()):
+            if exclude is not None and command_id == exclude:
+                continue
+            self._pending.pop(command_id)
+            self._completed.add(command_id)
+            out.append(ResultRecord(command_id=command_id, command=command,
+                                    result=RESULT_CANCELLED, reason=reason))
+        return out

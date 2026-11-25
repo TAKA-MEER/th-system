@@ -14,13 +14,13 @@ from typing import Callable, Dict, List, Optional, Tuple, Set, Any
 
 
 # ============================================================
-# DetailedDesign-names.md §2-2 — モード一覧（18）
+# DetailedDesign-names.md §2-2 — モード一覧（19）
 # ============================================================
 MODES: Set[str] = {
     "INIT", "IDLE", "ESTOP", "CARRY",
     "FOLLOW", "MANUAL", "TEACH_FOLLOW", "TEACH_MANUAL", "REPLAY", "LINE", "LEASH",
     "PREP", "PANEL_NAV", "AT_PANEL", "SUMMON", "HOME_NAV", "AT_HOME",
-    "OPCHECK", "CALIB",
+    "OPCHECK", "CALIB", "AUTO_MEASURE",
 }
 
 # DetailedDesign-names.md §3 — モードごとの状態集合（`NONE` は「状態を持たない」の予約語）。
@@ -38,7 +38,7 @@ MODE_STATES: Dict[str, Set[str]] = {
     "LEASH": {"DEV_CHECK", "READY", "RUN", "HOLD", "PAUSE"},
     "PREP": {"MAPPING", "REGISTER", "RETURN", "EDIT", "SAVED", "PAUSE"},
     "PANEL_NAV": {"NAV", "BLOCKED", "PAUSE", "ALIGN"},
-    "AT_PANEL": {"IDLE_P", "WORKING", "PAUSE"},
+    "AT_PANEL": {"IDLE_P", "WORKING", "ADJUST", "PAUSE"},
     "SUMMON": {"POINT", "WAIT_CLEAR", "NAV", "BLOCKED", "PAUSE", "ALIGN"},
     "HOME_NAV": {"NAV", "BLOCKED", "PAUSE"},
     # Spec-modes.md §2.3（2026-09-08 追加）。AT_PANEL と同型で、作業中ボタンが無いぶん
@@ -46,6 +46,10 @@ MODE_STATES: Dict[str, Set[str]] = {
     "AT_HOME": {"IDLE_H", "PAUSE"},
     "OPCHECK": {"LIST", "RUNNING_CHECK", "REPAIR"},
     "CALIB": {"LIST", "S1", "S2", "S3", "S4"},
+    # 8-g P5a/P5b（2026-11-23。DetailedDesign-measure.md §6.2）。状態は入口ができる
+    # パケットで足す（P5a は WAIT・PAUSE、P5b で NAV・ALIGN・BLOCKED、P3 で ADJUST。
+    # 入口の無い状態は validate() の到達可能性が咎める）。
+    "AUTO_MEASURE": {"WAIT", "PAUSE", "NAV", "ALIGN", "BLOCKED", "ADJUST"},
 }
 
 assert set(MODE_STATES.keys()) == MODES
@@ -61,6 +65,19 @@ IDLE_MODE: str = "IDLE"
 # state_manager.py が UI 非常停止起因の ESTOP ラッチ判定で使う参照点（N-1 と同じ理由で
 # ノード側にモード名リテラルを書かない。2026-09-01。SM-3.1.1-11）。
 ESTOP_MODE: str = "ESTOP"
+
+# state_manager.py が「自律測定を抜けた」判定で使う参照点（N-1 と同じ理由で
+# ノード側にモード名リテラルを書かない。8-g P5a）。
+AUTO_MEASURE_MODE: str = "AUTO_MEASURE"
+
+# state_manager.py が「測定の続き」（8-g P2 の停止命令を含む）の判定で使う
+# 参照点（同上。AT_PANEL/WORKING も台帳の片付けの対象になる）。
+AT_PANEL_MODE: str = "AT_PANEL"
+
+# state_manager.py が ESTOP と同じく「前モードの恒常性一時的遷移」として
+# 扱う CARRY の参照点（同上。8-g P5a。LOCALIZATION_LOST の reentry_required が
+# ESTOP / CARRY を挟んだ復帰で消えないようにするため）。
+CARRY_MODE: str = "CARRY"
 
 # state_manager.py が Context.check_item のラッチ（開始・破棄）で使う参照点（N-1 と
 # 同じ理由でノード側にモード名リテラルを書かない。WP-MAINT-01。2026-09-25）。
@@ -105,6 +122,9 @@ ESTOP_RESUME_RUN: Dict[str, str] = {
     "LEASH": "RUN",
     "PANEL_NAV": "NAV",
     "HOME_NAV": "NAV",
+    # 8-g P5b: 自律測定の NAV が run_state（attributes.yaml）。走行中からの
+    # 非常停止・手押しは同モードの PAUSE へ戻す（C-09c-running が拾う）。
+    "AUTO_MEASURE": "NAV",
 }
 
 # 1b-1（SG-A12）— 「走行中」の判定。在席喪失（sys.presence_lost）で PAUSE に
@@ -114,6 +134,9 @@ ESTOP_RESUME_RUN: Dict[str, str] = {
 # PREP の run_state（MAPPING。地図作成中の連れ回し）は走行ではないので除く。
 _DRIVING_EXTRA_STATES = frozenset({
     ("PANEL_NAV", "ALIGN"), ("SUMMON", "ALIGN"), ("PREP", "RETURN"),
+    # 8-g P5b: 自律測定の ALIGN（向き合わせでその場旋回する走行状態）。
+    ("AUTO_MEASURE", "ALIGN"),
+    ("AUTO_MEASURE", "ADJUST"),
 })
 
 
@@ -142,6 +165,10 @@ def is_driving(mode: str, state: str, attrs: Dict[str, dict],
 # PREP/RETURN も別の行（C-09c-prep-return 等）が先に拾う。
 ESTOP_RESUME_PAUSE_EXTRA: Set[Tuple[str, str]] = {
     ("PANEL_NAV", "BLOCKED"), ("HOME_NAV", "BLOCKED"), ("PANEL_NAV", "ALIGN"),
+    # 8-g P5b: 自律測定の BLOCKED（空けば自動で走り直す）・ALIGN（その場旋回する）も
+    # 「走行中」と同じく同モードの PAUSE へ戻す（SM-3.1.1-11 の 2026-10-22 変更と同じ理由）。
+    ("AUTO_MEASURE", "BLOCKED"), ("AUTO_MEASURE", "ALIGN"),
+    ("AUTO_MEASURE", "ADJUST"),
 }
 
 
@@ -153,7 +180,9 @@ def prev_resumes_to_pause(prev_mode: str, prev_state: str) -> bool:
 # C-04（$resume_run）が None になるモード。attributes.yaml の run_state が
 # null のモードのうち、PAUSE に入りうるもの（SG-B22）。ガード resume_run_available が
 # これを弾く（guards.py がこの集合を参照する）。
-RESUME_RUN_UNAVAILABLE_MODES: Set[str] = {"AT_PANEL", "AT_HOME", "OPCHECK", "CALIB"}
+# AUTO_MEASURE（8-g P5a）は run_state が null（P5a は走行状態を持たない）と共に、
+# 戻るのが meas.start だけ（ui.resume_yes では走らない。Spec-modes.md §6）ため含める。
+RESUME_RUN_UNAVAILABLE_MODES: Set[str] = {"AT_PANEL", "AT_HOME", "OPCHECK", "CALIB", "AUTO_MEASURE"}
 
 # C-05（$resume_state）が None になるモード。resume_state が null のうち、
 # PAUSE に入りうるものは PREP だけ（INIT/IDLE/ESTOP/CARRY は PAUSE を持たない。
@@ -172,6 +201,7 @@ ESTOP_PREV_MODES: Dict[str, Set[str]] = {
     "estop_prev_is_init": {"INIT"},
     "estop_prev_is_summon": {"SUMMON"},
     "estop_prev_is_at_panel": {"AT_PANEL"},
+    "estop_prev_is_at_panel_working": {"AT_PANEL"},
     "estop_prev_is_at_home": {"AT_HOME"},
     "estop_prev_is_opcheck": {"OPCHECK"},
     "estop_prev_is_calib": {"CALIB"},
@@ -184,6 +214,7 @@ ESTOP_PREV_MODES: Dict[str, Set[str]] = {
     "estop_resume_prev": set(MODES) - {"INIT", "IDLE", "ESTOP", "CARRY"},
     "carry_prev_is_summon": {"SUMMON"},
     "carry_prev_is_at_panel": {"AT_PANEL"},
+    "carry_prev_is_at_panel_working": {"AT_PANEL"},
     "carry_prev_is_at_home": {"AT_HOME"},
     "carry_prev_is_opcheck": {"OPCHECK"},
     "carry_prev_is_calib": {"CALIB"},
@@ -201,6 +232,7 @@ GOTO_KIND_MAP: Dict[str, str] = {
     "PANEL": "PANEL_NAV",
     "HOME": "HOME_NAV",
     "SUMMON": "SUMMON",
+    "AUTO_MEASURE": "AUTO_MEASURE",  # 8-g P5a（SM-3.1.2-120）
 }
 
 # DetailedDesign-state.md §3-2 — 実行時解決トークン（$arg.<key> はプレフィックスで判定）。
@@ -265,6 +297,16 @@ EFFECT_ARG_SPECS: Dict[str, Dict[str, str]] = {
     "commit_calib": {"item": _STR},
     "revert_calib": {"item": _STR},
     "discard_calib": {"item": _STR},
+    # 8-g P5a（SM-3.1.2-120。DetailedDesign-measure.md §6.2）。引数なし。
+    "start_measure_map": {},
+    # 8-g P5b（SM-3.1.2-121。DetailedDesign-measure.md §6.2）。目的地を
+    # venue_navigator へ渡す（command_id と map フレームの x/y/yaw）。
+    "measure_goal": {"command_id": _STR, "x": "float", "y": "float", "yaw": "float"},
+    # 8-g P3（SM-3.1.2-127・-136。DetailedDesign-measure.md §6.4）。盤前の旋回・並進を
+    # measure_adjuster へ渡す（command_id と kind のほか、旋回は angle_rad、並進は
+    # side・distance_m）。文字列の集合ではないので R2 の対象外。
+    "measure_adjust": {"command_id": _STR, "kind": _STR, "angle_rad": "float",
+                       "side": _STR, "distance_m": "float"},
 }
 
 
@@ -313,6 +355,31 @@ class Context:
     # 会場地図を持たない（/map_session/status の VENUE が UNLOADED）か。SM-3.1.2-119。
     # 未受信・LOCALIZING・MAPPING は False（塞がない。起動直後を巻き込まない）。
     venue_unloaded: bool = False
+    # 8-g P5a: 測定機能の生存（measure_link のラッチ実効値。DetailedDesign-measure.md
+    # §6.2 の入口ガード用）。state_manager が _measure_link_check() の値を詰める。
+    # 既定は「ok」（既存のライザーは元々この情報を渡していなかったため）。
+    measure_link_ok: bool = True
+    measure_link_reason: str = ""
+    # 8-g P5a: 自己位置を見失ったあとの入り直し要否（-142）。state_manager が
+    # ラッチする（/measure/command_state の reentry_required と同じ値）。
+    measure_reentry_required: bool = False
+    # 8-g P5b: 角が描く円の確認の実効値（/measure/corner_status のラッチ。
+    # 1 秒届かなければ False。state_manager が詰める。既定は False＝障害物あり扱い
+    # （確認できていないものを「空いている」と扱わない）。
+    measure_corner_clear: bool = False
+    # 8-g P5b: いまの地図の instance_id（/map_session/status）。state_manager が
+    # ラッチする。meas.goal の map 照合（map_mismatch）で読む。
+    measure_map_instance_id: str = ""
+    # 8-g P5b: PAUSE に入る直前にいた自律測定の状態（NAV・ALIGN・BLOCKED・WAIT）。
+    # meas.start の戻り先（-130）を選ぶ。state_manager がラッチする（ESTOP/CARRY から
+    # PAUSE へ戻るときは prev_state を使って閉じる。prev_state 自体は clear_prev で消える）。
+    measure_prev_state: str = ""
+    # 8-g P3（SM-3.1.2-127・-136。DetailedDesign-measure.md §6.4）。並進の「進む先」の
+    # 空き距離（measure_clearance が /measure/corner_status に足す free_*_m の
+    # ラッチ。TF・鮮度が無いときは 0）。state_manager が詰める。既定は 0＝障害物あり扱い
+    # （確認できていないものを「空いている」と扱わない）。
+    measure_free_forward_m: float = 0.0
+    measure_free_backward_m: float = 0.0
     arg: Dict[str, Any] = field(default_factory=dict)
 
 

@@ -46,7 +46,7 @@
   value: null
   derived_from: [drivetrain_ceiling_mps, v_max_headroom_ratio]
   formula: v_max_from_ceiling
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner, params_audit]
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1・§6.4"
   note: "ゾーン OUT の上限。A1 の 2 本制約を満たせなければ 1 回だけ引き下げられる（P-5）"
   # speed_limit_strictness_rank（N-15・A13）: この行の値が「speed_limit 名の厳しさ順」
@@ -93,7 +93,7 @@
   value: null
   derived_from: [venue_clearance_m, brake_accel_mps2, brake_delay_s]
   formula: speed_from_braking_distance
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, params_audit]
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "ゾーン IN の上限。venue_clearance_m と brake_accel_mps2 のどちらかが placeholder なら placeholder（S5）"
   speed_limit_strictness_rank: 4  # N-15・A13。v_max(43行目のコメント) 参照
@@ -116,7 +116,7 @@
   value: null
   derived_from: [panel_clearance_m, brake_accel_mps2, brake_delay_s]
   formula: speed_from_braking_distance
-  consumers: [obstacle_limiter, params_audit]
+  consumers: [obstacle_limiter, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "AT_PANEL のジョグ。A2a は課さない（極低速軸。params.md §4.1）"
   speed_limit_strictness_rank: 3  # N-15・A13。v_max(43行目のコメント) 参照
@@ -126,7 +126,7 @@
   class: b
   status: given
   value: 0.5
-  consumers: [leash_runner, obstacle_limiter, params_audit]
+  consumers: [leash_runner, obstacle_limiter, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "LEASH（一定速）。逆算対象が無いため given（方針値）。2026-10-05 ユーザー決定の暫定 0.5 m/s（旧 1.0 は駆動系の天井 0.71 m/s を超えていた。A13 違反で発覚）。LEASH 実装時に実測で見直す（Spec-params.md §2 は改定済み。main の 3297feb）。obstacle_limiter は SystemState.speed_limit=\"v_leash\" を数値へ解決するために必要（attributes.yaml の LEASH が speed_limit: v_leash）"
   speed_limit_strictness_rank: 5  # N-15・A13。v_max(43行目のコメント) 参照
@@ -136,7 +136,7 @@
   class: b
   status: given
   value: 0.05
-  consumers: [opcheck_runner, opcheck_auto, obstacle_limiter, params_audit]
+  consumers: [opcheck_runner, opcheck_auto, obstacle_limiter, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "OPCHECK のモーター確認。押している間だけ動く極低速（方針値）。obstacle_limiter は SystemState.speed_limit=\"v_check\" を数値へ解決するために必要（attributes.yaml の OPCHECK が speed_limit: v_check）"
   speed_limit_strictness_rank: 1  # N-15・A13。v_max(43行目のコメント) 参照
@@ -146,7 +146,7 @@
   class: b
   status: given
   value: 0.15
-  consumers: [calib_runner, obstacle_limiter, params_audit]
+  consumers: [calib_runner, obstacle_limiter, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "CALIB の自律走行・旋回。校正の再現性が出る速度（方針値）。obstacle_limiter は SystemState.speed_limit=\"v_calib\" を数値へ解決するために必要（attributes.yaml の CALIB が speed_limit: v_calib）"
   speed_limit_strictness_rank: 2  # N-15・A13。v_max(43行目のコメント) 参照
@@ -156,9 +156,9 @@
   class: b
   status: given
   value: 1.2
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, params_audit]
+  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, measure_link, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1"
-  note: "角速度上限。逆算式が無いため given。暫定値（P1 fail-slow）。2026-09-04（WS-9T）実機で手動ジョグのその場旋回が遅い（0.6=34°/s、90°に約2.6s）との報告を受け 0.6→1.2 に引き上げ。w_align_max（d_floor 割れ時の追加絞り）は別項目（2026-11-10 に 0.45 へ）"
+  note: "角速度上限。逆算式が無いため given。measure_link は /measure/status の w_limit_radps = min(w_max, w_cap)（8-g P5c・§6.6）に使う。暫定値（P1 fail-slow）。2026-09-04（WS-9T）実機で手動ジョグのその場旋回が遅い（0.6=34°/s、90°に約2.6s）との報告を受け 0.6→1.2 に引き上げ。w_align_max（d_floor 割れ時の追加絞り）は別項目（2026-11-10 に 0.45 へ）"
 
 - name: w_align_max
   unit: rad/s
@@ -174,7 +174,7 @@
   class: b
   status: given
   value: 0.40
-  consumers: [venue_navigator, calib_runner]
+  consumers: [venue_navigator, calib_runner, measure_adjuster]
   spec_ref: "Spec-params.md「その場旋回の速さの下限」/ Spec-onsite.md §6.2.1"
   note: "その場旋回の速さの下限。2026-11-10 ユーザー決定。向き合わせ・校正の旋回で回すときはこれ以上にする（モーターの不感帯 0.25〜0.30 の上。実測で 0.40 以上ならすぐ回る）。venue_navigator と calib_runner が同じ値を使う（2 か所に別々に持たせない）"
 
@@ -326,7 +326,7 @@
   class: b
   status: given
   value: 0.30
-  consumers: [params_audit]
+  consumers: [params_audit, measure_clearance]
   spec_ref: "DetailedDesign-names.md §7.2・§7.5"
   note: "リミッタの obstacle_floor_distance_m に足す余裕。safety_margin_m より小さい（A2 の成否を単独で決める）"
 
@@ -562,7 +562,7 @@
   class: b
   status: given
   value: 0.09
-  consumers: [venue_navigator]
+  consumers: [venue_navigator, measure_adjuster]
   spec_ref: "DetailedDesign-names.md §7.2"
   note: "venue_navigator.py の既定値（変更なし）。旧値 0.05・旧 consumers
     obstacle_limiter は未使用のままずれていた（th_safety 全体に参照なし。
@@ -692,7 +692,7 @@
   source: "上部構造（四隅の支柱）搭載後に実測。周囲 500mm 以内の実体を除去した状態で /scan を 300 スキャン集計（scripts/measure_blind_sectors.py）。laser_link 基準・反時計回り正・平坦配列。四隅の支柱が laser 中心から約 0.33m の距離に前左 +45.9..+61.5 / 前右 -59.5..-38.9 / 後左 +130.3..+143.5 / 後右 -132.8..-117.5 の 4 セクタとして恒常的に映る。いずれも obstacle_limiter の前方コーン(±28.6°)・後方コーン(±34.4°)の外なので L5 の v_reverse キャップは発火しない。
 
     【2026-09-09 追記】初回実測値（前左 +45.9..+54.9 / 前右 -51.9..-45.4 / 後左 +130.3..+138.8 / 後右 -132.8..-125.8）は、支柱をかすめるグレージング角のビームが measure_blind_sectors.py の 90% persist 判定と NEAR_M=0.5m しきい値の境界で本来より 4〜7 度過小に切り詰められており、実機で /scan_filtered を確認すると各セクタの端から支柱の点群（0.32〜0.67m の近距離リターン）が漏れて地図（slam_toolbox）に写り込む不具合があった。/scan と /scan_filtered をセクタ境界の内外で突き合わせて実測し直し、支柱の点群が完全に消え、かつ境界の外側では実環境の距離（0.75m以上）が masking されずそのまま出ることを実機で確認した上でこの値に更新。measure_blind_sectors.py 側も MARGIN を 1.0→5.0 度、NEAR_M 既定値を 0.5→0.6m に変更済み（再測定時は同じ余裕を引き継ぐ）"
-  consumers: [lidar_filter, obstacle_limiter, opcheck_runner, opcheck_auto, calib_runner]
+  consumers: [lidar_filter, obstacle_limiter, opcheck_runner, opcheck_auto, calib_runner, measure_clearance]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-wp0.md WP-PARAM-01 §5"
   note: "死角セクタ（O-4）。平坦配列 [a0,a1, a2,a3, ...]（度）で持ち、lidar_filter._build_blind_ranges() / th_safety::flat_to_range_pairs() が 2 個ずつ組にする。空配列と『未校正』は別物であり、その判定は blind_calibrated（class:b）に委ねる（DetailedDesign-open.md 参照）。上部構造の形状を変えたら WP-CALIB-01 の手順で再測定すること"
 
@@ -1279,6 +1279,78 @@
   spec_ref: "DetailedDesign-names.md §7.3"
   note: "sys.link_timeout の契機。暫定値。2026-11-19 に 10000 → 30000（ユーザー決定）: bringup の起動直後は約 40 ノードの相手探し（SEDP）がラズパイに殺到し、1 回で約 7 万件・9 割近くを取りこぼす（docs/network.md「/scan がコンテナに届かない」6.）。普段は 10 秒以内に追いつくが、遅れると 10 秒で制御系が立て直され、立て直しが殺到を繰り返して LiDAR がいつまでもつながらなかった（2026-11-19 17:58〜17:59 に約 20 秒おきに 3 回）"
 
+- name: arm_clearance_scan_max_age_ms
+  unit: ms
+  class: b
+  status: given
+  value: 500
+  consumers: [params_audit, measure_clearance]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §3.5・§6.2"
+  note: "腕が振れる範囲の確認で、最後のスキャンがこれより古ければ UNKNOWN（scan_stale）。暫定値。角が描く円の確認（measure_clearance。P5b）も同じ値で、古ければ clear=false（2026-11-23）。names.md に先に載っていて registry の照合試験が赤だったので行だけ先に置く（2026-11-23）"
+
+- name: arm_clearance_blind_near_m
+  unit: m
+  class: b
+  status: given
+  value: 0.65
+  consumers: [params_audit, measure_clearance]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §6.5"
+  note: "腕が振れる範囲の確認で、laser_link の中心からこれ以内の部分の死角は判定から除く（2026-11-23 ユーザー決定）。いまの四隅の支柱ではどの向きの範囲にも機体の中心から約 0.6 m 以内の死角の楔がかかり、除かないと毎回 UNKNOWN になるため。Spec-measure.md §5.2 の既知のリスク"
+
+- name: corner_clear_radius_m
+  unit: m
+  class: b
+  status: given
+  value: 0.689
+  consumers: [params_audit, measure_clearance]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §6.8"
+  note: "発進・旋回の前の確認（角が描く円。/measure/corner_status）の半径（2026-11-25 ユーザー決定・fk 申し送り 25）。機体の外接 0.389 m + 0.3 m。スキャンと局所コストマップの両方をこの半径で見る。コストマップは致死（値 100）だけを数える"
+
+- name: adjust_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 20000
+  consumers: [state_manager]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §6.4"
+  note: "ADJUST の締め切り（8-g P3）。3.5 rad の旋回を向き合わせの速さ（下限 0.40 rad/s）で回すと約 9 秒かかるため、それを十分に超える 20 秒にした（measure_adjuster が落ちても ADJUST に閉じ込められない。詳細設計 §6.4）"
+
+- name: adjust_translate_v_mps
+  unit: m/s
+  class: b
+  status: given
+  value: 0.10
+  consumers: [measure_adjuster]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §6.4"
+  note: "ADJUST の前後並進の速さ（8-g P3。新規 registry 値）。盤前の位置合わせの数十 cm の動きなので極低速でよい（v_jog_panel の上限の内側）。暫定値"
+
+- name: adjust_translate_tolerance_m
+  unit: m
+  class: b
+  status: given
+  value: 0.02
+  consumers: [measure_adjuster]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §6.4"
+  note: "ADJUST の前後並進の許容差（8-g P3。新規 registry 値）。平坦な床で数十 cm の並進なら 2 cm の内側で十分。暫定値"
+
+- name: measure_link_timeout_ms
+  unit: ms
+  class: b
+  status: given
+  value: 1000
+  consumers: [measure_link]
+  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-measure.md §3.4・§6.1"
+  note: "最後に版一致（interface_version \"1\"）の /measure/heartbeat を受けてからこの時間が過ぎたら途絶とみなす（5 Hz の 5 回分。2026-11-23 決定）"
+
+- name: measure_ui_port
+  unit: null
+  class: b
+  status: given
+  value: 8091
+  consumers: [web_ui]
+  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-measure.md §6.2"
+  note: "S-60 の「測定機能の画面へ」が同じタブで移る先のポート（ホストは画面を開いているもの）。初期値 8091（fk fk_web_port）。S-50 では変えない"
+
 - name: restart_max_count
   unit: null
   class: c
@@ -1772,7 +1844,7 @@
   class: b
   status: given
   value: 1.2
-  consumers: [venue_navigator]
+  consumers: [venue_navigator, measure_adjuster]
   spec_ref: "DetailedDesign-names.md §7.2"
   note: "venue_navigator.py の既定値（変更なし）。暫定値"
 
@@ -1781,7 +1853,7 @@
   class: b
   status: given
   value: 0.6
-  consumers: [venue_navigator]
+  consumers: [venue_navigator, measure_adjuster]
   spec_ref: "DetailedDesign-names.md §7.2"
   note: "venue_navigator.py の既定値（変更なし）。暫定値"
 

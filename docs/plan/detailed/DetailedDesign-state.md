@@ -231,6 +231,7 @@ class StateCore:
 
 | id | mode | state | event | guard | to_mode | to_state | effects |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| **`C-01-working`** | `AT_PANEL` | `WORKING` | `ui.jog.hold` | **`working`** | — | — | **`reject: true`**（`working_in_progress`）。**`override_common`**（8-g P2。停止命令の間はジョグを受け付けない。`C-01` より先に落とす） |
 | `C-01` | `*` | `*` | `ui.jog.hold` | `jog_allowed` | `=` | `$pause_unless_prep` | `set_jog{on:true}` |
 | `C-02` | `*` | `PAUSE` | `sys.jog_lease_expired` | — | `=` | `PAUSE` | `set_jog{on:false}` |
 | `C-03` | `*` | `*` | `fault.recoverable` | `fault_stops_mode` | `=` | `$pause_unless_prep` | `open_window{id:W-1}` |
@@ -245,6 +246,7 @@ class StateCore:
 | **`C-09b-init`** | `ESTOP` | `NONE` | `ui.estop.release` | **`estop_prev_is_init`**（押下前 `INIT`。SG-A5。`C-09b` より前に置く） | `INIT` | `CHECK` | `clear_prev` |
 | `C-09b` | `ESTOP` | `NONE` | `ui.estop.release` | `no_critical_fault` | `IDLE` | `NONE` | `clear_prev` |
 | **`C-09c-summon`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_summon`** | `SUMMON` | `POINT` | `clear_prev`, `close_window{id:W-1}`, `enable_jog_ui`, `begin_two_point{kind:SUMMON}` |
+| **`C-09c-at-panel-working`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_at_panel_working`**（8-g P2。押下前が `AT_PANEL/WORKING`） | `AT_PANEL` | `WORKING` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-at-panel`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_at_panel`** | `AT_PANEL` | `IDLE_P` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-at-home`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_at_home`** | `AT_HOME` | `IDLE_H` | `clear_prev`, `close_window{id:W-1}` |
 | **`C-09c-opcheck`** | `ESTOP` | `NONE` | `ui.resume_yes` | **`estop_prev_is_opcheck`** | `OPCHECK` | `LIST` | `clear_prev`, `close_window{id:W-1}`, `abort_check` |
@@ -259,6 +261,7 @@ class StateCore:
 | **`C-09f`** | `ESTOP` | `NONE` | `ui.resume_ack` | **`fault_cleared_and_ui_released`** | `IDLE` | `NONE` | `clear_prev`, `close_window{id:W-1}` |
 | `C-10` | `CARRY` | `NONE` | `hw.estop.release` | — | `=` | `=` | `show_resume` |
 | **`C-11-summon`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_summon`** | `SUMMON` | `POINT` | `clear_prev`, `close_window{id:W-2}`, `enable_jog_ui`, `begin_two_point{kind:SUMMON}` |
+| **`C-11-at-panel-working`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_at_panel_working`**（8-g P2。押下前が `AT_PANEL/WORKING`） | `AT_PANEL` | `WORKING` | `clear_prev`, `close_window{id:W-2}` |
 | **`C-11-at-panel`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_at_panel`** | `AT_PANEL` | `IDLE_P` | `clear_prev`, `close_window{id:W-2}` |
 | **`C-11-at-home`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_at_home`** | `AT_HOME` | `IDLE_H` | `clear_prev`, `close_window{id:W-2}` |
 | **`C-11-opcheck`** | `CARRY` | `NONE` | `ui.carry_resume` | **`carry_prev_is_opcheck`** | `OPCHECK` | `LIST` | `clear_prev`, `close_window{id:W-2}`, `abort_check` |
@@ -324,7 +327,7 @@ class StateCore:
 | `no_critical_fault` | `fault_severity != "CRITICAL"` | `fault_severity` |
 | `hw_released` | `not hw_estop` | `hw_estop` |
 | **`hw_released_and_no_critical`** | `not hw_estop and fault_severity != "CRITICAL"` | `hw_estop`, `fault_severity` |
-| **`carry_resume_prev` / `carry_prev_is_*`（12 件）** | `carry_*_ok`（上と同値）＋押下前モード・状態の振り分け（`C-09c` の `estop_*` と同型） | `hw_estop`, `fault_severity` |
+| **`carry_resume_prev` / `carry_prev_is_*`（12 件）** | `carry_*_ok`（上と同値）＋押下前モード・状態の振り分け（`C-09c` の `estop_*` と同型。8-g P2 の `carry_prev_is_at_panel_working` を含む） | `hw_estop`, `fault_severity` |
 | **`leash_slack`** | `not leash_taut` | `leash_taut` |
 | **`can_finish`** | `mode not in {"ESTOP"}` かつ（`mode != "CARRY"` または `not hw_estop`） | `hw_estop`, **`mode`** |
 | `mode_entry_allowed` | `mode_entry.yaml` が許し、かつ前提条件（§`DetailedDesign-transit.md` §0.4）を満たす | `route_ids`, `flags`, `leash_present`, `camera_present` |
@@ -346,6 +349,7 @@ class StateCore:
 | `estop_resume_prev` | `not fault_active and severity != CRITICAL and not hw_estop and prev_mode ∉ {"",INIT,IDLE,ESTOP,CARRY}` | `fault_active`, `fault_severity`, `hw_estop`, `prev_mode` |
 | **`estop_prev_is_init`** | 上の3項（`hw_estop` を問わない。`INIT/CHECK` に戻れば `T-INIT-03` が留める）`and prev_mode == "INIT"` | `fault_active`, `fault_severity`, `prev_mode` |
 | **`estop_prev_is_summon`／`_at_panel`／`_at_home`／`_opcheck`／`_calib`** | 上の3項 `and prev_mode == {SUMMON／AT_PANEL／AT_HOME／OPCHECK／CALIB}`（1b-2。§6 の右列への振り分け） | 同上＋`hw_estop` |
+| **`estop_prev_is_at_panel_working`** | 上の3項 `and prev_mode == "AT_PANEL" and prev_state == "WORKING"`（8-g P2。`C-09c-at-panel-working`。`C-09c-at-panel` より前に置く） | 同上＋`prev_state` |
 | **`estop_prev_is_prep_return`** | 上の3項 `and prev_mode == "PREP" and prev_state == "RETURN"`（`PREP/PAUSE` へ。1b-1 SG-A7） | 同上＋`prev_state` |
 | **`estop_prev_is_prep`** | 上の3項 `and prev_mode == "PREP" and prev_state != "RETURN"` | 同上 |
 | **`estop_prev_was_running`** | 上の3項 `and prev_state == ESTOP_RESUME_RUN[prev_mode]`（走行中の 9 モード。`attributes.yaml` の `run_state` の転記。一致は test で縛る） | 同上 |
@@ -600,10 +604,17 @@ class StateCore:
 | --- | --- | --- | --- | --- | --- | --- |
 | `T-ATP-01` | `IDLE_P` | `ui.working` (`on=true`) | — | `=` | `WORKING` | — |
 | `T-ATP-02` | `WORKING` | `ui.working` (`on=false`) | — | `=` | `IDLE_P` | — |
+| **`T-ATP-02-done`** | `WORKING` | `meas.done`（8-g P2） | — | `=` | `IDLE_P` | — |
+| **`T-ATP-08-fault`** | `WORKING` | `fault.recoverable`（8-g P2。`override_common`） | — | `=` | `WORKING` | `open_window{id:W-1}` |
+| **`T-ATP-09-ack`** | `WORKING` | `ui.resume_ack`（8-g P2） | `fault_cleared` | `=` | `WORKING` | `close_window{id:W-1}` |
 | `T-ATP-03` | `IDLE_P` | `ui.jog.hold` | — | `=` | `PAUSE` | `set_jog(true)` |
 | `T-ATP-04` | `PAUSE` | `sys.jog_lease_expired` | — | `=` | **`IDLE_P`** | `set_jog(false)` |
 | `T-ATP-05` | `IDLE_P` ／ `WORKING` | `ui.goto` | `goto_allowed` | `$arg.kind`（§3.5） | `$initial` | — |
 | **`T-ATP-07`** | `IDLE_P` | `ui.save` | `map_update` | `=` | `=` | `commit_map_patch` |
+| **`T-ATP-00`／`-00a`** | `WORKING` | `meas.turn`／`meas.translate`（8-g P3） | 角・進む先 | `=` | `ADJUST` | `measure_adjust{command_id, kind, angle_rad, side, distance_m}` |
+| **`T-ATP-00X`／`-00Y`** | `WORKING` | `meas.turn`／`meas.translate`（8-g P3 拒否） | 角・進む先 | — | —（拒否） | — |
+| **`T-ATP-00-adjust-reject`** | `ADJUST` | `meas.done`／`ui.working`／`ui.goto`（8-g P3） | — | — | —（拒否 `adjust_in_progress`） | — |
+| **`T-ATP-10`／`-10t`／`-10f`** | `ADJUST` | `evt.adjust_done`／`sys.adjust_timeout`／`evt.adjust_failed`（8-g P3） | — | `=` | `WORKING` | — |
 
 **`T-ATP-06` は置かない。**「作業中に行き先を選ぼうとした」の拒否は
 **ガード `goto_allowed` の否定**で表す（`not flags["working"]`）。
@@ -965,6 +976,8 @@ jog_lease_ms  ≥  /cmd_vel_manual の twist_mux timeout (1.0 s)
 **ゾーンは属性表に持たせない。**画面から引く（[names](DetailedDesign-names.md) §4.1）。
 
 ### 8.2 実値（**18 行 × 9 列。これが `attributes.yaml` の中身**）
+
+`AUTO_MEASURE`（8-g P5a で 19 行目。P5b で走行状態 `NAV` を足した）の値と遷移の行は [measure](DetailedDesign-measure.md) §6.2 にある。この表と §4.2 には写していない。正しい値は `attributes.yaml` と `transitions.yaml`（`T-MEAS-*`・`C-15-measure-link-*`・`C-15-auto-measure`）。
 
 | モード | `initial_state` | `run_state` | `resume` | `resume_state` | `needs_tracker` | `speed_limit` | `auto_brake_default` | `jog` | `has_record` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

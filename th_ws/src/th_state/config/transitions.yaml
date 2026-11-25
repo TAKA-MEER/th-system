@@ -11,6 +11,24 @@
 #   - LINE/LEASH の一部行は実装を段階8へ後回しにしており、§3.3 のeffect一覧に無い効果名
 #     （例: plan_line_route）は転記していない（空リスト）。表そのものは含める。
 
+# 8-g P2（SM-3.1.2-062）: 停止命令の間（AT_PANEL/WORKING）のジョグは
+# override_common の拒否行で C-01 より先に落とす（理由 working_in_progress）。
+# jog_active が立たないので速度上限は停止のまま（/cmd_vel は 0）。
+- id: C-01-working
+  layer: 0
+  mode: AT_PANEL
+  state:
+  - WORKING
+  - ADJUST
+  event: ui.jog.hold
+  guard: working
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-062
+  reject: true
+  reject_reason_key: working_in_progress
+  override_common: true
 - id: C-01
   layer: 0
   mode: '*'
@@ -241,6 +259,25 @@
   - name: begin_two_point
     args:
       kind: SUMMON
+  spec_ref: SM-3.1.1-11
+# C-09c-at-panel-working: 8-g P2（SM-3.1.2-140）。押下前が AT_PANEL/WORKING
+# （停止命令の間）なら WORKING へ戻す（停止命令のまま）。C-09c-at-panel より
+# 前に置く。clear_prev が効く前に prev_state を読む（ガードは Context の
+# prev_* を見る。effect の clear_prev はそのあとに走る）。
+- id: C-09c-at-panel-working
+  layer: 0
+  mode: ESTOP
+  state: NONE
+  event: ui.resume_yes
+  guard: estop_prev_is_at_panel_working
+  to_mode: AT_PANEL
+  to_state: WORKING
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-1
   spec_ref: SM-3.1.1-11
 # C-09c-at-panel / -at-home: §6 の右列どおり IDLE_P / IDLE_H（確認をやり直す）。
 - id: C-09c-at-panel
@@ -496,6 +533,24 @@
   - name: begin_two_point
     args:
       kind: SUMMON
+  spec_ref: SM-3.1.1-14
+# C-11-at-panel-working: 8-g P2（SM-3.1.2-140）。押下前が AT_PANEL/WORKING
+# （停止命令の間）なら WORKING へ戻す。C-11-at-panel より前に置く
+# （C-09c-at-panel-working と同じ読み順の注意）。
+- id: C-11-at-panel-working
+  layer: 0
+  mode: CARRY
+  state: NONE
+  event: ui.carry_resume
+  guard: carry_prev_is_at_panel_working
+  to_mode: AT_PANEL
+  to_state: WORKING
+  effects:
+  - name: clear_prev
+    args: {}
+  - name: close_window
+    args:
+      id: W-2
   spec_ref: SM-3.1.1-14
 # C-11-at-panel / -at-home: §6 の右列どおり IDLE_P / IDLE_H（確認をやり直す）。
 - id: C-11-at-panel
@@ -776,6 +831,47 @@
   spec_ref: SM-3.1.1-19
   reject: true
   reject_reason_key: recoverable_fault_active
+# 8-g P5a（SM-3.1.2-120）: 自律測定の入口は測定機能と通信できなければ拒否する
+# （理由キー measure_link_lost／measure_version_mismatch）。C-15-summon と同じ
+# 「同一イベント・ガード違いを記載順で振り分ける」流儀。C-15-recoverable-fault-active
+# より後・C-15-summon より前に置く（回復フォルトが残ればそちらが先）。
+# C-15-auto-measure は効果 start_measure_map（dest map_session）で地図を作り直す。
+- id: C-15-measure-link-version
+  layer: 0
+  mode: IDLE
+  state: NONE
+  event: ui.goto
+  guard: measure_version_mismatch
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-120
+  reject: true
+  reject_reason_key: measure_version_mismatch
+- id: C-15-measure-link-lost
+  layer: 0
+  mode: IDLE
+  state: NONE
+  event: ui.goto
+  guard: measure_link_lost
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-120
+  reject: true
+  reject_reason_key: measure_link_lost
+- id: C-15-auto-measure
+  layer: 0
+  mode: IDLE
+  state: NONE
+  event: ui.goto
+  guard: goto_auto_measure
+  to_mode: AUTO_MEASURE
+  to_state: $initial
+  effects:
+  - name: start_measure_map
+    args: {}
+  spec_ref: SM-3.1.2-120
 - id: C-15-summon
   layer: 0
   mode: IDLE
@@ -1954,7 +2050,57 @@
   to_mode: '='
   to_state: IDLE_P
   effects: []
+  spec_ref: SM-3.1.2-134
+# 8-g P2（SM-3.1.2-063）: 測定機能の「測定を終えた」（meas.done）。WORKING →
+# IDLE_P で、すぐ DONE を出す（台帳は state_manager の IMMEDIATE_MEASURE_COMMANDS）。
+# WORKING で受ける meas.* はこれだけ。ほかは行が無いので state_not_accepting。
+# AT_PANEL の IDLE_P・PAUSE では従来どおりすべて拒否。
+- id: T-ATP-02-done
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event: meas.done
+  guard: null
+  to_mode: '='
+  to_state: IDLE_P
+  effects: []
   spec_ref: SM-3.1.2-063
+# 8-g P2（SM-3.1.2-139）: WORKING の回復フォルトは override_common の行で
+# WORKING のまま（effect open_window。C-03 の PAUSE には落とさない）。
+# 測定機能との途絶（evt.measure_link_lost）は WORKING では遷移しない（行が無い）。
+- id: T-ATP-08-fault
+  layer: 10
+  mode: AT_PANEL
+  state:
+  - WORKING
+  - ADJUST
+  event: fault.recoverable
+  guard: null
+  to_mode: '='
+  to_state: WORKING
+  effects:
+  - name: open_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.2-139
+  override_common: true
+# 8-g P2（SM-3.1.2-139）: WORKING の W-1「確認」（ui.resume_ack）は状態を変えずに
+# 受け、窓を閉じる（ガード fault_cleared。フォルトが残っている間は受けない）。
+- id: T-ATP-09-ack
+  layer: 10
+  mode: AT_PANEL
+  state:
+  - WORKING
+  - ADJUST
+  event: ui.resume_ack
+  guard: fault_cleared
+  to_mode: '='
+  to_state: WORKING
+  effects:
+  - name: close_window
+    args:
+      id: W-1
+  spec_ref: SM-3.1.2-139
 - id: T-ATP-03
   layer: 10
   mode: AT_PANEL
@@ -1988,7 +2134,9 @@
 - id: T-ATP-05-working
   layer: 10
   mode: AT_PANEL
-  state: WORKING
+  state:
+  - WORKING
+  - ADJUST
   event: ui.goto
   guard: working
   to_mode: null
@@ -2766,3 +2914,501 @@
   to_state: $initial
   effects: []
   spec_ref: SM-3.1.2-098
+# 8-g P5a/P5b（自律測定。DetailedDesign-measure.md §6.2）。
+# P5a の状態は WAIT・PAUSE だけだったが、P5b で NAV・ALIGN・BLOCKED を足した
+# （ADJUST は P3 でその入口の行と一緒に足す）。出る行も、その状態を足す
+# パケットで足す。meas.turn・translate と腕の範囲の確認は行が無いので
+# 拒否される（state_not_accepting）。AT_PANEL の WORKING の meas 行も P2。
+# meas.set_limits は P5c（§6.6）で受ける（T-MEAS-04・T-ATP-00-set-limits）。
+# T-MEAS-01X は -142 の拒否行（meas.start の前に評価される。LOCALIZATION_LOST のあと
+# 自律測定を抜けて入り直すまで localization_lost で拒否）。
+# 記載順で振り分ける（§3-1 流儀）: 拒否行（reentry → map → corner）を先に置き、
+# そのあとに受理行を置く。
+- id: T-MEAS-01X
+  layer: 10
+  mode: AUTO_MEASURE
+  state: PAUSE
+  event: meas.start
+  guard: measure_reentry_required
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-130
+  reject: true
+  reject_reason_key: localization_lost
+- id: T-MEAS-01C
+  layer: 10
+  mode: AUTO_MEASURE
+  state: PAUSE
+  event: meas.start
+  guard: measure_start_corner_blocked
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-130
+  reject: true
+  reject_reason_key: corner_obstacle
+- id: T-MEAS-01N
+  layer: 10
+  mode: AUTO_MEASURE
+  state: PAUSE
+  event: meas.start
+  guard: measure_prev_is_nav_or_blocked
+  to_mode: '='
+  to_state: NAV
+  effects: []
+  spec_ref: SM-3.1.2-130
+- id: T-MEAS-01A
+  layer: 10
+  mode: AUTO_MEASURE
+  state: PAUSE
+  event: meas.start
+  guard: measure_prev_is_align
+  to_mode: '='
+  to_state: ALIGN
+  effects: []
+  spec_ref: SM-3.1.2-130
+- id: T-MEAS-01
+  layer: 10
+  mode: AUTO_MEASURE
+  state: PAUSE
+  event: meas.start
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects: []
+  spec_ref: SM-3.1.2-130
+- id: T-MEAS-02
+  layer: 10
+  mode: AUTO_MEASURE
+  state:
+  - PAUSE
+  - ADJUST
+  event: meas.abort
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects: []
+  spec_ref: SM-3.1.2-131
+- id: T-MEAS-02B
+  layer: 10
+  mode: AUTO_MEASURE
+  state:
+  - NAV
+  - ALIGN
+  - BLOCKED
+  - ADJUST
+  event: meas.abort
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects:
+  - name: cancel_follow_path
+    args: {}
+  spec_ref: SM-3.1.2-131
+- id: T-MEAS-05
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.goal
+  guard: measure_reentry_required
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-121
+  reject: true
+  reject_reason_key: localization_lost
+- id: T-MEAS-06
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.goal
+  guard: measure_map_mismatch
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-121
+  reject: true
+  reject_reason_key: map_mismatch
+- id: T-MEAS-07
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.goal
+  guard: measure_corner_blocked
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-121
+  reject: true
+  reject_reason_key: corner_obstacle
+- id: T-MEAS-08
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.goal
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: measure_goal
+    args:
+      command_id: $arg.command_id
+      x: $arg.x
+      y: $arg.y
+      yaw: $arg.yaw
+  spec_ref: SM-3.1.2-121
+- id: T-MEAS-09
+  layer: 10
+  mode: AUTO_MEASURE
+  state:
+  - NAV
+  - BLOCKED
+  event: meas.reroute
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects:
+  - name: replan
+    args: {}
+  spec_ref: SM-3.1.2-122
+- id: T-MEAS-10
+  layer: 10
+  mode: AUTO_MEASURE
+  state: NAV
+  event: evt.arrived
+  guard: null
+  to_mode: '='
+  to_state: ALIGN
+  effects: []
+  spec_ref: SM-3.1.2-123
+- id: T-MEAS-11
+  layer: 10
+  mode: AUTO_MEASURE
+  state: ALIGN
+  event: evt.align_done
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects: []
+  spec_ref: SM-3.1.2-124
+- id: T-MEAS-12
+  layer: 10
+  mode: AUTO_MEASURE
+  state: NAV
+  event: evt.blocked
+  guard: null
+  to_mode: '='
+  to_state: BLOCKED
+  effects: []
+  spec_ref: SM-3.1.2-125
+- id: T-MEAS-13
+  layer: 10
+  mode: AUTO_MEASURE
+  state: BLOCKED
+  event: evt.unblocked
+  guard: null
+  to_mode: '='
+  to_state: NAV
+  effects: []
+  spec_ref: SM-3.1.2-126
+- id: T-MEAS-14
+  layer: 10
+  mode: AUTO_MEASURE
+  state:
+  - NAV
+  - ALIGN
+  - BLOCKED
+  - ADJUST
+  event: meas.stop
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects:
+  - name: cancel_follow_path
+    args: {}
+  spec_ref: SM-3.1.2-129
+- id: T-MEAS-15
+  layer: 10
+  mode: AUTO_MEASURE
+  state:
+  - NAV
+  - ALIGN
+  - BLOCKED
+  - ADJUST
+  event: evt.measure_link_lost
+  guard: null
+  to_mode: '='
+  to_state: PAUSE
+  effects: []
+  spec_ref: SM-3.1.2-133
+- id: T-MEAS-03
+  layer: 10
+  mode: AUTO_MEASURE
+  state: '*'
+  event: meas.finish
+  guard: null
+  to_mode: IDLE
+  to_state: NONE
+  effects: []
+  spec_ref: SM-3.1.2-135
+# 8-g P5c（§6.6）: meas.set_limits の受理行。AUTO_MEASURE の全状態と
+# AT_PANEL/WORKING・ADJUST で受け、状態は変えない（すぐ DONE）。
+# ほかは行が無いので state_not_accepting。
+- id: T-MEAS-04
+  layer: 10
+  mode: AUTO_MEASURE
+  state: '*'
+  event: meas.set_limits
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects: []
+  # meas.set_limits は正本 §3.1.2 に専用の SM 番号が無い（Spec-measure.md §3
+  # 「速度・加速度の上限」）。AUTO_MEASURE の行として -135 段落に載せる
+  # （test_transition_table の fan-out 宣言に対応）。
+  spec_ref: SM-3.1.2-135
+- id: T-ATP-00-set-limits
+  layer: 10
+  mode: AT_PANEL
+  state:
+  - WORKING
+  - ADJUST
+  event: meas.set_limits
+  guard: null
+  to_mode: '='
+  to_state: '='
+  effects: []
+  # AT_PANEL の行は -136 段落に載せる（WORKING の turn/translate と同じ）。
+  spec_ref: SM-3.1.2-136
+# 8-g P3（SM-3.1.2-127・-136）: 盤前の旋回・前後の並進（ADJUST）。
+# 受ける順は reentry_required（自律測定のみ）→ corner_obstacle → 並進だけ path_obstacle。
+# ADJUST 中の meas.done・停止を解く・行き先は adjust_in_progress で拒否（-138）。
+# ADJUST からの終わり（-128・-137）は evt.adjust_done、締め切りは sys.adjust_timeout、
+# 進まないときは evt.adjust_failed（state_manager が台帳へ CANCELLED を出す）。
+- id: T-ATP-00-adjust-reject
+  layer: 10
+  mode: AT_PANEL
+  state: ADJUST
+  event:
+  - meas.done
+  - ui.working
+  - ui.goto
+  guard: null
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-138
+  reject: true
+  reject_reason_key: adjust_in_progress
+  override_common: true
+# ADJUST 中の meas.turn／translate は §6.4「ほか（ADJUST 中を含む）は
+# state_not_accepting」にする（adjust_in_progress は meas.done・
+# ui.working off・ui.goto だけ）。自律測定の ADJUST も同じ。
+- id: T-MEAS-20X
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event:
+  - meas.turn
+  - meas.translate
+  guard: measure_reentry_required
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-127
+  reject: true
+  reject_reason_key: localization_lost
+- id: T-MEAS-21X
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event:
+  - meas.turn
+  - meas.translate
+  guard: measure_corner_blocked
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-127
+  reject: true
+  reject_reason_key: corner_obstacle
+- id: T-MEAS-22X
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.translate
+  guard: measure_path_blocked
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-127
+  reject: true
+  reject_reason_key: path_obstacle
+- id: T-MEAS-20
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.turn
+  guard: null
+  to_mode: '='
+  to_state: ADJUST
+  effects:
+  - name: measure_adjust
+    args:
+      command_id: $arg.command_id
+      kind: turn
+      angle_rad: $arg.angle_rad
+      side: ''
+      distance_m: 0
+  spec_ref: SM-3.1.2-127
+- id: T-MEAS-21
+  layer: 10
+  mode: AUTO_MEASURE
+  state: WAIT
+  event: meas.translate
+  guard: null
+  to_mode: '='
+  to_state: ADJUST
+  effects:
+  - name: measure_adjust
+    args:
+      command_id: $arg.command_id
+      kind: translate
+      angle_rad: 0
+      side: $arg.side
+      distance_m: $arg.distance_m
+  spec_ref: SM-3.1.2-127
+- id: T-ATP-00X
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event:
+  - meas.turn
+  - meas.translate
+  guard: measure_corner_blocked
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-136
+  reject: true
+  reject_reason_key: corner_obstacle
+- id: T-ATP-00Y
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event: meas.translate
+  guard: measure_path_blocked
+  to_mode: null
+  to_state: null
+  effects: []
+  spec_ref: SM-3.1.2-136
+  reject: true
+  reject_reason_key: path_obstacle
+- id: T-ATP-00
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event: meas.turn
+  guard: null
+  to_mode: '='
+  to_state: ADJUST
+  effects:
+  - name: measure_adjust
+    args:
+      command_id: $arg.command_id
+      kind: turn
+      angle_rad: $arg.angle_rad
+      side: ''
+      distance_m: 0
+  spec_ref: SM-3.1.2-136
+- id: T-ATP-00a
+  layer: 10
+  mode: AT_PANEL
+  state: WORKING
+  event: meas.translate
+  guard: null
+  to_mode: '='
+  to_state: ADJUST
+  effects:
+  - name: measure_adjust
+    args:
+      command_id: $arg.command_id
+      kind: translate
+      angle_rad: 0
+      side: $arg.side
+      distance_m: $arg.distance_m
+  spec_ref: SM-3.1.2-136
+- id: T-MEAS-23
+  layer: 10
+  mode: AUTO_MEASURE
+  state: ADJUST
+  event: evt.adjust_done
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects: []
+  spec_ref: SM-3.1.2-128
+- id: T-MEAS-24
+  layer: 10
+  mode: AUTO_MEASURE
+  state: ADJUST
+  event: sys.adjust_timeout
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects: []
+  spec_ref: SM-3.1.2-128
+- id: T-MEAS-25
+  layer: 10
+  mode: AUTO_MEASURE
+  state: ADJUST
+  event: evt.adjust_failed
+  guard: null
+  to_mode: '='
+  to_state: WAIT
+  effects: []
+  spec_ref: SM-3.1.2-128
+- id: T-ATP-10
+  layer: 10
+  mode: AT_PANEL
+  state: ADJUST
+  event: evt.adjust_done
+  guard: null
+  to_mode: '='
+  to_state: WORKING
+  effects: []
+  spec_ref: SM-3.1.2-137
+- id: T-ATP-10t
+  layer: 10
+  mode: AT_PANEL
+  state: ADJUST
+  event: sys.adjust_timeout
+  guard: null
+  to_mode: '='
+  to_state: WORKING
+  effects: []
+  spec_ref: SM-3.1.2-137
+- id: T-ATP-10f
+  layer: 10
+  mode: AT_PANEL
+  state: ADJUST
+  event: evt.adjust_failed
+  guard: null
+  to_mode: '='
+  to_state: WORKING
+  effects: []
+  spec_ref: SM-3.1.2-137
+# 停止命令の ADJUST の「回復フォルト・途絶」（-139・§6.4）は WORKING へ戻す
+# （動きをやめて捨てる）。測定機能との途絶は WORKING では遷移しないが
+# ADJUST では WORKING へ戻し、台帳は state_manager が CANCELLED（link_lost）。
+- id: T-ATP-10L
+  layer: 10
+  mode: AT_PANEL
+  state: ADJUST
+  event: evt.measure_link_lost
+  guard: null
+  to_mode: '='
+  to_state: WORKING
+  effects: []
+  spec_ref: SM-3.1.2-139

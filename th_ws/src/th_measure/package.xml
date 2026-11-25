@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>th_measure</name>
+  <version>0.1.0</version>
+  <description>測定機能（fk-system）との接続の芯。生存確認（measure_link）と
+    /measure/status の発行。純コアは link_core.py（ROS 非依存）。
+    詳細設計は docs/plan/detailed/DetailedDesign-measure.md §6.1</description>
+  <maintainer email="dev@example.com">TH Team</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+  <depend>rclpy</depend>
+  <depend>tf2_ros</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>th_system_msgs</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

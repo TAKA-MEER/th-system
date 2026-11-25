@@ -112,11 +112,15 @@ def evaluate(now_ms: int, last_fb_ms: Optional[int], last_cmd_alive_ms: Optional
 
 
 def should_emit_link_ok(report: LinkReport, estop_seen: bool, hw_estop: bool,
-                        dev_link_ignored: bool) -> bool:
-    """`evt.link_ok` を出してよいか（WP-DEV-01A。旧 L-2 ゲート式の純粋関数化）。
+                        dev_link_ignored: bool, sim: bool = False) -> bool:
+    """`evt.link_ok` を出してよいか（WP-DEV-01A。旧 L-2 ゲート式の純粋関数化）
 
-    - 通常（`dev_link_ignored` が偽）: `report.all_ok()` かつ **物理 E-Stop の状態を
+    - 通常（`dev_link_ignored` が偽・`sim` が偽）: `report.all_ok()` かつ **物理 E-Stop の状態を
       受信済み** かつ押されていないときだけ真（L-2・CL-B-6。従来どおり）。
+    - シミュレーション（`sim` が真。8-g P6。DetailedDesign-measure.md §6.7）:
+      `report.all_ok()` かつ押されていないときだけ真。**`estop_seen` を求めない**
+      （`/safety/estop_hw` の唯一の publisher は `esp32_bridge` で sim に居ないため、
+      求めると `link_ok` が永久に出ない。押されていると分かっている間は出さない）。
     - 開発モード（真）: 物理 E-Stop が**押されていると分かっている間は出さない**
       （Spec-safety.md §10 の境界。`dev_mode` でも外さない）。
       未受信（`estop_seen` が偽）でも出す —— `/safety/estop_hw` の唯一の publisher
@@ -129,6 +133,8 @@ def should_emit_link_ok(report: LinkReport, estop_seen: bool, hw_estop: bool,
         return False
     if dev_link_ignored:
         return True
+    if sim:
+        return report.all_ok()
     return report.all_ok() and estop_seen
 
 

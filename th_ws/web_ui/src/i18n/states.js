@@ -26,9 +26,18 @@ export const STATE_NAMES = {
   // WP-UI-07: S-21 試験のサブ状態（transitions.yaml T-ATP-01/02・T-SUM-01/05）。
   WORKING: '作業中',
   WAIT_CLEAR: '退避待ち',
+  // 8-g P5a-ui: 自律測定（AUTO_MEASURE）のサブ状態（Spec-modes.md SM-3.1.2-120）。
+  // PAUSE は既存の「一時停止中」をそのまま使う（仕様 §3.16 の「一時停止」）。
+  WAIT: '指示待ち',
   // T-PNAV-04/T-HNAV-04（evt.blocked）。stop-banner（STOP_REASON_LABELS.blocked）
   // が詳しい理由を出すので、ここは短い状態語のみ。
   BLOCKED: '経路探索中（再試行）',
+  // 8-g P5b: 自律測定と試験場内（PANEL_NAV）の向き合わせ。
+  ALIGN: '向き合わせ中',
+  // 8-g P3-ui: 盤前の旋回・前後の並進（AUTO_MEASURE / AT_PANEL の ADJUST）。
+  // S-60 の状態表示と S-21（停止命令の表示に添える）に出る。
+  // DetailedDesign-measure.md §6.4（P3-ui の表）。
+  ADJUST: '測定機能の指示で動作中',
   // WP-UI-08: OPCHECK のサブ状態（transitions.yaml T-OPC-01〜08）。
   RUNNING_CHECK: '確認中',
   REPAIR: '故障診断',

@@ -4,6 +4,7 @@
     "has_record": false,
     "initial_state": "IDLE_H",
     "jog": "allowed",
+    "jog_speed_limit": "v_slow",
     "needs_tracker": "unused",
     "resume": "ack_only",
     "resume_state": "IDLE_H",
@@ -15,11 +16,24 @@
     "has_record": false,
     "initial_state": "IDLE_P",
     "jog": "allowed",
+    "jog_speed_limit": "v_jog_panel",
     "needs_tracker": "unused",
     "resume": "ack_only",
     "resume_state": "IDLE_P",
     "run_state": null,
     "speed_limit": "stop"
+  },
+  "AUTO_MEASURE": {
+    "auto_brake_default": "on_locked",
+    "has_record": false,
+    "initial_state": "WAIT",
+    "jog": "allowed",
+    "jog_speed_limit": "v_jog_panel",
+    "needs_tracker": "unused",
+    "resume": "ack_only",
+    "resume_state": "PAUSE",
+    "run_state": "NAV",
+    "speed_limit": "v_slow"
   },
   "CALIB": {
     "auto_brake_default": "on_locked",

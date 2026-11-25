@@ -39,7 +39,7 @@ _SPEC_ID_RE = re.compile(r"SM-3\.1\.[12]-\d+[a-z]?")
 # SM-3.1.1-14 = 12。2026-10-22 に C-11-blocked を廃して 11。
 SPEC_FANOUT = {
     "SM-3.1.1-03": 2, "SM-3.1.1-04": 2, "SM-3.1.1-05": 2,
-    "SM-3.1.1-10": 4, "SM-3.1.1-11": 15, "SM-3.1.1-14": 11, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
+    "SM-3.1.1-10": 4, "SM-3.1.1-11": 16, "SM-3.1.1-14": 12, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
     "SM-3.1.2-043": 2,     "SM-3.1.2-069": 3, "SM-3.1.2-094": 4,
     # 1b-7 SG-B11: SM-3.1.2-017 は T-TEACH-05（ui.run 拒否）と T-TEACH-05J
     # （ui.jog.hold 拒否。C-01 が SAVED を抜ける穴塞ぎ）の 2 行。
@@ -75,6 +75,36 @@ SPEC_FANOUT = {
     # SM-3.1.2-143（2026-11-12 A-12②）: SUMMON/POINT はジョグで PAUSE に落とさない。
     # ジョグ開始（T-SUM-18）とリース満了（T-SUM-19）の 2 行。
     "SM-3.1.2-143": 2,
+    # 自律測定（8-g P5a。DetailedDesign-measure.md §6.2）:
+    # -120（入口）= 拒否 2 行（C-15-measure-link-version／-lost）+ 受理 1 行
+    # （C-15-auto-measure。効果 start_measure_map）。理由キーを分けるため 3 行。
+    "SM-3.1.2-120": 3,
+    # -130（発進）= 拒否 2 行（T-MEAS-01X の入り直し要否・T-MEAS-01C の角の確認）
+    # + 受理 3 行（T-MEAS-01N→NAV・T-MEAS-01A→ALIGN・T-MEAS-01→WAIT）。
+    "SM-3.1.2-130": 5,
+    # -131（中止）= T-MEAS-02（PAUSE）+ T-MEAS-02B（NAV・ALIGN・BLOCKED）の 2 行。
+    "SM-3.1.2-131": 2,
+    # -121（目的地）= 拒否 3 行（入り直し要否・map_mismatch・角の確認）+ 受理 1 行
+    # （T-MEAS-08 の measure_goal）。
+    "SM-3.1.2-121": 4,
+    # 8-g P2（停止命令）: -062（入口）= T-ATP-01（ui.working）+ C-01-working
+    # （ジョグの拒否行）。-139（回復フォルト・途絶）= T-ATP-08-fault +
+    # T-ATP-09-ack の 2 行。-063（meas.done）は T-ATP-02-done の 1 行だけ
+    # （T-ATP-02 の ui.working off は -134）。-140 の復帰行は -11/-14 に含む。
+    "SM-3.1.2-062": 2,
+    "SM-3.1.2-139": 3,
+    # 8-g P3: -127・-136（受理）= 拒否行（reentry/corner/path の 3 行）+
+    # 受理行（turn・translate の 2 行）で 5・4 行。-128・-137（ADJUST の終わり）
+    # = done・timeout・failed の 3 行。
+    "SM-3.1.2-127": 5,
+    # 8-g P5c: meas.set_limits の AT_PANEL 行を -136 に足した（turn・translate の
+    # 受理 2 行 + 拒否 2 行 + set_limits 1 行 = 5 行）。
+    "SM-3.1.2-136": 5,
+    # -135（終了）= T-MEAS-03（meas.finish）+ T-MEAS-04（meas.set_limits。
+    # 正本 §3.1.2 に専用の番号が無いので AUTO_MEASURE の行として -135 段落に載せる）。
+    "SM-3.1.2-135": 2,
+    "SM-3.1.2-128": 3,
+    "SM-3.1.2-137": 3,
 }
 
 
@@ -190,6 +220,10 @@ _STATIC_GUARD_OVERRIDES = {
     "estop_prev_is_at_panel": {"fault_active": False, "fault_severity": "",
                                "hw_estop": False, "prev_mode": "AT_PANEL",
                                "prev_state": "WORKING"},
+    # 8-g P2: 押下前が AT_PANEL/WORKING のときだけ真（-140 の復帰行）。
+    "estop_prev_is_at_panel_working": {"fault_active": False, "fault_severity": "",
+                                       "hw_estop": False, "prev_mode": "AT_PANEL",
+                                       "prev_state": "WORKING"},
     "estop_prev_is_at_home": {"fault_active": False, "fault_severity": "",
                               "hw_estop": False, "prev_mode": "AT_HOME",
                               "prev_state": "IDLE_H"},
@@ -222,6 +256,8 @@ _STATIC_GUARD_OVERRIDES = {
                              "prev_mode": "SUMMON", "prev_state": "NAV"},
     "carry_prev_is_at_panel": {"hw_estop": False, "fault_severity": "",
                                "prev_mode": "AT_PANEL", "prev_state": "WORKING"},
+    "carry_prev_is_at_panel_working": {"hw_estop": False, "fault_severity": "",
+                                       "prev_mode": "AT_PANEL", "prev_state": "WORKING"},
     "carry_prev_is_at_home": {"hw_estop": False, "fault_severity": "",
                               "prev_mode": "AT_HOME", "prev_state": "IDLE_H"},
     "carry_prev_is_opcheck": {"hw_estop": False, "fault_severity": "",
@@ -244,6 +280,26 @@ _STATIC_GUARD_OVERRIDES = {
     "resume_state_available": {"fault_active": False},
     # SM-3.1.1-19（2026-11-10）: 運用入口を塞ぐ回復フォルトが残っている。
     "recoverable_fault_active": {"recoverable_fault_types": ("ESP32_DISCONNECTED",)},
+    # 8-g P5a: 自律測定の入口（goto_auto_measure）と生存の拒否 2 行・入り直しの拒否 1 行。
+    "goto_auto_measure": {"arg": {"kind": "AUTO_MEASURE"}},
+    "measure_version_mismatch": {"arg": {"kind": "AUTO_MEASURE"},
+                               "measure_link_ok": False,
+                               "measure_link_reason": "version_mismatch"},
+    "measure_link_lost": {"arg": {"kind": "AUTO_MEASURE"},
+                          "measure_link_ok": False,
+                          "measure_link_reason": "timeout"},
+    "measure_reentry_required": {"measure_reentry_required": True},
+    # 8-g P5b: 目的地の拒否 3 行と発進の戻り先 3 行（ctx の新フィールド）。
+    "measure_map_mismatch": {"measure_map_instance_id": "m1",
+                             "arg": {"map_instance_id": "m2"}},
+    "measure_corner_blocked": {"measure_corner_clear": False},
+    # 8-g P3: 並進の進む先（距離が free_*_m を超える）。FORWARD で縛る。
+    "measure_path_blocked": {"arg": {"side": "FORWARD", "distance_m": 0.5},
+                           "measure_free_forward_m": 0.3},
+    "measure_start_corner_blocked": {"measure_prev_state": "NAV",
+                                     "measure_corner_clear": False},
+    "measure_prev_is_nav_or_blocked": {"measure_prev_state": "NAV"},
+    "measure_prev_is_align": {"measure_prev_state": "ALIGN"},
     # 1b-1 SG-A12: presence_stops_mode は attributes 束縛の動的ガード
     # （build_guards が state_core.is_driving で束縛）。静的な ctx 上書きでは
     # 真にできないため、ここには載せない（下の表明で mode_entry_allowed と
@@ -264,6 +320,13 @@ def _base_ctx_kwargs():
         line_visible=False, camera_present=False,
         check_item="", check_result="", calib_item="", calib_preview_sane=False,
         map_update_available=False, now_ms=0, arg={},
+        # 8-g P5b: 新しい Context フィールドの既定（角の確認は clear・地図は m1）。
+        # 拒否行の個別の上書き（guard ごとの表で False / 別の id）が優先される。
+        measure_corner_clear=True, measure_map_instance_id="m1",
+        measure_prev_state="",
+        # 8-g P3: 並進の進む先は広く開いている前提（path_obstacle の拒否行は
+        # ガード上書きで狭い値にする）。
+        measure_free_forward_m=9.0, measure_free_backward_m=9.0,
     )
 
 
@@ -285,7 +348,9 @@ def _concrete_state(row, mode):
     else:
         candidates = [s]
     valid = [c for c in candidates if c in state_core.MODE_STATES[mode]]
-    return sorted(valid)[0] if valid else sorted(state_core.MODE_STATES[mode])[0]
+    # 宣言順の先頭を取る（sorted では ADJUST が WORKING より前に来て
+    # T-ATP-05-working のような行が ADJUST の行に隠れる）。
+    return valid[0] if valid else sorted(state_core.MODE_STATES[mode])[0]
 
 
 def _concrete_event(row):
@@ -321,6 +386,20 @@ def _scenario_for(row):
                 kwargs[key] = merged
             else:
                 kwargs[key] = val
+    if event == "meas.translate":
+        # 並進の受理行は進む先が開いている前提で発火させる（距離を超える
+        # 値の拒否行はガード上書きで arg / free_*_m が勝つ）。
+        kwargs.setdefault("arg", {})
+        if "distance_m" not in kwargs["arg"]:
+            kwargs["arg"] = {**kwargs["arg"], "side": "FORWARD",
+                           "distance_m": 0.1}
+    if event == "meas.goal":
+        # 受理行（ガード無し）は地図が一致し角が空いている前提で発火させる
+        # （拒否行の上書きで arg / measure_corner_clear が違えばそちらが勝つ）。
+        kwargs.setdefault("arg", {})
+        if "map_instance_id" not in kwargs["arg"]:
+            kwargs["arg"] = {**kwargs["arg"], "map_instance_id": "m1"}
+        kwargs.setdefault("measure_corner_clear", True)
     return mode, state, event, state_core.Context(**kwargs)
 
 

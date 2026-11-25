@@ -120,6 +120,19 @@ REGISTRY_NODES: tuple[str, ...] = (
     # 2026-10-04 まで opcheck_runner.yaml を別名ノードで読んでいたため、トップレベルの
     # キー（ノード名）が合わず値が一切効いていなかった（死角マスクが空のまま比較していた）。
     "opcheck_auto",
+    # 8-g P1（2026-11-23）: measure_link は measure_link_timeout_ms と
+    # /measure/status の v_limit_mps 解決に使う速度パラメータ
+    # （v_max / v_slow / v_jog_panel / v_leash / v_check / v_calib）を
+    # 生成 yaml に載せる。新規行のみで blocking placeholder を含まないため
+    # A8 は armed にならない（v_slow / v_jog_panel は placeholder 導出で
+    # 生成物に載らず、ノード側の既定値に倒れる）。
+    "measure_link",
+    # 8-g P5b: measure_clearance は arm_clearance_scan_max_age_ms を生成 yaml に
+    # 載せる。新規行のみで blocking placeholder を含まないため A8 は armed にならない。
+    "measure_clearance",
+    # 8-g P3: measure_adjuster は並進の速さ・許容差と向き合わせの registry 値を
+    # 生成 yaml に載せる。
+    "measure_adjuster",
 )
 
 # ---------------------------------------------------------------------------

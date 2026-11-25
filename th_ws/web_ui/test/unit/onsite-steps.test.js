@@ -107,13 +107,14 @@ test('UX-2-d: onsiteReasons は手動不可モードにだけ jog_denied を返�
 // no_panel_pin/no_home_pin（venue_nav_core.find_home_goal が HOME ピンを探す）。
 
 test('UX-6-b: working 中は 3 ボタンとも working_in_progress（ピンの有無に関係なく）', () => {
+  // 8-g P2-ui: working 中は手動（manual）も working_in_progress。
   assert.deepEqual(
     onsiteReasons({ mode: 'AT_PANEL', attributes: attributesLike, pins: PINS_BOTH, working: true }),
-    { destHome: 'working_in_progress', destNextPanel: 'working_in_progress', destSummonHere: 'working_in_progress' },
+    { manual: 'working_in_progress', destHome: 'working_in_progress', destNextPanel: 'working_in_progress', destSummonHere: 'working_in_progress' },
   )
   assert.deepEqual(
     onsiteReasons({ mode: 'AT_PANEL', attributes: attributesLike, pins: [], working: true }),
-    { destHome: 'working_in_progress', destNextPanel: 'working_in_progress', destSummonHere: 'working_in_progress' },
+    { manual: 'working_in_progress', destHome: 'working_in_progress', destNextPanel: 'working_in_progress', destSummonHere: 'working_in_progress' },
   )
 })
 

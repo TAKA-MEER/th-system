@@ -60,6 +60,10 @@ safety_monitor ─→ /safety/fault_lock (lock 254) ─────────�
 下流から見て「指令が来ない」状態を作らないため）。判定ロジックは ROS2 非依存の
 `th_safety/obstacle_limiter_core.hpp` にあり、ノード側は sub/pub/timer の配線だけを行います。
 起動時に `base_link ← laser_link` の TF を有界リトライで取得します。
+測定機能の速度・加速度の上限（8-g P5c・`DetailedDesign-measure.md` §6.6）は
+`/system/state` の `measure_*_cap` 4 項目を受け、速度は即座クランプ、加速度は
+通常時ランプの上限に `min` で効く（下げる方向にだけ。ロック・途絶・障害物の
+停止はランプを通らない）。
 
 各入力トピックのタイムアウト値は `th_safety/config/twist_mux.yaml` で変更します。
 
@@ -90,6 +94,125 @@ safety_monitor ─→ /safety/fault_lock (lock 254) ─────────�
 > `th_ws/src/th_state/config/*.yaml` が正）。
 
 **運用入口のフォルト拒否（SM-3.1.1-19）**: `state_manager` は `/safety/active_faults` の現在集合を購読し、`IDLE` / `MANUAL` からのモード選択と `IDLE` / `AT_HOME` からの行き先選択を判定する。走行を止める回復フォルト（`LIDAR_LOST`・`ESP32_DISCONNECTED`。必須通信系統の断はこの 2 種で表れる）が残っていれば遷移を拒否し、`recoverable_fault_active` を返して W-1 を開く。W-1 の effect には残存フォルト名を含める。`PERSON_TRACKER_LOST` と、開発モードの `lidar_fault` が実効のときの `LIDAR_LOST` は数えない。物理非常停止を押したまま起動した場合は、`state_manager` がその間 `link_wait_timeout_ms` を数えず、解除後から疎通確認の時間を取り直すため、案内を保ったまま再起動ループを避ける。
+
+### 測定機能（fk-system）との接続の芯（8-g P1）
+
+`th_measure` の `measure_link` ノードが測定機能の生存確認と `/measure/status`
+（reliable・transient_local・10 Hz）の発行を受け持つ。`/measure/heartbeat` のうち
+`interface_version == "1"` のものだけを数え（純コア `th_measure/link_core.py`。
+ROS 非依存）、`/system/event` へ `evt.measure_link_ok` ／ `evt.measure_link_lost`
+（変化時と 1 Hz の出し直し）を出す。受け手は `state_manager`（最後の値を
+ラッチし、3 秒どちらも来なければ途絶とみなす）。`state_manager` はサービス
+`/measure/command`（`meas.*` のみ。判定順: `bad_argument` → `version_mismatch` →
+`link_lost` → `state_not_accepting`）と `/measure/result` の発行（純コア
+`th_state/measure_ledger.py` が 1 指示につき必ず 1 回だけ出す）、および内部トピック
+`/measure/command_state` を受け持つ。P1 では遷移表（`transitions.yaml`）に
+`meas.*` の行が無いため、すべての `meas.*` は `state_not_accepting` で拒否される。
+正本は `docs/plan/detailed/DetailedDesign-measure.md` §3・§6.1。
+
+**自律測定 `AUTO_MEASURE`（8-g P5a/P5b）**: `IDLE` から `ui.goto`（`kind: AUTO_MEASURE`）で入る。
+入口は測定機能の生存を見て、途絶なら `measure_link_lost`、版違いなら `measure_version_mismatch`
+で拒否する（`C-15-measure-link-*`）。入るときの effect `start_measure_map` で、`slam_control` が
+会場地図・経路地図に触れずに `slam_toolbox` をまっさらな地図作成にする（`instance_id` が新しくなる。
+`dirty` は立てない）。`map_freezer` はこのモードを凍結しない（`PASS_MODES`）。
+`localization_health` はモード全体を監視する。状態は `WAIT`・`PAUSE` に P5b で
+`NAV`・`ALIGN`・`BLOCKED` を足した（`ADJUST` は P3）。
+受理する指示は `meas.goal`（`WAIT`→`NAV`。拒否の順: `localization_lost` →
+`map_mismatch` → `corner_obstacle`。effect `measure_goal` で `venue_navigator` へ渡す）・
+`meas.reroute`（`NAV`・`BLOCKED`→`NAV`。すぐ `DONE`）・`meas.start`（`PAUSE` から
+止める前の状態へ。`NAV`・`BLOCKED`→`NAV`、`ALIGN`→`ALIGN`、それ以外→`WAIT`。
+`NAV`・`ALIGN` へ戻るときは角の確認をし直す）・`meas.stop`（走行系→`PAUSE`。目的地は持つ）・
+`meas.abort`（走行系・`PAUSE`→`WAIT`。目的地は `CANCELLED`（`aborted`））・
+`meas.finish`（→`IDLE`）。`meas.set_limits` は P5c で受ける（`AUTO_MEASURE` の
+全状態と `AT_PANEL`／`WORKING`・`ADJUST`。状態は変えない。8-g P5c）。
+`PAUSE` からは `ui.resume_yes` では戻らず、`meas.start` だけで戻る。`/measure/command` は
+受理の判定 → 台帳への記録 → 遷移の順に処理する。引数（`x`・`y`・`yaw`・
+`map_instance_id` ほか）と `command_id` を遷移表の `arg` に渡す。
+`venue_navigator` は試験場内と同じ駆動系を自律測定にも使う（目的地は `measure_goal` から。
+会場地図の検査は見ない。`AUTO_MEASURE` だけ手前 1.5 m の `/map` が不明なら `BLOCKED`）。
+`measure_clearance`（`th_measure`）が `/scan_filtered` と局所コストマップから
+半径 `corner_clear_radius_m`（0.689 m。外接 0.389 m ＋ 0.3 m。8-g P7）の円の中の障害物を 5 Hz で `/measure/corner_status` に出す
+（コストマップは致死のセルだけを数える）
+（`state_manager` は 1 秒届かなければ `clear=false` とみなす）。
+同じノードが腕が振れる範囲の確認（`/measure/check_arm_clearance`。8-g P4）の
+サービスも持つ。`/system/state` を購読して `AUTO_MEASURE`/`WAIT` と
+`AT_PANEL`/`WORKING` だけで受け（`ADJUST` を含むほかは `state_not_accepting`。
+拒否の順は `bad_argument` → `state_not_accepting`）、`region` を向きごとに
+回して（`LEFT` +90°・`RIGHT` −90°・`CURRENT` 0°。機体の形 0.55 m 角の内側は
+除く）判定を返す。判定順はスキャンの鮮度（`scan_stale`）→ 障害物
+（`BLOCKED`）→ 死角（`blind_sector`）。状態は変えない（`state_manager` を
+通さない）。正本は `DetailedDesign-measure.md` §3.5・§6.5。
+`evt.measure_link_lost` は、ラッチの値が変わったときだけ遷移表へ流す
+（`NAV`・`ALIGN`・`BLOCKED`→`PAUSE`。`pause_reason` は `measure_link`）。
+自律測定中に `LOCALIZATION_LOST` を受けると、進行中の指示を
+`CANCELLED`（`localization_lost`）で終え、`reentry_required` を立てる。`ESTOP`・`CARRY` を
+挟んで自律測定へ戻る間は片付けない。それ以外のモードへ出たとき（`ESTOP` 経由で
+`IDLE` へ出た場合を含む）に、残りの指示を `CANCELLED` にし、`reentry_required`
+を下ろす（`state_manager` の `_measure_in_session`）。正本は `DetailedDesign-measure.md` §6.2。
+
+**盤前の旋回・前後の並進 `ADJUST`（8-g P3）**: `measure_adjuster`（`th_measure`）が
+effect `measure_adjust`（`{command_id, kind, angle_rad, side, distance_m}`）を受け、
+`/system/state` が `ADJUST` の間だけ `/cmd_vel_behavior` に出す（Nav2 を使わない直接制御。
+帰還は TF `odom→base_link`。旋回は始点からのヨーを巻き戻さずに積み上げ、並進は始点からの
+進んだ距離で向きを保つ）。`meas.turn`／`meas.translate` は `AUTO_MEASURE`／`WAIT` と
+`AT_PANEL`／`WORKING` で受け、拒否の順は `reentry_required` → `corner_obstacle` →
+並進だけ `path_obstacle`（進む先の空きは `measure_clearance` が
+`/measure/corner_status` の `free_forward_m`／`free_backward_m` に出す）。速度の上限は
+状態 `ADJUST` で両モードとも `v_jog_panel`。締め切りは `state_manager` が
+`adjust_timeout_ms` でタイマを切り `sys.adjust_timeout` を流す。終わったら
+`evt.adjust_done` で `WAIT`／`WORKING` へ戻し、台帳に `DONE` を 1 回出す。
+`ADJUST` を出たら進行中の旋回・並進は `CANCELLED`（理由は出た契機。
+`evt.adjust_done` の `command_id` が進行中と違うものは捨てる）。
+自律測定の `ADJUST` からは非常停止・手押しへ入ると戻り先は `PAUSE`（走行状態と同じ）。
+停止命令の `ADJUST` では `meas.done`・停止を解く・行き先を拒否するので、閉じ込めは起きない。
+正本は `DetailedDesign-measure.md` §6.4。
+
+**速度・加速度の上限 `meas.set_limits`（8-g P5c）**: `state_manager` が
+4 項目を測定の続きの間だけ持ち（`ESTOP`・`CARRY` を挟んでも持つ）、
+`/system/state` の末尾 4 項目と `/measure/command_state` へ出す。続きでなく
+なったら 0 に戻す。`obstacle_limiter` が速度は即座クランプ、加速度は
+通常時ランプの上限に `min` で効かせ、`measure_link` が `/measure/status`
+の `v_limit_mps`・`w_limit_radps` に本システムの上限との小さい方を出す。
+正本は `DetailedDesign-measure.md` §6.6。
+
+**自律測定の画面（8-g P5a-ui）**: S-01 の「測定」の「自律測定」から入れ、
+S-60 に「測定機能の画面へ」（`measure_ui_port` を `/params/get` で読む）・
+「自律測定を終了」（W-4 の腕の格納の確認を先に挟む）・「手動」が並ぶ。
+W-1／W-2 の IDLE 抜け道にも同じ腕の確認を挟む（`SM-3.1.1-18`）。
+
+**お立会試験の停止命令 `AT_PANEL`／`WORKING`（8-g P2）**: S-21 の「測定機能へ」が
+`ui.working`（`{"on": true}`）で `IDLE_P`→`WORKING` に入る（測定機能の生存は
+ガードにしない。止まる向きなので）。`WORKING` で受ける `meas.*` は測定機能の
+「測定を終えた」`meas.done` だけ（`WORKING`→`IDLE_P`。すぐ `DONE`。ほかは
+`state_not_accepting`。`IDLE_P`・`PAUSE` では従来どおりすべて拒否）。人の
+「停止を解く」は既存の `ui.working`（`{"on": false}`）。ジョグは
+`override_common` の拒否行（`C-01-working`）で `C-01` より先に
+`working_in_progress` で落とす（`jog_active` が立たず `/cmd_vel` は 0 のまま）。
+回復フォルト（`fault.recoverable`）は `override_common` の行で `WORKING` のまま
+（effect `open_window`。`C-03` の `PAUSE` には落とさない）。W-1 の「確認」
+（`ui.resume_ack`。ガード `fault_cleared`）は状態を変えずに受ける
+（effect `close_window`）。測定機能との途絶（`evt.measure_link_lost`）は
+`WORKING` では遷移しない。非常停止・手押しの解除は、押下前が `WORKING` なら
+`AT_PANEL`／`WORKING` へ戻す（`C-09c-at-panel-working`・`C-11-at-panel-working`。
+ふつうの `AT_PANEL` は従来どおり `IDLE_P`。`IDLE` へ抜ける行は変えない）。
+`/system/state.working` の出す値は `guards.published_working` で決め、
+`ESTOP`・`CARRY` の間も押下前が `AT_PANEL`／`WORKING` なら `true` を保つ
+（行き先拒否のガード `is_working` は変えない。`/measure/status.working` は
+その写し）。結果の台帳も `AT_PANEL`／`WORKING` を「測定の続き」として扱い、
+そこから `ESTOP`・`CARRY` 以外へ出たら残りを `CANCELLED` にする
+（`meas.done` なら `finished`、ほかは `mode_exit`）。正本は
+`DetailedDesign-measure.md` §6.3。画面側（P2-ui）は別担当。
+
+**シミュレーション（Gazebo）で自律測定を通す（8-g P6）**: `gazebo.launch.py`（`sim:=true`）
+でも `venue_navigator` を起動する（`bringup.launch.py` の `onsite_enabled` の下と同じ
+生成 yaml。Nav2 の `FollowPath`／`ComputePathToPose`・`/map`・`/map_session/status`
+（`slam_control`）は sim に既に揃っているため、足すのはそれだけ）。起動時の疎通は
+開発モードを流用せず、既存の `connectivity_checker` の `sim` を広げる:
+`should_emit_link_ok` が `sim` のとき `/safety/estop_hw` の受信済み（`estop_seen`）を
+求めない（publisher の `esp32_bridge` は sim に居ない）。押されていると分かっている
+（`hw_estop`）間は `sim` でも出さない。新しい起動引数・名前は作らない。
+正本は `DetailedDesign-measure.md` §6.7。確認は `dev_mode` を入れずに
+`measure_sim_fake.py`（`th_ws/scripts/`）で `ui.goto`→`meas.goal`→`ARRIVED` を見て行う。
 
 ### 遷移ルールの実装（旧 FSM）
 

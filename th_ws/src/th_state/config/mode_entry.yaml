@@ -26,6 +26,7 @@ IDLE:
   - HOME_NAV
   - OPCHECK
   - CALIB
+  - AUTO_MEASURE  # 8-g P5a（SM-3.1.2-120。入口は ui.goto kind:AUTO_MEASURE）
 
 MANUAL:
   - IDLE
@@ -86,6 +87,10 @@ OPCHECK:
 
 CALIB:
   - OPCHECK
+  - IDLE
+
+AUTO_MEASURE:
+  # 8-g P5a。「自律測定を終了」は既存の「終了」の口（C-08 ui.finish）。
   - IDLE
 
 ESTOP:

@@ -31,14 +31,16 @@
 // `order` (theme.css) puts them in the right stacking position regardless
 // of where in the JSX tree they're mounted, so they can all live in this
 // one Fragment.
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { resumeChoices } from './limits.js'
+import { needsArmConfirmForExit } from '../modes/armConfirm.js'
 import { faultLabel } from '../i18n/faults.js'
 import { reasonLabel } from '../i18n/reasons.js'
 import { modeLabel } from '../i18n/modes.js'
 import {
   W6_TITLE, W6_CLOSE, W6_MODE, W6_REAR_BLIND, W6_AUTO_BRAKE_LABEL,
   W6_AUTO_BRAKE_ON, W6_AUTO_BRAKE_OFF, W6_AUTO_BRAKE_UNKNOWN,
+  S60_ARM_TOGGLE_TITLE, S60_ARM_QUESTION, S60_ARM_CANCEL, S60_ARM_OK,
 } from '../i18n/screens.js'
 import { autoBrakeLabelKey } from './autoBrake.js'
 import AutoBrakeToggle from '../parts/AutoBrakeToggle.jsx'
@@ -78,7 +80,7 @@ const ESTOP_DISABLED_IN_CARRY = 'estop_disabled_in_carry'
 // control the same flag. It now doubles as "W-1 dismissed", covering both
 // the ESTOP and fault-caused-PAUSE cases below.
 export default function Windows({
-  ros, w1Active, mode, stateName, prevMode, estopUi, estopHw, estopFromUi, fault, activeFaultTypes = [], pauseReason, attributes,
+  ros, w1Active, mode, stateName, prevMode, working = false, estopUi, estopHw, estopFromUi, fault, activeFaultTypes = [], pauseReason, attributes,
   onTrigger, estopDismissed, setEstopDismissed, confirmOpen, onConfirmMount,
   lastRejectReason, jogOpen, onJogClose, guideKey, guideDetail, onGuideClose,
   saveAsk, onSaveYes, onSaveNo, saveBusy = false, saveError = null, autoBrake, autoBrakeCanToggle = false, confirmWindow,
@@ -118,11 +120,15 @@ export default function Windows({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [w1IsEstop, stateName, faultActive, pauseReason, setEstopDismissed])
 
+  // 8-g P5a-ui（SM-3.1.1-18）: W-1／W-2 の IDLE 抜け道の前に挟む腕の格納の確認
+  // （W-4）。ここを onto の後段で = 必要確実に hasModal より前で宣言。
+  const [armPending, setArmPending] = useState(null) // null | { trigger }
+
   const w1Open = w1Active && !estopDismissed
   const carryOpen = mode === 'CARRY'
   // W-4（保存確認。1b-7 SG-B3）はシェル所有。W-1／W-2 と同じ modal 扱い。
   const saveOpen = !!saveAsk
-  const hasModal = w1Open || carryOpen || confirmOpen || saveOpen || historyOpen
+  const hasModal = w1Open || carryOpen || confirmOpen || saveOpen || historyOpen || !!armPending
 
   // C-09f (ESTOP) / C-04,C-05 (fault-caused PAUSE): once the underlying
   // condition clears, the window becomes a resume confirmation instead of a
@@ -161,6 +167,23 @@ export default function Windows({
   const carryHwReleased = mode === 'CARRY' && !estopHw
 
   const fire = (trigger) => onTrigger?.(trigger)
+
+  // 8-g P5a-ui（SM-3.1.1-18）: W-1 の「メインメニューへ」(ui.resume_no)・「確認」
+  // (ui.resume_ack) と W-2 の「メインメニューへ」(ui.finish) の前に、腕の格納の
+  // 確認（W-4）を挟む。やめる なら送らない。判定は modes/armConfirm.js の 1 か所。
+  // 元のモードへ戻るボタン（ui.resume_yes / ui.carry_resume)は IDLE へ抜けないので
+  // 確認を挟まない。
+  const fireGated = (trigger) => {
+    if (needsArmConfirmForExit({ trigger, currentMode: mode, prevMode, working })) {
+      setArmPending({ trigger })
+      return
+    }
+    fire(trigger)
+  }
+  const fireArmConfirm = () => {
+    if (armPending) fire(armPending.trigger)
+    setArmPending(null)
+  }
 
   // 解消後の再開確認に添える「解消した異常」（Spec-webui.md §4.1）。その一時停止
   // （W-1 を開いた時点 = SystemState.since）以降に始まって解消した記録だけを対象に、
@@ -215,13 +238,13 @@ export default function Windows({
             </div>
             <footer>
               {w1Resolved && w1Resume === 'ack_only' && (
-                <button type="button" className="btn primary" onClick={() => fire('ui.resume_ack')}>
+                <button type="button" className="btn primary" data-testid="w1-resume-ack" onClick={() => fireGated('ui.resume_ack')}>
                   {WIN_RESUME_ACK}
                 </button>
               )}
               {w1Resolved && w1Resume === 'yes_no' && (
                 <>
-                  <button type="button" className="btn" onClick={() => fire('ui.resume_no')}>
+                  <button type="button" className="btn" data-testid="w1-resume-no" onClick={() => fireGated('ui.resume_no')}>
                     {resumeNoLabel}
                   </button>
                   <button type="button" className="btn primary" onClick={() => fire('ui.resume_yes')}>
@@ -277,12 +300,32 @@ export default function Windows({
                   <button type="button" className="btn primary wide mt" onClick={() => fire('ui.carry_resume')}>
                     {WIN_CARRY_RESUME}
                   </button>
-                  <button type="button" className="btn wide mt" onClick={() => fire('ui.finish')}>
+                  <button type="button" className="btn wide mt" data-testid="w2-c" onClick={() => fireGated('ui.finish')}>
                     {WIN_CARRY_DISMISS}
                   </button>
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* W-4 腕の格納の確認（8-g P5a-ui。SM-3.1.1-18）。画面のポータルではなく
+            シェルが直接描く（W-1／W-2 はその内側のウィンドウが所有する確認）。
+            やめる は送らない。メインメニューへで保留していた trigger を送る。 */}
+        {armPending && (
+          <div className="win confirm show" data-testid="w4-arm-ask">
+            <header>{S60_ARM_TOGGLE_TITLE}</header>
+            <div className="bodyw">
+              <p data-testid="w4-arm-question">{S60_ARM_QUESTION}</p>
+            </div>
+            <footer>
+              <button type="button" className="btn" data-testid="w4-arm-cancel" onClick={() => setArmPending(null)}>
+                {S60_ARM_CANCEL}
+              </button>
+              <button type="button" className="btn primary" data-testid="w4-arm-ok" onClick={fireArmConfirm}>
+                {S60_ARM_OK}
+              </button>
+            </footer>
           </div>
         )}
 

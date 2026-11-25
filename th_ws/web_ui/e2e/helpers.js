@@ -19,6 +19,22 @@ export async function setTestFault(page, patch) {
   await page.evaluate((p) => window.__thSetTestFault(p), patch)
 }
 
+// 8-g P5a-ui: /measure/status を種にして開く。useMeasureStatus.js は
+// window.__thTestMeasureStatus を初回値にし、window.__thSetTestMeasureStatus で
+// 表示を更新する。
+export async function gotoScreenWithMeasure(page, screen, state, measure) {
+  await page.addInitScript(({ s, scr, m }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    window.__thTestMeasureStatus = m
+  }, { s: state, scr: screen, m: measure })
+  await page.goto('/')
+}
+
+export async function setTestMeasureStatus(page, value) {
+  await page.evaluate((v) => window.__thSetTestMeasureStatus(v), value)
+}
+
 // /safety/active_faults の 1 通が届いたふり。types は辞書順の配列
 // （useSystemState.js の window.__thSetTestActiveFaults が受ける形に合わせる）。
 export async function setTestActiveFaults(page, types) {

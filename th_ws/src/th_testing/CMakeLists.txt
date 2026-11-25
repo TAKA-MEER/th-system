@@ -508,6 +508,16 @@ if(BUILD_TESTING)
   ament_add_pytest_test(connectivity_checker_node
     test/test_connectivity_checker_node.py
     TIMEOUT 120)
+  # 8-g P6（DetailedDesign-measure.md §6.7）: sim=true のときは
+  # /safety/estop_hw 未受信でも evt.link_ok が出る（esp32_bridge は sim に居ない）。
+  # 押下中は sim でも出さない。本物の connectivity_checker の launch_testing。
+  ament_add_pytest_test(test_sim_link_ok_node
+    test/test_sim_link_ok_node.py
+    TIMEOUT 120)
+  # 8-g P6 の裏側: sim=false（通常）では従来どおり estop_hw 受信を求める。
+  ament_add_pytest_test(test_no_sim_link_ok_node
+    test/test_no_sim_link_ok_node.py
+    TIMEOUT 120)
   # 1b-6（SG-B6・SG-B7）: sys.link_timeout → restart effect → 再起動の実呼出し
   # （kill は偽物に差し替え）と、未保存がある間の execute 拒否・解消後の印ファイル
   # （launch_testing。ROS2 要）
@@ -606,6 +616,62 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_runaway_freshness_node
     test/test_runaway_freshness_node.py
     TIMEOUT 180)
+  # 8-g P1（DetailedDesign-measure.md §6.1）: 本物の measure_link と
+  # state_manager を生成 yaml 先渡しで起動し、link_lost / version_mismatch /
+  # state_not_accepting / bad_argument / 入口分離 / status の QoS を縛る。
+  ament_add_pytest_test(test_measure_link_node
+    test/test_measure_link_node.py
+    TIMEOUT 300)
+  # 8-g P5a（DetailedDesign-measure.md §6.2）: 本物の state_manager と
+  # measure_link を生成 yaml 先渡しで起動し、AUTO_MEASURE の入口（link 可否）・
+  # meas.* 遷移・台帳の順（id 重複は遷移せず bad_argument）・途絶の扱いを縛る。
+  ament_add_pytest_test(test_auto_measure_node
+    test/test_auto_measure_node.py
+    TIMEOUT 300)
+  # 8-g P2（DetailedDesign-measure.md §6.3）: 本物の state_manager と measure_link・
+  # obstacle_limiter を生成 yaml 先渡しで起動し、お立会試験の停止命令
+  # （AT_PANEL/WORKING の meas.done・ジョグ拒否・回復フォルト・非常停止・手押し・
+  # 途絶・停止を解く）を縛る。
+  ament_add_pytest_test(test_working_stop_node
+    test/test_working_stop_node.py
+    TIMEOUT 600)
+  # 8-g P5b（DetailedDesign-measure.md §6.2）: 本物の state_manager と measure_link・
+  # venue_navigator（Nav2 は代役）を生成 yaml 先渡しで起動し、目的地への走行
+  # （goal→NAV→ALIGN→WAIT と ARRIVED 1 回・拒否の順・停止/発進・非常停止は PAUSE・
+  # 途絶・中止・/map 不明は BLOCKED）を縛る。
+  ament_add_pytest_test(test_auto_measure_nav_node
+    test/test_auto_measure_nav_node.py
+    TIMEOUT 600)
+  # 8-g P5b: 本物の measure_clearance を生成 yaml 先渡しで起動し、/measure/corner_status
+  # の 5 つの理由（tf_unavailable・clear・obstacle_scan・scan_stale・obstacle_costmap）を縛る。
+  ament_add_pytest_test(test_measure_clearance_node
+    test/test_measure_clearance_node.py
+    TIMEOUT 300)
+  # 8-g P3（DetailedDesign-measure.md §6.4）: 本物の state_manager・measure_link・
+  # measure_clearance・measure_adjuster・twist_mux・obstacle_limiter を生成 yaml
+  # 先渡しで起動し、ADJUST の旋回・並進（閉ループ）・path/corner 拒否・
+  # 非常停止/停止の台帳を縛る。lidar_filter は本物で /scan_filtered を出す。
+  ament_add_pytest_test(test_adjust_node
+    test/test_adjust_node.py
+    TIMEOUT 900)
+  # 8-g P3（§6.4 締め切り）: measure_adjuster を起動しない構成で、
+  # ADJUST が adjust_timeout_ms 後に WORKING へ戻り CANCELLED になることを縛る。
+  ament_add_pytest_test(test_adjust_timeout_node
+    test/test_adjust_timeout_node.py
+    TIMEOUT 300)
+  # 8-g P4（DetailedDesign-measure.md §6.5）: 本物の state_manager・measure_link・
+  # measure_clearance を生成 yaml 先渡しで起動し、腕が振れる範囲の確認
+  # （/measure/check_arm_clearance）の向きの判定・受け手の状態・古いスキャン・
+  # 死角・bad_argument を縛る。
+  ament_add_pytest_test(test_arm_clearance_node
+    test/test_arm_clearance_node.py
+    TIMEOUT 600)
+  # 8-g P5c（DetailedDesign-measure.md §6.6）: 本物の state_manager・measure_link・
+  # twist_mux・obstacle_limiter を生成 yaml 先渡しで起動し、meas.set_limits の
+  # 速度・加速度の上限（/cmd_vel への効き・非常停止で鈍らせない・続きの片付け）を縛る。
+  ament_add_pytest_test(test_measure_limits_node
+    test/test_measure_limits_node.py
+    TIMEOUT 600)
   # 物理非常停止の間（手押し）は DRIVE_RUNAWAY を判定しない（Spec-safety §3.5.3 末尾）。
   # 押下中は出ない・離したら 0 から数え直し・立っているフォルトは解除しない・UI 非常停止では止まらない
   ament_add_pytest_test(test_runaway_carry_node
@@ -760,6 +826,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_prep_return_home_map_node
     test/test_prep_return_home_map_node.py
     TIMEOUT 120)
+  # 8-g P5a: effect start_measure_map で slam_toolbox をまっさらな地図作成にする
+  # （instance_id が新しくなり dirty が立たない。インプロセス・rclpy 要）。
+  ament_add_pytest_test(test_auto_measure_map
+    test/test_auto_measure_map.py
+    TIMEOUT 180)
   ament_add_pytest_test(test_slam_control_restart_apply
     test/test_slam_control_restart_apply.py
     TIMEOUT 60)

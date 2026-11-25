@@ -11,6 +11,9 @@ export const SCREEN_IDS = {
   S30: 'S-30', S31: 'S-31',
   // WP-MAINT-03: S-40 校正（names.json の screens にある）。
   S40: 'S-40',
+  // 8-g P5a-ui: S-60 自律測定（names.json の screens には無いが zones.py の
+  // SCREEN_ZONE にはある。画面の申告は S-60 であるためここも足す）。
+  S60: 'S-60',
 }
 
 // mode -> screen-key map. S-01 sends ui.enter_mode; when th_state accepts
@@ -35,6 +38,8 @@ export const MODE_TO_SCREEN = {
   OPCHECK: 'S30',
   // WP-MAINT-03: CALIB（校正）-> S-40。state（LIST/S1〜S4）は画面の中で見る。
   CALIB: 'S40',
+  // 8-g P5a-ui: AUTO_MEASURE（自律測定）-> S-60（Spec-webui.md §3.16）。
+  AUTO_MEASURE: 'S60',
 }
 
 // 表示中の画面は SystemState.mode から導出する（純関数）。
