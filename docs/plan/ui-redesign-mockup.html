@@ -2084,6 +2084,7 @@ const robotMini = () => `<svg viewBox="0 0 60 60" width="60" height="60"><rect x
 
 /* ---------- S-40 校正（型: 手順を進める） ---------- */
 const CALIBS = [['straight','直進','11/10　誤差 0.4 %'],['rot','旋回','11/10　誤差 1.2°'],['imu','IMU','11/11'],['blind','LiDAR 死角','11/11']]
+const calRunning = () => ['s1','s2','s3','s4','imu1','blind'].includes(S.calib.sub)
 function calibView(){
   const k=S.calib, s=k.sub
   const item = {list:'straight', s1:'straight', s2:'straight', s3:'straight', s4:'straight', imu1:'imu', blind:'blind', hist:'straight'}[s]
@@ -2091,7 +2092,8 @@ function calibView(){
   const running = step>=0
   const SL = item==='imu' ? ['案内','測る','確定'] : item==='blind' ? ['選ぶ','確かめる','確定'] : ['案内','実行','確認','検証']
   const steps = `<div class="steps">${SL.map((l,i)=>`<div class="st ${i<step?'done':i===step?'cur':''}">${l}</div>`).join('')}</div>`
-  const rows = CALIBS.map(([id,n,last])=>`<div class="lrow ${item===id?'on':''} ${running&&item!==id?'dis':''}" data-btn data-act="${running?'':'calSel'}" data-id="${id}" ${running&&item!==id?'data-why="校正の途中です"':''}><span class="nm">${n}<small>${last}</small></span></div>`).join('')
+  // 2026-11-26 ユーザー決定: 校正の途中でも別の項目・履歴・戻るを押せる（押すと補正値を確定せずにやめて移る。SM-3.1.2-145／-146）
+  const rows = CALIBS.map(([id,n,last])=>`<div class="lrow ${item===id?'on':''}" data-btn data-act="calSel" data-id="${id}"><span class="nm">${n}<small>${last}</small></span></div>`).join('')
   let body='', next='走らせる', nextDis=false, nextAct='calNext'
   if (s==='hist'){
     body = `<table class="tbl"><tr><th>日付</th><th class="num">補正値</th><th class="num">検証の誤差</th><th></th></tr>
@@ -2124,9 +2126,9 @@ function calibView(){
     next='確定する'
   }
   const quitBtn = btn('calQuit', k.quit, {dis:!running, why:'校正の途中だけ使えます', help:'quit'})
-  const opbar = k.quitAt==='top' && running ? quitBtn : btn('exitCalib','戻る',{icon:'back',cls:'exit',help:'back'})
+  const opbar = btn('exitCalib','戻る',{icon:'back',cls:'exit',help:'back'}) + (k.quitAt==='top' && running ? quitBtn : '')
   return listView({title:'校正', state: running?'校正中':'', opbar, lhd:'項目', rows,
-    phd: s==='hist' ? `<span class="pt">直進　履歴</span>` : `<span class="pt">${CALIBS.find(q=>q[0]===item)[1]}</span>${steps}${btn('calHist','履歴',{dis:running,why:'校正の途中は開けません'})}`,
+    phd: s==='hist' ? `<span class="pt">直進　履歴</span>` : `<span class="pt">${CALIBS.find(q=>q[0]===item)[1]}</span>${steps}${btn('calHist','履歴')}`,
     body, foot:`${k.quitAt==='top' ? '' : quitBtn}<span class="grow"></span>${btn(nextAct,next,{cls: /走らせる/.test(next) ? 'adv' : 'fwd',dis:nextDis,why:'走っています',help:'advance'})}`})
 }
 
@@ -2283,12 +2285,12 @@ function extAct(a, id){
     return true }
   if (S.scr==='calib'){ const k=S.calib
     switch(a){
-      case 'exitCalib': toMenu('maint'); break
-      case 'calSel': k.sub = {straight:'list', rot:'list', imu:'imu1', blind:'blind'}[id]; if (id==='rot') toast('（案の画面では直進だけ描いた）'); break
+      case 'exitCalib': if (calRunning()) toast('校正をやめた（補正値は変えない）'); toMenu('maint'); break
+      case 'calSel': if (calRunning()) toast('校正をやめた（補正値は変えない）'); k.sub = {straight:'list', rot:'list', imu:'imu1', blind:'blind'}[id]; if (id==='rot') toast('（案の画面では直進だけ描いた）'); break
       case 'calNext': { const nx={list:'s1', s1:'s2', s2:'s3', s3:'s4', s4:'list', imu1:'list', blind:'list'}[k.sub]; if (k.sub==='s4'||k.sub==='blind'||k.sub==='imu1') toast('補正値を確定した'); k.sub=nx
         if (nx==='s2') setTimeout(()=>{ if (k.sub==='s2'){ k.sub='s3'; render() } },1500); break }
       case 'calQuit': k.sub='list'; toast('やめた（補正値は変えない）'); break
-      case 'calHist': k.sub='hist'; break
+      case 'calHist': if (calRunning()) toast('校正をやめた（補正値は変えない）'); k.sub='hist'; break
       case 'calHistClose': k.sub='list'; k.arm=false; break
       case 'rollback': if (k.arm){ k.arm=false; toast('11/03 の値に戻した') } else k.arm=true; break
     }
@@ -2338,7 +2340,7 @@ Object.assign(NOTES, {
   check:{changed:['<b>型: 手順を進める</b>。左＝4 項目と結果の印（✓・×・—。形で区別し赤は使わない。P1）、右＝手順の図','下端: 左「やめる」（確かめている間だけ）／右「確かめる」（位置は固定）','だめのときの「校正へ」「故障診断へ」は結果の表の下（右下のボタンの語を変えない。R2 (a)）','結果は測った値と基準を並べ、外れた値だけ黄の地（P5）','S-31 故障診断も同じ型: 確かめることを並べて押すと ✓（画面の中だけの控え）'],
     look:['非常停止の項目で、機体の非常停止ボタンの絵を押す →「押す」に ✓ → もう一つの絵で「戻す」。この項目の間は非常停止の窓を出さない（D71。D50 の例外）','モーターの矢印は押している間だけ動く（ヘルプの長押しの対象外。P4）'],
     opts:[]},
-  calib:{changed:['<b>タブ 5 枚を無くした</b>。左＝4 項目（前回の日付と誤差）、右＝手順。履歴は項目の右上の「履歴」','進みは<b>段の印</b>（P2）。「Step 3/4」の文字を消す','右下の進むボタンの語を項目と段で決める（直進＝走らせる／IMU＝始める（A-9）／確認＝確定する／検証＝完了）','IMU は外して傾ける図（A-9）','完了のあと「始業点検へ」'],
+  calib:{changed:['<b>校正の途中でも一覧の別の項目・「履歴」・「戻る」を押せる</b>。押すと補正値を確定せずにやめて移る（始業点検と同じ。2026-11-26。spec SM-3.1.2-145／-146）','<b>タブ 5 枚を無くした</b>。左＝4 項目（前回の日付と誤差）、右＝手順。履歴は項目の右上の「履歴」','進みは<b>段の印</b>（P2）。「Step 3/4」の文字を消す','右下の進むボタンの語を項目と段で決める（直進＝走らせる／IMU＝始める（A-9）／確認＝確定する／検証＝完了）','IMU は外して傾ける図（A-9）','完了のあと「始業点検へ」'],
     look:['「中断」の語と置き場所（未決 6）を切り替えて比べる'],
     opts:[{q:'取りやめの語（未決 6）', k:['calib','quit'], v:[['やめる','やめる（案）'],['中断','中断（spec）']], why:'S-21 の「中断」（行き先の取り消し）と同じ語が別の意味になる（R2 (b)）'},
       {q:'取りやめの置き場所（未決 6）', k:['calib','quitAt'], v:[['foot','下端の左（案）'],['top','左上（spec §3.14）']], why:'左上は全画面で「終了／戻る」の場所。spec どおりだと校正の途中だけ左上の意味が変わる'}]},
