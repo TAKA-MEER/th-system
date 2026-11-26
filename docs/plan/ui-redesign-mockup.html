@@ -132,6 +132,25 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .shape-role .b.exit{border-radius:3px 14px 14px 3px}
 
 .mapctl{position:absolute;left:10px;bottom:10px;display:flex;gap:8px;z-index:3}
+/* 手動走行の計器（D81） */
+.mainv.withtelem svg.map{width:calc(100% - 350px)}
+.telem{position:absolute;top:10px;right:10px;bottom:10px;width:330px;overflow:hidden;background:var(--panel);border:1px solid var(--bd);border-radius:8px;padding:8px 12px;display:flex;flex-direction:column;gap:2px;font-size:14px;color:var(--tx);z-index:2}
+.telem .tl{display:flex;align-items:baseline;gap:8px;margin-top:4px}
+.telem .tl span{font-size:13px;color:var(--mut);font-weight:700;min-width:64px}
+.telem .tl b{font-size:20px;font-variant-numeric:tabular-nums}
+.telem .tl small{color:var(--mut);font-size:13px;margin-left:auto;font-variant-numeric:tabular-nums}
+.telem .tw{font-size:13px;font-weight:700;color:var(--warn-tx);border-left:4px solid var(--warn);padding-left:6px}
+.telem .whs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+.telem .wh{display:grid;grid-template-columns:64px 1fr;grid-template-rows:auto auto auto auto;column-gap:8px;align-items:center}
+.telem .wh > svg{grid-row:2/4}
+.telem .whn{grid-column:1/-1;font-size:13px;color:var(--mut);font-weight:700}
+.telem .whv b{display:block;font-size:18px;font-variant-numeric:tabular-nums}.telem .whv small{font-size:12px;color:var(--mut)}
+.telem .pw{grid-column:1/-1;display:grid;grid-template-columns:70px 1fr auto;gap:6px;align-items:center;font-size:12px;color:var(--mut)}
+.telem .pw b{color:var(--tx);font-size:13px;font-variant-numeric:tabular-nums}
+.telem .pw:last-child{grid-template-columns:70px 1fr}
+.portrait .mainv.withtelem svg.map{width:100%;height:calc(100% - 300px)}
+.portrait .telem{top:auto;left:10px;width:auto;height:290px;display:grid;grid-template-columns:1fr 1fr;column-gap:14px;align-content:start}
+.portrait .telem .whs{grid-column:2;grid-row:1/8;margin-top:0}
 /* 地図の端の道具（D78・D79）: 右下に小さく。凡例は上へ開く */
 .mapkit{position:absolute;right:10px;bottom:10px;z-index:3;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .mainv.withradar .mapkit,.mainv.withstick .mapkit{right:284px}
@@ -1591,7 +1610,7 @@ function render(){
   const auto = (S.scr==='day' && S.day.sub==='moving') || (S.scr==='prep' && S.prep.sub==='return') || (S.af.scope==='all' && autoOut)
   if (auto && S.af.v!=='none' && S.ab.k==='none') dev.insertAdjacentHTML('beforeend', `<div class="autoframe ${S.af.v}"></div>`)
   if (S.ori==='P' && S.sz.v==='old') dev.querySelectorAll('.content').forEach(c=>{ const mv=c.querySelector('.mainv'); if (mv) mv.style.minHeight='560px' })
-  dev.querySelectorAll('.mainv').forEach(m=>{ m.classList.toggle('withradar', !!m.querySelector('.radar')); m.classList.toggle('withflow', !!m.querySelector('.flow')); m.classList.toggle('withstick', !!m.querySelector('.stick')) })
+  dev.querySelectorAll('.mainv').forEach(m=>{ m.classList.toggle('withradar', !!m.querySelector('.radar')); m.classList.toggle('withflow', !!m.querySelector('.flow')); m.classList.toggle('withstick', !!m.querySelector('.stick')); m.classList.toggle('withtelem', !!m.querySelector('.telem')) })
   fit(); placeBubble(dev); renderNotes()
 }
 // 吹き出し（HTML）をピンの上に置く。地図の SVG は viewBox 1000×620 を枠に「meet」で収めている
@@ -1615,6 +1634,7 @@ function fit(){
    タップ: 長押し 0.6 秒で出る（その指を離してもボタンは押されない）。「×」か枠の外を押すと閉じる。
    停止│走行（data-nolong）は長押しの対象にしない。非常停止にはヘルプを付けない。 */
 const HELP = {
+  telem:['計器','速さ: 塗り＝実際・縦線＝スティックの指令・点線＝速度の上限・黄＝自動ブレーキで削った分。直近 5 秒: 太い線＝実際・細い線＝指令。車輪: 帯の塗り＝実際の速さ（上が前進）・横線＝目標。出力＝モーターに出している PWM・エンコーダ＝車輪の回転のパルス。目標と実際が離れると黄の枠。'],
   toggle:['停止 ／ 走行','「停止する」は移動をその場で止めます。行き先は残り、「再開する」で続きを走ります。'],
   stick:['手動','触れている間だけ機体が動きます。倒した向きへ進み、離すと止まります。待機場所へ戻る途中に触れると一時停止します。'],
   jog:['手動','手動操作パネルを開きます。スティックに触れている間だけ動きます。移動中に触れると一時停止します。'],
@@ -1829,6 +1849,51 @@ function followView(){
 function reRec(id, name, len){ const armed = S.reArm===id
   return `<div class="rt${armed?' armed':''}" data-act="reRec" data-id="${id}"><span>${armed?'もう一度押すと上書き　':'録り直す　'}${name}</span><small>${len}</small></div>` }
 /* ---------- S-11／S-13 手動系（型: 走らせる） ---------- */
+// 手動走行（S-11）だけの計器（2026-11-26 ユーザー指示 D81）: 速さ・モーター出力・エンコーダからの入力を図で出す。
+// 色は使わない（灰の濃淡）。指令と実際の差が大きいときと、自動ブレーキで削られたときだけ注意の黄
+const TELEM = {
+  idle:  {cmd:0,   out:0,   act:0,    w:0,   L:[0,0,0,0],          R:[0,0,0,0]},
+  drive: {cmd:.40, out:.40, act:.38,  w:.15, L:[.36,.35,46,1120],  R:[.44,.42,55,1340]},
+  near:  {cmd:.40, out:.12, act:.13,  w:0,   L:[.12,.12,17,380],   R:[.12,.13,18,410]},
+  paused:{cmd:0,   out:0,   act:0,    w:0,   L:[0,0,0,0],          R:[0,0,0,0]},
+}
+function telemHTML(s){
+  const t=TELEM[s]||TELEM.idle, LIM=.50, braked = t.out < t.cmd-0.01
+  const f2 = v => (v<0?'−':'')+Math.abs(v).toFixed(2)
+  // 速さの帯: 0〜0.6 m/s。塗り＝実際、細い縦線＝指令（スティック）、点線＝速度の上限、黄の帯＝自動ブレーキで削った分
+  const W=300, X=v=>8+Math.max(0,Math.min(.6,v))/.6*(W-16)
+  const bar = `<svg viewBox="0 0 ${W} 64" width="100%" height="64">
+    <rect x="8" y="14" width="${W-16}" height="26" rx="3" style="fill:var(--inset);stroke:var(--bd-hi)"/>
+    ${braked?`<rect x="${X(t.out)}" y="14" width="${X(t.cmd)-X(t.out)}" height="26" style="fill:var(--jis-y,#ffd100)" fill-opacity=".55"/>`:''}
+    <rect x="8" y="14" width="${X(t.act)-8}" height="26" rx="3" style="fill:var(--tx)" fill-opacity=".75"/>
+    <path d="M${X(t.cmd)} 6V48" style="stroke:var(--tx)" stroke-width="3"/>
+    <path d="M${X(LIM)} 10V44" style="stroke:var(--mut)" stroke-width="2" stroke-dasharray="4 3"/>
+    ${[0,.2,.4,.6].map(v=>`<text x="${X(v)}" y="61" text-anchor="middle" font-size="12" style="fill:var(--mut)">${v.toFixed(1)}</text>`).join('')}</svg>`
+  // 直近 5 秒の線: 指令（細い実線）と実際（太い線）。自動ブレーキが効くと指令から離れる
+  const N=50, ser=k=>Array.from({length:N},(_,i)=>{ const tt=i/N*5
+    if (s==='drive'){ const c=tt>1?t.cmd:0; return k==='c'?c:t.act*(tt>1?1-Math.exp(-(tt-1)*3):0) }
+    if (s==='near'){ const c=t.cmd, o=tt>3?t.out:t.cmd, a=tt>3?t.out+(.38-t.out)*Math.exp(-(tt-3)*4):.38; return k==='c'?c:a }
+    return 0 })
+  const SY=v=>52-v/.6*44, line=(a,w,dash='')=>`<polyline points="${a.map((v,i)=>`${(8+i/(N-1)*(W-16)).toFixed(1)},${SY(v).toFixed(1)}`).join(' ')}" fill="none" style="stroke:var(--tx)" stroke-width="${w}" ${dash}/>`
+  const spark = `<svg viewBox="0 0 ${W} 58" width="100%" height="58"><rect x="8" y="6" width="${W-16}" height="46" style="fill:none;stroke:var(--bd)"/>
+    <path d="M8 ${SY(LIM)}H${W-8}" style="stroke:var(--mut)" stroke-dasharray="4 3"/>${line(ser('c'),1.5,'stroke-opacity=".6"')}${line(ser('a'),3)}</svg>`
+  // 左右の車輪: 目標と実際の速さ（縦の帯。中央が 0、上が前進）／モーター出力（PWM の %）／エンコーダ（1 秒あたりのパルス）
+  const wheel = (nm,[tg,ac,pw,enc]) => { const H=110, Y=v=>H/2-v/.6*(H/2-6), off=Math.abs(tg-ac)>.05
+    return `<div class="wh"><div class="whn">${nm}</div>
+      <svg viewBox="0 0 64 ${H}" width="64" height="${H}"><rect x="18" y="4" width="28" height="${H-8}" rx="3" style="fill:var(--inset);stroke:${off?'var(--warn)':'var(--bd-hi)'}" stroke-width="${off?3:1}"/>
+        <path d="M14 ${H/2}H50" style="stroke:var(--mut)"/>
+        <rect x="22" y="${Math.min(Y(ac),H/2)}" width="20" height="${Math.abs(Y(ac)-H/2)}" style="fill:var(--tx)" fill-opacity=".75"/>
+        <path d="M10 ${Y(tg)}H54" style="stroke:var(--tx)" stroke-width="3"/></svg>
+      <div class="whv"><b>${f2(ac)}</b><small>目標 ${f2(tg)} m/s</small></div>
+      <div class="pw"><span>出力</span><svg viewBox="0 0 100 12" width="100%" height="12" preserveAspectRatio="none"><rect width="100" height="12" rx="2" style="fill:var(--inset);stroke:var(--bd-hi)"/><rect width="${pw}" height="12" rx="2" style="fill:var(--tx)" fill-opacity=".6"/></svg><b>${pw}%</b></div>
+      <div class="pw"><span>エンコーダ</span><b>${enc.toLocaleString()} /秒</b></div></div>` }
+  return `<div class="telem" data-help="telem">
+    <div class="tl"><span>速さ</span><b>${f2(t.act)} m/s</b><small>指令 ${f2(t.cmd)}　上限 ${LIM.toFixed(2)}</small></div>
+    ${bar}${braked?`<div class="tw">自動ブレーキで ${f2(t.out)} m/s に減速</div>`:''}
+    <div class="tl"><span>直近 5 秒</span></div>${spark}
+    <div class="tl"><span>回転</span><b>${f2(t.w)} rad/s</b></div>
+    <div class="whs">${wheel('左の車輪',t.L)}${wheel('右の車輪',t.R)}</div></div>`
+}
 function manualView(){
   const m=S.manual, T=m.teach
   if ((m.sub==='entry'||m.sub==='saved') && !T) m.sub='idle'
@@ -1839,7 +1904,7 @@ function manualView(){
   const where = T && s!=='entry' ? `<span>記録</span><b>${s==='idle'?'3.2 m　0:41':'8.6 m　1:55'}</b>` : ''
   let main
   if (T && s!=='entry') main = mapSVG({robot:C(160,110,-60), path:[C(175,176),C(172,140),C(160,110)], partial:true, pins:[], scan:true}) + (s==='near'?`<div class="nearlab">前方 12 cm</div>`:'')
-  else main = surroundSVG({near:s==='near', blind:m.blind, moving})
+  else main = surroundSVG({near:s==='near', blind:m.blind, moving}) + (T ? '' : telemHTML(s))   // 計器は手動走行だけ（D81）
   if (s==='entry') main += `<div class="center"><div class="card wide"><div class="rtl">
       <div class="rt" data-act="startRec"><span>新しい経路</span><small>名前　経路 4</small></div>
       ${reRec('R','廊下の往復','12.3 m')}</div></div></div>`
@@ -2177,7 +2242,7 @@ Object.assign(NOTES, {
     look:['「確認」（向くだけ）の置き方 a〜c を比べる（未決 5）','「記録中」は中立の札＋丸の印（D70）'],
     opts:[{q:'画面', k:['follow','teach'], v:[[false,'S-10 追従走行'],[true,'S-12 教示（追従）']], why:'S-12 は S-10 に「保存」と記録の量を足しただけ（Spec-webui.md §3.4）'},
       {q:'「確認」の置き方（未決 5）', k:['follow','conf'], v:[['a','a 3 面のトグル'],['b','b 別のボタン'],['c','c 置かない']], why:'spec の操作カードは 停止／確認／走行。D33 のトグルは 2 面。c は機体の仕様を改める（G3）'}]},
-  manual:{changed:['主表示を<b>機体のまわりの図</b>にした（LiDAR の点・機体の外形・減速が始まる距離の点線の輪）。近い点は橙で、向きと距離を出す。いまの文字だけの「障害物」区画を置き換える（G1）','右列 ② は「停止する」だけ（走り出すのはスティック）。トグルと同じ位置・高さ','自動ブレーキは左上の切り替え。ON の間はロック（2 回押して外す。D68・D73）。切れている間はヘッダの下段に「自動ブレーキなし」が点滅（D74）。既定は ON（D75）','S-13 は地図と経路を主表示にし、右列 ① に記録の量・③ に保存'],
+  manual:{changed:['<b>手動走行だけ</b>、主表示の右に計器（速さ・直近 5 秒・回転・左右の車輪の目標と実速度・モーター出力・エンコーダ。D81）。出力とエンコーダはいま機体から届いていない（premises §7 B8）','主表示を<b>機体のまわりの図</b>にした（LiDAR の点・機体の外形・減速が始まる距離の点線の輪）。近い点は橙で、向きと距離を出す。いまの文字だけの「障害物」区画を置き換える（G1）','右列 ② は「停止する」だけ（走り出すのはスティック）。トグルと同じ位置・高さ','自動ブレーキは左上の切り替え。ON の間はロック（2 回押して外す。D68・D73）。切れている間はヘッダの下段に「自動ブレーキなし」が点滅（D74）。既定は ON（D75）','S-13 は地図と経路を主表示にし、右列 ① に記録の量・③ に保存'],
     look:['死角は 4 本の柱だけを図に細い灰の扇形で描く。「後方は死角があります」の文は出さない（D69）','「記録中」は中立の札＋丸の印（D70）','スティックを右列の残り全部に広げた大きさ'],
     opts:[{q:'画面', k:['manual','teach'], v:[[false,'S-11 手動走行'],[true,'S-13 教示（手動）']], why:''},
       ]},
