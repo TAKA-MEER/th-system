@@ -598,6 +598,27 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .prog{height:22px;border-radius:999px;background:var(--inset);border:1px solid var(--bd-hi);overflow:hidden}
 .prog i{display:block;height:100%;background:var(--ctrl-hi)}
 .arrows{display:grid;grid-template-columns:repeat(3,96px);grid-template-rows:repeat(3,96px);gap:10px;justify-content:center}
+/* 始業点検: 手順（一覧の下）・モーターの指令と実測（2026-11-26） */
+.g-list .csteps{list-style:none;margin:auto 0 0;padding:8px 4px 0;border-top:1px solid var(--bd-hi);display:flex;flex-direction:column;gap:4px}
+.portrait .g-list .csteps{grid-column:1/-1;margin-top:4px}
+.csteps li{display:flex;gap:8px;align-items:baseline;font-size:15px;line-height:1.3;color:var(--mut)}
+.csteps li .n{flex:none;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--bd-hi);display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
+.csteps li.cur{color:var(--tx);font-weight:700}
+.csteps li.cur .n{background:var(--sel-bg);color:var(--sel-tx);border-color:var(--sel-bg)}
+.csteps li.done{opacity:.6}
+.fig.mot{gap:24px;justify-content:space-around}
+.fig.mot .arrows{flex:none}
+.dirb{position:relative}
+.dirb .dm{position:absolute;right:4px;top:4px;transform:scale(.8)}
+.mgs{flex:1;min-width:0;max-width:640px;display:grid;grid-template-columns:1fr 64px 1fr;gap:8px;align-items:start}
+.mg{display:flex;flex-direction:column;align-items:center;gap:2px}
+.mg b{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+.mg small,.mgc small{font-size:14px;color:var(--mut);font-variant-numeric:tabular-nums}
+.mgc{display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:44px}
+.mgc svg{width:44px;height:44px}
+.portrait .fig.mot{gap:12px}
+.portrait .mgs{grid-template-columns:1fr 48px 1fr}
+.portrait .mg b{font-size:26px}
 .arrows .b{min-height:96px;font-size:20px;padding:0}
 .chk{display:flex;align-items:center;gap:14px;min-height:64px;padding:0 14px;border:1px solid var(--bd-hi);border-radius:8px;font-size:19px;cursor:pointer;background:var(--panel)}
 .chk .bx{width:34px;height:34px;border:3px solid var(--bd-hi);border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:900}
@@ -1640,6 +1661,7 @@ function fit(){
    タップ: 長押し 0.6 秒で出る（その指を離してもボタンは押されない）。「×」か枠の外を押すと閉じる。
    停止│走行（data-nolong）は長押しの対象にしない。非常停止にはヘルプを付けない。 */
 const HELP = {
+  motorgraph:['指令と実測','左のグラフが左の車輪、右が右の車輪。細い線＝指令・太い線＝実測（エンコーダから求めた速さ）。直近 15 秒で、真ん中の点線が 0（上が前進）。大きな数がいまの実測。'],
   telem:['計器','大きな数＝いまの速さ（後退は −）。帯: 塗り＝実際・太い縦線＝スティックの指令・点線＝速度の上限・黄＝自動ブレーキで削った分。その下の線は直近 5 秒（太い線＝実際・細い線＝指令）。弧の矢印＝回転。左右の帯＝左右の車輪（塗り＝実際・横線＝目標・上が前進）。出力＝モーターへの PWM・エンコーダ＝車輪の回転のパルス。目標と実際が離れると黄の枠。'],
   toggle:['停止 ／ 走行','「停止する」は移動をその場で止めます。行き先は残り、「再開する」で続きを走ります。'],
   stick:['手動','触れている間だけ機体が動きます。倒した向きへ進み、離すと止まります。待機場所へ戻る途中に触れると一時停止します。'],
@@ -1982,6 +2004,35 @@ function replayView(){
 
 /* ---------- S-30 始業点検／S-31 故障診断（型: 手順を進める） ---------- */
 const CHECKS = [['estop','非常停止ボタン'],['motor','モーター'],['imu','IMU'],['lidar','LiDAR']]
+// モーター: 左右の車輪の指令と実測（エンコーダから求めた速さ）を直近 15 秒の線で（実装の WheelSpeedView と同じ中身）。
+// 左右は置き場所で示す（左の車輪のグラフが左）。色は使わず、細い線＝指令・太い線＝実測。値は大きく
+function motorGraph(s){
+  const run = s==='motor', N=150, Ws=250, Hs=150, ymax=.15
+  // 0〜3 秒 前（両輪 +0.10）・4〜7 秒 後（−0.10）・8〜11 秒 左回り（左 −0.10・右 +0.10）・12 秒〜いま 右回りを押している。実測は指令に少し遅れて追う
+  const cmd = (side,t) => !run ? 0 : t<3 ? .10 : t<4 ? 0 : t<7 ? -.10 : t<8 ? 0 : t<11 ? (side==='L'?-.10:.10) : t<12 ? 0 : (side==='L'?.10:-.10)
+  const meas = side => { let v=0; return Array.from({length:N},(_,i)=>{ const t=i/N*15; v += (cmd(side,t)-v)*0.35; return [t, v*(side==='L'?.95:.92)] }) }
+  const X=t=>4+t/15*(Ws-8), Y=v=>Hs/2-v/ymax*(Hs/2-6)
+  const g = side => { const m=meas(side), c=Array.from({length:N},(_,i)=>[i/N*15, cmd(side,i/N*15)])
+    const pl=(a,w,op)=>`<polyline points="${a.map(([t,v])=>`${X(t).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')}" fill="none" style="stroke:var(--tx)" stroke-width="${w}" stroke-opacity="${op}" stroke-linejoin="round"/>`
+    const last=Math.round(m[N-1][1]*100)/100, cl=cmd(side,15), sg=v=>(v<0?'−':'')+Math.abs(v).toFixed(2)
+    return `<div class="mg"><svg viewBox="0 0 ${Ws} ${Hs}" width="100%" height="${Hs}" preserveAspectRatio="none"><rect x="1" y="1" width="${Ws-2}" height="${Hs-2}" style="fill:var(--inset);stroke:var(--bd)"/>
+      <path d="M4 ${Hs/2}H${Ws-4}" style="stroke:var(--mut)" stroke-dasharray="4 4"/>${pl(c,1.6,.6)}${pl(m,3.2,1)}</svg>
+      <b>${sg(last)}</b><small>指令 ${sg(cl)}</small></div>` }
+  return `<div class="mgs" data-help="motorgraph">${g('L')}<span class="mgc">${robotMini()}<small>m/s</small></span>${g('R')}</div>`
+}
+// 始業点検の手順（2026-11-26 ユーザー指示: 余っている所に手順の説明文を置く）。Spec-checks.md §2.4。いまの手順を濃く、済んだものは薄く
+const CHECK_STEPS = {
+  estop: ['「確かめる」を押す','非常停止ボタンを押す','画面の「押す」に ✓ が付いたら、実物と見比べる','ボタンを回して戻す','「戻す」に ✓ が付いたら、実物と見比べる'],
+  motor: ['機体のまわりを空けて「確かめる」を押す','前・後・左・右を 1 つずつ押し続ける（押している間だけ動く）','機体が動いたかを目で見る','4 方向とも指令と実測が合えば ✓'],
+  imu:   ['機体を動かさずに「確かめる」を押す','止まったまま待つ（ジャイロのずれを測る）','だめなら IMU の校正へ'],
+  lidar: ['「確かめる」を押す','図の柱の位置と実物の柱を見比べる','死角がずれていれば LiDAR の死角の校正へ'],
+}
+function checkStepsHTML(c){
+  const s=c.sub, k=c.sel, L=CHECK_STEPS[k]
+  const cur = k==='estop' ? (s!=='estop' ? 0 : !c.pushed ? 1 : !c.released ? 3 : 4)
+    : k==='motor' ? (s==='motor' ? 1 : 0) : k==='imu' ? (s==='imu' ? 1 : 0) : (s==='lidarNg' ? 2 : 0)
+  return `<ol class="csteps">${L.map((t,i)=>`<li class="${i<cur?'done':i===cur?'cur':''}"><span class="n">${i+1}</span><span>${t}</span></li>`).join('')}</ol>`
+}
 function checkView(){
   const c=S.check, s=c.sub
   const res = {estop:'ok', motor: s==='repair'?'ng':'none', imu: s==='imu'?'none':'ok', lidar: s==='lidarNg'?'ng':'none'}
@@ -2004,8 +2055,10 @@ function checkView(){
     body = `<div class="fig"><div class="cell" data-act="estopPushChk" style="cursor:pointer">${estopPict(true)}<span class="cap">${mk(push,true)}押す</span></div>
       <div class="cell" data-act="estopRelChk" style="cursor:pointer">${estopPict(false)}<span class="cap">${mk(rel,true)}戻す</span></div></div>`
   } else if (c.sel==='motor'){
-    const a = (k,l)=>`<button class="b" data-btn data-act="motorHold" data-id="${k}" data-help="hold" data-nolong ${s==='motor'?'':'disabled'} style="${s==='motor'?'':'opacity:.4'}">${l}</button>`
-    body = `<div class="fig"><div class="arrows"><span></span>${a('f','前')}<span></span>${a('l','左')}<span style="display:flex;align-items:center;justify-content:center">${robotMini()}</span>${a('r','右')}<span></span>${a('b','後')}<span></span></div></div>`
+    // 方向ごとの結果（Spec-checks.md §2.4 の 2: 4 方向すべてで指令と実測の符号・追従が合ってはじめて OK）。案の画面は前・後・左を済ませた所
+    const done = k => !!c.motorDone[k] || (s==='motor' && ['f','b','l'].includes(k))
+    const a = (k,l)=>`<button class="b dirb" data-btn data-act="motorHold" data-id="${k}" data-help="hold" data-nolong ${s==='motor'?'':'disabled'} style="${s==='motor'?'':'opacity:.4'}">${l}<span class="dm">${mk(done(k)?'ok':'none',true)}</span></button>`
+    body = `<div class="fig mot"><div class="arrows"><span></span>${a('f','前')}<span></span>${a('l','左')}<span style="display:flex;align-items:center;justify-content:center">${robotMini()}</span>${a('r','右')}<span></span>${a('b','後')}<span></span></div>${motorGraph(s)}</div>`
   } else if (c.sel==='imu'){
     body = s==='imu' ? `<div class="fig" style="flex-direction:column;align-items:stretch;justify-content:center;padding:0 40px"><div class="prog"><i style="width:60%"></i></div></div>`
       : `<div class="fig"><span class="mkline">${mk('ok')}08:43</span></div>`
@@ -2019,7 +2072,7 @@ function checkView(){
   }
   const quitLabel = 'やめる'
   return listView({title:'始業点検', state: running?'確認中':'', opbar:btn('exitCheck','戻る',{icon:'back',cls:'exit',help:'back'}),
-    lhd:`${mk('ok',true)} ${cnt('ok')}　${mk('ng',true)} ${cnt('ng')}　${mk('none',true)} ${cnt('none')}`, rows,
+    lhd:`${mk('ok',true)} ${cnt('ok')}　${mk('ng',true)} ${cnt('ng')}　${mk('none',true)} ${cnt('none')}`, rows: rows + checkStepsHTML(c),
     phd:`<span class="pt">${CHECKS.find(q=>q[0]===c.sel)[1]}</span>`, body,
     foot:`${btn('chkQuit',quitLabel,{dis:!running,why:'確かめている間だけ使えます',help:'quit'})}<span class="grow"></span>${btn('chkRun','確かめる',{cls:'fwd',dis:running,why:'確かめています',help:'advance'})}`})
 }
@@ -2215,13 +2268,13 @@ function extAct(a, id){
     switch(a){
       case 'exitCheck': toMenu('maint'); break
       case 'chkSel': c.sel=id; c.sub='list'; break
-      case 'chkRun': c.sub = {estop:'estop', motor:'motor', imu:'imu', lidar:'lidarNg'}[c.sel]; c.pushed=false; c.released=false
+      case 'chkRun': c.sub = {estop:'estop', motor:'motor', imu:'imu', lidar:'lidarNg'}[c.sel]; c.pushed=false; c.released=false; c.motorDone={}
         if (c.sub==='imu') setTimeout(()=>{ if (c.sub==='imu'){ c.sub='list'; c.sel='imu'; render() } },1600); break
       case 'chkQuit': c.sub='list'; toast('やめた（結果は記録しない）'); break
       case 'estopPushChk': if (c.sub!=='estop') break
         c.pushed=true; break   // D71: この項目の間は非常停止の窓を出さない
       case 'estopRelChk': if (c.sub==='estop' && c.pushed){ c.released=true; if (S.ab.k==='carry') setAb('resolved'); setTimeout(()=>{ if (c.sub==='estop'){ c.sub='list'; render() } },900) } break
-      case 'motorHold': toast('押している間だけ動く'); break
+      case 'motorHold': c.motorDone[id]=true; toast('押している間だけ動く'); break
       case 'toCalib': S.scr='calib'; setSub('blind'); break
       case 'repChk': c.rep[id]=!c.rep[id]; break
       case 'quitRepair': c.sub='list'; c.sel='motor'; break
