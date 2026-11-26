@@ -1636,7 +1636,7 @@ function fit(){
    タップ: 長押し 0.6 秒で出る（その指を離してもボタンは押されない）。「×」か枠の外を押すと閉じる。
    停止│走行（data-nolong）は長押しの対象にしない。非常停止にはヘルプを付けない。 */
 const HELP = {
-  telem:['計器','大きな数＝いまの速さ。帯: 塗り＝実際・太い縦線＝スティックの指令・点線＝速度の上限・黄＝自動ブレーキで削った分。その下の線は直近 5 秒（太い線＝実際・細い線＝指令）。弧の矢印＝回転。左右の帯＝左右の車輪（塗り＝実際・横線＝目標・上が前進）。出力＝モーターへの PWM・エンコーダ＝車輪の回転のパルス。目標と実際が離れると黄の枠。'],
+  telem:['計器','大きな数＝いまの速さ（後退は −）。帯: 塗り＝実際・太い縦線＝スティックの指令・点線＝速度の上限・黄＝自動ブレーキで削った分。その下の線は直近 5 秒（太い線＝実際・細い線＝指令）。弧の矢印＝回転。左右の帯＝左右の車輪（塗り＝実際・横線＝目標・上が前進）。出力＝モーターへの PWM・エンコーダ＝車輪の回転のパルス。目標と実際が離れると黄の枠。'],
   toggle:['停止 ／ 走行','「停止する」は移動をその場で止めます。行き先は残り、「再開する」で続きを走ります。'],
   stick:['手動','触れている間だけ機体が動きます。倒した向きへ進み、離すと止まります。待機場所へ戻る途中に触れると一時停止します。'],
   jog:['手動','手動操作パネルを開きます。スティックに触れている間だけ動きます。移動中に触れると一時停止します。'],
@@ -1677,7 +1677,7 @@ SUBS.menu.push(['shutdown','運用の終了（窓）'],['autoask','自律測定�
 Object.assign(SUBS, {
   connect:[['ok','そろった'],['lidar','LiDAR が来ない'],['camera','カメラだけ来ない'],['restart','再起動中']],
   follow:()=>[...(S.follow.teach?[['entry','経路を選ぶ（入口）']]:[]),['pick','対象を選ぶ'],['ready','選んだ・止まっている'],['run',S.follow.teach?'記録中':'追従中'],['paused','一時停止']],
-  manual:()=>[...(S.manual.teach?[['entry','経路を選ぶ（入口）']]:[]),['idle','止まっている'],['drive','走らせている'],['near','障害物に近い'],['paused','一時停止'],...(S.manual.teach?[['saved','保存した']]:[])],
+  manual:()=>[...(S.manual.teach?[['entry','経路を選ぶ（入口）']]:[]),['idle','止まっている'],['drive','走らせている'],['back','後ろへ走らせている'],['spin','その場で回している'],['near','障害物に近い'],['paused','一時停止'],...(S.manual.teach?[['saved','保存した']]:[])],
   replay:[['select','経路を選ぶ'],['loading','地図の読み込み'],['search','位置を探している'],['notfound','見つからない'],['far','経路から離れている'],['ready','位置が決まった'],['run','再生中'],['paused','一時停止'],['end','終点']],
   check:[['list','一覧'],['estop','非常停止ボタン'],['motor','モーター'],['imu','IMU（測っている）'],['lidarNg','LiDAR（だめ）'],['repair','S-31 故障診断']],
   calib:[['list','一覧'],['s1','直進 案内'],['s2','直進 実行'],['s3','直進 確認'],['s4','直進 検証'],['imu1','IMU 案内'],['blind','LiDAR 死角'],['hist','履歴']],
@@ -1703,7 +1703,7 @@ function extSetSub(v){
 function pauseOnAb(){
   if (S.scr==='follow' && S.follow.sub==='run') S.follow.sub='paused'
   if (S.scr==='replay' && S.replay.sub==='run') S.replay.sub='paused'
-  if (S.scr==='manual' && (S.manual.sub==='drive'||S.manual.sub==='near')) S.manual.sub='paused'
+  if (S.scr==='manual' && ['drive','back','spin','near'].includes(S.manual.sub)) S.manual.sub='paused'
   if (S.scr==='auto' && S.auto.sub==='turn') S.auto.sub='paused'
 }
 
@@ -1762,7 +1762,28 @@ function listView({title, state='', opbar, lhd='', rows, cls='', phd='', body, f
 }
 const exitBtn = (act='exit', label='終了') => btn(act, label, {icon:'close', cls:'exit', help:'exit'})
 // 機体のまわりの図（S-11 手動）: 機体を中心に LiDAR の点・機体の外形・減速が始まる距離の輪。近い点は橙
-function surroundSVG({near=false, blind='fig', moving=false}={}){
+// 進む向きのガイド線（2026-11-26 ユーザー指摘。車のバックカメラのガイド線にならう）: 機体の幅の 2 本の線を、いまの速さと回転から
+// 予想した進路に沿って前（後退なら後ろ）へ 1.5 m 伸ばし、0.5 m ごとに横線を引く。その場で回すときは機体のまわりに弧の矢印。
+// 色は「進む」（機体が動いている間だけ。P8）。進路に障害物があって自動ブレーキが効いているときは注意の黄
+function guideSVG({v=0, w=0, blocked=false}, cx, cy, M){
+  const col = blocked ? 'var(--warn)' : 'var(--robot,#7fb4ee)'
+  if (Math.abs(v)<0.02 && Math.abs(w)<0.02) return ''
+  if (Math.abs(v)<0.02){ const r=0.48*M, dir=Math.sign(w)   // その場で回す: 左回り（w>0）なら反時計回りの弧
+    const a0=-Math.PI/2, a1=a0-dir*1.9, P=a=>[cx+r*Math.cos(a), cy+r*Math.sin(a)], [x0,y0]=P(a0), [x1,y1]=P(a1)
+    const t=a1-dir*0.001, [tx,ty]=[-Math.sin(a1)*-dir, Math.cos(a1)*-dir]
+    const hx=x1+tx*14, hy=y1+ty*14, nx=-ty*9, ny=tx*9
+    return `<g opacity=".9"><path d="M${x0.toFixed(1)} ${y0.toFixed(1)}A${r} ${r} 0 0 ${dir>0?0:1} ${x1.toFixed(1)} ${y1.toFixed(1)}" fill="none" style="stroke:${col}" stroke-width="7" stroke-linecap="round"/>
+      <path d="M${(hx).toFixed(1)} ${(hy).toFixed(1)}L${(x1+nx).toFixed(1)} ${(y1+ny).toFixed(1)}L${(x1-nx).toFixed(1)} ${(y1-ny).toFixed(1)}Z" style="fill:${col}"/></g>` }
+  const sg=Math.sign(v), k=w/v, half=0.275, L=1.5
+  // 機体の座標（x 前・y 左）→ 図（上が前）。進路の弧長 s に沿って、前端（後退なら後端）から伸ばす
+  const at = (s, d) => { const th=k*s, x = Math.abs(k)<1e-6 ? s : Math.sin(th)/k, y = Math.abs(k)<1e-6 ? 0 : (1-Math.cos(th))/k
+    const px = x + Math.cos(th)*half*sg - Math.sin(th)*d, py = y + Math.sin(th)*half*sg + Math.cos(th)*d
+    return [cx - py*M, cy - px*M] }
+  const edge = d => Array.from({length:31},(_,i)=>at(sg*i/30*L, d)).map(q=>q.map(n=>n.toFixed(1)).join(',')).join(' ')
+  const tick = s => { const [a,b]=[at(sg*s, half), at(sg*s, -half)]; return `<path d="M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}" style="stroke:${col}" stroke-width="${s===L?6:4}" stroke-linecap="round" opacity="${s===L?.9:.7}"/>` }
+  return `<g>${[half,-half].map(d=>`<polyline points="${edge(d)}" fill="none" style="stroke:${col}" stroke-width="6" stroke-linecap="round" opacity=".9"/>`).join('')}${[0.5,1.0,L].map(tick).join('')}</g>`
+}
+function surroundSVG({near=false, blind='fig', moving=false, motion=null}={}){
   const M=120, cx=300, cy=320, r=rand(7)
   let pts=''
   const dot=(x,y,c)=>{ pts+=`<circle cx="${(cx+x*M).toFixed(1)}" cy="${(cy-y*M).toFixed(1)}" r="3.2" fill="${c}"/>` }
@@ -1777,10 +1798,10 @@ function surroundSVG({near=false, blind='fig', moving=false}={}){
     const P=(r,a)=>`${(cx+r*Math.sin(a)).toFixed(1)} ${(cy-r*Math.cos(a)).toFixed(1)}`
     return `<path d="M${P(r0,a1)} L${P(R,a1)} A${R} ${R} 0 0 1 ${P(R,a2)} L${P(r0,a2)} Z" fill="var(--dim)" opacity=".2"/>` }
   const wedge = blind==='fig' ? [45,135,225,315].map(pil).join('') : ''
-  const lab = near ? `<text x="${cx+ox*M+20}" y="${cy-oy*M-22}" font-size="26" font-weight="800" style="fill:var(--warn-tx)">前方 12 cm</text>` : ''
+  const lab = near ? `<text x="${cx+(motion?48:0)+ox*M+20}" y="${cy-oy*M-22}" font-size="26" font-weight="800" style="fill:var(--warn-tx)">前方 12 cm</text>` : ''
   return `<svg class="map" viewBox="0 0 600 620" preserveAspectRatio="xMidYMid meet">${wedge}${ring}${pts}
     <rect x="${cx-fp/2}" y="${cy-fp/2}" width="${fp}" height="${fp}" rx="4" style="fill:var(--robot-fp,rgba(63,138,224,.25));stroke:var(--robot,#7fb4ee)" stroke-width="2"/>
-    <path d="M${cx-14} ${cy+12}L${cx} ${cy-22}L${cx+14} ${cy+12}Z" style="fill:var(--robot,#7fb4ee)" stroke="#fff" stroke-width="2"/>${lab}</svg>`
+    <path d="M${cx-14} ${cy+12}L${cx} ${cy-22}L${cx+14} ${cy+12}Z" style="fill:var(--robot,#7fb4ee)" stroke="#fff" stroke-width="2"/>${motion?guideSVG(motion,cx,cy,M):''}${lab}</svg>`
 }
 
 /* ---------- S-00 接続確認（型: 見る・変える） ---------- */
@@ -1857,14 +1878,16 @@ const TELEM = {
   idle:  {cmd:0,   out:0,   act:0,    w:0,   L:[0,0,0,0],          R:[0,0,0,0]},
   drive: {cmd:.40, out:.40, act:.38,  w:.15, L:[.36,.35,46,1120],  R:[.44,.42,55,1340]},
   near:  {cmd:.40, out:.12, act:.13,  w:0,   L:[.12,.12,17,380],   R:[.12,.13,18,410]},
+  back:  {cmd:-.20,out:-.20,act:-.19, w:-.12, L:[-.16,-.15,-20,-470], R:[-.23,-.22,-28,-700]},
+  spin:  {cmd:0,   out:0,   act:0,    w:.60, L:[-.17,-.16,-22,-520], R:[.17,.17,22,540]},
   paused:{cmd:0,   out:0,   act:0,    w:0,   L:[0,0,0,0],          R:[0,0,0,0]},
 }
 function telemHTML(s){
   // 2026-11-26 ユーザー指摘: 文を減らし、値とゲージを大きく。語は左右の車輪の間に 1 つずつだけ（位置が左右を示す）
-  const t=TELEM[s]||TELEM.idle, LIM=.50, braked = t.out < t.cmd-0.01
-  const f2 = v => (v<0?'−':'')+Math.abs(v).toFixed(2)
+  const t=TELEM[s]||TELEM.idle, LIM=.50, braked = Math.abs(t.out) < Math.abs(t.cmd)-0.01
+  const f2 = v => (v<0?'−':'')+Math.abs(v).toFixed(2), sn = v => (v<0?'−':'')+Math.abs(v).toLocaleString()
   // 速さの帯: 塗り＝実際、太い縦線＝指令（スティック）、点線＝速度の上限、黄＝自動ブレーキで削った分
-  const W=360, X=v=>6+Math.max(0,Math.min(.6,v))/.6*(W-12)
+  const W=360, X=v=>6+Math.max(0,Math.min(.6,Math.abs(v)))/.6*(W-12)
   const bar = `<svg viewBox="0 0 ${W} 66" width="100%" height="66">
     <rect x="6" y="8" width="${W-12}" height="40" rx="4" style="fill:var(--inset);stroke:var(--bd-hi)"/>
     ${braked?`<rect x="${X(t.out)}" y="8" width="${X(t.cmd)-X(t.out)}" height="40" style="fill:var(--jis-y,#ffd100)" fill-opacity=".6"/>`:''}
@@ -1874,7 +1897,7 @@ function telemHTML(s){
     ${[0,.2,.4,.6].map(v=>`<text x="${Math.min(Math.max(X(v),10),W-12)}" y="65" text-anchor="middle" font-size="12" style="fill:var(--mut)">${v.toFixed(1)}</text>`).join('')}</svg>`
   // 直近 5 秒: 太い線＝実際、細い線＝指令
   const N=50, ser=k=>Array.from({length:N},(_,i)=>{ const tt=i/N*5
-    if (s==='drive'){ const c=tt>1?t.cmd:0; return k==='c'?c:t.act*(tt>1?1-Math.exp(-(tt-1)*3):0) }
+    if (s==='drive'||s==='back'){ const c=tt>1?Math.abs(t.cmd):0; return k==='c'?c:Math.abs(t.act)*(tt>1?1-Math.exp(-(tt-1)*3):0) }
     if (s==='near'){ const a=tt>3?t.out+(.38-t.out)*Math.exp(-(tt-3)*4):.38; return k==='c'?t.cmd:a }
     return 0 })
   const SY=v=>48-v/.6*42, line=(a,w,op=1)=>`<polyline points="${a.map((v,i)=>`${(6+i/(N-1)*(W-12)).toFixed(1)},${SY(v).toFixed(1)}`).join(' ')}" fill="none" style="stroke:var(--tx)" stroke-opacity="${op}" stroke-width="${w}"/>`
@@ -1895,25 +1918,25 @@ function telemHTML(s){
     <div class="g">${gauge(L)}</div><div class="c">${body}</div><div class="g">${gauge(R)}</div>
     <b class="v">${f2(L[1])}</b><span class="c u">m/s</span><b class="v">${f2(R[1])}</b>
     <span class="v s">${f2(L[0])}</span><span class="c">目標</span><span class="v s">${f2(R[0])}</span>
-    <div class="v"><b>${L[2]}%</b>${pwb(L[2])}</div><span class="c">出力</span><div class="v"><b>${R[2]}%</b>${pwb(R[2])}</div>
-    <b class="v m">${L[3].toLocaleString()}</b><span class="c">エンコーダ<br>/秒</span><b class="v m">${R[3].toLocaleString()}</b></div>`
+    <div class="v"><b>${sn(L[2])}%</b>${pwb(Math.abs(L[2]))}</div><span class="c">出力</span><div class="v"><b>${sn(R[2])}%</b>${pwb(Math.abs(R[2]))}</div>
+    <b class="v m">${sn(L[3])}</b><span class="c">エンコーダ<br>/秒</span><b class="v m">${sn(R[3])}</b></div>`
   return `<div class="telem" data-help="telem"><div class="sp"><div class="top"><div class="big"><b>${f2(t.act)}</b><small>m/s</small></div>${rot}</div>${bar}${spark}</div>${whs}</div>`
 }
 function manualView(){
   const m=S.manual, T=m.teach
   if ((m.sub==='entry'||m.sub==='saved') && !T) m.sub='idle'
   const s=m.sub
-  const moving = s==='drive'||s==='near'
+  const moving = ['drive','back','spin','near'].includes(s)
   const stop = btn('stop','停止する',{cls:'stopone',dis:!moving,why:'止まっています',help:'toggle'})
   const ops = T ? `<div class="row">${btn('save','保存',{dis:moving||s==='saved'||s==='entry',why:moving?'スティックを離してから保存します':s==='saved'?'保存しました':'記録がまだありません',help:'save'})}</div>` : ''
   const where = T && s!=='entry' ? `<span>記録</span><b>${s==='idle'?'3.2 m　0:41':'8.6 m　1:55'}</b>` : ''
   let main
   if (T && s!=='entry') main = mapSVG({robot:C(160,110,-60), path:[C(175,176),C(172,140),C(160,110)], partial:true, pins:[], scan:true}) + (s==='near'?`<div class="nearlab">前方 12 cm</div>`:'')
-  else main = surroundSVG({near:s==='near', blind:m.blind, moving}) + (T ? '' : telemHTML(s))   // 計器は手動走行だけ（D81）
+  else main = surroundSVG({near:s==='near', blind:m.blind, moving, motion: moving ? {v:(TELEM[s]||TELEM.idle).act, w:(TELEM[s]||TELEM.idle).w, blocked:s==='near'} : null}) + (T ? '' : telemHTML(s))   // 計器は手動走行だけ（D81）
   if (s==='entry') main += `<div class="center"><div class="card wide"><div class="rtl">
       <div class="rt" data-act="startRec"><span>新しい経路</span><small>名前　経路 4</small></div>
       ${reRec('R','廊下の往復','12.3 m')}</div></div></div>`
-  const st = {entry:'', idle:T?'記録中':'', drive:T?'記録中':'走行中', near:T?'記録中':'走行中', paused:'一時停止中', saved:'保存済み'}[s]
+  const st = {entry:'', idle:T?'記録中':'', drive:T?'記録中':'走行中', back:T?'記録中':'走行中', spin:T?'記録中':'走行中', near:T?'記録中':'走行中', paused:'一時停止中', saved:'保存済み'}[s]
   const stCls = T && (s==='idle'||moving) ? ' rec-'+S.rec.col : moving ? ' run' : undefined
   return drvView({title: T?'教示（手動）':'手動走行', state:st, stCls,
     opbar: exitBtn() + brakeCtl('manual'),
@@ -2247,7 +2270,7 @@ Object.assign(NOTES, {
     look:['「確認」（向くだけ）の置き方 a〜c を比べる（未決 5）','「記録中」は中立の札＋丸の印（D70）'],
     opts:[{q:'画面', k:['follow','teach'], v:[[false,'S-10 追従走行'],[true,'S-12 教示（追従）']], why:'S-12 は S-10 に「保存」と記録の量を足しただけ（Spec-webui.md §3.4）'},
       {q:'「確認」の置き方（未決 5）', k:['follow','conf'], v:[['a','a 3 面のトグル'],['b','b 別のボタン'],['c','c 置かない']], why:'spec の操作カードは 停止／確認／走行。D33 のトグルは 2 面。c は機体の仕様を改める（G3）'}]},
-  manual:{changed:['<b>手動走行だけ</b>、主表示の右に計器（速さ・直近 5 秒・回転・左右の車輪の目標と実速度・モーター出力・エンコーダ。D81）。出力とエンコーダはいま機体から届いていない（premises §7 B8）','主表示を<b>機体のまわりの図</b>にした（LiDAR の点・機体の外形・減速が始まる距離の点線の輪）。近い点は橙で、向きと距離を出す。いまの文字だけの「障害物」区画を置き換える（G1）','右列 ② は「停止する」だけ（走り出すのはスティック）。トグルと同じ位置・高さ','自動ブレーキは左上の切り替え。ON の間はロック（2 回押して外す。D68・D73）。切れている間はヘッダの下段に「自動ブレーキなし」が点滅（D74）。既定は ON（D75）','S-13 は地図と経路を主表示にし、右列 ① に記録の量・③ に保存'],
+  manual:{changed:['機体の絵の前（後退なら後ろ）に<b>進む向きのガイド線</b>（車のバックカメラにならう。機体の幅の 2 本の線をいまの速さと回転から予想した進路に沿って 1.5 m、0.5 m ごとに横線。その場で回すときは弧の矢印。自動ブレーキが効くと黄）','<b>手動走行だけ</b>、主表示の右に計器（速さ・直近 5 秒・回転・左右の車輪の目標と実速度・モーター出力・エンコーダ。D81）。出力とエンコーダはいま機体から届いていない（premises §7 B8）','主表示を<b>機体のまわりの図</b>にした（LiDAR の点・機体の外形・減速が始まる距離の点線の輪）。近い点は橙で、向きと距離を出す。いまの文字だけの「障害物」区画を置き換える（G1）','右列 ② は「停止する」だけ（走り出すのはスティック）。トグルと同じ位置・高さ','自動ブレーキは左上の切り替え。ON の間はロック（2 回押して外す。D68・D73）。切れている間はヘッダの下段に「自動ブレーキなし」が点滅（D74）。既定は ON（D75）','S-13 は地図と経路を主表示にし、右列 ① に記録の量・③ に保存'],
     look:['死角は 4 本の柱だけを図に細い灰の扇形で描く。「後方は死角があります」の文は出さない（D69）','「記録中」は中立の札＋丸の印（D70）','スティックを右列の残り全部に広げた大きさ'],
     opts:[{q:'画面', k:['manual','teach'], v:[[false,'S-11 手動走行'],[true,'S-13 教示（手動）']], why:''},
       ]},
