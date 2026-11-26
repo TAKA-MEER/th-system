@@ -155,8 +155,8 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .portrait .telem .whs{flex:1;margin-top:0}
 .mainv.withtelem:has(.telem.tl-l) svg.map{left:auto;right:0}
 .telem.tl-l{right:auto;left:10px}
-.portrait .mainv.withtelem:has(.telem.tl-l) svg.map{top:auto;bottom:0}
-.portrait .telem.tl-l{top:10px;bottom:auto}
+.portrait .mainv.withtelem:has(.telem.tl-l) svg.map{width:calc(100% - 410px);height:100%;left:auto;right:0;top:0}
+.portrait .telem.tl-l{top:10px;bottom:10px;height:auto;width:390px;flex-direction:column;gap:4px}
 /* 地図の端の道具（D78・D79）: 右下に小さく。凡例は上へ開く */
 .mapkit{position:absolute;right:10px;bottom:10px;z-index:3;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .mainv.withradar .mapkit,.mainv.withstick .mapkit{right:284px}
@@ -1910,7 +1910,7 @@ function telemHTML(s){
   // 回転: 弧の矢印の形で向きを、数値で速さを
   const rot = `<div class="rot"><svg viewBox="0 0 40 40" width="34" height="34"><path d="M30 12A13 13 0 1 0 33 24" fill="none" style="stroke:var(--mut)" stroke-width="3.5"/><path d="M24 6L32 12L24 17Z" style="fill:var(--mut)"/></svg><b>${f2(t.w)}</b><small>rad/s</small></div>`
   // 左右の車輪: 縦の帯（上が前進。塗り＝実際・横線＝目標）。値は帯の下。語は間の列に 1 つずつ
-  const [L,R]=[t.L,t.R], H=140, Y=v=>H/2-v/.6*(H/2-6)
+  const [L,R]=[t.L,t.R], H=(S.ori==='P' && S.manual.tpos==='left')?340:140, Y=v=>H/2-v/.6*(H/2-6)
   const gauge = ([tg,ac]) => { const off=Math.abs(tg-ac)>.05
     return `<svg viewBox="0 0 70 ${H}" width="70" height="${H}"><rect x="12" y="3" width="46" height="${H-6}" rx="4" style="fill:var(--inset);stroke:${off?'var(--warn)':'var(--bd-hi)'}" stroke-width="${off?3.5:1}"/>
       <path d="M6 ${H/2}H64" style="stroke:var(--mut)"/><rect x="16" y="${Math.min(Y(ac),H/2)}" width="38" height="${Math.abs(Y(ac)-H/2)}" style="fill:var(--tx)" fill-opacity=".8"/>
@@ -2277,7 +2277,7 @@ Object.assign(NOTES, {
       {q:'「確認」の置き方（未決 5）', k:['follow','conf'], v:[['a','a 3 面のトグル'],['b','b 別のボタン'],['c','c 置かない']], why:'spec の操作カードは 停止／確認／走行。D33 のトグルは 2 面。c は機体の仕様を改める（G3）'}]},
   manual:{changed:['機体の絵の前（後退なら後ろ）に<b>進む向きのガイド線</b>（車のバックカメラにならう。機体の幅の 2 本の線をいまの速さと回転から予想した進路に沿って 1.5 m、0.5 m ごとに横線。その場で回すときは弧の矢印。自動ブレーキが効くと黄）','<b>手動走行だけ</b>、主表示の右に計器（速さ・直近 5 秒・回転・左右の車輪の目標と実速度・モーター出力・エンコーダ。D81）。出力とエンコーダはいま機体から届いていない（premises §7 B8）','主表示を<b>機体のまわりの図</b>にした（LiDAR の点・機体の外形・減速が始まる距離の点線の輪）。近い点は橙で、向きと距離を出す。いまの文字だけの「障害物」区画を置き換える（G1）','右列 ② は「停止する」だけ（走り出すのはスティック）。トグルと同じ位置・高さ','自動ブレーキは左上の切り替え。ON の間はロック（2 回押して外す。D68・D73）。切れている間はヘッダの下段に「自動ブレーキなし」が点滅（D74）。既定は ON（D75）','S-13 は地図と経路を主表示にし、右列 ① に記録の量・③ に保存'],
     look:['死角は 4 本の柱だけを図に細い灰の扇形で描く。「後方は死角があります」の文は出さない（D69）','「記録中」は中立の札＋丸の印（D70）','スティックを右列の残り全部に広げた大きさ'],
-    opts:[{q:'画面', k:['manual','teach'], v:[[false,'S-11 手動走行'],[true,'S-13 教示（手動）']], why:''},{q:'計器の位置（S-11）', k:['manual','tpos'], v:[['left','左（まわりの図は右。2026-11-26 の試し）'],['right','右（まわりの図は左）']], why:'計器と機体のまわりの図の位置を入れ替えて比べる（ユーザー指示 2026-11-26）。縦長では上下を入れ替える'},
+    opts:[{q:'画面', k:['manual','teach'], v:[[false,'S-11 手動走行'],[true,'S-13 教示（手動）']], why:''},{q:'計器の位置（S-11）', k:['manual','tpos'], v:[['left','左（横長は決定 D82。縦長も左に並べる案）'],['right','右（11-26 の最初の版。縦長は下）']], why:'横長は計器を左・まわりの図を右に決めた（D82）。縦長は図の左右の余白が大きかったので、横長と同じく左右に並べ、車輪のゲージを縦に伸ばして計器の高さを埋める案'},
       ]},
   replay:{changed:['入口は主表示の中央のカード（P7）: 経路の一覧＋順│逆（R-91）＋「この経路で進む」。地図の画像の無い経路には印と 1 行（A-21）','読み込み中は地図の上に「地図を読み込んでいます」（A-22）','右列 ① は確度の印（探しています／見つかりません／経路から離れています／決まった）→ 再生中は経路からのずれ','位置が決まるまで「再生する」は薄く、押すと理由（A-23 ②）。決まったら<b>ゆっくり明滅</b>（A-22・D43）','地図の更新 ON／OFF は使えない間は出さない（M11 と同じ）。タブを無くした','手動は W-6（窓の中は 上＝自動ブレーキ・下＝手動の一式。A-18）'],
     look:['「経路を選ぶ」→「この経路で進む」→ 読み込み → 位置を探す → 決まる、の流れで、次に押すものが目で追えるか','「経路を選び直す」を一時停止中だけにした（SM-3.1.2-103。G3 の B7）'],
