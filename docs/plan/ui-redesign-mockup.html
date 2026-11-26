@@ -132,25 +132,27 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .shape-role .b.exit{border-radius:3px 14px 14px 3px}
 
 .mapctl{position:absolute;left:10px;bottom:10px;display:flex;gap:8px;z-index:3}
-/* 手動走行の計器（D81） */
-.mainv.withtelem svg.map{width:calc(100% - 350px)}
-.telem{position:absolute;top:10px;right:10px;bottom:10px;width:330px;overflow:hidden;background:var(--panel);border:1px solid var(--bd);border-radius:8px;padding:8px 12px;display:flex;flex-direction:column;gap:2px;font-size:14px;color:var(--tx);z-index:2}
-.telem .tl{display:flex;align-items:baseline;gap:8px;margin-top:4px}
-.telem .tl span{font-size:13px;color:var(--mut);font-weight:700;min-width:64px}
-.telem .tl b{font-size:20px;font-variant-numeric:tabular-nums}
-.telem .tl small{color:var(--mut);font-size:13px;margin-left:auto;font-variant-numeric:tabular-nums}
-.telem .tw{font-size:13px;font-weight:700;color:var(--warn-tx);border-left:4px solid var(--warn);padding-left:6px}
-.telem .whs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
-.telem .wh{display:grid;grid-template-columns:64px 1fr;grid-template-rows:auto auto auto auto;column-gap:8px;align-items:center}
-.telem .wh > svg{grid-row:2/4}
-.telem .whn{grid-column:1/-1;font-size:13px;color:var(--mut);font-weight:700}
-.telem .whv b{display:block;font-size:18px;font-variant-numeric:tabular-nums}.telem .whv small{font-size:12px;color:var(--mut)}
-.telem .pw{grid-column:1/-1;display:grid;grid-template-columns:70px 1fr auto;gap:6px;align-items:center;font-size:12px;color:var(--mut)}
-.telem .pw b{color:var(--tx);font-size:13px;font-variant-numeric:tabular-nums}
-.telem .pw:last-child{grid-template-columns:70px 1fr}
-.portrait .mainv.withtelem svg.map{width:100%;height:calc(100% - 300px)}
-.portrait .telem{top:auto;left:10px;width:auto;height:290px;display:grid;grid-template-columns:1fr 1fr;column-gap:14px;align-content:start}
-.portrait .telem .whs{grid-column:2;grid-row:1/8;margin-top:0}
+/* 手動走行の計器（D81。2026-11-26 文を減らし値とゲージを大きく） */
+.mainv.withtelem svg.map{width:calc(100% - 410px)}
+.telem{position:absolute;top:10px;right:10px;bottom:10px;width:390px;overflow:hidden;background:var(--panel);border:1px solid var(--bd);border-radius:8px;padding:6px 14px;display:flex;flex-direction:column;justify-content:space-between;gap:4px;color:var(--tx);z-index:2;font-variant-numeric:tabular-nums}
+.telem .big{display:flex;align-items:baseline;gap:6px}
+.telem .big b{font-size:44px;font-weight:800;line-height:1.05}
+.telem .big small,.telem .rot small{font-size:15px;color:var(--mut)}
+.telem .top{display:flex;align-items:center;justify-content:space-between}
+.telem .rot{display:flex;align-items:center;gap:6px}
+.telem .rot b{font-size:26px;font-weight:800}
+.telem .whs{display:grid;grid-template-columns:1fr 64px 1fr;align-items:center;justify-items:center;row-gap:0}
+.telem .whs .c{font-size:12px;color:var(--mut);text-align:center;line-height:1.2}
+.telem .whs .v{font-size:26px;font-weight:800}
+.telem .whs .v.s{font-size:17px;font-weight:600;color:var(--mut)}
+.telem .whs .v.m{font-size:20px}
+.telem .whs div.v{width:100%;max-width:110px;text-align:center}
+.telem .whs div.v b{font-size:20px;display:block}
+.telem .whs div.v svg{display:block;margin-top:2px}
+.portrait .mainv.withtelem svg.map{width:100%;height:calc(100% - 340px)}
+.portrait .telem{top:auto;left:10px;width:auto;height:330px;flex-direction:row;gap:18px}
+.portrait .telem .sp{flex:1;min-width:0}
+.portrait .telem .whs{flex:1;margin-top:0}
 /* 地図の端の道具（D78・D79）: 右下に小さく。凡例は上へ開く */
 .mapkit{position:absolute;right:10px;bottom:10px;z-index:3;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .mainv.withradar .mapkit,.mainv.withstick .mapkit{right:284px}
@@ -1634,7 +1636,7 @@ function fit(){
    タップ: 長押し 0.6 秒で出る（その指を離してもボタンは押されない）。「×」か枠の外を押すと閉じる。
    停止│走行（data-nolong）は長押しの対象にしない。非常停止にはヘルプを付けない。 */
 const HELP = {
-  telem:['計器','速さ: 塗り＝実際・縦線＝スティックの指令・点線＝速度の上限・黄＝自動ブレーキで削った分。直近 5 秒: 太い線＝実際・細い線＝指令。車輪: 帯の塗り＝実際の速さ（上が前進）・横線＝目標。出力＝モーターに出している PWM・エンコーダ＝車輪の回転のパルス。目標と実際が離れると黄の枠。'],
+  telem:['計器','大きな数＝いまの速さ。帯: 塗り＝実際・太い縦線＝スティックの指令・点線＝速度の上限・黄＝自動ブレーキで削った分。その下の線は直近 5 秒（太い線＝実際・細い線＝指令）。弧の矢印＝回転。左右の帯＝左右の車輪（塗り＝実際・横線＝目標・上が前進）。出力＝モーターへの PWM・エンコーダ＝車輪の回転のパルス。目標と実際が離れると黄の枠。'],
   toggle:['停止 ／ 走行','「停止する」は移動をその場で止めます。行き先は残り、「再開する」で続きを走ります。'],
   stick:['手動','触れている間だけ機体が動きます。倒した向きへ進み、離すと止まります。待機場所へ戻る途中に触れると一時停止します。'],
   jog:['手動','手動操作パネルを開きます。スティックに触れている間だけ動きます。移動中に触れると一時停止します。'],
@@ -1858,41 +1860,44 @@ const TELEM = {
   paused:{cmd:0,   out:0,   act:0,    w:0,   L:[0,0,0,0],          R:[0,0,0,0]},
 }
 function telemHTML(s){
+  // 2026-11-26 ユーザー指摘: 文を減らし、値とゲージを大きく。語は左右の車輪の間に 1 つずつだけ（位置が左右を示す）
   const t=TELEM[s]||TELEM.idle, LIM=.50, braked = t.out < t.cmd-0.01
   const f2 = v => (v<0?'−':'')+Math.abs(v).toFixed(2)
-  // 速さの帯: 0〜0.6 m/s。塗り＝実際、細い縦線＝指令（スティック）、点線＝速度の上限、黄の帯＝自動ブレーキで削った分
-  const W=300, X=v=>8+Math.max(0,Math.min(.6,v))/.6*(W-16)
-  const bar = `<svg viewBox="0 0 ${W} 64" width="100%" height="64">
-    <rect x="8" y="14" width="${W-16}" height="26" rx="3" style="fill:var(--inset);stroke:var(--bd-hi)"/>
-    ${braked?`<rect x="${X(t.out)}" y="14" width="${X(t.cmd)-X(t.out)}" height="26" style="fill:var(--jis-y,#ffd100)" fill-opacity=".55"/>`:''}
-    <rect x="8" y="14" width="${X(t.act)-8}" height="26" rx="3" style="fill:var(--tx)" fill-opacity=".75"/>
-    <path d="M${X(t.cmd)} 6V48" style="stroke:var(--tx)" stroke-width="3"/>
-    <path d="M${X(LIM)} 10V44" style="stroke:var(--mut)" stroke-width="2" stroke-dasharray="4 3"/>
-    ${[0,.2,.4,.6].map(v=>`<text x="${X(v)}" y="61" text-anchor="middle" font-size="12" style="fill:var(--mut)">${v.toFixed(1)}</text>`).join('')}</svg>`
-  // 直近 5 秒の線: 指令（細い実線）と実際（太い線）。自動ブレーキが効くと指令から離れる
+  // 速さの帯: 塗り＝実際、太い縦線＝指令（スティック）、点線＝速度の上限、黄＝自動ブレーキで削った分
+  const W=360, X=v=>6+Math.max(0,Math.min(.6,v))/.6*(W-12)
+  const bar = `<svg viewBox="0 0 ${W} 66" width="100%" height="66">
+    <rect x="6" y="8" width="${W-12}" height="40" rx="4" style="fill:var(--inset);stroke:var(--bd-hi)"/>
+    ${braked?`<rect x="${X(t.out)}" y="8" width="${X(t.cmd)-X(t.out)}" height="40" style="fill:var(--jis-y,#ffd100)" fill-opacity=".6"/>`:''}
+    <rect x="6" y="8" width="${X(t.act)-6}" height="40" rx="4" style="fill:var(--tx)" fill-opacity=".8"/>
+    <path d="M${X(t.cmd)} 2V54" style="stroke:var(--tx)" stroke-width="4"/>
+    <path d="M${X(LIM)} 4V52" style="stroke:var(--mut)" stroke-width="2.5" stroke-dasharray="5 4"/>
+    ${[0,.2,.4,.6].map(v=>`<text x="${Math.min(Math.max(X(v),10),W-12)}" y="65" text-anchor="middle" font-size="12" style="fill:var(--mut)">${v.toFixed(1)}</text>`).join('')}</svg>`
+  // 直近 5 秒: 太い線＝実際、細い線＝指令
   const N=50, ser=k=>Array.from({length:N},(_,i)=>{ const tt=i/N*5
     if (s==='drive'){ const c=tt>1?t.cmd:0; return k==='c'?c:t.act*(tt>1?1-Math.exp(-(tt-1)*3):0) }
-    if (s==='near'){ const c=t.cmd, o=tt>3?t.out:t.cmd, a=tt>3?t.out+(.38-t.out)*Math.exp(-(tt-3)*4):.38; return k==='c'?c:a }
+    if (s==='near'){ const a=tt>3?t.out+(.38-t.out)*Math.exp(-(tt-3)*4):.38; return k==='c'?t.cmd:a }
     return 0 })
-  const SY=v=>52-v/.6*44, line=(a,w,dash='')=>`<polyline points="${a.map((v,i)=>`${(8+i/(N-1)*(W-16)).toFixed(1)},${SY(v).toFixed(1)}`).join(' ')}" fill="none" style="stroke:var(--tx)" stroke-width="${w}" ${dash}/>`
-  const spark = `<svg viewBox="0 0 ${W} 58" width="100%" height="58"><rect x="8" y="6" width="${W-16}" height="46" style="fill:none;stroke:var(--bd)"/>
-    <path d="M8 ${SY(LIM)}H${W-8}" style="stroke:var(--mut)" stroke-dasharray="4 3"/>${line(ser('c'),1.5,'stroke-opacity=".6"')}${line(ser('a'),3)}</svg>`
-  // 左右の車輪: 目標と実際の速さ（縦の帯。中央が 0、上が前進）／モーター出力（PWM の %）／エンコーダ（1 秒あたりのパルス）
-  const wheel = (nm,[tg,ac,pw,enc]) => { const H=110, Y=v=>H/2-v/.6*(H/2-6), off=Math.abs(tg-ac)>.05
-    return `<div class="wh"><div class="whn">${nm}</div>
-      <svg viewBox="0 0 64 ${H}" width="64" height="${H}"><rect x="18" y="4" width="28" height="${H-8}" rx="3" style="fill:var(--inset);stroke:${off?'var(--warn)':'var(--bd-hi)'}" stroke-width="${off?3:1}"/>
-        <path d="M14 ${H/2}H50" style="stroke:var(--mut)"/>
-        <rect x="22" y="${Math.min(Y(ac),H/2)}" width="20" height="${Math.abs(Y(ac)-H/2)}" style="fill:var(--tx)" fill-opacity=".75"/>
-        <path d="M10 ${Y(tg)}H54" style="stroke:var(--tx)" stroke-width="3"/></svg>
-      <div class="whv"><b>${f2(ac)}</b><small>目標 ${f2(tg)} m/s</small></div>
-      <div class="pw"><span>出力</span><svg viewBox="0 0 100 12" width="100%" height="12" preserveAspectRatio="none"><rect width="100" height="12" rx="2" style="fill:var(--inset);stroke:var(--bd-hi)"/><rect width="${pw}" height="12" rx="2" style="fill:var(--tx)" fill-opacity=".6"/></svg><b>${pw}%</b></div>
-      <div class="pw"><span>エンコーダ</span><b>${enc.toLocaleString()} /秒</b></div></div>` }
-  return `<div class="telem" data-help="telem">
-    <div class="tl"><span>速さ</span><b>${f2(t.act)} m/s</b><small>指令 ${f2(t.cmd)}　上限 ${LIM.toFixed(2)}</small></div>
-    ${bar}${braked?`<div class="tw">自動ブレーキで ${f2(t.out)} m/s に減速</div>`:''}
-    <div class="tl"><span>直近 5 秒</span></div>${spark}
-    <div class="tl"><span>回転</span><b>${f2(t.w)} rad/s</b></div>
-    <div class="whs">${wheel('左の車輪',t.L)}${wheel('右の車輪',t.R)}</div></div>`
+  const SY=v=>48-v/.6*42, line=(a,w,op=1)=>`<polyline points="${a.map((v,i)=>`${(6+i/(N-1)*(W-12)).toFixed(1)},${SY(v).toFixed(1)}`).join(' ')}" fill="none" style="stroke:var(--tx)" stroke-opacity="${op}" stroke-width="${w}"/>`
+  const spark = `<svg viewBox="0 0 ${W} 52" width="100%" height="52"><rect x="6" y="3" width="${W-12}" height="46" style="fill:none;stroke:var(--bd)"/>
+    <path d="M6 ${SY(LIM)}H${W-6}" style="stroke:var(--mut)" stroke-dasharray="5 4"/>${line(ser('c'),1.5,.55)}${line(ser('a'),3.5)}</svg>`
+  // 回転: 弧の矢印の形で向きを、数値で速さを
+  const rot = `<div class="rot"><svg viewBox="0 0 40 40" width="34" height="34"><path d="M30 12A13 13 0 1 0 33 24" fill="none" style="stroke:var(--mut)" stroke-width="3.5"/><path d="M24 6L32 12L24 17Z" style="fill:var(--mut)"/></svg><b>${f2(t.w)}</b><small>rad/s</small></div>`
+  // 左右の車輪: 縦の帯（上が前進。塗り＝実際・横線＝目標）。値は帯の下。語は間の列に 1 つずつ
+  const [L,R]=[t.L,t.R], H=140, Y=v=>H/2-v/.6*(H/2-6)
+  const gauge = ([tg,ac]) => { const off=Math.abs(tg-ac)>.05
+    return `<svg viewBox="0 0 70 ${H}" width="70" height="${H}"><rect x="12" y="3" width="46" height="${H-6}" rx="4" style="fill:var(--inset);stroke:${off?'var(--warn)':'var(--bd-hi)'}" stroke-width="${off?3.5:1}"/>
+      <path d="M6 ${H/2}H64" style="stroke:var(--mut)"/><rect x="16" y="${Math.min(Y(ac),H/2)}" width="38" height="${Math.abs(Y(ac)-H/2)}" style="fill:var(--tx)" fill-opacity=".8"/>
+      <path d="M2 ${Y(tg)}H68" style="stroke:var(--tx)" stroke-width="4"/></svg>` }
+  const pwb = pw => `<svg viewBox="0 0 100 10" width="100%" height="10" preserveAspectRatio="none"><rect width="100" height="10" rx="2" style="fill:var(--inset);stroke:var(--bd-hi)"/><rect width="${pw}" height="10" rx="2" style="fill:var(--tx)" fill-opacity=".65"/></svg>`
+  const body = `<svg viewBox="0 0 60 ${H}" width="60" height="${H}"><rect x="14" y="${H/2-22}" width="32" height="44" rx="3" style="fill:var(--robot-fp);stroke:var(--robot)" stroke-width="2"/>
+    <rect x="6" y="${H/2-12}" width="7" height="24" rx="2" style="fill:var(--tx)"/><rect x="47" y="${H/2-12}" width="7" height="24" rx="2" style="fill:var(--tx)"/><path d="M24 ${H/2+6}L30 ${H/2-10}L36 ${H/2+6}Z" style="fill:var(--robot)"/></svg>`
+  const whs = `<div class="whs">
+    <div class="g">${gauge(L)}</div><div class="c">${body}</div><div class="g">${gauge(R)}</div>
+    <b class="v">${f2(L[1])}</b><span class="c u">m/s</span><b class="v">${f2(R[1])}</b>
+    <span class="v s">${f2(L[0])}</span><span class="c">目標</span><span class="v s">${f2(R[0])}</span>
+    <div class="v"><b>${L[2]}%</b>${pwb(L[2])}</div><span class="c">出力</span><div class="v"><b>${R[2]}%</b>${pwb(R[2])}</div>
+    <b class="v m">${L[3].toLocaleString()}</b><span class="c">エンコーダ<br>/秒</span><b class="v m">${R[3].toLocaleString()}</b></div>`
+  return `<div class="telem" data-help="telem"><div class="sp"><div class="top"><div class="big"><b>${f2(t.act)}</b><small>m/s</small></div>${rot}</div>${bar}${spark}</div>${whs}</div>`
 }
 function manualView(){
   const m=S.manual, T=m.teach
