@@ -132,6 +132,20 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .shape-role .b.exit{border-radius:3px 14px 14px 3px}
 
 .mapctl{position:absolute;left:10px;bottom:10px;display:flex;gap:8px;z-index:3}
+/* 地図の端の道具（D78・D79）: 右下に小さく。凡例は上へ開く */
+.mapkit{position:absolute;right:10px;bottom:10px;z-index:3;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.mainv.withradar .mapkit,.mainv.withstick .mapkit{right:284px}
+.mainv.withflow .mapkit{bottom:106px}
+.mapkit .mkr{display:flex;gap:6px}
+.mapkit .mk2{display:flex;align-items:center;justify-content:center;gap:6px;min-height:56px;min-width:56px;padding:0 10px;font:inherit;font-size:14px;font-weight:700;color:var(--tx);background:var(--panel);border:1px solid var(--bd-hi);border-radius:6px;cursor:pointer;opacity:.94}
+.mapkit .mk2.on{background:var(--sel-bg,#e6e8ec);color:var(--sel-tx,#0f1117);border-color:var(--sel-bg,#e6e8ec);opacity:1}
+.mapkit .mapleg{background:var(--panel);border:1px solid var(--bd-hi);border-radius:8px;padding:4px 10px 8px;font-size:14px}
+.mapkit .mapleg .lg{display:grid;grid-template-columns:auto auto;column-gap:14px}
+.mapkit .mapleg .lt{display:flex;align-items:center;justify-content:space-between;font-weight:800;margin-bottom:4px}
+.mapkit .mapleg .hx{width:36px;height:36px;border:none;background:none;color:var(--tx);cursor:pointer}
+.mapkit .mapleg .hx svg{width:20px;height:20px}
+.mapkit .mapleg .lr{display:flex;align-items:center;gap:8px;height:27px;white-space:nowrap}
+.mapkit .mapleg .lr svg{flex:none}
 .mapctl .b{min-height:44px;font-size:16px;background:#232733e6}
 
 /* 右列（試験場内） */
@@ -690,7 +704,7 @@ const S = {
   menu:{lvl:'top', trackerOff:false, noRoute:false},
   wt:{v:'new'}, sz:{v:'new'}, pal:{v:'new', pause:'neutral'},   // 2026-11-17 に決定（D33〜D37）。'old' で 11-16 の版
   af:{v:'pulse'}, dbg:{v:'none'}, theme:{v:'light'}, col:{v:'jis'},   // 画面の地（§6.8・案。2026-11-17 の意見）   // 自律走行中の枠（§6.5・案）／表示の不具合の試し（D39）
-  font:{v:'sys'}, shape:{v:'role'}, map:{rot:0, view:'2d', wall:'wall', col:'now', pal:'prop', cost:'ins', pts:'dark'}, trk:{w:'io'},
+  font:{v:'sys'}, shape:{v:'role'}, map:{rot:0, view:'2d', wall:'wall', col:'now', pal:'prop', cost:'ins', pts:'dark', costOn:true, leg:false}, trk:{w:'io'},
   day:{sub:'home', dest:null, sel:null, robot:'home', flowStep:0,
        abortLabel:'中断'},   // 2026-11-15: 「中断」のまま（D15）。別の語は案として残す
   ab:{k:'none', cause:null, recent:null},
@@ -860,7 +874,7 @@ function wallBoxes(partial){
        + `<path d="${sl[0]}" fill="${col.sideL}"/><path d="${sr[0]}" fill="${col.sideR}"/><path d="${tp[0]}" fill="${col.top}"/>` }
   return wallCache[key]=`<g pointer-events="none">${out}</g>`
 }
-function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, scan=true, bubBody=null, order=false, orderList=null, costmap=true, block=null}){
+function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, scan=true, bubBody=null, order=false, orderList=null, costmap=true, block=null, kit=true}){
   const OL = orderList || S.order
   const {P, sc, d3, mtx, hpx} = mapProj()
   const pt = q => q.map(v=>v.toFixed(1)).join(',')
@@ -877,7 +891,7 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
   const walls = d3 ? wallBoxes(partial) : ''
   // コストマップ（Nav2 のグローバル）。内接＝機体の中心が入ると壁に当たる帯／膨張＝通れるが避けたい帯。S.map.cost で描き方を比べる
   let cost = ''
-  if (!d3 && costmap && S.map.cost!=='off'){ const k=S.map.cost
+  if (!d3 && costmap && S.map.costOn && S.map.cost!=='off'){ const k=S.map.cost
     const defs = `<defs><pattern id="hcD" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="9" stroke="#7f8896" stroke-width="3.2"/></pattern>
       <pattern id="hcL" width="11" height="11" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="11" stroke="#aab2bd" stroke-width="1.6"/></pattern>
       <mask id="mcI" maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="620"><image href="${MAPDATA.cost.ins}" ${place}/></mask>
@@ -938,7 +952,31 @@ function mapSVG({robot, path, sel, selLabel, dest, partial=false, pins=PINS, sca
   }
   const pl = path ? `<polyline points="${path.map(q=>pt(P(...q))).join(' ')}" fill="none" stroke="#0f1117" stroke-opacity=".7" stroke-width="9"/><polyline points="${path.map(q=>pt(P(...q))).join(' ')}" fill="none" style="stroke:var(--route,#ffd54f)" stroke-width="5" stroke-dasharray="14 9"/>` : ''
   return `<svg class="map" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">${clip}${floor}${cost}
-    ${pl}${walls}${pts}${items.sort((a,b)=>a[0]-b[0]).map(i=>i[1]).join('')}${labels}${bubble}</svg>${bubHTML}`
+    ${pl}${walls}${pts}${items.sort((a,b)=>a[0]-b[0]).map(i=>i[1]).join('')}${labels}${bubble}</svg>${bubHTML}${kit?mapKit(costmap):''}`
+}
+// 地図の端の小さな道具（2026-11-26 ユーザー決定 D78・D79。すべての地図）: コストマップ（入れない所）の入切と、展開式の凡例。
+// 地図は広いので、カーソルを合わせたときのヘルプ（D19）は出さない。凡例はこのボタンで開く
+function mapKit(costmap=true){
+  const sw = (inner) => `<svg viewBox="0 0 40 24" width="40" height="24">${inner}</svg>`
+  const box = (fill, st='var(--bd-hi)') => `<rect x="3" y="3" width="34" height="18" rx="2" style="fill:${fill};stroke:${st}" stroke-width="1"/>`
+  const prop = S.map.pal==='prop' && S.map.view!=='3d'
+  const rows = prop ? [
+    [box('#ffffff'), '通れる床'],
+    [box('#ffffff')+`<rect x="3" y="3" width="34" height="7" fill="rgba(90,100,115,.30)"/><rect x="3" y="3" width="34" height="3" fill="#7f8896"/>`, '入れない所'],
+    [box('#7f8896','#7f8896'), '壁'],
+    [box('var(--map-unk)'), 'まだ見ていない所'],
+    [box('#ffffff')+[9,16,23,30].map(x=>`<circle cx="${x}" cy="12" r="2.8" style="fill:var(--pt)"/>`).join(''), 'いま見えている物'],
+    [box('#ffffff')+[12,20,28].map(x=>`<circle cx="${x}" cy="12" r="2.8" style="fill:var(--warn)"/>`).join(''), '近い物'],
+    [`<circle cx="20" cy="12" r="9" style="fill:var(--jis-y,#ffd100)" fill-opacity=".45" stroke="#a88a00" stroke-width="2" stroke-dasharray="4 3"/>`, '経路を塞いでいる所'],
+    [`<path d="M3 12H37" style="stroke:var(--route)" stroke-width="4" stroke-dasharray="8 5"/>`, '経路'],
+    [`<rect x="11" y="3" width="18" height="18" style="fill:var(--robot-fp);stroke:var(--robot)" stroke-width="1.5"/><path d="M15 7L26 12L15 17Z" style="fill:var(--robot)"/>`, '機体'],
+    [pinShape('home',16,12,0,{r:7,fill:'var(--pin-home,#4caf50)'}), '待機場所'],
+    [pinShape('panel',16,12,0,{r:7,fill:'var(--pin-panel,#3f8ae0)'}), '配電盤'],
+  ] : [[box('#ffffff'), 'この配色の凡例は「案」の地図だけ']]
+  const leg = S.map.leg ? `<div class="mapleg" role="dialog" aria-label="凡例"><div class="lt"><span>凡例</span><button class="hx" data-act="legTog" aria-label="閉じる">${ic('close')}</button></div>
+    <div class="lg">${rows.map(([g,t])=>`<div class="lr">${sw(g)}<span>${t}</span></div>`).join('')}</div></div>` : ''
+  const cst = costmap ? `<button class="mk2 ${S.map.costOn?'on':''}" data-btn data-act="costTog" aria-pressed="${S.map.costOn}">${sw(box('#ffffff')+`<rect x="3" y="3" width="34" height="7" fill="rgba(90,100,115,.45)"/><rect x="3" y="3" width="34" height="3" fill="#7f8896"/>`)}<span>入れない所</span></button>` : ''
+  return `<div class="mapkit">${leg}<div class="mkr">${cst}<button class="mk2 ${S.map.leg?'on':''}" data-btn data-act="legTog" aria-expanded="${S.map.leg}"><span>凡例</span></button></div></div>`
 }
 function radarSVG(big, off=false){
   if (off) return `<div class="radar ${big?'big':''}" style="display:flex;align-items:center;justify-content:center;text-align:center;color:var(--mut);font-size:15px;padding:16px">人検出が止まっています<br>左上の「人検出」で動かします</div>`
@@ -1292,6 +1330,9 @@ function whyAt(el, msg){
 function toast(msg){ const t=document.querySelector('#dev .toast'); if(!t) return; t.textContent=msg; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2600) }
 function act(a, id){
   if (!a) return
+  // 地図の端の道具（D78・D79）
+  if (a==='costTog'){ S.map.costOn=!S.map.costOn; return render() }
+  if (a==='legTog'){ S.map.leg=!S.map.leg; return render() }
   // 対象を選ぶ（M2）: レーダーの候補を押す。もう一度押すと外す
   if (a==='cand'){ S.target = S.target===+id ? null : +id; return render() }
   // 異常（全画面）
@@ -1497,7 +1538,7 @@ function applyFont(dev){
 }
 const MAP_OPTS = [
   {q:'地図の配色（2026-11-23 案）', k:['map','pal'], v:[['prop','案: 床 白・壁 中間の灰・未探索は地'],['impl','いまの実装（生の灰・黒の壁・濃紺の地）'],['old','案の画面のこれまで']], why:'未探索を地と同じ色にして「壁の外」に見えないようにし、壁を黒から中間の灰へ下げて、いまの点群（濃い灰）が壁に乗っているかを読めるようにする。色相は使わない（ISA-101 のグレー基調。色は状態と操作の意味だけ。D37）。平面の地図だけ（擬似 3D は「これまで」で描く）'},
-  {q:'コストマップ（2026-11-23 案）', k:['map','cost'], v:[['ins','入れない帯だけ薄い灰（案）'],['fill','避けたい帯まで灰'],['hatch','避けたい帯まで斜線'],['red','いまの実装（赤のヒートマップ）'],['off','出さない']], why:'Nav2 のグローバルのコストマップを地図から計算した帯（壁から 0.275 m＝機体の中心が入ると当たる／0.80 m まで＝通れるが避けたい）。0.80 m まで描くと床のほとんどが覆われて読めない（いまの実装も同じ）。案は入れない帯だけを薄く塗り、白い床＝機体の中心が通れる所と読めるようにする。赤は止める操作と非常停止の色なので使わない。経路が塞がれたときは、切り替えによらず塞いでいる所を注意の黄で示す（「経路が塞がれた」の状態で見る）'},
+  {q:'コストマップの描き方（D78）', k:['map','cost'], v:[['ins','入れない帯だけ薄い灰（決定 D78）'],['fill','避けたい帯まで灰'],['hatch','避けたい帯まで斜線'],['red','いまの実装（赤のヒートマップ）'],['off','出さない']], why:'入切は地図の右下の「入れない所」で（D78）。Nav2 のグローバルのコストマップを地図から計算した帯（壁から 0.275 m＝機体の中心が入ると当たる／0.80 m まで＝通れるが避けたい）。0.80 m まで描くと床のほとんどが覆われて読めない（いまの実装も同じ）。案は入れない帯だけを薄く塗り、白い床＝機体の中心が通れる所と読めるようにする。赤は止める操作と非常停止の色なので使わない。経路が塞がれたときは、切り替えによらず塞いでいる所を注意の黄で示す（「経路が塞がれた」の状態で見る）'},
   {q:'点群の色（2026-11-23 案）', k:['map','pts'], v:[['dark','濃い灰＋近いと黄（案）'],['grey','灰（これまで）'],['cyan','水色（いまの実装）']], why:'いま LiDAR に見えている点。壁（中間の灰）より濃くし、地図とずれていないかを読めるようにする。減速が始まる距離より近い点だけ注意の黄にする（色が状態に結び付く）。水色は意味を持たない色'},
   {q:'地図の見え方（試し）', k:['map','view'], v:[['2d','平面'],['3d','擬似 3D']], why:'2026-11-16 の試し。地図は実機が作った経路地図（試験ブロックC2）。斜め上から見た形にし、壁のマスと機体に高さを付ける。壁の本当の高さは地図に無いので、高さは一律の仮（0.5 m）。印の名前は正立のまま'},
   {q:'擬似 3D の壁', k:['map','wall'], v:[['wall','つないだ壁'],['raw','地図のマスのまま']], why:'「つないだ壁」: 約 30 cm までのすき間をつなぎ（空いていると分かっているマスは埋めない）、10 マス未満の点の集まりを捨ててから、高さ 0.8 m（仮）の壁に起こす。捨てた小さい点は、壁より低い箱（0.25 m・仮）で出す。表示のための加工で、走行に使う地図は変えない'},
@@ -1774,7 +1815,7 @@ function followView(){
   const ops = (lookBtn||saveBtn) ? `<div class="row">${lookBtn}${saveBtn}</div>` : ''
   const where = s==='entry' ? '' : T ? `<span>記録</span><b>${s==='pick'||s==='ready'?'0.0 m　0:00':'12.4 m　1:32'}</b>` : (S.target==null ? `<span style="color:var(--warn-tx)">対象を選んでいません</span>` : `<span>対象まで</span><b>1.8 m</b>`)
   let main = radarSVG(true).replace('class="radar big"','class="radar big full"')
-  if (T && s!=='entry') main += `<div class="minimap" data-act="toast:押すと地図とレーダーの大きさを入れ替える（案）"><span class="cap">地図と経路</span>${mapSVG({robot:C(150,90,-90), path:[C(175,176),C(172,120),C(150,90)], pins:[], scan:false, costmap:false})}</div>`
+  if (T && s!=='entry') main += `<div class="minimap" data-act="toast:押すと地図とレーダーの大きさを入れ替える（案）"><span class="cap">地図と経路</span>${mapSVG({robot:C(150,90,-90), path:[C(175,176),C(172,120),C(150,90)], pins:[], scan:false, costmap:false, kit:false})}</div>`
   if (s==='entry') main += `<div class="center"><div class="card wide"><div class="rtl">
       <div class="rt" data-act="startRec"><span>新しい経路</span><small>名前　経路 4</small></div>
       ${reRec('R','廊下の往復','12.3 m')}${reRec('C2','試験ブロックC2','5.1 m')}</div></div></div>`
