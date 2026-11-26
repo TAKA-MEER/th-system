@@ -1765,23 +1765,23 @@ const exitBtn = (act='exit', label='終了') => btn(act, label, {icon:'close', c
 // 進む向きのガイド線（2026-11-26 ユーザー指摘。車のバックカメラのガイド線にならう）: 機体の幅の 2 本の線を、いまの速さと回転から
 // 予想した進路に沿って前（後退なら後ろ）へ 1.5 m 伸ばし、0.5 m ごとに横線を引く。その場で回すときは機体のまわりに弧の矢印。
 // 色は「進む」（機体が動いている間だけ。P8）。進路に障害物があって自動ブレーキが効いているときは注意の黄
-function guideSVG({v=0, w=0, blocked=false}, cx, cy, M){
+function guideSVG({v=0, w=0, blocked=false}, cx, cy, M, {L=1.5, sw=1}={}){
   const col = blocked ? 'var(--warn)' : 'var(--robot,#7fb4ee)'
   if (Math.abs(v)<0.02 && Math.abs(w)<0.02) return ''
   if (Math.abs(v)<0.02){ const r=0.48*M, dir=Math.sign(w)   // その場で回す: 左回り（w>0）なら反時計回りの弧
     const a0=-Math.PI/2, a1=a0-dir*1.9, P=a=>[cx+r*Math.cos(a), cy+r*Math.sin(a)], [x0,y0]=P(a0), [x1,y1]=P(a1)
     const t=a1-dir*0.001, [tx,ty]=[-Math.sin(a1)*-dir, Math.cos(a1)*-dir]
-    const hx=x1+tx*14, hy=y1+ty*14, nx=-ty*9, ny=tx*9
-    return `<g opacity=".9"><path d="M${x0.toFixed(1)} ${y0.toFixed(1)}A${r} ${r} 0 0 ${dir>0?0:1} ${x1.toFixed(1)} ${y1.toFixed(1)}" fill="none" style="stroke:${col}" stroke-width="7" stroke-linecap="round"/>
+    const hx=x1+tx*14*sw, hy=y1+ty*14*sw, nx=-ty*9*sw, ny=tx*9*sw
+    return `<g opacity=".5"><path d="M${x0.toFixed(1)} ${y0.toFixed(1)}A${r} ${r} 0 0 ${dir>0?0:1} ${x1.toFixed(1)} ${y1.toFixed(1)}" fill="none" style="stroke:${col}" stroke-width="${7*sw}" stroke-linecap="round"/>
       <path d="M${(hx).toFixed(1)} ${(hy).toFixed(1)}L${(x1+nx).toFixed(1)} ${(y1+ny).toFixed(1)}L${(x1-nx).toFixed(1)} ${(y1-ny).toFixed(1)}Z" style="fill:${col}"/></g>` }
-  const sg=Math.sign(v), k=w/v, half=0.275, L=1.5
+  const sg=Math.sign(v), k=w/v, half=0.275
   // 機体の座標（x 前・y 左）→ 図（上が前）。進路の弧長 s に沿って、前端（後退なら後端）から伸ばす
   const at = (s, d) => { const th=k*s, x = Math.abs(k)<1e-6 ? s : Math.sin(th)/k, y = Math.abs(k)<1e-6 ? 0 : (1-Math.cos(th))/k
     const px = x + Math.cos(th)*half*sg - Math.sin(th)*d, py = y + Math.sin(th)*half*sg + Math.cos(th)*d
     return [cx - py*M, cy - px*M] }
   const edge = d => Array.from({length:31},(_,i)=>at(sg*i/30*L, d)).map(q=>q.map(n=>n.toFixed(1)).join(',')).join(' ')
-  const tick = s => { const [a,b]=[at(sg*s, half), at(sg*s, -half)]; return `<path d="M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}" style="stroke:${col}" stroke-width="${s===L?6:4}" stroke-linecap="round" opacity="${s===L?.9:.7}"/>` }
-  return `<g>${[half,-half].map(d=>`<polyline points="${edge(d)}" fill="none" style="stroke:${col}" stroke-width="6" stroke-linecap="round" opacity=".9"/>`).join('')}${[0.5,1.0,L].map(tick).join('')}</g>`
+  const tick = s => { const [a,b]=[at(sg*s, half), at(sg*s, -half)]; return `<path d="M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}" style="stroke:${col}" stroke-width="${(s===L?6:4)*sw}" stroke-linecap="round" opacity="${s===L?.5:.35}"/>` }
+  return `<g>${[half,-half].map(d=>`<polyline points="${edge(d)}" fill="none" style="stroke:${col}" stroke-width="${6*sw}" stroke-linecap="round" opacity=".5"/>`).join('')}${[0.5,1.0,1.5].filter(q=>q<L).concat([L]).map(tick).join('')}</g>`
 }
 function surroundSVG({near=false, blind='fig', moving=false, motion=null}={}){
   const M=120, cx=300, cy=320, r=rand(7)
@@ -1912,8 +1912,9 @@ function telemHTML(s){
       <path d="M6 ${H/2}H64" style="stroke:var(--mut)"/><rect x="16" y="${Math.min(Y(ac),H/2)}" width="38" height="${Math.abs(Y(ac)-H/2)}" style="fill:var(--tx)" fill-opacity=".8"/>
       <path d="M2 ${Y(tg)}H68" style="stroke:var(--tx)" stroke-width="4"/></svg>` }
   const pwb = pw => `<svg viewBox="0 0 100 10" width="100%" height="10" preserveAspectRatio="none"><rect width="100" height="10" rx="2" style="fill:var(--inset);stroke:var(--bd-hi)"/><rect width="${pw}" height="10" rx="2" style="fill:var(--tx)" fill-opacity=".65"/></svg>`
-  const body = `<svg viewBox="0 0 60 ${H}" width="60" height="${H}"><rect x="14" y="${H/2-22}" width="32" height="44" rx="3" style="fill:var(--robot-fp);stroke:var(--robot)" stroke-width="2"/>
-    <rect x="6" y="${H/2-12}" width="7" height="24" rx="2" style="fill:var(--tx)"/><rect x="47" y="${H/2-12}" width="7" height="24" rx="2" style="fill:var(--tx)"/><path d="M24 ${H/2+6}L30 ${H/2-10}L36 ${H/2+6}Z" style="fill:var(--robot)"/></svg>`
+  const moving = ['drive','back','spin','near'].includes(s), MM=58
+  const body = `<svg viewBox="0 0 60 ${H}" width="60" height="${H}" style="overflow:visible">${moving?guideSVG({v:t.act, w:t.w, blocked:s==='near'}, 30, H/2, MM, {L:.9, sw:.5}):''}<rect x="14" y="${H/2-16}" width="32" height="32" rx="3" style="fill:var(--robot-fp);stroke:var(--robot)" stroke-width="2"/>
+    <rect x="6" y="${H/2-12}" width="7" height="24" rx="2" style="fill:var(--tx)"/><rect x="47" y="${H/2-12}" width="7" height="24" rx="2" style="fill:var(--tx)"/><path d="M24 ${H/2+6}L30 ${H/2-8}L36 ${H/2+6}Z" style="fill:var(--robot)"/></svg>`
   const whs = `<div class="whs">
     <div class="g">${gauge(L)}</div><div class="c">${body}</div><div class="g">${gauge(R)}</div>
     <b class="v">${f2(L[1])}</b><span class="c u">m/s</span><b class="v">${f2(R[1])}</b>
