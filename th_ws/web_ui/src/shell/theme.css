@@ -1200,7 +1200,8 @@ table.lst td.r{text-align:right}
 #s50.screen{display:flex;flex-direction:column;min-height:0;height:100%;padding:0}
 #s50 .content.g-list{flex:1;min-height:0;display:grid;gap:14px;grid-template-columns:380px minmax(0,1fr);grid-template-rows:minmax(0,1fr);padding:12px 14px}
 #s50 .lst{min-height:0;display:flex;flex-direction:column;gap:4px}
-#s50 .lrow{min-height:56px;display:flex;align-items:center;padding:0 14px;border:1px solid transparent;border-radius:8px;font-size:calc(var(--fs) * 1.05)}
+#s50 .lst > div{display:flex;flex-direction:column;gap:4px}
+#s50 .lrow{min-height:56px;display:flex;align-items:center;padding:0 14px;border:1px solid transparent;border-radius:8px;font-size:calc(var(--fs) * 1.05);width:100%;text-align:left;background:transparent}
 #s50 .lrow.on{background:var(--sel-bg);color:var(--sel-tx)}
 #s50 .pane{min-height:0;display:flex;flex-direction:column}
 #s50 .pbody{flex:1;min-height:0;overflow:auto}
