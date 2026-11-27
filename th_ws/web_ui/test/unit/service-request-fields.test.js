@@ -204,16 +204,17 @@ test('onsite/calib wrapper request literals fit their .srv request fields', () =
   )) {
     cases.push({ where: 'useCalibService.js', type: topics[m[1].split('.')[1]], literal: m[2] })
   }
-  // 呼び出し側が渡すリテラル: twoPoint/editPin/declareHome/selectPin({...})
+  // 呼び出し側が渡すリテラル: twoPoint/editPin/selectPin({...})
+  // 2026-11-27 D58: 待機場所の宣言（declareHome / DeclareHome.srv）は廃止され
+  // 機体側に無いので対象外。
   const wrapperType = {
     twoPoint: 'th_system_msgs/TwoPointPress',
     editPin: 'th_system_msgs/EditPin',
-    declareHome: 'th_system_msgs/DeclareHome',
     selectPin: 'th_system_msgs/GoToPanel',
   }
   for (const f of readdirSync(screensDir).filter((f) => f.endsWith('.jsx'))) {
     const src = read(screensDir, f)
-    for (const m of src.matchAll(/\b(twoPoint|editPin|declareHome|selectPin)\(\s*\{/g)) {
+    for (const m of src.matchAll(/\b(twoPoint|editPin|selectPin)\(\s*\{/g)) {
       let i = m.index + m[0].length - 1
       let depth = 0
       let j = i

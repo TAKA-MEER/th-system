@@ -28,8 +28,9 @@ def test_attributes_manual_like_are_manual_and_teach_manual():
 
 
 @pytest.mark.parametrize('mode', MANUAL_LIKE)
-def test_manual_out_default_off(mode):
-    assert effective_auto_brake(ATTRS[mode], 'OUT', False, None) is False
+def test_manual_out_default_on(mode):
+    # 2026-11-27 D75: 場外の手動系の既定は ON（従来は OFF）。
+    assert effective_auto_brake(ATTRS[mode], 'OUT', False, None) is True
 
 
 @pytest.mark.parametrize('mode', MANUAL_LIKE)
@@ -69,8 +70,8 @@ def test_locked_modes_cannot_be_disabled_without_jog(mode, zone, override):
 
 @pytest.mark.parametrize('mode', LOCKED)
 def test_jog_in_locked_mode_follows_zone_default(mode):
-    # ジョグ中は元のモードが自律系でも手動系として扱う（場外 OFF・場内 ON）。
-    assert effective_auto_brake(ATTRS[mode], 'OUT', True, None) is False
+    # ジョグ中は元のモードが自律系でも手動系として扱う（場外・場内とも ON。D75）。
+    assert effective_auto_brake(ATTRS[mode], 'OUT', True, None) is True
     assert effective_auto_brake(ATTRS[mode], 'IN', True, None) is True
     assert override_allowed(ATTRS[mode], True) is True
     # 試験員の切り替えもジョグ中は効く。
@@ -186,9 +187,9 @@ def test_s50_outdoor_default_on_enables_outdoor(mode):
 def test_s50_indoor_default_off_disables_indoor(mode):
     assert effective_auto_brake(
         ATTRS[mode], 'IN', False, None, indoor_default=False) is False
-    # OUT は場内の既定に左右されない。
+    # OUT は場内の既定に左右されない（場外の既定は ON。D75）。
     assert effective_auto_brake(
-        ATTRS[mode], 'OUT', False, None, indoor_default=False) is False
+        ATTRS[mode], 'OUT', False, None, indoor_default=False) is True
 
 
 @pytest.mark.parametrize('mode', MANUAL_LIKE)
@@ -216,3 +217,24 @@ def test_a15_panel_open_allows_override_without_jog():
     assert override_allowed(locked, False, False, True) is True
     assert effective_auto_brake(locked, "IN", False, False, False, False) is True
     assert effective_auto_brake(locked, "IN", False, False, False, True) is False
+
+
+# ── 試験準備（PREP）の切替（2026-11-27 D73） ──────────────────────────────
+def test_prep_free_allows_override_without_panel_or_jog():
+    """PREP は W-6 の知らせ（panel_open）が無くても切り替えられる（D73）。"""
+    assert override_allowed(ATTRS["PREP"], False, False, False) is False
+    assert override_allowed(ATTRS["PREP"], False, False, False, True) is True
+    # 場内（IN）の PREP で OFF の要求が効く。
+    assert effective_auto_brake(ATTRS["PREP"], "IN", False, False,
+                                False, False, True) is False
+    # prep_free が無いと効かない（自律系のまま ON）。
+    assert effective_auto_brake(ATTRS["PREP"], "IN", False, False) is True
+
+
+def test_prep_free_does_not_weaken_other_locked_modes():
+    """prep_free は PREP のときだけ呼び出し側が立てる。純関数は他モードも
+    許してしまうので、state_manager 側の条件（mode==PREP かつ在席）を守る。"""
+    for mode in LOCKED:
+        if mode == "PREP":
+            continue
+        assert override_allowed(ATTRS[mode], False, False, False, False) is False

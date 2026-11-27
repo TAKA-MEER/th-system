@@ -32,8 +32,6 @@
     "TEACH_FOLLOW",
     "TEACH_MANUAL",
     "REPLAY",
-    "LINE",
-    "LEASH",
     "PREP",
     "AT_HOME",
     "PANEL_NAV",
@@ -43,12 +41,6 @@
     "CALIB"
   ],
   "INIT": [
-    "IDLE"
-  ],
-  "LEASH": [
-    "IDLE"
-  ],
-  "LINE": [
     "IDLE"
   ],
   "MANUAL": [

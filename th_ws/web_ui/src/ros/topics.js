@@ -105,10 +105,8 @@ export const SERVICES = {
   // RegisterPin.srv, method=ROBOT_POSE）。names.json の endpoints に既にあるので
   // 辞書ゲートを通る。
   ONSITE_REGISTER_PIN: '/onsite/register_pin',
-  // WP-UI-07: S-21。待機場所の宣言（home_declarer）。選んだ配電盤のゴール保留は
-  // `/onsite/select_pin` だが、names.json（辞書ゲート）に無いため TOPICS/SERVICES には
-  // 載せず useOnsiteService.js 内のローカル定数で扱う（useOdomPose と同型）。
-  ONSITE_DECLARE_HOME: '/onsite/declare_home',
+  // 2026-11-27 D58: 待機場所の宣言（/onsite/declare_home・DeclareHome）は廃止され
+  // 機体側に無いので、ここにも names.json にも載せない。
   // brief-onsite-fix E: 保存した会場地図（slot:VENUE）を当日に読み直す。
   // S-21 の「保存した会場地図を開く」ボタンが呼ぶ（slam_control /map_session/open）。
   MAP_SESSION_OPEN: '/map_session/open',
@@ -189,9 +187,8 @@ export const SRV_TYPES = {
   ONSITE_EDIT_PIN: 'th_system_msgs/EditPin',
   // REG-2: 機体姿勢での直接登録。
   ONSITE_REGISTER_PIN: 'th_system_msgs/RegisterPin',
-  // WP-UI-07: S-21。待機場所宣言 / ピン選択（select_pin はサービス名が
-  // names.json に無いため S21Test 側のローカル定数で呼ぶ。型はここ）。
-  ONSITE_DECLARE_HOME: 'th_system_msgs/DeclareHome',
+  // S-21。ピン選択（select_pin はサービス名が names.json に無いため
+  // S21Test 側のローカル定数で呼ぶ。型はここ）。待機場所宣言（D58 廃止）は無い。
   ONSITE_SELECT_PIN: 'th_system_msgs/GoToPanel',
   // brief-onsite-fix E: /map_session/open の SRV 型。
   MAP_SESSION_OPEN: 'th_system_msgs/OpenMapSession',

@@ -189,10 +189,10 @@ public:
         // 0.0 のままだと「盤前・待機場所で前後に動かせない」になる。
         // A5 の順序（v_jog_panel <= v_reverse <= v_slow <= v_max）を満たす値にする。
         declare_parameter("v_jog_panel", 0.10);
-        // v_check / v_calib / v_leash: 2026-08-27 に registry.yaml の consumers へ
+        // v_check / v_calib: 2026-08-27 に registry.yaml の consumers へ
         // obstacle_limiter を追加した（SystemState.speed_limit が "v_check" /
-        // "v_calib" / "v_leash" を運びうる。attributes.yaml の OPCHECK / CALIB /
-        // LEASH の speed_limit がそれぞれこの名前を指すため、resolve_speed_limit_name()
+        // "v_calib" を運びうる。attributes.yaml の OPCHECK / CALIB の
+        // speed_limit がそれぞれこの名前を指すため、resolve_speed_limit_name()
         // が解決するには表に載っている必要がある）。これで生成 yaml
         // （th_ws/data/generated/obstacle_limiter.yaml）に値が載るようになった。
         // 数値の実体は registry.yaml の責務なので、ここでは他の v_* と同じく
@@ -202,7 +202,6 @@ public:
         // 食い違った N-14 と同じ失敗パターンになる）。
         declare_parameter("v_check", 0.0);
         declare_parameter("v_calib", 0.0);
-        declare_parameter("v_leash", 0.0);
 
         params_.obstacle_floor_distance_m = get_parameter("obstacle_floor_distance_m").as_double();
         params_.hysteresis_band_m = get_parameter("hysteresis_band_m").as_double();
@@ -291,7 +290,6 @@ public:
             {"v_jog_panel", get_parameter("v_jog_panel").as_double()},
             {"v_check", get_parameter("v_check").as_double()},
             {"v_calib", get_parameter("v_calib").as_double()},
-            {"v_leash", get_parameter("v_leash").as_double()},
         };
 
         // ── TF: 起動時に base_link<-laser_link を取得して保持する

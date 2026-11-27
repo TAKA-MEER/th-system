@@ -292,10 +292,9 @@ if(BUILD_TESTING)
     test/test_pin_clearance_core.py
     TIMEOUT 30)
 
-  # 待機場所宣言コア (Spec-onsite §4.0。姿勢オフセット・許容差判定。
-  # th_onsite の純ロジック。ROS2 不要)
-  ament_add_pytest_test(test_home_declare_core
-    test/test_home_declare_core.py
+  # 配電盤の順番変更の純ロジック (R-5。th_onsite の純ロジック。ROS2 不要)
+  ament_add_pytest_test(test_pin_order_core
+    test/test_pin_order_core.py
     TIMEOUT 30)
 
   # 機体姿勢ピン登録コア (REG-2。HOME 置換 / PANEL 連番の pin dict 構築。
@@ -665,6 +664,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_auto_brake_panel_node
     test/test_auto_brake_panel_node.py
     TIMEOUT 180)
+  # R-3（D73・D75）。場外の手動の既定 ON・PREP の心拍なし OFF と在席途絶での戻し。
+  ament_add_pytest_test(test_auto_brake_prep_node
+    test/test_auto_brake_prep_node.py
+    TIMEOUT 180)
   ament_add_pytest_test(test_auto_brake_dev_limiter_node
     test/test_auto_brake_dev_limiter_node.py
     TIMEOUT 180)
@@ -733,6 +736,10 @@ if(BUILD_TESTING)
   # 1b-11 SG-B16: pin_registrar のピン再登録（同じ id・同じ名前のまま位置と向きだけ。launch_testing）
   ament_add_pytest_test(test_pin_reregister_node
     test/test_pin_reregister_node.py
+    TIMEOUT 180)
+  # R-5（D60・D64）: 配電盤の順番変更（前へ／後へ・まとめて決める。launch_testing）
+  ament_add_pytest_test(test_pin_order_node
+    test/test_pin_order_node.py
     TIMEOUT 180)
   # 退避待ちゲートの disabled 結合テスト（brief-tracker-default-off §3.3。
   # /person/status が is_lost=True / lost_reason="disabled" の間 clear_ok を
@@ -968,13 +975,6 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_nav_venue_unloaded_node
     test/test_venue_nav_venue_unloaded_node.py
     TIMEOUT 400)
-
-  # 待機場所宣言の配線（DetailedDesign-onsite.md §9 #10。Gazebo なしの
-  # launch_testing で pin_registrar＋home_declarer を起動し、TF をずらして
-  # 照合・force・ピン変更時の解除・境界を検証。積算は venue_nav と同じ 240 秒枠）
-  ament_add_pytest_test(test_home_declarer_node
-    test/test_home_declarer_node.py
-    TIMEOUT 240)
 
   # 方式選択の前提・地図更新の保存（1b-11 SG-B13・SG-B14）。state_manager を起動し、
   # 経路 0 本・デバイス未接続・地図の有無が本番の配線で効くことを縛る。

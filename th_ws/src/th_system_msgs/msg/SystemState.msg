@@ -32,7 +32,7 @@ string pause_reason        # PAUSE に入った理由 ("" / "fault" / "jog" / "p
                             # 戻ってきた端末は一回きりの effect を受け取れないため、
                             # 状態から再開確認（W-1）を出す（Spec-safety.md §6.2.2）。
                             # 末尾に追加（既存フィールドの順序は変えない）
-bool leash_present          # リードデバイスの存在（1b-11 SG-B13）。
-                            # state_manager が evt.leash_present/absent でラッチ。
+bool leash_present          # 廃止（2026-11-27 D7。LINE/LEASH 廃止に伴い未使用）。
+                            # 列順・互換のためフィールドだけ残す。常に false。
                             # 未受信＝未接続扱い（false）。S-01 の LEASH ボタン表示用。
                             # 末尾に追加（既存フィールドの順序は変えない）

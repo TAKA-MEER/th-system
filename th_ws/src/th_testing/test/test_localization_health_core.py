@@ -392,8 +392,6 @@ def test_in_use_others_not_monitored():
         ("INIT", "CHECK"),
         ("ESTOP", "NONE"),
         ("FOLLOW", "RUN"),
-        ("LINE", "RUN"),
-        ("LEASH", "RUN"),
     ]
     for mode, state in cases:
         assert is_localization_in_use(mode, state) is False, (

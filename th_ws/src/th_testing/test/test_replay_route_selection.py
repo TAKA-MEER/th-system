@@ -39,8 +39,7 @@ def _ctx(**over):
         target_selected=False, target_confident=False,
         fault_active=False, fault_severity="", fault_type="",
         hw_estop=False, ui_estop=False,
-        route_ids=(), pin_kinds=(), leash_present=False, leash_taut=False,
-        line_visible=False, camera_present=False,
+        route_ids=(), pin_kinds=(), camera_present=False,
         check_item="", check_result="", calib_item="", calib_preview_sane=False,
         map_update_available=False, now_ms=0, arg={},
     )

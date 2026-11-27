@@ -282,10 +282,6 @@ def _resume_state_available(mode, state, ctx) -> bool:
     return not ctx.fault_active and mode not in RESUME_STATE_UNAVAILABLE_MODES
 
 
-def _leash_slack(mode, state, ctx) -> bool:
-    return not ctx.leash_taut
-
-
 def _can_finish(mode, state, ctx) -> bool:
     if mode == "ESTOP":
         return False
@@ -382,12 +378,6 @@ def _enter_replay_no_route(mode, state, ctx) -> bool:
     return ctx.arg.get("mode") == "REPLAY" and len(ctx.route_ids) == 0
 
 
-def _enter_leash_no_device(mode, state, ctx) -> bool:
-    """電子リード走行を選んだのにリードデバイスの存在を知らない
-    （device_not_connected。evt.leash_present 未受信＝未接続扱い）。"""
-    return ctx.arg.get("mode") == "LEASH" and not ctx.leash_present
-
-
 def _route_loaded(mode, state, ctx) -> bool:
     """replay_runner が実際に追従できる経路を積んでいるか。
 
@@ -413,14 +403,6 @@ def _map_update_off(mode, state, ctx) -> bool:
     not_allowed になる）ため、理由を出すにはこの形が要る
     （T-ATP-05-working と同じ流儀）。"""
     return not (bool(ctx.flags.get("map_update")) and ctx.map_update_available)
-
-
-def _line_visible(mode, state, ctx) -> bool:
-    return ctx.line_visible
-
-
-def _leash_taut(mode, state, ctx) -> bool:
-    return ctx.leash_taut
 
 
 def _preview_sane(mode, state, ctx) -> bool:
@@ -453,7 +435,6 @@ GUARDS: Dict[str, Callable] = {
     "no_critical_fault": _no_critical_fault,
     "hw_released": _hw_released,
     "hw_released_and_no_critical": _hw_released_and_no_critical,
-    "leash_slack": _leash_slack,
     "can_finish": _can_finish,
     "mode_entry_allowed": _mode_entry_allowed,
     "goto_allowed": _goto_allowed,
@@ -468,13 +449,10 @@ GUARDS: Dict[str, Callable] = {
     "route_arg_valid": _route_arg_valid,
     "route_exists": _route_exists,
     "enter_replay_no_route": _enter_replay_no_route,
-    "enter_leash_no_device": _enter_leash_no_device,
     "route_loaded": _route_loaded,
     "home_pin_exists": _home_pin_exists,
     "map_update": _map_update,
     "map_update_off": _map_update_off,
-    "line_visible": _line_visible,
-    "leash_taut": _leash_taut,
     "preview_sane": _preview_sane,
     "check_result_ok": _check_result_ok,
     "ng_and_calibrable": _ng_and_calibrable,
@@ -507,7 +485,7 @@ GUARDS: Dict[str, Callable] = {
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 62, len(GUARDS)
+assert len(GUARDS) == 58, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:

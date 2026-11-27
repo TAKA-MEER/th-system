@@ -64,8 +64,7 @@ def test_spec_table_drive_cases():
     for combo in [('PANEL_NAV', 'NAV'), ('HOME_NAV', 'NAV'), ('SUMMON', 'NAV'),
                   ('PREP', 'RETURN'), ('REPLAY', 'RUN'),
                   ('CALIB', 'S2'), ('CALIB', 'S4'),
-                  ('FOLLOW', 'RUN'), ('TEACH_FOLLOW', 'REC'),
-                  ('LINE', 'RUN'), ('LEASH', 'RUN')]:
+                  ('FOLLOW', 'RUN'), ('TEACH_FOLLOW', 'REC')]:
         assert decide_cue(*combo, False) == CUE_DRIVE, combo
 
 

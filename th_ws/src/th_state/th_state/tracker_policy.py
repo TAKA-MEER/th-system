@@ -11,7 +11,7 @@ from __future__ import annotations
 # Spec-modes.md §9（E-9）「動かさない」モード。このモード群へ遷移したら
 # tracker_enabled を false に自動停止する（ESTOP / CARRY は対象外）。
 TRACKER_AUTOSTOP_MODES = frozenset({
-    "INIT", "IDLE", "MANUAL", "TEACH_MANUAL", "REPLAY", "LINE", "LEASH",
+    "INIT", "IDLE", "MANUAL", "TEACH_MANUAL", "REPLAY",
     "OPCHECK", "CALIB",
 })
 

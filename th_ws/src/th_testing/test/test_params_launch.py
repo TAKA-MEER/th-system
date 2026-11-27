@@ -792,12 +792,12 @@ def test_safety_enabled_targets_still_includes_limiter():
 
 
 def test_onsite_nodes_gate_with_onsite_enabled():
-    """WP-ONSITE: pin_registrar / venue_navigator / wait_clear_gate / home_declarer の
-    onsite 4 ノードが、`onsite_enabled` 条件で bringup.launch.py に載っていること。
-    home_declarer が漏れると /onsite/declare_home が実機に出ず S-21 の待機場所宣言が
+    """WP-ONSITE: pin_registrar / venue_navigator / wait_clear_gate の
+    onsite 3 ノードが、`onsite_enabled` 条件で bringup.launch.py に載っていること。
+    ノードが漏れると /onsite のサービスが実機に出ず S-21 の操作が
     必ず失敗する（brief-onsite-fix B）。"""
     src = _read(BRINGUP_PY)
-    for name in ("pin_registrar", "venue_navigator", "wait_clear_gate", "home_declarer"):
+    for name in ("pin_registrar", "venue_navigator", "wait_clear_gate"):
         kw = _node_kwargs_by_name(name)
         assert "condition" in kw, (
             f"bringup.launch.py: name={name!r} の Node(...) に condition= が無い（WP-ONSITE）")
@@ -811,14 +811,14 @@ def test_onsite_nodes_gate_with_onsite_enabled():
 
 
 def test_onsite_cmake_and_launch_both_cover_four_executables():
-    """WP-ONSITE: th_onsite の 4 実行ファイル（pin_registrar / venue_navigator /
-    wait_clear_gate / home_declarer）が、CMakeLists.txt の install(PROGRAMS ...) と
+    """WP-ONSITE: th_onsite の 3 実行ファイル（pin_registrar / venue_navigator /
+    wait_clear_gate）が、CMakeLists.txt の install(PROGRAMS ...) と
     bringup.launch.py の両方に出ていること。片方だけに載っても実機に出ない
-    （brief-onsite-fix B: home_declarer が CMakeLists に載っているのに launch に
-    無く /onsite/declare_home が実機に出なかった）。"""
+    （brief-onsite-fix B: ノードが CMakeLists に載っているのに launch に
+    無く /onsite のサービスが実機に出なかった）。"""
     cmake = _read(os.path.join(_REPO_SRC, 'th_onsite', 'CMakeLists.txt'))
     launch_src = _read(BRINGUP_PY)
-    for script in ('pin_registrar', 'venue_navigator', 'wait_clear_gate', 'home_declarer'):
+    for script in ('pin_registrar', 'venue_navigator', 'wait_clear_gate'):
         assert f'scripts/{script}.py' in cmake, (
             f"th_onsite/CMakeLists.txt: install(PROGRAMS ...) に {script}.py が無い")
         assert f"executable='{script}.py'" in launch_src, (

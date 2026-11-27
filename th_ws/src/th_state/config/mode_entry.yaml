@@ -17,8 +17,6 @@ IDLE:
   - TEACH_FOLLOW
   - TEACH_MANUAL
   - REPLAY
-  - LINE
-  - LEASH
   - PREP
   - AT_HOME
   - PANEL_NAV
@@ -42,12 +40,6 @@ TEACH_MANUAL:
   - IDLE
 
 REPLAY:
-  - IDLE
-
-LINE:
-  - IDLE
-
-LEASH:
   - IDLE
 
 PREP:

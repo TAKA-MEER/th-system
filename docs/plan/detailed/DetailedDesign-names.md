@@ -46,7 +46,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | **`th_params`** | `ament_cmake` + python | **パラメータ registry・導出・監査**（§7） | 新規（`th_config_manager` の一部を吸収） |
 | **`th_state`** | `ament_cmake` + python | **状態機械**。遷移表が正本 | 新規（`th_mode_manager` を置換） |
 | `th_safety` | `ament_cmake` (C++) | `safety_monitor` / **`obstacle_limiter`** / twist_mux 設定 | 既存・拡張 |
-| **`th_transit`** | `ament_cmake` + python | 走行方式の挙動ノード（`FOLLOW` / `MANUAL` / `TEACH_*` / `LINE` / `LEASH`） | 新規（`th_planning` を置換） |
+| **`th_transit`** | `ament_cmake` + python | 走行方式の挙動ノード（`FOLLOW` / `MANUAL` / `TEACH_*`） | 新規（`th_planning` を置換） |
 | **`th_route`** | `ament_cmake` + python | 教示の記録・再生・**地図セッション** | 新規（`slam_control.py` を吸収） |
 | **`th_onsite`** | `ament_cmake` + python | 試験場内（`PREP` / `PANEL_NAV` / `AT_PANEL` / `SUMMON` / `HOME_NAV`） | 新規（`panel_navigator` / `summon_navigator` を置換） |
 | **`th_maintenance`** | `ament_cmake` + python | 始業点検・校正・故障診断 | 新規（`th_calibration` を吸収） |
@@ -76,8 +76,6 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | **`fault_recorder`** | **`th_state`** | **`scripts/fault_recorder.py`** | **フォルト履歴の記録（Spec-safety.md §3.5.5）。`/safety/active_faults` と `/system/state` を購読し `/system/fault_history` とファイルへ書くだけ。純コアは `th_state/fault_history_core.py`。挙動に影響しない** |
 | **`speaker_announcer`** | **`th_state`** | **`scripts/speaker_announcer.py`** | **機体スピーカーの報知判定（Spec-safety.md §11）。`/system/state` と `/safety/limiter_status` を見て `/speaker/cue`（`std_msgs/String` の JSON）へ 2 Hz。純コアは `th_state/speaker_announce_core.py`。報知は安全装置ではない** |
 | `follow_runner` | `th_transit` | `scripts/follow_runner.py` | `FOLLOW` / `TEACH_FOLLOW` / `PREP` の走行 |
-| `line_runner` | `th_transit` | `scripts/line_runner.py` | `LINE`（後回し） |
-| `leash_runner` | `th_transit` | `scripts/leash_runner.py` | `LEASH`（後回し） |
 | `route_recorder` | `th_route` | `scripts/route_recorder.py` | 教示の記録 |
 | `replay_runner` | `th_route` | `scripts/replay_runner.py` | 教示再生 |
 | `map_session` | `th_route` | `scripts/map_session.py` | 地図スロット |
@@ -140,7 +138,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | 理由 | |
 | --- | --- |
 | 遷移表が文字列で書かれている | 数値と文字列の二重管理は必ずずれる（`DD-3`） |
-| モードの増減で採番し直しになる | 18 モードは今後も増える（`LINE` / `LEASH` の後にも） |
+| モードの増減で採番し直しになる | 17 モードは今後も増える |
 | 既存の流儀と揃う | `FollowStatus` / `SearchStatus` / `SummonStatus` は既に `string state` を使い、CLAUDE.md も「文字列定義は .msg のコメントが正」としている |
 
 **タイプミスは起動時に落ちる。**`th_state` はロード時に遷移表の全 `mode` / `state` が
@@ -159,8 +157,6 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | | `TEACH_FOLLOW` | 教示（追従） | S-12 | 場外 | **要** |
 | | `TEACH_MANUAL` | 教示（手動） | S-13 | 場外 | 不要 |
 | | `REPLAY` | 教示再生 | S-14 | 場外 | 不要 |
-| | `LINE` | ライン誘導 | S-15 | 場外 | 不要 |
-| | `LEASH` | 電子リード | S-16 | 場外 | 不要 |
 | 試験場内 | `PREP` | 試験準備 | S-20 | **場内** | **要**（登録時のみ） |
 | | `PANEL_NAV` | 配電盤へ移動 | S-21 | **場内** | 不要 |
 | | `AT_PANEL` | 配電盤前 | S-21 | **場内** | 不要 |
@@ -187,8 +183,6 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | `MANUAL` | `RUN` / `PAUSE` |
 | `TEACH_FOLLOW` ／ `TEACH_MANUAL` | `ROUTE_SEL` / `REC` / `PAUSE` / `SAVED` |
 | `REPLAY` | `ROUTE_SEL` / `LOCALIZE` / `READY` / `RUN` / `PAUSE` / `SAVED` |
-| `LINE` | `SETUP` / `PLANNED` / `RUN` / `PAUSE` / `ARRIVED` |
-| `LEASH` | `DEV_CHECK` / `READY` / `RUN` / `HOLD` / `PAUSE` |
 | `PREP` | `MAPPING` / `REGISTER` / `RETURN` / `EDIT` / `SAVED` |
 | `PANEL_NAV` | `NAV` / `BLOCKED` / `PAUSE` / `ALIGN` |
 | `AT_PANEL` | `IDLE_P` / `WORKING` / `PAUSE` |
@@ -199,14 +193,9 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 
 **`STOP` という状態名は存在しない**（`Spec-modes.md` §3.1.1）。「停止」は操作の名前である。
 
-**`ARRIVED` は `LINE` にしか無い**（唯一の自動停止。`F-02`）。
 `PANEL_NAV` / `SUMMON` / `HOME_NAV` の到着は**滞在する状態ではない**。
 状態として持つと**到達不能状態になり `validate()` が落ちる**ので、状態集合から外す。
 到着したことは `effects: [mark_arrived]` と `/system/state.last_event` で表す。
-
-> **2026-08-16 反映済み**: 正本 `Spec-modes.md` §3・§3.1.2 の `ARRIVED` 表記を
-> 「到着（`AT_PANEL` へ）」に直し、**§3.0-① に「滞在するのは `LINE` だけ」と明記した**
-> （[DetailedDesign-open.md](DetailedDesign-open.md) §3 A-4）。
 
 ### 3.1 フラグ
 
@@ -225,7 +214,7 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 
 ---
 
-## 4. 画面（15）とゾーン
+## 4. 画面（13）とゾーン
 
 **ゾーンは 3 値である**（`Spec-modes.md` §7）。真偽値にしてはいけない
 （`OPCHECK` / `CALIB` に場外の `v_max` が適用されてしまう）。
@@ -239,8 +228,6 @@ twist_mux の設定と ROS2 の慣行がこの形であり、変えると既存�
 | `S-12` | 教示（追従） | `OUT` | `v_max` |
 | `S-13` | 教示（手動） | `OUT` | `v_max` |
 | `S-14` | 教示再生走行 | `OUT` | `v_max` |
-| `S-15` | ライン誘導走行 | `OUT` | `v_max` |
-| `S-16` | 電子リード走行 | `OUT` | `v_leash` |
 | `S-20` | 試験準備 | **`IN`** | `v_slow` |
 | `S-21` | 試験 | **`IN`** | `v_slow` |
 | `S-30` | 始業点検 | **`NA`** | `v_check` |
@@ -348,11 +335,10 @@ def derive_limits(screens, now_ms, p):
 | `/map_session/open` | `OpenMapSession`: `string slot` / `string session_id` / `string mode` → `bool success` / `string message` | `th_route` |
 | `/map_session/save` | `std_srvs/Trigger` | `th_route` |
 | `/map_session/discard` | `std_srvs/Trigger` | `th_route` |
-| `/onsite/two_point` | `TwoPointPress`: `string purpose`（`HOME`/`PANEL`/`SUMMON`/`LINE_POSE`） / `uint8 index`（1 or 2） → `bool accepted` / `string reject_reason_key` / `float32 yaw` | `th_onsite` |
+| `/onsite/two_point` | `TwoPointPress`: `string purpose`（`HOME`/`PANEL`/`SUMMON`） / `uint8 index`（1 or 2） → `bool accepted` / `string reject_reason_key` / `float32 yaw` | `th_onsite` |
 | `/onsite/register_pin` | `RegisterPin`: `string kind` / `string name` / `string method`（`TWO_POINT`/`PLANE`/`ROBOT_POSE`） → `bool success` / `Pin pin` / `string message` | `th_onsite` |
 | `/onsite/resolve_pin` | `ResolvePin`: `string action`（`place`/`retreat`/`cancel`） → `bool success` / `string message` | `th_onsite`。`PinWarning` が出ているピンの扱いを決める。`WS-9AB`（2026-09-10）で新設 |
-| `/onsite/edit_pin` | `EditPin`: `string id` / `string new_name` / **`bool is_delete`** → `bool success` / `string message` | `th_onsite`。**`delete` は C++ の予約語**で、rosidl が生成する C++ ヘッダがコンパイル不能になる（`WP-MSG-01` で実測）。`is_delete` に改名した。**SG-B16（1b-11）で再登録を追加**: `bool update_pose` / `float64 x` / `float64 y` / `float64 yaw`（map frame）。`update_pose=true` で同じ id のまま位置と向きを上書きする（`Spec-onsite.md` §2.3）。`new_name` が非空なら改名も同時に行う |
-| `/onsite/declare_home` | `DeclareHome`: `bool force` → `bool success` / `float32 offset_m` / `float32 offset_deg` / `string message` | `th_onsite` |
+| `/onsite/edit_pin` | `EditPin`: `string id` / `string new_name` / **`bool is_delete`** → `bool success` / `string message` | `th_onsite`。**`delete` は C++ の予約語**で、rosidl が生成する C++ ヘッダがコンパイル不能になる（`WP-MSG-01` で実測）。`is_delete` に改名した。**SG-B16（1b-11）で再登録を追加**: `bool update_pose` / `float64 x` / `float64 y` / `float64 yaw`（map frame）。`update_pose=true` で同じ id のまま位置と向きを上書きする（`Spec-onsite.md` §2.3）。`new_name` が非空なら改名も同時に行う。**R-5（2026-11-27 D60・D64）で順番変更を追加**: `int32 move`（-1: 前へ、1: 後へ）で 1 つずつ動かす操作と、`string[] order_ids`（空でなければ配電盤の並びをまとめて決める。押さなかった盤は現在の順のまま後ろへ）で並びを決める操作。順番は `pins.yaml` のリストの並び（`/onsite/pins` の配列の並び）として保存される |
 | `/onsite/map_erase` | `EraseMapRegion`: `float32 x0,y0,x1,y1` / `bool undo` → `bool success` | `th_route` |
 | `/opcheck/run_item` | `RunCheck`: `string item` → `bool started` / `string message` | `th_maintenance` |
 | `/opcheck/answer` | `AnswerCheck`: `string item` / `bool ok` → `bool accepted` | `th_maintenance` |
@@ -512,7 +498,6 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | --- | --- | --- | --- |
 | `v_max` | m/s | (b) | ゾーン `OUT` |
 | `v_slow` | m/s | (b) | ゾーン `IN` |
-| `v_leash` | m/s | (b) | `LEASH`（一定速） |
 | `v_reverse` | m/s | (b) | 後退（全モード共通の上限） |
 | `v_jog_panel` | m/s | (b) | `AT_PANEL` のジョグ |
 | `v_check` | m/s | (b) | `OPCHECK` のモーター確認 |
@@ -551,7 +536,6 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `nav_tolerance_m` ／ `nav_tolerance_deg` | m / deg | given（Nav2 の現行設定値） |
 | `person_position_sigma_m` | m | **(c)**（`O-c3`） |
 | `blocked_lookahead_m` | m | (b) |
-| `home_declare_tolerance_m` ／ `home_declare_tolerance_deg` | m / deg | (b) |
 | `align_tolerance_rad` | rad | (b) |
 | `route_sample_interval_m` ／ `route_jump_m` | m | (b) |
 | `replay_drift_m_per_100m` | m | **(c)**（`O-c4`） |
@@ -634,7 +618,6 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `restart_max_count` ／ `restart_wait_ms` | — / ms | (c)。**`O-d4`。マニュアル側で決める**ので registry.yaml に placeholder として置く（`WP-STATE-03`） |
 | `blocked_hold_ms` ／ `unblocked_hold_ms` | ms | (b) |
 | `route_gap_timeout_ms` | ms | (b) |
-| `leash_stop_latency_ms` | ms | (c) |
 | `calib_linear_distance_m` | m | (b)。校正 LINEAR の指定距離（SG-B21） |
 | `calib_rotation_deg` | deg | (b)。校正 ROTATION の指定角度（SG-B21） |
 | `calib_run_timeout_ms` | ms | (b)。校正の自律走行のタイムアウト（SG-B21） |
@@ -756,7 +739,7 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | `ui.enter_mode` | S-01 | 走行方式・試験準備・始業点検・校正の各ボタン。`arg_json` に `{"mode": "..."}` |
 | `ui.stop` | 全画面 | **停止**（操作カード左上） |
 | `ui.confirm` | S-10 / S-12 | **確認**（操作カード中上） |
-| `ui.run` | S-10 / S-12 / S-14 / S-15 / S-16 | **走行 / 再生**（操作カード右上）。ラベルは状態で変わるがトリガは 1 つ |
+| `ui.run` | S-10 / S-12 / S-14 | **走行 / 再生**（操作カード右上）。ラベルは状態で変わるがトリガは 1 つ |
 | `ui.save` | S-12 / S-13 / S-14 / S-20 | **保存**（操作カード左下） |
 | `ui.finish` | 全画面 | **終了**（画面左上の操作バー） |
 | `ui.jog.hold` | 全走行方式 / S-20 / S-21 | 仮想スティック。**リースなので繰り返し送る**（§8.4） |
@@ -783,19 +766,15 @@ safety_monitor ──► /safety/fault_lock (lock 254) ────────�
 | 事象 | 出すノード |
 | --- | --- |
 | `evt.link_ok` | `connectivity_checker`（必須 3 者が疎通） |
-| `evt.arrived` | `panel_navigator` / `home_navigator` / `summon_navigator` / `line_runner` |
+| `evt.arrived` | `panel_navigator` / `home_navigator` / `summon_navigator` |
 | `evt.align_done` | 各 navigator |
 | `evt.blocked` ／ `evt.unblocked` | 各 navigator |
 | `evt.target_lost` | `person_tracker_bridge` |
 | `evt.auto_selected` | `person_tracker_bridge`（`auto_select_hold_s` 成立） |
 | `evt.clear_ok` ／ `evt.clear_timeout` | `wait_clear_gate` |
 | `evt.localize_done` ／ `evt.localize_low` | `replay_runner` |
-| `evt.leash_taut` ／ `evt.leash_slack` ／ `evt.leash_absent` | `leash_runner`（後回し） |
-| `evt.line_lost` | `line_runner`（後回し） |
 | `evt.plane_done` | `pin_registrar` |
 | **`evt.two_point_done`** | `pin_registrar`（2 点指示の②が押された） |
-| **`evt.setup_done`** | `line_runner`（現在地・向き・目的地の 3 指定が揃った） |
-| **`evt.leash_present`** | `leash_runner`（デバイス接続確認 OK） |
 | **`evt.unblocked`** | 各 navigator |
 | `evt.register_ok` ／ `evt.register_rejected` | `pin_registrar` |
 | `evt.record_broken` | `route_recorder`（記録の連続性が切れた → `IDLE` へ） |

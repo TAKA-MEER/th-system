@@ -39,6 +39,7 @@ from th_system_msgs.srv import EditPin, RegisterPin, ResolvePin, TwoPointPress
 from th_onsite.pin_clearance_core import (
     cell_occupied, clearance_verdict, nearest_lethal_distance, retreat_pose,
 )
+from th_onsite.pin_order_core import move_panel, reorder_panels
 from th_onsite.robot_pose_register_core import build_pin_from_robot_pose
 from th_onsite.two_point_core import (
     TwoPointParams, compose_map_pose, is_target_valid, spacing_ok, two_point_yaw,
@@ -678,6 +679,35 @@ class PinRegistrar(Node):
 
     # ── /onsite/edit_pin (EditPin) ────────────────────────
     def _on_edit_pin(self, request, response):
+        # R-5（D60・D64）: 配電盤の順番変更（前へ／後へ・まとめて決める）。
+        # 順番変更が指定されたら、削除以外の編集より先に処理する。
+        move = int(getattr(request, 'move', 0) or 0)
+        order_ids = list(getattr(request, 'order_ids', []) or [])
+        if move != 0 or order_ids:
+            target = next((p for p in self._pins
+                           if p.get('id') == request.id), None)
+            if target is None:
+                response.success = False
+                response.message = f'ピン {request.id} が見つかりません'
+                return response
+            if target.get('kind') != 'PANEL':
+                response.success = False
+                response.message = '順番を変えられるのは配電盤だけです'
+                return response
+            if order_ids:
+                new_pins, err = reorder_panels(self._pins, order_ids)
+            else:
+                new_pins, err = move_panel(self._pins, request.id, move)
+            if err:
+                response.success = False
+                response.message = err
+                return response
+            self._pins = new_pins
+            _dump_pins(self._pins_path, self._pins, self._map_instance_id)
+            self._publish_pins()
+            response.success = True
+            response.message = f'配電盤 {request.id} の順番を変えました'
+            return response
         for p in self._pins:
             if p.get('id') == request.id:
                 if request.is_delete:

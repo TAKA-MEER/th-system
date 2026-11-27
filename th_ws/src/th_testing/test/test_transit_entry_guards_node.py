@@ -4,14 +4,12 @@ test_transit_entry_guards_node.py
 1b-11（SG-B13・SG-B14）— state_manager を実際に起動し、方式選択の前提と
 地図更新の保存が **WebUI を介さずに** サーバ側で縛られることを見る。
 ホスト側の step() 試験（test_transit_entry_guards_1b11.py）は純関数だけなので、
-ここでは「state_manager が値を渡す数行」（経路の本数・leash_present・
+ここでは「state_manager が値を渡す数行」（経路の本数・
 map_update_available）を壊したら赤くなるように、本番の経路で見る。
 
   a. /route/catalog が 0 本 → 教示再生は no_route_recorded で拒否
      （状態は動かない）／1 本載せると通る
-  b. evt.leash_present 前 → 電子リードは device_not_connected で拒否／
-     evt.leash_present 後は通り、/system/state の leash_present が真
-  c. REPLAY/PAUSE で地図更新 OFF → 保存は map_update_off で拒否（地図の有無によらず）。
+  b. REPLAY/PAUSE で地図更新 OFF → 保存は map_update_off で拒否（地図の有無によらず）。
      ON は機体が拒否するので保存が通る経路は当面ない（2026-10-22）
 """
 import json
@@ -195,22 +193,6 @@ class TestTransitEntryGuardsNode(unittest.TestCase):
         res = self._trigger('ui.enter_mode', {'mode': 'REPLAY'})
         assert res.accepted, res.reject_reason_key
         assert self._wait_mode('REPLAY', 'ROUTE_SEL')
-
-    def test_b_leash_needs_device(self):
-        res = self._trigger('ui.enter_mode', {'mode': 'LEASH'})
-        assert not res.accepted, 'デバイス未接続なのに電子リードに入れた'
-        assert res.reject_reason_key == 'device_not_connected', res.reject_reason_key
-        assert self._latest().leash_present is False
-
-        self._event('evt.leash_present')
-        self._spin(0.4)
-        assert self._latest().leash_present is True, 'leash_present が /system/state に出ない'
-        res = self._trigger('ui.enter_mode', {'mode': 'LEASH'})
-        assert res.accepted, res.reject_reason_key
-        assert self._wait_mode('LEASH')
-        self._trigger('ui.finish')
-        self._wait_mode('IDLE')
-        self._event('evt.leash_absent')
 
     def test_c_save_rejected_while_map_update_off(self):
         # 地図更新 ON は当面使えない（2026-10-22）ので、保存は ON 側の経路に入れない。

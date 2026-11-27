@@ -22,9 +22,9 @@ data = yaml.safe_load(SRC.read_text(encoding="utf-8"))
 if not isinstance(data, dict) or not data:
     sys.exit(f"attributes.yaml から 0 件しか読めなかった: {SRC}")
 
-# 19 モードあることを検査する（2026-09-08 に AT_HOME を追加。Spec-modes.md §2.3）。減っていたら書式が変わったとみなして落とす。
-if len(data) != 19:
-    sys.exit(f"モード数が 19 でない ({len(data)} 件)。attributes.yaml の書式を確認すること")
+# 17 モードあることを検査する（2026-11-27 に LINE・LEASH を廃止。D7）。減っていたら書式が変わったとみなして落とす。
+if len(data) != 17:
+    sys.exit(f"モード数が 17 でない ({len(data)} 件)。attributes.yaml の書式を確認すること")
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text(

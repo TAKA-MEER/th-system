@@ -25,8 +25,7 @@ def _ctx(**over):
         target_selected=False, target_confident=False,
         fault_active=False, fault_severity="", fault_type="",
         hw_estop=False, ui_estop=False,
-        route_ids=(), pin_kinds=(), leash_present=False, leash_taut=False,
-        line_visible=False, camera_present=False,
+        route_ids=(), pin_kinds=(), camera_present=False,
         check_item="", check_result="", calib_item="", calib_preview_sane=False,
         map_update_available=False, now_ms=0, arg={},
     )
@@ -57,24 +56,6 @@ def test_enter_other_modes_unaffected_by_route_gate(core):
     d = core.step("IDLE", "NONE", "ui.enter_mode",
                   _ctx(route_ids=(), arg={"mode": "MANUAL"}))
     assert d.accepted, d.reject_reason_key
-
-
-# ── SG-B13: 電子リードはデバイス未接続で押せない ───────────────────
-def test_enter_leash_rejected_without_device(core):
-    """leash_present 偽 → device_not_connected で拒否（C-13-leash-no-device）。"""
-    d = core.step("IDLE", "NONE", "ui.enter_mode",
-                  _ctx(leash_present=False, arg={"mode": "LEASH"}))
-    assert not d.accepted
-    assert d.reject_reason_key == "device_not_connected"
-    assert d.rule_id == "C-13-leash-no-device"
-
-
-def test_enter_leash_accepted_with_device(core):
-    """接続済みなら通る（ガードの入れすぎ検出）。"""
-    d = core.step("IDLE", "NONE", "ui.enter_mode",
-                  _ctx(leash_present=True, arg={"mode": "LEASH"}))
-    assert d.accepted, d.reject_reason_key
-    assert (d.to_mode, d.to_state) == ("LEASH", "DEV_CHECK")
 
 
 # ── SG-B14: T-REPLAY-08 は map_update_available が真のときだけ通る ──

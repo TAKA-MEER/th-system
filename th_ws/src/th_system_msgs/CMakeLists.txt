@@ -60,7 +60,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/RegisterPin.srv"
   "srv/ResolvePin.srv"
   "srv/EditPin.srv"
-  "srv/DeclareHome.srv"
   "srv/EraseMapRegion.srv"
   "srv/RunCheck.srv"
   "srv/AnswerCheck.srv"

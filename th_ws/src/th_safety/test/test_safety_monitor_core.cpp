@@ -157,7 +157,7 @@ TEST(SafetyMonitorCore, StateConsistentValidPairIsNotFault) {
   const auto& table = default_mode_states();
   EXPECT_FALSE(detect_state_inconsistent(false, "FOLLOW", "RUN", table));
   EXPECT_FALSE(detect_state_inconsistent(false, "IDLE", "NONE", table));
-  EXPECT_FALSE(detect_state_inconsistent(false, "LINE", "ARRIVED", table));
+  EXPECT_FALSE(detect_state_inconsistent(false, "REPLAY", "RUN", table));
 }
 
 // ── test_ui_estop_latch ───────────────────────────────────────────────────

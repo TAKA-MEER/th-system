@@ -16,9 +16,9 @@ from th_state.tracker_policy import (
 
 class TestTrackerAutostop:
     def test_autostop_modes_matches_spec(self):
-        """Spec-modes.md §9（E-9）「動かさない」の 9 モードと一致する。"""
+        """Spec-modes.md §9（E-9）「動かさない」の 7 モードと一致する。"""
         assert TRACKER_AUTOSTOP_MODES == {
-            "INIT", "IDLE", "MANUAL", "TEACH_MANUAL", "REPLAY", "LINE", "LEASH",
+            "INIT", "IDLE", "MANUAL", "TEACH_MANUAL", "REPLAY",
             "OPCHECK", "CALIB",
         }
 
