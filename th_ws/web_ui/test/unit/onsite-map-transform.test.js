@@ -6,6 +6,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   canvasToWorld, computeMapView, onsiteMapTransform, worldToCanvas, yawToSvgDeg,
+  MAP_ROTATE_STEP_DEG, rotateViewPoint, unrotateViewPoint, panelOrderOf,
 } from '../../src/mapGeometry.js'
 
 test('yawToSvgDeg: 0 は 0', () => {
@@ -23,6 +24,44 @@ test('yawToSvgDeg: -90° は +90', () => {
 
 test('yawToSvgDeg: π は -180', () => {
   assert.equal(yawToSvgDeg(Math.PI), -180)
+})
+
+test('map rotate: 15° ずつで往復は元に戻る（回した表示のタップでも正しい地図座標）', () => {
+  assert.equal(MAP_ROTATE_STEP_DEG, 15)
+  const cx = 340 / 2, cy = 250 / 2
+  for (const deg of [15, 30, 45, 90, 180, -15, 345]) {
+    const [rx, ry] = rotateViewPoint(100, 40, cx, cy, deg)
+    const [bx, by] = unrotateViewPoint(rx, ry, cx, cy, deg)
+    assert.ok(Math.abs(bx - 100) < 1e-9 && Math.abs(by - 40) < 1e-9,
+      `${deg}° 往復で元に: (${bx}, ${by})`)
+  }
+})
+
+test('map rotate: 表示を 15° 回した点の逆回転で地図タップの座標が正しい', () => {
+  // 表示側は toPx(world) を rotate(15) した位置に描く。タップはその逆で戻す。
+  const info = smallInfo()
+  const grid = { info, data: new Array(25).fill(0) }
+  const t = onsiteMapTransform(grid, 340, 250)
+  const wx = 0.5, wy = -0.3
+  const [vx, vy] = t.toPx(wx, wy)
+  const [rx, ry] = rotateViewPoint(vx, vy, 340 / 2, 250 / 2, MAP_ROTATE_STEP_DEG)
+  const [ux, uy] = unrotateViewPoint(rx, ry, 340 / 2, 250 / 2, MAP_ROTATE_STEP_DEG)
+  const [bw, bh] = canvasToWorld(ux, uy, info, t.view)
+  assert.ok(Math.abs(bw - wx) < 1e-9 && Math.abs(bh - wy) < 1e-9,
+    `逆回転→canvasToWorld で元に: (${bw}, ${bh})`)
+})
+
+test('panelOrderOf: 配電盤は PinList の並びに 1 から振る', () => {
+  const pins = [
+    { id: 'h', kind: 'HOME' },
+    { id: 'b', kind: 'PANEL' },
+    { id: 'a', kind: 'PANEL' },
+  ]
+  assert.equal(panelOrderOf(pins, 'b'), 1)
+  assert.equal(panelOrderOf(pins, 'a'), 2)
+  assert.equal(panelOrderOf(pins, 'h'), null)
+  assert.equal(panelOrderOf(pins, 'missing'), null)
+  assert.equal(panelOrderOf(null, 'a'), null)
 })
 
 // 地図なし: 中央寄せ 1m=24px。原点(0,0)はビュー中心、y は反転。

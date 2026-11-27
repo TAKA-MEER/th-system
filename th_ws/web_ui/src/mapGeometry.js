@@ -131,3 +131,36 @@ export function onsiteMapTransform(mapData, viewW, viewH, fallbackPxPerM = 24, i
     toPx(x, y) { return worldToCanvas(x, y, info, view) },
   }
 }
+
+// ── 地図の向き（回転表示。Spec-webui.md §6.1・§3.10）─────────────────────
+// 試験準備で「左へ回す」「右へ回す」で 15° ずつ回すのは表示だけ。ピンや経路の
+// 座標・機体へ送る値は変えない。回転は SVG の rotate(deg, cx, cy) で行い、
+// ポインタ→地図座標の変換では逆回転で戻す（往復で元に戻る。unit で縛る）。
+// SVG の rotate は画面上で時計回りが正（deg が正＝時計回り）。
+export const MAP_ROTATE_STEP_DEG = 15
+
+// 点 (x, y) を中心 (cx, cy) のまわり SVG の rotate(deg) と同じ向きに回す。
+export function rotateViewPoint(x, y, cx, cy, deg) {
+  const rad = (deg * Math.PI) / 180
+  const dx = x - cx, dy = y - cy
+  return [cx + dx * Math.cos(rad) - dy * Math.sin(rad), cy + dx * Math.sin(rad) + dy * Math.cos(rad)]
+}
+
+// rotateViewPoint の逆。回した表示を押したポインタを地図の座標へ戻す。
+export function unrotateViewPoint(x, y, cx, cy, deg) {
+  return rotateViewPoint(x, y, cx, cy, -deg)
+}
+
+// 配電盤ピンの順番（1 から）。PinList の並び（配列の順）で数える。
+// 順番を決める並べ替えの機体側は別（ブリーフ R）。ここでは並びの順に振るだけ。
+// 配電盤でなければ null。
+export function panelOrderOf(pins, id) {
+  if (!Array.isArray(pins)) return null
+  let n = 0
+  for (const p of pins) {
+    if (!p || p.kind !== 'PANEL') continue
+    n += 1
+    if (p.id === id) return n
+  }
+  return null
+}
