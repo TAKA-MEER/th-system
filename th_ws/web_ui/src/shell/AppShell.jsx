@@ -325,7 +325,8 @@ function AppShellInner({ screenName, screenId, children }) {
               何も出ず、操作者に理由が分からなかった。
               非常停止・フォルトは W-1 の窓が別に説明するので、窓が出ている間は
               二重に出さない。 */}
-          {!w1Active && stopBanner && (
+          {/* S-21 の経路が塞がれた窓（W-5）が出ている間は帯を出さない（§4: 窓が説明するものは二重に出さない）。 */}
+          {!w1Active && !(screenId === 'S-21' && stateName === 'BLOCKED') && stopBanner && (
             <div className={`stop-banner${stopBannerWarn ? ' warn' : ''}`} role="status" data-testid="stop-banner">
               {stopBanner}
             </div>
