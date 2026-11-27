@@ -21,6 +21,8 @@ export const MODE_NAMES = {
   HOME_NAV: '待機場所へ移動',
   // Spec-modes.md §2.3（2026-09-08 追加）。当日の試験画面はこのモードで開く。
   AT_HOME: '試験（当日）',
+  // Spec-modes.md §2.5（2026-11-01 追加）。自律測定。
+  AUTO_MEASURE: '自律測定',
   OPCHECK: '始業点検',
   CALIB: '校正',
 }

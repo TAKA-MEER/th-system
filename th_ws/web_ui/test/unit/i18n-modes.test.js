@@ -1,6 +1,6 @@
 // DetailedDesign-webui.md §9-7: i18n/modes.js must match Spec-webui.md §8.1's
-// 19-row table verbatim. The expected table below is transcribed directly
-// from that section (docs/plan/spec/Spec-webui.md lines ~691-702) -- this is
+// 20-row table verbatim (2026-11-27: LINE・LEASH 廃止の注記は残しつつ表は維持）。
+// The expected table below is transcribed directly from that section (docs/plan/spec/Spec-webui.md lines ~691-702) -- this is
 // the "snapshot" the design doc calls for.
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -24,11 +24,12 @@ const EXPECTED = {
   SUMMON: '呼び寄せ',
   HOME_NAV: '待機場所へ移動',
   AT_HOME: '試験（当日）',
+  AUTO_MEASURE: '自律測定',
   OPCHECK: '始業点検',
   CALIB: '校正',
 }
 
-test('i18n/modes.js has exactly the 19 rows of Spec-webui.md §8.1', () => {
+test('i18n/modes.js has exactly the 20 rows of Spec-webui.md §8.1', () => {
   assert.deepEqual(MODE_NAMES, EXPECTED)
-  assert.equal(Object.keys(MODE_NAMES).length, 19)
+  assert.equal(Object.keys(MODE_NAMES).length, 20)
 })

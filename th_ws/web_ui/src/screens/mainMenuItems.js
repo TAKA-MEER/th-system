@@ -7,24 +7,22 @@
 // mode_entry.json (built from th_state/config/mode_entry.yaml by
 // scripts/gen_mode_entry.py, same flow as generated/attributes.json) plus
 // the live SystemState, and returns
-// which of the 10 mode-entry buttons S-01 shows are enabled right now, and
+// which of the 9 mode-entry buttons S-01 shows are enabled right now, and
 // why not when they aren't.
 //
 // This is a *display convenience*, not the authority (DetailedDesign-webui.md
 // §4.1: "the UI may pre-decide for convenience, but it is not the
 // authority" -- th_state's guards are what actually accept or reject
-// /system/trigger's ui.enter_mode). preconds (routeCount / leashPresent)
-// covers what the screen can see; the rest (e.g. camera presence, which has
-// no signal source) isn't gated here, so a click that looked enabled here
-// can still come back rejected; the caller must show reject_reason_key from
-// the response in that case (i18n/reasons.js), the same way it shows the
+// /system/trigger's ui.enter_mode). preconds (routeCount) covers what the
+// screen can see; the rest isn't gated here, so a click that looked enabled
+// here can still come back rejected; the caller must show reject_reason_key
+// from the response in that case (i18n/reasons.js), the same way it shows the
 // reasonKey this module hands back for the checks it *can* make locally.
 
-// The 11 buttons S-01 shows (Spec-webui.md §3.2's move(7) + field(PREP/AT_HOME)
-// + maintenance(OPCHECK/CALIB) groups). PANEL_NAV / SUMMON / HOME_NAV are
-// also reachable from IDLE per mode_entry.yaml, but that's via ui.goto from
-// inside S-21 (the test screen), not an S-01 button
-// (DetailedDesign-names.md §8.1); they're deliberately left out of this list.
+// The 9 buttons S-01 shows (Spec-webui.md §3.2 の階層: 試験場 ▸ ／ 走行 ▸ ／
+// 点検と校正 ▸。ライン誘導・電子リードは 2026-11-27 廃止（D7）のため無い）。
+// PANEL_NAV / SUMMON / HOME_NAV は IDLE から届くが S-21 内の ui.goto で行くため
+// S-01 のボタンにはしない（DetailedDesign-names.md §8.1）。
 //
 // AT_HOME (2026-09-08, Spec-modes.md §2.3) IS an S-01 button: it is the day-of
 // entry point (「試験（当日）」). It used to be a special-cased local flag in
@@ -32,16 +30,56 @@
 // button is an ordinary ui.enter_mode like every other one, and the screen is
 // derived from /system/state instead of a UI-local flag.
 export const MENU_MODES = [
-  'FOLLOW', 'MANUAL', 'TEACH_FOLLOW', 'TEACH_MANUAL', 'REPLAY', 'LINE', 'LEASH',
+  'FOLLOW', 'MANUAL', 'TEACH_FOLLOW', 'TEACH_MANUAL', 'REPLAY',
   'PREP', 'AT_HOME',
   'OPCHECK', 'CALIB',
 ]
 
 export const MENU_GROUPS = [
-  { key: 'move', modes: ['FOLLOW', 'MANUAL', 'TEACH_FOLLOW', 'TEACH_MANUAL', 'REPLAY', 'LINE', 'LEASH'] },
+  { key: 'move', modes: ['FOLLOW', 'MANUAL', 'TEACH_FOLLOW', 'TEACH_MANUAL', 'REPLAY'] },
   { key: 'field', modes: ['PREP', 'AT_HOME'] },
   { key: 'maint', modes: ['OPCHECK', 'CALIB'] },
 ]
+
+/* S-01 のタイル階層（Spec-webui.md §3.2）。一番上は 5 タイル、下の階層は
+   「試験場▸」「走行▸」「点検と校正▸」。自律測定・設定は一番上のタイル。 */
+export const TOP_TILES = [
+  { key: 'field', kind: 'group', icon: 'field', size: 'l' },
+  { key: 'drive', kind: 'group', icon: 'drive', size: '' },
+  { key: 'maint', kind: 'group', icon: 'maint', size: '' },
+  { key: 'auto', kind: 'auto', icon: 'measure', size: 's' },
+  { key: 'settings', kind: 'settings', icon: 'gear', size: 's' },
+]
+
+export const GROUP_TILES = {
+  field: [
+    { key: 'AT_HOME', kind: 'mode', mode: 'AT_HOME', icon: 'day', size: 'l' },
+    { key: 'PREP', kind: 'mode', mode: 'PREP', icon: 'prep', size: '' },
+  ],
+  drive: [
+    { key: 'FOLLOW', kind: 'mode', mode: 'FOLLOW', icon: 'follow', size: 'l' },
+    { key: 'MANUAL', kind: 'mode', mode: 'MANUAL', icon: 'manual', size: 'l' },
+    { key: 'REPLAY', kind: 'mode', mode: 'REPLAY', icon: 'replay', size: '' },
+    { key: 'TEACH_FOLLOW', kind: 'mode', mode: 'TEACH_FOLLOW', icon: 'teach', size: '' },
+    { key: 'TEACH_MANUAL', kind: 'mode', mode: 'TEACH_MANUAL', icon: 'teach', size: '' },
+  ],
+  maint: [
+    { key: 'OPCHECK', kind: 'mode', mode: 'OPCHECK', icon: 'check', size: 'l' },
+    { key: 'CALIB', kind: 'mode', mode: 'CALIB', icon: 'calib', size: '' },
+  ],
+}
+
+/* タイルの大きさの順位は仮（モックアップの既定。Spec-webui.md §3.2）。
+   運用で使う頻度を見て決める。大きさはこの 1 か所の表だけが持つ。 */
+export const TILE_SIZES = Object.fromEntries([
+  ...TOP_TILES.map((t) => [t.key, t.size]),
+  ...Object.values(GROUP_TILES).flatMap((tiles) => tiles.map((t) => [t.key, t.size])),
+])
+
+export const TILE_ICONS = Object.fromEntries([
+  ...TOP_TILES.map((t) => [t.key, t.icon]),
+  ...Object.values(GROUP_TILES).flatMap((tiles) => tiles.map((t) => [t.key, t.icon])),
+])
 
 // attributes.yaml marks PREP's needs_tracker as "required", but per
 // DetailedDesign-state.md §8.2's footnote ※※ that's only true once inside
@@ -54,10 +92,9 @@ const TRACKER_GATE_EXEMPT = new Set(['PREP'])
 // menuItems(systemState, modeEntry, attributes, preconds) -> [{mode, enabled, reasonKey}]
 //
 // preconds は画面が別経路で知る前提条件（1b-11 SG-B13。DetailedDesign-transit.md
-// §0.4）。{ routeCount: 経路の本数（/route/catalog）, leashPresent:
-// /system/state.leash_present }。どちらも undefined（＝まだ分からない）なら
-// その前提では止めない（サーバ側のガードが正本で、押せば理由付きで拒否される）。
-// カメラ（LINE）は信号源が無いためここでは見ない（報告参照）。
+// §0.4）。{ routeCount: 経路の本数（/route/catalog） }。undefined（＝まだ分からない）
+// ならその前提では止めない（サーバ側のガードが正本で、押せば理由付きで拒否される）。
+// ライン誘導・電子リードは 2026-11-27 廃止（D7）。
 export function menuItems(systemState, modeEntry, attributes, preconds = {}) {
   const mode = systemState?.mode ?? null
 
@@ -70,7 +107,6 @@ export function menuItems(systemState, modeEntry, attributes, preconds = {}) {
 
   const allowed = new Set(modeEntry?.[mode] ?? [])
   const routeCount = preconds?.routeCount
-  const leashPresent = preconds?.leashPresent
 
   return MENU_MODES.map((m) => {
     if (!allowed.has(m)) {
@@ -80,10 +116,6 @@ export function menuItems(systemState, modeEntry, attributes, preconds = {}) {
     // 本数がまだ分からない（undefined）間は止めない。
     if (m === 'REPLAY' && typeof routeCount === 'number' && routeCount === 0) {
       return { mode: m, enabled: false, reasonKey: 'no_route_recorded' }
-    }
-    // 1b-11 SG-B13: 電子リードはデバイス未接続で押せない（device_not_connected）。
-    if (m === 'LEASH' && leashPresent === false) {
-      return { mode: m, enabled: false, reasonKey: 'device_not_connected' }
     }
     const attrs = attributes?.[m]
     if (attrs?.needs_tracker === 'required' && !TRACKER_GATE_EXEMPT.has(m) && !systemState.tracker_enabled) {
