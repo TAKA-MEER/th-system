@@ -77,7 +77,7 @@ export default function OperationCard({
         )}
         {slots.run && (() => {
           // SM-3.1.2-119: 会場地図が無い間は「走行」を押せない（runDisabled）。
-          // 理由は呼び出し側が別の場所に出していなければ runDenyReason で直下に出す。
+          // §3.3.3: 理由はそのボタンのすぐ上（入らなければ下）、三角付き。
           const btn = (
             <button
               type="button"
@@ -92,8 +92,8 @@ export default function OperationCard({
           if (!runDenyReason) return btn
           return (
             <div className="manual-cell">
+              <span className="reason-bubble" data-testid="reason-run">押せません　{runDenyReason}</span>
               {btn}
-              <span className="reason-badge" data-testid="reason-run">{runDenyReason}</span>
             </div>
           )
         })()}
@@ -110,6 +110,11 @@ export default function OperationCard({
         )}
         {slots.manual && (
           <div className="manual-cell">
+            {manualDenyReason && (
+              <span className="reason-bubble" data-testid="reason-manual">
+                押せません　{manualDenyReason}
+              </span>
+            )}
             <button
               type="button"
               className={`btn op-manual ${OP_BUTTON_KINDS.manual} ${tone('manual')}`}
@@ -119,11 +124,6 @@ export default function OperationCard({
               <IconJoystick />
               <span>{OP_LABELS.manual}</span>
             </button>
-            {manualDenyReason && (
-              <span className="reason-badge" data-testid="reason-manual">
-                {manualDenyReason}
-              </span>
-            )}
           </div>
         )}
       </div>

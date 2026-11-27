@@ -26,6 +26,7 @@ import { useDevMode } from '../ros/useDevMode.js'
 import { useManualPanelHeartbeat } from '../ros/useManualPanelHeartbeat.js'
 import { useFaultHistory } from '../ros/useFaultHistory.js'
 import { latestRecord, recentFaultText, isWithinRecentWindow } from '../ros/faultHistoryState.js'
+import { isAutonomousRun } from './autonomous.js'
 import './theme.css'
 
 // DetailedDesign-wp1.md WP-UI-01 §3.1: /safety/estop_ui is republished at
@@ -324,6 +325,9 @@ function AppShellInner({ screenName, screenId, children }) {
           </main>
         </JogPanelContext.Provider>
       </ConfirmWindowContext.Provider>
+      {isAutonomousRun(mode, stateName) && (
+        <div className="autonomous-frame" data-testid="autonomous-frame" aria-hidden="true" />
+      )}
       <Windows
         ros={ros}
         screenId={screenId}

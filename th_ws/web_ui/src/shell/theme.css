@@ -898,6 +898,34 @@ table.lst td.r{text-align:right}
 /* LiDAR 死角の図（S-30 の LiDAR 点検）。幅なりに最大 420px。 */
 .scan-mask-svg{width:100%;max-width:420px}
 
+/* ---------- W0a 部品: 停止│走行トグル・点滅・自律枠・押せない理由（§3.3.2〜§3.3.5） ---------- */
+.stoprun{display:flex;min-height:68px;border:2px solid var(--tx);border-radius:4px;overflow:hidden;background:var(--panel)}
+.stoprun button{flex:1 1 0;display:flex;align-items:center;justify-content:center;font-size:calc(var(--fs) * 1.1);font-weight:800;min-height:68px}
+.stoprun .sr-stop.paint{background:var(--stop);color:var(--stop-tx)}
+.stoprun .sr-run.paint{background:var(--ok);color:#fff}
+.stoprun .plain{background:transparent;color:var(--dim)}
+.stoprun.reserved{background:transparent}
+.stoprun.reserved button{color:var(--dim)}
+.stoprun .sr-sep{flex:none;width:2px;background:var(--tx)}
+/* 点滅（§3.3.4）: ゆっくり明滅（約2.4秒）／1Hz（注意）。動きを減らす設定では止める。 */
+@keyframes blinkSlow{50%{filter:brightness(.82)}}
+@keyframes blink1Hz{0%,49%{filter:brightness(1)}50%,100%{filter:brightness(.55)}}
+.blink-slow{animation:blinkSlow 2.4s ease-in-out infinite}
+.blink-1hz{animation:blink1Hz 1s steps(1,end) infinite}
+@media (prefers-reduced-motion:reduce){.blink-slow,.blink-1hz{animation:none}}
+/* 自律走行中の枠（§3.3.5）: ヘッダの下の画面の縁を緑で囲み 1Hz 点滅。 */
+.autonomous-frame{position:absolute;left:0;right:0;top:var(--hdr,96px);bottom:0;z-index:40;pointer-events:none;border:4px solid var(--ok);box-sizing:border-box}
+@media (prefers-reduced-motion:no-preference){.autonomous-frame{animation:frame1Hz 1s steps(1,end) infinite}}
+@keyframes frame1Hz{50%{border-color:transparent}}
+@media (prefers-reduced-motion:reduce){.autonomous-frame{animation:none}}
+/* 押せない理由（§3.3.3）: そのボタンのそば、三角付き。ヘッダには重ねない。 */
+.reason-wrap{display:inline-flex;flex-direction:column;position:relative}
+.reason-bubble{display:block;font-size:max(15px,calc(var(--fs) * .82));font-weight:700;line-height:1.4;color:var(--tx);background:var(--panel);border:2px solid var(--jis-y);border-radius:4px;padding:4px 8px;position:relative;margin-bottom:6px;white-space:nowrap}
+.reason-bubble::after{content:"";position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);border:8px solid transparent;border-top-color:var(--jis-y);border-bottom:none}
+.reason-bubble.below{margin-bottom:0;margin-top:6px}
+.reason-bubble.below::after{bottom:auto;top:-8px;border-top:none;border-bottom-color:var(--jis-y)}
+.reason-badge{font-size:max(15px,calc(var(--fs) * .82))}
+
 /* 横長の S-40 LiDAR 死角: 図（420px 四方）を縦に積むと右列のカードが本文を 213px 超える。
    図を左、説明・一覧・ボタンを右に並べる（図は 270px まで。扇形の指定には足りる）。 */
 @container app (min-width:1000px){
