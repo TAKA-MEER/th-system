@@ -19,13 +19,13 @@ test('S-13 再読み込みしても記録中の表示が戻る', async ({ page }
     '再読み込みで記録中の表示に戻っていない').toBeVisible()
 })
 
-test('S-13 「記録中」は赤いインジケータ', async ({ page }) => {
+test('S-13 「記録中」は中立の札（赤は使わない。Spec-webui.md §3.6 D70）', async ({ page }) => {
   await gotoScreen(page, 'S13', { mode: 'TEACH_MANUAL', state: 'REC' })
   await page.locator('#s13').waitFor()
   const rec = page.locator('[data-testid="s13-recording"]')
   await expect(rec).toBeVisible()
   const cls = await rec.getAttribute('class')
-  expect(cls, '記録中に赤系のクラスが無い').toMatch(/tone-ng/)
+  expect(cls, '記録中に赤系のクラスが付いている').not.toMatch(/tone-ng|ng/)
 })
 
 test('S-13 開始時の向きが出る（rad を度で表示）', async ({ page }) => {

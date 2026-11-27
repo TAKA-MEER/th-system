@@ -1,0 +1,74 @@
+/* screens/manualRun.css — S-11 手動走行・S-13 教示（手動）だけの配置。
+ *
+ * 型は「走らせる」（src/shell/Layouts.jsx の RunLayout）。骨組みに CSS は無いため
+ * この 2 画面の分だけここに書く（S-20 の S20Prep.css と同じ流儀）。
+ */
+
+#s11 .g-drv, #s13 .g-drv { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+#s11 .g-drv-row, #s13 .g-drv-row { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 10px; align-items: stretch; min-height: 0; }
+#s11 .g-drv > [data-pos="opbar"], #s13 .g-drv > [data-pos="opbar"] { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#s11 .g-drv .rcol, #s13 .g-drv .rcol { display: flex; flex-direction: column; min-width: 0; }
+#s11 .g-drv .rops, #s13 .g-drv .rops { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+#s11 .stick svg, #s13 .stick svg { max-height: 170px; }
+
+/* S-11 主表示: 計器を左、機体のまわりの図を右（縦長も左右。§3.5 D82）。
+ * どちらも主表示の高さいっぱいに大きく（モックアップ: 1 枚の大きな枠の中に
+ * 計器のパネルとまわりの図を並べる）。 */
+.s11-main { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 10px; align-items: stretch; height: 100%; min-height: 440px; background: #e4e9f0; border-radius: 8px; padding: 10px; box-sizing: border-box; }
+.s11-main .surround-wrap { min-width: 0; min-height: 0; display: flex; }
+.surround-svg { display: block; width: 100%; height: 100%; min-height: 0; }
+
+/* 計器: 枠のあるパネル（白） */
+.gauge { display: flex; flex-direction: column; gap: 8px; font-variant-numeric: tabular-nums; background: #fff; border: 1px solid var(--bd); border-radius: 8px; padding: 12px; box-sizing: border-box; height: 100%; }
+.gauge.gap-warn { outline: 2px solid var(--warn); outline-offset: 2px; }
+.gauge-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.gauge-big { display: flex; align-items: baseline; gap: 6px; }
+.gauge-big b { font-size: 44px; font-weight: 800; line-height: 1.05; }
+.gauge-big small, .gauge-rot small { font-size: 15px; color: var(--mut); }
+.gauge-rot { display: flex; align-items: center; gap: 6px; }
+.gauge-rot b { font-size: 26px; font-weight: 800; }
+.gauge-rot-svg { width: 36px; height: 36px; }
+.gauge-bandwrap { display: flex; flex-direction: column; gap: 2px; }
+.gauge-band, .gauge-line { display: block; width: 100%; height: auto; }
+.gauge-ticks { display: flex; justify-content: space-between; font-size: 12px; color: var(--mut); }
+.gauge-wheels { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; flex: 1 1 auto; min-height: 0; align-items: stretch; }
+.gauge-wheelcol { display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 0; }
+.gauge-wheel { flex: 1 1 auto; min-height: 60px; width: 100%; display: flex; justify-content: center; }
+.gauge-wheel-svg { height: 100%; width: 48px; min-height: 60px; }
+.gauge-middle { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.gauge-middle .gauge-mini { flex: 1 1 auto; min-height: 0; height: 100%; width: 72px; }
+/* 値の行と語の行を同じ高さにそろえる（左の値・語・右の値が横 1 行に見える）。
+ * 行の高さは左右の値と間の語で共通（.gw-actual 等の順番で対応付ける）。 */
+.gauge-labels { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 15px; color: var(--mut); line-height: 1.25; }
+.gauge-wheelvals { display: flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1.25; }
+.gauge-wheels .gw { display: flex; align-items: center; justify-content: center; }
+.gauge-wheels .gw-actual { height: 34px; }
+.gauge-wheels .gw-target { height: 22px; }
+.gauge-wheels .gw-output { height: 24px; }
+.gauge-wheels .gw-encoder { height: 24px; }
+.gauge-wheelvals .gw-actual { font-size: 26px; font-weight: 800; }
+.gauge-wheelvals .gw-target { font-size: 15px; color: var(--mut); }
+.gauge-wheelvals .gw-output { font-size: 17px; font-weight: 700; }
+.gauge-wheelvals .gw-encoder { font-size: 17px; font-weight: 700; }
+
+/* S-13 主表示: 作成中の地図。入口は中央のカード */
+.s13-main { position: relative; min-height: 280px; }
+.s13-entry { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.s13-entry .card { max-width: 420px; width: 100%; }
+.s13-rec { display: flex; flex-direction: column; gap: 2px; font-size: 15px; }
+.s13-rec .r { text-align: right; font-weight: 700; }
+
+@media (max-aspect-ratio: 1/1) {
+  #s11 .g-drv-row, #s13 .g-drv-row { grid-template-columns: minmax(0, 1fr); }
+  #s11 .g-drv .rcol, #s13 .g-drv .rcol { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+  #s11 .g-drv .rjog, #s13 .g-drv .rjog { grid-column: 2; grid-row: 1; }
+  #s11 .g-drv .rjog .stick svg, #s13 .g-drv .rjog .stick svg { max-height: 220px; }
+  .s11-main { grid-template-columns: 320px minmax(0, 1fr); min-height: 620px; }
+}
+#s13 .s13-main .mapWrapInner svg { max-height: min(42cqh, 320px); }
+
+/* 主表示の高さいっぱい（縦長の空き・横長の空きを無くす） */
+#s11 { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; }
+#s11 .g-drv { flex: 1 1 auto; min-height: 0; }
+#s11 .g-drv-row { flex: 1 1 auto; min-height: 0; }
+#s11 .blk.mainv { min-height: 0; display: flex; }

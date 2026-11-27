@@ -438,3 +438,21 @@ export async function setTestSpeaker(page, value) {
 export async function speakerParamCalls(page) {
   return page.evaluate(() => window.__thSpeakerParamCalls ?? [])
 }
+
+// S-11 の計器・まわりの図（Spec-webui.md §3.5）: /odom・WheelFeedback・
+// WheelCommand（/esp32/wheel_cmd_speed）・LimiterStatus・/scan・死角の値を種で流す。
+// モーター出力・エンコーダは機体から届かないので種では与えず、画面は「—」を出す。
+export async function gotoScreenWithManualTelemetry(page, screen, state, telemetry) {
+  await page.addInitScript(({ s, scr, t }) => {
+    window.__thTestState = s
+    window.__thTestScreen = scr
+    window.__thTestWheelSpeeds = t.wheels ?? { measured: [], command: [] }
+    window.__thTestOdomTwist = t.twist ?? null
+    window.__thTestLimiterStatus = t.limiter ?? null
+    window.__thTestScan = t.scan ?? null
+    if (t.blindRanges) {
+      window.__thTunableStubs = { lidar_filter: { values: { blind_angle_ranges: t.blindRanges } } }
+    }
+  }, { s: state, scr: screen, t: telemetry })
+  await page.goto('/')
+}

@@ -6,7 +6,6 @@ import { gotoScreen, setTestState, gotoScreenWithRoutePreview } from './helpers.
 
 async function openTeachTab(page) {
   await page.locator('#s13').waitFor()
-  await page.getByRole('tab', { name: '教示' }).click()
 }
 
 test('S-13 REC のときだけ「記録中」が出る', async ({ page }) => {

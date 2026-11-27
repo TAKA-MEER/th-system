@@ -16,7 +16,6 @@ import { gotoScreen, gotoScreenWithRouteCatalog } from './helpers.js'
 async function openTeach(page) {
   await page.locator('#s13').waitFor()
   // ROUTE_SEL では初期表示は走行タブ → 教示タブへ切替。
-  await page.getByRole('tab', { name: '教示' }).click()
 }
 
 async function routeSelectCalls(page) {

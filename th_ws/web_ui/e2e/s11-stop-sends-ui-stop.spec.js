@@ -1,4 +1,4 @@
-// DetailedDesign-wp3.md WP-TRANSIT-01 §4.2 / T1-4: S-11 の操作カードは
+// S-11 の停止ボタン（StopRunToggle）は
 // 「停止」1 つだけ。**その 1 つが実際に ui.stop を送ること**を確かめる。
 //
 // なぜこのテストが要るか: 初版は OperationCard に `onTrigger={() => {}}` を
@@ -12,7 +12,7 @@ test('the only button on S-11 actually sends ui.stop', async ({ page }) => {
   await gotoScreen(page, 'S11', { mode: 'MANUAL', state: 'RUN' })
   await page.locator('#s11').waitFor()
 
-  await page.click('.opsgrid .op-stop')
+  await page.click('[data-testid="s11-stop-run-stop"]')
 
   const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
   expect(calls.map((c) => c.trigger), '停止ボタンが ui.stop を送っていない')

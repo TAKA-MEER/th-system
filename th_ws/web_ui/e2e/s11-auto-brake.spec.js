@@ -90,7 +90,7 @@ test('approach warning appears while OFF when the limiter reports it', async ({ 
     { ...LIMITER_PASS, nearest_obstacle_m: 30, approach_clearance_m: 0.5,
       approach_warning: true })
   await page.locator('#s11').waitFor()
-  await expect(page.getByTestId('s11-approach-warning')).toBeVisible()
+  await expect(page.getByTestId('surround-near-label')).toBeVisible()
   await expect(page.getByTestId('s11-auto-brake-off-hint')).toBeVisible()
   // OFF 中は action が PASS のままでも「障害物なし」と出さない。
   await expect(page.locator('#s11')).not.toContainText('障害物なし')
@@ -105,7 +105,7 @@ test('stopped: warning shows the surrounding distance as "周囲"', async ({ pag
     { ...LIMITER_PASS, nearest_obstacle_m: 30, approach_distance_m: 0.6,
       approach_clearance_m: 0.35, approach_warning: true, approach_warning_moving: false })
   await page.locator('#s11').waitFor()
-  await expect(page.getByTestId('s11-approach-warning')).toBeVisible()
+  await expect(page.getByTestId('surround-near-label')).toBeVisible()
   await expect(page.locator('#s11')).toContainText('機体の周囲から 35 cm に障害物')
   await expect(page.locator('#s11')).not.toContainText('前方 30')
 })
@@ -114,7 +114,7 @@ test('no approach warning while OFF when the limiter does not report it', async 
   await gotoScreenWithLimiter(page, 'S11',
     { mode: 'MANUAL', state: 'RUN', zone: 'OUT', auto_brake: false }, LIMITER_PASS)
   await page.locator('#s11').waitFor()
-  await expect(page.getByTestId('s11-approach-warning')).toHaveCount(0)
+  await expect(page.getByTestId('surround-near-label')).toHaveCount(0)
   await expect(page.getByTestId('s11-auto-brake-off-hint')).toBeVisible()
 })
 
@@ -123,6 +123,6 @@ test('no approach warning while ON even if the signal were set', async ({ page }
     { mode: 'MANUAL', state: 'RUN', zone: 'IN', auto_brake: true },
     { ...LIMITER_PASS, approach_warning: true })
   await page.locator('#s11').waitFor()
-  await expect(page.getByTestId('s11-approach-warning')).toHaveCount(0)
+  await expect(page.getByTestId('surround-near-label')).toHaveCount(0)
   await expect(page.getByTestId('s11-auto-brake-off-hint')).toHaveCount(0)
 })

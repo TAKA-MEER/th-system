@@ -40,7 +40,6 @@ test('ON -> OFF: ロック2回＋「切」で送る', async ({ page }) => {
     { mode: 'TEACH_MANUAL', state: 'REC', zone: 'OUT', auto_brake: true }, LIMITER_PASS)
   await page.locator('#s13').waitFor()
   // REC では教示タブが初期表示。切替は走行タブにある。
-  await page.getByRole('tab', { name: '走行' }).click()
   await expect(page.getByTestId('s13-auto-brake')).toHaveText('ON')
 
   await page.getByTestId('s13-auto-brake-toggle').click()
@@ -60,7 +59,6 @@ test('ON -> OFF: 黄のまま押さなければ戻る', async ({ page }) => {
   await gotoScreenWithLimiter(page, 'S13',
     { mode: 'TEACH_MANUAL', state: 'REC', zone: 'OUT', auto_brake: true }, LIMITER_PASS)
   await page.locator('#s13').waitFor()
-  await page.getByRole('tab', { name: '走行' }).click()
   await page.getByTestId('s13-auto-brake-toggle').click()
   await expect(page.getByTestId('s13-auto-brake-toggle')).toContainText('もう一度押すと外す')
   await page.waitForTimeout(3200)
@@ -89,7 +87,6 @@ test('approach warning appears while OFF when the limiter reports it', async ({ 
     { ...LIMITER_PASS, nearest_obstacle_m: 30, approach_clearance_m: 0.5,
       approach_warning: true })
   await page.locator('#s13').waitFor()
-  await page.getByRole('tab', { name: '走行' }).click()
   await expect(page.getByTestId('s13-approach-warning')).toBeVisible()
   await expect(page.getByTestId('s13-auto-brake-off-hint')).toBeVisible()
   // OFF 中は action が PASS のままでも「障害物なし」と出さない。
@@ -102,7 +99,6 @@ test('no approach warning while ON even if the signal were set', async ({ page }
     { mode: 'TEACH_MANUAL', state: 'REC', zone: 'OUT', auto_brake: true },
     { ...LIMITER_PASS, approach_warning: true })
   await page.locator('#s13').waitFor()
-  await page.getByRole('tab', { name: '走行' }).click()
   await expect(page.getByTestId('s13-approach-warning')).toHaveCount(0)
   await expect(page.getByTestId('s13-auto-brake-off-hint')).toHaveCount(0)
 })

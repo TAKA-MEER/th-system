@@ -8,7 +8,7 @@ test('S-13 保存 button sends ui.save', async ({ page }) => {
   await gotoScreen(page, 'S13', { mode: 'TEACH_MANUAL', state: 'REC' })
   await page.locator('#s13').waitFor()
 
-  await page.locator('.opsgrid .op-save').click()
+  await page.locator('[data-testid="s13-save"]').click()
 
   const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
   expect(calls.map((c) => c.trigger), '保存ボタンが ui.save を送っていない')
