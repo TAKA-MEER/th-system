@@ -3,8 +3,9 @@
 // 数値は出さず「高い／低い」の 2 値＋目安文（DetailedDesign-transit-localize-options.md §4）。
 //
 // localize_quality の取りうる値（ROS 側 P2 が足す。未マージの間は undefined）:
-//   'high'       成立 → 「高い」
-//   'low_margin' 成立したが似た場所あり → 「低い」＋警告（READY の再生は押せるまま）
+//   'high'       成立 → 「位置が決まりました」（Spec-webui.md §3.7 の確度の印）
+//   'low_margin' 成立したが似た場所あり → 「低い」＋警告（READY の再生は押せるまま。
+//                位置は決まったが取り違えの恐れがあるため、4 語だけでは表せない）
 //   'failed'     不成立（LOCALIZE に留まる）→ 「見つかりません」＋案内
 //   'off_route'  推定は成立したが経路から離れすぎ（A-24）→ 「経路から離れています」
 //                ＋経路の近くへ置き直す案内（推定の失敗と区別する）
@@ -16,6 +17,7 @@
 // e2e/s14-ready.spec.js）の両方で縛る。
 import {
   S14_QUALITY_TITLE,
+  S14_QUALITY_DECIDED,
   S14_QUALITY_HIGH,
   S14_QUALITY_LOW,
   S14_QUALITY_LOW_HINT,
@@ -49,7 +51,7 @@ export function localizeQualityView(quality) {
 export function localizeQualityText(level) {
   switch (level) {
     case 'high':
-      return `${S14_QUALITY_TITLE}：${S14_QUALITY_HIGH}`
+      return S14_QUALITY_DECIDED
     case 'low':
       return `${S14_QUALITY_TITLE}：${S14_QUALITY_LOW}。${S14_QUALITY_LOW_HINT}`
     case 'failed':

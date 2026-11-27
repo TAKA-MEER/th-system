@@ -99,6 +99,11 @@ export default function OnsiteMap({
   // 「入れない所」のセル上の最初の経路点）で出せる範囲で描く。コストマップが
   // 無いときは経路の終点に出す（いずれも blocked が立つ間だけ）。
   blocked = false,
+  // 教示再生（S-14）の経路の始点・終点の印。{ start, end, startLabel, endLabel }。
+  // 始点＝進むの色の塗り丸、終点＝進むの色の輪（§6.1）。経路（plannedPath）の
+  // 行き先の輪と同じ場所になるので、経路があるときは終点の輪は描かない
+  // （名前だけ出す）。ピンの印とは別物（押せない・番号を出さない）。
+  routeEnds = null,
   // 地図の端の道具の置き場所（既定は右下。親から渡せる）。
   toolsClassName = '',
   toolsStyle = undefined,
@@ -386,6 +391,8 @@ export default function OnsiteMap({
     : scaleBarM >= 1 ? `${scaleBarM.toFixed(1)}m` : `${(scaleBarM * 100).toFixed(0)}cm`
   const showDestRing = plannedPath.length > 0
   const destPoint = showDestRing ? plannedPath[plannedPath.length - 1] : null
+  const routeStart = routeEnds?.start ?? null
+  const routeEnd = routeEnds?.end ?? null
   const robotHalf = robotHalfPx(t)
   return (
     <div className="mapWrapInner">
@@ -458,6 +465,53 @@ export default function OnsiteMap({
           strokeWidth={3}
           data-testid={`${testId}-map-dest`}
         />
+      ) : null}
+
+      {routeStart ? (
+        // 教示再生の始点（進むの色の塗り丸・白縁）。終点の輪は経路の行き先の輪
+        // （plannedPath の終点）と同じ場所に出るのでここでは描かない。経路が
+        // 無いときだけ終点の輪も出す。
+        <>
+          <circle
+            cx={t.toPx(routeStart.x, routeStart.y)[0]}
+            cy={t.toPx(routeStart.x, routeStart.y)[1]}
+            r={6}
+            fill={MAP_GO}
+            stroke="#ffffff"
+            strokeWidth={1.5}
+            data-testid={`${testId}-map-route-start`}
+          />
+          {routeEnds.startLabel ? (
+            <text
+              x={t.toPx(routeStart.x, routeStart.y)[0]}
+              y={t.toPx(routeStart.x, routeStart.y)[1] + 26}
+              textAnchor="middle" fontSize="15" fill={MAP_PIN_EDGE}
+              stroke={MAP_PIN} strokeWidth={3} paintOrder="stroke" strokeLinejoin="round"
+              data-testid={`${testId}-map-route-start-label`}
+            >
+              {routeEnds.startLabel}
+            </text>
+          ) : null}
+          {routeEnd && !destPoint ? (
+            <circle
+              cx={t.toPx(routeEnd.x, routeEnd.y)[0]}
+              cy={t.toPx(routeEnd.x, routeEnd.y)[1]}
+              r={6} fill="none" stroke={MAP_GO} strokeWidth={3}
+              data-testid={`${testId}-map-route-end`}
+            />
+          ) : null}
+          {routeEnd && routeEnds.endLabel ? (
+            <text
+              x={t.toPx(routeEnd.x, routeEnd.y)[0]}
+              y={t.toPx(routeEnd.x, routeEnd.y)[1] + 26}
+              textAnchor="middle" fontSize="15" fill={MAP_PIN_EDGE}
+              stroke={MAP_PIN} strokeWidth={3} paintOrder="stroke" strokeLinejoin="round"
+              data-testid={`${testId}-map-route-end-label`}
+            >
+              {routeEnds.endLabel}
+            </text>
+          ) : null}
+        </>
       ) : null}
 
       {blockedPoint ? (

@@ -358,12 +358,14 @@ export const S14_SPEED_TITLE = '再生速度'
 // 走行中、現在位置が経路から横にどれだけ外れているか [m] とこの再生での最大値。
 export const S14_XTRACK_TITLE = '経路からのずれ'
 export const S14_XTRACK_EMPTY = '--'
-export const S14_XTRACK_VALUE = (nowM, maxM) => `いま ${nowM.toFixed(2)} m・最大 ${maxM.toFixed(2)} m`
+export const S14_XTRACK_VALUE = (nowM, maxM) => `いま ${nowM.toFixed(2)} m　最大 ${maxM.toFixed(2)} m`
 // 初期姿勢の確度（W-01 P3 / DetailedDesign-transit-localize-options.md §4）。
 // /route/status（RouteStatus）の localize_quality を数値なしの 2 値＋目安文に写す。
 // 数値を出さないのは設計判断（数値の意味を試験員に説明できないため）。
 export const S14_QUALITY_TITLE = '確度'
 export const S14_QUALITY_HIGH = '高い'
+// high の ① の表示（Spec-webui.md §3.7 の確度の印の 4 語）。確度の 2 値は文に残さない。
+export const S14_QUALITY_DECIDED = '位置が決まりました'
 export const S14_QUALITY_LOW = '低い'
 export const S14_QUALITY_LOW_HINT = '似た場所が複数あり、取り違えの可能性があります'
 export const S14_QUALITY_FAILED = '見つかりません'
@@ -378,9 +380,22 @@ export const S14_QUALITY_SEARCHING = '探しています'
 export const S14_QUALITY_SEARCHING_HINT = '地図を読み込んでいます。短い経路で数秒、長い地図で30〜45秒かかります'
 // A-22: 経路を選んでから地図を読み込み終わるまで、地図の上に出す（Spec-webui.md §3.7）。
 export const S14_MAP_LOADING = '地図を読み込んでいます'
+// 経路一覧の「地図の画像なし」の印と、選んだときの 1 行（Spec-webui.md §3.7・A-21）。
+// 地図の有無は機体が送る /route/status の has_map で分かる（読み込んだ経路だけ）。
+export const S14_NO_MAP_TAG = '地図の画像なし'
+export const S14_NO_MAP_LINE = '始点の印に置いて再生する（途中からの再開はできない）'
+// 終端（§3.7）。① に経路名と併せて出す。
+export const S14_END = '終点'
+export const S14_START_LABEL = '始点'
+// 経路を選び直す（§3.7。一時停止中だけ。T-REPLAY-11）。押せない間の理由も出す。
+export const S14_RESELECT = '経路を選び直す'
+export const S14_RESELECT_REASON = '一時停止中に選び直せます'
+// 経路を選ぶまでは「再生」は押せない（§3.7 入口）。押せない理由（§3.3.3）。
+export const S14_SELECT_REASON = '経路を選んでから'
 // 「完全グローバルで探す」ボタン（Spec-webui.md §3.7）。押すと ui.localize_global。
 // FSM は REPLAY/LOCALIZE でだけ受け付ける（transitions.yaml T-REPLAY-03）。
 export const S14_GLOBAL_BUTTON = '完全グローバルで探す'
+export const S14_GLOBAL_REASON = '位置を探している間に使えます'
 // A-21: 地図の画像（pgm/yaml）を持たない経路（localize_quality='unknown'）の案内。
 // 始点決め打ちでしか再生できず、「完全グローバルで探す」は押しても効かないので
 // 無効にし、理由をこの文で示す（Spec-transit.md §4.2）。
