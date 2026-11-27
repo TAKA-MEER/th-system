@@ -31,7 +31,7 @@ async function triggerCalls(page) {
   return page.evaluate(() => window.__thTriggerCalls ?? [])
 }
 
-const run = (page) => page.locator('.opsgrid .op-run')
+const run = (page) => page.getByTestId('stop-run-toggle-run')
 
 for (const [quality, reason] of [
   ['searching', '探しています'],
@@ -41,20 +41,20 @@ for (const [quality, reason] of [
   test(`LOCALIZE（${quality}）は「再生」が押せず、理由「${reason}」が出る`, async ({ page }) => {
     await openS14(page, 'LOCALIZE', { localize_quality: quality })
     await expect(run(page)).toBeDisabled()
-    await expect(page.getByTestId('reason-run')).toContainText(reason)
+    await expect(page.getByTestId('stop-run-toggle-run-reason')).toContainText(reason)
   })
 }
 
 test('LOCALIZE の未受信（古いノード）も「再生」が押せず「探しています」が出る', async ({ page }) => {
   await openS14(page, 'LOCALIZE', {})
   await expect(run(page)).toBeDisabled()
-  await expect(page.getByTestId('reason-run')).toContainText('探しています')
+  await expect(page.getByTestId('stop-run-toggle-run-reason')).toContainText('探しています')
 })
 
 test('READY は「再生」が押せて、押すと ui.run が実際に送られる', async ({ page }) => {
   await openS14(page, 'READY', { localize_quality: 'high' })
   await expect(run(page)).toBeEnabled()
-  await expect(page.getByTestId('reason-run')).toHaveCount(0)
+  await expect(page.getByTestId('stop-run-toggle-run-reason')).toHaveCount(0)
 
   await run(page).click()
   const sent = (await triggerCalls(page)).filter((c) => c.trigger === 'ui.run')
@@ -64,7 +64,7 @@ test('READY は「再生」が押せて、押すと ui.run が実際に送られ
 test('unknown（地図の画像が無い経路）でも READY なら「再生」は押せる', async ({ page }) => {
   await openS14(page, 'READY', { localize_quality: 'unknown' })
   await expect(run(page)).toBeEnabled()
-  await expect(page.getByTestId('reason-run')).toHaveCount(0)
+  await expect(page.getByTestId('stop-run-toggle-run-reason')).toHaveCount(0)
 })
 
 test('PAUSE の「再生」（一時停止の再開）は押せて ui.run を送る', async ({ page }) => {
@@ -76,7 +76,7 @@ test('PAUSE の「再生」（一時停止の再開）は押せて ui.run を送
 
 test('地図の読み込み中は地図の上に出て、読み込み後に消える', async ({ page }) => {
   await openS14(page, 'LOCALIZE', { localize_quality: 'searching' }, { map: MAP })
-  const loading = page.getByTestId('route-preview-loading')
+  const loading = page.getByTestId('s14-map-overlay')
   await expect(loading).toBeVisible()
   await expect(loading).toContainText('地図を読み込んでいます')
 
@@ -88,7 +88,7 @@ test('地図の読み込み中は地図の上に出て、読み込み後に消�
 
 test('地図のトピックが届いていない間は読み込み中を出し、届いたら消す', async ({ page }) => {
   await openS14(page, 'LOCALIZE', {})
-  const loading = page.getByTestId('route-preview-loading')
+  const loading = page.getByTestId('s14-map-overlay')
   await expect(loading).toBeVisible()
 
   await page.evaluate((m) => window.__thSetTestRouteMap(m), MAP)
@@ -97,5 +97,5 @@ test('地図のトピックが届いていない間は読み込み中を出し�
 
 test('READY では読み込み中を出さない', async ({ page }) => {
   await openS14(page, 'READY', { localize_quality: 'high' }, { map: MAP })
-  await expect(page.getByTestId('route-preview-loading')).toHaveCount(0)
+  await expect(page.getByTestId('s14-map-overlay')).toHaveCount(0)
 })

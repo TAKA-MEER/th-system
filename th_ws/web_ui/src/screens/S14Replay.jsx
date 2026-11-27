@@ -1,143 +1,110 @@
-// screens/S14Replay.jsx — S-14, 教示再生 (SCREEN_NAMES.S14 in i18n/screens.js;
-// P5 / demo-teach-replay). Spec-webui.md §3.7 の簡略版。
+// screens/S14Replay.jsx — S-14, 教示再生 (SCREEN_NAMES.S14 in i18n/screens.js).
+// Spec-webui.md §3.7。型「走らせる」（RunLayout）。タブは無い。
 //
-// 教示済み経路を /route/catalog（RouteList）から一覧し、選択して ui.route_select
-// {id, reverse} で再生を開始する。FSM（th_state/config/transitions.yaml、P2〜P4 で配線済み）:
+// 入口は主表示の中央のカード（経路の一覧・順再生│逆再生・「この経路で進む」）。
+// 主表示は OnsiteMap（地図・経路・始点・終点・機体。読み込み中は地図の上）。
+// 右列 ① 確度の印／ずれ／終点、② 停止│再生、③ 完全グローバル・再生速度・
+// 経路を選び直す、④ 手動（W-6）。地図の更新の切り替えは出さない（使えない間）。
+//
+// FSM（th_state/config/transitions.yaml）:
 //   REPLAY: ROUTE_SEL --ui.route_select {id, reverse}--> LOCALIZE
-//           LOCALIZE --(replay_runner が evt.localize_done)--> READY
+//           LOCALIZE --(evt.localize_done)--> READY
 //           READY --ui.run--> RUN、RUN --ui.stop--> PAUSE、PAUSE --ui.run--> RUN
-//           RUN --(replay_runner が evt.arrived)--> PAUSE、* --ui.finish--> IDLE
-//
-// 逆再生は、順再生／逆再生のトグル（reverse 状態）で選ぶ。replay_runner の初期姿勢推定は
-// P4 の特例（W-01）で省略済みなので LOCALIZE はほぼ一瞬。
-//
-// 操作カードは stop（ui.stop）と run（ui.run、ラベル「再生」）だけ。
-// onTrigger を空関数にしない（S-11 の既知バグ。この画面では「再生」ボタンが
-// 実際に ui.run を送ることを e2e/s14-replay-button-sends-ui-run.spec.js で検証する）。
-//
-// W-01 P3: 初期姿勢の確度（/route/status の localize_quality を 2 値＋目安文に写す。
-// 写像は screens/s14Localize.js）と「完全グローバルで探す」ボタン
-// （REPLAY/LOCALIZE のときだけ出し、押すと ui.localize_global。
-// FSM は LOCALIZE でだけ受け付ける: transitions.yaml T-REPLAY-03）。
-// failed の「経路を選び直す」は既存の「終了」（ui.finish → IDLE → 選び直し）で
-// 足りるためボタンは作らない（LOCALIZE から ui.route_select を受ける行は無い）。
-import { useEffect, useRef, useState } from 'react'
+//           RUN --(evt.arrived)--> PAUSE、PAUSE --ui.route_select--> LOCALIZE（選び直す）
+//           * --ui.finish--> IDLE（終了）
+import { useEffect, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
-import { useSetFlag, MAP_UPDATE_FLAG } from '../ros/useSetFlag.js'
 import { useRouteCatalog } from '../ros/useRouteCatalog.js'
 import { useRouteStatus } from '../ros/useRouteStatus.js'
 import { useRoutePreview } from '../ros/useRoutePreview.js'
 import { useOdomPose } from '../ros/useOdomPose.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useRouteMap } from '../ros/useRouteMap.js'
+import { useScan } from '../ros/useScan.js'
 import { useReplaySpeedPublisher } from '../ros/useReplaySpeedPublisher.js'
+import { useJogPanel } from '../shell/jogPanel.js'
+import { RunLayout } from '../shell/Layouts.jsx'
+import StopRunToggle from '../parts/StopRunToggle.jsx'
+import ReasonButton from '../parts/ReasonButton.jsx'
+import ResultMark from '../parts/ResultMark.jsx'
+import HelpTip from '../parts/HelpTip.jsx'
 import AutoBrakeDevCard from '../parts/AutoBrakeDevCard.jsx'
-import RoutePreview from './RoutePreview.jsx'
-import OperationCard from '../shell/OperationCard.jsx'
 import ReplaySpeedControl from '../parts/ReplaySpeedControl.jsx'
 import { REPLAY_SPEED_RATIOS } from '../parts/replaySpeed.js'
-import DriveTab from './driveTab.jsx'
-import attributes from '../generated/attributes.json'
+import OnsiteMap from '../parts/OnsiteMap.jsx'
+import { scanToPoints } from '../parts/scanToPoints.js'
+import { baseToWorld } from '../mapGeometry.js'
+import { IconClose } from '../parts/icons.jsx'
+import './S14Replay.css'
 import {
-  S11_MANUAL_TITLE, S11_REAR_TITLE, S11_REAR_NOTE,
-  S14_TAB_REPLAY, S14_SELECT_TITLE, S14_EMPTY, S14_FWD, S14_REV, S14_PROCEED,
-  S14_POSE_TITLE, S14_POSE_LOCALIZE, S14_POSE_LOCALIZE_TIMEOUT, S14_POSE_READY, S14_POSE_RUN, S14_POSE_PAUSE, S14_POSE_PAUSE_RESUMABLE,
-  S14_GLOBAL_BUTTON, S14_NO_MAP_GUIDE,
-  S14_LENGTH, S14_POINTS, S14_SPEED_TITLE,
+  S14_SELECT_TITLE, S14_EMPTY, S14_FWD, S14_REV, S14_PROCEED,
+  S14_POSE_PAUSE, S14_POSE_PAUSE_RESUMABLE,
+  S14_GLOBAL_BUTTON, S14_NO_MAP_GUIDE, S14_NO_MAP_TAG, S14_NO_MAP_LINE,
+  S14_RESELECT, S14_RESELECT_REASON, S14_SELECT_REASON, S14_GLOBAL_REASON,
+  S14_END, S14_START_LABEL,
+  S14_MAP_LOADING, S14_QUALITY_SEARCHING, S14_POSE_LOCALIZE_TIMEOUT,
   S14_XTRACK_TITLE, S14_XTRACK_EMPTY, S14_XTRACK_VALUE,
-  S14_MAP_UPDATE_TITLE, S14_MAP_UPDATE_ON, S14_MAP_UPDATE_OFF, S14_MAP_UPDATE_NOTE,
-  S14_QUALITY_SEARCHING_HINT, S14_MAP_LOADING,
 } from '../i18n/screens.js'
 import {
   localizeQualityView, localizeQualityText, replayRunGate, mapLoadingVisible,
 } from './s14Localize.js'
 import { noMapRoute } from './routeMapWarning.js'
-import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
-import { stateLabel } from '../i18n/states.js'
 import { OP_LABELS } from '../i18n/states.js'
+import { S20_MAP_ARIA, S20_MAP_NO_POSE, S20_MAP_ROBOT } from '../i18n/screens.js'
 
-// LOCALIZE が長引く = 地図の読み直しに失敗（保存地図が無い経路、posegraph
-// ファイル欠落、始点から離れすぎ 等）。WS-9S 以降は slam_toolbox の respawn +
-// deserialize に長距離地図で ~45s かかりうるので、しきい値は余裕を持たせる。
+// LOCALIZE が長引く = 地図の読み直しに失敗等（slam_toolbox 再起動で ~45s かかりうる）。
 const LOCALIZE_TIMEOUT_MS = 60000
 
-// WS-9P: PAUSE の文言は「なぜ止まったか」で変える。終端に達したのなら終了を促し、
-// フォルト・ジョグ介入・停止ボタンで止まったのなら「再生で続きから」を案内する。
-// arrived は replay_runner が /route/status に載せてくる（RouteStatus.arrived）。
-// 状態名だけでは区別できない（T-REPLAY-06/09 と C-01/C-03 が同じ PAUSE に落ちる）。
-function poseText(stateName, arrived) {
-  if (stateName === 'LOCALIZE') return S14_POSE_LOCALIZE
-  if (stateName === 'READY') return S14_POSE_READY
-  if (stateName === 'RUN') return S14_POSE_RUN
-  if (stateName === 'PAUSE') return arrived ? S14_POSE_PAUSE : S14_POSE_PAUSE_RESUMABLE
-  return null
+// 確度の印（§3.3.1。✓＝正常／!＝要確認／×＝だめ。モックアップの search は !）。
+const QUALITY_MARK = {
+  high: 'OK', low: 'WARN', failed: 'NG', off_route: 'NG', searching: 'WARN',
 }
 
 export default function S14Replay({ onFinish }) {
   const { ros, state, stale } = useSystemState()
   const sendTrigger = useTrigger()
-  const setFlag = useSetFlag()
   const routes = useRouteCatalog(ros)
   const routeStatus = useRouteStatus(ros)
   const routePreview = useRoutePreview(ros)
   const odomPose = useOdomPose(ros)
   const routePose = useRoutePose(ros)
   const routeMap = useRouteMap(ros)
+  const scan = useScan(ros)
+  const jogPanel = useJogPanel()
   const disabledAll = stale || state?.mode == null
 
   const [selectedId, setSelectedId] = useState(null)
-  // W-19: 再生方向。既定は順再生（reverse=false）。「順再生／逆再生」の行で切り替える。
   const [reverse, setReverse] = useState(false)
   const [localizeStuck, setLocalizeStuck] = useState(false)
-  // WS-9T: 再生速度の比率。既定は中速。走行中に変えても replay_runner が
-  // 次ティックで反映する（useReplaySpeedPublisher → /replay/speed_scale）。
+  // 一時停止中だけ、選択カードをもう一度出す（「経路を選び直す」。T-REPLAY-11）。
+  const [reselecting, setReselecting] = useState(false)
   const [speedRatio, setSpeedRatio] = useState(REPLAY_SPEED_RATIOS.mid)
   useReplaySpeedPublisher(ros, speedRatio)
 
   const stateName = state?.state ?? null
-  const pose = poseText(stateName, routeStatus?.arrived === true)
   const empty = routes.length === 0
-  const selected = selectedId != null
+  const selecting = stateName === 'ROUTE_SEL' || reselecting
 
-  // W-01 P3: 初期姿勢の確度（/route/status の localize_quality。ROS 側 P2 が
-  // 足す 3 フィールドの 1 つ。未マージの間は undefined → 確度欄を出さない）。
-  // 数値は出さず「高い／低い」の 2 値＋目安文（options §4）。
+  useEffect(() => {
+    if (stateName !== 'PAUSE') setReselecting(false)
+  }, [stateName])
+
   const qualityView = localizeQualityView(routeStatus?.localize_quality)
   const qualityText = localizeQualityText(qualityView.level)
   const showQuality = qualityView.visible
     && (stateName === 'LOCALIZE' || stateName === 'READY')
-  // A-21: 地図の画像（pgm/yaml）を持たない経路。始点決め打ちでしか合わせられず、
-  // 「完全グローバルで探す」は押しても効かない。案内を出してボタンを無効にする
-  // （Spec-transit.md §4.2）。
   const noMap = noMapRoute(routeStatus)
   const showNoMapGuide = noMap
     && (stateName === 'LOCALIZE' || stateName === 'READY')
-  // searching（探索＋地図の読み直し）は 60 秒を超えうるので、既存の
-  // 「長引いている」注記は出さない（P3 ブリーフ §やること 1）。
-  // 1b-11 SG-B19: failed（原因別の案内が出ている）ときも出さない。
-  // 汎用のタイムアウト文言（「始点マークに置き直す」）は原因と違うことがある。
-  // A-24: off_route も専用の案内（経路の近くへ）を出すので出さない。
   const showStuckNote = localizeStuck
     && qualityView.level !== 'searching'
     && qualityView.level !== 'failed'
     && qualityView.level !== 'off_route'
-  // 1b-11 SG-B19: 探索・読み直しの待ち時間（Spec-transit.md §4.2.2）。
-  const showSearchingHint = qualityView.level === 'searching'
-    && (stateName === 'LOCALIZE' || stateName === 'READY')
-  // 1b-11 SG-B14: 地図の更新（Spec-webui.md §3.7）。既定 OFF。
-  // ON のときだけ操作カードに「保存」が出る。
-  const mapUpdate = !!state?.map_update
-  // A-23 ②: 位置が決まるまで（LOCALIZE）は「再生」を押せなくし、理由をそばに出す。
-  // READY で押せる（unknown の経路も始点決め打ちで READY に進む）、PAUSE の
-  // 再開も止めない（Spec-webui.md §3.7）。
   const runGate = replayRunGate(stateName, routeStatus?.localize_quality)
-  // A-22: 地図の読み込み中は地図の上に出す。判定は既存の信号だけ
-  // （localize_quality と /route/map_view の到着。新しいトピックは足さない）。
   const mapLoading = mapLoadingVisible(
     stateName, routeStatus?.localize_quality, routeMap != null)
 
-  // LOCALIZE が長く続いたら（＝地図の読み直し失敗の可能性）手がかりを出す。
   useEffect(() => {
     if (stateName !== 'LOCALIZE') { setLocalizeStuck(false); return undefined }
     setLocalizeStuck(false)
@@ -145,7 +112,6 @@ export default function S14Replay({ onFinish }) {
     return () => clearTimeout(t)
   }, [stateName])
 
-  // 終了 → ui.finish → 承認で S-01 へ戻る（S11Manual の handleFinish と同じ）。
   async function handleFinish() {
     try {
       const res = await sendTrigger('ui.finish')
@@ -155,15 +121,11 @@ export default function S14Replay({ onFinish }) {
     }
   }
 
-  // この経路で進む → ui.route_select {id, reverse}（W-19: トグルで選んだ方向）。
   async function handleProceed() {
     if (selectedId == null) return
     await sendTrigger('ui.route_select', { id: selectedId, reverse })
   }
 
-  // W-01 P3: 完全グローバルで探す → ui.localize_global。
-  // FSM は REPLAY/LOCALIZE でだけ受け付ける（transitions.yaml T-REPLAY-03）。
-  // ボタン自体を LOCALIZE のときだけ出す。探索中は押せない。
   async function handleGlobalLocalize() {
     try {
       await sendTrigger('ui.localize_global')
@@ -172,109 +134,90 @@ export default function S14Replay({ onFinish }) {
     }
   }
 
-  // 1b-11 SG-B14: 地図の更新トグル → /system/set_flag map_update。
-  // 受理は機体が決める（T-REPLAY-08 のガードが保存の可否を縛る）。
-  // fix-setflag-requester: 拒否・通信失敗を押した人に見せる（S-11 と同じ流儀）。
-  const [mapUpdateErr, setMapUpdateErr] = useState(null)
-  async function handleMapUpdateToggle() {
-    setMapUpdateErr(null)
-    try {
-      const res = await setFlag(MAP_UPDATE_FLAG, !mapUpdate, 's14')
-      if (!res?.accepted) {
-        setMapUpdateErr(reasonLabel(res?.reject_reason_key) ?? UNKNOWN_REASON_LABEL)
-      }
-    } catch {
-      setMapUpdateErr(UNKNOWN_REASON_LABEL)
-    }
+  // 地図の上で重ねるもの：経路・始点・終点・機体・スキャン（§3.7・§6.1）。
+  const robotPose = routePose ?? odomPose
+  let scanPoints = null
+  if (robotPose && scan) {
+    scanPoints = scanToPoints(scan).map(({ x, y }) => {
+      const [wx, wy] = baseToWorld(x, y, robotPose)
+      return { x: wx, y: wy }
+    })
   }
+  const previewPts = Array.isArray(routePreview) ? routePreview : []
+  const routeEnds = previewPts.length > 0 ? {
+    start: { x: previewPts[0].x, y: previewPts[0].y },
+    end: { x: previewPts[previewPts.length - 1].x, y: previewPts[previewPts.length - 1].y },
+    startLabel: S14_START_LABEL,
+    endLabel: S14_END,
+  } : null
 
-  // 経路を選び終えたあと（読み直し・再生・一時停止）は経路を選び直せない。選択カードを
-  // 畳んで、その高さと幅を地図に回す（地図が小さいという実機指摘。2026-10-10）。
-  const selecting = stateName === 'ROUTE_SEL'
+  // 地図の画像が無い経路の印は、読み込んだ経路（/route/status の has_map）だけで分かる。
+  // 一覧のほかの経路は機体が送っていないので作らない（値を出さない）。
+  const currentNoMap = routeStatus?.has_map === false
+    && routeStatus?.current?.id != null
+  const selectedNoMap = currentNoMap && selectedId === routeStatus?.current?.id
 
-  // 地図と再生速度のカードは、経路選択中とそれ以外で置く列を入れ替える（下の JSX）。
+  const arrived = routeStatus?.arrived === true
+  const currentRouteName = routeStatus?.current?.name
+    ?? routes.find((r) => r.id === selectedId)?.name
+    ?? routes.find((r) => r.id === routeStatus?.current?.id)?.name
+    ?? null
+
   const mapEl = (
-    <RoutePreview
-      preview={routePreview}
-      pose={routePose ?? odomPose}
-      mapData={routeMap}
-      targetIndex={routeStatus?.target_index ?? -1}
-      loadingText={mapLoading ? S14_MAP_LOADING : null}
-    />
-  )
-  const speedCard = (
-    <div className="card">
-      <h3>{S14_SPEED_TITLE}</h3>
-      <ReplaySpeedControl
-        value={speedRatio}
-        onSelect={setSpeedRatio}
-        disabled={disabledAll}
+    <div className="mapWrap" data-testid="s14-map-wrap">
+      <OnsiteMap
+        mapData={routeMap}
+        pins={[]}
+        robotPose={robotPose}
+        plannedPath={previewPts}
+        scanPoints={scanPoints}
+        routeEnds={routeEnds}
+        ariaLabel={S20_MAP_ARIA}
+        noPoseLabel={S20_MAP_NO_POSE}
+        robotLabel={S20_MAP_ROBOT}
+        overlayText={mapLoading ? S14_MAP_LOADING : null}
+        testId="s14"
       />
-    </div>
-  )
-
-  return (
-    <div className="screen two-col" id="s14">
-      <div className="left-col">
-        <div className="top-actions sticky">
-          <button
-            type="button"
-            className="btn sm"
-            data-testid="s14-finish"
-            disabled={disabledAll}
-            onClick={handleFinish}
-          >
-            {OP_LABELS.finish}
-          </button>
-          <div className="tabs grow" style={{ margin: 0, border: 'none' }} role="tablist">
-            <button type="button" role="tab" aria-selected className="tab on">
-              {S14_TAB_REPLAY}
-            </button>
-          </div>
-        </div>
-
-        <div className={`tabpane on pane-grid${selecting ? '' : ' map-first'}`}>
-         <div className="pane-col">
-          {selecting && (
-          <div className="card">
-            <h3>{S14_SELECT_TITLE}</h3>
-            {empty ? (
-              <div className="note" data-testid="s14-empty">{S14_EMPTY}</div>
-            ) : (
-              // 経路が増えても地図を下へ押し出さないよう一覧だけ枠内スクロール
-              <div className="lst-scroll">
-                <table className="lst">
-                  <tbody>
-                    {routes.map((r) => (
-                      <tr
-                        key={r.id}
-                        className={selectedId === r.id ? 'sel' : ''}
-                        data-testid="s14-route-row"
-                      >
-                        <td role="radio" aria-checked={selectedId === r.id} className="sm">
-                          <button
-                            type="button"
-                            data-testid={`s14-select-${r.id}`}
-                            onClick={() => setSelectedId(r.id)}
-                          >
-                            {r.name}
-                          </button>
-                        </td>
-                        <td className="r sm">
-                          {S14_LENGTH}: {r.length_m != null ? r.length_m.toFixed(2) : '--'}
-                          / {S14_POINTS}: {r.point_count}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div className="row mt">
-              <span className="grow sm">{S14_FWD}／{S14_REV}</span>
+      {selecting && (
+        <div className="card s14-select-card" data-testid="s14-select-card">
+          <h3>{S14_SELECT_TITLE}</h3>
+          {empty ? (
+            <div className="note" data-testid="s14-empty">{S14_EMPTY}</div>
+          ) : (
+            <div className="rtl" data-testid="s14-route-list">
+              {routes.map((r) => (
+                <div
+                  key={r.id}
+                  role="radio"
+                  aria-checked={selectedId === r.id}
+                  tabIndex={0}
+                  className={`rt${selectedId === r.id ? ' on' : ''}`}
+                  data-testid={`s14-select-${r.id}`}
+                  onClick={() => setSelectedId(r.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setSelectedId(r.id)
+                    }
+                  }}
+                >
+                  <span>{r.name}</span>
+                  {currentNoMap && r.id === routeStatus?.current?.id && (
+                    <span className="tagx" data-testid="s14-route-no-map">{S14_NO_MAP_TAG}</span>
+                  )}
+                  <small>{`${r.length_m != null ? r.length_m.toFixed(2) : '--'} m`}</small>
+                </div>
+              ))}
+            </div>
+          )}
+          {selectedNoMap && (
+            <div className="note mt" data-testid="s14-select-no-map">{S14_NO_MAP_LINE}</div>
+          )}
+          <div className="s14-dir-seg">
+            <HelpTip helpKey="s14-dir">
               <button
                 type="button"
-                className={`btn sm${!reverse ? ' primary' : ''}`}
+                className={`btn${!reverse ? ' on' : ''}`}
                 data-testid="s14-dir-fwd"
                 aria-pressed={!reverse}
                 disabled={disabledAll}
@@ -282,9 +225,11 @@ export default function S14Replay({ onFinish }) {
               >
                 {S14_FWD}
               </button>
+            </HelpTip>
+            <HelpTip helpKey="s14-dir">
               <button
                 type="button"
-                className={`btn sm${reverse ? ' primary' : ''}`}
+                className={`btn${reverse ? ' on' : ''}`}
                 data-testid="s14-dir-rev"
                 aria-pressed={reverse}
                 disabled={disabledAll}
@@ -292,126 +237,162 @@ export default function S14Replay({ onFinish }) {
               >
                 {S14_REV}
               </button>
-            </div>
+            </HelpTip>
+          </div>
+          <HelpTip helpKey="s14-proceed">
             <button
               type="button"
-              className="btn primary mt"
+              className="btn s14-proceed"
               data-testid="s14-proceed"
-              disabled={disabledAll || empty || !selected}
+              disabled={disabledAll || empty || selectedId == null}
               onClick={handleProceed}
             >
               {S14_PROCEED}
             </button>
-          </div>
-          )}
-
-          {selecting ? speedCard : mapEl}
-         </div>
-         <div className="pane-col">
-          {selecting && mapEl}
-          <div className="card">
-            <h3>{S14_POSE_TITLE}</h3>
-            <div className="note" data-testid="s14-pose">
-              {pose ?? stateLabel(stateName)}
-            </div>
-            {showQuality && (
-              <div className="note" data-testid="s14-localize-quality">{qualityText}</div>
-            )}
-            {/* 1b-11 SG-B19: 読み直しの待ち時間（Spec-transit.md §4.2.2）。
-                原因を断定しない文言にする（§4.2.3）。 */}
-            {showSearchingHint && (
-              <div className="note" data-testid="s14-localize-wait">{S14_QUALITY_SEARCHING_HINT}</div>
-            )}
-            {showNoMapGuide && (
-              <div className="note warn mt" role="alert" data-testid="s14-no-map">
-                {S14_NO_MAP_GUIDE}
-              </div>
-            )}
-            {stateName === 'LOCALIZE' && (
-              <button
-                type="button"
-                className="btn sm mt"
-                data-testid="s14-localize-global"
-                disabled={disabledAll || qualityView.level === 'searching' || noMap}
-                onClick={handleGlobalLocalize}
-              >
-                {S14_GLOBAL_BUTTON}
-              </button>
-            )}
-            {showStuckNote && (
-              <div className="note" data-testid="s14-localize-stuck">{S14_POSE_LOCALIZE_TIMEOUT}</div>
-            )}
-          </div>
-
-          {/* 経路からのずれ（Spec-webui.md §3.7）。走行中・一時停止中に
-              /route/status の cross_track_m / cross_track_max_m を出す。
-              停止しても最大値は残る。小数 2 桁。 */}
-          {(stateName === 'RUN' || stateName === 'PAUSE') && (
-            <div className="card">
-              <h3>{S14_XTRACK_TITLE}</h3>
-              <div className="note" data-testid="s14-xtrack">
-                {routeStatus?.cross_track_m != null && routeStatus?.cross_track_max_m != null
-                  ? S14_XTRACK_VALUE(routeStatus.cross_track_m, routeStatus.cross_track_max_m)
-                  : S14_XTRACK_EMPTY}
-              </div>
-            </div>
-          )}
-
-          {/* 地図の更新（Spec-webui.md S-14）。当面 OFF 固定で押せない（2026-10-22。
-              書き足しが効かないため）。機体側も ON を拒否する。 */}
-          <div className="card">
-            <h3>{S14_MAP_UPDATE_TITLE}</h3>
-            <div className="row mt">
-              <button
-                type="button"
-                className="btn sm"
-                data-testid="s14-map-update-toggle"
-                aria-pressed={mapUpdate}
-                disabled
-                onClick={handleMapUpdateToggle}
-              >
-                {mapUpdate ? S14_MAP_UPDATE_ON : S14_MAP_UPDATE_OFF}
-              </button>
-            </div>
-            {mapUpdateErr && (
-              <div className="note" data-testid="s14-map-update-error">{mapUpdateErr}</div>
-            )}
-            <div className="note">{S14_MAP_UPDATE_NOTE}</div>
-          </div>
-
-          {!selecting && speedCard}
-         </div>
+          </HelpTip>
         </div>
-      </div>
-
-      <div>
-        {/* 操作カードは右列先頭（S11 と同じ位置）。run→ui.run（ラベル「再生」）、
-            stop→ui.stop。save は地図更新 ON のときだけ（1b-11 SG-B14）。
-            onTrigger を空関数にしない。 */}
-        <OperationCard
-          mode={state?.mode}
-          stateName={stateName}
-          attributes={attributes}
-          slots={{ stop: true, check: false, run: true, save: mapUpdate, manual: false }}
-          runLabel={S14_TAB_REPLAY}
-          disabled={disabledAll}
-          runDisabled={!runGate.enabled}
-          runDenyReason={runGate.reason}
-          onTrigger={(trigger) => sendTrigger(trigger)}
-        />
-        <div className="card">
-          <h3>{S11_MANUAL_TITLE}</h3>
-          {/* 手動介入用（常設。Spec-transit §0.4） */}
-          <DriveTab kind="manual" />
-          {/* 1b-11 SG-C9 の S-14 分：後方は死角（Spec-safety.md §2.3）。
-              S-11 / S-13 と同じ文言。W-6 の分は別ブランチが扱う。 */}
-          <h3>{S11_REAR_TITLE}</h3>
-          <div className="note">{S11_REAR_NOTE}</div>
-        </div>
-        {/* A-15: 開発モードで項目 auto_brake を選んでいるときだけ出る。 */}
-        <AutoBrakeDevCard prefix="s14" />
-        <div className="state">{stateLabel(stateName)}</div>
-      </div>
+      )}
     </div>
+  )
+
+  const opbar = (
+    <div className="top-actions">
+      <HelpTip helpKey="finish">
+        <button
+          type="button"
+          className="btn exit"
+          data-testid="s14-finish"
+          disabled={disabledAll}
+          onClick={handleFinish}
+        >
+          <IconClose />
+          <span>{OP_LABELS.finish}</span>
+        </button>
+      </HelpTip>
+    </div>
+  )
+
+  const where = (
+    <div className="s14-where" data-testid="s14-where">
+      {showQuality && (
+        <span className="mkline">
+          <ResultMark result={QUALITY_MARK[qualityView.level]} testId="s14-quality-mark" />
+          <span data-testid="s14-localize-quality">{qualityText}</span>
+        </span>
+      )}
+      {showNoMapGuide && (
+        <span className="note warn" role="alert" data-testid="s14-no-map">
+          {S14_NO_MAP_GUIDE}
+        </span>
+      )}
+      {showStuckNote && (
+        <span className="note" data-testid="s14-localize-stuck">{S14_POSE_LOCALIZE_TIMEOUT}</span>
+      )}
+      {(stateName === 'RUN' || (stateName === 'PAUSE' && !arrived)) && (
+        <>
+          <span>{S14_XTRACK_TITLE}</span>
+          <b data-testid="s14-xtrack">
+            {routeStatus?.cross_track_m != null && routeStatus?.cross_track_max_m != null
+              ? S14_XTRACK_VALUE(routeStatus.cross_track_m, routeStatus.cross_track_max_m)
+              : S14_XTRACK_EMPTY}
+          </b>
+        </>
+      )}
+      {stateName === 'PAUSE' && arrived && (
+        <span data-testid="s14-ended">
+          {currentRouteName && <span>{currentRouteName}</span>}{' '}
+          <b>{S14_END}</b>
+        </span>
+      )}
+      {stateName === 'PAUSE' && arrived && (
+        <span className="s14-guide" data-testid="s14-pause-guide">{S14_POSE_PAUSE}</span>
+      )}
+      {stateName === 'PAUSE' && !arrived && (
+        <span className="s14-guide" data-testid="s14-pause-guide">{S14_POSE_PAUSE_RESUMABLE}</span>
+      )}
+    </div>
+  )
+
+  const runLabel = stateName === 'PAUSE' ? '再開する' : '再生する'
+  const stopEnabled = !disabledAll && stateName === 'RUN'
+  const runEnabled = !disabledAll && !selecting && !arrived
+    && (stateName === 'READY' || stateName === 'PAUSE') && runGate.enabled
+  // 終端（arrived）の理由は ① の「終点」＋終了の案内で示す。吹き出しを出すと
+  // トグルが高くなって下の列が動くので、ここでは出さない。
+  const runDenyReason = selecting
+    ? S14_SELECT_REASON
+    : (stateName === 'LOCALIZE' && !runGate.enabled ? runGate.reason : null)
+  const toggle = (
+    <StopRunToggle
+      stopLabel="停止する"
+      runLabel={runLabel}
+      stopEnabled={stopEnabled}
+      runEnabled={runEnabled}
+      runDenyReason={runDenyReason}
+      onStop={() => sendTrigger('ui.stop')}
+      onRun={() => sendTrigger('ui.run')}
+    />
+  )
+
+  const globalDisabled = disabledAll || stateName !== 'LOCALIZE'
+    || qualityView.level === 'searching' || noMap
+  const globalReason = stateName !== 'LOCALIZE'
+    ? S14_GLOBAL_REASON
+    : (noMap ? S14_NO_MAP_GUIDE : (qualityView.level === 'searching' ? S14_QUALITY_SEARCHING : null))
+  const ops = (
+    <>
+      <HelpTip helpKey="s14-global">
+        <ReasonButton
+          className="wide"
+          data-testid="s14-localize-global"
+          disabled={globalDisabled}
+          reason={globalReason}
+          reasonTestId="s14-global-reason"
+          onClick={handleGlobalLocalize}
+        >
+          <span>{S14_GLOBAL_BUTTON}</span>
+        </ReasonButton>
+      </HelpTip>
+      <HelpTip helpKey="s14-speed">
+        <ReplaySpeedControl
+          value={speedRatio}
+          onSelect={setSpeedRatio}
+          disabled={disabledAll}
+        />
+      </HelpTip>
+      <HelpTip helpKey="s14-reselect">
+        <ReasonButton
+          className="wide"
+          data-testid="s14-reselect"
+          disabled={disabledAll || stateName !== 'PAUSE' || reselecting}
+          reason={stateName !== 'PAUSE' ? S14_RESELECT_REASON : null}
+          reasonTestId="s14-reselect-reason"
+          onClick={() => setReselecting(true)}
+        >
+          <span>{S14_RESELECT}</span>
+        </ReasonButton>
+      </HelpTip>
+    </>
+  )
+
+  const jog = (
+    <HelpTip helpKey="manual">
+      <ReasonButton
+        className="manual"
+        data-testid="s14-manual"
+        disabled={disabledAll}
+        onClick={() => jogPanel.open()}
+      >
+        <span>{OP_LABELS.manual}</span>
+      </ReasonButton>
+    </HelpTip>
+  )
+
+  return (
+    <>
+      <RunLayout id="s14" opbar={opbar} main={mapEl} where={where} toggle={toggle} ops={ops} jog={jog} />
+      {/* A-15: 開発モードで項目 auto_brake を選んでいるときだけ出る。 */}
+      <AutoBrakeDevCard prefix="s14" />
+    </>
   )
 }

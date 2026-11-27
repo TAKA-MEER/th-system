@@ -10,10 +10,11 @@
 import { SPD_HIGH, SPD_MID, SPD_LOW } from '../i18n/screens.js'
 import { REPLAY_SPEED_RATIOS } from './replaySpeed.js'
 
+// 左から低速・中速・高速（モックアップと同じ順）。
 const ORDER = [
-  { ratio: REPLAY_SPEED_RATIOS.high, label: SPD_HIGH },
-  { ratio: REPLAY_SPEED_RATIOS.mid, label: SPD_MID },
   { ratio: REPLAY_SPEED_RATIOS.low, label: SPD_LOW },
+  { ratio: REPLAY_SPEED_RATIOS.mid, label: SPD_MID },
+  { ratio: REPLAY_SPEED_RATIOS.high, label: SPD_HIGH },
 ]
 
 export default function ReplaySpeedControl({ value, onSelect, disabled = false }) {

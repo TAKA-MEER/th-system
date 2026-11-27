@@ -19,9 +19,9 @@ import {
   S14_GLOBAL_BUTTON,
 } from '../../src/i18n/screens.js'
 
-test('high は確度「高い」を出す', () => {
+test('high は「位置が決まりました」（Spec-webui.md §3.7 の確度の印）', () => {
   assert.deepEqual(localizeQualityView('high'), { visible: true, level: 'high' })
-  assert.equal(localizeQualityText('high'), `${S14_QUALITY_TITLE}：${S14_QUALITY_HIGH}`)
+  assert.equal(localizeQualityText('high'), '位置が決まりました')
 })
 
 test('low_margin は「低い」＋取り違え警告（数値は出さない）', () => {

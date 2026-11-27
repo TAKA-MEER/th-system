@@ -9,11 +9,11 @@ test('xtrack title is present', () => {
 })
 
 test('xtrack value shows now and max with 2 decimals', () => {
-  assert.equal(S14_XTRACK_VALUE(0.1234, 0.4567), 'いま 0.12 m・最大 0.46 m')
+  assert.equal(S14_XTRACK_VALUE(0.1234, 0.4567), 'いま 0.12 m　最大 0.46 m')
 })
 
 test('xtrack value shows zeros at replay start', () => {
-  assert.equal(S14_XTRACK_VALUE(0, 0), 'いま 0.00 m・最大 0.00 m')
+  assert.equal(S14_XTRACK_VALUE(0, 0), 'いま 0.00 m　最大 0.00 m')
 })
 
 test('xtrack empty placeholder exists for missing status', () => {
