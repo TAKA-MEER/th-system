@@ -64,6 +64,10 @@ ESTOP_MODE: str = "ESTOP"
 # 同じ理由でノード側にモード名リテラルを書かない。WP-MAINT-01。2026-09-25）。
 OPCHECK_MODE: str = "OPCHECK"
 
+# state_manager.py が試験準備（PREP）で自動ブレーキの切替を許す判定に使う参照点
+# （同上。2026-11-27 D73）。
+PREP_MODE: str = "PREP"
+
 # state_manager.py が Context.calib_item / calib_preview_sane のラッチで使う参照点
 # （同上。WP-MAINT-02）。
 CALIB_MODE: str = "CALIB"

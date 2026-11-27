@@ -40,7 +40,7 @@ from th_system_msgs.srv import SetFlag, UiTrigger
 
 from th_state import guards as guards_module
 from th_state.onsite_context import derive_person_ctx, derive_pin_kinds
-from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, IDLE_MODE, OPCHECK_MODE, Context, Effect,
+from th_state.state_core import (BOOT_MODE, CALIB_MODE, ESTOP_MODE, IDLE_MODE, OPCHECK_MODE, PREP_MODE, Context, Effect,
                                    REPLAY_MODE, StateCore, TEACH_MODES, is_driving)
 # brief-tracker-default-off §3.1: モード名の集合・判定は tracker_policy.py に
 # 集約して import する（このファイルにモード名リテラルを書かない。N-1）。
@@ -164,9 +164,9 @@ class StateManager(Node):
         self.declare_parameter('ui_active_window_s', Parameter.Type.INTEGER)
         self.declare_parameter('screen_stale_ms', Parameter.Type.INTEGER)
         # SG-C14: S-50 で変える自動ブレーキの既定（registry 由来。生成 yaml が
-        # 上書きする）。既定は Spec-safety §2.1 と同じ off / on。/params/set で
+        # 上書きする）。既定は Spec-safety §2.1 と同じ on / on。/params/set で
         # 変えた値は overrides.yaml に残り、再起動後も維持される（次の起動から効く）。
-        self.declare_parameter('auto_brake_default_outdoor', 'off')
+        self.declare_parameter('auto_brake_default_outdoor', 'on')  # D75（2026-11-27）: 場外の手動系の既定 ON
         self.declare_parameter('auto_brake_default_indoor', 'on')
         # W-13 解除: target_confidence_min は registry.yaml 駆動
         # （person_tracker_bridge と同名・同値で共有行）。生成 yaml が上書きする。
@@ -451,12 +451,18 @@ class StateManager(Node):
         # 開発モードの項目が外れた（OFF・項目を外した・3 秒以上来ない）ら、自律系での
         # OFF 要求は捨てて ON に戻す（10 Hz のタイマーが毎回通る）。
         panel = self._panel_open()
+        # D73（2026-11-27）: 試験準備（PREP）は W-6 の知らせが無くても切り替えられる。
+        # ただし使用中の端末が居る間だけ（在席が無いとゾーン NA で元々 ON だが、
+        # 在席が戻ったときに OFF が復活しないよう要求自体を捨てる）。
+        prep = (self.mode == PREP_MODE)
+        presence = prep and self._presence_active
         if self._auto_brake_override is not None:
-            # パネルだけで許されている要求（手動系・ジョグ中・開発モードのどれでもない）は、
-            # 状態が変わったら捨てる（A-15）。ジョグ中は変化を許す（ジョグを始めたための
+            # パネルだけ・PREP だけで許されている要求は、状態が変わったら捨てる
+            # （A-15 / D73）。ジョグ中は変化を許す（ジョグを始めたための
             # 自律の一時停止など）ので、その間は基準の状態を追従させる。
+            # PREP を抜けた（モード変更）ときは _process 側で既に捨てている。
             panel_only = not override_allowed(attrs, self._jog_active, dev, False)
-            if not override_allowed(attrs, self._jog_active, dev, panel):
+            if not override_allowed(attrs, self._jog_active, dev, panel, presence):
                 self._auto_brake_override = None
             elif panel_only and self.state != self._override_state:
                 self._auto_brake_override = None
@@ -469,7 +475,7 @@ class StateManager(Node):
             'auto_brake_default_indoor').value).lower() != 'off'
         value = effective_auto_brake(attrs, zone, self._jog_active,
                                      self._auto_brake_override, dev, panel,
-                                     outdoor, indoor)
+                                     presence, outdoor, indoor)
         self._flags["auto_brake"] = value
         return value
 
@@ -923,7 +929,9 @@ class StateManager(Node):
             attrs = self.core.attributes(self.mode)
             dev = self._dev_auto_brake()
             panel = self._panel_open()
-            if not override_allowed(attrs, self._jog_active, dev, panel):
+            # D73: PREP は W-6 の知らせが無くても、使用中の端末が居る間は切り替えられる。
+            prep_ok = (self.mode == PREP_MODE) and self._presence_active
+            if not override_allowed(attrs, self._jog_active, dev, panel, prep_ok):
                 res.accepted = False
                 res.reject_reason_key = AUTO_BRAKE_LOCKED_REASON
                 return res

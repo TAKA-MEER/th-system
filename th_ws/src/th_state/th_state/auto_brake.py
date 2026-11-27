@@ -6,7 +6,8 @@
 正本は Spec-safety.md §2.1 と Spec-webui.md §3.5:
   - 自律系（attributes.yaml の `auto_brake_default: on_locked`）は無効化できない。
   - 手動系（手動走行・教示（手動））とジョグ介入中は、ゾーン既定に従う。
-    場外は OFF（警告のみ）、場内は ON。どちらも試験員が切り替えられる（既定であって固定ではない）。
+    場外・場内とも ON（2026-11-27 D75。従来は場外 OFF）。どちらも試験員が
+    切り替えられる（既定であって固定ではない）。
   - 画面の申告が途絶している・ゾーン NA のときは ON（安全側）。
   - 開発モードの項目 `auto_brake` が実効のときだけ（Spec-safety.md §10。2026-10-08 改定）、
     自律系・場内でも OFF の切替を受け付ける。**既定は通常と同じ**（項目を選んだだけでは
@@ -57,7 +58,8 @@ def dev_item_effective(raw, now_ms, recv_ms, item: str,
 
 def override_allowed(mode_attrs: Mapping[str, object], jog_active: bool,
                      dev_auto_brake: bool = False,
-                     panel_open: bool = False) -> bool:
+                     panel_open: bool = False,
+                     prep_free: bool = False) -> bool:
     """試験員が切り替えてよいか。
 
     手動系のモード（auto_brake_default が on_locked でない）か、ジョグ介入中
@@ -67,22 +69,25 @@ def override_allowed(mode_attrs: Mapping[str, object], jog_active: bool,
     `panel_open`（W-6 を開いている知らせが新しい）が真なら、スティックに触れていなくても
     切り替えてよい（A-15。2026-11-12 ユーザー決定。Spec-webui §3.5）。知らせの鮮度・
     閉じた・モードや状態が変わったときの戻しは呼び出し側（state_manager）が決める。
+    `prep_free`（試験準備 `PREP`。2026-11-27 D73）が真なら、W-6 の知らせが無くても
+    切り替えてよい。代わりに状態が変わった・`PREP` を抜けた・使用中の端末の心拍が
+    途絶えたら ON に戻す（呼び出し側が決める。在席の有無は呼び出し側の在席判定が渡す）。
     """
     return (mode_attrs.get("auto_brake_default") != LOCKED or bool(jog_active)
-            or bool(dev_auto_brake) or bool(panel_open))
+            or bool(dev_auto_brake) or bool(panel_open) or bool(prep_free))
 
 
 def zone_default(mode_attrs: Mapping[str, object], zone: str,
                  jog_active: bool,
-                 outdoor_default: bool = False,
+                 outdoor_default: bool = True,
                  indoor_default: bool = True) -> bool:
     """試験員の要求が無いときの既定値。
 
     場内（IN）は `indoor_default`（既定 ON。S-50 で変えた値は再起動後も維持）。
-    場外（OUT）の手動系・ジョグ介入中は `outdoor_default`（既定 OFF。S-50 で
-    変えた値は再起動後も維持。`attributes.yaml` の MANUAL / TEACH_MANUAL
-    `auto_brake_default: 'off'` は初期値の出どころで、実効は S-50 の値が優先する。
-    現行の attributes に素の 'on' の行は無く、既定値のままでは従来どおり OFF）。
+    場外（OUT）の手動系・ジョグ介入中は `outdoor_default`（既定 ON。2026-11-27
+    D75 で従来の OFF から変更。S-50 で変えた値は再起動後も維持。
+    `attributes.yaml` の MANUAL / TEACH_MANUAL `auto_brake_default: 'off'` は
+    「手動系」の印であって実効の既定値ではなく、実効は S-50 の値が優先する）。
     自律系（on_locked）でジョグ中でないときは S-50 の値に関わらず常に ON
     （Spec-safety §2.1「自律系の無効化は不可」。S-50 の既定が自律系を緩めない）。
     zone が NA を含む未知の値でも ON に倒す（安全側。S-50 の値に関わらず）。
@@ -104,18 +109,19 @@ def effective_auto_brake(mode_attrs: Mapping[str, object], zone: str,
                          override: Optional[bool],
                          dev_auto_brake: bool = False,
                          panel_open: bool = False,
-                         outdoor_default: bool = False,
+                         prep_free: bool = False,
+                         outdoor_default: bool = True,
                          indoor_default: bool = True) -> bool:
     """/system/state.auto_brake の値。
 
     override は試験員の要求（None なら無し）。切り替えを許さない状況（自律系・ゾーン NA）では
     要求を無視する。ゾーン NA（画面途絶・使用中 0 台を含む）は常に ON（安全側）。
     `outdoor_default` / `indoor_default` は S-50 で変える既定（state_manager が
-    registry 由来の値を渡す。既定は Spec-safety §2.1 と同じ off / on）。
+    registry 由来の値を渡す。既定は Spec-safety §2.1 と同じ on / on）。
     """
     if zone not in ("IN", "OUT"):
         return True
     if override is not None and override_allowed(mode_attrs, jog_active, dev_auto_brake,
-                                                 panel_open):
+                                                 panel_open, prep_free):
         return bool(override)
     return zone_default(mode_attrs, zone, jog_active, outdoor_default, indoor_default)

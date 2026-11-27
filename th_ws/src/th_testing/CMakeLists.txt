@@ -659,6 +659,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_auto_brake_panel_node
     test/test_auto_brake_panel_node.py
     TIMEOUT 180)
+  # R-3（D73・D75）。場外の手動の既定 ON・PREP の心拍なし OFF と在席途絶での戻し。
+  ament_add_pytest_test(test_auto_brake_prep_node
+    test/test_auto_brake_prep_node.py
+    TIMEOUT 180)
   ament_add_pytest_test(test_auto_brake_dev_limiter_node
     test/test_auto_brake_dev_limiter_node.py
     TIMEOUT 180)

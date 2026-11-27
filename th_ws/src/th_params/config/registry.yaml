@@ -226,10 +226,10 @@
   unit: null
   class: b
   status: given
-  value: 'off'
+  value: 'on'
   consumers: [state_manager]
   spec_ref: "DetailedDesign-names.md §7.1 / Spec-safety.md §2.1"
-  note: "S-50 で変える自動ブレーキの既定（場外の手動系。'on'/'off'）。state_manager が MANUAL / TEACH_MANUAL の attributes 既定に優先して使う。既定 'off'（Spec-safety §2.1）。ゾーン NA は値に関わらず ON（安全側）"
+  note: "S-50 で変える自動ブレーキの既定（場外の手動系。'on'/'off'）。state_manager が MANUAL / TEACH_MANUAL の attributes 既定に優先して使う。既定 'on'（Spec-safety §2.1。2026-11-27 D75 で従来の 'off' から変更）。ゾーン NA は値に関わらず ON（安全側）"
 
 - name: auto_brake_default_indoor
   unit: null
