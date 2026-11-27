@@ -31,6 +31,7 @@ export const SCREEN_NAMES = {
 }
 
 // ---------------------------------------------------------------- S-00 ----
+export const S00_CONNECT_TITLE = '機器の接続'
 export const S00_DIAG_PC = 'PC'
 export const S00_DIAG_AP = 'Wi-Fi AP（ラズパイ）'
 export const S00_DIAG_TABLET = 'タブレット'

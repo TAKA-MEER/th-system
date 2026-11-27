@@ -121,6 +121,11 @@ test('全項目が疎通しているのに INIT のとき（link_ok の直前）
 test('機器の名前は §1.2 の 15 px 以上で読める（描画後の大きさ）', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await gotoS00(page, { mode: 'INIT' }, PARTIAL)
+  // SVG は viewBox を縮小するので、描画後の大きさで縛る。図が主表示の約 2/3 を
+  // 占める（ SVG 幅が 600 px 以上）ことも縛る。古い 2 列が図を細い列に押し込み、
+  // 文字が 15 px 未満に落ちていた回帰の再発防止。
+  const svgW = await page.evaluate(() => Math.round(document.querySelector('svg').getBoundingClientRect().width))
+  expect(svgW, `図が小さい: SVG ${svgW}px`).toBeGreaterThanOrEqual(600)
   // SVG は viewBox を縮小するので、描画後の高さ（CSS px）で縛る。
   const heights = await page.evaluate(() => {
     const svg = document.querySelector('svg')

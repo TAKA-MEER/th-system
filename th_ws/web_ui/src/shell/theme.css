@@ -259,9 +259,9 @@ table{border-collapse:collapse;width:100%}
      疎通確認の表、右列＝総合＋自動判定。2 つの列は独立した縦積み（.split-col）なので、
      片方が伸びても他方の行がずれない（本文 592px に収める）。縦長では .split-col は
      ただの縦積みで、DOM 順がそのまま上から下の順になる。 */
-  #s01,#s00{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;align-items:start}
-  #s01 .card,#s00 .card{margin-bottom:0}
-  #s01 .split-col,#s00 .split-col{display:flex;flex-direction:column;gap:10px;min-width:0}
+  #s01{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;align-items:start}
+  #s01 .card{margin-bottom:0}
+  #s01 .split-col{display:flex;flex-direction:column;gap:10px;min-width:0}
   #s50 .tabpane.on{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
   #s50 .tabpane.on > .card{margin-bottom:0}
   /* 一般タブは区画を 1 つずつ全幅で出す（区画の切替は .s50-sections）。 */
@@ -1185,9 +1185,14 @@ table.lst td.r{text-align:right}
 
 /* ---------- S-00 接続確認（作り直し。Spec-webui §3.1・モックアップ） ---------- */
 #s00.screen{display:flex;flex-direction:column;min-height:0;height:100%;padding:0}
-#s00 .content.g-conn{flex:1;min-height:0;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) 300px;grid-template-rows:minmax(0,1fr);padding:12px 14px}
+/* 図の区画は本文の幅いっぱい。古い 2 列（.screen.two-col / 1.25fr 1fr）が効いて
+   図が細い列に押し込まれ、SVG が縮んで名前が読めなくなるのを防ぐ。 */
+#s00 .content.g-conn{flex:1;min-height:0;width:100%;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) 300px;grid-template-rows:auto minmax(0,1fr);padding:12px 14px}
+#s00 .content.g-conn > div:first-child{grid-column:1;grid-row:1}
+#s00 .content.g-conn > .diag{grid-column:1;grid-row:2;min-height:0}
+#s00 .content.g-conn > .side2{grid-column:2;grid-row:1/-1}
 #s00 .diag{position:relative;border:1px solid var(--bd);border-radius:8px;background:var(--inset);display:flex;flex-direction:column;min-height:0;padding:10px}
-#s00 .diag svg{flex:1;min-height:0;width:100%;height:auto}
+#s00 .diag svg{flex:1;min-height:0;width:100%;height:100%}
 #s00 .diag .fix{min-height:56px;display:flex;align-items:center;gap:10px;font-size:19px;padding:0 6px;color:var(--tx)}
 /* 明るい地の札（暗い地のままの .pill を S-00 の範囲で地に合わせる。
    「自動判定の結果はまだ届いていません」は白地に濃い字で読めるようにする） */
@@ -1209,7 +1214,8 @@ table.lst td.r{text-align:right}
 #s00 .ac .mk.none{background:var(--ctrl);color:var(--mut)}
 #s00 .push-bottom{margin-top:auto}
 @media (max-aspect-ratio: 1/1){
-  #s00 .content.g-conn{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}
+  #s00 .content.g-conn{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr) auto}
+  #s00 .content.g-conn > .side2{grid-column:1;grid-row:auto;grid-row:3}
 }
 
 /* ---------- S-50 設定（作り直し。Spec-webui §3.15・型: 見る・変える） ---------- */

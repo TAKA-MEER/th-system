@@ -17,7 +17,7 @@ import { linkRowView, linkDownKeys } from '../ros/linkStatusState.js'
 import HelpTip from '../parts/HelpTip.jsx'
 import ReasonButton from '../parts/ReasonButton.jsx'
 import {
-  S00_DIAG_PC, S00_DIAG_AP, S00_DIAG_TABLET, S00_DIAG_LIDAR, S00_DIAG_ESP32, S00_DIAG_CAM,
+  S00_CONNECT_TITLE, S00_DIAG_PC, S00_DIAG_AP, S00_DIAG_TABLET, S00_DIAG_LIDAR, S00_DIAG_ESP32, S00_DIAG_CAM,
   S00_DIAG_CHECKED_AT,
   S00_DIAG_FIX_LIDAR, S00_DIAG_FIX_ESP32, S00_DIAG_FIX_PC, S00_DIAG_FIX_AP, S00_DIAG_FIX_CAM,
   S00_LINK_TEXT, S00_ADVANCE, S00_OPEN_DEV,
@@ -51,12 +51,12 @@ function autoItemMark(result) {
 
 // 図の配置（テストの矩形 920x470。モックアップと同じ位置）。
 const N = {
-  pc: { x: 195, y: 250, name: S00_DIAG_PC, req: true },
-  ap: { x: 450, y: 250, name: S00_DIAG_AP, req: true },
-  tab: { x: 450, y: 70, name: S00_DIAG_TABLET, req: true },
-  lidar: { x: 725, y: 110, name: S00_DIAG_LIDAR, req: true },
-  esp: { x: 725, y: 250, name: S00_DIAG_ESP32, req: true },
-  cam: { x: 725, y: 400, name: S00_DIAG_CAM, req: false },
+  pc: { x: 180, y: 250, name: S00_DIAG_PC, req: true },
+  ap: { x: 540, y: 250, name: S00_DIAG_AP, req: true },
+  tab: { x: 540, y: 70, name: S00_DIAG_TABLET, req: true },
+  lidar: { x: 910, y: 110, name: S00_DIAG_LIDAR, req: true },
+  esp: { x: 910, y: 250, name: S00_DIAG_ESP32, req: true },
+  cam: { x: 910, y: 400, name: S00_DIAG_CAM, req: false },
 }
 const EDGES = [['pc', 'ap'], ['ap', 'tab'], ['ap', 'lidar'], ['ap', 'esp'], ['ap', 'cam']]
 
@@ -130,7 +130,7 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
     const n = N[k]
     const m = nodes[k].m
     // §1.2: 名前は 15px 以上。主表示いっぱいを前提に字を大きく（SVG の縮小を踏まえる）。
-    const w = k === 'ap' ? 330 : n.req ? 380 : 250
+    const w = k === 'pc' ? 300 : k === 'ap' ? 400 : n.req ? 340 : 250
     const h = n.req ? 84 : 68
     const sym = { ok: '✓', ng: '×', none: '—' }[m]
     const fill = { ok: 'var(--ok)', ng: 'var(--jis-y,#ffd100)', none: 'var(--ctrl-hi)' }[m]
@@ -169,7 +169,7 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
     )
   }
   const svg = (
-    <svg viewBox="0 30 920 420" preserveAspectRatio="xMidYMid meet" data-testid="s00-diag">
+    <svg viewBox="0 30 1080 420" preserveAspectRatio="xMidYMid meet" data-testid="s00-diag">
       {EDGES.map(([a, b]) => edge(a, b))}
       {Object.keys(N).map(node)}
     </svg>
@@ -190,6 +190,7 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
   return (
     <div className="screen" id="s00">
       <div className="content g-conn">
+        <div><h3>{S00_CONNECT_TITLE}</h3></div>
         <div className="diag" data-testid="s00-diagram">
           {svg}
           <div className="fix">
