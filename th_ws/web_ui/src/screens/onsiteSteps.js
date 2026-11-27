@@ -224,3 +224,22 @@ export function testSteps({ homeDeclared, mapOpened, selectedPinId, mode, stateN
   ]
   return { steps, currentIndex: currentIndexOf(steps.map((s) => s.done)) }
 }
+/**
+ * 点（経路の終端など）に最も近いピン。行き先を特定できないまま移動中が
+ * 始まったとき（画面を開き直した等）、経路の終端から行き先のピンを見つけるためのもの。
+ * @param {Array} pins
+ * @param {{x: number, y: number}|null} point
+ * @returns {Object|null}
+ */
+export function pinNearestToPoint(pins = [], point = null) {
+  if (!point || typeof point.x !== 'number' || typeof point.y !== 'number') return null
+  let best = null
+  let bestD = Infinity
+  pins.forEach((p) => {
+    const pos = p?.pose?.position
+    if (!pos) return
+    const d = Math.hypot(pos.x - point.x, pos.y - point.y)
+    if (d < bestD) { bestD = d; best = p }
+  })
+  return best
+}

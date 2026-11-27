@@ -645,3 +645,19 @@ test('ヘッダの札: IDLE_H は記号でなく「待機中」を出し、表�
   await setTestState(page, { mode: 'AT_HOME', state: 'NO_SUCH_STATE' })
   await expect(page.locator('#modePill')).toHaveCount(0)
 })
+
+test('右列 ①: 行き先を特定できないまま NAV でも「呼び寄せの位置」でなく向かっている盤の名を出す', async ({ page }) => {
+  // ui.goto を送っていない（行き先の特定が無い）。経路の終端（86,88）に最も近い盤は p1（盤 A-1）。
+  await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' }, {
+    plannedPath: [{ x: 0, y: 0 }, { x: 86, y: 88 }],
+  })
+  await expect(page.locator('[data-testid="s21-where"]')).toContainText('盤 A-1 へ')
+  await expect(page.locator('[data-testid="s21-where"]')).not.toContainText('呼び寄せの位置')
+})
+
+test('ボタンに矢印・四角の印は付かない（アイコンは例外だけ。§3.3.7）', async ({ page }) => {
+  await goto21(page, IDLE)
+  const ops = page.locator('[data-testid="s21-dest-home"], [data-testid="s21-dest-next-panel"], [data-testid="s21-dest-summon-here"], [data-testid="s21-measure"], [data-testid="s21-camera-open"], [data-testid="s21-abort"]')
+  await expect(ops.locator('svg')).toHaveCount(0)
+  await expect(page.locator('[data-testid="s21-dest-summon-here"]')).toContainText('呼び寄せ')
+})

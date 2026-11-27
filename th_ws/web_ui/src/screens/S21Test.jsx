@@ -49,11 +49,11 @@ import AutoBrakeDevCard from '../parts/AutoBrakeDevCard.jsx'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
 import { scanToPoints } from '../parts/scanToPoints.js'
-import { IconArrow, IconClose, IconStop } from '../parts/icons.jsx'
+import { IconClose } from '../parts/icons.jsx'
 import attributes from '../generated/attributes.json'
 import {
   NAV_MODES, nextPanelPin, onsiteReasons, abortAvailable,
-  remainingToDest, runBlockedByVenue,
+  pinNearestToPoint, remainingToDest, runBlockedByVenue,
 } from './onsiteSteps.js'
 import { baseToWorld } from '../mapGeometry.js'
 import { REJECT_REASONS, reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
@@ -372,10 +372,14 @@ export default function S21Test({ onExit }) {
 
   // 右列 ①「どこへ・あとどれだけ」。
   const destPin = pins.find((p) => p.id === destPinId) ?? null
+  // 行き先を特定できないまま移動中が始まったとき（画面を開き直した等）も
+  // 経路の終端から行き先のピンを引く（§3.11 ①「行き先の名前」）。
+  const pathDestPin = destPin
+    ?? (plannedPath?.length ? pinNearestToPoint(pins, plannedPath[plannedPath.length - 1]) : null)
   const remain = remainingToDest({ plannedPath, robotPose: routePose, destPin })
   let whereText
   if (isNavMode && MOVING_STATES.includes(stateName)) {
-    whereText = destPin ? S21_WHERE_TO(destPin.name || destPin.id) : S21_SUMMON_POS
+    whereText = pathDestPin ? S21_WHERE_TO(pathDestPin.name || pathDestPin.id) : S21_SUMMON_POS
   } else if (mode === 'AT_PANEL') {
     const cur = destPin ?? nextPanelPin(pins, routePose) ?? pins.find((p) => p?.kind === 'PANEL')
     whereText = cur ? S21_WHERE_AT_PANEL(cur.name || cur.id) : S21_SELECT_HINT
@@ -445,7 +449,6 @@ export default function S21Test({ onExit }) {
                 reasonTestId="s21-map-gate-reason"
                 onClick={() => handleOpenVenueMap()}
               >
-                <IconArrow />
                 <span>{S21_OPEN_VENUE_MAP}</span>
               </ReasonButton>
             </HelpTip>
@@ -490,8 +493,7 @@ export default function S21Test({ onExit }) {
                   reasonTestId="s21-pin-go-reason"
                   onClick={() => handlePinGo(selectedPin)}
                 >
-                  <IconArrow />
-                  <span>{S21_PIN_GO}</span>
+                    <span>{S21_PIN_GO}</span>
                 </ReasonButton>
               </HelpTip>
             </div>
@@ -644,7 +646,6 @@ export default function S21Test({ onExit }) {
           reasonTestId="reason-s21-dest-next-panel"
           onClick={handleNextPanel}
         >
-          <IconArrow />
           <span>
             {S21_DEST_NEXT_PANEL}
             <small data-testid="s21-next-panel-name">{nextPin ? `　${nextPin.name || nextPin.id} へ` : ''}</small>
@@ -661,8 +662,7 @@ export default function S21Test({ onExit }) {
             reasonTestId="reason-s21-dest-home"
             onClick={() => gotoDest('HOME')}
           >
-            <IconArrow />
-            <span>{S21_DEST_HOME}</span>
+              <span>{S21_DEST_HOME}</span>
           </ReasonButton>
         </HelpTip>
         <HelpTip helpKey="summon">
@@ -674,8 +674,7 @@ export default function S21Test({ onExit }) {
             reasonTestId="reason-s21-dest-summon-here"
             onClick={startSummon}
           >
-            <IconArrow />
-            <span>{S21_DEST_SUMMON_HERE}</span>
+              <span>{S21_DEST_SUMMON_HERE}</span>
           </ReasonButton>
         </HelpTip>
       </div>
@@ -690,7 +689,6 @@ export default function S21Test({ onExit }) {
               reasonTestId="s21-unstop-reason"
               onClick={openUnstop}
             >
-              <IconStop />
               <span>{S21_UNSTOP}</span>
             </ReasonButton>
           </HelpTip>
@@ -704,8 +702,7 @@ export default function S21Test({ onExit }) {
               reasonTestId="s21-measure-reason"
               onClick={startMeasure}
             >
-              <IconArrow />
-              <span>{S21_MEASURE}</span>
+                  <span>{S21_MEASURE}</span>
             </ReasonButton>
           </HelpTip>
         )}
@@ -718,8 +715,7 @@ export default function S21Test({ onExit }) {
             reasonTestId="s21-camera-reason"
             onClick={openCamera}
           >
-            <IconArrow />
-            <span>{S21_CAMERA}</span>
+              <span>{S21_CAMERA}</span>
           </ReasonButton>
         </HelpTip>
       </div>
@@ -749,7 +745,6 @@ export default function S21Test({ onExit }) {
           reasonTestId="s21-abort-reason"
           onClick={() => fire('ui.abort')}
         >
-          <IconStop />
           <span>{S21_BLOCKED_ABORT}</span>
         </ReasonButton>
       </HelpTip>

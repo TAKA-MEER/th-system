@@ -571,12 +571,12 @@ export const S21_PIN_MOVE = '移動'
 export const S21_NEXT_DEST_TITLE = '次の行き先'
 export const S21_DEST_HOME = '待機場所'
 export const S21_DEST_NEXT_PANEL = '次の配電盤'
-export const S21_DEST_SUMMON_HERE = 'その場で呼ぶ'
+export const S21_DEST_SUMMON_HERE = '呼び寄せ'
 export const S21_PICK_PANEL_HINT = '移動したいピンを押してください'
 // UX-7: ピンが 1 件も無いときの空表示。以前はカード見出し（S21_PREP_TITLE）を
 // そのまま出していて、同じ文字列が 2 回並んでいた。
 export const S21_PINS_EMPTY = '登録済みのピンがありません（前日の試験準備で登録します）'
-export const S21_SUMMON_TITLE = '(b) その場で呼ぶ'
+export const S21_SUMMON_TITLE = '(b) 呼び寄せ'
 export const S21_SUMMON_START = '呼び寄せ（2 点指示）'
 export const S21_WAIT_TITLE = '退避待ち — 退いてください'
 // SG-C8: 見失っている間（distance_m < 0）は距離を出さない。
