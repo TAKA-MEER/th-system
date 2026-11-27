@@ -24,7 +24,7 @@ const DEV_OFF = {
 async function openDevTab(page) {
   await page.getByTestId('s01-open-settings').click()
   await page.locator('#s50').waitFor()
-  await page.getByTestId('s50-tab-dev').click()
+  await page.getByTestId('s50-sec-dev').click()
   await expect(page.getByTestId('s50-dev-toggle')).toBeVisible()
 }
 
@@ -87,7 +87,7 @@ test('S-00 から開発モードの設定に入り、IDLE に達したら戻っ�
   await gotoScreen(page, 'S00', { mode: 'INIT' })
   await page.locator('#s00').waitFor()
   // INIT のあいだは「進む」は無く、開発モードの導線がある。
-  await expect(page.getByTestId('s00-advance')).toHaveCount(0)
+  await expect(page.getByTestId('s00-advance')).toHaveClass(/dis/)
   await page.getByTestId('s00-open-dev').click()
 
   // 開発モードタブで始まる（INIT では一般タブの読み込みが通らない）。
@@ -102,6 +102,7 @@ test('S-00 から開発モードの設定に入り、IDLE に達したら戻っ�
   // 機体側が evt.link_ok を出して IDLE に進んだ。
   await setTestState(page, { mode: 'IDLE' })
   await page.getByTestId('s50-back').click()
+  // S-00 に戻る（S-01 は IDLE で再利用可能）。
 
   await page.locator('#s00').waitFor()
   await page.getByTestId('s00-advance').click()

@@ -1,5 +1,5 @@
 // 1b-11（SG-B13・SG-B14・SG-B19・SG-C6・SG-C9 の S-14 分）の e2e。
-//  - S-01: 教示再生は経路 0 本で理由付きで押せない／電子リードはデバイス未接続で押せない
+//  - S-01: 教示再生は経路 0 本で理由付きで押せない（電子リードは 2026-11-27 廃止で消した）
 //  - S-14: 地図更新トグル（既定 OFF）→ 送信、ON のときだけ操作カードに「保存」
 //  - S-14: 始点・終点の印／後方の死角の表示／待ち時間の表示
 import { test, expect } from '@playwright/test'
@@ -13,32 +13,21 @@ const PREVIEW = [
 ]
 
 test('S-01: 経路 0 本だと教示再生は dis 表示で、押すと no_route_recorded の理由が出る', async ({ page }) => {
-  await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true, leash_present: true })
-  const replay = page.getByRole('button', { name: '教示再生' })
+  await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
+  await page.getByTestId('s01-group-drive').click()
+  const replay = page.getByTestId('s01-mode-REPLAY')
   await expect(replay).toHaveClass(/\bdis\b/)
   await replay.click()
-  await expect(page.locator('.win.confirm.show')).toBeVisible()
-  await expect(page.locator('.win.confirm.show')).toContainText('教示済みの経路がありません')
+  await expect(page.getByTestId('s01-reason-window')).toBeVisible()
+  await expect(page.getByTestId('s01-reason-window')).toContainText('教示済みの経路がありません')
 })
 
 test('S-01: 経路があれば教示再生は押せる', async ({ page }) => {
   await gotoScreenWithRouteCatalog(page, 'S01',
-    { mode: 'IDLE', tracker_enabled: true, leash_present: true }, ROUTES)
-  const replay = page.getByRole('button', { name: '教示再生' })
+    { mode: 'IDLE', tracker_enabled: true }, ROUTES)
+  await page.getByTestId('s01-group-drive').click()
+  const replay = page.getByTestId('s01-mode-REPLAY')
   await expect(replay).not.toHaveClass(/\bdis\b/)
-})
-
-test('S-01: リードデバイス未接続だと電子リードは dis 表示', async ({ page }) => {
-  await gotoScreenWithRouteCatalog(page, 'S01',
-    { mode: 'IDLE', tracker_enabled: true, leash_present: false }, ROUTES)
-  await expect(page.getByRole('button', { name: '電子リード' })).toHaveClass(/\bdis\b/)
-  await setTestState(page, { leash_present: true })
-  await expect(page.getByRole('button', { name: '電子リード' })).not.toHaveClass(/\bdis\b/)
-})
-
-test('S-01: 教示は保管場所から開始する案内が出る', async ({ page }) => {
-  await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
-  await expect(page.locator('body')).toContainText('保管場所から開始してください')
 })
 
 test('S-14: 地図の更新は OFF 固定で押せず、理由が出て、「保存」も出ない', async ({ page }) => {

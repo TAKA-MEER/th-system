@@ -22,9 +22,10 @@ for (const size of SIZES) {
       tracker_enabled: true,
       unsaved: ['venue_map', 'route', 'calib', 'map_patch'],
     })
-    // M-3: the unsaved count must show as a badge, not an expanded list
-    // (that expansion is what broke the 768px budget in the mockup).
+    // M-3: 未保存の件数は件数表示で、展開した一覧にしない（昔のモックアップで
+    // はみ出した）。
     await expect(page.locator('.card', { hasText: '運用の終了' })).toContainText('4 件')
+    await expect(page.getByTestId('s01-shutdown')).toBeVisible()
 
     const scrollable = await page.evaluate(
       () => document.body.scrollHeight > window.innerHeight,

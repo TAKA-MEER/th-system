@@ -20,8 +20,9 @@ test('S-01 手動走行 accepted by th_state -> S-11 renders', async ({ page }) 
   await stubTrigger(page, { 'ui.enter_mode': { accepted: true, reject_reason_key: '' } })
   await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
 
-  const manual = page.getByRole('button', { name: '手動走行' })
-  await expect(manual).toBeEnabled()
+  await page.getByTestId('s01-group-drive').click()
+  const manual = page.getByTestId('s01-mode-MANUAL')
+  await expect(manual).not.toHaveClass(/dis/)
   await manual.click()
 
   // 受理されただけでは動かない（FSM がまだ IDLE を publish している段階）。
@@ -38,12 +39,13 @@ test('S-01 手動走行 rejected by th_state stays on S-01 with a reason window'
   // shows why even for a denied-but-visible button).
   await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
 
-  const manual = page.getByRole('button', { name: '手動走行' })
+  await page.getByTestId('s01-group-drive').click()
+  const manual = page.getByTestId('s01-mode-MANUAL')
   await manual.click()
 
   // Rejected: no S-11, reason window shown on S-01.
   await expect(page.locator('#s11')).toHaveCount(0)
-  await expect(page.locator('.win.confirm.show')).toBeVisible()
+  await expect(page.getByTestId('s01-reason-window')).toBeVisible()
 })
 
 // ── 回帰テスト: 2026-09-02 に直した「モードと画面の乖離で操作不能」 ──

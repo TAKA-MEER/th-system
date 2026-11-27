@@ -7,64 +7,69 @@
 // case (mode_entry_denied, computed locally) is what's driven through the
 // UI here; the "server said no after all" path is covered by menuItems()
 // unit tests + code review, not by clicking through a live service.
+//
+// Spec-webui §3.2 (2026-11-27 作り直し): ライン誘導・電子リードの入口は消えた。
 import { test, expect } from '@playwright/test'
 import { gotoScreen, gotoScreenWithRouteCatalog, setTestState } from './helpers.js'
 
-test('M-1: every menu button is disabled while mode is INIT', async ({ page }) => {
+test('M-1: every menu tile is disabled while mode is INIT', async ({ page }) => {
   await gotoScreen(page, 'S01', { mode: 'INIT' })
-  const buttons = page.locator('.btnrow .btn')
-  const count = await buttons.count()
-  expect(count).toBeGreaterThan(0)
-  for (let i = 0; i < count; i++) {
-    await expect(buttons.nth(i)).toBeDisabled()
+  const buttons = page.locator('.tile')
+  // 一番上の 5 タイル（試験場▸・走行▸・点検と校正▸・自律測定・設定）。
+  await expect(buttons).toHaveCount(5)
+  for (let i = 0; i < 4; i++) {
+    await expect(buttons.nth(i)).toHaveClass(/dis/)
   }
+  // 設定タイルだけは INIT でも押せる（FSM を動かさない。S-00 の開発モードと同じ）。
+  await expect(page.getByTestId('s01-open-settings')).not.toHaveClass(/dis/)
+  await expect(page.getByTestId('s01-open-settings')).not.toBeDisabled()
 })
 
-test('mode IDLE: every menu button is enabled (mode_entry.yaml allows all 10 from IDLE)', async ({ page }) => {
-  // 1b-11 SG-B13: 教示再生は経路が 1 本以上、電子リードはデバイス接続済みが前提。
-  await gotoScreenWithRouteCatalog(page, 'S01', { mode: 'IDLE', tracker_enabled: true, leash_present: true },
+test('mode IDLE: every mode tile is enabled (mode_entry.yaml allows all 9 from IDLE)', async ({ page }) => {
+  // 1b-11 SG-B13: 教示再生は経路が 1 本以上が前提。
+  await gotoScreenWithRouteCatalog(page, 'S01', { mode: 'IDLE', tracker_enabled: true },
     [{ id: 'r1', name: '経路1', length_m: 5, point_count: 10 }])
-  const buttons = page.locator('.btnrow .btn')
-  const count = await buttons.count()
-  for (let i = 0; i < count; i++) {
-    await expect(buttons.nth(i)).toBeEnabled()
-    await expect(buttons.nth(i)).not.toHaveClass(/\bdis\b/)
+  // ライン誘導・電子リードは無い（D7）。
+  await expect(page.getByTestId('s01-group-field')).toHaveCount(1)
+  await page.getByTestId('s01-group-drive').click()
+  const tiles = page.locator('.tile')
+  for (let i = 0; i < await tiles.count(); i++) {
+    await expect(tiles.nth(i)).not.toHaveClass(/\bdis\b/)
   }
+  await expect(page.locator('[data-testid="s01-mode-LINE"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="s01-mode-LEASH"]')).toHaveCount(0)
+  await page.getByTestId('s01-back').click()
+  await expect(page.locator('[data-testid="s01-mode-FOLLOW"]')).toHaveCount(0)
+  await expect(page.getByTestId('s01-group-drive')).toHaveCount(1)
 })
 
-// 2026-09-02: 以前はここで mode MANUAL を seed していたが、main.jsx が
-// 画面を SystemState.mode から導出するようになった今、mode MANUAL では
-// S-11 が描画されるので S-01 のボタンは存在しない。
-// そもそも「mode MANUAL のまま S-01 に居る」状態は修正前から本番では
-// 到達不能で（S-11 から戻る手段は 終了 → ui.finish → IDLE だけ）、
-// このテストが直接 seed して作っていた合成状態だった。
-// 検証したいのは menuItems() の「今のモードから入れないボタンは dis 表示、
-// 押すと理由ウィンドウ」という挙動なので、専用画面を持たない＝S-01 が
-// 正しく描画されるモードで同じ形を突く。
-// WP-UI-08: OPCHECK は S-30、WP-MAINT-03: CALIB は S-40 ができたため、どちらも S-01 ではなく
-// 専用画面が描画される。今は FOLLOW（mode_entry.json では IDLE にしか行けない）を使う。
-test('mode FOLLOW: 入れないボタンは dis 表示で、押すと mode_entry_denied', async ({ page }) => {
+// 2026-09-02: mode MANUAL では S-11 が描画されるため、検証は専用画面が無い
+// FOLLOW（mode_entry.json では IDLE にしか行けない）で同じ形を突く。
+// WP-UI-08: OPCHECK は S-30、WP-MAINT-03: CALIB は S-40 の専用画面。
+test('mode FOLLOW: 入れないタイルは dis 表示で、押すと mode_entry_denied', async ({ page }) => {
   await gotoScreen(page, 'S01', { mode: 'FOLLOW', tracker_enabled: true })
 
-  const opcheck = page.getByRole('button', { name: '始業点検' })
-  await expect(opcheck).toBeEnabled() // clickable so the reason can show, but styled as denied
-  await expect(opcheck).toHaveClass(/\bdis\b/)
+  // 点検と校正の階層へ。
+  await page.getByTestId('s01-group-maint').click()
+  const opcheck = page.getByTestId('s01-mode-OPCHECK')
+  await expect(opcheck).toHaveClass(/dis/)
 
   await opcheck.click()
-  await expect(page.locator('.win.confirm.show')).toBeVisible()
-  await expect(page.locator('.win.confirm.show')).toContainText('今のモードからは移動できません')
+  await expect(page.getByTestId('s01-reason-window')).toBeVisible()
+  await expect(page.getByTestId('s01-reason-window')).toContainText('今のモードからは移動できません')
 })
 
 test('tracker_disabled: FOLLOW shows its own reason text, distinct from mode_entry_denied', async ({ page }) => {
   await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
   await setTestState(page, { tracker_enabled: false })
 
-  const follow = page.getByRole('button', { name: '追従走行' })
-  await expect(follow).toHaveClass(/\bdis\b/)
+  await page.getByTestId('s01-group-drive').click()
+  const follow = page.getByTestId('s01-mode-FOLLOW')
+  await expect(follow).toHaveClass(/dis/)
   await follow.click()
-  await expect(page.locator('.win.confirm.show')).toContainText('人物追跡がOFFです')
+  await expect(page.getByTestId('s01-reason-window')).toContainText('人物追跡がOFFです')
 
   // Closing returns to a clean state (no lingering modal / backdrop).
-  await page.getByRole('button', { name: '確認' }).click()
-  await expect(page.locator('.win.confirm.show')).toHaveCount(0)
+  await page.getByTestId('s01-reason-window').getByRole('button', { name: '確認' }).click()
+  await expect(page.getByTestId('s01-reason-window')).toHaveCount(0)
 })

@@ -172,7 +172,7 @@ test('(e) S-50 の「フォルト履歴」タブに同じ一覧が出る', async
   await setHistory(page, history(R(), R({ fault_type: 'ESP32_DISCONNECTED', started_at: T0 - 90, duration_s: 12 })))
   await page.getByTestId('s01-open-settings').click()
   await page.locator('#s50').waitFor()
-  await page.getByTestId('s50-tab-faults').click()
+  await page.getByTestId('s50-sec-log').click()
   const rows = page.getByTestId('s50-faults').getByTestId('fh-row')
   await expect(rows).toHaveCount(2)
   await expect(rows.nth(1).getByTestId('fh-dur')).toHaveText('12 秒')
@@ -184,7 +184,7 @@ test('(f) 空のときは「フォルトの記録はありません」', async (
   await gotoScreen(page, 'S01', { mode: 'IDLE' })
   await page.getByTestId('s01-open-settings').click()
   await page.locator('#s50').waitFor()
-  await page.getByTestId('s50-tab-faults').click()
+  await page.getByTestId('s50-sec-log').click()
   await expect(page.getByTestId('fh-empty')).toHaveText('フォルトの記録はありません')
   // ヘッダの窓も同じ空表示（記録が 0 件ならチップ自体が出ない）。
   await expect(page.getByTestId('recent-fault')).toHaveCount(0)

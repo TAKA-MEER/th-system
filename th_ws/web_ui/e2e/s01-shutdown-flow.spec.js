@@ -42,7 +42,7 @@ test('5-step flow: prepare -> per-item resolve -> gated confirm -> execute -> co
   await page.getByRole('button', { name: '制御系を停止する' }).click()
 
   // Step 2: W-4 opens with the unsaved list (from /shutdown/prepare).
-  const win = page.locator('.win.confirm.show')
+  const win = page.getByTestId('s01-shutdown-window')
   await expect(win).toBeVisible()
   await expect(win).toContainText('教示経路')
 
@@ -83,7 +83,7 @@ test('execute が通っても接続が切れなければ完了を出さない（
   await gotoScreen(page, 'S01', { mode: 'IDLE' })
   await page.getByRole('button', { name: '制御系を停止する' }).click()
 
-  const win = page.locator('.win.confirm.show')
+  const win = page.getByTestId('s01-shutdown-window')
   await win.getByRole('button', { name: '停止する' }).click()
   await expect(win).toHaveCount(0)
   const card = page.locator('.card', { hasText: '運用の終了' })
@@ -98,7 +98,7 @@ test('未保存が残っている間は「停止する」が押せず理由が�
   await gotoScreen(page, 'S01', { mode: 'IDLE', unsaved: ['route', 'calib'] })
   await page.getByRole('button', { name: '制御系を停止する' }).click()
 
-  const win = page.locator('.win.confirm.show')
+  const win = page.getByTestId('s01-shutdown-window')
   const confirmBtn = win.getByRole('button', { name: '停止する' })
   await expect(confirmBtn).toBeDisabled()
   await expect(win.getByTestId('shutdown-blocked-reason')).toContainText('残り 2 件')
@@ -112,7 +112,7 @@ test('discard uses the two-stage armed button (§3.2.1 step 3) and calls the rea
   await gotoScreen(page, 'S01', { mode: 'IDLE', unsaved: ['venue_map'] })
   await page.getByRole('button', { name: '制御系を停止する' }).click()
 
-  const win = page.locator('.win.confirm.show')
+  const win = page.getByTestId('s01-shutdown-window')
   await expect(win).toContainText('試験場内地図')
 
   const discard = win.getByRole('button', { name: '破棄', exact: true })
@@ -136,7 +136,7 @@ test('venue_map の「保存」は /map_session/open (VENUE, save) を呼ぶ', a
   await page.addInitScript(() => { window.__thTestSaveVenueMap = { success: true, message: '' } })
   await gotoScreen(page, 'S01', { mode: 'IDLE', unsaved: ['venue_map'] })
   await page.getByRole('button', { name: '制御系を停止する' }).click()
-  const win = page.locator('.win.confirm.show')
+  const win = page.getByTestId('s01-shutdown-window')
   await prepareNowReturns(page, [])
   await win.getByRole('button', { name: '保存', exact: true }).click()
   await expect(win).toContainText('処理済み')
@@ -153,7 +153,7 @@ test('操作が通っても機体側の一覧から消えなければ処理済�
   })
   await gotoScreen(page, 'S01', { mode: 'IDLE', unsaved: ['route'] })
   await page.getByRole('button', { name: '制御系を停止する' }).click()
-  const win = page.locator('.win.confirm.show')
+  const win = page.getByTestId('s01-shutdown-window')
   await win.getByRole('button', { name: '保存', exact: true }).click()
   await expect(win.getByTestId('shutdown-error-route')).toBeVisible({ timeout: 10000 })
   await expect(win).not.toContainText('処理済み')
@@ -166,7 +166,7 @@ test('画面から扱えない項目（校正の補正値）は保存・破棄�
   })
   await gotoScreen(page, 'S01', { mode: 'IDLE', unsaved: ['calib'] })
   await page.getByRole('button', { name: '制御系を停止する' }).click()
-  const win = page.locator('.win.confirm.show')
+  const win = page.getByTestId('s01-shutdown-window')
   await expect(win.getByTestId('shutdown-noaction-calib')).toBeVisible()
   await expect(win.getByRole('button', { name: '保存', exact: true })).toHaveCount(0)
   await expect(win.getByRole('button', { name: '停止する' })).toBeDisabled()
@@ -180,7 +180,7 @@ test('server-side rejection (unsaved_remains) is shown via i18n/reasons.js, not 
   await gotoScreen(page, 'S01', { mode: 'IDLE' })
   await page.getByRole('button', { name: '制御系を停止する' }).click()
 
-  const win = page.locator('.win.confirm.show')
+  const win = page.getByTestId('s01-shutdown-window')
   await expect(win).toContainText('未保存のデータはありません')
   await win.getByRole('button', { name: '停止する' }).click()
   await expect(win).toContainText('未保存のデータが残っています')
