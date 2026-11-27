@@ -12,11 +12,12 @@ const attributes = JSON.parse(
 
 const BG = async (loc) => loc.evaluate((el) => getComputedStyle(el).backgroundColor)
 const BG_TRANSPARENT = 'rgba(0, 0, 0, 0)'
-const BG_CURRENT = 'rgb(44, 74, 116)' // --ctrl-on（青の塗り）
+// Spec-webui.md §3.3.1（JIS配色）: 明るい地が既定。--ctrl-on は選んだ状態の塗り。
+const BG_CURRENT = 'rgb(91, 102, 117)' // --ctrl-on（今の状態）
 const BG_CONFIRM = 'rgb(23, 54, 29)' // 緑の塗り（保存）
 const BG_NEXT_STOP = 'rgb(161, 30, 30)' // 赤の塗り（次に押す停止）
-const BG_FACE = 'rgb(37, 40, 48)' // --ctrl（面＋枠。透明ではない）
-const BG_NEXT_RUN = 'rgb(52, 56, 73)' // --ctrl-hi（次に押す走行。白い太枠）
+const BG_FACE = 'rgb(230, 234, 240)' // --ctrl（面＋枠。透明ではない）
+const BG_NEXT_RUN = 'rgb(213, 219, 228)' // --ctrl-hi（次に押す走行。白い太枠）
 
 // ── SG-C10: 非常停止を解除バー ────────────────────────────────────────────
 
@@ -63,39 +64,41 @@ test('SG-C10: UI 非常停止ボタンを押すと解除バーが出て、解除
 
 // ── SG-C3: ヘッダの色 ─────────────────────────────────────────────────────
 
-test('SG-C3: ヘッダの色がモード・開発モードで変わる', async ({ page }) => {
-  await gotoWithState(page, { mode: 'IDLE' })
+test('SG-C3: ヘッダの地色はモードで変わらない。状態は状態札で読む', async ({ page }) => {
+  await gotoWithState(page, { mode: 'IDLE', state: 'NONE' })
   const hdr = page.locator('#hdr')
-  const bgOf = async () => hdr.evaluate((el) => getComputedStyle(el).backgroundImage)
-
-  await expect(hdr).toHaveAttribute('data-tone', 'normal')
+  const bgOf = async () => hdr.evaluate((el) => getComputedStyle(el).backgroundColor)
   const normal = await bgOf()
 
-  await setTestState(page, { mode: 'ESTOP', estop_ui: true })
-  await expect(hdr).toHaveAttribute('data-tone', 'estop')
-  const estop = await bgOf()
+  // 緑「進む」状態の札が出る。地色は変わらない。
+  await setTestState(page, { mode: 'FOLLOW', state: 'RUN' })
+  await expect(page.locator('#modePill')).toHaveAttribute('data-tone', 'go')
+  expect(await bgOf()).toBe(normal)
 
-  await setTestState(page, { mode: 'CARRY', estop_ui: false, estop_hw: true })
-  await expect(hdr).toHaveAttribute('data-tone', 'carry')
-  const carry = await bgOf()
+  // 非常停止の札は赤
+  await setTestState(page, { mode: 'ESTOP', state: 'PAUSE', estop_ui: true })
+  await expect(page.locator('#modePill')).toHaveAttribute('data-tone', 'estop')
+  expect(await bgOf()).toBe(normal)
 
-  expect(new Set([normal, estop, carry]).size, '3 つの色が互いに違うこと').toBe(3)
+  // 一時停止は白灰黒の札
+  await setTestState(page, { mode: 'FOLLOW', state: 'PAUSE' })
+  await expect(page.locator('#modePill')).toHaveAttribute('data-tone', 'neutral')
+  expect(await bgOf()).toBe(normal)
 })
 
-test('SG-C3: 開発モード中はヘッダの色が変わる（非常停止の赤は開発モードに負けない）', async ({ page }) => {
-  await gotoWithState(page, { mode: 'IDLE' })
+test('SG-C3: 開発モード中はヘッダの色が変わり、開発札で読む（非常停止の赤は開発モードに負けない）', async ({ page }) => {
+  await gotoWithState(page, { mode: 'IDLE', state: 'NONE' })
   const hdr = page.locator('#hdr')
-  const bgOf = () => hdr.evaluate((el) => getComputedStyle(el).backgroundImage)
+  const bgOf = () => hdr.evaluate((el) => getComputedStyle(el).backgroundColor)
   const normal = await bgOf()
 
   // ?dev=1 で開き直す（初期化スクリプトの状態は引き継がれる）。
   await page.goto('/?dev=1')
   await expect(page.locator('#devPill')).toBeVisible()
-  await expect(hdr).toHaveAttribute('data-tone', 'dev')
   expect(await bgOf()).not.toBe(normal)
 
-  await setTestState(page, { mode: 'ESTOP', estop_ui: true })
-  await expect(hdr).toHaveAttribute('data-tone', 'estop')
+  await setTestState(page, { mode: 'ESTOP', state: 'PAUSE', estop_ui: true })
+  await expect(page.locator('#modePill')).toHaveAttribute('data-tone', 'estop')
 })
 
 // ── SG-C2: 操作カードの色（U-17） ─────────────────────────────────────────
@@ -106,7 +109,7 @@ async function openHarness(page, st) {
 }
 const op = (page, cls) => page.locator(`[data-testid="opcard-harness"] .opsgrid .${cls}`)
 
-test('SG-C2: 走行中は走行だけが青塗り、停止は赤塗り、確認・手動は面＋枠、保存は緑塗り', async ({ page }) => {
+test('SG-C2: 走行中は走行だけが今の色、停止は赤、確認・手動は面＋枠、保存は緑', async ({ page }) => {
   await openHarness(page, { mode: 'REPLAY', state: attributes.REPLAY.run_state })
   expect(await BG(op(page, 'op-run'))).toBe(BG_CURRENT)
   expect(await BG(op(page, 'op-stop'))).toBe(BG_NEXT_STOP)
@@ -115,14 +118,14 @@ test('SG-C2: 走行中は走行だけが青塗り、停止は赤塗り、確認�
   expect(await BG(op(page, 'op-save'))).toBe(BG_CONFIRM)
 })
 
-test('SG-C2: 停止中は停止だけが青塗り（走行は青くない）', async ({ page }) => {
+test('SG-C2: 停止中は停止だけが今の色（走行は違う）', async ({ page }) => {
   await openHarness(page, { mode: 'REPLAY', state: attributes.REPLAY.resume_state })
   expect(await BG(op(page, 'op-stop'))).toBe(BG_CURRENT)
   expect(await BG(op(page, 'op-run'))).toBe(BG_NEXT_RUN)
   expect(await BG(op(page, 'op-save'))).toBe(BG_CONFIRM)
 })
 
-test('SG-C2: 確認中は確認だけが青塗り（青が 2 つ並ばない）', async ({ page }) => {
+test('SG-C2: 確認中は確認だけが今の色（今の色が 2 つ並ばない）', async ({ page }) => {
   await openHarness(page, { mode: 'REPLAY', state: attributes.REPLAY.initial_state })
   expect(await BG(op(page, 'op-check'))).toBe(BG_CURRENT)
   expect(await BG(op(page, 'op-run'))).toBe(BG_FACE)
