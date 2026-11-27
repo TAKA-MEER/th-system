@@ -1,0 +1,46 @@
+/* screens/follow.css — S-10 追従走行・S-12 教示（追従）だけの配置。
+ *
+ * 型は「走らせる」（src/shell/Layouts.jsx の RunLayout）。骨組みに CSS は無いため
+ * この 2 画面の分だけここに書く（S-11/S-13 の manualRun.css と同じ流儀）。
+ * 操作バーは高さ 68・左右の余白 14。中身は上下 12・左右 14 の余白、区画の間は 12
+ * （モックアップの .opbar・.content）。
+ */
+#s10 .g-drv, #s12 .g-drv { display: flex; flex-direction: column; gap: 12px; min-height: 0; height: 100%; box-sizing: border-box; padding: 12px 14px; }
+#s10 .g-drv-row, #s12 .g-drv-row { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; align-items: stretch; min-height: 0; flex: 1 1 auto; }
+#s10 .g-drv > [data-pos="opbar"], #s12 .g-drv > [data-pos="opbar"] { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; height: 68px; margin-left: -14px; margin-right: -14px; padding-left: 14px; padding-right: 14px; box-sizing: border-box; flex: none; }
+#s10 .g-drv .rcol, #s12 .g-drv .rcol { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+#s10 .g-drv .rops, #s12 .g-drv .rops { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+#s10 .stick svg, #s12 .stick svg { max-height: 170px; }
+
+/* S-10 主表示: 対象選択レーダー いっぱい */
+.s10-main { height: 100%; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.s10-main .card { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 0; }
+.s10-main .radar { height: 100%; width: auto; max-width: 100%; max-height: 100%; min-height: 0; }
+.s10-where { display: flex; flex-direction: column; gap: 2px; font-size: 15px; }
+.s10-where b { font-size: 28px; font-weight: 800; }
+
+/* S-12 主表示: レーダー＋作成中の地図と経路（小さく。押すと大小を入れ替え）。
+ * 入口（経路選択）は主表示の中央のカード。 */
+.s12-main { position: relative; height: 100%; min-height: 280px; }
+.s12-radar { position: absolute; display: flex; align-items: center; justify-content: center; min-height: 0; }
+.s12-radar.large { inset: 0; }
+.s12-radar.small { left: 50%; top: 50%; width: 280px; height: 280px; transform: translate(-50%, -50%); background: var(--bg, #f4f6f9); border-radius: 8px; }
+.s12-radar .card { display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; min-height: 0; }
+.s12-radar .radar { height: 100%; width: auto; max-width: 100%; max-height: 100%; min-height: 0; }
+.s12-map { position: absolute; min-height: 0; display: flex; flex-direction: column; }
+.s12-map.small { left: 12px; bottom: 12px; width: min(340px, 55%); }
+.s12-map.large { inset: 0; }
+.s12-map .mapWrap { position: relative; min-height: 0; }
+.s12-map.small .mapWrap svg { max-height: 240px; }
+.s12-map.large .mapWrap { flex: 1 1 auto; min-height: 0; }
+.s12-map.large .mapWrap svg { height: 100%; width: 100%; max-height: none; }
+.s12-map-swap { align-self: flex-start; margin-top: 6px; }
+.s12-entry { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.s12-entry .card { max-width: 420px; width: 100%; }
+
+@media (max-aspect-ratio: 1/1) {
+  #s10 .g-drv-row, #s12 .g-drv-row { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  #s10 .g-drv .rcol, #s12 .g-drv .rcol { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+  #s10 .g-drv .rjog, #s12 .g-drv .rjog { grid-column: 2; grid-row: 1; }
+  #s10 .g-drv .rjog .stick svg, #s12 .g-drv .rjog .stick svg { max-height: 220px; }
+}

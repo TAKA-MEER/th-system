@@ -9,6 +9,10 @@ import { S40_ITEM_LABELS } from './calib.js'
 export const SCREEN_NAMES = {
   S00: '接続確認',
   S01: 'メインメニュー',
+  // S-10 追従走行（FOLLOW）・S-12 教示（追従）（TEACH_FOLLOW）。
+  // 型「走らせる」（Spec-webui.md §3.4）。正式値は names.json / Spec-webui.md §2 が正。
+  S10: '追従走行',
+  S12: '教示（追従）',
   // S-11 手動走行（Spec-webui.md §2 の画面名の表）。
   S11: '手動走行',
   // P5 / demo-teach-replay: S-13 教示（手動）と S-14 教示再生。
@@ -291,6 +295,24 @@ export const S11_GAUGE_PERCENT = '%'
 export const S11_GAUGE_PER_SEC = '/秒'
 export const S11_GAUGE_NO_VALUE = '—'
 export const S11_GAUGE_NEAR_LABEL = (text) => text
+
+// ---------------------------------------------------------------- S-10（追従走行）・S-12（教示（追従））----
+// Spec-webui.md §3.4・§3.6。型「走らせる」。主表示は対象選択レーダー
+// （RadarSelect）。右列 ① S-10 は対象までの距離、S-12 は記録の量。
+// ② 停止│走行 ③ 向く（薄い緑の別ボタン。ui.confirm）④ スティック常設。
+export const S10_DISTANCE_LABEL = '対象まで'
+export const S10_NO_TARGET = '対象を選んでいません'
+export const S10_DIST = (m) => `${m.toFixed(1)} m`
+export const S12_MAP_CAPTION = '地図と経路'
+export const S12_MAP_SWAP = '地図とレーダーの大きさを入れ替え'
+export const S12_RUN_DENY_ROUTE = '経路を選んでから'
+export const S10_RUN_DENY_TARGET = '対象を選んでから'
+export const S10_RUN_DENY_FACE = '向いてから'
+export const S10_FACE_DENY_RUNNING = '走っています'
+export const S10_FACE_DENY_FACED = '向いています'
+export const S10_FACE_DENY_STOPPED = '止まっています'
+export const S12_SAVE_DENY_EMPTY = '記録がまだありません'
+export const S12_SAVE_DENY_SAVED = '保存しました'
 
 // ---------------------------------------------------------------- S-13 (教示（手動）) ----
 // P5 / demo-teach-replay. Spec-transit.md §0.5 / U-5: 教示（手動）＝手動走行画面＋
