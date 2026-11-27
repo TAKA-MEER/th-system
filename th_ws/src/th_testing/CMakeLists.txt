@@ -292,6 +292,11 @@ if(BUILD_TESTING)
     test/test_pin_clearance_core.py
     TIMEOUT 30)
 
+  # 配電盤の順番変更の純ロジック (R-5。th_onsite の純ロジック。ROS2 不要)
+  ament_add_pytest_test(test_pin_order_core
+    test/test_pin_order_core.py
+    TIMEOUT 30)
+
   # 機体姿勢ピン登録コア (REG-2。HOME 置換 / PANEL 連番の pin dict 構築。
   # th_onsite の純ロジック。ROS2 不要)
   ament_add_pytest_test(test_robot_pose_register_core
@@ -731,6 +736,10 @@ if(BUILD_TESTING)
   # 1b-11 SG-B16: pin_registrar のピン再登録（同じ id・同じ名前のまま位置と向きだけ。launch_testing）
   ament_add_pytest_test(test_pin_reregister_node
     test/test_pin_reregister_node.py
+    TIMEOUT 180)
+  # R-5（D60・D64）: 配電盤の順番変更（前へ／後へ・まとめて決める。launch_testing）
+  ament_add_pytest_test(test_pin_order_node
+    test/test_pin_order_node.py
     TIMEOUT 180)
   # 退避待ちゲートの disabled 結合テスト（brief-tracker-default-off §3.3。
   # /person/status が is_lost=True / lost_reason="disabled" の間 clear_ok を
