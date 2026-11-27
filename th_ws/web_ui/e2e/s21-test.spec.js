@@ -335,8 +335,8 @@ test('会場地図なし: PANEL_NAV/PAUSE の再開するは押せない（読�
 })
 
 test('次の配電盤: 順番が次に来る盤へそのまま出発する（行き先の名前入り）', async ({ page }) => {
-  await goto21(page, IDLE, { selectPin: { success: true, message: '' } })
-  // 機体（0,0）に最も近い盤は p1（盤 A-1）なので次は p2（盤 A-2）。
+  // 機体が p1（盤 A-1）の上に居る（到着）ので次は p2（盤 A-2）。
+  await goto21(page, IDLE, { pose: { x: 86, y: 88, yaw: 0 }, selectPin: { success: true, message: '' } })
   await expect(page.locator('[data-testid="s21-next-panel-name"]')).toContainText('盤 A-2')
   await page.locator('[data-testid="s21-dest-next-panel"]').click()
   const calls = await onsiteServiceCalls(page)

@@ -143,14 +143,18 @@ export function remainingToDest({ plannedPath = [], robotPose = null, destPin = 
 }
 
 /**
- * 「次の配電盤」のピン。機体に最も近い配電盤ピンの次（順番昇順）。
- * 機体位置が分からないときは順番先頭。最後の盤の次は無し（null）。
+ * 「次の配電盤」のピン。機体が次に向かう配電盤（順番昇順）。
+ * 機体位置が分からないときは順番先頭。最後の盤まで来た後は無し（null）。
+ * 機体が最も近い盤の前（到着半径未満でない）なら、その盤自体が次。
+ * 盤の上に居る（到着半径未満）なら、その次が次。
  * pins は登録順を順番とする（panelOrderOf と同じ扱い。mapGeometry.js 側の
  * 順番付けをここで再実装しないよう、呼び出し側で順序済みの配列を渡す）。
  * @param {Array} pins 配電盤ピン（順番昇順）
  * @param {{x: number, y: number}|null} robotPose
  * @returns {Object|null}
  */
+const ARRIVED_M = 0.5
+
 export function nextPanelPin(pins = [], robotPose = null) {
   const panels = pins.filter((p) => p?.kind === 'PANEL')
   if (panels.length === 0) return null
@@ -163,6 +167,7 @@ export function nextPanelPin(pins = [], robotPose = null) {
     const d = Math.hypot(pos.x - robotPose.x, pos.y - robotPose.y)
     if (d < bestD) { bestD = d; nearest = i }
   })
+  if (bestD >= ARRIVED_M) return panels[nearest]
   return panels[nearest + 1] ?? null
 }
 

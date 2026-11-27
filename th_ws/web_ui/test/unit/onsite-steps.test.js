@@ -407,7 +407,7 @@ test('remainingToDest: 経路があれば近い点から先の長さ、無けれ
   assert.equal(remainingToDest({ robotPose: { x: 0, y: 0 } }), null)
 })
 
-test('nextPanelPin: 近い盤の次、位置不明は先頭、最後の盤は null', () => {
+test('nextPanelPin: 近い盤の前ならその盤、盤の上に居れば次、位置不明は先頭、最後の盤は null', () => {
   const pins = [
     { id: 'p1', kind: 'PANEL', pose: { position: { x: 0, y: 0 } } },
     { id: 'p2', kind: 'PANEL', pose: { position: { x: 10, y: 0 } } },
@@ -415,8 +415,12 @@ test('nextPanelPin: 近い盤の次、位置不明は先頭、最後の盤は nu
     { id: 'h1', kind: 'HOME', pose: { position: { x: 0, y: 5 } } },
   ]
   assert.equal(nextPanelPin(pins, null).id, 'p1')
-  assert.equal(nextPanelPin(pins, { x: 1, y: 0 }).id, 'p2')
-  assert.equal(nextPanelPin(pins, { x: 19, y: 0 }), null)
+  // 待機場所から先頭の盤へ向かう途上（まだ盤に到着していない）: 次は先頭の盤
+  assert.equal(nextPanelPin(pins, { x: 1, y: 0 }).id, 'p1')
+  // p1 の上に居る: 次は p2
+  assert.equal(nextPanelPin(pins, { x: 0.1, y: 0 }).id, 'p2')
+  // p3 の上に居る: 次は無い
+  assert.equal(nextPanelPin(pins, { x: 19.9, y: 0 }), null)
   assert.equal(nextPanelPin([], { x: 0, y: 0 }), null)
 })
 
