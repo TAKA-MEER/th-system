@@ -41,7 +41,8 @@
 #s14 [data-pos="ops"] .spd .btn:first-child{border-radius:8px 0 0 8px}
 #s14 [data-pos="ops"] .spd .btn:last-child{border-radius:0 8px 8px 0}
 /* ④ 手動は幅いっぱい（モックアップと同じ）。 */
-#s14 [data-pos="jog"] > .help-wrap{width:100%}
+#s14 [data-pos="jog"] > .help-wrap{display:block;width:100%}
+#s14 [data-pos="jog"] > .help-wrap > .reason-wrap{display:flex;width:100%}
 #s14 [data-pos="jog"] .btn{width:100%}
 #s14 .rt{display:flex;align-items:baseline;gap:10px;padding:10px 12px;border:1px solid var(--bd);
   border-radius:8px;cursor:pointer;background:var(--panel)}
