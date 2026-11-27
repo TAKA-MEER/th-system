@@ -218,7 +218,10 @@ function AppShellInner({ screenName, screenId, children }) {
   // これ以降に起きて解消した記録だけ（Spec-webui.md §4.1。2026-11-10）。
   const w1SinceSec = Number(state?.since?.sec) || 0
   // WS-9R: 速度上限が 0 に落ちている理由（在席未確認・障害物・指令途絶など）。
-  const stopBanner = stopReasonLabel(stopReason(state, limiterStatus, fault, attributes))
+  const stopReasonKey = stopReason(state, limiterStatus, fault, attributes)
+  const stopBanner = stopReasonLabel(stopReasonKey)
+  // 経路が塞がれた（再試行中）は注意の帯にする（明るい地・濃い文字）。
+  const stopBannerWarn = stopReasonKey === 'blocked'
   // C-2 (WP-CARRY-01 §4/§7): server-side reject reason for a UI estop press
   // rejected during CARRY (C-06r), surfaced to W-2 -- see Windows.jsx.
   const lastRejectReason = state?.last_reject_reason ?? ''
@@ -322,9 +325,8 @@ function AppShellInner({ screenName, screenId, children }) {
               何も出ず、操作者に理由が分からなかった。
               非常停止・フォルトは W-1 の窓が別に説明するので、窓が出ている間は
               二重に出さない。 */}
-          {/* S-21 の経路が塞がれた窓（W-5）が出ている間は帯を出さない。窓が理由を説明する。 */}
-          {!w1Active && !(screenId === 'S-21' && stateName === 'BLOCKED') && stopBanner && (
-            <div className="stop-banner" role="status" data-testid="stop-banner">
+          {!w1Active && stopBanner && (
+            <div className={`stop-banner${stopBannerWarn ? ' warn' : ''}`} role="status" data-testid="stop-banner">
               {stopBanner}
             </div>
           )}
