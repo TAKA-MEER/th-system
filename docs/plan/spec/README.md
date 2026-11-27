@@ -30,7 +30,7 @@
 | 知りたいこと | 見る文書 |
 | --- | --- |
 | **何が・どう振る舞うべきか。どういう値が要るか** | [Spec.md](Spec.md)（本体）＋ 下の §2 の各ファイル |
-| 目標 G1〜G5・設計思想 SD-1〜SD-9・走行方式 7・モード一覧・1 日の流れ | [Spec.md](Spec.md) |
+| 目標 G1〜G5・設計思想 SD-1〜SD-9・走行方式 5・モード一覧・1 日の流れ | [Spec.md](Spec.md) |
 | 目的とユースケース（誰が何のために使うか） | [Spec.md](Spec.md) §1・§9 |
 | モード定義と遷移表（状態モデルの正本） | [Spec-modes.md](Spec-modes.md) §3.1 |
 | 安全チェーン 4 層・障害物・非常停止・通信断 | [Spec-safety.md](Spec-safety.md) |
@@ -64,14 +64,14 @@
 | --- | --- | --- |
 | **[Spec.md](Spec.md)** | **本体。**対象・用語・目標・設計思想・全体構成・走行方式一覧・モード一覧・目次 | 200 行以内を維持 |
 | [Spec-modes.md](Spec-modes.md) | **モード定義と遷移表。状態モデルの正本（§3.1）。**ゾーン・ジョグ介入・人物追跡の要否 | — |
-| [Spec-transit.md](Spec-transit.md) | 7 走行方式の完全仕様と比較 | — |
+| [Spec-transit.md](Spec-transit.md) | 5 走行方式の完全仕様と比較 | — |
 | [Spec-onsite.md](Spec-onsite.md) | 試験場内（前日の地図作成・登録／当日の盤前移動・呼び寄せ）・配電盤前 | — |
 | [Spec-measure.md](Spec-measure.md) | **自律測定**（測定機能 fk-system の指示で動く `AUTO_MEASURE`。2026-11-01 追加） | — |
 | [Spec-autoprep.md](Spec-autoprep.md) | **自動前日準備**（機体が回って地図と盤のピンの候補を作る。2026-11-10 起票・骨子のみ） | — |
 | [Spec-safety.md](Spec-safety.md) | 安全チェーン・障害物・非常停止・異常ウィンドウ・通信断 | — |
 | [Spec-ops.md](Spec-ops.md) | 導入・起動・疎通確認・終了手順 | — |
 | [Spec-checks.md](Spec-checks.md) | 始業点検 4 項目・校正 4 項目 | — |
-| [Spec-webui.md](Spec-webui.md) | 画面一覧（16）・遷移図・ウィンドウ・共通部品 | — |
+| [Spec-webui.md](Spec-webui.md) | 画面一覧（14）・遷移図・ウィンドウ・共通部品 | — |
 | [Spec-params.md](Spec-params.md) | パラメータ一覧・逆算の連鎖・保存先 | — |
 | **[Spec-open.md](Spec-open.md)** | **矛盾の解決記録・未確定事項・既存 ID の処理状況** | — |
 | [mockup/index.html](mockup/index.html) | **WebUI の見た目。**ブラウザで開ける単一ファイル | — |
