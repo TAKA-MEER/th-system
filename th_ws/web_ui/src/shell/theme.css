@@ -1153,3 +1153,25 @@ table.lst td.r{text-align:right}
   .csteps{grid-column:1/-1}
   .arrows{grid-template-columns:repeat(3,minmax(64px,80px));grid-template-rows:repeat(3,minmax(64px,80px))}
 }
+/* 手順を進める型は縦長でなく横長(高さ720)でもスクロール無しに収めるための締め付け */
+.g-list .pbody{min-height:0;min-width:0}
+.g-list .pbody > *{min-height:0}
+.g-list .phd{min-height:44px}
+.g-list .pfoot{min-height:60px}
+.g-list .pfoot .btn{min-height:56px}
+.g-list .tbl th,.g-list .tbl td{padding:3px 6px;font-size:max(15px,calc(var(--fs) * 0.78))}
+.g-list .note{padding:5px 8px;margin-top:4px}
+.g-list h3,.g-list h4{margin:2px 0}
+.g-list .fig{flex:none}
+.g-list .fig svg{max-height:34cqh}
+.g-list .mg svg{max-height:20cqh}
+.g-list .s40-blind-svg{max-height:26cqh !important;width:auto !important}
+.g-list .s40-blind-list{display:flex;flex-wrap:wrap;gap:4px 10px;list-style:none;padding:0}
+.g-list .s40-blind-list li{display:flex;align-items:center;gap:6px}
+.g-list .s31-hints{margin:4px 0}
+.g-list .chk{min-height:48px}
+.g-list .lrow{min-height:52px;padding:4px 10px}
+.g-list .csteps{gap:2px;padding-top:4px}
+.g-list .csteps li{font-size:15px}
+.g-list .s30-basis h4{margin:0}
+.screen#s30,.screen#s31,.screen#s40{height:100%;min-height:0;overflow:hidden}
