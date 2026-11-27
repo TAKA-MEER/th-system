@@ -1080,3 +1080,76 @@ table.lst td.r{text-align:right}
 }
 /* W-1 の再開確認に添える「解消した異常」。 */
 .fh-resolved{color:var(--warn-tx)}
+
+/* ---------- 手順を進める型（S-30/S-31/S-40。Layouts.jsx の StepsLayout） ----------
+   モックアップ .content.g-list と同じ値: 左=一覧・右=手順。操作バー高さ 68・
+   左右余白 14・中身上下 12・左右 14・区画間 12。主表示は高さいっぱい。
+   内容は収まるよう縮む（pbody は overflow:hidden。図は高さに追従）。 */
+.content.g-list{display:grid;grid-template-columns:380px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:12px;padding:12px 14px;height:100%;min-height:0}
+.g-list .lst{display:flex;flex-direction:column;gap:6px;min-height:0;min-width:0}
+.g-list .lst .lhd{display:flex;align-items:center;gap:8px;min-height:40px;font-size:calc(var(--fs) * 1.05);font-weight:800}
+.g-list .lrow{display:flex;align-items:center;gap:10px;min-height:64px;padding:6px 12px;border:1px solid var(--bd-hi);border-radius:8px;background:var(--panel);text-align:left;width:100%}
+.g-list .lrow .nm{flex:1;min-width:0;font-size:calc(var(--fs) * 1.0);font-weight:700}
+.g-list .lrow .nm small{display:block;font-size:max(15px,calc(var(--fs) * 0.8));font-weight:400;color:var(--mut);margin-top:2px}
+.g-list .lrow.on{background:var(--sel-bg);color:var(--sel-tx);border-color:var(--sel-bg)}
+.g-list .lrow.on .nm small{color:inherit;opacity:.85}
+.g-list .lrow.dis{opacity:.55}
+.g-list .pane{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0;border:1px solid var(--bd);border-radius:8px;background:var(--panel);padding:0 16px 14px}
+.g-list [data-pos="opbar"]{height:68px;display:flex;align-items:center;gap:12px;flex:none}
+.g-list .phd{display:flex;align-items:center;gap:12px;min-height:56px;flex:none;flex-wrap:wrap}
+.g-list .phd .pt{font-size:calc(var(--fs) * 1.25);font-weight:800;white-space:nowrap}
+.g-list .pbody{flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:10px}
+.g-list .pfoot{display:flex;gap:10px;align-items:center;flex:none;min-height:64px}
+.g-list .pfoot .btn{min-width:180px;min-height:64px;font-size:calc(var(--fs) * 1.0)}
+/* 進むボタン: 機体が動くものだけ塗る（.btn-adv は緑）。それ以外は太枠（.btn.primary） */
+.btn-adv{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:800}
+.btn-adv[disabled]{background:transparent;border-color:var(--bd-hi);color:var(--dim)}
+.fig{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;gap:20px}
+.fig svg{max-height:100%;max-width:100%}
+.fig .cell{display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:center;min-height:0}
+.fig .cell .cap{display:flex;align-items:center;gap:8px;font-size:calc(var(--fs) * 0.95);font-weight:700}
+.fig.mot{gap:16px}
+.arrows{display:grid;grid-template-columns:repeat(3,minmax(72px,96px));grid-template-rows:repeat(3,minmax(72px,96px));gap:8px;justify-content:center;flex:none}
+.arrows .dirb{position:relative;min-height:72px;font-size:calc(var(--fs) * 1.0);font-weight:800}
+.dirb .dm{position:absolute;right:4px;top:4px}
+.mgs{flex:1;min-width:0;display:grid;grid-template-columns:1fr 52px 1fr;gap:6px;align-items:start}
+.mg{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0}
+.mg svg{width:100%;height:auto;aspect-ratio:250/150;max-height:22cqh}
+.mg b{font-size:calc(var(--fs) * 1.5);font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+.mg small,.mgc small{font-size:max(15px,calc(var(--fs) * 0.72));color:var(--mut);font-variant-numeric:tabular-nums}
+.mgc{display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:24px}
+.csteps{list-style:none;margin:auto 0 0;padding:8px 2px 0;border-top:1px solid var(--bd-hi);display:flex;flex-direction:column;gap:4px}
+.csteps li{display:flex;gap:8px;align-items:baseline;font-size:max(15px,calc(var(--fs) * 0.78));line-height:1.3;color:var(--mut)}
+.csteps li .n{flex:none;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--bd-hi);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
+.csteps li.cur{color:var(--tx);font-weight:700}
+.csteps li.cur .n{background:var(--sel-bg);color:var(--sel-tx);border-color:var(--sel-bg)}
+.csteps li.done{opacity:.6}
+.tbl{width:100%;border-collapse:collapse;font-size:calc(var(--fs) * 0.92)}
+.tbl td,.tbl th{padding:6px 8px;border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}
+.tbl th{font-size:max(15px,calc(var(--fs) * 0.72));color:var(--mut);font-weight:700}
+.tbl td.num{text-align:right;font-variant-numeric:tabular-nums}
+.tbl tr.out td{background:color-mix(in srgb,var(--jis-y,#ffd100) 45%,transparent)}
+.prog{height:22px;border-radius:999px;background:var(--inset);border:1px solid var(--bd-hi);overflow:hidden}
+.prog i{display:block;height:100%;background:var(--ctrl-hi)}
+.steps{display:flex;gap:6px;flex:1;min-width:0}
+.steps .st{flex:1;min-width:0;height:44px;display:flex;align-items:center;justify-content:center;font-size:max(15px,calc(var(--fs) * 0.84));font-weight:700;border:2px solid var(--bd-hi);border-radius:4px;color:var(--mut);white-space:nowrap;overflow:hidden}
+.steps .st.done{background:var(--ctrl-hi);color:var(--tx);border-color:var(--ctrl-hi)}
+.steps .st.cur{border:3px solid var(--tx);color:var(--tx)}
+.chk{display:flex;align-items:center;gap:12px;min-height:64px;padding:4px 12px;border:1px solid var(--bd-hi);border-radius:8px;background:var(--panel);text-align:left;width:100%}
+.chk .bx{width:34px;height:34px;flex:none;border:3px solid var(--bd-hi);border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:900}
+.chk.on .bx{background:var(--ok);border-color:var(--ok);color:#fff}
+.oneline{font-size:calc(var(--fs) * 0.95);line-height:1.5}
+/* 結果の印（ResultMark） */
+.rm{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;flex:none;border-radius:50%;font-weight:900;font-size:18px;line-height:1}
+.rm.sm{width:24px;height:24px;font-size:14px}
+.rm-ok{color:var(--ok-tx);border:2px solid var(--ok-tx)}
+.rm-warn{color:var(--warn-tx);border:2px solid var(--warn)}
+.rm-ng{background:var(--jis-y);color:#161b22;border:2px solid var(--warn)}
+.rm-unknown{color:var(--mut);border:2px solid var(--bd-hi)}
+@container app (max-width:759px){
+  .content.g-list{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+  .g-list .lst{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .g-list .lst .lhd{grid-column:1/-1}
+  .csteps{grid-column:1/-1}
+  .arrows{grid-template-columns:repeat(3,minmax(64px,80px));grid-template-rows:repeat(3,minmax(64px,80px))}
+}
