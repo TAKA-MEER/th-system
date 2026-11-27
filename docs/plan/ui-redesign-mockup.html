@@ -85,6 +85,10 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .b.exit{min-height:42px;font-size:16px}
 .b.save{background:#1f4d2a;border-color:var(--ok);color:var(--ok-tx)}
 .b.adv{background:var(--ctrl-on);border-color:var(--brand)}
+.b.ico{min-width:56px;padding:0 12px;justify-content:center}
+.b.ico svg{width:26px;height:26px;margin:0}
+/* 「向く」（D90）: 押すとその場で少し回るので、進むの色を薄く */
+.b.look:not(.dis){background:color-mix(in srgb, var(--act) 18%, var(--panel));border-color:var(--act);color:var(--tx)}
 
 /* 対のトグル（R4） */
 .tg{display:flex;border-radius:12px;border:2px solid var(--bd-hi);overflow:hidden;min-height:56px;background:var(--inset)}
@@ -726,6 +730,8 @@ const P = {
   check:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2.5h6V4"/><path d="M8.5 11.5l2 2 4.5-4.5"/>',
   calib:'<rect x="2.5" y="8" width="19" height="8" rx="1.5"/><path d="M6.5 8v3M10.5 8v4M14.5 8v3M18.5 8v4"/>',
   back:'<path d="M15 5l-7 7 7 7"/>',
+  rotL:'<path d="M5 12a7 7 0 1 0 2.1-5"/><path d="M4 3v5h5"/>',
+  rotR:'<path d="M19 12a7 7 0 1 1-2.1-5"/><path d="M20 3v5h-5"/>',
   close:'<path d="M6 6l12 12M18 6L6 18"/>',
   home:'<path d="M3.5 11.5L12 4l8.5 7.5"/><path d="M6 10v10h12V10"/>',
   panel:'<rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M9 8h6M9 12h6M9 16h3"/>',
@@ -779,9 +785,9 @@ function setSub(v){
 }
 
 /* ---------------- 部品 ---------------- */
-function btn(act, label, {icon, cls='', dis=false, id, why='', help=''}={}){
-  if (S.scr!=='menu') icon=null   // アイコンはメインメニューだけ（D28）
-  return `<button class="b ${cls} ${dis?'dis':''}" data-btn data-act="${dis?'':act}" ${id?`data-id="${id}"`:''} ${dis&&why?`data-why="${why}"`:''} ${help?`data-help="${help}"`:''}>${icon?ic(icon):''}<span>${label}</span></button>`
+function btn(act, label, {icon, cls='', dis=false, id, why='', help='', iconOnly=false}={}){
+  if (S.scr!=='menu' && !iconOnly) icon=null   // アイコンはメインメニューだけ（D28）。例外: アイコンだけのボタン（D95: 入れない所・左へ回す・右へ回す）
+  return `<button class="b ${cls} ${iconOnly?'ico':''} ${dis?'dis':''}" data-btn data-act="${dis?'':act}" ${id?`data-id="${id}"`:''} ${dis&&why?`data-why="${why}"`:''} ${help?`data-help="${help}"`:''} ${iconOnly?`aria-label="${label}" title="${label}"`:''}>${icon?ic(icon):''}${iconOnly?'':`<span>${label}</span>`}</button>`
 }
 // 対のトグル。stop/run: 'cur' | 'en' | 'dis' | 'inert'（予約で押しても何も起きない）
 function tog(stop, run, {runLabel='走行', runHint='押すと走り出す', blink=true, note='', big=false, help=''}={}){
@@ -1021,7 +1027,7 @@ function mapKit(costmap=true){
   ] : [[box('#ffffff'), 'この配色の凡例は「案」の地図だけ']]
   const leg = S.map.leg ? `<div class="mapleg" role="dialog" aria-label="凡例"><div class="lt"><span>凡例</span><button class="hx" data-act="legTog" aria-label="閉じる">${ic('close')}</button></div>
     <div class="lg">${rows.map(([g,t])=>`<div class="lr">${sw(g)}<span>${t}</span></div>`).join('')}</div></div>` : ''
-  const cst = costmap ? `<button class="mk2 ${S.map.costOn?'on':''}" data-btn data-act="costTog" aria-pressed="${S.map.costOn}">${sw(box('#ffffff')+`<rect x="3" y="3" width="34" height="7" fill="rgba(90,100,115,.45)"/><rect x="3" y="3" width="34" height="3" fill="#7f8896"/>`)}<span>入れない所</span></button>` : ''
+  const cst = costmap ? `<button class="mk2 ${S.map.costOn?'on':''}" data-btn data-act="costTog" aria-pressed="${S.map.costOn}" aria-label="入れない所" title="入れない所">${sw(box('#ffffff')+`<rect x="3" y="3" width="34" height="7" fill="rgba(90,100,115,.45)"/><rect x="3" y="3" width="34" height="3" fill="#7f8896"/>`)}</button>` : ''
   return `<div class="mapkit">${leg}<div class="mkr">${cst}<button class="mk2 ${S.map.leg?'on':''}" data-btn data-act="legTog" aria-expanded="${S.map.leg}"><span>凡例</span></button></div></div>`
 }
 function radarSVG(big, off=false){
@@ -1285,7 +1291,7 @@ function prepView(){
     : `${pinById(p.sel).kind==='panel' ? `<div class="ordrow"><span>順番 <b>${S.order.indexOf(p.sel)+1}</b> / ${S.order.length}</span>${btn('ordUp','前へ',{dis:S.order.indexOf(p.sel)===0,why:'いちばん前です'})}${btn('ordDown','後へ',{dis:S.order.indexOf(p.sel)===S.order.length-1,why:'いちばん後ろです'})}</div>` : ''}${btn('pinRename','名前を変える')}${btn('pinRereg', `${MNAME[p.method]}登録し直す`)}${btn('pinDel', p.edit==='delArm' ? 'もう一度押すと削除' : '削除', {cls:'caution'+(p.edit==='delArm'?' armed':'')})}`
   let mainInner = mapSVG({robot:s==='return'?C(172,100,90):C(150,66,180), path:s==='return'?[C(172,100),C(172,150),C(175,176)]:null, partial:true, scan:true, pins:pinsNow, sel:p.ordering?null:p.sel, bubBody:editBody, order:true, orderList:p.ordering})
   // 地図の道具の段（地図の左上）。地図に対する操作はここへ足す（拡張の仕方: options §3.5）
-  mainInner += `<div class="mapctl">${btn('rotL','左へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}${btn('rotR','右へ回す',{dis:!mapping,why:'地図作成中に変えられます'})}${btn('ordStart','順番を決める',{dis:!mapping||!!p.ordering,why:'地図作成中に決められます'})}</div>`
+  mainInner += `<div class="mapctl">${btn('rotL','左へ回す',{icon:'rotL',iconOnly:true,dis:!mapping,why:'地図作成中に変えられます'})}${btn('rotR','右へ回す',{icon:'rotR',iconOnly:true,dis:!mapping,why:'地図作成中に変えられます'})}${btn('ordStart','順番を決める',{dis:!mapping||!!p.ordering,why:'地図作成中に決められます'})}</div>`
   if (s==='entry') mainInner += `<div class="center"><div class="card"><p>前回の試験場内地図とピン（${p.pins} 件）が残っています</p>
       ${btn('resume','続きから再開',{icon:'play',cls:'fwd'})}
       ${btn('fresh','新しい試験日として開始（前回を消す）',{icon:'close',cls:'caution'})}</div></div>`
@@ -1682,13 +1688,13 @@ const HELP = {
 // ============================================================
 Object.assign(S, {
   connect:{sub:'lidar'},
-  follow:{sub:'pick', teach:false, conf:'a', saved:false},
+  follow:{sub:'pick', teach:false, conf:'b', saved:false},
   manual:{sub:'idle', teach:false, blind:'fig', tpos:'left'},
   replay:{sub:'select', route:'C2', dir:'fwd', speed:'mid', devab:false},
   check:{sub:'list', sel:'motor', pushed:false, released:false, motorDone:{}, rep:{}},
   calib:{sub:'list', quit:'やめる', quitAt:'foot', commit:false},
   settings:{sub:'run', voice:true, spk:true, vol:60, ori:'auto', font:'normal', cost:true, dev:false, devItems:{link:true}},
-  auto:{sub:'wait', stop:false},
+  auto:{sub:'wait', stop:true},
   rec:{col:'neutral'},   // D70: 「記録中」は D37 に合わせる（中立の札＋丸の印）
   // 自動ブレーキ（D68・D73）: どの画面の切り替えも ON の間はロック。外すには 2 回押す（ON→OFF の確認を兼ねる）。
   // 既定はどこも ON（D75: 場外の手動も ON に改めた）
@@ -1879,7 +1885,7 @@ function followView(){
   if (s==='ready'){ E.look='en'; E.run='en' } else if (s==='run'){ E.stop='en'; E.run='cur'; E.look='dis' } else if (s==='paused'){ E.look='en'; E.run='en' }
   const runLabel = s==='paused' ? '再開' : '走行'
   const toggle = f.conf==='a' ? tog3(E.stop, E.look, E.run, runLabel) : tog(E.stop, E.run, {runLabel, note:'対象を選んでから', big:true, help:'toggle'})
-  const lookBtn = f.conf==='b' ? btn('look','向く',{dis:E.look!=='en',why:s==='run'?'走っています':'対象を選んでから',help:'look'}) : ''
+  const lookBtn = f.conf==='b' ? btn('look','向く',{cls:'look',dis:E.look!=='en',why:s==='run'?'走っています':'対象を選んでから',help:'look'}) : ''
   const saveBtn = T ? btn('save','保存',{dis:!(s==='paused'),why:s==='run'?'止めてから保存します':'記録がまだありません',help:'save'}) : ''
   const ops = (lookBtn||saveBtn) ? `<div class="row">${lookBtn}${saveBtn}</div>` : ''
   const where = s==='entry' ? '' : T ? `<span>記録</span><b>${s==='pick'||s==='ready'?'0.0 m　0:00':'12.4 m　1:32'}</b>` : (S.target==null ? `<span style="color:var(--warn-tx)">対象を選んでいません</span>` : `<span>対象まで</span><b>1.8 m</b>`)
@@ -2329,7 +2335,7 @@ Object.assign(NOTES, {
   follow:{changed:['<b>いまの実装に画面が無い</b>（S-10・S-12 の jsx が無い）。走らせる型で初めて作る','主表示はレーダー。候補を押して選ぶ（S-20・S-21 と同じ）','右列 ① は対象までの距離（S-12 は記録の量）、② は停止│走行、③ は S-12 だけ保存、④ は手動（常設）','S-12 は入口のカードで経路を選び、選ぶと記録が始まる（SM-3.1.2-012）。地図はレーダーの左下に小さく'],
     look:['「確認」（向くだけ）の置き方 a〜c を比べる（未決 5）','「記録中」は中立の札＋丸の印（D70）'],
     opts:[{q:'画面', k:['follow','teach'], v:[[false,'S-10 追従走行'],[true,'S-12 教示（追従）']], why:'S-12 は S-10 に「保存」と記録の量を足しただけ（Spec-webui.md §3.4）'},
-      {q:'「確認」の置き方（未決 5）', k:['follow','conf'], v:[['a','a 3 面のトグル'],['b','b 別のボタン'],['c','c 置かない']], why:'spec の操作カードは 停止／確認／走行。D33 のトグルは 2 面。c は機体の仕様を改める（G3）'}]},
+      {q:'「確認」の置き方（未決 5）', k:['follow','conf'], v:[['a','a 3 面のトグル'],['b','b 別のボタン（決定 D90。少し動くので薄い緑）'],['c','c 置かない']], why:'spec の操作カードは 停止／確認／走行。D33 のトグルは 2 面。c は機体の仕様を改める（G3）'}]},
   manual:{changed:['機体の絵の前（後退なら後ろ）に<b>進む向きのガイド線</b>（車のバックカメラにならう。機体の幅の 2 本の線をいまの速さと回転から予想した進路に沿って 1.5 m、0.5 m ごとに横線。その場で回すときは弧の矢印。自動ブレーキが効くと黄）','<b>手動走行だけ</b>、主表示の右に計器（速さ・直近 5 秒・回転・左右の車輪の目標と実速度・モーター出力・エンコーダ。D81）。出力とエンコーダはいま機体から届いていない（premises §7 B8）','主表示を<b>機体のまわりの図</b>にした（LiDAR の点・機体の外形・減速が始まる距離の点線の輪）。近い点は橙で、向きと距離を出す。いまの文字だけの「障害物」区画を置き換える（G1）','右列 ② は「停止する」だけ（走り出すのはスティック）。トグルと同じ位置・高さ','自動ブレーキは左上の切り替え。ON の間はロック（2 回押して外す。D68・D73）。切れている間はヘッダの下段に「自動ブレーキなし」が点滅（D74）。既定は ON（D75）','S-13 は地図と経路を主表示にし、右列 ① に記録の量・③ に保存'],
     look:['死角は 4 本の柱だけを図に細い灰の扇形で描く。「後方は死角があります」の文は出さない（D69）','「記録中」は中立の札＋丸の印（D70）','スティックを右列の残り全部に広げた大きさ'],
     opts:[{q:'画面', k:['manual','teach'], v:[[false,'S-11 手動走行'],[true,'S-13 教示（手動）']], why:''},{q:'計器の位置（S-11）', k:['manual','tpos'], v:[['left','左（横長は決定 D82。縦長も左に並べる案）'],['right','右（11-26 の最初の版。縦長は下）']], why:'横長は計器を左・まわりの図を右に決めた（D82）。縦長は図の左右の余白が大きかったので、横長と同じく左右に並べ、車輪のゲージを縦に伸ばして計器の高さを埋める案'},
@@ -2348,7 +2354,7 @@ Object.assign(NOTES, {
     look:['区分ごとに効き方が違うこと（G3 の B5）。変えた効き目をその場で確かめられない'], opts:[]},
   auto:{changed:['走らせる型の最小。右列 ③ に「測定機能の画面へ」を幅いっぱい（この画面でいちばん押すもの）','「自律測定を終了」を、ほかの画面の「終了」と同じ左上に（押すと「腕を格納しましたか」）','手動は W-6（触れたら一時停止）'],
     look:['「停止する」を置くか（未決 7）'],
-    opts:[{q:'「停止する」（未決 7）', k:['auto','stop'], v:[[false,'置かない（spec §3.16）'],[true,'置く（spec §3.3）']], why:'§3.3 は停止を全画面に置くとし、§3.16 の S-60 の要素には無い'}]},
+    opts:[{q:'「停止する」（未決 7）', k:['auto','stop'], v:[[true,'置く（決定 D91）'],[false,'置かない（spec §3.16）']], why:'§3.3 は停止を全画面に置くとし、§3.16 の S-60 の要素には無い'}]},
 })
 Object.assign(HELP, {
   brake:['自動ブレーキ','障害物に近づくと自動で減速・停止します。「切」にすると減速せず、近づいたことだけを知らせます。'],
