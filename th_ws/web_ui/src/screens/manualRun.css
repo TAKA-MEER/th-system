@@ -1,0 +1,50 @@
+/* screens/manualRun.css — S-11 手動走行・S-13 教示（手動）だけの配置。
+ *
+ * 型は「走らせる」（src/shell/Layouts.jsx の RunLayout）。骨組みに CSS は無いため
+ * この 2 画面の分だけここに書く（S-20 の S20Prep.css と同じ流儀）。
+ */
+
+#s11 .g-drv, #s13 .g-drv { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+#s11 .g-drv-row, #s13 .g-drv-row { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 10px; align-items: start; min-height: 0; }
+#s11 .g-drv > [data-pos="opbar"], #s13 .g-drv > [data-pos="opbar"] { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#s11 .g-drv .rcol, #s13 .g-drv .rcol { display: flex; flex-direction: column; min-width: 0; }
+#s11 .g-drv .rops, #s13 .g-drv .rops { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+#s11 .stick svg, #s13 .stick svg { max-height: 170px; }
+
+/* S-11 主表示: 計器を左、機体のまわりの図を右（縦長も左右。§3.5 D82） */
+.s11-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+.s11-main .surround-wrap { min-width: 0; }
+.surround-svg { display: block; width: 100%; height: auto; }
+
+/* 計器 */
+.gauge { display: flex; flex-direction: column; gap: 6px; font-variant-numeric: tabular-nums; }
+.gauge.gap-warn { outline: 2px solid var(--warn); outline-offset: 2px; border-radius: 8px; }
+.gauge-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.gauge-big b { font-size: 44px; font-weight: 800; line-height: 1.05; }
+.gauge-big small, .gauge-rot small { font-size: 15px; color: var(--mut); }
+.gauge-rot { display: flex; align-items: center; gap: 6px; }
+.gauge-rot b { font-size: 26px; font-weight: 800; }
+.gauge-rot-svg { width: 40px; height: 40px; }
+.gauge-band, .gauge-line { display: block; width: 100%; height: auto; }
+.gauge-wheels { display: grid; grid-template-columns: 1fr 64px 1fr; align-items: center; justify-items: center; }
+.gauge-wheel { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.gauge-wheel-svg { width: 40px; height: 64px; }
+.gauge-wheel-name { font-size: 15px; color: var(--mut); }
+.gauge-middle .gauge-mini { width: 64px; height: 64px; }
+.gauge-values { border-collapse: collapse; width: 100%; font-size: 15px; }
+.gauge-values td { padding: 2px 4px; }
+.gauge-values td.r { text-align: right; font-weight: 700; }
+
+/* S-13 主表示: 作成中の地図。入口は中央のカード */
+.s13-main { position: relative; min-height: 280px; }
+.s13-entry { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.s13-entry .card { max-width: 420px; width: 100%; }
+.s13-rec { display: flex; flex-direction: column; gap: 2px; font-size: 15px; }
+.s13-rec .r { text-align: right; font-weight: 700; }
+
+@media (max-aspect-ratio: 1/1) {
+  #s11 .g-drv-row, #s13 .g-drv-row { grid-template-columns: minmax(0, 1fr); }
+  #s11 .g-drv .rcol, #s13 .g-drv .rcol { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+  #s11 .g-drv .rjog, #s13 .g-drv .rjog { grid-column: 2; grid-row: 1; }
+  #s11 .g-drv .rjog .stick svg, #s13 .g-drv .rjog .stick svg { max-height: 220px; }
+}

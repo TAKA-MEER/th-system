@@ -650,11 +650,11 @@ table.lst td.r{text-align:right}
    WP-UI-03 §6.2 -- the authority is jog_gate). */
 .stick.off{opacity:.45;pointer-events:none}
 .stick.act{border-color:var(--brand);box-shadow:0 0 0 2px #24446e inset}
-.stick-guide{fill:none;stroke:#39404f;stroke-width:1.4}
-.stick-plate{fill:#1b1f28;stroke:#333a48}
-.stick-dead{fill:#2b3140;stroke:#4a5266}
-.stick-hint{fill:#7c8595;font-size:12px}
-.stick-knob{fill:#2b3140;stroke:#4a5266;transition:all .12s}
+.stick-guide{fill:none;stroke:#9aa3ad;stroke-width:1.4}
+.stick-plate{fill:#ffffff;stroke:#c9ced6}
+.stick-dead{fill:#e3e7ec;stroke:#c9ced6}
+.stick-hint{fill:#5b6472;font-size:12px}
+.stick-knob{fill:#ffffff;stroke:#8a94a3;transition:all .12s}
 .stick-knob.active{fill:var(--brand);stroke:var(--brand-lt)}
 .spd{display:flex;flex-direction:column;gap:6px;justify-content:center;flex:0 0 84px}
 .slider{flex:0 0 30px;display:flex;align-items:center;justify-content:center}

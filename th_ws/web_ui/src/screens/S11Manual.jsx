@@ -1,50 +1,34 @@
-// screens/S11Manual.jsx — S-11, 手動走行 (SCREEN_NAMES.S11 in i18n/screens.js;
-// DetailedDesign-wp3.md WP-TRANSIT-01).
+// screens/S11Manual.jsx — S-11, 手動走行 (Spec-webui.md §3.4・§3.5)。
 //
-// "走行タブを差し込んだ画面を 1 枚作り、メインメニューから到達できるようにする。
-// 挙動ノードは作らない" (§0). 走行は driveTab kind='manual' が担当し、この
-// 画面はその周りに 障害物カード／後退カード／操作カード を置くだけ (4.2)。
-//
-// 区画 (mockup L620-656 を写したもの):
-//   左上 操作バー … 終了 ＋ タブ「走行」1枚
-//   障害物カード … /safety/limiter_status の action で分岐する警告文 ＋
-//                   自動ブレーキトグル (attributes.json の MANUAL 行から既定を引く)
-//   後退カード    … 固定テキスト
-//   操作カード    … 「停止」だけ。走行の契機はスティックだけ (T1-4)
-//   手動操作カード … driveTab kind='manual' (スティック + 速度プリセット)
-//
-// 「手動」ボタンを置かない (DetailedDesign-webui.md §4.2): スティックを常設する
-// ので触れた瞬間に走行操作が始まるのが唯一の入り口。W-6 は開かない。
-//
-// 不変条件:
-//   T1-1 スティックに触ると PAUSE -> RUN (th_state の T-MANUAL-01 が担当。UI は何もしない)
-//   T1-3 速度上限の権威はリミッタ。画面は表示するだけ
-//   T1-4 操作カードに「走行」ボタンを置かない
-//   T1-5 自動ブレーキの既定は attributes.json の MANUAL.auto_brake_default から引く
+// 型「走らせる」（RunLayout）。主表示＝左に計器、右に機体のまわりの図。
+// 左上＝終了＋自動ブレーキの切り替え（ロック付き）。右列 ① は空けて位置を保ち、
+// ②「停止する」だけ（幅いっぱい。走行の契機はスティックだけ）、④ 速度のスライダ＋
+// スティック＋速度の段。タブは使わない。古い操作カードは使わない。
+import { useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useLimiterStatus } from '../ros/useLimiterStatus.js'
-import { canToggleAutoBrake, showApproachWarning, approachDistance, approachIsAround } from '../shell/autoBrake.js'
+import { useScan } from '../ros/useScan.js'
+import { useWheelSpeeds } from '../ros/useWheelSpeeds.js'
+import { useOdomTwist } from '../ros/useOdomTwist.js'
+import { useTunableParams } from '../ros/useTunableParams.js'
+import { useEffect } from 'react'
+import { canToggleAutoBrake, approachDistance, approachIsAround } from '../shell/autoBrake.js'
+import { RunLayout } from '../shell/Layouts.jsx'
 import AutoBrakeLockToggle from '../parts/AutoBrakeLockToggle.jsx'
-import OperationCard from '../shell/OperationCard.jsx'
-import DriveTab from './driveTab.jsx'
-import { obstacleWarning } from '../shell/limits.js'
+import StopRunToggle from '../parts/StopRunToggle.jsx'
+import HelpTip from '../parts/HelpTip.jsx'
+import SpeedGauge from '../parts/SpeedGauge.jsx'
+import SurroundView from '../parts/SurroundView.jsx'
+import JogConsole from '../parts/JogConsole.jsx'
+import { guideFor, brakeCutOf } from '../parts/surroundGeom.js'
+import { rangesFromFlat } from './calibCore.js'
 import attributes from '../generated/attributes.json'
-import {
-  S11_TAB_DRIVE, S11_OBSTACLE_TITLE, S11_OBSTACLE_WARN, S11_OBSTACLE_STOP,
-  S11_OBSTACLE_PASS, S11_OBSTACLE_UNKNOWN, S11_AUTO_BRAKE_LABEL,
-  S11_REAR_TITLE, S11_REAR_NOTE,
-  S11_MANUAL_TITLE, S11_APPROACH_WARNING,
-  S11_APPROACH_WARN, S11_APPROACH_WARN_AROUND,
-} from '../i18n/screens.js'
-import { stateLabel } from '../i18n/states.js'
+import { S11_APPROACH_WARN, S11_APPROACH_WARN_AROUND } from '../i18n/screens.js'
 import { OP_LABELS } from '../i18n/states.js'
-import { useState } from 'react'
+import './manualRun.css'
 
-// 自動ブレーキの表示 (T1-5)。既定は attributes.json の
-// MANUAL.auto_brake_default から引く——画面にハードコードしない (U-6)。
-// /system/state.auto_brake があるときはそちらが現在値（正本は機体側の state_manager。
-// 1b-15 SG-B10 で切替の経路ができた。要求は /system/set_flag auto_brake、受理は機体が決める）。
+// 自動ブレーキの表示（T1-5）。正本は /system/state.auto_brake（機体側）。
 function useAutoBrake(state) {
   const autoBrakeDefault = attributes?.MANUAL?.auto_brake_default === 'on'
   const [local, setLocal] = useState(null)
@@ -53,24 +37,47 @@ function useAutoBrake(state) {
   return [value, setLocal]
 }
 
+// 死角（lidar_filter の blind_angle_ranges。画面に値を持たない）。
+function useBlindRanges(ros) {
+  const { getTunableParams } = useTunableParams(ros)
+  const [ranges, setRanges] = useState([])
+  useEffect(() => {
+    let alive = true
+    getTunableParams('lidar_filter', ['blind_angle_ranges'])
+      .then((v) => { if (alive) setRanges(rangesFromFlat(v.blind_angle_ranges ?? [])) })
+      .catch(() => { if (alive) setRanges([]) })
+    return () => { alive = false }
+  }, [getTunableParams])
+  return ranges
+}
+
 export default function S11Manual({ onFinish }) {
   const { ros, state, stale } = useSystemState()
   const sendTrigger = useTrigger()
   const limiter = useLimiterStatus(ros)
-  const warn = obstacleWarning(limiter)
+  const scan = useScan(ros)
+  const wheels = useWheelSpeeds(ros)
+  const twist = useOdomTwist(ros)
+  const blindRanges = useBlindRanges(ros)
   const disabledAll = stale || state?.mode == null
 
   const [brake] = useAutoBrake(state)
-  const approach = showApproachWarning(limiter, brake)
   const stateName = state?.state ?? null
-
-  // 切替はロック付き部品（ON→OFF はロックの2回押し。W-4 は使わない）。
-  // 受理は機体が決める。表示は /system/state に従う。
   const canToggle = !disabledAll && canToggleAutoBrake(state, attributes, stale)
 
-  // 終了 → ui.finish → 承認で S-01 へ戻る (DetailedDesign-wp3.md §3.2)。
-  // 拒否されたら何もしない（遷移表から外れた状態では S-01 に戻れないので、
-  // th_state の判断を尊重し S-11 に留まる）。
+  const measured = wheels?.measured ?? []
+  const command = wheels?.command ?? []
+  const latestM = measured[measured.length - 1] ?? null
+  const v = latestM ? (latestM.left + latestM.right) / 2 : null
+  const guide = guideFor(v, twist?.wz)
+  const brakeActive = brakeCutOf(limiter) > 0
+
+  // 近い点の距離（機体の外形から。LimiterStatus の approach_clearance_m など）。
+  const nearDist = approachDistance(limiter)
+  const nearText = nearDist != null && Number.isFinite(nearDist)
+    ? (approachIsAround(limiter) ? S11_APPROACH_WARN_AROUND(nearDist) : S11_APPROACH_WARN(nearDist))
+    : null
+
   async function handleFinish() {
     try {
       const res = await sendTrigger('ui.finish')
@@ -81,76 +88,56 @@ export default function S11Manual({ onFinish }) {
   }
 
   return (
-    <div className="screen two-col" id="s11">
-      <div>
-        <div className="top-actions sticky">
-          <button
-            type="button"
-            className="btn sm"
-            data-testid="s11-finish"
-            disabled={disabledAll}
-            onClick={handleFinish}
-          >
-            {OP_LABELS.finish}
-          </button>
-          <div className="tabs grow" style={{ margin: 0, border: 'none' }}>
-            <button type="button" className="tab on">{S11_TAB_DRIVE}</button>
-          </div>
-        </div>
-        <div className="tabpane on">
-          <div className="card">
-            <h3>{S11_OBSTACLE_TITLE}</h3>
-            {/* OFF 中は減速しないので action は PASS のまま。機体が approach_warning を
-                立てたら「障害物なし」と出さず、距離つきの警告にする。 */}
-            <div className="note">
-              {approach ? (approachIsAround(limiter) ? S11_APPROACH_WARN_AROUND : S11_APPROACH_WARN)(approachDistance(limiter)) : obstacleText(warn)}
-            </div>
-            {approach && (
-              <div className="note warn mt" role="alert" data-testid="s11-approach-warning">
-                {S11_APPROACH_WARNING}
-              </div>
-            )}
-            <div className="row mt">
-              <span className="grow sm">{S11_AUTO_BRAKE_LABEL}</span>
+    <div id="s11" className="screen">
+      <RunLayout
+        opbar={(
+          <>
+            <HelpTip helpKey="finish">
+              <button
+                type="button"
+                className="btn exit"
+                data-testid="s11-finish"
+                disabled={disabledAll}
+                onClick={handleFinish}
+              >
+                <span>{OP_LABELS.finish}</span>
+              </button>
+            </HelpTip>
+            <HelpTip helpKey="brake">
               <AutoBrakeLockToggle brake={brake} canToggle={canToggle} prefix="s11" mode={state?.mode} stateName={stateName} />
+            </HelpTip>
+          </>
+        )}
+        main={(
+          <div className="s11-main">
+            <HelpTip helpKey="s11-gauge"><SpeedGauge measured={measured} command={command} twist={twist} limiter={limiter} /></HelpTip>
+            <div className="surround-wrap">
+              <HelpTip helpKey="s11-surround">
+              <SurroundView
+                scan={scan}
+                blindRanges={blindRanges}
+                guide={guide}
+                brakeActive={brakeActive}
+                nearText={nearText}
+              />
+              </HelpTip>
             </div>
           </div>
-          <div className="card">
-            <h3>{S11_REAR_TITLE}</h3>
-            <div className="note">{S11_REAR_NOTE}</div>
-          </div>
-        </div>
-      </div>
-      <div>
-        <OperationCard
-          mode={state?.mode}
-          stateName={stateName}
-          attributes={attributes}
-          // T1-4: 「停止」だけ。走行の契機はスティックだけ。
-          slots={{ stop: true, check: false, run: false, save: false, manual: false }}
-          disabled={disabledAll}
-          // 「停止」は ui.stop を送る（OperationCard が trigger 名を渡してくる）。
-          // ここを空関数にすると、この画面で唯一のボタンが無反応になる。
-          onTrigger={(trigger) => sendTrigger(trigger)}
-        />
-        <div className="card">
-          <h3>{S11_MANUAL_TITLE}</h3>
-          <DriveTab kind="manual" />
-        </div>
-        <div className="state">{stateLabel(stateName)}</div>
-      </div>
-
-
+        )}
+        where={<div aria-hidden="true" />}
+        toggle={(
+          <StopRunToggle
+            testId="s11-stop-run"
+            runLabel={null}
+            stopEnabled={!disabledAll}
+            onStop={() => sendTrigger('ui.stop')}
+          />
+        )}
+        ops={<div aria-hidden="true" />}
+        jog={(
+          <JogConsole ros={ros} disabled={stale} keyboard />
+        )}
+      />
     </div>
   )
-}
-
-// /safety/limiter_status が未受信 (warn === null) のときは「不明」を出す
-// (安全側。§6.2「障害物なし」と表示しない)。未受信と PASS を区別するのは
-// obstacleWarning() が null を返すことで行う。
-function obstacleText(warn) {
-  if (warn === null) return S11_OBSTACLE_UNKNOWN
-  if (warn.level === 'warn') return S11_OBSTACLE_WARN(warn.distance_m)
-  if (warn.level === 'stop') return S11_OBSTACLE_STOP(warn.distance_m)
-  return S11_OBSTACLE_PASS
 }

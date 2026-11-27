@@ -84,7 +84,8 @@ export function guideFor(v, wz) {
   if (!moving && turning) {
     // その場回転: 弧の矢印。半径は機体の外形＋少し外。
     const r = ROBOT_HALF_M + 0.15
-    const sweep = ww > 0 ? 1 : 0 // 左回りは反時計回り
+    // SVG の sweep-flag（画面座標）: 左回り (wz>0) は上から左へ = 反時計回り = 0
+    const sweep = ww > 0 ? 0 : 1
     // 弧は前方から回転方向へ 90°（描画側で sweep を使う）
     return { kind: 'arc', r, sweep, fromDeg: -90, toDeg: -90 + (ww > 0 ? 90 : -90) }
   }

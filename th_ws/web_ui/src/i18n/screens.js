@@ -279,6 +279,19 @@ export const S11_APPROACH_WARN_AROUND = (d) => `機体の周囲から ${Math.rou
 export const S11_REAR_TITLE = '後退'
 export const S11_REAR_NOTE = '後方は LiDAR の死角。後退速度を制限中'
 export const S11_MANUAL_TITLE = '手動操作'
+// S-11 計器（Spec-webui.md §3.5 D81・D82）。語は間の列に 1 つずつだけ。
+export const S11_GAUGE_SPEED_UNIT = 'm/s'
+export const S11_GAUGE_ROT_UNIT = 'rad/s'
+export const S11_GAUGE_ACTUAL = '速度'
+export const S11_GAUGE_TARGET = '目標'
+export const S11_GAUGE_OUTPUT = '出力'
+export const S11_GAUGE_ENCODER = 'エンコーダ'
+export const S11_GAUGE_LEFT = '左'
+export const S11_GAUGE_RIGHT = '右'
+export const S11_GAUGE_PERCENT = '%'
+export const S11_GAUGE_PER_SEC = '/秒'
+export const S11_GAUGE_NO_VALUE = '—'
+export const S11_GAUGE_NEAR_LABEL = (text) => text
 
 // ---------------------------------------------------------------- S-13 (教示（手動）) ----
 // P5 / demo-teach-replay. Spec-transit.md §0.5 / U-5: 教示（手動）＝手動走行画面＋
