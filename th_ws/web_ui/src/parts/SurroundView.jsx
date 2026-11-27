@@ -12,7 +12,7 @@ import { GUIDE_LENGTH_M } from './surroundGeom.js'
 const SIZE = 400
 const C = SIZE / 2
 const SCALE = 70 // px / m
-const BLIND_R_M = 1.5
+const BLIND_R_M = 2.2
 
 function polarDeg(deg, rPx) {
   const a = (deg * Math.PI) / 180
@@ -123,12 +123,12 @@ export default function SurroundView({
           y={C - (ROBOT_SIZE_M / 2) * SCALE}
           width={ROBOT_SIZE_M * SCALE}
           height={ROBOT_SIZE_M * SCALE}
-          fill="#ffffff" stroke="#333" strokeWidth="2"
+          fill="#e8f5e9" stroke="#2e7d32" strokeWidth="2.5"
         />
-        <polygon points={`${C},${C - (ROBOT_HALF_M + 0.12) * SCALE} ${C - 7},${C - (ROBOT_HALF_M - 0.06) * SCALE} ${C + 7},${C - (ROBOT_HALF_M - 0.06) * SCALE}`} fill="#333" />
+        <polygon points={`${C},${C - (ROBOT_HALF_M + 0.10) * SCALE} ${C - 7},${C - (ROBOT_HALF_M - 0.08) * SCALE} ${C + 7},${C - (ROBOT_HALF_M - 0.08) * SCALE}`} fill="#2e7d32" />
       </g>
       {nearText && (
-        <text x={C} y={C - (ROBOT_HALF_M + 0.28) * SCALE} textAnchor="middle" fontSize="17" fontWeight="700" fill="#8a6d00" data-testid="surround-near-label">
+        <text x={C + (ROBOT_HALF_M + 0.35) * SCALE} y={C - (ROBOT_HALF_M + 0.1) * SCALE} textAnchor="start" fontSize="17" fontWeight="700" fill="#8a6d00" data-testid="surround-near-label">
           {nearText}
         </text>
       )}

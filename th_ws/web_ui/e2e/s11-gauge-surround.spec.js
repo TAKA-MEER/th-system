@@ -18,6 +18,11 @@ async function openS11(page, extra = {}) {
   await page.locator('#s11').waitFor()
 }
 
+test('画面名は「手動走行」', async ({ page }) => {
+  await openS11(page, { wheels: { measured: [], command: [] }, twist: null, scan: null, limiter: null })
+  await expect(page.locator('#hdr')).toContainText('手動走行')
+})
+
 test('計器は大きな速さと回転、出力・エンコーダは「—」', async ({ page }) => {
   await openS11(page, {
     wheels: {
@@ -30,10 +35,16 @@ test('計器は大きな速さと回転、出力・エンコーダは「—」',
   })
   await expect(page.getByTestId('gauge-speed')).toHaveText('0.50')
   await expect(page.getByTestId('gauge-rot')).toContainText('0.25')
-  await expect(page.getByTestId('gauge-output-value')).toContainText('—')
-  await expect(page.getByTestId('gauge-encoder-value')).toContainText('—')
+  await expect(page.getByTestId('gauge-left-output-value')).toContainText('—')
+  await expect(page.getByTestId('gauge-left-encoder-value')).toContainText('—')
+  await expect(page.getByTestId('gauge-right-output-value')).toContainText('—')
+  await expect(page.getByTestId('gauge-right-encoder-value')).toContainText('—')
+  await expect(page.getByTestId('gauge-left-actual-value')).toHaveText('0.40')
+  await expect(page.getByTestId('gauge-right-actual-value')).toHaveText('0.60')
   await expect(page.getByTestId('gauge-wheel-left-actual')).toHaveCount(1)
   await expect(page.getByTestId('gauge-wheel-right-target')).toHaveCount(1)
+  await expect(page.locator('#s11 .gauge-labels')).toContainText('m/s')
+  await expect(page.locator('#s11 .gauge-labels')).toContainText('目標')
 })
 
 test('まわりの図: 減速の輪・機体・ガイド線・死角の扇形が出る（死角の文は出ない）', async ({ page }) => {

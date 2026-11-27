@@ -9,9 +9,8 @@ import { S40_ITEM_LABELS } from './calib.js'
 export const SCREEN_NAMES = {
   S00: '接続確認',
   S01: 'メインメニュー',
-  // S-11 (手動操作) は driveTab kind='manual' の常設タブで使用 (WP-UI-03)。
-  // 画面名の正式値は後続パケットで確定するが、テスト用に名前だけ用意する。
-  S11: '手動操作',
+  // S-11 手動走行（Spec-webui.md §2 の画面名の表）。
+  S11: '手動走行',
   // P5 / demo-teach-replay: S-13 教示（手動）と S-14 教示再生。
   // 正式値は names.json / Spec-webui.md §3.7 が正。
   S13: '教示（手動）',

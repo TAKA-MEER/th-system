@@ -74,7 +74,7 @@ export default function S11Manual({ onFinish }) {
 
   // 近い点の距離（機体の外形から。LimiterStatus の approach_clearance_m など）。
   const nearDist = approachDistance(limiter)
-  const nearText = showApproachWarning(limiter, brake) && nearDist != null && Number.isFinite(nearDist)
+  const nearText = (showApproachWarning(limiter, brake) || brakeCutOf(limiter) > 0) && nearDist != null && Number.isFinite(nearDist)
     ? (approachIsAround(limiter) ? S11_APPROACH_WARN_AROUND(nearDist) : S11_APPROACH_WARN(nearDist))
     : null
 
