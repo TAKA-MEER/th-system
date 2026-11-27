@@ -18,24 +18,23 @@ import {
 const IDLE_STATE = { mode: 'IDLE', state: 'IDLE', map_update: false }
 const PREP_STATE = { mode: 'PREP', state: 'MAPPING' }
 
-test('UX-2-a: S-21 の「停止」ボタンは btn-stop クラスを持ち、他の kind と異なる', async ({ page }) => {
+test('UX-2-a: S-21 の「停止する」は sr-stop クラスを持ち、他の行き先ボタンと異なる', async ({ page }) => {
   await gotoScreenWithOnsite(page, 'S21', IDLE_STATE, { pins: [], targets: [] })
-  const stopBtn = page.locator('#s21 .op-stop')
-  await expect(stopBtn).toHaveClass(/btn-stop/)
-  const otherBtns = page.locator('#s21 .btn-advance, #s21 .btn-register, #s21 .btn-save-op, #s21 .btn-manual-op, #s21 .btn-finish')
-  const count = await otherBtns.count()
-  for (let i = 0; i < count; i++) {
-    const cls = await otherBtns.nth(i).getAttribute('class') ?? ''
-    expect(cls).not.toContain('btn-stop')
+  const stopBtn = page.locator('[data-testid="stop-run-toggle-stop"]')
+  await expect(stopBtn).toHaveClass(/sr-stop/)
+  for (const tid of ['s21-dest-home', 's21-dest-next-panel', 's21-dest-summon-here', 's21-manual', 's21-abort']) {
+    const cls = await page.locator(`[data-testid="${tid}"]`).getAttribute('class') ?? ''
+    expect(cls, `${tid} が sr-stop を共有している`).not.toContain('sr-stop')
   }
 })
 
-test('UX-2-b: S-21 の手動ボタンは IDLE で disabled + 理由バッジ（jog_denied）', async ({ page }) => {
+test('UX-2-b: S-21 の手動ボタンは IDLE で押せず、押すと理由の吹き出しが出る（jog_denied）', async ({ page }) => {
   await gotoScreenWithOnsite(page, 'S21', IDLE_STATE, { pins: [], targets: [] })
   // mock idling の attrs: IDLE.jog='denied'
-  const manualBtn = page.locator('#s21 .op-manual')
+  const manualBtn = page.locator('[data-testid="s21-manual"]')
   await expect(manualBtn).toBeVisible()
-  await expect(manualBtn).toBeDisabled()
+  await expect(manualBtn).toHaveAttribute('aria-disabled', 'true')
+  await manualBtn.click({ force: true })
   const badge = page.locator('[data-testid="reason-manual"]')
   await expect(badge).toBeVisible()
   await expect(badge).toHaveText('押せません　このモードでは手動操作できません')
@@ -114,7 +113,6 @@ test('UX-5: S-21（SUMMON/WAIT_CLEAR・ピン6・候補4）は 1280×720 で本�
     homeDeclared: true,
     waitClear: { distance_m: 1.2, remaining_sec: 8, satisfied: false, verdict: 'WAITING' },
   })
-  await page.locator('[data-testid="s21-subtab-summon"]').click()
   expect(await bodyOverflowPx(page)).toBeLessThanOrEqual(1)
 })
 
@@ -151,7 +149,7 @@ test('F-7: S-21 で W-6 を開いても地図と重ならない', async ({ page 
   await page.locator('#s21').waitFor()
   await unlockOnsiteVenueMap(page)
   await setTestState(page, { mode: 'PANEL_NAV', state: 'NAV' })
-  await page.locator('#s21 .op-manual').click()
+  await page.locator('[data-testid="s21-manual"]').click()
   await page.locator('#jogWin.show').waitFor()
 
   const mapBox = await page.getByTestId('s21-map').boundingBox()

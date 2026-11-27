@@ -130,23 +130,21 @@ test('S-20: REGISTER では「人検出を停止」が押せず理由が出る�
 
 // ── S-21（試験当日） ─────────────────────────────────────────────────────────
 
-test('S-21: 人検出が止まっている間は対象選択タブの中心に「人検出を開始」', async ({ page }) => {
+test('S-21: 人検出が止まっている間は左上の切│入で「入」を押せる', async ({ page }) => {
   await openS21(page, { mode: 'SUMMON', state: 'POINT' })
-  await page.getByRole('tab', { name: '対象選択' }).click()
 
-  await expect(page.locator('[data-testid="s21-tracker-start"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s21-tracker-on"]')).toBeEnabled()
   await expect(page.locator('[data-testid="radar"]')).toHaveCount(0)
 
-  await page.locator('[data-testid="s21-tracker-start"]').click()
+  await page.locator('[data-testid="s21-tracker-on"]').click()
   const start = startCall(await setFlagCalls(page))
   expect(start, '「人検出を開始」が tracker_enabled=true を送っていない').toBeTruthy()
 })
 
 test('S-21: SUMMON では「人検出を停止」が押せず理由が出る（人検出が要る）', async ({ page }) => {
   await openS21(page, SUMMON_ON)
-  await page.getByRole('tab', { name: '対象選択' }).click()
 
-  await expect(page.locator('[data-testid="s21-tracker-stop"]')).toBeDisabled()
+  await expect(page.locator('[data-testid="s21-tracker-off"]')).toBeDisabled()
   await expect(page.locator('[data-testid="s21-tracker-stop-denied"]')).toContainText('人検出')
   // SUMMON/POINT かつ人検出 ON → レーダーは従来どおり出る。
   await expect(page.locator('[data-testid="radar-cand-0"]')).toBeVisible()
@@ -154,14 +152,14 @@ test('S-21: SUMMON では「人検出を停止」が押せず理由が出る（�
 
 test('S-21: 人検出が止まっている間は呼び寄せ（2 点指示）が非活性で注記が出る', async ({ page }) => {
   await openS21(page, { mode: 'SUMMON', state: 'POINT' })
-  await page.getByRole('tab', { name: '呼び寄せ' }).click()
 
   await expect(page.locator('[data-testid="s21-summon-tracker-off"]')).toHaveText('人検出が止まっています')
-  await expect(page.locator('[data-testid="s21-summon-start"]')).toBeDisabled()
+  // 人検出が止まっている間は記録ボタン自体を出さない（対象が見えないまま実行させない）。
+  await expect(page.locator('[data-testid="s21-wiz-press"]')).toHaveCount(0)
 
   await setTestState(page, { tracker_enabled: true })
   await expect(page.locator('[data-testid="s21-summon-tracker-off"]')).toHaveCount(0)
-  await expect(page.locator('[data-testid="s21-summon-start"]')).toBeEnabled()
+  await expect(page.locator('[data-testid="s21-wiz-press"]')).toBeEnabled()
 })
 
 // ── 失敗表示（fix-setflag-requester） ──────────────────────────────────────
@@ -199,8 +197,7 @@ test('S-21: 人検出の開始が理由なく拒否されたら「理由不明�
     }
   })
   await openS21(page, { mode: 'SUMMON', state: 'POINT' })
-  await page.getByRole('tab', { name: '対象選択' }).click()
 
-  await page.locator('[data-testid="s21-tracker-start"]').click()
+  await page.locator('[data-testid="s21-tracker-on"]').click()
   await expect(page.locator('[data-testid="s21-tracker-error"]')).toContainText('理由不明')
 })

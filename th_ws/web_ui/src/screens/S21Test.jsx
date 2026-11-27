@@ -76,7 +76,7 @@ import {
   S21_WIZ_STEP1, S21_WIZ_STEP2,
   S21_WAIT_TITLE, S21_WAIT_DIST, S21_WAIT_CLEARING, S21_WAIT_CANCEL,
   S21_CAMERA, S21_CAMERA_NO_URL, S21_CAMERA_BAD_URL,
-  TRACKER_OFF,
+  TRACKER_OFF, TRACKER_STOP_DENIED,
 } from '../i18n/screens.js'
 
 // onsiteReasons() は画面ローカルの意味キーだけを返す。文言解決はここで行う。
@@ -320,8 +320,16 @@ export default function S21Test({ onExit }) {
   }
 
   // 「停止を解く」→ W-4 の確認のあと停止命令を解く（T-ATP-02 → IDLE_P）。
-  function confirmUnstop() {
+  function openUnstop() {
+    setUnstopOpen(true)
+    confirmWindow.open()
+  }
+  function closeUnstop() {
     setUnstopOpen(false)
+    confirmWindow.close()
+  }
+  function confirmUnstop() {
+    closeUnstop()
     fire('ui.working')
   }
 
@@ -407,10 +415,13 @@ export default function S21Test({ onExit }) {
       </HelpTip>
       <PersonDetectToggle
         enabled={trackerEnabled}
-        canToggle={!disabledAll}
+        canToggle={!disabledAll && !(mode === 'SUMMON' && trackerEnabled)}
         onToggle={requestTracker}
         testId="s21-tracker"
       />
+      {mode === 'SUMMON' && trackerEnabled && (
+        <span className="note" data-testid="s21-tracker-stop-denied">{TRACKER_STOP_DENIED}</span>
+      )}
       {trackerErr && (
         <div className="note" data-testid="s21-tracker-error">{trackerErr}</div>
       )}
@@ -472,7 +483,7 @@ export default function S21Test({ onExit }) {
               </span>
               <HelpTip helpKey="pinGo">
                 <ReasonButton
-                  className="advance"
+                  className="go"
                   data-testid="s21-pin-go"
                   disabled={disabledAll || !!destMoveReason}
                   reason={destMoveReason}
@@ -623,7 +634,7 @@ export default function S21Test({ onExit }) {
     <>
       <HelpTip helpKey="nextPanel">
         <ReasonButton
-          className="advance wide"
+          className={`${nextPin && !disabledAll && !destNextPanelReason ? "go go-paint wide" : "go wide"}`}
           data-testid="s21-dest-next-panel"
           disabled={disabledAll || !!destNextPanelReason || !nextPin}
           reason={destNextPanelReason}
@@ -640,7 +651,7 @@ export default function S21Test({ onExit }) {
       <div className="btnrow n2">
         <HelpTip helpKey="destHome">
           <ReasonButton
-            className="advance"
+            className="go"
             data-testid="s21-dest-home"
             disabled={disabledAll || !!destHomeReason}
             reason={destHomeReason}
@@ -653,7 +664,7 @@ export default function S21Test({ onExit }) {
         </HelpTip>
         <HelpTip helpKey="summon">
           <ReasonButton
-            className="advance"
+            className="go"
             data-testid="s21-dest-summon-here"
             disabled={disabledAll || !trackerEnabled || !!destSummonHereReason}
             reason={!trackerEnabled ? TRACKER_OFF : destSummonHereReason}
@@ -674,7 +685,7 @@ export default function S21Test({ onExit }) {
               disabled={disabledAll || stateName === 'ADJUST'}
               reason={stateName === 'ADJUST' ? S21_UNSTOP_ADJUST : null}
               reasonTestId="s21-unstop-reason"
-              onClick={() => setUnstopOpen(true)}
+              onClick={openUnstop}
             >
               <IconStop />
               <span>{S21_UNSTOP}</span>
@@ -744,7 +755,10 @@ export default function S21Test({ onExit }) {
 
   return (
     <>
-      <RunLayout opbar={opbar} main={main} where={where} toggle={toggle} ops={ops} jog={jog} />
+      {/* 左上の操作バーは画面の左上に横 1 列（§3.3・§3.11）。RunLayout の opbar 枠は
+          右列の先頭なので、ここでは骨組みの外に置き、枠には空を渡す。 */}
+      <div className="s21-opbar">{opbar}</div>
+      <RunLayout id="s21" opbar={<span />} main={main} where={where} toggle={toggle} ops={ops} jog={jog} />
       {/* A-15: 開発モードで項目 auto_brake を選んでいるときだけ出る。 */}
       <AutoBrakeDevCard prefix="s21" />
       {unstopOpen && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(
@@ -752,7 +766,7 @@ export default function S21Test({ onExit }) {
           <header>{S21_UNSTOP_TITLE}</header>
           <div className="bodyw"><p>{S21_UNSTOP_BODY}</p></div>
           <footer>
-            <button type="button" className="btn" onClick={() => setUnstopOpen(false)}>{S21_UNSTOP_NO}</button>
+            <button type="button" className="btn" onClick={closeUnstop}>{S21_UNSTOP_NO}</button>
             <button type="button" className="btn primary" data-testid="s21-unstop-confirm" onClick={confirmUnstop}>{S21_UNSTOP_YES}</button>
           </footer>
         </>,

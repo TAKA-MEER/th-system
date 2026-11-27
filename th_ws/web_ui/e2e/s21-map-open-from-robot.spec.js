@@ -55,8 +55,7 @@ test('(b2) ローカルの「開きました」が残っていても、機体が
     pins: [], targets: [], openVenueMap: { success: true, message: '' },
   })
   await expect(map(page)).toBeVisible()
-  await page.getByTestId('s21-open-venue-map').click()
-  await expect(page.getByTestId('s21-open-venue-msg')).toBeVisible()
+  // ローカルの応答（開いた）で地図が出ていても、機体が UNLOADED に戻れば閉じる。
   await setStatus(page, status('UNLOADED'))
   await expect(gate(page)).toBeVisible()
   await expect(map(page)).toHaveCount(0)
@@ -72,8 +71,8 @@ test('(c) 手押し相当（CARRY → 元のモード）と作り直し（再読
   await page.reload()
   await page.locator('#s21').waitFor()
   await expect(map(page)).toBeVisible()
-  // 手順バー（段 1）も巻き戻らない
-  await expect(page.getByTestId('s21-venue-already-open')).toBeVisible()
+  // 地図の門も巻き戻らない（開いたまま）。
+  await expect(gate(page)).toHaveCount(0)
 })
 
 test('(d) 機体の値が届く前は従来どおり（地図タブは閉じ、ローカルの応答で開く）', async ({ page }) => {

@@ -5,10 +5,14 @@
 // S-21 は「モードに関係なく直接開く」画面なので、テストは ?__thTestScreen=S21
 // で開く（brief-UI-S21 §2.1・main.jsx の TEST_SCREEN 上書き）。IDLE のままでも
 // 表示されることを最初のテストで確かめる。
+//
+// 作り直し（Spec-webui §3.11。型「走らせる」）: タブ・手順バー・待機場所の宣言は
+// 無く、右列の固定 9 個と地図の吹き出しに置き換えた。このファイルの試験は
+// 新しい置き場所を縛る（testid は新しい置き場所のもの）。
 import { test, expect } from '@playwright/test'
 import {
   gotoScreenWithOnsite, onsiteServiceCalls, setTestState,
-  setTestPersonTargets, setTestWaitClear, setTestHomeDeclared, unlockOnsiteVenueMap,
+  setTestPersonTargets, setTestWaitClear, unlockOnsiteVenueMap,
 } from './helpers.js'
 
 // Pin.msg の最小形（pose.position が地図座標、kind が HOME/PANEL）。
@@ -23,7 +27,6 @@ function pin(id, name, kind, x, y, yawDeg = 90) {
   }
 }
 
-// S-21 の最低限の地図入力（home_declarer は未宣言 → ピン 2 本）。
 const PINS = [
   pin('p1', '盤 A-1', 'PANEL', 86, 88, 92),
   pin('p2', '盤 A-2', 'PANEL', 176, 88, 91),
@@ -40,9 +43,7 @@ const TARGETS = {
 
 const IDLE = { mode: 'IDLE', state: 'NONE' }
 
-// 最小 OccupancyGrid（S-20 と同じ。地図シードを渡すと地図タブにラスタが描かれる）。
-// orientation は ROS と同じ 4 成分（x/y/z/w）を必ず書く — x/y を省くと
-// mapGeometry.quatToYaw() が undefined*undefined = NaN になり toPx() が NaN を返す。
+// 最小 OccupancyGrid（S-20 と同じ。地図シードを渡すと地図にラスタが描かれる）。
 const ROUTE_MAP = {
   info: {
     resolution: 0.5,
@@ -53,10 +54,6 @@ const ROUTE_MAP = {
   data: [0, 100, -1, 0, 100, 0, 0, -1, -1, 0, 100, 0, 0, -1, 100, 0],
 }
 
-// brief-MAP-COSTMAP: Nav2 グローバル costmap（/global_costmap/costmap）の最小形。
-// 静的地図（ROUTE_MAP）とは別の origin/resolution/サイズでも構わない（OnsiteMap は
-// costmap 自身の info から実世界の四隅を toPx() で変換して配置する）。
-// orientation は ROUTE_MAP と同じく 4 成分を書く（上記コメント参照）。
 const COSTMAP = {
   info: {
     resolution: 0.5,
@@ -72,10 +69,8 @@ async function triggers(page) {
 }
 
 async function goto21(page, state = IDLE, extra = {}) {
-  // brief-tracker-default-off §3.4: このファイルの既存テストは「人検出が走って
-  // いる」前提でレーダー／呼び寄せを検証しているので、明示が無い限り
-  // tracker_enabled:true を seed する（人検出の既定 OFF は新規
-  // tracker-toggle スペックで false を明示して検証する）。
+  // brief-tracker-default-off §3.4: 人検出が走っている前提で seed する
+  // （既定 OFF の挙動は tracker-toggle スペックで検証する）。
   const seed = {
     ...IDLE, ...state,
     tracker_enabled: state?.tracker_enabled ?? true,
@@ -84,43 +79,37 @@ async function goto21(page, state = IDLE, extra = {}) {
   await page.locator('#s21').waitFor()
 }
 
-test('S-21 表示とタイトル（IDLE のまま直接開く）', async ({ page }) => {
+// ReasonButton は押せない間も disabled 属性を付けず aria-disabled で示す
+// （押すと理由の吹き出しが出る。§3.3.3）。押せる・押せないの判定はこれで見る。
+async function expectUnpressable(locator) {
+  await expect(locator).toHaveAttribute('aria-disabled', 'true')
+}
+
+test('S-21 表示（IDLE のまま直接開く）: 終了・右列の固定ボタン・地図の門', async ({ page }) => {
   await goto21(page, IDLE, { openVenueMap: { success: true, message: '' } })
-  await expect(page.locator('main')).toContainText('試験')
   await expect(page.locator('[data-testid="s21-finish"]')).toBeVisible()
-  // IDLE では「行き先を選んでください」を状態欄に出す（UX-5: タブ列右のピルは
-  // 状態欄と同じ文字列を二重に出していたので削った）。
-  await expect(page.locator('[data-testid="s21-state"]')).toHaveText('行き先を選んでください')
-  // brief-onsite-ux2 F-6: 地図タブは「保存した会場地図を開く」を押すまで
-  // OnsiteMap をマウントしない。押した後にピン 3 個とロボットマーカーが出る。
+  // 右列 ①「どこへ」
+  await expect(page.locator('[data-testid="s21-where"]')).toContainText('行き先を選んでください')
+  // 「会場地図を開く」を押すまで地図は出ない（主表示の中央にボタンだけ）。
+  await expect(page.locator('[data-testid="s21-map"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="s21-map-gate-msg"]')).toContainText('待機場所')
   await unlockOnsiteVenueMap(page)
   await expect(page.locator('[data-testid="s21-map-pin-p1"]')).toBeVisible()
   await expect(page.locator('[data-testid="s21-map-pin-p3"]')).toBeVisible()
   await expect(page.locator('[data-testid="s21-map-robot"]')).toBeVisible()
-  // 地図更新は OFF 固定。UX-5 で行（ラベル＋非活性ボタン）から操作カード脇の
-  // 小さな印（pill）に変えた。保存は出ない（map_update=false）。
-  await expect(page.locator('[data-testid="s21-map-update-pill"]')).toHaveText('地図の更新 OFF')
-  await expect(page.locator('#s21 .op-save')).toBeHidden()
-  // R-63: 理由は title だけだとタブレットで見えない。印を押すと画面に出る。
-  await expect(page.locator('[data-testid="s21-map-update-note"]')).toHaveCount(0)
-  await page.locator('[data-testid="s21-map-update-pill"]').click()
-  await expect(page.locator('[data-testid="s21-map-update-note"]')).toBeVisible()
-  await expect(page.locator('[data-testid="s21-map-update-note"]')).toContainText('地図の書き足しは現在使えません')
+  // 保存は出ない（地図更新は使えない間は出さない。§3.3 (c)）。
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toHaveCount(0)
 })
 
 // WS-9Y: 「会場地図を開く」の前提（機体を待機場所に置いてから押す）を画面に出す。
-// これが要る理由: slam_control は HOME ピンの姿勢を初期姿勢にフォールバックする
-// ため、機体が実際に待機場所にいないと自己位置が合わない。
 test('WS-9Y: 会場地図を開く前に「機体を待機場所に置いてから」の案内が出る', async ({ page }) => {
   await goto21(page, IDLE, { openVenueMap: { success: true, message: '' } })
-  await expect(page.locator('[data-testid="s21-open-venue-hint"]')).toBeVisible()
-  // 開いたあとは地図タブのゲート自体が消える（案内も含めて）。
+  await expect(page.locator('[data-testid="s21-map-gate-msg"]')).toContainText('待機場所')
   await unlockOnsiteVenueMap(page)
-  await expect(page.locator('[data-testid="s21-open-venue-hint"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="s21-map-gate-msg"]')).toHaveCount(0)
 })
 
-// MAP-1: 追従対象者（/person/status、base_link 相対）を地図上に表示する。
-// is_lost:false のときだけ baseToWorld() で map 座標に変換して出す。
+// MAP-1: 追従対象者は is_lost:false のときだけ地図に出る。
 test('MAP-1: 追従対象者は is_lost:false のときだけ地図に出る', async ({ page }) => {
   await goto21(page, IDLE, {
     openVenueMap: { success: true, message: '' },
@@ -129,7 +118,6 @@ test('MAP-1: 追従対象者は is_lost:false のときだけ地図に出る', a
   await unlockOnsiteVenueMap(page)
   await expect(page.locator('[data-testid="s21-map-person"]')).toBeVisible()
 
-  // is_lost:true に切り替えるとマーカーは消える。
   await page.evaluate(() => {
     window.__thSetTestPersonStatus({
       position: { x: 1, y: 0, z: 0 }, confidence: 0, is_lost: true, lost_reason: 'DETECTION_LOST',
@@ -138,9 +126,6 @@ test('MAP-1: 追従対象者は is_lost:false のときだけ地図に出る', a
   await expect(page.locator('[data-testid="s21-map-person"]')).toBeHidden()
 })
 
-// MAP-SCAN: /scan_filtered（sensor_msgs/LaserScan）を地図タブに点群として重ねる。
-// routePose（pose オプション）を seed したときだけ baseToWorld() できるので、
-// 点群が出るのは pose を渡した場合だけ。
 const MINIMAL_SCAN = {
   angle_min: -Math.PI,
   angle_max: Math.PI,
@@ -162,7 +147,6 @@ test('MAP-SCAN: 点群は pose があると s21-map-scan に円として出る',
 })
 
 test('MAP-SCAN: pose を渡さないとき点群は出ない', async ({ page }) => {
-  // pose を外すと routePose も未受信になり、baseToWorld() できないので null。
   await goto21(page, IDLE, {
     openVenueMap: { success: true, message: '' },
     scan: MINIMAL_SCAN,
@@ -179,29 +163,36 @@ test('終了は ui.finish が 1 回だけ送られる', async ({ page }) => {
   expect(finish, '終了が ui.finish を送っていない').toHaveLength(1)
 })
 
-// 2026-09-09 実機で確認: PANEL_NAV / SUMMON / HOME_NAV はジョグ後に PAUSE へ
-// 落ち、脱出路は ui.run（T-PNAV-*/T-SUM-*/T-HNAV-*）だけなのに操作カードの
-// run が false で潰されていて詰んでいた。AT_PANEL / AT_HOME はリース満了で
-// 自動的に IDLE_P/IDLE_H へ戻る（override_common）ので run は要らない
-// （run_state が null なので operationCardLayout が自然に隠す）。
-test('走行ボタン: PANEL_NAV には出る、AT_PANEL には出ない', async ({ page }) => {
+// 停止│走行（StopRunToggle）。押せる側だけ塗る（止める黒・走る緑）。
+test('停止│走行: PANEL_NAV/PAUSE は再開するが押せて ui.run、AT_PANEL では押せない', async ({ page }) => {
   await goto21(page, { mode: 'PANEL_NAV', state: 'PAUSE' })
-  await expect(page.locator('#s21 .op-run')).toBeVisible()
-  await page.locator('#s21 .op-run').click()
+  const run = page.locator('[data-testid="stop-run-toggle-run"]')
+  await expect(run).toBeEnabled()
+  await expect(run).toHaveText('再開する')
+  await run.click()
   expect(
     (await triggers(page)).some((c) => c.trigger === 'ui.run'),
-    '走行ボタンが ui.run を送っていない',
+    '再開が ui.run を送っていない',
   ).toBe(true)
 
   await goto21(page, { mode: 'AT_PANEL', state: 'IDLE_P' })
-  await expect(page.locator('#s21 .op-run')).toBeHidden()
+  await expect(page.locator('[data-testid="stop-run-toggle-run"]')).toBeDisabled()
+  await expect(page.locator('[data-testid="stop-run-toggle-stop"]')).toBeDisabled()
 })
 
-// WS-9AB: BLOCKED（経路が見つからず止まっている）帯。再検索と、非常停止せず
-// 待機場所へ戻る中断（T-PNAV-10 / T-SUM-17 / T-HNAV-09）。
-test('WS-9AB: PANEL_NAV/BLOCKED で「再検索」→ui.reroute、「中断」→ui.abort', async ({ page }) => {
+test('停止│走行: 走行中は停止するが押せて ui.stop', async ({ page }) => {
+  await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' })
+  const stop = page.locator('[data-testid="stop-run-toggle-stop"]')
+  await expect(stop).toBeEnabled()
+  await stop.click()
+  expect((await triggers(page)).some((c) => c.trigger === 'ui.stop'), '停止が ui.stop を送っていない').toBe(true)
+})
+
+// W-5: BLOCKED は窓（再検索／中断）で出す。帯ではない。
+test('W-5: PANEL_NAV/BLOCKED で窓が出て「再検索」→ui.reroute、「中断」→ui.abort', async ({ page }) => {
   await goto21(page, { mode: 'PANEL_NAV', state: 'BLOCKED' })
   await expect(page.locator('[data-testid="s21-blocked"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s21-blocked"]')).toContainText('経路が塞がれています')
   await page.locator('[data-testid="s21-blocked-reroute"]').click()
   expect((await triggers(page)).some((c) => c.trigger === 'ui.reroute'),
     '再検索が ui.reroute を送っていない').toBe(true)
@@ -209,231 +200,173 @@ test('WS-9AB: PANEL_NAV/BLOCKED で「再検索」→ui.reroute、「中断」�
   expect((await triggers(page)).some((c) => c.trigger === 'ui.abort'),
     '中断が ui.abort を送っていない').toBe(true)
 
-  // BLOCKED でないときは帯が出ない
   await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' })
   await expect(page.locator('[data-testid="s21-blocked"]')).toBeHidden()
 })
 
-// 一時停止中（PAUSE）にも「中断」を出す。走行中（NAV・ALIGN）は出さない。
-for (const mode of ['PANEL_NAV', 'HOME_NAV', 'SUMMON']) {
-  test(`${mode}/PAUSE で「中断」が見えて押すと ui.abort`, async ({ page }) => {
-    await goto21(page, { mode, state: 'PAUSE' })
-    await expect(page.locator('[data-testid="s21-paused"]')).toBeVisible()
-    const ab = page.locator('[data-testid="s21-paused-abort"]')
-    await expect(ab).toHaveText('中断')
-    await expect(ab).toHaveClass(/\bdanger\b/)
+// D12: 中断は走行中（NAV・ALIGN）も出す。
+for (const [mode, state] of [['PANEL_NAV', 'PAUSE'], ['HOME_NAV', 'PAUSE'], ['SUMMON', 'PAUSE'], ['PANEL_NAV', 'NAV'], ['PANEL_NAV', 'ALIGN']]) {
+  test(`中断は ${mode}/${state} で見えて押すと ui.abort`, async ({ page }) => {
+    await goto21(page, { mode, state })
+    const ab = page.locator('[data-testid="s21-abort"]')
+    await expect(ab).toBeVisible()
     await ab.click()
     expect((await triggers(page)).some((c) => c.trigger === 'ui.abort'),
       '中断が ui.abort を送っていない').toBe(true)
   })
 }
 
-for (const state of ['NAV', 'ALIGN']) {
-  test(`PANEL_NAV/${state} では「中断」を出さない`, async ({ page }) => {
-    await goto21(page, { mode: 'PANEL_NAV', state })
-    await expect(page.locator('[data-testid="s21-paused"]')).toBeHidden()
-    await expect(page.locator('[data-testid="s21-blocked"]')).toBeHidden()
-    await expect(page.getByRole('button', { name: '中断', exact: true })).toHaveCount(0)
+test('中断は行き先を選べない状態（AT_PANEL）では押せない理由が出る', async ({ page }) => {
+  await goto21(page, { mode: 'AT_PANEL', state: 'IDLE_P' })
+  const ab = page.locator('[data-testid="s21-abort"]')
+  await expectUnpressable(ab)
+  await ab.click({ force: true })
+  await expect(page.locator('[data-testid="s21-abort-reason"]')).toContainText('押せません')
+  expect((await triggers(page)).filter((c) => c.trigger === 'ui.abort'), '押せないのに ui.abort が送られている').toHaveLength(0)
+})
+
+// 地図の吹き出し: ピンを押すと「行き先にする」、押すとそのまま出発する。
+// 地図のピンの吹き出し（クリックできる座標のピンを使う。既定 PINS は far なので差し替える。）
+const NEAR_PINS = [
+  pin('p1', '盤 A-1', 'PANEL', 1, 1),
+  pin('p2', '盤 A-2', 'PANEL', 2, 2),
+  pin('p3', '待機場所', 'HOME', -1, -1),
+]
+
+test('地図の吹き出し: ピン→「行き先にする」→ select_pin + ui.goto{PANEL}', async ({ page }) => {
+  await goto21(page, IDLE, { openVenueMap: { success: true, message: '' }, selectPin: { success: true, message: '' }, pins: NEAR_PINS })
+  await unlockOnsiteVenueMap(page)
+  await page.locator('[data-testid="s21-map-pin-p1"]').click()
+  await expect(page.locator('[data-testid="s21-pin-bubble"]')).toBeVisible()
+  await page.locator('[data-testid="s21-pin-go"]').click()
+  const calls = (await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/select_pin')
+  expect(calls).toHaveLength(1)
+  expect(calls[0].request).toMatchObject({ panel_id: 'p1' })
+  const gotos = (await triggers(page)).filter((c) => c.trigger === 'ui.goto')
+  expect(gotos).toHaveLength(1)
+  expect(gotos[0].argJson).toMatchObject({ kind: 'PANEL' })
+  // 出発したら吹き出しは消える。
+  await expect(page.locator('[data-testid="s21-pin-bubble"]')).toHaveCount(0)
+})
+
+test('地図の吹き出し: 待機場所ピンはそのまま ui.goto{HOME}', async ({ page }) => {
+  await goto21(page, IDLE, { openVenueMap: { success: true, message: '' }, pins: NEAR_PINS })
+  await unlockOnsiteVenueMap(page)
+  await page.locator('[data-testid="s21-map-pin-p3"]').click()
+  await page.locator('[data-testid="s21-pin-go"]').click()
+  const gotos = (await triggers(page)).filter((c) => c.trigger === 'ui.goto')
+  expect(gotos).toHaveLength(1)
+  expect(gotos[0].argJson).toMatchObject({ kind: 'HOME' })
+  expect((await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/select_pin'),
+    '待機場所へは select_pin を送っていない').toHaveLength(0)
+})
+
+test('地図の吹き出し: ピン以外を押すと消える', async ({ page }) => {
+  await goto21(page, IDLE, { openVenueMap: { success: true, message: '' }, pins: NEAR_PINS })
+  await unlockOnsiteVenueMap(page)
+  await page.locator('[data-testid="s21-map-pin-p1"]').click()
+  await expect(page.locator('[data-testid="s21-pin-bubble"]')).toBeVisible()
+  await page.locator('[data-testid="s21-map"]').click({ position: { x: 5, y: 5 } })
+  await expect(page.locator('[data-testid="s21-pin-bubble"]')).toHaveCount(0)
+})
+
+test('地図の吹き出し: select_pin が拒否されたらメッセージを出し、ui.goto を送らない', async ({ page }) => {
+  await goto21(page, IDLE, { openVenueMap: { success: true, message: '' }, selectPin: { success: false, message: 'そのピンには行けません' }, pins: NEAR_PINS })
+  await unlockOnsiteVenueMap(page)
+  await page.locator('[data-testid="s21-map-pin-p1"]').click()
+  await page.locator('[data-testid="s21-pin-go"]').click()
+  await expect(page.locator('[data-testid="s21-go-err"]')).toContainText('そのピンには行けません')
+  expect((await triggers(page)).filter((c) => c.trigger === 'ui.goto'), 'reject なのに ui.goto を送っている').toHaveLength(0)
+})
+
+// SM-3.1.2-118: 移動中・一時停止中は行き先を押せない（押すと理由が出る）。
+for (const [mode, state, text] of [
+  ['PANEL_NAV', 'PAUSE', '一時停止中は選べません'],
+  ['HOME_NAV', 'PAUSE', '一時停止中は選べません'],
+  ['PANEL_NAV', 'NAV', '移動中は行き先を選べません'],
+]) {
+  test(`行き先は押せない: ${mode}/${state}（次の配電盤・待機場所・呼び寄せ）`, async ({ page }) => {
+    await goto21(page, { mode, state }, { openVenueMap: { success: true, message: '' }, selectPin: { success: true, message: '' } })
+    for (const tid of ['s21-dest-next-panel', 's21-dest-home', 's21-dest-summon-here']) {
+      const btn = page.locator(`[data-testid="${tid}"]`)
+      await expectUnpressable(btn)
+      await btn.click({ force: true })
+      await expect(page.locator(`[data-testid="reason-${tid}"]`)).toContainText(text)
+    }
+    expect((await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/select_pin'),
+      '押せないはずなのに select_pin が呼ばれている').toHaveLength(0)
+    expect((await triggers(page)).filter((c) => c.trigger === 'ui.goto'),
+      '押せないはずなのに ui.goto が送られている').toHaveLength(0)
   })
 }
 
-test('BLOCKED 帯の「再検索」「中断」はボタンの見た目(.btn)・44px 以上で描画される', async ({ page }) => {
-  await goto21(page, { mode: 'PANEL_NAV', state: 'BLOCKED' })
-  const re = page.getByRole('button', { name: '再検索' })
-  const ab = page.getByRole('button', { name: '中断', exact: true })
-  await expect(re).toHaveClass(/\bbtn\b/)
-  await expect(ab).toHaveClass(/\bbtn\b/)
-  await expect(ab).toHaveClass(/\bdanger\b/)
-  for (const b of [re, ab]) {
-    const box = await b.boundingBox()
-    expect(box.height, '高さが 44px 未満').toBeGreaterThanOrEqual(44)
-    // 枠線が描画されている（素のテキストに見えない）
-    expect(await b.evaluate((e) => getComputedStyle(e).borderTopWidth)).not.toBe('0px')
-  }
-  await page.screenshot({ path: '../../.briefs/tmp/s21-blocked.png' })
+// SM-3.1.2-119: 会場地図を持たない間は行き先と「走行」を押せない。
+const unloaded = (page) => page.evaluate(() => window.__thSetTestMapSession(
+  { slot: 'VENUE', session_id: 'venue', mode: 'UNLOADED', dirty: false, instance_id: 'x' }))
+const loaded = (page) => page.evaluate(() => window.__thSetTestMapSession(
+  { slot: 'VENUE', session_id: 'venue', mode: 'LOCALIZING', dirty: false, instance_id: 'x' }))
+for (const [mode, state] of [['IDLE', 'NONE'], ['AT_HOME', 'IDLE_H'], ['AT_PANEL', 'IDLE_P']]) {
+  test(`会場地図なし: ${mode}/${state} は行き先を押せず、押すと理由が出る`, async ({ page }) => {
+    await goto21(page, { mode, state }, { selectPin: { success: true, message: '' } })
+    await unloaded(page)
+    for (const tid of ['s21-dest-next-panel', 's21-dest-home', 's21-dest-summon-here']) {
+      const btn = page.locator(`[data-testid="${tid}"]`)
+      await expectUnpressable(btn)
+      await btn.click({ force: true })
+      await expect(page.locator(`[data-testid="reason-${tid}"]`)).toContainText('会場地図がありません')
+    }
+    expect((await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/select_pin')).toHaveLength(0)
+    await loaded(page)
+    await expect(page.locator('[data-testid="s21-dest-home"]')).not.toHaveAttribute('aria-disabled', 'true')
+  })
+}
+
+test('会場地図なし: PANEL_NAV/PAUSE の再開するは押せない（読み込み済みなら押せて ui.run）', async ({ page }) => {
+  await goto21(page, { mode: 'PANEL_NAV', state: 'PAUSE' })
+  const run = page.locator('[data-testid="stop-run-toggle-run"]')
+  await expect(run).toBeEnabled()
+  await unloaded(page)
+  await expect(run).toBeDisabled()
+  await expect(page.locator('[data-testid="stop-run-toggle-run-reason"]')).toContainText('会場地図がありません')
+  await loaded(page)
+  await expect(run).toBeEnabled()
+  await run.click()
+  expect((await triggers(page)).filter((c) => c.trigger === 'ui.run')).toHaveLength(1)
 })
 
-test('操作カードの停止は ui.stop、map_update のときだけ保存が表示され ui.save', async ({ page }) => {
-  await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' })
-  await page.locator('#s21 .op-stop').click()
-  const t = await triggers(page)
-  expect(t.some((c) => c.trigger === 'ui.stop'), '停止が ui.stop を送っていない').toBe(true)
-  await expect(page.locator('#s21 .op-save')).toBeHidden()
-
-  // 地図更新が ON になった体制（今の画面は OFF 固定だが、FSM が map_update を
-  // 立てた場合の表示切り替え）: 保存が出て、押すと ui.save。
-  await setTestState(page, { map_update: true })
-  await expect(page.locator('#s21 .op-save')).toBeVisible()
-  await page.locator('#s21 .op-save').click()
-  expect((await triggers(page)).some((c) => c.trigger === 'ui.save'), '保存が ui.save を送っていない').toBe(true)
-})
-
-test('待機場所の宣言: 失敗で force 再宣言を促し、成功で宣言済みになる', async ({ page }) => {
-  await goto21(page, IDLE, { declareHome: { success: false, message: '待機場所は別の場所にあります' } })
-  await expect(page.locator('[data-testid="s21-home-pill"]')).toHaveText('未宣言')
-
-  // 失敗 → メッセージと「強制的に宣言」が出る。
-  await page.locator('[data-testid="s21-home-declare"]').click()
-  await expect(page.locator('[data-testid="s21-home-err"]')).toContainText('待機場所は別の場所にあります')
-  let calls = await onsiteServiceCalls(page)
-  expect(calls[0].service).toBe('/onsite/declare_home')
-  expect(calls[0].request).toMatchObject({ force: false })
-
-  // force 再宣言（スタブを成功に差し替え）→ /onsite/declare_home の force:true。
-  await page.evaluate(() => { window.__thTestDeclareHome = { success: true, offset_m: 0, offset_deg: 0, message: '' } })
-  await page.locator('[data-testid="s21-home-force"]').click()
-  calls = await onsiteServiceCalls(page)
-  expect(calls).toHaveLength(2)
-  expect(calls[1].service).toBe('/onsite/declare_home')
-  expect(calls[1].request).toMatchObject({ force: true })
-  expect(
-    (await triggers(page)).filter((c) => c.trigger !== 'ui.screen'),
-    '宣言時に ui.goto などの誤 trigger を送っていない',
-  ).toHaveLength(0)
-
-  // home_declared を受信した前提（宣言済み）に変えるとピルが切り替わる。
-  await setTestHomeDeclared(page, true)
-  await expect(page.locator('[data-testid="s21-home-pill"]')).toHaveText('宣言済み')
-  await expect(page.locator('[data-testid="s21-home-declare"]')).toBeDisabled()
-})
-
-// 2026-09-09 実機で確認: venue_navigator._on_select_pin は pin.id で照合する
-// （名前では照合しない）。以前は `pin.name ?? pin.id` を panel_id に送っていて、
-// このテストの PINS フィクスチャが偶然すべて非空の name を持っていたため
-// （'盤 A-1' 等）バグに気づけなかった。実機の大半のピンは改名しておらず
-// name が空文字 '' で、`??` は null/undefined しかフォールバックしないので
-// 空文字はすり抜け、panel_id:'' が送られて常に「ピンが見つかりません」に
-// なっていた（選択の黄枠自体は画面ローカルの状態なので正常に見えた）。
-// 期待値を id（'p1'）に直し、name が空でも壊れないことも別テストで確認する。
-test('ピンの「移動」は select_pin を保留し、成功後に ui.goto{PANEL}（panel_id は id）', async ({ page }) => {
+test('次の配電盤: 順番が次に来る盤へそのまま出発する（行き先の名前入り）', async ({ page }) => {
   await goto21(page, IDLE, { selectPin: { success: true, message: '' } })
-  await page.locator('[data-testid="s21-pin-move-p1"]').click()
+  // 機体（0,0）に最も近い盤は p1（盤 A-1）なので次は p2（盤 A-2）。
+  await expect(page.locator('[data-testid="s21-next-panel-name"]')).toContainText('盤 A-2')
+  await page.locator('[data-testid="s21-dest-next-panel"]').click()
   const calls = await onsiteServiceCalls(page)
   expect(calls[0].service).toBe('/onsite/select_pin')
-  expect(calls[0].request).toMatchObject({ panel_id: 'p1' })
+  expect(calls[0].request).toMatchObject({ panel_id: 'p2' })
   const gotos = (await triggers(page)).filter((c) => c.trigger === 'ui.goto')
   expect(gotos).toHaveLength(1)
   expect(gotos[0].argJson).toMatchObject({ kind: 'PANEL' })
 })
 
-test('ピンの「移動」が reject されたらメッセージを出し、ui.goto を送らない', async ({ page }) => {
-  await goto21(page, IDLE, { selectPin: { success: false, message: 'そのピンには行けません' } })
-  await page.locator('[data-testid="s21-pin-move-p1"]').click()
-  await expect(page.locator('[data-testid="s21-go-err"]')).toContainText('そのピンには行けません')
-  const calls = await onsiteServiceCalls(page)
-  expect(calls[0].request).toMatchObject({ panel_id: 'p1' })
-  expect((await triggers(page)).filter((c) => c.trigger === 'ui.goto'), 'reject なのに ui.goto を送っている').toHaveLength(0)
-})
-
-// 名前が未設定（空文字 ''）のピンでも panel_id が空にならないこと（実機で
-// 踏んだ不具合の直接の再現）。
-test('ピンの「移動」: 名前が空文字のピンでも panel_id は id が送られる', async ({ page }) => {
-  await goto21(page, IDLE, {
-    pins: [
-      { id: 'panel_1', name: '', kind: 'PANEL', registered_at: '',
-        pose: { position: { x: 0.9, y: -0.06, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 } } },
-    ],
-    selectPin: { success: true, message: '' },
-  })
-  await page.locator('[data-testid="s21-pin-move-panel_1"]').click()
-  const calls = await onsiteServiceCalls(page)
-  expect(calls[0].request).toMatchObject({ panel_id: 'panel_1' })
-})
-
-// SM-3.1.2-118（2026-10-22 実機 T-10）: 移動の一時停止中・移動中は行き先を押せない。
-// 押せてしまうと select_pin だけ通って保留中の行き先が書き換わる。
-for (const [mode, state, text] of [
-  ['PANEL_NAV', 'PAUSE', '一時停止中は選べません'],
-  ['HOME_NAV', 'PAUSE', '一時停止中は選べません'],
-  ['SUMMON', 'PAUSE', '一時停止中は選べません'],
-  ['PANEL_NAV', 'NAV', '移動中は行き先を選べません'],
-]) {
-  test(`行き先は押せない: ${mode}/${state}（ピン行の移動・次の行き先・その場で呼ぶ）`, async ({ page }) => {
-    await goto21(page, { mode, state }, { selectPin: { success: true, message: '' } })
-    await page.locator('[data-testid="s21-subtab-dest"]').click()
-    await expect(page.locator('[data-testid="s21-pin-move-p1"]')).toBeDisabled()
-    await expect(page.locator('[data-testid="s21-pin-move-reason"]')).toContainText(text)
-    await expect(page.locator('[data-testid="s21-dest-home"]')).toBeDisabled()
-    await expect(page.locator('[data-testid="s21-dest-next-panel"]')).toBeDisabled()
-    await expect(page.locator('[data-testid="s21-dest-summon-here"]')).toBeDisabled()
-    expect((await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/select_pin'),
-      '押せないはずなのに select_pin が呼ばれている').toHaveLength(0)
-  })
-}
-
-// SM-3.1.2-119（2026-10-23 実機）: 会場地図を持たない間は行き先と「走行」を押せない。
-// 理由は行き先タブの見出しに 1 回だけ（各ボタンの下には出さない）。
-const unloaded = (page) => page.evaluate(() => window.__thSetTestMapSession(
-  { slot: 'VENUE', session_id: 'venue', mode: 'UNLOADED', dirty: false, instance_id: 'x' }))
-const loaded = (page) => page.evaluate(() => window.__thSetTestMapSession(
-  { slot: 'VENUE', session_id: 'venue', mode: 'LOCALIZING', dirty: false, instance_id: 'x' }))
-for (const [mode, state] of [
-  ['IDLE', 'NONE'], ['AT_HOME', 'IDLE_H'], ['AT_PANEL', 'IDLE_P'], ['PANEL_NAV', 'PAUSE'], ['HOME_NAV', 'PAUSE'], ['SUMMON', 'PAUSE'],
-]) {
-  test(`会場地図なし: ${mode}/${state} は行き先を押せず、理由は見出しに 1 回だけ`, async ({ page }) => {
-    await goto21(page, { mode, state }, { selectPin: { success: true, message: '' } })
-    await unloaded(page)
-    await page.locator('[data-testid="s21-subtab-dest"]').click()
-    await expect(page.locator('[data-testid="s21-pin-move-p1"]')).toBeDisabled()
-    await expect(page.locator('[data-testid="s21-pin-move-reason"]')).toContainText('会場地図がありません')
-    await expect(page.locator('[data-testid="s21-dest-home"]')).toBeDisabled()
-    await expect(page.locator('[data-testid="s21-dest-next-panel"]')).toBeDisabled()
-    await expect(page.locator('[data-testid="s21-dest-summon-here"]')).toBeDisabled()
-    await expect(page.getByText('会場地図がありません')).toHaveCount(1)
-    expect((await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/select_pin')).toHaveLength(0)
-    // 読み込み済みに戻れば（移動系以外は）押せる
-    await loaded(page)
-    await expect(page.locator('[data-testid="s21-pin-move-reason"]')).toHaveCount(
-      ['PANEL_NAV', 'HOME_NAV', 'SUMMON'].includes(mode) ? 1 : 0)
-  })
-}
-
-for (const mode of ['PANEL_NAV', 'HOME_NAV', 'SUMMON']) {
-  test(`会場地図なし: ${mode}/PAUSE の「走行」は押せない（読み込み済みなら押せて ui.run）`, async ({ page }) => {
-    await goto21(page, { mode, state: 'PAUSE' })
-    await page.locator('[data-testid="s21-subtab-dest"]').click()
-    const run = page.locator('#s21 .op-run')
-    await expect(run).toBeEnabled()
-    await unloaded(page)
-    await expect(run).toBeDisabled()
-    // 行き先タブを見ている間は理由を二重に出さない
-    await expect(page.getByText('会場地図がありません')).toHaveCount(1)
-    await page.locator('[data-testid="s21-subtab-summon"]').click()
-    await expect(page.locator('[data-testid="reason-run"]')).toContainText('会場地図がありません')
-    await loaded(page)
-    await expect(run).toBeEnabled()
-    await run.click()
-    expect((await triggers(page)).filter((c) => c.trigger === 'ui.run')).toHaveLength(1)
-  })
-}
-
-test('次の行き先: 待機場所→ui.goto{HOME}、その場で呼ぶ→ui.goto{SUMMON}、次の配電盤→ピン一覧を促す', async ({ page }) => {
+test('次の行き先: 待機場所→ui.goto{HOME}、呼び寄せ→ui.goto{SUMMON}', async ({ page }) => {
   await goto21(page)
-
   await page.locator('[data-testid="s21-dest-home"]').click()
   let gotos = (await triggers(page)).filter((c) => c.trigger === 'ui.goto')
   expect(gotos).toHaveLength(1)
   expect(gotos[0].argJson).toMatchObject({ kind: 'HOME' })
 
-  await page.locator('[data-testid="s21-dest-next-panel"]').click()
-  await expect(page.locator('[data-testid="s21-panel-pick-hint"]')).toBeVisible()
-
   await page.locator('[data-testid="s21-dest-summon-here"]').click()
   gotos = (await triggers(page)).filter((c) => c.trigger === 'ui.goto')
   expect(gotos).toHaveLength(2)
   expect(gotos[1].argJson).toMatchObject({ kind: 'SUMMON' })
-  // 呼び寄せサブタブに切り替わり、ウィザードはまだ出ない（SUMMON/POINT ではない）。
-  await expect(page.locator('[data-testid="s21-subtab-summon"]')).toHaveAttribute('aria-selected', 'true')
-  await expect(page.locator('[data-testid="s21-wizard"]')).toBeHidden()
 })
 
-test('呼び寄せ: SUMMON/POINT の 2 点指示ウィザードは purpose=SUMMON で index 1→2', async ({ page }) => {
+test('呼び寄せ: SUMMON/POINT は主表示に帯とレーダーが出て 2 点指示が purpose=SUMMON で index 1→2', async ({ page }) => {
   await goto21(page, IDLE, { twoPoint: { accepted: true, reject_reason_key: null, yaw: 0 } })
-  await page.locator('[data-testid="s21-subtab-summon"]').click()
-  await page.locator('[data-testid="s21-summon-start"]').click()
+  await page.locator('[data-testid="s21-dest-summon-here"]').click()
   await setTestState(page, { mode: 'SUMMON', state: 'POINT' })
+  await expect(page.locator('[data-testid="s21-summon-band"]')).toBeVisible()
+  await expect(page.locator('[data-testid="radar"]')).toBeVisible()
   await expect(page.locator('[data-testid="s21-wizard"]')).toBeVisible()
-  await expect(page.locator('[data-testid="s21-state"]')).toHaveText('位置指示中')
 
   await page.locator('[data-testid="s21-wiz-press"]').click()
   let calls = await onsiteServiceCalls(page)
@@ -441,7 +374,6 @@ test('呼び寄せ: SUMMON/POINT の 2 点指示ウィザードは purpose=SUMMO
   expect(summon).toHaveLength(1)
   expect(summon[0].request).toMatchObject({ purpose: 'SUMMON', index: 1 })
 
-  // Step 2/2 へ。受理で向き表示（yaw=90°）。
   await page.evaluate(() => { window.__thTestTwoPoint = { accepted: true, reject_reason_key: null, yaw: Math.PI / 2 } })
   await page.locator('[data-testid="s21-wiz-press"]').click()
   calls = await onsiteServiceCalls(page)
@@ -450,20 +382,26 @@ test('呼び寄せ: SUMMON/POINT の 2 点指示ウィザードは purpose=SUMMO
   await expect(page.locator('[data-testid="s21-wiz-done"]')).toHaveText('向き 90°')
 })
 
-test('退避待ち: WAIT_CLEAR で進捗ボックスが出て、中止は ui.abort', async ({ page }) => {
-  await goto21(page, IDLE, { waitClear: { distance_m: 0.4, remaining_sec: 7, satisfied: false, verdict: 'WAITING' } })
-  await page.locator('[data-testid="s21-subtab-summon"]').click()
-  await page.locator('[data-testid="s21-summon-start"]').click()
-  await setTestState(page, { mode: 'SUMMON', state: 'WAIT_CLEAR' })
+test('呼び寄せ: 対象を選ばなければ記録は押せない（対象が見えないまま実行させない）', async ({ page }) => {
+  await goto21(page, { mode: 'SUMMON', state: 'POINT' }, { targets: { ...TARGETS, selected_index: -1 }, twoPoint: { accepted: true, reject_reason_key: null, yaw: 0 } })
+  const btn = page.locator('[data-testid="s21-wiz-press"]')
+  await expectUnpressable(btn)
+  await btn.click({ force: true })
+  await expect(page.locator('[data-testid="s21-wiz-reason"]')).toContainText('対象を選んでから')
+  expect((await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/two_point'),
+    '対象無しで two_point が呼ばれている').toHaveLength(0)
+  await setTestPersonTargets(page, TARGETS)
+  await expect(btn).toBeEnabled()
+})
 
+test('退避待ち: WAIT_CLEAR で進捗ボックスが出て、中止は ui.abort', async ({ page }) => {
+  await goto21(page, { mode: 'SUMMON', state: 'WAIT_CLEAR' }, { waitClear: { distance_m: 0.4, remaining_sec: 7, satisfied: false, verdict: 'WAITING' } })
   await expect(page.locator('[data-testid="s21-clear-box"]')).toBeVisible()
   await expect(page.locator('[data-testid="s21-clear-dist"]')).toHaveText('0.4 m')
 
-  // 進捗を更新（残り 3 秒 → バーが伸びる）。
   await setTestWaitClear(page, { distance_m: 0.2, remaining_sec: 3, satisfied: false, verdict: 'WAITING' })
   await expect(page.locator('[data-testid="s21-clear-dist"]')).toHaveText('0.2 m')
 
-  // OK になったらバーが満杯（satisfied 表示）。
   await setTestWaitClear(page, { distance_m: 0.1, remaining_sec: 0, satisfied: true, verdict: 'OK' })
   await expect(page.locator('[data-testid="s21-clear-bar"].ok')).toBeAttached()
 
@@ -472,8 +410,6 @@ test('退避待ち: WAIT_CLEAR で進捗ボックスが出て、中止は ui.abo
   expect(abort, '中止が ui.abort を送っていない').toHaveLength(1)
 })
 
-// S-21 の「カメラ」ボタン（Spec-onsite.md §7.2。2026-11-20）。開く先は
-// /params/get の effective.camera_ui_url。window.open の呼び出しを記録する。
 const CAMERA_STUBS = {
   get: { effective: { camera_ui_url: 'http://192.168.5.129/' }, pending: {} },
   set: { success: true, message: 'OK' },
@@ -493,102 +429,68 @@ async function opened(page) {
   return page.evaluate(() => window.__thOpened ?? [])
 }
 
-test('配電盤前: 「カメラ」は /params/get の開く先を別タブで開き、機体へ何も送らない', async ({ page }) => {
+test('「カメラ」は /params/get の開く先を別タブで開き、機体へ何も送らない', async ({ page }) => {
   await stubWindowOpen(page)
   await goto21(page, { mode: 'AT_PANEL', state: 'IDLE_P' }, { paramsStubs: CAMERA_STUBS })
-  await page.locator('[data-testid="s21-subtab-atp"]').click()
-
   const btn = page.locator('[data-testid="s21-camera-open"]')
   await expect(btn).toBeEnabled()
   await btn.click()
-
   const urls = await opened(page)
   expect(urls).toHaveLength(1)
   expect(urls[0]).toEqual({ url: 'http://192.168.5.129/', target: '_blank', features: 'noopener' })
-  // 機体へは何も送らない（状態を変えない）。ui.screen は画面通知（状態変更でない）。
   const w = (await triggers(page)).filter((c) => c.trigger === 'ui.working')
   expect(w, '「カメラ」が ui.working を送っている').toHaveLength(0)
 })
 
-test('配電盤前: 「カメラ」は AT_PANEL 以外では押せない', async ({ page }) => {
+test('「カメラ」は AT_PANEL 以外では押せない', async ({ page }) => {
   await stubWindowOpen(page)
   await goto21(page, IDLE, { paramsStubs: CAMERA_STUBS })
-  await page.locator('[data-testid="s21-subtab-atp"]').click()
-  await expect(page.locator('[data-testid="s21-camera-open"]')).toBeDisabled()
+  await page.locator('[data-testid="s21-camera-open"]').click({ force: true })
+  await expect(page.locator('[data-testid="s21-camera-reason"]')).toContainText('押せません')
   await expect(await opened(page)).toHaveLength(0)
 })
 
-test('配電盤前: 「カメラ」の開く先が http(s) 以外なら押せなく理由を出す', async ({ page }) => {
+test('「カメラ」の開く先が http(s) 以外なら押せなく理由を出す', async ({ page }) => {
   await stubWindowOpen(page)
   await goto21(page, { mode: 'AT_PANEL', state: 'IDLE_P' }, {
     paramsStubs: { get: { effective: { camera_ui_url: 'ftp://192.168.5.129/' }, pending: {} } },
   })
-  await page.locator('[data-testid="s21-subtab-atp"]').click()
-  await expect(page.locator('[data-testid="s21-camera-open"]')).toBeDisabled()
+  await page.locator('[data-testid="s21-camera-open"]').click({ force: true })
   await expect(page.locator('[data-testid="s21-camera-reason"]')).toContainText('http://')
-  const w = (await triggers(page)).filter((c) => c.trigger === 'ui.working')
-  expect(w).toHaveLength(0)
+  expect((await triggers(page)).filter((c) => c.trigger === 'ui.working')).toHaveLength(0)
 })
 
-test('S-21 の「次にやること」にも ui.working を送らない（AT_PANEL では「カメラ」）', async ({ page }) => {
-  await stubWindowOpen(page)
-  await goto21(page, IDLE, {
-    homeDeclared: true,
-    openVenueMap: { success: true, message: '' },
-    paramsStubs: CAMERA_STUBS,
-  })
-  // 段1（会場地図を開く）を済ませてから段5へ進む（mapOpened はこの応答で決まる）。
-  // 会場地図操作は停止中だけ可なので、AT_PANEL へは後から切り替える。
-  const firstBtn = page.locator('[data-testid="s21-next-action"]')
-  await expect(firstBtn).toHaveText('会場地図を開く')
-  await firstBtn.click()
-  await setTestState(page, { mode: 'AT_PANEL', state: 'IDLE_P' })
-  // 段3（行き先を選ぶ）を済ませる＝ピン行を 1 つ選択する。
-  await page.locator('[data-testid="s21-pin-row"]').first().click()
-  // 段5「カメラ/呼び寄せ」が current。次操作は「カメラ」。
-  const btn = page.locator('[data-testid="s21-next-action"]')
-  await expect(btn).toHaveText('カメラ')
-  await btn.click()
-  expect(await opened(page)).toHaveLength(1)
+test('「測定機能へ」は盤の前で停止命令（ui.working）を送る', async ({ page }) => {
+  await goto21(page, { mode: 'AT_PANEL', state: 'IDLE_P' })
+  await page.locator('[data-testid="s21-measure"]').click()
   const w = (await triggers(page)).filter((c) => c.trigger === 'ui.working')
-  expect(w, '次にやることが ui.working を送っている').toHaveLength(0)
+  expect(w, '測定機能へが ui.working を送っていない').toHaveLength(1)
 })
 
-test('対象選択レーダー: SUMMON のときだけ ui.select_target を送る', async ({ page }) => {
+test('「停止を解く」は停止命令の間だけ出て、W-4 の確認のあと ui.working で解く', async ({ page }) => {
+  await goto21(page, { mode: 'AT_PANEL', state: 'WORKING' })
+  await expect(page.locator('[data-testid="s21-measure"]')).toHaveCount(0)
+  await page.locator('[data-testid="s21-unstop"]').click()
+  await expect(page.locator('[data-testid="s21-unstop-confirm"]')).toBeVisible()
+  await page.locator('[data-testid="s21-unstop-confirm"]').click()
+  const w = (await triggers(page)).filter((c) => c.trigger === 'ui.working')
+  expect(w, '停止を解くが ui.working を送っていない').toHaveLength(1)
+})
+
+test('対象選択レーダー: SUMMON/POINT は主表示に出て ui.select_target を送る', async ({ page }) => {
   await goto21(page, { mode: 'SUMMON', state: 'POINT' })
-  await page.getByRole('tab', { name: '対象選択' }).click()
   await expect(page.locator('[data-testid="radar-cand-0"]')).toBeVisible()
-
   await page.locator('[data-testid="radar-cand-1"]').click()
   const sel = (await triggers(page)).find((c) => c.trigger === 'ui.select_target')
   expect(sel, 'SUMMON のレーダーが ui.select_target を送っていない').toBeTruthy()
   expect(sel.argJson).toMatchObject({ index: 1 })
 })
 
-// WS-9AD(2026-09-11): 以前はタブを開くとレーダーが常に出てタップできてしまい、
-// SUMMON/POINT 以外では ui.select_target が黙って拒否される（無反応に見える）
-// だけだった。選べない場面ではレーダー自体を出さず案内文にする。
-test('対象選択レーダー: PANEL_NAV では選べない（レーダーを出さず案内文にする）', async ({ page }) => {
-  await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' })
-  await page.getByRole('tab', { name: '対象選択' }).click()
-  await expect(page.locator('[data-testid="s21-target-unavailable"]')).toBeVisible()
-  await expect(page.locator('[data-testid="radar-cand-0"]')).not.toBeVisible()
-  expect(
-    (await triggers(page)).filter((c) => c.trigger === 'ui.select_target'),
-    'PANEL_NAV では ui.select_target を出すべきではない',
-  ).toHaveLength(0)
-})
-
 test('レーダーの空表示と見失い表示', async ({ page }) => {
   await goto21(page, { mode: 'SUMMON', state: 'POINT' })
-  await page.getByRole('tab', { name: '対象選択' }).click()
-
   await setTestPersonTargets(page, { candidates: [], selected_index: -1, confidence: 0, is_lost: false, lost_reason: '' })
   await expect(page.locator('[data-testid="radar-empty"]')).toBeVisible()
 
-  // 2026-09-08 実機修正: 候補が居る間は isLost でも候補を隠さずタップ可能にする
-  // （人物追跡ライブラリは見失うと自動で再取得しないため、選び直す手段を必ず残す）。
-  // 候補 0 件 + isLost のときだけ「見失っています」の全面表示。
   await setTestPersonTargets(page, { ...TARGETS, is_lost: true, lost_reason: 'tracker_lost' })
   await expect(page.locator('[data-testid="radar-lost-reselect"]')).toBeVisible()
   await expect(page.locator('[data-testid="radar-cand-0"]')).toBeVisible()
@@ -598,27 +500,16 @@ test('レーダーの空表示と見失い表示', async ({ page }) => {
   await expect(page.locator('[data-testid="radar-lost"]')).toBeVisible()
 })
 
-// 2026-09-08 実機で確認: 対象を見失った後に再選択できないと復帰不能になる
-// （multiple_sensor_person_tracking は明示選択でしか再取得しない設計）。
 test('見失った状態でも候補をタップして選び直せる（SUMMON/POINT）', async ({ page }) => {
   await goto21(page, { mode: 'SUMMON', state: 'POINT' }, { targets: { ...TARGETS, is_lost: true } })
-  await page.getByRole('tab', { name: '対象選択' }).click()
-
   await expect(page.locator('[data-testid="radar-lost-reselect"]')).toBeVisible()
   await expect(page.locator('[data-testid="radar-cand-1"]')).toBeVisible()
-
   await page.locator('[data-testid="radar-cand-1"]').click()
   const sel = (await triggers(page)).find((c) => c.trigger === 'ui.select_target')
   expect(sel, '見失い中のタップが ui.select_target を送っていない').toBeTruthy()
   expect(sel.argJson).toMatchObject({ index: 1 })
 })
 
-test('SUMMON 以外のモードでも見た目はそのまま（PANEL_NAV で状態欄は stateLabel）', async ({ page }) => {
-  await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' })
-  await expect(page.locator('[data-testid="s21-state"]')).toHaveText('移動中')
-})
-
-// brief-onsite-fix C.5: 実地図シードで s21 地図タブにラスタが描かれ、ピン/ロボットが載る。
 test('地図シードありで s21-map-raster が描かれピンが地図座標に載る', async ({ page }) => {
   await goto21(page, IDLE, { routeMap: ROUTE_MAP, openVenueMap: { success: true, message: '' } })
   await unlockOnsiteVenueMap(page)
@@ -627,9 +518,7 @@ test('地図シードありで s21-map-raster が描かれピンが地図座標�
   await expect(page.locator('[data-testid="s21-map-robot"]')).toBeVisible()
 })
 
-// brief-onsite-ux2 F-6: 押す前は地図タブに OnsiteMap がマウントされない
-// （案内文と「保存した会場地図を開く」ボタンだけ）。押すと現れる。
-test('F-6: 「保存した会場地図を開く」を押すまで s21-map は存在せず、押すと現れる', async ({ page }) => {
+test('「保存した会場地図を開く」を押すまで s21-map は存在せず、押すと現れる', async ({ page }) => {
   await goto21(page, IDLE, { openVenueMap: { success: true, message: '' } })
   await expect(page.locator('[data-testid="s21-map"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="s21-map-gate-msg"]')).toBeVisible()
@@ -637,11 +526,9 @@ test('F-6: 「保存した会場地図を開く」を押すまで s21-map は存
   await expect(page.locator('[data-testid="s21-map"]')).toBeVisible()
 })
 
-// brief-onsite-fix E: 「保存した会場地図を開く」を押すと /map_session/open
-// （slot:VENUE / mode:reload / session_id:venue）を呼ぶ。
 test('保存した会場地図を開くが /map_session/open を呼ぶ', async ({ page }) => {
   await goto21(page)
-  const btn = page.locator('[data-testid="s21-open-venue-map"]')
+  const btn = page.locator('[data-testid="s21-map-gate-open"]')
   await expect(btn).toBeVisible()
   await btn.click()
   const open = (await onsiteServiceCalls(page)).find(
@@ -650,10 +537,6 @@ test('保存した会場地図を開くが /map_session/open を呼ぶ', async (
   expect(open.request).toMatchObject({ slot: 'VENUE', mode: 'reload', session_id: 'venue' })
 })
 
-// brief-MAP-COSTMAP: costmap（/global_costmap/costmap）と直近の Nav2 経路（/plan）が
-// 地図タブに重なる。シードは gotoScreenWithOnsite の costmap / plannedPath オプション
-// （__thTestCostmap / __thTestPlannedPath）経由。testid は s21-map-costmap /
-// s21-map-path。
 test('MAP-COSTMAP: costmap と Nav2 経路が地図に重なる', async ({ page }) => {
   await goto21(page, IDLE, {
     routeMap: ROUTE_MAP,
@@ -675,26 +558,17 @@ test('MAP-COSTMAP: costmap/経路を seed していなければ何も描かな�
   await expect(page.locator('[data-testid="s21-map-path"]')).toHaveCount(0)
 })
 
-
-
-// ── 1b-11 ──────────────────────────────────────────────────
-
-// SG-C8: 宣言成功時にずれ量を出す。
-test('待機場所の宣言: 成功でずれ量が出る', async ({ page }) => {
-  await goto21(page, IDLE, { declareHome: { success: true, offset_m: 0.034, offset_deg: 2.4, message: '' } })
-  await expect(page.locator('[data-testid="s21-home-offset"]')).toHaveCount(0)
-  await page.locator('[data-testid="s21-home-declare"]').click()
-  await expect(page.locator('[data-testid="s21-home-offset"]')).toHaveText('ずれ 0.03m・2°')
+test('右列 ①: 経路があれば「残り」の距離が出る', async ({ page }) => {
+  await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' }, {
+    plannedPath: [{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 3, y: 4 }],
+  })
+  await expect(page.locator('[data-testid="s21-where-remain"]')).toHaveText('残り 7.0 m')
 })
 
-// SG-C8: 退避待ちのバーは、ノードが出す remaining_sec の最初の値（= 実際の時間切れ）
-// を全体とする。画面に 15 や 30 を直書きしない。全体が 30 でも 60 でも半分で 50%。
+// SG-C8: 退避待ちのバーは、ノードが出す remaining_sec の最初の値を全体とする。
 for (const total of [30, 60]) {
   test(`退避待ち: バーの全体はノードの残り時間の初回値（${total}s）から取る`, async ({ page }) => {
-    await goto21(page, IDLE, { waitClear: { distance_m: 0.4, remaining_sec: total, satisfied: false, verdict: 'WAITING' } })
-    await page.locator('[data-testid="s21-subtab-summon"]').click()
-    await page.locator('[data-testid="s21-summon-start"]').click()
-    await setTestState(page, { mode: 'SUMMON', state: 'WAIT_CLEAR' })
+    await goto21(page, { mode: 'SUMMON', state: 'WAIT_CLEAR' }, { waitClear: { distance_m: 0.4, remaining_sec: total, satisfied: false, verdict: 'WAITING' } })
     await expect(page.locator('[data-testid="s21-clear-box"]')).toBeVisible()
     await setTestWaitClear(page, { distance_m: 0.4, remaining_sec: total / 2, satisfied: false, verdict: 'WAITING' })
     const w = async () => page.locator('[data-testid="s21-clear-bar"] i').evaluate((el) => el.style.width)
@@ -702,19 +576,13 @@ for (const total of [30, 60]) {
   })
 }
 
-// SG-C8: 見失っている間（distance_m < 0）は最後の距離を出さず「—」。
 test('退避待ち: 見失い中は距離を「—」にする', async ({ page }) => {
-  await goto21(page, IDLE, { waitClear: { distance_m: 0.4, remaining_sec: 20, satisfied: false, verdict: 'NOT_CLEAR' } })
-  await page.locator('[data-testid="s21-subtab-summon"]').click()
-  await page.locator('[data-testid="s21-summon-start"]').click()
-  await setTestState(page, { mode: 'SUMMON', state: 'WAIT_CLEAR' })
+  await goto21(page, { mode: 'SUMMON', state: 'WAIT_CLEAR' }, { waitClear: { distance_m: 0.4, remaining_sec: 20, satisfied: false, verdict: 'NOT_CLEAR' } })
   await expect(page.locator('[data-testid="s21-clear-dist"]')).toHaveText('0.4 m')
   await setTestWaitClear(page, { distance_m: -1, remaining_sec: 19, satisfied: false, verdict: 'NOT_CLEAR' })
   await expect(page.locator('[data-testid="s21-clear-dist"]')).toHaveText('—')
 })
 
-// SG-C14: S-50 でコストマップを非表示にすると、地図タブに costmap が重ならない
-// （seed していても描かない。購読自体も止める）。
 test('MAP-COSTMAP: 非表示設定では seed しても costmap を描かない', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('th.costmapVisible', '0')
@@ -728,6 +596,35 @@ test('MAP-COSTMAP: 非表示設定では seed しても costmap を描かない'
   await unlockOnsiteVenueMap(page)
   await expect(page.locator('[data-testid="s21-map-raster"]')).toBeVisible()
   await expect(page.locator('[data-testid="s21-map-costmap"]')).toHaveCount(0)
-  // 経路はコストマップ設定に縛られない（対照）。
   await expect(page.locator('[data-testid="s21-map-path"]')).toBeVisible()
+})
+
+// data-pos: 状態を変えても右列のボタンの位置は動かない（§3.3）。
+test('data-pos: 状態を変えても右列のボタンの位置が動かない', async ({ page }) => {
+  await goto21(page, IDLE, { openVenueMap: { success: true, message: '' } })
+  await unlockOnsiteVenueMap(page)
+  const ids = ['s21-finish', 'stop-run-toggle-stop', 'stop-run-toggle-run', 's21-manual', 's21-abort', 's21-dest-home', 's21-dest-next-panel', 's21-dest-summon-here', 's21-measure', 's21-camera-open']
+  // ヘッダの札の高さは状態で変わる（本文ごと下がりうる）ので、位置は
+  // 終了ボタン基準の相対位置で比べる（右列内部での並びが動かないこと）。
+  const rel = async () => {
+    const out = {}
+    const base = await page.locator('[data-testid="s21-finish"]').boundingBox()
+    for (const id of ids) {
+      const b = await page.locator(`[data-testid="${id}"]`).boundingBox()
+      out[id] = { x: b.x - base.x, y: b.y - base.y, width: b.width, height: b.height }
+    }
+    return out
+  }
+  const before = await rel()
+  const samePlace = (a, b) => Math.abs(a.x - b.x) <= 2 && Math.abs(a.y - b.y) <= 2 && Math.abs(a.width - b.width) <= 2 && Math.abs(a.height - b.height) <= 2
+  await setTestState(page, { mode: 'PANEL_NAV', state: 'NAV' })
+  const afterNav = await rel()
+  for (const id of ids) {
+    expect(samePlace(afterNav[id], before[id]), `${id} の位置が動いている`).toBe(true)
+  }
+  await setTestState(page, { mode: 'PANEL_NAV', state: 'PAUSE' })
+  const afterPause = await rel()
+  for (const id of ids) {
+    expect(samePlace(afterPause[id], before[id]), `${id} の位置が動いている`).toBe(true)
+  }
 })

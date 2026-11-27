@@ -1080,3 +1080,51 @@ table.lst td.r{text-align:right}
 }
 /* W-1 の再開確認に添える「解消した異常」。 */
 .fh-resolved{color:var(--warn-tx)}
+
+/* ---------- 型の骨組み（shell/Layouts.jsx。W0a の部品に対応する配置。P3 で追加） ----------
+   既存の .screen.two-col と同じ比率・同じ区切りで並べる（主表示と右列）。
+   狭いときは縦に積む（縦長）。data-pos の位置は状態で動かない。 */
+.content.g-drv{display:grid;grid-template-columns:1fr;gap:10px;align-items:start;padding:10px}
+@container app (min-width:760px){
+  .content.g-drv{grid-template-columns:1.35fr 1fr}
+}
+@container app (min-width:1300px){
+  .content.g-drv{grid-template-columns:1.15fr 1.4fr}
+}
+.content.g-list{display:grid;grid-template-columns:1fr;gap:10px;align-items:start;padding:10px}
+@container app (min-width:760px){
+  .content.g-list{grid-template-columns:minmax(0,5fr) minmax(0,7fr)}
+}
+.mainv{min-width:0}
+.rcol{display:flex;flex-direction:column;gap:10px;min-width:0}
+.rops{display:flex;flex-direction:column;gap:10px}
+.rjog{display:flex;flex-direction:column;gap:8px}
+
+/* ---------- S-21 試験（作り直し） ----------
+   #s21 の前身（.screen#s21）の地図・退避待ちバーの大きさを引き継ぐ。 */
+#s21 .mapWrap{position:relative}
+#s21 .mapWrap svg{display:block;width:100%;height:auto;max-height:min(42cqh,300px);
+  background:var(--inset);border:1px solid var(--bd);border-radius:var(--r)}
+#s21 .s21-bar{height:12px;border-radius:999px;overflow:hidden;background:var(--inset)}
+#s21 .s21-bar i{display:block;height:100%;border-radius:999px;background:var(--warn)}
+#s21 .s21-bar.ok i{background:var(--ok-tx)}
+#s21 .s21-bar.nope i{background:var(--ng-tx)}
+#s21 .s21-pin-bubble{position:absolute;left:12px;bottom:12px;z-index:5;display:flex;flex-direction:column;gap:8px;max-width:80%}
+#s21 .s21-summon-band{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+#s21 .s21-where{display:flex;flex-direction:column;gap:2px;font-size:calc(var(--fs) * 1.05);font-weight:700}
+#s21 .s21-where b{font-size:calc(var(--fs) * 1.2)}
+.s21-opbar{padding:10px 10px 0}
+#s21 .btnrow > .reason-wrap{display:flex;min-width:0}
+#s21 .btnrow > .reason-wrap > .btn{flex:1 1 auto;min-width:0}
+#s21 .btnrow > .help-wrap{display:flex;min-width:0}
+#s21 .btnrow > .help-wrap > .reason-wrap{flex:1 1 auto;display:flex;min-width:0}
+#s21 .btnrow > .help-wrap > .reason-wrap > .btn{flex:1 1 auto;min-width:0}
+/* S-21: 次の配電盤は出発の色（進むの緑）で塗る（モックアップ）。押せない間は塗りを外す。 */
+.btn.go-paint{background:var(--ok);color:#fff}
+.btn.go-paint.dis{background:transparent;color:var(--dim)}
+#s21 .rops > .help-wrap{display:flex;min-width:0}
+#s21 .rops > .help-wrap > .reason-wrap{flex:1 1 auto;display:flex;min-width:0}
+#s21 .rops > .help-wrap > .reason-wrap > .btn{flex:1 1 auto;min-width:0}
+#s21 [data-pos="ops"] > .help-wrap{display:flex;min-width:0}
+#s21 [data-pos="ops"] > .help-wrap > .reason-wrap{flex:1 1 auto;display:flex;min-width:0}
+#s21 [data-pos="ops"] > .help-wrap > .reason-wrap > .btn{flex:1 1 auto;min-width:0}

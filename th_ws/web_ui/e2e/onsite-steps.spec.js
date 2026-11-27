@@ -124,6 +124,10 @@ test('S-20: 2 点指示ウィザード（REGISTER）中は次操作ボタンを�
 })
 
 // ── S-21 ─────────────────────────────────────────────────
+// 作り直し（Spec-webui §3.11）: 手順バー・「次にやること」・待機場所の宣言は
+// 廃止し、右列の固定ボタンと主表示の帯に置き換えた。ここでは S-21 の
+// 「会場地図を開く」のゲートと呼び寄せ帯だけを縛る（操作の送付は
+// s21-test.spec.js が縛る）。
 
 async function goto21(page, state = IDLE, extra = {}) {
   await gotoScreenWithOnsite(page, 'S21', state, {
@@ -132,116 +136,14 @@ async function goto21(page, state = IDLE, extra = {}) {
   await page.locator('#s21').waitFor()
 }
 
-test('S-21: 手順バーが出て現在段は段1（会場地図を開く）', async ({ page }) => {
-  await goto21(page)
-  await expect(page.locator('[data-testid="s21-stepper"]')).toBeVisible()
-  await expect(page.locator('[data-testid="step-1"]')).toHaveAttribute('aria-current', 'step')
-  await expect(page.locator('[data-testid="s21-next-action"]')).toHaveText('会場地図を開く')
-})
-
-test('S-21: 「会場地図を開く」で /map_session/open を呼び段が進む', async ({ page }) => {
+test('S-21: 「会場地図を開く」で /map_session/open を呼んで地図が出る', async ({ page }) => {
   await goto21(page, IDLE, { openVenueMap: { success: true, message: '' } })
-
-  const btn = page.locator('[data-testid="s21-next-action"]')
-  await expect(btn).toHaveText('会場地図を開く')
-  await btn.click()
+  await expect(page.locator('[data-testid="s21-map"]')).toHaveCount(0)
+  await page.locator('[data-testid="s21-map-gate-open"]').click()
   const open = (await onsiteServiceCalls(page)).find((c) => c.service === '/map_session/open')
   expect(open, '「会場地図を開く」が /map_session/open を呼んでいない').toBeTruthy()
   expect(open.request).toMatchObject({ slot: 'VENUE', mode: 'reload', session_id: 'venue' })
-
-  // 成功で段1完了 → 現在は段2（待機場所を宣言）。
-  await expect(page.locator('[data-testid="step-1"]')).toHaveClass(/done/)
-  await expect(page.locator('[data-testid="step-2"]')).toHaveAttribute('aria-current', 'step')
-  await expect(btn).toHaveText('待機場所を宣言')
-})
-
-test('S-21: 「待機場所を宣言」で declare_home(force:false) を呼び段3へ', async ({ page }) => {
-  await goto21(page, IDLE, {
-    openVenueMap: { success: true, message: '' },
-    declareHome: { success: true, offset_m: 0, offset_deg: 0, message: '' },
-  })
-
-  const btn = page.locator('[data-testid="s21-next-action"]')
-  await expect(btn).toHaveText('会場地図を開く')
-  await btn.click()
-  await expect(btn).toHaveText('待機場所を宣言')
-  await btn.click()
-  const dh = (await onsiteServiceCalls(page)).find((c) => c.service === '/onsite/declare_home')
-  expect(dh, '宣言が /onsite/declare_home を呼んでいない').toBeTruthy()
-  expect(dh.request).toMatchObject({ force: false })
-
-  // home_declared の受信で段2完了 → 段3（行き先を選ぶ）。
-  await setTestHomeDeclared(page, true)
-  await expect(page.locator('[data-testid="step-2"]')).toHaveClass(/done/)
-  await expect(page.locator('[data-testid="step-3"]')).toHaveAttribute('aria-current', 'step')
-  await expect(btn).toHaveText('行き先を選ぶ')
-})
-
-test('S-21: 「行き先を選ぶ」で行き先サブタブ＋ピン選択を促す', async ({ page }) => {
-  await goto21(page, IDLE, {
-    openVenueMap: { success: true, message: '' },
-    homeDeclared: true,
-  })
-
-  const btn = page.locator('[data-testid="s21-next-action"]')
-  await expect(btn).toHaveText('会場地図を開く')
-  await btn.click() // 段1（会場地図を開く）
-  // 段2（宣言）は homeDeclared 済みなのでスキップ → 段3（行き先を選ぶ）。
-  await expect(btn).toHaveText('行き先を選ぶ')
-  await btn.click()
-  await expect(page.locator('[data-testid="s21-subtab-dest"]')).toHaveAttribute('aria-selected', 'true')
-  await expect(page.locator('[data-testid="s21-panel-pick-hint"]')).toBeVisible()
-})
-
-// 2026-09-09 実機フィードバック「移動を押すと停止ボタンが2つ出て両方反応しない」:
-// 段4（move、移動中）の「次にやること」は以前 kind:'stop' で ui.stop を送るだけの
-// ボタンだったが、操作カードに常時ある「停止」（.op-stop）と全く同じ操作の重複
-// だった。段4では「次にやること」自体を出さず、操作カードの停止だけにする
-// （UX-6-c が「保存」で既にやっている「同じ操作を二重に出さない」原則を停止にも
-// 適用）。
-test('S-21: 移動中は「次にやること」を出さない（操作カードの停止のみ）、配電盤前は「カメラ」で別タブを開く', async ({ page }) => {
-  // 「カメラ」は /params/get の effective.camera_ui_url を別タブで開く。
-  await page.addInitScript(() => {
-    window.__thOpened = []
-    window.open = (url, target, features) => {
-      window.__thOpened.push({ url, target, features })
-      return null
-    }
-  })
-  const CAMERA_STUBS = {
-    get: { effective: { camera_ui_url: 'http://192.168.5.129/' }, pending: {} },
-    set: { success: true, message: 'OK' },
-  }
-  // 段1（会場地図を開く）は IDLE で開いてから PANEL_NAV/NAV へ切り替える
-  // （停止中以外は地図操作ボタンが押せない。1b-5）。
-  await goto21(page, IDLE, {
-    openVenueMap: { success: true, message: '' },
-    homeDeclared: true,
-    paramsStubs: CAMERA_STUBS,
-  })
-  const btn = page.locator('[data-testid="s21-next-action"]')
-  await expect(btn).toHaveText('会場地図を開く')
-  await btn.click() // 段1（会場地図を開く）
-  // 段2（宣言）は homeDeclared 済みなのでスキップ → 段3（行き先を選ぶ）。
-  await expect(btn).toHaveText('行き先を選ぶ')
-  // 移動系モードへ：段1〜3が完了だが段4（AT_PANEL）未完了 → current=段4。
-  await setTestState(page, { mode: 'PANEL_NAV', state: 'NAV' })
-  await expect(page.locator('[data-testid="step-4"]')).toHaveAttribute('aria-current', 'step')
-  await expect(btn).toBeHidden()
-  // 停止は操作カード側（常時表示）だけで送る。
-  await page.locator('#s21 .op-stop').click()
-  expect((await triggers(page)).some((c) => c.trigger === 'ui.stop'), '停止が ui.stop を送っていない').toBe(true)
-
-  // AT_PANEL に着くと段4完了 → current=段5「カメラ/呼び寄せ」。
-  await setTestState(page, { mode: 'AT_PANEL', state: 'IDLE_P' })
-  await expect(page.locator('[data-testid="step-5"]')).toHaveAttribute('aria-current', 'step')
-  await expect(btn).toHaveText('カメラ')
-  await btn.click()
-  const opened = await page.evaluate(() => window.__thOpened ?? [])
-  expect(opened, 'カメラが別タブで開かれていない').toHaveLength(1)
-  expect(opened[0].target).toBe('_blank')
-  const w = (await triggers(page)).filter((c) => c.trigger === 'ui.working')
-  expect(w, '次にやることが ui.working を送っている').toHaveLength(0)
+  await expect(page.locator('[data-testid="s21-map"]')).toBeVisible()
 })
 
 // 1b-5 (SG-A6): 移動中は「会場地図を開く」が押せない（画面の事前無効化。
@@ -249,22 +151,16 @@ test('S-21: 移動中は「次にやること」を出さない（操作カー�
 test('S-21: 移動中（PANEL_NAV/NAV）は「会場地図を開く」が押せない', async ({ page }) => {
   await goto21(page, { mode: 'PANEL_NAV', state: 'NAV' }, {
     openVenueMap: { success: true, message: '' },
-    homeDeclared: true,
   })
-  // 地図タブの「会場地図を開く」・次操作・行き先タブの同ボタンがいずれも無効。
-  await expect(page.locator('[data-testid="s21-map-gate-open"]')).toBeDisabled()
-  await expect(page.locator('[data-testid="s21-next-action"]')).toBeDisabled()
-  await expect(page.locator('[data-testid="s21-open-venue-map"]')).toBeDisabled()
-  // 押せないので /map_session/open は呼ばれていない。
+  await expect(page.locator('[data-testid="s21-map-gate-open"]')).toHaveAttribute('aria-disabled', 'true')
   const open = (await onsiteServiceCalls(page)).filter((c) => c.service === '/map_session/open')
   expect(open, '移動中に /map_session/open が呼ばれている').toHaveLength(0)
 })
 
-test('S-21: 2 点指示ウィザード（SUMMON/POINT）中は次操作ボタンを隠す', async ({ page }) => {
-  await goto21(page, { mode: 'SUMMON', state: 'POINT' }, {
+test('S-21: 2 点指示ウィザード（SUMMON/POINT）は主表示の帯にそのまま出る（タブを押さない）', async ({ page }) => {
+  await goto21(page, { mode: 'SUMMON', state: 'POINT', tracker_enabled: true }, {
     openVenueMap: { success: true, message: '' },
   })
-  await page.locator('[data-testid="s21-subtab-summon"]').click()
   await expect(page.locator('[data-testid="s21-wizard"]')).toBeVisible()
-  await expect(page.locator('[data-testid="s21-next-action"]')).toBeHidden()
+  await expect(page.locator('[data-testid="s21-summon-band"]')).toBeVisible()
 })
