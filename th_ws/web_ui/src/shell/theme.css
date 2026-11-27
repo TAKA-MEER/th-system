@@ -76,7 +76,7 @@ table{border-collapse:collapse;width:100%}
 }
 #app{
   position:relative;display:flex;flex-direction:column;overflow:hidden;
-  background:var(--bg);
+  background:var(--bg);color:var(--tx); /* 明るい地の文字: audience/AudienceView.css の body{color} が漏れたときもここで止める */
   /* 論理サイズ。FixedStage が未マウントでも壊れないよう既定値を持たせる。 */
   width:var(--stage-w, 100%);height:var(--stage-h, 100dvh);
   flex:0 0 auto;
@@ -115,10 +115,10 @@ table{border-collapse:collapse;width:100%}
    フォルト文が長いときにこれが起きて「画面名／モードだけ下の行に落ちる」
    という変形になっていた。nowrap にして、足りない分は #screenName 自身の
    ellipsis に吸収させる（元々 max-width:559px の分岐だけがこうしていた）。 */
-#hdr .row1{display:flex;align-items:center;gap:8px;padding:7px 10px;flex-wrap:nowrap;min-width:0}
+#hdr .row1{display:flex;align-items:center;gap:8px;padding:7px 10px;flex-wrap:nowrap;min-width:0;color:#fff} /* 青い帯の上の文字は白（モックアップのヘッダ。#screenName・.proj はここから継ぐ） */
 #logo{height:30px;background:#fff;border-radius:5px;padding:3px 6px;flex:0 0 auto}
 #logo img{height:100%;display:block}
-.proj{font-size:calc(var(--fs) * .66);color:var(--brand-lt);letter-spacing:.02em;line-height:1.25;flex:0 0 auto}
+.proj{font-size:calc(var(--fs) * .66);color:#fff;letter-spacing:.02em;line-height:1.25;flex:0 0 auto}
 .proj b{display:block;font-size:calc(var(--fs) * .8);color:#fff;font-weight:700}
 #hdr .spacer{flex:1 1 auto}
 /* DetailedDesign-webui.md §2.5: screen name and mode are the largest text in the header */
@@ -382,8 +382,8 @@ table.lst td.r{text-align:right}
 
 .hint{background:#122033;border:1px solid #24446e;border-radius:6px;padding:8px 10px;
   font-size:calc(var(--fs) * .83);color:#b9d4f2;line-height:1.5}
-.note{background:#2a1c0a;border:1px solid #6a4a18;border-radius:6px;padding:8px 10px;
-  font-size:calc(var(--fs) * .83);color:var(--warn-tx);line-height:1.5}
+.note{background:var(--jis-y, #ffd100);border:1px solid var(--warn);border-radius:6px;padding:8px 10px;
+  font-size:calc(var(--fs) * .83);color:var(--warn-tx);line-height:1.5} /* §3.3.1 注意は黄。明るい地では --warn-tx は濃い文字 */
 
 /* ---------- S-20 試験準備（WP-UI-06。screens/S20Prep.jsx） ----------
    地図 SVG と対象選択レーダー。mockup の .mapWrap svg とデータテンプレート
@@ -412,7 +412,7 @@ table.lst td.r{text-align:right}
 .rv-cand circle{fill:#245089;stroke:#90caf9;stroke-width:1.5}
 .rv-cand.sel circle{fill:#43a047;stroke:#c8e6c9;stroke-width:2}
 .rv-cand text{fill:var(--mut);font-size:10px}
-.rv-cand.sel .rv-sel{fill:#c8e6c9;font-size:11px}
+.rv-cand.sel .rv-sel{fill:var(--ok-tx);font-size:11px} /* 明るい地では濃い文字（旧値 #c8e6c9 は暗い地向け） */
 .rv-cnf{fill:var(--mut);font-size:9px}
 
 /* ---------- S-21 試験（WP-UI-07。screens/S21Test.jsx） ---------- */

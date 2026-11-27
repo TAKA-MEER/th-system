@@ -52,10 +52,11 @@ function startCall(calls) {
 
 // ── S-20（試験準備） ─────────────────────────────────────────────────────────
 
-test('S-20: 人検出が止まっている間は対象選択タブの中心に「人検出を開始」でレーダーは出ない', async ({ page }) => {
+test('S-20: 人検出が止まっている間は地図の右上に「人検出を開始」でレーダーは出ない', async ({ page }) => {
+  // 画面の作り直し: 対象選択タブは無い。レーダーは地図の右上に重なり、止まっている間は
+  // TrackerControl（開始ボタン）が出る。
   await stubSetFlag(page, { tracker_enabled: { accepted: true, reject_reason_key: null } })
   await openS20(page, PREP_OFF)
-  await page.getByRole('tab', { name: '対象選択' }).click()
 
   await expect(page.locator('[data-testid="s20-tracker-off"]')).toHaveText('人検出が止まっています')
   await expect(page.locator('[data-testid="s20-tracker-start"]')).toBeVisible()
@@ -73,13 +74,14 @@ test('S-20: 人検出が止まっている間は対象選択タブの中心に�
 
 test('S-20: 人検出が止まっている間は 2 点指示の登録ボタンが非活性で注記が出る', async ({ page }) => {
   await openS20(page, PREP_OFF)
-  await page.getByRole('tab', { name: '登録' }).click()
 
   await expect(page.locator('[data-testid="s20-reg-tracker-off"]')).toHaveText('人検出が止まっています')
   await expect(page.locator('[data-testid="s20-reg-home"]')).toBeDisabled()
   await expect(page.locator('[data-testid="s20-reg-panel"]')).toBeDisabled()
   // 機体姿勢での直接登録（ROBOT_POSE）は人検出を要らないので非活性にしない。
-  await expect(page.locator('[data-testid="s20-reg-home-here"]')).toBeEnabled()
+  // 画面の作り直し: 方式の切り替えで選ぶ（別ボタンは無い）。
+  await page.locator('[data-testid="s20-method-pose"]').click()
+  await expect(page.locator('[data-testid="s20-reg-home"]')).toBeEnabled()
 
   // 人検出を開始すると（状態の正本は server なので setTestState で再現）有効に戻る。
   await setTestState(page, { tracker_enabled: true })
@@ -87,19 +89,17 @@ test('S-20: 人検出が止まっている間は 2 点指示の登録ボタン�
   await expect(page.locator('[data-testid="s20-reg-home"]')).toBeEnabled()
 })
 
-test('S-20: 人検出が動いている間は「人検出を停止」が出て、送信は value:false', async ({ page }) => {
+test('S-20: 人検出が動いている間は地図の右上にレーダーが出て、「人検出を停止」は左上の切り替えで送る', async ({ page }) => {
   await openS20(page, { ...PREP_OFF, tracker_enabled: true })
-  await page.getByRole('tab', { name: '対象選択' }).click()
 
-  await expect(page.locator('[data-testid="s20-tracker-stop"]')).toBeVisible()
-  // 候補が出ていれば「動作中」、レーダーも表示する。
-  await expect(page.locator('[data-testid="s20-tracker-status"]')).toHaveText('人検出 動作中')
+  // 画面の作り直し: ON の間はレーダーが地図の右上に出る（TrackerControl は出さない）。
   await expect(page.locator('[data-testid="radar-cand-0"]')).toBeVisible()
 
-  await page.locator('[data-testid="s20-tracker-stop"]').click()
+  // 停止は左上の「人検出 切│入」で送る（方式の停止ボタンは地図の上で出さない）。
+  await page.locator('[data-testid="s20-person-detect-off"]').click()
   const calls = await setFlagCalls(page)
   const stop = calls.find((c) => c.flag === 'tracker_enabled' && c.value === false)
-  expect(stop, '「人検出を停止」が tracker_enabled=false を送っていない').toBeTruthy()
+  expect(stop, '左上の「人検出 切」が tracker_enabled=false を送っていない').toBeTruthy()
 })
 
 test('S-20: 起動中（フラグ true だが候補なし）は「起動中…」と表示する', async ({ page }) => {
@@ -109,23 +109,21 @@ test('S-20: 起動中（フラグ true だが候補なし）は「起動中…�
       candidates: [], selected_index: -1, confidence: 0, is_lost: false, lost_reason: '',
     })
   })
-  await page.getByRole('tab', { name: '対象選択' }).click()
 
-  await expect(page.locator('[data-testid="s20-tracker-status"]')).toHaveText('起動中…')
+  // 画面の作り直し: 人検出 ON の間はレーダーが地図の右上に出る（TrackerControl は出さない）。
+  // 起動中（候補 0 件）はレーダーの空表示で分かる。
   await expect(page.locator('[data-testid="radar-empty"]')).toBeVisible()
 })
 
-test('S-20: REGISTER では「人検出を停止」が押せず理由が出る（MAPPING では押せる）', async ({ page }) => {
-  await openS20(page, { ...PREP_OFF, tracker_enabled: true })
-  await page.getByRole('tab', { name: '対象選択' }).click()
-
-  // MAPPING → 停止は押せる。
-  await expect(page.locator('[data-testid="s20-tracker-stop"]')).toBeEnabled()
-
-  // REGISTER（2 点指示の登録中）→ 人検出が要るので停止を事前無効化し理由を出す。
-  await setTestState(page, { state: 'REGISTER' })
-  await expect(page.locator('[data-testid="s20-tracker-stop"]')).toBeDisabled()
-  await expect(page.locator('[data-testid="s20-tracker-stop-denied"]')).toContainText('人検出')
+test('S-20: 人検出が止まっている間は地図の右上に「人検出を開始」が出る（左上の切り替えでも開始できる）', async ({ page }) => {
+  // 画面の作り直し: 停止は左上の「人検出 切│入」でだけ送る。地図の上の TrackerControl は
+  // 開始（OFF の間）だけ出す。開始が tracker_enabled=true を送ることを縛る。
+  await stubSetFlag(page, { tracker_enabled: { accepted: true, reject_reason_key: null } })
+  await openS20(page, PREP_OFF)
+  await expect(page.locator('[data-testid="s20-tracker-start"]')).toBeVisible()
+  await page.locator('[data-testid="s20-tracker-start"]').click()
+  const calls = await setFlagCalls(page)
+  expect(startCall(calls), '「人検出を開始」が tracker_enabled=true を送っていない').toBeTruthy()
 })
 
 // ── S-21（試験当日） ─────────────────────────────────────────────────────────
@@ -176,7 +174,6 @@ test('S-20: 人検出の開始が機体に拒否されたら理由が出て、�
     }
   })
   await openS20(page, PREP_OFF)
-  await page.getByRole('tab', { name: '対象選択' }).click()
 
   await page.locator('[data-testid="s20-tracker-start"]').click()
   await expect(page.locator('[data-testid="s20-tracker-error"]')).toContainText('人検出が必要です')
@@ -187,7 +184,6 @@ test('S-20: stubSetFlag の応答が実際に効く（拒否理由がスタブ�
   // helper が効いていないと既定（reject_reason_key: null）になり「理由不明」が出て赤になる。
   await stubSetFlag(page, { tracker_enabled: { accepted: false, reject_reason_key: 'tracker_required' } })
   await openS20(page, PREP_OFF)
-  await page.getByRole('tab', { name: '対象選択' }).click()
   await page.locator('[data-testid="s20-tracker-start"]').click()
   await expect(page.locator('[data-testid="s20-tracker-error"]')).toContainText('人検出が必要です')
 })

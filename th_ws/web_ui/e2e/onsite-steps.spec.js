@@ -48,79 +48,39 @@ async function triggers(page) {
 
 // ── S-20 ─────────────────────────────────────────────────
 
-test('S-20: 手順バーが出て現在段に aria-current が付く（空→段2）', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: [], targets: NO_TARGET, mappingActive: true })
-  await page.locator('#s20').waitFor()
-  await unlockOnsiteMap(page)
-
-  await expect(page.locator('[data-testid="s20-stepper"]')).toBeVisible()
-  await expect(page.locator('[data-testid="step-1"]')).toHaveClass(/done/)
-  await expect(page.locator('[data-testid="step-2"]')).toHaveAttribute('aria-current', 'step')
-  await expect(page.locator('[data-testid="step-2"]')).not.toHaveClass(/done/)
-  // 段1の丸に ✓（done）が出る（SVG が在る）。
-  await expect(page.locator('[data-testid="step-1"] .stepbar-check')).toBeVisible()
-})
-
-test('S-20: 「対象を選ぶ」で対象選択タブに切り替わる', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: [], targets: NO_TARGET, mappingActive: true })
-  await page.locator('#s20').waitFor()
-  await unlockOnsiteMap(page)
-
-  const btn = page.locator('[data-testid="s20-next-action"]')
-  await expect(btn).toHaveText('対象を選ぶ')
-  await btn.click()
-  await expect(page.locator('[data-testid="s20-tab-target"]')).toHaveAttribute('aria-selected', 'true')
-  await expect(page.locator('[data-testid="radar-cand-0"]')).toBeVisible()
-})
-
-test('S-20: 「人の位置で待機場所を登録」で登録サブタブへ切り替わり ui.register{HOME}', async ({ page }) => {
+// 画面の作り直し（Spec-webui.md §3.10）: 手順バー・「次にやること」ボタン・
+// タブは無い（D87）。S-20 の旧テスト（s20-stepper / s20-next-action / タブ切替）は
+// この段で削除し、S-20 の登録は e2e/s20-prep.spec.js が縛る。
+// ここに残す S-20 の検証: 登録ボタン（方式「人の位置で」）が ui.register を送ること。
+test('S-20: 方式「人の位置で」の登録ボタンが ui.register を送る', async ({ page }) => {
   await gotoScreenWithOnsite(page, 'S20', PREP, { pins: [], targets: TARGETS, mappingActive: true })
   await page.locator('#s20').waitFor()
-  await unlockOnsiteMap(page)
-
-  const btn = page.locator('[data-testid="s20-next-action"]')
-  await expect(btn).toHaveText('人の位置で待機場所を登録')
-  await btn.click()
-  await expect(page.locator('[data-testid="s20-subtab-register"]')).toHaveAttribute('aria-selected', 'true')
+  await page.locator('[data-testid="s20-method-person"]').click()
+  await page.locator('[data-testid="s20-reg-home"]').click()
   const reg = (await triggers(page)).filter((c) => c.trigger === 'ui.register')
   expect(reg, '待機場所の登録が ui.register を送っていない').toHaveLength(1)
   expect(reg[0].argJson).toMatchObject({ kind: 'HOME' })
+
+  await page.locator('[data-testid="s20-reg-panel"]').click()
+  const reg2 = (await triggers(page)).filter((c) => c.trigger === 'ui.register')
+  expect(reg2, '配電盤の登録が ui.register を送っていない').toHaveLength(2)
+  expect(reg2[1].argJson).toMatchObject({ kind: 'PANEL' })
 })
 
-test('S-20: 「人の位置で配電盤を登録」で ui.register{PANEL}', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: HOME_ONLY, targets: TARGETS, mappingActive: true })
-  await page.locator('#s20').waitFor()
-  await unlockOnsiteMap(page)
-
-  const btn = page.locator('[data-testid="s20-next-action"]')
-  await expect(btn).toHaveText('人の位置で配電盤を登録')
-  await btn.click()
-  const reg = (await triggers(page)).filter((c) => c.trigger === 'ui.register')
-  expect(reg, '配電盤の登録が ui.register を送っていない').toHaveLength(1)
-  expect(reg[0].argJson).toMatchObject({ kind: 'PANEL' })
-})
-
-test('S-20: 全部完了（保存まで済み）でも現在は段5、保存ボタンが動く', async ({ page }) => {
+test('S-20: 保存ボタンが ui.save を送る', async ({ page }) => {
   await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS, mappingActive: true })
   await page.locator('#s20').waitFor()
-  await unlockOnsiteMap(page)
-
-  await expect(page.locator('[data-testid="step-5"]')).toHaveAttribute('aria-current', 'step')
-  const btn = page.locator('[data-testid="s20-next-action"]')
-  await expect(btn).toHaveText('保存')
-  await btn.click()
+  await page.locator('[data-testid="s20-save"]').click()
   expect((await triggers(page)).some((c) => c.trigger === 'ui.save'), '保存が ui.save を送っていない').toBe(true)
 })
 
-test('S-20: 2 点指示ウィザード（REGISTER）中は次操作ボタンを隠す', async ({ page }) => {
+test('S-20: 2 点指示ウィザード（REGISTER）中は登録ボタンが手順の帯に置き換わる', async ({ page }) => {
   await gotoScreenWithOnsite(page, 'S20', PREP, { pins: HOME_ONLY, targets: TARGETS, mappingActive: true })
   await page.locator('#s20').waitFor()
-  await unlockOnsiteMap(page)
-
-  await expect(page.locator('[data-testid="s20-next-action"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s20-reg-home"]')).toBeVisible()
   await setTestState(page, { state: 'REGISTER' })
   await expect(page.locator('[data-testid="s20-wizard"]')).toBeVisible()
-  await expect(page.locator('[data-testid="s20-next-action"]')).toBeHidden()
+  await expect(page.locator('[data-testid="s20-reg-home"]')).toHaveCount(0)
 })
 
 // ── S-21 ─────────────────────────────────────────────────

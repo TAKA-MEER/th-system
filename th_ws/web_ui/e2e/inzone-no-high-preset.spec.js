@@ -8,25 +8,27 @@ import {
 
 const MID = 0.55 // generated/speed_presets.json の speed_preset_mid（unit が registry と照合済み）
 
+// S-20 はスティック常設（W-6 は無い）。S-21 は「手動」で W-6 を開く。
 async function openW6(page, screen) {
   if (screen === 'S20') {
     await gotoScreenWithOnsite(page, 'S20', { mode: 'PREP', state: 'MAPPING' },
       { pins: [], targets: [], mappingActive: true })
     await page.locator('#s20').waitFor()
-    await page.locator('#s20 .op-manual').click()
   } else {
     await gotoScreenWithOnsite(page, 'S21', { mode: 'AT_HOME', state: 'IDLE_H' },
       { pins: [], targets: [] })
     await page.locator('#s21').waitFor()
     await page.locator('#s21 .op-manual').click()
+    await page.locator('#jogWin.show').waitFor()
   }
-  await page.locator('#jogWin.show').waitFor()
 }
 
+const stickScope = (page, screen) => (screen === 'S20' ? '#s20' : '#jogWin')
+
 for (const screen of ['S20', 'S21']) {
-  test(`${screen}: 手動操作パネルに「高速」が無い（低速・中速だけ）`, async ({ page }) => {
+  test(`${screen}: 手動に「高速」が無い（低速・中速だけ）`, async ({ page }) => {
     await openW6(page, screen)
-    const btns = page.locator('#jogWin .spd button')
+    const btns = page.locator(`${stickScope(page, screen)} .spd button`)
     await expect(btns).toHaveCount(2)
     await expect(btns.filter({ hasText: '高速' })).toHaveCount(0)
     await expect(btns.filter({ hasText: '中速' })).toHaveCount(1)
@@ -35,8 +37,8 @@ for (const screen of ['S20', 'S21']) {
 
   test(`${screen}: スライダも中速（55%）までで、スティックを倒し切っても中速の割合を超えない`, async ({ page }) => {
     await openW6(page, screen)
-    await expect(page.locator('#jogWin .slider input')).toHaveAttribute('max', '55')
-    const stick = page.locator('#jogWin .stick svg')
+    await expect(page.locator(`${stickScope(page, screen)} .slider input`)).toHaveAttribute('max', '55')
+    const stick = page.locator(`${stickScope(page, screen)} .stick svg`)
     await downOnStick(page, stick, { offsetX: 0, offsetY: -0.9 })
     await page.waitForTimeout(4000) // ランプが目標に届くまで
     const cmds = (await jogPublishes(page, '/cmd_vel_manual_raw')).filter((c) => c.cmd)

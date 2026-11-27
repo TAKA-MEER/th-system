@@ -475,6 +475,40 @@ export const S20_RESET_IDLE = '新しい試験日として開始（前回の地�
 export const S20_RESET_ARMED = 'もう一度押すと消去します'
 export const S20_RESET_BUSY = '地図を初期化しています…'
 export const S20_RESET_FAIL = '初期化に失敗しました'
+// 画面の作り直し（Spec-webui.md §3.10）。タブ・次にやること・手順バーは無い。
+export const S20_METHOD_PERSON = '人の位置で'
+export const S20_METHOD_POSE = 'いまの姿勢で'
+export const S20_METHOD_TAP = '地図をタップして'
+export const S20_REG_HOME_SHORT = '待機場所を登録'
+export const S20_RETURN_HOME_SHORT = '待機場所に戻る'
+export const S20_REG_PANEL_SHORT = '配電盤を登録'
+export const S20_RESUME = '続きから再開'
+export const S20_START_MAPPING = '地図作成を開始'
+export const S20_ENTRY_REMAINING = (n) => `前回の試験場内地図とピン（${n} 件）が残っています`
+export const S20_PIN_COUNT = (n) => `ピン ${n} 件`
+export const S20_RESERVED_NOTE = '追従走行の予約'
+export const S20_ORDER_START = '順番を決める'
+export const S20_ORDER_COUNT = (n, total) => `順番 ${n} / ${total}`
+export const S20_ORDER_NEXT = (n) => `${n} 番目の配電盤を押す`
+export const S20_ORDER_DONE = 'すべて決めました'
+export const S20_ORDER_COMMIT = '決める'
+export const S20_ORDER_REDO = 'やり直す'
+export const S20_PIN_CLOSE = '閉じる'
+export const S20_PIN_ORDER_POS = (i, total) => `順番 ${i} / ${total}`
+export const S20_PIN_PREV = '前へ'
+export const S20_PIN_NEXT = '後へ'
+export const S20_PIN_REREGISTER_PERSON = '人の位置で登録し直す'
+export const S20_TAPMODE_MSG = '地図を押して、そのまま向けたい方へドラッグしてください'
+export const S20_REASON_NO_HOME = '待機場所が登録されていません'
+export const S20_REASON_STICK_SAVE = 'スティックに触れている間は保存できません'
+export const S20_REASON_SAVE_STOP = '停止してから保存できます'
+export const S20_REASON_REG_TRACKER = '人検出を動かすと登録できます'
+export const S20_REASON_REG_BUSY = '登録中は別の登録を始められません'
+export const S20_REASON_REG_MAP = '地図作成を始めてから登録できます'
+export const S20_REASON_ORDER_PANELS = '配電盤を 2 件以上登録してから決められます'
+export const S20_REASON_FIRST = 'いちばん前です'
+export const S20_REASON_LAST = 'いちばん後ろです'
+export const S20_REASON_REREG_PERSON = '人の位置での登録し直しは機体に対応していません'
 
 // 対象選択レーダー（parts/RadarSelect.jsx。S-20 / S-21 で共用。Spec-webui.md §9.1）。
 export const RADAR_ARIA = '対象選択レーダー'

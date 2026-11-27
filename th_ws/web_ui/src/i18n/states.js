@@ -42,14 +42,14 @@ export function stateLabel(stateName) {
 }
 
 // 状態の札の色（Spec-webui §3.3.1）。札に出す語は STATE_NAMES が正。
-// go=緑（進む・移動中）/ neutral=白灰黒（記録中・一時停止）/
+// go=緑（進む・移動中。機体が自分で動くときだけ）/ neutral=白灰黒（記録中・一時停止・地図作成中）/
 // warn=黄（注意）/ estop=赤に黄の地（非常停止中）/ none=札を出さない。
 export const STATE_CHIP_TONE = {
   NONE: 'none',
   RUN: 'go', NAV: 'go', RETURN: 'go',
   PAUSE: 'neutral', REC: 'neutral', CHECK: 'neutral', SETUP: 'neutral',
   LIST: 'neutral', IDLE_P: 'neutral', SAVED: 'neutral', WORKING: 'neutral',
-  MAPPING: 'go',
+  MAPPING: 'neutral', // 地図作成中は中立の札。緑は機体が自分で動く（進む）ときだけ（§3.3.1）。
   BLOCKED: 'warn', WAIT_CLEAR: 'warn',
   REGISTER: 'neutral', EDIT: 'neutral',
   SELECT: 'neutral', ROUTE_SEL: 'neutral', DEV_CHECK: 'neutral', POINT: 'neutral',

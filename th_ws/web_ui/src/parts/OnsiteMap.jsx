@@ -36,7 +36,7 @@ import {
 import { occupancyGridToPixels } from '../screens/routePreviewGeom.js'
 import { costmapToPixels } from './costmapPixels.js'
 import {
-  MAP_UNKNOWN, MAP_GO, MAP_SCAN, MAP_NEAR, MAP_WARN, MAP_PIN, MAP_PIN_EDGE,
+  MAP_GO, MAP_SCAN, MAP_NEAR, MAP_WARN, MAP_PIN, MAP_PIN_EDGE,
   SLOWDOWN_DISTANCE_M, ROBOT_HALF_M,
 } from './mapColors.js'
 import { readCostmapVisible, writeCostmapVisible } from './costmapVisibility.js'
@@ -230,6 +230,11 @@ export default function OnsiteMap({
 
   function handlePointerDown(e) {
     if (!t.view) return
+    // ピンを押したときはポインタキャプチャもパンも始めない。キャプチャを取ると
+    // click が svg へ再送出され、ピンの onClick（選択）が届かなくなる
+    // （Spec-webui §3.10「ピンを押すと吹き出し」、§3.11「ピンを押して行き先」）。
+    // tapMode 中はピン選択をしないので通常どおりドラッグのジェスチャーを始める。
+    if (!tapMode && e.target.closest?.('[data-testid*="-map-pin-"]')) return
     try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* noop */ }
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     // 実機確認（2026-09-15）: タブレットでピンチズームができない不具合の対策。
@@ -385,7 +390,8 @@ export default function OnsiteMap({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
     >
-      <rect width={MAP_VB_W} height={MAP_VB_H} fill={MAP_UNKNOWN} />
+      {/* 未探索は画面の地と同じ色（見えなくする。§6.1）。地は var(--bg) の明るい地。 */}
+      <rect width={MAP_VB_W} height={MAP_VB_H} fill="var(--bg)" />
       {/* 地図の向き（回転表示）のグループ。回すのは表示だけ。 */}
       <g transform={rotDeg ? `rotate(${rotDeg} ${MAP_CX} ${MAP_CY})` : undefined}>
       {hasMap ? (
@@ -524,8 +530,11 @@ export default function OnsiteMap({
                 </>
               )}
             </g>
+            {/* ラベルは輪郭で浮かせる（モックアップの流儀）。未探索は画面の地と同じ
+                明るい色なので白い文字では読めない（§6.1）。 */}
             <text
-              y={26} textAnchor="middle" fontSize="10" fill={edge}
+              y={26} textAnchor="middle" fontSize="10" fill={sel ? MAP_PIN_EDGE : MAP_PIN}
+              stroke={sel ? MAP_PIN : MAP_PIN_EDGE} strokeWidth={3} paintOrder="stroke" strokeLinejoin="round"
               data-testid={`${testId}-map-pin-label-${pin.id}`}
             >
               {pin.name || pin.id}
