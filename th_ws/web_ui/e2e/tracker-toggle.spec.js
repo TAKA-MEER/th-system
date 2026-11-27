@@ -143,6 +143,11 @@ test('S-21: 人検出が止まっている間は左上の切│入で「入」�
 
 test('S-21: SUMMON では「人検出を停止」が押せず理由が出る（人検出が要る）', async ({ page }) => {
   await openS21(page, SUMMON_ON)
+  // 地図を開いてからレーダーが主表示に重なる（SUMMON 中は地図の門が閉じるため先に開く）。
+  await page.evaluate(() => { window.__thTestOpenVenueMap = { success: true, message: '' } })
+  await page.evaluate(() => window.__thSetTestState({ mode: 'IDLE', state: 'NONE' }))
+  await page.getByTestId('s21-map-gate-open').click()
+  await page.evaluate(() => window.__thSetTestState({ mode: 'SUMMON', state: 'POINT' }))
 
   await expect(page.locator('[data-testid="s21-tracker-off"]')).toBeDisabled()
   await expect(page.locator('[data-testid="s21-tracker-stop-denied"]')).toContainText('人検出')

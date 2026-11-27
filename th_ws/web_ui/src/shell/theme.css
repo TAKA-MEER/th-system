@@ -1128,3 +1128,6 @@ table.lst td.r{text-align:right}
 #s21 [data-pos="ops"] > .help-wrap{display:flex;min-width:0}
 #s21 [data-pos="ops"] > .help-wrap > .reason-wrap{flex:1 1 auto;display:flex;min-width:0}
 #s21 [data-pos="ops"] > .help-wrap > .reason-wrap > .btn{flex:1 1 auto;min-width:0}
+#s21 .s21-radar-ovr{position:absolute;right:12px;top:12px;z-index:5;width:min(280px,45%)}
+#s21 .s21-radar-ovr .card{margin:0}
+#s21 .s21-radar-ovr .radar{max-height:240px}

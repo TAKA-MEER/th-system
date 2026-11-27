@@ -499,6 +499,18 @@ export default function S21Test({ onExit }) {
           {goErr && (
             <div className="note err" data-testid="s21-go-err">{goErr}</div>
           )}
+          {/* 呼び寄せ：主表示にレーダーを重ねる（§3.11）。手順の帯は地図の下。 */}
+          {showWizard && trackerEnabled && (
+            <div className="s21-radar-ovr">
+              <RadarSelect
+                candidates={personTargets.candidates}
+                selectedIndex={personTargets.selected_index}
+                isLost={personTargets.is_lost}
+                confidence={personTargets.confidence}
+                onSelect={handleSelectTarget}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -508,15 +520,7 @@ export default function S21Test({ onExit }) {
             <div className="note" data-testid="s21-summon-tracker-off">{TRACKER_OFF}</div>
           )}
           {trackerEnabled && showWizard && (
-            <>
-              <RadarSelect
-                candidates={personTargets.candidates}
-                selectedIndex={personTargets.selected_index}
-                isLost={personTargets.is_lost}
-                confidence={personTargets.confidence}
-                onSelect={handleSelectTarget}
-              />
-              <div className="well" data-testid="s21-wizard">
+            <div className="well" data-testid="s21-wizard">
                 <div className="row mb">
                   <span className="b sm">{S20_WIZ_STEP(wizStep)}</span>
                   <span className="grow sm mut">{wizStep === 1 ? S21_WIZ_STEP1 : S21_WIZ_STEP2}</span>
@@ -539,7 +543,6 @@ export default function S21Test({ onExit }) {
                   </HelpTip>
                 )}
               </div>
-            </>
           )}
           {showWait && (
             <div className="well" data-testid="s21-clear-box">

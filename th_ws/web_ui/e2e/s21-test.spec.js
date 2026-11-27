@@ -361,7 +361,8 @@ test('次の行き先: 待機場所→ui.goto{HOME}、呼び寄せ→ui.goto{SUM
 })
 
 test('呼び寄せ: SUMMON/POINT は主表示に帯とレーダーが出て 2 点指示が purpose=SUMMON で index 1→2', async ({ page }) => {
-  await goto21(page, IDLE, { twoPoint: { accepted: true, reject_reason_key: null, yaw: 0 } })
+  await goto21(page, IDLE, { twoPoint: { accepted: true, reject_reason_key: null, yaw: 0 }, openVenueMap: { success: true, message: '' } })
+  await unlockOnsiteVenueMap(page)
   await page.locator('[data-testid="s21-dest-summon-here"]').click()
   await setTestState(page, { mode: 'SUMMON', state: 'POINT' })
   await expect(page.locator('[data-testid="s21-summon-band"]')).toBeVisible()
@@ -478,7 +479,9 @@ test('「停止を解く」は停止命令の間だけ出て、W-4 の確認の�
 })
 
 test('対象選択レーダー: SUMMON/POINT は主表示に出て ui.select_target を送る', async ({ page }) => {
-  await goto21(page, { mode: 'SUMMON', state: 'POINT' })
+  await goto21(page, IDLE, { openVenueMap: { success: true, message: '' } })
+  await unlockOnsiteVenueMap(page)
+  await setTestState(page, { mode: 'SUMMON', state: 'POINT' })
   await expect(page.locator('[data-testid="radar-cand-0"]')).toBeVisible()
   await page.locator('[data-testid="radar-cand-1"]').click()
   const sel = (await triggers(page)).find((c) => c.trigger === 'ui.select_target')
@@ -487,7 +490,9 @@ test('対象選択レーダー: SUMMON/POINT は主表示に出て ui.select_tar
 })
 
 test('レーダーの空表示と見失い表示', async ({ page }) => {
-  await goto21(page, { mode: 'SUMMON', state: 'POINT' })
+  await goto21(page, IDLE, { openVenueMap: { success: true, message: '' } })
+  await unlockOnsiteVenueMap(page)
+  await setTestState(page, { mode: 'SUMMON', state: 'POINT' })
   await setTestPersonTargets(page, { candidates: [], selected_index: -1, confidence: 0, is_lost: false, lost_reason: '' })
   await expect(page.locator('[data-testid="radar-empty"]')).toBeVisible()
 
@@ -501,7 +506,9 @@ test('レーダーの空表示と見失い表示', async ({ page }) => {
 })
 
 test('見失った状態でも候補をタップして選び直せる（SUMMON/POINT）', async ({ page }) => {
-  await goto21(page, { mode: 'SUMMON', state: 'POINT' }, { targets: { ...TARGETS, is_lost: true } })
+  await goto21(page, IDLE, { openVenueMap: { success: true, message: '' }, targets: { ...TARGETS, is_lost: true } })
+  await unlockOnsiteVenueMap(page)
+  await setTestState(page, { mode: 'SUMMON', state: 'POINT' })
   await expect(page.locator('[data-testid="radar-lost-reselect"]')).toBeVisible()
   await expect(page.locator('[data-testid="radar-cand-1"]')).toBeVisible()
   await page.locator('[data-testid="radar-cand-1"]').click()
