@@ -134,7 +134,7 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
     const sym = { ok: '✓', ng: '×', none: '—' }[m]
     const fill = { ok: 'var(--ok)', ng: 'var(--jis-y,#ffd100)', none: 'var(--ctrl-hi)' }[m]
     return (
-      <g key={k}>
+      <g key={k} data-testid={`s00-node-${k}`} data-m={m} data-tone={nodes[k].tone}>
         <rect
           x={n.x - w / 2} y={n.y - h / 2} width={w} height={h} rx="8"
           style={{ fill: 'var(--panel)', stroke: m === 'ng' ? 'var(--warn)' : 'var(--bd-hi)' }}
@@ -230,11 +230,9 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
               <div className="ac">
                 {S00_AUTO_ITEM_ORDER.map((key) => {
                   const it = auto.items[key] ?? { result: 'CHECKING', reason: '' }
-                  const mark = autoItemMark(it.result)
                   return (
                     <div key={key} data-testid={`s00-auto-${key}`}>
-                      <span className={`mk ${mark.cls}`} aria-hidden="true">{mark.sym}</span>
-                      <span>{S00_AUTO_ITEM_LABELS[key]}{it.reason ? ` (${it.reason})` : ''}</span>
+                      <span>{s00AutoResultLabel(it.result)}{it.reason ? ` (${it.reason})` : ''}</span>
                     </div>
                   )
                 })}

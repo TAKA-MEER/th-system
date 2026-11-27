@@ -314,7 +314,8 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
       item = items.find((it) => it.mode === tile.mode)
       name = modeLabel(tile.mode)
     }
-    const disabled = disabledAll || (item ? !item.enabled : false)
+    // 「設定」は FSM を動かさないので disabledAll に縛らない（昔から）。
+    const disabled = tile.kind === 'settings' ? false : (disabledAll || (item ? !item.enabled : false))
     const testId = isMode ? `s01-mode-${tile.mode}`
       : tile.kind === 'auto' ? 's01-open-auto'
       : tile.kind === 'settings' ? 's01-open-settings'
@@ -327,7 +328,7 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
           type="button"
           className={`tile ${tile.size} ${disabled ? 'dis' : ''}`}
           style={area ? { gridArea: area } : undefined}
-          disabled={disabledAll && !isMode ? disabledAll : undefined}
+          disabled={tile.kind === 'settings' ? undefined : (disabledAll ? disabledAll : undefined)}
           onClick={() => handleTile(tile)}
           data-testid={testId}
           data-tile-size={tile.size}
@@ -456,7 +457,7 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
                 </span>
               </div>
               <HelpTip helpKey="s01-shutdown">
-              <button type="button" className="btn danger wide" disabled={disabledAll} onClick={openShutdown}>
+              <button type="button" className="btn danger wide" disabled={disabledAll} onClick={openShutdown} data-testid="s01-shutdown">
                 {SHUTDOWN_BUTTON}
               </button>
               </HelpTip>

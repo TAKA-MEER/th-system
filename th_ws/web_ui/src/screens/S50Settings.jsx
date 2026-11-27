@@ -61,7 +61,7 @@ import {
   S50_DEV_ITEMS_TITLE, S50_DEV_ITEM_LINK, S50_DEV_ITEM_LIDAR_FAULT,
   S50_DEV_ITEM_SCAN_STOP, S50_DEV_ITEM_BATTERY, S50_DEV_ITEM_OPCHECK,
   S50_DEV_ITEM_AUTO_BRAKE,
-  S50_DEV_NO_GATE, S50_DEV_EFFECTIVE_TITLE, S50_DEV_NONE,
+  S50_DEV_NO_GATE, S50_DEV_EFFECTIVE_TITLE, S50_DEV_NONE, S50_DEV_ESTOP_UNKNOWN,
   S50_DEV_SCOPE_NOTE,
   S50_DEV_SEND_FAILED,
   S50_SEC_RUN, S50_SEC_LOC, S50_SEC_NOTIFY, S50_SEC_SCREEN,
@@ -787,6 +787,9 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
           <h3 style={{ marginBottom: 8 }}>{S50_DEV_EFFECTIVE_TITLE}</h3>
           <p data-testid="s50-dev-effective">{devEffectiveText(devState)}</p>
           <p className="note" data-testid="s50-dev-scope">{S50_DEV_SCOPE_NOTE}</p>
+          {devState?.dev_mode && !devState.estop_hw_known && (
+            <p className="note" data-testid="s50-dev-estop-unknown">{S50_DEV_ESTOP_UNKNOWN}</p>
+          )}
         </div>
       </div>
     )
