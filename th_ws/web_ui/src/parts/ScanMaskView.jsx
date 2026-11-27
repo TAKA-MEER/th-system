@@ -33,7 +33,7 @@ export default function ScanMaskView({ scan, ranges }) {
           data-testid="s30-lidar-mask-wedge" />
       ))}
       {kept.map((p, i) => { const [x, y] = toXY(p); return <circle key={`k${i}`} cx={x} cy={y} r="1.8" fill="currentColor" /> })}
-      {masked.map((p, i) => { const [x, y] = toXY(p); return <circle key={`x${i}`} cx={x} cy={y} r="2.4" fill="crimson" /> })}
+      {masked.map((p, i) => { const [x, y] = toXY(p); return <circle key={`x${i}`} cx={x} cy={y} r="2.4" fill="#333a48" /> })}
       <polygon points={`${C},${C - 10} ${C - 6},${C + 6} ${C + 6},${C + 6}`} fill="currentColor" />
     </svg>
   )
