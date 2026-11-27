@@ -89,3 +89,36 @@ test('状態を変えても data-pos の位置が動かない', async ({ page })
   const after = await pos()
   expect(after, '状態変化で位置が動いた').toEqual(before)
 })
+
+test('値の行と語の行の高さがそろっている（左の値・語・右の値が横 1 行）', async ({ page }) => {
+  await openS11(page, {
+    wheels: {
+      measured: [{ t: Date.now() / 1000, left: 0.35, right: 0.42 }],
+      command: [{ t: Date.now() / 1000, left: 0.36, right: 0.44 }],
+    },
+    twist: { vx: 0.38, wz: 0.15 },
+    scan: null,
+    limiter: { action: 'PASS', applied_limit_mps: 0.5, in_linear: 0.4, out_linear: 0.4 },
+  })
+  const rows = [
+    ['gauge-left-actual-value', 'gauge-label-unit', 'gauge-right-actual-value'],
+    ['gauge-left-target-value', 'gauge-label-target', 'gauge-right-target-value'],
+    ['gauge-left-output-value', 'gauge-label-output', 'gauge-right-output-value'],
+    ['gauge-left-encoder-value', 'gauge-label-encoder', 'gauge-right-encoder-value'],
+  ]
+  for (const [l, label, r] of rows) {
+    const lb = await page.getByTestId(l).boundingBox()
+    const gb = await page.getByTestId(label).boundingBox()
+    const rb = await page.getByTestId(r).boundingBox()
+    expect(lb, `${l} が表示されていない`).not.toBeNull()
+    expect(gb, `${label} が表示されていない`).not.toBeNull()
+    expect(rb, `${r} が表示されていない`).not.toBeNull()
+    // 同じ行: 中心 y が近い（左の値・語・右の値が横に読める）
+    const cy = (b) => b.y + b.height / 2
+    expect(Math.abs(cy(lb) - cy(gb)), `${label} が ${l} と同じ行に無い`).toBeLessThan(6)
+    expect(Math.abs(cy(rb) - cy(gb)), `${r} が ${label} と同じ行に無い`).toBeLessThan(6)
+    // 左の値 < 語 < 右の値（横の順序）
+    expect(lb.x + lb.width, '左の値が語より右').toBeLessThanOrEqual(gb.x + 2)
+    expect(gb.x + gb.width, '語が右の値より右').toBeLessThanOrEqual(rb.x + 2)
+  }
+})

@@ -36,9 +36,16 @@
 .gauge-wheel { flex: 1 1 auto; min-height: 60px; width: 100%; display: flex; justify-content: center; }
 .gauge-wheel-svg { height: 100%; width: 48px; min-height: 60px; }
 .gauge-middle { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.gauge-middle .gauge-mini { flex: 0 0 auto; width: 72px; height: auto; }
-.gauge-labels { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; color: var(--mut); line-height: 1.25; }
+.gauge-middle .gauge-mini { flex: 1 1 auto; min-height: 0; height: 100%; width: 72px; }
+/* 値の行と語の行を同じ高さにそろえる（左の値・語・右の値が横 1 行に見える）。
+ * 行の高さは左右の値と間の語で共通（.gw-actual 等の順番で対応付ける）。 */
+.gauge-labels { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 15px; color: var(--mut); line-height: 1.25; }
 .gauge-wheelvals { display: flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1.25; }
+.gauge-wheels .gw { display: flex; align-items: center; justify-content: center; }
+.gauge-wheels .gw-actual { height: 34px; }
+.gauge-wheels .gw-target { height: 22px; }
+.gauge-wheels .gw-output { height: 24px; }
+.gauge-wheels .gw-encoder { height: 24px; }
 .gauge-wheelvals .gw-actual { font-size: 26px; font-weight: 800; }
 .gauge-wheelvals .gw-target { font-size: 15px; color: var(--mut); }
 .gauge-wheelvals .gw-output { font-size: 17px; font-weight: 700; }

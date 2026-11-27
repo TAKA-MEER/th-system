@@ -95,10 +95,10 @@ export default function SpeedGauge({
     const tgt = latestC?.[key] ?? null
     return (
       <div className="gauge-wheelvals" data-testid={`gauge-wheelvals-${side}`}>
-        <b className="gw-actual" data-testid={`gauge-${side}-actual-value`}>{fmt(act)}</b>
-        <span className="gw-target" data-testid={`gauge-${side}-target-value`}>{fmt(tgt)}</span>
-        <b className="gw-output" data-testid={`gauge-${side}-output-value`}>{S11_GAUGE_NO_VALUE}%</b>
-        <b className="gw-encoder" data-testid={`gauge-${side}-encoder-value`}>{S11_GAUGE_NO_VALUE}</b>
+        <b className="gw gw-actual" data-testid={`gauge-${side}-actual-value`}>{fmt(act)}</b>
+        <span className="gw gw-target" data-testid={`gauge-${side}-target-value`}>{fmt(tgt)}</span>
+        <b className="gw gw-output" data-testid={`gauge-${side}-output-value`}>{S11_GAUGE_NO_VALUE}%</b>
+        <b className="gw gw-encoder" data-testid={`gauge-${side}-encoder-value`}>{S11_GAUGE_NO_VALUE}</b>
       </div>
     )
   }
@@ -142,7 +142,7 @@ export default function SpeedGauge({
         {histA.length > 1 && <polyline points={linePts(histA)} fill="none" stroke="#111" strokeWidth="2.5" data-testid="gauge-history-actual" />}
       </svg>
 
-      <div className="gauge-wheels">
+      <div className="gauge-wheels" data-testid="gauge-wheels">
         <div className="gauge-wheelcol">
           {wheelBand('left', 'left')}
           {wheelValues('left', 'left')}
@@ -170,10 +170,10 @@ export default function SpeedGauge({
             )}
           </svg>
           <div className="gauge-labels">
-            <span>{S11_GAUGE_SPEED_UNIT}</span>
-            <span>{S11_GAUGE_TARGET}</span>
-            <span>{S11_GAUGE_OUTPUT}</span>
-            <span>{S11_GAUGE_ENCODER}</span>
+            <span className="gw gw-actual" data-testid="gauge-label-unit">{S11_GAUGE_SPEED_UNIT}</span>
+            <span className="gw gw-target" data-testid="gauge-label-target">{S11_GAUGE_TARGET}</span>
+            <span className="gw gw-output" data-testid="gauge-label-output">{S11_GAUGE_OUTPUT}</span>
+            <span className="gw gw-encoder" data-testid="gauge-label-encoder">{S11_GAUGE_ENCODER}</span>
           </div>
         </div>
         <div className="gauge-wheelcol">
