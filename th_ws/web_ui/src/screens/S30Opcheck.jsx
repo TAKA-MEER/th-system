@@ -181,7 +181,7 @@ export default function S30Opcheck() {
     if (stateName === 'LIST') { setStartedItem(null) }
   }, [stateName])
 
-  const activeItem = running ? (startedItem || status?.item) : null
+  const activeItem = running ? (startedItem || status?.item || null) : null
   const shownItem = activeItem || previewItem
   const currentResult = (it) => results[it]?.result ?? 'UNKNOWN'
 
@@ -279,7 +279,7 @@ export default function S30Opcheck() {
   const vImu = useStickyVerdict(status, 'IMU')
   const vLidar = useStickyVerdict(status, 'LIDAR')
   const stickyVerdict = activeItem === 'ESTOP' ? vEstop : activeItem === 'MOTOR' ? vMotor : activeItem === 'IMU' ? vImu : vLidar
-  const liveVerdict = status?.item === activeItem && status.result && status.result !== 'UNKNOWN'
+  const liveVerdict = status?.item === activeItem && status?.result && status.result !== 'UNKNOWN'
     ? { result: status.result, detail: status.detail, next_screen: status.next_screen, basis: parseBasis(status.basis_json) }
     : null
   const activeVerdict = stickyVerdict ?? liveVerdict

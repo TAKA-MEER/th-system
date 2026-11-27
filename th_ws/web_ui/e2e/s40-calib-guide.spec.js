@@ -54,7 +54,7 @@ async function verdictThenBackToList(page, opcheckStatus) {
 }
 
 async function clickGotoCalibInList(page, item) {
-  const btn = page.getByTestId(`s30-goto-calib-${item}`)
+  const btn = page.getByTestId('s30-goto-calib')
   await expect(btn).toBeVisible()
   await btn.click()
   await page.waitForFunction(
@@ -68,7 +68,7 @@ async function enterCalibList(page) {
   const calls = await triggerCalls(page)
   expect(calls.some((c) => c.trigger === 'ui.enter_mode' && c.argJson?.mode === 'CALIB')).toBeTruthy()
   await setState(page, { mode: 'CALIB', state: 'LIST' })
-  await expect(page.getByTestId('s40-tab-items')).toBeVisible()
+  await expect(page.getByTestId('s40-item-LINEAR')).toBeVisible()
 }
 
 test('LIDAR が NG → LIST の行の「校正へ」→ S-40 で BLIND が強調され案内が出る（自動では始まらない）', async ({ page }) => {
@@ -86,9 +86,9 @@ test('LIDAR が NG → LIST の行の「校正へ」→ S-40 で BLIND が強調
   await expect(page.getByTestId('s40-item-BLIND')).toHaveClass(/guided/)
   await expect(page.getByTestId('s40-item-IMU')).not.toHaveClass(/guided/)
   await expect(page.getByTestId('s40-item-LINEAR')).not.toHaveClass(/guided/)
-  // 自動で始まらない: LIST のままで「次へ」は無い
-  await expect(page.getByTestId('s40-next')).toHaveCount(0)
-  await expect(page.getByTestId('s40-start-BLIND')).toBeEnabled()
+  // 自動で始まらない: LIST のままで進むボタンは「始める」のまま（選んだ項目は BLIND）
+  await expect(page.getByTestId('s40-next')).toHaveText('始める')
+  await expect(page.getByTestId('s40-item-BLIND')).toBeVisible()
 })
 
 test('IMU が要確認（WARN）→ LIST の行の「校正へ」→ S-40 で IMU が強調される', async ({ page }) => {
@@ -120,7 +120,7 @@ test('判定前（UNKNOWN）の行には「校正へ」は出ない', async ({ p
   await stubTrigger(page, { 'ui.enter_mode': { accepted: true } })
   await gotoS30Running(page, 'LIDAR')
   await setState(page, { state: 'LIST' })
-  await expect(page.getByTestId('s30-goto-calib-LIDAR')).toHaveCount(0)
+  await expect(page.getByTestId('s30-goto-calib')).toHaveCount(0)
 })
 
 test('enter_mode が拒否されたら誘導は残らない（別経路で入っても出ない）', async ({ page }) => {
@@ -134,16 +134,16 @@ test('enter_mode が拒否されたら誘導は残らない（別経路で入っ
   expect(calls.some((c) => c.trigger === 'ui.enter_mode' && c.argJson?.mode === 'CALIB')).toBeTruthy()
   // S-01 など別経路で CALIB に入ったものとして遷る → 案内は出ない
   await setState(page, { mode: 'CALIB', state: 'LIST' })
-  await expect(page.getByTestId('s40-tab-items')).toBeVisible()
+  await expect(page.getByTestId('s40-item-LINEAR')).toBeVisible()
   await expect(page.getByTestId('s40-calib-guide')).toHaveCount(0)
-  await expect(page.locator('.s40-row.guided')).toHaveCount(0)
+  await expect(page.locator('.lrow.guided')).toHaveCount(0)
 })
 
 test('S-30 以外から S-40 に入ると何も出ない', async ({ page }) => {
   await gotoS40Direct(page)
-  await expect(page.getByTestId('s40-tab-items')).toBeVisible()
+  await expect(page.getByTestId('s40-item-LINEAR')).toBeVisible()
   await expect(page.getByTestId('s40-calib-guide')).toHaveCount(0)
-  await expect(page.locator('.s40-row.guided')).toHaveCount(0)
+  await expect(page.locator('.lrow.guided')).toHaveCount(0)
 })
 
 test('誘導の案内はウィザードに入ると畳まれ、LIST に戻っても出ない（1 回だけ）', async ({ page }) => {
@@ -159,7 +159,8 @@ test('誘導の案内はウィザードに入ると畳まれ、LIST に戻って
   await expect(page.getByTestId('s40-calib-guide')).toBeVisible()
 
   // 誘導どおり BLIND を人が開始する
-  await page.getByTestId('s40-start-BLIND').click()
+  await page.getByTestId('s40-item-BLIND').click()
+  await page.getByTestId('s40-next').click()
   await setState(page, { state: 'S1' })
   await page.evaluate(() => window.__thSetTestCalibStatus({
     item: 'BLIND', step: 'S1', result: 'GUIDE', preview_before: '', preview_after: '', detail: {},
@@ -171,7 +172,7 @@ test('誘導の案内はウィザードに入ると畳まれ、LIST に戻って
   await page.evaluate(() => window.__thSetTestCalibStatus({
     item: '', step: '', result: 'IDLE', preview_before: '', preview_after: '', detail: {},
   }))
-  await expect(page.getByTestId('s40-tab-items')).toBeVisible()
+  await expect(page.getByTestId('s40-item-LINEAR')).toBeVisible()
   await expect(page.getByTestId('s40-calib-guide')).toHaveCount(0)
-  await expect(page.locator('.s40-row.guided')).toHaveCount(0)
+  await expect(page.locator('.lrow.guided')).toHaveCount(0)
 })

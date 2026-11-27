@@ -36,22 +36,23 @@ const DETAIL = {
 const status = (over = {}) => ({ item: 'LINEAR', step: 'S3', result: 'WAIT_MEASURED',
   preview_before: '', preview_after: '', detail: DETAIL, ...over })
 
-test('一覧: 直進・旋回・IMU・LiDAR 死角のすべてに「開始」がある。旋回に「先に直進校正を」', async ({ page }) => {
+test('一覧: 4 項目の行に前回の日付と誤差が出る。「やめる」は押せない（LIST）', async ({ page }) => {
   await gotoS40(page, { calibStatus: status({ result: 'IDLE', item: '' }) })
   for (const it of ['LINEAR', 'ROTATION', 'IMU', 'BLIND']) {
-    await expect(page.getByTestId(`s40-start-${it}`)).toBeEnabled()
+    await expect(page.getByTestId(`s40-item-${it}`)).toBeVisible()
   }
-  await expect(page.getByTestId('s40-rotation-first')).toContainText('先に直進校正')
   await expect(page.getByTestId('s40-item-LINEAR')).toContainText('2026-10-01T10:00:00')
   await expect(page.getByTestId('s40-item-ROTATION')).toContainText('未校正')
-  // LIST では中断できない（走っていない）
+  // 旋回の警告は案内の段で出す（行には要再校正の自動印を付けない。§3.14）
+  await expect(page.getByTestId('s40-item-ROTATION')).not.toContainText('先に直進校正')
   await expect(page.getByTestId('s40-abort')).toBeDisabled()
 })
 
 test('「開始」が ui.calib_item を item 付きで送る', async ({ page }) => {
   await stubTrigger(page, { 'ui.calib_item': { accepted: true } })
   await gotoS40(page)
-  await page.getByTestId('s40-start-ROTATION').click()
+  await page.getByTestId('s40-item-ROTATION').click()
+  await page.getByTestId('s40-next').click()
   const calls = await triggerCalls(page)
   expect(calls.some((c) => c.trigger === 'ui.calib_item' && c.argJson?.item === 'ROTATION')).toBeTruthy()
 })
@@ -59,14 +60,16 @@ test('「開始」が ui.calib_item を item 付きで送る', async ({ page }) 
 test('拒否されたら理由を出す', async ({ page }) => {
   await stubTrigger(page, { 'ui.calib_item': { accepted: false, reject_reason_key: 'not_allowed' } })
   await gotoS40(page)
-  await page.getByTestId('s40-start-LINEAR').click()
+  await page.getByTestId('s40-item-LINEAR').click()
+  await page.getByTestId('s40-next').click()
   await expect(page.getByTestId('s40-err')).toContainText('今の状態ではこの操作はできません')
 })
 
-test('Step 1: 案内と「走り出す」が ui.calib_next を item 付きで送る。Step 表示は 1/4', async ({ page }) => {
+test('段 1（案内）: 案内と「走らせる」が ui.calib_next を item 付きで送る。段の印で現在段を示す', async ({ page }) => {
   await stubTrigger(page, { 'ui.calib_next': { accepted: true } })
   await gotoS40(page, { state: { state: 'S1' }, calibStatus: status({ result: 'GUIDE', step: 'S1' }) })
-  await expect(page.getByTestId('s40-step-title')).toHaveText('Step 1/4')
+  await expect(page.getByTestId('s40-step-1')).toHaveAttribute('aria-current', 'step')
+  await expect(page.getByTestId('s40-next')).toHaveText('走らせる')
   await expect(page.getByTestId('s40-guide')).toContainText('1 m')
   await page.getByTestId('s40-next').click()
   const calls = await triggerCalls(page)
@@ -82,22 +85,22 @@ test('旋回の案内に、直進校正が無い・古い警告が出る', async
   await expect(page.getByTestId('s40-warning')).toContainText('先に直進校正を実施してください')
 })
 
-test('Step 2: 走行中の進捗バーと、「中断」が ui.abort を送る', async ({ page }) => {
+test('段 2（実行）: 走行中の進捗バーと、「やめる」が ui.abort を送る', async ({ page }) => {
   await stubTrigger(page, { 'ui.abort': { accepted: true } })
   await gotoS40(page, { state: { state: 'S2' }, calibStatus: status({ result: 'RUNNING', step: 'S2' }) })
-  await expect(page.getByTestId('s40-step-title')).toHaveText('Step 2/4')
+  await expect(page.getByTestId('s40-step-2')).toHaveAttribute('aria-current', 'step')
   await expect(page.getByTestId('s40-run-bar')).toHaveAttribute('aria-valuenow', '40')
   await page.getByTestId('s40-abort').click()
   const calls = await triggerCalls(page)
   expect(calls.some((c) => c.trigger === 'ui.abort' && c.argJson?.item === 'LINEAR')).toBeTruthy()
 })
 
-test('Step 3: 実測値の「確認」が /calib/submit を item・measured 付きで送る', async ({ page }) => {
+test('段 3（確認）: 実測値の「確認」が /calib/submit を item・measured 付きで送る', async ({ page }) => {
   await gotoS40(page, {
     state: { state: 'S3' }, calibStatus: status(),
     calibStubs: { submit: { success: true, preview_before: '{}', preview_after: '{}' } },
   })
-  await expect(page.getByTestId('s40-step-title')).toHaveText('Step 3/4')
+  await expect(page.getByTestId('s40-step-3')).toHaveAttribute('aria-current', 'step')
   await expect(page.getByTestId('s40-submit')).toBeDisabled()          // 未入力
   await page.getByTestId('s40-measured').fill('0.97')
   await page.getByTestId('s40-submit').click()
@@ -145,12 +148,12 @@ test('別項目の PREVIEW_OK では「次へ」は押せない', async ({ page 
   await expect(page.getByTestId('s40-next')).toBeDisabled()
 })
 
-test('Step 4: 検証走行中は進捗、終わったら「検証結果を送る」が /calib/submit を送る', async ({ page }) => {
+test('段 4（検証）: 検証走行中は進捗、終わったら「検証結果を送る」が /calib/submit を送る', async ({ page }) => {
   await gotoS40(page, {
     state: { state: 'S4' }, calibStatus: status({ result: 'VERIFY_RUNNING', step: 'S4' }),
     calibStubs: { submit: { success: true, preview_before: '{}', preview_after: '{}' } },
   })
-  await expect(page.getByTestId('s40-step-title')).toHaveText('Step 4/4')
+  await expect(page.getByTestId('s40-step-4')).toHaveAttribute('aria-current', 'step')
   await expect(page.getByTestId('s40-run-bar')).toBeVisible()
   await expect(page.getByTestId('s40-verify-submit')).toHaveCount(0)
 
@@ -186,7 +189,7 @@ test('IMU: 進捗バーが 4 要素を出し、完了で「確定する」が ui
   await expect(page.getByTestId('s40-imu-bar')).toHaveAttribute('aria-valuenow', '50')
   await expect(page.getByTestId('s40-imu-gyro')).toContainText('3/3')
   await expect(page.getByTestId('s40-imu-mag')).toContainText('0/3')
-  await expect(page.getByTestId('s40-step-title')).toHaveCount(0)   // IMU は Step 表示ではなく進捗バー
+  await expect(page.getByTestId('s40-step-1')).not.toHaveAttribute('aria-current')
 
   await setState(page, { state: 'S3' })
   await setStatus(page, imuStatus('PREVIEW_OK', { sys: 3, gyro: 3, accel: 3, mag: 3 }))
@@ -201,7 +204,7 @@ test('履歴: 「この値に戻す」が /calib/rollback を item・generation 
     calibStatus: status({ result: 'IDLE', item: '' }),
     calibStubs: { rollback: { success: true } },
   })
-  await page.getByTestId('s40-tab-history').click()
+  await page.getByTestId('s40-history').click()
   await expect(page.getByTestId('s40-history-LINEAR')).toContainText('1 世代前: wheel_radius_scale=0.98')
   await expect(page.getByTestId('s40-history-ROTATION')).toContainText('履歴はありません')
   // 二段階アーム（Spec-webui.md §6）: 1 回目は「本当に戻す？」に変わるだけで送らない
@@ -218,7 +221,7 @@ test('履歴: 「この値に戻す」が /calib/rollback を item・generation 
 
 test('ロールバック失敗の応答では失敗を表示する', async ({ page }) => {
   await gotoS40(page, { calibStatus: status({ result: 'IDLE', item: '' }), calibStubs: { rollback: { success: false } } })
-  await page.getByTestId('s40-tab-history').click()
+  await page.getByTestId('s40-history').click()
   await page.getByTestId('s40-rollback-LINEAR-1').click()
   await page.getByTestId('s40-rollback-LINEAR-1').click()
   await expect(page.getByTestId('s40-rollback-msg')).toContainText('戻せませんでした')
@@ -293,7 +296,8 @@ const lastSubmit = async (page) => {
 test('BLIND: 「開始」が ui.calib_item を item=BLIND で送る。案内は「ロボットは動きません」', async ({ page }) => {
   await stubTrigger(page, { 'ui.calib_item': { accepted: true } })
   await gotoS40(page, { calibStatus: status({ result: 'IDLE', item: '' }) })
-  await page.getByTestId('s40-start-BLIND').click()
+  await page.getByTestId('s40-item-BLIND').click()
+  await page.getByTestId('s40-next').click()
   const calls = await triggerCalls(page)
   expect(calls.some((c) => c.trigger === 'ui.calib_item' && c.argJson?.item === 'BLIND')).toBeTruthy()
   await setState(page, { state: 'S1' })
@@ -392,7 +396,7 @@ test('BLIND: 機体が上限超過と返したら理由が出る（PREVIEW_INSAN
 
 test('BLIND: S3 は PREVIEW_OK になるまで「次へ」が出ない。S4 は検証中の表示のみ（実測値の入力は無い）', async ({ page }) => {
   await gotoS40(page, { state: { state: 'S3' }, scan: SCAN, calibStatus: blindStatus({ step: 'S3', result: 'WAIT_MEASURED' }) })
-  await expect(page.getByTestId('s40-next')).toHaveCount(0)
+  await expect(page.getByTestId('s40-next')).toBeDisabled()
   await setState(page, { state: 'S4' })
   await setStatus(page, blindStatus({ step: 'S4', result: 'VERIFY_RUNNING' }))
   await expect(page.getByTestId('s40-verifying')).toContainText('検証中')
@@ -417,7 +421,7 @@ test('BLIND: 履歴に死角の世代が出て、「この値に戻す」が /ca
       ...DETAIL.history, BLIND: [{ generation: 1, values: { blind_angle_ranges: [40, 60] }, calibrated_at: '2026-10-01T10:00:00' }] } } }),
     calibStubs: { rollback: { success: true } },
   })
-  await page.getByTestId('s40-tab-history').click()
+  await page.getByTestId('s40-history').click()
   await expect(page.getByTestId('s40-history-BLIND')).toContainText('1 世代前: 40〜60°')
   await page.getByTestId('s40-rollback-BLIND-1').click()
   await page.getByTestId('s40-rollback-BLIND-1').click()

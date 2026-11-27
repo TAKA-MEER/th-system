@@ -143,6 +143,10 @@ export default function S40Calib() {
     if (g) setGuide(g)
   }, [])
   useEffect(() => { if (inWizard) setGuide(null) }, [inWizard])
+  // 誘導先の項目を選んだ状態で見せる（自動では始めない。開始は人が「進む」を押す）。
+  useEffect(() => {
+    if (guide?.target && !selectedItem && fsmState === 'LIST') setSelectedItem(guide.target)
+  }, [guide, selectedItem, fsmState])
   const showGuide = guide && fsmState === 'LIST' && !showHistory
 
   useEffect(() => {
@@ -311,7 +315,7 @@ export default function S40Calib() {
     ? (item === 'IMU' ? T.S40_NEXT_START : item === 'LINEAR' || item === 'ROTATION' ? T.S40_NEXT_RUN : T.S40_NEXT_START)
     : (kind === 'idle' ? T.S40_NEXT_START : T.s40NextLabel(item, step - 1))
   // S1 の BLIND はスキャンの表示へ進む（走らない）。語は「走らせる」にしない。
-  const nextLabelFinal = (item === 'BLIND' && step === 1) ? T.S40_NEXT_RUN : nextLabel
+  const nextLabelFinal = (item === 'BLIND' && step === 1) ? T.S40_GUIDE_NEXT_BLIND : nextLabel
   // 走らせるだけ塗る（機体が動くもの。D103）。S1・LIST の LINEAR/ROTATION が該当。
   const nextPaint = nextLabelFinal === T.S40_NEXT_RUN && (item === 'LINEAR' || item === 'ROTATION')
     && (step === 0 || step === 1)
@@ -363,38 +367,42 @@ export default function S40Calib() {
   }
 
   function renderHistory() {
-    const it = selectedItem ?? item ?? 'LINEAR'
-    const rows = historyRows(detail, it)
     return (
       <div data-testid="s40-history-view">
-        <h3>{T.S40_ITEM_LABELS[it]}: {T.S40_HISTORY_TITLE}</h3>
-        <div className="s40-hist" data-testid={`s40-history-${it}`}>
-          {rows.length === 0 && <p className="note">{T.S40_HISTORY_EMPTY}</p>}
-          {rows.map((r) => (
-            <div key={r.generation} className="s40-row">
-              <div className="s40-row-main">
-                <span>{T.s40Generation(r.generation)}: {r.text}</span>
-                <span className="note">{r.calibratedAt}</span>
-                {r.verify && <span className="note">{`${T.S40_HISTORY_VERIFY}: ${r.verify}`}</span>}
-              </div>
-              <ArmedButton
-                idleLabel={T.S40_HISTORY_ROLLBACK}
-                armedLabel={T.S40_HISTORY_ROLLBACK_ARMED}
-                className="sm"
-                testId={`s40-rollback-${it}-${r.generation}`}
-                disabled={disabledAll || fsmState !== 'LIST'}
-                onConfirm={() => handleRollback(it, r.generation)}
-              />
+        <h3>{T.S40_HISTORY_TITLE}</h3>
+        {CALIB_STARTABLE.map((it) => {
+          const rows = historyRows(detail, it)
+          return (
+            <div key={it} className="s40-hist" data-testid={`s40-history-${it}`}>
+              <h4>{T.S40_ITEM_LABELS[it]}</h4>
+              {rows.length === 0 && <p className="note">{T.S40_HISTORY_EMPTY}</p>}
+              {rows.map((r) => (
+                <div key={r.generation} className="s40-row">
+                  <div className="s40-row-main">
+                    <span>{T.s40Generation(r.generation)}: {r.text}</span>
+                    <span className="note">{r.calibratedAt}</span>
+                    {r.verify && <span className="note">{`${T.S40_HISTORY_VERIFY}: ${r.verify}`}</span>}
+                  </div>
+                  <ArmedButton
+                    idleLabel={T.S40_HISTORY_ROLLBACK}
+                    armedLabel={T.S40_HISTORY_ROLLBACK_ARMED}
+                    className="sm"
+                    testId={`s40-rollback-${it}-${r.generation}`}
+                    disabled={disabledAll || fsmState !== 'LIST'}
+                    onConfirm={() => handleRollback(it, r.generation)}
+                  />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )
+        })}
         {rollbackMsg && <p className="note" data-testid="s40-rollback-msg">{rollbackMsg}</p>}
       </div>
     )
   }
 
   function renderBody() {
-    if (showHistory && fsmState === 'LIST') return renderHistory()
+    if (showHistory) return renderHistory()
     if (kind === 'list') {
       return (
         <div data-testid="s40-placeholder">
@@ -559,9 +567,9 @@ export default function S40Calib() {
     return <div>{T.S40_PLACEHOLDER}</div>
   }
 
-  const findings = showHistory && fsmState === 'LIST'
+  const findings = showHistory
   // 進むボタンが押せる段（S1・S3）。BLIND の S3 も次へ。
-  const canNext = fsmState === 'LIST' ? !showHistory : proceed
+  const canNext = fsmState === 'LIST' ? !showHistory : proceed // showHistory は foot の「閉じる」に差し替える
   const nextDisabled = disabledAll || !canNext
   const nextBtn = findings ? (
     <HelpTip helpKey="s40-history-close">
