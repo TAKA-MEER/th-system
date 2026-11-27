@@ -1,0 +1,208 @@
+/* screens/S20Prep.css — S-20 試験準備だけの配置（Spec-webui.md §3.10）。
+ *
+ * 型の骨組みは src/shell/Layouts.jsx（RunLayout。data-pos で位置を固定）を使う。
+ * 骨組み自体に CSS は無いため、この画面の分だけここに書く（共通部品・theme.css は触らない）。
+ * 横長: 主表示を左に大きく、右列（①〜④）を右。縦長: 主表示を上、右列を下に 2 列（§7）。
+ * 状態で位置を動かさない（同じ画面の中で状態が変わってもボタンの位置は動かない）。
+ */
+
+#s20 .g-drv {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+#s20 .g-drv-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 10px;
+  align-items: start;
+  min-height: 0;
+}
+
+/* 左上の操作バーは主表示と右列の上に横 1 列（§3.3 の型「走らせる」）。 */
+#s20 .g-drv > [data-pos="opbar"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+#s20 .g-drv .rcol {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+#s20 .g-drv .rops {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* 左上の操作バー（画面の左上に横 1 列。§3.3 の型「走らせる」）。 */
+#s20 [data-pos="opbar"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+#s20 .s20-where {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+}
+
+/* 右列の総高を 576px（横長 1280x720 の本文）に収めるための圧縮。
+ * スティックは 170px に頭打ちにする（WS-9AM の 150px 下限は保つ）。
+ * 押す的 56px（§1.2）は崩さない。 */
+#s20 .stickBox {
+  gap: 4px;
+}
+
+#s20 .stick svg {
+  max-height: 170px;
+}
+
+#s20 .g-drv .rops {
+  gap: 8px;
+}
+
+#s20 .s20-toggle .stoprun {
+  margin-bottom: 0;
+}
+
+#s20 .s20-reserved-note {
+  margin-top: 4px;
+}
+
+#s20 .s20-ops {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+#s20 .s20-ops .help-wrap,
+#s20 .s20-ops .reason-wrap,
+#s20 .s20-ops .btn {
+  width: 100%;
+}
+
+#s20 .s20-ops .note {
+  grid-column: 1 / -1;
+}
+
+/* 主表示: 地図＋地図の下の帯。帯は地図の大きさを変えない（地図は頭打ち）。 */
+#s20 .s20-mapwrap {
+  position: relative;
+}
+
+#s20 .s20-mapwrap .mapWrap svg {
+  max-height: 240px;
+}
+
+/* レーダーを地図の右上に重ねる。地図の邪魔にならない大きさに収める。 */
+#s20 .s20-radar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 168px;
+  max-width: 40%;
+  z-index: 3;
+}
+
+#s20 .s20-radar .card {
+  padding: 6px;
+  margin-bottom: 0;
+}
+
+#s20 .s20-radar .radar {
+  max-height: 148px;
+}
+
+/* 地図の左上: 「順番を決める」。 */
+#s20 .s20-maptools-tl {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+}
+
+/* ピンの吹き出し。順番ボタンの下に置く。 */
+#s20 .s20-balloon {
+  position: absolute;
+  top: 60px;
+  left: 8px;
+  z-index: 4;
+  width: 300px;
+  max-width: calc(100% - 16px);
+}
+
+#s20 .s20-entry {
+  max-width: 560px;
+  margin: 24px auto;
+}
+
+/* 地図の下の帯: 登録。手順・警告の帯はこの中に出る（地図の大きさを変えない）。 */
+#s20 .s20-band {
+  margin-top: 10px;
+}
+
+/* 2 点指示の段の印（済み＝塗り・いま＝太い縁。「Step 1/2」の文字にしない。P2）。 */
+#s20 .s20-steps {
+  display: inline-flex;
+  gap: 6px;
+}
+
+#s20 .s20-step {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--bd-hi);
+  background: transparent;
+}
+
+#s20 .s20-step.done {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+
+#s20 .s20-step.cur {
+  border: 3px solid var(--tx);
+}
+
+/* 登録ボタン（.btn-register）の明るい地での文字色。theme.css の値は暗い地向け */
+#s20 .btn-register {
+  border-color: var(--ok);
+  color: var(--tx);
+}
+
+/* 縦長: 操作バー → 主表示（地図＋レーダー）→ 登録の帯 → 右列（左に①〜③、右に④）。 */
+@media (max-aspect-ratio: 1/1) {
+  #s20 .g-drv-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #s20 .g-drv .rcol {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+  }
+
+  #s20 .s20-radar {
+    width: 180px;
+  }
+
+  #s20 .g-drv .rjog {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  #s20 .g-drv .rjog .stick svg {
+    max-height: 220px;
+  }
+}

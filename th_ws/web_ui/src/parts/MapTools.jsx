@@ -2,13 +2,14 @@
 //
 // 右下に置く。右にレーダー・スティックがある画面はその左、下に帯がある画面は
 // その上へ逃がせるように、置き場所は className / style で親から渡せる形にする
-// （既定は右下）。これらの道具はアイコンだけのボタン（語は aria-label と title）。
+// （既定は右下）。回転と「入れない所」はアイコンだけのボタン（語は aria-label
+// と title）。「凡例」は語のボタン（§3.3.7・§6.1）。
 //   - 「入れない所」＝コストマップの入切。入っている間は反転。
 //   - 「凡例」＝押すと上へ開く 2 列の凡例。× かもう一度押すと閉じる。
 //   - 「左へ回す」「右へ回す」＝地図の向きを 15° ずつ回す（試験準備だけ）。
 // 地図にはカーソルのヘルプを出さないので、この部品にも data-help を付けない。
 import { useState } from 'react'
-import { MAP_FREE, MAP_OCCUPIED, MAP_SCAN, MAP_NEAR, MAP_COST, MAP_GO, MAP_WARN, MAP_UNKNOWN, MAP_PIN, MAP_PIN_EDGE } from './mapColors.js'
+import { MAP_FREE, MAP_OCCUPIED, MAP_SCAN, MAP_NEAR, MAP_COST, MAP_GO, MAP_WARN, MAP_PIN, MAP_PIN_EDGE } from './mapColors.js'
 
 export const MAP_TOOLS_COSTMAP_LABEL = '入れない所'
 export const MAP_TOOLS_LEGEND_LABEL = '凡例'
@@ -21,14 +22,6 @@ function IconNoEntry() {
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
       <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2.4" />
       <line x1="5" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2.4" />
-    </svg>
-  )
-}
-function IconLegend() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <rect x="3" y="11" width="18" height="5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   )
 }
@@ -62,7 +55,7 @@ const LEGEND_ITEMS = [
   { label: '通れる床', style: { background: MAP_FREE } },
   { label: '入れない所', style: { background: MAP_COST } },
   { label: '壁', style: { background: MAP_OCCUPIED } },
-  { label: 'まだ見ていない所', style: { background: MAP_UNKNOWN } },
+  { label: 'まだ見ていない所', style: { background: 'var(--bg)' } }, // 未探索は画面の地と同じ（§6.1）
   { label: 'いま見えている物', style: { background: MAP_SCAN } },
   { label: '近い物', style: { background: MAP_NEAR } },
   { label: '経路を塞いでいる所', ring: MAP_WARN },
@@ -190,7 +183,7 @@ export default function MapTools({
         aria-expanded={legendOpen}
         onClick={() => setLegendOpen((v) => !v)}
       >
-        <IconLegend />
+        凡例 {/* §3.3.7・§6.1: 「凡例」は語のボタン。アイコンだけは回転と「入れない所」だけ */}
       </button>
     </div>
   )

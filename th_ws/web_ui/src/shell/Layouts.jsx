@@ -9,15 +9,18 @@
 export function RunLayout({ opbar, main, where, toggle, ops, jog, id, className = '' }) {
   return (
     <div className={`content g-drv ${className}`.trim()} data-layout="run" id={id}>
-      <div className="blk mainv" data-pos="main">{main}</div>
-      <div className="rcol">
-        <div className="rops">
-          <div data-pos="opbar">{opbar}</div>
-          <div data-pos="where">{where}</div>
-          <div data-pos="toggle">{toggle}</div>
-          <div data-pos="ops">{ops}</div>
+      {/* 操作バーは主表示と右列の上に横 1 列（Spec-webui.md §3.3 の型「走らせる」）。 */}
+      <div data-pos="opbar">{opbar}</div>
+      <div className="g-drv-row">
+        <div className="blk mainv" data-pos="main">{main}</div>
+        <div className="rcol">
+          <div className="rops">
+            <div data-pos="where">{where}</div>
+            <div data-pos="toggle">{toggle}</div>
+            <div data-pos="ops">{ops}</div>
+          </div>
+          <div className="rjog" data-pos="jog">{jog}</div>
         </div>
-        <div className="rjog" data-pos="jog">{jog}</div>
       </div>
     </div>
   )

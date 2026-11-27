@@ -6,14 +6,15 @@
 .mapWrapInner{position:relative}
 
 .mapTools{position:absolute;right:8px;bottom:8px;display:flex;gap:6px;z-index:6}
-.mapToolBtn{width:40px;height:40px;display:grid;place-items:center;border-radius:8px;
-  border:1px solid var(--bd,#3a3f4c);background:rgba(26,29,36,.92);color:var(--tx,#e6e8ec)}
-.mapToolBtn.on{background:var(--tx,#e6e8ec);color:#0f1117}
+.mapToolBtn{min-height:44px;min-width:44px;display:grid;place-items:center;border-radius:8px;
+  border:1px solid var(--bd-hi);background:var(--panel);color:var(--tx);
+  padding:6px 10px;font-size:calc(var(--fs) * .9);font-weight:700}
+.mapToolBtn.on{background:var(--sel-bg);border-color:var(--sel-bg);color:var(--sel-tx)}
 
 .mapLegend{position:absolute;right:0;bottom:calc(100% + 8px);z-index:7;
-  background:rgba(15,17,23,.96);border:1px solid var(--bd,#3a3f4c);border-radius:8px;
+  background:var(--panel);border:1px solid var(--bd-hi);border-radius:8px;
   padding:10px 12px 8px;min-width:280px}
 .mapLegend ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
-.mapLegend li{display:flex;align-items:center;gap:8px;color:var(--tx,#e6e8ec);font-size:calc(var(--fs,16px) * .75)}
+.mapLegend li{display:flex;align-items:center;gap:8px;color:var(--tx);font-size:calc(var(--fs,16px) * .75)}
 .mapLegendClose{position:absolute;top:4px;right:4px;width:28px;height:28px;display:grid;place-items:center;
-  border-radius:6px;color:var(--tx,#e6e8ec)}
+  border-radius:6px;color:var(--tx)}

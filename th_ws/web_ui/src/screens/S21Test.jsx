@@ -760,8 +760,7 @@ export default function S21Test({ onExit }) {
     <>
       {/* 左上の操作バーは画面の左上に横 1 列（§3.3・§3.11）。RunLayout の opbar 枠は
           右列の先頭なので、ここでは骨組みの外に置き、枠には空を渡す。 */}
-      <div className="s21-opbar">{opbar}</div>
-      <RunLayout id="s21" opbar={<span />} main={main} where={where} toggle={toggle} ops={ops} jog={jog} />
+      <RunLayout id="s21" opbar={opbar} main={main} where={where} toggle={toggle} ops={ops} jog={jog} />
       {/* A-15: 開発モードで項目 auto_brake を選んでいるときだけ出る。 */}
       <AutoBrakeDevCard prefix="s21" />
       {unstopOpen && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(

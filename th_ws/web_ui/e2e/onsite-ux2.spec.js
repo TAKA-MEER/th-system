@@ -80,9 +80,8 @@ test('UX-5: S-20（空シード）は 1280×720 で本文スクロールしな�
 // S-20: 中身多めシード（ピン 6 件 + 候補 4 件）で本文スクロール不要
 test('UX-5: S-20（ピン6・候補4）は 1280×720 で本文スクロールしない', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
-  await gotoScreenWithOnsite(page, 'S20', PREP_STATE, { pins: PINS6, targets: TARGETS4 })
-  // ピン一覧タブを開く
-  await page.locator('[data-testid="s20-subtab-pins"]').click()
+  await gotoScreenWithOnsite(page, 'S20', PREP_STATE, { pins: PINS6, targets: TARGETS4, mappingActive: true })
+  // 画面の作り直し: タブは無い。地図＋レーダーオーバーレイの状態で測る。
   expect(await bodyOverflowPx(page)).toBeLessThanOrEqual(1)
 })
 
@@ -125,17 +124,17 @@ function overlaps(a, b) {
     || a.y + a.height <= b.y || b.y + b.height <= a.y)
 }
 
-test('F-7: S-20 で W-6 を開いても地図と重ならない', async ({ page }) => {
+// 画面の作り直し（Spec-webui §3.10）: S-20 はスティックを常設する（「手動」ボタンで
+// 開く W-6 は無い）。S-20 の F-7（W-6 が地図と重ならない）は廃止した振る舞いなので
+// 削除する。スティック常設の潰れは WS-9AM の S-20 版を常設スティックで縛る。
+test('F-7: S-20 はスティック常設（W-6 は無い）で地図と重ならない', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await gotoScreenWithOnsite(page, 'S20', PREP_STATE, { pins: [], targets: [], mappingActive: true })
   await page.locator('#s20').waitFor()
-  await unlockOnsiteMap(page)
-  await page.locator('#s20 .op-manual').click()
-  await page.locator('#jogWin.show').waitFor()
-
+  await expect(page.locator('#jogWin.show')).toHaveCount(0)
   const mapBox = await page.getByTestId('s20-map').boundingBox()
-  const jogBox = await page.locator('#jogWin').boundingBox()
-  expect(overlaps(mapBox, jogBox), 'W-6 が S-20 の地図と重なっている').toBe(false)
+  const jogBox = await page.locator('#s20 .stick').boundingBox()
+  expect(overlaps(mapBox, jogBox), 'S-20 の常設スティックが地図と重なっている').toBe(false)
 })
 
 test('F-7: S-21 で W-6 を開いても地図と重ならない', async ({ page }) => {
@@ -166,14 +165,12 @@ test('F-7: S-21 で W-6 を開いても地図と重ならない', async ({ page 
 // .stick に min-width:160px を足したことで、この閾値はその下限を直接検証する。
 // 縦長 768×1024（3:4 実機ちょうど）と横長 1280×720 の両方で固定する。
 for (const [label, size] of [['縦長 768x1024', { width: 768, height: 1024 }], ['横長 1280x720', { width: 1280, height: 720 }]]) {
-  test(`WS-9AM: S-20 ${label} で W-6 を開いてもスティックパッドが潰れない`, async ({ page }) => {
+  test(`WS-9AM: S-20 ${label} の常設スティックパッドが潰れない`, async ({ page }) => {
     await page.setViewportSize(size)
     await gotoScreenWithOnsite(page, 'S20', PREP_STATE, { pins: [], targets: [], mappingActive: true })
     await page.locator('#s20').waitFor()
-    await page.locator('#s20 .op-manual').click()
-    await page.locator('#jogWin.show').waitFor()
-
-    const stickBox = await page.locator('#jogWin .stick svg').boundingBox()
-    expect(stickBox.width, 'W-6 のスティックパッドが潰れている').toBeGreaterThanOrEqual(150)
+    // 画面の作り直し: S-20 はスティック常設（W-6 は無い）。
+    const stickBox = await page.locator('#s20 .stick svg').boundingBox()
+    expect(stickBox.width, 'S-20 の常設スティックパッドが潰れている').toBeGreaterThanOrEqual(150)
   })
 }

@@ -635,3 +635,13 @@ test('data-pos: 状態を変えても右列のボタンの位置が動かない'
     expect(samePlace(afterPause[id], before[id]), `${id} の位置が動いている`).toBe(true)
   }
 })
+
+test('ヘッダの札: IDLE_H は記号でなく「待機中」を出し、表に無い状態は札を出さない（Spec-webui §8）', async ({ page }) => {
+  await goto21(page, { mode: 'AT_HOME', state: 'IDLE_H' })
+  const pill = page.locator('#modePill')
+  await expect(pill).toHaveText('待機中')
+  await expect(pill).toHaveAttribute('data-tone', 'neutral')
+
+  await setTestState(page, { mode: 'AT_HOME', state: 'NO_SUCH_STATE' })
+  await expect(page.locator('#modePill')).toHaveCount(0)
+})

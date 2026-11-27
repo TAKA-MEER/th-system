@@ -14,7 +14,7 @@
 //
 // It never publishes directly; all it knows about the wire is that
 // useJogLease exists. This keeps "送出を 1 箇所に閉じる" (§4.2).
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useJogLease } from '../ros/useJogLease.js'
 import { scaleJogCmd } from './stickGeometry.js'
 import { clampPresetForZone } from '../screens/screenZone.js'
@@ -24,7 +24,7 @@ import SpeedPreset from './SpeedPreset.jsx'
 import preset from '../generated/speed_presets.json'
 import { SPD_SLIDER_ARIA, KBD_HINT, KBD_HINT_KEYS } from '../i18n/screens.js'
 
-export default function JogConsole({ ros, disabled = false, keyboard = false, inZone = false }) {
+export default function JogConsole({ ros, disabled = false, keyboard = false, inZone = false, onHeldChange = null }) {
   const [selectedPct, setSelectedPct] = useState(preset.speed_preset_mid)
   // 場内の画面（S-20・S-21）は中速までに制限する（Spec-webui.md「速度プリセット」）。
   // 選択が高速のまま場内の画面に入っても、ここで中速に落ちる（表示・送出の両方）。
@@ -48,6 +48,10 @@ export default function JogConsole({ ros, disabled = false, keyboard = false, in
   // WS-9T: scaleJogCmd leaves a pure in-place turn unscaled by speedPct so the
   // low forward preset doesn't also slow cornering (stickGeometry.js).
   const scaled = scaleJogCmd(effectiveRaw, speedPct)
+
+  // S-20: スティックに触れている間は「保存」を押せなくする（Spec-webui §3.10）。
+  // 親（画面）が生の held を知るための通知だけ。送出は useJogLease のまま。
+  useEffect(() => { onHeldChange?.(effectiveHeld) }, [effectiveHeld])
 
   // Keep operator release distinct from a safety/UI disable: only the former
   // gets a braking tail; disabling must stop the publisher immediately.
