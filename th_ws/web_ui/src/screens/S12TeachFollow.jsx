@@ -215,7 +215,8 @@ export default function S12TeachFollow({ onFinish }) {
                 />
               </HelpTip>
             </div>
-            {mapPanel}
+            {/* モックアップでは入口では小地図を出さない。地図は経路選択で作り直すため。 */}
+            {!selecting && mapPanel}
             {entry}
           </div>
         )}

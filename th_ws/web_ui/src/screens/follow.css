@@ -16,7 +16,7 @@
 
 /* S-10 主表示: 対象選択レーダー いっぱい */
 .s10-main { height: 100%; min-height: 0; display: flex; align-items: center; justify-content: center; }
-.s10-main .card { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 0; }
+.s10-main .card { display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; min-height: 0; }
 .s10-main .radar { width: 100%; height: 100%; max-height: 100%; min-height: 0; }
 .s10-where { display: flex; flex-direction: column; gap: 2px; font-size: 15px; }
 .s10-where b { font-size: 28px; font-weight: 800; }
