@@ -268,7 +268,10 @@ export async function stdSetBoolCalls(page) {
 // gotoScreenWithOnsite の mappingActive を明示的に seed していない場合、
 // mappingActive===null（不明）のままだとボタンが非活性なので既定で true を渡す。
 export async function unlockOnsiteMap(page) {
-  await page.locator('[data-testid="s20-map-gate-start"]').click()
+  // 画面の作り直し（Spec-webui §3.10）: 地図作成中（mappingActive===true）は
+  // 入口カードが出ずに地図が直接出る。この場合は押すものが無いので何もしない。
+  const gate = page.locator('[data-testid="s20-map-gate-start"]')
+  if (await gate.count()) await gate.click()
 }
 
 // brief-onsite-ux2 F-6: S-21 の地図タブは「保存した会場地図を開く」（/map_session/open

@@ -39,7 +39,8 @@ test('pause_reason が空の PREP/PAUSE（非常停止から戻った状態）�
 test('PREP/RETURN で停止ボタンが押せて ui.stop を送る（SM-3.1.2-050a の入口）', async ({ page }) => {
   await gotoScreen(page, 'S20', { mode: 'PREP', state: 'RETURN' })
   await page.locator('#s20').waitFor()
-  const stop = page.locator('#s20 .op-stop')
+  // 画面の作り直し: 停止│走行は StopRunToggle 部品（待機場所へ戻る途中だけ停止が押せる）。
+  const stop = page.locator('[data-testid="s20-stop-run-stop"]')
   await expect(stop).toBeVisible()
   await expect(stop).toBeEnabled()
   await stop.click()

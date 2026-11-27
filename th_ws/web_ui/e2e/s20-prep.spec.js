@@ -28,6 +28,13 @@ const PINS = [
   pin('p2', '盤 A-2', 'PANEL', 176, 88, 91),
   pin('p3', '待機場所', 'HOME', 70, 190, 274),
 ]
+// 地図の上で実際に押せるピン（ROUTE_MAP の範囲内）。実ピン（PINS）は 86m 等の
+// 大きな座標で、実地図の倍率では画面外に飛ぶため、クリックする試験はこれを使う。
+const CLICK_PINS = [
+  pin('p1', '盤 A-1', 'PANEL', -0.5, 0.5, 92),
+  pin('p2', '盤 A-2', 'PANEL', 0.5, 0.5, 91),
+  pin('p3', '待機場所', 'HOME', -0.5, -0.5, 274),
+]
 
 const TARGETS = {
   candidates: [{ x: 1.2, y: 0.4 }, { x: -0.8, y: 0.6 }],
@@ -249,7 +256,9 @@ test('REG-2: 機体姿勢で登録（HOME）は registerPin{method:ROBOT_POSE} �
   await page.evaluate(() => {
     window.__thTestRegisterPinHere = { success: true, pin: {}, message: '機体の現在姿勢で登録しました' }
   })
-  await page.locator('[data-testid="s20-reg-home-here"]').click()
+  // 画面の作り直し: 方式の切り替えで「いまの姿勢で」を選ぶ（別ボタンは無い）。
+  await page.locator('[data-testid="s20-method-pose"]').click()
+  await page.locator('[data-testid="s20-reg-home"]').click()
   const calls = await onsiteServiceCalls(page)
   const reg = calls.find((c) => c.service === '/onsite/register_pin')
   expect(reg, '「いまの姿勢で待機場所を登録」が /onsite/register_pin を呼んでいない').toBeTruthy()
@@ -260,7 +269,7 @@ test('REG-2: 機体姿勢で登録（HOME）は registerPin{method:ROBOT_POSE} �
   await page.evaluate(() => {
     window.__thTestRegisterPinHere = { success: true, pin: {}, message: '' }
   })
-  await page.locator('[data-testid="s20-reg-home-here"]').click()
+  await page.locator('[data-testid="s20-reg-home"]').click()
   await expect(page.locator('[data-testid="s20-reg-here-msg"]')).toContainText('待機場所')
 })
 
@@ -271,7 +280,8 @@ test('REG-2: 機体姿勢で登録（PANEL）と失敗時の日本語表示', as
   await page.evaluate(() => {
     window.__thTestRegisterPinHere = { success: true, pin: {}, message: '' }
   })
-  await page.locator('[data-testid="s20-reg-panel-here"]').click()
+  await page.locator('[data-testid="s20-method-pose"]').click()
+  await page.locator('[data-testid="s20-reg-panel"]').click()
   const calls = await onsiteServiceCalls(page)
   const reg = calls.find((c) => c.service === '/onsite/register_pin')
   expect(reg).toBeTruthy()
@@ -282,7 +292,7 @@ test('REG-2: 機体姿勢で登録（PANEL）と失敗時の日本語表示', as
   await page.evaluate(() => {
     window.__thTestRegisterPinHere = { success: false, pin: {}, message: '自己位置（地図座標）が取得できません' }
   })
-  await page.locator('[data-testid="s20-reg-panel-here"]').click()
+  await page.locator('[data-testid="s20-reg-panel"]').click()
   const msg = page.locator('[data-testid="s20-reg-here-msg"]')
   await expect(msg).toBeVisible()
   await expect(msg).toHaveClass(/(^|\s)err(\s|$)/)
@@ -302,7 +312,8 @@ test('WS-9AC: いまの姿勢で登録が壁に近いと state=MAPPING のまま
       message: '壁から 0.28m しかありません。このまま登録 / 離して登録 / やめる を選んでください',
     }
   })
-  await page.locator('[data-testid="s20-reg-panel-here"]').click()
+  await page.locator('[data-testid="s20-method-pose"]').click()
+  await page.locator('[data-testid="s20-reg-panel"]').click()
   // MAPPING のまま。/onsite/pin_warning の topic 更新を模す。
   await page.evaluate(() => {
     window.__thSetTestPinWarning({
@@ -311,60 +322,56 @@ test('WS-9AC: いまの姿勢で登録が壁に近いと state=MAPPING のまま
     })
   })
   await expect(page.locator('[data-testid="s20-pinwarn"]')).toBeVisible()
-  // 未解決の警告が出ている間は登録系ボタンを無効化する。
-  await expect(page.locator('[data-testid="s20-reg-panel-here"]')).toBeDisabled()
-  await expect(page.locator('[data-testid="s20-reg-home"]')).toBeDisabled()
+  // 警告の帯は登録の帯に重ねて出る（地図の大きさを変えない。D62）。登録ボタンは隠れる。
+  await expect(page.locator('[data-testid="s20-reg-panel"]')).toHaveCount(0)
 })
 
 // 2026-09-09 レビューで確認: ROBOT_POSE は _place_pin_effect() を直接呼ぶため、
 // 2 点指示ウィザードの受付状態（_accepting/_p1/_yaw）を横から上書きして壊してしまう。
 // ウィザードが開いている（isRegister）間はボタンを無効化して、この衝突を防ぐ。
-test('REG-2: 2点指示ウィザードが開いている間は「いまの姿勢で登録」を無効化', async ({ page }) => {
+test('REG-2: 2点指示ウィザードが開いている間は登録の帯が手順に置き換わる', async ({ page }) => {
   await gotoScreenWithOnsite(page, 'S20', PREP, {
     pins: PINS, targets: TARGETS,
     twoPoint: { accepted: true, reject_reason_key: null, yaw: 0 },
   })
   await page.locator('#s20').waitFor()
-  await expect(page.locator('[data-testid="s20-reg-home-here"]')).toBeEnabled()
+  await page.locator('[data-testid="s20-method-pose"]').click()
+  await expect(page.locator('[data-testid="s20-reg-home"]')).toBeEnabled()
 
+  await page.locator('[data-testid="s20-method-person"]').click()
   await page.locator('[data-testid="s20-reg-home"]').click()
   await setTestState(page, { state: 'REGISTER' })
   await expect(page.locator('[data-testid="s20-wizard"]')).toBeVisible()
 
-  await expect(page.locator('[data-testid="s20-reg-home-here"]')).toBeDisabled()
-  await expect(page.locator('[data-testid="s20-reg-panel-here"]')).toBeDisabled()
+  // 手順の帯は登録の帯に重ねて出る。方式の切り替えと登録ボタンは隠れる。
+  await expect(page.locator('[data-testid="s20-reg-home"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="s20-method-pose"]')).toHaveCount(0)
 })
 
-test('停止/保存の操作カードと対象選択（radar）', async ({ page }) => {
+test('停止│走行は予約で押せない見た目（走行も停止も送らない）。保存は ui.save を送る', async ({ page }) => {
   await gotoScreenWithOnsite(
     page, 'S20', PREP,
     { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, mappingActive: true },
   )
   await page.locator('#s20').waitFor()
-  await unlockOnsiteMap(page)
 
-  // 「停止」「走行」は PREP では inert（2026-09-10 WS-9AA。将来の追従走行に予約）。
-  // ボタンは両方出て ui.stop / ui.run を送るが、FSM 側は状態を変えない自己ループ。
-  // ただし RETURN 中の停止だけは PAUSE に落とす（SM-3.1.2-050a）。ここは MAPPING の試験。
-  await expect(page.locator('#s20 .op-run')).toBeVisible()
-  await page.locator('#s20 .op-run').click()
-  expect(
-    (await triggers(page)).some((c) => c.trigger === 'ui.run'),
-    '走行ボタンが ui.run を送っていない',
-  ).toBe(true)
+  // 画面の作り直し（Spec-webui §3.3.2）: 試験準備の停止│走行は予約。
+  // 待機場所へ戻る途中（RETURN）だけ「停止する」が押せる。ここは MAPPING なので
+  // 両方とも押せない見た目で、理由も予約であることを示す。
+  const stop = page.locator('[data-testid="s20-stop-run-stop"]')
+  const run = page.locator('[data-testid="s20-stop-run-run"]')
+  await expect(stop).toBeDisabled()
+  await expect(run).toBeDisabled()
+  await expect(page.locator('#s20 .s20-reserved-note')).toContainText('予約')
 
-  // 操作カード: 停止(ui.stop)。保存は、この PINS/TARGETS シードだと全段完了で
-  // 「次にやること」ボタンも保存になるため、重複を避けて操作カード側には出ない
-  // （brief-onsite-ux-fix UX-6-c）。保存自体はそちらのボタンで送る。
-  await page.locator('#s20 .op-stop').click()
-  await expect(page.locator('#s20 .op-save')).toBeHidden()
-  await page.locator('[data-testid="s20-next-action"]').click()
+  // 保存（右列 ③）は ui.save を送る。押しても方式は抜けない。
+  await page.locator('[data-testid="s20-save"]').click()
   const t = await triggers(page)
-  expect(t.some((c) => c.trigger === 'ui.stop'), '停止が ui.stop を送っていない').toBe(true)
   expect(t.some((c) => c.trigger === 'ui.save'), '保存が ui.save を送っていない').toBe(true)
+  expect(t.some((c) => c.trigger === 'ui.stop' || c.trigger === 'ui.run'),
+    '予約の停止│走行が何か送った').toBe(false)
 
-  // 対象選択タブ: レーダーに候補 2 件。
-  await page.getByRole('tab', { name: '対象選択' }).click()
+  // 対象選択レーダーは地図の右上に重なる（対象選択タブは無い）。
   await expect(page.locator('[data-testid="radar-cand-0"]')).toBeVisible()
   await page.locator('[data-testid="radar-cand-1"]').click()
   const sel = (await triggers(page)).find((c) => c.trigger === 'ui.select_target')
@@ -373,9 +380,9 @@ test('停止/保存の操作カードと対象選択（radar）', async ({ page 
 })
 
 test('レーダーの空表示と見失い表示', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS })
+  // 画面の作り直し: レーダーは地図の上に常に出る（タブは無い）。地図作成中を seed する。
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS, mappingActive: true })
   await page.locator('#s20').waitFor()
-  await page.getByRole('tab', { name: '対象選択' }).click()
 
   await setTestPersonTargets(page, { candidates: [], selected_index: -1, confidence: 0, is_lost: false, lost_reason: '' })
   await expect(page.locator('[data-testid="radar-empty"]')).toBeVisible()
@@ -395,9 +402,8 @@ test('レーダーの空表示と見失い表示', async ({ page }) => {
 // 2026-09-08 実機で確認: 対象を見失った後に再選択できないと復帰不能になる
 // （multiple_sensor_person_tracking は明示選択でしか再取得しない設計）。
 test('見失った状態でも候補をタップして選び直せる', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: { ...TARGETS, is_lost: true } })
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: { ...TARGETS, is_lost: true }, mappingActive: true })
   await page.locator('#s20').waitFor()
-  await page.getByRole('tab', { name: '対象選択' }).click()
 
   await expect(page.locator('[data-testid="radar-lost-reselect"]')).toBeVisible()
   await expect(page.locator('[data-testid="radar-cand-1"]')).toBeVisible()
@@ -409,12 +415,11 @@ test('見失った状態でも候補をタップして選び直せる', async ({
 })
 
 test('待機場所のピンが無ければ 1 ボタンで戻すは非活性、あれば ui.return_home', async ({ page }) => {
-  // HOME ピン無し → 非活性。
+  // HOME ピン無し → 非活性（右列 ③ はタブ無しで常に出る）。
   await gotoScreenWithOnsite(page, 'S20', PREP, {
     pins: [pin('p1', '盤 A-1', 'PANEL', 86, 88, 92)], targets: TARGETS,
   })
   await page.locator('#s20').waitFor()
-  await page.getByRole('tab', { name: 'ピン' }).click()
   await expect(page.locator('[data-testid="s20-return-home"]')).toBeDisabled()
 
   // HOME ピン有り → クリックで ui.return_home。
@@ -424,18 +429,18 @@ test('待機場所のピンが無ければ 1 ボタンで戻すは非活性、�
   expect(back, '待機場所に戻すが ui.return_home を送っていない').toBeTruthy()
 })
 
-test('ピン一覧の編集（改名）と削除は /onsite/edit_pin を呼ぶ', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS })
+test('ピンの吹き出しの編集（改名）と削除は /onsite/edit_pin を呼ぶ', async ({ page }) => {
+  // 地図の実データ（routeMap）を seed するとピンが画面内に入る。
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: CLICK_PINS, targets: TARGETS, routeMap: ROUTE_MAP, mappingActive: true })
   await page.locator('#s20').waitFor()
-  await page.getByRole('tab', { name: 'ピン' }).click()
 
-  // 一覧にピン名と向きが出ること。
+  // ピンを押すと吹き出しが出て、ピン名と向きが出ること（ピン一覧タブは無い）。
+  await page.locator('[data-testid="s20-map-pin-p1"]').click()
+  await expect(page.locator('[data-testid="s20-pin-balloon"]')).toBeVisible()
   await expect(page.locator('[data-testid="s20-pin-name-p1"]')).toHaveText('盤 A-1')
-  await expect(page.locator('[data-testid="s20-pin-name-p3"]')).toHaveText('待機場所')
 
   // 改名。
-  await page.locator('[data-testid="s20-pin-edit-p1"]').click()
-  await expect(page.locator('[data-testid="s20-pin-editor"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s20-pin-edit-name"]')).toHaveValue('盤 A-1')
   await page.locator('[data-testid="s20-pin-edit-name"]').fill('盤 A-1改')
   await page.locator('[data-testid="s20-pin-rename"]').click()
   const calls = await onsiteServiceCalls(page)
@@ -444,7 +449,7 @@ test('ピン一覧の編集（改名）と削除は /onsite/edit_pin を呼ぶ',
   expect(rename.request).toMatchObject({ id: 'p1', new_name: '盤 A-1改', is_delete: false })
 
   // 削除（SG-C12: 二段階アーム。1 回目は何も送らず、2 回目で送る）。
-  await page.locator('[data-testid="s20-pin-edit-p1"]').click()
+  await page.locator('[data-testid="s20-map-pin-p1"]').click()
   const delBtn = page.locator('[data-testid="s20-pin-delete"] button')
   await delBtn.click()
   expect((await onsiteServiceCalls(page)).some((c) => c.request?.is_delete === true),
@@ -457,12 +462,11 @@ test('ピン一覧の編集（改名）と削除は /onsite/edit_pin を呼ぶ',
   expect(del.request.id).toBe('p1')
 })
 
-// 空の pins で tab ピンに「ピンがありません」相当（testid s20-pins-empty）が出る。
-test('ピンが 0 件なら空表示', async ({ page }) => {
+// 画面の作り直し: ピン一覧タブは無い。右列 ① の件数で 0 件が分かる。
+test('ピンが 0 件なら右列に「ピン 0 件」が出る', async ({ page }) => {
   await gotoScreen(page, 'S20', PREP)
   await page.locator('#s20').waitFor()
-  await page.getByRole('tab', { name: 'ピン' }).click()
-  await expect(page.locator('[data-testid="s20-pins-empty"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s20-pin-count"]')).toContainText('ピン 0 件')
 })
 
 // brief-onsite-fix C.5: 実地図（/route/map_view）が届いていれば占有格子ラスタが
@@ -496,16 +500,19 @@ test('地図シードなしならラスタは描かれない（モックアッ�
 
 // brief-onsite-ux2 F-6: 押す前は地図タブに OnsiteMap がマウントされない
 // （地図作成開始ボタンと案内文だけ）。押すと現れる。
-test('F-6: 「地図作成開始」を押すまで s20-map は存在せず、押すと現れる', async ({ page }) => {
+test('F-6: 地図作成中でなければ入口カードが出て、「地図作成を開始」を押すと地図が現れる', async ({ page }) => {
+  // 画面の作り直し: 入口かどうかは機体の状態（地図作成中か）から導く（A-9）。
+  // mappingActive===false なら入口カード。押すと set_mapping で開始して地図が出る。
   await gotoScreenWithOnsite(
     page, 'S20', PREP,
-    { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, mappingActive: true },
+    { pins: [], targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, mappingActive: false },
   )
   await page.locator('#s20').waitFor()
   await expect(page.locator('[data-testid="s20-map"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="s20-map-gate-msg"]')).toBeVisible()
   const startBtn = page.locator('[data-testid="s20-map-gate-start"]')
   await expect(startBtn).toBeEnabled()
+  await expect(startBtn).toContainText('地図作成を開始')
   await startBtn.click()
   await expect(page.locator('[data-testid="s20-map"]')).toBeVisible()
 })
@@ -518,17 +525,16 @@ test('F-6: mappingActive 不明の間は「地図作成開始」が非活性', a
   await expect(page.locator('[data-testid="s20-map-gate-start"]')).toBeDisabled()
 })
 
-// brief-onsite-ux2 F-6 の核心: mappingActive===true（起動時から動いている通常
-// ケース）で「地図作成開始」を押しても /slam_control/toggle_mapping を呼ばない
-// （呼ぶと動いている地図作成を誤って止めてしまう）。表示だけ解禁する。
-test('F-6: mappingActive===true なら toggle_mapping を呼ばずに表示だけ解禁', async ({ page }) => {
+// 画面の作り直し: mappingActive===true（起動時から動いている通常ケース）は
+// 入口カードが出ずに地図が直接出る。set_mapping / toggle_mapping は呼ばない。
+test('F-6: mappingActive===true なら入口カードが出ず地図が直接出る（何も呼ばない）', async ({ page }) => {
   await gotoScreenWithOnsite(
     page, 'S20', PREP,
     { pins: PINS, targets: TARGETS, mappingActive: true },
   )
   await page.locator('#s20').waitFor()
-  await page.locator('[data-testid="s20-map-gate-start"]').click()
   await expect(page.locator('[data-testid="s20-map"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s20-map-gate-start"]')).toHaveCount(0)
   const calls = await stdTriggerCalls(page)
   expect(calls.some((c) => c.service === '/slam_control/toggle_mapping'),
     'toggle_mapping は使わない（押下が重なると反転する。A-11）').toBe(false)
@@ -552,20 +558,22 @@ test('F-6: mappingActive===false なら toggle_mapping を呼んでから表示�
   expect(await stdSetBoolCalls(page)).toEqual([{ service: '/slam_control/set_mapping', data: true }])
 })
 
-// WS-9Y: 前回セッションのピンが残っているときだけ「新しい試験日として開始」を出す。
-test('WS-9Y: ピンが残っていれば地図ゲートにリセット案内が出る', async ({ page }) => {
+// WS-9Y: 前回セッションのピンが残っていれば入口カードに「新しい試験日として開始」を出す。
+// 画面の作り直し: 入口カードは地図作成中でないときにだけ出る（mappingActive===false）。
+test('WS-9Y: ピンが残っていれば入口カードにリセット案内が出る', async ({ page }) => {
   await gotoScreenWithOnsite(
     page, 'S20', PREP,
-    { pins: PINS, targets: TARGETS, mappingActive: true },
+    { pins: PINS, targets: TARGETS, mappingActive: false },
   )
   await page.locator('#s20').waitFor()
   await expect(page.locator('[data-testid="s20-reset-venue"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s20-map-gate-start"]')).toContainText('続きから再開')
 })
 
 test('WS-9Y: ピンが 0 件ならリセット案内は出ない', async ({ page }) => {
   await gotoScreenWithOnsite(
     page, 'S20', PREP,
-    { pins: [], targets: TARGETS, mappingActive: true },
+    { pins: [], targets: TARGETS, mappingActive: false },
   )
   await page.locator('#s20').waitFor()
   await expect(page.locator('[data-testid="s20-reset-venue"]')).toHaveCount(0)
@@ -581,7 +589,7 @@ test('WS-9Y: リセットは2回押しで discard_map → reset_pins の順に�
   })
   await gotoScreenWithOnsite(
     page, 'S20', PREP,
-    { pins: PINS, targets: TARGETS, mappingActive: true },
+    { pins: PINS, targets: TARGETS, mappingActive: false },
   )
   await page.locator('#s20').waitFor()
   const btn = page.locator('[data-testid="s20-reset-venue"] button')
@@ -601,7 +609,7 @@ test('WS-9Y: discard_map が失敗したら reset_pins を呼ばずエラーを�
   })
   await gotoScreenWithOnsite(
     page, 'S20', PREP,
-    { pins: PINS, targets: TARGETS, mappingActive: true },
+    { pins: PINS, targets: TARGETS, mappingActive: false },
   )
   await page.locator('#s20').waitFor()
   const btn = page.locator('[data-testid="s20-reset-venue"] button')
@@ -614,9 +622,8 @@ test('WS-9Y: discard_map が失敗したら reset_pins を呼ばずエラーを�
 
 // brief-onsite-fix F-2: レーダーに機体マーク（前方上向き三角＋中心丸）が出る。
 test('レーダーに機体マーク（radar-heading）が描かれる', async ({ page }) => {
-  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 } })
+  await gotoScreenWithOnsite(page, 'S20', PREP, { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, mappingActive: true })
   await page.locator('#s20').waitFor()
-  await page.getByRole('tab', { name: '対象選択' }).click()
   await expect(page.locator('[data-testid="radar-heading"]')).toBeVisible()
 })
 
@@ -637,13 +644,12 @@ test('MAPTAP: 地図タップ登録はドラッグ→確定で register_pin{meth
   await expect(page.locator('[data-testid="s20-map-reset-view"]')).toBeVisible()
   await expect(page.locator('[data-testid="s20-map-scale"]')).toBeVisible()
 
-  // 地図タブから離れてから入口ボタンを押す（タブが切り替わることを見るため）。
-  await page.getByRole('tab', { name: '対象選択' }).click()
   await page.evaluate(() => {
     window.__thTestRegisterPinMapTap = { success: true, pin: {}, message: '地図タップで登録しました' }
   })
-  await page.locator('[data-testid="s20-reg-panel-maptap"]').click()
-  await expect(page.locator('[data-testid="s20-tab-map"]')).toHaveAttribute('aria-selected', 'true')
+  // 画面の作り直し: 方式の切り替えで「地図をタップして」を選ぶ（タブは無い）。
+  await page.locator('[data-testid="s20-method-tap"]').click()
+  await page.locator('[data-testid="s20-reg-panel"]').click()
 
   // SVG 内ドラッグ（press→move→release）で確定カードが出る。
   const map = page.locator('[data-testid="s20-map"]')
@@ -684,7 +690,8 @@ test('MAPTAP: キャンセルでカードが消えサービスを呼ばない', 
   await page.evaluate(() => {
     window.__thTestRegisterPinMapTap = { success: true, pin: {}, message: '地図タップで登録しました' }
   })
-  await page.locator('[data-testid="s20-reg-home-maptap"]').click()
+  await page.locator('[data-testid="s20-method-tap"]').click()
+  await page.locator('[data-testid="s20-reg-home"]').click()
 
   const map = page.locator('[data-testid="s20-map"]')
   const box = await map.boundingBox()
@@ -721,7 +728,9 @@ test('MAPTAP: 非等倍の --stage-scale でもタップ位置が正しい map �
   await page.evaluate(() => {
     window.__thTestRegisterPinMapTap = { success: true, pin: {}, message: 'ok' }
   })
-  await page.locator('[data-testid="s20-reg-panel-maptap"]').click()
+  // 画面の作り直し: 方式の切り替えで「地図をタップして」を選ぶ（タブは無い）。
+  await page.locator('[data-testid="s20-method-tap"]').click()
+  await page.locator('[data-testid="s20-reg-panel"]').click()
 
   // OnsiteMap.jsx が実際に使う変換（zoom=1・pan=0 の初期状態）で、選んだ world 座標
   // が SVG の viewBox 上のどこに来るかを求める（本番コードと同じ mapGeometry.js）。
@@ -804,14 +813,15 @@ test('MAPTAP: 2本指ピンチでズームできる（タブレットでの拡�
 // ── 1b-11 ──────────────────────────────────────────────────
 
 // SG-B16: ピンの再登録（機体の現在姿勢）。同じ id のまま update_pose で送る。
+// 画面の作り直し: ピンを押すと吹き出しが出る（ピン一覧タブは無い）。
 test('ピン再登録: 機体位置で更新は同じ id の edit_pin(update_pose) を呼ぶ', async ({ page }) => {
   await gotoScreenWithOnsite(page, 'S20', PREP, {
-    pins: PINS, targets: TARGETS, pose: { x: 1.25, y: -0.5, yaw: 0.5 },
-    editPin: { success: true, message: '更新しました' },
+    pins: CLICK_PINS, targets: TARGETS, pose: { x: 1.25, y: -0.5, yaw: 0.5 }, routeMap: ROUTE_MAP,
+    editPin: { success: true, message: '更新しました' }, mappingActive: true,
   })
   await page.locator('#s20').waitFor()
-  await page.getByRole('tab', { name: 'ピン' }).click()
-  await page.locator('[data-testid="s20-pin-edit-p1"]').click()
+  await page.locator('[data-testid="s20-method-pose"]').click()
+  await page.locator('[data-testid="s20-map-pin-p1"]').click()
   await page.locator('[data-testid="s20-pin-reregister"]').click()
   const calls = (await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/edit_pin')
   expect(calls).toHaveLength(1)
@@ -827,15 +837,14 @@ test('ピン再登録: 機体位置で更新は同じ id の edit_pin(update_pos
 // 同じ id の edit_pin に載り、register_pin は呼ばれない。
 test('ピン再登録: 地図タップ→数値補正→確定は register_pin でなく edit_pin(update_pose)', async ({ page }) => {
   await gotoScreenWithOnsite(page, 'S20', PREP, {
-    pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, routeMap: ROUTE_MAP,
+    pins: CLICK_PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, routeMap: ROUTE_MAP,
     mappingActive: true, editPin: { success: true, message: '更新しました' },
   })
   await page.locator('#s20').waitFor()
   await unlockOnsiteMap(page)
-  await page.getByRole('tab', { name: 'ピン' }).click()
-  await page.locator('[data-testid="s20-pin-edit-p2"]').click()
+  await page.locator('[data-testid="s20-method-tap"]').click()
+  await page.locator('[data-testid="s20-map-pin-p2"]').click()
   await page.locator('[data-testid="s20-pin-reregister-maptap"]').click()
-  await expect(page.locator('[data-testid="s20-tab-map"]')).toHaveAttribute('aria-selected', 'true')
 
   const box = await page.locator('[data-testid="s20-map"]').boundingBox()
   await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.4)
@@ -874,7 +883,8 @@ test('MAPTAP: 数値補正した x,y,向きが register_pin(MAP_TAP) に載る',
   await page.evaluate(() => {
     window.__thTestRegisterPinMapTap = { success: true, pin: {}, message: 'ok' }
   })
-  await page.locator('[data-testid="s20-reg-panel-maptap"]').click()
+  await page.locator('[data-testid="s20-method-tap"]').click()
+  await page.locator('[data-testid="s20-reg-panel"]').click()
   const box = await page.locator('[data-testid="s20-map"]').boundingBox()
   await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.4)
   await page.mouse.down()
@@ -890,4 +900,93 @@ test('MAPTAP: 数値補正した x,y,向きが register_pin(MAP_TAP) に載る',
   // 向き 180°: ② は ① の真左。
   expect(reg.request.tap2_y).toBeCloseTo(0.3, 5)
   expect(reg.request.tap2_x).toBeLessThan(reg.request.tap1_x)
+})
+
+// ── 画面の作り直し（Spec-webui.md §3.10） ──────────────────────────────────
+
+// R-5（D60・D64）: 順番を決める。配電盤を押した順に番号 →「決める」で
+// /onsite/edit_pin に order_ids が載る（押さなかった盤は現在の順のまま後ろへ）。
+test('順番を決める: 押した順に order_ids で edit_pin を呼ぶ', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, {
+    pins: CLICK_PINS, targets: TARGETS, routeMap: ROUTE_MAP, mappingActive: true,
+    editPin: { success: true, message: '順番を変えました' },
+  })
+  await page.locator('#s20').waitFor()
+  await page.locator('[data-testid="s20-order-start"]').click()
+  await expect(page.locator('[data-testid="s20-order-band"]')).toBeVisible()
+  await expect(page.locator('[data-testid="s20-order-count"]')).toContainText('順番 0 / 2')
+  await page.locator('[data-testid="s20-map-pin-p2"]').click()
+  await expect(page.locator('[data-testid="s20-order-count"]')).toContainText('順番 1 / 2')
+  await page.locator('[data-testid="s20-map-pin-p1"]').click()
+  await expect(page.locator('[data-testid="s20-order-count"]')).toContainText('順番 2 / 2')
+  await page.locator('[data-testid="s20-order-commit"]').click()
+  const calls = (await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/edit_pin')
+  expect(calls, '順番を決めるが /onsite/edit_pin を呼んでいない').toHaveLength(1)
+  expect(calls[0].request.order_ids).toEqual(['p2', 'p1'])
+  await expect(page.locator('[data-testid="s20-order-band"]')).toHaveCount(0)
+})
+
+// R-5: 配電盤の前へ／後へは move=-1／+1 で edit_pin を呼ぶ。端では押せない。
+test('ピン吹き出し: 配電盤の「前へ」「後へ」で move を送る。端では押せない', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, {
+    pins: CLICK_PINS, targets: TARGETS, routeMap: ROUTE_MAP, mappingActive: true,
+    editPin: { success: true, message: '順番を変えました' },
+  })
+  await page.locator('#s20').waitFor()
+  // p1 は配電盤の先頭（順番 1 / 2）。「前へ」は押せない。
+  await page.locator('[data-testid="s20-map-pin-p1"]').click()
+  await expect(page.locator('[data-testid="s20-pin-move-prev"]')).toBeDisabled()
+  await page.locator('[data-testid="s20-pin-move-next"]').click()
+  let calls = (await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/edit_pin')
+  expect(calls.some((c) => c.request.id === 'p1' && c.request.move === 1),
+    '「後へ」が move:1 で /onsite/edit_pin を呼んでいない').toBe(true)
+
+  // p2 は配電盤の後尾。「後へ」は押せない。
+  await page.locator('[data-testid="s20-map-pin-p2"]').click()
+  await expect(page.locator('[data-testid="s20-pin-move-next"]')).toBeDisabled()
+  await page.locator('[data-testid="s20-pin-move-prev"]').click()
+  calls = (await onsiteServiceCalls(page)).filter((c) => c.service === '/onsite/edit_pin')
+  expect(calls.some((c) => c.request.id === 'p2' && c.request.move === -1),
+    '「前へ」が move:-1 で /onsite/edit_pin を呼んでいない').toBe(true)
+})
+
+// 人の位置での登録し直しは機体に対応していない（吹き出しの登録し直しは
+// いまの姿勢で／地図をタップしてだけ効く）。押せない見た目＋理由で出す。
+test('人の位置での登録し直しは機体に対応していない（押せない＋理由）', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, {
+    pins: CLICK_PINS, targets: TARGETS, routeMap: ROUTE_MAP, mappingActive: true,
+  })
+  await page.locator('#s20').waitFor()
+  // 方式は既定で「人の位置で」。
+  await page.locator('[data-testid="s20-map-pin-p1"]').click()
+  const btn = page.locator('[data-testid="s20-pin-reregister"]')
+  await expect(btn).toBeDisabled()
+  // §3.3.3: 押せないボタンは押すと理由が出る。ReasonButton は aria-disabled で
+  // 押下を受け付けるので、Playwright の通常 click（enabled 待ち）は使わず force で押す。
+  await btn.click({ force: true })
+  await expect(page.locator('[data-testid="s20-pin-reregister-reason"]')).toContainText('機体に対応していません')
+})
+
+// §3.3: 右列・下端のボタンはどの状態でも位置を変えない（data-pos の位置が動かない）。
+test('状態を変えても data-pos の位置が動かない', async ({ page }) => {
+  await gotoScreenWithOnsite(page, 'S20', PREP, {
+    pins: PINS, targets: TARGETS, mappingActive: true,
+  })
+  await page.locator('#s20').waitFor()
+  const box = async (pos) => page.locator(`[data-pos="${pos}"]`).boundingBox()
+  const before = {
+    opbar: await box('opbar'), toggle: await box('toggle'),
+    ops: await box('ops'), jog: await box('jog'),
+  }
+  // REGISTER（登録中）へ変えても、右列の位置は動かない。
+  await setTestState(page, { state: 'REGISTER' })
+  await expect(page.locator('[data-testid="s20-wizard"]')).toBeVisible()
+  const after = {
+    opbar: await box('opbar'), toggle: await box('toggle'),
+    ops: await box('ops'), jog: await box('jog'),
+  }
+  for (const pos of ['opbar', 'toggle', 'ops', 'jog']) {
+    expect(after[pos].x, `data-pos=${pos} の x が動いた`).toBeCloseTo(before[pos].x, 0)
+    expect(after[pos].y, `data-pos=${pos} の y が動いた`).toBeCloseTo(before[pos].y, 0)
+  }
 })
