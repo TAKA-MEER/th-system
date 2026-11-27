@@ -7,10 +7,26 @@
  */
 
 #s20 .g-drv {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+#s20 .g-drv-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: 10px;
   align-items: start;
+  min-height: 0;
+}
+
+/* 左上の操作バーは主表示と右列の上に横 1 列（§3.3 の型「走らせる」）。 */
+#s20 .g-drv > [data-pos="opbar"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 #s20 .g-drv .rcol {
@@ -26,7 +42,7 @@
   min-width: 0;
 }
 
-/* 左上の操作バー（RunLayout では右列の上。終了／人検出／自動ブレーキ／未保存）。 */
+/* 左上の操作バー（画面の左上に横 1 列。§3.3 の型「走らせる」）。 */
 #s20 [data-pos="opbar"] {
   display: flex;
   flex-wrap: wrap;
@@ -158,23 +174,35 @@
   border: 3px solid var(--tx);
 }
 
-/* 縦長: 主表示を上、右列を下に並べる（§7）。 */
+/* 登録ボタン（.btn-register）の明るい地での文字色。theme.css の値は暗い地向け */
+#s20 .btn-register {
+  border-color: var(--ok);
+  color: var(--tx);
+}
+
+/* 縦長: 操作バー → 主表示（地図＋レーダー）→ 登録の帯 → 右列（左に①〜③、右に④）。 */
 @media (max-aspect-ratio: 1/1) {
-  #s20 .g-drv {
+  #s20 .g-drv-row {
     grid-template-columns: minmax(0, 1fr);
   }
 
   #s20 .g-drv .rcol {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 10px;
-  }
-
-  #s20 .g-drv .rops {
-    grid-column: 1 / -1;
+    align-items: start;
   }
 
   #s20 .s20-radar {
     width: 180px;
+  }
+
+  #s20 .g-drv .rjog {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  #s20 .g-drv .rjog .stick svg {
+    max-height: 220px;
   }
 }
