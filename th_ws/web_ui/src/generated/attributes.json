@@ -4,6 +4,7 @@
     "has_record": false,
     "initial_state": "IDLE_H",
     "jog": "allowed",
+    "jog_speed_limit": "v_slow",
     "needs_tracker": "unused",
     "resume": "ack_only",
     "resume_state": "IDLE_H",
@@ -15,6 +16,7 @@
     "has_record": false,
     "initial_state": "IDLE_P",
     "jog": "allowed",
+    "jog_speed_limit": "v_jog_panel",
     "needs_tracker": "unused",
     "resume": "ack_only",
     "resume_state": "IDLE_P",
@@ -97,28 +99,6 @@
     "resume_state": null,
     "run_state": null,
     "speed_limit": "stop"
-  },
-  "LEASH": {
-    "auto_brake_default": "on_locked",
-    "has_record": false,
-    "initial_state": "DEV_CHECK",
-    "jog": "allowed",
-    "needs_tracker": "unused",
-    "resume": "yes_no",
-    "resume_state": "PAUSE",
-    "run_state": "RUN",
-    "speed_limit": "v_leash"
-  },
-  "LINE": {
-    "auto_brake_default": "on_locked",
-    "has_record": false,
-    "initial_state": "SETUP",
-    "jog": "allowed",
-    "needs_tracker": "unused",
-    "resume": "yes_no",
-    "resume_state": "PAUSE",
-    "run_state": "RUN",
-    "speed_limit": "v_max"
   },
   "MANUAL": {
     "auto_brake_default": "off",

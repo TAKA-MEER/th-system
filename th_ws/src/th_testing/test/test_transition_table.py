@@ -80,6 +80,9 @@ SPEC_FANOUT = {
 
 def _load_spec_ids(spec_path):
     text = spec_path.read_text(encoding="utf-8")
+    # 取り消し線（~~...~~）で欠番にした ID（例: 2026-11-27 D7 で廃止した
+    # SM-3.1.2-030〜-041）は遷移行を要求しないので除外する。
+    text = re.sub(r"~~[^~]*~~", "", text)
     return set(_SPEC_ID_RE.findall(text))
 
 

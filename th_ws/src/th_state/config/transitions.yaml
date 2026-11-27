@@ -719,18 +719,6 @@
   spec_ref: SM-3.1.1-15
   reject: true
   reject_reason_key: no_route_recorded
-- id: C-13-leash-no-device
-  layer: 0
-  mode: IDLE
-  state: '*'
-  event: ui.enter_mode
-  guard: enter_leash_no_device
-  to_mode: null
-  to_state: null
-  effects: []
-  spec_ref: SM-3.1.1-15
-  reject: true
-  reject_reason_key: device_not_connected
 - id: C-13
   layer: 0
   mode:

@@ -485,7 +485,7 @@ GUARDS: Dict[str, Callable] = {
     "presence_stops_mode": _presence_stops_mode,
 }
 
-assert len(GUARDS) == 62, len(GUARDS)
+assert len(GUARDS) == 58, len(GUARDS)
 
 
 def build_guards(mode_entry: Dict, attributes: Dict | None = None) -> Dict[str, Callable]:

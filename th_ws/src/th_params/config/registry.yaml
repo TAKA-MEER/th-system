@@ -57,7 +57,7 @@
   # th_state/zones.py の LIMIT_STRICTNESS が一致することは
   # test_state_registry_consistency.py（th_testing）が機械的に照合する
   # （2 か所の重複は残るが、N-14 のような静かな乖離にはしない）。
-  speed_limit_strictness_rank: 6
+  speed_limit_strictness_rank: 5  # v_leash（旧 rank 5）廃止で連番を保つ（2026-11-27 D7）
 
 - name: venue_clearance_m
   unit: m
