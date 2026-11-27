@@ -28,13 +28,20 @@
 #s14 .s14-dir-seg .btn{width:100%;border-radius:0}
 #s14 .s14-dir-seg .btn:first-child{border-radius:8px 0 0 8px}
 #s14 .s14-dir-seg .btn:last-child{border-radius:0 8px 8px 0}
+#s14 .s14-select-card .help-wrap{display:block;width:100%}
 #s14 .s14-proceed{width:100%;margin-top:10px}
+/* 右列のヘルプ付きボタンは幅いっぱい（S-21 と同じ決まり）。 */
+#s14 [data-pos="ops"] > .help-wrap{display:flex;min-width:0}
+#s14 [data-pos="ops"] > .help-wrap > .reason-wrap{flex:1 1 auto;display:flex;min-width:0}
+#s14 [data-pos="ops"] > .help-wrap > .reason-wrap > .btn{flex:1 1 auto;min-width:0}
+#s14 [data-pos="ops"] > .help-wrap > .spd{flex:1 1 auto}
 /* 再生速度は幅いっぱいの 3 段（低速／中速／高速。モックアップと同じ出し方）。 */
 #s14 [data-pos="ops"] .spd{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;flex:1 0 auto}
 #s14 [data-pos="ops"] .spd .btn{width:100%;border-radius:0}
 #s14 [data-pos="ops"] .spd .btn:first-child{border-radius:8px 0 0 8px}
 #s14 [data-pos="ops"] .spd .btn:last-child{border-radius:0 8px 8px 0}
 /* ④ 手動は幅いっぱい（モックアップと同じ）。 */
+#s14 [data-pos="jog"] > .help-wrap{width:100%}
 #s14 [data-pos="jog"] .btn{width:100%}
 #s14 .rt{display:flex;align-items:baseline;gap:10px;padding:10px 12px;border:1px solid var(--bd);
   border-radius:8px;cursor:pointer;background:var(--panel)}
