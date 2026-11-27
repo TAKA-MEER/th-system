@@ -24,6 +24,18 @@
 #s14 .s14-select-card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
   width:min(480px,92%);max-height:100%;overflow-y:auto;margin-bottom:0;z-index:5}
 #s14 .rtl{display:flex;flex-direction:column;gap:2px}
+#s14 .s14-dir-seg{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:10px}
+#s14 .s14-dir-seg .btn{width:100%;border-radius:0}
+#s14 .s14-dir-seg .btn:first-child{border-radius:8px 0 0 8px}
+#s14 .s14-dir-seg .btn:last-child{border-radius:0 8px 8px 0}
+#s14 .s14-proceed{width:100%;margin-top:10px}
+/* 再生速度は幅いっぱいの 3 段（低速／中速／高速。モックアップと同じ出し方）。 */
+#s14 [data-pos="ops"] .spd{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;flex:1 0 auto}
+#s14 [data-pos="ops"] .spd .btn{width:100%;border-radius:0}
+#s14 [data-pos="ops"] .spd .btn:first-child{border-radius:8px 0 0 8px}
+#s14 [data-pos="ops"] .spd .btn:last-child{border-radius:0 8px 8px 0}
+/* ④ 手動は幅いっぱい（モックアップと同じ）。 */
+#s14 [data-pos="jog"] .btn{width:100%}
 #s14 .rt{display:flex;align-items:baseline;gap:10px;padding:10px 12px;border:1px solid var(--bd);
   border-radius:8px;cursor:pointer;background:var(--panel)}
 #s14 .rt.on{border-color:var(--sel-bg);background:var(--sel-bg);color:var(--sel-tx)}

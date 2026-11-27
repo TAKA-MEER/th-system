@@ -213,11 +213,11 @@ export default function S14Replay({ onFinish }) {
           {selectedNoMap && (
             <div className="note mt" data-testid="s14-select-no-map">{S14_NO_MAP_LINE}</div>
           )}
-          <div className="row mt">
+          <div className="s14-dir-seg">
             <HelpTip helpKey="s14-dir">
               <button
                 type="button"
-                className={`btn sm${!reverse ? ' on' : ''}`}
+                className={`btn${!reverse ? ' on' : ''}`}
                 data-testid="s14-dir-fwd"
                 aria-pressed={!reverse}
                 disabled={disabledAll}
@@ -229,7 +229,7 @@ export default function S14Replay({ onFinish }) {
             <HelpTip helpKey="s14-dir">
               <button
                 type="button"
-                className={`btn sm${reverse ? ' on' : ''}`}
+                className={`btn${reverse ? ' on' : ''}`}
                 data-testid="s14-dir-rev"
                 aria-pressed={reverse}
                 disabled={disabledAll}
@@ -242,7 +242,7 @@ export default function S14Replay({ onFinish }) {
           <HelpTip helpKey="s14-proceed">
             <button
               type="button"
-              className="btn mt"
+              className="btn s14-proceed"
               data-testid="s14-proceed"
               disabled={disabledAll || empty || selectedId == null}
               onClick={handleProceed}
@@ -376,18 +376,16 @@ export default function S14Replay({ onFinish }) {
   )
 
   const jog = (
-    <div className="btnrow n2">
-      <HelpTip helpKey="manual">
-        <ReasonButton
-          className="manual"
-          data-testid="s14-manual"
-          disabled={disabledAll}
-          onClick={() => jogPanel.open()}
-        >
-          <span>{OP_LABELS.manual}</span>
-        </ReasonButton>
-      </HelpTip>
-    </div>
+    <HelpTip helpKey="manual">
+      <ReasonButton
+        className="manual"
+        data-testid="s14-manual"
+        disabled={disabledAll}
+        onClick={() => jogPanel.open()}
+      >
+        <span>{OP_LABELS.manual}</span>
+      </ReasonButton>
+    </HelpTip>
   )
 
   return (
