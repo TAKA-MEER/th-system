@@ -1,9 +1,14 @@
-// parts/costmapVisibility.js — S-50 の地図の表示項目（コストマップ表示／非表示）。
-// Spec-webui.md §3.15。今後、地図を見やすくする設定を同じ場所に足す。
-// fontScale.js と同じ流儀: localStorage が正本（既定は表示）。
-// S-20/S-21 の地図タブが useCostmap.js 経由で読む。切り替えは画面を開き直すと反映される。
+// parts/costmapVisibility.js — 「入れない所」（コストマップ表示／非表示）。
+// Spec-webui.md §6.1 の地図の端の道具「入れない所」の入切。全地図で共通で、
+// localStorage に置く（読めないときは既定）。
+// S-50 の表示設定もこのキー（th.costmapVisible）を共用する。
+//
+// 既定は「入」（出しておく）。「実際の地図で見て決める」（Spec-webui.md §6.1
+// の未決。ブリーフ W0b: 既定を 1 か所の定数にする）が決まったらここだけ直す。
 
 const KEY = 'th.costmapVisible'
+
+export const COSTMAP_DEFAULT_VISIBLE = true
 
 function storage() {
   try {
@@ -16,9 +21,9 @@ function storage() {
 export function readCostmapVisible() {
   try {
     const v = storage()?.getItem(KEY) ?? null
-    return v === null ? true : v === '1'
+    return v === null ? COSTMAP_DEFAULT_VISIBLE : v === '1'
   } catch {
-    return true
+    return COSTMAP_DEFAULT_VISIBLE
   }
 }
 

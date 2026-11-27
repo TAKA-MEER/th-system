@@ -1,0 +1,19 @@
+/* parts/mapTools.css — 地図の端の道具と凡例（Spec-webui.md §6.1）。
+   地図の部品専用。shell/theme.css の全体には触らず、地図の CSS はここにまとめる
+   （W0a が共通部分を作り直しているため）。
+   色は parts/mapColors.js の色を inline style で受ける。ここでは配置と形だけ。 */
+
+.mapWrapInner{position:relative}
+
+.mapTools{position:absolute;right:8px;bottom:8px;display:flex;gap:6px;z-index:6}
+.mapToolBtn{width:40px;height:40px;display:grid;place-items:center;border-radius:8px;
+  border:1px solid var(--bd,#3a3f4c);background:rgba(26,29,36,.92);color:var(--tx,#e6e8ec)}
+.mapToolBtn.on{background:var(--tx,#e6e8ec);color:#0f1117}
+
+.mapLegend{position:absolute;right:0;bottom:calc(100% + 8px);z-index:7;
+  background:rgba(15,17,23,.96);border:1px solid var(--bd,#3a3f4c);border-radius:8px;
+  padding:10px 12px 8px;min-width:280px}
+.mapLegend ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
+.mapLegend li{display:flex;align-items:center;gap:8px;color:var(--tx,#e6e8ec);font-size:calc(var(--fs,16px) * .75)}
+.mapLegendClose{position:absolute;top:4px;right:4px;width:28px;height:28px;display:grid;place-items:center;
+  border-radius:6px;color:var(--tx,#e6e8ec)}

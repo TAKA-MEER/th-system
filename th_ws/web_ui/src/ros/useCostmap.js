@@ -11,8 +11,12 @@
 // フックの形も useOnsiteMapView と完全に同じ: latest OccupancyGrid を
 // { info, data } で返す。null なら未受信。TEST_MODE のシードは
 // window.__thTestCostmap（mutate 用に window.__thSetTestCostmap も足す）。
+//
+// 「入れない所」の入切（parts/costmapVisibility.js の th.costmapVisible）は
+// ここでは見ない。購読は常時して、描くか描かないかは地図の部品（OnsiteMap）
+// が持つ。入切を購読で止めると、地図上の「入れない所」ボタンで入れたあと
+// 再購読するまで地図が戻らないため。
 import { useEffect, useRef, useState } from 'react'
-import { readCostmapVisible } from '../parts/costmapVisibility.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 
@@ -22,9 +26,6 @@ const COSTMAP_THROTTLE_MS = 2000
 
 export function useOnsiteCostmap(ros) {
   const topicRef = useRef(null)
-  // SG-C14: S-50 のコストマップ表示／非表示。非表示の間は購読しない
-  // （ロボット→ブラウザの転送自体を止める）。切り替えは地図画面を開き直すと反映される。
-  const [visible] = useState(readCostmapVisible)
   const [costmapData, setCostmapData] = useState(
     TEST_MODE ? (window.__thTestCostmap ?? null) : null)
 
@@ -36,7 +37,6 @@ export function useOnsiteCostmap(ros) {
 
   useEffect(() => {
     if (TEST_MODE || !ros) { topicRef.current = null; return undefined }
-    if (!visible) { topicRef.current = null; return undefined }
     const ROSLIB = window.ROSLIB
     if (!ROSLIB) return undefined
     topicRef.current = new ROSLIB.Topic({
@@ -55,7 +55,7 @@ export function useOnsiteCostmap(ros) {
       topicRef.current?.unsubscribe()
       topicRef.current = null
     }
-  }, [ros, visible])
+  }, [ros])
 
-  return visible ? costmapData : null
+  return costmapData
 }

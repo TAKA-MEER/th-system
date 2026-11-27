@@ -5,38 +5,47 @@
 // Uint8ClampedArray・同じ行反転規則（grid の行0=map フレーム下端、ImageData 行0=
 // 上端）。
 //
-// 値が高いほど不透明な赤（赤→橙→黄のグラデーション）、0（自由）と -1（未知）は
-// 透明に近くして、下に描いた静的占有格子（地図ラスタ）が透けて見えるようにする。
-// 値の意味は決め打ちでよく、「高コストほど濃い赤」であることが操作者に伝われば良い。
-// alpha チャンネルを利かせないと下の静的地図が見えなくなるので注意。
+// Spec-webui.md §6.1（2026-11-27）: 「入れない所」（機体の中心が入ると壁に当たる
+// 帯＝Nav2 の内接・致死のセル）だけを薄い灰で描く。避けたい帯（膨張の帯）は
+// 描かない。以前の赤〜橙のヒートマップ（値を面で塗る方式）は廃止した。
 //
-// 2026-09-09 実機フィードバック「コストマップで地図が見えない」: 初版は
-// v=100（最大コスト）で alpha≈220（86%）と、静的地図がほぼ隠れる濃さだった。
-// 低コスト（軽い膨張）まで alpha が付いていたため、部屋全体が赤くにじんで
-// 見えたのも一因。閾値を上げて低コスト域は透明に近くし、最大でも alpha を
-// 140（55%）に抑えて下の地図が必ず透けるようにする。
+// Nav2 のコスト値は 99＝internal max（内接）・100＝lethal（致死）。99/100 の
+// セルだけが「入れない所」（機体の中心がそこへ入ると壁に当たる所）であり、
+// それより低い値（膨張の帯）は通れるので描かない。白い床＝機体の中心が
+// 通れる所、と読める。
+import { MAP_COST } from './mapColors.js'
+
+export const COSTMAP_INFLATED = 99 // Nav2 internal max（内接）
+export const COSTMAP_LETHAL = 100 // Nav2 lethal（致死）
+
+export function isCostmapForbidden(v) {
+  return v === COSTMAP_INFLATED || v === COSTMAP_LETHAL
+}
+
 export function costmapToPixels(data, width, height) {
   const w = Math.floor(width)
   const h = Math.floor(height)
   const out = new Uint8ClampedArray(w * h * 4)
-  const ALPHA_CAP = 140
-  const VISIBLE_FROM = 20   // これ以下（自由・軽い膨張）は描かない
+  const [r, g, b] = hexToRgb(MAP_COST)
   for (let row = 0; row < h; row++) {
     for (let col = 0; col < w; col++) {
       const srcIdx = row * w + col
       const destRow = h - 1 - row
       const destIdx = (destRow * w + col) * 4
       const v = data[srcIdx]
-      // rosbridge の cbor 化で -1（未知）が 255 に化けることがあるので v > 100 も
-      // 未知扱いにする（occupancyGridToPixels と同じ考え方）。
-      const alpha = v <= VISIBLE_FROM || v > 100
-        ? 0
-        : Math.min(ALPHA_CAP, (v - VISIBLE_FROM) * (ALPHA_CAP / (100 - VISIBLE_FROM)))
-      out[destIdx] = 255
-      out[destIdx + 1] = Math.max(0, 180 - v * 1.6)
-      out[destIdx + 2] = 40
-      out[destIdx + 3] = alpha
+      if (isCostmapForbidden(v)) {
+        out[destIdx] = r
+        out[destIdx + 1] = g
+        out[destIdx + 2] = b
+        out[destIdx + 3] = 255
+      }
+      // それ以外は透明（下に描いた静的占有格子＝地図ラスタが透けて見える）
     }
   }
   return out
+}
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
