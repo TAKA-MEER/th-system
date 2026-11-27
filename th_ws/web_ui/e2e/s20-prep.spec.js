@@ -80,6 +80,23 @@ test('S-20 表示とタイトル', async ({ page }) => {
   await expect(page.locator('[data-testid="s20-map-robot"]')).toBeVisible()
 })
 
+// ヘッダの上段（青い帯）の画面名称は白（モックアップのヘッダ）。#app の文字が
+// 濃くなった（2df1c494）あと、青の帯の上で画面名称が濃く読めなくなるのを防ぐ。
+test('ヘッダの画面名称は青い帯の上で白', async ({ page }) => {
+  await gotoScreenWithOnsite(
+    page, 'S20', PREP,
+    { pins: PINS, targets: TARGETS, pose: { x: 0, y: 0, yaw: 0 }, mappingActive: true },
+  )
+  await page.locator('#screenName').waitFor()
+  await expect(page.locator('#screenName')).toHaveText('試験準備')
+  const color = await page.locator('#screenName').evaluate((el) => getComputedStyle(el).color)
+  expect(color).toBe('rgb(255, 255, 255)')
+  // プロジェクト名の上段（小さな文字）も白
+  await expect(page.locator('.proj')).toHaveCount(1)
+  const projColor = await page.locator('.proj').evaluate((el) => getComputedStyle(el).color)
+  expect(projColor).toBe('rgb(255, 255, 255)')
+})
+
 // MAP-1: 追従対象者（/person/status、base_link 相対）を地図上に表示する。
 // is_lost:false のときだけ baseToWorld() で map 座標に変換して出す。
 test('MAP-1: 追従対象者は is_lost:false のときだけ地図に出る', async ({ page }) => {
