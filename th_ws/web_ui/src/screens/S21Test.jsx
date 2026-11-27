@@ -1,26 +1,25 @@
-// screens/S21Test.jsx — S-21, 試験 (SCREEN_NAMES.S21 in i18n/screens.js;
-// brief-UI-S21 / WP-UI-07). Spec-webui.md §3.11 / mockup 1055〜1153 行。
+// screens/S21Test.jsx — S-21, 試験 (Spec-webui.md §3.11。型「走らせる」。タブは無い)。
+//
+// 右列のボタンはどの状態でも同じ 9 個・同じ位置（終了・停止│走行・手動・中断・
+// 待機場所・次の配電盤・呼び寄せ・測定機能へ・カメラ）。終了と人検出は左上の
+// 操作バー。地図のピンを押すと吹き出しに「行き先にする」、押すとそのまま出発。
+// 待機場所の宣言は無い（D58）。地図が出せない間は主表示の中央に「会場地図を開く」。
 //
 // FSM（th_state/config/transitions.yaml）:
 //   C-15:      IDLE --ui.goto{kind:PANEL|HOME|SUMMON}--> *（goto_allowed）
 //   T-PNAV/T-HNAV: PANEL_NAV / HOME_NAV（--ui.stop/run--> PAUSE/NAV、着地で
 //               AT_PANEL / IDLE）
-//   T-ATP-01/02（ui.working）: 機体側には残るが S-21 からは送らない（2026-11-20）。
-//   T-ATP-05:   AT_PANEL(IDLE_P/WORKING) --ui.goto--> $arg.kind
+//   T-ATP-01/02（ui.working）: AT_PANEL IDLE_P <-> WORKING。「測定機能へ」が
+//               停止命令を立て、「停止を解く」が W-4 の確認のあと解く。
+//   T-ATP-05:   AT_PANEL(IDLE_P) --ui.goto--> $arg.kind
 //   T-NAV-goto-reject: PANEL_NAV / SUMMON / HOME_NAV の全状態（PAUSE 含む）で ui.goto は拒否（SM-3.1.2-118）
 //   T-SUM-01:   SUMMON --evt.two_point_done--> WAIT_CLEAR（2 点指示は
 //               /onsite/two_point を purpose='SUMMON' index 1→2 で呼ぶ）
 //   T-SUM-05:   SUMMON(WAIT_CLEAR) --ui.abort--> POINT
 //   T-SUM-15:   SUMMON(POINT) --ui.select_target--> set_target
-//   ui.save は map_update=true のときだけ（地図更新 OFF に固定したので構造的に非表示）。
-//
-// 地図更新 OFF 固定（§2.2）: その有効化は W-10（map_editor）側の仕事なので、
-// この画面では「地図の更新 OFF」を非活性で表示し、「保存」は出さない。
-// 2 点指示ウィザード・地図／対象選択タブは S-20 の定数をそのまま流用する。
-// 呼び寄せ先の選択は /person/targets を RadarSelect で表示し、
-// SUMMON のときだけ ui.select_target を送る（FSM に定義されたモード限定）。
-// 終了は ui.finish を送るだけ。受理されれば FSM が IDLE になり main.jsx が S-01 に戻す。
+//   ui.save は出さない（地図更新は使えない間は出さない。§3.3 (c)）。
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useParamsOverrides } from '../ros/useParamsOverrides.js'
@@ -30,7 +29,6 @@ import { usePersonTargets } from '../ros/usePersonTargets.js'
 import { usePersonStatus } from '../ros/usePersonStatus.js'
 import { useScan } from '../ros/useScan.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
-import { useHomeDeclared } from '../ros/useHomeDeclared.js'
 import { useMapSessionStatus } from '../ros/useMapSessionStatus.js'
 import { resolveMapOpened } from '../ros/mapSessionState.js'
 import { useWaitClearStatus } from '../ros/useWaitClearStatus.js'
@@ -39,57 +37,51 @@ import { useOnsiteCostmap } from '../ros/useCostmap.js'
 import { usePlannedPath } from '../ros/usePlannedPath.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useJogPanel } from '../shell/jogPanel.js'
-import { trackerStopAllowed } from '../modes/trackerControlPolicy.js'
 import { venueOpenAllowed } from '../modes/stopOnlyGuard.js'
+import { useConfirmWindow } from '../shell/confirmWindow.js'
+import { RunLayout } from '../shell/Layouts.jsx'
+import StopRunToggle from '../parts/StopRunToggle.jsx'
+import ReasonButton from '../parts/ReasonButton.jsx'
+import PersonDetectToggle from '../parts/PersonDetectToggle.jsx'
+import HelpTip from '../parts/HelpTip.jsx'
+import WindowShell from '../shell/WindowShell.jsx'
 import AutoBrakeDevCard from '../parts/AutoBrakeDevCard.jsx'
 import RadarSelect from '../parts/RadarSelect.jsx'
-import TrackerControl from '../parts/TrackerControl.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
 import { scanToPoints } from '../parts/scanToPoints.js'
-import StepBar from '../parts/StepBar.jsx'
-import {
-  IconArrow, IconClose, IconPin, IconStop, OP_BUTTON_KINDS,
-} from '../parts/icons.jsx'
-import OperationCard from '../shell/OperationCard.jsx'
+import { IconArrow, IconClose, IconStop } from '../parts/icons.jsx'
 import attributes from '../generated/attributes.json'
 import {
-  NAV_MODES, testSteps, onsiteReasons, abortAvailable, runBlockedByVenue,
+  NAV_MODES, nextPanelPin, onsiteReasons, abortAvailable,
+  remainingToDest, runBlockedByVenue,
 } from './onsiteSteps.js'
 import { baseToWorld } from '../mapGeometry.js'
 import { REJECT_REASONS, reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
-import { OP_LABELS, stateLabel } from '../i18n/states.js'
+import { OP_LABELS } from '../i18n/states.js'
 import {
   BADGE_JOG_DENIED, BADGE_NO_HOME_PIN, BADGE_NO_PANEL_PIN,
   BADGE_GOTO_PAUSED, BADGE_GOTO_MOVING, BADGE_VENUE_NOT_LOADED,
-  S20_MAP_ARIA, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TARGET, S20_MAP_TITLE,
-  S20_TAB_MAP, S20_TAB_TARGET,
-  S20_WIZ_MSG_STEP1, S20_WIZ_MSG_STEP2, S20_WIZ_REGISTER, S20_WIZ_STEP, S20_PIN_YAW,
-  S21_ATPANEL_TITLE, S21_DEST_HOME, S21_DEST_NEXT_PANEL, S21_DEST_SUMMON_HERE,
-  S21_HOME_DECLARED, S21_HOME_DECLARE, S21_HOME_FORCE_DECLARE,
-  S21_HOME_OFFSET,
-  S21_HOME_RETRY_LATER, S21_HOME_UNDECLARED, S21_MAP_GATE_MSG, S21_MAP_LOADING,
-  S21_BLOCKED_ABORT, S21_PAUSED_MSG, S21_POINT_MSG, S21_BLOCKED_MSG, S21_BLOCKED_REROUTE,
-  S21_MAP_UPDATE, S21_MAP_UPDATE_NOTE, S21_MAP_UPDATE_OFF,
-  S21_NEXT_DECLARE_HOME, S21_NEXT_OPEN_VENUE, S21_NEXT_PICK_DEST,
-  S21_NEXT_SUMMON, S21_NEXT_CAMERA,
-  S21_NEXT_DEST_TITLE, S21_OPEN_VENUE_DONE, S21_OPEN_VENUE_HINT, S21_VENUE_ALREADY_OPEN, S21_OPEN_VENUE_MAP,
-  S21_PICK_PANEL_HINT, S21_PIN_MOVE, S21_PINS_EMPTY,
-  S21_OPEN_VENUE_FAIL, S21_PREP_TITLE, S21_SELECT_HINT, S21_STEP_DEST, S21_STEP_HOME, S21_STEP_MOVE,
-  S21_STEP_OPEN, S21_STEP_WORK, S21_SUBTAB_ATPANEL, S21_SUBTAB_DEST,
-  S21_SUBTAB_SUMMON, S21_SUMMON_START, S21_SUMMON_TITLE,
-  S21_TARGET_NOT_SELECTABLE,
-  S21_WAIT_CANCEL, S21_WAIT_CLEARING, S21_WAIT_DIST, S21_WAIT_TITLE,
+  S20_MAP_ARIA, S20_MAP_NO_POSE, S20_MAP_ROBOT, S20_MAP_TARGET,
+  S20_WIZ_STEP, S20_PIN_YAW,
+  S21_SELECT_HINT,
+  S21_MAP_LOADING,
+  S21_OPEN_VENUE_MAP, S21_OPEN_VENUE_HINT,
+  S21_DEST_HOME, S21_DEST_NEXT_PANEL, S21_DEST_SUMMON_HERE,
+  S21_PIN_GO, S21_MEASURE, S21_UNSTOP,
+  S21_UNSTOP_TITLE, S21_UNSTOP_BODY, S21_UNSTOP_YES, S21_UNSTOP_NO,
+  S21_MEASURE_AT_PANEL_ONLY, S21_UNSTOP_ADJUST,
+  S21_ABORT_NONE, S21_RECORD, S21_NO_TARGET,
+  S21_BLOCKED_TITLE, S21_BLOCKED_BODY, S21_BLOCKED_REROUTE, S21_BLOCKED_ABORT,
+  S21_WHERE_REMAIN, S21_WHERE_AT_PANEL, S21_WHERE_TO, S21_SUMMON_POS,
+  S21_WIZ_STEP1, S21_WIZ_STEP2,
+  S21_WAIT_TITLE, S21_WAIT_DIST, S21_WAIT_CLEARING, S21_WAIT_CANCEL,
   S21_CAMERA, S21_CAMERA_NO_URL, S21_CAMERA_BAD_URL,
-  // brief-tracker-default-off §3.4: 呼び寄せサブタブの「人検出が止まって
-  // います」表示。
   TRACKER_OFF,
 } from '../i18n/screens.js'
 
-// brief-onsite-ux-fix UX-6-a: onsiteReasons() は画面ローカルの意味キーだけを
-// 返す（i18n/reasons.js を経由しない）。文言解決はここで行う。working_in_progress /
-// wait_clear_active は guards.py に実在する reject_reason_key なので、その 2 つ
-// だけ i18n/reasons.js の文言をそのまま使う（新設しない）。jog_denied /
-// no_panel_pin / no_home_pin は画面専用なので i18n/screens.js の BADGE_* を使う。
+// onsiteReasons() は画面ローカルの意味キーだけを返す。文言解決はここで行う。
+// working_in_progress / wait_clear_active は guards.py に実在するキーなので
+// その 2 つだけ reasons.js の文言をそのまま使う（新設しない）。
 const ONSITE_BADGE_TEXT = {
   jog_denied: BADGE_JOG_DENIED,
   no_panel_pin: BADGE_NO_PANEL_PIN,
@@ -101,18 +93,7 @@ const ONSITE_BADGE_TEXT = {
   wait_clear_active: REJECT_REASONS.wait_clear_active,
 }
 
-// brief-onsite-ux UX-1: testSteps() が返す段 id → 表示ラベル（i18n の定数）。
-const S21_STEP_LABELS = {
-  open: S21_STEP_OPEN,
-  home: S21_STEP_HOME,
-  dest: S21_STEP_DEST,
-  move: S21_STEP_MOVE,
-  work: S21_STEP_WORK,
-}
-
-// SG-C8: 退避待ちバーの全体時間は画面に直書きしない。ノードが出す
-// remaining_sec の初回値（= clear_timeout_ms）をその回の全体とみなす。
-// 真の値は wait_clear_gate が持つ。残り時間の減少がそのまま進捗に見える係数。
+// SG-C8: 退避待ちバーの全体時間は画面に直書きしない（remaining_sec の初回値）。
 function waitBarPct(wait, totalSec) {
   if (wait.verdict === 'OK') return 100
   if (wait.verdict === 'NOT_CLEAR') return 4
@@ -121,20 +102,14 @@ function waitBarPct(wait, totalSec) {
   return Math.max(4, Math.min(96, 100 - (remain / totalSec) * 100))
 }
 
-// UX-2-a: 次操作ボタンにも形の種別（OP_BUTTON_KINDS）とアイコンを付ける。
-const NEXT_ACTION_ICONS = {
-  advance: <IconArrow />,
-  register: <IconPin />,
-  stop: <IconStop />,
-}
+const MOVING_STATES = ['NAV', 'ALIGN', 'BLOCKED']
 
 export default function S21Test({ onExit }) {
   const { ros, state, stale } = useSystemState()
+  // 1b-5 (SG-A6): 会場地図の読み直しは停止中だけ（Spec.md SD-9）。
+  const mapOpAllowed = venueOpenAllowed(state, stale)
   const sendTrigger = useTrigger()
-  // brief-tracker-default-off §3.4: 人検出の開始/停止（/system/set_flag
-  // tracker_enabled）。状態の正本は server（state.tracker_enabled）。
   const setFlag = useSetFlag()
-  // fix-setflag-requester: 拒否・通信失敗を押した人に見せる（S-20 と同じ）。
   const [trackerErr, setTrackerErr] = useState(null)
   async function requestTracker(next) {
     setTrackerErr(null)
@@ -153,45 +128,31 @@ export default function S21Test({ onExit }) {
   const scan = useScan(ros)
   const routeMap = useOnsiteMapView(ros)
   const routePose = useRoutePose(ros)
-  // brief-MAP-COSTMAP: 地図タブに Nav2 の costmap と直近の経路を重ねる。
   const costmapData = useOnsiteCostmap(ros)
   const plannedPath = usePlannedPath(ros)
-  const homeDeclared = useHomeDeclared(ros)
   const mapSession = useMapSessionStatus(ros)
   const wait = useWaitClearStatus(ros)
-  const { twoPoint, selectPin, declareHome, openVenueMap } = useOnsiteService()
+  const { twoPoint, selectPin, openVenueMap } = useOnsiteService()
   const jogPanel = useJogPanel()
+  const confirmWindow = useConfirmWindow()
 
   const disabledAll = stale || state?.mode == null
-  // 1b-5 (SG-A6): 会場地図の読み直しは停止中だけ（Spec.md SD-9）。サーバ側が
-  // 正で、画面は同じ条件で事前に押せなくする（走行中の押下で SLAM が再起動した）。
-  const mapOpAllowed = venueOpenAllowed(state, stale)
   const mode = state?.mode ?? null
   const stateName = state?.state ?? null
   const isNavMode = NAV_MODES.includes(mode)
-  const mapUpdate = !!state?.map_update
   const working = stateName === 'WORKING'
   const showWizard = mode === 'SUMMON' && stateName === 'POINT'
   const showWait = mode === 'SUMMON' && stateName === 'WAIT_CLEAR'
+  const moving = isNavMode && MOVING_STATES.includes(stateName)
 
-  // brief-tracker-default-off §3.4: 人検出フラグと「起動中（候補まだ出ない）」判定。
-  // SUMMON（全状態）は人検出が要るので「停止」を事前無効化して理由を出す。
   const trackerEnabled = state?.tracker_enabled === true
-  const hasCandidate = Array.isArray(personTargets.candidates)
-    && personTargets.candidates.length > 0
-  const trackerCanStop = trackerStopAllowed(mode, stateName)
 
-  // MAP-1: 追従対象者を地図上に表示。base_link 相対を baseToWorld() で map 座標に
-  // 変換する（routePose は map フレーム）。is_lost のときや routePose が未取得の
-  // ときは変換できないので null（マーカーを出さない）。
   let personPose = null
   if (routePose && personStatus && personStatus.is_lost === false) {
     const [wx, wy] = baseToWorld(personStatus.position.x, personStatus.position.y, routePose)
     personPose = { x: wx, y: wy }
   }
 
-  // MAP-SCAN: LiDAR の生スキャン（/scan_filtered、base_link 相対）を map 座標へ。
-  // routePose が未取得のときは変換できないので null（personPose と同じガード）。
   let scanPoints = null
   if (routePose && scan) {
     scanPoints = scanToPoints(scan).map(({ x, y }) => {
@@ -200,32 +161,23 @@ export default function S21Test({ onExit }) {
     })
   }
 
-  // 左列タブ（地図 / 対象選択）と右列サブタブ（行き先 / 呼び寄せ / 配電盤前）。
-  const [tab, setTab] = useState('map')
-  const [mapNoteOpen, setMapNoteOpen] = useState(false)
-  const [subtab, setSubtab] = useState('dest')
+  // 吹き出し（ピン選択）と行き先（右列 ①の「どこへ」）。
   const [selectedPinId, setSelectedPinId] = useState(null)
-  // 「次の配電盤」でピン一覧を促す。ピン行の「移動」で解除する。
-  const [panelPick, setPanelPick] = useState(false)
+  const [destPinId, setDestPinId] = useState(null)
+  const [goErr, setGoErr] = useState(null)
+  const [unstopOpen, setUnstopOpen] = useState(false)
 
   // 2 点指示ウィザード（SUMMON/POINT。purpose='SUMMON'）。
   const [wizStep, setWizStep] = useState(1)
   const [wizErr, setWizErr] = useState(null)
   const [wizYaw, setWizYaw] = useState(null)
 
-  // 待機場所の宣言エラー（success=false のときのメッセージと再宣言）。
-  const [homeErr, setHomeErr] = useState(null)
-  // SG-C8: 宣言成功時のずれ量（DeclareHome の offset_m/offset_deg）。
-  const [homeOffset, setHomeOffset] = useState(null)
-  // SG-C8: 退避待ちバーの全体時間。WAIT_CLEAR に入るたび remaining の初回値を取る。
+  // SG-C8: 退避待ちバーの全体時間。
   const waitTotalRef = useRef(0)
-  // 会場地図の読み直し（/map_session/open）の結果メッセージ（success/message）。
+  // 会場地図の読み直し（/map_session/open）の結果メッセージ。
   const [venueMsg, setVenueMsg] = useState(null)
-  // WS-9Y: reload は respawn 待ち込みで最大 45s+30s かかる。地図が無反応に見える
-  // のを防ぐため、地図タブに「読み込んでいます…」を出す間だけ true にする。
+  // reload は最大 45s+30s かかる間「読み込んでいます…」を出す。
   const [venueBusy, setVenueBusy] = useState(false)
-  // ピン選択（select_pin）の失敗メッセージ。
-  const [goErr, setGoErr] = useState(null)
 
   useEffect(() => {
     if (showWizard) return undefined
@@ -235,8 +187,6 @@ export default function S21Test({ onExit }) {
     return undefined
   }, [showWizard])
 
-  // SG-C8: WAIT_CLEAR に入った回の remaining 初回値を全体時間にする。
-  // 残りが増えたら（入り直し）取り直す。減るだけなら据え置く。
   useEffect(() => {
     if (showWait && wait.remaining_sec > waitTotalRef.current) {
       waitTotalRef.current = wait.remaining_sec
@@ -247,58 +197,72 @@ export default function S21Test({ onExit }) {
   }, [showWait, wait.remaining_sec])
 
   // ── 操作 ─────────────────────────────────────────────
-  // brief-UI-S21-entry: 「終了」は ui.finish を送り、そのあと main.jsx 経由で
-  // onsiteTestOpen を閉じてもらう（onExit）。閉じないと FSM が IDLE に戻った
-  // あとも S-21 が出たままになる。
   function handleFinish() {
     sendTrigger('ui.finish')
     onExit?.()
   }
 
-  // 行き先を選んで ui.goto（C-15: IDLE、T-ATP-05: AT_PANEL）。
-  function gotoDest(kind) {
-    setPanelPick(false)
-    sendTrigger('ui.goto', { kind })
+  // 他の操作を押したら W-6 を閉じる（W-6 を開いたまま別操作で移らない）。
+  function fire(trigger, arg) {
+    jogPanel.close()
+    sendTrigger(trigger, arg)
   }
 
-  // 「次の配電盤」はピン一覧に返して「移動」を押させるだけ（§2.2 の解釈）。
-  function pickNextPanel() {
-    setSubtab('dest')
-    setPanelPick(true)
-  }
-
-  // ピン行の「移動」: ゴールを保留（select_pin）→ 成功したら ui.goto{PANEL}。
-  // 2026-09-09 実機で確認: venue_navigator._on_select_pin は pin.id で照合する
-  // （名前では照合しない）。以前は `pin.name ?? pin.id` を送っていたが、
-  // name はデフォルトで空文字 '' （改名していない大半のピン）であり、`??` は
-  // null/undefined だけをフォールバックするため空文字はすり抜けて panel_id:'' が
-  // 送られ、「ピンが見つかりません」で常に失敗していた（選択（黄枠）自体は
-  // 画面ローカルの状態なので正常に見えた）。id は常に非空・不変なので
-  // フォールバック自体が不要。
-  async function handleMove(pin) {
+  // ピンの吹き出し「行き先にする」→ そのまま出発。
+  async function handlePinGo(pin) {
     setGoErr(null)
-    // SM-3.1.2-118: 移動中・一時停止中は select_pin も呼ばない（機体側も拒否するが、
-    // 呼ばなければ保留中の行き先に触れない）。ボタンは disabled だが二重に守る。
     if (destMoveReason) {
       setGoErr(destMoveReason)
       return
     }
+    if (pin.kind === 'HOME') {
+      setDestPinId(pin.id)
+      setSelectedPinId(null)
+      fire('ui.goto', { kind: 'HOME' })
+      return
+    }
     const res = await selectPin({ panel_id: pin.id })
     if (res?.success) {
-      setPanelPick(false)
-      sendTrigger('ui.goto', { kind: 'PANEL' })
+      setDestPinId(pin.id)
+      setSelectedPinId(null)
+      fire('ui.goto', { kind: 'PANEL' })
     } else {
       setGoErr(res?.message ?? null)
     }
   }
 
-  // その場で呼ぶ（ui.goto → SUMMON/POINT。2 点指示ウィザードへ）。
-  function startSummon() {
-    setSubtab('summon')
-    sendTrigger('ui.goto', { kind: 'SUMMON' })
+  // 「次の配電盤」→ 順番が次に来る盤へそのまま出発。
+  async function handleNextPanel() {
+    const next = nextPanelPin(pins, routePose)
+    if (!next) return
+    setGoErr(null)
+    if (destMoveReason) {
+      setGoErr(destMoveReason)
+      return
+    }
+    const res = await selectPin({ panel_id: next.id })
+    if (res?.success) {
+      setDestPinId(next.id)
+      fire('ui.goto', { kind: 'PANEL' })
+    } else {
+      setGoErr(res?.message ?? null)
+    }
   }
 
-  // 2 点指示（index 1 → 2）。拒否されたら理由を出して Step 1 からやり直し。
+  function gotoDest(kind) {
+    setSelectedPinId(null)
+    if (kind === 'HOME') {
+      const home = pins.find((p) => p?.kind === 'HOME')
+      if (home) setDestPinId(home.id)
+    }
+    fire('ui.goto', { kind })
+  }
+
+  function startSummon() {
+    setDestPinId(null)
+    fire('ui.goto', { kind: 'SUMMON' })
+  }
+
   async function handleWizPress() {
     setWizErr(null)
     const res = await twoPoint({ purpose: 'SUMMON', index: wizStep })
@@ -314,14 +278,18 @@ export default function S21Test({ onExit }) {
     setWizErr(key ? (REJECT_REASONS[key] ?? key) : null)
   }
 
-  // 退避待ちを中止（T-SUM-05: WAIT_CLEAR → POINT）。
   function cancelWait() {
     sendTrigger('ui.abort')
   }
 
-  // S-21 の「カメラ」ボタン（Spec-onsite.md §7.2）の開く先。カメラの IP は
-  // DHCP で決まるため実行時に /params/get で効き値（effective）を読む
-  // （ビルド時生成物の値は読まない。S-50 の保存が次の起動に反映される）。
+  // 呼び寄せ対象（RadarSelect）。SUMMON/POINT のときだけ送る（T-SUM-15）。
+  function handleSelectTarget(index) {
+    if (mode !== 'SUMMON' || stateName !== 'POINT') return
+    sendTrigger('ui.select_target', { index })
+  }
+
+  // S-21 の「カメラ」ボタン（Spec-onsite.md §7.2）。開く先は /params/get の
+  // effective.camera_ui_url（S-50 の保存が次の起動に反映される）。
   const { getParams } = useParamsOverrides(ros)
   const [cameraUrl, setCameraUrl] = useState(null)
   useEffect(() => {
@@ -333,38 +301,31 @@ export default function S21Test({ onExit }) {
       .catch(() => { if (alive) setCameraUrl(null) })
     return () => { alive = false }
   }, [getParams])
-  // 開けるアドレス（http/https）でなければ押せない。理由をボタンに添える。
   const cameraUrlValid =
-    typeof cameraUrl === 'string' && cameraUrl.startsWith('http://') ||
-    typeof cameraUrl === 'string' && cameraUrl.startsWith('https://')
+    typeof cameraUrl === 'string' && (cameraUrl.startsWith('http://') || cameraUrl.startsWith('https://'))
   const cameraUrlReason = cameraUrlValid
     ? null
     : (typeof cameraUrl === 'string' && cameraUrl.trim() !== '' ? S21_CAMERA_BAD_URL : S21_CAMERA_NO_URL)
   const cameraOpenable = mode === 'AT_PANEL' && !disabledAll && cameraUrlValid
 
-  // 配電盤前でカメラ機能（hve-system）の画面を別のタブで開く。機体へは
-  // 何も送らない（状態を変えない）。同じタブで遷移しない（WebUI を閉じると
-  // rosbridge と「使用中」の数えが切れるため）。
   function openCamera() {
     if (!cameraOpenable) return
     window.open(cameraUrl, '_blank', 'noopener')
   }
 
-  // 待機場所の宣言（home_declarer）。失敗時は force 再宣言を促す（§2.3）。
-  // 成功時はずれ量を出す（SG-C8）。
-  async function handleDeclareHome(force) {
-    setHomeErr(null)
-    setHomeOffset(null)
-    const res = await declareHome({ force })
-    if (!res?.success) {
-      setHomeErr(res?.message ?? null)
-    } else if (typeof res?.offset_m === 'number') {
-      setHomeOffset({ m: res.offset_m, deg: res.offset_deg ?? 0 })
-    }
+  // 「測定機能へ」→ 本システムの停止命令（WORKING）。測定機能の画面は別系統の
+  // 画面で開く（このボタンは機体への停止命令だけを送る。T-ATP-01）。
+  function startMeasure() {
+    fire('ui.working')
+  }
+
+  // 「停止を解く」→ W-4 の確認のあと停止命令を解く（T-ATP-02 → IDLE_P）。
+  function confirmUnstop() {
+    setUnstopOpen(false)
+    fire('ui.working')
   }
 
   // 保存した会場地図を開く（/map_session/open, slot:VENUE / mode:reload）。
-  // 当日の手順の先頭（brief-onsite-fix E）。success / message を画面に出す。
   // 停止中以外は送らない（サーバ側も拒否する。二重の守り）。
   async function handleOpenVenueMap() {
     if (!mapOpAllowed) return
@@ -375,23 +336,13 @@ export default function S21Test({ onExit }) {
     setVenueBusy(false)
   }
 
-  // 呼び寄せ対象（RadarSelect）。SUMMON/POINT のときだけ送る（T-SUM-15）。
-  function handleSelectTarget(index) {
-    if (mode !== 'SUMMON' || stateName !== 'POINT') return
-    sendTrigger('ui.select_target', { index })
-  }
-
-  const stateText = isNavMode ? stateLabel(stateName) : S21_SELECT_HINT
-  const pendingYaw = showWizard && wizYaw != null
-
-  // UX-2-b/UX-2-d/UX-6-b: この画面から「押せない」ことが画面だけでも分かる理由のバッジ。
-  // SM-3.1.2-119: 機体が「会場地図を持たない」と言っているときだけ（未受信は塞がない）。
+  // ── 理由バッジ（画面だけで分かる押せない理由）──
   const venueUnloaded = mapSession?.slot === 'VENUE' && mapSession?.mode === 'UNLOADED'
   const reasons = onsiteReasons({
     mode, stateName, attributes, pins, working, venueUnloaded,
   })
   const runBlocked = runBlockedByVenue(mode, stateName, venueUnloaded)
-  const manualDenyReason = reasons.manual ? (ONSITE_BADGE_TEXT[reasons.manual] ?? reasons.manual) : null
+  const manualReason = reasons.manual ? (ONSITE_BADGE_TEXT[reasons.manual] ?? reasons.manual) : null
   const destHomeReason = reasons.destHome ? (ONSITE_BADGE_TEXT[reasons.destHome] ?? reasons.destHome) : null
   const destNextPanelReason = reasons.destNextPanel
     ? (ONSITE_BADGE_TEXT[reasons.destNextPanel] ?? reasons.destNextPanel) : null
@@ -400,156 +351,153 @@ export default function S21Test({ onExit }) {
   const destMoveReason = reasons.destMove
     ? (ONSITE_BADGE_TEXT[reasons.destMove] ?? reasons.destMove) : null
 
-  // ── 手順バー（UX-1）と「次にやること」ボタン ──
-  // 段 1「会場地図を開く」は機体の /map_session/status（slot:VENUE が LOCALIZING）から
-  // 導く（Spec-webui §3.11。画面の作り直し・再読み込み・手押し復帰でも消えない）。
-  // 画面ローカルの応答（venueMsg.ok）は、機体の値が届く前だけ使う。
-  // brief-onsite-ux2 F-6: この mapOpened を地図タブの表示ゲートにも使う
-  // （「会場地図を開く」まで地図を出さない）。
   const mapOpened = resolveMapOpened(mapSession, venueMsg?.ok)
-  const { steps, currentIndex } = testSteps({
-    homeDeclared,
-    mapOpened,
-    selectedPinId,
-    mode,
-    stateName,
-  })
-  const stepViews = steps.map((s) => ({ ...s, label: S21_STEP_LABELS[s.id] ?? s.id }))
 
-  // 現在段の操作を 1 個だけ出す。押すと必要なサブタブへ自動で切り替わる。
-  // 2 点指示ウィザード（POINT）と退避待ち（WAIT_CLEAR）は最優先で見せ、隠す。
-  // kind は OP_BUTTON_KINDS に通す（進む=塗り、登録=枠線水色、停止=丸太枠赤）。
-  // 2026-09-09 実機フィードバック「移動を押すと停止ボタンが2つ出て両方反応
-  // しない」: 段3（move、移動中）は以前 kind:'stop' の「次にやること」ボタンを
-  // 出していたが、操作カード側に常時ある「停止」（下記 slots={{stop:true,...}}）
-  // と全く同じ ui.stop を送るだけの重複だった（UX-6-c が「保存」で既にやっている
-  // 「同じ操作を二重に出さない」原則を、停止には適用し忘れていた）。段3は
-  // 「次にやること」を出さず、操作カードの停止だけにする。
-  const nextActions = {
-    0: { kind: 'advance', label: S21_NEXT_OPEN_VENUE, run: () => handleOpenVenueMap() },
-    1: { kind: 'register', label: S21_NEXT_DECLARE_HOME, run: () => { setSubtab('dest'); handleDeclareHome(false) } },
-    2: { kind: 'advance', label: S21_NEXT_PICK_DEST, run: () => { setSubtab('dest'); setPanelPick(true) } },
-    // 段 5: 配電盤前なら「カメラ」（別タブで開く。機体へは送らない）、
-    // それ以外は呼び寄せ（SUMMON ならサブタブへ誘導）。
-    4: mode === 'AT_PANEL'
-      ? { kind: 'advance', label: S21_NEXT_CAMERA, run: openCamera }
-      : { kind: 'advance', label: S21_NEXT_SUMMON, run: () => setSubtab('summon') },
+  // 停止│走行：走行中は停止、PAUSE からは再開（会場地図が無い間は押せない）。
+  const stopEnabled = !disabledAll && moving
+  const runEnabled = !disabledAll && isNavMode && stateName === 'PAUSE' && !runBlocked
+  const runLabel = stateName === 'PAUSE' ? '再開する' : '走行する'
+
+  // 中断：移動中・一時停止中・経路が塞がれた間・呼び寄せの位置指定中に効く。
+  const abortOk = abortAvailable(mode, stateName)
+  const abortDisabled = disabledAll || !abortOk
+
+  // 右列 ①「どこへ・あとどれだけ」。
+  const destPin = pins.find((p) => p.id === destPinId) ?? null
+  const remain = remainingToDest({ plannedPath, robotPose: routePose, destPin })
+  let whereText
+  if (isNavMode && MOVING_STATES.includes(stateName)) {
+    whereText = destPin ? S21_WHERE_TO(destPin.name || destPin.id) : S21_SUMMON_POS
+  } else if (mode === 'AT_PANEL') {
+    const cur = destPin ?? nextPanelPin(pins, routePose) ?? pins.find((p) => p?.kind === 'PANEL')
+    whereText = cur ? S21_WHERE_AT_PANEL(cur.name || cur.id) : S21_SELECT_HINT
+  } else if (mode === 'SUMMON') {
+    whereText = S21_SUMMON_POS
+  } else {
+    whereText = mode === 'AT_HOME' ? S21_DEST_HOME : S21_SELECT_HINT
   }
-  const nextAction = (showWizard || showWait) ? null : (nextActions[currentIndex] ?? null)
+  const whereRemain = (isNavMode && remain != null) ? S21_WHERE_REMAIN(remain) : null
 
-  return (
-    <div className="screen two-col" id="s21">
-      <div className="stepbar-cell">
-        <StepBar steps={stepViews} currentIndex={currentIndex} testId="s21" />
-      </div>
-      <div className="left-col">
-        <div className="top-actions sticky">
-          {/* brief-onsite-ux2 F-1: 終了は S-11/S-13/S-14 と同じ左上（top-actions
-              sticky の先頭）。前回のブリーフで右列右下（.finish-row）に置いた
-              のが誤りだったので統一する。 */}
-          <button
-            type="button"
-            className={`btn sm ${OP_BUTTON_KINDS.finish}`}
-            data-testid="s21-finish"
-            disabled={disabledAll}
-            onClick={handleFinish}
-          >
-            <IconClose />
-            <span>{OP_LABELS.finish}</span>
-          </button>
-          <div className="tabs grow" style={{ margin: 0, border: 'none' }} role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'map'}
-              className={`tab ${tab === 'map' ? 'on' : ''}`}
-              data-testid="s21-tab-map"
-              onClick={() => setTab('map')}
-            >
-              {S20_TAB_MAP}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'target'}
-              className={`tab ${tab === 'target' ? 'on' : ''}`}
-              data-testid="s21-tab-target"
-              onClick={() => setTab('target')}
-            >
-              {S20_TAB_TARGET}
-            </button>
-          </div>
+  // 呼び寄せ：対象を選ばなければ記録しない（対象が見えないまま実行させない）。
+  const targetSelected = (personTargets.selected_index ?? -1) >= 0
+  const wizDisabled = disabledAll || !trackerEnabled || !targetSelected
+
+  const selectedPin = pins.find((p) => p.id === selectedPinId) ?? null
+
+  // ピン以外を押したら吹き出しを消す（取り消し）。
+  function onMapBackgroundClick(e) {
+    if (e.target.closest('[data-testid^="s21-map-pin-"]')) return
+    if (e.target.closest('[data-testid="s21-pin-bubble"]')) return
+    setSelectedPinId(null)
+  }
+
+  const opbar = (
+    <div className="top-actions">
+      <HelpTip helpKey="finish">
+        <button
+          type="button"
+          className="btn exit"
+          data-testid="s21-finish"
+          disabled={disabledAll}
+          onClick={handleFinish}
+        >
+          <IconClose />
+          <span>{OP_LABELS.finish}</span>
+        </button>
+      </HelpTip>
+      <PersonDetectToggle
+        enabled={trackerEnabled}
+        canToggle={!disabledAll}
+        onToggle={requestTracker}
+        testId="s21-tracker"
+      />
+      {trackerErr && (
+        <div className="note" data-testid="s21-tracker-error">{trackerErr}</div>
+      )}
+    </div>
+  )
+
+  const main = (
+    <>
+      {!mapOpened && (
+        <div className="card" data-testid="s21-map-gate">
+          <div className="note" data-testid="s21-map-gate-msg">{S21_OPEN_VENUE_HINT}</div>
+          {venueBusy ? (
+            <div className="note" data-testid="s21-map-gate-busy">{S21_MAP_LOADING}</div>
+          ) : (
+            <HelpTip helpKey="venueOpen">
+              <ReasonButton
+                className="wide mt"
+                data-testid="s21-map-gate-open"
+                disabled={disabledAll || !mapOpAllowed}
+                reason={(!mapOpAllowed && !disabledAll) ? S21_MAP_LOADING : null}
+                reasonTestId="s21-map-gate-reason"
+                onClick={() => handleOpenVenueMap()}
+              >
+                <IconArrow />
+                <span>{S21_OPEN_VENUE_MAP}</span>
+              </ReasonButton>
+            </HelpTip>
+          )}
+          {venueMsg && !venueMsg.ok && (
+            <div className="note mt err" data-testid="s21-open-venue-msg">{venueMsg.text}</div>
+          )}
         </div>
+      )}
 
-        {tab === 'map' && !mapOpened && (
-          <div className="tabpane on">
-            <div className="card">
-              <h3>{S20_MAP_TITLE}</h3>
-              <div className="note" data-testid="s21-map-gate-msg">{S21_MAP_GATE_MSG}</div>
-              <div className="sm mut mb" data-testid="s21-open-venue-hint">{S21_OPEN_VENUE_HINT}</div>
-              {venueBusy ? (
-                <div className="note" data-testid="s21-map-gate-busy">{S21_MAP_LOADING}</div>
-              ) : (
-                <button
-                  type="button"
-                  className={`btn wide mt ${OP_BUTTON_KINDS.advance}`}
-                  data-testid="s21-map-gate-open"
-                  disabled={disabledAll || !mapOpAllowed}
-                  onClick={() => handleOpenVenueMap()}
+      {mapOpened && (
+        <div className="mapWrap" onClick={onMapBackgroundClick}>
+          <OnsiteMap
+            mapData={routeMap}
+            pins={pins}
+            robotPose={routePose}
+            personPose={personPose}
+            personLabel={S20_MAP_TARGET}
+            costmapData={costmapData}
+            plannedPath={plannedPath}
+            scanPoints={scanPoints}
+            selectedPinId={selectedPinId}
+            onSelectPin={setSelectedPinId}
+            ariaLabel={S20_MAP_ARIA}
+            noPoseLabel={S20_MAP_NO_POSE}
+            robotLabel={S20_MAP_ROBOT}
+            overlayText={venueBusy ? S21_MAP_LOADING : null}
+            testId="s21"
+            blocked={isNavMode && stateName === 'BLOCKED'}
+          />
+          {selectedPin && (
+            <div className="card s21-pin-bubble" data-testid="s21-pin-bubble">
+              <span className="b sm" data-testid="s21-pin-bubble-name">
+                {selectedPin.name || selectedPin.id}
+              </span>
+              <HelpTip helpKey="pinGo">
+                <ReasonButton
+                  className="advance"
+                  data-testid="s21-pin-go"
+                  disabled={disabledAll || !!destMoveReason}
+                  reason={destMoveReason}
+                  reasonTestId="s21-pin-go-reason"
+                  onClick={() => handlePinGo(selectedPin)}
                 >
                   <IconArrow />
-                  <span>{S21_OPEN_VENUE_MAP}</span>
-                </button>
-              )}
+                  <span>{S21_PIN_GO}</span>
+                </ReasonButton>
+              </HelpTip>
             </div>
-          </div>
-        )}
+          )}
+          {goErr && (
+            <div className="note err" data-testid="s21-go-err">{goErr}</div>
+          )}
+        </div>
+      )}
 
-        {tab === 'map' && mapOpened && (
-          <div className="tabpane on">
-            <div className="card">
-              <h3>{S20_MAP_TITLE}</h3>
-              <div className="mapWrap">
-                <OnsiteMap
-                  mapData={routeMap}
-                  pins={pins}
-                  robotPose={routePose}
-                  personPose={personPose}
-                  personLabel={S20_MAP_TARGET}
-                  costmapData={costmapData}
-                  plannedPath={plannedPath}
-                  scanPoints={scanPoints}
-                  selectedPinId={selectedPinId}
-                  onSelectPin={setSelectedPinId}
-                  ariaLabel={S20_MAP_ARIA}
-                  noPoseLabel={S20_MAP_NO_POSE}
-                  robotLabel={S20_MAP_ROBOT}
-                  overlayText={venueBusy ? S21_MAP_LOADING : null}
-                  testId="s21"
-                  blocked={isNavMode && stateName === 'BLOCKED'}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === 'target' && (
-          <div className="tabpane on">
-            {/* brief-tracker-default-off §3.4: 中心に人検出の開始/停止。OFF の間は
-                レーダーは出さない（候補は定義上無い）。停止は SUMMON では押せない。 */}
-            <TrackerControl
-              enabled={trackerEnabled}
-              hasCandidate={hasCandidate}
-              canStop={trackerCanStop}
-              onStart={() => requestTracker(true)}
-              onStop={() => requestTracker(false)}
-              disabled={disabledAll}
-              testId="s21"
-            />
-            {trackerErr && (
-              <div className="note" data-testid="s21-tracker-error">{trackerErr}</div>
-            )}
-            {trackerEnabled && (mode === 'SUMMON' && stateName === 'POINT' ? (
+      {(showWizard || showWait) && (
+        <div className="s21-summon-band" data-testid="s21-summon-band">
+          {!trackerEnabled && (
+            <div className="note" data-testid="s21-summon-tracker-off">{TRACKER_OFF}</div>
+          )}
+          {trackerEnabled && showWizard && (
+            <>
               <RadarSelect
                 candidates={personTargets.candidates}
                 selectedIndex={personTargets.selected_index}
@@ -557,440 +505,260 @@ export default function S21Test({ onExit }) {
                 confidence={personTargets.confidence}
                 onSelect={handleSelectTarget}
               />
-            ) : (
-              // WS-9AD(2026-09-11): T-SUM-15 は SUMMON/POINT でしか ui.select_target
-              // を受理しない。それ以外でもタブは開けてしまい、以前はタップしても
-              // 無反応（拒否が画面に出ない）だった。選べる場面だけレーダーを出す。
-              <div className="note" data-testid="s21-target-unavailable">
-                {S21_TARGET_NOT_SELECTABLE}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div>
-        {nextAction && (
-          <button
-            type="button"
-            className={`next-action ${OP_BUTTON_KINDS[nextAction.kind] ?? ''}`.trim()}
-            data-testid="s21-next-action"
-            disabled={disabledAll || venueBusy || (currentIndex === 0 && !mapOpAllowed)
-              || (currentIndex === 4 && mode === 'AT_PANEL' && !cameraOpenable)}
-            onClick={nextAction.run}
-          >
-            {NEXT_ACTION_ICONS[nextAction.kind]}
-            <span>{nextAction.label}</span>
-          </button>
-        )}
-        <OperationCard
-          mode={mode}
-          stateName={stateName}
-          attributes={attributes}
-          // brief-onsite-ux-fix UX-6-c: 「次にやること」が保存のときは操作カード
-          // 側の保存を出さない（S-21 の次操作に保存は現状無いが S-20 と揃えておく）。
-          //
-          // 2026-09-09 実機で確認: run を false で潰していたため、PANEL_NAV /
-          // SUMMON / HOME_NAV でジョグ後に PAUSE に落ちると「走行」ボタンが
-          // どこにも無く詰んでいた（T-PNAV-*/T-SUM-*/T-HNAV-* の PAUSE
-          // --ui.run--> NAV が唯一の脱出路）。AT_PANEL / AT_HOME はリース満了で
-          // 自動的に IDLE_P / IDLE_H へ戻る（override_common）ので run は要らず、
-          // operationCardLayout の既定（attrs.run_state != null）が
-          // モードごとに正しく出し分ける（S-20 と同じ「stop と同じ扱いにして
-          // FSM に判断させる」流儀）。
-          slots={{
-            stop: true, check: false, save: mapUpdate && nextAction?.kind !== 'save', manual: true,
-          }}
-          disabled={disabledAll}
-          manualDenyReason={manualDenyReason}
-          runDisabled={runBlocked}
-          // 理由は行き先タブの見出しに 1 回出す。別タブを見ているときだけここに出す。
-          runDenyReason={runBlocked && subtab !== 'dest' ? BADGE_VENUE_NOT_LOADED : null}
-          onTrigger={(trigger) => sendTrigger(trigger)}
-          onManualClick={() => jogPanel.open()}
-        />
-        {/* UX-5: 状態表示と「地図の更新 OFF」の印を 1 行に並べる。地図の更新は
-            W-10 により構造的に常時 OFF なので、行を占める操作としては出さない。 */}
-        <div className="row s21-state-row">
-          <span className="state grow" data-testid="s21-state">{stateText}</span>
-          {/* タブレットにはホバーが無く title だけでは理由が出ないので、押すと理由の注記を
-              開閉する（2026-10-22 実機 R-63）。画面の縦に余裕が無いので常時は出さない。 */}
-          <button
-            type="button"
-            className="pill"
-            data-testid="s21-map-update-pill"
-            title={S21_MAP_UPDATE_NOTE}
-            aria-expanded={mapNoteOpen}
-            onClick={() => setMapNoteOpen((v) => !v)}
-          >
-            {S21_MAP_UPDATE} {S21_MAP_UPDATE_OFF}
-          </button>
-          {mapNoteOpen && (
-            <div className="note s21-map-update-note" data-testid="s21-map-update-note">
-              {S21_MAP_UPDATE_NOTE}
-            </div>
-          )}
-        </div>
-
-        {/* A-15: 開発モードで項目 auto_brake を選んでいるときだけ出る（出なければ何も描かない）。 */}
-        <AutoBrakeDevCard prefix="s21" />
-
-        {/* WS-9AB: BLOCKED（経路が見つからず止まっている）の帯。再検索と、
-            非常停止せず方式をやめて止まる「中断」（→ AT_HOME/IDLE_H。待機場所へは走らない。
-            T-PNAV-10 / T-SUM-17 / T-HNAV-09）。 */}
-        {isNavMode && stateName === 'BLOCKED' && (
-          <div className="row s21-blocked" data-testid="s21-blocked">
-            <span className="grow">{S21_BLOCKED_MSG}</span>
-            <button
-              type="button"
-              className="btn primary"
-              data-testid="s21-blocked-reroute"
-              onClick={() => sendTrigger('ui.reroute')}
-            >
-              {S21_BLOCKED_REROUTE}
-            </button>
-            <button
-              type="button"
-              className="btn danger"
-              data-testid="s21-blocked-abort"
-              onClick={() => sendTrigger('ui.abort')}
-            >
-              {S21_BLOCKED_ABORT}
-            </button>
-          </div>
-        )}
-
-        {/* 一時停止中（PAUSE）にも「中断」を出す。BADGE_GOTO_PAUSED が指す操作。 */}
-        {abortAvailable(mode, stateName) && stateName === 'PAUSE' && (
-          <div className="row s21-blocked" data-testid="s21-paused">
-            <span className="grow">{S21_PAUSED_MSG}</span>
-            <button
-              type="button"
-              className="btn danger"
-              data-testid="s21-paused-abort"
-              onClick={() => sendTrigger('ui.abort')}
-            >
-              {S21_BLOCKED_ABORT}
-            </button>
-          </div>
-        )}
-
-        {/* SM-3.1.2-143（A-12）: 呼び寄せの位置指定（POINT）からも「中断」で抜けられる
-            （T-SUM-17 は受け付けるが、画面にボタンが無かった）。 */}
-        {abortAvailable(mode, stateName) && stateName === 'POINT' && (
-          <div className="row s21-blocked" data-testid="s21-point">
-            <span className="grow">{S21_POINT_MSG}</span>
-            <button
-              type="button"
-              className="btn danger"
-              data-testid="s21-point-abort"
-              onClick={() => sendTrigger('ui.abort')}
-            >
-              {S21_BLOCKED_ABORT}
-            </button>
-          </div>
-        )}
-
-        <div className="subtabs">
-          <div className="tabs" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={subtab === 'dest'}
-              className={`tab ${subtab === 'dest' ? 'on' : ''}`}
-              data-testid="s21-subtab-dest"
-              onClick={() => setSubtab('dest')}
-            >
-              {S21_SUBTAB_DEST}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={subtab === 'summon'}
-              className={`tab ${subtab === 'summon' ? 'on' : ''}`}
-              data-testid="s21-subtab-summon"
-              onClick={() => setSubtab('summon')}
-            >
-              {S21_SUBTAB_SUMMON}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={subtab === 'atp'}
-              className={`tab ${subtab === 'atp' ? 'on' : ''}`}
-              data-testid="s21-subtab-atp"
-              onClick={() => setSubtab('atp')}
-            >
-              {S21_SUBTAB_ATPANEL}
-            </button>
-          </div>
-
-          {subtab === 'dest' && (
-            <div className="tabpane on">
-              <div className="card">
-                <h3>{S21_PREP_TITLE}</h3>
-                <div className="row mb s21-prep-row">
-                  <button
-                    type="button"
-                    className="btn sm grow"
-                    data-testid="s21-open-venue-map"
-                    disabled={disabledAll || venueBusy || !mapOpAllowed}
-                    onClick={() => handleOpenVenueMap()}
-                  >
-                    {S21_OPEN_VENUE_MAP}
-                  </button>
-                  <span className={`pill ${homeDeclared ? 'ok' : 'ng'}`} data-testid="s21-home-pill">
-                    {homeDeclared ? S21_HOME_DECLARED : S21_HOME_UNDECLARED}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn sm btn-register"
-                    data-testid="s21-home-declare"
-                    disabled={disabledAll || homeDeclared}
-                    onClick={() => handleDeclareHome(false)}
-                  >
-                    <IconPin />
-                    <span>{S21_HOME_DECLARE}</span>
-                  </button>
+              <div className="well" data-testid="s21-wizard">
+                <div className="row mb">
+                  <span className="b sm">{S20_WIZ_STEP(wizStep)}</span>
+                  <span className="grow sm mut">{wizStep === 1 ? S21_WIZ_STEP1 : S21_WIZ_STEP2}</span>
                 </div>
-                {mapOpened && !venueMsg?.ok && (
-                  <div className="note mb" data-testid="s21-venue-already-open">{S21_VENUE_ALREADY_OPEN}</div>
-                )}
-                {venueMsg && (!venueMsg.ok || mapOpened) && (
-                  <div className={`note mb${venueMsg.ok ? '' : ' err'}`} data-testid="s21-open-venue-msg">
-                    {venueMsg.text || (venueMsg.ok ? S21_OPEN_VENUE_DONE : S21_OPEN_VENUE_FAIL)}
-                  </div>
-                )}
-                {homeOffset && (
-                  <div className="note mb" data-testid="s21-home-offset">
-                    {S21_HOME_OFFSET(homeOffset.m, homeOffset.deg)}
-                  </div>
-                )}
-                {homeErr && (
-                  <div className="note mb" data-testid="s21-home-err">
-                    <div className="mb">{homeErr}</div>
-                    <div className="btnrow n2">
-                      <button
-                        type="button"
-                        className="btn sm"
-                        data-testid="s21-home-force"
-                        onClick={() => handleDeclareHome(true)}
-                      >
-                        {S21_HOME_FORCE_DECLARE}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn sm"
-                        data-testid="s21-home-err-close"
-                        onClick={() => setHomeErr(null)}
-                      >
-                        {S21_HOME_RETRY_LATER}
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {pins.length === 0 ? (
-                  <div className="note" data-testid="s21-pins-empty">{S21_PINS_EMPTY}</div>
+                {wizErr && <div className="note" data-testid="s21-wiz-err">{wizErr}</div>}
+                {wizYaw != null ? (
+                  <div className="note" data-testid="s21-wiz-done">{S20_PIN_YAW(wizYaw)}</div>
                 ) : (
-                  <>
-                    <div className={`lst-scroll pin-list${destMoveReason ? ' pin-list-short' : ''}`}>
-                      <table className="lst">
-                        <tbody>
-                          {pins.map((pin) => (
-                            <tr
-                              key={pin.id}
-                              className={pin.id === selectedPinId ? 'sel' : ''}
-                              data-testid="s21-pin-row"
-                              onClick={() => setSelectedPinId(pin.id)}
-                            >
-                              <td className="sm" data-testid={`s21-pin-name-${pin.id}`}>
-                                {pin.name || pin.id}
-                              </td>
-                              <td className="r">
-                                <button
-                                  type="button"
-                                  className="btn sm"
-                                  data-testid={`s21-pin-move-${pin.id}`}
-                                  disabled={disabledAll || !!destMoveReason}
-                                  onClick={(e) => { e.stopPropagation(); handleMove(pin) }}
-                                >
-                                  {S21_PIN_MOVE}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {panelPick && (
-                      <div className="note mt" data-testid="s21-panel-pick-hint">{S21_PICK_PANEL_HINT}</div>
-                    )}
-                    {goErr && (
-                      <div className="note mt" data-testid="s21-go-err">{goErr}</div>
-                    )}
-                  </>
+                  <HelpTip helpKey="record">
+                    <ReasonButton
+                      className="primary wide"
+                      data-testid="s21-wiz-press"
+                      disabled={wizDisabled}
+                      reason={(!targetSelected && trackerEnabled) ? S21_NO_TARGET : null}
+                      reasonTestId="s21-wiz-reason"
+                      onClick={handleWizPress}
+                    >
+                      <span>{S21_RECORD}</span>
+                    </ReasonButton>
+                  </HelpTip>
                 )}
               </div>
-
-              <div className="card">
-                <h3>
-                  {S21_NEXT_DEST_TITLE}
-                  {destMoveReason && (
-                    <span className="reason-badge reason-inline" data-testid="s21-pin-move-reason">{destMoveReason}</span>
-                  )}
-                </h3>
-                <div className="btnrow n3">
-                  <div>
-                    <button
-                      type="button"
-                      className={`btn ${OP_BUTTON_KINDS.advance}`}
-                      data-testid="s21-dest-home"
-                      disabled={disabledAll || !!destHomeReason}
-                      onClick={() => gotoDest('HOME')}
-                    >
-                      <IconArrow />
-                      <span>{S21_DEST_HOME}</span>
-                    </button>
-                    {destHomeReason && !destMoveReason && (
-                      <span className="reason-badge" data-testid="reason-s21-dest-home">
-                        {destHomeReason}
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <button
-                      type="button"
-                      className={`btn ${OP_BUTTON_KINDS.advance}`}
-                      data-testid="s21-dest-next-panel"
-                      disabled={disabledAll || !!destNextPanelReason}
-                      onClick={pickNextPanel}
-                    >
-                      <IconArrow />
-                      <span>{S21_DEST_NEXT_PANEL}</span>
-                    </button>
-                    {destNextPanelReason && !destMoveReason && (
-                      <span className="reason-badge" data-testid="reason-s21-dest-next-panel">
-                        {destNextPanelReason}
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <button
-                      type="button"
-                      className={`btn ${OP_BUTTON_KINDS.advance}`}
-                      data-testid="s21-dest-summon-here"
-                      disabled={disabledAll || !!destSummonHereReason}
-                      onClick={startSummon}
-                    >
-                      <IconArrow />
-                      <span>{S21_DEST_SUMMON_HERE}</span>
-                    </button>
-                    {destSummonHereReason && !destMoveReason && (
-                      <span className="reason-badge" data-testid="reason-s21-dest-summon-here">
-                        {destSummonHereReason}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+            </>
           )}
-
-          {subtab === 'summon' && (
-            <div className="tabpane on">
-              <div className="card">
-                <h3>{S21_SUMMON_TITLE}</h3>
-                {/* brief-tracker-default-off §3.4: 人検出が止まっている間は呼び寄せ
-                    （2 点指示）を始められない（人検出が要る）。ボタンを非活性にし、
-                    理由も出す。 */}
-                {!trackerEnabled && (
-                  <div className="note" data-testid="s21-summon-tracker-off">{TRACKER_OFF}</div>
-                )}
+          {showWait && (
+            <div className="well" data-testid="s21-clear-box">
+              <div className="b sm mb">{S21_WAIT_TITLE}</div>
+              <div className="row mb">
+                <div className={`s21-bar grow ${wait.verdict === 'OK' ? 'ok' : (wait.verdict === 'NOT_CLEAR' ? 'nope' : '')}`} data-testid="s21-clear-bar">
+                  <i style={{ width: `${waitBarPct(wait, waitTotalRef.current)}%` }} />
+                </div>
+                <span className="mono b" data-testid="s21-clear-dist">{S21_WAIT_DIST(wait.distance_m)}</span>
+              </div>
+              <div className="row">
+                <span className="grow sm mut" data-testid="s21-clear-hint">{S21_WAIT_CLEARING}</span>
                 <button
                   type="button"
-                  className="btn primary wide"
-                  data-testid="s21-summon-start"
-                  disabled={disabledAll || !trackerEnabled || !!destSummonHereReason}
-                  onClick={startSummon}
+                  className="btn sm"
+                  data-testid="s21-wait-cancel"
+                  disabled={disabledAll}
+                  onClick={cancelWait}
                 >
-                  <IconArrow />
-                  <span>{S21_SUMMON_START}</span>
+                  {S21_WAIT_CANCEL}
                 </button>
-
-                {showWizard && (
-                  <div className="well mt" data-testid="s21-wizard">
-                    <div className="row mb">
-                      <span className="b sm">{S20_WIZ_STEP(wizStep)}</span>
-                      <span className="grow sm mut">{wizStep === 1 ? S20_WIZ_MSG_STEP1 : S20_WIZ_MSG_STEP2}</span>
-                    </div>
-                    {wizErr && <div className="note" data-testid="s21-wiz-err">{wizErr}</div>}
-                    {pendingYaw ? (
-                      <div className="note" data-testid="s21-wiz-done">{S20_PIN_YAW(wizYaw)}</div>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn primary wide"
-                        data-testid="s21-wiz-press"
-                        disabled={disabledAll}
-                        onClick={handleWizPress}
-                      >
-                        {S20_WIZ_REGISTER}
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {showWait && (
-                  <div className="well mt" data-testid="s21-clear-box">
-                    <div className="b sm mb">{S21_WAIT_TITLE}</div>
-                    <div className="row mb">
-                      <div className={`s21-bar grow ${wait.verdict === 'OK' ? 'ok' : (wait.verdict === 'NOT_CLEAR' ? 'nope' : '')}`} data-testid="s21-clear-bar">
-                        <i style={{ width: `${waitBarPct(wait, waitTotalRef.current)}%` }} />
-                      </div>
-                      <span className="mono b" data-testid="s21-clear-dist">{S21_WAIT_DIST(wait.distance_m)}</span>
-                    </div>
-                    <div className="row">
-                      <span className="grow sm mut" data-testid="s21-clear-hint">{S21_WAIT_CLEARING}</span>
-                      <button
-                        type="button"
-                        className="btn sm"
-                        data-testid="s21-wait-cancel"
-                        disabled={disabledAll}
-                        onClick={cancelWait}
-                      >
-                        {S21_WAIT_CANCEL}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {subtab === 'atp' && (
-            <div className="tabpane on">
-              <div className="card">
-                <h3>{S21_ATPANEL_TITLE}</h3>
-                <div className="row">
-                  <span className="grow sm">{S21_CAMERA}</span>
-                  <button
-                    type="button"
-                    className="btn"
-                    data-testid="s21-camera-open"
-                    disabled={!cameraOpenable}
-                    onClick={openCamera}
-                  >
-                    {S21_CAMERA}
-                  </button>
-                </div>
-                {!cameraOpenable && cameraUrlReason && (
-                  <span className="reason-badge" data-testid="s21-camera-reason">{cameraUrlReason}</span>
-                )}
               </div>
             </div>
           )}
         </div>
-      </div>
+      )}
+
+      {isNavMode && stateName === 'BLOCKED' && (
+        <WindowShell
+          className="blocked-win"
+          testId="s21-blocked"
+          title={S21_BLOCKED_TITLE}
+          footer={<>
+            <HelpTip helpKey="reroute">
+              <button
+                type="button"
+                className="btn primary"
+                data-testid="s21-blocked-reroute"
+                onClick={() => fire('ui.reroute')}
+              >
+                {S21_BLOCKED_REROUTE}
+              </button>
+            </HelpTip>
+            <HelpTip helpKey="abort">
+              <button
+                type="button"
+                className="btn danger"
+                data-testid="s21-blocked-abort"
+                onClick={() => fire('ui.abort')}
+              >
+                {S21_BLOCKED_ABORT}
+              </button>
+            </HelpTip>
+          </>}
+        >
+          <p data-testid="s21-blocked-msg">
+            {destPin ? `${S21_WHERE_TO(destPin.name || destPin.id)}　` : ''}{S21_BLOCKED_BODY}
+          </p>
+        </WindowShell>
+      )}
+    </>
+  )
+
+  const where = (
+    <div className="s21-where" data-testid="s21-where">
+      <span>{whereText}</span>
+      {whereRemain && <b data-testid="s21-where-remain">{whereRemain}</b>}
     </div>
   )
+
+  const toggle = (
+    <StopRunToggle
+      stopLabel="停止する"
+      runLabel={runLabel}
+      stopEnabled={stopEnabled}
+      runEnabled={runEnabled}
+      runDenyReason={runDisabledReason()}
+      onStop={() => fire('ui.stop')}
+      onRun={() => fire('ui.run')}
+      testId="stop-run-toggle"
+    />
+  )
+
+  function runDisabledReason() {
+    if (disabledAll || !isNavMode || stateName !== 'PAUSE') return null
+    if (runBlocked) return BADGE_VENUE_NOT_LOADED
+    return null
+  }
+
+  const nextPin = nextPanelPin(pins, routePose)
+  const ops = (
+    <>
+      <HelpTip helpKey="nextPanel">
+        <ReasonButton
+          className="advance wide"
+          data-testid="s21-dest-next-panel"
+          disabled={disabledAll || !!destNextPanelReason || !nextPin}
+          reason={destNextPanelReason}
+          reasonTestId="reason-s21-dest-next-panel"
+          onClick={handleNextPanel}
+        >
+          <IconArrow />
+          <span>
+            {S21_DEST_NEXT_PANEL}
+            <small data-testid="s21-next-panel-name">{nextPin ? `　${nextPin.name || nextPin.id} へ` : ''}</small>
+          </span>
+        </ReasonButton>
+      </HelpTip>
+      <div className="btnrow n2">
+        <HelpTip helpKey="destHome">
+          <ReasonButton
+            className="advance"
+            data-testid="s21-dest-home"
+            disabled={disabledAll || !!destHomeReason}
+            reason={destHomeReason}
+            reasonTestId="reason-s21-dest-home"
+            onClick={() => gotoDest('HOME')}
+          >
+            <IconArrow />
+            <span>{S21_DEST_HOME}</span>
+          </ReasonButton>
+        </HelpTip>
+        <HelpTip helpKey="summon">
+          <ReasonButton
+            className="advance"
+            data-testid="s21-dest-summon-here"
+            disabled={disabledAll || !trackerEnabled || !!destSummonHereReason}
+            reason={!trackerEnabled ? TRACKER_OFF : destSummonHereReason}
+            reasonTestId="reason-s21-dest-summon-here"
+            onClick={startSummon}
+          >
+            <IconArrow />
+            <span>{S21_DEST_SUMMON_HERE}</span>
+          </ReasonButton>
+        </HelpTip>
+      </div>
+      <div className="btnrow n2">
+        {working ? (
+          <HelpTip helpKey="unstop">
+            <ReasonButton
+              className="stop-unstop"
+              data-testid="s21-unstop"
+              disabled={disabledAll || stateName === 'ADJUST'}
+              reason={stateName === 'ADJUST' ? S21_UNSTOP_ADJUST : null}
+              reasonTestId="s21-unstop-reason"
+              onClick={() => setUnstopOpen(true)}
+            >
+              <IconStop />
+              <span>{S21_UNSTOP}</span>
+            </ReasonButton>
+          </HelpTip>
+        ) : (
+          <HelpTip helpKey="measure">
+            <ReasonButton
+              className="measure"
+              data-testid="s21-measure"
+              disabled={disabledAll || mode !== 'AT_PANEL'}
+              reason={mode !== 'AT_PANEL' ? S21_MEASURE_AT_PANEL_ONLY : null}
+              reasonTestId="s21-measure-reason"
+              onClick={startMeasure}
+            >
+              <IconArrow />
+              <span>{S21_MEASURE}</span>
+            </ReasonButton>
+          </HelpTip>
+        )}
+        <HelpTip helpKey="camera">
+          <ReasonButton
+            className="camera"
+            data-testid="s21-camera-open"
+            disabled={!cameraOpenable}
+            reason={(mode === 'AT_PANEL' && !cameraOpenable) ? cameraUrlReason : (mode !== 'AT_PANEL' ? S21_MEASURE_AT_PANEL_ONLY : null)}
+            reasonTestId="s21-camera-reason"
+            onClick={openCamera}
+          >
+            <IconArrow />
+            <span>{S21_CAMERA}</span>
+          </ReasonButton>
+        </HelpTip>
+      </div>
+    </>
+  )
+
+  const jog = (
+    <div className="btnrow n2">
+      <HelpTip helpKey="manual">
+        <ReasonButton
+          className="manual"
+          data-testid="s21-manual"
+          disabled={disabledAll || !!manualReason}
+          reason={manualReason}
+          reasonTestId="reason-manual"
+          onClick={() => jogPanel.open()}
+        >
+          <span>{OP_LABELS.manual}</span>
+        </ReasonButton>
+      </HelpTip>
+      <HelpTip helpKey="abort">
+        <ReasonButton
+          className="danger abort"
+          data-testid="s21-abort"
+          disabled={abortDisabled}
+          reason={!abortOk ? S21_ABORT_NONE : null}
+          reasonTestId="s21-abort-reason"
+          onClick={() => fire('ui.abort')}
+        >
+          <IconStop />
+          <span>{S21_BLOCKED_ABORT}</span>
+        </ReasonButton>
+      </HelpTip>
+    </div>
+  )
+
+  return (
+    <>
+      <RunLayout opbar={opbar} main={main} where={where} toggle={toggle} ops={ops} jog={jog} />
+      {/* A-15: 開発モードで項目 auto_brake を選んでいるときだけ出る。 */}
+      <AutoBrakeDevCard prefix="s21" />
+      {unstopOpen && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(
+        <>
+          <header>{S21_UNSTOP_TITLE}</header>
+          <div className="bodyw"><p>{S21_UNSTOP_BODY}</p></div>
+          <footer>
+            <button type="button" className="btn" onClick={() => setUnstopOpen(false)}>{S21_UNSTOP_NO}</button>
+            <button type="button" className="btn primary" data-testid="s21-unstop-confirm" onClick={confirmUnstop}>{S21_UNSTOP_YES}</button>
+          </footer>
+        </>,
+        confirmWindow.mountNode,
+      )}
+    </>
+  )
 }
+
