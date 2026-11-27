@@ -1,6 +1,7 @@
 // e2e/onsite-ux2.spec.js — brief-onsite-ux UX-2-a / UX-2-b、brief-onsite-ux-fix UX-5
 // UX-2-a: 「停止」ボタンの class（btn-stop）が他のどの kind とも異なること。
-// UX-2-b: S-21 の手動ボタンは IDLE のとき非活性 + 理由バッジ（jog_denied）。
+// UX-2-b: S-21 の手動ボタンは IDLE のとき非活性 + 理由の出し方（jog_denied）。
+//         書き直し後は三角付きの吹き出し「押せません　<理由>」（§3.3.3）。
 //         （サーバがこの keys を返さないことが dichotomy 証明で分かっているため
 //         画面側でだけ判定する。UX-2-b の列挙テストは unit で担保済み。）
 // UX-5:   S-20 / S-21 が 1280×720（scale 1）で「本文（#body）がスクロールを
@@ -37,7 +38,7 @@ test('UX-2-b: S-21 の手動ボタンは IDLE で disabled + 理由バッジ（j
   await expect(manualBtn).toBeDisabled()
   const badge = page.locator('[data-testid="reason-manual"]')
   await expect(badge).toBeVisible()
-  await expect(badge).toHaveText('このモードでは手動操作できません')
+  await expect(badge).toHaveText('押せません　このモードでは手動操作できません')
 })
 
 // ── UX-5: 「操作者がページをスクロールしなくてよい」を直接測る ──────────────

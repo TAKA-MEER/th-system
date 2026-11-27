@@ -19,7 +19,7 @@ export const REJECT_REASONS = {
   venue_not_loaded: '推定が立ち上がり直したため会場地図がありません。待機場所へ手で戻して地図を開き直してください',
   // SM-3.1.2-144: PREP の「待機場所へ」。会場地図が無く地図作成も始まっていない。
   prep_map_not_started: '地図がまだありません。地図作成を開始してから戻ってください',
-  estop_disabled_in_carry: '手押し中は非常停止を操作できません',
+  estop_disabled_in_carry: '非常停止中は非常停止を操作できません',
   estop_engaged: '非常停止が作動中です',
   hw_estop_still_pressed: '物理非常停止ボタンが押されたままです',
   route_not_found: '指定した経路が見つかりません',

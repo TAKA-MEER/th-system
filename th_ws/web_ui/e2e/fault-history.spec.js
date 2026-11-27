@@ -31,14 +31,17 @@ test('(a) 0.1 秒で解消しても、再開確認に「解消した異常」が
   await setTestFault(page, lidar(false))
   await setHistory(page, history(R()))
   const win = page.locator('.win.fault.show')
-  await expect(win.getByRole('button', { name: 'はい' })).toBeVisible()   // 再開確認に変わった
+  await expect(win.getByTestId('w1-confirm')).toBeVisible()   // 再開確認に変わった
+  await expect(win.getByRole('button', { name: 'はい' })).toHaveCount(0)
+  await expect(win.getByRole('button', { name: 'いいえ' })).toHaveCount(0)
+  await expect(win.getByRole('button', { name: '非表示' })).toHaveCount(0)
   await expect(win.getByTestId('w1-resolved-fault')).toHaveText('解消した異常：LiDAR 途絶（0.1 秒・12:34:56）')
   // 残る: 時間が経っても、他の履歴の更新があっても、再開を押すまで消えない。
   await page.waitForTimeout(700)
   await expect(win.getByTestId('w1-resolved-fault')).toBeVisible()
-  await win.getByRole('button', { name: 'はい' }).click()
+  await win.getByTestId('w1-confirm').click()
   const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
-  expect(calls.map((c) => c.trigger)).toContain('ui.resume_yes')
+  expect(calls.map((c) => c.trigger)).toContain('ui.resume_ack')
 })
 
 test('(b) 同じ種別が短時間に続いたら「ほか N 回」', async ({ page }) => {
@@ -68,7 +71,7 @@ test('(g) 逆順: 履歴が解消より先に届く／解消より後に届く�
   await gotoWithState(p2, PAUSED)
   await setTestFault(p2, lidar(true))
   await setTestFault(p2, lidar(false))
-  await expect(p2.getByRole('button', { name: 'はい' })).toBeVisible()
+  await expect(p2.getByTestId('w1-confirm')).toBeVisible()
   await expect(p2.getByTestId('w1-resolved-fault')).toHaveCount(0)
   await setHistory(p2, history(R()))
   await expect(p2.getByTestId('w1-resolved-fault')).toBeVisible()
@@ -79,7 +82,7 @@ test('(g2) 前のフォルトの記録は、別種別のフォルトの再開確
   await setHistory(page, history(R({ fault_type: 'ESP32_DISCONNECTED', started_at: T0 - 600 })))
   await setTestFault(page, lidar(true))
   await setTestFault(page, lidar(false))
-  await expect(page.getByRole('button', { name: 'はい' })).toBeVisible()
+  await expect(page.getByTestId('w1-confirm')).toBeVisible()
   await expect(page.getByTestId('w1-resolved-fault')).toHaveCount(0)
 })
 
@@ -157,7 +160,7 @@ test('(c)(d) ヘッダに「直近の異常」が出て、押すと一覧の窓�
 
 test('(c2) 継続中のフォルトがある間は、ヘッダは現在のフォルトが優先（直近の異常は出さない）', async ({ page }) => {
   await gotoWithState(page, { mode: 'IDLE', state: 'IDLE' })
-  await setHistory(page, history(R()))
+  await setHistory(page, history(R({ started_at: Math.floor(Date.now() / 1000) })))
   await expect(page.getByTestId('recent-fault')).toBeVisible()
   await setTestFault(page, { active: true, fault_type: 'UI_DISCONNECTED', severity: 'RECOVERABLE' })
   await expect(page.getByTestId('recent-fault')).toHaveCount(0)
@@ -192,7 +195,7 @@ test('ヘッダは 2 行を超えず、非常停止が押せる（長い種別�
     await page.setViewportSize(size)
     await gotoWithState(page, { mode: 'FOLLOW', state: 'RUN', zone: 'IN' })
     const before = (await page.locator('#hdr').boundingBox()).height
-    await setHistory(page, history(R({ fault_type: 'MUX_DEAD' })))
+    await setHistory(page, history(R({ fault_type: 'MUX_DEAD', started_at: Math.floor(Date.now() / 1000) })))
     await expect(page.getByTestId('recent-fault')).toBeVisible()
     const after = (await page.locator('#hdr').boundingBox()).height
     expect(after).toBe(before)

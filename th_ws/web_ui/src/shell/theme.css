@@ -9,19 +9,45 @@
    + clamp() rules (DetailedDesign-webui.md §2.3 / SD-2) transfer unchanged.
    ============================================================ */
 
-:root{
+:root,
+#app[data-theme="light"]{
+  /* Spec-webui §3.3.1 (JIS B 9960-1): 1色1意味。明るい地が既定
+     （mockup の theme-light + col-jis の既定値）。青はヘッダの帯だけ。 */
+  --bg:#f4f6f9; --panel:#ffffff; --inset:#eef1f5;
+  --ctrl:#e6eaf0; --ctrl-hi:#d5dbe4; --ctrl-on:#5b6675;
+  --bd:#d7dde5; --bd-hi:#b9c2ce;
+  --tx:#161b22; --mut:#4f5866; --dim:#8d95a1;
+  --brand:#1f4f96; --brand-lt:#2a5fa8; --brand-dk:#163d75;
+  --hdr-row2:#d1d7e0; --hdr-row2-bd:#b9c2ce;
+  --ok:#1f7a35; --ok-tx:#1f7a2e; --ok-lt:#5cc477;
+  --stop:#161b22; --stop-tx:#ffffff;
+  --warn:#d9a800; --warn-tx:#5c4700; --jis-y:#ffd100;
+  --ng:#d9a800; --ng-tx:#5c4700;
+  --estop:#b71c1c; --estop-hi:#e53935; --estop-bg:#ffd100;
+  --carry:#111111; --carry-tx:#ffffff;
+  --sel-bg:#5b6675; --sel-tx:#ffffff;
+  --map-unk:#dde2e8; --pt:#1f2733;
+  --hdr:96px;
+  --r:8px;
+  color-scheme:light;
+}
+/* 暗い地: 変数を切り替えれば出せる形。既定にはしない（地図の暗い配色は未作成）。 */
+#app[data-theme="dark"]{
   --bg:#0f1117; --panel:#1a1d24; --inset:#12141b;
-  --ctrl:#252830; --ctrl-hi:#343849; --ctrl-on:#2c4a74;
+  --ctrl:#252830; --ctrl-hi:#343849; --ctrl-on:#2f6bc6;
   --bd:#2a2d35; --bd-hi:#3a3f4c;
   --tx:#e6e8ec; --mut:#8b93a1; --dim:#5c6470;
   --brand:#3f8ae0; --brand-lt:#7fb4ee; --brand-dk:#12233d;
-  --ok:#4caf50; --ok-tx:#8fd694;
-  --warn:#ffb74d; --warn-tx:#ffcc80;
-  --ng:#ef5350; --ng-tx:#ff9b98;
-  --estop:#c62828; --estop-hi:#e53935;
-  --carry:#7e4fb0; --carry-tx:#c9a6e8;
-  --hdr:96px;
-  --r:8px;
+  --hdr-row2:#121722; --hdr-row2-bd:#2a2d35;
+  --ok:#4caf50; --ok-tx:#8fd694; --ok-lt:#5cc477;
+  --stop:#0b0d10; --stop-tx:#ffffff;
+  --warn:#e6b800; --warn-tx:#ffd84d; --jis-y:#ffd100;
+  --ng:#e6b800; --ng-tx:#ffd84d;
+  --estop:#c62828; --estop-hi:#e53935; --estop-bg:#ffd100;
+  --sel-bg:#e6e8ec; --sel-tx:#0f1117;
+  --map-unk:#3a3f4a; --pt:#0b0d12;
+  color-scheme:dark;
+}
   /* Base font size. Every font-size is written as calc(var(--fs) * n).
      Inside #app, the container query below makes this track screen width. */
   --fs:16px;
@@ -29,7 +55,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{
-  background:#07090d; color:var(--tx); font-size:var(--fs);
+  background:#d9ded8; color:var(--tx); font-size:var(--fs);
   font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
   -webkit-tap-highlight-color:transparent; overflow:hidden;
 }
@@ -74,15 +100,15 @@ table{border-collapse:collapse;width:100%}
 /* ================= header (always on top, never covered) ================= */
 #hdr{
   flex:0 0 auto;z-index:100;position:relative;
-  background:linear-gradient(180deg,#16283f,#101a29);
+  background:var(--brand);
   border-bottom:2px solid var(--brand);
 }
 /* ヘッダの色（SG-C3。shell/limits.js の headerTone()）。Spec-webui.md §8
    「非常停止＝赤／解除待ち＝紫」、§5「開発モード中はヘッダの色を変える」。
    開発モードの色は #devPill と同じ系統（spec は色を指定していない）。 */
-#hdr[data-tone="estop"]{background:linear-gradient(180deg,#4a1414,#2a0c0c);border-bottom-color:var(--estop)}
-#hdr[data-tone="carry"]{background:linear-gradient(180deg,#2e1b46,#1c1226);border-bottom-color:var(--carry)}
-#hdr[data-tone="dev"]{background:linear-gradient(180deg,#4a1030,#2a0a1c);border-bottom-color:#8a2a5a}
+#hdr[data-tone="estop"]{background:var(--brand);border-bottom-color:var(--estop)}
+#hdr[data-tone="carry"]{background:var(--brand);border-bottom-color:var(--carry)}
+#hdr[data-tone="dev"]{background:#60408a;border-bottom-color:#3e235e}
 /* flex-wrap:nowrap は必須（2026-09-02）。wrap だと、幅が足りなくなったとき
    #screenName が省略記号で縮む前に行が増え、ヘッダーの高さごと変わってしまう
    （＝本文の高さが動く。DetailedDesign-webui.md §2.5）。実機では row2 の
@@ -100,25 +126,33 @@ table{border-collapse:collapse;width:100%}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
 #modePill{
   flex:0 0 auto;font-size:calc(var(--fs) * 1.05);font-weight:800;padding:5px 14px;border-radius:999px;
-  background:#2a3242;border:1px solid #3a4356;white-space:nowrap;
+  background:#ffffff;border:2px solid var(--tx);color:var(--tx);white-space:nowrap;
 }
-#modePill.unknown{background:#3a1414;border-color:#8a2a2a;color:var(--ng-tx)}
+#modePill[data-tone="go"]{background:var(--ok);border-color:var(--ok);color:#fff}
+#modePill[data-tone="warn"]{background:var(--jis-y);border-color:var(--jis-y);color:var(--tx)}
+#modePill[data-tone="estop"]{background:var(--estop);border-color:var(--estop-bg);color:#fff;box-shadow:0 0 0 3px var(--estop-bg)}
+#modePill.unknown{background:var(--warn);border-color:#111;color:#111}
 #zonePill{
-  flex:0 0 auto;font-size:calc(var(--fs) * .72);font-weight:700;padding:4px 9px;border-radius:999px;
-  background:#3a2a10;border:1px solid #7a5a20;color:var(--warn-tx);white-space:nowrap;display:none;
+  flex:0 0 auto;font-size:max(15px,calc(var(--fs) * .72));font-weight:700;padding:4px 9px;border-radius:999px;
+  background:#ffffff;border:1px solid #111;color:#111;white-space:nowrap;display:none;
 }
 #zonePill.show{display:inline-block}
 #devPill{
-  flex:0 0 auto;font-size:calc(var(--fs) * .72);font-weight:700;padding:4px 9px;border-radius:999px;
-  background:#4a1030;border:1px solid #8a2a5a;color:#ffa6d0;display:none;
+  flex:0 0 auto;font-size:max(15px,calc(var(--fs) * .72));font-weight:700;padding:4px 9px;border-radius:999px;
+  background:#fff;border:1px solid #111;color:#111;display:none;
 }
 #devPill.show{display:inline-block}
-#hdr .row2{display:flex;align-items:stretch;gap:0;border-top:1px solid #23334a}
+#hdr .row2{display:flex;align-items:stretch;gap:0;border-top:1px solid var(--hdr-row2-bd,#b9d4ee);background:var(--hdr-row2,#d1d7e0)}
 #faultBox{
   flex:1 1 auto;display:flex;align-items:center;gap:8px;padding:7px 12px;
-  background:#151b26;font-size:calc(var(--fs) * .88);min-width:0;
+  background:transparent;font-size:calc(var(--fs) * .88);min-width:0;
 }
-#faultDot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:0 0 auto}
+/* 自動ブレーキなし（D74）: 注意の黄で 1 Hz 点滅。reduced-motion では点けたまま。 */
+#autoBrakeOff{flex:0 0 auto;font-weight:800;font-size:calc(var(--fs) * .9);padding:3px 10px;border-radius:999px;background:var(--jis-y);color:var(--tx);border:2px solid var(--tx);white-space:nowrap}
+@media (prefers-reduced-motion:no-preference){#autoBrakeOff{animation:abBlink 1s steps(1,end) infinite}}
+@keyframes abBlink{50%{background:transparent}}
+@media (prefers-reduced-motion:reduce){#autoBrakeOff{animation:none}}
+#faultDot{width:9px;height:9px;border-radius:50%;background:transparent;flex:0 0 auto;display:none}
 #faultDot.ng{background:var(--ng)}
 #faultDot.warn{background:var(--warn)}
 /* min-width:0 が無いと flex アイテムの既定 (min-width:auto = 内容の最小幅) の
@@ -133,12 +167,14 @@ table{border-collapse:collapse;width:100%}
    width >=160px and >=25% of screen width; the tallest button on screen */
 #estopBtn{
   /* 25cqw = 25% of #app's width. vw would ignore an embedding frame and overflow it */
-  flex:0 0 auto;min-width:max(160px,25cqw);min-height:max(72px,calc(var(--fs) * 4.2));
+  flex:0 0 auto;min-width:max(160px,25cqw);min-height:max(76px,calc(var(--fs) * 4.2));
   background:var(--estop);color:#fff;
   font-size:calc(var(--fs) * 1.25);font-weight:800;letter-spacing:.14em;padding:12px 20px;
   border-left:2px solid #7a1414;
   box-shadow:inset 0 0 0 2px #ff6b6b33;
 }
+/* 非常停止は赤に黄の地（§3.3.1）。黄の板を背後に置き、上下中央に置く。 */
+.estop-plate{flex:0 0 auto;display:flex;align-items:center;background:var(--estop-bg);padding:5px 6px}
 #estopBtn:active{background:var(--estop-hi)}
 #estopBtn.engaged{background:var(--carry);border-left-color:#4a2a70}
 /* C-2 (WP-CARRY-01 §4.3): CARRY's own "won't do anything" look -- not
@@ -277,28 +313,32 @@ table{border-collapse:collapse;width:100%}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .grow{flex:1 1 auto}
 .mut{color:var(--mut)}.dim{color:var(--dim)}
-.sm{font-size:calc(var(--fs) * .82)}.xs{font-size:calc(var(--fs) * .74)}
+/* §1.2: 小さい文字は 15 以上。--fs の倍率だけだと 15 未満になるので下限を明示する。 */
+.sm{font-size:max(15px,calc(var(--fs) * .82))}.xs{font-size:max(15px,calc(var(--fs) * .74))}
 .mono{font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;font-variant-numeric:tabular-nums}
 .b{font-weight:700}
 .tone-ok{color:var(--ok-tx)}.tone-ng{color:var(--ng-tx)}.tone-warn{color:var(--warn-tx)}
 .mt{margin-top:8px}.mb{margin-bottom:8px}
 
 .btn{
-  background:var(--ctrl);border:1px solid var(--bd-hi);border-radius:6px;
+  background:var(--panel);border:1px solid var(--bd-hi);border-radius:4px;
   padding:11px 14px;font-size:calc(var(--fs) * .95);font-weight:600;text-align:center;
+  min-height:56px;min-width:56px;
 }
 .btn:active{background:var(--ctrl-hi)}
-/* Blue = "what's happening now" only (§4.3 / U-17). Never used for emphasis. */
-.btn.on{background:var(--ctrl-on);border-color:var(--brand);color:#fff}
-.btn.primary{background:#245089;border-color:var(--brand)}
-.btn.save{background:#17361d;border-color:#2f7a38;color:#a9e0ad;font-weight:700}
-.btn.save:active{background:#1f4a27}
-.btn.danger{background:#4a1414;border-color:#8a2a2a;color:var(--ng-tx)}
+/* §3.3.1: 反転＝選んでいるもの。青はボタンの色に使わない（D37 廃止）。 */
+.btn.on{background:var(--sel-bg);border-color:var(--sel-bg);color:var(--sel-tx)}
+/* 押すと機体が動かない「進む」は塗らず太い縁で強める（P8）。 */
+.btn.primary{background:var(--panel);border:3px solid var(--tx);color:var(--tx);font-weight:800}
+.btn.save{background:var(--panel);border:2px solid var(--ok);color:var(--tx);font-weight:700}
+.btn.save:active{background:var(--ctrl-hi)}
+.btn.danger{background:var(--panel);border:2px solid var(--jis-y);color:var(--tx);font-weight:700}
 .btn.wide{width:100%}
 /* S-21 BLOCKED 帯のボタン: タップしやすい大きさ（最小 44px） */
 .s21-blocked .btn{min-height:44px}
-.btn[disabled],.btn.dis{opacity:.4;cursor:not-allowed}
-.btn.sm{padding:7px 10px;font-size:calc(var(--fs) * .84)}
+/* §3.3.3: 押せないボタンは塗りを外し枠と語を残す。半透明にしない。 */
+.btn[disabled],.btn.dis{background:transparent;border:1px solid var(--bd-hi);color:var(--dim);opacity:1;cursor:not-allowed}
+.btn.sm{padding:7px 10px;font-size:calc(var(--fs) * .95);min-height:56px}
 
 /* Ported from docs/plan/spec/mockup/index.html (not carried over by
    WP-UI-01, which built no screens yet -- first needed by S-00/S-01,
@@ -644,14 +684,15 @@ table.lst td.r{text-align:right}
    解除バーがその暗幕に沈んでタップが吸われ、解除できない（W-1 の文言自体が
    「解除は画面下端の解除バーから」と案内しているのに）。モックアップの
    #overlay(900) < #release(950) の順序に相当（DetailedDesign-webui.md §2.1）。 */
+/* 解除の帯（§1.2/§4.1）: 本文の下端の中央。白地・黒の太い枠・角なし・小さめ。 */
 #release{
-  flex:0 0 auto;display:none;background:#1c1226;border-top:2px solid var(--carry);
-  padding:9px 12px;z-index:70;position:relative;
+  flex:0 0 auto;display:none;background:transparent;
+  padding:9px 12px;z-index:70;position:relative;justify-content:center;
 }
 #release.show{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-#release .rt{flex:1 1 200px;font-size:calc(var(--fs) * .85);color:var(--carry-tx)}
-#releaseBtn{background:#3d2160;border:1px solid var(--carry);border-radius:6px;padding:9px 16px;
-  font-weight:700;color:#e2ccf7}
+#release .rt{font-size:calc(var(--fs) * .85);color:var(--tx)}
+#releaseBtn{background:#ffffff;border:3px solid #161b22;border-radius:0;padding:9px 16px;
+  font-weight:800;color:#161b22;min-height:56px}
 
 /* WS-9R (2026-09-04): 止まっている理由の帯。速度上限が 0 の間だけ出る。
    黙って止まると操作者に理由が分からない（実機「謎の一時停止」）。
@@ -856,6 +897,60 @@ table.lst td.r{text-align:right}
 
 /* LiDAR 死角の図（S-30 の LiDAR 点検）。幅なりに最大 420px。 */
 .scan-mask-svg{width:100%;max-width:420px}
+
+/* ---------- W0a 部品: 停止│走行トグル・点滅・自律枠・押せない理由（§3.3.2〜§3.3.5） ---------- */
+.stoprun{display:flex;min-height:68px;border:2px solid var(--tx);border-radius:4px;overflow:hidden;background:var(--panel)}
+.stoprun button{flex:1 1 0;display:flex;align-items:center;justify-content:center;font-size:calc(var(--fs) * 1.1);font-weight:800;min-height:68px}
+.stoprun .sr-stop.paint{background:var(--stop);color:var(--stop-tx)}
+.stoprun .sr-run.paint{background:var(--ok);color:#fff}
+.stoprun .plain{background:transparent;color:var(--dim)}
+.stoprun.reserved{background:transparent}
+.stoprun.reserved button{color:var(--dim)}
+.stoprun .sr-sep{flex:none;width:2px;background:var(--tx)}
+/* 点滅（§3.3.4）: ゆっくり明滅（約2.4秒）／1Hz（注意）。動きを減らす設定では止める。 */
+@keyframes blinkSlow{50%{filter:brightness(.82)}}
+@keyframes blink1Hz{0%,49%{filter:brightness(1)}50%,100%{filter:brightness(.55)}}
+.blink-slow{animation:blinkSlow 2.4s ease-in-out infinite}
+.blink-1hz{animation:blink1Hz 1s steps(1,end) infinite}
+@media (prefers-reduced-motion:reduce){.blink-slow,.blink-1hz{animation:none}}
+/* 自律走行中の枠（§3.3.5）: ヘッダの下の画面の縁を緑で囲み 1Hz 点滅。 */
+.autonomous-frame{position:absolute;left:0;right:0;top:var(--hdr,96px);bottom:0;z-index:40;pointer-events:none;border:4px solid var(--ok);box-sizing:border-box}
+@media (prefers-reduced-motion:no-preference){.autonomous-frame{animation:frame1Hz 1s steps(1,end) infinite}}
+@keyframes frame1Hz{50%{border-color:transparent}}
+@media (prefers-reduced-motion:reduce){.autonomous-frame{animation:none}}
+/* 押せない理由（§3.3.3）: そのボタンのそば、三角付き。ヘッダには重ねない。 */
+.reason-wrap{display:inline-flex;flex-direction:column;position:relative}
+.reason-bubble{display:block;font-size:max(15px,calc(var(--fs) * .82));font-weight:700;line-height:1.4;color:var(--tx);background:var(--panel);border:2px solid var(--jis-y);border-radius:4px;padding:4px 8px;position:relative;margin-bottom:6px;white-space:nowrap}
+.reason-bubble::after{content:"";position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);border:8px solid transparent;border-top-color:var(--jis-y);border-bottom:none}
+.reason-bubble.below{margin-bottom:0;margin-top:6px}
+.reason-bubble.below::after{bottom:auto;top:-8px;border-top:none;border-bottom-color:var(--jis-y)}
+.reason-badge{font-size:max(15px,calc(var(--fs) * .82))}
+/* ---------- W0a: ヘルプ・形（§3.3.6/§3.3.7） ---------- */
+.help-wrap{position:relative;display:inline-flex}
+.help-pop{position:absolute;left:0;top:calc(100% + 6px);z-index:90;width:280px;max-width:82vw;background:var(--panel);border:2px solid var(--bd-hi);border-radius:8px;padding:10px 34px 10px 12px;box-shadow:0 8px 28px #00000033;display:flex;flex-direction:column;gap:4px}
+.help-title{font-weight:800;font-size:max(15px,calc(var(--fs) * .95))}
+.help-body{font-size:max(15px,calc(var(--fs) * .85));line-height:1.5;color:var(--mut)}
+.help-close{position:absolute;right:6px;top:6px;width:40px;height:40px;border:1px solid var(--bd-hi);border-radius:8px;background:var(--ctrl)}
+/* 形は役割で変える: 出発=丸・道具=角・終了=片側だけ丸。 */
+.btn.go{border-radius:999px}
+.btn.tool{border-radius:4px}
+.btn.exit{border-radius:4px 999px 999px 4px}
+.btn.icon-only{min-width:56px;padding:0 12px;justify-content:center}
+/* 人検出トグル（§3.5）: 入のときだけ明るく点ける。 */
+.tracker-toggle{display:inline-flex;align-items:center;gap:8px}
+.tracker-cap{font-weight:800;font-size:max(15px,calc(var(--fs) * .9))}
+.tracker-sides{display:inline-flex;border:2px solid var(--tx);border-radius:4px;overflow:hidden;min-height:56px}
+.tracker-side{min-width:64px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:calc(var(--fs) * .95)}
+.tracker-side.off.on{background:var(--panel);color:var(--tx)}
+.tracker-side.onside.on{background:var(--ok);color:#fff}
+.tracker-side:not(.on){background:transparent;color:var(--dim)}
+/* 自動ブレーキのロック（§3.5）: 鍵印の「入」。1回目で黄の「もう一度押すと外す」。 */
+.lockb{display:inline-flex;align-items:center;gap:8px;min-height:56px}
+.lockb.armed{background:var(--jis-y);border-color:var(--tx);color:var(--tx)}
+/* 自動ブレーキの「切│入」切り替え（ロックが外れた後）。今の側は選ばれた見た目。 */
+.brake-sides{display:inline-flex;border:2px solid var(--tx);border-radius:4px;overflow:hidden;min-height:56px;vertical-align:middle}
+.brake-side{border:none;border-radius:0;min-width:72px}
+.brake-side.cur{background:var(--ctrl-hi);font-weight:800}
 
 /* 横長の S-40 LiDAR 死角: 図（420px 四方）を縦に積むと右列のカードが本文を 213px 超える。
    図を左、説明・一覧・ボタンを右に並べる（図は 270px まで。扇形の指定には足りる）。 */

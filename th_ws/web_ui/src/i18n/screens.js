@@ -231,8 +231,12 @@ export const W6_AUTO_BRAKE_LABEL = '自動ブレーキ'
 export const W6_AUTO_BRAKE_ON = 'ON'
 export const W6_AUTO_BRAKE_OFF = 'OFF'
 export const W6_AUTO_BRAKE_UNKNOWN = '不明'
-// A-15: W-6 と自律系の画面の切替。文言は S-11 の切替と同じ意味（確認 W-4 も同じ）。
+// A-15: W-6 と自律系の画面の切替。2026-11-27 書き直し後は W-4 でなくロックの2回押し。
 export const AB_TO_OFF = 'OFF にする'
+export const AB_LOCK_ON = '入' // 鍵の印。押してもすぐには外れない
+export const AB_LOCK_ARMED = 'もう一度押すと外す' // 黄。約3秒で戻る
+export const AB_LOCK_OPEN = '切│入' // ロックが外れた表示
+export const AB_LOCK_OFF = '切'
 export const AB_TO_ON = 'ON にする'
 export const AB_HINT_OFF = 'OFF のあいだは障害物に近づいても減速しません。画面の警告を見て操作してください'
 export const AB_CONFIRM_TITLE = '自動ブレーキを OFF にしますか'

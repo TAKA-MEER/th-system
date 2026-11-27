@@ -69,7 +69,7 @@ test('pressing the UI estop in CARRY surfaces estop_disabled_in_carry via System
   // through /system/state (see file header).
   await setTestState(page, { last_reject_reason: 'estop_disabled_in_carry' })
 
-  await expect(page.locator('.win.carry.show')).toContainText('手押し中は非常停止を操作できません')
+  await expect(page.locator('.win.carry.show')).toContainText('非常停止中は非常停止を操作できません')
 })
 
 test('the estop button does not visually claim success (no "engaged" look) while in CARRY', async ({ page }) => {

@@ -41,6 +41,29 @@ export function stateLabel(stateName) {
   return STATE_NAMES[stateName] ?? stateName
 }
 
+// 状態の札の色（Spec-webui §3.3.1）。札に出す語は STATE_NAMES が正。
+// go=緑（進む・移動中）/ neutral=白灰黒（記録中・一時停止）/
+// warn=黄（注意）/ estop=赤に黄の地（非常停止中）/ none=札を出さない。
+export const STATE_CHIP_TONE = {
+  NONE: 'none',
+  RUN: 'go', NAV: 'go', RETURN: 'go',
+  PAUSE: 'neutral', REC: 'neutral', CHECK: 'neutral', SETUP: 'neutral',
+  LIST: 'neutral', IDLE_P: 'neutral', SAVED: 'neutral', WORKING: 'neutral',
+  MAPPING: 'go',
+  BLOCKED: 'warn', WAIT_CLEAR: 'warn',
+  REGISTER: 'neutral', EDIT: 'neutral',
+  SELECT: 'neutral', ROUTE_SEL: 'neutral', DEV_CHECK: 'neutral', POINT: 'neutral',
+  RUNNING_CHECK: 'neutral', REPAIR: 'warn',
+}
+
+export function stateChipTone(stateName) {
+  if (!stateName || stateName === 'NONE') return 'none'
+  return STATE_CHIP_TONE[stateName] ?? 'neutral'
+}
+
+export const AUTO_BRAKE_OFF_LABEL = '自動ブレーキなし'
+export const ZONE_LIMIT_LABEL = '速度制限'
+
 // §6.2 fail-safe banner: shown in the header when /system/state stops arriving.
 export const DISCONNECTED_LABEL = '制御系と通信できません'
 export const CONNECTED_LABEL = '正常'
@@ -48,11 +71,10 @@ export const CONNECTED_LABEL = '正常'
 // Project branding text (kept out of shell/ files per U-4).
 export const PROJECT_NAME_JA = '高見舎プロジェクト'
 
-// Zone pill text (DetailedDesign-names.md §4). Full zone derivation needs
-// /ui/active_screen aggregation across clients, which is screen-level work
-// not yet built (WP-UI-02+); these labels are ready for when that lands.
+// Zone: 試験場内のときだけ「速度制限」とだけ出す（Spec-webui §1）。
+// 場外・対象外では出さない。
 export const ZONE_LABELS = {
-  IN:  { long: '試験場内・低速・自動ブレーキON', short: '場内・低速' },
+  IN:  { long: '速度制限', short: '速度制限' },
   OUT: { long: '試験場外', short: '場外' },
   NA:  { long: '対象外', short: '対象外' },
 }
@@ -93,30 +115,34 @@ export const WIN_ESTOP_RESUME_PREV = '元のモードに戻る'
 export const WIN_ESTOP_TO_MENU = 'メインメニューへ'
 export const WIN_ESTOP_TITLE = '非常停止中'
 export const WIN_ESTOP_BODY = '非常停止ボタンが押されました。速度指令をゼロにしています。'
-export const WIN_ESTOP_HINT = '解除は画面下端の解除バーから。解除すると元のモードの再開を選べます。'
+export const WIN_ESTOP_HINT = '解除は画面下端の解除バーから。解除できたら「確認」を押してください。走行は再開しません。'
 // fault 起因の ESTOP（DRIVE_RUNAWAY 等）。「ボタンが押された」ではないので別文言（#1）。
 export const WIN_ESTOP_SYSTEM_TITLE = '安全のため停止しました'
 export const WIN_ESTOP_SYSTEM_BODY = '安全監視が異常を検知し、速度指令をゼロにしています。'
-export const WIN_ESTOP_SYSTEM_HINT = '原因が解消したら「確認」を押すとメインメニューに戻ります。'
+export const WIN_ESTOP_SYSTEM_HINT = '原因が解消したら「確認」を押してください。走行は再開しません。'
 // WS-9O (2026-09-04): フォルト起因でも元のモードへ戻れるようになった。戻り先は
 // 停止状態なので、走り出すにはもう一度「再生」を押す必要がある（Spec-safety.md §3.5.2）。
 export const WIN_ESTOP_SYSTEM_HINT_RESUMABLE =
-  '原因は解消しました。元のモードに戻ると停止した状態から再開できます。'
+  '原因は解消しました。「確認」を押すと元のモードの停止した状態に戻ります。走行は再開しません。'
 
 // W-1 generalized to fault-caused PAUSE, not just ESTOP (DetailedDesign-wp1.md
 // WP-UI-01 §11 "W-1 の一般化" -> WP-UI-02). The body text itself (cause and
 // remedy) comes from i18n/faults.js, keyed by FaultStatus.fault_type.
 export const WIN_FAULT_TITLE = '異常が発生しました'
-export const WIN_FAULT_HINT = '解決すると、この画面が再開の選択肢に変わります。'
+export const WIN_FAULT_HINT = '原因を取り除いてください。解消したら「確認」を押してください。走行は再開しません。'
+export const WIN_RESOLVED_LABEL = '解消しました'
+export const WIN_RELEASED_LABEL = '解除しました'
+export const WIN_ESTOP_RESOLVED_TITLE = '非常停止を解除しました'
+export const WIN_FAULT_RESOLVED_TITLE = '異常が解消しました'
 // 1b-1 SG-A12: 走行中に操作端末が離れた一時停止。フォルトでは無いので
 // 最初から「再開しますか」の形で出す（Spec-safety.md §6.2.2）。
 export const WIN_PRESENCE_TITLE = '一時停止しました'
-export const WIN_PRESENCE_BODY = '操作端末が離れたため一時停止しました。再開するには「はい」を押してください。'
+export const WIN_PRESENCE_BODY = '操作端末が離れたため一時停止しました。「確認」を押すと閉じます。走行は再開しません。'
 // 試験準備の自動帰還の一時停止（ジョグ・非常停止から戻った場合など。理由は問わない）。
 export const WIN_PREP_PAUSE_TITLE = '一時停止しました'
-export const WIN_PREP_PAUSE_BODY = '自動帰還を一時停止しています。再開するには「はい」、やめて地図作成に戻るには「いいえ」を押してください。'
-export const WIN_CARRY_TITLE = '手押しモード'
-export const WIN_CARRY_BODY = '物理非常停止ボタンが押されています。人が機体を押して運んでいるとみなします。'
+export const WIN_PREP_PAUSE_BODY = '自動帰還を一時停止しています。「確認」を押すと地図作成に戻ります。'
+export const WIN_CARRY_TITLE = '非常停止'
+export const WIN_CARRY_BODY = '非常停止ボタンが押されています。機体を動かさないでください。'
 // W-4 保存確認（教示の記録。1b-7 SG-B3）。ask_save（記録途切れ）／
 // ask_save_if_unsaved（「終了」で未保存あり）で開く。はい→ ui.save（保存）、
 // いいえ→ ui.discard（破棄。同名の既存経路は押し出さない）。

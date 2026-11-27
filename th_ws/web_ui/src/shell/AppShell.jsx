@@ -2,7 +2,7 @@
 // and the estop release bar (DetailedDesign-webui.md §1/§2).
 // Screens (WP-UI-02+) are rendered as `children`; this packet builds no
 // screen content (DetailedDesign-wp1.md WP-UI-01 §1).
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Component } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useActiveScreenPublisher } from '../ros/useActiveScreenPublisher.js'
@@ -25,12 +25,24 @@ import { readDevMode, DEV_MODE_EVENT } from '../parts/devMode.js'
 import { useDevMode } from '../ros/useDevMode.js'
 import { useManualPanelHeartbeat } from '../ros/useManualPanelHeartbeat.js'
 import { useFaultHistory } from '../ros/useFaultHistory.js'
-import { latestRecord, recentFaultText } from '../ros/faultHistoryState.js'
+import { latestRecord, recentFaultText, isWithinRecentWindow } from '../ros/faultHistoryState.js'
+import { isAutonomousRun } from './autonomous.js'
 import './theme.css'
 
 // DetailedDesign-wp1.md WP-UI-01 §3.1: /safety/estop_ui is republished at
 // 2Hz while held, not sent once and latched client-side.
 const ESTOP_UI_HZ = 2
+
+/* §0 原則 4: 中身の描画が例外で落ちても非常停止は残って押せる。
+   ヘッダをバウンダリの外に置き、本文だけを隔離する。 */
+class BodyErrorBoundary extends Component {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  render() {
+    if (this.state.failed) return <div className="body-error-fallback" role="alert">画面を表示できませんでした。非常停止ボタンは押せます。表示を直すには画面を読み直してください。</div>
+    return this.props.children
+  }
+}
 
 function EstopReleaseBar({ show, onRelease }) {
   return (
@@ -101,6 +113,13 @@ function AppShellInner({ screenName, screenId, children }) {
   const [jogOpen, setJogOpen] = useState(false)
   // A-15: W-6 を開いている間の心拍（スティックに触れていなくても自動ブレーキを切り替えられる）。
   useManualPanelHeartbeat(ros, jogOpen)
+  // 状態が変わったら W-6 は閉じる（心拍も止まり、機体が自動ブレーキを ON に戻す）。
+  const jogModeStateRef = useRef(null)
+  useEffect(() => {
+    const key = `${state?.mode}/${state?.state}`
+    if (jogModeStateRef.current != null && jogModeStateRef.current !== key) setJogOpen(false)
+    jogModeStateRef.current = key
+  }, [state?.mode, state?.state])
   const jogPanelApi = useMemo(() => ({
     isOpen: jogOpen,
     open: () => setJogOpen(true),
@@ -274,6 +293,7 @@ function AppShellInner({ screenName, screenId, children }) {
       <Header
         screenName={screenName}
         mode={mode}
+        stateName={stateName}
         stale={stale}
         zone={zone}
         fault={fault}
@@ -282,8 +302,12 @@ function AppShellInner({ screenName, screenId, children }) {
         onEstopClick={handleEstopClick}
         faultBadgeVisible={w1Active && estopDismissed}
         onFaultBadgeClick={() => setEstopDismissed(false)}
-        recentFaultText={recentFaultText(latestRecord(faultRecords))}
+        recentFaultText={(()=>{
+          const rec = latestRecord(faultRecords)
+          return rec && isWithinRecentWindow(rec, Math.floor(Date.now()/1000)) ? recentFaultText(rec) : null
+        })()}
         onRecentFaultClick={() => setHistoryOpen(true)}
+        autoBrakeOff={state?.auto_brake === false}
       />
       {/* Screens (WP-UI-02+) read mode/state/stale themselves via
           useSystemState() -- see ros/useSystemState.js -- rather than
@@ -304,10 +328,13 @@ function AppShellInner({ screenName, screenId, children }) {
             </div>
           )}
           <main id="body">
-            {children}
+            <BodyErrorBoundary>{children}</BodyErrorBoundary>
           </main>
         </JogPanelContext.Provider>
       </ConfirmWindowContext.Provider>
+      {isAutonomousRun(mode, stateName) && (
+        <div className="autonomous-frame" data-testid="autonomous-frame" aria-hidden="true" />
+      )}
       <Windows
         ros={ros}
         screenId={screenId}

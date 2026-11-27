@@ -13,11 +13,12 @@ test('SG-A12: PAUSE＋presence_lost で W-1 に再開確認が出る（フォル
   await expect(win).toBeVisible()
   await expect(win).toContainText('操作端末が離れたため一時停止しました')
   // フォルトが無いので最初から「再開しますか」の形（FOLLOW は yes_no）。
-  await expect(win.getByRole('button', { name: 'はい' })).toBeVisible()
-  await expect(win.getByRole('button', { name: 'いいえ' })).toBeVisible()
-  await win.getByRole('button', { name: 'はい' }).click()
+  await expect(win.getByRole('button', { name: '確認' })).toBeVisible()
+  await expect(win.getByRole('button', { name: 'はい' })).toHaveCount(0)
+  await expect(win.getByRole('button', { name: 'いいえ' })).toHaveCount(0)
+  await win.getByRole('button', { name: '確認' }).click()
   const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
-  expect(calls.map((c) => c.trigger)).toContain('ui.resume_yes')
+  expect(calls.map((c) => c.trigger)).toContain('ui.resume_ack')
 })
 
 test('SG-A12: 再読み込み後も W-1 が出る（状態由来・effect に頼らない）', async ({ page }) => {
@@ -28,12 +29,13 @@ test('SG-A12: 再読み込み後も W-1 が出る（状態由来・effect に頼
   await expect(page.locator('.win.fault.show')).toContainText('操作端末が離れたため一時停止しました')
 })
 
-test('SG-A12: PREP/PAUSE でも「はい／いいえ」が出る（attributes の PREP は yes_no）', async ({ page }) => {
+test('SG-A12: PREP/PAUSE でも「確認」だけ（D48）', async ({ page }) => {
   await gotoWithState(page, { mode: 'PREP', state: 'PAUSE', pause_reason: 'presence_lost' })
   const win = page.locator('.win.fault.show')
   await expect(win).toBeVisible()
-  await expect(win.getByRole('button', { name: 'はい' })).toBeVisible()
-  await expect(win.getByRole('button', { name: 'いいえ' })).toBeVisible()
+  await expect(win.getByRole('button', { name: '確認' })).toBeVisible()
+  await expect(win.getByRole('button', { name: 'はい' })).toHaveCount(0)
+  await expect(win.getByRole('button', { name: 'いいえ' })).toHaveCount(0)
 })
 
 test('SG-A12: MANUAL/PAUSE は「確認」1 択（ack_only）', async ({ page }) => {

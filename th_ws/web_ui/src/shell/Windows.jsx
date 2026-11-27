@@ -33,7 +33,7 @@
 // one Fragment.
 import { useEffect } from 'react'
 import { resumeChoices } from './limits.js'
-import { faultLabel } from '../i18n/faults.js'
+import { faultLabel, faultShortLabel } from '../i18n/faults.js'
 import { reasonLabel } from '../i18n/reasons.js'
 import { modeLabel } from '../i18n/modes.js'
 import {
@@ -46,6 +46,7 @@ import JogConsole from '../parts/JogConsole.jsx'
 import { isInZoneScreen } from '../screens/screenZone.js'
 import ArmedButton from '../parts/ArmedButton.jsx'
 import GuideBanner from './GuideBanner.jsx'
+import WindowShell from './WindowShell.jsx'
 import FaultHistoryList from '../parts/FaultHistoryList.jsx'
 import { latestResolved, recordsSince, resolvedSummary } from '../ros/faultHistoryState.js'
 import {
@@ -54,6 +55,7 @@ import {
   WIN_SAVE_TITLE, WIN_SAVE_BODY, WIN_SAVE_YES, WIN_SAVE_TITLE_MAP, WIN_SAVE_TITLE_BOTH, WIN_SAVE_BODY_MAP, WIN_SAVE_NO_IDLE, WIN_SAVE_NO_ARMED,
   WIN_ESTOP_SYSTEM_TITLE, WIN_ESTOP_SYSTEM_BODY, WIN_ESTOP_SYSTEM_HINT, WIN_ESTOP_SYSTEM_HINT_RESUMABLE,
   WIN_ESTOP_TITLE, WIN_ESTOP_BODY, WIN_ESTOP_HINT, WIN_FAULT_TITLE, WIN_FAULT_HINT,
+  WIN_RESOLVED_LABEL, WIN_RELEASED_LABEL, WIN_ESTOP_RESOLVED_TITLE, WIN_FAULT_RESOLVED_TITLE,
   WIN_PRESENCE_TITLE, WIN_PRESENCE_BODY, WIN_PREP_PAUSE_TITLE, WIN_PREP_PAUSE_BODY,
   WIN_CARRY_TITLE, WIN_CARRY_BODY, WIN_CARRY_HINT, WIN_CARRY_RELEASED,
   WIN_CARRY_RESUME, WIN_CARRY_DISMISS, WIN_CARRY_ESTOP_DISABLED, WIN_CARRY_ESP32_LOST,
@@ -118,11 +120,12 @@ export default function Windows({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [w1IsEstop, stateName, faultActive, pauseReason, setEstopDismissed])
 
-  const w1Open = w1Active && !estopDismissed
+  // §4.1: W-1 は隠せない（旧「非表示」は廃止）。dismissed フラグは残すが表示を止めない。
+  const w1Open = w1Active
   const carryOpen = mode === 'CARRY'
   // W-4（保存確認。1b-7 SG-B3）はシェル所有。W-1／W-2 と同じ modal 扱い。
   const saveOpen = !!saveAsk
-  const hasModal = w1Open || carryOpen || confirmOpen || saveOpen || historyOpen
+  const hasModal = !!w1Open || carryOpen || confirmOpen || saveOpen || historyOpen
 
   // C-09f (ESTOP) / C-04,C-05 (fault-caused PAUSE): once the underlying
   // condition clears, the window becomes a resume confirmation instead of a
@@ -150,11 +153,6 @@ export default function Windows({
   const estopCanResumePrev = w1IsEstop && !estopUi && !estopHw
     && !faultActive && fault?.severity !== 'CRITICAL'
     && !_ESTOP_PREV_NONRESUMABLE.has(prevMode ?? '')
-  const w1Resume = w1IsEstop
-    ? (estopCanResumePrev ? 'yes_no' : 'ack_only')
-    : resumeChoices(mode, attributes)
-  const resumeYesLabel = estopCanResumePrev ? WIN_ESTOP_RESUME_PREV : WIN_RESUME_YES
-  const resumeNoLabel = estopCanResumePrev ? WIN_ESTOP_TO_MENU : WIN_RESUME_NO
 
   // C-11/C-12: CARRY only offers a way out once the physical button is
   // released.
@@ -180,11 +178,14 @@ export default function Windows({
 
         {w1Active && (
           <div className={`win fault ${w1Open ? 'show' : ''} ${w1Resolved ? 'resolved' : ''}`}>
-            <header>
-              {w1IsFaultEstop ? WIN_ESTOP_SYSTEM_TITLE
+            <header data-testid="w1-title">
+              {w1Resolved && w1IsEstop ? WIN_ESTOP_RESOLVED_TITLE
+                : w1Resolved && !w1IsPresencePause && !w1IsPrepPause && !w1IsEstop ? (fault?.fault_type ? `${faultShortLabel(fault.fault_type)}（${WIN_RESOLVED_LABEL.charAt(0)}）` : WIN_FAULT_RESOLVED_TITLE)
+                : w1IsFaultEstop ? WIN_ESTOP_SYSTEM_TITLE
                 : w1IsEstop ? WIN_ESTOP_TITLE
                 : w1IsPresencePause ? WIN_PRESENCE_TITLE
-                : w1IsPrepPause ? WIN_PREP_PAUSE_TITLE : WIN_FAULT_TITLE}
+                : w1IsPrepPause ? WIN_PREP_PAUSE_TITLE
+                : (fault?.fault_type ? faultShortLabel(fault.fault_type) : WIN_FAULT_TITLE)}
             </header>
             <div className="bodyw">
               <p>
@@ -204,6 +205,9 @@ export default function Windows({
               {w1IsFaultEstop && fault?.fault_type && (
                 <p className="hint mt">{faultLabel(fault.fault_type)}</p>
               )}
+              {w1Resolved && (
+                <p className="pill ok mt" data-testid="w1-resolved-label">{w1IsEstop ? WIN_RELEASED_LABEL : WIN_RESOLVED_LABEL}</p>
+              )}
               {!w1Resolved && (
                 <p className="hint mt">
                   {w1IsFaultEstop
@@ -214,43 +218,26 @@ export default function Windows({
               )}
             </div>
             <footer>
-              {w1Resolved && w1Resume === 'ack_only' && (
-                <button type="button" className="btn primary" onClick={() => fire('ui.resume_ack')}>
+              {w1Resolved && (
+                <button type="button" className="btn primary" data-testid="w1-confirm"
+                  onClick={() => fire(w1IsEstop && estopCanResumePrev ? 'ui.resume_yes' : 'ui.resume_ack')}>
                   {WIN_RESUME_ACK}
                 </button>
               )}
-              {w1Resolved && w1Resume === 'yes_no' && (
-                <>
-                  <button type="button" className="btn" onClick={() => fire('ui.resume_no')}>
-                    {resumeNoLabel}
-                  </button>
-                  <button type="button" className="btn primary" onClick={() => fire('ui.resume_yes')}>
-                    {resumeYesLabel}
-                  </button>
-                </>
-              )}
-              <button type="button" className="btn" onClick={() => setEstopDismissed(true)}>
-                {WIN_HIDE_LABEL}
-              </button>
             </footer>
           </div>
         )}
 
         {historyOpen && (
-          <div className="win confirm fh-win show" data-testid="fh-window">
-            <header>{FH_WIN_TITLE}</header>
-            <div className="bodyw"><FaultHistoryList records={faultRecords} /></div>
-            <footer>
-              <button type="button" className="btn primary" data-testid="fh-close" onClick={onHistoryClose}>
-                {FH_WIN_CLOSE}
-              </button>
-            </footer>
-          </div>
+          <WindowShell className="confirm fh-win" testId="fh-window" title={FH_WIN_TITLE}
+            footer={<button type="button" className="btn primary" data-testid="fh-close" onClick={onHistoryClose}>{FH_WIN_CLOSE}</button>}>
+            <FaultHistoryList records={faultRecords} />
+          </WindowShell>
         )}
 
         {carryOpen && (
-          <div className="win carry show">
-            <header>{WIN_CARRY_TITLE}</header>
+          <div className="win carry show" data-testid="w2-window">
+            <header data-testid="w2-title">{WIN_CARRY_TITLE}</header>
             <div className="bodyw">
               <p>{WIN_CARRY_BODY}</p>
               <p className="hint mt">{WIN_CARRY_HINT}</p>
@@ -273,12 +260,9 @@ export default function Windows({
               )}
               {carryHwReleased && (
                 <div className="mt">
-                  <div className="row"><span className="pill ok">{WIN_CARRY_RELEASED}</span></div>
-                  <button type="button" className="btn primary wide mt" onClick={() => fire('ui.carry_resume')}>
-                    {WIN_CARRY_RESUME}
-                  </button>
-                  <button type="button" className="btn wide mt" onClick={() => fire('ui.finish')}>
-                    {WIN_CARRY_DISMISS}
+                  <div className="row"><span className="pill ok" data-testid="w2-released">{WIN_RELEASED_LABEL}</span></div>
+                  <button type="button" className="btn primary wide mt" data-testid="w2-confirm" onClick={() => fire('ui.carry_resume')}>
+                    {WIN_RESUME_ACK}
                   </button>
                 </div>
               )}
@@ -298,31 +282,19 @@ export default function Windows({
             画面の portal ではなくシェルが直接描く（「終了」後は画面が S-01 に
             変わっているため）。 */}
         {saveOpen && (
-          <div className="win confirm show" data-testid="w4-save-ask">
-            <header>
+          <WindowShell className="confirm" testId="w4-save-ask"
+            title={saveAsk.venueMap ? (saveAsk.route ? WIN_SAVE_TITLE_BOTH : WIN_SAVE_TITLE_MAP) : WIN_SAVE_TITLE}
+            footer={<>
+              <button type="button" className="btn primary" data-testid="w4-save-yes" disabled={saveBusy} onClick={onSaveYes}>{WIN_SAVE_YES}</button>
+              <ArmedButton idleLabel={WIN_SAVE_NO_IDLE} armedLabel={WIN_SAVE_NO_ARMED} onConfirm={onSaveNo} />
+            </>}>
+            <p data-testid="w4-save-body">
               {saveAsk.venueMap
-                ? (saveAsk.route ? WIN_SAVE_TITLE_BOTH : WIN_SAVE_TITLE_MAP)
-                : WIN_SAVE_TITLE}
-            </header>
-            <div className="bodyw">
-              <p data-testid="w4-save-body">
-                {saveAsk.venueMap
-                  ? WIN_SAVE_BODY_MAP({ routeId: saveAsk.routeId, route: saveAsk.route })
-                  : WIN_SAVE_BODY(saveAsk.routeId)}
-              </p>
-              {saveError && <p className="note" role="alert" data-testid="w4-save-error">{saveError}</p>}
-            </div>
-            <footer>
-              <button type="button" className="btn primary" data-testid="w4-save-yes" disabled={saveBusy} onClick={onSaveYes}>
-                {WIN_SAVE_YES}
-              </button>
-              <ArmedButton
-                idleLabel={WIN_SAVE_NO_IDLE}
-                armedLabel={WIN_SAVE_NO_ARMED}
-                onConfirm={onSaveNo}
-              />
-            </footer>
-          </div>
+                ? WIN_SAVE_BODY_MAP({ routeId: saveAsk.routeId, route: saveAsk.route })
+                : WIN_SAVE_BODY(saveAsk.routeId)}
+            </p>
+            {saveError && <p className="note" role="alert" data-testid="w4-save-error">{saveError}</p>}
+          </WindowShell>
         )}
 
         {/* W-5 (route-blocked): opened by screens (WP-UI-03+) */}
@@ -377,14 +349,16 @@ export default function Windows({
         </div>
         {/* A-15: 表示を切替にする（Spec-webui §3.5 ジョグ介入）。W-6 を開いている間は
             スティックに触れていなくても押せる（開いている間の心拍は AppShell の
-            useManualPanelHeartbeat。機体が最終判断。拒否の理由は出す）。ON→OFF は W-4 で確認する。
+            useManualPanelHeartbeat。機体が最終判断。拒否の理由は出す）。ON→OFF はロックの2回押し。
             閉じる・状態が変わる・心拍の途絶で機体が ON に戻す。 */}
         <div className="jw-s" data-testid="w6-auto-brake-ctl">
           <AutoBrakeToggle
             brake={autoBrake ?? null}
             canToggle={autoBrakeCanToggle && jogOpen}
             prefix="w6"
-            confirmWindow={confirmWindow}
+            statusTestId="w6-auto-brake-toggle-state"
+            mode={mode}
+            stateName={stateName}
           />
         </div>
         <JogConsole ros={ros} disabled={!jogOpen} keyboard inZone={isInZoneScreen(screenId)} />

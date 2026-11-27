@@ -11,6 +11,10 @@
 // production load).
 import { useSystemState } from './ros/useSystemState.js'
 import OperationCard from './shell/OperationCard.jsx'
+import HelpTip from './parts/HelpTip.jsx'
+import PersonDetectToggle from './parts/PersonDetectToggle.jsx'
+import ReasonButton from './parts/ReasonButton.jsx'
+import StopRunToggle from './parts/StopRunToggle.jsx'
 import attributes from './generated/attributes.json'
 import { useJogPanel } from './shell/jogPanel.js'
 
@@ -24,6 +28,10 @@ export default function OperationCardHarness() {
 
   return (
     <div data-testid="opcard-harness">
+      <HelpTip helpKey="finish">
+        <button type="button" className="btn exit" data-testid="harness-finish">終了</button>
+      </HelpTip>
+      <PersonDetectToggle enabled={false} testId="harness-tracker" />
       <button type="button" className="btn sm" data-testid="harness-open-jog" onClick={() => jogPanel.open()}>
         W-6
       </button>
@@ -36,6 +44,12 @@ export default function OperationCardHarness() {
         onTrigger={() => {}}
         onManualClick={() => {}}
       />
+      <div style={{ marginTop: 140 }}>
+        <ReasonButton data-testid="harness-reason-btn" reasonTestId="harness-reason" reason="場外では手動は使えません" disabled>
+          手動
+        </ReasonButton>
+      </div>
+      <StopRunToggle testId="harness-stoprun" stopEnabled runEnabled />
     </div>
   )
 }

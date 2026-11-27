@@ -4,7 +4,7 @@
 // U-1). Never folds the screen name, mode, or the estop button — only the
 // project name / zone pill / screen-name tail may shrink (§2.5, U-10).
 import { LOGO_DATA_URI } from './logo.js'
-import { modeLabel, MODE_UNKNOWN_LABEL } from '../i18n/modes.js'
+import { stateLabel, UNKNOWN_STATE_LABEL, stateChipTone, AUTO_BRAKE_OFF_LABEL, ZONE_LIMIT_LABEL } from '../i18n/states.js'
 import { faultLabel } from '../i18n/faults.js'
 import { headerTone } from './limits.js'
 import {
@@ -15,6 +15,7 @@ import {
 export default function Header({
   screenName,
   mode,
+  stateName,
   stale,
   zone,
   fault,
@@ -25,9 +26,14 @@ export default function Header({
   onFaultBadgeClick,
   recentFaultText,
   onRecentFaultClick,
+  autoBrakeOff = false,
 }) {
-  const modeText = stale ? MODE_UNKNOWN_LABEL : modeLabel(mode)
-  const zoneLabels = zone ? ZONE_LABELS[zone] : null
+  // §1: the header reports the current state, never merely the mode.  A
+  // mode with no meaningful state deliberately has no pill.
+  const stateText = stale ? UNKNOWN_STATE_LABEL : (stateName && stateName !== 'NONE'
+    ? stateLabel(stateName) : '')
+  const chipTone = stale ? 'warn' : (mode === 'ESTOP' || mode === 'CARRY' ? 'estop' : stateChipTone(stateName))
+  const showZone = zone === 'IN'
 
   // C-2 (DetailedDesign-wp1.md WP-CARRY-01 §4.3): in CARRY, C-06r rejects
   // every UI estop press server-side, so `.engaged` (the look a *genuinely
@@ -41,7 +47,7 @@ export default function Header({
   // Priority: link loss > estop > a recoverable fault (WP-UI-02 generalizes
   // W-1 to fault-caused PAUSE; the header follows the same priority so it
   // never claims normal while a fault window is actually open) > normal.
-  let faultText = CONNECTED_LABEL
+  let faultText = ''
   let faultDotClass = ''
   if (stale) {
     faultText = DISCONNECTED_LABEL
@@ -61,11 +67,8 @@ export default function Header({
         <div className="proj">MIRS2602-<b>{PROJECT_NAME_JA}</b></div>
         <div className="spacer" />
         <div id="screenName">{screenName ?? ''}</div>
-        {zoneLabels && (
-          <div id="zonePill" className="show">
-            <span className="z-long">{zoneLabels.long}</span>
-            <span className="z-short">{zoneLabels.short}</span>
-          </div>
+        {showZone && (
+          <div id="zonePill" className="show">{ZONE_LIMIT_LABEL}</div>
         )}
         {devMode && (
           <div id="devPill" className="show">
@@ -73,18 +76,21 @@ export default function Header({
             <span className="d-short">{DEV_MODE_LABEL.short}</span>
           </div>
         )}
-        <div id="modePill" className={stale ? 'unknown' : ''}>{modeText}</div>
+        {stateText && <div id="modePill" data-tone={chipTone} className={stale ? 'unknown' : ''}>{stateText}</div>}
       </div>
       <div className="row2">
         <div id="faultBox" title={AP_SPOF_NOTE}>
-          <span id="faultDot" className={faultDotClass} />
-          <span id="faultTx">{faultText}</span>
+          {faultText && <><span id="faultDot" className={faultDotClass} />
+            <span id="faultTx">{faultText}</span></>}
           {/* 解消した直近の異常を残す（Spec-webui.md §1）。押すと履歴の一覧。
               継続中のフォルトは上の faultText が優先で、これは出さない。 */}
           {recentFaultText && !stale && !fault?.active && (
             <button type="button" id="recentFault" data-testid="recent-fault" onClick={onRecentFaultClick}>
               {recentFaultText}
             </button>
+          )}
+          {autoBrakeOff && !stale && mode !== 'ESTOP' && mode !== 'CARRY' && (
+            <span id="autoBrakeOff" role="alert">{AUTO_BRAKE_OFF_LABEL}</span>
           )}
           <span className="spacer grow" />
           {faultBadgeVisible && (
@@ -93,13 +99,15 @@ export default function Header({
             </button>
           )}
         </div>
-        <button
-          id="estopBtn"
-          className={estopClass}
-          onClick={onEstopClick}
-        >
-          {ESTOP_BUTTON_LABEL}
-        </button>
+        <div className="estop-plate">
+          <button
+            id="estopBtn"
+            className={estopClass}
+            onClick={onEstopClick}
+          >
+            {ESTOP_BUTTON_LABEL}
+          </button>
+        </div>
       </div>
     </header>
   )

@@ -19,26 +19,28 @@ test('UI 起因・解除済み・押下前 MANUAL の ESTOP は 2 択を出し�
 
   const win = page.locator('.win.fault.show')
   await expect(win).toBeVisible()
-  const back = page.getByRole('button', { name: '元のモードに戻る' })
-  const menu = page.getByRole('button', { name: 'メインメニューへ' })
+  // D48: 2択は廃止。「確認」だけ。復帰可能なら ui.resume_yes (SM-3.1.1-11)。
+  await expect(page.getByRole('button', { name: '元のモードに戻る' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'メインメニューへ' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '非表示' })).toHaveCount(0)
+  const back = page.getByTestId('w1-confirm')
   await expect(back).toBeVisible()
-  await expect(menu).toBeVisible()
 
   await back.click()
   const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
   expect(calls.map((c) => c.trigger)).toContain('ui.resume_yes')
 })
 
-test('メインメニューへ は ui.resume_no を送る', async ({ page }) => {
+test('押下前 TEACH_MANUAL の ESTOP の確認は ui.resume_yes を送る（D48）', async ({ page }) => {
   await gotoWithState(page, {
     mode: 'ESTOP', prev_mode: 'TEACH_MANUAL', estop_from_ui: true, estop_ui: false, estop_hw: false,
   })
-  await page.getByRole('button', { name: 'メインメニューへ' }).click()
+  await page.getByTestId('w1-confirm').click()
   const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
-  expect(calls.map((c) => c.trigger)).toContain('ui.resume_no')
+  expect(calls.map((c) => c.trigger)).toContain('ui.resume_yes')
 })
 
-test('WS-9O: fault 起因の ESTOP もフォルトが消えていれば「戻る」を出し、文言はシステム側', async ({ page }) => {
+test('WS-9O: fault 起因の ESTOP もフォルトが消えていれば「確認」で ui.resume_yes、文言はシステム側', async ({ page }) => {
   // fault は一瞬で消えるので active:false・severity 空でも estop_from_ui=false のまま。
   await gotoWithState(page, {
     mode: 'ESTOP', prev_mode: 'MANUAL', estop_from_ui: false, estop_ui: false, estop_hw: false,
@@ -46,17 +48,17 @@ test('WS-9O: fault 起因の ESTOP もフォルトが消えていれば「戻る
   await page.evaluate(() => window.__thSetTestFault({ active: false, severity: '', fault_type: 'DRIVE_RUNAWAY' }))
 
   // 文言は起因で出し分ける（ボタンが出ても「非常停止ボタンが押されました」にはしない）。
-  await expect(page.locator('.win.fault.show')).toContainText('安全のため停止しました')
-  const back = page.getByRole('button', { name: '元のモードに戻る' })
+  await expect(page.locator('.win.fault.show')).toContainText('安全監視が異常を検知し')
+  await expect(page.getByRole('button', { name: '元のモードに戻る' })).toHaveCount(0)
+  const back = page.getByTestId('w1-confirm')
   await expect(back).toBeVisible()
-  await expect(page.getByRole('button', { name: 'メインメニューへ' })).toBeVisible()
 
   await back.click()
   const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
   expect(calls.map((c) => c.trigger)).toContain('ui.resume_yes')
 })
 
-test('WS-9O: fault 起因でも押下前が IDLE なら 2 択を出さず「確認」だけ', async ({ page }) => {
+test('WS-9O: fault 起因でも押下前が IDLE なら「確認」で ui.resume_ack', async ({ page }) => {
   await gotoWithState(page, {
     mode: 'ESTOP', prev_mode: 'IDLE', estop_from_ui: false, estop_ui: false, estop_hw: false,
   })
@@ -78,7 +80,7 @@ test('重大フォルトが継続中の ESTOP は確認ボタンも出さない'
   await expect(page.locator('#overlay').getByRole('button', { name: '確認' })).toHaveCount(0)
 })
 
-test('押下前が IDLE（メニューで押した）の UI-ESTOP は 2 択を出さない', async ({ page }) => {
+test('押下前が IDLE（メニューで押した）の UI-ESTOP の確認は ui.resume_ack', async ({ page }) => {
   await gotoWithState(page, {
     mode: 'ESTOP', prev_mode: 'IDLE', estop_from_ui: true, estop_ui: false, estop_hw: false,
   })

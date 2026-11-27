@@ -107,6 +107,16 @@ export function IconSave() {
   )
 }
 
+// 鍵（自動ブレーキのロック。枠線）。絵文字は使わない（目標 G2）。
+export function IconLock() {
+  return (
+    <Ic>
+      <rect x="3.5" y="7.5" width="9" height="6.5" {...STROKE} />
+      <path d="M5.5 7.5V5.5a2.5 2.5 0 0 1 5 0v2" {...STROKE} />
+    </Ic>
+  )
+}
+
 // 終了: ✕（枠線・灰）。
 export function IconClose() {
   return (
