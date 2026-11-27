@@ -905,9 +905,32 @@ export const S30_STATUS_WAITING = 'データ待ち…'
 // SG-C13: IMU の校正状態・LiDAR のライブスキャンと死角マスク（Spec-checks.md §2.4 #3・#4）
 export const S30_IMU_CALIB_TITLE = '校正状態（3 が校正済み）'
 export const S30_IMU_CALIB_LABELS = { sys: 'sys', gyro: 'gyro', accel: 'accel', mag: 'mag' }
-export const S30_LIDAR_VIEW_TITLE = '生スキャン（灰色の扇＝死角マスク、赤い点＝マスクの内側）'
+export const S30_LIDAR_VIEW_TITLE = '生スキャン（灰色の扇＝死角マスク、濃い点＝マスクの内側）'
 export const S30_LIDAR_NO_SCAN = 'スキャン待ち…'
 export const S30_LIDAR_MASK_UNKNOWN = '死角マスクを取得できませんでした'
+
+
+// ---- UIR-P7（Spec-webui §3.12・§3.13・§3.14。モックアップ check/calib と同じ語）----
+export const S30_BACK = '戻る'
+export const S30_CONFIRM = '確かめる'
+export const S30_ABORT2 = 'やめる'
+export const S30_GOTO_REPAIR = '故障診断へ'
+export const S30_COUNTS_TITLE = '結果の数'
+// 選んだ項目の手順文（Spec-checks.md §2.4。モックアップ CHECK_STEPS と同じ文）。
+export const S30_STEPS = {
+  ESTOP: ['「確かめる」を押す', '非常停止ボタンを押す', '画面の「押す」に印が付いたら、実物と見比べる', 'ボタンを回して戻す', '「戻す」に印が付いたら、実物と見比べる'],
+  MOTOR: ['機体のまわりを空けて「確かめる」を押す', '前・後・左・右を 1 つずつ押し続ける（押している間だけ動く）', '機体が動いたかを目で見る', '4 方向とも指令と実測が合えば印が付く'],
+  IMU: ['機体を動かさずに「確かめる」を押す', '止まったまま待つ（ジャイロのずれを測る）', 'だめなら IMU の校正へ'],
+  LIDAR: ['「確かめる」を押す', '図の柱の位置と実物の柱を見比べる', '死角がずれていれば LiDAR の死角の校正へ'],
+}
+// いまの段（0始まり）。実行中だけ 1 へ進み、押下・解除の進みで動く。
+export function s30StepIndex(item, { running, sawPress, sawRelease, answered }) {
+  if (item === 'ESTOP' && running) return !sawPress ? 1 : !answered?.press ? 2 : !sawRelease ? 3 : 4
+  if (!running) return 0
+  return 1
+}
+export const S31_ABORT = 'やめる'
+export const S31_TO_CHECK = '始業点検へ戻る'
 
 // ---------------------------------------------------------------- S-31 (故障診断) ----
 export const S31_TITLE = '故障診断'
