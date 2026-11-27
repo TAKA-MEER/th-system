@@ -1,6 +1,7 @@
 // e2e/s30-opcheck.spec.js — S-30 始業点検 (WP-UI-08). Binds the production
 // send paths, not just source text:
-//   - selecting an item sends ui.check_item (/system/trigger)
+//   - 一覧で選んで「確かめる」を押すと ui.check_item が送られる
+//     （一覧の行を押すだけでは始めない。実行中は別の行を押すと切り替わる）
 //   - ESTOP's はい/いいえ send /opcheck/answer
 //   - MOTOR's hold buttons repeat /opcheck/motor_hold while held and send
 //     NONE exactly once on every kind of release (pointerup, pointercancel,
@@ -50,11 +51,14 @@ async function motorHoldPublishes(page) {
   return page.evaluate(() => window.__thMotorHoldPublishes ?? [])
 }
 
-test('項目を選ぶと ui.check_item が実際に送られる', async ({ page }) => {
+test('項目を選んで「確かめる」を押すと ui.check_item が実際に送られる', async ({ page }) => {
   await stubTrigger(page, { 'ui.check_item': { accepted: true } })
   await gotoS30(page, { state: { state: 'LIST' } })
 
   await page.getByTestId('s30-item-MOTOR').click()
+  // 一覧の行を押すだけでは始めない（手順を見て「確かめる」で始める）。
+  expect((await page.evaluate(() => window.__thTriggerCalls ?? [])).filter((c) => c.trigger !== 'ui.screen')).toEqual([])
+  await page.getByTestId('s30-confirm').click()
 
   const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
   expect(calls.some((c) => c.trigger === 'ui.check_item' && c.argJson?.item === 'MOTOR')).toBeTruthy()
@@ -97,9 +101,10 @@ test('ESTOP: いいえ で ok:false が送られる', async ({ page }) => {
   expect(calls).toContainEqual({ item: 'ESTOP', ok: false })
 })
 
-test('LIST 状態では MOTOR のホールドボタンは存在しない（ゲート: 選択済み項目が無い）', async ({ page }) => {
+test('LIST では MOTOR のホールドボタンは押せない（ゲート: 実行中ではない）', async ({ page }) => {
   await gotoS30(page, { state: { state: 'LIST' } })
-  await expect(page.getByTestId('s30-motor-forward')).toHaveCount(0)
+  await page.getByTestId('s30-item-MOTOR').click()
+  await expect(page.getByTestId('s30-motor-forward')).toBeDisabled()
 })
 
 // brief-a13（SG-A13）: 4 方向の済み／未は /opcheck/status の detail（done=...）から出す。
@@ -265,9 +270,10 @@ test('実行中の項目そのものを押しても何も送らない', async ({
   expect(calls.some((c) => c.trigger === 'ui.check_item')).toBeFalsy()
 })
 
-test('一覧（LIST）では「中断」を出さない', async ({ page }) => {
+test('一覧（LIST）では「やめる」は押せない（位置は保つ。実行中だけ）', async ({ page }) => {
   await gotoS30(page, { state: { state: 'LIST' } })
-  await expect(page.getByTestId('s30-abort')).toHaveCount(0)
+  await expect(page.getByTestId('s30-abort')).toBeVisible()
+  await expect(page.getByTestId('s30-abort')).toBeDisabled()
 })
 
 // ---- SG-C13: IMU の校正状態・LiDAR のライブスキャンと死角マスク（Spec-checks.md §2.4 #3・#4）----
@@ -296,7 +302,7 @@ test('IMU: 校正状態がまだ届かないときはデータ待ち', async ({ 
 const SCAN = { angle_min: 0, angle_increment: Math.PI / 2, range_min: 0.1, range_max: 10,
   ranges: [1.0, 1.0, null, null] }
 
-test('LIDAR: 生スキャンが出て、機体の死角マスク（registry の値）が扇で重なる。マスク内の点は赤', async ({ page }) => {
+test('LIDAR: 生スキャンが出て、機体の死角マスク（registry の値）が扇で重なる。マスク内の点は濃い色', async ({ page }) => {
   await gotoS30(page, {
     state: { state: 'RUNNING_CHECK' }, opcheckStatus: RUNNING('LIDAR'), scan: SCAN,
     tunables: { lidar_filter: { values: { blind_angle_ranges: [80, 100, 170, 190] } } },
@@ -304,8 +310,8 @@ test('LIDAR: 生スキャンが出て、機体の死角マスク（registry の�
   await page.getByTestId('s30-item-LIDAR').click()
   await expect(page.getByTestId('s30-lidar-view')).toBeVisible()
   await expect(page.getByTestId('s30-lidar-mask-wedge')).toHaveCount(2)
-  // 90° の点だけがマスクの内側（赤）、0° の点は外側
-  await expect(page.locator('[data-testid="s30-lidar-view"] circle[fill="crimson"]')).toHaveCount(1)
+  // 90° の点だけがマスクの内側（濃い色）、0° の点は外側
+  await expect(page.locator('[data-testid="s30-lidar-view"] circle[fill="#333a48"]')).toHaveCount(1)
 })
 
 test('LIDAR: マスクの値が変われば扇も変わる（画面に直書きしていない）', async ({ page }) => {
@@ -315,7 +321,7 @@ test('LIDAR: マスクの値が変われば扇も変わる（画面に直書き�
   })
   await page.getByTestId('s30-item-LIDAR').click()
   await expect(page.getByTestId('s30-lidar-mask-wedge')).toHaveCount(1)
-  await expect(page.locator('[data-testid="s30-lidar-view"] circle[fill="crimson"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="s30-lidar-view"] circle[fill="#333a48"]')).toHaveCount(0)
 })
 
 test('LIDAR: マスクを取得できないときは扇を出さず、取得できない旨を出す', async ({ page }) => {
@@ -352,14 +358,14 @@ test('結果の保持: IMU WARN と LiDAR NG は LIST に戻っても「戻る�
   await expect(panel).toBeVisible()
   await expect(panel).toContainText('校正が必要です')
   await expect(panel.getByTestId('s30-goto-calib')).toBeVisible()
-  await expect(panel.locator('.pill')).toHaveText('要確認')
+  await expect(panel).toContainText('要確認')
 
   await page.getByTestId('s30-held-back').click()
   await expect(panel).toHaveCount(0)
 
   await finishRun(page, 'LIDAR', 'NG', 'blind_mismatch', 'lidar_calib')
   await expect(panel).toBeVisible()
-  await expect(panel.locator('.pill')).toHaveText('NG')
+  await expect(panel).toContainText('NG')
   await expect(panel).toContainText('死角マスクの設定と実際の死角がずれています')
   await expect(panel.getByTestId('s30-goto-calib')).toBeVisible()
   // 放置しても機体へは何も送らない（ui.check_item / ui.abort を余計に出さない）
@@ -416,9 +422,9 @@ test('判定の根拠: LiDAR NG は測った値と基準が並び、基準を外
   await expect(panel.getByTestId('s30-basis-blind_offset_deg')).toContainText('測れず')
   // 強調は基準を外れた項目だけ（判定と同じ NG のトーンの pill）
   await expect(gap).toHaveAttribute('data-ok', 'false')
-  await expect(gap.locator('.pill.ng')).toHaveCount(1)
+  await expect(gap).toHaveClass(/out/)
   await expect(panel.locator('tr[data-ok="false"]')).toHaveCount(1)
-  await expect(panel.locator('[data-testid="s30-basis"] .pill')).toHaveCount(1)
+  await expect(panel.locator('[data-testid="s30-basis"] tr.out')).toHaveCount(1)
   // 判定の後に UNKNOWN が流れ続けても、時間が経っても残る
   await page.waitForTimeout(500)
   await expect(gap).toBeVisible()
@@ -436,8 +442,8 @@ test('判定の根拠: IMU WARN は校正状態(判定時点の値)が残り、�
   await expect(panel.getByTestId('s30-basis-imu_bias')).toContainText('0.000 rad/s')
   const bad = panel.locator('tr[data-ok="false"]')
   await expect(bad).toHaveCount(2) // accel と mag だけ
-  await expect(panel.getByTestId('s30-basis-calib_accel').locator('.pill.warn')).toHaveCount(1)
-  await expect(panel.getByTestId('s30-basis-calib_sys').locator('.pill')).toHaveCount(0)
+  await expect(panel.getByTestId('s30-basis-calib_accel')).toHaveClass(/out/)
+  await expect(panel.getByTestId('s30-basis-calib_sys')).not.toHaveClass(/out/)
   await expect(panel.getByTestId('s30-goto-calib')).toBeVisible()
 })
 
@@ -457,5 +463,5 @@ test('判定の根拠: 根拠の無い機体(basis_json なし)は従来どお�
   const panel = page.getByTestId('s30-held-result')
   await expect(panel).toBeVisible()
   await expect(panel.getByTestId('s30-basis')).toHaveCount(0)
-  await expect(panel.locator('.pill')).toHaveText('NG')
+  await expect(panel).toContainText('NG')
 })

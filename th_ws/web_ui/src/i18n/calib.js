@@ -30,7 +30,7 @@ export const S40_COMMITTED = '補正値を確定しました。'
 
 // ── ウィザード ────────────────────────────────────────────
 export const S40_STEP_LABELS = ['案内', '実行・実測', '確認', '検証']
-export function s40StepTitle(n) { return `Step ${n}/4` }
+export function s40StepTitle(n) { return `段 ${n}` }
 
 export function s40GuideText(item, detail) {
   if (item === 'LINEAR') {
@@ -116,7 +116,7 @@ export function s40ReasonLabel(reason) {
 
 
 // ── BLIND（LiDAR 死角）──────────────────────────────────────
-export const S40_BLIND_HINT = 'スキャン上をなぞって、写り込んでいる角度帯を選びます（上が前方）。灰色は登録済み、青が選択中、赤い点は選ぶと消える点です。'
+export const S40_BLIND_HINT = 'スキャン上をなぞって、写り込んでいる角度帯を選びます（上が前方）。灰色は登録済み、濃い色が選択中、濃い点は選ぶと消える点です。'
 export const S40_BLIND_NO_SCAN = 'スキャンが届いていません'
 export const S40_BLIND_RANGES_TITLE = '選んだ範囲'
 export const S40_BLIND_NONE = '（なし。確定するとマスクを全部外します）'
@@ -141,4 +141,29 @@ export const S40_BLIND_PROBLEMS = {
   zero_width: '幅のない区間があります。',
   invalid_format: '選択の形が不正です。',
   no_scan: 'スキャンが届いていないため確認できません。',
+}
+
+// ---- UIR-P7（Spec-webui §3.14。モックアップ calib と同じ語・段の印）----
+export const S40_BACK = '戻る'
+export const S40_QUIT = 'やめる'
+export const S40_NEXT_RUN = '走らせる'
+export const S40_NEXT_START = '始める'
+export const S40_NEXT_CONFIRM = '確定する'
+export const S40_NEXT_DONE = '完了'
+export const S40_HISTORY_TITLE = '履歴'
+export const S40_CLOSE = '閉じる'
+export const S40_TO_CHECK = '始業点検へ'
+// 項目と段で決まる段の印（P2。文字の「Step n/4」にしない）。
+export function s40StepLabels(item) {
+  if (item === 'IMU') return ['案内', '測る', '確定']
+  if (item === 'BLIND') return ['選ぶ', '確かめる', '確定']
+  return ['案内', '実行', '確認', '検証']
+}
+// （項目, 現在の段 1始まり）→ 進むボタンの語（Spec-webui §3.14）。
+// 直進・旋回: 案内＝走らせる／実行＝確定する／確認＝完了。IMU: 案内＝始める／測る＝確定する／確定＝完了。
+// 死角: 選ぶ＝スキャンを表示する／確かめる＝確定する／確定＝完了（機体は動かない）。
+export function s40NextLabel(item, step) {
+  if (step === 1) return item === 'IMU' ? S40_NEXT_START : item === 'BLIND' ? S40_GUIDE_NEXT_BLIND : S40_NEXT_RUN
+  if (step === 2) return S40_NEXT_CONFIRM
+  return S40_NEXT_DONE
 }

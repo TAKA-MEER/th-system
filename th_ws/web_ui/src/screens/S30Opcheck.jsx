@@ -1,40 +1,19 @@
-// screens/S30Opcheck.jsx — S-30, 始業点検 (SCREEN_NAMES.S30 in
-// i18n/screens.js; WP-UI-08 / WP-MAINT-01). Spec-webui.md §3.12,
-// DetailedDesign-maintenance.md §2.
+// screens/S30Opcheck.jsx — S-30, 始業点検 (Spec-webui.md §3.12).
+// 型「手順を進める」（shell/Layouts.jsx の StepsLayout）。
+// 左=一覧（結果の印・時刻・印ごとの数）＋手順の文、右=項目ごとの手順。
+// 下端=左「やめる」（実行中だけ）／右「確かめる」（押しても機体は動かない）。
+// 実行中でも別の項目・「戻る」でやめられる（SM-3.1.2-116/-117）。
+// 非常停止の項目を確かめている間は非常停止の窓を出さない: OPCHECK の
+// RUNNING_CHECK は元々 W-1 の条件（mode=ESTOP / PAUSE）に当たらないので
+// 追加の設定は要らない（物理ボタンの押下は機体側で入力として扱う SM-3.1.2-089）.
 //
-// FSM (th_state/config/transitions.yaml T-OPC-01〜08):
-//   LIST --ui.check_item{item}--> RUNNING_CHECK (effect: start_monitor{item}
-//     -> /system/effect, opcheck_runner starts the item)
-//   RUNNING_CHECK --evt.check_result(check_result_ok)--> LIST (record_result)
-//   RUNNING_CHECK --evt.check_result(ng_and_calibrable)--> LIST (offer_calib)
-//   RUNNING_CHECK --evt.check_result(ng_and_not_calibrable)--> REPAIR
+// FSM (th_state/config/transitions.yaml T-OPC-01〜10):
+//   LIST --ui.check_item--> RUNNING_CHECK (start_monitor)
+//   RUNNING_CHECK --evt.check_result--> LIST (record_result)
+//   RUNNING_CHECK --ui.check_item--> RUNNING_CHECK (abort + start_monitor)
+//   RUNNING_CHECK --ui.abort--> LIST (abort_check)
 //   REPAIR --ui.stop--> LIST
-//   LIST --ui.enter_mode{mode:CALIB}--> CALIB (T-OPC-07; S-40 doesn't exist
-//     yet, so this currently lands on S-01's screenless-mode escape button)
-//   * --fault.recoverable--> LIST (abort_check)
-//
-// Item selection goes through /system/trigger's ui.check_item, exactly like
-// every other screen's FSM-mediated action -- NOT /opcheck/run_item
-// (RunCheck). Calling RunCheck directly would start opcheck_runner's
-// item without moving the FSM to RUNNING_CHECK, desyncing the screen from
-// th_state (see this packet's completion report, "本番の送信経路").
-//
-// The 4 items don't share one UI: ESTOP is a 4-step press/confirm/release/
-// confirm wizard (§2.2), MOTOR is 4 hold-buttons + a live cmd-vs-measured
-// graph (§2.3), IMU/LIDAR are display-only (/opcheck/status's result +
-// detail, §2.4/§2.5 -- Spec-webui.md §3.12's "詳細: 選んだ項目のモニターと
-// 自動判定"). LiDAR's raw-scan live view (§2.5 順1) was left as
-// result-only display per the brief's explicit "無ければ判定表示だけでよい"
-// escape hatch -- see completion report.
-//
-// Known node-side gap this screen works around rather than fixes (ROS
-// changes are out of this packet's scope): opcheck_runner._monitor_tick
-// republishes CheckStatus with result="UNKNOWN" every 100ms even the tick
-// right after a final OK/WARN/NG, because none of T-OPC-02/03/06 send it a
-// record_result/abort_check effect to close `_item`. Each item monitor below
-// latches the first non-UNKNOWN status it sees for the run it's currently
-// showing (see useStickyVerdict) so the verdict doesn't flicker back to the
-// step wizard 100ms later.
+//   LIST --ui.enter_mode{CALIB}--> CALIB
 import { useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
@@ -50,38 +29,101 @@ import { rangesFromFlat } from './calibCore.js'
 import ScanMaskView from '../parts/ScanMaskView.jsx'
 import HoldButton from '../parts/HoldButton.jsx'
 import WheelSpeedView from '../parts/WheelSpeedView.jsx'
+import ResultMark from '../parts/ResultMark.jsx'
+import HelpTip from '../parts/HelpTip.jsx'
+import ReasonButton from '../parts/ReasonButton.jsx'
+import { StepsLayout } from '../shell/Layouts.jsx'
 import { setCalibGuide, clearCalibGuide } from './calibGuide.js'
 import { checkReasonLabel } from '../i18n/checks.js'
 import { parseBasis } from '../ros/checkBasis.js'
 import { MOTOR_DIRS, parseMotorDone } from '../ros/motorDirs.js'
 import { REJECT_REASONS } from '../i18n/reasons.js'
-import { OP_LABELS } from '../i18n/states.js'
 import {
-  S30_ITEM_ORDER, S30_ITEM_LABELS, S30_LIST_TITLE, S30_OVERALL_TITLE,
-  S30_RESULT_UNKNOWN, S30_RESULT_OK, S30_RESULT_WARN, S30_RESULT_NG, S30_RESULT_RUNNING,
-  S30_RESULT_TONE, s30OverallLabel, S30_DETAIL_PLACEHOLDER, S30_ABORT, S30_ABORT_NOTE, S30_GOTO_CALIB, S30_RESULT_TITLE, S30_RESULT_BACK,
-  S30_ESTOP_STEP1, S30_ESTOP_STEP2, S30_ESTOP_STEP3, S30_ESTOP_STEP4,
+  S30_ITEM_ORDER, S30_ITEM_LABELS, S30_RESULT_OK, S30_RESULT_WARN, S30_RESULT_NG, S30_RESULT_UNKNOWN,
+  S30_DETAIL_PLACEHOLDER, S30_ABORT_NOTE, S30_GOTO_CALIB, S30_GOTO_REPAIR, S30_RESULT_TITLE, S30_RESULT_BACK,
+  S30_ESTOP_PRESSED, S30_ESTOP_RELEASED,
   S30_MOTOR_FORWARD, S30_MOTOR_BACK, S30_MOTOR_LEFT, S30_MOTOR_RIGHT, S30_MOTOR_HOLD_NOTE,
   S30_STATUS_DETAIL_TITLE, S30_STATUS_WAITING,
-  S30_IMU_CALIB_TITLE, S30_IMU_CALIB_LABELS, S30_LIDAR_VIEW_TITLE, S30_LIDAR_NO_SCAN,
-  S30_LIDAR_MASK_UNKNOWN,
+  S30_IMU_CALIB_TITLE, S30_IMU_CALIB_LABELS, S30_LIDAR_VIEW_TITLE, S30_LIDAR_NO_SCAN, S30_LIDAR_MASK_UNKNOWN,
   S30_BASIS_TITLE, S30_BASIS_VALUE, S30_BASIS_THRESHOLD, S30_BASIS_LABELS,
   s30BasisValueText, s30BasisThresholdText,
+  S30_BACK, S30_CONFIRM, S30_ABORT2, S30_STEPS, s30StepIndex,
 } from '../i18n/screens.js'
 import { WIN_RESUME_YES, WIN_RESUME_NO } from '../i18n/states.js'
 
-function resultLabel(result) {
-  if (result === 'OK') return S30_RESULT_OK
-  if (result === 'WARN') return S30_RESULT_WARN
-  if (result === 'NG') return S30_RESULT_NG
-  return S30_RESULT_UNKNOWN
+function resultKind(result) {
+  return result ?? 'UNKNOWN'
 }
 
-// Latches the first non-UNKNOWN CheckStatus seen for `item` since this
-// component instance mounted (i.e. since the current run of that item
-// started -- callers conditionally render the per-item monitor so each run
-// gets a fresh instance). See file header for why this must not read the
-// cross-run module latch that ros/useOpcheckStatus.js also keeps.
+// 判定の根拠（測った値と基準）。外れた値だけ黄の地（tr.out）。
+function BasisList({ basis }) {
+  if (!basis || basis.length === 0) return null
+  return (
+    <div className="s30-basis" data-testid="s30-basis">
+      <table className="tbl">
+        <thead><tr><th>測ったもの</th><th className="num">{S30_BASIS_VALUE}</th><th>{S30_BASIS_THRESHOLD}</th><th /></tr></thead>
+        <tbody>
+          {basis.map((b) => (
+            <tr key={b.key} className={b.ok ? '' : 'out'} data-testid={`s30-basis-${b.key}`} data-ok={b.ok ? 'true' : 'false'}>
+              <td>{S30_BASIS_LABELS[b.key] ?? b.key}</td>
+              <td className="num">{s30BasisValueText(b)}</td>
+              <td>{s30BasisThresholdText(b)}</td>
+              <td><ResultMark result={b.ok ? 'OK' : 'NG'} small testId={`s30-basis-mark-${b.key}`} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// 誘導（結果の表の下。右下の「確かめる」の場所には出さない。§3.3 (a)）。
+function GotoRow({ item, nextScreen, onGotoCalib, onGotoRepair }) {
+  if (nextScreen === 'imu_calib' || nextScreen === 'lidar_calib') {
+    return (
+      <div className="row mt">
+        <HelpTip helpKey="s30-goto">
+          <button type="button" className="btn primary" data-testid="s30-goto-calib" onClick={onGotoCalib}>
+            {S30_GOTO_CALIB}
+          </button>
+        </HelpTip>
+      </div>
+    )
+  }
+  if (nextScreen === 'repair') {
+    return (
+      <div className="row mt">
+        <HelpTip helpKey="s30-goto">
+          <button type="button" className="btn primary" data-testid="s30-goto-repair" onClick={onGotoRepair}>
+            {S30_GOTO_REPAIR}
+          </button>
+        </HelpTip>
+      </div>
+    )
+  }
+  return null
+}
+
+function VerdictPanel({ item, verdict, onGotoCalib, onGotoRepair, onBack }) {
+  return (
+    <div data-testid={onBack ? 's30-held-result' : 's30-verdict'}>
+      {onBack && <h3>{S30_RESULT_TITLE}</h3>}
+      <div className="row mt">
+        <ResultMark result={resultKind(verdict.result)} testId="s30-verdict-mark" />
+        <span className="note" style={{ display: 'inline' }}>{verdict.result === 'OK' ? S30_RESULT_OK : verdict.result === 'WARN' ? S30_RESULT_WARN : verdict.result === 'NG' ? S30_RESULT_NG : S30_RESULT_UNKNOWN}</span>
+        {verdict.detail && <span>{checkReasonLabel(item, verdict.detail)}</span>}
+      </div>
+      <BasisList basis={verdict.basis} />
+      <GotoRow item={item} nextScreen={verdict.next_screen} onGotoCalib={onGotoCalib} onGotoRepair={onGotoRepair} />
+      {onBack && (
+        <button type="button" className="btn mt" data-testid="s30-held-back" onClick={onBack}>
+          {S30_RESULT_BACK}
+        </button>
+      )}
+    </div>
+  )
+}
+
 function useStickyVerdict(status, item) {
   const [verdict, setVerdict] = useState(null)
   useEffect(() => {
@@ -92,231 +134,21 @@ function useStickyVerdict(status, item) {
   return verdict
 }
 
-// 判定の根拠（測った値と基準）。基準を満たさなかった項目（ok:false）は判定と同じトーンの
-// pill で強調する。根拠の無い判定（古い機体・MOTOR など）は何も出さない。
-function BasisList({ basis, tone }) {
-  if (!basis || basis.length === 0) return null
+function EstopPict({ pushed }) {
   return (
-    <div className="s30-basis" data-testid="s30-basis">
-      <h4>{S30_BASIS_TITLE}</h4>
-      <table className="s30-basis-table">
-        <thead>
-          <tr><th /><th>{S30_BASIS_VALUE}</th><th>{S30_BASIS_THRESHOLD}</th></tr>
-        </thead>
-        <tbody>
-          {basis.map((b) => (
-            <tr key={b.key} className={b.ok ? '' : 'bad'} data-testid={`s30-basis-${b.key}`}
-              data-ok={b.ok ? 'true' : 'false'}>
-              <td>{S30_BASIS_LABELS[b.key] ?? b.key}</td>
-              <td>{b.ok ? s30BasisValueText(b) : <span className={`pill ${tone || 'ng'}`}>{s30BasisValueText(b)}</span>}</td>
-              <td>{s30BasisThresholdText(b)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <svg viewBox="0 0 200 170" aria-hidden="true">
+      <rect x="30" y={pushed ? 96 : 80} width="140" height={pushed ? 40 : 56} rx="10" fill="#b71c1c" />
+      <rect x="20" y="130" width="160" height="30" rx="6" fill="#ffd100" stroke="#161b22" strokeWidth="2" />
+      {pushed
+        ? <path d="M100 10v60M80 50l20 22 20-22" stroke="currentColor" strokeWidth="8" fill="none" strokeLinecap="round" />
+        : <path d="M60 40a45 45 0 0 1 80 0M140 40l4-22M140 40l-20-6" stroke="currentColor" strokeWidth="8" fill="none" strokeLinecap="round" />}
+    </svg>
   )
 }
 
-function VerdictCard({ item, verdict, disabledAll, onGotoCalib }) {
-  const showCalib = verdict.next_screen === 'imu_calib' || verdict.next_screen === 'lidar_calib'
+function RobotMini() {
   return (
-    <div className="card">
-      <div className="s30-verdict">
-        <span className={`pill ${S30_RESULT_TONE[verdict.result] ?? ''}`}>{resultLabel(verdict.result)}</span>
-        {verdict.detail && <span className="note">{checkReasonLabel(item, verdict.detail)}</span>}
-      </div>
-      <BasisList basis={verdict.basis} tone={S30_RESULT_TONE[verdict.result]} />
-      {showCalib && (
-        <button type="button" className="btn wide" disabled={disabledAll}
-          data-testid="s30-goto-calib" onClick={() => onGotoCalib(item, verdict)}>
-          {S30_GOTO_CALIB}
-        </button>
-      )}
-    </div>
-  )
-}
-
-// 判定の保持表示（Spec-webui §3.12「結果」）。判定が確定すると FSM は LIST へ戻る
-// （SM-3.1.2-086/087）ので、画面が結果を持ち続け、「戻る」を押すまで消さない。
-// 「戻る」は画面の表示を閉じるだけで何も送らない（FSM・機体に影響しない）。
-function HeldResultPanel({ held, disabledAll, onGotoCalib, onBack }) {
-  return (
-    <div className="card" data-testid="s30-held-result">
-      <h3>{S30_RESULT_TITLE}</h3>
-      <p className="note">{S30_ITEM_LABELS[held.item]}</p>
-      <VerdictCard item={held.item} verdict={held} disabledAll={disabledAll} onGotoCalib={onGotoCalib} />
-      <button type="button" className="btn wide" data-testid="s30-held-back" onClick={onBack}>
-        {S30_RESULT_BACK}
-      </button>
-    </div>
-  )
-}
-
-function EstopMonitor({ status, estopHw, disabledAll, onAnswer, onGotoCalib }) {
-  const verdict = useStickyVerdict(status, 'ESTOP')
-  const [sawPress, setSawPress] = useState(!!estopHw)
-  const [sawRelease, setSawRelease] = useState(false)
-  const [pressAnswered, setPressAnswered] = useState(false)
-  const [releaseAnswered, setReleaseAnswered] = useState(false)
-  const prevHwRef = useRef(!!estopHw)
-
-  useEffect(() => {
-    const prev = prevHwRef.current
-    if (estopHw && !prev) setSawPress(true)
-    if (!estopHw && prev) {
-      setSawRelease((already) => already || sawPress)
-    }
-    prevHwRef.current = !!estopHw
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [estopHw])
-
-  if (verdict) return <VerdictCard item="ESTOP" verdict={verdict} disabledAll={disabledAll} onGotoCalib={onGotoCalib} />
-
-  function handleAnswer(ok, which) {
-    onAnswer('ESTOP', ok)
-    if (which === 'press') setPressAnswered(true)
-    else setReleaseAnswered(true)
-  }
-
-  let msg = S30_ESTOP_STEP1
-  let asking = null
-  if (!sawPress) {
-    msg = S30_ESTOP_STEP1
-  } else if (!pressAnswered) {
-    msg = S30_ESTOP_STEP2
-    asking = 'press'
-  } else if (!sawRelease) {
-    msg = S30_ESTOP_STEP3
-  } else if (!releaseAnswered) {
-    msg = S30_ESTOP_STEP4
-    asking = 'release'
-  } else {
-    msg = S30_STATUS_WAITING
-  }
-
-  return (
-    <div className="s30-step" data-testid="s30-estop-step">
-      <div className="s30-step-msg">{msg}</div>
-      {asking && (
-        <div className="s30-answer-row">
-          <button type="button" className="btn" disabled={disabledAll}
-            data-testid="s30-estop-yes" onClick={() => handleAnswer(true, asking)}>
-            {WIN_RESUME_YES}
-          </button>
-          <button type="button" className="btn" disabled={disabledAll}
-            data-testid="s30-estop-no" onClick={() => handleAnswer(false, asking)}>
-            {WIN_RESUME_NO}
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-const MOTOR_DIR_LABELS = {
-  FORWARD: S30_MOTOR_FORWARD,
-  BACK: S30_MOTOR_BACK,
-  LEFT: S30_MOTOR_LEFT,
-  RIGHT: S30_MOTOR_RIGHT,
-}
-
-// MOTOR の 4 方向の済み／未（brief-a13・SG-A13）。runner が UNKNOWN の detail
-// 先頭に `done=...` で進捗を載せる（msg 不変）。spec §2.4 #2「未実施の方向がある間は
-// 判定を確定しない」の途中経過表示。
-function MotorDirProgress({ status }) {
-  const done = status?.item === 'MOTOR' ? parseMotorDone(status.detail) : []
-  return (
-    <div className="s30-motor-dirs" data-testid="s30-motor-dirs">
-      {MOTOR_DIRS.map((dir) => (
-        <span key={dir} className={`pill ${done.includes(dir) ? 'ok' : ''}`}
-          data-testid={`s30-motor-dir-${dir}`}>
-          {MOTOR_DIR_LABELS[dir]} {done.includes(dir) ? '済' : '未'}
-        </span>
-      ))}
-    </div>
-  )
-}
-
-// SG-C13（Spec-checks.md §2.4 #3-3）: IMU の校正状態 sys/gyro/accel/mag のリアルタイム表示。
-function ImuCalibPanel({ ros }) {
-  const calib = useImuCalib(ros)
-  return (
-    <div data-testid="s30-imu-calib">
-      <h4>{S30_IMU_CALIB_TITLE}</h4>
-      {!calib && <p className="note" data-testid="s30-imu-calib-waiting">{S30_STATUS_WAITING}</p>}
-      {calib && (
-        <div className="row">
-          {Object.keys(S30_IMU_CALIB_LABELS).map((k) => (
-            <span key={k} className={`pill ${calib[k] >= 3 ? 'ok' : 'warn'}`}
-              data-testid={`s30-imu-${k}`}>
-              {S30_IMU_CALIB_LABELS[k]} {calib[k]}/3
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// SG-C13（Spec-checks.md §2.4 #4-1・#4-3）: 生スキャンのライブ表示に死角マスクを重ねる。
-// マスクは機体の値（lidar_filter の blind_angle_ranges）を読む。画面に値を持たない。
-// 死角除去前の生スキャン /scan を見る（マスクの内側の写り込みが見えるように。S-40 と同じ）。
-function LidarMaskPanel({ ros }) {
-  const scan = useScan(ros, TOPICS.SCAN)
-  const { getTunableParams } = useTunableParams(ros)
-  const [ranges, setRanges] = useState(null)
-  useEffect(() => {
-    let alive = true
-    getTunableParams('lidar_filter', ['blind_angle_ranges'])
-      .then((v) => { if (alive) setRanges(rangesFromFlat(v.blind_angle_ranges ?? [])) })
-      .catch(() => { if (alive) setRanges(null) })
-    return () => { alive = false }
-  }, [getTunableParams])
-  return (
-    <div data-testid="s30-lidar-panel">
-      <h4>{S30_LIDAR_VIEW_TITLE}</h4>
-      {!scan && <p className="note" data-testid="s30-lidar-no-scan">{S30_LIDAR_NO_SCAN}</p>}
-      {ranges === null && <p className="note" data-testid="s30-lidar-mask-unknown">{S30_LIDAR_MASK_UNKNOWN}</p>}
-      <ScanMaskView scan={scan} ranges={ranges ?? []} />
-    </div>
-  )
-}
-
-function SimpleStatusMonitor({ item, ros, status, disabledAll, onGotoCalib }) {
-  const verdict = useStickyVerdict(status, item)
-  const live = status?.item === item ? status : null
-  const shown = verdict ?? live
-
-  return (
-    <div className="card">
-      <h3>{S30_STATUS_DETAIL_TITLE}</h3>
-      {!shown && <p className="note">{S30_STATUS_WAITING}</p>}
-      {shown && (
-        <>
-          <div className="s30-verdict">
-            <span className={`pill ${S30_RESULT_TONE[shown.result] ?? ''}`}>
-              {shown.result === 'UNKNOWN' ? S30_RESULT_RUNNING : resultLabel(shown.result)}
-            </span>
-          </div>
-          {shown.detail && (
-            <p className="note" data-testid={`s30-${item.toLowerCase()}-detail`}>
-              {shown.result && shown.result !== 'UNKNOWN'
-                ? checkReasonLabel(item, shown.detail)
-                : shown.detail}
-            </p>
-          )}
-        </>
-      )}
-      {item === 'IMU' && <ImuCalibPanel ros={ros} />}
-      {item === 'LIDAR' && <LidarMaskPanel ros={ros} />}
-      {verdict && (verdict.next_screen === 'imu_calib' || verdict.next_screen === 'lidar_calib') && (
-        <button type="button" className="btn wide" disabled={disabledAll}
-          data-testid="s30-goto-calib" onClick={() => onGotoCalib(item, verdict)}>
-          {S30_GOTO_CALIB}
-        </button>
-      )}
-    </div>
+    <svg viewBox="0 0 60 60" aria-hidden="true"><rect x="6" y="6" width="48" height="48" rx="4" fill="var(--inset)" stroke="var(--tx)" strokeWidth="2" /><path d="M20 40L30 16L40 40Z" fill="var(--tx)" /></svg>
   )
 }
 
@@ -333,194 +165,379 @@ export default function S30Opcheck() {
   const estopHw = !!state?.estop_hw
   const estopUi = !!state?.estop_ui
 
-  const [selectedItem, setSelectedItem] = useState(null)
+  const [previewItem, setPreviewItem] = useState(null)
+  const [startedItem, setStartedItem] = useState(null)
   const [selectErr, setSelectErr] = useState(null)
-  // 確定した判定の保持（「戻る」か別項目の選択まで消さない）。
   const [held, setHeld] = useState(null)
   const initialStatusRef = useRef(status)
   useEffect(() => {
-    if (status === initialStatusRef.current) return // 開いた時点で既にある値は今回の判定ではない
+    if (status === initialStatusRef.current) return
     if (status?.item && status.result && status.result !== 'UNKNOWN') {
       setHeld({ item: status.item, result: status.result, detail: status.detail, next_screen: status.next_screen, basis: parseBasis(status.basis_json) })
     }
   }, [status])
 
-  // The item that is actually running server-side takes priority over the
-  // locally-clicked one (status.item is authoritative once it arrives);
-  // selectedItem only bridges the gap between "trigger accepted" and "first
-  // CheckStatus for it". Reset once the FSM leaves RUNNING_CHECK.
   useEffect(() => {
-    if (stateName === 'LIST') setSelectedItem(null)
+    if (stateName === 'LIST') { setStartedItem(null) }
   }, [stateName])
 
-  // 実行中に別の項目へ切り替えた直後は、status.item がまだ前の項目のことがある
-  // （abort_check → start_monitor の往復待ち）。押した項目を優先する（SM-3.1.2-117）。
-  const activeItem = running ? (selectedItem || status?.item) : null
+  const activeItem = running ? (startedItem || status?.item || null) : null
+  const shownItem = activeItem || previewItem
+  const currentResult = (it) => results[it]?.result ?? 'UNKNOWN'
 
-  // MOTOR's hold must stop the instant this screen is not in a state where
-  // opcheck_runner's deadman is supposed to be listened to -- re-derived
-  // continuously (useMotorHold re-reads `gate` on every tick), not just at
-  // press time. opcheck_runner._sync_command doesn't check which item is
-  // selected (see completion report "B"), so the UI-side gate is what keeps
-  // a stray hold from driving the base once the MOTOR item isn't the one
-  // actually running.
+  // ESTOP wizard state (kept from the old implementation).
+  const [sawPress, setSawPress] = useState(!!estopHw)
+  const [sawRelease, setSawRelease] = useState(false)
+  const [pressAnswered, setPressAnswered] = useState(false)
+  const [releaseAnswered, setReleaseAnswered] = useState(false)
+  const prevHwRef = useRef(!!estopHw)
+  useEffect(() => {
+    // Reset the wizard when leaving the ESTOP item so a rerun starts from step 1.
+    if (!running || activeItem !== 'ESTOP') {
+      setSawPress(false); setSawRelease(false); setPressAnswered(false); setReleaseAnswered(false)
+    }
+    const prev = prevHwRef.current
+    if (estopHw && !prev) setSawPress(true)
+    if (!estopHw && prev) setSawRelease((already) => already || sawPress)
+    prevHwRef.current = !!estopHw
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estopHw, running, activeItem])
+
   const motorHoldGate = running && activeItem === 'MOTOR' && !disabledAll && !estopHw && !estopUi
   const motorHold = useMotorHold(ros, motorHoldGate)
   const [motorDir, setMotorDir] = useState(null)
   function motorPress(dir) { setMotorDir(dir); motorHold.press(dir) }
   function motorRelease() { setMotorDir(null); motorHold.release() }
 
-  // LIST では項目を始める。RUNNING_CHECK では今の項目を中断して選んだ項目へ切り替える
-  // （SM-3.1.2-116/-117。2026-10-04 まで実行中は一覧が押せず、判定が出るまで抜けられなかった）。
-  async function handleSelect(item) {
-    if (!(stateName === 'LIST' || running) || disabledAll) return
-    if (running && item === activeItem) return
-    const prevSelected = selectedItem
+  async function startItem(item) {
+    if (disabledAll) return
     setSelectErr(null)
-    setHeld(null) // 新しい確認が始まる
-    setSelectedItem(item)
+    setHeld(null)
+    setStartedItem(item)
+    setPreviewItem(item)
     try {
       const res = await sendTrigger('ui.check_item', { item })
       if (!res?.accepted) {
-        setSelectedItem(prevSelected)
+        setStartedItem(null)
         setSelectErr(res?.reject_reason_key ? (REJECT_REASONS[res.reject_reason_key] ?? res.reject_reason_key) : null)
       }
     } catch {
-      setSelectedItem(prevSelected)
+      setStartedItem(null)
     }
   }
 
-  // 実行中の項目をやめて一覧へ戻る（結果は記録しない。SM-3.1.2-116）。
+  function handleRow(item) {
+    if (disabledAll) return
+    if (running) {
+      // 実行中は押すとその項目へ切り替わる（SM-3.1.2-117。結果は記録しない）。
+      if (item !== activeItem) startItem(item)
+      return
+    }
+    // LIST では押すだけでは始めない。手順を見て「確かめる」で始める。
+    setHeld(null)
+    setPreviewItem(item)
+    setSelectErr(null)
+  }
+
+  async function handleBack() {
+    try { await sendTrigger('ui.finish') } catch { /* 留まる */ }
+  }
   async function handleAbort() {
-    try { await sendTrigger('ui.abort') } catch { /* rosbridge 一時失敗。留まる */ }
+    try { await sendTrigger('ui.abort') } catch { /* 留まる */ }
   }
 
-  async function handleFinish() {
-    try { await sendTrigger('ui.finish') } catch { /* rosbridge 一時失敗。留まる */ }
-  }
-
-  // S-40 への誘導元を受け渡してから ui.enter_mode{CALIB} を送る（T-OPC-07 に
-  // 項目を運ぶ仕組みは無いので画面側の受け渡し。screens/calibGuide.js）。
-  // 拒否・送信失敗では受け渡しを消す（S-01 など別経路で S-40 に入ったときに
-  // 古い誘導が残らないようにする）。対応表に無い項目（ESTOP・MOTOR）は
-  // setCalibGuide が置かずに捨てる。
   async function handleGotoCalib(item, verdict) {
     setCalibGuide({ from: item, result: verdict?.result })
     try {
       const res = await sendTrigger('ui.enter_mode', { mode: 'CALIB' })
       if (!res?.accepted) clearCalibGuide()
     } catch {
-      clearCalibGuide() // rosbridge 一時失敗。受け渡しを残さない
+      clearCalibGuide()
     }
   }
+  async function handleGotoRepair() {
+    try { await sendTrigger('ui.stop') } catch { /* 留まる */ }
+  }
+
+  // Motor direction progress (done=... in detail).
+  const doneDirs = status?.item === 'MOTOR' ? parseMotorDone(status.detail) : []
+
+  // Steps text (numbers).
+  const stepsText = shownItem ? S30_STEPS[shownItem] ?? [] : []
+  const curStep = shownItem ? s30StepIndex(shownItem, {
+    running: running && activeItem === shownItem,
+    sawPress, sawRelease, answered: { press: pressAnswered, release: releaseAnswered },
+  }) : 0
+
+  // Counts by result mark.
+  const counts = { OK: 0, WARN: 0, NG: 0, UNKNOWN: 0 }
+  for (const it of S30_ITEM_ORDER) counts[resultKind(currentResult(it))] += 1
+
+  // フックは無条件に呼ぶ（4 項目分）。使うのは実行中の項目の分だけ。
+  const vEstop = useStickyVerdict(status, 'ESTOP')
+  const vMotor = useStickyVerdict(status, 'MOTOR')
+  const vImu = useStickyVerdict(status, 'IMU')
+  const vLidar = useStickyVerdict(status, 'LIDAR')
+  const stickyVerdict = activeItem === 'ESTOP' ? vEstop : activeItem === 'MOTOR' ? vMotor : activeItem === 'IMU' ? vImu : vLidar
+  const liveVerdict = status?.item === activeItem && status?.result && status.result !== 'UNKNOWN'
+    ? { result: status.result, detail: status.detail, next_screen: status.next_screen, basis: parseBasis(status.basis_json) }
+    : null
+  const activeVerdict = stickyVerdict ?? liveVerdict
+
+  const leftList = (
+    <>
+      <div className="lhd">
+        <ResultMark result="OK" small testId="s30-count-ok" /> <span>{counts.OK}</span>
+        {'　'}
+        <ResultMark result="NG" small testId="s30-count-ng" /> <span>{counts.NG}</span>
+        {'　'}
+        <ResultMark result="UNKNOWN" small testId="s30-count-unknown" /> <span>{counts.UNKNOWN}</span>
+      </div>
+      {S30_ITEM_ORDER.map((item) => (
+        <button
+          key={item}
+          type="button"
+          className={`lrow${shownItem === item ? ' on' : ''}`}
+          data-testid={`s30-item-${item}`}
+          onClick={() => handleRow(item)}
+        >
+          <span className="nm">
+            {S30_ITEM_LABELS[item]}
+            <small>{results[item]?.checked_at ?? ''}</small>
+          </span>
+          <ResultMark result={resultKind(currentResult(item))} testId={`s30-mark-${item}`} />
+        </button>
+      ))}
+      {selectErr && <p className="note" data-testid="s30-select-err">{selectErr}</p>}
+      {shownItem && (
+        <ol className="csteps" data-testid="s30-steps">
+          {stepsText.map((t, i) => (
+            <li key={t} className={i < curStep ? 'done' : i === curStep ? 'cur' : ''}>
+              <span className="n">{i + 1}</span><span>{t}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </>
+  )
+
+  const bodyContent = (() => {
+    if (held && !activeItem) {
+      return (
+        <VerdictPanel item={held.item} verdict={held}
+          onGotoCalib={() => handleGotoCalib(held.item, held)} onGotoRepair={handleGotoRepair}
+          onBack={() => setHeld(null)} />
+      )
+    }
+    if (!shownItem) return <p className="note">{S30_DETAIL_PLACEHOLDER}</p>
+    if (!activeItem) {
+      // LIST・プレビュー: 項目の手順の図を出す（機体は動かない。§3.12）。
+      if (shownItem === 'MOTOR') {
+        return (
+          <div className="fig mot">
+            <div className="arrows">
+              <span /><MotorArrow dir="FORWARD" label={S30_MOTOR_FORWARD} done={false} disabled gate={false} active={false} onPress={() => {}} onRelease={() => {}} />
+              <span />
+              <MotorArrow dir="LEFT" label={S30_MOTOR_LEFT} done={false} disabled gate={false} active={false} onPress={() => {}} onRelease={() => {}} />
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><RobotMini /></span>
+              <MotorArrow dir="RIGHT" label={S30_MOTOR_RIGHT} done={false} disabled gate={false} active={false} onPress={() => {}} onRelease={() => {}} />
+              <span /><MotorArrow dir="BACK" label={S30_MOTOR_BACK} done={false} disabled gate={false} active={false} onPress={() => {}} onRelease={() => {}} />
+              <span />
+            </div>
+            <WheelSpeedView measured={wheelData.measured} command={wheelData.command} />
+          </div>
+        )
+      }
+      if (shownItem === 'ESTOP') {
+        return (
+          <div className="fig">
+            <div className="cell"><EstopPict pushed={false} /><span className="cap"><ResultMark result="UNKNOWN" small testId="s30-estop-push-mark" />押す</span></div>
+            <div className="cell"><EstopPict pushed={false} /><span className="cap"><ResultMark result="UNKNOWN" small testId="s30-estop-release-mark" />戻す</span></div>
+          </div>
+        )
+      }
+      if (shownItem === 'IMU') return <div className="fig"><ImuLive ros={ros} /></div>
+      return <div className="fig"><LidarLive ros={ros} /></div>
+    }
+    // Running.
+    if (activeItem === 'ESTOP') {
+      if (activeVerdict) {
+        return <VerdictPanel item="ESTOP" verdict={activeVerdict} onGotoCalib={() => handleGotoCalib('ESTOP', activeVerdict)} onGotoRepair={handleGotoRepair} />
+      }
+      let msg, asking = null
+      if (!sawPress) msg = '非常停止ボタンを押してください'
+      else if (!pressAnswered) { msg = '押されていることが画面に出ています。実物と一致していますか'; asking = 'press' }
+      else if (!sawRelease) msg = '非常停止ボタンを解除してください'
+      else if (!releaseAnswered) { msg = '解除されたことが画面に出ています。一致していますか'; asking = 'release' }
+      else msg = S30_STATUS_WAITING
+      return (
+        <div data-testid="s30-estop-step">
+          <div className="fig">
+            <div className="cell"><EstopPict pushed={!!estopHw} /><span className="cap"><ResultMark result={sawPress ? 'OK' : 'UNKNOWN'} small testId="s30-estop-push-mark" />押す</span></div>
+            <div className="cell"><EstopPict pushed={!!estopHw} /><span className="cap"><ResultMark result={sawRelease ? 'OK' : 'UNKNOWN'} small testId="s30-estop-release-mark" />戻す</span></div>
+          </div>
+          <p className="oneline" style={{ textAlign: 'center' }}>{msg}</p>
+          {asking && (
+            <div className="s30-answer-row">
+              <button type="button" className="btn" data-testid="s30-estop-yes" onClick={() => { answer('ESTOP', true); if (asking === 'press') setPressAnswered(true); else setReleaseAnswered(true) }}>
+                {WIN_RESUME_YES}
+              </button>
+              <button type="button" className="btn" data-testid="s30-estop-no" onClick={() => { answer('ESTOP', false); if (asking === 'press') setPressAnswered(true); else setReleaseAnswered(true) }}>
+                {WIN_RESUME_NO}
+              </button>
+            </div>
+          )}
+          <p className="note">{estopHw ? S30_ESTOP_PRESSED : S30_ESTOP_RELEASED}</p>
+        </div>
+      )
+    }
+    if (activeItem === 'MOTOR') {
+      if (activeVerdict) {
+        return <VerdictPanel item="MOTOR" verdict={activeVerdict} onGotoCalib={() => handleGotoCalib('MOTOR', activeVerdict)} onGotoRepair={handleGotoRepair} />
+      }
+      return (
+        <div>
+          <p className="note">{S30_MOTOR_HOLD_NOTE}</p>
+          <div className="fig mot">
+            <div className="arrows">
+              <span /><MotorArrow dir="FORWARD" label={S30_MOTOR_FORWARD} done={doneDirs.includes('FORWARD')} disabled={disabledAll} gate={motorHoldGate} active={motorDir === 'FORWARD'} onPress={motorPress} onRelease={motorRelease} />
+              <span />
+              <MotorArrow dir="LEFT" label={S30_MOTOR_LEFT} done={doneDirs.includes('LEFT')} disabled={disabledAll} gate={motorHoldGate} active={motorDir === 'LEFT'} onPress={motorPress} onRelease={motorRelease} />
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><RobotMini /></span>
+              <MotorArrow dir="RIGHT" label={S30_MOTOR_RIGHT} done={doneDirs.includes('RIGHT')} disabled={disabledAll} gate={motorHoldGate} active={motorDir === 'RIGHT'} onPress={motorPress} onRelease={motorRelease} />
+              <span /><MotorArrow dir="BACK" label={S30_MOTOR_BACK} done={doneDirs.includes('BACK')} disabled={disabledAll} gate={motorHoldGate} active={motorDir === 'BACK'} onPress={motorPress} onRelease={motorRelease} />
+              <span />
+            </div>
+            <WheelSpeedView measured={wheelData.measured} command={wheelData.command} />
+          </div>
+          <div className="s30-motor-dirs" data-testid="s30-motor-dirs">
+            {MOTOR_DIRS.map((dir) => (
+              <span key={dir} data-testid={`s30-motor-dir-${dir}`}>{dir} {doneDirs.includes(dir) ? '済' : '未'}</span>
+            ))}
+          </div>
+        </div>
+      )
+    }
+    if (activeItem === 'IMU') {
+      const verdict = activeVerdict
+      if (verdict) return <VerdictPanel item="IMU" verdict={verdict} onGotoCalib={() => handleGotoCalib('IMU', verdict)} onGotoRepair={handleGotoRepair} />
+      return (
+        <div>
+          <div className="row"><ResultMark result="UNKNOWN" testId="s30-running-mark" /><span>{S30_STATUS_WAITING}</span></div>
+          <ImuLive ros={ros} />
+        </div>
+      )
+    }
+    // LIDAR
+    const verdict = activeVerdict
+    if (verdict) return <VerdictPanel item="LIDAR" verdict={verdict} onGotoCalib={() => handleGotoCalib('LIDAR', verdict)} onGotoRepair={handleGotoRepair} />
+    return (
+      <div>
+        <div className="row"><ResultMark result="UNKNOWN" testId="s30-running-mark" /><span>{S30_STATUS_WAITING}</span></div>
+        <LidarLive ros={ros} />
+      </div>
+    )
+  })()
+
+  const confirmDisabled = disabledAll || running || !previewItem
+  const confirmReason = running ? '確かめています' : !previewItem ? '項目を選んでください' : null
 
   return (
-    <div className="screen two-col" id="s30">
-      <div className="left-col">
-        <div className="top-actions sticky">
-          <button type="button" className="btn sm" data-testid="s30-finish"
-            disabled={disabledAll} onClick={handleFinish}>
-            {OP_LABELS.finish}
-          </button>
-        </div>
-        <div className="card">
-          <h3>{S30_LIST_TITLE}</h3>
-          {S30_ITEM_ORDER.map((item) => {
-            // SG-B5（1b-8）: 判定と同時に FSM は LIST へ戻る（T-OPC-02/04）のに
-            // 「校正へ」は RUNNING_CHECK の詳細カードにしか無かった。LIST の行にも
-            // 直近の判定（results ラッチ。S-31 と同じ流儀）から出す。FSM 側は
-            // spec（SM-3.1.2-087「校正へ導線を出す」・-092「LIST → CALIB」）
-            // どおりなので変えない。T-OPC-07 は LIST 限定のため LIST のときだけ出す。
-            const calibVerdict = (results[item]?.next_screen === 'imu_calib' || results[item]?.next_screen === 'lidar_calib')
-              ? results[item] : null
-            return (
-              <div key={item} className="s30-row-wrap">
-                <button
-                  type="button"
-                  className={`s30-row ${activeItem === item ? 'running' : ''}`}
-                  disabled={disabledAll || !(stateName === 'LIST' || running)}
-                  data-testid={`s30-item-${item}`}
-                  onClick={() => handleSelect(item)}
-                >
-                  <span className="s30-row-label">{S30_ITEM_LABELS[item]}</span>
-                  <span className={`pill ${S30_RESULT_TONE[results[item]?.result] ?? ''}`}>
-                    {resultLabel(results[item]?.result)}
-                  </span>
-                </button>
-                {calibVerdict && stateName === 'LIST' && (
-                  <button type="button" className="btn wide" disabled={disabledAll}
-                    data-testid={`s30-goto-calib-${item}`}
-                    onClick={() => handleGotoCalib(item, calibVerdict)}>
-                    {S30_GOTO_CALIB}
-                  </button>
-                )}
-              </div>
-            )
-          })}
-          {selectErr && <p className="note" data-testid="s30-select-err">{selectErr}</p>}
-        </div>
-        <div className="card">
-          <h3>{S30_OVERALL_TITLE}</h3>
-          <span className="pill" data-testid="s30-overall">{s30OverallLabel(results)}</span>
-        </div>
-      </div>
-
-      <div>
-        {!activeItem && held && (
-          <HeldResultPanel held={held} disabledAll={disabledAll}
-            onGotoCalib={handleGotoCalib} onBack={() => setHeld(null)} />
-        )}
-        {!activeItem && !held && (
-          <div className="card"><p className="note">{S30_DETAIL_PLACEHOLDER}</p></div>
-        )}
-        {running && (
-          <div className="top-actions">
-            <button type="button" className="btn sm" data-testid="s30-abort"
-              disabled={disabledAll} onClick={handleAbort}>
-              {S30_ABORT}
+    <div id="s30" className="screen">
+      <StepsLayout
+        opbar={(
+          <HelpTip helpKey="s30-back">
+            <button type="button" className="btn exit" data-testid="s30-back" disabled={disabledAll} onClick={handleBack}>
+              {S30_BACK}
             </button>
-            <span className="xs mut">{S30_ABORT_NOTE}</span>
-          </div>
+          </HelpTip>
         )}
-        {activeItem === 'ESTOP' && (
-          <EstopMonitor
-            status={status} estopHw={estopHw} disabledAll={disabledAll}
-            onAnswer={answer} onGotoCalib={handleGotoCalib}
-          />
+        list={leftList}
+        body={(
+          <>
+            <div className="phd"><span className="pt">{shownItem ? S30_ITEM_LABELS[shownItem] : S30_STATUS_DETAIL_TITLE}</span></div>
+            <div data-testid="s30-body">{bodyContent}</div>
+          </>
         )}
-        {activeItem === 'MOTOR' && (() => {
-          const verdict = status?.item === 'MOTOR' && status.result && status.result !== 'UNKNOWN'
-            ? { result: status.result, detail: status.detail, next_screen: status.next_screen }
-            : null
-          if (verdict) {
-            return <VerdictCard item="MOTOR" verdict={verdict} disabledAll={disabledAll} onGotoCalib={handleGotoCalib} />
-          }
-          return (
-            <div className="card">
-              <p className="note">{S30_MOTOR_HOLD_NOTE}</p>
-              <MotorDirProgress status={status} />
-              <div className="hold-grid">
-                <HoldButton direction="FORWARD" label={S30_MOTOR_FORWARD}
-                  active={motorDir === 'FORWARD'} disabled={disabledAll || !motorHoldGate}
-                  onPress={motorPress} onRelease={motorRelease} testId="s30-motor-forward" />
-                <HoldButton direction="BACK" label={S30_MOTOR_BACK}
-                  active={motorDir === 'BACK'} disabled={disabledAll || !motorHoldGate}
-                  onPress={motorPress} onRelease={motorRelease} testId="s30-motor-back" />
-                <HoldButton direction="LEFT" label={S30_MOTOR_LEFT}
-                  active={motorDir === 'LEFT'} disabled={disabledAll || !motorHoldGate}
-                  onPress={motorPress} onRelease={motorRelease} testId="s30-motor-left" />
-                <HoldButton direction="RIGHT" label={S30_MOTOR_RIGHT}
-                  active={motorDir === 'RIGHT'} disabled={disabledAll || !motorHoldGate}
-                  onPress={motorPress} onRelease={motorRelease} testId="s30-motor-right" />
-              </div>
-              <WheelSpeedView measured={wheelData.measured} command={wheelData.command} />
-            </div>
-          )
-        })()}
-        {(activeItem === 'IMU' || activeItem === 'LIDAR') && (
-          <SimpleStatusMonitor item={activeItem} ros={ros} status={status} disabledAll={disabledAll} onGotoCalib={handleGotoCalib} />
+        foot={(
+          <>
+            <HelpTip helpKey="s30-abort">
+              <ReasonButton
+                data-testid="s30-abort"
+                disabled={!running || disabledAll}
+                reason={!running ? '確かめている間だけ使えます' : null}
+                onClick={handleAbort}
+                className="primary"
+              >
+                {S30_ABORT2}
+              </ReasonButton>
+            </HelpTip>
+            <span className="grow" />
+            <HelpTip helpKey="s30-confirm">
+              <ReasonButton
+                data-testid="s30-confirm"
+                disabled={confirmDisabled}
+                reason={confirmReason}
+                onClick={() => previewItem && startItem(previewItem)}
+                className="primary"
+              >
+                {S30_CONFIRM}
+              </ReasonButton>
+            </HelpTip>
+          </>
         )}
-      </div>
+      />
+    </div>
+  )
+}
+
+function MotorArrow({ dir, label, done, disabled, gate, active, onPress, onRelease }) {
+  const testId = `s30-motor-${dir.toLowerCase()}`
+  return (
+    <span style={{ position: 'relative', display: 'block' }}>
+      <HoldButton direction={dir} label={label} active={active} disabled={disabled || !gate}
+        onPress={onPress} onRelease={onRelease} testId={testId} />
+      <span className="dm"><ResultMark result={done ? 'OK' : 'UNKNOWN'} small testId={`${testId}-mark`} /></span>
+    </span>
+  )
+}
+
+function ImuLive({ ros }) {
+  const calib = useImuCalib(ros)
+  return (
+    <div data-testid="s30-imu-calib">
+      <h4>{S30_IMU_CALIB_TITLE}</h4>
+      {!calib && <p className="note" data-testid="s30-imu-calib-waiting">{S30_STATUS_WAITING}</p>}
+      {calib && (
+        <div className="row">
+          {Object.keys(S30_IMU_CALIB_LABELS).map((k) => (
+            <span key={k} data-testid={`s30-imu-${k}`}>
+              {S30_IMU_CALIB_LABELS[k]} {calib[k]}/3
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LidarLive({ ros }) {
+  const scan = useScan(ros, TOPICS.SCAN)
+  const { getTunableParams } = useTunableParams(ros)
+  const [ranges, setRanges] = useState(null)
+  useEffect(() => {
+    let alive = true
+    getTunableParams('lidar_filter', ['blind_angle_ranges'])
+      .then((v) => { if (alive) setRanges(rangesFromFlat(v.blind_angle_ranges ?? [])) })
+      .catch(() => { if (alive) setRanges(null) })
+    return () => { alive = false }
+  }, [getTunableParams])
+  return (
+    <div data-testid="s30-lidar-panel">
+      <h4>{S30_LIDAR_VIEW_TITLE}</h4>
+      {!scan && <p className="note" data-testid="s30-lidar-no-scan">{S30_LIDAR_NO_SCAN}</p>}
+      {ranges === null && <p className="note" data-testid="s30-lidar-mask-unknown">{S30_LIDAR_MASK_UNKNOWN}</p>}
+      <ScanMaskView scan={scan} ranges={ranges ?? []} />
     </div>
   )
 }

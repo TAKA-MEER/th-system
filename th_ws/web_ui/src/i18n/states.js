@@ -38,6 +38,12 @@ export const STATE_NAMES = {
   // WP-UI-08: OPCHECK のサブ状態（transitions.yaml T-OPC-01〜08）。
   RUNNING_CHECK: '確認中',
   REPAIR: '故障診断',
+  // UIR-P7: 校正の段階（T-CAL-01〜09）。札には記号（S1〜S4）を出さない（Spec-webui §8）。
+  // どの段でも「校正中」の一語。モード名はヘッダの画面名が示している。
+  S1: '校正中',
+  S2: '校正中',
+  S3: '校正中',
+  S4: '校正中',
 }
 
 export const UNKNOWN_STATE_LABEL = '不明'
@@ -61,6 +67,7 @@ export const STATE_CHIP_TONE = {
   REGISTER: 'neutral', EDIT: 'neutral',
   SELECT: 'neutral', ROUTE_SEL: 'neutral', DEV_CHECK: 'neutral', POINT: 'neutral',
   RUNNING_CHECK: 'neutral', REPAIR: 'warn',
+  S1: 'neutral', S2: 'neutral', S3: 'neutral', S4: 'neutral',
 }
 
 export function stateChipTone(stateName) {

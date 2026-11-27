@@ -29,9 +29,10 @@ export function RunLayout({ opbar, main, where, toggle, ops, jog, id, className 
 export function StepsLayout({ opbar, list, body, foot }) {
   return (
     <div className="content g-list" data-layout="steps">
+      {/* 「戻る」は画面左上の操作バー（一覧・手順の上。走らせる型の「終了」と同じ場所） */}
+      <div data-pos="opbar">{opbar}</div>
       <div className="lst" data-pos="list">{list}</div>
       <div className="pane" data-pos="body">
-        <div data-pos="opbar">{opbar}</div>
         <div className="pbody">{body}</div>
         <div className="pfoot" data-pos="foot">{foot}</div>
       </div>

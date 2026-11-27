@@ -2,8 +2,8 @@
 //
 // 上が前方 0°・左が +90°（laser_link 基準・反時計回り正。機体側と同じ規約）。
 //   - 灰色の扇 … いま登録されている死角（detail.current.blind_angle_ranges）
-//   - 青い扇   … 選択中（ドラッグで足す。ここから削除・全部外す・登録済みに戻すができる）
-//   - 赤い点   … 選択の内側の点（マスクすると障害物として見なくなる＝消える点）
+//   - 濃い扇   … 選択中（ドラッグで足す。ここから削除・全部外す・登録済みに戻すができる）
+//   - 濃い点   … 選択の内側の点（マスクすると障害物として見なくなる＝消える点）
 // 幅の上限（1 区間・総幅・区間数）を超える選択は「確認」を押せない。**検査の正本は機体側**で、
 // 画面は押す前に分かるようにしているだけ（機体も同じ検査をして、超えたら適用しない）。
 //
@@ -86,13 +86,13 @@ export default function BlindScanSelect({
           <path key={`reg-${i}`} d={wedge(rg)} fill="gray" fillOpacity="0.25" />
         ))}
         {ranges.map((rg, i) => (
-          <path key={`sel-${i}`} d={wedge(rg)} fill="dodgerblue" fillOpacity="0.30"
+          <path key={`sel-${i}`} d={wedge(rg)} fill="#333a48" fillOpacity="0.30"
             data-testid="s40-blind-wedge" />
         ))}
-        {dragRange && <path d={wedge(dragRange)} fill="dodgerblue" fillOpacity="0.15"
-          stroke="dodgerblue" strokeDasharray="4 3" />}
-        {kept.map((p, i) => { const [x, y] = toXY(p); return <circle key={`k${i}`} cx={x} cy={y} r="1.8" fill="currentColor" /> })}
-        {masked.map((p, i) => { const [x, y] = toXY(p); return <circle key={`m${i}`} cx={x} cy={y} r="2.4" fill="crimson" /> })}
+        {dragRange && <path d={wedge(dragRange)} fill="#333a48" fillOpacity="0.15"
+          stroke="#333a48" strokeDasharray="4 3" />}
+        {kept.map((p, i) => { const [x, y] = toXY(p); if (Math.hypot(x - C, y - C) > R) return null; return <circle key={`k${i}`} cx={x} cy={y} r="1.8" fill="currentColor" /> })}
+        {masked.map((p, i) => { const [x, y] = toXY(p); if (Math.hypot(x - C, y - C) > R) return null; return <circle key={`m${i}`} cx={x} cy={y} r="2.4" fill="#333a48" /> })}
         <polygon points={`${C},${C - 10} ${C - 6},${C + 6} ${C + 6},${C + 6}`} fill="currentColor" />
       </svg>
       {!scan && <p className="s40-warn" data-testid="s40-blind-no-scan">{T.S40_BLIND_NO_SCAN}</p>}
