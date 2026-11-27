@@ -589,6 +589,7 @@ export default function S20Prep() {
                   testId="s20"
                   tapMode={tapMode}
                   onTapConfirm={handleMapTapConfirm}
+                  rotateEnabled
                   previewPose={pendingTap ? {
                     x: tapDraft != null ? Number(tapDraft.x) : pendingTap.tap1.x,
                     y: tapDraft != null ? Number(tapDraft.y) : pendingTap.tap1.y,

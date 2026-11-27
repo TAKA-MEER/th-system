@@ -526,6 +526,7 @@ export default function S21Test({ onExit }) {
                   robotLabel={S20_MAP_ROBOT}
                   overlayText={venueBusy ? S21_MAP_LOADING : null}
                   testId="s21"
+                  blocked={isNavMode && stateName === 'BLOCKED'}
                 />
               </div>
             </div>
