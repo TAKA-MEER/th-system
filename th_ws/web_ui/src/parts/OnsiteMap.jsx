@@ -657,11 +657,13 @@ export default function OnsiteMap({
     />
     {t.view ? (
       // 「全体表示」と縮尺は地図の左下に重ねる（§6.1。右下は地図の道具の置き場）。
-      <div className="row" style={{ position: 'absolute', left: 8, bottom: 8, alignItems: 'center', zIndex: 6 }}>
+      // 行自体はポインタを通す（ピンの吹き出しのボタンを覆って押せなくしない）。
+      <div className="row" style={{ position: 'absolute', left: 8, bottom: 8, alignItems: 'center', zIndex: 6, pointerEvents: 'none' }}>
         <button
           type="button"
           className="btn sm"
           data-testid={`${testId}-map-reset-view`}
+          style={{ pointerEvents: 'auto' }}
           onClick={handleResetView}
         >
           {S20_MAP_RESET_VIEW}
