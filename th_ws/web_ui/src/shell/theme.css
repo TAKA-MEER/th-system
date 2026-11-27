@@ -1162,6 +1162,15 @@ table.lst td.r{text-align:right}
 #s01 .tile.s .tile-ic svg{width:36px;height:36px}
 #s01 .tile.s .nm{font-size:calc(var(--fs) * 1.25)}
 #s01 .tile.dis{background:var(--panel);border:1px solid var(--bd-hi);color:var(--mut)}
+/* S-01 の区画の色（mockup pal-new。走行は黄土。紫は使わない）。地を区画色 10% で染め、
+   アイコンを区画色にし、左の縁を区画色にする。--gc は renderTile が置く。 */
+#s01 .tile.g{background:color-mix(in srgb,var(--gc, var(--panel)) 10%, var(--panel));border-left-width:6px;border-left-color:var(--gc, var(--bd-hi))}
+#s01 .tile.g{border-left-width:1px}
+#s01 .tile.g .tile-ic{color:var(--gc, inherit)}
+#s01 .tile.g.dis{background:var(--panel);opacity:.55}
+/* 「制御系を停止する」は黄＝注意の意味と合わないので黄を外し、中立の太い縁にする。 */
+#s01 .btn.danger{border-width:3px;border-color:var(--tx)}
+/* 「押すと一覧を表示します」は説明の文なので出さない（§0 原則 7）。 */
 #s01 .side{width:340px;flex:none;display:flex;flex-direction:column;gap:12px;min-height:0}
 #s01 .side .card{margin-bottom:0}
 #s01 .tiles > .help-wrap{display:contents}
@@ -1176,9 +1185,16 @@ table.lst td.r{text-align:right}
 
 /* ---------- S-00 接続確認（作り直し。Spec-webui §3.1・モックアップ） ---------- */
 #s00.screen{display:flex;flex-direction:column;min-height:0;height:100%;padding:0}
-#s00 .content.g-conn{flex:1;min-height:0;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:minmax(0,1fr);padding:12px 14px}
+#s00 .content.g-conn{flex:1;min-height:0;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) 340px;grid-template-rows:minmax(0,1fr);padding:12px 14px}
 #s00 .diag{position:relative;border:1px solid var(--bd);border-radius:8px;background:var(--inset);display:flex;flex-direction:column;min-height:0;padding:10px}
-#s00 .diag svg{flex:1;min-height:0;width:100%}
+#s00 .diag svg{flex:1;min-height:0;width:100%;height:auto}
+#s00 .diag .fix{min-height:56px;display:flex;align-items:center;gap:10px;font-size:19px;padding:0 6px;color:var(--tx)}
+/* 明るい地の札（暗い地のままの .pill を S-00 の範囲で地に合わせる。
+   「自動判定の結果はまだ届いていません」は白地に濃い字で読めるようにする） */
+#s00 .pill{background:var(--panel);color:var(--tx);border:1px solid var(--bd-hi)}
+#s00 .pill.ok{border-color:var(--ok);color:var(--ok-tx)}
+#s00 .pill.ng{border-color:var(--ng-tx);color:var(--ng-tx)}
+#s00 .pill.warn{border-color:var(--warn);color:var(--warn-tx)}
 #s00 .fix{min-height:56px;display:flex;align-items:center;gap:10px;font-size:calc(var(--fs) * 1.15);padding:0 6px}
 #s00 .fix .time{margin-left:auto;color:var(--mut);font-size:max(15px,calc(var(--fs) * .82))}
 #s00 .side2{display:flex;flex-direction:column;gap:14px;min-height:0}

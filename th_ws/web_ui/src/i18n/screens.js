@@ -96,7 +96,7 @@ export const S00_NOT_READY = '必須機器が繋がっていません'
 // 1b-6 SG-B7: start.sh が数えた起動回数（control_attempt。2 以上が再起動）。
 // Spec-ops.md §2.4・Spec-webui.md §3.1 の文言どおり。
 export const S00_RESTARTING = (n) => `制御系を再起動しています（${n} 回目）`
-export const S00_ADVANCE = 'メインメニュー画面へ'
+export const S00_ADVANCE = 'メインメニューへ'
 // 疎通確認で止まったときに開発モードの設定へ入る導線（2026-09-23）
 export const S00_OPEN_DEV = '開発モードの設定'
 
@@ -742,7 +742,7 @@ export const S50_BLIND_GOTO_CALIB = '校正で変更する'
 export const S50_BLIND_NOTE =
   '今の死角マスクの表示だけです。変えるときは校正（S-40 の「LiDAR 死角」）で行います'
   + '（上限の検査・安全判定への同時反映・履歴が付きます）。'
-export const S50_SEC_SLAM = '再生の自己位置推定（slam_toolbox）'
+export const S50_SEC_SLAM = '再生の自己位置推定'
 export const S50_SLAM_NOTE =
   '変更は「YAML に保存」してから、次に「この経路で進む」を押したときに有効になります'
   + '（SLAM がその場では読み直さないため）。補正頻度を上げる＝間隔を小さく、'

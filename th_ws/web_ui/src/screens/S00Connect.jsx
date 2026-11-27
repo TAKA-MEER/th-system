@@ -129,8 +129,9 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
   const node = (k) => {
     const n = N[k]
     const m = nodes[k].m
-    const w = k === 'ap' ? 270 : n.req ? 210 : 170
-    const h = n.req ? 76 : 62
+    // §1.2: 名前は 15px 以上。主表示いっぱいを前提に字を大きく（SVG の縮小を踏まえる）。
+    const w = k === 'ap' ? 300 : n.req ? 300 : 230
+    const h = n.req ? 84 : 68
     const sym = { ok: '✓', ng: '×', none: '—' }[m]
     const fill = { ok: 'var(--ok)', ng: 'var(--jis-y,#ffd100)', none: 'var(--ctrl-hi)' }[m]
     return (
@@ -146,21 +147,21 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
           <circle cx={n.x - w / 2 + 26} cy={n.y} r={n.req ? 16 : 12} style={{ fill }} />
         )}
         <text
-          x={n.x - w / 2 + 26 - (m === 'ng' ? 1 : 0)} y={n.y + 7} textAnchor="middle"
-          fontSize={n.req ? 20 : 16} fontWeight="900"
+          x={n.x - w / 2 + 26 - (m === 'ng' ? 1 : 0)} y={n.y + 8} textAnchor="middle"
+          fontSize={n.req ? 26 : 22} fontWeight="900"
           style={{ fill: m === 'ok' ? '#fff' : '#161b22' }}
         >
           {sym}
         </text>
         <text
-          x={n.x - w / 2 + 50} y={n.y + (DATA[k] ? -1 : 7)}
-          fontSize={n.req ? 20 : 17} fontWeight={n.req ? 800 : 600}
+          x={n.x - w / 2 + 56} y={n.y + (DATA[k] ? -1 : 8)}
+          fontSize={n.req ? 27 : 23} fontWeight={n.req ? 800 : 600}
           style={{ fill: 'var(--tx)' }}
         >
           {n.name}
         </text>
         {DATA[k] ? (
-          <text x={n.x - w / 2 + 50} y={n.y + 21} fontSize="15" style={{ fill: 'var(--mut)' }}>
+          <text x={n.x - w / 2 + 56} y={n.y + 24} fontSize="21" style={{ fill: 'var(--mut)' }}>
             {DATA[k]}
           </text>
         ) : null}
@@ -168,7 +169,7 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
     )
   }
   const svg = (
-    <svg viewBox="0 0 920 470" preserveAspectRatio="xMidYMid meet" data-testid="s00-diag">
+    <svg viewBox="0 30 920 420" preserveAspectRatio="xMidYMid meet" data-testid="s00-diag">
       {EDGES.map(([a, b]) => edge(a, b))}
       {Object.keys(N).map(node)}
     </svg>

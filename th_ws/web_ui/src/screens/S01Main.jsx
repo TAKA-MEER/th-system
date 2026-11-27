@@ -47,12 +47,12 @@ import {
 } from '../parts/icons.jsx'
 import {
   S01_TILE_FIELD, S01_TILE_DRIVE, S01_TILE_MAINT, S01_TILE_AUTO, S01_TILE_SETTINGS,
-  S01_BACK, S01_CONNECT, S01_AUTO_TITLE, S01_AUTO_NO, S01_AUTO_YES,
+  S01_BACK, S01_AUTO_TITLE, S01_AUTO_NO, S01_AUTO_YES,
   S01_FINISH_ESCAPE,
   S01_NET_TITLE, S01_NET_OK, S01_NET_CHECKING, S01_NET_WARN,
   S01_NET_SUPPRESSED, S01_NET_OPEN, S01_NET_LINK_DOWN, S00_ITEMS,
   WIN_REASON_TITLE, WIN_REASON_OK,
-  SHUTDOWN_TITLE, SHUTDOWN_UNSAVED_LABEL, SHUTDOWN_NONE, SHUTDOWN_BUTTON, SHUTDOWN_HINT,
+  SHUTDOWN_TITLE, SHUTDOWN_UNSAVED_LABEL, SHUTDOWN_NONE, SHUTDOWN_BUTTON,
   SHUTDOWN_WIN_TITLE, SHUTDOWN_WIN_INTRO, SHUTDOWN_WIN_NONE, SHUTDOWN_SAVE,
   SHUTDOWN_DISCARD_IDLE, SHUTDOWN_DISCARD_ARMED, SHUTDOWN_CANCEL, SHUTDOWN_CONFIRM,
   SHUTDOWN_LOADING, SHUTDOWN_STOPPING, SHUTDOWN_BLOCKED_HINT,
@@ -68,6 +68,12 @@ const TILE_ICONS = {
 }
 
 const GROUP_NAMES = { field: S01_TILE_FIELD, drive: S01_TILE_DRIVE, maint: S01_TILE_MAINT }
+
+const TILE_GC = {
+  field: '#26a69a',
+  drive: '#8f8a3e',
+  maint: '#a1887f',
+}
 
 const TILE_HELP = {
   field: 's01-field', drive: 's01-drive', maint: 's01-maint',
@@ -322,12 +328,18 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
       : `s01-group-${tile.key}`
     const helpKey = isMode ? MODE_HELP[tile.mode] : TILE_HELP[tile.key]
     const reason = disabled && item && !disabledAll ? (reasonLabel(item.reasonKey) ?? null) : null
+    // 区画の色（mockup pal-new。--gc は CSS が地の色・アイコン・縁に使う）。
+    // 試験場 #26a69a／走行 #8f8a3e（黄土。紫は使わない）／点検と校正 #a1887f。
+    // 自律測定・設定は無地（白）。
+    const gc = isGroup ? TILE_GC[tile.key]
+      : isMode ? TILE_GC[lvl]
+      : null
     return (
       <HelpTip key={tile.key} helpKey={helpKey}>
         <button
           type="button"
-          className={`tile ${tile.size} ${disabled ? 'dis' : ''}`}
-          style={area ? { gridArea: area } : undefined}
+          className={`tile ${tile.size} ${gc ? 'g' : ''} ${disabled ? 'dis' : ''}`}
+          style={{ ...(area ? { gridArea: area } : {}), ...(gc ? { '--gc': gc } : {}) }}
           disabled={tile.kind === 'settings' ? undefined : (disabledAll ? disabledAll : undefined)}
           onClick={() => handleTile(tile)}
           data-testid={testId}
@@ -350,6 +362,21 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
 
   const groupName = GROUP_NAMES[lvl]
 
+  // §3.2「下＝運用の終了・接続確認」: 接続確認は操作バーではなく、ネットワーク
+  // 接続確認の区画の中の「詳細を見る」で S-00 へ行く（区画と重複させない）。
+  const netDetail = onOpenConnect && (
+    <HelpTip helpKey="s01-connect">
+      <button
+        type="button"
+        className="btn"
+        onClick={onOpenConnect}
+        data-testid="s01-net-open"
+      >
+        <span>{S01_NET_OPEN}</span>
+      </button>
+    </HelpTip>
+  )
+
   return (
     <div className="screen" id="s01">
       <div className="opbar" data-pos="opbar">
@@ -367,18 +394,6 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
             </HelpTip>
           )}
           <span className="grow" />
-          {onOpenConnect && (
-            <HelpTip helpKey="s01-connect">
-              <button
-                type="button"
-                className="btn exit"
-                onClick={onOpenConnect}
-                data-testid="s01-net-open"
-              >
-                <span>{S01_CONNECT}</span>
-              </button>
-            </HelpTip>
-          )}
         </div>
       <div className="s01-main">
         <div className="mcol">
@@ -421,6 +436,7 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
           {auto && !auto.suppressed && auto.overall !== 'OK' && !autoCheckWarns(auto) && (
             <div className="note">{S01_NET_CHECKING}</div>
           )}
+          {netDetail && <div className="row mt">{netDetail}</div>}
         </div>
 
         {needsFinishEscape(mode) && (
@@ -461,7 +477,6 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
                 {SHUTDOWN_BUTTON}
               </button>
               </HelpTip>
-              <div className="hint mt">{SHUTDOWN_HINT}</div>
             </>
           )}
         </div>
