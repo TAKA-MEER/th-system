@@ -29,14 +29,12 @@ test('OFF -> ON sends the request without a confirmation', async ({ page }) => {
   await page.locator('#s13').waitFor()
   await expect(page.getByTestId('s13-auto-brake')).toHaveText('OFF')
 
-  await page.getByTestId('s13-auto-brake-toggle').click()
-
-  await expect(page.getByTestId('s13-auto-brake-confirm')).toHaveCount(0)
+  await page.getByTestId('s13-auto-brake-on').click()
   const calls = await flagCalls(page)
   expect(calls.map((c) => [c.flag, c.value])).toEqual([['auto_brake', true]])
 })
 
-test('ON -> OFF: 1回目は黄で送信なし、2回目で送る', async ({ page }) => {
+test('ON -> OFF: ロック2回＋「切」で送る', async ({ page }) => {
   await stubAccepted(page)
   await gotoScreenWithLimiter(page, 'S13',
     { mode: 'TEACH_MANUAL', state: 'REC', zone: 'OUT', auto_brake: true }, LIMITER_PASS)
@@ -48,8 +46,11 @@ test('ON -> OFF: 1回目は黄で送信なし、2回目で送る', async ({ page
   await page.getByTestId('s13-auto-brake-toggle').click()
 
   await expect(page.getByTestId('s13-auto-brake-toggle')).toContainText('もう一度押すと外す')
-  expect(await flagCalls(page), '2回目までは要求を送ってはいけない').toEqual([])
+  expect(await flagCalls(page), '1回目では要求を送ってはいけない').toEqual([])
   await page.getByTestId('s13-auto-brake-toggle').click()
+  await expect(page.getByTestId('s13-auto-brake-off')).toBeVisible()
+  expect(await flagCalls(page), 'ロックが外れただけでは要求を送ってはいけない').toEqual([])
+  await page.getByTestId('s13-auto-brake-off').click()
   const calls = await flagCalls(page)
   expect(calls.map((c) => [c.flag, c.value])).toEqual([['auto_brake', false]])
 })
@@ -77,7 +78,7 @@ test('a request rejected by the vehicle shows the reason and the display stays',
   await gotoScreenWithLimiter(page, 'S13',
     { mode: 'TEACH_MANUAL', state: 'ROUTE_SEL', zone: 'OUT', auto_brake: false }, LIMITER_PASS)
   await page.locator('#s13').waitFor()
-  await page.getByTestId('s13-auto-brake-toggle').click()
+  await page.getByTestId('s13-auto-brake-on').click()
   await expect(page.getByTestId('s13-auto-brake-error')).toContainText('切り替えられません')
   await expect(page.getByTestId('s13-auto-brake')).toHaveText('OFF')
 })

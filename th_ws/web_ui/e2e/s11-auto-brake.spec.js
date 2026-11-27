@@ -28,14 +28,13 @@ test('OFF -> ON sends the request without a confirmation', async ({ page }) => {
   await page.locator('#s11').waitFor()
   await expect(page.getByTestId('s11-auto-brake')).toHaveText('OFF')
 
-  await page.getByTestId('s11-auto-brake-toggle').click()
-
-  await expect(page.getByTestId('s11-auto-brake-confirm')).toHaveCount(0)
+  // OFF の間は「入」をすぐ押せる（切り替え「切│入」）
+  await page.getByTestId('s11-auto-brake-on').click()
   const calls = await flagCalls(page)
   expect(calls.map((c) => [c.flag, c.value])).toEqual([['auto_brake', true]])
 })
 
-test('ON -> OFF: 1回目は黄「もう一度押すと外す」で送信なし、2回目で送る', async ({ page }) => {
+test('ON -> OFF: ロック2回（黄→「切│入」）＋「切」で送る', async ({ page }) => {
   await stubAccepted(page)
   await gotoScreenWithLimiter(page, 'S11',
     { mode: 'MANUAL', state: 'PAUSE', zone: 'IN', auto_brake: true }, LIMITER_PASS)
@@ -45,8 +44,12 @@ test('ON -> OFF: 1回目は黄「もう一度押すと外す」で送信なし�
   await page.getByTestId('s11-auto-brake-toggle').click()
 
   await expect(page.getByTestId('s11-auto-brake-toggle')).toContainText('もう一度押すと外す')
-  expect(await flagCalls(page), '2回目までは要求を送ってはいけない').toEqual([])
+  expect(await flagCalls(page), '1回目では要求を送ってはいけない').toEqual([])
   await page.getByTestId('s11-auto-brake-toggle').click()
+  // 2回目でロックが外れ「切│入」が出る。まだ送らない。
+  await expect(page.getByTestId('s11-auto-brake-off')).toBeVisible()
+  expect(await flagCalls(page), 'ロックが外れただけでは要求を送ってはいけない').toEqual([])
+  await page.getByTestId('s11-auto-brake-off').click()
   const calls = await flagCalls(page)
   expect(calls.map((c) => [c.flag, c.value])).toEqual([['auto_brake', false]])
 })
@@ -74,7 +77,7 @@ test('a request rejected by the vehicle shows the reason and the display stays',
   await gotoScreenWithLimiter(page, 'S11',
     { mode: 'MANUAL', state: 'PAUSE', zone: 'OUT', auto_brake: false }, LIMITER_PASS)
   await page.locator('#s11').waitFor()
-  await page.getByTestId('s11-auto-brake-toggle').click()
+  await page.getByTestId('s11-auto-brake-on').click()
   await expect(page.getByTestId('s11-auto-brake-error')).toContainText('切り替えられません')
   await expect(page.getByTestId('s11-auto-brake')).toHaveText('OFF')
 })

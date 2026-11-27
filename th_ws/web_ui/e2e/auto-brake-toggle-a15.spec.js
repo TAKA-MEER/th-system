@@ -38,8 +38,11 @@ test('W-6: ON -> OFF はロックの2回押し' , async ({ page }) => {
   const w6 = page.locator('#jogWin.show')
   await w6.getByTestId('w6-auto-brake-toggle').click()
   await expect(w6.getByTestId('w6-auto-brake-toggle')).toContainText('もう一度押すと外す')
-  expect(await sent(page), '2回目までは要求を送ってはいけない').toEqual([])
+  expect(await sent(page), '1回目では要求を送ってはいけない').toEqual([])
   await w6.getByTestId('w6-auto-brake-toggle').click()
+  await expect(w6.getByTestId('w6-auto-brake-off')).toBeVisible()
+  expect(await sent(page), 'ロックが外れただけでは要求を送ってはいけない').toEqual([])
+  await w6.getByTestId('w6-auto-brake-off').click()
   expect(await sent(page)).toEqual([['auto_brake', false]])
 })
 
@@ -55,7 +58,7 @@ test('W-6: 黄のまま押さなければ戻る' , async ({ page }) => {
 test('W-6: OFF -> ON は確認なしで送られる', async ({ page }) => {
   await accepted(page)
   await openW6(page, { jog_active: true, auto_brake: false })
-  await page.locator('#jogWin.show').getByTestId('w6-auto-brake-toggle').click()
+  await page.locator('#jogWin.show').getByTestId('w6-auto-brake-on').click()
   expect(await sent(page)).toEqual([['auto_brake', true]])
 })
 
@@ -64,7 +67,7 @@ test('W-6: 機体に拒否されたら理由を出す', async ({ page }) => {
     window.__thTestSetFlag = { auto_brake: () => ({ accepted: false, reject_reason_key: 'auto_brake_locked' }) }
   })
   await openW6(page, { jog_active: true, auto_brake: false })
-  await page.locator('#jogWin.show').getByTestId('w6-auto-brake-toggle').click()
+  await page.locator('#jogWin.show').getByTestId('w6-auto-brake-on').click()
   await expect(page.getByTestId('w6-auto-brake-error')).toContainText('切り替えられません')
   await expect(page.locator('#jogWin').getByTestId('w6-auto-brake')).toHaveAttribute('data-state', 'off')
 })
@@ -80,6 +83,7 @@ test('S-21: 開発モードの項目 auto_brake を選んでいるときだけ�
   await expect(page.getByTestId('s21-auto-brake-card')).toBeVisible()
   await page.getByTestId('s21-auto-brake-toggle').click()
   await page.getByTestId('s21-auto-brake-toggle').click()
+  await page.getByTestId('s21-auto-brake-off').click()
   expect(await sent(page)).toEqual([['auto_brake', false]])
 
   await setTestDevMode(page, DEV_OTHER)
@@ -97,6 +101,7 @@ test('S-14: 開発モードの項目を選んでいないと切替は出ない�
   await expect(page.getByTestId('s14-auto-brake-card')).toBeVisible()
   await page.getByTestId('s14-auto-brake-toggle').click()
   await page.getByTestId('s14-auto-brake-toggle').click()
+  await page.getByTestId('s14-auto-brake-off').click()
   expect(await sent(page)).toEqual([['auto_brake', false]])
 })
 
@@ -135,5 +140,6 @@ test('W-6: スティックに触れていなくても（jog_active=false の自�
   await expect(t).toBeEnabled()
   await t.click()
   await t.click()
+  await page.locator('#jogWin.show').getByTestId('w6-auto-brake-off').click()
   expect(await sent(page)).toEqual([['auto_brake', false]])
 })
