@@ -42,6 +42,12 @@ test('fail-safe: unknown mode (null) behaves exactly like INIT', () => {
 test('mode IDLE with tracker enabled: every menu mode is enabled (mode_entry.yaml allows all 10 from IDLE)', () => {
   const items = byMode(menuItems({ mode: 'IDLE', tracker_enabled: true }, modeEntry, attributes))
   for (const m of MENU_MODES) {
+    // 2026-11-27 D7: LINE・LEASH は廃止され、mode_entry にも無い。
+    if (m === 'LINE' || m === 'LEASH') {
+      assert.equal(items[m].enabled, false, `${m} is abolished (D7)`)
+      assert.equal(items[m].reasonKey, 'mode_entry_denied')
+      continue
+    }
     assert.equal(items[m].enabled, true, `${m} should be enabled from IDLE`)
     assert.equal(items[m].reasonKey, null)
   }
@@ -92,12 +98,5 @@ test('SG-B13: 経路 0 本なら教示再生は押せない（no_route_recorded�
   assert.equal(unknown.REPLAY.enabled, true)
 })
 
-test('SG-B13: リードデバイス未接続なら電子リードは押せない（device_not_connected）', () => {
-  const st = { mode: 'IDLE', tracker_enabled: true }
-  const off = byMode(menuItems(st, modeEntry, attributes, { leashPresent: false }))
-  assert.equal(off.LEASH.enabled, false)
-  assert.equal(off.LEASH.reasonKey, 'device_not_connected')
-  const on = byMode(menuItems(st, modeEntry, attributes, { leashPresent: true }))
-  assert.equal(on.LEASH.enabled, true)
-  assert.equal(on.REPLAY.enabled, true)
-})
+// 2026-11-27 D7: 電子リード（LEASH）廃止に伴い、リードデバイス未接続の
+// device_not_connected の試験は削除（廃止した振る舞いを縛っていた）。
