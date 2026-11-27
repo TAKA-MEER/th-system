@@ -14,6 +14,7 @@ test('estop button is taller than every other button on screen (portrait)', asyn
     (els) => els.map((el) => ({
       height: el.getBoundingClientRect().height,
       id: el.id || el.className,
+      tile: el.closest('#s01') != null && (el.classList.contains('tile') || el.closest('.tile') != null || el.closest('[data-tile]') != null),
     })),
   )
   expect(heights.length).toBeGreaterThan(1)
@@ -23,14 +24,16 @@ test('estop button is taller than every other button on screen (portrait)', asyn
 
   for (const h of heights) {
     if (h.id.includes('estopBtn')) continue
+    // Spec-webui §1.2: メインメニューのタイルだけ例外（機体が走らない画面）。
+    if (h.tile) continue
     expect(h.height, `button "${h.id}" (${h.height}px) must not be taller than #estopBtn (${estopHeight}px)`)
       .toBeLessThan(estopHeight)
   }
 })
 
-test('estop button meets its minimum size (>=72px tall, >=160px wide)', async ({ page }) => {
+test('estop button meets its minimum size (>=76px tall, >=160px wide)', async ({ page }) => {
   await gotoWithState(page, {})
   const box = await page.locator('#estopBtn').boundingBox()
-  expect(box.height).toBeGreaterThanOrEqual(72)
+  expect(box.height).toBeGreaterThanOrEqual(76)
   expect(box.width).toBeGreaterThanOrEqual(160)
 })

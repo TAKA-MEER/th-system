@@ -9,20 +9,45 @@
    + clamp() rules (DetailedDesign-webui.md §2.3 / SD-2) transfer unchanged.
    ============================================================ */
 
-:root{
-  /* Spec-webui §3.3.1: one colour, one operational meaning. */
-  --bg:#f5f6f4; --panel:#ffffff; --inset:#edf0eb;
-  --ctrl:#ffffff; --ctrl-hi:#e1e5df; --ctrl-on:#111111;
-  --bd:#66706a; --bd-hi:#202622;
-  --tx:#111512; --mut:#536058; --dim:#788078;
-  --brand:#155b9b; --brand-lt:#dcecff; --brand-dk:#0d3d6a;
-  --ok:#16803a; --ok-tx:#075c24;
-  --warn:#f2c500; --warn-tx:#312800;
-  --ng:#f2c500; --ng-tx:#312800;
-  --estop:#c5151b; --estop-hi:#9e1116;
+:root,
+#app[data-theme="light"]{
+  /* Spec-webui §3.3.1 (JIS B 9960-1): 1色1意味。明るい地が既定
+     （mockup の theme-light + col-jis の既定値）。青はヘッダの帯だけ。 */
+  --bg:#f4f6f9; --panel:#ffffff; --inset:#eef1f5;
+  --ctrl:#e6eaf0; --ctrl-hi:#d5dbe4; --ctrl-on:#5b6675;
+  --bd:#d7dde5; --bd-hi:#b9c2ce;
+  --tx:#161b22; --mut:#4f5866; --dim:#8d95a1;
+  --brand:#1f4f96; --brand-lt:#2a5fa8; --brand-dk:#163d75;
+  --hdr-row2:#d1d7e0; --hdr-row2-bd:#b9c2ce;
+  --ok:#1f7a35; --ok-tx:#1f7a2e; --ok-lt:#5cc477;
+  --stop:#161b22; --stop-tx:#ffffff;
+  --warn:#d9a800; --warn-tx:#5c4700; --jis-y:#ffd100;
+  --ng:#d9a800; --ng-tx:#5c4700;
+  --estop:#b71c1c; --estop-hi:#e53935; --estop-bg:#ffd100;
   --carry:#111111; --carry-tx:#ffffff;
+  --sel-bg:#5b6675; --sel-tx:#ffffff;
+  --map-unk:#dde2e8; --pt:#1f2733;
   --hdr:96px;
   --r:8px;
+  color-scheme:light;
+}
+/* 暗い地: 変数を切り替えれば出せる形。既定にはしない（地図の暗い配色は未作成）。 */
+#app[data-theme="dark"]{
+  --bg:#0f1117; --panel:#1a1d24; --inset:#12141b;
+  --ctrl:#252830; --ctrl-hi:#343849; --ctrl-on:#2f6bc6;
+  --bd:#2a2d35; --bd-hi:#3a3f4c;
+  --tx:#e6e8ec; --mut:#8b93a1; --dim:#5c6470;
+  --brand:#3f8ae0; --brand-lt:#7fb4ee; --brand-dk:#12233d;
+  --hdr-row2:#121722; --hdr-row2-bd:#2a2d35;
+  --ok:#4caf50; --ok-tx:#8fd694; --ok-lt:#5cc477;
+  --stop:#0b0d10; --stop-tx:#ffffff;
+  --warn:#e6b800; --warn-tx:#ffd84d; --jis-y:#ffd100;
+  --ng:#e6b800; --ng-tx:#ffd84d;
+  --estop:#c62828; --estop-hi:#e53935; --estop-bg:#ffd100;
+  --sel-bg:#e6e8ec; --sel-tx:#0f1117;
+  --map-unk:#3a3f4a; --pt:#0b0d12;
+  color-scheme:dark;
+}
   /* Base font size. Every font-size is written as calc(var(--fs) * n).
      Inside #app, the container query below makes this track screen width. */
   --fs:16px;
@@ -105,12 +130,12 @@ table{border-collapse:collapse;width:100%}
 }
 #modePill.unknown{background:var(--warn);border-color:#111;color:#111}
 #zonePill{
-  flex:0 0 auto;font-size:calc(var(--fs) * .72);font-weight:700;padding:4px 9px;border-radius:999px;
+  flex:0 0 auto;font-size:max(15px,calc(var(--fs) * .72));font-weight:700;padding:4px 9px;border-radius:999px;
   background:#ffffff;border:1px solid #111;color:#111;white-space:nowrap;display:none;
 }
 #zonePill.show{display:inline-block}
 #devPill{
-  flex:0 0 auto;font-size:calc(var(--fs) * .72);font-weight:700;padding:4px 9px;border-radius:999px;
+  flex:0 0 auto;font-size:max(15px,calc(var(--fs) * .72));font-weight:700;padding:4px 9px;border-radius:999px;
   background:#fff;border:1px solid #111;color:#111;display:none;
 }
 #devPill.show{display:inline-block}
@@ -134,7 +159,7 @@ table{border-collapse:collapse;width:100%}
    width >=160px and >=25% of screen width; the tallest button on screen */
 #estopBtn{
   /* 25cqw = 25% of #app's width. vw would ignore an embedding frame and overflow it */
-  flex:0 0 auto;min-width:max(160px,25cqw);min-height:max(72px,calc(var(--fs) * 4.2));
+  flex:0 0 auto;min-width:max(160px,25cqw);min-height:max(76px,calc(var(--fs) * 4.2));
   background:var(--estop);color:#fff;
   font-size:calc(var(--fs) * 1.25);font-weight:800;letter-spacing:.14em;padding:12px 20px;
   border-left:2px solid #7a1414;
@@ -278,28 +303,32 @@ table{border-collapse:collapse;width:100%}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .grow{flex:1 1 auto}
 .mut{color:var(--mut)}.dim{color:var(--dim)}
-.sm{font-size:calc(var(--fs) * .82)}.xs{font-size:calc(var(--fs) * .74)}
+/* §1.2: 小さい文字は 15 以上。--fs の倍率だけだと 15 未満になるので下限を明示する。 */
+.sm{font-size:max(15px,calc(var(--fs) * .82))}.xs{font-size:max(15px,calc(var(--fs) * .74))}
 .mono{font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;font-variant-numeric:tabular-nums}
 .b{font-weight:700}
 .tone-ok{color:var(--ok-tx)}.tone-ng{color:var(--ng-tx)}.tone-warn{color:var(--warn-tx)}
 .mt{margin-top:8px}.mb{margin-bottom:8px}
 
 .btn{
-  background:var(--ctrl);border:1px solid var(--bd-hi);border-radius:6px;
+  background:var(--panel);border:1px solid var(--bd-hi);border-radius:4px;
   padding:11px 14px;font-size:calc(var(--fs) * .95);font-weight:600;text-align:center;
+  min-height:56px;min-width:56px;
 }
 .btn:active{background:var(--ctrl-hi)}
-/* Blue = "what's happening now" only (§4.3 / U-17). Never used for emphasis. */
-.btn.on{background:var(--ctrl-on);border-color:var(--brand);color:#fff}
-.btn.primary{background:#245089;border-color:var(--brand)}
-.btn.save{background:#17361d;border-color:#2f7a38;color:#a9e0ad;font-weight:700}
-.btn.save:active{background:#1f4a27}
-.btn.danger{background:#4a1414;border-color:#8a2a2a;color:var(--ng-tx)}
+/* §3.3.1: 反転＝選んでいるもの。青はボタンの色に使わない（D37 廃止）。 */
+.btn.on{background:var(--sel-bg);border-color:var(--sel-bg);color:var(--sel-tx)}
+/* 押すと機体が動かない「進む」は塗らず太い縁で強める（P8）。 */
+.btn.primary{background:var(--panel);border:3px solid var(--tx);color:var(--tx);font-weight:800}
+.btn.save{background:var(--panel);border:2px solid var(--ok);color:var(--tx);font-weight:700}
+.btn.save:active{background:var(--ctrl-hi)}
+.btn.danger{background:var(--panel);border:2px solid var(--jis-y);color:var(--tx);font-weight:700}
 .btn.wide{width:100%}
 /* S-21 BLOCKED 帯のボタン: タップしやすい大きさ（最小 44px） */
 .s21-blocked .btn{min-height:44px}
-.btn[disabled],.btn.dis{opacity:.4;cursor:not-allowed}
-.btn.sm{padding:7px 10px;font-size:calc(var(--fs) * .84)}
+/* §3.3.3: 押せないボタンは塗りを外し枠と語を残す。半透明にしない。 */
+.btn[disabled],.btn.dis{background:transparent;border:1px solid var(--bd-hi);color:var(--dim);opacity:1;cursor:not-allowed}
+.btn.sm{padding:7px 10px;font-size:calc(var(--fs) * .95);min-height:56px}
 
 /* Ported from docs/plan/spec/mockup/index.html (not carried over by
    WP-UI-01, which built no screens yet -- first needed by S-00/S-01,
