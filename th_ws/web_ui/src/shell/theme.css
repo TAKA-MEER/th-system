@@ -1141,3 +1141,81 @@ table.lst td.r{text-align:right}
 #s21 .s21-radar-ovr .radar{max-height:240px}
 /* 経路が塞がれた（再試行中）の停止理由の帯は注意の帯（明るい地・濃い文字）。 */
 .stop-banner.warn{background:#f7e3a1;border-color:#b58900;color:#3a2d00}
+
+/* ---------- S-01 メインメニュー（作り直し。Spec-webui §3.2・モックアップ M2） ---------- */
+#s01.screen{display:flex;flex-direction:column;min-height:0;height:100%}
+#s01 .opbar{height:68px;flex:none;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--bd)}
+#s01 .s01-main{flex:1;min-height:0;display:flex;gap:12px;padding:12px 14px}
+#s01 .mcol{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+#s01 .s01-banner{font-weight:800;font-size:calc(var(--fs) * 1.05);margin-bottom:10px}
+#s01 .tiles{flex:1;display:grid;gap:12px;min-height:0}
+#s01 .tiles[data-lvl="field"]{grid-template-columns:1fr 1fr}
+#s01 .tiles[data-lvl="drive"]{grid-template-columns:repeat(3,1fr)}
+#s01 .tiles[data-lvl="maint"]{grid-template-columns:1fr 1fr}
+#s01 .tile{background:var(--panel);border:1px solid var(--bd-hi);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:10px;text-align:center;min-height:56px}
+#s01 .tile .tile-ic{display:grid;place-items:center;color:var(--tx)}
+#s01 .tile .tile-ic svg{width:64px;height:64px}
+#s01 .tile .nm{font-size:calc(var(--fs) * 1.5);font-weight:800;line-height:1.2}
+#s01 .tile.l .tile-ic svg{width:92px;height:92px}
+#s01 .tile.l .nm{font-size:calc(var(--fs) * 2)}
+#s01 .tile.s{flex-direction:row;gap:14px}
+#s01 .tile.s .tile-ic svg{width:36px;height:36px}
+#s01 .tile.s .nm{font-size:calc(var(--fs) * 1.25)}
+#s01 .tile.dis{background:var(--panel);border:1px solid var(--bd-hi);color:var(--mut)}
+#s01 .side{width:340px;flex:none;display:flex;flex-direction:column;gap:12px;min-height:0}
+#s01 .side .card{margin-bottom:0}
+#s01 .tiles > .help-wrap{display:contents}
+@media (max-aspect-ratio: 1/1){
+  #s01 .s01-main{flex-direction:column}
+  #s01 .side{width:auto}
+  #s01 .tiles[data-lvl="drive"]{grid-template-columns:1fr 1fr}
+}
+/* WindowShell が W-4 のホストの中に入ったときの二重枠を避ける（P1 追加）。 */
+#overlay .win.confirm.show:has(> .win.show){background:transparent;border:none;box-shadow:none;padding:0}
+#overlay .win.confirm.show > .win.show{width:100%;margin:0;max-height:100%}
+
+/* ---------- S-00 接続確認（作り直し。Spec-webui §3.1・モックアップ） ---------- */
+#s00.screen{display:flex;flex-direction:column;min-height:0;height:100%;padding:0}
+#s00 .content.g-conn{flex:1;min-height:0;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:minmax(0,1fr);padding:12px 14px}
+#s00 .diag{position:relative;border:1px solid var(--bd);border-radius:8px;background:var(--inset);display:flex;flex-direction:column;min-height:0;padding:10px}
+#s00 .diag svg{flex:1;min-height:0;width:100%}
+#s00 .fix{min-height:56px;display:flex;align-items:center;gap:10px;font-size:calc(var(--fs) * 1.15);padding:0 6px}
+#s00 .fix .time{margin-left:auto;color:var(--mut);font-size:max(15px,calc(var(--fs) * .82))}
+#s00 .side2{display:flex;flex-direction:column;gap:14px;min-height:0}
+#s00 .side2 .card{margin-bottom:0}
+#s00 .side2 h3{font-size:max(15px,calc(var(--fs) * .82));color:var(--mut);font-weight:700;margin-bottom:6px}
+#s00 .ac{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#s00 .ac div{display:flex;align-items:center;gap:10px;font-size:calc(var(--fs) * 1.05);min-height:48px}
+#s00 .ac .mk{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:900;flex:none}
+#s00 .ac .mk.ok{background:var(--ok);color:#fff}
+#s00 .ac .mk.warn{background:var(--panel);border:3px solid var(--warn);color:var(--warn-tx)}
+#s00 .ac .mk.ng{background:var(--jis-y);color:#161b22}
+#s00 .ac .mk.none{background:var(--ctrl);color:var(--mut)}
+#s00 .push-bottom{margin-top:auto}
+@media (max-aspect-ratio: 1/1){
+  #s00 .content.g-conn{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}
+}
+
+/* ---------- S-50 設定（作り直し。Spec-webui §3.15・型: 見る・変える） ---------- */
+#s50.screen{display:flex;flex-direction:column;min-height:0;height:100%;padding:0}
+#s50 .content.g-list{flex:1;min-height:0;display:grid;gap:14px;grid-template-columns:380px minmax(0,1fr);grid-template-rows:minmax(0,1fr);padding:12px 14px}
+#s50 .lst{min-height:0;display:flex;flex-direction:column;gap:4px}
+#s50 .lrow{min-height:56px;display:flex;align-items:center;padding:0 14px;border:1px solid transparent;border-radius:8px;font-size:calc(var(--fs) * 1.05)}
+#s50 .lrow.on{background:var(--sel-bg);color:var(--sel-tx)}
+#s50 .pane{min-height:0;display:flex;flex-direction:column}
+#s50 .pbody{flex:1;min-height:0;overflow:auto}
+#s50 .pfoot{flex:none;display:flex;align-items:center;gap:10px;padding-top:10px}
+#s50 .when{font-size:max(15px,calc(var(--fs) * .82));color:var(--mut);padding:4px 10px;border:1px solid var(--bd-hi);border-radius:999px;white-space:nowrap}
+#s50 .grp{display:flex;flex-direction:column;gap:16px}
+#s50 .gr{display:flex;align-items:center;gap:12px;min-height:56px}
+#s50 .gr > span{flex:1;min-width:0}
+#s50 .mseg{display:inline-flex;border:1px solid var(--bd-hi);border-radius:8px;overflow:hidden}
+#s50 .mseg > button{padding:8px 16px;min-height:56px;font-weight:600}
+#s50 .mseg > button.on{background:var(--sel-bg);color:var(--sel-tx)}
+#s50 .stepper{display:inline-flex;align-items:center;gap:8px}
+#s50 .stepper b{min-width:90px;text-align:center;font-size:calc(var(--fs) * 1.15);font-variant-numeric:tabular-nums}
+#s50 .inp{background:var(--inset);border:1px solid var(--bd-hi);border-radius:6px;color:var(--tx);padding:12px;font:inherit;min-height:56px}
+@media (max-aspect-ratio: 1/1){
+  #s50 .content.g-list{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+  #s50 .lst{display:grid;grid-template-columns:1fr 1fr}
+}

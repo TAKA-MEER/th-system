@@ -1,17 +1,12 @@
 // screens/S50Settings.jsx — S-50 設定（SCREEN_NAMES.S50; WS-9X）。
-// Spec-webui.md §3.15 / docs/plan/spec/mockup/index.html #s50。
+// Spec-webui.md §3.15（型: 見る・変える。タブは無い）。左に区分 8 つ、右に中身。
+// 右の下端の右に「保存」と「いつ効くかの印」（すぐ／次の起動から／
+// 次に地図を読み直したときから）。効き方の違う設定は区分を分ける。
+// 注記の文は置かない（§0 原則 7）。
 //
-// S-01 の「保守・設定」カードから開く IDLE のサブ画面。FSM のモードではない
+// S-01 の「設定」タイルから開く IDLE のサブ画面。FSM のモードではない
 // （main.jsx の Screens() が settingsOpen を持ち、resolveScreen が S-01 のときだけ
 // S-50 を返す。動作系モードに入ると自動で閉じる）。
-//
-// タブ:
-//   一般     … 実配線のあるパラメータ調整（follow_planner_mapless / lidar_filter /
-//              slam_toolbox）。旧 SettingsPanel.jsx の中身をそのまま移植。
-//   表示     … 文字サイズ（localStorage、parts/fontScale.js）
-//   開発モード … 開発モード ON/OFF と項目別選択（ros/useDevMode.js 経由で
-//              connectivity_checker のパラメータに書く。表示の正本は
-//              /system/dev_mode。localStorage は見た目の即時反映だけ）
 //
 // 変更できるのは停止中（IDLE・PREP の地図作業中・非ジョグ）のときだけ
 // （Spec.md SD-9。1b-5）。UI で disabled にするのに加え、config_manager が
@@ -28,6 +23,8 @@ import { useDevMode } from '../ros/useDevMode.js'
 import { useFaultHistory } from '../ros/useFaultHistory.js'
 import { useSpeaker } from '../ros/useSpeaker.js'
 import FaultHistoryList from '../parts/FaultHistoryList.jsx'
+import HelpTip from '../parts/HelpTip.jsx'
+import { ViewLayout } from '../shell/Layouts.jsx'
 import {
   DEV_ITEMS, devIgnoreParam, effectiveItems,
 } from '../ros/devModeState.js'
@@ -37,44 +34,43 @@ import {
   readStageOrientation, writeStageOrientation,
   ORIENTATION_AUTO, ORIENTATION_LANDSCAPE, ORIENTATION_PORTRAIT,
 } from '../parts/stageOrientation.js'
-import { readCostmapVisible, writeCostmapVisible } from '../parts/costmapVisibility.js'
+import { readHelpEnabled, writeHelpEnabled } from '../parts/helpPrefs.js'
 import { readDevMode, setDevMode } from '../parts/devMode.js'
+import { clampTunableParam } from '../ros/s50TunableLimits.js'
 import PARAM_LIMITS from '../generated/param_limits.json'
-import { clampTunableParam, tunableFieldMax } from '../ros/s50TunableLimits.js'
 import { presetOrderError } from '../ros/presetOrder.js'
 import {
-  S50_BACK, S50_TAB_GENERAL, S50_TAB_DISPLAY, S50_TAB_DEV, S50_TAB_FAULT_HISTORY, S50_GUARD,
+  S50_BACK, S50_GUARD,
   S50_SAVE_YAML, S50_SAVING, S50_SAVED, S50_SAVE_FAILED, S50_LOAD_FAILED,
-  S50_SEC_FOLLOW, S50_SEC_LIDAR, S50_SEC_SLAM, S50_SLAM_NOTE,
-  S50_SEC_FOLLOW_TAB, S50_SEC_LIDAR_TAB, S50_SEC_SLAM_TAB, S50_SEC_PRESET_TAB,
-  S50_SEC_PRESET, S50_PRESET_NOTE, S50_PRESET_SAVE,
+  S50_SEC_SLAM, S50_SEC_PRESET, S50_PRESET_SAVE,
   S50_PRESET_REASON_LABEL, S50_PRESET_REASON_NEED, S50_PRESET_NEXT_PREFIX,
-  S50_SEC_SPEAKER_TAB, S50_SEC_SPEAKER, S50_SPEAKER_NOTE,
-  S50_SPEAKER_ON, S50_SPEAKER_OFF, S50_SPEAKER_VOLUME, S50_SPEAKER_TEST,
+  S50_SEC_SPEAKER, S50_SPEAKER_ON, S50_SPEAKER_OFF, S50_SPEAKER_VOLUME, S50_SPEAKER_TEST,
   S50_SPEAKER_TEST_SENT, S50_SPEAKER_SEND_FAILED, S50_SPEAKER_NO_REPLY,
   S50_SPEAKER_PLAYING,
   S50_PRESET_ORDER_REASONS,
-  S50_SEC_BRAKE_TAB, S50_SEC_BRAKE, S50_BRAKE_NOTE, S50_BRAKE_OUTDOOR, S50_BRAKE_INDOOR,
+  S50_SEC_BRAKE, S50_BRAKE_OUTDOOR, S50_BRAKE_INDOOR,
   S50_BRAKE_OFF, S50_BRAKE_ON,
-  S50_SEC_CAMERA_TAB, S50_SEC_CAMERA, S50_CAMERA_NOTE, S50_CAMERA_URL_LABEL, S50_CAMERA_BAD_URL,
-  S50_BLIND_GOTO_CALIB, S50_BLIND_NOTE,
+  S50_SEC_CAMERA, S50_CAMERA_URL_LABEL, S50_CAMERA_BAD_URL,
+  S50_BLIND_GOTO_CALIB,
   S50_FONT_TITLE, S50_FONT_NORMAL, S50_FONT_LARGE, S50_FONT_XLARGE,
   S50_VOICE_TITLE, S50_VOICE_ON, S50_VOICE_OFF,
   S50_ORIENTATION_TITLE, S50_ORIENTATION_AUTO, S50_ORIENTATION_PORTRAIT,
   S50_ORIENTATION_LANDSCAPE,
-  S50_COSTMAP_TITLE, S50_COSTMAP_SHOW, S50_COSTMAP_HIDE,
-  S50_DEV_TITLE, S50_DEV_ENABLE, S50_DEV_DISABLE, S50_DEV_NOTE,
-  S50_DEV_ITEMS_TITLE, S50_DEV_ITEM_LINK, S50_DEV_ITEM_LINK_DESC,
-  S50_DEV_ITEM_LIDAR_FAULT, S50_DEV_ITEM_LIDAR_FAULT_DESC,
-  S50_DEV_ITEM_SCAN_STOP, S50_DEV_ITEM_SCAN_STOP_DESC,
-  S50_DEV_ITEM_BATTERY, S50_DEV_ITEM_OPCHECK, S50_DEV_ITEM_OPCHECK_DESC,
+  S50_HELP_TITLE, S50_HELP_SHOW, S50_HELP_HIDE,
+  S50_DEV_TITLE, S50_DEV_ENABLE, S50_DEV_DISABLE,
+  S50_DEV_ITEMS_TITLE, S50_DEV_ITEM_LINK, S50_DEV_ITEM_LIDAR_FAULT,
+  S50_DEV_ITEM_SCAN_STOP, S50_DEV_ITEM_BATTERY, S50_DEV_ITEM_OPCHECK,
   S50_DEV_ITEM_AUTO_BRAKE,
   S50_DEV_NO_GATE, S50_DEV_EFFECTIVE_TITLE, S50_DEV_NONE,
-  S50_DEV_ESTOP_UNKNOWN, S50_DEV_SCOPE_NOTE,
+  S50_DEV_SCOPE_NOTE,
   S50_DEV_SEND_FAILED,
+  S50_SEC_RUN, S50_SEC_LOC, S50_SEC_NOTIFY, S50_SEC_SCREEN,
+  S50_SEC_LINK, S50_SEC_LOG, S50_SEC_BLIND, S50_SEC_DEV,
+  S50_WHEN_NEXT_BOOT, S50_WHEN_MAP_RELOAD, S50_WHEN_NOW,
 } from '../i18n/screens.js'
 
-// follow_planner_mapless: th_config_manager/tunable_targets.py の params と揃える。
+// follow_planner_mapless の項目。Spec-webui §3.15 に区分が無いため画面には
+// 出さない（th_testing/test/test_tunable_targets.py が互換のために参照）。
 const MAPLESS_FIELDS = [
   { name: 'lookback_distance',             label: '軌跡追従: 遡り距離',   unit: 'm',    min: 0.1, max: 3,    step: 0.05 },
   { name: 'trail_sample_interval_m',       label: '軌跡点の記録間隔',     unit: 'm',    min: 0.01, max: 0.5, step: 0.01 },
@@ -128,22 +124,14 @@ const isValidCameraUrl = (value) =>
 // 上限値自体は scripts/gen_param_limits.py が registry.yaml から作る）。
 const REGISTRY_CAPS = { follow_planner_mapless: { v_max: PARAM_LIMITS.v_max } }
 
-// 一般タブの LiDAR 死角は読み取り専用（2026-10-02 Spec-webui.md §3.15）。
-// 変更は校正 S-40 の BLIND 経路だけにするため、編集欄も「YAML に保存」も置かない。
-// 値の読み出しは lidar_filter の get_parameters を直接叩く従来の経路のまま
-// （表示は config_manager の調整対象でなくても読める）。
-
-// 開発モードの項目メタ（WP-DEV-01B §2）。キーは devModeState.DEV_ITEMS と揃える。
-// battery 以外は効く。opcheck は起動時の自動点検の警告を消す
-// （判定自体は止めない）。battery は as-built に止める側の
-// 仕組みが無く、選んでも何も起きない（DEV_NO_GATE_ITEMS。カード末尾の注記で明示する）。
+// 開発モードの項目メタ。キーは devModeState.DEV_ITEMS と揃える。
 const DEV_ITEM_META = [
-  { item: 'link', label: S50_DEV_ITEM_LINK, desc: S50_DEV_ITEM_LINK_DESC },
-  { item: 'lidar_fault', label: S50_DEV_ITEM_LIDAR_FAULT, desc: S50_DEV_ITEM_LIDAR_FAULT_DESC },
-  { item: 'scan_stop', label: S50_DEV_ITEM_SCAN_STOP, desc: S50_DEV_ITEM_SCAN_STOP_DESC },
-  { item: 'battery', label: S50_DEV_ITEM_BATTERY, desc: '' },
-  { item: 'opcheck', label: S50_DEV_ITEM_OPCHECK, desc: S50_DEV_ITEM_OPCHECK_DESC },
-  { item: 'auto_brake', label: S50_DEV_ITEM_AUTO_BRAKE, desc: '' },
+  { item: 'link', label: S50_DEV_ITEM_LINK },
+  { item: 'lidar_fault', label: S50_DEV_ITEM_LIDAR_FAULT },
+  { item: 'scan_stop', label: S50_DEV_ITEM_SCAN_STOP },
+  { item: 'battery', label: S50_DEV_ITEM_BATTERY },
+  { item: 'opcheck', label: S50_DEV_ITEM_OPCHECK },
+  { item: 'auto_brake', label: S50_DEV_ITEM_AUTO_BRAKE },
 ]
 const DEV_ITEM_LABEL = Object.fromEntries(DEV_ITEM_META.map(({ item, label }) => [item, label]))
 
@@ -193,40 +181,28 @@ function NumberField({ label, unit, value, min, max, step, disabled, onCommit })
   )
 }
 
-const SECTION_TABS = [
-  ['follow', S50_SEC_FOLLOW_TAB],
-  ['lidar', S50_SEC_LIDAR_TAB],
-  ['slam', S50_SEC_SLAM_TAB],
-  ['preset', S50_SEC_PRESET_TAB],
-  ['brake', S50_SEC_BRAKE_TAB],
-  ['camera', S50_SEC_CAMERA_TAB],
-  ['speaker', S50_SEC_SPEAKER_TAB],
+const SECTIONS = [
+  ['run', S50_SEC_RUN, 's50-run'],
+  ['loc', S50_SEC_LOC, 's50-loc'],
+  ['notify', S50_SEC_NOTIFY, 's50-notify'],
+  ['screen', S50_SEC_SCREEN, 's50-screen'],
+  ['link', S50_SEC_LINK, 's50-link'],
+  ['log', S50_SEC_LOG, 's50-log'],
+  ['blind', S50_SEC_BLIND, 's50-blind'],
+  ['dev', S50_SEC_DEV, 's50-dev'],
 ]
 
-function Section({ title, note, saveKey, status, editable, loading, onSave, children }) {
-  return (
-    <div className="card">
-      <div className="row" style={{ marginBottom: 8 }}>
-        <h3 className="grow" style={{ margin: 0 }}>{title}</h3>
-        <button
-          type="button"
-          className="btn save sm"
-          disabled={!editable || loading}
-          onClick={onSave}
-          data-testid={`s50-save-${saveKey}`}
-        >
-          {S50_SAVE_YAML}
-        </button>
-      </div>
-      {status && <p className="note" data-testid={`s50-status-${saveKey}`}>{status}</p>}
-      {note && <p className="note">{note}</p>}
-      <div className="s50-grid">{children}</div>
-    </div>
-  )
+const WHEN = {
+  run: S50_WHEN_NEXT_BOOT,
+  loc: S50_WHEN_MAP_RELOAD,
+  notify: S50_WHEN_NOW,
+  screen: S50_WHEN_NOW,
+  link: S50_WHEN_NEXT_BOOT,
+  dev: S50_WHEN_NOW,
 }
 
 // initialTab: S-00（疎通確認）から開いたときは 'dev'。INIT では一般タブの
-// 読み込み（config_manager）が通らないため、開発モードタブから始める。
+// 読み込み（config_manager）が通らないため、開発モードの区分から始める。
 export default function S50Settings({ onBack, initialTab = 'general' }) {
   const { ros, state, stale } = useSystemState()
   const { getTunableParams, applyTunableParam, saveTunableParams } = useTunableParams(ros)
@@ -234,8 +210,7 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   const { getParams, setParams } = useParamsOverrides(ros)
   // S-40（校正）への導線。FSM が真実なので画面側で遷移はしない — 受理されれば
   // /system/state が CALIB になり、main.jsx が S-50 を畳んで S-40 を出す。
-  // 拒否されたら理由をその場に出す（S-01 の理由ウィンドウと同型。S-30 の
-  // 発射しっぱなしにはしない）。
+  // 拒否されたら理由をその場に出す。
   const sendTrigger = useTrigger()
   const [calibErr, setCalibErr] = useState('')
 
@@ -243,26 +218,18 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   // 拒否されるようになったため外す（以前は IDLE/MANUAL だった）。
   const editable = mapOrParamOpAllowed(state, stale)
 
-  const [tab, setTab] = useState(initialTab)
-  // 一般タブの区画（追従 / LiDAR / SLAM / 速度プリセット）。1 画面に全部は並ばないので
-  // 区画ごとに出す（スクロール無しで収めるため。2026-10-10）。
-  const [section, setSection] = useState('follow')
-
-  // ── 一般タブ ──
-  const [mapless, setMapless] = useState({})
-  const [blindRanges, setBlindRanges] = useState(null)
-  const [slam, setSlam] = useState({})
+  const [section, setSection] = useState(initialTab === 'dev' ? 'dev' : initialTab === 'general' ? 'run' : 'run')
   const [status, setStatus] = useState({})
   const [loading, setLoading] = useState(false)
-  // ── SG-B8: 速度プリセット区画 ──
+  const [blindRanges, setBlindRanges] = useState(null)
+  const [slam, setSlam] = useState({})
   // presetEff＝いま効いている値、presetPending＝保存済みで次回から効く上書き、
-  // presetDraft＝編集中。保存は /params/set（出どころ付き）で一括し、
-  // 走行中の値には触れない（次の起動から効く）。
+  // presetDraft＝編集中。保存は /params/set（出どころ付き）で一括。
   const [presetEff, setPresetEff] = useState({})
   const [presetPending, setPresetPending] = useState({})
   const [presetDraft, setPresetDraft] = useState({})
   const [presetReason, setPresetReason] = useState('')
-  // ── SG-C14: 自動ブレーキ既定区画（preset と同じ /params 経路）──
+  // ── SG-C14: 自動ブレーキ既定（preset と同じ /params 経路）──
   const [brakeEff, setBrakeEff] = useState({})
   const [brakeDraft, setBrakeDraft] = useState({})
   const [brakeReason, setBrakeReason] = useState('')
@@ -273,56 +240,35 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
 
   const reload = useCallback(() => {
     setLoading(true)
-    // SG-B9: 起動していないノードの失敗で全体を落とさない。節ごとに成否を
-    // 扱い、取れたぶんは出す（本番の bringup では use_stub なしだと
-    // follow_planner_mapless が起動しておらず、その取得だけ失敗する）。
     Promise.allSettled([
-      getTunableParams('follow_planner_mapless', MAPLESS_FIELDS.map((f) => f.name)),
       getTunableParams('lidar_filter', ['blind_angle_ranges']),
       getTunableParams('slam_toolbox', SLAM_FIELDS.map((f) => f.name)),
-    ]).then(([maplessRes, lidarRes, slamRes]) => {
-      const loadErr = {}
-      if (maplessRes.status === 'fulfilled') {
-        setMapless(maplessRes.value)
-      } else {
-        setMapless({})
-        loadErr.follow_planner_mapless = S50_LOAD_FAILED
-      }
+    ]).then(([lidarRes, slamRes]) => {
       if (lidarRes.status === 'fulfilled') {
         setBlindRanges(lidarRes.value.blind_angle_ranges ?? [])
       } else {
-        // 読み取り専用表示は従来どおり「取得できませんでした」になる
-        //（s50-blind-current。節の注記は出さない）。
         setBlindRanges(null)
       }
       if (slamRes.status === 'fulfilled') {
         setSlam(slamRes.value ?? {})
       } else {
         setSlam({})
-        loadErr.slam_toolbox = S50_LOAD_FAILED
-      }
-      if (Object.keys(loadErr).length > 0) {
-        setStatus((s) => ({ ...s, ...loadErr }))
+        setStatus((s) => ({ ...s, slam_toolbox: S50_LOAD_FAILED }))
       }
     }).finally(() => setLoading(false))
-    // SG-B8: 速度プリセットは /params/get で効き値と保存済み上書きを区別して読む。
-    // 取れなくても他区画は出す（節ごとの成否。各区画の保存ボタンだけ無効化）。
     getParams(PRESET_NAMES).then((payload) => {
       setPresetEff(payload?.effective ?? {})
       setPresetPending(payload?.pending ?? {})
-      // 編集の出発点は「次に効く値」（保存済みがあればそれ、無ければ効き値）。
       setPresetDraft({ ...(payload?.effective ?? {}), ...(payload?.pending ?? {}) })
     }).catch(() => {
       setStatus((s) => ({ ...s, preset: S50_LOAD_FAILED }))
     })
-    // SG-C14: 自動ブレーキの既定も同じ経路で読む（次に効く値を編集の出発点にする）。
     getParams(BRAKE_NAMES).then((payload) => {
       setBrakeEff(payload?.effective ?? {})
       setBrakeDraft({ ...(payload?.effective ?? {}), ...(payload?.pending ?? {}) })
     }).catch(() => {
       setStatus((s) => ({ ...s, brake: S50_LOAD_FAILED }))
     })
-    // カメラの開く先も同じ経路で読む（次に効く値を編集の出発点にする）。
     getParams(CAMERA_NAMES).then((payload) => {
       setCameraEff(payload?.effective ?? {})
       setCameraDraft({ ...(payload?.effective ?? {}), ...(payload?.pending ?? {}) })
@@ -333,13 +279,6 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
 
   useEffect(() => { reload() }, [reload])
 
-  const applyMapless = (name, isInt) => (value) => {
-    // SG-B9: registry の上限を超えて送らない（欄の max と二重の網。
-    // 保存はこの生値を YAML に書くので、ここで丸めた値が保存される値になる）。
-    const capped = clampTunableParam(REGISTRY_CAPS, 'follow_planner_mapless', name, value)
-    setMapless((prev) => ({ ...prev, [name]: capped }))
-    applyTunableParam('follow_planner_mapless', name, capped, { isInt }).catch(() => {})
-  }
   const gotoCalib = () => {
     setCalibErr('')
     sendTrigger('ui.enter_mode', { mode: 'CALIB' }).then((res) => {
@@ -348,30 +287,39 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   }
   const applySlam = (name) => (value) => {
     setSlam((prev) => ({ ...prev, [name]: value }))
-    // slam_toolbox はライブ反映しない。値は保持され、YAML 保存 → 次の経路選択で効く。
     applyTunableParam('slam_toolbox', name, value).catch(() => {})
   }
 
-  const save = (nodeName) => {
-    setStatus((s) => ({ ...s, [nodeName]: S50_SAVING }))
-    saveTunableParams(nodeName)
+  const saveSlam = () => {
+    setStatus((s) => ({ ...s, slam_toolbox: S50_SAVING }))
+    saveTunableParams('slam_toolbox')
       .then((res) => setStatus((s) => ({
-        ...s, [nodeName]: res.success ? S50_SAVED : `${S50_SAVE_FAILED}: ${res.message}`,
+        ...s, slam_toolbox: res.success ? S50_SAVED : `${S50_SAVE_FAILED}: ${res.message}`,
       })))
       .catch((e) => setStatus((s) => ({
-        ...s, [nodeName]: `${S50_SAVE_FAILED}: ${e.message ?? e}`,
+        ...s, slam_toolbox: `${S50_SAVE_FAILED}: ${e.message ?? e}`,
       })))
   }
 
-  // SG-B8: 速度プリセットの保存（/params/set。出どころ必須＝PT-4）。
-  // 即時の set_parameters はしない（走行中の値は変えない。次の起動から効く）。
-  // SG-C14: 低速≦中速≦高速でなければ保存不可（サーバ側も同じ規則で拒否する）。
+  // SG-B8/SG-C14: 低速≦中速≦高速でなければ保存不可（サーバ側も同じ規則で拒否）。
   const presetOrderKey = presetOrderError(presetDraft)
   const presetOrderReason = presetOrderKey ? (S50_PRESET_ORDER_REASONS[presetOrderKey] ?? presetOrderKey) : ''
   const applyPreset = (name) => (value) => {
     setPresetDraft((prev) => ({ ...prev, [name]: value }))
   }
-  const savePreset = () => {
+  const presetDiffs = pendingDiff(PRESET_NAMES, presetEff, presetPending)
+
+  async function saveParamsSet(values, reasonKey) {
+    const changed = {}
+    for (const [name, draft, eff] of values) {
+      if (draft !== eff) changed[name] = draft
+    }
+    if (Object.keys(changed).length === 0) return { ok: true }
+    const res = await setParams(changed, 'web_ui', reasonKey)
+    return { ok: !!res?.success, message: res?.message }
+  }
+
+  const saveRun = async () => {
     if (presetOrderReason) {
       setStatus((s) => ({ ...s, preset: presetOrderReason }))
       return
@@ -380,68 +328,26 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
       setStatus((s) => ({ ...s, preset: S50_PRESET_REASON_NEED }))
       return
     }
-    setStatus((s) => ({ ...s, preset: S50_SAVING }))
-    // 効き値から変わったものだけ送る（触っていない行に触らない）。
-    const values = {}
-    for (const name of PRESET_NAMES) {
-      if (presetDraft[name] !== presetEff[name]) values[name] = presetDraft[name]
+    setStatus((s) => ({ ...s, preset: S50_SAVING, brake: S50_SAVING }))
+    try {
+      const pRes = await saveParamsSet(PRESET_NAMES.map((n) => [n, presetDraft[n], presetEff[n]]), presetReason)
+      const bRes = await saveParamsSet(BRAKE_NAMES.map((n) => [n, brakeDraft[n], brakeEff[n]]), brakeReason || presetReason)
+      setStatus((s) => ({
+        ...s,
+        preset: pRes.ok ? S50_SAVED : `${S50_SAVE_FAILED}: ${pRes.message ?? ''}`,
+        brake: bRes.ok ? S50_SAVED : `${S50_SAVE_FAILED}: ${bRes.message ?? ''}`,
+      }))
+      if (pRes.ok && bRes.ok) reload()
+    } catch (e) {
+      setStatus((s) => ({ ...s, preset: `${S50_SAVE_FAILED}: ${e.message ?? e}` }))
     }
-    if (Object.keys(values).length === 0) {
-      setStatus((s) => ({ ...s, preset: S50_SAVED }))
-      return
-    }
-    setParams(values, 'web_ui', presetReason)
-      .then((res) => {
-        if (res?.success) {
-          setStatus((s) => ({ ...s, preset: S50_SAVED }))
-          reload()
-        } else {
-          setStatus((s) => ({ ...s, preset: `${S50_SAVE_FAILED}: ${res?.message ?? ''}` }))
-        }
-      })
-      .catch((e) => setStatus((s) => ({
-        ...s, preset: `${S50_SAVE_FAILED}: ${e.message ?? e}`,
-      })))
   }
-  const presetDiffs = pendingDiff(PRESET_NAMES, presetEff, presetPending)
 
-  // SG-C14: 自動ブレーキ既定の保存（/params/set。出どころ必須＝PT-4）。
-  // 即時の set_parameters はしない（走行中の値は変えない。次の起動から効く）。
   const applyBrake = (name) => (value) => {
     if (value !== 'on' && value !== 'off') return
     setBrakeDraft((prev) => ({ ...prev, [name]: value }))
   }
-  const saveBrake = () => {
-    if (!brakeReason) {
-      setStatus((s) => ({ ...s, brake: S50_PRESET_REASON_NEED }))
-      return
-    }
-    setStatus((s) => ({ ...s, brake: S50_SAVING }))
-    const values = {}
-    for (const name of BRAKE_NAMES) {
-      if (brakeDraft[name] !== brakeEff[name]) values[name] = brakeDraft[name]
-    }
-    if (Object.keys(values).length === 0) {
-      setStatus((s) => ({ ...s, brake: S50_SAVED }))
-      return
-    }
-    setParams(values, 'web_ui', brakeReason)
-      .then((res) => {
-        if (res?.success) {
-          setStatus((s) => ({ ...s, brake: S50_SAVED }))
-          reload()
-        } else {
-          setStatus((s) => ({ ...s, brake: `${S50_SAVE_FAILED}: ${res?.message ?? ''}` }))
-        }
-      })
-      .catch((e) => setStatus((s) => ({
-        ...s, brake: `${S50_SAVE_FAILED}: ${e.message ?? e}`,
-      })))
-  }
 
-  // S-21 の「カメラ」ボタンの開く先の保存（/params/set。出どころ必須＝PT-4）。
-  // 即時の set_parameters はしない（走行中の値は変えない。次の起動から効く）。
-  // http(s) 以外は画面でも弾く（機体側 params_audit も同じ規則で弾く）。
   const cameraUrlBad = !isValidCameraUrl(cameraDraft.camera_ui_url)
   const applyCamera = (value) => {
     setCameraDraft((prev) => ({ ...prev, camera_ui_url: value }))
@@ -478,14 +384,12 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
       })))
   }
 
-  // ── 表示タブ ──
+  // ── 表示 ──
   const [fontScale, setFontScale] = useState(() => readFontScale())
   const chooseFont = (name) => {
     setFontScale(name)
     applyFontScale(name)
   }
-  // ── SG-C14: 表示タブ（音声 ON/OFF・縦横の固定・コストマップ表示）──
-  // 機体を動かさない表示だけの設定なので、文字サイズと同じく停止中の縛りは無い。
   const [voiceOn, setVoiceOn] = useState(() => readVoiceMaster())
   const chooseVoice = (on) => {
     setVoiceOn(on)
@@ -495,19 +399,16 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   const chooseOrientation = (value) => {
     setOrientation(writeStageOrientation(value))
   }
-  const [costmapVisible, setCostmapVisible] = useState(() => readCostmapVisible())
-  const chooseCostmap = (visible) => {
-    setCostmapVisible(writeCostmapVisible(visible))
+  const [helpOn, setHelpOn] = useState(() => readHelpEnabled())
+  const chooseHelp = (on) => {
+    setHelpOn(on)
+    writeHelpEnabled(on)
   }
 
-  // ── 開発モードタブ (WP-DEV-01B) ──  // 表示の正本は /system/dev_mode（useDevMode）。localStorage は押した瞬間の
-  // 見た目だけに残す（?dev=1 は据え置き）。トグルはどのモードでも押せる
-  // （INIT を抜けるために要るので、一般タブのような停止中の縛りは無い）。
+  // ── 開発モード ──
   const { dev: devState, setDevParam } = useDevMode(ros)
   const faultRecords = useFaultHistory(ros)
   const [devLocal, setDevLocal] = useState(() => readDevMode())
-  // 既定は全項目 OFF（connectivity_checker の dev_ignore_* 既定と同じ。
-  // 開発モードに入っただけでは通常運用と同じ。Spec-safety.md §10）。
   const [devItemsLocal, setDevItemsLocal] = useState(
     () => Object.fromEntries(DEV_ITEMS.map((item) => [item, false])))
   const [devStatus, setDevStatus] = useState('')
@@ -528,8 +429,6 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
   }
 
   // ── 機体のスピーカー区画 (Spec-safety §11) ──
-  // 実行中に変えられる（停止中の縛りは無い。開発モードタブと同じ）。
-  // 変えた値は機体に残り再起動後も維持する（ノード側の settings.json）。
   const { cue: speakerCue, status: speakerStatus, setEnabled, setVolume, testChime } = useSpeaker(ros)
   const [speakerErr, setSpeakerErr] = useState('')
   const [speakerTestSent, setSpeakerTestSent] = useState(false)
@@ -555,395 +454,306 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
     ['xlarge', S50_FONT_XLARGE],
   ]
 
-  return (
-    <div className="screen" id="s50">
-      <div className="top-actions sticky">
-        <button type="button" className="btn sm" onClick={onBack} data-testid="s50-back">
+  const opbar = (
+    <div className="top-actions" data-pos="opbar">
+      <HelpTip helpKey="s50-back">
+        <button type="button" className="btn" onClick={onBack} data-testid="s50-back">
           {S50_BACK}
         </button>
-        <div className="tabs grow" style={{ margin: 0, border: 'none' }} role="tablist">
-          {[
-            ['general', S50_TAB_GENERAL],
-            ['display', S50_TAB_DISPLAY],
-            ['dev', S50_TAB_DEV],
-            ['faults', S50_TAB_FAULT_HISTORY],
-          ].map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={tab === key}
-              className={`tab ${tab === key ? 'on' : ''}`}
-              onClick={() => setTab(key)}
-              data-testid={`s50-tab-${key}`}
-            >
-              {label}
-            </button>
+      </HelpTip>
+    </div>
+  )
+
+  const list = (
+    <div>
+      {SECTIONS.map(([key, label, helpKey]) => (
+        <HelpTip key={key} helpKey={helpKey}>
+          <button
+            type="button"
+            className={`lrow ${section === key ? 'on' : ''}`}
+            onClick={() => setSection(key)}
+            data-testid={`s50-sec-${key}`}
+          >
+            <span>{label}</span>
+          </button>
+        </HelpTip>
+      ))}
+    </div>
+  )
+
+  let body = null
+  if (section === 'run') {
+    body = (
+      <div className="grp">
+        <div>
+          <h3 style={{ marginBottom: 8 }}>{S50_SEC_PRESET}</h3>
+          {status.preset && <p className="note" data-testid="s50-status-preset">{status.preset}</p>}
+          {presetOrderReason && (
+            <p className="note" data-testid="s50-preset-order">{presetOrderReason}</p>
+          )}
+          {presetDiffs.length > 0 && (
+            <p className="note" data-testid="s50-preset-pending">
+              {presetDiffs.map(({ name, effective, pending }) => (
+                `${S50_PRESET_NEXT_PREFIX} ${name}: ${effective} → ${pending}`
+              )).join(' ／ ')}
+            </p>
+          )}
+          <div className="s50-grid">
+            {PRESET_FIELDS.map((f) => (
+              <NumberField
+                key={f.name} label={f.label} unit={f.unit}
+                min={f.min} max={f.max} step={f.step}
+                value={presetDraft[f.name]}
+                disabled={!editable || loading || !(f.name in presetDraft)}
+                onCommit={applyPreset(f.name)}
+              />
+            ))}
+          </div>
+        </div>
+        <div>
+          <h3 style={{ marginBottom: 8 }}>{S50_SEC_BRAKE}</h3>
+          {status.brake && <p className="note" data-testid="s50-status-brake">{status.brake}</p>}
+          <div className="s50-grid">
+            {BRAKE_FIELDS.map((f) => (
+              <label className="s50-field" key={f.name}>
+                <span className="s50-field-label">{f.label}</span>
+                <select
+                  value={brakeDraft[f.name] ?? ''}
+                  disabled={!editable || loading || !(f.name in brakeDraft)}
+                  onChange={(e) => applyBrake(f.name)(e.target.value)}
+                  data-testid={`s50-brake-${f.name === BRAKE_NAMES[0] ? 'outdoor' : 'indoor'}`}
+                >
+                  {!(f.name in brakeDraft) && <option value="">—</option>}
+                  {BRAKE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+        </div>
+        <label className="s50-field">
+          <span className="s50-field-label">{S50_PRESET_REASON_LABEL}</span>
+          <input
+            type="text"
+            value={presetReason}
+            disabled={!editable || loading}
+            onChange={(e) => setPresetReason(e.target.value)}
+            data-testid="s50-preset-reason"
+          />
+        </label>
+      </div>
+    )
+  } else if (section === 'loc') {
+    body = (
+      <div className="grp">
+        <h3 style={{ marginBottom: 8 }}>{S50_SEC_SLAM}</h3>
+        {status.slam_toolbox && <p className="note" data-testid="s50-status-slam_toolbox">{status.slam_toolbox}</p>}
+        <div className="s50-grid">
+          {SLAM_FIELDS.map((f) => (
+            <NumberField
+              key={f.name} label={f.label} unit={f.unit}
+              min={f.min} max={f.max} step={f.step}
+              value={slam[f.name]}
+              disabled={!editable || loading || !(f.name in slam)}
+              onCommit={applySlam(f.name)}
+            />
           ))}
         </div>
       </div>
-
-      {!editable && tab === 'general' && (
-        <p className="note" data-testid="s50-guard">{S50_GUARD}</p>
-      )}
-
-      {tab === 'general' && (
-        <div className="tabpane on s50-general">
-          <div className="tabs s50-sections" role="tablist">
-            {SECTION_TABS.map(([key, label]) => (
+    )
+  } else if (section === 'notify') {
+    body = (
+      <div className="grp">
+        <div>
+          <h3 style={{ marginBottom: 8 }}>{S50_VOICE_TITLE}</h3>
+          <div className="btnrow n2">
+            {[
+              [true, S50_VOICE_ON, 's50-voice-on'],
+              [false, S50_VOICE_OFF, 's50-voice-off'],
+            ].map(([value, label, testId]) => (
               <button
-                key={key}
+                key={testId}
                 type="button"
-                role="tab"
-                aria-selected={section === key}
-                className={`tab ${section === key ? 'on' : ''}`}
-                onClick={() => setSection(key)}
-                data-testid={`s50-sec-${key}`}
+                className={`btn ${voiceOn === value ? 'on' : ''}`}
+                onClick={() => chooseVoice(value)}
+                data-testid={testId}
               >
                 {label}
               </button>
             ))}
           </div>
-          {section === 'follow' && (
-          <Section
-            title={S50_SEC_FOLLOW} saveKey="follow_planner_mapless"
-            status={status.follow_planner_mapless} editable={editable} loading={loading}
-            onSave={() => save('follow_planner_mapless')}
+        </div>
+        <div>
+          <h3 style={{ marginBottom: 8 }}>{S50_SEC_SPEAKER}</h3>
+          <button
+            type="button"
+            className={`btn ${(speakerCue?.enabled ?? false) ? 'on' : ''}`}
+            onClick={toggleSpeaker}
+            data-testid="s50-speaker-toggle"
           >
-            {MAPLESS_FIELDS.map((f) => (
-              <NumberField
-                key={f.name} label={f.label} unit={f.unit}
-                min={f.min}
-                max={tunableFieldMax(REGISTRY_CAPS, 'follow_planner_mapless', f.name, f.max)}
-                step={f.step}
-                value={mapless[f.name]}
-                disabled={!editable || loading}
-                onCommit={applyMapless(f.name, f.isInt)}
-              />
-            ))}
-          </Section>
-          )}
-
-          {section === 'lidar' && (
-          <div className="card">
-            <div className="row" style={{ marginBottom: 8 }}>
-              <h3 className="grow" style={{ margin: 0 }}>{S50_SEC_LIDAR}</h3>
+            {(speakerCue?.enabled ?? false) ? S50_SPEAKER_ON : S50_SPEAKER_OFF}
+          </button>
+          <label className="s50-field mt">
+            <span className="s50-field-label">
+              {S50_SPEAKER_VOLUME} ({speakerCue?.volume ?? '—'})
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value={speakerCue?.volume ?? 60}
+              onChange={(e) => changeSpeakerVolume(Number(e.target.value))}
+              data-testid="s50-speaker-volume"
+            />
+          </label>
+          <div className="row" style={{ marginTop: 8 }}>
+            <HelpTip helpKey="s50-speaker-test">
               <button
                 type="button"
-                className="btn sm"
-                onClick={gotoCalib}
-                data-testid="s50-goto-calib"
-              >
-                {S50_BLIND_GOTO_CALIB}
-              </button>
-            </div>
-            <p className="note">{S50_BLIND_NOTE}</p>
-            <p data-testid="s50-blind-current">
-              {blindRanges == null ? (loading ? '' : S50_LOAD_FAILED) : blindRangesText(blindRanges)}
-            </p>
-            {calibErr && <p className="note" data-testid="s50-calib-err">{calibErr}</p>}
-          </div>
-          )}
-
-          {section === 'slam' && (
-          <Section
-            title={S50_SEC_SLAM} saveKey="slam_toolbox" note={S50_SLAM_NOTE}
-            status={status.slam_toolbox} editable={editable} loading={loading}
-            onSave={() => save('slam_toolbox')}
-          >
-            {SLAM_FIELDS.map((f) => (
-              <NumberField
-                key={f.name} label={f.label} unit={f.unit}
-                min={f.min} max={f.max} step={f.step}
-                value={slam[f.name]}
-                disabled={!editable || loading || !(f.name in slam)}
-                onCommit={applySlam(f.name)}
-              />
-            ))}
-          </Section>
-          )}
-
-          {section === 'preset' && (
-          <div className="card">
-            <div className="row" style={{ marginBottom: 8 }}>
-              <h3 className="grow" style={{ margin: 0 }}>{S50_SEC_PRESET}</h3>
-              <button
-                type="button"
-                className="btn save sm"
-                disabled={!editable || loading || !!presetOrderReason}
-                onClick={savePreset}
-                data-testid="s50-save-preset"
-              >
-                {S50_PRESET_SAVE}
-              </button>
-            </div>
-            {status.preset && <p className="note" data-testid="s50-status-preset">{status.preset}</p>}
-            <p className="note">{S50_PRESET_NOTE}</p>
-            {presetOrderReason && (
-              <p className="note" data-testid="s50-preset-order">
-                {presetOrderReason}
-              </p>
-            )}
-            {presetDiffs.length > 0 && (
-              <p className="note" data-testid="s50-preset-pending">
-                {presetDiffs.map(({ name, effective, pending }) => (
-                  `${S50_PRESET_NEXT_PREFIX} ${name}: ${effective} → ${pending}`
-                )).join(' ／ ')}
-              </p>
-            )}
-            <div className="s50-grid">
-              {PRESET_FIELDS.map((f) => (
-                <NumberField
-                  key={f.name} label={f.label} unit={f.unit}
-                  min={f.min} max={f.max} step={f.step}
-                  value={presetDraft[f.name]}
-                  disabled={!editable || loading || !(f.name in presetDraft)}
-                  onCommit={applyPreset(f.name)}
-                />
-              ))}
-            </div>
-            <label className="s50-field">
-              <span className="s50-field-label">{S50_PRESET_REASON_LABEL}</span>
-              <input
-                type="text"
-                value={presetReason}
-                disabled={!editable || loading}
-                onChange={(e) => setPresetReason(e.target.value)}
-                data-testid="s50-preset-reason"
-              />
-            </label>
-          </div>
-          )}
-
-          {section === 'speaker' && (
-          <div className="card">
-            <div className="row" style={{ marginBottom: 8 }}>
-              <h3 className="grow" style={{ margin: 0 }}>{S50_SEC_SPEAKER}</h3>
-              <button
-                type="button"
-                className={`btn sm ${(speakerCue?.enabled ?? false) ? 'on' : ''}`}
-                onClick={toggleSpeaker}
-                data-testid="s50-speaker-toggle"
-              >
-                {(speakerCue?.enabled ?? false) ? S50_SPEAKER_ON : S50_SPEAKER_OFF}
-              </button>
-            </div>
-            <p className="note">{S50_SPEAKER_NOTE}</p>
-            <label className="s50-field">
-              <span className="s50-field-label">
-                {S50_SPEAKER_VOLUME} ({speakerCue?.volume ?? '—'})
-              </span>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="1"
-                value={speakerCue?.volume ?? 60}
-                onChange={(e) => changeSpeakerVolume(Number(e.target.value))}
-                data-testid="s50-speaker-volume"
-              />
-            </label>
-            <div className="row" style={{ marginTop: 8 }}>
-              <button
-                type="button"
-                className="btn sm"
+                className="btn"
                 onClick={sendSpeakerTest}
                 data-testid="s50-speaker-test"
               >
                 {S50_SPEAKER_TEST}
               </button>
-            </div>
-            {speakerTestSent && <p className="note" data-testid="s50-speaker-test-sent">{S50_SPEAKER_TEST_SENT}</p>}
-            {speakerErr && <p className="note" data-testid="s50-speaker-err">{speakerErr}</p>}
-            <p data-testid="s50-speaker-state">
-              {speakerCue == null
-                ? S50_LOAD_FAILED
-                : (!speakerCue.rpi_ok
-                  ? S50_SPEAKER_NO_REPLY
-                  : `${S50_SPEAKER_PLAYING}: ${speakerStatus?.cue ?? speakerCue.cue}`
-                    + (speakerStatus?.error ? ` (${speakerStatus.error})` : ''))}
-            </p>
+            </HelpTip>
           </div>
-          )}
-
-          {section === 'brake' && (
-          <div className="card">
-            <div className="row" style={{ marginBottom: 8 }}>
-              <h3 className="grow" style={{ margin: 0 }}>{S50_SEC_BRAKE}</h3>
+          {speakerTestSent && <p className="note" data-testid="s50-speaker-test-sent">{S50_SPEAKER_TEST_SENT}</p>}
+          {speakerErr && <p className="note" data-testid="s50-speaker-err">{speakerErr}</p>}
+          <p data-testid="s50-speaker-state">
+            {speakerCue == null
+              ? S50_LOAD_FAILED
+              : (!speakerCue.rpi_ok
+                ? S50_SPEAKER_NO_REPLY
+                : `${S50_SPEAKER_PLAYING}: ${speakerStatus?.cue ?? speakerCue.cue}`
+                  + (speakerStatus?.error ? ` (${speakerStatus.error})` : ''))}
+          </p>
+        </div>
+      </div>
+    )
+  } else if (section === 'screen') {
+    body = (
+      <div className="grp">
+        <div>
+          <h3 style={{ marginBottom: 8 }}>{S50_ORIENTATION_TITLE}</h3>
+          <div className="btnrow n3">
+            {[
+              [ORIENTATION_AUTO, S50_ORIENTATION_AUTO, 's50-orientation-auto'],
+              [ORIENTATION_PORTRAIT, S50_ORIENTATION_PORTRAIT, 's50-orientation-portrait'],
+              [ORIENTATION_LANDSCAPE, S50_ORIENTATION_LANDSCAPE, 's50-orientation-landscape'],
+            ].map(([value, label, testId]) => (
               <button
+                key={testId}
                 type="button"
-                className="btn save sm"
-                disabled={!editable || loading}
-                onClick={saveBrake}
-                data-testid="s50-save-brake"
+                className={`btn ${orientation === value ? 'on' : ''}`}
+                onClick={() => chooseOrientation(value)}
+                data-testid={testId}
               >
-                {S50_PRESET_SAVE}
+                {label}
               </button>
-            </div>
-            {status.brake && <p className="note" data-testid="s50-status-brake">{status.brake}</p>}
-            <p className="note">{S50_BRAKE_NOTE}</p>
-            <div className="s50-grid">
-              {BRAKE_FIELDS.map((f) => (
-                <label className="s50-field" key={f.name}>
-                  <span className="s50-field-label">{f.label}</span>
-                  <select
-                    value={brakeDraft[f.name] ?? ''}
-                    disabled={!editable || loading || !(f.name in brakeDraft)}
-                    onChange={(e) => applyBrake(f.name)(e.target.value)}
-                    data-testid={`s50-brake-${f.name === BRAKE_NAMES[0] ? 'outdoor' : 'indoor'}`}
-                  >
-                    {!(f.name in brakeDraft) && <option value="">—</option>}
-                    {BRAKE_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </label>
-              ))}
-            </div>
-            <label className="s50-field">
-              <span className="s50-field-label">{S50_PRESET_REASON_LABEL}</span>
-              <input
-                type="text"
-                value={brakeReason}
-                disabled={!editable || loading}
-                onChange={(e) => setBrakeReason(e.target.value)}
-                data-testid="s50-brake-reason"
-              />
-            </label>
+            ))}
           </div>
-          )}
-
-          {section === 'camera' && (
-          <div className="card">
-            <div className="row" style={{ marginBottom: 8 }}>
-              <h3 className="grow" style={{ margin: 0 }}>{S50_SEC_CAMERA}</h3>
+        </div>
+        <div>
+          <h3 style={{ marginBottom: 8 }}>{S50_FONT_TITLE}</h3>
+          <div className="btnrow n3">
+            {FONT_OPTIONS.map(([key, label]) => (
               <button
+                key={key}
                 type="button"
-                className="btn save sm"
-                disabled={!editable || loading || cameraUrlBad}
-                onClick={saveCamera}
-                data-testid="s50-save-camera"
+                className={`btn ${fontScale === key ? 'on' : ''}`}
+                onClick={() => chooseFont(key)}
+                data-testid={`s50-font-${key}`}
               >
-                {S50_PRESET_SAVE}
+                {label}
               </button>
-            </div>
-            {status.camera && <p className="note" data-testid="s50-status-camera">{status.camera}</p>}
-            <p className="note">{S50_CAMERA_NOTE}</p>
-            <label className="s50-field">
-              <span className="s50-field-label">{S50_CAMERA_URL_LABEL}</span>
-              <input
-                type="text"
-                value={cameraDraft.camera_ui_url ?? ''}
-                disabled={!editable || loading || !('camera_ui_url' in cameraDraft)}
-                onChange={(e) => applyCamera(e.target.value)}
-                data-testid="s50-camera-url"
-              />
-            </label>
-            <label className="s50-field">
-              <span className="s50-field-label">{S50_PRESET_REASON_LABEL}</span>
-              <input
-                type="text"
-                value={cameraReason}
-                disabled={!editable || loading}
-                onChange={(e) => setCameraReason(e.target.value)}
-                data-testid="s50-camera-reason"
-              />
-            </label>
+            ))}
           </div>
-          )}
         </div>
-      )}
-
-      {tab === 'display' && (
-        <div className="tabpane on">
-          <div className="card">
-            <h3>{S50_FONT_TITLE}</h3>
-            <div className="btnrow n3">
-              {FONT_OPTIONS.map(([key, label]) => (
+        <div>
+          <h3 style={{ marginBottom: 8 }}>{S50_HELP_TITLE}</h3>
+          <div className="btnrow n2">
+            {[
+              [true, S50_HELP_SHOW, 's50-help-on'],
+              [false, S50_HELP_HIDE, 's50-help-off'],
+            ].map(([value, label, testId]) => (
+              <HelpTip key={testId} helpKey="s50-help">
                 <button
-                  key={key}
                   type="button"
-                  className={`btn ${fontScale === key ? 'on' : ''}`}
-                  onClick={() => chooseFont(key)}
-                  data-testid={`s50-font-${key}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="card">
-            <h3>{S50_VOICE_TITLE}</h3>
-            <div className="btnrow n3">
-              {[
-                [true, S50_VOICE_ON, 's50-voice-on'],
-                [false, S50_VOICE_OFF, 's50-voice-off'],
-              ].map(([value, label, testId]) => (
-                <button
-                  key={testId}
-                  type="button"
-                  className={`btn ${voiceOn === value ? 'on' : ''}`}
-                  onClick={() => chooseVoice(value)}
+                  className={`btn ${helpOn === value ? 'on' : ''}`}
+                  onClick={() => chooseHelp(value)}
                   data-testid={testId}
                 >
                   {label}
                 </button>
-              ))}
-            </div>
-          </div>
-          <div className="card">
-            <h3>{S50_ORIENTATION_TITLE}</h3>
-            <div className="btnrow n3">
-              {[
-                [ORIENTATION_AUTO, S50_ORIENTATION_AUTO, 's50-orientation-auto'],
-                [ORIENTATION_PORTRAIT, S50_ORIENTATION_PORTRAIT, 's50-orientation-portrait'],
-                [ORIENTATION_LANDSCAPE, S50_ORIENTATION_LANDSCAPE, 's50-orientation-landscape'],
-              ].map(([value, label, testId]) => (
-                <button
-                  key={testId}
-                  type="button"
-                  className={`btn ${orientation === value ? 'on' : ''}`}
-                  onClick={() => chooseOrientation(value)}
-                  data-testid={testId}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="card">
-            <h3>{S50_COSTMAP_TITLE}</h3>
-            <div className="btnrow n3">
-              {[
-                [true, S50_COSTMAP_SHOW, 's50-costmap-show'],
-                [false, S50_COSTMAP_HIDE, 's50-costmap-hide'],
-              ].map(([value, label, testId]) => (
-                <button
-                  key={testId}
-                  type="button"
-                  className={`btn ${costmapVisible === value ? 'on' : ''}`}
-                  onClick={() => chooseCostmap(value)}
-                  data-testid={testId}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+              </HelpTip>
+            ))}
           </div>
         </div>
-      )}
-
-      {tab === 'faults' && (
-        <div className="tabpane on s50-faults" data-testid="s50-faults">
-          <FaultHistoryList records={faultRecords} />
+      </div>
+    )
+  } else if (section === 'link') {
+    body = (
+      <div className="grp">
+        <h3 style={{ marginBottom: 8 }}>{S50_SEC_CAMERA}</h3>
+        {status.camera && <p className="note" data-testid="s50-status-camera">{status.camera}</p>}
+        <label className="s50-field">
+          <span className="s50-field-label">{S50_CAMERA_URL_LABEL}</span>
+          <input
+            type="text"
+            value={cameraDraft.camera_ui_url ?? ''}
+            disabled={!editable || loading || !('camera_ui_url' in cameraDraft)}
+            onChange={(e) => applyCamera(e.target.value)}
+            data-testid="s50-camera-url"
+          />
+        </label>
+        <label className="s50-field">
+          <span className="s50-field-label">{S50_PRESET_REASON_LABEL}</span>
+          <input
+            type="text"
+            value={cameraReason}
+            disabled={!editable || loading}
+            onChange={(e) => setCameraReason(e.target.value)}
+            data-testid="s50-camera-reason"
+          />
+        </label>
+      </div>
+    )
+  } else if (section === 'log') {
+    body = (
+      <div data-testid="s50-faults">
+        <FaultHistoryList records={faultRecords} />
+      </div>
+    )
+  } else if (section === 'blind') {
+    body = (
+      <div className="grp">
+        <p data-testid="s50-blind-current">
+          {blindRanges == null ? (loading ? '' : S50_LOAD_FAILED) : blindRangesText(blindRanges)}
+        </p>
+        <div className="row">
+          <HelpTip helpKey="s50-goto-calib">
+            <button
+              type="button"
+              className="btn"
+              onClick={gotoCalib}
+              data-testid="s50-goto-calib"
+            >
+              {S50_BLIND_GOTO_CALIB}
+            </button>
+          </HelpTip>
         </div>
-      )}
-
-      {tab === 'dev' && (
-        <div className="tabpane on s50-dev">
-          <div className="card">
-            <h3>{S50_DEV_TITLE}</h3>
-            <p className="note">{S50_DEV_NOTE}</p>
+        {calibErr && <p className="note" data-testid="s50-calib-err">{calibErr}</p>}
+      </div>
+    )
+  } else if (section === 'dev') {
+    body = (
+      <div className="grp">
+        <div>
+          <h3 style={{ marginBottom: 8 }}>{S50_DEV_TITLE}</h3>
+          <HelpTip helpKey="s50-dev-toggle">
             <button
               type="button"
               className={`btn wide ${devShown ? 'on' : ''}`}
@@ -952,40 +762,74 @@ export default function S50Settings({ onBack, initialTab = 'general' }) {
             >
               {devShown ? S50_DEV_DISABLE : S50_DEV_ENABLE}
             </button>
-            {devStatus && <p className="note" data-testid="s50-dev-status">{devStatus}</p>}
-          </div>
-          <div className="card">
-            <h3>{S50_DEV_ITEMS_TITLE}</h3>
-            <div className="s50-grid s50-dev-items">
-              {DEV_ITEM_META.map(({ item, label, desc }) => (
-                <div key={item}>
-                  <button
-                    type="button"
-                    className={`btn wide ${devItemsShown[item] ? 'on' : ''}`}
-                    aria-pressed={!!devItemsShown[item]}
-                    onClick={() => toggleDevItem(item)}
-                    data-testid={`s50-dev-ignore-${item}`}
-                  >
-                    {label}
-                  </button>
-                  {desc && <p className="note">{desc}</p>}
-                </div>
-              ))}
-            </div>
-            <p className="note" data-testid="s50-dev-no-gate">{S50_DEV_NO_GATE}</p>
-          </div>
-          <div className="s50-dev-stack">
-          <div className="card">
-            <h3>{S50_DEV_EFFECTIVE_TITLE}</h3>
-            <p data-testid="s50-dev-effective">{devEffectiveText(devState)}</p>
-            {devState?.dev_mode && !devState.estop_hw_known && (
-              <p className="note" data-testid="s50-dev-estop-unknown">{S50_DEV_ESTOP_UNKNOWN}</p>
-            )}
-          </div>
-          <p className="note" data-testid="s50-dev-scope">{S50_DEV_SCOPE_NOTE}</p>
-          </div>
+          </HelpTip>
+          {devStatus && <p className="note" data-testid="s50-dev-status">{devStatus}</p>}
         </div>
+        <div>
+          <h3 style={{ marginBottom: 8 }}>{S50_DEV_ITEMS_TITLE}</h3>
+          <div className="s50-grid s50-dev-items">
+            {DEV_ITEM_META.map(({ item, label }) => (
+              <button
+                key={item}
+                type="button"
+                className={`btn ${devItemsShown[item] ? 'on' : ''}`}
+                aria-pressed={!!devItemsShown[item]}
+                onClick={() => toggleDevItem(item)}
+                data-testid={`s50-dev-ignore-${item}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="note" data-testid="s50-dev-no-gate">{S50_DEV_NO_GATE}</p>
+        </div>
+        <div>
+          <h3 style={{ marginBottom: 8 }}>{S50_DEV_EFFECTIVE_TITLE}</h3>
+          <p data-testid="s50-dev-effective">{devEffectiveText(devState)}</p>
+          <p className="note" data-testid="s50-dev-scope">{S50_DEV_SCOPE_NOTE}</p>
+        </div>
+      </div>
+    )
+  }
+
+  const saveFor = () => {
+    if (section === 'run') return { onSave: saveRun }
+    if (section === 'loc') return { onSave: saveSlam }
+    if (section === 'link') return { onSave: saveCamera }
+    return null
+  }
+  const saveCfg = saveFor()
+
+  const foot = (
+    <div data-pos="foot">
+      {!editable && section !== 'notify' && section !== 'screen' && section !== 'log' && section !== 'blind' && section !== 'dev' && (
+        <p className="note" data-testid="s50-guard">{S50_GUARD}</p>
       )}
+      <div className="row">
+        <span className="grow" />
+        {WHEN[section] && (
+          <span className="when" data-testid={`s50-when-${section}`}>{WHEN[section]}</span>
+        )}
+        {saveCfg && (
+          <HelpTip helpKey="s50-save">
+            <button
+              type="button"
+              className="btn save"
+              disabled={!editable || loading || (section === 'run' && !!presetOrderReason) || (section === 'link' && cameraUrlBad)}
+              onClick={saveCfg.onSave}
+              data-testid={section === 'run' ? 's50-save-run' : section === 'loc' ? 's50-save-slam_toolbox' : 's50-save-camera'}
+            >
+              {S50_PRESET_SAVE}
+            </button>
+          </HelpTip>
+        )}
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="screen" id="s50">
+      <ViewLayout opbar={opbar} list={list} body={body} foot={foot} />
     </div>
   )
 }
