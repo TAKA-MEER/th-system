@@ -172,11 +172,13 @@ export function fitTransform(points, w, h, pad = ROUTE_PREVIEW_PAD) {
 // Convert an OccupancyGrid data column to the RGBA bitmap RoutePreview blits on
 // the route-preview canvas. Pure & canvas-free so test/unit drives it with node
 // --test. Row 0 of the grid is the map-frame bottom, ImageData row 0 is the top,
-// so rows are flipped here. Unknown is mid-grey 128, 0 (free) is white, 100
-// (occupied) is black. Only uses index access (`data[i]`), so it works for both
+// so rows are flipped here. 色は parts/mapColors.js の Spec-webui.md §6.1:
+// 未知は透明（画面の地と同じ＝見えなくする）、0（自由）は白、100（占有）は
+// 中間の灰。Only uses index access (`data[i]`), so it works for both
 // a plain Array and a TypedArray — with rosbridge `compression:'cbor'` (/map,
 // WS-9F) the data may arrive as a Uint8Array where unknown (-1) is stored as
-// 255, hence `v < 0 || v > 100` (instead of bare `v < 0`) is treated as unknown.
+// 255, hence `v < 0 || v > 100` is treated as unknown.
+import { occupancyGray } from '../parts/mapColors.js'
 export function occupancyGridToPixels(data, width, height) {
   const w = Math.floor(width)
   const h = Math.floor(height)
@@ -186,12 +188,13 @@ export function occupancyGridToPixels(data, width, height) {
       const srcIdx = row * w + col
       const destRow = h - 1 - row
       const destIdx = (destRow * w + col) * 4
-      const v = data[srcIdx]
-      let gray
-      if (v < 0 || v > 100) gray = 128
-      else gray = 255 - Math.round(v * 2.55)
-      out[destIdx] = out[destIdx + 1] = out[destIdx + 2] = gray
-      out[destIdx + 3] = 255
+      const gray = occupancyGray(data[srcIdx])
+      if (gray == null) {
+        out[destIdx + 3] = 0 // 未知＝画面の地と同じ（見えなくする）
+      } else {
+        out[destIdx] = out[destIdx + 1] = out[destIdx + 2] = gray
+        out[destIdx + 3] = 255
+      }
     }
   }
   return out
