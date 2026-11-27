@@ -48,3 +48,4 @@
   #s11 .g-drv .rjog, #s13 .g-drv .rjog { grid-column: 2; grid-row: 1; }
   #s11 .g-drv .rjog .stick svg, #s13 .g-drv .rjog .stick svg { max-height: 220px; }
 }
+#s13 .s13-main .mapWrapInner svg { max-height: min(42cqh, 320px); }

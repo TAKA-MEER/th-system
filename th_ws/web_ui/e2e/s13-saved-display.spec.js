@@ -15,7 +15,6 @@ async function openS13Teach(page, status) {
     { routes: [], preview: [], status },
   )
   await page.locator('#s13').waitFor()
-  await page.getByRole('tab', { name: '教示' }).click()
 }
 
 test('S-13 saved=true なら「保存しました」を出す', async ({ page }) => {

@@ -133,19 +133,14 @@ test('SG-C2: 確認中は確認だけが今の色（今の色が 2 つ並ばな�
   await expect(page.locator('[data-testid="opcard-harness"] .opsgrid .btn.on')).toHaveCount(1)
 })
 
-test('SG-C2: ボタンの幅は置く数で変わらない（停止だけの S-11 でも格子の 3 等分の 1 マス）', async ({ page }) => {
-  const share = async (stopSel, gridSel) => {
-    const w = (await page.locator(stopSel).boundingBox()).width
-    const g = (await page.locator(gridSel).boundingBox()).width
-    return w / g
-  }
-  await openHarness(page, { mode: 'REPLAY', state: 'PAUSE' })
-  const withMany = await share('[data-testid="opcard-harness"] .op-stop', '[data-testid="opcard-harness"] .opsgrid')
-
+test('SG-C2: S-11 の「停止する」は新しい停止│走行トグルで右列いっぱい（古い操作カードは使わない）', async ({ page }) => {
   await gotoScreen(page, 'S11', { mode: 'MANUAL', state: 'PAUSE' })
-  const only = await share('#s11 .opsgrid .op-stop', '#s11 .opsgrid')
-  expect(only, '停止だけでも行いっぱいに伸びない').toBeLessThan(0.4)
-  expect(Math.abs(only - withMany), '置く数で幅の割合が変わらない').toBeLessThan(0.03)
+  const toggle = page.locator('[data-testid="s11-stop-run"]')
+  await expect(toggle).toBeVisible()
+  const w = (await toggle.boundingBox()).width
+  const col = (await page.locator('#s11 [data-pos="toggle"]').boundingBox()).width
+  expect(w / col, '停止だけでも右列いっぱいに伸びる').toBeGreaterThan(0.9)
+  await expect(page.locator('#s11 .card.ops')).toHaveCount(0)
 })
 
 // ── SG-C11: W-6 は操作カードの停止・確認・走行・保存で閉じる ──────────────

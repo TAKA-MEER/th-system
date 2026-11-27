@@ -15,7 +15,8 @@ import { useRouteCatalog } from '../ros/useRouteCatalog.js'
 import { useRoutePreview } from '../ros/useRoutePreview.js'
 import { useOdomPose } from '../ros/useOdomPose.js'
 import { useRouteMap } from '../ros/useRouteMap.js'
-import { canToggleAutoBrake } from '../shell/autoBrake.js'
+import { canToggleAutoBrake, showApproachWarning, approachDistance, approachIsAround } from '../shell/autoBrake.js'
+import { useLimiterStatus } from '../ros/useLimiterStatus.js'
 import { RunLayout } from '../shell/Layouts.jsx'
 import AutoBrakeLockToggle from '../parts/AutoBrakeLockToggle.jsx'
 import StopRunToggle from '../parts/StopRunToggle.jsx'
@@ -34,6 +35,7 @@ import {
   S13_ROUTE_NEW_TITLE, S13_ROUTE_EXISTING_TITLE,
   S13_NEW_START, S13_RESELECT, S13_RESELECT_ARMED,
   S14_EMPTY,
+  S11_APPROACH_WARN, S11_APPROACH_WARN_AROUND,
 } from '../i18n/screens.js'
 import { OP_LABELS } from '../i18n/states.js'
 import './manualRun.css'
@@ -56,6 +58,7 @@ export default function S13TeachManual({ onFinish }) {
   const routePreview = useRoutePreview(ros)
   const odomPose = useOdomPose(ros)
   const routeMap = useRouteMap(ros, { clearOnRestart: true })
+  const limiter = useLimiterStatus(ros)
   const disabledAll = stale || state?.mode == null
 
   const stateName = state?.state ?? null
@@ -70,6 +73,10 @@ export default function S13TeachManual({ onFinish }) {
 
   const [brake] = useAutoBrake(state)
   const canToggle = !disabledAll && canToggleAutoBrake(state, attributes, stale)
+  const nearDist = approachDistance(limiter)
+  const approachText = showApproachWarning(limiter, brake) && nearDist != null && Number.isFinite(nearDist)
+    ? (approachIsAround(limiter) ? S11_APPROACH_WARN_AROUND(nearDist) : S11_APPROACH_WARN(nearDist))
+    : null
 
   async function handleFinish() {
     try {
@@ -204,6 +211,7 @@ export default function S13TeachManual({ onFinish }) {
             {st?.start_yaw != null && st?.points > 0 && (
               <span>{S13_START_YAW_LABEL} <span className="r" data-testid="s13-start-yaw">{S13_DEG((st.start_yaw * 180 / Math.PI).toFixed(0))}</span></span>
             )}
+            {approachText && <span className="note warn" role="alert" data-testid="s13-approach-warning">{approachText}</span>}
             {paused && <span className="note">{S13_PAUSE_HINT}</span>}
             {savedState && (saved
               ? <span className="note" data-testid="s13-saved">{S13_SAVED}</span>

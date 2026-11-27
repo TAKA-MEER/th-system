@@ -13,7 +13,7 @@ import { useWheelSpeeds } from '../ros/useWheelSpeeds.js'
 import { useOdomTwist } from '../ros/useOdomTwist.js'
 import { useTunableParams } from '../ros/useTunableParams.js'
 import { useEffect } from 'react'
-import { canToggleAutoBrake, approachDistance, approachIsAround } from '../shell/autoBrake.js'
+import { canToggleAutoBrake, approachDistance, approachIsAround, showApproachWarning } from '../shell/autoBrake.js'
 import { RunLayout } from '../shell/Layouts.jsx'
 import AutoBrakeLockToggle from '../parts/AutoBrakeLockToggle.jsx'
 import StopRunToggle from '../parts/StopRunToggle.jsx'
@@ -74,7 +74,7 @@ export default function S11Manual({ onFinish }) {
 
   // 近い点の距離（機体の外形から。LimiterStatus の approach_clearance_m など）。
   const nearDist = approachDistance(limiter)
-  const nearText = nearDist != null && Number.isFinite(nearDist)
+  const nearText = showApproachWarning(limiter, brake) && nearDist != null && Number.isFinite(nearDist)
     ? (approachIsAround(limiter) ? S11_APPROACH_WARN_AROUND(nearDist) : S11_APPROACH_WARN(nearDist))
     : null
 
