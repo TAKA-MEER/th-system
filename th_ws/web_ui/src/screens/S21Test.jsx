@@ -44,7 +44,7 @@ import StopRunToggle from '../parts/StopRunToggle.jsx'
 import ReasonButton from '../parts/ReasonButton.jsx'
 import PersonDetectToggle from '../parts/PersonDetectToggle.jsx'
 import HelpTip from '../parts/HelpTip.jsx'
-import WindowShell from '../shell/WindowShell.jsx'
+
 import AutoBrakeDevCard from '../parts/AutoBrakeDevCard.jsx'
 import RadarSelect from '../parts/RadarSelect.jsx'
 import OnsiteMap from '../parts/OnsiteMap.jsx'
@@ -333,6 +333,20 @@ export default function S21Test({ onExit }) {
     fire('ui.working')
   }
 
+  // W-5（経路が塞がれた）は本文の中央に出す（§4・D53）。共通の窓の部品で、
+  // ヘッダ以外を幕で暗くする（#overlay の幕。confirmWindow の mountNode へ portal）。
+  const blockedOpen = isNavMode && stateName === 'BLOCKED'
+  const blockedOwnedRef = useRef(false)
+  useEffect(() => {
+    if (blockedOpen) {
+      blockedOwnedRef.current = true
+      confirmWindow.open()
+    } else if (blockedOwnedRef.current) {
+      blockedOwnedRef.current = false
+      confirmWindow.close()
+    }
+  }, [blockedOpen])
+
   // 保存した会場地図を開く（/map_session/open, slot:VENUE / mode:reload）。
   // 停止中以外は送らない（サーバ側も拒否する。二重の守り）。
   async function handleOpenVenueMap() {
@@ -572,12 +586,16 @@ export default function S21Test({ onExit }) {
         </div>
       )}
 
-      {isNavMode && stateName === 'BLOCKED' && (
-        <WindowShell
-          className="blocked-win"
-          testId="s21-blocked"
-          title={S21_BLOCKED_TITLE}
-          footer={<>
+      {/* W-5（経路が塞がれた）は #overlay に portal して本文の中央に出す（§4・D53）。 */}
+      {blockedOpen && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(
+        <div data-testid="s21-blocked">
+          <header style={{ background: '#2a1c0a', color: 'var(--warn-tx)' }}>{S21_BLOCKED_TITLE}</header>
+          <div className="bodyw">
+            <p data-testid="s21-blocked-msg">
+              {destPin ? `${S21_WHERE_TO(destPin.name || destPin.id)}　` : ''}{S21_BLOCKED_BODY}
+            </p>
+          </div>
+          <footer>
             <HelpTip helpKey="reroute">
               <button
                 type="button"
@@ -598,12 +616,9 @@ export default function S21Test({ onExit }) {
                 {S21_BLOCKED_ABORT}
               </button>
             </HelpTip>
-          </>}
-        >
-          <p data-testid="s21-blocked-msg">
-            {destPin ? `${S21_WHERE_TO(destPin.name || destPin.id)}　` : ''}{S21_BLOCKED_BODY}
-          </p>
-        </WindowShell>
+          </footer>
+        </div>,
+        confirmWindow.mountNode,
       )}
     </>
   )
