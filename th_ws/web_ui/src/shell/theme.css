@@ -1185,7 +1185,7 @@ table.lst td.r{text-align:right}
 
 /* ---------- S-00 接続確認（作り直し。Spec-webui §3.1・モックアップ） ---------- */
 #s00.screen{display:flex;flex-direction:column;min-height:0;height:100%;padding:0}
-#s00 .content.g-conn{flex:1;min-height:0;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) 340px;grid-template-rows:minmax(0,1fr);padding:12px 14px}
+#s00 .content.g-conn{flex:1;min-height:0;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) 300px;grid-template-rows:minmax(0,1fr);padding:12px 14px}
 #s00 .diag{position:relative;border:1px solid var(--bd);border-radius:8px;background:var(--inset);display:flex;flex-direction:column;min-height:0;padding:10px}
 #s00 .diag svg{flex:1;min-height:0;width:100%;height:auto}
 #s00 .diag .fix{min-height:56px;display:flex;align-items:center;gap:10px;font-size:19px;padding:0 6px;color:var(--tx)}

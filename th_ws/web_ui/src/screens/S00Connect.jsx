@@ -51,12 +51,12 @@ function autoItemMark(result) {
 
 // 図の配置（テストの矩形 920x470。モックアップと同じ位置）。
 const N = {
-  pc: { x: 140, y: 250, name: S00_DIAG_PC, req: true },
+  pc: { x: 195, y: 250, name: S00_DIAG_PC, req: true },
   ap: { x: 450, y: 250, name: S00_DIAG_AP, req: true },
   tab: { x: 450, y: 70, name: S00_DIAG_TABLET, req: true },
-  lidar: { x: 760, y: 110, name: S00_DIAG_LIDAR, req: true },
-  esp: { x: 760, y: 250, name: S00_DIAG_ESP32, req: true },
-  cam: { x: 760, y: 400, name: S00_DIAG_CAM, req: false },
+  lidar: { x: 725, y: 110, name: S00_DIAG_LIDAR, req: true },
+  esp: { x: 725, y: 250, name: S00_DIAG_ESP32, req: true },
+  cam: { x: 725, y: 400, name: S00_DIAG_CAM, req: false },
 }
 const EDGES = [['pc', 'ap'], ['ap', 'tab'], ['ap', 'lidar'], ['ap', 'esp'], ['ap', 'cam']]
 
@@ -130,7 +130,7 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
     const n = N[k]
     const m = nodes[k].m
     // §1.2: 名前は 15px 以上。主表示いっぱいを前提に字を大きく（SVG の縮小を踏まえる）。
-    const w = k === 'ap' ? 300 : n.req ? 300 : 230
+    const w = k === 'ap' ? 330 : n.req ? 380 : 250
     const h = n.req ? 84 : 68
     const sym = { ok: '✓', ng: '×', none: '—' }[m]
     const fill = { ok: 'var(--ok)', ng: 'var(--jis-y,#ffd100)', none: 'var(--ctrl-hi)' }[m]
@@ -148,20 +148,20 @@ export default function S00Connect({ onAdvance, onOpenSettings }) {
         )}
         <text
           x={n.x - w / 2 + 26 - (m === 'ng' ? 1 : 0)} y={n.y + 8} textAnchor="middle"
-          fontSize={n.req ? 26 : 22} fontWeight="900"
+          fontSize={n.req ? 34 : 30} fontWeight="900"
           style={{ fill: m === 'ok' ? '#fff' : '#161b22' }}
         >
           {sym}
         </text>
         <text
           x={n.x - w / 2 + 56} y={n.y + (DATA[k] ? -1 : 8)}
-          fontSize={n.req ? 27 : 23} fontWeight={n.req ? 800 : 600}
+          fontSize={n.req ? 32 : 28} fontWeight={n.req ? 800 : 600}
           style={{ fill: 'var(--tx)' }}
         >
           {n.name}
         </text>
         {DATA[k] ? (
-          <text x={n.x - w / 2 + 56} y={n.y + 24} fontSize="21" style={{ fill: 'var(--mut)' }}>
+          <text x={n.x - w / 2 + 56} y={n.y + 24} fontSize="26" style={{ fill: 'var(--mut)' }}>
             {DATA[k]}
           </text>
         ) : null}

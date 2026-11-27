@@ -118,6 +118,22 @@ test('全項目が疎通しているのに INIT のとき（link_ok の直前）
   await expect(page.locator('[data-testid="s00-advance"]')).toHaveClass(/dis/)
 })
 
+test('機器の名前は §1.2 の 15 px 以上で読める（描画後の大きさ）', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await gotoS00(page, { mode: 'INIT' }, PARTIAL)
+  // SVG は viewBox を縮小するので、描画後の高さ（CSS px）で縛る。
+  const heights = await page.evaluate(() => {
+    const svg = document.querySelector('svg')
+    return [...svg.querySelectorAll('text')]
+      .filter((t) => t.textContent.trim())
+      .map((t) => Math.round(t.getBoundingClientRect().height))
+  })
+  expect(heights.length).toBeGreaterThan(0)
+  for (const h of heights) {
+    expect(h, `図の文字が小さい: ${h}px`).toBeGreaterThanOrEqual(15)
+  }
+})
+
 test('カメラは任意で、だめでも図の線は灰にしない', async ({ page }) => {
   await gotoS00(page, { mode: 'INIT' }, PARTIAL)
   await expect(page.getByTestId('s00-edge-cam')).toHaveAttribute('data-dead', 'false')
