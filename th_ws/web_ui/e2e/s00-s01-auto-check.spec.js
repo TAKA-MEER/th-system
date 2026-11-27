@@ -1,10 +1,10 @@
 // 起動時の自動点検の警告（Spec-ops.md §2.6・Spec-webui.md §3.1/S-00・§3.2/S-01）。
-// S-00 の「総合」の下に自動判定を出し、S-01 の「ネットワーク接続確認」の
+// S-00 の右列の自動判定の段に 4 つの印を出し、S-01 の「ネットワーク接続確認」の
 // 要約にも NG / WARN のときに同じ警告を出す。警告だけで、運用に入る・
 // 進むボタンの活性は変えない（C-r4）。開発モードで opcheck を外すと警告を
 // 出さず、消していることが分かる表示にする。
 import { test, expect } from '@playwright/test'
-import { gotoScreenWithAutoCheck, setTestAutoCheck } from './helpers.js'
+import { gotoScreenWithAutoCheck, setTestAutoCheck, gotoScreenWithRouteCatalog } from './helpers.js'
 
 const NG_AUTO = {
   overall: 'NG',
@@ -62,12 +62,12 @@ test('S-01: NG のとき要約に警告が出るが、走行ボタンは活性�
   await gotoScreenWithAutoCheck(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, NG_AUTO)
   await expect(page.locator('[data-testid="s01-net-summary"]')).toBeVisible()
   await expect(page.locator('[data-testid="s01-net-warn"]')).toBeVisible()
-  // 警告だけ。メニューボタンは非活性にしない（変異チェック⑤の標的）。
-  const buttons = page.locator('.btnrow .btn')
-  expect(await buttons.count()).toBeGreaterThan(0)
-  for (let i = 0; i < await buttons.count(); i++) {
-    await expect(buttons.nth(i)).toBeEnabled()
-  }
+  // 警告だけ。走行タイルは非活性にしない（変異チェック⑤の標的。教示再生は経路が
+  // ある場合だけ対象＝別理由で dis になる）。
+  await page.getByTestId('s01-group-drive').click()
+  const follow = page.getByTestId('s01-mode-FOLLOW')
+  await expect(follow).not.toHaveClass(/dis/)
+  await expect(follow).toBeEnabled()
 })
 
 test('S-01: suppressed のときは警告なしで「消している」表示', async ({ page }) => {

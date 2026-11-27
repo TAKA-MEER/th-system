@@ -15,7 +15,7 @@ async function openSpeakerSection(page, speaker = SPEAKER) {
   await gotoScreenWithSpeaker(page, 'S01', STATE, speaker)
   await page.getByTestId('s01-open-settings').click()
   await expect(page.locator('#s50')).toBeVisible()
-  await page.getByTestId('s50-sec-speaker').click()
+  await page.getByTestId('s50-sec-notify').click()
   await expect(page.getByTestId('s50-speaker-toggle')).toBeVisible()
 }
 

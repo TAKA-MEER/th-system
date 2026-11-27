@@ -39,18 +39,16 @@ test('fail-safe: unknown mode (null) behaves exactly like INIT', () => {
   assert.deepEqual(menuItems({ mode: null }, modeEntry, attributes), menuItems({ mode: 'INIT' }, modeEntry, attributes))
 })
 
-test('mode IDLE with tracker enabled: every menu mode is enabled (mode_entry.yaml allows all 10 from IDLE)', () => {
+test('mode IDLE with tracker enabled: every menu mode is enabled (mode_entry.yaml allows all 9 from IDLE)', () => {
   const items = byMode(menuItems({ mode: 'IDLE', tracker_enabled: true }, modeEntry, attributes))
+  assert.equal(MENU_MODES.length, 9)
   for (const m of MENU_MODES) {
-    // 2026-11-27 D7: LINE・LEASH は廃止され、mode_entry にも無い。
-    if (m === 'LINE' || m === 'LEASH') {
-      assert.equal(items[m].enabled, false, `${m} is abolished (D7)`)
-      assert.equal(items[m].reasonKey, 'mode_entry_denied')
-      continue
-    }
     assert.equal(items[m].enabled, true, `${m} should be enabled from IDLE`)
     assert.equal(items[m].reasonKey, null)
   }
+  // 2026-11-27 D7: LINE・LEASH は廃止され、メニューにも無い。
+  assert.equal('LINE' in items, false)
+  assert.equal('LEASH' in items, false)
 })
 
 test('mode IDLE with tracker disabled: FOLLOW/TEACH_FOLLOW blocked (needs_tracker: required), PREP exempt', () => {
@@ -84,7 +82,7 @@ test('mode MANUAL: only OPCHECK/CALIB are allowed (mode_entry.yaml: MANUAL -> [I
   assert.equal(items.FOLLOW.reasonKey, 'mode_entry_denied')
 })
 
-// 1b-11 SG-B13: 方式選択の前提（経路の本数・リードデバイス）。
+// 1b-11 SG-B13: 方式選択の前提（経路の本数）。
 test('SG-B13: 経路 0 本なら教示再生は押せない（no_route_recorded）、1 本以上なら押せる', () => {
   const st = { mode: 'IDLE', tracker_enabled: true }
   const zero = byMode(menuItems(st, modeEntry, attributes, { routeCount: 0 }))
@@ -100,3 +98,4 @@ test('SG-B13: 経路 0 本なら教示再生は押せない（no_route_recorded�
 
 // 2026-11-27 D7: 電子リード（LEASH）廃止に伴い、リードデバイス未接続の
 // device_not_connected の試験は削除（廃止した振る舞いを縛っていた）。
+// ライン誘導・電子リードの入口もメニューから消えている。

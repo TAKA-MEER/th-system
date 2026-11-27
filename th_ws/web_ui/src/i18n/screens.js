@@ -31,6 +31,21 @@ export const SCREEN_NAMES = {
 }
 
 // ---------------------------------------------------------------- S-00 ----
+export const S00_CONNECT_TITLE = '機器の接続'
+export const S00_DIAG_PC = 'PC'
+export const S00_DIAG_AP = 'Wi-Fi AP（ラズパイ）'
+export const S00_DIAG_TABLET = 'タブレット'
+export const S00_DIAG_LIDAR = 'LiDAR'
+export const S00_DIAG_ESP32 = 'ESP32'
+export const S00_DIAG_CAM = 'カメラ'
+export const S00_DIAG_REQUIRED = '必須'
+export const S00_DIAG_OPTIONAL = '任意'
+export const S00_DIAG_CHECKED_AT = (time) => `確かめた時刻 ${time}`
+export const S00_DIAG_FIX_LIDAR = 'LiDAR の電源とケーブルを確かめる'
+export const S00_DIAG_FIX_ESP32 = 'ESP32 の電源とケーブルを確かめる'
+export const S00_DIAG_FIX_PC = 'PC 側のノードの起動を確かめる'
+export const S00_DIAG_FIX_AP = 'タブレットを AP に近づけて確かめる'
+export const S00_DIAG_FIX_CAM = 'カメラの電源を確かめる（なくても運用に入れます）'
 export const S00_CHECK_TITLE = '疎通確認'
 export const S00_COL_DEVICE = '機器'
 export const S00_COL_REQ = '扱い'
@@ -82,7 +97,7 @@ export const S00_NOT_READY = '必須機器が繋がっていません'
 // 1b-6 SG-B7: start.sh が数えた起動回数（control_attempt。2 以上が再起動）。
 // Spec-ops.md §2.4・Spec-webui.md §3.1 の文言どおり。
 export const S00_RESTARTING = (n) => `制御系を再起動しています（${n} 回目）`
-export const S00_ADVANCE = 'メインメニュー画面へ'
+export const S00_ADVANCE = 'メインメニューへ'
 // 疎通確認で止まったときに開発モードの設定へ入る導線（2026-09-23）
 export const S00_OPEN_DEV = '開発モードの設定'
 
@@ -140,6 +155,16 @@ export const S01_NET_OPEN = '詳細を見る'
 export const S01_NET_LINK_DOWN = '未接続: '
 
 // 運用の終了 (DetailedDesign-webui.md §8.3 / Spec-webui.md §3.2.1).
+export const S01_TILE_FIELD = '試験場'
+export const S01_TILE_DRIVE = '走行'
+export const S01_TILE_MAINT = '点検と校正'
+export const S01_TILE_AUTO = '自律測定'
+export const S01_TILE_SETTINGS = '設定'
+export const S01_BACK = '戻る'
+export const S01_CONNECT = '接続確認'
+export const S01_AUTO_TITLE = '自律動作を許可しますか'
+export const S01_AUTO_NO = '許可しない'
+export const S01_AUTO_YES = '許可する'
 export const SHUTDOWN_TITLE = '運用の終了'
 export const SHUTDOWN_UNSAVED_LABEL = '未保存のデータ'
 export const SHUTDOWN_NONE = 'なし'
@@ -694,6 +719,20 @@ export const S01_FINISH_ESCAPE = '終了して待機に戻る'
 // 判定は人の責任なので S-01 に常時出す（DetailedDesign-transit.md §0.4）。
 export const S01_TEACH_NOTE = '教示は保管場所から開始してください（復路では教示できません）'
 export const S50_BACK = '戻る'
+export const S50_SEC_RUN = '速さとブレーキ'
+export const S50_SEC_LOC = '再生の位置合わせ'
+export const S50_SEC_NOTIFY = '知らせる'
+export const S50_SEC_SCREEN = '画面'
+export const S50_SEC_LINK = 'つなぎ先'
+export const S50_SEC_LOG = '異常の履歴'
+export const S50_SEC_BLIND = 'LiDAR 死角'
+export const S50_SEC_DEV = '開発モード'
+export const S50_WHEN_NEXT_BOOT = '次の起動から'
+export const S50_WHEN_MAP_RELOAD = '次に地図を読み直したときから'
+export const S50_WHEN_NOW = 'すぐ'
+export const S50_HELP_TITLE = 'ヘルプ表示'
+export const S50_HELP_SHOW = '出す'
+export const S50_HELP_HIDE = '出さない'
 export const S50_TAB_GENERAL = '一般'
 export const S50_TAB_DISPLAY = '表示'
 export const S50_TAB_DEV = '開発モード'
@@ -719,7 +758,7 @@ export const S50_BLIND_GOTO_CALIB = '校正で変更する'
 export const S50_BLIND_NOTE =
   '今の死角マスクの表示だけです。変えるときは校正（S-40 の「LiDAR 死角」）で行います'
   + '（上限の検査・安全判定への同時反映・履歴が付きます）。'
-export const S50_SEC_SLAM = '再生の自己位置推定（slam_toolbox）'
+export const S50_SEC_SLAM = '再生の自己位置推定'
 export const S50_SLAM_NOTE =
   '変更は「YAML に保存」してから、次に「この経路で進む」を押したときに有効になります'
   + '（SLAM がその場では読み直さないため）。補正頻度を上げる＝間隔を小さく、'

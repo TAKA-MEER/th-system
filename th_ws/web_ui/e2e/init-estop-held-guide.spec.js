@@ -10,7 +10,8 @@ test('effect が無くても S-00 に案内が出て、IDLE へ進む導線が�
   await gotoScreen(page, 'S00', { mode: 'INIT', state: 'CHECK', estop_hw: true })
   await expect(page.getByTestId('w3-guide'))
     .toContainText('起動時に非常停止ボタンが押されたままです。戻してください')
-  await expect(page.getByTestId('s00-advance')).toHaveCount(0)
+  await expect(page.getByTestId('s00-advance')).toBeVisible()
+  await expect(page.getByTestId('s00-advance')).toHaveClass(/dis/)
 })
 
 test('ボタンを戻すと案内が消える', async ({ page }) => {

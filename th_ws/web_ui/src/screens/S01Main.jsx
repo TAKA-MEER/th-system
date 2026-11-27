@@ -1,13 +1,16 @@
 // screens/S01Main.jsx — S-01, the main menu screen (SCREEN_NAMES.S01 in
 // i18n/screens.js; DetailedDesign-wp1.md WP-UI-02).
 //
-// Two independent things live here: mode selection (menuItems() drives
-// which of the 10 buttons are enabled -- screens/mainMenuItems.js) and the
+// Spec-webui §3.2: 一番上は 5 タイル（試験場 ▸・走行 ▸・点検と校正 ▸・自律測定・
+// 設定）と下の段の「運用の終了」「接続確認」。下の階層は「戻る」で上へ。
+// タイルの大きさの順位は mainMenuItems.js の TILE_SIZES の 1 か所だけが持つ。
+// ライン誘導・電子リードの入口は消した（2026-11-27 D7）。
+//
+// Two independent things live here: mode selection (menuItems() drives which
+// of the 9 buttons are enabled -- screens/mainMenuItems.js) and the
 // shutdown flow (SHUTDOWN_TITLE in i18n/screens.js; DetailedDesign-webui.md
-// §8.3 / DetailedDesign-state.md §12.5's 5 steps). Both use the shared W-4
-// confirm window (shell/confirmWindow.js) for anything beyond a single
-// button press, since M-3 forbids expanding the unsaved list into the card
-// itself.
+// §8.3 / DetailedDesign-state.md §12.5's 5 steps). Both use the shared
+// WindowShell (shell/WindowShell.jsx) via the W-4 confirm window portal.
 //
 // 1b-6 (SG-B6): W-4 の「保存」「破棄」は項目ごとの本物の操作を呼ぶ。
 //   venue_map … 保存: /map_session/open (slot VENUE, mode save)
@@ -30,19 +33,26 @@ import { useStdTrigger } from '../ros/useStdTrigger.js'
 import { useOnsiteService } from '../ros/useOnsiteService.js'
 import { SERVICES } from '../ros/topics.js'
 import { useConfirmWindow } from '../shell/confirmWindow.js'
+import WindowShell from '../shell/WindowShell.jsx'
 import ArmedButton from '../parts/ArmedButton.jsx'
-import { menuItems, MENU_GROUPS, needsFinishEscape } from './mainMenuItems.js'
+import HelpTip from '../parts/HelpTip.jsx'
+import { menuItems, TOP_TILES, GROUP_TILES, needsFinishEscape } from './mainMenuItems.js'
 import attributes from '../generated/attributes.json'
 import modeEntry from '../generated/mode_entry.json'
 import { modeLabel } from '../i18n/modes.js'
 import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
 import {
-  GROUP_MOVE_TITLE, GROUP_FIELD_TITLE, GROUP_MAINT_TITLE, S01_SETTINGS,
-  S01_FINISH_ESCAPE, S01_TEACH_NOTE,
+  IconField, IconDrive, IconMaint, IconMeasure, IconGear, IconDay, IconPrep,
+  IconFollow, IconManual, IconReplay, IconTeach, IconCheck, IconCalib, IconBack,
+} from '../parts/icons.jsx'
+import {
+  S01_TILE_FIELD, S01_TILE_DRIVE, S01_TILE_MAINT, S01_TILE_AUTO, S01_TILE_SETTINGS,
+  S01_BACK, S01_AUTO_TITLE, S01_AUTO_NO, S01_AUTO_YES,
+  S01_FINISH_ESCAPE,
   S01_NET_TITLE, S01_NET_OK, S01_NET_CHECKING, S01_NET_WARN,
   S01_NET_SUPPRESSED, S01_NET_OPEN, S01_NET_LINK_DOWN, S00_ITEMS,
   WIN_REASON_TITLE, WIN_REASON_OK,
-  SHUTDOWN_TITLE, SHUTDOWN_UNSAVED_LABEL, SHUTDOWN_NONE, SHUTDOWN_BUTTON, SHUTDOWN_HINT,
+  SHUTDOWN_TITLE, SHUTDOWN_UNSAVED_LABEL, SHUTDOWN_NONE, SHUTDOWN_BUTTON,
   SHUTDOWN_WIN_TITLE, SHUTDOWN_WIN_INTRO, SHUTDOWN_WIN_NONE, SHUTDOWN_SAVE,
   SHUTDOWN_DISCARD_IDLE, SHUTDOWN_DISCARD_ARMED, SHUTDOWN_CANCEL, SHUTDOWN_CONFIRM,
   SHUTDOWN_LOADING, SHUTDOWN_STOPPING, SHUTDOWN_BLOCKED_HINT,
@@ -50,7 +60,44 @@ import {
   SHUTDOWN_LOAD_ERROR, SHUTDOWN_ITEM_FAILED, SHUTDOWN_NO_ACTION, unsavedCountLabel, unsavedLabel,
 } from '../i18n/screens.js'
 
-const GROUP_TITLES = { move: GROUP_MOVE_TITLE, field: GROUP_FIELD_TITLE, maint: GROUP_MAINT_TITLE }
+const TILE_ICONS = {
+  field: <IconField />, drive: <IconDrive />, maint: <IconMaint />,
+  measure: <IconMeasure />, gear: <IconGear />, day: <IconDay />, prep: <IconPrep />,
+  follow: <IconFollow />, manual: <IconManual />, replay: <IconReplay />,
+  teach: <IconTeach />, check: <IconCheck />, calib: <IconCalib />,
+}
+
+const GROUP_NAMES = { field: S01_TILE_FIELD, drive: S01_TILE_DRIVE, maint: S01_TILE_MAINT }
+
+const TILE_GC = {
+  field: '#26a69a',
+  drive: '#8f8a3e',
+  maint: '#a1887f',
+}
+
+const TILE_HELP = {
+  field: 's01-field', drive: 's01-drive', maint: 's01-maint',
+  auto: 's01-auto', settings: 's01-settings',
+}
+
+const MODE_HELP = {
+  FOLLOW: 's01-mode-follow', MANUAL: 's01-mode-manual',
+  TEACH_FOLLOW: 's01-mode-teach-follow', TEACH_MANUAL: 's01-mode-teach-manual',
+  REPLAY: 's01-mode-replay', PREP: 's01-mode-prep', AT_HOME: 's01-mode-at-home',
+  OPCHECK: 's01-mode-opcheck', CALIB: 's01-mode-calib',
+}
+
+// グリッドの置き場所（モックアップ LAYOUT の既定）。
+const TOP_AREA = {
+  landscape: {
+    cols: '1.35fr 1fr 1fr', rows: '1fr 1fr .42fr',
+    areas: { field: '1/1/4/2', drive: '1/2/3/3', maint: '1/3/3/4', auto: '3/2/4/3', settings: '3/3/4/4' },
+  },
+  portrait: {
+    cols: '1fr 1fr', rows: '1.25fr 1fr .42fr',
+    areas: { field: '1/1/2/3', drive: '2/1/3/2', maint: '2/2/3/3', auto: '3/1/4/2', settings: '3/2/4/3' },
+  },
+}
 
 function parseUnsaved(message) {
   try {
@@ -75,7 +122,8 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
   const onsite = useOnsiteService()
   const confirmWindow = useConfirmWindow()
 
-  // null | { kind: 'reason', reasonKey } | { kind: 'shutdown' }
+  const [lvl, setLvl] = useState('top')
+  // null | { kind: 'reason', reasonKey } | { kind: 'shutdown' } | { kind: 'auto' }
   const [activeWindow, setActiveWindow] = useState(null)
 
   const [shutdownPhase, setShutdownPhase] = useState('idle') // idle|loading|ready|executing|stopping|done
@@ -100,11 +148,10 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
   const disabledAll = stale || mode == null || mode === 'INIT'
 
   const items = menuItems(state, modeEntry, attributes, {
-    // 1b-11 SG-B13: 経路の本数は /route/catalog、リードデバイスは /system/state。
+    // 1b-11 SG-B13: 経路の本数は /route/catalog。
     // TEST_MODE の未 seed（useRouteCatalog 初期値 []）は「0 本」として扱い、
     // 教示再生を止める（空の一覧で押せる方が誤り。サーバ側も同じく拒否する）。
     routeCount: routes.length,
-    leashPresent: state?.leash_present,
   })
   const liveUnsaved = state?.unsaved ?? []
 
@@ -113,30 +160,64 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
     confirmWindow.close()
   }
 
-  async function handleMenuClick(item) {
-    if (disabledAll) return
-    if (!item.enabled) {
-      setActiveWindow({ kind: 'reason', reasonKey: item.reasonKey })
-      confirmWindow.open()
-      return
-    }
+  function openReason(reasonKey) {
+    setActiveWindow({ kind: 'reason', reasonKey })
+    confirmWindow.open()
+  }
+
+  async function enterMode(targetMode) {
     try {
-      const res = await sendTrigger('ui.enter_mode', { mode: item.mode })
+      const res = await sendTrigger('ui.enter_mode', { mode: targetMode })
       if (!res?.accepted) {
-        setActiveWindow({ kind: 'reason', reasonKey: res?.reject_reason_key ?? null })
-        confirmWindow.open()
+        openReason(res?.reject_reason_key ?? null)
         return
       }
       // accepted: hand off to main.jsx, which owns the screen FSM — the
-      // destination for this mode comes from the MODE_TO_SCREEN map there
-      // (DetailedDesign-wp3.md WP-TRANSIT-01 §11 c1: screen transitions are
-      // a map so later packets add one row per screen). If no screen is
-      // mapped yet (e.g. a mode whose screen is a later packet), it's a
-      // no-op here; /system/state will reflect the mode change anyway.
-      if (onEnter) onEnter(item.mode)
+      // destination for this mode comes from the MODE_TO_SCREEN map there.
+      // If no screen is mapped yet (e.g. a mode whose screen is a later
+      // packet), it's a no-op here; /system/state will reflect the mode
+      // change anyway.
+      if (onEnter) onEnter(targetMode)
     } catch {
-      setActiveWindow({ kind: 'reason', reasonKey: null })
+      openReason(null)
+    }
+  }
+
+  async function handleMenuClick(item) {
+    if (disabledAll) return
+    if (!item.enabled) {
+      openReason(item.reasonKey)
+      return
+    }
+    await enterMode(item.mode)
+  }
+
+  function handleTile(tile) {
+    if (disabledAll) return
+    if (tile.kind === 'group') {
+      setLvl(tile.key)
+    } else if (tile.kind === 'settings') {
+      if (onOpenSettings) onOpenSettings()
+    } else if (tile.kind === 'auto') {
+      setActiveWindow({ kind: 'auto' })
       confirmWindow.open()
+    } else if (tile.kind === 'mode') {
+      const item = items.find((it) => it.mode === tile.mode)
+      if (item) handleMenuClick(item)
+    }
+  }
+
+  async function handleFinishEscape() {
+    if (disabledAll) return
+    try {
+      const res = await sendTrigger('ui.finish')
+      if (!res?.accepted) {
+        openReason(res?.reject_reason_key ?? null)
+        return
+      }
+      if (onEnter) onEnter('IDLE')
+    } catch {
+      openReason(null)
     }
   }
 
@@ -227,220 +308,205 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
     }
   }
 
-  const renderGroup = (group) => (
-    <div className="card" key={group.key}>
-      <h3>{GROUP_TITLES[group.key]}</h3>
-      {/* 1b-11 SG-B13: 教示は保管場所起点（Spec-transit.md §0.6・§3.5）。
-          判定は人の責任なので S-01 に常時案内を出す
-          （DetailedDesign-transit.md §0.4）。 */}
-      {group.key === 'move' && <div className="note">{S01_TEACH_NOTE}</div>}
-      <div className="btnrow n2">
-        {group.modes.map((m) => {
-          const item = items.find((it) => it.mode === m)
-          return (
-            <button
-              key={m}
-              type="button"
-              className={`btn ${item.enabled ? '' : 'dis'}`}
-              disabled={disabledAll}
-              onClick={() => handleMenuClick(item)}
-              data-testid={`s01-mode-${m}`}
-            >
-              {modeLabel(m)}
-            </button>
-          )
-        })}
-      </div>
-      {/* WS-9X: 「設定」は FSM のモードではないので menuItems() も
-          .btnrow（モード選択ボタンのグリッド）にも入れない。S-50 を開く
-          だけ（onOpenSettings）。stale / INIT でも設定は読めるように
-          disabledAll では切らない。 */}
-      {group.key === 'maint' && onOpenSettings && (
+  function renderTile(tile, area, orientation) {
+    const isGroup = tile.kind === 'group'
+    const isMode = tile.kind === 'mode'
+    let name = ''
+    let item = null
+    if (isGroup) name = GROUP_NAMES[tile.key]
+    else if (tile.kind === 'auto') name = S01_TILE_AUTO
+    else if (tile.kind === 'settings') name = S01_TILE_SETTINGS
+    else if (isMode) {
+      item = items.find((it) => it.mode === tile.mode)
+      name = modeLabel(tile.mode)
+    }
+    // 「設定」は FSM を動かさないので disabledAll に縛らない（昔から）。
+    const disabled = tile.kind === 'settings' ? false : (disabledAll || (item ? !item.enabled : false))
+    const testId = isMode ? `s01-mode-${tile.mode}`
+      : tile.kind === 'auto' ? 's01-open-auto'
+      : tile.kind === 'settings' ? 's01-open-settings'
+      : `s01-group-${tile.key}`
+    const helpKey = isMode ? MODE_HELP[tile.mode] : TILE_HELP[tile.key]
+    const reason = disabled && item && !disabledAll ? (reasonLabel(item.reasonKey) ?? null) : null
+    // 区画の色（mockup pal-new。--gc は CSS が地の色・アイコン・縁に使う）。
+    // 試験場 #26a69a／走行 #8f8a3e（黄土。紫は使わない）／点検と校正 #a1887f。
+    // 自律測定・設定は無地（白）。
+    const gc = isGroup ? TILE_GC[tile.key]
+      : isMode ? TILE_GC[lvl]
+      : null
+    return (
+      <HelpTip key={tile.key} helpKey={helpKey}>
         <button
           type="button"
-          className="btn wide mt"
-          onClick={onOpenSettings}
-          data-testid="s01-open-settings"
+          className={`tile ${tile.size} ${gc ? 'g' : ''} ${disabled ? 'dis' : ''}`}
+          style={{ ...(area ? { gridArea: area } : {}), ...(gc ? { '--gc': gc } : {}) }}
+          disabled={tile.kind === 'settings' ? undefined : (disabledAll ? disabledAll : undefined)}
+          onClick={() => handleTile(tile)}
+          data-testid={testId}
+          data-tile-size={tile.size}
+          data-reason={reason ?? ''}
         >
-          {S01_SETTINGS}
+          <span className="tile-ic" aria-hidden="true">{TILE_ICONS[tile.icon]}</span>
+          <span className="nm">{name}{(isGroup ? ' ▸' : '')}</span>
         </button>
-      )}
-    </div>
+      </HelpTip>
+    )
+  }
+
+  const orientation = typeof window !== 'undefined' && window.innerWidth < window.innerHeight
+    ? 'portrait' : 'landscape'
+  const topLayout = TOP_AREA[orientation]
+  const topTiles = lvl === 'top'
+    ? TOP_TILES.map((t) => renderTile(t, topLayout.areas[t.key], orientation))
+    : GROUP_TILES[lvl].map((t) => renderTile(t, null, orientation))
+
+  const groupName = GROUP_NAMES[lvl]
+
+  // §3.2「下＝運用の終了・接続確認」: 接続確認は操作バーではなく、ネットワーク
+  // 接続確認の区画の中の「詳細を見る」で S-00 へ行く（区画と重複させない）。
+  const netDetail = onOpenConnect && (
+    <HelpTip helpKey="s01-connect">
+      <button
+        type="button"
+        className="btn"
+        onClick={onOpenConnect}
+        data-testid="s01-net-open"
+      >
+        <span>{S01_NET_OPEN}</span>
+      </button>
+    </HelpTip>
   )
 
   return (
     <div className="screen" id="s01">
-      <div className="split-col">
-      {/* ネットワーク接続確認の要約（Spec-webui.md §3.2・Spec-ops.md §2.6）。
-          S-00 と同じ警告を出す。警告だけでボタン類の活性は変えない（C-r4）。
-          タップで S-00 相当の詳細へ。 */}
-      <div className="card" data-testid="s01-net-summary">
-        <h3>{S01_NET_TITLE}</h3>
-        {linkDown.length > 0 && (
-          <div className="row mb">
-            <span className="pill ng" data-testid="s01-net-link-down">
-              {S01_NET_LINK_DOWN}
-              {linkDown.map((k) => S00_ITEMS.find((it) => it.key === k)?.label ?? k).join('、')}
-            </span>
-          </div>
-        )}
-        {!auto && <div className="note">{S01_NET_CHECKING}</div>}
-        {auto?.suppressed && <div className="note">{S01_NET_SUPPRESSED}</div>}
-        {auto && !auto.suppressed && autoCheckWarns(auto) && (
-          <div className="row mb">
-            <span className="pill ng" data-testid="s01-net-warn">{S01_NET_WARN}</span>
-          </div>
-        )}
-        {auto && !auto.suppressed && !autoCheckWarns(auto) && auto.overall === 'OK' && linkDown.length === 0 && (
-          <div className="note">{S01_NET_OK}</div>
-        )}
-        {auto && !auto.suppressed && auto.overall !== 'OK' && !autoCheckWarns(auto) && (
-          <div className="note">{S01_NET_CHECKING}</div>
-        )}
-        {onOpenConnect && (
-          <button
-            type="button"
-            className="btn wide mt"
-            onClick={onOpenConnect}
-            data-testid="s01-net-open"
-          >
-            {S01_NET_OPEN}
-          </button>
-        )}
-      </div>
-      {MENU_GROUPS.filter((g) => g.key === 'move').map(renderGroup)}
-      </div>
-      <div className="split-col">
-      {MENU_GROUPS.filter((g) => g.key !== 'move').map(renderGroup)}
-
-      {needsFinishEscape(mode) && (
-        <div className="card">
-          <button
-            type="button"
-            className="btn danger wide"
-            disabled={disabledAll}
-            onClick={async () => {
-              try {
-                const res = await sendTrigger('ui.finish')
-                if (!res?.accepted) {
-                  setActiveWindow({ kind: 'reason', reasonKey: res?.reject_reason_key ?? null })
-                  confirmWindow.open()
-                  return
-                }
-                if (onEnter) onEnter('IDLE')
-              } catch {
-                setActiveWindow({ kind: 'reason', reasonKey: null })
-                confirmWindow.open()
-              }
-            }}
-            data-testid="s01-finish-escape"
-          >
-            {S01_FINISH_ESCAPE}
-          </button>
+      <div className="opbar" data-pos="opbar">
+          {lvl !== 'top' && (
+            <HelpTip helpKey="s01-back">
+              <button
+                type="button"
+                className="btn exit"
+                onClick={() => setLvl('top')}
+                data-testid="s01-back"
+              >
+                <IconBack />
+                <span>{S01_BACK}</span>
+              </button>
+            </HelpTip>
+          )}
+          <span className="grow" />
         </div>
-      )}
-
-      <div className="card">
-        <h3>{SHUTDOWN_TITLE}</h3>
-        {shutdownPhase === 'done' ? (
-          <div className="note">
-            <div className="b">{SHUTDOWN_DONE_TITLE}</div>
-            <div>{SHUTDOWN_DONE_BODY}</div>
+      <div className="s01-main">
+        <div className="mcol">
+          {lvl !== 'top' && <div className="s01-banner">{groupName}</div>}
+          <div
+            className="tiles"
+            data-testid="s01-tiles"
+            data-lvl={lvl}
+            style={lvl === 'top' ? {
+              gridTemplateColumns: topLayout.cols,
+              gridTemplateRows: topLayout.rows,
+            } : undefined}
+          >
+            {topTiles}
           </div>
-        ) : shutdownPhase === 'stopping' ? (
-          <div className="note" data-testid="shutdown-stopping">
-            <div className="b">{SHUTDOWN_STOPPING}</div>
-          </div>
-        ) : (
-          <>
+        </div>
+        <div className="side">
+        {/* ネットワーク接続確認の要約（Spec-webui.md §3.2・Spec-ops.md §2.6）。
+            S-00 と同じ警告を出す。警告だけでボタン類の活性は変えない（C-r4）。 */}
+        <div className="card" data-testid="s01-net-summary">
+          <h3>{S01_NET_TITLE}</h3>
+          {linkDown.length > 0 && (
             <div className="row mb">
-              <span className="grow sm">{SHUTDOWN_UNSAVED_LABEL}</span>
-              <span className={`pill ${liveUnsaved.length ? 'ng' : 'ok'}`}>
-                {liveUnsaved.length ? unsavedCountLabel(liveUnsaved.length) : SHUTDOWN_NONE}
+              <span className="pill ng" data-testid="s01-net-link-down">
+                {S01_NET_LINK_DOWN}
+                {linkDown.map((k) => S00_ITEMS.find((it) => it.key === k)?.label ?? k).join('、')}
               </span>
             </div>
-            <button type="button" className="btn danger wide" disabled={disabledAll} onClick={openShutdown}>
-              {SHUTDOWN_BUTTON}
-            </button>
-            <div className="hint mt">{SHUTDOWN_HINT}</div>
-          </>
-        )}
-      </div>
+          )}
+          {!auto && <div className="note">{S01_NET_CHECKING}</div>}
+          {auto?.suppressed && <div className="note">{S01_NET_SUPPRESSED}</div>}
+          {auto && !auto.suppressed && autoCheckWarns(auto) && (
+            <div className="row mb">
+              <span className="pill ng" data-testid="s01-net-warn">{S01_NET_WARN}</span>
+            </div>
+          )}
+          {auto && !auto.suppressed && !autoCheckWarns(auto) && auto.overall === 'OK' && linkDown.length === 0 && (
+            <div className="note">{S01_NET_OK}</div>
+          )}
+          {auto && !auto.suppressed && auto.overall !== 'OK' && !autoCheckWarns(auto) && (
+            <div className="note">{S01_NET_CHECKING}</div>
+          )}
+          {netDetail && <div className="row mt">{netDetail}</div>}
+        </div>
 
+        {needsFinishEscape(mode) && (
+          <div className="card">
+            <button
+              type="button"
+              className="btn danger wide"
+              disabled={disabledAll}
+              onClick={handleFinishEscape}
+              data-testid="s01-finish-escape"
+            >
+              {S01_FINISH_ESCAPE}
+            </button>
+          </div>
+        )}
+
+        <div className="card">
+          <h3>{SHUTDOWN_TITLE}</h3>
+          {shutdownPhase === 'done' ? (
+            <div className="note">
+              <div className="b">{SHUTDOWN_DONE_TITLE}</div>
+              <div>{SHUTDOWN_DONE_BODY}</div>
+            </div>
+          ) : shutdownPhase === 'stopping' ? (
+            <div className="note" data-testid="shutdown-stopping">
+              <div className="b">{SHUTDOWN_STOPPING}</div>
+            </div>
+          ) : (
+            <>
+              <div className="row mb">
+                <span className="grow sm">{SHUTDOWN_UNSAVED_LABEL}</span>
+                <span className={`pill ${liveUnsaved.length ? 'ng' : 'ok'}`}>
+                  {liveUnsaved.length ? unsavedCountLabel(liveUnsaved.length) : SHUTDOWN_NONE}
+                </span>
+              </div>
+              <HelpTip helpKey="s01-shutdown">
+              <button type="button" className="btn danger wide" disabled={disabledAll} onClick={openShutdown} data-testid="s01-shutdown">
+                {SHUTDOWN_BUTTON}
+              </button>
+              </HelpTip>
+            </>
+          )}
+        </div>
+        </div>
       </div>
 
       {activeWindow?.kind === 'reason' && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(
-        <>
-          <header>{WIN_REASON_TITLE}</header>
-          <div className="bodyw">
-            <p>{reasonLabel(activeWindow.reasonKey) ?? UNKNOWN_REASON_LABEL}</p>
-          </div>
-          <footer>
+        <WindowShell className="confirm" testId="s01-reason-window" title={WIN_REASON_TITLE}>
+          <p>{reasonLabel(activeWindow.reasonKey) ?? UNKNOWN_REASON_LABEL}</p>
+          <div className="mt">
             <button type="button" className="btn primary" onClick={closeWindow}>{WIN_REASON_OK}</button>
-          </footer>
-        </>,
+          </div>
+        </WindowShell>,
+        confirmWindow.mountNode,
+      )}
+
+      {activeWindow?.kind === 'auto' && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(
+        <WindowShell className="confirm" testId="s01-auto-window" title={S01_AUTO_TITLE}
+          footer={<>
+            <button type="button" className="btn" onClick={closeWindow} data-testid="s01-auto-no">{S01_AUTO_NO}</button>
+            <button type="button" className="btn primary" onClick={() => { closeWindow(); enterMode('AUTO_MEASURE') }} data-testid="s01-auto-yes">{S01_AUTO_YES}</button>
+          </>}>
+          <p data-testid="s01-auto-body">{modeLabel('AUTO_MEASURE')}</p>
+        </WindowShell>,
         confirmWindow.mountNode,
       )}
 
       {activeWindow?.kind === 'shutdown' && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(
-        <>
-          <header>{SHUTDOWN_WIN_TITLE}</header>
-          <div className="bodyw">
-            {shutdownPhase === 'loading' && <p className="mut sm">{SHUTDOWN_LOADING}</p>}
-            {shutdownPhase !== 'loading' && (
-              <>
-                <div className="sm mb">{SHUTDOWN_WIN_INTRO}</div>
-                {unsavedItems.length === 0 ? (
-                  <div className="note">{SHUTDOWN_WIN_NONE}</div>
-                ) : (
-                  <table className="lst">
-                    <tbody>
-                      {unsavedItems.map((key) => (
-                        <tr key={key}>
-                          <td>{unsavedLabel(key)}</td>
-                          <td className="r">
-                            {resolvedItems.has(key) ? (
-                              <span className="pill ok">{SHUTDOWN_RESOLVED}</span>
-                            ) : !ITEM_ACTIONS[key] ? (
-                              <span className="xs mut" data-testid={`shutdown-noaction-${key}`}>
-                                {SHUTDOWN_NO_ACTION}
-                              </span>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  className="btn sm"
-                                  disabled={busyKey != null}
-                                  onClick={() => runItem(key, 'save')}
-                                  data-testid={`shutdown-save-${key}`}
-                                >
-                                  {SHUTDOWN_SAVE}
-                                </button>
-                                {' '}
-                                <ArmedButton
-                                  className="sm"
-                                  idleLabel={SHUTDOWN_DISCARD_IDLE}
-                                  armedLabel={SHUTDOWN_DISCARD_ARMED}
-                                  onConfirm={() => runItem(key, 'discard')}
-                                />
-                                {itemErrors[key] && (
-                                  <div className="xs tone-ng" data-testid={`shutdown-error-${key}`}>
-                                    {itemErrors[key]}
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                {shutdownError && <div className="note mt">{reasonLabel(shutdownError) ?? shutdownError}</div>}
-              </>
-            )}
-          </div>
-          <footer>
+        <WindowShell className="confirm" testId="s01-shutdown-window" title={SHUTDOWN_WIN_TITLE}
+          footer={<>
             <button type="button" className="btn" onClick={closeWindow}>{SHUTDOWN_CANCEL}</button>
             {!allResolved && shutdownPhase === 'ready' && (
               <span className="hint" data-testid="shutdown-blocked-reason">
@@ -455,8 +521,61 @@ export default function S01Main({ onEnter, onOpenSettings, onOpenConnect }) {
             >
               {SHUTDOWN_CONFIRM}
             </button>
-          </footer>
-        </>,
+          </>}>
+          {shutdownPhase === 'loading' && <p className="mut sm">{SHUTDOWN_LOADING}</p>}
+          {shutdownPhase !== 'loading' && (
+            <>
+              <div className="sm mb">{SHUTDOWN_WIN_INTRO}</div>
+              {unsavedItems.length === 0 ? (
+                <div className="note">{SHUTDOWN_WIN_NONE}</div>
+              ) : (
+                <table className="lst">
+                  <tbody>
+                    {unsavedItems.map((key) => (
+                      <tr key={key}>
+                        <td>{unsavedLabel(key)}</td>
+                        <td className="r">
+                          {resolvedItems.has(key) ? (
+                            <span className="pill ok">{SHUTDOWN_RESOLVED}</span>
+                          ) : !ITEM_ACTIONS[key] ? (
+                            <span className="xs mut" data-testid={`shutdown-noaction-${key}`}>
+                              {SHUTDOWN_NO_ACTION}
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="btn sm"
+                                disabled={busyKey != null}
+                                onClick={() => runItem(key, 'save')}
+                                data-testid={`shutdown-save-${key}`}
+                              >
+                                {SHUTDOWN_SAVE}
+                              </button>
+                              {' '}
+                              <ArmedButton
+                                className="sm"
+                                idleLabel={SHUTDOWN_DISCARD_IDLE}
+                                armedLabel={SHUTDOWN_DISCARD_ARMED}
+                                onConfirm={() => runItem(key, 'discard')}
+                              />
+                              {itemErrors[key] && (
+                                <div className="xs tone-ng" data-testid={`shutdown-error-${key}`}>
+                                  {itemErrors[key]}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {shutdownError && <div className="note mt">{reasonLabel(shutdownError) ?? shutdownError}</div>}
+            </>
+          )}
+        </WindowShell>,
         confirmWindow.mountNode,
       )}
     </div>

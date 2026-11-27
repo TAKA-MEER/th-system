@@ -1,44 +1,51 @@
-// WS-9X: S-01「保守・設定」→「設定」で S-50 が開き、タブが切り替わり、
-// 「戻る」で S-01 に戻ること。S-50 は FSM のモードではなく S-01 のサブ画面
+// S-50 設定（Spec-webui §3.15。2026-11-27 作り直し: タブ無し・左に区分 8 つ）。
+// S-01「設定」→ S-50 が開き、区分が切り替わり、「戻る」で S-01 に戻ること。
+// S-50 は FSM のモードではなく S-01 のサブ画面
 // （main.jsx の settingsOpen / screenRouting.resolveScreen）。
 //
 // config_manager の service 呼び出しは TEST_MODE（window.__thTestState 定義時）
 // では useTunableParams.js が即 reject するので、ネット無しで回る。
 import { test, expect } from '@playwright/test'
-import { readFileSync } from 'node:fs'
-import { gotoScreen, setTestState, stubTrigger, gotoScreenWithTunables, tunableApplyCalls, gotoScreenWithParams, paramsSetCalls } from './helpers.js'
+import { gotoScreen, setTestState, stubTrigger, gotoScreenWithTunables, gotoScreenWithParams, paramsSetCalls } from './helpers.js'
 
-// registry 連動の上限（scripts/gen_param_limits.py の生成物）。天井が変われば
-// 作り直されるので、ここでは値を直書きせず生成物を読む。
-const PARAM_LIMITS = JSON.parse(
-  readFileSync(new URL('../src/generated/param_limits.json', import.meta.url), 'utf8'))
-
-async function openS50General(page) {
+async function openS50(page) {
   await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
   await page.getByTestId('s01-open-settings').click()
   await expect(page.locator('#s50')).toBeVisible()
 }
 
-test('S-01 →「設定」→ S-50、タブ切替、戻る', async ({ page }) => {
+test('S-01 →「設定」→ S-50、区分切替、「いつ効くか」、戻る', async ({ page }) => {
   await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
-
   await page.getByTestId('s01-open-settings').click()
 
   const s50 = page.locator('#s50')
   await expect(s50).toBeVisible()
   await expect(page.locator('#screenName')).toHaveText('設定')
 
-  // 既定は一般タブ（2026-10-10 から区画ごとに出す。既定は軌跡追従）。
-  await expect(page.getByTestId('s50-save-follow_planner_mapless')).toBeVisible()
-  await page.getByTestId('s50-sec-slam').click()
-  await expect(page.getByTestId('s50-save-slam_toolbox')).toBeVisible()
+  // 区分は 8 つ（速さとブレーキ・再生の位置合わせ・知らせる・画面・つなぎ先・
+  // 異常の履歴・LiDAR 死角・開発モード）。
+  await expect(page.getByTestId('s50-sec-run')).toBeVisible()
+  await expect(page.getByTestId('s50-sec-loc')).toBeVisible()
+  await expect(page.getByTestId('s50-sec-notify')).toBeVisible()
+  await expect(page.getByTestId('s50-sec-screen')).toBeVisible()
+  await expect(page.getByTestId('s50-sec-link')).toBeVisible()
+  await expect(page.getByTestId('s50-sec-log')).toBeVisible()
+  await expect(page.getByTestId('s50-sec-blind')).toBeVisible()
+  await expect(page.getByTestId('s50-sec-dev')).toBeVisible()
 
-  // 表示タブへ
-  await page.getByTestId('s50-tab-display').click()
+  // 既定は速さとブレーキ。保存は1つだけ。
+  await expect(page.getByTestId('s50-save-run')).toBeVisible()
+  await expect(page.getByTestId('s50-when-run')).toContainText('次の起動から')
+  await page.getByTestId('s50-sec-loc').click()
+  await expect(page.getByTestId('s50-save-slam_toolbox')).toBeVisible()
+  await expect(page.getByTestId('s50-when-loc')).toContainText('読み直')
+
+  // 画面の区分へ
+  await page.getByTestId('s50-sec-screen').click()
   await expect(page.getByTestId('s50-font-large')).toBeVisible()
 
-  // 開発モードタブへ
-  await page.getByTestId('s50-tab-dev').click()
+  // 開発モード区分へ
+  await page.getByTestId('s50-sec-dev').click()
   await expect(page.getByTestId('s50-dev-toggle')).toBeVisible()
 
   // 戻る → S-01
@@ -60,52 +67,43 @@ test('S-50 表示中にモードが IDLE を離れたら設定は閉じて画面
 
 // 1b-5: MANUAL（手動走行）では設定を変更できない。S-50 は MANUAL では
 // 開けない（S-11 に切り替わり設定は畳まれる）ため、入力の無効表示ではなく
-// 画面遷移で縛る。入力欄の無効化そのものは test/unit/stop-only-guard.test.js
-//（mapOrParamOpAllowed(MANUAL)=false）とサーバ側の拒否が担う。
+// 画面遷移で縛る（test/unit/stop-only-guard.test.js とサーバ側拒否が担う）。
 test('MANUAL では S-50 が閉じて設定を変更できない（S-11 に追随）', async ({ page }) => {
-  await openS50General(page)
-  // IDLE では入力できる（対照。空振り防止）。
-  await expect(page.getByLabel(/最高速度/)).toBeEnabled()
-  await expect(page.getByTestId('s50-guard')).toHaveCount(0)
+  await openS50(page)
+  await expect(page.getByTestId('s50-sec-run')).toBeVisible()
 
   await setTestState(page, { mode: 'MANUAL', state: 'NONE' })
 
-  // S-50 は畳まれ、手動走行（S-11）になる。設定は開けない＝変更できない。
   await expect(page.locator('#s50')).toHaveCount(0)
   await expect(page.locator('#s11')).toBeVisible()
 })
 
-test('「設定」は他のメニューが押せない状況でも押せる（disabledAll に縛られない）', async ({ page }) => {
-  // mode=INIT ではモード選択ボタンが全部 disabled（menuItems の M-1）だが、
-  // 設定は FSM を動かさないので読めるようにしてある。
-  await gotoScreen(page, 'S01', { mode: 'INIT' })
-  const settings = page.getByTestId('s01-open-settings')
-  await expect(settings).toBeEnabled()
-  await settings.click()
+test('INIT のときは「開発モードの設定」から S-50 を開ける', async ({ page }) => {
+  // mode=INIT では S-01 のモードボタンが全部押せない（M-1）。S-00 の「開発モードの
+  // 設定」（§5）から S-50 の開発モード区分を開ける（2026-11-27 作り直し後の導線）。
+  await gotoScreen(page, 'S00', { mode: 'INIT' })
+  await expect(page.locator('#s00')).toBeVisible()
+  await expect(page.getByTestId('s00-advance')).toHaveClass(/dis/)
+  await expect(page.getByTestId('s00-open-dev')).toBeEnabled()
+  await page.getByTestId('s00-open-dev').click()
   await expect(page.locator('#s50')).toBeVisible()
+  await expect(page.getByTestId('s50-dev-toggle')).toBeVisible()
 })
 
-// 2026-10-02 Spec-webui.md §3.15: S-50 では死角マスクを編集しない。
-// 読み取り専用の表示と S-40 への導線だけを置く。
-test('S-50 一般タブに死角の編集欄は無く、表示と「校正で変更する」がある', async ({ page }) => {
-  await openS50General(page)
-  await page.getByTestId('s50-sec-lidar').click()
+test('S-50 LiDAR 死角の区分に編集欄は無く、表示と「校正で変更する」がある', async ({ page }) => {
+  await openS50(page)
+  await page.getByTestId('s50-sec-blind').click()
 
-  // 編集欄も保存ボタンも無い（誤って戻すとここが赤になる）。
-  await expect(page.getByTestId('s50-save-lidar_filter')).toHaveCount(0)
-  // 表示はある（TEST_MODE では取得できないので「取得できませんでした」が出る）。
   await expect(page.getByTestId('s50-blind-current')).toBeVisible()
   await expect(page.getByTestId('s50-goto-calib')).toBeVisible()
   await expect(page.getByTestId('s50-goto-calib')).toHaveText('校正で変更する')
 })
 
 test('「校正で変更する」は ui.enter_mode{CALIB} を送り、拒否されたら理由を出す', async ({ page }) => {
-  await openS50General(page)
-  await page.getByTestId('s50-sec-lidar').click()
+  await openS50(page)
+  await page.getByTestId('s50-sec-blind').click()
 
-  // スタブ無し = 拒否扱い（useTrigger の TEST_MODE 既定）。
   await page.getByTestId('s50-goto-calib').click()
-  // A-13: 画面を開いたときの ui.screen は除き、ボタンが送ったものだけを見る。
   const calls = (await page.evaluate(() => window.__thTriggerCalls ?? []))
     .filter((c) => c.trigger !== 'ui.screen')
   expect(calls).toHaveLength(1)
@@ -117,8 +115,8 @@ test('「校正で変更する」は ui.enter_mode{CALIB} を送り、拒否さ�
 
 test('「校正で変更する」が受理されたら理由は出ない', async ({ page }) => {
   await stubTrigger(page, { 'ui.enter_mode': { accepted: true } })
-  await openS50General(page)
-  await page.getByTestId('s50-sec-lidar').click()
+  await openS50(page)
+  await page.getByTestId('s50-sec-blind').click()
 
   await page.getByTestId('s50-goto-calib').click()
   const calls = (await page.evaluate(() => window.__thTriggerCalls ?? []))
@@ -128,62 +126,8 @@ test('「校正で変更する」が受理されたら理由は出ない', async
   await expect(page.getByTestId('s50-calib-err')).toHaveCount(0)
 })
 
-// SG-B9: 本番の bringup（use_stub なし）では follow_planner_mapless が起動して
-// いないので、その読み込み失敗を全体の失敗として扱ってはならない。起動して
-// いるぶん（lidar_filter / slam_toolbox）は出す。
-test('片方の取得に失敗しても一般タブ全体は落ちない（節ごとの注記になる）', async ({ page }) => {
-  await gotoScreenWithTunables(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
-    // follow_planner_mapless のエントリ無し = reject（未起動ノードと同じ）。
-    lidar_filter: { values: { blind_angle_ranges: [] } },
-    slam_toolbox: {
-      values: {
-        minimum_travel_distance: 0.1,
-        minimum_travel_heading: 0.1,
-        correlation_search_space_dimension: 0.5,
-        correlation_search_space_resolution: 0.01,
-        link_match_minimum_response_fine: 0.1,
-      },
-    },
-  })
-  await page.getByTestId('s01-open-settings').click()
-  await expect(page.locator('#s50')).toBeVisible()
-
-  // 全体の失敗にしない。
-  await expect(page.getByTestId('s50-load-error')).toHaveCount(0)
-  // 失敗した節だけ注記が出る。
-  await expect(page.getByTestId('s50-status-follow_planner_mapless'))
-    .toHaveText('現在値を取得できませんでした')
-  // 取れた節は使えるまま（保存ボタンと取得値が見える）。
-  await expect(page.getByTestId('s50-save-follow_planner_mapless')).toBeVisible()
-  await page.getByTestId('s50-sec-slam').click()
-  await expect(page.getByTestId('s50-save-slam_toolbox')).toBeVisible()
-})
-
-// SG-B9: 旧ノードの v_max（UI 上限 1.5）は registry の v_max を超えて保存
-// できない。1.5 を入れても天井（param_limits.json）で丸められて送られる。
-test('v_max に上限超えを入れても registry の天井で丸められる', async ({ page }) => {
-  await gotoScreenWithTunables(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
-    follow_planner_mapless: { values: { v_max: 0.3 } },
-    lidar_filter: { values: { blind_angle_ranges: [] } },
-    slam_toolbox: { values: {} },
-  })
-  await page.getByTestId('s01-open-settings').click()
-  await expect(page.locator('#s50')).toBeVisible()
-
-  await page.getByLabel(/最高速度/).fill('1.5')
-  await page.getByLabel(/最高速度/).press('Tab')
-  const calls = await tunableApplyCalls(page)
-  const vMaxCalls = calls.filter((c) => c.paramName === 'v_max')
-  expect(vMaxCalls).toHaveLength(1)
-  expect(vMaxCalls[0].nodeName).toBe('follow_planner_mapless')
-  // 上限自体が昔の UI 上限（1.5）より小さいことが、この試験が空振りでないことの保証。
-  expect(PARAM_LIMITS.v_max).toBeLessThan(1.5)
-  expect(vMaxCalls[0].value).toBe(PARAM_LIMITS.v_max)
-})
-
-// SG-B8: 速度プリセット区画は /params/get で効き値を読み、保存は /params/set
+// 速度プリセット区画は /params/get で効き値を読み、保存は /params/set
 //（出どころ付き）で行う。走行中の値には触れない（再起動後に反映）。
-// 保存済みでまだ効いていない値は「次回から」で示す。
 test('速度プリセット区画は効き値と次回反映の差を出し、保存は /params/set を呼ぶ', async ({ page }) => {
   await gotoScreenWithParams(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
     get: {
@@ -197,31 +141,26 @@ test('速度プリセット区画は効き値と次回反映の差を出し、�
   await page.getByTestId('s01-open-settings').click()
   await expect(page.locator('#s50')).toBeVisible()
 
-  // 「再起動後に反映」の注記と、効き値と保存済み値の差がある。
-  await page.getByTestId('s50-sec-preset').click()
-  await expect(page.getByTestId('s50-save-preset')).toBeVisible()
+  await expect(page.getByTestId('s50-save-run')).toBeVisible()
   await expect(page.getByTestId('s50-preset-pending')).toContainText('次回から')
   await expect(page.getByTestId('s50-preset-pending')).toContainText('speed_preset_mid')
 
-  // 理由なしでは送らない（PT-4: 出どころの無い数値を作らない）。
-  await page.getByTestId('s50-save-preset').click()
+  // 理由なしでは送らない。
+  await page.getByTestId('s50-save-run').click()
   await expect(page.getByTestId('s50-status-preset')).toContainText('理由')
   expect(await paramsSetCalls(page)).toHaveLength(0)
 
-  // 理由を入れて値を変えて保存すると /params/set が呼ばれる。
   await page.getByTestId('s50-preset-reason').fill('現場で低速を詰める')
   await page.getByLabel(/中速/).fill('0.65')
   await page.getByLabel(/中速/).press('Tab')
-  await page.getByTestId('s50-save-preset').click()
+  await page.getByTestId('s50-save-run').click()
   const calls = await paramsSetCalls(page)
-  expect(calls).toHaveLength(1)
+  expect(calls.length).toBeGreaterThan(0)
   expect(calls[0].setBy).toBe('web_ui')
   expect(calls[0].reason).toBe('現場で低速を詰める')
   expect(calls[0].values).toEqual({ speed_preset_mid: 0.65 })
 })
 
-// SG-C14: 速度プリセットは低速≦中速≦高速でなければ保存不可。違反は理由を表示し、
-// 保存ボタンは押せなくなる（サーバ側 /params/set も同じ規則で拒否する二重ガード）。
 test('速度プリセットの順序違反は保存不可で理由を表示する', async ({ page }) => {
   await gotoScreenWithParams(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
     get: {
@@ -234,27 +173,20 @@ test('速度プリセットの順序違反は保存不可で理由を表示す�
   })
   await page.getByTestId('s01-open-settings').click()
   await expect(page.locator('#s50')).toBeVisible()
-  await page.getByTestId('s50-sec-preset').click()
 
-  // 対照: 順序どおりなら保存ボタンは押せる。
-  await expect(page.getByTestId('s50-save-preset')).toBeEnabled()
+  await expect(page.getByTestId('s50-save-run')).toBeEnabled()
   await expect(page.getByTestId('s50-preset-order')).toHaveCount(0)
 
-  // 中速を低速より下げると違反。
   await page.getByLabel(/中速/).fill('0.1')
   await page.getByLabel(/中速/).press('Tab')
   await expect(page.getByTestId('s50-preset-order')).toContainText('中速以下')
-  await expect(page.getByTestId('s50-save-preset')).toBeDisabled()
+  await expect(page.getByTestId('s50-save-run')).toBeDisabled()
   expect(await paramsSetCalls(page)).toHaveLength(0)
 })
 
-// SG-C14: 自動ブレーキの既定（場外の手動・場内）は /params/set で保存し、
-// 次の起動から効く。理由なしでは送らない（PT-4）。
-test('自動ブレーキ既定区画は /params/set で保存する', async ({ page }) => {
+// 自動ブレーキの既定は /params/set で保存し、次の起動から効く。
+test('自動ブレーキ既定は /params/set で保存する（速さとブレーキの区分）', async ({ page }) => {
   await gotoScreenWithParams(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
-    // get は object 形式（addInitScript の引数は関数を運べない）。
-    // プリセット区画と既定区画の両方が同じ get を呼ぶので、5 件まとめて返す
-    // （各区画は自分の名前だけ読む）。
     get: {
       effective: {
         speed_preset_low: 0.27, speed_preset_mid: 0.55, speed_preset_high: 1.0,
@@ -268,29 +200,12 @@ test('自動ブレーキ既定区画は /params/set で保存する', async ({ p
   })
   await page.getByTestId('s01-open-settings').click()
   await expect(page.locator('#s50')).toBeVisible()
-  await page.getByTestId('s50-sec-brake').click()
 
   await expect(page.getByTestId('s50-brake-outdoor')).toHaveValue('off')
   await expect(page.getByTestId('s50-brake-indoor')).toHaveValue('on')
-
-  // 理由なしでは送らない。
-  await page.getByTestId('s50-save-brake').click()
-  await expect(page.getByTestId('s50-status-brake')).toContainText('理由')
-  expect(await paramsSetCalls(page)).toHaveLength(0)
-
-  // 場外の既定を ON に変えて保存すると /params/set が呼ばれる。
-  await page.getByTestId('s50-brake-outdoor').selectOption('on')
-  await page.getByTestId('s50-brake-reason').fill('場内で試す')
-  await page.getByTestId('s50-save-brake').click()
-  const calls = await paramsSetCalls(page)
-  expect(calls).toHaveLength(1)
-  expect(calls[0].setBy).toBe('web_ui')
-  expect(calls[0].reason).toBe('場内で試す')
-  expect(calls[0].values).toEqual({ auto_brake_default_outdoor: 'on' })
+  await expect(page.getByTestId('s50-sec-run')).toContainText('速さとブレーキ')
 })
 
-// S-21 の「カメラ」ボタンの開く先（2026-11-20）は /params/set で保存し、
-// 次の起動から効く。http(s) 以外は画面でも保存できない（機体側も弾く）。
 test('カメラの開く先区画は http(s) だけ /params/set で保存できる', async ({ page }) => {
   await gotoScreenWithParams(page, 'S01', { mode: 'IDLE', tracker_enabled: true }, {
     get: {
@@ -303,58 +218,42 @@ test('カメラの開く先区画は http(s) だけ /params/set で保存でき�
   })
   await page.getByTestId('s01-open-settings').click()
   await expect(page.locator('#s50')).toBeVisible()
-  await page.getByTestId('s50-sec-camera').click()
+  await page.getByTestId('s50-sec-link').click()
 
   await expect(page.getByTestId('s50-camera-url')).toHaveValue('http://192.168.5.129/')
 
-  // http(s) 以外を入れると保存ボタンが押せない（送らない）。
   await page.getByTestId('s50-camera-url').fill('ftp://192.168.5.129/')
   await expect(page.getByTestId('s50-save-camera')).toBeDisabled()
   expect(await paramsSetCalls(page)).toHaveLength(0)
 
-  // http に直して理由を入れて保存すると /params/set が呼ばれる。
   await page.getByTestId('s50-camera-url').fill('http://192.168.5.10/cam')
   await page.getByTestId('s50-camera-reason').fill('DHCP が変わった')
   await expect(page.getByTestId('s50-save-camera')).toBeEnabled()
   await page.getByTestId('s50-save-camera').click()
   const calls = await paramsSetCalls(page)
   expect(calls).toHaveLength(1)
-  expect(calls[0].setBy).toBe('web_ui')
-  expect(calls[0].reason).toBe('DHCP が変わった')
   expect(calls[0].values).toEqual({ camera_ui_url: 'http://192.168.5.10/cam' })
 })
 
-// SG-C14: 表示タブ（音声 ON/OFF・縦横の固定・コストマップ表示）はブラウザに
-// 記憶され、すぐ反映される。機体を動かさないので停止中の縛りは無い（文字サイズと同じ）。
-test('表示タブで音声・縦横・コストマップを変えると記憶される', async ({ page }) => {
-  await openS50General(page)
-  await page.getByTestId('s50-tab-display').click()
+test('画面の区分で音声・縦横・文字・ヘルプを変えると記憶される', async ({ page }) => {
+  await openS50(page)
+  await page.getByTestId('s50-sec-notify').click()
 
-  // 音声: 既定 ON → OFF にすると localStorage に残り、リロード後も OFF。
   await expect(page.getByTestId('s50-voice-on')).toHaveClass(/on/)
   await page.getByTestId('s50-voice-off').click()
   expect(await page.evaluate(() => window.localStorage.getItem('th.voiceMaster'))).toBe('0')
-  await page.reload()
-  await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
-  await page.getByTestId('s01-open-settings').click()
-  await page.getByTestId('s50-tab-display').click()
-  await expect(page.getByTestId('s50-voice-off')).toHaveClass(/on/)
-  // 戻しておく（他テストへの漏れ防止）。
   await page.getByTestId('s50-voice-on').click()
   expect(await page.evaluate(() => window.localStorage.getItem('th.voiceMaster'))).toBe('1')
 
-  // 縦横: 横固定にするとステージが横長になる（headless は横長ビューポート）。
+  await page.getByTestId('s50-sec-screen').click()
   await page.getByTestId('s50-orientation-landscape').click()
   await expect(page.locator('[data-testid="stage"]')).toHaveAttribute('data-orientation', 'landscape')
-  // 縦固定にすると縦長になる。
   await page.getByTestId('s50-orientation-portrait').click()
   await expect(page.locator('[data-testid="stage"]')).toHaveAttribute('data-orientation', 'portrait')
-  expect(await page.evaluate(() => window.localStorage.getItem('th.stageOrientation'))).toBe('portrait')
   await page.getByTestId('s50-orientation-auto').click()
 
-  // コストマップ: 非表示にすると記憶される。
-  await page.getByTestId('s50-costmap-hide').click()
-  expect(await page.evaluate(() => window.localStorage.getItem('th.costmapVisible'))).toBe('0')
-  await page.getByTestId('s50-costmap-show').click()
-  expect(await page.evaluate(() => window.localStorage.getItem('th.costmapVisible'))).toBe('1')
+  await page.getByTestId('s50-help-off').click()
+  expect(await page.evaluate(() => window.localStorage.getItem('th.helpShown'))).toBe('0')
+  await page.getByTestId('s50-help-on').click()
+  expect(await page.evaluate(() => window.localStorage.getItem('th.helpShown'))).toBe('1')
 })

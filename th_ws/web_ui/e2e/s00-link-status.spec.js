@@ -1,6 +1,6 @@
-// S-00 の機器別の行（Spec-webui.md §3.1。2026-10-04）。以前は 4 行とも全体の合否
-// （mode が INIT か）を出すだけで、どの機器が繋がっていないか分からなかった。
-// /system/link_status の項目別の状態が、各行に別々に出ることを縛る。
+// S-00 の機器のつながりの図（Spec-webui.md §3.1。2026-11-27 作り直し）。
+// 表をやめ図にした。/system/link_status の項目別の状態が、図の各機器に
+// 別々に・実データ（受信の間隔）で出ることを縛る。
 import { test, expect } from '@playwright/test'
 
 async function gotoS00(page, state, link) {
@@ -23,30 +23,35 @@ const PARTIAL = {
   estop_hw: { seen: true, pressed: false },
 }
 
-test('INIT 中でも、繋がっている機器と繋がっていない機器が行ごとに分かれて出る', async ({ page }) => {
+test('INIT 中でも、つながっている機器とつながらない機器が図に分かれて出る', async ({ page }) => {
   await gotoS00(page, { mode: 'INIT' }, PARTIAL)
-  await expect(page.getByTestId('s00-link-esp32_feedback')).toContainText('疎通')
-  await expect(page.getByTestId('s00-link-esp32_feedback')).toHaveClass(/tone-ok/)
-  await expect(page.getByTestId('s00-link-lidar')).toContainText('未接続')
-  await expect(page.getByTestId('s00-link-lidar')).toHaveClass(/tone-ng/)
-  await expect(page.getByTestId('s00-link-detail-lidar')).toContainText('一度も受信していない')
-  await expect(page.getByTestId('s00-link-detail-nodes')).toContainText('obstacle_limiter')
-  await expect(page.locator('[data-testid="s00-advance"]')).toHaveCount(0)
+  await expect(page.getByTestId('s00-node-esp')).toHaveAttribute('data-m', 'ok')
+  await expect(page.getByTestId('s00-node-lidar')).toHaveAttribute('data-m', 'ng')
+  await expect(page.getByTestId('s00-node-pc')).toHaveAttribute('data-m', 'ng')
+  // LiDAR・PC の実データ（受信の間隔・不足ノード）が図に出る。
+  await expect(page.getByTestId('s00-node-lidar')).toContainText('一度も受信していない')
+  await expect(page.getByTestId('s00-node-pc')).toContainText('obstacle_limiter')
+  // つながっていない機器への線は灰の点線。
+  await expect(page.getByTestId('s00-edge-lidar')).toHaveAttribute('data-dead', 'true')
+  await expect(page.getByTestId('s00-edge-esp')).toHaveAttribute('data-dead', 'false')
+  // 図の下にだめな機器の対処の 1 行が出る。
+  await expect(page.getByTestId('s00-fix')).toContainText('LiDAR の電源とケーブルを確かめる')
+  await expect(page.locator('[data-testid="s00-advance"]')).toHaveClass(/dis/)
 })
 
-test('届くたびに行が更新される', async ({ page }) => {
+test('届くたびに図の機器が更新される', async ({ page }) => {
   await gotoS00(page, { mode: 'INIT' }, PARTIAL)
   await page.evaluate((v) => window.__thSetTestLinkStatus(v), {
     ...PARTIAL,
     items: { ...PARTIAL.items, lidar: { ok: true, age_ms: 100, points: 720, expected_points: 720 } },
   })
-  await expect(page.getByTestId('s00-link-lidar')).toContainText('疎通')
+  await expect(page.getByTestId('s00-node-lidar')).toHaveAttribute('data-m', 'ok')
 })
 
-test('項目別の状態が届いていない間は、IDLE でも緑にしない（確認中）', async ({ page }) => {
+test('項目別の状態が届いていない間は、IDLE でも緑にしない（—）', async ({ page }) => {
   await gotoS00(page, { mode: 'IDLE' }, null)
-  await expect(page.getByTestId('s00-link-esp32_feedback')).toContainText('確認中')
-  await expect(page.getByTestId('s00-link-esp32_feedback')).toHaveClass(/tone-warn/)
+  await expect(page.getByTestId('s00-node-esp')).toHaveAttribute('data-m', 'none')
+  await expect(page.getByTestId('s00-node-lidar')).toHaveAttribute('data-m', 'none')
 })
 
 test('開発モードで外していても本当の状態を出し、無視中と添える', async ({ page }) => {
@@ -58,8 +63,8 @@ test('開発モードで外していても本当の状態を出し、無視中�
       nodes: { ok: true, missing: [], ignored: true },
     },
   })
-  await expect(page.getByTestId('s00-link-esp32_feedback')).toContainText('未接続')
-  await expect(page.getByTestId('s00-link-detail-esp32_feedback')).toContainText('開発モードで無視中')
+  await expect(page.getByTestId('s00-node-esp')).toHaveAttribute('data-m', 'ng')
+  await expect(page.getByTestId('s00-node-esp')).toContainText('開発モードで無視中')
 })
 
 test('S-01 の要約に、繋がっていない機器の名前が出る', async ({ page }) => {
@@ -74,20 +79,21 @@ test('S-01 の要約に、繋がっていない機器の名前が出る', async 
   await expect(page.getByTestId('s01-net-link-down')).not.toContainText('ホイールフィードバック')
 })
 
-// 1b-6 SG-C4: 項目別の状態が届いているのに揃わないときは、総合欄に
-// 「必須機器が繋がっていません」（従来は「確認中」のままだった）。
-test('総合欄: 項目別の状態が届いて揃わなければ「必須機器が繋がっていません」', async ({ page }) => {
+// 1b-6 SG-C4: 項目別の状態が届いているのに揃わないときは、押せない理由に
+// 「必須機器が繋がっていません」が出る。
+test('揃わないときは押せない理由に「必須機器が繋がっていません」が出る', async ({ page }) => {
   await gotoS00(page, { mode: 'INIT' }, PARTIAL)
-  await expect(page.getByTestId('s00-overall')).toContainText('必須機器が繋がっていません')
+  await page.locator('[data-testid="s00-advance"]').click({ force: true })
+  await expect(page.getByTestId('s00-advance-reason')).toContainText('必須機器が繋がっていません')
 })
 
-test('総合欄: 項目別の状態が届いていなければ「確認中」のまま', async ({ page }) => {
+test('揃わないときは押せない理由に「確認中」が出る', async ({ page }) => {
   await gotoS00(page, { mode: 'INIT' }, null)
-  await expect(page.getByTestId('s00-overall')).toContainText('確認中')
+  await page.locator('[data-testid="s00-advance"]').click({ force: true })
+  await expect(page.getByTestId('s00-advance-reason')).toContainText('確認中')
 })
 
 // 1b-6 SG-B7: 再起動中（restart.attempt >= 2）は「制御系を再起動しています（n 回目）」。
-// Spec-ops.md §2.4・Spec-webui.md §3.1 の文言どおり。
 test('再起動中は「制御系を再起動しています（n 回目）」が出る', async ({ page }) => {
   await gotoS00(page, { mode: 'INIT' }, { ...PARTIAL, restart: { attempt: 2, calls: 1 } })
   await expect(page.getByTestId('s00-restart')).toContainText('制御系を再起動しています（2 回目）')
@@ -103,17 +109,39 @@ test('再起動表示は、運用に入れる（IDLE）ようになったら消�
   await expect(page.getByTestId('s00-restart')).toHaveCount(0)
 })
 
-test('全項目が疎通しているのに INIT のとき（link_ok の直前）は「確認中」のまま', async ({ page }) => {
+test('全項目が疎通しているのに INIT のとき（link_ok の直前）は進めない', async ({ page }) => {
   const ALL_OK = JSON.parse(JSON.stringify(PARTIAL))
   ALL_OK.items.lidar.ok = true
   ALL_OK.items.nodes.ok = true
   await gotoS00(page, { mode: 'INIT' }, ALL_OK)
-  await expect(page.getByTestId('s00-overall')).toContainText('確認中')
-  await expect(page.getByTestId('s00-overall')).not.toContainText('繋がっていません')
+  await expect(page.getByTestId('s00-node-esp')).toHaveAttribute('data-m', 'ok')
+  await expect(page.locator('[data-testid="s00-advance"]')).toHaveClass(/dis/)
 })
 
-test('タブレット行と AP 行に状態が出る（接続中は ✓）', async ({ page }) => {
+test('機器の名前は §1.2 の 15 px 以上で読める（描画後の大きさ）', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
   await gotoS00(page, { mode: 'INIT' }, PARTIAL)
-  await expect(page.getByTestId('s00-tablet')).toContainText('接続している')
-  await expect(page.getByTestId('s00-ap')).toContainText('通信できている')
+  // SVG は viewBox を縮小するので、描画後の大きさで縛る。図が主表示の約 2/3 を
+  // 占める（ SVG 幅が 600 px 以上）ことも縛る。古い 2 列が図を細い列に押し込み、
+  // 文字が 15 px 未満に落ちていた回帰の再発防止。
+  const svgW = await page.evaluate(() => Math.round(document.querySelector('svg').getBoundingClientRect().width))
+  expect(svgW, `図が小さい: SVG ${svgW}px`).toBeGreaterThanOrEqual(600)
+  // SVG は viewBox を縮小するので、描画後の高さ（CSS px）で縛る。
+  const heights = await page.evaluate(() => {
+    const svg = document.querySelector('svg')
+    return [...svg.querySelectorAll('text')]
+      .filter((t) => t.textContent.trim())
+      .map((t) => Math.round(t.getBoundingClientRect().height))
+  })
+  expect(heights.length).toBeGreaterThan(0)
+  for (const h of heights) {
+    expect(h, `図の文字が小さい: ${h}px`).toBeGreaterThanOrEqual(15)
+  }
+})
+
+test('カメラは任意で、だめでも図の線は灰にしない', async ({ page }) => {
+  await gotoS00(page, { mode: 'INIT' }, PARTIAL)
+  await expect(page.getByTestId('s00-edge-cam')).toHaveAttribute('data-dead', 'false')
+  // カメラは機体から値が届かないので「—」を出す（値は作らない）。
+  await expect(page.getByTestId('s00-node-cam')).toHaveAttribute('data-m', 'none')
 })

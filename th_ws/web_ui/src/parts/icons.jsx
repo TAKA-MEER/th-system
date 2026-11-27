@@ -125,3 +125,118 @@ export function IconClose() {
     </Ic>
   )
 }
+
+/* ---- S-01 メインメニューのタイルのアイコン（Spec-webui §3.3.7）。 ----
+   アイコンの例外はメインメニューのタイルだけ。新しく足すだけ（既存は変えない）。 */
+export function IconField() {
+  return (
+    <Ic>
+      <path d="M3 13V8l5-4 5 4v5" {...STROKE} />
+      <path d="M7 13V9.5h2V13" {...STROKE} strokeWidth="1.3" />
+    </Ic>
+  )
+}
+export function IconDrive() {
+  return (
+    <Ic>
+      <circle cx="8" cy="8" r="5.5" {...STROKE} />
+      <path d="M8 4.5V8l3 2" {...STROKE} />
+    </Ic>
+  )
+}
+export function IconMaint() {
+  return (
+    <Ic>
+      <path d="M10.5 2.8a3 3 0 0 0-2.8 3.9L3 11.4a1.8 1.8 0 1 0 2.6 2.6l4.7-4.7a3 3 0 0 0 3.9-2.8l-2.2 2.2-2.1-.5-.5-2.1 2.1-2.2z" fill="currentColor" fillOpacity="0.25" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+    </Ic>
+  )
+}
+export function IconMeasure() {
+  return (
+    <Ic>
+      <rect x="3" y="3" width="10" height="10" rx="2" {...STROKE} />
+      <path d="M6 10.5V7M8 10.5V5.5M10 10.5V8.5" {...STROKE} />
+    </Ic>
+  )
+}
+export function IconGear() {
+  return (
+    <Ic>
+      <circle cx="8" cy="8" r="2" {...STROKE} />
+      <path d="M8 2.5v2M8 11.5v2M2.5 8h2M11.5 8h2M4.2 4.2l1.4 1.4M10.4 10.4l1.4 1.4M11.8 4.2l-1.4 1.4M5.6 10.4l-1.4 1.4" {...STROKE} strokeWidth="1.5" />
+    </Ic>
+  )
+}
+export function IconDay() {
+  return (
+    <Ic>
+      <rect x="3" y="4" width="10" height="8" rx="1.5" {...STROKE} />
+      <path d="M3 7.5h10" {...STROKE} strokeWidth="1.3" />
+      <path d="M5.5 4V2.8M10.5 4V2.8" {...STROKE} strokeWidth="1.3" />
+    </Ic>
+  )
+}
+export function IconPrep() {
+  return (
+    <Ic>
+      <path d="M4 13.5V5.5L8 3l4 2.5v8" {...STROKE} strokeWidth="1.5" />
+      <path d="M4 13.5h8M6 13.5v-3h4v3" {...STROKE} strokeWidth="1.3" />
+    </Ic>
+  )
+}
+export function IconFollow() {
+  return (
+    <Ic>
+      <circle cx="8" cy="5" r="2.2" fill="currentColor" fillOpacity="0.3" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M8 7.2v4M8 11.2L5.5 14M8 11.2l2.5 2.8" {...STROKE} />
+    </Ic>
+  )
+}
+export function IconManual() {
+  return (
+    <Ic>
+      <circle cx="8" cy="8" r="5" {...STROKE} />
+      <circle cx="8" cy="8" r="1.6" fill="currentColor" />
+      <path d="M8 3v2M8 11v2M3 8h2M11 8h2" {...STROKE} strokeWidth="1.5" />
+    </Ic>
+  )
+}
+export function IconReplay() {
+  return (
+    <Ic>
+      <path d="M4 5.5A4.5 4.5 0 1 1 3.5 9" {...STROKE} />
+      <path d="M3 2.5v3h3" {...STROKE} />
+    </Ic>
+  )
+}
+export function IconTeach() {
+  return (
+    <Ic>
+      <circle cx="4.5" cy="11.5" r="1.8" fill="currentColor" fillOpacity="0.3" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="11.5" cy="4.5" r="1.8" fill="currentColor" fillOpacity="0.3" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M5.8 10.2l4.4-4.4" {...STROKE} strokeDasharray="2 2" />
+    </Ic>
+  )
+}
+export function IconCheck() {
+  return (
+    <Ic>
+      <path d="M3 8.5l3 3L13 4" {...STROKE} strokeWidth="2.2" />
+    </Ic>
+  )
+}
+export function IconCalib() {
+  return (
+    <Ic>
+      <path d="M8 2.5v3M8 10.5v3M2.5 8h3M10.5 8h3" {...STROKE} strokeWidth="1.5" />
+      <circle cx="8" cy="8" r="2" fill="currentColor" fillOpacity="0.3" stroke="currentColor" strokeWidth="1.3" />
+    </Ic>
+  )
+}
+export function IconBack() {
+  return (
+    <Ic>
+      <path d="M13 8H4M8 3L3 8l5 5" {...STROKE} strokeWidth="2" />
+    </Ic>
+  )
+}

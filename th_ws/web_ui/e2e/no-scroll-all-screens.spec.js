@@ -176,13 +176,9 @@ for (const size of SIZES) {
     await page.goto('/')
     await page.getByTestId('s01-open-settings').click()
     await expect(page.locator('#s50')).toBeVisible()
-    for (const sec of ['follow', 'lidar', 'slam', 'preset']) {
+    for (const sec of ['run', 'loc', 'notify', 'screen', 'link', 'log', 'blind', 'dev']) {
       await page.getByTestId(`s50-sec-${sec}`).click()
-      expect(await overflowing(page), `S-50 一般 > ${sec} ${size.name}`).toEqual([])
-    }
-    for (const tab of ['display', 'dev']) {
-      await page.getByTestId(`s50-tab-${tab}`).click()
-      expect(await overflowing(page), `S-50 ${tab} ${size.name}`).toEqual([])
+      expect(await overflowing(page), `S-50 ${sec} ${size.name}`).toEqual([])
     }
   })
 }

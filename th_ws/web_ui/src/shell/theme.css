@@ -259,9 +259,9 @@ table{border-collapse:collapse;width:100%}
      疎通確認の表、右列＝総合＋自動判定。2 つの列は独立した縦積み（.split-col）なので、
      片方が伸びても他方の行がずれない（本文 592px に収める）。縦長では .split-col は
      ただの縦積みで、DOM 順がそのまま上から下の順になる。 */
-  #s01,#s00{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;align-items:start}
-  #s01 .card,#s00 .card{margin-bottom:0}
-  #s01 .split-col,#s00 .split-col{display:flex;flex-direction:column;gap:10px;min-width:0}
+  #s01{display:grid;grid-template-columns:1.25fr 1fr;gap:10px;align-items:start}
+  #s01 .card{margin-bottom:0}
+  #s01 .split-col{display:flex;flex-direction:column;gap:10px;min-width:0}
   #s50 .tabpane.on{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
   #s50 .tabpane.on > .card{margin-bottom:0}
   /* 一般タブは区画を 1 つずつ全幅で出す（区画の切替は .s50-sections）。 */
@@ -1243,3 +1243,104 @@ table.lst td.r{text-align:right}
 .g-list .csteps li{font-size:15px}
 .g-list .s30-basis h4{margin:0}
 .screen#s30,.screen#s31,.screen#s40{height:100%;min-height:0;overflow:hidden}
+
+/* ---------- S-01 メインメニュー（作り直し。Spec-webui §3.2・モックアップ M2） ---------- */
+#s01.screen{display:flex;flex-direction:column;min-height:0;height:100%}
+#s01 .opbar{height:68px;flex:none;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--bd)}
+#s01 .s01-main{flex:1;min-height:0;display:flex;gap:12px;padding:12px 14px}
+#s01 .mcol{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+#s01 .s01-banner{font-weight:800;font-size:calc(var(--fs) * 1.05);margin-bottom:10px}
+#s01 .tiles{flex:1;display:grid;gap:12px;min-height:0}
+#s01 .tiles[data-lvl="field"]{grid-template-columns:1fr 1fr}
+#s01 .tiles[data-lvl="drive"]{grid-template-columns:repeat(3,1fr)}
+#s01 .tiles[data-lvl="maint"]{grid-template-columns:1fr 1fr}
+#s01 .tile{background:var(--panel);border:1px solid var(--bd-hi);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:10px;text-align:center;min-height:56px}
+#s01 .tile .tile-ic{display:grid;place-items:center;color:var(--tx)}
+#s01 .tile .tile-ic svg{width:64px;height:64px}
+#s01 .tile .nm{font-size:calc(var(--fs) * 1.5);font-weight:800;line-height:1.2}
+#s01 .tile.l .tile-ic svg{width:92px;height:92px}
+#s01 .tile.l .nm{font-size:calc(var(--fs) * 2)}
+#s01 .tile.s{flex-direction:row;gap:14px}
+#s01 .tile.s .tile-ic svg{width:36px;height:36px}
+#s01 .tile.s .nm{font-size:calc(var(--fs) * 1.25)}
+#s01 .tile.dis{background:var(--panel);border:1px solid var(--bd-hi);color:var(--mut)}
+/* S-01 の区画の色（mockup pal-new。走行は黄土。紫は使わない）。地を区画色 10% で染め、
+   アイコンを区画色にし、左の縁を区画色にする。--gc は renderTile が置く。 */
+#s01 .tile.g{background:color-mix(in srgb,var(--gc, var(--panel)) 10%, var(--panel));border-left-width:6px;border-left-color:var(--gc, var(--bd-hi))}
+#s01 .tile.g{border-left-width:1px}
+#s01 .tile.g .tile-ic{color:var(--gc, inherit)}
+#s01 .tile.g.dis{background:var(--panel);opacity:.55}
+/* 「制御系を停止する」は黄＝注意の意味と合わないので黄を外し、中立の太い縁にする。 */
+#s01 .btn.danger{border-width:3px;border-color:var(--tx)}
+/* 「押すと一覧を表示します」は説明の文なので出さない（§0 原則 7）。 */
+#s01 .side{width:340px;flex:none;display:flex;flex-direction:column;gap:12px;min-height:0}
+#s01 .side .card{margin-bottom:0}
+#s01 .tiles > .help-wrap{display:contents}
+@media (max-aspect-ratio: 1/1){
+  #s01 .s01-main{flex-direction:column}
+  #s01 .side{width:auto}
+  #s01 .tiles[data-lvl="drive"]{grid-template-columns:1fr 1fr}
+}
+/* WindowShell が W-4 のホストの中に入ったときの二重枠を避ける（P1 追加）。 */
+#overlay .win.confirm.show:has(> .win.show){background:transparent;border:none;box-shadow:none;padding:0}
+#overlay .win.confirm.show > .win.show{width:100%;margin:0;max-height:100%}
+
+/* ---------- S-00 接続確認（作り直し。Spec-webui §3.1・モックアップ） ---------- */
+#s00.screen{display:flex;flex-direction:column;min-height:0;height:100%;padding:0}
+/* 図の区画は本文の幅いっぱい。古い 2 列（.screen.two-col / 1.25fr 1fr）が効いて
+   図が細い列に押し込まれ、SVG が縮んで名前が読めなくなるのを防ぐ。 */
+#s00 .content.g-conn{flex:1;min-height:0;width:100%;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) 300px;grid-template-rows:auto minmax(0,1fr);padding:12px 14px}
+#s00 .content.g-conn > div:first-child{grid-column:1;grid-row:1}
+#s00 .content.g-conn > .diag{grid-column:1;grid-row:2;min-height:0}
+#s00 .content.g-conn > .side2{grid-column:2;grid-row:1/-1}
+#s00 .diag{position:relative;border:1px solid var(--bd);border-radius:8px;background:var(--inset);display:flex;flex-direction:column;min-height:0;padding:10px}
+#s00 .diag svg{flex:1;min-height:0;width:100%;height:100%}
+#s00 .diag .fix{min-height:56px;display:flex;align-items:center;gap:10px;font-size:19px;padding:0 6px;color:var(--tx)}
+/* 明るい地の札（暗い地のままの .pill を S-00 の範囲で地に合わせる。
+   「自動判定の結果はまだ届いていません」は白地に濃い字で読めるようにする） */
+#s00 .pill{background:var(--panel);color:var(--tx);border:1px solid var(--bd-hi)}
+#s00 .pill.ok{border-color:var(--ok);color:var(--ok-tx)}
+#s00 .pill.ng{border-color:var(--ng-tx);color:var(--ng-tx)}
+#s00 .pill.warn{border-color:var(--warn);color:var(--warn-tx)}
+#s00 .fix{min-height:56px;display:flex;align-items:center;gap:10px;font-size:calc(var(--fs) * 1.15);padding:0 6px}
+#s00 .fix .time{margin-left:auto;color:var(--mut);font-size:max(15px,calc(var(--fs) * .82))}
+#s00 .side2{display:flex;flex-direction:column;gap:14px;min-height:0}
+#s00 .side2 .card{margin-bottom:0}
+#s00 .side2 h3{font-size:max(15px,calc(var(--fs) * .82));color:var(--mut);font-weight:700;margin-bottom:6px}
+#s00 .ac{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#s00 .ac div{display:flex;align-items:center;gap:10px;font-size:calc(var(--fs) * 1.05);min-height:48px}
+#s00 .ac .mk{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:900;flex:none}
+#s00 .ac .mk.ok{background:var(--ok);color:#fff}
+#s00 .ac .mk.warn{background:var(--panel);border:3px solid var(--warn);color:var(--warn-tx)}
+#s00 .ac .mk.ng{background:var(--jis-y);color:#161b22}
+#s00 .ac .mk.none{background:var(--ctrl);color:var(--mut)}
+#s00 .push-bottom{margin-top:auto}
+@media (max-aspect-ratio: 1/1){
+  #s00 .content.g-conn{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr) auto}
+  #s00 .content.g-conn > .side2{grid-column:1;grid-row:auto;grid-row:3}
+}
+
+/* ---------- S-50 設定（作り直し。Spec-webui §3.15・型: 見る・変える） ---------- */
+#s50.screen{display:flex;flex-direction:column;min-height:0;height:100%;padding:0}
+#s50 .content.g-list{flex:1;min-height:0;display:grid;gap:14px;grid-template-columns:380px minmax(0,1fr);grid-template-rows:minmax(0,1fr);padding:12px 14px}
+#s50 .lst{min-height:0;display:flex;flex-direction:column;gap:4px}
+#s50 .lst > div{display:flex;flex-direction:column;gap:4px}
+#s50 .lrow{min-height:56px;display:flex;align-items:center;padding:0 14px;border:1px solid transparent;border-radius:8px;font-size:calc(var(--fs) * 1.05);width:100%;text-align:left;background:transparent}
+#s50 .lrow.on{background:var(--sel-bg);color:var(--sel-tx)}
+#s50 .pane{min-height:0;display:flex;flex-direction:column}
+#s50 .pbody{flex:1;min-height:0;overflow:auto}
+#s50 .pfoot{flex:none;display:flex;align-items:center;gap:10px;padding-top:10px}
+#s50 .when{font-size:max(15px,calc(var(--fs) * .82));color:var(--mut);padding:4px 10px;border:1px solid var(--bd-hi);border-radius:999px;white-space:nowrap}
+#s50 .grp{display:flex;flex-direction:column;gap:16px}
+#s50 .gr{display:flex;align-items:center;gap:12px;min-height:56px}
+#s50 .gr > span{flex:1;min-width:0}
+#s50 .mseg{display:inline-flex;border:1px solid var(--bd-hi);border-radius:8px;overflow:hidden}
+#s50 .mseg > button{padding:8px 16px;min-height:56px;font-weight:600}
+#s50 .mseg > button.on{background:var(--sel-bg);color:var(--sel-tx)}
+#s50 .stepper{display:inline-flex;align-items:center;gap:8px}
+#s50 .stepper b{min-width:90px;text-align:center;font-size:calc(var(--fs) * 1.15);font-variant-numeric:tabular-nums}
+#s50 .inp{background:var(--inset);border:1px solid var(--bd-hi);border-radius:6px;color:var(--tx);padding:12px;font:inherit;min-height:56px}
+@media (max-aspect-ratio: 1/1){
+  #s50 .content.g-list{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+  #s50 .lst{display:grid;grid-template-columns:1fr 1fr}
+}
