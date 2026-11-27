@@ -4,9 +4,9 @@
 // MapView (src/MapView.jsx) is OccupancyGrid-based and cannot render the
 // odom-frame route preview, so this is a dedicated, lightweight canvas:
 //   layers: ⓪ /map background raster (when a map is available, WS-8B)
-//           ① preview polyline  ② /scan_filtered point cloud (red, converted
-//           via baseToWorld against the robot pose)  ③ robot triangle marker
-//           ④ the pure-pursuit target point (a prominent dot) when
+//           ① preview polyline  ② /scan_filtered point cloud （濃い灰、近い点は
+//           注意の黄。§6.1) ③ robot marker（進むの色の三角＋実寸の四角）
+//           ④ the pure-pursuit target point (a prominent ring) when
 //           targetIndex >= 0 and preview[targetIndex] exists.
 //
 // The drawing coords come from fitTransform(), a pure function exported for
@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSystemState } from '../ros/useSystemState.js'
 import { ROUTE_PREVIEW_EMPTY } from '../i18n/screens.js'
 import { fitTransform, ROUTE_PREVIEW_PAD, centeredTransform, ROUTE_PREVIEW_HALF_SPAN_M, scanToPoints, SCAN_FALLBACK_MAX_M, mapDestRect, smoothPose, occupancyGridToPixels } from './routePreviewGeom.js'
+import { MAP_GO, MAP_SCAN, MAP_NEAR, SLOWDOWN_DISTANCE_M, ROBOT_HALF_M } from '../parts/mapColors.js'
 
 const TEST_MODE = typeof window !== 'undefined' && window.__thTestState !== undefined
 const SCAN_TOPIC = '/scan_filtered'
@@ -174,14 +175,14 @@ export default function RoutePreview({ preview, pose, targetIndex, mapData, load
     }
     if (TEST_MODE) window.__thRoutePreviewMapDrawn = mapDrawn
 
-    // ① preview polyline
+    // ① preview polyline（進むの色＝緑。Spec-webui.md §6.1）
     if (preview && preview.length > 1) {
       ctx.beginPath()
       preview.forEach((p, i) => {
         if (i === 0) ctx.moveTo(px(p), py(p))
         else ctx.lineTo(px(p), py(p))
       })
-      ctx.strokeStyle = '#ffb74d'
+      ctx.strokeStyle = MAP_GO
       ctx.lineWidth = 2
       ctx.stroke()
     }
@@ -201,11 +202,14 @@ export default function RoutePreview({ preview, pose, targetIndex, mapData, load
       endpointsDrawn.start = true
       const e = preview[preview.length - 1]
       const ex = px(e), ey = py(e)
-      ctx.fillStyle = '#ffa726'
-      ctx.fillRect(ex - 5, ey - 5, 10, 10)
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 1.5
-      ctx.strokeRect(ex - 5, ey - 5, 10, 10)
+      // 行き先の輪（進むの色の輪。§6.1）
+      ctx.beginPath()
+      ctx.arc(ex, ey, 6, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,0)'
+      ctx.fill()
+      ctx.strokeStyle = MAP_GO
+      ctx.lineWidth = 3
+      ctx.stroke()
       endpointsDrawn.end = true
     }
     if (TEST_MODE) window.__thRoutePreviewEndpointsDrawn = endpointsDrawn
@@ -217,38 +221,44 @@ export default function RoutePreview({ preview, pose, targetIndex, mapData, load
     let scanDrawn = 0
     const scanPts = scanToPoints(scanData, pose, SCAN_FALLBACK_MAX_M)
     if (scanPts.length) {
-      ctx.fillStyle = '#ef5350'
       for (const wp of scanPts) {
         const cx = px(wp), cy = py(wp)
+        // 減速が始まる距離（仮値 0.6 m）より近い点は注意の黄、それ以外は濃い灰（§6.1）
+        const dist = pose ? Math.hypot(wp.x - pose.x, wp.y - pose.y) : Infinity
+        ctx.fillStyle = dist <= SLOWDOWN_DISTANCE_M ? MAP_NEAR : MAP_SCAN
         ctx.fillRect(cx - 1, cy - 1, 2, 2)
         scanDrawn++
       }
     }
     if (TEST_MODE) window.__thRoutePreviewScanDrawn = scanDrawn
 
-    // ③ robot marker (MapView's triangle, no map-origin rotation: odom frame)
+    // ③ robot marker（進むの色の三角＋実寸の四角。§6.1。odom frame）
     if (pose) {
       const cx = px(pose), cy = py(pose)
       // WS-6.4: with the centred transform the robot fixes the canvas centre.
       ctx.save()
       ctx.translate(cx, cy)
       ctx.rotate(Math.PI / 2 - pose.yaw)
+      const halfPx = ROBOT_HALF_M * fit.scale
+      ctx.strokeStyle = MAP_GO
+      ctx.lineWidth = 2
+      ctx.strokeRect(-halfPx, -halfPx, halfPx * 2, halfPx * 2)
       ctx.beginPath()
       ctx.moveTo(0, -9); ctx.lineTo(-7, 7); ctx.lineTo(7, 7); ctx.closePath()
-      ctx.fillStyle = '#90caf9'
+      ctx.fillStyle = MAP_GO
       ctx.fill()
       ctx.restore()
     }
 
-    // ④ pure-pursuit target point
+    // ④ pure-pursuit target point（行き先の輪＝進むの色の輪。§6.1）
     if (preview && targetIndex != null && preview[targetIndex] != null) {
       const t = preview[targetIndex]
       ctx.beginPath()
       ctx.arc(px(t), py(t), 5, 0, Math.PI * 2)
-      ctx.fillStyle = '#26c6da'
+      ctx.fillStyle = 'rgba(255,255,255,0)'
       ctx.fill()
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 1.5
+      ctx.strokeStyle = MAP_GO
+      ctx.lineWidth = 3
       ctx.stroke()
     }
   }, [])
