@@ -33,7 +33,8 @@
   border-radius:999px;padding:1px 8px;white-space:nowrap}
 
 /* 右列 ① の「どこへ・あとどれだけ」相当（確度の印・ずれ・終点）。 */
-#s14 .s14-where{display:flex;flex-direction:column;gap:2px;font-size:calc(var(--fs) * 1.05);font-weight:700}
+#s14 .s14-where{display:flex;flex-direction:column;gap:2px;font-size:calc(var(--fs) * 1.05);font-weight:700;
+  min-height:calc(var(--fs) * 3.4)}
 #s14 .s14-where b{font-size:calc(var(--fs) * 1.2)}
 #s14 .s14-where .mkline{display:flex;align-items:center;gap:8px}
 #s14 .s14-guide{font-size:calc(var(--fs) * .9);color:var(--mut);font-weight:400}

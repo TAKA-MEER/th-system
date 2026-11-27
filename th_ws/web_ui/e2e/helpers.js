@@ -131,7 +131,9 @@ export async function gotoScreenWithRouteRobot(page, screen, state, { routes, pr
     window.__thTestRoutePreview = pv
     window.__thTestRouteStatus = st
     if (ps) window.__thTestOdomPose = ps
-    if (sc) window.__thTestRouteScan = sc
+    // S-13 の RoutePreview は __thTestRouteScan、S-14 の OnsiteMap 経路は
+    // useScan の __thTestScan を読む。両方に seed してどちらの画面でも通るように。
+    if (sc) { window.__thTestRouteScan = sc; window.__thTestScan = sc }
     if (mp) window.__thTestRouteMap = mp
     if (rp) window.__thTestRoutePose = rp
   }, { s: state, scr: screen, r: routes, pv: preview, st: status, ps: pose, sc: scan, mp: map, rp: routePose })

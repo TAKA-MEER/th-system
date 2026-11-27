@@ -14,7 +14,7 @@ test('S-14 shows cross-track now and max while RUN', async ({ page }) => {
     })
   await page.locator('#s14').waitFor()
   await expect(page.locator('[data-testid="s14-xtrack"]'))
-    .toHaveText('いま 0.12 m・最大 0.46 m')
+    .toHaveText('いま 0.12 m　最大 0.46 m')
 })
 
 test('S-14 keeps showing max while PAUSE', async ({ page }) => {
@@ -25,7 +25,7 @@ test('S-14 keeps showing max while PAUSE', async ({ page }) => {
     })
   await page.locator('#s14').waitFor()
   await expect(page.locator('[data-testid="s14-xtrack"]'))
-    .toHaveText('いま 0.00 m・最大 0.45 m')
+    .toHaveText('いま 0.00 m　最大 0.45 m')
 })
 
 test('S-14 shows placeholder when status has no cross-track yet', async ({ page }) => {

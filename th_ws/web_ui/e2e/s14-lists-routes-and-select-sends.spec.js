@@ -15,7 +15,7 @@ test('S-14 lists routes and selecting + proceed sends ui.route_select', async ({
   await page.locator('#s14').waitFor()
 
   // 2 行表示。
-  await expect(page.getByTestId('s14-route-row')).toHaveCount(2)
+  await expect(page.locator('[data-testid^="s14-select-route_"]')).toHaveCount(2)
 
   // 1 行選択 → 「この経路で進む」。
   await page.getByTestId('s14-select-route_r2').click()

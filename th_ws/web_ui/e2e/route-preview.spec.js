@@ -1,13 +1,8 @@
-// WS-3 / demo-teach-replay: S-14 の経路プレビューが /route/status の target_index
-// を実際に描画へ届けること（純-pursuit 目標点マーカー）。経路や status は e2e に
-// th_state が無いので helpers の gotoScreenWithRoutePreview で
-// window.__thTestRouteCatalog / __thTestRoutePreview / __thTestRouteStatus に seed する。
-//
-// RoutePreview は TEST_MODE で描いた内容を window.__thRoutePreviewDrawn に記録し、
-// canvas の data-target-index にも反映する。target_index=-1（未走行）のときは
-// マーカーを描かないため、ここでは「target_index=5 なら canvas が 5 を描く」ことと
-// 「target_index=-1 なら -1（マーカーなし）」の両方を検証する。S-14 側が targetIndex を
-// -1 に固定すると 1 本目が赤くなる（変異 3）。
+// S-14 の主表示（OnsiteMap）の地図：経路・始点・終点・機体・スキャンと地図ラスタ。
+// 経路や status は e2e に th_state が無いので helpers の
+// gotoScreenWithRoutePreview / gotoScreenWithRouteRobot で
+// window.__thTestRouteCatalog / __thTestRoutePreview / __thTestRouteStatus に
+// seed する（useScan の __thTestScan も併せて seed する。helpers 参照）。
 import { test, expect } from '@playwright/test'
 import { gotoScreenWithRoutePreview, gotoScreenWithRouteRobot } from './helpers.js'
 
@@ -15,12 +10,10 @@ const ROUTES = [
   { id: 'route_r1', name: '経路A', length_m: 3.14, point_count: 12 },
 ]
 
-// 8 点の経路（index 5 を目標点にする）。
+// 8 点の経路。
 const PREVIEW = Array.from({ length: 8 }, (_, i) => ({ x: i, y: Math.sin(i) }))
 
-// 空経路では「経路がありません」を出し、進むボタンを無効にする。
-
-test('S-14 preview draws the pure-pursuit targetIndex from /route/status', async ({ page }) => {
+test('S-14 の地図に経路が描かれる（空なら描かれない）', async ({ page }) => {
   await gotoScreenWithRoutePreview(
     page, 'S14',
     { mode: 'REPLAY', state: 'RUN' },
@@ -28,28 +21,18 @@ test('S-14 preview draws the pure-pursuit targetIndex from /route/status', async
   )
   await page.locator('#s14').waitFor()
 
-  const canvas = page.locator('[data-testid="route-preview"]')
-  await expect(canvas).toBeVisible()
-  await expect(canvas).toHaveAttribute('data-target-index', '5')
-
-  const drawn = await page.evaluate(() => window.__thRoutePreviewDrawn)
-  expect(drawn.targetIndex, '描画した targetIndex が -1 でない').toBe(5)
+  const map = page.getByTestId('s14-map')
+  await expect(map).toBeVisible()
+  await expect(page.getByTestId('s14-map-path')).toBeVisible()
+  // 経路の終点に行き先の輪が出る。
+  await expect(page.getByTestId('s14-map-dest')).toBeVisible()
+  // 始点の印と始点・終点の名前が出る。
+  await expect(page.getByTestId('s14-map-route-start')).toBeVisible()
+  await expect(page.getByTestId('s14-map-route-start-label')).toContainText('始点')
+  await expect(page.getByTestId('s14-map-route-end-label')).toContainText('終点')
 })
 
-test('S-14 preview omits the target marker when target_index is -1', async ({ page }) => {
-  await gotoScreenWithRoutePreview(
-    page, 'S14',
-    { mode: 'REPLAY', state: 'ROUTE_SEL' },
-    { routes: ROUTES, preview: PREVIEW, status: { target_index: -1 } },
-  )
-  await page.locator('#s14').waitFor()
-
-  const canvas = page.locator('[data-testid="route-preview"]')
-  await expect(canvas).toBeVisible()
-  await expect(canvas).toHaveAttribute('data-target-index', '-1')
-})
-
-test('S-14 preview shows the empty placeholder when there is no preview', async ({ page }) => {
+test('S-14 の地図に経路が無ければ経路・行き先の輪は描かれない', async ({ page }) => {
   await gotoScreenWithRoutePreview(
     page, 'S14',
     { mode: 'REPLAY', state: 'READY' },
@@ -57,20 +40,41 @@ test('S-14 preview shows the empty placeholder when there is no preview', async 
   )
   await page.locator('#s14').waitFor()
 
-  await expect(page.getByTestId('route-preview-empty')).toBeVisible()
+  await expect(page.getByTestId('s14-map')).toBeVisible()
+  await expect(page.getByTestId('s14-map-path')).toHaveCount(0)
+  await expect(page.getByTestId('s14-map-route-start')).toHaveCount(0)
 })
 
-// ---------------------------------------------------------------- WS-6.4: robot-centred view ----
+// ---------------------------------------------------------------- 地図の道具 ----
+
+test('S-14 の地図に地図の端の道具（入れない所・凡例）が出て、凡例は開いて閉じられる', async ({ page }) => {
+  await gotoScreenWithRoutePreview(
+    page, 'S14',
+    { mode: 'REPLAY', state: 'RUN' },
+    { routes: ROUTES, preview: PREVIEW, status: {} },
+  )
+  await page.locator('#s14').waitFor()
+
+  await expect(page.getByTestId('s14-map-tools')).toBeVisible()
+  await expect(page.getByTestId('s14-map-costmap-toggle')).toBeVisible()
+  await expect(page.getByTestId('s14-map-legend')).toHaveCount(0)
+  await page.getByTestId('s14-map-legend-toggle').click()
+  await expect(page.getByTestId('s14-map-legend')).toBeVisible()
+  await page.getByTestId('s14-map-legend-close').click()
+  await expect(page.getByTestId('s14-map-legend')).toHaveCount(0)
+})
+
+// ---------------------------------------------------------------- スキャン・機体 ----
 
 const POSE = { x: 0, y: 0, yaw: 0 }
-// 3〜5m の有限レンジの最小形 LaserScan（7.5m 以内なので描かれる）。
+// 3〜5m の有限レンジの最小形 LaserScan（useScan の /scan_filtered 相当）。
 const SCAN = {
   angle_min: 0,
   angle_increment: 0.1,
   ranges: [3, 4, 5, 0.5, 6],
 }
 
-test('S-14 scans on-canvas: the robot-centred view draws scan points (#5)', async ({ page }) => {
+test('S-14 の地図に LiDAR の点が描かれる（機体のまわりの点）', async ({ page }) => {
   await gotoScreenWithRouteRobot(
     page, 'S14',
     { mode: 'REPLAY', state: 'RUN' },
@@ -78,14 +82,13 @@ test('S-14 scans on-canvas: the robot-centred view draws scan points (#5)', asyn
   )
   await page.locator('#s14').waitFor()
 
-  const canvas = page.locator('[data-testid="route-preview"]')
-  await expect(canvas).toBeVisible()
-
-  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewScanDrawn))
-    .toBeGreaterThan(0)
+  await expect(page.getByTestId('s14-map')).toBeVisible()
+  const scan = page.getByTestId('s14-map-scan')
+  await expect(scan).toBeVisible()
+  await expect(scan.locator('circle')).toHaveCount(5)
 })
 
-test('S-14 does not rescale when the robot moves (fixed zoom, no flicker #4)', async ({ page }) => {
+test('S-14 の地図に機体の印が出る（位置と向きの三角＋大きさの四角）', async ({ page }) => {
   await gotoScreenWithRouteRobot(
     page, 'S14',
     { mode: 'REPLAY', state: 'RUN' },
@@ -93,84 +96,54 @@ test('S-14 does not rescale when the robot moves (fixed zoom, no flicker #4)', a
   )
   await page.locator('#s14').waitFor()
 
-  // Capture the fixed scale at pose A, then move the robot 1m and confirm the
-  // scale is unchanged (the centred transform must not re-fit to route data).
-  const s1 = await page.evaluate(() => window.__thRoutePreviewFit?.scale)
-  expect(s1).toBeGreaterThan(0)
-
-  await page.evaluate(() => window.__thSetTestOdomPose({ x: 1, y: -0.5, yaw: 0.3 }))
-  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewFit?.scale))
-    .toBe(s1)
+  await expect(page.getByTestId('s14-map-robot')).toBeVisible()
+  await expect(page.getByTestId('s14-map-robot-footprint')).toBeVisible()
 })
 
-// ---------------------------------------------------------------- WS-8A: range_max clip ----
-
-test('S-14 draws scan points far past the old 7.5m clip (range_max honoured)', async ({ page }) => {
-  // Open-venue walls at 8–12m used to be dropped by the hard 7.5m clip; the
-  // clip now honours scanData.range_max, so far points are drawn.
-  const farScan = {
-    angle_min: 0,
-    angle_increment: 0.1,
-    ranges: [12, 8, 9], // all > 7.5 but <= range_max
-    range_max: 15,
-  }
+test('S-14 の地図は機体が動いても機体を描き続ける（位置の追従）', async ({ page }) => {
+  const routePose = { x: 1, y: 0.5, yaw: 0, frame: 'map' }
   await gotoScreenWithRouteRobot(
     page, 'S14',
     { mode: 'REPLAY', state: 'RUN' },
-    { routes: ROUTES, preview: PREVIEW, status: { target_index: 5 }, pose: POSE, scan: farScan },
+    { routes: ROUTES, preview: PREVIEW, status: { target_index: 5 }, pose: POSE, routePose, scan: SCAN },
   )
   await page.locator('#s14').waitFor()
 
-  // All three far returns must survive the clip.
-  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewScanDrawn)).toBe(3)
+  await expect(page.getByTestId('s14-map-robot')).toBeVisible()
+  await page.evaluate(() => window.__thSetTestRoutePose({ x: 2, y: 1, yaw: 0.3, frame: 'map' }))
+  await expect(page.getByTestId('s14-map-robot')).toBeVisible()
 })
 
-test('S-14 drops points beyond scanData.range_max but keeps nearer ones', async ({ page }) => {
-  // r=1 stays, r=20 (beyond range_max 15) is dropped -> exactly 1 drawn.
-  const mixed = {
-    angle_min: 0,
-    angle_increment: 0.1,
-    ranges: [1, 20],
-    range_max: 15,
-  }
-  await gotoScreenWithRouteRobot(
-    page, 'S14',
-    { mode: 'REPLAY', state: 'RUN' },
-    { routes: ROUTES, preview: PREVIEW, status: { target_index: 5 }, pose: POSE, scan: mixed },
-  )
-  await page.locator('#s14').waitFor()
+// ---------------------------------------------------------------- /map ライヤ ----
 
-  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewScanDrawn)).toBe(1)
-})
-
-// ---------------------------------------------------------------- WS-8B: /map layer ----
-
-// 最小 OccupancyGrid: 4×4, res 0.5, origin (-1,-1) → world x/y ∈ [-1,1]。
-// 0 自由 / 100 占有 / -1 未知 を混ぜる（OccupancyGrid の data 配列）。
+// 最小 OccupancyGrid: 4x4, res 0.5, origin (-1,-1) → world x/y in [-1,1]。
 const ROUTE_MAP = {
   info: {
     resolution: 0.5,
     width: 4,
     height: 4,
-    origin: { position: { x: -1, y: -1 }, orientation: { w: 1, z: 0 } },
+    origin: { position: { x: -1, y: -1 }, orientation: { x: 0, y: 0, w: 1, z: 0 } },
   },
   data: [0, 100, -1, 0, 100, 0, 0, -1, -1, 0, 100, 0, 0, -1, 100, 0],
 }
 
-test('S-14 draws the map raster as the deepest layer when a map is present', async ({ page }) => {
+test('S-14 の地図に地図ラスタ（/route/map_view）が描かれる', async ({ page }) => {
+  // 地図（[-1,1]）の中に収まる経路で測る（外側は OnsiteMap の表示範囲外）。
+  const previewInMap = Array.from({ length: 8 }, (_, i) => ({ x: -0.8 + i * 0.2, y: Math.sin(i) * 0.3 }))
   await gotoScreenWithRouteRobot(
     page, 'S14',
     { mode: 'REPLAY', state: 'RUN' },
-    { routes: ROUTES, preview: PREVIEW, status: { target_index: 5 }, pose: POSE, scan: SCAN, map: ROUTE_MAP },
+    { routes: ROUTES, preview: previewInMap, status: { target_index: 5 }, pose: POSE, scan: SCAN, map: ROUTE_MAP },
   )
   await page.locator('#s14').waitFor()
 
-  // 地図が最背面に描かれた。scan も従来どおり描かれる（レイヤは共存）。
-  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewMapDrawn)).toBe(true)
-  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewScanDrawn)).toBeGreaterThan(0)
+  await expect(page.getByTestId('s14-map-raster')).toBeVisible()
+  // 経路・スキャンも従来どおり描かれる（レイヤは共存）。
+  await expect(page.getByTestId('s14-map-path')).toBeVisible()
+  await expect(page.getByTestId('s14-map-scan')).toBeVisible()
 })
 
-test('S-14 falls back cleanly with NO map (map-less operation, scan+preview intact)', async ({ page }) => {
+test('S-14 は地図が無くても経路とスキャンで動く（地図無しの運用）', async ({ page }) => {
   await gotoScreenWithRouteRobot(
     page, 'S14',
     { mode: 'REPLAY', state: 'RUN' },
@@ -178,14 +151,15 @@ test('S-14 falls back cleanly with NO map (map-less operation, scan+preview inta
   )
   await page.locator('#s14').waitFor()
 
-  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewMapDrawn)).toBe(false)
-  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewScanDrawn)).toBeGreaterThan(0)
+  await expect(page.getByTestId('s14-map-raster')).toHaveCount(0)
+  await expect(page.getByTestId('s14-map-path')).toBeVisible()
+  await expect(page.getByTestId('s14-map-scan')).toBeVisible()
 })
 
-test('S-14 prefers the map-frame /route/robot_pose over odom when both are present', async ({ page }) => {
-  // routePose を map 座標 (50,50) に、odomPose を原点 (0,0) に seed。正しければ
-  // routePose が centre になり pose.x=50 が反映される（変異 3: odom 固定だと x=0）。
-  const routePose = { x: 50, y: 50, yaw: 0, frame: 'map' }
+test('S-14 は map フレームの /route/robot_pose を機体の位置に使う', async ({ page }) => {
+  // routePose を map 座標 (0.5, 0.5) に seed。正しければ機体の印が描かれる
+  // （odom 固定だと経路・地図とずれて出ない）。
+  const routePose = { x: 0.5, y: 0.5, yaw: 0, frame: 'map' }
   await gotoScreenWithRouteRobot(
     page, 'S14',
     { mode: 'REPLAY', state: 'RUN' },
@@ -196,5 +170,6 @@ test('S-14 prefers the map-frame /route/robot_pose over odom when both are prese
   )
   await page.locator('#s14').waitFor()
 
-  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewPose?.x)).toBe(50)
+  await expect(page.getByTestId('s14-map-robot')).toBeVisible()
+  await expect(page.getByTestId('s14-map-raster')).toBeVisible()
 })

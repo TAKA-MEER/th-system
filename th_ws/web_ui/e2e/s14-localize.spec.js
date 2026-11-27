@@ -40,26 +40,26 @@ test('(b) low_margin で警告が出て READY の再生ボタンが押せる', a
   // 警告のみで再生は止めない（設計判断。options §4）。
   await expect(quality).not.toContainText('高い')
 
-  const run = page.locator('.opsgrid .op-run')
+  const run = page.getByTestId('stop-run-toggle-run')
   await expect(run).toBeEnabled()
   await run.click()
   expect((await triggerCalls(page)).map((c) => c.trigger), 'READY の再生が ui.run を送っていない')
     .toContain('ui.run')
 })
 
-test('(c) READY では「完全グローバルで探す」が出ない', async ({ page }) => {
+test('(c) READY では「完全グローバルで探す」は押せない（位置を探す間だけ）', async ({ page }) => {
   await openS14(page, 'READY', { localize_quality: 'low_margin' })
-  await expect(page.getByTestId('s14-localize-global')).toHaveCount(0)
+  await expect(page.getByTestId('s14-localize-global')).toBeDisabled()
 })
 
-test('(c) RUN では「完全グローバルで探す」が出ない', async ({ page }) => {
+test('(c) RUN では「完全グローバルで探す」は押せない', async ({ page }) => {
   await openS14(page, 'RUN', {})
-  await expect(page.getByTestId('s14-localize-global')).toHaveCount(0)
+  await expect(page.getByTestId('s14-localize-global')).toBeDisabled()
 })
 
-test('(c) PAUSE では「完全グローバルで探す」が出ない', async ({ page }) => {
+test('(c) PAUSE では「完全グローバルで探す」は押せない', async ({ page }) => {
   await openS14(page, 'PAUSE', {})
-  await expect(page.getByTestId('s14-localize-global')).toHaveCount(0)
+  await expect(page.getByTestId('s14-localize-global')).toBeDisabled()
 })
 
 test('(d) searching で 60 秒注記が出ない（ボタンは押せない）', async ({ page }) => {
@@ -77,11 +77,10 @@ test('(d) searching で 60 秒注記が出ない（ボタンは押せない）',
   await expect(page.getByTestId('s14-localize-stuck')).toHaveCount(0)
 })
 
-test('high は「高い」と出る（READY。数値は出さない）', async ({ page }) => {
+test('high は「位置が決まりました」（READY。数値は出さない）', async ({ page }) => {
   await openS14(page, 'READY', { localize_quality: 'high' })
   const quality = page.getByTestId('s14-localize-quality')
-  await expect(quality).toContainText('高い')
-  await expect(quality).not.toContainText('低い')
+  await expect(quality).toContainText('位置が決まりました')
 })
 
 test('unknown（地図の画像が無い経路）は確度欄を出さず、案内を出して完全グローバルを無効にする', async ({ page }) => {
@@ -98,5 +97,5 @@ test('unknown（地図の画像が無い経路）は確度欄を出さず、案�
 test('unknown は READY でも案内を出す', async ({ page }) => {
   await openS14(page, 'READY', { localize_quality: 'unknown' })
   await expect(page.getByTestId('s14-no-map')).toContainText('完全グローバル')
-  await expect(page.getByTestId('s14-localize-global')).toHaveCount(0)
+  await expect(page.getByTestId('s14-localize-global')).toBeDisabled()
 })

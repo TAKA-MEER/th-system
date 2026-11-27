@@ -192,7 +192,7 @@ export default function S14Replay({ onFinish }) {
                   aria-checked={selectedId === r.id}
                   tabIndex={0}
                   className={`rt${selectedId === r.id ? ' on' : ''}`}
-                  data-testid="s14-route-row"
+                  data-testid={`s14-select-${r.id}`}
                   onClick={() => setSelectedId(r.id)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -288,7 +288,7 @@ export default function S14Replay({ onFinish }) {
       {showStuckNote && (
         <span className="note" data-testid="s14-localize-stuck">{S14_POSE_LOCALIZE_TIMEOUT}</span>
       )}
-      {(stateName === 'RUN' || stateName === 'PAUSE') && (
+      {(stateName === 'RUN' || (stateName === 'PAUSE' && !arrived)) && (
         <>
           <span>{S14_XTRACK_TITLE}</span>
           <b data-testid="s14-xtrack">
@@ -315,8 +315,10 @@ export default function S14Replay({ onFinish }) {
 
   const runLabel = stateName === 'PAUSE' ? '再開する' : '再生する'
   const stopEnabled = !disabledAll && stateName === 'RUN'
-  const runEnabled = !disabledAll && !selecting
+  const runEnabled = !disabledAll && !selecting && !arrived
     && (stateName === 'READY' || stateName === 'PAUSE') && runGate.enabled
+  // 終端（arrived）の理由は ① の「終点」＋終了の案内で示す。吹き出しを出すと
+  // トグルが高くなって下の列が動くので、ここでは出さない。
   const runDenyReason = selecting
     ? S14_SELECT_REASON
     : (stateName === 'LOCALIZE' && !runGate.enabled ? runGate.reason : null)

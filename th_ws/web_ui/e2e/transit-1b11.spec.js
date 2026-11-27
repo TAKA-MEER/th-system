@@ -1,7 +1,7 @@
 // 1b-11（SG-B13・SG-B14・SG-B19・SG-C6・SG-C9 の S-14 分）の e2e。
 //  - S-01: 教示再生は経路 0 本で理由付きで押せない／電子リードはデバイス未接続で押せない
-//  - S-14: 地図更新トグル（既定 OFF）→ 送信、ON のときだけ操作カードに「保存」
-//  - S-14: 始点・終点の印／後方の死角の表示／待ち時間の表示
+//  - S-14: 地図更新の切り替えは出さない（使えない間。§3.3 (c)）／「保存」も出さない
+//  - S-14: 始点・終点の印（OnsiteMap の経路の印）
 import { test, expect } from '@playwright/test'
 import {
   gotoScreen, gotoScreenWithRouteCatalog, gotoScreenWithRoutePreview, setTestState,
@@ -41,53 +41,39 @@ test('S-01: 教示は保管場所から開始する案内が出る', async ({ pa
   await expect(page.locator('body')).toContainText('保管場所から開始してください')
 })
 
-test('S-14: 地図の更新は OFF 固定で押せず、理由が出て、「保存」も出ない', async ({ page }) => {
+test('S-14: 地図の更新の切り替えは出さず、「保存」も出ない（使えない間。§3.3 (c)）', async ({ page }) => {
   await gotoScreenWithRoutePreview(page, 'S14',
     { mode: 'REPLAY', state: 'PAUSE' },
     { routes: ROUTES, preview: PREVIEW, status: {} })
   await page.locator('#s14').waitFor()
-  const toggle = page.getByTestId('s14-map-update-toggle')
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
-  await expect(toggle).toBeDisabled()
-  await expect(page.locator('#s14')).toContainText('地図の書き足しは現在使えません')
+  await expect(page.getByTestId('s14-map-update-toggle')).toHaveCount(0)
+  await expect(page.locator('#s14')).not.toContainText('地図の書き足しは現在使えません')
   await expect(page.locator('.opsgrid .op-save')).toHaveCount(0)
-
-  await toggle.click({ force: true })
-  const flags = await page.evaluate(() => window.__thSetFlagCalls ?? [])
-  expect(flags.some((c) => c.flag === 'map_update'),
-    '押せないはずのトグルが map_update を送った').toBe(false)
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
 })
 
-test('S-14: 経路の始点・終点の印を描く', async ({ page }) => {
+test('S-14: 経路の始点・終点の印を描く（OnsiteMap の経路の印）', async ({ page }) => {
   await gotoScreenWithRoutePreview(page, 'S14',
     { mode: 'REPLAY', state: 'READY' },
     { routes: ROUTES, preview: PREVIEW, status: {} })
   await page.locator('#s14').waitFor()
-  await expect.poll(async () => page.evaluate(() => window.__thRoutePreviewEndpointsDrawn))
-    .toEqual({ start: true, end: true })
+  await expect(page.getByTestId('s14-map-route-start')).toBeVisible()
+  await expect(page.getByTestId('s14-map-route-start-label')).toContainText('始点')
+  await expect(page.getByTestId('s14-map-route-end-label')).toContainText('終点')
+  await expect(page.getByTestId('s14-map-dest')).toBeVisible()
 })
 
-test('S-14: 後方は死角の表示が出る', async ({ page }) => {
-  await gotoScreenWithRoutePreview(page, 'S14',
-    { mode: 'REPLAY', state: 'READY' },
-    { routes: ROUTES, preview: PREVIEW, status: {} })
-  await page.locator('#s14').waitFor()
-  await expect(page.locator('#s14')).toContainText('後方は LiDAR の死角')
-})
-
-test('S-14: 探索中は待ち時間を原因を断定しない文言で出す・failed では汎用の置き直し案内を出さない', async ({ page }) => {
+test('S-14: 探索中の確度の印は「探しています」で、原因を断定する待ち時間は出さない', async ({ page }) => {
   await gotoScreenWithRoutePreview(page, 'S14',
     { mode: 'REPLAY', state: 'LOCALIZE' },
     { routes: ROUTES, preview: PREVIEW, status: { localize_quality: 'searching' } })
   await page.locator('#s14').waitFor()
-  const wait = page.getByTestId('s14-localize-wait')
-  await expect(wait).toContainText('30〜45秒')
-  await expect(wait).not.toContainText('セッション')
+  await expect(page.getByTestId('s14-localize-quality')).toContainText('探しています')
+  await expect(page.getByTestId('s14-localize-wait')).toHaveCount(0)
 
   await gotoScreenWithRoutePreview(page, 'S14',
     { mode: 'REPLAY', state: 'LOCALIZE' },
     { routes: ROUTES, preview: PREVIEW, status: { localize_quality: 'failed' } })
   await page.locator('#s14').waitFor()
+  await expect(page.getByTestId('s14-localize-quality')).toContainText('見つかりません')
   await expect(page.getByTestId('s14-localize-wait')).toHaveCount(0)
 })
