@@ -17,6 +17,12 @@ export const STATE_NAMES = {
   POINT: '位置指示中',
   LIST: '一覧確認中',
   IDLE_P: '待機中',
+  // UIR-P3: 試験（当日）のサブ状態（モード×状態）。札の語はモックアップの札に合わせる
+  // （待機中・移動中・一時停止中・経路待ち・配電盤前・測定中・旋回中・位置指示中・退避待ち）。
+  // Spec-webui §8・§8.1: 内部の記号（IDLE_H など）を画面に出さない。
+  IDLE_H: '待機中',
+  ALIGN: '配電盤前',
+  ADJUST: '旋回中',
   // WP-UI-06: PREP のサブ状態（th_state/config/transitions.yaml T-PREP-01〜15）。
   // stateLabel(state) のフォールバック（生トークン表示）を避けるために足す。
   REGISTER: '登録中',
@@ -24,11 +30,11 @@ export const STATE_NAMES = {
   RETURN: '待機場所へ移動中',
   EDIT: '地図編集中',
   // WP-UI-07: S-21 試験のサブ状態（transitions.yaml T-ATP-01/02・T-SUM-01/05）。
-  WORKING: '作業中',
+  WORKING: '測定中',
   WAIT_CLEAR: '退避待ち',
   // T-PNAV-04/T-HNAV-04（evt.blocked）。stop-banner（STOP_REASON_LABELS.blocked）
   // が詳しい理由を出すので、ここは短い状態語のみ。
-  BLOCKED: '経路探索中（再試行）',
+  BLOCKED: '経路待ち',
   // WP-UI-08: OPCHECK のサブ状態（transitions.yaml T-OPC-01〜08）。
   RUNNING_CHECK: '確認中',
   REPAIR: '故障診断',
@@ -38,7 +44,8 @@ export const UNKNOWN_STATE_LABEL = '不明'
 
 export function stateLabel(stateName) {
   if (!stateName) return UNKNOWN_STATE_LABEL
-  return STATE_NAMES[stateName] ?? stateName
+  // Spec-webui §8・§8.1: 表に無い内部の記号を画面に出さない（札は出さない）。
+  return STATE_NAMES[stateName] ?? ''
 }
 
 // 状態の札の色（Spec-webui §3.3.1）。札に出す語は STATE_NAMES が正。
@@ -46,9 +53,9 @@ export function stateLabel(stateName) {
 // warn=黄（注意）/ estop=赤に黄の地（非常停止中）/ none=札を出さない。
 export const STATE_CHIP_TONE = {
   NONE: 'none',
-  RUN: 'go', NAV: 'go', RETURN: 'go',
+  RUN: 'go', NAV: 'go', RETURN: 'go', ALIGN: 'go', ADJUST: 'go',
   PAUSE: 'neutral', REC: 'neutral', CHECK: 'neutral', SETUP: 'neutral',
-  LIST: 'neutral', IDLE_P: 'neutral', SAVED: 'neutral', WORKING: 'neutral',
+  LIST: 'neutral', IDLE_P: 'neutral', IDLE_H: 'neutral', SAVED: 'neutral', WORKING: 'neutral',
   MAPPING: 'neutral', // 地図作成中は中立の札。緑は機体が自分で動く（進む）ときだけ（§3.3.1）。
   BLOCKED: 'warn', WAIT_CLEAR: 'warn',
   REGISTER: 'neutral', EDIT: 'neutral',

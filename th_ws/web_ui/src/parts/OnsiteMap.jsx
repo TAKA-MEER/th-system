@@ -170,6 +170,21 @@ export default function OnsiteMap({
   // ジェスチャー中のドラッグ表示（viewBox 座標）。release で消える。
   const [drag, setDrag] = useState(null)
   const svgRef = useRef(null)
+  // ピンと名前の大きさは画面上の大きさで固定する（§6.1: 当たり判定 60 論理 px・
+  // 名前 15 px 以上。地図の表示倍率に引きずられないよう逆倍率をかける）。
+  const [displayK, setDisplayK] = useState(1)
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return undefined
+    const update = () => {
+      const w = svg.clientWidth
+      if (w > 0) setDisplayK(w / MAP_VB_W)
+    }
+    update()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null
+    ro?.observe(svg)
+    return () => ro?.disconnect()
+  }, [])
   const panRef = useRef(null)
   // 実機確認（2026-09-15）: 同時に押されているポインタ（タッチ）を pointerId ごとに
   // 保持し、2本になったらピンチズームへ切り替える。1本の間はタップジェスチャー／パン。
@@ -495,6 +510,7 @@ export default function OnsiteMap({
               }
             }}
           >
+            <g transform={`scale(${1 / displayK})`}>
             {/* 当たり判定は 60 論理 px 以上（透明の大きな円で確保する） */}
             <circle r={PIN_HIT_R} fill="#ffffff" fillOpacity="0" />
             {/* 向きが分かる形: 待機場所＝向きの方へ尖った家形、配電盤＝四角に
@@ -533,12 +549,13 @@ export default function OnsiteMap({
             {/* ラベルは輪郭で浮かせる（モックアップの流儀）。未探索は画面の地と同じ
                 明るい色なので白い文字では読めない（§6.1）。 */}
             <text
-              y={26} textAnchor="middle" fontSize="10" fill={sel ? MAP_PIN_EDGE : MAP_PIN}
+              y={26} textAnchor="middle" fontSize="15" fill={sel ? MAP_PIN_EDGE : MAP_PIN}
               stroke={sel ? MAP_PIN : MAP_PIN_EDGE} strokeWidth={3} paintOrder="stroke" strokeLinejoin="round"
               data-testid={`${testId}-map-pin-label-${pin.id}`}
             >
               {pin.name || pin.id}
             </text>
+            </g>
           </g>
         )
       })}
@@ -656,11 +673,14 @@ export default function OnsiteMap({
       style={toolsStyle}
     />
     {t.view ? (
-      <div className="row mt" style={{ alignItems: 'center' }}>
+      // 「全体表示」と縮尺は地図の左下に重ねる（§6.1。右下は地図の道具の置き場）。
+      // 行自体はポインタを通す（ピンの吹き出しのボタンを覆って押せなくしない）。
+      <div className="row" style={{ position: 'absolute', left: 8, bottom: 8, alignItems: 'center', zIndex: 6, pointerEvents: 'none' }}>
         <button
           type="button"
           className="btn sm"
           data-testid={`${testId}-map-reset-view`}
+          style={{ pointerEvents: 'auto' }}
           onClick={handleResetView}
         >
           {S20_MAP_RESET_VIEW}

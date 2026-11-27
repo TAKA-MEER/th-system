@@ -583,12 +583,12 @@ export const S21_PIN_MOVE = '移動'
 export const S21_NEXT_DEST_TITLE = '次の行き先'
 export const S21_DEST_HOME = '待機場所'
 export const S21_DEST_NEXT_PANEL = '次の配電盤'
-export const S21_DEST_SUMMON_HERE = 'その場で呼ぶ'
+export const S21_DEST_SUMMON_HERE = '呼び寄せ'
 export const S21_PICK_PANEL_HINT = '移動したいピンを押してください'
 // UX-7: ピンが 1 件も無いときの空表示。以前はカード見出し（S21_PREP_TITLE）を
 // そのまま出していて、同じ文字列が 2 回並んでいた。
 export const S21_PINS_EMPTY = '登録済みのピンがありません（前日の試験準備で登録します）'
-export const S21_SUMMON_TITLE = '(b) その場で呼ぶ'
+export const S21_SUMMON_TITLE = '(b) 呼び寄せ'
 export const S21_SUMMON_START = '呼び寄せ（2 点指示）'
 export const S21_WAIT_TITLE = '退避待ち — 退いてください'
 // SG-C8: 見失っている間（distance_m < 0）は距離を出さない。
@@ -644,6 +644,28 @@ export const BADGE_GOTO_PAUSED = '一時停止中は選べません（「走行�
 // 行き先と「走行」を押せない。画面は幅が狭いので理由の前半（推定が立ち上がり直した）は省く。機体の拒否理由は reasons.js venue_not_loaded。
 export const BADGE_VENUE_NOT_LOADED = '会場地図がありません。待機場所へ手で戻して、地図を開き直してください'
 export const BADGE_GOTO_MOVING = '移動中は行き先を選べません。着いてから選んでください'
+// S-21 作り直し（Spec-webui §3.11）。タブ・手順バー・待機場所の宣言を無くし、
+// 右列の固定 9 個と地図の吹き出しに置き換えた。
+export const S21_PIN_GO = '行き先にする'
+export const S21_MEASURE = '測定機能へ'
+export const S21_UNSTOP = '停止を解く'
+export const S21_UNSTOP_TITLE = '腕が格納位置にありますか'
+export const S21_UNSTOP_BODY = '測定機構の腕が格納位置にあることを確かめてください'
+export const S21_UNSTOP_YES = '解く'
+export const S21_UNSTOP_NO = 'やめる'
+export const S21_MEASURE_AT_PANEL_ONLY = '配電盤の前でだけ押せます'
+export const S21_UNSTOP_ADJUST = '測定機能が旋回中なので解けません'
+export const S21_ABORT_NONE = '取り消す行き先がありません（移動中・一時停止中・呼び寄せの位置指定中に押せます）'
+export const S21_RECORD = '記録'
+export const S21_NO_TARGET = '対象を選んでから記録できます'
+export const S21_BLOCKED_TITLE = '経路が塞がれています'
+export const S21_BLOCKED_BODY = '空けば自動で続きを走ります'
+export const S21_WHERE_REMAIN = (m) => `残り ${m.toFixed(1)} m`
+export const S21_WHERE_AT_PANEL = (name) => `${name} の前`
+export const S21_WHERE_TO = (name) => `${name} へ`
+export const S21_SUMMON_POS = '呼び寄せの位置'
+export const S21_WIZ_STEP1 = '機体に来てほしい位置に立って「記録」'
+export const S21_WIZ_STEP2 = '機体に向いてほしい方向へ 1 歩動いて「記録」'
 
 // ---------------------------------------------------------------- S-50 設定（WS-9X） ----
 // screens/S50Settings.jsx の表示文字列。Spec-webui.md §3.15 のタブ構成。

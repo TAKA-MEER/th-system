@@ -48,13 +48,12 @@ test('走行中で問題が無ければ帯を出さない', async ({ page }) => 
 // 出ない」。venue_navigator が Nav2 の経路計画に失敗すると state だけ BLOCKED
 // になる（mode はそのまま。attributes[mode].run_state と一致しないので走行状態
 // ゲートで弾かれ、帯どころか状態欄にも英語の生トークンしか出ていなかった）。
-test('経路計画が失敗（BLOCKED）すると帯が出る', async ({ page }) => {
+test('経路が塞がれた（BLOCKED）ときは W-5 の窓が説明するので帯を二重に出さない', async ({ page }) => {
   await gotoScreen(page, 'S21', {
     mode: 'PANEL_NAV', state: 'BLOCKED', zone: 'OUT', speed_limit: 'v_slow',
   })
-  const banner = page.getByTestId('stop-banner')
-  await expect(banner).toBeVisible()
-  await expect(banner).toContainText('経路が見つからず')
+  await expect(page.getByTestId('s21-blocked')).toBeVisible()
+  await expect(page.getByTestId('stop-banner')).toHaveCount(0)
 })
 
 test('非常停止中は W-1 の窓が説明するので帯を二重に出さない', async ({ page }) => {

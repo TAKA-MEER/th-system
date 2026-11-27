@@ -6,9 +6,9 @@
 // 横長・縦長（§7の表）の両方。タブの部品は使わない（使わないので描かない）。
 // 状態で位置を動かさない（同じ画面の中で状態が変わってもボタンの位置は動かない）。
 // data-pos で位置を縛れる形（where/toggle/ops/jog/foot）。使い方は README.md。
-export function RunLayout({ opbar, main, where, toggle, ops, jog }) {
+export function RunLayout({ opbar, main, where, toggle, ops, jog, id, className = '' }) {
   return (
-    <div className="content g-drv" data-layout="run">
+    <div className={`content g-drv ${className}`.trim()} data-layout="run" id={id}>
       {/* 操作バーは主表示と右列の上に横 1 列（Spec-webui.md §3.3 の型「走らせる」）。 */}
       <div data-pos="opbar">{opbar}</div>
       <div className="g-drv-row">

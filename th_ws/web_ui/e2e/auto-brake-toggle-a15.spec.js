@@ -28,7 +28,7 @@ async function openW6(page, state) {
   await page.setViewportSize({ width: 1280, height: 720 })
   await gotoScreen(page, 'S21', { mode: 'PANEL_NAV', state: 'NAV', zone: 'IN', ...state })
   await page.locator('#s21').waitFor()
-  await page.locator('#s21 .op-manual').click()
+  await page.locator('[data-testid="s21-manual"]').click()
   await expect(page.locator('#jogWin.show')).toBeVisible()
 }
 
@@ -119,7 +119,7 @@ test('W-6: 開くと /ui/manual_panel の心拍が出て、閉じると空文字
   await page.waitForTimeout(500)
   expect(await beats(), '開く前に送ってはいけない').toEqual([])
 
-  await page.locator('#s21 .op-manual').click()
+  await page.locator('[data-testid="s21-manual"]').click()
   await expect(page.locator('#jogWin.show')).toBeVisible()
   await expect.poll(async () => (await beats()).filter((d) => d !== '').length).toBeGreaterThanOrEqual(3)
   // スティックには触れていないので、ジョグのリース・速度指令は出ていない（開いただけで PAUSE に落とさない）

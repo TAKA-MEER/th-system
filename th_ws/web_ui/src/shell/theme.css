@@ -382,6 +382,8 @@ table.lst td.r{text-align:right}
 
 .hint{background:#122033;border:1px solid #24446e;border-radius:6px;padding:8px 10px;
   font-size:calc(var(--fs) * .83);color:#b9d4f2;line-height:1.5}
+/* 窓の中の注意文は白い地に合わせる（明るい地）。 */
+.win .hint{background:var(--inset);border-color:var(--bd);color:var(--tx)}
 .note{background:var(--jis-y, #ffd100);border:1px solid var(--warn);border-radius:6px;padding:8px 10px;
   font-size:calc(var(--fs) * .83);color:var(--warn-tx);line-height:1.5} /* §3.3.1 注意は黄。明るい地では --warn-tx は濃い文字 */
 
@@ -548,10 +550,14 @@ table.lst td.r{text-align:right}
 .win > .bodyw{padding:14px;font-size:calc(var(--fs) * .92);line-height:1.6}
 .win > footer{padding:11px 14px;display:flex;gap:8px;justify-content:flex-end;
   border-top:1px solid var(--bd);flex-wrap:wrap}
-.win.fault > header{background:#3a1414;color:var(--ng-tx)}
-.win.resolved > header{background:#14331a;color:var(--ok-tx)}
-.win.carry > header{background:#2e1b46;color:var(--carry-tx)}
-.win.blocked > header{background:#2a1c0a;color:var(--warn-tx)}
+/* 窓の題は白い地に濃い文字（明るい地に合わせる）。状態の色は題の前の印で出す
+   （異常は注意の黄の印、解消は緑の✓、非常停止は赤に黄の地の印。§3.3.1・D42）。 */
+.win.fault > header,.win.resolved > header,.win.carry > header,.win.blocked > header{background:var(--panel);color:var(--tx)}
+.win-mark{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;font-size:13px;font-weight:800;flex:none}
+.win-mark.warn{background:var(--jis-y);color:#1a1a1a}
+.win-mark.ok{background:var(--ok);color:#fff}
+.win-mark.estop{background:var(--jis-y);color:#c62828}
+.win.confirm > header.s21-win-head{background:var(--panel);color:var(--tx)}
 .win.confirm > header{background:#1f2634}
 
 /* W-3 guide window: a one-line band inserted below the body. An absolutely
@@ -1080,3 +1086,58 @@ table.lst td.r{text-align:right}
 }
 /* W-1 の再開確認に添える「解消した異常」。 */
 .fh-resolved{color:var(--warn-tx)}
+
+/* ---------- 型の骨組み（shell/Layouts.jsx。W0a の部品に対応する配置。P3 で追加） ----------
+   既存の .screen.two-col と同じ比率・同じ区切りで並べる（主表示と右列）。
+   狭いときは縦に積む（縦長）。data-pos の位置は状態で動かない。 */
+/* 主表示は操作バーの下から本文の下端まで、右列の幅を除いた全部を使う（モックアップ）。
+   余白はモックアップに合わせる（本文の左右に 20px。S-20 の約 93px とは揃えない）。 */
+#s21.g-drv{display:flex;flex-direction:column;gap:10px;min-height:0;height:100%;padding:10px 20px}
+#s21 .g-drv-row{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(340px,1fr);gap:10px;align-items:stretch;flex:1 1 auto;min-height:0}
+#s21.g-drv > [data-pos="opbar"]{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+#s21 .content.g-list{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:10px;align-items:start;padding:10px}
+#s21 .mainv{min-width:0;min-height:0;display:flex;flex-direction:column}
+#s21 [data-pos="main"]{min-height:0}
+#s21 [data-pos="main"] > [data-testid="s21-map-gate"]{margin:auto}
+#s21 .mapWrap{flex:1 1 auto;min-height:0}
+#s21 .mapWrapInner{height:100%}
+#s21 image{image-rendering:-webkit-optimize-contrast;image-rendering:pixelated}
+#s21 .rcol{display:flex;flex-direction:column;gap:10px;min-width:0}
+#s21 .rops{display:flex;flex-direction:column;gap:10px}
+#s21 .rjog{display:flex;flex-direction:column;gap:8px}
+@media (max-aspect-ratio: 1/1){
+  #s21 .g-drv-row{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}
+}
+
+/* ---------- S-21 試験（作り直し） ----------
+   #s21 の前身（.screen#s21）の地図・退避待ちバーの大きさを引き継ぐ。 */
+#s21 .mapWrap{position:relative}
+#s21 .mapWrap svg{display:block;width:100%;height:100%;max-height:none;
+  background:var(--inset);border:1px solid var(--bd);border-radius:var(--r)}
+#s21 .s21-bar{height:12px;border-radius:999px;overflow:hidden;background:var(--inset)}
+#s21 .s21-bar i{display:block;height:100%;border-radius:999px;background:var(--warn)}
+#s21 .s21-bar.ok i{background:var(--ok-tx)}
+#s21 .s21-bar.nope i{background:var(--ng-tx)}
+#s21 .s21-pin-bubble{position:absolute;left:12px;bottom:12px;z-index:5;display:flex;flex-direction:column;gap:8px;max-width:80%}
+#s21 .s21-summon-band{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+#s21 .s21-where{display:flex;flex-direction:column;gap:2px;font-size:calc(var(--fs) * 1.05);font-weight:700}
+#s21 .s21-where b{font-size:calc(var(--fs) * 1.2)}
+#s21 .btnrow > .reason-wrap{display:flex;min-width:0}
+#s21 .btnrow > .reason-wrap > .btn{flex:1 1 auto;min-width:0}
+#s21 .btnrow > .help-wrap{display:flex;min-width:0}
+#s21 .btnrow > .help-wrap > .reason-wrap{flex:1 1 auto;display:flex;min-width:0}
+#s21 .btnrow > .help-wrap > .reason-wrap > .btn{flex:1 1 auto;min-width:0}
+/* S-21: 次の配電盤は出発の色（進むの緑）で塗る（モックアップ）。押せない間は塗りを外す。 */
+.btn.go-paint{background:var(--ok);color:#fff}
+.btn.go-paint.dis{background:transparent;color:var(--dim)}
+#s21 .rops > .help-wrap{display:flex;min-width:0}
+#s21 .rops > .help-wrap > .reason-wrap{flex:1 1 auto;display:flex;min-width:0}
+#s21 .rops > .help-wrap > .reason-wrap > .btn{flex:1 1 auto;min-width:0}
+#s21 [data-pos="ops"] > .help-wrap{display:flex;min-width:0}
+#s21 [data-pos="ops"] > .help-wrap > .reason-wrap{flex:1 1 auto;display:flex;min-width:0}
+#s21 [data-pos="ops"] > .help-wrap > .reason-wrap > .btn{flex:1 1 auto;min-width:0}
+#s21 .s21-radar-ovr{position:absolute;right:12px;top:12px;z-index:5;width:min(280px,45%)}
+#s21 .s21-radar-ovr .card{margin:0}
+#s21 .s21-radar-ovr .radar{max-height:240px}
+/* 経路が塞がれた（再試行中）の停止理由の帯は注意の帯（明るい地・濃い文字）。 */
+.stop-banner.warn{background:#f7e3a1;border-color:#b58900;color:#3a2d00}

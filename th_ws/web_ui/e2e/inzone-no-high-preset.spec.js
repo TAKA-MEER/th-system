@@ -18,7 +18,7 @@ async function openW6(page, screen) {
     await gotoScreenWithOnsite(page, 'S21', { mode: 'AT_HOME', state: 'IDLE_H' },
       { pins: [], targets: [] })
     await page.locator('#s21').waitFor()
-    await page.locator('#s21 .op-manual').click()
+    await page.locator('[data-testid="s21-manual"]').click()
     await page.locator('#jogWin.show').waitFor()
   }
 }
