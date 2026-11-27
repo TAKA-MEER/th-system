@@ -165,8 +165,9 @@ export default function S40Calib() {
   }
 
   // LIST で「進む」を押す。S1 へ入る（ui.calib_item）。
-  async function startItem(it) {
-    if (fsmState !== 'LIST' || disabledAll) return
+  // 途中の切替の後半（abort 受理後）もここを通る：受理＝LIST のはずなので送る。
+  async function startItem(it, force = false) {
+    if ((!force && fsmState !== 'LIST') || disabledAll) return
     setErr(null)
     setSelectedItem(it)
     try {
@@ -198,7 +199,7 @@ export default function S40Calib() {
   function handleRow(it) {
     if (disabledAll) return
     if (inWizard) {
-      switchWhileRunning(() => startItem(it))
+      switchWhileRunning(() => startItem(it, true))
       return
     }
     setShowHistory(false)
