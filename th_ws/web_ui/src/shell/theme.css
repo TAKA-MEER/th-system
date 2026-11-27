@@ -382,6 +382,8 @@ table.lst td.r{text-align:right}
 
 .hint{background:#122033;border:1px solid #24446e;border-radius:6px;padding:8px 10px;
   font-size:calc(var(--fs) * .83);color:#b9d4f2;line-height:1.5}
+/* 窓の中の注意文は白い地に合わせる（明るい地）。 */
+.win .hint{background:var(--inset);border-color:var(--bd);color:var(--tx)}
 .note{background:var(--jis-y, #ffd100);border:1px solid var(--warn);border-radius:6px;padding:8px 10px;
   font-size:calc(var(--fs) * .83);color:var(--warn-tx);line-height:1.5} /* §3.3.1 注意は黄。明るい地では --warn-tx は濃い文字 */
 
@@ -548,10 +550,14 @@ table.lst td.r{text-align:right}
 .win > .bodyw{padding:14px;font-size:calc(var(--fs) * .92);line-height:1.6}
 .win > footer{padding:11px 14px;display:flex;gap:8px;justify-content:flex-end;
   border-top:1px solid var(--bd);flex-wrap:wrap}
-.win.fault > header{background:#3a1414;color:var(--ng-tx)}
-.win.resolved > header{background:#14331a;color:var(--ok-tx)}
-.win.carry > header{background:#2e1b46;color:var(--carry-tx)}
-.win.blocked > header{background:#2a1c0a;color:var(--warn-tx)}
+/* 窓の題は白い地に濃い文字（明るい地に合わせる）。状態の色は題の前の印で出す
+   （異常は注意の黄の印、解消は緑の✓、非常停止は赤に黄の地の印。§3.3.1・D42）。 */
+.win.fault > header,.win.resolved > header,.win.carry > header,.win.blocked > header{background:var(--panel);color:var(--tx)}
+.win-mark{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;font-size:13px;font-weight:800;flex:none}
+.win-mark.warn{background:var(--jis-y);color:#1a1a1a}
+.win-mark.ok{background:var(--ok);color:#fff}
+.win-mark.estop{background:var(--jis-y);color:#c62828}
+.win.confirm > header.s21-win-head{background:var(--panel);color:var(--tx)}
 .win.confirm > header{background:#1f2634}
 
 /* W-3 guide window: a one-line band inserted below the body. An absolutely

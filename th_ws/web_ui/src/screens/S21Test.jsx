@@ -588,8 +588,8 @@ export default function S21Test({ onExit }) {
 
       {/* W-5（経路が塞がれた）は #overlay に portal して本文の中央に出す（§4・D53）。 */}
       {blockedOpen && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(
-        <div data-testid="s21-blocked" style={{ display: 'contents' }}>
-          <header style={{ background: 'var(--panel)', color: 'var(--tx)' }}>{S21_BLOCKED_TITLE}</header>
+        <>
+          <header className="s21-win-head" data-testid="s21-blocked">{S21_BLOCKED_TITLE}</header>
           <div className="bodyw">
             <p data-testid="s21-blocked-msg">
               {destPin ? `${S21_WHERE_TO(destPin.name || destPin.id)}　` : ''}{S21_BLOCKED_BODY}
@@ -617,7 +617,7 @@ export default function S21Test({ onExit }) {
               </button>
             </HelpTip>
           </footer>
-        </div>,
+        </>,
         confirmWindow.mountNode,
       )}
     </>

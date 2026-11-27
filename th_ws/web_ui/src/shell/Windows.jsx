@@ -179,6 +179,7 @@ export default function Windows({
         {w1Active && (
           <div className={`win fault ${w1Open ? 'show' : ''} ${w1Resolved ? 'resolved' : ''}`}>
             <header data-testid="w1-title">
+              <span className={`win-mark ${w1Resolved && !w1IsEstop ? 'ok' : (w1IsEstop ? 'estop' : 'warn')}`} aria-hidden="true">{w1Resolved && !w1IsEstop ? '✓' : (w1IsEstop ? '■' : '▲')}</span>
               {w1Resolved && w1IsEstop ? WIN_ESTOP_RESOLVED_TITLE
                 : w1Resolved && !w1IsPresencePause && !w1IsPrepPause && !w1IsEstop ? (fault?.fault_type ? `${faultShortLabel(fault.fault_type)}（${WIN_RESOLVED_LABEL.charAt(0)}）` : WIN_FAULT_RESOLVED_TITLE)
                 : w1IsFaultEstop ? WIN_ESTOP_SYSTEM_TITLE
@@ -237,7 +238,7 @@ export default function Windows({
 
         {carryOpen && (
           <div className="win carry show" data-testid="w2-window">
-            <header data-testid="w2-title">{WIN_CARRY_TITLE}</header>
+            <header data-testid="w2-title"><span className="win-mark estop" aria-hidden="true">■</span>{WIN_CARRY_TITLE}</header>
             <div className="bodyw">
               <p>{WIN_CARRY_BODY}</p>
               <p className="hint mt">{WIN_CARRY_HINT}</p>
