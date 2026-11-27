@@ -122,3 +122,91 @@ test('値の行と語の行の高さがそろっている（左の値・語・�
     expect(gb.x + gb.width, '語が右の値より右').toBeLessThanOrEqual(rb.x + 2)
   }
 })
+
+test('自動ブレーキで削った分の黄の帯が出る（in_linear > out_linear のとき）', async ({ page }) => {
+  const t = Date.now() / 1000
+  await openS11(page, {
+    wheels: {
+      measured: [{ t, left: 0.12, right: 0.13 }],
+      command: [{ t, left: 0.12, right: 0.12 }],
+    },
+    twist: { vx: 0.13, wz: 0 },
+    scan: null,
+    limiter: { action: 'CLAMP', applied_limit_mps: 0.5, in_linear: 0.4, out_linear: 0.13 },
+  })
+  const cutRect = page.getByTestId('gauge-cut')
+  await expect(cutRect).toHaveCount(1)
+  await expect(cutRect).toHaveAttribute('fill', '#ffd100')
+  // 黄の帯は out_linear から in_linear の範囲
+  const x = Number(await cutRect.getAttribute('x'))
+  const w = Number(await cutRect.getAttribute('width'))
+  expect(w, '黄の帯の幅が無い').toBeGreaterThan(10)
+  expect(x, '黄の帯が out_linear より左').toBeGreaterThanOrEqual(0)
+})
+
+test('削っていないときは黄の帯が出ない（PASS・in = out）', async ({ page }) => {
+  const t = Date.now() / 1000
+  await openS11(page, {
+    wheels: {
+      measured: [{ t, left: 0.4, right: 0.4 }],
+      command: [{ t, left: 0.4, right: 0.4 }],
+    },
+    twist: { vx: 0.4, wz: 0 },
+    scan: null,
+    limiter: { action: 'PASS', applied_limit_mps: 0.5, in_linear: 0.4, out_linear: 0.4 },
+  })
+  await expect(page.getByTestId('gauge-cut')).toHaveCount(0)
+})
+
+test('目標と実際の差が 0.05 m/s を超えたら注意の黄枠が出る', async ({ page }) => {
+  const t = Date.now() / 1000
+  await openS11(page, {
+    wheels: {
+      measured: [{ t, left: 0.35, right: 0.42 }],
+      command: [{ t, left: 0.44, right: 0.44 }],
+    },
+    twist: { vx: 0.38, wz: 0 },
+    scan: null,
+    limiter: { action: 'PASS', applied_limit_mps: 0.5, in_linear: 0.44, out_linear: 0.44 },
+  })
+  await expect(page.locator('.gauge.gap-warn')).toHaveCount(1)
+})
+
+test('目標と実際の差が 0.05 m/s 以下なら注意の黄枠は出ない', async ({ page }) => {
+  const t = Date.now() / 1000
+  await openS11(page, {
+    wheels: {
+      measured: [{ t, left: 0.35, right: 0.42 }],
+      command: [{ t, left: 0.39, right: 0.41 }],
+    },
+    twist: { vx: 0.38, wz: 0 },
+    scan: null,
+    limiter: { action: 'PASS', applied_limit_mps: 0.5, in_linear: 0.4, out_linear: 0.4 },
+  })
+  await expect(page.locator('.gauge.gap-warn')).toHaveCount(0)
+})
+
+test('ガイド線は自動ブレーキが効いているとき黄、効いていないとき進む色', async ({ page }) => {
+  const t = Date.now() / 1000
+  await openS11(page, {
+    wheels: {
+      measured: [{ t, left: 0.12, right: 0.13 }],
+      command: [{ t, left: 0.12, right: 0.12 }],
+    },
+    twist: { vx: 0.13, wz: 0 },
+    scan: null,
+    limiter: { action: 'CLAMP', applied_limit_mps: 0.5, in_linear: 0.4, out_linear: 0.13 },
+  })
+  await expect(page.getByTestId('surround-guide')).toHaveAttribute('stroke', '#ffd100')
+
+  await openS11(page, {
+    wheels: {
+      measured: [{ t, left: 0.4, right: 0.4 }],
+      command: [{ t, left: 0.4, right: 0.4 }],
+    },
+    twist: { vx: 0.4, wz: 0 },
+    scan: null,
+    limiter: { action: 'PASS', applied_limit_mps: 0.5, in_linear: 0.4, out_linear: 0.4 },
+  })
+  await expect(page.getByTestId('surround-guide')).toHaveAttribute('stroke', '#4caf50')
+})
