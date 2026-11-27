@@ -19,6 +19,7 @@ test('S-01 の「試験（当日）」で ui.enter_mode{mode:AT_HOME} を送り�
   await gotoScreen(page, 'S01', IDLE)
   await page.locator('#s01').waitFor()
 
+  await page.getByTestId('s01-group-field').click()
   const btn = page.locator('[data-testid="s01-mode-AT_HOME"]')
   await expect(btn).toHaveText('試験（当日）')
   await expect(page.locator('#s21')).toBeHidden()
@@ -56,7 +57,10 @@ test('S-21 の「終了」は ui.finish を送り、IDLE に戻ると S-01 が�
 test('「試験（当日）」は INIT では押せない（M-1: 起動中は何も押せない）', async ({ page }) => {
   await gotoScreen(page, 'S01', { mode: 'INIT', state: 'NONE' })
   await page.locator('#s01').waitFor()
-  await expect(page.locator('[data-testid="s01-mode-AT_HOME"]')).toBeDisabled()
+  // 起動中は階層タイルごと押せない（M-1。AT_HOME は試験場▸ の中のため
+  // 階層で起きている）。
+  await expect(page.getByTestId('s01-group-field')).toHaveClass(/dis/)
+  await expect(page.getByTestId('s01-group-field')).toBeDisabled()
 })
 
 test('AT_HOME は設定(S-50)より優先される（動作系モードが最優先）', async ({ page }) => {

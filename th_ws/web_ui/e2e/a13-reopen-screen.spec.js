@@ -55,7 +55,8 @@ test('A-13: mode が INIT のときは従来どおり S-00 を開く', async ({ 
 test('A-13: INIT で開いたあと IDLE に変わっても、押すまで S-00 のまま', async ({ page }) => {
   await gotoReopen(page, { mode: 'INIT', state: 'CHECK' })
   await expect(page.locator('#s00')).toBeVisible()
-  await expect(page.getByTestId('s00-advance')).toHaveCount(0)
+  await expect(page.getByTestId('s00-advance')).toBeVisible()
+  await expect(page.getByTestId('s00-advance')).toHaveClass(/dis/)
 
   await setTestState(page, { mode: 'IDLE', state: 'NONE' })
   await expect(page.locator('#s00')).toBeVisible()

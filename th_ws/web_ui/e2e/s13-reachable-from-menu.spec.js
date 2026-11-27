@@ -19,8 +19,9 @@ test('S-01 教示（手動）accepted by th_state -> S-13 renders', async ({ pag
   await stubTrigger(page, { 'ui.enter_mode': { accepted: true, reject_reason_key: '' } })
   await gotoScreen(page, 'S01', { mode: 'IDLE', tracker_enabled: true })
 
-  const teach = page.getByRole('button', { name: '教示（手動）' })
-  await expect(teach).toBeEnabled()
+  await page.getByTestId('s01-group-drive').click()
+  const teach = page.getByTestId('s01-mode-TEACH_MANUAL')
+  await expect(teach).not.toHaveClass(/dis/)
   await teach.click()
 
   // 受理されただけでは動かない。FSM がモードを publish して初めて動く。
