@@ -32,13 +32,12 @@ import { mapSaveWarningVisible } from './routeMapWarning.js'
 import {
   S13_ROUTE_NAME_LABEL, S13_ROUTE_NAME_PLACEHOLDER,
   S13_PAUSED, S13_PAUSE_HINT, S13_SAVED, S13_SAVE_FAILED, S13_MAP_SAVE_WARNING,
-  S13_RECORDED_LABEL, S13_POINTS_LABEL, S13_ELAPSED_LABEL, S13_START_YAW_LABEL, S13_SEC, S13_M, S13_DEG,
   S13_ROUTE_NEW_TITLE, S13_ROUTE_EXISTING_TITLE,
   S13_NEW_START, S13_RESELECT, S13_RESELECT_ARMED,
   S14_EMPTY,
 } from '../i18n/screens.js'
 import {
-  S12_MAP_CAPTION, S12_MAP_SWAP, S12_RUN_DENY_ROUTE,
+  S12_MAP_CAPTION, S12_MAP_SWAP, S12_RUN_DENY_ROUTE, S12_REC_M, S12_REC_TIME,
   S10_RUN_DENY_TARGET, S10_FACE_DENY_RUNNING, S12_SAVE_DENY_EMPTY, S12_SAVE_DENY_SAVED,
 } from '../i18n/screens.js'
 import { OP_LABELS } from '../i18n/states.js'
@@ -205,15 +204,14 @@ export default function S12TeachFollow({ onFinish }) {
         main={(
           <div className="s12-main">
             <div className={`s12-radar ${mapLarge ? 'small' : 'large'}`}>
-              <HelpTip helpKey="s10-radar">
-                <RadarSelect
-                  candidates={candidates}
-                  selectedIndex={selectedIndex}
-                  isLost={personTargets?.is_lost ?? false}
-                  confidence={personTargets?.confidence}
-                  onSelect={handleSelectTarget}
-                />
-              </HelpTip>
+              {/* レーダー（地図と同じく、カーソルのヘルプを出さない。§3.3.6） */}
+              <RadarSelect
+                candidates={candidates}
+                selectedIndex={selectedIndex}
+                isLost={personTargets?.is_lost ?? false}
+                confidence={personTargets?.confidence}
+                onSelect={handleSelectTarget}
+              />
             </div>
             {/* モックアップでは入口では小地図を出さない。地図は経路選択で作り直すため。 */}
             {!selecting && mapPanel}
@@ -221,13 +219,11 @@ export default function S12TeachFollow({ onFinish }) {
           </div>
         )}
         where={(
-          <div className="s13-rec" data-testid="s12-record-amount">
-            <span>{S13_RECORDED_LABEL} <span className="r" data-testid="s12-recorded-m">{st?.recorded_m != null ? S13_M(st.recorded_m.toFixed(2)) : '--'}</span></span>
-            <span>{S13_POINTS_LABEL} <span className="r" data-testid="s12-points">{st?.points != null ? st.points : '--'}</span></span>
-            <span>{S13_ELAPSED_LABEL} <span className="r" data-testid="s12-elapsed">{st?.elapsed_sec != null ? S13_SEC(st.elapsed_sec.toFixed(0)) : '--'}</span></span>
-            {st?.start_yaw != null && st?.points > 0 && (
-              <span>{S13_START_YAW_LABEL} <span className="r" data-testid="s12-start-yaw">{S13_DEG((st.start_yaw * 180 / Math.PI).toFixed(0))}</span></span>
-            )}
+          <div className="s12-rec" data-testid="s12-record-amount">
+            {/* 記録の量は距離と時間を 1 行で（「12.4 m　1:32」。点数・開始時の向きは出さない） */}
+            <b data-testid="s12-record-amount-value">
+              {st?.recorded_m != null ? S12_REC_M(st.recorded_m) + '　' + (st?.elapsed_sec != null ? S12_REC_TIME(st.elapsed_sec) : '--') : '--'}
+            </b>
             {paused && <span className="note" data-testid="s12-paused-note">{S13_PAUSED}</span>}
             {paused && <span className="note">{S13_PAUSE_HINT}</span>}
             {savedState && (saved

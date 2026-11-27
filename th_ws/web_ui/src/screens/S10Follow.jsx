@@ -97,15 +97,14 @@ export default function S10Follow({ onFinish }) {
         )}
         main={(
           <div className="s10-main">
-            <HelpTip helpKey="s10-radar">
-              <RadarSelect
-                candidates={candidates}
-                selectedIndex={selectedIndex}
-                isLost={personTargets?.is_lost ?? false}
-                confidence={personTargets?.confidence}
-                onSelect={handleSelectTarget}
-              />
-            </HelpTip>
+            {/* レーダー（地図と同じく、カーソルのヘルプを出さない。§3.3.6） */}
+            <RadarSelect
+              candidates={candidates}
+              selectedIndex={selectedIndex}
+              isLost={personTargets?.is_lost ?? false}
+              confidence={personTargets?.confidence}
+              onSelect={handleSelectTarget}
+            />
           </div>
         )}
         where={(
