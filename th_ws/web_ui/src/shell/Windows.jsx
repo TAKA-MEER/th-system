@@ -150,11 +150,6 @@ export default function Windows({
   const estopCanResumePrev = w1IsEstop && !estopUi && !estopHw
     && !faultActive && fault?.severity !== 'CRITICAL'
     && !_ESTOP_PREV_NONRESUMABLE.has(prevMode ?? '')
-  const w1Resume = w1IsEstop
-    ? (estopCanResumePrev ? 'yes_no' : 'ack_only')
-    : resumeChoices(mode, attributes)
-  const resumeYesLabel = estopCanResumePrev ? WIN_ESTOP_RESUME_PREV : WIN_RESUME_YES
-  const resumeNoLabel = estopCanResumePrev ? WIN_ESTOP_TO_MENU : WIN_RESUME_NO
 
   // C-11/C-12: CARRY only offers a way out once the physical button is
   // released.
@@ -214,24 +209,11 @@ export default function Windows({
               )}
             </div>
             <footer>
-              {w1Resolved && w1Resume === 'ack_only' && (
+              {w1Resolved && (
                 <button type="button" className="btn primary" onClick={() => fire('ui.resume_ack')}>
                   {WIN_RESUME_ACK}
                 </button>
               )}
-              {w1Resolved && w1Resume === 'yes_no' && (
-                <>
-                  <button type="button" className="btn" onClick={() => fire('ui.resume_no')}>
-                    {resumeNoLabel}
-                  </button>
-                  <button type="button" className="btn primary" onClick={() => fire('ui.resume_yes')}>
-                    {resumeYesLabel}
-                  </button>
-                </>
-              )}
-              <button type="button" className="btn" onClick={() => setEstopDismissed(true)}>
-                {WIN_HIDE_LABEL}
-              </button>
             </footer>
           </div>
         )}
@@ -275,10 +257,7 @@ export default function Windows({
                 <div className="mt">
                   <div className="row"><span className="pill ok">{WIN_CARRY_RELEASED}</span></div>
                   <button type="button" className="btn primary wide mt" onClick={() => fire('ui.carry_resume')}>
-                    {WIN_CARRY_RESUME}
-                  </button>
-                  <button type="button" className="btn wide mt" onClick={() => fire('ui.finish')}>
-                    {WIN_CARRY_DISMISS}
+                    {WIN_RESUME_ACK}
                   </button>
                 </div>
               )}
