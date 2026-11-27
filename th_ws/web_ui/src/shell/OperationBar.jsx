@@ -2,6 +2,7 @@
 // tabs / a status pill (DetailedDesign-webui.md §4). "Finish" lives only
 // here, never in the operation card, so a slip can't be mistaken for pause.
 import { OP_LABELS } from '../i18n/states.js'
+import HelpTip from '../parts/HelpTip.jsx'
 
 export default function OperationBar({
   onFinish,
@@ -14,9 +15,11 @@ export default function OperationBar({
 }) {
   return (
     <div className={`top-actions ${sticky ? 'sticky' : ''}`}>
-      <button type="button" className="btn" disabled={finishDisabled} onClick={onFinish}>
-        {OP_LABELS.finish}
-      </button>
+      <HelpTip helpKey="finish">
+        <button type="button" className="btn exit" disabled={finishDisabled} onClick={onFinish}>
+          {OP_LABELS.finish}
+        </button>
+      </HelpTip>
       {tabs && tabs.length > 0 && (
         <div className="tabs" role="tablist">
           {tabs.map((t) => (

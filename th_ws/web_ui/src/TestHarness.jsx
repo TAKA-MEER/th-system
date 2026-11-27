@@ -11,6 +11,7 @@
 // production load).
 import { useSystemState } from './ros/useSystemState.js'
 import OperationCard from './shell/OperationCard.jsx'
+import HelpTip from './parts/HelpTip.jsx'
 import attributes from './generated/attributes.json'
 import { useJogPanel } from './shell/jogPanel.js'
 
@@ -24,6 +25,9 @@ export default function OperationCardHarness() {
 
   return (
     <div data-testid="opcard-harness">
+      <HelpTip helpKey="finish">
+        <button type="button" className="btn exit" data-testid="harness-finish">終了</button>
+      </HelpTip>
       <button type="button" className="btn sm" data-testid="harness-open-jog" onClick={() => jogPanel.open()}>
         W-6
       </button>
