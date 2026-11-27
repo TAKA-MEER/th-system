@@ -1109,7 +1109,7 @@ table.lst td.r{text-align:right}
 .fig .cell{display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:center;min-height:0}
 .fig .cell .cap{display:flex;align-items:center;gap:8px;font-size:calc(var(--fs) * 0.95);font-weight:700}
 .fig.mot{gap:16px}
-.arrows{display:grid;grid-template-columns:repeat(3,minmax(72px,96px));grid-template-rows:repeat(3,minmax(72px,96px));gap:8px;justify-content:center;flex:none}
+.arrows{display:grid;grid-template-columns:repeat(3,minmax(104px,124px));grid-template-rows:repeat(3,minmax(72px,96px));gap:8px;justify-content:center;flex:none}
 .arrows .dirb{position:relative;min-height:72px;font-size:calc(var(--fs) * 1.0);font-weight:800}
 .dirb .dm{position:absolute;right:4px;top:4px}
 .mgs{flex:1;min-width:0;display:grid;grid-template-columns:1fr 52px 1fr;gap:6px;align-items:start}
