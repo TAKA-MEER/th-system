@@ -656,7 +656,8 @@ export default function OnsiteMap({
       style={toolsStyle}
     />
     {t.view ? (
-      <div className="row mt" style={{ alignItems: 'center' }}>
+      // 「全体表示」と縮尺は地図の左下に重ねる（§6.1。右下は地図の道具の置き場）。
+      <div className="row" style={{ position: 'absolute', left: 8, bottom: 8, alignItems: 'center', zIndex: 6 }}>
         <button
           type="button"
           className="btn sm"

@@ -1084,22 +1084,29 @@ table.lst td.r{text-align:right}
 /* ---------- 型の骨組み（shell/Layouts.jsx。W0a の部品に対応する配置。P3 で追加） ----------
    既存の .screen.two-col と同じ比率・同じ区切りで並べる（主表示と右列）。
    狭いときは縦に積む（縦長）。data-pos の位置は状態で動かない。 */
-#s21 .g-drv{display:flex;flex-direction:column;gap:10px;min-height:0;padding:10px}
-#s21 .g-drv-row{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(340px,1fr);gap:10px;align-items:start;min-height:0}
-#s21 .g-drv > [data-pos="opbar"]{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+/* 主表示は操作バーの下から本文の下端まで、右列の幅を除いた全部を使う（モックアップ）。
+   余白はモックアップに合わせる（本文の左右に 20px。S-20 の約 93px とは揃えない）。 */
+#s21.g-drv{display:flex;flex-direction:column;gap:10px;min-height:0;height:100%;padding:10px 20px}
+#s21 .g-drv-row{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(340px,1fr);gap:10px;align-items:stretch;flex:1 1 auto;min-height:0}
+#s21.g-drv > [data-pos="opbar"]{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 #s21 .content.g-list{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:10px;align-items:start;padding:10px}
-#s21 .mainv{min-width:0}
+#s21 .mainv{min-width:0;min-height:0;display:flex;flex-direction:column}
+#s21 [data-pos="main"]{min-height:0}
+#s21 [data-pos="main"] > [data-testid="s21-map-gate"]{margin:auto}
+#s21 .mapWrap{flex:1 1 auto;min-height:0}
+#s21 .mapWrapInner{height:100%}
+#s21 image{image-rendering:-webkit-optimize-contrast;image-rendering:pixelated}
 #s21 .rcol{display:flex;flex-direction:column;gap:10px;min-width:0}
 #s21 .rops{display:flex;flex-direction:column;gap:10px}
 #s21 .rjog{display:flex;flex-direction:column;gap:8px}
 @media (max-aspect-ratio: 1/1){
-  #s21 .g-drv-row{grid-template-columns:minmax(0,1fr)}
+  #s21 .g-drv-row{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}
 }
 
 /* ---------- S-21 試験（作り直し） ----------
    #s21 の前身（.screen#s21）の地図・退避待ちバーの大きさを引き継ぐ。 */
 #s21 .mapWrap{position:relative}
-#s21 .mapWrap svg{display:block;width:100%;height:auto;max-height:min(42cqh,300px);
+#s21 .mapWrap svg{display:block;width:100%;height:100%;max-height:none;
   background:var(--inset);border:1px solid var(--bd);border-radius:var(--r)}
 #s21 .s21-bar{height:12px;border-radius:999px;overflow:hidden;background:var(--inset)}
 #s21 .s21-bar i{display:block;height:100%;border-radius:999px;background:var(--warn)}
