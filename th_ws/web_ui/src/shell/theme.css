@@ -936,6 +936,14 @@ table.lst td.r{text-align:right}
 .btn.tool{border-radius:4px}
 .btn.exit{border-radius:4px 999px 999px 4px}
 .btn.icon-only{min-width:56px;padding:0 12px;justify-content:center}
+/* 人検出トグル（§3.5）: 入のときだけ明るく点ける。 */
+.tracker-toggle{display:inline-flex;align-items:center;gap:8px}
+.tracker-cap{font-weight:800;font-size:max(15px,calc(var(--fs) * .9))}
+.tracker-sides{display:inline-flex;border:2px solid var(--tx);border-radius:4px;overflow:hidden;min-height:56px}
+.tracker-side{min-width:64px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:calc(var(--fs) * .95)}
+.tracker-side.off.on{background:var(--panel);color:var(--tx)}
+.tracker-side.onside.on{background:var(--ok);color:#fff}
+.tracker-side:not(.on){background:transparent;color:var(--dim)}
 
 /* 横長の S-40 LiDAR 死角: 図（420px 四方）を縦に積むと右列のカードが本文を 213px 超える。
    図を左、説明・一覧・ボタンを右に並べる（図は 270px まで。扇形の指定には足りる）。 */

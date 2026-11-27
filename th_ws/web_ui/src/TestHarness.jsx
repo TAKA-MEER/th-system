@@ -12,6 +12,7 @@
 import { useSystemState } from './ros/useSystemState.js'
 import OperationCard from './shell/OperationCard.jsx'
 import HelpTip from './parts/HelpTip.jsx'
+import PersonDetectToggle from './parts/PersonDetectToggle.jsx'
 import attributes from './generated/attributes.json'
 import { useJogPanel } from './shell/jogPanel.js'
 
@@ -28,6 +29,7 @@ export default function OperationCardHarness() {
       <HelpTip helpKey="finish">
         <button type="button" className="btn exit" data-testid="harness-finish">終了</button>
       </HelpTip>
+      <PersonDetectToggle enabled={false} testId="harness-tracker" />
       <button type="button" className="btn sm" data-testid="harness-open-jog" onClick={() => jogPanel.open()}>
         W-6
       </button>
