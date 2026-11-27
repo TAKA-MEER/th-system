@@ -157,3 +157,37 @@ test('S-40 BLIND: 生スキャン無しでは S1 の「次へ」が押せない�
   const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
   expect(calls.some((c) => c.trigger === 'ui.calib_next')).toBeFalsy()
 })
+
+test('S-40: ヘッダの札に内部の記号（S2等）が出ず、「校正中」と出る', async ({ page }) => {
+  await stubTrigger(page, { 'ui.calib_next': { accepted: true } })
+  await page.addInitScript(() => {
+    window.__thTestState = { mode: 'CALIB', state: 'S2' }
+    window.__thTestScreen = 'S40'
+    window.__thTestCalibStatus = {
+      item: 'LINEAR', step: 'S2', result: 'RUNNING', preview_before: '', preview_after: '',
+      detail: { commanded: 1.0, progress: 0.4, history: {}, last_calibrated: {} },
+    }
+  })
+  await page.goto('/')
+  await page.locator('#body').waitFor()
+  await expect(page.locator('#modePill')).toHaveText('校正中')
+  await expect(page.locator('#modePill')).not.toContainText('S2')
+})
+
+test('S-30: ヘッダに記号（RUNNING_CHECK）が出ず、「確認中」と出る。戻るは画面の左上', async ({ page }) => {
+  await stubTrigger(page, { 'ui.check_item': { accepted: true } })
+  await page.addInitScript(() => {
+    window.__thTestState = { mode: 'OPCHECK', state: 'RUNNING_CHECK' }
+    window.__thTestScreen = 'S30'
+    window.__thTestOpcheckStatus = { item: 'MOTOR', result: 'UNKNOWN', detail: '', next_screen: '' }
+  })
+  await page.goto('/')
+  await page.locator('#body').waitFor()
+  await expect(page.locator('#modePill')).toHaveText('確認中')
+  await expect(page.locator('#modePill')).not.toContainText('RUNNING_CHECK')
+  // 「戻る」は一覧・手順の上の画面左上（data-pos="opbar" が左列・手順列より上）
+  const bar = await page.locator('[data-pos="opbar"]').boundingBox()
+  const list = await page.locator('[data-pos="list"]').boundingBox()
+  expect(bar.y).toBeLessThan(list.y)
+  expect(bar.x).toBeLessThanOrEqual(list.x + 2)
+})

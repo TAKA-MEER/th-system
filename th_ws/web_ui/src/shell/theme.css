@@ -1085,7 +1085,9 @@ table.lst td.r{text-align:right}
    モックアップ .content.g-list と同じ値: 左=一覧・右=手順。操作バー高さ 68・
    左右余白 14・中身上下 12・左右 14・区画間 12。主表示は高さいっぱい。
    内容は収まるよう縮む（pbody は overflow:hidden。図は高さに追従）。 */
-.content.g-list{display:grid;grid-template-columns:380px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:12px;padding:12px 14px;height:100%;min-height:0}
+/* 操作バー（戻る）は一覧・手順の上に全幅で出る（走らせる型と同じ位置） */
+.content.g-list{display:grid;grid-template-columns:380px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);gap:10px 12px;padding:12px 14px;height:100%;min-height:0}
+.g-list > [data-pos="opbar"]{grid-column:1/-1;height:auto;min-height:56px;display:flex;align-items:center;gap:12px}
 .g-list .lst{display:flex;flex-direction:column;gap:6px;min-height:0;min-width:0}
 .g-list .lst .lhd{display:flex;align-items:center;gap:8px;min-height:40px;font-size:calc(var(--fs) * 1.05);font-weight:800}
 .g-list .lrow{display:flex;align-items:center;gap:10px;min-height:64px;padding:6px 12px;border:1px solid var(--bd-hi);border-radius:8px;background:var(--panel);text-align:left;width:100%}
@@ -1165,9 +1167,15 @@ table.lst td.r{text-align:right}
 .g-list .fig{flex:none}
 .g-list .fig svg{max-height:34cqh}
 .g-list .mg svg{max-height:20cqh}
-.g-list .s40-blind-svg{max-height:26cqh !important;width:auto !important}
+/* 死角の図は枠の中に丸ごと入る（見切れない）。等比を保ち、ボタン行も下端に重ならない */
+.g-list .s40-blind{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);column-gap:12px;align-items:start;min-height:0}
+.g-list .s40-blind > :first-child{grid-column:1 / -1}
+.g-list .s40-blind > .s40-blind-svg{grid-column:1;grid-row:2 / span 8;overflow:hidden;display:block;justify-self:center;width:min(100%,20cqh) !important;height:auto !important;max-height:20cqh !important}
+.g-list .s40-blind > :not(.s40-blind-svg):not(:first-child){grid-column:2}
+.g-list .s40-blind .row{flex-wrap:wrap;margin-top:2px}
+.g-list .s40-blind .btn{min-height:36px}
 .g-list .s40-blind-list{display:flex;flex-wrap:wrap;gap:4px 10px;list-style:none;padding:0}
-.g-list .s40-blind-list li{display:flex;align-items:center;gap:6px}
+.g-list .s40-blind-list li{display:flex;align-items:center;gap:6px;min-height:0}
 .g-list .s31-hints{margin:4px 0}
 .g-list .chk{min-height:48px}
 .g-list .lrow{min-height:52px;padding:4px 10px}

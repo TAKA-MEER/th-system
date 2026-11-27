@@ -15,10 +15,6 @@ const Hs = 150
 const HISTORY_SEC = 15
 const MIN_SPAN_MPS = 0.15
 
-function fmt(v) {
-  return v == null ? '—' : v.toFixed(2)
-}
-
 function fmtSigned(v) {
   if (v == null) return '—'
   return `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)}`
@@ -103,11 +99,7 @@ export default function WheelSpeedView({ measured = [], command = [], nowSec = n
         </span>
         {graph('R')}
       </div>
-      {/* 常設の現在値（ホバー不要。タブレットのタッチで hover が効かないため）。 */}
-      <div className="wsv-tooltip" data-testid="wheel-speed-current">
-        <span>左 実測 {fmt(latestM?.left)} 指令 {fmt(latestC?.left)}</span>
-        <span>右 実測 {fmt(latestM?.right)} 指令 {fmt(latestC?.right)}</span>
-      </div>
+      {/* 下の大きな数と重複する行は出さない（差し戻し P7-4） */}
     </div>
   )
 }

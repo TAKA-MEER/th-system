@@ -91,8 +91,8 @@ export default function BlindScanSelect({
         ))}
         {dragRange && <path d={wedge(dragRange)} fill="#333a48" fillOpacity="0.15"
           stroke="#333a48" strokeDasharray="4 3" />}
-        {kept.map((p, i) => { const [x, y] = toXY(p); return <circle key={`k${i}`} cx={x} cy={y} r="1.8" fill="currentColor" /> })}
-        {masked.map((p, i) => { const [x, y] = toXY(p); return <circle key={`m${i}`} cx={x} cy={y} r="2.4" fill="#333a48" /> })}
+        {kept.map((p, i) => { const [x, y] = toXY(p); if (Math.hypot(x - C, y - C) > R) return null; return <circle key={`k${i}`} cx={x} cy={y} r="1.8" fill="currentColor" /> })}
+        {masked.map((p, i) => { const [x, y] = toXY(p); if (Math.hypot(x - C, y - C) > R) return null; return <circle key={`m${i}`} cx={x} cy={y} r="2.4" fill="#333a48" /> })}
         <polygon points={`${C},${C - 10} ${C - 6},${C + 6} ${C + 6},${C + 6}`} fill="currentColor" />
       </svg>
       {!scan && <p className="s40-warn" data-testid="s40-blind-no-scan">{T.S40_BLIND_NO_SCAN}</p>}
