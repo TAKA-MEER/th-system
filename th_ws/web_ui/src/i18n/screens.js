@@ -911,6 +911,7 @@ export const S30_LIDAR_MASK_UNKNOWN = '死角マスクを取得できません�
 
 
 // ---- UIR-P7（Spec-webui §3.12・§3.13・§3.14。モックアップ check/calib と同じ語）----
+export const WHEEL_SPEED_WAIT = 'ESP32 からの速度データ待ち…'
 export const S30_BACK = '戻る'
 export const S30_CONFIRM = '確かめる'
 export const S30_ABORT2 = 'やめる'

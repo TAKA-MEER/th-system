@@ -8,6 +8,7 @@
 // 一例の hook の真実は ros/useWheelSpeeds.js の形 ({ measured: [{t,left,right}],
 // command: [{t,left,right}] })。
 import { useMemo } from 'react'
+import { WHEEL_SPEED_WAIT } from '../i18n/screens.js'
 
 const Ws = 250
 const Hs = 150
@@ -90,7 +91,7 @@ export default function WheelSpeedView({ measured = [], command = [], nowSec = n
 
   return (
     <div className="wheel-speed-wrap" data-testid="wheel-speed-view">
-      {!hasData && <p className="note">ESP32 からの速度データ待ち…</p>}
+      {!hasData && <p className="note">{WHEEL_SPEED_WAIT}</p>}
       <div className="mgs">
         {graph('L')}
         <span className="mgc" aria-hidden="true">
