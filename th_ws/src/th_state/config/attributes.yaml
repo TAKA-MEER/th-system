@@ -106,26 +106,6 @@ REPLAY:
   auto_brake_default: on_locked
   jog: allowed
   has_record: true
-LINE:
-  initial_state: SETUP
-  run_state: RUN
-  resume: yes_no
-  resume_state: PAUSE
-  needs_tracker: unused
-  speed_limit: v_max
-  auto_brake_default: on_locked
-  jog: allowed
-  has_record: false
-LEASH:
-  initial_state: DEV_CHECK
-  run_state: RUN
-  resume: yes_no
-  resume_state: PAUSE
-  needs_tracker: unused
-  speed_limit: v_leash
-  auto_brake_default: on_locked
-  jog: allowed
-  has_record: false
 PREP:
   # RETURN（自動帰還）だけ PAUSE を持つ（Spec-modes.md §3.0-② 追記・2026-10-05 決定）。
   # prep_states に残した状態では C-01（ジョグ介入）/ C-03（回復フォルト）の

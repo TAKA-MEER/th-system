@@ -18,7 +18,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Set, Any
 # ============================================================
 MODES: Set[str] = {
     "INIT", "IDLE", "ESTOP", "CARRY",
-    "FOLLOW", "MANUAL", "TEACH_FOLLOW", "TEACH_MANUAL", "REPLAY", "LINE", "LEASH",
+    "FOLLOW", "MANUAL", "TEACH_FOLLOW", "TEACH_MANUAL", "REPLAY",
     "PREP", "PANEL_NAV", "AT_PANEL", "SUMMON", "HOME_NAV", "AT_HOME",
     "OPCHECK", "CALIB",
 }
@@ -34,8 +34,6 @@ MODE_STATES: Dict[str, Set[str]] = {
     "TEACH_FOLLOW": {"ROUTE_SEL", "REC", "PAUSE", "SAVED"},
     "TEACH_MANUAL": {"ROUTE_SEL", "REC", "PAUSE", "SAVED"},
     "REPLAY": {"ROUTE_SEL", "LOCALIZE", "READY", "RUN", "PAUSE", "SAVED"},
-    "LINE": {"SETUP", "PLANNED", "RUN", "PAUSE", "ARRIVED"},
-    "LEASH": {"DEV_CHECK", "READY", "RUN", "HOLD", "PAUSE"},
     "PREP": {"MAPPING", "REGISTER", "RETURN", "EDIT", "SAVED", "PAUSE"},
     "PANEL_NAV": {"NAV", "BLOCKED", "PAUSE", "ALIGN"},
     "AT_PANEL": {"IDLE_P", "WORKING", "PAUSE"},
@@ -101,8 +99,6 @@ ESTOP_RESUME_RUN: Dict[str, str] = {
     "TEACH_FOLLOW": "REC",
     "TEACH_MANUAL": "REC",
     "REPLAY": "RUN",
-    "LINE": "RUN",
-    "LEASH": "RUN",
     "PANEL_NAV": "NAV",
     "HOME_NAV": "NAV",
 }
@@ -292,9 +288,6 @@ class Context:
     ui_estop: bool
     route_ids: Tuple[str, ...]
     pin_kinds: Tuple[str, ...]
-    leash_present: bool
-    leash_taut: bool
-    line_visible: bool
     camera_present: bool
     check_item: str
     check_result: str

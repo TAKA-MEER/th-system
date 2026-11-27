@@ -8,8 +8,6 @@
 #   - to_mode は §4.2 の表でモード跨ぎが無いモードでは列自体が省略されているが、
 #     このファイルでは全行に "="（不変）を明示する。
 #   - C-06r は C-06b より前に置く（layer 0 内は記載順に走査するため。§3.1 規則1）。
-#   - LINE/LEASH の一部行は実装を段階8へ後回しにしており、§3.3 のeffect一覧に無い効果名
-#     （例: plan_line_route）は転記していない（空リスト）。表そのものは含める。
 
 - id: C-01
   layer: 0
@@ -690,13 +688,11 @@
   - name: clear_prev
     args: {}
   spec_ref: SM-3.1.1-10
-# C-13-replay-no-route / C-13-leash-no-device: 1b-11 SG-B13（方式選択の前提。
+# C-13-replay-no-route: 1b-11 SG-B13（方式選択の前提。
 # DetailedDesign-transit.md §0.4）。C-13 より前に置き、前提を満たさない選択だけ
 # 理由付きで拒否する（T-ATP-05-working と同じ明示の拒否行の流儀）。
-# mode は IDLE に限る（MANUAL からは mode_entry 表自体が REPLAY/LEASH を許さない
-# ので C-13 の mode_entry_denied が出る）。LINE のカメラは信号源（/camera/status
-# の発行者）がリポジトリに無いため対象外（報告参照。deny 既定にすると LINE に
-# 入れなくなる後退になる）。
+# mode は IDLE に限る（MANUAL からは mode_entry 表自体が REPLAY を許さない
+# ので C-13 の mode_entry_denied が出る）。
 - id: C-13-recoverable-fault-active
   layer: 0
   mode:
@@ -1287,150 +1283,6 @@
     args:
       key: route_unreadable
   spec_ref: SM-3.1.2-020
-- id: T-LINE-01
-  layer: 10
-  mode: LINE
-  state: SETUP
-  event: evt.setup_done
-  guard: null
-  to_mode: '='
-  to_state: PLANNED
-  effects: []
-  spec_ref: SM-3.1.2-030
-- id: T-LINE-02
-  layer: 10
-  mode: LINE
-  state: PLANNED
-  event: ui.run
-  guard: null
-  to_mode: '='
-  to_state: RUN
-  effects: []
-  spec_ref: SM-3.1.2-031
-- id: T-LINE-03
-  layer: 10
-  mode: LINE
-  state: RUN
-  event: evt.arrived
-  guard: null
-  to_mode: '='
-  to_state: ARRIVED
-  effects: []
-  spec_ref: SM-3.1.2-032
-- id: T-LINE-04
-  layer: 10
-  mode: LINE
-  state: RUN
-  event: evt.line_lost
-  guard: null
-  to_mode: '='
-  to_state: PAUSE
-  effects:
-  - name: guide
-    args:
-      key: line_lost
-  spec_ref: SM-3.1.2-033
-- id: T-LINE-05
-  layer: 10
-  mode: LINE
-  state: RUN
-  event: ui.stop
-  guard: null
-  to_mode: '='
-  to_state: PAUSE
-  effects: []
-  spec_ref: SM-3.1.2-034
-- id: T-LINE-06
-  layer: 10
-  mode: LINE
-  state:
-  - PAUSE
-  - ARRIVED
-  event: ui.run
-  guard: line_visible
-  to_mode: '='
-  to_state: RUN
-  effects: []
-  spec_ref: SM-3.1.2-035
-- id: T-LEASH-01
-  layer: 10
-  mode: LEASH
-  state: DEV_CHECK
-  event: evt.leash_present
-  guard: null
-  to_mode: '='
-  to_state: READY
-  effects: []
-  spec_ref: SM-3.1.2-036
-- id: T-LEASH-07
-  layer: 10
-  mode: LEASH
-  state: DEV_CHECK
-  event: evt.leash_absent
-  guard: null
-  to_mode: '='
-  to_state: DEV_CHECK
-  effects:
-  - name: guide
-    args:
-      key: leash_not_connected
-  spec_ref: SM-3.1.2-037
-- id: T-LEASH-02
-  layer: 10
-  mode: LEASH
-  state:
-  - READY
-  - PAUSE
-  event: ui.run
-  guard: leash_taut
-  to_mode: '='
-  to_state: RUN
-  effects: []
-  spec_ref: SM-3.1.2-038
-- id: T-LEASH-03
-  layer: 10
-  mode: LEASH
-  state:
-  - READY
-  - PAUSE
-  event: ui.run
-  guard: leash_slack
-  to_mode: '='
-  to_state: HOLD
-  effects: []
-  spec_ref: SM-3.1.2-038
-- id: T-LEASH-04
-  layer: 10
-  mode: LEASH
-  state: RUN
-  event: evt.leash_slack
-  guard: null
-  to_mode: '='
-  to_state: HOLD
-  effects: []
-  spec_ref: SM-3.1.2-039
-- id: T-LEASH-05
-  layer: 10
-  mode: LEASH
-  state: HOLD
-  event: evt.leash_taut
-  guard: null
-  to_mode: '='
-  to_state: RUN
-  effects: []
-  spec_ref: SM-3.1.2-040
-- id: T-LEASH-06
-  layer: 10
-  mode: LEASH
-  state:
-  - RUN
-  - HOLD
-  event: ui.stop
-  guard: null
-  to_mode: '='
-  to_state: PAUSE
-  effects: []
-  spec_ref: SM-3.1.2-041
 - id: T-PREP-01
   layer: 10
   mode: PREP

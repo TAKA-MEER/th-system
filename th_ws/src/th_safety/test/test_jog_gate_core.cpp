@@ -59,8 +59,8 @@ Attributes real_attributes() {
   // is_drive: MANUAL, TEACH_MANUAL
   a.jog.emplace("MANUAL", JogLevel::IS_DRIVE);
   a.jog.emplace("TEACH_MANUAL", JogLevel::IS_DRIVE);
-  // allowed: 残り 10 モード
-  for (const char* m : {"FOLLOW", "TEACH_FOLLOW", "REPLAY", "LINE", "LEASH",
+  // allowed: 残り 8 モード
+  for (const char* m : {"FOLLOW", "TEACH_FOLLOW", "REPLAY",
                         "PREP", "PANEL_NAV", "AT_PANEL", "SUMMON", "HOME_NAV"}) {
     a.jog.emplace(m, JogLevel::ALLOWED);
   }

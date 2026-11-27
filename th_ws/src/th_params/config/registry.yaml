@@ -46,7 +46,7 @@
   value: null
   derived_from: [drivetrain_ceiling_mps, v_max_headroom_ratio]
   formula: v_max_from_ceiling
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner, params_audit]
+  consumers: [follow_runner, venue_navigator, obstacle_limiter, replay_runner, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1・§6.4"
   note: "ゾーン OUT の上限。A1 の 2 本制約を満たせなければ 1 回だけ引き下げられる（P-5）"
   # speed_limit_strictness_rank（N-15・A13）: この行の値が「speed_limit 名の厳しさ順」
@@ -93,7 +93,7 @@
   value: null
   derived_from: [venue_clearance_m, brake_accel_mps2, brake_delay_s]
   formula: speed_from_braking_distance
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, params_audit]
+  consumers: [follow_runner, venue_navigator, obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "ゾーン IN の上限。venue_clearance_m と brake_accel_mps2 のどちらかが placeholder なら placeholder（S5）"
   speed_limit_strictness_rank: 4  # N-15・A13。v_max(43行目のコメント) 参照
@@ -105,7 +105,7 @@
   value: null
   derived_from: [venue_clearance_m, brake_accel_mps2, brake_delay_s]
   formula: speed_from_braking_distance
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, params_audit]
+  consumers: [follow_runner, venue_navigator, obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "後退（全モード共通の上限）。LiDAR に死角が無い現構成では v_slow と同じ venue_clearance_m からの逆算（2026-10-09）。venue_clearance_m と brake_accel_mps2 のどちらかが placeholder なら placeholder（S5）。死角のある構成では blind_clearance_m を加味して再設計"
 
@@ -120,16 +120,6 @@
   spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
   note: "AT_PANEL のジョグ。A2a は課さない（極低速軸。params.md §4.1）"
   speed_limit_strictness_rank: 3  # N-15・A13。v_max(43行目のコメント) 参照
-
-- name: v_leash
-  unit: m/s
-  class: b
-  status: given
-  value: 0.5
-  consumers: [leash_runner, obstacle_limiter, params_audit]
-  spec_ref: "DetailedDesign-names.md §7.1 / DetailedDesign-params.md §3.1.1"
-  note: "LEASH（一定速）。逆算対象が無いため given（方針値）。2026-10-05 ユーザー決定の暫定 0.5 m/s（旧 1.0 は駆動系の天井 0.71 m/s を超えていた。A13 違反で発覚）。LEASH 実装時に実測で見直す（Spec-params.md §2 は改定済み。main の 3297feb）。obstacle_limiter は SystemState.speed_limit=\"v_leash\" を数値へ解決するために必要（attributes.yaml の LEASH が speed_limit: v_leash）"
-  speed_limit_strictness_rank: 5  # N-15・A13。v_max(43行目のコメント) 参照
 
 - name: v_check
   unit: m/s
@@ -156,7 +146,7 @@
   class: b
   status: given
   value: 1.2
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, params_audit]
+  consumers: [follow_runner, venue_navigator, obstacle_limiter, params_audit]
   spec_ref: "DetailedDesign-names.md §7.1"
   note: "角速度上限。逆算式が無いため given。暫定値（P1 fail-slow）。2026-09-04（WS-9T）実機で手動ジョグのその場旋回が遅い（0.6=34°/s、90°に約2.6s）との報告を受け 0.6→1.2 に引き上げ。w_align_max（d_floor 割れ時の追加絞り）は別項目（2026-11-10 に 0.45 へ）"
 
@@ -272,7 +262,7 @@
   source: "実機試験 T-13（R-66・R-69）。昇降機搭載状態での自動ブレーキ減速度 1.0〜1.4 m/s2 の最悪値。"
   blocking: true
   blocking_from_stage: 0
-  consumers: [follow_runner, line_runner, leash_runner, venue_navigator, obstacle_limiter, replay_runner]
+  consumers: [follow_runner, venue_navigator, obstacle_limiter, replay_runner]
   spec_ref: "DetailedDesign-names.md §7.2 / DetailedDesign-params.md §6.2 / DetailedDesign-wp0.md WP-PARAM-01 §5"
   note: "自動ブレーキの停止距離導出に使う最悪減速度。2026-11-10 の昇降機搭載実機試験で 1.0〜1.4 m/s2 を観測し、最悪値 1.0 を採用（Spec-safety.md §2.2）。通常ランプ停止・非常停止の空走値とは区別する。"
 
@@ -371,7 +361,7 @@
   class: b
   status: derived
   value: null
-  value_by: [v_max, v_slow, v_reverse, v_jog_panel, v_check, v_calib, v_leash]
+  value_by: [v_max, v_slow, v_reverse, v_jog_panel, v_check, v_calib]
   derived_from: [brake_accel_mps2, brake_delay_s, safety_margin_m]
   formula: braking_distance_plus_margin
   consumers: [follow_runner, replay_runner, venue_navigator]
@@ -531,7 +521,7 @@
   class: b
   status: given
   value: 1.0
-  consumers: [follow_runner, line_runner]
+  consumers: [follow_runner]
   spec_ref: "DetailedDesign-names.md §7.2"
   note: "暫定値（P1 fail-slow）"
 
@@ -1306,7 +1296,7 @@
   class: b
   status: given
   value: 500
-  consumers: [follow_runner, line_runner]
+  consumers: [follow_runner]
   spec_ref: "DetailedDesign-names.md §7.3"
   note: "暫定値"
 
@@ -1315,7 +1305,7 @@
   class: b
   status: given
   value: 500
-  consumers: [follow_runner, line_runner]
+  consumers: [follow_runner]
   spec_ref: "DetailedDesign-names.md §7.3"
   note: "暫定値"
 
@@ -1327,17 +1317,6 @@
   consumers: [route_recorder]
   spec_ref: "DetailedDesign-names.md §7.3"
   note: "暫定値。1b-7 で教示の記録の連続性切れ（SM-3.1.2-019）のしきい値として使う"
-
-- name: leash_stop_latency_ms
-  unit: ms
-  class: c
-  status: placeholder
-  value: TBD_MEASURE
-  blocking: true
-  blocking_from_stage: 8
-  consumers: [leash_runner]
-  spec_ref: "DetailedDesign-names.md §7.3 / DetailedDesign-wp0.md WP-PARAM-01 §5"
-  note: "段階 8 まで測りようがない"
 
 # =========================================================================
 # W-03: 教示・再生・間引きの挙動値（names §7.3）

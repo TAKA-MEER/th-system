@@ -26,7 +26,7 @@ from th_config_manager.map_freezer_core import (  # noqa: E402
     make_anchor, parse_anchor)
 
 MODES = ['INIT', 'IDLE', 'ESTOP', 'CARRY', 'FOLLOW', 'MANUAL', 'TEACH_FOLLOW',
-         'TEACH_MANUAL', 'REPLAY', 'LINE', 'LEASH', 'PREP', 'PANEL_NAV',
+         'TEACH_MANUAL', 'REPLAY', 'PREP', 'PANEL_NAV',
          'AT_PANEL', 'SUMMON', 'HOME_NAV', 'AT_HOME', 'OPCHECK', 'CALIB']
 PASS_MODES = {'PREP', 'TEACH_FOLLOW', 'TEACH_MANUAL'}
 

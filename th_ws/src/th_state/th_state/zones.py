@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import Dict, Mapping
 
 # ============================================================
-# DetailedDesign-names.md §4 — 画面（15）とゾーン・速度上限の表そのもの。
+# DetailedDesign-names.md §4 — 画面（13）とゾーン・速度上限の表そのもの。
 # ============================================================
 SCREEN_ZONE: Dict[str, str] = {
     "S-00": "NA",
@@ -37,8 +37,6 @@ SCREEN_ZONE: Dict[str, str] = {
     "S-12": "OUT",
     "S-13": "OUT",
     "S-14": "OUT",
-    "S-15": "OUT",
-    "S-16": "OUT",
     "S-20": "IN",
     "S-21": "IN",
     "S-30": "NA",
@@ -55,8 +53,6 @@ SCREEN_SPEED_LIMIT: Dict[str, str] = {
     "S-12": "v_max",
     "S-13": "v_max",
     "S-14": "v_max",
-    "S-15": "v_max",
-    "S-16": "v_leash",
     "S-20": "v_slow",
     "S-21": "v_slow",
     "S-30": "v_check",
@@ -89,7 +85,7 @@ _ZONE_PRIORITY = ("IN", "NA", "OUT")
 # `v_calib`(0.15) と `v_slow` の間に置いた。measured 値が入って本当に想定と違えば
 # 上記の A13 が起動を拒否するので、この位置自体が事故を起こすことはない。
 LIMIT_STRICTNESS = (
-    "stop", "v_check", "v_calib", "v_jog_panel", "v_slow", "v_leash", "v_max")
+    "stop", "v_check", "v_calib", "v_jog_panel", "v_slow", "v_max")
 
 
 # attributes.yaml の jog_speed_limit を省略した行のジョグ中の上限名（最も厳しい側）。

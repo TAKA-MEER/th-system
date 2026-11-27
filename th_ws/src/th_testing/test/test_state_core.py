@@ -253,12 +253,12 @@ def _carry_ctx(prev_mode, prev_state, **over):
 
 @pytest.mark.rule("C-11-running")
 def test_carry_resume_running_goes_to_pause(state_core_bundle):
-    """走行中の 9 モードは同モードの PAUSE へ（勝手に走り出さない）。"""
+    """走行中の 7 モードは同モードの PAUSE へ（勝手に走り出さない）。"""
     core, _, _, _ = state_core_bundle
     for prev_mode, run_state in [
             ("FOLLOW", "RUN"), ("MANUAL", "RUN"),
             ("TEACH_FOLLOW", "REC"), ("TEACH_MANUAL", "REC"),
-            ("REPLAY", "RUN"), ("LINE", "RUN"), ("LEASH", "RUN"),
+            ("REPLAY", "RUN"),
             ("PANEL_NAV", "NAV"), ("HOME_NAV", "NAV")]:
         d = core.step("CARRY", "NONE", "ui.carry_resume",
                       _carry_ctx(prev_mode, run_state))
@@ -285,10 +285,6 @@ def test_carry_resume_stopped_returns_to_prev_state(state_core_bundle):
             ("TEACH_MANUAL", "SAVED"),
             ("REPLAY", "ROUTE_SEL"), ("REPLAY", "READY"), ("REPLAY", "PAUSE"),
             ("REPLAY", "SAVED"),
-            ("LINE", "SETUP"), ("LINE", "PLANNED"), ("LINE", "PAUSE"),
-            ("LINE", "ARRIVED"),
-            ("LEASH", "DEV_CHECK"), ("LEASH", "READY"), ("LEASH", "HOLD"),
-            ("LEASH", "PAUSE"),
             ("PANEL_NAV", "PAUSE"),
             ("HOME_NAV", "PAUSE")]:
         d = core.step("CARRY", "NONE", "ui.carry_resume",
@@ -744,12 +740,12 @@ def _resume_ctx(prev_mode, prev_state, **over):
 
 @pytest.mark.rule("C-09c-running")
 def test_estop_resume_running_goes_to_pause(state_core_bundle):
-    """走行中の 9 モードは同モードの PAUSE へ（勝手に走り出さない）。"""
+    """走行中の 7 モードは同モードの PAUSE へ（勝手に走り出さない）。"""
     core, _, _, _ = state_core_bundle
     for prev_mode, run_state in [
             ("FOLLOW", "RUN"), ("MANUAL", "RUN"),
             ("TEACH_FOLLOW", "REC"), ("TEACH_MANUAL", "REC"),
-            ("REPLAY", "RUN"), ("LINE", "RUN"), ("LEASH", "RUN"),
+            ("REPLAY", "RUN"),
             ("PANEL_NAV", "NAV"), ("HOME_NAV", "NAV")]:
         d = core.step("ESTOP", "NONE", "ui.resume_yes",
                       _resume_ctx(prev_mode, run_state))
@@ -773,10 +769,6 @@ def test_estop_resume_stopped_returns_to_prev_state(state_core_bundle):
             ("TEACH_MANUAL", "SAVED"),
             ("REPLAY", "ROUTE_SEL"), ("REPLAY", "READY"), ("REPLAY", "PAUSE"),
             ("REPLAY", "SAVED"),
-            ("LINE", "SETUP"), ("LINE", "PLANNED"), ("LINE", "PAUSE"),
-            ("LINE", "ARRIVED"),
-            ("LEASH", "DEV_CHECK"), ("LEASH", "READY"), ("LEASH", "HOLD"),
-            ("LEASH", "PAUSE"),
             ("PANEL_NAV", "PAUSE"),
             ("HOME_NAV", "PAUSE")]:
         # AT_HOME/PAUSE は C-09c-at-home（IDLE_H）が先に拾うためここに含めない。
@@ -1238,7 +1230,6 @@ def test_presence_lost_pauses_only_when_driving(state_core_bundle):
                              ("MANUAL", "RUN", "PAUSE"),
                              ("TEACH_FOLLOW", "REC", "PAUSE"),
                              ("REPLAY", "RUN", "PAUSE"),
-                             ("LINE", "RUN", "PAUSE"),
                              ("PANEL_NAV", "NAV", "PAUSE"),
                              ("PANEL_NAV", "ALIGN", "PAUSE"),
                              ("SUMMON", "ALIGN", "PAUSE"),

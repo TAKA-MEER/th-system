@@ -78,7 +78,7 @@ def test_screen_not_interacting_is_excluded():
 # ============================================================
 @pytest.mark.parametrize("screen_id,expected_zone,expected_limit", [
     ("S-10", "OUT", "v_max"),
-    ("S-16", "OUT", "v_leash"),
+    ("S-11", "OUT", "v_max"),
     ("S-20", "IN", "v_slow"),
     ("S-21", "IN", "v_slow"),
     ("S-30", "NA", "v_check"),
@@ -122,8 +122,8 @@ def test_na_stop_screen_wins_over_out_v_max():
 
 def test_multiple_screens_take_minimum_speed_limit_not_zone_priority():
     now = 10_000
-    # S-30 (NA/v_check) と S-16 (OUT/v_leash) の同時使用。
-    # v_check と v_leash のどちらが厳しいかは LIMIT_STRICTNESS の順序が決める
+    # S-30 (NA/v_check) と S-20 (IN/v_slow) の同時使用。
+    # v_check と v_slow のどちらが厳しいかは LIMIT_STRICTNESS の順序が決める
     # （テストは「NA 側の画面が居合わせても IN の緩い上限へは絶対に倒れない」
     #   ことだけを直接保証する。実際の厳しさ順は zones.py の定義そのものを見る）。
     screens = {
@@ -141,11 +141,11 @@ def test_multiple_out_screens_take_minimum():
     now = 10_000
     screens = {
         "c1": _screen("S-10", now),  # OUT / v_max
-        "c2": _screen("S-16", now),  # OUT / v_leash
+        "c2": _screen("S-11", now),  # OUT / v_max
     }
     limits = derive_limits(screens, now_ms=now, ui_active_window_s=_WINDOW_S)
     assert limits.zone == "OUT"
-    assert limits.speed_limit == "v_leash"  # v_max より厳しい
+    assert limits.speed_limit == "v_max"
 
 
 def test_mixed_freshness_only_active_screens_count():

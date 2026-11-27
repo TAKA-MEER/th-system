@@ -208,7 +208,7 @@ class TestStateManagerNode(unittest.TestCase):
             get_package_prefix('th_state'), 'lib', 'th_state', 'state_manager.py')
         src = open(path, encoding='utf-8').read()
         modes = {"INIT", "IDLE", "ESTOP", "CARRY", "FOLLOW", "MANUAL", "TEACH_FOLLOW",
-                  "TEACH_MANUAL", "REPLAY", "LINE", "LEASH", "PREP", "PANEL_NAV", "AT_PANEL",
+                  "TEACH_MANUAL", "REPLAY", "PREP", "PANEL_NAV", "AT_PANEL",
                   "SUMMON", "HOME_NAV", "OPCHECK", "CALIB"}
         bad = [n.value for n in ast.walk(ast.parse(src))
                if isinstance(n, ast.Constant) and n.value in modes]

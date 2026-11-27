@@ -32,8 +32,6 @@ DRIVE_STATES = frozenset({
     # §2.1 の自律系の走行（2026-10-14 の spec 改定で追加）。
     ("FOLLOW", "RUN"),
     ("TEACH_FOLLOW", "REC"),
-    ("LINE", "RUN"),
-    ("LEASH", "RUN"),
 })
 
 # run_state（attributes.yaml）を持つが §11 の表に無く鳴らさないもの。

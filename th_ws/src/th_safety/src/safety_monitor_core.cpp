@@ -95,8 +95,6 @@ const std::map<std::string, std::set<std::string>>& default_mode_states() {
       {"TEACH_FOLLOW", {"ROUTE_SEL", "REC", "PAUSE", "SAVED"}},
       {"TEACH_MANUAL", {"ROUTE_SEL", "REC", "PAUSE", "SAVED"}},
       {"REPLAY", {"ROUTE_SEL", "LOCALIZE", "READY", "RUN", "PAUSE", "SAVED"}},
-      {"LINE", {"SETUP", "PLANNED", "RUN", "PAUSE", "ARRIVED"}},
-      {"LEASH", {"DEV_CHECK", "READY", "RUN", "HOLD", "PAUSE"}},
       {"PREP", {"MAPPING", "REGISTER", "RETURN", "EDIT", "SAVED", "PAUSE"}},  // PAUSE は RETURN 中だけ（Spec-modes.md §3.0-② 追記・1b-1 SG-A7）
       {"PANEL_NAV", {"NAV", "BLOCKED", "PAUSE", "ALIGN"}},
       {"AT_PANEL", {"IDLE_P", "WORKING", "PAUSE"}},

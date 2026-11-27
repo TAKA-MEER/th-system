@@ -39,7 +39,7 @@ _SPEC_ID_RE = re.compile(r"SM-3\.1\.[12]-\d+[a-z]?")
 # SM-3.1.1-14 = 12。2026-10-22 に C-11-blocked を廃して 11。
 SPEC_FANOUT = {
     "SM-3.1.1-03": 2, "SM-3.1.1-04": 2, "SM-3.1.1-05": 2,
-    "SM-3.1.1-10": 4, "SM-3.1.1-11": 15, "SM-3.1.1-14": 11, "SM-3.1.2-004": 2, "SM-3.1.2-038": 2,
+    "SM-3.1.1-10": 4, "SM-3.1.1-11": 15, "SM-3.1.1-14": 11, "SM-3.1.2-004": 2,
     "SM-3.1.2-043": 2,     "SM-3.1.2-069": 3, "SM-3.1.2-094": 4,
     # 1b-7 SG-B11: SM-3.1.2-017 は T-TEACH-05（ui.run 拒否）と T-TEACH-05J
     # （ui.jog.hold 拒否。C-01 が SAVED を抜ける穴塞ぎ）の 2 行。
@@ -54,9 +54,9 @@ SPEC_FANOUT = {
     # WORKING の拒否行 T-ATP-05-working（拒否理由 working_in_progress を返す）の 2 行。
     "SM-3.1.2-066": 2,
     # 1b-11 SG-B13: SM-3.1.1-15 は C-13（遷移）に加え、前提の拒否行
-    # C-13-replay-no-route（no_route_recorded）・C-13-leash-no-device
-    # （device_not_connected）の 3 行。
-    "SM-3.1.1-15": 3,
+    # C-13-replay-no-route（no_route_recorded）の 2 行。
+    # C-13-leash-no-device は LINE/LEASH 廃止（2026-11-27 D7）で削除。
+    "SM-3.1.1-15": 2,
     # SM-3.1.1-19（2026-11-10）: 運用入口の拒否。モード選択（IDLE/MANUAL）・
     # IDLE の行き先選択・AT_HOME の行き先選択の 3 行。
     "SM-3.1.1-19": 3,
@@ -153,7 +153,6 @@ _STATIC_GUARD_OVERRIDES = {
     "no_critical_fault": {"fault_severity": ""},
     "hw_released": {"hw_estop": False},
     "hw_released_and_no_critical": {"hw_estop": False, "fault_severity": ""},
-    "leash_slack": {"leash_taut": False},
     "can_finish": {},
     "goto_allowed": {"flags": {"working": False}, "arg": {"kind": "HOME"}},
     "goto_summon": {"flags": {"working": False}, "arg": {"kind": "SUMMON"}},
@@ -172,9 +171,6 @@ _STATIC_GUARD_OVERRIDES = {
     "map_update_off": {},
     # 1b-11 SG-B13: 方式選択の前提の拒否行ガード。
     "enter_replay_no_route": {"route_ids": (), "arg": {"mode": "REPLAY"}},
-    "enter_leash_no_device": {"leash_present": False, "arg": {"mode": "LEASH"}},
-    "line_visible": {"line_visible": True},
-    "leash_taut": {"leash_taut": True},
     "preview_sane": {"calib_preview_sane": True},
     "check_result_ok": {"check_result": "OK"},
     "ng_and_calibrable": {"check_result": "NG", "check_item": "IMU"},
@@ -260,8 +256,7 @@ def _base_ctx_kwargs():
         target_selected=False, target_confident=False,
         fault_active=False, fault_severity="", fault_type="",
         hw_estop=False, ui_estop=False,
-        route_ids=(), pin_kinds=(), leash_present=False, leash_taut=False,
-        line_visible=False, camera_present=False,
+        route_ids=(), pin_kinds=(), camera_present=False,
         check_item="", check_result="", calib_item="", calib_preview_sane=False,
         map_update_available=False, now_ms=0, arg={},
     )
