@@ -138,7 +138,7 @@
 
 ## 5. モックアップについて
 
-[mockup/index.html](mockup/index.html) は**見た目と操作感を確かめるための静的 HTML**である。
+[mockup/index.html](mockup/index.html) は**見た目と操作感を確かめるための静的 HTML**である（2026-11-27 に画面の作り直しの版へ置き換えた。右の欄の切り替えは比べるための別案で、既定の表示が Spec-webui.md に当たる）。
 
 | 項目 | 内容 |
 | --- | --- |
