@@ -292,12 +292,6 @@ if(BUILD_TESTING)
     test/test_pin_clearance_core.py
     TIMEOUT 30)
 
-  # 待機場所宣言コア (Spec-onsite §4.0。姿勢オフセット・許容差判定。
-  # th_onsite の純ロジック。ROS2 不要)
-  ament_add_pytest_test(test_home_declare_core
-    test/test_home_declare_core.py
-    TIMEOUT 30)
-
   # 機体姿勢ピン登録コア (REG-2。HOME 置換 / PANEL 連番の pin dict 構築。
   # th_onsite の純ロジック。ROS2 不要)
   ament_add_pytest_test(test_robot_pose_register_core
@@ -968,13 +962,6 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_venue_nav_venue_unloaded_node
     test/test_venue_nav_venue_unloaded_node.py
     TIMEOUT 400)
-
-  # 待機場所宣言の配線（DetailedDesign-onsite.md §9 #10。Gazebo なしの
-  # launch_testing で pin_registrar＋home_declarer を起動し、TF をずらして
-  # 照合・force・ピン変更時の解除・境界を検証。積算は venue_nav と同じ 240 秒枠）
-  ament_add_pytest_test(test_home_declarer_node
-    test/test_home_declarer_node.py
-    TIMEOUT 240)
 
   # 方式選択の前提・地図更新の保存（1b-11 SG-B13・SG-B14）。state_manager を起動し、
   # 経路 0 本・デバイス未接続・地図の有無が本番の配線で効くことを縛る。

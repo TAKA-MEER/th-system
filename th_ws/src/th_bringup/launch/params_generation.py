@@ -101,7 +101,7 @@ REGISTRY_NODES: tuple[str, ...] = (
     # 試験場内用の 2 個目のインスタンス。同じ行を消費する（registry の consumers に併記）。
     # map_downsampler.yaml を別名ノードで読むとキーが合わず値が効かない（2026-10-04）。
     "onsite_map_downsampler",
-    # W-13: pin_registrar / venue_navigator / wait_clear_gate / home_declarer /
+    # W-13: pin_registrar / venue_navigator / wait_clear_gate /
     # person_tracker_bridge を足す。REGISTRY_NODES は A8 の対象を絞るだけ
     # （生成は consumers 駆動）。placeholder 行（person_position_sigma_m /
     # tracker_lost_grace_ms / replay_drift_m_per_100m）はいずれも
@@ -109,7 +109,6 @@ REGISTRY_NODES: tuple[str, ...] = (
     "pin_registrar",
     "venue_navigator",
     "wait_clear_gate",
-    "home_declarer",
     "person_tracker_bridge",
     # WP-MAINT-01: opcheck_runner は registry.yaml の motor_* ほか OPCHECK 行
     # （consumers に入っている行）を生成 yaml に載せる。新規行のみで blocking

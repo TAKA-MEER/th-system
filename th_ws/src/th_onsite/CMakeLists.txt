@@ -12,7 +12,6 @@ install(PROGRAMS
   scripts/pin_registrar.py
   scripts/wait_clear_gate.py
   scripts/venue_navigator.py
-  scripts/home_declarer.py
   DESTINATION lib/${PROJECT_NAME})
 
 ament_package()

@@ -38,8 +38,6 @@ _W13_NODES = {
                                     "venue_navigator.py"),
     "wait_clear_gate": os.path.join(_REPO_SRC, "th_onsite", "scripts",
                                     "wait_clear_gate.py"),
-    "home_declarer": os.path.join(_REPO_SRC, "th_onsite", "scripts",
-                                  "home_declarer.py"),
     "person_tracker_bridge": os.path.join(_REPO_SRC, "th_perception", "scripts",
                                           "person_tracker_bridge.py"),
 }
@@ -290,7 +288,7 @@ def _generated_yaml_refs(node_call: ast.Call) -> list:
 
 def test_launch_passes_generated_yaml():
     for name in ("pin_registrar", "venue_navigator", "wait_clear_gate",
-                 "home_declarer", "person_tracker_bridge"):
+                 "person_tracker_bridge"):
         nodes = _bringup_nodes_by_name(name)
         assert nodes, f"bringup に name={name!r} が無い"
         for node in nodes:

@@ -525,28 +525,6 @@
   spec_ref: "DetailedDesign-names.md §7.2"
   note: "暫定値（P1 fail-slow）"
 
-- name: home_declare_tolerance_m
-  unit: m
-  class: b
-  status: given
-  value: 0.30
-  consumers: [home_declarer]
-  spec_ref: "DetailedDesign-names.md §7.2"
-  note: "home_declarer.py の既定値（変更なし）。旧値 0.1・旧 consumers
-    venue_navigator は未使用のままずれていた。W-13 で live 値と実際の
-    消費者に合わせた。暫定値"
-
-- name: home_declare_tolerance_deg
-  unit: deg
-  class: b
-  status: given
-  value: 15.0
-  consumers: [home_declarer]
-  spec_ref: "DetailedDesign-names.md §7.2"
-  note: "home_declarer.py の既定値（変更なし）。旧値 5.0・旧 consumers
-    venue_navigator は未使用のままずれていた。W-13 で live 値と実際の
-    消費者に合わせた。暫定値"
-
 - name: align_tolerance_rad
   unit: rad
   class: b
