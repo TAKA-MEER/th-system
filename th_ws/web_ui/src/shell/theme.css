@@ -115,10 +115,10 @@ table{border-collapse:collapse;width:100%}
    フォルト文が長いときにこれが起きて「画面名／モードだけ下の行に落ちる」
    という変形になっていた。nowrap にして、足りない分は #screenName 自身の
    ellipsis に吸収させる（元々 max-width:559px の分岐だけがこうしていた）。 */
-#hdr .row1{display:flex;align-items:center;gap:8px;padding:7px 10px;flex-wrap:nowrap;min-width:0}
+#hdr .row1{display:flex;align-items:center;gap:8px;padding:7px 10px;flex-wrap:nowrap;min-width:0;color:#fff} /* 青い帯の上の文字は白（モックアップのヘッダ。#screenName・.proj はここから継ぐ） */
 #logo{height:30px;background:#fff;border-radius:5px;padding:3px 6px;flex:0 0 auto}
 #logo img{height:100%;display:block}
-.proj{font-size:calc(var(--fs) * .66);color:var(--brand-lt);letter-spacing:.02em;line-height:1.25;flex:0 0 auto}
+.proj{font-size:calc(var(--fs) * .66);color:#fff;letter-spacing:.02em;line-height:1.25;flex:0 0 auto}
 .proj b{display:block;font-size:calc(var(--fs) * .8);color:#fff;font-weight:700}
 #hdr .spacer{flex:1 1 auto}
 /* DetailedDesign-webui.md §2.5: screen name and mode are the largest text in the header */
