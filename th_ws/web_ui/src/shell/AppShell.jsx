@@ -113,6 +113,13 @@ function AppShellInner({ screenName, screenId, children }) {
   const [jogOpen, setJogOpen] = useState(false)
   // A-15: W-6 を開いている間の心拍（スティックに触れていなくても自動ブレーキを切り替えられる）。
   useManualPanelHeartbeat(ros, jogOpen)
+  // 状態が変わったら W-6 は閉じる（心拍も止まり、機体が自動ブレーキを ON に戻す）。
+  const jogModeStateRef = useRef(null)
+  useEffect(() => {
+    const key = `${state?.mode}/${state?.state}`
+    if (jogModeStateRef.current != null && jogModeStateRef.current !== key) setJogOpen(false)
+    jogModeStateRef.current = key
+  }, [state?.mode, state?.state])
   const jogPanelApi = useMemo(() => ({
     isOpen: jogOpen,
     open: () => setJogOpen(true),

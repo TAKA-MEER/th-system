@@ -944,6 +944,9 @@ table.lst td.r{text-align:right}
 .tracker-side.off.on{background:var(--panel);color:var(--tx)}
 .tracker-side.onside.on{background:var(--ok);color:#fff}
 .tracker-side:not(.on){background:transparent;color:var(--dim)}
+/* 自動ブレーキのロック（§3.5）: 鍵印の「入」。1回目で黄の「もう一度押すと外す」。 */
+.lockb{display:inline-flex;align-items:center;gap:8px;min-height:56px}
+.lockb.armed{background:var(--caution);border-color:var(--tx);color:var(--tx)}
 
 /* 横長の S-40 LiDAR 死角: 図（420px 四方）を縦に積むと右列のカードが本文を 213px 超える。
    図を左、説明・一覧・ボタンを右に並べる（図は 270px まで。扇形の指定には足りる）。 */

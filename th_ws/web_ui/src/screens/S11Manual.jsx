@@ -24,10 +24,8 @@
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useLimiterStatus } from '../ros/useLimiterStatus.js'
-import { useSetFlag, AUTO_BRAKE_FLAG } from '../ros/useSetFlag.js'
-import { useConfirmWindow } from '../shell/confirmWindow.js'
-import { canToggleAutoBrake, autoBrakeNeedsConfirm, showApproachWarning, approachDistance, approachIsAround } from '../shell/autoBrake.js'
-import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
+import { canToggleAutoBrake, showApproachWarning, approachDistance, approachIsAround } from '../shell/autoBrake.js'
+import AutoBrakeLockToggle from '../parts/AutoBrakeLockToggle.jsx'
 import OperationCard from '../shell/OperationCard.jsx'
 import DriveTab from './driveTab.jsx'
 import { obstacleWarning } from '../shell/limits.js'
@@ -35,16 +33,13 @@ import attributes from '../generated/attributes.json'
 import {
   S11_TAB_DRIVE, S11_OBSTACLE_TITLE, S11_OBSTACLE_WARN, S11_OBSTACLE_STOP,
   S11_OBSTACLE_PASS, S11_OBSTACLE_UNKNOWN, S11_AUTO_BRAKE_LABEL,
-  S11_AUTO_BRAKE_OFF, S11_AUTO_BRAKE_ON, S11_REAR_TITLE, S11_REAR_NOTE,
-  S11_MANUAL_TITLE, S11_AUTO_BRAKE_TO_OFF, S11_AUTO_BRAKE_TO_ON,
-  S11_AUTO_BRAKE_HINT_OFF, S11_AUTO_BRAKE_CONFIRM_TITLE, S11_AUTO_BRAKE_CONFIRM_BODY,
-  S11_AUTO_BRAKE_CONFIRM_YES, S11_AUTO_BRAKE_CONFIRM_NO, S11_APPROACH_WARNING,
+  S11_REAR_TITLE, S11_REAR_NOTE,
+  S11_MANUAL_TITLE, S11_APPROACH_WARNING,
   S11_APPROACH_WARN, S11_APPROACH_WARN_AROUND,
 } from '../i18n/screens.js'
 import { stateLabel } from '../i18n/states.js'
 import { OP_LABELS } from '../i18n/states.js'
 import { useState } from 'react'
-import { createPortal } from 'react-dom'
 
 // 自動ブレーキの表示 (T1-5)。既定は attributes.json の
 // MANUAL.auto_brake_default から引く——画面にハードコードしない (U-6)。
@@ -69,46 +64,9 @@ export default function S11Manual({ onFinish }) {
   const approach = showApproachWarning(limiter, brake)
   const stateName = state?.state ?? null
 
-  // 1b-15 SG-B10: 切替。ON→OFF だけ W-4（確認）を挟む。OFF→ON は確認なし。
-  // 受理は機体が決める（拒否されたら理由を出す）。画面の表示は /system/state に従う
-  // ——押した直後に勝手に切り替わった見た目にしない。
-  const setFlag = useSetFlag()
-  const confirmWindow = useConfirmWindow()
-  const [confirmOff, setConfirmOff] = useState(false)
-  const [brakeError, setBrakeError] = useState(null)
+  // 切替はロック付き部品（ON→OFF はロックの2回押し。W-4 は使わない）。
+  // 受理は機体が決める。表示は /system/state に従う。
   const canToggle = !disabledAll && canToggleAutoBrake(state, attributes, stale)
-
-  async function requestAutoBrake(next) {
-    setBrakeError(null)
-    try {
-      const res = await setFlag(AUTO_BRAKE_FLAG, next, 's11-auto-brake')
-      if (!res?.accepted) {
-        setBrakeError(reasonLabel(res?.reject_reason_key) ?? UNKNOWN_REASON_LABEL)
-      }
-    } catch {
-      setBrakeError(UNKNOWN_REASON_LABEL)
-    }
-  }
-
-  function handleToggle() {
-    const next = !brake
-    if (autoBrakeNeedsConfirm(brake, next)) {
-      setConfirmOff(true)
-      confirmWindow.open()
-      return
-    }
-    requestAutoBrake(next)
-  }
-
-  function closeConfirm() {
-    setConfirmOff(false)
-    confirmWindow.close()
-  }
-
-  function confirmYes() {
-    closeConfirm()
-    requestAutoBrake(false)
-  }
 
   // 終了 → ui.finish → 承認で S-01 へ戻る (DetailedDesign-wp3.md §3.2)。
   // 拒否されたら何もしない（遷移表から外れた状態では S-01 に戻れないので、
@@ -154,27 +112,8 @@ export default function S11Manual({ onFinish }) {
             )}
             <div className="row mt">
               <span className="grow sm">{S11_AUTO_BRAKE_LABEL}</span>
-              <span className={`pill ${brake ? 'ok' : ''}`} data-testid="s11-auto-brake">
-                {brake ? S11_AUTO_BRAKE_ON : S11_AUTO_BRAKE_OFF}
-              </span>
-              {/* 1b-15 SG-B10: 切替。手動系とジョグ中だけ押せる（自律系は無効化不可。
-                  Spec-safety.md §2.1）。押せない状態では無効にする。 */}
-              <button
-                type="button"
-                className="btn sm"
-                data-testid="s11-auto-brake-toggle"
-                disabled={!canToggle}
-                onClick={handleToggle}
-              >
-                {brake ? S11_AUTO_BRAKE_TO_OFF : S11_AUTO_BRAKE_TO_ON}
-              </button>
+              <AutoBrakeLockToggle brake={brake} canToggle={canToggle} prefix="s11" mode={state?.mode} stateName={stateName} />
             </div>
-            {brake === false && (
-              <div className="note mt" data-testid="s11-auto-brake-off-hint">{S11_AUTO_BRAKE_HINT_OFF}</div>
-            )}
-            {brakeError && (
-              <div className="note mt" data-testid="s11-auto-brake-error">{brakeError}</div>
-            )}
           </div>
           <div className="card">
             <h3>{S11_REAR_TITLE}</h3>
@@ -201,23 +140,7 @@ export default function S11Manual({ onFinish }) {
         <div className="state">{stateLabel(stateName)}</div>
       </div>
 
-      {confirmOff && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(
-        <>
-          <header>{S11_AUTO_BRAKE_CONFIRM_TITLE}</header>
-          <div className="bodyw" data-testid="s11-auto-brake-confirm">
-            <p>{S11_AUTO_BRAKE_CONFIRM_BODY}</p>
-          </div>
-          <footer>
-            <button type="button" className="btn" data-testid="s11-auto-brake-confirm-no" onClick={closeConfirm}>
-              {S11_AUTO_BRAKE_CONFIRM_NO}
-            </button>
-            <button type="button" className="btn danger" data-testid="s11-auto-brake-confirm-yes" onClick={confirmYes}>
-              {S11_AUTO_BRAKE_CONFIRM_YES}
-            </button>
-          </footer>
-        </>,
-        confirmWindow.mountNode,
-      )}
+
     </div>
   )
 }

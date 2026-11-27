@@ -349,14 +349,16 @@ export default function Windows({
         </div>
         {/* A-15: 表示を切替にする（Spec-webui §3.5 ジョグ介入）。W-6 を開いている間は
             スティックに触れていなくても押せる（開いている間の心拍は AppShell の
-            useManualPanelHeartbeat。機体が最終判断。拒否の理由は出す）。ON→OFF は W-4 で確認する。
+            useManualPanelHeartbeat。機体が最終判断。拒否の理由は出す）。ON→OFF はロックの2回押し。
             閉じる・状態が変わる・心拍の途絶で機体が ON に戻す。 */}
         <div className="jw-s" data-testid="w6-auto-brake-ctl">
           <AutoBrakeToggle
             brake={autoBrake ?? null}
             canToggle={autoBrakeCanToggle && jogOpen}
             prefix="w6"
-            confirmWindow={confirmWindow}
+            statusTestId="w6-auto-brake-toggle-state"
+            mode={mode}
+            stateName={stateName}
           />
         </div>
         <JogConsole ros={ros} disabled={!jogOpen} keyboard inZone={isInZoneScreen(screenId)} />

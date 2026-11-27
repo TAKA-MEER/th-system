@@ -1,4 +1,4 @@
-// 1b-15 SG-B10: S-11 の自動ブレーキ切替・確認（W-4）・OFF 中の接近警告。
+// 1b-15 SG-B10: S-11 の自動ブレーキ切替（ロックの2回押し）・OFF 中の接近警告。
 //
 // 「ボタンがある」ではなく「押すと機体へ要求が送られる」ことを見る
 // （s11-stop-sends-ui-stop.spec.js と同じ理由。DetailedDesign-wp3.md §11 c6）。
@@ -35,7 +35,7 @@ test('OFF -> ON sends the request without a confirmation', async ({ page }) => {
   expect(calls.map((c) => [c.flag, c.value])).toEqual([['auto_brake', true]])
 })
 
-test('ON -> OFF asks first; "yes" sends the request, nothing before', async ({ page }) => {
+test('ON -> OFF: 1回目は黄「もう一度押すと外す」で送信なし、2回目で送る', async ({ page }) => {
   await stubAccepted(page)
   await gotoScreenWithLimiter(page, 'S11',
     { mode: 'MANUAL', state: 'PAUSE', zone: 'IN', auto_brake: true }, LIMITER_PASS)
@@ -44,26 +44,23 @@ test('ON -> OFF asks first; "yes" sends the request, nothing before', async ({ p
 
   await page.getByTestId('s11-auto-brake-toggle').click()
 
-  await expect(page.getByTestId('s11-auto-brake-confirm')).toBeVisible()
-  expect(await flagCalls(page), '確認の前に要求を送ってはいけない').toEqual([])
-
-  await page.getByTestId('s11-auto-brake-confirm-yes').click()
+  await expect(page.getByTestId('s11-auto-brake-toggle')).toContainText('もう一度押すと外す')
+  expect(await flagCalls(page), '2回目までは要求を送ってはいけない').toEqual([])
+  await page.getByTestId('s11-auto-brake-toggle').click()
   const calls = await flagCalls(page)
   expect(calls.map((c) => [c.flag, c.value])).toEqual([['auto_brake', false]])
-  await expect(page.getByTestId('s11-auto-brake-confirm')).toHaveCount(0)
 })
 
-test('ON -> OFF: "no" closes the window and sends nothing', async ({ page }) => {
+test('ON -> OFF: 押さなければ何も送らない', async ({ page }) => {
   await stubAccepted(page)
   await gotoScreenWithLimiter(page, 'S11',
     { mode: 'MANUAL', state: 'PAUSE', zone: 'IN', auto_brake: true }, LIMITER_PASS)
   await page.locator('#s11').waitFor()
   await page.getByTestId('s11-auto-brake-toggle').click()
-  await expect(page.getByTestId('s11-auto-brake-confirm')).toBeVisible()
-
-  await page.getByTestId('s11-auto-brake-confirm-no').click()
-
-  await expect(page.getByTestId('s11-auto-brake-confirm')).toHaveCount(0)
+  await expect(page.getByTestId('s11-auto-brake-toggle')).toContainText('もう一度押すと外す')
+  // 押さなければロックは約3秒で戻り、何も送らない。
+  await page.waitForTimeout(3200)
+  await expect(page.getByTestId('s11-auto-brake-toggle')).not.toContainText('もう一度押すと外す')
   expect(await flagCalls(page)).toEqual([])
   await expect(page.getByTestId('s11-auto-brake')).toHaveText('ON')
 })

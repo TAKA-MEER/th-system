@@ -17,7 +17,6 @@
 // 始まる。操作カードは stop（ui.stop）と save（ui.save）だけ。走行の契機は
 // スティックだけ（S-11 の T1-4 と同じ）。
 import { useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useSystemState } from '../ros/useSystemState.js'
 import { useTrigger } from '../ros/useTrigger.js'
 import { useLimiterStatus } from '../ros/useLimiterStatus.js'
@@ -27,10 +26,9 @@ import { useRoutePreview } from '../ros/useRoutePreview.js'
 import { useOdomPose } from '../ros/useOdomPose.js'
 import { useRoutePose } from '../ros/useRoutePose.js'
 import { useRouteMap } from '../ros/useRouteMap.js'
-import { useSetFlag, AUTO_BRAKE_FLAG } from '../ros/useSetFlag.js'
-import { useConfirmWindow } from '../shell/confirmWindow.js'
-import { canToggleAutoBrake, autoBrakeNeedsConfirm, showApproachWarning, approachDistance, approachIsAround } from '../shell/autoBrake.js'
-import { reasonLabel, UNKNOWN_REASON_LABEL } from '../i18n/reasons.js'
+import { canToggleAutoBrake, showApproachWarning, approachDistance, approachIsAround } from '../shell/autoBrake.js'
+import AutoBrakeLockToggle from '../parts/AutoBrakeLockToggle.jsx'
+import { reasonLabel } from '../i18n/reasons.js'
 import RoutePreview from './RoutePreview.jsx'
 import { mapSaveWarningVisible } from './routeMapWarning.js'
 import OperationCard from '../shell/OperationCard.jsx'
@@ -41,10 +39,8 @@ import attributes from '../generated/attributes.json'
 import {
   S11_TAB_DRIVE, S11_OBSTACLE_TITLE, S11_OBSTACLE_WARN, S11_OBSTACLE_STOP,
   S11_OBSTACLE_PASS, S11_OBSTACLE_UNKNOWN, S11_AUTO_BRAKE_LABEL,
-  S11_AUTO_BRAKE_OFF, S11_AUTO_BRAKE_ON, S11_REAR_TITLE, S11_REAR_NOTE,
-  S11_MANUAL_TITLE, S11_AUTO_BRAKE_TO_OFF, S11_AUTO_BRAKE_TO_ON,
-  S11_AUTO_BRAKE_HINT_OFF, S11_AUTO_BRAKE_CONFIRM_TITLE, S11_AUTO_BRAKE_CONFIRM_BODY,
-  S11_AUTO_BRAKE_CONFIRM_YES, S11_AUTO_BRAKE_CONFIRM_NO, S11_APPROACH_WARNING,
+  S11_REAR_TITLE, S11_REAR_NOTE,
+  S11_MANUAL_TITLE, S11_APPROACH_WARNING,
   S11_APPROACH_WARN, S11_APPROACH_WARN_AROUND,
   S13_TAB_TEACH, S13_TEACH_TITLE, S13_ROUTE_NAME_LABEL, S13_ROUTE_NAME_PLACEHOLDER,
   S13_RECORDING, S13_PAUSED, S13_PAUSE_HINT, S13_SAVED, S13_SAVE_FAILED, S13_MAP_SAVE_WARNING, S13_RECORDED_LABEL, S13_POINTS_LABEL,
@@ -118,49 +114,10 @@ export default function S13TeachManual({ onFinish }) {
   // REC/PAUSE 中は記録対象が確定済み、SAVED 後は保存＝確定なので選ばせない。
   const selecting = stateName === 'ROUTE_SEL'
 
-  // 1b-15 SG-B10: 自動ブレーキの切替。S-11 と同じ見た目・同じ経路
-  // （useSetFlag）。ON→OFF だけ W-4（確認）を挟む。OFF→ON は確認なし。
-  // 受理は機体が決める（拒否されたら理由を出す）。画面の表示は /system/state
-  // に従う——押した直後に勝手に切り替わった見た目にしない。
+  // 切替はロック付き部品（ON→OFF はロックの2回押し。W-4 は使わない）。
   const [brake] = useAutoBrake(state)
   const approach = showApproachWarning(limiter, brake)
-  const setFlag = useSetFlag()
-  const confirmWindow = useConfirmWindow()
-  const [confirmOff, setConfirmOff] = useState(false)
-  const [brakeError, setBrakeError] = useState(null)
   const canToggle = !disabledAll && canToggleAutoBrake(state, attributes, stale)
-
-  async function requestAutoBrake(next) {
-    setBrakeError(null)
-    try {
-      const res = await setFlag(AUTO_BRAKE_FLAG, next, 's13-auto-brake')
-      if (!res?.accepted) {
-        setBrakeError(reasonLabel(res?.reject_reason_key) ?? UNKNOWN_REASON_LABEL)
-      }
-    } catch {
-      setBrakeError(UNKNOWN_REASON_LABEL)
-    }
-  }
-
-  function handleToggle() {
-    const next = !brake
-    if (autoBrakeNeedsConfirm(brake, next)) {
-      setConfirmOff(true)
-      confirmWindow.open()
-      return
-    }
-    requestAutoBrake(next)
-  }
-
-  function closeConfirm() {
-    setConfirmOff(false)
-    confirmWindow.close()
-  }
-
-  function confirmYes() {
-    closeConfirm()
-    requestAutoBrake(false)
-  }
 
   // 終了 → ui.finish → 承認で S-01 へ戻る（S11Manual の handleFinish と同じ）。
   async function handleFinish() {
@@ -264,25 +221,8 @@ export default function S13TeachManual({ onFinish }) {
               )}
               <div className="row mt">
                 <span className="grow sm">{S11_AUTO_BRAKE_LABEL}</span>
-                <span className={`pill ${brake ? 'ok' : ''}`} data-testid="s13-auto-brake">
-                  {brake ? S11_AUTO_BRAKE_ON : S11_AUTO_BRAKE_OFF}
-                </span>
-                <button
-                  type="button"
-                  className="btn sm"
-                  data-testid="s13-auto-brake-toggle"
-                  disabled={!canToggle}
-                  onClick={handleToggle}
-                >
-                  {brake ? S11_AUTO_BRAKE_TO_OFF : S11_AUTO_BRAKE_TO_ON}
-                </button>
+                <AutoBrakeLockToggle brake={brake} canToggle={canToggle} prefix="s13" mode={state?.mode} stateName={state?.state ?? null} />
               </div>
-              {brake === false && (
-                <div className="note mt" data-testid="s13-auto-brake-off-hint">{S11_AUTO_BRAKE_HINT_OFF}</div>
-              )}
-              {brakeError && (
-                <div className="note mt" data-testid="s13-auto-brake-error">{brakeError}</div>
-              )}
             </div>
             <div className="card">
               <h3>{S11_REAR_TITLE}</h3>
@@ -448,23 +388,7 @@ export default function S13TeachManual({ onFinish }) {
         )}
       </div>
 
-      {confirmOff && confirmWindow.isOpen && confirmWindow.mountNode && createPortal(
-        <>
-          <header>{S11_AUTO_BRAKE_CONFIRM_TITLE}</header>
-          <div className="bodyw" data-testid="s13-auto-brake-confirm">
-            <p>{S11_AUTO_BRAKE_CONFIRM_BODY}</p>
-          </div>
-          <footer>
-            <button type="button" className="btn" data-testid="s13-auto-brake-confirm-no" onClick={closeConfirm}>
-              {S11_AUTO_BRAKE_CONFIRM_NO}
-            </button>
-            <button type="button" className="btn danger" data-testid="s13-auto-brake-confirm-yes" onClick={confirmYes}>
-              {S11_AUTO_BRAKE_CONFIRM_YES}
-            </button>
-          </footer>
-        </>,
-        confirmWindow.mountNode,
-      )}
+
     </div>
   )
 }
