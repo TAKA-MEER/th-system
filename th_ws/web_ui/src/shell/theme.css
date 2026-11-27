@@ -1085,7 +1085,7 @@ table.lst td.r{text-align:right}
    既存の .screen.two-col と同じ比率・同じ区切りで並べる（主表示と右列）。
    狭いときは縦に積む（縦長）。data-pos の位置は状態で動かない。 */
 #s21 .g-drv{display:flex;flex-direction:column;gap:10px;min-height:0;padding:10px}
-#s21 .g-drv-row{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:10px;align-items:start;min-height:0}
+#s21 .g-drv-row{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(340px,1fr);gap:10px;align-items:start;min-height:0}
 #s21 .g-drv > [data-pos="opbar"]{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 #s21 .content.g-list{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:10px;align-items:start;padding:10px}
 #s21 .mainv{min-width:0}
