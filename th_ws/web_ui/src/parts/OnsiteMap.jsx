@@ -230,6 +230,11 @@ export default function OnsiteMap({
 
   function handlePointerDown(e) {
     if (!t.view) return
+    // ピンを押したときはポインタキャプチャもパンも始めない。キャプチャを取ると
+    // click が svg へ再送出され、ピンの onClick（選択）が届かなくなる
+    // （Spec-webui §3.10「ピンを押すと吹き出し」、§3.11「ピンを押して行き先」）。
+    // tapMode 中はピン選択をしないので通常どおりドラッグのジェスチャーを始める。
+    if (!tapMode && e.target.closest?.('[data-testid*="-map-pin-"]')) return
     try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* noop */ }
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     // 実機確認（2026-09-15）: タブレットでピンチズームができない不具合の対策。
