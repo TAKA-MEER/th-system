@@ -42,9 +42,10 @@ test('mode IDLE: every menu button is enabled (mode_entry.yaml allows all 10 fro
 // 押すと理由ウィンドウ」という挙動なので、専用画面を持たない＝S-01 が
 // 正しく描画されるモードで同じ形を突く。
 // WP-UI-08: OPCHECK は S-30、WP-MAINT-03: CALIB は S-40 ができたため、どちらも S-01 ではなく
-// 専用画面が描画される。今は FOLLOW（mode_entry.json では IDLE にしか行けない）を使う。
-test('mode FOLLOW: 入れないボタンは dis 表示で、押すと mode_entry_denied', async ({ page }) => {
-  await gotoScreen(page, 'S01', { mode: 'FOLLOW', tracker_enabled: true })
+// 専用画面が描画される。UIR-P4: FOLLOW も S-10 へ配線された。今は AUTO_MEASURE（S-60 の画面は
+// まだ無い。mode_entry.yaml に載らないので全ボタンが dis）を使う。
+test('mode AUTO_MEASURE: 入れないボタンは dis 表示で、押すと mode_entry_denied', async ({ page }) => {
+  await gotoScreen(page, 'S01', { mode: 'AUTO_MEASURE', tracker_enabled: true })
 
   const opcheck = page.getByRole('button', { name: '始業点検' })
   await expect(opcheck).toBeEnabled() // clickable so the reason can show, but styled as denied

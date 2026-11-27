@@ -7,14 +7,15 @@
 // resolveScreen が S-30 を返すようになった（gotoScreen の第2引数はどの画面を
 // 開くかの決め手ではない。読むのは state.mode/state.state だけ -- DRIVE_S11
 // の合成画面を除き testScreen は screenRouting.js で使われない）。
-// WP-MAINT-03: CALIB も S-40 ができて MODE_TO_SCREEN に載ったので、今は FOLLOW を例に使う
-// （画面の無いモードは FOLLOW / LEASH / LINE 等）。
+// WP-MAINT-03: CALIB も S-40 ができて MODE_TO_SCREEN に載った。
+// UIR-P4: FOLLOW も S-10 へ配線された。今は AUTO_MEASURE（S-60 の画面は
+// fk-system の準備待ちでまだ無い）を例に使う。
 import { test, expect } from '@playwright/test'
 import { gotoScreen, stubTrigger } from './helpers.js'
 
-test('FOLLOW: finish-escape ボタンが見え、押すと ui.finish を送る', async ({ page }) => {
+test('AUTO_MEASURE: finish-escape ボタンが見え、押すと ui.finish を送る', async ({ page }) => {
   await stubTrigger(page, { 'ui.finish': { accepted: true } })
-  await gotoScreen(page, 'S01', { mode: 'FOLLOW', state: 'RUN' })
+  await gotoScreen(page, 'S01', { mode: 'AUTO_MEASURE', state: 'WAIT' })
 
   const btn = page.getByTestId('s01-finish-escape')
   await expect(btn).toBeVisible()
