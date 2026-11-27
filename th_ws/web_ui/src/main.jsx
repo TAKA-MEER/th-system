@@ -46,6 +46,10 @@ const TEST_SCREEN = typeof window !== 'undefined' ? window.__thTestScreen : unde
 // __thTestReopen で connectOpen の初期値を false にする（e2e/helpers.js の
 // gotoReopen()）。開き直しかどうかは最初に受け取った mode で決まる。
 const TEST_REOPEN = typeof window !== 'undefined' && window.__thTestReopen === true
+// e2e 専用 (§0 原則 4): 中身が例外で落ちても非常停止が残ることの試し。
+// __thTestThrow があれば本文は投げるだけの部品になる。
+const TEST_THROW = typeof window !== 'undefined' && window.__thTestThrow === true
+function ThrowingBody() { throw new Error('e2e: throwing body') }
 
 // e2e 用の DRIVE テスト画面: 常設走行タブ (driveTab) と、W-6 を開く「手動」
 // ボタンだけを並べる。runTestDrive() は __thTestScreen === 'DRIVE_S11' を
@@ -229,9 +233,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       : (
         <SystemStateProvider>
           <FixedStage>
-            {(TEST_MODE && !TEST_SCREEN)
-              ? <AppShell><OperationCardHarness /></AppShell>
-              : <Screens />}
+            {TEST_THROW
+              ? <AppShell screenName="投げる画面"><ThrowingBody /></AppShell>
+              : (TEST_MODE && !TEST_SCREEN)
+                ? <AppShell><OperationCardHarness /></AppShell>
+                : <Screens />}
           </FixedStage>
         </SystemStateProvider>
       )}

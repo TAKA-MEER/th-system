@@ -10,7 +10,7 @@ const EXPECTED = {
   INIT: '起動中',
   IDLE: '待機',
   ESTOP: '非常停止',
-  CARRY: '手押し',
+  CARRY: '非常停止',
   FOLLOW: '追従走行',
   MANUAL: '手動走行',
   TEACH_FOLLOW: '教示（追従）',

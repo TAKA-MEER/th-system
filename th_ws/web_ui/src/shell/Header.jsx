@@ -4,7 +4,7 @@
 // U-1). Never folds the screen name, mode, or the estop button — only the
 // project name / zone pill / screen-name tail may shrink (§2.5, U-10).
 import { LOGO_DATA_URI } from './logo.js'
-import { stateLabel, UNKNOWN_STATE_LABEL } from '../i18n/states.js'
+import { stateLabel, UNKNOWN_STATE_LABEL, stateChipTone, AUTO_BRAKE_OFF_LABEL, ZONE_LIMIT_LABEL } from '../i18n/states.js'
 import { faultLabel } from '../i18n/faults.js'
 import { headerTone } from './limits.js'
 import {
@@ -26,12 +26,14 @@ export default function Header({
   onFaultBadgeClick,
   recentFaultText,
   onRecentFaultClick,
+  autoBrakeOff = false,
 }) {
   // §1: the header reports the current state, never merely the mode.  A
   // mode with no meaningful state deliberately has no pill.
   const stateText = stale ? UNKNOWN_STATE_LABEL : (stateName && stateName !== 'NONE'
     ? stateLabel(stateName) : '')
-  const zoneLabels = zone ? ZONE_LABELS[zone] : null
+  const chipTone = stale ? 'warn' : (mode === 'ESTOP' || mode === 'CARRY' ? 'estop' : stateChipTone(stateName))
+  const showZone = zone === 'IN'
 
   // C-2 (DetailedDesign-wp1.md WP-CARRY-01 §4.3): in CARRY, C-06r rejects
   // every UI estop press server-side, so `.engaged` (the look a *genuinely
@@ -65,11 +67,8 @@ export default function Header({
         <div className="proj">MIRS2602-<b>{PROJECT_NAME_JA}</b></div>
         <div className="spacer" />
         <div id="screenName">{screenName ?? ''}</div>
-        {zoneLabels && (
-          <div id="zonePill" className="show">
-            <span className="z-long">{zoneLabels.long}</span>
-            <span className="z-short">{zoneLabels.short}</span>
-          </div>
+        {showZone && (
+          <div id="zonePill" className="show">{ZONE_LIMIT_LABEL}</div>
         )}
         {devMode && (
           <div id="devPill" className="show">
@@ -77,7 +76,7 @@ export default function Header({
             <span className="d-short">{DEV_MODE_LABEL.short}</span>
           </div>
         )}
-        {stateText && <div id="modePill" className={stale ? 'unknown' : ''}>{stateText}</div>}
+        {stateText && <div id="modePill" data-tone={chipTone} className={stale ? 'unknown' : ''}>{stateText}</div>}
       </div>
       <div className="row2">
         <div id="faultBox" title={AP_SPOF_NOTE}>
@@ -90,6 +89,9 @@ export default function Header({
               {recentFaultText}
             </button>
           )}
+          {autoBrakeOff && !stale && mode !== 'ESTOP' && mode !== 'CARRY' && (
+            <span id="autoBrakeOff" role="alert">{AUTO_BRAKE_OFF_LABEL}</span>
+          )}
           <span className="spacer grow" />
           {faultBadgeVisible && (
             <button id="faultBadge" className="show" onClick={onFaultBadgeClick}>
@@ -97,13 +99,15 @@ export default function Header({
             </button>
           )}
         </div>
-        <button
-          id="estopBtn"
-          className={estopClass}
-          onClick={onEstopClick}
-        >
-          {ESTOP_BUTTON_LABEL}
-        </button>
+        <div className="estop-plate">
+          <button
+            id="estopBtn"
+            className={estopClass}
+            onClick={onEstopClick}
+          >
+            {ESTOP_BUTTON_LABEL}
+          </button>
+        </div>
       </div>
     </header>
   )

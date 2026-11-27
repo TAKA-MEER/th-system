@@ -64,25 +64,17 @@ test('(c) run_state の無いモード（AT_HOME）は従来どおり: 確認後
   await expect(win(page)).toHaveCount(0)
 })
 
-test('(d) 走行モード（PANEL_NAV）: 「はい」で機体が pause_reason を戻すと閉じる', async ({ page }) => {
+test('(d) 走行モード（PANEL_NAV）: 「確認」(ui.resume_ack) で機体が pause_reason を戻すと閉じる', async ({ page }) => {
   await gotoWithState(page, { mode: 'PANEL_NAV', state: 'NAV', pause_reason: '' })
   await setTestState(page, { state: 'PAUSE', pause_reason: 'fault' })
   await setTestFault(page, { active: true, ...FT })
   await setTestFault(page, { active: false, ...FT })
   await expect(win(page)).toBeVisible()
-  await win(page).getByRole('button', { name: 'はい' }).click()
-  expect(await triggers(page)).toContain('ui.resume_yes')
-  await setTestState(page, { state: 'PAUSE', pause_reason: '' })
-  await expect(win(page)).toHaveCount(0)
-})
-
-test('(d2) 走行モード（PANEL_NAV）: 「いいえ」でも同様に閉じる', async ({ page }) => {
-  await gotoWithState(page, { mode: 'PANEL_NAV', state: 'NAV', pause_reason: '' })
-  await setTestState(page, { state: 'PAUSE', pause_reason: 'fault' })
-  await setTestFault(page, { active: true, ...FT })
-  await setTestFault(page, { active: false, ...FT })
-  await win(page).getByRole('button', { name: 'いいえ' }).click()
-  expect(await triggers(page)).toContain('ui.resume_no')
+  // D48: 「はい／いいえ」は廃止。「確認」だけ（SM-3.1.1-05）。
+  await expect(win(page).getByRole('button', { name: 'はい' })).toHaveCount(0)
+  await expect(win(page).getByRole('button', { name: 'いいえ' })).toHaveCount(0)
+  await win(page).getByRole('button', { name: '確認' }).click()
+  expect(await triggers(page)).toContain('ui.resume_ack')
   await setTestState(page, { state: 'PAUSE', pause_reason: '' })
   await expect(win(page)).toHaveCount(0)
 })

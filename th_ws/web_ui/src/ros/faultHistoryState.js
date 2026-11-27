@@ -149,3 +149,14 @@ export function recentFaultText(rec) {
   if (!rec) return null
   return `直近の異常：${faultShortLabel(rec.fault_type)} ${formatClock(rec.started_at)}`
 }
+
+// §1: 解消した直近の異常は発生から約 3 分で消える。
+export const RECENT_FAULT_WINDOW_S = 180
+
+export function isWithinRecentWindow(rec, nowEpochSec, windowS = RECENT_FAULT_WINDOW_S) {
+  if (!rec || rec.ongoing) return rec ? true : false
+  if (!Number.isFinite(nowEpochSec)) return true
+  const start = Number(rec.started_at) || 0
+  if (start <= 0) return true
+  return nowEpochSec - start <= windowS
+}

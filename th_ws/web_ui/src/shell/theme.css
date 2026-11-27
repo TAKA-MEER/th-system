@@ -126,8 +126,11 @@ table{border-collapse:collapse;width:100%}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
 #modePill{
   flex:0 0 auto;font-size:calc(var(--fs) * 1.05);font-weight:800;padding:5px 14px;border-radius:999px;
-  background:#ffffff;border:2px solid #111111;color:#111111;white-space:nowrap;
+  background:#ffffff;border:2px solid var(--tx);color:var(--tx);white-space:nowrap;
 }
+#modePill[data-tone="go"]{background:var(--ok);border-color:var(--ok);color:#fff}
+#modePill[data-tone="warn"]{background:var(--jis-y);border-color:var(--jis-y);color:var(--tx)}
+#modePill[data-tone="estop"]{background:var(--estop);border-color:var(--estop-bg);color:#fff;box-shadow:0 0 0 3px var(--estop-bg)}
 #modePill.unknown{background:var(--warn);border-color:#111;color:#111}
 #zonePill{
   flex:0 0 auto;font-size:max(15px,calc(var(--fs) * .72));font-weight:700;padding:4px 9px;border-radius:999px;
@@ -139,11 +142,16 @@ table{border-collapse:collapse;width:100%}
   background:#fff;border:1px solid #111;color:#111;display:none;
 }
 #devPill.show{display:inline-block}
-#hdr .row2{display:flex;align-items:stretch;gap:0;border-top:1px solid #b9d4ee}
+#hdr .row2{display:flex;align-items:stretch;gap:0;border-top:1px solid var(--hdr-row2-bd,#b9d4ee);background:var(--hdr-row2,#d1d7e0)}
 #faultBox{
   flex:1 1 auto;display:flex;align-items:center;gap:8px;padding:7px 12px;
-  background:#ffffff;font-size:calc(var(--fs) * .88);min-width:0;
+  background:transparent;font-size:calc(var(--fs) * .88);min-width:0;
 }
+/* 自動ブレーキなし（D74）: 注意の黄で 1 Hz 点滅。reduced-motion では点けたまま。 */
+#autoBrakeOff{flex:0 0 auto;font-weight:800;font-size:calc(var(--fs) * .9);padding:3px 10px;border-radius:999px;background:var(--jis-y);color:var(--tx);border:2px solid var(--tx);white-space:nowrap}
+@media (prefers-reduced-motion:no-preference){#autoBrakeOff{animation:abBlink 1s steps(1,end) infinite}}
+@keyframes abBlink{50%{background:transparent}}
+@media (prefers-reduced-motion:reduce){#autoBrakeOff{animation:none}}
 #faultDot{width:9px;height:9px;border-radius:50%;background:transparent;flex:0 0 auto;display:none}
 #faultDot.ng{background:var(--ng)}
 #faultDot.warn{background:var(--warn)}
@@ -165,6 +173,8 @@ table{border-collapse:collapse;width:100%}
   border-left:2px solid #7a1414;
   box-shadow:inset 0 0 0 2px #ff6b6b33;
 }
+/* 非常停止は赤に黄の地（§3.3.1）。黄の板を背後に置き、上下中央に置く。 */
+.estop-plate{flex:0 0 auto;display:flex;align-items:center;background:var(--estop-bg);padding:5px 6px}
 #estopBtn:active{background:var(--estop-hi)}
 #estopBtn.engaged{background:var(--carry);border-left-color:#4a2a70}
 /* C-2 (WP-CARRY-01 §4.3): CARRY's own "won't do anything" look -- not
@@ -674,14 +684,15 @@ table.lst td.r{text-align:right}
    解除バーがその暗幕に沈んでタップが吸われ、解除できない（W-1 の文言自体が
    「解除は画面下端の解除バーから」と案内しているのに）。モックアップの
    #overlay(900) < #release(950) の順序に相当（DetailedDesign-webui.md §2.1）。 */
+/* 解除の帯（§1.2/§4.1）: 本文の下端の中央。白地・黒の太い枠・角なし・小さめ。 */
 #release{
-  flex:0 0 auto;display:none;background:#1c1226;border-top:2px solid var(--carry);
-  padding:9px 12px;z-index:70;position:relative;
+  flex:0 0 auto;display:none;background:transparent;
+  padding:9px 12px;z-index:70;position:relative;justify-content:center;
 }
 #release.show{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-#release .rt{flex:1 1 200px;font-size:calc(var(--fs) * .85);color:var(--carry-tx)}
-#releaseBtn{background:#3d2160;border:1px solid var(--carry);border-radius:6px;padding:9px 16px;
-  font-weight:700;color:#e2ccf7}
+#release .rt{font-size:calc(var(--fs) * .85);color:var(--tx)}
+#releaseBtn{background:#ffffff;border:3px solid #161b22;border-radius:0;padding:9px 16px;
+  font-weight:800;color:#161b22;min-height:56px}
 
 /* WS-9R (2026-09-04): 止まっている理由の帯。速度上限が 0 の間だけ出る。
    黙って止まると操作者に理由が分からない（実機「謎の一時停止」）。

@@ -68,9 +68,10 @@ test('WS-9Z: PANEL_NAV でもフォルトが実際に見えれば窓を出し（
   await setTestFault(page, { active: false, fault_type: 'LIDAR_LOST', severity: 'RECOVERABLE' })
   const win = page.locator('.win.fault.show')
   await expect(win).toBeVisible()
-  // PANEL_NAV は yes_no（attributes.yaml）。
-  await expect(win.getByRole('button', { name: 'いいえ' })).toBeVisible()
-  await expect(win.getByRole('button', { name: 'はい' })).toBeVisible()
+  // D48: 「はい／いいえ」は廃止。「確認」だけ（SM-3.1.1-05）。
+  await expect(win.getByRole('button', { name: 'いいえ' })).toHaveCount(0)
+  await expect(win.getByRole('button', { name: 'はい' })).toHaveCount(0)
+  await expect(win.getByRole('button', { name: '確認' })).toBeVisible()
 })
 
 test('WS-9Z: PAUSE を抜けたらラッチは解除される（次に別モードで PAUSE に入っても誤って残らない）', async ({ page }) => {
