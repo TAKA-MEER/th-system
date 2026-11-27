@@ -66,11 +66,12 @@ export function runBlockedByVenue(mode, stateName, venueUnloaded) {
 }
 
 // 「中断」（ui.abort → AT_HOME/IDLE_H）を出す状態（Spec-webui §3.11 S-21）。
-// 経路が塞がれた BLOCKED と、一時停止中の PAUSE。走行中（NAV・ALIGN）は出さない
-// （「停止」してから「中断」）。SUMMON の POINT にも出す（SM-3.1.2-143。2026-11-12
-// A-12。2 点指示は受け付けるのに抜けるボタンが無かった）。WAIT_CLEAR の ui.abort は
+// 移動中（NAV・ALIGN）も出す（2026-11-13 D12。行き先を押したら即出発するので、
+// 誤選択からすぐ止める出口として要る）。経路が塞がれた BLOCKED と、一時停止中の
+// PAUSE も出す。SUMMON の POINT にも出す（SM-3.1.2-143。2026-11-12 A-12。
+// 2 点指示は受け付けるのに抜けるボタンが無かった）。WAIT_CLEAR の ui.abort は
 // 退避待ちのやり直しで意味が違うので、ここでは出さない。
-export const ABORT_STATES = ['BLOCKED', 'PAUSE']
+export const ABORT_STATES = ['NAV', 'ALIGN', 'BLOCKED', 'PAUSE']
 export function abortAvailable(mode, stateName) {
   if (mode === 'SUMMON' && stateName === 'POINT') return true
   return GOTO_BLOCKED_MODES.includes(mode) && ABORT_STATES.includes(stateName)
@@ -111,6 +112,59 @@ export function onsiteReasons({
 
 // S-21 の「行き先を選ぶ」段の完了判定に使うモード群（S21Test.jsx からも参照する）。
 export const NAV_MODES = ['SUMMON', 'PANEL_NAV', 'AT_PANEL', 'HOME_NAV']
+
+/**
+ * 右列 ①「どこへ・あとどれだけ」の残り距離（m）。経路（/plan）があれば機体に
+ * 最も近い経路点から先の長さ、無ければ行き先ピンまでの直線距離。どちらも
+ * 分からないときは null（画面は距離を出さない。値をでっち上げない）。
+ * @param {{plannedPath?: Array, robotPose?: {x: number, y: number},
+ *         destPin?: {pose?: {position?: {x: number, y: number}}}} _
+ * @returns {number|null}
+ */
+export function remainingToDest({ plannedPath = [], robotPose = null, destPin = null } = {}) {
+  if (robotPose && Array.isArray(plannedPath) && plannedPath.length > 1) {
+    let best = 0
+    let bestD = Infinity
+    for (let i = 0; i < plannedPath.length; i += 1) {
+      const d = Math.hypot(plannedPath[i].x - robotPose.x, plannedPath[i].y - robotPose.y)
+      if (d < bestD) { bestD = d; best = i }
+    }
+    let remain = 0
+    for (let i = best; i < plannedPath.length - 1; i += 1) {
+      remain += Math.hypot(plannedPath[i + 1].x - plannedPath[i].x, plannedPath[i + 1].y - plannedPath[i].y)
+    }
+    return remain
+  }
+  const p = destPin?.pose?.position
+  if (robotPose && p && typeof p.x === 'number' && typeof p.y === 'number') {
+    return Math.hypot(p.x - robotPose.x, p.y - robotPose.y)
+  }
+  return null
+}
+
+/**
+ * 「次の配電盤」のピン。機体に最も近い配電盤ピンの次（順番昇順）。
+ * 機体位置が分からないときは順番先頭。最後の盤の次は無し（null）。
+ * pins は登録順を順番とする（panelOrderOf と同じ扱い。mapGeometry.js 側の
+ * 順番付けをここで再実装しないよう、呼び出し側で順序済みの配列を渡す）。
+ * @param {Array} pins 配電盤ピン（順番昇順）
+ * @param {{x: number, y: number}|null} robotPose
+ * @returns {Object|null}
+ */
+export function nextPanelPin(pins = [], robotPose = null) {
+  const panels = pins.filter((p) => p?.kind === 'PANEL')
+  if (panels.length === 0) return null
+  if (!robotPose) return panels[0]
+  let nearest = 0
+  let bestD = Infinity
+  panels.forEach((p, i) => {
+    const pos = p.pose?.position
+    if (!pos) return
+    const d = Math.hypot(pos.x - robotPose.x, pos.y - robotPose.y)
+    if (d < bestD) { bestD = d; nearest = i }
+  })
+  return panels[nearest + 1] ?? null
+}
 
 function currentIndexOf(done) {
   const i = done.findIndex((d) => !d)

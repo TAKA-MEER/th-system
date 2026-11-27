@@ -4,8 +4,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  GOTO_BLOCKED_MODES, NAV_MODES, VENUE_GATED_MODES, abortAvailable, jogAllowedForMode, onsiteReasons,
-  prepSteps, runBlockedByVenue, testSteps,
+  GOTO_BLOCKED_MODES, NAV_MODES, VENUE_GATED_MODES, abortAvailable, jogAllowedForMode, nextPanelPin, onsiteReasons,
+  prepSteps, remainingToDest, runBlockedByVenue, testSteps,
 } from '../../src/screens/onsiteSteps.js'
 import { OP_BUTTON_KINDS } from '../../src/parts/opKinds.js'
 
@@ -382,19 +382,42 @@ test('SM-3.1.2-118: 行き先を選べる状態（AT_HOME の IDLE_H/PAUSE・AT_
   }
 })
 
-test('abortAvailable: 「中断」は PANEL_NAV/HOME_NAV/SUMMON の BLOCKED と PAUSE、SUMMON の POINT', () => {
+test('abortAvailable: 「中断」は PANEL_NAV/HOME_NAV/SUMMON の NAV・ALIGN・BLOCKED・PAUSE と SUMMON の POINT', () => {
+  // D12: 走行中（NAV・ALIGN）も出す。WAIT_CLEAR は退避待ちのやり直しなので出さない。
   const states = ['NAV', 'BLOCKED', 'PAUSE', 'ALIGN', 'POINT', 'WAIT_CLEAR', 'IDLE_H', 'IDLE_P', null]
   for (const mode of ['PANEL_NAV', 'HOME_NAV', 'SUMMON']) {
     for (const st of states) {
-      const expected = st === 'BLOCKED' || st === 'PAUSE' || (mode === 'SUMMON' && st === 'POINT')
+      const expected = ['NAV', 'ALIGN', 'BLOCKED', 'PAUSE'].includes(st) || (mode === 'SUMMON' && st === 'POINT')
       assert.equal(abortAvailable(mode, st), expected, `${mode}/${st}`)
     }
   }
   for (const mode of ['AT_HOME', 'AT_PANEL', 'IDLE', 'MANUAL', null]) {
-    for (const st of ['BLOCKED', 'PAUSE', 'NAV', 'POINT']) {
+    for (const st of ['BLOCKED', 'PAUSE', 'NAV', 'ALIGN', 'POINT']) {
       assert.equal(abortAvailable(mode, st), false, `${mode}/${st}`)
     }
   }
+})
+
+test('remainingToDest: 経路があれば近い点から先の長さ、無ければ直線、どちらも無ければ null', () => {
+  const path = [{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 3, y: 4 }]
+  assert.equal(remainingToDest({ plannedPath: path, robotPose: { x: 0, y: 0 } }), 7)
+  assert.equal(remainingToDest({ plannedPath: path, robotPose: { x: 3, y: 0 } }), 4)
+  assert.equal(remainingToDest({ plannedPath: [], robotPose: { x: 0, y: 0 }, destPin: { pose: { position: { x: 3, y: 4 } } } }), 5)
+  assert.equal(remainingToDest({}), null)
+  assert.equal(remainingToDest({ robotPose: { x: 0, y: 0 } }), null)
+})
+
+test('nextPanelPin: 近い盤の次、位置不明は先頭、最後の盤は null', () => {
+  const pins = [
+    { id: 'p1', kind: 'PANEL', pose: { position: { x: 0, y: 0 } } },
+    { id: 'p2', kind: 'PANEL', pose: { position: { x: 10, y: 0 } } },
+    { id: 'p3', kind: 'PANEL', pose: { position: { x: 20, y: 0 } } },
+    { id: 'h1', kind: 'HOME', pose: { position: { x: 0, y: 5 } } },
+  ]
+  assert.equal(nextPanelPin(pins, null).id, 'p1')
+  assert.equal(nextPanelPin(pins, { x: 1, y: 0 }).id, 'p2')
+  assert.equal(nextPanelPin(pins, { x: 19, y: 0 }), null)
+  assert.equal(nextPanelPin([], { x: 0, y: 0 }), null)
 })
 
 // ── SM-3.1.2-119: 会場地図を持たない間は行き先と「走行」を塞ぐ ───────────────
