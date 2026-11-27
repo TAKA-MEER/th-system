@@ -10,16 +10,17 @@
    ============================================================ */
 
 :root{
-  --bg:#0f1117; --panel:#1a1d24; --inset:#12141b;
-  --ctrl:#252830; --ctrl-hi:#343849; --ctrl-on:#2c4a74;
-  --bd:#2a2d35; --bd-hi:#3a3f4c;
-  --tx:#e6e8ec; --mut:#8b93a1; --dim:#5c6470;
-  --brand:#3f8ae0; --brand-lt:#7fb4ee; --brand-dk:#12233d;
-  --ok:#4caf50; --ok-tx:#8fd694;
-  --warn:#ffb74d; --warn-tx:#ffcc80;
-  --ng:#ef5350; --ng-tx:#ff9b98;
-  --estop:#c62828; --estop-hi:#e53935;
-  --carry:#7e4fb0; --carry-tx:#c9a6e8;
+  /* Spec-webui §3.3.1: one colour, one operational meaning. */
+  --bg:#f5f6f4; --panel:#ffffff; --inset:#edf0eb;
+  --ctrl:#ffffff; --ctrl-hi:#e1e5df; --ctrl-on:#111111;
+  --bd:#66706a; --bd-hi:#202622;
+  --tx:#111512; --mut:#536058; --dim:#788078;
+  --brand:#155b9b; --brand-lt:#dcecff; --brand-dk:#0d3d6a;
+  --ok:#16803a; --ok-tx:#075c24;
+  --warn:#f2c500; --warn-tx:#312800;
+  --ng:#f2c500; --ng-tx:#312800;
+  --estop:#c5151b; --estop-hi:#9e1116;
+  --carry:#111111; --carry-tx:#ffffff;
   --hdr:96px;
   --r:8px;
   /* Base font size. Every font-size is written as calc(var(--fs) * n).
@@ -29,7 +30,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{
-  background:#07090d; color:var(--tx); font-size:var(--fs);
+  background:#d9ded8; color:var(--tx); font-size:var(--fs);
   font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
   -webkit-tap-highlight-color:transparent; overflow:hidden;
 }
@@ -74,15 +75,15 @@ table{border-collapse:collapse;width:100%}
 /* ================= header (always on top, never covered) ================= */
 #hdr{
   flex:0 0 auto;z-index:100;position:relative;
-  background:linear-gradient(180deg,#16283f,#101a29);
+  background:var(--brand);
   border-bottom:2px solid var(--brand);
 }
 /* ヘッダの色（SG-C3。shell/limits.js の headerTone()）。Spec-webui.md §8
    「非常停止＝赤／解除待ち＝紫」、§5「開発モード中はヘッダの色を変える」。
    開発モードの色は #devPill と同じ系統（spec は色を指定していない）。 */
-#hdr[data-tone="estop"]{background:linear-gradient(180deg,#4a1414,#2a0c0c);border-bottom-color:var(--estop)}
-#hdr[data-tone="carry"]{background:linear-gradient(180deg,#2e1b46,#1c1226);border-bottom-color:var(--carry)}
-#hdr[data-tone="dev"]{background:linear-gradient(180deg,#4a1030,#2a0a1c);border-bottom-color:#8a2a5a}
+#hdr[data-tone="estop"]{background:var(--brand);border-bottom-color:var(--estop)}
+#hdr[data-tone="carry"]{background:var(--brand);border-bottom-color:var(--carry)}
+#hdr[data-tone="dev"]{background:#60408a;border-bottom-color:#3e235e}
 /* flex-wrap:nowrap は必須（2026-09-02）。wrap だと、幅が足りなくなったとき
    #screenName が省略記号で縮む前に行が増え、ヘッダーの高さごと変わってしまう
    （＝本文の高さが動く。DetailedDesign-webui.md §2.5）。実機では row2 の
@@ -100,25 +101,25 @@ table{border-collapse:collapse;width:100%}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
 #modePill{
   flex:0 0 auto;font-size:calc(var(--fs) * 1.05);font-weight:800;padding:5px 14px;border-radius:999px;
-  background:#2a3242;border:1px solid #3a4356;white-space:nowrap;
+  background:#ffffff;border:2px solid #111111;color:#111111;white-space:nowrap;
 }
-#modePill.unknown{background:#3a1414;border-color:#8a2a2a;color:var(--ng-tx)}
+#modePill.unknown{background:var(--warn);border-color:#111;color:#111}
 #zonePill{
   flex:0 0 auto;font-size:calc(var(--fs) * .72);font-weight:700;padding:4px 9px;border-radius:999px;
-  background:#3a2a10;border:1px solid #7a5a20;color:var(--warn-tx);white-space:nowrap;display:none;
+  background:#ffffff;border:1px solid #111;color:#111;white-space:nowrap;display:none;
 }
 #zonePill.show{display:inline-block}
 #devPill{
   flex:0 0 auto;font-size:calc(var(--fs) * .72);font-weight:700;padding:4px 9px;border-radius:999px;
-  background:#4a1030;border:1px solid #8a2a5a;color:#ffa6d0;display:none;
+  background:#fff;border:1px solid #111;color:#111;display:none;
 }
 #devPill.show{display:inline-block}
-#hdr .row2{display:flex;align-items:stretch;gap:0;border-top:1px solid #23334a}
+#hdr .row2{display:flex;align-items:stretch;gap:0;border-top:1px solid #b9d4ee}
 #faultBox{
   flex:1 1 auto;display:flex;align-items:center;gap:8px;padding:7px 12px;
-  background:#151b26;font-size:calc(var(--fs) * .88);min-width:0;
+  background:#ffffff;font-size:calc(var(--fs) * .88);min-width:0;
 }
-#faultDot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:0 0 auto}
+#faultDot{width:9px;height:9px;border-radius:50%;background:transparent;flex:0 0 auto;display:none}
 #faultDot.ng{background:var(--ng)}
 #faultDot.warn{background:var(--warn)}
 /* min-width:0 が無いと flex アイテムの既定 (min-width:auto = 内容の最小幅) の

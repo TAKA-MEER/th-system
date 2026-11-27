@@ -274,6 +274,7 @@ function AppShellInner({ screenName, screenId, children }) {
       <Header
         screenName={screenName}
         mode={mode}
+        stateName={stateName}
         stale={stale}
         zone={zone}
         fault={fault}
