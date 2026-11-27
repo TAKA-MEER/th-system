@@ -193,13 +193,22 @@ class TestPinOrder(unittest.TestCase):
         self.assertEqual(self._read_file_ids(), ['home', 'p3', 'p1', 'p2'])
 
     def test_reorder_rejects_unknown_and_edge(self):
+        # ノードのメモリ内は前試験の並びのままなので、現在の先頭の盤で測る。
+        before = self._read_file_ids()
         res = self._call_edit(id='p1', order_ids=['p2', 'nope'])
         self.assertFalse(res.success)
-        res = self._call_edit(id='p1', move=-1)
+        first_panel = None
+        with self._lock:
+            for p in self.pins:
+                if p.kind == 'PANEL':
+                    first_panel = p.id
+                    break
+        self.assertIsNotNone(first_panel)
+        res = self._call_edit(id=first_panel, move=-1)
         self.assertFalse(res.success, '端の盤を外へ動かせた')
         res = self._call_edit(id='home', move=1)
         self.assertFalse(res.success, 'HOME の順番を変えられた')
-        self.assertEqual(self._read_file_ids(), ['home', 'p1', 'p2', 'p3'],
+        self.assertEqual(self._read_file_ids(), before,
                          '拒否したのに pins.yaml が変わった')
 
 
