@@ -138,3 +138,22 @@ test('S-31: 症状のチェックを押すと ✓ が付き、記録はしない
   const calls2 = await page.evaluate(() => window.__thTriggerCalls ?? [])
   expect(calls2.some((c) => c.trigger === 'ui.stop')).toBeTruthy()
 })
+
+test('S-40 BLIND: 生スキャン無しでは S1 の「次へ」が押せない（空の確定で登録済みの死角を消さない）', async ({ page }) => {
+  await stubTrigger(page, { 'ui.calib_next': { accepted: true } })
+  await page.addInitScript(() => {
+    window.__thTestState = { mode: 'CALIB', state: 'S1' }
+    window.__thTestScreen = 'S40'
+    window.__thTestCalibStatus = {
+      item: 'BLIND', step: 'S1', result: 'GUIDE', preview_before: '', preview_after: '',
+      detail: { current: { blind_angle_ranges: [45.9, 61.5] }, history: {}, last_calibrated: {} },
+    }
+  })
+  await page.goto('/')
+  await page.locator('#body').waitFor()
+  await page.evaluate(() => window.__thSetTestScan(null))
+  // スキャン無し：「次へ」相当は押せない（押せる見た目で残す）。
+  await expect(page.getByTestId('s40-next')).toBeDisabled()
+  const calls = await page.evaluate(() => window.__thTriggerCalls ?? [])
+  expect(calls.some((c) => c.trigger === 'ui.calib_next')).toBeFalsy()
+})

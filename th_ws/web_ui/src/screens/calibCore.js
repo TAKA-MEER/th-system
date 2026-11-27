@@ -80,9 +80,17 @@ export function viewKind({ fsmState, item, status }) {
 
 // 「次へ」を押せるか。S1 は常に（走り出す）、S3 は PREVIEW_OK のときだけ。
 // IMU の S3 は完了（PREVIEW_OK）を待って「確定」を押せる。S2・S4 は自動で進むので押せない。
-export function canProceed({ fsmState, item, status }) {
+export function canProceed({ fsmState, item, status, scan = null }) {
   const step = stepNumber(fsmState)
-  if (step === 1) return true
+  if (step === 1) {
+    // BLIND の S1（選ぶ）は生スキャン（/scan）が要る。無いまま次へを押すと
+    // 空の確定になり登録済みの死角が消えて世代が増える（P1 知見）。
+    if (item === 'BLIND') {
+      const ranges = scan?.ranges
+      return !!scan && Array.isArray(ranges) && ranges.length > 0
+    }
+    return true
+  }
   if (step === 3) {
     return !!status && status.item === item && status.result === 'PREVIEW_OK'
   }

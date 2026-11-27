@@ -125,7 +125,7 @@ export default function S40Calib() {
   const kind = viewKind({ fsmState, item, status })
   const step = stepNumber(fsmState)
   const inWizard = step > 0
-  const proceed = canProceed({ fsmState, item, status })
+  const proceed = canProceed({ fsmState, item, status, scan: rawScan })
 
   useEffect(() => {
     if (fsmState === 'LIST') { setSelectedItem(null); setShowHistory(false) }
@@ -314,7 +314,7 @@ export default function S40Calib() {
   // LIST（開始前）: 直進・旋回=走らせる、それ以外=始める。
   const nextLabel = fsmState === 'LIST'
     ? (item === 'IMU' ? T.S40_NEXT_START : item === 'LINEAR' || item === 'ROTATION' ? T.S40_NEXT_RUN : T.S40_NEXT_START)
-    : (kind === 'idle' ? T.S40_NEXT_START : T.s40NextLabel(item, step - 1))
+    : (kind === 'idle' ? T.S40_NEXT_START : T.s40NextLabel(item, step))
   // S1 の BLIND はスキャンの表示へ進む（走らない）。語は「走らせる」にしない。
   const nextLabelFinal = (item === 'BLIND' && step === 1) ? T.S40_GUIDE_NEXT_BLIND : nextLabel
   // 走らせるだけ塗る（機体が動くもの。D103）。S1・LIST の LINEAR/ROTATION が該当。

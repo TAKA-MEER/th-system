@@ -159,9 +159,11 @@ export function s40StepLabels(item) {
   if (item === 'BLIND') return ['選ぶ', '確かめる', '確定']
   return ['案内', '実行', '確認', '検証']
 }
+// （項目, 現在の段 1始まり）→ 進むボタンの語（Spec-webui §3.14）。
+// 直進・旋回: 案内＝走らせる／実行＝確定する／確認＝完了。IMU: 案内＝始める／測る＝確定する／確定＝完了。
+// 死角: 選ぶ＝スキャンを表示する／確かめる＝確定する／確定＝完了（機体は動かない）。
 export function s40NextLabel(item, step) {
-  if (step === 0) return item === 'IMU' ? S40_NEXT_START : S40_NEXT_RUN
+  if (step === 1) return item === 'IMU' ? S40_NEXT_START : item === 'BLIND' ? S40_GUIDE_NEXT_BLIND : S40_NEXT_RUN
   if (step === 2) return S40_NEXT_CONFIRM
-  if (step === 3) return S40_NEXT_DONE
-  return S40_NEXT_RUN
+  return S40_NEXT_DONE
 }
