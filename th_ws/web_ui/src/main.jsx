@@ -7,6 +7,8 @@ import AudienceView from './audience/AudienceView.jsx'
 import OperationCardHarness from './TestHarness.jsx'
 import S00Connect from './screens/S00Connect.jsx'
 import S01Main from './screens/S01Main.jsx'
+import S10Follow from './screens/S10Follow.jsx'
+import S12TeachFollow from './screens/S12TeachFollow.jsx'
 import S11Manual from './screens/S11Manual.jsx'
 import S13TeachManual from './screens/S13TeachManual.jsx'
 import S14Replay from './screens/S14Replay.jsx'
@@ -136,6 +138,20 @@ function Screens() {
   // FSM が IDLE になり、その /system/state を見てここが S-01 に戻す。
   // onFinish を渡して画面側から直接切り替えさせない（それをやると
   // 「画面は戻ったが FSM は戻っていない」という乖離を作り直すことになる）。
+  if (screen === 'S10') {
+    return (
+      <AppShell screenName={SCREEN_NAMES.S10} screenId={SCREEN_IDS.S10}>
+        <S10Follow />
+      </AppShell>
+    )
+  }
+  if (screen === 'S12') {
+    return (
+      <AppShell screenName={SCREEN_NAMES.S12} screenId={SCREEN_IDS.S12}>
+        <S12TeachFollow />
+      </AppShell>
+    )
+  }
   if (screen === 'S11') {
     return (
       <AppShell screenName={SCREEN_NAMES.S11} screenId={SCREEN_IDS.S11}>

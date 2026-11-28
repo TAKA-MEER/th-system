@@ -1,0 +1,71 @@
+/* screens/follow.css — S-10 追従走行・S-12 教示（追従）だけの配置。
+ *
+ * 型は「走らせる」（src/shell/Layouts.jsx の RunLayout）。骨組みに CSS は無いため
+ * この 2 画面の分だけここに書く（S-11/S-13 の manualRun.css と同じ流儀）。
+ * 操作バーは高さ 68・左右の余白 14。中身は上下 12・左右 14 の余白、区画の間は 12
+ * （モックアップの .opbar・.content）。
+ */
+#s10 { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; }
+#s12 { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; }
+#s10 .g-drv, #s12 .g-drv { display: flex; flex-direction: column; gap: 12px; min-height: 0; flex: 1 1 auto; box-sizing: border-box; padding: 12px 14px; }
+#s10 .g-drv-row, #s12 .g-drv-row { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; align-items: stretch; min-height: 0; flex: 1 1 auto; }
+#s10 .g-drv > [data-pos="opbar"], #s12 .g-drv > [data-pos="opbar"] { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; height: 68px; margin-left: -14px; margin-right: -14px; padding-left: 14px; padding-right: 14px; box-sizing: border-box; flex: none; }
+#s10 .g-drv .rcol, #s12 .g-drv .rcol { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+#s10 .g-drv .rops, #s12 .g-drv .rops { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+#s10 .stick svg, #s12 .stick svg { max-height: 170px; }
+
+/* S-10 主表示: 区画いっぱいのレーダー（円は区画の短い辺いっぱい）。
+ * 共通の .radar は max-height:min(42cqh,300px) なので、この 2 画面では外す。 */
+#s10 .mainv, #s12 .mainv { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.s10-main { flex: 1 1 auto; min-height: 0; display: flex; }
+.s10-main .card, .s12-radar .card { flex: 1 1 auto; display: flex; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; background: transparent; }
+.s10-main .radar, .s12-radar .radar { width: 100%; height: 100%; max-height: none; min-height: 0; }
+.s10-where { display: flex; flex-direction: column; gap: 2px; font-size: 15px; }
+.s10-where b { font-size: 28px; font-weight: 800; }
+
+/* 向く: 停止│走行の下に幅いっぱい。押せるとき（disabled でないとき）は薄い緑。 */
+#s10 .btn.look, #s12 .btn.look { width: 100%; min-height: 56px; }
+#s10 .btn.look:not(:disabled):not(.dis), #s12 .btn.look:not(:disabled):not(.dis) {
+  background: color-mix(in srgb, var(--ok) 18%, var(--panel)); border: 2px solid var(--ok); color: var(--tx); font-weight: 700;
+}
+.s12-ops { display: flex; gap: 12px; }
+.s12-ops > * { flex: 1 1 0; min-width: 0; }
+.s12-ops .btn { width: 100%; min-height: 56px; }
+.s12-rec { display: flex; flex-direction: column; gap: 2px; font-size: 15px; }
+.s12-rec b { font-size: 28px; font-weight: 800; }
+
+/* S-12 主表示: レーダーが区画いっぱい。作成中の地図と経路は左下に枠つきで小さく重ねる
+ * （押すと大小を入れ替え）。入口（経路選択）は主表示の中央のカード。 */
+.s12-main { position: relative; flex: 1 1 auto; min-height: 0; display: flex; }
+.s12-radar { display: flex; min-width: 0; min-height: 0; }
+.s12-radar.large { flex: 1 1 auto; }
+.s12-radar.small { position: absolute; left: 12px; bottom: 12px; width: 300px; height: 200px; z-index: 2; border: 1px solid var(--bd-hi); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.s12-map { position: absolute; min-height: 0; display: flex; flex-direction: column; }
+.s12-map.small { left: 12px; bottom: 12px; width: 300px; height: 200px; z-index: 2; border: 1px solid var(--bd-hi); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.s12-map.large { inset: 0; }
+.s12-map .mapWrap { position: relative; flex: 1 1 auto; min-height: 0; }
+.s12-map .mapWrap svg { width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; }
+.s12-map-swap { position: absolute; left: 8px; top: 6px; z-index: 3; }
+.s12-map.small .s12-map-swap { inset: 0; width: 100%; height: 100%; background: transparent; border: 0; text-align: left; justify-content: flex-start; align-items: flex-start; padding: 6px 8px; font-size: 15px; color: var(--mut); }
+.s12-entry { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; }
+.s12-entry .card { max-width: 420px; width: 100%; }
+
+@media (max-aspect-ratio: 1/1) {
+  #s10 .g-drv-row, #s12 .g-drv-row { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  #s10 .g-drv .rcol, #s12 .g-drv .rcol { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+  #s10 .g-drv .rjog, #s12 .g-drv .rjog { grid-column: 2; grid-row: 1; }
+  #s10 .g-drv .rjog .stick svg, #s12 .g-drv .rjog .stick svg { max-height: 220px; }
+}
+
+#s10 [data-pos="ops"] .reason-wrap, #s12 [data-pos="ops"] .reason-wrap { display: block; width: 100%; }
+#s10 [data-pos="ops"] > *, #s12 .s12-ops > * { display: block; }
+
+/* 画面の幅いっぱい（共通の .screen の最大幅 1100 を外す。モックアップの .content と同じ） */
+#s10.screen, #s12.screen { max-width: none; margin: 0; }
+/* 走行の押せない理由は、停止│走行の枠の下の黄の帯（押せるときは出ない） */
+#s10 .stoprun, #s12 .stoprun { flex-wrap: wrap; }
+#s10 .stoprun .reason-bubble, #s12 .stoprun .reason-bubble { flex: 1 0 100%; order: 9; margin: 0; border: 0; border-top: 2px solid var(--tx); border-radius: 0; background: var(--jis-y, #ffd100); white-space: normal; }
+#s10 .stoprun .reason-bubble::after, #s12 .stoprun .reason-bubble::after { display: none; }
+/* 小さい間は地図の道具・全体表示・縮尺を出さない。占有格子は滲ませない。 */
+.s12-map.small .mapWrap .row { display: none; }
+#s12 image { image-rendering: -webkit-optimize-contrast; image-rendering: pixelated; }

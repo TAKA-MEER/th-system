@@ -411,10 +411,11 @@ table.lst td.r{text-align:right}
    .rv-msg と違って中心を占有しない（候補のタップを妨げない）ので pointer-events は既定のまま。 */
 .rv-msg-lost{fill:var(--warn);font-size:10px;font-weight:700}
 .rv-cand{cursor:pointer}
-.rv-cand circle{fill:#245089;stroke:#90caf9;stroke-width:1.5}
-.rv-cand.sel circle{fill:#43a047;stroke:#c8e6c9;stroke-width:2}
+.rv-cand circle{fill:#808080;stroke:#ffffff;stroke-width:1.5}
+.rv-cand.sel circle{fill:#1a1a1a;stroke:#ffffff;stroke-width:2}
+.rv-cand .rv-num{fill:#ffffff;font-size:11px;font-weight:800;pointer-events:none}
 .rv-cand text{fill:var(--mut);font-size:10px}
-.rv-cand.sel .rv-sel{fill:var(--ok-tx);font-size:11px} /* 明るい地では濃い文字（旧値 #c8e6c9 は暗い地向け） */
+.rv-cand.sel .rv-sel{fill:#1a1a1a;font-size:11px} /* 明るい地では濃い文字（旧値 #c8e6c9 は暗い地向け） */
 .rv-cnf{fill:var(--mut);font-size:9px}
 
 /* ---------- S-21 試験（WP-UI-07。screens/S21Test.jsx） ---------- */

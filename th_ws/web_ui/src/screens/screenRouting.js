@@ -5,7 +5,7 @@
 // names.json の screens に載っている ID (N-15: /ui/active_screen の
 // screen_id はこの値をそのまま使う -- names.json に無い値を送ってはいけない)。
 export const SCREEN_IDS = {
-  S00: 'S-00', S01: 'S-01', S11: 'S-11', S13: 'S-13', S14: 'S-14',
+  S00: 'S-00', S01: 'S-01', S10: 'S-10', S12: 'S-12', S11: 'S-11', S13: 'S-13', S14: 'S-14',
   S20: 'S-20', S21: 'S-21', S50: 'S-50',
   // WP-UI-08: S-30 始業点検 / S-31 故障診断（names.json の screens にある）。
   S30: 'S-30', S31: 'S-31',
@@ -24,7 +24,7 @@ export const SCREEN_IDS = {
 // 開く導線（S-01 の「試験」ボタン等）は別パケットの仕事で、e2e は TEST_SCREEN
 // 経由で直接開く（main.jsx 側の上書き。screenRouting には入れない）。
 export const MODE_TO_SCREEN = {
-  MANUAL: 'S11', TEACH_MANUAL: 'S13', REPLAY: 'S14', PREP: 'S20',
+  FOLLOW: 'S10', TEACH_FOLLOW: 'S12', MANUAL: 'S11', TEACH_MANUAL: 'S13', REPLAY: 'S14', PREP: 'S20',
   PANEL_NAV: 'S21', SUMMON: 'S21', AT_PANEL: 'S21', HOME_NAV: 'S21',
   // 2026-09-08: 当日の待機モード（Spec-modes.md §2.3）。以前は S-21 に対応する
   // モードが無く main.jsx のローカルフラグ（onsiteTestOpen）で出していたが、

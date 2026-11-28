@@ -22,6 +22,7 @@ import {
   RADAR_LOST_RESELECT, RADAR_SELECTED,
 } from '../i18n/screens.js'
 import { RADAR_PX_PER_M, RADAR_CX, RADAR_CY, radarToSvg } from './radarGeometry.js'
+import { MAP_GO, MAP_PIN, MAP_PIN_EDGE } from './mapColors.js'
 
 // 論理 viewBox は 240x240（radarGeometry はこの座標系が前提。変更禁止）。
 // 表示サイズは CSS（.radar の width:100% / max-height）が決める
@@ -51,17 +52,17 @@ export default function RadarSelect({
         {/* 前方（機体 +x / 画面の上）の軸線を強調。F-2。 */}
         <line className="rv-axis rv-axis-fwd" x1={CX} y1={CY - RADAR_PX_PER_M * 2} x2={CX} y2={CY} />
         <line className="rv-axis" x1={CX - RADAR_PX_PER_M * 2} y1={CY} x2={CX + RADAR_PX_PER_M * 2} y2={CY} />
-        {/* 機体マーク（中心の丸＋上向き三角）。候補より下のレイヤに描いて隠れないようにする。 */}
+        {/* 機体マーク（中心の丸＋上向き三角。進むの色＝緑。候補より下のレイヤに描いて隠れないようにする。 */}
         <g data-testid="radar-heading">
           <polygon
             points={`${CX},${CY - 20} ${CX - 10},${CY + 6} ${CX + 10},${CY + 6}`}
-            fill="none"
-            stroke="#90caf9"
+            fill={MAP_GO}
+            stroke={MAP_PIN_EDGE}
             strokeWidth="2"
             strokeLinejoin="round"
           />
-          <circle cx={CX} cy={CY} r={6} fill="#90caf9" />
-          <text x={CX} y={CY - 26} textAnchor="middle" fontSize="11" fill="#90caf9">
+          <circle cx={CX} cy={CY} r={6} fill={MAP_GO} stroke={MAP_PIN_EDGE} strokeWidth="1.5" />
+          <text x={CX} y={CY - 26} textAnchor="middle" fontSize="11" fontWeight="700" fill={MAP_GO}>
             {RADAR_HEADING}
           </text>
         </g>
@@ -104,6 +105,8 @@ export default function RadarSelect({
                   }}
                 >
                   <circle r={10} />
+                  {sel && <circle r={15} fill="none" stroke={MAP_PIN} strokeWidth="2.5" />}
+                  <text y={4} textAnchor="middle" className="rv-num">{i + 1}</text>
                   {sel && <text y={-18} textAnchor="middle" className="rv-sel">{RADAR_SELECTED}</text>}
                   {/* 確信度は選択中の候補にだけ添える。confidence は追跡中の対象 1 つを
                       表すスカラなので、未選択の先頭候補に出すと「確信度 0%」が

@@ -43,11 +43,11 @@ test('mode IDLE: every mode tile is enabled (mode_entry.yaml allows all 9 from I
   await expect(page.getByTestId('s01-group-drive')).toHaveCount(1)
 })
 
-// 2026-09-02: mode MANUAL では S-11 が描画されるため、検証は専用画面が無い
-// FOLLOW（mode_entry.json では IDLE にしか行けない）で同じ形を突く。
-// WP-UI-08: OPCHECK は S-30、WP-MAINT-03: CALIB は S-40 の専用画面。
-test('mode FOLLOW: 入れないタイルは dis 表示で、押すと mode_entry_denied', async ({ page }) => {
-  await gotoScreen(page, 'S01', { mode: 'FOLLOW', tracker_enabled: true })
+// 2026-09-02: mode MANUAL では S-11 が描画されるため、検証は専用画面が無いモードで同じ形を突く。
+// WP-UI-08: OPCHECK は S-30、WP-MAINT-03: CALIB は S-40、UIR-P4: FOLLOW は S-10 の専用画面。
+// 今は AUTO_MEASURE（S-60 の画面はまだ無い。mode_entry.yaml に載らないので全タイルが dis）を使う。
+test('mode AUTO_MEASURE: 入れないタイルは dis 表示で、押すと mode_entry_denied', async ({ page }) => {
+  await gotoScreen(page, 'S01', { mode: 'AUTO_MEASURE', tracker_enabled: true })
 
   // 点検と校正の階層へ。
   await page.getByTestId('s01-group-maint').click()
