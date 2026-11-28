@@ -73,7 +73,7 @@ test('S-10: 選んだ対象までの距離が出る', async ({ page }) => {
 
 test('S-10: 状態を変えても右列の位置が動かない', async ({ page }) => {
   await openS10(page, { mode: 'FOLLOW', state: 'SELECT', tracker_enabled: true })
-  const box = async () => page.locator('#s10 .g-drv-row').boundingBox()
+  const box = async () => page.locator('#s10 .content.g-drv').boundingBox()
   const before = await box()
   await page.evaluate(() => window.__thSetTestPersonTargets({
     candidates: [{ x: 1.2, y: 0.4 }, { x: -0.8, y: 0.6 }],

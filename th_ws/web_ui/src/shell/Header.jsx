@@ -12,6 +12,13 @@ import {
   PROJECT_NAME_JA, REOPEN_WINDOW_LABEL, ZONE_LABELS, DEV_MODE_LABEL, AP_SPOF_NOTE,
 } from '../i18n/states.js'
 
+// 注意の印（モックアップの ic('warn')）。異常の文と「自動ブレーキなし」の頭に付ける
+const WARN_ICON = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 3l10 18H2z" /><path d="M12 10v5" /><circle cx="12" cy="18" r=".6" fill="currentColor" />
+  </svg>
+)
+
 export default function Header({
   screenName,
   mode,
@@ -49,24 +56,30 @@ export default function Header({
   // never claims normal while a fault window is actually open) > normal.
   let faultText = ''
   let faultDotClass = ''
+  // 文の地（モックアップ .hdr .r2 .al）: 切断・非常停止中＝赤（em）／異常＝黄（ab。注意の印を付ける）
+  let faultTone = ''
   if (stale) {
     faultText = DISCONNECTED_LABEL
     faultDotClass = 'ng'
+    faultTone = 'em'
   } else if (mode === 'ESTOP') {
     faultText = ESTOP_ACTIVE_LABEL
     faultDotClass = 'ng'
+    faultTone = 'em'
   } else if (fault?.active) {
     faultText = faultLabel(fault.fault_type)
     faultDotClass = fault.severity === 'CRITICAL' ? 'ng' : 'warn'
+    faultTone = 'ab'
   }
 
   return (
     <header id="hdr" data-tone={headerTone(mode, devMode, stale)}>
       <div className="row1">
         <div id="logo"><img src={LOGO_DATA_URI} alt="" /></div>
-        <div className="proj">MIRS2602-<b>{PROJECT_NAME_JA}</b></div>
-        <div className="spacer" />
+        <div className="proj"><small>MIRS2602-</small>{PROJECT_NAME_JA}</div>
+        {/* 画面名称はプロジェクト名の真後ろ（D21。モックアップ .hdr .title）。右は札まで空ける */}
         <div id="screenName">{screenName ?? ''}</div>
+        <div className="spacer" />
         {showZone && (
           <div id="zonePill" className="show">{ZONE_LIMIT_LABEL}</div>
         )}
@@ -81,7 +94,7 @@ export default function Header({
       <div className="row2">
         <div id="faultBox" title={AP_SPOF_NOTE}>
           {faultText && <><span id="faultDot" className={faultDotClass} />
-            <span id="faultTx">{faultText}</span></>}
+            <span id="faultTx" className={faultTone}>{faultTone === 'ab' && WARN_ICON}{faultText}</span></>}
           {/* 解消した直近の異常を残す（Spec-webui.md §1）。押すと履歴の一覧。
               継続中のフォルトは上の faultText が優先で、これは出さない。 */}
           {recentFaultText && !stale && !fault?.active && (
@@ -90,7 +103,7 @@ export default function Header({
             </button>
           )}
           {autoBrakeOff && !stale && mode !== 'ESTOP' && mode !== 'CARRY' && (
-            <span id="autoBrakeOff" role="alert">{AUTO_BRAKE_OFF_LABEL}</span>
+            <span id="autoBrakeOff" role="alert">{WARN_ICON}{AUTO_BRAKE_OFF_LABEL}</span>
           )}
           <span className="spacer grow" />
           {faultBadgeVisible && (

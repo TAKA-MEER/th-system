@@ -47,3 +47,18 @@ CI=1 PW_PORT=4401 npx playwright test     # e2e。必ず CI=1 と PW_PORT を付
 
 ## 書き換え前の姿
 書き換え前に残した仕様書は `docs/plan/spec/_legacy/` にある。現行は `docs/plan/spec/` を読む。
+
+## モックアップとの比較（tools/mockcompare）
+実画面を `docs/plan/spec/mockup/index.html` と同じ論理サイズ（横長 1280×720・縦長 960×1280、倍率 1）で開き、
+名前を付けた領域の位置・大きさ・字・色・角・枠を比べる（D106。許容 ±2 px、色は同じ値）。
+```bash
+node tools/mockcompare/run.mjs --port 4520 --screen S11 --ori L   # S-11 の横長だけ
+node tools/mockcompare/run.mjs --port 4520 --state S30-list --frame # 骨組みの領域だけ
+node tools/mockcompare/run.mjs --list                              # 状態の一覧（NA＝載せられない状態と理由）
+```
+- `--port` は必須（並行で使うので人ごとに変える）。毎回 `vite build` してそのポートで `vite preview` を立て、終わったら止める。
+  自分で立てたサーバを使うなら `--reuse`（`--no-build` で build を省く）。
+- 出力は `tools/mockcompare/out/`（gitignore）: `summary.md`（状態ごとの超過）・`<状態>-<向き>.md`（差の表）・
+  `.side.png`（左右に並べた絵）・`.diff.png`（違う画素を赤・超過した領域の枠）。許容を超えたものがあれば終了コード 1。
+- 状態の対応表は `states.mjs`、領域の名前とセレクタは `regions.mjs`。実画面の要素に `data-mc="<領域名>"` を付けると
+  `regions.mjs` のセレクタより優先される。

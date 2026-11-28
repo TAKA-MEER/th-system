@@ -84,7 +84,7 @@ test('S-12: レーダーのタップが ui.select_target を送る', async ({ pa
 
 test('S-12: 状態を変えても右列の位置が動かない', async ({ page }) => {
   await openS12(page, { mode: 'TEACH_FOLLOW', state: 'ROUTE_SEL', tracker_enabled: true })
-  const box = async () => page.locator('#s12 .g-drv-row').boundingBox()
+  const box = async () => page.locator('#s12 .content.g-drv').boundingBox()
   const before = await box()
   await page.evaluate(() => window.__thSetTestState({ mode: 'TEACH_FOLLOW', state: 'REC' }))
   const after = await box()

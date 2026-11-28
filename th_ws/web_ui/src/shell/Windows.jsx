@@ -177,7 +177,7 @@ export default function Windows({
         <div className="backdrop" />
 
         {w1Active && (
-          <div className={`win fault ${w1Open ? 'show' : ''} ${w1Resolved ? 'resolved' : ''}`}>
+          <div className={`win fault ${w1Open ? 'show' : ''} ${w1Resolved ? 'resolved' : ''} ${w1IsEstop ? 'em' : (w1Resolved ? '' : 'ab')}`}>
             <header data-testid="w1-title">
               <span className={`win-mark ${w1Resolved && !w1IsEstop ? 'ok' : (w1IsEstop ? 'estop' : 'warn')}`} aria-hidden="true">{w1Resolved && !w1IsEstop ? '✓' : (w1IsEstop ? '■' : '▲')}</span>
               {w1Resolved && w1IsEstop ? WIN_ESTOP_RESOLVED_TITLE
@@ -237,7 +237,7 @@ export default function Windows({
         )}
 
         {carryOpen && (
-          <div className="win carry show" data-testid="w2-window">
+          <div className="win carry em show" data-testid="w2-window">
             <header data-testid="w2-title"><span className="win-mark estop" aria-hidden="true">■</span>{WIN_CARRY_TITLE}</header>
             <div className="bodyw">
               <p>{WIN_CARRY_BODY}</p>

@@ -5,42 +5,7 @@
  * 横長: 主表示を左に大きく、右列（①〜④）を右。縦長: 主表示を上、右列を下に 2 列（§7）。
  * 状態で位置を動かさない（同じ画面の中で状態が変わってもボタンの位置は動かない）。
  */
-
-#s20 .g-drv {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-}
-
-#s20 .g-drv-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 10px;
-  align-items: start;
-  min-height: 0;
-}
-
-/* 左上の操作バーは主表示と右列の上に横 1 列（§3.3 の型「走らせる」）。 */
-#s20 .g-drv > [data-pos="opbar"] {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-#s20 .g-drv .rcol {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-#s20 .g-drv .rops {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-}
+/* D106: 骨組み（.g-drv・操作バー・右列の幅と並び・縦長の並び）は theme.css の共通の規則だけで決める。ここには中身だけを書く。 */
 
 /* 左上の操作バー（画面の左上に横 1 列。§3.3 の型「走らせる」）。 */
 #s20 [data-pos="opbar"] {
@@ -65,10 +30,6 @@
 
 #s20 .stick svg {
   max-height: 170px;
-}
-
-#s20 .g-drv .rops {
-  gap: 8px;
 }
 
 #s20 .s20-toggle .stoprun {
@@ -182,24 +143,8 @@
 
 /* 縦長: 操作バー → 主表示（地図＋レーダー）→ 登録の帯 → 右列（左に①〜③、右に④）。 */
 @media (max-aspect-ratio: 1/1) {
-  #s20 .g-drv-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  #s20 .g-drv .rcol {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 10px;
-    align-items: start;
-  }
-
   #s20 .s20-radar {
     width: 180px;
-  }
-
-  #s20 .g-drv .rjog {
-    grid-column: 2;
-    grid-row: 1;
   }
 
   #s20 .g-drv .rjog .stick svg {
