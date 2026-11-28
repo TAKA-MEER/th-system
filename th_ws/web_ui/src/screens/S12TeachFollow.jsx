@@ -37,7 +37,7 @@ import {
   S14_EMPTY,
 } from '../i18n/screens.js'
 import {
-  S12_MAP_CAPTION, S12_MAP_SWAP, S12_RUN_DENY_ROUTE, S12_REC_M, S12_REC_TIME,
+  S12_MAP_CAPTION, S12_MAP_SWAP, S12_RUN_DENY_ROUTE, S12_REC_M, S12_REC_TIME, S12_REC_LABEL,
   S10_RUN_DENY_TARGET, S10_FACE_DENY_RUNNING, S12_SAVE_DENY_EMPTY, S12_SAVE_DENY_SAVED,
 } from '../i18n/screens.js'
 import { OP_LABELS } from '../i18n/states.js'
@@ -171,6 +171,7 @@ export default function S12TeachFollow({ onFinish }) {
           robotPose={odomPose}
           plannedPath={routePreview ?? []}
           testId="s12-map"
+          toolsStyle={mapLarge ? undefined : { display: 'none' }}
         />
       </div>
       <button
@@ -221,6 +222,7 @@ export default function S12TeachFollow({ onFinish }) {
         where={(
           <div className="s12-rec" data-testid="s12-record-amount">
             {/* 記録の量は距離と時間を 1 行で（「12.4 m　1:32」。点数・開始時の向きは出さない） */}
+            <span>{S12_REC_LABEL}</span>
             <b data-testid="s12-record-amount-value">
               {st?.recorded_m != null ? S12_REC_M(st.recorded_m) + '　' + (st?.elapsed_sec != null ? S12_REC_TIME(st.elapsed_sec) : '--') : '--'}
             </b>
@@ -249,7 +251,7 @@ export default function S12TeachFollow({ onFinish }) {
           />
         )}
         ops={(
-          <>
+          <div className="s12-ops">
             <HelpTip helpKey="look">
               <ReasonButton
                 className="look wide"
@@ -278,7 +280,7 @@ export default function S12TeachFollow({ onFinish }) {
                 <span>{OP_LABELS.save}</span>
               </ReasonButton>
             </HelpTip>
-          </>
+          </div>
         )}
         jog={(
           <JogConsole ros={ros} disabled={stale} keyboard />

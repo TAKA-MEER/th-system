@@ -303,6 +303,9 @@ export const S11_GAUGE_NEAR_LABEL = (text) => text
 export const S10_DISTANCE_LABEL = '対象まで'
 export const S10_NO_TARGET = '対象を選んでいません'
 export const S10_DIST = (m) => `${m.toFixed(1)} m`
+export const S12_REC_LABEL = '記録'
+export const S12_REC_M = (m) => `${Number(m).toFixed(1)} m`
+export const S12_REC_TIME = (sec) => { const t = Math.max(0, Math.round(Number(sec))); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}` }
 export const S12_MAP_CAPTION = '地図と経路'
 export const S12_MAP_SWAP = '地図とレーダーの大きさを入れ替え'
 export const S12_RUN_DENY_ROUTE = '経路を選んでから'

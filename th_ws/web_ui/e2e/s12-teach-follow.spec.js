@@ -59,8 +59,9 @@ test('S-12: 記録の量が出る', async ({ page }) => {
   await openS12(page, { mode: 'TEACH_FOLLOW', state: 'REC', tracker_enabled: true }, {
     status: { recorded_m: 12.4, elapsed_sec: 92, points: 100, start_yaw: 0.5, saved: false },
   })
-  await expect(page.getByTestId('s12-recorded-m')).toHaveText('12.40 m')
-  await expect(page.getByTestId('s12-points')).toHaveText('100')
+  // 距離と時間を 1 行で。点数・開始時の向きは出さない。
+  await expect(page.getByTestId('s12-record-amount-value')).toHaveText('12.4 m　1:32')
+  await expect(page.getByTestId('s12-record-amount')).not.toContainText('点')
 })
 
 test('S-12: 地図は小さく出て押すと大小を入れ替える', async ({ page }) => {
