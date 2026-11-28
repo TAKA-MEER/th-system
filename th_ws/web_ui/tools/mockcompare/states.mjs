@@ -147,20 +147,20 @@ export const STATES = [
 
   // ---------------- S-20 試験準備 ----------------
   S('S20-entry', "st('prep','entry')", NA('実画面の試験準備に入口のカードの状態を作る種を確かめていない')),
-  S('S20-mapping', "st('prep','mapping')", { screen: 'S20', state: { mode: 'PREP', state: 'MAPPING', tracker_enabled: true }, seeds: { ...ONSITE, __thTestMappingActive: true } }),
-  S('S20-reg', "st('prep','reg')", { screen: 'S20', state: { mode: 'PREP', state: 'REGISTER', tracker_enabled: true }, seeds: { ...ONSITE, __thTestMappingActive: true } }),
-  S('S20-return', "st('prep','return')", { screen: 'S20', state: { mode: 'PREP', state: 'RETURN', tracker_enabled: true }, seeds: { ...ONSITE, __thTestMappingActive: true } }),
+  S('S20-mapping', "st('prep','mapping')", { screen: 'S20', state: { mode: 'PREP', state: 'MAPPING', tracker_enabled: true, zone: 'IN' }, seeds: { ...ONSITE, __thTestMappingActive: true } }),
+  S('S20-reg', "st('prep','reg')", { screen: 'S20', state: { mode: 'PREP', state: 'REGISTER', tracker_enabled: true, zone: 'IN' }, seeds: { ...ONSITE, __thTestMappingActive: true } }),
+  S('S20-return', "st('prep','return')", { screen: 'S20', state: { mode: 'PREP', state: 'RETURN', tracker_enabled: true, zone: 'IN' }, seeds: { ...ONSITE, __thTestMappingActive: true } }),
 
   // ---------------- S-21 試験（当日）----------------
-  S('S21-unloaded', "st('day','unloaded')", { screen: 'S21', state: { mode: 'AT_HOME', state: 'IDLE_H', tracker_enabled: true }, seeds: { ...ONSITE, __thTestMapSession: { slot: 'VENUE', mode: 'UNLOADED', dirty: false, instance_id: 'x' } } }),
-  S('S21-home', "st('day','home')", { screen: 'S21', state: { mode: 'AT_HOME', state: 'IDLE_H', tracker_enabled: true }, seeds: ONSITE }),
-  S('S21-moving', "st('day','moving')", { screen: 'S21', state: { mode: 'PANEL_NAV', state: 'NAV', tracker_enabled: true }, seeds: ONSITE }),
-  S('S21-paused', "st('day','paused')", { screen: 'S21', state: { mode: 'PANEL_NAV', state: 'PAUSE', tracker_enabled: true }, seeds: ONSITE }),
-  S('S21-blocked', "st('day','blocked')", { screen: 'S21', state: { mode: 'PANEL_NAV', state: 'BLOCKED', tracker_enabled: true }, seeds: ONSITE }),
-  S('S21-panel', "st('day','panel')", { screen: 'S21', state: { mode: 'AT_PANEL', state: 'IDLE_P', tracker_enabled: true }, seeds: ONSITE }),
-  S('S21-working', "st('day','working')", { screen: 'S21', state: { mode: 'AT_PANEL', state: 'WORKING', tracker_enabled: true }, seeds: ONSITE }),
-  S('S21-summon', "st('day','summon')", { screen: 'S21', state: { mode: 'SUMMON', state: 'POINT', tracker_enabled: true }, seeds: ONSITE }),
-  S('S21-waitclear', "st('day','waitclear')", { screen: 'S21', state: { mode: 'SUMMON', state: 'WAIT_CLEAR', tracker_enabled: true }, seeds: { ...ONSITE, __thTestWaitClear: { distance_m: 0.4, remaining_sec: 7, satisfied: false, verdict: 'WAITING' } } }),
+  S('S21-unloaded', "st('day','unloaded')", { screen: 'S21', state: { mode: 'AT_HOME', state: 'IDLE_H', tracker_enabled: true, zone: 'IN' }, seeds: { ...ONSITE, __thTestMapSession: { slot: 'VENUE', mode: 'UNLOADED', dirty: false, instance_id: 'x' } } }),
+  S('S21-home', "st('day','home')", { screen: 'S21', state: { mode: 'AT_HOME', state: 'IDLE_H', tracker_enabled: true, zone: 'IN' }, seeds: ONSITE }),
+  S('S21-moving', "st('day','moving')", { screen: 'S21', state: { mode: 'PANEL_NAV', state: 'NAV', tracker_enabled: true, zone: 'IN' }, seeds: ONSITE }),
+  S('S21-paused', "st('day','paused')", { screen: 'S21', state: { mode: 'PANEL_NAV', state: 'PAUSE', tracker_enabled: true, zone: 'IN' }, seeds: ONSITE }),
+  S('S21-blocked', "st('day','blocked')", { screen: 'S21', state: { mode: 'PANEL_NAV', state: 'BLOCKED', tracker_enabled: true, zone: 'IN' }, seeds: ONSITE }),
+  S('S21-panel', "st('day','panel')", { screen: 'S21', state: { mode: 'AT_PANEL', state: 'IDLE_P', tracker_enabled: true, zone: 'IN' }, seeds: ONSITE }),
+  S('S21-working', "st('day','working')", { screen: 'S21', state: { mode: 'AT_PANEL', state: 'WORKING', tracker_enabled: true, zone: 'IN' }, seeds: ONSITE }),
+  S('S21-summon', "st('day','summon')", { screen: 'S21', state: { mode: 'SUMMON', state: 'POINT', tracker_enabled: true, zone: 'IN' }, seeds: ONSITE }),
+  S('S21-waitclear', "st('day','waitclear')", { screen: 'S21', state: { mode: 'SUMMON', state: 'WAIT_CLEAR', tracker_enabled: true, zone: 'IN' }, seeds: { ...ONSITE, __thTestWaitClear: { distance_m: 0.4, remaining_sec: 7, satisfied: false, verdict: 'WAITING' } } }),
 
   // ---------------- S-30 始業点検・S-31 故障診断（手順を進める）----------------
   S('S30-list', "st('check','list')", { screen: 'S30', state: { mode: 'OPCHECK', state: 'LIST' } }),
