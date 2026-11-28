@@ -30,7 +30,18 @@ const ONSITE = {
   __thTestOdomPose: { x: 0, y: 0, yaw: 0 }, __thTestRoutePose: { x: 0, y: 0, yaw: 0 }, __thTestHomeDeclared: true,
   __thTestMapSession: { slot: 'VENUE', mode: 'LOADED', dirty: false, instance_id: 'x' },
 }
-const BANNER = { kind: 'info', text: '地図を保存していません。保存してから終えてください（帯の文が長い場合も枠は動かない）' }
+// 帯（W-3 の案内。/system/effect の guide）。揺らしたら帯が本当に出たことも確かめる（出ていなければ何も揺らしていない）
+const GUIDE = { name: 'guide', dest: 'WebUI', args_json: JSON.stringify({ key: 'summon_clear_timeout' }) }
+const banner = async (page) => {
+  await page.evaluate((m) => window.__thSetTestSystemEffect(m), GUIDE)
+  await expect(page.getByTestId('w3-guide')).toBeVisible()
+}
+// 押せないボタンを押して、理由の吹き出しを出す（出たことも確かめる）。
+// 捕まえたポインタなどに邪魔されないよう dispatchEvent で押す
+const reason = (btn, bubble) => async (page) => {
+  await page.getByTestId(btn).dispatchEvent('click')
+  await expect(page.locator(bubble)).toBeVisible()
+}
 
 // 種の書き換え（ros/use*.js の試験用の縫い目）。fn を配列にすると、在るものを全部呼ぶ（1 つも無ければ落とす）
 const set = (fn, v) => async (page) => page.evaluate(({ fs, x }) => {
@@ -48,12 +59,12 @@ const CASES = [
     ['状態 CONFIRM', st({ mode: 'FOLLOW', state: 'CONFIRM', tracker_enabled: true })],
     ['状態 RUN', st({ mode: 'FOLLOW', state: 'RUN', tracker_enabled: true })],
     ['状態 PAUSE', st({ mode: 'FOLLOW', state: 'PAUSE', tracker_enabled: true })],
-    ['帯あり', set('__thSetTestSystemEffect', BANNER)],
+    ['帯あり', banner],
   ]],
   ['S-11 手動走行', 'S11', { mode: 'MANUAL', state: 'PAUSE', tracker_enabled: true }, {}, [
     ['状態 RUN', st({ mode: 'MANUAL', state: 'RUN', tracker_enabled: true })],
     ['数値の桁', set('__thSetTestOdomTwist', { linear: { x: 0.45, y: 0, z: 0 }, angular: { x: 0, y: 0, z: -1.25 } })],
-    ['帯あり', set('__thSetTestSystemEffect', BANNER)],
+    ['帯あり', banner],
     ['状態 PAUSE', st({ mode: 'MANUAL', state: 'PAUSE', tracker_enabled: true })],
   ]],
   ['S-12 教示（追従）', 'S12', { mode: 'TEACH_FOLLOW', state: 'REC', tracker_enabled: true },
@@ -72,6 +83,8 @@ const CASES = [
     ['状態 RUN', st({ mode: 'REPLAY', state: 'RUN', tracker_enabled: true })],
     ['数値の桁', set('__thSetTestRouteStatus', { target_index: 5, cross_track_m: 12.4, cross_track_max_m: 12.4 })],
     ['ラベルの長さ', set('__thSetTestRouteCatalog', ROUTES('第二実験棟の東側をぐるりと回る長い名前の経路'))],
+    ['押せない理由', reason('s14-reselect', '[data-testid="s14-reselect-reason"]')],
+    ['帯あり', banner],
     ['状態 PAUSE', st({ mode: 'REPLAY', state: 'PAUSE', tracker_enabled: true })],
   ]],
   ['S-20 試験準備', 'S20', { mode: 'PREP', state: 'MAPPING', tracker_enabled: true }, { ...ONSITE, __thTestMappingActive: true }, [
@@ -88,6 +101,7 @@ const CASES = [
     ['状態 盤の前', st({ mode: 'AT_PANEL', state: 'IDLE_P', tracker_enabled: true })],
   ]],
   ['S-30 始業点検', 'S30', { mode: 'OPCHECK', state: 'LIST' }, {}, [
+    ['押せない理由', reason('s30-abort', '[data-pos="foot"] .reason-bubble')],
     ['状態 点検中', async (page) => {
       await st({ mode: 'OPCHECK', state: 'RUNNING_CHECK' })(page)
       await set('__thSetTestOpcheckStatus', { item: 'MOTOR', result: 'UNKNOWN', detail: 'done= hold=NONE', next_screen: '' })(page)
