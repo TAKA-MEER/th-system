@@ -38,7 +38,7 @@ export const REGIONS = [
   { name: 'rcol-toggle', mock: '[data-pos="toggle"]', real: '[data-pos="toggle"]' },
   { name: 'rcol-ops', mock: '[data-pos="ops"]', real: '[data-pos="ops"]' },
   { name: 'rcol-jog', mock: '[data-pos="jog"]', real: '[data-pos="jog"]' },
-  { name: 'toggle', mock: '.rcol .tg', real: '.rcol .tg', style: true },
+  { name: 'toggle', mock: '.rcol .tg', real: '.rcol .stoprun', style: true },
   { name: 'rcol-btn', group: true, style: true, mock: '.rcol .b', real: '.rcol .btn' },
   { name: 'telem', mock: '.telem', real: '.telem' },
   // 手順を進める型・見る・変える型

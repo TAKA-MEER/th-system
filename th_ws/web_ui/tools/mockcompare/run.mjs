@@ -256,9 +256,17 @@ function compare(mock, real, args, ignore = {}) {
         if (row.issues.length && row.max <= args.tol) row.max = Math.max(row.max, args.tol + 0.01)  // 見た目だけの違いも超過に数える
       }
     }
+    // 除外: '理由' ならその領域の差を全部、{ why, only: ['x', '色', …] } なら頭がそれで始まる差だけを除く
     const ig = ignore[n] ?? ignore[base(n)]
-    if (ig && row.issues.length) { row.ignored = ig; row.issues = row.issues.map((x) => `（除外）${x}`) }
-    row.over = row.issues.length > 0 && !row.ignored
+    if (ig && row.issues.length) {
+      const why = typeof ig === 'string' ? ig : ig.why
+      const hit = (x) => typeof ig === 'string' || ig.only.some((k) => x.startsWith(k))
+      const left = row.issues.filter((x) => !hit(x))
+      if (left.length < row.issues.length) row.ignored = why
+      row.issues = [...left, ...row.issues.filter(hit).map((x) => `（除外）${x}`)]
+      row.left = left.length
+    } else row.left = row.issues.length
+    row.over = row.left > 0
     row.frame = FRAME.has(n)
     row.group = !!g?.group
     rows.push(row)

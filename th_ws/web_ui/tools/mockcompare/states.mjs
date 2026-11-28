@@ -14,7 +14,7 @@
 //            after    読み込み後に page で行うこと（async (page) => {...}）
 //          null のときは載せられなかった状態。why に理由を書く（報告の「載せられなかった状態」）。
 //   oris   測る向き（既定 ['L','P']）
-//   ignore 意図して合わせない領域 { 領域名: '理由（spec の節など）' }。表には「除外」として残り、超過に数えない。
+//   ignore 意図して合わせない領域 { 領域名: '理由（spec の節など）' } か { 領域名: { why, only: ['x','y','w','h','字','色','背景',…] } }。表には「除外」として残り、超過に数えない。
 //          spec とモックアップが食い違う所・機体から届かない値など（brief-F0「一致させない」）だけに使う
 //
 // 実画面の値（地図・点群・数値）はモックアップの見本と違ってよい。枠と配置を比べる（brief-F0）。
@@ -76,10 +76,17 @@ const opcheck = (item, result = 'UNKNOWN', detail = '') => ({ __thTestOpcheckSta
 const click = (testId) => async (page) => { await page.getByTestId(testId).click() }
 const clicks = (...ids) => async (page) => { for (const id of ids) await page.getByTestId(id).click() }
 const fault = (f) => async (page) => { await page.evaluate((p) => window.__thSetTestFault(p), f) }
+const setState = (st) => async (page) => { await page.evaluate((p) => window.__thSetTestState(p), st) }
 const LIDAR_FAULT = { active: true, fault_type: 'LIDAR_LOST', severity: 'RECOVERABLE' }
 
 // 全状態に効く除外（理由つき）。画面ごとのものは各状態の ignore に書く
-export const GLOBAL_IGNORE = {}
+export const GLOBAL_IGNORE = {
+  // Spec-webui §1.1「高見舎ロゴ」。実装は本物のロゴ（src/shell/logo.js。横長 56×24 を白地の札に載せる）、
+  // モックアップは仮の「TH」（30×30）。ロゴが 38 px 広いぶん、プロジェクト名と画面名称が右へずれる（x だけ除く）
+  'header-logo': 'Spec-webui §1.1: 本物の高見舎ロゴ（モックアップは仮の TH）',
+  'header-brand': { why: 'ロゴの幅の差（header-logo）で右へずれる', only: ['x'] },
+  'header-title': { why: 'ロゴの幅の差（header-logo）で右へずれる', only: ['x'] },
+}
 
 const S = (name, mock, real, extra = {}) => ({ name, mock, real, ...extra })
 const NA = (why) => ({ na: why })
@@ -189,7 +196,11 @@ export const STATES = [
   // モックアップの図解（docs/manual/tools/shots.py）と同じく、教示再生の再生中に重ねる
   S('W1-fault', "st('replay','run'); ab('fault')", { screen: 'S14', state: { mode: 'REPLAY', state: 'PAUSE', tracker_enabled: true }, seeds: REPLAY, after: fault(LIDAR_FAULT) }),
   S('W1-resolved', "st('replay','run'); ab('fault'); ab('resolved')", { screen: 'S14', state: { mode: 'REPLAY', state: 'PAUSE', tracker_enabled: true }, seeds: REPLAY, after: async (page) => { await fault(LIDAR_FAULT)(page); await fault({ ...LIDAR_FAULT, active: false })(page) } }),
-  S('W2-estop', "st('replay','run'); ab('estop')", { screen: 'S14', state: { mode: 'ESTOP', state: 'NONE', tracker_enabled: true, estop_ui: true }, seeds: REPLAY }),
-  S('W2-carry', "st('replay','run'); ab('carry')", { screen: 'S14', state: { mode: 'CARRY', state: 'NONE', tracker_enabled: true }, seeds: REPLAY }),
+  // 実画面は再生中から非常停止へ移す（mode が ESTOP／CARRY の間、画面は MODE_TO_SCREEN に無いのでメインメニューに戻る。
+  // モックアップは再生の画面の上に窓を出す。この違いは表の「実画面に無い」に出る）
+  S('W2-estop', "st('replay','run'); ab('estop')", { screen: 'S14', state: { mode: 'REPLAY', state: 'RUN', tracker_enabled: true }, seeds: REPLAY,
+    after: setState({ mode: 'ESTOP', state: 'NONE', prev_mode: 'REPLAY', estop_from_ui: true, estop_ui: true, estop_hw: false }) }),
+  S('W2-carry', "st('replay','run'); ab('carry')", { screen: 'S14', state: { mode: 'REPLAY', state: 'RUN', tracker_enabled: true }, seeds: REPLAY,
+    after: setState({ mode: 'CARRY', state: 'NONE', prev_mode: 'REPLAY', estop_hw: true }) }),
   S('W6-jog', "st('replay','run'); act1('jog')", NA('実画面の教示再生に W-6（手動の窓）を開く操作の対応を確かめていない')),
 ]
