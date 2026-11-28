@@ -123,13 +123,13 @@ table.t th{background:var(--soft); font-weight:700; white-space:nowrap}
 .cover .band{background:var(--navy); color:#fff; margin:-11mm -12mm 0; padding:24mm 14mm 12mm}
 .cover .band .sub{font-size:12pt; color:#b8c9e6; margin-top:2mm}
 .cover .band .meta{font-size:8.6pt; color:#8fa6cc; margin-top:8mm}
-.toc{list-style:none; display:flex; flex-direction:column; gap:.6mm; font-size:9.4pt}
+.toc{list-style:none; display:flex; flex-direction:column; gap:.1mm; font-size:9pt}
 .toc li{display:flex; align-items:baseline; gap:2mm}
-.toc li.ch{font-weight:700; margin-top:2mm; font-size:10.4pt}
+.toc li.ch{font-weight:700; margin-top:1.2mm; font-size:10pt}
 .toc li .dots{flex:1 1 auto; border-bottom:.3mm dotted #9aa3b2; transform:translateY(-1mm)}
 .toc li a{color:inherit; text-decoration:none}
 .toc li .pg{min-width:6mm; text-align:right; font-variant-numeric:tabular-nums}
-.toc li.sub{padding-left:5mm; font-size:8.9pt}
+.toc li.sub{padding-left:5mm; font-size:8.5pt}
 
 /* 目次の画面の流れ */
 .flow{display:grid; grid-template-columns:auto auto auto auto 1fr; align-items:center; gap:2mm; font-size:8.6pt}

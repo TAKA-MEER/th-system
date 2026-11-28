@@ -1,7 +1,7 @@
 # 図解マニュアル（docs/manual）
 
 タブレット画面（WebUI）のスクリーンショットに番号付きの注釈を重ねた、`docs/使い方.md` の図解版。
-**画面はいまモックアップ（`docs/plan/spec/mockup/index.html`）を「横長」1280×720 で撮っている。**
+**画面はいま新しいモックアップ（`docs/plan/spec/mockup/index.html`。2026-11-27 の画面の作り直し版）を「横長」1280×720 で撮っている。**
 実機の画面での撮り直しは今後（下の「実機の画面に切り替えるとき」）。
 
 - 見る: `index.html` をブラウザで開く（外部を読まないので、機体の AP 配下でも開ける）
@@ -14,14 +14,14 @@
 | `index.html` | 本文。A4 縦の `.sheet` 1 つが PDF の 1 ページ。凡例・手順・注意の文言はここに書く |
 | `manual.css` | ページ・図・注釈の体裁。ページの大きさは mm で決め打ち（画面でも PDF でも同じページ割り） |
 | `annotate.js` | `img/shots.js` を読んで図に枠と番号丸を重ねる。凡例の番号との食い違いも検査する |
-| `tools/shots.py` | ショットの定義（状態を作る JS・切り抜く要素・注釈の番号と要素）。**文言は持たない** |
+| `tools/shots.py` | ショットの定義（状態を作る JS・切り抜く要素・注釈の番号と要素）。**文言は持たない**。状態はモックアップの外側の切り替え欄をクリックして作る（`st('replay','run')`・`ab('fault')`・`act1('jog')` など。`capture.py` の `HELPERS_JS`） |
 | `tools/capture.py` | モックアップを開いて撮影し、`img/<id>.png` と `img/shots.js`（注釈の矩形）を書く |
 | `tools/make_pdf.py` | `index.html` を `使い方-図解.pdf` にし、ページ割りと注釈を検査する |
 | `img/` | 撮影結果（生成物だが、HTML をそのまま開けるよう git に入れる） |
 
 ## 作り直す
 
-Windows ホストの Python で動く（2026-11-02 に Python 3.12・Playwright 1.61・pypdf 6.14 で確認）。
+Windows ホストの Python で動く（2026-11-02 に Python 3.12・Playwright 1.61・pypdf 6.14 で確認）。2026-11-28 に Linux（Python 3.10）でも通した。
 
 ```bash
 pip install playwright pypdf && python -m playwright install chromium   # 初回だけ
@@ -33,7 +33,8 @@ python docs/manual/tools/make_pdf.py --preview <DIR>   # 各ページの PNG も
 ```
 
 `capture.py` が**失敗にする**もの: 準備の JS の例外・注釈の要素が見つからない／見えない・撮影範囲から半分以上はみ出す。
-**警告**: 本文がスクロールしないと見えない分がある（意図して一部だけ載せるショットは `allow_scroll=True`）。
+**警告**: 本文（`.body`・`.content`・`.mainv`）がスクロールしないと見えない分がある（意図して一部だけ載せるショットは `allow_scroll=True`）。
+指定なしで全部撮ると、`shots.py` に無い PNG は消える（指定して撮ったときは消えない）。
 
 `make_pdf.py` が**失敗にする**もの（終了コード 1）:
 
@@ -45,7 +46,7 @@ python docs/manual/tools/make_pdf.py --preview <DIR>   # 各ページの PNG も
 
 - **文言の正は `docs/使い方.md`**。この冊子は「画面のどこを見て、どこを押すか」を図で示すだけにして、
   手順・挙動は使い方.md に合わせる。各ページの末尾に対応する節を書く。
-- 画面に見える語はモックアップに合わせる。**モックアップと実機が違うところは、紫の「実機との違い」の枠で書く**
+- 画面に見える語はモックアップに合わせる。ページ（`.sheet`）はモックアップが変わったら `index.html` を直接直す（生成はしない）。**モックアップと実機が違うところは、紫の「実機との違い」の枠で書く**
   （実機に無い画面は付録に回し「実機では未実装」の札を付ける）。
 - 1 ページ = 1 つの `.sheet`。あふれたらページを分ける（`make_pdf.py` が教えてくれる）。
 - 注釈は `tools/shots.py` に番号と要素だけを書き、名前と意味は `index.html` の `<ol class="legend" data-shot="ID">` に書く。

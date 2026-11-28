@@ -28,7 +28,7 @@ SHOTS = [
     # ---------------- 1 画面の見方 ----------------
     S("layout", "st('replay','run')", [
         (1, "#dev .hdr .title", "bl"), (2, "#dev .hdr .mst", "bl"), (3, "#dev .estop-top", "bl"),
-        (4, "#dev .opbar .exit", "bl"), (5, "#dev .mainv", "tl"), (6, "#dev .rcol .where", "l"),
+        (4, "#dev .opbar .exit", "r"), (5, "#dev .mainv", "bl"), (6, "#dev .rcol .where", "l"),
         (7, "#dev .rcol .tg", "l"), (8, "#dev .rcol .rrow", "l"), (9, "#dev .rcol .rjog", "l"),
     ]),
     S("hdr-normal", "st('day','moving')", [
@@ -36,11 +36,9 @@ SHOTS = [
     ], clip=HDR, pad=0),
     S("hdr-fault", "st('day','moving'); ab('fault')", [(1, "#dev .hdr .al", "b")], clip=HDR, pad=0),
     S("hdr-estop", "st('day','moving'); ab('estop')", [(1, "#dev .hdr .al", "b"), (2, "#dev .hdr .mst", "b")], clip=HDR, pad=0),
-    S("hdr-carry", "st('day','moving'); ab('carry')", [(1, "#dev .hdr .al", "b")], clip=HDR, pad=0),
-    S("hdr-recent", "st('day','moving'); ab('fault'); ab('resolved'); act1('ack')", [(1, "#dev .hdr .al", "b")], clip=HDR, pad=0),
     S("hdr-brakeoff", "st('manual','idle'); act1('bkUnlock','manual'); act1('bkUnlock','manual'); act1('brakeOff','manual')",
       [(1, "#dev .hdr .brkoff", "b"), (2, "#dev .opbar .brk", "b")], clip="#dev .hdr || #dev .opbar || #dev .estop-top", pad=0),
-    S("hdr-dev", "st('settings','dev'); S.settings.dev=true; render()", [(1, "#dev .hdr", "b")], clip=HDR, pad=0),
+    S("hdr-dev", "st('settings','dev'); S.settings.dev=true; render()", [], clip=HDR, pad=0),
 
     # ---------------- 1 つづき: 走らせる型の右列・ボタン ----------------
     S("toggle-states", "st('replay','paused')", [
@@ -49,17 +47,17 @@ SHOTS = [
     S("toggle-run", "st('replay','run')", [(1, "#dev .rcol .tg .go-stop", "l"), (2, "#dev .rcol .tg .idle", "r")],
       clip="#dev .rcol .rops .tg", pad=14),
     S("dis-reason", "st('day','home'); [...document.querySelectorAll('#dev button.dis')].find(b=>b.textContent.includes('測定機能へ')).dispatchEvent(new MouseEvent('click',{bubbles:true}))",
-      [(1, "#dev .why-pop", "t"), (2, "#dev .ctl .b.dis::測定機能へ", "b")], clip="#dev .ctl", pad=0),
+      [(1, "#dev .why-pop", "t"), (2, "#dev .ctl .b.dis::測定機能へ", "b")], clip="#dev .ctl || #dev .why-pop", pad=6),
 
     # ---------------- 2 起動と終了 ----------------
     S("s00-ok", "st('connect','ok')", [
         (1, "#dev .diag", "tl"), (2, "#dev .side2 .big", "l"), (3, "#dev .side2 .ac", "l"), (4, "#dev .side2 > div:last-child .b", "tl"),
     ]),
     S("s00-ng", "st('connect','lidar')", [
-        (1, "#dev .diag .mk.ng", "r"), (2, "#dev .diag .fix", "t"), (3, "#dev .side2 .big", "l"), (4, "#dev .hdr .mst", "bl"),
+        (1, "#dev .diag .fix", "t"), (2, "#dev .side2 .big", "l"), (3, "#dev .hdr .mst", "bl"),
     ]),
     S("s00-camera", "st('connect','camera')", [(1, "#dev .diag", "tl"), (2, "#dev .side2 .big", "l")]),
-    S("s00-restart", "st('connect','restart')", [(1, "#dev .hdr .mst", "bl")], clip="#dev .hdr", pad=0),
+    S("s00-restart", "st('connect','restart')", [(1, "#dev .hdr .mst", "l")], clip="#dev .hdr", pad=0),
     S("s01", "st('menu','top')", [
         (1, "#dev .tile.l", "tl"), (2, "#dev .tile::走行", "tl"), (3, "#dev .tile::点検と校正", "tl"),
         (4, "#dev .tile::自律測定", "tl"), (5, "#dev .tile::設定", "tl"), (6, "#dev .halt", "l"), (7, "#dev .opbar .exit", "bl"),
@@ -67,7 +65,7 @@ SHOTS = [
     S("s01-drive", "st('menu','drive')", [
         (1, "#dev .opbar .exit::戻る", "bl"), (2, "#dev .tile::追従走行", "tl"), (3, "#dev .tile::教示再生", "tl"),
     ]),
-    S("s01-field-maint", "st('menu','field')", [(1, "#dev .tile::試験準備", "tl"), (2, "#dev .tile::試験", "tr")]),
+    S("s01-field-maint", "st('menu','field')", [(1, "#dev .tile::試験準備", "tl"), (2, "#dev .tile::試験（当日）", "tr")]),
     S("s01-auto-permit", "st('menu','autoask')", [(1, "#dev .win .b::許可しない", "bl"), (2, "#dev .win .b::許可する", "br")],
       clip="#dev .win", pad=16),
     S("shutdown-list", "st('menu','shutdown')", [
@@ -86,13 +84,12 @@ SHOTS = [
     S("s10-ready", "st('follow','ready')", [(1, "#dev .radar", "tl"), (2, "#dev .rcol .look", "l"), (3, "#dev .rcol .tg .go-run", "l")]),
     S("s10-run", "st('follow','run')", [(1, "#dev .hdr .mst", "bl"), (2, "#dev .rcol .where", "l"), (3, "#dev .rcol .tg .go-stop", "l")]),
     S("s11", "st('manual','drive')", [
-        (1, "#dev .opbar .brk, #dev .opbar .lockb", "bl"), (2, "#dev .mainv .telem", "tl"), (3, "#dev .mainv .surr, #dev .mainv svg", "tr"),
+        (1, "#dev .opbar .brk, #dev .opbar .lockb", "r"), (2, "#dev .mainv .telem", "tl"), (3, "#dev .mainv .surr, #dev .mainv svg", "tr"),
         (4, "#dev .rcol .stopone", "l"), (5, "#dev .rcol .rjog", "l"),
     ]),
-    S("s11-near", "st('manual','near')", [(1, "#dev .mainv .telem", "tl"), (2, "#dev .mainv svg", "tr")]),
-    S("brake-lock", "st('manual','idle')", [(1, "#dev .opbar .lockb", "b")], clip="#dev .opbar", pad=0),
-    S("brake-armed", "st('manual','idle'); act1('bkUnlock','manual')", [(1, "#dev .opbar .lockb", "b")], clip="#dev .opbar", pad=0),
-    S("brake-unlocked", "st('manual','idle'); act1('bkUnlock','manual'); act1('bkUnlock','manual')", [(1, "#dev .opbar .brk", "b")], clip="#dev .opbar", pad=0),
+    S("brake-lock", "st('manual','idle')", [(1, "#dev .opbar .lockb", "r")], clip="#dev .opbar", pad=0),
+    S("brake-armed", "st('manual','idle'); act1('bkUnlock','manual')", [(1, "#dev .opbar .lockb", "r")], clip="#dev .opbar", pad=0),
+    S("brake-unlocked", "st('manual','idle'); act1('bkUnlock','manual'); act1('bkUnlock','manual')", [(1, "#dev .opbar .brk", "r")], clip="#dev .opbar", pad=0),
     S("s12-entry", "st('follow','entry',{teach:true})", [(1, "#dev .card.wide .rt:first-child", "tl"), (2, "#dev .card.wide .rt::録り直す", "bl"), (3, "#dev .radar", "tr")]),
     S("s12-rec", "st('follow','run',{teach:true})", [
         (1, "#dev .hdr .mst", "bl"), (2, "#dev .minimap", "tl"), (3, "#dev .rcol .where", "l"), (4, "#dev .rcol .rrow .save, #dev .rcol .rrow .b::保存", "l"),
@@ -101,7 +98,7 @@ SHOTS = [
     S("s13-rec", "st('manual','drive',{teach:true})", [
         (1, "#dev .hdr .mst", "bl"), (2, "#dev .mainv", "tl"), (3, "#dev .rcol .where", "l"), (4, "#dev .rcol .stopone", "l"), (5, "#dev .rcol .b::保存", "l"),
     ]),
-    S("s13-saved", "st('manual','saved',{teach:true})", [(1, "#dev .hdr .mst", "bl"), (2, "#dev .rcol .b::保存", "l")]),
+    S("s13-saved", "st('manual','saved',{teach:true})", [(1, "#dev .hdr .mst", "l"), (2, "#dev .rcol .b::保存", "l")]),
     S("s14-select", "st('replay','select')", [
         (1, "#dev .rtl", "tl"), (2, "#dev .rt::地図の画像なし", "r"), (3, "#dev .card.wide .mseg", "l"), (4, "#dev .b.fwd::この経路で進む", "l"),
     ]),
@@ -109,16 +106,14 @@ SHOTS = [
     S("s14-search", "st('replay','search')", [
         (1, "#dev .rcol .where", "l"), (2, "#dev .rcol .tg", "l"), (3, "#dev .rcol .b::完全グローバルで探す", "l"),
     ]),
-    S("s14-notfound", "st('replay','notfound')", [(1, "#dev .rcol .where", "l")], clip="#dev .rcol", pad=8),
-    S("s14-far", "st('replay','far')", [(1, "#dev .rcol .where", "l")], clip="#dev .rcol", pad=8),
-    S("s14-ready", "st('replay','ready')", [(1, "#dev .rcol .where", "l"), (2, "#dev .rcol .tg .go-run", "l")], clip="#dev .rcol", pad=8),
+    S("s14-ready", "st('replay','ready')", [(1, "#dev .rcol .where", "l"), (2, "#dev .rcol .tg .go-run", "l")], clip="#dev .rcol .rops", pad=8),
     S("s14-run", "st('replay','run')", [
         (1, "#dev .mainv", "tl"), (2, "#dev .rcol .where", "l"), (3, "#dev .rcol .tg", "l"), (4, "#dev .rcol .rrow .mseg", "l"), (5, "#dev .rcol .rjog", "l"),
     ]),
     S("s14-paused", "st('replay','paused')", [
         (1, "#dev .rcol .tg .go-run", "l"), (2, "#dev .rcol .b::経路を選び直す", "l"),
-    ], clip="#dev .rcol", pad=8),
-    S("s14-end", "st('replay','end')", [(1, "#dev .rcol .where", "l")], clip="#dev .rcol", pad=8),
+    ], clip="#dev .rcol .rops", pad=8),
+    S("s14-end", "st('replay','end')", [(1, "#dev .rcol .where", "l")], clip="#dev .rcol .rops", pad=8),
     S("s14-jog", "st('replay','run'); act1('jog')", [
         (1, "#dev .w6", "tl"), (2, "#dev .rcol .rjog", "l"),
     ]),
@@ -128,7 +123,7 @@ SHOTS = [
         (1, "#dev .card .b.fwd", "tl"), (2, "#dev .card .b.caution", "bl"), (3, "#dev .opbar", "bl"),
     ]),
     S("s20-mapping", "st('prep','mapping')", [
-        (1, "#dev .opbar", "bl"), (2, "#dev .mainv", "tl"), (3, "#dev .mapctl", "tl"),
+        (1, "#dev .opbar", "bl"), (2, "#dev .mainv", "b"), (3, "#dev .mapctl", "tl"),
         (4, "#dev .b-ops .where", "l"), (5, "#dev .b-ops .tg", "l"), (6, "#dev .b-ops .save", "l"),
         (7, "#dev .b-jog", "l"),
     ]),
@@ -138,11 +133,11 @@ SHOTS = [
     S("s20-reg2", "st('prep','reg')", [(1, "#dev .stp", "tl"), (2, "#dev .b::記録", "tr"), (3, "#dev .b::やめる", "tr")],
       clip="#dev .stp || #dev .b::記録 || #dev .b::やめる", pad=16),
     S("s20-pin-edit", "st('prep','mapping'); act1('pin','A-1')", [(1, "#dev .bub", "tl")], clip="#dev .mainv", pad=0),
-    S("s20-order", "st('prep','mapping'); act1('ordStart'); act1('pin','B-1'); act1('pin','A-2')", [(1, "#dev .mainv", "tl")], clip="#dev .mainv", pad=0),
+    S("s20-order", "st('prep','mapping'); act1('ordStart'); act1('pin','B-1'); act1('pin','A-2')", [(1, "#dev .b-reg", "tl")], clip="#dev .mainv || #dev .b-reg", pad=0),
     S("s20-tap", "st('prep','mapping'); act1('method','tap'); S.prep.tap={kind:'PANEL',pt:[330,300],dir:[400,280]}; render()",
-      [(1, "#dev .mainv", "tl")], clip="#dev .mainv", pad=0),
+      [(1, "#dev .b-reg", "tl")], clip="#dev .mainv || #dev .b-reg", pad=0),
     S("s20-wall", "st('prep','mapping'); S.prep.warn={kn:'配電盤',kind:'panel',pos:[330,300],ang:0.4}; render()",
-      [(1, "#dev .mainv", "tl")], clip="#dev .mainv", pad=0),
+      [(1, "#dev .b-reg", "tl")], clip="#dev .mainv || #dev .b-reg", pad=0),
     S("s20-return", "st('prep','return')", [(1, "#dev .hdr .mst", "bl"), (2, "#dev .b-ops .tg .go-stop", "l")]),
     S("s21-unloaded", "st('day','unloaded')", [(1, "#dev .card .b.fwd", "tl"), (2, "#dev .ctl .where", "l")]),
     S("s21-home", "st('day','home')", [
@@ -203,5 +198,4 @@ SHOTS = [
     S("s60-wait", "st('auto','wait')", [
         (1, "#dev .opbar .exit", "bl"), (2, "#dev .rcol .where", "l"), (3, "#dev .rcol .tg", "l"), (4, "#dev .rcol .b.big", "l"), (5, "#dev .rcol .rjog", "l"),
     ]),
-    S("s60-turn", "st('auto','turn')", [(1, "#dev .hdr .mst", "bl")]),
 ]
