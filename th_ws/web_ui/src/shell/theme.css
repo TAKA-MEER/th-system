@@ -97,136 +97,93 @@ table{border-collapse:collapse;width:100%}
    on boot. Default 1 keeps the previous behaviour exactly. */
 #app > *{ --fs:calc(clamp(16px, calc(1.1cqi + 3.6px), 22px) * var(--fs-user, 1)); font-size:var(--fs); }
 
-/* ================= header (always on top, never covered) ================= */
+/* ================= header (always on top, never covered) =================
+   D106（2026-11-28）: モックアップ（docs/plan/spec/mockup/index.html の .hdr・.estop-top・.estop-plate。
+   既定の sz-new・pal-new・theme-light・col-jis・shape-role）と同じ px で固定する。
+   高さは中身（札・異常の文・開発モード）で変わらない（以前は 140〜144 で画面ごとに揺れた）。
+   字は --fs（画面幅で伸びる）ではなくモックアップの px で書く。 */
 #hdr{
-  flex:0 0 auto;z-index:100;position:relative;
-  background:var(--brand);
-  border-bottom:2px solid var(--brand);
+  flex:0 0 auto;z-index:100;position:relative;height:134px;
+  display:flex;flex-direction:column;
+  background:var(--hdr-row2,#d1d7e0);color:#fff;
+  border-bottom:2px solid var(--brand-dk,#163d75);
 }
 /* ヘッダの色（SG-C3。shell/limits.js の headerTone()）。Spec-webui.md §8
-   「非常停止＝赤／解除待ち＝紫」、§5「開発モード中はヘッダの色を変える」。
-   開発モードの色は #devPill と同じ系統（spec は色を指定していない）。 */
-#hdr[data-tone="estop"]{background:var(--brand);border-bottom-color:var(--estop)}
-#hdr[data-tone="carry"]{background:var(--brand);border-bottom-color:var(--carry)}
-#hdr[data-tone="dev"]{background:#60408a;border-bottom-color:#3e235e}
-/* flex-wrap:nowrap は必須（2026-09-02）。wrap だと、幅が足りなくなったとき
-   #screenName が省略記号で縮む前に行が増え、ヘッダーの高さごと変わってしまう
-   （＝本文の高さが動く。DetailedDesign-webui.md §2.5）。実機では row2 の
-   フォルト文が長いときにこれが起きて「画面名／モードだけ下の行に落ちる」
-   という変形になっていた。nowrap にして、足りない分は #screenName 自身の
-   ellipsis に吸収させる（元々 max-width:559px の分岐だけがこうしていた）。 */
-#hdr .row1{display:flex;align-items:center;gap:8px;padding:7px 10px;flex-wrap:nowrap;min-width:0;color:#fff} /* 青い帯の上の文字は白（モックアップのヘッダ。#screenName・.proj はここから継ぐ） */
-#logo{height:30px;background:#fff;border-radius:5px;padding:3px 6px;flex:0 0 auto}
+   「非常停止＝赤／解除待ち＝紫」、§5「開発モード中はヘッダの色を変える」（モックアップ .devmode .hdr .r1）。 */
+#hdr[data-tone="estop"]{border-bottom-color:var(--estop)}
+#hdr[data-tone="carry"]{border-bottom-color:var(--carry)}
+#hdr[data-tone="dev"] .row1{background:#7a5312}
+/* 上段（48）: ロゴ・プロジェクト名・画面名称（名称はプロジェクト名の真後ろで位置がほぼ動かない。D21）・
+   速度制限・状態の札（右端）。nowrap: 足りない分は画面名称の省略記号で吸収し、行を増やさない。 */
+#hdr .row1{height:48px;flex:none;display:flex;align-items:center;padding:0 14px;flex-wrap:nowrap;min-width:0;
+  background:var(--brand);color:#fff}
+#logo{height:30px;flex:none;margin-right:8px;background:#fff;border-radius:6px;padding:3px 6px}
 #logo img{height:100%;display:block}
-.proj{font-size:calc(var(--fs) * .66);color:#fff;letter-spacing:.02em;line-height:1.25;flex:0 0 auto}
-.proj b{display:block;font-size:calc(var(--fs) * .8);color:#fff;font-weight:700}
-#hdr .spacer{flex:1 1 auto}
-/* DetailedDesign-webui.md §2.5: screen name and mode are the largest text in the header */
-#screenName{font-size:calc(var(--fs) * 1.45);font-weight:800;letter-spacing:.02em;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
-#modePill{
-  flex:0 0 auto;font-size:calc(var(--fs) * 1.05);font-weight:800;padding:5px 14px;border-radius:999px;
-  background:#ffffff;border:2px solid var(--tx);color:var(--tx);white-space:nowrap;
-}
-#modePill[data-tone="go"]{background:var(--ok);border-color:var(--ok);color:#fff}
-#modePill[data-tone="warn"]{background:var(--jis-y);border-color:var(--jis-y);color:var(--tx)}
-#modePill[data-tone="estop"]{background:var(--estop);border-color:var(--estop-bg);color:#fff;box-shadow:0 0 0 3px var(--estop-bg)}
-#modePill.unknown{background:var(--warn);border-color:#111;color:#111}
-#zonePill{
-  flex:0 0 auto;font-size:max(15px,calc(var(--fs) * .72));font-weight:700;padding:4px 9px;border-radius:999px;
-  background:#ffffff;border:1px solid #111;color:#111;white-space:nowrap;display:none;
-}
+.proj{flex:none;font-size:13px;font-weight:400;line-height:1.2;color:#cfdcf0}
+.proj b{display:block;font-size:14px;color:#fff;font-weight:700}
+#screenName{flex:0 1 auto;min-width:0;margin-left:16px;font-size:26px;font-weight:800;letter-spacing:.05em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hdr .row1 .spacer{flex:1}
+#zonePill{flex:none;display:none;font-size:15px;padding:3px 10px;border-radius:999px;
+  border:1px solid #cfdcf0;color:#fff;background:transparent;white-space:nowrap}
 #zonePill.show{display:inline-block}
-#devPill{
-  flex:0 0 auto;font-size:max(15px,calc(var(--fs) * .72));font-weight:700;padding:4px 9px;border-radius:999px;
-  background:#fff;border:1px solid #111;color:#111;display:none;
-}
+#devPill{flex:none;display:none;margin-left:8px;font-size:15px;font-weight:700;padding:3px 10px;border-radius:999px;
+  background:#fff;border:1px solid #111;color:#111;white-space:nowrap}
 #devPill.show{display:inline-block}
-#hdr .row2{display:flex;align-items:stretch;gap:0;border-top:1px solid var(--hdr-row2-bd,#b9d4ee);background:var(--hdr-row2,#d1d7e0)}
-#faultBox{
-  flex:1 1 auto;display:flex;align-items:center;gap:8px;padding:7px 12px;
-  background:transparent;font-size:calc(var(--fs) * .88);min-width:0;
-}
-/* 自動ブレーキなし（D74）: 注意の黄で 1 Hz 点滅。reduced-motion では点けたまま。 */
-#autoBrakeOff{flex:0 0 auto;font-weight:800;font-size:calc(var(--fs) * .9);padding:3px 10px;border-radius:999px;background:var(--jis-y);color:var(--tx);border:2px solid var(--tx);white-space:nowrap}
-@media (prefers-reduced-motion:no-preference){#autoBrakeOff{animation:abBlink 1s steps(1,end) infinite}}
-@keyframes abBlink{50%{background:transparent}}
-@media (prefers-reduced-motion:reduce){#autoBrakeOff{animation:none}}
-#faultDot{width:9px;height:9px;border-radius:50%;background:transparent;flex:0 0 auto;display:none}
-#faultDot.ng{background:var(--ng)}
-#faultDot.warn{background:var(--warn)}
-/* min-width:0 が無いと flex アイテムの既定 (min-width:auto = 内容の最小幅) の
-   ため、ellipsis があっても実際には縮まず、親を押し広げる。 */
-#faultTx{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-#faultBadge{
-  flex:0 0 auto;font-size:calc(var(--fs) * .74);font-weight:700;padding:3px 9px;border-radius:999px;
-  background:#4a1010;border:1px solid #8a2a2a;color:var(--ng-tx);display:none;cursor:pointer;
-}
-#faultBadge.show{display:inline-block}
-/* DetailedDesign-webui.md §2.2 (U-9): height >=72px and >= 4.2x base font,
-   width >=160px and >=25% of screen width; the tallest button on screen */
-#estopBtn{
-  /* 25cqw = 25% of #app's width. vw would ignore an embedding frame and overflow it */
-  flex:0 0 auto;min-width:max(160px,25cqw);min-height:max(76px,calc(var(--fs) * 4.2));
-  background:var(--estop);color:#fff;
-  font-size:calc(var(--fs) * 1.25);font-weight:800;letter-spacing:.14em;padding:12px 20px;
-  border-left:2px solid #7a1414;
-  box-shadow:inset 0 0 0 2px #ff6b6b33;
-}
-/* 非常停止は赤に黄の地（§3.3.1）。黄の板を背後に置き、上下中央に置く。 */
-.estop-plate{flex:0 0 auto;display:flex;align-items:center;background:var(--estop-bg);padding:5px 6px}
-#estopBtn:active{background:var(--estop-hi)}
-#estopBtn.engaged{background:var(--carry);border-left-color:#4a2a70}
-/* C-2 (WP-CARRY-01 §4.3): CARRY's own "won't do anything" look -- not
-   `.engaged` (that's reserved for a genuinely accepted press, and would
-   visually claim this one worked; C-06r actually rejects it), not
-   `disabled`/hidden either (the button stays pressable; the safety-path
-   publish to /safety/estop_ui never stops -- AppShell.jsx). A hazard-stripe
-   fill on the same red keeps it recognizable as the estop button while
-   reading as "inert" rather than "off" or "success". */
-#estopBtn.disabled-in-carry{
-  background:repeating-linear-gradient(135deg,var(--estop) 0 10px,#5a1414 10px 20px);
-  cursor:not-allowed;
-}
-#estopBtn.disabled-in-carry:active{
-  background:repeating-linear-gradient(135deg,var(--estop) 0 10px,#5a1414 10px 20px);
-}
-/* On a portrait screen, occupy >=45% of the header's second row */
-#hdr .row2{--estop-w:46%}
-#estopBtn{flex-basis:var(--estop-w,auto)}
-@container app (min-width:760px){
-  #hdr .row2{--estop-w:auto}
-  #faultBox{min-width:190px}
-}
-/* WS-9X: 横長でもヘッダーは 2 段のまま（row1 / row2 を縦に積む）。
-   以前は min-width:1200px で 1 段（row1 | row2 横並び）にしていたが、それだと
-   row2 の取り分が ~42cqw に固定され、フォルト／状態メッセージ（#faultBox）の
-   幅が狭くなる。ユーザー要望（2026-09-04）で、本文高さより「エラーメッセージ
-   のスペース」を優先し、2 段に統一した。
-   2 段なら row2 は常に全幅で、#faultBox が flex:1 1 auto、#estopBtn が
-   min-width:max(160px,25cqw) の右端 = メッセージ領域が最大になる。
-   （2026-09-02 に直した「フォルト文の長さでヘッダーが変形する」不具合は
-   1 段レイアウト特有だったので、2 段に統一したことで原理的に再発しない。） */
-/* On a portrait screen, fold the project name and shorten the zone pill.
-   A header that wraps to 2 lines eats into body height (DetailedDesign-webui.md §2.5) */
-.z-short{display:none}
-@container app (max-width:559px){
-  .proj{display:none}
-  .z-long{display:none}
-  .z-short{display:inline}
-  #hdr .spacer{display:none}
-  /* grow here would push the mode pill onto the next line; only allow shrink */
-  #screenName{flex:0 1 auto}
-  /* keep row1 nowrap: with wrap, the layout adds a line before the screen
-     name shrinks, which grows the header. nowrap forces the screen name's
-     own ellipsis to absorb the missing space instead */
-  #hdr .row1{gap:6px;padding:7px 8px;flex-wrap:nowrap}
-  #modePill,#zonePill,#devPill{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
-  #devPill{font-size:calc(var(--fs) * .66);padding:4px 7px}
-  #devPill .d-long{display:none}
-}
 .d-short{display:none}
-@container app (max-width:559px){ .d-short{display:inline} }
+/* 状態の札（モックアップ .hdr .mst）。白い札が既定（一時停止も中立の白。pause-neutral）、移動中は「進む」の色 */
+#modePill{flex:none;margin-left:8px;font-size:18px;font-weight:800;padding:3px 12px;border-radius:4px;
+  background:#ffffff;color:var(--tx);white-space:nowrap}
+#modePill[data-tone="go"]{background:var(--ok);color:#fff;box-shadow:inset 0 0 0 2px #ffffff}
+#modePill[data-tone="warn"]{background:var(--jis-y);color:var(--tx)}
+#modePill[data-tone="estop"]{background:#b71c1c;color:#fff}
+#modePill.unknown{background:var(--warn);color:#111}
+/* 下段（84）: 異常のときだけ出す（正常は空。D45）。非常停止の板の下に潜らないよう右を空ける */
+#hdr .row2{flex:1;display:flex;align-items:stretch;min-height:0;background:var(--hdr-row2,#d1d7e0);
+  border-bottom:1px solid var(--hdr-row2-bd,#b9c2ce);padding-right:var(--estop-plate-w)}
+#faultBox{flex:1 1 auto;display:flex;align-items:stretch;gap:0;padding:0;min-width:0;color:var(--tx);font-size:18px}
+#faultDot{display:none}
+/* 異常の文（モックアップ .hdr .r2 .al）。異常＝黄・非常停止中／切断＝赤 */
+#faultTx{display:flex;align-items:center;gap:10px;padding:0 16px;font-size:18px;font-weight:800;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+#faultTx.ab{background:var(--jis-y);color:#161b22}
+#faultTx.em{background:#b71c1c;color:#fff}
+#faultTx svg{width:24px;height:24px;flex:none}
+/* 直近の異常（モックアップ .al.past）。押すと履歴 */
+#recentFault{display:flex;align-items:center;padding:0 16px;font-size:16px;font-weight:600;color:var(--mut);white-space:nowrap}
+/* 自動ブレーキなし（D74。モックアップ .al.brkoff）: 注意の黄で 1 Hz 点滅。reduced-motion では点けたまま */
+#autoBrakeOff{flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;font-size:18px;font-weight:800;
+  background:var(--jis-y);color:#161b22;white-space:nowrap}
+@media (prefers-reduced-motion:no-preference){#autoBrakeOff{animation:abBlink 1s steps(1,end) infinite}}
+@keyframes abBlink{50%{opacity:.15}}
+#faultBadge{flex:none;display:none;align-self:center;margin-right:12px;font-size:15px;font-weight:700;padding:3px 10px;border-radius:999px;
+  background:#4a1010;border:1px solid #8a2a2a;color:#fff;cursor:pointer}
+#faultBadge.show{display:inline-block}
+/* 非常停止（D39・D52。モックアップ .estop-top / .col-jis .estop-plate）: ヘッダの右下に黄の板（角なし）を敷き、
+   赤いボタンを板の上下中央（上下 5・左右 6）に置く。幅は横長 max(330px,26%)・縦長 47%。
+   いちばん高いボタン（76）に保つ（DetailedDesign-webui.md §2.2 U-9）。 */
+#app{--estop-w:max(330px,26%)}
+#stage[data-orientation="portrait"] #app{--estop-w:47%}
+#hdr{--estop-plate-w:calc(var(--estop-w) + 12px)}
+#hdr .estop-plate{position:absolute;z-index:99;right:0;top:48px;height:86px;width:var(--estop-plate-w);
+  background:var(--estop-bg,#ffd100);padding:5px 6px}
+#estopBtn{
+  display:flex;align-items:center;justify-content:center;width:100%;height:76px;
+  border-radius:8px;border:2px solid #ff8a80;
+  background:linear-gradient(#e53935,#b71c1c);color:#fff;
+  font-size:28px;font-weight:800;letter-spacing:.1em;text-shadow:0 1px 2px #0008;
+  box-shadow:inset 0 1px 0 #ffffff55,inset 0 -3px 0 #00000033;
+}
+#estopBtn:active{filter:brightness(.85)}
+#estopBtn.engaged{background:var(--carry);border-color:#4a2a70}
+/* C-2 (WP-CARRY-01 §4.3): CARRY's own "won't do anything" look -- not
+   `.engaged` (that's reserved for a genuinely accepted press), not
+   `disabled`/hidden either (the button stays pressable; the safety-path
+   publish to /safety/estop_ui never stops -- AppShell.jsx). */
+#estopBtn.disabled-in-carry,#estopBtn.disabled-in-carry:active{
+  background:repeating-linear-gradient(135deg,var(--estop) 0 10px,#5a1414 10px 20px);
+  cursor:not-allowed;filter:none;
+}
 
 /* ================= body (the only scrolling region) ================= */
 /* scrollbar-gutter keeps body width stable across scrollbar appearance, so
