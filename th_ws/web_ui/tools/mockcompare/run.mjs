@@ -191,7 +191,7 @@ function measureInPage({ root, regions }) {
     const bw = Math.max(...['Top', 'Right', 'Bottom', 'Left'].map((s) => parseFloat(cs[`border${s}Width`]) || 0))
     return {
       fontSize: parseFloat(cs.fontSize), fontWeight: cs.fontWeight, color: cs.color,
-      background: cs.backgroundColor, bgImage: cs.backgroundImage, fontFamily: cs.fontFamily, radius: parseFloat(cs.borderTopLeftRadius) || 0, borderWidth: bw,
+      background: cs.backgroundColor, bgImage: cs.backgroundImage, fontFamily: cs.fontFamily, numeric: cs.fontVariantNumeric, radius: parseFloat(cs.borderTopLeftRadius) || 0, borderWidth: bw,
       text: e.textContent.replace(/\s+/g, ' ').trim().slice(0, 24),
     }
   }
@@ -246,6 +246,8 @@ function compare(mock, real, args, ignore = {}) {
         const b = r.style
         const want = (k) => g.style === true || g.style.includes(k)
         if (want('font') && Math.abs(a.fontSize - b.fontSize) > 0.5) row.issues.push(`字 ${a.fontSize}→${b.fontSize}`)
+        // 数字の幅（モックアップは #dev 全体が tabular-nums。桁が変わっても幅が揃う）
+        if (want('font') && a.numeric !== b.numeric) row.issues.push(`数字 ${a.numeric}→${b.numeric}`)
         if (want('font') && a.fontWeight !== b.fontWeight) row.issues.push(`太さ ${a.fontWeight}→${b.fontWeight}`)
         if (want('color') && normColor(a.color) !== normColor(b.color)) row.issues.push(`色 ${a.color}→${b.color}`)
         if (want('bg') && normColor(a.background) !== normColor(b.background)) row.issues.push(`背景 ${normColor(a.background)}→${normColor(b.background)}`)
