@@ -27,24 +27,34 @@ MOCKUP = REPO / "docs" / "plan" / "spec" / "mockup" / "index.html"
 IMG = MANUAL / "img"
 SHOTS_JS = IMG / "shots.js"
 
-# fitStage() の倍率が 1 になる大きさ: (W-36)/1280 = (H-36)/720 = 1
-VIEWPORT = {"width": 1316, "height": 756}
+# モックアップの #dev（画面本体。論理 1280×720）を倍率 1 で左上に固定して撮る。
+# 外側の切り替え欄（#bar）と説明欄（#notes）は隠す。render() のたびに fit() が transform を
+# inline で付け直すので、!important で潰す
+VIEWPORT = {"width": 1400, "height": 800}
 SCALE = 2  # PNG の解像度（論理 px の 2 倍。A4 幅 186mm で約 350dpi）
 
-# モックアップ専用の操作パネル（#demo）は隠すだけにする。消すと engageEstop() が落ちる
 INJECT_CSS = """
-#demo{display:none!important}
+#bar,#notes{display:none!important}
+#main,#stageWrap{display:block!important;position:static!important;width:auto!important;height:auto!important;padding:0!important;margin:0!important}
+#devBox{position:fixed!important;left:0;top:0;width:auto!important;height:auto!important}
+#dev{transform:none!important;position:absolute!important;left:0!important;top:0!important}
+body{overflow:hidden!important}
 *,*::before,*::after{transition:none!important;animation:none!important;caret-color:transparent!important}
 """
 
-# 準備の JS から使う小道具
+# 準備の JS から使う小道具。状態はモックアップの外側の切り替え欄（隠してある）をクリックして作る
+# （モックアップ自身のハンドラが走るので、自動ブレーキの初期化・異常による一時停止なども本物どおり）
 HELPERS_JS = r"""
-window.__tab = id => {
-  const b = document.querySelector(`[onclick="tab(this,'${id}')"]`);
-  if (!b) throw new Error('tab not found: ' + id);
-  b.click();
+window.__c = sel => { const e = document.querySelector(sel); if (!e) throw new Error('見つからない: ' + sel); e.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true})); };
+// 画面 scr の状態 sub を開く。o.teach で教示版（追従・手動）。S-12/S-13 は先に teach を立てる
+window.st = (scr, sub, o = {}) => {
+  __c(`[data-scr="${scr}"]`);
+  if (o.teach !== undefined) { S[scr].teach = o.teach; render(); }
+  if (sub) __c(`[data-sub="${sub}"]`);
 };
-window.__ocrow = i => oc(document.querySelectorAll('#s30 .ocrow')[i], 'oc' + (i + 1));
+window.ab = k => __c(`[data-ab="${k}"]`);          // none / fault / estop / carry / resolved
+// 画面内のボタンを押す（data-act）。id は data-id
+window.act1 = (a, id) => __c(`#dev [data-act="${a}"]` + (id ? `[data-id="${id}"]` : ''));
 window.__vis = e => {
   if (!e || !e.getClientRects().length) return false;
   const cs = getComputedStyle(e);
@@ -97,7 +107,6 @@ def capture_one(page, shot):
     page.goto(MOCKUP.as_uri())
     page.add_style_tag(content=INJECT_CSS)
     page.evaluate(HELPERS_JS)
-    page.evaluate("document.body.className='pv-landscape'; fitStage();")
     page.evaluate("document.fonts.ready")
     try:
         page.evaluate("() => {" + shot["setup"] + "\n}")
@@ -105,9 +114,9 @@ def capture_one(page, shot):
         raise RuntimeError(f"{sid}: 準備の JS が失敗した: {e}") from e
     page.wait_for_timeout(shot.get("wait", 150))
 
-    app = page.evaluate("(()=>{const r=document.getElementById('app').getBoundingClientRect();return {x:r.left,y:r.top,w:r.width,h:r.height}})()")
+    app = page.evaluate("(()=>{const r=document.getElementById('dev').getBoundingClientRect();return {x:r.left,y:r.top,w:r.width,h:r.height}})()")
     if abs(app["w"] - 1280) > 0.5 or abs(app["h"] - 720) > 0.5:
-        raise RuntimeError(f"{sid}: #app が 1280×720 になっていない: {app}")
+        raise RuntimeError(f"{sid}: #dev が 1280×720 になっていない: {app}")
 
     if shot.get("clip"):
         r = page.evaluate("s => __rect(s)", shot["clip"])
@@ -124,9 +133,9 @@ def capture_one(page, shot):
 
     warnings = []
     if not shot.get("clip") and not shot.get("allow_scroll"):
-        sh, ch = page.evaluate("(()=>{const b=document.getElementById('body');return [b.scrollHeight,b.clientHeight]})()")
-        if sh > ch + 2:
-            warnings.append(f"本文が {sh - ch}px スクロールしないと見えない")
+        over = page.evaluate("(()=>{const d=document.getElementById('dev');return [...d.querySelectorAll('.body,.content,.mainv')].filter(e=>e.scrollHeight>e.clientHeight+2).map(e=>e.className+' +'+(e.scrollHeight-e.clientHeight))})()")
+        if over:
+            warnings.append("スクロールしないと見えない分がある: " + ", ".join(over))
 
     marks = []
     for m in shot.get("marks", []):
