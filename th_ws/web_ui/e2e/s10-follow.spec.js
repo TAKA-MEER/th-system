@@ -101,3 +101,66 @@ test('S-10: 終了が ui.finish を送る', async ({ page }) => {
   const calls = await triggers(page)
   expect(calls.map((c) => c.trigger), '終了が ui.finish を送っていない').toContain('ui.finish')
 })
+
+// ---- 差し戻し（見た目）: レーダーを主表示いっぱいに・色・「向く」 ----
+const TWO = {
+  candidates: [{ x: 1.2, y: 0.4 }, { x: -0.8, y: 0.6 }],
+  confidence: 0.87, is_lost: false, lost_reason: '',
+}
+
+test('S-10: レーダーは主表示（右列を除く本文）いっぱいで、円は短い辺いっぱい', async ({ page }) => {
+  await openS10(page, { mode: 'FOLLOW', state: 'SELECT', tracker_enabled: true })
+  const main = await page.locator('[data-pos="main"]').boundingBox()
+  const radar = await page.getByTestId('radar').boundingBox()
+  expect(radar.width, 'レーダーの幅が主表示の幅いっぱいでない').toBeGreaterThanOrEqual(main.width - 2)
+  expect(radar.height, 'レーダーの高さが主表示の高さいっぱいでない').toBeGreaterThanOrEqual(main.height - 2)
+  const vh = page.viewportSize().height
+  expect(main.y + main.height, '主表示の下に大きな空きがある').toBeGreaterThan(vh - 40)
+})
+
+test('S-10: 縦長でもレーダーは主表示の幅いっぱい', async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 1280 })
+  await openS10(page, { mode: 'FOLLOW', state: 'SELECT', tracker_enabled: true })
+  const main = await page.locator('[data-pos="main"]').boundingBox()
+  const radar = await page.getByTestId('radar').boundingBox()
+  expect(radar.width).toBeGreaterThanOrEqual(main.width - 2)
+  expect(main.width, '縦長で主表示が幅いっぱいでない').toBeGreaterThan(960 * 0.85)
+})
+
+test('S-10: レーダーの色。候補は灰の丸＋番号、選んだ人は反転、機体は緑、青を使わない', async ({ page }) => {
+  await openS10(page, { mode: 'FOLLOW', state: 'SELECT', tracker_enabled: true })
+  await page.evaluate((t) => window.__thSetTestPersonTargets({ ...t, selected_index: 0 }), TWO)
+  const fill = (id) => page.locator(`[data-testid="${id}"] circle`).first().evaluate((e) => getComputedStyle(e).fill)
+  const grey = await fill('radar-cand-1')
+  const sel = await fill('radar-cand-0')
+  expect(grey, '候補の丸が中立の灰でない').toBe('rgb(128, 128, 128)')
+  expect(sel, '選んだ人が反転（濃い地）でない').toBe('rgb(26, 26, 26)')
+  await expect(page.locator('[data-testid="radar-cand-0"] .rv-num')).toHaveText('1')
+  await expect(page.locator('[data-testid="radar-cand-1"] .rv-num')).toHaveText('2')
+  const heading = await page.locator('[data-testid="radar-heading"] polygon').evaluate((e) => getComputedStyle(e).fill)
+  expect(heading, '機体の三角が進むの色（緑）でない').toMatch(/^rgb\(\d+, \d+, \d+\)$/)
+  const [r, g, b] = heading.match(/\d+/g).map(Number)
+  expect(g, '機体の三角が緑でない').toBeGreaterThan(r)
+  expect(g).toBeGreaterThan(b)
+  const html = await page.getByTestId('radar').evaluate((e) => e.outerHTML.toLowerCase())
+  expect(html, '青（旧: #90caf9・#245089）が残っている').not.toMatch(/90caf9|245089/)
+})
+
+test('S-10: 向くは停止│走行の下に幅いっぱい。押せるときだけ薄い緑', async ({ page }) => {
+  await openS10(page, { mode: 'FOLLOW', state: 'SELECT', tracker_enabled: true })
+  const face = page.getByTestId('s10-face')
+  const toggle = page.getByTestId('s10-stop-run')
+  const bg = () => face.evaluate((e) => getComputedStyle(e).backgroundColor)
+  const off = await bg()
+  await page.evaluate((t) => window.__thSetTestPersonTargets({ ...t, selected_index: 0 }), TWO)
+  await expect(face).not.toHaveClass(/\bdis\b/)
+  const on = await bg()
+  expect(on, '押せるときの「向く」が薄い緑でない').not.toBe(off)
+  const [r, g, b] = on.match(/\d+/g).map(Number)
+  expect(g, '押せるときの「向く」が緑みでない').toBeGreaterThan(r)
+  expect(g).toBeGreaterThan(b)
+  const fb = await face.boundingBox()
+  const tb = await toggle.boundingBox()
+  expect(fb.y, '「向く」が停止│走行の下でない').toBeGreaterThanOrEqual(tb.y + tb.height - 1)
+  expect(Math.abs(fb.width - tb.width), '「向く」が幅いっぱいでない').toBeLessThanOrEqual(4)
+})
