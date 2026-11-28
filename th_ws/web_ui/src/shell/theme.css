@@ -1391,3 +1391,13 @@ table.lst td.r{text-align:right}
 .stoprun > button:first-child{border-radius:2px 0 0 2px}
 .stoprun > button:last-of-type{border-radius:0 2px 2px 0}
 .stoprun > button:only-of-type{border-radius:2px}
+
+/* ---- 案内の帯（W-3・#winGuide。モックアップ .flow／D66「帯は重ねる。地図の大きさは変えない」）:
+   走らせる型では主表示の下端に重ねる（以前は本文の下に段を足し、主表示と右列の ④ が 78 px 縮んだ）。
+   Spec-webui §4.2（S-10 は主表示の下端の帯）。右列（停止│走行・手動）と解除の帯は覆わない。
+   S-20・S-21（§4.2 は「登録の帯の場所」。いまは本文の上の段）と、手順・見る型・型の無い画面は従来どおり ---- */
+#app:not([data-screen="S-20"]):not([data-screen="S-21"]):has(.content.g-drv) #winGuide{position:absolute;z-index:50;left:26px;right:438px;bottom:24px;
+  background:rgba(255,255,255,.97);border:1px solid var(--bd-hi);border-radius:8px;padding:12px 14px;gap:14px;
+  box-shadow:0 6px 18px #0003}
+#app:not([data-screen="S-20"]):not([data-screen="S-21"]):has(.content.g-drv) #winGuide .g-tx{color:var(--tx);font-size:16px}
+#stage[data-orientation="portrait"] #app:not([data-screen="S-20"]):not([data-screen="S-21"]):has(.content.g-drv) #winGuide{right:26px;bottom:366px}
