@@ -32,10 +32,14 @@ test('unmounting the drive tab mid-drag releases (zero once) and stops', async (
   await page.waitForTimeout(250)
 
   const cmds = await jogPublishes(page, '/cmd_vel_manual_raw')
-  // Exactly one extra publish (the release zero) after the held window.
-  expect(cmds.length - heldCount).toBe(1)
-  expect(cmds[cmds.length - 1].cmd.vx).toBe(0)
-  expect(cmds[cmds.length - 1].cmd.wz).toBe(0)
+  // Exactly one release zero, at the very end: everything before it is the held
+  // (non-zero) command. 2026-11-28: was `cmds.length - heldCount === 1`, which
+  // raced -- the 10 Hz held publish can fire once more between counting
+  // heldCount and dispatching the leave click (分岐元でも並行の負荷で 14/48 落ちた).
+  const isZero = (c) => c.cmd.vx === 0 && c.cmd.wz === 0
+  expect(cmds.length).toBeGreaterThan(heldCount)
+  expect(isZero(cmds[cmds.length - 1])).toBe(true)
+  expect(cmds.slice(0, -1).filter(isZero)).toEqual([])
 
   // And nothing arrives afterwards.
   await page.waitForTimeout(250)
