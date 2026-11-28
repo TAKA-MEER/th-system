@@ -27,7 +27,7 @@
   --carry:#111111; --carry-tx:#ffffff;
   --sel-bg:#5b6675; --sel-tx:#ffffff;
   --map-unk:#dde2e8; --pt:#1f2733;
-  --hdr:96px;
+  --hdr:134px;
   --r:8px;
   color-scheme:light;
 }
@@ -119,8 +119,8 @@ table{border-collapse:collapse;width:100%}
   background:var(--brand);color:#fff}
 #logo{height:30px;flex:none;margin-right:8px;background:#fff;border-radius:6px;padding:3px 6px}
 #logo img{height:100%;display:block}
-.proj{flex:none;font-size:13px;font-weight:400;line-height:1.2;color:#cfdcf0}
-.proj b{display:block;font-size:14px;color:#fff;font-weight:700}
+.proj{flex:none;font-size:14px;font-weight:700;line-height:1.2;color:#fff}
+.proj small{display:block;font-size:13px;font-weight:400;color:#cfdcf0}
 #screenName{flex:0 1 auto;min-width:0;margin-left:16px;font-size:26px;font-weight:800;letter-spacing:.05em;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #hdr .row1 .spacer{flex:1}
@@ -189,16 +189,12 @@ table{border-collapse:collapse;width:100%}
 /* scrollbar-gutter keeps body width stable across scrollbar appearance, so
    height:auto figures don't resize themselves just because a scrollbar
    showed up. */
-#body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
-  scrollbar-gutter:stable}
-.screen{padding:10px}
+#body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+/* D106: .screen は本文いっぱいの箱。外側の余白・最大幅・中央寄せを付けない（以前は padding 10・
+   max-width 1100 の中央寄せで、モックアップより左右に 90 px 狭かった）。余白は型の .content が持つ。 */
+.screen{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
 @container app (min-width:760px){
   .screen.two-col{display:grid;grid-template-columns:1.35fr 1fr;gap:10px;align-items:start}
-}
-/* Cap single-column screens' width on wide screens so buttons don't stretch
-   full width (a target that keeps moving is hard to aim at). */
-@container app (min-width:1200px){
-  .screen:not(.two-col){max-width:1100px;margin:0 auto}
 }
 @container app (min-width:1300px){
   .screen.two-col{grid-template-columns:1.15fr 1.4fr}
@@ -878,7 +874,7 @@ table.lst td.r{text-align:right}
 .blink-1hz{animation:blink1Hz 1s steps(1,end) infinite}
 @media (prefers-reduced-motion:reduce){.blink-slow,.blink-1hz{animation:none}}
 /* 自律走行中の枠（§3.3.5）: ヘッダの下の画面の縁を緑で囲み 1Hz 点滅。 */
-.autonomous-frame{position:absolute;left:0;right:0;top:var(--hdr,96px);bottom:0;z-index:40;pointer-events:none;border:4px solid var(--ok);box-sizing:border-box}
+.autonomous-frame{position:absolute;left:0;right:0;top:var(--hdr,134px);bottom:0;z-index:40;pointer-events:none;border:6px solid var(--ok);box-sizing:border-box}
 @media (prefers-reduced-motion:no-preference){.autonomous-frame{animation:frame1Hz 1s steps(1,end) infinite}}
 @keyframes frame1Hz{50%{border-color:transparent}}
 @media (prefers-reduced-motion:reduce){.autonomous-frame{animation:none}}
@@ -1048,11 +1044,7 @@ table.lst td.r{text-align:right}
 /* ---------- 型の骨組み（shell/Layouts.jsx。W0a の部品に対応する配置。P3 で追加） ----------
    既存の .screen.two-col と同じ比率・同じ区切りで並べる（主表示と右列）。
    狭いときは縦に積む（縦長）。data-pos の位置は状態で動かない。 */
-/* 主表示は操作バーの下から本文の下端まで、右列の幅を除いた全部を使う（モックアップ）。
-   余白はモックアップに合わせる（本文の左右に 20px。S-20 の約 93px とは揃えない）。 */
-#s21.g-drv{display:flex;flex-direction:column;gap:10px;min-height:0;height:100%;padding:10px 20px}
-#s21 .g-drv-row{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(340px,1fr);gap:10px;align-items:stretch;flex:1 1 auto;min-height:0}
-#s21.g-drv > [data-pos="opbar"]{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+/* D106: 骨組み（.g-drv・操作バー・右列）は下の「3 つの型の骨組み」の共通の規則で決める。ここは中身だけ。 */
 #s21 .content.g-list{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:10px;align-items:start;padding:10px}
 #s21 .mainv{min-width:0;min-height:0;display:flex;flex-direction:column}
 #s21 [data-pos="main"]{min-height:0}
@@ -1060,12 +1052,6 @@ table.lst td.r{text-align:right}
 #s21 .mapWrap{flex:1 1 auto;min-height:0}
 #s21 .mapWrapInner{height:100%}
 #s21 image{image-rendering:-webkit-optimize-contrast;image-rendering:pixelated}
-#s21 .rcol{display:flex;flex-direction:column;gap:10px;min-width:0}
-#s21 .rops{display:flex;flex-direction:column;gap:10px}
-#s21 .rjog{display:flex;flex-direction:column;gap:8px}
-@media (max-aspect-ratio: 1/1){
-  #s21 .g-drv-row{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}
-}
 
 /* ---------- S-21 試験（作り直し） ----------
    #s21 の前身（.screen#s21）の地図・退避待ちバーの大きさを引き継ぐ。 */
@@ -1103,9 +1089,6 @@ table.lst td.r{text-align:right}
    モックアップ .content.g-list と同じ値: 左=一覧・右=手順。操作バー高さ 68・
    左右余白 14・中身上下 12・左右 14・区画間 12。主表示は高さいっぱい。
    内容は収まるよう縮む（pbody は overflow:hidden。図は高さに追従）。 */
-/* 操作バー（戻る）は一覧・手順の上に全幅で出る（走らせる型と同じ位置） */
-.content.g-list{display:grid;grid-template-columns:380px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);gap:10px 12px;padding:12px 14px;height:100%;min-height:0}
-.g-list > [data-pos="opbar"]{grid-column:1/-1;height:auto;min-height:56px;display:flex;align-items:center;gap:12px}
 .g-list .lst{display:flex;flex-direction:column;gap:6px;min-height:0;min-width:0}
 .g-list .lst .lhd{display:flex;align-items:center;gap:8px;min-height:40px;font-size:calc(var(--fs) * 1.05);font-weight:800}
 .g-list .lrow{display:flex;align-items:center;gap:10px;min-height:64px;padding:6px 12px;border:1px solid var(--bd-hi);border-radius:8px;background:var(--panel);text-align:left;width:100%}
@@ -1115,7 +1098,6 @@ table.lst td.r{text-align:right}
 .g-list .lrow.on .nm small{color:inherit;opacity:.85}
 .g-list .lrow.dis{opacity:.55}
 .g-list .pane{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0;border:1px solid var(--bd);border-radius:8px;background:var(--panel);padding:0 16px 14px}
-.g-list [data-pos="opbar"]{height:68px;display:flex;align-items:center;gap:12px;flex:none}
 .g-list .phd{display:flex;align-items:center;gap:12px;min-height:56px;flex:none;flex-wrap:wrap}
 .g-list .phd .pt{font-size:calc(var(--fs) * 1.25);font-weight:800;white-space:nowrap}
 .g-list .pbody{flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:10px}
@@ -1279,15 +1261,12 @@ table.lst td.r{text-align:right}
 }
 
 /* ---------- S-50 設定（作り直し。Spec-webui §3.15・型: 見る・変える） ---------- */
-#s50.screen{display:flex;flex-direction:column;min-height:0;height:100%;padding:0}
-#s50 .content.g-list{flex:1;min-height:0;display:grid;gap:14px;grid-template-columns:380px minmax(0,1fr);grid-template-rows:minmax(0,1fr);padding:12px 14px}
 #s50 .lst{min-height:0;display:flex;flex-direction:column;gap:4px}
 #s50 .lst > div{display:flex;flex-direction:column;gap:4px}
 #s50 .lrow{min-height:56px;display:flex;align-items:center;padding:0 14px;border:1px solid transparent;border-radius:8px;font-size:calc(var(--fs) * 1.05);width:100%;text-align:left;background:transparent}
 #s50 .lrow.on{background:var(--sel-bg);color:var(--sel-tx)}
 #s50 .pane{min-height:0;display:flex;flex-direction:column}
 #s50 .pbody{flex:1;min-height:0;overflow:auto}
-#s50 .pfoot{flex:none;display:flex;align-items:center;gap:10px;padding-top:10px}
 #s50 .when{font-size:max(15px,calc(var(--fs) * .82));color:var(--mut);padding:4px 10px;border:1px solid var(--bd-hi);border-radius:999px;white-space:nowrap}
 #s50 .grp{display:flex;flex-direction:column;gap:16px}
 #s50 .gr{display:flex;align-items:center;gap:12px;min-height:56px}
@@ -1298,7 +1277,117 @@ table.lst td.r{text-align:right}
 #s50 .stepper{display:inline-flex;align-items:center;gap:8px}
 #s50 .stepper b{min-width:90px;text-align:center;font-size:calc(var(--fs) * 1.15);font-variant-numeric:tabular-nums}
 #s50 .inp{background:var(--inset);border:1px solid var(--bd-hi);border-radius:6px;color:var(--tx);padding:12px;font:inherit;min-height:56px}
-@media (max-aspect-ratio: 1/1){
-  #s50 .content.g-list{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
-  #s50 .lst{display:grid;grid-template-columns:1fr 1fr}
-}
+
+/* ============================================================
+   D106（2026-11-28）3 つの型の骨組み・共通部品をモックアップの値に合わせる
+   （docs/plan/spec/mockup/index.html の .body・.opbar・.content・.g-drv・.g-list・.b・.tg。
+   既定の sz-new・theme-light・pal-new・col-jis・shape-role の値）。
+   ここより前の規則・画面ごとの CSS で、この骨組みの寸法を上書きしない。
+   中身の寸法（主表示の中・右列のボタンの中身など）は画面ごとの段で合わせる。
+   縦長の判定は #stage[data-orientation="portrait"]（論理幅 960 なので幅のコンテナクエリでは判定できない）。
+   ============================================================ */
+#app{font-family:'Noto Sans JP','Hiragino Kaku Gothic ProN','Yu Gothic UI',system-ui,sans-serif;font-variant-numeric:tabular-nums}
+/* 本文（ヘッダの下 586 / 縦長 1146）: 操作バー＋型の .content。本文自体は動かず、はみ出しは各枠の中で扱う */
+#body{display:flex;flex-direction:column;min-height:0}
+.layout{flex:1 1 auto;min-height:0;min-width:0;display:flex;flex-direction:column}
+/* 操作バー（左上）: 高さ 68・全幅・下に線。左から 終了／戻る・切り替え・印 */
+.opbar{height:68px;flex:none;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--bd);min-width:0}
+.opbar .cap{font-size:16px;color:var(--mut);margin-left:14px;font-weight:700}
+.layout > .content{flex:1 1 auto;min-height:0;min-width:0;padding:12px 14px}
+
+/* ---- 走らせる型: 主表示＋右列（400）。右列 ①どこへ（40）②停止│走行 ③その画面の操作 ④手動 ---- */
+.content.g-drv{display:grid;gap:12px;grid-template-columns:minmax(0,1fr) 400px;grid-template-rows:minmax(0,1fr)}
+.g-drv > .mainv{position:relative;min-width:0;min-height:0;background:var(--inset);border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+.g-drv > .rcol{display:flex;flex-direction:column;gap:10px;min-height:0;min-width:0}
+.g-drv .rops{display:flex;flex-direction:column;gap:10px;flex:none;min-width:0}
+.g-drv .rops > [data-pos]{min-width:0}
+.g-drv .where{display:flex;align-items:baseline;gap:12px;height:40px;flex:none;padding:0 2px;white-space:nowrap;overflow:hidden}
+.g-drv .where span{flex:1;min-width:0;font-size:24px;font-weight:800;overflow:hidden;text-overflow:ellipsis}
+.g-drv .where b{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums}
+.g-drv .rrow{display:flex;flex-direction:column;gap:8px;min-height:56px}
+.g-drv .rrow .row{display:flex;gap:8px}
+.g-drv .rrow .row > *{flex:1}
+.g-drv .rjog{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}
+.g-drv .rjog h3,.g-drv .rrow h3{font-size:15px;color:var(--mut);font-weight:700;letter-spacing:.05em}
+#stage[data-orientation="portrait"] .content.g-drv{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}
+#stage[data-orientation="portrait"] .g-drv > .rcol{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}
+#stage[data-orientation="portrait"] .g-drv .rjog{height:330px;flex:none}
+
+/* ---- 手順を進める型・見る・変える型: 左＝一覧（380）／右＝手順・中身。下端に やめる｜進む／保存 ---- */
+.content.g-list{display:grid;gap:14px;grid-template-columns:380px minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+.g-list > .lst{display:flex;flex-direction:column;gap:8px;min-height:0;min-width:0}
+.g-list .lhd{display:flex;align-items:center;gap:10px;height:40px;min-height:0;font-size:20px;font-weight:800}
+.g-list .lrow{display:flex;align-items:center;gap:12px;min-height:72px;padding:0 14px;border:1px solid var(--bd-hi);border-radius:8px;background:var(--panel);text-align:left;width:100%}
+.g-list .lrow .nm{flex:1;min-width:0;font-size:20px;font-weight:700}
+.g-list .lrow .nm small{display:block;font-size:15px;font-weight:400;color:var(--mut);margin-top:0}
+.g-list .lst.sec7{gap:4px}
+.g-list .lst.sec7 .lrow{min-height:56px}
+.g-list > .pane{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0;border:1px solid var(--bd);border-radius:8px;background:var(--panel);padding:14px 16px}
+.g-list .phd{display:flex;align-items:center;gap:14px;min-height:56px;flex:none}
+.g-list .phd .pt{font-size:24px;font-weight:800;white-space:nowrap}
+.g-list .pbody{flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:12px}
+.g-list .pfoot{display:flex;gap:10px;align-items:center;flex:none;min-height:64px}
+.g-list .pfoot .btn{min-width:200px;min-height:64px;font-size:20px}
+.g-list .pfoot .grow{flex:1}
+.g-list .pfoot .when{font-size:15px;color:var(--mut);padding:4px 10px;border:1px solid var(--bd-hi);border-radius:999px;white-space:nowrap}
+#stage[data-orientation="portrait"] .content.g-list{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+#stage[data-orientation="portrait"] .g-list > .lst{display:grid;grid-template-columns:1fr 1fr}
+#stage[data-orientation="portrait"] .g-list > .lst .lhd{grid-column:1/-1}
+#stage[data-orientation="portrait"] .g-list > .lst.sec7{grid-template-columns:1fr 1fr 1fr 1fr}
+
+/* ---- ボタン（モックアップ .b）: 高さ 56・字 18/600・角 4・左右 16。押せないものは塗らず枠と語を残す ---- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:0 16px;
+  border-radius:4px;border:1px solid var(--bd-hi);background:var(--panel);box-shadow:0 1px 3px #0000001f;
+  font-size:18px;font-weight:600;white-space:nowrap}
+.btn[disabled],.btn.dis{background:transparent;border-color:var(--bd);color:#7d8592;box-shadow:none}
+.btn.on{background:var(--sel-bg);border-color:var(--sel-bg);color:var(--sel-tx)}
+.btn.primary,.btn.fwd{border:3px solid var(--tx);font-weight:800}
+.btn.primary[disabled]{border:3px solid var(--bd);color:#7d8592}
+/* 終了／戻る（モックアップ .b.exit）: 片側だけ丸い・字 17 */
+.btn.exit{min-height:56px;padding:0 16px;font-size:17px;border-radius:4px 999px 999px 4px}
+
+/* ---- 停止│走行（モックアップ .tg.tg2）: 塗るのは押せる側だけ。高さ 60・字 19/800・枠 2 ---- */
+.stoprun{display:flex;min-height:60px;border:2px solid var(--bd-hi);border-radius:4px;overflow:hidden;background:var(--inset);box-shadow:0 1px 3px #0000001f}
+.stoprun button{flex:1 1 0;display:flex;align-items:center;justify-content:center;min-height:56px;font-size:19px;font-weight:800}
+.stoprun .plain{background:var(--inset);color:var(--dim)}
+.stoprun .sr-stop.paint{background:var(--stop);color:#fff}
+.stoprun .sr-run.paint{background:var(--ok);color:#fff;box-shadow:inset 0 0 0 3px #fff}
+.stoprun .sr-sep{flex:none;width:2px;background:var(--bd-hi)}
+
+/* ---- 窓（モックアップ .win・.scrim）: 本文の中央（ヘッダの下の中央）。幕はヘッダを暗くしない（ヘッダが上の層）。
+   幅 min(620, 本文−48)・枠 2・角 8・余白 16 18。異常＝黄の枠 3／非常停止＝赤の枠 3。
+   題 26/800・本文 18・ボタンは高さ 64・字 20 を横に等分 ---- */
+#overlay{padding-top:134px}
+#overlay .backdrop{top:134px;background:rgba(10,14,22,.55)}
+.win{font-size:16px;width:min(620px,calc(100% - 48px));max-height:calc(100% - 48px);border:2px solid var(--bd-hi);border-radius:8px;
+  padding:16px 18px;gap:12px;box-shadow:0 6px 18px #0003;background:var(--panel)}
+.win.ab{border:3px solid var(--jis-y,#ffd100)}
+.win.em{border:3px solid #b71c1c}
+.win > header{padding:0;border:none;background:transparent;color:var(--tx);display:flex;align-items:center;gap:12px;font-size:26px;font-weight:800}
+.win.confirm > header{background:transparent}
+.win > .bodyw{padding:0;font-size:18px;line-height:1.5}
+.win > footer{padding:0;border:none;display:flex;gap:10px;flex-wrap:nowrap}
+.win > footer .btn{flex:1;min-height:64px;font-size:20px}
+/* 解除の帯（D52・D53。モックアップ .relbar）: 本文の下端の中央に重ねる（以前は本文の下に段を足し、本文の高さが縮んだ）。
+   白地・黒の太い枠・角なし。300×56・字 20/800。説明の文は読み上げ用に残し、見た目は帯だけ */
+#release{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);padding:0;z-index:70}
+#release .rt{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+#releaseBtn{width:300px;height:56px;min-height:56px;display:flex;align-items:center;justify-content:center;gap:12px;
+  font-size:20px;font-weight:800;padding:0;box-shadow:0 4px 14px #0003}
+
+/* ---- 押せない理由（§3.3.3・モックアップ .why-pop）: 押したボタンのすぐ上（入らなければ下）に「重ねて」出す。
+   以前は文の流れの中に出し、ボタンや右列の下の段を押し下げていた（安定性の試験 layout-stability で検出）。
+   停止│走行（.stoprun）の中の理由も同じ。角の丸みは子のボタンで付け、はみ出しを切らない ---- */
+.reason-wrap{position:relative}
+.reason-bubble{position:absolute;z-index:60;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);margin:0;
+  width:max-content;max-width:460px;white-space:normal;
+  background:#263248;border:2px solid var(--mut);color:#fff;padding:10px 14px;border-radius:8px;
+  font-size:17px;font-weight:400;line-height:1.4;box-shadow:0 6px 18px #000a;pointer-events:none}
+.reason-bubble::after{content:'';position:absolute;left:50%;bottom:-8px;top:auto;width:12px;height:12px;background:#263248;
+  border:2px solid var(--mut);border-top:none;border-left:none;transform:translateX(-50%) rotate(45deg)}
+.reason-bubble.below{bottom:auto;top:calc(100% + 10px);margin:0}
+.reason-bubble.below::after{bottom:auto;top:-8px;border:2px solid var(--mut);border-bottom:none;border-right:none}
+.stoprun{position:relative;overflow:visible}
+.stoprun > button:first-child{border-radius:2px 0 0 2px}
+.stoprun > button:last-of-type{border-radius:0 2px 2px 0}
+.stoprun > button:only-of-type{border-radius:2px}

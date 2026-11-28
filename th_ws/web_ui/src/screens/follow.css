@@ -5,13 +5,7 @@
  * 操作バーは高さ 68・左右の余白 14。中身は上下 12・左右 14 の余白、区画の間は 12
  * （モックアップの .opbar・.content）。
  */
-#s10 { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; }
-#s12 { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; }
-#s10 .g-drv, #s12 .g-drv { display: flex; flex-direction: column; gap: 12px; min-height: 0; flex: 1 1 auto; box-sizing: border-box; padding: 12px 14px; }
-#s10 .g-drv-row, #s12 .g-drv-row { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; align-items: stretch; min-height: 0; flex: 1 1 auto; }
-#s10 .g-drv > [data-pos="opbar"], #s12 .g-drv > [data-pos="opbar"] { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; height: 68px; margin-left: -14px; margin-right: -14px; padding-left: 14px; padding-right: 14px; box-sizing: border-box; flex: none; }
-#s10 .g-drv .rcol, #s12 .g-drv .rcol { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
-#s10 .g-drv .rops, #s12 .g-drv .rops { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* D106: 骨組み（.g-drv・操作バー・右列の幅と並び・縦長の並び）は theme.css の共通の規則だけで決める。ここには中身だけを書く。 */
 #s10 .stick svg, #s12 .stick svg { max-height: 170px; }
 
 /* S-10 主表示: 区画いっぱいのレーダー（円は区画の短い辺いっぱい）。
@@ -51,9 +45,6 @@
 .s12-entry .card { max-width: 420px; width: 100%; }
 
 @media (max-aspect-ratio: 1/1) {
-  #s10 .g-drv-row, #s12 .g-drv-row { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  #s10 .g-drv .rcol, #s12 .g-drv .rcol { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
-  #s10 .g-drv .rjog, #s12 .g-drv .rjog { grid-column: 2; grid-row: 1; }
   #s10 .g-drv .rjog .stick svg, #s12 .g-drv .rjog .stick svg { max-height: 220px; }
 }
 
@@ -63,9 +54,6 @@
 /* 画面の幅いっぱい（共通の .screen の最大幅 1100 を外す。モックアップの .content と同じ） */
 #s10.screen, #s12.screen { max-width: none; margin: 0; }
 /* 走行の押せない理由は、停止│走行の枠の下の黄の帯（押せるときは出ない） */
-#s10 .stoprun, #s12 .stoprun { flex-wrap: wrap; }
-#s10 .stoprun .reason-bubble, #s12 .stoprun .reason-bubble { flex: 1 0 100%; order: 9; margin: 0; border: 0; border-top: 2px solid var(--tx); border-radius: 0; background: var(--jis-y, #ffd100); white-space: normal; }
-#s10 .stoprun .reason-bubble::after, #s12 .stoprun .reason-bubble::after { display: none; }
 /* 小さい間は地図の道具・全体表示・縮尺を出さない。占有格子は滲ませない。 */
 .s12-map.small .mapWrap .row { display: none; }
 #s12 image { image-rendering: -webkit-optimize-contrast; image-rendering: pixelated; }
