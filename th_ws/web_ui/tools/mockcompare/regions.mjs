@@ -7,14 +7,14 @@
 //   "css"            見えている最初の要素
 //   "css::文字列"     その文字列を含む要素のうち、いちばん短いもの
 //   "a || b"         矩形を合併する
-// style: true の領域は rect に加えて計算後の字の大きさ・太さ・色・背景・角の丸み・枠線の幅も比べる。
+// style: true（または比べる項目の配列 'font' 'color' 'bg' 'radius' 'border'）の領域は rect に加えて計算後の字の大きさ・太さ・色・背景・角の丸み・枠線の幅も比べる。
 // group: 同じ形の要素を文書の順に 1, 2, 3… と番号を振って対にする（右列のボタンなど）。
 
 export const REGIONS = [
   // ヘッダ
   { name: 'header', mock: '.hdr', real: '#hdr' },
-  { name: 'header-r1', mock: '.hdr .r1', real: '#hdr .row1', style: true },
-  { name: 'header-r2', mock: '.hdr .r2', real: '#hdr .row2', style: true },
+  { name: 'header-r1', mock: '.hdr .r1', real: '#hdr .row1' },
+  { name: 'header-r2', mock: '.hdr .r2', real: '#hdr .row2', style: ['bg'] },
   { name: 'header-logo', mock: '.hdr .logo', real: '#logo' },
   { name: 'header-brand', mock: '.hdr .brand', real: '#hdr .proj', style: true },
   { name: 'header-title', mock: '.hdr .title', real: '#screenName', style: true },
@@ -22,7 +22,7 @@ export const REGIONS = [
   { name: 'header-state', mock: '.hdr .mst', real: '#modePill', style: true },
   { name: 'header-alert', mock: '.hdr .r2 .al', real: '#faultTx, #autoBrakeOff, #recentFault', style: true },
   // 非常停止（ヘッダの外に重ねて描く）
-  { name: 'estop-plate', mock: '.estop-plate', real: '#hdr .estop-plate', style: true },
+  { name: 'estop-plate', mock: '.estop-plate', real: '#hdr .estop-plate', style: ['bg'] },
   { name: 'estop', mock: '.estop-top', real: '#estopBtn', style: true },
   // 本文の枠
   { name: 'body', mock: '.body', real: '#body' },

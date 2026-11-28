@@ -14,6 +14,8 @@
 //            after    読み込み後に page で行うこと（async (page) => {...}）
 //          null のときは載せられなかった状態。why に理由を書く（報告の「載せられなかった状態」）。
 //   oris   測る向き（既定 ['L','P']）
+//   ignore 意図して合わせない領域 { 領域名: '理由（spec の節など）' }。表には「除外」として残り、超過に数えない。
+//          spec とモックアップが食い違う所・機体から届かない値など（brief-F0「一致させない」）だけに使う
 //
 // 実画面の値（地図・点群・数値）はモックアップの見本と違ってよい。枠と配置を比べる（brief-F0）。
 
@@ -75,6 +77,9 @@ const click = (testId) => async (page) => { await page.getByTestId(testId).click
 const clicks = (...ids) => async (page) => { for (const id of ids) await page.getByTestId(id).click() }
 const fault = (f) => async (page) => { await page.evaluate((p) => window.__thSetTestFault(p), f) }
 const LIDAR_FAULT = { active: true, fault_type: 'LIDAR_LOST', severity: 'RECOVERABLE' }
+
+// 全状態に効く除外（理由つき）。画面ごとのものは各状態の ignore に書く
+export const GLOBAL_IGNORE = {}
 
 const S = (name, mock, real, extra = {}) => ({ name, mock, real, ...extra })
 const NA = (why) => ({ na: why })

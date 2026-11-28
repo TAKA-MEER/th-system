@@ -30,7 +30,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { STATES } from './states.mjs'
+import { STATES, GLOBAL_IGNORE } from './states.mjs'
 import { REGIONS, FRAME } from './regions.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -155,10 +155,9 @@ function measureInPage({ root, regions }) {
   const R = document.querySelector(root).getBoundingClientRect()
   const vis = (e) => {
     if (!e || !e.getClientRects().length) return false
+    // 大きさ 0 の要素も「在る」と数える（場所を空けていない＝0 px の枠は、それ自体が差）
     const cs = getComputedStyle(e)
-    if (cs.visibility === 'hidden' || cs.display === 'none') return false
-    const r = e.getBoundingClientRect()
-    return r.width > 0 && r.height > 0
+    return cs.visibility !== 'hidden' && cs.display !== 'none'
   }
   const find = (spec, all) => {
     let out = null
@@ -192,7 +191,7 @@ function measureInPage({ root, regions }) {
     const bw = Math.max(...['Top', 'Right', 'Bottom', 'Left'].map((s) => parseFloat(cs[`border${s}Width`]) || 0))
     return {
       fontSize: parseFloat(cs.fontSize), fontWeight: cs.fontWeight, color: cs.color,
-      background: cs.backgroundColor, radius: parseFloat(cs.borderTopLeftRadius) || 0, borderWidth: bw,
+      background: cs.backgroundColor, bgImage: cs.backgroundImage, fontFamily: cs.fontFamily, radius: parseFloat(cs.borderTopLeftRadius) || 0, borderWidth: bw,
       text: e.textContent.replace(/\s+/g, ' ').trim().slice(0, 24),
     }
   }
@@ -223,7 +222,7 @@ function regionSpecs(side, frameOnly) {
 // ---------------- 比べる ----------------
 const TRANSPARENT = new Set(['rgba(0, 0, 0, 0)', 'transparent'])
 const normColor = (c) => (TRANSPARENT.has(c) ? 'transparent' : c)
-function compare(mock, real, args) {
+function compare(mock, real, args, ignore = {}) {
   const rows = []
   const names = [...new Set([...Object.keys(mock), ...Object.keys(real)])]
   const order = REGIONS.map((g) => g.name)
@@ -245,17 +244,23 @@ function compare(mock, real, args) {
       if (g?.style) {
         const a = m.style
         const b = r.style
-        if (Math.abs(a.fontSize - b.fontSize) > 0.5) row.issues.push(`字 ${a.fontSize}→${b.fontSize}`)
-        if (a.fontWeight !== b.fontWeight) row.issues.push(`太さ ${a.fontWeight}→${b.fontWeight}`)
-        if (normColor(a.color) !== normColor(b.color)) row.issues.push(`色 ${a.color}→${b.color}`)
-        if (normColor(a.background) !== normColor(b.background)) row.issues.push(`背景 ${normColor(a.background)}→${normColor(b.background)}`)
+        const want = (k) => g.style === true || g.style.includes(k)
+        if (want('font') && Math.abs(a.fontSize - b.fontSize) > 0.5) row.issues.push(`字 ${a.fontSize}→${b.fontSize}`)
+        if (want('font') && a.fontWeight !== b.fontWeight) row.issues.push(`太さ ${a.fontWeight}→${b.fontWeight}`)
+        if (want('color') && normColor(a.color) !== normColor(b.color)) row.issues.push(`色 ${a.color}→${b.color}`)
+        if (want('bg') && normColor(a.background) !== normColor(b.background)) row.issues.push(`背景 ${normColor(a.background)}→${normColor(b.background)}`)
+        if (want('bg') && a.bgImage !== b.bgImage) row.issues.push(`背景の絵 ${a.bgImage.slice(0, 60)}→${b.bgImage.slice(0, 60)}`)
         const cap = (s, rect) => Math.min(s.radius, rect.h / 2, rect.w / 2)
-        if (Math.abs(cap(a, m.rect) - cap(b, r.rect)) > 1) row.issues.push(`角 ${a.radius}→${b.radius}`)
-        if (Math.abs(a.borderWidth - b.borderWidth) > 0.5) row.issues.push(`枠 ${a.borderWidth}→${b.borderWidth}`)
+        if (want('radius') && Math.abs(cap(a, m.rect) - cap(b, r.rect)) > 1) row.issues.push(`角 ${a.radius}→${b.radius}`)
+        if (want('border') && Math.abs(a.borderWidth - b.borderWidth) > 0.5) row.issues.push(`枠 ${a.borderWidth}→${b.borderWidth}`)
         if (row.issues.length && row.max <= args.tol) row.max = Math.max(row.max, args.tol + 0.01)  // 見た目だけの違いも超過に数える
       }
     }
-    row.over = row.issues.length > 0
+    const ig = ignore[n] ?? ignore[base(n)]
+    if (ig && row.issues.length) { row.ignored = ig; row.issues = row.issues.map((x) => `（除外）${x}`) }
+    row.over = row.issues.length > 0 && !row.ignored
+    row.frame = FRAME.has(n)
+    row.group = !!g?.group
     rows.push(row)
   }
   return rows
@@ -265,8 +270,8 @@ const fmtRect = (x) => (x ? `${Math.round(x.rect.x)},${Math.round(x.rect.y)} ${M
 function tableMd(title, rows, args, extra = []) {
   const lines = [`# ${title}`, '', ...extra, '', '| 領域 | モックアップ x,y w×h | 実画面 x,y w×h | 差 | |', '|---|---|---|---|---|']
   for (const r of rows) {
-    if (!args.all && !r.over) continue
-    lines.push(`| ${r.name} | ${fmtRect(r.mock)} | ${fmtRect(r.real)} | ${r.issues.join(' / ') || 'ok'} | ${r.over ? '✗' : ''} |`)
+    if (!args.all && !r.over && !r.ignored) continue
+    lines.push(`| ${r.name} | ${fmtRect(r.mock)} | ${fmtRect(r.real)} | ${r.issues.join(' / ') || 'ok'} | ${r.over ? '✗' : r.ignored ? `除外: ${r.ignored}` : ''} |`)
   }
   return lines.join('\n') + '\n'
 }
@@ -351,7 +356,7 @@ async function main() {
           const rl = await openReal(browser, server.url, st, ori)
           const m = await mk.page.evaluate(measureInPage, { root: mk.root, regions: regionSpecs('mock', args.frame) })
           const r = await rl.page.evaluate(measureInPage, { root: rl.root, regions: regionSpecs('real', args.frame) })
-          const rows = compare(m, r, args)
+          const rows = compare(m, r, args, { ...GLOBAL_IGNORE, ...(st.ignore ?? {}) })
           const over = rows.filter((x) => x.over)
           const pageErrors = [...mk.errors.map((e) => `モックアップ: ${e}`), ...rl.errors.map((e) => `実画面: ${e}`)]
           fs.writeFileSync(path.join(OUT, `${id}.md`), tableMd(`${id}（許容 ±${args.tol} px）`, rows, args,
@@ -384,14 +389,20 @@ async function main() {
 
 function writeSummary(results, args) {
   const L = [`# モックアップとの差（許容 ±${args.tol} px${args.frame ? '・骨組みだけ' : ''}）`, '',
-    '| 状態 | 超過 / 領域 | 大きいもの（上位 5） |', '|---|---|---|']
+    '骨組み＝regions.mjs の FRAME（ヘッダ・非常停止・操作バー・主表示・右列・一覧・手順の外枠）。',
+    '番号＝番号で対にした領域（右列のボタンなど。1 個ずれると後ろも連鎖して出る）。除外＝states.mjs の ignore（理由つき）。', '',
+    '| 状態 | 骨組み | 中身 | 番号 | 除外 | 大きいもの（骨組み・中身の上位 5） |', '|---|---|---|---|---|---|']
   for (const x of results) {
-    if (x.na) L.push(`| ${x.id} | NA | ${x.na} |`)
-    else if (x.error) L.push(`| ${x.id} | エラー | ${x.error.replace(/\|/g, '/').slice(0, 200)} |`)
+    if (x.na) L.push(`| ${x.id} | NA | | | | ${x.na} |`)
+    else if (x.error) L.push(`| ${x.id} | エラー | | | | ${x.error.replace(/\|/g, '/').slice(0, 200)} |`)
     else {
-      const top = x.rows.filter((r) => r.over).sort((a, b) => b.max - a.max).slice(0, 5)
+      const ov = x.rows.filter((r) => r.over)
+      const fr = ov.filter((r) => r.frame)
+      const gr = ov.filter((r) => r.group)
+      const ct = ov.filter((r) => !r.frame && !r.group)
+      const top = [...fr, ...ct].sort((a, b) => (b.frame - a.frame) || (b.max - a.max)).slice(0, 5)
         .map((r) => `${r.name}: ${r.issues.slice(0, 2).join(' ')}`).join('<br>')
-      L.push(`| ${x.id} | ${x.over} / ${x.total} | ${top} |`)
+      L.push(`| ${x.id} | ${fr.length} | ${ct.length} | ${gr.length} | ${x.rows.filter((r) => r.ignored).length} | ${top} |`)
     }
   }
   fs.writeFileSync(path.join(OUT, 'summary.md'), L.join('\n') + '\n')
