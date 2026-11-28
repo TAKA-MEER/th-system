@@ -91,10 +91,13 @@ test('ヘッダの画面名称は青い帯の上で白', async ({ page }) => {
   await expect(page.locator('#screenName')).toHaveText('試験準備')
   const color = await page.locator('#screenName').evaluate((el) => getComputedStyle(el).color)
   expect(color).toBe('rgb(255, 255, 255)')
-  // プロジェクト名の上段（小さな文字）も白
+  // プロジェクト名（高見舎プロジェクト）は白。上の小さな「MIRS2602-」は帯に馴染む薄い青
+  // （D106: モックアップ .theme-light .hdr .brand small{color:#cfdcf0} に合わせた。2026-11-28）
   await expect(page.locator('.proj')).toHaveCount(1)
   const projColor = await page.locator('.proj').evaluate((el) => getComputedStyle(el).color)
   expect(projColor).toBe('rgb(255, 255, 255)')
+  const projSmall = await page.locator('.proj small').evaluate((el) => getComputedStyle(el).color)
+  expect(projSmall).toBe('rgb(207, 220, 240)')
 })
 
 // MAP-1: 追従対象者（/person/status、base_link 相対）を地図上に表示する。

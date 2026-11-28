@@ -76,7 +76,7 @@ export default function Header({
     <header id="hdr" data-tone={headerTone(mode, devMode, stale)}>
       <div className="row1">
         <div id="logo"><img src={LOGO_DATA_URI} alt="" /></div>
-        <div className="proj">MIRS2602-<b>{PROJECT_NAME_JA}</b></div>
+        <div className="proj"><small>MIRS2602-</small>{PROJECT_NAME_JA}</div>
         {/* 画面名称はプロジェクト名の真後ろ（D21。モックアップ .hdr .title）。右は札まで空ける */}
         <div id="screenName">{screenName ?? ''}</div>
         <div className="spacer" />

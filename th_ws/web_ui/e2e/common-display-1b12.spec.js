@@ -66,7 +66,7 @@ test('SG-C10: UI 非常停止ボタンを押すと解除バーが出て、解除
 
 test('SG-C3: ヘッダの地色はモードで変わらない。状態は状態札で読む', async ({ page }) => {
   await gotoWithState(page, { mode: 'IDLE', state: 'NONE' })
-  const hdr = page.locator('#hdr')
+  const hdr = page.locator('#hdr .row1')   // 青い帯（D106 で上段が地の色を持つ）
   const bgOf = async () => hdr.evaluate((el) => getComputedStyle(el).backgroundColor)
   const normal = await bgOf()
 
@@ -88,7 +88,8 @@ test('SG-C3: ヘッダの地色はモードで変わらない。状態は状態�
 
 test('SG-C3: 開発モード中はヘッダの色が変わり、開発札で読む（非常停止の赤は開発モードに負けない）', async ({ page }) => {
   await gotoWithState(page, { mode: 'IDLE', state: 'NONE' })
-  const hdr = page.locator('#hdr')
+  // 帯の色は上段（#hdr .row1。モックアップ .devmode .hdr .r1）で変える（D106 でヘッダの地は上段と下段に分かれた）
+  const hdr = page.locator('#hdr .row1')
   const bgOf = () => hdr.evaluate((el) => getComputedStyle(el).backgroundColor)
   const normal = await bgOf()
 
